@@ -55,6 +55,7 @@ type CreateActiveTeamInput struct {
 	LeadAvatarID    string              `json:"lead_avatar_id"`
 	Workers         []InitialTeamWorker `json:"workers"`
 	DesiredStatus   string              `json:"-"`
+	Evaluation      string              `json:"-"`
 }
 
 // TeamWorker is one workspace-scoped Team membership and its call policy.
@@ -99,6 +100,7 @@ func (s *Store) CreateActiveTeam(
 		SuccessCriteria: input.SuccessCriteria,
 		LeadAvatarID:    input.LeadAvatarID,
 		Status:          finalCreateTeamStatus(input.DesiredStatus),
+		Evaluation:      finalCreateTeamEvaluation(input.Evaluation),
 	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -118,12 +120,12 @@ func (s *Store) CreateActiveTeam(
 	if err := tx.QueryRow(ctx, `
 		INSERT INTO weave_teams (
 			id, workspace_id, name, objective, primary_scenario,
-			success_criteria, lead_avatar_id, status
-		) VALUES ($1, $2, $3, $4, $5, $6, NULL, 'needs_repair')
+			success_criteria, lead_avatar_id, status, evaluation
+		) VALUES ($1, $2, $3, $4, $5, $6, NULL, 'needs_repair', $7)
 		RETURNING created_at, updated_at
 	`,
 		team.ID, team.WorkspaceID, team.Name, team.Objective,
-		team.PrimaryScenario, team.SuccessCriteria,
+		team.PrimaryScenario, team.SuccessCriteria, team.Evaluation,
 	).Scan(&team.CreatedAt, &team.UpdatedAt); err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.ConstraintName == "weave_teams_workspace_id_name_key" {
@@ -259,6 +261,9 @@ func validateCreateActiveTeamInput(workspaceID string, input CreateActiveTeamInp
 	if status := finalCreateTeamStatus(input.DesiredStatus); status != "active" && status != "building" {
 		return ErrInvalidTeamCreationInput
 	}
+	if evaluation := finalCreateTeamEvaluation(input.Evaluation); evaluation != TeamEvaluationEvaluated && evaluation != TeamEvaluationUnevaluated {
+		return ErrInvalidTeamCreationInput
+	}
 
 	workerIDs := make(map[string]struct{}, len(input.Workers))
 	validKinds := map[string]struct{}{
@@ -301,4 +306,12 @@ func finalCreateTeamStatus(status string) string {
 		return "active"
 	}
 	return status
+}
+
+func finalCreateTeamEvaluation(evaluation string) string {
+	evaluation = strings.TrimSpace(evaluation)
+	if evaluation == "" {
+		return TeamEvaluationEvaluated
+	}
+	return evaluation
 }
