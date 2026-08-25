@@ -83,6 +83,27 @@ func TestHandleCreateTeamFromTemplateRejectsUnknownJSONField(t *testing.T) {
 	}
 }
 
+func TestHandleCreateTeamFromTemplateAcceptsDeclarativePlan(t *testing.T) {
+	service := &fakeTeamTemplateService{outcome: teamtemplates.Outcome{BuildRunID: "run-1", Status: "building"}}
+	server := &Server{TeamTemplates: service}
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/v1/teams:from-template", strings.NewReader(`{
+		"yaml":"x",
+		"idempotency_key":"e7c03b33-bfac-4a34-a443-805319f7fa24",
+		"declarative_spec":{"schema_version":1,"entry_node_id":"entry","input_contract":{"type":"text"},"output_contract":{"type":"text"},"nodes":[],"edges":[]}
+	}`))
+	request.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	ctx := echo.New().NewContext(request, recorder)
+	ctx.Set("tenant", "workspace-1")
+	ctx.Set("user_id", "user-1")
+	if err := server.handleCreateTeamFromTemplate(ctx); err != nil {
+		t.Fatalf("handler error = %v", err)
+	}
+	if recorder.Code != http.StatusAccepted || service.request.DeclarativeSpec == nil || service.request.DeclarativeSpec.EntryNodeID != "entry" {
+		t.Fatalf("status = %d request = %#v body = %s", recorder.Code, service.request, recorder.Body.String())
+	}
+}
+
 func TestHandleListTeamTemplateSamples(t *testing.T) {
 	service := &fakeTeamTemplateService{samples: []teamtemplates.Sample{{Name: "research", YAML: "schema: team-template/v1"}}}
 	server := &Server{TeamTemplates: service}
@@ -120,11 +141,13 @@ type fakeTeamTemplateService struct {
 	samples     []teamtemplates.Sample
 	workspaceID string
 	userID      string
+	request     teamtemplates.Request
 }
 
-func (s *fakeTeamTemplateService) Instantiate(_ context.Context, workspaceID, userID string, _ teamtemplates.Request) (teamtemplates.Outcome, error) {
+func (s *fakeTeamTemplateService) Instantiate(_ context.Context, workspaceID, userID string, request teamtemplates.Request) (teamtemplates.Outcome, error) {
 	s.workspaceID = workspaceID
 	s.userID = userID
+	s.request = request
 	return s.outcome, s.err
 }
 

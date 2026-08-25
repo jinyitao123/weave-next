@@ -15,8 +15,10 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jinyitao123/weave/internal/build/teambuild"
+	"github.com/jinyitao123/weave/internal/build/teameval"
 	"github.com/jinyitao123/weave/internal/build/teamforge"
 	"github.com/jinyitao123/weave/internal/build/teamtemplate"
+	"github.com/jinyitao123/weave/internal/kernel/workflow/machine"
 )
 
 const progressPathPrefix = "/v1/internal/team-build-runs/"
@@ -28,10 +30,11 @@ var (
 )
 
 type Request struct {
-	YAML           string         `json:"yaml,omitempty"`
-	Sample         string         `json:"sample,omitempty"`
-	Overrides      map[string]any `json:"overrides,omitempty"`
-	IdempotencyKey string         `json:"idempotency_key"`
+	YAML            string                               `json:"yaml,omitempty"`
+	Sample          string                               `json:"sample,omitempty"`
+	Overrides       map[string]any                       `json:"overrides,omitempty"`
+	DeclarativeSpec *teamforge.DeclarativeWorkflowSpecV1 `json:"declarative_spec,omitempty"`
+	IdempotencyKey  string                               `json:"idempotency_key"`
 }
 
 type Outcome struct {
@@ -99,6 +102,10 @@ type Service struct {
 	catalog     Catalog
 }
 
+type declarativePlan struct {
+	bundle teambuild.CompilerAuthorizationBundle
+}
+
 func New(idempotency IdempotencyStore, builds BuildStore, submitter Submitter, options Options) *Service {
 	if options.ReadyTimeout <= 0 {
 		options.ReadyTimeout = 15 * time.Second
@@ -146,11 +153,18 @@ func (s *Service) Instantiate(ctx context.Context, workspaceID, userID string, r
 	if err != nil {
 		return Outcome{}, err
 	}
-	fingerprint, err := templateFingerprint(compiled.Template)
+	fingerprint, err := templateFingerprint(compiled.Template, request.DeclarativeSpec)
 	if err != nil {
 		return Outcome{}, fmt.Errorf("fingerprint team template: %w", err)
 	}
 	buildRunID := deterministicBuildRunID(workspaceID, key)
+	var declarative *declarativePlan
+	if request.DeclarativeSpec != nil {
+		declarative, err = compileDeclarativePlan(workspaceID, buildRunID, compiled, *request.DeclarativeSpec)
+		if err != nil {
+			return Outcome{}, declarativeRequestError(err)
+		}
+	}
 	record, err := s.idempotency.Claim(ctx, IdempotencyRecord{
 		WorkspaceID: workspaceID, Key: key, Fingerprint: fingerprint,
 		BuildRunID: buildRunID, CreatedBy: userID,
@@ -170,7 +184,12 @@ func (s *Service) Instantiate(ctx context.Context, workspaceID, userID string, r
 	if terminal, outcome, terminalErr := terminalOutcome(run); terminal {
 		return outcome, terminalErr
 	}
-	revision, err := s.ensureBlueprintRevision(ctx, workspaceID, buildRunID, compiled)
+	var revision teambuild.BlueprintRevision
+	if declarative == nil {
+		revision, err = s.ensureBlueprintRevision(ctx, workspaceID, buildRunID, compiled)
+	} else {
+		revision, err = s.ensureDeclarativeRevisions(ctx, workspaceID, buildRunID, compiled, *declarative)
+	}
 	if err != nil {
 		return Outcome{}, err
 	}
@@ -205,6 +224,147 @@ func (s *Service) Instantiate(ctx context.Context, workspaceID, userID string, r
 		}
 	}
 	return s.waitForTerminal(workspaceID, buildRunID)
+}
+
+func (s *Service) ensureDeclarativeRevisions(
+	ctx context.Context,
+	workspaceID, buildRunID string,
+	compiled teamtemplate.Compilation,
+	plan declarativePlan,
+) (teambuild.BlueprintRevision, error) {
+	latest, err := s.builds.GetLatestBlueprintRevision(ctx, workspaceID, buildRunID)
+	switch {
+	case err == nil && latest.RevisionNo == plan.bundle.RevisionNo:
+		return verifyDeclarativeRevision(latest, plan)
+	case err == nil && latest.RevisionNo == 1:
+		if _, err := verifyBlueprintIdentity(latest, compiled.Blueprint); err != nil {
+			return teambuild.BlueprintRevision{}, err
+		}
+	case errors.Is(err, teambuild.ErrBuildRunNotFound):
+		if _, err := s.ensureBlueprintRevision(ctx, workspaceID, buildRunID, compiled); err != nil {
+			return teambuild.BlueprintRevision{}, err
+		}
+	case err != nil:
+		return teambuild.BlueprintRevision{}, fmt.Errorf("read declarative template revision: %w", err)
+	default:
+		return teambuild.BlueprintRevision{}, ErrIdempotencyConflict
+	}
+	revision, err := s.builds.PersistCompilerAuthorizationBundle(ctx, workspaceID, buildRunID, plan.bundle)
+	if err == nil {
+		return revision, nil
+	}
+	revision, reloadErr := s.builds.GetLatestBlueprintRevision(ctx, workspaceID, buildRunID)
+	if reloadErr != nil {
+		return teambuild.BlueprintRevision{}, fmt.Errorf("persist declarative template revision: %w", err)
+	}
+	return verifyDeclarativeRevision(revision, plan)
+}
+
+func verifyDeclarativeRevision(revision teambuild.BlueprintRevision, plan declarativePlan) (teambuild.BlueprintRevision, error) {
+	if revision.RevisionNo != plan.bundle.RevisionNo ||
+		revision.BlueprintHash != plan.bundle.BlueprintHash ||
+		revision.ChangeSetHash != plan.bundle.ChangeSetHash {
+		return teambuild.BlueprintRevision{}, ErrIdempotencyConflict
+	}
+	return revision, nil
+}
+
+func compileDeclarativePlan(
+	workspaceID, buildRunID string,
+	compiled teamtemplate.Compilation,
+	spec teamforge.DeclarativeWorkflowSpecV1,
+) (*declarativePlan, error) {
+	briefHash, normalizedContract, contractHash, err := teambuild.ValidateBuildRunDrafts(compiled.Brief, compiled.Contract)
+	if err != nil {
+		return nil, err
+	}
+	bindings, err := teamforge.ResolveCreateDeclarativeWorkerBindingsV1(spec, compiled.Blueprint)
+	if err != nil {
+		return nil, err
+	}
+	planned := make([]teameval.PlannedWorkerBinding, 0, len(bindings))
+	for _, worker := range bindings {
+		planned = append(planned, teameval.PlannedWorkerBinding{
+			StableRef: worker.StableRef, AgentID: worker.AgentID, AgentVersion: worker.AgentVersion,
+		})
+	}
+	frozen, err := teamforge.FreezeDeclarativeWorkflowSpecV1(
+		spec,
+		bindings,
+		teamforge.DeclarativeBuildBindingV1{
+			BuildRunID: buildRunID, BriefHash: briefHash, ContractHash: contractHash,
+			AssetScope: compiled.Brief.AllowedAssets, BaselineHash: teamforge.EmptyCreateBaselineHashV1,
+		},
+		func(trigger machine.TriggerConfig, graph machine.GraphDefinition) (machine.Report, error) {
+			return teameval.ValidateWorkflowForBlueprint(workspaceID, compiled.Blueprint, planned, trigger, graph)
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+	blueprint := compiled.Blueprint
+	blueprint.Workflow = teambuild.BlueprintWorkflowV1{
+		Mode: teambuild.BlueprintWorkflowDeclarativeV1, DeclarativeSpecHash: frozen.SpecHash,
+	}
+	if err := teambuild.ValidateTeamBlueprintV1(blueprint); err != nil {
+		return nil, err
+	}
+	changeSet, err := teamforge.CompileTemplateInstantiateDeclarativeChangeSetV1(
+		teamforge.EmptyCreateBaselineV1(), blueprint, frozen,
+	)
+	if err != nil {
+		return nil, err
+	}
+	blueprintJSON, err := json.Marshal(blueprint)
+	if err != nil {
+		return nil, err
+	}
+	blueprintHash, err := blueprint.BlueprintHash()
+	if err != nil {
+		return nil, err
+	}
+	changeSetJSON, err := changeSet.TemplateInstantiateCanonicalBytes()
+	if err != nil {
+		return nil, err
+	}
+	changeSetHash, err := changeSet.TemplateInstantiateCanonicalHash()
+	if err != nil {
+		return nil, err
+	}
+	if normalizedContractHash, hashErr := normalizedContract.Hash(); hashErr != nil || normalizedContractHash != contractHash {
+		return nil, errors.New("normalized declarative evaluation contract hash mismatch")
+	}
+	return &declarativePlan{
+		bundle: teambuild.CompilerAuthorizationBundle{
+			RevisionNo: 2, BlueprintJSON: blueprintJSON, BlueprintHash: blueprintHash,
+			ChangeSetJSON: changeSetJSON, ChangeSetHash: changeSetHash,
+			BaselineHash: teamforge.EmptyCreateBaselineHashV1, EvaluationContractHash: contractHash,
+		},
+	}, nil
+}
+
+func declarativeRequestError(err error) error {
+	var validation *teamforge.DeclarativeWorkflowValidationError
+	if errors.As(err, &validation) {
+		problems := make([]teamtemplate.Problem, 0, len(validation.Problems))
+		for _, problem := range validation.Problems {
+			problems = append(problems, teamtemplate.Problem{
+				Path: "/declarative_spec" + problem.Path, Code: problem.Code, Message: problem.Message,
+			})
+		}
+		return &teamtemplate.ValidationError{Problems: problems}
+	}
+	var blueprintValidation *teambuild.BlueprintValidationError
+	if errors.As(err, &blueprintValidation) {
+		problems := make([]teamtemplate.Problem, 0, len(blueprintValidation.Problems))
+		for _, problem := range blueprintValidation.Problems {
+			problems = append(problems, teamtemplate.Problem{
+				Path: "/declarative_spec" + problem.Path, Code: problem.Code, Message: problem.Message,
+			})
+		}
+		return &teamtemplate.ValidationError{Problems: problems}
+	}
+	return validationError("/declarative_spec", "template_declarative_plan_invalid", err.Error())
 }
 
 func (s *Service) resolveRequest(request Request) ([]byte, error) {
@@ -384,8 +544,11 @@ func isTemplateAuthorizationDeferral(err error) bool {
 		errors.Is(err, teambuild.ErrTemplateConcurrencyExceeded)
 }
 
-func templateFingerprint(template teamtemplate.Template) (string, error) {
-	data, err := json.Marshal(template)
+func templateFingerprint(template teamtemplate.Template, declarativeSpec *teamforge.DeclarativeWorkflowSpecV1) (string, error) {
+	data, err := json.Marshal(struct {
+		Template        teamtemplate.Template                `json:"template"`
+		DeclarativeSpec *teamforge.DeclarativeWorkflowSpecV1 `json:"declarative_spec,omitempty"`
+	}{Template: template, DeclarativeSpec: declarativeSpec})
 	if err != nil {
 		return "", err
 	}

@@ -445,6 +445,33 @@ func CompileTemplateInstantiateChangeSetV1(
 	return compileChangeSetV1(baseline, blueprint, nil, false)
 }
 
+// CompileTemplateInstantiateDeclarativeChangeSetV1 compiles a frozen
+// declarative_v1 graph for the template fast path. It preserves the ordinary
+// declarative freeze and BuildRun bindings while omitting only the deferred
+// candidate and publish operations.
+func CompileTemplateInstantiateDeclarativeChangeSetV1(
+	baseline TeamBuildBaselineV1,
+	blueprint teambuild.TeamBlueprintV1,
+	frozen FrozenDeclarativeWorkflowSpecV1,
+) (ChangeSetV1, error) {
+	if blueprint.Mode != teambuild.ModeCreate {
+		return ChangeSetV1{}, errors.New("template_instantiate declarative ChangeSet requires create mode")
+	}
+	if blueprint.Workflow.Mode != teambuild.BlueprintWorkflowDeclarativeV1 {
+		return ChangeSetV1{}, errors.New("template_instantiate declarative ChangeSet requires declarative_v1 workflow mode")
+	}
+	if err := validateFrozenDeclarativeWorkflowSpecV1(frozen); err != nil {
+		return ChangeSetV1{}, err
+	}
+	if frozen.SpecHash != strings.TrimSpace(blueprint.Workflow.DeclarativeSpecHash) {
+		return ChangeSetV1{}, errors.New("frozen declarative_v1 spec hash does not match Blueprint")
+	}
+	if frozen.BuildBinding.BaselineHash != strings.TrimSpace(baseline.SourceSnapshotHash) {
+		return ChangeSetV1{}, errors.New("frozen declarative_v1 spec baseline does not match ChangeSet baseline")
+	}
+	return compileChangeSetV1(baseline, blueprint, &frozen, false)
+}
+
 // CompileDeclarativeChangeSetV1 compiles a platform-frozen declarative_v1
 // graph into the ordinary workflow_compile ChangeSet operation. It does not
 // connect the phase-2 executor/materializer.

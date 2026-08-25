@@ -452,10 +452,18 @@ export interface TeamTemplateSamplesResponse {
   samples: TeamTemplateSample[];
 }
 
-export interface CreateTeamFromTemplateInput {
+export type CreateTeamFromTemplateInput = ({
   yaml: string;
+  sample?: never;
+  overrides?: never;
+} | {
+  yaml?: never;
+  sample: string;
+  overrides?: Record<string, unknown>;
+}) & {
   idempotency_key: string;
-}
+  declarative_spec?: Record<string, unknown>;
+};
 
 export interface CreateTeamFromTemplateOutcome {
   team_id?: string;
