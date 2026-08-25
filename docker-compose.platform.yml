@@ -1,0 +1,72 @@
+# Weave platform deployment — server + optional remote runtime.
+# The root Dockerfile bundles the CLI engines (opencode/codex/claude), so the
+# same image serves both roles: default entrypoint = server, `runtime ...` = remote runtime.
+#
+# First boot: `docker compose -f docker-compose.platform.yml up -d`
+# Then create a runtime in 设置 → 运行时 to get a one-time rtk_ token, put it in
+# WEAVE_RUNTIME_TOKEN, and start the runtime:
+#   WEAVE_RUNTIME_TOKEN=rtk_xxx docker compose -f docker-compose.platform.yml --profile runtime up -d
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: weave
+      POSTGRES_USER: weave
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-weave}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U weave -d weave"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+
+  weave:
+    build:
+      context: .
+      args:
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
+        OPENCODE_VERSION: ${OPENCODE_VERSION:-1.18.11}
+        CODEX_VERSION: ${CODEX_VERSION:-0.146.0}
+        CLAUDE_CODE_VERSION: ${CLAUDE_CODE_VERSION:-2.1.220}
+    image: weave-platform
+    ports:
+      - "8080:8080"
+    environment:
+      DATABASE_URL: postgres://weave:${POSTGRES_PASSWORD:-weave}@db:5432/weave?sslmode=disable
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
+      # Credential-vault key (64 hex chars = 32 bytes). REQUIRED for workspace LLM providers.
+      WEAVE_SECRET_KEY: ${WEAVE_SECRET_KEY:?set WEAVE_SECRET_KEY (openssl rand -hex 32)}
+      WEAVE_ADMIN_USER: ${WEAVE_ADMIN_USER:-admin}
+      WEAVE_ADMIN_PASS: ${WEAVE_ADMIN_PASS:?set WEAVE_ADMIN_PASS}
+      # Engine credentials are injected at runtime — never baked into the image.
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      WEAVE_LOOM_MODEL: ${WEAVE_LOOM_MODEL:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODELS: ${OPENAI_MODELS:-gpt-5.2,gpt-5.3-codex,gpt-5.4,gpt-5.4-mini,gpt-5.5,gpt-5.6,gpt-5.6-luna,gpt-5.6-sol,gpt-5.6-terra}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Remote runtime — opt-in (needs a runtime token created in the console
+  # first). Talks to the server over HTTP only; no DB access. In production this
+  # typically runs on a DIFFERENT machine via `weave runtime --server https://…`;
+  # this service is the single-host / staging shape of the same thing.
+  runtime:
+    image: weave-platform
+    profiles: ["runtime"]
+    command:
+      [
+        "runtime",
+        "--server", "http://weave:8080",
+        "--runtime-token", "${WEAVE_RUNTIME_TOKEN:?create a runtime in the console and set WEAVE_RUNTIME_TOKEN}",
+        "--concurrency", "${WEAVE_RUNTIME_CONCURRENCY:-2}",
+      ]
+    depends_on:
+      - weave
+    restart: unless-stopped
+
+volumes:
+  pgdata:

@@ -1,0 +1,15 @@
+.git
+.env*
+.claude
+.worktrees
+.superpowers
+.weave-demo
+
+weave-app/node_modules
+weave-app/.acceptance
+weave-app/dist
+weave-app/src-tauri/target
+
+**/node_modules
+*.log
+loom-linux

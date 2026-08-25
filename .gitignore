@@ -1,0 +1,45 @@
+# Binaries
+*.exe
+*.dll
+*.so
+*.dylib
+/weave
+bin/
+
+# Go
+*.test
+coverage.out
+
+# Node
+weave-app/node_modules/
+weave-app/dist/
+
+# Finder 复制产生的 "xxx 2/" 目录
+* 2/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+
+# Env
+.env
+
+# never commit e2e auth state or prebuilt binaries
+weave-app/e2e/.auth/
+deploy/weave
+
+# 计划/ 自 2026-07-28 起纳入版本管理（原独立计划仓库历史已备份为 bundle）
+.demaike.env
+.demaike-opencode.json
+
+# 本地产物永不入库（2026-07-29 事故后钉死）
+.env.bak-*
+.superpowers/
+.worktrees/
+.weave-demo/
+/cacert.pem
+/loom-linux
