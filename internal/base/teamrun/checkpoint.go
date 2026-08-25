@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jinyitao123/weave/internal/kernel/loomruntime"
 	"github.com/jinyitao123/weave/internal/base/snapshot"
 )
 
@@ -77,48 +76,6 @@ func DecodeWorkflowCheckpointV1(raw []byte) (WorkflowCheckpointV1, error) {
 		return WorkflowCheckpointV1{}, err
 	}
 	return checkpoint, nil
-}
-
-func validateWorkflowCheckpoint(checkpoint WorkflowCheckpointV1) error {
-	if checkpoint.SchemaVersion != WorkflowCheckpointSchemaVersion ||
-		checkpoint.Stamp.WorkspaceID == "" ||
-		checkpoint.Stamp.WorkflowID == "" ||
-		checkpoint.Stamp.WorkflowVersion < 1 ||
-		checkpoint.Stamp.RunSnapshotID == "" ||
-		checkpoint.RunID == "" ||
-		checkpoint.TeamRunGeneration < 0 ||
-		checkpoint.ExecutionLeaseEpoch < 0 ||
-		checkpoint.NodeID == "" ||
-		checkpoint.CompletedOutputs == nil ||
-		checkpoint.WrittenAt.IsZero() {
-		return fmt.Errorf("%w: checkpoint fields are invalid", ErrTeamRunSnapshotUnavailable)
-	}
-	for nodeID, output := range checkpoint.CompletedOutputs {
-		if nodeID == "" || len(output) == 0 || !json.Valid(output) {
-			return fmt.Errorf("%w: checkpoint output is invalid", ErrTeamRunSnapshotUnavailable)
-		}
-	}
-	if len(checkpoint.Usage) != 0 {
-		accumulator, err := loomruntime.UnmarshalUsageAccumulator(checkpoint.Usage)
-		if err != nil {
-			return fmt.Errorf("%w: checkpoint usage: %v", ErrTeamRunSnapshotUnavailable, err)
-		}
-		if owner := accumulator.OwnedRunID(); owner != "" && owner != checkpoint.RunID {
-			return fmt.Errorf(
-				"%w: checkpoint usage belongs to run %q, not %q",
-				ErrTeamRunSnapshotUnavailable,
-				owner,
-				checkpoint.RunID,
-			)
-		}
-	}
-	if checkpoint.UsageIncompleteReason != "" && checkpoint.UsageComplete {
-		return fmt.Errorf(
-			"%w: checkpoint usage_incomplete_reason requires usage_complete=false",
-			ErrTeamRunSnapshotUnavailable,
-		)
-	}
-	return nil
 }
 
 func ValidateCheckpointRun(checkpoint WorkflowCheckpointV1, run TeamRun) error {

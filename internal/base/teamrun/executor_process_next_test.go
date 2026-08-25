@@ -11,7 +11,6 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jinyitao123/weave/internal/base/db"
-	"github.com/jinyitao123/weave/internal/kernel/loomruntime"
 	"github.com/jinyitao123/weave/internal/base/snapshot"
 	"github.com/jinyitao123/weave/internal/base/taskqueue"
 	"github.com/jinyitao123/weave/internal/base/testutil"
@@ -22,7 +21,7 @@ func TestExecutorProcessNextQueuedRunSucceeds(t *testing.T) {
 	h.runtime.executeResult = RuntimeResult{
 		Status: RuntimeCompleted,
 		Output: json.RawMessage(`{"ok":true}`),
-		Usage:  loomruntime.UsageTotals{InputTokens: 3, OutputTokens: 5, CostUSD: 0.25},
+		Usage:  UsageTotals{InputTokens: 3, OutputTokens: 5, CostUSD: 0.25},
 	}
 	taskID := h.enqueueWorkflowTask(t, "run-success")
 
@@ -42,7 +41,7 @@ func TestExecutorProcessNextRuntimeErrorFailsRunAndTask(t *testing.T) {
 	h := newProcessNextHarness(t)
 	h.runtime.executeResult = RuntimeResult{
 		Status: RuntimeFailed,
-		Usage:  loomruntime.UsageTotals{InputTokens: 1},
+		Usage:  UsageTotals{InputTokens: 1},
 	}
 	h.runtime.executeErr = executionError(ErrorCodeOutputInvalid, errors.New("bad workflow output"))
 	taskID := h.enqueueWorkflowTask(t, "run-failed")
@@ -97,7 +96,7 @@ func TestExecutorProcessNextRunningRunReclaimsLeaseAndExecutesFromStart(t *testi
 	h.runtime.executeResult = RuntimeResult{
 		Status: RuntimeCompleted,
 		Output: json.RawMessage(`{"reclaimed":true}`),
-		Usage:  loomruntime.UsageTotals{InputTokens: 7, OutputTokens: 11, CostUSD: 0.5},
+		Usage:  UsageTotals{InputTokens: 7, OutputTokens: 11, CostUSD: 0.5},
 	}
 	taskID, running := h.seedRunningWorkflowTask(t, "run-reclaim")
 
@@ -131,7 +130,7 @@ func TestExecutorProcessNextReplaysSuccessTerminalMarkerWithoutRuntime(t *testin
 		running,
 		"success",
 		"completed",
-		loomruntime.UsageTotals{InputTokens: 2, OutputTokens: 3},
+		UsageTotals{InputTokens: 2, OutputTokens: 3},
 		true,
 		"",
 	); err != nil {
@@ -163,7 +162,7 @@ func TestExecutorProcessNextReplaysFailedTerminalMarkerWithoutRuntime(t *testing
 		running,
 		"failed",
 		string(ErrorCodeOutputInvalid),
-		loomruntime.UsageTotals{InputTokens: 2},
+		UsageTotals{InputTokens: 2},
 		true,
 		"",
 	); err != nil {

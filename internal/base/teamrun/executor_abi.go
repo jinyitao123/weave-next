@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jinyitao123/weave/internal/kernel/loomruntime"
 	"github.com/jinyitao123/weave/internal/base/taskqueue"
 )
 
@@ -33,50 +32,6 @@ type ExecutorRunStore interface {
 type ExecutorCheckpointStore interface {
 	PutTx(context.Context, pgx.Tx, WorkflowCheckpointV1) (string, error)
 	GetTx(context.Context, pgx.Tx, string, string) (WorkflowCheckpointV1, error)
-}
-
-type RuntimeResultStatus string
-
-const (
-	RuntimeCompleted RuntimeResultStatus = "completed"
-	RuntimeParked    RuntimeResultStatus = "parked"
-	RuntimeFailed    RuntimeResultStatus = "failed"
-)
-
-type RuntimePark struct {
-	NodeID           string
-	CompletedOutputs map[string]json.RawMessage
-	WaitKind         WaitKind
-	WaitDetail       json.RawMessage
-	// UsageCheckpoint persists the serial machine's usage accumulator so a
-	// park/resume cycle never loses or duplicates confirmed usage.
-	UsageCheckpoint json.RawMessage
-	// UsageComplete is false when the run reached a node whose usage cannot
-	// be measured (candidate fanout legs / CLI node without a receipt);
-	// UsageIncompleteReason names the unmeasured part.
-	UsageComplete         bool
-	UsageIncompleteReason string
-}
-
-type RuntimeResult struct {
-	Status RuntimeResultStatus
-	Output json.RawMessage
-	Park   *RuntimePark
-	// Usage is the accumulated confirmed logical usage of the serial machine.
-	// It is set on every terminal outcome (completed, parked, failed) so a
-	// failed run still charges its observed usage.
-	Usage loomruntime.UsageTotals
-	// UsageComplete is false when the run result only covers the measured
-	// serial/loop contributions; UsageIncompleteReason names the unmeasured
-	// part (see the UsageIncompleteReason* constants).
-	UsageComplete         bool
-	UsageIncompleteReason string
-}
-
-type RuntimeRunner interface {
-	Execute(context.Context, TeamRun, *taskqueue.Task) (RuntimeResult, error)
-	ResumeCheckpoint(context.Context, TeamRun, *taskqueue.Task, WorkflowCheckpointV1) (RuntimeResult, error)
-	TimerResumeTarget(context.Context, TeamRun, *taskqueue.Task, WorkflowCheckpointV1) (string, bool, error)
 }
 
 type FanoutLegPlan struct {
@@ -140,26 +95,6 @@ type ExecutorFanout interface {
 
 type FanoutLegRunner interface {
 	ExecuteFanoutLeg(context.Context, *taskqueue.Task, FanoutLegTaskPayloadV1) (json.RawMessage, error)
-}
-
-type Executor struct {
-	Tasks             ExecutorTaskStore
-	Consumer          *Consumer
-	Transactions      TransactionBeginner
-	Runs              ExecutorRunStore
-	Checkpoints       ExecutorCheckpointStore
-	Runtime           RuntimeRunner
-	Fanout            ExecutorFanout
-	RuntimeRecords    loomruntime.TerminalRecordStore
-	Now               func() time.Time
-	ResumeTokenHash   func() ([]byte, error)
-	HeartbeatInterval time.Duration
-	// ClaimWorkspaceID and ClaimRunSnapshotID optionally restrict ProcessNext
-	// to one admitted run. Ordinary daemon workers leave them empty and keep
-	// claiming the shared queue; synchronous candidate drivers set both so a
-	// healthy build cannot be hijacked by another conversation's task.
-	ClaimWorkspaceID   string
-	ClaimRunSnapshotID string
 }
 
 type FanoutLegTaskPayloadV1 struct {

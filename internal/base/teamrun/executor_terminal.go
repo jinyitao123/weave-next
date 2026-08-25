@@ -9,9 +9,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/jinyitao123/weave/internal/kernel/loomruntime"
 	"github.com/jinyitao123/weave/internal/base/storeext"
 	"github.com/jinyitao123/weave/internal/base/taskqueue"
+	"github.com/jinyitao123/weave/internal/kernel/loomruntime"
 )
 
 const frozenAttemptLeaseTTL = 120 * time.Second
@@ -432,4 +432,48 @@ func (e *Executor) replayFrozenTerminalTx(
 			"frozen final terminal status %q cannot be replayed", marker.Status,
 		)
 	}
+}
+
+func writeFanoutYieldMarkerTx(
+	ctx context.Context,
+	tx pgx.Tx,
+	running TeamRun,
+	parked TeamRun,
+	checkpoint WorkflowCheckpointV1,
+	now time.Time,
+) error {
+	stateStore := loomruntime.NewPGTerminalStateStore()
+	lease, present, err := stateStore.ReadAttemptLeaseForUpdate(ctx, tx, running.WorkspaceID, running.RunID)
+	if err != nil || !present {
+		if err == nil {
+			err = errors.New("fanout creator attempt lease is missing")
+		}
+		return fmt.Errorf("read fanout creator attempt lease: %w", err)
+	}
+	if lease.AttemptGeneration != int64(running.ExecutionLeaseEpoch) || lease.AttemptID != frozenAttemptID(running) ||
+		lease.State != loomruntime.AttemptLeaseActive {
+		return errors.New("fanout creator attempt lease differs from running TeamRun")
+	}
+	teamID, workflowID, snapshotID := running.TeamID, running.WorkflowID, running.RunSnapshotID
+	workflowVersion := int32(running.WorkflowVersion)
+	graphName := frozenGraphName(running)
+	checkpointSequence := int64(parked.ResumeGeneration)
+	auditVersion := int16(3)
+	marker := loomruntime.TerminalMarkerV1{
+		WorkspaceID: running.WorkspaceID, RunID: running.RunID, SchemaVersion: 1,
+		AttemptGeneration: lease.AttemptGeneration, AttemptID: lease.AttemptID,
+		Agent: graphName, AttributionScope: loomruntime.TerminalAttributionFixedWorkflow,
+		TeamID: &teamID, WorkflowID: &workflowID, WorkflowVersion: &workflowVersion,
+		RunSnapshotID: &snapshotID, RunStartedAt: lease.RunStartedAt,
+		Phase: loomruntime.TerminalMarkerPhaseYielded, Status: loomruntime.TerminalMarkerStatusYielded,
+		StopReason: "yielded", Source: loomruntime.TerminalMarkerSourceNormal, TerminalAt: now,
+		EvidenceKind: loomruntime.TerminalMarkerEvidenceCheckpoint, CheckpointGraph: &graphName,
+		CheckpointSeq: &checkpointSequence, CheckpointSavedAt: &checkpoint.WrittenAt,
+		AuditState: loomruntime.TerminalMarkerAuditMaterialized, AuditSchemaVersion: &auditVersion,
+		LineageState: loomruntime.TerminalMarkerLineagePending, CreatedAt: now, UpdatedAt: now,
+	}
+	if _, err := stateStore.ApplyTerminalMarkerTransition(ctx, tx, marker); err != nil {
+		return fmt.Errorf("write fanout yielded marker: %w", err)
+	}
+	return nil
 }
