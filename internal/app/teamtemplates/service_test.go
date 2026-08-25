@@ -22,7 +22,7 @@ template: research_synthesis
 template_parameters:
   lead_instruction: 组织调研并完成交付
   parallel_worker_refs: [researcher, analyst]
-  finalizer_ref: lead
+  finalizer_ref: writer
   result_requirements:
     lead: 汇总并交付
     researcher: 提供可核验来源

@@ -131,12 +131,13 @@ template: research_synthesis
 template_parameters:
   lead_instruction: 协调调研
   parallel_worker_refs: [researcher, analyst]
-  finalizer_ref: lead
-  result_requirements: {researcher: 给出来源, analyst: 交叉验证, lead: 汇总报告}
+  finalizer_ref: editor
+  result_requirements: {researcher: 给出来源, analyst: 交叉验证, editor: 汇总报告}
 members:
   - {name: lead, display_name: 负责人, role: avatar, responsibilities: [协调], capabilities: [delegation]}
   - {name: researcher, display_name: 调研员, role: worker, responsibilities: [调研], capabilities: [search]}
   - {name: analyst, display_name: 分析员, role: worker, responsibilities: [分析], capabilities: [analysis]}
+  - {name: editor, display_name: 编辑, role: worker, responsibilities: [汇总], capabilities: [writing]}
 lead: lead
 delivery: {success_criteria: [结果可验证]}
 budget: {max_cost_usd: %.2f}

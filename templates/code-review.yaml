@@ -6,9 +6,9 @@ template: parallel_review
 template_parameters:
   lead_instruction: 明确变更目标与审查范围，组织并行评审，汇总结论与修改建议
   parallel_worker_refs: [implementation-reviewer, test-reviewer]
-  finalizer_ref: review-lead
+  finalizer_ref: review-synthesizer
   result_requirements:
-    review-lead: 汇总问题、风险等级与建议修改顺序
+    review-synthesizer: 汇总问题、风险等级与建议修改顺序
     implementation-reviewer: 审查正确性、可维护性与边界处理
     test-reviewer: 审查测试覆盖、失败路径与回归风险
 members:
@@ -27,6 +27,11 @@ members:
     role: worker
     responsibilities: [审查测试覆盖, 识别回归风险]
     capabilities: [test_analysis, risk_detection]
+  - name: review-synthesizer
+    display_name: 评审汇总员
+    role: worker
+    responsibilities: [合并评审结论, 统一风险等级, 排定修改顺序]
+    capabilities: [review_synthesis, risk_prioritization]
 lead: review-lead
 delivery:
   success_criteria: [每个问题均定位到具体变更, 风险等级有明确依据, 修改建议可直接执行]

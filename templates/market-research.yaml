@@ -6,9 +6,9 @@ template: research_synthesis
 template_parameters:
   lead_instruction: 拆解调研问题，组织并行取证，完成最终交付
   parallel_worker_refs: [source-researcher, market-analyst]
-  finalizer_ref: research-lead
+  finalizer_ref: research-editor
   result_requirements:
-    research-lead: 汇总结论并标明证据边界
+    research-editor: 汇总结论并标明证据边界
     source-researcher: 提供一手来源、日期与原始链接
     market-analyst: 交叉验证数据并解释竞争格局
 members:
@@ -27,6 +27,11 @@ members:
     role: worker
     responsibilities: [数据分析, 竞品对比, 交叉验证]
     capabilities: [analysis, fact_checking]
+  - name: research-editor
+    display_name: 调研编辑
+    role: worker
+    responsibilities: [汇总证据, 标注边界, 编辑交付]
+    capabilities: [report_writing, evidence_synthesis]
 lead: research-lead
 delivery:
   success_criteria: [关键事实均可追溯, 覆盖指定市场与竞品, 明确区分事实与判断]

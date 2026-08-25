@@ -87,13 +87,14 @@ func templateInstantiateTestBlueprint() teambuild.TeamBlueprintV1 {
 			{StableRef: "lead", Name: "research-team-lead", DisplayName: "负责人", Role: teambuild.BlueprintMemberRoleAvatar, ManagementMode: teambuild.BlueprintManagementManaged, Responsibilities: []string{"协调"}, Capabilities: []string{"delegation"}, ExecutionPolicy: teambuild.BlueprintExecutionPolicyV1{EngineClass: teambuild.BlueprintEngineStandard, ExecutionMode: teambuild.BlueprintExecutionToolLoop}},
 			{StableRef: "researcher", Name: "research-team-researcher", DisplayName: "调研员", Role: teambuild.BlueprintMemberRoleWorker, ManagementMode: teambuild.BlueprintManagementManaged, Responsibilities: []string{"调研"}, Capabilities: []string{"search"}, ExecutionPolicy: teambuild.BlueprintExecutionPolicyV1{EngineClass: teambuild.BlueprintEngineStandard, ExecutionMode: teambuild.BlueprintExecutionToolLoop}},
 			{StableRef: "analyst", Name: "research-team-analyst", DisplayName: "分析员", Role: teambuild.BlueprintMemberRoleWorker, ManagementMode: teambuild.BlueprintManagementManaged, Responsibilities: []string{"分析"}, Capabilities: []string{"analysis"}, ExecutionPolicy: teambuild.BlueprintExecutionPolicyV1{EngineClass: teambuild.BlueprintEngineStandard, ExecutionMode: teambuild.BlueprintExecutionToolLoop}},
+			{StableRef: "editor", Name: "research-team-editor", DisplayName: "编辑", Role: teambuild.BlueprintMemberRoleWorker, ManagementMode: teambuild.BlueprintManagementManaged, Responsibilities: []string{"汇总"}, Capabilities: []string{"writing"}, ExecutionPolicy: teambuild.BlueprintExecutionPolicyV1{EngineClass: teambuild.BlueprintEngineStandard, ExecutionMode: teambuild.BlueprintExecutionToolLoop}},
 		},
 		LeadRef: "lead",
 		Workflow: teambuild.BlueprintWorkflowV1{
 			Mode: teambuild.BlueprintWorkflowTemplate, Template: teambuild.BlueprintTemplateResearchSummary,
 			TemplateParameters: &teambuild.BlueprintWorkflowTemplateParametersV1{
-				LeadInstruction: "协调调研", ParallelWorkerRefs: []string{"researcher", "analyst"}, FinalizerRef: "lead",
-				ResultRequirements: map[string]string{"researcher": "给出来源", "analyst": "交叉验证", "lead": "汇总报告"},
+				LeadInstruction: "协调调研", ParallelWorkerRefs: []string{"researcher", "analyst"}, FinalizerRef: "editor",
+				ResultRequirements: map[string]string{"researcher": "给出来源", "analyst": "交叉验证", "editor": "汇总报告"},
 			},
 		},
 		RevisionPolicy: teambuild.BlueprintRevisionPolicyV1{

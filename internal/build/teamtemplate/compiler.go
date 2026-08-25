@@ -145,6 +145,51 @@ func validateMembers(c *problemCollector, template Template) {
 	} else if lead.Role != teambuild.BlueprintMemberRoleAvatar {
 		c.add("/lead", "template_lead_role_invalid", "lead must reference an avatar member")
 	}
+	validateExecutableMemberRefs(c, template, members)
+}
+
+// Built-in workflow templates compile primary/reviewer/parallel/finalizer
+// references into machine worker nodes. The platform authorization snapshot
+// deliberately derives worker-node proofs only from the TeamWorker roster;
+// the lead avatar is represented separately as ValidationContext.Lead and is
+// therefore not a legal target for one of those nodes.
+func validateExecutableMemberRefs(c *problemCollector, template Template, members map[string]Member) {
+	params := template.TemplateParameters
+	refs := make([]struct {
+		path string
+		ref  string
+	}, 0, len(params.ParallelWorkerRefs)+3)
+	appendRef := func(path, ref string) {
+		if ref != "" {
+			refs = append(refs, struct {
+				path string
+				ref  string
+			}{path: path, ref: ref})
+		}
+	}
+	appendRef("/template_parameters/primary_ref", params.PrimaryRef)
+	appendRef("/template_parameters/reviewer_ref", params.ReviewerRef)
+	for i, ref := range params.ParallelWorkerRefs {
+		appendRef(fmt.Sprintf("/template_parameters/parallel_worker_refs/%d", i), ref)
+	}
+	appendRef("/template_parameters/finalizer_ref", params.FinalizerRef)
+
+	seen := make(map[string]string, len(refs))
+	for _, executable := range refs {
+		member, ok := members[executable.ref]
+		if !ok {
+			c.add(executable.path, "template_worker_ref_unknown", "workflow executable reference must identify a member name")
+			continue
+		}
+		if member.Role != teambuild.BlueprintMemberRoleWorker {
+			c.add(executable.path, "template_worker_ref_role_invalid", "workflow executable reference must identify a worker member")
+		}
+		if prior, duplicate := seen[executable.ref]; duplicate {
+			c.add(executable.path, "template_worker_ref_duplicate", "workflow executable reference duplicates "+prior)
+		} else {
+			seen[executable.ref] = executable.path
+		}
+	}
 }
 
 func validateIdentifier(c *problemCollector, path, value, label string) {

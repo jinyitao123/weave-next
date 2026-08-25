@@ -10,9 +10,9 @@ template: research_synthesis
 template_parameters:
   lead_instruction: 拆解调研问题，组织并行取证，完成最终交付
   parallel_worker_refs: [source-researcher, market-analyst]
-  finalizer_ref: research-lead
+  finalizer_ref: research-editor
   result_requirements:
-    research-lead: 汇总结论并标明证据边界
+    research-editor: 汇总结论并标明证据边界
     source-researcher: 提供一手来源、日期与原始链接
     market-analyst: 交叉验证数据并解释竞争格局
 members:
@@ -31,6 +31,11 @@ members:
     role: worker
     responsibilities: [数据分析, 竞品对比, 交叉验证]
     capabilities: [analysis, fact_checking]
+  - name: research-editor
+    display_name: 调研编辑
+    role: worker
+    responsibilities: [汇总证据, 标注边界, 编辑交付]
+    capabilities: [report_writing, evidence_synthesis]
 lead: research-lead
 delivery:
   success_criteria: [关键事实均可追溯, 覆盖指定市场与竞品, 明确区分事实与判断]
@@ -83,9 +88,9 @@ template: parallel_review
 template_parameters:
   lead_instruction: 明确变更目标与审查范围，组织并行评审，汇总结论与修改建议
   parallel_worker_refs: [implementation-reviewer, test-reviewer]
-  finalizer_ref: review-lead
+  finalizer_ref: review-synthesizer
   result_requirements:
-    review-lead: 汇总问题、风险等级与建议修改顺序
+    review-synthesizer: 汇总问题、风险等级与建议修改顺序
     implementation-reviewer: 审查正确性、可维护性与边界处理
     test-reviewer: 审查测试覆盖、失败路径与回归风险
 members:
@@ -104,6 +109,11 @@ members:
     role: worker
     responsibilities: [审查测试覆盖, 识别回归风险]
     capabilities: [test_analysis, risk_detection]
+  - name: review-synthesizer
+    display_name: 评审汇总员
+    role: worker
+    responsibilities: [合并评审结论, 统一风险等级, 排定修改顺序]
+    capabilities: [review_synthesis, risk_prioritization]
 lead: review-lead
 delivery:
   success_criteria: [每个问题均定位到具体变更, 风险等级有明确依据, 修改建议可直接执行]

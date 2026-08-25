@@ -17,11 +17,11 @@ template: research_synthesis
 template_parameters:
   lead_instruction: 组织协调调研与成稿
   parallel_worker_refs: [researcher, analyst]
-  finalizer_ref: coordinator
+  finalizer_ref: editor
   result_requirements:
     researcher: 给出可核验的一手来源
     analyst: 完成交叉验证
-    coordinator: 汇总成结构化报告
+    editor: 汇总成结构化报告
 members:
   - name: coordinator
     display_name: 协调员
@@ -42,6 +42,11 @@ members:
     role: worker
     responsibilities: [归纳与交叉验证]
     capabilities: [analysis]
+  - name: editor
+    display_name: 调研编辑
+    role: worker
+    responsibilities: [汇总与交付]
+    capabilities: [report_writing]
 lead: coordinator
 delivery:
   success_criteria: [数据可溯源, 覆盖全部指定竞品]
@@ -96,9 +101,9 @@ func TestCompileYAMLFieldMappings(t *testing.T) {
 		{name: "lead", got: compiled.Blueprint.LeadRef, want: "coordinator"},
 		{name: "lead instruction", got: params.LeadInstruction, want: "组织协调调研与成稿"},
 		{name: "parallel refs", got: params.ParallelWorkerRefs, want: []string{"researcher", "analyst"}},
-		{name: "finalizer ref", got: params.FinalizerRef, want: "coordinator"},
+		{name: "finalizer ref", got: params.FinalizerRef, want: "editor"},
 		{name: "result requirements", got: params.ResultRequirements, want: map[string]string{
-			"researcher": "给出可核验的一手来源", "analyst": "完成交叉验证", "coordinator": "汇总成结构化报告",
+			"researcher": "给出可核验的一手来源", "analyst": "完成交叉验证", "editor": "汇总成结构化报告",
 		}},
 		{name: "success criteria to brief", got: compiled.Brief.SuccessCriteria, want: []string{"数据可溯源", "覆盖全部指定竞品"}},
 		{name: "success criteria to rubric", got: []string{compiled.Contract.Rubric[0].Name, compiled.Contract.Rubric[1].Name}, want: []string{"数据可溯源", "覆盖全部指定竞品"}},
@@ -132,6 +137,7 @@ func TestCompileSupportsAllBuiltinTopologies(t *testing.T) {
 			{Name: "lead", DisplayName: "负责人", Role: teambuild.BlueprintMemberRoleAvatar, Responsibilities: []string{"协调与交付"}, Capabilities: []string{"delegation"}},
 			{Name: "maker", DisplayName: "执行者", Role: teambuild.BlueprintMemberRoleWorker, Responsibilities: []string{"执行"}, Capabilities: []string{"produce"}},
 			{Name: "reviewer", DisplayName: "评审者", Role: teambuild.BlueprintMemberRoleWorker, Responsibilities: []string{"评审"}, Capabilities: []string{"review"}},
+			{Name: "synthesizer", DisplayName: "汇总者", Role: teambuild.BlueprintMemberRoleWorker, Responsibilities: []string{"汇总"}, Capabilities: []string{"synthesis"}},
 		},
 		Lead: "lead", Delivery: Delivery{SuccessCriteria: []string{"结果完整"}}, Budget: Budget{MaxCostUSD: 1},
 	}
@@ -149,12 +155,12 @@ func TestCompileSupportsAllBuiltinTopologies(t *testing.T) {
 			ResultRequirements: map[string]string{"maker": "产出内容", "reviewer": "给出批注"},
 		}},
 		{name: "parallel review", topology: teambuild.BlueprintTemplateParallelReview, params: TemplateParameters{
-			LeadInstruction: "协调并行评审", ParallelWorkerRefs: []string{"maker", "reviewer"}, FinalizerRef: "lead",
-			ResultRequirements: map[string]string{"maker": "给出意见", "reviewer": "给出意见", "lead": "汇总结论"},
+			LeadInstruction: "协调并行评审", ParallelWorkerRefs: []string{"maker", "reviewer"}, FinalizerRef: "synthesizer",
+			ResultRequirements: map[string]string{"maker": "给出意见", "reviewer": "给出意见", "synthesizer": "汇总结论"},
 		}},
 		{name: "research synthesis", topology: teambuild.BlueprintTemplateResearchSummary, params: TemplateParameters{
-			LeadInstruction: "协调并行调研", ParallelWorkerRefs: []string{"maker", "reviewer"}, FinalizerRef: "lead",
-			ResultRequirements: map[string]string{"maker": "给出材料", "reviewer": "交叉验证", "lead": "汇总报告"},
+			LeadInstruction: "协调并行调研", ParallelWorkerRefs: []string{"maker", "reviewer"}, FinalizerRef: "synthesizer",
+			ResultRequirements: map[string]string{"maker": "给出材料", "reviewer": "交叉验证", "synthesizer": "汇总报告"},
 		}},
 	}
 	for _, tc := range cases {
@@ -221,8 +227,15 @@ func TestCompileReportsFieldProblemsTogether(t *testing.T) {
 }
 
 func TestCompileRejectsCompactBlueprintSemanticMismatch(t *testing.T) {
-	input := strings.Replace(validResearchTemplateYAML, "finalizer_ref: coordinator", "finalizer_ref: missing", 1)
+	input := strings.Replace(validResearchTemplateYAML, "finalizer_ref: editor", "finalizer_ref: missing", 1)
 	_, err := CompileYAML([]byte(input))
+	assertProblemPath(t, err, "/template_parameters/finalizer_ref")
+}
+
+func TestCompileRejectsAvatarAsWorkerNode(t *testing.T) {
+	input := strings.Replace(validResearchTemplateYAML, "finalizer_ref: editor", "finalizer_ref: coordinator", 1)
+	_, err := CompileYAML([]byte(input))
+	assertProblemCode(t, err, "template_worker_ref_role_invalid")
 	assertProblemPath(t, err, "/template_parameters/finalizer_ref")
 }
 
