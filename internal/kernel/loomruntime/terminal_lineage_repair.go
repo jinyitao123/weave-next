@@ -72,83 +72,9 @@ func (err *TerminalLineageRepairError) Error() string {
 
 func (err *TerminalLineageRepairError) Unwrap() error { return err.cause }
 
-type TerminalLineageRepairer interface {
-	RepairOne(context.Context) (bool, error)
-}
-
 type terminalLineageRepairer struct {
 	records TerminalRecordStore
 	txStore expectedRunAdmissionTxStore
-}
-
-func NewTerminalLineageRepairer(
-	store TerminalRecordStore,
-) (TerminalLineageRepairer, error) {
-	if store == nil || isNilTerminalRecordStore(store) {
-		return nil, ErrA4TerminalLineageRepairUnsupported
-	}
-	txStore, ok := store.(expectedRunAdmissionTxStore)
-	if !ok {
-		return nil, fmt.Errorf(
-			"%w: store has no transaction extension",
-			ErrA4TerminalLineageRepairUnsupported,
-		)
-	}
-	return &terminalLineageRepairer{
-		records: store,
-		txStore: txStore,
-	}, nil
-}
-
-func (repairer *terminalLineageRepairer) RepairOne(
-	ctx context.Context,
-) (bool, error) {
-	tx, err := repairer.txStore.BeginTx(ctx)
-	if err != nil {
-		return false, newTerminalLineageRepairError(
-			TerminalLineageRepairSelectBegin,
-			TerminalMarkerV1{},
-			terminalLineageRepairFailedCode,
-			true,
-			err,
-		)
-	}
-	finished := false
-	defer func() {
-		if !finished {
-			_ = tx.Rollback(ctx)
-		}
-	}()
-
-	marker, present, err := NewPGTerminalStateStore().
-		LockNextTerminalLineageRepair(ctx, tx)
-	if err != nil {
-		return false, newTerminalLineageRepairError(
-			TerminalLineageRepairSelectRead,
-			TerminalMarkerV1{},
-			terminalLineageRepairFailedCode,
-			true,
-			err,
-		)
-	}
-	if !present {
-		_ = tx.Rollback(ctx)
-		finished = true
-		return false, nil
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return false, newTerminalLineageRepairError(
-			TerminalLineageRepairSelectCommit,
-			marker,
-			terminalLineageRepairFailedCode,
-			true,
-			err,
-		)
-	}
-	finished = true
-
-	_, processed, err := repairTerminalLineageSnapshot(ctx, repairer, marker)
-	return processed, err
 }
 
 func repairTerminalLineageRun(

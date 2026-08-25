@@ -561,44 +561,6 @@ func (*PGTerminalStateStore) ReadTerminalMarkerForUpdate(ctx context.Context, tx
 	return m, true, nil
 }
 
-func (*PGTerminalStateStore) LockNextTerminalLineageRepair(
-	ctx context.Context,
-	tx pgx.Tx,
-) (TerminalMarkerV1, bool, error) {
-	if tx == nil {
-		return TerminalMarkerV1{}, false, fmt.Errorf("tx must be non-nil")
-	}
-	marker, err := scanTerminalMarker(tx.QueryRow(
-		ctx,
-		"SELECT "+terminalMarkerColumns+`
-		 FROM weave_run_terminal_markers
-		 WHERE audit_state='materialized'
-		   AND (
-		        lineage_state='pending'
-		        OR (
-		             lineage_state='failed'
-		             AND last_error_code IN (
-		                 'terminal_lineage_missing',
-		                 'terminal_lineage_repair_failed'
-		             )
-		        )
-		   )
-		 ORDER BY updated_at, workspace_id, run_id
-		 FOR UPDATE SKIP LOCKED
-		 LIMIT 1`,
-	))
-	if errors.Is(err, pgx.ErrNoRows) {
-		return TerminalMarkerV1{}, false, nil
-	}
-	if err != nil {
-		return TerminalMarkerV1{}, false, fmt.Errorf(
-			"lock next terminal lineage repair: %w",
-			err,
-		)
-	}
-	return marker, true, nil
-}
-
 func markerArgs(m TerminalMarkerV1) []any {
 	return []any{m.WorkspaceID, m.RunID, m.SchemaVersion, m.AttemptGeneration, m.AttemptID, m.Agent, string(m.AttributionScope), m.TeamID, m.WorkflowID, m.WorkflowVersion, m.RunSnapshotID, m.ConversationID, m.ParentRunID, m.ParentSeq, m.AggregationParentRunID, m.TaskGroupID, m.RunStartedAt, string(m.Phase), string(m.Status), m.StopReason, string(m.Source), m.TerminalAt, string(m.EvidenceKind), m.CheckpointGraph, m.CheckpointSeq, m.CheckpointSavedAt, m.UsageInputTokens, m.UsageOutputTokens, m.UsageCostUSD, string(m.AuditState), m.AuditSchemaVersion, string(m.LineageState), m.LastErrorCode}
 }

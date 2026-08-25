@@ -108,14 +108,6 @@ type normalTerminalCommitPlan struct {
 	LeaseTarget AttemptLeaseState
 }
 
-func commitNormalTerminalPG(
-	ctx context.Context,
-	store expectedRunAdmissionTxStore,
-	commit NormalTerminalCommit,
-) error {
-	return commitNormalTerminalPGWithOutcome(ctx, store, commit, nil)
-}
-
 func commitNormalTerminalPGWithOutcome(
 	ctx context.Context,
 	store expectedRunAdmissionTxStore,

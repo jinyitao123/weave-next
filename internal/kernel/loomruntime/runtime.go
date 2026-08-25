@@ -23,8 +23,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jinyitao123/loom"
 	"github.com/jinyitao123/loom/contract"
-	"github.com/jinyitao123/weave/internal/kernel/compiler"
 	"github.com/jinyitao123/weave/internal/base/execution"
+	"github.com/jinyitao123/weave/internal/kernel/compiler"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 )
 
@@ -294,8 +294,6 @@ func (err *TerminalPersistenceError) Unwrap() error {
 	}
 	return err.Err
 }
-
-func (*TerminalPersistenceError) terminalPersistenceFailure() {}
 
 // LoadRunAgentExecutionStamp reads the latest root checkpoint without
 // compiling an agent. The caller-provided agent name is only a checkpoint
@@ -1029,27 +1027,6 @@ func finishWithHeartbeatError(
 	return result, errors.Join(runErr, heartbeatErr)
 }
 
-func (p PreparedRun) writeRootTerminal(
-	ctx context.Context,
-	startedAt time.Time,
-	endedAt time.Time,
-	result Result,
-	runErr error,
-	attribution TerminalAttribution,
-) error {
-	_, err := p.persistRootTerminal(
-		ctx,
-		startedAt,
-		endedAt,
-		result,
-		runErr,
-		attribution,
-		nil,
-		nil,
-	)
-	return err
-}
-
 func (p PreparedRun) persistRootTerminal(
 	ctx context.Context,
 	startedAt time.Time,
@@ -1389,18 +1366,6 @@ func (p PreparedRun) ResumeAt(ctx context.Context, runID string, seq int64, inpu
 		return finishWithHeartbeatError(result, runErr, heartbeatErr)
 	}
 	return result, runErr
-}
-
-func finishWithExpectedRunError(
-	result Result,
-	runErr error,
-	registryErr error,
-) (Result, error) {
-	persistenceErr := &ExpectedRunPersistenceError{Err: registryErr}
-	if runErr == nil {
-		return result, persistenceErr
-	}
-	return result, errors.Join(runErr, persistenceErr)
 }
 
 type forkUsageContextKey struct{}

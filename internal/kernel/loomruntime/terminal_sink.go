@@ -68,14 +68,6 @@ type TerminalLineageDiagnostic struct {
 // TerminalLineageObserver receives structured best-effort rebuild diagnostics.
 type TerminalLineageObserver func(TerminalLineageDiagnostic)
 
-// NewMonotonicTerminalSink constructs a sink backed by an atomic record store.
-func NewMonotonicTerminalSink(store TerminalRecordStore) (TerminalSink, error) {
-	if store == nil || isNilTerminalRecordStore(store) {
-		return nil, fmt.Errorf("terminal record store is required")
-	}
-	return &monotonicTerminalSink{store: store}, nil
-}
-
 // NewLineageTerminalSink adds self and ancestor rebuilds after the A3c write.
 func NewLineageTerminalSink(
 	store TerminalRecordStore,

@@ -98,30 +98,6 @@ func (err *FreshExpectedRunAdmissionError) Unwrap() error {
 	return err.Err
 }
 
-type expectedAttemptLeasePresenceClass string
-
-const (
-	expectedAttemptLeaseAbsent          expectedAttemptLeasePresenceClass = "absent"
-	expectedAttemptLeasePresent         expectedAttemptLeasePresenceClass = "present"
-	expectedAttemptLeaseLivenessUnknown expectedAttemptLeasePresenceClass = "terminal_liveness_unknown"
-)
-
-func classifyExpectedAttemptLeasePresence(
-	expectedPresent bool,
-	leasePresent bool,
-) (expectedAttemptLeasePresenceClass, error) {
-	switch {
-	case !expectedPresent && !leasePresent:
-		return expectedAttemptLeaseAbsent, nil
-	case expectedPresent && leasePresent:
-		return expectedAttemptLeasePresent, nil
-	case expectedPresent:
-		return expectedAttemptLeaseLivenessUnknown, nil
-	default:
-		return "", ErrOrphanAttemptLease
-	}
-}
-
 // ExpectedRunPersistenceError identifies a run whose expected identity could
 // not be durably registered at the runtime boundary.
 type ExpectedRunPersistenceError struct {
