@@ -132,12 +132,28 @@ func (s *Store) AuthorizeBuildRun(
 			return TeamBuildRun{}, BuildAuthorizationReceipt{}, fmt.Errorf("authorize build run: %w", err)
 		}
 	}
-	if err := validateBuildAuthorizationOptions(mode, auth, revisionToken); err != nil {
+	if err := validateBuildAuthorizationOptions(mode, executionStrategy, confirmedBy, auth, revisionToken); err != nil {
 		return TeamBuildRun{}, BuildAuthorizationReceipt{}, fmt.Errorf("authorize build run: %w", err)
 	}
 
+	var totalBudget Budget
+	if err := json.Unmarshal(totalBudgetRaw, &totalBudget); err != nil {
+		return TeamBuildRun{}, BuildAuthorizationReceipt{}, fmt.Errorf("authorize build run: decode total budget: %w", err)
+	}
 	now := s.clock.Now()
+	decisionReason := ""
+	if auth.Authority == AuthorizationTemplateAuto {
+		decisionReason, err = s.reserveTemplateAuthorizationTx(
+			ctx, tx, workspaceID, buildRunID, totalBudget.MaxCostUSD, *auth.TemplatePolicy, now,
+		)
+		if err != nil {
+			return TeamBuildRun{}, BuildAuthorizationReceipt{}, fmt.Errorf("authorize build run: %w", err)
+		}
+	}
 	transitionReason := "workspace admin confirmed brief and contract"
+	if decisionReason != "" {
+		transitionReason = TemplateAuthorizerSubject + ": " + decisionReason
+	}
 	if baselineHash != "" {
 		transitionReason = "workspace admin confirmed brief and contract; baseline " + baselineHash + " frozen"
 	}
@@ -146,12 +162,14 @@ func (s *Store) AuthorizeBuildRun(
 		SET status='authorized', confirmed_by=$3, baseline_snapshot_json=$4,
 			authorization_authority=$5, authorized_revision_no=$6,
 			authorized_blueprint_hash=$7, authorized_change_set_hash=$8,
-			updated_at=$9
+			authorization_decision_subject=$9, authorization_decision_reason=$10,
+			authorization_decided_at=$11, updated_at=$11
 		WHERE workspace_id=$1 AND build_run_id=$2 AND status='planning'
 		RETURNING `+buildRunColumns+`
 	`, workspaceID, buildRunID, confirmedBy, baselineForInsert,
 		auth.Authority, nullableInt(authRevisionNo(auth)), nullableString(authBlueprintHash(auth)),
-		nullableString(authChangeSetHash(auth)), now))
+		nullableString(authChangeSetHash(auth)), nullableString(auth.DecisionSubject),
+		nullableString(decisionReason), now))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return TeamBuildRun{}, BuildAuthorizationReceipt{}, fmt.Errorf("authorize build run: %w", ErrBuildRunNotPlanning)
 	}
@@ -180,26 +198,25 @@ func (s *Store) AuthorizeBuildRun(
 	if err := json.Unmarshal(scopeRaw, &scope); err != nil {
 		return TeamBuildRun{}, BuildAuthorizationReceipt{}, fmt.Errorf("authorize build run: decode asset scope: %w", err)
 	}
-	var roundBudget, totalBudget Budget
+	var roundBudget Budget
 	if err := json.Unmarshal(roundBudgetRaw, &roundBudget); err != nil {
 		return TeamBuildRun{}, BuildAuthorizationReceipt{}, fmt.Errorf("authorize build run: decode round budget: %w", err)
 	}
-	if err := json.Unmarshal(totalBudgetRaw, &totalBudget); err != nil {
-		return TeamBuildRun{}, BuildAuthorizationReceipt{}, fmt.Errorf("authorize build run: decode total budget: %w", err)
-	}
 	receipt := BuildAuthorizationReceipt{
-		workspaceID:   workspaceID,
-		buildRunID:    buildRunID,
-		contractHash:  contractHash,
-		mode:          mode,
-		authority:     auth.Authority,
-		revisionToken: cloneBlueprintRevisionToken(auth.RevisionToken),
-		assetScope:    cloneAssetScope(scope),
-		roundBudget:   roundBudget,
-		totalBudget:   totalBudget,
-		expiresAt:     expiresAt,
-		confirmedBy:   confirmedBy,
-		createdAt:     now,
+		workspaceID:     workspaceID,
+		buildRunID:      buildRunID,
+		contractHash:    contractHash,
+		mode:            mode,
+		authority:       auth.Authority,
+		revisionToken:   cloneBlueprintRevisionToken(auth.RevisionToken),
+		decisionSubject: auth.DecisionSubject,
+		decisionReason:  decisionReason,
+		assetScope:      cloneAssetScope(scope),
+		roundBudget:     roundBudget,
+		totalBudget:     totalBudget,
+		expiresAt:       expiresAt,
+		confirmedBy:     confirmedBy,
+		createdAt:       now,
 	}
 	return run, receipt, nil
 }
@@ -214,22 +231,57 @@ func effectiveAuthorizeOptions(options []AuthorizeOptions) AuthorizeOptions {
 		auth = options[0]
 	}
 	auth.Authority = strings.TrimSpace(auth.Authority)
+	auth.DecisionSubject = strings.TrimSpace(auth.DecisionSubject)
 	auth.RevisionToken = cloneBlueprintRevisionToken(auth.RevisionToken)
+	if auth.TemplatePolicy != nil {
+		policy := *auth.TemplatePolicy
+		auth.TemplatePolicy = &policy
+	}
 	return auth
 }
 
-func validateBuildAuthorizationOptions(mode string, auth AuthorizeOptions, latest *BlueprintRevisionToken) error {
+func validateBuildAuthorizationOptions(
+	mode, executionStrategy, confirmedBy string,
+	auth AuthorizeOptions,
+	latest *BlueprintRevisionToken,
+) error {
 	switch auth.Authority {
 	case "":
 		return fmt.Errorf("%w: authority is required", ErrBlueprintRevisionMismatch)
 	case AuthorizationAutoBuild:
+		if auth.DecisionSubject != "" || auth.TemplatePolicy != nil {
+			return fmt.Errorf("%w: auto_build forbids template authorization facts", ErrBlueprintRevisionMismatch)
+		}
 		if auth.RevisionToken != nil {
 			return fmt.Errorf("%w: auto_build cannot carry a reviewed revision token", ErrBlueprintRevisionMismatch)
 		}
 		return nil
 	case AuthorizationContinueBuild, "reviewed_blueprint":
+		if auth.DecisionSubject != "" || auth.TemplatePolicy != nil {
+			return fmt.Errorf("%w: reviewed authorization forbids template authorization facts", ErrBlueprintRevisionMismatch)
+		}
 		if mode != ModeCreate && mode != ModeOptimize {
 			return fmt.Errorf("%w: continue build requires create or optimize mode", ErrBlueprintRevisionMismatch)
+		}
+		if auth.RevisionToken == nil || latest == nil {
+			return ErrCompilerRevisionRequired
+		}
+		if *auth.RevisionToken != *latest {
+			return ErrBlueprintRevisionMismatch
+		}
+		return nil
+	case AuthorizationTemplateAuto:
+		if mode != ModeCreate || executionStrategy != ExecutionStrategyTemplateInstantiate {
+			return fmt.Errorf("%w: template_auto requires a template_instantiate create run", ErrBlueprintRevisionMismatch)
+		}
+		if strings.TrimSpace(confirmedBy) == "" || confirmedBy == TemplateAuthorizerSubject {
+			return fmt.Errorf("%w: template_auto confirmed_by must be the real submitting user", ErrBlueprintRevisionMismatch)
+		}
+		if auth.DecisionSubject != TemplateAuthorizerSubject || auth.TemplatePolicy == nil {
+			return fmt.Errorf("%w: template_auto requires platform decision facts", ErrBlueprintRevisionMismatch)
+		}
+		if err := validateTemplateAuthorizationPolicy(*auth.TemplatePolicy); err != nil {
+			return fmt.Errorf("%w: %v", ErrBlueprintRevisionMismatch, err)
 		}
 		if auth.RevisionToken == nil || latest == nil {
 			return ErrCompilerRevisionRequired

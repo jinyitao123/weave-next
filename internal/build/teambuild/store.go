@@ -154,6 +154,7 @@ const buildRunColumns = `
 	expires_at, publish_eligible, rollback_status,
 	confirmed_by, authorization_authority, authorized_revision_no,
 	authorized_blueprint_hash, authorized_change_set_hash,
+	authorization_decision_subject, authorization_decision_reason,
 	final_ref_json, created_at, updated_at, decided_at
 `
 
@@ -973,6 +974,7 @@ func scanBuildRun(row rowScanner) (TeamBuildRun, error) {
 	var baselineRaw, finalRefRaw, roundBudgetRaw, totalBudgetRaw []byte
 	var confirmedBy *string
 	var authorizationAuthority, authorizedBlueprintHash, authorizedChangeSetHash *string
+	var authorizationDecisionSubject, authorizationDecisionReason *string
 	var authorizedRevisionNo *int
 	var conversationID *string
 	var decidedAt *time.Time
@@ -984,6 +986,7 @@ func scanBuildRun(row rowScanner) (TeamBuildRun, error) {
 		&run.ExpiresAt, &run.PublishEligible, &run.RollbackStatus,
 		&confirmedBy, &authorizationAuthority, &authorizedRevisionNo,
 		&authorizedBlueprintHash, &authorizedChangeSetHash,
+		&authorizationDecisionSubject, &authorizationDecisionReason,
 		&finalRefRaw, &run.CreatedAt, &run.UpdatedAt, &decidedAt,
 	); err != nil {
 		return TeamBuildRun{}, err
@@ -1022,6 +1025,12 @@ func scanBuildRun(row rowScanner) (TeamBuildRun, error) {
 	}
 	if authorizationAuthority != nil {
 		run.Authorization.Authority = *authorizationAuthority
+	}
+	if authorizationDecisionSubject != nil {
+		run.Authorization.DecisionSubject = *authorizationDecisionSubject
+	}
+	if authorizationDecisionReason != nil {
+		run.Authorization.DecisionReason = *authorizationDecisionReason
 	}
 	if authorizedRevisionNo != nil && authorizedBlueprintHash != nil && authorizedChangeSetHash != nil {
 		run.Authorization.RevisionToken = &BlueprintRevisionToken{

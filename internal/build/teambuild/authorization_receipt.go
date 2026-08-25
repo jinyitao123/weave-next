@@ -12,25 +12,35 @@ import (
 // only the Store can mint a valid credential; server-side validation always
 // re-checks the bound facts against the persisted TeamBuildRun.
 type BuildAuthorizationReceipt struct {
-	workspaceID   string
-	buildRunID    string
-	contractHash  string
-	mode          string
-	authority     string
-	revisionToken *BlueprintRevisionToken
-	assetScope    AssetScope
-	roundBudget   Budget
-	totalBudget   Budget
-	expiresAt     time.Time
-	confirmedBy   string
-	createdAt     time.Time
+	workspaceID     string
+	buildRunID      string
+	contractHash    string
+	mode            string
+	authority       string
+	revisionToken   *BlueprintRevisionToken
+	decisionSubject string
+	decisionReason  string
+	assetScope      AssetScope
+	roundBudget     Budget
+	totalBudget     Budget
+	expiresAt       time.Time
+	confirmedBy     string
+	createdAt       time.Time
 }
 
 // Valid reports whether the receipt carries complete minted material.
 func (r BuildAuthorizationReceipt) Valid() bool {
-	return r.workspaceID != "" && r.buildRunID != "" && r.contractHash != "" &&
+	valid := r.workspaceID != "" && r.buildRunID != "" && r.contractHash != "" &&
 		(r.mode == ModeCreate || r.mode == ModeOptimize) &&
 		r.confirmedBy != "" && !r.expiresAt.IsZero() && !r.createdAt.IsZero()
+	if !valid {
+		return false
+	}
+	if r.authority == AuthorizationTemplateAuto {
+		return r.revisionToken != nil && r.decisionSubject == TemplateAuthorizerSubject &&
+			strings.TrimSpace(r.decisionReason) != "" && r.confirmedBy != TemplateAuthorizerSubject
+	}
+	return true
 }
 
 // WorkspaceID exposes the workspace bound to this receipt.
@@ -47,6 +57,13 @@ func (r BuildAuthorizationReceipt) Mode() string { return r.mode }
 
 // Authority exposes how the run was moved into execution.
 func (r BuildAuthorizationReceipt) Authority() string { return r.authority }
+
+// DecisionSubject exposes the platform principal that made an automatic
+// authorization decision, distinct from the real user who confirmed it.
+func (r BuildAuthorizationReceipt) DecisionSubject() string { return r.decisionSubject }
+
+// DecisionReason exposes the persisted threshold/quota decision rationale.
+func (r BuildAuthorizationReceipt) DecisionReason() string { return r.decisionReason }
 
 // RevisionToken exposes the reviewed blueprint revision bound to this receipt,
 // if the authorization was a reviewed-blueprint authorization.
@@ -145,18 +162,20 @@ func (s *Store) ReissueReceipt(
 		)
 	}
 	return BuildAuthorizationReceipt{
-		workspaceID:   workspaceID,
-		buildRunID:    buildRunID,
-		contractHash:  run.ContractHash,
-		mode:          run.Mode,
-		authority:     run.Authorization.Authority,
-		revisionToken: cloneBlueprintRevisionToken(run.Authorization.RevisionToken),
-		assetScope:    cloneAssetScope(run.AssetScope),
-		roundBudget:   run.RoundBudget,
-		totalBudget:   run.TotalBudget,
-		expiresAt:     run.ExpiresAt,
-		confirmedBy:   run.ConfirmedBy,
-		createdAt:     run.CreatedAt,
+		workspaceID:     workspaceID,
+		buildRunID:      buildRunID,
+		contractHash:    run.ContractHash,
+		mode:            run.Mode,
+		authority:       run.Authorization.Authority,
+		revisionToken:   cloneBlueprintRevisionToken(run.Authorization.RevisionToken),
+		decisionSubject: run.Authorization.DecisionSubject,
+		decisionReason:  run.Authorization.DecisionReason,
+		assetScope:      cloneAssetScope(run.AssetScope),
+		roundBudget:     run.RoundBudget,
+		totalBudget:     run.TotalBudget,
+		expiresAt:       run.ExpiresAt,
+		confirmedBy:     run.ConfirmedBy,
+		createdAt:       run.CreatedAt,
 	}, nil
 }
 
@@ -196,6 +215,10 @@ func (s *Store) ValidateReceipt(
 		return fmt.Errorf("validate build receipt: %w", ErrBlueprintRevisionMismatch)
 	}
 	if !sameBlueprintRevisionToken(receipt.RevisionToken(), run.Authorization.RevisionToken) {
+		return fmt.Errorf("validate build receipt: %w", ErrBlueprintRevisionMismatch)
+	}
+	if receipt.DecisionSubject() != run.Authorization.DecisionSubject ||
+		receipt.DecisionReason() != run.Authorization.DecisionReason {
 		return fmt.Errorf("validate build receipt: %w", ErrBlueprintRevisionMismatch)
 	}
 	if receipt.Mode() != run.Mode {

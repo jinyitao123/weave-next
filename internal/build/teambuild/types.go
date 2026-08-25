@@ -801,6 +801,8 @@ type FinalRef struct {
 const (
 	AuthorizationContinueBuild = "continue_build"
 	AuthorizationAutoBuild     = "auto_build"
+	AuthorizationTemplateAuto  = "template_auto"
+	TemplateAuthorizerSubject  = "platform-template-authorizer"
 )
 
 type BlueprintRevisionToken struct {
@@ -810,13 +812,26 @@ type BlueprintRevisionToken struct {
 }
 
 type BuildAuthorization struct {
-	Authority     string                  `json:"authority,omitempty"`
-	RevisionToken *BlueprintRevisionToken `json:"revision_token,omitempty"`
+	Authority       string                  `json:"authority,omitempty"`
+	RevisionToken   *BlueprintRevisionToken `json:"revision_token,omitempty"`
+	DecisionSubject string                  `json:"decision_subject,omitempty"`
+	DecisionReason  string                  `json:"decision_reason,omitempty"`
 }
 
 type AuthorizeOptions struct {
-	Authority     string
-	RevisionToken *BlueprintRevisionToken
+	Authority       string
+	RevisionToken   *BlueprintRevisionToken
+	DecisionSubject string
+	TemplatePolicy  *TemplateAuthorizationPolicy
+}
+
+// TemplateAuthorizationPolicy bounds automatic template authorization. All
+// monetary values reserve declared BuildRun budget, not eventual spend.
+type TemplateAuthorizationPolicy struct {
+	AutoBudgetThresholdUSD float64
+	DailyBudgetUSD         float64
+	MonthlyBudgetUSD       float64
+	MaxConcurrent          int
 }
 
 // TeamBuildRun is the persisted execution-control record (plan §6.0).

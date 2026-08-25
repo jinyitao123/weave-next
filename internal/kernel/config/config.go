@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -37,11 +38,39 @@ type Config struct {
 	EmbedderKey       string // EMBEDDER_API_KEY
 	EmbedderModel     string // EMBEDDER_MODEL, default "text-embedding-3-small"
 	EmbedderDimension int    // EMBEDDER_DIMENSION, default 1536
+
+	// Team template automatic authorization limits.
+	TemplateAutoMaxCostUSD   float64 // WEAVE_TEMPLATE_AUTO_MAX_COST_USD, default 5
+	TemplateDailyBudgetUSD   float64 // WEAVE_TEMPLATE_DAILY_BUDGET_USD, default 25
+	TemplateMonthlyBudgetUSD float64 // WEAVE_TEMPLATE_MONTHLY_BUDGET_USD, default 250
+	TemplateMaxConcurrent    int     // WEAVE_TEMPLATE_MAX_CONCURRENT, default 2
 }
 
 // Load reads configuration from environment variables.
 func Load() (*Config, error) {
 	dim, _ := strconv.Atoi(envOr("EMBEDDER_DIMENSION", "1536"))
+	templateAutoMaxCost, err := positiveFloatEnv("WEAVE_TEMPLATE_AUTO_MAX_COST_USD", 5)
+	if err != nil {
+		return nil, err
+	}
+	templateDailyBudget, err := positiveFloatEnv("WEAVE_TEMPLATE_DAILY_BUDGET_USD", 25)
+	if err != nil {
+		return nil, err
+	}
+	templateMonthlyBudget, err := positiveFloatEnv("WEAVE_TEMPLATE_MONTHLY_BUDGET_USD", 250)
+	if err != nil {
+		return nil, err
+	}
+	templateMaxConcurrent, err := positiveIntEnv("WEAVE_TEMPLATE_MAX_CONCURRENT", 2)
+	if err != nil {
+		return nil, err
+	}
+	if templateDailyBudget < templateAutoMaxCost {
+		return nil, fmt.Errorf("WEAVE_TEMPLATE_DAILY_BUDGET_USD must be at least WEAVE_TEMPLATE_AUTO_MAX_COST_USD")
+	}
+	if templateMonthlyBudget < templateDailyBudget {
+		return nil, fmt.Errorf("WEAVE_TEMPLATE_MONTHLY_BUDGET_USD must be at least WEAVE_TEMPLATE_DAILY_BUDGET_USD")
+	}
 	port := envOr("PORT", "8080")
 	workspacesRoot := os.Getenv("WEAVE_WORKSPACES_ROOT")
 	if workspacesRoot == "" {
@@ -63,22 +92,26 @@ func Load() (*Config, error) {
 	}
 
 	cfg := &Config{
-		Port:              port,
-		DatabaseURL:       os.Getenv("DATABASE_URL"),
-		JWTSecret:         os.Getenv("JWT_SECRET"),
-		LogLevel:          envOr("LOG_LEVEL", "info"),
-		DevMode:           devMode,
-		AdminUser:         os.Getenv("WEAVE_ADMIN_USER"),
-		AdminPass:         os.Getenv("WEAVE_ADMIN_PASS"),
-		CORSOrigins:       corsOrigins,
-		MCPBoundaryBase:   envOr("WEAVE_MCP_BOUNDARY_BASE", "http://127.0.0.1:"+port),
-		WorkspacesRoot:    workspacesRoot,
-		OneAPIBase:        os.Getenv("OPENAI_BASE_URL"),
-		OneAPIKey:         os.Getenv("OPENAI_API_KEY"),
-		EmbedderURL:       os.Getenv("EMBEDDER_URL"),
-		EmbedderKey:       os.Getenv("EMBEDDER_API_KEY"),
-		EmbedderModel:     envOr("EMBEDDER_MODEL", "text-embedding-3-small"),
-		EmbedderDimension: dim,
+		Port:                     port,
+		DatabaseURL:              os.Getenv("DATABASE_URL"),
+		JWTSecret:                os.Getenv("JWT_SECRET"),
+		LogLevel:                 envOr("LOG_LEVEL", "info"),
+		DevMode:                  devMode,
+		AdminUser:                os.Getenv("WEAVE_ADMIN_USER"),
+		AdminPass:                os.Getenv("WEAVE_ADMIN_PASS"),
+		CORSOrigins:              corsOrigins,
+		MCPBoundaryBase:          envOr("WEAVE_MCP_BOUNDARY_BASE", "http://127.0.0.1:"+port),
+		WorkspacesRoot:           workspacesRoot,
+		OneAPIBase:               os.Getenv("OPENAI_BASE_URL"),
+		OneAPIKey:                os.Getenv("OPENAI_API_KEY"),
+		EmbedderURL:              os.Getenv("EMBEDDER_URL"),
+		EmbedderKey:              os.Getenv("EMBEDDER_API_KEY"),
+		EmbedderModel:            envOr("EMBEDDER_MODEL", "text-embedding-3-small"),
+		EmbedderDimension:        dim,
+		TemplateAutoMaxCostUSD:   templateAutoMaxCost,
+		TemplateDailyBudgetUSD:   templateDailyBudget,
+		TemplateMonthlyBudgetUSD: templateMonthlyBudget,
+		TemplateMaxConcurrent:    templateMaxConcurrent,
 	}
 
 	if cfg.DatabaseURL == "" {
@@ -89,6 +122,30 @@ func Load() (*Config, error) {
 	}
 
 	return cfg, nil
+}
+
+func positiveFloatEnv(key string, fallback float64) (float64, error) {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return fallback, nil
+	}
+	value, err := strconv.ParseFloat(raw, 64)
+	if err != nil || value <= 0 || math.IsNaN(value) || math.IsInf(value, 0) {
+		return 0, fmt.Errorf("%s must be a positive number", key)
+	}
+	return value, nil
+}
+
+func positiveIntEnv(key string, fallback int) (int, error) {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return fallback, nil
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil || value <= 0 {
+		return 0, fmt.Errorf("%s must be a positive integer", key)
+	}
+	return value, nil
 }
 
 // ResolveEngineCLIPath resolves an external engine executable. An explicit
