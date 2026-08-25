@@ -1,0 +1,34 @@
+schema: team-template/v1
+name: market-research
+display_name: 市场调研团队
+purpose: 持续产出有来源、可复核的市场与竞品调研报告
+template: research_synthesis
+template_parameters:
+  lead_instruction: 拆解调研问题，组织并行取证，完成最终交付
+  parallel_worker_refs: [source-researcher, market-analyst]
+  finalizer_ref: research-lead
+  result_requirements:
+    research-lead: 汇总结论并标明证据边界
+    source-researcher: 提供一手来源、日期与原始链接
+    market-analyst: 交叉验证数据并解释竞争格局
+members:
+  - name: research-lead
+    display_name: 调研负责人
+    role: avatar
+    responsibilities: [拆解问题, 组织协作, 汇总交付]
+    capabilities: [task_delegation, report_writing]
+  - name: source-researcher
+    display_name: 资料调研员
+    role: worker
+    responsibilities: [检索一手资料, 记录来源]
+    capabilities: [web_search, source_verification]
+  - name: market-analyst
+    display_name: 市场分析员
+    role: worker
+    responsibilities: [数据分析, 竞品对比, 交叉验证]
+    capabilities: [analysis, fact_checking]
+lead: research-lead
+delivery:
+  success_criteria: [关键事实均可追溯, 覆盖指定市场与竞品, 明确区分事实与判断]
+budget:
+  max_cost_usd: 2

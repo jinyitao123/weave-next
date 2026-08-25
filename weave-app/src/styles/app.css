@@ -306,6 +306,7 @@ a { color: inherit; }
 .team-row strong, .team-row small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .team-row strong { color: var(--label-primary); font-size: var(--text-footnote); }
 .team-row small { color: var(--label-secondary); font-size: var(--text-caption); }
+.team-row__badges { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-1); }
 .team-row__icon, .member-avatar { width: 30px; height: 30px; display: grid; place-items: center; border-radius: var(--radius-sm); color: var(--label-secondary); background: color-mix(in srgb, var(--label-primary), transparent 92%); }
 .teams-detail { min-width: 0; }
 .teams-detail > .state-view { min-height: 480px; }
@@ -338,6 +339,14 @@ a { color: inherit; }
 .dispatch-rules-facts { margin-top: 14px; }
 .dispatch-rules-section .readonly-note { margin: 12px 0 0; }
 .team-editor { min-width: 0; }
+.team-template-editor { display: grid; gap: var(--space-4); }
+.team-template-toolbar { display: grid; grid-template-columns: minmax(220px, .7fr) minmax(0, 1.3fr); align-items: end; gap: var(--space-4); }
+.team-template-toolbar > p { margin: 0 0 var(--space-1); color: var(--label-secondary); font-size: var(--text-caption); line-height: 1.5; }
+.team-template-yaml { min-height: 420px; resize: vertical; font-family: var(--font-mono); font-size: var(--text-caption); line-height: 1.55; tab-size: 2; }
+.team-template-progress { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3); border: 1px solid var(--separator); border-radius: var(--radius-md); color: var(--success); background: color-mix(in srgb, var(--success), transparent 94%); }
+.team-template-progress > span { min-width: 0; display: grid; gap: var(--space-1); }
+.team-template-progress strong { color: var(--label-primary); font-size: var(--text-footnote); }
+.team-template-progress small { color: var(--label-secondary); font-size: var(--text-caption); overflow-wrap: anywhere; }
 .team-form-section { padding: var(--space-4) 0; border-bottom: 1px solid var(--separator-strong); }
 .team-form-section:first-of-type { padding-top: 0; }
 .team-form-section:last-child { border-bottom: 0; }
@@ -1071,6 +1080,8 @@ a { color: inherit; }
   .ui-button { min-height: 44px; }
   .ui-button--small { min-height: 44px; }
   main .icon-button { min-width: 44px; min-height: 44px; }
+  .team-template-toolbar { grid-template-columns: minmax(0, 1fr); align-items: stretch; }
+  .team-template-yaml { min-height: 360px; }
 }
 
 .agent-detail__return { min-height: var(--space-8); display: inline-flex; align-items: center; gap: var(--space-2); color: var(--label-secondary); text-decoration: none; font-size: var(--text-footnote); font-weight: 600; }

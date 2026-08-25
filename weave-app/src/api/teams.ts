@@ -1,11 +1,14 @@
 import type { ApiClient } from "./client";
 import type {
   CreateTeamInput,
+  CreateTeamFromTemplateInput,
+  CreateTeamFromTemplateOutcome,
   CreateTeamResponse,
   Team,
   TeamDispatchRules,
   TeamRoster,
   TeamRosterResult,
+  TeamTemplateSamplesResponse,
   UpdateTeamDispatchRulesInput,
   UpdateTeamRosterInput,
 } from "./types";
@@ -24,6 +27,14 @@ export const teamsMethods = {
     return this.request<CreateTeamResponse>("/v1/teams", { method: "POST", body: input });
   },
 
+  listTeamTemplateSamples(this: ApiClient, signal?: AbortSignal): Promise<TeamTemplateSamplesResponse> {
+    return this.request<TeamTemplateSamplesResponse>("/v1/team-templates/samples", { signal });
+  },
+
+  createTeamFromTemplate(this: ApiClient, input: CreateTeamFromTemplateInput): Promise<CreateTeamFromTemplateOutcome> {
+    return this.request<CreateTeamFromTemplateOutcome>("/v1/teams:from-template", { method: "POST", body: input });
+  },
+
   updateTeamRoster(this: ApiClient, id: string, input: UpdateTeamRosterInput): Promise<TeamRosterResult> {
     return this.request<TeamRosterResult>(`/v1/teams/${encodeURIComponent(id)}/roster`, { method: "PUT", body: input });
   },
@@ -36,4 +47,3 @@ export const teamsMethods = {
     return this.request<TeamDispatchRules>(`/v1/teams/${encodeURIComponent(id)}/dispatch-rules`, { method: "PUT", body: input });
   },
 };
-

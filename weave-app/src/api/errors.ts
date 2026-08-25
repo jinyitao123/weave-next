@@ -42,10 +42,15 @@ export async function apiErrorFromResponse(response: Response): Promise<ApiError
       code?: string;
       error?: string | { code?: string; message?: string };
       message?: string;
+      problems?: Array<{ path?: string; message?: string }>;
     };
     const nested = typeof payload.error === "object" ? payload.error : undefined;
     code = payload.code || nested?.code;
-    message = payload.message || nested?.message || (typeof payload.error === "string" ? payload.error : "") || message;
+    const problemMessage = payload.problems
+      ?.filter((problem) => problem.message)
+      .map((problem) => `${problem.path || "/"}：${problem.message}`)
+      .join("；");
+    message = payload.message || nested?.message || (typeof payload.error === "string" ? payload.error : "") || problemMessage || message;
   } catch {
     // A non-JSON error body still keeps its HTTP classification.
   }
@@ -133,6 +138,9 @@ const knownMessages: Record<string, string> = {
   workflow_delivery_store_failed: "Delivery Target store 操作失败。",
   team_roster_write_required: "Team 成员关系只能通过 Teams 的完整 Roster command 修改。",
   provider_required: "当前工作区没有可用的模型供应商。请先在控制中心 → 模型供应商中镜像系统供应商，再创建新团队。",
+  template_idempotency_conflict: "同一请求标识已经用于另一份模板，请关闭后重新发起创建。",
+  template_build_failed: "模板构建未能完成，请查看构建步骤后重试。",
+  team_template_unavailable: "团队模板服务当前不可用。",
 };
 
 export function apiErrorMessage(error: unknown): string {

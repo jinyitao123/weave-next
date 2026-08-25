@@ -1,0 +1,35 @@
+schema: team-template/v1
+name: content-production
+display_name: 内容生产团队
+purpose: 稳定产出符合选题、受众与品牌要求的内容稿件
+template: delivery_rework_loop
+template_parameters:
+  lead_instruction: 明确写作要求，组织撰稿与审校，收敛到可交付版本
+  primary_ref: content-writer
+  reviewer_ref: content-editor
+  max_iterations: 2
+  result_requirements:
+    content-lead: 确认成稿满足选题和交付要求
+    content-writer: 提交结构完整、表达清晰的正文
+    content-editor: 给出具体可执行的审校意见
+members:
+  - name: content-lead
+    display_name: 内容负责人
+    role: avatar
+    responsibilities: [澄清选题, 把控交付, 组织协作]
+    capabilities: [task_delegation, editorial_planning]
+  - name: content-writer
+    display_name: 内容撰稿人
+    role: worker
+    responsibilities: [资料消化, 结构设计, 正文写作]
+    capabilities: [writing, research]
+  - name: content-editor
+    display_name: 内容编辑
+    role: worker
+    responsibilities: [事实审校, 结构审校, 风格校准]
+    capabilities: [editing, fact_checking]
+lead: content-lead
+delivery:
+  success_criteria: [内容回应选题目标, 事实与引语可核验, 结构和语气适合目标受众]
+budget:
+  max_cost_usd: 3

@@ -103,6 +103,25 @@ func TestInstantiateDefersWhenTemplateAutoRequiresAuthorization(t *testing.T) {
 	}
 }
 
+func TestInstantiateResolvesSampleOverrides(t *testing.T) {
+	builds := &memoryBuildStore{}
+	service := New(&memoryIdempotencyStore{}, builds, &memorySubmitter{builds: builds}, Options{
+		Policy: testPolicy(), Catalog: NewStaticCatalog(),
+	})
+	outcome, err := service.Instantiate(context.Background(), "workspace-1", "user-1", Request{
+		Sample: "market-research", Overrides: map[string]any{
+			"display_name": "消费市场调研团队",
+			"budget":       map[string]any{"max_cost_usd": 4.0},
+		}, IdempotencyKey: uuid.NewString(),
+	})
+	if err != nil {
+		t.Fatalf("Instantiate() error = %v", err)
+	}
+	if outcome.Status != "ready" || builds.run.TotalBudget.MaxCostUSD != 4 {
+		t.Fatalf("outcome = %#v, budget = %#v", outcome, builds.run.TotalBudget)
+	}
+}
+
 func TestInstantiateRejectsChangedContentForClaimedKey(t *testing.T) {
 	key := uuid.New()
 	idempotency := &memoryIdempotencyStore{record: &IdempotencyRecord{
@@ -194,6 +213,7 @@ func (s *memoryBuildStore) CreateBuildRun(_ context.Context, workspaceID, buildR
 		WorkspaceID: workspaceID, BuildRunID: buildRunID, Mode: teambuild.ModeCreate,
 		ExecutionStrategy: params.ExecutionStrategy, Status: teambuild.StatusPlanning,
 		Brief: params.Brief, BriefHash: briefHash, Contract: contract, ContractHash: contractHash,
+		TotalBudget: params.Brief.TotalBudget,
 	}
 	s.createdBy = params.CreatedBy
 	return s.run, nil

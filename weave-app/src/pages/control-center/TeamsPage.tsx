@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { Archive, Bot, ChevronRight, LockKeyhole, Plus, RefreshCw, ShieldAlert, UserRound, UsersRound } from "lucide-react";
+import { Archive, Bot, ChevronRight, FileCode2, LockKeyhole, Plus, RefreshCw, ShieldAlert, UserRound, UsersRound } from "lucide-react";
 import {
   api,
   apiErrorMessage,
@@ -22,6 +22,7 @@ import { Switch } from "../../ui/Switch";
 import { ErrorNotice, LoadingView } from "../../ui/StatusViews";
 import { createClientUUID } from "../../platform/uuid";
 import { Navigate, useNavigate, useSearchParams } from "react-router-dom";
+import { TeamTemplateModal } from "./TeamTemplateModal";
 
 const dateTime = new Intl.DateTimeFormat("zh-CN", { dateStyle: "medium", timeStyle: "short" });
 const rosterKinds: TeamRosterKind[] = ["consult", "dispatch", "handoff"];
@@ -160,11 +161,13 @@ export function TeamsPage() {
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [conflict, setConflict] = useState(false);
+  const [creatingFromTemplate, setCreatingFromTemplate] = useState(false);
 
   const avatars = useMemo(() => agents.filter((agent) => !agent.deleted && agent.role === "avatar"), [agents]);
   const workerCandidates = useMemo(() => agents.filter((agent) => !agent.deleted && agent.role === "worker"), [agents]);
   const canEditTeam = user?.role === "admin" || user?.role === "owner";
   const canCreate = canEditTeam;
+  const canCreateFromTemplate = user?.role === "admin";
 
   const refresh = useCallback(async (initial = false) => {
     if (initial) setLoading(true); else setRefreshing(true);
@@ -197,6 +200,11 @@ export function TeamsPage() {
     setCreateStep("basic");
     setCreating(true);
   }, [avatars, workerCandidates]);
+
+  const finishTemplateCreate = useCallback((teamID: string) => {
+    setCreatingFromTemplate(false);
+    navigate(`/control/teams/${encodeURIComponent(teamID)}`);
+  }, [navigate]);
 
   useEffect(() => {
     if (!requestedCreate) {
@@ -278,6 +286,13 @@ export function TeamsPage() {
           <Plus size={16} aria-hidden="true" />
           创建团队
         </Button>}
+        {canCreateFromTemplate && !forbidden && <Button
+          variant="primary"
+          onClick={() => setCreatingFromTemplate(true)}
+        >
+          <FileCode2 size={16} aria-hidden="true" />
+          从模板创建
+        </Button>}
       </div>
     </div>
     {error && !forbidden && <ErrorNotice message={error} onRetry={() => void refresh(false)} />}
@@ -296,10 +311,14 @@ export function TeamsPage() {
         <Plus size={16} aria-hidden="true" />
         创建第一个团队
       </Button>}
+      {canCreateFromTemplate && <Button variant="primary" onClick={() => setCreatingFromTemplate(true)}>
+        <FileCode2 size={16} aria-hidden="true" />
+        从行业模板创建
+      </Button>}
       {(!avatars.length || !workerCandidates.length) && <p className="candidate-warning">
-        {!avatars.length ? "暂无可作为负责人的分身。请先在「智能体」中创建分身。" : ""}
+        {!avatars.length ? "手动创建暂无可作为负责人的分身。请先在「智能体」中创建分身。" : ""}
         {!avatars.length && !workerCandidates.length ? " " : ""}
-        {!workerCandidates.length ? "暂无可作为成员的数字员工。请先在「智能体」中创建数字员工。" : ""}
+        {!workerCandidates.length ? "手动创建暂无可作为成员的数字员工。请先在「智能体」中创建数字员工。" : ""}
       </p>}
     </div> : <div className="teams-master" role="list" aria-label="团队列表">
         {teams.map((team) => <button
@@ -314,9 +333,12 @@ export function TeamsPage() {
             <strong>{team.name}</strong>
             <small>{team.objective || "未设置目标"}</small>
           </span>
-          <Badge tone={team.status === "active" ? "success" : "neutral"}>
-            {team.status === "active" ? "使用中" : "已归档"}
-          </Badge>
+          <span className="team-row__badges">
+            {team.evaluation === "unevaluated" && <Badge tone="warning">待评测</Badge>}
+            <Badge tone={team.status === "active" ? "success" : "neutral"}>
+              {team.status === "active" ? "使用中" : "已归档"}
+            </Badge>
+          </span>
           <ChevronRight size={16} />
         </button>)}
     </div>}
@@ -458,6 +480,12 @@ export function TeamsPage() {
         </section>}
       </form>
     </Modal>
+
+    <TeamTemplateModal
+      open={creatingFromTemplate}
+      onClose={() => setCreatingFromTemplate(false)}
+      onReady={finishTemplateCreate}
+    />
 
   </section>;
 }

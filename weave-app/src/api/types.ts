@@ -436,8 +436,33 @@ export interface Team {
   success_criteria: string;
   lead_avatar_id: string;
   status: TeamStatus;
+  evaluation: "evaluated" | "unevaluated";
   created_at: string;
   updated_at: string;
+}
+
+export interface TeamTemplateSample {
+  name: string;
+  display_name: string;
+  description?: string;
+  yaml: string;
+}
+
+export interface TeamTemplateSamplesResponse {
+  samples: TeamTemplateSample[];
+}
+
+export interface CreateTeamFromTemplateInput {
+  yaml: string;
+  idempotency_key: string;
+}
+
+export interface CreateTeamFromTemplateOutcome {
+  team_id?: string;
+  build_run_id: string;
+  status: "ready" | "building" | "authorization_required" | string;
+  evaluation?: "unevaluated";
+  progress_url?: string;
 }
 
 export interface TeamAgentSummary {
