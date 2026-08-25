@@ -1,0 +1,435 @@
+// Package deliverable reads immutable final outputs projected from the session outbox.
+package deliverable
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+var ErrNotFound = errors.New("final deliverable not found")
+
+// ErrNotPromotable reports a message that cannot be promoted into a final
+// deliverable: it has no session outbox identity behind it (legacy message)
+// or its content is blank.
+var ErrNotPromotable = errors.New("message is not promotable")
+
+// FinalDeliverable is one immutable, user-visible final output.
+type FinalDeliverable struct {
+	ID             string          `json:"id"`
+	WorkspaceID    string          `json:"workspace_id"`
+	ProjectID      string          `json:"project_id,omitempty"`
+	ConversationID string          `json:"conversation_id,omitempty"`
+	UserID         string          `json:"user_id"`
+	LeadAvatarID   string          `json:"lead_avatar_id"`
+	SessionID      string          `json:"session_id"`
+	EventID        string          `json:"event_id"`
+	RunID          string          `json:"run_id"`
+	RunSnapshotID  string          `json:"run_snapshot_id"`
+	Title          string          `json:"title"`
+	Content        string          `json:"content"`
+	ContentType    string          `json:"content_type"`
+	Metadata       json.RawMessage `json:"metadata"`
+	CreatedAt      time.Time       `json:"created_at"`
+}
+
+// WorkflowOutput describes one immutable output emitted by a published
+// workflow node. Conversation-triggered workflow outputs are projected into
+// the same user-visible artifact ledger as explicitly declared deliverables;
+// metadata distinguishes intermediate stages from the final delivery.
+type WorkflowOutput struct {
+	WorkspaceID   string
+	RunID         string
+	RunSnapshotID string
+	NodeID        string
+	NodeLabel     string
+	NodeType      string
+	AgentID       string
+	Output        any
+	Final         bool
+	CreatedAt     time.Time
+}
+
+// ListFilter narrows a workspace-scoped deliverable list.
+type ListFilter struct {
+	ProjectID      string
+	ConversationID string
+	Limit          int
+	Offset         int
+}
+
+// Store reads immutable final deliverables.
+type Store struct {
+	pool *pgxpool.Pool
+}
+
+// New creates a final deliverable store.
+func New(pool *pgxpool.Pool) *Store {
+	return &Store{pool: pool}
+}
+
+// RecordWorkflowOutput persists one output from a conversation-triggered,
+// published workflow. Non-conversation runs (schedule, API validation, and
+// candidate evaluation) intentionally produce no user-facing artifact here.
+// Replays are idempotent by run, node, artifact kind, and content hash.
+func (s *Store) RecordWorkflowOutput(ctx context.Context, output WorkflowOutput) error {
+	if s == nil || s.pool == nil {
+		return errors.New("workflow deliverable store is unavailable")
+	}
+	output.WorkspaceID = strings.TrimSpace(output.WorkspaceID)
+	output.RunID = strings.TrimSpace(output.RunID)
+	output.RunSnapshotID = strings.TrimSpace(output.RunSnapshotID)
+	output.NodeID = strings.TrimSpace(output.NodeID)
+	if output.WorkspaceID == "" || output.RunID == "" || output.RunSnapshotID == "" || output.NodeID == "" {
+		return errors.New("workflow deliverable identity is incomplete")
+	}
+
+	content, contentType, err := encodeWorkflowOutput(output.Output)
+	if err != nil {
+		return fmt.Errorf("encode workflow deliverable: %w", err)
+	}
+	if strings.TrimSpace(content) == "" {
+		return nil
+	}
+
+	var projectID, conversationID, userID, leadAvatarID string
+	err = s.pool.QueryRow(ctx, `
+		SELECT COALESCE(snapshot.project_id, ''), conversation.id,
+		       conversation.user_id, team.lead_avatar_id
+		FROM weave_team_run_snapshots AS snapshot
+		JOIN weave_teams AS team
+		  ON team.workspace_id=snapshot.workspace_id AND team.id=snapshot.team_id
+		JOIN weave_conversations AS conversation
+		  ON conversation.workspace_id=snapshot.workspace_id
+		 AND conversation.id=snapshot.trigger_source_v2->>'source_ref'
+		WHERE snapshot.workspace_id=$1 AND snapshot.run_id=$2
+		  AND snapshot.mode='fixed_workflow'
+		  AND snapshot.trigger_source_v2->>'type'='conversation_explicit'
+		  AND conversation.parent_message_id IS NULL
+	`, output.WorkspaceID, output.RunSnapshotID).Scan(
+		&projectID, &conversationID, &userID, &leadAvatarID,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("resolve workflow deliverable conversation: %w", err)
+	}
+
+	kind := "stage"
+	titlePrefix := "阶段产物"
+	if output.Final {
+		kind = "final"
+		titlePrefix = "最终产物"
+	}
+	label := strings.TrimSpace(output.NodeLabel)
+	if label == "" && strings.TrimSpace(output.AgentID) != "" {
+		err := s.pool.QueryRow(ctx, `
+			SELECT COALESCE(NULLIF(BTRIM(display_name), ''), name)
+			FROM weave_agents
+			WHERE workspace_id=$1 AND id=$2
+		`, output.WorkspaceID, strings.TrimSpace(output.AgentID)).Scan(&label)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("resolve workflow deliverable agent label: %w", err)
+		}
+	}
+	if label == "" {
+		label = workflowNodeFallbackLabel(output.NodeType)
+	}
+	title := titlePrefix + " · " + label
+	metadata, err := json.Marshal(map[string]any{
+		"source":        "published_workflow",
+		"artifact_kind": kind,
+		"node_id":       output.NodeID,
+		"node_label":    label,
+		"node_type":     strings.TrimSpace(output.NodeType),
+	})
+	if err != nil {
+		return fmt.Errorf("encode workflow deliverable metadata: %w", err)
+	}
+	contentDigest := sha256.Sum256([]byte(content))
+	eventID := "workflow-" + kind + ":" + output.RunID + ":" + output.NodeID + ":" + hex.EncodeToString(contentDigest[:12])
+	idDigest := sha256.Sum256([]byte(strings.Join([]string{
+		output.WorkspaceID, output.RunID, eventID,
+	}, "\x1f")))
+	id := fmt.Sprintf("deliverable_%x", idDigest[:16])
+	createdAt := output.CreatedAt.UTC()
+	if createdAt.IsZero() {
+		createdAt = time.Now().UTC()
+	}
+	var nullableProjectID any
+	if projectID != "" {
+		nullableProjectID = projectID
+	}
+	_, err = s.pool.Exec(ctx, `
+		INSERT INTO weave_final_deliverables (
+			id, workspace_id, project_id, conversation_id, user_id, lead_avatar_id,
+			session_id, event_id, run_id, run_snapshot_id, title, content,
+			content_type, metadata, created_at
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+		ON CONFLICT DO NOTHING
+	`, id, output.WorkspaceID, nullableProjectID, conversationID, userID, leadAvatarID,
+		conversationID, eventID, output.RunID, output.RunSnapshotID, title, content,
+		contentType, metadata, createdAt)
+	if err != nil {
+		return fmt.Errorf("insert workflow deliverable: %w", err)
+	}
+	return nil
+}
+
+func workflowNodeFallbackLabel(nodeType string) string {
+	switch strings.TrimSpace(nodeType) {
+	case "lead":
+		return "需求统筹"
+	case "worker":
+		return "协作成员"
+	case "transform":
+		return "结果整理"
+	case "parallel":
+		return "并行执行"
+	case "join":
+		return "结果汇聚"
+	case "loop":
+		return "校验返修"
+	case "deliver":
+		return "交付"
+	default:
+		return "工作流阶段"
+	}
+}
+
+func encodeWorkflowOutput(output any) (string, string, error) {
+	if text, ok := output.(string); ok {
+		trimmed := strings.TrimSpace(text)
+		switch {
+		case LooksLikeHTMLDocument(trimmed):
+			return text, "text/html", nil
+		case strings.HasPrefix(strings.ToLower(trimmed), "<svg"):
+			return text, "image/svg+xml", nil
+		default:
+			return text, "text/markdown", nil
+		}
+	}
+	encoded, err := json.MarshalIndent(output, "", "  ")
+	if err != nil {
+		return "", "", err
+	}
+	return string(encoded), "application/json", nil
+}
+
+// PromoteMessage promotes one assistant message into an immutable final
+// deliverable, deriving the session/run identity from the session outbox row
+// recorded for the message's event. created is false when the promotion
+// already happened; the existing deliverable is returned unchanged.
+func (s *Store) PromoteMessage(
+	ctx context.Context,
+	workspaceID, userID, messageID, title string,
+) (FinalDeliverable, bool, error) {
+	messageID = strings.TrimSpace(messageID)
+	var conversationID, content, eventID, conversationUserID string
+	err := s.pool.QueryRow(ctx, `
+		SELECT m.conversation_id, m.content, COALESCE(m.event_id, ''), c.user_id
+		FROM weave_messages m
+		JOIN weave_conversations c
+		  ON c.workspace_id = m.workspace_id AND c.id = m.conversation_id
+		WHERE m.workspace_id=$1 AND m.id=$2 AND m.role='assistant'
+		  AND c.parent_message_id IS NULL
+	`, workspaceID, messageID).Scan(&conversationID, &content, &eventID, &conversationUserID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return FinalDeliverable{}, false, ErrNotFound
+	}
+	if err != nil {
+		return FinalDeliverable{}, false, fmt.Errorf("read promotable message: %w", err)
+	}
+	if conversationUserID != userID {
+		return FinalDeliverable{}, false, ErrNotFound
+	}
+	if eventID == "" || strings.TrimSpace(content) == "" {
+		return FinalDeliverable{}, false, ErrNotPromotable
+	}
+	contentType := "text/markdown"
+	if LooksLikeHTMLDocument(content) {
+		contentType = "text/html"
+	}
+
+	var outboxUserID, leadAvatarID, sessionID, runID, runSnapshotID string
+	var projectID *string
+	err = s.pool.QueryRow(ctx, `
+		SELECT user_id, lead_avatar_id, session_id, active_run_id, run_snapshot_id, project_id
+		FROM weave_session_outbox
+		WHERE workspace_id=$1 AND event_id=$2
+		LIMIT 1
+	`, workspaceID, eventID).Scan(
+		&outboxUserID, &leadAvatarID, &sessionID, &runID, &runSnapshotID, &projectID,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return FinalDeliverable{}, false, ErrNotPromotable
+	}
+	if err != nil {
+		return FinalDeliverable{}, false, fmt.Errorf("read message outbox identity: %w", err)
+	}
+
+	metadata, err := json.Marshal(map[string]any{
+		"source":          "user_promotion",
+		"message_id":      messageID,
+		"conversation_id": conversationID,
+	})
+	if err != nil {
+		return FinalDeliverable{}, false, fmt.Errorf("encode promoted deliverable metadata: %w", err)
+	}
+	digest := sha256.Sum256([]byte(workspaceID + "\x1f" + "promote" + "\x1f" + messageID))
+	id := fmt.Sprintf("deliverable_%x", digest[:16])
+	if strings.TrimSpace(title) == "" {
+		title = "Promoted deliverable"
+	}
+	tag, err := s.pool.Exec(ctx, `
+		INSERT INTO weave_final_deliverables (
+			id, workspace_id, project_id, conversation_id, user_id, lead_avatar_id,
+			session_id, event_id, run_id, run_snapshot_id, title, content,
+			content_type, metadata, created_at
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+		ON CONFLICT (workspace_id, user_id, lead_avatar_id, session_id, event_id)
+		DO NOTHING
+	`, id, workspaceID, projectID, conversationID, outboxUserID, leadAvatarID,
+		sessionID, "promote:"+messageID, runID, runSnapshotID, title, content,
+		contentType, metadata, time.Now())
+	if err != nil {
+		return FinalDeliverable{}, false, fmt.Errorf("insert promoted deliverable: %w", err)
+	}
+	deliverable, err := s.Get(ctx, workspaceID, id)
+	if err != nil {
+		return FinalDeliverable{}, false, fmt.Errorf("read promoted deliverable: %w", err)
+	}
+	return deliverable, tag.RowsAffected() == 1, nil
+}
+
+const deliverableColumns = `
+	id, workspace_id, project_id, conversation_id, user_id, lead_avatar_id,
+	session_id, event_id, run_id, run_snapshot_id, title, content,
+	content_type, metadata, created_at
+`
+
+// Get returns one deliverable from one workspace.
+func (s *Store) Get(ctx context.Context, workspaceID, id string) (FinalDeliverable, error) {
+	deliverable, err := scanDeliverable(s.pool.QueryRow(ctx, `
+		SELECT `+deliverableColumns+`
+		FROM weave_final_deliverables
+		WHERE workspace_id=$1 AND id=$2 AND btrim(content) <> ''
+	`, workspaceID, strings.TrimSpace(id)))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return FinalDeliverable{}, ErrNotFound
+	}
+	if err != nil {
+		return FinalDeliverable{}, fmt.Errorf("get final deliverable: %w", err)
+	}
+	return deliverable, nil
+}
+
+// LatestForConversation returns the newest deliverable projected for one conversation.
+func (s *Store) LatestForConversation(
+	ctx context.Context,
+	workspaceID, conversationID string,
+) (FinalDeliverable, error) {
+	deliverable, err := scanDeliverable(s.pool.QueryRow(ctx, `
+		SELECT `+deliverableColumns+`
+		FROM weave_final_deliverables
+		WHERE workspace_id=$1 AND conversation_id=$2 AND btrim(content) <> ''
+		ORDER BY created_at DESC, id DESC
+		LIMIT 1
+	`, workspaceID, strings.TrimSpace(conversationID)))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return FinalDeliverable{}, ErrNotFound
+	}
+	if err != nil {
+		return FinalDeliverable{}, fmt.Errorf("get latest conversation deliverable: %w", err)
+	}
+	return deliverable, nil
+}
+
+// List returns final deliverables in newest-first order.
+func (s *Store) List(
+	ctx context.Context,
+	workspaceID string,
+	filter ListFilter,
+) ([]FinalDeliverable, error) {
+	if filter.Limit <= 0 || filter.Limit > 200 {
+		filter.Limit = 50
+	}
+	if filter.Offset < 0 {
+		filter.Offset = 0
+	}
+	rows, err := s.pool.Query(ctx, `
+		SELECT `+deliverableColumns+`
+		FROM weave_final_deliverables
+		WHERE workspace_id=$1
+		  AND btrim(content) <> ''
+		  AND ($2='' OR project_id=$2)
+		  AND ($3='' OR conversation_id=$3)
+		ORDER BY created_at DESC, id DESC
+		LIMIT $4 OFFSET $5
+	`, workspaceID, strings.TrimSpace(filter.ProjectID),
+		strings.TrimSpace(filter.ConversationID), filter.Limit, filter.Offset)
+	if err != nil {
+		return nil, fmt.Errorf("list final deliverables: %w", err)
+	}
+	defer rows.Close()
+
+	items := make([]FinalDeliverable, 0)
+	for rows.Next() {
+		item, err := scanDeliverable(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan final deliverable: %w", err)
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list final deliverable rows: %w", err)
+	}
+	return items, nil
+}
+
+type rowScanner interface {
+	Scan(...any) error
+}
+
+func scanDeliverable(row rowScanner) (FinalDeliverable, error) {
+	var result FinalDeliverable
+	var projectID, conversationID *string
+	var metadata []byte
+	err := row.Scan(
+		&result.ID,
+		&result.WorkspaceID,
+		&projectID,
+		&conversationID,
+		&result.UserID,
+		&result.LeadAvatarID,
+		&result.SessionID,
+		&result.EventID,
+		&result.RunID,
+		&result.RunSnapshotID,
+		&result.Title,
+		&result.Content,
+		&result.ContentType,
+		&metadata,
+		&result.CreatedAt,
+	)
+	if err != nil {
+		return FinalDeliverable{}, err
+	}
+	if projectID != nil {
+		result.ProjectID = *projectID
+	}
+	if conversationID != nil {
+		result.ConversationID = *conversationID
+	}
+	result.Metadata = append(json.RawMessage(nil), metadata...)
+	return result, nil
+}

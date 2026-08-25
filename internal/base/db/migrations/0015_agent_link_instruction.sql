@@ -1,0 +1,2 @@
+ALTER TABLE weave_agent_links
+ADD COLUMN IF NOT EXISTS instruction TEXT NOT NULL DEFAULT '';

@@ -1,0 +1,94 @@
+{
+  "schema_version": 1,
+  "input": {
+    "schema_version": 1,
+    "factory_key": {
+      "factory_id": "standard",
+      "factory_version": "1",
+      "compiler_abi": "weave-graph-abi-v1"
+    },
+    "agent": {
+      "schema_version": 1,
+      "workspace_id": "workspace-a",
+      "agent_id": "agent-a",
+      "agent_version": 9007199254740991,
+      "name": "agent-a",
+      "display_name": "Agent A",
+      "role": "worker",
+      "engine": "loom",
+      "runtime_id": "",
+      "model": "model-a",
+      "system_prompt": "Stable example prompt.",
+      "identity": {
+        "core": "Stable example prompt.",
+        "extended": "",
+        "raw": "Stable example prompt."
+      },
+      "profiles": {
+        "": {"system_addition": "BMP", "greeting": ""},
+        "😀": {"system_addition": "astral", "greeting": ""}
+      },
+      "permissions": {
+        "deny": [],
+        "allow": ["alpha", "zeta"],
+        "ask": []
+      },
+      "memory_config": null,
+      "memory_slots": [],
+      "output_schema": null,
+      "limits": {
+        "max_cost_usd": 1,
+        "max_tokens": 1000,
+        "max_output_tokens": 100,
+        "step_budget": 20,
+        "max_tool_repeats": 5
+      },
+      "fallback": {
+        "models": ["model-z", "model-a"],
+        "retries": 2
+      },
+      "guard": null,
+      "compaction": null,
+      "graph_type": "standard",
+      "factory_input": {}
+    },
+    "skills": [],
+    "mcp_bindings": [],
+    "primary_model": {
+      "schema_version": 1,
+      "workspace_id": "workspace-a",
+      "provider_id": "provider-a",
+      "provider_revision": 4294967297,
+      "model_id": "model-a",
+      "base_url": "https://example.test/v1",
+      "json_object_mode": true,
+      "credential_ref": {
+        "schema_version": 1,
+        "workspace_id": "workspace-a",
+        "kind": "provider_api_key",
+        "resource_id": "provider-a",
+        "slot": "api_key",
+        "credential_version": null
+      },
+      "content_hash": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    "fallback_models": [],
+    "runtime": null,
+    "credentials": [],
+    "dependencies": {
+      "schema_version": 1,
+      "dependencies": [],
+      "manifest_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "capability": {
+      "schema_version": 1,
+      "may_yield": true,
+      "interactive_step_ids": ["step-a", "step-z"],
+      "interactive_tool_ids": ["tool-a", "tool-z"],
+      "may_invoke_agent": false,
+      "agent_step_ids": []
+    }
+  },
+  "canonical": "{\"agent\":{\"agent_id\":\"agent-a\",\"agent_version\":9007199254740991,\"compaction\":null,\"display_name\":\"Agent A\",\"engine\":\"loom\",\"factory_input\":{},\"fallback\":{\"models\":[\"model-z\",\"model-a\"],\"retries\":2},\"graph_type\":\"standard\",\"guard\":null,\"identity\":{\"core\":\"Stable example prompt.\",\"extended\":\"\",\"raw\":\"Stable example prompt.\"},\"limits\":{\"max_cost_usd\":1,\"max_output_tokens\":100,\"max_tokens\":1000,\"max_tool_repeats\":5,\"step_budget\":20},\"memory_config\":null,\"memory_slots\":[],\"model\":\"model-a\",\"name\":\"agent-a\",\"output_schema\":null,\"permissions\":{\"allow\":[\"alpha\",\"zeta\"],\"ask\":[],\"deny\":[]},\"profiles\":{\"😀\":{\"greeting\":\"\",\"system_addition\":\"astral\"},\"\":{\"greeting\":\"\",\"system_addition\":\"BMP\"}},\"role\":\"worker\",\"runtime_id\":\"\",\"schema_version\":1,\"system_prompt\":\"Stable example prompt.\",\"workspace_id\":\"workspace-a\"},\"capability\":{\"agent_step_ids\":[],\"interactive_step_ids\":[\"step-a\",\"step-z\"],\"interactive_tool_ids\":[\"tool-a\",\"tool-z\"],\"may_invoke_agent\":false,\"may_yield\":true,\"schema_version\":1},\"credentials\":[],\"dependencies\":{\"dependencies\":[],\"manifest_hash\":\"4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945\",\"schema_version\":1},\"factory_key\":{\"compiler_abi\":\"weave-graph-abi-v1\",\"factory_id\":\"standard\",\"factory_version\":\"1\"},\"fallback_models\":[],\"mcp_bindings\":[],\"primary_model\":{\"base_url\":\"https://example.test/v1\",\"content_hash\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"credential_ref\":{\"credential_version\":null,\"kind\":\"provider_api_key\",\"resource_id\":\"provider-a\",\"schema_version\":1,\"slot\":\"api_key\",\"workspace_id\":\"workspace-a\"},\"json_object_mode\":true,\"model_id\":\"model-a\",\"provider_id\":\"provider-a\",\"provider_revision\":4294967297,\"schema_version\":1,\"workspace_id\":\"workspace-a\"},\"runtime\":null,\"schema_version\":1,\"skills\":[]}",
+  "sha256": "04b6a127358af1dd3083347d9c53e69bb7b5a540cc81f6066f0cccf9b40070a1"
+}
