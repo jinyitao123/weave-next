@@ -3,12 +3,12 @@ import { createPortal } from "react-dom";
 import { ChevronDown, FolderKanban, Inbox, LogOut, Menu, MessageSquarePlus, PanelLeftClose, Pencil, Search, Settings2, UserPlus, Users, X } from "lucide-react";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { api, apiErrorMessage, type Conversation, type Project, type TeamBuildRunSummary } from "../api";
-import { useAuth } from "../auth/AuthContext";
+import { useAuth } from "../auth/useAuth";
 import { Badge } from "../ui/Badge";
 import { Button } from "../ui/Button";
 import { Field } from "../ui/Field";
 import { Modal } from "../ui/Modal";
-import { useWorkspace } from "../workspace/WorkspaceContext";
+import { useWorkspace } from "../workspace/useWorkspace";
 import { isPlatformAsset, isUnclassifiedProject, META_TEAM_NAME, TEAM_ARCHITECT_AGENT_NAME } from "../workspace/identity";
 import { useSidebarState } from "./useSidebarState";
 

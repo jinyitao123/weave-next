@@ -14,7 +14,7 @@ import { SkillsPage } from "./control-center/SkillsPage";
 import { DeliveryTargetsPage } from "./control-center/DeliveryTargetsPage";
 import { ProvidersPage } from "./control-center/ProvidersPage";
 import { RuntimesPage } from "./RuntimesPage";
-import { useAuth } from "../auth/AuthContext";
+import { useAuth } from "../auth/useAuth";
 import { Badge } from "../ui/Badge";
 import { API_SCOPE_OPTIONS, apiScopeLabel } from "../workspace/labels";
 import { Button } from "../ui/Button";

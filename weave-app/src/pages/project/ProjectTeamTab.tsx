@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, apiErrorMessage, type ProjectCollaborator, type TeamDispatchRules, type TeamRoster, type User, type WorkflowSummary } from "../../api";
-import { useAuth } from "../../auth/AuthContext";
+import { useAuth } from "../../auth/useAuth";
 import { Badge } from "../../ui/Badge";
 import { Button } from "../../ui/Button";
 import { ConfirmModal } from "../../ui/ConfirmModal";
 import { Card } from "../../ui/Card";
 import { Field } from "../../ui/Field";
 import { ErrorNotice, LoadingView } from "../../ui/StatusViews";
-import { useWorkspace } from "../../workspace/WorkspaceContext";
+import { useWorkspace } from "../../workspace/useWorkspace";
 import { isPlatformAsset } from "../../workspace/identity";
 
 interface ProjectTeamTabProps {

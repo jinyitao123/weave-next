@@ -10,7 +10,7 @@ import {
   type TerminalOutcome,
   type ToolCallRecord,
 } from "../../api";
-import { useWorkspace } from "../../workspace/WorkspaceContext";
+import { useWorkspace } from "../../workspace/useWorkspace";
 import { executionStepLabel, memberFallbackLabel, UUID_PATTERN as uuidPattern } from "../../workspace/labels";
 import { PixelAvatar } from "../../ui/PixelAvatar";
 import { MarkdownText } from "./MarkdownText";

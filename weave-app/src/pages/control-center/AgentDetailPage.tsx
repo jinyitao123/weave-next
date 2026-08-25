@@ -14,7 +14,7 @@ import {
   type Runtime,
   type User,
 } from "../../api";
-import { useAuth } from "../../auth/AuthContext";
+import { useAuth } from "../../auth/useAuth";
 import { Button } from "../../ui/Button";
 import { Field } from "../../ui/Field";
 import { Modal } from "../../ui/Modal";

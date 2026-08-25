@@ -10,7 +10,7 @@ import { Button } from "../ui/Button";
 import { Card } from "../ui/Card";
 import { Field } from "../ui/Field";
 import { ErrorNotice, LoadingView } from "../ui/StatusViews";
-import { useWorkspace } from "../workspace/WorkspaceContext";
+import { useWorkspace } from "../workspace/useWorkspace";
 import { executionStepLabel } from "../workspace/labels";
 
 type EvidenceKind = "group" | "job" | "run";

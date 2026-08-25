@@ -1,16 +1,6 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type PropsWithChildren } from "react";
-import { ApiError, api, type LoginRequest, type User } from "../api";
-
-interface AuthContextValue {
-  status: "restoring" | "authenticated" | "anonymous";
-  user: User | null;
-  login(input: LoginRequest): Promise<void>;
-  devLogin(tenant: string): Promise<void>;
-  refreshUser(signal?: AbortSignal): Promise<User>;
-  logout(): Promise<void>;
-}
-
-const AuthContext = createContext<AuthContextValue | null>(null);
+import { useCallback, useEffect, useMemo, useState, type PropsWithChildren } from "react";
+import { ApiError, api, type User } from "../api";
+import { AuthContext, type AuthContextValue } from "./authContextValue";
 
 export function AuthProvider({ children }: PropsWithChildren) {
   const [status, setStatus] = useState<AuthContextValue["status"]>("restoring");
@@ -87,10 +77,4 @@ export function AuthProvider({ children }: PropsWithChildren) {
   }), [logout, refreshUser, status, user]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
-}
-
-export function useAuth(): AuthContextValue {
-  const value = useContext(AuthContext);
-  if (!value) throw new Error("useAuth must be used within AuthProvider");
-  return value;
 }

@@ -1,7 +1,8 @@
 import { RefreshCw } from "lucide-react";
-import { DeliverableBody, useDeliverables } from "../../features/conversation/DeliverablePanel";
+import { DeliverableBody } from "../../features/conversation/DeliverablePanel";
+import { useDeliverables } from "../../features/conversation/useDeliverables";
 import { Button } from "../../ui/Button";
-import { useWorkspace } from "../../workspace/WorkspaceContext";
+import { useWorkspace } from "../../workspace/useWorkspace";
 
 interface ProjectDeliverablesTabProps {
   projectId: string;

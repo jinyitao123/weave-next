@@ -1,6 +1,6 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { ControlCenterRoutes } from "./pages/ControlCenterPage";
-import { useAuth } from "./auth/AuthContext";
+import { useAuth } from "./auth/useAuth";
 import { LoginPage } from "./auth/LoginPage";
 import { ActivityPage } from "./pages/ActivityPage";
 import { InboxPage } from "./pages/InboxPage";

@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { ArrowRight, Layers3 } from "lucide-react";
 import { apiErrorMessage } from "../api";
-import { useAuth } from "./AuthContext";
+import { useAuth } from "./useAuth";
 import { Button } from "../ui/Button";
 import { Field } from "../ui/Field";
 import { ErrorNotice } from "../ui/StatusViews";

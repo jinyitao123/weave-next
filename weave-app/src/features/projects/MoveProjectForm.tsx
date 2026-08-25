@@ -27,7 +27,7 @@ export function MoveProjectForm({ open, project, teams, agents, onClose, onMove 
       setTeamId(teams.find((team) => team.id !== project.team_id)?.id || "");
       setError(null);
     }
-  }, [open, project.avatar_id, teams]);
+  }, [open, project.avatar_id, project.team_id, teams]);
 
   function teamOptionLabel(team: Team): string {
     const lead = agents.find((agent) => agent.id === team.lead_avatar_id);

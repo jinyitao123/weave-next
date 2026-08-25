@@ -6,7 +6,7 @@ import { Link, useNavigate, useOutletContext } from "react-router-dom";
 import { api, apiErrorMessage } from "../api";
 import { Card } from "../ui/Card";
 import { ErrorNotice, LoadingView } from "../ui/StatusViews";
-import { useWorkspace } from "../workspace/WorkspaceContext";
+import { useWorkspace } from "../workspace/useWorkspace";
 import { isPlatformAsset, TEAM_ARCHITECT_AGENT_NAME } from "../workspace/identity";
 
 export function InboxPage() {

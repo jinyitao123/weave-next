@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type PropsWithChildren } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type PropsWithChildren } from "react";
 import {
   api,
   apiBaseUrl,
@@ -6,41 +6,14 @@ import {
   EventStreamClient,
   type AgentRecord,
   type Conversation,
-  type CreateProjectInput,
-  type MoveProjectInput,
   type Project,
   type Team,
   type UnreadConversation,
-  type UpdateProjectInput,
 } from "../api";
 import { platform } from "../platform";
-import { useAuth } from "../auth/AuthContext";
+import { useAuth } from "../auth/useAuth";
 import { isPlatformAsset, TEAM_ARCHITECT_AGENT_NAME } from "./identity";
-
-interface WorkspaceContextValue {
-  agents: AgentRecord[];
-  avatars: AgentRecord[];
-  teams: Team[];
-  projects: Project[];
-  conversations: Conversation[];
-  unread: UnreadConversation[];
-  loading: boolean;
-  connected: boolean;
-  error: string | null;
-  refresh(): Promise<void>;
-  refreshConversations(projectId?: string): Promise<void>;
-  renameConversation(conversationId: string, title: string): Promise<Conversation>;
-  invalidationVersion: number;
-  markConversationRead(conversationId: string, lastMessageId: string): Promise<void>;
-  createProject(input: CreateProjectInput): Promise<Project>;
-  ensureUnclassifiedProject(avatarId: string): Promise<Project>;
-  updateProject(id: string, input: UpdateProjectInput): Promise<Project>;
-  archiveProject(id: string): Promise<void>;
-  restoreProject(id: string): Promise<Project>;
-  moveProject(id: string, input: MoveProjectInput): Promise<Project>;
-}
-
-const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
+import { WorkspaceContext, type WorkspaceContextValue } from "./workspaceContextValue";
 
 export function WorkspaceProvider({ children }: PropsWithChildren) {
   const { status, logout } = useAuth();
@@ -206,10 +179,4 @@ export function WorkspaceProvider({ children }: PropsWithChildren) {
   }), [agents, avatars, connected, conversations, error, invalidationVersion, loading, markConversationRead, projects, refresh, refreshConversations, replaceProject, teams, unread]);
 
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;
-}
-
-export function useWorkspace(): WorkspaceContextValue {
-  const value = useContext(WorkspaceContext);
-  if (!value) throw new Error("useWorkspace must be used within WorkspaceProvider");
-  return value;
 }

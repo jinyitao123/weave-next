@@ -5,7 +5,7 @@ import { api, apiErrorMessage, type RunSummary } from "../../api";
 import { Badge } from "../../ui/Badge";
 import { Button } from "../../ui/Button";
 import { ErrorNotice, LoadingView } from "../../ui/StatusViews";
-import { useWorkspace } from "../../workspace/WorkspaceContext";
+import { useWorkspace } from "../../workspace/useWorkspace";
 import { costLabel, usageLabel } from "../../workspace/labels";
 
 interface ProjectRunsTabProps {

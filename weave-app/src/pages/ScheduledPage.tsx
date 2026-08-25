@@ -3,7 +3,7 @@ import "../styles/scheduled.css";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { CalendarClock, Database, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { api, apiErrorMessage, type AgentSchedule, type AgentScheduleInput, type ConnectorSchedule } from "../api";
-import { useAuth } from "../auth/AuthContext";
+import { useAuth } from "../auth/useAuth";
 import { Badge } from "../ui/Badge";
 import { Button } from "../ui/Button";
 import { Card } from "../ui/Card";
@@ -11,7 +11,7 @@ import { Field } from "../ui/Field";
 import { ConfirmModal } from "../ui/ConfirmModal";
 import { Modal } from "../ui/Modal";
 import { ErrorNotice, LoadingView } from "../ui/StatusViews";
-import { useWorkspace } from "../workspace/WorkspaceContext";
+import { useWorkspace } from "../workspace/useWorkspace";
 import {
   scheduleKindLabel,
   syncConflictLabel,

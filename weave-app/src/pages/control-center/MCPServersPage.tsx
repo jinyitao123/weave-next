@@ -25,7 +25,7 @@ import {
   type MCPTool,
   type MCPTransport,
 } from "../../api";
-import { useAuth } from "../../auth/AuthContext";
+import { useAuth } from "../../auth/useAuth";
 import { Badge } from "../../ui/Badge";
 import { Button } from "../../ui/Button";
 import { Field } from "../../ui/Field";

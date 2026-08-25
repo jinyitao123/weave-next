@@ -8,7 +8,7 @@ import { Badge } from "../../ui/Badge";
 import { Button } from "../../ui/Button";
 import { ConfirmModal } from "../../ui/ConfirmModal";
 import { ErrorNotice, LoadingView } from "../../ui/StatusViews";
-import { useWorkspace } from "../../workspace/WorkspaceContext";
+import { useWorkspace } from "../../workspace/useWorkspace";
 import { isPlatformAsset, isTeamBuildProject, isUnclassifiedProject, projectDisplayName } from "../../workspace/identity";
 import { ProjectConversationsTab } from "./ProjectConversationsTab";
 import { ProjectDeliverablesTab } from "./ProjectDeliverablesTab";

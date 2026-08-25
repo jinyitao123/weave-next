@@ -8,14 +8,15 @@ import { applyChatTurnStreamEvent } from "../features/conversation/chatTurnEvent
 import { pollAttachedWorkflowProgress, reconnectPendingTurn as reconnectPendingChatTurn, type ChatTurnRecoveryContext } from "../features/conversation/chatTurnRecovery";
 import { buildChatTurnRequest, chatTurnBlockedReason, createPendingTurn } from "../features/conversation/chatTurnRequest";
 import { handleChatTurnTerminal, type ChatTurnTerminalContext } from "../features/conversation/chatTurnTerminal";
-import { DeliverableBody, useDeliverables } from "../features/conversation/DeliverablePanel";
+import { DeliverableBody } from "../features/conversation/DeliverablePanel";
+import { useDeliverables } from "../features/conversation/useDeliverables";
 import { MarkdownText } from "../features/conversation/MarkdownText";
 import { RuntimeAssignmentNotice } from "../features/conversation/RuntimeAssignmentNotice";
 import { useChatTurnController } from "../features/conversation/useChatTurnController";
 import { Button } from "../ui/Button";
 import { Card } from "../ui/Card";
 import { ErrorNotice, LoadingView } from "../ui/StatusViews";
-import { useWorkspace } from "../workspace/WorkspaceContext";
+import { useWorkspace } from "../workspace/useWorkspace";
 import { isPlatformAsset, isUnclassifiedProject, projectDisplayName, TEAM_ARCHITECT_AGENT_NAME } from "../workspace/identity";
 
 const cliEngines: Record<string, true> = { claude: true, codex: true, opencode: true };
