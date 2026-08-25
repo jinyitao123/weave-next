@@ -27,11 +27,6 @@ func codexProviderName(provider string) string {
 	return provider
 }
 
-// WriteCodexHome writes the isolated Codex CLI configuration for one workdir.
-func WriteCodexHome(workDir string, rec *registry.AgentRecord, oneapiBase, boundaryBase, apiKeyEnvName string) error {
-	return WriteCodexHomeWithAuthMode(workDir, rec, oneapiBase, boundaryBase, apiKeyEnvName, "")
-}
-
 func WriteCodexHomeWithAuthMode(workDir string, rec *registry.AgentRecord, oneapiBase, boundaryBase, apiKeyEnvName, authMode string) error {
 	if codexUsesHostChatGPTAuth(authMode) {
 		return nil

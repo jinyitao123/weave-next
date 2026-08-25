@@ -66,11 +66,6 @@ func ClassifyTool(name string, declared []string) ToolClassification {
 	return ToolRead
 }
 
-// IsWriteTool reports declared or heuristic write classification.
-func IsWriteTool(name string, declared []string) bool {
-	return ClassifyTool(name, declared) != ToolRead
-}
-
 func isDeclaredWriteTool(name string, declared []string) bool {
 	for _, tool := range declared {
 		if strings.EqualFold(name, tool) {

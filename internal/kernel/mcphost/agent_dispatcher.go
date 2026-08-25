@@ -281,15 +281,6 @@ func (d *AgentToolDispatcher) Dispatch(ctx context.Context, call contract.ToolCa
 	return finish(result.Output, false), nil
 }
 
-func containsAgent(agents []registry.ManagedAgent, name string) bool {
-	for _, rec := range agents {
-		if rec.Name == name {
-			return true
-		}
-	}
-	return false
-}
-
 func containsAgentKind(agents []registry.ManagedAgent, name, kind string) bool {
 	for _, rec := range agents {
 		if rec.Name == name && rec.Kind == kind {

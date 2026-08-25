@@ -400,13 +400,6 @@ func validateContractBasicNode(report *Report, nodeID, path string, contract Out
 	}
 }
 
-func rawJSONObject(raw json.RawMessage) bool {
-	if inspectJSON(raw) != nil {
-		return false
-	}
-	return rawStartsJSONObject(raw)
-}
-
 func rawStartsJSONObject(raw json.RawMessage) bool {
 	trimmed := bytes.TrimSpace(raw)
 	return len(trimmed) >= 2 && trimmed[0] == '{'

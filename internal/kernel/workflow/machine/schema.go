@@ -434,19 +434,6 @@ func addFixedSchemaProblem(
 	})
 }
 
-func semanticJSONKey(raw json.RawMessage, path string, stats *schemaComplexityStats) (string, *dtoError) {
-	if issue := inspectJSON(raw); issue != nil {
-		return "", newDTOError(prefixedPath(path, issue.path), issue.code, issue.Error())
-	}
-	var value any
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	decoder.UseNumber()
-	if err := decoder.Decode(&value); err != nil {
-		return "", newDTOError(path, CodeJSONInvalid, "invalid JSON")
-	}
-	return semanticJSONValueKey(value, stats), nil
-}
-
 func semanticJSONValueKey(value any, stats *schemaComplexityStats) string {
 	var builder strings.Builder
 	appendSemanticJSONValueKey(&builder, value, stats)
@@ -727,18 +714,6 @@ func (schema *FixedJSONSchema) property(name string) (*FixedJSONSchema, bool) {
 	}
 	value, ok := schema.properties[name]
 	return value, ok
-}
-
-func (schema *FixedJSONSchema) propertyNames() []string {
-	if schema == nil {
-		return nil
-	}
-	names := make([]string, 0, len(schema.properties))
-	for name := range schema.properties {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	return names
 }
 
 func (schema *FixedJSONSchema) requiredNames() []string {

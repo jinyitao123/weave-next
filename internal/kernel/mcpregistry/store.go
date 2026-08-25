@@ -535,26 +535,6 @@ func (s *Store) Catalog(ctx context.Context, workspaceID, id string) (ProbeResul
 	return ProbeResult{Server: server, Tools: tools}, nil
 }
 
-func (s *Store) requireOpen(ctx context.Context, workspaceID, id string) error {
-	var enabled bool
-	var revokedAt, deletedAt *time.Time
-	err := s.pool.QueryRow(ctx, `
-		SELECT enabled, revoked_at, deleted_at
-		FROM weave_mcp_servers
-		WHERE workspace_id=$1 AND id=$2
-	`, workspaceID, id).Scan(&enabled, &revokedAt, &deletedAt)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return ErrNotFound
-	}
-	if err != nil {
-		return err
-	}
-	if !enabled || revokedAt != nil || deletedAt != nil {
-		return coded(ErrClosed, "MCP server is disabled, revoked, or deleted")
-	}
-	return nil
-}
-
 func (s *Store) listCachedToolsTx(ctx context.Context, tx pgx.Tx, workspaceID, id string) ([]Tool, error) {
 	rows, err := tx.Query(ctx, `
 		SELECT t.server_id, t.name, t.description, t.input_schema, t.annotations,

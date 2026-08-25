@@ -21,24 +21,6 @@ type AgentFreezeRequest struct {
 	FactoryInput json.RawMessage
 }
 
-// ResolveDependenciesEagerTx freezes requested agents in order, then eagerly
-// resolves the complete manifest using the caller-owned transaction.
-func ResolveDependenciesEagerTx(
-	ctx context.Context,
-	source *Resolver,
-	agents []AgentFreezeRequest,
-	enumerated frozen.EnumeratedDependencyManifest,
-) (frozen.FrozenDependencyManifest, compiler.FrozenResolver, error) {
-	for _, agent := range agents {
-		if _, err := source.ResolveAgentVersion(
-			ctx, agent.Ref, agent.Usage, agent.Key, agent.FactoryInput,
-		); err != nil {
-			return frozen.FrozenDependencyManifest{}, nil, err
-		}
-	}
-	return ResolveManifest(ctx, enumerated, source)
-}
-
 // ArtifactDependencySet is the complete secretless DTO set carried by a
 // publication artifact.
 type ArtifactDependencySet struct {

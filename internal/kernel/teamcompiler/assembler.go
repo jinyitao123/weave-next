@@ -155,32 +155,6 @@ func ValidateCatalogContentHash(catalog TeamInteractionCatalog, expected string)
 	return nil
 }
 
-func ValidateWorkerRoleProof(worker FrozenTeamWorker, bundle frozen.FrozenExecutionBundle) error {
-	if err := validateRoleProofShape(worker.RoleProof); err != nil {
-		return err
-	}
-	if worker.WorkerAgentID != bundle.Agent.AgentID ||
-		worker.WorkerAgentVersion != bundle.Agent.AgentVersion ||
-		bundle.Agent.Role != "worker" || bundle.Capability.Role != "worker" ||
-		bundle.Capability.SchemaVersion != worker.RoleProof.CapabilitySchema {
-		return ErrTeamWorkerRoleIncompatible
-	}
-	agentHash, err := frozen.HashDTO(bundle.Agent, frozen.PreorderFrozenAgentRecord)
-	if err != nil {
-		return codedError(CodeTeamWorkerRoleIncompatible, err)
-	}
-	capabilityHash, err := frozen.HashDTO(bundle.Capability, frozen.PreorderCapabilityManifest)
-	if err != nil {
-		return codedError(CodeTeamWorkerRoleIncompatible, err)
-	}
-	if !equalHash(agentHash, bundle.Capability.AgentContentHash) ||
-		!equalHash(agentHash, worker.RoleProof.AgentContentHash) ||
-		!equalHash(capabilityHash, worker.RoleProof.CapabilityContentHash) {
-		return ErrTeamWorkerRoleIncompatible
-	}
-	return nil
-}
-
 func validateKinds(kinds []InteractionKind, defaultKind InteractionKind) error {
 	if len(kinds) == 0 {
 		return ErrTeamInteractionKindInvalid
@@ -290,8 +264,4 @@ func validHash(value string) bool {
 		return false
 	}
 	return true
-}
-
-func equalHash(left, right string) bool {
-	return len(left) == len(right) && subtle.ConstantTimeCompare([]byte(left), []byte(right)) == 1
 }

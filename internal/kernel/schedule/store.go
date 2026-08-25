@@ -539,11 +539,6 @@ func equalOptionalTime(left, right *time.Time) bool {
 	return left.Equal(*right)
 }
 
-// ScheduledFor returns a schedule's logical UTC occurrence for one local date.
-func ScheduledFor(item Schedule, localDate time.Time) (time.Time, error) {
-	return scheduledForWithProbe(item, localDate, probeTimezone)
-}
-
 func scheduledForWithProbe(
 	item Schedule,
 	localDate time.Time,

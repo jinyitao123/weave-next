@@ -178,24 +178,6 @@ func (s *Store) scanProvider(row rowScanner) (llmrouter.ProviderConfig, error) {
 	return cfg, nil
 }
 
-func (s *Store) providerCipherForUpdate(ctx context.Context, workspaceID, id, apiKey string) (string, error) {
-	if apiKey != "" && apiKey != MaskedKey {
-		return secret.Seal(s.key, []byte(apiKey))
-	}
-	var ciphertext string
-	err := s.pool.QueryRow(ctx, `
-		SELECT api_key_cipher FROM weave_provider_credentials
-		WHERE workspace_id=$1 AND id=$2
-	`, workspaceID, id).Scan(&ciphertext)
-	if err == nil {
-		return ciphertext, nil
-	}
-	if !errors.Is(err, pgx.ErrNoRows) {
-		return "", err
-	}
-	return secret.Seal(s.key, nil)
-}
-
 func (s *Store) embedderCipherForUpdate(ctx context.Context, workspaceID, apiKey string) (string, error) {
 	if apiKey != "" && apiKey != MaskedKey {
 		return secret.Seal(s.key, []byte(apiKey))

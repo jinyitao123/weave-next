@@ -339,16 +339,6 @@ func validateAgentExecutionStamp(
 	return nil
 }
 
-// buildExecPayload frames one dispatch as an engine_exec task. Loom runs
-// in-process on the daemon: it carries the turn as Loom.Messages and holds no
-// CLI credentials — the model and MCP tools are proxied back through the server
-// (the daemon dials the LLM proxy and task-scoped gateway with its lease token),
-// so OneAPI keys, boundary tokens, and the CLI prompt/env never enter the
-// payload. CLI engines keep the historical materialized-workdir shape.
-func (e *Executor) buildExecPayload(tenant string, rec *registry.AgentRecord, prompt string, attachments []execenv.Attachment) EngineExecRequest {
-	return e.buildExecPayloadWithSchema(tenant, rec, prompt, attachments, nil)
-}
-
 func (e *Executor) buildExecPayloadWithSchema(
 	tenant string,
 	rec *registry.AgentRecord,

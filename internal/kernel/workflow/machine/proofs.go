@@ -64,18 +64,6 @@ func NewCapabilityProof(
 	}
 }
 
-func (p CapabilityProof) InteractiveStepIDs() []string {
-	return append([]string(nil), p.interactiveStepIDs...)
-}
-
-func (p CapabilityProof) InteractiveToolIDs() []string {
-	return append([]string(nil), p.interactiveToolIDs...)
-}
-
-func (p CapabilityProof) AgentStepIDs() []string {
-	return append([]string(nil), p.agentStepIDs...)
-}
-
 func (p CapabilityProof) hasInteractiveCapability() bool {
 	return p.MayYield || len(p.interactiveStepIDs) != 0 || len(p.interactiveToolIDs) != 0
 }
@@ -195,22 +183,6 @@ func (s AuthorizationSnapshot) TeamWorker(agentID string) (TeamWorkerProof, bool
 func (s AuthorizationSnapshot) Reference(key ScopedReferenceKey) (ProofState, bool) {
 	state, ok := s.references[key]
 	return state, ok
-}
-
-func (s AuthorizationSnapshot) Workers() map[string]TeamWorkerProof {
-	workers := make(map[string]TeamWorkerProof, len(s.workers))
-	for agentID, proof := range s.workers {
-		workers[agentID] = proof.clone()
-	}
-	return workers
-}
-
-func (s AuthorizationSnapshot) References() map[ScopedReferenceKey]ProofState {
-	references := make(map[ScopedReferenceKey]ProofState, len(s.references))
-	for key, state := range s.references {
-		references[key] = state
-	}
-	return references
 }
 
 type AgentProofState string
@@ -371,14 +343,6 @@ func (s DependencySnapshot) Agent(key AgentVersionKey) (DependencyProof, bool) {
 	return proof.clone(), ok
 }
 
-func (s DependencySnapshot) Agents() map[AgentVersionKey]DependencyProof {
-	copied := make(map[AgentVersionKey]DependencyProof, len(s.agents))
-	for key, proof := range s.agents {
-		copied[key] = proof.clone()
-	}
-	return copied
-}
-
 func (s DependencySnapshot) Workflow() (DependencyProof, bool) {
 	return s.workflow.clone(), s.workflowPresent
 }
@@ -449,14 +413,6 @@ func NewFactorySnapshot(factories map[FactoryKey]FactoryProof) FactorySnapshot {
 func (s FactorySnapshot) Factory(key FactoryKey) (FactoryProof, bool) {
 	proof, ok := s.factories[key]
 	return proof.clone(), ok
-}
-
-func (s FactorySnapshot) Factories() map[FactoryKey]FactoryProof {
-	copied := make(map[FactoryKey]FactoryProof, len(s.factories))
-	for key, proof := range s.factories {
-		copied[key] = proof.clone()
-	}
-	return copied
 }
 
 func cloneDependencyFailures(failures []DependencyFailure) []DependencyFailure {

@@ -15,12 +15,6 @@ import (
 // task-status tools.
 const BuiltinTaskStatusServerURL = "builtin://task-status"
 
-// IsBuiltinTaskStatusAction reports whether one action identity belongs to the
-// builtin task-status tools.
-func IsBuiltinTaskStatusAction(serverID, serverURL string) bool {
-	return serverID == "" && serverURL == BuiltinTaskStatusServerURL
-}
-
 // TaskStatusWriteTools lists declared-write task status tools rejected by the
 // write gate.
 var TaskStatusWriteTools = []string{"cancel_task", "retry_failed_leg"}

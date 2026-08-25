@@ -49,15 +49,6 @@ type Service struct {
 // Option configures a probe service.
 type Option func(*Service)
 
-// WithTimeout bounds the complete upstream handshake and tools/list request.
-func WithTimeout(timeout time.Duration) Option {
-	return func(service *Service) {
-		if timeout > 0 {
-			service.timeout = timeout
-		}
-	}
-}
-
 // New creates a strict MCP probe service.
 func New(store registryStore, opts ...Option) *Service {
 	service := &Service{store: store, timeout: defaultProbeTimeout}

@@ -34,14 +34,6 @@ func NewService(store *Store, embedder contract.Embedder) *Service {
 	return &Service{store: store, embedder: embedder, deduplicationThreshold: DefaultDeduplicationThreshold}
 }
 
-// NewServiceWithThreshold creates a Service with a custom deduplication threshold.
-func NewServiceWithThreshold(store *Store, embedder contract.Embedder, threshold float64) *Service {
-	if threshold <= 0 || threshold > 1 {
-		threshold = DefaultDeduplicationThreshold
-	}
-	return &Service{store: store, embedder: embedder, deduplicationThreshold: threshold}
-}
-
 // Embedder returns the underlying embedder for reuse by other services (e.g., semantic skill matching).
 func (ms *Service) Embedder() contract.Embedder {
 	return ms.embedder
