@@ -78,11 +78,19 @@ BANDS = {
 
 TOP_TO_BAND = {pkg: band for band, pkgs in BANDS.items() for pkg in pkgs}
 ORDER = {"base": 0, "kernel": 1, "build": 2, "app": 3}
+BASELINE_LIMITS = {
+    "base/teamrun -> kernel workflow/loomruntime baseline": 11,
+    "build teamforge/teamorch -> app/metateam baseline": 2,
+}
 
 
 def parse_imports(source: str) -> list[str]:
     imports = []
-    for match in re.finditer(r'^\s*import\s+"([^"]+)"', source, re.MULTILINE):
+    for match in re.finditer(
+        r'^\s*import\s+(?:[._A-Za-z][._A-Za-z0-9]*\s+)?"([^"]+)"',
+        source,
+        re.MULTILINE,
+    ):
         imports.append(match.group(1))
     for block in re.finditer(r"^\s*import\s*\((.*?)^\s*\)", source, re.MULTILINE | re.DOTALL):
         imports.extend(re.findall(r'"([^"]+)"', block.group(1)))
@@ -179,8 +187,13 @@ def main() -> int:
                     )
                 )
 
-    for reason, count in sorted(baselines.items()):
-        print(f"depguard baseline: {reason}: {count}")
+    for reason, limit in sorted(BASELINE_LIMITS.items()):
+        count = baselines.get(reason, 0)
+        print(f"depguard baseline: {reason}: {count}/{limit}")
+        if count > limit:
+            violations.append(
+                (pathlib.Path("tools/depguard/check_depguard.py"), reason, "baseline exceeds ratchet limit")
+            )
     if violations:
         for path, imp, reason in violations:
             print(f"{path}: imports {imp}: {reason}", file=sys.stderr)

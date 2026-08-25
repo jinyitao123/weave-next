@@ -1,0 +1,6 @@
+{
+  "base": {"lines": 17266, "packages": 12, "external_dependencies": 4},
+  "kernel": {"lines": 57388, "packages": 32, "external_dependencies": 3},
+  "build": {"lines": 31460, "packages": 6, "external_dependencies": 3},
+  "app": {"lines": 32525, "packages": 12, "external_dependencies": 6}
+}

@@ -41,6 +41,10 @@ jobs:
         run: go test ./internal/... ./cmd/...
       - name: Depguard
         run: ./scripts/depguard.sh
+      - name: Base dependency whitelist
+        run: ./scripts/base-depguard.sh
+      - name: Four-band budgets
+        run: ./scripts/budgetguard.sh
 
   compose-validate:
     runs-on: ubuntu-latest
