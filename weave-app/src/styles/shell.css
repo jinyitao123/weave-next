@@ -1,0 +1,477 @@
+/* macOS 主壳与窗口工具栏；全部覆盖规则在 app.css 之后加载。 */
+
+.sidebar {
+  background: var(--glass-bg);
+  border-right-color: var(--separator);
+  backdrop-filter: saturate(145%) blur(var(--glass-blur));
+}
+
+.shell-workspace-row {
+  min-width: 0;
+  min-height: calc(var(--space-10) + var(--space-6));
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0 var(--space-3);
+}
+
+.shell-workspace-switcher {
+  position: relative;
+  min-width: 0;
+  flex: 1;
+}
+
+.shell-workspace-switcher summary,
+.shell-workspace-menu {
+  min-width: 0;
+  min-height: var(--space-10);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-sm);
+}
+
+.shell-workspace-switcher summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.shell-workspace-switcher summary::-webkit-details-marker { display: none; }
+.shell-workspace-switcher summary:hover { background: var(--bg-tertiary); }
+.shell-workspace-switcher summary > span:nth-child(2),
+.shell-workspace-menu > span:last-child { min-width: 0; flex: 1; display: grid; }
+.shell-workspace-switcher strong,
+.shell-workspace-switcher small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.shell-workspace-switcher strong { font-size: var(--text-subhead); }
+.shell-workspace-switcher small { color: var(--label-secondary); font-size: var(--text-caption); }
+.shell-workspace-switcher[open] summary > svg { transform: rotate(180deg); }
+
+.shell-workspace-menu {
+  position: absolute;
+  z-index: 50;
+  top: calc(100% + var(--space-1));
+  left: 0;
+  right: 0;
+  padding: var(--space-2);
+  border: 1px solid var(--separator);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-menu);
+  backdrop-filter: blur(var(--glass-blur));
+}
+
+.shell-actions {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-3) var(--space-3);
+}
+.shell-actions--new-task { padding-top: 0; }
+.shell-actions.shell-actions--new-task .shell-new-conversation,
+.shell-actions.shell-actions--new-task > .ui-button { flex: 1 1 0; min-width: 0; }
+.shell-actions.shell-actions--new-task .shell-new-conversation > summary { width: 100%; justify-content: center; }
+.shell-new-team-error { margin: calc(var(--space-2) * -1) var(--space-3) var(--space-3); color: var(--danger); font-size: var(--text-caption); line-height: 1.4; }
+.shell-actions .sidebar-search { flex: 1; margin: 0; min-width: 0; }
+.shell-actions .sidebar-search input {
+  height: calc(var(--space-8) + var(--space-1));
+  padding-left: var(--space-8);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-footnote);
+}
+.shell-actions .sidebar-search > svg { left: var(--space-3); }
+.shell-actions .ui-button { flex: 0 0 auto; min-width: 0; white-space: nowrap; }
+.shell-inbox-icon {
+  flex: 0 0 auto;
+  width: 36px;
+  height: calc(var(--space-8) + var(--space-1));
+  display: inline-grid;
+  place-items: center;
+  position: relative;
+  border-radius: var(--radius-sm);
+  color: var(--label-secondary);
+  text-decoration: none;
+}
+.shell-inbox-icon:hover { color: var(--label-primary); background: var(--bg-tertiary); }
+.shell-inbox-icon .ui-badge { position: absolute; top: 2px; right: 2px; }
+
+.shell-new-conversation { position: relative; min-width: 0; }
+.shell-new-conversation summary { min-width: 0; list-style: none; }
+.shell-new-conversation summary::-webkit-details-marker { display: none; }
+.shell-new-conversation summary > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.shell-new-conversation__menu {
+  position: absolute;
+  z-index: 60;
+  top: calc(100% + var(--space-1));
+  left: 0;
+  width: max(220px, calc(var(--sidebar-width) - var(--space-6)));
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border: 1px solid var(--separator);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-menu);
+  backdrop-filter: blur(var(--glass-blur));
+}
+/* 通过 portal 渲染到 body 的版本：fixed 定位，脱离 sidebar 的层叠上下文 */
+.shell-new-conversation__menu--portal {
+  position: fixed;
+  z-index: 200;
+  max-height: min(60vh, 420px);
+  overflow-y: auto;
+}
+
+.shell-new-conversation__label {
+  padding: var(--space-2) var(--space-2) var(--space-1);
+  color: var(--label-secondary);
+  font-size: var(--text-caption);
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0;
+}
+
+.shell-new-conversation__menu button {
+  min-width: 0;
+  min-height: var(--space-10);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--label-primary);
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  font-size: var(--text-subhead);
+}
+
+.shell-new-conversation__menu button:hover:not(:disabled) { background: var(--bg-tertiary); }
+.shell-new-conversation__menu button:disabled { opacity: 0.5; cursor: default; }
+.shell-new-conversation__menu button > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.shell-new-conversation__menu button > small { min-width: 0; margin-left: auto; overflow: hidden; color: var(--label-tertiary); font-size: var(--text-caption); text-overflow: ellipsis; white-space: nowrap; }
+.shell-new-conversation__empty { padding: var(--space-2); color: var(--label-tertiary); font-size: var(--text-footnote); }
+
+.shell-team-toggle .ui-badge { flex: 0 0 auto; margin-left: auto; }
+
+.primary-nav { gap: var(--space-1); padding-bottom: var(--space-5); }
+.primary-nav a { min-height: calc(var(--space-10) - var(--space-1)); gap: var(--space-3); border-radius: var(--radius-sm); font-size: var(--text-callout); }
+.primary-nav a .ui-badge { margin-left: auto; }
+
+.shell-tree { min-height: 0; flex: 1; display: grid; align-content: start; gap: var(--space-4); overflow-y: auto; padding-bottom: var(--space-5); }
+
+.shell-build-history,
+.shell-projects { padding: 0 var(--space-3); }
+.shell-build-history__head,
+.shell-projects__head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
+.shell-build-history__head h2,
+.shell-projects__head h2 { margin: 0; }
+
+.shell-build-history h2,
+.shell-projects h2 {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  color: var(--label-secondary);
+  font-size: var(--text-caption);
+  font-weight: 650;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+.shell-build-history__head button {
+  min-height: var(--space-8);
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--label-tertiary);
+  background: transparent;
+  font: inherit;
+  font-size: var(--text-caption);
+  cursor: pointer;
+}
+.shell-build-history__head button:hover { color: var(--label-primary); background: var(--bg-tertiary); }
+.shell-build-history nav { display: grid; gap: var(--space-1); }
+.shell-build-history a {
+  min-width: 0;
+  min-height: calc(var(--space-10) - var(--space-1));
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-sm);
+  color: var(--label-secondary);
+  text-decoration: none;
+  font-size: var(--text-subhead);
+}
+.shell-build-history a:hover { color: var(--label-primary); background: var(--bg-tertiary); }
+.shell-build-history a[aria-current] { color: var(--label-primary); background: color-mix(in srgb, var(--label-primary), transparent 92%); }
+.shell-build-history a > svg,
+.shell-build-history a > .ui-badge { flex: 0 0 auto; }
+.shell-build-history a > span:not(.ui-badge) { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.shell-build-history a > .ui-badge { padding: 1px var(--space-2); font-size: var(--text-caption); }
+
+/* 团队筛选：与「新任务」同款弹出菜单 */
+.shell-team-filter { position: relative; }
+.shell-team-filter > summary {
+  min-height: var(--space-8);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-sm);
+  color: var(--label-secondary);
+  font-size: var(--text-caption);
+  cursor: pointer;
+  list-style: none;
+  white-space: nowrap;
+}
+.shell-team-filter > summary::-webkit-details-marker { display: none; }
+.shell-team-filter > summary:hover { color: var(--label-primary); background: var(--bg-tertiary); }
+.shell-team-filter__menu {
+  position: absolute;
+  z-index: 60;
+  top: calc(100% + var(--space-1));
+  right: 0;
+  min-width: 160px;
+  max-height: 240px;
+  overflow-y: auto;
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border: 1px solid var(--separator);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-menu);
+  backdrop-filter: blur(var(--glass-blur));
+}
+.shell-team-filter__menu button {
+  min-width: 0;
+  min-height: var(--space-8);
+  display: flex;
+  align-items: center;
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--label-primary);
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  font-size: var(--text-subhead);
+  white-space: nowrap;
+}
+.shell-team-filter__menu button:hover { background: var(--bg-tertiary); }
+.shell-team-filter__menu button[aria-current] { color: var(--label-primary); background: color-mix(in srgb, var(--label-primary), transparent 92%); }
+
+/* 团队标签：胶囊 */
+.shell-project-team {
+  margin-left: auto;
+  max-width: 110px;
+  flex: 0 1 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 1px var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--bg-tertiary);
+  color: var(--label-tertiary);
+  font-size: var(--text-caption);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.shell-project-team .ui-badge { flex: 0 0 auto; }
+.shell-projects nav,
+.shell-project-group,
+.shell-team-group,
+.shell-team-projects { display: grid; gap: var(--space-1); }
+.shell-project-group,
+.shell-team-group { min-width: 0; }
+.shell-team-header { min-width: 0; display: flex; align-items: center; gap: var(--space-1); }
+.shell-team-toggle {
+  min-width: 0;
+  min-height: calc(var(--space-10) - var(--space-1));
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--label-primary);
+  font: inherit;
+  font-size: var(--text-subhead);
+  font-weight: 650;
+  text-align: left;
+  cursor: pointer;
+}
+.shell-team-toggle:hover { background: var(--bg-tertiary); }
+.shell-team-toggle span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.shell-team-manage { min-width: var(--space-8) !important; width: var(--space-8); min-height: var(--space-8) !important; justify-content: center; padding: 0 !important; opacity: 0; }
+.shell-team-header:hover .shell-team-manage,
+.shell-team-manage:focus-visible { opacity: 1; }
+.shell-team-projects { margin-left: var(--space-3); }
+.shell-team-projects:empty::after { content: "暂无项目"; padding: var(--space-1) var(--space-3); color: var(--label-tertiary); font-size: var(--text-caption); }
+.shell-projects a {
+  min-width: 0;
+  min-height: calc(var(--space-10) - var(--space-1));
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-sm);
+  color: var(--label-secondary);
+  text-decoration: none;
+  font-size: var(--text-subhead);
+}
+.shell-projects a:hover { color: var(--label-primary); background: var(--bg-tertiary); }
+.shell-projects a[aria-current] { color: var(--label-primary); background: color-mix(in srgb, var(--label-primary), transparent 92%); }
+.shell-projects a > svg { flex: 0 0 auto; }
+.shell-projects a span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.shell-project-conversation-row { min-width: 0; display: flex; align-items: center; margin-left: var(--space-4); }
+.shell-project-conversation-row .shell-project-conversation { flex: 1; margin-left: 0; }
+/* 项目行内 hover 出现的「新建会话」悬浮图标（绝对定位，不参与 flex 布局） */
+.shell-project-group > a { position: relative; }
+.shell-project-group > a > .shell-project-new {
+  position: absolute;
+  right: var(--space-2);
+  top: 50%;
+  translate: 0 -50%;
+  width: 15px;
+  height: 15px;
+  padding: 0;
+  display: inline-grid;
+  place-items: center;
+  border-radius: var(--radius-sm);
+  color: inherit;
+  background: transparent;
+  opacity: 0;
+}
+.shell-project-group > a:hover > .shell-project-new,
+.shell-project-group > a:focus-visible > .shell-project-new,
+.shell-project-group > a > .shell-project-new:focus-visible { opacity: 1; }
+.shell-project-group > a > .shell-project-new:hover { color: var(--label-primary); }
+
+.shell-projects > p { margin: 0; padding: var(--space-2) var(--space-3); color: var(--label-secondary); font-size: var(--text-subhead); }
+
+.sidebar__footer { padding: var(--space-2); }
+.sidebar__footer .connection-state { padding-inline: var(--space-1); }
+.shell-account-row { min-width: 0; display: flex; align-items: center; gap: var(--space-1); }
+.shell-account-row .account-menu { min-width: 0; flex: 1; }
+.shell-account-row .account-menu summary { min-height: var(--space-10); border-radius: var(--radius-sm); }
+.shell-account-row .account-menu__popover { min-width: calc(var(--space-10) * 5); }
+.shell-account-row .account-menu__popover button { width: 100%; }
+
+.mobile-drawer { background: var(--glass-bg); backdrop-filter: blur(var(--glass-blur)); }
+
+.shell-toolbar {
+  min-width: 0;
+  min-height: calc(var(--space-10) + var(--space-1));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding-inline: var(--space-6);
+  border-bottom: 1px solid var(--separator);
+  background: color-mix(in srgb, var(--bg-elevated), transparent 14%);
+  backdrop-filter: blur(var(--glass-blur));
+}
+
+.shell-toolbar__title { flex: 0 0 auto; font-size: var(--text-subhead); font-weight: 600; letter-spacing: 0; }
+.shell-toolbar__actions { min-width: 0; display: flex; align-items: center; justify-content: flex-end; gap: var(--space-2); }
+
+/* 收起态下顶栏左侧紧凑：展开按钮 + 标题靠左，右侧动作靠右 */
+.app-shell--collapsed .shell-toolbar { gap: var(--space-2); }
+.app-shell--collapsed .shell-toolbar__title { margin-right: auto; }
+.app-shell--collapsed .page > .shell-toolbar { padding-inline: var(--space-2); }
+
+.page.inbox-page,
+.page.page--catalog,
+.page.activity-page,
+.page.scheduled-page { padding-top: 0; }
+.page.inbox-page {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+.page.inbox-page > .empty-surface { flex: 1; }
+.page.inbox-page > .shell-toolbar {
+  margin: 0;
+  padding-inline: var(--space-6);
+  position: sticky;
+  top: 0;
+  flex: 0 0 auto;
+  background: var(--bg-elevated);
+  backdrop-filter: blur(var(--glass-blur));
+}
+
+.page > .shell-toolbar {
+  margin: 0 calc(-1 * var(--space-10)) var(--space-8);
+  padding-inline: var(--space-10);
+}
+
+.timeline-pane { grid-template-rows: minmax(0, 1fr) auto; }
+.timeline-toolbar.shell-toolbar { min-height: calc(var(--space-10) + var(--space-1)); padding-inline: var(--space-6); }
+.timeline-toolbar .shell-toolbar__title { margin-right: var(--space-2); }
+.timeline-pane--hero .timeline { display: flex; align-items: center; justify-content: center; overflow: visible; padding-bottom: 12vh; }
+.conversation-hero { display: grid; justify-items: center; gap: var(--space-3); color: var(--label-tertiary); text-align: center; }
+.conversation-hero h1 { margin: 0; color: var(--label-primary); font-size: var(--text-title1); font-weight: 650; letter-spacing: 0; }
+.conversation-hero p { margin: 0; color: var(--label-secondary); font-size: var(--text-callout); }
+.conversation-hero .ui-button { margin-top: var(--space-2); }
+.conversation-team-picker { width: min(100%, calc(var(--space-10) * 9)); display: grid; gap: var(--space-2); margin-top: var(--space-2); }
+.conversation-team-picker .ui-button { justify-content: flex-start; margin-top: 0; text-align: left; }
+.conversation-team-picker .ui-button small { min-width: 0; margin-left: auto; overflow: hidden; color: var(--label-tertiary); font-size: var(--text-caption); text-overflow: ellipsis; white-space: nowrap; }
+
+@media (min-width: 736px) {
+  .app-shell > .sidebar { padding-top: var(--space-2); }
+  .app-shell > .sidebar .shell-workspace-row { min-height: calc(var(--space-10) + var(--space-4)); }
+  .settings-layout > .settings-sidebar { padding-top: calc(var(--space-6) + var(--space-1)); }
+  .app-shell > .sidebar,
+  .settings-layout > .settings-sidebar,
+  .shell-toolbar { border-color: var(--separator); }
+}
+
+@media (max-width: 1080px) {
+  .page > .shell-toolbar { margin-inline: calc(-1 * var(--space-6)); padding-inline: var(--space-6); }
+}
+
+@media (max-width: 736px) {
+  .shell-workspace-row { padding-right: calc(var(--space-10) + var(--space-3)); }
+  .shell-workspace-row .sidebar-collapse { display: none; }
+  .shell-tree a, .primary-nav a { min-height: calc(var(--space-10) + var(--space-1)); }
+  .page > .shell-toolbar { margin: 0 calc(-1 * var(--space-4)) var(--space-6); padding-inline: var(--space-4); }
+  .shell-toolbar__actions .ui-button { min-width: calc(var(--space-10) + var(--space-1)); }
+  .shell-toolbar__actions .ui-button span { display: none; }
+  .timeline-toolbar.shell-toolbar { top: calc(var(--space-10) + var(--space-4)); padding-inline: var(--space-4); }
+  .timeline-toolbar__context span { display: none; }
+  .timeline-pane { grid-template-rows: calc(var(--space-10) + var(--space-1)) minmax(calc(var(--space-10) * 8), 1fr) auto; }
+  .timeline-pane--hero .timeline { padding-bottom: var(--space-6); }
+}
+
+.shell-workspace-identity {
+  min-width: 0;
+  min-height: var(--space-10);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-2);
+}
+
+.shell-workspace-identity > span:last-child { min-width: 0; flex: 1; display: grid; }
+
+.shell-project-conversation-row .shell-project-conversation { min-width: 0; }
+
+.shell-conversation-rename {
+  flex: none;
+  opacity: 0;
+}
+
+.shell-project-conversation-row:hover .shell-conversation-rename,
+.shell-conversation-rename:focus-visible {
+  opacity: 1;
+}

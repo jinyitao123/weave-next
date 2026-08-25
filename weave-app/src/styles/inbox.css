@@ -1,0 +1,135 @@
+.inbox-page .page-header h1 { font-size: var(--text-title1); letter-spacing: 0; }
+
+/* 让首屏舞台在内容区内纵向铺满 */
+.inbox-page { min-height: 100%; display: flex; flex-direction: column; }
+.inbox-page > .empty-surface.inbox-start { flex: 1; }
+.inbox-stream { display: grid; gap: var(--space-3); }
+.inbox-refresh { color: var(--label-secondary); }
+.inbox-refresh:hover { color: var(--label-primary); background: var(--bg-tertiary); }
+
+.unread-item .ui-card__body { min-height: calc(var(--space-10) * 2); display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: var(--space-3); }
+.unread-item h2 { margin: var(--space-1) 0; font-size: var(--text-callout); letter-spacing: 0; }
+.unread-item h2 a { color: inherit; text-decoration: none; }
+.unread-item h2 a:hover { text-decoration: underline; text-underline-offset: var(--space-1); }
+.unread-item p, .unread-item time { margin: 0; color: var(--label-secondary); font-size: var(--text-footnote); }
+.unread-item .item-kicker { color: var(--accent-text); font-size: var(--text-caption); font-weight: 700; letter-spacing: 0; }
+
+@media (max-width: 736px) {
+  .inbox-page .page-header .ui-button, .unread-item a { min-height: 44px; }
+  .inbox-page .page-header .ui-button { width: 100%; }
+  .unread-item .ui-card__body { grid-template-columns: auto minmax(0, 1fr); }
+  .unread-item time { grid-column: 2; }
+  .unread-item h2 a { display: inline-flex; align-items: center; }
+}
+
+.inbox-start__actions {
+  display: grid;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+  min-width: 320px;
+}
+
+/* 舞台时刻（设计语言 §1A）：首屏派活面板是用户初见产品的舞台，
+   用艺术底 + 磨砂玻璃卡片；工作台区域保持中性，不使用这套材质。 */
+.inbox-start {
+  position: relative;
+  flex: 1;
+  min-height: 420px;
+  margin: var(--space-5);
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+  isolation: isolate;
+  background:
+    radial-gradient(120% 90% at 18% 8%, var(--stage-halo-1) 0%, transparent 55%),
+    radial-gradient(100% 80% at 86% 18%, var(--stage-halo-2) 0%, transparent 52%),
+    radial-gradient(130% 110% at 50% 108%, var(--stage-halo-3) 0%, transparent 62%),
+    linear-gradient(158deg, var(--stage-base-1) 0%, var(--stage-base-2) 56%, var(--stage-base-3) 100%);
+}
+
+.empty-surface.inbox-start > svg {
+  color: var(--stage-text);
+}
+
+.empty-surface.inbox-start h2 {
+  color: var(--stage-text);
+  font-size: var(--text-title2);
+}
+
+.empty-surface.inbox-start p {
+  color: var(--stage-text-secondary);
+}
+
+.inbox-start__team {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--stage-glass-border);
+  border-radius: var(--radius-lg);
+  background: var(--stage-glass);
+  backdrop-filter: blur(var(--stage-blur)) saturate(1.4);
+  -webkit-backdrop-filter: blur(var(--stage-blur)) saturate(1.4);
+  cursor: pointer;
+  text-align: left;
+  color: var(--stage-text);
+  transition: background var(--motion-fast) ease;
+}
+
+.inbox-start__team:hover {
+  background: var(--stage-glass-hover);
+}
+
+.inbox-start__team > span:nth-child(2) {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+}
+
+.inbox-start__team small {
+  color: var(--stage-text-secondary);
+}
+
+.inbox-start__go {
+  color: var(--stage-text);
+  font-size: var(--text-footnote);
+}
+
+.inbox-start__builder {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  color: var(--stage-text);
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: var(--text-subhead);
+}
+
+.inbox-start__builder:disabled,
+.inbox-start__team:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* 降透明/降动态偏好：舞台退回中性底，卡片退回普通表面 */
+@media (prefers-reduced-transparency: reduce) {
+  .inbox-start {
+    background: var(--bg-secondary);
+  }
+
+  .empty-surface.inbox-start h2 { color: var(--label-primary); }
+  .inbox-start p, .empty-surface.inbox-start > svg { color: var(--label-secondary); }
+
+  .inbox-start__team {
+    background: var(--bg-primary);
+    border-color: var(--separator);
+    color: var(--label-primary);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  .inbox-start__team small { color: var(--label-secondary); }
+  .inbox-start__go, .inbox-start__builder { color: var(--accent-text); }
+}
