@@ -1,0 +1,54 @@
+package api
+
+import (
+	"errors"
+	"net/http"
+
+	"github.com/jinyitao123/weave/internal/app/chatrequest"
+	"github.com/labstack/echo/v4"
+)
+
+func (s *Server) handleGetChatRequest(c echo.Context) error {
+	if s.ChatRequests == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "chat request status is unavailable"})
+	}
+	record, err := s.ChatRequests.Get(
+		c.Request().Context(), getTenant(c), getUserID(c), c.Param("id"),
+	)
+	if err == nil {
+		record, err = s.ChatRequests.AttachWorkflowProgress(c.Request().Context(), record)
+	}
+	return respondChatRequestStatus(c, record, err)
+}
+
+func (s *Server) handleGetConversationChatRequest(c echo.Context) error {
+	if s.ChatRequests == nil || s.Conversations == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "chat request status is unavailable"})
+	}
+	conversationID := c.Param("id")
+	conversation, err := s.Conversations.GetConversation(c.Request().Context(), getTenant(c), conversationID)
+	if err != nil {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "conversation_not_found"})
+	}
+	if conversation.UserID != getUserID(c) {
+		return c.JSON(http.StatusForbidden, map[string]string{"error": "conversation_read_only"})
+	}
+	record, err := s.ChatRequests.GetLatestForConversation(
+		c.Request().Context(), getTenant(c), getUserID(c), conversationID,
+	)
+	if err == nil {
+		record, err = s.ChatRequests.AttachWorkflowProgress(c.Request().Context(), record)
+	}
+	return respondChatRequestStatus(c, record, err)
+}
+
+func respondChatRequestStatus(c echo.Context, record chatrequest.Request, err error) error {
+	switch {
+	case errors.Is(err, chatrequest.ErrNotFound):
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "chat_request_not_found"})
+	case err != nil:
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	default:
+		return c.JSON(http.StatusOK, record)
+	}
+}

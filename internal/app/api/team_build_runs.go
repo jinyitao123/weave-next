@@ -1,0 +1,446 @@
+package api
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
+	"regexp"
+	"strings"
+
+	"github.com/google/uuid"
+	"github.com/jinyitao123/weave/internal/base/snapshot"
+	"github.com/jinyitao123/weave/internal/base/taskqueue"
+	"github.com/jinyitao123/weave/internal/build/teambuild"
+	"github.com/jinyitao123/weave/internal/kernel/workflow"
+	"github.com/labstack/echo/v4"
+)
+
+var teamBuildCandidateHashPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
+
+var (
+	errTeamBuildStoreUnavailable  = errors.New("team build store unavailable")
+	errBuildRunNotActionable      = errors.New("build run is not actionable")
+	errBuildRunWorkflowOutOfScope = errors.New("build run workflow is out of asset scope")
+)
+
+type candidateTestRunRequest struct {
+	BuildRunID  string          `json:"build_run_id"`
+	WorkflowID  string          `json:"workflow_id"`
+	ContentHash string          `json:"content_hash"`
+	Input       json.RawMessage `json:"input"`
+}
+
+type candidateTestRunResponse struct {
+	RunID           string `json:"run_id"`
+	WorkflowID      string `json:"workflow_id"`
+	WorkflowVersion int    `json:"workflow_version"`
+	TaskID          string `json:"task_id"`
+	BuildRunID      string `json:"build_run_id"`
+	ContentHash     string `json:"content_hash"`
+}
+
+type candidatePublishRequest struct {
+	BuildRunID  string `json:"build_run_id"`
+	WorkflowID  string `json:"workflow_id"`
+	ContentHash string `json:"content_hash"`
+}
+
+type candidatePublishResponse struct {
+	WorkflowID      string `json:"workflow_id"`
+	WorkflowVersion int    `json:"workflow_version"`
+	ContentHash     string `json:"content_hash"`
+	BuildRunID      string `json:"build_run_id"`
+	BuildRunStatus  string `json:"build_run_status"`
+}
+
+// handleCandidateTestRun starts one admin test run of a frozen candidate:
+// the run snapshot records the build_run_id and content_hash, and the task
+// queue carries the "api" source so the teamrun consumer and executor can
+// resolve the candidate envelope instead of the published artifact.
+func (s *Server) handleCandidateTestRun(c echo.Context) error {
+	if s.Workflow == nil || s.TeamBuild == nil ||
+		s.ScheduleTransactions == nil || s.Snapshots == nil || s.Tasks == nil {
+		return workflowError(
+			c,
+			http.StatusServiceUnavailable,
+			"candidate_run_unavailable",
+			"candidate test run service unavailable",
+		)
+	}
+	var request candidateTestRunRequest
+	if err := decodeWorkflowBody(c, &request); err != nil {
+		return workflowSchemaError(c)
+	}
+	if err := validateCandidateTestRunRequest(request); err != nil {
+		return workflowSchemaError(c)
+	}
+	workspaceID := getTenant(c)
+	ctx := c.Request().Context()
+
+	if _, err := s.authorizeTeamBuildRunWorkflow(
+		ctx, workspaceID, request.BuildRunID, request.WorkflowID, false,
+	); err != nil {
+		return mapTeamBuildRunAuthorizationError(c, err)
+	}
+
+	payload := json.RawMessage(`{}`)
+	if request.Input != nil {
+		if !json.Valid(request.Input) {
+			return workflowSchemaError(c)
+		}
+		payload = append(json.RawMessage(nil), request.Input...)
+	}
+
+	tx, err := s.ScheduleTransactions.Begin(ctx)
+	if err != nil {
+		return workflowStoreFailure(c, fmt.Errorf("begin candidate test run: %w", err))
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	admitted, err := s.Workflow.AdmitWorkflowCandidateRunTx(
+		ctx,
+		tx,
+		workflow.WorkflowCandidateRunAdmissionRequest{
+			WorkspaceID: workspaceID,
+			WorkflowID:  request.WorkflowID,
+			BuildRunID:  request.BuildRunID,
+			ContentHash: request.ContentHash,
+			SourceRef:   request.BuildRunID,
+			TriggerType: "api",
+		},
+	)
+	if err != nil {
+		return s.respondCandidateRunAdmissionError(c, tx, request.WorkflowID, err)
+	}
+	if err := validateCandidateRunSnapshot(
+		admitted, workspaceID, request.WorkflowID,
+		request.BuildRunID, request.ContentHash,
+	); err != nil {
+		return workflowStoreFailure(c, err)
+	}
+	createdSnapshot, err := s.Snapshots.CreateTx(ctx, tx, admitted)
+	if err != nil {
+		return workflowStoreFailure(c, fmt.Errorf("create candidate test run snapshot: %w", err))
+	}
+	task := &taskqueue.Task{
+		ID:                    "task-" + uuid.NewString(),
+		WorkspaceID:           createdSnapshot.WorkspaceID,
+		IdentityKind:          taskqueue.IdentityTeamWorkflow,
+		IdentitySchemaVersion: 2,
+		WorkflowID:            createdSnapshot.WorkflowID,
+		WorkflowVersion:       createdSnapshot.WorkflowVersion,
+		RunSnapshotID:         createdSnapshot.RunID,
+		Source:                "api",
+		Kind:                  "team_workflow",
+		Payload:               payload,
+	}
+	if err := s.Tasks.EnqueueTx(ctx, tx, task); err != nil {
+		return workflowStoreFailure(c, fmt.Errorf("enqueue candidate test run task: %w", err))
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return workflowStoreFailure(c, fmt.Errorf("commit candidate test run: %w", err))
+	}
+	return c.JSON(http.StatusCreated, candidateTestRunResponse{
+		RunID:           createdSnapshot.RunID,
+		WorkflowID:      createdSnapshot.WorkflowID,
+		WorkflowVersion: createdSnapshot.WorkflowVersion,
+		TaskID:          task.ID,
+		BuildRunID:      request.BuildRunID,
+		ContentHash:     request.ContentHash,
+	})
+}
+
+// handleCandidatePublish releases the exact frozen candidate the admin test
+// run consumed: read candidate by content hash, verify the hash, rebuild and
+// insert the publication (with the updated_at CAS), then mark the TeamBuildRun
+// publishing -> passed with the final publication reference.
+func (s *Server) handleCandidatePublish(c echo.Context) error {
+	if s.Workflow == nil || s.TeamBuild == nil || s.ScheduleTransactions == nil {
+		return workflowError(
+			c,
+			http.StatusServiceUnavailable,
+			"candidate_publish_unavailable",
+			"candidate publish service unavailable",
+		)
+	}
+	var request candidatePublishRequest
+	if err := decodeWorkflowBody(c, &request); err != nil {
+		return workflowSchemaError(c)
+	}
+	if err := validateCandidatePublishRequest(request); err != nil {
+		return workflowSchemaError(c)
+	}
+	workspaceID := getTenant(c)
+	ctx := c.Request().Context()
+
+	if _, err := s.authorizeTeamBuildRunWorkflow(
+		ctx, workspaceID, request.BuildRunID, request.WorkflowID, true,
+	); err != nil {
+		return mapTeamBuildRunAuthorizationError(c, err)
+	}
+
+	tx, err := s.ScheduleTransactions.Begin(ctx)
+	if err != nil {
+		return workflowStoreFailure(c, fmt.Errorf("begin candidate publish: %w", err))
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	candidate, err := s.Workflow.GetCandidateTx(
+		ctx, tx, workspaceID, request.WorkflowID, request.ContentHash,
+	)
+	if err != nil {
+		return mapCandidatePublishError(c, err)
+	}
+	if candidate.ContentHash != request.ContentHash {
+		return workflowError(
+			c,
+			http.StatusConflict,
+			"candidate_hash_mismatch",
+			"candidate content hash does not match request",
+		)
+	}
+	publication, err := workflow.PublicationFromCandidate(candidate)
+	if err != nil {
+		var coded interface{ Code() string }
+		if errors.As(err, &coded) && coded.Code() != "" {
+			return workflowError(c, http.StatusUnprocessableEntity, coded.Code(), coded.Code())
+		}
+		return workflowStoreFailure(c, err)
+	}
+	if err := s.Workflow.InsertPublicationTx(ctx, tx, publication); err != nil {
+		return mapWorkflowPublishError(c, err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return workflowStoreFailure(c, fmt.Errorf("commit candidate publish: %w", err))
+	}
+	finalRef := teambuild.FinalRef{
+		Ref: fmt.Sprintf(
+			"workflow:%s:%s:v%d",
+			workspaceID, publication.WorkflowID, publication.WorkflowVersion,
+		),
+	}
+	updated, err := s.TeamBuild.MarkPublished(
+		ctx, workspaceID, request.BuildRunID, getUserID(c), finalRef,
+	)
+	if err != nil {
+		return workflowError(
+			c,
+			http.StatusConflict,
+			"build_run_publish_finalize_failed",
+			"build run could not be finalized as passed",
+		)
+	}
+	return c.JSON(http.StatusOK, candidatePublishResponse{
+		WorkflowID:      publication.WorkflowID,
+		WorkflowVersion: publication.WorkflowVersion,
+		ContentHash:     publication.Artifact.ContentHash,
+		BuildRunID:      request.BuildRunID,
+		BuildRunStatus:  updated.Status,
+	})
+}
+
+// authorizeTeamBuildRunWorkflow is the API-layer TeamBuildRun gate modeled on
+// the writegate receipt check: the run must be live and the workflow must sit
+// inside the frozen asset scope. The publish entry additionally requires the
+// run to already be in the publishing state, because MarkPublished finalizes
+// exactly that transition.
+func (s *Server) authorizeTeamBuildRunWorkflow(
+	ctx context.Context,
+	workspaceID, buildRunID, workflowID string,
+	requirePublishing bool,
+) (teambuild.TeamBuildRun, error) {
+	if s.TeamBuild == nil {
+		return teambuild.TeamBuildRun{}, errTeamBuildStoreUnavailable
+	}
+	run, err := s.TeamBuild.GetBuildRun(ctx, workspaceID, buildRunID)
+	if err != nil {
+		return teambuild.TeamBuildRun{}, err
+	}
+	if requirePublishing {
+		if run.Status != teambuild.StatusPublishing {
+			return teambuild.TeamBuildRun{}, errBuildRunNotActionable
+		}
+	} else {
+		switch run.Status {
+		case teambuild.StatusAuthorized,
+			teambuild.StatusRoundRunning,
+			teambuild.StatusPublishing:
+		default:
+			return teambuild.TeamBuildRun{}, errBuildRunNotActionable
+		}
+	}
+	if !run.AssetScope.Contains(teambuild.AssetRef{Kind: "workflow", ID: workflowID}) {
+		return teambuild.TeamBuildRun{}, errBuildRunWorkflowOutOfScope
+	}
+	return run, nil
+}
+
+func validateCandidateTestRunRequest(request candidateTestRunRequest) error {
+	for name, value := range map[string]string{
+		"build_run_id": request.BuildRunID,
+		"workflow_id":  request.WorkflowID,
+		"content_hash": request.ContentHash,
+	} {
+		if value == "" || value != strings.TrimSpace(value) {
+			return errors.New(name + " is required")
+		}
+	}
+	if !teamBuildCandidateHashPattern.MatchString(request.ContentHash) {
+		return errors.New("content_hash is invalid")
+	}
+	if request.Input != nil && !json.Valid(request.Input) {
+		return errors.New("input is invalid")
+	}
+	return nil
+}
+
+func validateCandidatePublishRequest(request candidatePublishRequest) error {
+	for name, value := range map[string]string{
+		"build_run_id": request.BuildRunID,
+		"workflow_id":  request.WorkflowID,
+		"content_hash": request.ContentHash,
+	} {
+		if value == "" || value != strings.TrimSpace(value) {
+			return errors.New(name + " is required")
+		}
+	}
+	if !teamBuildCandidateHashPattern.MatchString(request.ContentHash) {
+		return errors.New("content_hash is invalid")
+	}
+	return nil
+}
+
+func validateCandidateRunSnapshot(
+	admitted snapshot.TeamRunSnapshot,
+	workspaceID, workflowID, buildRunID, contentHash string,
+) error {
+	if admitted.RunID == "" ||
+		admitted.WorkspaceID != workspaceID ||
+		admitted.TeamID == "" ||
+		admitted.SnapshotSchemaVersion != 2 ||
+		admitted.Mode != "fixed_workflow" ||
+		admitted.WorkflowID != workflowID ||
+		admitted.WorkflowVersion < 1 ||
+		admitted.ArtifactWorkflowID != workflowID ||
+		admitted.ArtifactWorkflowVersion != admitted.WorkflowVersion ||
+		admitted.BuildRunID != buildRunID ||
+		admitted.CandidateContentHash != contentHash {
+		return errors.New("candidate admission returned a mismatched fixed workflow identity")
+	}
+	var trigger struct {
+		SchemaVersion int    `json:"schema_version"`
+		Type          string `json:"type"`
+		SourceRef     string `json:"source_ref"`
+	}
+	if err := decodeExactJSON(admitted.TriggerSourceV2, &trigger); err != nil {
+		return fmt.Errorf("decode candidate trigger source: %w", err)
+	}
+	if trigger.SchemaVersion != 1 || trigger.Type != "api" ||
+		trigger.SourceRef != buildRunID {
+		return errors.New("candidate admission returned a mismatched trigger")
+	}
+	return nil
+}
+
+func (s *Server) respondCandidateRunAdmissionError(
+	c echo.Context,
+	tx interface {
+		Rollback(context.Context) error
+	},
+	workflowID string,
+	err error,
+) error {
+	ctx := c.Request().Context()
+	var denial *workflow.FixedWorkflowAdmissionDenial
+	if errors.As(err, &denial) {
+		if rollbackErr := tx.Rollback(ctx); rollbackErr != nil {
+			return workflowStoreFailure(c, errors.Join(err, rollbackErr))
+		}
+		record, auditErr := s.Workflow.RecordFixedWorkflowAdmissionDenial(
+			context.WithoutCancel(ctx),
+			workflow.FixedWorkflowAdmissionDenialAttempt{
+				WorkspaceID:         getTenant(c),
+				WorkflowID:          workflowID,
+				WorkflowVersion:     denial.WorkflowVersion,
+				TriggerType:         "api",
+				AdmissionAttemptKey: uuid.NewString(),
+				ReasonCode:          denial.ReasonCode,
+			},
+		)
+		if auditErr != nil {
+			return workflowStoreFailure(c, errors.Join(err, auditErr))
+		}
+		return workflowError(
+			c,
+			http.StatusConflict,
+			string(record.ReasonCode),
+			"candidate run admission denied",
+		)
+	}
+
+	switch {
+	case errors.Is(err, workflow.ErrCandidateNotFound):
+		return workflowError(c, http.StatusNotFound, "candidate_not_found", "candidate not found")
+	case errors.Is(err, workflow.ErrNotFound):
+		return workflowError(c, http.StatusNotFound, "workflow_not_found", "workflow not found")
+	case errors.Is(err, workflow.ErrArchived):
+		return workflowError(c, http.StatusConflict, "workflow_archived", "workflow archived")
+	case errors.Is(err, workflow.ErrWorkflowScheduleAdmissionDenied):
+		return workflowError(
+			c,
+			http.StatusUnprocessableEntity,
+			"workflow_not_runnable",
+			"workflow is not runnable",
+		)
+	default:
+		return workflowStoreFailure(c, err)
+	}
+}
+
+func mapTeamBuildRunAuthorizationError(c echo.Context, err error) error {
+	switch {
+	case errors.Is(err, teambuild.ErrBuildRunNotFound):
+		return workflowError(c, http.StatusNotFound, "build_run_not_found", "build run not found")
+	case errors.Is(err, errBuildRunNotActionable):
+		return workflowError(
+			c,
+			http.StatusConflict,
+			"build_run_not_actionable",
+			"build run is not actionable",
+		)
+	case errors.Is(err, errBuildRunWorkflowOutOfScope):
+		return workflowError(
+			c,
+			http.StatusForbidden,
+			"build_run_workflow_out_of_scope",
+			"workflow is outside the build run asset scope",
+		)
+	case errors.Is(err, errTeamBuildStoreUnavailable):
+		return workflowError(
+			c,
+			http.StatusServiceUnavailable,
+			"team_build_unavailable",
+			"team build store unavailable",
+		)
+	default:
+		return workflowStoreFailure(c, err)
+	}
+}
+
+func mapCandidatePublishError(c echo.Context, err error) error {
+	switch {
+	case errors.Is(err, workflow.ErrCandidateNotFound):
+		return workflowError(c, http.StatusNotFound, "candidate_not_found", "candidate not found")
+	case errors.Is(err, workflow.ErrCandidateInvalid):
+		return workflowError(
+			c,
+			http.StatusUnprocessableEntity,
+			"candidate_invalid",
+			"candidate is invalid",
+		)
+	default:
+		return workflowStoreFailure(c, err)
+	}
+}
