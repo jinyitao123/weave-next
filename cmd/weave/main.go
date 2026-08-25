@@ -14,34 +14,35 @@ import (
 	"github.com/jinyitao123/weave/internal/app/api"
 	"github.com/jinyitao123/weave/internal/app/apikeys"
 	"github.com/jinyitao123/weave/internal/app/attachments"
-	"github.com/jinyitao123/weave/internal/kernel/audit"
-	"github.com/jinyitao123/weave/internal/kernel/compiler"
-	"github.com/jinyitao123/weave/internal/kernel/config"
 	"github.com/jinyitao123/weave/internal/app/conversation"
-	"github.com/jinyitao123/weave/internal/kernel/credentials"
 	"github.com/jinyitao123/weave/internal/app/daemon"
-	"github.com/jinyitao123/weave/internal/base/db"
-	"github.com/jinyitao123/weave/internal/kernel/declarative"
-	"github.com/jinyitao123/weave/internal/kernel/declarative/designprompt"
-	"github.com/jinyitao123/weave/internal/base/deliverable"
-	"github.com/jinyitao123/weave/internal/kernel/delivery"
-	"github.com/jinyitao123/weave/internal/base/fanout"
-	"github.com/jinyitao123/weave/internal/kernel/llmrouter"
-	"github.com/jinyitao123/weave/internal/kernel/mcpregistry"
-	"github.com/jinyitao123/weave/internal/kernel/memory"
 	"github.com/jinyitao123/weave/internal/app/metateam"
-	"github.com/jinyitao123/weave/internal/kernel/org"
 	"github.com/jinyitao123/weave/internal/app/projects"
-	"github.com/jinyitao123/weave/internal/base/realtime"
-	"github.com/jinyitao123/weave/internal/kernel/runtimes"
-	"github.com/jinyitao123/weave/internal/kernel/schedule"
 	"github.com/jinyitao123/weave/internal/app/schedules"
-	"github.com/jinyitao123/weave/internal/kernel/secret"
-	"github.com/jinyitao123/weave/internal/kernel/skills"
+	"github.com/jinyitao123/weave/internal/app/teamtemplates"
+	"github.com/jinyitao123/weave/internal/app/users"
+	"github.com/jinyitao123/weave/internal/base/db"
+	"github.com/jinyitao123/weave/internal/base/deliverable"
+	"github.com/jinyitao123/weave/internal/base/fanout"
+	"github.com/jinyitao123/weave/internal/base/realtime"
 	"github.com/jinyitao123/weave/internal/base/taskqueue"
 	"github.com/jinyitao123/weave/internal/build/teambuild"
 	"github.com/jinyitao123/weave/internal/build/teamorch"
-	"github.com/jinyitao123/weave/internal/app/users"
+	"github.com/jinyitao123/weave/internal/kernel/audit"
+	"github.com/jinyitao123/weave/internal/kernel/compiler"
+	"github.com/jinyitao123/weave/internal/kernel/config"
+	"github.com/jinyitao123/weave/internal/kernel/credentials"
+	"github.com/jinyitao123/weave/internal/kernel/declarative"
+	"github.com/jinyitao123/weave/internal/kernel/declarative/designprompt"
+	"github.com/jinyitao123/weave/internal/kernel/delivery"
+	"github.com/jinyitao123/weave/internal/kernel/llmrouter"
+	"github.com/jinyitao123/weave/internal/kernel/mcpregistry"
+	"github.com/jinyitao123/weave/internal/kernel/memory"
+	"github.com/jinyitao123/weave/internal/kernel/org"
+	"github.com/jinyitao123/weave/internal/kernel/runtimes"
+	"github.com/jinyitao123/weave/internal/kernel/schedule"
+	"github.com/jinyitao123/weave/internal/kernel/secret"
+	"github.com/jinyitao123/weave/internal/kernel/skills"
 )
 
 var buildCommit = "unknown"
@@ -90,6 +91,15 @@ func (a teamBuildExecutionAdapter) Submit(
 
 func (a teamBuildExecutionAdapter) Start() { a.service.Start() }
 func (a teamBuildExecutionAdapter) Stop()  { a.service.Stop() }
+
+type teamTemplateExecutionAdapter struct {
+	service api.TeamBuildExecutionService
+}
+
+func (a teamTemplateExecutionAdapter) Submit(ctx context.Context, workspaceID, buildRunID string) error {
+	_, err := a.service.Submit(ctx, workspaceID, buildRunID)
+	return err
+}
 
 func registerFrozenDescriptors() error {
 	if err := compiler.RegisterDescriptor(compiler.NewStandardFrozenDescriptor()); err != nil {
@@ -414,6 +424,17 @@ func main() {
 		srv.TeamBuildOrchestrator = teamBuildExecutionAdapter{
 			service: async,
 		}
+		srv.TeamTemplates = teamtemplates.New(
+			teamtemplates.NewPGIdempotencyStore(srv.Pool),
+			srv.TeamBuild,
+			teamTemplateExecutionAdapter{service: srv.TeamBuildOrchestrator},
+			teamtemplates.Options{Policy: teambuild.TemplateAuthorizationPolicy{
+				AutoBudgetThresholdUSD: cfg.TemplateAutoMaxCostUSD,
+				DailyBudgetUSD:         cfg.TemplateDailyBudgetUSD,
+				MonthlyBudgetUSD:       cfg.TemplateMonthlyBudgetUSD,
+				MaxConcurrent:          cfg.TemplateMaxConcurrent,
+			}},
+		)
 	}
 
 	// Every due agent schedule is first written to the durable task ledger. The

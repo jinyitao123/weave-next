@@ -23,40 +23,40 @@ import (
 	"github.com/jinyitao123/loom/pgstore"
 	"github.com/jinyitao123/weave/internal/app/apikeys"
 	"github.com/jinyitao123/weave/internal/app/attachments"
-	"github.com/jinyitao123/weave/internal/kernel/audit"
 	"github.com/jinyitao123/weave/internal/app/chatrequest"
-	"github.com/jinyitao123/weave/internal/kernel/compiler"
-	"github.com/jinyitao123/weave/internal/kernel/config"
 	"github.com/jinyitao123/weave/internal/app/conversation"
-	"github.com/jinyitao123/weave/internal/kernel/credentials"
+	"github.com/jinyitao123/weave/internal/app/ownermem"
+	"github.com/jinyitao123/weave/internal/app/projects"
+	"github.com/jinyitao123/weave/internal/app/schedules"
+	"github.com/jinyitao123/weave/internal/app/users"
+	"github.com/jinyitao123/weave/internal/app/webui"
 	"github.com/jinyitao123/weave/internal/base/deliverable"
-	"github.com/jinyitao123/weave/internal/kernel/delivery"
 	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/base/fanout"
+	"github.com/jinyitao123/weave/internal/base/realtime"
+	"github.com/jinyitao123/weave/internal/base/snapshot"
+	"github.com/jinyitao123/weave/internal/base/storeext"
+	"github.com/jinyitao123/weave/internal/base/taskqueue"
+	"github.com/jinyitao123/weave/internal/base/teamrun"
+	"github.com/jinyitao123/weave/internal/build/teambuild"
+	"github.com/jinyitao123/weave/internal/build/teamforge"
+	"github.com/jinyitao123/weave/internal/kernel/audit"
+	"github.com/jinyitao123/weave/internal/kernel/compiler"
+	"github.com/jinyitao123/weave/internal/kernel/config"
+	"github.com/jinyitao123/weave/internal/kernel/credentials"
+	"github.com/jinyitao123/weave/internal/kernel/delivery"
 	"github.com/jinyitao123/weave/internal/kernel/llmrouter"
 	"github.com/jinyitao123/weave/internal/kernel/loomruntime"
 	"github.com/jinyitao123/weave/internal/kernel/mcphost"
 	"github.com/jinyitao123/weave/internal/kernel/mcpregistry"
 	"github.com/jinyitao123/weave/internal/kernel/memory"
 	"github.com/jinyitao123/weave/internal/kernel/org"
-	"github.com/jinyitao123/weave/internal/app/ownermem"
-	"github.com/jinyitao123/weave/internal/app/projects"
-	"github.com/jinyitao123/weave/internal/base/realtime"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 	"github.com/jinyitao123/weave/internal/kernel/runtimellm"
 	"github.com/jinyitao123/weave/internal/kernel/runtimes"
 	"github.com/jinyitao123/weave/internal/kernel/schedule"
-	"github.com/jinyitao123/weave/internal/app/schedules"
 	importskills "github.com/jinyitao123/weave/internal/kernel/skills"
-	"github.com/jinyitao123/weave/internal/base/snapshot"
-	"github.com/jinyitao123/weave/internal/base/storeext"
-	"github.com/jinyitao123/weave/internal/base/taskqueue"
-	"github.com/jinyitao123/weave/internal/build/teambuild"
 	"github.com/jinyitao123/weave/internal/kernel/teamcompiler"
-	"github.com/jinyitao123/weave/internal/build/teamforge"
-	"github.com/jinyitao123/weave/internal/base/teamrun"
-	"github.com/jinyitao123/weave/internal/app/users"
-	"github.com/jinyitao123/weave/internal/app/webui"
 	"github.com/jinyitao123/weave/internal/kernel/workflow"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
@@ -99,6 +99,7 @@ type Server struct {
 	Workflow                  *workflow.Store                     // nil if PG pool unavailable
 	TeamBuild                 *teambuild.Store                    // nil if PG pool unavailable
 	TeamBuildOrchestrator     TeamBuildExecutionService           // nil until the production meta-team controller is configured
+	TeamTemplates             TeamTemplateService                 // nil until the template fast path is configured
 	TeamForgeDrafts           *teamforge.DraftRegistry            // shared in-memory draft registry; nil disables teamforge wiring
 	Pool                      *pgxpool.Pool                       // nil if PG pool unavailable
 	TeamWorkers               *registry.TeamWorkerRepository      // nil if PG pool unavailable
@@ -366,6 +367,8 @@ func (s *Server) registerRoutes() {
 	auth.GET("/teams", s.handleListTeams, orgScope)
 	auth.GET("/team-creation-options", s.handleGetTeamCreationOptions, orgScope)
 	auth.POST("/teams", s.handleCreateTeam, RequireRole("admin"), orgScope)
+	auth.POST("/teams:from-template", s.handleCreateTeamFromTemplate, RequireRole("admin"), orgScope)
+	auth.GET("/team-templates/samples", s.handleListTeamTemplateSamples, orgScope)
 	auth.GET("/teams/:id", s.handleGetTeam, orgScope)
 	auth.GET("/teams/:id/dispatch-rules", s.handleGetTeamDispatchRules, orgScope)
 	auth.PUT("/teams/:id/dispatch-rules", s.handlePutTeamDispatchRules, RequireAnyRole("admin", "owner"), orgScope)
