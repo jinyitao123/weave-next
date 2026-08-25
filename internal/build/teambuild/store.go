@@ -159,10 +159,11 @@ const buildRunColumns = `
 
 // CreateRunParams carries the initial drafts of one build task.
 type CreateRunParams struct {
-	Brief     BuildBrief
-	Contract  EvaluationContract
-	ExpiresAt time.Time
-	CreatedBy string
+	Brief             BuildBrief
+	Contract          EvaluationContract
+	ExpiresAt         time.Time
+	CreatedBy         string
+	ExecutionStrategy string
 	// ConversationID optionally binds the control record to the chat
 	// conversation that drove the build task. It is nullable and does not
 	// constrain the run lifecycle.
@@ -235,9 +236,9 @@ func (s *Store) CreateBuildRun(
 	if err != nil {
 		return TeamBuildRun{}, fmt.Errorf("create build run: encode total budget: %w", err)
 	}
-	executionStrategy := ExecutionStrategyLegacy
-	if params.Brief.Mode == ModeCreate {
-		executionStrategy = ExecutionStrategyCompilerV1
+	executionStrategy, err := initialExecutionStrategy(params.Brief.Mode, params.ExecutionStrategy)
+	if err != nil {
+		return TeamBuildRun{}, fmt.Errorf("create build run: %w", err)
 	}
 
 	now := s.clock.Now()
@@ -281,6 +282,23 @@ func (s *Store) CreateBuildRun(
 		return TeamBuildRun{}, fmt.Errorf("commit create build run: %w", err)
 	}
 	return run, nil
+}
+
+func initialExecutionStrategy(mode, requested string) (string, error) {
+	requested = strings.TrimSpace(requested)
+	if requested == ExecutionStrategyTemplateInstantiate {
+		if mode != ModeCreate {
+			return "", errors.New("template_instantiate execution strategy requires create mode")
+		}
+		return requested, nil
+	}
+	if requested != "" {
+		return "", fmt.Errorf("unsupported explicit execution strategy %q", requested)
+	}
+	if mode == ModeCreate {
+		return ExecutionStrategyCompilerV1, nil
+	}
+	return ExecutionStrategyLegacy, nil
 }
 
 func expandCreateAssetScope(brief BuildBrief) BuildBrief {

@@ -24,32 +24,32 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jinyitao123/loom/contract"
 	"github.com/jinyitao123/loom/pgstore"
-	"github.com/jinyitao123/weave/internal/kernel/audit"
-	"github.com/jinyitao123/weave/internal/kernel/compiler"
-	"github.com/jinyitao123/weave/internal/kernel/credentials"
+	"github.com/jinyitao123/weave/internal/app/metateam"
 	"github.com/jinyitao123/weave/internal/base/deliverable"
-	"github.com/jinyitao123/weave/internal/kernel/delivery"
-	"github.com/jinyitao123/weave/internal/kernel/engine"
 	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/base/fanout"
 	"github.com/jinyitao123/weave/internal/base/frozen"
+	"github.com/jinyitao123/weave/internal/base/snapshot"
+	"github.com/jinyitao123/weave/internal/base/storeext"
+	"github.com/jinyitao123/weave/internal/base/taskqueue"
+	"github.com/jinyitao123/weave/internal/base/teamrun"
+	"github.com/jinyitao123/weave/internal/build/teambuild"
+	"github.com/jinyitao123/weave/internal/build/teameval"
+	"github.com/jinyitao123/weave/internal/build/teamforge"
+	"github.com/jinyitao123/weave/internal/kernel/audit"
+	"github.com/jinyitao123/weave/internal/kernel/compiler"
+	"github.com/jinyitao123/weave/internal/kernel/credentials"
+	"github.com/jinyitao123/weave/internal/kernel/delivery"
+	"github.com/jinyitao123/weave/internal/kernel/engine"
 	"github.com/jinyitao123/weave/internal/kernel/loomruntime"
 	"github.com/jinyitao123/weave/internal/kernel/mcphost"
 	"github.com/jinyitao123/weave/internal/kernel/mcpregistry"
-	"github.com/jinyitao123/weave/internal/app/metateam"
 	"github.com/jinyitao123/weave/internal/kernel/org"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 	"github.com/jinyitao123/weave/internal/kernel/runtimellm"
 	"github.com/jinyitao123/weave/internal/kernel/runtimes"
 	"github.com/jinyitao123/weave/internal/kernel/schedule"
 	"github.com/jinyitao123/weave/internal/kernel/skills"
-	"github.com/jinyitao123/weave/internal/base/snapshot"
-	"github.com/jinyitao123/weave/internal/base/storeext"
-	"github.com/jinyitao123/weave/internal/base/taskqueue"
-	"github.com/jinyitao123/weave/internal/build/teambuild"
-	"github.com/jinyitao123/weave/internal/build/teameval"
-	"github.com/jinyitao123/weave/internal/build/teamforge"
-	"github.com/jinyitao123/weave/internal/base/teamrun"
 	"github.com/jinyitao123/weave/internal/kernel/workflow"
 	"github.com/jinyitao123/weave/internal/kernel/workflow/machine"
 )
@@ -1923,7 +1923,7 @@ func activatePublishedTeamTx(ctx context.Context, tx pgx.Tx, workspaceID, teamID
 	}
 	tag, err := tx.Exec(ctx, `
 		UPDATE weave_teams
-		SET status='active', lead_avatar_id=$3, updated_at=now()
+		SET status='active', lead_avatar_id=$3, evaluation='evaluated', updated_at=now()
 		WHERE workspace_id=$1 AND id=$2 AND status IN ('building','active')
 	`, workspaceID, teamID, leadAvatarID)
 	if err != nil {

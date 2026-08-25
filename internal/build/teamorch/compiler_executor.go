@@ -14,11 +14,11 @@ import (
 
 	"github.com/jinyitao123/loom/contract"
 	"github.com/jinyitao123/weave/internal/base/frozen"
-	"github.com/jinyitao123/weave/internal/kernel/registry"
+	"github.com/jinyitao123/weave/internal/base/teamrun"
 	"github.com/jinyitao123/weave/internal/build/teambuild"
 	"github.com/jinyitao123/weave/internal/build/teameval"
 	"github.com/jinyitao123/weave/internal/build/teamforge"
-	"github.com/jinyitao123/weave/internal/base/teamrun"
+	"github.com/jinyitao123/weave/internal/kernel/registry"
 	"github.com/jinyitao123/weave/internal/kernel/workflow"
 )
 
@@ -450,7 +450,7 @@ func (p *ProductionPhases) handleCompiledAsset(ctx context.Context, operation Op
 	result, err := applier.Apply(ctx, teamforge.CompiledAssetApplyRequest{
 		WorkspaceID: operation.WorkspaceID, BuildRunID: operation.BuildRunID,
 		RevisionNo: operation.Revision.RevisionNo, Blueprint: operation.Blueprint,
-		Operation: operation.Operation,
+		Operation: operation.Operation, ExecutionStrategy: operation.Run.EffectiveExecutionStrategy(),
 	})
 	if err != nil {
 		var assetErr *teamforge.CompiledAssetApplyError

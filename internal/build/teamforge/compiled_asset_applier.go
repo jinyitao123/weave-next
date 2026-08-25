@@ -11,9 +11,9 @@ import (
 	"strings"
 
 	"github.com/jinyitao123/loom/contract"
+	"github.com/jinyitao123/weave/internal/build/teambuild"
 	"github.com/jinyitao123/weave/internal/kernel/org"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
-	"github.com/jinyitao123/weave/internal/build/teambuild"
 )
 
 // ReceiptIssuer is the only authority source accepted by the deterministic
@@ -24,11 +24,12 @@ type ReceiptIssuer interface {
 }
 
 type CompiledAssetApplyRequest struct {
-	WorkspaceID string
-	BuildRunID  string
-	RevisionNo  int
-	Blueprint   teambuild.TeamBlueprintV1
-	Operation   ChangeOperationV1
+	WorkspaceID       string
+	BuildRunID        string
+	RevisionNo        int
+	Blueprint         teambuild.TeamBlueprintV1
+	Operation         ChangeOperationV1
+	ExecutionStrategy string
 }
 
 type CompiledAssetApplyResult struct {
@@ -164,7 +165,14 @@ func (a *CompiledAssetApplier) dispatch(ctx context.Context, kind string, receip
 		return NewWriteTools(request.WorkspaceID, "platform-compiler", receipt, a.Validator, a.Audit, a.Writes).Dispatch(ctx, call)
 	}
 	allowCreate := request.Blueprint.Mode == teambuild.ModeCreate
-	return NewTeamWriteToolsMode(request.WorkspaceID, "platform-compiler", receipt, a.Validator, a.Audit, a.Reads, a.Writes, allowCreate).Dispatch(ctx, call)
+	evaluation := org.TeamEvaluationEvaluated
+	if request.ExecutionStrategy == teambuild.ExecutionStrategyTemplateInstantiate {
+		evaluation = org.TeamEvaluationUnevaluated
+	}
+	return newTeamWriteToolsModeWithEvaluation(
+		request.WorkspaceID, "platform-compiler", receipt, a.Validator, a.Audit,
+		a.Reads, a.Writes, allowCreate, evaluation,
+	).Dispatch(ctx, call)
 }
 
 func (a *CompiledAssetApplier) applyTeamUpdate(ctx context.Context, receipt teambuild.BuildAuthorizationReceipt, request CompiledAssetApplyRequest) (CompiledAssetApplyResult, error) {

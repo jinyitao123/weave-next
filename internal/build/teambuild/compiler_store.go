@@ -248,14 +248,14 @@ func (s *Store) PersistCompilerAuthorizationBundle(
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	var runMode, status, briefHash, contractHash string
+	var runMode, status, briefHash, contractHash, currentStrategy string
 	var assetScopeJSON []byte
 	if err := tx.QueryRow(ctx, `
-		SELECT mode, status, brief_hash, contract_hash, asset_scope_json
+		SELECT mode, status, brief_hash, contract_hash, asset_scope_json, execution_strategy
 		FROM weave_team_build_runs
 		WHERE workspace_id=$1 AND build_run_id=$2
 		FOR UPDATE
-	`, workspaceID, buildRunID).Scan(&runMode, &status, &briefHash, &contractHash, &assetScopeJSON); errors.Is(err, pgx.ErrNoRows) {
+	`, workspaceID, buildRunID).Scan(&runMode, &status, &briefHash, &contractHash, &assetScopeJSON, &currentStrategy); errors.Is(err, pgx.ErrNoRows) {
 		return BlueprintRevision{}, fmt.Errorf("persist compiler bundle: %w", ErrBuildRunNotFound)
 	} else if err != nil {
 		return BlueprintRevision{}, fmt.Errorf("persist compiler bundle: %w", err)
@@ -268,6 +268,13 @@ func (s *Store) PersistCompilerAuthorizationBundle(
 	}
 	if contractHash != bundle.EvaluationContractHash {
 		return BlueprintRevision{}, fmt.Errorf("persist compiler bundle: %w: evaluation contract hash mismatch", ErrCompilerBundleInvalid)
+	}
+	selectedStrategy := ExecutionStrategyCompilerV1
+	if currentStrategy == ExecutionStrategyTemplateInstantiate {
+		selectedStrategy = ExecutionStrategyTemplateInstantiate
+	}
+	if err := validateCompilerChangeSetStrategy(changeSet, selectedStrategy); err != nil {
+		return BlueprintRevision{}, fmt.Errorf("persist compiler bundle: %w: %v", ErrCompilerBundleInvalid, err)
 	}
 	if workflowMode == BlueprintWorkflowDeclarativeV1 {
 		// Frozen specs are trusted to come from the platform compiler entrypoint; Store only checks their hash/envelope and BuildRun binding, not machine validity.
@@ -343,7 +350,7 @@ func (s *Store) PersistCompilerAuthorizationBundle(
 		UPDATE weave_team_build_runs
 		SET execution_strategy=$3, updated_at=$4
 		WHERE workspace_id=$1 AND build_run_id=$2 AND status='planning'
-	`, workspaceID, buildRunID, ExecutionStrategyCompilerV1, now); err != nil {
+	`, workspaceID, buildRunID, selectedStrategy, now); err != nil {
 		return BlueprintRevision{}, fmt.Errorf("select compiler execution strategy: %w", err)
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -400,6 +407,9 @@ func (s *Store) AppendCompilerRevisionFromPatch(
 	}
 	if status != StatusRoundRunning || strategy != ExecutionStrategyCompilerV1 {
 		return BlueprintRevision{}, fmt.Errorf("append compiler revision: %w", ErrBuildRunNotRoundRunning)
+	}
+	if err := validateCompilerChangeSetStrategy(changeSet, ExecutionStrategyCompilerV1); err != nil {
+		return BlueprintRevision{}, fmt.Errorf("append compiler revision: %w: %v", ErrCompilerBundleInvalid, err)
 	}
 
 	latest, err := getLatestBlueprintRevisionTx(ctx, tx, workspaceID, buildRunID)
@@ -962,10 +972,51 @@ func validateOperationDAG(operations []compilerChangeOperation) error {
 	return nil
 }
 
+func validateCompilerChangeSetStrategy(changeSet compilerChangeSetDocument, strategy string) error {
+	candidateIndex, publishIndex := -1, -1
+	candidateCount, publishCount := 0, 0
+	for index, operation := range changeSet.Operations {
+		switch operation.Type {
+		case "candidate_run":
+			candidateIndex, candidateCount = index, candidateCount+1
+		case "publish":
+			publishIndex, publishCount = index, publishCount+1
+		}
+	}
+	switch strategy {
+	case ExecutionStrategyTemplateInstantiate:
+		if candidateCount != 0 || publishCount != 0 {
+			return errors.New("template_instantiate forbids candidate_run and publish")
+		}
+		return nil
+	case ExecutionStrategyCompilerV1:
+		if candidateCount != 1 || publishCount != 1 ||
+			publishIndex != len(changeSet.Operations)-1 || candidateIndex != publishIndex-1 {
+			return errors.New("compiler_v1 requires terminal candidate_run and publish operations")
+		}
+		candidate := changeSet.Operations[candidateIndex]
+		want := make([]string, 0, candidateIndex)
+		for _, operation := range changeSet.Operations[:candidateIndex] {
+			want = append(want, operation.OperationID)
+		}
+		sort.Strings(want)
+		if !reflect.DeepEqual(candidate.DependsOn, want) {
+			return errors.New("compiler_v1 candidate_run must depend on every materialization operation")
+		}
+		publish := changeSet.Operations[publishIndex]
+		if len(publish.DependsOn) != 1 || publish.DependsOn[0] != candidate.OperationID {
+			return errors.New("compiler_v1 publish must depend only on candidate_run")
+		}
+		return nil
+	default:
+		return fmt.Errorf("unsupported compiler execution strategy %q", strategy)
+	}
+}
+
 func (s *Store) validateCompilerAuthorizationBundleTx(
 	ctx context.Context,
 	tx pgx.Tx,
-	workspaceID, buildRunID, runMode, contractHash, actualBaselineHash, confirmedBy string,
+	workspaceID, buildRunID, runMode, executionStrategy, contractHash, actualBaselineHash, confirmedBy string,
 ) error {
 	var revision BlueprintRevision
 	var baselineHash, authorityHash, sourceReportHash, patchHash *string
@@ -1025,6 +1076,9 @@ func (s *Store) validateCompilerAuthorizationBundleTx(
 	}
 	if blueprint.Mode != runMode || workflowMode != revision.WorkflowMode {
 		return fmt.Errorf("%w: run or workflow binding mismatch", ErrCompilerBundleInvalid)
+	}
+	if err := validateCompilerChangeSetStrategy(changeSet, executionStrategy); err != nil {
+		return fmt.Errorf("%w: %v", ErrCompilerBundleInvalid, err)
 	}
 	if revision.EvaluationContractHash != contractHash {
 		return fmt.Errorf("%w: evaluation contract binding mismatch", ErrCompilerBundleInvalid)

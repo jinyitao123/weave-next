@@ -426,7 +426,23 @@ func CompileChangeSetV1(baseline TeamBuildBaselineV1, blueprint teambuild.TeamBl
 	if blueprint.Workflow.Mode == teambuild.BlueprintWorkflowDeclarativeV1 {
 		return ChangeSetV1{}, errors.New("declarative_v1 workflow requires CompileDeclarativeChangeSetV1 with a frozen spec")
 	}
-	return compileChangeSetV1(baseline, blueprint, nil)
+	return compileChangeSetV1(baseline, blueprint, nil, true)
+}
+
+// CompileTemplateInstantiateChangeSetV1 produces only deterministic asset
+// materialization operations. Candidate evaluation and publication remain the
+// unchanged compiler_v1 path used by a later explicit evaluation build.
+func CompileTemplateInstantiateChangeSetV1(
+	baseline TeamBuildBaselineV1,
+	blueprint teambuild.TeamBlueprintV1,
+) (ChangeSetV1, error) {
+	if blueprint.Mode != teambuild.ModeCreate {
+		return ChangeSetV1{}, errors.New("template_instantiate ChangeSet requires create mode")
+	}
+	if blueprint.Workflow.Mode != teambuild.BlueprintWorkflowTemplate {
+		return ChangeSetV1{}, errors.New("template_instantiate initially requires a built-in template workflow")
+	}
+	return compileChangeSetV1(baseline, blueprint, nil, false)
 }
 
 // CompileDeclarativeChangeSetV1 compiles a platform-frozen declarative_v1
@@ -449,13 +465,14 @@ func CompileDeclarativeChangeSetV1(
 	if frozen.BuildBinding.BaselineHash != strings.TrimSpace(baseline.SourceSnapshotHash) {
 		return ChangeSetV1{}, errors.New("frozen declarative_v1 spec baseline does not match ChangeSet baseline")
 	}
-	return compileChangeSetV1(baseline, blueprint, &frozen)
+	return compileChangeSetV1(baseline, blueprint, &frozen, true)
 }
 
 func compileChangeSetV1(
 	baseline TeamBuildBaselineV1,
 	blueprint teambuild.TeamBlueprintV1,
 	declarative *FrozenDeclarativeWorkflowSpecV1,
+	includeCandidatePublish bool,
 ) (ChangeSetV1, error) {
 	if err := teambuild.ValidateTeamBlueprintV1(blueprint); err != nil {
 		return ChangeSetV1{}, err
@@ -470,12 +487,13 @@ func compileChangeSetV1(
 	}
 
 	compiler := changeSetCompilerV1{
-		baseline:       baseline,
-		blueprint:      blueprint,
-		declarative:    declarative,
-		memberVersions: make(map[string]int64, len(blueprint.Members)),
-		memberTargets:  make(map[string]string, len(blueprint.Members)),
-		memberMutated:  make(map[string]bool, len(blueprint.Members)),
+		baseline:                baseline,
+		blueprint:               blueprint,
+		declarative:             declarative,
+		includeCandidatePublish: includeCandidatePublish,
+		memberVersions:          make(map[string]int64, len(blueprint.Members)),
+		memberTargets:           make(map[string]string, len(blueprint.Members)),
+		memberMutated:           make(map[string]bool, len(blueprint.Members)),
 	}
 	if err := compiler.compile(); err != nil {
 		return ChangeSetV1{}, err
@@ -491,20 +509,27 @@ func compileChangeSetV1(
 		return ChangeSetV1{}, err
 	}
 	changeSet.ChangeSetID = id
-	if err := ValidateChangeSetV1(changeSet); err != nil {
-		return ChangeSetV1{}, fmt.Errorf("compiled change set invalid: %w", err)
+	var validateErr error
+	if includeCandidatePublish {
+		validateErr = ValidateChangeSetV1(changeSet)
+	} else {
+		validateErr = ValidateTemplateInstantiateChangeSetV1(changeSet)
+	}
+	if validateErr != nil {
+		return ChangeSetV1{}, fmt.Errorf("compiled change set invalid: %w", validateErr)
 	}
 	return changeSet, nil
 }
 
 type changeSetCompilerV1 struct {
-	baseline       TeamBuildBaselineV1
-	blueprint      teambuild.TeamBlueprintV1
-	declarative    *FrozenDeclarativeWorkflowSpecV1
-	operations     []ChangeOperationV1
-	memberVersions map[string]int64
-	memberTargets  map[string]string
-	memberMutated  map[string]bool
+	baseline                TeamBuildBaselineV1
+	blueprint               teambuild.TeamBlueprintV1
+	declarative             *FrozenDeclarativeWorkflowSpecV1
+	includeCandidatePublish bool
+	operations              []ChangeOperationV1
+	memberVersions          map[string]int64
+	memberTargets           map[string]string
+	memberMutated           map[string]bool
 }
 
 func (c *changeSetCompilerV1) compile() error {
@@ -680,6 +705,9 @@ func (c *changeSetCompilerV1) compile() error {
 			return err
 		}
 		c.operations = append(c.operations, op)
+	}
+	if !c.includeCandidatePublish {
+		return nil
 	}
 
 	changeIDs := make([]string, 0, len(c.operations))
@@ -928,7 +956,17 @@ func (baseline TeamBuildBaselineV1) CanonicalHash() (string, error) {
 // CanonicalBytes returns the stable JSON representation of a valid change
 // set. Operations retain deterministic topological compiler order.
 func (changeSet ChangeSetV1) CanonicalBytes() ([]byte, error) {
-	if err := ValidateChangeSetV1(changeSet); err != nil {
+	return changeSet.canonicalBytes(ValidateChangeSetV1)
+}
+
+// TemplateInstantiateCanonicalBytes returns the stable representation of a
+// materialization-only ChangeSet.
+func (changeSet ChangeSetV1) TemplateInstantiateCanonicalBytes() ([]byte, error) {
+	return changeSet.canonicalBytes(ValidateTemplateInstantiateChangeSetV1)
+}
+
+func (changeSet ChangeSetV1) canonicalBytes(validate func(ChangeSetV1) error) ([]byte, error) {
+	if err := validate(changeSet); err != nil {
 		return nil, err
 	}
 	raw, err := json.Marshal(changeSet)
@@ -947,7 +985,29 @@ func (changeSet ChangeSetV1) CanonicalHash() (string, error) {
 	return hex.EncodeToString(sum[:]), nil
 }
 
+// TemplateInstantiateCanonicalHash hashes the complete materialization-only
+// ChangeSet document for blueprint revision binding.
+func (changeSet ChangeSetV1) TemplateInstantiateCanonicalHash() (string, error) {
+	bytes, err := changeSet.TemplateInstantiateCanonicalBytes()
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(bytes)
+	return hex.EncodeToString(sum[:]), nil
+}
+
 func ValidateChangeSetV1(changeSet ChangeSetV1) error {
+	return validateChangeSetV1(changeSet, true)
+}
+
+// ValidateTemplateInstantiateChangeSetV1 accepts the same closed operation
+// contracts and DAG rules while requiring candidate_run and publish to be
+// completely absent.
+func ValidateTemplateInstantiateChangeSetV1(changeSet ChangeSetV1) error {
+	return validateChangeSetV1(changeSet, false)
+}
+
+func validateChangeSetV1(changeSet ChangeSetV1, requireCandidatePublish bool) error {
 	if changeSet.SchemaVersion != ChangeSetSchemaVersionV1 {
 		return errors.New("change set schema_version must be 1")
 	}
@@ -1031,6 +1091,16 @@ func ValidateChangeSetV1(changeSet ChangeSetV1) error {
 			publishIndex = index
 			publishCount++
 		}
+	}
+	if !requireCandidatePublish {
+		if candidateCount != 0 || publishCount != 0 {
+			return errors.New("template_instantiate change set forbids candidate_run and publish")
+		}
+		expectedChangeSetID, err := contentAddressChangeSetV1(changeSet)
+		if err != nil || expectedChangeSetID != changeSet.ChangeSetID {
+			return errors.New("change_set_id is not content-addressed")
+		}
+		return nil
 	}
 	if candidateCount != 1 || publishCount != 1 {
 		return errors.New("change set requires exactly one candidate_run and one publish")

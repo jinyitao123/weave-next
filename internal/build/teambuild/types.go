@@ -24,8 +24,9 @@ const (
 	ModeCreate   = "create"
 	ModeOptimize = "optimize"
 
-	ExecutionStrategyLegacy     = "legacy"
-	ExecutionStrategyCompilerV1 = "compiler_v1"
+	ExecutionStrategyLegacy              = "legacy"
+	ExecutionStrategyCompilerV1          = "compiler_v1"
+	ExecutionStrategyTemplateInstantiate = "template_instantiate"
 
 	WorkflowBuildModeBlueprint = "blueprint"
 	WorkflowBuildModeCustom    = "custom"

@@ -113,7 +113,7 @@ func (s *Store) AuthorizeBuildRun(
 			}
 		}
 	case ModeCreate:
-		if executionStrategy != ExecutionStrategyCompilerV1 {
+		if !isCompilerExecutionStrategy(executionStrategy) {
 			return TeamBuildRun{}, BuildAuthorizationReceipt{}, fmt.Errorf("authorize build run: %w", ErrCompilerRevisionRequired)
 		}
 		revisionToken, err = s.requireLatestCompilerRevisionTx(
@@ -125,9 +125,9 @@ func (s *Store) AuthorizeBuildRun(
 	default:
 		return TeamBuildRun{}, BuildAuthorizationReceipt{}, fmt.Errorf("authorize build run: invalid mode %q", mode)
 	}
-	if executionStrategy == ExecutionStrategyCompilerV1 {
+	if isCompilerExecutionStrategy(executionStrategy) {
 		if err := s.validateCompilerAuthorizationBundleTx(
-			ctx, tx, workspaceID, buildRunID, mode, contractHash, baselineHash, confirmedBy,
+			ctx, tx, workspaceID, buildRunID, mode, executionStrategy, contractHash, baselineHash, confirmedBy,
 		); err != nil {
 			return TeamBuildRun{}, BuildAuthorizationReceipt{}, fmt.Errorf("authorize build run: %w", err)
 		}
@@ -202,6 +202,10 @@ func (s *Store) AuthorizeBuildRun(
 		createdAt:     now,
 	}
 	return run, receipt, nil
+}
+
+func isCompilerExecutionStrategy(strategy string) bool {
+	return strategy == ExecutionStrategyCompilerV1 || strategy == ExecutionStrategyTemplateInstantiate
 }
 
 func effectiveAuthorizeOptions(options []AuthorizeOptions) AuthorizeOptions {

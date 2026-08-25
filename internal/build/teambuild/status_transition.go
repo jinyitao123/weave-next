@@ -153,6 +153,64 @@ func (s *Store) MarkPublished(
 	return run, nil
 }
 
+// MarkTemplateInstantiated finalizes a materialization-only template build.
+// Unlike publication, it deliberately leaves publish_eligible false while
+// recording the ready unevaluated Team as the final result.
+func (s *Store) MarkTemplateInstantiated(
+	ctx context.Context,
+	workspaceID, buildRunID, actor string,
+	finalRef FinalRef,
+) (TeamBuildRun, error) {
+	if strings.TrimSpace(actor) == "" {
+		return TeamBuildRun{}, errors.New("mark template instantiated: actor is required")
+	}
+	if strings.TrimSpace(finalRef.Ref) == "" || strings.TrimSpace(finalRef.TeamID) == "" {
+		return TeamBuildRun{}, errors.New("mark template instantiated: team final ref is required")
+	}
+	finalRefJSON, err := json.Marshal(finalRef)
+	if err != nil {
+		return TeamBuildRun{}, fmt.Errorf("mark template instantiated: encode final ref: %w", err)
+	}
+	now := s.clock.Now()
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return TeamBuildRun{}, fmt.Errorf("begin mark template instantiated: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	run, err := scanBuildRun(tx.QueryRow(ctx, `
+		UPDATE weave_team_build_runs
+		SET status='passed', updated_at=$3, decided_at=$3,
+			publish_eligible=false, final_ref_json=$4
+		WHERE workspace_id=$1 AND build_run_id=$2
+		  AND status='round_running' AND execution_strategy='template_instantiate'
+		RETURNING `+buildRunColumns+`
+	`, workspaceID, buildRunID, now, finalRefJSON))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return TeamBuildRun{}, fmt.Errorf("mark template instantiated: build run %q is not a running template build", buildRunID)
+	}
+	if err != nil {
+		return TeamBuildRun{}, fmt.Errorf("mark template instantiated: %w", err)
+	}
+	nextSeq, err := nextTransitionSeq(ctx, tx, workspaceID, buildRunID)
+	if err != nil {
+		return TeamBuildRun{}, fmt.Errorf("mark template instantiated: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO weave_team_build_run_transitions (
+			workspace_id, build_run_id, seq, from_status, to_status,
+			reason, actor, created_at
+		) VALUES ($1,$2,$3,'round_running','passed',
+			'template assets materialized; evaluation deferred',$4,$5)
+	`, workspaceID, buildRunID, nextSeq, actor, now); err != nil {
+		return TeamBuildRun{}, fmt.Errorf("mark template instantiated ledger: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return TeamBuildRun{}, fmt.Errorf("commit mark template instantiated: %w", err)
+	}
+	return run, nil
+}
+
 // GetLatestBuildRunTransitionReason returns the reason recorded by the newest
 // transition for one build run. Terminal presentation uses the append-only
 // ledger as its source of truth instead of inferring a reason from model text.

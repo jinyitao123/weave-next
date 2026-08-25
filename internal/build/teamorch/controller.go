@@ -174,8 +174,11 @@ func (c *Controller) Run(ctx context.Context, workspaceID, buildRunID string) (R
 	if err != nil {
 		return Result{}, fmt.Errorf("round controller: load build run: %w", err)
 	}
-	if run.EffectiveExecutionStrategy() == teambuild.ExecutionStrategyCompilerV1 {
+	switch run.EffectiveExecutionStrategy() {
+	case teambuild.ExecutionStrategyCompilerV1:
 		return c.runCompilerV1(ctx, run, actor)
+	case teambuild.ExecutionStrategyTemplateInstantiate:
+		return c.runTemplateInstantiate(ctx, run, actor)
 	}
 	switch run.Status {
 	case teambuild.StatusPassed, teambuild.StatusBlocked, teambuild.StatusCancelled, teambuild.StatusPublishing:
@@ -528,6 +531,125 @@ func (c *Controller) Run(ctx context.Context, workspaceID, buildRunID string) (R
 	}
 	return Result{WorkspaceID: workspaceID, BuildRunID: buildRunID,
 		Status: run.Status, Rounds: len(rounds)}, nil
+}
+
+// runTemplateInstantiate executes the same receipt-gated compiler DAG but
+// terminates after asset materialization. It never enters candidate evaluation
+// or publication, and records the ready Team as an unevaluated final result.
+func (c *Controller) runTemplateInstantiate(
+	ctx context.Context,
+	run teambuild.TeamBuildRun,
+	actor string,
+) (Result, error) {
+	workspaceID, buildRunID := run.WorkspaceID, run.BuildRunID
+	switch run.Status {
+	case teambuild.StatusPassed, teambuild.StatusBlocked, teambuild.StatusCancelled:
+		return Result{WorkspaceID: workspaceID, BuildRunID: buildRunID, Status: run.Status}, nil
+	case teambuild.StatusPlanning:
+		return Result{}, errors.New("round controller: build run is not authorized")
+	case teambuild.StatusPublishing:
+		return Result{}, errors.New("round controller: template_instantiate must never enter publishing")
+	}
+	if c.Compiler == nil {
+		return Result{}, errors.New("round controller: template_instantiate executor unavailable")
+	}
+	if run.Status == teambuild.StatusAuthorized {
+		if !c.now().Before(run.ExpiresAt) {
+			reason := fmt.Sprintf("build run authorization expired at %s", run.ExpiresAt.UTC().Format(time.RFC3339))
+			if _, err := c.Store.TransitionStatus(ctx, workspaceID, buildRunID,
+				teambuild.StatusAuthorized, teambuild.StatusBlocked, actor, reason); err != nil {
+				return Result{}, fmt.Errorf("round controller: stop expired template authorization: %w", err)
+			}
+			return Result{WorkspaceID: workspaceID, BuildRunID: buildRunID, Status: teambuild.StatusBlocked, StopReason: reason}, nil
+		}
+		var err error
+		run, err = c.Store.TransitionStatus(ctx, workspaceID, buildRunID,
+			teambuild.StatusAuthorized, teambuild.StatusRoundRunning, actor,
+			"template_instantiate asset materialization started")
+		if err != nil {
+			return Result{}, fmt.Errorf("round controller: start template_instantiate execution: %w", err)
+		}
+	}
+	execution, err := c.Compiler.Execute(ctx, workspaceID, buildRunID)
+	if err != nil {
+		return Result{}, fmt.Errorf("round controller: execute template_instantiate revision: %w", err)
+	}
+	if execution.Cancelled {
+		current, loadErr := c.Store.GetBuildRun(context.WithoutCancel(ctx), workspaceID, buildRunID)
+		if loadErr != nil {
+			return Result{}, fmt.Errorf("round controller: reload cancelled template run: %w", loadErr)
+		}
+		if current.Status == teambuild.StatusRoundRunning {
+			current, loadErr = c.Store.TransitionStatus(context.WithoutCancel(ctx), workspaceID, buildRunID,
+				teambuild.StatusRoundRunning, teambuild.StatusCancelled, actor, "template_operation_cancelled")
+			if loadErr != nil {
+				return Result{}, fmt.Errorf("round controller: cancel template run: %w", loadErr)
+			}
+		}
+		return Result{WorkspaceID: workspaceID, BuildRunID: buildRunID, Status: current.Status, StopReason: "template_operation_cancelled"}, nil
+	}
+	if execution.Failure != nil {
+		failure := execution.Failure
+		if failure.Class == teameval.FailureClassRuntimeInfrastructure && failure.Retryable {
+			current, loadErr := c.Store.GetBuildRun(ctx, workspaceID, buildRunID)
+			if loadErr != nil {
+				return Result{}, loadErr
+			}
+			return Result{WorkspaceID: workspaceID, BuildRunID: buildRunID, Status: current.Status, StopReason: failure.Code}, nil
+		}
+		current, transitionErr := c.Store.TransitionStatus(ctx, workspaceID, buildRunID,
+			teambuild.StatusRoundRunning, teambuild.StatusBlocked, actor, failure.Code)
+		if transitionErr != nil {
+			return Result{}, fmt.Errorf("round controller: block template_instantiate failure: %w", transitionErr)
+		}
+		return Result{WorkspaceID: workspaceID, BuildRunID: buildRunID, Status: current.Status, StopReason: failure.Code}, nil
+	}
+	if !execution.Complete {
+		current, loadErr := c.Store.GetBuildRun(ctx, workspaceID, buildRunID)
+		if loadErr != nil {
+			return Result{}, loadErr
+		}
+		return Result{WorkspaceID: workspaceID, BuildRunID: buildRunID, Status: current.Status}, nil
+	}
+	steps, err := c.Store.ListOperationSteps(ctx, workspaceID, buildRunID, execution.RevisionNo)
+	if err != nil {
+		return Result{}, fmt.Errorf("round controller: list completed template operations: %w", err)
+	}
+	teamID, err := templateInstantiatedTeamID(steps)
+	if err != nil {
+		return Result{}, fmt.Errorf("round controller: resolve instantiated team: %w", err)
+	}
+	finalized, err := c.Store.MarkTemplateInstantiated(ctx, workspaceID, buildRunID, actor, teambuild.FinalRef{
+		Ref: teamID, TeamID: teamID,
+	})
+	if err != nil {
+		return Result{}, fmt.Errorf("round controller: finalize template_instantiate: %w", err)
+	}
+	return Result{WorkspaceID: workspaceID, BuildRunID: buildRunID, Status: finalized.Status}, nil
+}
+
+func templateInstantiatedTeamID(steps []teambuild.OperationStep) (string, error) {
+	for _, step := range steps {
+		if step.OperationType != string(teamforge.OperationTeamCreate) ||
+			step.Status != teambuild.OperationStatusSucceeded {
+			continue
+		}
+		var evidence struct {
+			ToolResult struct {
+				Team struct {
+					ID string `json:"id"`
+				} `json:"team"`
+			} `json:"tool_result"`
+		}
+		if err := json.Unmarshal(step.EvidenceJSON, &evidence); err != nil {
+			return "", err
+		}
+		if teamID := strings.TrimSpace(evidence.ToolResult.Team.ID); teamID != "" {
+			return teamID, nil
+		}
+		return "", errors.New("team_create evidence has no team id")
+	}
+	return "", errors.New("completed template revision has no successful team_create operation")
 }
 
 // runCompilerV1 is intentionally separate from the legacy round loop. Its

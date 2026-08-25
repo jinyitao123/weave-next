@@ -16,9 +16,9 @@ import (
 	"strings"
 
 	"github.com/jinyitao123/loom/contract"
+	"github.com/jinyitao123/weave/internal/build/teambuild"
 	"github.com/jinyitao123/weave/internal/kernel/org"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
-	"github.com/jinyitao123/weave/internal/build/teambuild"
 )
 
 const (
@@ -33,11 +33,12 @@ const (
 // calling agent, and BuildAuthorizationReceipt are fixed at construction
 // time; every call is receipt-gated on AssetRef{Kind: "team"}.
 type TeamWriteToolsDispatcher struct {
-	gate              *WriteGate
-	deps              Deps
-	writeDeps         WriteDeps
-	createTeamEnabled bool
-	tools             []contract.ToolDef
+	gate               *WriteGate
+	deps               Deps
+	writeDeps          WriteDeps
+	createTeamEnabled  bool
+	creationEvaluation string
+	tools              []contract.ToolDef
 }
 
 // NewTeamWriteTools creates the team write dispatcher for one workspace, one
@@ -70,11 +71,31 @@ func NewTeamWriteToolsMode(
 	writeDeps WriteDeps,
 	allowCreateTeam bool,
 ) *TeamWriteToolsDispatcher {
+	return newTeamWriteToolsModeWithEvaluation(
+		workspaceID, agentName, receipt, validator, audit, deps, writeDeps,
+		allowCreateTeam, org.TeamEvaluationEvaluated,
+	)
+}
+
+func newTeamWriteToolsModeWithEvaluation(
+	workspaceID, agentName string,
+	receipt teambuild.BuildAuthorizationReceipt,
+	validator ReceiptValidator,
+	audit AuditRecorder,
+	deps Deps,
+	writeDeps WriteDeps,
+	allowCreateTeam bool,
+	creationEvaluation string,
+) *TeamWriteToolsDispatcher {
+	if creationEvaluation != org.TeamEvaluationUnevaluated {
+		creationEvaluation = org.TeamEvaluationEvaluated
+	}
 	d := &TeamWriteToolsDispatcher{
-		gate:              newWriteGate(workspaceID, agentName, receipt, validator, audit, writeDeps),
-		deps:              deps,
-		writeDeps:         writeDeps,
-		createTeamEnabled: allowCreateTeam,
+		gate:               newWriteGate(workspaceID, agentName, receipt, validator, audit, writeDeps),
+		deps:               deps,
+		writeDeps:          writeDeps,
+		createTeamEnabled:  allowCreateTeam,
+		creationEvaluation: creationEvaluation,
 	}
 	d.tools = make([]contract.ToolDef, 0, 2)
 	if d.createTeamEnabled {
@@ -202,6 +223,7 @@ func (d *TeamWriteToolsDispatcher) createTeam(ctx context.Context, call contract
 		SuccessCriteria: input.SuccessCriteria,
 		LeadAvatarID:    strings.TrimSpace(input.LeadAvatarID),
 		DesiredStatus:   "building",
+		Evaluation:      d.creationEvaluation,
 		Workers:         make([]org.InitialTeamWorker, len(input.Workers)),
 	}
 	for i, worker := range input.Workers {
