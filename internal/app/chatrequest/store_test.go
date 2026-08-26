@@ -183,6 +183,11 @@ func TestStoreFailOrphanedRunningRequests(t *testing.T) {
 	if _, err := store.MarkRunning(ctx, "workspace-1", "user-1", clientRequestID); err != nil {
 		t.Fatalf("mark running: %v", err)
 	}
+	if _, err := store.pool.Exec(ctx, `UPDATE weave_chat_requests
+		SET updated_at=$1 WHERE workspace_id='workspace-1' AND user_id='user-1' AND client_request_id=$2`,
+		store.clock.Now().Add(-30*time.Minute), clientRequestID); err != nil {
+		t.Fatalf("age orphaned request: %v", err)
+	}
 	_, err := store.pool.Exec(ctx, `
 		INSERT INTO weave_session_execution_leases (
 			workspace_id,user_id,lead_avatar_id,session_id,lease_epoch,state,

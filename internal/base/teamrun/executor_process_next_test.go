@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jinyitao123/weave/internal/base/db"
+	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/base/snapshot"
 	"github.com/jinyitao123/weave/internal/base/taskqueue"
 	"github.com/jinyitao123/weave/internal/base/testutil"
@@ -67,7 +68,7 @@ func TestExecutorProcessNextParkTimerCompletesTaskAndPersistsCheckpoint(t *testi
 			CompletedOutputs: map[string]json.RawMessage{"lead": json.RawMessage(`{"done":true}`)},
 			WaitKind:         WaitTimer,
 			WaitDetail:       json.RawMessage(`{"wake_at":"2026-08-25T10:05:00Z","node_id":"wait-node"}`),
-			UsageCheckpoint:  json.RawMessage(`{"schema_version":1,"run_id":"run-park","entries":[]}`),
+			UsageCheckpoint:  json.RawMessage(`{"schema_version":1,"next_call_ordinals":{},"calls":[]}`),
 			UsageComplete:    true,
 		},
 	}
@@ -98,7 +99,7 @@ func TestExecutorProcessNextRunningRunReclaimsLeaseAndExecutesFromStart(t *testi
 		Output: json.RawMessage(`{"reclaimed":true}`),
 		Usage:  UsageTotals{InputTokens: 7, OutputTokens: 11, CostUSD: 0.5},
 	}
-	taskID, running := h.seedRunningWorkflowTask(t, "run-reclaim")
+	taskID, running := h.seedRunningWorkflowTaskBeforeAdmission(t, "run-reclaim")
 
 	processed, err := h.executor.ProcessNext(context.Background(), "worker-2")
 	if err != nil {
@@ -268,11 +269,12 @@ func TestExecutorProcessNextLeaseLostReturnsWithoutFailingTask(t *testing.T) {
 }
 
 type processNextHarness struct {
-	pool     *pgxpool.Pool
-	tasks    *taskqueue.Store
-	runtime  *scriptedRuntime
-	executor *Executor
-	now      time.Time
+	pool            *pgxpool.Pool
+	tasks           *taskqueue.Store
+	runtime         *scriptedRuntime
+	executor        *Executor
+	now             time.Time
+	publishedSeeded bool
 }
 
 func newProcessNextHarness(t *testing.T) *processNextHarness {
@@ -359,6 +361,54 @@ func (h *processNextHarness) seedRunningWorkflowTask(t *testing.T, runID string)
 	return taskID, running
 }
 
+func (h *processNextHarness) seedRunningWorkflowTaskBeforeAdmission(t *testing.T, runID string) (string, TeamRun) {
+	t.Helper()
+	ctx := context.Background()
+	taskID := h.enqueueWorkflowTask(t, runID)
+	claimed, err := h.tasks.Claim(ctx, "seed-worker", taskqueue.ClaimFilter{
+		Kind: "team_workflow", IdentityKind: taskqueue.IdentityTeamWorkflow,
+		WorkspaceID: "workspace-1", RunSnapshotID: runID,
+	})
+	if err != nil {
+		t.Fatalf("claim seed task before admission: %v", err)
+	}
+	if claimed == nil {
+		t.Fatal("claim seed task before admission returned nil")
+	}
+	queued, err := h.executor.Consumer.ConsumeClaimed(ctx, claimed, "seed-worker")
+	if err != nil {
+		t.Fatalf("consume seed task before admission: %v", err)
+	}
+	tx, err := h.pool.Begin(ctx)
+	if err != nil {
+		t.Fatalf("begin seed running before admission: %v", err)
+	}
+	running, err := NewPGStore().ClaimRunningTx(ctx, tx, ClaimRequest{
+		WorkspaceID: queued.WorkspaceID, RunID: queued.RunID,
+		ExpectedStatus: StatusQueued, ExpectedTeamRunGeneration: queued.Generation,
+		ExpectedExecutionLeaseEpoch: queued.ExecutionLeaseEpoch,
+		ExpectedResumeGeneration:    queued.ResumeGeneration,
+		ExecutorID:                  executorIdentity(claimed.ID, "seed-worker"),
+		IdempotencyKey:              executorClaimKey(claimed.ID),
+		Actor:                       executorIdentity(claimed.ID, "seed-worker"), Source: consumerSource, OccurredAt: h.now,
+	})
+	if err != nil {
+		_ = tx.Rollback(ctx)
+		t.Fatalf("seed running before admission: %v", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatalf("commit seed running before admission: %v", err)
+	}
+	if _, err := h.pool.Exec(ctx, `
+		UPDATE weave_task_queue
+		SET status='queued', worker_id=NULL, started_at=NULL, lease_expires_at=NULL, updated_at=$2
+		WHERE id=$1
+	`, taskID, h.now); err != nil {
+		t.Fatalf("restore task for pre-admission reclaim: %v", err)
+	}
+	return taskID, running
+}
+
 func (h *processNextHarness) seedWorkflowSnapshot(t *testing.T, runID string) {
 	t.Helper()
 	ctx := context.Background()
@@ -372,7 +422,17 @@ func (h *processNextHarness) seedWorkflowSnapshot(t *testing.T, runID string) {
 	`, h.now); err != nil {
 		t.Fatalf("seed workspace/team: %v", err)
 	}
-	_, err := snapshot.NewStore(h.pool).Create(ctx, snapshot.TeamRunSnapshot{
+	contentHash := h.seedPublishedWorkflowArtifact(t)
+	buildRunID := "build-" + runID
+	triggerSource, err := json.Marshal(struct {
+		SchemaVersion int    `json:"schema_version"`
+		Type          string `json:"type"`
+		SourceRef     string `json:"source_ref"`
+	}{SchemaVersion: 1, Type: "api", SourceRef: buildRunID})
+	if err != nil {
+		t.Fatalf("marshal API trigger source: %v", err)
+	}
+	_, err = snapshot.NewStore(h.pool).Create(ctx, snapshot.TeamRunSnapshot{
 		RunID: runID, WorkspaceID: "workspace-1", TeamID: "team-1",
 		SnapshotSchemaVersion: 2, Mode: "fixed_workflow",
 		WorkflowID: "workflow-1", WorkflowVersion: 1,
@@ -391,16 +451,73 @@ func (h *processNextHarness) seedWorkflowSnapshot(t *testing.T, runID string) {
 			"source_snapshot_id":null,
 			"task_group_id":null
 		}`),
-		TriggerSourceV2: json.RawMessage(`{
-			"schema_version":1,
-			"type":"api",
-			"source_ref":"process-next-test"
-		}`),
-		RuntimeAssignment: json.RawMessage(`{}`),
+		TriggerSourceV2:      triggerSource,
+		RuntimeAssignment:    json.RawMessage(`{}`),
+		BuildRunID:           buildRunID,
+		CandidateContentHash: contentHash,
 	})
 	if err != nil {
 		t.Fatalf("create snapshot: %v", err)
 	}
+}
+
+func (h *processNextHarness) seedPublishedWorkflowArtifact(t *testing.T) string {
+	t.Helper()
+	if h.publishedSeeded {
+		var contentHash string
+		if err := h.pool.QueryRow(context.Background(), `
+			SELECT content_hash
+			FROM weave_published_artifact_contents
+			WHERE workspace_id='workspace-1' AND workflow_id='workflow-1' AND workflow_version=1
+		`).Scan(&contentHash); err != nil {
+			t.Fatalf("read published workflow artifact hash: %v", err)
+		}
+		return contentHash
+	}
+	ctx := context.Background()
+	trigger := json.RawMessage(`{"schema_version":1}`)
+	graph := json.RawMessage(`{"schema_version":1}`)
+	payload := frozen.ArtifactPayloadV1{
+		SchemaVersion: frozen.ArtifactSchemaVersion, TriggerConfig: trigger, GraphDefinition: graph,
+		Team:    frozen.ArtifactTeamV1{WorkspaceID: "workspace-1", TeamID: "team-1", LeadAgentID: "fixture-lead"},
+		Bundles: []frozen.FrozenExecutionBundle{}, DeliveryTargets: []frozen.FrozenDeliveryTarget{},
+	}
+	contentHash, err := frozen.ComputeArtifactContentHash(frozen.ArtifactEnvelopeHashInputV1{
+		WorkspaceID: "workspace-1", WorkflowID: "workflow-1", WorkflowVersion: 1,
+		ArtifactSchemaVersion:     frozen.ArtifactSchemaVersion,
+		CanonicalizationAlgorithm: frozen.ArtifactCanonicalizationAlgorithm,
+		CanonicalizationVersion:   frozen.ArtifactCanonicalizationVersion,
+		HashAlgorithm:             frozen.ArtifactHashAlgorithm, Payload: payload,
+	})
+	if err != nil {
+		t.Fatalf("hash published workflow fixture: %v", err)
+	}
+	payloadJSON, err := frozen.Canonicalize(payload, frozen.PreorderArtifactPayloadV1)
+	if err != nil {
+		t.Fatalf("canonicalize published workflow fixture: %v", err)
+	}
+	if _, err := h.pool.Exec(ctx, `
+		INSERT INTO weave_team_workflows (workspace_id,id,team_id,name)
+		VALUES ('workspace-1','workflow-1','team-1','Workflow 1');
+		INSERT INTO weave_team_workflow_versions (
+			workspace_id,workflow_id,version,status,trigger_config,graph_definition,created_by
+		) VALUES ('workspace-1','workflow-1',1,'draft',$1::jsonb,$2::jsonb,'fixture');
+		UPDATE weave_team_workflow_versions
+		SET status='published',published_at=$3,updated_at=$3
+		WHERE workspace_id='workspace-1' AND workflow_id='workflow-1' AND version=1;
+		INSERT INTO weave_published_artifact_contents (
+			workspace_id,workflow_id,workflow_version,artifact_schema_version,
+			canonicalization_algorithm,canonicalization_version,hash_algorithm,content_hash,payload
+		) VALUES ('workspace-1','workflow-1',1,1,'rfc8785+jcs-preorder',1,'sha256',$4,$5::jsonb);
+		INSERT INTO weave_workflow_version_admission_statuses (workspace_id,workflow_id,workflow_version,blocked)
+		VALUES ('workspace-1','workflow-1',1,false);
+		UPDATE weave_team_workflows SET published_version=1,updated_at=$3
+		WHERE workspace_id='workspace-1' AND id='workflow-1'
+	`, string(trigger), string(graph), h.now, contentHash, string(payloadJSON)); err != nil {
+		t.Fatalf("seed published workflow artifact: %v", err)
+	}
+	h.publishedSeeded = true
+	return contentHash
 }
 
 func (h *processNextHarness) assertTask(t *testing.T, taskID, status, runID, errContains string) {

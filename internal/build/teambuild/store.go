@@ -281,14 +281,14 @@ func (s *Store) CreateBuildRun(
 			round_budget_json, total_budget_json,
 			expires_at, publish_eligible, rollback_status, execution_strategy,
 			confirmed_by, final_ref_json, created_at, updated_at, decided_at
-		) VALUES ($1,$2,$3,'planning',$4,$5,$6,$7,$8,$9,$10,$11,NULL,$12,$13,$14,false,'none',$15,NULL,NULL,$16,$16,NULL)
+		) VALUES ($1,$2,$3,'planning',$4,$5,$6,$7::jsonb,$8,$9::jsonb,$10,$11::jsonb,NULL,$12::jsonb,$13::jsonb,$14,false,'none',$15,NULL,NULL,$16,$16,NULL)
 		RETURNING `+buildRunColumns+`
 	`, workspaceID, buildRunID, params.Brief.Mode,
 		nullableString(params.ConversationID),
 		nullableString(params.EvaluationTeamID),
 		params.EvaluationOnly,
-		briefJSON, briefHash, contractJSON, contractHash,
-		scopeJSON, roundBudgetJSON, totalBudgetJSON,
+		string(briefJSON), briefHash, string(contractJSON), contractHash,
+		string(scopeJSON), string(roundBudgetJSON), string(totalBudgetJSON),
 		params.ExpiresAt, executionStrategy, now))
 	if err != nil {
 		if params.EvaluationTeamID != "" && isActiveEvaluationUniqueViolation(err) {
@@ -500,15 +500,15 @@ func (s *Store) UpdateDraftContracts(
 
 	run, err := scanBuildRun(s.pool.QueryRow(ctx, `
 		UPDATE weave_team_build_runs
-		SET brief_json=$4, brief_hash=$5, contract_json=$6, contract_hash=$7,
-			asset_scope_json=$8, round_budget_json=$9, total_budget_json=$10,
+		SET brief_json=$4::jsonb, brief_hash=$5, contract_json=$6::jsonb, contract_hash=$7,
+			asset_scope_json=$8::jsonb, round_budget_json=$9::jsonb, total_budget_json=$10::jsonb,
 			updated_at=$11
 		WHERE workspace_id=$1 AND build_run_id=$2 AND status='planning'
 		  AND mode=$3
 		RETURNING `+buildRunColumns+`
 	`, workspaceID, buildRunID, brief.Mode,
-		briefJSON, briefHash, contractJSON, contractHash,
-		scopeJSON, roundBudgetJSON, totalBudgetJSON,
+		string(briefJSON), briefHash, string(contractJSON), contractHash,
+		string(scopeJSON), string(roundBudgetJSON), string(totalBudgetJSON),
 		s.clock.Now()))
 	if errors.Is(err, pgx.ErrNoRows) {
 		if _, getErr := s.GetBuildRun(ctx, workspaceID, buildRunID); getErr != nil {

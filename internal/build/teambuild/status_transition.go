@@ -188,10 +188,10 @@ func (s *Store) MarkPublishedTx(
 	run, err := scanBuildRun(tx.QueryRow(ctx, `
 		UPDATE weave_team_build_runs
 		SET status='passed', updated_at=$3, decided_at=$3,
-			publish_eligible=true, final_ref_json=$4
+			publish_eligible=true, final_ref_json=$4::jsonb
 		WHERE workspace_id=$1 AND build_run_id=$2 AND status='publishing'
 		RETURNING `+buildRunColumns+`
-	`, workspaceID, buildRunID, now, finalRefJSON))
+	`, workspaceID, buildRunID, now, string(finalRefJSON)))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return TeamBuildRun{}, fmt.Errorf("mark build run published tx: %w", ErrInvalidTransition)
 	}
@@ -242,11 +242,11 @@ func (s *Store) MarkTemplateInstantiated(
 	run, err := scanBuildRun(tx.QueryRow(ctx, `
 		UPDATE weave_team_build_runs
 		SET status='passed', updated_at=$3, decided_at=$3,
-			publish_eligible=false, final_ref_json=$4
+			publish_eligible=false, final_ref_json=$4::jsonb
 		WHERE workspace_id=$1 AND build_run_id=$2
 		  AND status='round_running' AND execution_strategy='template_instantiate'
 		RETURNING `+buildRunColumns+`
-	`, workspaceID, buildRunID, now, finalRefJSON))
+	`, workspaceID, buildRunID, now, string(finalRefJSON)))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return TeamBuildRun{}, fmt.Errorf("mark template instantiated: build run %q is not a running template build", buildRunID)
 	}

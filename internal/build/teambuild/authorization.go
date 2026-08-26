@@ -102,7 +102,7 @@ func (s *Store) AuthorizeBuildRun(
 		if err != nil {
 			return TeamBuildRun{}, BuildAuthorizationReceipt{}, fmt.Errorf("authorize build run: encode baseline snapshot: %w", err)
 		}
-		baselineForInsert = encoded
+		baselineForInsert = string(encoded)
 		baselineHash = snapshot.ContentHash
 		if executionStrategy == ExecutionStrategyCompilerV1 {
 			revisionToken, err = s.requireLatestCompilerRevisionTx(
@@ -159,7 +159,7 @@ func (s *Store) AuthorizeBuildRun(
 	}
 	run, err := scanBuildRun(tx.QueryRow(ctx, `
 		UPDATE weave_team_build_runs
-		SET status='authorized', confirmed_by=$3, baseline_snapshot_json=$4,
+		SET status='authorized', confirmed_by=$3, baseline_snapshot_json=$4::jsonb,
 			authorization_authority=$5, authorized_revision_no=$6,
 			authorized_blueprint_hash=$7, authorized_change_set_hash=$8,
 			authorization_decision_subject=$9, authorization_decision_reason=$10,

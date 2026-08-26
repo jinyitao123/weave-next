@@ -824,12 +824,12 @@ func (r *AgentRegistry) PutTx(ctx context.Context, tx pgx.Tx, tenant string, rec
 				display_name=$4,
 				role=$5,
 				visibility=$6,
-				spec=$7,
+				spec=$7::jsonb,
 				version=$8,
 				updated_at=$9,
 				deleted=false
 			WHERE id=$1 AND workspace_id=$2 AND name=$10
-		`, id, tenant, rec.OwnerUserID, rec.DisplayName, rec.Role, rec.Visibility, data, version, now, rec.Name)
+		`, id, tenant, rec.OwnerUserID, rec.DisplayName, rec.Role, rec.Visibility, string(data), version, now, rec.Name)
 		if err != nil {
 			return err
 		}
@@ -842,15 +842,15 @@ func (r *AgentRegistry) PutTx(ctx context.Context, tx pgx.Tx, tenant string, rec
 				id, workspace_id, team_id, owner_user_id, name, display_name, role,
 				visibility, spec, version, deleted, created_at, updated_at
 			)
-			VALUES ($1, $2, NULLIF($3, ''), $4, $5, $6, $7, $8, $9, $10, false, $11, $12)
-		`, id, tenant, rec.TeamID, rec.OwnerUserID, rec.Name, rec.DisplayName, rec.Role, rec.Visibility, data, version, createdAt, now); err != nil {
+			VALUES ($1, $2, NULLIF($3, ''), $4, $5, $6, $7, $8, $9::jsonb, $10, false, $11, $12)
+		`, id, tenant, rec.TeamID, rec.OwnerUserID, rec.Name, rec.DisplayName, rec.Role, rec.Visibility, string(data), version, createdAt, now); err != nil {
 			return err
 		}
 	}
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO weave_agent_versions (workspace_id, agent_id, version, spec)
-		VALUES ($1, $2, $3, $4)
-	`, tenant, id, version, data); err != nil {
+		VALUES ($1, $2, $3, $4::jsonb)
+	`, tenant, id, version, string(data)); err != nil {
 		return err
 	}
 	return nil

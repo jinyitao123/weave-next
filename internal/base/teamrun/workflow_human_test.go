@@ -73,6 +73,7 @@ func TestHumanResumeQueuesContinuationAdvancesCheckpointAndBindsDigest(t *testin
 	}
 
 	h.runtime.resumeResult = RuntimeResult{Status: RuntimeCompleted, Output: json.RawMessage(`{"delivered":true}`), UsageComplete: true}
+	h.executor.Now = func() time.Time { return h.now.Add(2 * time.Second) }
 	processed, err = h.executor.ProcessNext(context.Background(), "worker-2")
 	if err != nil || !processed {
 		t.Fatalf("process human continuation: processed=%v err=%v", processed, err)
@@ -106,6 +107,7 @@ func TestHumanTimeoutQueuesContinuationAndAdvancesTimeoutEdge(t *testing.T) {
 	}
 	_ = tx.Rollback(context.Background())
 	h.runtime.resumeResult = RuntimeResult{Status: RuntimeCompleted, Output: json.RawMessage(`{"timed_out":true}`), UsageComplete: true}
+	h.executor.Now = func() time.Time { return h.now.Add(2 * time.Second) }
 	processed, err := h.executor.ProcessNext(context.Background(), "worker-timeout")
 	if err != nil || !processed || h.runtime.resumeCalls != 1 {
 		t.Fatalf("process timeout continuation: processed=%v resume=%d err=%v", processed, h.runtime.resumeCalls, err)
@@ -193,6 +195,10 @@ func TestHumanTaskReaderUsesStableUpdatedAtRunIDCursor(t *testing.T) {
 		}
 	}
 	reader := &HumanTaskReader{Pool: h.pool}
+	count, err := reader.Count(context.Background(), "workspace-1")
+	if err != nil || count != 2 {
+		t.Fatalf("task count = %d err = %v, want 2", count, err)
+	}
 	first, more, err := reader.List(context.Background(), "workspace-1", nil, "", 1)
 	if err != nil || !more || len(first) != 1 {
 		t.Fatalf("first page: items=%d more=%v err=%v", len(first), more, err)

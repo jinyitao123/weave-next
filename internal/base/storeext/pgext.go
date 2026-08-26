@@ -356,14 +356,17 @@ type UsageAgg struct {
 func (e *PGExt) AggregateUsage(ctx context.Context, ns string) ([]UsageAgg, error) {
 	rows, err := e.pool.Query(ctx, `
 		SELECT
-			COALESCE(value->>'agent', 'unknown') AS agent,
+			COALESCE(stored.value->>'agent', 'unknown') AS agent,
 			COUNT(*)::int AS runs,
-			COALESCE(SUM((value->>'tokens_in')::int), 0)::int AS tokens_in,
-			COALESCE(SUM((value->>'tokens_out')::int), 0)::int AS tokens_out,
-			COALESCE(SUM((value->>'cost_usd')::numeric), 0)::float8 AS cost_usd
-		FROM loom_store
-		WHERE namespace = $1
-		GROUP BY COALESCE(value->>'agent', 'unknown')
+			COALESCE(SUM((stored.value->>'tokens_in')::int), 0)::int AS tokens_in,
+			COALESCE(SUM((stored.value->>'tokens_out')::int), 0)::int AS tokens_out,
+			COALESCE(SUM((stored.value->>'cost_usd')::numeric), 0)::float8 AS cost_usd
+		FROM (
+			SELECT namespace, convert_from(value, 'UTF8')::jsonb AS value
+			FROM loom_store
+		) AS stored
+		WHERE stored.namespace = $1
+		GROUP BY COALESCE(stored.value->>'agent', 'unknown')
 	`, ns)
 	if err != nil {
 		return nil, fmt.Errorf("storeext: aggregate usage: %w", err)
