@@ -1,6 +1,7 @@
 package teamforge
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/jinyitao123/weave/internal/build/teambuild"
@@ -31,6 +32,44 @@ func TestTemplateInstantiateChangeSetContainsOnlyMaterialization(t *testing.T) {
 	}
 	if _, err := materialization.TemplateInstantiateCanonicalHash(); err != nil {
 		t.Fatalf("TemplateInstantiateCanonicalHash() error = %v", err)
+	}
+}
+
+func TestEvaluationChangeSetContainsNoAssetMutation(t *testing.T) {
+	blueprint := templateInstantiateTestBlueprint()
+	blueprint.Mode = teambuild.ModeOptimize
+	blueprint.TeamID = "team-1"
+	blueprint.NewTeamName = ""
+	blueprint.RevisionPolicy.MaxRevisions = 1
+	members := make([]BaselineMemberV1, 0, len(blueprint.Members))
+	refs := make([]string, 0, len(blueprint.Members))
+	for index := range blueprint.Members {
+		blueprint.Members[index].ManagementMode = teambuild.BlueprintManagementPreserveExisting
+		member := blueprint.Members[index]
+		members = append(members, BaselineMemberV1{
+			StableRef: member.StableRef, Target: member.Name, Version: 1, Desired: member,
+		})
+		refs = append(refs, member.StableRef)
+	}
+	baseline := TeamBuildBaselineV1{
+		SchemaVersion: ChangeSetSchemaVersionV1,
+		SourceSnapshotHash: strings.Repeat("a", 64), Mode: teambuild.ModeOptimize, TeamID: "team-1",
+		Team: &BaselineTeamV1{Target: "team-1", Version: 1, Purpose: blueprint.Purpose, LeadRef: blueprint.LeadRef},
+		Members: members,
+		Roster: &BaselineRosterV1{Version: 1, LeadRef: blueprint.LeadRef, MemberRefs: refs},
+	}
+	changeSet, err := CompileEvaluationChangeSetV1(baseline, blueprint, nil)
+	if err != nil {
+		t.Fatalf("CompileEvaluationChangeSetV1() error = %v", err)
+	}
+	if len(changeSet.Operations) != 3 {
+		t.Fatalf("operations = %#v, want verify workflow + candidate + publish", changeSet.Operations)
+	}
+	want := []ChangeOperationTypeV1{OperationWorkflowCompile, OperationCandidateRun, OperationPublish}
+	for index, operation := range changeSet.Operations {
+		if operation.Type != want[index] {
+			t.Fatalf("operation[%d] = %s, want %s", index, operation.Type, want[index])
+		}
 	}
 }
 

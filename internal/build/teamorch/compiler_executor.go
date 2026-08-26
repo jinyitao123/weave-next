@@ -424,6 +424,14 @@ func (p *ProductionPhases) HandleOperation(ctx context.Context, operation Operat
 		return OperationResult{}, &OperationError{Class: teameval.FailureClassRuntimeInfrastructure,
 			Code: "compiler_phase_dependencies_unavailable", Retryable: true}
 	}
+	if operation.Run.EvaluationOnly {
+		switch operation.Operation.Type {
+		case teamforge.OperationWorkflowCompile, teamforge.OperationCandidateRun, teamforge.OperationPublish:
+		default:
+			return OperationResult{}, &OperationError{Class: teameval.FailureClassGovernance,
+				Code: "evaluation_asset_mutation_forbidden", Evidence: json.RawMessage(`{"evaluation_only":true}`)}
+		}
+	}
 	switch operation.Operation.Type {
 	case teamforge.OperationAgentCreate, teamforge.OperationAgentUpdate,
 		teamforge.OperationTeamCreate, teamforge.OperationTeamUpdate,
@@ -537,6 +545,9 @@ func (p *ProductionPhases) handleCompilerWorkflow(ctx context.Context, operation
 	if err != nil {
 		return OperationResult{}, &OperationError{Class: teameval.FailureClassCompile,
 			Code: "workflow_compile_member_binding_failed", Cause: err}
+	}
+	if operation.Run.EvaluationOnly {
+		return p.verifyEvaluationWorkflowDraft(ctx, operation, boundHash, "")
 	}
 	receipt, err := p.Deps.Build.ReissueReceipt(ctx, operation.WorkspaceID, operation.BuildRunID)
 	if err != nil {
@@ -676,6 +687,9 @@ func (p *ProductionPhases) handleCompilerDeclarativeWorkflow(
 		return OperationResult{}, &OperationError{Class: teameval.FailureClassCompile,
 			Code: "workflow_declarative_materialized_hash_failed", Cause: err}
 	}
+	if operation.Run.EvaluationOnly {
+		return p.verifyEvaluationWorkflowDraft(ctx, operation, materializedHash, materializedSpec.SpecHash)
+	}
 
 	workflowID := strings.TrimSpace(operation.Operation.Target)
 	version, skip, err := p.materializeDeclarativeWorkflow(ctx, operation, workflowID, materializedSpec)
@@ -690,6 +704,54 @@ func (p *ProductionPhases) handleCompilerDeclarativeWorkflow(
 		SpecHash: input.SpecHash, CompiledHash: materializedHash,
 		PlannedShapeHash: compiledHash,
 	})
+}
+
+// verifyEvaluationWorkflowDraft proves the lineage-derived workflow is still
+// the exact existing draft without writing it. The compiler operation remains
+// in the DAG to carry the declarative frozen spec and to bind candidate
+// execution to a concrete version, but evaluation_only turns it into a strict
+// verification step.
+func (p *ProductionPhases) verifyEvaluationWorkflowDraft(
+	ctx context.Context,
+	operation OperationContext,
+	wantCompiledHash, specHash string,
+) (OperationResult, error) {
+	workflowID := strings.TrimSpace(operation.Operation.Target)
+	versionNo, err := p.latestDraftVersion(ctx, operation.WorkspaceID, workflowID)
+	if err != nil {
+		return OperationResult{}, &OperationError{Class: teameval.FailureClassGovernance,
+			Code: "evaluation_workflow_draft_unavailable", Cause: err}
+	}
+	version, err := p.Deps.Workflows.GetVersion(ctx, operation.WorkspaceID, workflowID, versionNo)
+	if err != nil {
+		return OperationResult{}, &OperationError{Class: teameval.FailureClassRuntimeInfrastructure,
+			Code: "evaluation_workflow_draft_read_failed", Retryable: true, Cause: err}
+	}
+	raw, err := json.Marshal(struct {
+		Trigger json.RawMessage `json:"trigger"`
+		Graph   json.RawMessage `json:"graph"`
+	}{version.TriggerConfig, version.GraphDefinition})
+	if err != nil {
+		return OperationResult{}, err
+	}
+	actualHash, err := frozen.HashCanonicalJSON(raw)
+	if err != nil {
+		return OperationResult{}, err
+	}
+	if actualHash != wantCompiledHash {
+		return OperationResult{}, &OperationError{Class: teameval.FailureClassGovernance,
+			Code:     "evaluation_workflow_draft_changed",
+			Evidence: json.RawMessage(`{"evaluation_only":true,"asset_changed":true}`)}
+	}
+	evidence, err := json.Marshal(compilerWorkflowVersionEvidence{
+		Compiler: operation.Operation.Compiler, WorkflowID: workflowID,
+		WorkflowVersion: versionNo, WorkflowRef: fmt.Sprintf("workflow-version:%d", versionNo),
+		SpecHash: specHash, CompiledHash: actualHash, PlannedShapeHash: wantCompiledHash,
+	})
+	if err != nil {
+		return OperationResult{}, err
+	}
+	return OperationResult{Skip: true, OutputHash: actualHash, Evidence: evidence}, nil
 }
 
 type declarativeAgentLoader interface {

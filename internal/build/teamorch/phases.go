@@ -1876,45 +1876,59 @@ func (p *ProductionPhases) PublishStep(ctx context.Context, workspaceID, buildRu
 			alreadyPublished = artifactErr == nil && artifact.ContentHash == candidate.ContentHash
 		}
 	}
+	publication, err := workflow.PublicationFromCandidate(candidate)
+	if err != nil {
+		return fmt.Errorf("publish step: convert candidate: %w", err)
+	}
+	tx, err := p.Deps.Pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("publish step: begin atomic publication: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	verifiedBaselineHash, err := p.Deps.Build.VerifyEvaluationBaselineTx(ctx, tx, workspaceID, buildRunID)
+	if err != nil {
+		_ = tx.Rollback(ctx)
+		return p.blockEvaluationPublicationCAS(ctx, run, err)
+	}
 	if !alreadyPublished {
-		publication, err := workflow.PublicationFromCandidate(candidate)
-		if err != nil {
-			return fmt.Errorf("publish step: convert candidate: %w", err)
-		}
-		tx, err := p.Deps.Pool.Begin(ctx)
-		if err != nil {
-			return fmt.Errorf("publish step: begin publication: %w", err)
-		}
-		defer func() { _ = tx.Rollback(ctx) }()
 		if err := p.Deps.Workflows.InsertPublicationTx(ctx, tx, publication); err != nil {
 			return fmt.Errorf("publish step: insert publication: %w", err)
 		}
+	}
+	if !run.EvaluationOnly {
 		if err := activatePublishedTeamTx(ctx, tx, workspaceID, candidate.Payload.Team.TeamID, candidate.Payload.Team.LeadAgentID); err != nil {
 			return fmt.Errorf("publish step: activate team: %w", err)
-		}
-		if err := tx.Commit(ctx); err != nil {
-			return fmt.Errorf("publish step: commit publication: %w", err)
-		}
-	} else {
-		tx, err := p.Deps.Pool.Begin(ctx)
-		if err != nil {
-			return fmt.Errorf("publish step: begin team activation: %w", err)
-		}
-		defer func() { _ = tx.Rollback(ctx) }()
-		if err := activatePublishedTeamTx(ctx, tx, workspaceID, candidate.Payload.Team.TeamID, candidate.Payload.Team.LeadAgentID); err != nil {
-			return fmt.Errorf("publish step: activate team: %w", err)
-		}
-		if err := tx.Commit(ctx); err != nil {
-			return fmt.Errorf("publish step: commit team activation: %w", err)
 		}
 	}
-	if _, err := p.Deps.Build.MarkPublished(ctx, workspaceID, buildRunID, DefaultActor, teambuild.FinalRef{
+	if _, err := p.Deps.Build.MarkPublishedTx(ctx, tx, workspaceID, buildRunID, DefaultActor, teambuild.FinalRef{
 		Ref:    candidate.ContentHash,
 		TeamID: candidate.Payload.Team.TeamID,
-	}); err != nil {
-		return fmt.Errorf("publish step: mark published: %w", err)
+	}, verifiedBaselineHash); err != nil {
+		_ = tx.Rollback(ctx)
+		return p.blockEvaluationPublicationCAS(ctx, run, err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("publish step: commit atomic publication: %w", err)
 	}
 	return nil
+}
+
+func (p *ProductionPhases) blockEvaluationPublicationCAS(
+	ctx context.Context,
+	run teambuild.TeamBuildRun,
+	cause error,
+) error {
+	if !run.EvaluationOnly ||
+		(!errors.Is(cause, teambuild.ErrEvaluationBaselineChanged) &&
+			!errors.Is(cause, teambuild.ErrEvaluationPublishCAS)) {
+		return fmt.Errorf("publish step: atomic publication: %w", cause)
+	}
+	if _, err := p.Deps.Build.TransitionStatus(ctx, run.WorkspaceID, run.BuildRunID,
+		teambuild.StatusPublishing, teambuild.StatusBlocked, DefaultActor,
+		"evaluation_baseline_cas_failed"); err != nil {
+		return fmt.Errorf("publish step: block evaluation CAS failure: %v (original: %w)", err, cause)
+	}
+	return fmt.Errorf("publish step: evaluation blocked by baseline CAS: %w", cause)
 }
 
 func activatePublishedTeamTx(ctx context.Context, tx pgx.Tx, workspaceID, teamID, leadAvatarID string) error {

@@ -64,17 +64,20 @@ type Member struct {
 
 // Team represents a named team within a workspace.
 type Team struct {
-	ID              string    `json:"id"`
-	WorkspaceID     string    `json:"workspace_id"`
-	Name            string    `json:"name"`
-	Objective       string    `json:"objective"`
-	PrimaryScenario string    `json:"primary_scenario"`
-	SuccessCriteria string    `json:"success_criteria"`
-	LeadAvatarID    string    `json:"lead_avatar_id"`
-	Status          string    `json:"status"`
-	Evaluation      string    `json:"evaluation"`
-	CreatedAt       time.Time `json:"created_at"`
-	UpdatedAt       time.Time `json:"updated_at"`
+	ID                     string     `json:"id"`
+	WorkspaceID            string     `json:"workspace_id"`
+	Name                   string     `json:"name"`
+	Objective              string     `json:"objective"`
+	PrimaryScenario        string     `json:"primary_scenario"`
+	SuccessCriteria        string     `json:"success_criteria"`
+	LeadAvatarID           string     `json:"lead_avatar_id"`
+	Status                 string     `json:"status"`
+	Evaluation             string     `json:"evaluation"`
+	EvaluationBuildRunID   string     `json:"evaluation_build_run_id,omitempty"`
+	EvaluationContractHash string     `json:"evaluation_contract_hash,omitempty"`
+	EvaluatedAt            *time.Time `json:"evaluated_at,omitempty"`
+	CreatedAt              time.Time  `json:"created_at"`
+	UpdatedAt              time.Time  `json:"updated_at"`
 }
 
 // UpdateTeamDesignInput contains the design-level fields that an optimize
@@ -191,7 +194,9 @@ func (s *Store) ListTeams(ctx context.Context, workspaceID string) ([]Team, erro
 	rows, err := s.pool.Query(ctx,
 		`SELECT id, workspace_id, name, objective, primary_scenario,
 		        success_criteria, COALESCE(lead_avatar_id, ''), status,
-		        evaluation, created_at, updated_at
+		        evaluation, COALESCE(evaluation_build_run_id, ''),
+		        COALESCE(evaluation_contract_hash, ''), evaluated_at,
+		        created_at, updated_at
 		 FROM weave_teams WHERE workspace_id=$1 ORDER BY created_at`, workspaceID)
 	if err != nil {
 		return nil, err
@@ -204,7 +209,9 @@ func (s *Store) ListTeams(ctx context.Context, workspaceID string) ([]Team, erro
 		if err := rows.Scan(
 			&team.ID, &team.WorkspaceID, &team.Name, &team.Objective,
 			&team.PrimaryScenario, &team.SuccessCriteria, &team.LeadAvatarID,
-			&team.Status, &team.Evaluation, &team.CreatedAt, &team.UpdatedAt,
+			&team.Status, &team.Evaluation, &team.EvaluationBuildRunID,
+			&team.EvaluationContractHash, &team.EvaluatedAt,
+			&team.CreatedAt, &team.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -220,7 +227,9 @@ func (s *Store) ListBusinessTeams(ctx context.Context, workspaceID string) ([]Te
 	rows, err := s.pool.Query(ctx,
 		`SELECT id, workspace_id, name, objective, primary_scenario,
 		        success_criteria, COALESCE(lead_avatar_id, ''), status,
-		        evaluation, created_at, updated_at
+		        evaluation, COALESCE(evaluation_build_run_id, ''),
+		        COALESCE(evaluation_contract_hash, ''), evaluated_at,
+		        created_at, updated_at
 		 FROM weave_teams
 		 WHERE workspace_id=$1 AND name NOT LIKE '\_\_%' ESCAPE '\' AND id NOT LIKE '\_\_%' ESCAPE '\'
 		 ORDER BY created_at`, workspaceID)
@@ -235,7 +244,9 @@ func (s *Store) ListBusinessTeams(ctx context.Context, workspaceID string) ([]Te
 		if err := rows.Scan(
 			&team.ID, &team.WorkspaceID, &team.Name, &team.Objective,
 			&team.PrimaryScenario, &team.SuccessCriteria, &team.LeadAvatarID,
-			&team.Status, &team.Evaluation, &team.CreatedAt, &team.UpdatedAt,
+			&team.Status, &team.Evaluation, &team.EvaluationBuildRunID,
+			&team.EvaluationContractHash, &team.EvaluatedAt,
+			&team.CreatedAt, &team.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -430,14 +441,18 @@ func (s *Store) GetTeamTx(
 	err := tx.QueryRow(ctx, `
 		SELECT id, workspace_id, name, objective, primary_scenario,
 		       success_criteria, COALESCE(lead_avatar_id, ''), status,
-		       evaluation, created_at, updated_at
+		       evaluation, COALESCE(evaluation_build_run_id, ''),
+		       COALESCE(evaluation_contract_hash, ''), evaluated_at,
+		       created_at, updated_at
 		FROM weave_teams
 		WHERE workspace_id=$1 AND id=$2
 		FOR SHARE
 	`, workspaceID, teamID).Scan(
 		&team.ID, &team.WorkspaceID, &team.Name, &team.Objective,
 		&team.PrimaryScenario, &team.SuccessCriteria, &team.LeadAvatarID,
-		&team.Status, &team.Evaluation, &team.CreatedAt, &team.UpdatedAt,
+		&team.Status, &team.Evaluation, &team.EvaluationBuildRunID,
+		&team.EvaluationContractHash, &team.EvaluatedAt,
+		&team.CreatedAt, &team.UpdatedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Team{}, fmt.Errorf("team %q not found: %w", teamID, ErrTeamNotFound)
@@ -459,13 +474,17 @@ func (s *Store) GetTeam(ctx context.Context, workspaceID, teamID string) (Team, 
 	err := s.pool.QueryRow(ctx, `
 		SELECT id, workspace_id, name, objective, primary_scenario,
 		       success_criteria, COALESCE(lead_avatar_id, ''), status,
-		       evaluation, created_at, updated_at
+		       evaluation, COALESCE(evaluation_build_run_id, ''),
+		       COALESCE(evaluation_contract_hash, ''), evaluated_at,
+		       created_at, updated_at
 		FROM weave_teams
 		WHERE workspace_id=$1 AND id=$2
 	`, workspaceID, teamID).Scan(
 		&team.ID, &team.WorkspaceID, &team.Name, &team.Objective,
 		&team.PrimaryScenario, &team.SuccessCriteria, &team.LeadAvatarID,
-		&team.Status, &team.Evaluation, &team.CreatedAt, &team.UpdatedAt,
+		&team.Status, &team.Evaluation, &team.EvaluationBuildRunID,
+		&team.EvaluationContractHash, &team.EvaluatedAt,
+		&team.CreatedAt, &team.UpdatedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Team{}, fmt.Errorf("team %q not found: %w", teamID, ErrTeamNotFound)
@@ -520,14 +539,18 @@ func (s *Store) UpdateTeamDesign(
 	err = tx.QueryRow(ctx, `
 		SELECT id, workspace_id, name, objective, primary_scenario,
 		       success_criteria, COALESCE(lead_avatar_id, ''), status,
-		       evaluation, created_at, updated_at
+		       evaluation, COALESCE(evaluation_build_run_id, ''),
+		       COALESCE(evaluation_contract_hash, ''), evaluated_at,
+		       created_at, updated_at
 		FROM weave_teams
 		WHERE workspace_id=$1 AND id=$2
 		FOR UPDATE
 	`, workspaceID, teamID).Scan(
 		&team.ID, &team.WorkspaceID, &team.Name, &team.Objective,
 		&team.PrimaryScenario, &team.SuccessCriteria, &team.LeadAvatarID,
-		&team.Status, &team.Evaluation, &team.CreatedAt, &team.UpdatedAt,
+		&team.Status, &team.Evaluation, &team.EvaluationBuildRunID,
+		&team.EvaluationContractHash, &team.EvaluatedAt,
+		&team.CreatedAt, &team.UpdatedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Team{}, fmt.Errorf("team %q not found: %w", teamID, ErrTeamNotFound)
@@ -553,11 +576,15 @@ func (s *Store) UpdateTeamDesign(
 		WHERE workspace_id=$1 AND id=$2
 		RETURNING id, workspace_id, name, objective, primary_scenario,
 		          success_criteria, COALESCE(lead_avatar_id, ''), status,
-		          evaluation, created_at, updated_at
+		          evaluation, COALESCE(evaluation_build_run_id, ''),
+		          COALESCE(evaluation_contract_hash, ''), evaluated_at,
+		          created_at, updated_at
 	`, workspaceID, teamID, input.Objective, input.PrimaryScenario, input.SuccessCriteria).Scan(
 		&team.ID, &team.WorkspaceID, &team.Name, &team.Objective,
 		&team.PrimaryScenario, &team.SuccessCriteria, &team.LeadAvatarID,
-		&team.Status, &team.Evaluation, &team.CreatedAt, &team.UpdatedAt,
+		&team.Status, &team.Evaluation, &team.EvaluationBuildRunID,
+		&team.EvaluationContractHash, &team.EvaluatedAt,
+		&team.CreatedAt, &team.UpdatedAt,
 	); err != nil {
 		return Team{}, fmt.Errorf("update team design: %w", err)
 	}

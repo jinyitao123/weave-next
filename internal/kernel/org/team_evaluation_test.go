@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestFinalCreateTeamEvaluationPreservesLegacyDefault(t *testing.T) {
@@ -27,11 +28,16 @@ func TestFinalCreateTeamEvaluationPreservesLegacyDefault(t *testing.T) {
 }
 
 func TestTeamJSONProjectsEvaluation(t *testing.T) {
-	encoded, err := json.Marshal(Team{ID: "team-1", Evaluation: TeamEvaluationUnevaluated})
+	now := time.Now().UTC()
+	encoded, err := json.Marshal(Team{
+		ID: "team-1", Evaluation: TeamEvaluationEvaluated,
+		EvaluationBuildRunID: "br-1", EvaluationContractHash: strings.Repeat("a", 64), EvaluatedAt: &now,
+	})
 	if err != nil {
 		t.Fatalf("json.Marshal() error = %v", err)
 	}
-	if got := string(encoded); !strings.Contains(got, `"evaluation":"unevaluated"`) {
+	if got := string(encoded); !strings.Contains(got, `"evaluation_build_run_id":"br-1"`) ||
+		!strings.Contains(got, `"evaluation_contract_hash"`) || !strings.Contains(got, `"evaluated_at"`) {
 		t.Fatalf("Team JSON = %s, want evaluation projection", got)
 	}
 }

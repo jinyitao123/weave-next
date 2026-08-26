@@ -843,6 +843,7 @@ type TeamBuildRun struct {
 	Status            string
 	ConversationID    string
 	EvaluationTeamID  string
+	EvaluationOnly    bool
 	Brief             BuildBrief
 	BriefHash         string
 	Contract          EvaluationContract

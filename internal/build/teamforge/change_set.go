@@ -495,6 +495,88 @@ func CompileDeclarativeChangeSetV1(
 	return compileChangeSetV1(baseline, blueprint, &frozen, true)
 }
 
+// CompileEvaluationChangeSetV1 creates the evaluation-only DAG. The sole
+// workflow_compile step is a read-only exact-draft verification performed by
+// the executor; no team, roster, agent, graph, or workflow write operation is
+// present. Candidate execution and publication retain their ordinary closed
+// contracts.
+func CompileEvaluationChangeSetV1(
+	baseline TeamBuildBaselineV1,
+	blueprint teambuild.TeamBlueprintV1,
+	declarative *FrozenDeclarativeWorkflowSpecV1,
+) (ChangeSetV1, error) {
+	if blueprint.Mode != teambuild.ModeOptimize || baseline.Mode != teambuild.ModeOptimize || baseline.Team == nil {
+		return ChangeSetV1{}, errors.New("evaluation ChangeSet requires an optimize blueprint and baseline")
+	}
+	if blueprint.RevisionPolicy.MaxRevisions != 1 {
+		return ChangeSetV1{}, errors.New("evaluation ChangeSet requires max_revisions=1")
+	}
+	if err := teambuild.ValidateTeamBlueprintV1(blueprint); err != nil {
+		return ChangeSetV1{}, err
+	}
+	if err := validateBaselineIdentityV1(baseline, blueprint); err != nil {
+		return ChangeSetV1{}, err
+	}
+	compiler := changeSetCompilerV1{
+		baseline: baseline, blueprint: blueprint, declarative: declarative,
+		memberVersions: make(map[string]int64, len(baseline.Members)),
+		memberTargets:  make(map[string]string, len(baseline.Members)),
+		memberMutated:  make(map[string]bool, len(baseline.Members)),
+	}
+	for _, member := range baseline.Members {
+		compiler.memberVersions[member.StableRef] = member.Version
+		compiler.memberTargets[member.StableRef] = member.Target
+	}
+	workflowInput, compilerName, _, err := compiler.compileWorkflowInput()
+	if err != nil {
+		return ChangeSetV1{}, err
+	}
+	workflowTarget := teambuild.FirstOptimizeWorkflowID(blueprint.TeamID)
+	if baseline.Workflow != nil {
+		workflowTarget = strings.TrimSpace(baseline.Workflow.Target)
+	}
+	verifyWorkflow, err := newChangeOperationWithCompilerV1(
+		OperationWorkflowCompile, workflowTarget, nil, workflowInput, nil,
+		"none", compilerName,
+	)
+	if err != nil {
+		return ChangeSetV1{}, err
+	}
+	candidate, err := newChangeOperationV1(
+		OperationCandidateRun, "candidate/"+teamIdentitySegment(blueprint), nil,
+		candidateOperationInputV1{TeamTarget: baseline.Team.Target},
+		[]string{verifyWorkflow.OperationID}, "none",
+	)
+	if err != nil {
+		return ChangeSetV1{}, err
+	}
+	publish, err := newChangeOperationV1(
+		OperationPublish, baseline.Team.Target, int64Ptr(baseline.Team.Version),
+		publishOperationInputV1{TeamTarget: baseline.Team.Target},
+		[]string{candidate.OperationID}, "team-version:"+fmt.Sprint(baseline.Team.Version),
+	)
+	if err != nil {
+		return ChangeSetV1{}, err
+	}
+	blueprintHash, err := blueprint.BlueprintHash()
+	if err != nil {
+		return ChangeSetV1{}, err
+	}
+	changeSet := ChangeSetV1{
+		SchemaVersion: ChangeSetSchemaVersionV1,
+		BaselineHash:  baseline.SourceSnapshotHash, BlueprintHash: blueprintHash,
+		Operations: []ChangeOperationV1{verifyWorkflow, candidate, publish},
+	}
+	changeSet.ChangeSetID, err = contentAddressChangeSetV1(changeSet)
+	if err != nil {
+		return ChangeSetV1{}, err
+	}
+	if err := ValidateChangeSetV1(changeSet); err != nil {
+		return ChangeSetV1{}, fmt.Errorf("compiled evaluation change set invalid: %w", err)
+	}
+	return changeSet, nil
+}
+
 func compileChangeSetV1(
 	baseline TeamBuildBaselineV1,
 	blueprint teambuild.TeamBlueprintV1,

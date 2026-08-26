@@ -102,24 +102,89 @@ func (s *Store) MarkPublished(
 	workspaceID, buildRunID, actor string,
 	finalRef FinalRef,
 ) (TeamBuildRun, error) {
-	if strings.TrimSpace(actor) == "" {
-		return TeamBuildRun{}, errors.New("mark build run published: actor is required")
-	}
-	if strings.TrimSpace(finalRef.Ref) == "" {
-		return TeamBuildRun{}, errors.New("mark build run published: final ref is required")
-	}
-	finalRefJSON, err := json.Marshal(finalRef)
-	if err != nil {
-		return TeamBuildRun{}, fmt.Errorf("mark build run published: encode final ref: %w", err)
-	}
-
-	now := s.clock.Now()
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return TeamBuildRun{}, fmt.Errorf("begin mark build run published: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
+	run, err := s.MarkPublishedTx(ctx, tx, workspaceID, buildRunID, actor, finalRef, "")
+	if err != nil {
+		return TeamBuildRun{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return TeamBuildRun{}, fmt.Errorf("commit mark build run published: %w", err)
+	}
+	return run, nil
+}
+
+// MarkPublishedTx finalizes publication inside the caller-owned transaction.
+// Evaluation runs additionally flip the unevaluated team and provenance with
+// a CAS bound to the baseline proof returned by VerifyEvaluationBaselineTx.
+func (s *Store) MarkPublishedTx(
+	ctx context.Context,
+	tx pgx.Tx,
+	workspaceID, buildRunID, actor string,
+	finalRef FinalRef,
+	verifiedBaselineHash string,
+) (TeamBuildRun, error) {
+	if tx == nil {
+		return TeamBuildRun{}, errors.New("mark build run published tx: transaction is required")
+	}
+	if strings.TrimSpace(actor) == "" {
+		return TeamBuildRun{}, errors.New("mark build run published tx: actor is required")
+	}
+	if strings.TrimSpace(finalRef.Ref) == "" {
+		return TeamBuildRun{}, errors.New("mark build run published tx: final ref is required")
+	}
+	var status, evaluationTeamID, contractHash string
+	var evaluationOnly bool
+	var baselineRaw []byte
+	err := tx.QueryRow(ctx, `
+		SELECT status, evaluation_only, COALESCE(evaluation_team_id,''),
+			contract_hash, baseline_snapshot_json
+		FROM weave_team_build_runs
+		WHERE workspace_id=$1 AND build_run_id=$2
+		FOR UPDATE
+	`, workspaceID, buildRunID).Scan(
+		&status, &evaluationOnly, &evaluationTeamID, &contractHash, &baselineRaw,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return TeamBuildRun{}, fmt.Errorf("mark build run published tx: %w", ErrBuildRunNotFound)
+	}
+	if err != nil {
+		return TeamBuildRun{}, fmt.Errorf("mark build run published tx: %w", err)
+	}
+	if status != StatusPublishing {
+		return TeamBuildRun{}, fmt.Errorf("mark build run published tx: %w: run is not publishing", ErrInvalidTransition)
+	}
+	now := s.clock.Now()
+	if evaluationOnly {
+		var baseline BaselineSnapshot
+		if err := json.Unmarshal(baselineRaw, &baseline); err != nil {
+			return TeamBuildRun{}, fmt.Errorf("mark build run published tx: decode baseline: %w", err)
+		}
+		if verifiedBaselineHash == "" || verifiedBaselineHash != baseline.ContentHash ||
+			finalRef.TeamID != evaluationTeamID {
+			return TeamBuildRun{}, fmt.Errorf("mark build run published tx: %w: evaluation proof mismatch", ErrEvaluationPublishCAS)
+		}
+		tag, err := tx.Exec(ctx, `
+			UPDATE weave_teams
+			SET evaluation='evaluated', evaluation_build_run_id=$3,
+				evaluation_contract_hash=$4, evaluated_at=$5, updated_at=$5
+			WHERE workspace_id=$1 AND id=$2 AND evaluation='unevaluated'
+		`, workspaceID, evaluationTeamID, buildRunID, contractHash, now)
+		if err != nil {
+			return TeamBuildRun{}, fmt.Errorf("mark build run published tx: certify team: %w", err)
+		}
+		if tag.RowsAffected() != 1 {
+			return TeamBuildRun{}, fmt.Errorf("mark build run published tx: %w: team state changed", ErrEvaluationPublishCAS)
+		}
+	}
+	finalRefJSON, err := json.Marshal(finalRef)
+	if err != nil {
+		return TeamBuildRun{}, fmt.Errorf("mark build run published tx: encode final ref: %w", err)
+	}
 	run, err := scanBuildRun(tx.QueryRow(ctx, `
 		UPDATE weave_team_build_runs
 		SET status='passed', updated_at=$3, decided_at=$3,
@@ -128,15 +193,14 @@ func (s *Store) MarkPublished(
 		RETURNING `+buildRunColumns+`
 	`, workspaceID, buildRunID, now, finalRefJSON))
 	if errors.Is(err, pgx.ErrNoRows) {
-		return TeamBuildRun{}, fmt.Errorf("mark build run published: build run %q is not publishing or does not exist", buildRunID)
+		return TeamBuildRun{}, fmt.Errorf("mark build run published tx: %w", ErrInvalidTransition)
 	}
 	if err != nil {
-		return TeamBuildRun{}, fmt.Errorf("mark build run published: %w", err)
+		return TeamBuildRun{}, fmt.Errorf("mark build run published tx: %w", err)
 	}
-
 	nextSeq, err := nextTransitionSeq(ctx, tx, workspaceID, buildRunID)
 	if err != nil {
-		return TeamBuildRun{}, fmt.Errorf("mark build run published: %w", err)
+		return TeamBuildRun{}, fmt.Errorf("mark build run published tx: %w", err)
 	}
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO weave_team_build_run_transitions (
@@ -145,10 +209,7 @@ func (s *Store) MarkPublished(
 		) VALUES ($1,$2,$3,'publishing','passed',
 			'final publication completed',$4,$5)
 	`, workspaceID, buildRunID, nextSeq, actor, now); err != nil {
-		return TeamBuildRun{}, fmt.Errorf("mark build run published ledger: %w", err)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return TeamBuildRun{}, fmt.Errorf("commit mark build run published: %w", err)
+		return TeamBuildRun{}, fmt.Errorf("mark build run published tx ledger: %w", err)
 	}
 	return run, nil
 }

@@ -244,7 +244,7 @@ func (s *Service) ensureBuildRun(
 	run, err = s.builds.CreateBuildRun(ctx, workspaceID, buildRunID, teambuild.CreateRunParams{
 		Brief: brief, Contract: contract, CreatedBy: userID,
 		ExpiresAt: s.now().UTC().Add(s.runTTL), ExecutionStrategy: teambuild.ExecutionStrategyCompilerV1,
-		EvaluationTeamID: teamID,
+		EvaluationTeamID: teamID, EvaluationOnly: true,
 	})
 	if errors.Is(err, teambuild.ErrActiveTeamEvaluation) {
 		return teambuild.TeamBuildRun{}, ErrConcurrentEvaluation
@@ -287,7 +287,7 @@ func (s *Service) ensureRevision(
 	var changeSet teamforge.ChangeSetV1
 	switch blueprint.Workflow.Mode {
 	case teambuild.BlueprintWorkflowTemplate:
-		changeSet, err = teamforge.CompileChangeSetV1(baseline, blueprint)
+		changeSet, err = teamforge.CompileEvaluationChangeSetV1(baseline, blueprint, nil)
 	case teambuild.BlueprintWorkflowDeclarativeV1:
 		if s.declarativeValidate == nil {
 			return teambuild.BlueprintRevision{}, ErrUnavailable
@@ -318,7 +318,7 @@ func (s *Service) ensureRevision(
 			Mode: teambuild.ModeOptimize, Baseline: preview.Snapshot,
 		}, blueprint)
 		if err == nil {
-			changeSet, err = teamforge.CompileDeclarativeChangeSetV1(baseline, blueprint, frozen)
+			changeSet, err = teamforge.CompileEvaluationChangeSetV1(baseline, blueprint, &frozen)
 		}
 	default:
 		return teambuild.BlueprintRevision{}, fmt.Errorf("unsupported template workflow lineage %q", blueprint.Workflow.Mode)
@@ -405,7 +405,7 @@ func verifyRunIdentity(
 		return teambuild.TeamBuildRun{}, err
 	}
 	if run.ExecutionStrategy != teambuild.ExecutionStrategyCompilerV1 ||
-		run.EvaluationTeamID != teamID || run.ContractHash != contractHash {
+		!run.EvaluationOnly || run.EvaluationTeamID != teamID || run.ContractHash != contractHash {
 		return teambuild.TeamBuildRun{}, ErrIdempotencyConflict
 	}
 	return run, nil

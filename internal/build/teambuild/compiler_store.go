@@ -20,6 +20,7 @@ var (
 	ErrBlueprintRevisionNotAppendSafe = errors.New("blueprint revision is not append-safe")
 	ErrNoReadyOperationStep           = errors.New("no ready compiler operation step")
 	ErrOperationStepLeaseLost         = errors.New("compiler operation step lease lost")
+	ErrEvaluationOnlyRevision         = errors.New("evaluation-only run forbids blueprint revisions")
 )
 
 const (
@@ -249,13 +250,14 @@ func (s *Store) PersistCompilerAuthorizationBundle(
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	var runMode, status, briefHash, contractHash, currentStrategy string
+	var evaluationOnly bool
 	var assetScopeJSON []byte
 	if err := tx.QueryRow(ctx, `
-		SELECT mode, status, brief_hash, contract_hash, asset_scope_json, execution_strategy
+		SELECT mode, status, brief_hash, contract_hash, asset_scope_json, execution_strategy, evaluation_only
 		FROM weave_team_build_runs
 		WHERE workspace_id=$1 AND build_run_id=$2
 		FOR UPDATE
-	`, workspaceID, buildRunID).Scan(&runMode, &status, &briefHash, &contractHash, &assetScopeJSON, &currentStrategy); errors.Is(err, pgx.ErrNoRows) {
+	`, workspaceID, buildRunID).Scan(&runMode, &status, &briefHash, &contractHash, &assetScopeJSON, &currentStrategy, &evaluationOnly); errors.Is(err, pgx.ErrNoRows) {
 		return BlueprintRevision{}, fmt.Errorf("persist compiler bundle: %w", ErrBuildRunNotFound)
 	} else if err != nil {
 		return BlueprintRevision{}, fmt.Errorf("persist compiler bundle: %w", err)
@@ -268,6 +270,18 @@ func (s *Store) PersistCompilerAuthorizationBundle(
 	}
 	if contractHash != bundle.EvaluationContractHash {
 		return BlueprintRevision{}, fmt.Errorf("persist compiler bundle: %w: evaluation contract hash mismatch", ErrCompilerBundleInvalid)
+	}
+	if evaluationOnly {
+		if blueprint.RevisionPolicy.MaxRevisions != 1 || bundle.RevisionNo != 1 {
+			return BlueprintRevision{}, fmt.Errorf("persist compiler bundle: %w: evaluation_only requires exactly one revision", ErrCompilerBundleInvalid)
+		}
+		for _, operation := range changeSet.Operations {
+			switch operation.Type {
+			case "workflow_compile", "candidate_run", "publish":
+			default:
+				return BlueprintRevision{}, fmt.Errorf("persist compiler bundle: %w: evaluation_only forbids %s", ErrCompilerBundleInvalid, operation.Type)
+			}
+		}
 	}
 	selectedStrategy := ExecutionStrategyCompilerV1
 	if currentStrategy == ExecutionStrategyTemplateInstantiate {
@@ -395,18 +409,22 @@ func (s *Store) AppendCompilerRevisionFromPatch(
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	var runMode, status, contractHash, strategy string
+	var evaluationOnly bool
 	if err := tx.QueryRow(ctx, `
-		SELECT mode, status, contract_hash, execution_strategy
+		SELECT mode, status, contract_hash, execution_strategy, evaluation_only
 		FROM weave_team_build_runs
 		WHERE workspace_id=$1 AND build_run_id=$2
 		FOR UPDATE
-	`, workspaceID, buildRunID).Scan(&runMode, &status, &contractHash, &strategy); errors.Is(err, pgx.ErrNoRows) {
+	`, workspaceID, buildRunID).Scan(&runMode, &status, &contractHash, &strategy, &evaluationOnly); errors.Is(err, pgx.ErrNoRows) {
 		return BlueprintRevision{}, fmt.Errorf("append compiler revision: %w", ErrBuildRunNotFound)
 	} else if err != nil {
 		return BlueprintRevision{}, fmt.Errorf("append compiler revision: %w", err)
 	}
 	if status != StatusRoundRunning || strategy != ExecutionStrategyCompilerV1 {
 		return BlueprintRevision{}, fmt.Errorf("append compiler revision: %w", ErrBuildRunNotRoundRunning)
+	}
+	if evaluationOnly {
+		return BlueprintRevision{}, fmt.Errorf("append compiler revision: %w", ErrEvaluationOnlyRevision)
 	}
 	if err := validateCompilerChangeSetStrategy(changeSet, ExecutionStrategyCompilerV1); err != nil {
 		return BlueprintRevision{}, fmt.Errorf("append compiler revision: %w: %v", ErrCompilerBundleInvalid, err)

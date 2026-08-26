@@ -99,6 +99,62 @@ func (s *Store) PreviewCompilerBaseline(
 	}, nil
 }
 
+// VerifyEvaluationBaselineTx recaptures the complete authorization baseline
+// under the caller's publication transaction and locks. The returned hash is
+// the proof token accepted by MarkPublishedTx; ordinary runs return an empty
+// token. Publication must call this before inserting publication facts.
+func (s *Store) VerifyEvaluationBaselineTx(
+	ctx context.Context,
+	tx pgx.Tx,
+	workspaceID, buildRunID string,
+) (string, error) {
+	if tx == nil {
+		return "", errors.New("verify evaluation baseline: transaction is required")
+	}
+	var status string
+	var evaluationOnly bool
+	var briefRaw, baselineRaw []byte
+	err := tx.QueryRow(ctx, `
+		SELECT status, evaluation_only, brief_json, baseline_snapshot_json
+		FROM weave_team_build_runs
+		WHERE workspace_id=$1 AND build_run_id=$2
+		FOR UPDATE
+	`, workspaceID, buildRunID).Scan(&status, &evaluationOnly, &briefRaw, &baselineRaw)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", fmt.Errorf("verify evaluation baseline: %w", ErrBuildRunNotFound)
+	}
+	if err != nil {
+		return "", fmt.Errorf("verify evaluation baseline: %w", err)
+	}
+	if !evaluationOnly {
+		return "", nil
+	}
+	if status != StatusPublishing {
+		return "", fmt.Errorf("verify evaluation baseline: %w: run is not publishing", ErrEvaluationPublishCAS)
+	}
+	var brief BuildBrief
+	var frozen BaselineSnapshot
+	if err := json.Unmarshal(briefRaw, &brief); err != nil {
+		return "", fmt.Errorf("verify evaluation baseline: decode brief: %w", err)
+	}
+	if err := json.Unmarshal(baselineRaw, &frozen); err != nil {
+		return "", fmt.Errorf("verify evaluation baseline: decode frozen baseline: %w", err)
+	}
+	capturedAt, err := time.Parse(time.RFC3339Nano, frozen.CapturedAt)
+	if err != nil {
+		return "", fmt.Errorf("verify evaluation baseline: decode captured_at: %w", err)
+	}
+	current, err := s.captureBaselineTxAt(ctx, tx, workspaceID, brief, capturedAt)
+	if err != nil {
+		return "", fmt.Errorf("verify evaluation baseline: %w", err)
+	}
+	if current.ContentHash != frozen.ContentHash {
+		return "", fmt.Errorf("verify evaluation baseline: %w: frozen=%s current=%s",
+			ErrEvaluationBaselineChanged, frozen.ContentHash, current.ContentHash)
+	}
+	return frozen.ContentHash, nil
+}
+
 // captureBaselineTx reads the live target Team, Roster, referenced Agents,
 // and Workflows inside the caller-owned authorize transaction, then builds,
 // hashes, validates, and closure-checks the full optimize baseline. The

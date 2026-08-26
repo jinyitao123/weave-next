@@ -44,6 +44,12 @@ func (s *Service) Execute(
 		return result, nil
 	}
 	if err := s.publisher.PublishStep(ctx, workspaceID, buildRunID); err != nil {
+		if errors.Is(err, teambuild.ErrEvaluationBaselineChanged) ||
+			errors.Is(err, teambuild.ErrEvaluationPublishCAS) {
+			result.Status = teambuild.StatusBlocked
+			result.StopReason = "evaluation_baseline_cas_failed"
+			return result, nil
+		}
 		return Result{}, fmt.Errorf("publish evaluated team build candidate: %w", err)
 	}
 	result.Status = teambuild.StatusPassed

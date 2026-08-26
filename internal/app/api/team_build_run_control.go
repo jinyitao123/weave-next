@@ -80,6 +80,8 @@ type teamBuildRunResponse struct {
 	ExecutionStrategy string                       `json:"execution_strategy"`
 	Status            string                       `json:"status"`
 	ConversationID    string                       `json:"conversation_id,omitempty"`
+	EvaluationTeamID  string                       `json:"evaluation_team_id,omitempty"`
+	EvaluationOnly    bool                         `json:"evaluation_only"`
 	Brief             teambuild.BuildBrief         `json:"brief"`
 	BriefHash         string                       `json:"brief_hash"`
 	Contract          teambuild.EvaluationContract `json:"contract"`
@@ -264,6 +266,8 @@ func teamBuildRunView(run teambuild.TeamBuildRun) teamBuildRunResponse {
 		ExecutionStrategy: run.EffectiveExecutionStrategy(),
 		Status:            run.Status,
 		ConversationID:    run.ConversationID,
+		EvaluationTeamID:  run.EvaluationTeamID,
+		EvaluationOnly:    run.EvaluationOnly,
 		Brief:             run.Brief,
 		BriefHash:         run.BriefHash,
 		Contract:          run.Contract,

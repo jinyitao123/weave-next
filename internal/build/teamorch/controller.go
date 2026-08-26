@@ -876,6 +876,19 @@ func (c *Controller) handleCompilerBusinessQuality(
 	ctx context.Context, run teambuild.TeamBuildRun, actor string, revisionNo int, eval RoundEvaluation,
 ) (Result, bool, error) {
 	workspaceID, buildRunID := run.WorkspaceID, run.BuildRunID
+	if run.EvaluationOnly {
+		report, err := c.roundReport(eval, revisionNo)
+		if err != nil {
+			return Result{}, false, err
+		}
+		if _, err := c.Store.SaveRoundReport(ctx, workspaceID, buildRunID, report); err != nil &&
+			!errors.Is(err, teambuild.ErrRoundReportExists) {
+			return Result{}, false, fmt.Errorf("round controller: persist evaluation-only business report: %w", err)
+		}
+		result, err := c.blockCompilerWithPersistedReport(ctx, workspaceID, buildRunID, actor,
+			"evaluation_business_quality_failed", revisionNo)
+		return result, false, err
+	}
 	if eval.Diagnosis.RevisionAction != teameval.RevisionActionRequestBlueprintPatch {
 		eval.Diagnosis.FailureDetail = "business-quality diagnosis did not request BlueprintPatch"
 		result, err := c.stopCompilerDiagnosis(ctx, workspaceID, buildRunID, actor, revisionNo, revisionNo-1, eval)

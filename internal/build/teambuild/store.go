@@ -86,6 +86,12 @@ var (
 	// ErrActiveTeamEvaluation reports the database-enforced single active
 	// evaluation run for one team.
 	ErrActiveTeamEvaluation = errors.New("team already has an active evaluation run")
+	// ErrEvaluationBaselineChanged blocks certification when any baseline-bound
+	// team asset changed after evaluation authorization.
+	ErrEvaluationBaselineChanged = errors.New("evaluation baseline changed")
+	// ErrEvaluationPublishCAS reports a failed unevaluated-team certification
+	// compare-and-swap.
+	ErrEvaluationPublishCAS = errors.New("evaluation publish compare-and-swap failed")
 )
 
 // Clock supplies timestamps for build run transitions.
@@ -152,7 +158,7 @@ func New(pool *pgxpool.Pool, clock Clock) *Store {
 
 const buildRunColumns = `
 	workspace_id, build_run_id, mode, execution_strategy, status, conversation_id,
-	evaluation_team_id,
+	evaluation_team_id, evaluation_only,
 	brief_json, brief_hash, contract_json, contract_hash,
 	asset_scope_json, baseline_snapshot_json,
 	round_budget_json, total_budget_json,
@@ -178,6 +184,7 @@ type CreateRunParams struct {
 	// persisted separately from brief.team_id so concurrency can be enforced by
 	// a partial unique index without classifying ordinary optimize runs.
 	EvaluationTeamID string
+	EvaluationOnly   bool
 }
 
 // ValidateBuildRunDrafts validates and canonicalizes the two documents used
@@ -215,6 +222,9 @@ func (s *Store) CreateBuildRun(
 	}
 	if strings.TrimSpace(params.CreatedBy) == "" {
 		return TeamBuildRun{}, errors.New("create build run: created_by is required")
+	}
+	if params.EvaluationOnly != (strings.TrimSpace(params.EvaluationTeamID) != "") {
+		return TeamBuildRun{}, errors.New("create build run: evaluation_only must exactly match evaluation_team_id presence")
 	}
 	var err error
 	params.Brief = expandCreateAssetScope(params.Brief)
@@ -265,17 +275,18 @@ func (s *Store) CreateBuildRun(
 	run, err := scanBuildRun(tx.QueryRow(ctx, `
 		INSERT INTO weave_team_build_runs (
 			workspace_id, build_run_id, mode, status, conversation_id,
-			evaluation_team_id,
+			evaluation_team_id, evaluation_only,
 			brief_json, brief_hash, contract_json, contract_hash,
 			asset_scope_json, baseline_snapshot_json,
 			round_budget_json, total_budget_json,
 			expires_at, publish_eligible, rollback_status, execution_strategy,
 			confirmed_by, final_ref_json, created_at, updated_at, decided_at
-		) VALUES ($1,$2,$3,'planning',$4,$5,$6,$7,$8,$9,$10,NULL,$11,$12,$13,false,'none',$14,NULL,NULL,$15,$15,NULL)
+		) VALUES ($1,$2,$3,'planning',$4,$5,$6,$7,$8,$9,$10,$11,NULL,$12,$13,$14,false,'none',$15,NULL,NULL,$16,$16,NULL)
 		RETURNING `+buildRunColumns+`
 	`, workspaceID, buildRunID, params.Brief.Mode,
 		nullableString(params.ConversationID),
 		nullableString(params.EvaluationTeamID),
+		params.EvaluationOnly,
 		briefJSON, briefHash, contractJSON, contractHash,
 		scopeJSON, roundBudgetJSON, totalBudgetJSON,
 		params.ExpiresAt, executionStrategy, now))
@@ -1003,7 +1014,7 @@ func scanBuildRun(row rowScanner) (TeamBuildRun, error) {
 	var decidedAt *time.Time
 	if err := row.Scan(
 		&run.WorkspaceID, &run.BuildRunID, &run.Mode, &run.ExecutionStrategy, &run.Status, &conversationID,
-		&evaluationTeamID,
+		&evaluationTeamID, &run.EvaluationOnly,
 		&briefRaw, &run.BriefHash, &contractRaw, &run.ContractHash,
 		&scopeRaw, &baselineRaw,
 		&roundBudgetRaw, &totalBudgetRaw,
