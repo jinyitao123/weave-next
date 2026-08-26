@@ -1147,7 +1147,12 @@ func validOutgoingCardinality(node Node, edgeIndexes []int, edges []Edge, loopBy
 	case NodeJoin:
 		return counts[RouteSuccess] == 1 && counts[RouteFailure] <= 1 && only(RouteSuccess, RouteFailure)
 	case NodeWait:
-		return counts[RouteSuccess] == 1 && counts[RouteTimeout] <= 1 && counts[RouteFailure] <= 1 && only(RouteSuccess, RouteTimeout, RouteFailure)
+		config, _ := node.Config.(WaitConfig)
+		timeoutCountValid := counts[RouteTimeout] <= 1
+		if config.EffectiveKind() == WaitKindHuman && config.TimeoutSeconds != nil {
+			timeoutCountValid = counts[RouteTimeout] == 1
+		}
+		return counts[RouteSuccess] == 1 && timeoutCountValid && counts[RouteFailure] <= 1 && only(RouteSuccess, RouteTimeout, RouteFailure)
 	case NodeLoop:
 		return counts[RouteBody] == 1 && counts[RouteExit] == 1 && only(RouteBody, RouteExit)
 	case NodeDeliver:

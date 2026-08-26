@@ -120,6 +120,7 @@ type Server struct {
 	teamRunWorkers            *teamrun.Workers
 	teamRunCancel             *teamrun.CancelService
 	teamRunHumanResume        *teamrun.HumanResumeService
+	teamRunHumanTasks         *teamrun.HumanTaskReader
 	workflowFanoutReconciler  *fanout.WorkflowReconcilerWorker
 }
 
@@ -511,6 +512,8 @@ func (s *Server) registerRoutes() {
 	auth.POST("/conversations/:id/threads", s.handleCreateThread, chatScope)
 	auth.POST("/conversations/:id/read", s.handleMarkConversationRead, chatScope)
 	auth.GET("/inbox/unread", s.handleListInboxUnread, chatScope)
+	auth.GET("/human-tasks", s.handleListHumanTasks, runsScope)
+	auth.POST("/human-tasks/:run_id/complete", s.handleCompleteHumanTask, runsScope)
 	auth.POST("/messages/:id/flag", s.handleFlagMessage, chatScope)
 	auth.DELETE("/messages/:id/flag", s.handleUnflagMessage, chatScope)
 	auth.POST("/messages/:id/deliverable", s.handlePromoteMessageDeliverable, chatScope)
@@ -814,6 +817,13 @@ func (s *Server) ConfigureTeamRunWorkers() {
 			Executor:     executor,
 			BatchSize:    temporaryTeamRunWorkerBatchSize,
 		},
+		HumanTimeout: &teamrun.HumanTimeoutSweeper{
+			Transactions: pool,
+			Runs:         runStore,
+			Checkpoints:  checkpointStore,
+			Tasks:        s.Tasks,
+			BatchSize:    temporaryTeamRunWorkerBatchSize,
+		},
 		PollInterval: temporaryTeamRunWorkerPollInterval,
 	}
 	s.teamRunCancel = &teamrun.CancelService{
@@ -826,6 +836,7 @@ func (s *Server) ConfigureTeamRunWorkers() {
 		Checkpoints:  checkpointStore,
 		Tasks:        s.Tasks,
 	}
+	s.teamRunHumanTasks = &teamrun.HumanTaskReader{Pool: pool}
 	s.workflowFanoutReconciler = &fanout.WorkflowReconcilerWorker{
 		Transactions: pool, Store: s.Fanout, Coordinator: coordinator,
 		BatchSize:    temporaryTeamRunWorkerBatchSize,

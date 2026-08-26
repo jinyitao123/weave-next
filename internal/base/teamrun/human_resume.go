@@ -30,6 +30,7 @@ type HumanWaitDetailV1 struct {
 	WaitType      string          `json:"wait_type"`
 	NodeID        string          `json:"node_id"`
 	SuccessNodeID string          `json:"success_node_id"`
+	TimeoutNodeID string          `json:"timeout_node_id,omitempty"`
 	ResumeSchema  json.RawMessage `json:"resume_schema"`
 	Task          HumanTaskDetail `json:"task"`
 	DeadlineAt    *time.Time      `json:"deadline_at,omitempty"`
@@ -44,10 +45,17 @@ func DecodeHumanWaitDetailV1(raw json.RawMessage) (HumanWaitDetailV1, error) {
 		return HumanWaitDetailV1{}, fmt.Errorf("decode human wait detail: %w", err)
 	}
 	var schema map[string]json.RawMessage
+	deadlineEncodingValid := true
+	if detail.DeadlineAt != nil {
+		_, offset := detail.DeadlineAt.Zone()
+		deadlineEncodingValid = offset == 0 && detail.DeadlineAt.Nanosecond() == 0
+	}
 	if detail.SchemaVersion != 1 || detail.WaitType != "human" || detail.NodeID == "" ||
-		detail.SuccessNodeID == "" || detail.Task.Title == "" || detail.Task.Instructions == "" ||
+		detail.SuccessNodeID == "" || detail.Task.Title == "" || len(detail.Task.Title) > 256 ||
+		detail.Task.Instructions == "" || len(detail.Task.Instructions) > 4*1024 || !deadlineEncodingValid ||
 		json.Unmarshal(detail.ResumeSchema, &schema) != nil || schema == nil ||
-		(detail.DeadlineAt != nil && detail.DeadlineAt.IsZero()) {
+		(detail.DeadlineAt != nil && (detail.DeadlineAt.IsZero() || detail.TimeoutNodeID == "")) ||
+		(detail.DeadlineAt == nil && detail.TimeoutNodeID != "") {
 		return HumanWaitDetailV1{}, errors.New("human wait detail fields are invalid")
 	}
 	return detail, nil
@@ -176,7 +184,8 @@ func (s *HumanResumeService) Complete(
 	}
 	taskPayload, err := json.Marshal(HumanResumeTaskPayloadV1{
 		SchemaVersion: 1, Kind: "human_resume", RunID: req.RunID,
-		IdempotencyKey: req.IdempotencyKey, PayloadDigest: hex.EncodeToString(req.PayloadDigest),
+		IdempotencyKey: req.IdempotencyKey, Disposition: "completed",
+		PayloadDigest: hex.EncodeToString(req.PayloadDigest),
 	})
 	if err != nil {
 		return CompleteHumanWaitResult{}, err
@@ -201,7 +210,8 @@ type HumanResumeTaskPayloadV1 struct {
 	Kind           string `json:"kind"`
 	RunID          string `json:"run_id"`
 	IdempotencyKey string `json:"idempotency_key"`
-	PayloadDigest  string `json:"payload_digest"`
+	Disposition    string `json:"disposition"`
+	PayloadDigest  string `json:"payload_digest,omitempty"`
 }
 
 func humanResumeTaskID(workspaceID, runID, idempotencyKey string) string {
@@ -218,11 +228,12 @@ func (e *Executor) processHumanResume(ctx context.Context, task *taskqueue.Task,
 	var payload HumanResumeTaskPayloadV1
 	if err := decodeExact(task.Payload, &payload); err != nil || payload.SchemaVersion != 1 ||
 		payload.Kind != "human_resume" || payload.RunID == "" || payload.RunID != task.ContextKey ||
-		payload.IdempotencyKey == "" {
+		payload.IdempotencyKey == "" || (payload.Disposition != "completed" && payload.Disposition != "timeout") {
 		return e.Tasks.FailClaimed(ctx, task.ID, workerID, string(ErrorCodeIdentityMismatch))
 	}
 	payloadDigest, err := hex.DecodeString(payload.PayloadDigest)
-	if err != nil || len(payloadDigest) != sha256.Size {
+	if err != nil || (payload.Disposition == "completed" && len(payloadDigest) != sha256.Size) ||
+		(payload.Disposition == "timeout" && len(payloadDigest) != 0) {
 		return e.Tasks.FailClaimed(ctx, task.ID, workerID, string(ErrorCodeIdentityMismatch))
 	}
 	tx, err := e.Transactions.Begin(ctx)

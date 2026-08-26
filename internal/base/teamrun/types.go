@@ -281,6 +281,7 @@ type ResumeRequest struct {
 	ExpectedSessionLeaseEpoch   *SessionLeaseEpoch
 	Payload                     json.RawMessage
 	PayloadDigest               []byte
+	HumanTimeout                bool
 	ExecutorID                  string
 	IdempotencyKey              string
 	Actor                       string

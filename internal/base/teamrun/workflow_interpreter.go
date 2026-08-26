@@ -394,12 +394,18 @@ func runSerialMachine(
 					now = time.Now().UTC()
 				}
 				var deadlineAt *time.Time
+				timeoutNodeID := ""
 				if config.TimeoutSeconds != nil {
-					deadline := now.Add(time.Duration(*config.TimeoutSeconds) * time.Second).UTC()
+					var present bool
+					timeoutNodeID, present = edgeTarget(edges[current], machine.RouteTimeout)
+					if !present {
+						return fail(executionError(ErrorCodeRuntimeIncompatible, fmt.Errorf("human wait node %q lacks a timeout edge", node.ID)))
+					}
+					deadline := now.Add(time.Duration(*config.TimeoutSeconds) * time.Second).UTC().Truncate(time.Second)
 					deadlineAt = &deadline
 				}
 				detail, err := json.Marshal(HumanWaitDetailV1{
-					SchemaVersion: 1, WaitType: "human", NodeID: node.ID, SuccessNodeID: successNodeID,
+					SchemaVersion: 1, WaitType: "human", NodeID: node.ID, SuccessNodeID: successNodeID, TimeoutNodeID: timeoutNodeID,
 					ResumeSchema: config.ResumeSchema,
 					Task:         HumanTaskDetail{Title: config.Task.Title, Instructions: config.Task.Instructions, AudienceRef: config.Task.AudienceRef},
 					DeadlineAt:   deadlineAt,

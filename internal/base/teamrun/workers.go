@@ -185,6 +185,7 @@ type Workers struct {
 	Executor     *Executor
 	CancelGrace  *CancelGraceSweeper
 	TimerWake    *TimerWakeSweeper
+	HumanTimeout *HumanTimeoutSweeper
 	PollInterval time.Duration
 
 	mu     sync.Mutex
@@ -206,7 +207,11 @@ func (workers *Workers) Start() {
 	workers.cancel = cancel
 	workers.mu.Unlock()
 
-	workers.wg.Add(3)
+	workerCount := 3
+	if workers.HumanTimeout != nil {
+		workerCount++
+	}
+	workers.wg.Add(workerCount)
 	go func() {
 		defer workers.wg.Done()
 		workers.executorLoop(ctx)
@@ -219,6 +224,12 @@ func (workers *Workers) Start() {
 		defer workers.wg.Done()
 		workers.timerWakeLoop(ctx)
 	}()
+	if workers.HumanTimeout != nil {
+		go func() {
+			defer workers.wg.Done()
+			workers.humanTimeoutLoop(ctx)
+		}()
+	}
 	slog.Info("team run background workers started")
 }
 
@@ -268,6 +279,17 @@ func (workers *Workers) timerWakeLoop(ctx context.Context) {
 	for {
 		if _, err := workers.TimerWake.Sweep(ctx); err != nil && ctx.Err() == nil {
 			slog.Error("team run timer wake iteration failed", "error", err)
+		}
+		if !workers.wait(ctx) {
+			return
+		}
+	}
+}
+
+func (workers *Workers) humanTimeoutLoop(ctx context.Context) {
+	for {
+		if _, err := workers.HumanTimeout.Sweep(ctx); err != nil && ctx.Err() == nil {
+			slog.Error("team run human timeout iteration failed", "error", err)
 		}
 		if !workers.wait(ctx) {
 			return

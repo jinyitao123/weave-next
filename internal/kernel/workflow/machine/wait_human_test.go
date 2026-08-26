@@ -91,3 +91,25 @@ func TestHumanWaitInsideFanoutIsRejected(t *testing.T) {
 	}
 	t.Fatalf("expected %s, got %+v", CodeHumanWaitInFanout, report.Issues)
 }
+
+func TestHumanWaitWithDeadlineRequiresTimeoutEdge(t *testing.T) {
+	timeout := int64(60)
+	graph := GraphDefinition{
+		SchemaVersion: SchemaVersionV1, EntryNodeID: "review",
+		Nodes: []Node{
+			{ID: "review", Type: NodeWait, Config: WaitConfig{
+				Kind: WaitKindHuman, ResumeSchema: json.RawMessage(`{"type":"object"}`),
+				TimeoutSeconds: &timeout, Task: &HumanTaskConfig{Title: "终审", Instructions: "确认"},
+			}},
+			{ID: "deliver", Type: NodeDeliver, Config: DeliverConfig{}},
+		},
+		Edges: []Edge{{ID: "success", FromNodeID: "review", ToNodeID: "deliver", Route: RouteSuccess}},
+	}
+	report := validateTopology(ValidationContext{Graph: graph})
+	for _, issue := range report.Issues {
+		if issue.Code == CodeEdgeCardinalityInvalid && issue.NodeID == "review" {
+			return
+		}
+	}
+	t.Fatalf("expected missing timeout edge rejection, got %+v", report.Issues)
+}

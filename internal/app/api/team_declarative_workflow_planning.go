@@ -9,6 +9,7 @@ import (
 	"io"
 
 	"github.com/jinyitao123/loom/contract"
+	"github.com/jinyitao123/weave/internal/base/teamrun"
 	"github.com/jinyitao123/weave/internal/build/teambuild"
 	"github.com/jinyitao123/weave/internal/build/teameval"
 	"github.com/jinyitao123/weave/internal/build/teamforge"
@@ -151,6 +152,11 @@ func (s *Server) planDeclarativeWorkflow(
 	workspaceID, buildRunID string,
 	spec teamforge.DeclarativeWorkflowSpecV1,
 ) (blueprintPlanResult, error) {
+	if err := validateDeclarativeHumanWaitBounds(spec); err != nil {
+		return blueprintPlanResult{}, &blueprintPlanningError{
+			Code: "declarative_human_wait_too_large", Message: err.Error(),
+		}
+	}
 	if s == nil || s.TeamBuild == nil {
 		return blueprintPlanResult{}, &blueprintPlanningError{
 			Code: "team_build_unavailable", Message: "team build store unavailable",
@@ -283,6 +289,31 @@ func (s *Server) planDeclarativeWorkflow(
 	result, err := blueprintPlanResultFromRevision(revision, false)
 	result.DeclarativeSpecHash = frozen.SpecHash
 	return result, err
+}
+
+func validateDeclarativeHumanWaitBounds(spec teamforge.DeclarativeWorkflowSpecV1) error {
+	for _, node := range spec.Nodes {
+		if node.Type != machine.NodeWait {
+			continue
+		}
+		if len(node.Config) > teamrun.HumanWaitDetailMaxBytes {
+			return fmt.Errorf("human wait node %q config exceeds 16KiB", node.ID)
+		}
+		var config struct {
+			Kind machine.WaitKind `json:"kind"`
+			Task struct {
+				Title        string `json:"title"`
+				Instructions string `json:"instructions"`
+			} `json:"task"`
+		}
+		if err := json.Unmarshal(node.Config, &config); err != nil {
+			return fmt.Errorf("decode human wait node %q bounds: %w", node.ID, err)
+		}
+		if config.Kind == machine.WaitKindHuman && (len(config.Task.Title) > 256 || len(config.Task.Instructions) > 4*1024) {
+			return fmt.Errorf("human wait node %q title or instructions exceeds byte limit", node.ID)
+		}
+	}
+	return nil
 }
 
 // freezeDeclarativeWorkflow reuses the same proof assembly as workflow draft

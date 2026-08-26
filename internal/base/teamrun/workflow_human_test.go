@@ -83,3 +83,152 @@ func TestHumanResumeQueuesContinuationAdvancesCheckpointAndBindsDigest(t *testin
 	h.assertTask(t, completed.TaskID, "completed", "run-human-resume", "")
 	h.assertRun(t, "run-human-resume", StatusSucceeded, nil)
 }
+
+func TestHumanTimeoutQueuesContinuationAndAdvancesTimeoutEdge(t *testing.T) {
+	h := newProcessNextHarness(t)
+	parkHumanRunForTimeout(t, h, "run-human-timeout")
+	sweeper := &HumanTimeoutSweeper{
+		Transactions: h.pool, Runs: NewPGStore(), Checkpoints: NewPGCheckpointStore(), Tasks: h.tasks,
+		Now: func() time.Time { return h.now.Add(time.Second) }, BatchSize: 10,
+	}
+	count, err := sweeper.Sweep(context.Background())
+	if err != nil || count != 1 {
+		t.Fatalf("sweep human timeout: count=%d err=%v", count, err)
+	}
+	h.assertRun(t, "run-human-timeout", StatusRunning, nil)
+	tx := h.mustBeginTx(t)
+	checkpoint, err := NewPGCheckpointStore().GetTx(context.Background(), tx, "workspace-1", "run-human-timeout")
+	if err != nil {
+		t.Fatalf("read timeout checkpoint: %v", err)
+	}
+	if checkpoint.NodeID != "timeout-deliver" || string(checkpoint.CompletedOutputs["review"]) != `{"node_id":"review","status":"timeout"}` {
+		t.Fatalf("unexpected timeout checkpoint: %#v", checkpoint)
+	}
+	_ = tx.Rollback(context.Background())
+	h.runtime.resumeResult = RuntimeResult{Status: RuntimeCompleted, Output: json.RawMessage(`{"timed_out":true}`), UsageComplete: true}
+	processed, err := h.executor.ProcessNext(context.Background(), "worker-timeout")
+	if err != nil || !processed || h.runtime.resumeCalls != 1 {
+		t.Fatalf("process timeout continuation: processed=%v resume=%d err=%v", processed, h.runtime.resumeCalls, err)
+	}
+	h.assertRun(t, "run-human-timeout", StatusSucceeded, nil)
+}
+
+func TestHumanCompleteAndTimeoutOnlyOneCASWins(t *testing.T) {
+	h := newProcessNextHarness(t)
+	parkHumanRunForTimeout(t, h, "run-human-race")
+	payload := json.RawMessage(`{"decision":"approve"}`)
+	digest := sha256.Sum256(payload)
+	service := &HumanResumeService{
+		Transactions: h.pool, Runs: NewPGStore(), Checkpoints: NewPGCheckpointStore(), Tasks: h.tasks,
+		Now: func() time.Time { return h.now.Add(time.Second) },
+	}
+	sweeper := &HumanTimeoutSweeper{
+		Transactions: h.pool, Runs: NewPGStore(), Checkpoints: NewPGCheckpointStore(), Tasks: h.tasks,
+		Now: func() time.Time { return h.now.Add(time.Second) }, BatchSize: 10,
+	}
+	start := make(chan struct{})
+	completeResult := make(chan error, 1)
+	timeoutResult := make(chan struct {
+		count int
+		err   error
+	}, 1)
+	go func() {
+		<-start
+		_, err := service.Complete(context.Background(), CompleteHumanWaitRequest{
+			WorkspaceID: "workspace-1", RunID: "run-human-race", Payload: payload, PayloadDigest: digest[:],
+			IdempotencyKey: "race-complete", Actor: "user-1", OccurredAt: h.now.Add(time.Second),
+		})
+		completeResult <- err
+	}()
+	go func() {
+		<-start
+		count, err := sweeper.Sweep(context.Background())
+		timeoutResult <- struct {
+			count int
+			err   error
+		}{count: count, err: err}
+	}()
+	close(start)
+	completeErr := <-completeResult
+	timeout := <-timeoutResult
+	completeWon := completeErr == nil
+	timeoutWon := timeout.err == nil && timeout.count == 1
+	if completeWon == timeoutWon {
+		t.Fatalf("exactly one CAS must win: complete_err=%v timeout_count=%d timeout_err=%v", completeErr, timeout.count, timeout.err)
+	}
+	if completeErr != nil && !errors.Is(completeErr, ErrTeamRunStateConflict) {
+		t.Fatalf("losing complete error = %v", completeErr)
+	}
+	var transitions int
+	if err := h.pool.QueryRow(context.Background(), `SELECT count(*) FROM weave_team_run_transitions
+		WHERE workspace_id='workspace-1' AND run_id='run-human-race'
+		  AND from_status='parked' AND to_status='running'`).Scan(&transitions); err != nil {
+		t.Fatalf("count resume transitions: %v", err)
+	}
+	if transitions != 1 {
+		t.Fatalf("parked->running transitions = %d, want 1", transitions)
+	}
+}
+
+func TestHumanTaskReaderUsesStableUpdatedAtRunIDCursor(t *testing.T) {
+	h := newProcessNextHarness(t)
+	for _, runID := range []string{"run-human-list-a", "run-human-list-b"} {
+		h.runtime.executeResult = RuntimeResult{
+			Status: RuntimeParked,
+			Park: &RuntimePark{
+				NodeID: "review", CompletedOutputs: map[string]json.RawMessage{"draft": json.RawMessage(`{"deliverable_ref":"artifact-1"}`)},
+				WaitKind: WaitHuman,
+				WaitDetail: json.RawMessage(`{
+					"schema_version":1,"wait_type":"human","node_id":"review","success_node_id":"deliver",
+					"resume_schema":{"type":"object"},
+					"task":{"title":"终审","instructions":"确认交付物","audience_ref":"editor"}
+				}`),
+				UsageComplete: true,
+			},
+		}
+		h.enqueueWorkflowTask(t, runID)
+		processed, err := h.executor.ProcessNext(context.Background(), "worker-"+runID)
+		if err != nil || !processed {
+			t.Fatalf("park list run %q: processed=%v err=%v", runID, processed, err)
+		}
+	}
+	reader := &HumanTaskReader{Pool: h.pool}
+	first, more, err := reader.List(context.Background(), "workspace-1", nil, "", 1)
+	if err != nil || !more || len(first) != 1 {
+		t.Fatalf("first page: items=%d more=%v err=%v", len(first), more, err)
+	}
+	if first[0].Run.RunID != "run-human-list-b" || first[0].Detail.Task.AudienceRef != "editor" ||
+		string(first[0].CompletedOutputs["draft"]) != `{"deliverable_ref":"artifact-1"}` {
+		t.Fatalf("unexpected first task: %#v", first[0])
+	}
+	second, more, err := reader.List(
+		context.Background(), "workspace-1", &first[0].Run.UpdatedAt, first[0].Run.RunID, 1,
+	)
+	if err != nil || more || len(second) != 1 || second[0].Run.RunID != "run-human-list-a" {
+		t.Fatalf("second page: items=%#v more=%v err=%v", second, more, err)
+	}
+}
+
+func parkHumanRunForTimeout(t *testing.T, h *processNextHarness, runID string) {
+	t.Helper()
+	h.runtime.executeResult = RuntimeResult{
+		Status: RuntimeParked,
+		Park: &RuntimePark{
+			NodeID: "review", CompletedOutputs: map[string]json.RawMessage{}, WaitKind: WaitHuman,
+			WaitDetail: json.RawMessage(`{
+				"schema_version":1,"wait_type":"human","node_id":"review",
+				"success_node_id":"deliver","timeout_node_id":"timeout-deliver",
+				"resume_schema":{"type":"object","properties":{"decision":{"type":"string"}},"required":["decision"]},
+				"task":{"title":"终审","instructions":"确认交付物"},
+				"deadline_at":"2026-08-25T09:59:00Z"
+			}`),
+			UsageComplete: true,
+		},
+	}
+	h.enqueueWorkflowTask(t, runID)
+	processed, err := h.executor.ProcessNext(context.Background(), "worker-park")
+	if err != nil || !processed {
+		t.Fatalf("park human timeout run: processed=%v err=%v", processed, err)
+	}
+	h.assertRun(t, runID, StatusParked, nil)
+}

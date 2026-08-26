@@ -288,6 +288,46 @@ func (*PGStore) ListTimerWakeExpiredTx(
 	return runs, nil
 }
 
+func (*PGStore) ListHumanDeadlineExpiredTx(
+	ctx context.Context,
+	tx pgx.Tx,
+	now time.Time,
+	limit int,
+) ([]TeamRun, error) {
+	if err := requireTx(tx); err != nil {
+		return nil, err
+	}
+	if now.IsZero() || limit < 1 {
+		return nil, fmt.Errorf("now and a positive limit are required")
+	}
+	deadline := now.UTC().Truncate(time.Second).Format(time.RFC3339)
+	rows, err := tx.Query(ctx, `SELECT `+teamRunColumns+`
+		FROM weave_team_runs
+		WHERE status='parked'
+			AND wait_kind='human'
+			AND wait_detail ? 'deadline_at'
+			AND wait_detail->>'deadline_at'<=$1
+		ORDER BY wait_detail->>'deadline_at',workspace_id,run_id
+		FOR UPDATE SKIP LOCKED
+		LIMIT $2`, deadline, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list expired team run human waits: %w", err)
+	}
+	defer rows.Close()
+	runs := make([]TeamRun, 0)
+	for rows.Next() {
+		run, scanErr := scanTeamRun(rows)
+		if scanErr != nil {
+			return nil, fmt.Errorf("scan expired team run human wait: %w", scanErr)
+		}
+		runs = append(runs, run)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list expired team run human wait rows: %w", err)
+	}
+	return runs, nil
+}
+
 func (*PGStore) get(
 	ctx context.Context,
 	tx pgx.Tx,
@@ -1355,10 +1395,16 @@ func (store *PGStore) ResumeRunningTx(
 	}
 	switch req.ExpectedWaitKind {
 	case WaitTimer, WaitFanout:
-		if len(req.Payload) != 0 || len(req.PayloadDigest) != 0 {
+		if req.HumanTimeout || len(req.Payload) != 0 || len(req.PayloadDigest) != 0 {
 			return TeamRun{}, fmt.Errorf("payload is only allowed for human resume")
 		}
 	case WaitHuman:
+		if req.HumanTimeout {
+			if len(req.Payload) != 0 || len(req.PayloadDigest) != 0 {
+				return TeamRun{}, fmt.Errorf("human timeout forbids payload")
+			}
+			break
+		}
 		if len(req.Payload) == 0 || !json.Valid(req.Payload) || len(req.Payload) > 64*1024 || len(req.PayloadDigest) != sha256.Size {
 			return TeamRun{}, fmt.Errorf("human resume payload and digest are invalid")
 		}
