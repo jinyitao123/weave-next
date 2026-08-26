@@ -14,17 +14,17 @@ import (
 	"github.com/jinyitao123/loom"
 	"github.com/jinyitao123/loom/contract"
 	"github.com/jinyitao123/loom/stdlib"
-	"github.com/jinyitao123/weave/internal/kernel/compiler"
 	"github.com/jinyitao123/weave/internal/app/conversation"
+	"github.com/jinyitao123/weave/internal/base/execution"
+	"github.com/jinyitao123/weave/internal/base/realtime"
+	"github.com/jinyitao123/weave/internal/base/taskqueue"
+	"github.com/jinyitao123/weave/internal/kernel/compiler"
 	"github.com/jinyitao123/weave/internal/kernel/engine"
 	"github.com/jinyitao123/weave/internal/kernel/execenv"
-	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/kernel/loomruntime"
-	"github.com/jinyitao123/weave/internal/base/realtime"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 	"github.com/jinyitao123/weave/internal/kernel/runtimes"
 	"github.com/jinyitao123/weave/internal/kernel/sessionexec"
-	"github.com/jinyitao123/weave/internal/base/taskqueue"
 	"github.com/labstack/echo/v4"
 )
 
@@ -564,6 +564,9 @@ func (s *Server) ExecuteChat(ctx context.Context, tenant string, req taskqueue.C
 		if err != nil {
 			return nil, err
 		}
+	}
+	if s.metaTeamRunDisabled(rec.Name, "") {
+		return nil, errMetaTeamDisabled
 	}
 	rec, err = s.applyTaskRuntimeAssignment(ctx, tenant, rec, req.RuntimeAssignment)
 	if err != nil {

@@ -29,3 +29,27 @@ func TestTeamArchitectPromptSeparatesCreateAndOptimizeProtocols(t *testing.T) {
 		}
 	}
 }
+
+func TestIsAgentNameMatchesOnlyMetaTeamSix(t *testing.T) {
+	for _, name := range []string{
+		TeamArchitectName, ConfigEngineerName, GraphDesignerName,
+		EvalDebuggerName, SemanticJudgeName, BlueprintPatchPlannerName,
+	} {
+		if !IsAgentName(name) {
+			t.Fatalf("IsAgentName(%q) = false", name)
+		}
+	}
+	for _, name := range []string{TeamName, "__graph_designer", "__anything_else", "worker"} {
+		if IsAgentName(name) {
+			t.Fatalf("IsAgentName(%q) = true", name)
+		}
+	}
+}
+
+func TestNewMetaAgentRecordUsesPlatformVisibility(t *testing.T) {
+	for _, builtin := range metaTeamAgents() {
+		if visibility := newMetaAgentRecord(builtin).Visibility; visibility != "platform" {
+			t.Fatalf("newMetaAgentRecord(%q).Visibility = %q", builtin.name, visibility)
+		}
+	}
+}

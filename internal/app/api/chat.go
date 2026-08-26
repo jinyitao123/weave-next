@@ -16,25 +16,25 @@ import (
 	"github.com/jinyitao123/loom"
 	"github.com/jinyitao123/loom/contract"
 	"github.com/jinyitao123/loom/stdlib"
-	"github.com/jinyitao123/weave/internal/kernel/compiler"
 	"github.com/jinyitao123/weave/internal/app/conversation"
+	"github.com/jinyitao123/weave/internal/app/metateam"
+	"github.com/jinyitao123/weave/internal/app/projects"
+	"github.com/jinyitao123/weave/internal/base/execution"
+	"github.com/jinyitao123/weave/internal/base/realtime"
+	"github.com/jinyitao123/weave/internal/base/snapshot"
+	"github.com/jinyitao123/weave/internal/base/taskqueue"
+	"github.com/jinyitao123/weave/internal/build/teambuild"
+	"github.com/jinyitao123/weave/internal/kernel/compiler"
 	"github.com/jinyitao123/weave/internal/kernel/declarative/designprompt"
 	"github.com/jinyitao123/weave/internal/kernel/engine"
 	"github.com/jinyitao123/weave/internal/kernel/execenv"
-	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/kernel/grounding"
 	"github.com/jinyitao123/weave/internal/kernel/loomruntime"
 	"github.com/jinyitao123/weave/internal/kernel/mcphost"
 	"github.com/jinyitao123/weave/internal/kernel/memory"
-	"github.com/jinyitao123/weave/internal/app/metateam"
-	"github.com/jinyitao123/weave/internal/app/projects"
-	"github.com/jinyitao123/weave/internal/base/realtime"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 	"github.com/jinyitao123/weave/internal/kernel/runtimes"
 	"github.com/jinyitao123/weave/internal/kernel/sessionexec"
-	"github.com/jinyitao123/weave/internal/base/snapshot"
-	"github.com/jinyitao123/weave/internal/base/taskqueue"
-	"github.com/jinyitao123/weave/internal/build/teambuild"
 	"github.com/labstack/echo/v4"
 )
 
@@ -793,10 +793,6 @@ func (s *Server) handleChat(c echo.Context) error {
 	if !req.Async && !req.Stream {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "stream_required"})
 	}
-	if req.Agent == metateam.BlueprintPatchPlannerName {
-		return c.JSON(http.StatusForbidden, map[string]string{"error": "platform-internal agent"})
-	}
-
 	tenant := getTenant(c)
 	userID := getUserID(c)
 	req.ConversationID = strings.TrimSpace(req.ConversationID)
@@ -806,6 +802,12 @@ func (s *Server) handleChat(c echo.Context) error {
 	roles, _ := c.Get("roles").([]string)
 	ctx = contextWithTeamForgeOperator(ctx, userID, roles)
 	c.SetRequest(c.Request().WithContext(ctx))
+	if s.metaTeamRunDisabled(req.Agent, req.Intent) {
+		return metaTeamDisabledResponse(c)
+	}
+	if req.Agent == metateam.BlueprintPatchPlannerName {
+		return c.JSON(http.StatusForbidden, map[string]string{"error": "platform-internal agent"})
+	}
 	if req.Agent == designprompt.AgentName {
 		designprompt.EnsureDesigner(s.Registry, tenant)
 	}

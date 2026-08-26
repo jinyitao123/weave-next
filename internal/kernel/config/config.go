@@ -44,6 +44,10 @@ type Config struct {
 	TemplateDailyBudgetUSD   float64 // WEAVE_TEMPLATE_DAILY_BUDGET_USD, default 25
 	TemplateMonthlyBudgetUSD float64 // WEAVE_TEMPLATE_MONTHLY_BUDGET_USD, default 250
 	TemplateMaxConcurrent    int     // WEAVE_TEMPLATE_MAX_CONCURRENT, default 2
+
+	// Optional built-in meta-team conversation guide. Disabling it preserves
+	// stored assets and history while freezing all new runs.
+	MetaTeamEnabled bool // WEAVE_METATEAM_ENABLED, default true
 }
 
 // Load reads configuration from environment variables.
@@ -62,6 +66,10 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 	templateMaxConcurrent, err := positiveIntEnv("WEAVE_TEMPLATE_MAX_CONCURRENT", 2)
+	if err != nil {
+		return nil, err
+	}
+	metaTeamEnabled, err := boolEnv("WEAVE_METATEAM_ENABLED", true)
 	if err != nil {
 		return nil, err
 	}
@@ -112,6 +120,7 @@ func Load() (*Config, error) {
 		TemplateDailyBudgetUSD:   templateDailyBudget,
 		TemplateMonthlyBudgetUSD: templateMonthlyBudget,
 		TemplateMaxConcurrent:    templateMaxConcurrent,
+		MetaTeamEnabled:          metaTeamEnabled,
 	}
 
 	if cfg.DatabaseURL == "" {
@@ -122,6 +131,18 @@ func Load() (*Config, error) {
 	}
 
 	return cfg, nil
+}
+
+func boolEnv(key string, fallback bool) (bool, error) {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return fallback, nil
+	}
+	value, err := strconv.ParseBool(raw)
+	if err != nil {
+		return false, fmt.Errorf("%s must be a boolean", key)
+	}
+	return value, nil
 }
 
 func positiveFloatEnv(key string, fallback float64) (float64, error) {

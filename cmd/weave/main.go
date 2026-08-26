@@ -249,7 +249,9 @@ func main() {
 			srv.TeamBuild.SetBaselineSources(srv.OrgStore, srv.Registry, srv.Workflow)
 		}
 		designprompt.EnsureDesignStudio(srv.Registry, srv.OrgStore, "default")
-		if err := metateam.EnsureMetaTeam(context.Background(), srv.Registry, srv.OrgStore, "default"); err != nil {
+		if err := metateam.EnsureMetaTeamIfEnabled(
+			context.Background(), srv.Registry, srv.OrgStore, "default", cfg.MetaTeamEnabled,
+		); err != nil {
 			slog.Warn("failed to seed meta team", "error", err)
 		}
 

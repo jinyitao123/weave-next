@@ -339,6 +339,7 @@ func (s *Server) registerRoutes() {
 
 	// Organization.
 	auth.GET("/workspace", s.handleGetWorkspace, orgScope)
+	auth.GET("/features", s.handleGetFeatures, orgScope)
 	auth.GET("/workspace/members", s.handleListMembers, orgScope)
 	auth.POST("/workspace/members", s.handleAddMember, RequireAnyRole("admin", "owner"), orgScope)
 	auth.DELETE("/workspace/members/:userID", s.handleRemoveMember, RequireAnyRole("admin", "owner"), orgScope)

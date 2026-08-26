@@ -94,7 +94,7 @@ func (s *Server) teamForgePlatformTools(
 	ctx context.Context,
 	workspaceID, conversationID, agentName string,
 ) []contract.ToolDispatcher {
-	if conversationID == "" || s.TeamBuild == nil || s.Audit == nil {
+	if !s.metaTeamEnabled() || conversationID == "" || s.TeamBuild == nil || s.Audit == nil {
 		return nil
 	}
 	run, err := s.TeamBuild.GetActiveBuildRunByConversation(ctx, workspaceID, conversationID)

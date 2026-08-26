@@ -4,6 +4,7 @@ import type {
   Conversation,
   CreateProjectInput,
   MoveProjectInput,
+  PlatformFeatures,
   Project,
   Team,
   UnreadConversation,
@@ -11,6 +12,7 @@ import type {
 } from "../api";
 
 export interface WorkspaceContextValue {
+  features: PlatformFeatures;
   agents: AgentRecord[];
   avatars: AgentRecord[];
   teams: Team[];

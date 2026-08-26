@@ -12,16 +12,16 @@ import (
 	"github.com/jinyitao123/loom"
 	"github.com/jinyitao123/loom/contract"
 	"github.com/jinyitao123/loom/stdlib"
+	"github.com/jinyitao123/weave/internal/app/metateam"
+	"github.com/jinyitao123/weave/internal/base/execution"
+	"github.com/jinyitao123/weave/internal/base/snapshot"
+	"github.com/jinyitao123/weave/internal/build/teamforge"
 	"github.com/jinyitao123/weave/internal/kernel/compiler"
 	"github.com/jinyitao123/weave/internal/kernel/engine"
-	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/kernel/mcphost"
 	"github.com/jinyitao123/weave/internal/kernel/memory"
-	"github.com/jinyitao123/weave/internal/app/metateam"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
-	"github.com/jinyitao123/weave/internal/base/snapshot"
 	"github.com/jinyitao123/weave/internal/kernel/teamcompiler"
-	"github.com/jinyitao123/weave/internal/build/teamforge"
 )
 
 const teamAssemblerDisabledEnv = "WEAVE_TEAM_ASSEMBLER_DISABLED"
@@ -370,6 +370,9 @@ func (r *apiLockedWorkerRunner) StepFor(
 	}
 	if frozenWorker == nil {
 		return nil, teamcompiler.ErrTeamWorkerVersionUnavailable
+	}
+	if r.server.metaTeamRunDisabled(frozenWorker.Name, "") {
+		return nil, errMetaTeamDisabled
 	}
 	record, err := r.server.Registry.GetVersion(
 		ctx, ref.WorkspaceID, ref.WorkerAgentID, int(ref.WorkerAgentVersion),

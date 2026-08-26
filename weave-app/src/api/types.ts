@@ -1168,6 +1168,10 @@ export interface TeamTemplateDraft {
   next_action: "review_and_submit_from_console";
 }
 
+export interface PlatformFeatures {
+  metateam: { enabled: boolean };
+}
+
 export interface TerminalOutcome {
   schema_version: 1;
   turn_state: "plan_ready" | "needs_clarification" | "blocked" | "completed";

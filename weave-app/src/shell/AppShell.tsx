@@ -40,7 +40,7 @@ function teamBuildStatus(run: TeamBuildRunSummary | undefined, ready: boolean): 
 
 export function AppShell() {
   const { user, logout } = useAuth();
-  const { agents, teams, projects, conversations, unread, connected, ensureUnclassifiedProject, invalidationVersion, renameConversation } = useWorkspace();
+  const { agents, teams, projects, conversations, unread, connected, features, ensureUnclassifiedProject, invalidationVersion, renameConversation } = useWorkspace();
   const location = useLocation();
   const navigate = useNavigate();
   const [navOpen, setNavOpen] = useState(false);
@@ -379,10 +379,10 @@ export function AppShell() {
         }}>
           <summary ref={newConversationTriggerRef} className="ui-button ui-button--secondary ui-button--small" aria-haspopup="menu"><MessageSquarePlus size={16} aria-hidden="true" /><span>新任务</span></summary>
         </details>
-        <Button variant="secondary" size="small" loading={newConversationBusy === TEAM_ARCHITECT_AGENT_NAME} onClick={() => void openNewTeamConversation()}>
+        {features.metateam.enabled && <Button variant="secondary" size="small" loading={newConversationBusy === TEAM_ARCHITECT_AGENT_NAME} onClick={() => void openNewTeamConversation()}>
           <UserPlus size={16} aria-hidden="true" />
           <span>新团队</span>
-        </Button>
+        </Button>}
         {newConversationOpen && newConversationMenuPos && createPortal(
           <div className="shell-new-conversation__menu shell-new-conversation__menu--portal" role="menu" aria-label="新对话" style={{ top: newConversationMenuPos.top, left: newConversationMenuPos.left, width: newConversationMenuPos.width }}>
             <span className="shell-new-conversation__label">团队 · 快速会话</span>

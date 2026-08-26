@@ -6,6 +6,7 @@ import {
   EventStreamClient,
   type AgentRecord,
   type Conversation,
+  type PlatformFeatures,
   type Project,
   type Team,
   type UnreadConversation,
@@ -23,6 +24,7 @@ export function WorkspaceProvider({ children }: PropsWithChildren) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [unread, setUnread] = useState<UnreadConversation[]>([]);
+  const [features, setFeatures] = useState<PlatformFeatures>({ metateam: { enabled: false } });
   const [loading, setLoading] = useState(true);
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -33,15 +35,17 @@ export function WorkspaceProvider({ children }: PropsWithChildren) {
     if (status !== "authenticated") return;
     setLoading(true);
     try {
+      const nextFeatures = await api.getFeatures();
       const [agentRecords, teamArchitect, teamRecords, projectResponse, conversationRecords, unreadRecords] = await Promise.all([
         api.listAgents(),
-        api.getAgent(TEAM_ARCHITECT_AGENT_NAME).catch(() => null),
+        nextFeatures.metateam.enabled ? api.getAgent(TEAM_ARCHITECT_AGENT_NAME).catch(() => null) : Promise.resolve(null),
         api.listTeams(),
         api.listProjects({ includeArchived: true }),
         api.listConversations(),
         api.listUnread(),
       ]);
       if (!mounted.current) return;
+      setFeatures(nextFeatures);
       const workspaceAgents = teamArchitect && !agentRecords.some((agent) => agent.id === teamArchitect.id)
         ? [...agentRecords, teamArchitect]
         : agentRecords;
@@ -125,6 +129,7 @@ export function WorkspaceProvider({ children }: PropsWithChildren) {
   }, []);
 
   const value = useMemo<WorkspaceContextValue>(() => ({
+    features,
     agents,
     avatars,
     teams,
@@ -176,7 +181,7 @@ export function WorkspaceProvider({ children }: PropsWithChildren) {
       replaceProject(project);
       return project;
     },
-  }), [agents, avatars, connected, conversations, error, invalidationVersion, loading, markConversationRead, projects, refresh, refreshConversations, replaceProject, teams, unread]);
+  }), [agents, avatars, connected, conversations, error, features, invalidationVersion, loading, markConversationRead, projects, refresh, refreshConversations, replaceProject, teams, unread]);
 
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;
 }

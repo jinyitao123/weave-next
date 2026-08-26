@@ -50,6 +50,20 @@ const (
 	teamArchitectMaxOutputTokens = 8192
 )
 
+// IsAgentName matches only the six built-in meta-team people. It deliberately
+// does not use the reserved "__" prefix: __graph_designer belongs to the
+// independent designprompt subsystem and remains runnable when this guide is
+// disabled.
+func IsAgentName(name string) bool {
+	switch name {
+	case TeamArchitectName, ConfigEngineerName, GraphDesignerName,
+		EvalDebuggerName, SemanticJudgeName, BlueprintPatchPlannerName:
+		return true
+	default:
+		return false
+	}
+}
+
 // Role prompts for the four meta team employees (design plan §4.1-§4.4).
 // The meta team designs and judges. The platform compiler and its later
 // ChangeSet executor own all formal asset construction.
@@ -527,6 +541,21 @@ func EnsureMetaTeam(
 	return nil
 }
 
+// EnsureMetaTeamIfEnabled is the startup seed boundary. Disabled mode is a
+// strict no-op: it neither creates missing assets nor deletes retained ones.
+func EnsureMetaTeamIfEnabled(
+	ctx context.Context,
+	reg *registry.AgentRegistry,
+	orgStore *org.Store,
+	workspaceID string,
+	enabled bool,
+) error {
+	if !enabled {
+		return nil
+	}
+	return EnsureMetaTeam(ctx, reg, orgStore, workspaceID)
+}
+
 func metaTeamRoster(agents map[string]*registry.AgentRecord) []org.InitialTeamWorker {
 	return []org.InitialTeamWorker{
 		{
@@ -665,10 +694,19 @@ func ensureMetaAgent(
 		}
 		return rec, nil
 	}
+	rec := newMetaAgentRecord(builtin)
+	if err := reg.Put(ctx, workspaceID, rec); err != nil {
+		return nil, err
+	}
+	return rec, nil
+}
+
+func newMetaAgentRecord(builtin builtinMetaAgent) *registry.AgentRecord {
 	rec := &registry.AgentRecord{
 		Name:        builtin.name,
 		DisplayName: builtin.displayName,
 		Role:        builtin.role,
+		Visibility:  registry.VisibilityPlatform,
 		Model:       "",
 		Engine:      "",
 		Spec: stdlib.AgentSpec{
@@ -688,10 +726,7 @@ func ensureMetaAgent(
 		rec.GraphType = "declarative"
 		rec.GraphDefinition = builtin.graphDefinition()
 	}
-	if err := reg.Put(ctx, workspaceID, rec); err != nil {
-		return nil, err
-	}
-	return rec, nil
+	return rec
 }
 
 func cloneOutputSchema(schema *json.RawMessage) *json.RawMessage {
@@ -741,6 +776,7 @@ func applyManagedBlueprintPatchPlanner(rec *registry.AgentRecord, builtin builti
 	rec.OwnerUserID = nil
 	rec.DisplayName = builtin.displayName
 	rec.Role = builtin.role
+	rec.Visibility = registry.VisibilityPlatform
 	rec.Engine = ""
 	rec.RuntimeID = ""
 	rec.Model = ""

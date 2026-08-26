@@ -43,3 +43,29 @@ func TestLoadRejectsInvalidTemplateAuthorizationLimits(t *testing.T) {
 		})
 	}
 }
+
+func TestLoadMetaTeamEnabled(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://example")
+	t.Setenv("JWT_SECRET", "secret")
+	t.Setenv("WEAVE_WORKSPACES_ROOT", t.TempDir())
+	t.Setenv("WEAVE_METATEAM_ENABLED", "")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.MetaTeamEnabled {
+		t.Fatal("MetaTeamEnabled default = false, want true")
+	}
+	t.Setenv("WEAVE_METATEAM_ENABLED", "false")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.MetaTeamEnabled {
+		t.Fatal("MetaTeamEnabled = true, want false")
+	}
+	t.Setenv("WEAVE_METATEAM_ENABLED", "sometimes")
+	if _, err := Load(); err == nil {
+		t.Fatal("Load() invalid WEAVE_METATEAM_ENABLED error = nil")
+	}
+}
