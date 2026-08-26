@@ -85,6 +85,10 @@ type PhaseDeps struct {
 	Descriptors  *compiler.DescriptorRegistry
 	Fanout       *fanout.Store
 	Drafts       *teamforge.DraftRegistry
+	// SemanticJudge optionally replaces the current metateam-backed executor.
+	// Nil keeps the M2b compatibility adapter; M2c supplies the build-native
+	// implementation through this seam.
+	SemanticJudge teambuild.SemanticJudgeExecutor
 	// CLIExecutor is the same remote runtime path used by ordinary published
 	// TeamWorkflow runs. Candidate evaluation must not silently drop it.
 	CLIExecutor mcphost.RemoteEngineExecutor
@@ -3113,58 +3117,95 @@ func (p *ProductionPhases) semanticRubricEvaluation(
 	if err != nil {
 		return semanticRubricEvaluation{}, fmt.Errorf("build semantic evaluation package: %w", err)
 	}
+	executor := p.Deps.SemanticJudge
+	if executor == nil {
+		executor = metateamSemanticJudgeExecutor{phases: p, round: round}
+	}
+	judged, err := executor.Execute(ctx, teambuild.SemanticJudgeRequest{
+		WorkspaceID: round.WorkspaceID, BuildRunID: round.BuildRunID,
+		RevisionNo: round.RoundNo, Run: round.Run,
+		Payload: payload, EvidenceHash: evidenceHash,
+	})
+	if err != nil {
+		return semanticRubricEvaluation{}, err
+	}
+	return decodeSemanticEvaluationOutput(judged.Output, round.Run.Contract, runs)
+}
+
+type metateamSemanticJudgeExecutor struct {
+	phases *ProductionPhases
+	round  RoundContext
+}
+
+func (e metateamSemanticJudgeExecutor) Execute(
+	ctx context.Context,
+	request teambuild.SemanticJudgeRequest,
+) (teambuild.SemanticJudgeResult, error) {
+	p := e.phases
+	if p == nil || request.WorkspaceID != e.round.WorkspaceID || request.BuildRunID != e.round.BuildRunID ||
+		request.RevisionNo != e.round.RoundNo || request.EvidenceHash == "" {
+		return teambuild.SemanticJudgeResult{}, errors.New("semantic judge request identity is invalid")
+	}
 	attempt, err := p.Deps.Build.GetSemanticEvaluationAttempt(
-		ctx, round.WorkspaceID, round.BuildRunID, round.RoundNo,
+		ctx, request.WorkspaceID, request.BuildRunID, request.RevisionNo,
 		teambuild.SourceRoleSemanticJudge,
 	)
 	var semanticRunErr error
 	if errors.Is(err, teambuild.ErrSemanticEvaluationAttemptNotFound) {
 		result, runErr := p.runAgent(
-			ctx, round, metateam.SemanticJudgeName, string(payload),
-			teambuild.SourceRoleSemanticJudge, evidenceHash,
+			ctx, e.round, metateam.SemanticJudgeName, string(request.Payload),
+			teambuild.SourceRoleSemanticJudge, request.EvidenceHash,
 		)
 		if runErr != nil {
 			semanticRunErr = runErr
-			attempt, err = p.Deps.Build.GetSemanticEvaluationAttempt(
-				ctx, round.WorkspaceID, round.BuildRunID, round.RoundNo,
-				teambuild.SourceRoleSemanticJudge,
-			)
-			if err != nil {
-				return semanticRubricEvaluation{}, fmt.Errorf("run semantic evaluator: %w", runErr)
+		} else if err := p.accountBuildRunUsage(
+			ctx, e.round, teambuild.SourceRoleSemanticJudge, result.RunID,
+		); err != nil {
+			return teambuild.SemanticJudgeResult{}, fmt.Errorf("account semantic evaluator: %w", err)
+		}
+		attempt, err = p.Deps.Build.GetSemanticEvaluationAttempt(
+			ctx, request.WorkspaceID, request.BuildRunID, request.RevisionNo,
+			teambuild.SourceRoleSemanticJudge,
+		)
+		if err != nil {
+			if semanticRunErr != nil {
+				return teambuild.SemanticJudgeResult{}, fmt.Errorf("run semantic evaluator: %w", semanticRunErr)
 			}
-		} else {
-			if err := p.accountBuildRunUsage(
-				ctx, round, teambuild.SourceRoleSemanticJudge, result.RunID,
-			); err != nil {
-				return semanticRubricEvaluation{}, fmt.Errorf("account semantic evaluator: %w", err)
-			}
-			attempt, err = p.Deps.Build.GetSemanticEvaluationAttempt(
-				ctx, round.WorkspaceID, round.BuildRunID, round.RoundNo,
-				teambuild.SourceRoleSemanticJudge,
-			)
-			if err != nil {
-				return semanticRubricEvaluation{}, fmt.Errorf("load semantic evaluator attempt: %w", err)
-			}
+			return teambuild.SemanticJudgeResult{}, fmt.Errorf("load semantic evaluator attempt: %w", err)
 		}
 	} else if err != nil {
-		return semanticRubricEvaluation{}, err
+		return teambuild.SemanticJudgeResult{}, err
 	}
-	if attempt.EvidenceHash != evidenceHash || attempt.SourceRole != teambuild.SourceRoleSemanticJudge {
-		return semanticRubricEvaluation{}, errors.New("semantic evaluation attempt is not bound to current evidence")
+	if attempt.EvidenceHash != request.EvidenceHash || attempt.SourceRole != teambuild.SourceRoleSemanticJudge {
+		return teambuild.SemanticJudgeResult{}, errors.New("semantic evaluation attempt is not bound to current evidence")
 	}
-	if err := p.backfillUsageSource(ctx, round, teambuild.BuildUsageSource{
+	if err := p.backfillUsageSource(ctx, e.round, teambuild.BuildUsageSource{
 		WorkspaceID: attempt.WorkspaceID, BuildRunID: attempt.BuildRunID,
 		RoundNo: attempt.RevisionNo, SourceKind: teambuild.UsageSourceKindBuildAgent,
 		SourceRole: attempt.SourceRole, SourceRunID: attempt.SourceRunID,
 	}); err != nil {
-		return semanticRubricEvaluation{}, fmt.Errorf("reconcile semantic evaluator usage: %w", err)
+		return teambuild.SemanticJudgeResult{}, fmt.Errorf("reconcile semantic evaluator usage: %w", err)
 	}
 	output, err := semanticEvaluationAttemptOutput(attempt, semanticRunErr)
 	if err != nil {
-		return semanticRubricEvaluation{}, err
+		return teambuild.SemanticJudgeResult{}, err
 	}
-	return decodeSemanticEvaluationOutput(output, round.Run.Contract, runs)
+	usage, err := p.Deps.Build.GetRoundBudgetUsage(ctx, request.WorkspaceID, request.BuildRunID, request.RevisionNo)
+	if err != nil {
+		return teambuild.SemanticJudgeResult{}, fmt.Errorf("load semantic evaluator usage ledger: %w", err)
+	}
+	return teambuild.SemanticJudgeResult{
+		AttemptID: fmt.Sprintf("%s/%s/%d/%s", request.WorkspaceID, request.BuildRunID, request.RevisionNo, teambuild.SourceRoleSemanticJudge),
+		RunID:     attempt.SourceRunID, Output: output, Usage: usage,
+		UsageSource: teambuild.BuildUsageSource{
+			WorkspaceID: attempt.WorkspaceID, BuildRunID: attempt.BuildRunID,
+			RoundNo: attempt.RevisionNo, SourceKind: teambuild.UsageSourceKindBuildAgent,
+			SourceRole: attempt.SourceRole, SourceRunID: attempt.SourceRunID,
+		},
+	}, nil
 }
+
+var _ teambuild.SemanticJudgeExecutor = metateamSemanticJudgeExecutor{}
 
 func semanticEvaluationAttemptOutput(
 	attempt teambuild.SemanticEvaluationAttempt,
