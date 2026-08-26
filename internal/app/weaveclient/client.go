@@ -158,7 +158,10 @@ func (c *Client) DispatchStatus(ctx context.Context, clientRequestID string) (js
 }
 
 func (c *Client) TeamRunStatus(ctx context.Context, snapshotID string) (json.RawMessage, error) {
-	query := url.Values{"view": {"run"}, "run_snapshot_id": {strings.TrimSpace(snapshotID)}}
+	query := url.Values{
+		"view": {"run"}, "run_snapshot_id": {strings.TrimSpace(snapshotID)},
+		"aggregation_mode": {"all-exclusive"},
+	}
 	return c.getJSON(ctx, "/v1/runs?"+query.Encode())
 }
 

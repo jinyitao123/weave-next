@@ -144,7 +144,8 @@ func TestReadEndpointsAndResumeAreThinHTTPMappings(t *testing.T) {
 	want := []string{
 		"GET /v1/team-templates/samples", "POST /v1/teams:from-template",
 		"GET /v1/internal/team-build-runs/build-1/progress", "GET /v1/chat-requests/dispatch-1",
-		"GET /v1/runs?run_snapshot_id=snapshot-1&view=run", "GET /v1/deliverables?limit=20&offset=5",
+		"GET /v1/runs?aggregation_mode=all-exclusive&run_snapshot_id=snapshot-1&view=run",
+		"GET /v1/deliverables?limit=20&offset=5",
 		"GET /v1/deliverables/delivery-1", "POST /v1/resume",
 	}
 	for _, key := range want {

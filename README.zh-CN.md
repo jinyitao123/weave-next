@@ -166,6 +166,54 @@ curl -X POST http://localhost:8080/v1/chat \
   -d '{ "agent": "assistant", "message": "你好！", "stream": true }'
 ```
 
+### CLI 与 MCP 客户端
+
+`weave` 二进制可直接调用已经运行的 Weave 服务，不会加载服务端配置，也不会连接
+PostgreSQL：
+
+```bash
+export WEAVE_API_URL=http://127.0.0.1:8080 # 默认值
+export WEAVE_API_KEY=wv_sk_xxx
+
+weave team samples
+weave team up -f templates/code-review.yaml \
+  --idempotency-key 2bab1728-9dc0-4b61-a1f5-115fcaaf8e08
+weave team dispatch --team <team-id> --task "审查这次变更" \
+  --client-request-id 676506ec-1cf5-4c78-b324-29057591d3b5 --wait
+weave status build <build-id>
+weave status dispatch <client-request-id>
+weave status team-run <run-snapshot-id>
+weave deliverable list
+weave deliverable get <deliverable-id>
+```
+
+建队所用 API key 的角色必须是 `admin`。模板、团队和 build 状态需要 `org`
+scope；派活、resume 和交付物需要 `chat` scope；team-run 状态需要 `runs`
+scope。`team_create` 不会代替调用方生成幂等键。同一次 dispatch 必须始终使用
+同一把 API key，因为请求归属与 key 绑定。CLI runtime 承载的 Lead 不接受异步
+dispatch。只有 Agent 显式调用 `save_deliverable` 才会产生交付物；v1 的交付物
+列表不支持按 team 或 run 过滤。
+
+Codex 从 `~/.codex/config.toml` 或受信任项目的 `.codex/config.toml` 读取本地
+stdio MCP server：
+
+```toml
+[mcp_servers.weave]
+command = "/absolute/path/to/weave"
+args = ["mcp", "serve"]
+env = { WEAVE_API_URL = "http://127.0.0.1:8080" }
+env_vars = ["WEAVE_API_KEY"]
+```
+
+启动 Codex 前先 export `WEAVE_API_KEY`。Claude Code 可用同一个进程注册：
+
+```bash
+claude mcp add --transport stdio \
+  --env WEAVE_API_URL=http://127.0.0.1:8080 \
+  --env WEAVE_API_KEY="$WEAVE_API_KEY" \
+  weave -- /absolute/path/to/weave mcp serve
+```
+
 ## API 端点
 
 | 方法 | 路径 | 说明 |

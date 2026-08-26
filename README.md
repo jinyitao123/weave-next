@@ -178,6 +178,56 @@ curl -X POST http://localhost:8080/v1/chat \
   }'
 ```
 
+### CLI and MCP clients
+
+The `weave` binary can call an already-running Weave service without loading
+server configuration or opening PostgreSQL:
+
+```bash
+export WEAVE_API_URL=http://127.0.0.1:8080 # default
+export WEAVE_API_KEY=wv_sk_xxx
+
+weave team samples
+weave team up -f templates/code-review.yaml \
+  --idempotency-key 2bab1728-9dc0-4b61-a1f5-115fcaaf8e08
+weave team dispatch --team <team-id> --task "Review this change" \
+  --client-request-id 676506ec-1cf5-4c78-b324-29057591d3b5 --wait
+weave status build <build-id>
+weave status dispatch <client-request-id>
+weave status team-run <run-snapshot-id>
+weave deliverable list
+weave deliverable get <deliverable-id>
+```
+
+Use an API key with role `admin` for team creation. The required scopes are
+`org` for templates, teams, and build status; `chat` for dispatch, resume, and
+deliverables; and `runs` for team-run status. `team_create` never invents an
+idempotency key. Keep the same API key throughout one dispatch because request
+ownership is key-specific. Leads backed by CLI runtimes reject asynchronous
+dispatch. Deliverables appear only when an agent explicitly calls
+`save_deliverable`; v1 has no team or run filter for deliverable listing.
+
+Codex reads local stdio MCP servers from `~/.codex/config.toml` or a trusted
+project's `.codex/config.toml`:
+
+```toml
+[mcp_servers.weave]
+command = "/absolute/path/to/weave"
+args = ["mcp", "serve"]
+env = { WEAVE_API_URL = "http://127.0.0.1:8080" }
+env_vars = ["WEAVE_API_KEY"]
+```
+
+Export `WEAVE_API_KEY` before starting Codex. For Claude Code, register the
+same process with:
+
+```bash
+claude mcp add --transport stdio \
+  --env WEAVE_API_URL=http://127.0.0.1:8080 \
+  --env WEAVE_API_KEY="$WEAVE_API_KEY" \
+  weave -- /absolute/path/to/weave mcp serve
+```
+
 ## API Endpoints
 
 | Method | Path | Description |
