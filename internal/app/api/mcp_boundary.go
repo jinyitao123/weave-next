@@ -174,7 +174,7 @@ func handleMCPProtocolRequest(
 ) error {
 	result, err := (mcpprotocol.Adapter{
 		Dispatcher: dispatcher, ServerName: serverName,
-		UnsupportedMethodMessage: unsupportedMethodMessage,
+		UnsupportedMethodMessage: unsupportedMethodMessage, RedactToolErrors: true,
 	}).Handle(c.Request().Context(), request)
 	switch {
 	case errors.Is(err, mcpprotocol.ErrInvalidCallParams):

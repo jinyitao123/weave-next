@@ -55,6 +55,7 @@ type Adapter struct {
 	Dispatcher               contract.ToolDispatcher
 	ServerName               string
 	UnsupportedMethodMessage string
+	RedactToolErrors         bool
 }
 
 func Decode(reader io.Reader) (Request, error) {
@@ -118,7 +119,7 @@ func (a Adapter) Handle(ctx context.Context, request Request) (Result, error) {
 			return Result{}, ErrEmptyToolResult
 		}
 		content := result.Content
-		if result.IsError {
+		if result.IsError && a.RedactToolErrors {
 			content = "upstream MCP error"
 		}
 		return Result{Response: &Response{
@@ -133,6 +134,20 @@ func (a Adapter) Handle(ctx context.Context, request Request) (Result, error) {
 			JSONRPC: "2.0", ID: responseID(request.ID),
 			Error: &RPCError{Code: -32601, Message: a.UnsupportedMethodMessage},
 		}}, nil
+	}
+}
+
+func ErrorResponse(id json.RawMessage, err error) *Response {
+	code := -32603
+	message := "tool execution failed"
+	switch {
+	case errors.Is(err, ErrInvalidRequest):
+		code, message = -32700, "invalid JSON-RPC request"
+	case errors.Is(err, ErrInvalidCallParams):
+		code, message = -32602, "invalid tools/call params"
+	}
+	return &Response{
+		JSONRPC: "2.0", ID: responseID(id), Error: &RPCError{Code: code, Message: message},
 	}
 }
 

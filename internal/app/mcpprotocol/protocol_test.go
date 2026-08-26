@@ -53,7 +53,10 @@ func TestAdapterPreservesBoundaryAndGatewayResponses(t *testing.T) {
 			dispatcher := &fakeDispatcher{tools: []contract.ToolDef{{
 				Name: "lookup", Description: "Lookup", InputSchema: json.RawMessage(`{"type":"object"}`),
 			}}}
-			adapter := Adapter{Dispatcher: dispatcher, ServerName: test.server, UnsupportedMethodMessage: test.unsupported}
+			adapter := Adapter{
+				Dispatcher: dispatcher, ServerName: test.server,
+				UnsupportedMethodMessage: test.unsupported, RedactToolErrors: true,
+			}
 
 			initialized, err := adapter.Handle(context.Background(), Request{ID: json.RawMessage(`1`), Method: "initialize"})
 			if err != nil {
@@ -78,7 +81,7 @@ func TestAdapterPreservesBoundaryAndGatewayResponses(t *testing.T) {
 
 func TestAdapterToolCallBehavior(t *testing.T) {
 	dispatcher := &fakeDispatcher{result: &contract.ToolResult{Content: "done"}}
-	adapter := Adapter{Dispatcher: dispatcher}
+	adapter := Adapter{Dispatcher: dispatcher, RedactToolErrors: true}
 	result, err := adapter.Handle(context.Background(), Request{
 		ID: json.RawMessage(`"call-1"`), Method: "tools/call",
 		Params: json.RawMessage(`{"name":"lookup"}`),
@@ -125,6 +128,12 @@ func TestAdapterErrorClassification(t *testing.T) {
 	if err != nil || !notification.Notification || notification.Response != nil {
 		t.Fatalf("notification = %#v, %v", notification, err)
 	}
+}
+
+func TestErrorResponseUsesJSONRPCWithoutPrivateDetails(t *testing.T) {
+	assertJSON(t, ErrorResponse(nil, ErrInvalidRequest), `{"jsonrpc":"2.0","id":null,"error":{"code":-32700,"message":"invalid JSON-RPC request"}}`)
+	assertJSON(t, ErrorResponse(json.RawMessage(`7`), ErrInvalidCallParams), `{"jsonrpc":"2.0","id":7,"error":{"code":-32602,"message":"invalid tools/call params"}}`)
+	assertJSON(t, ErrorResponse(json.RawMessage(`"x"`), errors.New("database password")), `{"jsonrpc":"2.0","id":"x","error":{"code":-32603,"message":"tool execution failed"}}`)
 }
 
 func assertJSON(t *testing.T, got any, want string) {

@@ -10,6 +10,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/jinyitao123/weave/internal/app/mcpstdio"
 	"github.com/jinyitao123/weave/internal/app/weaveclient"
 )
 
@@ -25,7 +26,7 @@ func Dispatch(args []string, stdout, stderr io.Writer) (bool, int) {
 		return false, 0
 	}
 	switch args[0] {
-	case "team", "status", "deliverable":
+	case "team", "status", "deliverable", "mcp":
 		err := run(context.Background(), args, stdout, stderr)
 		if err == nil {
 			return true, 0
@@ -51,6 +52,11 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		return runStatus(ctx, client, args[1:], stdout, stderr)
 	case "deliverable":
 		return runDeliverable(ctx, client, args[1:], stdout, stderr)
+	case "mcp":
+		if len(args) != 2 || args[1] != "serve" {
+			return usageError("mcp_serve_required")
+		}
+		return mcpstdio.Serve(ctx, os.Stdin, stdout, client)
 	default:
 		return usageError("unknown_command")
 	}
@@ -224,5 +230,6 @@ func Usage() string {
 		"weave team dispatch --team <id> --task <task> [--client-request-id <uuid>] [--wait]",
 		"weave status build|dispatch|team-run <id>",
 		"weave deliverable list|get [id]",
+		"weave mcp serve",
 	}, "\n") + "\n"
 }
