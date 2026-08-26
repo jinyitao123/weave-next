@@ -80,7 +80,6 @@ TOP_TO_BAND = {pkg: band for band, pkgs in BANDS.items() for pkg in pkgs}
 ORDER = {"base": 0, "kernel": 1, "build": 2, "app": 3}
 BASELINE_LIMITS = {
     "base/teamrun -> kernel workflow/loomruntime baseline": 11,
-    "build teamforge/teamorch -> app/metateam baseline": 2,
 }
 
 
@@ -143,8 +142,6 @@ def is_allowed_exception(importer_pkg: str, imported_pkg: str) -> str | None:
         "loomruntime",
     }:
         return "base/teamrun -> kernel workflow/loomruntime baseline"
-    if importer_pkg in {"teamforge", "teamorch"} and imported_pkg == "metateam":
-        return "build teamforge/teamorch -> app/metateam baseline"
     return None
 
 

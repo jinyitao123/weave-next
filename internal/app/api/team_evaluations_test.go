@@ -12,7 +12,7 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-func TestHandleEvaluateTeamStatusSemantics(t *testing.T) {
+func TestHandleEvaluateTeamStatusSemanticsWhenMetaTeamDisabled(t *testing.T) {
 	tests := []struct {
 		name       string
 		outcome    teamevaluations.Outcome
@@ -29,7 +29,9 @@ func TestHandleEvaluateTeamStatusSemantics(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			service := &fakeTeamEvaluationService{outcome: tc.outcome, err: tc.err}
-			server := &Server{TeamEvaluations: service}
+			server := &Server{
+				Config: &config.Config{MetaTeamEnabled: false}, TeamEvaluations: service,
+			}
 			recorder := httptest.NewRecorder()
 			request := httptest.NewRequest(http.MethodPost, "/v1/teams/team-1/evaluations", strings.NewReader(`{"contract":{},"idempotency_key":"e7c03b33-bfac-4a34-a443-805319f7fa24","budget":{"max_cost_usd":5}}`))
 			request.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)

@@ -1,7 +1,6 @@
 // Package metateam seeds the platform's built-in meta team ("元团队") for one
-// workspace: the four employee AgentRecords, one controller-only patch
-// planner AgentRecord, and one active Team with its
-// roster, instantiated per workspace from the shared template (team-forge
+// workspace: four guide AgentRecords and one active Team with its roster,
+// instantiated per workspace from the shared template (team-forge
 // design plan §4). All assets carry the reserved "__" name prefix and the
 // ["system"] tag, which marks them as platform-built: the teamforge write
 // gate and the teambuild brief validation both refuse to target "__" assets,
@@ -32,13 +31,9 @@ const (
 	ConfigEngineerName = "__config_engineer"
 	GraphDesignerName  = "__graph_designer_tf"
 	EvalDebuggerName   = "__eval_debugger"
-	// SemanticJudgeName is controller-only and absent from the delegable
-	// roster. It judges a platform-assembled immutable scenario package; the
-	// full eval debugger keeps its separate evidence/diagnosis responsibility.
-	SemanticJudgeName = "__semantic_judge"
-	// BlueprintPatchPlannerName is persisted with the meta-team assets but is
-	// intentionally absent from the delegable roster. Only the platform
-	// controller invokes it after an immutable business-quality report exists.
+	// The retired judge and planner names remain reserved so disabled-mode API
+	// gates also reject direct runs against records retained from older seeds.
+	SemanticJudgeName         = "__semantic_judge"
 	BlueprintPatchPlannerName = "__blueprint_patch_planner"
 
 	// Declarative condition loops carry a hard max_loops budget; exceeding it
@@ -49,10 +44,10 @@ const (
 	teamArchitectMaxOutputTokens = 8192
 )
 
-// IsAgentName matches only the six built-in meta-team people. It deliberately
-// does not use the reserved "__" prefix: __graph_designer belongs to the
-// independent designprompt subsystem and remains runnable when this guide is
-// disabled.
+// IsAgentName matches the four guides plus two retired identities retained by
+// older workspaces. It deliberately does not use the reserved "__" prefix:
+// __graph_designer belongs to the independent designprompt subsystem and
+// remains runnable when this guide is disabled.
 func IsAgentName(name string) bool {
 	switch name {
 	case TeamArchitectName, ConfigEngineerName, GraphDesignerName,
@@ -392,7 +387,7 @@ func EnsureMetaTeam(
 		return errors.New("meta team seed stores are unavailable")
 	}
 
-	agents := make(map[string]*registry.AgentRecord, 6)
+	agents := make(map[string]*registry.AgentRecord, 4)
 	for _, builtin := range metaTeamAgents() {
 		rec, err := ensureMetaAgent(ctx, reg, workspaceID, builtin)
 		if err != nil {

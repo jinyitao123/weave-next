@@ -23,7 +23,9 @@ import (
 	"github.com/jinyitao123/weave/internal/kernel/workflow/machine"
 )
 
-func TestPostTemplateEvaluationPGConcurrentAndBaselineCAS(t *testing.T) {
+// The evaluation service has no metateam dependency; paired with the API's
+// disabled-config handler test, this exercises the real-PG off-mode path.
+func TestPostTemplateEvaluationPGMetaTeamDisabledPathConcurrentAndBaselineCAS(t *testing.T) {
 	fixture := newEvaluationPGFixture(t)
 	outcome := fixture.start(t, fixture.contract, uuid.NewString())
 	if outcome.Status != teambuild.StatusAuthorized {

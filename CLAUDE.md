@@ -12,7 +12,6 @@ Use the four-band layout under `internal/`:
 Known migration baselines are documented and enforced by `scripts/depguard.sh`:
 
 - `base/teamrun` may import `kernel/workflow`, `kernel/workflow/machine`, and `kernel/loomruntime`.
-- `build/teamforge` and `build/teamorch` may import `app/metateam`.
 
 Validation commands:
 

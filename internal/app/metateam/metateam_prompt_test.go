@@ -30,7 +30,7 @@ func TestTeamArchitectPromptSeparatesCreateAndOptimizeProtocols(t *testing.T) {
 	}
 }
 
-func TestIsAgentNameMatchesOnlyMetaTeamSix(t *testing.T) {
+func TestIsAgentNameMatchesOnlyGuideAndRetainedMetaTeamIdentities(t *testing.T) {
 	for _, name := range []string{
 		TeamArchitectName, ConfigEngineerName, GraphDesignerName,
 		EvalDebuggerName, SemanticJudgeName, BlueprintPatchPlannerName,

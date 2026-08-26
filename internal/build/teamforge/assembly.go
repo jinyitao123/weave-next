@@ -8,8 +8,17 @@ package teamforge
 import (
 	"strings"
 
-	"github.com/jinyitao123/weave/internal/app/metateam"
 	"github.com/jinyitao123/weave/internal/build/teambuild"
+)
+
+// Guide agent names are build protocol identities, not ownership of their
+// workspace AgentRecords. The application metateam package assembles those
+// records; build code must not import upward to discover the protocol names.
+const (
+	TeamArchitectAgentName  = "__team_architect"
+	ConfigEngineerAgentName = "__config_engineer"
+	GraphDesignerAgentName  = "__graph_designer_tf"
+	EvalDebuggerAgentName   = "__eval_debugger"
 )
 
 // ToolSet names the teamforge dispatcher groups one agent may receive for one
@@ -71,7 +80,7 @@ func DecideToolSetForMode(agentName, runStatus, mode string) ToolSet {
 func DecideLegacyDirectToolSetForMode(agentName, runStatus, mode string) ToolSet {
 	var writes ToolSet
 	switch agentName {
-	case metateam.ConfigEngineerName:
+	case ConfigEngineerAgentName:
 		// 配置工程师 holds the agent assembly and team/roster write sets
 		// (plan §10.2.1 and §10.2.3 team entry).
 		writes = ToolSet{AgentWrite: true}
@@ -83,12 +92,11 @@ func DecideLegacyDirectToolSetForMode(agentName, runStatus, mode string) ToolSet
 		} else {
 			writes.TeamWrite = true
 		}
-	case metateam.GraphDesignerName:
+	case GraphDesignerAgentName:
 		// 图设计师 holds the employee internal-graph and team-workflow write
 		// sets (plan §10.2.2 and §10.2.3 workflow entry).
 		writes = ToolSet{GraphWrite: true, WorkflowWrite: true}
-	case metateam.TeamArchitectName, metateam.EvalDebuggerName,
-		metateam.BlueprintPatchPlannerName:
+	case TeamArchitectAgentName, EvalDebuggerAgentName:
 		// 团队架构师 and 评测调试师 never hold configuration write tools
 		// (plan §4.1/§4.4); they stay read-only in every phase.
 		writes = ToolSet{}
@@ -112,9 +120,8 @@ func DecideLegacyDirectToolSetForMode(agentName, runStatus, mode string) ToolSet
 
 func isMetaTeamAgent(agentName string) bool {
 	switch agentName {
-	case metateam.TeamArchitectName, metateam.ConfigEngineerName,
-		metateam.GraphDesignerName, metateam.EvalDebuggerName,
-		metateam.BlueprintPatchPlannerName:
+	case TeamArchitectAgentName, ConfigEngineerAgentName,
+		GraphDesignerAgentName, EvalDebuggerAgentName:
 		return true
 	default:
 		return false

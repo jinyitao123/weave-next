@@ -26,7 +26,6 @@ import (
 	"github.com/jinyitao123/loom/contract"
 	"github.com/jinyitao123/loom/pgstore"
 	"github.com/jinyitao123/loom/stdlib"
-	"github.com/jinyitao123/weave/internal/app/metateam"
 	"github.com/jinyitao123/weave/internal/base/deliverable"
 	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/base/fanout"
@@ -624,8 +623,8 @@ func (p *ProductionPhases) Build(ctx context.Context, round RoundContext) error 
 		agentName   string
 	}
 	steps := []buildRoleStep{
-		{sourceRole: teambuild.SourceRoleConfigEngineer, messageRole: "config-engineer", agentName: metateam.ConfigEngineerName},
-		{sourceRole: teambuild.SourceRoleGraphDesigner, messageRole: "graph-designer", agentName: metateam.GraphDesignerName},
+		{sourceRole: teambuild.SourceRoleConfigEngineer, messageRole: "config-engineer", agentName: teamforge.ConfigEngineerAgentName},
+		{sourceRole: teambuild.SourceRoleGraphDesigner, messageRole: "graph-designer", agentName: teamforge.GraphDesignerAgentName},
 	}
 	previousOutput := "authorized_execution_plan=" + string(executionPlan)
 	for _, step := range steps {
