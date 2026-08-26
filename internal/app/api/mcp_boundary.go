@@ -3,14 +3,14 @@ package api
 import (
 	"context"
 	"crypto/hmac"
-	"encoding/json"
-	"io"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
 	"sync"
 
 	"github.com/jinyitao123/loom/contract"
+	"github.com/jinyitao123/weave/internal/app/mcpprotocol"
 	"github.com/jinyitao123/weave/internal/kernel/mcphost"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 	"github.com/jinyitao123/weave/internal/kernel/secret"
@@ -47,34 +47,8 @@ type boundaryAgentLookup interface {
 	Get(ctx context.Context, tenant, name string) (*registry.AgentRecord, error)
 }
 
-type boundaryRequest struct {
-	JSONRPC string          `json:"jsonrpc"`
-	ID      json.RawMessage `json:"id"`
-	Method  string          `json:"method"`
-	Params  json.RawMessage `json:"params"`
-}
-
-type boundaryResponse struct {
-	JSONRPC string            `json:"jsonrpc"`
-	ID      json.RawMessage   `json:"id"`
-	Result  any               `json:"result,omitempty"`
-	Error   *boundaryRPCError `json:"error,omitempty"`
-}
-
-type boundaryRPCError struct {
-	Code    int    `json:"code"`
-	Message string `json:"message"`
-}
-
-type boundaryTool struct {
-	Name        string          `json:"name"`
-	Description string          `json:"description"`
-	InputSchema json.RawMessage `json:"inputSchema"`
-}
-
 const (
 	upstreamMCPUnavailable = "upstream MCP unavailable"
-	upstreamMCPError       = "upstream MCP error"
 )
 
 func (s *Server) handleMCPBoundary(c echo.Context) error {
@@ -130,80 +104,12 @@ func (s *Server) handleMCPGatewayWith(
 }
 
 func handleStableGatewayRPC(c echo.Context, dispatcher contract.ToolDispatcher) error {
-	var request boundaryRequest
-	decoder := json.NewDecoder(c.Request().Body)
-	if err := decoder.Decode(&request); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid JSON-RPC request"})
-	}
-	var trailing any
-	if err := decoder.Decode(&trailing); err != io.EOF {
+	request, err := mcpprotocol.Decode(c.Request().Body)
+	if err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid JSON-RPC request"})
 	}
 	c.Response().Header().Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
-
-	switch request.Method {
-	case "initialize":
-		return c.JSON(http.StatusOK, boundaryResponse{
-			JSONRPC: "2.0", ID: request.ID,
-			Result: map[string]any{
-				"protocolVersion": "2025-03-26",
-				"capabilities":    map[string]any{"tools": map[string]any{}},
-				"serverInfo":      map[string]string{"name": "weave-mcp-gateway", "version": "1"},
-			},
-		})
-	case "notifications/initialized":
-		return c.NoContent(http.StatusAccepted)
-	case "tools/list":
-		tools, err := dispatcher.ListTools(c.Request().Context())
-		if err != nil {
-			return echo.NewHTTPError(http.StatusBadGateway, upstreamMCPUnavailable)
-		}
-		resultTools := make([]boundaryTool, 0, len(tools))
-		for _, tool := range tools {
-			resultTools = append(resultTools, boundaryTool{
-				Name: tool.Name, Description: tool.Description, InputSchema: tool.InputSchema,
-			})
-		}
-		return c.JSON(http.StatusOK, boundaryResponse{
-			JSONRPC: "2.0", ID: request.ID, Result: map[string]any{"tools": resultTools},
-		})
-	case "tools/call":
-		var params struct {
-			Name      string          `json:"name"`
-			Arguments json.RawMessage `json:"arguments"`
-		}
-		if err := json.Unmarshal(request.Params, &params); err != nil {
-			return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid tools/call params"})
-		}
-		if len(params.Arguments) == 0 {
-			params.Arguments = json.RawMessage(`{}`)
-		}
-		result, err := dispatcher.Dispatch(c.Request().Context(), contract.ToolCall{
-			ID: boundaryRequestID(request.ID), Name: params.Name, Args: string(params.Arguments),
-		})
-		if err != nil {
-			return echo.NewHTTPError(http.StatusBadGateway, upstreamMCPUnavailable)
-		}
-		if result == nil {
-			return echo.NewHTTPError(http.StatusBadGateway, "empty MCP tool result")
-		}
-		content := result.Content
-		if result.IsError {
-			content = upstreamMCPError
-		}
-		return c.JSON(http.StatusOK, boundaryResponse{
-			JSONRPC: "2.0", ID: request.ID,
-			Result: map[string]any{
-				"content": []map[string]string{{"type": "text", "text": content}},
-				"isError": result.IsError,
-			},
-		})
-	default:
-		return c.JSON(http.StatusOK, boundaryResponse{
-			JSONRPC: "2.0", ID: request.ID,
-			Error: &boundaryRPCError{Code: -32601, Message: "method not supported by gateway"},
-		})
-	}
+	return handleMCPProtocolRequest(c, dispatcher, request, "weave-mcp-gateway", "method not supported by gateway")
 }
 
 func (s *Server) handleMCPBoundaryWith(
@@ -241,13 +147,8 @@ func (s *Server) handleMCPBoundaryWith(
 		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "MCP boundary dependencies are unavailable"})
 	}
 
-	var request boundaryRequest
-	decoder := json.NewDecoder(c.Request().Body)
-	if err := decoder.Decode(&request); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid JSON-RPC request"})
-	}
-	var trailing any
-	if err := decoder.Decode(&trailing); err != io.EOF {
+	request, err := mcpprotocol.Decode(c.Request().Body)
+	if err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid JSON-RPC request"})
 	}
 	c.Response().Header().Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
@@ -261,90 +162,32 @@ func (s *Server) handleMCPBoundaryWith(
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "MCP server not found"})
 	}
 
-	switch request.Method {
-	case "initialize":
-		return c.JSON(http.StatusOK, boundaryResponse{
-			JSONRPC: "2.0",
-			ID:      request.ID,
-			Result: map[string]any{
-				"protocolVersion": "2025-03-26",
-				"capabilities": map[string]any{
-					"tools": map[string]any{},
-				},
-				"serverInfo": map[string]string{
-					"name":    "weave-mcp-boundary",
-					"version": "1",
-				},
-			},
-		})
-	case "notifications/initialized":
-		return c.NoContent(http.StatusAccepted)
-	case "tools/list":
-		tools, err := dispatcher.ListTools(c.Request().Context())
-		if err != nil {
-			return echo.NewHTTPError(http.StatusBadGateway, upstreamMCPUnavailable)
-		}
-		resultTools := make([]boundaryTool, 0, len(tools))
-		for _, tool := range tools {
-			resultTools = append(resultTools, boundaryTool{
-				Name: tool.Name, Description: tool.Description, InputSchema: tool.InputSchema,
-			})
-		}
-		return c.JSON(http.StatusOK, boundaryResponse{
-			JSONRPC: "2.0",
-			ID:      request.ID,
-			Result:  map[string]any{"tools": resultTools},
-		})
-	case "tools/call":
-		var params struct {
-			Name      string          `json:"name"`
-			Arguments json.RawMessage `json:"arguments"`
-		}
-		if err := json.Unmarshal(request.Params, &params); err != nil {
-			return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid tools/call params"})
-		}
-		if len(params.Arguments) == 0 {
-			params.Arguments = json.RawMessage(`{}`)
-		}
-		result, err := dispatcher.Dispatch(c.Request().Context(), contract.ToolCall{
-			ID:   boundaryRequestID(request.ID),
-			Name: params.Name,
-			Args: string(params.Arguments),
-		})
-		if err != nil {
-			return echo.NewHTTPError(http.StatusBadGateway, upstreamMCPUnavailable)
-		}
-		if result == nil {
-			return echo.NewHTTPError(http.StatusBadGateway, "empty MCP tool result")
-		}
-		content := result.Content
-		if result.IsError {
-			content = upstreamMCPError
-		}
-		return c.JSON(http.StatusOK, boundaryResponse{
-			JSONRPC: "2.0",
-			ID:      request.ID,
-			Result: map[string]any{
-				"content": []map[string]string{{"type": "text", "text": content}},
-				"isError": result.IsError,
-			},
-		})
-	default:
-		return c.JSON(http.StatusOK, boundaryResponse{
-			JSONRPC: "2.0",
-			ID:      request.ID,
-			Error: &boundaryRPCError{
-				Code:    -32601,
-				Message: "method not supported by boundary",
-			},
-		})
-	}
+	return handleMCPProtocolRequest(c, dispatcher, request, "weave-mcp-boundary", "method not supported by boundary")
 }
 
-func boundaryRequestID(raw json.RawMessage) string {
-	var id string
-	if err := json.Unmarshal(raw, &id); err == nil {
-		return id
+func handleMCPProtocolRequest(
+	c echo.Context,
+	dispatcher contract.ToolDispatcher,
+	request mcpprotocol.Request,
+	serverName string,
+	unsupportedMethodMessage string,
+) error {
+	result, err := (mcpprotocol.Adapter{
+		Dispatcher: dispatcher, ServerName: serverName,
+		UnsupportedMethodMessage: unsupportedMethodMessage,
+	}).Handle(c.Request().Context(), request)
+	switch {
+	case errors.Is(err, mcpprotocol.ErrInvalidCallParams):
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid tools/call params"})
+	case errors.Is(err, mcpprotocol.ErrUpstreamUnavailable):
+		return echo.NewHTTPError(http.StatusBadGateway, upstreamMCPUnavailable)
+	case errors.Is(err, mcpprotocol.ErrEmptyToolResult):
+		return echo.NewHTTPError(http.StatusBadGateway, "empty MCP tool result")
+	case err != nil:
+		return echo.NewHTTPError(http.StatusBadGateway, upstreamMCPUnavailable)
+	case result.Notification:
+		return c.NoContent(http.StatusAccepted)
+	default:
+		return c.JSON(http.StatusOK, result.Response)
 	}
-	return string(raw)
 }
