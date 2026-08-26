@@ -53,6 +53,19 @@
 .blueprint-proposal-card__blocked-copy { display: grid; gap: var(--space-1); min-width: 0; }
 .blueprint-proposal-card__blocked-copy > strong { color: var(--danger); font-size: var(--text-caption); }
 .blueprint-proposal-card__mode-note { grid-column: 1 / -1; color: var(--label-secondary); }
+.template-draft-card { display: grid; gap: var(--space-3); margin-bottom: var(--space-3); padding: var(--space-3); border: 1px solid var(--card-border); border-radius: var(--radius-md); background: var(--card-bg); box-shadow: var(--card-shadow); }
+.template-draft-card > header { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: var(--space-2); }
+.template-draft-card > header > div { min-width: 0; display: grid; gap: var(--space-1); }
+.template-draft-card strong { color: var(--label-primary); }
+.template-draft-card small, .template-draft-card > p { color: var(--label-secondary); }
+.template-draft-card > p { margin: 0; line-height: 1.5; }
+.template-draft-card ul { display: flex; flex-wrap: wrap; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
+.template-draft-card li { display: inline-flex; align-items: center; gap: var(--space-1); padding: var(--space-1) var(--space-2); border-radius: var(--radius-pill); background: var(--bg-elevated); font-size: var(--text-caption); }
+.template-draft-card details { overflow: hidden; border: 1px solid var(--separator); border-radius: var(--radius-sm); }
+.template-draft-card summary { padding: var(--space-2) var(--space-3); color: var(--label-secondary); cursor: pointer; font-size: var(--text-caption); }
+.template-draft-card pre { max-height: 360px; overflow: auto; margin: 0; padding: var(--space-3); border-top: 1px solid var(--separator); background: var(--bg-elevated); font-family: var(--font-mono); font-size: var(--text-caption); white-space: pre; }
+.template-draft-card > footer { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding-top: var(--space-2); border-top: 1px solid var(--separator); }
+.template-draft-card__error { margin: 0; color: var(--danger-text); font-size: var(--text-caption); }
 .candidate-evaluation { display: grid; gap: var(--space-2); margin-top: var(--space-2); padding-top: var(--space-2); border-top: 1px solid var(--separator); }
 .candidate-evaluation header { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
 .candidate-evaluation p { color: var(--label-secondary); font-size: var(--text-caption); line-height: 1.5; }

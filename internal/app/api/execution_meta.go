@@ -243,6 +243,21 @@ func (r *assistantExecutionRecorder) lastToolCallFailed(names ...string) bool {
 	return false
 }
 
+func (r *assistantExecutionRecorder) lastSuccessfulToolResult(name string) (string, bool) {
+	if r == nil {
+		return "", false
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for index := len(r.execution.ToolCalls) - 1; index >= 0; index-- {
+		call := r.execution.ToolCalls[index]
+		if call.Name == name && call.Status == "success" && call.Result != "" {
+			return call.Result, true
+		}
+	}
+	return "", false
+}
+
 func (r *assistantExecutionRecorder) finishToolSegment(agent string, call contract.ToolCall, result, status string, completedAt time.Time) {
 	for index := len(r.segments) - 1; index >= 0; index-- {
 		segment := &r.segments[index]
@@ -306,4 +321,42 @@ func mergeAssistantExecutionSegments(metadata json.RawMessage, segments []assist
 		return metadata
 	}
 	return encoded
+}
+
+// mergeTeamTemplateDraftMetadata promotes the last successfully rendered
+// template draft out of the execution trace. Message timelines intentionally
+// compact tool payloads, while the Console review card needs the complete
+// normalized YAML after a refresh.
+func mergeTeamTemplateDraftMetadata(metadata json.RawMessage, execution assistantExecutionMetadata) json.RawMessage {
+	for index := len(execution.ToolCalls) - 1; index >= 0; index-- {
+		call := execution.ToolCalls[index]
+		if call.Name != "tf_render_template_draft" || call.Status != "success" || call.Result == "" {
+			continue
+		}
+		var draft struct {
+			SchemaVersion int             `json:"schema_version"`
+			Status        string          `json:"status"`
+			YAML          string          `json:"yaml"`
+			Preview       json.RawMessage `json:"preview"`
+			NextAction    string          `json:"next_action"`
+		}
+		if err := json.Unmarshal([]byte(call.Result), &draft); err != nil ||
+			draft.SchemaVersion != 1 || draft.Status != "ready_for_review" ||
+			draft.YAML == "" || len(draft.Preview) == 0 {
+			return metadata
+		}
+		fields := map[string]any{}
+		if len(metadata) > 0 {
+			if err := json.Unmarshal(metadata, &fields); err != nil {
+				return metadata
+			}
+		}
+		fields["team_template_draft"] = json.RawMessage(call.Result)
+		encoded, err := json.Marshal(fields)
+		if err != nil {
+			return metadata
+		}
+		return encoded
+	}
+	return metadata
 }

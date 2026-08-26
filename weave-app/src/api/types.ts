@@ -1146,7 +1146,26 @@ export interface AssistantMessageMetadata {
   blueprint_revision_token?: BlueprintRevisionToken;
   blueprint_authorization_semantic?: string;
   team_blueprint_summary?: TeamBlueprintSummary;
+  team_template_draft?: TeamTemplateDraft;
   terminal_outcome?: TerminalOutcome;
+}
+
+export interface TeamTemplateDraft {
+  schema_version: 1;
+  status: "ready_for_review";
+  idempotency_key: string;
+  yaml: string;
+  preview: {
+    name: string;
+    display_name: string;
+    purpose: string;
+    topology: string;
+    lead: string;
+    members: Array<{ name: string; display_name: string; role: string }>;
+    success_criteria: string[];
+    max_cost_usd: number;
+  };
+  next_action: "review_and_submit_from_console";
 }
 
 export interface TerminalOutcome {

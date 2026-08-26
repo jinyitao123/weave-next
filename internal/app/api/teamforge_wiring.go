@@ -100,7 +100,7 @@ func (s *Server) teamForgePlatformTools(
 	run, err := s.TeamBuild.GetActiveBuildRunByConversation(ctx, workspaceID, conversationID)
 	if err != nil {
 		if errors.Is(err, teambuild.ErrBuildRunNotFound) {
-			dispatchers := make([]contract.ToolDispatcher, 0, 2)
+			dispatchers := make([]contract.ToolDispatcher, 0, 3)
 			latest, latestErr := s.TeamBuild.GetLatestBuildRunByConversation(ctx, workspaceID, conversationID)
 			enableDiscoveryReads := false
 			switch {
@@ -134,6 +134,11 @@ func (s *Server) teamForgePlatformTools(
 						teamforge.NewDiscoveryReadTools(workspaceID, agentName, s.Audit, s.teamForgeDeps()),
 					)
 				}
+			}
+			if enableDiscoveryReads && agentName == metateam.TeamArchitectName {
+				dispatchers = append(dispatchers,
+					teamforge.NewRenderTemplateDraftTools(workspaceID, agentName, s.Audit),
+				)
 			}
 			if s.canSubmitTeamBuildBrief(ctx, workspaceID, conversationID, agentName) {
 				operator := teamForgeOperatorFromContext(ctx)

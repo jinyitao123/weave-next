@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { CheckCircle2, FileText, LoaderCircle, MessagesSquare, Paperclip, Users } from "lucide-react";
-import { api, type AssistantExecutionMetadata, type AssistantMessageMetadata, type BuildRunOperationStep, type BuildRunProgress, type BuildRunSummary, type CandidateEvaluation, type ChatRequest, type ExecutionSegment, type Message, type MessageAttachment, type RuntimeAssignment, type TeamArchitectReport, type ToolCallRecord } from "../../api";
+import { CheckCircle2, FileCode2, FileText, LoaderCircle, MessagesSquare, Paperclip, Users } from "lucide-react";
+import { api, apiErrorMessage, type AssistantExecutionMetadata, type AssistantMessageMetadata, type BuildRunOperationStep, type BuildRunProgress, type BuildRunSummary, type CandidateEvaluation, type ChatRequest, type ExecutionSegment, type Message, type MessageAttachment, type RuntimeAssignment, type TeamArchitectReport, type TeamTemplateDraft, type ToolCallRecord } from "../../api";
 import { Badge } from "../../ui/Badge";
 import { Button } from "../../ui/Button";
 import { ExecutionProcess } from "./ExecutionProcess";
@@ -167,12 +167,88 @@ export function ConversationMessage({
       {terminalOutcome?.report && <StructuredTeamReport report={terminalOutcome.report} />}
       {message.role === "assistant" && metadata.runtime_assignment && <RuntimeAssignmentNotice assignment={metadata.runtime_assignment} />}
       {extractedAnswer && <MarkdownText text={normalizeAssistantAnswer(extractedAnswer, blueprintBuildRun)} />}
+      {message.role === "assistant" && metadata.team_template_draft && <TeamTemplateDraftCard draft={metadata.team_template_draft} onOpenTeam={onOpenTeam} />}
       {message.role === "assistant" && <BlueprintProposalCard metadata={metadata} buildRun={blueprintBuildRun} mode={blueprintCardMode} invalidationVersion={buildProgressInvalidationVersion} onOpenTeam={onOpenTeam} onSubmit={actions.onSubmitBuildRun} onRequestChanges={actions.onRequestBlueprintChanges} onReplan={actions.onReplanBuildRun} onAbandon={actions.onAbandonBuildRun} />}
       {!terminalOutcome && !extractedAnswer && !suppressBlueprintPlaceholder && <MessageContent message={message} />}
       {promoteError && <div className="pending-error" role="alert"><p>{promoteError}</p></div>}
     </div>
     <MessageActions message={message} {...actions} suppressPromotion={structuredBlocked} />
   </article>;
+}
+
+function TeamTemplateDraftCard({ draft, onOpenTeam }: { draft: TeamTemplateDraft; onOpenTeam?: (teamId: string) => void }) {
+  const [submitting, setSubmitting] = useState(false);
+  const [buildRunID, setBuildRunID] = useState("");
+  const [status, setStatus] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!buildRunID || status === "authorization_required" || status === "passed") return;
+    const controller = new AbortController();
+    let timer = 0;
+    const poll = async () => {
+      try {
+        const progress = await api.getTeamBuildRunProgress(buildRunID, controller.signal);
+        if (controller.signal.aborted) return;
+        setStatus(progress.run_status);
+        if (progress.run_status === "passed") {
+          if (progress.final_ref?.team_id) onOpenTeam?.(progress.final_ref.team_id);
+          else setError("团队已创建，但响应中缺少团队标识。请前往团队列表查看。");
+          return;
+        }
+        if (progress.run_status === "blocked" || progress.run_status === "cancelled") {
+          setError(`模板构建已${progress.run_status === "blocked" ? "暂停" : "取消"}，请查看构建记录。`);
+          return;
+        }
+        timer = window.setTimeout(() => void poll(), 1_200);
+      } catch (requestError) {
+        if (!controller.signal.aborted) setError(apiErrorMessage(requestError));
+      }
+    };
+    void poll();
+    return () => {
+      controller.abort();
+      window.clearTimeout(timer);
+    };
+  }, [buildRunID, onOpenTeam, status]);
+
+  async function submit() {
+    setSubmitting(true);
+    setError(null);
+    try {
+      const outcome = await api.createTeamFromTemplate({ yaml: draft.yaml, idempotency_key: draft.idempotency_key });
+      setBuildRunID(outcome.build_run_id);
+      setStatus(outcome.status);
+      if (outcome.status === "ready" && outcome.team_id) onOpenTeam?.(outcome.team_id);
+      if (outcome.status === "authorization_required") {
+        setError("模板预算或工作区额度超出自动授权范围。构建已保留，请由管理员审核后继续。");
+      }
+    } catch (requestError) {
+      setError(apiErrorMessage(requestError));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  const complete = status === "ready" || status === "passed";
+  return <section className="template-draft-card" aria-label="团队模板草稿">
+    <header>
+      <FileCode2 size={16} aria-hidden="true" />
+      <div><strong>{draft.preview.display_name}</strong><small>{draft.preview.topology} · {draft.preview.members.length} 位成员</small></div>
+      <Badge tone={complete ? "success" : status ? "accent" : "warning"}>{complete ? "已创建" : status ? "创建中" : "待审阅"}</Badge>
+    </header>
+    <p>{draft.preview.purpose}</p>
+    <ul>{draft.preview.members.map((member) => <li key={member.name}><span>{member.display_name}</span><small>{agentRoleLabel(member.role)}</small></li>)}</ul>
+    <details><summary>审阅 team.yaml</summary><pre><code>{draft.yaml}</code></pre></details>
+    {error && <p className="template-draft-card__error" role="alert">{error}</p>}
+    <footer>
+      <small>预算上限 ${draft.preview.max_cost_usd.toFixed(2)} · 创建后状态为待评测</small>
+      <Button variant="primary" size="small" loading={submitting} disabled={submitting || !!buildRunID} onClick={() => void submit()}>
+        <CheckCircle2 size={14} aria-hidden="true" />
+        {submitting ? "正在提交…" : buildRunID ? "已提交" : "确认并创建团队"}
+      </Button>
+    </footer>
+  </section>;
 }
 
 function StructuredTeamReport({ report }: { report: TeamArchitectReport }) {
