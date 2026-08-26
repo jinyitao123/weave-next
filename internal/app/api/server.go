@@ -100,6 +100,7 @@ type Server struct {
 	TeamBuild                 *teambuild.Store                    // nil if PG pool unavailable
 	TeamBuildOrchestrator     TeamBuildExecutionService           // nil until the production meta-team controller is configured
 	TeamTemplates             TeamTemplateService                 // nil until the template fast path is configured
+	TeamEvaluations           TeamEvaluationService               // nil until post-template evaluation is configured
 	TeamForgeDrafts           *teamforge.DraftRegistry            // shared in-memory draft registry; nil disables teamforge wiring
 	Pool                      *pgxpool.Pool                       // nil if PG pool unavailable
 	TeamWorkers               *registry.TeamWorkerRepository      // nil if PG pool unavailable
@@ -369,6 +370,7 @@ func (s *Server) registerRoutes() {
 	auth.GET("/team-creation-options", s.handleGetTeamCreationOptions, orgScope)
 	auth.POST("/teams", s.handleCreateTeam, RequireRole("admin"), orgScope)
 	auth.POST("/teams:from-template", s.handleCreateTeamFromTemplate, RequireRole("admin"), orgScope)
+	auth.POST("/teams/:id/evaluations", s.handleEvaluateTeam, RequireRole("admin"), orgScope)
 	auth.GET("/team-templates/samples", s.handleListTeamTemplateSamples, orgScope)
 	auth.GET("/teams/:id", s.handleGetTeam, orgScope)
 	auth.GET("/teams/:id/dispatch-rules", s.handleGetTeamDispatchRules, orgScope)

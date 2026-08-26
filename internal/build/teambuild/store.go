@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jinyitao123/weave/internal/kernel/org"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
@@ -82,6 +83,9 @@ var (
 	// source identity: the identity already exists with a different role.
 	// The original association row is never modified.
 	ErrUsageSourceConflict = errors.New("usage source conflict")
+	// ErrActiveTeamEvaluation reports the database-enforced single active
+	// evaluation run for one team.
+	ErrActiveTeamEvaluation = errors.New("team already has an active evaluation run")
 )
 
 // Clock supplies timestamps for build run transitions.
@@ -148,6 +152,7 @@ func New(pool *pgxpool.Pool, clock Clock) *Store {
 
 const buildRunColumns = `
 	workspace_id, build_run_id, mode, execution_strategy, status, conversation_id,
+	evaluation_team_id,
 	brief_json, brief_hash, contract_json, contract_hash,
 	asset_scope_json, baseline_snapshot_json,
 	round_budget_json, total_budget_json,
@@ -169,6 +174,10 @@ type CreateRunParams struct {
 	// conversation that drove the build task. It is nullable and does not
 	// constrain the run lifecycle.
 	ConversationID string
+	// EvaluationTeamID marks the dedicated post-template evaluation run. It is
+	// persisted separately from brief.team_id so concurrency can be enforced by
+	// a partial unique index without classifying ordinary optimize runs.
+	EvaluationTeamID string
 }
 
 // ValidateBuildRunDrafts validates and canonicalizes the two documents used
@@ -256,19 +265,24 @@ func (s *Store) CreateBuildRun(
 	run, err := scanBuildRun(tx.QueryRow(ctx, `
 		INSERT INTO weave_team_build_runs (
 			workspace_id, build_run_id, mode, status, conversation_id,
+			evaluation_team_id,
 			brief_json, brief_hash, contract_json, contract_hash,
 			asset_scope_json, baseline_snapshot_json,
 			round_budget_json, total_budget_json,
 			expires_at, publish_eligible, rollback_status, execution_strategy,
 			confirmed_by, final_ref_json, created_at, updated_at, decided_at
-		) VALUES ($1,$2,$3,'planning',$4,$5,$6,$7,$8,$9,NULL,$10,$11,$12,false,'none',$13,NULL,NULL,$14,$14,NULL)
+		) VALUES ($1,$2,$3,'planning',$4,$5,$6,$7,$8,$9,$10,NULL,$11,$12,$13,false,'none',$14,NULL,NULL,$15,$15,NULL)
 		RETURNING `+buildRunColumns+`
 	`, workspaceID, buildRunID, params.Brief.Mode,
 		nullableString(params.ConversationID),
+		nullableString(params.EvaluationTeamID),
 		briefJSON, briefHash, contractJSON, contractHash,
 		scopeJSON, roundBudgetJSON, totalBudgetJSON,
 		params.ExpiresAt, executionStrategy, now))
 	if err != nil {
+		if params.EvaluationTeamID != "" && isActiveEvaluationUniqueViolation(err) {
+			return TeamBuildRun{}, fmt.Errorf("create build run: %w", ErrActiveTeamEvaluation)
+		}
 		return TeamBuildRun{}, fmt.Errorf("create build run: %w", err)
 	}
 	if _, err := tx.Exec(ctx, `
@@ -285,12 +299,21 @@ func (s *Store) CreateBuildRun(
 	return run, nil
 }
 
+func isActiveEvaluationUniqueViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23505" &&
+		pgErr.ConstraintName == "weave_team_build_runs_active_evaluation_unique_idx"
+}
+
 func initialExecutionStrategy(mode, requested string) (string, error) {
 	requested = strings.TrimSpace(requested)
 	if requested == ExecutionStrategyTemplateInstantiate {
 		if mode != ModeCreate {
 			return "", errors.New("template_instantiate execution strategy requires create mode")
 		}
+		return requested, nil
+	}
+	if requested == ExecutionStrategyCompilerV1 {
 		return requested, nil
 	}
 	if requested != "" {
@@ -976,10 +999,11 @@ func scanBuildRun(row rowScanner) (TeamBuildRun, error) {
 	var authorizationAuthority, authorizedBlueprintHash, authorizedChangeSetHash *string
 	var authorizationDecisionSubject, authorizationDecisionReason *string
 	var authorizedRevisionNo *int
-	var conversationID *string
+	var conversationID, evaluationTeamID *string
 	var decidedAt *time.Time
 	if err := row.Scan(
 		&run.WorkspaceID, &run.BuildRunID, &run.Mode, &run.ExecutionStrategy, &run.Status, &conversationID,
+		&evaluationTeamID,
 		&briefRaw, &run.BriefHash, &contractRaw, &run.ContractHash,
 		&scopeRaw, &baselineRaw,
 		&roundBudgetRaw, &totalBudgetRaw,
@@ -1041,6 +1065,9 @@ func scanBuildRun(row rowScanner) (TeamBuildRun, error) {
 	}
 	if conversationID != nil {
 		run.ConversationID = *conversationID
+	}
+	if evaluationTeamID != nil {
+		run.EvaluationTeamID = *evaluationTeamID
 	}
 	run.DecidedAt = decidedAt
 	return run, nil

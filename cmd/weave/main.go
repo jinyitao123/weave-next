@@ -19,6 +19,7 @@ import (
 	"github.com/jinyitao123/weave/internal/app/metateam"
 	"github.com/jinyitao123/weave/internal/app/projects"
 	"github.com/jinyitao123/weave/internal/app/schedules"
+	"github.com/jinyitao123/weave/internal/app/teamevaluations"
 	"github.com/jinyitao123/weave/internal/app/teamtemplates"
 	"github.com/jinyitao123/weave/internal/app/users"
 	"github.com/jinyitao123/weave/internal/base/db"
@@ -27,6 +28,7 @@ import (
 	"github.com/jinyitao123/weave/internal/base/realtime"
 	"github.com/jinyitao123/weave/internal/base/taskqueue"
 	"github.com/jinyitao123/weave/internal/build/teambuild"
+	"github.com/jinyitao123/weave/internal/build/teameval"
 	"github.com/jinyitao123/weave/internal/build/teamorch"
 	"github.com/jinyitao123/weave/internal/kernel/audit"
 	"github.com/jinyitao123/weave/internal/kernel/compiler"
@@ -43,6 +45,7 @@ import (
 	"github.com/jinyitao123/weave/internal/kernel/schedule"
 	"github.com/jinyitao123/weave/internal/kernel/secret"
 	"github.com/jinyitao123/weave/internal/kernel/skills"
+	"github.com/jinyitao123/weave/internal/kernel/workflow/machine"
 )
 
 var buildCommit = "unknown"
@@ -436,6 +439,25 @@ func main() {
 				MonthlyBudgetUSD:       cfg.TemplateMonthlyBudgetUSD,
 				MaxConcurrent:          cfg.TemplateMaxConcurrent,
 			}},
+		)
+		srv.TeamEvaluations = teamevaluations.New(
+			teamevaluations.NewPGIdempotencyStore(srv.Pool),
+			srv.TeamBuild,
+			teamTemplateExecutionAdapter{service: srv.TeamBuildOrchestrator},
+			teamevaluations.Options{
+				OrgStore: srv.OrgStore, Registry: srv.Registry, Workflows: srv.Workflow,
+				DeclarativeValidator: func(
+					ctx context.Context,
+					workspaceID, teamID string,
+					trigger machine.TriggerConfig,
+					graph machine.GraphDefinition,
+				) (machine.Report, error) {
+					return teameval.ValidateWorkflowForTeam(ctx, teameval.WorkflowValidateDeps{
+						Teams: srv.OrgStore, Roster: srv.TeamWorkers,
+						Agents: srv.Registry, Workflows: srv.Workflow,
+					}, workspaceID, teamID, trigger, graph)
+				},
+			},
 		)
 	}
 
