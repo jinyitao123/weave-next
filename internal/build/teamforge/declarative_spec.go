@@ -341,6 +341,15 @@ func compileDeclarativeNodeConfig(
 			return nil, nil, err
 		}
 		return config, nil, nil
+	case machine.NodeWait:
+		var config machine.WaitConfig
+		if err := strictRaw(node.Config, &config); err != nil {
+			return nil, nil, err
+		}
+		if config.Kind != machine.WaitKindHuman {
+			return nil, nil, errors.New("declarative_v1 wait requires kind=human")
+		}
+		return config, nil, nil
 	case machine.NodeLoop:
 		var config machine.LoopConfig
 		if err := strictRaw(node.Config, &config); err != nil {
@@ -353,7 +362,7 @@ func compileDeclarativeNodeConfig(
 			return nil, nil, err
 		}
 		return config, nil, nil
-	case machine.NodeWait, machine.NodeHandoff:
+	case machine.NodeHandoff:
 		return nil, nil, fmt.Errorf("node type %q is not supported by declarative_v1", node.Type)
 	default:
 		return nil, nil, fmt.Errorf("unknown node type %q", node.Type)

@@ -607,6 +607,25 @@ func validateNodeConfigBasic(report *Report, path string, node Node) {
 			validateRawJSONObject(report, node.ID, joinPath(configPath, "resume_schema"), config.ResumeSchema)
 		}
 		positive(config.TimeoutSeconds, "timeout_seconds")
+		switch config.EffectiveKind() {
+		case WaitKindTimer:
+			if config.Task != nil {
+				report.AddNode(PhaseDTO, joinPath(configPath, "task"), node.ID, CodeUnknownField, "task is only allowed for human wait")
+			}
+		case WaitKindHuman:
+			if config.Task == nil {
+				report.AddNode(PhaseDTO, joinPath(configPath, "task"), node.ID, CodeFieldRequired, "human wait requires task")
+			} else {
+				if config.Task.Title == "" {
+					report.AddNode(PhaseDTO, joinPath(joinPath(configPath, "task"), "title"), node.ID, CodeFieldRequired, "task title must not be empty")
+				}
+				if config.Task.Instructions == "" {
+					report.AddNode(PhaseDTO, joinPath(joinPath(configPath, "task"), "instructions"), node.ID, CodeFieldRequired, "task instructions must not be empty")
+				}
+			}
+		default:
+			report.AddNode(PhaseDTO, joinPath(configPath, "kind"), node.ID, CodeEnumInvalid, "wait kind must be timer or human")
+		}
 	case NodeLoop:
 		config, ok := node.Config.(LoopConfig)
 		if !ok {
@@ -913,6 +932,7 @@ func validateTopology(ctx ValidationContext) Report {
 		from := nodeIndex[edge.FromNodeID]
 		outgoing[from] = append(outgoing[from], edgeIndex)
 	}
+	validateHumanWaitFanoutPlacement(&report, graph, nodeIndex, outgoing)
 
 	entry := nodeIndex[graph.EntryNodeID]
 	reachable := make([]bool, len(graph.Nodes))
@@ -1019,6 +1039,43 @@ func validateTopology(ctx ValidationContext) Report {
 	}
 
 	return report
+}
+
+func validateHumanWaitFanoutPlacement(report *Report, graph GraphDefinition, nodeIndex map[string]int, outgoing [][]int) {
+	for parallelIndex, node := range graph.Nodes {
+		config, ok := node.Config.(ParallelConfig)
+		if node.Type != NodeParallel || !ok {
+			continue
+		}
+		joinIndex, hasJoin := nodeIndex[config.JoinNodeID]
+		if !hasJoin {
+			continue
+		}
+		visited := make([]bool, len(graph.Nodes))
+		queue := make([]int, 0)
+		for _, edgeIndex := range outgoing[parallelIndex] {
+			if graph.Edges[edgeIndex].Route == RouteBranch {
+				queue = append(queue, nodeIndex[graph.Edges[edgeIndex].ToNodeID])
+			}
+		}
+		for len(queue) != 0 {
+			current := queue[0]
+			queue = queue[1:]
+			if current == joinIndex || visited[current] {
+				continue
+			}
+			visited[current] = true
+			if wait, isWait := graph.Nodes[current].Config.(WaitConfig); graph.Nodes[current].Type == NodeWait && isWait && wait.EffectiveKind() == WaitKindHuman {
+				report.AddNode(PhaseTopology, fmt.Sprintf("/nodes/%d", current), graph.Nodes[current].ID,
+					CodeHumanWaitInFanout, "human wait is forbidden inside a parallel fanout")
+			}
+			for _, edgeIndex := range outgoing[current] {
+				if graph.Edges[edgeIndex].Route != RouteBack {
+					queue = append(queue, nodeIndex[graph.Edges[edgeIndex].ToNodeID])
+				}
+			}
+		}
+	}
 }
 
 type loopHeaderIndex map[string]map[string]struct{}

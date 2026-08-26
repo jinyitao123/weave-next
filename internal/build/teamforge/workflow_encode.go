@@ -162,8 +162,14 @@ func workflowNodeConfigJSON(nodeType machine.NodeType, config machine.NodeConfig
 		return payload
 	case machine.WaitConfig:
 		payload := map[string]any{"resume_schema": typed.ResumeSchema}
+		if typed.Kind != "" {
+			payload["kind"] = typed.Kind
+		}
 		if typed.TimeoutSeconds != nil {
 			payload["timeout_seconds"] = *typed.TimeoutSeconds
+		}
+		if typed.Task != nil {
+			payload["task"] = typed.Task
 		}
 		return payload
 	case machine.LoopConfig:

@@ -171,6 +171,10 @@ func cloneNodeConfig(config machine.NodeConfig) machine.NodeConfig {
 		cp := typed
 		cp.ResumeSchema = append(json.RawMessage(nil), typed.ResumeSchema...)
 		cp.TimeoutSeconds = cloneInt64Ptr(typed.TimeoutSeconds)
+		if typed.Task != nil {
+			task := *typed.Task
+			cp.Task = &task
+		}
 		return cp
 	case machine.LoopConfig:
 		cp := typed

@@ -534,9 +534,20 @@ func decodeJoinConfig(raw json.RawMessage, path string) (NodeConfig, *dtoError) 
 }
 
 func decodeWaitConfig(raw json.RawMessage, path string) (NodeConfig, *dtoError) {
-	object, issue := configObject(raw, path, "resume_schema", "timeout_seconds")
+	object, issue := configObject(raw, path, "kind", "resume_schema", "timeout_seconds", "task")
 	if issue != nil {
 		return nil, issue
+	}
+	kind := WaitKind("")
+	if rawKind, ok := object["kind"]; ok {
+		value, valueIssue := stringField(rawKind, joinPath(path, "kind"))
+		if valueIssue != nil {
+			return nil, valueIssue
+		}
+		kind = WaitKind(value)
+		if kind != WaitKindTimer && kind != WaitKindHuman {
+			return nil, newDTOError(joinPath(path, "kind"), CodeEnumInvalid, "wait kind must be timer or human")
+		}
 	}
 	if issue = requireField(object, "resume_schema", joinPath(path, "resume_schema"), CodeFieldRequired); issue != nil {
 		return nil, issue
@@ -544,13 +555,41 @@ func decodeWaitConfig(raw json.RawMessage, path string) (NodeConfig, *dtoError) 
 	if _, issue = objectFields(object["resume_schema"], joinPath(path, "resume_schema")); issue != nil {
 		return nil, issue
 	}
-	result := WaitConfig{ResumeSchema: cloneRaw(object["resume_schema"])}
+	result := WaitConfig{Kind: kind, ResumeSchema: cloneRaw(object["resume_schema"])}
 	if timeout, ok := object["timeout_seconds"]; ok {
 		value, valueIssue := integerField(timeout, joinPath(path, "timeout_seconds"))
 		if valueIssue != nil {
 			return nil, valueIssue
 		}
 		result.TimeoutSeconds = &value
+	}
+	if rawTask, ok := object["task"]; ok {
+		taskObject, taskIssue := configObject(rawTask, joinPath(path, "task"), "title", "instructions", "audience_ref")
+		if taskIssue != nil {
+			return nil, taskIssue
+		}
+		title, taskIssue := requiredString(taskObject, "title", joinPath(path, "task"))
+		if taskIssue != nil {
+			return nil, taskIssue
+		}
+		instructions, taskIssue := requiredString(taskObject, "instructions", joinPath(path, "task"))
+		if taskIssue != nil {
+			return nil, taskIssue
+		}
+		audienceRef := ""
+		if rawAudience, exists := taskObject["audience_ref"]; exists {
+			audienceRef, taskIssue = stringField(rawAudience, joinPath(joinPath(path, "task"), "audience_ref"))
+			if taskIssue != nil {
+				return nil, taskIssue
+			}
+		}
+		result.Task = &HumanTaskConfig{Title: title, Instructions: instructions, AudienceRef: audienceRef}
+	}
+	if result.EffectiveKind() == WaitKindHuman && result.Task == nil {
+		return nil, newDTOError(joinPath(path, "task"), CodeFieldRequired, "human wait requires task")
+	}
+	if result.EffectiveKind() == WaitKindTimer && result.Task != nil {
+		return nil, newDTOError(joinPath(path, "task"), CodeUnknownField, "task is only allowed for human wait")
 	}
 	return result, nil
 }

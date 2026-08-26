@@ -212,12 +212,35 @@ type JoinConfig struct {
 
 func (JoinConfig) nodeConfig() {}
 
+type WaitKind string
+
+const (
+	// An omitted kind remains a timer wait for machine-v1 compatibility.
+	WaitKindTimer WaitKind = "timer"
+	WaitKindHuman WaitKind = "human"
+)
+
+type HumanTaskConfig struct {
+	Title        string `json:"title"`
+	Instructions string `json:"instructions"`
+	AudienceRef  string `json:"audience_ref,omitempty"`
+}
+
 type WaitConfig struct {
-	ResumeSchema   json.RawMessage `json:"resume_schema"`
-	TimeoutSeconds *int64          `json:"timeout_seconds,omitempty"`
+	Kind           WaitKind         `json:"kind,omitempty"`
+	ResumeSchema   json.RawMessage  `json:"resume_schema"`
+	TimeoutSeconds *int64           `json:"timeout_seconds,omitempty"`
+	Task           *HumanTaskConfig `json:"task,omitempty"`
 }
 
 func (WaitConfig) nodeConfig() {}
+
+func (c WaitConfig) EffectiveKind() WaitKind {
+	if c.Kind == "" {
+		return WaitKindTimer
+	}
+	return c.Kind
+}
 
 type PredicateOperator string
 

@@ -274,7 +274,7 @@ func decodeNodeConfigStrict(nodeType machine.NodeType, raw json.RawMessage) (mac
 		if err != nil {
 			return nil, fmt.Errorf("wait config: %w", err)
 		}
-		if err := rejectJSONFields(fields, "resume_schema", "timeout_seconds"); err != nil {
+		if err := rejectJSONFields(fields, "kind", "resume_schema", "timeout_seconds", "task"); err != nil {
 			return nil, err
 		}
 		if err := requireJSONField(fields, "resume_schema", "wait config"); err != nil {

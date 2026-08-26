@@ -773,10 +773,12 @@ var workflowNodeConfigSpecs = map[string]workflowNodeConfigSpec{
 		},
 	},
 	"wait": {
-		Description: "等待节点（会话触发）",
+		Description: "等待节点（kind 缺省为 timer；declarative_v1 仅开放 human）",
 		Fields: []workflowNodeFieldSpec{
+			{Key: "kind", JSONType: "enum", Enum: []string{"timer", "human"}},
 			{Key: "resume_schema", JSONType: "object", Required: true},
 			{Key: "timeout_seconds", JSONType: "integer"},
+			{Key: "task", JSONType: "object"},
 		},
 	},
 	"loop": {
@@ -972,6 +974,7 @@ var workflowNodeFieldDescriptions = map[string]string{
 	"success_count":      "quorum 所需成功数（正数）",
 	"deadline_seconds":   "deadline 超时秒数（正数）",
 	"resume_schema":      "wait 恢复载荷的 JSON Schema（object）",
+	"task":               "human wait 的任务展示信息：title、instructions、audience_ref",
 	"timeout_seconds":    "超时秒数（可选）",
 	"max_iterations":     "循环最大迭代次数（正数）",
 	"latch_node_id":      "循环 latch 节点 id（back 边的唯一来源）",

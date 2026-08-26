@@ -12,8 +12,8 @@ package teamforge
 import (
 	"context"
 
-	"github.com/jinyitao123/weave/internal/kernel/compiler"
 	"github.com/jinyitao123/weave/internal/build/teameval"
+	"github.com/jinyitao123/weave/internal/kernel/compiler"
 	"github.com/jinyitao123/weave/internal/kernel/workflow/machine"
 )
 
@@ -80,6 +80,7 @@ var workflowHintByCode = map[string]string{
 	"workflow_parallel_branch_not_dispatch_worker": "parallel 的每条 branch 必须指向 dispatch worker。",
 	"workflow_parallel_branch_not_exclusive":       "parallel 的 branch 目标不能被其他 branch 共享。",
 	"workflow_parallel_nested":                     "v1 不支持嵌套 parallel；拆成顺序阶段。",
+	"workflow_human_wait_in_fanout":                "human wait 只能位于 fanout join 之后的串行主图；请移动人工节点。",
 	"workflow_parallel_join_invalid":               "parallel.config.join_node_id 必须指向其 join 节点。",
 	"workflow_parallel_join_shared":                "join 节点不能同时属于多个 parallel。",
 	"workflow_join_inputs_mismatch":                "join 的输入腿与 parallel 的 branch 不一致；检查每个 dispatch worker 的 join 边。",

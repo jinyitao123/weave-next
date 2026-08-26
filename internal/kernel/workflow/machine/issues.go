@@ -72,6 +72,7 @@ const (
 	CodeParallelBranchNotDispatchWorker   = "workflow_parallel_branch_not_dispatch_worker"
 	CodeParallelBranchNotExclusive        = "workflow_parallel_branch_not_exclusive"
 	CodeParallelNested                    = "workflow_parallel_nested"
+	CodeHumanWaitInFanout                 = "workflow_human_wait_in_fanout"
 	CodeParallelJoinInvalid               = "workflow_parallel_join_invalid"
 	CodeParallelJoinShared                = "workflow_parallel_join_shared"
 	CodeJoinInputsMismatch                = "workflow_join_inputs_mismatch"
