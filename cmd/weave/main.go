@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"io"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -14,6 +15,7 @@ import (
 	"github.com/jinyitao123/weave/internal/app/api"
 	"github.com/jinyitao123/weave/internal/app/apikeys"
 	"github.com/jinyitao123/weave/internal/app/attachments"
+	"github.com/jinyitao123/weave/internal/app/cli"
 	"github.com/jinyitao123/weave/internal/app/conversation"
 	"github.com/jinyitao123/weave/internal/app/daemon"
 	"github.com/jinyitao123/weave/internal/app/metateam"
@@ -112,6 +114,10 @@ func registerFrozenDescriptors() error {
 }
 
 func main() {
+	if handled, exitCode := dispatchEarlyCommand(os.Args[1:], os.Stdout, os.Stderr); handled {
+		os.Exit(exitCode)
+	}
+
 	if err := registerFrozenDescriptors(); err != nil {
 		slog.Error("failed to register frozen graph descriptors", "error", err)
 		os.Exit(1)
@@ -491,4 +497,8 @@ func main() {
 	if err := srv.Start(); err != nil {
 		slog.Info("server stopped", "reason", err)
 	}
+}
+
+func dispatchEarlyCommand(args []string, stdout, stderr io.Writer) (bool, int) {
+	return cli.Dispatch(args, stdout, stderr)
 }
