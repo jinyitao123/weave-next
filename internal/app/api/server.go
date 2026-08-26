@@ -119,6 +119,7 @@ type Server struct {
 	sessionExecutionWorkers   *sessionExecutionWorkers
 	teamRunWorkers            *teamrun.Workers
 	teamRunCancel             *teamrun.CancelService
+	teamRunHumanResume        *teamrun.HumanResumeService
 	workflowFanoutReconciler  *fanout.WorkflowReconcilerWorker
 }
 
@@ -818,6 +819,12 @@ func (s *Server) ConfigureTeamRunWorkers() {
 	s.teamRunCancel = &teamrun.CancelService{
 		Transactions: pool,
 		Runs:         runStore,
+	}
+	s.teamRunHumanResume = &teamrun.HumanResumeService{
+		Transactions: pool,
+		Runs:         runStore,
+		Checkpoints:  checkpointStore,
+		Tasks:        s.Tasks,
 	}
 	s.workflowFanoutReconciler = &fanout.WorkflowReconcilerWorker{
 		Transactions: pool, Store: s.Fanout, Coordinator: coordinator,

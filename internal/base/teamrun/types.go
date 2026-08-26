@@ -49,6 +49,7 @@ type WaitKind string
 const (
 	WaitTimer  WaitKind = "timer"
 	WaitFanout WaitKind = "fanout"
+	WaitHuman  WaitKind = "human"
 )
 
 type TeamRun struct {
@@ -99,6 +100,7 @@ type Transition struct {
 	Actor               string
 	Source              string
 	IdempotencyKey      string
+	PayloadDigest       []byte
 	ErrorCode           *ErrorCode
 	CauseSummary        *string
 	OccurredAt          time.Time
@@ -277,6 +279,8 @@ type ResumeRequest struct {
 	ExpectedWaitKind            WaitKind
 	ExpectedResumeTokenHash     []byte
 	ExpectedSessionLeaseEpoch   *SessionLeaseEpoch
+	Payload                     json.RawMessage
+	PayloadDigest               []byte
 	ExecutorID                  string
 	IdempotencyKey              string
 	Actor                       string

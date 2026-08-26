@@ -3,6 +3,7 @@ package teamrun
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -30,7 +31,7 @@ const teamRunColumns = `workspace_id,project_id,run_id,status,
 
 const transitionColumns = `workspace_id,run_id,seq,from_status,to_status,
 	team_run_generation,execution_lease_epoch,resume_generation,
-	actor,source,idempotency_key,error_code,cause_summary,occurred_at,orphaned`
+	actor,source,idempotency_key,payload_digest,error_code,cause_summary,occurred_at,orphaned`
 
 func scanTeamRun(row rowScanner) (TeamRun, error) {
 	var run TeamRun
@@ -105,6 +106,7 @@ func scanTransition(row rowScanner) (Transition, error) {
 		&transition.Actor,
 		&transition.Source,
 		&transition.IdempotencyKey,
+		&transition.PayloadDigest,
 		&errorCode,
 		&transition.CauseSummary,
 		&transition.OccurredAt,
@@ -146,6 +148,7 @@ type commandMeta struct {
 	expectedEpoch      ExecutionLeaseEpoch
 	expectedResume     ResumeGeneration
 	idempotencyKey     string
+	payloadDigest      []byte
 	actor              string
 	source             string
 	occurredAt         time.Time
@@ -353,9 +356,9 @@ func appendTransition(
 	tag, err := tx.Exec(ctx, `INSERT INTO weave_team_run_transitions (
 			workspace_id,run_id,seq,from_status,to_status,
 			team_run_generation,execution_lease_epoch,resume_generation,
-			actor,source,idempotency_key,error_code,cause_summary,occurred_at,orphaned
+			actor,source,idempotency_key,payload_digest,error_code,cause_summary,occurred_at,orphaned
 		)
-		SELECT $1,$2,COALESCE(MAX(seq),0)+1,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14
+		SELECT $1,$2,COALESCE(MAX(seq),0)+1,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15
 		FROM weave_team_run_transitions
 		WHERE workspace_id=$1 AND run_id=$2
 		ON CONFLICT (workspace_id,run_id,idempotency_key) DO NOTHING`,
@@ -369,6 +372,7 @@ func appendTransition(
 		meta.actor,
 		meta.source,
 		meta.idempotencyKey,
+		meta.payloadDigest,
 		errorCode,
 		run.CauseSummary,
 		meta.occurredAt,
@@ -397,6 +401,9 @@ func sameTransition(
 		transition.ToStatus != to ||
 		transition.Actor != meta.actor ||
 		transition.Source != meta.source {
+		return false
+	}
+	if !bytes.Equal(transition.PayloadDigest, meta.payloadDigest) {
 		return false
 	}
 	if (transition.ErrorCode == nil) != (errorCode == nil) ||
@@ -741,6 +748,20 @@ func normalizeWaitDetail(req ParkRequest) (json.RawMessage, error) {
 		}
 		return normalized, nil
 	}
+	if req.WaitKind == WaitHuman {
+		if req.SessionLeaseEpoch != nil {
+			return nil, fmt.Errorf("human wait forbids session_lease_epoch")
+		}
+		detail, err := DecodeHumanWaitDetailV1(req.WaitDetail)
+		if err != nil {
+			return nil, err
+		}
+		normalized, err := json.Marshal(detail)
+		if err != nil {
+			return nil, fmt.Errorf("normalize human wait_detail: %w", err)
+		}
+		return normalized, nil
+	}
 	delete(detail, "session_lease_epoch")
 	if req.SessionLeaseEpoch != nil {
 		return nil, fmt.Errorf("non-session wait forbids session_lease_epoch")
@@ -770,7 +791,7 @@ func (store *PGStore) ParkTx(
 		return TeamRun{}, fmt.Errorf("executor, checkpoint, and resume token hash must be non-empty")
 	}
 	switch req.WaitKind {
-	case WaitTimer, WaitFanout:
+	case WaitTimer, WaitFanout, WaitHuman:
 	default:
 		return TeamRun{}, fmt.Errorf("wait_kind %q is invalid", req.WaitKind)
 	}
@@ -1298,6 +1319,7 @@ func resumeMeta(req ResumeRequest) commandMeta {
 		expectedEpoch:      req.ExpectedExecutionLeaseEpoch,
 		expectedResume:     req.ExpectedResumeGeneration,
 		idempotencyKey:     req.IdempotencyKey,
+		payloadDigest:      append([]byte(nil), req.PayloadDigest...),
 		actor:              req.Actor,
 		source:             req.Source,
 		occurredAt:         req.OccurredAt,
@@ -1333,6 +1355,17 @@ func (store *PGStore) ResumeRunningTx(
 	}
 	switch req.ExpectedWaitKind {
 	case WaitTimer, WaitFanout:
+		if len(req.Payload) != 0 || len(req.PayloadDigest) != 0 {
+			return TeamRun{}, fmt.Errorf("payload is only allowed for human resume")
+		}
+	case WaitHuman:
+		if len(req.Payload) == 0 || !json.Valid(req.Payload) || len(req.Payload) > 64*1024 || len(req.PayloadDigest) != sha256.Size {
+			return TeamRun{}, fmt.Errorf("human resume payload and digest are invalid")
+		}
+		digest := sha256.Sum256(req.Payload)
+		if !bytes.Equal(digest[:], req.PayloadDigest) {
+			return TeamRun{}, fmt.Errorf("human resume payload digest differs")
+		}
 	default:
 		return TeamRun{}, fmt.Errorf("expected_wait_kind %q is invalid", req.ExpectedWaitKind)
 	}

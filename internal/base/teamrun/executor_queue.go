@@ -47,6 +47,8 @@ func (e *Executor) processClaimedWorkflowTask(ctx context.Context, task *taskque
 			return e.processFanoutLeg(ctx, task, workerID)
 		case "fanout_resume":
 			return e.processFanoutResume(ctx, task, workerID)
+		case "human_resume":
+			return e.processHumanResume(ctx, task, workerID)
 		}
 	}
 

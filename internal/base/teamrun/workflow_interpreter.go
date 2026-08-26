@@ -378,7 +378,45 @@ func runSerialMachine(
 			}
 		case machine.NodeWait:
 			config, ok := node.Config.(machine.WaitConfig)
-			if !ok || config.TimeoutSeconds == nil || *config.TimeoutSeconds < 1 ||
+			if !ok {
+				return fail(executionError(ErrorCodeRuntimeIncompatible, fmt.Errorf("wait node %q config is invalid", node.ID)))
+			}
+			if config.EffectiveKind() == machine.WaitKindHuman {
+				if config.Task == nil {
+					return fail(executionError(ErrorCodeRuntimeIncompatible, fmt.Errorf("human wait node %q task is invalid", node.ID)))
+				}
+				successNodeID, present := edgeTarget(edges[current], machine.RouteSuccess)
+				if !present {
+					return fail(executionError(ErrorCodeRuntimeIncompatible, fmt.Errorf("human wait node %q lacks a success edge", node.ID)))
+				}
+				now := start.Now
+				if now.IsZero() {
+					now = time.Now().UTC()
+				}
+				var deadlineAt *time.Time
+				if config.TimeoutSeconds != nil {
+					deadline := now.Add(time.Duration(*config.TimeoutSeconds) * time.Second).UTC()
+					deadlineAt = &deadline
+				}
+				detail, err := json.Marshal(HumanWaitDetailV1{
+					SchemaVersion: 1, WaitType: "human", NodeID: node.ID, SuccessNodeID: successNodeID,
+					ResumeSchema: config.ResumeSchema,
+					Task:         HumanTaskDetail{Title: config.Task.Title, Instructions: config.Task.Instructions, AudienceRef: config.Task.AudienceRef},
+					DeadlineAt:   deadlineAt,
+				})
+				if err != nil || len(detail) > HumanWaitDetailMaxBytes {
+					if err == nil {
+						err = errors.New("human wait detail exceeds 16KiB")
+					}
+					return fail(executionError(ErrorCodeRuntimeIncompatible, err))
+				}
+				return serialMachineResult{
+					Status: serialParked, Outputs: outputs, NodeID: node.ID,
+					WaitKind: WaitHuman, WaitDetail: detail, Usage: usage,
+					UsageComplete: usageComplete, UsageIncompleteReason: usageIncompleteReason,
+				}
+			}
+			if config.TimeoutSeconds == nil || *config.TimeoutSeconds < 1 ||
 				start.SourceKind != SourceSession {
 				return fail(executionError(
 					ErrorCodeUnexpectedInteractiveYield,

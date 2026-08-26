@@ -56,7 +56,7 @@ func (e *Executor) parkRunning(
 	executorID string,
 	park RuntimePark,
 ) (TeamRun, error) {
-	if park.WaitKind != WaitTimer && park.WaitKind != WaitFanout {
+	if park.WaitKind != WaitTimer && park.WaitKind != WaitFanout && park.WaitKind != WaitHuman {
 		return TeamRun{}, executionError(
 			ErrorCodeUnexpectedInteractiveYield,
 			errors.New("workflow executor does not support this park kind"),
