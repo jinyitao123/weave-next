@@ -1,5 +1,5 @@
 import type { ApiClient } from "./client";
-import type { BlueprintRevisionToken, BuildRunProgress, SubmitBuildRunResponse, TeamBuildRunListResponse, TeamRunListResponse, UsageReport } from "./types";
+import type { BlueprintRevisionToken, BuildRunProgress, SubmitBuildRunResponse, TeamBuildRunListResponse, TeamEvaluationRoundReportResponse, TeamRunListResponse, UsageReport } from "./types";
 
 /** 团队构建运行聚合与用量（team-build read aggregation）。 */
 export const buildRunsMethods = {
@@ -13,6 +13,10 @@ export const buildRunsMethods = {
 
   getTeamBuildRunProgress(this: ApiClient, buildRunId: string, signal?: AbortSignal): Promise<BuildRunProgress> {
     return this.request<BuildRunProgress>(`/v1/internal/team-build-runs/${encodeURIComponent(buildRunId)}/progress`, { signal });
+  },
+
+  getTeamBuildRunRoundReport(this: ApiClient, buildRunId: string, roundNo: number, signal?: AbortSignal): Promise<TeamEvaluationRoundReportResponse> {
+    return this.request<TeamEvaluationRoundReportResponse>(`/v1/internal/team-build-runs/${encodeURIComponent(buildRunId)}/rounds/${roundNo}/report`, { signal });
   },
 
   submitTeamBuildRun(this: ApiClient, buildRunId: string, input: { authority?: string; revision_token?: BlueprintRevisionToken }): Promise<SubmitBuildRunResponse> {

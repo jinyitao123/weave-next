@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { Archive, Bot, ChevronRight, FileCode2, LockKeyhole, Plus, RefreshCw, ShieldAlert, UserRound, UsersRound } from "lucide-react";
+import { Archive, Bot, ChevronRight, ClipboardCheck, FileCode2, LockKeyhole, Plus, RefreshCw, ShieldAlert, UserRound, UsersRound } from "lucide-react";
 import {
   api,
   apiErrorMessage,
@@ -23,6 +23,7 @@ import { ErrorNotice, LoadingView } from "../../ui/StatusViews";
 import { createClientUUID } from "../../platform/uuid";
 import { Navigate, useNavigate, useSearchParams } from "react-router-dom";
 import { TeamTemplateModal } from "./TeamTemplateModal";
+import { TeamEvaluationModal } from "./TeamEvaluationModal";
 
 const dateTime = new Intl.DateTimeFormat("zh-CN", { dateStyle: "medium", timeStyle: "short" });
 const rosterKinds: TeamRosterKind[] = ["consult", "dispatch", "handoff"];
@@ -162,12 +163,14 @@ export function TeamsPage() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [conflict, setConflict] = useState(false);
   const [creatingFromTemplate, setCreatingFromTemplate] = useState(false);
+  const [evaluatingTeam, setEvaluatingTeam] = useState<Team | null>(null);
 
   const avatars = useMemo(() => agents.filter((agent) => !agent.deleted && agent.role === "avatar"), [agents]);
   const workerCandidates = useMemo(() => agents.filter((agent) => !agent.deleted && agent.role === "worker"), [agents]);
   const canEditTeam = user?.role === "admin" || user?.role === "owner";
   const canCreate = canEditTeam;
   const canCreateFromTemplate = user?.role === "admin";
+  const canEvaluate = user?.role === "admin";
 
   const refresh = useCallback(async (initial = false) => {
     if (initial) setLoading(true); else setRefreshing(true);
@@ -205,6 +208,10 @@ export function TeamsPage() {
     setCreatingFromTemplate(false);
     navigate(`/control/teams/${encodeURIComponent(teamID)}`);
   }, [navigate]);
+
+  const finishEvaluation = useCallback(() => {
+    void refresh(false);
+  }, [refresh]);
 
   useEffect(() => {
     if (!requestedCreate) {
@@ -321,26 +328,29 @@ export function TeamsPage() {
         {!workerCandidates.length ? "手动创建暂无可作为成员的数字员工。请先在「智能体」中创建数字员工。" : ""}
       </p>}
     </div> : <div className="teams-master" role="list" aria-label="团队列表">
-        {teams.map((team) => <button
-          key={team.id}
-          type="button"
-          role="listitem"
-          className="team-row"
-          onClick={() => navigate(`/control/teams/${encodeURIComponent(team.id)}`)}
-        >
-          <span className="team-row__icon"><UsersRound size={16} /></span>
-          <span>
-            <strong>{team.name}</strong>
-            <small>{team.objective || "未设置目标"}</small>
-          </span>
-          <span className="team-row__badges">
-            {team.evaluation === "unevaluated" && <Badge tone="warning">待评测</Badge>}
-            <Badge tone={team.status === "active" ? "success" : "neutral"}>
-              {team.status === "active" ? "使用中" : "已归档"}
-            </Badge>
-          </span>
-          <ChevronRight size={16} />
-        </button>)}
+        {teams.map((team) => <div key={team.id} role="listitem" className="team-row-shell">
+          <button
+            type="button"
+            className="team-row"
+            onClick={() => navigate(`/control/teams/${encodeURIComponent(team.id)}`)}
+          >
+            <span className="team-row__icon"><UsersRound size={16} /></span>
+            <span>
+              <strong>{team.name}</strong>
+              <small>{team.objective || "未设置目标"}</small>
+            </span>
+            <span className="team-row__badges">
+              {team.evaluation === "unevaluated" && <Badge tone="warning">待评测</Badge>}
+              <Badge tone={team.status === "active" ? "success" : "neutral"}>
+                {team.status === "active" ? "使用中" : "已归档"}
+              </Badge>
+            </span>
+            <ChevronRight size={16} />
+          </button>
+          {canEvaluate && team.evaluation === "unevaluated" && team.status !== "archived" && <Button size="small" variant="ghost" onClick={() => setEvaluatingTeam(team)}>
+            <ClipboardCheck size={15} aria-hidden="true" />开始评测
+          </Button>}
+        </div>)}
     </div>}
 
     <Modal
@@ -485,6 +495,12 @@ export function TeamsPage() {
       open={creatingFromTemplate}
       onClose={() => setCreatingFromTemplate(false)}
       onReady={finishTemplateCreate}
+    />
+
+    <TeamEvaluationModal
+      team={evaluatingTeam}
+      onClose={() => setEvaluatingTeam(null)}
+      onCompleted={finishEvaluation}
     />
 
   </section>;

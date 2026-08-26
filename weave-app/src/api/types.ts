@@ -437,8 +437,42 @@ export interface Team {
   lead_avatar_id: string;
   status: TeamStatus;
   evaluation: "evaluated" | "unevaluated";
+  evaluation_build_run_id?: string;
+  evaluation_contract_hash?: string;
+  evaluated_at?: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface TeamEvaluationInput {
+  contract: Record<string, unknown>;
+  idempotency_key: string;
+  budget: { max_cost_usd: number };
+}
+
+export interface TeamEvaluationOutcome {
+  build_run_id: string;
+  status: string;
+  progress_url: string;
+}
+
+export interface TeamEvaluationReport {
+  schema_version: number;
+  round_no: number;
+  conclusion: string;
+  failure_category?: string;
+  hard_gate_results: Array<{ gate_id: string; passed: boolean; status?: string; detail?: string }>;
+  rubric_scores: Array<{ dimension_id: string; score: number; reason: string }>;
+  severe_defects: string[];
+  scenario_results: Array<{ scenario_id: string; terminal_status: string; artifact_ref: string }>;
+}
+
+export interface TeamEvaluationRoundReportResponse {
+  build_run_id: string;
+  round_no: number;
+  report_hash: string;
+  report: TeamEvaluationReport;
+  created_at: string;
 }
 
 export interface TeamTemplateSample {

@@ -9,6 +9,8 @@ import type {
   TeamRoster,
   TeamRosterResult,
   TeamTemplateSamplesResponse,
+  TeamEvaluationInput,
+  TeamEvaluationOutcome,
   UpdateTeamDispatchRulesInput,
   UpdateTeamRosterInput,
 } from "./types";
@@ -33,6 +35,10 @@ export const teamsMethods = {
 
   createTeamFromTemplate(this: ApiClient, input: CreateTeamFromTemplateInput): Promise<CreateTeamFromTemplateOutcome> {
     return this.request<CreateTeamFromTemplateOutcome>("/v1/teams:from-template", { method: "POST", body: input });
+  },
+
+  evaluateTeam(this: ApiClient, id: string, input: TeamEvaluationInput): Promise<TeamEvaluationOutcome> {
+    return this.request<TeamEvaluationOutcome>(`/v1/teams/${encodeURIComponent(id)}/evaluations`, { method: "POST", body: input });
   },
 
   updateTeamRoster(this: ApiClient, id: string, input: UpdateTeamRosterInput): Promise<TeamRosterResult> {

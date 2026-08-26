@@ -285,15 +285,7 @@ func (s *Server) handleValidateWorkflowVersion(c echo.Context) error {
 }
 
 func (s *Server) handlePublishWorkflowVersion(c echo.Context) error {
-	if s.Workflow == nil ||
-		s.OrgStore == nil ||
-		s.Registry == nil ||
-		s.DeliveryTargets == nil ||
-		s.Credentials == nil ||
-		s.AgentSchedules == nil ||
-		s.Descriptors == nil ||
-		s.Skills == nil ||
-		s.ScheduleTransactions == nil {
+	if s.Workflow == nil || s.OrgStore == nil {
 		return workflowError(
 			c,
 			http.StatusServiceUnavailable,
@@ -320,6 +312,21 @@ func (s *Server) handlePublishWorkflowVersion(c echo.Context) error {
 			fmt.Sprintf("team must pass POST /v1/teams/%s/evaluations before its workflow can be published", team.ID),
 		)
 	}
+	if s.Registry == nil ||
+		s.DeliveryTargets == nil ||
+		s.Credentials == nil ||
+		s.AgentSchedules == nil ||
+		s.Descriptors == nil ||
+		s.Skills == nil ||
+		s.ScheduleTransactions == nil {
+		return workflowError(
+			c,
+			http.StatusServiceUnavailable,
+			"workflow_store_unavailable",
+			"workflow store unavailable",
+		)
+	}
+
 	preflight, err := s.runWorkflowPublicationPreflight(c, versionNumber)
 	if preflight == nil {
 		return err

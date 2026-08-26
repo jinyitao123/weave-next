@@ -300,6 +300,9 @@ a { color: inherit; }
 
 .teams-browser { min-height: 620px; display: grid; grid-template-columns: minmax(240px, .72fr) minmax(0, 1.58fr); border-bottom: 1px solid var(--separator-strong); }
 .teams-master { border-right: 1px solid var(--separator); }
+.team-row-shell { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; border-bottom: 1px solid var(--separator); }
+.team-row-shell > .team-row { border-bottom: 0; }
+.team-row-shell > .ui-button { margin-right: var(--space-3); white-space: nowrap; }
 .team-row { width: 100%; min-height: 76px; display: grid; grid-template-columns: 34px minmax(0, 1fr) auto 16px; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-3); border: 0; border-bottom: 1px solid var(--separator); color: var(--label-secondary); background: transparent; cursor: pointer; text-align: left; }
 .team-row:hover, .team-row.active { color: var(--label-primary); background: var(--bg-secondary); }
 .team-row > span:nth-child(2) { min-width: 0; display: grid; gap: var(--space-1); }
@@ -347,6 +350,22 @@ a { color: inherit; }
 .team-template-progress > span { min-width: 0; display: grid; gap: var(--space-1); }
 .team-template-progress strong { color: var(--label-primary); font-size: var(--text-footnote); }
 .team-template-progress small { color: var(--label-secondary); font-size: var(--text-caption); overflow-wrap: anywhere; }
+.team-evaluation-editor { display: grid; gap: var(--space-4); }
+.team-evaluation-budget { display: grid; grid-template-columns: minmax(220px, .6fr) minmax(0, 1.4fr); align-items: end; gap: var(--space-4); }
+.team-evaluation-budget .notice { min-height: 40px; display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-1); color: var(--warning); font-size: var(--text-caption); }
+.team-evaluation-contract { min-height: 420px; resize: vertical; font-family: var(--font-mono); font-size: var(--text-caption); line-height: 1.55; tab-size: 2; }
+.team-evaluation-progress { display: grid; gap: var(--space-3); padding: var(--space-3); border: 1px solid var(--separator); border-radius: var(--radius-md); background: var(--bg-secondary); }
+.team-evaluation-progress > header { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; align-items: center; gap: var(--space-2); }
+.team-evaluation-progress > header > span { min-width: 0; display: grid; gap: var(--space-1); }
+.team-evaluation-progress small { color: var(--label-secondary); font-size: var(--text-caption); overflow-wrap: anywhere; }
+.team-evaluation-report { padding-top: var(--space-3); border-top: 1px solid var(--separator); }
+.team-evaluation-report h3, .team-evaluation-report p { margin: 0; }
+.team-evaluation-report h3 { font-size: var(--text-footnote); }
+.team-evaluation-report p { margin-top: var(--space-1); color: var(--label-secondary); font-size: var(--text-caption); }
+.team-evaluation-report ul { display: grid; gap: var(--space-2); margin: var(--space-3) 0 0; padding: 0; list-style: none; }
+.team-evaluation-report li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-1) var(--space-3); padding-bottom: var(--space-2); border-bottom: 1px solid var(--separator); }
+.team-evaluation-report li small { grid-column: 1 / -1; }
+.team-evaluation-report .team-evaluation-defects { color: var(--danger); }
 .team-form-section { padding: var(--space-4) 0; border-bottom: 1px solid var(--separator-strong); }
 .team-form-section:first-of-type { padding-top: 0; }
 .team-form-section:last-child { border-bottom: 0; }
@@ -945,6 +964,9 @@ a { color: inherit; }
   .teams-master { max-height: 260px; overflow-y: auto; border-right: 0; border-bottom: 1px solid var(--separator-strong); }
   .team-row { min-height: 68px; grid-template-columns: 34px minmax(0, 1fr) auto; padding-inline: 0; }
   .team-row > svg { display: none; }
+  .team-row-shell { grid-template-columns: minmax(0, 1fr); padding-bottom: var(--space-2); }
+  .team-row-shell > .ui-button { width: fit-content; margin-inline: 34px 0; }
+  .team-evaluation-budget { grid-template-columns: minmax(0, 1fr); align-items: stretch; }
   .team-detail-card { padding: 20px 0 28px; }
   .team-detail-card > header { flex-direction: column; }
   .team-detail-actions { width: 100%; justify-content: flex-start; }
