@@ -20,10 +20,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jinyitao123/loom/contract"
 	"github.com/jinyitao123/loom/pgstore"
+	"github.com/jinyitao123/loom/stdlib"
 	"github.com/jinyitao123/weave/internal/app/metateam"
 	"github.com/jinyitao123/weave/internal/base/deliverable"
 	"github.com/jinyitao123/weave/internal/base/execution"
@@ -1353,7 +1355,42 @@ func (p *ProductionPhases) runAgent(
 	if err != nil {
 		return mcphost.AgentRunResult{}, fmt.Errorf("meta-team employee %q: %w", agentName, err)
 	}
+	runner, err := p.agentRunner(ctx, round, rec, role, sourceReportHash)
+	if err != nil {
+		return mcphost.AgentRunResult{}, err
+	}
+	return runner.Run(ctx, agentName, message)
+}
+
+// runControlledAgent executes an in-memory build resource without resolving
+// it through the workspace registry. The record and execution stamp are
+// supplied by build code, while AgentRunner retains the existing durable run,
+// terminal, attribution, and checkpoint protocol.
+func (p *ProductionPhases) runControlledAgent(
+	ctx context.Context,
+	round RoundContext,
+	rec *registry.AgentRecord,
+	message, role, evidenceHash string,
+) (mcphost.AgentRunResult, error) {
+	runner, err := p.agentRunner(ctx, round, rec, role, evidenceHash)
+	if err != nil {
+		return mcphost.AgentRunResult{}, err
+	}
+	stamp := execution.AgentExecutionStamp{
+		AgentID: rec.ID, AgentVersion: rec.Version,
+		ExecutionScope: execution.ScopeLegacyOrchestrator,
+	}
+	return runner.RunRecord(ctx, rec, stamp, message)
+}
+
+func (p *ProductionPhases) agentRunner(
+	ctx context.Context,
+	round RoundContext,
+	rec *registry.AgentRecord,
+	role, sourceReportHash string,
+) (*mcphost.AgentRunner, error) {
 	var llm contract.LLM
+	var err error
 	if p.Deps.Runtimes != nil && p.Deps.CLIExecutor != nil {
 		assignment, selectErr := p.Deps.Runtimes.Select(
 			ctx, round.WorkspaceID, engine.Codex, "", rec.RuntimeID,
@@ -1377,14 +1414,14 @@ func (p *ProductionPhases) runAgent(
 				},
 			)
 			if err != nil {
-				return mcphost.AgentRunResult{}, err
+				return nil, err
 			}
 		}
 	}
 	if llm == nil {
 		llm, err = p.llmForWorkspace(ctx, round.WorkspaceID)
 		if err != nil {
-			return mcphost.AgentRunResult{}, err
+			return nil, err
 		}
 	}
 	runner := mcphost.NewAgentRunner(
@@ -1468,7 +1505,7 @@ func (p *ProductionPhases) runAgent(
 			)
 		}
 	}
-	return runner.Run(ctx, agentName, message)
+	return runner, nil
 }
 
 // platformToolsForAgent builds the teamforge dispatchers one meta-team
@@ -3050,7 +3087,7 @@ func decodeSemanticEvaluationOutput(
 	}
 	decoder := json.NewDecoder(strings.NewReader(output))
 	decoder.DisallowUnknownFields()
-	var judged metateam.SemanticJudgeOutputV1
+	var judged teambuild.SemanticJudgeOutputV1
 	if err := decoder.Decode(&judged); err != nil {
 		return semanticRubricEvaluation{}, fmt.Errorf("decode semantic evaluation output: %w", err)
 	}
@@ -3119,7 +3156,7 @@ func (p *ProductionPhases) semanticRubricEvaluation(
 	}
 	executor := p.Deps.SemanticJudge
 	if executor == nil {
-		executor = metateamSemanticJudgeExecutor{phases: p, round: round}
+		executor = buildSemanticJudgeExecutor{phases: p, round: round}
 	}
 	judged, err := executor.Execute(ctx, teambuild.SemanticJudgeRequest{
 		WorkspaceID: round.WorkspaceID, BuildRunID: round.BuildRunID,
@@ -3132,12 +3169,12 @@ func (p *ProductionPhases) semanticRubricEvaluation(
 	return decodeSemanticEvaluationOutput(judged.Output, round.Run.Contract, runs)
 }
 
-type metateamSemanticJudgeExecutor struct {
+type buildSemanticJudgeExecutor struct {
 	phases *ProductionPhases
 	round  RoundContext
 }
 
-func (e metateamSemanticJudgeExecutor) Execute(
+func (e buildSemanticJudgeExecutor) Execute(
 	ctx context.Context,
 	request teambuild.SemanticJudgeRequest,
 ) (teambuild.SemanticJudgeResult, error) {
@@ -3152,8 +3189,8 @@ func (e metateamSemanticJudgeExecutor) Execute(
 	)
 	var semanticRunErr error
 	if errors.Is(err, teambuild.ErrSemanticEvaluationAttemptNotFound) {
-		result, runErr := p.runAgent(
-			ctx, e.round, metateam.SemanticJudgeName, string(request.Payload),
+		result, runErr := p.runControlledAgent(
+			ctx, e.round, semanticJudgeRecord(request.WorkspaceID), string(request.Payload),
 			teambuild.SourceRoleSemanticJudge, request.EvidenceHash,
 		)
 		if runErr != nil {
@@ -3205,7 +3242,26 @@ func (e metateamSemanticJudgeExecutor) Execute(
 	}, nil
 }
 
-var _ teambuild.SemanticJudgeExecutor = metateamSemanticJudgeExecutor{}
+var _ teambuild.SemanticJudgeExecutor = buildSemanticJudgeExecutor{}
+
+func semanticJudgeRecord(workspaceID string) *registry.AgentRecord {
+	return &registry.AgentRecord{
+		Name: teambuild.SemanticJudgeResourceName,
+		ID: uuid.NewSHA1(uuid.NameSpaceURL, []byte(
+			"weave/build/semantic-judge/v1\x00"+workspaceID,
+		)).String(),
+		WorkspaceID: workspaceID, Version: 1,
+		DisplayName: "语义质量裁判", Role: "worker",
+		Visibility: registry.VisibilityPlatform,
+		Spec: stdlib.AgentSpec{Identity: stdlib.IdentitySpec{
+			Core: teambuild.SemanticJudgePrompt,
+		}},
+		Compaction:      &registry.CompactionConfig{Enabled: false},
+		GraphType:       "declarative",
+		GraphDefinition: teambuild.SemanticJudgeDefinition(),
+		Tags:            []string{"system", "build-controlled"},
+	}
+}
 
 func semanticEvaluationAttemptOutput(
 	attempt teambuild.SemanticEvaluationAttempt,
