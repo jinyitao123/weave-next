@@ -6,6 +6,7 @@ import { buildRunsMethods } from "./buildruns";
 import { conversationsMethods } from "./conversations";
 import { deliverablesMethods } from "./deliverables";
 import { featuresMethods } from "./features";
+import { humanTasksMethods } from "./humanTasks";
 import { projectsMethods } from "./projects";
 import { runsMethods } from "./runs";
 import { schedulesMethods } from "./schedules";
@@ -19,7 +20,7 @@ export const apiBaseUrl = import.meta.env.VITE_WEAVE_API_URL?.replace(/\/+$/, ""
  * 按域拆分后的 API 单例：核心（client.ts）+ 各域方法模块合并。
  * 调用方 import 路径与既有 `api.*` 用法保持不变。
  */
-export const api = Object.assign(Object.assign(
+export const api = Object.assign(Object.assign(Object.assign(
   Object.assign(
     Object.assign(
       Object.assign(
@@ -40,7 +41,7 @@ export const api = Object.assign(Object.assign(
   buildRunsMethods,
   schedulesMethods,
   settingsMethods,
-), featuresMethods);
+), featuresMethods), humanTasksMethods);
 
 export { ApiError, apiErrorMessage, normalizeThrownError } from "./errors";
 export { EventStreamClient } from "./sse";

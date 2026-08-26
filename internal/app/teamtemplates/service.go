@@ -46,14 +46,16 @@ type Outcome struct {
 }
 
 type Sample struct {
-	Name        string `json:"name"`
-	DisplayName string `json:"display_name"`
-	Description string `json:"description,omitempty"`
-	YAML        string `json:"yaml"`
+	Name            string                               `json:"name"`
+	DisplayName     string                               `json:"display_name"`
+	Description     string                               `json:"description,omitempty"`
+	YAML            string                               `json:"yaml"`
+	DeclarativeSpec *teamforge.DeclarativeWorkflowSpecV1 `json:"declarative_spec,omitempty"`
 }
 
 type Catalog interface {
 	Resolve(name string, overrides map[string]any) ([]byte, error)
+	ResolveDeclarative(name string) (*teamforge.DeclarativeWorkflowSpecV1, error)
 	List() []Sample
 }
 
@@ -148,6 +150,12 @@ func (s *Service) Instantiate(ctx context.Context, workspaceID, userID string, r
 	yamlBytes, err := s.resolveRequest(request)
 	if err != nil {
 		return Outcome{}, err
+	}
+	if request.DeclarativeSpec == nil && strings.TrimSpace(request.Sample) != "" {
+		request.DeclarativeSpec, err = s.catalog.ResolveDeclarative(strings.TrimSpace(request.Sample))
+		if err != nil {
+			return Outcome{}, validationError("/sample", "template_sample_invalid", err.Error())
+		}
 	}
 	compiled, err := teamtemplate.CompileYAML(yamlBytes)
 	if err != nil {

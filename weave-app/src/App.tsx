@@ -4,6 +4,7 @@ import { useAuth } from "./auth/useAuth";
 import { LoginPage } from "./auth/LoginPage";
 import { ActivityPage } from "./pages/ActivityPage";
 import { InboxPage } from "./pages/InboxPage";
+import { HumanTasksPage } from "./pages/HumanTasksPage";
 import { LegacyProjectRedirect } from "./pages/LegacyProjectRedirect";
 import { RedirectConversation } from "./pages/RedirectConversation";
 import { ScheduledPage } from "./pages/ScheduledPage";
@@ -33,6 +34,7 @@ export function App() {
           <Route path="/project/:projectId/runs" element={<ProjectContainer />} />
           <Route path="/project/:projectId/deliverables" element={<ProjectContainer />} />
           <Route path="/inbox" element={<InboxPage />} />
+          <Route path="/human-tasks" element={<HumanTasksPage />} />
           <Route path="/activity" element={<ActivityPage />} />
           <Route path="/runtimes" element={<Navigate to="/control/runtimes" replace />} />
           <Route path="/scheduled" element={<ScheduledPage />} />

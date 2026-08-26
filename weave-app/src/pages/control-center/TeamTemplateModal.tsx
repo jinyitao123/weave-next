@@ -109,7 +109,12 @@ export function TeamTemplateModal({ open, onClose, onReady }: TeamTemplateModalP
     setSubmitting(true);
     setError(null);
     try {
-      const outcome = await api.createTeamFromTemplate({ yaml, idempotency_key: idempotencyKey });
+      const declarativeSpec = samples.find((sample) => sample.name === selectedSample)?.declarative_spec;
+      const outcome = await api.createTeamFromTemplate({
+        yaml,
+        idempotency_key: idempotencyKey,
+        ...(declarativeSpec ? { declarative_spec: declarativeSpec } : {}),
+      });
       setBuildRunID(outcome.build_run_id);
       setBuildStatus(outcome.status);
       if (outcome.status === "ready" && outcome.team_id) {

@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type PointerEvent } from "react";
 import { createPortal } from "react-dom";
-import { ChevronDown, FolderKanban, Inbox, LogOut, Menu, MessageSquarePlus, PanelLeftClose, Pencil, Search, Settings2, UserPlus, Users, X } from "lucide-react";
+import { ChevronDown, ClipboardCheck, FolderKanban, Inbox, LogOut, Menu, MessageSquarePlus, PanelLeftClose, Pencil, Search, Settings2, UserPlus, Users, X } from "lucide-react";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { api, apiErrorMessage, type Conversation, type Project, type TeamBuildRunSummary } from "../api";
+import { humanTasksChangedEvent } from "../api/humanTasks";
 import { useAuth } from "../auth/useAuth";
 import { Badge } from "../ui/Badge";
 import { Button } from "../ui/Button";
@@ -58,6 +59,7 @@ export function AppShell() {
   const [newTeamError, setNewTeamError] = useState<string | null>(null);
   const [teamBuildRuns, setTeamBuildRuns] = useState<TeamBuildRunSummary[]>([]);
   const [teamBuildRunsReady, setTeamBuildRunsReady] = useState(false);
+  const [humanTaskCount, setHumanTaskCount] = useState(0);
   const newConversationTriggerRef = useRef<HTMLElement>(null);
   const [newConversationMenuPos, setNewConversationMenuPos] = useState<{ top: number; left: number; width: number } | null>(null);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
@@ -208,6 +210,27 @@ export function AppShell() {
   }
 
   const unreadCount = unread.reduce((sum, item) => sum + item.unread_count, 0);
+
+  useEffect(() => {
+    let disposed = false;
+    async function loadHumanTaskCount() {
+      try {
+        const response = await api.listHumanTasks({ limit: 1 });
+        if (!disposed) setHumanTaskCount(response.total);
+      } catch {
+        if (!disposed) setHumanTaskCount(0);
+      }
+    }
+    const handleChanged = () => void loadHumanTaskCount();
+    void loadHumanTaskCount();
+    const interval = window.setInterval(loadHumanTaskCount, 15_000);
+    window.addEventListener(humanTasksChangedEvent, handleChanged);
+    return () => {
+      disposed = true;
+      window.clearInterval(interval);
+      window.removeEventListener(humanTasksChangedEvent, handleChanged);
+    };
+  }, [invalidationVersion]);
 
   const { activeProjectId, activeConversationId } = useMemo(() => {
     const match = location.pathname.match(/^\/project\/([^/]+)\/conversations(?:\/([^/]+))?/);
@@ -367,6 +390,7 @@ export function AppShell() {
           <input type="search" value={sidebarQuery} onChange={(event) => setSidebarQuery(event.target.value)} placeholder="搜索" autoComplete="off" />
         </label>
         <NavLink className="shell-inbox-icon" to="/inbox" onClick={() => setNavOpen(false)} aria-label="收件箱" title="收件箱"><Inbox size={16} />{unreadCount > 0 && <Badge tone="accent">{unreadCount}</Badge>}</NavLink>
+        <NavLink className="shell-inbox-icon" to="/human-tasks" onClick={() => setNavOpen(false)} aria-label={`人工待办 ${humanTaskCount} 项`} title="人工待办"><ClipboardCheck size={16} />{humanTaskCount > 0 && <Badge tone="warning">{humanTaskCount}</Badge>}</NavLink>
       </div>
       <div className="shell-actions shell-actions--new-task">
         <details className="shell-new-conversation" open={newConversationOpen} onToggle={(event) => {

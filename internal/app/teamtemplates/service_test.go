@@ -136,6 +136,22 @@ func TestInstantiateResolvesSampleOverrides(t *testing.T) {
 	}
 }
 
+func TestInstantiateHumanFinalReviewSampleFreezesDeclarativePlan(t *testing.T) {
+	builds := &memoryBuildStore{}
+	service := New(&memoryIdempotencyStore{}, builds, &memorySubmitter{builds: builds}, Options{
+		Policy: testPolicy(), Catalog: NewStaticCatalog(),
+	})
+	outcome, err := service.Instantiate(context.Background(), "workspace-1", "user-1", Request{
+		Sample: "human-final-review", IdempotencyKey: uuid.NewString(),
+	})
+	if err != nil {
+		t.Fatalf("Instantiate() error = %v", err)
+	}
+	if outcome.Status != "ready" || builds.revision.RevisionNo != 2 {
+		t.Fatalf("outcome = %#v revision = %#v", outcome, builds.revision)
+	}
+}
+
 func TestInstantiateFreezesDeclarativePlanAsSecondRevision(t *testing.T) {
 	spec := declarativeTestSpec(t)
 	builds := &memoryBuildStore{}

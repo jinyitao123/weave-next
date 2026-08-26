@@ -120,3 +120,40 @@ delivery:
 budget:
   max_cost_usd: 2
 `
+
+const humanFinalReviewSampleYAML = `schema: team-template/v1
+name: human-final-review
+display_name: 人工终审交付团队
+purpose: 接收完整交付稿，并由工作区成员完成最终审核与决定
+template: delivery_rework_loop
+template_parameters:
+  lead_instruction: 明确终审要求，接收完整交付稿并提交人工终审
+  primary_ref: delivery-writer
+  reviewer_ref: quality-reviewer
+  max_iterations: 1
+  result_requirements:
+    delivery-lead: 确认任务边界并组织交付
+    delivery-writer: 形成包含依据与边界的完整交付稿
+    quality-reviewer: 在进入人工终审前检查交付稿完整性
+members:
+  - name: delivery-lead
+    display_name: 交付负责人
+    role: avatar
+    responsibilities: [澄清要求, 组织交付, 跟进终审]
+    capabilities: [task_delegation, delivery_management]
+  - name: delivery-writer
+    display_name: 交付撰稿人
+    role: worker
+    responsibilities: [材料整理, 形成交付稿]
+    capabilities: [analysis, writing]
+  - name: quality-reviewer
+    display_name: 质量审校员
+    role: worker
+    responsibilities: [完整性检查, 风险标注]
+    capabilities: [quality_review, risk_detection]
+lead: delivery-lead
+delivery:
+  success_criteria: [交付稿完整回应任务要求, 依据与边界清晰, 人工终审决定被记录]
+budget:
+  max_cost_usd: 2
+`

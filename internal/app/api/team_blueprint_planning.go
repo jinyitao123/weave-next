@@ -14,10 +14,10 @@ import (
 	"sync"
 
 	"github.com/jinyitao123/loom/contract"
-	"github.com/jinyitao123/weave/internal/kernel/credentials"
 	"github.com/jinyitao123/weave/internal/app/metateam"
 	"github.com/jinyitao123/weave/internal/build/teambuild"
 	"github.com/jinyitao123/weave/internal/build/teamforge"
+	"github.com/jinyitao123/weave/internal/kernel/credentials"
 	"github.com/labstack/echo/v4"
 )
 
@@ -546,7 +546,7 @@ func (d *teamBlueprintPlanningDispatcher) ListTools(context.Context) ([]contract
 		},
 		{
 			Name:        teamDeclarativeWorkflowPlanToolName,
-			Description: "提交 declarative_v1 工作流。固定 N 并行→join→主执行者/评审者有限返工→deliver 的形态必须优先提交 kind=parallel_join_review_loop 的 pattern；平台确定性生成节点、边、ValueRef、iteration 与 latch，禁止为该形态手写 spec。只有其他受支持拓扑才提交完整 spec。平台严格解码并封闭字段，通过已冻结 TeamBlueprint roster 将 worker stable_ref 绑定到精确 AgentVersion（create 绑定 ChangeSet 将创建的 v1，optimize 绑定冻结的现有版本），运行 machine validator，再把冻结 spec 与 GraphDefinition 编译进 ChangeSet。生产节点 instruction/result_requirement 必须描述长期通用能力并服从 run_input；EvaluationContract 的候选题目、样例实体、数量、字数和测试专用约束不得硬编码进生产 spec。dispatch 仅用于 parallel 的直接分支 worker，且只能以一条 join 出边结束；顺序或 loop body 中的 worker 必须用 consult，并以 success 出边继续，loop latch 则以 back 回到 loop。loop 禁止声明 output；平台派生 {iteration_count, limit_reached, latch_result}，循环外必须从 loop 节点读取 /latch_result 或 /latch_result/<latch 必填字段>，不得直接读取 body 节点。不支持 wait/handoff、嵌套 loop/parallel 或动态 fanout。不得填写 agent_id/agent_version。",
+			Description: "提交 declarative_v1 工作流。固定 N 并行→join→主执行者/评审者有限返工→deliver 的形态必须优先提交 kind=parallel_join_review_loop 的 pattern；平台确定性生成节点、边、ValueRef、iteration 与 latch，禁止为该形态手写 spec。只有其他受支持拓扑才提交完整 spec。平台严格解码并封闭字段，通过已冻结 TeamBlueprint roster 将 worker stable_ref 绑定到精确 AgentVersion（create 绑定 ChangeSet 将创建的 v1，optimize 绑定冻结的现有版本），运行 machine validator，再把冻结 spec 与 GraphDefinition 编译进 ChangeSet。生产节点 instruction/result_requirement 必须描述长期通用能力并服从 run_input；EvaluationContract 的候选题目、样例实体、数量、字数和测试专用约束不得硬编码进生产 spec。dispatch 仅用于 parallel 的直接分支 worker，且只能以一条 join 出边结束；顺序或 loop body 中的 worker 必须用 consult，并以 success 出边继续，loop latch 则以 back 回到 loop。loop 禁止声明 output；平台派生 {iteration_count, limit_reached, latch_result}，循环外必须从 loop 节点读取 /latch_result 或 /latch_result/<latch 必填字段>，不得直接读取 body 节点。串行主图允许 kind=human 的 wait，必须填写 resume_schema 与 task，带 timeout_seconds 时必须有 timeout 路由；fanout 分支内禁止 human wait。仍不支持 handoff、嵌套 loop/parallel 或动态 fanout。不得填写 agent_id/agent_version。",
 			InputSchema: teamDeclarativeWorkflowPlanInputSchema,
 		},
 	}

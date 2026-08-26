@@ -480,6 +480,7 @@ export interface TeamTemplateSample {
   display_name: string;
   description?: string;
   yaml: string;
+  declarative_spec?: Record<string, unknown>;
 }
 
 export interface TeamTemplateSamplesResponse {
@@ -505,6 +506,49 @@ export interface CreateTeamFromTemplateOutcome {
   status: "ready" | "building" | "authorization_required" | string;
   evaluation?: "unevaluated";
   progress_url?: string;
+}
+
+export interface RuntimeSchema {
+  type?: "null" | "boolean" | "object" | "array" | "number" | "integer" | "string";
+  properties?: Record<string, RuntimeSchema>;
+  required?: string[];
+  additionalProperties?: boolean | RuntimeSchema;
+  items?: RuntimeSchema;
+  enum?: unknown[];
+  const?: unknown;
+}
+
+export interface HumanTask {
+  run_id: string;
+  project_id?: string;
+  team_id: string;
+  workflow_id: string;
+  workflow_version: number;
+  title: string;
+  instructions: string;
+  audience_ref?: string;
+  resume_schema: RuntimeSchema;
+  deadline_at?: string;
+  completed_outputs: Record<string, unknown>;
+  updated_at: string;
+}
+
+export interface HumanTasksResponse {
+  tasks: HumanTask[];
+  next_cursor: string;
+  total: number;
+}
+
+export interface CompleteHumanTaskInput {
+  payload: unknown;
+  idempotency_key: string;
+}
+
+export interface CompleteHumanTaskOutcome {
+  run_id: string;
+  status: "queued";
+  task_id: string;
+  idempotent: boolean;
 }
 
 export interface TeamAgentSummary {

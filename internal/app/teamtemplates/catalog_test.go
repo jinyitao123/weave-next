@@ -12,7 +12,7 @@ import (
 func TestStaticCatalogSamplesMatchRepositoryAndCompile(t *testing.T) {
 	catalog := NewStaticCatalog()
 	items := catalog.List()
-	wantNames := []string{"code-review", "content-production", "market-research"}
+	wantNames := []string{"code-review", "content-production", "human-final-review", "market-research"}
 	gotNames := make([]string, 0, len(items))
 	for _, item := range items {
 		gotNames = append(gotNames, item.Name)
@@ -29,6 +29,9 @@ func TestStaticCatalogSamplesMatchRepositoryAndCompile(t *testing.T) {
 		}
 		if compiled.Template.Name != item.Name || compiled.Template.DisplayName != item.DisplayName {
 			t.Fatalf("sample metadata = %#v, template = %#v", item, compiled.Template)
+		}
+		if item.Name == "human-final-review" && item.DeclarativeSpec == nil {
+			t.Fatal("human-final-review sample must include its declarative workflow")
 		}
 	}
 	if !reflect.DeepEqual(gotNames, wantNames) {

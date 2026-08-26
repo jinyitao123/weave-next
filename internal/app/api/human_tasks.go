@@ -66,6 +66,10 @@ func (s *Server) handleListHumanTasks(c echo.Context) error {
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
+	total, err := s.teamRunHumanTasks.Count(c.Request().Context(), getTenant(c))
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
 	responses := make([]humanTaskResponse, 0, len(items))
 	for _, item := range items {
 		responses = append(responses, humanTaskResponse{
@@ -84,7 +88,7 @@ func (s *Server) handleListHumanTasks(c echo.Context) error {
 			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "encode cursor"})
 		}
 	}
-	return c.JSON(http.StatusOK, map[string]any{"tasks": responses, "next_cursor": nextCursor})
+	return c.JSON(http.StatusOK, map[string]any{"tasks": responses, "next_cursor": nextCursor, "total": total})
 }
 
 func (s *Server) handleCompleteHumanTask(c echo.Context) error {
