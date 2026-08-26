@@ -132,11 +132,11 @@ var configEngineerOutputSchema = json.RawMessage(`{
   }
 }`)
 
-// EvalDebuggerJudgeOutputV1 is the strict semantic-judge payload consumed by
+// SemanticJudgeOutputV1 is the strict semantic-judge payload consumed by
 // the platform controller. It contains semantic rubric scores and observed
 // severe defects only: hard gates, terminal facts, aggregation, diagnosis,
 // and publication authority remain deterministic platform responsibilities.
-type EvalDebuggerJudgeOutputV1 struct {
+type SemanticJudgeOutputV1 struct {
 	SchemaVersion int                         `json:"schema_version"`
 	RubricScores  []EvalDebuggerRubricScore   `json:"rubric_scores"`
 	SevereDefects *[]EvalDebuggerSevereDefect `json:"severe_defects"`

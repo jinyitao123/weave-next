@@ -3050,7 +3050,7 @@ func decodeSemanticEvaluationOutput(
 	}
 	decoder := json.NewDecoder(strings.NewReader(output))
 	decoder.DisallowUnknownFields()
-	var judged metateam.EvalDebuggerJudgeOutputV1
+	var judged metateam.SemanticJudgeOutputV1
 	if err := decoder.Decode(&judged); err != nil {
 		return semanticRubricEvaluation{}, fmt.Errorf("decode semantic evaluation output: %w", err)
 	}
