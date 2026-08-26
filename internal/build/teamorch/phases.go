@@ -91,6 +91,9 @@ type PhaseDeps struct {
 	// Nil keeps the M2b compatibility adapter; M2c supplies the build-native
 	// implementation through this seam.
 	SemanticJudge teambuild.SemanticJudgeExecutor
+	// BlueprintPatchPlanner optionally replaces the build-controlled planner;
+	// nil selects the production executor owned by this package.
+	BlueprintPatchPlanner teambuild.BlueprintPatchPlannerExecutor
 	// CLIExecutor is the same remote runtime path used by ordinary published
 	// TeamWorkflow runs. Candidate evaluation must not silently drop it.
 	CLIExecutor mcphost.RemoteEngineExecutor
@@ -221,25 +224,25 @@ func (p *ProductionPhases) PlanBlueprintPatch(
 	if len(valueHashes) == 0 {
 		return teambuild.BlueprintPatchV1{}, errors.New("blueprint_patch_path_not_executable: revision policy has no connected deterministic patch path")
 	}
-	existingAttempt, err := p.Deps.Build.GetBlueprintPatchPlanningAttempt(
+	_, err = p.Deps.Build.GetBlueprintPatchPlanningAttempt(
 		ctx, round.WorkspaceID, round.BuildRunID, revision.RevisionNo,
 		teambuild.SourceRoleBlueprintPatchPlanner,
 	)
-	if err == nil {
-		return p.recoverBlueprintPatchPlanningAttempt(ctx, round, existingAttempt, reportHash, blueprint)
-	}
-	if !errors.Is(err, teambuild.ErrBlueprintPatchPlanningAttemptNotFound) {
+	attemptExists := err == nil
+	if !attemptExists && !errors.Is(err, teambuild.ErrBlueprintPatchPlanningAttemptNotFound) {
 		return teambuild.BlueprintPatchV1{}, fmt.Errorf("inspect blueprint patch planning attempt: %w", err)
 	}
-	preDecision, err := p.Deps.Build.EvaluateBudget(
-		ctx, round.WorkspaceID, round.BuildRunID, round.RoundNo,
-		round.Run.RoundBudget, round.Run.TotalBudget,
-	)
-	if err != nil {
-		return teambuild.BlueprintPatchV1{}, fmt.Errorf("evaluate blueprint patch budget before planner: %w", err)
-	}
-	if !preDecision.Allowed {
-		return teambuild.BlueprintPatchV1{}, fmt.Errorf("%w: no balance before planner", ErrBlueprintPatchPlannerBudgetExhausted)
+	if !attemptExists {
+		preDecision, err := p.Deps.Build.EvaluateBudget(
+			ctx, round.WorkspaceID, round.BuildRunID, round.RoundNo,
+			round.Run.RoundBudget, round.Run.TotalBudget,
+		)
+		if err != nil {
+			return teambuild.BlueprintPatchV1{}, fmt.Errorf("evaluate blueprint patch budget before planner: %w", err)
+		}
+		if !preDecision.Allowed {
+			return teambuild.BlueprintPatchV1{}, fmt.Errorf("%w: no balance before planner", ErrBlueprintPatchPlannerBudgetExhausted)
+		}
 	}
 	payload, err := json.Marshal(struct {
 		Instruction       string                     `json:"instruction"`
@@ -256,49 +259,17 @@ func (p *ProductionPhases) PlanBlueprintPatch(
 	if err != nil {
 		return teambuild.BlueprintPatchV1{}, err
 	}
-	_, err = p.runAgent(ctx, round, metateam.BlueprintPatchPlannerName, string(payload), teambuild.SourceRoleBlueprintPatchPlanner, reportHash)
+	executor := p.Deps.BlueprintPatchPlanner
+	if executor == nil {
+		executor = buildBlueprintPatchPlannerExecutor{phases: p, round: round}
+	}
+	planned, err := executor.Execute(ctx, teambuild.BlueprintPatchPlannerRequest{
+		WorkspaceID: round.WorkspaceID, BuildRunID: round.BuildRunID,
+		RevisionNo: revision.RevisionNo, Run: round.Run,
+		Payload: payload, SourceReportHash: reportHash,
+	})
 	if err != nil {
-		// A concurrent controller may have won the unique revision attempt and
-		// caused this admission to fail before graph execution. Re-read the
-		// durable winner and recover it; never start another planner run.
-		existingAttempt, loadErr := p.Deps.Build.GetBlueprintPatchPlanningAttempt(
-			ctx, round.WorkspaceID, round.BuildRunID, revision.RevisionNo,
-			teambuild.SourceRoleBlueprintPatchPlanner,
-		)
-		if loadErr != nil {
-			return teambuild.BlueprintPatchV1{}, fmt.Errorf("run blueprint patch planner: %w", err)
-		}
-		return p.recoverBlueprintPatchPlanningAttempt(ctx, round, existingAttempt, reportHash, blueprint)
-	}
-	existingAttempt, err = p.Deps.Build.GetBlueprintPatchPlanningAttempt(
-		ctx, round.WorkspaceID, round.BuildRunID, revision.RevisionNo,
-		teambuild.SourceRoleBlueprintPatchPlanner,
-	)
-	if err != nil {
-		return teambuild.BlueprintPatchV1{}, fmt.Errorf("load completed blueprint patch planning attempt: %w", err)
-	}
-	return p.recoverBlueprintPatchPlanningAttempt(ctx, round, existingAttempt, reportHash, blueprint)
-}
-
-func (p *ProductionPhases) recoverBlueprintPatchPlanningAttempt(
-	ctx context.Context,
-	round RoundContext,
-	attempt teambuild.BlueprintPatchPlanningAttempt,
-	reportHash string,
-	blueprint teambuild.TeamBlueprintV1,
-) (teambuild.BlueprintPatchV1, error) {
-	if attempt.SourceReportHash != reportHash || attempt.SourceRole != teambuild.SourceRoleBlueprintPatchPlanner {
-		return teambuild.BlueprintPatchV1{}, errors.New("blueprint patch planning attempt is not bound to the current report")
-	}
-	if attempt.OutputText == nil || attempt.OutputHash == nil {
-		return teambuild.BlueprintPatchV1{}, fmt.Errorf("%w: blueprint patch planner output is not recorded", ErrUsageSourcePending)
-	}
-	if err := p.backfillUsageSource(ctx, round, teambuild.BuildUsageSource{
-		WorkspaceID: attempt.WorkspaceID, BuildRunID: attempt.BuildRunID,
-		RoundNo: attempt.RevisionNo, SourceKind: teambuild.UsageSourceKindBuildAgent,
-		SourceRole: attempt.SourceRole, SourceRunID: attempt.SourceRunID,
-	}); err != nil {
-		return teambuild.BlueprintPatchV1{}, fmt.Errorf("account blueprint patch planner: %w", err)
+		return teambuild.BlueprintPatchV1{}, err
 	}
 	decision, err := p.Deps.Build.EvaluateBudget(ctx, round.WorkspaceID, round.BuildRunID, round.RoundNo,
 		round.Run.RoundBudget, round.Run.TotalBudget)
@@ -308,7 +279,7 @@ func (p *ProductionPhases) recoverBlueprintPatchPlanningAttempt(
 	if !decision.Allowed {
 		return teambuild.BlueprintPatchV1{}, fmt.Errorf("%w: planner charge consumed remaining balance", ErrBlueprintPatchPlannerBudgetExhausted)
 	}
-	patch, err := decodeBlueprintPatchPlannerOutput(*attempt.OutputText)
+	patch, err := decodeBlueprintPatchPlannerOutput(planned.Output)
 	if err != nil {
 		return teambuild.BlueprintPatchV1{}, err
 	}
@@ -320,6 +291,73 @@ func (p *ProductionPhases) recoverBlueprintPatchPlanningAttempt(
 	}
 	return patch, nil
 }
+
+type buildBlueprintPatchPlannerExecutor struct {
+	phases *ProductionPhases
+	round  RoundContext
+}
+
+func (e buildBlueprintPatchPlannerExecutor) Execute(
+	ctx context.Context,
+	request teambuild.BlueprintPatchPlannerRequest,
+) (teambuild.BlueprintPatchPlannerResult, error) {
+	p := e.phases
+	if p == nil || p.Deps.Build == nil || request.WorkspaceID != e.round.WorkspaceID ||
+		request.BuildRunID != e.round.BuildRunID || request.RevisionNo != e.round.RoundNo ||
+		request.SourceReportHash == "" {
+		return teambuild.BlueprintPatchPlannerResult{}, errors.New("blueprint patch planner request identity is invalid")
+	}
+	attempt, err := p.Deps.Build.GetBlueprintPatchPlanningAttempt(
+		ctx, request.WorkspaceID, request.BuildRunID, request.RevisionNo,
+		teambuild.SourceRoleBlueprintPatchPlanner,
+	)
+	if errors.Is(err, teambuild.ErrBlueprintPatchPlanningAttemptNotFound) {
+		_, runErr := p.runControlledAgent(
+			ctx, e.round, blueprintPatchPlannerRecord(request.WorkspaceID), string(request.Payload),
+			teambuild.SourceRoleBlueprintPatchPlanner, request.SourceReportHash,
+		)
+		attempt, err = p.Deps.Build.GetBlueprintPatchPlanningAttempt(
+			ctx, request.WorkspaceID, request.BuildRunID, request.RevisionNo,
+			teambuild.SourceRoleBlueprintPatchPlanner,
+		)
+		if err != nil {
+			if runErr != nil {
+				return teambuild.BlueprintPatchPlannerResult{}, fmt.Errorf("run blueprint patch planner: %w", runErr)
+			}
+			return teambuild.BlueprintPatchPlannerResult{}, fmt.Errorf("load blueprint patch planner attempt: %w", err)
+		}
+	} else if err != nil {
+		return teambuild.BlueprintPatchPlannerResult{}, err
+	}
+	if attempt.SourceReportHash != request.SourceReportHash ||
+		attempt.SourceRole != teambuild.SourceRoleBlueprintPatchPlanner {
+		return teambuild.BlueprintPatchPlannerResult{}, errors.New("blueprint patch planning attempt is not bound to the current report")
+	}
+	if attempt.OutputText == nil || attempt.OutputHash == nil {
+		return teambuild.BlueprintPatchPlannerResult{}, fmt.Errorf("%w: blueprint patch planner output is not recorded", ErrUsageSourcePending)
+	}
+	source := teambuild.BuildUsageSource{
+		WorkspaceID: attempt.WorkspaceID, BuildRunID: attempt.BuildRunID,
+		RoundNo: attempt.RevisionNo, SourceKind: teambuild.UsageSourceKindBuildAgent,
+		SourceRole: attempt.SourceRole, SourceRunID: attempt.SourceRunID,
+	}
+	if err := p.backfillUsageSource(ctx, e.round, source); err != nil {
+		return teambuild.BlueprintPatchPlannerResult{}, fmt.Errorf("account blueprint patch planner: %w", err)
+	}
+	usage, err := p.Deps.Build.GetRoundBudgetUsage(
+		ctx, request.WorkspaceID, request.BuildRunID, request.RevisionNo,
+	)
+	if err != nil {
+		return teambuild.BlueprintPatchPlannerResult{}, fmt.Errorf("load blueprint patch planner usage ledger: %w", err)
+	}
+	return teambuild.BlueprintPatchPlannerResult{
+		AttemptID: fmt.Sprintf("%s/%s/%d/%s", request.WorkspaceID, request.BuildRunID, request.RevisionNo, teambuild.SourceRoleBlueprintPatchPlanner),
+		RunID:     attempt.SourceRunID, Output: *attempt.OutputText,
+		Usage: usage, UsageSource: source,
+	}, nil
+}
+
+var _ teambuild.BlueprintPatchPlannerExecutor = buildBlueprintPatchPlannerExecutor{}
 
 func decodeBlueprintPatchPlannerOutput(output string) (teambuild.BlueprintPatchV1, error) {
 	if err := rejectDuplicateJSONKeys(strings.NewReader(output)); err != nil {
@@ -3243,6 +3281,26 @@ func (e buildSemanticJudgeExecutor) Execute(
 }
 
 var _ teambuild.SemanticJudgeExecutor = buildSemanticJudgeExecutor{}
+
+func blueprintPatchPlannerRecord(workspaceID string) *registry.AgentRecord {
+	return &registry.AgentRecord{
+		Name: teambuild.BlueprintPatchPlannerResourceName,
+		ID: uuid.NewSHA1(uuid.NameSpaceURL, []byte(
+			"weave/build/blueprint-patch-planner/v1\x00"+workspaceID,
+		)).String(),
+		WorkspaceID: workspaceID, Version: 1,
+		DisplayName: "蓝图补丁规划器", Role: "worker",
+		Visibility: registry.VisibilityPlatform,
+		Spec: stdlib.AgentSpec{Identity: stdlib.IdentitySpec{
+			Core: teambuild.BlueprintPatchPlannerPrompt,
+		}},
+		MemoryConfig:    &registry.MemoryConfig{Enabled: false},
+		Compaction:      &registry.CompactionConfig{Enabled: false},
+		GraphType:       "declarative",
+		GraphDefinition: teambuild.BlueprintPatchPlannerDefinition(),
+		Tags:            []string{"system", "build-controlled"},
+	}
+}
 
 func semanticJudgeRecord(workspaceID string) *registry.AgentRecord {
 	return &registry.AgentRecord{
