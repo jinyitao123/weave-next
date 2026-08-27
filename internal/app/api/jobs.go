@@ -518,7 +518,8 @@ func (s *Server) runEngineChatRecord(
 	if executor == nil {
 		return "", fmt.Errorf("engine executor is unavailable")
 	}
-	return executor.ExecRemote(ctx, tenant, resolved, stamp, message, execAttachments)
+	result, err := executor.ExecRemote(ctx, tenant, resolved, stamp, message, execAttachments)
+	return result.Output, err
 }
 
 // ExecuteChat runs a chat request without HTTP context.

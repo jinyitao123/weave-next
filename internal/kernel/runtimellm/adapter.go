@@ -11,11 +11,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"strings"
 	"sync/atomic"
 
 	"github.com/jinyitao123/loom/contract"
 	"github.com/jinyitao123/weave/internal/base/execution"
+	"github.com/jinyitao123/weave/internal/kernel/engine"
 	"github.com/jinyitao123/weave/internal/kernel/mcphost"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 )
@@ -101,22 +103,60 @@ func (a *Adapter) Chat(ctx context.Context, req contract.ChatRequest) (*contract
 	if err != nil {
 		return nil, err
 	}
-	var output string
+	var result engine.RunResult
 	if structured, ok := a.executor.(mcphost.StructuredRemoteEngineExecutor); ok {
-		output, err = structured.ExecRemoteStructured(
+		result, err = structured.ExecRemoteStructured(
 			ctx, a.tenant, a.agent, a.stamp, prompt, nil, protocolOutputSchema,
 		)
 	} else {
-		output, err = a.executor.ExecRemote(ctx, a.tenant, a.agent, a.stamp, prompt, nil)
+		result, err = a.executor.ExecRemote(ctx, a.tenant, a.agent, a.stamp, prompt, nil)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("runtime LLM inference: %w", err)
 	}
-	parsed, err := a.parseResponse(output, req.Tools)
+	parsed, err := a.parseResponse(result.Output, req.Tools)
 	if err != nil {
 		return nil, err
 	}
+	parsed.Usage, err = contractUsage(result)
+	if err != nil {
+		return nil, fmt.Errorf("runtime LLM usage: %w", err)
+	}
 	return parsed, nil
+}
+
+func contractUsage(result engine.RunResult) (contract.Usage, error) {
+	receipts := make([]*engine.UsageReceipt, 0, len(result.Attempts)+1)
+	if len(result.Attempts) > 0 {
+		for _, attempt := range result.Attempts {
+			if attempt.Usage != nil {
+				receipts = append(receipts, attempt.Usage)
+			}
+		}
+	} else if result.Usage != nil {
+		receipts = append(receipts, result.Usage)
+	}
+	var usage contract.Usage
+	for _, receipt := range receipts {
+		if err := engine.ValidateUsageReceipt(receipt); err != nil {
+			return contract.Usage{}, err
+		}
+		if receipt.HasTokens {
+			if receipt.InputTokens > int(^uint(0)>>1)-usage.InputTokens ||
+				receipt.OutputTokens > int(^uint(0)>>1)-usage.OutputTokens {
+				return contract.Usage{}, errors.New("token total overflows int")
+			}
+			usage.InputTokens += receipt.InputTokens
+			usage.OutputTokens += receipt.OutputTokens
+		}
+		if receipt.HasCost {
+			usage.CostUSD += receipt.CostUSD
+			if math.IsNaN(usage.CostUSD) || math.IsInf(usage.CostUSD, 0) {
+				return contract.Usage{}, errors.New("cost total is not finite")
+			}
+		}
+	}
+	return usage, nil
 }
 
 func (a *Adapter) Stream(ctx context.Context, req contract.ChatRequest) (<-chan contract.StreamChunk, error) {
@@ -185,9 +225,6 @@ func (a *Adapter) parseResponse(output string, tools []contract.ToolDef) (*contr
 	}
 	return &contract.ChatResponse{
 		Content: parsed.Content, ToolCalls: calls, StopReason: stopReason,
-		// The current runtime executor exposes final output but no trustworthy
-		// token accounting. Zero is deliberate; never fabricate usage.
-		Usage: contract.Usage{},
 	}, nil
 }
 

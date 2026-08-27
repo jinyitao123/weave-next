@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/kernel/config"
 	"github.com/jinyitao123/weave/internal/kernel/engine"
 	"github.com/jinyitao123/weave/internal/kernel/execenv"
-	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 	"github.com/jinyitao123/weave/internal/kernel/secret"
 )
@@ -45,16 +45,16 @@ func (e *LocalExecutor) ExecRemote(
 	stamp execution.AgentExecutionStamp,
 	prompt string,
 	attachments []execenv.Attachment,
-) (string, error) {
+) (engine.RunResult, error) {
 	if err := validateAgentExecutionStamp(tenant, rec, stamp); err != nil {
-		return "", fmt.Errorf("local engine executor: %w", err)
+		return engine.RunResult{}, fmt.Errorf("local engine executor: %w", err)
 	}
 	workDir, menv, err := execenv.Materialize(e.workspacesRoot, rec, prompt, attachments)
 	if err != nil {
-		return "", err
+		return engine.RunResult{}, err
 	}
 	if err := execenv.WriteEngineConfig(rec.Engine, workDir, rec, e.oneapiBase, e.boundaryBase, e.oneapiKey); err != nil {
-		return "", err
+		return engine.RunResult{}, err
 	}
 	if menv == nil {
 		menv = make(map[string]string)
@@ -71,17 +71,21 @@ func (e *LocalExecutor) ExecRemote(
 	cliPath := config.ResolveEngineCLIPath(rec.Engine)
 	backend, err := engine.New(rec.Engine, cliPath)
 	if err != nil {
-		return "", fmt.Errorf("engine %q: %v", rec.Engine, err)
+		return engine.RunResult{}, fmt.Errorf("engine %q: %v", rec.Engine, err)
 	}
-	result, _ := backend.Run(ctx, engine.RunSpec{
-		WorkDir: workDir,
-		Prompt:  promptWithAttachmentNotice(prompt, attachments),
-		Model:   rec.Model,
-		Env:     menv,
-		Timeout: localEngineExecTimeout,
+	result, runErr := backend.Run(ctx, engine.RunSpec{
+		WorkDir:       workDir,
+		Prompt:        promptWithAttachmentNotice(prompt, attachments),
+		Model:         rec.Model,
+		Env:           menv,
+		Timeout:       localEngineExecTimeout,
+		EngineVersion: engine.BinaryVersion(ctx, cliPath),
 	})
 	if result.Status != "completed" {
-		return "", errors.New(result.Err)
+		if runErr != nil {
+			return result, runErr
+		}
+		return result, errors.New(result.Err)
 	}
-	return result.Output, nil
+	return result, runErr
 }

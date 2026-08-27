@@ -6,6 +6,7 @@ import (
 	"net/url"
 
 	"github.com/jinyitao123/loom/contract"
+	"github.com/jinyitao123/weave/internal/kernel/engine"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 )
 
@@ -37,6 +38,7 @@ type EngineExecRequest struct {
 	OneAPIBase     string                 `json:"oneapi_base,omitempty"`
 	OneAPIKey      string                 `json:"oneapi_key,omitempty"`
 	TimeoutSeconds int                    `json:"timeout_seconds,omitempty"`
+	EngineVersion  string                 `json:"engine_version,omitempty"`
 	Attachments    []EngineExecAttachment `json:"attachments,omitempty"`
 	Loom           *LoomExecInput         `json:"loom,omitempty"`
 }
@@ -71,10 +73,39 @@ type EngineExecAttachment struct {
 // Usage is a pointer because encoding/json's omitempty cannot elide a zero
 // struct — CLI daemons keep producing the historical {"output": ...} shape.
 type EngineExecResult struct {
-	Output     string          `json:"output"`
-	StopReason string          `json:"stop_reason,omitempty"`
-	Usage      *contract.Usage `json:"usage,omitempty"`
-	RunID      string          `json:"run_id,omitempty"`
+	Output       string               `json:"output"`
+	StopReason   string               `json:"stop_reason,omitempty"`
+	Usage        *contract.Usage      `json:"usage,omitempty"`
+	RunID        string               `json:"run_id,omitempty"`
+	Status       string               `json:"status,omitempty"`
+	Error        string               `json:"error,omitempty"`
+	UsageReceipt *engine.UsageReceipt `json:"usage_receipt,omitempty"`
+	Diagnostics  []engine.Diagnostic  `json:"diagnostics,omitempty"`
+}
+
+// CLIEngineExecResult preserves the complete external-engine outcome across
+// the daemon/server task boundary.
+func CLIEngineExecResult(result engine.RunResult) EngineExecResult {
+	return EngineExecResult{
+		Output:       result.Output,
+		Status:       result.Status,
+		Error:        result.Err,
+		UsageReceipt: result.Usage,
+		Diagnostics:  append([]engine.Diagnostic(nil), result.Diagnostics...),
+	}
+}
+
+// EngineRunResult maps a remote task result back to the engine carrier.
+func (result EngineExecResult) EngineRunResult() engine.RunResult {
+	status := result.Status
+	if status == "" {
+		status = "completed" // compatibility with pre-receipt daemons
+	}
+	return engine.RunResult{
+		Output: result.Output, Status: status, Err: result.Error,
+		Usage:       result.UsageReceipt,
+		Diagnostics: append([]engine.Diagnostic(nil), result.Diagnostics...),
+	}
 }
 
 // RedactClaimPayload returns the payload bytes a daemon may see for one

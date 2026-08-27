@@ -18,13 +18,13 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jinyitao123/weave/internal/base/execution"
+	"github.com/jinyitao123/weave/internal/base/taskqueue"
 	"github.com/jinyitao123/weave/internal/kernel/config"
 	"github.com/jinyitao123/weave/internal/kernel/engine"
 	"github.com/jinyitao123/weave/internal/kernel/execenv"
-	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/kernel/runtimes"
 	"github.com/jinyitao123/weave/internal/kernel/secret"
-	"github.com/jinyitao123/weave/internal/base/taskqueue"
 )
 
 const (
@@ -263,7 +263,7 @@ func (d *service) processTask(ctx context.Context, task *taskqueue.Task) {
 		d.renewLoop(taskCtx, cancelTask, task.ID, leaseLost)
 	}()
 
-	output, runErr := d.executeTask(taskCtx, task)
+	result, runErr := d.executeTask(taskCtx, task)
 	if leaseLost.Load() || ctx.Err() != nil {
 		cancelTask()
 		<-renewDone
@@ -271,13 +271,13 @@ func (d *service) processTask(ctx context.Context, task *taskqueue.Task) {
 	}
 
 	var report func(context.Context) error
-	if runErr != nil {
+	if runErr != nil && result.Status == "" {
 		report = func(reportCtx context.Context) error {
 			return d.client.fail(reportCtx, task.ID, runErr.Error())
 		}
 	} else {
 		report = func(reportCtx context.Context) error {
-			return d.client.complete(reportCtx, task.ID, output)
+			return d.client.complete(reportCtx, task.ID, result)
 		}
 	}
 	if errors.Is(d.reportUntilAccepted(taskCtx, report), errLeaseLost) {
@@ -323,26 +323,26 @@ func (d *service) reportUntilAccepted(ctx context.Context, report func(context.C
 	}
 }
 
-func (d *service) executeTask(ctx context.Context, task *taskqueue.Task) (string, error) {
+func (d *service) executeTask(ctx context.Context, task *taskqueue.Task) (runtimes.EngineExecResult, error) {
 	var request runtimes.EngineExecRequest
 	if err := json.Unmarshal(task.Payload, &request); err != nil {
-		return "", fmt.Errorf("runtime: decode task payload: %w", err)
+		return runtimes.EngineExecResult{}, fmt.Errorf("runtime: decode task payload: %w", err)
 	}
 	if !engine.IsCLIEngine(request.Engine) {
-		return "", fmt.Errorf("runtime: unsupported CLI engine %q", request.Engine)
+		return runtimes.EngineExecResult{}, fmt.Errorf("runtime: unsupported CLI engine %q", request.Engine)
 	}
 	if _, err := agentExecutionStampForTask(task, request); err != nil {
-		return "", err
+		return runtimes.EngineExecResult{}, err
 	}
 
 	workDir, runEnv, err := execenv.Materialize(d.workspacesRoot, request.Record, request.Prompt, nil)
 	if err != nil {
-		return "", err
+		return runtimes.EngineExecResult{}, err
 	}
 	if len(request.Attachments) > 0 {
 		downloadDir, err := os.MkdirTemp(workDir, ".weave-attachments-")
 		if err != nil {
-			return "", fmt.Errorf("runtime: create attachment temp directory: %w", err)
+			return runtimes.EngineExecResult{}, fmt.Errorf("runtime: create attachment temp directory: %w", err)
 		}
 		defer os.RemoveAll(downloadDir)
 
@@ -350,28 +350,28 @@ func (d *service) executeTask(ctx context.Context, task *taskqueue.Task) (string
 		for _, attachment := range request.Attachments {
 			local, err := os.CreateTemp(downloadDir, "attachment-")
 			if err != nil {
-				return "", fmt.Errorf("runtime: create attachment temp file: %w", err)
+				return runtimes.EngineExecResult{}, fmt.Errorf("runtime: create attachment temp file: %w", err)
 			}
 			downloadErr := d.client.downloadAttachment(ctx, task.ID, attachment.ID, local)
 			closeErr := local.Close()
 			if downloadErr != nil {
-				return "", downloadErr
+				return runtimes.EngineExecResult{}, downloadErr
 			}
 			if closeErr != nil {
-				return "", fmt.Errorf("runtime: close attachment temp file: %w", closeErr)
+				return runtimes.EngineExecResult{}, fmt.Errorf("runtime: close attachment temp file: %w", closeErr)
 			}
 			attachments = append(attachments, execenv.Attachment{Filename: attachment.Filename, Path: local.Name()})
 		}
 		workDir, runEnv, err = execenv.Materialize(d.workspacesRoot, request.Record, request.Prompt, attachments)
 		if err != nil {
-			return "", err
+			return runtimes.EngineExecResult{}, err
 		}
 	}
 
 	cliAuthMode := d.detectCLIAuthMode(ctx, request.Engine)
 	oneAPIBase, oneAPIKey := runtimeProviderConfig(request)
 	if err := execenv.WriteEngineConfigWithAuthMode(request.Engine, workDir, request.Record, oneAPIBase, d.server, oneAPIKey, cliAuthMode); err != nil {
-		return "", err
+		return runtimes.EngineExecResult{}, err
 	}
 	if runEnv == nil {
 		runEnv = make(map[string]string)
@@ -402,24 +402,35 @@ func (d *service) executeTask(ctx context.Context, task *taskqueue.Task) (string
 		timeoutSeconds = defaultTimeoutSeconds
 	}
 	result, err := d.runEngine(ctx, request.Engine, engine.RunSpec{
-		WorkDir:      workDir,
-		Prompt:       request.Prompt,
-		Model:        request.Model,
-		Env:          runEnv,
-		Timeout:      time.Duration(timeoutSeconds) * time.Second,
-		OutputSchema: request.OutputSchema,
+		WorkDir:       workDir,
+		Prompt:        request.Prompt,
+		Model:         request.Model,
+		Env:           runEnv,
+		Timeout:       time.Duration(timeoutSeconds) * time.Second,
+		EngineVersion: d.engineVersion(request.Engine),
+		OutputSchema:  request.OutputSchema,
 	})
+	execResult := runtimes.CLIEngineExecResult(result)
 	if err != nil {
-		return "", err
+		return execResult, err
 	}
 	if result.Status != "completed" {
 		message := result.Err
 		if message == "" {
 			message = fmt.Sprintf("engine run ended with status %q", result.Status)
 		}
-		return "", errors.New(message)
+		return execResult, errors.New(message)
 	}
-	return result.Output, nil
+	return execResult, nil
+}
+
+func (d *service) engineVersion(name string) string {
+	for _, capability := range d.engineCapabilities {
+		if capability.Engine == name {
+			return capability.BinaryVersion
+		}
+	}
+	return "unavailable"
 }
 
 func runtimeProviderConfig(request runtimes.EngineExecRequest) (baseURL, apiKey string) {
@@ -665,34 +676,12 @@ func detectEngineCapabilities(ctx context.Context, detected []string) []runtimes
 		}
 		capabilities = append(capabilities, runtimes.EngineCapability{
 			Engine: name, BinaryPath: binaryPath,
-			BinaryVersion: engineBinaryVersion(ctx, binaryPath),
+			BinaryVersion: engine.BinaryVersion(ctx, binaryPath),
 			AuthMode:      authMode, ProtocolVersion: engineProtocolVersion(name),
 			EndpointClass: endpointClass,
 		})
 	}
 	return capabilities
-}
-
-func engineBinaryVersion(ctx context.Context, binaryPath string) string {
-	checkCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(checkCtx, binaryPath, "--version")
-	cmd.Env = envWithExecutableDir(os.Environ(), binaryPath)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return "unavailable"
-	}
-	version := strings.TrimSpace(string(output))
-	if line, _, found := strings.Cut(version, "\n"); found {
-		version = strings.TrimSpace(line)
-	}
-	if len(version) > 160 {
-		version = version[:160]
-	}
-	if version == "" {
-		return "unavailable"
-	}
-	return version
 }
 
 func engineProtocolVersion(name string) string {

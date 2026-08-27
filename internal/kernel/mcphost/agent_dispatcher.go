@@ -9,9 +9,10 @@ import (
 
 	"github.com/jinyitao123/loom"
 	"github.com/jinyitao123/loom/contract"
-	"github.com/jinyitao123/weave/internal/kernel/compiler"
-	"github.com/jinyitao123/weave/internal/kernel/execenv"
 	"github.com/jinyitao123/weave/internal/base/execution"
+	"github.com/jinyitao123/weave/internal/kernel/compiler"
+	"github.com/jinyitao123/weave/internal/kernel/engine"
+	"github.com/jinyitao123/weave/internal/kernel/execenv"
 	"github.com/jinyitao123/weave/internal/kernel/loomruntime"
 	"github.com/jinyitao123/weave/internal/kernel/memory"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
@@ -69,7 +70,7 @@ type RemoteEngineExecutor interface {
 		stamp execution.AgentExecutionStamp,
 		prompt string,
 		attachments []execenv.Attachment,
-	) (output string, err error)
+	) (result engine.RunResult, err error)
 }
 
 // StructuredRemoteEngineExecutor is an optional extension for callers that
@@ -84,7 +85,7 @@ type StructuredRemoteEngineExecutor interface {
 		prompt string,
 		attachments []execenv.Attachment,
 		outputSchema json.RawMessage,
-	) (output string, err error)
+	) (result engine.RunResult, err error)
 }
 
 // DispatchRecorder records completed single-agent dispatches for tracing.

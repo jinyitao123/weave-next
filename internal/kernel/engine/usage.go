@@ -1,11 +1,88 @@
 package engine
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"math"
+	"os"
+	"os/exec"
 	"strings"
+	"time"
 )
+
+// BinaryVersion observes the exact CLI version used for a local invocation.
+// "unavailable" is explicit metadata, never an inferred version.
+func BinaryVersion(ctx context.Context, binaryPath string) string {
+	checkCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(checkCtx, binaryPath, "--version")
+	cmd.Env = envWithCLIPath(os.Environ(), binaryPath)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return "unavailable"
+	}
+	version := strings.TrimSpace(string(output))
+	if line, _, found := strings.Cut(version, "\n"); found {
+		version = strings.TrimSpace(line)
+	}
+	if len(version) > 160 {
+		version = version[:160]
+	}
+	if version == "" {
+		return "unavailable"
+	}
+	return version
+}
+
+// ValidateUsageReceipt checks the untrusted daemon boundary. It validates
+// reported values and provenance but never tries to verify the CLI's honesty.
+func ValidateUsageReceipt(receipt *UsageReceipt) error {
+	if receipt == nil {
+		return nil
+	}
+	if receipt.Source != UsageSourceCLIReported {
+		return fmt.Errorf("usage source must be %q", UsageSourceCLIReported)
+	}
+	if receipt.Scope != UsageScopeInvocation && receipt.Scope != UsageScopeSession {
+		return fmt.Errorf("usage scope is invalid")
+	}
+	if strings.TrimSpace(receipt.EngineVersion) == "" || receipt.EngineVersion == "unavailable" || len(receipt.EngineVersion) > 160 {
+		return fmt.Errorf("usage engine_version is invalid")
+	}
+	if !receipt.HasTokens && !receipt.HasCost {
+		return fmt.Errorf("usage receipt has no reported dimension")
+	}
+	if receipt.InputTokens < 0 || receipt.OutputTokens < 0 {
+		return fmt.Errorf("usage token counts must be non-negative")
+	}
+	if !receipt.HasTokens && (receipt.InputTokens != 0 || receipt.OutputTokens != 0) {
+		return fmt.Errorf("unreported token dimension must be zero-valued")
+	}
+	if receipt.CostUSD < 0 || math.IsNaN(receipt.CostUSD) || math.IsInf(receipt.CostUSD, 0) {
+		return fmt.Errorf("usage cost must be finite and non-negative")
+	}
+	if !receipt.HasCost && receipt.CostUSD != 0 {
+		return fmt.Errorf("unreported cost dimension must be zero-valued")
+	}
+	if len(receipt.RawSummary) > maxRawUsageSummary {
+		return fmt.Errorf("usage raw_summary exceeds %d bytes", maxRawUsageSummary)
+	}
+	return nil
+}
+
+// ValidateDiagnostics bounds the untrusted diagnostic channel.
+func ValidateDiagnostics(diagnostics []Diagnostic) error {
+	if len(diagnostics) > 32 {
+		return fmt.Errorf("too many engine diagnostics")
+	}
+	for index, item := range diagnostics {
+		if strings.TrimSpace(item.Code) == "" || len(item.Code) > 80 || len(item.Message) > 1024 {
+			return fmt.Errorf("engine diagnostic %d is invalid", index)
+		}
+	}
+	return nil
+}
 
 const (
 	UsageSourceCLIReported = "cli-reported"
@@ -54,9 +131,18 @@ func bindUsageReceipt(result *RunResult, spec RunSpec) {
 	if result.Usage == nil {
 		return
 	}
+	version := strings.TrimSpace(spec.EngineVersion)
+	if version == "" || version == "unavailable" {
+		result.Diagnostics = append(result.Diagnostics, diagnostic(
+			"usage_engine_version_unavailable",
+			"CLI usage receipt is discarded because the binary version is unavailable",
+		))
+		result.Usage = nil
+		return
+	}
 	result.Usage.Source = UsageSourceCLIReported
 	result.Usage.Scope = UsageScopeInvocation
-	result.Usage.EngineVersion = strings.TrimSpace(spec.EngineVersion)
+	result.Usage.EngineVersion = version
 }
 
 func newUsageReceipt(tokens *reportedTokenUsage, cost *float64, raw string) (*UsageReceipt, []Diagnostic) {

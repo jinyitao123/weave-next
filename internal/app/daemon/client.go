@@ -11,8 +11,8 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/jinyitao123/weave/internal/kernel/runtimes"
 	"github.com/jinyitao123/weave/internal/base/taskqueue"
+	"github.com/jinyitao123/weave/internal/kernel/runtimes"
 )
 
 var errLeaseLost = errors.New("daemon: task lease lost")
@@ -96,8 +96,8 @@ func (c *runtimeClient) renew(ctx context.Context, taskID string) error {
 	return c.postTaskNoContent(ctx, taskID, "renew", nil)
 }
 
-func (c *runtimeClient) complete(ctx context.Context, taskID, output string) error {
-	return c.postTaskNoContent(ctx, taskID, "complete", runtimes.EngineExecResult{Output: output})
+func (c *runtimeClient) complete(ctx context.Context, taskID string, result runtimes.EngineExecResult) error {
+	return c.postTaskNoContent(ctx, taskID, "complete", result)
 }
 
 func (c *runtimeClient) fail(ctx context.Context, taskID, message string) error {

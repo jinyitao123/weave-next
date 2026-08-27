@@ -54,6 +54,20 @@ type RunResult struct {
 	Err         string
 	Usage       *UsageReceipt
 	Diagnostics []Diagnostic
+	// Attempts is populated by retrying remote executors. Each durable task ID
+	// appears at most once so downstream accumulators can deduplicate replays
+	// without collapsing distinct physical spend.
+	Attempts []UsageAttempt
+}
+
+// UsageAttempt binds one physical CLI invocation to its durable task/runtime.
+type UsageAttempt struct {
+	AttemptID   string
+	RuntimeID   string
+	Engine      string
+	Status      string
+	Usage       *UsageReceipt
+	Diagnostics []Diagnostic
 }
 
 // Diagnostic reports a best-effort CLI parsing problem without turning a

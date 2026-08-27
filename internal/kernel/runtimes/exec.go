@@ -14,11 +14,11 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jinyitao123/loom/contract"
+	"github.com/jinyitao123/weave/internal/base/execution"
+	"github.com/jinyitao123/weave/internal/base/taskqueue"
 	"github.com/jinyitao123/weave/internal/kernel/engine"
 	"github.com/jinyitao123/weave/internal/kernel/execenv"
-	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
-	"github.com/jinyitao123/weave/internal/base/taskqueue"
 )
 
 // Keep the engine task ceiling aligned with the teamrun agent-node ceiling.
@@ -53,7 +53,7 @@ func (e *Executor) ExecRemote(
 	stamp execution.AgentExecutionStamp,
 	prompt string,
 	attachments []execenv.Attachment,
-) (string, error) {
+) (engine.RunResult, error) {
 	return e.execRemote(ctx, tenant, rec, stamp, prompt, attachments, nil)
 }
 
@@ -68,9 +68,9 @@ func (e *Executor) ExecRemoteStructured(
 	prompt string,
 	attachments []execenv.Attachment,
 	outputSchema json.RawMessage,
-) (string, error) {
+) (engine.RunResult, error) {
 	if len(outputSchema) == 0 || !json.Valid(outputSchema) {
-		return "", errors.New("remote engine executor: valid output schema is required")
+		return engine.RunResult{}, errors.New("remote engine executor: valid output schema is required")
 	}
 	return e.execRemote(ctx, tenant, rec, stamp, prompt, attachments, outputSchema)
 }
@@ -83,18 +83,18 @@ func (e *Executor) execRemote(
 	prompt string,
 	attachments []execenv.Attachment,
 	outputSchema json.RawMessage,
-) (string, error) {
+) (engine.RunResult, error) {
 	if err := validateAgentExecutionStamp(tenant, rec, stamp); err != nil {
-		return "", fmt.Errorf("remote engine executor: %w", err)
+		return engine.RunResult{}, fmt.Errorf("remote engine executor: %w", err)
 	}
 	if !engine.IsCLIEngine(rec.Engine) {
-		return "", errors.New("员工远程执行仅支持 claude、codex 或 opencode，未入队")
+		return engine.RunResult{}, errors.New("员工远程执行仅支持 claude、codex 或 opencode，未入队")
 	}
 	if e == nil || e.runtimes == nil {
-		return "", errors.New("员工所在运行时不存在，未入队")
+		return engine.RunResult{}, errors.New("员工所在运行时不存在，未入队")
 	}
 	if e.tasks == nil {
-		return "", errors.New("remote engine executor: task queue is unavailable")
+		return engine.RunResult{}, errors.New("remote engine executor: task queue is unavailable")
 	}
 
 	// Frozen workflow workers predate the policy field. Explicit Pool
@@ -103,8 +103,9 @@ func (e *Executor) execRemote(
 	if rec.RuntimePolicyMode == "" {
 		selected, getErr := e.runtimes.Get(ctx, tenant, rec.RuntimeID)
 		if getErr != nil || selected.PoolID == "" {
-			output, _, err := e.execRemoteAttempt(ctx, tenant, rec, stamp, prompt, attachments, outputSchema, "", "")
-			return output, err
+			result, taskID, err := e.execRemoteAttempt(ctx, tenant, rec, stamp, prompt, attachments, outputSchema, "", "")
+			result.Attempts = appendUsageAttempt(result.Attempts, taskID, rec.RuntimeID, rec.Engine, result)
+			return result, err
 		}
 		resolved := *rec
 		resolved.RuntimePolicyMode = "engine_pool"
@@ -114,28 +115,33 @@ func (e *Executor) execRemote(
 
 	candidates, err := e.runtimeCandidates(ctx, tenant, rec)
 	if err != nil {
-		return "", err
+		return engine.RunResult{}, err
 	}
 	traceID := "runtime-attempts-" + uuid.NewString()
 	parentTaskID := ""
 	var lastErr error
+	var lastResult engine.RunResult
+	var attempts []engine.UsageAttempt
 	for _, runtimeID := range candidates {
 		for sameRuntimeAttempt := 0; sameRuntimeAttempt < 2; sameRuntimeAttempt++ {
 			attemptRecord := *rec
 			attemptRecord.RuntimeID = runtimeID
-			output, taskID, attemptErr := e.execRemoteAttempt(
+			result, taskID, attemptErr := e.execRemoteAttempt(
 				ctx, tenant, &attemptRecord, stamp, prompt, attachments, outputSchema, traceID, parentTaskID,
 			)
+			attempts = appendUsageAttempt(attempts, taskID, runtimeID, rec.Engine, result)
+			result.Attempts = append([]engine.UsageAttempt(nil), attempts...)
 			if attemptErr == nil {
 				_ = e.runtimes.RecordExecutionSuccess(context.WithoutCancel(ctx), tenant, runtimeID)
-				return output, nil
+				return result, nil
 			}
+			lastResult = result
 			lastErr = attemptErr
 			if taskID != "" {
 				parentTaskID = taskID
 			}
 			if ctx.Err() != nil || !retryableRuntimeFailure(attemptErr) {
-				return "", attemptErr
+				return result, attemptErr
 			}
 			_ = e.runtimes.RecordInfrastructureFailure(
 				context.WithoutCancel(ctx), tenant, runtimeID, attemptErr.Error(),
@@ -143,12 +149,28 @@ func (e *Executor) execRemote(
 		}
 	}
 	if rec.RuntimePolicyMode == "strict_pin" {
-		return "", fmt.Errorf("runtime_pinned_unavailable: %w", lastErr)
+		return lastResult, fmt.Errorf("runtime_pinned_unavailable: %w", lastErr)
 	}
 	if rec.RuntimePolicyMode == "engine_pool" {
-		return "", fmt.Errorf("runtime_pool_exhausted: %w", lastErr)
+		return lastResult, fmt.Errorf("runtime_pool_exhausted: %w", lastErr)
 	}
-	return "", fmt.Errorf("runtime_temporarily_unavailable: %w", lastErr)
+	return lastResult, fmt.Errorf("runtime_temporarily_unavailable: %w", lastErr)
+}
+
+func appendUsageAttempt(attempts []engine.UsageAttempt, taskID, runtimeID, engineName string, result engine.RunResult) []engine.UsageAttempt {
+	if taskID == "" {
+		return attempts
+	}
+	for _, attempt := range attempts {
+		if attempt.AttemptID == taskID {
+			return attempts
+		}
+	}
+	return append(attempts, engine.UsageAttempt{
+		AttemptID: taskID, RuntimeID: runtimeID, Engine: engineName,
+		Status: result.Status, Usage: result.Usage,
+		Diagnostics: append([]engine.Diagnostic(nil), result.Diagnostics...),
+	})
 }
 
 func (e *Executor) runtimeCandidates(ctx context.Context, tenant string, rec *registry.AgentRecord) ([]string, error) {
@@ -217,43 +239,52 @@ func (e *Executor) execRemoteAttempt(
 	attachments []execenv.Attachment,
 	outputSchema json.RawMessage,
 	traceID, parentTaskID string,
-) (string, string, error) {
+) (engine.RunResult, string, error) {
 	tx, err := e.runtimes.pool.Begin(ctx)
 	if err != nil {
-		return "", "", fmt.Errorf("begin runtime admission: %w", err)
+		return engine.RunResult{}, "", fmt.Errorf("begin runtime admission: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	var enginesJSON []byte
+	var enginesJSON, capabilitiesJSON []byte
 	var lastHeartbeatAt *time.Time
 	err = tx.QueryRow(ctx, `
-		SELECT engines, last_heartbeat_at
+		SELECT engines, engine_capabilities, last_heartbeat_at
 		FROM weave_runtimes
 		WHERE workspace_id=$1 AND id=$2
 		  AND enabled=true AND revoked_at IS NULL AND deleted_at IS NULL
 		FOR SHARE
-	`, tenant, rec.RuntimeID).Scan(&enginesJSON, &lastHeartbeatAt)
+	`, tenant, rec.RuntimeID).Scan(&enginesJSON, &capabilitiesJSON, &lastHeartbeatAt)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return "", "", errors.New("员工所在运行时不存在，未入队")
+		return engine.RunResult{}, "", errors.New("员工所在运行时不存在，未入队")
 	}
 	if err != nil {
-		return "", "", fmt.Errorf("lock runtime admission: %w", err)
+		return engine.RunResult{}, "", fmt.Errorf("lock runtime admission: %w", err)
 	}
 	if lastHeartbeatAt == nil || lastHeartbeatAt.Before(e.runtimes.now().Add(-onlineWindow)) {
-		return "", "", errors.New("员工所在运行时离线，未入队")
+		return engine.RunResult{}, "", errors.New("员工所在运行时离线，未入队")
 	}
 	var advertisedEngines []string
 	if err := json.Unmarshal(enginesJSON, &advertisedEngines); err != nil {
-		return "", "", fmt.Errorf("decode runtime engines: %w", err)
+		return engine.RunResult{}, "", fmt.Errorf("decode runtime engines: %w", err)
 	}
 	if !slices.Contains(advertisedEngines, rec.Engine) {
-		return "", "", fmt.Errorf("员工所在运行时未上报引擎 %q，未入队", rec.Engine)
+		return engine.RunResult{}, "", fmt.Errorf("员工所在运行时未上报引擎 %q，未入队", rec.Engine)
+	}
+	var capabilities map[string]EngineCapability
+	if err := json.Unmarshal(capabilitiesJSON, &capabilities); err != nil {
+		return engine.RunResult{}, "", fmt.Errorf("decode runtime engine capabilities: %w", err)
+	}
+	capability, exists := capabilities[rec.Engine]
+	if !exists || strings.TrimSpace(capability.BinaryVersion) == "" {
+		return engine.RunResult{}, "", fmt.Errorf("员工所在运行时未上报引擎 %q 版本，未入队", rec.Engine)
 	}
 
 	payload := e.buildExecPayloadWithSchema(tenant, rec, prompt, attachments, outputSchema)
+	payload.EngineVersion = capability.BinaryVersion
 	encoded, err := json.Marshal(payload)
 	if err != nil {
-		return "", "", fmt.Errorf("encode remote engine task: %w", err)
+		return engine.RunResult{}, "", fmt.Errorf("encode remote engine task: %w", err)
 	}
 	task := &taskqueue.Task{
 		ID:                    "task-" + uuid.NewString(),
@@ -280,10 +311,10 @@ func (e *Executor) execRemoteAttempt(
 		})
 	}
 	if err := e.tasks.EnqueueTx(ctx, tx, task); err != nil {
-		return "", "", fmt.Errorf("enqueue remote engine task: %w", err)
+		return engine.RunResult{}, "", fmt.Errorf("enqueue remote engine task: %w", err)
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return "", "", fmt.Errorf("commit remote engine task: %w", err)
+		return engine.RunResult{}, "", fmt.Errorf("commit remote engine task: %w", err)
 	}
 	terminal, err := e.tasks.AwaitTerminal(ctx, tenant, task.ID, engineExecTimeout)
 	if err != nil {
@@ -295,19 +326,30 @@ func (e *Executor) execRemoteAttempt(
 		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		_ = e.tasks.Cancel(cleanupCtx, tenant, task.ID)
 		cleanupCancel()
-		return "", task.ID, err
+		return engine.RunResult{}, task.ID, err
 	}
 	if terminal.Status != taskqueue.StatusCompleted {
 		if terminal.Error != "" {
-			return "", task.ID, errors.New(terminal.Error)
+			return engine.RunResult{}, task.ID, errors.New(terminal.Error)
 		}
-		return "", task.ID, fmt.Errorf("remote engine task ended with status %q", terminal.Status)
+		return engine.RunResult{}, task.ID, fmt.Errorf("remote engine task ended with status %q", terminal.Status)
 	}
 	var result EngineExecResult
 	if err := json.Unmarshal(terminal.Result, &result); err != nil {
-		return "", task.ID, fmt.Errorf("decode remote engine result: %w", err)
+		return engine.RunResult{}, task.ID, fmt.Errorf("decode remote engine result: %w", err)
 	}
-	return result.Output, task.ID, nil
+	engineResult := result.EngineRunResult()
+	if engineResult.Usage != nil && engineResult.Usage.EngineVersion != payload.EngineVersion {
+		return engine.RunResult{}, task.ID, errors.New("remote engine usage receipt version does not match admitted binary")
+	}
+	if engineResult.Status != "completed" {
+		message := engineResult.Err
+		if message == "" {
+			message = fmt.Sprintf("engine run ended with status %q", engineResult.Status)
+		}
+		return engineResult, task.ID, errors.New(message)
+	}
+	return engineResult, task.ID, nil
 }
 
 func validateAgentExecutionStamp(

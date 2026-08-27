@@ -10,25 +10,28 @@ import (
 	"github.com/jinyitao123/loom/contract"
 	"github.com/jinyitao123/loom/pgstore"
 	"github.com/jinyitao123/loom/stdlib"
+	"github.com/jinyitao123/weave/internal/base/execution"
+	"github.com/jinyitao123/weave/internal/base/storeext"
 	"github.com/jinyitao123/weave/internal/kernel/compiler"
 	"github.com/jinyitao123/weave/internal/kernel/engine"
 	"github.com/jinyitao123/weave/internal/kernel/execenv"
-	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/kernel/loomruntime"
 	"github.com/jinyitao123/weave/internal/kernel/memory"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 	"github.com/jinyitao123/weave/internal/kernel/runtimes"
-	"github.com/jinyitao123/weave/internal/base/storeext"
 )
 
 // AgentRunResult contains the complete result of an agent run. State is kept
 // for callers that need to process a yielded in-process run.
 type AgentRunResult struct {
-	Output    string
-	Yielded   bool
-	YieldType string
-	RunID     string
-	State     loom.State
+	Output      string
+	Yielded     bool
+	YieldType   string
+	RunID       string
+	State       loom.State
+	Usage       *engine.UsageReceipt
+	Diagnostics []engine.Diagnostic
+	Attempts    []engine.UsageAttempt
 }
 
 // AgentRunner runs registered agents through their configured execution path.
@@ -157,11 +160,11 @@ func (r *AgentRunner) runRecord(
 		if rec.RuntimeID != "" && r.RemoteExec != nil {
 			executor = r.RemoteExec
 		}
-		output, execErr := executor.ExecRemote(ctx, r.tenant, resolved, stamp, message, r.attachments)
+		result, execErr := executor.ExecRemote(ctx, r.tenant, resolved, stamp, message, r.attachments)
 		if execErr != nil {
-			return AgentRunResult{}, execErr
+			return AgentRunResult{Usage: result.Usage, Diagnostics: result.Diagnostics, Attempts: result.Attempts}, execErr
 		}
-		return AgentRunResult{Output: output}, nil
+		return AgentRunResult{Output: result.Output, Usage: result.Usage, Diagnostics: result.Diagnostics, Attempts: result.Attempts}, nil
 	}
 
 	if rec.RuntimeID != "" && r.RemoteExec != nil {
@@ -169,11 +172,11 @@ func (r *AgentRunner) runRecord(
 		if resolveCurrentSkills {
 			resolved = r.resolveSkills(rec)
 		}
-		output, execErr := r.RemoteExec.ExecRemote(ctx, r.tenant, resolved, stamp, message, r.attachments)
+		result, execErr := r.RemoteExec.ExecRemote(ctx, r.tenant, resolved, stamp, message, r.attachments)
 		if execErr != nil {
-			return AgentRunResult{}, execErr
+			return AgentRunResult{Usage: result.Usage, Diagnostics: result.Diagnostics, Attempts: result.Attempts}, execErr
 		}
-		return AgentRunResult{Output: output}, nil
+		return AgentRunResult{Output: result.Output, Usage: result.Usage, Diagnostics: result.Diagnostics, Attempts: result.Attempts}, nil
 	}
 
 	if stamp.ExecutionScope != execution.ScopeLegacyOrchestrator {

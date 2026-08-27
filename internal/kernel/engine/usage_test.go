@@ -2,6 +2,7 @@ package engine
 
 import (
 	"bytes"
+	"context"
 	"math"
 	"os"
 	"path/filepath"
@@ -100,17 +101,66 @@ func TestFailedAndTimeoutRunsRetainReportedUsage(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name+"/failed", func(t *testing.T) {
-			result, err := runFixtureCLI(t, tc.backend, tc.fixture, "exit 7", time.Second)
+			result, err := runFixtureCLI(t, tc.backend, tc.fixture, "exit 7", 0)
 			if err == nil || result.Status != "failed" || result.Usage == nil {
 				t.Fatalf("status=%q usage=%+v err=%v diagnostics=%+v", result.Status, result.Usage, err, result.Diagnostics)
 			}
 		})
 		t.Run(tc.name+"/timeout", func(t *testing.T) {
-			result, err := runFixtureCLI(t, tc.backend, tc.fixture, "sleep 5", 500*time.Millisecond)
+			result, err := runTimeoutFixtureCLI(t, tc.backend, tc.fixture)
 			if err == nil || result.Status != "timeout" || result.Usage == nil {
 				t.Fatalf("status=%q usage=%+v err=%v diagnostics=%+v", result.Status, result.Usage, err, result.Diagnostics)
 			}
 		})
+	}
+}
+
+func runTimeoutFixtureCLI(t *testing.T, backend func(string) Backend, fixture string) (RunResult, error) {
+	t.Helper()
+	dir := t.TempDir()
+	marker := filepath.Join(dir, "receipt-emitted")
+	script := filepath.Join(dir, "fixture-cli")
+	contents := "#!/bin/sh\ncommand cat \"$WEAVE_TEST_FIXTURE\"\ntouch \"$WEAVE_TEST_MARKER\"\nsleep 30\n"
+	if err := os.WriteFile(script, []byte(contents), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	fixturePath, err := filepath.Abs(filepath.Join("testdata", fixture))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	type outcome struct {
+		result RunResult
+		err    error
+	}
+	done := make(chan outcome, 1)
+	go func() {
+		result, runErr := backend(script).Run(ctx, RunSpec{
+			WorkDir: dir, Prompt: "fixture",
+			Env: map[string]string{
+				"WEAVE_TEST_FIXTURE": fixturePath,
+				"WEAVE_TEST_MARKER":  marker,
+			},
+			EngineVersion: "fixture-version",
+		})
+		done <- outcome{result: result, err: runErr}
+	}()
+	deadline := time.NewTimer(5 * time.Second)
+	defer deadline.Stop()
+	ticker := time.NewTicker(5 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if _, statErr := os.Stat(marker); statErr == nil {
+			cancel()
+			finished := <-done
+			return finished.result, finished.err
+		}
+		select {
+		case <-deadline.C:
+			t.Fatal("fixture CLI did not emit its terminal receipt")
+		case <-ticker.C:
+		}
 	}
 }
 

@@ -7,8 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jinyitao123/weave/internal/kernel/runtimes"
 	"github.com/jinyitao123/weave/internal/base/taskqueue"
+	"github.com/jinyitao123/weave/internal/kernel/engine"
+	"github.com/jinyitao123/weave/internal/kernel/runtimes"
 	"github.com/labstack/echo/v4"
 )
 
@@ -334,6 +335,9 @@ func (s *Server) handleRuntimeTaskComplete(c echo.Context) error {
 	if err := c.Bind(&request); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
 	}
+	if err := validateRuntimeEngineExecResult(task, request); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
 	result, err := json.Marshal(request)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "cannot encode task result"})
@@ -348,6 +352,51 @@ func (s *Server) handleRuntimeTaskComplete(c echo.Context) error {
 		return c.JSON(http.StatusConflict, map[string]string{"error": "task lease lost"})
 	}
 	return c.NoContent(http.StatusNoContent)
+}
+
+func validateRuntimeEngineExecResult(task *taskqueue.Task, result runtimes.EngineExecResult) error {
+	if task == nil {
+		return errors.New("task is required")
+	}
+	var payload runtimes.EngineExecRequest
+	if err := json.Unmarshal(task.Payload, &payload); err != nil {
+		return errors.New("task payload is invalid")
+	}
+	if !engine.IsCLIEngine(payload.Engine) {
+		if result.UsageReceipt != nil || len(result.Diagnostics) > 0 || result.Status != "" || result.Error != "" {
+			return errors.New("CLI result fields are forbidden for a non-CLI task")
+		}
+		return nil
+	}
+	if result.Usage != nil || result.RunID != "" || result.StopReason != "" {
+		return errors.New("loom result fields are forbidden for a CLI task")
+	}
+	switch result.Status {
+	case "", "completed", "failed", "timeout":
+	default:
+		return errors.New("engine result status is invalid")
+	}
+	if result.Status == "completed" && result.Error != "" {
+		return errors.New("completed engine result cannot carry an error")
+	}
+	if (result.Status == "failed" || result.Status == "timeout") && strings.TrimSpace(result.Error) == "" {
+		return errors.New("failed engine result requires an error")
+	}
+	if err := engine.ValidateDiagnostics(result.Diagnostics); err != nil {
+		return err
+	}
+	if err := engine.ValidateUsageReceipt(result.UsageReceipt); err != nil {
+		return err
+	}
+	if result.UsageReceipt != nil {
+		if result.UsageReceipt.Scope != engine.UsageScopeInvocation {
+			return errors.New("resumed/session-cumulative CLI usage is not accepted")
+		}
+		if strings.TrimSpace(payload.EngineVersion) == "" || result.UsageReceipt.EngineVersion != payload.EngineVersion {
+			return errors.New("usage receipt engine_version does not match the admitted runtime")
+		}
+	}
+	return nil
 }
 
 func (s *Server) handleRuntimeTaskFail(c echo.Context) error {

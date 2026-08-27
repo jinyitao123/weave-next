@@ -9,13 +9,13 @@ import (
 
 	"github.com/jinyitao123/loom"
 	"github.com/jinyitao123/loom/stdlib"
+	"github.com/jinyitao123/weave/internal/base/execution"
+	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/kernel/compiler"
 	"github.com/jinyitao123/weave/internal/kernel/credentials"
 	"github.com/jinyitao123/weave/internal/kernel/engine"
 	"github.com/jinyitao123/weave/internal/kernel/execenv"
-	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/kernel/freezer"
-	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/kernel/loomruntime"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 	"github.com/jinyitao123/weave/internal/kernel/runtimellm"
@@ -42,7 +42,7 @@ type RuntimeCLIExecutor interface {
 		execution.AgentExecutionStamp,
 		string,
 		[]execenv.Attachment,
-	) (string, error)
+	) (engine.RunResult, error)
 }
 
 type RuntimeCLIEntry struct {
@@ -63,8 +63,14 @@ func NewRuntimeCLIEntry(
 }
 
 func (e *RuntimeCLIEntry) Execute(ctx context.Context, prompt string) (string, error) {
+	result, err := e.ExecuteResult(ctx, prompt)
+	return result.Output, err
+}
+
+// ExecuteResult preserves the CLI receipt for TeamRun node accounting.
+func (e *RuntimeCLIEntry) ExecuteResult(ctx context.Context, prompt string) (engine.RunResult, error) {
 	if e == nil || runtimeNilLike(e.executor) || e.record == nil {
-		return "", runtimeHostUnsupportedError("CLI runtime executor is unavailable")
+		return engine.RunResult{}, runtimeHostUnsupportedError("CLI runtime executor is unavailable")
 	}
 	return e.executor.ExecRemote(
 		ctx,
