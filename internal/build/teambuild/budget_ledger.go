@@ -80,10 +80,17 @@ func (s *Store) RecordBudgetUsageTx(
 	if err := validateBudgetCharge(charge); err != nil {
 		return BudgetCharge{}, err
 	}
+	run, err := s.LockBuildRunTx(ctx, tx, workspaceID, buildRunID)
+	if err != nil {
+		return BudgetCharge{}, fmt.Errorf("record budget usage: %w", err)
+	}
+	if run.Status == StatusPassed {
+		return BudgetCharge{}, ErrBudgetUsageAfterPassed
+	}
 	now := s.clock.Now().UTC()
 
 	var recorded BudgetCharge
-	err := tx.QueryRow(ctx, `
+	err = tx.QueryRow(ctx, `
 		INSERT INTO weave_team_build_run_budget_ledger (
 			workspace_id, build_run_id, round_no, source_kind, source_role,
 			source_run_id, input_tokens, output_tokens, cost_usd, tool_calls,
@@ -213,13 +220,67 @@ func (s *Store) EvaluateBudget(
 			"evaluate budget: workspace_id, build_run_id, and positive round_no are required",
 		)
 	}
-	roundUsage, err := s.GetRoundBudgetUsage(ctx, workspaceID, buildRunID, roundNo)
-	if err != nil {
-		return BudgetDecision{}, fmt.Errorf("evaluate budget: %w", err)
+	return s.evaluateBudget(ctx, s.pool, workspaceID, buildRunID, roundNo, roundBudget, totalBudget)
+}
+
+// EvaluateBudgetTx is the caller-transaction form of the single budget gate.
+// It uses the same ExceededDims-only decision logic as EvaluateBudget.
+func (s *Store) EvaluateBudgetTx(
+	ctx context.Context,
+	tx pgx.Tx,
+	workspaceID, buildRunID string,
+	roundNo int,
+	roundBudget, totalBudget Budget,
+) (BudgetDecision, error) {
+	if tx == nil {
+		return BudgetDecision{}, errors.New("evaluate budget tx: transaction is required")
 	}
-	totalUsage, err := s.GetBudgetUsage(ctx, workspaceID, buildRunID)
+	return s.evaluateBudget(ctx, tx, workspaceID, buildRunID, roundNo, roundBudget, totalBudget)
+}
+
+type budgetRowQuerier interface {
+	QueryRow(context.Context, string, ...any) pgx.Row
+}
+
+func (s *Store) evaluateBudget(
+	ctx context.Context,
+	querier budgetRowQuerier,
+	workspaceID, buildRunID string,
+	roundNo int,
+	roundBudget, totalBudget Budget,
+) (BudgetDecision, error) {
+	if workspaceID == "" || buildRunID == "" || roundNo < 1 {
+		return BudgetDecision{}, errors.New(
+			"evaluate budget: workspace_id, build_run_id, and positive round_no are required",
+		)
+	}
+	var roundUsage BudgetUsage
+	err := querier.QueryRow(ctx, `
+		SELECT COALESCE(SUM(input_tokens),0)::bigint,
+			COALESCE(SUM(output_tokens),0)::bigint,
+			COALESCE(SUM(cost_usd),0),
+			COALESCE(SUM(tool_calls),0)::bigint
+		FROM weave_team_build_run_budget_ledger
+		WHERE workspace_id=$1 AND build_run_id=$2 AND round_no=$3
+	`, workspaceID, buildRunID, roundNo).Scan(
+		&roundUsage.InputTokens, &roundUsage.OutputTokens, &roundUsage.CostUSD, &roundUsage.ToolCalls,
+	)
 	if err != nil {
-		return BudgetDecision{}, fmt.Errorf("evaluate budget: %w", err)
+		return BudgetDecision{}, fmt.Errorf("evaluate budget: round usage: %w", err)
+	}
+	var totalUsage BudgetUsage
+	err = querier.QueryRow(ctx, `
+		SELECT COALESCE(SUM(input_tokens),0)::bigint,
+			COALESCE(SUM(output_tokens),0)::bigint,
+			COALESCE(SUM(cost_usd),0),
+			COALESCE(SUM(tool_calls),0)::bigint
+		FROM weave_team_build_run_budget_ledger
+		WHERE workspace_id=$1 AND build_run_id=$2
+	`, workspaceID, buildRunID).Scan(
+		&totalUsage.InputTokens, &totalUsage.OutputTokens, &totalUsage.CostUSD, &totalUsage.ToolCalls,
+	)
+	if err != nil {
+		return BudgetDecision{}, fmt.Errorf("evaluate budget: total usage: %w", err)
 	}
 	return evaluateBudgetUsage(roundUsage, totalUsage, roundBudget, totalBudget), nil
 }
@@ -484,6 +545,45 @@ func (s *Store) ListUnchargedUsageSources(
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("list uncharged usage sources: %w", err)
+	}
+	return sources, nil
+}
+
+// ListAllUnchargedUsageSourcesTx returns every unsettled source for a run in
+// deterministic lock order. G5 calls it only after locking the BuildRun.
+func (s *Store) ListAllUnchargedUsageSourcesTx(
+	ctx context.Context,
+	tx pgx.Tx,
+	workspaceID, buildRunID string,
+) ([]BuildUsageSource, error) {
+	if tx == nil {
+		return nil, errors.New("list all uncharged usage sources tx: transaction is required")
+	}
+	rows, err := tx.Query(ctx, `
+		SELECT s.workspace_id, s.build_run_id, s.round_no, s.source_kind,
+			s.source_role, s.source_run_id, s.created_at
+		FROM weave_team_build_run_usage_sources s
+		LEFT JOIN weave_team_build_run_budget_ledger l
+		  ON l.workspace_id=s.workspace_id AND l.build_run_id=s.build_run_id
+		 AND l.round_no=s.round_no AND l.source_kind=s.source_kind
+		 AND l.source_run_id=s.source_run_id
+		WHERE s.workspace_id=$1 AND s.build_run_id=$2 AND l.workspace_id IS NULL
+		ORDER BY s.round_no, s.created_at, s.source_role, s.source_run_id
+	`, workspaceID, buildRunID)
+	if err != nil {
+		return nil, fmt.Errorf("list all uncharged usage sources tx: %w", err)
+	}
+	defer rows.Close()
+	sources := make([]BuildUsageSource, 0)
+	for rows.Next() {
+		source, scanErr := scanUsageSource(rows)
+		if scanErr != nil {
+			return nil, fmt.Errorf("list all uncharged usage sources tx: %w", scanErr)
+		}
+		sources = append(sources, source)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list all uncharged usage sources tx: %w", err)
 	}
 	return sources, nil
 }

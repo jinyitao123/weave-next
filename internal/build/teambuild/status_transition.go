@@ -137,35 +137,18 @@ func (s *Store) MarkPublishedTx(
 	if strings.TrimSpace(finalRef.Ref) == "" {
 		return TeamBuildRun{}, errors.New("mark build run published tx: final ref is required")
 	}
-	var status, evaluationTeamID, contractHash string
-	var evaluationOnly bool
-	var baselineRaw []byte
-	err := tx.QueryRow(ctx, `
-		SELECT status, evaluation_only, COALESCE(evaluation_team_id,''),
-			contract_hash, baseline_snapshot_json
-		FROM weave_team_build_runs
-		WHERE workspace_id=$1 AND build_run_id=$2
-		FOR UPDATE
-	`, workspaceID, buildRunID).Scan(
-		&status, &evaluationOnly, &evaluationTeamID, &contractHash, &baselineRaw,
-	)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return TeamBuildRun{}, fmt.Errorf("mark build run published tx: %w", ErrBuildRunNotFound)
-	}
+	locked, err := s.LockBuildRunTx(ctx, tx, workspaceID, buildRunID)
 	if err != nil {
 		return TeamBuildRun{}, fmt.Errorf("mark build run published tx: %w", err)
 	}
-	if status != StatusPublishing {
+	if locked.Status != StatusPublishing {
 		return TeamBuildRun{}, fmt.Errorf("mark build run published tx: %w: run is not publishing", ErrInvalidTransition)
 	}
 	now := s.clock.Now()
-	if evaluationOnly {
-		var baseline BaselineSnapshot
-		if err := json.Unmarshal(baselineRaw, &baseline); err != nil {
-			return TeamBuildRun{}, fmt.Errorf("mark build run published tx: decode baseline: %w", err)
-		}
-		if verifiedBaselineHash == "" || verifiedBaselineHash != baseline.ContentHash ||
-			finalRef.TeamID != evaluationTeamID {
+	if locked.EvaluationOnly {
+		if locked.Baseline == nil || verifiedBaselineHash == "" ||
+			verifiedBaselineHash != locked.Baseline.ContentHash ||
+			finalRef.TeamID != locked.EvaluationTeamID {
 			return TeamBuildRun{}, fmt.Errorf("mark build run published tx: %w: evaluation proof mismatch", ErrEvaluationPublishCAS)
 		}
 		tag, err := tx.Exec(ctx, `
@@ -173,7 +156,7 @@ func (s *Store) MarkPublishedTx(
 			SET evaluation='evaluated', evaluation_build_run_id=$3,
 				evaluation_contract_hash=$4, evaluated_at=$5, updated_at=$5
 			WHERE workspace_id=$1 AND id=$2 AND evaluation='unevaluated'
-		`, workspaceID, evaluationTeamID, buildRunID, contractHash, now)
+		`, workspaceID, locked.EvaluationTeamID, buildRunID, locked.ContractHash, now)
 		if err != nil {
 			return TeamBuildRun{}, fmt.Errorf("mark build run published tx: certify team: %w", err)
 		}
@@ -210,6 +193,49 @@ func (s *Store) MarkPublishedTx(
 			'final publication completed',$4,$5)
 	`, workspaceID, buildRunID, nextSeq, actor, now); err != nil {
 		return TeamBuildRun{}, fmt.Errorf("mark build run published tx ledger: %w", err)
+	}
+	return run, nil
+}
+
+// BlockPublishingBudgetTx performs G5's terminal rejection in the same
+// transaction that holds the BuildRun lock, settles usage, and reads budget.
+func (s *Store) BlockPublishingBudgetTx(
+	ctx context.Context,
+	tx pgx.Tx,
+	workspaceID, buildRunID, actor string,
+) (TeamBuildRun, error) {
+	if tx == nil || strings.TrimSpace(actor) == "" {
+		return TeamBuildRun{}, errors.New("block publishing budget tx: transaction and actor are required")
+	}
+	locked, err := s.LockBuildRunTx(ctx, tx, workspaceID, buildRunID)
+	if err != nil {
+		return TeamBuildRun{}, fmt.Errorf("block publishing budget tx: %w", err)
+	}
+	if locked.Status != StatusPublishing {
+		return TeamBuildRun{}, fmt.Errorf("block publishing budget tx: %w: run is not publishing", ErrInvalidTransition)
+	}
+	now := s.clock.Now()
+	run, err := scanBuildRun(tx.QueryRow(ctx, `
+		UPDATE weave_team_build_runs
+		SET status='blocked', updated_at=$3, decided_at=$3,
+			publish_eligible=false, final_ref_json=NULL
+		WHERE workspace_id=$1 AND build_run_id=$2 AND status='publishing'
+		RETURNING `+buildRunColumns+`
+	`, workspaceID, buildRunID, now))
+	if err != nil {
+		return TeamBuildRun{}, fmt.Errorf("block publishing budget tx: %w", err)
+	}
+	nextSeq, err := nextTransitionSeq(ctx, tx, workspaceID, buildRunID)
+	if err != nil {
+		return TeamBuildRun{}, fmt.Errorf("block publishing budget tx: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO weave_team_build_run_transitions (
+			workspace_id, build_run_id, seq, from_status, to_status,
+			reason, actor, created_at
+		) VALUES ($1,$2,$3,'publishing','blocked','budget_exhausted',$4,$5)
+	`, workspaceID, buildRunID, nextSeq, actor, now); err != nil {
+		return TeamBuildRun{}, fmt.Errorf("block publishing budget tx ledger: %w", err)
 	}
 	return run, nil
 }

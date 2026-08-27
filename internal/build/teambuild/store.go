@@ -79,6 +79,9 @@ var (
 	// source identity: the source already has a ledger row with different
 	// facts. The original row is never modified.
 	ErrBudgetUsageConflict = errors.New("budget usage conflict")
+	// ErrBudgetUsageAfterPassed rejects a late source after publication has
+	// atomically finalized the BuildRun.
+	ErrBudgetUsageAfterPassed = errors.New("budget usage rejected after build run passed")
 	// ErrUsageSourceConflict reports a non-idempotent replay of one usage
 	// source identity: the identity already exists with a different role.
 	// The original association row is never modified.
@@ -168,6 +171,32 @@ const buildRunColumns = `
 	authorization_decision_subject, authorization_decision_reason,
 	final_ref_json, created_at, updated_at, decided_at
 `
+
+// LockBuildRunTx returns the current run while holding its row lock until the
+// caller-owned transaction ends. Budget settlement and publication share this
+// lock so no charge can race a publishing -> passed decision.
+func (s *Store) LockBuildRunTx(
+	ctx context.Context,
+	tx pgx.Tx,
+	workspaceID, buildRunID string,
+) (TeamBuildRun, error) {
+	if tx == nil {
+		return TeamBuildRun{}, errors.New("lock build run tx: transaction is required")
+	}
+	run, err := scanBuildRun(tx.QueryRow(ctx, `
+		SELECT `+buildRunColumns+`
+		FROM weave_team_build_runs
+		WHERE workspace_id=$1 AND build_run_id=$2
+		FOR UPDATE
+	`, workspaceID, buildRunID))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return TeamBuildRun{}, fmt.Errorf("lock build run tx: %w", ErrBuildRunNotFound)
+	}
+	if err != nil {
+		return TeamBuildRun{}, fmt.Errorf("lock build run tx: %w", err)
+	}
+	return run, nil
+}
 
 // CreateRunParams carries the initial drafts of one build task.
 type CreateRunParams struct {

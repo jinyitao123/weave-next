@@ -44,6 +44,11 @@ func (s *Service) Execute(
 		return result, nil
 	}
 	if err := s.publisher.PublishStep(ctx, workspaceID, buildRunID); err != nil {
+		if errors.Is(err, ErrCompilerPublishBudgetExhausted) {
+			result.Status = teambuild.StatusBlocked
+			result.StopReason = "budget_exhausted"
+			return result, nil
+		}
 		if errors.Is(err, teambuild.ErrEvaluationBaselineChanged) ||
 			errors.Is(err, teambuild.ErrEvaluationPublishCAS) {
 			result.Status = teambuild.StatusBlocked

@@ -24,6 +24,17 @@ func TestServiceMapsEvaluationBaselineCASFailureToBlocked(t *testing.T) {
 	}
 }
 
+func TestServiceMapsAtomicG5BudgetRejectionToBlocked(t *testing.T) {
+	service := NewService(
+		fakeRoundDriver{result: Result{WorkspaceID: "workspace-1", BuildRunID: "run-1", Status: teambuild.StatusPublishing}},
+		fakePublisher{err: ErrCompilerPublishBudgetExhausted},
+	)
+	result, err := service.Execute(context.Background(), "workspace-1", "run-1")
+	if err != nil || result.Status != teambuild.StatusBlocked || result.StopReason != "budget_exhausted" {
+		t.Fatalf("result = %#v, err = %v", result, err)
+	}
+}
+
 func TestSemanticRubricEvaluationUsesBuildOwnedExecutor(t *testing.T) {
 	executor := &fakeSemanticJudgeExecutor{result: teambuild.SemanticJudgeResult{
 		AttemptID: "attempt-1", RunID: "run-judge-1",

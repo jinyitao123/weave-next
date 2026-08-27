@@ -1069,6 +1069,15 @@ func (p *ProductionPhases) handleCompilerPublish(ctx context.Context, operation 
 			Code: "publish_candidate_restore_failed", Retryable: true, Cause: err}
 	}
 	if err := p.PublishStep(ctx, operation.WorkspaceID, operation.BuildRunID); err != nil {
+		if errors.Is(err, ErrCompilerPublishBudgetExhausted) {
+			return OperationResult{}, &OperationError{
+				Class: teameval.FailureClassBudgetExhausted,
+				Code:  string(teameval.FailureClassBudgetExhausted),
+				Evidence: json.RawMessage(
+					`{"publication":"blocked","reason":"budget_exhausted"}`,
+				),
+			}
+		}
 		return OperationResult{}, &OperationError{Class: teameval.FailureClassRuntimeInfrastructure,
 			Code: "publish_operation_failed", Retryable: true, Cause: err}
 	}

@@ -723,6 +723,17 @@ func (c *Controller) runCompilerV1(ctx context.Context, run teambuild.TeamBuildR
 		}
 		if execution.Failure != nil {
 			failure := execution.Failure
+			if failure.Class == teameval.FailureClassBudgetExhausted {
+				current, loadErr := c.Store.GetBuildRun(ctx, workspaceID, buildRunID)
+				if loadErr != nil {
+					return Result{}, loadErr
+				}
+				if current.Status == teambuild.StatusBlocked {
+					return Result{WorkspaceID: workspaceID, BuildRunID: buildRunID,
+						Status: current.Status, StopReason: failure.Code,
+						Rounds: execution.RevisionNo}, nil
+				}
+			}
 			if failure.Class == teameval.FailureClassRuntimeInfrastructure && failure.Retryable {
 				current, loadErr := c.Store.GetBuildRun(ctx, workspaceID, buildRunID)
 				if loadErr != nil {

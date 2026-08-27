@@ -175,6 +175,11 @@ func (p *ProductionPhases) llmForWorkspace(
 // Blueprint revision.
 var ErrBlueprintPatchPlannerBudgetExhausted = errors.New("blueprint patch planner budget exhausted")
 
+// ErrCompilerPublishBudgetExhausted reports a G5 rejection that has already
+// committed publishing -> blocked atomically. Callers must preserve the
+// budget failure class instead of wrapping it as retryable infrastructure.
+var ErrCompilerPublishBudgetExhausted = errors.New("compiler publish budget exhausted")
+
 // PlanBlueprintPatch invokes the dedicated read-only patch planner only after
 // the controller has persisted a complete business-quality report. The
 // planner returns one strict document; all application, compilation, CAS and
@@ -1081,6 +1086,9 @@ func (p *ProductionPhases) backfillUsageSource(
 		return fmt.Errorf("begin usage reconcile: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+	if _, err := p.Deps.Build.LockBuildRunTx(ctx, tx, round.WorkspaceID, round.BuildRunID); err != nil {
+		return fmt.Errorf("lock build run for usage reconcile: %w", err)
+	}
 	marker, present, err := loomruntime.NewPGTerminalStateStore().
 		ReadTerminalMarkerForUpdate(ctx, tx, round.WorkspaceID, source.SourceRunID)
 	if err != nil {
@@ -1152,6 +1160,9 @@ func (p *ProductionPhases) accountBuildRunUsage(
 		return fmt.Errorf("begin usage accounting: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+	if _, err := p.Deps.Build.LockBuildRunTx(ctx, tx, round.WorkspaceID, round.BuildRunID); err != nil {
+		return fmt.Errorf("lock build run for usage accounting: %w", err)
+	}
 	marker, present, err := loomruntime.NewPGTerminalStateStore().
 		ReadTerminalMarkerForUpdate(ctx, tx, round.WorkspaceID, runID)
 	if err != nil {
@@ -1285,6 +1296,9 @@ func (p *ProductionPhases) backfillCandidateUsageSource(
 		return fmt.Errorf("begin candidate usage reconcile: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+	if _, err := p.Deps.Build.LockBuildRunTx(ctx, tx, round.WorkspaceID, round.BuildRunID); err != nil {
+		return fmt.Errorf("lock build run for candidate usage reconcile: %w", err)
+	}
 	marker, present, err := loomruntime.NewPGTerminalStateStore().
 		ReadTerminalMarkerForUpdate(ctx, tx, round.WorkspaceID, source.SourceRunID)
 	if err != nil {
@@ -1975,21 +1989,18 @@ func (p *ProductionPhases) PublishStep(ctx context.Context, workspaceID, buildRu
 		return fmt.Errorf("publish step: load build run: %w", err)
 	}
 	compilerV1 := run.EffectiveExecutionStrategy() == teambuild.ExecutionStrategyCompilerV1
-	var candidateRef string
-	if !compilerV1 {
-		rounds, err := p.Deps.Build.ListRounds(ctx, workspaceID, buildRunID)
-		if err != nil {
-			return fmt.Errorf("publish step: list rounds: %w", err)
-		}
-		if len(rounds) == 0 {
-			return errors.New("publish step: build run has no recorded rounds")
-		}
-		last := rounds[len(rounds)-1]
-		if last.Conclusion != teambuild.ConclusionPass {
-			return fmt.Errorf("publish step: last round conclusion is %q, want pass", last.Conclusion)
-		}
-		candidateRef = last.CandidateRef
+	rounds, err := p.Deps.Build.ListRounds(ctx, workspaceID, buildRunID)
+	if err != nil {
+		return fmt.Errorf("publish step: list rounds: %w", err)
 	}
+	if len(rounds) == 0 {
+		return errors.New("publish step: build run has no recorded rounds")
+	}
+	lastRound := rounds[len(rounds)-1]
+	if lastRound.Conclusion != teambuild.ConclusionPass {
+		return fmt.Errorf("publish step: last round conclusion is %q, want pass", lastRound.Conclusion)
+	}
+	candidateRef := lastRound.CandidateRef
 
 	p.mu.Lock()
 	candidate := p.lastCandidate
@@ -2021,6 +2032,34 @@ func (p *ProductionPhases) PublishStep(ctx context.Context, workspaceID, buildRu
 		return fmt.Errorf("publish step: begin atomic publication: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+	lockedRun, err := p.Deps.Build.LockBuildRunTx(ctx, tx, workspaceID, buildRunID)
+	if err != nil {
+		return fmt.Errorf("publish step: lock build run: %w", err)
+	}
+	if lockedRun.Status != teambuild.StatusPublishing {
+		return fmt.Errorf("publish step: locked run status is %q, want publishing", lockedRun.Status)
+	}
+	if err := p.settlePublishUsageTx(ctx, tx, lockedRun); err != nil {
+		return fmt.Errorf("publish step: settle usage: %w", err)
+	}
+	decision, err := p.Deps.Build.EvaluateBudgetTx(
+		ctx, tx, workspaceID, buildRunID, lastRound.RoundNo,
+		lockedRun.RoundBudget, lockedRun.TotalBudget,
+	)
+	if err != nil {
+		return fmt.Errorf("publish step: G5 budget gate: %w", err)
+	}
+	if len(decision.ExceededDims) > 0 {
+		if _, err := p.Deps.Build.BlockPublishingBudgetTx(
+			ctx, tx, workspaceID, buildRunID, DefaultActor,
+		); err != nil {
+			return fmt.Errorf("publish step: G5 atomic block: %w", err)
+		}
+		if err := tx.Commit(ctx); err != nil {
+			return fmt.Errorf("publish step: commit G5 atomic block: %w", err)
+		}
+		return ErrCompilerPublishBudgetExhausted
+	}
 	verifiedBaselineHash, err := p.Deps.Build.VerifyEvaluationBaselineTx(ctx, tx, workspaceID, buildRunID)
 	if err != nil {
 		_ = tx.Rollback(ctx)
@@ -2045,6 +2084,48 @@ func (p *ProductionPhases) PublishStep(ctx context.Context, workspaceID, buildRu
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("publish step: commit atomic publication: %w", err)
+	}
+	return nil
+}
+
+func (p *ProductionPhases) settlePublishUsageTx(
+	ctx context.Context,
+	tx pgx.Tx,
+	run teambuild.TeamBuildRun,
+) error {
+	sources, err := p.Deps.Build.ListAllUnchargedUsageSourcesTx(
+		ctx, tx, run.WorkspaceID, run.BuildRunID,
+	)
+	if err != nil {
+		return err
+	}
+	for _, source := range sources {
+		marker, present, err := loomruntime.NewPGTerminalStateStore().
+			ReadTerminalMarkerForUpdate(ctx, tx, run.WorkspaceID, source.SourceRunID)
+		if err != nil {
+			return err
+		}
+		if !present || marker.Phase != loomruntime.TerminalMarkerPhaseFinal {
+			return fmt.Errorf("%w: source %s/%s", ErrUsageSourcePending, source.SourceKind, source.SourceRunID)
+		}
+		round := RoundContext{
+			WorkspaceID: run.WorkspaceID, BuildRunID: run.BuildRunID,
+			RoundNo: source.RoundNo, Run: run,
+		}
+		var charge teambuild.BudgetCharge
+		switch source.SourceKind {
+		case teambuild.UsageSourceKindBuildAgent:
+			charge = usageChargeFromMarker(round, source.SourceRole, source.SourceRunID, marker)
+		case teambuild.UsageSourceKindCandidateRuntime:
+			charge = usageChargeFromCandidateMarker(round, source.SourceRole, source.SourceRunID, marker)
+		default:
+			return fmt.Errorf("unsupported usage source kind %q", source.SourceKind)
+		}
+		if _, err := p.Deps.Build.RecordBudgetUsageTx(
+			ctx, tx, run.WorkspaceID, run.BuildRunID, charge,
+		); err != nil {
+			return err
+		}
 	}
 	return nil
 }
