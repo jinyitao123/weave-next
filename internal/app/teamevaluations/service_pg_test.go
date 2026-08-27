@@ -189,6 +189,48 @@ func TestPostTemplateEvaluationPGAtomicCertification(t *testing.T) {
 	}
 }
 
+func TestPostTemplateEvaluationPGBudgetReauthorization(t *testing.T) {
+	fixture := newEvaluationPGFixture(t)
+	outcome := fixture.start(t, fixture.contract, uuid.NewString())
+	run, err := fixture.builds.TransitionStatus(
+		fixture.ctx, fixture.workspaceID, outcome.BuildRunID,
+		teambuild.StatusAuthorized, teambuild.StatusRoundRunning,
+		"worker", "candidate started",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixture.builds.RecordBudgetUsage(fixture.ctx, fixture.workspaceID, run.BuildRunID, teambuild.BudgetCharge{
+		WorkspaceID: fixture.workspaceID, BuildRunID: run.BuildRunID, RoundNo: 1,
+		SourceKind:  teambuild.UsageSourceKindCandidateRuntime,
+		SourceRole:  teambuild.SourceRoleFixedWorkflowRoot,
+		SourceRunID: "evaluation-candidate", CostUSD: 5.01,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixture.builds.TransitionStatus(
+		fixture.ctx, fixture.workspaceID, run.BuildRunID,
+		teambuild.StatusRoundRunning, teambuild.StatusBlocked,
+		"worker", teambuild.BudgetExhaustedReason,
+	); err != nil {
+		t.Fatal(err)
+	}
+	restored, receipt, err := fixture.builds.ReauthorizeBudgetBlockedRun(
+		fixture.ctx, fixture.workspaceID, run.BuildRunID, "admin-2",
+		teambuild.Budget{MaxCostUSD: 6}, teambuild.Budget{MaxCostUSD: 6},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if restored.Status != teambuild.StatusAuthorized || !restored.EvaluationOnly ||
+		restored.EvaluationTeamID != fixture.team.ID || restored.BriefHash != run.BriefHash {
+		t.Fatalf("restored evaluation run = %#v", restored)
+	}
+	if !receipt.Valid() || receipt.RoundBudget().MaxCostUSD != 6 || receipt.TotalBudget().MaxCostUSD != 6 {
+		t.Fatalf("restored evaluation receipt = %#v", receipt)
+	}
+}
+
 type evaluationPGFixture struct {
 	ctx         context.Context
 	pool        *pgxpool.Pool

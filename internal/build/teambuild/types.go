@@ -39,6 +39,8 @@ const (
 	StatusBlocked      = "blocked"
 	StatusCancelled    = "cancelled"
 
+	BudgetExhaustedReason = "budget_exhausted"
+
 	RollbackNone       = "none"
 	RollbackRolledBack = "rolled_back"
 	RollbackFailed     = "rollback_failed"

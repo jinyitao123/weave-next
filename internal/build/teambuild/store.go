@@ -82,6 +82,12 @@ var (
 	// ErrBudgetUsageAfterPassed rejects a late source after publication has
 	// atomically finalized the BuildRun.
 	ErrBudgetUsageAfterPassed = errors.New("budget usage rejected after build run passed")
+	// ErrBudgetReauthorizationRequired rejects recovery for a run that was not
+	// blocked by the structured budget_exhausted terminal reason.
+	ErrBudgetReauthorizationRequired = errors.New("build run is not blocked by budget exhaustion")
+	// ErrBudgetReauthorizationInvalid rejects a budget recovery that lowers a
+	// bound, does not increase any bound, or still leaves recorded usage over.
+	ErrBudgetReauthorizationInvalid = errors.New("budget reauthorization is invalid")
 	// ErrUsageSourceConflict reports a non-idempotent replay of one usage
 	// source identity: the identity already exists with a different role.
 	// The original association row is never modified.

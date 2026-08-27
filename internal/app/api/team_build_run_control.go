@@ -235,6 +235,8 @@ type buildRunProgressChangeSet struct {
 type authorizeBuildRunRequest struct {
 	Authority     string                            `json:"authority,omitempty"`
 	RevisionToken *teambuild.BlueprintRevisionToken `json:"revision_token,omitempty"`
+	RoundBudget   *teambuild.Budget                 `json:"round_budget,omitempty"`
+	TotalBudget   *teambuild.Budget                 `json:"total_budget,omitempty"`
 }
 
 type submitBuildRunRequest = authorizeBuildRunRequest
@@ -416,6 +418,31 @@ func (s *Server) handleAuthorizeBuildRun(c echo.Context) error {
 	if err := decodeOptionalAuthorizeBuildRunBody(c, &request); err != nil {
 		return workflowSchemaError(c)
 	}
+	existing, err := s.TeamBuild.GetBuildRun(c.Request().Context(), getTenant(c), c.Param("id"))
+	if err != nil {
+		return mapTeamBuildRunControlError(c, err)
+	}
+	if existing.Status == teambuild.StatusBlocked {
+		if request.RoundBudget == nil || request.TotalBudget == nil ||
+			strings.TrimSpace(request.Authority) != "" || request.RevisionToken != nil {
+			return workflowError(c, http.StatusUnprocessableEntity,
+				"budget_reauthorization_invalid",
+				"budget recovery requires round_budget and total_budget only")
+		}
+		run, _, err := s.TeamBuild.ReauthorizeBudgetBlockedRun(
+			c.Request().Context(), getTenant(c), existing.BuildRunID, getUserID(c),
+			*request.RoundBudget, *request.TotalBudget,
+		)
+		if err != nil {
+			return mapTeamBuildRunControlError(c, err)
+		}
+		return c.JSON(http.StatusOK, teamBuildRunView(run))
+	}
+	if request.RoundBudget != nil || request.TotalBudget != nil {
+		return workflowError(c, http.StatusUnprocessableEntity,
+			"budget_reauthorization_invalid",
+			"budget overrides are accepted only for a budget-blocked run")
+	}
 	s.TeamBuild.SetBaselineSources(s.OrgStore, s.Registry, s.Workflow)
 	run, _, err := s.TeamBuild.AuthorizeBuildRun(
 		c.Request().Context(),
@@ -444,10 +471,29 @@ func (s *Server) handleSubmitBuildRun(c echo.Context) error {
 		return mapTeamBuildRunControlError(c, err)
 	}
 	if run.Status == teambuild.StatusPlanning {
-		_, _, err = s.TeamBuild.AuthorizeBuildRun(c.Request().Context(), getTenant(c), run.BuildRunID, getUserID(c), nil, teambuild.AuthorizeOptions{
+		if request.RoundBudget != nil || request.TotalBudget != nil {
+			return workflowError(c, http.StatusUnprocessableEntity,
+				"budget_reauthorization_invalid",
+				"budget overrides are accepted only for a budget-blocked run")
+		}
+		run, _, err = s.TeamBuild.AuthorizeBuildRun(c.Request().Context(), getTenant(c), run.BuildRunID, getUserID(c), nil, teambuild.AuthorizeOptions{
 			Authority:     strings.TrimSpace(request.Authority),
 			RevisionToken: request.RevisionToken,
 		})
+		if err != nil {
+			return mapTeamBuildRunControlError(c, err)
+		}
+	} else if run.Status == teambuild.StatusBlocked {
+		if request.RoundBudget == nil || request.TotalBudget == nil ||
+			strings.TrimSpace(request.Authority) != "" || request.RevisionToken != nil {
+			return workflowError(c, http.StatusUnprocessableEntity,
+				"budget_reauthorization_invalid",
+				"budget recovery requires round_budget and total_budget only")
+		}
+		run, _, err = s.TeamBuild.ReauthorizeBudgetBlockedRun(
+			c.Request().Context(), getTenant(c), run.BuildRunID, getUserID(c),
+			*request.RoundBudget, *request.TotalBudget,
+		)
 		if err != nil {
 			return mapTeamBuildRunControlError(c, err)
 		}
@@ -461,7 +507,7 @@ func (s *Server) handleSubmitBuildRun(c echo.Context) error {
 		BuildRunID:  submission.BuildRunID,
 		RunStatus:   run.Status,
 		QueueStatus: submission.Status,
-		Authority:   strings.TrimSpace(request.Authority),
+		Authority:   run.Authorization.Authority,
 	})
 }
 
@@ -1059,6 +1105,21 @@ func mapTeamBuildRunControlError(c echo.Context, err error) error {
 			http.StatusConflict,
 			"build_run_not_planning",
 			"build run is not in planning",
+		)
+	case errors.Is(err, teambuild.ErrBudgetReauthorizationRequired):
+		return workflowError(
+			c,
+			http.StatusConflict,
+			"budget_reauthorization_conflict",
+			"build run is not recoverable from budget exhaustion",
+		)
+	case errors.Is(err, teambuild.ErrBudgetReauthorizationInvalid),
+		errors.Is(err, teambuild.ErrReceiptExpired):
+		return workflowError(
+			c,
+			http.StatusUnprocessableEntity,
+			"budget_reauthorization_invalid",
+			"increased budgets must cover recorded usage and preserve every existing bound",
 		)
 	case errors.Is(err, teambuild.ErrCompilerRevisionRequired):
 		return workflowError(

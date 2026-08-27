@@ -6,6 +6,7 @@ import (
 	"errors"
 	"reflect"
 	"testing"
+	"time"
 )
 
 func TestEvaluateBudgetUsageUsesOnlyStrictExceededDimensions(t *testing.T) {
@@ -84,6 +85,160 @@ func TestG5BudgetRejectionAndLateChargeRealPG(t *testing.T) {
 	if !errors.Is(err, ErrBudgetUsageAfterPassed) {
 		t.Fatalf("late charge error = %v, want ErrBudgetUsageAfterPassed", err)
 	}
+}
+
+func TestBudgetReauthorizationResetsBudgetFailureRealPG(t *testing.T) {
+	ctx := context.Background()
+	store := newAuthorizeTestStore(t)
+	planning := createAuthorizeTestRun(t, ctx, store, "build-budget-recovery", ModeCreate)
+	authorized := authorizeBudgetTestRun(t, ctx, store, planning)
+	if _, err := store.TransitionStatus(
+		ctx, authorized.WorkspaceID, authorized.BuildRunID,
+		StatusAuthorized, StatusRoundRunning, "worker", "candidate started",
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	step, err := store.ClaimReadyOperationStep(
+		ctx, authorized.WorkspaceID, authorized.BuildRunID, 1, "worker", time.Minute,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.RetryOperationStep(
+		ctx, step.WorkspaceID, step.BuildRunID, step.RevisionNo,
+		step.OperationID, "worker", step.LeaseEpoch,
+		BudgetExhaustedReason, BudgetExhaustedReason, json.RawMessage(`{"gate":"G1"}`),
+	); err != nil {
+		t.Fatalf("retry budget failure class: %v", err)
+	}
+	step, err = store.ClaimReadyOperationStep(
+		ctx, authorized.WorkspaceID, authorized.BuildRunID, 1, "worker", time.Minute,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.FailOperationStep(
+		ctx, step.WorkspaceID, step.BuildRunID, step.RevisionNo,
+		step.OperationID, "worker", step.LeaseEpoch,
+		BudgetExhaustedReason, BudgetExhaustedReason, json.RawMessage(`{"gate":"G1"}`),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.RecordBudgetUsage(ctx, authorized.WorkspaceID, authorized.BuildRunID, BudgetCharge{
+		WorkspaceID: authorized.WorkspaceID, BuildRunID: authorized.BuildRunID, RoundNo: 1,
+		SourceKind: UsageSourceKindBuildAgent, SourceRole: SourceRoleFixedWorkflowRoot,
+		SourceRunID: "build-agent-over", InputTokens: 1001,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.TransitionStatus(
+		ctx, authorized.WorkspaceID, authorized.BuildRunID,
+		StatusRoundRunning, StatusBlocked, "worker", BudgetExhaustedReason,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	newRound := Budget{MaxInputTokens: 2000}
+	newTotal := Budget{MaxInputTokens: 6000}
+	restored, receipt, err := store.ReauthorizeBudgetBlockedRun(
+		ctx, authorized.WorkspaceID, authorized.BuildRunID, "admin-2", newRound, newTotal,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if restored.Status != StatusAuthorized || restored.BriefHash != planning.BriefHash ||
+		restored.Brief.RoundBudget != planning.Brief.RoundBudget {
+		t.Fatalf("restored run changed frozen brief identity: %#v", restored)
+	}
+	if !receipt.Valid() || receipt.RoundBudget() != newRound || receipt.TotalBudget() != newTotal ||
+		receipt.ConfirmedBy() != "admin-2" {
+		t.Fatalf("reauthorization receipt = %#v", receipt)
+	}
+	steps, err := store.ListOperationSteps(ctx, restored.WorkspaceID, restored.BuildRunID, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(steps) != 2 || steps[0].Status != OperationStatusPending ||
+		steps[0].ErrorClass != "" || steps[1].Status != OperationStatusPending {
+		t.Fatalf("restored steps = %#v", steps)
+	}
+	decision, err := store.EvaluateBudget(
+		ctx, restored.WorkspaceID, restored.BuildRunID, 1,
+		restored.RoundBudget, restored.TotalBudget,
+	)
+	if err != nil || len(decision.ExceededDims) != 0 {
+		t.Fatalf("restored budget decision = %#v, err = %v", decision, err)
+	}
+}
+
+func TestBudgetOperationRecoveryGuardRejectsOtherTerminalsRealPG(t *testing.T) {
+	ctx := context.Background()
+	store := newAuthorizeTestStore(t)
+
+	compileFailed := createAuthorizeTestRun(t, ctx, store, "build-compile-failed", ModeCreate)
+	compileFailed = authorizeBudgetTestRun(t, ctx, store, compileFailed)
+	if _, err := store.TransitionStatus(
+		ctx, compileFailed.WorkspaceID, compileFailed.BuildRunID,
+		StatusAuthorized, StatusRoundRunning, "worker", "operation started",
+	); err != nil {
+		t.Fatal(err)
+	}
+	failedStep, err := store.ClaimReadyOperationStep(
+		ctx, compileFailed.WorkspaceID, compileFailed.BuildRunID, 1, "worker", time.Minute,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	failedStep, err = store.FailOperationStep(
+		ctx, failedStep.WorkspaceID, failedStep.BuildRunID, failedStep.RevisionNo,
+		failedStep.OperationID, "worker", failedStep.LeaseEpoch,
+		"compile_failure", "compile_failed", json.RawMessage(`{"compile":false}`),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := forceBudgetTestStepPending(ctx, store, failedStep); err == nil {
+		t.Fatal("compile_failure terminal step reopened; want database rejection")
+	}
+
+	succeeded := createAuthorizeTestRun(t, ctx, store, "build-succeeded", ModeCreate)
+	succeeded = authorizeBudgetTestRun(t, ctx, store, succeeded)
+	if _, err := store.TransitionStatus(
+		ctx, succeeded.WorkspaceID, succeeded.BuildRunID,
+		StatusAuthorized, StatusRoundRunning, "worker", "operation started",
+	); err != nil {
+		t.Fatal(err)
+	}
+	succeededStep, err := store.ClaimReadyOperationStep(
+		ctx, succeeded.WorkspaceID, succeeded.BuildRunID, 1, "worker", time.Minute,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	succeededStep, err = store.SucceedOperationStep(
+		ctx, succeededStep.WorkspaceID, succeededStep.BuildRunID, succeededStep.RevisionNo,
+		succeededStep.OperationID, "worker", succeededStep.LeaseEpoch,
+		"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		json.RawMessage(`{"compiled":true}`),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := forceBudgetTestStepPending(ctx, store, succeededStep); err == nil {
+		t.Fatal("succeeded terminal step reopened; want database rejection")
+	}
+}
+
+func forceBudgetTestStepPending(ctx context.Context, store *Store, step OperationStep) error {
+	_, err := store.pool.Exec(ctx, `
+		UPDATE weave_team_build_operation_steps
+		SET status='pending', lease_owner=NULL, lease_until=NULL,
+			error_class=NULL, error_code=NULL, evidence_json=NULL,
+			output_hash=NULL, completed_at=NULL, updated_at=updated_at
+		WHERE workspace_id=$1 AND build_run_id=$2 AND revision_no=$3 AND operation_id=$4
+	`, step.WorkspaceID, step.BuildRunID, step.RevisionNo, step.OperationID)
+	return err
 }
 
 func moveBudgetTestRunToPublishing(t *testing.T, ctx context.Context, store *Store, run TeamBuildRun) {

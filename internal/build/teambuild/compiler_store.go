@@ -1528,7 +1528,8 @@ func (s *Store) RetryOperationStep(
 	operationID, workerID string, leaseEpoch int64,
 	errorClass, errorCode string, evidenceJSON json.RawMessage,
 ) (OperationStep, error) {
-	if errorClass != "compile_failure" && errorClass != "runtime_infrastructure_failure" {
+	if errorClass != "compile_failure" && errorClass != "runtime_infrastructure_failure" &&
+		errorClass != "budget_exhausted" {
 		return OperationStep{}, errors.New("retry compiler operation step: failure class is not retryable")
 	}
 	if strings.TrimSpace(errorCode) == "" {
