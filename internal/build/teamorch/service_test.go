@@ -25,13 +25,46 @@ func TestServiceMapsEvaluationBaselineCASFailureToBlocked(t *testing.T) {
 }
 
 func TestServiceMapsAtomicG5BudgetRejectionToBlocked(t *testing.T) {
+	publisher := &countingPublisher{err: ErrCompilerPublishBudgetExhausted}
 	service := NewService(
 		fakeRoundDriver{result: Result{WorkspaceID: "workspace-1", BuildRunID: "run-1", Status: teambuild.StatusPublishing}},
-		fakePublisher{err: ErrCompilerPublishBudgetExhausted},
+		publisher,
 	)
 	result, err := service.Execute(context.Background(), "workspace-1", "run-1")
 	if err != nil || result.Status != teambuild.StatusBlocked || result.StopReason != "budget_exhausted" {
 		t.Fatalf("result = %#v, err = %v", result, err)
+	}
+	if publisher.calls != 1 {
+		t.Fatalf("G5 publisher calls = %d, want one terminal attempt", publisher.calls)
+	}
+}
+
+func TestAllowsUnmeasuredUsageRequiresExplicitReasonedWaiver(t *testing.T) {
+	if allowsUnmeasuredUsage(teambuild.BuildBrief{}) {
+		t.Fatal("missing waiver allowed incomplete usage")
+	}
+	if allowsUnmeasuredUsage(teambuild.BuildBrief{UnmeasuredUsageWaiver: &teambuild.UnmeasuredUsageWaiver{Accepted: true}}) {
+		t.Fatal("reasonless waiver allowed incomplete usage")
+	}
+	if allowsUnmeasuredUsage(teambuild.BuildBrief{UnmeasuredUsageWaiver: &teambuild.UnmeasuredUsageWaiver{Reason: "CLI receipt unavailable"}}) {
+		t.Fatal("unaccepted waiver allowed incomplete usage")
+	}
+	if !allowsUnmeasuredUsage(teambuild.BuildBrief{UnmeasuredUsageWaiver: &teambuild.UnmeasuredUsageWaiver{
+		Accepted: true, Reason: "CLI receipt unavailable during Phase 1",
+	}}) {
+		t.Fatal("explicit reasoned waiver did not allow incomplete usage")
+	}
+	incomplete := false
+	if !blocksIncompleteUsage(teambuild.EvaluationReport{UsageComplete: &incomplete}, teambuild.BuildBrief{}) {
+		t.Fatal("incomplete usage without waiver did not block")
+	}
+	if blocksIncompleteUsage(
+		teambuild.EvaluationReport{UsageComplete: &incomplete},
+		teambuild.BuildBrief{UnmeasuredUsageWaiver: &teambuild.UnmeasuredUsageWaiver{
+			Accepted: true, Reason: "CLI receipt unavailable during Phase 1",
+		}},
+	) {
+		t.Fatal("explicit waiver did not release incomplete-usage policy")
 	}
 }
 
@@ -82,6 +115,16 @@ func (f fakeRoundDriver) Run(context.Context, string, string) (Result, error) {
 type fakePublisher struct{ err error }
 
 func (f fakePublisher) PublishStep(context.Context, string, string) error { return f.err }
+
+type countingPublisher struct {
+	calls int
+	err   error
+}
+
+func (p *countingPublisher) PublishStep(context.Context, string, string) error {
+	p.calls++
+	return p.err
+}
 
 type fakeSemanticJudgeExecutor struct {
 	called  bool

@@ -12,20 +12,21 @@ import (
 // only the Store can mint a valid credential; server-side validation always
 // re-checks the bound facts against the persisted TeamBuildRun.
 type BuildAuthorizationReceipt struct {
-	workspaceID     string
-	buildRunID      string
-	contractHash    string
-	mode            string
-	authority       string
-	revisionToken   *BlueprintRevisionToken
-	decisionSubject string
-	decisionReason  string
-	assetScope      AssetScope
-	roundBudget     Budget
-	totalBudget     Budget
-	expiresAt       time.Time
-	confirmedBy     string
-	createdAt       time.Time
+	workspaceID           string
+	buildRunID            string
+	contractHash          string
+	mode                  string
+	authority             string
+	revisionToken         *BlueprintRevisionToken
+	decisionSubject       string
+	decisionReason        string
+	assetScope            AssetScope
+	roundBudget           Budget
+	totalBudget           Budget
+	unmeasuredUsageWaiver *UnmeasuredUsageWaiver
+	expiresAt             time.Time
+	confirmedBy           string
+	createdAt             time.Time
 }
 
 // Valid reports whether the receipt carries complete minted material.
@@ -34,6 +35,10 @@ func (r BuildAuthorizationReceipt) Valid() bool {
 		(r.mode == ModeCreate || r.mode == ModeOptimize) &&
 		r.confirmedBy != "" && !r.expiresAt.IsZero() && !r.createdAt.IsZero()
 	if !valid {
+		return false
+	}
+	if waiver := r.unmeasuredUsageWaiver; waiver != nil &&
+		(!waiver.Accepted || strings.TrimSpace(waiver.Reason) == "") {
 		return false
 	}
 	if r.authority == AuthorizationTemplateAuto {
@@ -85,6 +90,12 @@ func (r BuildAuthorizationReceipt) RoundBudget() Budget { return r.roundBudget }
 
 // TotalBudget exposes the total-task budget bound to this receipt.
 func (r BuildAuthorizationReceipt) TotalBudget() Budget { return r.totalBudget }
+
+// UnmeasuredUsageWaiver exposes the temporary waiver bound to this receipt.
+// Nil means an incomplete-usage report must block publication.
+func (r BuildAuthorizationReceipt) UnmeasuredUsageWaiver() *UnmeasuredUsageWaiver {
+	return cloneUnmeasuredUsageWaiver(r.unmeasuredUsageWaiver)
+}
 
 // ExpiresAt exposes the expiry bound to this receipt.
 func (r BuildAuthorizationReceipt) ExpiresAt() time.Time { return r.expiresAt }
@@ -162,20 +173,21 @@ func (s *Store) ReissueReceipt(
 		)
 	}
 	return BuildAuthorizationReceipt{
-		workspaceID:     workspaceID,
-		buildRunID:      buildRunID,
-		contractHash:    run.ContractHash,
-		mode:            run.Mode,
-		authority:       run.Authorization.Authority,
-		revisionToken:   cloneBlueprintRevisionToken(run.Authorization.RevisionToken),
-		decisionSubject: run.Authorization.DecisionSubject,
-		decisionReason:  run.Authorization.DecisionReason,
-		assetScope:      cloneAssetScope(run.AssetScope),
-		roundBudget:     run.RoundBudget,
-		totalBudget:     run.TotalBudget,
-		expiresAt:       run.ExpiresAt,
-		confirmedBy:     run.ConfirmedBy,
-		createdAt:       run.CreatedAt,
+		workspaceID:           workspaceID,
+		buildRunID:            buildRunID,
+		contractHash:          run.ContractHash,
+		mode:                  run.Mode,
+		authority:             run.Authorization.Authority,
+		revisionToken:         cloneBlueprintRevisionToken(run.Authorization.RevisionToken),
+		decisionSubject:       run.Authorization.DecisionSubject,
+		decisionReason:        run.Authorization.DecisionReason,
+		assetScope:            cloneAssetScope(run.AssetScope),
+		roundBudget:           run.RoundBudget,
+		totalBudget:           run.TotalBudget,
+		unmeasuredUsageWaiver: cloneUnmeasuredUsageWaiver(run.Brief.UnmeasuredUsageWaiver),
+		expiresAt:             run.ExpiresAt,
+		confirmedBy:           run.ConfirmedBy,
+		createdAt:             run.CreatedAt,
 	}, nil
 }
 
@@ -227,6 +239,11 @@ func (s *Store) ValidateReceipt(
 	if receipt.RoundBudget() != run.RoundBudget || receipt.TotalBudget() != run.TotalBudget {
 		return fmt.Errorf("validate build receipt: %w", ErrReceiptBudgetMismatch)
 	}
+	if !sameUnmeasuredUsageWaiver(
+		receipt.UnmeasuredUsageWaiver(), run.Brief.UnmeasuredUsageWaiver,
+	) {
+		return fmt.Errorf("validate build receipt: %w", ErrReceiptBriefHashMismatch)
+	}
 	assetRef = ResolveAssetScopeRef(run, assetRef)
 	if !run.AssetScope.Contains(assetRef) {
 		return fmt.Errorf("validate build receipt: %w", ErrReceiptAssetOutOfScope)
@@ -235,6 +252,21 @@ func (s *Store) ValidateReceipt(
 }
 
 func sameBlueprintRevisionToken(left, right *BlueprintRevisionToken) bool {
+	if left == nil || right == nil {
+		return left == nil && right == nil
+	}
+	return *left == *right
+}
+
+func cloneUnmeasuredUsageWaiver(value *UnmeasuredUsageWaiver) *UnmeasuredUsageWaiver {
+	if value == nil {
+		return nil
+	}
+	cloned := *value
+	return &cloned
+}
+
+func sameUnmeasuredUsageWaiver(left, right *UnmeasuredUsageWaiver) bool {
 	if left == nil || right == nil {
 		return left == nil && right == nil
 	}

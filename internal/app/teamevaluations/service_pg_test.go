@@ -231,6 +231,45 @@ func TestPostTemplateEvaluationPGBudgetReauthorization(t *testing.T) {
 	}
 }
 
+func TestPostTemplateEvaluationPGFullBudgetAndUsageWaiverReceipt(t *testing.T) {
+	fixture := newEvaluationPGFixture(t)
+	waiver := &teambuild.UnmeasuredUsageWaiver{
+		Accepted: true, Reason: "CLI usage receipts are unavailable during Phase 1",
+	}
+	outcome, err := fixture.service.Evaluate(
+		fixture.ctx, fixture.workspaceID, "admin-1", fixture.team.ID,
+		Request{
+			Contract: fixture.contract, IdempotencyKey: uuid.NewString(),
+			Budget: Budget{
+				MaxInputTokens: 1000, MaxOutputTokens: 500,
+				MaxToolCalls: 20, MaxCostUSD: 5,
+			},
+			UnmeasuredUsageWaiver: waiver,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := fixture.builds.GetBuildRun(fixture.ctx, fixture.workspaceID, outcome.BuildRunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantBudget := teambuild.Budget{
+		MaxInputTokens: 1000, MaxOutputTokens: 500, MaxToolCalls: 20, MaxCostUSD: 5,
+	}
+	if run.RoundBudget != wantBudget || run.TotalBudget != wantBudget ||
+		run.Brief.UnmeasuredUsageWaiver == nil || *run.Brief.UnmeasuredUsageWaiver != *waiver {
+		t.Fatalf("evaluation budget/waiver = %#v", run)
+	}
+	receipt, err := fixture.builds.ReissueReceipt(fixture.ctx, fixture.workspaceID, outcome.BuildRunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if receipt.UnmeasuredUsageWaiver() == nil || *receipt.UnmeasuredUsageWaiver() != *waiver {
+		t.Fatalf("authorization receipt waiver = %#v", receipt.UnmeasuredUsageWaiver())
+	}
+}
+
 type evaluationPGFixture struct {
 	ctx         context.Context
 	pool        *pgxpool.Pool

@@ -2000,6 +2000,13 @@ func (p *ProductionPhases) PublishStep(ctx context.Context, workspaceID, buildRu
 	if lastRound.Conclusion != teambuild.ConclusionPass {
 		return fmt.Errorf("publish step: last round conclusion is %q, want pass", lastRound.Conclusion)
 	}
+	roundReport, err := p.Deps.Build.GetRoundReport(ctx, workspaceID, buildRunID, lastRound.RoundNo)
+	if err != nil {
+		return fmt.Errorf("publish step: load final round report: %w", err)
+	}
+	if lastRound.ReportRef == "" || roundReport.ReportHash != lastRound.ReportRef {
+		return errors.New("publish step: final round report binding is invalid")
+	}
 	candidateRef := lastRound.CandidateRef
 
 	p.mu.Lock()
@@ -2060,6 +2067,17 @@ func (p *ProductionPhases) PublishStep(ctx context.Context, workspaceID, buildRu
 		}
 		return ErrCompilerPublishBudgetExhausted
 	}
+	if blocksIncompleteUsage(roundReport.Report, lockedRun.Brief) {
+		if _, err := p.Deps.Build.BlockPublishingBudgetTx(
+			ctx, tx, workspaceID, buildRunID, DefaultActor,
+		); err != nil {
+			return fmt.Errorf("publish step: incomplete-usage atomic block: %w", err)
+		}
+		if err := tx.Commit(ctx); err != nil {
+			return fmt.Errorf("publish step: commit incomplete-usage atomic block: %w", err)
+		}
+		return ErrCompilerPublishBudgetExhausted
+	}
 	verifiedBaselineHash, err := p.Deps.Build.VerifyEvaluationBaselineTx(ctx, tx, workspaceID, buildRunID)
 	if err != nil {
 		_ = tx.Rollback(ctx)
@@ -2086,6 +2104,15 @@ func (p *ProductionPhases) PublishStep(ctx context.Context, workspaceID, buildRu
 		return fmt.Errorf("publish step: commit atomic publication: %w", err)
 	}
 	return nil
+}
+
+func allowsUnmeasuredUsage(brief teambuild.BuildBrief) bool {
+	waiver := brief.UnmeasuredUsageWaiver
+	return waiver != nil && waiver.Accepted && strings.TrimSpace(waiver.Reason) != ""
+}
+
+func blocksIncompleteUsage(report teambuild.EvaluationReport, brief teambuild.BuildBrief) bool {
+	return report.UsageComplete != nil && !*report.UsageComplete && !allowsUnmeasuredUsage(brief)
 }
 
 func (p *ProductionPhases) settlePublishUsageTx(

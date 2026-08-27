@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -25,6 +26,23 @@ func TestEvaluateBudgetUsageUsesOnlyStrictExceededDimensions(t *testing.T) {
 	}
 	if got := evaluateBudgetUsage(over, over, budget, budget).ExceededDims; !reflect.DeepEqual(got, want) {
 		t.Fatalf("exceeded dimensions = %v, want %v", got, want)
+	}
+}
+
+func TestOldBuildBriefJSONHasNoImplicitUnmeasuredUsageWaiver(t *testing.T) {
+	var brief BuildBrief
+	if err := json.Unmarshal([]byte(`{"schema_version":1}`), &brief); err != nil {
+		t.Fatal(err)
+	}
+	if brief.UnmeasuredUsageWaiver != nil {
+		t.Fatalf("old brief gained waiver: %#v", brief.UnmeasuredUsageWaiver)
+	}
+	raw, err := json.Marshal(BuildBrief{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(raw) == "" || strings.Contains(string(raw), "unmeasured_usage_waiver") {
+		t.Fatalf("zero-value waiver was not omitted: %s", raw)
 	}
 }
 
@@ -71,9 +89,23 @@ func TestG5BudgetRejectionAndLateChargeRealPG(t *testing.T) {
 		t.Fatalf("G5 reason = %q, err = %v", reason, err)
 	}
 
-	passed := createAuthorizeTestRun(t, ctx, store, "build-passed", ModeCreate)
+	passed := createBudgetTestRun(t, ctx, store, "build-passed",
+		Budget{MaxInputTokens: 1000}, Budget{MaxInputTokens: 1000})
 	passed = authorizeBudgetTestRun(t, ctx, store, passed)
 	moveBudgetTestRunToPublishing(t, ctx, store, passed)
+	if _, err := store.RecordBudgetUsage(ctx, passed.WorkspaceID, passed.BuildRunID, BudgetCharge{
+		WorkspaceID: passed.WorkspaceID, BuildRunID: passed.BuildRunID, RoundNo: 1,
+		SourceKind: UsageSourceKindCandidateRuntime, SourceRole: SourceRoleFixedWorkflowRoot,
+		SourceRunID: "candidate-exact", InputTokens: 1000,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	exact, err := store.EvaluateBudget(
+		ctx, passed.WorkspaceID, passed.BuildRunID, 1, passed.RoundBudget, passed.TotalBudget,
+	)
+	if err != nil || len(exact.ExceededDims) != 0 {
+		t.Fatalf("exact-budget G5 decision = %#v, err = %v", exact, err)
+	}
 	if _, err := store.MarkPublished(ctx, passed.WorkspaceID, passed.BuildRunID, "publisher", FinalRef{Ref: "candidate-hash"}); err != nil {
 		t.Fatal(err)
 	}
@@ -170,6 +202,97 @@ func TestBudgetReauthorizationResetsBudgetFailureRealPG(t *testing.T) {
 	if err != nil || len(decision.ExceededDims) != 0 {
 		t.Fatalf("restored budget decision = %#v, err = %v", decision, err)
 	}
+	if _, err := store.TransitionStatus(
+		ctx, restored.WorkspaceID, restored.BuildRunID,
+		StatusAuthorized, StatusRoundRunning, "worker", "resume candidate",
+	); err != nil {
+		t.Fatal(err)
+	}
+	candidate, err := store.ClaimReadyOperationStep(
+		ctx, restored.WorkspaceID, restored.BuildRunID, 1, "worker", time.Minute,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	finalHash := strings.Repeat("b", 64)
+	if _, err := store.SucceedOperationStep(
+		ctx, candidate.WorkspaceID, candidate.BuildRunID, candidate.RevisionNo,
+		candidate.OperationID, "worker", candidate.LeaseEpoch, finalHash,
+		json.RawMessage(`{"candidate":"completed"}`),
+	); err != nil {
+		t.Fatal(err)
+	}
+	publish, err := store.ClaimReadyOperationStep(
+		ctx, restored.WorkspaceID, restored.BuildRunID, 1, "worker", time.Minute,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.TransitionStatus(
+		ctx, restored.WorkspaceID, restored.BuildRunID,
+		StatusRoundRunning, StatusPublishing, "worker", "resumed candidate passed",
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.MarkPublished(
+		ctx, restored.WorkspaceID, restored.BuildRunID, "publisher", FinalRef{Ref: finalHash},
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.SucceedOperationStep(
+		ctx, publish.WorkspaceID, publish.BuildRunID, publish.RevisionNo,
+		publish.OperationID, "worker", publish.LeaseEpoch, finalHash,
+		json.RawMessage(`{"publication":"completed"}`),
+	); err != nil {
+		t.Fatal(err)
+	}
+	completed, err := store.GetBuildRun(ctx, restored.WorkspaceID, restored.BuildRunID)
+	if err != nil || completed.Status != StatusPassed {
+		t.Fatalf("recovered run did not complete: run=%#v err=%v", completed, err)
+	}
+}
+
+func TestMidScenarioBudgetExhaustionStopsAndPreservesUsageRealPG(t *testing.T) {
+	ctx := context.Background()
+	store := newAuthorizeTestStore(t)
+	run := createAuthorizeTestRun(t, ctx, store, "build-mid-scenario", ModeCreate)
+	run = authorizeBudgetTestRun(t, ctx, store, run)
+	if _, err := store.TransitionStatus(
+		ctx, run.WorkspaceID, run.BuildRunID,
+		StatusAuthorized, StatusRoundRunning, "worker", "candidate suite started",
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.RecordBudgetUsage(ctx, run.WorkspaceID, run.BuildRunID, BudgetCharge{
+		WorkspaceID: run.WorkspaceID, BuildRunID: run.BuildRunID, RoundNo: 1,
+		SourceKind: UsageSourceKindCandidateRuntime, SourceRole: "candidate_scenario:0:first",
+		SourceRunID: "scenario-1", InputTokens: 1001,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	decision, err := store.EvaluateBudget(
+		ctx, run.WorkspaceID, run.BuildRunID, 1, run.RoundBudget, run.TotalBudget,
+	)
+	if err != nil || len(decision.ExceededDims) == 0 {
+		t.Fatalf("mid-scenario decision = %#v, err = %v", decision, err)
+	}
+	if _, err := store.TransitionStatus(
+		ctx, run.WorkspaceID, run.BuildRunID,
+		StatusRoundRunning, StatusBlocked, "worker", BudgetExhaustedReason,
+	); err != nil {
+		t.Fatal(err)
+	}
+	usage, err := store.GetBudgetUsage(ctx, run.WorkspaceID, run.BuildRunID)
+	if err != nil || usage.InputTokens != 1001 {
+		t.Fatalf("recorded usage = %#v, err = %v", usage, err)
+	}
+	var ledgerRows int
+	if err := store.pool.QueryRow(ctx, `
+		SELECT COUNT(*) FROM weave_team_build_run_budget_ledger
+		WHERE workspace_id=$1 AND build_run_id=$2
+	`, run.WorkspaceID, run.BuildRunID).Scan(&ledgerRows); err != nil || ledgerRows != 1 {
+		t.Fatalf("ledger rows = %d, err = %v", ledgerRows, err)
+	}
 }
 
 func TestBudgetOperationRecoveryGuardRejectsOtherTerminalsRealPG(t *testing.T) {
@@ -249,6 +372,28 @@ func moveBudgetTestRunToPublishing(t *testing.T, ctx context.Context, store *Sto
 			t.Fatal(err)
 		}
 	}
+}
+
+func createBudgetTestRun(
+	t *testing.T,
+	ctx context.Context,
+	store *Store,
+	buildRunID string,
+	roundBudget, totalBudget Budget,
+) TeamBuildRun {
+	t.Helper()
+	brief := authorizeTestBrief(ModeCreate)
+	brief.RoundBudget = roundBudget
+	brief.TotalBudget = totalBudget
+	run, err := store.CreateBuildRun(ctx, "workspace-1", buildRunID, CreateRunParams{
+		Brief: brief, Contract: authorizeTestContract(),
+		ExpiresAt: time.Date(2026, 8, 25, 11, 0, 0, 0, time.UTC),
+		CreatedBy: "admin-1",
+	})
+	if err != nil {
+		t.Fatalf("create budget test run: %v", err)
+	}
+	return run
 }
 
 func authorizeBudgetTestRun(t *testing.T, ctx context.Context, store *Store, run TeamBuildRun) TeamBuildRun {

@@ -196,7 +196,8 @@ func (s *Store) ReauthorizeBudgetBlockedRun(
 		decisionReason:  run.Authorization.DecisionReason,
 		assetScope:      cloneAssetScope(run.AssetScope),
 		roundBudget:     roundBudget, totalBudget: totalBudget,
-		expiresAt: run.ExpiresAt, confirmedBy: confirmedBy, createdAt: now,
+		unmeasuredUsageWaiver: cloneUnmeasuredUsageWaiver(run.Brief.UnmeasuredUsageWaiver),
+		expiresAt:             run.ExpiresAt, confirmedBy: confirmedBy, createdAt: now,
 	}
 	return run, receipt, nil
 }

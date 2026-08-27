@@ -52,13 +52,17 @@ func (e *ValidationError) Error() string {
 }
 
 type Request struct {
-	Contract       teambuild.EvaluationContract `json:"contract"`
-	IdempotencyKey string                       `json:"idempotency_key"`
-	Budget         Budget                       `json:"budget"`
+	Contract              teambuild.EvaluationContract     `json:"contract"`
+	IdempotencyKey        string                           `json:"idempotency_key"`
+	Budget                Budget                           `json:"budget"`
+	UnmeasuredUsageWaiver *teambuild.UnmeasuredUsageWaiver `json:"unmeasured_usage_waiver,omitempty"`
 }
 
 type Budget struct {
-	MaxCostUSD float64 `json:"max_cost_usd"`
+	MaxInputTokens  int64   `json:"max_input_tokens,omitempty"`
+	MaxOutputTokens int64   `json:"max_output_tokens,omitempty"`
+	MaxToolCalls    int64   `json:"max_tool_calls,omitempty"`
+	MaxCostUSD      float64 `json:"max_cost_usd,omitempty"`
 }
 
 type Outcome struct {
@@ -142,8 +146,15 @@ func (s *Service) Evaluate(
 	if err != nil {
 		return Outcome{}, validation("/idempotency_key", "evaluation_idempotency_key_invalid", "idempotency_key must be a UUID")
 	}
-	if math.IsNaN(request.Budget.MaxCostUSD) || math.IsInf(request.Budget.MaxCostUSD, 0) || request.Budget.MaxCostUSD <= 0 {
-		return Outcome{}, validation("/budget/max_cost_usd", "evaluation_budget_invalid", "budget.max_cost_usd must be finite and greater than zero")
+	if err := validateEvaluationBudget(request.Budget); err != nil {
+		return Outcome{}, validation("/budget", "evaluation_budget_invalid", err.Error())
+	}
+	if waiver := request.UnmeasuredUsageWaiver; waiver != nil &&
+		(!waiver.Accepted || strings.TrimSpace(waiver.Reason) == "") {
+		return Outcome{}, validation(
+			"/unmeasured_usage_waiver", "evaluation_usage_waiver_invalid",
+			"unmeasured_usage_waiver requires accepted=true and a reason",
+		)
 	}
 	if problems := placeholderProblems(request.Contract); len(problems) != 0 {
 		return Outcome{}, &ValidationError{Problems: problems}
@@ -160,12 +171,14 @@ func (s *Service) Evaluate(
 	if err != nil {
 		return Outcome{}, fmt.Errorf("%w: %v", ErrTemplateLineage, err)
 	}
-	brief := evaluationBrief(team, blueprint, request.Budget)
+	brief := evaluationBrief(team, blueprint, request.Budget, request.UnmeasuredUsageWaiver)
 	_, normalizedContract, contractHash, err := teambuild.ValidateBuildRunDrafts(brief, request.Contract)
 	if err != nil {
 		return Outcome{}, validation("/contract", "evaluation_contract_invalid", err.Error())
 	}
-	fingerprint, err := evaluationFingerprint(teamID, contractHash, request.Budget)
+	fingerprint, err := evaluationFingerprint(
+		teamID, contractHash, request.Budget, request.UnmeasuredUsageWaiver,
+	)
 	if err != nil {
 		return Outcome{}, fmt.Errorf("fingerprint team evaluation: %w", err)
 	}
@@ -373,25 +386,31 @@ func evaluationBlueprint(lineage teambuild.BlueprintRevision, teamID string) (te
 	return blueprint, nil
 }
 
-func evaluationBrief(team org.Team, blueprint teambuild.TeamBlueprintV1, budget Budget) teambuild.BuildBrief {
+func evaluationBrief(
+	team org.Team,
+	blueprint teambuild.TeamBlueprintV1,
+	budget Budget,
+	waiver *teambuild.UnmeasuredUsageWaiver,
+) teambuild.BuildBrief {
 	direction := strings.TrimSpace(team.Objective)
 	if direction == "" {
 		direction = strings.TrimSpace(blueprint.Purpose)
 	}
 	return teambuild.BuildBrief{
 		SchemaVersion: 1, Mode: teambuild.ModeOptimize,
-		BusinessDirection: direction,
-		Task:              "Evaluate the existing team against the submitted real contract without changing team assets.",
-		TeamID:            team.ID,
-		SuccessCriteria:   []string{"The frozen evaluation contract passes against the unchanged team assets."},
-		Constraints:       []string{"evaluation_only", "preserve_existing_roster", "manual_admin_authorization"},
-		Prohibitions:      []string{"Do not patch the blueprint or mutate team, roster, agent, or workflow assets during evaluation."},
+		BusinessDirection:     direction,
+		Task:                  "Evaluate the existing team against the submitted real contract without changing team assets.",
+		TeamID:                team.ID,
+		SuccessCriteria:       []string{"The frozen evaluation contract passes against the unchanged team assets."},
+		Constraints:           []string{"evaluation_only", "preserve_existing_roster", "manual_admin_authorization"},
+		Prohibitions:          []string{"Do not patch the blueprint or mutate team, roster, agent, or workflow assets during evaluation."},
+		UnmeasuredUsageWaiver: cloneEvaluationUsageWaiver(waiver),
 		AllowedAssets: teambuild.AssetScope{
 			AllowedKinds: []string{"agent", "team", "workflow"},
 			Refs:         []teambuild.AssetRef{{Kind: "team", ID: team.ID}},
 		},
-		RoundBudget: teambuild.Budget{MaxCostUSD: budget.MaxCostUSD},
-		TotalBudget: teambuild.Budget{MaxCostUSD: budget.MaxCostUSD},
+		RoundBudget: evaluationBuildBudget(budget),
+		TotalBudget: evaluationBuildBudget(budget),
 	}
 }
 
@@ -455,17 +474,57 @@ func sourceDeclarativeSpec(raw json.RawMessage) (teamforge.DeclarativeWorkflowSp
 	return teamforge.DeclarativeWorkflowSpecV1{}, errors.New("template lineage has no declarative workflow operation")
 }
 
-func evaluationFingerprint(teamID, contractHash string, budget Budget) (string, error) {
+func evaluationFingerprint(
+	teamID, contractHash string,
+	budget Budget,
+	waiver *teambuild.UnmeasuredUsageWaiver,
+) (string, error) {
 	raw, err := json.Marshal(struct {
-		TeamID       string  `json:"team_id"`
-		ContractHash string  `json:"contract_hash"`
-		MaxCostUSD   float64 `json:"max_cost_usd"`
-	}{teamID, contractHash, budget.MaxCostUSD})
+		TeamID                string                           `json:"team_id"`
+		ContractHash          string                           `json:"contract_hash"`
+		MaxCostUSD            float64                          `json:"max_cost_usd"`
+		MaxInputTokens        int64                            `json:"max_input_tokens,omitempty"`
+		MaxOutputTokens       int64                            `json:"max_output_tokens,omitempty"`
+		MaxToolCalls          int64                            `json:"max_tool_calls,omitempty"`
+		UnmeasuredUsageWaiver *teambuild.UnmeasuredUsageWaiver `json:"unmeasured_usage_waiver,omitempty"`
+	}{
+		TeamID: teamID, ContractHash: contractHash, MaxCostUSD: budget.MaxCostUSD,
+		MaxInputTokens: budget.MaxInputTokens, MaxOutputTokens: budget.MaxOutputTokens,
+		MaxToolCalls:          budget.MaxToolCalls,
+		UnmeasuredUsageWaiver: cloneEvaluationUsageWaiver(waiver),
+	})
 	if err != nil {
 		return "", err
 	}
 	sum := sha256.Sum256(raw)
 	return hex.EncodeToString(sum[:]), nil
+}
+
+func validateEvaluationBudget(budget Budget) error {
+	if budget.MaxInputTokens < 0 || budget.MaxOutputTokens < 0 || budget.MaxToolCalls < 0 ||
+		budget.MaxCostUSD < 0 || math.IsNaN(budget.MaxCostUSD) || math.IsInf(budget.MaxCostUSD, 0) {
+		return errors.New("budget bounds must be finite and non-negative")
+	}
+	if budget.MaxInputTokens == 0 && budget.MaxOutputTokens == 0 &&
+		budget.MaxToolCalls == 0 && budget.MaxCostUSD == 0 {
+		return errors.New("budget must declare at least one positive bound")
+	}
+	return nil
+}
+
+func evaluationBuildBudget(budget Budget) teambuild.Budget {
+	return teambuild.Budget{
+		MaxInputTokens: budget.MaxInputTokens, MaxOutputTokens: budget.MaxOutputTokens,
+		MaxToolCalls: budget.MaxToolCalls, MaxCostUSD: budget.MaxCostUSD,
+	}
+}
+
+func cloneEvaluationUsageWaiver(value *teambuild.UnmeasuredUsageWaiver) *teambuild.UnmeasuredUsageWaiver {
+	if value == nil {
+		return nil
+	}
+	cloned := *value
+	return &cloned
 }
 
 func deterministicBuildRunID(workspaceID string, key uuid.UUID) string {

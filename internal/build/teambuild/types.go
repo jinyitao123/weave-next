@@ -308,9 +308,13 @@ type BuildBrief struct {
 	Constraints       []string     `json:"constraints,omitempty"`
 	Prohibitions      []string     `json:"prohibitions,omitempty"`
 	WaivedGates       []GateWaiver `json:"waived_gates,omitempty"`
-	AllowedAssets     AssetScope   `json:"allowed_assets"`
-	RoundBudget       Budget       `json:"round_budget"`
-	TotalBudget       Budget       `json:"total_budget"`
+	// UnmeasuredUsageWaiver is the temporary Phase-1 authorization for
+	// publishing a candidate whose report explicitly says usage_complete=false.
+	// Absence is the fail-closed default; old brief JSON remains readable.
+	UnmeasuredUsageWaiver *UnmeasuredUsageWaiver `json:"unmeasured_usage_waiver,omitempty"`
+	AllowedAssets         AssetScope             `json:"allowed_assets"`
+	RoundBudget           Budget                 `json:"round_budget"`
+	TotalBudget           Budget                 `json:"total_budget"`
 }
 
 // EffectiveWorkflowBuildMode resolves the backward-compatible zero value to
@@ -347,6 +351,14 @@ type HardGate struct {
 type GateWaiver struct {
 	GateID string `json:"gate_id"`
 	Reason string `json:"reason"`
+}
+
+// UnmeasuredUsageWaiver records an administrator's explicit acceptance that
+// CLI/engine usage is not yet measurable. It is removed when Phase 2 supplies
+// those receipts.
+type UnmeasuredUsageWaiver struct {
+	Accepted bool   `json:"accepted"`
+	Reason   string `json:"reason"`
 }
 
 // RubricDimension is one business-quality dimension with its threshold.
@@ -915,6 +927,11 @@ func validateBuildBrief(brief BuildBrief) error {
 	}
 	if _, err := normalizeGateWaivers(brief.WaivedGates); err != nil {
 		return fmt.Errorf("invalid build brief: %w", err)
+	}
+	if waiver := brief.UnmeasuredUsageWaiver; waiver != nil {
+		if !waiver.Accepted || strings.TrimSpace(waiver.Reason) == "" {
+			return errors.New("invalid build brief: unmeasured_usage_waiver requires accepted=true and a reason")
+		}
 	}
 	if err := validateAssetScope(brief.AllowedAssets); err != nil {
 		return fmt.Errorf("invalid build brief: %w", err)

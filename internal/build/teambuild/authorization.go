@@ -203,20 +203,21 @@ func (s *Store) AuthorizeBuildRun(
 		return TeamBuildRun{}, BuildAuthorizationReceipt{}, fmt.Errorf("authorize build run: decode round budget: %w", err)
 	}
 	receipt := BuildAuthorizationReceipt{
-		workspaceID:     workspaceID,
-		buildRunID:      buildRunID,
-		contractHash:    contractHash,
-		mode:            mode,
-		authority:       auth.Authority,
-		revisionToken:   cloneBlueprintRevisionToken(auth.RevisionToken),
-		decisionSubject: auth.DecisionSubject,
-		decisionReason:  decisionReason,
-		assetScope:      cloneAssetScope(scope),
-		roundBudget:     roundBudget,
-		totalBudget:     totalBudget,
-		expiresAt:       expiresAt,
-		confirmedBy:     confirmedBy,
-		createdAt:       now,
+		workspaceID:           workspaceID,
+		buildRunID:            buildRunID,
+		contractHash:          contractHash,
+		mode:                  mode,
+		authority:             auth.Authority,
+		revisionToken:         cloneBlueprintRevisionToken(auth.RevisionToken),
+		decisionSubject:       auth.DecisionSubject,
+		decisionReason:        decisionReason,
+		assetScope:            cloneAssetScope(scope),
+		roundBudget:           roundBudget,
+		totalBudget:           totalBudget,
+		unmeasuredUsageWaiver: cloneUnmeasuredUsageWaiver(brief.UnmeasuredUsageWaiver),
+		expiresAt:             expiresAt,
+		confirmedBy:           confirmedBy,
+		createdAt:             now,
 	}
 	return run, receipt, nil
 }

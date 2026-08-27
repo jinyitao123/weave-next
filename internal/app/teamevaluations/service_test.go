@@ -56,3 +56,24 @@ func TestDeterministicBuildRunIDIsWorkspaceScoped(t *testing.T) {
 		t.Fatalf("build run id = %q", first)
 	}
 }
+
+func TestEvaluationBudgetSupportsEveryMeasuredDimension(t *testing.T) {
+	budget := Budget{MaxInputTokens: 10, MaxOutputTokens: 20, MaxToolCalls: 3, MaxCostUSD: 1.5}
+	if err := validateEvaluationBudget(budget); err != nil {
+		t.Fatal(err)
+	}
+	if got := evaluationBuildBudget(budget); got != (teambuild.Budget{
+		MaxInputTokens: 10, MaxOutputTokens: 20, MaxToolCalls: 3, MaxCostUSD: 1.5,
+	}) {
+		t.Fatalf("build budget = %#v", got)
+	}
+	if err := validateEvaluationBudget(Budget{MaxToolCalls: 1}); err != nil {
+		t.Fatalf("tool-call-only budget rejected: %v", err)
+	}
+	if err := validateEvaluationBudget(Budget{}); err == nil {
+		t.Fatal("empty evaluation budget accepted")
+	}
+	if err := validateEvaluationBudget(Budget{MaxInputTokens: -1}); err == nil {
+		t.Fatal("negative evaluation budget accepted")
+	}
+}
