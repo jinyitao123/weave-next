@@ -46,6 +46,29 @@ func TestOldBuildBriefJSONHasNoImplicitUnmeasuredUsageWaiver(t *testing.T) {
 	}
 }
 
+func TestEvaluationReportKeepsCLIZeroDistinctFromMissingDimension(t *testing.T) {
+	trueValue, falseValue := true, false
+	completeZero := EvaluationReport{
+		SchemaVersion: 1, RoundNo: 1, Conclusion: ConclusionPass,
+		UsageHasTokens: &trueValue, UsageHasCost: &trueValue,
+		UsageSources: []string{"cli-reported"},
+	}
+	if _, err := completeZero.Hash(); err != nil {
+		t.Fatalf("explicit CLI zero report rejected: %v", err)
+	}
+	partial := completeZero
+	partial.UsageHasCost = &falseValue
+	partial.UsageComplete = &falseValue
+	partial.UsageIncompleteReason = "CLI receipt did not report cost"
+	if _, err := partial.Hash(); err != nil {
+		t.Fatalf("dimension-incomplete CLI report rejected: %v", err)
+	}
+	partial.UsageComplete = &trueValue
+	if _, err := partial.Hash(); err == nil {
+		t.Fatal("missing cost dimension accepted usage_complete=true")
+	}
+}
+
 func TestG5BudgetRejectionAndLateChargeRealPG(t *testing.T) {
 	ctx := context.Background()
 	store := newAuthorizeTestStore(t)

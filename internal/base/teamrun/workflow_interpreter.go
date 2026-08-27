@@ -223,6 +223,9 @@ func runSerialMachine(
 			if len(nodeUsage.CLIAttempts) > 0 && (!nodeUsage.Coverage.HasTokens || !nodeUsage.Coverage.HasCost) && usageIncompleteReason == "" {
 				usageComplete = false
 				usageIncompleteReason = UsageIncompleteReasonCLINode
+				if nodeUsage.Coverage.HasTokens || nodeUsage.Coverage.HasCost {
+					usageIncompleteReason = UsageIncompleteReasonCLIDimensions
+				}
 			}
 			if err != nil {
 				next, routed := edgeTarget(edges[current], machine.RouteFailure)

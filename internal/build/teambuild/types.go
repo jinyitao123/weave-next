@@ -353,9 +353,10 @@ type GateWaiver struct {
 	Reason string `json:"reason"`
 }
 
-// UnmeasuredUsageWaiver records an administrator's explicit acceptance that
-// CLI/engine usage is not yet measurable. It is removed when Phase 2 supplies
-// those receipts.
+// UnmeasuredUsageWaiver records an administrator's explicit acceptance of
+// usage sources or dimensions that remain unmeasured. Phase 2 narrows this
+// waiver to gaps such as a missing CLI receipt, a token-only receipt's cost
+// dimension, or CLI-internal tool calls; it never turns unknowns into zero.
 type UnmeasuredUsageWaiver struct {
 	Accepted bool   `json:"accepted"`
 	Reason   string `json:"reason"`
@@ -486,6 +487,9 @@ type EvaluationReport struct {
 	// budget gate then enforces the measured usage as a lower bound.
 	UsageComplete         *bool    `json:"usage_complete,omitempty"`
 	UsageIncompleteReason string   `json:"usage_incomplete_reason,omitempty"`
+	UsageHasTokens        *bool    `json:"usage_has_tokens,omitempty"`
+	UsageHasCost          *bool    `json:"usage_has_cost,omitempty"`
+	UsageSources          []string `json:"usage_sources,omitempty"`
 	ToolCalls             int64    `json:"tool_calls,omitempty"`
 	Regressions           []string `json:"regressions,omitempty"`
 	Improvements          []string `json:"improvements,omitempty"`
@@ -1321,6 +1325,24 @@ func validateEvaluationReport(report EvaluationReport) error {
 		return errors.New(
 			"invalid evaluation report: usage_incomplete_reason requires usage_complete=false",
 		)
+	}
+	if (report.UsageHasTokens == nil) != (report.UsageHasCost == nil) {
+		return errors.New(
+			"invalid evaluation report: usage_has_tokens and usage_has_cost must be present together",
+		)
+	}
+	if report.UsageHasTokens != nil && (!*report.UsageHasTokens || !*report.UsageHasCost) &&
+		(report.UsageComplete == nil || *report.UsageComplete) {
+		return errors.New(
+			"invalid evaluation report: incomplete usage dimension requires usage_complete=false",
+		)
+	}
+	seenUsageSources := make(map[string]bool, len(report.UsageSources))
+	for _, source := range report.UsageSources {
+		if strings.TrimSpace(source) == "" || seenUsageSources[source] {
+			return errors.New("invalid evaluation report: usage_sources must be non-empty and unique")
+		}
+		seenUsageSources[source] = true
 	}
 	for _, result := range report.HardGateResults {
 		if strings.TrimSpace(result.GateID) == "" {

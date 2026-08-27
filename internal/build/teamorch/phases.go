@@ -3209,12 +3209,15 @@ func (p *ProductionPhases) assembleReport(
 	}
 	// The report carries the candidate run's measured usage exactly as the
 	// durable terminal record reports it, plus the usage-completeness
-	// annotation: fanout legs and CLI nodes without a usage receipt are
-	// unmeasured, so usage_complete=false names the unmeasured part instead
+	// annotation: fanout legs and CLI nodes with missing receipts/dimensions
+	// are unmeasured, so usage_complete=false names the unmeasured part instead
 	// of fabricating zeros. The budget gate enforces this measured usage as
 	// a lower bound. Measured tool calls follow the same terminal receipt.
 	incompleteReasons := make([]string, 0)
 	seenIncompleteReason := make(map[string]bool)
+	usageDimensionsObserved := false
+	usageHasTokens, usageHasCost := true, true
+	seenUsageSource := make(map[string]bool)
 	for _, scenarioRun := range runs {
 		entry, ok := p.candidateRunUsage(ctx, round.WorkspaceID, scenarioRun.RunID)
 		if !ok {
@@ -3225,6 +3228,17 @@ func (p *ProductionPhases) assembleReport(
 		report.OutputTokens += int64(measured.OutputTokens)
 		report.CostUSD += measured.CostUSD
 		report.ToolCalls += int64(measured.ToolCalls)
+		if entry.UsageHasTokens != nil && entry.UsageHasCost != nil {
+			usageDimensionsObserved = true
+			usageHasTokens = usageHasTokens && *entry.UsageHasTokens
+			usageHasCost = usageHasCost && *entry.UsageHasCost
+		}
+		for _, source := range entry.UsageSources {
+			if !seenUsageSource[source] {
+				seenUsageSource[source] = true
+				report.UsageSources = append(report.UsageSources, source)
+			}
+		}
 		if entry.UsageComplete != nil && !*entry.UsageComplete {
 			reason := strings.TrimSpace(entry.UsageIncompleteReason)
 			if reason != "" && !seenIncompleteReason[reason] {
@@ -3234,6 +3248,11 @@ func (p *ProductionPhases) assembleReport(
 		}
 	}
 	report.Tokens = report.InputTokens + report.OutputTokens
+	if usageDimensionsObserved {
+		hasTokens, hasCost := usageHasTokens, usageHasCost
+		report.UsageHasTokens = &hasTokens
+		report.UsageHasCost = &hasCost
+	}
 	if len(incompleteReasons) > 0 {
 		incomplete := false
 		report.UsageComplete = &incomplete

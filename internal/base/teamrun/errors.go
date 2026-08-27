@@ -48,8 +48,9 @@ var (
 // result and EvaluationReport then carry usage_complete=false plus one of
 // these reasons instead of fabricating zero usage for the unmeasured parts.
 const (
-	UsageIncompleteReasonParallelLegs = "unmeasured parallel legs"
-	UsageIncompleteReasonCLINode      = "CLI node without usage receipt"
+	UsageIncompleteReasonParallelLegs  = "unmeasured parallel legs"
+	UsageIncompleteReasonCLINode       = "CLI node without usage receipt"
+	UsageIncompleteReasonCLIDimensions = "CLI receipt missing usage dimensions"
 )
 
 func ValidateErrorCode(code ErrorCode) bool {
