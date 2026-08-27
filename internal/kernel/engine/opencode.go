@@ -74,16 +74,22 @@ func (b *opencodeBackend) Run(ctx context.Context, spec RunSpec) (RunResult, err
 
 	select {
 	case finished := <-done:
-		return finishOpenCodeRun(finished.parsed, stderr.String(), finished.err)
+		result, err := finishOpenCodeRun(finished.parsed, stderr.String(), finished.err)
+		bindUsageReceipt(&result, spec)
+		return result, err
 	case <-runCtx.Done():
 		_ = terminateProcess(cmd)
+		var finished outcome
 		select {
-		case <-done:
+		case finished = <-done:
 		case <-time.After(time.Second):
 			_ = killProcess(cmd)
-			<-done
+			finished = <-done
 		}
-		result := RunResult{Status: "timeout", Err: runCtx.Err().Error()}
+		result := openCodeRunResult(finished.parsed)
+		result.Status = "timeout"
+		result.Err = runCtx.Err().Error()
+		bindUsageReceipt(&result, spec)
 		return result, fmt.Errorf("opencode: %w", runCtx.Err())
 	}
 }
@@ -113,9 +119,21 @@ func mergedEnv(overrides map[string]string) []string {
 }
 
 type openCodeOutput struct {
-	text      strings.Builder
-	sessionID string
-	errText   string
+	text          strings.Builder
+	sessionID     string
+	errText       string
+	parseFailed   bool
+	terminalCount int
+	steps         []openCodeStepReceipt
+	usage         *UsageReceipt
+	diagnostics   []Diagnostic
+}
+
+type openCodeStepReceipt struct {
+	reason string
+	tokens *reportedTokenUsage
+	cost   *float64
+	raw    string
 }
 
 func parseOpenCodeOutput(stdout interface{ Read([]byte) (int, error) }) openCodeOutput {
@@ -123,8 +141,11 @@ func parseOpenCodeOutput(stdout interface{ Read([]byte) (int, error) }) openCode
 	scanner := bufio.NewScanner(stdout)
 	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 	for scanner.Scan() {
+		line := append([]byte(nil), scanner.Bytes()...)
 		var event map[string]json.RawMessage
-		if json.Unmarshal(scanner.Bytes(), &event) != nil {
+		if err := json.Unmarshal(line, &event); err != nil {
+			output.parseFailed = true
+			output.diagnostics = append(output.diagnostics, diagnostic("usage_parse_failed", "opencode emitted malformed JSONL: "+err.Error()))
 			continue
 		}
 		eventType := jsonString(event["type"])
@@ -147,15 +168,139 @@ func parseOpenCodeOutput(stdout interface{ Read([]byte) (int, error) }) openCode
 			if message := eventErrorMessage(event); message != "" {
 				output.errText = message
 			}
-		case "tool_call", "tool_result", "step_finish", "done":
+		case "step_finish":
+			step, err := parseOpenCodeStep(event, string(line))
+			if err != nil {
+				output.parseFailed = true
+				output.diagnostics = append(output.diagnostics, diagnostic("usage_invalid", "opencode usage is invalid: "+err.Error()))
+				continue
+			}
+			output.steps = append(output.steps, step)
+			if step.reason != "" && step.reason != "tool-calls" {
+				output.terminalCount++
+			}
+		case "tool_call", "tool_result", "done":
 		default:
 			// New OpenCode event types are forward-compatible by default.
 		}
 	}
-	if err := scanner.Err(); err != nil && output.errText == "" {
-		output.errText = err.Error()
+	if err := scanner.Err(); err != nil {
+		if output.errText == "" {
+			output.errText = err.Error()
+		}
+		output.parseFailed = true
+		output.diagnostics = append(output.diagnostics, diagnostic("usage_parse_failed", "opencode JSONL scan failed: "+err.Error()))
 	}
+	output.finalizeUsage()
 	return output
+}
+
+func parseOpenCodeStep(event map[string]json.RawMessage, raw string) (openCodeStepReceipt, error) {
+	part := jsonObject(event["part"])
+	if part == nil {
+		return openCodeStepReceipt{}, errors.New("step_finish.part is required")
+	}
+	step := openCodeStepReceipt{reason: jsonString(part["reason"]), raw: raw}
+	cost, err := decodeFloatField(part, "cost")
+	if err != nil {
+		return openCodeStepReceipt{}, err
+	}
+	step.cost = cost
+	tokens := jsonObject(part["tokens"])
+	if tokens == nil {
+		return step, nil
+	}
+	total, totalErr := decodeIntField(tokens, "total")
+	input, inputErr := decodeIntField(tokens, "input")
+	output, outputErr := decodeIntField(tokens, "output")
+	reasoning, reasoningErr := decodeIntField(tokens, "reasoning")
+	cache := jsonObject(tokens["cache"])
+	var cacheRead, cacheWrite *int
+	var cacheReadErr, cacheWriteErr error
+	if cache != nil {
+		cacheRead, cacheReadErr = decodeIntField(cache, "read")
+		cacheWrite, cacheWriteErr = decodeIntField(cache, "write")
+	}
+	if err := errors.Join(totalErr, inputErr, outputErr, reasoningErr, cacheReadErr, cacheWriteErr); err != nil {
+		return openCodeStepReceipt{}, err
+	}
+	if total == nil || input == nil || output == nil || reasoning == nil || cacheRead == nil || cacheWrite == nil {
+		return step, nil
+	}
+	if *reasoning > *output {
+		return openCodeStepReceipt{}, errors.New("reasoning tokens exceed inclusive output tokens")
+	}
+	normalizedInput, err := addReportedInt(*input, *cacheRead)
+	if err == nil {
+		normalizedInput, err = addReportedInt(normalizedInput, *cacheWrite)
+	}
+	if err != nil {
+		return openCodeStepReceipt{}, err
+	}
+	normalizedTotal, err := addReportedInt(normalizedInput, *output)
+	if err != nil {
+		return openCodeStepReceipt{}, err
+	}
+	if normalizedTotal != *total {
+		return openCodeStepReceipt{}, errors.New("tokens.total does not equal inclusive input plus inclusive output")
+	}
+	step.tokens = &reportedTokenUsage{InputTokens: normalizedInput, OutputTokens: *output}
+	return step, nil
+}
+
+func (output *openCodeOutput) finalizeUsage() {
+	if output.parseFailed {
+		output.usage = nil
+		return
+	}
+	if output.terminalCount == 0 {
+		output.diagnostics = append(output.diagnostics, diagnostic("usage_terminal_missing", "opencode unique terminal step_finish event is missing"))
+		output.usage = nil
+		return
+	}
+	if output.terminalCount != 1 {
+		output.diagnostics = append(output.diagnostics, diagnostic("usage_terminal_ambiguous", "opencode emitted more than one terminal step_finish event"))
+		output.usage = nil
+		return
+	}
+	var raw string
+	tokensComplete := len(output.steps) > 0
+	costComplete := len(output.steps) > 0
+	var totals reportedTokenUsage
+	var cost float64
+	for _, step := range output.steps {
+		raw = appendRawSummary(raw, step.raw)
+		if step.tokens == nil {
+			tokensComplete = false
+		} else if tokensComplete {
+			var err error
+			totals.InputTokens, err = addReportedInt(totals.InputTokens, step.tokens.InputTokens)
+			if err == nil {
+				totals.OutputTokens, err = addReportedInt(totals.OutputTokens, step.tokens.OutputTokens)
+			}
+			if err != nil {
+				output.diagnostics = append(output.diagnostics, diagnostic("usage_invalid", "opencode usage is invalid: "+err.Error()))
+				output.usage = nil
+				return
+			}
+		}
+		if step.cost == nil {
+			costComplete = false
+		} else if costComplete {
+			cost += *step.cost
+		}
+	}
+	var tokenDimension *reportedTokenUsage
+	if tokensComplete {
+		tokenDimension = &totals
+	}
+	var costDimension *float64
+	if costComplete {
+		costDimension = &cost
+	}
+	receipt, diagnostics := newUsageReceipt(tokenDimension, costDimension, raw)
+	output.usage = receipt
+	output.diagnostics = append(output.diagnostics, diagnostics...)
 }
 
 func eventText(event map[string]json.RawMessage) string {
@@ -215,7 +360,7 @@ func jsonObject(raw json.RawMessage) map[string]json.RawMessage {
 }
 
 func finishOpenCodeRun(parsed openCodeOutput, stderr string, waitErr error) (RunResult, error) {
-	result := RunResult{Output: parsed.text.String(), SessionID: parsed.sessionID}
+	result := openCodeRunResult(parsed)
 	if waitErr == nil && parsed.errText == "" {
 		result.Status = "completed"
 		return result, nil
@@ -229,6 +374,15 @@ func finishOpenCodeRun(parsed openCodeOutput, stderr string, waitErr error) (Run
 		result.Err = waitErr.Error()
 	}
 	return result, fmt.Errorf("opencode: %s", result.Err)
+}
+
+func openCodeRunResult(parsed openCodeOutput) RunResult {
+	return RunResult{
+		Output:      parsed.text.String(),
+		SessionID:   parsed.sessionID,
+		Usage:       parsed.usage,
+		Diagnostics: append([]Diagnostic(nil), parsed.diagnostics...),
+	}
 }
 
 func failedOpenCodeResult(err error) (RunResult, error) {

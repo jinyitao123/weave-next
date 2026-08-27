@@ -38,16 +38,29 @@ type RunSpec struct {
 	Env      map[string]string
 	Timeout  time.Duration
 	ResumeID string // resume a prior session (optional)
+	// EngineVersion binds a CLI-reported usage receipt to the binary observed
+	// by the runtime capability probe. Callers must pass the exact advertised
+	// version rather than guessing it from the wire format.
+	EngineVersion string
 	// OutputSchema asks a supporting CLI to constrain its final message.
 	OutputSchema json.RawMessage
 }
 
 // RunResult is a worker's terminal outcome.
 type RunResult struct {
-	Output    string
-	SessionID string
-	Status    string // "completed" | "failed" | "timeout"
-	Err       string
+	Output      string
+	SessionID   string
+	Status      string // "completed" | "failed" | "timeout"
+	Err         string
+	Usage       *UsageReceipt
+	Diagnostics []Diagnostic
+}
+
+// Diagnostic reports a best-effort CLI parsing problem without turning a
+// successfully produced worker answer into a failed run.
+type Diagnostic struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
 }
 
 // Event is one normalised item from a CLI's NDJSON stream. Adapters emit these

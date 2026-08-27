@@ -99,16 +99,22 @@ func (b *codexBackend) Run(ctx context.Context, spec RunSpec) (RunResult, error)
 
 	select {
 	case finished := <-done:
-		return finishCodexRun(finished.parsed, stderr.String(), finished.err)
+		result, err := finishCodexRun(finished.parsed, stderr.String(), finished.err)
+		bindUsageReceipt(&result, spec)
+		return result, err
 	case <-runCtx.Done():
 		_ = terminateProcess(cmd)
+		var finished outcome
 		select {
-		case <-done:
+		case finished = <-done:
 		case <-time.After(time.Second):
 			_ = killProcess(cmd)
-			<-done
+			finished = <-done
 		}
-		result := RunResult{Status: "timeout", Err: runCtx.Err().Error()}
+		result := codexRunResult(finished.parsed)
+		result.Status = "timeout"
+		result.Err = runCtx.Err().Error()
+		bindUsageReceipt(&result, spec)
 		return result, fmt.Errorf("codex: %w", runCtx.Err())
 	}
 }
@@ -158,10 +164,14 @@ func codexModelForRun(model string, env map[string]string) string {
 }
 
 type codexOutput struct {
-	output    string
-	sessionID string
-	status    string
-	errText   string
+	output          string
+	sessionID       string
+	status          string
+	errText         string
+	completionCount int
+	parseFailed     bool
+	usage           *UsageReceipt
+	diagnostics     []Diagnostic
 }
 
 const codexJSONLMaxEventBytes = 16 * 1024 * 1024
@@ -174,8 +184,11 @@ func parseCodexOutput(stdout interface{ Read([]byte) (int, error) }) codexOutput
 	// small, so the Scanner default and the previous 1 MiB ceiling are too low.
 	scanner.Buffer(make([]byte, 64*1024), codexJSONLMaxEventBytes)
 	for scanner.Scan() {
+		line := append([]byte(nil), scanner.Bytes()...)
 		var event map[string]json.RawMessage
-		if json.Unmarshal(scanner.Bytes(), &event) != nil {
+		if err := json.Unmarshal(line, &event); err != nil {
+			output.parseFailed = true
+			output.diagnostics = append(output.diagnostics, diagnostic("usage_parse_failed", "codex emitted malformed JSONL: "+err.Error()))
 			continue
 		}
 		switch jsonString(event["type"]) {
@@ -191,6 +204,10 @@ func parseCodexOutput(stdout interface{ Read([]byte) (int, error) }) codexOutput
 				// the wire format forward-compatible without widening the API.
 			}
 		case "turn.completed":
+			output.completionCount++
+			receipt, diagnostics := parseCodexUsage(event, string(line))
+			output.usage = receipt
+			output.diagnostics = append(output.diagnostics, diagnostics...)
 			if output.status != "failed" {
 				output.status = "completed"
 			}
@@ -216,15 +233,58 @@ func parseCodexOutput(stdout interface{ Read([]byte) (int, error) }) codexOutput
 		_, _ = io.Copy(io.Discard, stdout)
 		output.status = "failed"
 		output.errText = err.Error()
+		output.parseFailed = true
+		output.diagnostics = append(output.diagnostics, diagnostic("usage_parse_failed", "codex JSONL scan failed: "+err.Error()))
+	}
+	if output.completionCount == 0 {
+		output.diagnostics = append(output.diagnostics, diagnostic("usage_terminal_missing", "codex turn.completed event is missing"))
+		output.usage = nil
+	} else if output.completionCount != 1 {
+		output.diagnostics = append(output.diagnostics, diagnostic("usage_terminal_ambiguous", "codex emitted more than one turn.completed event"))
+		output.usage = nil
+	}
+	if output.parseFailed {
+		output.usage = nil
 	}
 	return output
 }
 
-func finishCodexRun(parsed codexOutput, stderr string, waitErr error) (RunResult, error) {
-	result := RunResult{
-		Output:    parsed.output,
-		SessionID: parsed.sessionID,
+func parseCodexUsage(event map[string]json.RawMessage, raw string) (*UsageReceipt, []Diagnostic) {
+	usage := jsonObject(event["usage"])
+	var tokens *reportedTokenUsage
+	if usage != nil {
+		input, inputErr := decodeIntField(usage, "input_tokens")
+		cached, cachedErr := decodeIntField(usage, "cached_input_tokens")
+		output, outputErr := decodeIntField(usage, "output_tokens")
+		reasoning, reasoningErr := decodeIntField(usage, "reasoning_output_tokens")
+		if err := errors.Join(inputErr, cachedErr, outputErr, reasoningErr); err != nil {
+			return nil, []Diagnostic{diagnostic("usage_invalid", "codex usage is invalid: "+err.Error())}
+		}
+		if input != nil && cached != nil && output != nil && reasoning != nil {
+			if *cached > *input {
+				return nil, []Diagnostic{diagnostic("usage_invalid", "codex cached_input_tokens exceeds inclusive input_tokens")}
+			}
+			if *reasoning > *output {
+				return nil, []Diagnostic{diagnostic("usage_invalid", "codex reasoning_output_tokens exceeds inclusive output_tokens")}
+			}
+			tokens = &reportedTokenUsage{InputTokens: *input, OutputTokens: *output}
+		}
 	}
+	return newUsageReceipt(tokens, nil, raw)
+}
+
+func codexRunResult(parsed codexOutput) RunResult {
+	return RunResult{
+		Output:      parsed.output,
+		SessionID:   parsed.sessionID,
+		Status:      parsed.status,
+		Usage:       parsed.usage,
+		Diagnostics: append([]Diagnostic(nil), parsed.diagnostics...),
+	}
+}
+
+func finishCodexRun(parsed codexOutput, stderr string, waitErr error) (RunResult, error) {
+	result := codexRunResult(parsed)
 	if waitErr == nil && parsed.status == "completed" && parsed.errText == "" {
 		result.Status = "completed"
 		return result, nil

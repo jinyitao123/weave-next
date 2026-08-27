@@ -1,0 +1,173 @@
+package engine
+
+import (
+	"bytes"
+	"math"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"testing"
+	"time"
+)
+
+func TestParseClaudeUsageRealFixtureExplicitZero(t *testing.T) {
+	parsed := parseClaudeOutput(bytes.NewReader(readFixture(t, "claude-2.1.245.jsonl")))
+	if parsed.usage == nil {
+		t.Fatalf("expected explicit zero receipt, diagnostics=%+v", parsed.diagnostics)
+	}
+	assertReceipt(t, parsed.usage, 0, 0, 0, true, true)
+}
+
+func TestParseClaudeUsageNormalizesExclusiveCacheCounters(t *testing.T) {
+	parsed := parseClaudeOutput(strings.NewReader(`{"type":"result","subtype":"success","is_error":false,"result":"OK","total_cost_usd":0.25,"usage":{"input_tokens":10,"cache_creation_input_tokens":3,"cache_read_input_tokens":7,"output_tokens":5}}` + "\n"))
+	if parsed.usage == nil {
+		t.Fatalf("expected receipt, diagnostics=%+v", parsed.diagnostics)
+	}
+	assertReceipt(t, parsed.usage, 20, 5, 0.25, true, true)
+}
+
+func TestParseCodexUsageRealFixtureKeepsInclusiveInput(t *testing.T) {
+	parsed := parseCodexOutput(bytes.NewReader(readFixture(t, "codex-0.144.5.jsonl")))
+	if parsed.usage == nil {
+		t.Fatalf("expected receipt, diagnostics=%+v", parsed.diagnostics)
+	}
+	assertReceipt(t, parsed.usage, 14058, 5, 0, true, false)
+	if !hasDiagnostic(parsed.diagnostics, "usage_cost_unreported") {
+		t.Fatalf("missing cost diagnostic: %+v", parsed.diagnostics)
+	}
+}
+
+func TestParseOpenCodeUsageRealFixtureSumsStepsAndCache(t *testing.T) {
+	parsed := parseOpenCodeOutput(bytes.NewReader(readFixture(t, "opencode-1.2.10.jsonl")))
+	if parsed.usage == nil {
+		t.Fatalf("expected receipt, diagnostics=%+v", parsed.diagnostics)
+	}
+	assertReceipt(t, parsed.usage, 21984, 62, 0.0034398, true, true)
+	if parsed.terminalCount != 1 || len(parsed.steps) != 2 {
+		t.Fatalf("terminal=%d steps=%d", parsed.terminalCount, len(parsed.steps))
+	}
+}
+
+func TestParseOpenCodeMissingTerminalIsNotPartialUsage(t *testing.T) {
+	lines := strings.Split(strings.TrimSpace(string(readFixture(t, "opencode-1.2.10.jsonl"))), "\n")
+	parsed := parseOpenCodeOutput(strings.NewReader(strings.Join(lines[:len(lines)-1], "\n") + "\n"))
+	if parsed.usage != nil {
+		t.Fatalf("partial steps must not become a receipt: %+v", parsed.usage)
+	}
+	if !hasDiagnostic(parsed.diagnostics, "usage_terminal_missing") {
+		t.Fatalf("missing terminal diagnostic: %+v", parsed.diagnostics)
+	}
+}
+
+func TestParseFailureNeverBecomesZeroUsage(t *testing.T) {
+	parsed := parseCodexOutput(strings.NewReader("not-json\n" + string(readFixture(t, "codex-0.144.5.jsonl"))))
+	if parsed.usage != nil {
+		t.Fatalf("malformed stream must not produce usage: %+v", parsed.usage)
+	}
+	if !hasDiagnostic(parsed.diagnostics, "usage_parse_failed") {
+		t.Fatalf("missing parse diagnostic: %+v", parsed.diagnostics)
+	}
+}
+
+func TestCodexRejectsInvalidReportedUsage(t *testing.T) {
+	parsed := parseCodexOutput(strings.NewReader(`{"type":"turn.completed","usage":{"input_tokens":1,"cached_input_tokens":2,"output_tokens":1,"reasoning_output_tokens":0}}` + "\n"))
+	if parsed.usage != nil || !hasDiagnostic(parsed.diagnostics, "usage_invalid") {
+		t.Fatalf("invalid receipt accepted: usage=%+v diagnostics=%+v", parsed.usage, parsed.diagnostics)
+	}
+}
+
+func TestOpenCodeOutputAlreadyIncludesReasoning(t *testing.T) {
+	parsed := parseOpenCodeOutput(strings.NewReader(`{"type":"step_finish","sessionID":"session-fixture","part":{"type":"step-finish","reason":"stop","cost":0.00320222,"tokens":{"total":11165,"input":11027,"output":138,"reasoning":135,"cache":{"read":0,"write":0}}}}` + "\n"))
+	if parsed.usage == nil {
+		t.Fatalf("expected receipt, diagnostics=%+v", parsed.diagnostics)
+	}
+	assertReceipt(t, parsed.usage, 11027, 138, 0.00320222, true, true)
+}
+
+func TestFailedAndTimeoutRunsRetainReportedUsage(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("test helper is a POSIX shell script")
+	}
+	tests := []struct {
+		name    string
+		fixture string
+		backend func(string) Backend
+	}{
+		{name: Claude, fixture: "claude-2.1.245.jsonl", backend: func(path string) Backend { return &claudeBackend{cliPath: path} }},
+		{name: Codex, fixture: "codex-0.144.5.jsonl", backend: func(path string) Backend { return &codexBackend{cliPath: path} }},
+		{name: OpenCode, fixture: "opencode-1.2.10.jsonl", backend: func(path string) Backend { return &opencodeBackend{cliPath: path} }},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name+"/failed", func(t *testing.T) {
+			result, err := runFixtureCLI(t, tc.backend, tc.fixture, "exit 7", time.Second)
+			if err == nil || result.Status != "failed" || result.Usage == nil {
+				t.Fatalf("status=%q usage=%+v err=%v diagnostics=%+v", result.Status, result.Usage, err, result.Diagnostics)
+			}
+		})
+		t.Run(tc.name+"/timeout", func(t *testing.T) {
+			result, err := runFixtureCLI(t, tc.backend, tc.fixture, "sleep 5", 500*time.Millisecond)
+			if err == nil || result.Status != "timeout" || result.Usage == nil {
+				t.Fatalf("status=%q usage=%+v err=%v diagnostics=%+v", result.Status, result.Usage, err, result.Diagnostics)
+			}
+		})
+	}
+}
+
+func TestResumeDoesNotCountCLIUsage(t *testing.T) {
+	result := RunResult{Usage: &UsageReceipt{HasTokens: true}}
+	bindUsageReceipt(&result, RunSpec{ResumeID: "session-resume"})
+	if result.Usage != nil || !hasDiagnostic(result.Diagnostics, "usage_resume_disabled") {
+		t.Fatalf("resume usage=%+v diagnostics=%+v", result.Usage, result.Diagnostics)
+	}
+}
+
+func runFixtureCLI(t *testing.T, backend func(string) Backend, fixture, terminalCommand string, timeout time.Duration) (RunResult, error) {
+	t.Helper()
+	dir := t.TempDir()
+	script := filepath.Join(dir, "fixture-cli")
+	contents := "#!/bin/sh\ncommand cat \"$WEAVE_TEST_FIXTURE\"\n" + terminalCommand + "\n"
+	if err := os.WriteFile(script, []byte(contents), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	fixturePath, err := filepath.Abs(filepath.Join("testdata", fixture))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return backend(script).Run(t.Context(), RunSpec{
+		WorkDir: dir,
+		Prompt:  "fixture",
+		Env: map[string]string{
+			"WEAVE_TEST_FIXTURE": fixturePath,
+		},
+		Timeout:       timeout,
+		EngineVersion: "fixture-version",
+	})
+}
+
+func readFixture(t *testing.T, name string) []byte {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join("testdata", name))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
+}
+
+func assertReceipt(t *testing.T, receipt *UsageReceipt, input, output int, cost float64, hasTokens, hasCost bool) {
+	t.Helper()
+	if receipt.InputTokens != input || receipt.OutputTokens != output ||
+		math.Abs(receipt.CostUSD-cost) > 1e-12 || receipt.HasTokens != hasTokens || receipt.HasCost != hasCost ||
+		receipt.Source != UsageSourceCLIReported || receipt.Scope != UsageScopeInvocation {
+		t.Fatalf("receipt=%+v", receipt)
+	}
+}
+
+func hasDiagnostic(diagnostics []Diagnostic, code string) bool {
+	for _, item := range diagnostics {
+		if item.Code == code {
+			return true
+		}
+	}
+	return false
+}
