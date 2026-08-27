@@ -88,6 +88,17 @@ func nodeUsageAttemptID(callID string) string {
 	return "ua1_" + hex.EncodeToString(digest[:16])
 }
 
+func nodePhysicalUsageAttemptID(callID, physicalID string, index int) string {
+	digest := sha256.Sum256([]byte(fmt.Sprintf("teamrun-node-physical-attempt:%s:%s:%d", callID, physicalID, index)))
+	return "ua1_" + hex.EncodeToString(digest[:16])
+}
+
+type nodeUsageReport struct {
+	Totals      loomruntime.UsageTotals
+	Coverage    loomruntime.UsageCoverage
+	CLIAttempts []workflow.RuntimeCLIUsageAttempt
+}
+
 func runSerialMachine(
 	ctx context.Context,
 	graph machine.GraphDefinition,
@@ -175,24 +186,41 @@ func runSerialMachine(
 			if err != nil {
 				return fail(executionError(ErrorCodeExecutionUnrecoverable, err))
 			}
-			attemptID := nodeUsageAttemptID(callID)
-			if err := usage.StartAttempt(callID, attemptID); err != nil {
-				return fail(executionError(ErrorCodeExecutionUnrecoverable, err))
-			}
-			output, nodeUsage, nodeUsageComplete, err := runAgentNode(
+			output, nodeUsage, err := runAgentNode(
 				ctx, node, payload, entries, runInput, outputs,
 			)
-			if confirmErr := usage.ConfirmAttempt(callID, attemptID, contract.Usage{
-				InputTokens:  nodeUsage.InputTokens,
-				OutputTokens: nodeUsage.OutputTokens,
-				CostUSD:      nodeUsage.CostUSD,
-			}, nodeUsage.ToolCalls); confirmErr != nil {
-				return fail(executionError(ErrorCodeExecutionUnrecoverable, confirmErr))
+			if len(nodeUsage.CLIAttempts) == 0 {
+				attemptID := nodeUsageAttemptID(callID)
+				if startErr := usage.StartAttempt(callID, attemptID); startErr != nil {
+					return fail(executionError(ErrorCodeExecutionUnrecoverable, startErr))
+				}
+				if confirmErr := usage.ConfirmAttemptWithMetadata(callID, attemptID, contract.Usage{
+					InputTokens: nodeUsage.Totals.InputTokens, OutputTokens: nodeUsage.Totals.OutputTokens,
+					CostUSD: nodeUsage.Totals.CostUSD,
+				}, nodeUsage.Totals.ToolCalls, loomruntime.UsageAttemptMetadata{
+					HasTokens: nodeUsage.Coverage.HasTokens, HasCost: nodeUsage.Coverage.HasCost,
+				}); confirmErr != nil {
+					return fail(executionError(ErrorCodeExecutionUnrecoverable, confirmErr))
+				}
+			} else {
+				for index, physical := range nodeUsage.CLIAttempts {
+					attemptID := nodePhysicalUsageAttemptID(callID, physical.AttemptID, index)
+					if startErr := usage.StartAttempt(callID, attemptID); startErr != nil {
+						return fail(executionError(ErrorCodeExecutionUnrecoverable, startErr))
+					}
+					if confirmErr := usage.ConfirmAttemptWithMetadata(callID, attemptID, contract.Usage{
+						InputTokens: physical.InputTokens, OutputTokens: physical.OutputTokens, CostUSD: physical.CostUSD,
+					}, 0, loomruntime.UsageAttemptMetadata{
+						HasTokens: physical.HasTokens, HasCost: physical.HasCost, Source: physical.Source,
+					}); confirmErr != nil {
+						return fail(executionError(ErrorCodeExecutionUnrecoverable, confirmErr))
+					}
+				}
 			}
 			// A CLI runtime agent has no usage receipt: the candidate run
 			// executes it normally, records zero measured usage, and marks
 			// the result usage-incomplete instead of failing closed.
-			if start.Candidate && !nodeUsageComplete && usageIncompleteReason == "" {
+			if len(nodeUsage.CLIAttempts) > 0 && (!nodeUsage.Coverage.HasTokens || !nodeUsage.Coverage.HasCost) && usageIncompleteReason == "" {
 				usageComplete = false
 				usageIncompleteReason = UsageIncompleteReasonCLINode
 			}
@@ -648,11 +676,7 @@ func runAgentNode(
 	entries map[string]workflow.RuntimeGraphEntry,
 	runInput any,
 	outputs map[string]any,
-) (any, loomruntime.UsageTotals, bool, error) {
-	// usageComplete reports whether the executed node produced a measurable
-	// usage receipt: frozen graphs confirm logical usage, while CLI runtime
-	// agents have no receipt and contribute zero measured usage.
-	usageComplete := true
+) (any, nodeUsageReport, error) {
 	var (
 		agentID      string
 		agentVersion int64
@@ -665,7 +689,7 @@ func runAgentNode(
 		for _, bundle := range payload.Bundles {
 			if bundle.Agent.AgentID == agentID {
 				if agentVersion != 0 {
-					return nil, loomruntime.UsageTotals{}, false, executionError(
+					return nil, nodeUsageReport{}, executionError(
 						ErrorCodeRuntimeIncompatible,
 						fmt.Errorf("lead agent %q has multiple bundles", agentID),
 					)
@@ -678,14 +702,14 @@ func runAgentNode(
 		agentVersion = config.AgentVersion
 		instruction = config.ResultRequirement
 	default:
-		return nil, loomruntime.UsageTotals{}, false, executionError(
+		return nil, nodeUsageReport{}, executionError(
 			ErrorCodeRuntimeIncompatible,
 			fmt.Errorf("agent node %q config is invalid", node.ID),
 		)
 	}
 	entry, ok := entries[runtimeEntryKey(agentID, agentVersion)]
 	if !ok || (entry.Graph == nil && entry.CLI == nil) || (entry.Graph != nil && entry.CLI != nil) {
-		return nil, loomruntime.UsageTotals{}, false, executionError(
+		return nil, nodeUsageReport{}, executionError(
 			ErrorCodeRuntimeIncompatible,
 			fmt.Errorf("frozen runtime entry for node %q is unavailable or ambiguous", node.ID),
 		)
@@ -694,13 +718,13 @@ func runAgentNode(
 	for name, binding := range node.Inputs {
 		value, err := resolveValue(binding.Value, runInput, outputs)
 		if err != nil {
-			return nil, loomruntime.UsageTotals{}, false, executionError(ErrorCodeExecutionUnrecoverable, err)
+			return nil, nodeUsageReport{}, executionError(ErrorCodeExecutionUnrecoverable, err)
 		}
 		inputs[name] = value
 	}
 	encodedInputs, err := json.Marshal(inputs)
 	if err != nil {
-		return nil, loomruntime.UsageTotals{}, false, executionError(ErrorCodeExecutionUnrecoverable, err)
+		return nil, nodeUsageReport{}, executionError(ErrorCodeExecutionUnrecoverable, err)
 	}
 	prompt := instruction + "\n\nInputs:\n" + string(encodedInputs)
 	nodeTimeout := agentNodeExecutionTimeout
@@ -721,36 +745,37 @@ func runAgentNode(
 	}
 	if entry.CLI != nil {
 		type cliOutcome struct {
-			output string
+			result workflow.RuntimeCLIResult
 			err    error
 		}
 		outcomes := make(chan cliOutcome, 1)
 		go func() {
-			output, err := entry.CLI.Execute(nodeCtx, prompt)
-			outcomes <- cliOutcome{output: output, err: err}
+			result, err := entry.CLI.ExecuteAccounted(nodeCtx, prompt)
+			outcomes <- cliOutcome{result: result, err: err}
 		}()
 		var outcome cliOutcome
 		select {
 		case outcome = <-outcomes:
 		case <-nodeCtx.Done():
-			if timeout := timeoutErr(); timeout != nil {
-				return nil, loomruntime.UsageTotals{}, false, timeout
-			}
-			return nil, loomruntime.UsageTotals{}, false, executionError(ErrorCodeExecutionUnrecoverable, nodeCtx.Err())
+			// Engine adapters finish their parser loop after cancellation so a
+			// terminal receipt already read from stdout is not discarded here.
+			outcome = <-outcomes
+		}
+		usage, usageErr := runtimeCLIUsageReport(outcome.result.Attempts)
+		if usageErr != nil {
+			return nil, nodeUsageReport{}, executionError(ErrorCodeExecutionUnrecoverable, usageErr)
 		}
 		if timeout := timeoutErr(); timeout != nil {
-			return nil, loomruntime.UsageTotals{}, false, timeout
+			return nil, usage, timeout
 		}
 		if outcome.err != nil {
-			return nil, loomruntime.UsageTotals{}, false, executionError(ErrorCodeExecutionUnrecoverable, outcome.err)
+			return nil, usage, executionError(ErrorCodeExecutionUnrecoverable, outcome.err)
 		}
-		normalizedOutput, err := normalizeAgentNodeOutput(node, outcome.output)
+		normalizedOutput, err := normalizeAgentNodeOutput(node, outcome.result.Output)
 		if err != nil {
-			return nil, loomruntime.UsageTotals{}, false, err
+			return nil, usage, err
 		}
-		// A CLI execution has no usage receipt: report zero measured usage
-		// and usage_complete=false so callers never mistake it for full usage.
-		return normalizedOutput, loomruntime.UsageTotals{}, false, nil
+		return normalizedOutput, usage, nil
 	}
 	graphState := loom.State{
 		"messages":          []contract.Message{{Role: "user", Content: prompt}},
@@ -762,7 +787,7 @@ func runAgentNode(
 		graphState,
 		loomruntime.NewUsageAccumulator(),
 	); err != nil {
-		return nil, loomruntime.UsageTotals{}, false, executionError(
+		return nil, nodeUsageReport{}, executionError(
 			ErrorCodeExecutionUnrecoverable,
 			fmt.Errorf("initialize frozen graph usage for node %q: %w", node.ID, err),
 		)
@@ -772,7 +797,7 @@ func runAgentNode(
 	// usage into graph state; descriptors that install before-step hooks
 	// rebind to the real step name on their first step.
 	if err := loomruntime.BindUsageBeforeStep(execCtx, "graph_entry", graphState); err != nil {
-		return nil, loomruntime.UsageTotals{}, false, executionError(
+		return nil, nodeUsageReport{}, executionError(
 			ErrorCodeExecutionUnrecoverable,
 			fmt.Errorf("bind frozen graph usage for node %q: %w", node.ID, err),
 		)
@@ -791,65 +816,90 @@ func runAgentNode(
 	case graphResult = <-graphOutcomes:
 	case <-nodeCtx.Done():
 		if timeout := timeoutErr(); timeout != nil {
-			return nil, loomruntime.UsageTotals{}, usageComplete, timeout
+			return nil, nodeUsageReport{}, timeout
 		}
-		return nil, loomruntime.UsageTotals{}, usageComplete, executionError(ErrorCodeExecutionUnrecoverable, nodeCtx.Err())
+		return nil, nodeUsageReport{}, executionError(ErrorCodeExecutionUnrecoverable, nodeCtx.Err())
 	}
 	result, err := graphResult.result, graphResult.err
 	usage, usageErr := frozenNodeUsage(result)
 	if usageErr != nil {
-		return nil, loomruntime.UsageTotals{}, false, executionError(
+		return nil, nodeUsageReport{}, executionError(
 			ErrorCodeExecutionUnrecoverable,
 			fmt.Errorf("read frozen graph usage for node %q: %w", node.ID, usageErr),
 		)
 	}
 	if err != nil {
-		return nil, usage, usageComplete, executionError(ErrorCodeExecutionUnrecoverable, err)
+		return nil, usage, executionError(ErrorCodeExecutionUnrecoverable, err)
 	}
 	if result == nil {
-		return nil, usage, usageComplete, executionError(
+		return nil, usage, executionError(
 			ErrorCodeExecutionUnrecoverable,
 			errors.New("frozen graph returned no result"),
 		)
 	}
 	if result.Yielded || result.StopReason == loom.StopYielded {
-		return nil, usage, usageComplete, executionError(
+		return nil, usage, executionError(
 			ErrorCodeUnexpectedInteractiveYield,
 			fmt.Errorf("frozen graph for node %q yielded", node.ID),
 		)
 	}
 	if result.StopReason != loom.StopCompleted {
-		return nil, usage, usageComplete, executionError(
+		return nil, usage, executionError(
 			ErrorCodeExecutionUnrecoverable,
 			fmt.Errorf("frozen graph stopped with %q", result.StopReason),
 		)
 	}
 	output, present := result.State["output"]
 	if !present {
-		return nil, usage, usageComplete, executionError(
+		return nil, usage, executionError(
 			ErrorCodeOutputInvalid,
 			fmt.Errorf("frozen graph for node %q returned no output", node.ID),
 		)
 	}
 	normalizedOutput, err := normalizeAgentNodeOutput(node, output)
 	if err != nil {
-		return nil, usage, usageComplete, err
+		return nil, usage, err
 	}
-	return normalizedOutput, usage, usageComplete, nil
+	return normalizedOutput, usage, nil
+}
+
+func runtimeCLIUsageReport(attempts []workflow.RuntimeCLIUsageAttempt) (nodeUsageReport, error) {
+	accumulator := loomruntime.NewUsageAccumulator()
+	callID, err := accumulator.NextCall("cli-node-usage", "engine")
+	if err != nil {
+		return nodeUsageReport{}, err
+	}
+	for index, attempt := range attempts {
+		attemptID := fmt.Sprintf("cli-attempt-%d", index)
+		if err := accumulator.StartAttempt(callID, attemptID); err != nil {
+			return nodeUsageReport{}, err
+		}
+		if err := accumulator.ConfirmAttemptWithMetadata(callID, attemptID, contract.Usage{
+			InputTokens: attempt.InputTokens, OutputTokens: attempt.OutputTokens, CostUSD: attempt.CostUSD,
+		}, 0, loomruntime.UsageAttemptMetadata{
+			HasTokens: attempt.HasTokens, HasCost: attempt.HasCost, Source: attempt.Source,
+		}); err != nil {
+			return nodeUsageReport{}, err
+		}
+	}
+	return nodeUsageReport{
+		Totals: accumulator.Totals(), Coverage: accumulator.Coverage(),
+		CLIAttempts: append([]workflow.RuntimeCLIUsageAttempt(nil), attempts...),
+	}, nil
 }
 
 // frozenNodeUsage extracts the confirmed logical usage a frozen graph run
 // accumulated into its final state. A nil or incomplete result yields zero
 // usage (nothing was observed), never an error.
-func frozenNodeUsage(result *loom.RunResult) (loomruntime.UsageTotals, error) {
+func frozenNodeUsage(result *loom.RunResult) (nodeUsageReport, error) {
 	if result == nil || result.State == nil {
-		return loomruntime.UsageTotals{}, nil
+		return nodeUsageReport{Coverage: loomruntime.UsageCoverage{HasTokens: true, HasCost: true}}, nil
 	}
 	accumulator, err := loomruntime.LoadUsageAccumulator(result.State)
 	if err != nil {
-		return loomruntime.UsageTotals{}, err
+		return nodeUsageReport{}, err
 	}
-	return accumulator.Totals(), nil
+	return nodeUsageReport{Totals: accumulator.Totals(), Coverage: accumulator.Coverage()}, nil
 }
 
 // validateAgentNodeOutput enforces the node-level Output contract at runtime.

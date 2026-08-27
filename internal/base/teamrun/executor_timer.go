@@ -185,7 +185,7 @@ func (e *Executor) executeTimerResume(
 	if runErr != nil {
 		_, err := e.failRunning(
 			ctx, plan.run, plan.task, plan.executorID, runErr,
-			result.Usage, result.UsageComplete, result.UsageIncompleteReason,
+			result.Usage, result.UsageCoverage, result.UsageComplete, result.UsageIncompleteReason,
 		)
 		return err
 	}

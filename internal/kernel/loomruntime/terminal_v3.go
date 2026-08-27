@@ -66,6 +66,9 @@ type TerminalEntryV3 struct {
 	// omit both fields and read as usage-complete.
 	UsageComplete         *bool                      `json:"usage_complete,omitempty"`
 	UsageIncompleteReason string                     `json:"usage_incomplete_reason,omitempty"`
+	UsageHasTokens        *bool                      `json:"usage_has_tokens,omitempty"`
+	UsageHasCost          *bool                      `json:"usage_has_cost,omitempty"`
+	UsageSources          []string                   `json:"usage_sources,omitempty"`
 	SelfExclusive         TerminalUsage              `json:"self_exclusive"`
 	ChildBreakdown        []TerminalChildBreakdownV3 `json:"child_breakdown"`
 	SubtreeTotal          TerminalUsage              `json:"subtree_total"`
@@ -227,6 +230,11 @@ func validateTerminalV3JSONPresence(data []byte) error {
 		"step",
 		"summary",
 		"tool_calls",
+		"usage_complete",
+		"usage_incomplete_reason",
+		"usage_has_tokens",
+		"usage_has_cost",
+		"usage_sources",
 	} {
 		if raw, exists := fields[optional]; exists && bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
 			return fmt.Errorf("terminal schema-v3 field %q must be omitted instead of null", optional)
@@ -358,6 +366,29 @@ func validateTerminalV3(entry TerminalEntryV3) error {
 			TerminalRecordCorrupt,
 			"terminal usage_incomplete_reason requires usage_complete=false",
 		)
+	}
+	if (entry.UsageHasTokens == nil) != (entry.UsageHasCost == nil) {
+		return terminalRecordError(
+			TerminalRecordCorrupt,
+			"terminal usage_has_tokens and usage_has_cost must be present together",
+		)
+	}
+	if entry.UsageHasTokens != nil && (!*entry.UsageHasTokens || !*entry.UsageHasCost) &&
+		(entry.UsageComplete == nil || *entry.UsageComplete) {
+		return terminalRecordError(
+			TerminalRecordCorrupt,
+			"terminal incomplete usage dimension requires usage_complete=false",
+		)
+	}
+	seenSources := make(map[string]struct{}, len(entry.UsageSources))
+	for _, source := range entry.UsageSources {
+		if source == "" {
+			return terminalRecordError(TerminalRecordCorrupt, "terminal usage source is empty")
+		}
+		if _, duplicate := seenSources[source]; duplicate {
+			return terminalRecordError(TerminalRecordCorrupt, "terminal usage source %q is duplicated", source)
+		}
+		seenSources[source] = struct{}{}
 	}
 	if entry.ChildBreakdown == nil {
 		return terminalRecordError(TerminalRecordCorrupt, "terminal child_breakdown must be a non-nil array")

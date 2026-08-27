@@ -194,6 +194,7 @@ func frozenTerminalCandidate(
 	stopReason string,
 	endedAt time.Time,
 	usage loomruntime.UsageTotals,
+	usageCoverage *loomruntime.UsageCoverage,
 	usageComplete bool,
 	usageIncompleteReason string,
 	conversationID *string,
@@ -222,6 +223,15 @@ func frozenTerminalCandidate(
 		falseValue := false
 		usageCompletePtr = &falseValue
 	}
+	var usageHasTokens, usageHasCost *bool
+	var usageSources []string
+	if usageCoverage != nil {
+		hasTokens := usageCoverage.HasTokens
+		hasCost := usageCoverage.HasCost
+		usageHasTokens = &hasTokens
+		usageHasCost = &hasCost
+		usageSources = append([]string(nil), usageCoverage.Sources...)
+	}
 	return loomruntime.TerminalEntryV3{
 		SchemaVersion:         3,
 		RunID:                 run.RunID,
@@ -246,6 +256,9 @@ func frozenTerminalCandidate(
 		SubtreeTotal:          selfExclusive,
 		UsageComplete:         usageCompletePtr,
 		UsageIncompleteReason: usageIncompleteReason,
+		UsageHasTokens:        usageHasTokens,
+		UsageHasCost:          usageHasCost,
+		UsageSources:          usageSources,
 	}, nil
 }
 
@@ -255,6 +268,7 @@ func (e *Executor) commitFrozenNormalTerminal(
 	status string,
 	stopReason string,
 	usage loomruntime.UsageTotals,
+	usageCoverage *loomruntime.UsageCoverage,
 	usageComplete bool,
 	usageIncompleteReason string,
 ) error {
@@ -314,7 +328,7 @@ func (e *Executor) commitFrozenNormalTerminal(
 		return err
 	}
 	candidate, err := frozenTerminalCandidate(
-		run, lease, status, stopReason, endedAt, usage,
+		run, lease, status, stopReason, endedAt, usage, usageCoverage,
 		usageComplete, usageIncompleteReason, conversationID,
 	)
 	if err != nil {

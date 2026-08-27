@@ -38,6 +38,17 @@ type usageCallFrame struct {
 	callID    string
 	attemptID string
 	generate  attemptIDGenerator
+	reported  bool
+}
+
+// PhysicalUsageReport is an out-of-band receipt for contract.LLM adapters
+// whose underlying transport can expose retries and failed-attempt spend.
+type PhysicalUsageReport struct {
+	Usage     contract.Usage
+	ToolCalls int
+	HasTokens bool
+	HasCost   bool
+	Source    string
 }
 
 func withUsageRunScope(ctx context.Context) context.Context {
@@ -70,6 +81,43 @@ func RestartUsageAttempt(ctx context.Context) error {
 		return fmt.Errorf("%w: usage call frame belongs to another run scope", ErrUsageConflict)
 	}
 	return frame.startNextAttempt()
+}
+
+// ReportPhysicalUsage confirms one or more physical transport attempts under
+// the current logical LLM call. It is a no-op outside a bound usage scope.
+// Adapters must call it before returning an execution error so failed spend is
+// checkpointed. The ordinary response.Usage confirmation is then suppressed.
+func ReportPhysicalUsage(ctx context.Context, reports []PhysicalUsageReport) error {
+	scope, hasScope := usageScopeFromContext(ctx)
+	if !hasScope {
+		return nil
+	}
+	frame, hasFrame := usageCallFrameFromContext(ctx)
+	if !hasFrame || frame.scope != scope {
+		return fmt.Errorf("usage call frame is required to report physical usage")
+	}
+	for index, report := range reports {
+		if index > 0 {
+			if err := frame.startNextAttempt(); err != nil {
+				return err
+			}
+		}
+		frame.mu.Lock()
+		attemptID := frame.attemptID
+		frame.mu.Unlock()
+		if attemptID == "" {
+			return fmt.Errorf("usage physical attempt is not started")
+		}
+		if err := scope.confirmWithMetadata(frame.callID, attemptID, report.Usage, report.ToolCalls, UsageAttemptMetadata{
+			HasTokens: report.HasTokens, HasCost: report.HasCost, Source: report.Source,
+		}); err != nil {
+			return err
+		}
+	}
+	frame.mu.Lock()
+	frame.reported = len(reports) > 0
+	frame.mu.Unlock()
+	return nil
 }
 
 func (f *usageCallFrame) startNextAttempt() error {
@@ -179,12 +227,24 @@ func (s *usageRunScope) confirm(
 	usage contract.Usage,
 	toolCalls int,
 ) error {
+	return s.confirmWithMetadata(callID, attemptID, usage, toolCalls, UsageAttemptMetadata{
+		HasTokens: true, HasCost: true,
+	})
+}
+
+func (s *usageRunScope) confirmWithMetadata(
+	callID string,
+	attemptID string,
+	usage contract.Usage,
+	toolCalls int,
+	metadata UsageAttemptMetadata,
+) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if !s.bound || s.state == nil {
 		return fmt.Errorf("usage scope is not bound to a graph step")
 	}
-	if err := s.accumulator.ConfirmAttempt(callID, attemptID, usage, toolCalls); err != nil {
+	if err := s.accumulator.ConfirmAttemptWithMetadata(callID, attemptID, usage, toolCalls, metadata); err != nil {
 		return err
 	}
 	if err := StoreUsageAccumulator(s.state, s.accumulator); err != nil {
@@ -342,9 +402,12 @@ func (l *usageBoundaryLLM) Chat(
 	}
 	frame.mu.Lock()
 	confirmedAttemptID := frame.attemptID
+	reported := frame.reported
 	frame.mu.Unlock()
-	if err := scope.confirm(frame.callID, confirmedAttemptID, response.Usage, len(response.ToolCalls)); err != nil {
-		return nil, err
+	if !reported {
+		if err := scope.confirm(frame.callID, confirmedAttemptID, response.Usage, len(response.ToolCalls)); err != nil {
+			return nil, err
+		}
 	}
 	return response, nil
 }

@@ -132,6 +132,7 @@ func TestExecutorProcessNextReplaysSuccessTerminalMarkerWithoutRuntime(t *testin
 		"success",
 		"completed",
 		UsageTotals{InputTokens: 2, OutputTokens: 3},
+		nil,
 		true,
 		"",
 	); err != nil {
@@ -164,6 +165,7 @@ func TestExecutorProcessNextReplaysFailedTerminalMarkerWithoutRuntime(t *testing
 		"failed",
 		string(ErrorCodeOutputInvalid),
 		UsageTotals{InputTokens: 2},
+		nil,
 		true,
 		"",
 	); err != nil {

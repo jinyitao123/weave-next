@@ -180,7 +180,7 @@ func (e *Executor) finishRuntimeResult(
 	switch result.Status {
 	case RuntimeCompleted:
 		succeeded, err := e.succeedRunning(
-			ctx, run, task, executorID, result.Usage,
+			ctx, run, task, executorID, result.Usage, result.UsageCoverage,
 			result.UsageComplete, result.UsageIncompleteReason,
 		)
 		if err != nil {

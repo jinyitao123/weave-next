@@ -279,7 +279,7 @@ func (e *Executor) processHumanResume(ctx context.Context, task *taskqueue.Task,
 	if runErr != nil {
 		failed, failErr := e.failRunning(
 			ctx, run, task, executorID, runErr,
-			result.Usage, result.UsageComplete, result.UsageIncompleteReason,
+			result.Usage, result.UsageCoverage, result.UsageComplete, result.UsageIncompleteReason,
 		)
 		if failErr != nil {
 			return failErr

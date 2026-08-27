@@ -324,11 +324,12 @@ func (e *Executor) succeedRunning(
 	task *taskqueue.Task,
 	executorID string,
 	usage loomruntime.UsageTotals,
+	usageCoverage *loomruntime.UsageCoverage,
 	usageComplete bool,
 	usageIncompleteReason string,
 ) (TeamRun, error) {
 	if err := e.commitFrozenNormalTerminal(
-		ctx, run, "success", "completed", usage,
+		ctx, run, "success", "completed", usage, usageCoverage,
 		usageComplete, usageIncompleteReason,
 	); err != nil {
 		return TeamRun{}, err
@@ -367,6 +368,7 @@ func (e *Executor) failRunning(
 	executorID string,
 	runErr error,
 	usage loomruntime.UsageTotals,
+	usageCoverage *loomruntime.UsageCoverage,
 	usageComplete bool,
 	usageIncompleteReason string,
 ) (TeamRun, error) {
@@ -377,7 +379,7 @@ func (e *Executor) failRunning(
 		code = classified.Code
 	}
 	if err := e.commitFrozenNormalTerminal(
-		ctx, run, "failed", string(code), usage,
+		ctx, run, "failed", string(code), usage, usageCoverage,
 		usageComplete, usageIncompleteReason,
 	); err != nil {
 		return TeamRun{}, err

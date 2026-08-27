@@ -18,6 +18,7 @@ import (
 	"github.com/jinyitao123/loom/contract"
 	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/kernel/engine"
+	"github.com/jinyitao123/weave/internal/kernel/loomruntime"
 	"github.com/jinyitao123/weave/internal/kernel/mcphost"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 )
@@ -111,18 +112,62 @@ func (a *Adapter) Chat(ctx context.Context, req contract.ChatRequest) (*contract
 	} else {
 		result, err = a.executor.ExecRemote(ctx, a.tenant, a.agent, a.stamp, prompt, nil)
 	}
+	reports, usageErr := physicalUsageReports(result)
+	if usageErr != nil {
+		return nil, fmt.Errorf("runtime LLM usage: %w", usageErr)
+	}
 	if err != nil {
+		if reportErr := loomruntime.ReportPhysicalUsage(ctx, reports); reportErr != nil {
+			return nil, fmt.Errorf("runtime LLM failed usage: %w", reportErr)
+		}
 		return nil, fmt.Errorf("runtime LLM inference: %w", err)
 	}
 	parsed, err := a.parseResponse(result.Output, req.Tools)
 	if err != nil {
+		if reportErr := loomruntime.ReportPhysicalUsage(ctx, reports); reportErr != nil {
+			return nil, fmt.Errorf("runtime LLM invalid response usage: %w", reportErr)
+		}
 		return nil, err
 	}
 	parsed.Usage, err = contractUsage(result)
 	if err != nil {
 		return nil, fmt.Errorf("runtime LLM usage: %w", err)
 	}
+	if len(reports) > 0 {
+		reports[len(reports)-1].ToolCalls = len(parsed.ToolCalls)
+	}
+	if err := loomruntime.ReportPhysicalUsage(ctx, reports); err != nil {
+		return nil, fmt.Errorf("runtime LLM usage boundary: %w", err)
+	}
 	return parsed, nil
+}
+
+func physicalUsageReports(result engine.RunResult) ([]loomruntime.PhysicalUsageReport, error) {
+	receipts := make([]*engine.UsageReceipt, 0, len(result.Attempts)+1)
+	if len(result.Attempts) > 0 {
+		for _, attempt := range result.Attempts {
+			receipts = append(receipts, attempt.Usage)
+		}
+	} else {
+		receipts = append(receipts, result.Usage)
+	}
+	reports := make([]loomruntime.PhysicalUsageReport, 0, len(receipts))
+	for _, receipt := range receipts {
+		if err := engine.ValidateUsageReceipt(receipt); err != nil {
+			return nil, err
+		}
+		report := loomruntime.PhysicalUsageReport{}
+		if receipt != nil {
+			report.Usage = contract.Usage{
+				InputTokens: receipt.InputTokens, OutputTokens: receipt.OutputTokens, CostUSD: receipt.CostUSD,
+			}
+			report.HasTokens = receipt.HasTokens
+			report.HasCost = receipt.HasCost
+			report.Source = receipt.Source
+		}
+		reports = append(reports, report)
+	}
+	return reports, nil
 }
 
 func contractUsage(result engine.RunResult) (contract.Usage, error) {

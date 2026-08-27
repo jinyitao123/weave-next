@@ -123,7 +123,7 @@ func (e *Executor) processFanoutResume(ctx context.Context, task *taskqueue.Task
 	if runErr != nil {
 		failed, failErr := e.failRunning(
 			ctx, run, task, executorID, runErr,
-			result.Usage, result.UsageComplete, result.UsageIncompleteReason,
+			result.Usage, result.UsageCoverage, result.UsageComplete, result.UsageIncompleteReason,
 		)
 		if failErr != nil {
 			return failErr
@@ -220,7 +220,7 @@ func (r *WorkflowSerialRuntime) ExecuteFanoutLeg(
 	}
 	// Fanout legs keep the pre-T14B-2A behavior: leg-level usage settlement
 	// is owned by T14B-2B, so the contribution is intentionally discarded.
-	output, _, _, err := runAgentNode(
+	output, _, err := runAgentNode(
 		ctx, branch, loaded.payload, entries, runInput, outputs,
 	)
 	if err != nil {

@@ -51,6 +51,24 @@ type RuntimeCLIEntry struct {
 	stamp    execution.AgentExecutionStamp
 }
 
+// RuntimeCLIUsageAttempt is the TeamRun-facing, lossless subset of one engine
+// attempt. A nil engine receipt is represented by both dimensions false, not
+// by an estimated zero.
+type RuntimeCLIUsageAttempt struct {
+	AttemptID    string
+	InputTokens  int
+	OutputTokens int
+	CostUSD      float64
+	HasTokens    bool
+	HasCost      bool
+	Source       string
+}
+
+type RuntimeCLIResult struct {
+	Output   string
+	Attempts []RuntimeCLIUsageAttempt
+}
+
 func NewRuntimeCLIEntry(
 	executor RuntimeCLIExecutor,
 	record *registry.AgentRecord,
@@ -65,6 +83,37 @@ func NewRuntimeCLIEntry(
 func (e *RuntimeCLIEntry) Execute(ctx context.Context, prompt string) (string, error) {
 	result, err := e.ExecuteResult(ctx, prompt)
 	return result.Output, err
+}
+
+// ExecuteAccounted exposes every physical attempt to TeamRun accounting. The
+// result is returned even when execution fails so already incurred spend can
+// be committed before the failure route is chosen.
+func (e *RuntimeCLIEntry) ExecuteAccounted(ctx context.Context, prompt string) (RuntimeCLIResult, error) {
+	result, err := e.ExecuteResult(ctx, prompt)
+	accounted := RuntimeCLIResult{Output: result.Output}
+	if len(result.Attempts) > 0 {
+		accounted.Attempts = make([]RuntimeCLIUsageAttempt, 0, len(result.Attempts))
+		for _, attempt := range result.Attempts {
+			accounted.Attempts = append(accounted.Attempts, runtimeCLIUsageAttempt(attempt.AttemptID, attempt.Usage))
+		}
+	} else {
+		accounted.Attempts = []RuntimeCLIUsageAttempt{runtimeCLIUsageAttempt("", result.Usage)}
+	}
+	return accounted, err
+}
+
+func runtimeCLIUsageAttempt(attemptID string, receipt *engine.UsageReceipt) RuntimeCLIUsageAttempt {
+	usage := RuntimeCLIUsageAttempt{AttemptID: attemptID}
+	if receipt == nil {
+		return usage
+	}
+	usage.InputTokens = receipt.InputTokens
+	usage.OutputTokens = receipt.OutputTokens
+	usage.CostUSD = receipt.CostUSD
+	usage.HasTokens = receipt.HasTokens
+	usage.HasCost = receipt.HasCost
+	usage.Source = receipt.Source
+	return usage
 }
 
 // ExecuteResult preserves the CLI receipt for TeamRun node accounting.

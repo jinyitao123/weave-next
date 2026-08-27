@@ -49,6 +49,10 @@ type RuntimeResult struct {
 	// It is set on every terminal outcome (completed, parked, failed) so a
 	// failed run still charges its observed usage.
 	Usage UsageTotals
+	// UsageCoverage is present for runtimes using the Phase-2 receipt ABI. A
+	// nil value preserves legacy callers; a non-nil value distinguishes an
+	// unreported dimension from an explicitly reported zero.
+	UsageCoverage *loomruntime.UsageCoverage
 	// UsageComplete is false when the run result only covers the measured
 	// serial/loop contributions; UsageIncompleteReason names the unmeasured
 	// part (see the UsageIncompleteReason* constants).
@@ -494,6 +498,8 @@ func runtimeResultFromSerial(
 	result serialMachineResult,
 	payload frozen.ArtifactPayloadV1,
 ) (RuntimeResult, error) {
+	coverage := result.Usage.Coverage()
+	coveragePtr := &coverage
 	switch result.Status {
 	case serialCompleted:
 		if len(payload.DeliveryTargets) != 0 {
@@ -508,6 +514,7 @@ func runtimeResultFromSerial(
 		}
 		return RuntimeResult{
 			Status: RuntimeCompleted, Output: encoded, Usage: result.Usage.Totals(),
+			UsageCoverage:         coveragePtr,
 			UsageComplete:         result.UsageComplete,
 			UsageIncompleteReason: result.UsageIncompleteReason,
 		}, nil
@@ -533,10 +540,12 @@ func runtimeResultFromSerial(
 			UsageCheckpoint: usageCheckpoint,
 			UsageComplete:   result.UsageComplete, UsageIncompleteReason: result.UsageIncompleteReason,
 		}, Usage: result.Usage.Totals(),
+			UsageCoverage: coveragePtr,
 			UsageComplete: result.UsageComplete, UsageIncompleteReason: result.UsageIncompleteReason}, nil
 	case serialFailed:
 		return RuntimeResult{
 			Status: RuntimeFailed, Usage: result.Usage.Totals(),
+			UsageCoverage:         coveragePtr,
 			UsageComplete:         result.UsageComplete,
 			UsageIncompleteReason: result.UsageIncompleteReason,
 		}, result.Err
