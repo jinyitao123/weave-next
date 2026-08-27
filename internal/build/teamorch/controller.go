@@ -311,9 +311,8 @@ func (c *Controller) Run(ctx context.Context, workspaceID, buildRunID string) (R
 			RoundNo:     roundNo,
 			Run:         run,
 		}
-		// Budget gate, before Build: consumption must be strictly below every
-		// limit before a new cost source starts. An exceeded or exactly
-		// exhausted dimension blocks without calling Build.
+		// Budget gate, before Build: a strictly exceeded dimension blocks
+		// without calling Build. Exact equality is not an over-budget verdict.
 		//
 		// T15C baseline evaluation: for an optimize run, round 1 first
 		// evaluates the frozen baseline (pre-task published content) and
@@ -331,7 +330,7 @@ func (c *Controller) Run(ctx context.Context, workspaceID, buildRunID string) (R
 			}
 		}
 		if res, blocked, err := c.budgetGate(ctx, workspaceID, buildRunID, actor,
-			roundNo, len(rounds), run, false); err != nil {
+			roundNo, len(rounds), run); err != nil {
 			return Result{}, err
 		} else if blocked {
 			return res, nil
@@ -343,10 +342,9 @@ func (c *Controller) Run(ctx context.Context, workspaceID, buildRunID string) (R
 			return Result{}, fmt.Errorf("round controller: build phase round %d: %w", roundNo, err)
 		}
 		// Budget gate, after Build: the build phase's charges are in the
-		// ledger. Over the limit (or exactly at the limit) means Evaluate is
-		// another cost source that must not start.
+		// ledger. A strictly exceeded limit stops the run.
 		if res, blocked, err := c.budgetGate(ctx, workspaceID, buildRunID, actor,
-			roundNo, len(rounds), run, false); err != nil {
+			roundNo, len(rounds), run); err != nil {
 			return Result{}, err
 		} else if blocked {
 			return res, nil
@@ -400,11 +398,9 @@ func (c *Controller) Run(ctx context.Context, workspaceID, buildRunID string) (R
 
 		// Budget gate, after Evaluate: read the round + total ledger before
 		// the report/round rows and the pass/revise transition. Exceeded
-		// dimensions block even a passing round. An exactly exhausted
-		// dimension still permits a pass to publish (no extra usage), but
-		// blocks a revise from starting the next round.
+		// dimensions block even a passing round; exact equality does not.
 		if res, blocked, err := c.budgetGate(ctx, workspaceID, buildRunID, actor,
-			roundNo, len(rounds), run, eval.Conclusion == teambuild.ConclusionPass); err != nil {
+			roundNo, len(rounds), run); err != nil {
 			return Result{}, err
 		} else if blocked {
 			return res, nil
@@ -1120,18 +1116,13 @@ func (c *Controller) stopCompilerDiagnosis(
 }
 
 // budgetGate is one round-controller budget checkpoint. It reads the round
-// and total ledger (the controller never writes it; T14B's usage sources
-// do) and stops the run when a dimension is over its limit, or when the
-// limit is exactly consumed and the next step would start a new cost
-// source. allowZeroUsagePass lifts only the exact-balance block so an
-// already-passed round can complete report persistence and publishing
-// without further usage. The stop reason names every offending dimension.
+// and total ledger (the controller never writes it; usage sources do) and
+// stops the run only when ExceededDims is non-empty.
 func (c *Controller) budgetGate(
 	ctx context.Context,
 	workspaceID, buildRunID, actor string,
 	roundNo, roundsLen int,
 	run teambuild.TeamBuildRun,
-	allowZeroUsagePass bool,
 ) (Result, bool, error) {
 	decision, err := c.Store.EvaluateBudget(
 		ctx, workspaceID, buildRunID, roundNo, run.RoundBudget, run.TotalBudget,
@@ -1153,10 +1144,7 @@ func (c *Controller) budgetGate(
 		}, true, nil
 	}
 	if len(decision.ExceededDims) > 0 {
-		return block("budget exceeded: " + strings.Join(decision.ExceededDims, ", "))
-	}
-	if len(decision.ExhaustedDims) > 0 && !allowZeroUsagePass {
-		return block("budget exhausted: " + strings.Join(decision.ExhaustedDims, ", "))
+		return block(string(teameval.FailureClassBudgetExhausted))
 	}
 	return Result{}, false, nil
 }

@@ -571,21 +571,14 @@ type SemanticEvaluationAttempt struct {
 	OutputRecordedAt *time.Time
 }
 
-// BudgetDecision is the budget-gate verdict at one round-controller
-// checkpoint. It is read-only: the controller never writes the ledger.
+// BudgetDecision is the budget-gate verdict at one checkpoint. Every caller
+// decides exclusively from ExceededDims so exact budget equality remains a
+// passing state.
 type BudgetDecision struct {
-	// Allowed reports whether a new cost source (Build, Evaluate, or the
-	// next round) may start.
-	Allowed bool
 	// ExceededDims lists every round/total dimension whose consumption is
 	// strictly over its limit (e.g. "round input_tokens", "total cost_usd").
 	// Any exceeded dimension hard-blocks the run regardless of conclusion.
 	ExceededDims []string
-	// ExhaustedDims lists every dimension whose consumption exactly equals
-	// its limit (zero balance). A zero-balance run may finish an
-	// already-passed round without additional usage, but must not start
-	// another cost source.
-	ExhaustedDims []string
 }
 
 // Hash returns the sha256 of the strict canonical report JSON.

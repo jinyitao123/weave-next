@@ -239,7 +239,7 @@ func (p *ProductionPhases) PlanBlueprintPatch(
 		if err != nil {
 			return teambuild.BlueprintPatchV1{}, fmt.Errorf("evaluate blueprint patch budget before planner: %w", err)
 		}
-		if !preDecision.Allowed {
+		if len(preDecision.ExceededDims) > 0 {
 			return teambuild.BlueprintPatchV1{}, fmt.Errorf("%w: no balance before planner", ErrBlueprintPatchPlannerBudgetExhausted)
 		}
 	}
@@ -275,7 +275,7 @@ func (p *ProductionPhases) PlanBlueprintPatch(
 	if err != nil {
 		return teambuild.BlueprintPatchV1{}, fmt.Errorf("evaluate blueprint patch budget: %w", err)
 	}
-	if !decision.Allowed {
+	if len(decision.ExceededDims) > 0 {
 		return teambuild.BlueprintPatchV1{}, fmt.Errorf("%w: planner charge consumed remaining balance", ErrBlueprintPatchPlannerBudgetExhausted)
 	}
 	patch, err := decodeBlueprintPatchPlannerOutput(planned.Output)
@@ -563,8 +563,8 @@ func baselineReportKey(buildRunID string) string {
 // associated with its runtime run id by the admission-after hook before any
 // graph/LLM/tool work, its final terminal marker is charged into the T14A
 // budget ledger after the run, and after every role's accounting the budget
-// is evaluated so an exceeded or exactly exhausted dimension stops the next
-// role and returns nil — the controller's post-Build gate then transitions
+// is evaluated so a strictly exceeded dimension stops the next role and
+// returns nil — the controller's post-Build gate then transitions
 // the run to blocked. Build starts by reconciling the round's usage sources:
 // an association with a final marker but no ledger row is backfilled
 // idempotently, while an association without a final marker returns
@@ -592,7 +592,7 @@ func (p *ProductionPhases) Build(ctx context.Context, round RoundContext) error 
 	if err != nil {
 		return fmt.Errorf("build phase: evaluate reconciled budget round %d: %w", round.RoundNo, err)
 	}
-	if !initialDecision.Allowed {
+	if len(initialDecision.ExceededDims) > 0 {
 		return nil
 	}
 
@@ -644,7 +644,7 @@ func (p *ProductionPhases) Build(ctx context.Context, round RoundContext) error 
 				return fmt.Errorf("build phase: evaluate budget after %s round %d: %w",
 					step.sourceRole, round.RoundNo, err)
 			}
-			if !decision.Allowed {
+			if len(decision.ExceededDims) > 0 {
 				return nil
 			}
 			continue
@@ -670,7 +670,7 @@ func (p *ProductionPhases) Build(ctx context.Context, round RoundContext) error 
 		previousOutput = result.Output
 
 		// Each role's accounting must leave the next role startable; an
-		// exceeded or exactly exhausted dimension stops the build with no
+		// exceeded dimension stops the build with no
 		// error so the controller's post-Build gate blocks the run.
 		decision, err := p.Deps.Build.EvaluateBudget(
 			ctx,
@@ -684,7 +684,7 @@ func (p *ProductionPhases) Build(ctx context.Context, round RoundContext) error 
 			return fmt.Errorf("build phase: evaluate budget after %s round %d: %w",
 				step.sourceRole, round.RoundNo, err)
 		}
-		if !decision.Allowed {
+		if len(decision.ExceededDims) > 0 {
 			return nil
 		}
 	}
@@ -1656,6 +1656,18 @@ func (p *ProductionPhases) teamForgeWriteDeps() teamforge.WriteDeps {
 // and assembles the immutable round report.
 func (p *ProductionPhases) Evaluate(ctx context.Context, round RoundContext) (RoundEvaluation, error) {
 	workspaceID := round.WorkspaceID
+	if round.Run.EffectiveExecutionStrategy() == teambuild.ExecutionStrategyCompilerV1 {
+		decision, err := p.Deps.Build.EvaluateBudget(
+			ctx, workspaceID, round.BuildRunID, round.RoundNo,
+			round.Run.RoundBudget, round.Run.TotalBudget,
+		)
+		if err != nil {
+			return RoundEvaluation{}, fmt.Errorf("evaluate phase: candidate budget preflight: %w", err)
+		}
+		if len(decision.ExceededDims) > 0 {
+			return budgetExhaustedEvaluation(teambuild.EvaluationReport{SchemaVersion: 1}, "", decision), nil
+		}
+	}
 
 	team, err := p.targetTeam(ctx, workspaceID, round.Run)
 	if err != nil {
@@ -1757,6 +1769,24 @@ func (p *ProductionPhases) Evaluate(ctx context.Context, round RoundContext) (Ro
 			Output:       formatCandidateRunEvidence(runID, status, stageOutputs),
 			StageOutputs: stageOutputs,
 		})
+		if _, err := p.reconcileScenarioUsage(ctx, round, []string{roles[index]}); err != nil {
+			return RoundEvaluation{}, fmt.Errorf(
+				"evaluate phase: settle scenario %s usage: %w", scenario.ID, err,
+			)
+		}
+		decision, err := p.Deps.Build.EvaluateBudget(
+			ctx, workspaceID, round.BuildRunID, round.RoundNo,
+			round.Run.RoundBudget, round.Run.TotalBudget,
+		)
+		if err != nil {
+			return RoundEvaluation{}, fmt.Errorf(
+				"evaluate phase: scenario %s budget gate: %w", scenario.ID, err,
+			)
+		}
+		if len(decision.ExceededDims) > 0 {
+			report := p.assembleReport(ctx, round, team, candidate, runs, nil)
+			return budgetExhaustedEvaluation(report, candidateRef, decision), nil
+		}
 		if status != string(teamrun.StatusSucceeded) && status != "success" {
 			_, errorCode, failureDetail, factsErr := p.candidateOutcomeFacts(
 				ctx, workspaceID, runID,
@@ -1904,6 +1934,27 @@ func (p *ProductionPhases) Evaluate(ctx context.Context, round RoundContext) (Ro
 		Diagnosis:       diagnosis,
 		Report:          report,
 	}, nil
+}
+
+func budgetExhaustedEvaluation(
+	report teambuild.EvaluationReport,
+	candidateRef string,
+	decision teambuild.BudgetDecision,
+) RoundEvaluation {
+	detail := "budget_exhausted"
+	if len(decision.ExceededDims) > 0 {
+		detail += ": " + strings.Join(decision.ExceededDims, ", ")
+	}
+	return RoundEvaluation{
+		CandidateRef: candidateRef, Conclusion: teambuild.ConclusionBlocked,
+		FailureCategory: string(teameval.FailureClassBudgetExhausted), Report: report,
+		Diagnosis: teameval.TypedDiagnosis{
+			Class:             teameval.FailureClassBudgetExhausted,
+			OriginalErrorCode: string(teameval.FailureClassBudgetExhausted),
+			FailureDetail:     detail,
+			RevisionAction:    teameval.RevisionActionBlockPlatformDiagnosis,
+		},
+	}
 }
 
 // PublishStep releases the passed round's candidate through the publication

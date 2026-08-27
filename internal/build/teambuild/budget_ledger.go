@@ -199,11 +199,9 @@ func (s *Store) GetRoundBudgetUsage(
 }
 
 // EvaluateBudget compares the current round's and the whole-task's ledger
-// consumption against their budgets at one controller checkpoint. A limit
-// of zero means that dimension is unlimited. The verdict distinguishes
-// dimensions strictly over the limit (hard block) from dimensions exactly at
-// the limit (zero balance: no new cost source, but a completed pass may
-// still publish without extra usage).
+// consumption against their budgets at one checkpoint. A limit of zero means
+// that dimension is unlimited. Exact equality is not exceeded and therefore
+// never blocks a passing run.
 func (s *Store) EvaluateBudget(
 	ctx context.Context,
 	workspaceID, buildRunID string,
@@ -223,6 +221,13 @@ func (s *Store) EvaluateBudget(
 	if err != nil {
 		return BudgetDecision{}, fmt.Errorf("evaluate budget: %w", err)
 	}
+	return evaluateBudgetUsage(roundUsage, totalUsage, roundBudget, totalBudget), nil
+}
+
+func evaluateBudgetUsage(
+	roundUsage, totalUsage BudgetUsage,
+	roundBudget, totalBudget Budget,
+) BudgetDecision {
 	decision := BudgetDecision{}
 	compareBudgetIntDimension(&decision, "round", "input_tokens",
 		roundUsage.InputTokens, roundBudget.MaxInputTokens)
@@ -240,9 +245,7 @@ func (s *Store) EvaluateBudget(
 		totalUsage.ToolCalls, totalBudget.MaxToolCalls)
 	compareBudgetFloatDimension(&decision, "total", "cost_usd",
 		totalUsage.CostUSD, totalBudget.MaxCostUSD)
-	decision.Allowed = len(decision.ExceededDims) == 0 &&
-		len(decision.ExhaustedDims) == 0
-	return decision, nil
+	return decision
 }
 
 // compareBudgetIntDimension classifies one integer dimension's consumption
@@ -256,17 +259,13 @@ func compareBudgetIntDimension(
 		return
 	}
 	label := scope + " " + name
-	switch {
-	case consumed > limit:
+	if consumed > limit {
 		decision.ExceededDims = append(decision.ExceededDims, label)
-	case consumed == limit:
-		decision.ExhaustedDims = append(decision.ExhaustedDims, label)
 	}
 }
 
 // compareBudgetFloatDimension classifies the USD cost dimension against its
-// cap. A zero cap means unlimited: consumption of exactly zero must not be
-// mistaken for a zero balance, so the dimension is skipped entirely.
+// cap. A zero cap means unlimited, so the dimension is skipped entirely.
 func compareBudgetFloatDimension(
 	decision *BudgetDecision,
 	scope, name string,
@@ -276,11 +275,8 @@ func compareBudgetFloatDimension(
 		return
 	}
 	label := scope + " " + name
-	switch {
-	case consumed > limit:
+	if consumed > limit {
 		decision.ExceededDims = append(decision.ExceededDims, label)
-	case consumed == limit:
-		decision.ExhaustedDims = append(decision.ExhaustedDims, label)
 	}
 }
 
