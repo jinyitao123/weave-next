@@ -68,6 +68,7 @@ type TerminalMarkerV1 struct {
 	UsageInputTokens       int64
 	UsageOutputTokens      int64
 	UsageCostUSD           float64
+	UsageToolCalls         int64
 	AuditState             TerminalMarkerAuditState
 	AuditSchemaVersion     *int16
 	LineageState           TerminalMarkerLineageState
@@ -213,6 +214,9 @@ func ValidateTerminalMarkerV1(m TerminalMarkerV1) error {
 	}
 	if m.UsageCostUSD < 0 || math.IsNaN(m.UsageCostUSD) || math.IsInf(m.UsageCostUSD, 0) {
 		return fmt.Errorf("usage_cost_usd must be finite and non-negative")
+	}
+	if m.UsageToolCalls < 0 {
+		return fmt.Errorf("usage_tool_calls must be non-negative")
 	}
 	if m.AuditState == TerminalMarkerAuditMaterialized && (m.AuditSchemaVersion == nil || *m.AuditSchemaVersion != 3) {
 		return fmt.Errorf("audit_schema materialized requires version 3")
@@ -407,7 +411,7 @@ func ValidateTerminalMarkerTransition(current *TerminalMarkerV1, candidate Termi
 	if ok, field := markerIdentityEqual(*current, candidate); !ok {
 		return transitionError(current, candidate, "identity_conflict", field)
 	}
-	if candidate.UsageInputTokens < current.UsageInputTokens || candidate.UsageOutputTokens < current.UsageOutputTokens || candidate.UsageCostUSD < current.UsageCostUSD {
+	if candidate.UsageInputTokens < current.UsageInputTokens || candidate.UsageOutputTokens < current.UsageOutputTokens || candidate.UsageCostUSD < current.UsageCostUSD || candidate.UsageToolCalls < current.UsageToolCalls {
 		return transitionError(current, candidate, "usage_regression", "usage")
 	}
 	if reflect.DeepEqual(*current, candidate) {
@@ -504,14 +508,14 @@ func ValidateTerminalMarkerTransition(current *TerminalMarkerV1, candidate Termi
 	return transitionError(current, candidate, "transition_forbidden", "")
 }
 
-const terminalMarkerColumns = "workspace_id,run_id,schema_version,attempt_generation,attempt_id,agent,attribution_scope,team_id,workflow_id,workflow_version,run_snapshot_id,conversation_id,parent_run_id,parent_seq,aggregation_parent_run_id,task_group_id,run_started_at,phase,status,stop_reason,source,terminal_at,evidence_kind,checkpoint_graph,checkpoint_seq,checkpoint_saved_at,usage_input_tokens,usage_output_tokens,usage_cost_usd,audit_state,audit_schema_version,lineage_state,last_error_code,created_at,updated_at"
+const terminalMarkerColumns = "workspace_id,run_id,schema_version,attempt_generation,attempt_id,agent,attribution_scope,team_id,workflow_id,workflow_version,run_snapshot_id,conversation_id,parent_run_id,parent_seq,aggregation_parent_run_id,task_group_id,run_started_at,phase,status,stop_reason,source,terminal_at,evidence_kind,checkpoint_graph,checkpoint_seq,checkpoint_saved_at,usage_input_tokens,usage_output_tokens,usage_cost_usd,usage_tool_calls,audit_state,audit_schema_version,lineage_state,last_error_code,created_at,updated_at"
 
 type rowScanner interface{ Scan(...any) error }
 
 func scanTerminalMarker(row rowScanner) (TerminalMarkerV1, error) {
 	var m TerminalMarkerV1
 	var scope, phase, status, source, evidence, audit, lineage string
-	err := row.Scan(&m.WorkspaceID, &m.RunID, &m.SchemaVersion, &m.AttemptGeneration, &m.AttemptID, &m.Agent, &scope, &m.TeamID, &m.WorkflowID, &m.WorkflowVersion, &m.RunSnapshotID, &m.ConversationID, &m.ParentRunID, &m.ParentSeq, &m.AggregationParentRunID, &m.TaskGroupID, &m.RunStartedAt, &phase, &status, &m.StopReason, &source, &m.TerminalAt, &evidence, &m.CheckpointGraph, &m.CheckpointSeq, &m.CheckpointSavedAt, &m.UsageInputTokens, &m.UsageOutputTokens, &m.UsageCostUSD, &audit, &m.AuditSchemaVersion, &lineage, &m.LastErrorCode, &m.CreatedAt, &m.UpdatedAt)
+	err := row.Scan(&m.WorkspaceID, &m.RunID, &m.SchemaVersion, &m.AttemptGeneration, &m.AttemptID, &m.Agent, &scope, &m.TeamID, &m.WorkflowID, &m.WorkflowVersion, &m.RunSnapshotID, &m.ConversationID, &m.ParentRunID, &m.ParentSeq, &m.AggregationParentRunID, &m.TaskGroupID, &m.RunStartedAt, &phase, &status, &m.StopReason, &source, &m.TerminalAt, &evidence, &m.CheckpointGraph, &m.CheckpointSeq, &m.CheckpointSavedAt, &m.UsageInputTokens, &m.UsageOutputTokens, &m.UsageCostUSD, &m.UsageToolCalls, &audit, &m.AuditSchemaVersion, &lineage, &m.LastErrorCode, &m.CreatedAt, &m.UpdatedAt)
 	if err != nil {
 		return TerminalMarkerV1{}, err
 	}
@@ -562,7 +566,7 @@ func (*PGTerminalStateStore) ReadTerminalMarkerForUpdate(ctx context.Context, tx
 }
 
 func markerArgs(m TerminalMarkerV1) []any {
-	return []any{m.WorkspaceID, m.RunID, m.SchemaVersion, m.AttemptGeneration, m.AttemptID, m.Agent, string(m.AttributionScope), m.TeamID, m.WorkflowID, m.WorkflowVersion, m.RunSnapshotID, m.ConversationID, m.ParentRunID, m.ParentSeq, m.AggregationParentRunID, m.TaskGroupID, m.RunStartedAt, string(m.Phase), string(m.Status), m.StopReason, string(m.Source), m.TerminalAt, string(m.EvidenceKind), m.CheckpointGraph, m.CheckpointSeq, m.CheckpointSavedAt, m.UsageInputTokens, m.UsageOutputTokens, m.UsageCostUSD, string(m.AuditState), m.AuditSchemaVersion, string(m.LineageState), m.LastErrorCode}
+	return []any{m.WorkspaceID, m.RunID, m.SchemaVersion, m.AttemptGeneration, m.AttemptID, m.Agent, string(m.AttributionScope), m.TeamID, m.WorkflowID, m.WorkflowVersion, m.RunSnapshotID, m.ConversationID, m.ParentRunID, m.ParentSeq, m.AggregationParentRunID, m.TaskGroupID, m.RunStartedAt, string(m.Phase), string(m.Status), m.StopReason, string(m.Source), m.TerminalAt, string(m.EvidenceKind), m.CheckpointGraph, m.CheckpointSeq, m.CheckpointSavedAt, m.UsageInputTokens, m.UsageOutputTokens, m.UsageCostUSD, m.UsageToolCalls, string(m.AuditState), m.AuditSchemaVersion, string(m.LineageState), m.LastErrorCode}
 }
 func (*PGTerminalStateStore) ApplyTerminalMarkerTransition(ctx context.Context, tx pgx.Tx, c TerminalMarkerV1) (TerminalMarkerV1, error) {
 	if tx == nil {
@@ -587,7 +591,7 @@ func (*PGTerminalStateStore) ApplyTerminalMarkerTransition(ctx context.Context, 
 	var q string
 	if !present {
 		q = "INSERT INTO weave_run_terminal_markers (" + strings.TrimSuffix(terminalMarkerColumns, ",created_at,updated_at") + ",created_at,updated_at) VALUES ("
-		for i := 1; i <= 33; i++ {
+		for i := 1; i <= 34; i++ {
 			if i > 1 {
 				q += ","
 			}
@@ -595,7 +599,7 @@ func (*PGTerminalStateStore) ApplyTerminalMarkerTransition(ctx context.Context, 
 		}
 		q += ",statement_timestamp(),statement_timestamp()) RETURNING " + terminalMarkerColumns
 	} else {
-		q = "UPDATE weave_run_terminal_markers SET schema_version=$3,attempt_generation=$4,attempt_id=$5,agent=$6,attribution_scope=$7,team_id=$8,workflow_id=$9,workflow_version=$10,run_snapshot_id=$11,conversation_id=$12,parent_run_id=$13,parent_seq=$14,aggregation_parent_run_id=$15,task_group_id=$16,run_started_at=$17,phase=$18,status=$19,stop_reason=$20,source=$21,terminal_at=$22,evidence_kind=$23,checkpoint_graph=$24,checkpoint_seq=$25,checkpoint_saved_at=$26,usage_input_tokens=$27,usage_output_tokens=$28,usage_cost_usd=$29,audit_state=$30,audit_schema_version=$31,lineage_state=$32,last_error_code=$33,updated_at=statement_timestamp() WHERE workspace_id=$1 AND run_id=$2 RETURNING " + terminalMarkerColumns
+		q = "UPDATE weave_run_terminal_markers SET schema_version=$3,attempt_generation=$4,attempt_id=$5,agent=$6,attribution_scope=$7,team_id=$8,workflow_id=$9,workflow_version=$10,run_snapshot_id=$11,conversation_id=$12,parent_run_id=$13,parent_seq=$14,aggregation_parent_run_id=$15,task_group_id=$16,run_started_at=$17,phase=$18,status=$19,stop_reason=$20,source=$21,terminal_at=$22,evidence_kind=$23,checkpoint_graph=$24,checkpoint_seq=$25,checkpoint_saved_at=$26,usage_input_tokens=$27,usage_output_tokens=$28,usage_cost_usd=$29,usage_tool_calls=$30,audit_state=$31,audit_schema_version=$32,lineage_state=$33,last_error_code=$34,updated_at=statement_timestamp() WHERE workspace_id=$1 AND run_id=$2 RETURNING " + terminalMarkerColumns
 	}
 	out, err := scanTerminalMarker(tx.QueryRow(ctx, q, args...))
 	if err != nil {

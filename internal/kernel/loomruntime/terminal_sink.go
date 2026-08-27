@@ -491,6 +491,8 @@ func compareTerminalUsage(current, candidate TerminalUsage, path string) error {
 		return terminalConflict("usage_regression", path+".input_tokens")
 	case candidate.OutputTokens < current.OutputTokens:
 		return terminalConflict("usage_regression", path+".output_tokens")
+	case candidate.ToolCalls < current.ToolCalls:
+		return terminalConflict("usage_regression", path+".tool_calls")
 	case candidate.CostUSD < current.CostUSD:
 		return terminalConflict("usage_regression", path+".cost_usd")
 	default:

@@ -186,7 +186,7 @@ func runSerialMachine(
 				InputTokens:  nodeUsage.InputTokens,
 				OutputTokens: nodeUsage.OutputTokens,
 				CostUSD:      nodeUsage.CostUSD,
-			}); confirmErr != nil {
+			}, nodeUsage.ToolCalls); confirmErr != nil {
 				return fail(executionError(ErrorCodeExecutionUnrecoverable, confirmErr))
 			}
 			// A CLI runtime agent has no usage receipt: the candidate run

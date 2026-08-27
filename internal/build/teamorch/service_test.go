@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/jinyitao123/weave/internal/build/teambuild"
+	"github.com/jinyitao123/weave/internal/kernel/loomruntime"
 )
 
 func TestServiceMapsEvaluationBaselineCASFailureToBlocked(t *testing.T) {
@@ -44,6 +45,17 @@ func TestSemanticRubricEvaluationUsesBuildOwnedExecutor(t *testing.T) {
 	}
 	if !executor.called || executor.request.BuildRunID != "build-1" || len(result.Scores) != 1 || result.Scores[0].Score != 8 {
 		t.Fatalf("executor = %#v result = %#v", executor, result)
+	}
+}
+
+func TestBudgetChargesUseTerminalToolCalls(t *testing.T) {
+	round := RoundContext{WorkspaceID: "workspace-1", BuildRunID: "build-1", RoundNo: 1}
+	marker := loomruntime.TerminalMarkerV1{UsageToolCalls: 7}
+	if got := usageChargeFromMarker(round, "builder", "run-1", marker).ToolCalls; got != 7 {
+		t.Fatalf("build-agent tool calls = %d, want 7", got)
+	}
+	if got := usageChargeFromCandidateMarker(round, "candidate", "run-2", marker).ToolCalls; got != 7 {
+		t.Fatalf("candidate tool calls = %d, want 7", got)
 	}
 }
 

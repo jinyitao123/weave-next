@@ -116,6 +116,7 @@ func validatedTerminalExclusiveUsage(state loom.State) (TerminalUsage, error) {
 		InputTokens:  totals.InputTokens,
 		OutputTokens: totals.OutputTokens,
 		CostUSD:      totals.CostUSD,
+		ToolCalls:    totals.ToolCalls,
 	}
 	if err := validateTerminalUsage(exclusive); err != nil {
 		return TerminalUsage{}, fmt.Errorf(
@@ -162,6 +163,7 @@ func assembleTerminalV3Base(
 		TokensIn:               exclusive.InputTokens,
 		TokensOut:              exclusive.OutputTokens,
 		CostUSD:                exclusive.CostUSD,
+		ToolCalls:              exclusive.ToolCalls,
 		Step:                   input.Step,
 		Summary:                input.Summary,
 		SelfExclusive:          exclusive,

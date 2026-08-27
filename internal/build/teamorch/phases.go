@@ -1176,8 +1176,8 @@ func (p *ProductionPhases) accountBuildRunUsage(
 }
 
 // usageChargeFromMarker maps one final terminal marker's usage into the T14A
-// budget ledger identity for the round. Tool-call attribution is owned by
-// T14C and is deliberately fixed at zero in this ticket.
+// budget ledger identity for the round. Historical ledger rows that predate
+// marker tool-call attribution remain zero; append-only usage is never rewritten.
 func usageChargeFromMarker(
 	round RoundContext,
 	role, runID string,
@@ -1193,14 +1193,12 @@ func usageChargeFromMarker(
 		InputTokens:  marker.UsageInputTokens,
 		OutputTokens: marker.UsageOutputTokens,
 		CostUSD:      marker.UsageCostUSD,
-		// T14C owns tool-call attribution; this ticket fixes tool_calls at zero.
-		ToolCalls: 0,
+		ToolCalls:    marker.UsageToolCalls,
 	}
 }
 
 // usageChargeFromCandidateMarker maps one final candidate-runtime terminal
-// marker into the T14A budget ledger identity for the round. Tool-call
-// attribution is owned by T14C and stays zero in this ticket.
+// marker into the T14A budget ledger identity for the round.
 func usageChargeFromCandidateMarker(
 	round RoundContext,
 	sourceRole string,
@@ -1217,8 +1215,7 @@ func usageChargeFromCandidateMarker(
 		InputTokens:  marker.UsageInputTokens,
 		OutputTokens: marker.UsageOutputTokens,
 		CostUSD:      marker.UsageCostUSD,
-		// T14C owns tool-call attribution; this ticket fixes tool_calls at zero.
-		ToolCalls: 0,
+		ToolCalls:    marker.UsageToolCalls,
 	}
 }
 
@@ -1838,6 +1835,16 @@ func (p *ProductionPhases) Evaluate(ctx context.Context, round RoundContext) (Ro
 
 	report := p.assembleReport(ctx, round, team, candidate, runs, gates)
 	if scenarioRunsSucceeded(runs) {
+		decision, budgetErr := p.Deps.Build.EvaluateBudget(
+			ctx, workspaceID, round.BuildRunID, round.RoundNo,
+			round.Run.RoundBudget, round.Run.TotalBudget,
+		)
+		if budgetErr != nil {
+			return RoundEvaluation{}, fmt.Errorf("evaluate phase: semantic judge budget gate: %w", budgetErr)
+		}
+		if len(decision.ExceededDims) > 0 {
+			return budgetExhaustedEvaluation(report, candidateRef, decision), nil
+		}
 		semantic, evalErr := p.semanticRubricEvaluation(ctx, round, runs)
 		if evalErr != nil {
 			return p.infraEvaluation(round, fmt.Sprintf("semantic rubric evaluation failed: %v", evalErr), ""), nil
@@ -3097,7 +3104,7 @@ func (p *ProductionPhases) assembleReport(
 	// annotation: fanout legs and CLI nodes without a usage receipt are
 	// unmeasured, so usage_complete=false names the unmeasured part instead
 	// of fabricating zeros. The budget gate enforces this measured usage as
-	// a lower bound. Tool-call attribution remains owned by T14C.
+	// a lower bound. Measured tool calls follow the same terminal receipt.
 	incompleteReasons := make([]string, 0)
 	seenIncompleteReason := make(map[string]bool)
 	for _, scenarioRun := range runs {
@@ -3109,6 +3116,7 @@ func (p *ProductionPhases) assembleReport(
 		report.InputTokens += int64(measured.InputTokens)
 		report.OutputTokens += int64(measured.OutputTokens)
 		report.CostUSD += measured.CostUSD
+		report.ToolCalls += int64(measured.ToolCalls)
 		if entry.UsageComplete != nil && !*entry.UsageComplete {
 			reason := strings.TrimSpace(entry.UsageIncompleteReason)
 			if reason != "" && !seenIncompleteReason[reason] {

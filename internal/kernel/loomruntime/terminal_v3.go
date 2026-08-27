@@ -16,6 +16,7 @@ type TerminalUsage struct {
 	InputTokens  int     `json:"input_tokens"`
 	OutputTokens int     `json:"output_tokens"`
 	CostUSD      float64 `json:"cost_usd"`
+	ToolCalls    int     `json:"tool_calls,omitempty"`
 }
 
 // TerminalChildBreakdownV3 records one descendant's exclusive usage.
@@ -55,6 +56,7 @@ type TerminalEntryV3 struct {
 	TokensIn               int                      `json:"tokens_in"`
 	TokensOut              int                      `json:"tokens_out"`
 	CostUSD                float64                  `json:"cost_usd"`
+	ToolCalls              int                      `json:"tool_calls,omitempty"`
 	Step                   string                   `json:"step,omitempty"`
 	Summary                string                   `json:"summary,omitempty"`
 	// UsageComplete is nil (or true) when the entry's usage covers every
@@ -224,6 +226,7 @@ func validateTerminalV3JSONPresence(data []byte) error {
 		"task_group_id",
 		"step",
 		"summary",
+		"tool_calls",
 	} {
 		if raw, exists := fields[optional]; exists && bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
 			return fmt.Errorf("terminal schema-v3 field %q must be omitted instead of null", optional)
@@ -296,6 +299,9 @@ func validateTerminalUsageJSON(data json.RawMessage, path string) error {
 	if err := requireTerminalJSONFields(fields, []string{"input_tokens", "output_tokens", "cost_usd"}); err != nil {
 		return fmt.Errorf("terminal %s: %w", path, err)
 	}
+	if raw, exists := fields["tool_calls"]; exists && bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return fmt.Errorf("terminal %s.tool_calls must be omitted instead of null", path)
+	}
 	return nil
 }
 
@@ -331,6 +337,7 @@ func validateTerminalV3(entry TerminalEntryV3) error {
 		InputTokens:  entry.TokensIn,
 		OutputTokens: entry.TokensOut,
 		CostUSD:      entry.CostUSD,
+		ToolCalls:    entry.ToolCalls,
 	}
 	if err := validateTerminalUsage(alias); err != nil {
 		return terminalRecordError(TerminalRecordCorrupt, "terminal usage alias: %v", err)
@@ -411,6 +418,9 @@ func validateTerminalUsage(usage TerminalUsage) error {
 	if usage.OutputTokens < 0 {
 		return fmt.Errorf("output_tokens must be non-negative")
 	}
+	if usage.ToolCalls < 0 {
+		return fmt.Errorf("tool_calls must be non-negative")
+	}
 	if usage.CostUSD < 0 || math.IsNaN(usage.CostUSD) || math.IsInf(usage.CostUSD, 0) {
 		return fmt.Errorf("cost_usd must be finite and non-negative")
 	}
@@ -436,7 +446,11 @@ func addTerminalUsage(left, right TerminalUsage) (TerminalUsage, error) {
 	if math.IsNaN(cost) || math.IsInf(cost, 0) {
 		return TerminalUsage{}, fmt.Errorf("cost_usd is not finite")
 	}
-	return TerminalUsage{InputTokens: input, OutputTokens: output, CostUSD: cost}, nil
+	tools, ok := safeAddInt(left.ToolCalls, right.ToolCalls)
+	if !ok {
+		return TerminalUsage{}, fmt.Errorf("tool_calls overflows int")
+	}
+	return TerminalUsage{InputTokens: input, OutputTokens: output, CostUSD: cost, ToolCalls: tools}, nil
 }
 
 func validateTerminalAssociation(entry TerminalEntryV3) error {

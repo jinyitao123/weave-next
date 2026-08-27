@@ -177,13 +177,14 @@ func (s *usageRunScope) confirm(
 	callID string,
 	attemptID string,
 	usage contract.Usage,
+	toolCalls int,
 ) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if !s.bound || s.state == nil {
 		return fmt.Errorf("usage scope is not bound to a graph step")
 	}
-	if err := s.accumulator.ConfirmAttempt(callID, attemptID, usage); err != nil {
+	if err := s.accumulator.ConfirmAttempt(callID, attemptID, usage, toolCalls); err != nil {
 		return err
 	}
 	if err := StoreUsageAccumulator(s.state, s.accumulator); err != nil {
@@ -342,7 +343,7 @@ func (l *usageBoundaryLLM) Chat(
 	frame.mu.Lock()
 	confirmedAttemptID := frame.attemptID
 	frame.mu.Unlock()
-	if err := scope.confirm(frame.callID, confirmedAttemptID, response.Usage); err != nil {
+	if err := scope.confirm(frame.callID, confirmedAttemptID, response.Usage, len(response.ToolCalls)); err != nil {
 		return nil, err
 	}
 	return response, nil

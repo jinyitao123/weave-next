@@ -515,6 +515,7 @@ func prepareNormalTerminalCommit(
 		UsageInputTokens:       int64(commit.Candidate.SelfExclusive.InputTokens),
 		UsageOutputTokens:      int64(commit.Candidate.SelfExclusive.OutputTokens),
 		UsageCostUSD:           commit.Candidate.SelfExclusive.CostUSD,
+		UsageToolCalls:         int64(commit.Candidate.SelfExclusive.ToolCalls),
 		AuditState:             TerminalMarkerAuditMaterialized,
 		AuditSchemaVersion:     &auditSchemaVersion,
 		LineageState:           TerminalMarkerLineagePending,

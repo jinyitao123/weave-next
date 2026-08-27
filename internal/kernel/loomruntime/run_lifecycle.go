@@ -529,6 +529,7 @@ func lifecycleMarkerMatchesAudit(
 		string(marker.Status) == audit.Status &&
 		marker.UsageInputTokens == int64(audit.SelfExclusive.InputTokens) &&
 		marker.UsageOutputTokens == int64(audit.SelfExclusive.OutputTokens) &&
+		marker.UsageToolCalls == int64(audit.SelfExclusive.ToolCalls) &&
 		math.Float64bits(marker.UsageCostUSD) ==
 			math.Float64bits(audit.SelfExclusive.CostUSD)
 }

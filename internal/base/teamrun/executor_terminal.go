@@ -459,6 +459,14 @@ func writeFanoutYieldMarkerTx(
 	graphName := frozenGraphName(running)
 	checkpointSequence := int64(parked.ResumeGeneration)
 	auditVersion := int16(3)
+	usage := loomruntime.UsageTotals{}
+	if len(checkpoint.Usage) != 0 {
+		accumulator, err := loomruntime.UnmarshalUsageAccumulator(checkpoint.Usage)
+		if err != nil {
+			return fmt.Errorf("decode fanout checkpoint usage: %w", err)
+		}
+		usage = accumulator.Totals()
+	}
 	marker := loomruntime.TerminalMarkerV1{
 		WorkspaceID: running.WorkspaceID, RunID: running.RunID, SchemaVersion: 1,
 		AttemptGeneration: lease.AttemptGeneration, AttemptID: lease.AttemptID,
@@ -469,6 +477,8 @@ func writeFanoutYieldMarkerTx(
 		StopReason: "yielded", Source: loomruntime.TerminalMarkerSourceNormal, TerminalAt: now,
 		EvidenceKind: loomruntime.TerminalMarkerEvidenceCheckpoint, CheckpointGraph: &graphName,
 		CheckpointSeq: &checkpointSequence, CheckpointSavedAt: &checkpoint.WrittenAt,
+		UsageInputTokens: int64(usage.InputTokens), UsageOutputTokens: int64(usage.OutputTokens),
+		UsageCostUSD: usage.CostUSD, UsageToolCalls: int64(usage.ToolCalls),
 		AuditState: loomruntime.TerminalMarkerAuditMaterialized, AuditSchemaVersion: &auditVersion,
 		LineageState: loomruntime.TerminalMarkerLineagePending, CreatedAt: now, UpdatedAt: now,
 	}

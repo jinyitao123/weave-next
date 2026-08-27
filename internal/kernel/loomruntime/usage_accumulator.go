@@ -33,6 +33,7 @@ type UsageTotals struct {
 	InputTokens  int
 	OutputTokens int
 	CostUSD      float64
+	ToolCalls    int
 }
 
 type usageCall struct {
@@ -42,6 +43,7 @@ type usageCall struct {
 	AttemptIDs  map[string]struct{}
 	Confirmed   bool
 	Usage       contract.Usage
+	ToolCalls   int
 }
 
 type UsageAccumulator struct {
@@ -195,7 +197,11 @@ func (a *UsageAccumulator) StartAttempt(callID, attemptID string) error {
 }
 
 // ConfirmAttempt records the first confirmed response for a logical call.
-func (a *UsageAccumulator) ConfirmAttempt(callID, attemptID string, usage contract.Usage) error {
+func (a *UsageAccumulator) ConfirmAttempt(
+	callID, attemptID string,
+	usage contract.Usage,
+	toolCalls int,
+) error {
 	if a == nil {
 		return fmt.Errorf("usage accumulator is nil")
 	}
@@ -208,6 +214,9 @@ func (a *UsageAccumulator) ConfirmAttempt(callID, attemptID string, usage contra
 	if err := validateUsage(usage); err != nil {
 		return err
 	}
+	if toolCalls < 0 {
+		return fmt.Errorf("usage tool_calls must be non-negative")
+	}
 	current := normalizedUsageAccumulator(*a)
 	call, exists := current.calls[callID]
 	if !exists {
@@ -217,12 +226,12 @@ func (a *UsageAccumulator) ConfirmAttempt(callID, attemptID string, usage contra
 		return fmt.Errorf("attempt_id %q is not registered for usage_call_id %q", attemptID, callID)
 	}
 	if call.Confirmed {
-		if call.Usage == usage {
+		if call.Usage == usage && call.ToolCalls == toolCalls {
 			return nil
 		}
 		return fmt.Errorf("%w: usage_call_id %q was already confirmed", ErrUsageConflict, callID)
 	}
-	if _, err := current.totalsWith(usage); err != nil {
+	if _, err := current.totalsWith(usage, toolCalls); err != nil {
 		return err
 	}
 
@@ -230,6 +239,7 @@ func (a *UsageAccumulator) ConfirmAttempt(callID, attemptID string, usage contra
 	call = updated.calls[callID]
 	call.Confirmed = true
 	call.Usage = usage
+	call.ToolCalls = toolCalls
 	updated.calls[callID] = call
 	*a = updated
 	return nil
@@ -248,12 +258,12 @@ func validateUsage(usage contract.Usage) error {
 	return nil
 }
 
-func (a UsageAccumulator) totalsWith(extra contract.Usage) (UsageTotals, error) {
+func (a UsageAccumulator) totalsWith(extra contract.Usage, toolCalls int) (UsageTotals, error) {
 	totals, err := a.validatedTotals()
 	if err != nil {
 		return UsageTotals{}, err
 	}
-	return addUsageTotals(totals, extra)
+	return addUsageTotals(totals, extra, toolCalls)
 }
 
 func safeAddInt(left, right int) (int, bool) {
@@ -276,7 +286,7 @@ func (a UsageAccumulator) validatedTotals() (UsageTotals, error) {
 		if !call.Confirmed {
 			continue
 		}
-		next, err := addUsageTotals(totals, call.Usage)
+		next, err := addUsageTotals(totals, call.Usage, call.ToolCalls)
 		if err != nil {
 			return UsageTotals{}, fmt.Errorf("usage_call_id %q: %w", callID, err)
 		}
@@ -285,7 +295,7 @@ func (a UsageAccumulator) validatedTotals() (UsageTotals, error) {
 	return totals, nil
 }
 
-func addUsageTotals(current UsageTotals, usage contract.Usage) (UsageTotals, error) {
+func addUsageTotals(current UsageTotals, usage contract.Usage, toolCalls int) (UsageTotals, error) {
 	if err := validateUsage(usage); err != nil {
 		return UsageTotals{}, err
 	}
@@ -301,7 +311,11 @@ func addUsageTotals(current UsageTotals, usage contract.Usage) (UsageTotals, err
 	if math.IsNaN(cost) || math.IsInf(cost, 0) {
 		return UsageTotals{}, fmt.Errorf("cost_usd total is not finite")
 	}
-	return UsageTotals{InputTokens: input, OutputTokens: output, CostUSD: cost}, nil
+	tools, ok := safeAddInt(current.ToolCalls, toolCalls)
+	if !ok || toolCalls < 0 {
+		return UsageTotals{}, fmt.Errorf("tool_calls total is invalid")
+	}
+	return UsageTotals{InputTokens: input, OutputTokens: output, CostUSD: cost, ToolCalls: tools}, nil
 }
 
 // Totals returns the sum of all confirmed logical calls.
@@ -329,6 +343,7 @@ type usageCallCheckpoint struct {
 	InputTokens  int      `json:"input_tokens"`
 	OutputTokens int      `json:"output_tokens"`
 	CostUSD      float64  `json:"cost_usd"`
+	ToolCalls    int      `json:"tool_calls,omitempty"`
 }
 
 type usageAccumulatorCheckpointInput struct {
@@ -347,6 +362,7 @@ type usageCallCheckpointInput struct {
 	InputTokens  *int      `json:"input_tokens"`
 	OutputTokens *int      `json:"output_tokens"`
 	CostUSD      *float64  `json:"cost_usd"`
+	ToolCalls    *int      `json:"tool_calls,omitempty"`
 }
 
 func (input usageCallCheckpointInput) value(index int) (usageCallCheckpoint, error) {
@@ -390,7 +406,15 @@ func (input usageCallCheckpointInput) value(index int) (usageCallCheckpoint, err
 		InputTokens:  *input.InputTokens,
 		OutputTokens: *input.OutputTokens,
 		CostUSD:      *input.CostUSD,
+		ToolCalls:    optionalInt(input.ToolCalls),
 	}, nil
+}
+
+func optionalInt(value *int) int {
+	if value == nil {
+		return 0
+	}
+	return *value
 }
 
 func (a UsageAccumulator) checkpoint() (usageAccumulatorCheckpoint, error) {
@@ -428,6 +452,7 @@ func (a UsageAccumulator) checkpoint() (usageAccumulatorCheckpoint, error) {
 			InputTokens:  call.Usage.InputTokens,
 			OutputTokens: call.Usage.OutputTokens,
 			CostUSD:      call.Usage.CostUSD,
+			ToolCalls:    call.ToolCalls,
 		})
 	}
 	return checkpoint, nil
@@ -515,6 +540,7 @@ func UnmarshalUsageAccumulator(data []byte) (UsageAccumulator, error) {
 			AttemptIDs:  attempts,
 			Confirmed:   encoded.Confirmed,
 			Usage:       usage,
+			ToolCalls:   encoded.ToolCalls,
 		}
 	}
 	if err := accumulator.validate(); err != nil {
@@ -565,7 +591,7 @@ func (a UsageAccumulator) validate() error {
 				callID,
 			)
 		}
-		if !call.Confirmed && call.Usage != (contract.Usage{}) {
+		if !call.Confirmed && (call.Usage != (contract.Usage{}) || call.ToolCalls != 0) {
 			return fmt.Errorf("unconfirmed usage_call_id %q carries usage", callID)
 		}
 		if call.Confirmed && len(call.AttemptIDs) == 0 {
@@ -573,6 +599,9 @@ func (a UsageAccumulator) validate() error {
 		}
 		if err := validateUsage(call.Usage); err != nil {
 			return fmt.Errorf("usage_call_id %q: %w", callID, err)
+		}
+		if call.ToolCalls < 0 {
+			return fmt.Errorf("usage_call_id %q has negative tool_calls", callID)
 		}
 		for attemptID := range call.AttemptIDs {
 			if attemptID == "" {
