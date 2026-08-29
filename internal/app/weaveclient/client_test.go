@@ -37,21 +37,19 @@ func TestTeamCreateRequiresCallerIdempotencyKey(t *testing.T) {
 	assertClientError(t, err, "idempotency_key_required", 0)
 }
 
-func TestTeamDispatchResolvesActiveLeadAndPollsToYielded(t *testing.T) {
+func TestTeamDispatchUsesUnifiedFreeCollabAndPollsToYielded(t *testing.T) {
 	var polls atomic.Int32
 	handler := http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		if request.Header.Get("Authorization") != "Bearer "+testAPIKey {
 			t.Fatalf("authorization = %q", request.Header.Get("Authorization"))
 		}
 		switch request.Method + " " + request.URL.Path {
-		case "GET /v1/teams/team-1":
-			writeJSON(response, http.StatusOK, `{"team":{"status":"active"},"lead":{"name":"lead-agent"}}`)
-		case "POST /v1/chat":
+		case "POST /v1/teams/team-1/dispatch":
 			var body map[string]any
 			if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
 				t.Fatal(err)
 			}
-			if body["agent"] != "lead-agent" || body["message"] != "do work" || body["async"] != true || body["stream"] != false || body["client_request_id"] != "5d60aa9f-31d7-4fdf-a40c-53a46094e9d0" {
+			if body["task"] != "do work" || body["mode"] != "free_collab" || body["client_request_id"] != "5d60aa9f-31d7-4fdf-a40c-53a46094e9d0" {
 				t.Fatalf("chat body = %#v", body)
 			}
 			writeJSON(response, http.StatusAccepted, `{"status":"queued"}`)
@@ -67,7 +65,7 @@ func TestTeamDispatchResolvesActiveLeadAndPollsToYielded(t *testing.T) {
 	})
 	client := newTestClient(t, handler)
 	id, result, err := client.TeamDispatchAndWait(context.Background(), DispatchRequest{
-		TeamID: "team-1", Task: "do work", ClientRequestID: "5d60aa9f-31d7-4fdf-a40c-53a46094e9d0",
+		TeamID: "team-1", Task: "do work", Mode: "free_collab", ClientRequestID: "5d60aa9f-31d7-4fdf-a40c-53a46094e9d0",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -80,9 +78,7 @@ func TestTeamDispatchResolvesActiveLeadAndPollsToYielded(t *testing.T) {
 func TestTeamDispatchHandlesInProgressConflict(t *testing.T) {
 	handler := http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		switch request.Method + " " + request.URL.Path {
-		case "GET /v1/teams/team-1":
-			writeJSON(response, http.StatusOK, `{"team":{"status":"active"},"lead":{"name":"lead"}}`)
-		case "POST /v1/chat":
+		case "POST /v1/teams/team-1/dispatch":
 			writeJSON(response, http.StatusConflict, `{"code":"client_request_in_progress"}`)
 		case "GET /v1/chat-requests/5d60aa9f-31d7-4fdf-a40c-53a46094e9d0":
 			writeJSON(response, http.StatusOK, `{"status":"failed","error_code":"provider_failed"}`)
@@ -95,6 +91,34 @@ func TestTeamDispatchHandlesInProgressConflict(t *testing.T) {
 		TeamID: "team-1", Task: "do work", ClientRequestID: "5d60aa9f-31d7-4fdf-a40c-53a46094e9d0",
 	})
 	if err != nil || !strings.Contains(string(result), `"status":"failed"`) {
+		t.Fatalf("result = %s, error = %v", result, err)
+	}
+}
+
+func TestTeamDispatchWaitsForFixedWorkflowRun(t *testing.T) {
+	var polls atomic.Int32
+	handler := http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		switch request.Method + " " + request.URL.Path {
+		case "POST /v1/teams/team-1/dispatch":
+			writeJSON(response, http.StatusCreated, `{"run_id":"run-1","workflow_id":"workflow-1","workflow_version":2,"task_id":"task-1"}`)
+		case "GET /v1/runs":
+			if request.URL.Query().Get("run_snapshot_id") != "run-1" {
+				t.Fatalf("query = %s", request.URL.RawQuery)
+			}
+			if polls.Add(1) == 1 {
+				writeJSON(response, http.StatusOK, `{"runs":[],"total":0}`)
+				return
+			}
+			writeJSON(response, http.StatusOK, `{"runs":[{"status":"succeeded"}],"total":1}`)
+		default:
+			t.Fatalf("unexpected request %s %s", request.Method, request.URL.String())
+		}
+	})
+	client := newTestClient(t, handler)
+	_, result, err := client.TeamDispatchAndWait(context.Background(), DispatchRequest{
+		TeamID: "team-1", Task: "do work", Mode: "workflow",
+	})
+	if err != nil || !strings.Contains(string(result), `"status":"succeeded"`) {
 		t.Fatalf("result = %s, error = %v", result, err)
 	}
 }
@@ -112,7 +136,14 @@ func TestTeamDispatchRejectsMissingOrInactiveTeam(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			client := newTestClient(t, http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
-				writeJSON(response, test.status, test.body)
+				if request.URL.Path != "/v1/teams/team-1/dispatch" {
+					t.Fatalf("unexpected request %s", request.URL.Path)
+				}
+				if test.name == "missing" {
+					writeJSON(response, test.status, `{"code":"team_not_found"}`)
+				} else {
+					writeJSON(response, http.StatusConflict, `{"code":"team_not_active"}`)
+				}
 			}))
 			_, _, err := client.TeamDispatch(context.Background(), DispatchRequest{TeamID: "team-1", Task: "work"})
 			assertClientError(t, err, test.wantCode, test.wantStatus)

@@ -99,6 +99,27 @@ func TestInstantiateRunsTemplatePipelineAndWaitsIndependently(t *testing.T) {
 	}
 }
 
+func TestInstantiateAppliesConfiguredModelToStandardMembers(t *testing.T) {
+	builds := &memoryBuildStore{}
+	service := New(&memoryIdempotencyStore{}, builds, &memorySubmitter{builds: builds}, Options{
+		Policy: testPolicy(), DefaultModel: "gpt-5.6-luna",
+	})
+	if _, err := service.Instantiate(context.Background(), "workspace-1", "user-1", Request{
+		YAML: validTemplateYAML, IdempotencyKey: uuid.NewString(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var blueprint teambuild.TeamBlueprintV1
+	if err := json.Unmarshal(builds.revision.BlueprintJSON, &blueprint); err != nil {
+		t.Fatal(err)
+	}
+	for _, member := range blueprint.Members {
+		if member.ModelRef != "gpt-5.6-luna" {
+			t.Fatalf("member %q model = %q", member.Name, member.ModelRef)
+		}
+	}
+}
+
 func TestInstantiateDefersWhenTemplateAutoRequiresAuthorization(t *testing.T) {
 	builds := &memoryBuildStore{authorizeErr: teambuild.ErrTemplateAuthorizationRequired}
 	submitter := &memorySubmitter{builds: builds}

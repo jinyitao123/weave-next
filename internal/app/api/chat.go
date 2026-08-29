@@ -787,6 +787,10 @@ func (s *Server) handleChat(c echo.Context) error {
 	if err := c.Bind(&req); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 	}
+	return s.handleChatRequest(c, req)
+}
+
+func (s *Server) handleChatRequest(c echo.Context, req ChatRequest) error {
 	if req.Agent == "" || req.Message == "" {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "agent and message are required"})
 	}

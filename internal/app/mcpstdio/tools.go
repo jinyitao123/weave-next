@@ -106,8 +106,12 @@ func (d *ToolDispatcher) Dispatch(ctx context.Context, call contract.ToolCall) (
 		var input struct {
 			TeamID          string `json:"team_id"`
 			Task            string `json:"task"`
+			Mode            string `json:"mode"`
+			WorkflowID      string `json:"workflow_id"`
+			WorkflowVersion *int   `json:"workflow_version"`
 			ClientRequestID string `json:"client_request_id"`
 			ProjectID       string `json:"project_id"`
+			ConversationID  string `json:"conversation_id"`
 			Wait            bool   `json:"wait"`
 		}
 		if err := decodeArguments(call.Args, &input); err != nil {
@@ -115,7 +119,8 @@ func (d *ToolDispatcher) Dispatch(ctx context.Context, call contract.ToolCall) (
 		}
 		request := weaveclient.DispatchRequest{
 			TeamID: input.TeamID, Task: input.Task,
-			ClientRequestID: input.ClientRequestID, ProjectID: input.ProjectID,
+			Mode: input.Mode, WorkflowID: input.WorkflowID, WorkflowVersion: input.WorkflowVersion,
+			ClientRequestID: input.ClientRequestID, ProjectID: input.ProjectID, ConversationID: input.ConversationID,
 		}
 		var id string
 		var result json.RawMessage
@@ -343,8 +348,8 @@ var toolDefinitions = []contract.ToolDef{
 	},
 	{
 		Name:        "team_dispatch",
-		Description: "Send a task asynchronously to an active team's lead. Requires organization and chat access. A supplied client_request_id UUID makes retries converge; keep the same API key for the full dispatch lifecycle. Set wait to return completed, failed, or yielded status. Leads backed by CLI runtimes reject asynchronous dispatch with loom_runtime_inference_requires_stream. Errors: team_not_found, team_not_active, team_lead_unavailable, invalid_client_request_id, client_request_conflict, http_401, http_403.",
-		InputSchema: json.RawMessage(`{"type":"object","properties":{"team_id":{"type":"string"},"task":{"type":"string"},"client_request_id":{"type":"string","format":"uuid"},"project_id":{"type":"string"},"wait":{"type":"boolean","default":false}},"required":["team_id","task"],"additionalProperties":false}`),
+		Description: "Dispatch a task through the team's published default workflow. Set mode=free_collab explicitly only when free collaboration is intended; workflow failures never fall back silently. workflow_id overrides the team default and workflow_version pins an exact published version. A client_request_id UUID makes retries converge in either mode and rejects changed dispatch facts. Set wait to follow the selected run to a terminal or yielded state. Errors: team_not_found, team_not_active, no_default_workflow, default_workflow_unavailable, workflow_team_mismatch, workflow_not_published, team_lead_unavailable, invalid_client_request_id, client_request_conflict, http_401, http_403.",
+		InputSchema: json.RawMessage(`{"type":"object","properties":{"team_id":{"type":"string"},"task":{"type":"string"},"mode":{"type":"string","enum":["workflow","free_collab"],"default":"workflow"},"workflow_id":{"type":"string"},"workflow_version":{"type":"integer","minimum":1},"client_request_id":{"type":"string","format":"uuid"},"project_id":{"type":"string"},"conversation_id":{"type":"string"},"wait":{"type":"boolean","default":false}},"required":["team_id","task"],"additionalProperties":false}`),
 	},
 	{
 		Name: "build_status", ReadOnly: true,

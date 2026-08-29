@@ -59,8 +59,14 @@ func (s *Store) AdmitWorkflowManualRunTx(
 	if workflowStatus == WorkflowStatusArchived {
 		return snapshot.TeamRunSnapshot{}, ErrArchived
 	}
-	if workflowStatus != WorkflowStatusActive || publishedVersion == nil {
+	if workflowStatus != WorkflowStatusActive || (publishedVersion == nil && request.WorkflowVersion == nil) {
 		return snapshot.TeamRunSnapshot{}, ErrNotPublished
+	}
+	selectedVersion := 0
+	if request.WorkflowVersion != nil {
+		selectedVersion = *request.WorkflowVersion
+	} else {
+		selectedVersion = *publishedVersion
 	}
 
 	var versionStatus string
@@ -69,7 +75,7 @@ func (s *Store) AdmitWorkflowManualRunTx(
 		FROM weave_team_workflow_versions
 		WHERE workspace_id=$1 AND workflow_id=$2 AND version=$3
 		FOR SHARE
-	`, request.WorkspaceID, request.WorkflowID, *publishedVersion).Scan(&versionStatus); err != nil {
+	`, request.WorkspaceID, request.WorkflowID, selectedVersion).Scan(&versionStatus); err != nil {
 		return snapshot.TeamRunSnapshot{}, manualRunAdmissionReadError(
 			err, "published workflow version is unavailable",
 		)
@@ -79,7 +85,7 @@ func (s *Store) AdmitWorkflowManualRunTx(
 	}
 
 	envelope, err := readWorkflowScheduleArtifact(
-		ctx, tx, request.WorkspaceID, request.WorkflowID, *publishedVersion,
+		ctx, tx, request.WorkspaceID, request.WorkflowID, selectedVersion,
 	)
 	if err != nil {
 		return snapshot.TeamRunSnapshot{}, err
@@ -128,7 +134,7 @@ func (s *Store) AdmitWorkflowManualRunTx(
 		WorkspaceID:     request.WorkspaceID,
 		TeamID:          lockedTeamID,
 		WorkflowID:      request.WorkflowID,
-		WorkflowVersion: *publishedVersion,
+		WorkflowVersion: selectedVersion,
 		GraphDefinition: payload.GraphDefinition,
 	}); err != nil {
 		return snapshot.TeamRunSnapshot{}, err
@@ -166,7 +172,7 @@ func (s *Store) AdmitWorkflowManualRunTx(
 		SnapshotSchemaVersion:   2,
 		Mode:                    "fixed_workflow",
 		WorkflowID:              request.WorkflowID,
-		WorkflowVersion:         *publishedVersion,
+		WorkflowVersion:         selectedVersion,
 		ArtifactWorkflowID:      envelope.WorkflowID,
 		ArtifactWorkflowVersion: envelope.WorkflowVersion,
 		AdmissionDecision:       admissionDecision,
@@ -195,6 +201,9 @@ func validateWorkflowManualRunAdmissionRequest(
 	}
 	if request.TriggerType != "" && request.TriggerType != "conversation_explicit" {
 		return manualRunAdmissionDenied("trigger type is invalid")
+	}
+	if request.WorkflowVersion != nil && *request.WorkflowVersion <= 0 {
+		return manualRunAdmissionDenied("workflow version is invalid")
 	}
 	return nil
 }

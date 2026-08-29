@@ -114,9 +114,13 @@ func runTeam(ctx context.Context, client *weaveclient.Client, args []string, std
 		flags.SetOutput(stderr)
 		teamID := flags.String("team", "", "team ID")
 		task := flags.String("task", "", "task")
+		mode := flags.String("mode", "", "workflow or free_collab (default workflow)")
+		workflowID := flags.String("workflow", "", "workflow ID override")
+		workflowVersion := flags.Int("workflow-version", 0, "exact published workflow version")
 		wait := flags.Bool("wait", false, "wait for a terminal dispatch state")
 		clientRequestID := flags.String("client-request-id", "", "stable dispatch UUID")
 		projectID := flags.String("project", "", "project ID")
+		conversationID := flags.String("conversation", "", "conversation ID")
 		if err := flags.Parse(args[1:]); err != nil {
 			return usageError("invalid_arguments")
 		}
@@ -124,7 +128,13 @@ func runTeam(ctx context.Context, client *weaveclient.Client, args []string, std
 			return usageError("team_and_task_required")
 		}
 		request := weaveclient.DispatchRequest{
-			TeamID: *teamID, Task: *task, ClientRequestID: *clientRequestID, ProjectID: *projectID,
+			TeamID: *teamID, Task: *task, Mode: *mode, WorkflowID: *workflowID,
+			ClientRequestID: *clientRequestID, ProjectID: *projectID, ConversationID: *conversationID,
+		}
+		if *workflowVersion > 0 {
+			request.WorkflowVersion = workflowVersion
+		} else if *workflowVersion < 0 {
+			return usageError("invalid_workflow_version")
 		}
 		var id string
 		var result json.RawMessage
@@ -239,7 +249,7 @@ func Usage() string {
 	return strings.Join([]string{
 		"weave team samples",
 		"weave team up -f <team.yaml> [--declarative-spec <workflow.json>] --idempotency-key <uuid>",
-		"weave team dispatch --team <id> --task <task> [--client-request-id <uuid>] [--wait]",
+		"weave team dispatch --team <id> --task <task> [--mode workflow|free_collab] [--workflow <id>] [--workflow-version <n>] [--client-request-id <uuid>] [--wait]",
 		"weave status build|dispatch|team-run <id>",
 		"weave deliverable list|get [id]",
 		"weave mcp serve",

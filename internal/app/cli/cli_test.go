@@ -113,14 +113,12 @@ func TestTeamUpReadsFileAndCallsTemplateEndpoint(t *testing.T) {
 	}
 }
 
-func TestTeamDispatchOnlyResolvesTeamToLead(t *testing.T) {
+func TestTeamDispatchUsesUnifiedWorkflowEndpoint(t *testing.T) {
 	server := cliServer(t, func(response http.ResponseWriter, request *http.Request) {
 		switch request.Method + " " + request.URL.Path {
-		case "GET /v1/teams/team-1":
-			_, _ = response.Write([]byte(`{"team":{"status":"active"},"lead":{"name":"lead"}}`))
-		case "POST /v1/chat":
-			response.WriteHeader(http.StatusAccepted)
-			_, _ = response.Write([]byte(`{"status":"queued"}`))
+		case "POST /v1/teams/team-1/dispatch":
+			response.WriteHeader(http.StatusCreated)
+			_, _ = response.Write([]byte(`{"run_id":"run-1","workflow_id":"workflow-1","workflow_version":1}`))
 		default:
 			t.Fatalf("unexpected request %s %s", request.Method, request.URL.Path)
 		}
@@ -129,7 +127,7 @@ func TestTeamDispatchOnlyResolvesTeamToLead(t *testing.T) {
 	setCLIEnv(t, server.URL)
 	var stdout, stderr bytes.Buffer
 	_, code := Dispatch([]string{"team", "dispatch", "--team", "team-1", "--task", "work"}, &stdout, &stderr)
-	if code != 0 || !strings.Contains(stdout.String(), `"client_request_id"`) || !strings.Contains(stdout.String(), `"queued"`) {
+	if code != 0 || !strings.Contains(stdout.String(), `"client_request_id"`) || !strings.Contains(stdout.String(), `"workflow_id"`) {
 		t.Fatalf("code=%d stdout=%s stderr=%s", code, stdout.String(), stderr.String())
 	}
 }

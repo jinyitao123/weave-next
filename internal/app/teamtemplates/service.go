@@ -85,6 +85,7 @@ type Submitter interface {
 
 type Options struct {
 	Policy       teambuild.TemplateAuthorizationPolicy
+	DefaultModel string
 	ReadyTimeout time.Duration
 	PollInterval time.Duration
 	RunTTL       time.Duration
@@ -93,15 +94,16 @@ type Options struct {
 }
 
 type Service struct {
-	idempotency IdempotencyStore
-	builds      BuildStore
-	submitter   Submitter
-	policy      teambuild.TemplateAuthorizationPolicy
-	ready       time.Duration
-	poll        time.Duration
-	runTTL      time.Duration
-	now         func() time.Time
-	catalog     Catalog
+	idempotency  IdempotencyStore
+	builds       BuildStore
+	submitter    Submitter
+	policy       teambuild.TemplateAuthorizationPolicy
+	defaultModel string
+	ready        time.Duration
+	poll         time.Duration
+	runTTL       time.Duration
+	now          func() time.Time
+	catalog      Catalog
 }
 
 type declarativePlan struct {
@@ -124,7 +126,8 @@ func New(idempotency IdempotencyStore, builds BuildStore, submitter Submitter, o
 	return &Service{
 		idempotency: idempotency, builds: builds, submitter: submitter,
 		policy: options.Policy, ready: options.ReadyTimeout, poll: options.PollInterval,
-		runTTL: options.RunTTL, now: options.Now, catalog: options.Catalog,
+		defaultModel: strings.TrimSpace(options.DefaultModel),
+		runTTL:       options.RunTTL, now: options.Now, catalog: options.Catalog,
 	}
 }
 
@@ -161,6 +164,7 @@ func (s *Service) Instantiate(ctx context.Context, workspaceID, userID string, r
 	if err != nil {
 		return Outcome{}, err
 	}
+	applyTemplateDefaultModel(&compiled, s.defaultModel)
 	fingerprint, err := templateFingerprint(compiled.Template, request.DeclarativeSpec)
 	if err != nil {
 		return Outcome{}, fmt.Errorf("fingerprint team template: %w", err)
@@ -232,6 +236,27 @@ func (s *Service) Instantiate(ctx context.Context, workspaceID, userID string, r
 		}
 	}
 	return s.waitForTerminal(workspaceID, buildRunID)
+}
+
+func applyTemplateDefaultModel(compiled *teamtemplate.Compilation, defaultModel string) {
+	if compiled == nil || strings.TrimSpace(defaultModel) == "" {
+		return
+	}
+	defaultModel = strings.TrimSpace(defaultModel)
+	for i := range compiled.Blueprint.Members {
+		member := &compiled.Blueprint.Members[i]
+		if strings.TrimSpace(member.ModelRef) != "" || member.ExecutionPolicy.EngineClass != teambuild.BlueprintEngineStandard {
+			continue
+		}
+		member.ModelRef = defaultModel
+	}
+	for i := range compiled.Template.Members {
+		member := &compiled.Template.Members[i]
+		if strings.TrimSpace(member.ModelRef) != "" || (member.ExecutionPolicy != nil && member.ExecutionPolicy.EngineClass != teambuild.BlueprintEngineStandard) {
+			continue
+		}
+		member.ModelRef = defaultModel
+	}
 }
 
 func (s *Service) ensureDeclarativeRevisions(

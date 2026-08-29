@@ -11,8 +11,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/app/projects"
+	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/base/snapshot"
 	"github.com/jinyitao123/weave/internal/base/taskqueue"
 	"github.com/jinyitao123/weave/internal/kernel/workflow"
@@ -20,9 +20,10 @@ import (
 )
 
 type workflowManualRunRequest struct {
-	ProjectID      json.RawMessage `json:"project_id"`
-	ConversationID json.RawMessage `json:"conversation_id"`
-	Input          json.RawMessage `json:"input"`
+	ProjectID       json.RawMessage `json:"project_id"`
+	ConversationID  json.RawMessage `json:"conversation_id"`
+	Input           json.RawMessage `json:"input"`
+	WorkflowVersion *int            `json:"workflow_version,omitempty"`
 }
 
 type workflowManualRunResponse struct {
@@ -83,6 +84,9 @@ func (s *Server) handleRunWorkflow(c echo.Context) error {
 		}
 		payload = append(json.RawMessage(nil), request.Input...)
 	}
+	if request.WorkflowVersion != nil && *request.WorkflowVersion <= 0 {
+		return workflowSchemaError(c)
+	}
 	workspaceID := getTenant(c)
 	ctx := c.Request().Context()
 	tx, err := s.ScheduleTransactions.Begin(ctx)
@@ -108,14 +112,18 @@ func (s *Server) handleRunWorkflow(c echo.Context) error {
 		ctx,
 		tx,
 		workflow.WorkflowManualRunAdmissionRequest{
-			WorkspaceID: workspaceID,
-			WorkflowID:  c.Param("id"),
-			SourceRef:   sourceRef,
-			TriggerType: triggerType,
+			WorkspaceID:     workspaceID,
+			WorkflowID:      c.Param("id"),
+			WorkflowVersion: request.WorkflowVersion,
+			SourceRef:       sourceRef,
+			TriggerType:     triggerType,
 		},
 	)
 	if err != nil {
 		return s.respondWorkflowManualRunAdmissionError(c, tx, err, expectedTrigger)
+	}
+	if dispatchRunID, ok := c.Get("workflow_dispatch_run_id").(string); ok && dispatchRunID != "" {
+		admitted.RunID = dispatchRunID
 	}
 	if err := validateWorkflowManualRunSnapshot(
 		admitted, workspaceID, c.Param("id"), sourceRef, expectedTrigger,
@@ -198,10 +206,32 @@ func (s *Server) handleRunWorkflow(c echo.Context) error {
 
 	createdSnapshot, err := s.Snapshots.CreateTx(ctx, tx, admitted)
 	if err != nil {
+		if errors.Is(err, snapshot.ErrAlreadyExists) {
+			if fingerprint, ok := c.Get("workflow_dispatch_fingerprint").(string); ok && fingerprint != "" {
+				_ = tx.Rollback(ctx)
+				taskID, _ := c.Get("workflow_dispatch_task_id").(string)
+				existing, _, existingPayload, contextKey, found, replayErr := s.loadWorkflowDispatchReplay(
+					ctx, workspaceID, admitted.RunID, taskID,
+				)
+				if replayErr != nil {
+					return workflowStoreFailure(c, replayErr)
+				}
+				if found && contextKey == fingerprint && existingPayload == string(payload) {
+					existing.RunID = admitted.RunID
+					existing.ConversationID = conversationID
+					return c.JSON(http.StatusOK, existing)
+				}
+				return workflowError(c, http.StatusConflict, "client_request_conflict", "client_request_id was already used for different dispatch facts")
+			}
+		}
 		return workflowStoreFailure(c, fmt.Errorf("create manual workflow snapshot: %w", err))
 	}
+	taskID := "task-" + uuid.NewString()
+	if dispatchTaskID, ok := c.Get("workflow_dispatch_task_id").(string); ok && dispatchTaskID != "" {
+		taskID = dispatchTaskID
+	}
 	task := &taskqueue.Task{
-		ID:                    "task-" + uuid.NewString(),
+		ID:                    taskID,
 		WorkspaceID:           createdSnapshot.WorkspaceID,
 		ProjectID:             createdSnapshot.ProjectID,
 		IdentityKind:          taskqueue.IdentityTeamWorkflow,
@@ -212,6 +242,9 @@ func (s *Server) handleRunWorkflow(c echo.Context) error {
 		Source:                taskSource,
 		Kind:                  "team_workflow",
 		Payload:               payload,
+	}
+	if dispatchFingerprint, ok := c.Get("workflow_dispatch_fingerprint").(string); ok {
+		task.ContextKey = dispatchFingerprint
 	}
 	if err := s.Tasks.EnqueueTx(ctx, tx, task); err != nil {
 		return workflowStoreFailure(c, fmt.Errorf("enqueue manual workflow task: %w", err))

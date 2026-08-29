@@ -68,8 +68,12 @@ type TeamCreateRequest struct {
 type DispatchRequest struct {
 	TeamID          string
 	Task            string
+	Mode            string
+	WorkflowID      string
+	WorkflowVersion *int
 	ClientRequestID string
 	ProjectID       string
+	ConversationID  string
 }
 
 type ResumeRequest struct {
@@ -177,18 +181,25 @@ func (c *Client) TeamDispatch(ctx context.Context, request DispatchRequest) (str
 	} else if _, err := uuid.Parse(clientRequestID); err != nil {
 		return "", nil, &Error{Code: "invalid_client_request_id"}
 	}
-	team, err := c.resolveTeamLead(ctx, teamID)
-	if err != nil {
-		return clientRequestID, nil, err
-	}
 	body := map[string]any{
-		"agent": team.Lead.Name, "message": request.Task,
-		"client_request_id": clientRequestID, "async": true, "stream": false,
+		"task": request.Task, "client_request_id": clientRequestID,
+	}
+	if strings.TrimSpace(request.Mode) != "" {
+		body["mode"] = strings.TrimSpace(request.Mode)
+	}
+	if strings.TrimSpace(request.WorkflowID) != "" {
+		body["workflow_id"] = strings.TrimSpace(request.WorkflowID)
+	}
+	if request.WorkflowVersion != nil {
+		body["workflow_version"] = *request.WorkflowVersion
 	}
 	if strings.TrimSpace(request.ProjectID) != "" {
 		body["project_id"] = strings.TrimSpace(request.ProjectID)
 	}
-	result, err := c.sendJSON(ctx, http.MethodPost, "/v1/chat", body)
+	if strings.TrimSpace(request.ConversationID) != "" {
+		body["conversation_id"] = strings.TrimSpace(request.ConversationID)
+	}
+	result, err := c.sendJSON(ctx, http.MethodPost, "/v1/teams/"+url.PathEscape(teamID)+"/dispatch", body)
 	if apiErr, ok := err.(*Error); ok && apiErr.StatusCode == http.StatusConflict &&
 		apiErr.Code == "client_request_in_progress" {
 		result, err = c.DispatchStatus(ctx, clientRequestID)
@@ -204,8 +215,31 @@ func (c *Client) TeamDispatchAndWait(ctx context.Context, request DispatchReques
 	if terminalDispatchStatus(result) {
 		return clientRequestID, result, nil
 	}
+	if runID := workflowDispatchRunID(result); runID != "" {
+		result, err = c.WaitTeamRun(ctx, runID)
+		return clientRequestID, result, err
+	}
 	result, err = c.WaitDispatch(ctx, clientRequestID)
 	return clientRequestID, result, err
+}
+
+func (c *Client) WaitTeamRun(ctx context.Context, snapshotID string) (json.RawMessage, error) {
+	for {
+		result, err := c.TeamRunStatus(ctx, snapshotID)
+		if err != nil {
+			return nil, err
+		}
+		if terminalTeamRunStatus(result) {
+			return result, nil
+		}
+		timer := time.NewTimer(c.pollInterval)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return nil, &Error{Code: "poll_cancelled"}
+		case <-timer.C:
+		}
+	}
 }
 
 func (c *Client) WaitDispatch(ctx context.Context, clientRequestID string) (json.RawMessage, error) {
@@ -365,6 +399,34 @@ func terminalDispatchStatus(body json.RawMessage) bool {
 	}
 	switch response.Status {
 	case "completed", "failed", "yielded":
+		return true
+	default:
+		return false
+	}
+}
+
+func workflowDispatchRunID(body json.RawMessage) string {
+	var response struct {
+		RunID      string `json:"run_id"`
+		WorkflowID string `json:"workflow_id"`
+	}
+	if json.Unmarshal(body, &response) != nil || response.WorkflowID == "" {
+		return ""
+	}
+	return response.RunID
+}
+
+func terminalTeamRunStatus(body json.RawMessage) bool {
+	var response struct {
+		Runs []struct {
+			Status string `json:"status"`
+		} `json:"runs"`
+	}
+	if json.Unmarshal(body, &response) != nil || len(response.Runs) == 0 {
+		return false
+	}
+	switch response.Runs[0].Status {
+	case "succeeded", "failed", "cancelled", "abandoned":
 		return true
 	default:
 		return false

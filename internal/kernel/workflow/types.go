@@ -102,10 +102,11 @@ type WorkflowScheduleAdmissionRequest struct {
 // WorkflowManualRunAdmissionRequest identifies one operator-triggered run
 // whose exact published workflow facts must be admitted transactionally.
 type WorkflowManualRunAdmissionRequest struct {
-	WorkspaceID string
-	WorkflowID  string
-	SourceRef   string
-	TriggerType string
+	WorkspaceID     string
+	WorkflowID      string
+	WorkflowVersion *int
+	SourceRef       string
+	TriggerType     string
 }
 
 // Clock supplies timestamps for workflow mutations.

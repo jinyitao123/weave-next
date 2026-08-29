@@ -184,6 +184,17 @@ func (s *Store) InsertPublicationTx(
 	); err != nil {
 		return fmt.Errorf("set workflow published version: %w", err)
 	}
+	if _, err := tx.Exec(ctx, `
+		UPDATE weave_teams AS team
+		SET default_workflow_id=$2, updated_at=GREATEST(team.updated_at,$3)
+		FROM weave_team_workflows AS published
+		WHERE published.workspace_id=$1 AND published.id=$2
+		  AND team.workspace_id=published.workspace_id
+		  AND team.id=published.team_id
+		  AND team.default_workflow_id IS NULL
+	`, publication.WorkspaceID, publication.WorkflowID, effectivePublishedAt); err != nil {
+		return fmt.Errorf("set team default workflow: %w", err)
+	}
 	return nil
 }
 
