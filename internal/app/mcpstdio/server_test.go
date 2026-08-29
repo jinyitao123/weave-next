@@ -49,12 +49,13 @@ func TestServeUsesSharedProtocolForInitializeListAndCall(t *testing.T) {
 		t.Fatalf("initialize = %#v", initialize)
 	}
 	tools := responses[1]["result"].(map[string]any)["tools"].([]any)
-	if len(tools) != 9 {
+	if len(tools) != 12 {
 		t.Fatalf("tool count = %d", len(tools))
 	}
 	wantNames := []string{
 		"team_template_list", "team_create", "team_dispatch", "build_status", "dispatch_status",
-		"team_run_status", "resume", "deliverable_list", "deliverable_get",
+		"team_run_status", "human_task_list", "human_task_get", "human_task_complete",
+		"resume", "deliverable_list", "deliverable_get",
 	}
 	gotNames := make([]string, 0, len(tools))
 	for _, raw := range tools {

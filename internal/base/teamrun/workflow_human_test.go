@@ -204,8 +204,12 @@ func TestHumanTaskReaderUsesStableUpdatedAtRunIDCursor(t *testing.T) {
 		t.Fatalf("first page: items=%d more=%v err=%v", len(first), more, err)
 	}
 	if first[0].Run.RunID != "run-human-list-b" || first[0].Detail.Task.AudienceRef != "editor" ||
-		string(first[0].CompletedOutputs["draft"]) != `{"deliverable_ref":"artifact-1"}` {
+		first[0].CompletedOutputs != nil {
 		t.Fatalf("unexpected first task: %#v", first[0])
+	}
+	detail, err := reader.Get(context.Background(), "workspace-1", first[0].Run.RunID)
+	if err != nil || string(detail.CompletedOutputs["draft"]) != `{"deliverable_ref":"artifact-1"}` {
+		t.Fatalf("task detail = %#v err = %v", detail, err)
 	}
 	second, more, err := reader.List(
 		context.Background(), "workspace-1", &first[0].Run.UpdatedAt, first[0].Run.RunID, 1,

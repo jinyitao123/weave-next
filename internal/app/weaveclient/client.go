@@ -77,6 +77,12 @@ type ResumeRequest struct {
 	Input map[string]any `json:"input"`
 }
 
+type HumanTaskCompleteRequest struct {
+	RunID          string          `json:"-"`
+	Payload        json.RawMessage `json:"payload"`
+	IdempotencyKey string          `json:"idempotency_key"`
+}
+
 func (c *Client) TeamTemplateList(ctx context.Context) (json.RawMessage, error) {
 	return c.getJSON(ctx, "/v1/team-templates/samples")
 }
@@ -163,6 +169,46 @@ func (c *Client) TeamRunStatus(ctx context.Context, snapshotID string) (json.Raw
 		"aggregation_mode": {"all-exclusive"},
 	}
 	return c.getJSON(ctx, "/v1/runs?"+query.Encode())
+}
+
+func (c *Client) HumanTaskList(ctx context.Context, limit int, cursor string) (json.RawMessage, error) {
+	query := url.Values{}
+	if limit > 0 {
+		query.Set("limit", strconv.Itoa(limit))
+	}
+	if strings.TrimSpace(cursor) != "" {
+		query.Set("cursor", strings.TrimSpace(cursor))
+	}
+	path := "/v1/human-tasks"
+	if len(query) != 0 {
+		path += "?" + query.Encode()
+	}
+	return c.getJSON(ctx, path)
+}
+
+func (c *Client) HumanTaskGet(ctx context.Context, runID, pointer string, offset, limit int) (json.RawMessage, error) {
+	query := url.Values{}
+	if pointer != "" {
+		query.Set("path", pointer)
+	}
+	if limit > 0 {
+		query.Set("offset", strconv.Itoa(offset))
+		query.Set("limit", strconv.Itoa(limit))
+	}
+	path := "/v1/human-tasks/" + url.PathEscape(strings.TrimSpace(runID))
+	if len(query) != 0 {
+		path += "?" + query.Encode()
+	}
+	return c.getJSON(ctx, path)
+}
+
+func (c *Client) HumanTaskComplete(ctx context.Context, request HumanTaskCompleteRequest) (json.RawMessage, error) {
+	input := struct {
+		Payload        json.RawMessage `json:"payload"`
+		IdempotencyKey string          `json:"idempotency_key"`
+	}{Payload: request.Payload, IdempotencyKey: request.IdempotencyKey}
+	return c.sendJSON(ctx, http.MethodPost,
+		"/v1/human-tasks/"+url.PathEscape(strings.TrimSpace(request.RunID))+"/complete", input)
 }
 
 func (c *Client) Resume(ctx context.Context, request ResumeRequest) ([]byte, error) {

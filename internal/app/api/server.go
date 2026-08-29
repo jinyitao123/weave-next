@@ -513,6 +513,7 @@ func (s *Server) registerRoutes() {
 	auth.POST("/conversations/:id/read", s.handleMarkConversationRead, chatScope)
 	auth.GET("/inbox/unread", s.handleListInboxUnread, chatScope)
 	auth.GET("/human-tasks", s.handleListHumanTasks, runsScope)
+	auth.GET("/human-tasks/:run_id", s.handleGetHumanTask, runsScope)
 	auth.POST("/human-tasks/:run_id/complete", s.handleCompleteHumanTask, runsScope)
 	auth.POST("/messages/:id/flag", s.handleFlagMessage, chatScope)
 	auth.DELETE("/messages/:id/flag", s.handleUnflagMessage, chatScope)

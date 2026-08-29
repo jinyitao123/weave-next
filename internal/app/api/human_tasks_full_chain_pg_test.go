@@ -7,6 +7,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -218,8 +220,47 @@ func TestHumanFinalReviewSampleRealPGFullChain(t *testing.T) {
 	if err := json.Unmarshal(listRecorder.Body.Bytes(), &inbox); err != nil || inbox.Total != 1 || len(inbox.Tasks) != 1 {
 		t.Fatalf("decode human inbox: inbox=%#v err=%v body=%s", inbox, err, listRecorder.Body.String())
 	}
-	if got := string(inbox.Tasks[0].CompletedOutputs["draft"]); got != `"deliverable_ref:artifact-m3-final"` {
-		t.Fatalf("pending deliverable preview = %s", got)
+	if strings.Contains(listRecorder.Body.String(), "deliverable_ref:artifact-m3-final") ||
+		strings.Contains(listRecorder.Body.String(), "predecessor_outputs") {
+		t.Fatalf("human task list leaked predecessor output: %s", listRecorder.Body.String())
+	}
+	detail := getHumanTaskThroughAPI(t, server, workspaceID, userID, runID, "")
+	if detail.Code != http.StatusOK || !strings.Contains(detail.Body.String(), `"predecessor_outputs":{"draft":"deliverable_ref:artifact-m3-final"}`) {
+		t.Fatalf("human task detail status=%d body=%s", detail.Code, detail.Body.String())
+	}
+	chapterPath := "/predecessor_outputs/chapters/第一~1章~0草稿"
+	longChapter := strings.Repeat("长", humanTaskGetMaxBytes)
+	checkpointTx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkpoint, err := checkpoints.GetTx(ctx, checkpointTx, workspaceID, runID)
+	if err != nil {
+		_ = checkpointTx.Rollback(ctx)
+		t.Fatal(err)
+	}
+	chapters, _ := json.Marshal(map[string]string{"第一/章~草稿": "短稿", "长章": longChapter})
+	checkpoint.CompletedOutputs["chapters"] = chapters
+	checkpoint.WrittenAt = time.Now().UTC()
+	if _, err := checkpoints.PutTx(ctx, checkpointTx, checkpoint); err != nil {
+		_ = checkpointTx.Rollback(ctx)
+		t.Fatal(err)
+	}
+	if err := checkpointTx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	tooLarge := getHumanTaskThroughAPI(t, server, workspaceID, userID, runID, "")
+	if tooLarge.Code != http.StatusRequestEntityTooLarge || !strings.Contains(tooLarge.Body.String(), "human_task_value_too_large") {
+		t.Fatalf("oversize detail status=%d body=%s", tooLarge.Code, tooLarge.Body.String())
+	}
+	chapter := getHumanTaskThroughAPI(t, server, workspaceID, userID, runID, "?path="+url.QueryEscape(chapterPath))
+	if chapter.Code != http.StatusOK || strings.TrimSpace(chapter.Body.String()) != `"短稿"` {
+		t.Fatalf("chapter selection status=%d body=%s", chapter.Code, chapter.Body.String())
+	}
+	page := getHumanTaskThroughAPI(t, server, workspaceID, userID, runID,
+		"?path="+url.QueryEscape("/predecessor_outputs/chapters/长章")+"&offset=10&limit=1000")
+	if page.Code != http.StatusOK || page.Header().Get("X-Weave-Page-Total") != strconv.Itoa(humanTaskGetMaxBytes) {
+		t.Fatalf("chapter page status=%d headers=%v body_bytes=%d", page.Code, page.Header(), page.Body.Len())
 	}
 
 	invalid := completeHumanTaskThroughAPI(t, server, workspaceID, userID, runID,
@@ -321,6 +362,19 @@ func completeHumanTaskThroughAPI(t *testing.T, server *Server, workspaceID, user
 	ctx.SetParamValues(runID)
 	if err := server.handleCompleteHumanTask(ctx); err != nil {
 		t.Fatalf("complete human task handler: %v", err)
+	}
+	return recorder
+}
+
+func getHumanTaskThroughAPI(t *testing.T, server *Server, workspaceID, userID, runID, query string) *httptest.ResponseRecorder {
+	t.Helper()
+	recorder := httptest.NewRecorder()
+	ctx := humanTaskAPIContext(http.MethodGet, "/v1/human-tasks/"+runID+query, "", recorder, workspaceID, userID)
+	ctx.SetPath("/v1/human-tasks/:run_id")
+	ctx.SetParamNames("run_id")
+	ctx.SetParamValues(runID)
+	if err := server.handleGetHumanTask(ctx); err != nil {
+		t.Fatalf("get human task handler: %v", err)
 	}
 	return recorder
 }

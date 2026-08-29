@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -24,18 +25,22 @@ type humanTaskCursorV1 struct {
 }
 
 type humanTaskResponse struct {
-	RunID            string                     `json:"run_id"`
-	ProjectID        string                     `json:"project_id,omitempty"`
-	TeamID           string                     `json:"team_id"`
-	WorkflowID       string                     `json:"workflow_id"`
-	WorkflowVersion  int                        `json:"workflow_version"`
-	Title            string                     `json:"title"`
-	Instructions     string                     `json:"instructions"`
-	AudienceRef      string                     `json:"audience_ref,omitempty"`
-	ResumeSchema     json.RawMessage            `json:"resume_schema"`
-	DeadlineAt       *time.Time                 `json:"deadline_at,omitempty"`
-	CompletedOutputs map[string]json.RawMessage `json:"completed_outputs"`
-	UpdatedAt        time.Time                  `json:"updated_at"`
+	RunID           string          `json:"run_id"`
+	ProjectID       string          `json:"project_id,omitempty"`
+	TeamID          string          `json:"team_id"`
+	WorkflowID      string          `json:"workflow_id"`
+	WorkflowVersion int             `json:"workflow_version"`
+	Title           string          `json:"title"`
+	Instructions    string          `json:"instructions"`
+	AudienceRef     string          `json:"audience_ref,omitempty"`
+	ResumeSchema    json.RawMessage `json:"resume_schema"`
+	DeadlineAt      *time.Time      `json:"deadline_at,omitempty"`
+	UpdatedAt       time.Time       `json:"updated_at"`
+}
+
+type humanTaskDetailResponse struct {
+	humanTaskResponse
+	PredecessorOutputs map[string]json.RawMessage `json:"predecessor_outputs"`
 }
 
 type completeHumanTaskRequest struct {
@@ -77,8 +82,7 @@ func (s *Server) handleListHumanTasks(c echo.Context) error {
 			WorkflowID: item.Run.WorkflowID, WorkflowVersion: item.Run.WorkflowVersion,
 			Title: item.Detail.Task.Title, Instructions: item.Detail.Task.Instructions,
 			AudienceRef: item.Detail.Task.AudienceRef, ResumeSchema: item.Detail.ResumeSchema,
-			DeadlineAt: item.Detail.DeadlineAt, CompletedOutputs: item.CompletedOutputs,
-			UpdatedAt: item.Run.UpdatedAt,
+			DeadlineAt: item.Detail.DeadlineAt, UpdatedAt: item.Run.UpdatedAt,
 		})
 	}
 	nextCursor := ""
@@ -89,6 +93,223 @@ func (s *Server) handleListHumanTasks(c echo.Context) error {
 		}
 	}
 	return c.JSON(http.StatusOK, map[string]any{"tasks": responses, "next_cursor": nextCursor, "total": total})
+}
+
+const (
+	humanTaskGetMaxBytes  = 64 * 1024
+	humanTaskPageMaxItems = 10_000
+)
+
+var (
+	errInvalidJSONPointer = errors.New("invalid JSON pointer")
+	errJSONPointerMissing = errors.New("JSON pointer value not found")
+)
+
+func (s *Server) handleGetHumanTask(c echo.Context) error {
+	if err := s.requireCurrentWorkspaceMember(c); err != nil {
+		return err
+	}
+	if s.teamRunHumanTasks == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "human task detail unavailable"})
+	}
+	item, err := s.teamRunHumanTasks.Get(c.Request().Context(), getTenant(c), c.Param("run_id"))
+	if errors.Is(err, teamrun.ErrTeamRunIdentityMismatch) {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "human task not found"})
+	}
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	detail := humanTaskDetailResponse{
+		humanTaskResponse: humanTaskResponse{
+			RunID: item.Run.RunID, ProjectID: item.Run.ProjectID, TeamID: item.Run.TeamID,
+			WorkflowID: item.Run.WorkflowID, WorkflowVersion: item.Run.WorkflowVersion,
+			Title: item.Detail.Task.Title, Instructions: item.Detail.Task.Instructions,
+			AudienceRef: item.Detail.Task.AudienceRef, ResumeSchema: item.Detail.ResumeSchema,
+			DeadlineAt: item.Detail.DeadlineAt, UpdatedAt: item.Run.UpdatedAt,
+		},
+		PredecessorOutputs: item.CompletedOutputs,
+	}
+	encoded, err := json.Marshal(detail)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "encode human task detail"})
+	}
+	var value any
+	decoder := json.NewDecoder(bytes.NewReader(encoded))
+	decoder.UseNumber()
+	if err := decoder.Decode(&value); err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "decode human task detail"})
+	}
+	path := c.QueryParam("path")
+	value, err = resolveJSONPointer(value, path)
+	if errors.Is(err, errInvalidJSONPointer) {
+		return c.JSON(http.StatusBadRequest, map[string]string{"code": "invalid_json_pointer", "error": "path must be an RFC 6901 JSON pointer"})
+	}
+	if errors.Is(err, errJSONPointerMissing) {
+		return c.JSON(http.StatusNotFound, map[string]string{"code": "human_task_value_not_found", "error": "selected value not found"})
+	}
+	offset, limit, paged, err := parseHumanTaskPage(c.QueryParam("offset"), c.QueryParam("limit"))
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"code": "invalid_pagination", "error": err.Error()})
+	}
+	total := jsonPageLength(value)
+	if paged {
+		value, err = paginateJSONValue(value, offset, limit)
+		if err != nil {
+			return c.JSON(http.StatusBadRequest, map[string]string{"code": "value_not_pageable", "error": "selected value does not support offset/limit pagination"})
+		}
+		c.Response().Header().Set("X-Weave-Page-Offset", strconv.Itoa(offset))
+		c.Response().Header().Set("X-Weave-Page-Limit", strconv.Itoa(limit))
+		c.Response().Header().Set("X-Weave-Page-Total", strconv.Itoa(total))
+	}
+	selected, err := json.Marshal(value)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "encode selected human task value"})
+	}
+	if len(selected) > humanTaskGetMaxBytes {
+		return c.JSON(http.StatusRequestEntityTooLarge, map[string]any{
+			"code": "human_task_value_too_large", "error": "selected JSON value exceeds the response limit",
+			"max_bytes":             humanTaskGetMaxBytes,
+			"pagination_parameters": map[string]int{"offset": 0, "limit": 1000},
+		})
+	}
+	return c.JSONBlob(http.StatusOK, selected)
+}
+
+func resolveJSONPointer(document any, pointer string) (any, error) {
+	if pointer == "" {
+		return document, nil
+	}
+	if !strings.HasPrefix(pointer, "/") {
+		return nil, errInvalidJSONPointer
+	}
+	current := document
+	for _, rawToken := range strings.Split(pointer[1:], "/") {
+		token, err := decodeJSONPointerToken(rawToken)
+		if err != nil {
+			return nil, err
+		}
+		switch typed := current.(type) {
+		case map[string]any:
+			var ok bool
+			current, ok = typed[token]
+			if !ok {
+				return nil, errJSONPointerMissing
+			}
+		case []any:
+			if token == "-" || (len(token) > 1 && token[0] == '0') {
+				return nil, errJSONPointerMissing
+			}
+			index, err := strconv.Atoi(token)
+			if err != nil || index < 0 || index >= len(typed) {
+				return nil, errJSONPointerMissing
+			}
+			current = typed[index]
+		default:
+			return nil, errJSONPointerMissing
+		}
+	}
+	return current, nil
+}
+
+func decodeJSONPointerToken(token string) (string, error) {
+	var decoded strings.Builder
+	for index := 0; index < len(token); index++ {
+		if token[index] != '~' {
+			decoded.WriteByte(token[index])
+			continue
+		}
+		if index+1 >= len(token) {
+			return "", errInvalidJSONPointer
+		}
+		index++
+		switch token[index] {
+		case '0':
+			decoded.WriteByte('~')
+		case '1':
+			decoded.WriteByte('/')
+		default:
+			return "", errInvalidJSONPointer
+		}
+	}
+	return decoded.String(), nil
+}
+
+func parseHumanTaskPage(rawOffset, rawLimit string) (int, int, bool, error) {
+	rawOffset, rawLimit = strings.TrimSpace(rawOffset), strings.TrimSpace(rawLimit)
+	if rawOffset == "" && rawLimit == "" {
+		return 0, 0, false, nil
+	}
+	if rawLimit == "" {
+		return 0, 0, false, errors.New("limit is required when offset is set")
+	}
+	offset := 0
+	var err error
+	if rawOffset != "" {
+		offset, err = strconv.Atoi(rawOffset)
+		if err != nil || offset < 0 {
+			return 0, 0, false, errors.New("offset must be a non-negative integer")
+		}
+	}
+	limit, err := strconv.Atoi(rawLimit)
+	if err != nil || limit < 1 || limit > humanTaskPageMaxItems {
+		return 0, 0, false, errors.New("limit must be between 1 and 10000")
+	}
+	return offset, limit, true, nil
+}
+
+func jsonPageLength(value any) int {
+	switch typed := value.(type) {
+	case string:
+		return len([]rune(typed))
+	case []any:
+		return len(typed)
+	case map[string]any:
+		return len(typed)
+	default:
+		return 0
+	}
+}
+
+func paginateJSONValue(value any, offset, limit int) (any, error) {
+	end := offset + limit
+	switch typed := value.(type) {
+	case string:
+		runes := []rune(typed)
+		if offset > len(runes) {
+			offset = len(runes)
+		}
+		if end > len(runes) {
+			end = len(runes)
+		}
+		return string(runes[offset:end]), nil
+	case []any:
+		if offset > len(typed) {
+			offset = len(typed)
+		}
+		if end > len(typed) {
+			end = len(typed)
+		}
+		return typed[offset:end], nil
+	case map[string]any:
+		keys := make([]string, 0, len(typed))
+		for key := range typed {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		if offset > len(keys) {
+			offset = len(keys)
+		}
+		if end > len(keys) {
+			end = len(keys)
+		}
+		page := make(map[string]any, end-offset)
+		for _, key := range keys[offset:end] {
+			page[key] = typed[key]
+		}
+		return page, nil
+	default:
+		return nil, errors.New("value is not pageable")
+	}
 }
 
 func (s *Server) handleCompleteHumanTask(c echo.Context) error {

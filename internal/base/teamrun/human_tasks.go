@@ -49,10 +49,8 @@ func (r *HumanTaskReader) List(
 	rows, err := r.Pool.Query(ctx, `SELECT
 		r.workspace_id,r.project_id,r.run_id,r.status,r.team_id,r.workflow_id,
 		r.workflow_version,r.run_snapshot_id,r.source_kind,r.wait_detail,
-		r.created_at,r.updated_at,c.value
+		r.created_at,r.updated_at
 		FROM weave_team_runs r
-		LEFT JOIN loom_store c
-		  ON c.namespace='teamrun-checkpoint:'||r.workspace_id AND c.key=r.run_id
 		WHERE r.workspace_id=$1 AND r.status='parked' AND r.wait_kind='human'
 		  AND ($2::timestamptz IS NULL OR (r.updated_at,r.run_id)<($2,$3))
 		ORDER BY r.updated_at DESC,r.run_id DESC
@@ -63,7 +61,7 @@ func (r *HumanTaskReader) List(
 	defer rows.Close()
 	items := make([]HumanTaskItem, 0, limit+1)
 	for rows.Next() {
-		item, scanErr := scanHumanTask(rows)
+		item, scanErr := scanHumanTaskSummary(rows)
 		if scanErr != nil {
 			return nil, false, scanErr
 		}
@@ -103,17 +101,42 @@ func (r *HumanTaskReader) Get(
 }
 
 func scanHumanTask(row rowScanner) (HumanTaskItem, error) {
+	item, checkpointRaw, err := scanHumanTaskRow(row, true)
+	if err != nil {
+		return HumanTaskItem{}, err
+	}
+	checkpoint, err := DecodeWorkflowCheckpointV1(checkpointRaw)
+	if err != nil {
+		return HumanTaskItem{}, fmt.Errorf("decode human task checkpoint %q: %w", item.Run.RunID, err)
+	}
+	item.CompletedOutputs = checkpoint.CompletedOutputs
+	if item.CompletedOutputs == nil {
+		item.CompletedOutputs = make(map[string]json.RawMessage)
+	}
+	return item, nil
+}
+
+func scanHumanTaskSummary(row rowScanner) (HumanTaskItem, error) {
+	item, _, err := scanHumanTaskRow(row, false)
+	return item, err
+}
+
+func scanHumanTaskRow(row rowScanner, withCheckpoint bool) (HumanTaskItem, []byte, error) {
 	var item HumanTaskItem
 	var projectID *string
 	var status, sourceKind string
 	var checkpointRaw []byte
-	if err := row.Scan(
+	targets := []any{
 		&item.Run.WorkspaceID, &projectID, &item.Run.RunID, &status,
 		&item.Run.TeamID, &item.Run.WorkflowID, &item.Run.WorkflowVersion,
 		&item.Run.RunSnapshotID, &sourceKind, &item.Run.WaitDetail,
-		&item.Run.CreatedAt, &item.Run.UpdatedAt, &checkpointRaw,
-	); err != nil {
-		return HumanTaskItem{}, err
+		&item.Run.CreatedAt, &item.Run.UpdatedAt,
+	}
+	if withCheckpoint {
+		targets = append(targets, &checkpointRaw)
+	}
+	if err := row.Scan(targets...); err != nil {
+		return HumanTaskItem{}, nil, err
 	}
 	if projectID != nil {
 		item.Run.ProjectID = *projectID
@@ -124,16 +147,8 @@ func scanHumanTask(row rowScanner) (HumanTaskItem, error) {
 	item.Run.WaitKind = &waitKind
 	detail, err := DecodeHumanWaitDetailV1(item.Run.WaitDetail)
 	if err != nil {
-		return HumanTaskItem{}, fmt.Errorf("decode stored human task %q: %w", item.Run.RunID, err)
-	}
-	checkpoint, err := DecodeWorkflowCheckpointV1(checkpointRaw)
-	if err != nil {
-		return HumanTaskItem{}, fmt.Errorf("decode human task checkpoint %q: %w", item.Run.RunID, err)
-	}
-	item.CompletedOutputs = checkpoint.CompletedOutputs
-	if item.CompletedOutputs == nil {
-		item.CompletedOutputs = make(map[string]json.RawMessage)
+		return HumanTaskItem{}, nil, fmt.Errorf("decode stored human task %q: %w", item.Run.RunID, err)
 	}
 	item.Detail = detail
-	return item, nil
+	return item, checkpointRaw, nil
 }

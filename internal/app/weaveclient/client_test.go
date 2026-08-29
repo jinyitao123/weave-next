@@ -138,6 +138,11 @@ func TestReadEndpointsAndResumeAreThinHTTPMappings(t *testing.T) {
 	_, _ = client.BuildStatus(ctx, "build-1")
 	_, _ = client.DispatchStatus(ctx, "dispatch-1")
 	_, _ = client.TeamRunStatus(ctx, "snapshot-1")
+	_, _ = client.HumanTaskList(ctx, 20, "next")
+	_, _ = client.HumanTaskGet(ctx, "human-1", "/predecessor_outputs/chapter", 10, 50)
+	_, _ = client.HumanTaskComplete(ctx, HumanTaskCompleteRequest{
+		RunID: "human-1", Payload: json.RawMessage(`{"decision":"approve"}`), IdempotencyKey: "complete-1",
+	})
 	_, _ = client.DeliverableList(ctx, 20, 5)
 	_, _ = client.DeliverableGet(ctx, "delivery-1")
 	_, _ = client.Resume(ctx, ResumeRequest{RunID: "run-1", Agent: "lead", Input: map[string]any{"answer": "yes"}})
@@ -145,6 +150,9 @@ func TestReadEndpointsAndResumeAreThinHTTPMappings(t *testing.T) {
 		"GET /v1/team-templates/samples", "POST /v1/teams:from-template",
 		"GET /v1/internal/team-build-runs/build-1/progress", "GET /v1/chat-requests/dispatch-1",
 		"GET /v1/runs?aggregation_mode=all-exclusive&run_snapshot_id=snapshot-1&view=run",
+		"GET /v1/human-tasks?cursor=next&limit=20",
+		"GET /v1/human-tasks/human-1?limit=50&offset=10&path=%2Fpredecessor_outputs%2Fchapter",
+		"POST /v1/human-tasks/human-1/complete",
 		"GET /v1/deliverables?limit=20&offset=5",
 		"GET /v1/deliverables/delivery-1", "POST /v1/resume",
 	}
