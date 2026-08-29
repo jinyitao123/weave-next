@@ -2,6 +2,8 @@
 
 .runtime-page { max-width: calc(var(--content-max) + var(--space-10) + var(--space-10)); }
 .runtime-page .page-header h1 { font-size: var(--text-title1); letter-spacing: 0; }
+.runtime-page-actions { display: flex; align-items: center; justify-content: flex-end; gap: var(--space-2); }
+.runtime-page-actions > span { max-width: 180px; overflow: hidden; color: var(--label-secondary); font-size: var(--text-footnote); text-overflow: ellipsis; white-space: nowrap; }
 
 .runtime-local-card { margin-bottom: var(--space-6); }
 .runtime-local-card > .ui-card__header,
@@ -97,6 +99,9 @@
 }
 
 @media (max-width: 736px) {
+  .runtime-page-actions { width: 100%; flex-wrap: wrap; justify-content: stretch; }
+  .runtime-page-actions > span { width: 100%; max-width: none; }
+  .runtime-page-actions .ui-button { flex: 1 1 auto; }
   .runtime-page .page-header .ui-button { width: 100%; min-height: 44px; }
   .runtime-local-heading { grid-template-columns: var(--space-10) minmax(0, 1fr); padding: var(--space-3); }
   .runtime-local-heading .ui-badge { grid-column: 2; justify-self: start; }

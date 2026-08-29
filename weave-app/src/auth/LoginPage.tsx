@@ -44,9 +44,9 @@ export function LoginPage() {
     <main className="login-page">
       <section className="login-panel" aria-labelledby="login-title">
         <div className="brand-mark"><Layers3 size={20} /></div>
-        <p className="eyebrow">Conversation OS</p>
-        <h1 id="login-title">进入 Weave</h1>
-        <p className="login-intro">使用工作区账户继续。浏览器会话只保存在当前标签页会话中。</p>
+        <p className="eyebrow">Weave Runtime</p>
+        <h1 id="login-title">进入运行时管理台</h1>
+        <p className="login-intro">使用工作区账户管理分布在不同机器上的运行节点。</p>
         {error && <ErrorNotice message={error} />}
         <form className="form-stack" onSubmit={submit}>
           <Field label="工作区">{(control) => <input {...control} value={tenant} onChange={(event) => setTenant(event.target.value)} required autoComplete="organization" />}</Field>
@@ -63,9 +63,9 @@ export function LoginPage() {
         </div>
       </section>
       <aside className="login-context" aria-label="产品说明">
-        <span>一个工作区</span>
-        <strong>对话驱动工作，证据保持可见。</strong>
-        <p>登录后可查看后端持久化的工作区数据。</p>
+        <span>多运行时</span>
+        <strong>让任务在合适的机器上执行。</strong>
+        <p>团队协作由 Codex 发起；此处只管理运行节点、容量和连接状态。</p>
       </aside>
     </main>
   );

@@ -1,7 +1,8 @@
 import "../styles/runtimes.css";
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
-import { Clipboard, MonitorCog, Pencil, Play, Plus, RefreshCw, Server, Square, Trash2 } from "lucide-react";
+import { Clipboard, LogOut, MonitorCog, Pencil, Play, Plus, RefreshCw, Server, Square, Trash2 } from "lucide-react";
 import { api, apiErrorMessage, type Runtime, type RuntimeCreateResponse } from "../api";
+import { useAuth } from "../auth/useAuth";
 import { platform, type LocalRuntimeStatus } from "../platform";
 import { Badge } from "../ui/Badge";
 import { Button } from "../ui/Button";
@@ -65,6 +66,7 @@ function powershellSingleQuote(value: string): string {
 }
 
 export function RuntimesPage() {
+  const { logout, user } = useAuth();
   const desktopLocalRuntime = platform.kind === "desktop" && platform.capabilities.localRuntime;
   const [runtimes, setRuntimes] = useState<Runtime[]>([]);
   const [loading, setLoading] = useState(true);
@@ -216,8 +218,12 @@ export function RuntimesPage() {
 
   return <div className="page operations-page runtime-page">
     <header className="page-header">
-      <div><p className="eyebrow">远程执行</p><h1>运行时</h1><p>注册和管理在你自己机器上执行任务的运行节点，节点连接后自动上报引擎能力与在线状态</p></div>
-      <Button variant="primary" onClick={() => setCreating(true)}><Plus size={16} aria-hidden="true" /> 创建运行节点</Button>
+      <div><p className="eyebrow">Weave Runtime</p><h1>多运行时管理</h1><p>注册和管理在不同机器上执行任务的运行节点，节点连接后自动上报引擎能力与在线状态</p></div>
+      <div className="runtime-page-actions">
+        {user && <span title={user.username}>{user.username}</span>}
+        <Button variant="ghost" onClick={() => void logout()}><LogOut size={16} aria-hidden="true" /> 退出</Button>
+        <Button variant="primary" onClick={() => setCreating(true)}><Plus size={16} aria-hidden="true" /> 创建运行节点</Button>
+      </div>
     </header>
 
     {desktopLocalRuntime && <div role="region" aria-labelledby="runtime-local-heading"><Card
