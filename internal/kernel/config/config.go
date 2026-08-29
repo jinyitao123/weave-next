@@ -45,6 +45,13 @@ type Config struct {
 	TemplateMonthlyBudgetUSD float64 // WEAVE_TEMPLATE_MONTHLY_BUDGET_USD, default 250
 	TemplateMaxConcurrent    int     // WEAVE_TEMPLATE_MAX_CONCURRENT, default 2
 
+	// Read-only operational health observation policy.
+	HealthWindowSize         int     // WEAVE_HEALTH_WINDOW_SIZE, default 20
+	HealthMinSamples         int     // WEAVE_HEALTH_MIN_SAMPLES, default 3
+	HealthWarningFailureRate float64 // WEAVE_HEALTH_WARNING_FAILURE_RATE, default 0.25
+	HealthWarningSlowRate    float64 // WEAVE_HEALTH_WARNING_SLOW_RATE, default 0.5
+	HealthSlowRunSeconds     int     // WEAVE_HEALTH_SLOW_RUN_SECONDS, default 600
+
 	// Optional built-in meta-team conversation guide. Disabling it preserves
 	// stored assets and history while freezing all new runs.
 	MetaTeamEnabled bool // WEAVE_METATEAM_ENABLED, default true
@@ -69,6 +76,26 @@ func Load() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	healthWindowSize, err := positiveIntEnv("WEAVE_HEALTH_WINDOW_SIZE", 20)
+	if err != nil {
+		return nil, err
+	}
+	healthMinSamples, err := positiveIntEnv("WEAVE_HEALTH_MIN_SAMPLES", 3)
+	if err != nil {
+		return nil, err
+	}
+	healthWarningFailureRate, err := positiveFloatEnv("WEAVE_HEALTH_WARNING_FAILURE_RATE", 0.25)
+	if err != nil {
+		return nil, err
+	}
+	healthWarningSlowRate, err := positiveFloatEnv("WEAVE_HEALTH_WARNING_SLOW_RATE", 0.5)
+	if err != nil {
+		return nil, err
+	}
+	healthSlowRunSeconds, err := positiveIntEnv("WEAVE_HEALTH_SLOW_RUN_SECONDS", 600)
+	if err != nil {
+		return nil, err
+	}
 	metaTeamEnabled, err := boolEnv("WEAVE_METATEAM_ENABLED", true)
 	if err != nil {
 		return nil, err
@@ -78,6 +105,12 @@ func Load() (*Config, error) {
 	}
 	if templateMonthlyBudget < templateDailyBudget {
 		return nil, fmt.Errorf("WEAVE_TEMPLATE_MONTHLY_BUDGET_USD must be at least WEAVE_TEMPLATE_DAILY_BUDGET_USD")
+	}
+	if healthMinSamples > healthWindowSize {
+		return nil, fmt.Errorf("WEAVE_HEALTH_MIN_SAMPLES must not exceed WEAVE_HEALTH_WINDOW_SIZE")
+	}
+	if healthWarningFailureRate > 1 || healthWarningSlowRate > 1 {
+		return nil, fmt.Errorf("WEAVE health warning rates must not exceed 1")
 	}
 	port := envOr("PORT", "8080")
 	workspacesRoot := os.Getenv("WEAVE_WORKSPACES_ROOT")
@@ -120,6 +153,11 @@ func Load() (*Config, error) {
 		TemplateDailyBudgetUSD:   templateDailyBudget,
 		TemplateMonthlyBudgetUSD: templateMonthlyBudget,
 		TemplateMaxConcurrent:    templateMaxConcurrent,
+		HealthWindowSize:         healthWindowSize,
+		HealthMinSamples:         healthMinSamples,
+		HealthWarningFailureRate: healthWarningFailureRate,
+		HealthWarningSlowRate:    healthWarningSlowRate,
+		HealthSlowRunSeconds:     healthSlowRunSeconds,
 		MetaTeamEnabled:          metaTeamEnabled,
 	}
 

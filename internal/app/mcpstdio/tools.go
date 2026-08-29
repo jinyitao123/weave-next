@@ -333,12 +333,12 @@ var toolDefinitions = []contract.ToolDef{
 	},
 	{
 		Name: "team_list", ReadOnly: true,
-		Description: "List workspace teams, optionally filtered by lifecycle status and expanded with summaries. Requires organization access. Errors: http_400, http_401, http_403.",
+		Description: "List workspace teams, optionally filtered by lifecycle status and expanded with summaries. Summaries include the current default workflow's read-only operational health when available. Requires organization access. Errors: http_400, http_401, http_403.",
 		InputSchema: json.RawMessage(`{"type":"object","properties":{"status":{"type":"string","enum":["active","needs_repair","building","archived","all"]},"summary":{"type":"boolean"}},"additionalProperties":false}`),
 	},
 	{
 		Name: "team_status", ReadOnly: true,
-		Description: "Get one team's roster, lifecycle status, and operational summary by exact team_id. Requires organization access. Errors: http_401, http_403, http_404.",
+		Description: "Get one team's roster, lifecycle status, current default workflow health, and operational summary by exact team_id. Health is observational and never blocks dispatch. Requires organization access. Errors: http_401, http_403, http_404.",
 		InputSchema: json.RawMessage(`{"type":"object","properties":{"team_id":{"type":"string"}},"required":["team_id"],"additionalProperties":false}`),
 	},
 	{

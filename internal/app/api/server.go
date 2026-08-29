@@ -58,6 +58,7 @@ import (
 	importskills "github.com/jinyitao123/weave/internal/kernel/skills"
 	"github.com/jinyitao123/weave/internal/kernel/teamcompiler"
 	"github.com/jinyitao123/weave/internal/kernel/workflow"
+	"github.com/jinyitao123/weave/internal/kernel/workflowhealth"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 )
@@ -97,6 +98,7 @@ type Server struct {
 	Attachments               *attachments.Store                  // nil if PG pool unavailable
 	ChatRequests              *chatrequest.Store                  // nil if PG pool unavailable
 	Workflow                  *workflow.Store                     // nil if PG pool unavailable
+	WorkflowHealth            *workflowhealth.Store               // nil if PG pool unavailable
 	TeamBuild                 *teambuild.Store                    // nil if PG pool unavailable
 	TeamBuildOrchestrator     TeamBuildExecutionService           // nil until the production meta-team controller is configured
 	TeamTemplates             TeamTemplateService                 // nil until the template fast path is configured
@@ -122,6 +124,7 @@ type Server struct {
 	teamRunHumanResume        *teamrun.HumanResumeService
 	teamRunHumanTasks         *teamrun.HumanTaskReader
 	workflowFanoutReconciler  *fanout.WorkflowReconcilerWorker
+	workflowHealthWorkers     *workflowHealthWorkers
 }
 
 func (s *Server) engineExecutorFor(remote bool) mcphost.RemoteEngineExecutor {
@@ -258,6 +261,17 @@ func NewServer(cfg *config.Config, store loom.Store, models *llmrouter.Resolver)
 		s.Attachments = attachments.New(ps.Pool())
 		s.OwnerMem = ownermem.New(ps.Pool(), ownermem.RealClock{})
 		s.Workflow = workflow.New(ps.Pool(), workflow.RealClock{})
+		healthStore, healthErr := workflowhealth.New(ps.Pool(), workflowhealth.Policy{
+			WindowSize: cfg.HealthWindowSize, MinSamples: cfg.HealthMinSamples,
+			WarningFailureRate: cfg.HealthWarningFailureRate, WarningSlowRate: cfg.HealthWarningSlowRate,
+			SlowRunThreshold: time.Duration(cfg.HealthSlowRunSeconds) * time.Second,
+		})
+		if healthErr != nil {
+			slog.Error("workflow health initialization failed", "error", healthErr)
+		} else {
+			s.WorkflowHealth = healthStore
+			s.workflowHealthWorkers = &workflowHealthWorkers{store: healthStore}
+		}
 		s.TeamBuild = teambuild.New(ps.Pool(), teambuild.RealClock{})
 		s.WorkflowScheduleAdmission = NewWorkflowScheduleAdmissionService(s.Workflow)
 		s.ScheduleTransactions = ps.Pool()
@@ -679,6 +693,10 @@ func (s *Server) Start() error {
 	if s.workflowFanoutReconciler != nil && !teamRunWorkersDisabled() {
 		s.workflowFanoutReconciler.Start()
 		defer s.workflowFanoutReconciler.Stop()
+	}
+	if s.workflowHealthWorkers != nil {
+		s.workflowHealthWorkers.Start()
+		defer s.workflowHealthWorkers.Stop()
 	}
 	return s.Echo.Start(":" + s.Config.Port)
 }

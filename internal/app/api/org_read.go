@@ -2,13 +2,15 @@ package api
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"sort"
 
-	"github.com/jinyitao123/weave/internal/kernel/org"
 	"github.com/jinyitao123/weave/internal/base/snapshot"
+	"github.com/jinyitao123/weave/internal/kernel/org"
 	"github.com/jinyitao123/weave/internal/kernel/workflow"
+	"github.com/jinyitao123/weave/internal/kernel/workflowhealth"
 	"github.com/labstack/echo/v4"
 )
 
@@ -53,10 +55,11 @@ type teamSummaryLatestRun struct {
 // teamSummary is the single-team detail summary (contract C-ORGREAD §2.2);
 // it intentionally has no attention field.
 type teamSummary struct {
-	WorkerCount            int                   `json:"worker_count"`
-	ActiveWorkflowCount    int                   `json:"active_workflow_count"`
-	PublishedWorkflowCount int                   `json:"published_workflow_count"`
-	LatestRun              *teamSummaryLatestRun `json:"latest_run"`
+	WorkerCount            int                    `json:"worker_count"`
+	ActiveWorkflowCount    int                    `json:"active_workflow_count"`
+	PublishedWorkflowCount int                    `json:"published_workflow_count"`
+	LatestRun              *teamSummaryLatestRun  `json:"latest_run"`
+	Health                 *workflowhealth.Health `json:"health"`
 }
 
 // teamRosterSummary extends the detail summary with the roster attention flag
@@ -180,7 +183,7 @@ func (s *Server) handleGetTeam(c echo.Context) error {
 		return c.JSON(http.StatusOK, roster)
 	}
 
-	summary, _, summaryErr := s.buildTeamSummary(ctx, workspaceID, team.ID, len(roster.Workers))
+	summary, _, summaryErr := s.buildTeamSummary(ctx, workspaceID, team, len(roster.Workers))
 	response := teamDetailSummaryResponse{TeamRoster: roster, Summary: summary}
 	if summaryErr != nil {
 		response.SummaryError = &teamSummaryError{Code: teamSummaryErrorCodeReadStoreUnavailable}
@@ -220,7 +223,7 @@ func (s *Server) buildTeamRosterSummaryItems(
 ) []teamRosterSummaryItem {
 	items := make([]teamRosterSummaryItem, len(rosters))
 	for index, roster := range rosters {
-		summary, attention, err := s.buildTeamSummary(ctx, workspaceID, roster.Team.ID, len(roster.Workers))
+		summary, attention, err := s.buildTeamSummary(ctx, workspaceID, roster.Team, len(roster.Workers))
 		item := teamRosterSummaryItem{TeamRoster: roster}
 		if err != nil {
 			item.SummaryError = &teamSummaryError{Code: teamSummaryErrorCodeReadStoreUnavailable}
@@ -239,13 +242,13 @@ func (s *Server) buildTeamRosterSummaryItems(
 func (s *Server) buildTeamSummary(
 	ctx context.Context,
 	workspaceID string,
-	teamID string,
+	team org.Team,
 	workerCount int,
 ) (*teamSummary, bool, error) {
 	if s.Workflow == nil || s.Snapshots == nil || s.TeamReader == nil {
 		return nil, false, errTeamReadStoreUnavailable
 	}
-	workflows, err := s.Workflow.ListByTeam(ctx, workspaceID, teamID)
+	workflows, err := s.Workflow.ListByTeam(ctx, workspaceID, team.ID)
 	if err != nil {
 		return nil, false, err
 	}
@@ -258,14 +261,18 @@ func (s *Server) buildTeamSummary(
 			summary.PublishedWorkflowCount++
 		}
 	}
+	summary.Health, err = s.currentTeamWorkflowHealth(ctx, workspaceID, team, workflows)
+	if err != nil {
+		return nil, false, err
+	}
 
-	snapshots, err := s.Snapshots.ListByTeam(ctx, workspaceID, teamID)
+	snapshots, err := s.Snapshots.ListByTeam(ctx, workspaceID, team.ID)
 	if err != nil {
 		return nil, false, err
 	}
 	report, err := s.TeamReader.read(ctx, workspaceID, teamSelector{
 		View:            teamViewTeam,
-		TeamID:          teamID,
+		TeamID:          team.ID,
 		AggregationMode: aggregationModeAllExclusive,
 	})
 	if err != nil {
@@ -279,6 +286,45 @@ func (s *Server) buildTeamSummary(
 		summary.LatestRun = &teamSummaryLatestRun{RunID: latest.RunID, Classification: classification}
 	}
 	return summary, teamDiagnosticsNeedAttention(report.Diagnostics), nil
+}
+
+func (s *Server) currentTeamWorkflowHealth(
+	ctx context.Context,
+	workspaceID string,
+	team org.Team,
+	workflows []workflow.TeamWorkflow,
+) (*workflowhealth.Health, error) {
+	unknown := func(reason string) *workflowhealth.Health {
+		return &workflowhealth.Health{Conclusion: "unknown", WorkflowID: team.DefaultWorkflowID, ReasonCodes: []string{reason}}
+	}
+	if team.DefaultWorkflowID == "" {
+		return unknown("no_default_workflow"), nil
+	}
+	var selected *workflow.TeamWorkflow
+	for index := range workflows {
+		if workflows[index].ID == team.DefaultWorkflowID {
+			selected = &workflows[index]
+			break
+		}
+	}
+	if selected == nil || selected.PublishedVersion == nil {
+		return unknown("default_workflow_unavailable"), nil
+	}
+	artifact, err := s.Workflow.GetArtifact(ctx, workspaceID, selected.ID, *selected.PublishedVersion)
+	if errors.Is(err, workflow.ErrNotFound) {
+		return unknown("default_workflow_unavailable"), nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if s.WorkflowHealth == nil {
+		return unknown("observer_unavailable"), nil
+	}
+	health, err := s.WorkflowHealth.Current(ctx, workspaceID, selected.ID, *selected.PublishedVersion, artifact.ContentHash)
+	if err != nil {
+		return nil, err
+	}
+	return &health, nil
 }
 
 func latestTeamRunSnapshot(snapshots []snapshot.TeamRunSnapshot) (snapshot.TeamRunSnapshot, bool) {
