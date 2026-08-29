@@ -3,7 +3,6 @@ package api
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -13,7 +12,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jinyitao123/weave/internal/kernel/org"
 	"github.com/jinyitao123/weave/internal/kernel/workflow"
 	"github.com/jinyitao123/weave/internal/kernel/workflow/machine"
 	"github.com/labstack/echo/v4"
@@ -297,20 +295,6 @@ func (s *Server) handlePublishWorkflowVersion(c echo.Context) error {
 	versionNumber, ok := workflowVersionParam(c)
 	if !ok {
 		return workflowSchemaError(c)
-	}
-	workflowRow, err := s.Workflow.Get(c.Request().Context(), getTenant(c), c.Param("id"))
-	if err != nil {
-		return mapWorkflowPublishError(c, err)
-	}
-	team, err := s.OrgStore.GetTeam(c.Request().Context(), getTenant(c), workflowRow.TeamID)
-	if err != nil {
-		return workflowStoreFailure(c, err)
-	}
-	if team.Evaluation == org.TeamEvaluationUnevaluated {
-		return workflowError(
-			c, http.StatusConflict, "team_evaluation_required",
-			fmt.Sprintf("team must pass POST /v1/teams/%s/evaluations before its workflow can be published", team.ID),
-		)
 	}
 	if s.Registry == nil ||
 		s.DeliveryTargets == nil ||

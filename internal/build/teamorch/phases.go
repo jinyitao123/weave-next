@@ -2137,6 +2137,142 @@ func (p *ProductionPhases) PublishStep(ctx context.Context, workspaceID, buildRu
 	return nil
 }
 
+// FinalizeTemplatePublication turns a fully materialized template build into
+// its first usable immutable workflow without running candidate scenarios or
+// a semantic judge. Publication, default-workflow binding, Team activation,
+// project lead binding, and BuildRun completion share one transaction.
+func (p *ProductionPhases) FinalizeTemplatePublication(
+	ctx context.Context,
+	workspaceID, buildRunID, teamID, actor string,
+) (teambuild.TeamBuildRun, error) {
+	if p == nil || p.Deps.Pool == nil || p.Deps.Build == nil || p.Deps.Workflows == nil || p.builder == nil {
+		return teambuild.TeamBuildRun{}, errors.New("template publication dependencies are unavailable")
+	}
+	workflowID, workflowVersion, err := p.templatePublicationTarget(ctx, workspaceID, teamID)
+	if err != nil {
+		return teambuild.TeamBuildRun{}, err
+	}
+	tx, err := p.Deps.Pool.Begin(ctx)
+	if err != nil {
+		return teambuild.TeamBuildRun{}, fmt.Errorf("begin template publication: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	lockedRun, err := p.Deps.Build.LockBuildRunTx(ctx, tx, workspaceID, buildRunID)
+	if err != nil {
+		return teambuild.TeamBuildRun{}, fmt.Errorf("lock template build run: %w", err)
+	}
+	if lockedRun.Status != teambuild.StatusRoundRunning ||
+		lockedRun.EffectiveExecutionStrategy() != teambuild.ExecutionStrategyTemplateInstantiate {
+		return teambuild.TeamBuildRun{}, fmt.Errorf("template build run is not finalizable: status=%s strategy=%s", lockedRun.Status, lockedRun.EffectiveExecutionStrategy())
+	}
+
+	candidate, report, err := p.builder.BuildTx(ctx, tx, workflow.CandidateInput{
+		WorkspaceID: workspaceID, WorkflowID: workflowID, WorkflowVersion: workflowVersion,
+	})
+	if err != nil {
+		return teambuild.TeamBuildRun{}, fmt.Errorf("build template publication candidate: %w", err)
+	}
+	if report != nil && len(report.Issues) != 0 {
+		return teambuild.TeamBuildRun{}, fmt.Errorf("template workflow static validation failed with %d issue(s)", len(report.Issues))
+	}
+	if candidate == nil || candidate.Payload.Team.TeamID != teamID {
+		return teambuild.TeamBuildRun{}, errors.New("template publication candidate team identity mismatch")
+	}
+	publication, err := workflow.PublicationFromCandidate(candidate)
+	if err != nil {
+		return teambuild.TeamBuildRun{}, fmt.Errorf("convert template publication candidate: %w", err)
+	}
+	if err := p.Deps.Workflows.InsertPublicationTx(ctx, tx, publication); err != nil {
+		return teambuild.TeamBuildRun{}, fmt.Errorf("insert template publication: %w", err)
+	}
+	if err := activateTemplateTeamTx(
+		ctx, tx, workspaceID, teamID, workflowID, candidate.Payload.Team.LeadAgentID,
+	); err != nil {
+		return teambuild.TeamBuildRun{}, fmt.Errorf("activate template team: %w", err)
+	}
+	finalized, err := p.Deps.Build.MarkTemplatePublishedTx(
+		ctx, tx, workspaceID, buildRunID, actor,
+		teambuild.FinalRef{Ref: candidate.ContentHash, TeamID: teamID},
+	)
+	if err != nil {
+		return teambuild.TeamBuildRun{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return teambuild.TeamBuildRun{}, fmt.Errorf("commit template publication: %w", err)
+	}
+	return finalized, nil
+}
+
+func (p *ProductionPhases) templatePublicationTarget(
+	ctx context.Context,
+	workspaceID, teamID string,
+) (string, int, error) {
+	workflows, err := p.Deps.Workflows.ListByTeam(ctx, workspaceID, teamID)
+	if err != nil {
+		return "", 0, fmt.Errorf("list template workflows: %w", err)
+	}
+	active := make([]workflow.TeamWorkflow, 0, len(workflows))
+	for _, item := range workflows {
+		if item.Status == workflow.WorkflowStatusActive {
+			active = append(active, item)
+		}
+	}
+	if len(active) != 1 || active[0].PublishedVersion != nil {
+		return "", 0, fmt.Errorf("template team must have exactly one unpublished active workflow (found %d)", len(active))
+	}
+	versions, err := p.Deps.Workflows.ListVersionsByWorkflows(ctx, workspaceID, []string{active[0].ID})
+	if err != nil {
+		return "", 0, fmt.Errorf("list template workflow versions: %w", err)
+	}
+	draftVersion := 0
+	for _, version := range versions {
+		if version.Status != workflow.VersionStatusDraft {
+			continue
+		}
+		if draftVersion != 0 {
+			return "", 0, errors.New("template workflow has multiple drafts")
+		}
+		draftVersion = version.Version
+	}
+	if draftVersion == 0 {
+		return "", 0, errors.New("template workflow has no draft to publish")
+	}
+	return active[0].ID, draftVersion, nil
+}
+
+func activateTemplateTeamTx(
+	ctx context.Context,
+	tx pgx.Tx,
+	workspaceID, teamID, workflowID, leadAvatarID string,
+) error {
+	if strings.TrimSpace(teamID) == "" || strings.TrimSpace(workflowID) == "" || strings.TrimSpace(leadAvatarID) == "" {
+		return errors.New("template team activation identities are required")
+	}
+	tag, err := tx.Exec(ctx, `
+		UPDATE weave_teams
+		SET status='active', default_workflow_id=$3, updated_at=now()
+		WHERE workspace_id=$1 AND id=$2 AND status='building'
+		  AND lead_avatar_id=$4 AND evaluation='unevaluated'
+	`, workspaceID, teamID, workflowID, leadAvatarID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() != 1 {
+		return fmt.Errorf("team %q is not a finalizable template team", teamID)
+	}
+	if _, err := tx.Exec(ctx, `
+		UPDATE weave_projects
+		SET avatar_id=$3
+		WHERE workspace_id=$1 AND team_id=$2
+		  AND archived_at IS NULL
+		  AND COALESCE(system_kind,'') <> 'unclassified'
+	`, workspaceID, teamID, leadAvatarID); err != nil {
+		return err
+	}
+	return nil
+}
+
 func allowsUnmeasuredUsage(brief teambuild.BuildBrief) bool {
 	waiver := brief.UnmeasuredUsageWaiver
 	return waiver != nil && waiver.Accepted && strings.TrimSpace(waiver.Reason) != ""

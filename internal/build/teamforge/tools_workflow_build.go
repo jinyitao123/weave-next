@@ -164,7 +164,7 @@ func (d *WorkflowWriteToolsDispatcher) workflowBuild(ctx context.Context, call c
 	working.Trigger = scratch.Trigger
 	working.Graph = scratch.Graph
 
-	validation, err := validateWorkflowDraft(ctx, d.deps, d.gate.workspaceID, working)
+	validation, err := d.validateWorkflowDraft(ctx, working)
 	if err != nil {
 		return toolError(call.ID, err.Error()), nil
 	}

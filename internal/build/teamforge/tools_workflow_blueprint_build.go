@@ -104,7 +104,7 @@ func (d *WorkflowWriteToolsDispatcher) workflowBlueprintBuild(
 	working.Trigger = compiled.Trigger
 	working.Graph = compiled.Graph
 
-	validation, err := validateWorkflowDraft(ctx, d.deps, d.gate.workspaceID, working)
+	validation, err := d.validateWorkflowDraft(ctx, working)
 	if err != nil {
 		return toolError(call.ID, err.Error()), nil
 	}

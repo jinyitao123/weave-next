@@ -66,11 +66,12 @@ const (
 // DraftRegistry (keyed by build_run_id + workflow_id) so drafts survive
 // across requests and dispatcher instances.
 type WorkflowWriteToolsDispatcher struct {
-	gate      *WriteGate
-	deps      Deps
-	writeDeps WriteDeps
-	drafts    *workflowDraftStore
-	tools     []contract.ToolDef
+	gate                      *WriteGate
+	deps                      Deps
+	writeDeps                 WriteDeps
+	drafts                    *workflowDraftStore
+	tools                     []contract.ToolDef
+	allowBuildingTemplateTeam bool
 }
 
 // NewWorkflowWriteTools creates the team-workflow write dispatcher for one
@@ -185,6 +186,25 @@ func NewWorkflowBuildTools(
 	return d
 }
 
+// NewTemplateWorkflowBuildTools exposes the same deterministic Blueprint
+// compiler as NewWorkflowBuildTools, but permits the owning team to remain in
+// the template-only building state until publication activates both assets.
+func NewTemplateWorkflowBuildTools(
+	workspaceID, agentName string,
+	receipt teambuild.BuildAuthorizationReceipt,
+	validator ReceiptValidator,
+	audit AuditRecorder,
+	deps Deps,
+	writeDeps WriteDeps,
+	drafts *workflowDraftStore,
+) *WorkflowWriteToolsDispatcher {
+	d := NewWorkflowBuildTools(
+		workspaceID, agentName, receipt, validator, audit, deps, writeDeps, drafts,
+	)
+	d.allowBuildingTemplateTeam = true
+	return d
+}
+
 // NewCustomWorkflowBuildTools exposes only the raw full-graph builder. The API
 // wiring selects this dispatcher exclusively when the frozen BuildBrief was
 // admin-confirmed with workflow_build_mode=custom and a non-empty template_gap.
@@ -251,6 +271,16 @@ func (d *WorkflowWriteToolsDispatcher) toolRegistered(name string) bool {
 		}
 	}
 	return false
+}
+
+func (d *WorkflowWriteToolsDispatcher) validateWorkflowDraft(
+	ctx context.Context,
+	draft *workflowDraft,
+) (workflowValidation, error) {
+	if d.allowBuildingTemplateTeam {
+		return validateTemplateWorkflowDraft(ctx, d.deps, d.gate.workspaceID, draft)
+	}
+	return validateWorkflowDraft(ctx, d.deps, d.gate.workspaceID, draft)
 }
 
 var _ contract.ToolDispatcher = (*WorkflowWriteToolsDispatcher)(nil)
@@ -925,7 +955,7 @@ func (d *WorkflowWriteToolsDispatcher) workflowValidate(ctx context.Context, cal
 	if draft == nil {
 		return toolError(call.ID, fmt.Sprintf("no draft for workflow %q; call tf_wf_begin first", input.WorkflowID)), nil
 	}
-	validation, err := validateWorkflowDraft(ctx, d.deps, d.gate.workspaceID, draft)
+	validation, err := d.validateWorkflowDraft(ctx, draft)
 	if err != nil {
 		return toolError(call.ID, err.Error()), nil
 	}
@@ -974,7 +1004,7 @@ func (d *WorkflowWriteToolsDispatcher) commitWorkflowDraft(
 	input *workflowCallInput,
 	draft *workflowDraft,
 ) *contract.ToolResult {
-	validation, err := validateWorkflowDraft(ctx, d.deps, d.gate.workspaceID, draft)
+	validation, err := d.validateWorkflowDraft(ctx, draft)
 	if err != nil {
 		return toolError(call.ID, err.Error())
 	}

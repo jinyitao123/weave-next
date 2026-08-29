@@ -43,8 +43,9 @@ func normalizeTeamRosterCommand(command TeamRosterCommand) (TeamRosterCommand, e
 		normalized.OperatorID == "" || normalized.Reason == "" || normalized.LeadAgentID == "" {
 		return TeamRosterCommand{}, fmt.Errorf("%w: command identity, operator, reason, and lead are required", ErrTeamRosterInvalidRequest)
 	}
-	if normalized.DesiredTeamStatus != "active" && normalized.DesiredTeamStatus != "archived" {
-		return TeamRosterCommand{}, fmt.Errorf("%w: desired_team_status must be active or archived", ErrTeamRosterInvalidRequest)
+	if normalized.DesiredTeamStatus != "active" && normalized.DesiredTeamStatus != "archived" &&
+		normalized.DesiredTeamStatus != "building" {
+		return TeamRosterCommand{}, fmt.Errorf("%w: desired_team_status must be active, building, or archived", ErrTeamRosterInvalidRequest)
 	}
 	if normalized.ExpectedUpdatedAt.IsZero() {
 		return TeamRosterCommand{}, fmt.Errorf("%w: expected_updated_at is required", ErrTeamRosterInvalidRequest)
@@ -122,7 +123,7 @@ func decodeTeamRosterResult(raw []byte) (*TeamRosterResult, error) {
 
 func validateTeamRosterResult(result TeamRosterResult) error {
 	if result.SchemaVersion != teamRosterResultSchemaVersion || result.TeamID == "" ||
-		(result.TeamStatus != "active" && result.TeamStatus != "archived") || result.LeadAgentID == "" {
+		(result.TeamStatus != "active" && result.TeamStatus != "building" && result.TeamStatus != "archived") || result.LeadAgentID == "" {
 		return errors.New("invalid team roster response identity")
 	}
 	parsedTime, err := time.Parse("2006-01-02T15:04:05.000000Z", result.UpdatedAt)

@@ -51,6 +51,13 @@ type Phases interface {
 	Evaluate(ctx context.Context, round RoundContext) (RoundEvaluation, error)
 }
 
+type templatePublicationFinalizer interface {
+	FinalizeTemplatePublication(
+		ctx context.Context,
+		workspaceID, buildRunID, teamID, actor string,
+	) (teambuild.TeamBuildRun, error)
+}
+
 // RoundContext carries the frozen control record facts one round can use.
 type RoundContext struct {
 	WorkspaceID      string
@@ -529,9 +536,9 @@ func (c *Controller) Run(ctx context.Context, workspaceID, buildRunID string) (R
 		Status: run.Status, Rounds: len(rounds)}, nil
 }
 
-// runTemplateInstantiate executes the same receipt-gated compiler DAG but
-// terminates after asset materialization. It never enters candidate evaluation
-// or publication, and records the ready Team as an unevaluated final result.
+// runTemplateInstantiate executes the receipt-gated materialization DAG and
+// then delegates one atomic publication/activation/finalization transaction
+// to the production phases. It never runs candidate scenarios or a judge.
 func (c *Controller) runTemplateInstantiate(
 	ctx context.Context,
 	run teambuild.TeamBuildRun,
@@ -615,9 +622,11 @@ func (c *Controller) runTemplateInstantiate(
 	if err != nil {
 		return Result{}, fmt.Errorf("round controller: resolve instantiated team: %w", err)
 	}
-	finalized, err := c.Store.MarkTemplateInstantiated(ctx, workspaceID, buildRunID, actor, teambuild.FinalRef{
-		Ref: teamID, TeamID: teamID,
-	})
+	finalizer, ok := c.Phases.(templatePublicationFinalizer)
+	if !ok {
+		return Result{}, errors.New("round controller: template publication finalizer unavailable")
+	}
+	finalized, err := finalizer.FinalizeTemplatePublication(ctx, workspaceID, buildRunID, teamID, actor)
 	if err != nil {
 		return Result{}, fmt.Errorf("round controller: finalize template_instantiate: %w", err)
 	}

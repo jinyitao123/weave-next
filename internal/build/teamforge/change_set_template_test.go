@@ -108,9 +108,15 @@ func TestTeamWriteCreationEvaluationIsServerFixed(t *testing.T) {
 	if template.creationEvaluation != org.TeamEvaluationUnevaluated {
 		t.Fatalf("template creation evaluation = %q", template.creationEvaluation)
 	}
+	if template.rosterTeamStatus != "building" {
+		t.Fatalf("template roster status = %q, want building", template.rosterTeamStatus)
+	}
 	legacy := NewTeamWriteToolsMode("workspace", "compiler", teambuild.BuildAuthorizationReceipt{}, nil, nil, Deps{}, WriteDeps{}, true)
 	if legacy.creationEvaluation != org.TeamEvaluationEvaluated {
 		t.Fatalf("legacy creation evaluation = %q", legacy.creationEvaluation)
+	}
+	if legacy.rosterTeamStatus != "active" {
+		t.Fatalf("legacy roster status = %q, want active", legacy.rosterTeamStatus)
 	}
 	invalid := newTeamWriteToolsModeWithEvaluation("workspace", "compiler", teambuild.BuildAuthorizationReceipt{}, nil, nil, Deps{}, WriteDeps{}, true, "caller-controlled")
 	if invalid.creationEvaluation != org.TeamEvaluationEvaluated {

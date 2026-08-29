@@ -631,7 +631,7 @@ func validateRosterFinalState(request teamRosterMutationRequest) error {
 		}
 		return nil
 	}
-	if request.Status != "active" {
+	if request.Status != "active" && request.Status != "building" {
 		return fmt.Errorf(
 			"%w: invalid final team status %q", ErrTeamRosterInvalidRequest, request.Status,
 		)

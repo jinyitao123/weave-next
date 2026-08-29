@@ -181,8 +181,31 @@ func validateWorkflowDraft(
 	workspaceID string,
 	draft *workflowDraft,
 ) (workflowValidation, error) {
+	return validateWorkflowDraftForMode(ctx, deps, workspaceID, draft, false)
+}
+
+func validateTemplateWorkflowDraft(
+	ctx context.Context,
+	deps Deps,
+	workspaceID string,
+	draft *workflowDraft,
+) (workflowValidation, error) {
+	return validateWorkflowDraftForMode(ctx, deps, workspaceID, draft, true)
+}
+
+func validateWorkflowDraftForMode(
+	ctx context.Context,
+	deps Deps,
+	workspaceID string,
+	draft *workflowDraft,
+	templateInstantiation bool,
+) (workflowValidation, error) {
 	var out workflowValidation
-	report, err := teameval.ValidateWorkflowDraft(
+	validate := teameval.ValidateWorkflowDraft
+	if templateInstantiation {
+		validate = teameval.ValidateTemplateWorkflowDraft
+	}
+	report, err := validate(
 		ctx,
 		teameval.WorkflowValidateDeps{
 			Teams:     deps.Teams,

@@ -38,6 +38,7 @@ type TeamWriteToolsDispatcher struct {
 	writeDeps          WriteDeps
 	createTeamEnabled  bool
 	creationEvaluation string
+	rosterTeamStatus   string
 	tools              []contract.ToolDef
 }
 
@@ -96,6 +97,10 @@ func newTeamWriteToolsModeWithEvaluation(
 		writeDeps:          writeDeps,
 		createTeamEnabled:  allowCreateTeam,
 		creationEvaluation: creationEvaluation,
+		rosterTeamStatus:   "active",
+	}
+	if creationEvaluation == org.TeamEvaluationUnevaluated {
+		d.rosterTeamStatus = "building"
 	}
 	d.tools = make([]contract.ToolDef, 0, 2)
 	if d.createTeamEnabled {
@@ -335,7 +340,7 @@ func (d *TeamWriteToolsDispatcher) setRoster(ctx context.Context, call contract.
 		TeamID:            team.ID,
 		IdempotencyKey:    idempotencyKey,
 		ExpectedUpdatedAt: team.UpdatedAt,
-		DesiredTeamStatus: "active",
+		DesiredTeamStatus: d.rosterTeamStatus,
 		LeadAgentID:       input.LeadAgentID,
 		Workers:           make([]registry.TeamRosterWorkerInput, len(input.Workers)),
 		OperatorID:        d.gate.agent,

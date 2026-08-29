@@ -16,7 +16,7 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-func TestPublishWorkflowPGRejectsUnevaluatedTeam(t *testing.T) {
+func TestPublishWorkflowPGDoesNotGateUnevaluatedTeam(t *testing.T) {
 	ctx := context.Background()
 	pool := testutil.PostgresPool(t)
 	if err := db.Migrate(ctx, pool); err != nil {
@@ -67,9 +67,8 @@ func TestPublishWorkflowPGRejectsUnevaluatedTeam(t *testing.T) {
 	if err := server.handlePublishWorkflowVersion(echoContext); err != nil {
 		t.Fatalf("publish handler error: %v", err)
 	}
-	if recorder.Code != http.StatusConflict ||
-		!strings.Contains(recorder.Body.String(), `"code":"team_evaluation_required"`) ||
-		!strings.Contains(recorder.Body.String(), "/v1/teams/"+created.Team.ID+"/evaluations") {
+	if recorder.Code != http.StatusServiceUnavailable ||
+		strings.Contains(recorder.Body.String(), `"code":"team_evaluation_required"`) {
 		t.Fatalf("status = %d body = %s", recorder.Code, recorder.Body.String())
 	}
 }

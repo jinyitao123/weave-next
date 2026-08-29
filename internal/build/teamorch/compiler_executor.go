@@ -579,7 +579,11 @@ func (p *ProductionPhases) handleCompilerWorkflow(ctx context.Context, operation
 		return OperationResult{}, &OperationError{Class: teameval.FailureClassCompile,
 			Code: "workflow_compile_envelope_invalid", Cause: err}
 	}
-	dispatcher := teamforge.NewWorkflowBuildTools(
+	newWorkflowTools := teamforge.NewWorkflowBuildTools
+	if operation.Run.EffectiveExecutionStrategy() == teambuild.ExecutionStrategyTemplateInstantiate {
+		newWorkflowTools = teamforge.NewTemplateWorkflowBuildTools
+	}
+	dispatcher := newWorkflowTools(
 		operation.WorkspaceID, "platform-compiler", receipt, p.Deps.Build, p.Deps.Audit,
 		p.teamForgeDeps(), p.teamForgeWriteDeps(), p.Deps.Drafts.WorkflowDrafts(operation.BuildRunID),
 	)

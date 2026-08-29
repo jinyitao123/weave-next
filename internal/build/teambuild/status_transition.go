@@ -298,6 +298,67 @@ func (s *Store) MarkTemplateInstantiated(
 	return run, nil
 }
 
+// MarkTemplatePublishedTx finalizes a template fast-path build inside the
+// caller-owned publication transaction. The workflow publication and Team
+// activation must already be staged in the same transaction; this method
+// records the exact immutable artifact as the BuildRun final reference.
+func (s *Store) MarkTemplatePublishedTx(
+	ctx context.Context,
+	tx pgx.Tx,
+	workspaceID, buildRunID, actor string,
+	finalRef FinalRef,
+) (TeamBuildRun, error) {
+	if tx == nil {
+		return TeamBuildRun{}, errors.New("mark template published: transaction is required")
+	}
+	if strings.TrimSpace(actor) == "" {
+		return TeamBuildRun{}, errors.New("mark template published: actor is required")
+	}
+	if strings.TrimSpace(finalRef.Ref) == "" || strings.TrimSpace(finalRef.TeamID) == "" {
+		return TeamBuildRun{}, errors.New("mark template published: artifact final ref is required")
+	}
+	locked, err := s.LockBuildRunTx(ctx, tx, workspaceID, buildRunID)
+	if err != nil {
+		return TeamBuildRun{}, fmt.Errorf("mark template published: %w", err)
+	}
+	if locked.Status != StatusRoundRunning || locked.EffectiveExecutionStrategy() != ExecutionStrategyTemplateInstantiate {
+		return TeamBuildRun{}, fmt.Errorf("mark template published: build run %q is not a running template build", buildRunID)
+	}
+	finalRefJSON, err := json.Marshal(finalRef)
+	if err != nil {
+		return TeamBuildRun{}, fmt.Errorf("mark template published: encode final ref: %w", err)
+	}
+	now := s.clock.Now()
+	run, err := scanBuildRun(tx.QueryRow(ctx, `
+		UPDATE weave_team_build_runs
+		SET status='passed', updated_at=$3, decided_at=$3,
+			publish_eligible=false, final_ref_json=$4::jsonb
+		WHERE workspace_id=$1 AND build_run_id=$2
+		  AND status='round_running' AND execution_strategy='template_instantiate'
+		RETURNING `+buildRunColumns+`
+	`, workspaceID, buildRunID, now, string(finalRefJSON)))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return TeamBuildRun{}, fmt.Errorf("mark template published: build run %q changed", buildRunID)
+	}
+	if err != nil {
+		return TeamBuildRun{}, fmt.Errorf("mark template published: %w", err)
+	}
+	nextSeq, err := nextTransitionSeq(ctx, tx, workspaceID, buildRunID)
+	if err != nil {
+		return TeamBuildRun{}, fmt.Errorf("mark template published: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO weave_team_build_run_transitions (
+			workspace_id, build_run_id, seq, from_status, to_status,
+			reason, actor, created_at
+		) VALUES ($1,$2,$3,'round_running','passed',
+			'template workflow published and team activated',$4,$5)
+	`, workspaceID, buildRunID, nextSeq, actor, now); err != nil {
+		return TeamBuildRun{}, fmt.Errorf("mark template published ledger: %w", err)
+	}
+	return run, nil
+}
+
 // GetLatestBuildRunTransitionReason returns the reason recorded by the newest
 // transition for one build run. Terminal presentation uses the append-only
 // ledger as its source of truth instead of inferring a reason from model text.

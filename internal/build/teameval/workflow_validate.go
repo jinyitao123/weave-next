@@ -30,11 +30,11 @@ import (
 	"sync"
 
 	"github.com/jinyitao123/loom"
-	"github.com/jinyitao123/weave/internal/kernel/compiler"
 	"github.com/jinyitao123/weave/internal/base/frozen"
+	"github.com/jinyitao123/weave/internal/build/teambuild"
+	"github.com/jinyitao123/weave/internal/kernel/compiler"
 	"github.com/jinyitao123/weave/internal/kernel/org"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
-	"github.com/jinyitao123/weave/internal/build/teambuild"
 	"github.com/jinyitao123/weave/internal/kernel/workflow"
 	"github.com/jinyitao123/weave/internal/kernel/workflow/machine"
 )
@@ -138,6 +138,32 @@ func ValidateWorkflowDraft(
 	trigger machine.TriggerConfig,
 	graph machine.GraphDefinition,
 ) (machine.Report, error) {
+	return validateWorkflowDraft(ctx, deps, workspaceID, workflowID, trigger, graph, false)
+}
+
+// ValidateTemplateWorkflowDraft is the template-instantiation variant of
+// ValidateWorkflowDraft. A template team is deliberately kept in building
+// until its first workflow is frozen and published in the same transaction,
+// so this validator accepts that one transitional team state. Ordinary
+// workflow authoring continues to require an active team.
+func ValidateTemplateWorkflowDraft(
+	ctx context.Context,
+	deps WorkflowValidateDeps,
+	workspaceID, workflowID string,
+	trigger machine.TriggerConfig,
+	graph machine.GraphDefinition,
+) (machine.Report, error) {
+	return validateWorkflowDraft(ctx, deps, workspaceID, workflowID, trigger, graph, true)
+}
+
+func validateWorkflowDraft(
+	ctx context.Context,
+	deps WorkflowValidateDeps,
+	workspaceID, workflowID string,
+	trigger machine.TriggerConfig,
+	graph machine.GraphDefinition,
+	allowBuildingTeam bool,
+) (machine.Report, error) {
 	var out machine.Report
 	if deps.Workflows == nil {
 		return out, errors.New("workflow read is unavailable")
@@ -147,7 +173,7 @@ func ValidateWorkflowDraft(
 	if err != nil {
 		return out, fmt.Errorf("read workflow %q: %w", workflowID, err)
 	}
-	return ValidateWorkflowForTeam(ctx, deps, workspaceID, workflowRow.TeamID, trigger, graph)
+	return validateWorkflowForTeam(ctx, deps, workspaceID, workflowRow.TeamID, trigger, graph, allowBuildingTeam)
 }
 
 // ValidateWorkflowForTeam runs the same proof assembly as
@@ -160,6 +186,17 @@ func ValidateWorkflowForTeam(
 	workspaceID, teamID string,
 	trigger machine.TriggerConfig,
 	graph machine.GraphDefinition,
+) (machine.Report, error) {
+	return validateWorkflowForTeam(ctx, deps, workspaceID, teamID, trigger, graph, false)
+}
+
+func validateWorkflowForTeam(
+	ctx context.Context,
+	deps WorkflowValidateDeps,
+	workspaceID, teamID string,
+	trigger machine.TriggerConfig,
+	graph machine.GraphDefinition,
+	allowBuildingTeam bool,
 ) (machine.Report, error) {
 	var out machine.Report
 	if deps.Teams == nil || deps.Roster == nil || deps.Agents == nil {
@@ -181,7 +218,7 @@ func ValidateWorkflowForTeam(
 			break
 		}
 	}
-	if team == nil || team.Status != "active" {
+	if team == nil || (team.Status != "active" && !(allowBuildingTeam && team.Status == "building")) {
 		teamState = machine.ProofNotFound
 	}
 
