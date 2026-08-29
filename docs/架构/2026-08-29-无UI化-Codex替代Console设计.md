@@ -19,6 +19,7 @@ weave 不再拥有自己的 UI 和内置对话产品。人的操作面完全由�
 | **N-1** | MCP 民生面（§3 全部）+ bootstrap（§4） | 工具级测试 |
 | **N-2** | Codex app 真实接入验证（§5 剧本逐项 checklist） | **此门不过，不删任何东西** |
 | **N-3** | 删元团队（包/seed/gate/开关/测试；旧库资产保留只读，见 §6.4） | 全量绿 + 干净库回归 |
+| **N-4a** | 运行时管理面板（独立小页，§6.2 例外规则） | 面板只读现状 + 发 token；零构建链 |
 | **N-4** | 删 Console（§6 清单）+ README 重写 | 全量绿 + 干净库 bootstrap 全流程 |
 
 ## 3. MCP 民生面（互审修正版）
@@ -63,6 +64,8 @@ weave 不再拥有自己的 UI 和内置对话产品。人的操作面完全由�
 ### 6.2 Console（N-4）
 
 weave-app/、`internal/app/webui`（含 gzip helpers）、Dockerfile ui-builder 阶段、Tauri 壳、ignore 规则、compose/install 文案、`POST /v1/mcp/tools`（仅 Console 用的 MCP 探测面）、teamforge 的 Console next_action 文案、realtime workspace hub（`/v1/events` 仓内唯一消费者是 Console；**请求级 SSE 必须保留**——chat 流式是它）。现状无前端 CI job，无需删。
+
+**例外保留（2026-08-29 用户裁决）：运行时管理页独立存活。** Console 的原罪是"它是整个产品面"；运行时管理是纯运维监控（舰队健康/引擎发现/心跳扫视），对话式接口不适合它。规则：单用途（运行时状态 + 创建发 token，其余只读）、零构建链（单 HTML + vanilla JS，Go embed，不进 React/npm 体系）、app 带归属、禁止业务能力迁入。它不是 Console 的残躯，是一个新的、刻意很小的运维面板。
 
 ### 6.3 失去且不替代（如实记录）
 
