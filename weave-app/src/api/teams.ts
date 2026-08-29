@@ -22,7 +22,7 @@ export const teamsMethods = {
   },
 
   getTeam(this: ApiClient, id: string, signal?: AbortSignal): Promise<TeamRoster> {
-    return this.request<TeamRoster>(`/v1/teams/${encodeURIComponent(id)}`, { signal });
+    return this.request<TeamRoster>(`/v1/teams/${encodeURIComponent(id)}?include=summary`, { signal });
   },
 
   createTeam(this: ApiClient, input: CreateTeamInput): Promise<CreateTeamResponse> {

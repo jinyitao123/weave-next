@@ -1,12 +1,18 @@
 import { useCallback, useEffect, useState } from "react";
 import { ArrowLeft, ChevronLeft, ChevronRight, History } from "lucide-react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { api, apiErrorMessage, normalizeThrownError, type TeamRoster, type TeamRunListResponse, type TeamRunRow } from "../../api";
+import { api, apiErrorMessage, normalizeThrownError, type TeamRoster, type TeamRunListResponse, type TeamRunRow, type WorkflowHealth } from "../../api";
 import { Badge } from "../../ui/Badge";
 import { Button } from "../../ui/Button";
 import { ErrorNotice, LoadingView } from "../../ui/StatusViews";
 import { TeamDetailPanel } from "./TeamsPage";
 import { WorkflowsPage } from "./WorkflowsPage";
+
+function healthBadge(health?: WorkflowHealth) {
+  if (!health || health.conclusion === "unknown") return { label: "健康度待观察", tone: "neutral" as const };
+  if (health.conclusion === "healthy") return { label: "近期运行健康", tone: "success" as const };
+  return { label: "近期运行需关注", tone: "warning" as const };
+}
 
 type TeamDetailTab = "roster" | "dispatch" | "workflows" | "runs";
 
@@ -72,6 +78,7 @@ export function TeamDetailPage() {
 
   useEffect(() => { void loadTeam(); }, [loadTeam]);
 
+  const health = healthBadge(team?.summary?.health);
   return <section className="control-content team-detail-page" aria-labelledby="team-detail-heading">
     <Link className="team-detail-page__return" to="/control/teams"><ArrowLeft size={16} aria-hidden="true" />返回团队名册</Link>
     <header className="team-detail-page__header">
@@ -79,6 +86,7 @@ export function TeamDetailPage() {
         <h2 id="team-detail-heading">{team?.team.name || "团队详情"}</h2>
         <p>{team?.team.objective || (loading ? "正在加载团队信息…" : id)}</p>
       </div>
+      {team?.summary?.health && <Badge tone={health.tone}>{health.label} · {team.summary.health.sample_count} 个样本</Badge>}
     </header>
     <div className="team-detail-page__tabs" role="tablist" aria-label="团队详情分区">
       {tabs.map(([value, label]) => <button

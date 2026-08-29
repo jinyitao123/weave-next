@@ -131,6 +131,10 @@ export function ProjectTeamTab({ projectId, teamId }: ProjectTeamTabProps) {
               <h3>协作流程</h3>
               <p>{publishedWorkflows.length > 0 ? `${publishedWorkflows.length} 条已发布 · ${publishedWorkflows.map((workflow) => workflow.name).join("、")}` : "尚未发布流程"}</p>
             </div>
+            <div className="project-team-fact">
+              <h3>近期健康度</h3>
+              <p>{roster.summary?.health.conclusion === "healthy" ? "运行健康" : roster.summary?.health.conclusion === "warning" ? "需要关注" : `待积累样本（${roster.summary?.health.sample_count || 0}）`}</p>
+            </div>
           </div>
         )}
       </Card>

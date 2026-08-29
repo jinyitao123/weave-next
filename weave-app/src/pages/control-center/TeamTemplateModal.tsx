@@ -139,7 +139,7 @@ export function TeamTemplateModal({ open, onClose, onReady }: TeamTemplateModalP
     open={open}
     size="wide"
     title="从模板创建团队"
-    description="选择行业样例并直接修改 YAML。平台会校验、编译并创建一支待评测但可立即工作的团队。"
+    description="选择行业样例并直接修改 YAML。平台完成静态校验后会立即发布首个工作流版本，团队可以直接接活。"
     onClose={requestClose}
     footer={<>
       <Button disabled={submitting} onClick={requestClose}>关闭</Button>

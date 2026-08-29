@@ -340,7 +340,7 @@ export function TeamsPage() {
               <small>{team.objective || "未设置目标"}</small>
             </span>
             <span className="team-row__badges">
-              {team.evaluation === "unevaluated" && <Badge tone="warning">待评测</Badge>}
+              {team.evaluation === "unevaluated" && <Badge tone="neutral">未认证</Badge>}
               <Badge tone={team.status === "active" ? "success" : "neutral"}>
                 {team.status === "active" ? "使用中" : "已归档"}
               </Badge>
@@ -348,7 +348,7 @@ export function TeamsPage() {
             <ChevronRight size={16} />
           </button>
           {canEvaluate && team.evaluation === "unevaluated" && team.status !== "archived" && <Button size="small" variant="ghost" onClick={() => setEvaluatingTeam(team)}>
-            <ClipboardCheck size={15} aria-hidden="true" />开始评测
+            <ClipboardCheck size={15} aria-hidden="true" />发起认证
           </Button>}
         </div>)}
     </div>}

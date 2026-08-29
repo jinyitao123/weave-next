@@ -436,6 +436,7 @@ export interface Team {
   success_criteria: string;
   lead_avatar_id: string;
   status: TeamStatus;
+  default_workflow_id?: string;
   evaluation: "evaluated" | "unevaluated";
   evaluation_build_run_id?: string;
   evaluation_contract_hash?: string;
@@ -572,6 +573,34 @@ export interface TeamRoster {
   team: Team;
   lead: TeamAgentSummary | null;
   workers: TeamAgentSummary[];
+  summary?: TeamOperationalSummary | null;
+  summary_error?: { code: string };
+}
+
+export type WorkflowHealthConclusion = "unknown" | "healthy" | "warning";
+
+export interface WorkflowHealth {
+  conclusion: WorkflowHealthConclusion;
+  workflow_id: string;
+  workflow_version: number;
+  artifact_content_hash: string;
+  observation_id?: string;
+  observed_at?: string;
+  sample_count: number;
+  succeeded_count: number;
+  failed_count: number;
+  slow_count: number;
+  human_completed_count: number;
+  human_timeout_count: number;
+  reason_codes: string[];
+}
+
+export interface TeamOperationalSummary {
+  worker_count: number;
+  active_workflow_count: number;
+  published_workflow_count: number;
+  latest_run: { run_id: string; classification: string } | null;
+  health: WorkflowHealth;
 }
 
 export interface TeamRosterWorkerInput {

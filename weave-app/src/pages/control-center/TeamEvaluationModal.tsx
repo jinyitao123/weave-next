@@ -91,13 +91,13 @@ export function TeamEvaluationModal({ team, onClose, onCompleted }: TeamEvaluati
         if (next.run_status === "passed" || next.run_status === "blocked" || next.run_status === "cancelled") {
           await readReport();
           onCompleted();
-          if (next.run_status !== "passed") setError(`评测已${next.run_status === "blocked" ? "阻断" : "取消"}，团队仍保持未评测。`);
+          if (next.run_status !== "passed") setError(`认证已${next.run_status === "blocked" ? "失败" : "取消"}，不影响团队继续接活。`);
           return;
         }
         timer = window.setTimeout(() => void poll(), 1_200);
       } catch (requestError) {
         const normalized = normalizeThrownError(requestError);
-        if (normalized.kind !== "aborted") setError(`读取评测进度失败：${apiErrorMessage(normalized)}`);
+        if (normalized.kind !== "aborted") setError(`读取认证进度失败：${apiErrorMessage(normalized)}`);
       }
     };
     void poll();
@@ -149,14 +149,14 @@ export function TeamEvaluationModal({ team, onClose, onCompleted }: TeamEvaluati
   return <Modal
     open={!!team}
     size="wide"
-    title={`评测${team ? `“${team.name}”` : "团队"}`}
-    description="提交真实 EvaluationContract 与显式预算。评测失败只报告并阻断，不会修订团队资产。"
+    title={`认证${team ? `“${team.name}”` : "团队"}`}
+    description="这是可选的版本质量认证，不是团队接活的前置条件。认证会使用显式预算，失败不会修改或停用团队。"
     onClose={() => { if (!submitting) onClose(); }}
     footer={<>
       <Button disabled={submitting} onClick={onClose}>{terminal ? "完成" : "关闭"}</Button>
       <Button variant="primary" type="submit" form="team-evaluation-form" loading={submitting} disabled={!!buildRunID || !contractJSON.trim()}>
         <ClipboardCheck size={16} aria-hidden="true" />
-        {submitting ? "正在提交…" : "开始评测"}
+        {submitting ? "正在提交…" : "开始认证"}
       </Button>
     </>}
   >
@@ -174,11 +174,11 @@ export function TeamEvaluationModal({ team, onClose, onCompleted }: TeamEvaluati
       {buildRunID && <section className="team-evaluation-progress" aria-live="polite">
         <header>
           <CheckCircle2 size={18} aria-hidden="true" />
-          <span><strong>{progress?.run_status === "passed" ? "评测通过" : terminal ? "评测已停止" : "评测进行中"}</strong><small>{progress ? `已完成 ${completedSteps}/${progress.steps.length} 个步骤 · ${progress.run_status}` : buildRunID}</small></span>
+          <span><strong>{progress?.run_status === "passed" ? "认证通过" : terminal ? "认证已停止" : "认证进行中"}</strong><small>{progress ? `已完成 ${completedSteps}/${progress.steps.length} 个步骤 · ${progress.run_status}` : buildRunID}</small></span>
           {progress?.run_status && <Badge tone={progress.run_status === "passed" ? "success" : progress.run_status === "blocked" ? "danger" : "neutral"}>{progress.run_status}</Badge>}
         </header>
         {report && <div className="team-evaluation-report">
-          <h3>评测报告</h3>
+          <h3>认证报告</h3>
           <p>结论 {report.conclusion}{report.failure_category ? ` · ${report.failure_category}` : ""}</p>
           {!!report.rubric_scores?.length && <ul>{report.rubric_scores.map((score) => <li key={score.dimension_id}><strong>{score.dimension_id}</strong><span>{score.score} 分</span><small>{score.reason}</small></li>)}</ul>}
           {!!report.severe_defects?.length && <p className="team-evaluation-defects">严重缺陷 {report.severe_defects.join("；")}</p>}
