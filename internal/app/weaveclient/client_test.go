@@ -135,6 +135,13 @@ func TestReadEndpointsAndResumeAreThinHTTPMappings(t *testing.T) {
 	ctx := context.Background()
 	_, _ = client.TeamTemplateList(ctx)
 	_, _ = client.TeamCreate(ctx, TeamCreateRequest{Sample: "code-review", IdempotencyKey: "id"})
+	_, _ = client.ProviderList(ctx)
+	_, _ = client.ProviderAdd(ctx, ProviderAddRequest{Name: "openai", BaseURL: "https://example.test", APIKey: "secret", Models: []string{"model"}})
+	_, _ = client.APIKeyCreate(ctx, APIKeyCreateRequest{Name: "codex", Scopes: []string{"runs"}})
+	_, _ = client.RuntimeCreate(ctx, "mac")
+	_, _ = client.TeamList(ctx, "all", true)
+	_, _ = client.TeamStatus(ctx, "team-1")
+	_, _ = client.UsageSummary(ctx, "build-1")
 	_, _ = client.BuildStatus(ctx, "build-1")
 	_, _ = client.DispatchStatus(ctx, "dispatch-1")
 	_, _ = client.TeamRunStatus(ctx, "snapshot-1")
@@ -148,6 +155,9 @@ func TestReadEndpointsAndResumeAreThinHTTPMappings(t *testing.T) {
 	_, _ = client.Resume(ctx, ResumeRequest{RunID: "run-1", Agent: "lead", Input: map[string]any{"answer": "yes"}})
 	want := []string{
 		"GET /v1/team-templates/samples", "POST /v1/teams:from-template",
+		"GET /v1/providers", "POST /v1/providers", "POST /v1/auth/api-keys", "POST /v1/runtimes",
+		"GET /v1/teams?include=summary&status=all", "GET /v1/teams/team-1?include=summary",
+		"GET /v1/usage", "GET /v1/internal/team-build-runs/build-1/usage",
 		"GET /v1/internal/team-build-runs/build-1/progress", "GET /v1/chat-requests/dispatch-1",
 		"GET /v1/runs?aggregation_mode=all-exclusive&run_snapshot_id=snapshot-1&view=run",
 		"GET /v1/human-tasks?cursor=next&limit=20",

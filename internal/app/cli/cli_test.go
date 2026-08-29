@@ -85,7 +85,9 @@ func TestTeamUpReadsFileAndCallsTemplateEndpoint(t *testing.T) {
 		if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
 			t.Fatal(err)
 		}
-		if body["yaml"] != "name: test\n" || body["idempotency_key"] != "018f5f5a-c73c-7e31-8f4a-9b36797553a1" {
+		declarative, _ := body["declarative_spec"].(map[string]any)
+		if body["yaml"] != "name: test\n" || body["idempotency_key"] != "018f5f5a-c73c-7e31-8f4a-9b36797553a1" ||
+			declarative["schema_version"] != float64(1) {
 			t.Fatalf("body = %#v", body)
 		}
 		response.WriteHeader(http.StatusCreated)
@@ -97,9 +99,14 @@ func TestTeamUpReadsFileAndCallsTemplateEndpoint(t *testing.T) {
 	if err := os.WriteFile(file, []byte("name: test\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	specFile := filepath.Join(t.TempDir(), "workflow.json")
+	if err := os.WriteFile(specFile, []byte(`{"schema_version":1}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	var stdout, stderr bytes.Buffer
 	_, code := Dispatch([]string{
-		"team", "up", "-f", file, "--idempotency-key", "018f5f5a-c73c-7e31-8f4a-9b36797553a1",
+		"team", "up", "-f", file, "--declarative-spec", specFile,
+		"--idempotency-key", "018f5f5a-c73c-7e31-8f4a-9b36797553a1",
 	}, &stdout, &stderr)
 	if code != 0 || !strings.Contains(stdout.String(), `"team_id": "team-1"`) {
 		t.Fatalf("code=%d stdout=%s stderr=%s", code, stdout.String(), stderr.String())

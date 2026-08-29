@@ -79,6 +79,7 @@ func runTeam(ctx context.Context, client *weaveclient.Client, args []string, std
 		var filename string
 		flags.StringVar(&filename, "f", "", "team template YAML file")
 		flags.StringVar(&filename, "file", "", "team template YAML file")
+		declarativeSpecFile := flags.String("declarative-spec", "", "declarative workflow JSON file")
 		idempotencyKey := flags.String("idempotency-key", "", "caller-provided UUID")
 		if err := flags.Parse(args[1:]); err != nil {
 			return usageError("invalid_arguments")
@@ -93,8 +94,19 @@ func runTeam(ctx context.Context, client *weaveclient.Client, args []string, std
 		if err != nil {
 			return &commandError{code: "team_file_read_failed", exit: 1}
 		}
+		var declarativeSpec json.RawMessage
+		if strings.TrimSpace(*declarativeSpecFile) != "" {
+			declarativeSpec, err = os.ReadFile(*declarativeSpecFile)
+			if err != nil {
+				return &commandError{code: "declarative_spec_read_failed", exit: 1}
+			}
+			var object map[string]any
+			if json.Unmarshal(declarativeSpec, &object) != nil || object == nil {
+				return usageError("declarative_spec_invalid")
+			}
+		}
 		result, err := client.TeamCreate(ctx, weaveclient.TeamCreateRequest{
-			YAML: string(yaml), IdempotencyKey: *idempotencyKey,
+			YAML: string(yaml), DeclarativeSpec: declarativeSpec, IdempotencyKey: *idempotencyKey,
 		})
 		return writeResult(stdout, result, err)
 	case "dispatch":
@@ -226,7 +238,7 @@ func errorCode(err error) (string, int) {
 func Usage() string {
 	return strings.Join([]string{
 		"weave team samples",
-		"weave team up -f <team.yaml> --idempotency-key <uuid>",
+		"weave team up -f <team.yaml> [--declarative-spec <workflow.json>] --idempotency-key <uuid>",
 		"weave team dispatch --team <id> --task <task> [--client-request-id <uuid>] [--wait]",
 		"weave status build|dispatch|team-run <id>",
 		"weave deliverable list|get [id]",

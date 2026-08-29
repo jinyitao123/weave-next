@@ -108,10 +108,13 @@ func (s *Server) handleCreateRuntime(c echo.Context) error {
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
-	return c.JSON(http.StatusCreated, map[string]string{
-		"id":    runtime.ID,
-		"name":  runtime.Name,
-		"token": token,
+	return c.JSON(http.StatusCreated, map[string]any{
+		"id": runtime.ID, "name": runtime.Name, "token": token,
+		"next_commands": map[string]string{
+			"direct":  `weave runtime --server "$WEAVE_API_URL" --runtime-token '` + token + `'`,
+			"install": `curl -fsSL "${WEAVE_API_URL%/}/install.sh" | sh -s -- --server "$WEAVE_API_URL" --token '` + token + `'`,
+			"docker":  `WEAVE_RUNTIME_TOKEN='` + token + `' docker compose -f docker-compose.platform.yml --profile runtime up -d`,
+		},
 	})
 }
 

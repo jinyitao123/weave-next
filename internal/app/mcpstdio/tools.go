@@ -43,6 +43,65 @@ func (d *ToolDispatcher) Dispatch(ctx context.Context, call contract.ToolCall) (
 		}
 		result, err := d.client.TeamCreate(ctx, input)
 		return documentResult(call.ID, result, err), nil
+	case "provider_list":
+		var input struct{}
+		if err := decodeArguments(call.Args, &input); err != nil {
+			return toolError(call.ID, "invalid_arguments"), nil
+		}
+		result, err := d.client.ProviderList(ctx)
+		return documentResult(call.ID, result, err), nil
+	case "provider_add":
+		var input weaveclient.ProviderAddRequest
+		if err := decodeArguments(call.Args, &input); err != nil || strings.TrimSpace(input.Name) == "" ||
+			strings.TrimSpace(input.BaseURL) == "" || strings.TrimSpace(input.APIKey) == "" || len(input.Models) == 0 {
+			return toolError(call.ID, "invalid_arguments"), nil
+		}
+		result, err := d.client.ProviderAdd(ctx, input)
+		return documentResult(call.ID, result, err), nil
+	case "apikey_create":
+		var input weaveclient.APIKeyCreateRequest
+		if err := decodeArguments(call.Args, &input); err != nil || strings.TrimSpace(input.Name) == "" || len(input.Scopes) == 0 {
+			return toolError(call.ID, "invalid_arguments"), nil
+		}
+		result, err := d.client.APIKeyCreate(ctx, input)
+		return documentResult(call.ID, result, err), nil
+	case "runtime_create":
+		var input struct {
+			Name string `json:"name"`
+		}
+		if err := decodeArguments(call.Args, &input); err != nil || strings.TrimSpace(input.Name) == "" {
+			return toolError(call.ID, "invalid_arguments"), nil
+		}
+		result, err := d.client.RuntimeCreate(ctx, input.Name)
+		return documentResult(call.ID, result, err), nil
+	case "team_list":
+		var input struct {
+			Status  string `json:"status"`
+			Summary bool   `json:"summary"`
+		}
+		if err := decodeArguments(call.Args, &input); err != nil {
+			return toolError(call.ID, "invalid_arguments"), nil
+		}
+		result, err := d.client.TeamList(ctx, input.Status, input.Summary)
+		return documentResult(call.ID, result, err), nil
+	case "team_status":
+		var input struct {
+			TeamID string `json:"team_id"`
+		}
+		if err := decodeArguments(call.Args, &input); err != nil || strings.TrimSpace(input.TeamID) == "" {
+			return toolError(call.ID, "invalid_arguments"), nil
+		}
+		result, err := d.client.TeamStatus(ctx, input.TeamID)
+		return documentResult(call.ID, result, err), nil
+	case "usage_summary":
+		var input struct {
+			BuildID string `json:"build_id"`
+		}
+		if err := decodeArguments(call.Args, &input); err != nil {
+			return toolError(call.ID, "invalid_arguments"), nil
+		}
+		result, err := d.client.UsageSummary(ctx, input.BuildID)
+		return documentResult(call.ID, result, err), nil
 	case "team_dispatch":
 		var input struct {
 			TeamID          string `json:"team_id"`
@@ -205,6 +264,33 @@ func toolError(callID, code string) *contract.ToolResult {
 	return &contract.ToolResult{CallID: callID, Content: string(encoded), IsError: true}
 }
 
+type toolAccessPolicy struct {
+	Role   string
+	Scopes []string
+}
+
+var toolAccessPolicies = map[string]toolAccessPolicy{
+	"team_template_list":  {Role: "any", Scopes: []string{"org"}},
+	"team_create":         {Role: "admin", Scopes: []string{"org"}},
+	"provider_list":       {Role: "any", Scopes: []string{"admin"}},
+	"provider_add":        {Role: "admin", Scopes: []string{"admin"}},
+	"apikey_create":       {Role: "admin", Scopes: []string{"admin"}},
+	"runtime_create":      {Role: "any", Scopes: []string{"org"}},
+	"team_list":           {Role: "any", Scopes: []string{"org"}},
+	"team_status":         {Role: "any", Scopes: []string{"org"}},
+	"usage_summary":       {Role: "any", Scopes: []string{"runs", "org"}},
+	"team_dispatch":       {Role: "any", Scopes: []string{"org", "chat"}},
+	"build_status":        {Role: "any", Scopes: []string{"org"}},
+	"dispatch_status":     {Role: "any", Scopes: []string{"chat"}},
+	"team_run_status":     {Role: "any", Scopes: []string{"runs"}},
+	"human_task_list":     {Role: "workspace_member", Scopes: []string{"runs"}},
+	"human_task_get":      {Role: "workspace_member", Scopes: []string{"runs"}},
+	"human_task_complete": {Role: "workspace_member", Scopes: []string{"runs"}},
+	"resume":              {Role: "any", Scopes: []string{"chat"}},
+	"deliverable_list":    {Role: "any", Scopes: []string{"chat"}},
+	"deliverable_get":     {Role: "any", Scopes: []string{"chat"}},
+}
+
 var toolDefinitions = []contract.ToolDef{
 	{
 		Name: "team_template_list", ReadOnly: true,
@@ -213,8 +299,43 @@ var toolDefinitions = []contract.ToolDef{
 	},
 	{
 		Name:        "team_create",
-		Description: "Create a team from YAML or a named sample. Requires administrator and organization access plus a caller-supplied idempotency_key UUID. Returns team and build identifiers with current status. Errors: idempotency_key_required, template_idempotency_conflict, http_401, http_403, http_422.",
-		InputSchema: json.RawMessage(`{"type":"object","properties":{"yaml":{"type":"string"},"sample":{"type":"string"},"overrides":{"type":"object"},"idempotency_key":{"type":"string","format":"uuid"}},"required":["idempotency_key"],"anyOf":[{"required":["yaml"]},{"required":["sample"]}],"additionalProperties":false}`),
+		Description: "Create a team from YAML or a named sample, optionally with a declarative workflow specification. Requires administrator and organization access plus a caller-supplied idempotency_key UUID. Returns team and build identifiers with current status. Errors: idempotency_key_required, template_idempotency_conflict, http_401, http_403, http_422.",
+		InputSchema: json.RawMessage(`{"type":"object","properties":{"yaml":{"type":"string"},"sample":{"type":"string"},"overrides":{"type":"object"},"declarative_spec":{"type":"object"},"idempotency_key":{"type":"string","format":"uuid"}},"required":["idempotency_key"],"anyOf":[{"required":["yaml"]},{"required":["sample"]}],"additionalProperties":false}`),
+	},
+	{
+		Name: "provider_list", ReadOnly: true,
+		Description: "List configured model providers without secret values. Requires admin access. Returns provider metadata and immutable revision facts. Errors: http_401, http_403, http_500.",
+		InputSchema: json.RawMessage(`{"type":"object","additionalProperties":false}`),
+	},
+	{
+		Name:        "provider_add",
+		Description: "Add or revise an OpenAI-compatible model provider. Requires administrator role and admin access. The API key is accepted as secret input and is never returned. Errors: invalid_arguments, http_400, http_401, http_403, http_409.",
+		InputSchema: json.RawMessage(`{"type":"object","properties":{"id":{"type":"string"},"name":{"type":"string"},"base_url":{"type":"string"},"api_key":{"type":"string"},"models":{"type":"array","items":{"type":"string"},"minItems":1},"json_object_mode":{"type":"boolean"},"thinking_default_mode":{"type":"string"},"thinking_disable_with_tools":{"type":"boolean"},"attempt_timeout_seconds":{"type":"integer","minimum":0}},"required":["name","base_url","api_key","models"],"additionalProperties":false}`),
+	},
+	{
+		Name:        "apikey_create",
+		Description: "Create an API key owned by the current authenticated user. Requires administrator role and admin access. The raw key is returned once. Errors: invalid_arguments, http_400, http_401, http_403.",
+		InputSchema: json.RawMessage(`{"type":"object","properties":{"name":{"type":"string"},"role":{"type":"string"},"scopes":{"type":"array","items":{"type":"string"},"minItems":1},"expires_at":{"type":"string","format":"date-time"}},"required":["name","scopes"],"additionalProperties":false}`),
+	},
+	{
+		Name:        "runtime_create",
+		Description: "Create a CLI runtime registration. Requires organization access. Returns the one-time runtime token plus ready-to-run direct, install-script, and Docker commands. Errors: invalid_arguments, http_401, http_403, http_500.",
+		InputSchema: json.RawMessage(`{"type":"object","properties":{"name":{"type":"string"}},"required":["name"],"additionalProperties":false}`),
+	},
+	{
+		Name: "team_list", ReadOnly: true,
+		Description: "List workspace teams, optionally filtered by lifecycle status and expanded with summaries. Requires organization access. Errors: http_400, http_401, http_403.",
+		InputSchema: json.RawMessage(`{"type":"object","properties":{"status":{"type":"string","enum":["active","needs_repair","building","archived","all"]},"summary":{"type":"boolean"}},"additionalProperties":false}`),
+	},
+	{
+		Name: "team_status", ReadOnly: true,
+		Description: "Get one team's roster, lifecycle status, and operational summary by exact team_id. Requires organization access. Errors: http_401, http_403, http_404.",
+		InputSchema: json.RawMessage(`{"type":"object","properties":{"team_id":{"type":"string"}},"required":["team_id"],"additionalProperties":false}`),
+	},
+	{
+		Name: "usage_summary", ReadOnly: true,
+		Description: "Summarize workspace run usage and optionally include one exact build's budget usage and sources. Requires run access; a build_id also requires organization access. Errors: http_400, http_401, http_403, http_404.",
+		InputSchema: json.RawMessage(`{"type":"object","properties":{"build_id":{"type":"string"}},"additionalProperties":false}`),
 	},
 	{
 		Name:        "team_dispatch",

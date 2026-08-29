@@ -58,10 +58,11 @@ func New(config Config, httpClient *http.Client) (*Client, error) {
 }
 
 type TeamCreateRequest struct {
-	YAML           string         `json:"yaml,omitempty"`
-	Sample         string         `json:"sample,omitempty"`
-	Overrides      map[string]any `json:"overrides,omitempty"`
-	IdempotencyKey string         `json:"idempotency_key"`
+	YAML            string          `json:"yaml,omitempty"`
+	Sample          string          `json:"sample,omitempty"`
+	Overrides       map[string]any  `json:"overrides,omitempty"`
+	DeclarativeSpec json.RawMessage `json:"declarative_spec,omitempty"`
+	IdempotencyKey  string          `json:"idempotency_key"`
 }
 
 type DispatchRequest struct {
@@ -83,8 +84,79 @@ type HumanTaskCompleteRequest struct {
 	IdempotencyKey string          `json:"idempotency_key"`
 }
 
+type ProviderAddRequest struct {
+	ID                       string   `json:"id"`
+	Name                     string   `json:"name"`
+	BaseURL                  string   `json:"base_url"`
+	APIKey                   string   `json:"api_key"`
+	Models                   []string `json:"models"`
+	JSONObjectMode           bool     `json:"json_object_mode,omitempty"`
+	ThinkingDefaultMode      string   `json:"thinking_default_mode,omitempty"`
+	ThinkingDisableWithTools bool     `json:"thinking_disable_with_tools,omitempty"`
+	AttemptTimeoutSeconds    int      `json:"attempt_timeout_seconds,omitempty"`
+}
+
+type APIKeyCreateRequest struct {
+	Name      string     `json:"name"`
+	Role      string     `json:"role,omitempty"`
+	Scopes    []string   `json:"scopes"`
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
+}
+
 func (c *Client) TeamTemplateList(ctx context.Context) (json.RawMessage, error) {
 	return c.getJSON(ctx, "/v1/team-templates/samples")
+}
+
+func (c *Client) ProviderList(ctx context.Context) (json.RawMessage, error) {
+	return c.getJSON(ctx, "/v1/providers")
+}
+
+func (c *Client) ProviderAdd(ctx context.Context, request ProviderAddRequest) (json.RawMessage, error) {
+	return c.sendJSON(ctx, http.MethodPost, "/v1/providers", request)
+}
+
+func (c *Client) APIKeyCreate(ctx context.Context, request APIKeyCreateRequest) (json.RawMessage, error) {
+	return c.sendJSON(ctx, http.MethodPost, "/v1/auth/api-keys", request)
+}
+
+func (c *Client) RuntimeCreate(ctx context.Context, name string) (json.RawMessage, error) {
+	return c.sendJSON(ctx, http.MethodPost, "/v1/runtimes", map[string]string{"name": name})
+}
+
+func (c *Client) TeamList(ctx context.Context, status string, summary bool) (json.RawMessage, error) {
+	query := url.Values{}
+	if strings.TrimSpace(status) != "" {
+		query.Set("status", strings.TrimSpace(status))
+	}
+	if summary {
+		query.Set("include", "summary")
+	}
+	path := "/v1/teams"
+	if len(query) != 0 {
+		path += "?" + query.Encode()
+	}
+	return c.getJSON(ctx, path)
+}
+
+func (c *Client) TeamStatus(ctx context.Context, teamID string) (json.RawMessage, error) {
+	return c.getJSON(ctx, "/v1/teams/"+url.PathEscape(strings.TrimSpace(teamID))+"?include=summary")
+}
+
+func (c *Client) UsageSummary(ctx context.Context, buildRunID string) (json.RawMessage, error) {
+	workspaceUsage, err := c.getJSON(ctx, "/v1/usage")
+	if err != nil {
+		return nil, err
+	}
+	result := map[string]json.RawMessage{"workspace_usage": workspaceUsage}
+	if strings.TrimSpace(buildRunID) != "" {
+		buildUsage, err := c.getJSON(ctx, "/v1/internal/team-build-runs/"+
+			url.PathEscape(strings.TrimSpace(buildRunID))+"/usage")
+		if err != nil {
+			return nil, err
+		}
+		result["build_usage"] = buildUsage
+	}
+	return json.Marshal(result)
 }
 
 func (c *Client) TeamCreate(ctx context.Context, request TeamCreateRequest) (json.RawMessage, error) {

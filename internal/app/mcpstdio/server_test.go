@@ -49,11 +49,13 @@ func TestServeUsesSharedProtocolForInitializeListAndCall(t *testing.T) {
 		t.Fatalf("initialize = %#v", initialize)
 	}
 	tools := responses[1]["result"].(map[string]any)["tools"].([]any)
-	if len(tools) != 12 {
+	if len(tools) != 19 {
 		t.Fatalf("tool count = %d", len(tools))
 	}
 	wantNames := []string{
-		"team_template_list", "team_create", "team_dispatch", "build_status", "dispatch_status",
+		"team_template_list", "team_create", "provider_list", "provider_add", "apikey_create",
+		"runtime_create", "team_list", "team_status", "usage_summary",
+		"team_dispatch", "build_status", "dispatch_status",
 		"team_run_status", "human_task_list", "human_task_get", "human_task_complete",
 		"resume", "deliverable_list", "deliverable_get",
 	}
@@ -78,6 +80,38 @@ func TestServeUsesSharedProtocolForInitializeListAndCall(t *testing.T) {
 	parseError := responses[3]["error"].(map[string]any)
 	if parseError["code"] != float64(-32700) {
 		t.Fatalf("parse error = %#v", parseError)
+	}
+}
+
+func TestToolRoleScopeTableIsFrozen(t *testing.T) {
+	want := map[string]toolAccessPolicy{
+		"team_template_list":  {Role: "any", Scopes: []string{"org"}},
+		"team_create":         {Role: "admin", Scopes: []string{"org"}},
+		"provider_list":       {Role: "any", Scopes: []string{"admin"}},
+		"provider_add":        {Role: "admin", Scopes: []string{"admin"}},
+		"apikey_create":       {Role: "admin", Scopes: []string{"admin"}},
+		"runtime_create":      {Role: "any", Scopes: []string{"org"}},
+		"team_list":           {Role: "any", Scopes: []string{"org"}},
+		"team_status":         {Role: "any", Scopes: []string{"org"}},
+		"usage_summary":       {Role: "any", Scopes: []string{"runs", "org"}},
+		"team_dispatch":       {Role: "any", Scopes: []string{"org", "chat"}},
+		"build_status":        {Role: "any", Scopes: []string{"org"}},
+		"dispatch_status":     {Role: "any", Scopes: []string{"chat"}},
+		"team_run_status":     {Role: "any", Scopes: []string{"runs"}},
+		"human_task_list":     {Role: "workspace_member", Scopes: []string{"runs"}},
+		"human_task_get":      {Role: "workspace_member", Scopes: []string{"runs"}},
+		"human_task_complete": {Role: "workspace_member", Scopes: []string{"runs"}},
+		"resume":              {Role: "any", Scopes: []string{"chat"}},
+		"deliverable_list":    {Role: "any", Scopes: []string{"chat"}},
+		"deliverable_get":     {Role: "any", Scopes: []string{"chat"}},
+	}
+	if !reflect.DeepEqual(toolAccessPolicies, want) {
+		t.Fatalf("tool access policies = %#v", toolAccessPolicies)
+	}
+	for _, tool := range toolDefinitions {
+		if _, ok := toolAccessPolicies[tool.Name]; !ok {
+			t.Errorf("tool %q has no access policy", tool.Name)
+		}
 	}
 }
 
@@ -108,6 +142,31 @@ func TestToolArgumentsRejectUnknownFields(t *testing.T) {
 	}
 	if !result.IsError || result.Content != `{"error":"invalid_arguments"}` {
 		t.Fatalf("result = %#v", result)
+	}
+}
+
+func TestTeamCreatePassesDeclarativeSpec(t *testing.T) {
+	api := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if request.Method != http.MethodPost || request.URL.Path != "/v1/teams:from-template" {
+			t.Fatalf("request = %s %s", request.Method, request.URL.Path)
+		}
+		var body map[string]any
+		if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		spec, _ := body["declarative_spec"].(map[string]any)
+		if spec["schema_version"] != float64(1) {
+			t.Fatalf("body = %#v", body)
+		}
+		response.WriteHeader(http.StatusAccepted)
+		_, _ = response.Write([]byte(`{"build_run_id":"build-1","status":"building"}`))
+	}))
+	defer api.Close()
+	result, err := NewToolDispatcher(mcpClient(t, api.URL)).Dispatch(context.Background(), structToolCall(
+		"team_create", `{"yaml":"schema: team-template/v1","declarative_spec":{"schema_version":1},"idempotency_key":"018f5f5a-c73c-7e31-8f4a-9b36797553a1"}`,
+	))
+	if err != nil || result.IsError || !strings.Contains(result.Content, "build-1") {
+		t.Fatalf("result = %#v err = %v", result, err)
 	}
 }
 
