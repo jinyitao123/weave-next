@@ -14,6 +14,7 @@ import (
 const (
 	authSourceContextKey = "auth_source"
 	scopesContextKey     = "scopes"
+	apiKeyIDContextKey   = "api_key_id"
 	authSourceAPIKey     = "apikey"
 	authSourceJWT        = "jwt"
 )
@@ -51,11 +52,7 @@ func AuthMiddleware(jwtSecret string, keyStoreGetter func() *apikeys.Store, user
 				if err != nil {
 					return c.JSON(http.StatusUnauthorized, map[string]string{"error": "invalid api key"})
 				}
-				c.Set("tenant", key.TenantID)
-				c.Set("user_id", "apikey:"+key.ID)
-				c.Set("roles", []string{key.Role})
-				c.Set(authSourceContextKey, authSourceAPIKey)
-				c.Set(scopesContextKey, key.Scopes)
+				setAPIKeyContext(c, key)
 				go ks.TouchLastUsed(context.Background(), key.ID)
 				return next(c)
 			}
@@ -103,11 +100,7 @@ func OptionalAuthMiddleware(jwtSecret string, keyStoreGetter func() *apikeys.Sto
 			if strings.HasPrefix(tokenStr, "wv_sk_") {
 				if ks := keyStoreGetter(); ks != nil {
 					if key, err := ks.Validate(c.Request().Context(), tokenStr); err == nil {
-						c.Set("tenant", key.TenantID)
-						c.Set("user_id", "apikey:"+key.ID)
-						c.Set("roles", []string{key.Role})
-						c.Set(authSourceContextKey, authSourceAPIKey)
-						c.Set(scopesContextKey, key.Scopes)
+						setAPIKeyContext(c, key)
 						go ks.TouchLastUsed(context.Background(), key.ID)
 					}
 				}
@@ -131,6 +124,21 @@ func OptionalAuthMiddleware(jwtSecret string, keyStoreGetter func() *apikeys.Sto
 			return next(c)
 		}
 	}
+}
+
+func setAPIKeyContext(c echo.Context, key *apikeys.APIKey) {
+	userID := key.OwnerUserID
+	if userID == "" {
+		// Upgrade compatibility for an old key whose historical creator cannot
+		// be resolved. It remains authenticated but cannot impersonate a member.
+		userID = "apikey:" + key.ID
+	}
+	c.Set("tenant", key.TenantID)
+	c.Set("user_id", userID)
+	c.Set("roles", []string{key.Role})
+	c.Set(authSourceContextKey, authSourceAPIKey)
+	c.Set(scopesContextKey, key.Scopes)
+	c.Set(apiKeyIDContextKey, key.ID)
 }
 
 func resolveJWTUser(ctx context.Context, userStoreGetter func() *users.Store, claims *Claims) (*users.User, bool) {

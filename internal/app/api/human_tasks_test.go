@@ -9,11 +9,61 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+	"github.com/jinyitao123/weave/internal/app/apikeys"
+	"github.com/jinyitao123/weave/internal/app/users"
 	"github.com/jinyitao123/weave/internal/base/db"
 	"github.com/jinyitao123/weave/internal/base/testutil"
 	"github.com/jinyitao123/weave/internal/kernel/org"
 	"github.com/labstack/echo/v4"
 )
+
+func TestAPIKeyOwnerPassesLiveHumanTaskMembershipRealPG(t *testing.T) {
+	ctx := context.Background()
+	pool := testutil.PostgresPool(t)
+	if err := db.Migrate(ctx, pool); err != nil {
+		t.Fatal(err)
+	}
+	workspaceID := "human-key-owner-" + uuid.NewString()
+	userStore := users.NewStore(pool)
+	owner, err := userStore.Create(ctx, workspaceID, "owner", "password", "Owner", "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyStore := apikeys.NewStore(pool)
+	_, rawKey, err := keyStore.Create(ctx, workspaceID, "codex", "admin", owner.ID, []string{"runs"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := &Server{OrgStore: org.NewStore(pool)}
+	e := echo.New()
+	e.GET("/v1/human-tasks", func(c echo.Context) error {
+		if getUserID(c) != owner.ID {
+			return c.JSON(http.StatusForbidden, map[string]string{"error": "api key owner identity missing"})
+		}
+		if err := server.requireCurrentWorkspaceMember(c); err != nil {
+			return err
+		}
+		return c.NoContent(http.StatusNoContent)
+	}, AuthMiddleware("unused", func() *apikeys.Store { return keyStore }, func() *users.Store { return userStore }), RequireScope("runs"))
+
+	request := func() *httptest.ResponseRecorder {
+		recorder := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/v1/human-tasks", nil)
+		req.Header.Set(echo.HeaderAuthorization, "Bearer "+rawKey)
+		e.ServeHTTP(recorder, req)
+		return recorder
+	}
+	if recorder := request(); recorder.Code != http.StatusNoContent {
+		t.Fatalf("owner key status = %d body = %s", recorder.Code, recorder.Body.String())
+	}
+	if err := server.OrgStore.RemoveMember(ctx, workspaceID, owner.ID); err != nil {
+		t.Fatal(err)
+	}
+	if recorder := request(); recorder.Code != http.StatusForbidden {
+		t.Fatalf("revoked owner key status = %d body = %s", recorder.Code, recorder.Body.String())
+	}
+}
 
 func TestHumanTaskCursorRoundTrip(t *testing.T) {
 	wantTime := time.Date(2026, 8, 27, 12, 34, 56, 789, time.UTC)

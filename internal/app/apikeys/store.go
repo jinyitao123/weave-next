@@ -14,17 +14,26 @@ import (
 
 const keyPrefix = "wv_sk_"
 
+var bootstrapScopes = []string{"admin", "org", "chat", "runs"}
+
+// BootstrapScopes returns the minimal fixed scope set needed by the headless
+// management and human-task workflow. The returned slice is caller-owned.
+func BootstrapScopes() []string {
+	return append([]string(nil), bootstrapScopes...)
+}
+
 // APIKey represents a stored API key record (never contains the raw key).
 type APIKey struct {
-	ID        string     `json:"id"`
-	TenantID  string     `json:"tenant_id"`
-	Name      string     `json:"name"`
-	Role      string     `json:"role"`
-	Scopes    []string   `json:"scopes,omitempty"`
-	CreatedBy string     `json:"created_by,omitempty"`
-	ExpiresAt *time.Time `json:"expires_at,omitempty"`
-	LastUsed  *time.Time `json:"last_used,omitempty"`
-	CreatedAt time.Time  `json:"created_at"`
+	ID          string     `json:"id"`
+	TenantID    string     `json:"tenant_id"`
+	Name        string     `json:"name"`
+	Role        string     `json:"role"`
+	Scopes      []string   `json:"scopes,omitempty"`
+	OwnerUserID string     `json:"owner_user_id"`
+	CreatedBy   string     `json:"created_by,omitempty"`
+	ExpiresAt   *time.Time `json:"expires_at,omitempty"`
+	LastUsed    *time.Time `json:"last_used,omitempty"`
+	CreatedAt   time.Time  `json:"created_at"`
 }
 
 // Store provides CRUD operations on the weave_api_keys table.
@@ -39,6 +48,9 @@ func NewStore(pool *pgxpool.Pool) *Store {
 
 // Create generates a new API key and stores its hash. Returns the raw key (shown only once).
 func (s *Store) Create(ctx context.Context, tenantID, name, role, createdBy string, scopes []string, expiresAt *time.Time) (*APIKey, string, error) {
+	if createdBy == "" {
+		return nil, "", fmt.Errorf("create api key: owner user is required")
+	}
 	rawKey, err := generateKey()
 	if err != nil {
 		return nil, "", err
@@ -47,17 +59,22 @@ func (s *Store) Create(ctx context.Context, tenantID, name, role, createdBy stri
 	id := uuid.NewString()
 	now := time.Now()
 
-	_, err = s.pool.Exec(ctx,
-		`INSERT INTO weave_api_keys (id, tenant_id, name, key_hash, role, scopes, created_by, expires_at, created_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+	tag, err := s.pool.Exec(ctx,
+		`INSERT INTO weave_api_keys (id, tenant_id, name, key_hash, role, scopes, owner_user_id, created_by, expires_at, created_at)
+		 SELECT $1, $2, $3, $4, $5, $6, owner.id, $7, $8, $9
+		 FROM weave_users AS owner
+		 WHERE owner.id=$7 AND owner.tenant_id=$2 AND owner.disabled=false`,
 		id, tenantID, name, hash, role, scopes, createdBy, expiresAt, now)
 	if err != nil {
 		return nil, "", fmt.Errorf("create api key: %w", err)
 	}
+	if tag.RowsAffected() != 1 {
+		return nil, "", fmt.Errorf("create api key: owner user not found")
+	}
 
 	key := &APIKey{
 		ID: id, TenantID: tenantID, Name: name, Role: role, Scopes: scopes,
-		CreatedBy: createdBy, ExpiresAt: expiresAt, CreatedAt: now,
+		OwnerUserID: createdBy, CreatedBy: createdBy, ExpiresAt: expiresAt, CreatedAt: now,
 	}
 	return key, rawKey, nil
 }
@@ -67,9 +84,9 @@ func (s *Store) Validate(ctx context.Context, rawKey string) (*APIKey, error) {
 	hash := hashKey(rawKey)
 	var k APIKey
 	err := s.pool.QueryRow(ctx,
-		`SELECT id, tenant_id, name, role, scopes, created_by, expires_at, last_used, created_at
+		`SELECT id, tenant_id, name, role, scopes, COALESCE(owner_user_id, ''), created_by, expires_at, last_used, created_at
 		 FROM weave_api_keys WHERE key_hash=$1`, hash,
-	).Scan(&k.ID, &k.TenantID, &k.Name, &k.Role, &k.Scopes, &k.CreatedBy, &k.ExpiresAt, &k.LastUsed, &k.CreatedAt)
+	).Scan(&k.ID, &k.TenantID, &k.Name, &k.Role, &k.Scopes, &k.OwnerUserID, &k.CreatedBy, &k.ExpiresAt, &k.LastUsed, &k.CreatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("invalid api key")
 	}
@@ -87,7 +104,7 @@ func (s *Store) TouchLastUsed(ctx context.Context, id string) {
 // List returns all API keys for a tenant.
 func (s *Store) List(ctx context.Context, tenantID string) ([]APIKey, error) {
 	rows, err := s.pool.Query(ctx,
-		`SELECT id, tenant_id, name, role, scopes, created_by, expires_at, last_used, created_at
+		`SELECT id, tenant_id, name, role, scopes, COALESCE(owner_user_id, ''), created_by, expires_at, last_used, created_at
 		 FROM weave_api_keys WHERE tenant_id=$1 ORDER BY created_at DESC`, tenantID)
 	if err != nil {
 		return nil, err
@@ -97,7 +114,7 @@ func (s *Store) List(ctx context.Context, tenantID string) ([]APIKey, error) {
 	var keys []APIKey
 	for rows.Next() {
 		var k APIKey
-		if err := rows.Scan(&k.ID, &k.TenantID, &k.Name, &k.Role, &k.Scopes, &k.CreatedBy, &k.ExpiresAt, &k.LastUsed, &k.CreatedAt); err != nil {
+		if err := rows.Scan(&k.ID, &k.TenantID, &k.Name, &k.Role, &k.Scopes, &k.OwnerUserID, &k.CreatedBy, &k.ExpiresAt, &k.LastUsed, &k.CreatedAt); err != nil {
 			return nil, err
 		}
 		keys = append(keys, k)

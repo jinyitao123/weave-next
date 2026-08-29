@@ -214,13 +214,15 @@ func (s *Server) handleMe(c echo.Context) error {
 	tenant := getTenant(c)
 	userID := getUserID(c)
 
-	// API key users — return minimal info from claims.
-	if len(userID) > 7 && userID[:7] == "apikey:" {
+	// API keys represent their owner for membership checks while remaining a
+	// distinct authentication source with no account mutation authority.
+	if c.Get(authSourceContextKey) == authSourceAPIKey {
 		return c.JSON(http.StatusOK, map[string]any{
-			"id":        userID,
-			"tenant_id": getTenant(c),
-			"role":      firstRole(c),
-			"source":    "apikey",
+			"id":         userID,
+			"api_key_id": c.Get(apiKeyIDContextKey),
+			"tenant_id":  getTenant(c),
+			"role":       firstRole(c),
+			"source":     "apikey",
 		})
 	}
 
@@ -234,7 +236,7 @@ func (s *Server) handleMe(c echo.Context) error {
 // handleUpdateMe lets a signed-in human user change their own display name.
 func (s *Server) handleUpdateMe(c echo.Context) error {
 	userID := getUserID(c)
-	if strings.HasPrefix(userID, "apikey:") {
+	if c.Get(authSourceContextKey) == authSourceAPIKey {
 		return c.JSON(http.StatusForbidden, map[string]string{"error": "api keys have no account profile"})
 	}
 	var req struct {
@@ -261,7 +263,7 @@ func (s *Server) handleUpdateMe(c echo.Context) error {
 // handleChangeMyPassword lets a signed-in human user rotate their own password.
 func (s *Server) handleChangeMyPassword(c echo.Context) error {
 	userID := getUserID(c)
-	if strings.HasPrefix(userID, "apikey:") {
+	if c.Get(authSourceContextKey) == authSourceAPIKey {
 		return c.JSON(http.StatusForbidden, map[string]string{"error": "api keys have no account password"})
 	}
 	var req struct {
@@ -351,13 +353,14 @@ func (s *Server) handleCreateAPIKey(c echo.Context) error {
 	}
 
 	return c.JSON(http.StatusCreated, map[string]any{
-		"id":         key.ID,
-		"name":       key.Name,
-		"role":       key.Role,
-		"scopes":     key.Scopes,
-		"key":        rawKey,
-		"expires_at": key.ExpiresAt,
-		"created_at": key.CreatedAt,
+		"id":            key.ID,
+		"name":          key.Name,
+		"role":          key.Role,
+		"scopes":        key.Scopes,
+		"owner_user_id": key.OwnerUserID,
+		"key":           rawKey,
+		"expires_at":    key.ExpiresAt,
+		"created_at":    key.CreatedAt,
 	})
 }
 
