@@ -298,6 +298,7 @@ func NewServer(cfg *config.Config, store loom.Store, models *llmrouter.Resolver)
 func (s *Server) registerRoutes() {
 	// Public endpoints (no auth).
 	s.Echo.GET("/v1/health", s.handleHealth)
+	s.Echo.GET("/v1/ready", s.handleReady)
 	s.Echo.GET("/install.sh", s.handleInstallScript)
 	s.Echo.GET("/install.ps1", s.handleInstallScript)
 	s.Echo.GET("/v1/downloads/runtime/:os/:arch", s.handleDownloadRuntime)

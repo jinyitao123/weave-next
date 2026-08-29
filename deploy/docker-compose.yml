@@ -8,6 +8,7 @@ services:
     environment:
       DATABASE_URL: postgres://weave:weave@db:5432/weave?sslmode=disable
       JWT_SECRET: ${JWT_SECRET:-dev-secret-change-in-prod}
+      WEAVE_SECRET_KEY: ${WEAVE_SECRET_KEY:?set WEAVE_SECRET_KEY (openssl rand -hex 32)}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}

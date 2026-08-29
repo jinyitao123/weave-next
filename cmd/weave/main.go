@@ -140,6 +140,11 @@ func main() {
 		slog.Error("failed to load config", "error", err)
 		os.Exit(1)
 	}
+	secretKey, err := secret.KeyFromEnv()
+	if err != nil {
+		slog.Error("failed to load credential encryption key", "error", err)
+		os.Exit(1)
+	}
 
 	store, err := pgstore.New(cfg.DatabaseURL)
 	if err != nil {
@@ -300,15 +305,11 @@ func main() {
 		srv.Deliverables = deliverable.New(pool)
 		srv.Audit = audit.New(pool, audit.RealClock{})
 		srv.Conversations = conversation.New(pool, conversation.RealClock{})
-		if key, err := secret.KeyFromEnv(); err != nil {
-			slog.Warn("secure stores disabled because the encryption key is unavailable", "error", err)
-		} else {
-			srv.Credentials = credentials.New(pool, key)
-			srv.DeliveryTargets = delivery.New(pool, key)
-			models.SetSource(srv.Credentials)
-			srv.Embedders.SetSource(api.CredentialEmbedderSource{Store: srv.Credentials})
-			srv.MCPRegistry = mcpregistry.New(pool, key)
-		}
+		srv.Credentials = credentials.New(pool, secretKey)
+		srv.DeliveryTargets = delivery.New(pool, secretKey)
+		models.SetSource(srv.Credentials)
+		srv.Embedders.SetSource(api.CredentialEmbedderSource{Store: srv.Credentials})
+		srv.MCPRegistry = mcpregistry.New(pool, secretKey)
 
 		// Upgrade diagnostics: name the agents/workspaces still relying on the
 		// old "any workspace's credentials serve everyone" behavior.

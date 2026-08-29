@@ -101,6 +101,7 @@ cd weave
 cp deploy/.env.example deploy/.env
 # 编辑 deploy/.env:
 #   JWT_SECRET=$(openssl rand -hex 32)
+#   WEAVE_SECRET_KEY=$(openssl rand -hex 32)
 
 # 构建并启动
 docker compose up -d --build
@@ -109,6 +110,21 @@ docker compose up -d --build
 docker compose ps
 docker compose logs -f weave
 ```
+
+凭据主密钥只生成一次，并在数据库的整个生命周期内保持不变。服务管理器或挂载
+secret 的部署可以改用文件，避免把值直接放进服务端环境：
+
+```bash
+install -d -m 700 "$HOME/.config/weave"
+umask 077
+openssl rand -hex 32 > "$HOME/.config/weave/secret-key"
+unset WEAVE_SECRET_KEY
+export WEAVE_SECRET_KEY_FILE="$HOME/.config/weave/secret-key"
+```
+
+`WEAVE_SECRET_KEY` 与 `WEAVE_SECRET_KEY_FILE` 必须且只能配置一个。缺失、同时
+配置或内容无效时，服务端会拒绝启动。不要把任一设置传给 `weave mcp serve`；
+面向 Codex 的 MCP 进程只需要 `WEAVE_API_URL` 和 `WEAVE_API_KEY`。
 
 启动后：
 
@@ -220,6 +236,7 @@ claude mcp add --transport stdio \
 |---|---|---|
 | `POST` | `/v1/auth/login` | 用户名 / 密码登录 |
 | `GET` | `/v1/health` | 健康检查 |
+| `GET` | `/v1/ready` | 完整平台就绪检查 |
 | `GET/POST/PUT/DELETE` | `/v1/agents` | Agent 增删改查 |
 | `GET` | `/v1/agents/:name/topology` | 获取编译后的图拓扑 |
 | `POST` | `/v1/chat` | 对话（支持 `stream: true`、`profile`、`context`） |
@@ -239,6 +256,8 @@ claude mcp add --transport stdio \
 |---|---|---|---|
 | `DATABASE_URL` | 是 | — | PostgreSQL 连接字符串 |
 | `JWT_SECRET` | 是 | — | HS256 签名密钥 |
+| `WEAVE_SECRET_KEY` | 与密钥文件二选一 | — | 64 位十六进制或标准 base64 编码的 32 字节凭据主密钥 |
+| `WEAVE_SECRET_KEY_FILE` | 与直接密钥二选一 | — | 包含凭据主密钥的普通文件 |
 | `PORT` | 否 | `8080` | HTTP 监听端口 |
 | `WEAVE_DEV_MODE` | 否 | `false` | 开发端点开关（/v1/auth/token） |
 

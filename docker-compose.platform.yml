@@ -48,6 +48,11 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/v1/ready').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
     restart: unless-stopped
 
   # Remote runtime — opt-in (needs a runtime token created in the console
@@ -65,7 +70,8 @@ services:
         "--concurrency", "${WEAVE_RUNTIME_CONCURRENCY:-2}",
       ]
     depends_on:
-      - weave
+      weave:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:

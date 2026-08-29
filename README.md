@@ -109,6 +109,23 @@ export WEAVE_API_KEY="$(jq -r '.api_key' bootstrap.json)"
 weave serve
 ```
 
+Generate the credential key once and keep it stable for the lifetime of the
+database. Service managers and mounted-secret deployments can use a file
+instead of placing the value directly in the server environment:
+
+```bash
+install -d -m 700 "$HOME/.config/weave"
+umask 077
+openssl rand -hex 32 > "$HOME/.config/weave/secret-key"
+unset WEAVE_SECRET_KEY
+export WEAVE_SECRET_KEY_FILE="$HOME/.config/weave/secret-key"
+```
+
+Set exactly one of `WEAVE_SECRET_KEY` and `WEAVE_SECRET_KEY_FILE`. The server
+fails at startup if neither is configured, both are configured, or the key is
+invalid. Never pass either setting to `weave mcp serve`; the Codex-facing MCP
+process needs only `WEAVE_API_URL` and `WEAVE_API_KEY`.
+
 The first run creates an active `admin` user, generates a password when none
 was supplied, and creates one owner-bound API key with exactly
 `admin,org,chat,runs` scopes. The password and raw key are printed only when
@@ -277,6 +294,7 @@ claude mcp add --transport stdio \
 | `POST` | `/v1/auth/login` | Login with username/password |
 | `POST` | `/v1/auth/token` | Issue JWT token (dev mode) |
 | `GET` | `/v1/health` | Health check |
+| `GET` | `/v1/ready` | Full platform readiness check |
 | `GET/POST/PUT/DELETE` | `/v1/agents` | Agent CRUD |
 | `GET` | `/v1/agents/:name/topology` | Get compiled graph topology |
 | `POST` | `/v1/agents/:name/preview-prompt` | Preview assembled system prompt |
@@ -297,6 +315,8 @@ claude mcp add --transport stdio \
 |---|---|---|---|
 | `DATABASE_URL` | Yes | -- | PostgreSQL connection string |
 | `JWT_SECRET` | Yes | -- | HS256 signing key |
+| `WEAVE_SECRET_KEY` | One of key/key file | -- | 32-byte credential key as 64 hex characters or standard base64 |
+| `WEAVE_SECRET_KEY_FILE` | One of key/key file | -- | Regular file containing the credential key |
 | `PORT` | No | `8080` | HTTP listen port |
 | `WEAVE_DEV_MODE` | No | `false` | Enable dev endpoints (/v1/auth/token) |
 

@@ -39,7 +39,8 @@ func TestEnsureIsIdempotentAndExplicitlyResetsPasswordRealPG(t *testing.T) {
 		t.Fatalf("generated password cannot authenticate: %v", err)
 	}
 	for name, snippet := range first.MCP {
-		if !strings.Contains(snippet, "WEAVE_API_KEY") || strings.Contains(snippet, first.APIKey) {
+		if !strings.Contains(snippet, "WEAVE_API_KEY") || strings.Contains(snippet, first.APIKey) ||
+			strings.Contains(snippet, "WEAVE_SECRET_KEY") {
 			t.Errorf("%s snippet does not use environment indirection: %q", name, snippet)
 		}
 	}

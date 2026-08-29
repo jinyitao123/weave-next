@@ -11,12 +11,17 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
+	"strings"
 )
 
-const keySize = 32
+const (
+	keySize    = 32
+	keyEnv     = "WEAVE_SECRET_KEY"
+	keyFileEnv = "WEAVE_SECRET_KEY_FILE"
+)
 
 // BoundaryToken returns the HMAC token authorizing one agent MCP boundary.
-// It returns an empty string when WEAVE_SECRET_KEY is unavailable or invalid.
+// It returns an empty string when the credential key is unavailable or invalid.
 func BoundaryToken(tenant, agent string, idx int) string {
 	key, err := KeyFromEnv()
 	if err != nil {
@@ -39,13 +44,43 @@ func MCPGatewayToken(workspace, agent, serverID string) string {
 	return hex.EncodeToString(mac.Sum(nil))
 }
 
-// KeyFromEnv parses WEAVE_SECRET_KEY as 64-character hex or standard base64.
+// KeyFromEnv loads the credential encryption key from WEAVE_SECRET_KEY or
+// WEAVE_SECRET_KEY_FILE. The sources are mutually exclusive so deployment
+// mistakes cannot silently select a different key and strand existing
+// ciphertext.
 func KeyFromEnv() ([]byte, error) {
-	value := os.Getenv("WEAVE_SECRET_KEY")
-	if value == "" {
-		return nil, fmt.Errorf("credential encryption key not configured: WEAVE_SECRET_KEY is required")
+	value := strings.TrimSpace(os.Getenv(keyEnv))
+	path := strings.TrimSpace(os.Getenv(keyFileEnv))
+	source := keyEnv
+	if value != "" && path != "" {
+		return nil, fmt.Errorf("credential encryption key configuration is ambiguous: set only one of %s or %s", keyEnv, keyFileEnv)
 	}
+	if path != "" {
+		source = keyFileEnv
+		info, err := os.Stat(path)
+		if err != nil {
+			return nil, fmt.Errorf("read credential encryption key from %s: %w", keyFileEnv, err)
+		}
+		if !info.Mode().IsRegular() {
+			return nil, fmt.Errorf("read credential encryption key from %s: path must name a regular file", keyFileEnv)
+		}
+		contents, err := os.ReadFile(path)
+		if err != nil {
+			return nil, fmt.Errorf("read credential encryption key from %s: %w", keyFileEnv, err)
+		}
+		value = strings.TrimSpace(string(contents))
+	}
+	if value == "" {
+		return nil, fmt.Errorf("credential encryption key not configured: set %s or %s", keyEnv, keyFileEnv)
+	}
+	key, err := parseKey(value)
+	if err != nil {
+		return nil, fmt.Errorf("invalid credential encryption key from %s: %w", source, err)
+	}
+	return key, nil
+}
 
+func parseKey(value string) ([]byte, error) {
 	if len(value) == hex.EncodedLen(keySize) {
 		if key, err := hex.DecodeString(value); err == nil && len(key) == keySize {
 			return key, nil
@@ -53,10 +88,10 @@ func KeyFromEnv() ([]byte, error) {
 	}
 	key, err := base64.StdEncoding.DecodeString(value)
 	if err != nil {
-		return nil, fmt.Errorf("WEAVE_SECRET_KEY must be 64-character hex or base64-encoded 32 bytes: %w", err)
+		return nil, fmt.Errorf("credential encryption key must be 64-character hex or base64-encoded 32 bytes: %w", err)
 	}
 	if len(key) != keySize {
-		return nil, fmt.Errorf("WEAVE_SECRET_KEY must decode to 32 bytes, got %d", len(key))
+		return nil, fmt.Errorf("credential encryption key must decode to 32 bytes, got %d", len(key))
 	}
 	return key, nil
 }
