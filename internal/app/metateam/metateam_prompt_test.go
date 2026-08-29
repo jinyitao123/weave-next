@@ -1,9 +1,24 @@
 package metateam
 
 import (
+	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/jinyitao123/weave/internal/build/teambuild"
 )
+
+func TestRetiredConstructionRolesMatchBuildControlledResources(t *testing.T) {
+	configSchema := teambuild.ConfigEngineerOutputSchema()
+	if ConfigEngineerPrompt != teambuild.ConfigEngineerPrompt ||
+		!sameOutputSchemaCanonical(&configEngineerOutputSchema, &configSchema) {
+		t.Fatal("build-controlled config engineer drifted from the frozen registry role")
+	}
+	if GraphDesignerPrompt != teambuild.GraphDesignerPrompt ||
+		!reflect.DeepEqual(graphDesignerDefinition(), teambuild.GraphDesignerDefinition()) {
+		t.Fatal("build-controlled graph designer drifted from the frozen registry role")
+	}
+}
 
 func TestTeamArchitectPromptSeparatesCreateAndOptimizeProtocols(t *testing.T) {
 	createStart := strings.Index(TeamArchitectPrompt, "create 分支：")

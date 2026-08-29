@@ -86,6 +86,9 @@ type PhaseDeps struct {
 	Descriptors  *compiler.DescriptorRegistry
 	Fanout       *fanout.Store
 	Drafts       *teamforge.DraftRegistry
+	// ConstructionRoles optionally replaces the build-controlled config and
+	// graph executors; nil selects the production executor owned here.
+	ConstructionRoles teambuild.ConstructionRoleExecutor
 	// SemanticJudge optionally replaces the current metateam-backed executor.
 	// Nil keeps the M2b compatibility adapter; M2c supplies the build-native
 	// implementation through this seam.
@@ -625,11 +628,14 @@ func (p *ProductionPhases) Build(ctx context.Context, round RoundContext) error 
 	type buildRoleStep struct {
 		sourceRole  string
 		messageRole string
-		agentName   string
 	}
 	steps := []buildRoleStep{
-		{sourceRole: teambuild.SourceRoleConfigEngineer, messageRole: "config-engineer", agentName: teamforge.ConfigEngineerAgentName},
-		{sourceRole: teambuild.SourceRoleGraphDesigner, messageRole: "graph-designer", agentName: teamforge.GraphDesignerAgentName},
+		{sourceRole: teambuild.SourceRoleConfigEngineer, messageRole: "config-engineer"},
+		{sourceRole: teambuild.SourceRoleGraphDesigner, messageRole: "graph-designer"},
+	}
+	executor := p.Deps.ConstructionRoles
+	if executor == nil {
+		executor = buildConstructionRoleExecutor{phases: p, round: round}
 	}
 	previousOutput := "authorized_execution_plan=" + string(executionPlan)
 	for _, step := range steps {
@@ -664,13 +670,13 @@ func (p *ProductionPhases) Build(ctx context.Context, round RoundContext) error 
 			return fmt.Errorf("build phase: encode %s role context: %w", step.sourceRole, err)
 		}
 		message := previousOutput + "\nrole_context=" + string(roleContext)
-		result, err := p.runAgent(ctx, round, step.agentName, message, step.sourceRole, "")
+		result, err := executor.Execute(ctx, teambuild.ConstructionRoleRequest{
+			WorkspaceID: round.WorkspaceID, BuildRunID: round.BuildRunID,
+			RevisionNo: round.RoundNo, Run: round.Run,
+			SourceRole: step.sourceRole, Input: message,
+		})
 		if err != nil {
 			return fmt.Errorf("build phase: %s round %d: %w", step.sourceRole, round.RoundNo, err)
-		}
-		if err := p.accountBuildRunUsage(ctx, round, step.sourceRole, result.RunID); err != nil {
-			return fmt.Errorf("build phase: account %s round %d: %w",
-				step.sourceRole, round.RoundNo, err)
 		}
 		previousOutput = result.Output
 
@@ -695,6 +701,52 @@ func (p *ProductionPhases) Build(ctx context.Context, round RoundContext) error 
 	}
 	return nil
 }
+
+type buildConstructionRoleExecutor struct {
+	phases *ProductionPhases
+	round  RoundContext
+}
+
+func (e buildConstructionRoleExecutor) Execute(
+	ctx context.Context,
+	request teambuild.ConstructionRoleRequest,
+) (teambuild.ConstructionRoleResult, error) {
+	p := e.phases
+	if p == nil || request.WorkspaceID != e.round.WorkspaceID ||
+		request.BuildRunID != e.round.BuildRunID || request.RevisionNo != e.round.RoundNo {
+		return teambuild.ConstructionRoleResult{}, errors.New("construction role request identity is invalid")
+	}
+	rec, err := constructionRoleRecord(request.WorkspaceID, request.SourceRole)
+	if err != nil {
+		return teambuild.ConstructionRoleResult{}, err
+	}
+	result, err := p.runControlledAgent(
+		ctx, e.round, rec, request.Input, request.SourceRole, "",
+	)
+	if err != nil {
+		return teambuild.ConstructionRoleResult{}, err
+	}
+	if err := p.accountBuildRunUsage(ctx, e.round, request.SourceRole, result.RunID); err != nil {
+		return teambuild.ConstructionRoleResult{}, fmt.Errorf("account construction role: %w", err)
+	}
+	usage, err := p.Deps.Build.GetRoundBudgetUsage(
+		ctx, request.WorkspaceID, request.BuildRunID, request.RevisionNo,
+	)
+	if err != nil {
+		return teambuild.ConstructionRoleResult{}, fmt.Errorf("load construction role usage ledger: %w", err)
+	}
+	source := teambuild.BuildUsageSource{
+		WorkspaceID: request.WorkspaceID, BuildRunID: request.BuildRunID,
+		RoundNo: request.RevisionNo, SourceKind: teambuild.UsageSourceKindBuildAgent,
+		SourceRole: request.SourceRole, SourceRunID: result.RunID,
+	}
+	return teambuild.ConstructionRoleResult{
+		AttemptID: fmt.Sprintf("%s/%s/%d/%s", request.WorkspaceID, request.BuildRunID, request.RevisionNo, request.SourceRole),
+		RunID:     result.RunID, Output: result.Output, Usage: usage, UsageSource: source,
+	}, nil
+}
+
+var _ teambuild.ConstructionRoleExecutor = buildConstructionRoleExecutor{}
 
 // Baseline runs the optimize-mode baseline evaluation (T15C) before round 1's
 // Build: it freezes the pre-task published workflow content into a candidate,
@@ -1387,27 +1439,6 @@ func (p *ProductionPhases) reuseCandidateRun(
 		status = string(teamrun.StatusFailed)
 	}
 	return candidate, source.SourceRunID, status, nil
-}
-
-// runAgent executes one meta-team employee as an ordinary agent run with the
-// teamforge tool set injected through AgentRunner.InnerPlatformTools. The
-// admission-after usage attribution hook durably records the runtime-owned
-// run id (build_run, round, build_agent, role) before any graph work; a hook
-// failure fails the run closed inside loomruntime.
-func (p *ProductionPhases) runAgent(
-	ctx context.Context,
-	round RoundContext,
-	agentName, message, role, sourceReportHash string,
-) (mcphost.AgentRunResult, error) {
-	rec, err := p.Deps.Agents.Get(ctx, round.WorkspaceID, agentName)
-	if err != nil {
-		return mcphost.AgentRunResult{}, fmt.Errorf("meta-team employee %q: %w", agentName, err)
-	}
-	runner, err := p.agentRunner(ctx, round, rec, role, sourceReportHash)
-	if err != nil {
-		return mcphost.AgentRunResult{}, err
-	}
-	return runner.Run(ctx, agentName, message)
 }
 
 // runControlledAgent executes an in-memory build resource without resolving
@@ -3504,6 +3535,40 @@ func semanticJudgeRecord(workspaceID string) *registry.AgentRecord {
 		GraphDefinition: teambuild.SemanticJudgeDefinition(),
 		Tags:            []string{"system", "build-controlled"},
 	}
+}
+
+func constructionRoleRecord(workspaceID, sourceRole string) (*registry.AgentRecord, error) {
+	var name, displayName, prompt string
+	var definition *registry.GraphDefinition
+	var outputSchema *json.RawMessage
+	switch sourceRole {
+	case teambuild.SourceRoleConfigEngineer:
+		name, displayName, prompt = teambuild.ConfigEngineerResourceName, "配置工程师", teambuild.ConfigEngineerPrompt
+		definition = teambuild.ConfigEngineerDefinition()
+		schema := teambuild.ConfigEngineerOutputSchema()
+		outputSchema = &schema
+	case teambuild.SourceRoleGraphDesigner:
+		name, displayName, prompt = teambuild.GraphDesignerResourceName, "图设计师", teambuild.GraphDesignerPrompt
+		definition = teambuild.GraphDesignerDefinition()
+	default:
+		return nil, fmt.Errorf("unsupported construction source role %q", sourceRole)
+	}
+	return &registry.AgentRecord{
+		Name: name,
+		ID: uuid.NewSHA1(uuid.NameSpaceURL, []byte(
+			"weave/build/construction-role/v1\x00"+workspaceID+"\x00"+sourceRole,
+		)).String(),
+		WorkspaceID: workspaceID, Version: 1,
+		DisplayName: displayName, Role: "worker",
+		Visibility:      registry.VisibilityPlatform,
+		Spec:            stdlib.AgentSpec{Identity: stdlib.IdentitySpec{Core: prompt}},
+		MemoryConfig:    &registry.MemoryConfig{Enabled: false},
+		Compaction:      &registry.CompactionConfig{Enabled: false},
+		OutputSchema:    outputSchema,
+		GraphType:       "declarative",
+		GraphDefinition: definition,
+		Tags:            []string{"system", "build-controlled"},
+	}, nil
 }
 
 func semanticEvaluationAttemptOutput(

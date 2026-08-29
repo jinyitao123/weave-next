@@ -31,6 +31,11 @@ func TestMetaTeamSeedDisabledSkipsAndRetainsPlatformAssets(t *testing.T) {
 	if err := EnsureMetaTeamIfEnabled(ctx, reg, orgStore, workspaceID, true); err != nil {
 		t.Fatal(err)
 	}
+	for _, retired := range []string{ConfigEngineerName, GraphDesignerName} {
+		if _, err := reg.Get(ctx, workspaceID, retired); err == nil {
+			t.Fatalf("clean seed registered build-controlled role %q", retired)
+		}
+	}
 	before := make(map[string]int, 6)
 	for _, builtin := range metaTeamAgents() {
 		record, err := reg.Get(ctx, workspaceID, builtin.name)
@@ -45,6 +50,14 @@ func TestMetaTeamSeedDisabledSkipsAndRetainsPlatformAssets(t *testing.T) {
 	teams, err := orgStore.ListTeams(ctx, workspaceID)
 	if err != nil || len(teams) != 1 || teams[0].Name != TeamName {
 		t.Fatalf("seeded teams = %#v error = %v", teams, err)
+	}
+	workers, err := reg.ListTeamWorkers(ctx, workspaceID)
+	if err != nil || len(workers) != 1 {
+		t.Fatalf("seeded workers = %#v error = %v", workers, err)
+	}
+	evaluator, err := reg.Get(ctx, workspaceID, EvalDebuggerName)
+	if err != nil || workers[0].WorkerAgentID != evaluator.ID {
+		t.Fatalf("remaining meta worker = %#v evaluator = %#v error = %v", workers[0], evaluator, err)
 	}
 
 	if err := EnsureMetaTeamIfEnabled(ctx, reg, orgStore, workspaceID, false); err != nil {

@@ -2,7 +2,9 @@ package teamorch
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"os"
 	"reflect"
 	"strings"
@@ -10,11 +12,83 @@ import (
 
 	"github.com/jinyitao123/loom"
 	"github.com/jinyitao123/loom/contract"
+	"github.com/jinyitao123/loom/stdlib"
 	"github.com/jinyitao123/weave/internal/build/teambuild"
 	"github.com/jinyitao123/weave/internal/kernel/compiler"
 	"github.com/jinyitao123/weave/internal/kernel/declarative"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 )
+
+func TestConstructionControlledResourcesMatchFrozenLegacyExecution(t *testing.T) {
+	configRecord, err := constructionRoleRecord("workspace-1", teambuild.SourceRoleConfigEngineer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertFrozenResourceHash(t, "config prompt", teambuild.ConfigEngineerPrompt, "3bd1336856ba4cae1c8480c8e29920b1951244b05c4d640bfd18ae9abd84fea9")
+	assertFrozenJSONHash(t, "config schema", teambuild.ConfigEngineerOutputSchema(), "e401319abe813d98d7a85b1dfad16b7a558eb57ca8be444333cb0b8c0dab4b7d")
+	assertFrozenDefinitionHash(t, "config graph", configRecord.GraphDefinition, "ad2878087ea66e4894edddf255cd188bd768b71473bcab972c819003b03c6dd4")
+	legacyConfig := &registry.AgentRecord{
+		Name: "__config_engineer", Model: "", Version: 1,
+		Spec:         stdlib.AgentSpec{Identity: stdlib.IdentitySpec{Core: teambuild.ConfigEngineerPrompt}},
+		OutputSchema: configRecord.OutputSchema,
+		Compaction:   &registry.CompactionConfig{Enabled: false},
+	}
+	configOutput := `{"status":"CONFIG_OK","corrections":[],"missing_facts":[]}`
+	oldOutput, oldRequests := runFrozenRecord(t, legacyConfig, loom.State{"last_user_message": "authorized plan"}, configOutput)
+	newOutput, newRequests := runFrozenRecord(t, configRecord, loom.State{"last_user_message": "authorized plan"}, configOutput)
+	if oldOutput != newOutput || oldOutput != configOutput || !reflect.DeepEqual(oldRequests, newRequests) {
+		t.Fatalf("controlled config engineer transport drifted\nlegacy=%#v\ncontrolled=%#v", oldRequests, newRequests)
+	}
+
+	graphRecord, err := constructionRoleRecord("workspace-1", teambuild.SourceRoleGraphDesigner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertFrozenResourceHash(t, "graph prompt", teambuild.GraphDesignerPrompt, "6f34a874cf8f11632d30fa4f4fe84d3efb84bed1f3b45ce14c22aa424ae87669")
+	assertFrozenDefinitionHash(t, "graph definition", graphRecord.GraphDefinition, "70c47c71001fa171422e7c875f031020f21b77de60e6e485b4a97683f87b4301")
+	graphState := loom.State{
+		"last_user_message": "authorized plan", "meta_graph_planning_allowed": true,
+		"meta_graph_declarative_planning": true,
+	}
+	graphOutput := `{"schema_version":1}`
+	legacyGraph := *graphRecord
+	legacyGraph.ID = "legacy-registry-record"
+	legacyOutput, legacyRequests := runFrozenRecord(t, &legacyGraph, graphState, graphOutput)
+	controlledOutput, controlledRequests := runFrozenRecord(t, graphRecord, graphState, graphOutput)
+	if legacyOutput != controlledOutput || legacyOutput != graphOutput || !reflect.DeepEqual(legacyRequests, controlledRequests) {
+		t.Fatalf("controlled graph designer transport drifted\nlegacy=%#v\ncontrolled=%#v", legacyRequests, controlledRequests)
+	}
+}
+
+func assertFrozenResourceHash(t *testing.T, name, value, want string) {
+	t.Helper()
+	got := fmt.Sprintf("%x", sha256.Sum256([]byte(value)))
+	if got != want {
+		t.Fatalf("%s hash = %s, want %s", name, got, want)
+	}
+}
+
+func assertFrozenJSONHash(t *testing.T, name string, value json.RawMessage, want string) {
+	t.Helper()
+	var decoded any
+	if err := json.Unmarshal(value, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(decoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertFrozenResourceHash(t, name, string(encoded), want)
+}
+
+func assertFrozenDefinitionHash(t *testing.T, name string, definition *registry.GraphDefinition, want string) {
+	t.Helper()
+	encoded, err := json.Marshal(definition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertFrozenResourceHash(t, name, string(encoded), want)
+}
 
 func TestSemanticJudgeControlledResourceMatchesFrozenLegacyExecution(t *testing.T) {
 	prompt, err := os.ReadFile("testdata/semantic_judge_prompt_v1.txt")
@@ -86,6 +160,29 @@ func runFrozenControlledGraph(t *testing.T, definition *registry.GraphDefinition
 	}
 	value, _ := result.State["output"].(string)
 	return value, llm.requests
+}
+
+func runFrozenRecord(t *testing.T, record *registry.AgentRecord, state loom.State, output string) (string, []contract.ChatRequest) {
+	t.Helper()
+	declarative.Register()
+	llm := &capturingJudgeLLM{output: output}
+	graph, err := compiler.CompileAgent("workspace-1", record, llm, emptyConstructionTools{}, compiler.CompileOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := graph.Run(context.Background(), state, loom.NewMemStore())
+	if err != nil {
+		t.Fatal(err)
+	}
+	value, _ := result.State["output"].(string)
+	return value, llm.requests
+}
+
+type emptyConstructionTools struct{}
+
+func (emptyConstructionTools) ListTools(context.Context) ([]contract.ToolDef, error) { return nil, nil }
+func (emptyConstructionTools) Dispatch(context.Context, contract.ToolCall) (*contract.ToolResult, error) {
+	return nil, fmt.Errorf("unexpected tool call")
 }
 
 type capturingJudgeLLM struct {

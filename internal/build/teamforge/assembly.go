@@ -16,8 +16,8 @@ import (
 // records; build code must not import upward to discover the protocol names.
 const (
 	TeamArchitectAgentName  = "__team_architect"
-	ConfigEngineerAgentName = "__config_engineer"
-	GraphDesignerAgentName  = "__graph_designer_tf"
+	ConfigEngineerAgentName = teambuild.ConfigEngineerResourceName
+	GraphDesignerAgentName  = teambuild.GraphDesignerResourceName
 	EvalDebuggerAgentName   = "__eval_debugger"
 )
 

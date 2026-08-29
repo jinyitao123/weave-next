@@ -1,5 +1,5 @@
 // Package metateam seeds the platform's built-in meta team ("元团队") for one
-// workspace: four guide AgentRecords and one active Team with its roster,
+// workspace: two remaining guide AgentRecords and one active Team with its roster,
 // instantiated per workspace from the shared template (team-forge
 // design plan §4). All assets carry the reserved "__" name prefix and the
 // ["system"] tag, which marks them as platform-built: the teamforge write
@@ -154,11 +154,6 @@ type builtinMetaAgent struct {
 func metaTeamAgents() []builtinMetaAgent {
 	return []builtinMetaAgent{
 		{name: TeamArchitectName, displayName: "团队架构师", role: "avatar", prompt: TeamArchitectPrompt, outputSchema: &teamArchitectOutputSchema},
-		{name: ConfigEngineerName, displayName: "配置工程师", role: "worker", prompt: ConfigEngineerPrompt, outputSchema: &configEngineerOutputSchema},
-		{
-			name: GraphDesignerName, displayName: "图设计师", role: "worker",
-			prompt: GraphDesignerPrompt, graphDefinition: graphDesignerDefinition,
-		},
 		{
 			name: EvalDebuggerName, displayName: "评测调试师", role: "worker",
 			prompt: EvalDebuggerPrompt, graphDefinition: evalDebuggerDefinition,
@@ -387,7 +382,7 @@ func EnsureMetaTeam(
 		return errors.New("meta team seed stores are unavailable")
 	}
 
-	agents := make(map[string]*registry.AgentRecord, 4)
+	agents := make(map[string]*registry.AgentRecord, 2)
 	for _, builtin := range metaTeamAgents() {
 		rec, err := ensureMetaAgent(ctx, reg, workspaceID, builtin)
 		if err != nil {
@@ -450,24 +445,6 @@ func EnsureMetaTeamIfEnabled(
 
 func metaTeamRoster(agents map[string]*registry.AgentRecord) []org.InitialTeamWorker {
 	return []org.InitialTeamWorker{
-		{
-			WorkerAgentID:      agents[ConfigEngineerName].ID,
-			Duty:               "补齐 TeamBlueprint 的 Agent、Team 与 Roster 配置语义",
-			WhenToUse:          "规划期需要补齐 members/roster 等字段或定向生成 BlueprintPatch 时",
-			ContextInstruction: "只做只读事实核查并输出 Blueprint 或 BlueprintPatch；不写正式资产，不触碰任何 __ 前缀内置资产",
-			AllowedKinds:       []string{"consult", "dispatch"},
-			DefaultKind:        "dispatch",
-			ResultRequirement:  "交付字段完整、有事实依据的 Blueprint 或最小 BlueprintPatch",
-		},
-		{
-			WorkerAgentID:      agents[GraphDesignerName].ID,
-			Duty:               "模板不命中时设计并提交 declarative_v1 spec，并执行保留 custom_spec 的定向语义修订",
-			WhenToUse:          "固定模板无法表达业务拓扑，或已有 custom_spec 收到可信 targeted BlueprintPatch 时",
-			ContextInstruction: "模板命中时不参与；declarative_v1 只经专用规划工具提交，由平台编译器施工；员工内部图不承担跨员工编排",
-			AllowedKinds:       []string{"consult", "dispatch"},
-			DefaultKind:        "dispatch",
-			ResultRequirement:  "提交通过校验的 DeclarativeWorkflowSpecV1，或如实输出 NOT_APPLICABLE/BLOCKED",
-		},
 		{
 			WorkerAgentID:      agents[EvalDebuggerName].ID,
 			Duty:               "按冻结评测合同执行测试并产出 TypedDiagnosis",

@@ -11,11 +11,11 @@ import (
 	"github.com/jinyitao123/loom"
 	"github.com/jinyitao123/loom/contract"
 	"github.com/jinyitao123/loom/stdlib"
+	"github.com/jinyitao123/weave/internal/base/streamctx"
 	"github.com/jinyitao123/weave/internal/kernel/compiler"
 	"github.com/jinyitao123/weave/internal/kernel/memory"
 	"github.com/jinyitao123/weave/internal/kernel/otel"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
-	"github.com/jinyitao123/weave/internal/base/streamctx"
 )
 
 // Register registers the declarative graph factory with the compiler.
@@ -134,11 +134,18 @@ func buildChatStep(config map[string]any, llm contract.LLM, tools contract.ToolD
 	model := getStr(config, "model", rec.Model)
 	sysPrompt := getStr(config, "system_prompt", "")
 	maxIter := getInt(config, "max_iterations", 20)
+	var outputSchema *json.RawMessage
+	if rec.OutputSchema != nil {
+		schema := append(json.RawMessage(nil), (*rec.OutputSchema)...)
+		outputSchema = &schema
+	}
 
 	return stdlib.NewToolLoopStep(llm, tools, stdlib.ToolLoopOpts{
 		Model:         model,
 		SystemPrompt:  sysPrompt,
 		MaxIterations: maxIter,
+		MaxTokens:     rec.MaxOutputTokens,
+		OutputSchema:  outputSchema,
 	})
 }
 
