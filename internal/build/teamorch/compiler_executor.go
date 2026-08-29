@@ -727,14 +727,7 @@ func (p *ProductionPhases) verifyEvaluationWorkflowDraft(
 		return OperationResult{}, &OperationError{Class: teameval.FailureClassRuntimeInfrastructure,
 			Code: "evaluation_workflow_draft_read_failed", Retryable: true, Cause: err}
 	}
-	raw, err := json.Marshal(struct {
-		Trigger json.RawMessage `json:"trigger"`
-		Graph   json.RawMessage `json:"graph"`
-	}{version.TriggerConfig, version.GraphDefinition})
-	if err != nil {
-		return OperationResult{}, err
-	}
-	actualHash, err := frozen.HashCanonicalJSON(raw)
+	actualHash, err := workflowDraftContentHash(version.TriggerConfig, version.GraphDefinition)
 	if err != nil {
 		return OperationResult{}, err
 	}
@@ -844,10 +837,14 @@ func declarativeWorkflowCompileResult(
 }
 
 func declarativeCompiledGraphHash(spec teamforge.FrozenDeclarativeWorkflowSpecV1) (string, error) {
+	return workflowDraftContentHash(spec.TriggerConfig, spec.GraphDefinition)
+}
+
+func workflowDraftContentHash(trigger, graph json.RawMessage) (string, error) {
 	raw, err := json.Marshal(struct {
 		Trigger json.RawMessage `json:"trigger_config"`
 		Graph   json.RawMessage `json:"graph_definition"`
-	}{Trigger: spec.TriggerConfig, Graph: spec.GraphDefinition})
+	}{Trigger: trigger, Graph: graph})
 	if err != nil {
 		return "", err
 	}
