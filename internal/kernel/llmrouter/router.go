@@ -207,6 +207,9 @@ func (r *Router) resolve(model string) (contract.LLM, error) {
 
 // Chat dispatches to the correct provider based on req.Model.
 func (r *Router) Chat(ctx context.Context, req contract.ChatRequest) (*contract.ChatResponse, error) {
+	if req.Model == "" {
+		req.Model = r.fallback
+	}
 	provider, err := r.resolve(req.Model)
 	if err != nil {
 		return nil, err
@@ -216,6 +219,9 @@ func (r *Router) Chat(ctx context.Context, req contract.ChatRequest) (*contract.
 
 // Stream dispatches to the correct provider based on req.Model.
 func (r *Router) Stream(ctx context.Context, req contract.ChatRequest) (<-chan contract.StreamChunk, error) {
+	if req.Model == "" {
+		req.Model = r.fallback
+	}
 	provider, err := r.resolve(req.Model)
 	if err != nil {
 		return nil, err
