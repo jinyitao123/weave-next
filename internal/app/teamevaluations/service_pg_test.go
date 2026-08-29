@@ -334,7 +334,10 @@ func newEvaluationPGFixture(t *testing.T) *evaluationPGFixture {
 		},
 		RevisionPolicy: teambuild.BlueprintRevisionPolicyV1{MaxRevisions: 1, AllowedPatchPaths: []string{"/purpose"}},
 	}
-	workflowID := teambuild.FirstOptimizeWorkflowID(created.Team.ID)
+	// Template instantiation is allowed to preserve a template-defined workflow
+	// identity. Evaluation must freeze that real draft instead of substituting
+	// FirstOptimizeWorkflowID(teamID).
+	workflowID := prefix + "-template-workflow"
 	compiled, problems := teamforge.CompileWorkflowBlueprint(teamforge.WorkflowBlueprint{
 		Template: teamforge.WorkflowBlueprintDeliveryRework, LeadInstruction: "协调真实业务交付",
 		Primary:       &teamforge.WorkflowBlueprintWorker{AgentID: primary.ID, AgentVersion: 1, ResultRequirement: "形成完整初稿"},

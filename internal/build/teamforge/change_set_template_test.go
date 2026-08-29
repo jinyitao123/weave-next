@@ -52,13 +52,13 @@ func TestEvaluationChangeSetContainsNoAssetMutation(t *testing.T) {
 		refs = append(refs, member.StableRef)
 	}
 	baseline := TeamBuildBaselineV1{
-		SchemaVersion: ChangeSetSchemaVersionV1,
+		SchemaVersion:      ChangeSetSchemaVersionV1,
 		SourceSnapshotHash: strings.Repeat("a", 64), Mode: teambuild.ModeOptimize, TeamID: "team-1",
-		Team: &BaselineTeamV1{Target: "team-1", Version: 1, Purpose: blueprint.Purpose, LeadRef: blueprint.LeadRef},
+		Team:    &BaselineTeamV1{Target: "team-1", Version: 1, Purpose: blueprint.Purpose, LeadRef: blueprint.LeadRef},
 		Members: members,
-		Roster: &BaselineRosterV1{Version: 1, LeadRef: blueprint.LeadRef, MemberRefs: refs},
+		Roster:  &BaselineRosterV1{Version: 1, LeadRef: blueprint.LeadRef, MemberRefs: refs},
 	}
-	changeSet, err := CompileEvaluationChangeSetV1(baseline, blueprint, nil)
+	changeSet, err := CompileEvaluationChangeSetV1(baseline, blueprint, nil, "workflow-existing")
 	if err != nil {
 		t.Fatalf("CompileEvaluationChangeSetV1() error = %v", err)
 	}

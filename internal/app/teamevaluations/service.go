@@ -297,10 +297,14 @@ func (s *Service) ensureRevision(
 	if err != nil {
 		return teambuild.BlueprintRevision{}, fmt.Errorf("project evaluation baseline: %w", err)
 	}
+	workflowTarget, err := evaluationWorkflowTarget(*preview.Snapshot)
+	if err != nil {
+		return teambuild.BlueprintRevision{}, err
+	}
 	var changeSet teamforge.ChangeSetV1
 	switch blueprint.Workflow.Mode {
 	case teambuild.BlueprintWorkflowTemplate:
-		changeSet, err = teamforge.CompileEvaluationChangeSetV1(baseline, blueprint, nil)
+		changeSet, err = teamforge.CompileEvaluationChangeSetV1(baseline, blueprint, nil, workflowTarget)
 	case teambuild.BlueprintWorkflowDeclarativeV1:
 		if s.declarativeValidate == nil {
 			return teambuild.BlueprintRevision{}, ErrUnavailable
@@ -331,7 +335,7 @@ func (s *Service) ensureRevision(
 			Mode: teambuild.ModeOptimize, Baseline: preview.Snapshot,
 		}, blueprint)
 		if err == nil {
-			changeSet, err = teamforge.CompileEvaluationChangeSetV1(baseline, blueprint, &frozen)
+			changeSet, err = teamforge.CompileEvaluationChangeSetV1(baseline, blueprint, &frozen, workflowTarget)
 		}
 	default:
 		return teambuild.BlueprintRevision{}, fmt.Errorf("unsupported template workflow lineage %q", blueprint.Workflow.Mode)
@@ -361,6 +365,23 @@ func (s *Service) ensureRevision(
 		BaselineHash: preview.BaselineHash, BaselineCapturedAt: preview.CapturedAt,
 		EvaluationContractHash: run.ContractHash,
 	})
+}
+
+func evaluationWorkflowTarget(snapshot teambuild.BaselineSnapshot) (string, error) {
+	target := ""
+	for _, workflowRef := range snapshot.Workflows {
+		if workflowRef.Status != workflow.WorkflowStatusActive || workflowRef.Draft == nil {
+			continue
+		}
+		if target != "" {
+			return "", errors.New("evaluation baseline requires exactly one active draft workflow")
+		}
+		target = strings.TrimSpace(workflowRef.WorkflowID)
+	}
+	if target == "" {
+		return "", errors.New("evaluation baseline has no active draft workflow")
+	}
+	return target, nil
 }
 
 func evaluationBlueprint(lineage teambuild.BlueprintRevision, teamID string) (teambuild.TeamBlueprintV1, error) {

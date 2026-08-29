@@ -504,6 +504,7 @@ func CompileEvaluationChangeSetV1(
 	baseline TeamBuildBaselineV1,
 	blueprint teambuild.TeamBlueprintV1,
 	declarative *FrozenDeclarativeWorkflowSpecV1,
+	workflowTarget string,
 ) (ChangeSetV1, error) {
 	if blueprint.Mode != teambuild.ModeOptimize || baseline.Mode != teambuild.ModeOptimize || baseline.Team == nil {
 		return ChangeSetV1{}, errors.New("evaluation ChangeSet requires an optimize blueprint and baseline")
@@ -531,9 +532,14 @@ func CompileEvaluationChangeSetV1(
 	if err != nil {
 		return ChangeSetV1{}, err
 	}
-	workflowTarget := teambuild.FirstOptimizeWorkflowID(blueprint.TeamID)
+	workflowTarget = strings.TrimSpace(workflowTarget)
+	if workflowTarget == "" {
+		return ChangeSetV1{}, errors.New("evaluation ChangeSet requires a frozen workflow target")
+	}
 	if baseline.Workflow != nil {
-		workflowTarget = strings.TrimSpace(baseline.Workflow.Target)
+		if publishedTarget := strings.TrimSpace(baseline.Workflow.Target); publishedTarget != workflowTarget {
+			return ChangeSetV1{}, errors.New("evaluation workflow target does not match published baseline")
+		}
 	}
 	verifyWorkflow, err := newChangeOperationWithCompilerV1(
 		OperationWorkflowCompile, workflowTarget, nil, workflowInput, nil,

@@ -431,18 +431,20 @@ func (s *Store) expandOptimizeAssetScope(
 		}
 	}
 	scope.Refs = canonicalRefs
-	hasPublishedWorkflow := false
-	for _, workflow := range teamWorkflows {
-		if workflow.PublishedVersion != nil {
-			scope.Refs = appendAssetRef(scope.Refs, AssetRef{Kind: "workflow", ID: workflow.ID})
-			hasPublishedWorkflow = true
+	hasActiveWorkflow := false
+	for _, workflowRow := range teamWorkflows {
+		if workflowRow.Status != workflow.WorkflowStatusActive {
+			continue
 		}
+		scope.Refs = appendAssetRef(scope.Refs, AssetRef{Kind: "workflow", ID: workflowRow.ID})
+		hasActiveWorkflow = true
 	}
-	// Compiler baselines contain only published workflows. Draft-only workflow
-	// identities therefore do not provide an update target: remove any client
-	// draft refs above and authorize the same deterministic first-published
-	// workflow identity the compiler will emit.
-	if !hasPublishedWorkflow {
+	// Baseline capture freezes both published and draft workflow facts. Preserve
+	// an existing draft-only identity so post-template evaluation verifies and
+	// publishes the workflow that was actually instantiated. Only reserve the
+	// deterministic first-workflow slot when the team truly has no active
+	// workflow yet.
+	if !hasActiveWorkflow {
 		scope.Refs = appendAssetRef(scope.Refs, AssetRef{
 			Kind: "workflow",
 			ID:   FirstOptimizeWorkflowID(brief.TeamID),
