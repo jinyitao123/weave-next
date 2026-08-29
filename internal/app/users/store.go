@@ -195,6 +195,34 @@ func (s *Store) UpdatePassword(ctx context.Context, tenantID, id, password strin
 	return nil
 }
 
+// EnsureAdmin activates an existing user as a workspace administrator and
+// converges the matching membership to owner without changing the password.
+func (s *Store) EnsureAdmin(ctx context.Context, tenantID, id string) (*User, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+	tag, err := tx.Exec(ctx, `UPDATE weave_users
+		SET role='admin', disabled=false, updated_at=NOW()
+		WHERE id=$1 AND tenant_id=$2`, id, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	if tag.RowsAffected() != 1 {
+		return nil, fmt.Errorf("user %q not found", id)
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO weave_members(workspace_id,user_id,role)
+		VALUES($1,$2,'owner')
+		ON CONFLICT(workspace_id,user_id) DO UPDATE SET role='owner'`, tenantID, id); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	return s.GetByID(ctx, tenantID, id)
+}
+
 // Delete removes a user by ID.
 func (s *Store) Delete(ctx context.Context, tenantID, id string) error {
 	tx, err := s.pool.Begin(ctx)

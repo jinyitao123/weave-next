@@ -92,6 +92,48 @@ Three properties the whole design is built to guarantee:
 
 ## Quickstart
 
+### Headless quickstart (N-1 draft)
+
+Weave can be initialized and operated without opening the Console. Start
+PostgreSQL, set the server secrets, and run the idempotent bootstrap command
+before starting the API process:
+
+```bash
+export DATABASE_URL='postgres://weave:weave@127.0.0.1:5432/weave?sslmode=disable'
+export JWT_SECRET="$(openssl rand -hex 32)"
+export WEAVE_SECRET_KEY="$(openssl rand -hex 32)"
+export WEAVE_API_URL='http://127.0.0.1:8080'
+
+weave bootstrap > bootstrap.json
+export WEAVE_API_KEY="$(jq -r '.api_key' bootstrap.json)"
+weave serve
+```
+
+The first run creates an active `admin` user, generates a password when none
+was supplied, and creates one owner-bound API key with exactly
+`admin,org,chat,runs` scopes. The password and raw key are printed only when
+created. A repeat run keeps both unchanged. Use
+`weave bootstrap --reset-password --password '<new value>'` for an explicit
+password reset; if the flag is supplied without a password, a new one is
+generated. `bootstrap.json` also contains ready-to-copy Codex TOML and Claude
+Code registration snippets; both read the key from `WEAVE_API_KEY` instead of
+embedding it in configuration.
+
+After registering `weave mcp serve`, the MCP surface covers provider and API
+key setup, runtime registration, team creation/status, human review, saved
+deliverables, and usage. A custom declarative workflow can also be passed by
+the CLI:
+
+```bash
+weave team up -f team.yaml --declarative-spec workflow.json \
+  --idempotency-key 2bab1728-9dc0-4b61-a1f5-115fcaaf8e08
+```
+
+Keep `bootstrap.json` private and delete it after copying the generated
+credentials. On a later bootstrap run, `.api_key` is absent because raw keys
+are not recoverable; use the existing exported key or create a replacement
+through `apikey_create`.
+
 ### Docker Compose (recommended)
 
 ```bash

@@ -39,6 +39,15 @@ func (s *Server) handleGetFinalDeliverable(c echo.Context) error {
 	if err != nil {
 		return finalDeliverableFailure(c, err)
 	}
+	if c.QueryParam("path") != "" || c.QueryParam("offset") != "" || c.QueryParam("limit") != "" {
+		var content any
+		decoder := json.NewDecoder(strings.NewReader(item.Content))
+		decoder.UseNumber()
+		if err := decoder.Decode(&content); err != nil {
+			content = item.Content
+		}
+		return writeSelectedJSONResponse(c, content, "deliverable")
+	}
 	return c.JSON(http.StatusOK, item)
 }
 

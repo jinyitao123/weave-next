@@ -214,12 +214,16 @@ func (d *ToolDispatcher) Dispatch(ctx context.Context, call contract.ToolCall) (
 		return documentResult(call.ID, result, err), nil
 	case "deliverable_get":
 		var input struct {
-			ID string `json:"id"`
+			ID     string `json:"id"`
+			Path   string `json:"path"`
+			Offset int    `json:"offset"`
+			Limit  int    `json:"limit"`
 		}
-		if err := decodeArguments(call.Args, &input); err != nil || strings.TrimSpace(input.ID) == "" {
+		if err := decodeArguments(call.Args, &input); err != nil || strings.TrimSpace(input.ID) == "" ||
+			input.Offset < 0 || input.Limit < 0 || input.Limit > 10_000 || (input.Offset > 0 && input.Limit == 0) {
 			return toolError(call.ID, "invalid_arguments"), nil
 		}
-		result, err := d.client.DeliverableGet(ctx, input.ID)
+		result, err := d.client.DeliverableGetPath(ctx, input.ID, input.Path, input.Offset, input.Limit)
 		return documentResult(call.ID, result, err), nil
 	default:
 		return toolError(call.ID, "unknown_tool"), nil
@@ -384,8 +388,8 @@ var toolDefinitions = []contract.ToolDef{
 	},
 	{
 		Name: "deliverable_get", ReadOnly: true,
-		Description: "Get one saved deliverable by exact id. Requires chat access. Returns its metadata and content. Errors: final_deliverable_not_found, http_401, http_403.",
-		InputSchema: json.RawMessage(`{"type":"object","properties":{"id":{"type":"string"}},"required":["id"],"additionalProperties":false}`),
+		Description: "Get one saved deliverable by exact id. Requires chat access. For JSON content, path is an RFC 6901 pointer and returns the selected value itself; use offset and limit to page selected strings, arrays, or objects. Errors: final_deliverable_not_found, invalid_json_pointer, deliverable_value_not_found, deliverable_value_too_large, http_401, http_403.",
+		InputSchema: json.RawMessage(`{"type":"object","properties":{"id":{"type":"string"},"path":{"type":"string"},"offset":{"type":"integer","minimum":0},"limit":{"type":"integer","minimum":1,"maximum":10000}},"required":["id"],"additionalProperties":false}`),
 	},
 }
 

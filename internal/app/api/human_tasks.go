@@ -139,13 +139,17 @@ func (s *Server) handleGetHumanTask(c echo.Context) error {
 	if err := decoder.Decode(&value); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "decode human task detail"})
 	}
+	return writeSelectedJSONResponse(c, value, "human_task")
+}
+
+func writeSelectedJSONResponse(c echo.Context, document any, resource string) error {
 	path := c.QueryParam("path")
-	value, err = resolveJSONPointer(value, path)
+	value, err := resolveJSONPointer(document, path)
 	if errors.Is(err, errInvalidJSONPointer) {
 		return c.JSON(http.StatusBadRequest, map[string]string{"code": "invalid_json_pointer", "error": "path must be an RFC 6901 JSON pointer"})
 	}
 	if errors.Is(err, errJSONPointerMissing) {
-		return c.JSON(http.StatusNotFound, map[string]string{"code": "human_task_value_not_found", "error": "selected value not found"})
+		return c.JSON(http.StatusNotFound, map[string]string{"code": resource + "_value_not_found", "error": "selected value not found"})
 	}
 	offset, limit, paged, err := parseHumanTaskPage(c.QueryParam("offset"), c.QueryParam("limit"))
 	if err != nil {
@@ -163,11 +167,11 @@ func (s *Server) handleGetHumanTask(c echo.Context) error {
 	}
 	selected, err := json.Marshal(value)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "encode selected human task value"})
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "encode selected JSON value"})
 	}
 	if len(selected) > humanTaskGetMaxBytes {
 		return c.JSON(http.StatusRequestEntityTooLarge, map[string]any{
-			"code": "human_task_value_too_large", "error": "selected JSON value exceeds the response limit",
+			"code": resource + "_value_too_large", "error": "selected JSON value exceeds the response limit",
 			"max_bytes":             humanTaskGetMaxBytes,
 			"pagination_parameters": map[string]int{"offset": 0, "limit": 1000},
 		})

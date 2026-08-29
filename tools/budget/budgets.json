@@ -2,5 +2,5 @@
   "base": {"lines": 18490, "packages": 12, "external_dependencies": 4},
   "kernel": {"lines": 59550, "packages": 32, "external_dependencies": 3},
   "build": {"lines": 36653, "packages": 7, "external_dependencies": 4},
-  "app": {"lines": 39350, "packages": 18, "external_dependencies": 6}
+  "app": {"lines": 39702, "packages": 19, "external_dependencies": 6}
 }

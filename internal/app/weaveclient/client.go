@@ -307,7 +307,23 @@ func (c *Client) DeliverableList(ctx context.Context, limit, offset int) (json.R
 }
 
 func (c *Client) DeliverableGet(ctx context.Context, id string) (json.RawMessage, error) {
-	return c.getJSON(ctx, "/v1/deliverables/"+url.PathEscape(strings.TrimSpace(id)))
+	return c.DeliverableGetPath(ctx, id, "", 0, 0)
+}
+
+func (c *Client) DeliverableGetPath(ctx context.Context, id, pointer string, offset, limit int) (json.RawMessage, error) {
+	query := url.Values{}
+	if pointer != "" {
+		query.Set("path", pointer)
+	}
+	if limit > 0 {
+		query.Set("offset", strconv.Itoa(offset))
+		query.Set("limit", strconv.Itoa(limit))
+	}
+	path := "/v1/deliverables/" + url.PathEscape(strings.TrimSpace(id))
+	if len(query) != 0 {
+		path += "?" + query.Encode()
+	}
+	return c.getJSON(ctx, path)
 }
 
 type teamDetail struct {

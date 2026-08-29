@@ -152,6 +152,7 @@ func TestReadEndpointsAndResumeAreThinHTTPMappings(t *testing.T) {
 	})
 	_, _ = client.DeliverableList(ctx, 20, 5)
 	_, _ = client.DeliverableGet(ctx, "delivery-1")
+	_, _ = client.DeliverableGetPath(ctx, "delivery-1", "/chapters/one", 0, 25)
 	_, _ = client.Resume(ctx, ResumeRequest{RunID: "run-1", Agent: "lead", Input: map[string]any{"answer": "yes"}})
 	want := []string{
 		"GET /v1/team-templates/samples", "POST /v1/teams:from-template",
@@ -164,7 +165,8 @@ func TestReadEndpointsAndResumeAreThinHTTPMappings(t *testing.T) {
 		"GET /v1/human-tasks/human-1?limit=50&offset=10&path=%2Fpredecessor_outputs%2Fchapter",
 		"POST /v1/human-tasks/human-1/complete",
 		"GET /v1/deliverables?limit=20&offset=5",
-		"GET /v1/deliverables/delivery-1", "POST /v1/resume",
+		"GET /v1/deliverables/delivery-1",
+		"GET /v1/deliverables/delivery-1?limit=25&offset=0&path=%2Fchapters%2Fone", "POST /v1/resume",
 	}
 	for _, key := range want {
 		if !seen[key] {
