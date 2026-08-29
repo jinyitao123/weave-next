@@ -3,7 +3,6 @@ package teambuild_test
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -16,7 +15,7 @@ import (
 	"github.com/jinyitao123/weave/internal/build/teamtemplate"
 )
 
-func TestTemplateAutoAuthorizationBindsRevisionAndEnforcesConcurrency(t *testing.T) {
+func TestTemplateAutoAuthorizationBindsRevisionWithoutMaterializationQuota(t *testing.T) {
 	ctx := context.Background()
 	pool := testutil.PostgresPool(t)
 	if err := db.Migrate(ctx, pool); err != nil {
@@ -36,7 +35,7 @@ func TestTemplateAutoAuthorizationBindsRevisionAndEnforcesConcurrency(t *testing
 	if authorized.Authorization.Authority != teambuild.AuthorizationTemplateAuto ||
 		authorized.Authorization.RevisionToken == nil || *authorized.Authorization.RevisionToken != token ||
 		authorized.Authorization.DecisionSubject != teambuild.TemplateAuthorizerSubject ||
-		!strings.Contains(authorized.Authorization.DecisionReason, "within automatic threshold") ||
+		!strings.Contains(authorized.Authorization.DecisionReason, "declared budget applies only to later team runs") ||
 		authorized.ConfirmedBy != "user-1" {
 		t.Fatalf("authorized run = %#v", authorized)
 	}
@@ -47,13 +46,12 @@ func TestTemplateAutoAuthorizationBindsRevisionAndEnforcesConcurrency(t *testing
 	}
 
 	second, secondToken := createTemplateAuthorizationRun(t, ctx, store, "workspace-1", "auto-2", 2)
-	_, _, err = store.AuthorizeTemplateBuildRun(ctx, second.WorkspaceID, second.BuildRunID, "user-2", secondToken, policy)
-	if !errors.Is(err, teambuild.ErrTemplateConcurrencyExceeded) {
-		t.Fatalf("second authorization error = %v, want concurrency limit", err)
+	if _, _, err = store.AuthorizeTemplateBuildRun(ctx, second.WorkspaceID, second.BuildRunID, "user-2", secondToken, policy); err != nil {
+		t.Fatalf("second deterministic materialization was blocked: %v", err)
 	}
 }
 
-func TestTemplateAutoAuthorizationOverThresholdStaysPlanning(t *testing.T) {
+func TestTemplateAutoAuthorizationIgnoresLaterRunBudget(t *testing.T) {
 	ctx := context.Background()
 	pool := testutil.PostgresPool(t)
 	if err := db.Migrate(ctx, pool); err != nil {
@@ -64,20 +62,19 @@ func TestTemplateAutoAuthorizationOverThresholdStaysPlanning(t *testing.T) {
 	policy := teambuild.TemplateAuthorizationPolicy{
 		AutoBudgetThresholdUSD: 5, DailyBudgetUSD: 25, MonthlyBudgetUSD: 250, MaxConcurrent: 2,
 	}
-	_, _, err := store.AuthorizeTemplateBuildRun(ctx, run.WorkspaceID, run.BuildRunID, "user-1", token, policy)
-	if !errors.Is(err, teambuild.ErrTemplateAuthorizationRequired) {
-		t.Fatalf("authorization error = %v, want manual authorization", err)
+	if _, _, err := store.AuthorizeTemplateBuildRun(ctx, run.WorkspaceID, run.BuildRunID, "user-1", token, policy); err != nil {
+		t.Fatalf("deterministic materialization was blocked by later run budget: %v", err)
 	}
 	current, err := store.GetBuildRun(ctx, run.WorkspaceID, run.BuildRunID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if current.Status != teambuild.StatusPlanning || current.Authorization.Authority != "" {
-		t.Fatalf("rejected run mutated = %#v", current)
+	if current.Status != teambuild.StatusAuthorized || current.Authorization.Authority != teambuild.AuthorizationTemplateAuto {
+		t.Fatalf("authorized run = %#v", current)
 	}
 }
 
-func TestTemplateAutoAuthorizationEnforcesDailyAndMonthlyReservations(t *testing.T) {
+func TestTemplateAutoAuthorizationDoesNotReserveDailyOrMonthlyRunBudget(t *testing.T) {
 	ctx := context.Background()
 	pool := testutil.PostgresPool(t)
 	if err := db.Migrate(ctx, pool); err != nil {
@@ -94,8 +91,8 @@ func TestTemplateAutoAuthorizationEnforcesDailyAndMonthlyReservations(t *testing
 		t.Fatal(err)
 	}
 	dailySecond, dailySecondToken := createTemplateAuthorizationRun(t, ctx, store, "workspace-daily", "daily-2", 2)
-	if _, _, err := store.AuthorizeTemplateBuildRun(ctx, dailySecond.WorkspaceID, dailySecond.BuildRunID, "user-2", dailySecondToken, policy); !errors.Is(err, teambuild.ErrTemplateDailyQuotaExceeded) {
-		t.Fatalf("daily authorization error = %v", err)
+	if _, _, err := store.AuthorizeTemplateBuildRun(ctx, dailySecond.WorkspaceID, dailySecond.BuildRunID, "user-2", dailySecondToken, policy); err != nil {
+		t.Fatalf("daily materialization was blocked: %v", err)
 	}
 
 	monthlyFirst, monthlyFirstToken := createTemplateAuthorizationRun(t, ctx, store, "workspace-monthly", "monthly-1", 4)
@@ -110,8 +107,8 @@ func TestTemplateAutoAuthorizationEnforcesDailyAndMonthlyReservations(t *testing
 		t.Fatalf("move first reservation to prior day: %v", err)
 	}
 	monthlySecond, monthlySecondToken := createTemplateAuthorizationRun(t, ctx, store, "workspace-monthly", "monthly-2", 2)
-	if _, _, err := store.AuthorizeTemplateBuildRun(ctx, monthlySecond.WorkspaceID, monthlySecond.BuildRunID, "user-2", monthlySecondToken, policy); !errors.Is(err, teambuild.ErrTemplateMonthlyQuotaExceeded) {
-		t.Fatalf("monthly authorization error = %v", err)
+	if _, _, err := store.AuthorizeTemplateBuildRun(ctx, monthlySecond.WorkspaceID, monthlySecond.BuildRunID, "user-2", monthlySecondToken, policy); err != nil {
+		t.Fatalf("monthly materialization was blocked: %v", err)
 	}
 }
 

@@ -17,6 +17,7 @@ type Config struct {
 	BaseURL      string
 	APIKey       string
 	PollInterval time.Duration
+	WaitTimeout  time.Duration
 }
 
 func ConfigFromEnv() (Config, error) {

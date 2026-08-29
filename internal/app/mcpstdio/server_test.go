@@ -48,6 +48,9 @@ func TestServeUsesSharedProtocolForInitializeListAndCall(t *testing.T) {
 	if initialize["protocolVersion"] != "2025-03-26" || serverInfo["name"] != "weave" {
 		t.Fatalf("initialize = %#v", initialize)
 	}
+	if instructions, _ := initialize["instructions"].(string); !strings.Contains(instructions, "call team_list") || len(instructions) > 512 {
+		t.Fatalf("initialize instructions = %q", instructions)
+	}
 	tools := responses[1]["result"].(map[string]any)["tools"].([]any)
 	if len(tools) != 19 {
 		t.Fatalf("tool count = %d", len(tools))
@@ -167,6 +170,51 @@ func TestTeamCreatePassesDeclarativeSpec(t *testing.T) {
 	))
 	if err != nil || result.IsError || !strings.Contains(result.Content, "build-1") {
 		t.Fatalf("result = %#v err = %v", result, err)
+	}
+}
+
+func TestTeamCreateRequiresRunnableWorkflowForCustomTeam(t *testing.T) {
+	result, err := NewToolDispatcher(mcpClient(t, "http://127.0.0.1:1")).Dispatch(context.Background(), structToolCall(
+		"team_create", `{"yaml":"schema: team-template/v1","idempotency_key":"018f5f5a-c73c-7e31-8f4a-9b36797553a1"}`,
+	))
+	if err != nil || !result.IsError || result.Content != `{"error":"workflow_definition_required"}` {
+		t.Fatalf("result = %#v err = %v", result, err)
+	}
+}
+
+func TestTeamListReturnsCompactMatchingFacts(t *testing.T) {
+	api := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/v1/teams" || request.URL.Query().Get("include") != "summary" {
+			t.Fatalf("request = %s", request.URL.String())
+		}
+		_, _ = response.Write([]byte(`[{
+			"team":{"id":"team-1","name":"writers","status":"active","objective":"write",
+			"primary_scenario":"articles","success_criteria":"publishable","default_workflow_id":"wf-1"},
+			"lead":{"context_instruction":"large hidden prompt"},
+			"workers":[{"duty":"draft","when_to_use":"writing","context_instruction":"secret prompt"}],
+			"summary":{"published_workflow_count":1,"health":{"conclusion":"healthy"}}
+		}]`))
+	}))
+	defer api.Close()
+	result, err := NewToolDispatcher(mcpClient(t, api.URL)).Dispatch(context.Background(), structToolCall("team_list", `{}`))
+	if err != nil || result.IsError {
+		t.Fatalf("result = %#v err = %v", result, err)
+	}
+	if !strings.Contains(result.Content, `"workflow_available":true`) || !strings.Contains(result.Content, `"draft"`) ||
+		strings.Contains(result.Content, "context_instruction") || strings.Contains(result.Content, "hidden prompt") {
+		t.Fatalf("compact list = %s", result.Content)
+	}
+}
+
+func TestNormalizeDispatchResultUsesRootAndProductStatus(t *testing.T) {
+	result, err := normalizeDispatchResult("request-1", json.RawMessage(`{
+		"runs":[
+			{"run_id":"child","parent_run_id":"root","status":"running"},
+			{"run_id":"root","status":"succeeded"}
+		]
+	}`))
+	if err != nil || !strings.Contains(string(result), `"run_id":"root"`) || !strings.Contains(string(result), `"status":"completed"`) {
+		t.Fatalf("result = %s err = %v", result, err)
 	}
 }
 

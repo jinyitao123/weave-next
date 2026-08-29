@@ -281,9 +281,6 @@ func validateBuildAuthorizationOptions(
 		if auth.DecisionSubject != TemplateAuthorizerSubject || auth.TemplatePolicy == nil {
 			return fmt.Errorf("%w: template_auto requires platform decision facts", ErrBlueprintRevisionMismatch)
 		}
-		if err := validateTemplateAuthorizationPolicy(*auth.TemplatePolicy); err != nil {
-			return fmt.Errorf("%w: %v", ErrBlueprintRevisionMismatch, err)
-		}
 		if auth.RevisionToken == nil || latest == nil {
 			return ErrCompilerRevisionRequired
 		}

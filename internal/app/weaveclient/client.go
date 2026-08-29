@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -37,6 +38,7 @@ type Client struct {
 	apiKey       string
 	httpClient   *http.Client
 	pollInterval time.Duration
+	waitTimeout  time.Duration
 }
 
 func New(config Config, httpClient *http.Client) (*Client, error) {
@@ -51,9 +53,13 @@ func New(config Config, httpClient *http.Client) (*Client, error) {
 	if pollInterval <= 0 {
 		pollInterval = 500 * time.Millisecond
 	}
+	waitTimeout := config.WaitTimeout
+	if waitTimeout <= 0 {
+		waitTimeout = 45 * time.Second
+	}
 	return &Client{
 		baseURL: baseURL, apiKey: strings.TrimSpace(config.APIKey),
-		httpClient: httpClient, pollInterval: pollInterval,
+		httpClient: httpClient, pollInterval: pollInterval, waitTimeout: waitTimeout,
 	}, nil
 }
 
@@ -215,27 +221,37 @@ func (c *Client) TeamDispatchAndWait(ctx context.Context, request DispatchReques
 	if terminalDispatchStatus(result) {
 		return clientRequestID, result, nil
 	}
+	waitCtx, cancel := context.WithTimeout(ctx, c.waitTimeout)
+	defer cancel()
 	if runID := workflowDispatchRunID(result); runID != "" {
-		result, err = c.WaitTeamRun(ctx, runID)
+		result, err = c.WaitTeamRun(waitCtx, runID)
 		return clientRequestID, result, err
 	}
-	result, err = c.WaitDispatch(ctx, clientRequestID)
+	result, err = c.WaitDispatch(waitCtx, clientRequestID)
 	return clientRequestID, result, err
 }
 
 func (c *Client) WaitTeamRun(ctx context.Context, snapshotID string) (json.RawMessage, error) {
+	var latest json.RawMessage
 	for {
 		result, err := c.TeamRunStatus(ctx, snapshotID)
 		if err != nil {
+			if errors.Is(ctx.Err(), context.DeadlineExceeded) && len(latest) != 0 {
+				return latest, nil
+			}
 			return nil, err
 		}
-		if terminalTeamRunStatus(result) {
+		latest = result
+		if terminalTeamRunStatus(result, snapshotID) {
 			return result, nil
 		}
 		timer := time.NewTimer(c.pollInterval)
 		select {
 		case <-ctx.Done():
 			timer.Stop()
+			if errors.Is(ctx.Err(), context.DeadlineExceeded) && len(latest) != 0 {
+				return latest, nil
+			}
 			return nil, &Error{Code: "poll_cancelled"}
 		case <-timer.C:
 		}
@@ -243,11 +259,16 @@ func (c *Client) WaitTeamRun(ctx context.Context, snapshotID string) (json.RawMe
 }
 
 func (c *Client) WaitDispatch(ctx context.Context, clientRequestID string) (json.RawMessage, error) {
+	var latest json.RawMessage
 	for {
 		result, err := c.DispatchStatus(ctx, clientRequestID)
 		if err != nil {
+			if errors.Is(ctx.Err(), context.DeadlineExceeded) && len(latest) != 0 {
+				return latest, nil
+			}
 			return nil, err
 		}
+		latest = result
 		if terminalDispatchStatus(result) {
 			return result, nil
 		}
@@ -255,6 +276,9 @@ func (c *Client) WaitDispatch(ctx context.Context, clientRequestID string) (json
 		select {
 		case <-ctx.Done():
 			timer.Stop()
+			if errors.Is(ctx.Err(), context.DeadlineExceeded) && len(latest) != 0 {
+				return latest, nil
+			}
 			return nil, &Error{Code: "poll_cancelled"}
 		case <-timer.C:
 		}
@@ -416,16 +440,27 @@ func workflowDispatchRunID(body json.RawMessage) string {
 	return response.RunID
 }
 
-func terminalTeamRunStatus(body json.RawMessage) bool {
+func terminalTeamRunStatus(body json.RawMessage, snapshotID string) bool {
 	var response struct {
 		Runs []struct {
+			RunID  string `json:"run_id"`
 			Status string `json:"status"`
 		} `json:"runs"`
 	}
 	if json.Unmarshal(body, &response) != nil || len(response.Runs) == 0 {
 		return false
 	}
-	switch response.Runs[0].Status {
+	status := ""
+	for _, run := range response.Runs {
+		if strings.TrimSpace(run.RunID) == strings.TrimSpace(snapshotID) {
+			status = run.Status
+			break
+		}
+	}
+	if status == "" && len(response.Runs) == 1 {
+		status = response.Runs[0].Status
+	}
+	switch status {
 	case "succeeded", "failed", "cancelled", "abandoned":
 		return true
 	default:

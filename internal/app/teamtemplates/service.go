@@ -216,9 +216,6 @@ func (s *Service) Instantiate(ctx context.Context, workspaceID, userID string, r
 		}
 		run, _, err = s.builds.AuthorizeTemplateBuildRun(ctx, workspaceID, buildRunID, claimant, token, s.policy)
 		if err != nil {
-			if isTemplateAuthorizationDeferral(err) {
-				return pendingOutcome(buildRunID, "authorization_required"), nil
-			}
 			// A concurrent replay can win authorization between the preceding
 			// read and this call. Trust only the persisted successor state.
 			run, reloadErr := s.builds.GetBuildRun(ctx, workspaceID, buildRunID)
@@ -568,13 +565,6 @@ func terminalOutcome(run teambuild.TeamBuildRun) (bool, Outcome, error) {
 
 func pendingOutcome(buildRunID, status string) Outcome {
 	return Outcome{BuildRunID: buildRunID, Status: status, ProgressURL: progressPathPrefix + buildRunID + "/progress"}
-}
-
-func isTemplateAuthorizationDeferral(err error) bool {
-	return errors.Is(err, teambuild.ErrTemplateAuthorizationRequired) ||
-		errors.Is(err, teambuild.ErrTemplateDailyQuotaExceeded) ||
-		errors.Is(err, teambuild.ErrTemplateMonthlyQuotaExceeded) ||
-		errors.Is(err, teambuild.ErrTemplateConcurrencyExceeded)
 }
 
 func templateFingerprint(template teamtemplate.Template, declarativeSpec *teamforge.DeclarativeWorkflowSpecV1) (string, error) {

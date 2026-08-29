@@ -30,8 +30,11 @@ func TestStaticCatalogSamplesMatchRepositoryAndCompile(t *testing.T) {
 		if compiled.Template.Name != item.Name || compiled.Template.DisplayName != item.DisplayName {
 			t.Fatalf("sample metadata = %#v, template = %#v", item, compiled.Template)
 		}
-		if item.Name == "human-final-review" && item.DeclarativeSpec == nil {
-			t.Fatal("human-final-review sample must include its declarative workflow")
+		if item.DeclarativeSpec == nil {
+			t.Fatalf("%s sample must include its declarative workflow", item.Name)
+		}
+		if _, err := compileDeclarativePlan("workspace-1", "build-1", compiled, *item.DeclarativeSpec); err != nil {
+			t.Fatalf("compile declarative sample %q: %v", item.Name, err)
 		}
 	}
 	if !reflect.DeepEqual(gotNames, wantNames) {

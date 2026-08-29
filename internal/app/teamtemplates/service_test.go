@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -120,18 +121,15 @@ func TestInstantiateAppliesConfiguredModelToStandardMembers(t *testing.T) {
 	}
 }
 
-func TestInstantiateDefersWhenTemplateAutoRequiresAuthorization(t *testing.T) {
-	builds := &memoryBuildStore{authorizeErr: teambuild.ErrTemplateAuthorizationRequired}
+func TestInstantiatePropagatesUnexpectedAuthorizationFailure(t *testing.T) {
+	builds := &memoryBuildStore{authorizeErr: errors.New("authorization store failed")}
 	submitter := &memorySubmitter{builds: builds}
 	service := New(&memoryIdempotencyStore{}, builds, submitter, Options{Policy: testPolicy()})
-	outcome, err := service.Instantiate(context.Background(), "workspace-1", "real-user", Request{
+	_, err := service.Instantiate(context.Background(), "workspace-1", "real-user", Request{
 		YAML: validTemplateYAML, IdempotencyKey: uuid.NewString(),
 	})
-	if err != nil {
+	if err == nil || !strings.Contains(err.Error(), "authorize template build run") {
 		t.Fatalf("Instantiate() error = %v", err)
-	}
-	if outcome.Status != "authorization_required" || outcome.ProgressURL == "" {
-		t.Fatalf("outcome = %#v", outcome)
 	}
 	if submitter.calls != 0 {
 		t.Fatalf("submit calls = %d, want 0", submitter.calls)

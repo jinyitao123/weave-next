@@ -123,6 +123,45 @@ func TestTeamDispatchWaitsForFixedWorkflowRun(t *testing.T) {
 	}
 }
 
+func TestTeamDispatchWaitSelectsRequestedRootRun(t *testing.T) {
+	handler := http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		switch request.Method + " " + request.URL.Path {
+		case "POST /v1/teams/team-1/dispatch":
+			writeJSON(response, http.StatusCreated, `{"run_id":"root-1","workflow_id":"workflow-1","task_id":"task-1"}`)
+		case "GET /v1/runs":
+			writeJSON(response, http.StatusOK, `{"runs":[{"run_id":"child-1","status":"running"},{"run_id":"root-1","status":"succeeded"}],"total":2}`)
+		default:
+			t.Fatalf("unexpected request %s %s", request.Method, request.URL.String())
+		}
+	})
+	client := newTestClient(t, handler)
+	_, result, err := client.TeamDispatchAndWait(context.Background(), DispatchRequest{TeamID: "team-1", Task: "work"})
+	if err != nil || !strings.Contains(string(result), `"root-1"`) {
+		t.Fatalf("result = %s, error = %v", result, err)
+	}
+}
+
+func TestTeamDispatchWaitIsBoundedAndReturnsLatestStatus(t *testing.T) {
+	handler := http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		switch request.Method + " " + request.URL.Path {
+		case "POST /v1/teams/team-1/dispatch":
+			writeJSON(response, http.StatusCreated, `{"run_id":"root-1","workflow_id":"workflow-1","task_id":"task-1"}`)
+		case "GET /v1/runs":
+			writeJSON(response, http.StatusOK, `{"runs":[{"run_id":"root-1","status":"running"}],"total":1}`)
+		}
+	})
+	server := httptest.NewServer(handler)
+	defer server.Close()
+	client, err := New(Config{BaseURL: server.URL, APIKey: testAPIKey, PollInterval: time.Millisecond, WaitTimeout: 10 * time.Millisecond}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, result, err := client.TeamDispatchAndWait(context.Background(), DispatchRequest{TeamID: "team-1", Task: "work"})
+	if err != nil || !strings.Contains(string(result), `"status":"running"`) {
+		t.Fatalf("result = %s, error = %v", result, err)
+	}
+}
+
 func TestTeamDispatchRejectsMissingOrInactiveTeam(t *testing.T) {
 	for _, test := range []struct {
 		name       string

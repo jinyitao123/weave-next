@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"strings"
 
 	"github.com/jinyitao123/loom/contract"
 )
@@ -54,6 +55,7 @@ type Result struct {
 type Adapter struct {
 	Dispatcher               contract.ToolDispatcher
 	ServerName               string
+	Instructions             string
 	UnsupportedMethodMessage string
 	RedactToolErrors         bool
 }
@@ -74,13 +76,17 @@ func Decode(reader io.Reader) (Request, error) {
 func (a Adapter) Handle(ctx context.Context, request Request) (Result, error) {
 	switch request.Method {
 	case "initialize":
+		result := map[string]any{
+			"protocolVersion": ProtocolVersion,
+			"capabilities":    map[string]any{"tools": map[string]any{}},
+			"serverInfo":      map[string]string{"name": a.ServerName, "version": "1"},
+		}
+		if instructions := strings.TrimSpace(a.Instructions); instructions != "" {
+			result["instructions"] = instructions
+		}
 		return Result{Response: &Response{
 			JSONRPC: "2.0", ID: responseID(request.ID),
-			Result: map[string]any{
-				"protocolVersion": ProtocolVersion,
-				"capabilities":    map[string]any{"tools": map[string]any{}},
-				"serverInfo":      map[string]string{"name": a.ServerName, "version": "1"},
-			},
+			Result: result,
 		}}, nil
 	case "notifications/initialized":
 		return Result{Notification: true}, nil

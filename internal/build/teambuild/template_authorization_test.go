@@ -39,24 +39,6 @@ func TestValidateTemplateAuthorizationOptions(t *testing.T) {
 	}
 }
 
-func TestTemplateAuthorizationPolicyValidation(t *testing.T) {
-	valid := TemplateAuthorizationPolicy{AutoBudgetThresholdUSD: 5, DailyBudgetUSD: 25, MonthlyBudgetUSD: 250, MaxConcurrent: 2}
-	if err := validateTemplateAuthorizationPolicy(valid); err != nil {
-		t.Fatalf("valid policy error = %v", err)
-	}
-	cases := []TemplateAuthorizationPolicy{
-		{},
-		{AutoBudgetThresholdUSD: 5, DailyBudgetUSD: 4, MonthlyBudgetUSD: 250, MaxConcurrent: 2},
-		{AutoBudgetThresholdUSD: 5, DailyBudgetUSD: 25, MonthlyBudgetUSD: 24, MaxConcurrent: 2},
-		{AutoBudgetThresholdUSD: 5, DailyBudgetUSD: 25, MonthlyBudgetUSD: 250},
-	}
-	for _, policy := range cases {
-		if err := validateTemplateAuthorizationPolicy(policy); err == nil {
-			t.Fatalf("validateTemplateAuthorizationPolicy(%#v) error = nil", policy)
-		}
-	}
-}
-
 func TestTemplateReceiptRequiresDecisionFacts(t *testing.T) {
 	receipt := BuildAuthorizationReceipt{
 		workspaceID: "workspace", buildRunID: "run", contractHash: testSHA('c'),

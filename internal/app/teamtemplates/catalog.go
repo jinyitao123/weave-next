@@ -18,14 +18,28 @@ func NewStaticCatalog() *StaticCatalog {
 		"market-research": {
 			Name: "market-research", DisplayName: "市场调研团队",
 			Description: "并行取证与分析，汇总为可追溯的市场报告。", YAML: marketResearchSampleYAML,
+			DeclarativeSpec: synthesisSampleDeclarativeSpec(
+				"source-researcher", "提供一手来源、日期与原始链接",
+				"market-analyst", "交叉验证数据并解释竞争格局",
+				"research-editor", "汇总结论并标明证据边界",
+			),
 		},
 		"content-production": {
 			Name: "content-production", DisplayName: "内容生产团队",
 			Description: "撰稿与审校循环，收敛到符合受众要求的成稿。", YAML: contentProductionSampleYAML,
+			DeclarativeSpec: reworkSampleDeclarativeSpec(
+				"content-writer", "提交结构完整、表达清晰的正文",
+				"content-editor", "给出具体可执行的审校意见", 2,
+			),
 		},
 		"code-review": {
 			Name: "code-review", DisplayName: "代码评审团队",
 			Description: "并行审查实现与测试，汇总为可执行的修改建议。", YAML: codeReviewSampleYAML,
+			DeclarativeSpec: synthesisSampleDeclarativeSpec(
+				"implementation-reviewer", "审查正确性、可维护性与边界处理",
+				"test-reviewer", "审查测试覆盖、失败路径与回归风险",
+				"review-synthesizer", "汇总问题、风险等级与建议修改顺序",
+			),
 		},
 		"human-final-review": {
 			Name: "human-final-review", DisplayName: "人工终审交付团队",

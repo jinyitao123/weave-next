@@ -41,6 +41,9 @@ func (d *ToolDispatcher) Dispatch(ctx context.Context, call contract.ToolCall) (
 		if err := decodeArguments(call.Args, &input); err != nil {
 			return toolError(call.ID, "invalid_arguments"), nil
 		}
+		if strings.TrimSpace(input.Sample) == "" && len(input.DeclarativeSpec) == 0 {
+			return toolError(call.ID, "workflow_definition_required"), nil
+		}
 		result, err := d.client.TeamCreate(ctx, input)
 		return documentResult(call.ID, result, err), nil
 	case "provider_list":
@@ -82,8 +85,15 @@ func (d *ToolDispatcher) Dispatch(ctx context.Context, call contract.ToolCall) (
 		if err := decodeArguments(call.Args, &input); err != nil {
 			return toolError(call.ID, "invalid_arguments"), nil
 		}
-		result, err := d.client.TeamList(ctx, input.Status, input.Summary)
-		return documentResult(call.ID, result, err), nil
+		result, err := d.client.TeamList(ctx, input.Status, true)
+		if err != nil {
+			return documentResult(call.ID, nil, err), nil
+		}
+		result, err = compactTeamList(result)
+		if err != nil {
+			return toolError(call.ID, "invalid_api_response"), nil
+		}
+		return documentResult(call.ID, result, nil), nil
 	case "team_status":
 		var input struct {
 			TeamID string `json:"team_id"`
@@ -133,7 +143,7 @@ func (d *ToolDispatcher) Dispatch(ctx context.Context, call contract.ToolCall) (
 		if err != nil {
 			return toolError(call.ID, clientErrorCode(err)), nil
 		}
-		body, err := json.Marshal(map[string]any{"client_request_id": id, "result": result})
+		body, err := normalizeDispatchResult(id, result)
 		if err != nil {
 			return toolError(call.ID, "output_failed"), nil
 		}
@@ -235,6 +245,130 @@ func (d *ToolDispatcher) Dispatch(ctx context.Context, call contract.ToolCall) (
 	}
 }
 
+func normalizeDispatchResult(clientRequestID string, document json.RawMessage) ([]byte, error) {
+	result := map[string]any{"client_request_id": clientRequestID, "status": "queued"}
+	var runResponse struct {
+		Runs []struct {
+			RunID       string `json:"run_id"`
+			ParentRunID string `json:"parent_run_id"`
+			Status      string `json:"status"`
+			StopReason  string `json:"stop_reason"`
+		} `json:"runs"`
+	}
+	if json.Unmarshal(document, &runResponse) == nil && len(runResponse.Runs) != 0 {
+		run := runResponse.Runs[0]
+		for _, candidate := range runResponse.Runs {
+			if strings.TrimSpace(candidate.ParentRunID) == "" {
+				run = candidate
+				break
+			}
+		}
+		result["run_id"] = run.RunID
+		result["status"] = productDispatchStatus(run.Status)
+		if run.StopReason != "" {
+			result["stop_reason"] = run.StopReason
+		}
+		return json.Marshal(result)
+	}
+	var direct map[string]any
+	if err := json.Unmarshal(document, &direct); err != nil {
+		return nil, err
+	}
+	for _, key := range []string{"run_id", "workflow_id", "workflow_version", "task_id", "project_id", "conversation_id", "error_code"} {
+		if value, ok := direct[key]; ok {
+			result[key] = value
+		}
+	}
+	if status, _ := direct["status"].(string); status != "" {
+		result["status"] = productDispatchStatus(status)
+	}
+	return json.Marshal(result)
+}
+
+func productDispatchStatus(status string) string {
+	switch strings.TrimSpace(status) {
+	case "succeeded", "completed":
+		return "completed"
+	case "failed", "cancelled", "abandoned":
+		return "failed"
+	case "yielded", "waiting", "waiting_human":
+		return "yielded"
+	case "running", "executing", "in_progress":
+		return "running"
+	default:
+		return "queued"
+	}
+}
+
+type compactTeam struct {
+	TeamID            string   `json:"team_id"`
+	Name              string   `json:"name"`
+	Status            string   `json:"status"`
+	Objective         string   `json:"objective"`
+	PrimaryScenario   string   `json:"primary_scenario"`
+	SuccessCriteria   string   `json:"success_criteria"`
+	Responsibilities  []string `json:"responsibilities"`
+	DefaultWorkflowID string   `json:"default_workflow_id,omitempty"`
+	WorkflowAvailable bool     `json:"workflow_available"`
+	Health            string   `json:"health,omitempty"`
+}
+
+func compactTeamList(document json.RawMessage) (json.RawMessage, error) {
+	var items []struct {
+		Team struct {
+			ID                string `json:"id"`
+			Name              string `json:"name"`
+			Status            string `json:"status"`
+			Objective         string `json:"objective"`
+			PrimaryScenario   string `json:"primary_scenario"`
+			SuccessCriteria   string `json:"success_criteria"`
+			DefaultWorkflowID string `json:"default_workflow_id"`
+		} `json:"team"`
+		Workers []struct {
+			Duty              string `json:"duty"`
+			WhenToUse         string `json:"when_to_use"`
+			ResultRequirement string `json:"result_requirement"`
+		} `json:"workers"`
+		Summary *struct {
+			PublishedWorkflowCount int `json:"published_workflow_count"`
+			Health                 *struct {
+				Conclusion string `json:"conclusion"`
+			} `json:"health"`
+		} `json:"summary"`
+	}
+	if err := json.Unmarshal(document, &items); err != nil {
+		return nil, err
+	}
+	result := make([]compactTeam, 0, len(items))
+	for _, item := range items {
+		seen := map[string]bool{}
+		responsibilities := make([]string, 0, len(item.Workers)*2)
+		for _, worker := range item.Workers {
+			for _, value := range []string{worker.Duty, worker.WhenToUse, worker.ResultRequirement} {
+				value = strings.TrimSpace(value)
+				if value != "" && !seen[value] {
+					seen[value] = true
+					responsibilities = append(responsibilities, value)
+				}
+			}
+		}
+		compact := compactTeam{
+			TeamID: item.Team.ID, Name: item.Team.Name, Status: item.Team.Status,
+			Objective: item.Team.Objective, PrimaryScenario: item.Team.PrimaryScenario,
+			SuccessCriteria: item.Team.SuccessCriteria, Responsibilities: responsibilities,
+			DefaultWorkflowID: item.Team.DefaultWorkflowID,
+		}
+		if item.Summary != nil {
+			compact.WorkflowAvailable = item.Team.DefaultWorkflowID != "" && item.Summary.PublishedWorkflowCount > 0
+			if item.Summary.Health != nil {
+				compact.Health = item.Summary.Health.Conclusion
+			}
+		}
+		result = append(result, compact)
+	}
+	return json.Marshal(result)
+}
+
 func decodeArguments(raw string, target any) error {
 	if strings.TrimSpace(raw) == "" {
 		raw = "{}"
@@ -308,7 +442,7 @@ var toolDefinitions = []contract.ToolDef{
 	},
 	{
 		Name:        "team_create",
-		Description: "Create a team from YAML or a named sample, optionally with a declarative workflow specification. Requires administrator and organization access plus a caller-supplied idempotency_key UUID. Returns team and build identifiers with current status. Errors: idempotency_key_required, template_idempotency_conflict, http_401, http_403, http_422.",
+		Description: "Create a confirmed team from YAML plus a required declarative workflow, or from a runnable named sample. Requires administrator and organization access plus a caller-supplied idempotency_key UUID. Returns team and build identifiers with current status. Errors: workflow_definition_required, idempotency_key_required, template_idempotency_conflict, http_401, http_403, http_422.",
 		InputSchema: json.RawMessage(`{"type":"object","properties":{"yaml":{"type":"string"},"sample":{"type":"string"},"overrides":{"type":"object"},"declarative_spec":{"type":"object"},"idempotency_key":{"type":"string","format":"uuid"}},"required":["idempotency_key"],"anyOf":[{"required":["yaml"]},{"required":["sample"]}],"additionalProperties":false}`),
 	},
 	{
@@ -333,7 +467,7 @@ var toolDefinitions = []contract.ToolDef{
 	},
 	{
 		Name: "team_list", ReadOnly: true,
-		Description: "List workspace teams, optionally filtered by lifecycle status and expanded with summaries. Summaries include the current default workflow's read-only operational health when available. Requires organization access. Errors: http_400, http_401, http_403.",
+		Description: "List compact team-matching facts: purpose, scenario, responsibilities, success criteria, default workflow availability, and health. Internal prompts and worker context are omitted. Requires organization access. Errors: http_400, http_401, http_403.",
 		InputSchema: json.RawMessage(`{"type":"object","properties":{"status":{"type":"string","enum":["active","needs_repair","building","archived","all"]},"summary":{"type":"boolean"}},"additionalProperties":false}`),
 	},
 	{

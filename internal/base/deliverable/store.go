@@ -76,9 +76,9 @@ func New(pool *pgxpool.Pool) *Store {
 	return &Store{pool: pool}
 }
 
-// RecordWorkflowOutput persists one output from a conversation-triggered,
-// published workflow. Non-conversation runs (schedule, API validation, and
-// candidate evaluation) intentionally produce no user-facing artifact here.
+// RecordWorkflowOutput persists one output from a user-triggered published
+// workflow. Conversation and manual team dispatches create visible artifacts;
+// schedule, API validation, and candidate evaluation runs intentionally do not.
 // Replays are idempotent by run, node, artifact kind, and content hash.
 func (s *Store) RecordWorkflowOutput(ctx context.Context, output WorkflowOutput) error {
 	if s == nil || s.pool == nil {
@@ -100,28 +100,45 @@ func (s *Store) RecordWorkflowOutput(ctx context.Context, output WorkflowOutput)
 		return nil
 	}
 
-	var projectID, conversationID, userID, leadAvatarID string
+	var projectID, triggerType, sourceRef, leadAvatarID string
 	err = s.pool.QueryRow(ctx, `
-		SELECT COALESCE(snapshot.project_id, ''), conversation.id,
-		       conversation.user_id, team.lead_avatar_id
+		SELECT COALESCE(snapshot.project_id, ''),
+		       snapshot.trigger_source_v2->>'type',
+		       snapshot.trigger_source_v2->>'source_ref', team.lead_avatar_id
 		FROM weave_team_run_snapshots AS snapshot
 		JOIN weave_teams AS team
 		  ON team.workspace_id=snapshot.workspace_id AND team.id=snapshot.team_id
-		JOIN weave_conversations AS conversation
-		  ON conversation.workspace_id=snapshot.workspace_id
-		 AND conversation.id=snapshot.trigger_source_v2->>'source_ref'
 		WHERE snapshot.workspace_id=$1 AND snapshot.run_id=$2
 		  AND snapshot.mode='fixed_workflow'
-		  AND snapshot.trigger_source_v2->>'type'='conversation_explicit'
-		  AND conversation.parent_message_id IS NULL
 	`, output.WorkspaceID, output.RunSnapshotID).Scan(
-		&projectID, &conversationID, &userID, &leadAvatarID,
+		&projectID, &triggerType, &sourceRef, &leadAvatarID,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil
 	}
 	if err != nil {
-		return fmt.Errorf("resolve workflow deliverable conversation: %w", err)
+		return fmt.Errorf("resolve workflow deliverable trigger: %w", err)
+	}
+	var conversationID, userID string
+	switch triggerType {
+	case "conversation_explicit":
+		err = s.pool.QueryRow(ctx, `
+			SELECT id, user_id FROM weave_conversations
+			WHERE workspace_id=$1 AND id=$2 AND parent_message_id IS NULL
+		`, output.WorkspaceID, sourceRef).Scan(&conversationID, &userID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("resolve workflow deliverable conversation: %w", err)
+		}
+	case "manual":
+		userID = strings.TrimSpace(sourceRef)
+		if userID == "" || userID == "manual" {
+			return nil
+		}
+	default:
+		return nil
 	}
 
 	kind := "stage"
@@ -169,6 +186,14 @@ func (s *Store) RecordWorkflowOutput(ctx context.Context, output WorkflowOutput)
 	if projectID != "" {
 		nullableProjectID = projectID
 	}
+	var nullableConversationID any
+	if conversationID != "" {
+		nullableConversationID = conversationID
+	}
+	sessionID := conversationID
+	if sessionID == "" {
+		sessionID = "workflow:" + output.RunSnapshotID
+	}
 	_, err = s.pool.Exec(ctx, `
 		INSERT INTO weave_final_deliverables (
 			id, workspace_id, project_id, conversation_id, user_id, lead_avatar_id,
@@ -176,8 +201,8 @@ func (s *Store) RecordWorkflowOutput(ctx context.Context, output WorkflowOutput)
 			content_type, metadata, created_at
 		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
 		ON CONFLICT DO NOTHING
-	`, id, output.WorkspaceID, nullableProjectID, conversationID, userID, leadAvatarID,
-		conversationID, eventID, output.RunID, output.RunSnapshotID, title, content,
+	`, id, output.WorkspaceID, nullableProjectID, nullableConversationID, userID, leadAvatarID,
+		sessionID, eventID, output.RunID, output.RunSnapshotID, title, content,
 		contentType, metadata, createdAt)
 	if err != nil {
 		return fmt.Errorf("insert workflow deliverable: %w", err)

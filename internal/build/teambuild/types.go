@@ -836,8 +836,9 @@ type AuthorizeOptions struct {
 	TemplatePolicy  *TemplateAuthorizationPolicy
 }
 
-// TemplateAuthorizationPolicy bounds automatic template authorization. All
-// monetary values reserve declared BuildRun budget, not eventual spend.
+// TemplateAuthorizationPolicy is retained in authorization receipts for
+// backward compatibility. Deterministic template materialization does not
+// consume or reserve the declared budget for later team runs.
 type TemplateAuthorizationPolicy struct {
 	AutoBudgetThresholdUSD float64
 	DailyBudgetUSD         float64
