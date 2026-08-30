@@ -16,6 +16,8 @@ Weave Workbench is a separate application repository derived from DeepSeek Harne
 
 DeepSeek Harness owns the foreground interaction runtime: conversations, model providers, sessions, tool calls, approval presentation, terminal access, settings, and desktop packaging. Workbench changes branding and assembles a Weave profile; it does not replace the DSH agent loop or create a parallel application framework.
 
+Workbench removes development-facing DSH presentation only at its profile boundary: the internal-testing and official-provider onboarding dialogs, Preview badge, official brand, Subagent presentation, message feedback, and trajectory inspector are absent. The underlying runtime services remain intact, and non-Workbench DSH builds retain their original behavior.
+
 Weave remains the business execution service. The Workbench agent reaches it only through the public Weave MCP tools. A normal request follows one product sequence: inspect teams, dispatch through the selected team's default workflow, request user input only for a yielded human task, and read the final deliverable after completion. Workbench may coordinate several team runs for a complex FDE engagement, but Weave owns each durable run and deliverable.
 
 The MCP integration exposes `WEAVE_API_KEY` to the local Weave MCP subprocess through an operating-system credential or a process-scoped environment value. The key authorizes product API calls and can be rotated or revoked. `WEAVE_SECRET_KEY` stays inside the Weave server because it encrypts server-managed credentials; the Workbench process, its model, tool output, logs, and settings never receive that secret.

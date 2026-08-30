@@ -14,6 +14,7 @@ This bundle turns the general DSH Web runtime into Weave Workbench without chang
 ## Table of Contents
 
 - [Use this package](#use-this-package)
+- [Surface boundary](#surface-boundary)
 - [Credential boundary](#credential-boundary)
 - [Dev Note](#dev-note)
 - [Model Experience](#model-experience)
@@ -25,6 +26,11 @@ This bundle turns the general DSH Web runtime into Weave Workbench without chang
 Run `dsh --profile workbench` or the repository shortcut `pnpm workbench`. The shortcut prefers an explicit `WEAVE_API_KEY`, then checks the macOS Keychain service `weave-workbench-api-key`; other platforms use the explicit environment value. The shipped profile stacks `dsh-base`, `dsh-web-app`, and this bundle. When a key is present, the bundle starts `weave mcp serve` over stdio and publishes its tools under the `mcp__weave__*` namespace. This local Workbench defaults `WEAVE_API_URL` to `http://127.0.0.1:18080`, and `WEAVE_COMMAND` may select a different trusted local binary.
 
 When `WEAVE_API_KEY` is absent, the MCP row is disabled and the browser still starts. This keeps the foreground runtime usable while making the missing Weave connection observable; the agent is instructed not to claim team work occurred without the tools.
+
+<a id="surface-boundary"></a>
+## Surface boundary
+
+The Workbench client keeps the DSH session, workspace, model, permission, approval, tool, and deliverable foundations. It suppresses DSH's internal-testing notice, official-DeepSeek credential onboarding, Preview badge, official brand occupant, Subagent presentation, message-feedback controls, and trajectory inspection surface. Their generic DSH behavior remains unchanged in non-Workbench builds, and the Workbench Models settings section remains available without blocking first-run dialogs.
 
 <a id="credential-boundary"></a>
 ## Credential boundary

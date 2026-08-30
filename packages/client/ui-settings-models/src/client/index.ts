@@ -99,17 +99,18 @@ export function apply(ctx: ClientContext): void {
     schema,
     t,
   })
+  // Workbench owns its own first-run experience. The Models settings page
+  // remains available there, while DSH's notice and official-provider prompt
+  // stay exclusive to the generic DSH product surface.
+  const workbench = process.env.DSH_CLIENT_BUILD_PROFILE === 'workbench'
   // The scope's own memory mode is what keeps a remote browser process-local,
   // so the store needs no isLoopback branch of its own.
-  const welcomeController = new WelcomeNoticeStore(ctx.settingsScope.bind({
-    namespace: WELCOME_NOTICE_SETTINGS_NAMESPACE,
-    decode: decodeWelcomeSection,
-  }))
-  const welcomeInjected = (): WelcomeNoticeInjected => ({
-    controller: welcomeController,
-    hooks: { welcome: welcomeController.store },
-    t,
-  })
+  const welcomeController = workbench
+    ? undefined
+    : new WelcomeNoticeStore(ctx.settingsScope.bind({
+      namespace: WELCOME_NOTICE_SETTINGS_NAMESPACE,
+      decode: decodeWelcomeSection,
+    }))
 
   // Pushed invalidations converge every open surface without polling. The
   // settingsScope injection makes ui-settings activate first, and remote
@@ -125,7 +126,7 @@ export function apply(ctx: ClientContext): void {
       ctx.on('connection/reset', refreshModels),
     ]
     return () => {
-      welcomeController.dispose()
+      welcomeController?.dispose()
       for (const dispose of disposers) dispose()
     }
   }, 'ui-settings-models: pushed invalidations')
@@ -141,16 +142,23 @@ export function apply(ctx: ClientContext): void {
       'settings.models.footer': { kind: 'list', scope: 'root' },
     },
   }, ModelsSection))
-  ctx.slots.inject('settings.onboarding', () => ctx.slots.register({
-    name: 'settings.onboarding',
-    id: 'welcome-notice',
-    order: -100,
-    inject: welcomeInjected,
-  }, WelcomeNotice))
-  ctx.slots.inject('settings.onboarding', () => ctx.slots.register({
-    name: 'settings.onboarding',
-    id: 'deepseek-official',
-    order: 0,
-    inject: deepSeekOnboardingInjected,
-  }, DeepSeekOnboardingDialog))
+  if (welcomeController !== undefined) {
+    const welcomeInjected = (): WelcomeNoticeInjected => ({
+      controller: welcomeController,
+      hooks: { welcome: welcomeController.store },
+      t,
+    })
+    ctx.slots.inject('settings.onboarding', () => ctx.slots.register({
+      name: 'settings.onboarding',
+      id: 'welcome-notice',
+      order: -100,
+      inject: welcomeInjected,
+    }, WelcomeNotice))
+    ctx.slots.inject('settings.onboarding', () => ctx.slots.register({
+      name: 'settings.onboarding',
+      id: 'deepseek-official',
+      order: 0,
+      inject: deepSeekOnboardingInjected,
+    }, DeepSeekOnboardingDialog))
+  }
 }

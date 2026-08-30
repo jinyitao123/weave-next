@@ -15,6 +15,20 @@
       If Weave tools are unavailable, report that the Weave connection is not
       configured instead of pretending that team work was performed.
 
+# Keep the DSH runtime underneath Workbench, but remove development-oriented
+# product occupants from the Workbench browser roster.
+- id: ui-brand-official
+  disabled: true
+
+- id: ui-subagent
+  disabled: true
+
+- id: ui-message-feedback
+  disabled: true
+
+- id: ui-trajectory
+  disabled: true
+
 - insert:
     # The bridge is host-only. The API key reaches the trusted MCP subprocess,
     # never the browser bundle or model context. WEAVE_SECRET_KEY is server-only.

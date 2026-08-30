@@ -68,6 +68,7 @@ function fireResize(el: Element): void {
 
 afterEach(() => {
   cleanup()
+  vi.unstubAllEnvs()
   vi.unstubAllGlobals()
   resizeObservers.length = 0
 })
@@ -322,6 +323,14 @@ describe('Hero chrome', () => {
     expect(brandMarkOwner.size).toBe(34)
     expect(brandMarkOwner.className).toBeTypeOf('string')
     expect(renderSlot.mock.calls[0]?.[2]?.fallback).toBeTruthy()
+  })
+
+  it('omits the DSH preview badge in a Workbench build', () => {
+    vi.stubEnv('DSH_CLIENT_BUILD_PROFILE', 'workbench')
+    const renderSlot = vi.fn<HeroShellProps['renderSlot']>(() => null)
+    const view = render(<HeroShell t={makeTranslate(en, commonEn)} renderSlot={renderSlot} />)
+    expect(view.getByText('Into the Unknown')).toBeTruthy()
+    expect(view.queryByText('Preview')).toBeNull()
   })
 })
 

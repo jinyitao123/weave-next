@@ -14,6 +14,7 @@ kind: "package-bundle"
 ## 目录
 
 - [使用本包](#use-this-package)
+- [界面边界](#surface-boundary)
 - [凭据边界](#credential-boundary)
 - [开发备注](#dev-note)
 - [模型体验](#model-experience)
@@ -25,6 +26,11 @@ kind: "package-bundle"
 运行 `dsh --profile workbench`，或使用仓库快捷命令 `pnpm workbench`。快捷命令优先使用显式 `WEAVE_API_KEY`，随后检查 macOS 钥匙串服务 `weave-workbench-api-key`；其他平台使用显式环境值。随附 profile 依次叠加 `dsh-base`、`dsh-web-app` 和本组合包。存在 key 时，本组合包通过 stdio 启动 `weave mcp serve`，并把工具发布到 `mcp__weave__*` 命名空间。本地 Workbench 默认把 `WEAVE_API_URL` 设为 `http://127.0.0.1:18080`，`WEAVE_COMMAND` 可以选择另一个受信任的本地二进制。
 
 缺少 `WEAVE_API_KEY` 时，MCP 配置项会被禁用，但浏览器仍能启动。这样前台运行时仍可使用，同时连接缺失不会被伪装；agent 会被要求在工具不可用时不得声称已经完成团队工作。
+
+<a id="surface-boundary"></a>
+## 界面边界
+
+Workbench 客户端保留 DSH 的会话、工作区、模型、权限、人工确认、工具与交付物底座。它不展示 DSH 内测声明、DeepSeek 官方凭据首次引导、预览版标记、官方品牌占位、Subagent 呈现、消息反馈控件与轨迹检查界面。非 Workbench 构建中的 DSH 通用行为保持不变；Workbench 的模型设置页面仍然可用，但不会再以首次启动弹窗阻塞用户。
 
 <a id="credential-boundary"></a>
 ## 凭据边界

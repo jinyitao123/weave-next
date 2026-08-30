@@ -45,6 +45,9 @@ describe('shipped Workbench profile', () => {
     expect(disconnected.output).toContain("disabled: !!js '!process.env.WEAVE_API_KEY'")
     expect(disconnected.output).toContain("name: '@deepseek-ai/dsh-client-ui-brand-workbench'")
     expect(disconnected.output).toContain('You are Weave Workbench')
+    for (const id of ['ui-brand-official', 'ui-subagent', 'ui-message-feedback', 'ui-trajectory']) {
+      expect(disconnected.output).toMatch(new RegExp(`- id: ${id}\\n(?:  .*\\n){1,3}  disabled: true`))
+    }
 
     const connected = dump('wv_sk_profile_test')
     expect(connected.output).toContain("disabled: !!js '!process.env.WEAVE_API_KEY'")

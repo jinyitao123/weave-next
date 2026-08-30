@@ -16,6 +16,8 @@ Weave Workbench 是一个从 DeepSeek Harness 派生的独立应用仓库。仓�
 
 DeepSeek Harness 负责前台交互运行时，包括对话、模型供应商、会话、工具调用、审批呈现、终端访问、设置和桌面打包。Workbench 修改品牌并组装 Weave 配置，不替换 DSH 智能体循环，也不创建平行的应用框架。
 
+Workbench 只在自己的 profile 边界移除面向开发的 DSH 呈现，不显示内测与官方提供方首次引导弹窗、预览版标记、官方品牌、Subagent 呈现、消息反馈和轨迹检查器。底层运行服务保持完整，非 Workbench 的 DSH 构建继续保留原有行为。
+
 Weave 继续作为业务执行服务。Workbench 智能体只能通过公开的 Weave MCP 工具访问它。普通诉求遵循唯一产品流程，即检查团队、通过所选团队的默认工作流派发、仅在人工任务暂停时请求用户输入，并在完成后读取最终交付物。Workbench 可以为复杂 FDE 项目协调多次团队运行，但每项持久运行和交付物都由 Weave 负责。
 
 MCP 集成通过操作系统凭据或进程级环境值，只向本地 Weave MCP 子进程提供 `WEAVE_API_KEY`。该密钥用于授权产品 API 调用，并且可以轮换或撤销。`WEAVE_SECRET_KEY` 始终留在 Weave 服务端，因为它用于加密由服务端管理的凭据；Workbench 进程、模型、工具输出、日志和设置都不能收到该密钥。

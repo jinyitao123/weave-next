@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/proposed/architecture/2026-08-30-weave-workbench-dsh-foundation.md
-2026-08-30-weave-workbench-dsh-foundation.md: 0249a28c9e9aa520c2eb8dc2d0af929690bd2715
-2026-08-30-weave-workbench-dsh-foundation.zh.md: ee381246e3d0c33ab707326dbf4a0e2138ee30fd
+2026-08-30-weave-workbench-dsh-foundation.md: 5e2113d2715f4585fab9a45321c843450583457b
+2026-08-30-weave-workbench-dsh-foundation.zh.md: ae18aaa1af9da26c6b13dfafb13a14a118030e0d

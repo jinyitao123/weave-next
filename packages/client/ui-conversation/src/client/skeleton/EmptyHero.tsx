@@ -122,7 +122,9 @@ export function HeroShell({ t, renderSlot, children }: HeroShellProps) {
             })}
           </span>
           <span className={css.headlineText}>{t('hero.headline')}</span>
-          <span className={css.previewBadge}>{t('hero.preview')}</span>
+          {process.env.DSH_CLIENT_BUILD_PROFILE === 'workbench'
+            ? null
+            : <span className={css.previewBadge}>{t('hero.preview')}</span>}
         </div>
         <div className={css.body}>
           {/* The composer remains mounted outside this component. */}
