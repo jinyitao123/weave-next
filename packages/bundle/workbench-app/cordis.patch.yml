@@ -47,3 +47,6 @@
 
     - id: ui-brand-workbench
       name: '@deepseek-ai/dsh-client-ui-brand-workbench'
+
+    - id: ui-weave
+      name: '@deepseek-ai/dsh-client-ui-weave'

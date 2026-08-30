@@ -23,6 +23,7 @@
   "dsh": { "bundle": { "patch": "./cordis.patch.yml" } },
   "dependencies": {
     "@deepseek-ai/dsh-client-ui-brand-workbench": "workspace:^",
+    "@deepseek-ai/dsh-client-ui-weave": "workspace:^",
     "@deepseek-ai/dsh-mcp-client": "workspace:^"
   },
   "peerDependencies": {

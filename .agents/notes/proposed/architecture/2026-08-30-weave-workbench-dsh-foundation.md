@@ -22,7 +22,7 @@ Weave remains the business execution service. The Workbench agent reaches it onl
 
 The MCP integration exposes `WEAVE_API_KEY` to the local Weave MCP subprocess through an operating-system credential or a process-scoped environment value. The key authorizes product API calls and can be rotated or revoked. `WEAVE_SECRET_KEY` stays inside the Weave server because it encrypts server-managed credentials; the Workbench process, its model, tool output, logs, and settings never receive that secret.
 
-The user-facing run states are `queued`, `running`, `yielded`, `completed`, and `failed`. DSH tool cards render these states and retain the run identifier, human-task identifier when present, and final deliverable identifier. Weave's detailed lifecycle classifications remain diagnostic metadata and do not become additional product states.
+The user-facing run states are `queued`, `running`, `yielded`, `completed`, and `failed`. Weave-owned browser plugins progressively replace generic MCP JSON with narrow product cards while preserving the recorded tool result as the only authority. The first card renders `team_list` as candidate team facts and default-workflow availability; it neither invents a selection nor exposes internal health observations. Later dispatch, human-task, and deliverable cards render the five product states and retain the run identifier, human-task identifier when present, and final deliverable identifier. Weave's detailed lifecycle classifications remain diagnostic metadata and do not become additional product states.
 
 Workbench does not add pages for team editing, workflow editing, evaluation runs, build candidates, or governance. Team creation remains an MCP conversation followed by one declarative submission after user confirmation. The existing Weave application remains a runtime operations console until Workbench can present node registration, connectivity, capacity, engine support, and failure state without importing Weave's internal orchestration code.
 
@@ -46,6 +46,7 @@ Implementation proceeds in three independently usable increments. The first incr
 - An unchanged baseline build launches the supported DSH Web or desktop entry path before Weave-specific runtime changes begin.
 - A bundled profile starts the local Weave MCP server without copying `WEAVE_SECRET_KEY` into application configuration, model context, tool results, or logs.
 - A user can complete the Weave sequence `team_list` to `team_dispatch` to optional human-task completion to `deliverable_get` in one Workbench conversation.
+- `team_list` renders as candidate business facts rather than raw MCP JSON, does not claim that a candidate was selected, and omits internal health observations from the ordinary surface.
 - Run presentation branches only on `queued`, `running`, `yielded`, `completed`, and `failed`; diagnostic lifecycle data remains inspectable without blocking use.
 - Workbench contains no duplicate team, workflow, evaluation, candidate, or governance application pages, and multi-runtime UI migration requires explicit parity evidence before the standalone console is removed.
 

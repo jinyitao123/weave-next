@@ -43,6 +43,7 @@ kind: "package-group"
 | [`ui-sidebar/`](ui-sidebar/README.zh.md) | 展示工作区与会话导航 | — |
 | [`ui-brand-official/`](ui-brand-official/README.zh.md) | 用官方名称与标记填充通用浏览器品牌 slot | — |
 | [`ui-brand-workbench/`](ui-brand-workbench/README.zh.md) | 用 Weave Workbench 身份填充通用浏览器品牌 slot | — |
+| [`ui-weave/`](ui-weave/README.zh.md) | 用产品语言呈现 Weave 团队与工作流工具结果 | — |
 | [`ui-workspace/`](ui-workspace/README.zh.md) | 提供工作区选择与创建界面 | — |
 | [`ui-conversation/`](ui-conversation/README.zh.md) | 展示当前对话及其输入界面 | — |
 | [`ui-chat/`](ui-chat/README.zh.md) | 投影并渲染 Chat 对话 target | — |
