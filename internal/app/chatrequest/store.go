@@ -129,6 +129,71 @@ func (s *Store) Get(ctx context.Context, workspaceID, userID, clientRequestID st
 	return request, nil
 }
 
+// GetWorkflowDispatch reconstructs the status record for a manual team
+// workflow dispatch. Workflow dispatches predate the chat-request ledger, but
+// their run and task identities are deterministic and durably persisted. This
+// keeps the public client_request_id status contract valid without relying on
+// process-local state.
+func (s *Store) GetWorkflowDispatch(
+	ctx context.Context, workspaceID, userID, clientRequestID, runID string,
+) (Request, error) {
+	requestID, err := uuid.Parse(strings.TrimSpace(clientRequestID))
+	if err != nil {
+		return Request{}, ErrNotFound
+	}
+	var request Request
+	request.WorkspaceID = workspaceID
+	request.UserID = userID
+	request.ClientRequestID = requestID.String()
+	request.RunID = strings.TrimSpace(runID)
+	err = s.pool.QueryRow(ctx, `
+		SELECT COALESCE(snapshot.project_id,''), task.id,
+		       snapshot.created_at, snapshot.created_at
+		FROM weave_team_run_snapshots AS snapshot
+		JOIN weave_task_queue AS task
+		  ON task.workspace_id=snapshot.workspace_id
+		 AND task.run_snapshot_id=snapshot.run_id
+		WHERE snapshot.workspace_id=$1 AND snapshot.run_id=$2
+		  AND snapshot.mode='fixed_workflow'
+		  AND snapshot.trigger_source_v2->>'type'='manual'
+		  AND snapshot.trigger_source_v2->>'source_ref'=$3
+		ORDER BY task.created_at ASC, task.id ASC
+		LIMIT 1
+	`, workspaceID, request.RunID, userID).Scan(
+		&request.ProjectID, &request.TaskID, &request.CreatedAt, &request.UpdatedAt,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Request{}, ErrNotFound
+	}
+	if err != nil {
+		return Request{}, fmt.Errorf("get workflow dispatch: %w", err)
+	}
+	request.Status = "running"
+	request, err = s.AttachWorkflowProgress(ctx, request)
+	if err != nil {
+		return Request{}, err
+	}
+	if request.WorkflowProgress != nil {
+		request.Status = productWorkflowStatus(request.WorkflowProgress.Status)
+	}
+	return request, nil
+}
+
+func productWorkflowStatus(status string) string {
+	switch strings.TrimSpace(status) {
+	case "success", "succeeded", "completed":
+		return "completed"
+	case "failed", "cancelled", "abandoned":
+		return "failed"
+	case "yielded", "waiting", "waiting_human":
+		return "yielded"
+	case "queued", "pending":
+		return "queued"
+	default:
+		return "running"
+	}
+}
+
 // GetLatestForConversation returns the newest request owned by the current
 // user for a conversation. It is intentionally a read model: reconnecting
 // clients use it to converge on the durable execution without replaying the

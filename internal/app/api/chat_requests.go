@@ -15,6 +15,12 @@ func (s *Server) handleGetChatRequest(c echo.Context) error {
 	record, err := s.ChatRequests.Get(
 		c.Request().Context(), getTenant(c), getUserID(c), c.Param("id"),
 	)
+	if errors.Is(err, chatrequest.ErrNotFound) {
+		runID, _ := deterministicWorkflowDispatchIDs(getTenant(c), getUserID(c), c.Param("id"))
+		record, err = s.ChatRequests.GetWorkflowDispatch(
+			c.Request().Context(), getTenant(c), getUserID(c), c.Param("id"), runID,
+		)
+	}
 	if err == nil {
 		record, err = s.ChatRequests.AttachWorkflowProgress(c.Request().Context(), record)
 	}

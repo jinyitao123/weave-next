@@ -313,3 +313,15 @@ func assertTerminalPayloadFields(t *testing.T, raw json.RawMessage) {
 		}
 	}
 }
+
+func TestProductWorkflowStatus(t *testing.T) {
+	tests := map[string]string{
+		"pending": "queued", "running": "running", "succeeded": "completed",
+		"waiting_human": "yielded", "failed": "failed", "cancelled": "failed",
+	}
+	for input, want := range tests {
+		if got := productWorkflowStatus(input); got != want {
+			t.Fatalf("productWorkflowStatus(%q)=%q want %q", input, got, want)
+		}
+	}
+}
