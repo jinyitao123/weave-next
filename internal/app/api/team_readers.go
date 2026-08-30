@@ -12,8 +12,8 @@ import (
 	"strconv"
 
 	"github.com/jinyitao123/loom"
-	"github.com/jinyitao123/weave/internal/kernel/loomruntime"
 	"github.com/jinyitao123/weave/internal/base/snapshot"
+	"github.com/jinyitao123/weave/internal/kernel/loomruntime"
 	"github.com/labstack/echo/v4"
 )
 
@@ -86,6 +86,7 @@ type teamDiagnostics struct {
 
 type teamRunRow struct {
 	RunID          string                       `json:"run_id"`
+	Status         string                       `json:"status"`
 	Classification string                       `json:"classification"`
 	Terminal       *loomruntime.TerminalEntryV3 `json:"terminal,omitempty"`
 }
@@ -520,6 +521,7 @@ func classifyAndAggregateTeam(
 		}
 		rows = append(rows, teamRunRow{
 			RunID:          runID,
+			Status:         teamProductRunStatus(classification, entry),
 			Classification: classification,
 			Terminal:       entry,
 		})
@@ -561,6 +563,41 @@ func classifyAndAggregateTeam(
 		return report, fmt.Errorf("%w: unsupported aggregation mode %q", errTeamAggregationInvariant, mode)
 	}
 	return report, nil
+}
+
+// teamProductRunStatus keeps the user-facing run contract deliberately small.
+// Lifecycle classification remains available beside it for operators and
+// repair tooling, but MCP clients only need to branch on these five states.
+func teamProductRunStatus(
+	classification string,
+	entry *loomruntime.TerminalEntryV3,
+) string {
+	if entry != nil {
+		switch entry.Status {
+		case "success", "succeeded", "completed":
+			return "completed"
+		default:
+			return "failed"
+		}
+	}
+	switch classification {
+	case string(loomruntime.RunLifecycleTerminalStageYielded):
+		return "yielded"
+	case string(loomruntime.RunLifecycleTerminalProjectionBlocked),
+		string(loomruntime.RunLifecycleTerminalAssociationDefect),
+		string(loomruntime.RunLifecycleTerminalLineageDefect):
+		return "failed"
+	case string(loomruntime.RunLifecycleTerminalPendingActive),
+		string(loomruntime.RunLifecycleTerminalReconciling),
+		string(loomruntime.RunLifecycleTerminalMissing),
+		string(loomruntime.RunLifecycleTerminalLivenessUnknown):
+		// Missing terminal evidence is not itself a business failure. A queued
+		// continuation can briefly outlive its attempt lease before a worker
+		// claims it, as long fan-out workflows do under load.
+		return "running"
+	default:
+		return "running"
+	}
 }
 
 func teamLifecycleGrandfathered(

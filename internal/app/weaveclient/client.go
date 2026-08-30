@@ -461,7 +461,7 @@ func terminalTeamRunStatus(body json.RawMessage, snapshotID string) bool {
 		status = response.Runs[0].Status
 	}
 	switch status {
-	case "succeeded", "failed", "cancelled", "abandoned":
+	case "completed", "failed", "yielded", "succeeded", "cancelled", "abandoned":
 		return true
 	default:
 		return false

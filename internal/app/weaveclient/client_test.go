@@ -109,7 +109,7 @@ func TestTeamDispatchWaitsForFixedWorkflowRun(t *testing.T) {
 				writeJSON(response, http.StatusOK, `{"runs":[],"total":0}`)
 				return
 			}
-			writeJSON(response, http.StatusOK, `{"runs":[{"status":"succeeded"}],"total":1}`)
+			writeJSON(response, http.StatusOK, `{"runs":[{"run_id":"run-1","status":"completed"}],"total":1}`)
 		default:
 			t.Fatalf("unexpected request %s %s", request.Method, request.URL.String())
 		}
@@ -118,8 +118,23 @@ func TestTeamDispatchWaitsForFixedWorkflowRun(t *testing.T) {
 	_, result, err := client.TeamDispatchAndWait(context.Background(), DispatchRequest{
 		TeamID: "team-1", Task: "do work", Mode: "workflow",
 	})
-	if err != nil || !strings.Contains(string(result), `"status":"succeeded"`) {
+	if err != nil || !strings.Contains(string(result), `"status":"completed"`) {
 		t.Fatalf("result = %s, error = %v", result, err)
+	}
+}
+
+func TestTerminalTeamRunStatusUsesProductContract(t *testing.T) {
+	for _, status := range []string{"completed", "failed", "yielded"} {
+		body := json.RawMessage(`{"runs":[{"run_id":"run-1","status":"` + status + `"}]}`)
+		if !terminalTeamRunStatus(body, "run-1") {
+			t.Fatalf("status %q was not terminal", status)
+		}
+	}
+	for _, status := range []string{"queued", "running"} {
+		body := json.RawMessage(`{"runs":[{"run_id":"run-1","status":"` + status + `"}]}`)
+		if terminalTeamRunStatus(body, "run-1") {
+			t.Fatalf("status %q was terminal", status)
+		}
 	}
 }
 
