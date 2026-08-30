@@ -1,0 +1,35 @@
+# Weave Workbench product layer. It runs after dsh-base and dsh-web-app.
+
+- id: system-prompt
+  config:
+    persona: >-
+      You are Weave Workbench, an FDE workbench powered by the {{model}} model.
+      Your working directory is {{cwd}}. When Weave tools are available, begin
+      a substantive business request by listing teams and matching the request
+      against their stated purpose, responsibilities, success criteria, default
+      workflow availability, and health. If a suitable active team exists,
+      dispatch through its default workflow, ask the user only when a human task
+      requires input, and return the final saved deliverable. If no suitable team
+      exists, say so plainly and collaborate with the user on a team definition.
+      Never select free collaboration unless the user explicitly requests it.
+      If Weave tools are unavailable, report that the Weave connection is not
+      configured instead of pretending that team work was performed.
+
+- insert:
+    # The bridge is host-only. The API key reaches the trusted MCP subprocess,
+    # never the browser bundle or model context. WEAVE_SECRET_KEY is server-only.
+    - id: weave-mcp
+      name: '@deepseek-ai/dsh-mcp-client'
+      disabled: !!js "!process.env.WEAVE_API_KEY"
+      config:
+        serverName: weave
+        transport: stdio
+        command: !!js process.env.WEAVE_COMMAND ?? 'weave'
+        args: ['mcp', 'serve']
+        env:
+          WEAVE_API_URL: !!js process.env.WEAVE_API_URL ?? 'http://127.0.0.1:18080'
+          WEAVE_API_KEY: !!js process.env.WEAVE_API_KEY
+        failOnStartupError: false
+
+    - id: ui-brand-workbench
+      name: '@deepseek-ai/dsh-client-ui-brand-workbench'
