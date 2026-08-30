@@ -18,6 +18,14 @@ export const zh = {
   'teamList.scenario': '适用场景',
   'teamList.success': '完成标准',
   'teamList.responsibilities': '可承担',
+  'deliverable.title': '最终交付物',
+  'deliverable.running': '正在读取交付物',
+  'deliverable.ready': '文件已就绪',
+  'deliverable.failed': '读取交付物失败',
+  'deliverable.stopped': '读取交付物已中止',
+  'deliverable.invalid': '交付物数据无法识别',
+  'deliverable.download': '下载文件',
+  'deliverable.preview': '文件内容',
 } satisfies Record<string, string>
 
 /** Locale key union for Weave product presentations. */
@@ -40,4 +48,12 @@ export const en = {
   'teamList.scenario': 'Best for',
   'teamList.success': 'Done when',
   'teamList.responsibilities': 'Can handle',
+  'deliverable.title': 'Final deliverable',
+  'deliverable.running': 'Reading deliverable',
+  'deliverable.ready': 'File ready',
+  'deliverable.failed': 'Could not read deliverable',
+  'deliverable.stopped': 'Deliverable lookup stopped',
+  'deliverable.invalid': 'Deliverable data could not be read',
+  'deliverable.download': 'Download file',
+  'deliverable.preview': 'File contents',
 } satisfies Record<WeaveKey, string>
