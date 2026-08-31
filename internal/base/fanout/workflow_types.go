@@ -406,6 +406,15 @@ type AdvanceResumeRequest struct {
 	AdvancedAt           time.Time
 }
 
+type CloseWorkflowResumeGroupRequest struct {
+	WorkspaceID       string
+	GroupID           string
+	Generation        string
+	GroupCompletionID string
+	Reason            string
+	ClosedAt          time.Time
+}
+
 type ActivateParkRequest struct {
 	WorkspaceID        string
 	IntentID           string

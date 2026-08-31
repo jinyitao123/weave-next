@@ -357,9 +357,8 @@ func (c *WorkflowCoordinator) ReconcileGroup(ctx context.Context, workspaceID, g
 		if err != nil {
 			return err
 		}
-		if lease.MarkerPhase == "final" || lease.AttemptGeneration != plan.CreatorAttemptGeneration ||
-			lease.AttemptID != plan.CreatorAttemptID {
-			return workflowError(ErrorResumeConflict, "creator attempt cannot be resumed")
+		if creatorAttemptCannotResume(plan, lease, c.now()) {
+			return c.closeWorkflowResumeGroup(ctx, plan, "creator_attempt_unavailable_before_resume_claim")
 		}
 		claimID := uuid.NewSHA1(uuid.NameSpaceURL, []byte("weave/fanout-resume-claim/v1\x00"+workspaceID+"\x00"+groupID+"\x00"+plan.GroupCompletionID)).String()
 		if err := c.claimResume(ctx, plan, claimID, lease); err != nil {
@@ -369,6 +368,26 @@ func (c *WorkflowCoordinator) ReconcileGroup(ctx context.Context, workspaceID, g
 		if err != nil {
 			return err
 		}
+	}
+	if plan.CheckpointSequence == nil {
+		return workflowError(ErrorResumeConflict, "decided group has no activation checkpoint")
+	}
+	checkpoint, err := c.Checkpoints.GetYieldedCheckpoint(
+		ctx, workspaceID, plan.ParentRunID, *plan.CheckpointSequence,
+	)
+	if err != nil {
+		if errors.Is(err, ErrYieldedCheckpointUnavailable) {
+			closed, closeErr := c.closeWorkflowResumeGroupIfCreatorUnavailable(
+				ctx, plan, "yielded_checkpoint_unavailable_after_resume_decision",
+			)
+			if closeErr != nil {
+				return closeErr
+			}
+			if closed {
+				return nil
+			}
+		}
+		return err
 	}
 	newGeneration := plan.PreviousAttemptGeneration + 1
 	newAttemptID := plan.NewAttemptID
@@ -385,15 +404,6 @@ func (c *WorkflowCoordinator) ReconcileGroup(ctx context.Context, workspaceID, g
 			return err
 		}
 	}
-	if plan.CheckpointSequence == nil {
-		return workflowError(ErrorResumeConflict, "decided group has no activation checkpoint")
-	}
-	checkpoint, err := c.Checkpoints.GetYieldedCheckpoint(
-		ctx, workspaceID, plan.ParentRunID, *plan.CheckpointSequence,
-	)
-	if err != nil {
-		return err
-	}
 	result, err := c.Resumer.ResumeParkedRun(ctx, ResumeParkedRunRequest{
 		WorkspaceID: workspaceID, ParentRunID: plan.ParentRunID, RunSnapshotID: plan.RunSnapshotID,
 		IntentID: plan.IntentID, GroupID: groupID, Generation: plan.Generation,
@@ -409,6 +419,73 @@ func (c *WorkflowCoordinator) ReconcileGroup(ctx context.Context, workspaceID, g
 		return workflowError(ErrorResumeConflict, "parent resume claim conflicted")
 	}
 	return c.advanceResume(ctx, plan, result)
+}
+
+func (c *WorkflowCoordinator) closeWorkflowResumeGroupIfCreatorUnavailable(
+	ctx context.Context,
+	plan WorkflowResumePlan,
+	reason string,
+) (bool, error) {
+	lease, err := c.CreatorLeases.CreatorLeaseState(ctx, CreatorLeaseIdentity{
+		WorkspaceID: plan.WorkspaceID, RunID: plan.ParentRunID, CreatorEpoch: plan.CreatorEpoch,
+		AttemptGeneration: plan.CreatorAttemptGeneration, AttemptID: plan.CreatorAttemptID,
+	})
+	if err != nil {
+		if ErrorCodeOf(err) == ErrorResumeConflict {
+			return true, c.closeWorkflowResumeGroup(ctx, plan, reason+"_creator_lease_conflict")
+		}
+		return false, err
+	}
+	if !creatorAttemptCannotResume(plan, lease, c.now()) {
+		return false, nil
+	}
+	return true, c.closeWorkflowResumeGroup(ctx, plan, reason)
+}
+
+func creatorAttemptCannotResume(plan WorkflowResumePlan, lease CreatorLeaseState, now time.Time) bool {
+	expired := !lease.LeaseExpiresAt.IsZero() && !lease.LeaseExpiresAt.After(now)
+	return lease.MarkerPhase == "final" ||
+		lease.AttemptGeneration != plan.CreatorAttemptGeneration ||
+		lease.AttemptID != plan.CreatorAttemptID ||
+		expired
+}
+
+func (c *WorkflowCoordinator) closeWorkflowResumeGroup(
+	ctx context.Context,
+	plan WorkflowResumePlan,
+	reason string,
+) error {
+	tx, err := c.Transactions.Begin(ctx)
+	if err != nil {
+		return workflowError(ErrorStoreUnavailable, "begin workflow resume close: %v", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	locked, err := c.Store.GetWorkflowResumePlanTx(ctx, tx, plan.WorkspaceID, plan.GroupID)
+	if err != nil {
+		return err
+	}
+	if locked.Status == WorkflowGroupClosed || locked.Status == WorkflowGroupResumed {
+		if err := tx.Commit(ctx); err != nil {
+			return workflowError(ErrorStoreUnavailable, "commit workflow resume close replay: %v", err)
+		}
+		return nil
+	}
+	if locked.Mode != WorkflowResumeMode ||
+		locked.Status != WorkflowGroupDecided ||
+		locked.Generation != plan.Generation ||
+		locked.GroupCompletionID != plan.GroupCompletionID {
+		return workflowError(ErrorResumeConflict, "workflow resume close identity differs")
+	}
+	if _, err := c.Store.CASCloseWorkflowResumeGroupTx(ctx, tx, CloseWorkflowResumeGroupRequest{
+		WorkspaceID: locked.WorkspaceID, GroupID: locked.GroupID, Generation: locked.Generation,
+		GroupCompletionID: locked.GroupCompletionID, Reason: reason, ClosedAt: c.now(),
+	}); err != nil {
+		return err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return workflowError(ErrorStoreUnavailable, "commit workflow resume close: %v", err)
+	}
+	return nil
 }
 
 func (c *WorkflowCoordinator) tryDecideGroup(ctx context.Context, workspaceID, groupID string) error {

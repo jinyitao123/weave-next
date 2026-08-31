@@ -661,6 +661,42 @@ func (s *Store) CASAdvanceResumeTx(ctx context.Context, tx pgx.Tx, req AdvanceRe
 	return claim, tag.RowsAffected() == 1, nil
 }
 
+func (s *Store) CASCloseWorkflowResumeGroupTx(
+	ctx context.Context,
+	tx pgx.Tx,
+	req CloseWorkflowResumeGroupRequest,
+) (bool, error) {
+	if err := requireWorkflowTx(tx); err != nil {
+		return false, err
+	}
+	if req.WorkspaceID == "" || req.GroupID == "" || req.Generation == "" ||
+		req.GroupCompletionID == "" || req.Reason == "" || req.ClosedAt.IsZero() {
+		return false, workflowError(ErrorInvalidRequest, "invalid workflow resume close request")
+	}
+	payload, err := canonicalJSON(map[string]any{"reason": req.Reason})
+	if err != nil {
+		return false, workflowError(ErrorInvalidRequest, "encode workflow resume close payload: %v", err)
+	}
+	tag, err := tx.Exec(ctx, `UPDATE weave_fanout_group
+		SET status='closed',updated_at=$5
+		WHERE workspace_id=$1 AND group_id=$2 AND status='decided' AND mode='workflow_resume'
+		  AND generation=$3 AND group_completion_id=$4`, req.WorkspaceID, req.GroupID,
+		req.Generation, req.GroupCompletionID, req.ClosedAt.UTC())
+	if err != nil {
+		return false, mapWorkflowStoreError("close workflow resume group", err)
+	}
+	if tag.RowsAffected() != 1 {
+		return false, nil
+	}
+	if err := s.AppendAuditTx(ctx, tx, AuditEvent{
+		WorkspaceID: req.WorkspaceID, GroupID: req.GroupID, Generation: req.Generation,
+		EventType: "workflow_resume_closed", Payload: payload, OccurredAt: req.ClosedAt,
+	}); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 func (s *Store) getResumeClaimTx(ctx context.Context, tx pgx.Tx, workspaceID, groupID string) (ResumeClaim, error) {
 	var claim ResumeClaim
 	var state string
