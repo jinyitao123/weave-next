@@ -45,6 +45,7 @@ type Executor struct {
 	Checkpoints       ExecutorCheckpointStore
 	Runtime           RuntimeRunner
 	Fanout            ExecutorFanout
+	Corrections       *CorrectionStore
 	RuntimeRecords    loomruntime.TerminalRecordStore
 	Now               func() time.Time
 	ResumeTokenHash   func() ([]byte, error)

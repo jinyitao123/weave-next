@@ -47,9 +47,10 @@ const (
 type WaitKind string
 
 const (
-	WaitTimer  WaitKind = "timer"
-	WaitFanout WaitKind = "fanout"
-	WaitHuman  WaitKind = "human"
+	WaitTimer      WaitKind = "timer"
+	WaitFanout     WaitKind = "fanout"
+	WaitHuman      WaitKind = "human"
+	WaitCorrection WaitKind = "correction"
 )
 
 type TeamRun struct {

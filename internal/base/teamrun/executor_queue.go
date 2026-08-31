@@ -49,6 +49,8 @@ func (e *Executor) processClaimedWorkflowTask(ctx context.Context, task *taskque
 			return e.processFanoutResume(ctx, task, workerID)
 		case "human_resume":
 			return e.processHumanResume(ctx, task, workerID)
+		case "correction_resume":
+			return e.processCorrectionResume(ctx, task, workerID)
 		}
 	}
 

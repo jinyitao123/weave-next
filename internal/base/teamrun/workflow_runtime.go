@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/jinyitao123/weave/internal/base/deliverable"
@@ -105,6 +106,15 @@ func validateWorkflowCheckpoint(checkpoint WorkflowCheckpointV1) error {
 			ErrTeamRunSnapshotUnavailable,
 		)
 	}
+	for _, correction := range checkpoint.Corrections {
+		if correction.SchemaVersion != 1 || correction.CorrectionID == "" ||
+			correction.Instruction == "" || len(correction.AffectedNodes) == 0 ||
+			(correction.TargetKind != "team" && correction.TargetKind != "member") ||
+			(correction.TargetKind == "member" && correction.TargetMemberID == "") ||
+			(correction.TargetKind == "team" && correction.TargetMemberID != "") {
+			return fmt.Errorf("%w: checkpoint correction is invalid", ErrTeamRunSnapshotUnavailable)
+		}
+	}
 	return nil
 }
 
@@ -151,7 +161,84 @@ type WorkflowSerialRuntime struct {
 	Tasks                  ExecutorTaskStore
 	Snapshots              SnapshotReader
 	OutputRecorder         WorkflowOutputRecorder
+	Corrections            *CorrectionStore
+	Activities             ActivityRecorder
 	Now                    func() time.Time
+}
+
+type runtimeActivityScope struct {
+	NodeID        string
+	MemberID      string
+	MemberVersion int64
+}
+
+type runtimeActivityScopeKey struct{}
+
+func (r *WorkflowSerialRuntime) toolObserver(run TeamRun) workflow.RuntimeToolObserver {
+	if r.Activities == nil {
+		return nil
+	}
+	return func(ctx context.Context, event workflow.RuntimeToolEvent) {
+		scope, ok := ctx.Value(runtimeActivityScopeKey{}).(runtimeActivityScope)
+		if !ok || scope.NodeID == "" || scope.MemberID == "" {
+			return
+		}
+		detail, err := json.Marshal(map[string]any{
+			"tool_name": event.Tool, "tool_call_id": event.CallID,
+			"status": map[bool]string{true: "error", false: "ok"}[event.ResultError],
+		})
+		if err != nil {
+			return
+		}
+		if err := r.Activities.Record(ctx, ActivityEvent{
+			WorkspaceID: run.WorkspaceID, RunID: run.RunID, Kind: event.Kind,
+			NodeID: scope.NodeID, MemberID: scope.MemberID, MemberVersion: scope.MemberVersion,
+			Detail: detail, OccurredAt: time.Now().UTC(),
+		}); err != nil {
+			slog.Warn("team run tool activity record failed", "run_id", run.RunID, "node_id", scope.NodeID, "error", err)
+		}
+	}
+}
+
+func (r *WorkflowSerialRuntime) correctionBoundary(
+	run TeamRun,
+	graph machine.GraphDefinition,
+	payload frozen.ArtifactPayloadV1,
+) func(context.Context, string, map[string]any) (*CorrectionWaitDetailV1, error) {
+	if r.Corrections == nil {
+		return nil
+	}
+	return func(ctx context.Context, currentNodeID string, outputs map[string]any) (*CorrectionWaitDetailV1, error) {
+		item, present, err := r.Corrections.GetActive(ctx, run.WorkspaceID, run.RunID)
+		if err != nil {
+			return nil, err
+		}
+		if !present || item.Status != CorrectionRequested {
+			return nil, nil
+		}
+		detail, err := buildCorrectionWaitDetail(graph, payload, currentNodeID, outputs, item)
+		if err != nil {
+			return nil, err
+		}
+		return &detail, nil
+	}
+}
+
+func (r *WorkflowSerialRuntime) activityRecorder(run TeamRun) func(context.Context, string, machine.Node, string, int64, map[string]any) {
+	if r.Activities == nil {
+		return nil
+	}
+	return func(ctx context.Context, kind string, node machine.Node, memberID string, memberVersion int64, detail map[string]any) {
+		encoded, err := json.Marshal(detail)
+		if err != nil {
+			return
+		}
+		if err := r.Activities.Record(ctx, ActivityEvent{WorkspaceID: run.WorkspaceID, RunID: run.RunID,
+			Kind: kind, NodeID: node.ID, MemberID: memberID, MemberVersion: memberVersion,
+			Detail: encoded, OccurredAt: time.Now().UTC()}); err != nil {
+			slog.Warn("team run activity record failed", "run_id", run.RunID, "node_id", node.ID, "error", err)
+		}
+	}
 }
 
 func (r *WorkflowSerialRuntime) Execute(
@@ -172,9 +259,11 @@ func (r *WorkflowSerialRuntime) Execute(
 		prepared.runInput,
 		serialMachineStart{
 			SourceKind: run.SourceKind, Now: r.now(), Run: run,
-			ArtifactHash: prepared.envelope.ContentHash,
-			Candidate:    prepared.roundBoundCandidate(),
-			RecordOutput: r.workflowOutputRecorder(run),
+			ArtifactHash:    prepared.envelope.ContentHash,
+			Candidate:       prepared.roundBoundCandidate(),
+			RecordOutput:    r.workflowOutputRecorder(run),
+			CheckCorrection: r.correctionBoundary(run, prepared.graph, prepared.payload),
+			RecordActivity:  r.activityRecorder(run),
 		},
 	)
 	return runtimeResultFromSerial(result, prepared.payload)
@@ -224,6 +313,9 @@ func (r *WorkflowSerialRuntime) ResumeCheckpoint(
 			UsageComplete:         checkpoint.UsageComplete,
 			UsageIncompleteReason: checkpoint.UsageIncompleteReason,
 			RecordOutput:          r.workflowOutputRecorder(run),
+			CheckCorrection:       r.correctionBoundary(run, prepared.graph, prepared.payload),
+			RecordActivity:        r.activityRecorder(run),
+			Corrections:           append([]CorrectionDirectiveV1(nil), checkpoint.Corrections...),
 		},
 	)
 	return runtimeResultFromSerial(result, prepared.payload)
@@ -444,7 +536,8 @@ func (r *WorkflowSerialRuntime) prepare(
 	}
 	loader := *r.Loader
 	loader.RunSnapshotID = run.RunSnapshotID
-	runtimeArtifact, err := loader.Load(ctx, loaded.envelope, r.hostFactoryFor(loaded), resolver)
+	hostFactory := workflow.ObserveRuntimeTools(r.hostFactoryFor(loaded), r.toolObserver(run))
+	runtimeArtifact, err := loader.Load(ctx, loaded.envelope, hostFactory, resolver)
 	if err != nil {
 		return nil, executionError(ErrorCodeRuntimeIncompatible, err)
 	}

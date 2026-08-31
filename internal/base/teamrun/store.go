@@ -12,7 +12,11 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-type PGStore struct{}
+type PGStore struct {
+	// Transactions is optional for transaction-owned callers. It is used by
+	// Get, the small read adapter for public exact-run inspection.
+	Transactions TransactionBeginner
+}
 
 func NewPGStore() *PGStore { return &PGStore{} }
 
@@ -187,6 +191,32 @@ func (store *PGStore) GetTx(
 	runID string,
 ) (TeamRun, error) {
 	return store.get(ctx, tx, workspaceID, runID, false)
+}
+
+// Get reads one team run without exposing transaction ownership to callers.
+// Public adapters use this for exact-run reads while state-changing paths keep
+// using GetForUpdateTx inside their existing transaction.
+func (store *PGStore) Get(
+	ctx context.Context,
+	workspaceID string,
+	runID string,
+) (TeamRun, error) {
+	if store == nil || store.Transactions == nil {
+		return TeamRun{}, errors.New("team run store dependencies are unavailable")
+	}
+	tx, err := store.Transactions.Begin(ctx)
+	if err != nil {
+		return TeamRun{}, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	run, err := store.GetTx(ctx, tx, workspaceID, runID)
+	if err != nil {
+		return TeamRun{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return TeamRun{}, err
+	}
+	return run, nil
 }
 
 func (store *PGStore) GetForUpdateTx(
@@ -831,7 +861,7 @@ func (store *PGStore) ParkTx(
 		return TeamRun{}, fmt.Errorf("executor, checkpoint, and resume token hash must be non-empty")
 	}
 	switch req.WaitKind {
-	case WaitTimer, WaitFanout, WaitHuman:
+	case WaitTimer, WaitFanout, WaitHuman, WaitCorrection:
 	default:
 		return TeamRun{}, fmt.Errorf("wait_kind %q is invalid", req.WaitKind)
 	}
@@ -1394,7 +1424,7 @@ func (store *PGStore) ResumeRunningTx(
 		return TeamRun{}, fmt.Errorf("executor_id and resume token hash must be non-empty")
 	}
 	switch req.ExpectedWaitKind {
-	case WaitTimer, WaitFanout:
+	case WaitTimer, WaitFanout, WaitCorrection:
 		if req.HumanTimeout || len(req.Payload) != 0 || len(req.PayloadDigest) != 0 {
 			return TeamRun{}, fmt.Errorf("payload is only allowed for human resume")
 		}

@@ -62,6 +62,7 @@ type WorkflowOutput struct {
 type ListFilter struct {
 	ProjectID      string
 	ConversationID string
+	RunID          string
 	Limit          int
 	Offset         int
 }
@@ -398,10 +399,11 @@ func (s *Store) List(
 		  AND btrim(content) <> ''
 		  AND ($2='' OR project_id=$2)
 		  AND ($3='' OR conversation_id=$3)
+		  AND ($4='' OR run_id=$4)
 		ORDER BY created_at DESC, id DESC
-		LIMIT $4 OFFSET $5
+		LIMIT $5 OFFSET $6
 	`, workspaceID, strings.TrimSpace(filter.ProjectID),
-		strings.TrimSpace(filter.ConversationID), filter.Limit, filter.Offset)
+		strings.TrimSpace(filter.ConversationID), strings.TrimSpace(filter.RunID), filter.Limit, filter.Offset)
 	if err != nil {
 		return nil, fmt.Errorf("list final deliverables: %w", err)
 	}

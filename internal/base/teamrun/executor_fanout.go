@@ -8,7 +8,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
+	"time"
 
 	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/base/taskqueue"
@@ -194,7 +196,8 @@ func (r *WorkflowSerialRuntime) ExecuteFanoutLeg(
 	}
 	loader := *r.Loader
 	loader.RunSnapshotID = parent.RunSnapshotID
-	runtimeArtifact, err := loader.Load(ctx, loaded.envelope, r.hostFactoryFor(loaded), resolver)
+	hostFactory := workflow.ObserveRuntimeTools(r.hostFactoryFor(loaded), r.toolObserver(parent))
+	runtimeArtifact, err := loader.Load(ctx, loaded.envelope, hostFactory, resolver)
 	if err != nil {
 		return nil, executionError(ErrorCodeRuntimeIncompatible, err)
 	}
@@ -218,13 +221,41 @@ func (r *WorkflowSerialRuntime) ExecuteFanoutLeg(
 	for _, entry := range runtimeArtifact.Entries {
 		entries[runtimeEntryKey(entry.AgentID, entry.AgentVersion)] = entry
 	}
-	// Fanout legs keep the pre-T14B-2A behavior: leg-level usage settlement
-	// is owned by T14B-2B, so the contribution is intentionally discarded.
-	output, _, err := runAgentNode(
-		ctx, branch, loaded.payload, entries, runInput, outputs,
+	memberID, memberVersion, _ := agentNodeIdentity(branch, loaded.payload)
+	startedAt := time.Now().UTC()
+	recordActivity := r.activityRecorder(parent)
+	if recordActivity != nil {
+		inputNames := make([]string, 0, len(branch.Inputs))
+		inputSummary := make(map[string]string, len(branch.Inputs))
+		for name := range branch.Inputs {
+			inputNames = append(inputNames, name)
+			if value, resolveErr := resolveValue(branch.Inputs[name].Value, runInput, outputs); resolveErr == nil {
+				inputSummary[name] = activityValueSummary(value)
+			}
+		}
+		sort.Strings(inputNames)
+		recordActivity(ctx, "member_started", branch, memberID, memberVersion,
+			map[string]any{"input_names": inputNames, "input_summary": inputSummary})
+	}
+	// Fanout legs still do not contribute to run-level usage settlement; that
+	// remains owned by T14B-2B. Their measured usage is retained in the
+	// activity ledger so the worksite can show honest member-level facts.
+	output, nodeUsage, err := runAgentNode(
+		ctx, branch, loaded.payload, entries, runInput, outputs, nil,
 	)
 	if err != nil {
+		if recordActivity != nil {
+			recordActivity(ctx, "member_failed", branch, memberID, memberVersion, map[string]any{
+				"duration_ms": time.Since(startedAt).Milliseconds(), "error_code": string(executionErrorCode(err)),
+			})
+		}
 		return nil, err
+	}
+	if recordActivity != nil {
+		recordActivity(ctx, "member_completed", branch, memberID, memberVersion, map[string]any{
+			"duration_ms": time.Since(startedAt).Milliseconds(), "tool_calls": nodeUsage.Totals.ToolCalls,
+			"input_tokens": nodeUsage.Totals.InputTokens, "output_tokens": nodeUsage.Totals.OutputTokens,
+		})
 	}
 	if recorder := r.workflowOutputRecorder(parent); recorder != nil {
 		if err := recorder(ctx, branch, output, false); err != nil {

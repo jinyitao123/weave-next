@@ -61,6 +61,9 @@ type serialMachineStart struct {
 	UsageComplete         bool
 	UsageIncompleteReason string
 	RecordOutput          func(context.Context, machine.Node, any, bool) error
+	CheckCorrection       func(context.Context, string, map[string]any) (*CorrectionWaitDetailV1, error)
+	RecordActivity        func(context.Context, string, machine.Node, string, int64, map[string]any)
+	Corrections           []CorrectionDirectiveV1
 }
 
 type serialMachineResult struct {
@@ -180,14 +183,44 @@ func runSerialMachine(
 				fmt.Errorf("node %q is unavailable", current),
 			))
 		}
+		if start.CheckCorrection != nil {
+			detail, err := start.CheckCorrection(ctx, current, outputs)
+			if err != nil {
+				return fail(executionError(ErrorCodeExecutionUnrecoverable, err))
+			}
+			if detail != nil {
+				encoded, err := json.Marshal(detail)
+				if err != nil {
+					return fail(executionError(ErrorCodeExecutionUnrecoverable, err))
+				}
+				return serialMachineResult{Status: serialParked, Outputs: outputs, NodeID: current,
+					WaitKind: WaitCorrection, WaitDetail: encoded, Usage: usage,
+					UsageComplete: usageComplete, UsageIncompleteReason: usageIncompleteReason}
+			}
+		}
 		switch node.Type {
 		case machine.NodeLead, machine.NodeWorker:
+			memberID, memberVersion, _ := agentNodeIdentity(node, payload)
+			startedAt := time.Now().UTC()
+			if start.RecordActivity != nil {
+				inputNames := make([]string, 0, len(node.Inputs))
+				inputSummary := make(map[string]string, len(node.Inputs))
+				for name := range node.Inputs {
+					inputNames = append(inputNames, name)
+					if value, err := resolveValue(node.Inputs[name].Value, runInput, outputs); err == nil {
+						inputSummary[name] = activityValueSummary(value)
+					}
+				}
+				sort.Strings(inputNames)
+				start.RecordActivity(ctx, "member_started", node, memberID, memberVersion,
+					map[string]any{"input_names": inputNames, "input_summary": inputSummary})
+			}
 			callID, err := usage.NextCall(start.Run.RunID, node.ID)
 			if err != nil {
 				return fail(executionError(ErrorCodeExecutionUnrecoverable, err))
 			}
 			output, nodeUsage, err := runAgentNode(
-				ctx, node, payload, entries, runInput, outputs,
+				ctx, node, payload, entries, runInput, outputs, start.Corrections,
 			)
 			if len(nodeUsage.CLIAttempts) == 0 {
 				attemptID := nodeUsageAttemptID(callID)
@@ -228,6 +261,11 @@ func runSerialMachine(
 				}
 			}
 			if err != nil {
+				if start.RecordActivity != nil {
+					start.RecordActivity(ctx, "member_failed", node, memberID, memberVersion, map[string]any{
+						"duration_ms": time.Since(startedAt).Milliseconds(), "error_code": string(executionErrorCode(err)),
+					})
+				}
 				next, routed := edgeTarget(edges[current], machine.RouteFailure)
 				if routed {
 					current = next
@@ -236,6 +274,12 @@ func runSerialMachine(
 				return fail(err)
 			}
 			outputs[node.ID] = output
+			if start.RecordActivity != nil {
+				start.RecordActivity(ctx, "member_completed", node, memberID, memberVersion, map[string]any{
+					"duration_ms": time.Since(startedAt).Milliseconds(), "tool_calls": nodeUsage.Totals.ToolCalls,
+					"input_tokens": nodeUsage.Totals.InputTokens, "output_tokens": nodeUsage.Totals.OutputTokens,
+				})
+			}
 			if start.RecordOutput != nil {
 				if err := start.RecordOutput(ctx, node, output, false); err != nil {
 					return fail(executionError(ErrorCodeDeliveryUnavailable, err))
@@ -494,6 +538,19 @@ func runSerialMachine(
 	))
 }
 
+func activityValueSummary(value any) string {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return ""
+	}
+	const maxRunes = 320
+	runes := []rune(string(encoded))
+	if len(runes) <= maxRunes {
+		return string(runes)
+	}
+	return string(runes[:maxRunes]) + "…"
+}
+
 func serialMachineStepBudget(graph machine.GraphDefinition) int {
 	nodeCount := len(graph.Nodes)
 	if nodeCount < 1 {
@@ -520,6 +577,124 @@ func serialMachineStepBudget(graph machine.GraphDefinition) int {
 		return int(maxInt)
 	}
 	return int(budget)
+}
+
+func buildCorrectionWaitDetail(
+	graph machine.GraphDefinition,
+	payload frozen.ArtifactPayloadV1,
+	currentNodeID string,
+	outputs map[string]any,
+	item Correction,
+) (CorrectionWaitDetailV1, error) {
+	if currentNodeID == "" || item.Status != CorrectionRequested {
+		return CorrectionWaitDetailV1{}, errors.New("correction cannot be planned at this boundary")
+	}
+	restartNodeID := currentNodeID
+	if item.TargetKind == "team" {
+		restartNodeID = graph.EntryNodeID
+	} else if item.TargetKind == "member" {
+		matching := make([]string, 0)
+		for _, node := range graph.Nodes {
+			memberID, _, present := agentNodeIdentity(node, payload)
+			if present && memberID == item.TargetMemberID {
+				matching = append(matching, node.ID)
+			}
+		}
+		if len(matching) == 0 {
+			return CorrectionWaitDetailV1{}, errors.New("target member has no node in the frozen workflow")
+		}
+		for _, nodeID := range matching {
+			if _, completed := outputs[nodeID]; completed {
+				restartNodeID = nodeID
+				break
+			}
+		}
+	}
+	affectedSet := downstreamNodeSet(graph, restartNodeID)
+	if len(affectedSet) == 0 {
+		return CorrectionWaitDetailV1{}, errors.New("correction restart node is outside the frozen workflow")
+	}
+	affected := make([]string, 0, len(affectedSet))
+	for nodeID := range affectedSet {
+		affected = append(affected, nodeID)
+	}
+	sort.Strings(affected)
+	preserved := make([]string, 0)
+	for nodeID := range outputs {
+		if _, affected := affectedSet[nodeID]; !affected {
+			preserved = append(preserved, nodeID)
+		}
+	}
+	sort.Strings(preserved)
+	return CorrectionWaitDetailV1{
+		SchemaVersion: 1, WaitType: "correction", CorrectionID: item.CorrectionID,
+		TargetKind: item.TargetKind, TargetMemberID: item.TargetMemberID, Instruction: item.Instruction,
+		SafeNodeID: currentNodeID, RestartNodeID: restartNodeID,
+		AffectedNodeIDs: affected, PreservedNodeIDs: preserved,
+	}, nil
+}
+
+func downstreamNodeSet(graph machine.GraphDefinition, start string) map[string]struct{} {
+	adjacent := make(map[string][]string)
+	present := false
+	for _, node := range graph.Nodes {
+		if node.ID == start {
+			present = true
+		}
+	}
+	if !present {
+		return nil
+	}
+	for _, edge := range graph.Edges {
+		adjacent[edge.FromNodeID] = append(adjacent[edge.FromNodeID], edge.ToNodeID)
+	}
+	visited := map[string]struct{}{start: {}}
+	queue := []string{start}
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
+		for _, next := range adjacent[current] {
+			if _, seen := visited[next]; seen {
+				continue
+			}
+			visited[next] = struct{}{}
+			queue = append(queue, next)
+		}
+	}
+	return visited
+}
+
+func agentNodeIdentity(node machine.Node, payload frozen.ArtifactPayloadV1) (string, int64, bool) {
+	switch config := node.Config.(type) {
+	case machine.LeadConfig:
+		memberID := payload.Team.LeadAgentID
+		for _, bundle := range payload.Bundles {
+			if bundle.Agent.AgentID == memberID {
+				return memberID, bundle.Agent.AgentVersion, true
+			}
+		}
+	case machine.WorkerConfig:
+		return config.AgentID, config.AgentVersion, true
+	}
+	return "", 0, false
+}
+
+func correctionAppliesToNode(correction CorrectionDirectiveV1, node machine.Node, payload frozen.ArtifactPayloadV1) bool {
+	affected := false
+	for _, nodeID := range correction.AffectedNodes {
+		if nodeID == node.ID {
+			affected = true
+			break
+		}
+	}
+	if !affected {
+		return false
+	}
+	if correction.TargetKind == "team" {
+		return true
+	}
+	memberID, _, present := agentNodeIdentity(node, payload)
+	return present && memberID == correction.TargetMemberID
 }
 
 type runtimeJoinPolicy struct {
@@ -679,6 +854,7 @@ func runAgentNode(
 	entries map[string]workflow.RuntimeGraphEntry,
 	runInput any,
 	outputs map[string]any,
+	corrections []CorrectionDirectiveV1,
 ) (any, nodeUsageReport, error) {
 	var (
 		agentID      string
@@ -730,6 +906,11 @@ func runAgentNode(
 		return nil, nodeUsageReport{}, executionError(ErrorCodeExecutionUnrecoverable, err)
 	}
 	prompt := instruction + "\n\nInputs:\n" + string(encodedInputs)
+	for _, correction := range corrections {
+		if correctionAppliesToNode(correction, node, payload) {
+			prompt += "\n\nConfirmed user correction (apply to this execution):\n" + correction.Instruction
+		}
+	}
 	nodeTimeout := agentNodeExecutionTimeout
 	nodeCtx := ctx
 	cancel := func() {}
@@ -796,6 +977,9 @@ func runAgentNode(
 		)
 	}
 	execCtx := loomruntime.WithUsageRunScope(nodeCtx)
+	execCtx = context.WithValue(execCtx, runtimeActivityScopeKey{}, runtimeActivityScope{
+		NodeID: node.ID, MemberID: agentID, MemberVersion: agentVersion,
+	})
 	// Pre-bind the usage scope so hook-less frozen descriptors still confirm
 	// usage into graph state; descriptors that install before-step hooks
 	// rebind to the real step name on their first step.

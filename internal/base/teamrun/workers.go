@@ -157,21 +157,54 @@ func (s *CancelService) RequestCancel(
 	if err != nil {
 		return TeamRun{}, err
 	}
-	cancelled, err := s.Runs.RequestCancelTx(ctx, tx, RequestCancelRequest{
-		WorkspaceID:                 run.WorkspaceID,
-		RunID:                       run.RunID,
-		ExpectedStatus:              run.Status,
-		ExpectedTeamRunGeneration:   run.Generation,
-		ExpectedExecutionLeaseEpoch: run.ExecutionLeaseEpoch,
-		ExpectedResumeGeneration:    run.ResumeGeneration,
-		CancelActor:                 request.CancelActor,
-		CancelReason:                request.CancelReason,
-		GraceDeadlineAt:             request.GraceDeadline,
-		IdempotencyKey:              request.IdempotencyKey,
-		Actor:                       request.CancelActor,
-		Source:                      "teamrun_internal_cancel",
-		OccurredAt:                  now,
-	})
+	// A stop request is idempotent at the public boundary. Once the run is
+	// terminal there is no work left to cancel, and a retry while cancellation
+	// is already registered should return the observed state rather than turn a
+	// harmless page retry into a conflict.
+	if run.Status.Terminal() {
+		if err := tx.Commit(ctx); err != nil {
+			return TeamRun{}, fmt.Errorf("commit terminal team run cancel request: %w", err)
+		}
+		return run, nil
+	}
+	if run.Status == StatusCancelRequested {
+		if run.CancelIdempotencyKey != nil && *run.CancelIdempotencyKey == request.IdempotencyKey &&
+			run.CancelReason != nil && *run.CancelReason == request.CancelReason {
+			if err := tx.Commit(ctx); err != nil {
+				return TeamRun{}, fmt.Errorf("commit repeated team run cancel request: %w", err)
+			}
+			return run, nil
+		}
+		return TeamRun{}, fmt.Errorf("%w: team run cancellation is already in progress with different facts", ErrTeamRunStateConflict)
+	}
+	var cancelled TeamRun
+	if run.Status == StatusQueued {
+		cancelled, err = s.Runs.CancelQueuedTx(ctx, tx, CancelQueuedRequest{
+			WorkspaceID: run.WorkspaceID, RunID: run.RunID,
+			ExpectedStatus:              run.Status,
+			ExpectedTeamRunGeneration:   run.Generation,
+			ExpectedExecutionLeaseEpoch: run.ExecutionLeaseEpoch,
+			ExpectedResumeGeneration:    run.ResumeGeneration,
+			IdempotencyKey:              request.IdempotencyKey,
+			Actor:                       request.CancelActor, Source: "teamrun_public_cancel", OccurredAt: now,
+		})
+	} else {
+		cancelled, err = s.Runs.RequestCancelTx(ctx, tx, RequestCancelRequest{
+			WorkspaceID:                 run.WorkspaceID,
+			RunID:                       run.RunID,
+			ExpectedStatus:              run.Status,
+			ExpectedTeamRunGeneration:   run.Generation,
+			ExpectedExecutionLeaseEpoch: run.ExecutionLeaseEpoch,
+			ExpectedResumeGeneration:    run.ResumeGeneration,
+			CancelActor:                 request.CancelActor,
+			CancelReason:                request.CancelReason,
+			GraceDeadlineAt:             request.GraceDeadline,
+			IdempotencyKey:              request.IdempotencyKey,
+			Actor:                       request.CancelActor,
+			Source:                      "teamrun_public_cancel",
+			OccurredAt:                  now,
+		})
+	}
 	if err != nil {
 		return TeamRun{}, err
 	}

@@ -123,6 +123,9 @@ type Server struct {
 	teamRunCancel             *teamrun.CancelService
 	teamRunHumanResume        *teamrun.HumanResumeService
 	teamRunHumanTasks         *teamrun.HumanTaskReader
+	teamRunCorrections        *teamrun.CorrectionStore
+	teamRunCorrectionResume   *teamrun.CorrectionResumeService
+	teamRunActivities         *teamrun.PGActivityStore
 	workflowFanoutReconciler  *fanout.WorkflowReconcilerWorker
 	workflowHealthWorkers     *workflowHealthWorkers
 }
@@ -545,6 +548,11 @@ func (s *Server) registerRoutes() {
 	// Runs.
 	auth.GET("/runs", s.handleListRuns, runsScope)
 	auth.GET("/runs/:id", s.handleGetRun, runsScope)
+	auth.GET("/runs/:id/activity", s.handleGetRunActivity, runsScope)
+	auth.POST("/runs/:id/stop", s.handleStopRun, runsScope)
+	auth.GET("/runs/:id/corrections", s.handleListRunCorrections, runsScope)
+	auth.POST("/runs/:id/corrections", s.handleRequestRunCorrection, runsScope)
+	auth.POST("/runs/:id/corrections/:correction_id/confirm", s.handleConfirmRunCorrection, runsScope)
 	auth.GET("/runs/:id/trace", s.handleGetRunTrace, runsScope)
 	auth.GET("/runs/:id/state", s.handleGetRunState, runsScope)
 	auth.GET("/runs/:id/checkpoints", s.handleGetRunCheckpoints, runsScope)
@@ -752,7 +760,10 @@ func (s *Server) ConfigureTeamRunWorkers() {
 		return
 	}
 	runStore := teamrun.NewPGStore()
+	runStore.Transactions = pool
 	checkpointStore := teamrun.NewPGCheckpointStore()
+	correctionStore := &teamrun.CorrectionStore{Transactions: pool, Runs: runStore}
+	activityStore := &teamrun.PGActivityStore{Transactions: pool}
 	consumer := &teamrun.Consumer{
 		Transactions: pool,
 		Snapshots:    s.Snapshots,
@@ -793,6 +804,8 @@ func (s *Server) ConfigureTeamRunWorkers() {
 		Tasks:          s.Tasks,
 		Snapshots:      s.Snapshots,
 		OutputRecorder: s.Deliverables,
+		Corrections:    correctionStore,
+		Activities:     activityStore,
 	}
 	checkpointReader := &teamrun.FanoutCheckpointReader{
 		Transactions: pool, Runs: runStore, Checkpoints: checkpointStore,
@@ -822,6 +835,7 @@ func (s *Server) ConfigureTeamRunWorkers() {
 		Checkpoints:       checkpointStore,
 		Runtime:           runtime,
 		Fanout:            teamrun.FanoutCoordinatorAdapter{Coordinator: coordinator},
+		Corrections:       correctionStore,
 		RuntimeRecords:    s.StoreExt,
 		HeartbeatInterval: temporaryTeamRunTaskHeartbeat,
 	}
@@ -858,6 +872,12 @@ func (s *Server) ConfigureTeamRunWorkers() {
 		Tasks:        s.Tasks,
 	}
 	s.teamRunHumanTasks = &teamrun.HumanTaskReader{Pool: pool}
+	s.teamRunCorrections = correctionStore
+	s.teamRunActivities = activityStore
+	s.teamRunCorrectionResume = &teamrun.CorrectionResumeService{
+		Transactions: pool, Runs: runStore, Corrections: correctionStore,
+		Checkpoints: checkpointStore, Tasks: s.Tasks,
+	}
 	s.workflowFanoutReconciler = &fanout.WorkflowReconcilerWorker{
 		Transactions: pool, Store: s.Fanout, Coordinator: coordinator,
 		BatchSize:    temporaryTeamRunWorkerBatchSize,

@@ -40,9 +40,12 @@ type WorkflowCheckpointV1 struct {
 	// annotation across park/resume so a fanout park inside a round-bound
 	// candidate run still reports usage_complete=false after resume. Old
 	// checkpoints omit both fields and resume as usage-complete.
-	UsageComplete         bool      `json:"usage_complete,omitempty"`
-	UsageIncompleteReason string    `json:"usage_incomplete_reason,omitempty"`
-	WrittenAt             time.Time `json:"written_at"`
+	UsageComplete         bool   `json:"usage_complete,omitempty"`
+	UsageIncompleteReason string `json:"usage_incomplete_reason,omitempty"`
+	// Corrections are confirmed user directives carried across restart and
+	// resume. They are product input, not hidden model reasoning.
+	Corrections []CorrectionDirectiveV1 `json:"corrections,omitempty"`
+	WrittenAt   time.Time               `json:"written_at"`
 }
 
 type PGCheckpointStore struct{}

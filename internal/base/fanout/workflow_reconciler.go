@@ -45,30 +45,51 @@ func (w *WorkflowReconcilerWorker) Sweep(ctx context.Context) (int, error) {
 		return 0, err
 	}
 	processed := 0
+	var sweepErrors []error
 	for _, workspaceID := range workspaces {
 		intents, voided, groups, err := w.listWorkspaceCandidates(ctx, workspaceID)
 		if err != nil {
-			return processed, err
+			sweepErrors = append(sweepErrors, fmt.Errorf("list fanout candidates for workspace %q: %w", workspaceID, err))
+			continue
 		}
-		for _, intentID := range append(intents, voided...) {
-			if err := w.Coordinator.ReconcileIntent(ctx, workspaceID, intentID); err != nil {
-				return processed, fmt.Errorf("reconcile fanout intent %q: %w", intentID, err)
-			}
-			processed++
-		}
-		for _, groupID := range groups {
-			if err := w.Coordinator.ReconcileGroup(ctx, workspaceID, groupID); err != nil {
-				return processed, fmt.Errorf("reconcile fanout group %q: %w", groupID, err)
-			}
-			processed++
-		}
-		count, err := w.abandonExpiredCancellations(ctx, workspaceID)
+		count, err := w.reconcileCandidates(ctx, workspaceID, append(intents, voided...), groups)
+		processed += count
 		if err != nil {
-			return processed, err
+			sweepErrors = append(sweepErrors, err)
+		}
+		count, err = w.abandonExpiredCancellations(ctx, workspaceID)
+		if err != nil {
+			sweepErrors = append(sweepErrors, fmt.Errorf("reconcile fanout cancellations for workspace %q: %w", workspaceID, err))
+			continue
 		}
 		processed += count
 	}
-	return processed, nil
+	return processed, errors.Join(sweepErrors...)
+}
+
+func (w *WorkflowReconcilerWorker) reconcileCandidates(
+	ctx context.Context,
+	workspaceID string,
+	intents []string,
+	groups []string,
+) (int, error) {
+	processed := 0
+	var candidateErrors []error
+	for _, intentID := range intents {
+		if err := w.Coordinator.ReconcileIntent(ctx, workspaceID, intentID); err != nil {
+			candidateErrors = append(candidateErrors, fmt.Errorf("reconcile fanout intent %q: %w", intentID, err))
+			continue
+		}
+		processed++
+	}
+	for _, groupID := range groups {
+		if err := w.Coordinator.ReconcileGroup(ctx, workspaceID, groupID); err != nil {
+			candidateErrors = append(candidateErrors, fmt.Errorf("reconcile fanout group %q: %w", groupID, err))
+			continue
+		}
+		processed++
+	}
+	return processed, errors.Join(candidateErrors...)
 }
 
 func (w *WorkflowReconcilerWorker) listWorkspaces(ctx context.Context) ([]string, error) {

@@ -22,6 +22,7 @@ func (s *Server) handleListFinalDeliverables(c echo.Context) error {
 	items, err := s.Deliverables.List(c.Request().Context(), getTenant(c), deliverable.ListFilter{
 		ProjectID:      c.QueryParam("project_id"),
 		ConversationID: c.QueryParam("conversation_id"),
+		RunID:          c.QueryParam("run_id"),
 		Limit:          limit,
 		Offset:         offset,
 	})

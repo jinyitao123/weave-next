@@ -5,11 +5,18 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jinyitao123/loom"
+	"github.com/jinyitao123/weave/internal/base/deliverable"
+	"github.com/jinyitao123/weave/internal/base/frozen"
+	"github.com/jinyitao123/weave/internal/base/snapshot"
+	"github.com/jinyitao123/weave/internal/base/teamrun"
+	"github.com/jinyitao123/weave/internal/kernel/workflow/machine"
 	"github.com/labstack/echo/v4"
 )
 
@@ -296,6 +303,665 @@ func (s *Server) handleGetRun(c echo.Context) error {
 	}
 	run["attribution"] = attribution
 	return c.JSON(http.StatusOK, run)
+}
+
+type stopRunRequest struct {
+	Reason         string `json:"reason"`
+	IdempotencyKey string `json:"idempotency_key"`
+	GraceSeconds   int    `json:"grace_seconds,omitempty"`
+}
+
+type runActivityMember struct {
+	AgentID string                    `json:"agent_id"`
+	Name    string                    `json:"name"`
+	Duty    string                    `json:"duty,omitempty"`
+	Role    string                    `json:"role"`
+	Status  string                    `json:"status"`
+	Runtime *runActivityMemberRuntime `json:"runtime,omitempty"`
+	Stages  []runActivityMemberStage  `json:"stages"`
+}
+
+type runActivityMemberRuntime struct {
+	RuntimeID string `json:"runtime_id,omitempty"`
+	Engine    string `json:"engine,omitempty"`
+	Provider  string `json:"provider,omitempty"`
+	Model     string `json:"model,omitempty"`
+}
+
+type runActivityMemberInputRef struct {
+	Name         string `json:"name"`
+	ExpectedType string `json:"expected_type"`
+	Source       string `json:"source"`
+	NodeID       string `json:"node_id,omitempty"`
+	Path         string `json:"path,omitempty"`
+	Iteration    string `json:"iteration,omitempty"`
+	Summary      string `json:"summary,omitempty"`
+}
+
+type runActivityMemberStage struct {
+	NodeID      string                      `json:"node_id"`
+	Name        string                      `json:"name"`
+	Status      string                      `json:"status"`
+	Inputs      []runActivityMemberInputRef `json:"inputs"`
+	OutputRefs  []string                    `json:"output_refs"`
+	StartedAt   *time.Time                  `json:"started_at,omitempty"`
+	CompletedAt *time.Time                  `json:"completed_at,omitempty"`
+	DurationMs  int64                       `json:"duration_ms,omitempty"`
+	ToolCalls   int                         `json:"tool_calls,omitempty"`
+	Tools       []runActivityTool           `json:"tools"`
+}
+
+type runActivityTool struct {
+	CallID      string     `json:"call_id"`
+	Name        string     `json:"name"`
+	Status      string     `json:"status"`
+	StartedAt   *time.Time `json:"started_at,omitempty"`
+	CompletedAt *time.Time `json:"completed_at,omitempty"`
+}
+
+type runActivityRuntime struct {
+	RuntimeID string `json:"runtime_id,omitempty"`
+	Name      string `json:"name"`
+	Engine    string `json:"engine,omitempty"`
+	Mode      string `json:"mode,omitempty"`
+	Provider  string `json:"provider,omitempty"`
+	Model     string `json:"model,omitempty"`
+	Status    string `json:"status"`
+}
+
+type runActivityStage struct {
+	NodeID string `json:"node_id"`
+	Name   string `json:"name"`
+	Status string `json:"status"`
+}
+
+type runActivityDeliverableRef struct {
+	ID          string    `json:"id"`
+	Title       string    `json:"title"`
+	ContentType string    `json:"content_type"`
+	Kind        string    `json:"kind"`
+	NodeID      string    `json:"node_id,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
+func runActivityMembers(raw json.RawMessage, runStatus teamrun.Status) ([]runActivityMember, string) {
+	if len(raw) == 0 {
+		return []runActivityMember{}, "unavailable"
+	}
+	workers, err := snapshot.DecodeTeamWorkerSnapshot(raw)
+	if err != nil {
+		return []runActivityMember{}, "unavailable"
+	}
+	members := make([]runActivityMember, 0, len(workers))
+	for _, worker := range workers {
+		status := "known"
+		if runStatus.Terminal() {
+			status = "finished"
+		}
+		members = append(members, runActivityMember{
+			AgentID: worker.WorkerAgentID,
+			Name:    worker.Name,
+			Duty:    worker.Duty,
+			Role:    "worker",
+			Status:  status,
+			Stages:  []runActivityMemberStage{},
+		})
+	}
+	return members, "complete"
+}
+
+func runActivityMemberInputs(inputs map[string]machine.InputBinding) []runActivityMemberInputRef {
+	names := make([]string, 0, len(inputs))
+	for name := range inputs {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	refs := make([]runActivityMemberInputRef, 0, len(names))
+	for _, name := range names {
+		binding := inputs[name]
+		refs = append(refs, runActivityMemberInputRef{
+			Name: name, ExpectedType: string(binding.ExpectedType),
+			Source: string(binding.Value.Source), NodeID: binding.Value.NodeID,
+			Path: binding.Value.Path, Iteration: string(binding.Value.Iteration),
+		})
+	}
+	return refs
+}
+
+func runActivityBundleRuntime(bundle frozen.FrozenExecutionBundle) *runActivityMemberRuntime {
+	runtime := &runActivityMemberRuntime{
+		RuntimeID: bundle.Agent.RuntimeID, Engine: bundle.Agent.Engine,
+		Provider: bundle.PrimaryModel.ProviderID, Model: bundle.PrimaryModel.ModelID,
+	}
+	if bundle.Runtime != nil {
+		runtime.RuntimeID = bundle.Runtime.RuntimeID
+		runtime.Engine = bundle.Runtime.Engine
+	}
+	if runtime.RuntimeID == "" && runtime.Engine == "" && runtime.Provider == "" && runtime.Model == "" {
+		return nil
+	}
+	return runtime
+}
+
+func runActivityPublishedMembers(
+	payload frozen.ArtifactPayloadV1,
+	graph machine.GraphDefinition,
+	runStatus teamrun.Status,
+	deliverables []runActivityDeliverableRef,
+) ([]runActivityMember, []runActivityRuntime) {
+	bundles := make(map[string]frozen.FrozenExecutionBundle, len(payload.Bundles))
+	for _, bundle := range payload.Bundles {
+		bundles[bundle.Agent.AgentID] = bundle
+	}
+	newMember := func(agentID, duty, role string) runActivityMember {
+		name := agentID
+		var runtime *runActivityMemberRuntime
+		if bundle, ok := bundles[agentID]; ok {
+			if strings.TrimSpace(bundle.Agent.DisplayName) != "" {
+				name = bundle.Agent.DisplayName
+			} else if strings.TrimSpace(bundle.Agent.Name) != "" {
+				name = bundle.Agent.Name
+			}
+			runtime = runActivityBundleRuntime(bundle)
+		}
+		return runActivityMember{
+			AgentID: agentID, Name: name, Duty: duty, Role: role,
+			Status: "pending", Runtime: runtime, Stages: []runActivityMemberStage{},
+		}
+	}
+	members := make([]runActivityMember, 0, len(payload.Team.Workers)+1)
+	memberIndex := make(map[string]int, len(payload.Team.Workers)+1)
+	leadParticipates := false
+	for _, node := range graph.Nodes {
+		if node.Type == machine.NodeLead {
+			leadParticipates = true
+			break
+		}
+	}
+	if _, frozenLead := bundles[payload.Team.LeadAgentID]; frozenLead {
+		leadParticipates = true
+	}
+	if payload.Team.LeadAgentID != "" && leadParticipates {
+		memberIndex[payload.Team.LeadAgentID] = len(members)
+		members = append(members, newMember(payload.Team.LeadAgentID, "", "lead"))
+	}
+	for _, worker := range payload.Team.Workers {
+		if _, exists := memberIndex[worker.WorkerAgentID]; exists {
+			continue
+		}
+		memberIndex[worker.WorkerAgentID] = len(members)
+		members = append(members, newMember(worker.WorkerAgentID, worker.Duty, "worker"))
+	}
+	outputsByNode := make(map[string][]string)
+	for _, item := range deliverables {
+		if item.NodeID != "" {
+			outputsByNode[item.NodeID] = append(outputsByNode[item.NodeID], item.ID)
+		}
+	}
+	for _, node := range graph.Nodes {
+		agentID := ""
+		switch config := node.Config.(type) {
+		case machine.LeadConfig:
+			agentID = payload.Team.LeadAgentID
+		case machine.WorkerConfig:
+			agentID = config.AgentID
+		default:
+			continue
+		}
+		index, ok := memberIndex[agentID]
+		if !ok {
+			continue
+		}
+		name := strings.TrimSpace(node.Label)
+		if name == "" {
+			name = node.ID
+		}
+		status := "pending"
+		if len(outputsByNode[node.ID]) > 0 {
+			status = "completed"
+		} else if runStatus.Terminal() {
+			status = "not_recorded"
+		}
+		members[index].Stages = append(members[index].Stages, runActivityMemberStage{
+			NodeID: node.ID, Name: name, Status: status,
+			Inputs:     runActivityMemberInputs(node.Inputs),
+			OutputRefs: append([]string(nil), outputsByNode[node.ID]...),
+			Tools:      []runActivityTool{},
+		})
+	}
+	for index := range members {
+		completed := 0
+		for _, stage := range members[index].Stages {
+			if stage.Status == "completed" {
+				completed++
+			}
+		}
+		switch {
+		case len(members[index].Stages) > 0 && completed == len(members[index].Stages):
+			members[index].Status = "completed"
+		case runStatus == teamrun.StatusFailed:
+			members[index].Status = "failed"
+		case runStatus == teamrun.StatusCancelled || runStatus == teamrun.StatusAbandoned:
+			members[index].Status = "stopped"
+		case runStatus.Terminal():
+			members[index].Status = "not_recorded"
+		case completed > 0:
+			members[index].Status = "partially_completed"
+		default:
+			members[index].Status = "pending"
+		}
+	}
+	runtimes := make([]runActivityRuntime, 0, len(members))
+	seenRuntimes := make(map[string]struct{}, len(members))
+	for _, member := range members {
+		if member.Runtime == nil {
+			continue
+		}
+		key := strings.Join([]string{member.Runtime.RuntimeID, member.Runtime.Engine, member.Runtime.Provider, member.Runtime.Model}, "\x1f")
+		if _, exists := seenRuntimes[key]; exists {
+			continue
+		}
+		seenRuntimes[key] = struct{}{}
+		name := member.Runtime.RuntimeID
+		if name == "" {
+			name = member.Runtime.Engine
+		}
+		if name == "" {
+			name = strings.Trim(strings.Join([]string{member.Runtime.Provider, member.Runtime.Model}, "/"), "/")
+		}
+		runtimes = append(runtimes, runActivityRuntime{
+			RuntimeID: member.Runtime.RuntimeID, Name: name,
+			Engine: member.Runtime.Engine, Provider: member.Runtime.Provider,
+			Model: member.Runtime.Model, Status: string(runStatus),
+		})
+	}
+	return members, runtimes
+}
+
+func runActivityRuntimes(raw json.RawMessage, currentExecutorID *string, status teamrun.Status) ([]runActivityRuntime, string) {
+	type assignment struct {
+		RuntimeID string `json:"runtime_id"`
+		Mode      string `json:"mode"`
+		Engine    string `json:"engine"`
+	}
+	var frozen assignment
+	assignmentKnown := len(raw) > 0 && json.Unmarshal(raw, &frozen) == nil
+	runtimes := make([]runActivityRuntime, 0, 1)
+	if frozen.RuntimeID != "" || frozen.Engine != "" || frozen.Mode != "" {
+		name := frozen.RuntimeID
+		if name == "" {
+			name = frozen.Engine
+		}
+		runtimes = append(runtimes, runActivityRuntime{
+			RuntimeID: frozen.RuntimeID,
+			Name:      name,
+			Engine:    frozen.Engine,
+			Mode:      frozen.Mode,
+			Status:    string(status),
+		})
+	}
+	if currentExecutorID != nil && strings.TrimSpace(*currentExecutorID) != "" {
+		executor := strings.TrimSpace(*currentExecutorID)
+		matched := false
+		for index := range runtimes {
+			if runtimes[index].RuntimeID == executor || runtimes[index].Name == executor {
+				runtimes[index].Status = string(status)
+				matched = true
+			}
+		}
+		if !matched {
+			runtimes = append(runtimes, runActivityRuntime{Name: executor, Status: string(status)})
+		}
+	}
+	if !assignmentKnown && len(runtimes) == 0 {
+		return runtimes, "unavailable"
+	}
+	return runtimes, "complete"
+}
+
+func runActivityDeliverables(items []deliverable.FinalDeliverable) ([]runActivityDeliverableRef, []runActivityStage) {
+	refs := make([]runActivityDeliverableRef, 0, len(items))
+	stages := make([]runActivityStage, 0, len(items))
+	seenStages := make(map[string]struct{}, len(items))
+	for _, item := range items {
+		var metadata struct {
+			ArtifactKind string `json:"artifact_kind"`
+			NodeID       string `json:"node_id"`
+			NodeLabel    string `json:"node_label"`
+		}
+		_ = json.Unmarshal(item.Metadata, &metadata)
+		kind := metadata.ArtifactKind
+		if kind == "" {
+			kind = "final"
+		}
+		refs = append(refs, runActivityDeliverableRef{
+			ID: item.ID, Title: item.Title, ContentType: item.ContentType,
+			Kind: kind, NodeID: metadata.NodeID, CreatedAt: item.CreatedAt,
+		})
+		if metadata.NodeID == "" {
+			continue
+		}
+		if _, present := seenStages[metadata.NodeID]; present {
+			continue
+		}
+		seenStages[metadata.NodeID] = struct{}{}
+		name := strings.TrimSpace(metadata.NodeLabel)
+		if name == "" {
+			name = metadata.NodeID
+		}
+		stages = append(stages, runActivityStage{NodeID: metadata.NodeID, Name: name, Status: "completed"})
+	}
+	return refs, stages
+}
+
+func applyRunActivityEvents(members []runActivityMember, events []teamrun.ActivityEvent) {
+	memberIndex := make(map[string]int, len(members))
+	for index := range members {
+		memberIndex[members[index].AgentID] = index
+	}
+	for _, event := range events {
+		index, present := memberIndex[event.MemberID]
+		if !present {
+			continue
+		}
+		stageIndex := -1
+		for candidate := range members[index].Stages {
+			if members[index].Stages[candidate].NodeID == event.NodeID {
+				stageIndex = candidate
+				break
+			}
+		}
+		if stageIndex < 0 {
+			continue
+		}
+		stage := &members[index].Stages[stageIndex]
+		var detail struct {
+			DurationMs   int64             `json:"duration_ms"`
+			ToolCalls    int               `json:"tool_calls"`
+			ToolName     string            `json:"tool_name"`
+			ToolCallID   string            `json:"tool_call_id"`
+			Status       string            `json:"status"`
+			InputSummary map[string]string `json:"input_summary"`
+		}
+		_ = json.Unmarshal(event.Detail, &detail)
+		switch event.Kind {
+		case "member_started":
+			occurred := event.OccurredAt
+			stage.StartedAt = &occurred
+			stage.CompletedAt = nil
+			stage.DurationMs = 0
+			stage.ToolCalls = 0
+			stage.Tools = nil
+			stage.Status = "running"
+			members[index].Status = "running"
+			for inputIndex := range stage.Inputs {
+				stage.Inputs[inputIndex].Summary = detail.InputSummary[stage.Inputs[inputIndex].Name]
+			}
+		case "member_completed":
+			occurred := event.OccurredAt
+			stage.CompletedAt = &occurred
+			stage.DurationMs = detail.DurationMs
+			stage.ToolCalls = detail.ToolCalls
+			stage.Status = "completed"
+		case "member_failed":
+			occurred := event.OccurredAt
+			stage.CompletedAt = &occurred
+			stage.DurationMs = detail.DurationMs
+			stage.Status = "failed"
+			members[index].Status = "failed"
+		case "tool_started":
+			occurred := event.OccurredAt
+			stage.Tools = append(stage.Tools, runActivityTool{CallID: detail.ToolCallID, Name: detail.ToolName,
+				Status: "running", StartedAt: &occurred})
+		case "tool_completed":
+			occurred := event.OccurredAt
+			found := false
+			for toolIndex := range stage.Tools {
+				if stage.Tools[toolIndex].CallID == detail.ToolCallID {
+					stage.Tools[toolIndex].Status = detail.Status
+					stage.Tools[toolIndex].CompletedAt = &occurred
+					found = true
+					break
+				}
+			}
+			if !found {
+				stage.Tools = append(stage.Tools, runActivityTool{CallID: detail.ToolCallID, Name: detail.ToolName,
+					Status: detail.Status, CompletedAt: &occurred})
+			}
+		}
+	}
+	for index := range members {
+		allCompleted := len(members[index].Stages) > 0
+		for _, stage := range members[index].Stages {
+			if stage.Status != "completed" {
+				allCompleted = false
+				break
+			}
+		}
+		if allCompleted {
+			members[index].Status = "completed"
+		}
+	}
+}
+
+func latestRunActivityStage(members []runActivityMember, fallback []runActivityStage) string {
+	var latestName string
+	var latestAt time.Time
+	for _, member := range members {
+		for _, stage := range member.Stages {
+			occurredAt := stage.StartedAt
+			if stage.CompletedAt != nil {
+				occurredAt = stage.CompletedAt
+			}
+			if occurredAt != nil && (latestName == "" || occurredAt.After(latestAt)) {
+				latestName = stage.Name
+				latestAt = *occurredAt
+			}
+		}
+	}
+	if latestName != "" {
+		return latestName
+	}
+	for index := len(fallback) - 1; index >= 0; index-- {
+		if fallback[index].Name != "" {
+			return fallback[index].Name
+		}
+	}
+	return ""
+}
+
+// handleGetRunActivity is the small exact-run read contract used by
+// Workbench. It intentionally returns persisted execution facts only.
+func (s *Server) handleGetRunActivity(c echo.Context) error {
+	if s.teamRunCancel == nil || s.teamRunCancel.Runs == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "team_run_unavailable"})
+	}
+	run, err := s.teamRunCancel.Runs.Get(c.Request().Context(), getTenant(c), c.Param("id"))
+	if errors.Is(err, teamrun.ErrTeamRunIdentityMismatch) {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "run_not_found"})
+	}
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "run_read_failed"})
+	}
+	completeness := map[string]string{
+		"run": "complete", "stages": "unavailable", "members": "unavailable",
+		"runtimes": "unavailable", "human_tasks": "complete", "deliverables": "unavailable",
+		"member_inputs": "unavailable", "member_outputs": "unavailable", "member_tool_activity": "unavailable",
+		"activity_events": "unavailable", "corrections": "unavailable",
+	}
+	members := []runActivityMember{}
+	runtimes := []runActivityRuntime{}
+	if s.Snapshots != nil {
+		if frozen, snapshotErr := s.Snapshots.GetByRunID(c.Request().Context(), getTenant(c), run.RunSnapshotID); snapshotErr == nil {
+			members, completeness["members"] = runActivityMembers(frozen.TeamWorkerSnapshot, run.Status)
+			runtimes, completeness["runtimes"] = runActivityRuntimes(frozen.RuntimeAssignment, run.CurrentExecutorID, run.Status)
+		}
+	}
+	if len(runtimes) == 0 && run.CurrentExecutorID != nil {
+		runtimes, completeness["runtimes"] = runActivityRuntimes(nil, run.CurrentExecutorID, run.Status)
+	}
+	humanTasks := []map[string]any{}
+	if run.Status == teamrun.StatusParked && run.WaitKind != nil && *run.WaitKind == teamrun.WaitHuman {
+		completeness["human_tasks"] = "unavailable"
+		if s.teamRunHumanTasks != nil {
+			if item, humanErr := s.teamRunHumanTasks.Get(c.Request().Context(), getTenant(c), run.RunID); humanErr == nil {
+				humanTasks = append(humanTasks, map[string]any{
+					"run_id": run.RunID, "node_id": item.Detail.NodeID,
+					"title": item.Detail.Task.Title, "instructions": item.Detail.Task.Instructions,
+					"deadline_at": item.Detail.DeadlineAt,
+				})
+				completeness["human_tasks"] = "complete"
+			}
+		}
+	}
+	deliverableRefs := []runActivityDeliverableRef{}
+	stages := []runActivityStage{}
+	if s.Deliverables != nil {
+		if items, deliverableErr := s.Deliverables.List(c.Request().Context(), getTenant(c), deliverable.ListFilter{RunID: run.RunID, Limit: 100}); deliverableErr == nil {
+			deliverableRefs, stages = runActivityDeliverables(items)
+			completeness["deliverables"] = "complete"
+			// Workflow outputs prove completed nodes, but do not prove the
+			// unpublished remainder of the workflow graph.
+			if len(stages) > 0 {
+				completeness["stages"] = "partial"
+			}
+		}
+	}
+	if len(humanTasks) > 0 {
+		human := humanTasks[0]
+		nodeID, _ := human["node_id"].(string)
+		name, _ := human["title"].(string)
+		stages = append(stages, runActivityStage{NodeID: nodeID, Name: name, Status: "waiting"})
+		completeness["stages"] = "partial"
+	}
+	if s.Workflow != nil && run.WorkflowID != "" && run.WorkflowVersion > 0 {
+		if artifact, artifactErr := s.Workflow.GetArtifact(
+			c.Request().Context(), getTenant(c), run.WorkflowID, run.WorkflowVersion,
+		); artifactErr == nil {
+			payload, payloadErr := frozen.DecodeArtifactEnvelopeV1(frozen.ArtifactEnvelopeV1{
+				WorkspaceID: artifact.WorkspaceID, WorkflowID: artifact.WorkflowID,
+				WorkflowVersion:           artifact.WorkflowVersion,
+				ArtifactSchemaVersion:     artifact.ArtifactSchemaVersion,
+				CanonicalizationAlgorithm: artifact.CanonicalizationAlgorithm,
+				CanonicalizationVersion:   artifact.CanonicalizationVersion,
+				HashAlgorithm:             artifact.HashAlgorithm, ContentHash: artifact.ContentHash,
+				Payload: artifact.Payload,
+			})
+			if payloadErr == nil {
+				if graph, report := machine.DecodeGraphDefinitionV1(payload.GraphDefinition); report == nil || len(report.Issues) == 0 {
+					publishedMembers, publishedRuntimes := runActivityPublishedMembers(payload, graph, run.Status, deliverableRefs)
+					members = publishedMembers
+					completeness["members"] = "complete"
+					completeness["member_inputs"] = "partial"
+					if completeness["deliverables"] == "complete" {
+						completeness["member_outputs"] = "partial"
+					}
+					if len(publishedRuntimes) > 0 {
+						runtimes = publishedRuntimes
+						completeness["runtimes"] = "complete"
+					}
+				}
+			}
+		}
+	}
+	activityEvents := []teamrun.ActivityEvent{}
+	if s.teamRunActivities != nil {
+		if items, activityErr := s.teamRunActivities.List(c.Request().Context(), getTenant(c), run.RunID, 500); activityErr == nil {
+			activityEvents = items
+			applyRunActivityEvents(members, activityEvents)
+			completeness["activity_events"] = "complete"
+			completeness["member_tool_activity"] = "partial"
+		}
+	}
+	corrections := []teamrun.Correction{}
+	if s.teamRunCorrections != nil {
+		if items, correctionErr := s.teamRunCorrections.List(c.Request().Context(), getTenant(c), run.RunID, 20); correctionErr == nil {
+			corrections = items
+			completeness["corrections"] = "complete"
+		}
+	}
+	observedAt := time.Now().UTC()
+	return c.JSON(http.StatusOK, map[string]any{
+		"schema_version":           3,
+		"run_id":                   run.RunID,
+		"project_id":               run.ProjectID,
+		"status":                   run.Status,
+		"team_id":                  run.TeamID,
+		"workflow_id":              run.WorkflowID,
+		"workflow_version":         run.WorkflowVersion,
+		"run_snapshot_id":          run.RunSnapshotID,
+		"current_executor_id":      run.CurrentExecutorID,
+		"wait_kind":                run.WaitKind,
+		"checkpoint_ref":           run.CheckpointRef,
+		"cancel_requested_at":      run.CancelRequestedAt,
+		"cancel_grace_deadline_at": run.CancelGraceDeadlineAt,
+		"created_at":               run.CreatedAt,
+		"updated_at":               run.UpdatedAt,
+		"terminal_at":              run.TerminalAt,
+		"observed_at":              observedAt,
+		"revision": map[string]any{
+			"team_run_generation":   run.Generation,
+			"execution_lease_epoch": run.ExecutionLeaseEpoch,
+			"resume_generation":     run.ResumeGeneration,
+		},
+		"members":          members,
+		"runtimes":         runtimes,
+		"stages":           stages,
+		"latest_stage":     latestRunActivityStage(members, stages),
+		"completed_stages": len(stages) - len(humanTasks),
+		"human_tasks":      humanTasks,
+		"deliverables":     deliverableRefs,
+		"activity_events":  activityEvents,
+		"corrections":      corrections,
+		"completeness":     completeness,
+	})
+}
+
+// handleStopRun exposes Weave's existing exact TeamRun cancellation state
+// machine as one authenticated, idempotent product command.
+func (s *Server) handleStopRun(c echo.Context) error {
+	if s.teamRunCancel == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "team_run_cancel_unavailable"})
+	}
+	var request stopRunRequest
+	if c.Request().Body != nil {
+		if err := json.NewDecoder(c.Request().Body).Decode(&request); err != nil {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid_request"})
+		}
+	}
+	request.Reason = strings.TrimSpace(request.Reason)
+	request.IdempotencyKey = strings.TrimSpace(request.IdempotencyKey)
+	if request.Reason == "" {
+		request.Reason = "user_requested"
+	}
+	if request.IdempotencyKey == "" || len(request.IdempotencyKey) > 256 {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "idempotency_key_required"})
+	}
+	grace := 30 * time.Second
+	if request.GraceSeconds > 0 {
+		if request.GraceSeconds > 3600 {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": "grace_seconds_out_of_range"})
+		}
+		grace = time.Duration(request.GraceSeconds) * time.Second
+	}
+	run, err := s.teamRunCancel.RequestCancel(c.Request().Context(), teamrun.CancelRequest{
+		WorkspaceID: getTenant(c), RunID: c.Param("id"),
+		CancelActor: getUserID(c), CancelReason: request.Reason,
+		GraceDeadline: time.Now().UTC().Add(grace), IdempotencyKey: request.IdempotencyKey,
+	})
+	if errors.Is(err, teamrun.ErrTeamRunIdentityMismatch) {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "run_not_found"})
+	}
+	if errors.Is(err, teamrun.ErrTeamRunStateConflict) {
+		return c.JSON(http.StatusConflict, map[string]string{"error": "stop_conflict"})
+	}
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "run_stop_failed"})
+	}
+	return c.JSON(http.StatusAccepted, map[string]any{
+		"run_id": run.RunID, "status": run.Status,
+		"idempotency_key": request.IdempotencyKey,
+	})
 }
 
 // internalStateKeys are checkpoint state entries never exposed via the

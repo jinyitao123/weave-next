@@ -301,6 +301,18 @@ func (c *Client) TeamRunStatus(ctx context.Context, snapshotID string) (json.Raw
 	return c.getJSON(ctx, "/v1/runs?"+query.Encode())
 }
 
+// TeamRunActivity reads the bounded exact-run product snapshot.
+func (c *Client) TeamRunActivity(ctx context.Context, runID string) (json.RawMessage, error) {
+	return c.getJSON(ctx, "/v1/runs/"+url.PathEscape(strings.TrimSpace(runID))+"/activity")
+}
+
+// TeamRunStop requests idempotent cancellation of one exact TeamRun.
+func (c *Client) TeamRunStop(ctx context.Context, runID, reason, idempotencyKey string) (json.RawMessage, error) {
+	return c.sendJSON(ctx, http.MethodPost, "/v1/runs/"+url.PathEscape(strings.TrimSpace(runID))+"/stop", map[string]any{
+		"reason": strings.TrimSpace(reason), "idempotency_key": strings.TrimSpace(idempotencyKey),
+	})
+}
+
 func (c *Client) HumanTaskList(ctx context.Context, limit int, cursor string) (json.RawMessage, error) {
 	query := url.Values{}
 	if limit > 0 {
@@ -350,7 +362,14 @@ func (c *Client) Resume(ctx context.Context, request ResumeRequest) ([]byte, err
 }
 
 func (c *Client) DeliverableList(ctx context.Context, limit, offset int) (json.RawMessage, error) {
+	return c.DeliverableListForRun(ctx, "", limit, offset)
+}
+
+func (c *Client) DeliverableListForRun(ctx context.Context, runID string, limit, offset int) (json.RawMessage, error) {
 	query := url.Values{}
+	if strings.TrimSpace(runID) != "" {
+		query.Set("run_id", strings.TrimSpace(runID))
+	}
 	if limit > 0 {
 		query.Set("limit", strconv.Itoa(limit))
 	}

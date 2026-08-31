@@ -52,14 +52,14 @@ func TestServeUsesSharedProtocolForInitializeListAndCall(t *testing.T) {
 		t.Fatalf("initialize instructions = %q", instructions)
 	}
 	tools := responses[1]["result"].(map[string]any)["tools"].([]any)
-	if len(tools) != 19 {
+	if len(tools) != 21 {
 		t.Fatalf("tool count = %d", len(tools))
 	}
 	wantNames := []string{
 		"team_template_list", "team_create", "provider_list", "provider_add", "apikey_create",
 		"runtime_create", "team_list", "team_status", "usage_summary",
 		"team_dispatch", "build_status", "dispatch_status",
-		"team_run_status", "human_task_list", "human_task_get", "human_task_complete",
+		"team_run_status", "team_run_activity", "team_run_stop", "human_task_list", "human_task_get", "human_task_complete",
 		"resume", "deliverable_list", "deliverable_get",
 	}
 	gotNames := make([]string, 0, len(tools))
@@ -101,6 +101,8 @@ func TestToolRoleScopeTableIsFrozen(t *testing.T) {
 		"build_status":        {Role: "any", Scopes: []string{"org"}},
 		"dispatch_status":     {Role: "any", Scopes: []string{"chat"}},
 		"team_run_status":     {Role: "any", Scopes: []string{"runs"}},
+		"team_run_activity":   {Role: "any", Scopes: []string{"runs"}},
+		"team_run_stop":       {Role: "any", Scopes: []string{"runs"}},
 		"human_task_list":     {Role: "workspace_member", Scopes: []string{"runs"}},
 		"human_task_get":      {Role: "workspace_member", Scopes: []string{"runs"}},
 		"human_task_complete": {Role: "workspace_member", Scopes: []string{"runs"}},

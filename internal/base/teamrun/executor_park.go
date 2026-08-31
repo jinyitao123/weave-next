@@ -56,7 +56,7 @@ func (e *Executor) parkRunning(
 	executorID string,
 	park RuntimePark,
 ) (TeamRun, error) {
-	if park.WaitKind != WaitTimer && park.WaitKind != WaitFanout && park.WaitKind != WaitHuman {
+	if park.WaitKind != WaitTimer && park.WaitKind != WaitFanout && park.WaitKind != WaitHuman && park.WaitKind != WaitCorrection {
 		return TeamRun{}, executionError(
 			ErrorCodeUnexpectedInteractiveYield,
 			errors.New("workflow executor does not support this park kind"),
@@ -93,6 +93,18 @@ func (e *Executor) parkRunning(
 		return TeamRun{}, fmt.Errorf("begin team run park: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+	if park.WaitKind == WaitCorrection {
+		if e.Corrections == nil {
+			return TeamRun{}, executionError(ErrorCodeRuntimeIncompatible, errors.New("correction store is unavailable"))
+		}
+		detail, err := DecodeCorrectionWaitDetailV1(park.WaitDetail)
+		if err != nil {
+			return TeamRun{}, executionError(ErrorCodeRuntimeIncompatible, err)
+		}
+		if _, err := e.Corrections.MarkReadyTx(ctx, tx, run.WorkspaceID, run.RunID, detail, executorID, now); err != nil {
+			return TeamRun{}, fmt.Errorf("prepare correction safe point: %w", err)
+		}
+	}
 	if park.WaitKind == WaitFanout {
 		intent, err := e.Fanout.PreparePark(ctx, tx, prepare)
 		if err != nil {

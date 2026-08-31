@@ -13,9 +13,9 @@ import (
 
 	"github.com/jinyitao123/loom"
 	"github.com/jinyitao123/loom/contract"
+	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/kernel/compiler"
 	"github.com/jinyitao123/weave/internal/kernel/credentials"
-	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/kernel/llmrouter"
 	"github.com/jinyitao123/weave/internal/kernel/mcphost"
 )
@@ -40,6 +40,45 @@ func (f RuntimeHostFactoryFunc) Build(
 
 func NewRuntimeHostFactory() RuntimeHostFactory {
 	return RuntimeHostFactoryFunc(buildRuntimeHosts)
+}
+
+// RuntimeToolEvent is the secret-free observable envelope for one frozen
+// workflow tool call. Arguments and result content deliberately stay out of
+// this contract; callers can correlate real tool use without retaining
+// credentials or model-private working state.
+type RuntimeToolEvent struct {
+	Kind        string
+	Tool        string
+	CallID      string
+	ResultError bool
+}
+
+type RuntimeToolObserver func(context.Context, RuntimeToolEvent)
+
+// ObserveRuntimeTools decorates a runtime host factory with tool lifecycle
+// observation while preserving every existing frozen hook.
+func ObserveRuntimeTools(inner RuntimeHostFactory, observer RuntimeToolObserver) RuntimeHostFactory {
+	if inner == nil || observer == nil {
+		return inner
+	}
+	return RuntimeHostFactoryFunc(func(ctx context.Context, bundle frozen.FrozenExecutionBundle, resolver RuntimeCredentialResolver) (compiler.FrozenBuildOpts, io.Closer, error) {
+		opts, closer, err := inner.Build(ctx, bundle, resolver)
+		if err != nil {
+			return opts, closer, err
+		}
+		opts.Hooks.ToolHooks = append(opts.Hooks.ToolHooks, contract.ToolHook{
+			Pre: func(ctx context.Context, call contract.ToolCall) (contract.ToolCall, error) {
+				observer(ctx, RuntimeToolEvent{Kind: "tool_started", Tool: call.Name, CallID: call.ID})
+				return call, nil
+			},
+			Post: func(ctx context.Context, call contract.ToolCall, result *contract.ToolResult) error {
+				observer(ctx, RuntimeToolEvent{Kind: "tool_completed", Tool: call.Name, CallID: call.ID,
+					ResultError: result != nil && result.IsError})
+				return nil
+			},
+		})
+		return opts, closer, nil
+	})
 }
 
 func buildRuntimeHosts(

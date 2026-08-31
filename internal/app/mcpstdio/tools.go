@@ -175,6 +175,26 @@ func (d *ToolDispatcher) Dispatch(ctx context.Context, call contract.ToolCall) (
 		}
 		result, err := d.client.TeamRunStatus(ctx, input.SnapshotID)
 		return documentResult(call.ID, result, err), nil
+	case "team_run_activity":
+		var input struct {
+			RunID string `json:"run_id"`
+		}
+		if err := decodeArguments(call.Args, &input); err != nil || strings.TrimSpace(input.RunID) == "" {
+			return toolError(call.ID, "invalid_arguments"), nil
+		}
+		result, err := d.client.TeamRunActivity(ctx, input.RunID)
+		return documentResult(call.ID, result, err), nil
+	case "team_run_stop":
+		var input struct {
+			RunID          string `json:"run_id"`
+			Reason         string `json:"reason"`
+			IdempotencyKey string `json:"idempotency_key"`
+		}
+		if err := decodeArguments(call.Args, &input); err != nil || strings.TrimSpace(input.RunID) == "" || strings.TrimSpace(input.IdempotencyKey) == "" {
+			return toolError(call.ID, "invalid_arguments"), nil
+		}
+		result, err := d.client.TeamRunStop(ctx, input.RunID, input.Reason, input.IdempotencyKey)
+		return documentResult(call.ID, result, err), nil
 	case "human_task_list":
 		var input struct {
 			Limit  int    `json:"limit"`
@@ -219,13 +239,14 @@ func (d *ToolDispatcher) Dispatch(ctx context.Context, call contract.ToolCall) (
 		return &contract.ToolResult{CallID: call.ID, Content: string(result)}, nil
 	case "deliverable_list":
 		var input struct {
-			Limit  int `json:"limit"`
-			Offset int `json:"offset"`
+			Limit  int    `json:"limit"`
+			Offset int    `json:"offset"`
+			RunID  string `json:"run_id"`
 		}
 		if err := decodeArguments(call.Args, &input); err != nil || input.Limit < 0 || input.Offset < 0 {
 			return toolError(call.ID, "invalid_arguments"), nil
 		}
-		result, err := d.client.DeliverableList(ctx, input.Limit, input.Offset)
+		result, err := d.client.DeliverableListForRun(ctx, input.RunID, input.Limit, input.Offset)
 		return documentResult(call.ID, result, err), nil
 	case "deliverable_get":
 		var input struct {
@@ -426,6 +447,8 @@ var toolAccessPolicies = map[string]toolAccessPolicy{
 	"build_status":        {Role: "any", Scopes: []string{"org"}},
 	"dispatch_status":     {Role: "any", Scopes: []string{"chat"}},
 	"team_run_status":     {Role: "any", Scopes: []string{"runs"}},
+	"team_run_activity":   {Role: "any", Scopes: []string{"runs"}},
+	"team_run_stop":       {Role: "any", Scopes: []string{"runs"}},
 	"human_task_list":     {Role: "workspace_member", Scopes: []string{"runs"}},
 	"human_task_get":      {Role: "workspace_member", Scopes: []string{"runs"}},
 	"human_task_complete": {Role: "workspace_member", Scopes: []string{"runs"}},
@@ -482,7 +505,7 @@ var toolDefinitions = []contract.ToolDef{
 	},
 	{
 		Name:        "team_dispatch",
-		Description: "Dispatch a task through the team's published default workflow. Set mode=free_collab explicitly only when free collaboration is intended; workflow failures never fall back silently. workflow_id overrides the team default and workflow_version pins an exact published version. A client_request_id UUID makes retries converge in either mode and rejects changed dispatch facts. Set wait to follow the selected run to a terminal or yielded state. Errors: team_not_found, team_not_active, no_default_workflow, default_workflow_unavailable, workflow_team_mismatch, workflow_not_published, team_lead_unavailable, invalid_client_request_id, client_request_conflict, http_401, http_403.",
+		Description: "Dispatch a task through the team's published default workflow and return the durable run immediately by default. Set mode=free_collab explicitly only when free collaboration is intended; workflow failures never fall back silently. workflow_id overrides the team default and workflow_version pins an exact published version. A client_request_id UUID makes retries converge in either mode and rejects changed dispatch facts. Persistent clients should leave wait=false and observe the returned run with team_run_activity; set wait=true only for an explicitly requested synchronous terminal wait. Errors: team_not_found, team_not_active, no_default_workflow, default_workflow_unavailable, workflow_team_mismatch, workflow_not_published, team_lead_unavailable, invalid_client_request_id, client_request_conflict, http_401, http_403.",
 		InputSchema: json.RawMessage(`{"type":"object","properties":{"team_id":{"type":"string"},"task":{"type":"string"},"mode":{"type":"string","enum":["workflow","free_collab"],"default":"workflow"},"workflow_id":{"type":"string"},"workflow_version":{"type":"integer","minimum":1},"client_request_id":{"type":"string","format":"uuid"},"project_id":{"type":"string"},"conversation_id":{"type":"string"},"wait":{"type":"boolean","default":false}},"required":["team_id","task"],"additionalProperties":false}`),
 	},
 	{
@@ -499,6 +522,16 @@ var toolDefinitions = []contract.ToolDef{
 		Name: "team_run_status", ReadOnly: true,
 		Description: "Get run records for one exact team run snapshot. Requires run access and snapshot_id; IDs are not auto-detected. Returns matching run summaries. Errors: http_400, http_401, http_403.",
 		InputSchema: json.RawMessage(`{"type":"object","properties":{"snapshot_id":{"type":"string"}},"required":["snapshot_id"],"additionalProperties":false}`),
+	},
+	{
+		Name: "team_run_activity", ReadOnly: true,
+		Description: "Read bounded activity facts for one exact team run, including status, stages, runtime, and completeness. Requires run access.",
+		InputSchema: json.RawMessage(`{"type":"object","properties":{"run_id":{"type":"string"}},"required":["run_id"],"additionalProperties":false}`),
+	},
+	{
+		Name:        "team_run_stop",
+		Description: "Request idempotent cancellation of one exact team run. Repeat the same idempotency_key to recover an unknown response. Requires run access.",
+		InputSchema: json.RawMessage(`{"type":"object","properties":{"run_id":{"type":"string"},"reason":{"type":"string"},"idempotency_key":{"type":"string","minLength":1,"maxLength":256}},"required":["run_id","idempotency_key"],"additionalProperties":false}`),
 	},
 	{
 		Name: "human_task_list", ReadOnly: true,
@@ -522,8 +555,8 @@ var toolDefinitions = []contract.ToolDef{
 	},
 	{
 		Name: "deliverable_list", ReadOnly: true,
-		Description: "List saved deliverables. Requires chat access. Team and run filtering are unavailable. A dispatch produces a deliverable only when an agent explicitly saves one. Returns deliverable records. Errors: http_401, http_403.",
-		InputSchema: json.RawMessage(`{"type":"object","properties":{"limit":{"type":"integer","minimum":0},"offset":{"type":"integer","minimum":0}},"additionalProperties":false}`),
+		Description: "List saved deliverables. Requires chat access. Set run_id to isolate one exact team run. A dispatch produces a deliverable only when an agent explicitly saves one. Returns deliverable records. Errors: http_401, http_403.",
+		InputSchema: json.RawMessage(`{"type":"object","properties":{"run_id":{"type":"string"},"limit":{"type":"integer","minimum":0},"offset":{"type":"integer","minimum":0}},"additionalProperties":false}`),
 	},
 	{
 		Name: "deliverable_get", ReadOnly: true,
