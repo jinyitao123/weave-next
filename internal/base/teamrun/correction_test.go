@@ -3,6 +3,7 @@ package teamrun
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 )
@@ -92,5 +93,54 @@ func TestCorrectionSafePointConfirmAndResume(t *testing.T) {
 	})
 	if err != nil || !replayed.Idempotent {
 		t.Fatalf("idempotent confirmation: result=%#v err=%v", replayed, err)
+	}
+}
+
+func TestCorrectionAndActivityLedgersAreWorkspaceIsolated(t *testing.T) {
+	h := newProcessNextHarness(t)
+	_, _ = h.seedRunningWorkflowTaskBeforeAdmission(t, "run-isolated")
+	ctx := context.Background()
+	corrections := &CorrectionStore{Transactions: h.pool, Runs: NewPGStore()}
+	requested, err := corrections.Request(ctx, RequestCorrectionRequest{
+		WorkspaceID: "workspace-1", RunID: "run-isolated", TargetKind: "team",
+		Instruction: "recheck the evidence", IdempotencyKey: "isolated-correction",
+		Actor: "user-1", OccurredAt: h.now,
+	})
+	if err != nil {
+		t.Fatalf("request correction: %v", err)
+	}
+	visible, err := corrections.List(ctx, "workspace-1", "run-isolated", 20)
+	if err != nil || len(visible) != 1 || visible[0].CorrectionID != requested.CorrectionID {
+		t.Fatalf("owner correction list = %#v, err=%v", visible, err)
+	}
+	hidden, err := corrections.List(ctx, "workspace-2", "run-isolated", 20)
+	if err != nil || len(hidden) != 0 {
+		t.Fatalf("foreign correction list = %#v, err=%v", hidden, err)
+	}
+	_, err = corrections.Request(ctx, RequestCorrectionRequest{
+		WorkspaceID: "workspace-2", RunID: "run-isolated", TargetKind: "team",
+		Instruction: "foreign request", IdempotencyKey: "foreign-correction",
+		Actor: "user-2", OccurredAt: h.now,
+	})
+	if !errors.Is(err, ErrTeamRunIdentityMismatch) {
+		t.Fatalf("foreign correction request error = %v", err)
+	}
+
+	activities := &PGActivityStore{Transactions: h.pool}
+	err = activities.Record(ctx, ActivityEvent{
+		WorkspaceID: "workspace-1", RunID: "run-isolated", EventID: "isolated-activity",
+		Kind: "member_started", MemberID: "reviewer", Detail: json.RawMessage(`{"input":"evidence"}`),
+		OccurredAt: h.now,
+	})
+	if err != nil {
+		t.Fatalf("record activity: %v", err)
+	}
+	ownerEvents, err := activities.List(ctx, "workspace-1", "run-isolated", 20)
+	if err != nil || len(ownerEvents) != 1 || ownerEvents[0].EventID != "isolated-activity" {
+		t.Fatalf("owner activity list = %#v, err=%v", ownerEvents, err)
+	}
+	foreignEvents, err := activities.List(ctx, "workspace-2", "run-isolated", 20)
+	if err != nil || len(foreignEvents) != 0 {
+		t.Fatalf("foreign activity list = %#v, err=%v", foreignEvents, err)
 	}
 }
