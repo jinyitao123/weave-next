@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ChatConversationViewNode, ToolResultNode } from '@deepseek-ai/dsh-client-ui-chat/client'
-import { workTaskModel } from '../src/client/work-task-model.ts'
+import { workTaskFactsStale, workTaskModel } from '../src/client/work-task-model.ts'
 
 let sequence = 1
 
@@ -30,6 +30,15 @@ function tool(name: string, args: unknown, value: unknown, isError = false): Cha
 }
 
 describe('workTaskModel', () => {
+  it('does not age terminal facts into a stale warning', () => {
+    const observedAt = Date.parse('2026-08-31T08:00:00Z')
+    const now = observedAt + 60_000
+    expect(workTaskFactsStale('running', observedAt, now)).toBe(true)
+    expect(workTaskFactsStale('completed', observedAt, now)).toBe(false)
+    expect(workTaskFactsStale('failed', observedAt, now)).toBe(false)
+    expect(workTaskFactsStale('stopped', observedAt, now)).toBe(false)
+  })
+
   it('keeps listed teams available as a first-class chooser before dispatch', () => {
     const model = workTaskModel([tool('mcp__weave__team_list', {}, [
       {

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import type { CSSProperties } from 'react'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { WorkTaskDeliverable, WorkTaskMemberStatus, WorkTaskStatus } from './work-task-model.ts'
-import { projectedWorkTask, workTaskModel } from './work-task-model.ts'
+import { projectedWorkTask, workTaskFactsStale, workTaskModel } from './work-task-model.ts'
 import css from './WorkTaskPanel.module.css'
 
 interface WorkTaskInjected {
@@ -153,7 +153,7 @@ export function WorkTaskPanel({
   const finalDeliverables = model.deliverables.filter(item => item.kind === 'final')
   const stageDeliverables = model.deliverables.filter(item => item.kind === 'stage')
   const terminal = model.status === 'completed' || model.status === 'failed' || model.status === 'stopped'
-  const stale = model.observedAt > 0 && Date.now() - model.observedAt > 45_000
+  const stale = workTaskFactsStale(model.status, model.observedAt)
   const incomplete = Object.values(model.completeness).some(value => value !== 'complete')
   const activeCorrection = model.corrections.find(item => item.status === 'requested' || item.status === 'ready' || item.status === 'confirmed')
 

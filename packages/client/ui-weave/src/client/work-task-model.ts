@@ -114,6 +114,12 @@ export interface WorkTaskModel {
   readonly observedAt: number
 }
 
+/** Whether a non-terminal task has not received a recent authoritative observation. */
+export function workTaskFactsStale(status: WorkTaskStatus, observedAt: number, now = Date.now()): boolean {
+  const terminal = status === 'completed' || status === 'failed' || status === 'stopped'
+  return !terminal && observedAt > 0 && now - observedAt > 45_000
+}
+
 export interface WorkTaskAttempt {
   readonly clientRequestId: string
   readonly runId: string
