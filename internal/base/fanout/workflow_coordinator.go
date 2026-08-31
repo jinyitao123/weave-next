@@ -357,7 +357,7 @@ func (c *WorkflowCoordinator) ReconcileGroup(ctx context.Context, workspaceID, g
 		if err != nil {
 			return err
 		}
-		if creatorAttemptCannotResume(plan, lease, c.now()) {
+		if creatorAttemptFinalOrMoved(plan, lease) {
 			return c.closeWorkflowResumeGroup(ctx, plan, "creator_attempt_unavailable_before_resume_claim")
 		}
 		claimID := uuid.NewSHA1(uuid.NameSpaceURL, []byte("weave/fanout-resume-claim/v1\x00"+workspaceID+"\x00"+groupID+"\x00"+plan.GroupCompletionID)).String()
@@ -436,18 +436,21 @@ func (c *WorkflowCoordinator) closeWorkflowResumeGroupIfCreatorUnavailable(
 		}
 		return false, err
 	}
-	if !creatorAttemptCannotResume(plan, lease, c.now()) {
+	if !creatorAttemptUnavailableAfterMissingCheckpoint(plan, lease, c.now()) {
 		return false, nil
 	}
 	return true, c.closeWorkflowResumeGroup(ctx, plan, reason)
 }
 
-func creatorAttemptCannotResume(plan WorkflowResumePlan, lease CreatorLeaseState, now time.Time) bool {
-	expired := !lease.LeaseExpiresAt.IsZero() && !lease.LeaseExpiresAt.After(now)
+func creatorAttemptFinalOrMoved(plan WorkflowResumePlan, lease CreatorLeaseState) bool {
 	return lease.MarkerPhase == "final" ||
 		lease.AttemptGeneration != plan.CreatorAttemptGeneration ||
-		lease.AttemptID != plan.CreatorAttemptID ||
-		expired
+		lease.AttemptID != plan.CreatorAttemptID
+}
+
+func creatorAttemptUnavailableAfterMissingCheckpoint(plan WorkflowResumePlan, lease CreatorLeaseState, now time.Time) bool {
+	expired := !lease.LeaseExpiresAt.IsZero() && !lease.LeaseExpiresAt.After(now)
+	return creatorAttemptFinalOrMoved(plan, lease) || expired
 }
 
 func (c *WorkflowCoordinator) closeWorkflowResumeGroup(

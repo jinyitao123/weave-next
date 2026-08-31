@@ -13,39 +13,45 @@ import (
 	"github.com/jinyitao123/weave/internal/base/testutil"
 )
 
-func TestCreatorAttemptCannotResume(t *testing.T) {
+func TestCreatorAttemptUnavailablePredicates(t *testing.T) {
 	plan := WorkflowResumePlan{CreatorAttemptGeneration: 2, CreatorAttemptID: "attempt-a"}
 	now := time.Date(2026, 8, 31, 1, 2, 3, 0, time.UTC)
 
-	if creatorAttemptCannotResume(plan, CreatorLeaseState{
+	if creatorAttemptFinalOrMoved(plan, CreatorLeaseState{
 		AttemptGeneration: 2, AttemptID: "attempt-a",
 		LeaseExpiresAt: now.Add(time.Minute),
-	}, now) {
+	}) {
 		t.Fatal("matching nonterminal lease should be resumable")
 	}
-	if !creatorAttemptCannotResume(plan, CreatorLeaseState{
+	if !creatorAttemptFinalOrMoved(plan, CreatorLeaseState{
 		AttemptGeneration: 2, AttemptID: "attempt-a", MarkerPhase: "final",
 		LeaseExpiresAt: now.Add(time.Minute),
-	}, now) {
+	}) {
 		t.Fatal("final creator marker should not be resumable")
 	}
-	if !creatorAttemptCannotResume(plan, CreatorLeaseState{
+	if !creatorAttemptFinalOrMoved(plan, CreatorLeaseState{
 		AttemptGeneration: 3, AttemptID: "attempt-a",
 		LeaseExpiresAt: now.Add(time.Minute),
-	}, now) {
+	}) {
 		t.Fatal("moved attempt generation should not be resumable")
 	}
-	if !creatorAttemptCannotResume(plan, CreatorLeaseState{
+	if !creatorAttemptFinalOrMoved(plan, CreatorLeaseState{
 		AttemptGeneration: 2, AttemptID: "attempt-b",
 		LeaseExpiresAt: now.Add(time.Minute),
-	}, now) {
+	}) {
 		t.Fatal("moved attempt ID should not be resumable")
 	}
-	if !creatorAttemptCannotResume(plan, CreatorLeaseState{
+	if creatorAttemptFinalOrMoved(plan, CreatorLeaseState{
+		AttemptGeneration: 2, AttemptID: "attempt-a",
+		LeaseExpiresAt: now.Add(-time.Second),
+	}) {
+		t.Fatal("expired creator lease alone must not block a checkpoint-backed claim")
+	}
+	if !creatorAttemptUnavailableAfterMissingCheckpoint(plan, CreatorLeaseState{
 		AttemptGeneration: 2, AttemptID: "attempt-a",
 		LeaseExpiresAt: now.Add(-time.Second),
 	}, now) {
-		t.Fatal("expired creator lease should not be resumable")
+		t.Fatal("expired creator lease should close only after the checkpoint is missing")
 	}
 }
 
