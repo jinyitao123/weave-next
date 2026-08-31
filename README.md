@@ -92,6 +92,8 @@ Three properties the whole design is built to guarantee:
 
 ## Quickstart
 
+The invited Weave Workbench v0.1 deployment, recovery, and browser acceptance contract is documented in the [design-partner release baseline](docs/验收/2026-08-31-Weave-Workbench-v0.1-设计伙伴版发布基线.md).
+
 ### Headless quickstart (N-1 draft)
 
 Weave can be initialized and operated without opening the Console. Start
