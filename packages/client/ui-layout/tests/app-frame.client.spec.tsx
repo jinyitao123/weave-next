@@ -289,6 +289,15 @@ describe('AppFrame', () => {
     expect(frame.hasAttribute('data-details-collapsed')).toBe(true)
   })
 
+  it('keeps an explicitly opened details panel visible as a drawer after concession', () => {
+    frameWidth = 1159
+    const { frame, instance } = mountFrame()
+    act(() => { instance.actions.openDetails() })
+    expect(tracks(frame)).toEqual([280, 0])
+    expect(frame.hasAttribute('data-details-collapsed')).toBe(false)
+    expect(frame.hasAttribute('data-details-overlay')).toBe(true)
+  })
+
   it('closed sidebar keeps its compact rail with mounted slot content and collapsed owner props', () => {
     const { frame, instance, slotCalls, getByTestId } = mountFrame()
     act(() => { instance.actions.toggleSidebar() })

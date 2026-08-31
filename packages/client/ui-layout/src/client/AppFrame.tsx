@@ -150,6 +150,8 @@ export function AppFrame({
     ? 0
     : panels.sidebar === 0 ? SIDEBAR_DEFAULT : panels.sidebar
   const cols = computeColumns(viewport, sidebarPreference, detailsSession === undefined ? 0 : panels.details)
+  const detailsOpen = detailsSession !== undefined && panels.details > 0
+  const detailsOverlay = detailsOpen && cols.details === 0
   const colsRef = useRef(cols)
   colsRef.current = cols
 
@@ -178,7 +180,8 @@ export function AppFrame({
       className={css.frame}
       style={{ gridTemplateColumns: `${cols.sidebar}px minmax(0, 1fr) ${cols.details}px` }}
       data-sidebar-collapsed={sidebarCollapsed || undefined}
-      data-details-collapsed={cols.details === 0 || undefined}
+      data-details-collapsed={!detailsOpen || undefined}
+      data-details-overlay={detailsOverlay || undefined}
       data-dragging={dragging || undefined}
     >
       <DocumentTitle

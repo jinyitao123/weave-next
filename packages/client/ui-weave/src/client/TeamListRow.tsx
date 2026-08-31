@@ -1,10 +1,14 @@
 import type { ReactNode } from 'react'
 import { IconSparkle16, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ToolCallViewProps } from '@deepseek-ai/dsh-client-ui-tool/client'
-import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
+import type { InjectFace, PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import css from './TeamListRow.module.css'
 
-type TeamListProps = ToolCallViewProps & PropsLocale<'weave'>
+interface TeamListInjected {
+  readonly selectTeam?: (teamId: string, teamName: string) => Promise<void>
+}
+
+type TeamListProps = ToolCallViewProps & PropsLocale<'weave'> & InjectFace<TeamListInjected>
 type TeamListState = 'running' | 'ok' | 'empty' | 'error' | 'stopped' | 'invalid'
 
 interface TeamCandidate {
@@ -100,12 +104,13 @@ function summary(model: TeamListModel, t: TeamListProps['t']): string {
   }
 }
 
-function TeamCard({ team, t }: { team: TeamCandidate; t: TeamListProps['t'] }) {
+function TeamCard({ team, t, selectTeam }: { team: TeamCandidate; t: TeamListProps['t']; selectTeam?: TeamListInjected['selectTeam'] }) {
   const purpose = team.objective || team.primaryScenario
+  const dispatchable = team.status === 'active' && team.workflowAvailable
   return (
     <article
       className={css.team}
-      data-dispatchable={team.status === 'active' && team.workflowAvailable || undefined}
+      data-dispatchable={dispatchable || undefined}
     >
       <div className={css.teamHeader}>
         <strong className={css.teamName}>{team.name}</strong>
@@ -124,12 +129,17 @@ function TeamCard({ team, t }: { team: TeamCandidate; t: TeamListProps['t'] }) {
       {team.successCriteria !== '' ? (
         <p className={css.fact}><span>{t('teamList.success')}</span>{team.successCriteria}</p>
       ) : null}
+      {!dispatchable || selectTeam === undefined ? null : (
+        <button className={css.selectButton} type="button" onClick={() => { void selectTeam(team.teamId, team.name) }}>
+          {t('teamList.select')}
+        </button>
+      )}
     </article>
   )
 }
 
 /** Render Weave's team-list result as candidate facts rather than raw MCP JSON. */
-export function TeamListRow({ block, t }: TeamListProps) {
+export function TeamListRow({ block, selectTeam, t }: TeamListProps) {
   const model = teamListModel(block)
   return (
     <section className={css.card} data-tool="mcp__weave__team_list" data-state={model.state}>
@@ -141,7 +151,7 @@ export function TeamListRow({ block, t }: TeamListProps) {
       </header>
       {model.state === 'ok' ? (
         <div className={css.teams} aria-label={summary(model, t)}>
-          {model.teams.map(team => <TeamCard key={team.teamId} team={team} t={t} />)}
+          {model.teams.map(team => <TeamCard key={team.teamId} team={team} t={t} selectTeam={selectTeam} />)}
         </div>
       ) : null}
       {(model.state === 'error' || model.state === 'invalid') && model.detail !== null ? (

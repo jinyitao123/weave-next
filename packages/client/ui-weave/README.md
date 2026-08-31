@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-client-ui-weave` turns durable Weave MCP call results into Workbench product surfaces. It presents `mcp__weave__team_list` as candidate teams with business facts and presents `mcp__weave__deliverable_get` as a visible, downloadable final file instead of raw JSON.
+`dsh-client-ui-weave` turns durable Weave MCP call results into a visible work task. Workbench shows the selected team, workflow progress, active runtimes, human decisions, exact-run deliverables, and explicit blockers while preserving the conversation as the control surface.
 
 ## Table of Contents
 
@@ -25,14 +25,14 @@ English | [中文](README.zh.md)
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount the package after `ui-tool`. When the Weave MCP server returns `team_list`, the conversation shows a `Team match` card. Candidate facts are visible immediately. When it returns `deliverable_get`, the conversation shows the title, inferred filename, full text preview, and a download action. Unavailable data, transport failures, interruptions, and malformed responses get explicit states.
+Mount the package after `ui-chat` and `ui-tool`. The first recorded Weave call opens the right-side work-status panel and adds a compact status beside the Session title. The panel prefers the Host `workTask` projection, which continues to update after the foreground turn ends, and retains richer stage details from loaded conversation history. A deliverable counts toward the task only when its recorded `run_id` matches the active run.
 
-The card deliberately does not claim a team was selected. Selection is confirmed by a later dispatch call. It also omits team ids, workflow ids, and internal health observations from the ordinary product surface.
+The conversation keeps specialized `team_list` and `deliverable_get` cards. The work-status panel keeps opaque ids under a collapsed diagnostic section and reports a queued run or missing team runtime as an explicit issue.
 
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 
-The browser half registers the exact MCP wire names `mcp__weave__team_list` and `mcp__weave__deliverable_get` in ui-tool's keyed `tool.call.toolview` slot. Rendering derives only from the frozen call/result block, so history replay does not consult live Weave state. The deliverable view treats the returned content as a remote immutable file and downloads a browser-created copy; it does not pretend that the file exists in the local workspace.
+The browser half registers the exact MCP wire names `mcp__weave__team_list` and `mcp__weave__deliverable_get` in ui-tool's keyed `tool.call.toolview` slot. It also occupies the Session-header action list and the Chat details summary slot. The Workbench Host folds MCP facts into the durable `workTask` projection and synchronizes the corresponding Weave request outside the foreground turn. The deliverable view treats returned content as a remote immutable file and downloads a browser-created copy; it does not pretend that the file exists in the local workspace.
 
 <a id="further-exploration"></a>
 ## Further Exploration
@@ -53,8 +53,8 @@ None; presentation happens after the runtime records the call result.
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **Dispatch and human tasks are not specialized yet** — those calls still use the generic tool card.
-- **Candidates are not a decision** — the list card exposes comparable facts but does not infer or persist a selected team.
+- **One task per Session** — the current projection tracks the latest Weave dispatch in a Session; multi-dispatch task grouping remains deferred.
+- **Runtime detail depends on recorded status** — the panel shows role, provider, and model only when Weave status results include them.
 - **Compact JSON is the contract** — non-array or team entries without stable ids and names fall back to a malformed-result state.
 - **Deliverables are immutable remote files** — Workbench previews and downloads their recorded contents but does not materialize them into the active workspace.
 

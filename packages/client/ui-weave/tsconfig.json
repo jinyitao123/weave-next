@@ -3,6 +3,9 @@
   "compilerOptions": { "rootDir": "src", "outDir": "lib/types" },
   "include": ["src"],
   "references": [
+    { "path": "../../api/remotes/tsconfig.client.json" },
+    { "path": "../../api/session-controller/tsconfig.client.json" },
+    { "path": "../../session/session-projection" },
     { "path": "../../runtime-diagnostics/invariants" },
     { "path": "../locale" },
     { "path": "../ui-renderer" },

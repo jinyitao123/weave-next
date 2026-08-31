@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-30-weave-work-task-projection.md
+2026-08-30-weave-work-task-projection.md: 269278cad5ff5d8bdac0a9ab3e55ccb5e63f31be
+2026-08-30-weave-work-task-projection.zh.md: f840ddc49faf5fa17c7c4f9f19d83edabc4e30b4

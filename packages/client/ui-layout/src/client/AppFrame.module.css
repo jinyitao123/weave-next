@@ -48,6 +48,21 @@
   border-left: none;
 }
 
+/* When the center floor forces the details grid track to zero, an explicitly
+   opened panel becomes a drawer instead of disappearing. This preserves the
+   center-column concession contract while keeping the open action truthful. */
+.frame[data-details-overlay] .detailsCol {
+  position: absolute;
+  z-index: 10;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(360px, calc(100% - 56px));
+  background: var(--dsw-alias-bg-base);
+  border-left: 1px solid var(--dsw-alias-border-l2);
+  box-shadow: var(--dsw-shadow-lv2);
+}
+
 /* Drag handles are frame children (columns clip overflow): an 8px hit strip
    centered on the column border via inline left, above column content. Details
    adds a visible 12x32 pill at vertical center; sidebar keeps only the hit strip. */

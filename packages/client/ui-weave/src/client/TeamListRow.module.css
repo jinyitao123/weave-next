@@ -79,8 +79,26 @@
   min-width: 0;
   padding: 10px 12px;
   border: 1px solid var(--dsw-alias-border-l1);
-  border-radius: 12px;
+  border-radius: 8px;
   background: var(--dsw-alias-bg-base);
+}
+
+.selectButton {
+  width: 100%;
+  min-height: 32px;
+  margin-top: 9px;
+  padding: 6px 10px;
+  border: 1px solid var(--dsw-alias-border-l3);
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  line-height: 18px;
+  cursor: pointer;
+}
+
+.selectButton:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
 }
 
 .team[data-dispatchable] {
@@ -139,7 +157,7 @@
   padding: 9px 11px;
   overflow: auto;
   border: 1px solid var(--dsw-alias-border-l1);
-  border-radius: 10px;
+  border-radius: 8px;
   background: var(--dsw-alias-markdown-code-block);
   color: var(--dsw-alias-state-error-primary);
   white-space: pre-wrap;

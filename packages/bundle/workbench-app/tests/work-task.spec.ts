@@ -1,0 +1,210 @@
+import { describe, expect, it } from 'vitest'
+import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import { applyWorkTaskProjection, workTaskProjectionDefinition } from '../src/index.ts'
+
+const event = (type: string, data: unknown, seq = 0, time = 100): SessionEvent => ({
+  type, data, seq, time,
+} as SessionEvent)
+
+const call = (id: string, name: string, args: unknown, seq: number): SessionEvent => event('tool/call', {
+  turn: 1, step: 1, callId: id, name, arguments: JSON.stringify(args),
+}, seq, 100 + seq)
+
+const result = (id: string, value: unknown, seq: number): SessionEvent => event('tool/result', {
+  turn: 1,
+  step: 1,
+  message: {
+    id: `message-${id}`,
+    role: 'user',
+    source: { kind: 'tool', callId: id },
+    content: [{ type: 'tool-result', toolCallId: id, content: [{ type: 'text', text: JSON.stringify(value) }] }],
+  },
+}, seq, 100 + seq)
+
+describe('Workbench work-task projection', () => {
+  it('materializes a dispatch with its matched team and durable request identity', () => {
+    let state = workTaskProjectionDefinition.init()
+    const events = [
+      call('list', 'mcp__weave__team_list', {}, 0),
+      result('list', { teams: [{ id: 'team-1', name: '日冕首轮推演团队' }] }, 1),
+      call('dispatch', 'mcp__weave__team_dispatch', { team_id: 'team-1', workflow_id: 'baseline' }, 2),
+      result('dispatch', { client_request_id: 'request-1', run_id: 'run-1', status: 'queued' }, 3),
+    ]
+    for (const item of events) state = applyWorkTaskProjection(state, item)
+
+    expect(state.task).toMatchObject({
+      clientRequestId: 'request-1', runId: 'run-1', teamId: 'team-1',
+      teamName: '日冕首轮推演团队', workflowName: 'baseline', status: 'queued', blocker: 'queued',
+      brief: '', pendingAction: null,
+    })
+    expect(state.task?.attempts).toHaveLength(1)
+  })
+
+  it('folds reconnect-safe progress and runtime assignment from dispatch status', () => {
+    let state = workTaskProjectionDefinition.init()
+    for (const item of [
+      call('dispatch', 'mcp__weave__team_dispatch', { team_id: 'team-1' }, 0),
+      result('dispatch', { client_request_id: 'request-1', run_id: 'run-1', status: 'queued' }, 1),
+      call('status', 'mcp__weave__dispatch_status', { client_request_id: 'request-1' }, 2),
+      result('status', {
+        status: 'running', workflow_progress: { completed_stages: 3, total_stages: 9, latest_stage: '约束推演' },
+        runtime_assignment: { lead: { model: 'gpt-5.6-luna', provider: 'openai' } },
+      }, 3),
+    ]) state = applyWorkTaskProjection(state, item)
+
+    expect(state.task).toMatchObject({ status: 'running', completedStages: 3, totalStages: 9, latestStage: '约束推演' })
+    expect(state.task?.runtimes).toEqual([{ name: 'lead', detail: 'openai · gpt-5.6-luna', status: 'running' }])
+  })
+
+  it('shows a parked server run as waiting instead of inheriting a prior terminal state', () => {
+    let state = workTaskProjectionDefinition.init()
+    state = applyWorkTaskProjection(state, event('weave/work-task', {
+      clientRequestId: 'request-1', runId: 'run-1', teamId: 'team-1', teamName: 'Team', workflowName: 'baseline',
+      status: 'stopped', completedStages: 0, totalStages: 0, latestStage: '', runtimes: [],
+      humanTaskCount: 0, deliverableCount: 0, deliverables: [], blocker: 'none', updatedAt: 100,
+      brief: 'first', attempts: [], pendingAction: null, completeness: {}, observedAt: 100,
+    }))
+    state = applyWorkTaskProjection(state, call('status', 'mcp__weave__team_run_activity', { run_id: 'run-1' }, 1))
+    state = applyWorkTaskProjection(state, result('status', {
+      run_id: 'run-1', status: 'parked', wait_kind: 'fanout', completed_stages: 3,
+      stages: [
+        { name: '任务定义', status: 'completed' },
+        { name: '物理复核', status: 'completed' },
+        { name: '证据分析', status: 'completed' },
+      ],
+    }, 2))
+
+    expect(state.task?.status).toBe('waiting')
+    expect(state.task).toMatchObject({ completedStages: 3, latestStage: '证据分析' })
+  })
+
+  it('moves retained runtime evidence into the exact terminal state', () => {
+    let state = workTaskProjectionDefinition.init()
+    for (const item of [
+      call('dispatch', 'mcp__weave__team_dispatch', { team_id: 'team-1' }, 0),
+      result('dispatch', { run_id: 'run-1', status: 'running' }, 1),
+      call('running', 'mcp__weave__team_run_activity', { run_id: 'run-1' }, 2),
+      result('running', {
+        run_id: 'run-1', status: 'running',
+        runtimes: [{ name: 'teamrun:worker-1', status: 'running' }],
+      }, 3),
+      call('completed', 'mcp__weave__team_run_activity', { run_id: 'run-1' }, 4),
+      result('completed', { run_id: 'run-1', status: 'completed', runtimes: [] }, 5),
+    ]) state = applyWorkTaskProjection(state, item)
+
+    expect(state.task?.status).toBe('completed')
+    expect(state.task?.runtimes).toEqual([{ name: 'teamrun:worker-1', detail: '', status: 'completed' }])
+  })
+
+  it('persists exact member stages, input sources, outputs, and runtime facts', () => {
+    let state = workTaskProjectionDefinition.init()
+    for (const item of [
+      call('dispatch', 'mcp__weave__team_dispatch', { team_id: 'team-1' }, 0),
+      result('dispatch', { run_id: 'run-1', status: 'running' }, 1),
+      call('activity', 'mcp__weave__team_run_activity', { run_id: 'run-1' }, 2),
+      result('activity', {
+        run_id: 'run-1', status: 'succeeded',
+        members: [{
+          agent_id: 'worker-1', name: '约束分析员', duty: '复核关键假设', role: 'worker', status: 'completed',
+          runtime: { runtime_id: 'runtime-1', engine: 'codex', provider: 'openai', model: 'gpt-5.6-luna' },
+          stages: [{
+            node_id: 'verify', name: '约束复核', status: 'completed',
+            inputs: [{ name: 'facts', expected_type: 'text', source: 'node_output', node_id: 'draft', path: '$.facts' }],
+            output_refs: ['deliverable-1'],
+            started_at: '2026-08-30T10:00:00Z', completed_at: '2026-08-30T10:00:04Z', duration_ms: 4000,
+            tool_calls: 1, tools: [{ call_id: 'tool-1', name: 'evidence_lookup', status: 'ok',
+              started_at: '2026-08-30T10:00:01Z', completed_at: '2026-08-30T10:00:02Z' }],
+          }],
+        }],
+      }, 3),
+    ]) state = applyWorkTaskProjection(state, item)
+
+    expect(state.task?.members).toEqual([{
+      agentId: 'worker-1', name: '约束分析员', duty: '复核关键假设', role: 'worker', status: 'completed',
+      runtime: 'runtime-1 · openai/gpt-5.6-luna',
+      stages: [{
+        nodeId: 'verify', name: '约束复核', status: 'completed',
+        inputs: [{ name: 'facts', expectedType: 'text', source: 'node_output', nodeId: 'draft', path: '$.facts', summary: '' }],
+        outputRefs: ['deliverable-1'],
+        startedAt: '2026-08-30T10:00:00Z', completedAt: '2026-08-30T10:00:04Z', durationMs: 4000, toolCalls: 1,
+        tools: [{ callId: 'tool-1', name: 'evidence_lookup', status: 'ok',
+          startedAt: '2026-08-30T10:00:01Z', completedAt: '2026-08-30T10:00:02Z' }],
+      }],
+    }])
+  })
+
+  it('retains a ready correction impact plan for reconnect-safe confirmation', () => {
+    let state = workTaskProjectionDefinition.init()
+    for (const item of [
+      call('dispatch', 'mcp__weave__team_dispatch', { team_id: 'team-1' }, 0),
+      result('dispatch', { run_id: 'run-1', status: 'running' }, 1),
+      call('activity', 'mcp__weave__team_run_activity', { run_id: 'run-1' }, 2),
+      result('activity', { run_id: 'run-1', status: 'parked', wait_kind: 'correction', corrections: [{
+        correction_id: 'correction-1', target_kind: 'member', target_member_id: 'worker-1',
+        instruction: '重查证据边界', status: 'ready', safe_node_id: 'deliver', restart_node_id: 'review',
+        affected_node_ids: ['review', 'deliver'], preserved_node_ids: ['research'], requested_at: '2026-08-30T10:00:00Z',
+      }] }, 3),
+    ]) state = applyWorkTaskProjection(state, item)
+
+    expect(state.task?.status).toBe('waiting')
+    expect(state.task?.corrections[0]).toEqual({
+      correctionId: 'correction-1', targetKind: 'member', targetMemberId: 'worker-1',
+      instruction: '重查证据边界', status: 'ready', safeNodeId: 'deliver', restartNodeId: 'review',
+      affectedNodeIds: ['review', 'deliver'], preservedNodeIds: ['research'], requestedAt: '2026-08-30T10:00:00Z',
+    })
+  })
+
+  it('lets a host snapshot remain authoritative after the conversation turn ends', () => {
+    const state = workTaskProjectionDefinition.init()
+    const next = applyWorkTaskProjection(state, event('weave/work-task', {
+      clientRequestId: 'request-1', runId: 'run-1', teamId: 'team-1', teamName: 'Team', workflowName: '',
+      status: 'completed', completedStages: 9, totalStages: 9, latestStage: '交付', runtimes: [],
+      humanTaskCount: 0, deliverableCount: 1,
+      deliverables: [{
+        id: 'file-1', title: '最终报告', kind: 'final', contentType: 'text/markdown',
+        preview: '# 完成', createdAt: '2026-08-30T10:00:00Z',
+      }],
+      blocker: 'none', updatedAt: 999,
+      brief: '任务简报', attempts: [], pendingAction: null, completeness: { run: 'complete' }, observedAt: 999,
+    }))
+    expect(next.task?.status).toBe('completed')
+    expect(workTaskProjectionDefinition.wire.view(next)?.deliverableCount).toBe(1)
+    expect(workTaskProjectionDefinition.wire.view(next)?.deliverables[0]?.title).toBe('最终报告')
+  })
+
+  it('retains ordered run attempts and exactly one durable pending action', () => {
+    let state = workTaskProjectionDefinition.init()
+    for (const item of [
+      call('first', 'mcp__weave__team_dispatch', { team_id: 'team-1', task: '原始简报' }, 0),
+      result('first', { client_request_id: 'request-1', run_id: 'run-1', status: 'cancelled' }, 1),
+      event('weave/work-task-action', {
+        pendingAction: {
+          kind: 'rerun', targetRunId: 'run-1', idempotencyKey: '',
+          clientRequestId: 'request-2', brief: '完整修订简报', requestedAt: 102,
+        },
+      }, 2, 102),
+    ]) state = applyWorkTaskProjection(state, item)
+
+    expect(state.task?.pendingAction).toMatchObject({ kind: 'rerun', targetRunId: 'run-1' })
+
+    state = applyWorkTaskProjection(state, event('weave/work-task', {
+      ...state.task,
+      brief: '完整修订简报', clientRequestId: 'request-2', runId: 'run-2', status: 'queued',
+      pendingAction: null, updatedAt: 103,
+      attempts: [
+        ...state.task!.attempts,
+        {
+          clientRequestId: 'request-2', runId: 'run-2', brief: '完整修订简报', status: 'queued',
+          completedStages: 0, totalStages: 0, latestStage: '', deliverableCount: 0, deliverables: [],
+          createdAt: 103, updatedAt: 103,
+        },
+      ],
+    }, 3, 103))
+
+    expect(state.task?.pendingAction).toBeNull()
+    expect(state.task?.attempts.map(attempt => [attempt.runId, attempt.brief])).toEqual([
+      ['run-1', '原始简报'],
+      ['run-2', '完整修订简报'],
+    ])
+  })
+})

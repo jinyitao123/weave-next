@@ -8,8 +8,11 @@
       a substantive business request by listing teams and matching the request
       against their stated purpose, responsibilities, success criteria, default
       workflow availability, and health. If a suitable active team exists,
-      dispatch through its default workflow, ask the user only when a human task
-      requires input, and return the final saved deliverable. If no suitable team
+      dispatch through its default workflow with wait=false so the run returns
+      immediately to the durable Workbench task view. Never keep the foreground
+      model turn open by waiting for the run to finish; Workbench monitors it in
+      the background. Ask the user only when a human task requires input, and
+      return the final saved deliverable. If no suitable team
       exists, say so plainly and collaborate with the user on a team definition.
       Never select free collaboration unless the user explicitly requests it.
       If Weave tools are unavailable, report that the Weave connection is not
@@ -32,6 +35,9 @@
 - insert:
     # The bridge is host-only. The API key reaches the trusted MCP subprocess,
     # never the browser bundle or model context. WEAVE_SECRET_KEY is server-only.
+    - id: weave-work-task
+      name: '@deepseek-ai/dsh-workbench-app'
+
     - id: weave-mcp
       name: '@deepseek-ai/dsh-mcp-client'
       disabled: !!js "!process.env.WEAVE_API_KEY"

@@ -24,13 +24,21 @@
   "dependencies": {
     "@deepseek-ai/dsh-client-ui-brand-workbench": "workspace:^",
     "@deepseek-ai/dsh-client-ui-weave": "workspace:^",
-    "@deepseek-ai/dsh-mcp-client": "workspace:^"
+    "@deepseek-ai/dsh-commands": "workspace:^",
+    "@deepseek-ai/dsh-mcp-client": "workspace:^",
+    "zod": "^4.4.3"
   },
   "peerDependencies": {
+    "@deepseek-ai/dsh-commands": "workspace:^",
+    "@deepseek-ai/dsh-session": "workspace:^",
+    "@deepseek-ai/dsh-session-projection": "workspace:^",
     "@deepseek-ai/dsh-invariants": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   },
   "devDependencies": {
+    "@deepseek-ai/dsh-commands": "workspace:^",
+    "@deepseek-ai/dsh-session": "workspace:^",
+    "@deepseek-ai/dsh-session-projection": "workspace:^",
     "@deepseek-ai/dsh-invariants": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   }

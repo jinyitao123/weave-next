@@ -1042,6 +1042,30 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 
 来源：[`packages/core/session/src/types.ts:247`](../packages/core/session/src/types.ts)
 
+### `weave/*`
+
+<a id="weavework-task--log-only"></a>
+
+#### `weave/work-task` — log-only
+
+```ts persistence-catalog
+/** Whole latest Weave dispatch lifecycle, team, progress, runtime, blocker, and delivery summary synchronized by Workbench. */
+'weave/work-task': WorkTaskProjection
+```
+
+来源：[`packages/bundle/workbench-app/src/index.ts:152`](../packages/bundle/workbench-app/src/index.ts)
+
+<a id="weavework-task-action--log-only"></a>
+
+#### `weave/work-task-action` — log-only
+
+```ts persistence-catalog
+/** One unresolved Workbench command. Null clears it after an authoritative response. */
+'weave/work-task-action': { readonly pendingAction: WorkTaskPendingAction | null }
+```
+
+来源：[`packages/bundle/workbench-app/src/index.ts:154`](../packages/bundle/workbench-app/src/index.ts)
+
 ### `web/*`
 
 <a id="webdeepseek-search-llm-request--log-only"></a>

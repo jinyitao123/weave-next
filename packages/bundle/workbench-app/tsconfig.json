@@ -4,6 +4,9 @@
   "include": ["src"],
   "references": [
     { "path": "../../../vendor/cordis" },
+    { "path": "../../interaction/commands" },
+    { "path": "../../core/session" },
+    { "path": "../../session/session-projection" },
     { "path": "../../runtime-diagnostics/invariants" }
   ]
 }

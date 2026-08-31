@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-`dsh-client-ui-weave` 把持久化的 Weave MCP 调用结果转成 Workbench 产品界面。它把 `mcp__weave__team_list` 呈现为候选团队业务事实，并把 `mcp__weave__deliverable_get` 呈现为正文可见、可以下载的最终文件，不再直接显示原始 JSON。
+`dsh-client-ui-weave` 把持久化的 Weave MCP 调用结果转成可见的工作任务。Workbench 会展示已选团队、工作流进度、活跃运行时、人工决策、严格归属当前运行的交付物与明确异常，同时保留对话作为控制入口。
 
 ## 目录
 
@@ -25,14 +25,14 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用此包
 
-在 `ui-tool` 之后挂载此包。Weave MCP 服务返回 `team_list` 时，对话里会显示“团队匹配”卡片，并直接列出候选事实。返回 `deliverable_get` 时，对话里会直接显示标题、推断出的文件名、完整正文预览和下载操作。数据缺失、传输失败、调用中止和返回格式异常都有明确状态。
+在 `ui-chat` 和 `ui-tool` 之后挂载此包。会话记录第一次 Weave 调用后，右侧“工作现场”面板自动打开，Session 标题旁也会显示紧凑状态。面板从当前 Session 历史提取团队选择、阶段进度、运行时、人工任务、异常和交付物。只有记录中 `run_id` 与当前运行匹配的交付物才计入任务。
 
-卡片不会声称某个团队已经被选中，选中事实由后续派发调用确认。普通产品界面也不会展示团队 ID、工作流 ID 或内部健康度观察结果。
+对话保留专用的 `team_list` 和 `deliverable_get` 卡片。工作现场把不透明编号收进折叠的诊断区，并把长时间排队或团队运行时缺失呈现为明确问题。
 
 <a id="understand-the-implementation"></a>
 ## 理解实现
 
-浏览器侧把准确的 MCP 工具名 `mcp__weave__team_list` 和 `mcp__weave__deliverable_get` 注册进 ui-tool 的键控 `tool.call.toolview` slot。呈现只读取冻结的调用与结果块，历史回放不会查询当前 Weave 状态。交付物视图把返回正文视为远端不可变文件，并在浏览器中生成可下载副本，不会伪装成本地工作区文件。
+浏览器侧把准确的 MCP 工具名 `mcp__weave__team_list` 和 `mcp__weave__deliverable_get` 注册进 ui-tool 的键控 `tool.call.toolview` slot。它还占用 Session 标头操作列表与 Chat 详情摘要 slot。所有投影只读取冻结的调用与结果块，历史回放不会查询当前 Weave 状态。交付物视图把返回正文视为远端不可变文件，并在浏览器中生成可下载副本，不会伪装成本地工作区文件。
 
 <a id="further-exploration"></a>
 ## 继续探索
@@ -53,8 +53,8 @@ kind: "package-reference"
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **派发和人工任务尚未专门呈现**——这些调用仍使用通用工具卡片。
-- **候选列表不等于选择结果**——卡片提供可比较事实，但不会推断或保存已选团队。
+- **Session 仍然拥有持久化**——面板从已加载的 Weave 调用重建工作状态；宿主拥有、能脱离 Session 继续运行的 `WorkTask` 模型尚未存在。
+- **运行时详情依赖已记录状态**——只有 Weave 状态结果包含角色、提供方和模型时，面板才会展示它们。
 - **紧凑 JSON 是输入合同**——非数组结果，或缺少稳定 ID 与名称的团队条目，会进入格式异常状态。
 - **交付物是远端不可变文件**——Workbench 可以预览和下载已记录正文，但不会把它物化到当前工作区。
 

@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-This bundle turns the general DSH Web runtime into Weave Workbench without changing the agent loop. It adds the Workbench browser identity, connects the local `weave mcp serve` process when a business API key is present, and gives the foreground agent one product rule: match an existing team before dispatching work, or state that no suitable team exists and help define one.
+This bundle turns the general DSH Web runtime into Weave Workbench without changing the agent loop. It adds the Workbench browser identity, connects the local `weave mcp serve` process when a business API key is present, and gives the foreground agent one product rule: match an existing team before dispatching work, or state that no suitable team exists and help define one. A Host-side WorkTask projection records the dispatch and keeps its Weave status synchronized after the foreground turn ends.
 
 ## Table of Contents
 
@@ -26,6 +26,8 @@ This bundle turns the general DSH Web runtime into Weave Workbench without chang
 Run `dsh --profile workbench` or the repository shortcut `pnpm workbench`. The shortcut prefers an explicit `WEAVE_API_KEY`, then checks the macOS Keychain service `weave-workbench-api-key`; other platforms use the explicit environment value. The shipped profile stacks `dsh-base`, `dsh-web-app`, and this bundle. When a key is present, the bundle starts `weave mcp serve` over stdio and publishes its tools under the `mcp__weave__*` namespace. This local Workbench defaults `WEAVE_API_URL` to `http://127.0.0.1:18080`, and `WEAVE_COMMAND` may select a different trusted local binary.
 
 When `WEAVE_API_KEY` is absent, the MCP row is disabled and the browser still starts. This keeps the foreground runtime usable while making the missing Weave connection observable; the agent is instructed not to claim team work occurred without the tools.
+
+When a dispatch succeeds, the Host stores its `client_request_id`, run, team, workflow, progress, runtime assignment, and blocker state in the Session log. A bounded poller reads `/v1/chat-requests/:client_request_id` with the same business identity and appends whole snapshots. Closing the conversation therefore stops neither Weave execution nor Workbench status recovery.
 
 <a id="surface-boundary"></a>
 ## Surface boundary

@@ -146,7 +146,7 @@ export interface DetailsInjected {
 /** Full details-panel props. */
 export type DetailsSlotProps =
   PropsRuntime<'details'>
-  & PropsRenderSlots<'conversation.details.tool'>
+  & PropsRenderSlots<'conversation.details.summary' | 'conversation.details.tool'>
   & PropsStore<ChatStore>
   & InjectFace<DetailsInjected>
   & PropsLocale<'chat'>
@@ -163,6 +163,12 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   }
 
   interface SlotMap {
+    /**
+     * Session-level work summary shown while no individual Tool call is
+     * selected. Product layers use this seat for durable task, team, runtime,
+     * progress, and deliverable projections; absence keeps the generic hint.
+     */
+    'conversation.details.summary': { kind: 'single'; scope: 'session' }
     /**
      * Final Chat node renderer, keyed by `ChatNodeKind`. The component receives
      * the typed node, shared Chat actions, and Turn-data hook. Reusing a key

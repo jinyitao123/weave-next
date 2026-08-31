@@ -228,7 +228,7 @@ interface SessionStatus {
  * outranks completion reminders.
  */
 function sessionStatuses(
-  node: Pick<SessionNode, 'pendingInteraction' | 'running' | 'runningSubagentCount' | 'completed'>,
+  node: Pick<SessionNode, 'pendingInteraction' | 'workTask' | 'running' | 'runningSubagentCount' | 'completed'>,
   t: RowTranslate,
 ): readonly [SessionStatus, ...SessionStatus[]] {
   const subagents: SessionStatus | undefined = node.runningSubagentCount === 0
@@ -258,6 +258,16 @@ function sessionStatuses(
     default: return assertNever(node.pendingInteraction)
   }
   if (pending !== undefined) return subagents === undefined ? [pending] : [pending, subagents]
+  if (node.workTask !== undefined) {
+    const task: SessionStatus = node.workTask.status === 'completed'
+      ? { state: 'done', label: t('status.taskCompleted') }
+      : node.workTask.status === 'failed'
+        ? { state: 'warning', label: t('status.taskFailed') }
+        : node.workTask.status === 'waiting'
+          ? { state: 'warning', label: t('status.taskWaiting') }
+          : { state: 'ongoing', label: t(node.workTask.status === 'queued' ? 'status.taskQueued' : 'status.taskRunning') }
+    return subagents === undefined ? [task] : [task, subagents]
+  }
   if (node.running) {
     const primary: SessionStatus = { state: 'ongoing', label: t('status.running') }
     return subagents === undefined ? [primary] : [primary, subagents]
@@ -288,6 +298,12 @@ function SessionHoverContent({ node, now, t }: { node: SessionNode; now: number;
       {/* Same placeholder rule as the row's trailing cell: no timestamp
           before the first prompt. */}
       {!node.blank && <div className={css.hoverTime}>{hoverTimeLabel(node.updatedAt, now, t)}</div>}
+      {node.workTask !== undefined && (
+        <div className={css.hoverStatus}>
+          <span>{node.workTask.teamName || t('task.teamUnknown')}</span>
+          {node.workTask.totalStages > 0 && <span>{node.workTask.completedStages}/{node.workTask.totalStages}</span>}
+        </div>
+      )}
       {statuses.map(status => (
         <div className={css.hoverStatus} key={status.label}>
           <StateDot state={status.state} />
@@ -440,7 +456,12 @@ export function SessionNodeItem({ node, currentId, now, onOpen, onRename, onFork
           happened in it yet, so a "now" timestamp and the row verbs
           (rename/fork/archive) would all act on content that does not
           exist — both trailing cells stay off until the first prompt. */}
-      {!row.blank && <span className={css.time}>{timeLabel(row.updatedAt, now, t)}</span>}
+      {!row.blank && row.workTask !== undefined
+        ? <span className={css.taskMeta}>{[
+          row.workTask.teamName,
+          row.workTask.totalStages > 0 ? `${row.workTask.completedStages}/${row.workTask.totalStages}` : '',
+        ].filter(Boolean).join(' · ')}</span>
+        : !row.blank && <span className={css.time}>{timeLabel(row.updatedAt, now, t)}</span>}
       {!row.blank && (
         <span className={css.rowActions}>
           <Menu

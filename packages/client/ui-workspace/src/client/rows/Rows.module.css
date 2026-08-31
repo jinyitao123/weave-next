@@ -207,6 +207,17 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
+.taskMeta {
+  flex: none;
+  max-width: 42%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-secondary);
+}
+
 .dot {
   flex: none;
 }

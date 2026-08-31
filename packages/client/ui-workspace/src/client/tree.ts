@@ -23,6 +23,14 @@ export const UNGROUPED_KEY = ''
 export type SessionPendingInteractionStatus = 'approval' | 'plan-review' | 'question'
 type SessionPendingInteractions = ReadonlyMap<SessionId, SessionPendingInteractionBase>
 
+/** Product-neutral task summary carried by an optional Session projection. */
+export interface SessionWorkTask {
+  readonly status: 'preparing' | 'queued' | 'running' | 'waiting' | 'completed' | 'failed'
+  readonly teamName: string
+  readonly completedStages: number
+  readonly totalStages: number
+}
+
 /** One top-level session row in a group or the flat list. */
 export interface SessionNode {
   id: SessionId
@@ -32,6 +40,8 @@ export interface SessionNode {
   blank: boolean
   /** A Session-scoped UI consumer is awaiting this user. */
   pendingInteraction?: SessionPendingInteractionStatus
+  /** A durable background work task associated with this Session, when a product layer provides one. */
+  workTask?: SessionWorkTask
   running: boolean
   /** Running descendants connected through uninterrupted subagent-origin lineage. */
   runningSubagentCount: number
@@ -237,6 +247,19 @@ function sessionNode(
   pendingInteractions: SessionPendingInteractions,
 ): SessionNode {
   const pendingInteraction = visiblePendingKind(pendingInteractions.get(s.id)?.kind)
+  const projected = (s.projectionValues as { workTask?: unknown } | undefined)?.workTask
+  const candidate = typeof projected === 'object' && projected !== null
+    ? projected as Record<string, unknown>
+    : undefined
+  const taskStatus = candidate?.status
+  const workTask: SessionWorkTask | undefined = (
+    ['preparing', 'queued', 'running', 'waiting', 'completed', 'failed'].includes(String(taskStatus))
+  ) ? {
+      status: taskStatus as SessionWorkTask['status'],
+      teamName: typeof candidate?.teamName === 'string' ? candidate.teamName : '',
+      completedStages: typeof candidate?.completedStages === 'number' ? candidate.completedStages : 0,
+      totalStages: typeof candidate?.totalStages === 'number' ? candidate.totalStages : 0,
+    } : undefined
   return {
     id: s.id,
     title: sessionTitle(s),
@@ -246,6 +269,7 @@ function sessionNode(
     completed: s.completed === true,
     updatedAt: s.updatedAt,
     ...(pendingInteraction === undefined ? {} : { pendingInteraction }),
+    ...(workTask === undefined ? {} : { workTask }),
   }
 }
 

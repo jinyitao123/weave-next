@@ -3369,6 +3369,26 @@ export interface Config {
 
 Source: [`packages/webhook/webhook-github/src/index.ts:17`](../packages/webhook/webhook-github/src/index.ts)
 
+<a id="deepseek-aidsh-workbench-app"></a>
+
+## `@deepseek-ai/dsh-workbench-app`
+
+Requires: `sessions` · `sessionProjections`
+
+```ts config-catalog
+/** Host-only WorkTask synchronization settings. */
+export interface Config {
+  /** Weave HTTP API origin; defaults to `WEAVE_API_URL` and then the local development endpoint. */
+  readonly apiUrl?: string
+  /** Business API credential; defaults to host-only `WEAVE_API_KEY`. */
+  readonly apiKey?: string
+  /** Delay between non-terminal status reads in milliseconds. */
+  readonly pollIntervalMs?: number
+}
+```
+
+Source: [`packages/bundle/workbench-app/src/index.ts:223`](../packages/bundle/workbench-app/src/index.ts)
+
 <a id="deepseek-aidsh-workflow-worker-thread"></a>
 
 ## `@deepseek-ai/dsh-workflow-worker-thread`
@@ -3479,7 +3499,6 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-tool-subagent-control` — requires `tools` · `subagents` ([`packages/subagent/tool-subagent-control/src/index.ts`](../packages/subagent/tool-subagent-control/src/index.ts))
 - `@deepseek-ai/dsh-user-questions` ([`packages/interaction/user-questions/src/index.ts`](../packages/interaction/user-questions/src/index.ts))
 - `@deepseek-ai/dsh-webhook` — requires `agents` · `agentDefaultModel` · `agentPresets` · `permissionPresets` · `sessionTitle` · `workspaceRegistry` ([`packages/webhook/webhook/src/index.ts`](../packages/webhook/webhook/src/index.ts))
-- `@deepseek-ai/dsh-workbench-app` ([`packages/bundle/workbench-app/src/index.ts`](../packages/bundle/workbench-app/src/index.ts))
 - `@deepseek-ai/dsh-workspace` — requires `storageDomain` · `sessionPersistence` ([`packages/workspace/workspace/src/index.ts`](../packages/workspace/workspace/src/index.ts))
 
 ## Seam packages (not directly loadable)
