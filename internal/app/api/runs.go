@@ -744,6 +744,95 @@ func applyRunActivityEvents(members []runActivityMember, events []teamrun.Activi
 	}
 }
 
+func runActivityStageProgress(members []runActivityMember, humanTasks []map[string]any) (int, int) {
+	total := 0
+	completed := 0
+	for _, member := range members {
+		for _, stage := range member.Stages {
+			total++
+			if stage.Status == "completed" {
+				completed++
+			}
+		}
+	}
+	total += len(humanTasks)
+	return completed, total
+}
+
+func refineRunActivityCompleteness(
+	completeness map[string]string,
+	members []runActivityMember,
+	runStatus teamrun.Status,
+) {
+	if completeness["members"] != "complete" || completeness["activity_events"] != "complete" {
+		return
+	}
+	executedStages := 0
+	inputsComplete := true
+	outputsComplete := completeness["deliverables"] == "complete"
+	toolsComplete := true
+	for _, member := range members {
+		for _, stage := range member.Stages {
+			switch stage.Status {
+			case "running", "completed", "failed":
+				executedStages++
+			case "pending":
+				if runStatus.Terminal() {
+					inputsComplete = false
+					outputsComplete = false
+					toolsComplete = false
+				}
+				continue
+			case "not_recorded":
+				inputsComplete = false
+				outputsComplete = false
+				toolsComplete = false
+				continue
+			default:
+				continue
+			}
+			if stage.StartedAt == nil {
+				inputsComplete = false
+				toolsComplete = false
+			}
+			if stage.Status == "completed" && len(stage.OutputRefs) == 0 {
+				outputsComplete = false
+			}
+			completedTools := 0
+			for _, tool := range stage.Tools {
+				if tool.Status == "ok" || tool.Status == "error" {
+					completedTools++
+				}
+				if runStatus.Terminal() && tool.Status == "running" {
+					toolsComplete = false
+				}
+			}
+			if stage.Status == "completed" || stage.Status == "failed" {
+				if stage.ToolCalls != completedTools {
+					toolsComplete = false
+				}
+			}
+		}
+	}
+	if executedStages == 0 {
+		return
+	}
+	if inputsComplete {
+		completeness["member_inputs"] = "complete"
+	}
+	if outputsComplete {
+		completeness["member_outputs"] = "complete"
+	}
+	if toolsComplete {
+		completeness["member_tool_activity"] = "complete"
+	}
+	if completeness["member_inputs"] == "complete" &&
+		completeness["member_outputs"] == "complete" &&
+		completeness["member_tool_activity"] == "complete" {
+		completeness["stages"] = "complete"
+	}
+}
+
 func latestRunActivityStage(members []runActivityMember, fallback []runActivityStage) string {
 	var latestName string
 	var latestAt time.Time
@@ -871,6 +960,7 @@ func (s *Server) handleGetRunActivity(c echo.Context) error {
 			applyRunActivityEvents(members, activityEvents)
 			completeness["activity_events"] = "complete"
 			completeness["member_tool_activity"] = "partial"
+			refineRunActivityCompleteness(completeness, members, run.Status)
 		}
 	}
 	corrections := []teamrun.Correction{}
@@ -881,6 +971,13 @@ func (s *Server) handleGetRunActivity(c echo.Context) error {
 		}
 	}
 	observedAt := time.Now().UTC()
+	completedStages, totalStages := runActivityStageProgress(members, humanTasks)
+	if workflowCompleted := len(stages) - len(humanTasks); workflowCompleted > completedStages {
+		completedStages = workflowCompleted
+	}
+	if len(stages) > totalStages {
+		totalStages = len(stages)
+	}
 	return c.JSON(http.StatusOK, map[string]any{
 		"schema_version":           3,
 		"run_id":                   run.RunID,
@@ -908,7 +1005,8 @@ func (s *Server) handleGetRunActivity(c echo.Context) error {
 		"runtimes":         runtimes,
 		"stages":           stages,
 		"latest_stage":     latestRunActivityStage(members, stages),
-		"completed_stages": len(stages) - len(humanTasks),
+		"completed_stages": completedStages,
+		"total_stages":     totalStages,
 		"human_tasks":      humanTasks,
 		"deliverables":     deliverableRefs,
 		"activity_events":  activityEvents,

@@ -135,6 +135,92 @@ func TestApplyRunActivityEventsResetsTerminalTimingWhenStageRestarts(t *testing.
 	}
 }
 
+func TestRefineRunActivityCompletenessMarksRecordedStageFactsComplete(t *testing.T) {
+	started := time.Date(2026, 8, 31, 8, 0, 0, 0, time.UTC)
+	completed := started.Add(4 * time.Second)
+	members := []runActivityMember{{AgentID: "worker-1", Status: "pending", Stages: []runActivityMemberStage{{
+		NodeID: "verify", Status: "pending",
+		Inputs:     []runActivityMemberInputRef{{Name: "facts"}},
+		OutputRefs: []string{"deliverable-1"},
+		Tools:      []runActivityTool{},
+	}}}}
+	applyRunActivityEvents(members, []teamrun.ActivityEvent{
+		{Kind: "member_started", MemberID: "worker-1", NodeID: "verify", OccurredAt: started,
+			Detail: json.RawMessage(`{"input_summary":{"facts":"baseline"}}`)},
+		{Kind: "tool_started", MemberID: "worker-1", NodeID: "verify", OccurredAt: started.Add(time.Second),
+			Detail: json.RawMessage(`{"tool_name":"evidence_lookup","tool_call_id":"call-1"}`)},
+		{Kind: "tool_completed", MemberID: "worker-1", NodeID: "verify", OccurredAt: started.Add(2 * time.Second),
+			Detail: json.RawMessage(`{"tool_name":"evidence_lookup","tool_call_id":"call-1","status":"ok"}`)},
+		{Kind: "member_completed", MemberID: "worker-1", NodeID: "verify", OccurredAt: completed,
+			Detail: json.RawMessage(`{"duration_ms":4000,"tool_calls":1}`)},
+	})
+	completeness := map[string]string{
+		"members": "complete", "activity_events": "complete", "deliverables": "complete",
+		"stages": "partial", "member_inputs": "partial", "member_outputs": "partial", "member_tool_activity": "partial",
+	}
+	refineRunActivityCompleteness(completeness, members, teamrun.StatusSucceeded)
+	for _, key := range []string{"stages", "member_inputs", "member_outputs", "member_tool_activity"} {
+		if completeness[key] != "complete" {
+			t.Fatalf("%s completeness = %q, want complete; members=%#v", key, completeness[key], members)
+		}
+	}
+}
+
+func TestRefineRunActivityCompletenessKeepsToolTracePartialWhenCompletionIsMissing(t *testing.T) {
+	started := time.Date(2026, 8, 31, 8, 0, 0, 0, time.UTC)
+	completed := started.Add(4 * time.Second)
+	members := []runActivityMember{{AgentID: "worker-1", Status: "pending", Stages: []runActivityMemberStage{{
+		NodeID: "verify", Status: "pending", OutputRefs: []string{"deliverable-1"}, Tools: []runActivityTool{},
+	}}}}
+	applyRunActivityEvents(members, []teamrun.ActivityEvent{
+		{Kind: "member_started", MemberID: "worker-1", NodeID: "verify", OccurredAt: started},
+		{Kind: "tool_started", MemberID: "worker-1", NodeID: "verify", OccurredAt: started.Add(time.Second),
+			Detail: json.RawMessage(`{"tool_name":"evidence_lookup","tool_call_id":"call-1"}`)},
+		{Kind: "member_completed", MemberID: "worker-1", NodeID: "verify", OccurredAt: completed,
+			Detail: json.RawMessage(`{"duration_ms":4000,"tool_calls":1}`)},
+	})
+	completeness := map[string]string{
+		"members": "complete", "activity_events": "complete", "deliverables": "complete",
+		"stages": "partial", "member_inputs": "partial", "member_outputs": "partial", "member_tool_activity": "partial",
+	}
+	refineRunActivityCompleteness(completeness, members, teamrun.StatusSucceeded)
+	if completeness["member_tool_activity"] != "partial" {
+		t.Fatalf("member_tool_activity completeness = %q, want partial", completeness["member_tool_activity"])
+	}
+	if completeness["stages"] != "partial" {
+		t.Fatalf("stages completeness = %q, want partial", completeness["stages"])
+	}
+}
+
+func TestRunActivityStageProgressCountsMemberStagesAndHumanWait(t *testing.T) {
+	members := []runActivityMember{
+		{Stages: []runActivityMemberStage{{Status: "completed"}, {Status: "running"}}},
+		{Stages: []runActivityMemberStage{{Status: "completed"}}},
+	}
+	completed, total := runActivityStageProgress(members, []map[string]any{{"node_id": "review"}})
+	if completed != 2 || total != 4 {
+		t.Fatalf("progress = %d/%d, want 2/4", completed, total)
+	}
+}
+
+func TestRunActivityWorkflowProgressCanExceedMemberStageProgress(t *testing.T) {
+	members := []runActivityMember{
+		{Stages: []runActivityMemberStage{{Status: "completed"}}},
+		{Stages: []runActivityMemberStage{{Status: "completed"}}},
+	}
+	completed, total := runActivityStageProgress(members, nil)
+	stages := []runActivityStage{{}, {}, {}, {}}
+	if workflowCompleted := len(stages); workflowCompleted > completed {
+		completed = workflowCompleted
+	}
+	if len(stages) > total {
+		total = len(stages)
+	}
+	if completed != 4 || total != 4 {
+		t.Fatalf("progress = %d/%d, want workflow progress 4/4", completed, total)
+	}
+}
+
 func TestLatestRunActivityStageUsesNewestMemberBoundary(t *testing.T) {
 	first := time.Date(2026, 8, 31, 8, 0, 0, 0, time.UTC)
 	latest := first.Add(2 * time.Minute)
