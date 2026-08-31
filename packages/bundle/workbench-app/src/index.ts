@@ -3,6 +3,7 @@
 import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-commands'
+import { FIRST_PARTY_SECTION_ORDER } from '@deepseek-ai/dsh-system-prompt'
 import { z } from 'zod'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
@@ -607,10 +608,18 @@ export interface Config {
   readonly pollIntervalMs?: number
 }
 export const name = 'workbench-work-task'
-export const inject = ['sessions', 'sessionProjections', 'commands']
+export const inject = ['sessions', 'sessionProjections', 'commands', 'systemPrompt']
+
+/** Product policy that remains visible when a per-session agent preset shadows the deployment persona. */
+export const workbenchTeamRoutingSection = {
+  name: 'workbench:team-routing',
+  order: FIRST_PARTY_SECTION_ORDER.TEAM_POLICY + 10,
+  text: 'For substantive business work in Weave Workbench, first list the available Weave teams and match the request against each team\'s stated purpose, responsibilities, success criteria, default workflow availability, and health. If a suitable active team exists, dispatch its default workflow with wait=false. A successful Weave dispatch is already the durable task: do not create or update a DSH goal for it. After dispatch, make at most one activity or status call to confirm the handoff, then return the team, run ID, and current status immediately. Do not poll the run in the foreground, and do not save a duplicate foreground deliverable; Workbench monitors the run and projects Weave\'s deliverables in the background. Ask the user only when a human task requires input. Read and return the final Weave deliverable when the run is terminal or the user later asks for it. If no suitable team exists, say so plainly and collaborate with the user on a team definition. Never select free collaboration unless the user explicitly requests it. If Weave tools are unavailable, report that the Weave connection is not configured instead of pretending that team work was performed.',
+} as const
 
 /** Register the durable projection and keep non-terminal Weave runs synchronized outside the conversation turn. */
 export function apply(ctx: Context, config: Config = {}): void {
+  ctx.effect(() => ctx.systemPrompt.section(workbenchTeamRoutingSection), 'workbench team-routing policy')
   ctx.sessionProjections.register(workTaskProjectionDefinition)
   const apiUrl = (config.apiUrl ?? process.env.WEAVE_API_URL ?? 'http://127.0.0.1:18080').replace(/\/$/, '')
   const apiKey = (config.apiKey ?? process.env.WEAVE_API_KEY ?? '').trim()

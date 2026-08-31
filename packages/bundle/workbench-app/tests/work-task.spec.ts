@@ -1,7 +1,6 @@
-import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
-import { applyWorkTaskProjection, workTaskProjectionDefinition } from '../src/index.ts'
+import { applyWorkTaskProjection, workbenchTeamRoutingSection, workTaskProjectionDefinition } from '../src/index.ts'
 
 const event = (type: string, data: unknown, seq = 0, time = 100): SessionEvent => ({
   type, data, seq, time,
@@ -24,11 +23,10 @@ const result = (id: string, value: unknown, seq: number): SessionEvent => event(
 
 describe('Workbench work-task projection', () => {
   it('hands a dispatched Weave run to background ownership', () => {
-    const persona = readFileSync(new URL('../cordis.patch.yml', import.meta.url), 'utf8')
-
-    expect(persona).toContain('do not create or update a DSH goal')
-    expect(persona).toContain('make at most one activity or status call')
-    expect(persona).toContain('do not save a duplicate foreground deliverable')
+    expect(workbenchTeamRoutingSection.name).toBe('workbench:team-routing')
+    expect(workbenchTeamRoutingSection.text).toContain('do not create or update a DSH goal')
+    expect(workbenchTeamRoutingSection.text).toContain('make at most one activity or status call')
+    expect(workbenchTeamRoutingSection.text).toContain('do not save a duplicate foreground deliverable')
   })
 
   it('materializes a dispatch with its matched team and durable request identity', () => {

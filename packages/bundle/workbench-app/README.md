@@ -51,7 +51,7 @@ None.
 
 #### What the model sees
 
-The profile tells the foreground agent to list and match Weave teams for substantive business work, using tools such as `mcp__weave__team_list`, then dispatch a suitable team's default workflow with `wait=false`. After dispatch it may make at most one status call to confirm the handoff, then it returns the team, run ID, and current status. It must not create a DSH goal, poll the Weave run in the foreground, or save a duplicate deliverable. Workbench owns background status projection; the model reads the final Weave deliverable when the run is terminal or the user later requests it. With no match it must say so and collaborate on a team definition. It may use free collaboration only after an explicit user request, and it must report an unavailable Weave connection honestly.
+The profile registers the rule as a dedicated Workbench prompt section, so the selected per-session agent preset cannot shadow it. The foreground agent must list and match Weave teams for substantive business work, using tools such as `mcp__weave__team_list`, then dispatch a suitable team's default workflow with `wait=false`. After dispatch it may make at most one status call to confirm the handoff, then it returns the team, run ID, and current status. It must not create a DSH goal, poll the Weave run in the foreground, or save a duplicate deliverable. Workbench owns background status projection; the model reads the final Weave deliverable when the run is terminal or the user later requests it. With no match it must say so and collaborate on a team definition. It may use free collaboration only after an explicit user request, and it must report an unavailable Weave connection honestly.
 
 #### Token effect
 
