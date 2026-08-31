@@ -9,7 +9,7 @@ kind: "package-bundle"
 
 ## 概述
 
-本组合包在不修改 agent loop 的前提下，把通用 DSH Web 运行时变成 Weave Workbench。它加入 Workbench 浏览器身份，在业务 API key 存在时连接本地 `weave mcp serve` 进程，并给前台 agent 一条产品规则：派活前先匹配已有团队；如果没有合适团队，就如实说明并协助定义团队。
+本组合包在不修改 agent loop 的前提下，把通用 DSH Web 运行时变成 Weave Workbench。它加入 Workbench 浏览器身份，在业务 API key 存在时连接本地 `weave mcp serve` 进程，并给前台 agent 一条产品规则：派活前先匹配已有团队；如果没有合适团队，就如实说明并协助定义团队。宿主侧 WorkTask 投影会记录派发，并在前台回合结束后继续同步 Weave 状态。派发成功的 Weave 运行就是持久任务；前台 agent 不再创建影子 DSH 目标、轮询到结束或保存重复交付物。
 
 ## 目录
 
@@ -49,7 +49,7 @@ Workbench 客户端保留 DSH 的会话、工作区、模型、权限、人工�
 
 #### 模型看到什么
 
-Profile 要求前台 agent 面对实质性业务工作时先使用 `mcp__weave__team_list` 等工具列出并匹配 Weave 团队，随后通过合适团队的默认工作流派发，只在真实人工任务出现时暂停，并返回最终保存的交付物。没有匹配团队时，它必须如实说明并协助定义团队。只有用户明确要求时才可使用自由协作；Weave 连接不可用时也必须诚实报告。
+Profile 要求前台 agent 面对实质性业务工作时先使用 `mcp__weave__team_list` 等工具列出并匹配 Weave 团队，随后以 `wait=false` 通过合适团队的默认工作流派发。派发后最多调用一次状态接口确认交接，随即返回团队、运行 ID 和当前状态。它不得创建 DSH 目标、在前台轮询 Weave 运行，或保存重复交付物。Workbench 负责后台状态投影；运行终态或用户稍后索取时，模型再读取 Weave 最终交付物。没有匹配团队时，它必须如实说明并协助定义团队。只有用户明确要求时才可使用自由协作；Weave 连接不可用时也必须诚实报告。
 
 #### Token 影响
 

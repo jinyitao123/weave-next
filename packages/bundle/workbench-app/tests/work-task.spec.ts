@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { applyWorkTaskProjection, workTaskProjectionDefinition } from '../src/index.ts'
@@ -22,6 +23,14 @@ const result = (id: string, value: unknown, seq: number): SessionEvent => event(
 }, seq, 100 + seq)
 
 describe('Workbench work-task projection', () => {
+  it('hands a dispatched Weave run to background ownership', () => {
+    const persona = readFileSync(new URL('../cordis.patch.yml', import.meta.url), 'utf8')
+
+    expect(persona).toContain('do not create or update a DSH goal')
+    expect(persona).toContain('make at most one activity or status call')
+    expect(persona).toContain('do not save a duplicate foreground deliverable')
+  })
+
   it('materializes a dispatch with its matched team and durable request identity', () => {
     let state = workTaskProjectionDefinition.init()
     const events = [
