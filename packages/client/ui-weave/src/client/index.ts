@@ -6,9 +6,11 @@ import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
+import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import { DeliverableRow } from './DeliverableRow.tsx'
 import { TeamListRow } from './TeamListRow.tsx'
 import { WorkTaskHeader, WorkTaskPanel } from './WorkTaskPanel.tsx'
+import { ReadinessOnboarding, ReadinessSection } from './ReadinessPanel.tsx'
 import { en, NS, zh, type WeaveKey } from './locales.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
@@ -87,6 +89,19 @@ export function apply(ctx: ClientContext): void {
         if (result.value === undefined) return 'The Weave correction confirmation is unavailable.'
         return result.value.result.kind === 'error' ? result.value.result.text : null
       },
+      assessOutcome: async (runId: string, outcome: 'adopted' | 'needs-revision', note: string) => {
+        const result = await ctx.remote.commands.execute(sessionId, `/weave-assess ${JSON.stringify({ runId, outcome, note })}`, [])
+        if (!result.ok) return result.error.message
+        if (result.value === undefined) return 'The Weave outcome command is unavailable.'
+        return result.value.result.kind === 'error' ? result.value.result.text : null
+      },
     }),
   }, WorkTaskPanel))
+  const t = ctx.locale.bind(NS)
+  ctx.slots.inject('settings.section', () => ctx.slots.register({
+    name: 'settings.section', id: 'weave', order: -20, label: () => t('readiness.title'), locale: NS,
+  }, ReadinessSection))
+  ctx.slots.inject('settings.onboarding', () => ctx.slots.register({
+    name: 'settings.onboarding', id: 'weave-readiness', order: -200, locale: NS,
+  }, ReadinessOnboarding))
 }

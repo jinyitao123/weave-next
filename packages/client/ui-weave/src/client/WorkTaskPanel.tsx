@@ -12,6 +12,7 @@ interface WorkTaskInjected {
   readonly rerun?: (runId: string, brief: string) => Promise<string | null>
   readonly requestCorrection?: (runId: string, targetKind: 'team' | 'member', targetMemberId: string, instruction: string) => Promise<string | null>
   readonly confirmCorrection?: (runId: string, correctionId: string, disposition: 'apply' | 'discard') => Promise<string | null>
+  readonly assessOutcome?: (runId: string, outcome: 'adopted' | 'needs-revision', note: string) => Promise<string | null>
 }
 
 type PanelProps =
@@ -151,7 +152,7 @@ export function WorkTaskHeader({ useChat, useProjection, openDetails, t }: Heade
 /** Persistent Weave task, team, runtime, and deliverable projection. */
 export function WorkTaskPanel({
   useChat, useProjection, useSessions, sessionId, openDetails, selectTeam,
-  stopRun, rerun, requestCorrection, confirmCorrection, t,
+  stopRun, rerun, requestCorrection, confirmCorrection, assessOutcome, t,
 }: PanelProps) {
   const conversationModel = useChat(snapshot => workTaskModel(snapshot.nodes.values()))
   const projection = useProjection('workTask')
@@ -166,6 +167,7 @@ export function WorkTaskPanel({
   const [correctionOpen, setCorrectionOpen] = useState(false)
   const [correctionTarget, setCorrectionTarget] = useState('team')
   const [correctionInstruction, setCorrectionInstruction] = useState('')
+  const [assessmentNote, setAssessmentNote] = useState('')
 
   useEffect(() => {
     if (model.detected) openDetails()
@@ -233,6 +235,14 @@ export function WorkTaskPanel({
     try { await selectTeam(teamId, teamName) }
     catch (error) { setActionError(error instanceof Error ? error.message : String(error)) }
     finally { setSelectingTeamId('') }
+  }
+  const submitAssessment = async (outcome: 'adopted' | 'needs-revision') => {
+    if (assessOutcome === undefined || actionPending) return
+    setActionPending(true)
+    setActionError(null)
+    const error = await assessOutcome(model.runId, outcome, assessmentNote.trim())
+    setActionPending(false)
+    if (error !== null) setActionError(error)
   }
 
   return (
@@ -329,7 +339,7 @@ export function WorkTaskPanel({
         </section>
       )}
 
-      {model.status !== 'stopped' ? null : (
+      {!terminal ? null : (
         <section className={css.controlSection} aria-label={t('task.rerun')}>
           {revisionOpen ? (
             <div className={css.revisionBox}>
@@ -375,7 +385,7 @@ export function WorkTaskPanel({
         <div className={css.pendingAction} role="status">{t(activeCorrection.status === 'requested' ? 'task.correction.awaitingSafePoint' : 'task.correction.resuming')}</div>
       ) : null}
 
-      {model.runId === '' || model.status !== 'running' || activeCorrection !== undefined ? null : (
+      {model.runId === '' || !(model.status === 'running' || (model.status === 'waiting' && model.members.some(member => member.status === 'running'))) || activeCorrection !== undefined ? null : (
         <section className={css.controlSection} aria-label={t('task.correction')}>
           {correctionOpen ? (
             <div className={css.correctionComposer}>
@@ -419,6 +429,26 @@ export function WorkTaskPanel({
           </div>
         )}
       </section>
+
+      {model.status !== 'completed' || finalDeliverables.length === 0 ? null : (
+        <section className={css.assessment} aria-label={t('task.assessment')}>
+          <div className={css.sectionHeader}>
+            <span>{t('task.assessment')}</span>
+            {model.outcome === 'unrated' ? null : (
+              <span data-outcome={model.outcome}>{t(model.outcome === 'adopted' ? 'task.assessment.adopted' : 'task.assessment.needsRevision')}</span>
+            )}
+          </div>
+          <p>{t('task.assessment.notice')}</p>
+          <textarea value={assessmentNote} onChange={(event) => { setAssessmentNote(event.currentTarget.value) }}
+            placeholder={model.outcomeNote || t('task.assessment.placeholder')} />
+          <div className={css.controlActions}>
+            <button type="button" className={css.secondaryButton} disabled={actionPending}
+              onClick={() => { void submitAssessment('needs-revision') }}>{t('task.assessment.needsRevision')}</button>
+            <button type="button" className={css.primaryButton} disabled={actionPending}
+              onClick={() => { void submitAssessment('adopted') }}>{t('task.assessment.adopted')}</button>
+          </div>
+        </section>
+      )}
 
       <section className={css.section} aria-label={t('task.progress')}>
         <div className={css.sectionHeader}>

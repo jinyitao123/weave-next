@@ -105,6 +105,33 @@ describe('Workbench work-task projection', () => {
     expect(state.task?.runtimes).toEqual([{ name: 'teamrun:worker-1', detail: '', status: 'completed' }])
   })
 
+  it('starts a new run without inheriting terminal facts from the prior attempt', () => {
+    let state = workTaskProjectionDefinition.init()
+    state = applyWorkTaskProjection(state, event('weave/work-task', {
+      clientRequestId: 'request-1', runId: 'run-1', teamId: 'team-1', teamName: 'Team', workflowName: 'baseline',
+      status: 'failed', completedStages: 2, totalStages: 3, latestStage: '汇总',
+      members: [{ agentId: 'worker-1', name: '旧成员', duty: '', role: 'worker', status: 'failed', runtime: '', stages: [] }],
+      corrections: [{ correctionId: 'correction-1', targetKind: 'team', targetMemberId: '', instruction: '旧纠偏',
+        status: 'ready', safeNodeId: 'review', restartNodeId: 'review', affectedNodeIds: ['review'], preservedNodeIds: [], requestedAt: '' }],
+      runtimes: [{ name: 'old-runtime', detail: '', status: 'failed' }], humanTaskCount: 1,
+      deliverableCount: 1, deliverables: [{ id: 'old', title: '旧交付', kind: 'stage', contentType: 'text/plain', preview: '', content: '', truncated: false, createdAt: '' }],
+      blocker: 'failed', updatedAt: 100, brief: '旧任务', attempts: [], pendingAction: null, actionError: '',
+      completeness: { run: 'complete' }, startedAt: '2026-08-30T10:00:00Z', finishedAt: '2026-08-30T10:01:00Z',
+      tokensIn: 100, tokensOut: 20, costUSD: 1, outcome: 'needs-revision', outcomeNote: '旧判断', observedAt: 100,
+    }))
+    state = applyWorkTaskProjection(state, call('rerun', 'mcp__weave__team_dispatch', { team_id: 'team-1' }, 1))
+    state = applyWorkTaskProjection(state, result('rerun', {
+      run_id: 'run-2', client_request_id: 'request-2', status: 'queued',
+    }, 2))
+
+    expect(state.task).toMatchObject({
+      runId: 'run-2', status: 'queued', completedStages: 0, totalStages: 0, latestStage: '',
+      members: [], corrections: [], runtimes: [], humanTaskCount: 0, deliverableCount: 0, deliverables: [],
+      completeness: {}, startedAt: '', finishedAt: '', tokensIn: 0, tokensOut: 0, costUSD: 0,
+      outcome: 'unrated', outcomeNote: '',
+    })
+  })
+
   it('persists exact member stages, input sources, outputs, and runtime facts', () => {
     let state = workTaskProjectionDefinition.init()
     for (const item of [

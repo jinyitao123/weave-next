@@ -7,6 +7,13 @@ import { FIRST_PARTY_SECTION_ORDER } from '@deepseek-ai/dsh-system-prompt'
 import { z } from 'zod'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
+import { buildPilotReport } from './pilot-report.ts'
+import { inspectWeaveReadiness } from './readiness.ts'
+
+export { buildPilotReport } from './pilot-report.ts'
+export type { PilotReport, PilotReportTask } from './pilot-report.ts'
+export { inspectWeaveReadiness } from './readiness.ts'
+export type { WeaveReadiness, WeaveReadinessCheck, WeaveReadinessTone } from './readiness.ts'
 
 /** User-facing lifecycle of one Weave-dispatched task. */
 export type WorkTaskStatus = 'preparing' | 'queued' | 'running' | 'waiting' | 'stopping' | 'completed' | 'failed' | 'stopped'
@@ -34,6 +41,13 @@ export interface WorkTaskProjection {
   readonly pendingAction: WorkTaskPendingAction | null
   readonly actionError: string
   readonly completeness: Readonly<Record<string, 'complete' | 'partial' | 'unavailable'>>
+  readonly startedAt: string
+  readonly finishedAt: string
+  readonly tokensIn: number
+  readonly tokensOut: number
+  readonly costUSD: number
+  readonly outcome: 'unrated' | 'adopted' | 'needs-revision'
+  readonly outcomeNote: string
   readonly observedAt: number
   readonly updatedAt: number
 }
@@ -225,7 +239,12 @@ const taskSchema = z.object({
   blocker: z.enum(['none', 'queued', 'runtime-missing', 'failed']),
   attempts: z.array(attemptSchema).default([]), pendingAction: pendingActionSchema.nullable().default(null),
   actionError: z.string().default(''),
-  completeness: completenessSchema.default({}), observedAt: z.number().nonnegative().default(0),
+  completeness: completenessSchema.default({}),
+  startedAt: z.string().default(''), finishedAt: z.string().default(''),
+  tokensIn: z.number().int().nonnegative().default(0), tokensOut: z.number().int().nonnegative().default(0),
+  costUSD: z.number().nonnegative().default(0),
+  outcome: z.enum(['unrated', 'adopted', 'needs-revision']).default('unrated'), outcomeNote: z.string().default(''),
+  observedAt: z.number().nonnegative().default(0),
   updatedAt: z.number().nonnegative(),
 }).strict()
 const stateSchema = z.object({
@@ -283,6 +302,13 @@ function count(value: unknown, keys: readonly string[]): number {
   if (typeof found === 'number' && Number.isFinite(found)) return Math.max(0, Math.floor(found))
   if (typeof found === 'string' && /^\d+$/.test(found)) return Number(found)
   return 0
+}
+
+function finiteNumber(value: unknown, keys: readonly string[]): number | undefined {
+  const found = deepValue(value, new Set(keys))
+  if (typeof found === 'number' && Number.isFinite(found)) return Math.max(0, found)
+  if (typeof found === 'string' && /^\d+(?:\.\d+)?$/.test(found)) return Number(found)
+  return undefined
 }
 
 function status(value: unknown): WorkTaskStatus {
@@ -557,7 +583,7 @@ function snapshot(
     ? memberStages.length
     : count(value, ['total_stages', 'stages_total', 'stage_count'])
       || (sameRun ? previous?.totalStages ?? 0 : 0)
-  const retainedRuntimes = nextRuntimes.length === 0 ? previous?.runtimes ?? [] : nextRuntimes
+  const retainedRuntimes = nextRuntimes.length === 0 ? (sameRun ? previous?.runtimes ?? [] : []) : nextRuntimes
   const observed = observedAt(value, now)
   const base: Omit<WorkTaskProjection, 'attempts'> = {
     brief: seed.brief ?? previous?.brief ?? '',
@@ -569,19 +595,26 @@ function snapshot(
     completedStages,
     totalStages,
     latestStage: activeMemberStage || text(value, ['latest_stage', 'current_stage'])
-		|| latestRecordedStage(value) || previous?.latestStage || '',
-    members: rawMembers === undefined ? previous?.members ?? [] : nextMembers,
-    corrections: rawCorrections === undefined ? previous?.corrections ?? [] : correctionList(value),
+		|| latestRecordedStage(value) || (sameRun ? previous?.latestStage ?? '' : ''),
+    members: rawMembers === undefined ? (sameRun ? previous?.members ?? [] : []) : nextMembers,
+    corrections: rawCorrections === undefined ? (sameRun ? previous?.corrections ?? [] : []) : correctionList(value),
     runtimes: terminalStatus(nextStatus)
       ? retainedRuntimes.map(runtime => ({ ...runtime, status: nextStatus }))
       : retainedRuntimes,
-    humanTaskCount: seed.humanTaskCount ?? previous?.humanTaskCount ?? 0,
-    deliverableCount: seed.deliverableCount ?? previous?.deliverableCount ?? 0,
-    deliverables: seed.deliverables ?? previous?.deliverables ?? [],
+    humanTaskCount: seed.humanTaskCount ?? (sameRun ? previous?.humanTaskCount ?? 0 : 0),
+    deliverableCount: seed.deliverableCount ?? (sameRun ? previous?.deliverableCount ?? 0 : 0),
+    deliverables: seed.deliverables ?? (sameRun ? previous?.deliverables ?? [] : []),
     blocker: runtimeMissing ? 'runtime-missing' : nextStatus === 'failed' ? 'failed' : nextStatus === 'queued' ? 'queued' : 'none',
     pendingAction: seed.pendingAction === undefined ? previous?.pendingAction ?? null : seed.pendingAction,
     actionError: seed.actionError ?? previous?.actionError ?? '',
-    completeness: Object.keys(completeness(value)).length === 0 ? previous?.completeness ?? {} : completeness(value),
+    completeness: Object.keys(completeness(value)).length === 0 ? (sameRun ? previous?.completeness ?? {} : {}) : completeness(value),
+    startedAt: text(value, ['started_at', 'startedAt']) || (sameRun ? previous?.startedAt ?? '' : ''),
+    finishedAt: text(value, ['ended_at', 'endedAt', 'terminal_at', 'terminalAt', 'finished_at', 'finishedAt']) || (sameRun ? previous?.finishedAt ?? '' : ''),
+    tokensIn: Math.floor(finiteNumber(value, ['tokens_in', 'tokensIn', 'input_tokens']) ?? (sameRun ? previous?.tokensIn ?? 0 : 0)),
+    tokensOut: Math.floor(finiteNumber(value, ['tokens_out', 'tokensOut', 'output_tokens']) ?? (sameRun ? previous?.tokensOut ?? 0 : 0)),
+    costUSD: finiteNumber(value, ['cost_usd', 'costUSD']) ?? (sameRun ? previous?.costUSD ?? 0 : 0),
+    outcome: sameRun ? previous?.outcome ?? 'unrated' : 'unrated',
+    outcomeNote: sameRun ? previous?.outcomeNote ?? '' : '',
     observedAt: observed,
     updatedAt: now,
   }
@@ -634,7 +667,7 @@ export function applyWorkTaskProjection(state: WorkTaskState, event: SessionEven
 
 /** Projection definition registered with the Session projection registry. */
 export const workTaskProjectionDefinition = {
-  key: 'workTask', stateVersion: 7, stateSchema,
+  key: 'workTask', stateVersion: 8, stateSchema,
   init: (): WorkTaskState => ({ task: null, pendingCalls: {}, teams: {} }),
   apply: applyWorkTaskProjection,
   wire: { viewSchema: taskSchema.nullable(), view: (state: WorkTaskState) => state.task },
@@ -650,7 +683,7 @@ export interface Config {
   readonly pollIntervalMs?: number
 }
 export const name = 'workbench-work-task'
-export const inject = ['sessions', 'sessionProjections', 'commands', 'systemPrompt']
+export const inject = ['sessions', 'sessionProjections', 'commands', 'systemPrompt', 'connection']
 
 /** Product policy that remains visible when a per-session agent preset shadows the deployment persona. */
 export const workbenchTeamRoutingSection = {
@@ -665,6 +698,34 @@ export function apply(ctx: Context, config: Config = {}): void {
   ctx.sessionProjections.register(workTaskProjectionDefinition)
   const apiUrl = (config.apiUrl ?? process.env.WEAVE_API_URL ?? 'http://127.0.0.1:18080').replace(/\/$/, '')
   const apiKey = (config.apiKey ?? process.env.WEAVE_API_KEY ?? '').trim()
+  const connection = Reflect.get(ctx, 'connection') as {
+    readonly fetch: { register(route: { readonly path: string; readonly methods: readonly ('GET' | 'HEAD')[]; readonly fetch: (request: Request) => Promise<Response> }): () => Promise<void> }
+  }
+  const head = async (request: Request, response: Response): Promise<Response> => {
+    if (request.method === 'GET') return response
+    await response.body?.cancel()
+    return new Response(null, { status: response.status, headers: response.headers })
+  }
+  connection.fetch.register({
+    path: '/api/weave.status', methods: ['GET', 'HEAD'],
+    fetch: async request => head(request, Response.json(await inspectWeaveReadiness(apiUrl, apiKey), {
+      headers: { 'Cache-Control': 'no-store' },
+    })),
+  })
+  connection.fetch.register({
+    path: '/api/weave.pilot-report', methods: ['GET', 'HEAD'],
+    fetch: async (request) => {
+      const report = buildPilotReport(ctx.sessions, ctx.sessionProjections)
+      const date = report.generatedAt.slice(0, 10)
+      return head(request, new Response(JSON.stringify(report, null, 2), {
+        headers: {
+          'Cache-Control': 'no-store',
+          'Content-Type': 'application/json; charset=utf-8',
+          'Content-Disposition': `attachment; filename="weave-pilot-report-${date}.json"`,
+        },
+      }))
+    },
+  })
   const pollIntervalMs = Math.max(500, config.pollIntervalMs ?? 2_000)
   const timers = new Map<string, ReturnType<typeof setTimeout>>()
   const liveSessions = new Map<string, Session>()
@@ -746,6 +807,7 @@ export function apply(ctx: Context, config: Config = {}): void {
           }
           session.append('weave/work-task', next)
           await ctx.sessions.flush(session)
+          if (action.kind === 'rerun') terminalChecked.delete(sessionKey(session))
           schedule(session, 0)
           return
         }
@@ -836,9 +898,9 @@ export function apply(ctx: Context, config: Config = {}): void {
       let request: { runId?: unknown; brief?: unknown }
       try { request = JSON.parse(rawInput.trim()) as { runId?: unknown; brief?: unknown } } catch { return { kind: 'error', text: 'Invalid Weave rerun request.' } }
       const brief = typeof request.brief === 'string' ? request.brief.trim() : ''
-      if (current === null || current === undefined || current.status !== 'stopped'
+      if (current === null || current === undefined || !terminal(current)
         || typeof request.runId !== 'string' || request.runId !== current.runId || brief === '') {
-        return { kind: 'error', text: 'A stopped current run and a complete revised brief are required.' }
+        return { kind: 'error', text: 'A terminal current run and a complete revised brief are required.' }
       }
       if (current.pendingAction !== null) return { kind: 'error', text: 'Another Weave action is already pending.' }
       const pendingAction: WorkTaskPendingAction = {
@@ -909,6 +971,25 @@ export function apply(ctx: Context, config: Config = {}): void {
       return { kind: 'success', text: 'Weave correction confirmation recorded.' }
     },
   }), 'workbench: correction confirmation command')
+  ctx.effect(() => ctx.commands.register({
+    name: 'weave-assess',
+    description: 'record whether the final Weave delivery is usable without invoking the model',
+    recordInput: false,
+    handler: async ({ agent, rawInput }) => {
+      const current = ctx.sessionProjections.stateOf(agent.session, 'workTask')?.task
+      let request: { runId?: unknown; outcome?: unknown; note?: unknown }
+      try { request = JSON.parse(rawInput.trim()) as typeof request } catch { return { kind: 'error', text: 'Invalid Weave outcome assessment.' } }
+      const outcome = request.outcome === 'adopted' || request.outcome === 'needs-revision' ? request.outcome : ''
+      const note = typeof request.note === 'string' ? request.note.trim().slice(0, 2_000) : ''
+      if (current === null || current === undefined || current.status !== 'completed'
+        || request.runId !== current.runId || outcome === '') {
+        return { kind: 'error', text: 'A completed current run and a valid outcome are required.' }
+      }
+      agent.session.append('weave/work-task', { ...current, outcome, outcomeNote: note, updatedAt: Date.now() })
+      await ctx.sessions.flush(agent.session)
+      return { kind: 'success', text: 'Weave delivery outcome recorded.' }
+    },
+  }), 'workbench: delivery outcome command')
   ctx.effect(() => () => {
     for (const timer of timers.values()) clearTimeout(timer)
     timers.clear()

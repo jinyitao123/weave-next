@@ -23,6 +23,7 @@ describe('ui-weave browser plugin', () => {
         dictionaries.push({ namespace, value })
         return () => {}
       },
+      bind: () => ((key: string) => key),
     })
     ctx.provide('layout', { openDetails() {}, closeDetails() {}, toggleSidebar() {} })
     const execute = vi.fn(() => Promise.resolve({ ok: true, value: { commandId: 'command-1', result: { kind: 'success' } } }))

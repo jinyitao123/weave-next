@@ -345,6 +345,46 @@
 	line-height: 20px;
 }
 
+.assessment {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  margin: 0 0 18px;
+  padding: 12px;
+  border: 1px solid var(--dsw-alias-border-l3);
+  border-radius: 8px;
+  background: color-mix(in srgb, #2563eb 4%, var(--dsw-alias-bg-base));
+}
+
+.assessment p {
+  margin: 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.assessment textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 72px;
+  resize: vertical;
+  padding: 9px 10px;
+  border: 1px solid var(--dsw-alias-border-l3);
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  line-height: 20px;
+}
+
+.assessment [data-outcome='adopted'] {
+  color: var(--dsw-alias-state-success-primary);
+}
+
+.assessment [data-outcome='needs-revision'] {
+  color: var(--dsw-alias-state-warn-primary);
+}
+
 .impactRoute {
 	display: flex;
 	flex-wrap: wrap;

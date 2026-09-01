@@ -139,6 +139,13 @@ export interface WorkTaskModel {
   readonly pendingAction: WorkTaskPendingAction | null
   readonly actionError: string
   readonly completeness: Readonly<Record<string, 'complete' | 'partial' | 'unavailable'>>
+  readonly startedAt: string
+  readonly finishedAt: string
+  readonly tokensIn: number
+  readonly tokensOut: number
+  readonly costUSD: number
+  readonly outcome: 'unrated' | 'adopted' | 'needs-revision'
+  readonly outcomeNote: string
   readonly observedAt: number
 }
 
@@ -257,6 +264,13 @@ const EMPTY_MODEL: WorkTaskModel = {
   pendingAction: null,
   actionError: '',
   completeness: {},
+  startedAt: '',
+  finishedAt: '',
+  tokensIn: 0,
+  tokensOut: 0,
+  costUSD: 0,
+  outcome: 'unrated',
+  outcomeNote: '',
   observedAt: 0,
 }
 
@@ -355,6 +369,13 @@ function deepNumber(value: unknown, keys: readonly string[]): number {
   const found = deepValue(value, new Set(keys))
   if (typeof found === 'number' && Number.isFinite(found)) return Math.max(0, Math.floor(found))
   if (typeof found === 'string' && /^\d+$/.test(found)) return Number(found)
+  return 0
+}
+
+function deepDecimal(value: unknown, keys: readonly string[]): number {
+  const found = deepValue(value, new Set(keys))
+  if (typeof found === 'number' && Number.isFinite(found)) return Math.max(0, found)
+  if (typeof found === 'string' && /^\d+(?:\.\d+)?$/.test(found)) return Number(found)
   return 0
 }
 
@@ -746,6 +767,13 @@ export function workTaskModel(nodes: readonly ChatConversationViewNode[]): WorkT
     pendingAction: null,
     actionError: '',
     completeness: {},
+    startedAt: deepString(statusValue, ['started_at', 'startedAt']),
+    finishedAt: deepString(statusValue, ['ended_at', 'endedAt', 'terminal_at', 'terminalAt', 'finished_at', 'finishedAt']),
+    tokensIn: deepNumber(statusValue, ['tokens_in', 'tokensIn', 'input_tokens']),
+    tokensOut: deepNumber(statusValue, ['tokens_out', 'tokensOut', 'output_tokens']),
+    costUSD: deepDecimal(statusValue, ['cost_usd', 'costUSD']),
+    outcome: 'unrated',
+    outcomeNote: '',
     observedAt: 0,
   }
 }

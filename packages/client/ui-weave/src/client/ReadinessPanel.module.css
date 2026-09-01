@@ -1,0 +1,34 @@
+.section { display: flex; flex-direction: column; gap: 18px; max-width: 760px; padding: 6px 4px 28px; color: var(--dsw-alias-label-primary); }
+.section header { display: flex; flex-direction: column; gap: 5px; }
+.section header > span, .modalEyebrow { color: #2563eb; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.section h2, .modal h2 { margin: 0; font-size: 22px; line-height: 30px; }
+.section header p, .modal > p { margin: 0; color: var(--dsw-alias-label-secondary); font-size: 13px; line-height: 20px; }
+.loading, .error, .summary, .firstRun, .dataCard { border: 1px solid var(--dsw-alias-border-l3); border-radius: 10px; background: var(--dsw-alias-bg-base); }
+.loading { padding: 18px; color: var(--dsw-alias-label-secondary); }
+.error { display: flex; gap: 8px; align-items: center; padding: 14px; color: var(--dsw-alias-state-error-primary); }
+.error span { flex: 1; font-size: 12px; }
+.summary { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 14px; }
+.summary > div { display: flex; flex-direction: column; gap: 2px; }
+.summary > div span { color: var(--dsw-alias-label-secondary); font-size: 12px; }
+.statusMark, .checkMark { width: 9px; height: 9px; border-radius: 999px; background: var(--dsw-alias-state-warn-primary); }
+.summary[data-status='ready'] .statusMark, .check[data-tone='pass'] .checkMark { background: var(--dsw-alias-state-success-primary); }
+.summary[data-status='unconfigured'] .statusMark, .check[data-tone='fail'] .checkMark { background: var(--dsw-alias-state-error-primary); }
+.summary button, .error button, .dataCard button, .modalActions button { min-height: 32px; padding: 6px 11px; border: 1px solid var(--dsw-alias-border-l3); border-radius: 7px; background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-primary); cursor: pointer; }
+.checks { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.check { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 9px; align-items: start; padding: 11px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; }
+.checkMark { margin-top: 5px; }
+.check > div { display: flex; flex-direction: column; gap: 2px; }
+.check span { color: var(--dsw-alias-label-tertiary); font-size: 11px; line-height: 16px; }
+.firstRun { padding: 15px; }
+.firstRun ol { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 12px 0 0; padding: 0; counter-reset: steps; list-style: none; }
+.firstRun li { counter-increment: steps; padding: 10px; border-radius: 8px; background: var(--dsw-alias-interactive-bg-hover); font-size: 12px; line-height: 18px; }
+.firstRun li::before { content: counter(steps); display: block; margin-bottom: 5px; color: #2563eb; font-weight: 700; }
+.dataCard { display: flex; justify-content: space-between; gap: 16px; align-items: center; padding: 14px; }
+.dataCard > div { display: flex; flex-direction: column; gap: 3px; }
+.dataCard span, .privacy { color: var(--dsw-alias-label-tertiary); font-size: 11px; line-height: 17px; }
+.privacy { margin: -8px 0 0; }
+.modalBackdrop { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; padding: 20px; background: color-mix(in srgb, #0f172a 42%, transparent); backdrop-filter: blur(4px); }
+.modal { display: flex; flex-direction: column; gap: 14px; width: min(620px, calc(100vw - 40px)); max-height: calc(100vh - 40px); overflow: auto; padding: 24px; border: 1px solid var(--dsw-alias-border-l3); border-radius: 14px; background: var(--dsw-alias-bg-base); box-shadow: 0 18px 60px rgba(15, 23, 42, .2); }
+.modalActions { display: flex; justify-content: flex-end; gap: 8px; }
+.modalActions .primary { border-color: #2563eb; background: #2563eb; color: white; }
+@media (max-width: 720px) { .checks, .firstRun ol { grid-template-columns: 1fr; } .dataCard { align-items: stretch; flex-direction: column; } }
