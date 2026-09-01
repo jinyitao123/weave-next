@@ -180,8 +180,10 @@ func (store *CorrectionStore) Request(ctx context.Context, req RequestCorrection
 	if err != nil {
 		return Correction{}, err
 	}
-	if run.Status != StatusRunning {
-		return Correction{}, fmt.Errorf("%w: correction requires a running team run", ErrTeamRunStateConflict)
+	correctable := run.Status == StatusRunning ||
+		(run.Status == StatusParked && run.WaitKind != nil && *run.WaitKind == WaitFanout)
+	if !correctable {
+		return Correction{}, fmt.Errorf("%w: correction requires a running or fanout-waiting team run", ErrTeamRunStateConflict)
 	}
 	var activeCorrectionID string
 	if activeErr := tx.QueryRow(ctx, `SELECT correction_id FROM weave_team_run_corrections

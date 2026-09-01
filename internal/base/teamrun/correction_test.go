@@ -96,6 +96,28 @@ func TestCorrectionSafePointConfirmAndResume(t *testing.T) {
 	}
 }
 
+func TestCorrectionCanBeRequestedWhileExternalMemberIsRunning(t *testing.T) {
+	h := newProcessNextHarness(t)
+	_, _ = h.seedRunningWorkflowTaskBeforeAdmission(t, "run-fanout-correction")
+	if _, err := h.pool.Exec(context.Background(), `UPDATE weave_team_runs
+		SET status='parked', wait_kind='fanout'
+		WHERE workspace_id='workspace-1' AND run_id='run-fanout-correction'`); err != nil {
+		t.Fatalf("park run for fanout: %v", err)
+	}
+	corrections := &CorrectionStore{Transactions: h.pool, Runs: NewPGStore()}
+	requested, err := corrections.Request(context.Background(), RequestCorrectionRequest{
+		WorkspaceID: "workspace-1", RunID: "run-fanout-correction", TargetKind: "team",
+		Instruction:    "preserve completed evidence and revise the active branch",
+		IdempotencyKey: "request-during-fanout", Actor: "user-1", OccurredAt: h.now,
+	})
+	if err != nil {
+		t.Fatalf("request correction during fanout: %v", err)
+	}
+	if requested.Status != CorrectionRequested {
+		t.Fatalf("correction status = %q, want %q", requested.Status, CorrectionRequested)
+	}
+}
+
 func TestCorrectionAndActivityLedgersAreWorkspaceIsolated(t *testing.T) {
 	h := newProcessNextHarness(t)
 	_, _ = h.seedRunningWorkflowTaskBeforeAdmission(t, "run-isolated")

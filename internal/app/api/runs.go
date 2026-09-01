@@ -36,12 +36,46 @@ type RunSummary struct {
 	TokensIn       int     `json:"tokens_in"`
 	TokensOut      int     `json:"tokens_out"`
 	CostUSD        float64 `json:"cost_usd"`
+	UsageComplete  *bool   `json:"usage_complete,omitempty"`
 	Timestamp      string  `json:"timestamp,omitempty"`
 	ParentRunID    string  `json:"parent_run_id,omitempty"`
 	ParentSeq      int64   `json:"parent_seq,omitempty"`
 	ProjectID      string  `json:"project_id,omitempty"`
 	ConversationID string  `json:"conversation_id,omitempty"`
 	Attribution    string  `json:"attribution"`
+}
+
+type runActivityUsage struct {
+	TokensIn      int
+	TokensOut     int
+	CostUSD       float64
+	CompleteState string
+}
+
+func decodeRunActivityUsage(data []byte) (runActivityUsage, bool) {
+	var summary RunSummary
+	if json.Unmarshal(data, &summary) != nil || summary.RunID == "" {
+		return runActivityUsage{}, false
+	}
+	state := "complete"
+	if summary.UsageComplete != nil && !*summary.UsageComplete {
+		state = "partial"
+	}
+	return runActivityUsage{
+		TokensIn: summary.TokensIn, TokensOut: summary.TokensOut,
+		CostUSD: summary.CostUSD, CompleteState: state,
+	}, true
+}
+
+func (s *Server) readRunActivityUsage(ctx context.Context, workspaceID, runID string) (runActivityUsage, bool) {
+	if s.Store == nil {
+		return runActivityUsage{}, false
+	}
+	data, err := s.Store.Get(ctx, "audit:"+workspaceID, runID)
+	if err != nil {
+		return runActivityUsage{}, false
+	}
+	return decodeRunActivityUsage(data)
 }
 
 // RunListResponse wraps paginated run results.
@@ -919,7 +953,7 @@ func (s *Server) handleGetRunActivity(c echo.Context) error {
 		"run": "complete", "stages": "unavailable", "members": "unavailable",
 		"runtimes": "unavailable", "human_tasks": "complete", "deliverables": "unavailable",
 		"member_inputs": "unavailable", "member_outputs": "unavailable", "member_tool_activity": "unavailable",
-		"activity_events": "unavailable", "corrections": "unavailable",
+		"activity_events": "unavailable", "corrections": "unavailable", "usage": "unavailable",
 	}
 	members := []runActivityMember{}
 	runtimes := []runActivityRuntime{}
@@ -1013,6 +1047,10 @@ func (s *Server) handleGetRunActivity(c echo.Context) error {
 			completeness["corrections"] = "complete"
 		}
 	}
+	usage, usageKnown := s.readRunActivityUsage(c.Request().Context(), getTenant(c), run.RunID)
+	if usageKnown {
+		completeness["usage"] = usage.CompleteState
+	}
 	observedAt := time.Now().UTC()
 	enrichRunActivityRuntimes(c.Request().Context(), s.Runtimes, getTenant(c), members, runtimes)
 	completedStages, totalStages := runActivityStageProgress(members, humanTasks)
@@ -1037,8 +1075,13 @@ func (s *Server) handleGetRunActivity(c echo.Context) error {
 		"cancel_requested_at":      run.CancelRequestedAt,
 		"cancel_grace_deadline_at": run.CancelGraceDeadlineAt,
 		"created_at":               run.CreatedAt,
+		"started_at":               run.CreatedAt,
 		"updated_at":               run.UpdatedAt,
 		"terminal_at":              run.TerminalAt,
+		"finished_at":              run.TerminalAt,
+		"tokens_in":                usage.TokensIn,
+		"tokens_out":               usage.TokensOut,
+		"cost_usd":                 usage.CostUSD,
 		"observed_at":              observedAt,
 		"revision": map[string]any{
 			"team_run_generation":   run.Generation,

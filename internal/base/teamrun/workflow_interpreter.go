@@ -655,6 +655,16 @@ func buildCorrectionWaitDetail(
 				break
 			}
 		}
+		// A fanout checkpoint stores one projection under the join node rather
+		// than one top-level output per member. Restarting at that join after
+		// invalidating its projection cannot resume. Re-enter the owning
+		// parallel segment so the targeted directive is applied while the
+		// complete fanout projection is rebuilt.
+		if restartNodeID == currentNodeID {
+			if parallelNodeID := machine.OwningParallelNode(graph, currentNodeID, matching); parallelNodeID != "" {
+				restartNodeID = parallelNodeID
+			}
+		}
 	}
 	affectedSet := downstreamNodeSet(graph, restartNodeID)
 	if len(affectedSet) == 0 {
