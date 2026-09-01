@@ -84,9 +84,9 @@ func TestApplyRunActivityEventsProjectsInputTimingAndToolTrace(t *testing.T) {
 		{Kind: "member_started", MemberID: "worker-1", NodeID: "verify", OccurredAt: started,
 			Detail: json.RawMessage(`{"input_summary":{"facts":"{\"source\":\"baseline\"}"}}`)},
 		{Kind: "tool_started", MemberID: "worker-1", NodeID: "verify", OccurredAt: toolStarted,
-			Detail: json.RawMessage(`{"tool_name":"evidence_lookup","tool_call_id":"call-1","status":"ok"}`)},
+			Detail: json.RawMessage(`{"tool_name":"evidence_lookup","tool_call_id":"call-1","status":"ok","input":"{\"query\":\"baseline\"}"}`)},
 		{Kind: "tool_completed", MemberID: "worker-1", NodeID: "verify", OccurredAt: toolDone,
-			Detail: json.RawMessage(`{"tool_name":"evidence_lookup","tool_call_id":"call-1","status":"ok"}`)},
+			Detail: json.RawMessage(`{"tool_name":"evidence_lookup","tool_call_id":"call-1","status":"ok","output":"2 results"}`)},
 		{Kind: "member_completed", MemberID: "worker-1", NodeID: "verify", OccurredAt: completed,
 			Detail: json.RawMessage(`{"duration_ms":4000,"tool_calls":1}`)},
 	}
@@ -101,7 +101,8 @@ func TestApplyRunActivityEventsProjectsInputTimingAndToolTrace(t *testing.T) {
 	if stage.Inputs[0].Summary != `{"source":"baseline"}` {
 		t.Fatalf("input summary = %q", stage.Inputs[0].Summary)
 	}
-	if len(stage.Tools) != 1 || stage.Tools[0].Name != "evidence_lookup" || stage.Tools[0].Status != "ok" || stage.Tools[0].CompletedAt == nil {
+	if len(stage.Tools) != 1 || stage.Tools[0].Name != "evidence_lookup" || stage.Tools[0].Status != "ok" || stage.Tools[0].CompletedAt == nil ||
+		stage.Tools[0].Input != `{"query":"baseline"}` || stage.Tools[0].Output != "2 results" {
 		t.Fatalf("tool trace = %#v", stage.Tools)
 	}
 }

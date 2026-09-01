@@ -39,6 +39,24 @@ func TestParseCodexUsageRealFixtureKeepsInclusiveInput(t *testing.T) {
 	}
 }
 
+func TestParseCodexOutputCarriesObservedToolInputAndOutput(t *testing.T) {
+	stream := strings.Join([]string{
+		`{"type":"thread.started","thread_id":"thread-fixture"}`,
+		`{"type":"item.started","item":{"id":"command-1","type":"command_execution","command":"printf hello"}}`,
+		`{"type":"item.completed","item":{"id":"command-1","type":"command_execution","command":"printf hello","aggregated_output":"hello","exit_code":0,"status":"completed"}}`,
+		`{"type":"item.completed","item":{"id":"message-1","type":"agent_message","text":"OK"}}`,
+		`{"type":"turn.completed","usage":{"input_tokens":10,"cached_input_tokens":0,"output_tokens":2,"reasoning_output_tokens":0}}`,
+	}, "\n") + "\n"
+	parsed := parseCodexOutput(strings.NewReader(stream))
+	if len(parsed.events) != 2 || parsed.events[0].Kind != "tool_call" || parsed.events[1].Kind != "tool_result" {
+		t.Fatalf("events=%+v", parsed.events)
+	}
+	if parsed.events[0].Status != "running" || parsed.events[1].Status != "ok" || parsed.events[1].Tool != "shell" ||
+		parsed.events[1].Input != "printf hello" || parsed.events[1].Output != "hello" {
+		t.Fatalf("tool result=%+v", parsed.events[1])
+	}
+}
+
 func TestParseOpenCodeUsageRealFixtureSumsStepsAndCache(t *testing.T) {
 	parsed := parseOpenCodeOutput(bytes.NewReader(readFixture(t, "opencode-1.2.10.jsonl")))
 	if parsed.usage == nil {

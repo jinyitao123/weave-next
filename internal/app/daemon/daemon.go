@@ -397,6 +397,7 @@ func (d *service) executeTask(ctx context.Context, task *taskqueue.Task) (runtim
 			delete(runEnv, key)
 		}
 	}
+	outputsBefore := runtimes.SnapshotOutputArtifacts(workDir)
 	timeoutSeconds := request.TimeoutSeconds
 	if timeoutSeconds <= 0 {
 		timeoutSeconds = defaultTimeoutSeconds
@@ -410,6 +411,9 @@ func (d *service) executeTask(ctx context.Context, task *taskqueue.Task) (runtim
 		EngineVersion: d.engineVersion(request.Engine),
 		OutputSchema:  request.OutputSchema,
 	})
+	if result.Status == "completed" {
+		result.Artifacts = runtimes.CollectOutputArtifactsSince(workDir, outputsBefore)
+	}
 	execResult := runtimes.CLIEngineExecResult(result)
 	if err != nil {
 		return execResult, err

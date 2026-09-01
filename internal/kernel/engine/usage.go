@@ -7,8 +7,10 @@ import (
 	"math"
 	"os"
 	"os/exec"
+	"path"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // BinaryVersion observes the exact CLI version used for a local invocation.
@@ -79,6 +81,67 @@ func ValidateDiagnostics(diagnostics []Diagnostic) error {
 	for index, item := range diagnostics {
 		if strings.TrimSpace(item.Code) == "" || len(item.Code) > 80 || len(item.Message) > 1024 {
 			return fmt.Errorf("engine diagnostic %d is invalid", index)
+		}
+	}
+	return nil
+}
+
+// ValidateEvents bounds the untrusted runtime activity channel. Event input
+// and output are previews, not an alternate artifact transport.
+func ValidateEvents(events []Event) error {
+	if len(events) > 200 {
+		return fmt.Errorf("too many engine events")
+	}
+	for index, event := range events {
+		switch event.Kind {
+		case "text", "thinking", "tool_call", "tool_result", "error", "log":
+		default:
+			return fmt.Errorf("engine event %d kind is invalid", index)
+		}
+		if len(event.Text) > 4096 || len(event.Tool) > 160 || len(event.CallID) > 200 ||
+			len(event.Input) > 4096 || len(event.Output) > 4096 {
+			return fmt.Errorf("engine event %d exceeds its size bound", index)
+		}
+		if event.Status != "" && event.Status != "running" && event.Status != "ok" && event.Status != "error" {
+			return fmt.Errorf("engine event %d status is invalid", index)
+		}
+		if !utf8.ValidString(event.Text) || !utf8.ValidString(event.Tool) || !utf8.ValidString(event.CallID) ||
+			!utf8.ValidString(event.Input) || !utf8.ValidString(event.Output) {
+			return fmt.Errorf("engine event %d is not valid UTF-8", index)
+		}
+	}
+	return nil
+}
+
+const (
+	MaxArtifactCount       = 12
+	MaxArtifactBytes       = 256 * 1024
+	MaxArtifactsTotalBytes = 512 * 1024
+)
+
+// ValidateArtifacts accepts only bounded UTF-8 files named relative to the
+// worker's outputs/ directory. Host paths and traversal are rejected.
+func ValidateArtifacts(artifacts []Artifact) error {
+	if len(artifacts) > MaxArtifactCount {
+		return fmt.Errorf("too many engine artifacts")
+	}
+	total := 0
+	seen := make(map[string]struct{}, len(artifacts))
+	for index, artifact := range artifacts {
+		name := strings.TrimSpace(artifact.Path)
+		if name == "" || len(name) > 512 || !utf8.ValidString(name) || strings.Contains(name, "\\") || path.IsAbs(name) || path.Clean(name) != name || name == "." || strings.HasPrefix(name, "../") {
+			return fmt.Errorf("engine artifact %d path is invalid", index)
+		}
+		if _, exists := seen[name]; exists {
+			return fmt.Errorf("engine artifact %d path is duplicated", index)
+		}
+		seen[name] = struct{}{}
+		if strings.TrimSpace(artifact.ContentType) == "" || len(artifact.ContentType) > 160 || !utf8.ValidString(artifact.ContentType) || !utf8.ValidString(artifact.Content) || len(artifact.Content) > MaxArtifactBytes {
+			return fmt.Errorf("engine artifact %d content is invalid", index)
+		}
+		total += len(artifact.Content)
+		if total > MaxArtifactsTotalBytes {
+			return fmt.Errorf("engine artifacts exceed total size bound")
 		}
 	}
 	return nil

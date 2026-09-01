@@ -575,6 +575,45 @@ func (s *Store) ListByGroup(ctx context.Context, workspaceID, groupID string) ([
 	return tasks, nil
 }
 
+// ListEngineExecObservations returns completed runtime task results for one
+// exact run snapshot and agent identity. TeamRun uses it to reconcile durable
+// CLI tool observations after a member settles.
+func (s *Store) ListEngineExecObservations(
+	ctx context.Context,
+	workspaceID, runSnapshotID, agentID string,
+) ([]EngineExecObservation, error) {
+	if workspaceID == "" || runSnapshotID == "" || agentID == "" {
+		return nil, fmt.Errorf("workspace, run snapshot, and agent are required")
+	}
+	rows, err := s.pool.Query(ctx, `
+		SELECT id, result
+		FROM weave_task_queue
+		WHERE workspace_id=$1
+		  AND run_snapshot_id=$2
+		  AND agent_id=$3
+		  AND kind='engine_exec'
+		  AND status=$4
+		  AND result IS NOT NULL
+		ORDER BY COALESCE(completed_at, updated_at), created_at, id
+	`, workspaceID, runSnapshotID, agentID, StatusCompleted)
+	if err != nil {
+		return nil, fmt.Errorf("list engine exec observations: %w", err)
+	}
+	defer rows.Close()
+	observations := make([]EngineExecObservation, 0)
+	for rows.Next() {
+		var observation EngineExecObservation
+		if err := rows.Scan(&observation.TaskID, &observation.Result); err != nil {
+			return nil, fmt.Errorf("scan engine exec observation: %w", err)
+		}
+		observations = append(observations, observation)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list engine exec observation rows: %w", err)
+	}
+	return observations, nil
+}
+
 // CancelGroupLegs marks every queued, dispatched, or running leg of one group
 // as cancelled and returns how many legs changed. In-flight workers lose their
 // lease on the next heartbeat; their late completions are dropped because the

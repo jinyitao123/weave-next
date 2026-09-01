@@ -48,7 +48,10 @@ func TestServeUsesSharedProtocolForInitializeListAndCall(t *testing.T) {
 	if initialize["protocolVersion"] != "2025-03-26" || serverInfo["name"] != "weave" {
 		t.Fatalf("initialize = %#v", initialize)
 	}
-	if instructions, _ := initialize["instructions"].(string); !strings.Contains(instructions, "call team_list") || len(instructions) > 512 {
+	if instructions, _ := initialize["instructions"].(string); !strings.Contains(instructions, "call team_list") ||
+		!strings.Contains(instructions, "user-facing completion summary") ||
+		!strings.Contains(instructions, "Keep internal run IDs") ||
+		len(instructions) > 900 {
 		t.Fatalf("initialize instructions = %q", instructions)
 	}
 	tools := responses[1]["result"].(map[string]any)["tools"].([]any)
@@ -70,6 +73,13 @@ func TestServeUsesSharedProtocolForInitializeListAndCall(t *testing.T) {
 		for _, forbidden := range []string{"internal/", "/v1/", "state machine", "HTTP response body"} {
 			if strings.Contains(description, forbidden) {
 				t.Errorf("description for %s contains %q: %s", tool["name"], forbidden, description)
+			}
+		}
+		if tool["name"] == "team_create" {
+			schema, _ := json.Marshal(tool["inputSchema"])
+			if !bytes.Contains(schema, []byte(`"required":["yaml","declarative_spec"]`)) ||
+				!strings.Contains(description, "Do not call this tool from YAML alone") {
+				t.Fatalf("team_create contract does not require the workflow: %s / %s", schema, description)
 			}
 		}
 	}

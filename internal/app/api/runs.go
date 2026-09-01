@@ -16,6 +16,7 @@ import (
 	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/base/snapshot"
 	"github.com/jinyitao123/weave/internal/base/teamrun"
+	"github.com/jinyitao123/weave/internal/kernel/runtimes"
 	"github.com/jinyitao123/weave/internal/kernel/workflow/machine"
 	"github.com/labstack/echo/v4"
 )
@@ -323,6 +324,7 @@ type runActivityMember struct {
 
 type runActivityMemberRuntime struct {
 	RuntimeID string `json:"runtime_id,omitempty"`
+	Name      string `json:"name,omitempty"`
 	Engine    string `json:"engine,omitempty"`
 	Provider  string `json:"provider,omitempty"`
 	Model     string `json:"model,omitempty"`
@@ -357,6 +359,8 @@ type runActivityTool struct {
 	Status      string     `json:"status"`
 	StartedAt   *time.Time `json:"started_at,omitempty"`
 	CompletedAt *time.Time `json:"completed_at,omitempty"`
+	Input       string     `json:"input,omitempty"`
+	Output      string     `json:"output,omitempty"`
 }
 
 type runActivityRuntime struct {
@@ -681,6 +685,8 @@ func applyRunActivityEvents(members []runActivityMember, events []teamrun.Activi
 			ToolName     string            `json:"tool_name"`
 			ToolCallID   string            `json:"tool_call_id"`
 			Status       string            `json:"status"`
+			Input        string            `json:"input"`
+			Output       string            `json:"output"`
 			InputSummary map[string]string `json:"input_summary"`
 		}
 		_ = json.Unmarshal(event.Detail, &detail)
@@ -712,7 +718,7 @@ func applyRunActivityEvents(members []runActivityMember, events []teamrun.Activi
 		case "tool_started":
 			occurred := event.OccurredAt
 			stage.Tools = append(stage.Tools, runActivityTool{CallID: detail.ToolCallID, Name: detail.ToolName,
-				Status: "running", StartedAt: &occurred})
+				Status: "running", StartedAt: &occurred, Input: detail.Input})
 		case "tool_completed":
 			occurred := event.OccurredAt
 			found := false
@@ -720,13 +726,17 @@ func applyRunActivityEvents(members []runActivityMember, events []teamrun.Activi
 				if stage.Tools[toolIndex].CallID == detail.ToolCallID {
 					stage.Tools[toolIndex].Status = detail.Status
 					stage.Tools[toolIndex].CompletedAt = &occurred
+					if detail.Input != "" {
+						stage.Tools[toolIndex].Input = detail.Input
+					}
+					stage.Tools[toolIndex].Output = detail.Output
 					found = true
 					break
 				}
 			}
 			if !found {
 				stage.Tools = append(stage.Tools, runActivityTool{CallID: detail.ToolCallID, Name: detail.ToolName,
-					Status: detail.Status, CompletedAt: &occurred})
+					Status: detail.Status, CompletedAt: &occurred, Input: detail.Input, Output: detail.Output})
 			}
 		}
 	}
@@ -740,6 +750,39 @@ func applyRunActivityEvents(members []runActivityMember, events []teamrun.Activi
 		}
 		if allCompleted {
 			members[index].Status = "completed"
+		}
+	}
+}
+
+func enrichRunActivityRuntimes(
+	ctx context.Context,
+	store *runtimes.Store,
+	workspaceID string,
+	members []runActivityMember,
+	activityRuntimes []runActivityRuntime,
+) {
+	if store == nil {
+		return
+	}
+	stored, err := store.List(ctx, workspaceID)
+	if err != nil {
+		return
+	}
+	byID := make(map[string]runtimes.Runtime, len(stored))
+	for _, runtime := range stored {
+		byID[runtime.ID] = runtime
+	}
+	for memberIndex := range members {
+		if members[memberIndex].Runtime == nil {
+			continue
+		}
+		if runtime, ok := byID[members[memberIndex].Runtime.RuntimeID]; ok {
+			members[memberIndex].Runtime.Name = runtime.Name
+		}
+	}
+	for index := range activityRuntimes {
+		if runtime, ok := byID[activityRuntimes[index].RuntimeID]; ok {
+			activityRuntimes[index].Name = runtime.Name
 		}
 	}
 }
@@ -971,6 +1014,7 @@ func (s *Server) handleGetRunActivity(c echo.Context) error {
 		}
 	}
 	observedAt := time.Now().UTC()
+	enrichRunActivityRuntimes(c.Request().Context(), s.Runtimes, getTenant(c), members, runtimes)
 	completedStages, totalStages := runActivityStageProgress(members, humanTasks)
 	if workflowCompleted := len(stages) - len(humanTasks); workflowCompleted > completedStages {
 		completedStages = workflowCompleted

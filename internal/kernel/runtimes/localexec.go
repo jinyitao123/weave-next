@@ -73,6 +73,7 @@ func (e *LocalExecutor) ExecRemote(
 	if err != nil {
 		return engine.RunResult{}, fmt.Errorf("engine %q: %v", rec.Engine, err)
 	}
+	outputsBefore := SnapshotOutputArtifacts(workDir)
 	result, runErr := backend.Run(ctx, engine.RunSpec{
 		WorkDir:       workDir,
 		Prompt:        promptWithAttachmentNotice(prompt, attachments),
@@ -81,6 +82,9 @@ func (e *LocalExecutor) ExecRemote(
 		Timeout:       localEngineExecTimeout,
 		EngineVersion: engine.BinaryVersion(ctx, cliPath),
 	})
+	if result.Status == "completed" {
+		result.Artifacts = CollectOutputArtifactsSince(workDir, outputsBefore)
+	}
 	if result.Status != "completed" {
 		if runErr != nil {
 			return result, runErr

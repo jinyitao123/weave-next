@@ -54,6 +54,14 @@ type RunResult struct {
 	Err         string
 	Usage       *UsageReceipt
 	Diagnostics []Diagnostic
+	// Events are bounded, CLI-observed execution facts. They are carried to the
+	// TeamRun activity ledger; callers must not infer events that the CLI did not
+	// report.
+	Events []Event
+	// Artifacts are bounded text files explicitly written below outputs/ by the
+	// worker. Runtime adapters collect them after a successful invocation so the
+	// server can persist real files instead of a path-only final message.
+	Artifacts []Artifact
 	// Attempts is populated by retrying remote executors. Each durable task ID
 	// appears at most once so downstream accumulators can deduplicate replays
 	// without collapsing distinct physical spend.
@@ -68,6 +76,7 @@ type UsageAttempt struct {
 	Status      string
 	Usage       *UsageReceipt
 	Diagnostics []Diagnostic
+	Events      []Event
 }
 
 // Diagnostic reports a best-effort CLI parsing problem without turning a
@@ -81,12 +90,21 @@ type Diagnostic struct {
 // so callers (and future steering) can observe a run without knowing each CLI's
 // wire format.
 type Event struct {
-	Kind   string // text | thinking | tool_call | tool_result | error | log
-	Text   string
-	Tool   string
-	CallID string
-	Input  string
-	Output string
+	Kind   string `json:"kind"` // text | thinking | tool_call | tool_result | error | log
+	Text   string `json:"text,omitempty"`
+	Tool   string `json:"tool,omitempty"`
+	CallID string `json:"call_id,omitempty"`
+	Status string `json:"status,omitempty"`
+	Input  string `json:"input,omitempty"`
+	Output string `json:"output,omitempty"`
+}
+
+// Artifact is one user-visible UTF-8 file collected from a worker's outputs/
+// directory. Path is relative to outputs/ and never names a host path.
+type Artifact struct {
+	Path        string `json:"path"`
+	ContentType string `json:"content_type"`
+	Content     string `json:"content"`
 }
 
 // Backend runs one worker on a specific CLI runtime.

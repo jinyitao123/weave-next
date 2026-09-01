@@ -16,7 +16,7 @@ import (
 
 const maxMessageBytes = 16 << 20
 
-const serverInstructions = "For each request, decide whether it is one work item or a project. Decompose projects in Codex, then call team_list per work item. Dispatch only a clear match with an available default workflow. For partial or no match, explain the gap; never silently substitute a team or free_collab. Discuss a new team here and call team_create only after explicit confirmation. If yielded, read the human task and ask the user. If completed, match the run in deliverable_list, call deliverable_get, and return it."
+const serverInstructions = "For each request, decide whether it is one work item or a project. Decompose projects in Codex, then call team_list per work item. Dispatch only a clear match with an available default workflow. For partial or no match, explain the gap; never silently substitute a team or free_collab. Discuss a new team here and call team_create only after explicit confirmation. If yielded, read the human task and ask the user. If completed, match the run in deliverable_list and call deliverable_get. Return a short user-facing completion summary: what was finished, the main findings or decisions, the files the user can open, and any user action still needed. Keep internal run IDs, deliverable IDs, runtime IDs, host paths, hashes, validation command names, and engine details out of the main answer unless the user explicitly asks for technical details."
 
 func Serve(ctx context.Context, input io.Reader, output io.Writer, client *weaveclient.Client) error {
 	if client == nil {

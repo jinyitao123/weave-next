@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 type codexBackend struct {
@@ -172,6 +173,7 @@ type codexOutput struct {
 	parseFailed     bool
 	usage           *UsageReceipt
 	diagnostics     []Diagnostic
+	events          []Event
 }
 
 const codexJSONLMaxEventBytes = 16 * 1024 * 1024
@@ -194,14 +196,19 @@ func parseCodexOutput(stdout interface{ Read([]byte) (int, error) }) codexOutput
 		switch jsonString(event["type"]) {
 		case "thread.started":
 			output.sessionID = jsonString(event["thread_id"])
+		case "item.started":
+			item := jsonObject(event["item"])
+			if activity, ok := codexToolEvent(item, "tool_call"); ok && len(output.events) < 200 {
+				output.events = append(output.events, activity)
+			}
 		case "item.completed":
 			item := jsonObject(event["item"])
 			switch jsonString(item["type"]) {
 			case "agent_message":
 				output.output = jsonString(item["text"])
-			case "mcp_tool_call":
-				// RunResult has no event stream yet; recognising the item keeps
-				// the wire format forward-compatible without widening the API.
+			}
+			if activity, ok := codexToolEvent(item, "tool_result"); ok && len(output.events) < 200 {
+				output.events = append(output.events, activity)
 			}
 		case "turn.completed":
 			output.completionCount++
@@ -249,6 +256,84 @@ func parseCodexOutput(stdout interface{ Read([]byte) (int, error) }) codexOutput
 	return output
 }
 
+func boundedCodexText(value string) string {
+	if len(value) <= 4096 {
+		return value
+	}
+	value = value[:4096]
+	for !utf8.ValidString(value) {
+		value = value[:len(value)-1]
+	}
+	return value
+}
+
+func codexRawText(raw json.RawMessage) string {
+	if len(raw) == 0 || string(raw) == "null" {
+		return ""
+	}
+	if text := jsonString(raw); text != "" {
+		return boundedCodexText(text)
+	}
+	return boundedCodexText(string(raw))
+}
+
+// codexToolEvent normalises only execution items that Codex itself reports.
+// Unknown items stay ignored rather than being guessed into tool activity.
+func codexToolEvent(item map[string]json.RawMessage, kind string) (Event, bool) {
+	if item == nil {
+		return Event{}, false
+	}
+	itemType := jsonString(item["type"])
+	activity := Event{Kind: kind, CallID: jsonString(item["id"]), Status: "running"}
+	switch itemType {
+	case "command_execution":
+		activity.Tool = "shell"
+		activity.Input = codexRawText(item["command"])
+		activity.Output = codexRawText(item["aggregated_output"])
+	case "mcp_tool_call":
+		server := firstJSONField(item, "server", "server_name")
+		tool := firstJSONField(item, "tool", "tool_name", "name")
+		activity.Tool = strings.Trim(strings.Join([]string{server, tool}, "."), ".")
+		if activity.Tool == "" {
+			activity.Tool = "mcp_tool"
+		}
+		activity.Input = codexRawText(firstJSONRaw(item, "arguments", "input"))
+		activity.Output = codexRawText(firstJSONRaw(item, "result", "output", "error"))
+	case "file_change":
+		activity.Tool = "file_change"
+		activity.Input = codexRawText(firstJSONRaw(item, "changes", "input"))
+		activity.Output = codexRawText(firstJSONRaw(item, "status", "output"))
+	case "web_search":
+		activity.Tool = "web_search"
+		activity.Input = codexRawText(firstJSONRaw(item, "query", "input"))
+		activity.Output = codexRawText(firstJSONRaw(item, "result", "output"))
+	default:
+		return Event{}, false
+	}
+	if kind == "tool_result" {
+		activity.Status = "ok"
+		itemStatus := strings.ToLower(jsonString(item["status"]))
+		var exitCode int
+		exitCodePresent := json.Unmarshal(item["exit_code"], &exitCode) == nil && len(item["exit_code"]) > 0
+		if itemStatus == "failed" || itemStatus == "error" || exitCodePresent && exitCode != 0 || len(item["error"]) > 0 && string(item["error"]) != "null" {
+			activity.Status = "error"
+		}
+	}
+	if activity.CallID == "" {
+		activity.CallID = itemType + ":" + activity.Tool
+	}
+	return activity, true
+}
+
+func firstJSONRaw(object map[string]json.RawMessage, keys ...string) json.RawMessage {
+	for _, key := range keys {
+		if value, ok := object[key]; ok && len(value) > 0 && string(value) != "null" {
+			return value
+		}
+	}
+	return nil
+}
+
 func parseCodexUsage(event map[string]json.RawMessage, raw string) (*UsageReceipt, []Diagnostic) {
 	usage := jsonObject(event["usage"])
 	var tokens *reportedTokenUsage
@@ -280,6 +365,7 @@ func codexRunResult(parsed codexOutput) RunResult {
 		Status:      parsed.status,
 		Usage:       parsed.usage,
 		Diagnostics: append([]Diagnostic(nil), parsed.diagnostics...),
+		Events:      append([]Event(nil), parsed.events...),
 	}
 }
 

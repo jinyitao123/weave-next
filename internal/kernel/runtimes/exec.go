@@ -170,6 +170,7 @@ func appendUsageAttempt(attempts []engine.UsageAttempt, taskID, runtimeID, engin
 		AttemptID: taskID, RuntimeID: runtimeID, Engine: engineName,
 		Status: result.Status, Usage: result.Usage,
 		Diagnostics: append([]engine.Diagnostic(nil), result.Diagnostics...),
+		Events:      append([]engine.Event(nil), result.Events...),
 	})
 }
 

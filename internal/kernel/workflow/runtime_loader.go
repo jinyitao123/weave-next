@@ -62,11 +62,57 @@ type RuntimeCLIUsageAttempt struct {
 	HasTokens    bool
 	HasCost      bool
 	Source       string
+	ToolCalls    int
+	Events       []RuntimeCLIEvent
+}
+
+// RuntimeCLIEvent is the TeamRun-facing subset of one observed engine event.
+type RuntimeCLIEvent struct {
+	Kind   string `json:"kind"`
+	Tool   string `json:"tool,omitempty"`
+	CallID string `json:"call_id,omitempty"`
+	Status string `json:"status,omitempty"`
+	Input  string `json:"input,omitempty"`
+	Output string `json:"output,omitempty"`
+}
+
+// RuntimeCLIArtifact is the TeamRun-facing subset of one bounded outputs/ file.
+type RuntimeCLIArtifact struct {
+	Path, ContentType, Content string
 }
 
 type RuntimeCLIResult struct {
-	Output   string
-	Attempts []RuntimeCLIUsageAttempt
+	Output    string
+	Attempts  []RuntimeCLIUsageAttempt
+	Events    []RuntimeCLIEvent
+	Artifacts []RuntimeCLIArtifact
+}
+
+// ObservedEvents returns the bounded physical-attempt events when available.
+// An aggregate event list is only authoritative for executors without attempts.
+func (r RuntimeCLIResult) ObservedEvents(limit int) []RuntimeCLIEvent {
+	if limit <= 0 {
+		return nil
+	}
+	events := make([]RuntimeCLIEvent, 0, min(limit, len(r.Events)))
+	if len(r.Attempts) == 0 {
+		return append(events, r.Events[:min(limit, len(r.Events))]...)
+	}
+	for _, attempt := range r.Attempts {
+		for _, event := range attempt.Events {
+			if len(events) >= limit {
+				return events
+			}
+			if attempt.AttemptID != "" && event.CallID != "" {
+				event.CallID = attempt.AttemptID + ":" + event.CallID
+			}
+			events = append(events, event)
+		}
+	}
+	if len(events) > 0 {
+		return events
+	}
+	return append(events, r.Events[:min(limit, len(r.Events))]...)
 }
 
 func NewRuntimeCLIEntry(
@@ -94,16 +140,41 @@ func (e *RuntimeCLIEntry) ExecuteAccounted(ctx context.Context, prompt string) (
 	if len(result.Attempts) > 0 {
 		accounted.Attempts = make([]RuntimeCLIUsageAttempt, 0, len(result.Attempts))
 		for _, attempt := range result.Attempts {
-			accounted.Attempts = append(accounted.Attempts, runtimeCLIUsageAttempt(attempt.AttemptID, attempt.Usage))
+			accounted.Attempts = append(accounted.Attempts, runtimeCLIUsageAttempt(attempt.AttemptID, attempt.Usage, attempt.Events))
 		}
 	} else {
-		accounted.Attempts = []RuntimeCLIUsageAttempt{runtimeCLIUsageAttempt("", result.Usage)}
+		accounted.Attempts = []RuntimeCLIUsageAttempt{runtimeCLIUsageAttempt("", result.Usage, result.Events)}
+	}
+	for _, event := range result.Events {
+		accounted.Events = append(accounted.Events, runtimeCLIEvent(event))
+	}
+	for _, artifact := range result.Artifacts {
+		accounted.Artifacts = append(accounted.Artifacts, RuntimeCLIArtifact{
+			Path: artifact.Path, ContentType: artifact.ContentType, Content: artifact.Content,
+		})
 	}
 	return accounted, err
 }
 
-func runtimeCLIUsageAttempt(attemptID string, receipt *engine.UsageReceipt) RuntimeCLIUsageAttempt {
+func runtimeCLIUsageAttempt(attemptID string, receipt *engine.UsageReceipt, events []engine.Event) RuntimeCLIUsageAttempt {
 	usage := RuntimeCLIUsageAttempt{AttemptID: attemptID}
+	for _, event := range events {
+		usage.Events = append(usage.Events, runtimeCLIEvent(event))
+	}
+	seen := make(map[string]struct{})
+	for _, event := range events {
+		if event.Kind != "tool_call" && event.Kind != "tool_result" {
+			continue
+		}
+		key := event.CallID
+		if key == "" {
+			key = event.Tool
+		}
+		if _, exists := seen[key]; !exists {
+			seen[key] = struct{}{}
+			usage.ToolCalls++
+		}
+	}
 	if receipt == nil {
 		return usage
 	}
@@ -114,6 +185,10 @@ func runtimeCLIUsageAttempt(attemptID string, receipt *engine.UsageReceipt) Runt
 	usage.HasCost = receipt.HasCost
 	usage.Source = receipt.Source
 	return usage
+}
+
+func runtimeCLIEvent(event engine.Event) RuntimeCLIEvent {
+	return RuntimeCLIEvent{Kind: event.Kind, Tool: event.Tool, CallID: event.CallID, Status: event.Status, Input: event.Input, Output: event.Output}
 }
 
 // ExecuteResult preserves the CLI receipt for TeamRun node accounting.

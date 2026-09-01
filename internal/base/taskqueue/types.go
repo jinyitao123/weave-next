@@ -93,3 +93,10 @@ type TaskListResponse struct {
 	Jobs  []Task `json:"jobs"`
 	Total int    `json:"total"`
 }
+
+// EngineExecObservation is the bounded, durable result carrier for a completed
+// runtime-side engine task tied to one exact workflow member.
+type EngineExecObservation struct {
+	TaskID string
+	Result json.RawMessage
+}

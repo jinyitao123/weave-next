@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/jinyitao123/weave/internal/base/deliverable"
@@ -241,6 +242,64 @@ func (r *WorkflowSerialRuntime) activityRecorder(run TeamRun) func(context.Conte
 	}
 }
 
+type engineExecObservationStore interface {
+	ListEngineExecObservations(context.Context, string, string, string) ([]taskqueue.EngineExecObservation, error)
+}
+
+func (r *WorkflowSerialRuntime) observedEventLoader(run TeamRun) func(context.Context, machine.Node, string) []workflow.RuntimeCLIEvent {
+	store, ok := r.Tasks.(engineExecObservationStore)
+	if !ok || run.WorkspaceID == "" || run.RunSnapshotID == "" {
+		return nil
+	}
+	return func(ctx context.Context, node machine.Node, memberID string) []workflow.RuntimeCLIEvent {
+		if strings.TrimSpace(memberID) == "" {
+			return nil
+		}
+		observations, err := store.ListEngineExecObservations(ctx, run.WorkspaceID, run.RunSnapshotID, memberID)
+		if err != nil {
+			slog.Warn("team run observed activity reconciliation failed", "run_id", run.RunID, "node_id", node.ID, "error", err)
+			return nil
+		}
+		return runtimeEventsFromEngineExecObservations(observations, 200)
+	}
+}
+
+func runtimeEventsFromEngineExecObservations(observations []taskqueue.EngineExecObservation, limit int) []workflow.RuntimeCLIEvent {
+	if limit <= 0 || len(observations) == 0 {
+		return nil
+	}
+	type engineExecObservationResult struct {
+		Events []workflow.RuntimeCLIEvent `json:"events"`
+	}
+	events := make([]workflow.RuntimeCLIEvent, 0, min(limit, len(observations)))
+	seen := make(map[string]struct{})
+	for _, observation := range observations {
+		var result engineExecObservationResult
+		if len(observation.Result) == 0 || json.Unmarshal(observation.Result, &result) != nil {
+			continue
+		}
+		for _, event := range result.Events {
+			if len(events) >= limit {
+				return events
+			}
+			if event.Kind != "tool_call" && event.Kind != "tool_result" {
+				continue
+			}
+			if observation.TaskID != "" && event.CallID != "" &&
+				!strings.HasPrefix(event.CallID, observation.TaskID+":") {
+				event.CallID = observation.TaskID + ":" + event.CallID
+			}
+			key := strings.Join([]string{event.Kind, event.CallID, event.Tool}, "\x00")
+			if _, exists := seen[key]; exists {
+				continue
+			}
+			seen[key] = struct{}{}
+			events = append(events, event)
+		}
+	}
+	return events
+}
+
 func (r *WorkflowSerialRuntime) Execute(
 	ctx context.Context,
 	run TeamRun,
@@ -259,11 +318,13 @@ func (r *WorkflowSerialRuntime) Execute(
 		prepared.runInput,
 		serialMachineStart{
 			SourceKind: run.SourceKind, Now: r.now(), Run: run,
-			ArtifactHash:    prepared.envelope.ContentHash,
-			Candidate:       prepared.roundBoundCandidate(),
-			RecordOutput:    r.workflowOutputRecorder(run),
-			CheckCorrection: r.correctionBoundary(run, prepared.graph, prepared.payload),
-			RecordActivity:  r.activityRecorder(run),
+			ArtifactHash:       prepared.envelope.ContentHash,
+			Candidate:          prepared.roundBoundCandidate(),
+			RecordOutput:       r.workflowOutputRecorder(run),
+			RecordArtifact:     r.workflowArtifactRecorder(run),
+			CheckCorrection:    r.correctionBoundary(run, prepared.graph, prepared.payload),
+			RecordActivity:     r.activityRecorder(run),
+			LoadObservedEvents: r.observedEventLoader(run),
 		},
 	)
 	return runtimeResultFromSerial(result, prepared.payload)
@@ -313,8 +374,10 @@ func (r *WorkflowSerialRuntime) ResumeCheckpoint(
 			UsageComplete:         checkpoint.UsageComplete,
 			UsageIncompleteReason: checkpoint.UsageIncompleteReason,
 			RecordOutput:          r.workflowOutputRecorder(run),
+			RecordArtifact:        r.workflowArtifactRecorder(run),
 			CheckCorrection:       r.correctionBoundary(run, prepared.graph, prepared.payload),
 			RecordActivity:        r.activityRecorder(run),
+			LoadObservedEvents:    r.observedEventLoader(run),
 			Corrections:           append([]CorrectionDirectiveV1(nil), checkpoint.Corrections...),
 		},
 	)
@@ -404,6 +467,26 @@ func (r *WorkflowSerialRuntime) workflowOutputRecorder(
 			Output:        output,
 			Final:         final,
 			CreatedAt:     r.now(),
+		})
+	}
+}
+
+func (r *WorkflowSerialRuntime) workflowArtifactRecorder(
+	run TeamRun,
+) func(context.Context, machine.Node, deliverable.WorkflowArtifact, bool) error {
+	if r == nil || r.OutputRecorder == nil {
+		return nil
+	}
+	return func(ctx context.Context, node machine.Node, artifact deliverable.WorkflowArtifact, final bool) error {
+		agentID := ""
+		if worker, ok := node.Config.(machine.WorkerConfig); ok {
+			agentID = worker.AgentID
+		}
+		return r.OutputRecorder.RecordWorkflowOutput(ctx, deliverable.WorkflowOutput{
+			WorkspaceID: run.WorkspaceID, RunID: run.RunID, RunSnapshotID: run.RunSnapshotID,
+			NodeID: node.ID, NodeLabel: node.Label, NodeType: string(node.Type), AgentID: agentID,
+			Artifact: &artifact,
+			Final:    final, CreatedAt: r.now(),
 		})
 	}
 }

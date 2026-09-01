@@ -32,9 +32,9 @@ func TestRuntimeCLIEntryPreservesFailedAttemptsAndMissingReceipt(t *testing.T) {
 	record := &registry.AgentRecord{WorkspaceID: "workspace-1", ID: "agent-1", Version: 1}
 	entry, err := NewRuntimeCLIEntry(runtimeCLIReceiptExecutor{
 		result: engine.RunResult{Attempts: []engine.UsageAttempt{
-			{AttemptID: "task-failed", Status: "failed", Usage: receipt},
+			{AttemptID: "task-failed", Status: "failed", Usage: receipt, Events: []engine.Event{{Kind: "tool_call", Tool: "shell", CallID: "call-1"}}},
 			{AttemptID: "task-timeout", Status: "timeout"},
-		}},
+		}, Events: []engine.Event{{Kind: "tool_call", Tool: "shell", CallID: "call-1"}}},
 		err: errors.New("CLI attempts exhausted"),
 	}, record, execution.AgentExecutionStamp{})
 	if err != nil {
@@ -52,5 +52,31 @@ func TestRuntimeCLIEntryPreservesFailedAttemptsAndMissingReceipt(t *testing.T) {
 	if result.Attempts[1].HasTokens || result.Attempts[1].HasCost ||
 		result.Attempts[1].InputTokens != 0 || result.Attempts[1].CostUSD != 0 {
 		t.Fatalf("missing receipt was not preserved as unknown dimensions: %#v", result.Attempts[1])
+	}
+	if len(result.Attempts[0].Events) != 1 || len(result.Events) != 1 {
+		t.Fatalf("observed events were not preserved: %#v", result)
+	}
+}
+
+func TestRuntimeCLIResultObservedEventsPrefersPhysicalAttempts(t *testing.T) {
+	result := RuntimeCLIResult{
+		Events: []RuntimeCLIEvent{{Kind: "tool_call", CallID: "aggregate"}},
+		Attempts: []RuntimeCLIUsageAttempt{
+			{AttemptID: "task-1", Events: []RuntimeCLIEvent{{Kind: "tool_call", CallID: "call-1"}}},
+			{AttemptID: "task-2", Events: []RuntimeCLIEvent{{Kind: "tool_result", CallID: "call-2"}}},
+		},
+	}
+	events := result.ObservedEvents(2)
+	if len(events) != 2 || events[0].CallID != "task-1:call-1" || events[1].CallID != "task-2:call-2" {
+		t.Fatalf("observed events = %#v", events)
+	}
+	if got := result.ObservedEvents(1); len(got) != 1 || got[0].CallID != "task-1:call-1" {
+		t.Fatalf("limited events = %#v", got)
+	}
+	if got := (RuntimeCLIResult{Events: result.Events}).ObservedEvents(2); len(got) != 1 || got[0].CallID != "aggregate" {
+		t.Fatalf("aggregate fallback = %#v", got)
+	}
+	if got := (RuntimeCLIResult{Attempts: []RuntimeCLIUsageAttempt{{AttemptID: "task-empty"}}, Events: result.Events}).ObservedEvents(2); len(got) != 1 || got[0].CallID != "aggregate" {
+		t.Fatalf("empty-attempt fallback = %#v", got)
 	}
 }

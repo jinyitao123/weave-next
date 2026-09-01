@@ -263,10 +263,16 @@ weave deliverable get <deliverable-id>
 Use an API key with role `admin` for team creation. The required scopes are
 `org` for templates, teams, and build status; `chat` for dispatch, resume, and
 deliverables; and `runs` for team-run status. `team_create` never invents an
-idempotency key. Keep the same API key throughout one dispatch because request
-ownership is key-specific. Leads backed by CLI runtimes reject asynchronous
-dispatch. Deliverables appear only when an agent explicitly calls
-`save_deliverable`; v1 has no team or run filter for deliverable listing.
+idempotency key, and YAML creation requires a complete `declarative_spec` in the
+same call. Keep the same API key throughout one dispatch because request
+ownership is key-specific. Published workflow node outputs are projected into
+the deliverable ledger and can be filtered by exact run; explicit
+`save_deliverable` remains available for conversation output.
+
+Published workflow CLI workers may also produce visible files by writing
+supported UTF-8 outputs below their reserved `outputs/` directory. The runtime
+returns only newly created, rewritten, or changed bounded files; Weave records them as
+immutable exact-run deliverables rather than exposing a runtime host path.
 
 Codex reads local stdio MCP servers from `~/.codex/config.toml` or a trusted
 project's `.codex/config.toml`:

@@ -81,6 +81,8 @@ type EngineExecResult struct {
 	Error        string               `json:"error,omitempty"`
 	UsageReceipt *engine.UsageReceipt `json:"usage_receipt,omitempty"`
 	Diagnostics  []engine.Diagnostic  `json:"diagnostics,omitempty"`
+	Events       []engine.Event       `json:"events,omitempty"`
+	Artifacts    []engine.Artifact    `json:"artifacts,omitempty"`
 }
 
 // CLIEngineExecResult preserves the complete external-engine outcome across
@@ -92,6 +94,8 @@ func CLIEngineExecResult(result engine.RunResult) EngineExecResult {
 		Error:        result.Err,
 		UsageReceipt: result.Usage,
 		Diagnostics:  append([]engine.Diagnostic(nil), result.Diagnostics...),
+		Events:       append([]engine.Event(nil), result.Events...),
+		Artifacts:    append([]engine.Artifact(nil), result.Artifacts...),
 	}
 }
 
@@ -105,6 +109,8 @@ func (result EngineExecResult) EngineRunResult() engine.RunResult {
 		Output: result.Output, Status: status, Err: result.Error,
 		Usage:       result.UsageReceipt,
 		Diagnostics: append([]engine.Diagnostic(nil), result.Diagnostics...),
+		Events:      append([]engine.Event(nil), result.Events...),
+		Artifacts:   append([]engine.Artifact(nil), result.Artifacts...),
 	}
 }
 

@@ -54,8 +54,17 @@ type WorkflowOutput struct {
 	NodeType      string
 	AgentID       string
 	Output        any
+	Artifact      *WorkflowArtifact
 	Final         bool
 	CreatedAt     time.Time
+}
+
+// WorkflowArtifact is one runtime-produced file whose path is relative to the
+// worker's reserved outputs/ directory.
+type WorkflowArtifact struct {
+	Path        string
+	ContentType string
+	Content     string
 }
 
 // ListFilter narrows a workspace-scoped deliverable list.
@@ -94,6 +103,15 @@ func (s *Store) RecordWorkflowOutput(ctx context.Context, output WorkflowOutput)
 	}
 
 	content, contentType, err := encodeWorkflowOutput(output.Output)
+	artifactPath := ""
+	if output.Artifact != nil {
+		artifactPath = strings.TrimSpace(output.Artifact.Path)
+		content = output.Artifact.Content
+		contentType = strings.TrimSpace(output.Artifact.ContentType)
+		if contentType == "" {
+			contentType = "text/plain"
+		}
+	}
 	if err != nil {
 		return fmt.Errorf("encode workflow deliverable: %w", err)
 	}
@@ -163,18 +181,22 @@ func (s *Store) RecordWorkflowOutput(ctx context.Context, output WorkflowOutput)
 		label = workflowNodeFallbackLabel(output.NodeType)
 	}
 	title := titlePrefix + " · " + label
+	if artifactPath != "" {
+		title = artifactPath
+	}
 	metadata, err := json.Marshal(map[string]any{
 		"source":        "published_workflow",
 		"artifact_kind": kind,
 		"node_id":       output.NodeID,
 		"node_label":    label,
 		"node_type":     strings.TrimSpace(output.NodeType),
+		"filename":      artifactPath,
 	})
 	if err != nil {
 		return fmt.Errorf("encode workflow deliverable metadata: %w", err)
 	}
 	contentDigest := sha256.Sum256([]byte(content))
-	eventID := "workflow-" + kind + ":" + output.RunID + ":" + output.NodeID + ":" + hex.EncodeToString(contentDigest[:12])
+	eventID := "workflow-" + kind + ":" + output.RunID + ":" + output.NodeID + ":" + artifactPath + ":" + hex.EncodeToString(contentDigest[:12])
 	idDigest := sha256.Sum256([]byte(strings.Join([]string{
 		output.WorkspaceID, output.RunID, eventID,
 	}, "\x1f")))

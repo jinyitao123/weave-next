@@ -465,8 +465,8 @@ var toolDefinitions = []contract.ToolDef{
 	},
 	{
 		Name:        "team_create",
-		Description: "Create a confirmed team from YAML plus a required declarative workflow, or from a runnable named sample. Requires administrator and organization access plus a caller-supplied idempotency_key UUID. Returns team and build identifiers with current status. Errors: workflow_definition_required, idempotency_key_required, template_idempotency_conflict, http_401, http_403, http_422.",
-		InputSchema: json.RawMessage(`{"type":"object","properties":{"yaml":{"type":"string"},"sample":{"type":"string"},"overrides":{"type":"object"},"declarative_spec":{"type":"object"},"idempotency_key":{"type":"string","format":"uuid"}},"required":["idempotency_key"],"anyOf":[{"required":["yaml"]},{"required":["sample"]}],"additionalProperties":false}`),
+		Description: "Create a confirmed team either from (1) YAML plus a complete declarative_spec workflow, or (2) a runnable named sample. Do not call this tool from YAML alone: first agree the workflow nodes, edges, input contract, and output contract with the user, then send them in declarative_spec. Requires administrator and organization access plus a caller-supplied idempotency_key UUID. Returns team and build identifiers with current status. Errors: workflow_definition_required, idempotency_key_required, template_idempotency_conflict, http_401, http_403, http_422.",
+		InputSchema: json.RawMessage(`{"type":"object","properties":{"yaml":{"type":"string"},"sample":{"type":"string"},"overrides":{"type":"object"},"declarative_spec":{"type":"object"},"idempotency_key":{"type":"string","format":"uuid"}},"required":["idempotency_key"],"oneOf":[{"required":["yaml","declarative_spec"],"not":{"required":["sample"]}},{"required":["sample"],"not":{"required":["yaml"]}}],"additionalProperties":false}`),
 	},
 	{
 		Name: "provider_list", ReadOnly: true,

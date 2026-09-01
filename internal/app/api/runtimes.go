@@ -366,7 +366,8 @@ func validateRuntimeEngineExecResult(task *taskqueue.Task, result runtimes.Engin
 		return errors.New("task payload is invalid")
 	}
 	if !engine.IsCLIEngine(payload.Engine) {
-		if result.UsageReceipt != nil || len(result.Diagnostics) > 0 || result.Status != "" || result.Error != "" {
+		if result.UsageReceipt != nil || len(result.Diagnostics) > 0 || len(result.Events) > 0 ||
+			len(result.Artifacts) > 0 || result.Status != "" || result.Error != "" {
 			return errors.New("CLI result fields are forbidden for a non-CLI task")
 		}
 		return nil
@@ -386,6 +387,12 @@ func validateRuntimeEngineExecResult(task *taskqueue.Task, result runtimes.Engin
 		return errors.New("failed engine result requires an error")
 	}
 	if err := engine.ValidateDiagnostics(result.Diagnostics); err != nil {
+		return err
+	}
+	if err := engine.ValidateEvents(result.Events); err != nil {
+		return err
+	}
+	if err := engine.ValidateArtifacts(result.Artifacts); err != nil {
 		return err
 	}
 	if err := engine.ValidateUsageReceipt(result.UsageReceipt); err != nil {

@@ -18,6 +18,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jinyitao123/loom"
 	"github.com/jinyitao123/loom/contract"
+	"github.com/jinyitao123/weave/internal/base/deliverable"
 	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/kernel/loomruntime"
 	"github.com/jinyitao123/weave/internal/kernel/workflow"
@@ -61,8 +62,10 @@ type serialMachineStart struct {
 	UsageComplete         bool
 	UsageIncompleteReason string
 	RecordOutput          func(context.Context, machine.Node, any, bool) error
+	RecordArtifact        func(context.Context, machine.Node, deliverable.WorkflowArtifact, bool) error
 	CheckCorrection       func(context.Context, string, map[string]any) (*CorrectionWaitDetailV1, error)
 	RecordActivity        func(context.Context, string, machine.Node, string, int64, map[string]any)
+	LoadObservedEvents    func(context.Context, machine.Node, string) []workflow.RuntimeCLIEvent
 	Corrections           []CorrectionDirectiveV1
 }
 
@@ -100,6 +103,8 @@ type nodeUsageReport struct {
 	Totals      loomruntime.UsageTotals
 	Coverage    loomruntime.UsageCoverage
 	CLIAttempts []workflow.RuntimeCLIUsageAttempt
+	Events      []workflow.RuntimeCLIEvent
+	Artifacts   []workflow.RuntimeCLIArtifact
 }
 
 func runSerialMachine(
@@ -243,7 +248,7 @@ func runSerialMachine(
 					}
 					if confirmErr := usage.ConfirmAttemptWithMetadata(callID, attemptID, contract.Usage{
 						InputTokens: physical.InputTokens, OutputTokens: physical.OutputTokens, CostUSD: physical.CostUSD,
-					}, 0, loomruntime.UsageAttemptMetadata{
+					}, physical.ToolCalls, loomruntime.UsageAttemptMetadata{
 						HasTokens: physical.HasTokens, HasCost: physical.HasCost, Source: physical.Source,
 					}); confirmErr != nil {
 						return fail(executionError(ErrorCodeExecutionUnrecoverable, confirmErr))
@@ -260,6 +265,9 @@ func runSerialMachine(
 					usageIncompleteReason = UsageIncompleteReasonCLIDimensions
 				}
 			}
+			if len(nodeUsage.Events) == 0 && start.LoadObservedEvents != nil {
+				nodeUsage.Events = start.LoadObservedEvents(ctx, node, memberID)
+			}
 			if err != nil {
 				if start.RecordActivity != nil {
 					start.RecordActivity(ctx, "member_failed", node, memberID, memberVersion, map[string]any{
@@ -273,6 +281,35 @@ func runSerialMachine(
 				}
 				return fail(err)
 			}
+			if start.RecordActivity != nil {
+				for eventIndex, event := range nodeUsage.Events {
+					kind := ""
+					switch event.Kind {
+					case "tool_call":
+						kind = "tool_started"
+					case "tool_result":
+						kind = "tool_completed"
+					default:
+						continue
+					}
+					callID := strings.TrimSpace(event.CallID)
+					if callID == "" {
+						callID = fmt.Sprintf("%s:%d", node.ID, eventIndex)
+					}
+					detail := map[string]any{
+						"tool_call_id": callID, "tool_name": event.Tool,
+						"input": event.Input, "output": event.Output,
+					}
+					if kind == "tool_completed" {
+						status := event.Status
+						if status != "error" {
+							status = "ok"
+						}
+						detail["status"] = status
+					}
+					start.RecordActivity(ctx, kind, node, memberID, memberVersion, detail)
+				}
+			}
 			outputs[node.ID] = output
 			if start.RecordActivity != nil {
 				start.RecordActivity(ctx, "member_completed", node, memberID, memberVersion, map[string]any{
@@ -283,6 +320,15 @@ func runSerialMachine(
 			if start.RecordOutput != nil {
 				if err := start.RecordOutput(ctx, node, output, false); err != nil {
 					return fail(executionError(ErrorCodeDeliveryUnavailable, err))
+				}
+			}
+			if start.RecordArtifact != nil {
+				for _, artifact := range nodeUsage.Artifacts {
+					if err := start.RecordArtifact(ctx, node, deliverable.WorkflowArtifact{
+						Path: artifact.Path, ContentType: artifact.ContentType, Content: artifact.Content,
+					}, true); err != nil {
+						return fail(executionError(ErrorCodeDeliveryUnavailable, err))
+					}
 				}
 			}
 			if next, routed := edgeTarget(edges[current], machine.RouteBack); routed {
@@ -945,7 +991,7 @@ func runAgentNode(
 			// terminal receipt already read from stdout is not discarded here.
 			outcome = <-outcomes
 		}
-		usage, usageErr := runtimeCLIUsageReport(outcome.result.Attempts)
+		usage, usageErr := runtimeCLIUsageReport(outcome.result)
 		if usageErr != nil {
 			return nil, nodeUsageReport{}, executionError(ErrorCodeExecutionUnrecoverable, usageErr)
 		}
@@ -1050,20 +1096,20 @@ func runAgentNode(
 	return normalizedOutput, usage, nil
 }
 
-func runtimeCLIUsageReport(attempts []workflow.RuntimeCLIUsageAttempt) (nodeUsageReport, error) {
+func runtimeCLIUsageReport(result workflow.RuntimeCLIResult) (nodeUsageReport, error) {
 	accumulator := loomruntime.NewUsageAccumulator()
 	callID, err := accumulator.NextCall("cli-node-usage", "engine")
 	if err != nil {
 		return nodeUsageReport{}, err
 	}
-	for index, attempt := range attempts {
+	for index, attempt := range result.Attempts {
 		attemptID := fmt.Sprintf("cli-attempt-%d", index)
 		if err := accumulator.StartAttempt(callID, attemptID); err != nil {
 			return nodeUsageReport{}, err
 		}
 		if err := accumulator.ConfirmAttemptWithMetadata(callID, attemptID, contract.Usage{
 			InputTokens: attempt.InputTokens, OutputTokens: attempt.OutputTokens, CostUSD: attempt.CostUSD,
-		}, 0, loomruntime.UsageAttemptMetadata{
+		}, attempt.ToolCalls, loomruntime.UsageAttemptMetadata{
 			HasTokens: attempt.HasTokens, HasCost: attempt.HasCost, Source: attempt.Source,
 		}); err != nil {
 			return nodeUsageReport{}, err
@@ -1071,7 +1117,9 @@ func runtimeCLIUsageReport(attempts []workflow.RuntimeCLIUsageAttempt) (nodeUsag
 	}
 	return nodeUsageReport{
 		Totals: accumulator.Totals(), Coverage: accumulator.Coverage(),
-		CLIAttempts: append([]workflow.RuntimeCLIUsageAttempt(nil), attempts...),
+		CLIAttempts: append([]workflow.RuntimeCLIUsageAttempt(nil), result.Attempts...),
+		Events:      result.ObservedEvents(200),
+		Artifacts:   append([]workflow.RuntimeCLIArtifact(nil), result.Artifacts...),
 	}, nil
 }
 
