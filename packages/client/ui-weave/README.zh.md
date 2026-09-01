@@ -27,12 +27,12 @@ kind: "package-reference"
 
 在 `ui-chat` 和 `ui-tool` 之后挂载此包。会话记录第一次 Weave 调用后，右侧“工作现场”面板自动打开，Session 标题旁也会显示紧凑状态。面板从当前 Session 历史提取团队选择、阶段进度、运行时、人工任务、异常和交付物。只有记录中 `run_id` 与当前运行匹配的交付物才计入任务。
 
-对话保留专用的 `team_list` 和 `deliverable_get` 卡片。工作现场把不透明编号收进折叠的诊断区，并把长时间排队或团队运行时缺失呈现为明确问题。
+对话保留专用的 `team_list` 和 `deliverable_get` 卡片。工作现场把不透明编号收进折叠的诊断区，以实名运行时展示引擎、提供方和模型，只展示 Weave 实际记录的 CLI 工具输入输出，并把长时间排队或团队运行时缺失呈现为明确问题。
 
 <a id="understand-the-implementation"></a>
 ## 理解实现
 
-浏览器侧把准确的 MCP 工具名 `mcp__weave__team_list` 和 `mcp__weave__deliverable_get` 注册进 ui-tool 的键控 `tool.call.toolview` slot。它还占用 Session 标头操作列表与 Chat 详情摘要 slot。所有投影只读取冻结的调用与结果块，历史回放不会查询当前 Weave 状态。交付物视图把返回正文视为远端不可变文件，并在浏览器中生成可下载副本，不会伪装成本地工作区文件。
+浏览器侧把准确的 MCP 工具名 `mcp__weave__team_list` 和 `mcp__weave__deliverable_get` 注册进 ui-tool 的键控 `tool.call.toolview` slot。它还占用 Session 标头操作列表与 Chat 详情摘要 slot。Workbench 宿主把 MCP 事实折叠进持久 `workTask` 投影，并在前台轮次之外同步对应的 Weave 请求。工作任务交付物视图预览已记录正文；完整的受限文件存在时，它会在浏览器中生成可下载副本。它不会伪装文件位于本地工作区，也不会解引用 agent 打印的路径。
 
 <a id="further-exploration"></a>
 ## 继续探索
@@ -53,8 +53,8 @@ kind: "package-reference"
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **Session 仍然拥有持久化**——面板从已加载的 Weave 调用重建工作状态；宿主拥有、能脱离 Session 继续运行的 `WorkTask` 模型尚未存在。
-- **运行时详情依赖已记录状态**——只有 Weave 状态结果包含角色、提供方和模型时，面板才会展示它们。
+- **每个 Session 只展示一个任务**——当前投影跟踪 Session 中最近一次 Weave 派发；多派发任务分组仍暂缓。
+- **运行时详情是观察事实**——面板展示注册运行时名称与冻结的引擎、提供方、模型事实；缺失事实仍明确显示为未报告。
 - **紧凑 JSON 是输入合同**——非数组结果，或缺少稳定 ID 与名称的团队条目，会进入格式异常状态。
 - **交付物是远端不可变文件**——Workbench 可以预览和下载已记录正文，但不会把它物化到当前工作区。
 

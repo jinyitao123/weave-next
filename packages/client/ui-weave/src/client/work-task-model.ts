@@ -35,8 +35,10 @@ export interface WorkTaskTeamCandidate {
   readonly workflowAvailable: boolean
 }
 
+/** User-facing lifecycle state for one workflow member or stage. */
 export type WorkTaskMemberStatus = 'pending' | 'running' | 'partially-completed' | 'completed' | 'failed' | 'stopped' | 'not-recorded'
 
+/** One declared input observed for a member stage. */
 export interface WorkTaskMemberInput {
   readonly name: string
   readonly expectedType: string
@@ -46,6 +48,7 @@ export interface WorkTaskMemberInput {
   readonly summary: string
 }
 
+/** One workflow stage assigned to a member, including observed tools and outputs. */
 export interface WorkTaskMemberStage {
   readonly nodeId: string
   readonly name: string
@@ -59,14 +62,18 @@ export interface WorkTaskMemberStage {
   readonly tools: readonly WorkTaskMemberTool[]
 }
 
+/** One bounded tool call observation recorded by Weave. */
 export interface WorkTaskMemberTool {
   readonly callId: string
   readonly name: string
   readonly status: 'running' | 'ok' | 'error'
   readonly startedAt: string
   readonly completedAt: string
+  readonly input: string
+  readonly output: string
 }
 
+/** One frozen team member and their observed execution stages. */
 export interface WorkTaskMember {
   readonly agentId: string
   readonly name: string
@@ -84,7 +91,28 @@ export interface WorkTaskDeliverable {
   readonly kind: 'final' | 'stage'
   readonly contentType: string
   readonly preview: string
+  readonly content: string
+  readonly truncated: boolean
   readonly createdAt: string
+}
+
+/** Whether the panel should warn a user that important visible task facts are incomplete. */
+export function workTaskHasUserVisibleCompletenessWarning(model: Pick<WorkTaskModel,
+  'status' | 'completedStages' | 'totalStages' | 'members' | 'runtimes' | 'deliverables' | 'completeness'
+>): boolean {
+  const values = Object.values(model.completeness)
+  if (values.length === 0) return false
+  const criticalMissing = ['run', 'members', 'runtimes', 'deliverables']
+    .some(key => model.completeness[key] !== undefined && model.completeness[key] !== 'complete')
+  if (criticalMissing) return true
+  const finishedWithVisibleWork = model.status === 'completed'
+    && model.members.length > 0
+    && model.runtimes.length > 0
+    && model.deliverables.some(item => item.kind === 'final')
+    && model.totalStages > 0
+    && model.completedStages >= model.totalStages
+  if (finishedWithVisibleWork) return false
+  return values.some(value => value !== 'complete')
 }
 
 /** Durable, read-only projection used by the Weave work-task surfaces. */
@@ -114,12 +142,19 @@ export interface WorkTaskModel {
   readonly observedAt: number
 }
 
-/** Whether a non-terminal task has not received a recent authoritative observation. */
+/**
+ * Whether a non-terminal task has not received a recent authoritative observation.
+ * @param status - current user-facing task status.
+ * @param observedAt - epoch milliseconds of the latest authoritative observation.
+ * @param now - epoch milliseconds used for the freshness comparison.
+ * @returns whether the visible facts have exceeded the freshness threshold.
+ */
 export function workTaskFactsStale(status: WorkTaskStatus, observedAt: number, now = Date.now()): boolean {
   const terminal = status === 'completed' || status === 'failed' || status === 'stopped'
   return !terminal && observedAt > 0 && now - observedAt > 45_000
 }
 
+/** One durable dispatch attempt retained with the active work task. */
 export interface WorkTaskAttempt {
   readonly clientRequestId: string
   readonly runId: string
@@ -134,6 +169,7 @@ export interface WorkTaskAttempt {
   readonly updatedAt: number
 }
 
+/** The sole unresolved local network action, persisted before it is sent. */
 export interface WorkTaskPendingAction {
   readonly kind: 'stop' | 'rerun' | 'correction-request' | 'correction-confirm'
   readonly targetRunId: string
@@ -148,6 +184,7 @@ export interface WorkTaskPendingAction {
   readonly instruction: string
 }
 
+/** One durable correction request and its computed restart impact. */
 export interface WorkTaskCorrection {
   readonly correctionId: string
   readonly targetKind: 'team' | 'member'
@@ -303,6 +340,17 @@ function deepString(value: unknown, keys: readonly string[]): string {
   return typeof found === 'string' ? found.trim() : ''
 }
 
+function preferredString(value: unknown, keys: readonly string[]): string {
+  const item = record(value)
+  if (item !== null) {
+    for (const key of keys) {
+      const candidate = item[key]
+      if (typeof candidate === 'string' && candidate.trim() !== '') return candidate.trim()
+    }
+  }
+  return deepString(value, keys)
+}
+
 function deepNumber(value: unknown, keys: readonly string[]): number {
   const found = deepValue(value, new Set(keys))
   if (typeof found === 'number' && Number.isFinite(found)) return Math.max(0, Math.floor(found))
@@ -387,13 +435,15 @@ function runtimeList(value: unknown): readonly WorkTaskRuntime[] {
   return source.flatMap((candidate): WorkTaskRuntime[] => {
     const item = record(candidate)
     if (item === null) return []
-    const name = deepString(item, ['role', 'name', 'agent_name', 'runtime_name', 'id'])
+    const name = preferredString(item, ['name', 'runtime_name', 'role', 'agent_name', 'id'])
     if (name === '') return []
     const model = deepString(item, ['model', 'model_name'])
-    const provider = deepString(item, ['provider', 'runtime', 'environment'])
+    const provider = deepString(item, ['provider'])
+    const engine = deepString(item, ['engine'])
+    const mode = deepString(item, ['mode'])
     return [{
       name,
-      detail: [provider, model].filter(Boolean).join(' · '),
+      detail: [engine, provider, model, mode].filter(Boolean).join(' · '),
       status: normalizedStatus(deepString(item, ['status', 'state'])),
     }]
   })
@@ -447,7 +497,8 @@ function memberStages(value: unknown): readonly WorkTaskMemberStage[] {
         const status = deepString(tool, ['status'])
         if (name === '' || !['running', 'ok', 'error'].includes(status)) return []
         return [{ callId: deepString(tool, ['call_id', 'callId']), name, status: status as WorkTaskMemberTool['status'],
-          startedAt: deepString(tool, ['started_at', 'startedAt']), completedAt: deepString(tool, ['completed_at', 'completedAt']) }]
+          startedAt: deepString(tool, ['started_at', 'startedAt']), completedAt: deepString(tool, ['completed_at', 'completedAt']),
+          input: deepString(tool, ['input']), output: deepString(tool, ['output']) }]
       }),
     }]
   })
@@ -487,7 +538,7 @@ function memberList(value: unknown): readonly WorkTaskMember[] {
     if (agentId === '') return []
     const runtime = record(item.runtime)
     const runtimeDetail = runtime === null ? '' : [
-      deepString(runtime, ['runtime_id', 'runtimeId', 'engine']),
+      preferredString(runtime, ['name', 'runtime_name', 'runtime_id', 'runtimeId']), deepString(runtime, ['engine']),
       [deepString(runtime, ['provider']), deepString(runtime, ['model'])].filter(Boolean).join('/'),
     ].filter(Boolean).join(' · ')
     return [{
@@ -496,6 +547,19 @@ function memberList(value: unknown): readonly WorkTaskMember[] {
       status: memberStatus(item), runtime: runtimeDetail, stages: memberStages(item.stages),
     }]
   })
+}
+
+function memberStageList(members: readonly WorkTaskMember[]): readonly WorkTaskStage[] {
+  return members.flatMap(member => member.stages.map(stage => ({
+    name: stage.name,
+    status: stage.status === 'completed'
+      ? 'completed' as const
+      : stage.status === 'running'
+        ? 'running' as const
+        : stage.status === 'failed'
+          ? 'failed' as const
+          : 'waiting' as const,
+  })))
 }
 
 function routeModels(nodes: readonly ChatConversationViewNode[]): readonly string[] {
@@ -516,6 +580,25 @@ function routeModels(nodes: readonly ChatConversationViewNode[]): readonly strin
     }
   }
   return [...routes]
+}
+
+function runtimeIdentityMatchesMember(runtime: WorkTaskRuntime, member: WorkTaskMember): boolean {
+  if (member.runtime === '') return false
+  return member.runtime.includes(runtime.name) || (runtime.detail !== '' && member.runtime.includes(runtime.detail))
+}
+
+function runtimeStatusFromMembers(runtime: WorkTaskRuntime, members: readonly WorkTaskMember[], runtimeCount: number): WorkTaskRuntime['status'] {
+  const assigned = members.filter(member => runtimeIdentityMatchesMember(runtime, member))
+  if (assigned.length === 0 && runtimeCount === 1) {
+    if (members.some(member => member.status === 'running')) return 'running'
+    if (members.some(member => member.status === 'failed')) return 'failed'
+    if (members.length > 0 && members.every(member => member.status === 'completed')) return 'completed'
+  }
+  if (assigned.length === 0) return runtime.status
+  if (assigned.some(member => member.status === 'running')) return 'running'
+  if (assigned.some(member => member.status === 'failed')) return 'failed'
+  if (assigned.every(member => member.status === 'completed')) return 'completed'
+  return runtime.status === 'completed' ? 'completed' : 'waiting'
 }
 
 function matchingCount(value: unknown, runId: string): number {
@@ -542,14 +625,21 @@ function deliverableList(value: unknown, runId: string): WorkTaskDeliverable[] {
     seen.add(id)
     const rawMetadata = item.metadata
     const metadata = typeof rawMetadata === 'string' ? parseJson(rawMetadata) : rawMetadata
-    const kind = deepString(metadata, ['artifact_kind']) === 'final' ? 'final' : 'stage'
-    const content = typeof item.content === 'string' ? item.content.trim() : ''
+    const publishedWorkflow = deepString(metadata, ['source']) === 'published_workflow'
+    const filename = deepString(metadata, ['filename'])
+    const nodeType = deepString(metadata, ['node_type'])
+    const rawKind = deepString(metadata, ['artifact_kind'])
+    const kind = rawKind === 'final' && !(publishedWorkflow && filename === '' && nodeType === 'deliver') ? 'final' : 'stage'
+    const content = typeof item.content === 'string' ? item.content : ''
+    const contentLimit = 256 * 1024
     return [{
       id,
       title: deepString(item, ['title', 'name']) || id,
       kind,
       contentType: deepString(item, ['content_type', 'contentType']) || 'text/plain',
-      preview: content.slice(0, 6_000),
+      preview: content.trim().slice(0, 6_000),
+      content: content.slice(0, contentLimit),
+      truncated: content.length > contentLimit,
       createdAt: deepString(item, ['created_at', 'createdAt']),
     }]
   })
@@ -581,8 +671,10 @@ export function workTaskModel(nodes: readonly ChatConversationViewNode[]): WorkT
   let status = normalizedStatus(deepString(statusValue, ['status', 'state', 'run_status']))
   if (humanTaskCount > 0) status = 'waiting'
 
-  const stages = stageList(statusValue)
   const members = memberList(runActivity?.value ?? statusValue)
+  const reportedStages = stageList(statusValue)
+  const memberStages = memberStageList(members)
+  const stages = memberStages.length > 0 ? memberStages : reportedStages
   const activeMemberStage = members.flatMap(member => member.stages)
     .find(stage => stage.status === 'running')?.name
   const completedStages = deepNumber(statusValue, ['completed_stages', 'stages_completed', 'completed_count'])
@@ -616,12 +708,18 @@ export function workTaskModel(nodes: readonly ChatConversationViewNode[]): WorkT
         ? 'queued'
         : 'none'
 
-  const runtimes = [...runtimeList(runActivity?.value ?? runStatus?.value ?? statusValue)]
+  const reportedRuntimes = runtimeList(runActivity?.value ?? runStatus?.value ?? statusValue)
+  const runtimes = reportedRuntimes
+    .map(runtime => ({ ...runtime, status: runtimeStatusFromMembers(runtime, members, reportedRuntimes.length) }))
   const corrections = correctionList(runActivity?.value ?? statusValue)
   for (const route of routeModels(nodes)) {
     if (!runtimes.some(runtime => runtime.detail.includes(route))) {
       runtimes.push({ name: 'workbench', detail: route, status: status === 'completed' ? 'completed' : 'running' })
     }
+  }
+  for (const member of members) {
+    if (member.runtime === '' || runtimes.some(runtime => runtimeIdentityMatchesMember(runtime, member))) continue
+    runtimes.push({ name: member.runtime, detail: '', status: member.status === 'completed' ? 'completed' : member.status === 'running' ? 'running' : 'waiting' })
   }
 
   return {

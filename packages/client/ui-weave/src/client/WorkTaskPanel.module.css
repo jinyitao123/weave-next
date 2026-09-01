@@ -13,6 +13,44 @@
   padding-bottom: 18px;
 }
 
+.sceneBoard {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding: 0 0 18px;
+}
+
+.sceneCard {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 11px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-base);
+}
+
+.sceneCard span,
+.sceneCard small {
+  overflow: hidden;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sceneCard strong {
+  overflow: hidden;
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 19px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .eyebrow,
 .sectionHeader,
 .fact > span,
@@ -50,9 +88,12 @@
   background: var(--dsw-alias-label-tertiary);
 }
 
-.statusDot[data-status='running'],
 .statusDot[data-status='completed'] {
   background: var(--dsw-alias-state-success-primary);
+}
+
+.statusDot[data-status='running'] {
+  background: #2563eb;
 }
 
 .statusDot[data-status='queued'],
@@ -169,8 +210,8 @@
 }
 
 .stages li[data-status='running'] .stageMark {
-  border-color: var(--dsw-alias-state-warn-primary);
-  background: var(--dsw-alias-state-warn-primary);
+  border-color: #2563eb;
+  background: #2563eb;
 }
 
 .stages li[data-status='failed'] .stageMark {
@@ -436,7 +477,7 @@
 
 .member summary {
   display: grid;
-  grid-template-columns: 8px minmax(0, 1fr) auto;
+  grid-template-columns: 8px minmax(0, 1fr) minmax(80px, .8fr) auto;
   align-items: center;
   gap: 8px;
   min-height: 42px;
@@ -455,9 +496,12 @@
   background: var(--dsw-alias-label-tertiary);
 }
 
-.memberStatus[data-status='completed'],
-.memberStatus[data-status='running'] {
+.memberStatus[data-status='completed'] {
   background: var(--dsw-alias-state-success-primary);
+}
+
+.memberStatus[data-status='running'] {
+  background: #2563eb;
 }
 
 .memberStatus[data-status='pending'],
@@ -479,6 +523,7 @@
 
 .memberIdentity strong,
 .memberIdentity span,
+.memberRuntimeChip,
 .memberState {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -486,10 +531,19 @@
 }
 
 .memberIdentity span,
+.memberRuntimeChip,
 .memberState {
   color: var(--dsw-alias-label-tertiary);
   font-size: 11px;
   line-height: 16px;
+}
+
+.memberRuntimeChip {
+  min-width: 0;
+  padding: 2px 6px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  background: var(--dsw-alias-bg-base);
 }
 
 .memberBody {
@@ -565,6 +619,36 @@
 	align-items: center;
 	gap: 6px;
 	font-size: 11px;
+}
+
+.toolDetail {
+	grid-column: 2 / -1;
+	min-width: 0;
+}
+
+.toolDetail summary {
+	color: var(--dsw-alias-label-tertiary);
+	cursor: pointer;
+	font-size: 10px;
+}
+
+.toolDetail > span {
+	display: block;
+	margin-top: 5px;
+	color: var(--dsw-alias-label-tertiary);
+	font-size: 10px;
+}
+
+.toolDetail pre {
+	max-height: 180px;
+	margin: 3px 0 0;
+	padding: 7px 8px;
+	overflow: auto;
+	border-radius: 6px;
+	background: var(--dsw-alias-markdown-code-block);
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	font-size: 10px;
 }
 
 .toolTimeline code {
@@ -760,6 +844,24 @@
   color: var(--dsw-alias-label-secondary);
 }
 
+.stageDeliverables {
+  border-top: 1px solid var(--dsw-alias-border-l2);
+}
+
+.stageDeliverables > summary {
+  padding: 9px 0;
+  cursor: pointer;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+  list-style: none;
+}
+
+.stageDeliverables > summary::-webkit-details-marker {
+  display: none;
+}
+
 .deliverable {
   border-top: 1px solid var(--dsw-alias-border-l2);
 }
@@ -839,6 +941,30 @@
   font-size: 12px;
   line-height: 19px;
   color: var(--dsw-alias-label-secondary);
+}
+
+.deliverableActions {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin-top: 8px;
+	font-size: 11px;
+	color: var(--dsw-alias-label-tertiary);
+}
+
+.deliverableActions button {
+	padding: 5px 8px;
+	border: 1px solid var(--dsw-alias-border-l1);
+	border-radius: 7px;
+	background: transparent;
+	color: var(--dsw-alias-label-secondary);
+	cursor: pointer;
+	font: inherit;
+}
+
+.deliverableActions button:hover {
+	border-color: var(--dsw-alias-brand-primary);
+	color: var(--dsw-alias-brand-primary);
 }
 
 .issue,

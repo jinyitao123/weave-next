@@ -1051,7 +1051,7 @@ Source: [`packages/core/session/src/types.ts:249`](../packages/core/session/src/
 'weave/work-task': WorkTaskProjection
 ```
 
-Source: [`packages/bundle/workbench-app/src/index.ts:152`](../packages/bundle/workbench-app/src/index.ts)
+Source: [`packages/bundle/workbench-app/src/index.ts:163`](../packages/bundle/workbench-app/src/index.ts)
 
 <a id="weavework-task-action--log-only"></a>
 
@@ -1062,7 +1062,7 @@ Source: [`packages/bundle/workbench-app/src/index.ts:152`](../packages/bundle/wo
 'weave/work-task-action': { readonly pendingAction: WorkTaskPendingAction | null }
 ```
 
-Source: [`packages/bundle/workbench-app/src/index.ts:154`](../packages/bundle/workbench-app/src/index.ts)
+Source: [`packages/bundle/workbench-app/src/index.ts:165`](../packages/bundle/workbench-app/src/index.ts)
 
 ### `web/*`
 

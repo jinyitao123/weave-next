@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ChatConversationViewNode, ToolResultNode } from '@deepseek-ai/dsh-client-ui-chat/client'
-import { workTaskFactsStale, workTaskModel } from '../src/client/work-task-model.ts'
+import { workTaskFactsStale, workTaskHasUserVisibleCompletenessWarning, workTaskModel } from '../src/client/work-task-model.ts'
 
 let sequence = 1
 
@@ -37,6 +37,27 @@ describe('workTaskModel', () => {
     expect(workTaskFactsStale('completed', observedAt, now)).toBe(false)
     expect(workTaskFactsStale('failed', observedAt, now)).toBe(false)
     expect(workTaskFactsStale('stopped', observedAt, now)).toBe(false)
+  })
+
+  it('does not warn about internal partial fields after visible completed work is complete', () => {
+    expect(workTaskHasUserVisibleCompletenessWarning({
+      status: 'completed',
+      completedStages: 3,
+      totalStages: 3,
+      members: [{ agentId: 'a', name: '分析员', duty: '', role: 'worker', status: 'completed', runtime: 'mac-codex-live', stages: [] }],
+      runtimes: [{ name: 'mac-codex-live', detail: 'codex', status: 'completed' }],
+      deliverables: [{
+        id: 'final-file', title: 'final_observation.md', kind: 'final', contentType: 'text/markdown',
+        preview: '订单 75', content: '订单 75', truncated: false, createdAt: '',
+      }],
+      completeness: {
+        run: 'complete',
+        members: 'complete',
+        runtimes: 'complete',
+        deliverables: 'complete',
+        member_tool_activity: 'partial',
+      },
+    })).toBe(false)
   })
 
   it('keeps listed teams available as a first-class chooser before dispatch', () => {
@@ -126,16 +147,41 @@ describe('workTaskModel', () => {
     expect(model.deliverables).toEqual([
       {
         id: 'file-1', title: '首轮推演结论', kind: 'final', contentType: 'text/markdown',
-        preview: '# 结论\n风险边界已确认。', createdAt: '2026-08-30T10:00:00Z',
+        preview: '# 结论\n风险边界已确认。', content: '# 结论\n风险边界已确认。', truncated: false, createdAt: '2026-08-30T10:00:00Z',
       },
       {
         id: 'file-2', title: '约束清单', kind: 'stage', contentType: 'text/markdown',
-        preview: '- 预算约束', createdAt: '2026-08-30T09:00:00Z',
+        preview: '- 预算约束', content: '- 预算约束', truncated: false, createdAt: '2026-08-30T09:00:00Z',
       },
     ])
     expect(model.runtimes).toEqual([{
       name: '系统分析员', detail: 'local · luna', status: 'running',
     }])
+  })
+
+  it('keeps workflow delivery summaries out of the final-file group', () => {
+    const model = workTaskModel([
+      tool('mcp__weave__team_dispatch', { team_id: 'team-a' }, { run_id: 'run-a' }),
+      tool('mcp__weave__deliverable_list', {}, [
+        {
+          run_id: 'run-a', id: 'summary', title: '最终产物 · 交付', content_type: 'text/markdown',
+          content: '运行总结', metadata: {
+            source: 'published_workflow', artifact_kind: 'final', node_type: 'deliver', filename: '',
+          }, created_at: '2026-08-30T10:00:00Z',
+        },
+        {
+          run_id: 'run-a', id: 'file', title: 'final_observation.md', content_type: 'text/markdown',
+          content: '订单 75\n净利润 8604.78\n履约异常 6\n', metadata: {
+            source: 'published_workflow', artifact_kind: 'final', node_type: 'worker', filename: 'final_observation.md',
+          }, created_at: '2026-08-30T10:01:00Z',
+        },
+      ]),
+    ])
+
+    expect(model.deliverables.map(item => [item.title, item.kind])).toEqual([
+      ['最终产物 · 交付', 'stage'],
+      ['final_observation.md', 'final'],
+    ])
   })
 
   it('keeps dispatch lifecycle authoritative when the terminal projection is missing', () => {
@@ -175,6 +221,30 @@ describe('workTaskModel', () => {
     expect(workTaskModel(nodes).status).toBe('waiting')
   })
 
+  it('lets active member evidence make its runtime visibly running', () => {
+    const nodes = [
+      tool('mcp__weave__team_dispatch', { team_id: 'team-a' }, { run_id: 'run-a' }),
+      tool('mcp__weave__team_run_activity', { run_id: 'run-a' }, {
+        run_id: 'run-a', status: 'parked', wait_kind: 'fanout',
+        runtimes: [{ name: 'mac-codex-live', engine: 'codex', status: 'waiting' }],
+        members: [
+          {
+            agent_id: 'worker-1', name: '订单与利润分析员', status: 'running',
+            runtime: { runtime_name: 'mac-codex-live', engine: 'codex' },
+          },
+          {
+            agent_id: 'worker-2', name: '履约与结算审计员', status: 'pending',
+            runtime: { runtime_name: 'mac-codex-live', engine: 'codex' },
+          },
+        ],
+      }),
+    ]
+
+    expect(workTaskModel(nodes).runtimes).toEqual([{
+      name: 'mac-codex-live', detail: 'codex', status: 'running',
+    }])
+  })
+
   it('derives member lanes only from reported execution facts', () => {
     const nodes = [
       tool('mcp__weave__team_dispatch', { team_id: 'team-a' }, { run_id: 'run-a' }),
@@ -189,13 +259,16 @@ describe('workTaskModel', () => {
             output_refs: ['file-1'],
             started_at: '2026-08-30T10:00:00Z', completed_at: '2026-08-30T10:00:03Z', duration_ms: 3000,
             tool_calls: 1, tools: [{ call_id: 'tool-1', name: 'calculator', status: 'ok',
-              started_at: '2026-08-30T10:00:01Z', completed_at: '2026-08-30T10:00:02Z' }],
+              started_at: '2026-08-30T10:00:01Z', completed_at: '2026-08-30T10:00:02Z',
+              input: '12 * 3', output: '36' }],
           }],
         }],
       }),
     ]
 
-    expect(workTaskModel(nodes).members).toEqual([{
+    const model = workTaskModel(nodes)
+    expect(model).toMatchObject({ completedStages: 1, totalStages: 1, stages: [{ name: '物理复核', status: 'completed' }] })
+    expect(model.members).toEqual([{
       agentId: 'worker-1', name: '物理复核员', duty: '复核数量级', role: 'worker', status: 'completed',
       runtime: 'runtime-1 · openai/gpt-5.6-luna',
       stages: [{
@@ -204,7 +277,7 @@ describe('workTaskModel', () => {
         outputRefs: ['file-1'],
         startedAt: '2026-08-30T10:00:00Z', completedAt: '2026-08-30T10:00:03Z', durationMs: 3000, toolCalls: 1,
         tools: [{ callId: 'tool-1', name: 'calculator', status: 'ok',
-          startedAt: '2026-08-30T10:00:01Z', completedAt: '2026-08-30T10:00:02Z' }],
+          startedAt: '2026-08-30T10:00:01Z', completedAt: '2026-08-30T10:00:02Z', input: '12 * 3', output: '36' }],
       }],
     }])
   })

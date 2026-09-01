@@ -75,8 +75,10 @@ export interface WorkTaskRuntime {
   readonly status: WorkTaskStatus
 }
 
+/** User-facing lifecycle state for one workflow member or stage. */
 export type WorkTaskMemberStatus = 'pending' | 'running' | 'partially-completed' | 'completed' | 'failed' | 'stopped' | 'not-recorded'
 
+/** One declared input observed for a member stage. */
 export interface WorkTaskMemberInput {
   readonly name: string
   readonly expectedType: string
@@ -86,6 +88,7 @@ export interface WorkTaskMemberInput {
   readonly summary: string
 }
 
+/** One workflow stage assigned to a member, including observed tools and outputs. */
 export interface WorkTaskMemberStage {
   readonly nodeId: string
   readonly name: string
@@ -99,14 +102,18 @@ export interface WorkTaskMemberStage {
   readonly tools: WorkTaskMemberTool[]
 }
 
+/** One bounded tool call observation recorded by Weave. */
 export interface WorkTaskMemberTool {
   readonly callId: string
   readonly name: string
   readonly status: 'running' | 'ok' | 'error'
   readonly startedAt: string
   readonly completedAt: string
+  readonly input: string
+  readonly output: string
 }
 
+/** One durable correction request and its computed restart impact. */
 export interface WorkTaskCorrection {
   readonly correctionId: string
   readonly targetKind: 'team' | 'member'
@@ -120,6 +127,7 @@ export interface WorkTaskCorrection {
   readonly requestedAt: string
 }
 
+/** One frozen team member and their observed execution stages. */
 export interface WorkTaskMember {
   readonly agentId: string
   readonly name: string
@@ -137,6 +145,8 @@ export interface WorkTaskDeliverable {
   readonly kind: 'final' | 'stage'
   readonly contentType: string
   readonly preview: string
+  readonly content: string
+  readonly truncated: boolean
   readonly createdAt: string
 }
 
@@ -173,7 +183,7 @@ const memberStageSchema = z.object({
   startedAt: z.string().default(''), completedAt: z.string().default(''),
   durationMs: z.number().int().nonnegative().default(0), toolCalls: z.number().int().nonnegative().default(0),
   tools: z.array(z.object({ callId: z.string(), name: z.string(), status: z.enum(['running', 'ok', 'error']),
-    startedAt: z.string(), completedAt: z.string() }).strict()).default([]),
+    startedAt: z.string(), completedAt: z.string(), input: z.string().default(''), output: z.string().default('') }).strict()).default([]),
 }).strict()
 const memberSchema = z.object({
   agentId: z.string(), name: z.string(), duty: z.string(), role: z.enum(['lead', 'worker']),
@@ -181,7 +191,7 @@ const memberSchema = z.object({
 }).strict()
 const deliverableSchema = z.object({
   id: z.string(), title: z.string(), kind: z.enum(['final', 'stage']),
-  contentType: z.string(), preview: z.string(), createdAt: z.string(),
+  contentType: z.string(), preview: z.string(), content: z.string().default(''), truncated: z.boolean().default(false), createdAt: z.string(),
 }).strict()
 const attemptSchema = z.object({
   clientRequestId: z.string(), runId: z.string(), brief: z.string(), status: statusSchema,
@@ -257,6 +267,17 @@ function text(value: unknown, keys: readonly string[]): string {
   return typeof found === 'string' ? found.trim() : ''
 }
 
+function preferredText(value: unknown, keys: readonly string[]): string {
+  const item = object(value)
+  if (item !== undefined) {
+    for (const key of keys) {
+      const candidate = item[key]
+      if (typeof candidate === 'string' && candidate.trim() !== '') return candidate.trim()
+    }
+  }
+  return text(value, keys)
+}
+
 function count(value: unknown, keys: readonly string[]): number {
   const found = deepValue(value, new Set(keys))
   if (typeof found === 'number' && Number.isFinite(found)) return Math.max(0, Math.floor(found))
@@ -303,8 +324,10 @@ function runtimeList(value: unknown, taskStatus: WorkTaskStatus): WorkTaskRuntim
     : Object.entries(object(source) ?? {})
   return entries.flatMap(([fallback, candidate]): WorkTaskRuntime[] => {
     const item = object(candidate)
-    const name = item === undefined ? fallback : text(item, ['role', 'name', 'agent_name', 'runtime_name', 'id']) || fallback
-    const detail = item === undefined ? String(candidate ?? '') : [text(item, ['provider', 'runtime', 'environment']), text(item, ['model', 'model_name'])].filter(Boolean).join(' · ')
+    const name = item === undefined ? fallback : preferredText(item, ['name', 'runtime_name', 'role', 'agent_name', 'id']) || fallback
+    const detail = item === undefined ? String(candidate ?? '') : [
+      text(item, ['engine']), text(item, ['provider']), text(item, ['model', 'model_name']), text(item, ['mode']),
+    ].filter(Boolean).join(' · ')
     const candidateStatus = status(candidate)
     return name === '' ? [] : [{ name, detail, status: candidateStatus === 'preparing' ? taskStatus : candidateStatus }]
   })
@@ -358,7 +381,8 @@ function memberStages(value: unknown): WorkTaskMemberStage[] {
         const rawStatus = text(tool, ['status'])
         if (name === '' || !['running', 'ok', 'error'].includes(rawStatus)) return []
         return [{ callId: text(tool, ['call_id', 'callId']), name, status: rawStatus as WorkTaskMemberTool['status'],
-          startedAt: text(tool, ['started_at', 'startedAt']), completedAt: text(tool, ['completed_at', 'completedAt']) }]
+          startedAt: text(tool, ['started_at', 'startedAt']), completedAt: text(tool, ['completed_at', 'completedAt']),
+          input: text(tool, ['input']), output: text(tool, ['output']) }]
       }),
     }]
   })
@@ -398,7 +422,7 @@ function memberList(value: unknown): WorkTaskMember[] {
     if (agentId === '') return []
     const runtime = object(item.runtime)
     const runtimeDetail = runtime === undefined ? '' : [
-      text(runtime, ['runtime_id', 'runtimeId', 'engine']),
+      preferredText(runtime, ['name', 'runtime_name', 'runtime_id', 'runtimeId']), text(runtime, ['engine']),
       [text(runtime, ['provider']), text(runtime, ['model'])].filter(Boolean).join('/'),
     ].filter(Boolean).join(' · ')
     return [{
@@ -444,14 +468,21 @@ function deliverableList(value: unknown, runId: string): WorkTaskDeliverable[] {
     seen.add(id)
     const rawMetadata = item.metadata
     const metadata = typeof rawMetadata === 'string' ? parsed(rawMetadata) : rawMetadata
-    const kind = text(metadata, ['artifact_kind']) === 'final' ? 'final' : 'stage'
-    const content = typeof item.content === 'string' ? item.content.trim() : ''
+    const publishedWorkflow = text(metadata, ['source']) === 'published_workflow'
+    const filename = text(metadata, ['filename'])
+    const nodeType = text(metadata, ['node_type'])
+    const rawKind = text(metadata, ['artifact_kind'])
+    const kind = rawKind === 'final' && !(publishedWorkflow && filename === '' && nodeType === 'deliver') ? 'final' : 'stage'
+    const content = typeof item.content === 'string' ? item.content : ''
+    const contentLimit = 256 * 1024
     return [{
       id,
       title: text(item, ['title', 'name']) || id,
       kind,
       contentType: text(item, ['content_type', 'contentType']) || 'text/plain',
-      preview: content.slice(0, 6_000),
+      preview: content.trim().slice(0, 6_000),
+      content: content.slice(0, contentLimit),
+      truncated: content.length > contentLimit,
       createdAt: text(item, ['created_at', 'createdAt']),
     }]
   })
@@ -513,19 +544,30 @@ function snapshot(
   const rawMembers = deepValue(value, new Set(['members']))
   const rawCorrections = deepValue(value, new Set(['corrections']))
   const nextMembers = memberList(value)
+  const memberStages = nextMembers.flatMap(member => member.stages)
   const activeMemberStage = nextMembers.flatMap(member => member.stages)
     .find(stage => stage.status === 'running')?.name ?? ''
+  const nextRunId = text(value, ['run_id', 'runId']) || seed.runId || previous?.runId || ''
+  const sameRun = nextRunId !== '' && previous?.runId === nextRunId
+  const completedStages = memberStages.length > 0
+    ? memberStages.filter(stage => stage.status === 'completed').length
+    : count(value, ['completed_stages', 'stages_completed', 'completed_count'])
+      || (sameRun ? previous?.completedStages ?? 0 : 0)
+  const totalStages = memberStages.length > 0
+    ? memberStages.length
+    : count(value, ['total_stages', 'stages_total', 'stage_count'])
+      || (sameRun ? previous?.totalStages ?? 0 : 0)
   const retainedRuntimes = nextRuntimes.length === 0 ? previous?.runtimes ?? [] : nextRuntimes
   const observed = observedAt(value, now)
   const base: Omit<WorkTaskProjection, 'attempts'> = {
     brief: seed.brief ?? previous?.brief ?? '',
     clientRequestId: text(value, ['client_request_id', 'clientRequestId']) || seed.clientRequestId || previous?.clientRequestId || '',
-    runId: text(value, ['run_id', 'runId']) || seed.runId || previous?.runId || '',
+    runId: nextRunId,
     teamId: seed.teamId || previous?.teamId || '', teamName: seed.teamName || previous?.teamName || '',
     workflowName: seed.workflowName || previous?.workflowName || '',
     status: runtimeMissing ? 'waiting' : nextStatus === 'preparing' ? previous?.status ?? 'preparing' : nextStatus,
-    completedStages: count(value, ['completed_stages', 'stages_completed', 'completed_count']) || previous?.completedStages || 0,
-    totalStages: count(value, ['total_stages', 'stages_total', 'stage_count']) || previous?.totalStages || 0,
+    completedStages,
+    totalStages,
     latestStage: activeMemberStage || text(value, ['latest_stage', 'current_stage'])
 		|| latestRecordedStage(value) || previous?.latestStage || '',
     members: rawMembers === undefined ? previous?.members ?? [] : nextMembers,
@@ -592,7 +634,7 @@ export function applyWorkTaskProjection(state: WorkTaskState, event: SessionEven
 
 /** Projection definition registered with the Session projection registry. */
 export const workTaskProjectionDefinition = {
-  key: 'workTask', stateVersion: 5, stateSchema,
+  key: 'workTask', stateVersion: 7, stateSchema,
   init: (): WorkTaskState => ({ task: null, pendingCalls: {}, teams: {} }),
   apply: applyWorkTaskProjection,
   wire: { viewSchema: taskSchema.nullable(), view: (state: WorkTaskState) => state.task },
@@ -614,7 +656,7 @@ export const inject = ['sessions', 'sessionProjections', 'commands', 'systemProm
 export const workbenchTeamRoutingSection = {
   name: 'workbench:team-routing',
   order: FIRST_PARTY_SECTION_ORDER.TEAM_POLICY + 10,
-  text: 'For substantive business work in Weave Workbench, first list the available Weave teams and match the request against each team\'s stated purpose, responsibilities, success criteria, default workflow availability, and health. If a suitable active team exists, dispatch its default workflow with wait=false. A successful Weave dispatch is already the durable task: do not create or update a DSH goal for it. After dispatch, make at most one activity or status call to confirm the handoff, then return the team, run ID, and current status immediately. Do not poll the run in the foreground, and do not save a duplicate foreground deliverable; Workbench monitors the run and projects Weave\'s deliverables in the background. Ask the user only when a human task requires input. Read and return the final Weave deliverable when the run is terminal or the user later asks for it. If no suitable team exists, say so plainly and collaborate with the user on a team definition. Never select free collaboration unless the user explicitly requests it. If Weave tools are unavailable, report that the Weave connection is not configured instead of pretending that team work was performed.',
+  text: 'For substantive business work in Weave Workbench, first list the available Weave teams and match the request against each team\'s stated purpose, responsibilities, success criteria, default workflow availability, and health. If a suitable active team exists, dispatch its default workflow with wait=false. A successful Weave dispatch is already the durable task: do not create or update a DSH goal for it. After dispatch, make at most one activity or status call to confirm the handoff, then return the team, run ID, and current status immediately. Do not poll the run in the foreground, and do not save a duplicate foreground deliverable; Workbench monitors the run and projects Weave\'s deliverables in the background. Ask the user only when a human task requires input. When the run is terminal or the user later asks for the result, read the final Weave deliverable and answer with a short user-facing completion summary: what was finished, the main findings or decisions, the files the user can open, and any user action still needed. Keep internal run IDs, deliverable IDs, runtime IDs, host paths, hashes, validation command names, and engine details out of the main answer unless the user explicitly asks for technical details. If no suitable team exists, say so plainly and collaborate with the user on a team definition. Never select free collaboration unless the user explicitly requests it. If Weave tools are unavailable, report that the Weave connection is not configured instead of pretending that team work was performed.',
 } as const
 
 /** Register the durable projection and keep non-terminal Weave runs synchronized outside the conversation turn. */

@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import type { CSSProperties } from 'react'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import type { WorkTaskDeliverable, WorkTaskMemberStatus, WorkTaskStatus } from './work-task-model.ts'
-import { projectedWorkTask, workTaskFactsStale, workTaskModel } from './work-task-model.ts'
+import type { WorkTaskDeliverable, WorkTaskMemberStatus, WorkTaskRuntime, WorkTaskStatus } from './work-task-model.ts'
+import { projectedWorkTask, workTaskFactsStale, workTaskHasUserVisibleCompletenessWarning, workTaskModel } from './work-task-model.ts'
 import css from './WorkTaskPanel.module.css'
 
 interface WorkTaskInjected {
@@ -39,6 +39,15 @@ function statusKey(status: WorkTaskStatus): typeof STATUS_KEYS[WorkTaskStatus] {
   return STATUS_KEYS[status]
 }
 
+function runtimeDisplayStatus(runtime: WorkTaskRuntime, runtimes: readonly WorkTaskRuntime[], members: ReturnType<typeof workTaskModel>['members']): WorkTaskStatus {
+  const activeMember = members.find(member => member.status === 'running')
+  if (activeMember === undefined) return runtime.status
+  if (runtimes.length === 1 || activeMember.runtime.includes(runtime.name) || (runtime.detail !== '' && activeMember.runtime.includes(runtime.detail))) {
+    return 'running'
+  }
+  return runtime.status
+}
+
 const MEMBER_STATUS_KEYS = {
   pending: 'task.member.status.pending',
   running: 'task.member.status.running',
@@ -53,17 +62,27 @@ function memberStatusKey(status: WorkTaskMemberStatus): typeof MEMBER_STATUS_KEY
   return MEMBER_STATUS_KEYS[status]
 }
 
-function durationLabel(milliseconds: number): string {
-  if (milliseconds < 1_000) return `${milliseconds} ms`
+function durationLabel(milliseconds: number, t: PanelProps['t']): string {
+  if (milliseconds < 1_000) return t('task.duration.milliseconds', { count: milliseconds })
   const seconds = Math.round(milliseconds / 100) / 10
-  if (seconds < 60) return `${seconds} s`
-  return `${Math.floor(seconds / 60)} min ${Math.round(seconds % 60)} s`
+  if (seconds < 60) return t('task.duration.seconds', { count: seconds })
+  return t('task.duration.minutes', { minutes: Math.floor(seconds / 60), seconds: Math.round(seconds % 60) })
 }
 
 function timestampLabel(value: string): string {
   if (value === '') return ''
   const timestamp = new Date(value)
   return Number.isNaN(timestamp.getTime()) ? '' : timestamp.toLocaleString()
+}
+
+function downloadDeliverable(item: WorkTaskDeliverable): void {
+  const blob = new Blob([item.content], { type: `${item.contentType};charset=utf-8` })
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = item.title || 'weave-deliverable'
+  anchor.click()
+  URL.revokeObjectURL(url)
 }
 
 function DeliverableItems({ items, t }: { readonly items: readonly WorkTaskDeliverable[]; readonly t: PanelProps['t'] }) {
@@ -81,7 +100,7 @@ function DeliverableItems({ items, t }: { readonly items: readonly WorkTaskDeliv
           : 'task.deliverables.previousRevision')
         const metadata = [revisionLabel, timestamp].filter(Boolean).join(' · ')
         return (
-          <details className={css.deliverable} data-kind={item.kind} key={item.id}>
+          <details className={css.deliverable} data-kind={item.kind} key={item.id} open={item.kind === 'final'}>
             <summary>
               <span className={css.fileMark} aria-hidden />
               <span className={css.deliverableIdentity}>
@@ -95,6 +114,12 @@ function DeliverableItems({ items, t }: { readonly items: readonly WorkTaskDeliv
               {item.preview === ''
                 ? <p className={css.muted}>{t('task.deliverables.noPreview')}</p>
                 : <pre>{item.preview}</pre>}
+              <div className={css.deliverableActions}>
+                {item.content === '' || item.truncated ? null : (
+                  <button type="button" onClick={() => downloadDeliverable(item)}>{t('task.deliverables.download')}</button>
+                )}
+                {item.truncated ? <span>{t('task.deliverables.truncated')}</span> : null}
+              </div>
             </div>
           </details>
         )
@@ -154,8 +179,16 @@ export function WorkTaskPanel({
   const stageDeliverables = model.deliverables.filter(item => item.kind === 'stage')
   const terminal = model.status === 'completed' || model.status === 'failed' || model.status === 'stopped'
   const stale = workTaskFactsStale(model.status, model.observedAt)
-  const incomplete = Object.values(model.completeness).some(value => value !== 'complete')
+  const incomplete = workTaskHasUserVisibleCompletenessWarning(model)
   const activeCorrection = model.corrections.find(item => item.status === 'requested' || item.status === 'ready' || item.status === 'confirmed')
+  const displayedRuntimes = model.runtimes.map(runtime => ({
+    ...runtime,
+    status: runtimeDisplayStatus(runtime, model.runtimes, model.members),
+  }))
+  const activeRuntimeCount = displayedRuntimes.filter(runtime => runtime.status === 'running').length
+  const visibleRuntimeCount = model.runtimes.length === 0
+    ? model.members.filter(member => member.runtime !== '').length
+    : model.runtimes.length
 
   const submitStop = async () => {
     if (stopRun === undefined || actionPending) return
@@ -205,7 +238,7 @@ export function WorkTaskPanel({
   return (
     <div className={css.panel} data-weave-work-task data-status={model.status}>
       <section className={css.hero}>
-        <div className={css.eyebrow}>{t('task.overview')}</div>
+        <div className={css.eyebrow}>{t('task.workScene')}</div>
         <div className={css.taskTitle}>{taskTitle}</div>
         <div className={css.statusLine}>
           <span className={css.statusDot} data-status={model.status} aria-hidden />
@@ -227,6 +260,31 @@ export function WorkTaskPanel({
                   : 'task.action.correctionConfirmPending')}
           </div>
         )}
+      </section>
+
+      <section className={css.sceneBoard} aria-label={t('task.workScene')}>
+        <div className={css.sceneCard}>
+          <span>{t('task.team')}</span>
+          <strong>{model.teamName || t('task.team.pending')}</strong>
+          {model.workflowName === '' ? null : <small>{t('task.workflow')} · {model.workflowName}</small>}
+        </div>
+        <div className={css.sceneCard}>
+          <span>{t('task.progress')}</span>
+          <strong>{model.totalStages > 0
+            ? t('task.progress.count', { completed: model.completedStages, total: model.totalStages })
+            : t('task.progress.completedCount', { completed: model.completedStages })}</strong>
+          {model.latestStage === '' ? null : <small>{model.latestStage}</small>}
+        </div>
+        <div className={css.sceneCard}>
+          <span>{t('task.members')}</span>
+          <strong>{t('task.members.count', { count: model.members.length })}</strong>
+          <small>{t('task.runtimes.summary', { active: activeRuntimeCount, total: visibleRuntimeCount })}</small>
+        </div>
+        <div className={css.sceneCard}>
+          <span>{t('task.deliverables')}</span>
+          <strong>{t('task.deliverables.count', { count: model.deliverableCount })}</strong>
+          <small>{finalDeliverables.length === 0 ? t('task.deliverables.noFinal') : t('task.deliverables.finalReady', { count: finalDeliverables.length })}</small>
+        </div>
       </section>
 
       {model.runId !== '' || model.teamCandidates.length === 0 ? null : (
@@ -339,6 +397,29 @@ export function WorkTaskPanel({
         </section>
       )}
 
+      <section className={css.section} aria-label={t('task.deliverables')}>
+        <div className={css.sectionHeader}>
+          <span>{t('task.deliverables')}</span>
+          <span>{model.deliverableCount}</span>
+        </div>
+        {model.deliverables.length === 0 ? <p className={css.muted}>{t('task.deliverables.empty')}</p> : (
+          <div className={css.deliverableGroups}>
+            {finalDeliverables.length === 0 ? null : (
+              <div className={css.deliverableGroup}>
+                <div className={css.deliverableGroupTitle}>{t('task.deliverables.finalGroup')}</div>
+                <DeliverableItems items={finalDeliverables} t={t} />
+              </div>
+            )}
+            {stageDeliverables.length === 0 ? null : (
+              <details className={css.stageDeliverables}>
+                <summary>{t('task.deliverables.stageGroup', { count: stageDeliverables.length })}</summary>
+                <DeliverableItems items={stageDeliverables} t={t} />
+              </details>
+            )}
+          </div>
+        )}
+      </section>
+
       <section className={css.section} aria-label={t('task.progress')}>
         <div className={css.sectionHeader}>
           <span>{t('task.progress')}</span>
@@ -394,8 +475,9 @@ export function WorkTaskPanel({
                   <span className={css.memberStatus} data-status={member.status} aria-hidden />
                   <span className={css.memberIdentity}>
                     <strong>{member.name}</strong>
-                    <span>{t(member.role === 'lead' ? 'task.member.lead' : 'task.member.worker')}</span>
+                    <span>{member.duty === '' ? t(member.role === 'lead' ? 'task.member.lead' : 'task.member.worker') : member.duty}</span>
                   </span>
+                  <span className={css.memberRuntimeChip}>{member.runtime || t('task.member.runtimeUnknown')}</span>
                   <span className={css.memberState}>{t(memberStatusKey(member.status))}</span>
                 </summary>
                 <div className={css.memberBody}>
@@ -420,7 +502,7 @@ export function WorkTaskPanel({
                           {stage.startedAt === '' && stage.durationMs === 0 && stage.toolCalls === 0 ? null : (
                             <div className={css.memberStageMetrics}>
                               {stage.startedAt === '' ? null : <span>{t('task.member.started')} <time dateTime={stage.startedAt}>{new Date(stage.startedAt).toLocaleTimeString()}</time></span>}
-                              {stage.durationMs === 0 ? null : <span>{t('task.member.duration')} {durationLabel(stage.durationMs)}</span>}
+                              {stage.durationMs === 0 ? null : <span>{t('task.member.duration')} {durationLabel(stage.durationMs, t)}</span>}
                               <span>{t('task.member.tools')} {stage.toolCalls}</span>
                             </div>
                           )}
@@ -432,6 +514,13 @@ export function WorkTaskPanel({
                                   <span className={css.toolState} aria-hidden />
                                   <code>{tool.name}</code>
                                   <small>{t(tool.status === 'running' ? 'task.member.tool.running' : tool.status === 'error' ? 'task.member.tool.error' : 'task.member.tool.ok')}</small>
+                                  {tool.input === '' && tool.output === '' ? null : (
+                                    <details className={css.toolDetail}>
+                                      <summary>{t('task.member.tool.details')}</summary>
+                                      {tool.input === '' ? null : <><span>{t('task.member.tool.input')}</span><pre>{tool.input}</pre></>}
+                                      {tool.output === '' ? null : <><span>{t('task.member.tool.output')}</span><pre>{tool.output}</pre></>}
+                                    </details>
+                                  )}
                                 </div>
                               ))}
                             </div>
@@ -470,7 +559,7 @@ export function WorkTaskPanel({
         <div className={css.sectionHeader}><span>{t('task.runtimes')}</span><span>{model.runtimes.length}</span></div>
         {model.runtimes.length === 0 ? <p className={css.muted}>{t(terminal ? 'task.runtimes.notRecorded' : 'task.runtimes.empty')}</p> : (
           <div className={css.runtimeList}>
-            {model.runtimes.map((runtime, index) => (
+            {displayedRuntimes.map((runtime, index) => (
               <div className={css.runtime} key={`${runtime.name}-${index}`}>
                 <span className={css.statusDot} data-status={runtime.status} aria-hidden />
                 <span className={css.runtimeIdentity}>
@@ -501,29 +590,6 @@ export function WorkTaskPanel({
           <span>{t('task.human.count', { count: model.humanTaskCount })}</span>
         </section>
       )}
-
-      <section className={css.section} aria-label={t('task.deliverables')}>
-        <div className={css.sectionHeader}>
-          <span>{t('task.deliverables')}</span>
-          <span>{model.deliverableCount}</span>
-        </div>
-        {model.deliverables.length === 0 ? <p className={css.muted}>{t('task.deliverables.empty')}</p> : (
-          <div className={css.deliverableGroups}>
-            {finalDeliverables.length === 0 ? null : (
-              <div className={css.deliverableGroup}>
-                <div className={css.deliverableGroupTitle}>{t('task.deliverables.finalGroup')}</div>
-                <DeliverableItems items={finalDeliverables} t={t} />
-              </div>
-            )}
-            {stageDeliverables.length === 0 ? null : (
-              <div className={css.deliverableGroup}>
-                <div className={css.deliverableGroupTitle}>{t('task.deliverables.stageGroup', { count: stageDeliverables.length })}</div>
-                <DeliverableItems items={stageDeliverables} t={t} />
-              </div>
-            )}
-          </div>
-        )}
-      </section>
 
       {model.attempts.length < 2 ? null : (
         <section className={css.section} aria-label={t('task.attempts')}>
