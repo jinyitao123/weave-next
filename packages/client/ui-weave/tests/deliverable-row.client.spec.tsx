@@ -78,6 +78,23 @@ describe('DeliverableRow', () => {
     expect(view.container.textContent).toContain('正文直接来自 /content。')
   })
 
+  it('bounds a large preview while retaining the complete download', () => {
+    const content = `begin-${'x'.repeat(12_000)}-complete-tail`
+    const createObjectURL = vi.fn<(blob: Blob) => string>(() => 'blob:large-deliverable')
+    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: createObjectURL })
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() })
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    const payload = JSON.stringify({ id: 'large', title: '大文件', content, content_type: 'text/plain' })
+    const view = render(<DeliverableRow {...props(settled(payload))} />)
+
+    expect(view.container.textContent).toContain('文件较大，仅展示开头')
+    expect(view.container.textContent).not.toContain('complete-tail')
+    fireEvent.click(view.getByRole('button', { name: /下载文件/ }))
+    expect(createObjectURL).toHaveBeenCalledWith(expect.any(Blob))
+    expect(createObjectURL.mock.calls[0]?.[0].size).toBe(new Blob([content]).size)
+    click.mockRestore()
+  })
+
   it('keeps running and failures honest', () => {
     expect(deliverableModel(running()).state).toBe('running')
     expect(deliverableModel(settled('bad json')).state).toBe('invalid')

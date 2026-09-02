@@ -13,12 +13,23 @@ interface Deliverable {
   readonly content: string
   readonly contentType: string
   readonly filename: string
+  readonly preview: string
+  readonly previewTruncated: boolean
 }
 
 interface DeliverableModel {
   readonly state: DeliverableState
   readonly deliverable: Deliverable | null
   readonly detail: string | null
+}
+
+const PREVIEW_CHARACTER_LIMIT = 12_000
+
+function visiblePreview(content: string): Pick<Deliverable, 'preview' | 'previewTruncated'> {
+  return {
+    preview: content.slice(0, PREVIEW_CHARACTER_LIMIT),
+    previewTruncated: content.length > PREVIEW_CHARACTER_LIMIT,
+  }
 }
 
 function resultText(block: ToolCallViewProps['block']): string | null {
@@ -87,6 +98,7 @@ export function deliverableModel(block: ToolCallViewProps['block']): Deliverable
         deliverable: {
           id, title, content: parsed, contentType: 'text/markdown',
           filename: safeFilename(title, id, 'md'),
+          ...visiblePreview(parsed),
         },
       }
     }
@@ -104,6 +116,7 @@ export function deliverableModel(block: ToolCallViewProps['block']): Deliverable
       deliverable: {
         id, title: title || id, content, contentType,
         filename: safeFilename(title, id, extension(contentType, content)),
+        ...visiblePreview(content),
       },
     }
   } catch {
@@ -162,7 +175,8 @@ export function DeliverableRow({ block, t }: DeliverableProps) {
             </button>
           </div>
           <div className={css.previewLabel}>{t('deliverable.preview')}</div>
-          <pre className={css.preview}>{deliverable.content}</pre>
+          <pre className={css.preview}>{deliverable.preview}</pre>
+          {deliverable.previewTruncated ? <p className={css.previewNotice}>{t('deliverable.previewTruncated')}</p> : null}
         </article>
       ) : null}
       {(model.state === 'error' || model.state === 'invalid') && model.detail !== null ? (

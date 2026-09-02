@@ -14,4 +14,5 @@
 .download:hover { border-color: var(--dsw-alias-brand-primary); color: var(--dsw-alias-brand-primary); }
 .previewLabel { padding: 8px 12px 0; }
 .preview { max-height: 440px; margin: 5px 12px 12px; padding: 11px 12px; overflow: auto; border-radius: 9px; background: var(--dsw-alias-markdown-code-block); color: var(--dsw-alias-label-primary); white-space: pre-wrap; overflow-wrap: anywhere; font: var(--dsw-font-markdown-code-block-small); }
+.previewNotice { margin: -5px 12px 12px; color: var(--dsw-alias-label-caption); font-size: 11px; line-height: 16px; }
 .errorDetail { max-height: 160px; margin: 5px 0 4px 22px; padding: 9px 11px; overflow: auto; border: 1px solid var(--dsw-alias-border-l1); border-radius: 10px; background: var(--dsw-alias-markdown-code-block); color: var(--dsw-alias-state-error-primary); white-space: pre-wrap; overflow-wrap: anywhere; font: var(--dsw-font-markdown-code-block-small); }

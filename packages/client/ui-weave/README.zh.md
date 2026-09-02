@@ -32,7 +32,7 @@ kind: "package-reference"
 <a id="understand-the-implementation"></a>
 ## 理解实现
 
-浏览器侧把准确的 MCP 工具名 `mcp__weave__team_list` 和 `mcp__weave__deliverable_get` 注册进 ui-tool 的键控 `tool.call.toolview` slot。它还占用 Session 标头操作列表与 Chat 详情摘要 slot。Workbench 宿主把 MCP 事实折叠进持久 `workTask` 投影，并在前台轮次之外同步对应的 Weave 请求。工作任务交付物视图预览已记录正文；完整的受限文件存在时，它会在浏览器中生成可下载副本。它不会伪装文件位于本地工作区，也不会解引用 agent 打印的路径。
+浏览器侧把准确的 MCP 工具名 `mcp__weave__team_list` 和 `mcp__weave__deliverable_get` 注册进 ui-tool 的键控 `tool.call.toolview` slot。它还占用 Session 标头操作列表与 Chat 详情摘要 slot。Workbench 宿主把 MCP 事实折叠进持久 `workTask` 投影，并在前台轮次之外同步对应的 Weave 请求。工作现场只有在用户展开某一份交付物时才把正文挂入页面，对话中的单文件卡片也会限制可见预览长度，同时保留完整的已记录内容用于下载。完整的受限文件存在时，浏览器会生成可下载副本。它不会伪装文件位于本地工作区，也不会解引用 agent 打印的路径。
 
 <a id="further-exploration"></a>
 ## 继续探索

@@ -88,6 +88,7 @@ function downloadDeliverable(item: WorkTaskDeliverable): void {
 }
 
 function DeliverableItems({ items, t }: { readonly items: readonly WorkTaskDeliverable[]; readonly t: PanelProps['t'] }) {
+  const [expandedIds, setExpandedIds] = useState<ReadonlySet<string>>(() => new Set())
   const latestIds = new Set<string>()
   for (const item of items) {
     if (!items.some(candidate => candidate.title === item.title && latestIds.has(candidate.id))) latestIds.add(item.id)
@@ -101,8 +102,18 @@ function DeliverableItems({ items, t }: { readonly items: readonly WorkTaskDeliv
           ? 'task.deliverables.currentRevision'
           : 'task.deliverables.previousRevision')
         const metadata = [revisionLabel, timestamp].filter(Boolean).join(' · ')
+        const expanded = expandedIds.has(item.id)
         return (
-          <details className={css.deliverable} data-kind={item.kind} key={item.id} open={item.kind === 'final'}>
+          <details className={css.deliverable} data-kind={item.kind} key={item.id} onToggle={(event) => {
+            const open = event.currentTarget.open
+            setExpandedIds((current) => {
+              if (current.has(item.id) === open) return current
+              const next = new Set(current)
+              if (open) next.add(item.id)
+              else next.delete(item.id)
+              return next
+            })
+          }}>
             <summary>
               <span className={css.fileMark} aria-hidden />
               <span className={css.deliverableIdentity}>
@@ -112,17 +123,19 @@ function DeliverableItems({ items, t }: { readonly items: readonly WorkTaskDeliv
               </span>
               <span className={css.deliverableKind}>{t(item.kind === 'final' ? 'task.deliverables.final' : 'task.deliverables.stage')}</span>
             </summary>
-            <div className={css.deliverableBody}>
-              {item.preview === ''
-                ? <p className={css.muted}>{t('task.deliverables.noPreview')}</p>
-                : <pre>{item.preview}</pre>}
-              <div className={css.deliverableActions}>
-                {item.content === '' || item.truncated ? null : (
-                  <button type="button" onClick={() =>{  downloadDeliverable(item) }}>{t('task.deliverables.download')}</button>
-                )}
-                {item.truncated ? <span>{t('task.deliverables.truncated')}</span> : null}
+            {expanded ? (
+              <div className={css.deliverableBody}>
+                {item.preview === ''
+                  ? <p className={css.muted}>{t('task.deliverables.noPreview')}</p>
+                  : <pre>{item.preview}</pre>}
+                <div className={css.deliverableActions}>
+                  {item.content === '' || item.truncated ? null : (
+                    <button type="button" onClick={() =>{  downloadDeliverable(item) }}>{t('task.deliverables.download')}</button>
+                  )}
+                  {item.truncated ? <span>{t('task.deliverables.truncated')}</span> : null}
+                </div>
               </div>
-            </div>
+            ) : null}
           </details>
         )
       })}

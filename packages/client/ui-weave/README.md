@@ -32,7 +32,7 @@ The conversation keeps specialized `team_list` and `deliverable_get` cards. The 
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 
-The browser half registers the exact MCP wire names `mcp__weave__team_list` and `mcp__weave__deliverable_get` in ui-tool's keyed `tool.call.toolview` slot. It also occupies the Session-header action list and the Chat details summary slot. The Workbench Host folds MCP facts into the durable `workTask` projection and synchronizes the corresponding Weave request outside the foreground turn. The work-task deliverable view previews the recorded content and downloads a browser-created copy when the complete bounded file is present; it does not pretend that the file exists in the local workspace or dereference a path printed by an agent.
+The browser half registers the exact MCP wire names `mcp__weave__team_list` and `mcp__weave__deliverable_get` in ui-tool's keyed `tool.call.toolview` slot. It also occupies the Session-header action list and the Chat details summary slot. The Workbench Host folds MCP facts into the durable `workTask` projection and synchronizes the corresponding Weave request outside the foreground turn. The work-task surface keeps file bodies out of the document until the user expands one deliverable, and the conversation card bounds its visible preview while retaining the complete recorded content for download. The browser downloads a generated copy when the complete bounded file is present; it does not pretend that the file exists in the local workspace or dereference a path printed by an agent.
 
 <a id="further-exploration"></a>
 ## Further Exploration
