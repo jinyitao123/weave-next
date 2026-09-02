@@ -153,6 +153,12 @@ func (r *WorkflowSerialRuntime) ExecuteFanoutLeg(
 	if err != nil {
 		return nil, executionError(ErrorCodeIdentityMismatch, err)
 	}
+	if parent.Status != StatusParked || parent.WaitKind == nil || *parent.WaitKind != WaitFanout {
+		return nil, executionError(
+			ErrorCodeIdentityMismatch,
+			fmt.Errorf("fanout leg parent is not parked on fanout (status=%s)", parent.Status),
+		)
+	}
 	if parent.WorkflowID != task.WorkflowID || parent.WorkflowVersion != task.WorkflowVersion ||
 		parent.RunSnapshotID != task.RunSnapshotID {
 		return nil, executionError(ErrorCodeIdentityMismatch, errors.New("fanout leg parent identity differs"))
