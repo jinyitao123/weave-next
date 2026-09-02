@@ -605,7 +605,7 @@ function routeModels(nodes: readonly ChatConversationViewNode[]): readonly strin
 
 function runtimeIdentityMatchesMember(runtime: WorkTaskRuntime, member: WorkTaskMember): boolean {
   if (member.runtime === '') return false
-  return member.runtime.includes(runtime.name) || (runtime.detail !== '' && member.runtime.includes(runtime.detail))
+  return member.runtime === runtime.name || member.runtime.startsWith(`${runtime.name} · `)
 }
 
 function runtimeStatusFromMembers(runtime: WorkTaskRuntime, members: readonly WorkTaskMember[], runtimeCount: number): WorkTaskRuntime['status'] {

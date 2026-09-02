@@ -245,6 +245,34 @@ describe('workTaskModel', () => {
     }])
   })
 
+  it('does not assign a member to another runtime whose name is only a prefix', () => {
+    const nodes = [
+      tool('mcp__weave__team_dispatch', { team_id: 'team-a' }, { run_id: 'run-a' }),
+      tool('mcp__weave__team_run_activity', { run_id: 'run-a' }, {
+        run_id: 'run-a', status: 'parked', wait_kind: 'fanout',
+        runtimes: [
+          { name: 'mac-codex-live', engine: 'codex', status: 'waiting' },
+          { name: 'mac-codex-live-local', engine: 'codex', status: 'waiting' },
+        ],
+        members: [
+          {
+            agent_id: 'worker-1', name: '本机分析员', status: 'running',
+            runtime: { runtime_name: 'mac-codex-live-local', engine: 'codex' },
+          },
+          {
+            agent_id: 'worker-2', name: '远端分析员', status: 'completed',
+            runtime: { runtime_name: 'mac-codex-live', engine: 'codex' },
+          },
+        ],
+      }),
+    ]
+
+    expect(workTaskModel(nodes).runtimes).toEqual([
+      { name: 'mac-codex-live', detail: 'codex', status: 'completed' },
+      { name: 'mac-codex-live-local', detail: 'codex', status: 'running' },
+    ])
+  })
+
   it('derives member lanes only from reported execution facts', () => {
     const nodes = [
       tool('mcp__weave__team_dispatch', { team_id: 'team-a' }, { run_id: 'run-a' }),
