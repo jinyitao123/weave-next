@@ -9,7 +9,7 @@ import { Button } from "../ui/Button";
 import { Field } from "../ui/Field";
 import { ErrorNotice, LoadingView } from "../ui/StatusViews";
 import { useOutletContext } from "react-router-dom";
-import { displayName } from "../workspace/labels";
+import { businessFieldLabel } from "../workspace/labels";
 
 function initialSchemaValue(schema: RuntimeSchema): unknown {
   if (Object.prototype.hasOwnProperty.call(schema, "const")) return schema.const;
@@ -70,7 +70,7 @@ function SchemaField({ name, schema, value, required, onChange }: {
   required: boolean;
   onChange(value: unknown): void;
 }) {
-  const label = `${name}${required ? " *" : ""}`;
+  const label = `${businessFieldLabel(name)}${required ? " *" : ""}`;
   if (Object.prototype.hasOwnProperty.call(schema, "const")) {
     return <div className="human-schema-const"><span>{label}</span><code>{constValueLabel(schema.const)}</code></div>;
   }
@@ -145,7 +145,7 @@ function OutputPreview({ outputs }: { outputs: Record<string, unknown> }) {
   const entries = Object.entries(outputs);
   if (!entries.length) return <p className="human-output-empty">当前节点没有可预览的上游交付物。</p>;
   return <div className="human-output-list">{entries.map(([nodeID, output], index) => <article key={nodeID}>
-    <strong>{displayName(nodeID, `第 ${index + 1} 项交付物`)}</strong>
+    <strong>第 {index + 1} 项交付物</strong>
     <pre>{typeof output === "string" ? output : JSON.stringify(output, null, 2)}</pre>
   </article>)}</div>;
 }

@@ -11,7 +11,7 @@ import { Card } from "../ui/Card";
 import { Field } from "../ui/Field";
 import { ErrorNotice, LoadingView } from "../ui/StatusViews";
 import { useWorkspace } from "../workspace/useWorkspace";
-import { executionStepLabel, isTechnicalIdentifier, stopReasonLabel, usageLabel } from "../workspace/labels";
+import { businessFieldLabel, executionStepLabel, isTechnicalIdentifier, relativeTimeLabel, stopReasonLabel, usageLabel } from "../workspace/labels";
 import { toolDisplayName } from "../features/conversation/executionToolAction";
 
 type EvidenceKind = "group" | "job" | "run";
@@ -238,12 +238,12 @@ export function ActivityPage() {
     {error && <ErrorNotice message={error} onRetry={() => void refresh()} />}
     {loading && !groups.length && !jobs.length && !runs.length ? <LoadingView label="正在读取执行证据" /> : <div className="activity-layout">
       <div className="activity-master">
-        <EvidenceSection icon={CircleDot} title="运行记录" count={runs.length}>{runs.map((run) => <EvidenceRow key={run.run_id} active={selectedKind === "run" && selectedId === run.run_id} title={runTitle(run)} status={run.status} meta={`${projectNames.get(run.project_id || "") || (run.attribution === "project_attributed" ? "项目名称不可见" : "历史未归属")} · ${formatTime(run.started_at)}`} onClick={() => select("run", run.run_id)} />)}</EvidenceSection>
-        {groups.length > 0 && <EvidenceSection icon={Workflow} title="任务组" count={groups.length}>{groups.map((group) => <EvidenceRow key={group.id} active={selectedKind === "group" && selectedId === group.id} title={groupTitle(group.original_request)} status={group.status} meta={`${group.project_id ? projectNames.get(group.project_id) || "项目名称不可见" : "项目归属未记录"} · ${group.legs.length} 个执行分支 · ${formatTime(group.updated_at)}`} onClick={() => select("group", group.id)} />)}</EvidenceSection>}
-        {visibleJobs.length > 0 && <EvidenceSection icon={BriefcaseBusiness} title="任务" count={visibleJobs.length}>{visibleJobs.map((job) => <EvidenceRow key={job.id} active={selectedKind === "job" && selectedId === job.id} title={jobTitle(job)} status={job.status} meta={`${job.kind || "类型未记录"} · ${job.project_id ? projectNames.get(job.project_id) || "项目名称不可见" : "项目归属未记录"} · ${formatTime(job.updated_at)}`} onClick={() => select("job", job.id)} />)}</EvidenceSection>}
+        <EvidenceSection icon={CircleDot} title="运行记录" count={runs.length}>{runs.map((run) => <EvidenceRow key={run.run_id} active={selectedKind === "run" && selectedId === run.run_id} title={runTitle(run)} status={run.status} meta={`${projectNames.get(run.project_id || "") || (run.attribution === "project_attributed" ? "项目名称不可见" : "历史未归属")} · ${relativeTimeLabel(run.started_at) || formatTime(run.started_at)}`} onClick={() => select("run", run.run_id)} />)}</EvidenceSection>
+        {groups.length > 0 && <EvidenceSection icon={Workflow} title="任务组" count={groups.length}>{groups.map((group) => <EvidenceRow key={group.id} active={selectedKind === "group" && selectedId === group.id} title={groupTitle(group.original_request)} status={group.status} meta={`${group.project_id ? projectNames.get(group.project_id) || "项目名称不可见" : "项目归属未记录"} · ${group.legs.length} 个执行分支 · ${relativeTimeLabel(group.updated_at) || formatTime(group.updated_at)}`} onClick={() => select("group", group.id)} />)}</EvidenceSection>}
+        {visibleJobs.length > 0 && <EvidenceSection icon={BriefcaseBusiness} title="任务" count={visibleJobs.length}>{visibleJobs.map((job) => <EvidenceRow key={job.id} active={selectedKind === "job" && selectedId === job.id} title={jobTitle(job)} status={job.status} meta={`${jobKindLabels[job.kind] || "任务"} · ${job.project_id ? projectNames.get(job.project_id) || "项目名称不可见" : "项目归属未记录"} · ${relativeTimeLabel(job.updated_at) || formatTime(job.updated_at)}`} onClick={() => select("job", job.id)} />)}</EvidenceSection>}
       </div>
       <aside className="activity-detail">
-        {!selectedId ? <div className="activity-detail__empty"><Activity size={24} /><strong>选择一项证据</strong><p>查看持久详情、入口和可用操作。</p></div> : detailLoading ? <LoadingView label="正在读取详情" /> : <>
+        {!selectedId ? <div className="activity-detail__empty"><Activity size={24} /><strong>选择一项记录</strong><p>查看进展、结果和可用操作。</p></div> : detailLoading ? <LoadingView label="正在读取详情" /> : <>
           {detailError && <ErrorNotice message={detailError} />}
           {selectedKind === "group" && detail && <TaskGroupEvidence detail={detail as TaskGroupDetail} projectId={selectedGroup?.project_id} onSelect={select} />}
           {selectedKind === "job" && detail && <JobEvidence job={detail as Job} projectName={projectNames.get((detail as Job).project_id || "")} onSelect={select} onCancel={() => void cancelSelected()} cancelling={cancelling} />}
@@ -255,22 +255,22 @@ export function ActivityPage() {
 }
 
 function EvidenceSection({ icon: Icon, title, count, children }: { icon: typeof Activity; title: string; count: number; children: ReactNode }) {
-  return <section className="evidence-section"><header><Icon size={16} /><strong>{title}</strong><Badge>{count} 条</Badge></header><div>{children || <p className="activity-empty">暂无记录</p>}</div></section>;
+  return <section className="evidence-section"><header><Icon size={16} /><strong>{title}</strong><Badge>{count} 条</Badge></header><ul>{children || <li className="activity-empty">暂无记录</li>}</ul></section>;
 }
 function EvidenceRow({ active, title, status, meta, onClick }: { active: boolean; title: string; status: string; meta: string; onClick(): void }) {
-  return <div className={active ? "evidence-row evidence-row--active" : "evidence-row"}><Button variant="ghost" size="small" onClick={onClick}><span className="evidence-row__copy"><strong>{title}</strong><span className="evidence-row__meta"><Badge tone={statusTone(status)}>{statusText(status)}</Badge><small>{meta}</small></span></span><ChevronRight size={16} /></Button></div>;
+  return <li className={active ? "evidence-row evidence-row--active" : "evidence-row"}><button type="button" aria-current={active ? "page" : undefined} onClick={onClick}><span className="evidence-row__copy"><strong>{title}</strong><span className="evidence-row__meta"><Badge tone={statusTone(status)}>{statusText(status)}</Badge><small>{meta}</small></span></span><ChevronRight size={16} /></button></li>;
 }
 function TaskGroupEvidence({ detail, projectId, onSelect }: { detail: TaskGroupDetail; projectId?: string; onSelect(kind: EvidenceKind, id: string): void }) {
-  return <div className="evidence-detail"><Badge tone={statusTone(detail.status)}>{statusText(detail.status)}</Badge><h2>{groupTitle(detail.original_request)}</h2><p>需 {detail.quorum} 个分支完成 · {formatTime(detail.updated_at)}</p>{detail.conversation_id && projectId ? <Link className="text-link" to={`/project/${encodeURIComponent(projectId)}/conversations/${encodeURIComponent(detail.conversation_id)}`}>进入对应会话</Link> : detail.conversation_id ? <p className="readonly-note">暂时无法定位该会话所属的项目。</p> : null}<TechnicalInfo rows={[['任务组 ID', detail.id], ['Avatar Agent', detail.avatar_agent], ['原始请求', isTechnicalIdentifier(detail.original_request) ? detail.original_request : ''], ['会话 ID', detail.conversation_id]]} /><h3>执行分支</h3><div className="activity-leg-list">{detail.legs.map((leg, index) => <article key={`${leg.job_id}:${index}`}><div><strong>{isTechnicalIdentifier(leg.agent) ? `执行分支 ${index + 1}` : leg.agent}</strong><Badge tone={statusTone(leg.status)}>{statusText(leg.status)}</Badge></div>{leg.error && <p className="danger-text">{leg.error}</p>}{leg.result_summary && <p>{leg.result_summary}</p>}<TechnicalInfo rows={[['Agent', leg.agent], ['任务 ID', leg.job_id], ['运行 ID', leg.run_id]]} /><footer>{leg.job_id && <Button variant="ghost" size="small" onClick={() => onSelect("job", leg.job_id)}>查看任务</Button>}{leg.run_id && <Button variant="ghost" size="small" onClick={() => onSelect("run", leg.run_id)}>查看运行</Button>}</footer></article>)}</div></div>;
+  return <div className="evidence-detail"><Badge tone={statusTone(detail.status)}>{statusText(detail.status)}</Badge><h2>{groupTitle(detail.original_request)}</h2><p>需 {detail.quorum} 个分支完成 · {relativeTimeLabel(detail.updated_at) || formatTime(detail.updated_at)}</p>{detail.conversation_id && projectId ? <Link className="text-link" to={`/project/${encodeURIComponent(projectId)}/conversations/${encodeURIComponent(detail.conversation_id)}`}>进入对应会话</Link> : detail.conversation_id ? <p className="readonly-note">暂时无法定位该会话所属的项目。</p> : null}<TechnicalInfo rows={[['任务组 ID', detail.id], ['Avatar Agent', detail.avatar_agent], ['原始请求', isTechnicalIdentifier(detail.original_request) ? detail.original_request : ''], ['会话 ID', detail.conversation_id]]} /><h3>执行分支</h3><div className="activity-leg-list">{detail.legs.map((leg, index) => <article key={`${leg.job_id}:${index}`}><div><strong>{isTechnicalIdentifier(leg.agent) ? `执行分支 ${index + 1}` : leg.agent}</strong><Badge tone={statusTone(leg.status)}>{statusText(leg.status)}</Badge></div>{leg.error && <p className="danger-text">执行未完成，请打开运行记录查看详情。</p>}{leg.result_summary && <p>{leg.result_summary}</p>}<TechnicalInfo rows={[['Agent', leg.agent], ['任务 ID', leg.job_id], ['运行 ID', leg.run_id]]} /><footer>{leg.job_id && <Button variant="ghost" size="small" onClick={() => onSelect("job", leg.job_id)}>查看任务</Button>}{leg.run_id && <Button variant="ghost" size="small" onClick={() => onSelect("run", leg.run_id)}>查看运行</Button>}</footer></article>)}</div></div>;
 }
 function JobEvidence({ job, projectName, onSelect, onCancel, cancelling }: { job: Job; projectName?: string; onSelect(kind: EvidenceKind, id: string): void; onCancel(): void; cancelling: boolean }) {
   const runId = job.run_id;
   const taskGroupId = job.task_group_id;
-  return <div className="evidence-detail"><Badge tone={statusTone(job.status)}>{statusText(job.status)}</Badge><h2>{jobTitle(job)}</h2><p>{jobKindLabels[job.kind] || job.kind || "任务类型未记录"} · {projectName || (job.project_id ? "项目名称不可见" : "项目归属未记录")} · 来源 {jobSourceLabels[job.source || ""] || "其他"} · {formatTime(job.created_at)}</p>{job.error && <ErrorNotice message={job.error} />}<TechnicalInfo rows={[['任务 ID', job.id], ['Agent', job.agent], ['项目 ID', job.project_id || '未记录'], ['运行时 ID', job.runtime_id || '未记录']]} /><div className="activity-actions">{runId && <Button onClick={() => onSelect("run", runId)}>查看运行记录</Button>}{taskGroupId && <Button onClick={() => onSelect("group", taskGroupId)}>查看任务组</Button>}{cancellable[job.status] && <Button variant="danger" loading={cancelling} onClick={onCancel}><Ban size={14} />取消任务</Button>}</div></div>;
+  return <div className="evidence-detail"><Badge tone={statusTone(job.status)}>{statusText(job.status)}</Badge><h2>{jobTitle(job)}</h2><p>{jobKindLabels[job.kind] || "任务"} · {projectName || (job.project_id ? "项目名称不可见" : "项目归属未记录")} · 来源 {jobSourceLabels[job.source || ""] || "其他"} · {relativeTimeLabel(job.created_at) || formatTime(job.created_at)}</p>{job.error && <ErrorNotice message="任务未能完成，请查看运行记录或稍后重试。" />}<TechnicalInfo rows={[['任务 ID', job.id], ['Agent', job.agent], ['项目 ID', job.project_id || '未记录'], ['运行时 ID', job.runtime_id || '未记录']]} /><div className="activity-actions">{runId && <Button onClick={() => onSelect("run", runId)}>查看运行记录</Button>}{taskGroupId && <Button onClick={() => onSelect("group", taskGroupId)}>查看任务组</Button>}{cancellable[job.status] && <Button variant="danger" loading={cancelling} onClick={onCancel}><Ban size={14} />取消任务</Button>}</div></div>;
 }
 
 function TechnicalInfo({ rows }: { rows: Array<[string, string]> }) {
-  return <details className="activity-technical"><summary>技术信息</summary><dl>{rows.filter(([, value]) => value).map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl></details>;
+  return <details className="activity-technical"><summary>开发者详情</summary><div className="disclosure-grid"><dl>{rows.filter(([, value]) => value).map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl></div></details>;
 }
 interface StreamAttempt<Request> {
   request: Request;
@@ -366,12 +366,12 @@ function RunEvidence({ runId, summary, projectName, detail, trace, state, checkp
       }, controller.signal);
       const terminal: NonNullable<ResumeAttempt["terminal"]> = terminalEvent || { type: "done", data: { ...result.terminal } };
       const terminalError = typeof terminal.data.error === "string" ? terminal.data.error : "";
-      setAttempt((current) => current ? { ...current, phase: terminalError ? "failed" : "terminal", activity: terminal.type === "done" ? "运行已结束" : "已转入等待输入", terminal, error: terminalError || undefined } : current);
+      setAttempt((current) => current ? { ...current, phase: terminalError ? "failed" : "terminal", activity: terminal.type === "done" ? "运行已结束" : "已转入等待输入", terminal, error: terminalError ? "执行未能完成，请稍后重试。" : undefined } : current);
       const returnedRunId = typeof terminal.data.run_id === "string" && terminal.data.run_id ? terminal.data.run_id : request.run_id;
       try {
         await onRefresh(returnedRunId, request.agent);
       } catch (refreshError) {
-        setAttempt((current) => current ? { ...current, phase: "failed", error: `服务端已返回 ${terminal.type}，但刷新运行证据失败：${apiErrorMessage(refreshError)}` } : current);
+        setAttempt((current) => current ? { ...current, phase: "failed", error: `执行已经结束，但最新记录暂时无法刷新：${apiErrorMessage(refreshError)}` } : current);
       }
     } catch (requestError) {
       if (controller.signal.aborted) setAttempt((current) => current ? { ...current, phase: "stopped", activity: "已停止在此页面等待", error: "仅停止了页面等待；后端执行未被声明为已取消。可使用同一请求重试读取结果。" } : current);
@@ -394,13 +394,13 @@ function RunEvidence({ runId, summary, projectName, detail, trace, state, checkp
       }, controller.signal);
       const terminal: NonNullable<ForkAttempt["terminal"]> = terminalEvent || { type: "done", data: { ...result.terminal } };
       const terminalError = typeof terminal.data.error === "string" ? terminal.data.error : "";
-      setForkAttempt((current) => current ? { ...current, phase: terminalError ? "failed" : "terminal", activity: terminal.type === "done" ? "运行已结束" : "已转入等待输入", terminal, error: terminalError || undefined } : current);
+      setForkAttempt((current) => current ? { ...current, phase: terminalError ? "failed" : "terminal", activity: terminal.type === "done" ? "运行已结束" : "已转入等待输入", terminal, error: terminalError ? "新的执行分支未能完成，请稍后重试。" : undefined } : current);
       const childRunId = typeof terminal.data.run_id === "string" ? terminal.data.run_id : "";
       if (childRunId) {
         try {
           await onRefresh(childRunId, request.agent);
         } catch (refreshError) {
-          setForkAttempt((current) => current ? { ...current, phase: "failed", error: `服务端已返回 ${terminal.type}，但刷新子运行证据失败：${apiErrorMessage(refreshError)}` } : current);
+          setForkAttempt((current) => current ? { ...current, phase: "failed", error: `新的执行分支已经结束，但最新记录暂时无法刷新：${apiErrorMessage(refreshError)}` } : current);
         }
       }
     } catch (requestError) {
@@ -439,7 +439,7 @@ function RunEvidence({ runId, summary, projectName, detail, trace, state, checkp
   return <div className="evidence-detail">
     <div className="activity-badges"><Badge tone={attributed ? "success" : "neutral"}>{attributionText(summary?.attribution)}</Badge>{summary && <Badge tone={statusTone(summary.status)}>{statusText(summary.status)}</Badge>}</div>
     <h2>{summary ? runTitle(summary) : "运行详情"}</h2>
-    <p>{summary ? `${projectName || (attributed ? "项目名称不可见" : "历史未归属")} · ${formatTime(summary.started_at)}` : "服务端运行详情"}</p>
+    <p>{summary ? `${projectName || (attributed ? "项目名称不可见" : "历史未归属")} · ${relativeTimeLabel(summary.started_at) || formatTime(summary.started_at)}` : "运行详情"}</p>
     {summary && <dl className="run-facts">
       <div><dt>耗时</dt><dd>{formatDuration(summary.duration_ms)}</dd></div>
       <div><dt>模型用量</dt><dd>{usageLabel(summary.tokens_in, summary.tokens_out)}</dd></div>
@@ -447,38 +447,43 @@ function RunEvidence({ runId, summary, projectName, detail, trace, state, checkp
     </dl>}
     {requestSummary && <section className="run-readable"><h3>运行摘要</h3><MarkdownText text={requestSummary} /></section>}
     {output && output !== requestSummary && <section className="run-readable"><h3>运行输出</h3><MarkdownText text={output} /></section>}
-    {trace && trace.length > 0 && <section className="run-readable"><h3>调用轨迹</h3><ol className="run-trace-list">{trace.map((entry, index) => {
+    {trace && trace.length > 0 && <section className="run-readable"><h3>执行过程</h3><ol className="run-trace-list">{trace.map((entry, index) => {
       const record = isRecord(entry) ? entry : {};
-      const label = stringField(record, "step_name") || stringField(record, "name") || stringField(record, "type") || `轨迹 ${index + 1}`;
+      const rawLabel = stringField(record, "step_name") || stringField(record, "name") || stringField(record, "type");
+      const step = executionStepLabel(rawLabel);
+      const label = step.mapped ? step.label : `执行步骤 ${index + 1}`;
       const status = stringField(record, "status");
       const time = stringField(record, "timestamp") || stringField(record, "created_at");
       return <li key={`${label}:${index}`}><strong>{label}</strong>{(status || time) && <small>{[status && statusText(status), time && formatTime(time)].filter(Boolean).join(" · ")}</small>}</li>;
     })}</ol></section>}
-    {stateEntries.length > 0 && <section className="run-readable"><h3>业务状态</h3><dl className="run-state-list">{stateEntries.map(([key, value]) => <div key={key}><dt>{key}</dt><dd>{typeof value === "string" ? <MarkdownText text={value} /> : JSON.stringify(value)}</dd></div>)}</dl></section>}
-    {positiveCheckpoints.length > 0 && <section className="run-readable"><h3>检查点</h3><ol className="run-checkpoint-list">{positiveCheckpoints.map((checkpoint) => <li key={checkpoint.seq}><Badge tone="neutral">#{checkpoint.seq}</Badge><span><strong>{checkpoint.last_step || "步骤未记录"}</strong><small>{formatTime(checkpoint.saved_at)}</small></span></li>)}</ol></section>}
+    {stateEntries.length > 0 && <section className="run-readable"><h3>业务状态</h3><dl className="run-state-list">{stateEntries.map(([key, value]) => <div key={key}><dt>{businessFieldLabel(key)}</dt><dd>{typeof value === "string" ? (isTechnicalIdentifier(value) ? "已记录" : <MarkdownText text={value} />) : "结构化结果已保存"}</dd></div>)}</dl></section>}
+    {positiveCheckpoints.length > 0 && <section className="run-readable"><h3>可恢复节点</h3><ol className="run-checkpoint-list">{positiveCheckpoints.map((checkpoint, index) => { const step = executionStepLabel(checkpoint.last_step); return <li key={checkpoint.seq}><Badge tone="neutral">节点 {index + 1}</Badge><span><strong>{step.mapped ? step.label : "阶段成果已保存"}</strong><small>{relativeTimeLabel(checkpoint.saved_at) || formatTime(checkpoint.saved_at)}</small></span></li>; })}</ol></section>}
     {Object.keys(evidenceErrors).length > 0 && <section className="run-evidence-errors" aria-label="部分取证不可用">{evidenceErrors.trace && <p>调用轨迹读取失败：{evidenceErrors.trace}</p>}{evidenceErrors.state && <p>业务状态读取失败：{evidenceErrors.state}</p>}{evidenceErrors.checkpoints && <p>检查点读取失败：{evidenceErrors.checkpoints}</p>}</section>}
-    <TechnicalInfo rows={[['运行 ID', runId], ['Agent', summary?.agent || '未记录'], ['项目 ID', summary?.project_id || '未记录'], ['父运行 ID', summary?.parent_run_id || '未记录']]} />
-    {(resumable || attempt) && <Card className="run-resume" header={<div className="run-card__heading"><div><h3 id="run-resume-title">{resumable ? "继续执行" : "继续执行结果"}</h3><p>{resumable ? "此运行正在等待输入。继续后，以服务端终止事件和刷新后的运行证据为准。" : attempt?.terminal ? "当前操作已收到服务端终止事件；下方事实来自该事件和刷新后的运行证据。" : "本页面已停止等待或继续执行失败；后端状态仍以刷新后的运行证据为准。"}</p></div>{resumable && <Badge tone="warning">等待输入</Badge>}</div>}>
+    {(resumable || attempt) && <Card className="run-resume" header={<div className="run-card__heading"><div><h3 id="run-resume-title">{resumable ? "继续执行" : "继续执行结果"}</h3><p>{resumable ? "团队正在等待你的决定。补充说明后会从当前位置继续。" : attempt?.terminal ? "本次处理已经结束，最新运行记录如下。" : "页面已停止等待或继续失败；刷新后可查看任务的真实状态。"}</p></div>{resumable && <Badge tone="warning">等待输入</Badge>}</div>}>
       {resumable && <form onSubmit={submitResume}>
         <Field label="继续说明">{(control) => <textarea {...control} rows={3} value={message} disabled={attempt?.phase === "streaming"} placeholder="用自然语言说明接下来要做什么" onChange={(event) => { setMessage(event.target.value); setInputError(null); }} />}</Field>
-        <details className="run-resume__advanced"><summary>高级输入（可选）</summary><Field label="JSON 对象" help="用于需要结构化字段的工作流；继续说明非空时会合并为 message。" error={inputError}>{(control) => <textarea {...control} className="code-input" rows={6} value={advancedInput} disabled={attempt?.phase === "streaming"} spellCheck={false} onChange={(event) => { setAdvancedInput(event.target.value); setInputError(null); }} />}</Field></details>
+        <details className="run-resume__advanced"><summary>高级输入（可选）</summary><div className="disclosure-grid"><div><Field label="结构化内容" help="仅在工作流明确要求结构化字段时使用。" error={inputError}>{(control) => <textarea {...control} className="code-input" rows={6} value={advancedInput} disabled={attempt?.phase === "streaming"} spellCheck={false} onChange={(event) => { setAdvancedInput(event.target.value); setInputError(null); }} />}</Field></div></div></details>
         <div className="run-resume__actions">{attempt?.phase === "streaming" ? <Button onClick={() => resumeAbortRef.current?.abort()}><Square size={14} /> 停止等待</Button> : <Button variant="primary" type="submit"><Send size={14} /> 继续执行</Button>}{attempt && (attempt.phase === "failed" || attempt.phase === "stopped") && <Button onClick={() => void executeResume(attempt.request)}><RefreshCw size={14} /> 使用同一输入重试</Button>}</div>
       </form>}
       {attempt && <StreamAttemptView attempt={attempt} />}
     </Card>}
-    {(forkable || forkAttempt) && <Card className="run-fork" header={<div className="run-card__heading"><div><h3 id="run-fork-title">创建分叉</h3><p>{forkAttempt?.terminal ? "服务端已返回分叉终止事实；子运行证据已按返回的 run_id 刷新。" : "从真实历史检查点创建新运行。执行仅通过事件流发起。"}</p></div>{selectedForkSeq !== null && <Badge tone="accent">seq {selectedForkSeq}</Badge>}</div>}>
+    {(forkable || forkAttempt) && <Card className="run-fork" header={<div className="run-card__heading"><div><h3 id="run-fork-title">从节点重新开始</h3><p>{forkAttempt?.terminal ? "新的执行分支已经创建，运行记录已刷新。" : "保留此前成果，从选定节点按新的说明继续。"}</p></div>{selectedForkSeq !== null && <Badge tone="accent">已选恢复节点</Badge>}</div>}>
       {forkable && <form onSubmit={submitFork}>
-        <Field label="检查点">{(control) => <select {...control} value={selectedForkSeq ?? ""} disabled={forkAttempt?.phase === "streaming"} onChange={(event) => setForkSeq(Number(event.target.value))}>{positiveCheckpoints.map((checkpoint) => <option key={checkpoint.seq} value={checkpoint.seq}>#{checkpoint.seq}{checkpoint.last_step ? ` · ${checkpoint.last_step}` : ""}{checkpoint.saved_at ? ` · ${checkpoint.saved_at}` : ""}</option>)}</select>}</Field>
+        <Field label="恢复节点">{(control) => <select {...control} value={selectedForkSeq ?? ""} disabled={forkAttempt?.phase === "streaming"} onChange={(event) => setForkSeq(Number(event.target.value))}>{positiveCheckpoints.map((checkpoint, index) => <option key={checkpoint.seq} value={checkpoint.seq}>恢复节点 {index + 1}{checkpoint.saved_at ? ` · ${relativeTimeLabel(checkpoint.saved_at) || formatTime(checkpoint.saved_at)}` : ""}</option>)}</select>}</Field>
         <Field label="分叉说明">{(control) => <textarea {...control} rows={3} value={forkMessage} disabled={forkAttempt?.phase === "streaming"} placeholder="用自然语言说明分叉后要执行什么" onChange={(event) => { setForkMessage(event.target.value); setForkInputError(null); }} />}</Field>
-        <details className="run-resume__advanced"><summary>高级输入（可选）</summary><Field label="JSON 对象" help="必须是 JSON 对象；分叉说明非空时会合并为 input.message。" error={forkInputError}>{(control) => <textarea {...control} className="code-input" rows={6} value={forkAdvancedInput} disabled={forkAttempt?.phase === "streaming"} spellCheck={false} onChange={(event) => { setForkAdvancedInput(event.target.value); setForkInputError(null); }} />}</Field></details>
+        <details className="run-resume__advanced"><summary>高级输入（可选）</summary><div className="disclosure-grid"><div><Field label="结构化内容" help="仅在工作流明确要求结构化字段时使用。" error={forkInputError}>{(control) => <textarea {...control} className="code-input" rows={6} value={forkAdvancedInput} disabled={forkAttempt?.phase === "streaming"} spellCheck={false} onChange={(event) => { setForkAdvancedInput(event.target.value); setForkInputError(null); }} />}</Field></div></div></details>
         <div className="run-resume__actions">{forkAttempt?.phase === "streaming" ? <Button onClick={() => forkAbortRef.current?.abort()}><Square size={14} /> 停止等待</Button> : <Button variant="primary" type="submit"><Workflow size={14} /> 创建分叉</Button>}{forkAttempt && (forkAttempt.phase === "failed" || forkAttempt.phase === "stopped") && <Button onClick={() => void executeFork(forkAttempt.parentRunId, forkAttempt.request)}><RefreshCw size={14} /> 使用同一输入重试</Button>}</div>
       </form>}
       {forkAttempt && <StreamAttemptView attempt={forkAttempt} />}
     </Card>}
-    <EvidenceJSON title="原始运行数据" value={detail} />
-    {trace !== null && <EvidenceJSON title="原始调用轨迹" value={trace} />}
-    {state !== null && <EvidenceJSON title="原始业务状态" value={state} />}
-    {checkpoints !== null && <EvidenceJSON title="原始检查点" value={checkpoints} />}
+    <details className="activity-developer-details"><summary>开发者详情</summary><div className="disclosure-grid"><div>
+      <TechnicalRows rows={[["运行 ID", runId], ["Agent", summary?.agent || "未记录"], ["项目 ID", summary?.project_id || "未记录"], ["父运行 ID", summary?.parent_run_id || "未记录"]]} />
+      <EvidenceJSON title="原始运行数据" value={detail} />
+      {trace !== null && <EvidenceJSON title="原始调用轨迹" value={trace} />}
+      {state !== null && <EvidenceJSON title="原始业务状态" value={state} />}
+      {checkpoints !== null && <EvidenceJSON title="原始检查点" value={checkpoints} />}
+    </div></div></details>
   </div>;
 }
+function TechnicalRows({ rows }: { rows: Array<[string, string]> }) { return <dl className="activity-technical-rows">{rows.filter(([, value]) => value).map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>; }
 function EvidenceJSON({ title, value }: { title: string; value: unknown }) { return <details className="activity-json"><summary>{title}</summary><pre>{JSON.stringify(value, null, 2)}</pre></details>; }

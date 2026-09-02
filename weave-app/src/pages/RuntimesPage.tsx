@@ -11,6 +11,7 @@ import { Field } from "../ui/Field";
 import { ConfirmModal } from "../ui/ConfirmModal";
 import { Modal } from "../ui/Modal";
 import { ErrorNotice, LoadingView } from "../ui/StatusViews";
+import { engineLabel } from "../workspace/labels";
 
 const dateTime = new Intl.DateTimeFormat("zh-CN", { dateStyle: "medium", timeStyle: "short" });
 
@@ -246,11 +247,11 @@ export function RuntimesPage() {
         <caption className="sr-only">运行节点列表</caption>
         <thead><tr><th scope="col">名称</th><th scope="col">状态与容量</th><th scope="col">引擎与认证</th><th scope="col">最近连接</th><th scope="col">创建时间</th><th scope="col">操作</th></tr></thead>
         <tbody>{runtimes.map((runtime) => <tr key={runtime.id}>
-			<th scope="row" data-label="名称"><strong>{runtime.name}</strong>{runtime.pool_id ? <small>故障转移组：{runtime.pool_id}</small> : null}</th>
-			<td data-label="状态与容量"><div className="runtime-status"><Badge tone={runtime.health_status === "healthy" || runtime.health_status === "busy" ? "success" : runtime.health_status === "degraded" ? "warning" : "neutral"}>{runtime.health_status === "busy" ? "繁忙" : runtime.health_status === "degraded" ? "降级" : runtime.health_status === "quarantined" ? "已隔离" : runtime.online ? "健康" : "离线"}</Badge><small>{runtime.active_slots}/{runtime.total_slots} 槽位使用中</small>{runtime.consecutive_infra_failures > 0 && <small>连续基础设施失败：{runtime.consecutive_infra_failures}</small>}{runtime.last_failure_reason && <small title={runtime.last_failure_reason}>最近原因：{runtime.last_failure_reason}</small>}<small>{runtime.enabled ? "已启用" : "已停用"}</small>{runtime.revoked_at ? <small>已撤销：{dateTime.format(new Date(runtime.revoked_at))}</small> : null}{runtime.deleted_at ? <small>已删除：{dateTime.format(new Date(runtime.deleted_at))}</small> : null}</div></td>
+			<th scope="row" data-label="名称"><strong>{runtime.name}</strong>{runtime.pool_id ? <small>已加入故障转移组</small> : null}</th>
+			<td data-label="状态与容量"><div className="runtime-status"><Badge tone={runtime.health_status === "healthy" || runtime.health_status === "busy" ? "success" : runtime.health_status === "degraded" ? "warning" : "neutral"}>{runtime.health_status === "busy" ? "繁忙" : runtime.health_status === "degraded" ? "降级" : runtime.health_status === "quarantined" ? "已隔离" : runtime.online ? "健康" : "离线"}</Badge><small>{runtime.active_slots}/{runtime.total_slots} 槽位使用中</small>{runtime.consecutive_infra_failures > 0 && <small>连续执行异常：{runtime.consecutive_infra_failures} 次</small>}{runtime.last_failure_reason && <small>最近一次执行出现异常</small>}<small>{runtime.enabled ? "已启用" : "已停用"}</small>{runtime.revoked_at ? <small>已撤销：{dateTime.format(new Date(runtime.revoked_at))}</small> : null}{runtime.deleted_at ? <small>已删除：{dateTime.format(new Date(runtime.deleted_at))}</small> : null}</div></td>
           <td data-label="引擎与认证"><div className="runtime-engine-facts">{runtime.engines.length ? runtime.engines.map((engine) => {
             const capability = runtime.engine_capabilities?.[engine];
-            return <details key={engine}><summary>{engine} · {capability ? authModeLabels[capability.auth_mode] || capability.auth_mode : "旧节点未上报详情"}</summary>{capability && <dl><div><dt>二进制</dt><dd><code>{capability.binary_path}</code></dd></div><div><dt>版本</dt><dd>{capability.binary_version}</dd></div><div><dt>端点</dt><dd>{endpointClassLabels[capability.endpoint_class] || capability.endpoint_class}</dd></div><div><dt>协议</dt><dd>{capability.protocol_version}</dd></div></dl>}</details>;
+            return <details key={engine}><summary>{engineLabel(engine)} · {capability ? authModeLabels[capability.auth_mode] || "认证方式未知" : "旧节点未上报详情"}</summary>{capability && <dl><div><dt>程序</dt><dd><code>{capability.binary_path}</code></dd></div><div><dt>版本</dt><dd>{capability.binary_version}</dd></div><div><dt>连接</dt><dd>{endpointClassLabels[capability.endpoint_class] || "外部端点"}</dd></div><div><dt>协议</dt><dd>{capability.protocol_version}</dd></div></dl>}</details>;
           }) : "尚未上报"}</div></td>
                     <td data-label="最近连接"><time dateTime={runtime.last_heartbeat_at || undefined}>{runtime.last_heartbeat_at ? dateTime.format(new Date(runtime.last_heartbeat_at)) : "尚未连接"}</time></td>
           <td data-label="创建时间"><time dateTime={runtime.created_at}>{dateTime.format(new Date(runtime.created_at))}</time></td>

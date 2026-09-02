@@ -72,7 +72,7 @@ function settingsFocusableElements(drawer: HTMLElement): HTMLElement[] {
 }
 
 function roleLabel(role: string) {
-  return ({ admin: "管理员", owner: "所有者", member: "成员", user: "用户", service: "服务" } as Record<string, string>)[role] || role;
+  return ({ admin: "管理员", owner: "所有者", member: "成员", user: "用户", service: "服务" } as Record<string, string>)[role] || "成员";
 }
 
 function formatDate(value?: string | null, fallback = "—") {

@@ -158,6 +158,34 @@ export function displayName(name: string | undefined | null, fallback: string): 
   return trimmed && !isTechnicalIdentifier(trimmed) ? trimmed : fallback;
 }
 
+/**
+ * 枚举展示闸门。调用方只提供受控映射；未收录的新值永远不会穿透到界面。
+ */
+export function enumLabel(labels: Readonly<Record<string, string>>, value: string | undefined | null, fallback: string): string {
+  return value ? labels[value] || fallback : fallback;
+}
+
+const BUSINESS_FIELD_LABELS: Record<string, string> = {
+  action: "处理方式",
+  approve: "审批决定",
+  comment: "补充说明",
+  decision: "处理决定",
+  feedback: "修改意见",
+  message: "继续说明",
+  note: "备注",
+  reason: "原因",
+  reject: "驳回原因",
+};
+
+/** 结构化工作流字段 → 业务称呼；陌生的代码式字段名不会直接暴露。 */
+export function businessFieldLabel(name?: string): string {
+  const trimmed = (name || "").trim();
+  const known = BUSINESS_FIELD_LABELS[trimmed.toLowerCase()];
+  if (known) return known;
+  if (!trimmed || isTechnicalIdentifier(trimmed) || /^[a-z][a-z0-9_-]*$/i.test(trimmed)) return "补充信息";
+  return trimmed;
+}
+
 /** 用户角色 → 中文。 */
 export function userRoleLabel(role?: string): string {
   switch (role) {

@@ -84,27 +84,27 @@ const knownMessages: Record<string, string> = {
   project_resource_not_found: "项目资料不存在或已被移除。",
   project_archived: "已归档项目不能新增资料。",
   project_resource_conflict: "该资料已绑定到项目。",
-  invalid_project_resource: "资料引用不符合后端合同。",
+  invalid_project_resource: "这项资料无法添加，请重新选择。",
   project_resource_operation_failed: "项目资料操作失败。",
-  invalid_client_request_id: "请求标识不是有效 UUID。",
-  client_request_conflict: "同一请求标识对应了不同内容。",
-  chat_request_idempotency_unavailable: "服务端持久幂等暂不可用。",
-  chat_request_admission_failed: "对话请求未能进入服务端。",
-  client_request_in_progress: "该请求仍在服务端执行。",
+  invalid_client_request_id: "这次操作已失效，请重新发起。",
+  client_request_conflict: "这次操作的内容已经变化，请重新发起。",
+  chat_request_idempotency_unavailable: "请求保护暂不可用，请稍后重试。",
+  chat_request_admission_failed: "任务暂时未能开始，请稍后重试。",
+  client_request_in_progress: "该任务仍在执行，请稍候。",
   final_deliverables_unavailable: "最终交付物服务当前不可用。",
   final_deliverable_not_found: "最终交付物尚未生成或已不可用。",
   final_deliverable_read_failed: "最终交付物读取失败，请重试。",
-  conversation_not_found: "Conversation 不存在或当前用户不可访问。",
+  conversation_not_found: "会话不存在或当前账号无法访问。",
   invalid_conversation_title: "会话名称必须包含 1 到 80 个字符。",
   conversation_thread_immutable: "讨论线程不能重命名。",
-  workflow_run_project_unavailable: "Workflow Run 的 Project 服务当前不可用，请稍后重试或配置 Project 服务。",
-  workflow_run_project_not_found: "请选择一个存在且可用的活跃 Project。",
-  workflow_run_project_archived: "所选 Project 已归档，请选择一个活跃 Project。",
+  workflow_run_project_unavailable: "项目服务当前不可用，请稍后重试。",
+  workflow_run_project_not_found: "请选择一个可用的项目。",
+  workflow_run_project_archived: "所选项目已归档，请选择一个活跃项目。",
   workflow_run_project_avatar_mismatch: "请选择所属分身与工作流团队主分身一致的项目。",
-  invalid_team_selector: "Run 筛选参数无效。",
-  runtime_unavailable: "所选 Runtime 当前不可用。",
-  no_eligible_runtime: "没有满足当前引擎要求的在线 Runtime。",
-  runtime_override_not_supported: "当前 Agent 引擎不支持指定 Runtime。",
+  invalid_team_selector: "运行记录的筛选条件无效。",
+  runtime_unavailable: "所选运行环境当前不可用。",
+  no_eligible_runtime: "没有满足当前任务要求的在线运行环境。",
+  runtime_override_not_supported: "当前智能体不支持指定运行环境。",
   project_usage_unavailable: "项目用量读取当前不可用。",
   project_memory_unavailable: "项目记忆服务当前不可用。",
   project_memory_list_failed: "项目记忆列表读取失败。",
@@ -122,21 +122,21 @@ const knownMessages: Record<string, string> = {
   query_required: "请输入搜索内容。",
   project_run_filter_unavailable: "服务端项目 Run 筛选当前不可用。",
   client_request_replay: "服务端已复用同一请求。", 
-  workflow_mcp_unsupported_transport: "MCP transport 不受支持。",
-  workflow_mcp_invalid_request: "MCP Server 字段不符合后端合同。",
-  workflow_mcp_server_not_found: "MCP Server 不存在或已删除。",
-  workflow_mcp_server_conflict: "MCP Server slug 已存在或当前状态冲突。",
-  workflow_mcp_server_closed: "MCP Server 已禁用、撤销或删除，不能执行该操作。",
-  workflow_mcp_credential_unavailable: "MCP registry 加密密钥不可用。请配置服务端密钥后重试。",
-  workflow_provider_revision_required: "Provider 配置不完整、ID 保留或字段不符合 revision 合同。",
+  workflow_mcp_unsupported_transport: "当前不支持这种连接方式。",
+  workflow_mcp_invalid_request: "连接配置不完整，请检查后重试。",
+  workflow_mcp_server_not_found: "外部工具服务不存在或已删除。",
+  workflow_mcp_server_conflict: "已有同名外部工具服务，或当前状态不允许修改。",
+  workflow_mcp_server_closed: "外部工具服务已停用，不能继续操作。",
+  workflow_mcp_credential_unavailable: "安全凭据服务不可用，请联系管理员。",
+  workflow_provider_revision_required: "模型供应商配置不完整，请检查后重试。",
   workflow_credential_unavailable: "凭据加密材料不可用或无法解密。",
-  workflow_frozen_manifest_mismatch: "冻结配置清单与当前 revision 不一致。",
-  workflow_delivery_invalid_request: "Delivery Target 请求字段不符合后端合同。",
-  workflow_delivery_target_not_found: "Delivery Target 不存在或已不可用。",
-  workflow_delivery_target_closed: "Delivery Target 已关闭，后端不允许继续修改。",
-  workflow_delivery_store_unavailable: "Delivery Target store 未配置。",
-  workflow_delivery_store_failed: "Delivery Target store 操作失败。",
-  team_roster_write_required: "Team 成员关系只能通过 Teams 的完整 Roster command 修改。",
+  workflow_frozen_manifest_mismatch: "配置已发生变化，请刷新后重试。",
+  workflow_delivery_invalid_request: "交付目标配置不完整，请检查后重试。",
+  workflow_delivery_target_not_found: "交付目标不存在或已不可用。",
+  workflow_delivery_target_closed: "交付目标已关闭，不能继续修改。",
+  workflow_delivery_store_unavailable: "交付服务尚未配置。",
+  workflow_delivery_store_failed: "交付服务操作失败，请稍后重试。",
+  team_roster_write_required: "请从团队成员页面修改成员关系。",
   provider_required: "当前工作区没有可用的模型供应商。请先在控制中心 → 模型供应商中镜像系统供应商，再创建新团队。",
   template_idempotency_conflict: "同一请求标识已经用于另一份模板，请关闭后重新发起创建。",
   template_build_failed: "模板构建未能完成，请查看构建步骤后重试。",
@@ -145,5 +145,26 @@ const knownMessages: Record<string, string> = {
 
 export function apiErrorMessage(error: unknown): string {
   const normalized = normalizeThrownError(error);
-  return (normalized.code && knownMessages[normalized.code]) || normalized.message;
+  if (normalized.code && knownMessages[normalized.code]) return knownMessages[normalized.code];
+  switch (normalized.kind) {
+    case "bad_request":
+    case "unprocessable":
+      return "请求内容有误，请检查后重试。";
+    case "unauthenticated":
+      return "登录状态已失效，请重新登录。";
+    case "forbidden":
+      return "当前账号没有执行此操作的权限。";
+    case "not_found":
+      return "目标内容不存在或已不可用。";
+    case "conflict":
+      return "内容已发生变化，请刷新后重试。";
+    case "server":
+      return "服务暂时不可用，请稍后重试。";
+    case "network":
+      return "暂时无法连接 Weave，请检查网络后重试。";
+    case "aborted":
+      return "操作已停止。";
+    default:
+      return "操作未完成，请稍后重试。";
+  }
 }

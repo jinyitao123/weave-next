@@ -213,8 +213,8 @@
 .execution-timeline-tool { min-width: 0; }
 .execution-timeline-tool > summary { min-height: 28px; display: grid; grid-template-columns: minmax(110px, auto) minmax(0, 1fr) auto auto; align-items: center; gap: var(--space-2); color: var(--label-tertiary); cursor: pointer; font-size: var(--text-caption); list-style: none; }
 .execution-timeline-tool > summary::-webkit-details-marker { display: none; }
-.execution-timeline-tool__name { overflow: hidden; color: var(--label-secondary); background: none; font-family: var(--font-mono); text-overflow: ellipsis; white-space: nowrap; }
-.execution-timeline-tool__args { overflow: hidden; color: var(--label-tertiary); font-family: var(--font-mono); text-overflow: ellipsis; white-space: nowrap; }
+.execution-timeline-tool__name { overflow: hidden; color: var(--label-secondary); background: none; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.execution-timeline-tool__args { overflow: hidden; color: var(--label-tertiary); text-overflow: ellipsis; white-space: nowrap; }
 .execution-timeline-tool > summary em { color: var(--danger); font-style: normal; white-space: nowrap; }
 .execution-timeline-tool--running > summary em { color: var(--accent-text); }
 .execution-timeline-tool > summary svg:last-child { transition: transform var(--motion-fast) ease; }
@@ -342,7 +342,7 @@
 .execution-tool-record { min-width: 0; }
 .execution-tool-record > summary { min-width: 0; min-height: 26px; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: var(--space-2); padding: var(--space-1) 0; color: var(--label-tertiary); font-size: var(--text-caption); cursor: pointer; list-style: none; }
 .execution-tool-record > summary::-webkit-details-marker { display: none; }
-.execution-tool-record > summary code { overflow: hidden; color: var(--label-secondary); background: none; text-overflow: ellipsis; white-space: nowrap; }
+.execution-tool-record > summary > span { overflow: hidden; color: var(--label-secondary); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .execution-tool-record > summary svg:last-child { transition: transform var(--motion-fast) ease; }
 .execution-tool-record[open] > summary svg:last-child { transform: rotate(180deg); }
 .execution-tool-record > div { display: grid; grid-template-columns: 1fr; gap: var(--space-2); padding: 0 0 var(--space-2) 20px; }

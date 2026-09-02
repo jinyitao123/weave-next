@@ -7,7 +7,7 @@ import { ExecutionProcess } from "./ExecutionProcess";
 import { MarkdownText } from "./MarkdownText";
 import { MessageContent } from "./MessageContent";
 import { RuntimeAssignmentNotice } from "./RuntimeAssignmentNotice";
-import { agentRoleLabel } from "../../workspace/labels";
+import { agentRoleLabel, displayName, isTechnicalIdentifier } from "../../workspace/labels";
 import { buildRunPhaseLabel } from "./buildRunPhase";
 import { blueprintFooterPresentation, buildOperationFailureDescription } from "./blueprintProposalFooter";
 import { extractedAnswerSegmentID, finalAnswerFromExecutionSegments, isBlueprintWaitingPlaceholder } from "./conversationMessageOutcome";
@@ -328,7 +328,7 @@ function BlueprintProposalCard({ metadata, buildRun, mode = "full", invalidation
         const capability = member.capabilities?.[0];
         return <li key={member.ref}>
           <div>
-            <span>{member.display_name || member.name}</span>
+            <span>{displayName(member.display_name || member.name, "一位团队成员")}</span>
             <small>{agentRoleLabel(member.role)}</small>
           </div>
           {responsibilities[0] && <p>{responsibilities[0]}</p>}
@@ -432,8 +432,9 @@ const OPERATION_LABELS: Record<string, string> = {
 
 function operationStepDisplay(step: BuildRunOperationStep): string {
   if (step.display_label) return step.display_label;
-  const base = OPERATION_LABELS[step.operation_type] || step.operation_type;
-  const target = (step.target_name || step.target || "").replace(/^candidate\//, "");
+  const base = OPERATION_LABELS[step.operation_type] || "处理团队配置";
+  const rawTarget = (step.target_name || step.target || "").replace(/^candidate\//, "");
+  const target = isTechnicalIdentifier(rawTarget) ? "" : rawTarget;
   if (step.operation_type === "candidate_run") return target ? `业务验收（试运行：${target}）` : "业务验收（试运行）";
   return target ? `${base}：${target}` : base;
 }

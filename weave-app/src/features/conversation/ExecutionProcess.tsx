@@ -14,7 +14,7 @@ import { useWorkspace } from "../../workspace/useWorkspace";
 import { executionStepLabel, memberFallbackLabel, UUID_PATTERN as uuidPattern } from "../../workspace/labels";
 import { PixelAvatar } from "../../ui/PixelAvatar";
 import { MarkdownText } from "./MarkdownText";
-import { toolAction, type ToolAction } from "./executionToolAction";
+import { toolAction, toolDisplayName, type ToolAction } from "./executionToolAction";
 import { toolFailureCounts } from "./executionToolFailures";
 import { terminalTurnStateTitle } from "./terminalOutcome";
 
@@ -296,7 +296,7 @@ function ParallelStage({ group, sequence, expanded, selectedKey, nameForAgent, o
 function ToolRecord({ tool }: { tool: ToolCallRecord }) {
   const status = executionStatus(tool.status);
   return <details className="execution-tool-record">
-    <summary><ToolStatusIcon status={status} /><code>{tool.name}</code><ChevronDown size={14} aria-hidden="true" /></summary>
+    <summary><ToolStatusIcon status={status} /><span>{toolDisplayName(tool.name)}</span><ChevronDown size={14} aria-hidden="true" /></summary>
     <div><IOBlock label="参数" value={tool.args || ""} /><IOBlock label="结果" value={tool.result || ""} streaming={status === "running"} /></div>
   </details>;
 }
@@ -522,8 +522,8 @@ function ToolGroup({ group, followingTools, resolveIdentifier }: { group: ToolSe
           const args = retryDiff || compactJSON(tool.args, resolveIdentifier);
           return <details className={`execution-timeline-tool execution-timeline-tool--${status}`} key={segment.id || `${tool.call_id || tool.name}:${index}`}>
             <summary>
-              <code className="execution-timeline-tool__name">{tool.name}</code>
-              {args && <span className="execution-timeline-tool__args">{args}</span>}
+              <span className="execution-timeline-tool__name">{toolDisplayName(tool.name)}</span>
+              {args && <span className="execution-timeline-tool__args">有执行详情</span>}
               {status === "failed" && <em>失败</em>}
               {status === "running" && <em>执行中</em>}
               <ChevronDown size={14} aria-hidden="true" />

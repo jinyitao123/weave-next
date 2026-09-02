@@ -586,7 +586,6 @@ export function ConversationPage({ projectId, conversationId = "", conversationI
     });
     if (blockedReason) {
       setLoadError(blockedReason);
-      writeSubmitDebug("blocked", { blockedReason });
       return;
     }
     const request = buildChatTurnRequest({
@@ -606,15 +605,8 @@ export function ConversationPage({ projectId, conversationId = "", conversationI
     });
     if (!request.message) {
       setLoadError("请输入消息内容后再发送。");
-      writeSubmitDebug("empty_message", { blockedReason: "empty_message" });
       return;
     }
-    writeSubmitDebug("submit", {
-      agent: request.agent,
-      conversationId: request.conversation_id || "",
-      messageLength: request.message.length,
-      projectId: request.project_id,
-    });
     const nextPending = createPendingTurn({
       request,
       currentPending,
@@ -750,7 +742,6 @@ export function ConversationPage({ projectId, conversationId = "", conversationI
   ];
 
   const composerTextareaRef = useRef<HTMLTextAreaElement>(null);
-  const sendButtonRef = useRef<HTMLButtonElement>(null);
   const lastSendGestureAtRef = useRef(0);
   const submitTurnRef = useRef(submitTurn);
   submitTurnRef.current = submitTurn;
@@ -785,10 +776,10 @@ export function ConversationPage({ projectId, conversationId = "", conversationI
     return () => window.removeEventListener("resize", resizeComposerTextarea);
   }, [resizeComposerTextarea]);
   function submitComposerGesture(event: ReactMouseEvent<HTMLButtonElement>) {
-    attemptSubmitFromGesture(`react:${event.type}`, event);
+    attemptSubmitFromGesture(event);
   }
 
-  function attemptSubmitFromGesture(source: string, event: { preventDefault(): void; type?: string }) {
+  function attemptSubmitFromGesture(event: { preventDefault(): void; type?: string }) {
     event.preventDefault();
     const now = Date.now();
     const draftLength = composerTextareaRef.current?.value.length || draftRef.current.length || draft.length;
@@ -798,56 +789,13 @@ export function ConversationPage({ projectId, conversationId = "", conversationI
           : conversationId && !exactTargetConversation ? "conversation_unresolved"
             : pendingRef.current?.state === "sending" ? "pending_sending"
               : "";
-    writeSubmitDebug(source, {
-      blockedReason,
-      draftLength,
-      ready: !blockedReason && (pendingRef.current?.state === "failed" || draftLength > 0),
-    });
     if (now - lastSendGestureAtRef.current < 750) {
-      writeSubmitDebug(`${source}:deduped`, { draftLength });
       return;
     }
     lastSendGestureAtRef.current = now;
-    writeSubmitDebug(`${source}:calling_submit`, { draftLength });
-    try {
-      const submission = submitTurnRef.current(event as unknown as FormEvent);
-      writeSubmitDebug(`${source}:submit_call_returned`, { draftLength });
-      void submission.catch((error) => {
-        const normalized = normalizeThrownError(error);
-        writeSubmitDebug(`${source}:submit_error`, {
-          code: normalized.code || "",
-          error: apiErrorMessage(normalized),
-          kind: normalized.kind,
-          rawMessage: error instanceof Error ? error.message : String(error),
-          rawName: error instanceof Error ? error.name : typeof error,
-          status: normalized.status,
-        });
-      });
-    } catch (error) {
-      const normalized = normalizeThrownError(error);
-      writeSubmitDebug(`${source}:submit_throw`, {
-        code: normalized.code || "",
-        error: apiErrorMessage(normalized),
-        kind: normalized.kind,
-        rawMessage: error instanceof Error ? error.message : String(error),
-        rawName: error instanceof Error ? error.name : typeof error,
-        status: normalized.status,
-      });
+    if (!blockedReason && (pendingRef.current?.state === "failed" || draftLength > 0)) {
+      void submitTurnRef.current(event as unknown as FormEvent);
     }
-  }
-
-  function writeSubmitDebug(source: string, extra: Record<string, unknown> = {}) {
-    const node = sendButtonRef.current;
-    if (!node) return;
-    node.dataset.submitDebug = JSON.stringify({
-      at: new Date().toISOString(),
-      source,
-      draftLength: composerTextareaRef.current?.value.length || draftRef.current.length || draft.length,
-      hasProject: !!selectedProject,
-      hasAvatar: !!selectedAvatar,
-      pendingState: pendingRef.current?.state || "",
-      ...extra,
-    });
   }
 
   const previousUserCreatedAtByMessageID = useMemo(() => {
@@ -965,7 +913,7 @@ export function ConversationPage({ projectId, conversationId = "", conversationI
             <ChipMenu ariaLabel="项目" current={selectedProjectName} emptyLabel="暂无可用项目" items={projectChipItems} selectedId={projectId} onSelect={(id) => navigate(`/project/${encodeURIComponent(id)}/conversations`)} />
             {isCLIEngine && <ChipMenu ariaLabel="运行时" current={runtimes.find((runtime) => runtime.id === selectedRuntimeId)?.name || "自动选择"} emptyLabel="暂无可用 Runtime" items={runtimeChipItems} selectedId={selectedRuntimeId} disabled={isReadOnlyConversation || pending?.state === "sending"} onSelect={setSelectedRuntimeId} />}
           </div>
-          {pending?.state === "sending" ? <Button variant="primary" size="small" aria-label="停止等待" title="停止等待" onClick={() => abortRef.current?.abort()}><Square size={14} /></Button> : <Button ref={sendButtonRef} variant="primary" size="small" type="button" aria-label="发送（Enter 发送，Shift+Enter 换行）" title="发送（Enter 发送，Shift+Enter 换行）" disabled={uploadingAttachments || isReadOnlyConversation || !selectedProject || !selectedAvatar || !!(conversationId && !exactTargetConversation) || (!(pending?.state === "failed") && !draft.trim())} data-submit-ready={(!uploadingAttachments && !isReadOnlyConversation && !!selectedProject && !!selectedAvatar && !(conversationId && !exactTargetConversation) && (pending?.state === "failed" || !!draft.trim())) ? "true" : "false"} data-draft-length={draft.length} onClick={submitComposerGesture}><Send size={16} /></Button>}
+          {pending?.state === "sending" ? <Button variant="primary" size="small" aria-label="停止等待" title="停止等待" onClick={() => abortRef.current?.abort()}><Square size={14} /></Button> : <Button variant="primary" size="small" type="button" aria-label="发送（Enter 发送，Shift+Enter 换行）" title="发送（Enter 发送，Shift+Enter 换行）" disabled={uploadingAttachments || isReadOnlyConversation || !selectedProject || !selectedAvatar || !!(conversationId && !exactTargetConversation) || (!(pending?.state === "failed") && !draft.trim())} onClick={submitComposerGesture}><Send size={16} /></Button>}
         </div>}>
           <label className="composer-message"><textarea ref={composerTextareaRef} aria-label="消息" placeholder={isReadOnlyConversation ? "此会话为只读" : isSelectedThread ? "回复此讨论" : selectedProject ? "描述任务，回车发送" : "先从左侧选择一个团队或项目"} value={draft} disabled={composerDisabled} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void submitTurn(); } }} /></label>
           <AttachmentChips attachments={selectedAttachmentFacts} onRemove={(id) => setSelectedAttachments((current) => current.filter((attachmentID) => attachmentID !== id))} />
