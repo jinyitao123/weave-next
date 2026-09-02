@@ -7,12 +7,11 @@ import { Field } from "../ui/Field";
 import { ErrorNotice } from "../ui/StatusViews";
 
 export function LoginPage() {
-  const { devLogin, login } = useAuth();
+  const { login } = useAuth();
   const [tenant, setTenant] = useState("default");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [devSubmitting, setDevSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -25,18 +24,6 @@ export function LoginPage() {
       setError(apiErrorMessage(requestError));
     } finally {
       setSubmitting(false);
-    }
-  }
-
-  async function submitDevLogin() {
-    setDevSubmitting(true);
-    setError(null);
-    try {
-      await devLogin(tenant);
-    } catch (requestError) {
-      setError(apiErrorMessage(requestError));
-    } finally {
-      setDevSubmitting(false);
     }
   }
 
@@ -56,11 +43,6 @@ export function LoginPage() {
             {submitting ? "正在验证…" : <>登录 <ArrowRight size={16} /></>}
           </Button>
         </form>
-        <div className="login-dev-entry">
-          <Button type="button" variant="ghost" loading={devSubmitting} disabled={!tenant || submitting} onClick={() => void submitDevLogin()}>
-            {devSubmitting ? "正在进入…" : "开发模式进入"}
-          </Button>
-        </div>
       </section>
       <aside className="login-context" aria-label="产品说明">
         <span>多运行时</span>
