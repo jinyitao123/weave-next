@@ -41,9 +41,9 @@ function statusKey(status: WorkTaskStatus): typeof STATUS_KEYS[WorkTaskStatus] {
 }
 
 function runtimeDisplayStatus(runtime: WorkTaskRuntime, runtimes: readonly WorkTaskRuntime[], members: ReturnType<typeof workTaskModel>['members']): WorkTaskStatus {
-  const activeMember = members.find(member => member.status === 'running')
-  if (activeMember === undefined) return runtime.status
-  if (runtimes.length === 1 || activeMember.runtime === runtime.name || activeMember.runtime.startsWith(`${runtime.name} · `)) {
+  const activeMembers = members.filter(member => member.status === 'running')
+  if (activeMembers.length === 0) return runtime.status
+  if (runtimes.length === 1 || activeMembers.some(member => member.runtime === runtime.name || member.runtime.startsWith(`${runtime.name} · `))) {
     return 'running'
   }
   return runtime.status
