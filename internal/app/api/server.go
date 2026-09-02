@@ -841,6 +841,9 @@ func (s *Server) ConfigureTeamRunWorkers() {
 	}
 	s.teamRunWorkers = &teamrun.Workers{
 		Executor: executor,
+		// Four durable claims are enough to make ordinary multi-runtime fanout
+		// genuinely concurrent without introducing an unbounded worker pool.
+		ExecutorConcurrency: 4,
 		CancelGrace: &teamrun.CancelGraceSweeper{
 			Transactions: pool,
 			Runs:         runStore,

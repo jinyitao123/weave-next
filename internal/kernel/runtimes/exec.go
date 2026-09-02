@@ -24,7 +24,7 @@ import (
 // Keep the engine task ceiling aligned with the teamrun agent-node ceiling.
 // The caller may still cancel earlier, while a healthy CLI task gets the full
 // bounded window promised by teamrun.
-const engineExecTimeout = 20 * time.Minute
+const engineExecTimeout = 45 * time.Minute
 
 // Executor relays one external CLI engine execution through a bound runtime.
 type Executor struct {

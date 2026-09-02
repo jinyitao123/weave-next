@@ -220,6 +220,10 @@ type Workers struct {
 	TimerWake    *TimerWakeSweeper
 	HumanTimeout *HumanTimeoutSweeper
 	PollInterval time.Duration
+	// ExecutorConcurrency bounds independent workflow/fanout claims. A single
+	// executor loop makes a Parallel node observationally serial even when its
+	// branches target different runtimes.
+	ExecutorConcurrency int
 
 	mu     sync.Mutex
 	cancel context.CancelFunc
@@ -240,15 +244,21 @@ func (workers *Workers) Start() {
 	workers.cancel = cancel
 	workers.mu.Unlock()
 
-	workerCount := 3
+	executorConcurrency := workers.ExecutorConcurrency
+	if executorConcurrency <= 0 {
+		executorConcurrency = 1
+	}
+	workerCount := executorConcurrency + 2
 	if workers.HumanTimeout != nil {
 		workerCount++
 	}
 	workers.wg.Add(workerCount)
-	go func() {
-		defer workers.wg.Done()
-		workers.executorLoop(ctx)
-	}()
+	for index := 0; index < executorConcurrency; index++ {
+		go func(index int) {
+			defer workers.wg.Done()
+			workers.executorLoop(ctx, index)
+		}(index)
+	}
 	go func() {
 		defer workers.wg.Done()
 		workers.cancelGraceLoop(ctx)
@@ -281,8 +291,8 @@ func (workers *Workers) Stop() {
 	}
 }
 
-func (workers *Workers) executorLoop(ctx context.Context) {
-	workerID := "teamrun:" + strconv.FormatInt(time.Now().UnixNano(), 36)
+func (workers *Workers) executorLoop(ctx context.Context, index int) {
+	workerID := "teamrun:" + strconv.FormatInt(time.Now().UnixNano(), 36) + ":" + strconv.Itoa(index)
 	for {
 		processed, err := workers.Executor.ProcessNext(ctx, workerID)
 		if err != nil && ctx.Err() == nil {

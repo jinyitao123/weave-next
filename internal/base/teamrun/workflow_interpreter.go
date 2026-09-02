@@ -27,10 +27,14 @@ import (
 
 // Agent nodes use one execution budget in both candidate validation and
 // published workflows. A candidate must exercise the same timeout contract
-// that production will enforce after publication. Twenty minutes keeps the
-// execution bounded while allowing a Mac CLI worker to finish a realistic
-// requirements pass that can legitimately exceed the former ten-minute cap.
-var agentNodeExecutionTimeout = 20 * time.Minute
+// that production will enforce after publication. Forty-five minutes keeps
+// execution bounded while allowing a CLI worker to finish a realistic complex
+// professional pass that can legitimately exceed the former short ceilings.
+// Complex professional nodes may legitimately spend more than twenty minutes
+// reading evidence, building an application, and running bounded checks. Keep
+// the execution finite, but do not turn useful progress into a false failure at
+// the former short ceiling.
+var agentNodeExecutionTimeout = 45 * time.Minute
 
 type serialMachineStatus string
 

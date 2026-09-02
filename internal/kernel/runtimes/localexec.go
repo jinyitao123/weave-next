@@ -16,7 +16,7 @@ import (
 
 // Keep local CLI execution aligned with remote engine tasks and TeamRun agent
 // nodes so deployment topology does not change the effective timeout contract.
-const localEngineExecTimeout = 20 * time.Minute
+const localEngineExecTimeout = 45 * time.Minute
 
 // LocalExecutor executes an external CLI engine in the server's local runtime.
 type LocalExecutor struct {
