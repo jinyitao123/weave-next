@@ -9,6 +9,7 @@ import { Button } from "../ui/Button";
 import { Field } from "../ui/Field";
 import { ErrorNotice, LoadingView } from "../ui/StatusViews";
 import { useOutletContext } from "react-router-dom";
+import { displayName } from "../workspace/labels";
 
 function initialSchemaValue(schema: RuntimeSchema): unknown {
   if (Object.prototype.hasOwnProperty.call(schema, "const")) return schema.const;
@@ -33,7 +34,16 @@ function initialSchemaValue(schema: RuntimeSchema): unknown {
 function enumLabel(value: unknown): string {
   if (value === "approve") return "通过";
   if (value === "reject") return "驳回";
-  return typeof value === "string" ? value : JSON.stringify(value);
+  if (typeof value === "string" && value.trim()) return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  return "未命名选项";
+}
+
+function constValueLabel(value: unknown): string {
+  if (value === null) return "空";
+  if (typeof value === "string") return value || "空文本";
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  return "固定内容";
 }
 
 function JSONEditor({ label, value, onChange }: { label: string; value: unknown; onChange(value: unknown): void }) {
@@ -47,7 +57,7 @@ function JSONEditor({ label, value, onChange }: { label: string; value: unknown;
         onChange(JSON.parse(next));
         setError(null);
       } catch {
-        setError("请输入有效 JSON");
+        setError("内容不是有效的 JSON，请检查格式。");
       }
     }} />}
   </Field>;
@@ -62,7 +72,7 @@ function SchemaField({ name, schema, value, required, onChange }: {
 }) {
   const label = `${name}${required ? " *" : ""}`;
   if (Object.prototype.hasOwnProperty.call(schema, "const")) {
-    return <div className="human-schema-const"><span>{label}</span><code>{JSON.stringify(schema.const)}</code></div>;
+    return <div className="human-schema-const"><span>{label}</span><code>{constValueLabel(schema.const)}</code></div>;
   }
   if (schema.enum?.length) {
     return <Field label={label}>{(control) => <select {...control} value={JSON.stringify(value)} onChange={(event) => onChange(JSON.parse(event.target.value))}>
@@ -95,7 +105,7 @@ function SchemaField({ name, schema, value, required, onChange }: {
     return <Field label={label}>{(control) => <input {...control} type="number" step={schema.type === "integer" ? 1 : "any"} value={typeof value === "number" ? value : 0} onChange={(event) => onChange(Number(event.target.value))} />}</Field>;
   }
   if (schema.type === "null") {
-    return <div className="human-schema-const"><span>{label}</span><code>null</code></div>;
+    return <div className="human-schema-const"><span>{label}</span><code>空</code></div>;
   }
   return <Field label={label}>{(control) => name.toLowerCase().includes("comment") || name.includes("批注")
     ? <textarea {...control} rows={4} value={typeof value === "string" ? value : ""} onChange={(event) => onChange(event.target.value)} />
@@ -134,8 +144,8 @@ function ResumeForm({ task, busy, onComplete }: { task: HumanTask; busy: boolean
 function OutputPreview({ outputs }: { outputs: Record<string, unknown> }) {
   const entries = Object.entries(outputs);
   if (!entries.length) return <p className="human-output-empty">当前节点没有可预览的上游交付物。</p>;
-  return <div className="human-output-list">{entries.map(([nodeID, output]) => <article key={nodeID}>
-    <strong>{nodeID}</strong>
+  return <div className="human-output-list">{entries.map(([nodeID, output], index) => <article key={nodeID}>
+    <strong>{displayName(nodeID, `第 ${index + 1} 项交付物`)}</strong>
     <pre>{typeof output === "string" ? output : JSON.stringify(output, null, 2)}</pre>
   </article>)}</div>;
 }
@@ -210,7 +220,7 @@ export function HumanTasksPage() {
     </div> : <div className="human-tasks-layout">
       <nav className="human-task-list" aria-label="人工待办列表">
         {tasks.map((task) => <button key={task.run_id} type="button" aria-current={selected?.run_id === task.run_id ? "page" : undefined} onClick={() => { setSelectedRunID(task.run_id); setCompletedMessage(""); }}>
-          <span><strong>{task.title}</strong><small>{task.workflow_id} · v{task.workflow_version}</small></span>
+          <span><strong>{task.title}</strong><small>{(task.instructions || "等待人工决定").replace(/\s+/g, " ").slice(0, 40)}</small></span>
           <time dateTime={task.updated_at}>{new Intl.DateTimeFormat("zh-CN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(task.updated_at))}</time>
         </button>)}
         {nextCursor && <Button size="small" loading={loadingMore} onClick={() => void load(nextCursor)}>加载更多</Button>}

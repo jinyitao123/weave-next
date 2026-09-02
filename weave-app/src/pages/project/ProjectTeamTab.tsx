@@ -10,6 +10,7 @@ import { Field } from "../../ui/Field";
 import { ErrorNotice, LoadingView } from "../../ui/StatusViews";
 import { useWorkspace } from "../../workspace/useWorkspace";
 import { isPlatformAsset } from "../../workspace/identity";
+import { displayName, engineLabel } from "../../workspace/labels";
 
 interface ProjectTeamTabProps {
   projectId: string;
@@ -117,15 +118,15 @@ export function ProjectTeamTab({ projectId, teamId }: ProjectTeamTabProps) {
           <div className="project-team-grid">
             <div className="project-team-fact">
               <h3>负责人</h3>
-              <p>{roster.lead ? `${roster.lead.display_name || roster.lead.name} · ${roster.lead.engine || "未配置引擎"}` : "未配置负责人"}</p>
+              <p>{roster.lead ? `${displayName(roster.lead.display_name || roster.lead.name, "负责人")} · ${engineLabel(roster.lead.engine)}` : "未配置负责人"}</p>
             </div>
             <div className="project-team-fact">
               <h3>员工</h3>
-              <p>{roster.workers.length > 0 ? roster.workers.map((worker) => worker.name).join("、") : "未配置员工"}</p>
+              <p>{roster.workers.length > 0 ? roster.workers.map((worker) => displayName(worker.display_name || worker.name, "一位员工")).join("、") : "未配置员工"}</p>
             </div>
             <div className="project-team-fact">
               <h3>派发规则</h3>
-              <p>{dispatchRules ? `并行 ${dispatchRules.execution} · leg ${dispatchRules.leg_timeout_sec}s · 组截止 ${dispatchRules.group_deadline_sec}s · quorum ${dispatchRules.quorum}` : "未配置"}</p>
+              <p>{dispatchRules ? `最多并行 ${dispatchRules.execution} 个分支 · 单分支限时 ${dispatchRules.leg_timeout_sec} 秒 · 整体截止 ${dispatchRules.group_deadline_sec} 秒 · 至少 ${dispatchRules.quorum} 个分支完成` : "未配置"}</p>
             </div>
             <div className="project-team-fact">
               <h3>协作流程</h3>
@@ -159,7 +160,7 @@ export function ProjectTeamTab({ projectId, teamId }: ProjectTeamTabProps) {
               const addedBy = userById.get(collaborator.added_by);
               return (
                 <div className="project-collaborator-row" key={collaborator.team_id}>
-                  <strong>{team?.name || collaborator.team_id}</strong>
+                  <strong>{team?.name || "已删除团队"}</strong>
                   <Badge tone={collaborator.removed_at ? "neutral" : "success"}>{collaborator.removed_at ? "已移除" : "协作中"}</Badge>
                   <span>{addedBy ? (addedBy.display_name || addedBy.username) : "未知成员"}</span>
                   <time dateTime={collaborator.added_at}>{when.format(new Date(collaborator.added_at))}</time>

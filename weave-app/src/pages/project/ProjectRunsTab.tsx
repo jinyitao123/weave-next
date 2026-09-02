@@ -27,7 +27,7 @@ function statusLabel(status: string): string {
     completed: "已完成", success: "成功", failed: "失败", running: "运行中", active: "执行中",
     queued: "排队中", cancelled: "已取消", timed_out: "超时", superseded: "已取代",
   };
-  return labels[status] || status;
+  return labels[status] || "状态未知";
 }
 
 function formatTime(value?: string): string {

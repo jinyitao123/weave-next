@@ -13,6 +13,7 @@ import { Modal } from "../ui/Modal";
 import { ErrorNotice, LoadingView } from "../ui/StatusViews";
 import { useWorkspace } from "../workspace/useWorkspace";
 import {
+  displayName,
   scheduleKindLabel,
   syncConflictLabel,
   syncFrequencyLabel,
@@ -161,7 +162,7 @@ export function ScheduledPage() {
               {agents.map((item) => (
                 <Card className="scheduled-item scheduled-item--agent" padding="compact" key={item.id}>
                   <div className="scheduled-identity">
-                    <strong>{workspace.agents.find((agent) => agent.name === item.agent)?.display_name || item.agent}</strong>
+                    <strong>{displayName(workspace.agents.find((agent) => agent.name === item.agent)?.display_name || item.agent, "一位分身")}</strong>
                     <small>{item.message || "空消息"}</small>
                   </div>
                   <div className="scheduled-fact"><Badge tone="accent">{scheduleKindLabel(item.kind)}</Badge><span>{item.kind === "daily" ? `每天 ${item.time_of_day} · ${item.timezone}` : `${item.run_at ? when.format(new Date(item.run_at)) : "未设置执行时间"} · ${item.timezone}`}</span></div>

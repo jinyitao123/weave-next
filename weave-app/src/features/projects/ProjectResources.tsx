@@ -147,7 +147,7 @@ export function ProjectResources({ project }: { project: Project }) {
         const workspaceActionsVisible = resource.kind === "local_workspace" && platform.capabilities.folderOpener && platform.capabilities.diffViewer;
         return <article key={resource.id}>
           <span className="resource-icon">{resource.kind === "attachment" ? <Paperclip size={16} /> : resource.kind === "mcp_server" ? <Cable size={16} /> : <HardDrive size={16} />}</span>
-          <div className="resource-details"><strong>{resource.display_name}</strong><small>{resource.kind === "attachment" ? "附件" : resource.kind === "mcp_server" ? "MCP Server" : `本地工作目录 · Runtime ${resource.runtime_id}`}</small></div>
+          <div className="resource-details"><strong>{resource.display_name}</strong><small>{resource.kind === "attachment" ? "附件" : resource.kind === "mcp_server" ? "MCP Server" : `本地工作目录 · ${availableRuntimes.find((runtime) => runtime.id === resource.runtime_id)?.name || "已卸载的运行环境"}`}</small></div>
           {workspaceActionsVisible && <div className="workspace-actions">
             <Button variant="ghost" loading={openingFolder} aria-label={`打开目录 ${resource.display_name}`} onClick={() => void runWorkspaceAction(resource, "folder")}>{!openingFolder && <FolderOpen size={14} />} 打开目录</Button>
             <Button variant="ghost" loading={openingDiff} aria-label={`查看差异 ${resource.display_name}`} onClick={() => void runWorkspaceAction(resource, "diff")}>{!openingDiff && <GitCompare size={14} />} 查看差异</Button>

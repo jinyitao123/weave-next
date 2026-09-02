@@ -139,11 +139,84 @@ export function executionStepLabel(step?: string): { label: string; mapped: bool
 export const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
+ * 技术标识符判定：UUID、内部平台资产名（__ 前缀）、服务端拼接 ID
+ * （frt1_/flt1_/task- 前缀、default: 组合键）。命中即不得直接渲染。
+ */
+export function isTechnicalIdentifier(value?: string): boolean {
+  if (!value) return false;
+  return UUID_PATTERN.test(value)
+    || value.startsWith("__")
+    || /^(?:frt1_|flt1_|task-|default:|[0-9a-f]{8}-[0-9a-f-]{27,})/i.test(value);
+}
+
+/**
+ * 名称展示闸门：名称缺失或本质是技术标识符时，回退为通用中文称呼，
+ * 绝不把原始 ID/内部名回显到界面。
+ */
+export function displayName(name: string | undefined | null, fallback: string): string {
+  const trimmed = (name || "").trim();
+  return trimmed && !isTechnicalIdentifier(trimmed) ? trimmed : fallback;
+}
+
+/** 用户角色 → 中文。 */
+export function userRoleLabel(role?: string): string {
+  switch (role) {
+    case "owner":
+      return "所有者";
+    case "admin":
+      return "管理员";
+    default:
+      return "成员";
+  }
+}
+
+/** 运行停止原因 → 中文；未映射时回退通用文案，不回显原始枚举。 */
+export function stopReasonLabel(reason?: string): string {
+  switch ((reason || "").trim()) {
+    case "":
+      return "未记录";
+    case "end_turn":
+    case "stop":
+      return "自然结束";
+    case "max_tokens":
+    case "length":
+      return "达到长度上限";
+    case "cancelled":
+      return "已取消";
+    case "timed_out":
+    case "timeout":
+      return "超时";
+    case "error":
+    case "failed":
+      return "异常结束";
+    default:
+      return "已结束";
+  }
+}
+
+/** 相对时间：1 分钟内「刚刚」，之后逐级到具体日期。无效输入回退空串。 */
+export function relativeTimeLabel(value?: string, now = Date.now()): string {
+  if (!value) return "";
+  const time = Date.parse(value);
+  if (!Number.isFinite(time)) return "";
+  const seconds = Math.max(0, Math.floor((now - time) / 1000));
+  if (seconds < 60) return "刚刚";
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes} 分钟前`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} 小时前`;
+  const days = Math.floor(hours / 24);
+  if (days === 1) return "昨天";
+  if (days < 7) return `${days} 天前`;
+  return new Intl.DateTimeFormat("zh-CN", { month: "short", day: "numeric" }).format(new Date(time));
+}
+
+/**
  * 执行过程里成员标识的兜底显示名。仅在拿不到真实名称时使用：
  * UUID、内部平台资产名（__ 前缀）一律不展示碎片，回退为通用称呼。
  */
 export function memberFallbackLabel(identifier: string): string {
-  if (!identifier || UUID_PATTERN.test(identifier) || identifier.startsWith("__")) {
+  if (!identifier || isTechnicalIdentifier(identifier)) {
     return "一位成员";
   }
   return identifier;

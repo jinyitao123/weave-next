@@ -11,6 +11,7 @@ import { Field } from "../ui/Field";
 import { Modal } from "../ui/Modal";
 import { useWorkspace } from "../workspace/useWorkspace";
 import { isPlatformAsset, isUnclassifiedProject, META_TEAM_NAME, TEAM_ARCHITECT_AGENT_NAME } from "../workspace/identity";
+import { userRoleLabel } from "../workspace/labels";
 import { useSidebarState } from "./useSidebarState";
 
 const drawerFocusableSelector = "a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), summary, [tabindex]:not([tabindex='-1'])";
@@ -442,7 +443,7 @@ export function AppShell() {
       <div className="sidebar__footer">
         <div className="shell-account-row">
         <details className="account-menu" ref={accountMenuRef} open={accountMenuOpen} onToggle={(event) => setAccountMenuOpen(event.currentTarget.open)}>
-          <summary><span className="user-avatar">{(user?.display_name || user?.username || "W").slice(0, 1).toUpperCase()}</span><span><strong>{user?.display_name || user?.username || "当前用户"}</strong><small>{user?.tenant_id}</small></span></summary>
+          <summary><span className="user-avatar">{(user?.display_name || user?.username || "W").slice(0, 1).toUpperCase()}</span><span><strong>{user?.display_name || user?.username || "当前用户"}</strong><small>{userRoleLabel(user?.role)}</small></span></summary>
           <div className="account-menu__popover">
             <div className="account-menu__header">
               <Link to="/control/account" state={{ returnTo: `${location.pathname}${location.search}${location.hash}` }} onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); setNavOpen(false); }}><span className="user-avatar">{(user?.display_name || user?.username || "W").slice(0, 1).toUpperCase()}</span><span><strong>{user?.display_name || user?.username || "当前用户"}</strong></span></Link>

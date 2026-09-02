@@ -11,7 +11,8 @@ import { Card } from "../ui/Card";
 import { Field } from "../ui/Field";
 import { ErrorNotice, LoadingView } from "../ui/StatusViews";
 import { useWorkspace } from "../workspace/useWorkspace";
-import { executionStepLabel } from "../workspace/labels";
+import { executionStepLabel, isTechnicalIdentifier, stopReasonLabel, usageLabel } from "../workspace/labels";
+import { toolDisplayName } from "../features/conversation/executionToolAction";
 
 type EvidenceKind = "group" | "job" | "run";
 type RunEvidenceErrors = Partial<Record<"trace" | "state" | "checkpoints", string>>;
@@ -74,12 +75,8 @@ function evidenceError(result: PromiseRejectedResult) {
   return apiErrorMessage(result.reason);
 }
 
-function isTechnicalIdentity(value?: string) {
-  return !!value && /^(?:frt1_|flt1_|task-|default:team_workflow:|[0-9a-f]{8}-[0-9a-f-]{27,})/i.test(value);
-}
-
 function groupTitle(originalRequest?: string) {
-  return originalRequest && !isTechnicalIdentity(originalRequest) ? originalRequest : "未命名任务组";
+  return originalRequest && !isTechnicalIdentifier(originalRequest) ? originalRequest : "未命名任务组";
 }
 
 function attributionText(attribution?: string) {
@@ -89,13 +86,13 @@ function attributionText(attribution?: string) {
 }
 
 function jobTitle(job: Job) {
-  if (job.agent && !isTechnicalIdentity(job.agent)) return job.agent;
+  if (job.agent && !isTechnicalIdentifier(job.agent)) return job.agent;
   if (job.kind) return jobKindLabels[job.kind] || "任务";
   return "任务";
 }
 
 function runTitle(run: RunSummary) {
-  if (run.agent && !isTechnicalIdentity(run.agent)) return run.agent;
+  if (run.agent && !isTechnicalIdentifier(run.agent)) return run.agent;
   if (run.step) { const step = executionStepLabel(run.step); return step.mapped ? step.label : "一次运行"; }
   return "一次运行";
 }
@@ -264,7 +261,7 @@ function EvidenceRow({ active, title, status, meta, onClick }: { active: boolean
   return <div className={active ? "evidence-row evidence-row--active" : "evidence-row"}><Button variant="ghost" size="small" onClick={onClick}><span className="evidence-row__copy"><strong>{title}</strong><span className="evidence-row__meta"><Badge tone={statusTone(status)}>{statusText(status)}</Badge><small>{meta}</small></span></span><ChevronRight size={16} /></Button></div>;
 }
 function TaskGroupEvidence({ detail, projectId, onSelect }: { detail: TaskGroupDetail; projectId?: string; onSelect(kind: EvidenceKind, id: string): void }) {
-  return <div className="evidence-detail"><Badge tone={statusTone(detail.status)}>{statusText(detail.status)}</Badge><h2>{groupTitle(detail.original_request)}</h2><p>需 {detail.quorum} 个分支完成 · {formatTime(detail.updated_at)}</p>{detail.conversation_id && projectId ? <Link className="text-link" to={`/project/${encodeURIComponent(projectId)}/conversations/${encodeURIComponent(detail.conversation_id)}`}>进入对应会话</Link> : detail.conversation_id ? <p className="readonly-note">暂时无法定位该会话所属的项目。</p> : null}<TechnicalInfo rows={[['任务组 ID', detail.id], ['Avatar Agent', detail.avatar_agent], ['原始请求', isTechnicalIdentity(detail.original_request) ? detail.original_request : ''], ['会话 ID', detail.conversation_id]]} /><h3>执行分支</h3><div className="activity-leg-list">{detail.legs.map((leg, index) => <article key={`${leg.job_id}:${index}`}><div><strong>{isTechnicalIdentity(leg.agent) ? `执行分支 ${index + 1}` : leg.agent}</strong><Badge tone={statusTone(leg.status)}>{statusText(leg.status)}</Badge></div>{leg.error && <p className="danger-text">{leg.error}</p>}{leg.result_summary && <p>{leg.result_summary}</p>}<TechnicalInfo rows={[['Agent', leg.agent], ['任务 ID', leg.job_id], ['运行 ID', leg.run_id]]} /><footer>{leg.job_id && <Button variant="ghost" size="small" onClick={() => onSelect("job", leg.job_id)}>查看任务</Button>}{leg.run_id && <Button variant="ghost" size="small" onClick={() => onSelect("run", leg.run_id)}>查看运行</Button>}</footer></article>)}</div></div>;
+  return <div className="evidence-detail"><Badge tone={statusTone(detail.status)}>{statusText(detail.status)}</Badge><h2>{groupTitle(detail.original_request)}</h2><p>需 {detail.quorum} 个分支完成 · {formatTime(detail.updated_at)}</p>{detail.conversation_id && projectId ? <Link className="text-link" to={`/project/${encodeURIComponent(projectId)}/conversations/${encodeURIComponent(detail.conversation_id)}`}>进入对应会话</Link> : detail.conversation_id ? <p className="readonly-note">暂时无法定位该会话所属的项目。</p> : null}<TechnicalInfo rows={[['任务组 ID', detail.id], ['Avatar Agent', detail.avatar_agent], ['原始请求', isTechnicalIdentifier(detail.original_request) ? detail.original_request : ''], ['会话 ID', detail.conversation_id]]} /><h3>执行分支</h3><div className="activity-leg-list">{detail.legs.map((leg, index) => <article key={`${leg.job_id}:${index}`}><div><strong>{isTechnicalIdentifier(leg.agent) ? `执行分支 ${index + 1}` : leg.agent}</strong><Badge tone={statusTone(leg.status)}>{statusText(leg.status)}</Badge></div>{leg.error && <p className="danger-text">{leg.error}</p>}{leg.result_summary && <p>{leg.result_summary}</p>}<TechnicalInfo rows={[['Agent', leg.agent], ['任务 ID', leg.job_id], ['运行 ID', leg.run_id]]} /><footer>{leg.job_id && <Button variant="ghost" size="small" onClick={() => onSelect("job", leg.job_id)}>查看任务</Button>}{leg.run_id && <Button variant="ghost" size="small" onClick={() => onSelect("run", leg.run_id)}>查看运行</Button>}</footer></article>)}</div></div>;
 }
 function JobEvidence({ job, projectName, onSelect, onCancel, cancelling }: { job: Job; projectName?: string; onSelect(kind: EvidenceKind, id: string): void; onCancel(): void; cancelling: boolean }) {
   const runId = job.run_id;
@@ -316,20 +313,20 @@ function applyStreamEvent<Attempt extends StreamAttempt<unknown>>(event: ResumeS
     setAttempt((current) => current ? { ...current, output: current.output + event.data.content, activity: "正在接收输出" } : current);
   }
   if (event.type === "tool_call") {
-    const name = typeof event.data.name === "string" ? event.data.name : "工具调用";
+    const name = typeof event.data.name === "string" ? event.data.name : "";
     const callId = typeof event.data.call_id === "string" ? event.data.call_id : undefined;
-    setAttempt((current) => current ? { ...current, activity: `正在调用 ${name}`, tools: [...current.tools, { call_id: callId, name, status: "running" }] } : current);
+    setAttempt((current) => current ? { ...current, activity: `正在调用${toolDisplayName(name)}`, tools: [...current.tools, { call_id: callId, name, status: "running" }] } : current);
   }
   if (event.type === "tool_result") {
-    const name = typeof event.data.name === "string" ? event.data.name : "工具调用";
+    const name = typeof event.data.name === "string" ? event.data.name : "";
     const status = String(event.data.status || "success");
     const content = String(event.data.content || "");
-    setAttempt((current) => current ? { ...current, activity: `${name} · ${status === "success" ? "成功" : status === "failed" ? "失败" : status}`, tools: updateToolResult(current.tools, name, status, content) } : current);
+    setAttempt((current) => current ? { ...current, activity: `${toolDisplayName(name)} · ${status === "success" ? "成功" : "失败"}`, tools: updateToolResult(current.tools, name, status, content) } : current);
   }
 }
 
 function StreamAttemptView({ attempt }: { attempt: StreamAttempt<unknown> }) {
-  return <div className="run-resume__stream" aria-live="polite"><div className="run-resume__status"><CircleDot size={14} /><strong>{attempt.activity}</strong></div>{attempt.error && <p className="run-resume__error" role="alert">{attempt.error}</p>}{attempt.steps.length > 0 && <div className="run-resume__steps" aria-label="执行步骤">{attempt.steps.map((step, index) => <span key={`${step}:${index}`}>{step}</span>)}</div>}{attempt.tools.length > 0 && <div className="run-resume__tools" aria-label="工具活动">{attempt.tools.map((tool, index) => <span key={`${tool.call_id || tool.name}:${index}`}><b>{tool.name}</b><Badge tone={tool.status === "success" ? "success" : tool.status === "running" ? "accent" : "danger"}>{tool.status === "success" ? "成功" : tool.status === "running" ? "执行中" : "失败"}</Badge></span>)}</div>}{attempt.output && <pre className="run-resume__output">{attempt.output}</pre>}{attempt.terminal && <section className="run-resume__terminal"><header><strong>{attempt.terminal.type === "done" ? "运行已结束" : "等待输入"}</strong></header><details><summary>技术细节</summary><pre>{JSON.stringify(attempt.terminal.data, null, 2)}</pre></details></section>}</div>;
+  return <div className="run-resume__stream" aria-live="polite"><div className="run-resume__status"><CircleDot size={14} /><strong>{attempt.activity}</strong></div>{attempt.error && <p className="run-resume__error" role="alert">{attempt.error}</p>}{attempt.steps.length > 0 && <div className="run-resume__steps" aria-label="执行步骤">{attempt.steps.map((step, index) => <span key={`${step}:${index}`}>{step}</span>)}</div>}{attempt.tools.length > 0 && <div className="run-resume__tools" aria-label="工具活动">{attempt.tools.map((tool, index) => <span key={`${tool.call_id || tool.name}:${index}`}><b>{toolDisplayName(tool.name)}</b><Badge tone={tool.status === "success" ? "success" : tool.status === "running" ? "accent" : "danger"}>{tool.status === "success" ? "成功" : tool.status === "running" ? "执行中" : "失败"}</Badge></span>)}</div>}{attempt.output && <pre className="run-resume__output">{attempt.output}</pre>}{attempt.terminal && <section className="run-resume__terminal"><header><strong>{attempt.terminal.type === "done" ? "运行已结束" : "等待输入"}</strong></header><details><summary>技术细节</summary><pre>{JSON.stringify(attempt.terminal.data, null, 2)}</pre></details></section>}</div>;
 }
 
 function RunEvidence({ runId, summary, projectName, detail, trace, state, checkpoints, evidenceErrors, onRefresh }: { runId: string; summary?: RunSummary; projectName?: string; detail: unknown; trace: unknown[] | null; state: RunState | null; checkpoints: RunCheckpoint[] | null; evidenceErrors: RunEvidenceErrors; onRefresh(runId: string, agent: string): Promise<void> }) {
@@ -369,7 +366,7 @@ function RunEvidence({ runId, summary, projectName, detail, trace, state, checkp
       }, controller.signal);
       const terminal: NonNullable<ResumeAttempt["terminal"]> = terminalEvent || { type: "done", data: { ...result.terminal } };
       const terminalError = typeof terminal.data.error === "string" ? terminal.data.error : "";
-      setAttempt((current) => current ? { ...current, phase: terminalError ? "failed" : "terminal", activity: `服务端返回 ${terminal.type}`, terminal, error: terminalError || undefined } : current);
+      setAttempt((current) => current ? { ...current, phase: terminalError ? "failed" : "terminal", activity: terminal.type === "done" ? "运行已结束" : "已转入等待输入", terminal, error: terminalError || undefined } : current);
       const returnedRunId = typeof terminal.data.run_id === "string" && terminal.data.run_id ? terminal.data.run_id : request.run_id;
       try {
         await onRefresh(returnedRunId, request.agent);
@@ -397,7 +394,7 @@ function RunEvidence({ runId, summary, projectName, detail, trace, state, checkp
       }, controller.signal);
       const terminal: NonNullable<ForkAttempt["terminal"]> = terminalEvent || { type: "done", data: { ...result.terminal } };
       const terminalError = typeof terminal.data.error === "string" ? terminal.data.error : "";
-      setForkAttempt((current) => current ? { ...current, phase: terminalError ? "failed" : "terminal", activity: `服务端返回 ${terminal.type}`, terminal, error: terminalError || undefined } : current);
+      setForkAttempt((current) => current ? { ...current, phase: terminalError ? "failed" : "terminal", activity: terminal.type === "done" ? "运行已结束" : "已转入等待输入", terminal, error: terminalError || undefined } : current);
       const childRunId = typeof terminal.data.run_id === "string" ? terminal.data.run_id : "";
       if (childRunId) {
         try {
@@ -445,9 +442,8 @@ function RunEvidence({ runId, summary, projectName, detail, trace, state, checkp
     <p>{summary ? `${projectName || (attributed ? "项目名称不可见" : "历史未归属")} · ${formatTime(summary.started_at)}` : "服务端运行详情"}</p>
     {summary && <dl className="run-facts">
       <div><dt>耗时</dt><dd>{formatDuration(summary.duration_ms)}</dd></div>
-      <div><dt>输入 Token</dt><dd>{summary.tokens_in.toLocaleString("zh-CN")}</dd></div>
-      <div><dt>输出 Token</dt><dd>{summary.tokens_out.toLocaleString("zh-CN")}</dd></div>
-      <div><dt>停止原因</dt><dd>{summary.stop_reason || "未记录"}</dd></div>
+      <div><dt>模型用量</dt><dd>{usageLabel(summary.tokens_in, summary.tokens_out)}</dd></div>
+      <div><dt>结束方式</dt><dd>{stopReasonLabel(summary.stop_reason)}</dd></div>
     </dl>}
     {requestSummary && <section className="run-readable"><h3>运行摘要</h3><MarkdownText text={requestSummary} /></section>}
     {output && output !== requestSummary && <section className="run-readable"><h3>运行输出</h3><MarkdownText text={output} /></section>}
@@ -462,7 +458,7 @@ function RunEvidence({ runId, summary, projectName, detail, trace, state, checkp
     {positiveCheckpoints.length > 0 && <section className="run-readable"><h3>检查点</h3><ol className="run-checkpoint-list">{positiveCheckpoints.map((checkpoint) => <li key={checkpoint.seq}><Badge tone="neutral">#{checkpoint.seq}</Badge><span><strong>{checkpoint.last_step || "步骤未记录"}</strong><small>{formatTime(checkpoint.saved_at)}</small></span></li>)}</ol></section>}
     {Object.keys(evidenceErrors).length > 0 && <section className="run-evidence-errors" aria-label="部分取证不可用">{evidenceErrors.trace && <p>调用轨迹读取失败：{evidenceErrors.trace}</p>}{evidenceErrors.state && <p>业务状态读取失败：{evidenceErrors.state}</p>}{evidenceErrors.checkpoints && <p>检查点读取失败：{evidenceErrors.checkpoints}</p>}</section>}
     <TechnicalInfo rows={[['运行 ID', runId], ['Agent', summary?.agent || '未记录'], ['项目 ID', summary?.project_id || '未记录'], ['父运行 ID', summary?.parent_run_id || '未记录']]} />
-    {(resumable || attempt) && <Card className="run-resume" header={<div className="run-card__heading"><div><h3 id="run-resume-title">{resumable ? "继续执行" : "继续执行结果"}</h3><p>{resumable ? "此运行正在等待输入。继续后，以服务端终止事件和刷新后的运行证据为准。" : attempt?.terminal ? "当前操作已收到服务端终止事件；下方事实来自该事件和刷新后的运行证据。" : "本页面已停止等待或继续执行失败；后端状态仍以刷新后的运行证据为准。"}</p></div>{resumable && <Badge tone="warning">{state.yield_phase}</Badge>}</div>}>
+    {(resumable || attempt) && <Card className="run-resume" header={<div className="run-card__heading"><div><h3 id="run-resume-title">{resumable ? "继续执行" : "继续执行结果"}</h3><p>{resumable ? "此运行正在等待输入。继续后，以服务端终止事件和刷新后的运行证据为准。" : attempt?.terminal ? "当前操作已收到服务端终止事件；下方事实来自该事件和刷新后的运行证据。" : "本页面已停止等待或继续执行失败；后端状态仍以刷新后的运行证据为准。"}</p></div>{resumable && <Badge tone="warning">等待输入</Badge>}</div>}>
       {resumable && <form onSubmit={submitResume}>
         <Field label="继续说明">{(control) => <textarea {...control} rows={3} value={message} disabled={attempt?.phase === "streaming"} placeholder="用自然语言说明接下来要做什么" onChange={(event) => { setMessage(event.target.value); setInputError(null); }} />}</Field>
         <details className="run-resume__advanced"><summary>高级输入（可选）</summary><Field label="JSON 对象" help="用于需要结构化字段的工作流；继续说明非空时会合并为 message。" error={inputError}>{(control) => <textarea {...control} className="code-input" rows={6} value={advancedInput} disabled={attempt?.phase === "streaming"} spellCheck={false} onChange={(event) => { setAdvancedInput(event.target.value); setInputError(null); }} />}</Field></details>

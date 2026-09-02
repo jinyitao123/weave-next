@@ -8,7 +8,7 @@ import { Card } from "../../ui/Card";
 import { ErrorNotice, LoadingView } from "../../ui/StatusViews";
 import { MarkdownText } from "./MarkdownText";
 import { useWorkspace } from "../../workspace/useWorkspace";
-import { deliverableTypeLabel } from "../../workspace/labels";
+import { deliverableTypeLabel, displayName } from "../../workspace/labels";
 import { useDeliverables, type DeliverablesState } from "./useDeliverables";
 
 const runIdentityCache = new Map<string, string>();
@@ -58,8 +58,8 @@ function useRunIdentity(runId: string): string {
     }
     api.getRun(runId)
       .then((detail) => {
-        const agent = typeof detail.agent === "string" && detail.agent.trim() ? detail.agent.trim() : "";
-        const resolved = agent || "运行信息不可用";
+        const agent = typeof detail.agent === "string" ? detail.agent.trim() : "";
+        const resolved = displayName(agent, "一次运行");
         runIdentityCache.set(runId, resolved);
         if (!cancelled) setLabel(resolved);
       })
@@ -76,15 +76,14 @@ function DeliverableProvenance({ item }: { item: FinalDeliverable }) {
   const { avatars, conversations } = useWorkspace();
   const runLabel = useRunIdentity(item.run_id);
   const avatar = avatars.find((record) => record.id === item.lead_avatar_id);
-  const avatarLabel = avatar?.display_name || avatar?.name || "已删除分身";
-  const snapshotLabel = item.run_snapshot_id && item.run_snapshot_id === item.run_id ? "同一次运行" : runLabel;
+  const avatarLabel = displayName(avatar?.display_name || avatar?.name, "已删除分身");
   const conversation = item.conversation_id ? conversations.find((record) => record.id === item.conversation_id) : undefined;
   const conversationHref = item.project_id && item.conversation_id ? `/project/${encodeURIComponent(item.project_id)}/conversations/${encodeURIComponent(item.conversation_id)}` : "";
+  const conversationLabel = displayName(conversation?.title, "未命名会话");
   return <dl className="deliverable-provenance">
     <div><dt>来源运行</dt><dd>{runLabel}</dd></div>
-    <div><dt>运行</dt><dd>{snapshotLabel}</dd></div>
     <div><dt>主分身</dt><dd>{avatarLabel}</dd></div>
-    {item.conversation_id && <div><dt>来源会话</dt><dd>{conversationHref ? <Link className="text-link" to={conversationHref}>{conversation?.title || item.conversation_id}</Link> : conversation?.title || item.conversation_id}</dd></div>}
+    {item.conversation_id && <div><dt>来源会话</dt><dd>{conversationHref ? <Link className="text-link" to={conversationHref}>{conversationLabel}</Link> : conversationLabel}</dd></div>}
   </dl>;
 }
 
