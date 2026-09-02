@@ -507,6 +507,7 @@ func (r *WorkflowSerialRuntime) recordWorkflowArtifacts(
 	run TeamRun,
 	owner workflowArtifactOwner,
 	artifacts []workflow.RuntimeCLIArtifact,
+	final bool,
 ) error {
 	if r == nil || r.OutputRecorder == nil {
 		return nil
@@ -518,7 +519,7 @@ func (r *WorkflowSerialRuntime) recordWorkflowArtifacts(
 			Artifact: &deliverable.WorkflowArtifact{
 				Path: artifact.Path, ContentType: artifact.ContentType, Content: artifact.Content,
 			},
-			Final: true, CreatedAt: r.now(),
+			Final: final, CreatedAt: r.now(),
 		}); err != nil {
 			return err
 		}

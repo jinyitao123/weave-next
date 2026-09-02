@@ -62,7 +62,7 @@ func TestRecordWorkflowArtifactsProjectsFanoutFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := runtime.recordWorkflowArtifacts(context.Background(), run, owner, usage.Artifacts); err != nil {
+	if err := runtime.recordWorkflowArtifacts(context.Background(), run, owner, usage.Artifacts, true); err != nil {
 		t.Fatal(err)
 	}
 	if len(store.outputs) != 2 {
@@ -77,6 +77,17 @@ func TestRecordWorkflowArtifactsProjectsFanoutFiles(t *testing.T) {
 			output.Artifact.ContentType != usage.Artifacts[index].ContentType ||
 			output.Artifact.Content != usage.Artifacts[index].Content {
 			t.Fatalf("output[%d] artifact = %#v", index, output.Artifact)
+		}
+	}
+
+	failedStore := &recordingWorkflowOutputStore{}
+	runtime.OutputRecorder = failedStore
+	if err := runtime.recordWorkflowArtifacts(context.Background(), run, owner, usage.Artifacts, false); err != nil {
+		t.Fatal(err)
+	}
+	for index, output := range failedStore.outputs {
+		if output.Final {
+			t.Fatalf("failed output[%d] was promoted to final: %#v", index, output)
 		}
 	}
 }

@@ -3,9 +3,10 @@ package api
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
+	"mime"
 	"net/http"
+	"path"
 	"strconv"
 	"strings"
 
@@ -112,20 +113,41 @@ func (s *Server) handleDownloadFinalDeliverable(c echo.Context) error {
 	if err != nil {
 		return finalDeliverableFailure(c, err)
 	}
+	filename := workflowArtifactFilename(item)
+	if filename != "" {
+		c.Response().Header().Set(echo.HeaderContentDisposition, mime.FormatMediaType("attachment", map[string]string{"filename": filename}))
+		return c.Blob(http.StatusOK, item.ContentType+"; charset=utf-8", []byte(item.Content))
+	}
 	extension := "md"
 	switch {
 	case strings.HasPrefix(item.ContentType, "image/svg+xml") || strings.HasPrefix(strings.ToLower(strings.TrimSpace(item.Content)), "<svg"):
 		extension = "svg"
 	case deliverable.LooksLikeHTMLDocument(item.Content) || strings.HasPrefix(item.ContentType, "text/html"):
 		extension = "html"
+	case strings.HasPrefix(item.ContentType, "application/x-ndjson") || strings.HasPrefix(item.ContentType, "application/jsonl"):
+		extension = "jsonl"
 	case strings.HasPrefix(item.ContentType, "application/json"):
 		extension = "json"
 	case strings.HasPrefix(item.ContentType, "text/plain"):
 		extension = "txt"
 	}
-	filename := "weave-deliverable-" + item.ID + "." + extension
-	c.Response().Header().Set(echo.HeaderContentDisposition, fmt.Sprintf("attachment; filename=%q", filename))
+	filename = "weave-deliverable-" + item.ID + "." + extension
+	c.Response().Header().Set(echo.HeaderContentDisposition, mime.FormatMediaType("attachment", map[string]string{"filename": filename}))
 	return c.Blob(http.StatusOK, item.ContentType+"; charset=utf-8", []byte(item.Content))
+}
+
+func workflowArtifactFilename(item deliverable.FinalDeliverable) string {
+	var metadata struct {
+		Filename string `json:"filename"`
+	}
+	if json.Unmarshal(item.Metadata, &metadata) != nil {
+		return ""
+	}
+	filename := path.Base(strings.ReplaceAll(strings.TrimSpace(metadata.Filename), "\\", "/"))
+	if filename == "." || filename == "/" || filename == "" {
+		return ""
+	}
+	return strings.ReplaceAll(strings.ReplaceAll(filename, "\r", ""), "\n", "")
 }
 
 func finalDeliverableUnavailable(c echo.Context) error {

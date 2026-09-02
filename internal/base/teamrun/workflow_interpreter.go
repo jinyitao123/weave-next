@@ -272,21 +272,6 @@ func runSerialMachine(
 			if len(nodeUsage.Events) == 0 && start.LoadObservedEvents != nil {
 				nodeUsage.Events = start.LoadObservedEvents(ctx, node, memberID)
 			}
-			if err != nil {
-				if start.RecordActivity != nil {
-					failure := ClassifyFailure(err)
-					start.RecordActivity(ctx, "member_failed", node, memberID, memberVersion, map[string]any{
-						"duration_ms": time.Since(startedAt).Milliseconds(), "error_code": string(executionErrorCode(err)),
-						"failure_class": failure.Class, "failure_reason": failure.Reason, "retryable": false,
-					})
-				}
-				next, routed := edgeTarget(edges[current], machine.RouteFailure)
-				if routed {
-					current = next
-					continue
-				}
-				return fail(err)
-			}
 			if start.RecordActivity != nil {
 				for eventIndex, event := range nodeUsage.Events {
 					kind := ""
@@ -315,6 +300,30 @@ func runSerialMachine(
 					}
 					start.RecordActivity(ctx, kind, node, memberID, memberVersion, detail)
 				}
+			}
+			if err != nil {
+				if start.RecordArtifact != nil {
+					for _, artifact := range nodeUsage.Artifacts {
+						if recordErr := start.RecordArtifact(ctx, node, deliverable.WorkflowArtifact{
+							Path: artifact.Path, ContentType: artifact.ContentType, Content: artifact.Content,
+						}, false); recordErr != nil {
+							return fail(executionError(ErrorCodeDeliveryUnavailable, errors.Join(err, recordErr)))
+						}
+					}
+				}
+				if start.RecordActivity != nil {
+					failure := ClassifyFailure(err)
+					start.RecordActivity(ctx, "member_failed", node, memberID, memberVersion, map[string]any{
+						"duration_ms": time.Since(startedAt).Milliseconds(), "error_code": string(executionErrorCode(err)),
+						"failure_class": failure.Class, "failure_reason": failure.Reason, "retryable": false,
+					})
+				}
+				next, routed := edgeTarget(edges[current], machine.RouteFailure)
+				if routed {
+					current = next
+					continue
+				}
+				return fail(err)
 			}
 			outputs[node.ID] = output
 			if start.RecordActivity != nil {

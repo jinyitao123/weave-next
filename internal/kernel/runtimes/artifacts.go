@@ -3,7 +3,6 @@ package runtimes
 import (
 	"crypto/sha256"
 	"io/fs"
-	"mime"
 	"os"
 	"path/filepath"
 	"sort"
@@ -14,7 +13,7 @@ import (
 )
 
 var outputArtifactTypes = map[string]string{
-	".csv": "text/csv", ".html": "text/html", ".json": "application/json",
+	".csv": "text/csv", ".html": "text/html", ".json": "application/json", ".jsonl": "application/x-ndjson",
 	".md": "text/markdown", ".svg": "image/svg+xml", ".tsv": "text/tab-separated-values",
 	".scad": "text/x-openscad", ".txt": "text/plain", ".yaml": "application/yaml", ".yml": "application/yaml",
 }
@@ -84,9 +83,6 @@ func CollectOutputArtifactsSince(workDir string, before OutputArtifactSnapshot) 
 		relative, err := filepath.Rel(root, name)
 		if err != nil {
 			continue
-		}
-		if detected := mime.TypeByExtension(extension); detected != "" {
-			contentType = strings.SplitN(detected, ";", 2)[0]
 		}
 		artifacts = append(artifacts, engine.Artifact{
 			Path: filepath.ToSlash(relative), ContentType: contentType, Content: string(content),

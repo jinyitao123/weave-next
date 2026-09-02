@@ -254,9 +254,14 @@ func (r *WorkflowSerialRuntime) ExecuteFanoutLeg(
 	// remains owned by T14B-2B. Their measured usage is retained in the
 	// activity ledger so the worksite can show honest member-level facts.
 	output, nodeUsage, err := runAgentNode(
-		ctx, branch, loaded.payload, entries, runInput, outputs, nil,
+		ctx, branch, loaded.payload, entries, runInput, outputs, checkpoint.Corrections,
 	)
 	if err != nil {
+		if recordErr := r.recordWorkflowArtifacts(ctx, parent, workflowArtifactOwner{
+			NodeID: branch.ID, NodeLabel: branch.Label, NodeType: string(branch.Type), AgentID: worker.AgentID,
+		}, nodeUsage.Artifacts, false); recordErr != nil {
+			return nil, executionError(ErrorCodeDeliveryUnavailable, errors.Join(err, recordErr))
+		}
 		if recordActivity != nil {
 			failure := ClassifyFailure(err)
 			recordActivity(ctx, "member_failed", branch, memberID, memberVersion, map[string]any{
@@ -279,7 +284,7 @@ func (r *WorkflowSerialRuntime) ExecuteFanoutLeg(
 	}
 	if err := r.recordWorkflowArtifacts(ctx, parent, workflowArtifactOwner{
 		NodeID: branch.ID, NodeLabel: branch.Label, NodeType: string(branch.Type), AgentID: worker.AgentID,
-	}, nodeUsage.Artifacts); err != nil {
+	}, nodeUsage.Artifacts, true); err != nil {
 		return nil, executionError(ErrorCodeDeliveryUnavailable, err)
 	}
 	encoded, err := json.Marshal(output)

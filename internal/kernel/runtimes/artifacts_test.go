@@ -25,6 +25,9 @@ func TestCollectOutputArtifactsKeepsOnlyBoundedRegularTextFiles(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(outputs, "nested", "summary.json"), []byte(`{"ok":true}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(outputs, "ledger.jsonl"), []byte("{\"tick\":1}\n{\"tick\":2}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(filepath.Join(outputs, "binary.png"), []byte{0, 1, 2}, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -35,11 +38,14 @@ func TestCollectOutputArtifactsKeepsOnlyBoundedRegularTextFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	artifacts := CollectOutputArtifacts(workDir)
-	if len(artifacts) != 2 || artifacts[0].Path != "orders.csv" || artifacts[1].Path != "nested/summary.json" {
+	if len(artifacts) != 3 || artifacts[0].Path != "ledger.jsonl" || artifacts[1].Path != "orders.csv" || artifacts[2].Path != "nested/summary.json" {
 		t.Fatalf("artifacts=%+v", artifacts)
 	}
-	if artifacts[0].ContentType != "text/csv" || artifacts[0].Content != "id,total\n1,12\n" {
-		t.Fatalf("csv=%+v", artifacts[0])
+	if artifacts[0].ContentType != "application/x-ndjson" || artifacts[0].Content != "{\"tick\":1}\n{\"tick\":2}\n" {
+		t.Fatalf("jsonl=%+v", artifacts[0])
+	}
+	if artifacts[1].ContentType != "text/csv" || artifacts[1].Content != "id,total\n1,12\n" {
+		t.Fatalf("csv=%+v", artifacts[1])
 	}
 	before := SnapshotOutputArtifacts(workDir)
 	if unchanged := CollectOutputArtifactsSince(workDir, before); len(unchanged) != 0 {
