@@ -136,6 +136,29 @@ func TestApplyRunActivityEventsResetsTerminalTimingWhenStageRestarts(t *testing.
 	}
 }
 
+func TestApplyRunActivityEventsProjectsAndClearsRetryableFailure(t *testing.T) {
+	members := []runActivityMember{{AgentID: "worker-1", Status: "pending", Stages: []runActivityMemberStage{{
+		NodeID: "verify", Status: "pending", Tools: []runActivityTool{},
+	}}}}
+	failed := time.Date(2026, 9, 2, 8, 0, 0, 0, time.UTC)
+	applyRunActivityEvents(members, []teamrun.ActivityEvent{{
+		Kind: "member_failed", MemberID: "worker-1", NodeID: "verify", OccurredAt: failed,
+		Detail: json.RawMessage(`{"failure_class":"infrastructure","failure_reason":"runtime connection failed","retryable":true}`),
+	}})
+	stage := members[0].Stages[0]
+	if stage.Status != "failed" || stage.FailureClass != "infrastructure" ||
+		stage.FailureReason != "runtime connection failed" || !stage.Retryable {
+		t.Fatalf("projected failure = %#v", stage)
+	}
+	applyRunActivityEvents(members, []teamrun.ActivityEvent{{
+		Kind: "member_started", MemberID: "worker-1", NodeID: "verify", OccurredAt: failed.Add(time.Second),
+	}})
+	stage = members[0].Stages[0]
+	if stage.Status != "running" || stage.FailureClass != "" || stage.FailureReason != "" || stage.Retryable {
+		t.Fatalf("restarted failure state = %#v", stage)
+	}
+}
+
 func TestRefineRunActivityCompletenessMarksRecordedStageFactsComplete(t *testing.T) {
 	started := time.Date(2026, 8, 31, 8, 0, 0, 0, time.UTC)
 	completed := started.Add(4 * time.Second)

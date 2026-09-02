@@ -59,6 +59,13 @@ func (e *Executor) processFanoutLeg(ctx context.Context, task *taskqueue.Task, w
 		Generation: payload.Generation, CompletedAt: now,
 	}
 	if runErr != nil {
+		failure := ClassifyFailure(runErr)
+		// Infrastructure failures remain recoverable while the parent is parked.
+		// The failed durable task is the single-stage retry unit; successful
+		// sibling legs and their artifacts remain untouched.
+		if failure.Retryable {
+			return e.Tasks.FailClaimed(ctx, task.ID, workerID, fanoutCompletionError(runErr))
+		}
 		completion.Terminal = "failed"
 		completion.ErrorCode = fanoutCompletionError(runErr)
 	} else {
@@ -251,8 +258,10 @@ func (r *WorkflowSerialRuntime) ExecuteFanoutLeg(
 	)
 	if err != nil {
 		if recordActivity != nil {
+			failure := ClassifyFailure(err)
 			recordActivity(ctx, "member_failed", branch, memberID, memberVersion, map[string]any{
 				"duration_ms": time.Since(startedAt).Milliseconds(), "error_code": string(executionErrorCode(err)),
+				"failure_class": failure.Class, "failure_reason": failure.Reason, "retryable": failure.Retryable,
 			})
 		}
 		return nil, err

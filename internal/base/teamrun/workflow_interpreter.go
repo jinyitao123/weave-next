@@ -274,8 +274,10 @@ func runSerialMachine(
 			}
 			if err != nil {
 				if start.RecordActivity != nil {
+					failure := ClassifyFailure(err)
 					start.RecordActivity(ctx, "member_failed", node, memberID, memberVersion, map[string]any{
 						"duration_ms": time.Since(startedAt).Milliseconds(), "error_code": string(executionErrorCode(err)),
+						"failure_class": failure.Class, "failure_reason": failure.Reason, "retryable": false,
 					})
 				}
 				next, routed := edgeTarget(edges[current], machine.RouteFailure)

@@ -346,6 +346,26 @@ type stopRunRequest struct {
 	GraceSeconds   int    `json:"grace_seconds,omitempty"`
 }
 
+func (s *Server) handleRetryRunStage(c echo.Context) error {
+	if s.teamRunStageRetry == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "team_run_stage_retry_unavailable"})
+	}
+	result, err := s.teamRunStageRetry.Retry(c.Request().Context(), teamrun.StageRetryRequest{
+		WorkspaceID: getTenant(c), RunID: c.Param("id"), NodeID: strings.TrimSpace(c.Param("node_id")),
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, teamrun.ErrTeamRunIdentityMismatch):
+			return c.JSON(http.StatusNotFound, map[string]string{"error": "run_not_found"})
+		case errors.Is(err, teamrun.ErrTeamRunStateConflict):
+			return c.JSON(http.StatusConflict, map[string]string{"error": "stage_not_retryable"})
+		default:
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "stage_retry_failed"})
+		}
+	}
+	return c.JSON(http.StatusAccepted, result)
+}
+
 type runActivityMember struct {
 	AgentID string                    `json:"agent_id"`
 	Name    string                    `json:"name"`
@@ -375,16 +395,19 @@ type runActivityMemberInputRef struct {
 }
 
 type runActivityMemberStage struct {
-	NodeID      string                      `json:"node_id"`
-	Name        string                      `json:"name"`
-	Status      string                      `json:"status"`
-	Inputs      []runActivityMemberInputRef `json:"inputs"`
-	OutputRefs  []string                    `json:"output_refs"`
-	StartedAt   *time.Time                  `json:"started_at,omitempty"`
-	CompletedAt *time.Time                  `json:"completed_at,omitempty"`
-	DurationMs  int64                       `json:"duration_ms,omitempty"`
-	ToolCalls   int                         `json:"tool_calls,omitempty"`
-	Tools       []runActivityTool           `json:"tools"`
+	NodeID        string                      `json:"node_id"`
+	Name          string                      `json:"name"`
+	Status        string                      `json:"status"`
+	Inputs        []runActivityMemberInputRef `json:"inputs"`
+	OutputRefs    []string                    `json:"output_refs"`
+	StartedAt     *time.Time                  `json:"started_at,omitempty"`
+	CompletedAt   *time.Time                  `json:"completed_at,omitempty"`
+	DurationMs    int64                       `json:"duration_ms,omitempty"`
+	ToolCalls     int                         `json:"tool_calls,omitempty"`
+	Tools         []runActivityTool           `json:"tools"`
+	FailureClass  string                      `json:"failure_class,omitempty"`
+	FailureReason string                      `json:"failure_reason,omitempty"`
+	Retryable     bool                        `json:"retryable,omitempty"`
 }
 
 type runActivityTool struct {
@@ -714,14 +737,17 @@ func applyRunActivityEvents(members []runActivityMember, events []teamrun.Activi
 		}
 		stage := &members[index].Stages[stageIndex]
 		var detail struct {
-			DurationMs   int64             `json:"duration_ms"`
-			ToolCalls    int               `json:"tool_calls"`
-			ToolName     string            `json:"tool_name"`
-			ToolCallID   string            `json:"tool_call_id"`
-			Status       string            `json:"status"`
-			Input        string            `json:"input"`
-			Output       string            `json:"output"`
-			InputSummary map[string]string `json:"input_summary"`
+			DurationMs    int64             `json:"duration_ms"`
+			ToolCalls     int               `json:"tool_calls"`
+			ToolName      string            `json:"tool_name"`
+			ToolCallID    string            `json:"tool_call_id"`
+			Status        string            `json:"status"`
+			Input         string            `json:"input"`
+			Output        string            `json:"output"`
+			InputSummary  map[string]string `json:"input_summary"`
+			FailureClass  string            `json:"failure_class"`
+			FailureReason string            `json:"failure_reason"`
+			Retryable     bool              `json:"retryable"`
 		}
 		_ = json.Unmarshal(event.Detail, &detail)
 		switch event.Kind {
@@ -732,6 +758,9 @@ func applyRunActivityEvents(members []runActivityMember, events []teamrun.Activi
 			stage.DurationMs = 0
 			stage.ToolCalls = 0
 			stage.Tools = nil
+			stage.FailureClass = ""
+			stage.FailureReason = ""
+			stage.Retryable = false
 			stage.Status = "running"
 			members[index].Status = "running"
 			for inputIndex := range stage.Inputs {
@@ -748,6 +777,9 @@ func applyRunActivityEvents(members []runActivityMember, events []teamrun.Activi
 			stage.CompletedAt = &occurred
 			stage.DurationMs = detail.DurationMs
 			stage.Status = "failed"
+			stage.FailureClass = detail.FailureClass
+			stage.FailureReason = detail.FailureReason
+			stage.Retryable = detail.Retryable
 			members[index].Status = "failed"
 		case "tool_started":
 			occurred := event.OccurredAt

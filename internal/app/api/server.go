@@ -121,6 +121,7 @@ type Server struct {
 	sessionExecutionWorkers   *sessionExecutionWorkers
 	teamRunWorkers            *teamrun.Workers
 	teamRunCancel             *teamrun.CancelService
+	teamRunStageRetry         *teamrun.StageRetryService
 	teamRunHumanResume        *teamrun.HumanResumeService
 	teamRunHumanTasks         *teamrun.HumanTaskReader
 	teamRunCorrections        *teamrun.CorrectionStore
@@ -550,6 +551,7 @@ func (s *Server) registerRoutes() {
 	auth.GET("/runs/:id", s.handleGetRun, runsScope)
 	auth.GET("/runs/:id/activity", s.handleGetRunActivity, runsScope)
 	auth.POST("/runs/:id/stop", s.handleStopRun, runsScope)
+	auth.POST("/runs/:id/stages/:node_id/retry", s.handleRetryRunStage, runsScope)
 	auth.GET("/runs/:id/corrections", s.handleListRunCorrections, runsScope)
 	auth.POST("/runs/:id/corrections", s.handleRequestRunCorrection, runsScope)
 	auth.POST("/runs/:id/corrections/:correction_id/confirm", s.handleConfirmRunCorrection, runsScope)
@@ -867,7 +869,9 @@ func (s *Server) ConfigureTeamRunWorkers() {
 	s.teamRunCancel = &teamrun.CancelService{
 		Transactions: pool,
 		Runs:         runStore,
+		Tasks:        s.Tasks,
 	}
+	s.teamRunStageRetry = &teamrun.StageRetryService{Runs: runStore, Tasks: s.Tasks}
 	s.teamRunHumanResume = &teamrun.HumanResumeService{
 		Transactions: pool,
 		Runs:         runStore,

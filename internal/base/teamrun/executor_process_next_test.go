@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jinyitao123/weave/internal/base/db"
+	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/base/snapshot"
 	"github.com/jinyitao123/weave/internal/base/taskqueue"
@@ -36,6 +37,34 @@ func TestExecutorProcessNextQueuedRunSucceeds(t *testing.T) {
 	h.assertTask(t, taskID, taskqueue.StatusCompleted, "run-success", "")
 	h.assertRun(t, "run-success", StatusSucceeded, nil)
 	h.assertTerminalMarker(t, "run-success", "success", "completed")
+}
+
+func TestCancelServiceCancelsEveryTaskInRunSnapshot(t *testing.T) {
+	h := newProcessNextHarness(t)
+	taskID := h.enqueueWorkflowTask(t, "run-cancel-tree")
+	run := h.readRun(t, "run-cancel-tree")
+	child := &taskqueue.Task{
+		ID: "engine-child", WorkspaceID: run.WorkspaceID, Agent: "worker",
+		IdentityKind: taskqueue.IdentityAgent, IdentitySchemaVersion: 2,
+		ExecutionScope: execution.ScopeTeamWorkerLeaf, RunSnapshotID: run.RunSnapshotID,
+		Source: "dispatch", Kind: "engine_exec", Payload: json.RawMessage(`{"task":"work"}`),
+	}
+	if err := h.tasks.Enqueue(context.Background(), child); err != nil {
+		t.Fatalf("enqueue engine child: %v", err)
+	}
+	service := &CancelService{Transactions: h.pool, Runs: NewPGStore(), Tasks: h.tasks, Now: func() time.Time { return h.now }}
+	got, err := service.RequestCancel(context.Background(), CancelRequest{
+		WorkspaceID: run.WorkspaceID, RunID: run.RunID, CancelActor: "user-1", CancelReason: "stop",
+		GraceDeadline: h.now.Add(30 * time.Second), IdempotencyKey: "stop-once",
+	})
+	if err != nil || got.Status != StatusCancelled {
+		t.Fatalf("cancel run: status=%q err=%v", got.Status, err)
+	}
+	h.assertTask(t, taskID, taskqueue.StatusCancelled, "", "")
+	storedChild, err := h.tasks.Get(context.Background(), run.WorkspaceID, child.ID)
+	if err != nil || storedChild.Status != taskqueue.StatusCancelled {
+		t.Fatalf("engine child status=%q err=%v", storedChild.Status, err)
+	}
 }
 
 func TestExecutorProcessNextRuntimeErrorFailsRunAndTask(t *testing.T) {
@@ -226,6 +255,34 @@ func TestExecutorProcessNextFanoutLegRecordsTerminal(t *testing.T) {
 	}
 	if fanout.completion.Terminal != "succeeded" || fanout.completion.LegID != "leg-1" {
 		t.Fatalf("unexpected fanout completion: %#v", fanout.completion)
+	}
+}
+
+func TestExecutorProcessNextFanoutInfrastructureFailureWaitsForStageRetry(t *testing.T) {
+	task := &taskqueue.Task{
+		ID: "fanout-task", WorkspaceID: "workspace-1", ContextKey: "group-1",
+		Kind: "team_workflow", WorkerID: "worker-1",
+		Payload: json.RawMessage(`{
+			"schema_version":1,"kind":"fanout_leg","workspace_id":"workspace-1",
+			"parent_run_id":"parent-run","intent_id":"intent-1","group_id":"group-1",
+			"leg_id":"leg-1","branch_id":"branch-1","branch_ordinal":0,"generation":"gen-1",
+			"frozen_bundle_ref":{},"input_ref":{},"may_yield_proof":{}
+		}`),
+	}
+	tasks := &fakeProcessNextTasks{claimed: task}
+	runtime := &scriptedRuntime{fanoutErr: executionError(ErrorCodeExecutionUnrecoverable, errors.New("request timed out"))}
+	fanout := &fakeFanout{}
+	executor := fakeFanoutExecutor(tasks, runtime, fanout)
+
+	processed, err := executor.ProcessNext(context.Background(), "worker-1")
+	if err != nil || !processed {
+		t.Fatalf("process next: processed=%v err=%v", processed, err)
+	}
+	if !tasks.failed || tasks.completed {
+		t.Fatalf("task terminal state: failed=%v completed=%v", tasks.failed, tasks.completed)
+	}
+	if fanout.completion.Terminal != "" {
+		t.Fatalf("recoverable infrastructure failure decided fanout: %#v", fanout.completion)
 	}
 }
 

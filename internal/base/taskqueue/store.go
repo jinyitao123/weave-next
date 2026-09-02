@@ -659,6 +659,28 @@ func (s *Store) RequeueFailedLeg(ctx context.Context, workspaceID, groupID, agen
 	return task, nil
 }
 
+// RequeueFailedTask retries one exact failed task while retaining its frozen
+// payload and identity. The expected snapshot and context prevent a caller
+// from reviving unrelated or superseded work.
+func (s *Store) RequeueFailedTask(ctx context.Context, workspaceID, id, runSnapshotID, contextKey string) (*Task, error) {
+	now := s.clock.Now()
+	row := s.pool.QueryRow(ctx, `
+		UPDATE weave_task_queue
+		SET status=$6,result=NULL,error=NULL,run_id=NULL,worker_id=NULL,
+			lease_expires_at=NULL,started_at=NULL,completed_at=NULL,updated_at=$7
+		WHERE workspace_id=$1 AND id=$2 AND run_snapshot_id=$3 AND context_key=$4 AND status=$5
+		RETURNING `+taskColumns,
+		workspaceID, id, runSnapshotID, contextKey, StatusFailed, StatusQueued, now)
+	task, err := scanTask(row)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, fmt.Errorf("failed task %q is not retryable", id)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("requeue failed task: %w", err)
+	}
+	return task, nil
+}
+
 // Get reads one task from a workspace.
 func (s *Store) Get(ctx context.Context, workspaceID, id string) (*Task, error) {
 	row := s.pool.QueryRow(ctx, `

@@ -130,7 +130,10 @@ type CancelRequest struct {
 type CancelService struct {
 	Transactions TransactionBeginner
 	Runs         *PGStore
-	Now          func() time.Time
+	Tasks        interface {
+		CancelRunTasks(context.Context, string, string) (int, error)
+	}
+	Now func() time.Time
 }
 
 // RequestCancel is the narrow internal registration boundary for running or
@@ -165,6 +168,11 @@ func (s *CancelService) RequestCancel(
 		if err := tx.Commit(ctx); err != nil {
 			return TeamRun{}, fmt.Errorf("commit terminal team run cancel request: %w", err)
 		}
+		if s.Tasks != nil {
+			if _, err := s.Tasks.CancelRunTasks(ctx, run.WorkspaceID, run.RunSnapshotID); err != nil {
+				return TeamRun{}, fmt.Errorf("cancel terminal team run child tasks: %w", err)
+			}
+		}
 		return run, nil
 	}
 	if run.Status == StatusCancelRequested {
@@ -172,6 +180,11 @@ func (s *CancelService) RequestCancel(
 			run.CancelReason != nil && *run.CancelReason == request.CancelReason {
 			if err := tx.Commit(ctx); err != nil {
 				return TeamRun{}, fmt.Errorf("commit repeated team run cancel request: %w", err)
+			}
+			if s.Tasks != nil {
+				if _, err := s.Tasks.CancelRunTasks(ctx, run.WorkspaceID, run.RunSnapshotID); err != nil {
+					return TeamRun{}, fmt.Errorf("cancel repeated team run child tasks: %w", err)
+				}
 			}
 			return run, nil
 		}
@@ -210,6 +223,11 @@ func (s *CancelService) RequestCancel(
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return TeamRun{}, fmt.Errorf("commit team run cancel request: %w", err)
+	}
+	if s.Tasks != nil {
+		if _, err := s.Tasks.CancelRunTasks(ctx, cancelled.WorkspaceID, cancelled.RunSnapshotID); err != nil {
+			return TeamRun{}, fmt.Errorf("cancel team run child tasks: %w", err)
+		}
 	}
 	return cancelled, nil
 }
