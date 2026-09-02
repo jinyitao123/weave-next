@@ -16,7 +16,11 @@ import (
 var outputArtifactTypes = map[string]string{
 	".csv": "text/csv", ".html": "text/html", ".json": "application/json",
 	".md": "text/markdown", ".svg": "image/svg+xml", ".tsv": "text/tab-separated-values",
-	".txt": "text/plain", ".yaml": "application/yaml", ".yml": "application/yaml",
+	".scad": "text/x-openscad", ".txt": "text/plain", ".yaml": "application/yaml", ".yml": "application/yaml",
+}
+
+var ignoredOutputArtifactDirectories = map[string]struct{}{
+	".git": {}, ".next": {}, ".turbo": {}, ".vinext": {}, ".wrangler": {}, "coverage": {}, "node_modules": {},
 }
 
 // OutputArtifactSnapshot identifies eligible files that already existed before
@@ -102,6 +106,11 @@ func outputArtifactFiles(workDir string) []string {
 		if walkErr != nil || entry == nil {
 			return nil
 		}
+		if name != root && entry.IsDir() {
+			if _, ignored := ignoredOutputArtifactDirectories[entry.Name()]; ignored {
+				return filepath.SkipDir
+			}
+		}
 		if entry.Type()&os.ModeSymlink != 0 {
 			if entry.IsDir() {
 				return filepath.SkipDir
@@ -115,6 +124,21 @@ func outputArtifactFiles(workDir string) []string {
 		}
 		return nil
 	})
-	sort.Strings(entries)
+	// Prefer shallow, user-authored delivery files before framework internals.
+	// The transport remains bounded, but a large application scaffold can no
+	// longer displace sibling drawings, models, and acceptance manifests merely
+	// because one deeply nested dependency sorts first alphabetically.
+	sort.Slice(entries, func(left, right int) bool {
+		leftRelative, leftErr := filepath.Rel(root, entries[left])
+		rightRelative, rightErr := filepath.Rel(root, entries[right])
+		if leftErr == nil && rightErr == nil {
+			leftDepth := strings.Count(filepath.ToSlash(leftRelative), "/")
+			rightDepth := strings.Count(filepath.ToSlash(rightRelative), "/")
+			if leftDepth != rightDepth {
+				return leftDepth < rightDepth
+			}
+		}
+		return entries[left] < entries[right]
+	})
 	return entries
 }

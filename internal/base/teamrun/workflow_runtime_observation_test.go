@@ -1,11 +1,22 @@
 package teamrun
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 
+	"github.com/jinyitao123/weave/internal/base/deliverable"
 	"github.com/jinyitao123/weave/internal/base/taskqueue"
 )
+
+type recordingWorkflowOutputStore struct {
+	outputs []deliverable.WorkflowOutput
+}
+
+func (s *recordingWorkflowOutputStore) RecordWorkflowOutput(_ context.Context, output deliverable.WorkflowOutput) error {
+	s.outputs = append(s.outputs, output)
+	return nil
+}
 
 func TestRuntimeEventsFromEngineExecObservations(t *testing.T) {
 	result, err := json.Marshal(map[string]any{
@@ -33,5 +44,39 @@ func TestRuntimeEventsFromEngineExecObservations(t *testing.T) {
 	}
 	if got := runtimeEventsFromEngineExecObservations([]taskqueue.EngineExecObservation{{TaskID: "task-1", Result: result}}, 1); len(got) != 1 {
 		t.Fatalf("limited events = %#v", got)
+	}
+}
+
+func TestRecordWorkflowArtifactsProjectsFanoutFiles(t *testing.T) {
+	store := &recordingWorkflowOutputStore{}
+	runtime := &WorkflowSerialRuntime{OutputRecorder: store}
+	run := TeamRun{WorkspaceID: "workspace-1", RunID: "run-1", RunSnapshotID: "snapshot-1"}
+	owner := workflowArtifactOwner{
+		NodeID: "research", NodeLabel: "Research", NodeType: "worker", AgentID: "agent-1",
+	}
+	var usage nodeUsageReport
+	if err := json.Unmarshal([]byte(`{"Artifacts":[
+		{"path":"model/results.json","content_type":"application/json","content":"{\"ok\":true}"},
+		{"path":"drawings/concept.svg","content_type":"image/svg+xml","content":"<svg/>"}
+	]}`), &usage); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := runtime.recordWorkflowArtifacts(context.Background(), run, owner, usage.Artifacts); err != nil {
+		t.Fatal(err)
+	}
+	if len(store.outputs) != 2 {
+		t.Fatalf("recorded outputs = %#v", store.outputs)
+	}
+	for index, output := range store.outputs {
+		if output.WorkspaceID != run.WorkspaceID || output.RunID != run.RunID ||
+			output.RunSnapshotID != run.RunSnapshotID || output.NodeID != owner.NodeID || !output.Final {
+			t.Fatalf("output[%d] identity = %#v", index, output)
+		}
+		if output.Artifact == nil || output.Artifact.Path != usage.Artifacts[index].Path ||
+			output.Artifact.ContentType != usage.Artifacts[index].ContentType ||
+			output.Artifact.Content != usage.Artifacts[index].Content {
+			t.Fatalf("output[%d] artifact = %#v", index, output.Artifact)
+		}
 	}
 }

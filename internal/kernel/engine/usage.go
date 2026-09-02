@@ -114,7 +114,7 @@ func ValidateEvents(events []Event) error {
 }
 
 const (
-	MaxArtifactCount       = 12
+	MaxArtifactCount       = 64
 	MaxArtifactBytes       = 256 * 1024
 	MaxArtifactsTotalBytes = 512 * 1024
 )

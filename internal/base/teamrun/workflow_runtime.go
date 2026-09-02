@@ -491,6 +491,41 @@ func (r *WorkflowSerialRuntime) workflowArtifactRecorder(
 	}
 }
 
+// recordWorkflowArtifacts gives fanout branches the same immutable artifact
+// projection as serial worker nodes. Without this bridge the runtime files
+// exist only in the executor workspace while the user-visible run records
+// merely the worker's prose summary.
+type workflowArtifactOwner struct {
+	NodeID    string
+	NodeLabel string
+	NodeType  string
+	AgentID   string
+}
+
+func (r *WorkflowSerialRuntime) recordWorkflowArtifacts(
+	ctx context.Context,
+	run TeamRun,
+	owner workflowArtifactOwner,
+	artifacts []workflow.RuntimeCLIArtifact,
+) error {
+	if r == nil || r.OutputRecorder == nil {
+		return nil
+	}
+	for _, artifact := range artifacts {
+		if err := r.OutputRecorder.RecordWorkflowOutput(ctx, deliverable.WorkflowOutput{
+			WorkspaceID: run.WorkspaceID, RunID: run.RunID, RunSnapshotID: run.RunSnapshotID,
+			NodeID: owner.NodeID, NodeLabel: owner.NodeLabel, NodeType: owner.NodeType, AgentID: owner.AgentID,
+			Artifact: &deliverable.WorkflowArtifact{
+				Path: artifact.Path, ContentType: artifact.ContentType, Content: artifact.Content,
+			},
+			Final: true, CreatedAt: r.now(),
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (r *WorkflowSerialRuntime) loadFrozenGraph(
 	ctx context.Context,
 	run TeamRun,

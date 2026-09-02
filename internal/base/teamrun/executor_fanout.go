@@ -262,6 +262,11 @@ func (r *WorkflowSerialRuntime) ExecuteFanoutLeg(
 			return nil, executionError(ErrorCodeDeliveryUnavailable, err)
 		}
 	}
+	if err := r.recordWorkflowArtifacts(ctx, parent, workflowArtifactOwner{
+		NodeID: branch.ID, NodeLabel: branch.Label, NodeType: string(branch.Type), AgentID: worker.AgentID,
+	}, nodeUsage.Artifacts); err != nil {
+		return nil, executionError(ErrorCodeDeliveryUnavailable, err)
+	}
 	encoded, err := json.Marshal(output)
 	if err != nil {
 		return nil, executionError(ErrorCodeOutputInvalid, err)
