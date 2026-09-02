@@ -11,6 +11,7 @@ interface ProjectionSource {
   stateOf(session: Session, key: 'workTask'): { readonly task: WorkTaskProjection | null } | undefined
 }
 
+/** One task outcome included in the bounded commercial-pilot report. */
 export interface PilotReportTask {
   readonly team: string
   readonly status: WorkTaskProjection['status']
@@ -27,6 +28,7 @@ export interface PilotReportTask {
   readonly outcomeNote: string
 }
 
+/** Aggregate commercial-pilot evidence and its contributing task rows. */
 export interface PilotReport {
   readonly generatedAt: string
   readonly summary: {
@@ -44,7 +46,12 @@ export interface PilotReport {
   readonly tasks: readonly PilotReportTask[]
 }
 
-/** Build a bounded, secretless report suitable for a design-partner review. */
+/**
+ * Build a bounded, secretless report suitable for a design-partner review.
+ * @param sessions - Session inventory used to locate candidate work tasks.
+ * @param projections - Durable WorkTask projection reader.
+ * @returns The aggregate pilot report and its bounded task rows.
+ */
 export function buildPilotReport(sessions: TaskSource, projections: ProjectionSource): PilotReport {
   const tasks = sessions.list().flatMap((session): PilotReportTask[] => {
     const task = projections.stateOf(session, 'workTask')?.task

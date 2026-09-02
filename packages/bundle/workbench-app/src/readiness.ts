@@ -2,12 +2,14 @@
 
 export type WeaveReadinessTone = 'pass' | 'warning' | 'fail'
 
+/** One product-facing prerequisite check for first dispatch. */
 export interface WeaveReadinessCheck {
   readonly id: 'credential' | 'service' | 'access' | 'teams' | 'runtimes'
   readonly tone: WeaveReadinessTone
   readonly detail: string
 }
 
+/** Secretless readiness summary returned to the Workbench browser. */
 export interface WeaveReadiness {
   readonly status: 'ready' | 'attention' | 'unconfigured'
   readonly checkedAt: string
@@ -43,7 +45,13 @@ function requestHeaders(apiKey: string): Headers {
   return headers
 }
 
-/** Inspect only the minimum facts required before a first team dispatch. */
+/**
+ * Inspect only the minimum facts required before a first team dispatch.
+ * @param apiUrl - Base URL of the Weave service owned by the Host.
+ * @param apiKey - Host-only bearer credential for Weave.
+ * @param fetcher - HTTP implementation, replaceable in tests.
+ * @returns The product-facing connection, team, and runtime readiness summary.
+ */
 export async function inspectWeaveReadiness(
   apiUrl: string,
   apiKey: string,

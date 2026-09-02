@@ -45,6 +45,32 @@ describe('Connection exact Fetch routes', () => {
     await disposeFiber()
   })
 
+  it('dispatches authenticated mutation methods to their exact route owner', async () => {
+    const { connection, dispose: disposeFiber } = await mounted()
+    const route = vi.fn(async (request: Request) =>
+      Response.json({ method: request.method, body: await request.json() as unknown }))
+    const dispose = connection.fetch.register({
+      path: '/api/runtime.manage',
+      methods: ['POST', 'PUT', 'DELETE'],
+      fetch: route,
+    })
+    const shared = connection.createSharedFetchHandler('/api')
+
+    for (const method of ['POST', 'PUT', 'DELETE'] as const) {
+      const response = await shared.fetch(new Request('http://host/api/runtime.manage', {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'local-node' }),
+      }))
+      expect(response.status).toBe(200)
+      expect(await response.json()).toEqual({ method, body: { name: 'local-node' } })
+    }
+    expect(route).toHaveBeenCalledTimes(3)
+
+    await dispose()
+    await disposeFiber()
+  })
+
   it('rejects invalid and duplicate registrations', async () => {
     const { connection, dispose: disposeFiber } = await mounted()
     const fetch = async (): Promise<Response> => new Response()

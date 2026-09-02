@@ -92,12 +92,12 @@ export function deliverableModel(block: ToolCallViewProps['block']): Deliverable
       if (id === '' || parsed === '') {
         return { state: 'invalid', deliverable: null, detail }
       }
-      const title = markdownTitle(parsed) || id
+      const title = markdownTitle(parsed)
       return {
         state: 'ok', detail: null,
         deliverable: {
           id, title, content: parsed, contentType: 'text/markdown',
-          filename: safeFilename(title, id, 'md'),
+          filename: safeFilename(title, '', 'md'),
           ...visiblePreview(parsed),
         },
       }
@@ -115,7 +115,7 @@ export function deliverableModel(block: ToolCallViewProps['block']): Deliverable
       state: 'ok', detail: null,
       deliverable: {
         id, title: title || id, content, contentType,
-        filename: safeFilename(title, id, extension(contentType, content)),
+        filename: safeFilename(title, '', extension(contentType, content)),
         ...visiblePreview(content),
       },
     }
@@ -166,10 +166,10 @@ export function DeliverableRow({ block, t }: DeliverableProps) {
         <article className={css.file}>
           <div className={css.fileHeader}>
             <div className={css.identity}>
-              <strong>{deliverable.title}</strong>
+              <strong>{deliverable.title || t('deliverable.untitled')}</strong>
               <span>{deliverable.filename}</span>
             </div>
-            <button className={css.download} type="button" onClick={() => download(deliverable)}>
+            <button className={css.download} type="button" onClick={() => { download(deliverable) }}>
               <IconDownloadOutline16 size={14} />
               {t('deliverable.download')}
             </button>
@@ -178,9 +178,6 @@ export function DeliverableRow({ block, t }: DeliverableProps) {
           <pre className={css.preview}>{deliverable.preview}</pre>
           {deliverable.previewTruncated ? <p className={css.previewNotice}>{t('deliverable.previewTruncated')}</p> : null}
         </article>
-      ) : null}
-      {(model.state === 'error' || model.state === 'invalid') && model.detail !== null ? (
-        <pre className={css.errorDetail}>{model.detail}</pre>
       ) : null}
     </section>
   )

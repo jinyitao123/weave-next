@@ -9,7 +9,7 @@ kind: "package-bundle"
 
 ## 概述
 
-本组合包在不修改 agent loop 的前提下，把通用 DSH Web 运行时变成 Weave Workbench。它加入 Workbench 浏览器身份，在业务 API key 存在时连接本地 `weave mcp serve` 进程，并给前台 agent 一条产品规则：派活前先匹配已有团队；如果没有合适团队，就如实说明并协助定义团队。宿主侧 WorkTask 投影会记录派发，并在前台回合结束后继续同步 Weave 状态。派发成功的 Weave 运行就是持久任务；前台 agent 不再创建影子 DSH 目标、轮询到结束或保存重复交付物。
+本组合包在不修改 agent loop 的前提下，把通用 DSH Web 运行时变成 Weave Workbench。它加入 Workbench 浏览器身份，在业务 API key 存在时连接本地 `weave mcp serve` 进程，并给前台 agent 一条产品规则：派活前先匹配已有团队；如果没有合适团队，就如实说明并协助定义团队。宿主侧 WorkTask 投影会记录派发，并在前台回合结束后继续同步 Weave 状态。同一个已认证宿主会向 Workbench 主界面提供受限的运行节点注册表。派发成功的 Weave 运行就是持久任务；前台 agent 不再创建影子 DSH 目标、轮询到结束或保存重复交付物。
 
 ## 目录
 
@@ -29,6 +29,8 @@ kind: "package-bundle"
 
 派发成功后，宿主会把 `client_request_id`、run、团队、工作流、进度、成员活动、实名运行时、精确绑定到该 run 的交付物与异常状态写进 Session 日志。受限轮询器以同一业务身份读取精确 run 活动和交付物合同并追加完整快照。因此关闭对话既不会停止 Weave 执行，也不会破坏 Workbench 的状态恢复。CLI 员工明确写入 `outputs/` 目录的文本文件会成为不可变 Weave 交付物，面板无需访问任意宿主路径即可预览和下载。
 
+Workbench 主界面会展示已注册运行节点的可用性、容量、引擎、最近连接时间和故障接管组。用户可以在这里添加、改名、分组或移除节点，无需进入独立管理应用。移除节点会立即撤销连接，并可能中断正在执行的工作；已保存的任务事实与交付物仍然保留。新建节点的运行令牌只出现在创建它的浏览器响应中。整次任务控制使用专用的已认证产品路由，并直接追加 WorkTask 动作，因此纠偏与重新运行不会在对话里显示成内部命令记录。
+
 <a id="surface-boundary"></a>
 ## 界面边界
 
@@ -37,7 +39,7 @@ Workbench 客户端保留 DSH 的会话、工作区、模型、权限、人工�
 <a id="credential-boundary"></a>
 ## 凭据边界
 
-`WEAVE_API_KEY` 只从受信任的宿主进程传给本地 MCP 子进程。它不会写入客户端产物，也不会加入模型上下文。`WEAVE_SECRET_KEY` 与 `WEAVE_SECRET_KEY_FILE` 只属于 Weave 服务端，用于加密存储凭据；本组合包永远不读取或转发这两个值。
+`WEAVE_API_KEY` 只从受信任的宿主进程传给本地 MCP 子进程和已认证的 Weave 请求。它不会写入客户端产物，也不会加入模型上下文。运行节点列表只返回展示、健康、容量与调度事实；变更响应只会在新建节点时返回一次运行令牌。`WEAVE_SECRET_KEY` 与 `WEAVE_SECRET_KEY_FILE` 只属于 Weave 服务端，用于加密存储凭据；本组合包永远不读取或转发这两个值。
 
 <a id="dev-note"></a>
 ## 开发备注

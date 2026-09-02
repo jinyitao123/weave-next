@@ -247,6 +247,11 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+.briefDetails { margin-top: 8px; }
+.briefDetails summary, .attemptBrief summary { cursor: pointer; color: var(--dsw-alias-label-secondary); font-size: 12px; line-height: 18px; }
+.briefDetails .brief { margin-top: 7px; }
+.attemptBrief { width: 100%; margin-top: 3px; }
+.attemptBrief p { max-height: 140px; margin: 6px 0 0; overflow: auto; color: var(--dsw-alias-label-tertiary); font-size: 11px; line-height: 17px; white-space: pre-wrap; }
 
 .truthLine {
   display: flex;
@@ -416,9 +421,11 @@
 	color: var(--dsw-alias-label-secondary);
 }
 
-.impactRoute code,
-.impactColumns code {
-	font: 11px/17px ui-monospace, SFMono-Regular, Menlo, monospace;
+.impactRoute strong,
+.impactColumns strong {
+	font-size: 11px;
+  font-weight: 500;
+  line-height: 17px;
 }
 
 .impactColumns {
@@ -714,10 +721,16 @@
 	font-size: 10px;
 }
 
-.toolTimeline code {
+.toolTimeline code,
+.toolTimeline strong {
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
+}
+
+.toolTimeline strong {
+  font-size: 11px;
+  font-weight: 500;
 }
 
 .toolTimeline small {
@@ -797,6 +810,25 @@
 	line-height: 17px;
 	color: var(--dsw-alias-label-secondary);
 	overflow-wrap: anywhere;
+}
+
+.inputDetails > summary {
+  cursor: pointer;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 17px;
+}
+
+.inputDetails .memberStageFacts {
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.inputFact > strong {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 17px;
 }
 
 .runtime {

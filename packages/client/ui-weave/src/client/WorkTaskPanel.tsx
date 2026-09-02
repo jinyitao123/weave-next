@@ -3,6 +3,7 @@ import type { CSSProperties } from 'react'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { WorkTaskDeliverable, WorkTaskMemberStatus, WorkTaskRuntime, WorkTaskStatus } from './work-task-model.ts'
 import { projectedWorkTask, workTaskFactsStale, workTaskHasUserVisibleCompletenessWarning, workTaskModel } from './work-task-model.ts'
+import { RuntimeCenter } from './RuntimeCenter.tsx'
 import css from './WorkTaskPanel.module.css'
 
 interface WorkTaskInjected {
@@ -71,10 +72,87 @@ function durationLabel(milliseconds: number, t: PanelProps['t']): string {
   return t('task.duration.minutes', { minutes: Math.floor(seconds / 60), seconds: Math.round(seconds % 60) })
 }
 
-function timestampLabel(value: string): string {
+function timestampLabel(value: string, t: PanelProps['t']): string {
   if (value === '') return ''
   const timestamp = new Date(value)
-  return Number.isNaN(timestamp.getTime()) ? '' : timestamp.toLocaleString()
+  if (Number.isNaN(timestamp.getTime())) return ''
+  const minutes = Math.max(0, Math.floor((Date.now() - timestamp.getTime()) / 60_000))
+  if (minutes < 1) return t('runtimeCenter.justNow')
+  if (minutes < 60) return t('runtimeCenter.minutesAgo', { count: minutes })
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return t('runtimeCenter.hoursAgo', { count: hours })
+  return t('runtimeCenter.daysAgo', { count: Math.floor(hours / 24) })
+}
+
+function stageLabel(value: string, t: PanelProps['t']): string {
+  const stage = value.trim().toLowerCase()
+  if (/(research|analysis|analy[sz]e|investigate|evidence|调研|研究|分析|证据)/u.test(stage)) return t('task.stage.research')
+  if (/(review|verify|audit|check|test|validate|复核|审核|校验|验证|验收)/u.test(stage)) return t('task.stage.verify')
+  if (/(draft|write|create|design|build|generate|撰写|设计|生成|制作|初稿)/u.test(stage)) return t('task.stage.create')
+  if (/(edit|refine|final|deliver|summary|synthesi[sz]e|汇总|定稿|交付|编辑)/u.test(stage)) return t('task.stage.deliver')
+  if (/[㐀-鿿]/u.test(value) || /\s/u.test(value.trim())) return value.trim()
+  return t('task.stage.generic')
+}
+
+function toolLabel(value: string, t: PanelProps['t']): string {
+  const tool = value.trim().toLowerCase()
+  if (/(read|search|find|list|get|fetch|open|browse)/u.test(tool)) return t('task.member.tool.read')
+  if (/(write|edit|create|save|patch|render)/u.test(tool)) return t('task.member.tool.write')
+  if (/(exec|run|shell|bash|test|valid|build|compile)/u.test(tool)) return t('task.member.tool.execute')
+  if (/(delegate|dispatch|agent|message|handoff|wait)/u.test(tool)) return t('task.member.tool.coordinate')
+  return t('task.member.tool.other')
+}
+
+function inputSourceLabel(value: string, t: PanelProps['t']): string {
+  const source = value.trim().toLowerCase()
+  if (/(node|stage|upstream|workflow)/u.test(source)) return t('task.member.input.upstream')
+  if (/(file|path|attachment|artifact|deliverable|workspace)/u.test(source)) return t('task.member.input.file')
+  if (/(request|task|brief|user|prompt)/u.test(source)) return t('task.member.input.request')
+  return t('task.member.input.other')
+}
+
+function deliverableTypeLabel(value: string, t: PanelProps['t']): string {
+  const kind = value.trim().toLowerCase()
+  if (kind.includes('html')) return t('task.deliverables.type.web')
+  if (kind.includes('csv') || kind.includes('spreadsheet') || kind.includes('excel')) return t('task.deliverables.type.table')
+  if (kind.includes('json') || kind.includes('yaml') || kind.includes('xml')) return t('task.deliverables.type.data')
+  if (kind.startsWith('image/')) return t('task.deliverables.type.image')
+  if (kind.includes('markdown') || kind.includes('text') || kind.includes('pdf') || kind.includes('word')) return t('task.deliverables.type.document')
+  return t('task.deliverables.type.file')
+}
+
+function teamDisplayName(value: string, fallback: string): string {
+  const name = value.trim()
+  if (name === '' || /^[0-9a-f]{8}-[0-9a-f-]{27,}$/iu.test(name)) return fallback
+  if (!/^[a-z0-9_-]+$/u.test(name) || (!name.includes('-') && !name.includes('_'))) return name
+  return name.split(/[-_]+/u).filter(Boolean).map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')
+}
+
+function runtimeNameLabel(value: string, t: PanelProps['t']): string {
+  if (value.trim() === '') return t('task.member.runtimeUnknown')
+  return value.split(' · ').map((part, index) => {
+    if (index > 0 && part.toLowerCase() === 'codex') return t('runtimeCenter.engine.codex')
+    if (index > 0 && (part.toLowerCase() === 'claude' || part.toLowerCase() === 'claude-code')) return t('runtimeCenter.engine.claude')
+    if (index > 0 && part.toLowerCase() === 'opencode') return t('runtimeCenter.engine.opencode')
+    return teamDisplayName(part, t('task.runtime.assigned'))
+  }).join(' · ')
+}
+
+function runtimeDetailLabel(value: string, t: PanelProps['t']): string {
+  if (value.trim() === '') return t('task.runtime.detailPending')
+  return value.split(' · ').map((part) => {
+    const normalized = part.trim().toLowerCase()
+    if (normalized === 'codex') return t('runtimeCenter.engine.codex')
+    if (normalized === 'claude' || normalized === 'claude-code') return t('runtimeCenter.engine.claude')
+    if (normalized === 'opencode') return t('runtimeCenter.engine.opencode')
+    if (normalized === 'openai') return t('runtimeCenter.provider.openai')
+    return part
+  }).join(' · ')
+}
+
+function deliverableTitle(value: string, t: PanelProps['t']): string {
+  const title = value.trim()
+  return title === '' || /^[0-9a-f]{8}-[0-9a-f-]{27,}$/iu.test(title) ? t('deliverable.untitled') : title
 }
 
 function downloadDeliverable(item: WorkTaskDeliverable): void {
@@ -97,7 +175,7 @@ function DeliverableItems({ items, t }: { readonly items: readonly WorkTaskDeliv
     <div className={css.deliverableList}>
       {items.map((item) => {
         const revisions = items.filter(candidate => candidate.title === item.title).length
-        const timestamp = timestampLabel(item.createdAt)
+        const timestamp = timestampLabel(item.createdAt, t)
         const revisionLabel = revisions < 2 ? '' : t(latestIds.has(item.id)
           ? 'task.deliverables.currentRevision'
           : 'task.deliverables.previousRevision')
@@ -117,8 +195,8 @@ function DeliverableItems({ items, t }: { readonly items: readonly WorkTaskDeliv
             <summary>
               <span className={css.fileMark} aria-hidden />
               <span className={css.deliverableIdentity}>
-                <strong>{item.title}</strong>
-                <span>{item.contentType}</span>
+                <strong>{deliverableTitle(item.title, t)}</strong>
+                <span>{deliverableTypeLabel(item.contentType, t)}</span>
                 {metadata === '' ? null : <span>{metadata}</span>}
               </span>
               <span className={css.deliverableKind}>{t(item.kind === 'final' ? 'task.deliverables.final' : 'task.deliverables.stage')}</span>
@@ -130,7 +208,7 @@ function DeliverableItems({ items, t }: { readonly items: readonly WorkTaskDeliv
                   : <pre>{item.preview}</pre>}
                 <div className={css.deliverableActions}>
                   {item.content === '' || item.truncated ? null : (
-                    <button type="button" onClick={() =>{  downloadDeliverable(item) }}>{t('task.deliverables.download')}</button>
+                    <button type="button" onClick={() => { downloadDeliverable(item) }}>{t('task.deliverables.download')}</button>
                   )}
                   {item.truncated ? <span>{t('task.deliverables.truncated')}</span> : null}
                 </div>
@@ -148,7 +226,11 @@ export function WorkTaskHeader({ useChat, useProjection, openDetails, t }: Heade
   const conversationModel = useChat(snapshot => workTaskModel(snapshot.nodes.values()))
   const projection = useProjection('workTask')
   const model = projectedWorkTask(conversationModel, projection)
-  if (!model.detected) return null
+  if (!model.detected) return (
+    <button className={css.headerPill} type="button" onClick={openDetails} aria-label={t('runtimeCenter.open')}>
+      <span className={css.statusDot} aria-hidden /><span>{t('runtimeCenter.open')}</span>
+    </button>
+  )
   const progress = model.totalStages > 0
     ? t('task.progress.count', { completed: model.completedStages, total: model.totalStages })
     : model.completedStages > 0
@@ -188,7 +270,7 @@ export function WorkTaskPanel({
     if (model.detected) openDetails()
   }, [model.detected, openDetails])
 
-  if (!model.detected) return null
+  if (!model.detected) return <div className={css.panel}><RuntimeCenter t={t} /></div>
   const progressPercent = model.totalStages === 0
     ? 0
     : Math.min(100, Math.round(model.completedStages / model.totalStages * 100))
@@ -278,7 +360,12 @@ export function WorkTaskPanel({
           <span className={css.statusDot} data-status={model.status} aria-hidden />
           <strong>{t(statusKey(model.status))}</strong>
         </div>
-        {model.brief === '' ? null : <p className={css.brief}>{model.brief}</p>}
+        {model.brief === '' ? null : (
+          <details className={css.briefDetails}>
+            <summary>{t('task.brief')}</summary>
+            <p className={css.brief}>{model.brief}</p>
+          </details>
+        )}
         <div className={css.truthLine}>
           {stale ? <span data-tone="warning">{t('task.freshness.stale')}</span> : <span>{t('task.freshness.current')}</span>}
           {incomplete ? <span data-tone="warning">{t('task.completeness.partial')}</span> : null}
@@ -301,15 +388,15 @@ export function WorkTaskPanel({
       <section className={css.sceneBoard} aria-label={t('task.workScene')}>
         <div className={css.sceneCard}>
           <span>{t('task.team')}</span>
-          <strong>{model.teamName || t('task.team.pending')}</strong>
-          {model.workflowName === '' ? null : <small>{t('task.workflow')} · {model.workflowName}</small>}
+          <strong>{teamDisplayName(model.teamName, t('task.team.pending'))}</strong>
+          {model.workflowName === '' ? null : <small>{t('task.workflow')}</small>}
         </div>
         <div className={css.sceneCard}>
           <span>{t('task.progress')}</span>
           <strong>{model.totalStages > 0
             ? t('task.progress.count', { completed: model.completedStages, total: model.totalStages })
             : t('task.progress.completedCount', { completed: model.completedStages })}</strong>
-          {model.latestStage === '' ? null : <small>{model.latestStage}</small>}
+          {model.latestStage === '' ? null : <small>{stageLabel(model.latestStage, t)}</small>}
         </div>
         <div className={css.sceneCard}>
           <span>{t('task.members')}</span>
@@ -388,19 +475,19 @@ export function WorkTaskPanel({
         </section>
       )}
       {actionError === null ? null : <div className={css.actionError} role="alert">{actionError}</div>}
-      {model.actionError === '' ? null : <div className={css.actionError} role="alert">{model.actionError}</div>}
+      {model.actionError === '' ? null : <div className={css.actionError} role="alert">{t('task.action.rejected')}</div>}
 
       {activeCorrection?.status === 'ready' ? (
         <section className={css.correctionPlan} aria-label={t('task.correction.impact')}>
           <div className={css.sectionHeader}><span>{t('task.correction.impact')}</span><span>{t('task.correction.ready')}</span></div>
           <strong>{activeCorrection.instruction}</strong>
           <div className={css.impactRoute}>
-            <span>{t('task.correction.safePoint')} <code>{activeCorrection.safeNodeId}</code></span>
-            <span>{t('task.correction.restartAt')} <code>{activeCorrection.restartNodeId}</code></span>
+            <span>{t('task.correction.safePoint')} <strong>{stageLabel(activeCorrection.safeNodeId, t)}</strong></span>
+            <span>{t('task.correction.restartAt')} <strong>{stageLabel(activeCorrection.restartNodeId, t)}</strong></span>
           </div>
           <div className={css.impactColumns}>
-            <div><span>{t('task.correction.affected')}</span>{activeCorrection.affectedNodeIds.map(nodeId => <code key={nodeId}>{nodeId}</code>)}</div>
-            <div><span>{t('task.correction.preserved')}</span>{activeCorrection.preservedNodeIds.length === 0 ? <em>{t('task.correction.none')}</em> : activeCorrection.preservedNodeIds.map(nodeId => <code key={nodeId}>{nodeId}</code>)}</div>
+            <div><span>{t('task.correction.affected')}</span>{activeCorrection.affectedNodeIds.map(nodeId => <strong key={nodeId}>{stageLabel(nodeId, t)}</strong>)}</div>
+            <div><span>{t('task.correction.preserved')}</span>{activeCorrection.preservedNodeIds.length === 0 ? <em>{t('task.correction.none')}</em> : activeCorrection.preservedNodeIds.map(nodeId => <strong key={nodeId}>{stageLabel(nodeId, t)}</strong>)}</div>
           </div>
           <div className={css.controlActions}>
             <button type="button" className={css.secondaryButton} disabled={actionPending} onClick={() => { void submitCorrectionDecision('discard') }}>{t('task.correction.discard')}</button>
@@ -498,7 +585,7 @@ export function WorkTaskPanel({
         {model.latestStage === '' ? null : (
           <div className={css.fact}>
             <span>{t(terminal ? 'task.lastStage' : 'task.currentStage')}</span>
-            <strong>{model.latestStage}</strong>
+            <strong>{stageLabel(model.latestStage, t)}</strong>
           </div>
         )}
         {model.stages.length === 0 ? null : (
@@ -506,7 +593,7 @@ export function WorkTaskPanel({
             {model.stages.map((stage, index) => (
               <li key={`${stage.name}-${index}`} data-status={stage.status}>
                 <span className={css.stageMark} aria-hidden />
-                <span>{stage.name}</span>
+                <span>{stageLabel(stage.name, t)}</span>
               </li>
             ))}
           </ol>
@@ -516,8 +603,8 @@ export function WorkTaskPanel({
       <section className={css.section} aria-label={t('task.team')}>
         <div className={css.sectionHeader}><span>{t('task.team')}</span></div>
         <div className={css.primaryCard}>
-          <strong>{model.teamName || t('task.team.pending')}</strong>
-          {model.workflowName === '' ? null : <span>{t('task.workflow')} · {model.workflowName}</span>}
+          <strong>{teamDisplayName(model.teamName, t('task.team.pending'))}</strong>
+          {model.workflowName === '' ? null : <span>{t('task.workflow')}</span>}
         </div>
       </section>
 
@@ -533,14 +620,14 @@ export function WorkTaskPanel({
                     <strong>{member.name}</strong>
                     <span>{member.duty === '' ? t(member.role === 'lead' ? 'task.member.lead' : 'task.member.worker') : member.duty}</span>
                   </span>
-                  <span className={css.memberRuntimeChip}>{member.runtime || t('task.member.runtimeUnknown')}</span>
+                  <span className={css.memberRuntimeChip}>{runtimeNameLabel(member.runtime, t)}</span>
                   <span className={css.memberState}>{t(memberStatusKey(member.status))}</span>
                 </summary>
                 <div className={css.memberBody}>
                   {member.duty === '' ? null : <p>{member.duty}</p>}
                   <div className={css.memberRuntime}>
                     <span>{t('task.member.runtime')}</span>
-                    <strong>{member.runtime || t('task.member.runtimeUnknown')}</strong>
+                    <strong>{runtimeNameLabel(member.runtime, t)}</strong>
                   </div>
                   {model.status !== 'running' || activeCorrection !== undefined ? null : (
                     <button type="button" className={css.memberCorrectionButton} onClick={() => {
@@ -552,7 +639,7 @@ export function WorkTaskPanel({
                       {member.stages.map(stage => (
                         <li key={stage.nodeId} data-status={stage.status}>
                           <div className={css.memberStageHeading}>
-                            <strong>{stage.name}</strong>
+                            <strong>{stageLabel(stage.name, t)}</strong>
                             <span>{t(memberStatusKey(stage.status))}</span>
                           </div>
                           {stage.status !== 'failed' || stage.failureClass === '' ? null : (
@@ -591,7 +678,7 @@ export function WorkTaskPanel({
                               {stage.tools.map((tool, toolIndex) => (
                                 <div key={`${tool.callId}-${toolIndex}`} data-status={tool.status}>
                                   <span className={css.toolState} aria-hidden />
-                                  <code>{tool.name}</code>
+                                  <strong>{toolLabel(tool.name, t)}</strong>
                                   <small>{t(tool.status === 'running' ? 'task.member.tool.running' : tool.status === 'error' ? 'task.member.tool.error' : 'task.member.tool.ok')}</small>
                                   {tool.input === '' && tool.output === '' ? null : (
                                     <details className={css.toolDetail}>
@@ -605,21 +692,23 @@ export function WorkTaskPanel({
                             </div>
                           )}
                           {stage.inputs.length === 0 ? null : (
-                            <div className={css.memberStageFacts}>
-                              <span>{t('task.member.inputs')}</span>
-                              {stage.inputs.map(input => (
-                                <div className={css.inputFact} key={input.name}>
-                                  <code>{input.name}: {input.source}{input.nodeId === '' ? '' : ` / ${input.nodeId}`}{input.path === '' ? '' : ` ${input.path}`}</code>
-                                  {input.summary === '' ? null : <span>{input.summary}</span>}
-                                </div>
-                              ))}
-                            </div>
+                            <details className={css.inputDetails}>
+                              <summary>{t('task.member.input.details')}</summary>
+                              <div className={css.memberStageFacts}>
+                                {stage.inputs.map((input, inputIndex) => (
+                                  <div className={css.inputFact} key={`${input.name}-${inputIndex}`}>
+                                    <strong>{inputSourceLabel(input.source, t)}</strong>
+                                    {input.summary === '' ? null : <span>{input.summary}</span>}
+                                  </div>
+                                ))}
+                              </div>
+                            </details>
                           )}
                           {stage.outputRefs.length === 0 ? null : (
                             <div className={css.memberStageFacts}>
                               <span>{t('task.member.outputs')}</span>
                               {stage.outputRefs.map(outputRef => (
-                                <code key={outputRef}>{model.deliverables.find(item => item.id === outputRef)?.title ?? outputRef}</code>
+                                <span key={outputRef}>{model.deliverables.find(item => item.id === outputRef)?.title ?? t('task.deliverables.type.file')}</span>
                               ))}
                             </div>
                           )}
@@ -642,8 +731,8 @@ export function WorkTaskPanel({
               <div className={css.runtime} key={`${runtime.name}-${index}`}>
                 <span className={css.statusDot} data-status={runtime.status} aria-hidden />
                 <span className={css.runtimeIdentity}>
-                  <strong>{runtime.name}</strong>
-                  <span>{runtime.detail || t('task.runtime.detailPending')}</span>
+                  <strong>{runtimeNameLabel(runtime.name, t)}</strong>
+                  <span>{runtimeDetailLabel(runtime.detail, t)}</span>
                 </span>
                 <span className={css.runtimeStatus}>{t(statusKey(runtime.status))}</span>
               </div>
@@ -678,7 +767,12 @@ export function WorkTaskPanel({
               <li key={attempt.clientRequestId || attempt.runId} data-current={attempt.runId === model.runId || undefined}>
                 <span>{t('task.attempt', { index: index + 1 })}</span>
                 <strong>{t(statusKey(attempt.status))}</strong>
-                <small>{attempt.brief}</small>
+                {attempt.brief === '' ? null : (
+                  <details className={css.attemptBrief}>
+                    <summary>{t('task.attempt.brief')}</summary>
+                    <p>{attempt.brief}</p>
+                  </details>
+                )}
               </li>
             ))}
           </ol>
@@ -689,6 +783,7 @@ export function WorkTaskPanel({
         <details className={css.diagnostics}>
           <summary>{t('task.diagnostics')}</summary>
           <div><span>{t('task.runId')}</span><code>{model.runId}</code></div>
+          {model.workflowName === '' ? null : <div><span>{t('task.workflow')}</span><code>{model.workflowName}</code></div>}
         </details>
       )}
     </div>

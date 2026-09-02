@@ -26,6 +26,14 @@ function displayTitle(node: SessionNode, t: RowTranslate): string {
   return node.blank ? t('session.new') : node.title
 }
 
+/** Human-readable team label from a product projection; opaque ids never enter the row. */
+function taskTeamLabel(value: string, t: RowTranslate): string {
+  const name = value.trim()
+  if (name === '' || /^[0-9a-f]{8}-[0-9a-f-]{27,}$/iu.test(name)) return t('task.teamUnknown')
+  if (!/^[a-z0-9_-]+$/u.test(name) || (!name.includes('-') && !name.includes('_'))) return name
+  return name.split(/[-_]+/u).filter(Boolean).map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')
+}
+
 /** Localized compact relative time ("刚刚"/"5分钟" in zh, "now"/"5min" in en). */
 function timeLabel(updatedAt: number, now: number, t: RowTranslate): string {
   const { unit, n } = relativeTime(updatedAt, now)
@@ -300,7 +308,7 @@ function SessionHoverContent({ node, now, t }: { node: SessionNode; now: number;
       {!node.blank && <div className={css.hoverTime}>{hoverTimeLabel(node.updatedAt, now, t)}</div>}
       {node.workTask !== undefined && (
         <div className={css.hoverStatus}>
-          <span>{node.workTask.teamName || t('task.teamUnknown')}</span>
+          <span>{taskTeamLabel(node.workTask.teamName, t)}</span>
           {node.workTask.totalStages > 0 && <span>{node.workTask.completedStages}/{node.workTask.totalStages}</span>}
         </div>
       )}
@@ -458,7 +466,7 @@ export function SessionNodeItem({ node, currentId, now, onOpen, onRename, onFork
           exist — both trailing cells stay off until the first prompt. */}
       {!row.blank && row.workTask !== undefined
         ? <span className={css.taskMeta}>{[
-          row.workTask.teamName,
+          taskTeamLabel(row.workTask.teamName, t),
           row.workTask.totalStages > 0 ? `${row.workTask.completedStages}/${row.workTask.totalStages}` : '',
         ].filter(Boolean).join(' · ')}</span>
         : !row.blank && <span className={css.time}>{timeLabel(row.updatedAt, now, t)}</span>}

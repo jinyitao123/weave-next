@@ -147,6 +147,21 @@ describe('workspace browser rows', () => {
     expect(onOpen).toHaveBeenCalledWith(node.id)
   })
 
+  it('presents projected team names without raw slugs or opaque ids', () => {
+    const base: SessionNode = {
+      id: sid('session'), title: 'Team work', blank: false, running: false,
+      runningSubagentCount: 0, completed: false, updatedAt: 0,
+      workTask: { status: 'completed', teamName: 'daily-intelligence', completedStages: 3, totalStages: 3 },
+    }
+    const view = render(<SessionNodeItem node={base} currentId={undefined} now={0} onOpen={vi.fn()}
+      onRename={vi.fn()} onFork={vi.fn()} onArchive={vi.fn()} t={t} />)
+    expect(view.container.textContent).toContain('Daily Intelligence')
+    expect(view.container.textContent).not.toContain('daily-intelligence')
+    view.rerender(<SessionNodeItem node={{ ...base, workTask: { ...base.workTask!, teamName: '123e4567-e89b-12d3-a456-426614174000' } }}
+      currentId={undefined} now={0} onOpen={vi.fn()} onRename={vi.fn()} onFork={vi.fn()} onArchive={vi.fn()} t={t} />)
+    expect(view.container.textContent).not.toContain('123e4567-e89b-12d3-a456-426614174000')
+  })
+
   it('shows the green done dot only on a finished, unviewed session (live activity wins the slot)', () => {
     const renderRow = (over: Partial<SessionNode>) => render(
       <SessionNodeItem

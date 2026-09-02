@@ -3,12 +3,12 @@ export const NS = 'session-log-download'
 
 /** Simplified-Chinese Session export strings. */
 export const zh = {
-  'header.action': 'Session 日志',
-  'dialog.preparingTitle': '正在导出 Session',
-  'dialog.preparingDescription': '正在准备包含当前 Session、子 Session 和附件的 ZIP 文件。',
-  'dialog.successTitle': 'Session 导出已开始下载',
-  'dialog.successDescription': '浏览器正在下载 Session ZIP 文件。',
-  'dialog.errorTitle': 'Session 导出失败',
+  'header.action': '会话记录',
+  'dialog.preparingTitle': '正在导出会话记录',
+  'dialog.preparingDescription': '正在准备包含当前会话、相关会话和附件的压缩文件。',
+  'dialog.successTitle': '会话记录已开始下载',
+  'dialog.successDescription': '浏览器正在下载会话记录压缩文件。',
+  'dialog.errorTitle': '会话记录导出失败',
   'dialog.close': '关闭',
   'dialog.commandFailed': '无法启动 Session 导出。',
 } as const

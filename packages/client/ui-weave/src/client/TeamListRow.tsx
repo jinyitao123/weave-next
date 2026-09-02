@@ -93,6 +93,13 @@ function statusLabel(team: TeamCandidate, t: TeamListProps['t']): string {
     : t('teamList.noWorkflow')
 }
 
+function displayName(value: string, t: TeamListProps['t']): string {
+  const name = value.trim()
+  if (/^[0-9a-f]{8}-[0-9a-f-]{27,}$/iu.test(name)) return t('teamList.unnamed')
+  if (!/^[a-z0-9_-]+$/u.test(name) || (!name.includes('-') && !name.includes('_'))) return name
+  return name.split(/[-_]+/u).filter(Boolean).map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')
+}
+
 function summary(model: TeamListModel, t: TeamListProps['t']): string {
   switch (model.state) {
     case 'running': return t('teamList.running')
@@ -113,7 +120,7 @@ function TeamCard({ team, t, selectTeam }: { team: TeamCandidate; t: TeamListPro
       data-dispatchable={dispatchable || undefined}
     >
       <div className={css.teamHeader}>
-        <strong className={css.teamName}>{team.name}</strong>
+        <strong className={css.teamName}>{displayName(team.name, t)}</strong>
         <span className={css.workflowState}>{statusLabel(team, t)}</span>
       </div>
       {purpose !== '' ? <p className={css.purpose}>{purpose}</p> : null}
@@ -153,9 +160,6 @@ export function TeamListRow({ block, selectTeam, t }: TeamListProps) {
         <div className={css.teams} aria-label={summary(model, t)}>
           {model.teams.map(team => <TeamCard key={team.teamId} team={team} t={t} selectTeam={selectTeam} />)}
         </div>
-      ) : null}
-      {(model.state === 'error' || model.state === 'invalid') && model.detail !== null ? (
-        <pre className={css.errorDetail}>{model.detail}</pre>
       ) : null}
     </section>
   )

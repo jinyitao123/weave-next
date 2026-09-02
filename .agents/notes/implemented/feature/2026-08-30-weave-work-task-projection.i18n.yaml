@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-30-weave-work-task-projection.md
-2026-08-30-weave-work-task-projection.md: 40ff1b69f783688ec91e7f5218d10f999008e306
-2026-08-30-weave-work-task-projection.zh.md: 4879197cd559c9db2016f695c548ed94bda2b500
+2026-08-30-weave-work-task-projection.md: dc05cfbc623366bf512899a9325054b6d9bb4876
+2026-08-30-weave-work-task-projection.zh.md: ff0db0749ce6868a42f6152377e0b15795c1d72e

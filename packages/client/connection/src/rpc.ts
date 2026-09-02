@@ -134,7 +134,7 @@ export type ConnectionRpcHandler = (
 export type ConnectionRpcEndpointMatcher = (endpoint: string) => boolean
 
 /** HTTP methods supported by exact Fetch routes on the shared API channel. */
-export type ConnectionFetchMethod = 'GET' | 'HEAD'
+export type ConnectionFetchMethod = 'GET' | 'HEAD' | 'POST' | 'PUT' | 'DELETE'
 
 /** One exact, transport-independent Fetch route owned by a Host feature. */
 export interface ConnectionFetchRoute {

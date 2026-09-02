@@ -65,7 +65,7 @@ describe('TeamListRow', () => {
 
     const failed = render(<TeamListRow {...props(settled('http_403', { isError: true }))} />)
     expect(failed.container.textContent).toContain('读取团队失败')
-    expect(failed.container.textContent).toContain('http_403')
+    expect(failed.container.textContent).not.toContain('http_403')
   })
 
   it('marks unavailable teams without treating them as selected', () => {

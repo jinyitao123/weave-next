@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-This bundle turns the general DSH Web runtime into Weave Workbench without changing the agent loop. It adds the Workbench browser identity, connects the local `weave mcp serve` process when a business API key is present, and gives the foreground agent one product rule: match an existing team before dispatching work, or state that no suitable team exists and help define one. A Host-side WorkTask projection records the dispatch and keeps its Weave status synchronized after the foreground turn ends. The dispatched Weave run is the durable task; the foreground agent does not create a shadow DSH goal, poll it to completion, or save a duplicate deliverable.
+This bundle turns the general DSH Web runtime into Weave Workbench without changing the agent loop. It adds the Workbench browser identity, connects the local `weave mcp serve` process when a business API key is present, and gives the foreground agent one product rule: match an existing team before dispatching work, or state that no suitable team exists and help define one. A Host-side WorkTask projection records the dispatch and keeps its Weave status synchronized after the foreground turn ends. The same authenticated Host exposes a bounded runtime-node registry to the main Workbench surface. The dispatched Weave run is the durable task; the foreground agent does not create a shadow DSH goal, poll it to completion, or save a duplicate deliverable.
 
 ## Table of Contents
 
@@ -29,6 +29,8 @@ When `WEAVE_API_KEY` is absent, the MCP row is disabled and the browser still st
 
 When a dispatch succeeds, the Host stores its `client_request_id`, run, team, workflow, progress, member activity, named runtime assignment, exact-run deliverables, and blocker state in the Session log. A bounded poller reads the exact run activity and deliverable contracts with the same business identity and appends whole snapshots. Closing the conversation therefore stops neither Weave execution nor Workbench status recovery. Text files explicitly produced below a CLI worker's `outputs/` directory arrive as immutable Weave deliverables, so the panel can preview and download them without accessing an arbitrary host path.
 
+The main Workbench surface lists registered runtime nodes with availability, capacity, engine, last connection, and failover-group membership. Users can add, rename, group, or remove a node without visiting a separate administration application. Removing a node revokes its connection immediately and can interrupt active work; saved task facts and deliverables remain. A newly created runtime token appears only in the creating browser response. Whole-task controls use a dedicated authenticated product route and append WorkTask actions directly, so corrections and reruns do not appear as internal command records in the conversation.
+
 <a id="surface-boundary"></a>
 ## Surface boundary
 
@@ -37,7 +39,7 @@ The Workbench client keeps the DSH session, workspace, model, permission, approv
 <a id="credential-boundary"></a>
 ## Credential boundary
 
-`WEAVE_API_KEY` is passed only from the trusted host process to the local MCP subprocess. It is not embedded in client artifacts and is not added to model context. `WEAVE_SECRET_KEY` and `WEAVE_SECRET_KEY_FILE` belong exclusively to the Weave server because they encrypt stored credentials; this bundle never reads or forwards either value.
+`WEAVE_API_KEY` is passed only from the trusted host process to the local MCP subprocess and authenticated Weave requests. It is not embedded in client artifacts and is not added to model context. Runtime-list responses expose only display, health, capacity, and scheduling facts; mutation responses expose a newly created runtime token once. `WEAVE_SECRET_KEY` and `WEAVE_SECRET_KEY_FILE` belong exclusively to the Weave server because they encrypt stored credentials; this bundle never reads or forwards either value.
 
 <a id="dev-note"></a>
 ## Dev Note

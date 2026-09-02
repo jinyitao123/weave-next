@@ -3373,7 +3373,7 @@ Source: [`packages/webhook/webhook-github/src/index.ts:17`](../packages/webhook/
 
 ## `@deepseek-ai/dsh-workbench-app`
 
-Requires: `sessions` · `sessionProjections` · `commands` · `systemPrompt`
+Requires: `sessions` · `sessionProjections` · `commands` · `systemPrompt` · `connection`
 
 ```ts config-catalog
 /** Host-only WorkTask synchronization settings. */
@@ -3387,7 +3387,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/bundle/workbench-app/src/index.ts:640`](../packages/bundle/workbench-app/src/index.ts)
+Source: [`packages/bundle/workbench-app/src/index.ts:706`](../packages/bundle/workbench-app/src/index.ts)
 
 <a id="deepseek-aidsh-workflow-worker-thread"></a>
 

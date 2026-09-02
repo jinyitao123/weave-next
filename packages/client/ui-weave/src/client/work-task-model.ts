@@ -99,7 +99,11 @@ export interface WorkTaskDeliverable {
   readonly createdAt: string
 }
 
-/** Whether the panel should warn a user that important visible task facts are incomplete. */
+/**
+ * Whether the panel should warn a user that important visible task facts are incomplete.
+ * @param model - Visible task facts and their projection completeness markers.
+ * @returns Whether the user should see a data-completeness warning.
+ */
 export function workTaskHasUserVisibleCompletenessWarning(model: Pick<WorkTaskModel,
   'status' | 'completedStages' | 'totalStages' | 'members' | 'runtimes' | 'deliverables' | 'completeness'
 >): boolean {
