@@ -284,7 +284,7 @@ func (r *WorkflowSerialRuntime) ExecuteFanoutLeg(
 	}
 	if err := r.recordWorkflowArtifacts(ctx, parent, workflowArtifactOwner{
 		NodeID: branch.ID, NodeLabel: branch.Label, NodeType: string(branch.Type), AgentID: worker.AgentID,
-	}, nodeUsage.Artifacts, true); err != nil {
+	}, nodeUsage.Artifacts, false); err != nil {
 		return nil, executionError(ErrorCodeDeliveryUnavailable, err)
 	}
 	encoded, err := json.Marshal(output)

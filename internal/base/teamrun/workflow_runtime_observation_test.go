@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/jinyitao123/weave/internal/base/deliverable"
 	"github.com/jinyitao123/weave/internal/base/taskqueue"
@@ -89,5 +90,23 @@ func TestRecordWorkflowArtifactsProjectsFanoutFiles(t *testing.T) {
 		if output.Final {
 			t.Fatalf("failed output[%d] was promoted to final: %#v", index, output)
 		}
+	}
+}
+
+func TestCheckpointFromParkPreservesConfirmedCorrections(t *testing.T) {
+	correction := CorrectionDirectiveV1{
+		SchemaVersion: 1, CorrectionID: "correction-1", TargetKind: "member",
+		TargetMemberID: "regional-analyst", Instruction: "keep the source read-only",
+		AffectedNodes: []string{"parallel", "regional", "join"},
+	}
+	checkpoint := checkpointFromPark(TeamRun{
+		WorkspaceID: "workspace-1", RunID: "run-1", WorkflowID: "workflow-1",
+		WorkflowVersion: 1, RunSnapshotID: "snapshot-1",
+	}, RuntimePark{
+		NodeID: "join", WaitKind: WaitFanout, Corrections: []CorrectionDirectiveV1{correction},
+	}, time.Time{})
+
+	if len(checkpoint.Corrections) != 1 || checkpoint.Corrections[0].CorrectionID != correction.CorrectionID {
+		t.Fatalf("checkpoint corrections = %#v", checkpoint.Corrections)
 	}
 }

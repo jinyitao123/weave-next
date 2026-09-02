@@ -42,6 +42,7 @@ func checkpointFromPark(
 		ExecutionLeaseEpoch:   run.ExecutionLeaseEpoch,
 		NodeID:                park.NodeID,
 		CompletedOutputs:      park.CompletedOutputs,
+		Corrections:           append([]CorrectionDirectiveV1(nil), park.Corrections...),
 		Usage:                 park.UsageCheckpoint,
 		UsageComplete:         park.UsageComplete,
 		UsageIncompleteReason: park.UsageIncompleteReason,

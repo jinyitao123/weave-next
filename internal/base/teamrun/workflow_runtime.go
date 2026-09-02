@@ -33,6 +33,10 @@ type RuntimePark struct {
 	CompletedOutputs map[string]json.RawMessage
 	WaitKind         WaitKind
 	WaitDetail       json.RawMessage
+	// Corrections carries confirmed user directives across every subsequent
+	// safe-point park. Without this, a correction resume that immediately
+	// re-enters fanout loses the directive before the branch tasks start.
+	Corrections []CorrectionDirectiveV1
 	// UsageCheckpoint persists the serial machine's usage accumulator so a
 	// park/resume cycle never loses or duplicates confirmed usage.
 	UsageCheckpoint json.RawMessage
@@ -327,7 +331,7 @@ func (r *WorkflowSerialRuntime) Execute(
 			LoadObservedEvents: r.observedEventLoader(run),
 		},
 	)
-	return runtimeResultFromSerial(result, prepared.payload)
+	return runtimeResultFromSerial(result, prepared.payload, nil)
 }
 
 func (r *WorkflowSerialRuntime) ResumeCheckpoint(
@@ -381,7 +385,7 @@ func (r *WorkflowSerialRuntime) ResumeCheckpoint(
 			Corrections:           append([]CorrectionDirectiveV1(nil), checkpoint.Corrections...),
 		},
 	)
-	return runtimeResultFromSerial(result, prepared.payload)
+	return runtimeResultFromSerial(result, prepared.payload, checkpoint.Corrections)
 }
 
 func (r *WorkflowSerialRuntime) TimerResumeTarget(
@@ -709,6 +713,7 @@ func decodeCheckpointOutputs(raw map[string]json.RawMessage) (map[string]any, er
 func runtimeResultFromSerial(
 	result serialMachineResult,
 	payload frozen.ArtifactPayloadV1,
+	corrections []CorrectionDirectiveV1,
 ) (RuntimeResult, error) {
 	coverage := result.Usage.Coverage()
 	coveragePtr := &coverage
@@ -749,6 +754,7 @@ func runtimeResultFromSerial(
 		return RuntimeResult{Status: RuntimeParked, Park: &RuntimePark{
 			NodeID: result.NodeID, CompletedOutputs: outputs,
 			WaitKind: result.WaitKind, WaitDetail: result.WaitDetail,
+			Corrections:     append([]CorrectionDirectiveV1(nil), corrections...),
 			UsageCheckpoint: usageCheckpoint,
 			UsageComplete:   result.UsageComplete, UsageIncompleteReason: result.UsageIncompleteReason,
 		}, Usage: result.Usage.Totals(),
