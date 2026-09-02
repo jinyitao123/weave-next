@@ -221,6 +221,24 @@ describe('workTaskModel', () => {
     expect(workTaskModel(nodes).status).toBe('waiting')
   })
 
+  it('exposes an infrastructure-failed stage as explicitly retryable', () => {
+    const model = workTaskModel([
+      tool('mcp__weave__team_dispatch', { team_id: 'team-a' }, { run_id: 'run-a' }),
+      tool('mcp__weave__team_run_activity', { run_id: 'run-a' }, {
+        run_id: 'run-a', status: 'parked', wait_kind: 'fanout',
+        members: [{ agent_id: 'worker-1', name: '物理复核员', status: 'failed', stages: [{
+          node_id: 'physics', name: '物理复核', status: 'failed', failure_class: 'infrastructure',
+          failure_reason: 'the runtime connection or execution environment failed before the stage could finish', retryable: true,
+        }] }],
+      }),
+    ])
+
+    expect(model.status).toBe('waiting')
+    expect(model.members[0]?.stages[0]).toMatchObject({
+      nodeId: 'physics', failureClass: 'infrastructure', retryable: true,
+    })
+  })
+
   it('lets active member evidence make its runtime visibly running', () => {
     const nodes = [
       tool('mcp__weave__team_dispatch', { team_id: 'team-a' }, { run_id: 'run-a' }),
@@ -304,6 +322,7 @@ describe('workTaskModel', () => {
         inputs: [{ name: 'brief', expectedType: 'text', source: 'run_input', nodeId: '', path: '$', summary: '' }],
         outputRefs: ['file-1'],
         startedAt: '2026-08-30T10:00:00Z', completedAt: '2026-08-30T10:00:03Z', durationMs: 3000, toolCalls: 1,
+        failureClass: '', failureReason: '', retryable: false,
         tools: [{ callId: 'tool-1', name: 'calculator', status: 'ok',
           startedAt: '2026-08-30T10:00:01Z', completedAt: '2026-08-30T10:00:02Z', input: '12 * 3', output: '36' }],
       }],

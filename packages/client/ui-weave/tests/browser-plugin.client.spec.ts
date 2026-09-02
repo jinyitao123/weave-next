@@ -55,10 +55,12 @@ describe('ui-weave browser plugin', () => {
     const injected = (summary[0]?.inject as (sessionId: string) => {
       stopRun(runId: string): Promise<string | null>
       rerun(runId: string, brief: string): Promise<string | null>
+      retryStage(runId: string, nodeId: string): Promise<string | null>
     })('session-1')
     await expect(injected.stopRun('run-1')).resolves.toBeNull()
     await expect(injected.rerun('run-1', 'revised brief')).resolves.toBeNull()
-    expect(execute).toHaveBeenCalledTimes(2)
+    await expect(injected.retryStage('run-1', 'physics')).resolves.toBeNull()
+    expect(execute).toHaveBeenCalledTimes(3)
     expect(dictionaries).toHaveLength(1)
   })
 })

@@ -69,7 +69,7 @@ export interface WorkTaskAttempt {
 
 /** The sole unresolved local network action, persisted before it is sent. */
 export interface WorkTaskPendingAction {
-  readonly kind: 'stop' | 'rerun' | 'correction-request' | 'correction-confirm'
+  readonly kind: 'stop' | 'rerun' | 'stage-retry' | 'correction-request' | 'correction-confirm'
   readonly targetRunId: string
   readonly idempotencyKey: string
   readonly clientRequestId: string
@@ -80,6 +80,7 @@ export interface WorkTaskPendingAction {
   readonly correctionId: string
   readonly disposition: 'apply' | 'discard' | ''
   readonly instruction: string
+  readonly nodeId: string
 }
 
 /** One runtime assignment reported by Weave for the task. */
@@ -114,6 +115,9 @@ export interface WorkTaskMemberStage {
   readonly durationMs: number
   readonly toolCalls: number
   readonly tools: WorkTaskMemberTool[]
+  readonly failureClass: 'work' | 'verification' | 'infrastructure' | 'cancelled' | ''
+  readonly failureReason: string
+  readonly retryable: boolean
 }
 
 /** One bounded tool call observation recorded by Weave. */
@@ -198,6 +202,8 @@ const memberStageSchema = z.object({
   durationMs: z.number().int().nonnegative().default(0), toolCalls: z.number().int().nonnegative().default(0),
   tools: z.array(z.object({ callId: z.string(), name: z.string(), status: z.enum(['running', 'ok', 'error']),
     startedAt: z.string(), completedAt: z.string(), input: z.string().default(''), output: z.string().default('') }).strict()).default([]),
+  failureClass: z.enum(['work', 'verification', 'infrastructure', 'cancelled', '']).default(''),
+  failureReason: z.string().default(''), retryable: z.boolean().default(false),
 }).strict()
 const memberSchema = z.object({
   agentId: z.string(), name: z.string(), duty: z.string(), role: z.enum(['lead', 'worker']),
@@ -214,11 +220,12 @@ const attemptSchema = z.object({
   createdAt: z.number().nonnegative(), updatedAt: z.number().nonnegative(),
 }).strict()
 const pendingActionSchema = z.object({
-  kind: z.enum(['stop', 'rerun', 'correction-request', 'correction-confirm']), targetRunId: z.string(), idempotencyKey: z.string(),
+  kind: z.enum(['stop', 'rerun', 'stage-retry', 'correction-request', 'correction-confirm']), targetRunId: z.string(), idempotencyKey: z.string(),
   clientRequestId: z.string(), brief: z.string(), requestedAt: z.number().nonnegative(),
   targetKind: z.enum(['team', 'member', '']).default(''), targetMemberId: z.string().default(''),
   correctionId: z.string().default(''), disposition: z.enum(['apply', 'discard', '']).default(''),
   instruction: z.string().default(''),
+  nodeId: z.string().default(''),
 }).strict()
 const correctionSchema = z.object({
   correctionId: z.string(), targetKind: z.enum(['team', 'member']), targetMemberId: z.string(),
@@ -400,6 +407,9 @@ function memberStages(value: unknown): WorkTaskMemberStage[] {
       outputRefs: Array.isArray(rawOutputs) ? rawOutputs.filter((entry): entry is string => typeof entry === 'string') : [],
       startedAt: text(item, ['started_at', 'startedAt']), completedAt: text(item, ['completed_at', 'completedAt']),
       durationMs: count(item, ['duration_ms', 'durationMs']), toolCalls: count(item, ['tool_calls', 'toolCalls']),
+      failureClass: (['work', 'verification', 'infrastructure', 'cancelled'].includes(text(item, ['failure_class', 'failureClass']))
+        ? text(item, ['failure_class', 'failureClass']) : '') as WorkTaskMemberStage['failureClass'],
+      failureReason: text(item, ['failure_reason', 'failureReason']), retryable: item.retryable === true,
       tools: rawTools.flatMap((candidate): WorkTaskMemberTool[] => {
         const tool = object(candidate)
         if (tool === undefined) return []
@@ -775,6 +785,10 @@ export function apply(ctx: Context, config: Config = {}): void {
             method: 'POST', body: JSON.stringify({ task: action.brief, mode: 'workflow', client_request_id: action.clientRequestId,
               ...(current.workflowName === '' ? {} : { workflow_id: current.workflowName }) }),
           })
+        } else if (action.kind === 'stage-retry') {
+          response = await request(`/v1/runs/${encodeURIComponent(action.targetRunId)}/stages/${encodeURIComponent(action.nodeId)}/retry`, {
+            method: 'POST', body: '{}',
+          })
         } else if (action.kind === 'correction-request') {
           response = await request(`/v1/runs/${encodeURIComponent(action.targetRunId)}/corrections`, {
             method: 'POST', body: JSON.stringify({ target_kind: action.targetKind,
@@ -800,7 +814,7 @@ export function apply(ctx: Context, config: Config = {}): void {
             next = { ...current, pendingAction: null, actionError: '',
               corrections,
               updatedAt: Date.now() }
-          } else if (action.kind === 'correction-confirm') {
+          } else if (action.kind === 'correction-confirm' || action.kind === 'stage-retry') {
             next = { ...current, pendingAction: null, actionError: '', updatedAt: Date.now() }
           } else {
             next = snapshot(current, value, Date.now(), { pendingAction: null, actionError: '' })
@@ -881,7 +895,7 @@ export function apply(ctx: Context, config: Config = {}): void {
         kind: 'stop', targetRunId: current.runId,
         idempotencyKey: `workbench-stop:${randomUUID()}`,
         clientRequestId: '', brief: '', requestedAt: Date.now(),
-        targetKind: '', targetMemberId: '', correctionId: '', disposition: '', instruction: '',
+        targetKind: '', targetMemberId: '', correctionId: '', disposition: '', instruction: '', nodeId: '',
       }
       agent.session.append('weave/work-task-action', { pendingAction })
       await ctx.sessions.flush(agent.session)
@@ -906,7 +920,7 @@ export function apply(ctx: Context, config: Config = {}): void {
       const pendingAction: WorkTaskPendingAction = {
         kind: 'rerun', targetRunId: current.runId, idempotencyKey: '',
         clientRequestId: randomUUID(), brief, requestedAt: Date.now(),
-        targetKind: '', targetMemberId: '', correctionId: '', disposition: '', instruction: '',
+        targetKind: '', targetMemberId: '', correctionId: '', disposition: '', instruction: '', nodeId: '',
       }
       agent.session.append('weave/work-task-action', { pendingAction })
       await ctx.sessions.flush(agent.session)
@@ -936,7 +950,7 @@ export function apply(ctx: Context, config: Config = {}): void {
       const pendingAction: WorkTaskPendingAction = {
         kind: 'correction-request', targetRunId: current.runId,
         idempotencyKey: `workbench-correction:${randomUUID()}`, clientRequestId: '', brief: '', requestedAt: Date.now(),
-        targetKind, targetMemberId: targetKind === 'member' ? targetMemberId : '', correctionId: '', disposition: '', instruction,
+        targetKind, targetMemberId: targetKind === 'member' ? targetMemberId : '', correctionId: '', disposition: '', instruction, nodeId: '',
       }
       agent.session.append('weave/work-task-action', { pendingAction })
       await ctx.sessions.flush(agent.session)
@@ -963,7 +977,7 @@ export function apply(ctx: Context, config: Config = {}): void {
       const pendingAction: WorkTaskPendingAction = {
         kind: 'correction-confirm', targetRunId: current.runId,
         idempotencyKey: `workbench-correction-confirm:${randomUUID()}`, clientRequestId: '', brief: '', requestedAt: Date.now(),
-        targetKind: '', targetMemberId: '', correctionId, disposition, instruction: '',
+        targetKind: '', targetMemberId: '', correctionId, disposition, instruction: '', nodeId: '',
       }
       agent.session.append('weave/work-task-action', { pendingAction })
       await ctx.sessions.flush(agent.session)
@@ -971,6 +985,30 @@ export function apply(ctx: Context, config: Config = {}): void {
       return { kind: 'success', text: 'Weave correction confirmation recorded.' }
     },
   }), 'workbench: correction confirmation command')
+  ctx.effect(() => ctx.commands.register({
+    name: 'weave-retry-stage',
+    description: 'retry one exact infrastructure-failed Weave stage without invoking the model',
+    recordInput: false,
+    handler: async ({ agent, rawInput }) => {
+      const current = ctx.sessionProjections.stateOf(agent.session, 'workTask')?.task
+      let request: { runId?: unknown; nodeId?: unknown }
+      try { request = JSON.parse(rawInput.trim()) as typeof request } catch { return { kind: 'error', text: 'Invalid Weave stage retry request.' } }
+      const nodeId = typeof request.nodeId === 'string' ? request.nodeId.trim() : ''
+      const retryable = current?.members.some(member => member.stages.some(stage => stage.nodeId === nodeId && stage.retryable)) === true
+      if (current === null || current === undefined || request.runId !== current.runId || nodeId === '' || !retryable) {
+        return { kind: 'error', text: 'A retryable infrastructure-failed stage is required.' }
+      }
+      if (current.pendingAction !== null) return { kind: 'error', text: 'Another Weave action is already pending.' }
+      const pendingAction: WorkTaskPendingAction = {
+        kind: 'stage-retry', targetRunId: current.runId, idempotencyKey: '', clientRequestId: '', brief: '', requestedAt: Date.now(),
+        targetKind: '', targetMemberId: '', correctionId: '', disposition: '', instruction: '', nodeId,
+      }
+      agent.session.append('weave/work-task-action', { pendingAction })
+      await ctx.sessions.flush(agent.session)
+      schedule(agent.session, 0)
+      return { kind: 'success', text: 'Weave stage retry request recorded.' }
+    },
+  }), 'workbench: exact failed stage retry command')
   ctx.effect(() => ctx.commands.register({
     name: 'weave-assess',
     description: 'record whether the final Weave delivery is usable without invoking the model',

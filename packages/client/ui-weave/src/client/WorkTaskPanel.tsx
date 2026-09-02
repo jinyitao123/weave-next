@@ -10,6 +10,7 @@ interface WorkTaskInjected {
   readonly selectTeam?: (teamId: string, teamName: string) => Promise<void>
   readonly stopRun?: (runId: string) => Promise<string | null>
   readonly rerun?: (runId: string, brief: string) => Promise<string | null>
+  readonly retryStage?: (runId: string, nodeId: string) => Promise<string | null>
   readonly requestCorrection?: (runId: string, targetKind: 'team' | 'member', targetMemberId: string, instruction: string) => Promise<string | null>
   readonly confirmCorrection?: (runId: string, correctionId: string, disposition: 'apply' | 'discard') => Promise<string | null>
   readonly assessOutcome?: (runId: string, outcome: 'adopted' | 'needs-revision', note: string) => Promise<string | null>
@@ -117,7 +118,7 @@ function DeliverableItems({ items, t }: { readonly items: readonly WorkTaskDeliv
                 : <pre>{item.preview}</pre>}
               <div className={css.deliverableActions}>
                 {item.content === '' || item.truncated ? null : (
-                  <button type="button" onClick={() => downloadDeliverable(item)}>{t('task.deliverables.download')}</button>
+                  <button type="button" onClick={() =>{  downloadDeliverable(item) }}>{t('task.deliverables.download')}</button>
                 )}
                 {item.truncated ? <span>{t('task.deliverables.truncated')}</span> : null}
               </div>
@@ -152,7 +153,7 @@ export function WorkTaskHeader({ useChat, useProjection, openDetails, t }: Heade
 /** Persistent Weave task, team, runtime, and deliverable projection. */
 export function WorkTaskPanel({
   useChat, useProjection, useSessions, sessionId, openDetails, selectTeam,
-  stopRun, rerun, requestCorrection, confirmCorrection, assessOutcome, t,
+  stopRun, rerun, retryStage, requestCorrection, confirmCorrection, assessOutcome, t,
 }: PanelProps) {
   const conversationModel = useChat(snapshot => workTaskModel(snapshot.nodes.values()))
   const projection = useProjection('workTask')
@@ -168,6 +169,7 @@ export function WorkTaskPanel({
   const [correctionTarget, setCorrectionTarget] = useState('team')
   const [correctionInstruction, setCorrectionInstruction] = useState('')
   const [assessmentNote, setAssessmentNote] = useState('')
+  const [retryNodeId, setRetryNodeId] = useState('')
 
   useEffect(() => {
     if (model.detected) openDetails()
@@ -209,6 +211,15 @@ export function WorkTaskPanel({
     setActionPending(false)
     if (error !== null) setActionError(error)
     else setRevisionOpen(false)
+  }
+  const submitStageRetry = async () => {
+    if (retryStage === undefined || actionPending || retryNodeId === '') return
+    setActionPending(true)
+    setActionError(null)
+    const error = await retryStage(model.runId, retryNodeId)
+    setActionPending(false)
+    if (error !== null) setActionError(error)
+    else setRetryNodeId('')
   }
   const submitCorrection = async () => {
     if (requestCorrection === undefined || actionPending || correctionInstruction.trim() === '') return
@@ -265,9 +276,11 @@ export function WorkTaskPanel({
               ? 'task.action.stopPending'
               : model.pendingAction.kind === 'rerun'
                 ? 'task.action.rerunPending'
-                : model.pendingAction.kind === 'correction-request'
-                  ? 'task.action.correctionPending'
-                  : 'task.action.correctionConfirmPending')}
+                : model.pendingAction.kind === 'stage-retry'
+                  ? 'task.action.stageRetryPending'
+                  : model.pendingAction.kind === 'correction-request'
+                    ? 'task.action.correctionPending'
+                    : 'task.action.correctionConfirmPending')}
           </div>
         )}
       </section>
@@ -529,6 +542,29 @@ export function WorkTaskPanel({
                             <strong>{stage.name}</strong>
                             <span>{t(memberStatusKey(stage.status))}</span>
                           </div>
+                          {stage.status !== 'failed' || stage.failureClass === '' ? null : (
+                            <div className={css.stageFailure} data-class={stage.failureClass}>
+                              <strong>{t(stage.failureClass === 'infrastructure'
+                                ? 'task.failure.infrastructure'
+                                : stage.failureClass === 'verification'
+                                  ? 'task.failure.verification'
+                                  : 'task.failure.work')}</strong>
+                              {stage.failureReason === '' ? null : <span>{t(stage.failureClass === 'infrastructure'
+                                ? 'task.failure.reason.infrastructure'
+                                : stage.failureClass === 'verification'
+                                  ? 'task.failure.reason.verification'
+                                  : 'task.failure.reason.work')}</span>}
+                              {!stage.retryable || retryStage === undefined ? null : retryNodeId === stage.nodeId ? (
+                                <div className={css.retryConfirm}>
+                                  <span>{t('task.retry.impact')}</span>
+                                  <div className={css.controlActions}>
+                                    <button type="button" className={css.secondaryButton} onClick={() => { setRetryNodeId('') }}>{t('task.cancel')}</button>
+                                    <button type="button" className={css.primaryButton} disabled={actionPending} onClick={() => { void submitStageRetry() }}>{t('task.retry.confirm')}</button>
+                                  </div>
+                                </div>
+                              ) : <button type="button" className={css.memberCorrectionButton} onClick={() => { setRetryNodeId(stage.nodeId) }}>{t('task.retry.stage')}</button>}
+                            </div>
+                          )}
                           {stage.startedAt === '' && stage.durationMs === 0 && stage.toolCalls === 0 ? null : (
                             <div className={css.memberStageMetrics}>
                               {stage.startedAt === '' ? null : <span>{t('task.member.started')} <time dateTime={stage.startedAt}>{new Date(stage.startedAt).toLocaleTimeString()}</time></span>}

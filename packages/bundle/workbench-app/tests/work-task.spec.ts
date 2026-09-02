@@ -164,6 +164,7 @@ describe('Workbench work-task projection', () => {
         inputs: [{ name: 'facts', expectedType: 'text', source: 'node_output', nodeId: 'draft', path: '$.facts', summary: '' }],
         outputRefs: ['deliverable-1'],
         startedAt: '2026-08-30T10:00:00Z', completedAt: '2026-08-30T10:00:04Z', durationMs: 4000, toolCalls: 1,
+        failureClass: '', failureReason: '', retryable: false,
         tools: [{ callId: 'tool-1', name: 'evidence_lookup', status: 'ok',
           startedAt: '2026-08-30T10:00:01Z', completedAt: '2026-08-30T10:00:02Z',
           input: '{"query":"关键假设"}', output: '2 条证据' }],

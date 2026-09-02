@@ -77,6 +77,12 @@ export function apply(ctx: ClientContext): void {
         if (result.value === undefined) return 'The Weave rerun command is unavailable.'
         return result.value.result.kind === 'error' ? result.value.result.text : null
       },
+      retryStage: async (runId: string, nodeId: string) => {
+        const result = await ctx.remote.commands.execute(sessionId, `/weave-retry-stage ${JSON.stringify({ runId, nodeId })}`, [])
+        if (!result.ok) return result.error.message
+        if (result.value === undefined) return 'The Weave stage retry command is unavailable.'
+        return result.value.result.kind === 'error' ? result.value.result.text : null
+      },
       requestCorrection: async (runId: string, targetKind: 'team' | 'member', targetMemberId: string, instruction: string) => {
         const result = await ctx.remote.commands.execute(sessionId, `/weave-correct ${JSON.stringify({ runId, targetKind, targetMemberId, instruction })}`, [])
         if (!result.ok) return result.error.message

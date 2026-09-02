@@ -261,6 +261,29 @@
   color: var(--dsw-alias-state-warn-primary);
 }
 
+.stageFailure {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 9px 10px;
+  border: 1px solid var(--dsw-alias-state-error-primary);
+  border-radius: 7px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.stageFailure[data-class='infrastructure'] {
+  border-color: var(--dsw-alias-state-warn-primary);
+}
+
+.retryConfirm {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
 .pendingAction,
 .actionError {
   padding: 8px 10px;

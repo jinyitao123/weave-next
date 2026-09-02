@@ -60,6 +60,9 @@ export interface WorkTaskMemberStage {
   readonly durationMs: number
   readonly toolCalls: number
   readonly tools: readonly WorkTaskMemberTool[]
+  readonly failureClass: 'work' | 'verification' | 'infrastructure' | 'cancelled' | ''
+  readonly failureReason: string
+  readonly retryable: boolean
 }
 
 /** One bounded tool call observation recorded by Weave. */
@@ -178,7 +181,7 @@ export interface WorkTaskAttempt {
 
 /** The sole unresolved local network action, persisted before it is sent. */
 export interface WorkTaskPendingAction {
-  readonly kind: 'stop' | 'rerun' | 'correction-request' | 'correction-confirm'
+  readonly kind: 'stop' | 'rerun' | 'stage-retry' | 'correction-request' | 'correction-confirm'
   readonly targetRunId: string
   readonly idempotencyKey: string
   readonly clientRequestId: string
@@ -189,6 +192,7 @@ export interface WorkTaskPendingAction {
   readonly correctionId: string
   readonly disposition: 'apply' | 'discard' | ''
   readonly instruction: string
+  readonly nodeId: string
 }
 
 /** One durable correction request and its computed restart impact. */
@@ -511,6 +515,9 @@ function memberStages(value: unknown): readonly WorkTaskMemberStage[] {
       outputRefs: Array.isArray(rawOutputs) ? rawOutputs.filter((entry): entry is string => typeof entry === 'string') : [],
       startedAt: deepString(item, ['started_at', 'startedAt']), completedAt: deepString(item, ['completed_at', 'completedAt']),
       durationMs: deepNumber(item, ['duration_ms', 'durationMs']), toolCalls: deepNumber(item, ['tool_calls', 'toolCalls']),
+      failureClass: (['work', 'verification', 'infrastructure', 'cancelled'].includes(deepString(item, ['failure_class', 'failureClass']))
+        ? deepString(item, ['failure_class', 'failureClass']) : '') as WorkTaskMemberStage['failureClass'],
+      failureReason: deepString(item, ['failure_reason', 'failureReason']), retryable: item.retryable === true,
       tools: rawTools.flatMap((candidate): WorkTaskMemberTool[] => {
         const tool = record(candidate)
         if (tool === null) return []
