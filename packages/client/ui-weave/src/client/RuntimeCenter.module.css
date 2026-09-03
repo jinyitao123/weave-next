@@ -44,15 +44,19 @@ button:disabled { cursor: default; opacity: .5; }
 .install code { display: block; margin-top: 7px; }
 @media (max-width: 520px) { .heading { flex-direction: column; } .runtime summary { grid-template-columns: 8px minmax(0, 1fr) auto; } .capacity { display: none; } .body dl { grid-template-columns: 1fr; } }
 @media (prefers-reduced-motion: no-preference) { .runtime summary, .headingActions button, .actions button { transition: color 140ms ease, background-color 140ms ease, border-color 140ms ease; } }
-.homeLauncher { box-sizing: border-box; display: grid; width: 100%; grid-template-columns: 28px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 9px 12px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 12px; background: color-mix(in srgb, var(--dsw-alias-bg-base) 88%, var(--dsw-alias-brand-primary)); color: var(--dsw-alias-label-primary); cursor: pointer; text-align: left; box-shadow: var(--dsw-shadow-lv1); }
-.homeLauncher > span:nth-child(2) { display: flex; min-width: 0; flex-direction: column; }
-.homeLauncher strong { font-size: 13px; line-height: 18px; }
-.homeLauncher small, .homeLauncher > span:last-child { color: var(--dsw-alias-label-tertiary); font-size: 11px; line-height: 16px; }
-.homeLauncher:hover { border-color: var(--dsw-alias-brand-primary); }
-.homeMark { width: 24px; height: 24px; border-radius: 8px; background: var(--dsw-alias-brand-primary); box-shadow: inset 0 0 0 7px color-mix(in srgb, white 86%, transparent); }
-.homeBackdrop { position: fixed; z-index: 60; inset: 0; display: grid; place-items: center; padding: 24px; background: rgb(0 0 0 / 28%); backdrop-filter: blur(5px); }
+.sidebarTrigger { box-sizing: border-box; display: flex; width: calc(100% + 4px); height: 42px; align-items: center; gap: 8px; margin: 4px -2px; padding: 0 10px 0 8px; overflow: hidden; border: 0; border-radius: 12px; background: transparent; color: var(--dsw-alias-label-primary); cursor: pointer; font: inherit; text-align: left; }
+.sidebarTrigger:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.sidebarTrigger small { flex: none; margin-left: auto; color: var(--dsw-alias-label-tertiary); font-size: 11px; line-height: 16px; font-variant-numeric: tabular-nums; }
+.sidebarRail { width: 36px; height: 36px; justify-content: center; gap: 0; margin: 8px 0; padding: 0; border-radius: 50%; }
+.sidebarIcon { position: relative; display: inline-flex; flex: none; }
+.sidebarDot { position: absolute; right: -3px; bottom: -3px; width: 7px; height: 7px; border: 1.5px solid var(--dsw-specific-sidebar-fill); border-radius: 50%; background: var(--dsw-alias-label-tertiary); }
+.sidebarDot[data-tone='healthy'] { background: var(--dsw-alias-state-success-primary); }
+.sidebarDot[data-tone='partial'] { background: var(--dsw-alias-state-warn-primary); }
+.sidebarDot[data-tone='attention'] { background: var(--dsw-alias-state-error-primary); }
+.sidebarLabel { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 14px; line-height: 22px; }
+.homeBackdrop { position: fixed; z-index: 1000; inset: 0; display: grid; place-items: center; padding: 24px; background: rgb(0 0 0 / 28%); backdrop-filter: blur(5px); }
 .homePanel { position: relative; box-sizing: border-box; width: min(620px, 100%); max-height: min(760px, calc(100vh - 48px)); padding: 14px 22px 20px; overflow: auto; border: 1px solid var(--dsw-alias-border-l2); border-radius: 16px; background: var(--dsw-alias-bg-base); box-shadow: 0 24px 80px rgb(0 0 0 / 24%); }
 .homePanel .center { padding-top: 8px; border-top: 0; }
 .homeClose { position: sticky; z-index: 2; top: 0; float: right; width: 28px; height: 28px; margin-right: -8px; border: 0; border-radius: 50%; background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-secondary); cursor: pointer; font: inherit; font-size: 18px; line-height: 28px; }
-@media (max-width: 520px) { .homeLauncher { grid-template-columns: 28px minmax(0, 1fr); } .homeLauncher > span:last-child { display: none; } .homeBackdrop { padding: 12px; } .homePanel { max-height: calc(100vh - 24px); padding-inline: 16px; } }
-@media (prefers-reduced-motion: no-preference) { .homeLauncher { transition: border-color 140ms ease, background-color 140ms ease, box-shadow 140ms ease; } }
+@media (max-width: 520px) { .homeBackdrop { padding: 12px; } .homePanel { max-height: calc(100vh - 24px); padding-inline: 16px; } }
+@media (prefers-reduced-motion: no-preference) { .sidebarTrigger { transition: color 140ms ease, background-color 140ms ease; } }

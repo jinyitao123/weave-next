@@ -13,7 +13,7 @@ describe('Workbench Weave readiness', () => {
 
   it('reports a dispatchable team and healthy runtime from authenticated host probes', async () => {
     const fetcher = vi.fn<typeof fetch>(async (input) => {
-      const url = String(input)
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
       if (url.endsWith('/v1/health')) return Response.json({ status: 'ok', version: '1.0.0' })
       if (url.includes('/v1/teams')) return Response.json([{
         id: 'team-1', default_workflow_id: 'workflow-1',

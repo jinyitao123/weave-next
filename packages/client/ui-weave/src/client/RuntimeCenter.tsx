@@ -1,12 +1,20 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
+import { IconDataOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import css from './RuntimeCenter.module.css'
+
+interface RuntimeEngineView {
+  readonly engine: string
+  readonly binaryVersion: string
+  readonly authMode: 'chatgpt' | 'oauth' | 'provider' | 'unknown'
+}
 
 interface RuntimeView {
   readonly id: string
   readonly name: string
   readonly engines: readonly string[]
+  readonly engineCapabilities: readonly RuntimeEngineView[]
   readonly healthStatus: 'healthy' | 'busy' | 'degraded' | 'quarantined' | 'offline'
   readonly totalSlots: number
   readonly activeSlots: number
@@ -19,7 +27,8 @@ interface RuntimeView {
 
 interface CreatedRuntime { readonly id: string; readonly name: string; readonly token: string }
 type Props = PropsLocale<'weave'>
-type HomeProps = PropsRuntime<'conversation.input.dock'> & Props
+type SidebarProps = PropsRuntime<'sidebar.footer.action'> & Props
+type CenterProps = Props & { readonly onSnapshot?: (runtimes: readonly RuntimeView[]) => void }
 
 function object(value: unknown): Record<string, unknown> | undefined {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -33,9 +42,22 @@ function runtime(value: unknown): RuntimeView | null {
   const healthStatus = ['healthy', 'busy', 'degraded', 'quarantined', 'offline'].includes(String(item.healthStatus))
     ? item.healthStatus as RuntimeView['healthStatus']
     : 'offline'
+  const capabilities = Array.isArray(item.engineCapabilities) ? item.engineCapabilities : []
   return {
     id: item.id, name: item.name,
     engines: Array.isArray(item.engines) ? item.engines.filter((engine): engine is string => typeof engine === 'string') : [],
+    engineCapabilities: capabilities.flatMap((value): RuntimeEngineView[] => {
+      const capability = object(value)
+      if (capability === undefined || typeof capability.engine !== 'string') return []
+      const authMode = ['chatgpt', 'oauth', 'provider'].includes(String(capability.authMode))
+        ? capability.authMode as RuntimeEngineView['authMode']
+        : 'unknown'
+      return [{
+        engine: capability.engine,
+        binaryVersion: typeof capability.binaryVersion === 'string' ? capability.binaryVersion : '',
+        authMode,
+      }]
+    }),
     healthStatus,
     totalSlots: typeof item.totalSlots === 'number' ? item.totalSlots : 0,
     activeSlots: typeof item.activeSlots === 'number' ? item.activeSlots : 0,
@@ -59,6 +81,26 @@ function engineLabel(engine: string, t: Props['t']): string {
   if (normalized === 'opencode') return t('runtimeCenter.engine.opencode')
   if (normalized === 'loom' || normalized === 'toolloop') return t('runtimeCenter.engine.builtin')
   return t('runtimeCenter.engine.other')
+}
+
+function authLabel(mode: RuntimeEngineView['authMode'], t: Props['t']): string {
+  if (mode === 'chatgpt') return t('runtimeCenter.auth.chatgpt')
+  if (mode === 'oauth') return t('runtimeCenter.auth.oauth')
+  if (mode === 'provider') return t('runtimeCenter.auth.provider')
+  return t('runtimeCenter.auth.unknown')
+}
+
+function engineSummary(item: RuntimeView, t: Props['t']): string {
+  if (item.engines.length === 0) return t('runtimeCenter.engine.pending')
+  return item.engines.map((engine) => {
+    const capability = item.engineCapabilities.find(candidate => candidate.engine === engine)
+    const label = engineLabel(engine, t)
+    return capability === undefined ? label : `${label} · ${authLabel(capability.authMode, t)}`
+  }).join(' / ')
+}
+
+function availableRuntimeCount(runtimes: readonly RuntimeView[]): number {
+  return runtimes.filter(item => item.online && item.enabled && !['offline', 'quarantined'].includes(item.healthStatus)).length
 }
 
 function runtimeName(value: string, t: Props['t']): string {
@@ -102,8 +144,16 @@ async function responseError(response: Response, t: Props['t'], fallback: string
   } catch { return fallback }
 }
 
+async function fetchRuntimes(t: Props['t']): Promise<readonly RuntimeView[]> {
+  const response = await fetch('/api/weave.runtimes', { headers: { Accept: 'application/json' }, cache: 'no-store' })
+  if (!response.ok) throw new Error(await responseError(response, t, t('runtimeCenter.error.load')))
+  const list = runtimeList(await response.json() as unknown)
+  if (list === null) throw new Error(t('runtimeCenter.error.load'))
+  return list
+}
+
 /** Product runtime registry backed by host-authenticated Weave requests. */
-export function RuntimeCenter({ t }: Props) {
+export function RuntimeCenter({ t, onSnapshot }: CenterProps) {
   const [runtimes, setRuntimes] = useState<readonly RuntimeView[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -120,14 +170,12 @@ export function RuntimeCenter({ t }: Props) {
   const refresh = useCallback(async () => {
     setLoading(true); setError('')
     try {
-      const response = await fetch('/api/weave.runtimes', { headers: { Accept: 'application/json' }, cache: 'no-store' })
-      if (!response.ok) throw new Error(await responseError(response, t, t('runtimeCenter.error.load')))
-      const list = runtimeList(await response.json() as unknown)
-      if (list === null) throw new Error(t('runtimeCenter.error.load'))
+      const list = await fetchRuntimes(t)
       setRuntimes(list)
+      onSnapshot?.(list)
     } catch (cause) { setError(cause instanceof Error ? cause.message : t('runtimeCenter.error.load')) }
     finally { setLoading(false) }
-  }, [t])
+  }, [onSnapshot, t])
 
   useEffect(() => { void refresh() }, [refresh])
 
@@ -176,7 +224,7 @@ export function RuntimeCenter({ t }: Props) {
     catch { setNotice(t('runtimeCenter.token.copyFailed')) }
   }
 
-  const available = runtimes.filter(item => item.online && item.enabled && !['offline', 'quarantined'].includes(item.healthStatus)).length
+  const available = availableRuntimeCount(runtimes)
   return (
     <section className={css.center} aria-label={t('runtimeCenter.title')}>
       <div className={css.heading}>
@@ -194,12 +242,23 @@ export function RuntimeCenter({ t }: Props) {
             <details className={css.runtime} key={item.id}>
               <summary>
                 <span className={css.status} data-status={item.healthStatus} aria-hidden />
-                <span className={css.identity}><strong>{runtimeName(item.name, t)}</strong><small>{item.engines.length === 0 ? t('runtimeCenter.engine.pending') : item.engines.map(engine => engineLabel(engine, t)).join(' · ')}</small></span>
+                <span className={css.identity}><strong>{runtimeName(item.name, t)}</strong><small>{engineSummary(item, t)}</small></span>
                 <span className={css.capacity}>{t('runtimeCenter.capacity', { active: item.activeSlots, total: item.totalSlots })}</span>
                 <span className={css.health}>{t(`runtimeCenter.status.${item.healthStatus}` as const)}</span>
               </summary>
               <div className={css.body}>
-                <dl><div><dt>{t('runtimeCenter.lastSeen')}</dt><dd>{timeLabel(item.lastHeartbeatAt, t)}</dd></div><div><dt>{t('runtimeCenter.pool')}</dt><dd>{poolName(item.poolId, t)}</dd></div></dl>
+                <dl>
+                  <div><dt>{t('runtimeCenter.lastSeen')}</dt><dd>{timeLabel(item.lastHeartbeatAt, t)}</dd></div>
+                  <div><dt>{t('runtimeCenter.pool')}</dt><dd>{poolName(item.poolId, t)}</dd></div>
+                  {item.engineCapabilities.map(capability => (
+                    <div key={capability.engine}>
+                      <dt>{engineLabel(capability.engine, t)}</dt>
+                      <dd>{capability.binaryVersion === ''
+                        ? authLabel(capability.authMode, t)
+                        : t('runtimeCenter.engine.detail', { auth: authLabel(capability.authMode, t), version: capability.binaryVersion })}</dd>
+                    </div>
+                  ))}
+                </dl>
                 <div className={css.actions}>
                   <button type="button" onClick={() => { setEditing(item); setEditedName(item.name); setPoolId(item.poolId) }}>{t('runtimeCenter.configure')}</button>
                   <button type="button" data-danger onClick={() => { setRemoving(item) }}>{t('runtimeCenter.remove')}</button>
@@ -250,28 +309,62 @@ export function RuntimeCenter({ t }: Props) {
   )
 }
 
-/** Main-page entry for runtime management while the current Session is blank. */
-export function RuntimeHomeEntry({ session, t }: HomeProps) {
+/** Global DSH sidebar entry for runtime-node availability and management. */
+export function RuntimeSidebarEntry({ wide, t }: SidebarProps) {
   const [open, setOpen] = useState(false)
+  const [runtimes, setRuntimes] = useState<readonly RuntimeView[] | null>(null)
+  const [unavailable, setUnavailable] = useState(false)
+
+  const refreshSummary = useCallback(async () => {
+    try {
+      setRuntimes(await fetchRuntimes(t))
+      setUnavailable(false)
+    } catch {
+      setUnavailable(true)
+    }
+  }, [t])
+
+  useEffect(() => { void refreshSummary() }, [refreshSummary])
   useEffect(() => {
     if (!open) return
     const close = (event: KeyboardEvent) => { if (event.key === 'Escape') setOpen(false) }
     window.addEventListener('keydown', close)
     return () => { window.removeEventListener('keydown', close) }
   }, [open])
-  if (!session.blank) return null
+
+  const available = runtimes === null ? 0 : availableRuntimeCount(runtimes)
+  const total = runtimes?.length ?? 0
+  const tone = runtimes === null
+    ? 'pending'
+    : unavailable || available === 0
+      ? 'attention'
+      : available < total
+        ? 'partial'
+        : 'healthy'
+  const summary = runtimes === null
+    ? t('runtimeCenter.sidebar.pending')
+    : t('runtimeCenter.summary', { available, total })
   return (
     <>
-      <button type="button" className={css.homeLauncher} aria-haspopup="dialog" onClick={() => { setOpen(true) }}>
-        <span className={css.homeMark} aria-hidden />
-        <span><strong>{t('runtimeCenter.title')}</strong><small>{t('runtimeCenter.home.notice')}</small></span>
-        <span>{t('runtimeCenter.home.open')}</span>
+      <button
+        type="button"
+        className={`${css.sidebarTrigger}${wide ? '' : ` ${css.sidebarRail}`}`}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        aria-label={t('runtimeCenter.sidebar.aria', { summary })}
+        onClick={() => { setOpen(true); void refreshSummary() }}
+      >
+        <span className={css.sidebarIcon}>
+          <IconDataOutline16 size={wide ? 16 : 18} />
+          <span className={css.sidebarDot} data-tone={tone} aria-hidden />
+        </span>
+        {wide ? <><span className={css.sidebarLabel}>{t('runtimeCenter.title')}</span><small>{summary}</small></> : null}
       </button>
       {!open ? null : (
         <div className={css.homeBackdrop} role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setOpen(false) }}>
           <section className={css.homePanel} role="dialog" aria-modal="true" aria-label={t('runtimeCenter.title')}>
             <button type="button" className={css.homeClose} autoFocus aria-label={t('runtimeCenter.close')} onClick={() => { setOpen(false) }}>×</button>
-            <RuntimeCenter t={t} />
+            <RuntimeCenter t={t} onSnapshot={setRuntimes} />
           </section>
         </div>
       )}

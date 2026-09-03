@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { apply, inject } from '../src/client/index.ts'
 import { DeliverableRow } from '../src/client/DeliverableRow.tsx'
-import { RuntimeHomeEntry } from '../src/client/RuntimeCenter.tsx'
+import { RuntimeSidebarEntry } from '../src/client/RuntimeCenter.tsx'
 import { TeamListRow } from '../src/client/TeamListRow.tsx'
 import { WorkTaskHeader, WorkTaskPanel } from '../src/client/WorkTaskPanel.tsx'
 import { WorkTaskCommandRow } from '../src/client/WorkTaskCommandRow.tsx'
@@ -17,7 +17,7 @@ describe('ui-weave browser plugin', () => {
         'tool.call.toolview': { kind: 'keyed', scope: 'session' },
         'conversation.session.header.actions': { kind: 'list', scope: 'session' },
         'conversation.details.summary': { kind: 'single', scope: 'session' },
-        'conversation.input.dock': { kind: 'list', scope: 'session' },
+        'sidebar.footer.action': { kind: 'list', scope: 'root' },
         'conversation.chat.commandview': { kind: 'keyed', scope: 'session' },
       },
     } as never, () => null)
@@ -55,10 +55,10 @@ describe('ui-weave browser plugin', () => {
     const summary = slots.entries('conversation.details.summary')
     expect(summary).toHaveLength(1)
     expect(summary[0]?.component).toBe(WorkTaskPanel)
-    const home = slots.entries('conversation.input.dock')
-    expect(home).toHaveLength(1)
-    expect(home[0]?.options).toMatchObject({ id: 'weave-runtime-home', order: -100 })
-    expect(home[0]?.component).toBe(RuntimeHomeEntry)
+    const runtimes = slots.entries('sidebar.footer.action')
+    expect(runtimes).toHaveLength(1)
+    expect(runtimes[0]?.options).toMatchObject({ id: 'weave-runtimes', order: -100 })
+    expect(runtimes[0]?.component).toBe(RuntimeSidebarEntry)
     const commands = slots.entries('conversation.chat.commandview')
     expect(commands).toHaveLength(6)
     expect(commands.map(entry => entry.options.key)).toEqual([

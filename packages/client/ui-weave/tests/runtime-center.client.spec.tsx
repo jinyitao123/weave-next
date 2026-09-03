@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
-import { RuntimeCenter, RuntimeHomeEntry } from '../src/client/RuntimeCenter.tsx'
+import { RuntimeCenter, RuntimeSidebarEntry } from '../src/client/RuntimeCenter.tsx'
 import { WorkTaskPanel } from '../src/client/WorkTaskPanel.tsx'
 import { zh } from '../src/client/locales.ts'
 
@@ -15,17 +15,19 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 function runtimeResponse(): Response {
   return Response.json({ runtimes: [{
     id: 'runtime-secret-id', name: 'analysis-codex-node', engines: ['codex'], healthStatus: 'healthy',
+    engineCapabilities: [{ engine: 'codex', binaryVersion: '0.91.0', authMode: 'chatgpt' }],
     totalSlots: 3, activeSlots: 1, poolId: 'private-pool', enabled: true, online: true,
     lastHeartbeatAt: new Date().toISOString(), createdAt: new Date().toISOString(),
   }] })
 }
 
 describe('Weave runtime center', () => {
-  it('opens runtime management from the blank-session main page', async () => {
+  it('opens runtime management from the global DSH sidebar', async () => {
     vi.stubGlobal('fetch', vi.fn<typeof fetch>(() => Promise.resolve(runtimeResponse())))
-    const props = { session: { blank: true }, t } as unknown as Parameters<typeof RuntimeHomeEntry>[0]
-    const view = render(<RuntimeHomeEntry {...props} />)
-    fireEvent.click(view.getByRole('button', { name: /运行节点.*管理节点/u }))
+    const props = { wide: true, t } as unknown as Parameters<typeof RuntimeSidebarEntry>[0]
+    const view = render(<RuntimeSidebarEntry {...props} />)
+    expect(await view.findByText('1/1 个可用')).toBeTruthy()
+    fireEvent.click(view.getByRole('button', { name: /运行节点/u }))
     expect(await view.findByRole('dialog', { name: '运行节点' })).toBeTruthy()
     expect(await view.findByText('Analysis Codex Node')).toBeTruthy()
     fireEvent.click(view.getByRole('button', { name: '关闭运行节点' }))
@@ -39,6 +41,8 @@ describe('Weave runtime center', () => {
 
     expect(await view.findByText('Analysis Codex Node')).toBeTruthy()
     expect(view.container.textContent).toContain('Codex')
+    expect(view.container.textContent).toContain('ChatGPT 账号')
+    expect(view.container.textContent).toContain('0.91.0')
     expect(view.container.textContent).toContain('1/3 个位置占用')
     expect(view.container.textContent).not.toContain('runtime-secret-id')
     expect(view.container.textContent).not.toContain('private-pool')

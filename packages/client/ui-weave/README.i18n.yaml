@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/client/ui-weave/README.md
-README.md: 1277e5cbb22b3ed125ab865f451bdae3812f4ce5
-README.zh.md: eb910eac77800affc43187e54d2d79181261dabd
+README.md: 04ea4c0246b6260fa1402b9d5ac59892c78dc41c
+README.zh.md: 71901215655961dfc3dbce4098a2c57f68db68be

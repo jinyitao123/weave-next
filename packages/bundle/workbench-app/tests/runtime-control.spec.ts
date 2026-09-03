@@ -7,6 +7,10 @@ describe('Workbench runtime management proxy', () => {
       expect(new Headers(init?.headers).get('Authorization')).toBe('Bearer host-secret')
       return Response.json({ runtimes: [{
         id: 'runtime-1', name: '分析节点', engines: ['codex'], health_status: 'healthy',
+        engine_capabilities: { codex: {
+          engine: 'codex', binary_path: '/private/bin/codex', binary_version: '0.91.0',
+          auth_mode: 'chatgpt', protocol_version: '1', endpoint_class: 'openai',
+        } },
         total_slots: 3, active_slots: 1, pool_id: 'fallback', enabled: true, online: true,
         last_heartbeat_at: '2026-09-03T10:00:00Z', created_at: '2026-09-01T10:00:00Z',
         binary_path: '/private/bin', last_failure_reason: 'private failure',
@@ -17,7 +21,10 @@ describe('Workbench runtime management proxy', () => {
     )
     expect(response.status).toBe(200)
     const text = await response.text()
-    expect(JSON.parse(text)).toMatchObject({ runtimes: [{ name: '分析节点', engines: ['codex'], activeSlots: 1 }] })
+    expect(JSON.parse(text)).toMatchObject({ runtimes: [{
+      name: '分析节点', engines: ['codex'], activeSlots: 1,
+      engineCapabilities: [{ engine: 'codex', binaryVersion: '0.91.0', authMode: 'chatgpt' }],
+    }] })
     expect(text).not.toContain('host-secret')
     expect(text).not.toContain('/private/bin')
     expect(text).not.toContain('private failure')

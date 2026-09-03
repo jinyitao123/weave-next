@@ -2,11 +2,19 @@
 
 import { z } from 'zod'
 
+/** Secretless identity facts for one engine observed on a registered runtime. */
+export interface WeaveRuntimeEngineView {
+  readonly engine: string
+  readonly binaryVersion: string
+  readonly authMode: 'chatgpt' | 'oauth' | 'provider' | 'unknown'
+}
+
 /** Secretless scheduling facts for one registered Weave runtime. */
 export interface WeaveRuntimeView {
   readonly id: string
   readonly name: string
   readonly engines: readonly string[]
+  readonly engineCapabilities: readonly WeaveRuntimeEngineView[]
   readonly healthStatus: 'healthy' | 'busy' | 'degraded' | 'quarantined' | 'offline'
   readonly totalSlots: number
   readonly activeSlots: number
@@ -48,12 +56,27 @@ function healthStatus(value: unknown): WeaveRuntimeView['healthStatus'] {
     : 'offline'
 }
 
+function authMode(value: unknown): WeaveRuntimeEngineView['authMode'] {
+  return value === 'chatgpt' || value === 'oauth' || value === 'provider' ? value : 'unknown'
+}
+
+function engineCapabilities(value: unknown, engines: readonly string[]): readonly WeaveRuntimeEngineView[] {
+  const items = object(value)
+  if (items === undefined) return []
+  return engines.flatMap((engine): WeaveRuntimeEngineView[] => {
+    const capability = object(items[engine])
+    if (capability === undefined) return []
+    return [{ engine, binaryVersion: string(capability.binary_version), authMode: authMode(capability.auth_mode) }]
+  })
+}
+
 function runtimeView(value: unknown): WeaveRuntimeView | null {
   const item = object(value)
   if (item === undefined || string(item.id) === '' || string(item.name) === '') return null
+  const engines = Array.isArray(item.engines) ? item.engines.filter((engine): engine is string => typeof engine === 'string') : []
   return {
     id: string(item.id), name: string(item.name),
-    engines: Array.isArray(item.engines) ? item.engines.filter((engine): engine is string => typeof engine === 'string') : [],
+    engines, engineCapabilities: engineCapabilities(item.engine_capabilities, engines),
     healthStatus: healthStatus(item.health_status), totalSlots: count(item.total_slots), activeSlots: count(item.active_slots),
     poolId: string(item.pool_id), enabled: item.enabled !== false, online: item.online === true,
     lastHeartbeatAt: string(item.last_heartbeat_at), createdAt: string(item.created_at),

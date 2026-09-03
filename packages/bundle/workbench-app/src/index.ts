@@ -16,7 +16,7 @@ export type { PilotReport, PilotReportTask } from './pilot-report.ts'
 export { inspectWeaveReadiness } from './readiness.ts'
 export type { WeaveReadiness, WeaveReadinessCheck, WeaveReadinessTone } from './readiness.ts'
 export { handleWeaveRuntimeRequest } from './runtime-control.ts'
-export type { WeaveRuntimeList, WeaveRuntimeView } from './runtime-control.ts'
+export type { WeaveRuntimeEngineView, WeaveRuntimeList, WeaveRuntimeView } from './runtime-control.ts'
 
 /** User-facing lifecycle of one Weave-dispatched task. */
 export type WorkTaskStatus = 'preparing' | 'queued' | 'running' | 'waiting' | 'stopping' | 'completed' | 'failed' | 'stopped'

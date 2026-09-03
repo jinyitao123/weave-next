@@ -5,9 +5,10 @@ import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
+import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import { DeliverableRow } from './DeliverableRow.tsx'
-import { RuntimeHomeEntry } from './RuntimeCenter.tsx'
+import { RuntimeSidebarEntry } from './RuntimeCenter.tsx'
 import { TeamListRow } from './TeamListRow.tsx'
 import { WorkTaskCommandRow } from './WorkTaskCommandRow.tsx'
 import { WorkTaskHeader, WorkTaskPanel } from './WorkTaskPanel.tsx'
@@ -103,9 +104,9 @@ export function apply(ctx: ClientContext): void {
       },
     }),
   }, WorkTaskPanel))
-  ctx.slots.inject('conversation.input.dock', () => ctx.slots.register({
-    name: 'conversation.input.dock', id: 'weave-runtime-home', order: -100, locale: NS,
-  }, RuntimeHomeEntry))
+  ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({
+    name: 'sidebar.footer.action', id: 'weave-runtimes', order: -100, locale: NS,
+  }, RuntimeSidebarEntry))
   ctx.slots.inject('settings.section', () => ctx.slots.register({
     name: 'settings.section', id: 'weave', order: -20, label: () => t('readiness.title'), locale: NS,
   }, ReadinessSection))
