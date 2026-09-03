@@ -163,7 +163,7 @@ export interface WorkTaskMember {
 export interface WorkTaskDeliverable {
   readonly id: string
   readonly title: string
-  readonly kind: 'final' | 'stage'
+  readonly kind: 'final' | 'summary' | 'stage'
   readonly contentType: string
   readonly preview: string
   readonly content: string
@@ -213,7 +213,7 @@ const memberSchema = z.object({
   status: memberStatusSchema, runtime: z.string(), stages: z.array(memberStageSchema),
 }).strict()
 const deliverableSchema = z.object({
-  id: z.string(), title: z.string(), kind: z.enum(['final', 'stage']),
+  id: z.string(), title: z.string(), kind: z.enum(['final', 'summary', 'stage']),
   contentType: z.string(), preview: z.string(), content: z.string().default(''), truncated: z.boolean().default(false), createdAt: z.string(),
 }).strict()
 const attemptSchema = z.object({
@@ -527,7 +527,11 @@ function deliverableList(value: unknown, runId: string): WorkTaskDeliverable[] {
     const filename = text(metadata, ['filename'])
     const nodeType = text(metadata, ['node_type'])
     const rawKind = text(metadata, ['artifact_kind'])
-    const kind = rawKind === 'final' && !(publishedWorkflow && filename === '' && nodeType === 'deliver') ? 'final' : 'stage'
+    const kind = rawKind !== 'final'
+      ? 'stage'
+      : publishedWorkflow && filename === '' && nodeType === 'deliver'
+        ? 'summary'
+        : 'final'
     const content = typeof item.content === 'string' ? item.content : ''
     const contentLimit = 256 * 1024
     return [{
@@ -696,7 +700,7 @@ export function applyWorkTaskProjection(state: WorkTaskState, event: SessionEven
 
 /** Projection definition registered with the Session projection registry. */
 export const workTaskProjectionDefinition = {
-  key: 'workTask', stateVersion: 8, stateSchema,
+  key: 'workTask', stateVersion: 9, stateSchema,
   init: (): WorkTaskState => ({ task: null, pendingCalls: {}, teams: {} }),
   apply: applyWorkTaskProjection,
   wire: { viewSchema: taskSchema.nullable(), view: (state: WorkTaskState) => state.task },
@@ -718,7 +722,7 @@ export const inject = ['sessions', 'sessionProjections', 'commands', 'systemProm
 export const workbenchTeamRoutingSection = {
   name: 'workbench:team-routing',
   order: FIRST_PARTY_SECTION_ORDER.TEAM_POLICY + 10,
-  text: 'For substantive business work in Weave Workbench, first list the available Weave teams and match the request against each team\'s stated purpose, responsibilities, success criteria, default workflow availability, and health. If a suitable active team exists, dispatch its default workflow with wait=false. A successful Weave dispatch is already the durable task: do not create or update a DSH goal for it. After dispatch, make at most one activity or status call to confirm the handoff, then return the team, run ID, and current status immediately. Do not poll the run in the foreground, and do not save a duplicate foreground deliverable; Workbench monitors the run and projects Weave\'s deliverables in the background. Ask the user only when a human task requires input. When the run is terminal or the user later asks for the result, read the final Weave deliverable and answer with a short user-facing completion summary: what was finished, the main findings or decisions, the files the user can open, and any user action still needed. Keep internal run IDs, deliverable IDs, runtime IDs, host paths, hashes, validation command names, and engine details out of the main answer unless the user explicitly asks for technical details. If no suitable team exists, say so plainly and collaborate with the user on a team definition. Never select free collaboration unless the user explicitly requests it. If Weave tools are unavailable, report that the Weave connection is not configured instead of pretending that team work was performed.',
+  text: 'For substantive business work in Weave Workbench, first list the available Weave teams and match the request against each team\'s stated purpose, responsibilities, success criteria, default workflow availability, and health. If a suitable active team exists, dispatch its default workflow with wait=false. A successful Weave dispatch is already the durable task: do not create or update a DSH goal for it. After dispatch, make at most one activity or status call to confirm the handoff, then return the selected team and a short human-facing state such as queued, underway, waiting for input, completed, or needs attention. Do not include internal identifiers, raw workflow versions, orchestration phases, or backend enums unless the user explicitly asks for technical details. Do not poll the run in the foreground, and do not save a duplicate foreground deliverable; Workbench monitors the run and projects Weave\'s deliverables in the background. Ask the user only when a human task requires input. When the run is terminal or the user later asks for the result, read the final Weave deliverable and answer with a short user-facing completion summary: what was finished, the main findings or decisions, the files the user can open, and any user action still needed. Keep internal run IDs, deliverable IDs, runtime IDs, host paths, hashes, validation command names, and engine details out of the main answer unless the user explicitly asks for technical details. If no suitable team exists, say so plainly and collaborate with the user on a team definition. Never select free collaboration unless the user explicitly requests it. If Weave tools are unavailable, report that the Weave connection is not configured instead of pretending that team work was performed.',
 } as const
 
 /** Register the durable projection and keep non-terminal Weave runs synchronized outside the conversation turn. */

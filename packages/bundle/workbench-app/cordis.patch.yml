@@ -12,8 +12,11 @@
       immediately to the durable Workbench task view. A successful Weave dispatch
       is already the durable task: do not create or update a DSH goal for it. After
       dispatch, make at most one activity or status call to confirm the handoff,
-      then return the team, run ID, and current status immediately. Do not poll the
-      run in the foreground, and do not save a duplicate foreground deliverable;
+      then return the selected team and a short human-facing state such as queued,
+      underway, waiting for input, completed, or needs attention. Do not include
+      internal identifiers, raw workflow versions, orchestration phases, or backend
+      enums unless the user explicitly asks for technical details. Do not poll the run
+      in the foreground, and do not save a duplicate foreground deliverable;
       Workbench monitors the run and projects Weave's deliverables in the
       background. Ask the user only when a human task requires input. Read and
       return the final saved deliverable when the run is terminal or the user

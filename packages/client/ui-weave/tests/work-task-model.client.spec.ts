@@ -159,7 +159,7 @@ describe('workTaskModel', () => {
     }])
   })
 
-  it('keeps workflow delivery summaries out of the final-file group', () => {
+  it('keeps workflow delivery summaries distinct from final files and stage outputs', () => {
     const model = workTaskModel([
       tool('mcp__weave__team_dispatch', { team_id: 'team-a' }, { run_id: 'run-a' }),
       tool('mcp__weave__deliverable_list', {}, [
@@ -179,7 +179,7 @@ describe('workTaskModel', () => {
     ])
 
     expect(model.deliverables.map(item => [item.title, item.kind])).toEqual([
-      ['最终产物 · 交付', 'stage'],
+      ['最终产物 · 交付', 'summary'],
       ['final_observation.md', 'final'],
     ])
   })

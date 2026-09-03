@@ -3387,7 +3387,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/bundle/workbench-app/src/index.ts:706`](../packages/bundle/workbench-app/src/index.ts)
+Source: [`packages/bundle/workbench-app/src/index.ts:710`](../packages/bundle/workbench-app/src/index.ts)
 
 <a id="deepseek-aidsh-workflow-worker-thread"></a>
 

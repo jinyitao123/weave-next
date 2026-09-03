@@ -91,7 +91,7 @@ export interface WorkTaskMember {
 export interface WorkTaskDeliverable {
   readonly id: string
   readonly title: string
-  readonly kind: 'final' | 'stage'
+  readonly kind: 'final' | 'summary' | 'stage'
   readonly contentType: string
   readonly preview: string
   readonly content: string
@@ -661,7 +661,11 @@ function deliverableList(value: unknown, runId: string): WorkTaskDeliverable[] {
     const filename = deepString(metadata, ['filename'])
     const nodeType = deepString(metadata, ['node_type'])
     const rawKind = deepString(metadata, ['artifact_kind'])
-    const kind = rawKind === 'final' && !(publishedWorkflow && filename === '' && nodeType === 'deliver') ? 'final' : 'stage'
+    const kind = rawKind !== 'final'
+      ? 'stage'
+      : publishedWorkflow && filename === '' && nodeType === 'deliver'
+        ? 'summary'
+        : 'final'
     const content = typeof item.content === 'string' ? item.content : ''
     const contentLimit = 256 * 1024
     return [{

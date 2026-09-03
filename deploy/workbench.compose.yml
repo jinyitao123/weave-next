@@ -1,0 +1,50 @@
+services:
+  workbench:
+    image: ${WORKBENCH_IMAGE:-weave-workbench:latest}
+    restart: unless-stopped
+    env_file:
+      - ${WORKBENCH_ENV_FILE:-.env}
+    environment:
+      DSH_HOME: /data/dsh
+      WEAVE_API_URL: http://weave:8080
+    command:
+      - --host
+      - 127.0.0.1
+      - --port
+      - "3080"
+      - --trusted-host
+      - ${WORKBENCH_PUBLIC_AUTHORITY:?set WORKBENCH_PUBLIC_AUTHORITY}
+      - --no-open
+    ports:
+      - ${WORKBENCH_BIND_ADDRESS:-127.0.0.1}:${WORKBENCH_PORT:-3080}:3081
+    volumes:
+      - ./data:/data/dsh
+      - ./workspace:/workspace
+    working_dir: /workspace
+    networks:
+      - weave
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - fetch('http://127.0.0.1:3080/').then(r=>process.exit(r.status===401||r.ok?0:1)).catch(()=>process.exit(1))
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  gateway:
+    image: nginx:alpine
+    restart: unless-stopped
+    depends_on:
+      workbench:
+        condition: service_healthy
+    network_mode: service:workbench
+    volumes:
+      - ./workbench.nginx.conf:/etc/nginx/nginx.conf:ro
+
+networks:
+  weave:
+    external: true
+    name: ${WEAVE_DOCKER_NETWORK:-weave_default}

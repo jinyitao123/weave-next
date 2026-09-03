@@ -199,7 +199,11 @@ function DeliverableItems({ items, t }: { readonly items: readonly WorkTaskDeliv
                 <span>{deliverableTypeLabel(item.contentType, t)}</span>
                 {metadata === '' ? null : <span>{metadata}</span>}
               </span>
-              <span className={css.deliverableKind}>{t(item.kind === 'final' ? 'task.deliverables.final' : 'task.deliverables.stage')}</span>
+              <span className={css.deliverableKind}>{t(item.kind === 'final'
+                ? 'task.deliverables.final'
+                : item.kind === 'summary'
+                  ? 'task.deliverables.summary'
+                  : 'task.deliverables.stage')}</span>
             </summary>
             {expanded ? (
               <div className={css.deliverableBody}>
@@ -275,6 +279,7 @@ export function WorkTaskPanel({
     ? 0
     : Math.min(100, Math.round(model.completedStages / model.totalStages * 100))
   const finalDeliverables = model.deliverables.filter(item => item.kind === 'final')
+  const summaryDeliverables = model.deliverables.filter(item => item.kind === 'summary')
   const stageDeliverables = model.deliverables.filter(item => item.kind === 'stage')
   const terminal = model.status === 'completed' || model.status === 'failed' || model.status === 'stopped'
   const stale = workTaskFactsStale(model.status, model.observedAt)
@@ -406,7 +411,11 @@ export function WorkTaskPanel({
         <div className={css.sceneCard}>
           <span>{t('task.deliverables')}</span>
           <strong>{t('task.deliverables.count', { count: model.deliverableCount })}</strong>
-          <small>{finalDeliverables.length === 0 ? t('task.deliverables.noFinal') : t('task.deliverables.finalReady', { count: finalDeliverables.length })}</small>
+          <small>{finalDeliverables.length > 0
+            ? t('task.deliverables.finalReady', { count: finalDeliverables.length })
+            : summaryDeliverables.length > 0
+              ? t('task.deliverables.summaryReady')
+              : t('task.deliverables.noFinal')}</small>
         </div>
       </section>
 
@@ -533,6 +542,12 @@ export function WorkTaskPanel({
                 <DeliverableItems items={finalDeliverables} t={t} />
               </div>
             )}
+            {summaryDeliverables.length === 0 ? null : (
+              <div className={css.deliverableGroup}>
+                <div className={css.deliverableGroupTitle}>{t('task.deliverables.summaryGroup')}</div>
+                <DeliverableItems items={summaryDeliverables} t={t} />
+              </div>
+            )}
             {stageDeliverables.length === 0 ? null : (
               <details className={css.stageDeliverables}>
                 <summary>{t('task.deliverables.stageGroup', { count: stageDeliverables.length })}</summary>
@@ -543,7 +558,7 @@ export function WorkTaskPanel({
         )}
       </section>
 
-      {model.status !== 'completed' || finalDeliverables.length === 0 ? null : (
+      {model.status !== 'completed' || finalDeliverables.length + summaryDeliverables.length === 0 ? null : (
         <section className={css.assessment} aria-label={t('task.assessment')}>
           <div className={css.sectionHeader}>
             <span>{t('task.assessment')}</span>

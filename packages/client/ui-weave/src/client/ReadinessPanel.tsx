@@ -77,6 +77,29 @@ function checkLabel(id: CheckId, t: ReadinessProps['t']): string {
   return t(`readiness.check.${id}` as const)
 }
 
+function checkDetail(check: ReadinessCheck, value: Readiness, t: ReadinessProps['t']): string {
+  if (check.id === 'credential') {
+    return t(check.tone === 'pass' ? 'readiness.detail.credential.ready' : 'readiness.detail.credential.missing')
+  }
+  if (check.id === 'service') {
+    if (check.tone === 'warning') return t('readiness.detail.service.pending')
+    if (check.tone === 'fail') return t('readiness.detail.service.offline')
+    return value.serviceVersion === ''
+      ? t('readiness.detail.service.ready')
+      : t('readiness.detail.service.version', { version: value.serviceVersion })
+  }
+  if (check.id === 'access') {
+    if (check.tone === 'warning') return t('readiness.detail.access.pending')
+    return t(check.tone === 'pass' ? 'readiness.detail.access.ready' : 'readiness.detail.access.denied')
+  }
+  if (check.id === 'teams') {
+    if (check.tone === 'warning') return t('readiness.detail.teams.pending')
+    return t('readiness.detail.teams.count', { available: value.dispatchableTeamCount, total: value.teamCount })
+  }
+  if (check.tone === 'warning') return t('readiness.detail.runtimes.pending')
+  return t('readiness.detail.runtimes.count', { available: value.healthyRuntimeCount, total: value.runtimeCount })
+}
+
 function StatusContents({ state, reload, t }: {
   readonly state: StatusState
   readonly reload: () => Promise<void>
@@ -85,7 +108,7 @@ function StatusContents({ state, reload, t }: {
   if (state.phase === 'loading') return <div className={css.loading}>{t('readiness.loading')}</div>
   if (state.phase === 'error') return (
     <div className={css.error} role="alert">
-      <strong>{t('readiness.unavailable')}</strong><span>{state.error}</span>
+      <strong>{t('readiness.unavailable')}</strong>
       <button type="button" onClick={() => { void reload() }}>{t('readiness.retry')}</button>
     </div>
   )
@@ -104,7 +127,7 @@ function StatusContents({ state, reload, t }: {
         {value.checks.map(check => (
           <div className={css.check} data-tone={check.tone} key={check.id}>
             <span className={css.checkMark} aria-hidden />
-            <div><strong>{checkLabel(check.id, t)}</strong><span>{check.detail}</span></div>
+            <div><strong>{checkLabel(check.id, t)}</strong><span>{checkDetail(check, value, t)}</span></div>
           </div>
         ))}
       </div>

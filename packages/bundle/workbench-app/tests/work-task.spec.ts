@@ -29,6 +29,8 @@ describe('Workbench work-task projection', () => {
     expect(workbenchTeamRoutingSection.text).toContain('do not save a duplicate foreground deliverable')
     expect(workbenchTeamRoutingSection.text).toContain('short user-facing completion summary')
     expect(workbenchTeamRoutingSection.text).toContain('Keep internal run IDs')
+    expect(workbenchTeamRoutingSection.text).toContain('Do not include internal identifiers')
+    expect(workbenchTeamRoutingSection.text).not.toContain('return the team, run ID')
   })
 
   it('materializes a dispatch with its matched team and durable request identity', () => {
