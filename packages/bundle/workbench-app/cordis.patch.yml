@@ -9,7 +9,10 @@
       against their stated purpose, responsibilities, success criteria, default
       workflow availability, and health. If a suitable active team exists,
       dispatch through its default workflow with wait=false so the run returns
-      immediately to the durable Workbench task view. A successful Weave dispatch
+      immediately to the durable Workbench task view. If no suitable team exists, define one with
+      the user; once they confirm it, create the agreed team and workflow and
+      immediately dispatch the original task. Do not perform the requested
+      research or production work in the foreground. A successful Weave dispatch
       is already the durable task: do not create or update a DSH goal for it. After
       dispatch, make at most one activity or status call to confirm the handoff,
       then return the selected team and a short human-facing state such as queued,
@@ -25,11 +28,36 @@
       open, and any user action still needed. Keep internal run IDs,
       deliverable IDs, runtime IDs, host paths, hashes, validation command
       names, and engine details out of the main answer unless the user
-      explicitly asks for technical details. If no suitable team exists, say so plainly and
-      collaborate with the user on a team definition.
+      explicitly asks for technical details.
       Never select free collaboration unless the user explicitly requests it.
       If Weave tools are unavailable, report that the Weave connection is not
       configured instead of pretending that team work was performed.
+
+# Workbench is provider-neutral. A saved Models choice overrides this inert
+# fallback; a clean deployment must configure a provider instead of silently
+# inheriting DSH's official DeepSeek model.
+- id: agent-default-model
+  config:
+    provider: unconfigured
+    model: unconfigured
+
+# The generic DSH product retains its native DeepSeek adapter. Workbench uses
+# only providers deliberately configured through its Models settings. The
+# shared API extension stays active because non-model session and inventory
+# services consume it; it does not register a provider route by itself.
+- id: llm-deepseek
+  disabled: true
+
+# Workbench's foreground agent routes business work to Weave teams. Do not
+# leave DSH's vendor-owned search adapter visible after removing the vendor
+# model default: research belongs to the dispatched team's capable runtime.
+- id: web-search-deepseek
+  disabled: true
+
+- id: tool-web
+  config:
+    search: false
+    fetch: false
 
 # Keep the DSH runtime underneath Workbench, but remove development-oriented
 # product occupants from the Workbench browser roster.
@@ -43,6 +71,12 @@
   disabled: true
 
 - id: ui-trajectory
+  disabled: true
+
+# Workbench owns one stable full-capability foreground agent. Agent preset
+# composition remains available to DSH profiles, but it is not a business-task
+# choice and minimal's complete prompt would suppress the Workbench team policy.
+- id: ui-agent-preset
   disabled: true
 
 - insert:
