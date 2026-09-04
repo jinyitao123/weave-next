@@ -280,7 +280,7 @@ func TestTeamListReturnsCompactMatchingFacts(t *testing.T) {
 			t.Fatalf("request = %s", request.URL.String())
 		}
 		_, _ = response.Write([]byte(`[{
-			"team":{"id":"team-1","name":"writers","status":"active","objective":"write",
+			"team":{"id":"team-1","name":"writers","display_name":"内容创作组","status":"active","objective":"write",
 			"primary_scenario":"articles","success_criteria":"publishable","default_workflow_id":"wf-1"},
 			"lead":{"context_instruction":"large hidden prompt"},
 			"workers":[{"duty":"draft","when_to_use":"writing","context_instruction":"secret prompt"}],
@@ -292,7 +292,7 @@ func TestTeamListReturnsCompactMatchingFacts(t *testing.T) {
 	if err != nil || result.IsError {
 		t.Fatalf("result = %#v err = %v", result, err)
 	}
-	if !strings.Contains(result.Content, `"workflow_available":true`) || !strings.Contains(result.Content, `"draft"`) ||
+	if !strings.Contains(result.Content, `"workflow_available":true`) || !strings.Contains(result.Content, `"display_name":"内容创作组"`) || !strings.Contains(result.Content, `"draft"`) ||
 		strings.Contains(result.Content, "context_instruction") || strings.Contains(result.Content, "hidden prompt") {
 		t.Fatalf("compact list = %s", result.Content)
 	}

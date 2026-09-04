@@ -345,7 +345,7 @@ func compileBlueprint(template Template) teambuild.TeamBlueprintV1 {
 	}
 	return teambuild.TeamBlueprintV1{
 		SchemaVersion: teambuild.BlueprintSchemaVersionV1,
-		Mode:          teambuild.ModeCreate, NewTeamName: template.Name,
+		Mode:          teambuild.ModeCreate, NewTeamName: template.Name, TeamDisplayName: template.DisplayName,
 		Purpose: template.Purpose, Members: members, LeadRef: template.Lead,
 		Workflow: teambuild.BlueprintWorkflowV1{
 			Mode: teambuild.BlueprintWorkflowTemplate, Template: template.Template, TemplateParameters: &params,

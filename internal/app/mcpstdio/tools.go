@@ -358,6 +358,7 @@ func productDispatchStatus(status string) string {
 type compactTeam struct {
 	TeamID            string   `json:"team_id"`
 	Name              string   `json:"name"`
+	DisplayName       string   `json:"display_name"`
 	Status            string   `json:"status"`
 	Objective         string   `json:"objective"`
 	PrimaryScenario   string   `json:"primary_scenario"`
@@ -373,6 +374,7 @@ func compactTeamList(document json.RawMessage) (json.RawMessage, error) {
 		Team struct {
 			ID                string `json:"id"`
 			Name              string `json:"name"`
+			DisplayName       string `json:"display_name"`
 			Status            string `json:"status"`
 			Objective         string `json:"objective"`
 			PrimaryScenario   string `json:"primary_scenario"`
@@ -408,7 +410,7 @@ func compactTeamList(document json.RawMessage) (json.RawMessage, error) {
 			}
 		}
 		compact := compactTeam{
-			TeamID: item.Team.ID, Name: item.Team.Name, Status: item.Team.Status,
+			TeamID: item.Team.ID, Name: item.Team.Name, DisplayName: item.Team.DisplayName, Status: item.Team.Status,
 			Objective: item.Team.Objective, PrimaryScenario: item.Team.PrimaryScenario,
 			SuccessCriteria: item.Team.SuccessCriteria, Responsibilities: responsibilities,
 			DefaultWorkflowID: item.Team.DefaultWorkflowID,

@@ -189,6 +189,7 @@ type dispatchRulesInput struct {
 type createTeamInput struct {
 	BuildRunID      string              `json:"build_run_id"`
 	Name            string              `json:"name"`
+	DisplayName     string              `json:"display_name"`
 	Objective       string              `json:"objective"`
 	PrimaryScenario string              `json:"primary_scenario"`
 	SuccessCriteria string              `json:"success_criteria"`
@@ -223,6 +224,7 @@ func (d *TeamWriteToolsDispatcher) createTeam(ctx context.Context, call contract
 
 	createInput := org.CreateActiveTeamInput{
 		Name:            input.Name,
+		DisplayName:     input.DisplayName,
 		Objective:       input.Objective,
 		PrimaryScenario: input.PrimaryScenario,
 		SuccessCriteria: input.SuccessCriteria,
@@ -420,6 +422,7 @@ var createTeamSchema = json.RawMessage(`{
 	"properties": {
 		"build_run_id": {"type": "string", "description": "可选；省略时自动绑定当前授权 run"},
 		"name": {"type": "string", "description": "Team name; must sit inside the build authorization scope"},
+		"display_name": {"type": "string", "description": "User-facing team name"},
 		"objective": {"type": "string"},
 		"primary_scenario": {"type": "string"},
 		"success_criteria": {"type": "string"},

@@ -242,11 +242,12 @@ type ChangeOperationV1 struct {
 }
 
 type teamOperationInputV1 struct {
-	Mode    string `json:"mode"`
-	TeamID  string `json:"team_id,omitempty"`
-	Name    string `json:"name,omitempty"`
-	Purpose string `json:"purpose"`
-	LeadRef string `json:"lead_ref"`
+	Mode        string `json:"mode"`
+	TeamID      string `json:"team_id,omitempty"`
+	Name        string `json:"name,omitempty"`
+	DisplayName string `json:"display_name,omitempty"`
+	Purpose     string `json:"purpose"`
+	LeadRef     string `json:"lead_ref"`
 }
 
 type rosterOperationInputV1 struct {
@@ -730,7 +731,7 @@ func (c *changeSetCompilerV1) compile() error {
 	var teamMutationID string
 	teamInput := teamOperationInputV1{
 		Mode: c.blueprint.Mode, TeamID: strings.TrimSpace(c.blueprint.TeamID), Name: normalizeChangeText(c.blueprint.NewTeamName),
-		Purpose: normalizeChangeText(c.blueprint.Purpose), LeadRef: strings.TrimSpace(c.blueprint.LeadRef),
+		DisplayName: normalizeChangeText(c.blueprint.TeamDisplayName), Purpose: normalizeChangeText(c.blueprint.Purpose), LeadRef: strings.TrimSpace(c.blueprint.LeadRef),
 	}
 	if c.baseline.Team == nil {
 		op, err := newChangeOperationV1(OperationTeamCreate, teamTarget, nil, teamInput, memberMutationIDs, "delete:"+teamTarget)

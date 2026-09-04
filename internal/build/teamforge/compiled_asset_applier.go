@@ -291,7 +291,8 @@ func (a *CompiledAssetApplier) compiledTeamCreateArgs(ctx context.Context, reque
 	}
 	return map[string]any{
 		"build_run_id": request.BuildRunID, "name": request.Blueprint.NewTeamName,
-		"objective": request.Blueprint.Purpose, "primary_scenario": request.Blueprint.Purpose,
+		"display_name": request.Blueprint.TeamDisplayName,
+		"objective":    request.Blueprint.Purpose, "primary_scenario": request.Blueprint.Purpose,
 		"success_criteria": compiledSuccessCriteria(request.Blueprint),
 		"lead_avatar_id":   lead.ID, "workers": workers,
 	}, nil

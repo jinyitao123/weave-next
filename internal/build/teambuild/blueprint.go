@@ -48,15 +48,16 @@ var (
 // the planning meta-team. It describes intent and compatibility policy; it
 // does not contain persistence operations or low-level graph nodes.
 type TeamBlueprintV1 struct {
-	SchemaVersion  int                       `json:"schema_version"`
-	Mode           string                    `json:"mode"`
-	TeamID         string                    `json:"team_id,omitempty"`
-	NewTeamName    string                    `json:"new_team_name,omitempty"`
-	Purpose        string                    `json:"purpose"`
-	Members        []BlueprintMemberV1       `json:"members"`
-	LeadRef        string                    `json:"lead_ref"`
-	Workflow       BlueprintWorkflowV1       `json:"workflow"`
-	RevisionPolicy BlueprintRevisionPolicyV1 `json:"revision_policy"`
+	SchemaVersion   int                       `json:"schema_version"`
+	Mode            string                    `json:"mode"`
+	TeamID          string                    `json:"team_id,omitempty"`
+	NewTeamName     string                    `json:"new_team_name,omitempty"`
+	TeamDisplayName string                    `json:"team_display_name,omitempty"`
+	Purpose         string                    `json:"purpose"`
+	Members         []BlueprintMemberV1       `json:"members"`
+	LeadRef         string                    `json:"lead_ref"`
+	Workflow        BlueprintWorkflowV1       `json:"workflow"`
+	RevisionPolicy  BlueprintRevisionPolicyV1 `json:"revision_policy"`
 }
 
 // BlueprintMemberV1 describes one stable logical team member. StableRef is
@@ -241,6 +242,9 @@ func validateBlueprintIdentity(c *blueprintProblemCollector, blueprint TeamBluep
 		}
 		if newName != "" {
 			c.add("/new_team_name", "blueprint_new_team_name_forbidden", "optimize mode forbids new_team_name")
+		}
+		if strings.TrimSpace(blueprint.TeamDisplayName) != "" {
+			c.add("/team_display_name", "blueprint_team_display_name_forbidden", "optimize mode forbids team_display_name")
 		}
 	default:
 		c.add("/mode", "blueprint_mode_invalid", "mode must be create or optimize")
@@ -901,6 +905,7 @@ func normalizeTeamBlueprint(value TeamBlueprintV1) TeamBlueprintV1 {
 	normalized.Mode = strings.TrimSpace(value.Mode)
 	normalized.TeamID = strings.TrimSpace(value.TeamID)
 	normalized.NewTeamName = normalizeText(value.NewTeamName)
+	normalized.TeamDisplayName = normalizeText(value.TeamDisplayName)
 	normalized.Purpose = normalizeText(value.Purpose)
 	normalized.LeadRef = strings.TrimSpace(value.LeadRef)
 	normalized.Members = make([]BlueprintMemberV1, len(value.Members))

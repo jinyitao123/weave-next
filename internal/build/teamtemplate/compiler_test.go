@@ -94,6 +94,7 @@ func TestCompileYAMLFieldMappings(t *testing.T) {
 		{name: "schema to normalized template", got: compiled.Template.Schema, want: SchemaV1},
 		{name: "name to brief team", got: compiled.Brief.NewTeamName, want: "market-research-trio"},
 		{name: "name to blueprint team", got: compiled.Blueprint.NewTeamName, want: "market-research-trio"},
+		{name: "display name to blueprint team", got: compiled.Blueprint.TeamDisplayName, want: "市场调研三人组"},
 		{name: "name to write prefix", got: compiled.Brief.AllowedAssets.NamePrefix, want: "market-research-trio"},
 		{name: "purpose to business direction", got: compiled.Brief.BusinessDirection, want: "持续产出竞品监控报告"},
 		{name: "purpose to blueprint", got: compiled.Blueprint.Purpose, want: "持续产出竞品监控报告"},

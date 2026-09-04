@@ -67,6 +67,7 @@ type Team struct {
 	ID                     string     `json:"id"`
 	WorkspaceID            string     `json:"workspace_id"`
 	Name                   string     `json:"name"`
+	DisplayName            string     `json:"display_name"`
 	Objective              string     `json:"objective"`
 	PrimaryScenario        string     `json:"primary_scenario"`
 	SuccessCriteria        string     `json:"success_criteria"`
@@ -193,7 +194,7 @@ func (s *Store) RemoveMember(ctx context.Context, workspaceID, userID string) er
 // ListTeams returns all teams in a workspace.
 func (s *Store) ListTeams(ctx context.Context, workspaceID string) ([]Team, error) {
 	rows, err := s.pool.Query(ctx,
-		`SELECT id, workspace_id, name, objective, primary_scenario,
+		`SELECT id, workspace_id, name, COALESCE(NULLIF(display_name, ''), name), objective, primary_scenario,
 		        success_criteria, COALESCE(lead_avatar_id, ''), status,
 		        COALESCE(default_workflow_id, ''),
 		        evaluation, COALESCE(evaluation_build_run_id, ''),
@@ -209,7 +210,7 @@ func (s *Store) ListTeams(ctx context.Context, workspaceID string) ([]Team, erro
 	for rows.Next() {
 		var team Team
 		if err := rows.Scan(
-			&team.ID, &team.WorkspaceID, &team.Name, &team.Objective,
+			&team.ID, &team.WorkspaceID, &team.Name, &team.DisplayName, &team.Objective,
 			&team.PrimaryScenario, &team.SuccessCriteria, &team.LeadAvatarID,
 			&team.Status, &team.DefaultWorkflowID, &team.Evaluation, &team.EvaluationBuildRunID,
 			&team.EvaluationContractHash, &team.EvaluatedAt,
@@ -227,7 +228,7 @@ func (s *Store) ListTeams(ctx context.Context, workspaceID string) ([]Team, erro
 // platform teams, such as the teamforge tf_list_teams tool.
 func (s *Store) ListBusinessTeams(ctx context.Context, workspaceID string) ([]Team, error) {
 	rows, err := s.pool.Query(ctx,
-		`SELECT id, workspace_id, name, objective, primary_scenario,
+		`SELECT id, workspace_id, name, COALESCE(NULLIF(display_name, ''), name), objective, primary_scenario,
 		        success_criteria, COALESCE(lead_avatar_id, ''), status,
 		        COALESCE(default_workflow_id, ''),
 		        evaluation, COALESCE(evaluation_build_run_id, ''),
@@ -245,7 +246,7 @@ func (s *Store) ListBusinessTeams(ctx context.Context, workspaceID string) ([]Te
 	for rows.Next() {
 		var team Team
 		if err := rows.Scan(
-			&team.ID, &team.WorkspaceID, &team.Name, &team.Objective,
+			&team.ID, &team.WorkspaceID, &team.Name, &team.DisplayName, &team.Objective,
 			&team.PrimaryScenario, &team.SuccessCriteria, &team.LeadAvatarID,
 			&team.Status, &team.DefaultWorkflowID, &team.Evaluation, &team.EvaluationBuildRunID,
 			&team.EvaluationContractHash, &team.EvaluatedAt,
@@ -261,14 +262,14 @@ func (s *Store) ListBusinessTeams(ctx context.Context, workspaceID string) ([]Te
 // CreateTeam creates a team in a workspace.
 func (s *Store) CreateTeam(ctx context.Context, workspaceID, name string) (Team, error) {
 	team := Team{
-		ID: uuid.NewString(), WorkspaceID: workspaceID, Name: name,
+		ID: uuid.NewString(), WorkspaceID: workspaceID, Name: name, DisplayName: name,
 		Status: "needs_repair", Evaluation: TeamEvaluationEvaluated,
 	}
 	err := s.pool.QueryRow(ctx, `
-		INSERT INTO weave_teams (id, workspace_id, name)
-		VALUES ($1, $2, $3)
+		INSERT INTO weave_teams (id, workspace_id, name, display_name)
+		VALUES ($1, $2, $3, $4)
 		RETURNING created_at, updated_at
-	`, team.ID, team.WorkspaceID, team.Name).Scan(&team.CreatedAt, &team.UpdatedAt)
+	`, team.ID, team.WorkspaceID, team.Name, team.DisplayName).Scan(&team.CreatedAt, &team.UpdatedAt)
 	if err != nil {
 		return Team{}, err
 	}
@@ -442,7 +443,7 @@ func (s *Store) GetTeamTx(
 	}
 	var team Team
 	err := tx.QueryRow(ctx, `
-		SELECT id, workspace_id, name, objective, primary_scenario,
+		SELECT id, workspace_id, name, COALESCE(NULLIF(display_name, ''), name), objective, primary_scenario,
 		       success_criteria, COALESCE(lead_avatar_id, ''), status,
 		       COALESCE(default_workflow_id, ''),
 		       evaluation, COALESCE(evaluation_build_run_id, ''),
@@ -452,7 +453,7 @@ func (s *Store) GetTeamTx(
 		WHERE workspace_id=$1 AND id=$2
 		FOR SHARE
 	`, workspaceID, teamID).Scan(
-		&team.ID, &team.WorkspaceID, &team.Name, &team.Objective,
+		&team.ID, &team.WorkspaceID, &team.Name, &team.DisplayName, &team.Objective,
 		&team.PrimaryScenario, &team.SuccessCriteria, &team.LeadAvatarID,
 		&team.Status, &team.DefaultWorkflowID, &team.Evaluation, &team.EvaluationBuildRunID,
 		&team.EvaluationContractHash, &team.EvaluatedAt,
@@ -476,7 +477,7 @@ func (s *Store) GetTeamTx(
 func (s *Store) GetTeam(ctx context.Context, workspaceID, teamID string) (Team, error) {
 	var team Team
 	err := s.pool.QueryRow(ctx, `
-		SELECT id, workspace_id, name, objective, primary_scenario,
+		SELECT id, workspace_id, name, COALESCE(NULLIF(display_name, ''), name), objective, primary_scenario,
 		       success_criteria, COALESCE(lead_avatar_id, ''), status,
 		       COALESCE(default_workflow_id, ''),
 		       evaluation, COALESCE(evaluation_build_run_id, ''),
@@ -485,7 +486,7 @@ func (s *Store) GetTeam(ctx context.Context, workspaceID, teamID string) (Team, 
 		FROM weave_teams
 		WHERE workspace_id=$1 AND id=$2
 	`, workspaceID, teamID).Scan(
-		&team.ID, &team.WorkspaceID, &team.Name, &team.Objective,
+		&team.ID, &team.WorkspaceID, &team.Name, &team.DisplayName, &team.Objective,
 		&team.PrimaryScenario, &team.SuccessCriteria, &team.LeadAvatarID,
 		&team.Status, &team.DefaultWorkflowID, &team.Evaluation, &team.EvaluationBuildRunID,
 		&team.EvaluationContractHash, &team.EvaluatedAt,
@@ -542,7 +543,7 @@ func (s *Store) UpdateTeamDesign(
 
 	var team Team
 	err = tx.QueryRow(ctx, `
-		SELECT id, workspace_id, name, objective, primary_scenario,
+		SELECT id, workspace_id, name, COALESCE(NULLIF(display_name, ''), name), objective, primary_scenario,
 		       success_criteria, COALESCE(lead_avatar_id, ''), status,
 		       COALESCE(default_workflow_id, ''),
 		       evaluation, COALESCE(evaluation_build_run_id, ''),
@@ -552,7 +553,7 @@ func (s *Store) UpdateTeamDesign(
 		WHERE workspace_id=$1 AND id=$2
 		FOR UPDATE
 	`, workspaceID, teamID).Scan(
-		&team.ID, &team.WorkspaceID, &team.Name, &team.Objective,
+		&team.ID, &team.WorkspaceID, &team.Name, &team.DisplayName, &team.Objective,
 		&team.PrimaryScenario, &team.SuccessCriteria, &team.LeadAvatarID,
 		&team.Status, &team.DefaultWorkflowID, &team.Evaluation, &team.EvaluationBuildRunID,
 		&team.EvaluationContractHash, &team.EvaluatedAt,
@@ -580,14 +581,14 @@ func (s *Store) UpdateTeamDesign(
 		UPDATE weave_teams
 		SET objective=$3, primary_scenario=$4, success_criteria=$5, updated_at=now()
 		WHERE workspace_id=$1 AND id=$2
-		RETURNING id, workspace_id, name, objective, primary_scenario,
+		RETURNING id, workspace_id, name, COALESCE(NULLIF(display_name, ''), name), objective, primary_scenario,
 		          success_criteria, COALESCE(lead_avatar_id, ''), status,
 		          COALESCE(default_workflow_id, ''),
 		          evaluation, COALESCE(evaluation_build_run_id, ''),
 		          COALESCE(evaluation_contract_hash, ''), evaluated_at,
 		          created_at, updated_at
 	`, workspaceID, teamID, input.Objective, input.PrimaryScenario, input.SuccessCriteria).Scan(
-		&team.ID, &team.WorkspaceID, &team.Name, &team.Objective,
+		&team.ID, &team.WorkspaceID, &team.Name, &team.DisplayName, &team.Objective,
 		&team.PrimaryScenario, &team.SuccessCriteria, &team.LeadAvatarID,
 		&team.Status, &team.DefaultWorkflowID, &team.Evaluation, &team.EvaluationBuildRunID,
 		&team.EvaluationContractHash, &team.EvaluatedAt,

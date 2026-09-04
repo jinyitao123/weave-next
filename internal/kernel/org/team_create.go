@@ -49,6 +49,7 @@ type InitialTeamWorker struct {
 // immediately usable Team.
 type CreateActiveTeamInput struct {
 	Name            string              `json:"name"`
+	DisplayName     string              `json:"display_name,omitempty"`
 	Objective       string              `json:"objective"`
 	PrimaryScenario string              `json:"primary_scenario"`
 	SuccessCriteria string              `json:"success_criteria"`
@@ -95,12 +96,16 @@ func (s *Store) CreateActiveTeam(
 		ID:              uuid.NewString(),
 		WorkspaceID:     workspaceID,
 		Name:            input.Name,
+		DisplayName:     strings.TrimSpace(input.DisplayName),
 		Objective:       input.Objective,
 		PrimaryScenario: input.PrimaryScenario,
 		SuccessCriteria: input.SuccessCriteria,
 		LeadAvatarID:    input.LeadAvatarID,
 		Status:          finalCreateTeamStatus(input.DesiredStatus),
 		Evaluation:      finalCreateTeamEvaluation(input.Evaluation),
+	}
+	if team.DisplayName == "" {
+		team.DisplayName = team.Name
 	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -119,12 +124,12 @@ func (s *Store) CreateActiveTeam(
 
 	if err := tx.QueryRow(ctx, `
 		INSERT INTO weave_teams (
-			id, workspace_id, name, objective, primary_scenario,
+			id, workspace_id, name, display_name, objective, primary_scenario,
 			success_criteria, lead_avatar_id, status, evaluation
-		) VALUES ($1, $2, $3, $4, $5, $6, NULL, 'needs_repair', $7)
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, NULL, 'needs_repair', $8)
 		RETURNING created_at, updated_at
 	`,
-		team.ID, team.WorkspaceID, team.Name, team.Objective,
+		team.ID, team.WorkspaceID, team.Name, team.DisplayName, team.Objective,
 		team.PrimaryScenario, team.SuccessCriteria, team.Evaluation,
 	).Scan(&team.CreatedAt, &team.UpdatedAt); err != nil {
 		var pgErr *pgconn.PgError
