@@ -252,6 +252,7 @@ func frozenTerminalCandidate(
 		TokensIn:              usage.InputTokens,
 		TokensOut:             usage.OutputTokens,
 		CostUSD:               usage.CostUSD,
+		ToolCalls:             usage.ToolCalls,
 		SelfExclusive:         selfExclusive,
 		ChildBreakdown:        []loomruntime.TerminalChildBreakdownV3{},
 		SubtreeTotal:          selfExclusive,
