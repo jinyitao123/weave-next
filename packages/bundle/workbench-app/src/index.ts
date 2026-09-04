@@ -364,7 +364,7 @@ function listedTeams(value: unknown): Record<string, string> {
   const items = Array.isArray(value) ? value : Array.isArray(nested) ? nested : []
   return Object.fromEntries(items.flatMap((candidate): [string, string][] => {
     const id = text(candidate, ['team_id', 'teamId', 'id'])
-    return id === '' ? [] : [[id, teamDisplayName(text(candidate, ['display_name', 'displayName', 'name']))]]
+    return id === '' ? [] : [[id, teamDisplayName(preferredText(candidate, ['display_name', 'displayName', 'name']))]]
   }))
 }
 
@@ -678,7 +678,22 @@ export function applyWorkTaskProjection(state: WorkTaskState, event: SessionEven
   const pendingCalls = Object.fromEntries(Object.entries(state.pendingCalls).filter(([id]) => id !== callId))
   if (event.data.message.content[0].isError) return { ...state, pendingCalls }
   const value = resultValue(event)
-  if (call.name === 'mcp__weave__team_list') return { ...state, pendingCalls, teams: { ...state.teams, ...listedTeams(value) } }
+  if (call.name === 'mcp__weave__team_list') {
+    const teams = { ...state.teams, ...listedTeams(value) }
+    const refreshedName = state.task === null ? '' : teams[state.task.teamId] ?? ''
+    const task = state.task === null || refreshedName === '' || refreshedName === state.task.teamName
+      ? state.task
+      : { ...state.task, teamName: refreshedName, updatedAt: event.time }
+    return { ...state, pendingCalls, teams, task }
+  }
+  if (call.name === 'mcp__weave__team_create') {
+    const teamId = text(value, ['team_id', 'teamId', 'id'])
+    const definition = object(call.args)?.definition
+    const displayName = teamDisplayName(preferredText(definition, ['display_name', 'displayName', 'name']))
+    return teamId === '' || displayName === ''
+      ? { ...state, pendingCalls }
+      : { ...state, pendingCalls, teams: { ...state.teams, [teamId]: displayName } }
+  }
   if (call.name === 'mcp__weave__team_dispatch') {
     const teamId = text(call.args, ['team_id', 'teamId', 'team'])
     const task = snapshot(state.task, value, event.time, {
@@ -700,7 +715,7 @@ export function applyWorkTaskProjection(state: WorkTaskState, event: SessionEven
 
 /** Projection definition registered with the Session projection registry. */
 export const workTaskProjectionDefinition = {
-  key: 'workTask', stateVersion: 9, stateSchema,
+  key: 'workTask', stateVersion: 10, stateSchema,
   init: (): WorkTaskState => ({ task: null, pendingCalls: {}, teams: {} }),
   apply: applyWorkTaskProjection,
   wire: { viewSchema: taskSchema.nullable(), view: (state: WorkTaskState) => state.task },

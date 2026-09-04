@@ -51,6 +51,32 @@ describe('Workbench work-task projection', () => {
     expect(state.task?.attempts).toHaveLength(1)
   })
 
+  it('keeps the business name when a newly created team is dispatched immediately', () => {
+    let state = workTaskProjectionDefinition.init()
+    for (const item of [
+      call('create', 'mcp__weave__team_create', { definition: { display_name: '日冕计划任务定义与先期论证筹备组' } }, 0),
+      result('create', { team_id: 'team-new', status: 'ready' }, 1),
+      call('dispatch', 'mcp__weave__team_dispatch', { team_id: 'team-new', task: '开展先期论证' }, 2),
+      result('dispatch', { run_id: 'run-new', status: 'queued' }, 3),
+    ]) state = applyWorkTaskProjection(state, item)
+
+    expect(state.task).toMatchObject({
+      teamId: 'team-new', teamName: '日冕计划任务定义与先期论证筹备组', brief: '开展先期论证', status: 'queued',
+    })
+  })
+
+  it('refreshes a restored task when the team business name becomes available', () => {
+    let state = workTaskProjectionDefinition.init()
+    for (const item of [
+      call('dispatch', 'mcp__weave__team_dispatch', { team_id: 'team-1', task: '继续研究' }, 0),
+      result('dispatch', { run_id: 'run-1', status: 'running' }, 1),
+      call('list', 'mcp__weave__team_list', {}, 2),
+      result('list', { teams: [{ team_id: 'team-1', name: 'coronal-program-research', display_name: '日冕计划任务定义与先期论证筹备组' }] }, 3),
+    ]) state = applyWorkTaskProjection(state, item)
+
+    expect(state.task?.teamName).toBe('日冕计划任务定义与先期论证筹备组')
+  })
+
   it('folds reconnect-safe progress and runtime assignment from dispatch status', () => {
     let state = workTaskProjectionDefinition.init()
     for (const item of [

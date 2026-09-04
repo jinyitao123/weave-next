@@ -63,7 +63,7 @@ describe('workTaskModel', () => {
   it('keeps listed teams available as a first-class chooser before dispatch', () => {
     const model = workTaskModel([tool('mcp__weave__team_list', {}, [
       {
-        team_id: 'team-ready', name: '可派发团队', objective: '完成复杂业务推演',
+        team_id: 'team-ready', name: 'dispatch-team', display_name: '可派发团队', objective: '完成复杂业务推演',
         status: 'active', workflow_available: true,
       },
       {

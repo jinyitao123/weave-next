@@ -431,7 +431,7 @@ function teamIdentity(calls: readonly ToolObservation[], dispatch: ToolObservati
       const item = record(candidate)
       if (item === null) continue
       const id = deepString(item, ['team_id', 'teamId', 'id'])
-      const name = deepString(item, ['name'])
+      const name = preferredString(item, ['display_name', 'displayName', 'name'])
       if (dispatchId !== '' && id === dispatchId) return { id, name: name || id }
     }
   }
@@ -446,7 +446,7 @@ function teamCandidates(calls: readonly ToolObservation[]): readonly WorkTaskTea
     const item = record(candidate)
     if (item === null) return []
     const teamId = deepString(item, ['team_id', 'teamId', 'id'])
-    const name = deepString(item, ['name'])
+    const name = preferredString(item, ['display_name', 'displayName', 'name'])
     if (teamId === '' || name === '') return []
     return [{
       teamId,
