@@ -18,6 +18,8 @@ import (
 	"github.com/jinyitao123/weave/internal/build/teameval"
 	"github.com/jinyitao123/weave/internal/build/teamforge"
 	"github.com/jinyitao123/weave/internal/build/teamtemplate"
+	"github.com/jinyitao123/weave/internal/kernel/engine"
+	"github.com/jinyitao123/weave/internal/kernel/runtimes"
 	"github.com/jinyitao123/weave/internal/kernel/workflow/machine"
 )
 
@@ -84,26 +86,28 @@ type Submitter interface {
 }
 
 type Options struct {
-	Policy       teambuild.TemplateAuthorizationPolicy
-	DefaultModel string
-	ReadyTimeout time.Duration
-	PollInterval time.Duration
-	RunTTL       time.Duration
-	Now          func() time.Time
-	Catalog      Catalog
+	Policy          teambuild.TemplateAuthorizationPolicy
+	DefaultModel    string
+	RuntimeSelector RuntimeSelector
+	ReadyTimeout    time.Duration
+	PollInterval    time.Duration
+	RunTTL          time.Duration
+	Now             func() time.Time
+	Catalog         Catalog
 }
 
 type Service struct {
-	idempotency  IdempotencyStore
-	builds       BuildStore
-	submitter    Submitter
-	policy       teambuild.TemplateAuthorizationPolicy
-	defaultModel string
-	ready        time.Duration
-	poll         time.Duration
-	runTTL       time.Duration
-	now          func() time.Time
-	catalog      Catalog
+	idempotency     IdempotencyStore
+	builds          BuildStore
+	submitter       Submitter
+	policy          teambuild.TemplateAuthorizationPolicy
+	defaultModel    string
+	runtimeSelector RuntimeSelector
+	ready           time.Duration
+	poll            time.Duration
+	runTTL          time.Duration
+	now             func() time.Time
+	catalog         Catalog
 }
 
 type declarativePlan struct {
@@ -126,8 +130,9 @@ func New(idempotency IdempotencyStore, builds BuildStore, submitter Submitter, o
 	return &Service{
 		idempotency: idempotency, builds: builds, submitter: submitter,
 		policy: options.Policy, ready: options.ReadyTimeout, poll: options.PollInterval,
-		defaultModel: strings.TrimSpace(options.DefaultModel),
-		runTTL:       options.RunTTL, now: options.Now, catalog: options.Catalog,
+		defaultModel:    strings.TrimSpace(options.DefaultModel),
+		runtimeSelector: options.RuntimeSelector,
+		runTTL:          options.RunTTL, now: options.Now, catalog: options.Catalog,
 	}
 }
 
@@ -164,11 +169,16 @@ func (s *Service) Instantiate(ctx context.Context, workspaceID, userID string, r
 	if err != nil {
 		return Outcome{}, err
 	}
-	applyTemplateDefaultModel(&compiled, s.defaultModel)
 	fingerprint, err := templateFingerprint(compiled.Template, request.DeclarativeSpec)
 	if err != nil {
 		return Outcome{}, fmt.Errorf("fingerprint team template: %w", err)
 	}
+	if s.runtimeSelector != nil {
+		if assignment, selectErr := s.runtimeSelector.Select(ctx, workspaceID, engine.Codex, "", ""); selectErr == nil {
+			applyTemplateDefaultRuntime(&compiled, assignment.RuntimeID)
+		}
+	}
+	applyTemplateDefaultModel(&compiled, s.defaultModel)
 	buildRunID := deterministicBuildRunID(workspaceID, key)
 	var declarative *declarativePlan
 	if request.DeclarativeSpec != nil {
@@ -233,6 +243,44 @@ func (s *Service) Instantiate(ctx context.Context, workspaceID, userID string, r
 		}
 	}
 	return s.waitForTerminal(workspaceID, buildRunID)
+}
+
+// RuntimeSelector is the narrow execution-placement surface used by the
+// product template path. The platform owns this choice; callers should not
+// have to copy runtime identifiers into otherwise business-level team YAML.
+type RuntimeSelector interface {
+	Select(context.Context, string, string, string, string) (runtimes.Assignment, error)
+}
+
+func applyTemplateDefaultRuntime(compiled *teamtemplate.Compilation, runtimeID string) {
+	if compiled == nil || strings.TrimSpace(runtimeID) == "" {
+		return
+	}
+	runtimeID = strings.TrimSpace(runtimeID)
+	for i := range compiled.Blueprint.Members {
+		member := &compiled.Blueprint.Members[i]
+		if member.ExecutionPolicy.EngineClass != teambuild.BlueprintEngineStandard || strings.TrimSpace(member.ModelRef) != "" {
+			continue
+		}
+		member.ExecutionPolicy = teambuild.BlueprintExecutionPolicyV1{
+			EngineClass:   teambuild.BlueprintEngineCLI,
+			Engine:        engine.Codex,
+			ExecutionMode: teambuild.BlueprintExecutionRuntime,
+			RuntimeRef:    runtimeID,
+		}
+	}
+	for i := range compiled.Template.Members {
+		member := &compiled.Template.Members[i]
+		if member.ExecutionPolicy != nil || strings.TrimSpace(member.ModelRef) != "" {
+			continue
+		}
+		member.ExecutionPolicy = &teamtemplate.ExecutionPolicy{
+			EngineClass:   teambuild.BlueprintEngineCLI,
+			Engine:        engine.Codex,
+			ExecutionMode: teambuild.BlueprintExecutionRuntime,
+			RuntimeRef:    runtimeID,
+		}
+	}
 }
 
 func applyTemplateDefaultModel(compiled *teamtemplate.Compilation, defaultModel string) {

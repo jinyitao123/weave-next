@@ -24,6 +24,13 @@ var stableCodePattern = regexp.MustCompile(`^[a-z][a-z0-9_]{0,80}$`)
 type Error struct {
 	Code       string
 	StatusCode int
+	Problems   []Problem
+}
+
+type Problem struct {
+	Path    string `json:"path"`
+	Code    string `json:"code"`
+	Message string `json:"message"`
 }
 
 func (e *Error) Error() string {
@@ -535,8 +542,9 @@ func (c *Client) send(ctx context.Context, method, path string, input any) ([]by
 
 func apiError(status int, body []byte) error {
 	var response struct {
-		Code  string `json:"code"`
-		Error string `json:"error"`
+		Code     string    `json:"code"`
+		Error    string    `json:"error"`
+		Problems []Problem `json:"problems"`
 	}
 	_ = json.Unmarshal(body, &response)
 	code := strings.TrimSpace(response.Code)
@@ -546,5 +554,5 @@ func apiError(status int, body []byte) error {
 	if !stableCodePattern.MatchString(code) {
 		code = fmt.Sprintf("http_%d", status)
 	}
-	return &Error{Code: code, StatusCode: status}
+	return &Error{Code: code, StatusCode: status, Problems: response.Problems}
 }

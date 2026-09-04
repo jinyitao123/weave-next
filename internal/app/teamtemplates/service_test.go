@@ -13,6 +13,8 @@ import (
 	"github.com/jinyitao123/weave/internal/build/teambuild"
 	"github.com/jinyitao123/weave/internal/build/teamforge"
 	"github.com/jinyitao123/weave/internal/build/teamtemplate"
+	"github.com/jinyitao123/weave/internal/kernel/engine"
+	"github.com/jinyitao123/weave/internal/kernel/runtimes"
 )
 
 const validTemplateYAML = `schema: team-template/v1
@@ -117,6 +119,36 @@ func TestInstantiateAppliesConfiguredModelToStandardMembers(t *testing.T) {
 	for _, member := range blueprint.Members {
 		if member.ModelRef != "gpt-5.6-luna" {
 			t.Fatalf("member %q model = %q", member.Name, member.ModelRef)
+		}
+	}
+}
+
+func TestInstantiatePrefersAvailableCodexRuntimeForUnconfiguredMembers(t *testing.T) {
+	builds := &memoryBuildStore{}
+	selector := &staticRuntimeSelector{assignment: runtimes.Assignment{
+		RuntimeID: "runtime-1", Engine: engine.Codex, Mode: runtimes.SelectionAuto,
+	}}
+	service := New(&memoryIdempotencyStore{}, builds, &memorySubmitter{builds: builds}, Options{
+		Policy: testPolicy(), DefaultModel: "gpt-5.6-luna", RuntimeSelector: selector,
+	})
+	if _, err := service.Instantiate(context.Background(), "workspace-1", "user-1", Request{
+		YAML: validTemplateYAML, IdempotencyKey: uuid.NewString(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if selector.calls != 1 {
+		t.Fatalf("runtime selection calls = %d, want 1", selector.calls)
+	}
+	var blueprint teambuild.TeamBlueprintV1
+	if err := json.Unmarshal(builds.revision.BlueprintJSON, &blueprint); err != nil {
+		t.Fatal(err)
+	}
+	for _, member := range blueprint.Members {
+		if member.ModelRef != "" || member.ExecutionPolicy.EngineClass != teambuild.BlueprintEngineCLI ||
+			member.ExecutionPolicy.Engine != engine.Codex ||
+			member.ExecutionPolicy.ExecutionMode != teambuild.BlueprintExecutionRuntime ||
+			member.ExecutionPolicy.RuntimeRef != "runtime-1" {
+			t.Fatalf("member %q execution = %#v model = %q", member.Name, member.ExecutionPolicy, member.ModelRef)
 		}
 	}
 }
@@ -407,6 +439,17 @@ type memorySubmitter struct {
 	asynchronous bool
 	onSubmit     func()
 	calls        int
+}
+
+type staticRuntimeSelector struct {
+	assignment runtimes.Assignment
+	err        error
+	calls      int
+}
+
+func (s *staticRuntimeSelector) Select(_ context.Context, _, _, _, _ string) (runtimes.Assignment, error) {
+	s.calls++
+	return s.assignment, s.err
 }
 
 func (s *memorySubmitter) Submit(_ context.Context, _, _ string) error {

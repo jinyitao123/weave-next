@@ -3,14 +3,47 @@ package mcpstdio
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 
 	"github.com/jinyitao123/loom/contract"
 	"github.com/jinyitao123/weave/internal/app/weaveclient"
+	"github.com/jinyitao123/weave/internal/build/teamtemplate"
+	"gopkg.in/yaml.v3"
 )
+
+type teamCreateArguments struct {
+	Definition      *researchTeamDefinition `json:"definition,omitempty"`
+	YAML            string                  `json:"yaml,omitempty"`
+	Sample          string                  `json:"sample,omitempty"`
+	Overrides       map[string]any          `json:"overrides,omitempty"`
+	DeclarativeSpec json.RawMessage         `json:"declarative_spec,omitempty"`
+	IdempotencyKey  string                  `json:"idempotency_key"`
+}
+
+// researchTeamDefinition is the product-level structured path. It names
+// people and outcomes, while Weave owns stable refs and topology parameters.
+type researchTeamDefinition struct {
+	DisplayName     string               `json:"display_name"`
+	Purpose         string               `json:"purpose"`
+	LeadInstruction string               `json:"lead_instruction"`
+	Lead            researchTeamMember   `json:"lead"`
+	Researchers     []researchTeamMember `json:"researchers"`
+	Finalizer       researchTeamMember   `json:"finalizer"`
+	SuccessCriteria []string             `json:"success_criteria"`
+	MaxCostUSD      float64              `json:"max_cost_usd"`
+}
+
+type researchTeamMember struct {
+	DisplayName       string   `json:"display_name"`
+	Responsibilities  []string `json:"responsibilities"`
+	Capabilities      []string `json:"capabilities"`
+	ResultRequirement string   `json:"result_requirement"`
+}
 
 type ToolDispatcher struct {
 	client *weaveclient.Client
@@ -37,14 +70,15 @@ func (d *ToolDispatcher) Dispatch(ctx context.Context, call contract.ToolCall) (
 		result, err := d.client.TeamTemplateList(ctx)
 		return documentResult(call.ID, result, err), nil
 	case "team_create":
-		var input weaveclient.TeamCreateRequest
+		var input teamCreateArguments
 		if err := decodeArguments(call.Args, &input); err != nil {
 			return toolError(call.ID, "invalid_arguments"), nil
 		}
-		if strings.TrimSpace(input.Sample) == "" && len(input.DeclarativeSpec) == 0 {
-			return toolError(call.ID, "workflow_definition_required"), nil
+		request, err := teamCreateRequest(input)
+		if err != nil {
+			return toolError(call.ID, "invalid_arguments"), nil
 		}
-		result, err := d.client.TeamCreate(ctx, input)
+		result, err := d.client.TeamCreate(ctx, request)
 		return documentResult(call.ID, result, err), nil
 	case "provider_list":
 		var input struct{}
@@ -405,8 +439,64 @@ func decodeArguments(raw string, target any) error {
 	return nil
 }
 
+func teamCreateRequest(input teamCreateArguments) (weaveclient.TeamCreateRequest, error) {
+	request := weaveclient.TeamCreateRequest{
+		YAML: input.YAML, Sample: input.Sample, Overrides: input.Overrides,
+		DeclarativeSpec: input.DeclarativeSpec, IdempotencyKey: input.IdempotencyKey,
+	}
+	if input.Definition == nil {
+		return request, nil
+	}
+	definition := input.Definition
+	digest := sha256.Sum256([]byte(strings.TrimSpace(definition.DisplayName) + "\n" + strings.TrimSpace(definition.Purpose)))
+	member := func(ref, role string, source researchTeamMember) teamtemplate.Member {
+		return teamtemplate.Member{
+			Name: ref, DisplayName: source.DisplayName, Role: role,
+			Responsibilities: source.Responsibilities, Capabilities: source.Capabilities,
+		}
+	}
+	members := make([]teamtemplate.Member, 0, len(definition.Researchers)+2)
+	members = append(members, member("lead", "avatar", definition.Lead))
+	parallelRefs := make([]string, 0, len(definition.Researchers))
+	requirements := make(map[string]string, len(definition.Researchers)+1)
+	for index, researcher := range definition.Researchers {
+		ref := fmt.Sprintf("researcher-%d", index+1)
+		parallelRefs = append(parallelRefs, ref)
+		members = append(members, member(ref, "worker", researcher))
+		requirements[ref] = researcher.ResultRequirement
+	}
+	members = append(members, member("finalizer", "worker", definition.Finalizer))
+	requirements["finalizer"] = definition.Finalizer.ResultRequirement
+	template := teamtemplate.Template{
+		Schema: teamtemplate.SchemaV1,
+		Name:   fmt.Sprintf("team-%x", digest[:6]), DisplayName: definition.DisplayName,
+		Purpose: definition.Purpose, Template: "research_synthesis",
+		TemplateParameters: teamtemplate.TemplateParameters{
+			LeadInstruction: definition.LeadInstruction, ParallelWorkerRefs: parallelRefs,
+			FinalizerRef: "finalizer", ResultRequirements: requirements,
+		},
+		Members: members, Lead: "lead",
+		Delivery: teamtemplate.Delivery{SuccessCriteria: definition.SuccessCriteria},
+		Budget:   teamtemplate.Budget{MaxCostUSD: definition.MaxCostUSD},
+	}
+	encoded, err := yaml.Marshal(template)
+	if err != nil {
+		return weaveclient.TeamCreateRequest{}, err
+	}
+	request.YAML = string(encoded)
+	return request, nil
+}
+
 func documentResult(callID string, document json.RawMessage, err error) *contract.ToolResult {
 	if err != nil {
+		var apiErr *weaveclient.Error
+		if errors.As(err, &apiErr) && len(apiErr.Problems) != 0 {
+			encoded, _ := json.Marshal(struct {
+				Error    string                `json:"error"`
+				Problems []weaveclient.Problem `json:"problems"`
+			}{Error: apiErr.Code, Problems: apiErr.Problems})
+			return &contract.ToolResult{CallID: callID, Content: string(encoded), IsError: true}
+		}
 		return toolError(callID, clientErrorCode(err))
 	}
 	if len(document) == 0 {
@@ -465,8 +555,8 @@ var toolDefinitions = []contract.ToolDef{
 	},
 	{
 		Name:        "team_create",
-		Description: "Create a confirmed team either from (1) YAML plus a complete declarative_spec workflow, or (2) a runnable named sample. Do not call this tool from YAML alone: first agree the workflow nodes, edges, input contract, and output contract with the user, then send them in declarative_spec. Requires administrator and organization access plus a caller-supplied idempotency_key UUID. Returns team and build identifiers with current status. Errors: workflow_definition_required, idempotency_key_required, template_idempotency_conflict, http_401, http_403, http_422.",
-		InputSchema: json.RawMessage(`{"type":"object","properties":{"yaml":{"type":"string"},"sample":{"type":"string"},"overrides":{"type":"object"},"declarative_spec":{"type":"object"},"idempotency_key":{"type":"string","format":"uuid"}},"required":["idempotency_key"],"oneOf":[{"required":["yaml","declarative_spec"],"not":{"required":["sample"]}},{"required":["sample"],"not":{"required":["yaml"]}}],"additionalProperties":false}`),
+		Description: "Create a confirmed research team. Prefer definition: provide the user-facing team name and purpose, one lead, at least two parallel researchers, one independent finalizer, their responsibilities and required results, success criteria, and budget. Weave owns all internal names, references, YAML, workflow parameters, model settings, runtime identifiers, and execution strategy. YAML remains available for advanced built-in templates; YAML plus declarative_spec is only for a genuinely custom graph; sample uses a runnable named sample. Requires administrator and organization access plus a caller-supplied idempotency_key UUID. Returns team and build identifiers with current status. Errors: idempotency_key_required, template_idempotency_conflict, http_401, http_403, http_422.",
+		InputSchema: json.RawMessage(`{"type":"object","properties":{"definition":{"type":"object","properties":{"display_name":{"type":"string"},"purpose":{"type":"string"},"lead_instruction":{"type":"string"},"lead":{"$ref":"#/$defs/member"},"researchers":{"type":"array","minItems":2,"items":{"$ref":"#/$defs/member"}},"finalizer":{"$ref":"#/$defs/member"},"success_criteria":{"type":"array","minItems":1,"items":{"type":"string"}},"max_cost_usd":{"type":"number","exclusiveMinimum":0}},"required":["display_name","purpose","lead_instruction","lead","researchers","finalizer","success_criteria","max_cost_usd"],"additionalProperties":false},"yaml":{"type":"string"},"sample":{"type":"string"},"overrides":{"type":"object"},"declarative_spec":{"type":"object"},"idempotency_key":{"type":"string","format":"uuid"}},"required":["idempotency_key"],"oneOf":[{"required":["definition"],"not":{"anyOf":[{"required":["yaml"]},{"required":["sample"]},{"required":["declarative_spec"]}]}},{"required":["yaml"],"not":{"anyOf":[{"required":["definition"]},{"required":["sample"]}]}},{"required":["sample"],"not":{"anyOf":[{"required":["definition"]},{"required":["yaml"]}]}}],"$defs":{"member":{"type":"object","properties":{"display_name":{"type":"string"},"responsibilities":{"type":"array","minItems":1,"items":{"type":"string"}},"capabilities":{"type":"array","minItems":1,"items":{"type":"string"}},"result_requirement":{"type":"string"}},"required":["display_name","responsibilities","capabilities","result_requirement"],"additionalProperties":false}},"additionalProperties":false}`),
 	},
 	{
 		Name: "provider_list", ReadOnly: true,

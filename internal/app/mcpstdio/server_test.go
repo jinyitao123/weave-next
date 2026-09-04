@@ -14,6 +14,7 @@ import (
 
 	"github.com/jinyitao123/loom/contract"
 	"github.com/jinyitao123/weave/internal/app/weaveclient"
+	"github.com/jinyitao123/weave/internal/build/teamtemplate"
 )
 
 func TestServeUsesSharedProtocolForInitializeListAndCall(t *testing.T) {
@@ -77,9 +78,12 @@ func TestServeUsesSharedProtocolForInitializeListAndCall(t *testing.T) {
 		}
 		if tool["name"] == "team_create" {
 			schema, _ := json.Marshal(tool["inputSchema"])
-			if !bytes.Contains(schema, []byte(`"required":["yaml","declarative_spec"]`)) ||
-				!strings.Contains(description, "Do not call this tool from YAML alone") {
-				t.Fatalf("team_create contract does not require the workflow: %s / %s", schema, description)
+			if !bytes.Contains(schema, []byte(`"required":["definition"]`)) ||
+				!bytes.Contains(schema, []byte(`"required":["yaml"]`)) ||
+				bytes.Contains(schema, []byte(`"required":["yaml","declarative_spec"]`)) ||
+				bytes.Contains(schema, []byte(`"runtime_ref"`)) || bytes.Contains(schema, []byte(`"model_ref"`)) ||
+				!strings.Contains(description, "Prefer definition") {
+				t.Fatalf("team_create contract does not expose the structured business path: %s / %s", schema, description)
 			}
 		}
 	}
@@ -147,6 +151,24 @@ func TestServeReturnsStableToolErrorWithoutRawHTTPBody(t *testing.T) {
 	}
 }
 
+func TestServeReturnsFieldProblemsForCorrectableValidationErrors(t *testing.T) {
+	api := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		response.WriteHeader(http.StatusUnprocessableEntity)
+		_, _ = response.Write([]byte(`{"problems":[{"path":"/lead","code":"template_lead_unknown","message":"lead must reference a member"}]}`))
+	}))
+	defer api.Close()
+	input := `{"jsonrpc":"2.0","id":"call","method":"tools/call","params":{"name":"team_create","arguments":{"sample":"market-research","idempotency_key":"018f5f5a-c73c-7e31-8f4a-9b36797553a1"}}}` + "\n"
+	var output bytes.Buffer
+	if err := Serve(context.Background(), strings.NewReader(input), &output, mcpClient(t, api.URL)); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`\"error\":\"http_422\"`, `\"path\":\"/lead\"`, `\"code\":\"template_lead_unknown\"`, "lead must reference a member"} {
+		if !strings.Contains(output.String(), want) {
+			t.Fatalf("output missing %q: %s", want, output.String())
+		}
+	}
+}
+
 func TestToolArgumentsRejectUnknownFields(t *testing.T) {
 	client := mcpClient(t, "http://127.0.0.1:1")
 	result, err := NewToolDispatcher(client).Dispatch(context.Background(), structToolCall(
@@ -185,11 +207,69 @@ func TestTeamCreatePassesDeclarativeSpec(t *testing.T) {
 	}
 }
 
-func TestTeamCreateRequiresRunnableWorkflowForCustomTeam(t *testing.T) {
-	result, err := NewToolDispatcher(mcpClient(t, "http://127.0.0.1:1")).Dispatch(context.Background(), structToolCall(
+func TestTeamCreatePassesBuiltInTemplateYAMLWithoutDeclarativeSpec(t *testing.T) {
+	api := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if request.Method != http.MethodPost || request.URL.Path != "/v1/teams:from-template" {
+			t.Fatalf("request = %s %s", request.Method, request.URL.Path)
+		}
+		var body map[string]any
+		if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		if body["yaml"] != "schema: team-template/v1" {
+			t.Fatalf("body = %#v", body)
+		}
+		if _, ok := body["declarative_spec"]; ok {
+			t.Fatalf("unexpected declarative_spec in body = %#v", body)
+		}
+		response.WriteHeader(http.StatusAccepted)
+		_, _ = response.Write([]byte(`{"build_run_id":"build-1","status":"building"}`))
+	}))
+	defer api.Close()
+	result, err := NewToolDispatcher(mcpClient(t, api.URL)).Dispatch(context.Background(), structToolCall(
 		"team_create", `{"yaml":"schema: team-template/v1","idempotency_key":"018f5f5a-c73c-7e31-8f4a-9b36797553a1"}`,
 	))
-	if err != nil || !result.IsError || result.Content != `{"error":"workflow_definition_required"}` {
+	if err != nil || result.IsError || !strings.Contains(result.Content, "build-1") {
+		t.Fatalf("result = %#v err = %v", result, err)
+	}
+}
+
+func TestTeamCreateRendersStructuredBusinessDefinition(t *testing.T) {
+	api := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		var body struct {
+			YAML            string          `json:"yaml"`
+			DeclarativeSpec json.RawMessage `json:"declarative_spec"`
+		}
+		if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		for _, want := range []string{
+			"schema: team-template/v1", "display_name: 日冕研究团队", "template: research_synthesis",
+			"parallel_worker_refs:", "- researcher", "max_cost_usd: 3",
+		} {
+			if !strings.Contains(body.YAML, want) {
+				t.Fatalf("rendered YAML missing %q:\n%s", want, body.YAML)
+			}
+		}
+		compiled, err := teamtemplate.CompileYAML([]byte(body.YAML))
+		if err != nil {
+			t.Fatalf("rendered structured definition does not compile: %v\n%s", err, body.YAML)
+		}
+		if compiled.Template.Name == "corona-research" || len(compiled.Template.Members) != 4 ||
+			compiled.Template.TemplateParameters.FinalizerRef != "finalizer" {
+			t.Fatalf("compiled template = %#v", compiled.Template)
+		}
+		if len(body.DeclarativeSpec) != 0 {
+			t.Fatalf("unexpected declarative spec = %s", body.DeclarativeSpec)
+		}
+		response.WriteHeader(http.StatusAccepted)
+		_, _ = response.Write([]byte(`{"build_run_id":"build-structured","status":"building"}`))
+	}))
+	defer api.Close()
+	result, err := NewToolDispatcher(mcpClient(t, api.URL)).Dispatch(context.Background(), structToolCall(
+		"team_create", `{"idempotency_key":"018f5f5a-c73c-7e31-8f4a-9b36797553a2","definition":{"display_name":"日冕研究团队","purpose":"形成决策研究","lead_instruction":"组织研究","lead":{"display_name":"负责人","responsibilities":["组织"],"capabilities":["delegation"],"result_requirement":"统筹交付"},"researchers":[{"display_name":"研究员","responsibilities":["研究"],"capabilities":["research"],"result_requirement":"提供资料"},{"display_name":"分析员","responsibilities":["分析"],"capabilities":["analysis"],"result_requirement":"交叉验证"}],"finalizer":{"display_name":"总装员","responsibilities":["交付"],"capabilities":["writing"],"result_requirement":"综合交付"},"success_criteria":["可追溯"],"max_cost_usd":3}}`,
+	))
+	if err != nil || result.IsError || !strings.Contains(result.Content, "build-structured") {
 		t.Fatalf("result = %#v err = %v", result, err)
 	}
 }

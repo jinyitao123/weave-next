@@ -440,7 +440,7 @@ func main() {
 			teamtemplates.NewPGIdempotencyStore(srv.Pool),
 			srv.TeamBuild,
 			teamTemplateExecutionAdapter{service: srv.TeamBuildOrchestrator},
-			teamtemplates.Options{Catalog: teamtemplates.NewStaticCatalog(), DefaultModel: defaultModel, Policy: teambuild.TemplateAuthorizationPolicy{
+			teamtemplates.Options{Catalog: teamtemplates.NewStaticCatalog(), DefaultModel: defaultModel, RuntimeSelector: srv.Runtimes, Policy: teambuild.TemplateAuthorizationPolicy{
 				AutoBudgetThresholdUSD: cfg.TemplateAutoMaxCostUSD,
 				DailyBudgetUSD:         cfg.TemplateDailyBudgetUSD,
 				MonthlyBudgetUSD:       cfg.TemplateMonthlyBudgetUSD,
