@@ -23,7 +23,7 @@ func TestExecutorProcessNextQueuedRunSucceeds(t *testing.T) {
 	h.runtime.executeResult = RuntimeResult{
 		Status: RuntimeCompleted,
 		Output: json.RawMessage(`{"ok":true}`),
-		Usage:  UsageTotals{InputTokens: 3, OutputTokens: 5, CostUSD: 0.25},
+		Usage:  UsageTotals{InputTokens: 3, OutputTokens: 5, CostUSD: 0.25, ToolCalls: 7},
 	}
 	taskID := h.enqueueWorkflowTask(t, "run-success")
 
@@ -37,6 +37,7 @@ func TestExecutorProcessNextQueuedRunSucceeds(t *testing.T) {
 	h.assertTask(t, taskID, taskqueue.StatusCompleted, "run-success", "")
 	h.assertRun(t, "run-success", StatusSucceeded, nil)
 	h.assertTerminalMarker(t, "run-success", "success", "completed")
+	h.assertTerminalToolCalls(t, "run-success", 7)
 }
 
 func TestCancelServiceCancelsEveryTaskInRunSnapshot(t *testing.T) {
@@ -645,6 +646,21 @@ func (h *processNextHarness) assertTerminalMarker(t *testing.T, runID, status, s
 	}
 	if statusRaw != status || stopReasonRaw != stopReason {
 		t.Fatalf("terminal marker = (%q,%q), want (%q,%q)", statusRaw, stopReasonRaw, status, stopReason)
+	}
+}
+
+func (h *processNextHarness) assertTerminalToolCalls(t *testing.T, runID string, want int64) {
+	t.Helper()
+	var got int64
+	if err := h.pool.QueryRow(context.Background(), `
+		SELECT usage_tool_calls
+		FROM weave_run_terminal_markers
+		WHERE workspace_id='workspace-1' AND run_id=$1
+	`, runID).Scan(&got); err != nil {
+		t.Fatalf("read terminal tool calls: %v", err)
+	}
+	if got != want {
+		t.Fatalf("terminal tool calls = %d, want %d", got, want)
 	}
 }
 

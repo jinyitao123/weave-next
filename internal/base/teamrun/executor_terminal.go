@@ -215,6 +215,7 @@ func frozenTerminalCandidate(
 		InputTokens:  usage.InputTokens,
 		OutputTokens: usage.OutputTokens,
 		CostUSD:      usage.CostUSD,
+		ToolCalls:    usage.ToolCalls,
 	}
 	var usageCompletePtr *bool
 	// The reason is the discriminator: callers that never set the annotation
