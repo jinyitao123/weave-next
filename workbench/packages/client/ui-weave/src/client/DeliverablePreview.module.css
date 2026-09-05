@@ -1,0 +1,13 @@
+.tablePreview, .imagePreview { display: flex; min-width: 0; flex-direction: column; gap: 12px; }
+.tableScroll, .imageScroll { overflow: auto; max-height: 640px; overscroll-behavior: contain; }
+.tableScroll:focus-visible, .imageScroll:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: 2px; }
+.tableScroll table { border-collapse: collapse; min-width: 100%; font-size: 14px; line-height: 1.6; }
+.tableScroll caption { text-align: left; font-weight: 500; padding-bottom: 10px; }
+.tableScroll td { min-width: 88px; max-width: 400px; padding: 9px 12px; border: 1px solid var(--dsw-alias-border-l2); vertical-align: top; white-space: pre-wrap; overflow-wrap: anywhere; }
+.tableScroll tr:nth-child(even) { background: var(--dsw-alias-interactive-bg-hover); }
+.tablePreview > p, .imagePreview > p { color: var(--dsw-alias-label-secondary); font-size: 13px; }
+.controls { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.controls button { min-width: 34px; min-height: 34px; padding: 4px 9px; border: 1px solid var(--dsw-alias-border-l1); border-radius: 5px; color: inherit; background: transparent; font: inherit; cursor: pointer; }
+.controls button:disabled { opacity: .5; cursor: default; }
+.controls output { min-width: 44px; text-align: center; font-variant-numeric: tabular-nums; font-size: 13px; }
+.imageScroll img { display: block; max-width: none; height: auto; }

@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-01-weave-commercial-pilot-readiness.md
+2026-09-01-weave-commercial-pilot-readiness.md: 542502b1b735cfc5f1781c3ca24ae295c8e3176a
+2026-09-01-weave-commercial-pilot-readiness.zh.md: 788d3bf3a1004e7fc9b725819372b1eb0f71fdfa
