@@ -4,6 +4,8 @@ Status: implemented
 
 English | [中文](2026-07-02-bilingual-docs-and-pairing-gate.zh.md)
 
+Migration scope: this note preserves decisions from the original runtime; components marked as historical paths are not included in the current Weave Workbench workspace.
+
 ## Problem
 
 This repo's documentation corpus is read by people and agents inside and outside the company, in both English and Chinese. Maintaining a second language by hand, with no mechanism, is how translations rot: one side moves on, the other silently lies, and no gate notices. The repo's standing answer to invariants of this kind is to encode them as a mechanical check (see [quality gates](2026-06-11-quality-gates.md) and [doc-sync enforcement](../../archived/process/2026-06-11-doc-sync-enforcement.md)), so the bilingual policy ships with one.
@@ -19,7 +21,7 @@ This repo's documentation corpus is read by people and agents inside and outside
 
 ## Verification
 
-The verification contract covers each boundary independently. `verify-translation-pairing` pins pair completeness, hashes, switchers, and structure, while its discovery tests pin the named root policy documents and automatic README coverage; [`project-doc-site.spec.ts`](../../../../scripts/project-doc-site.spec.ts) pins locale-specific source selection for published pairs; [`cordis-config-files.spec.ts`](../../../../scripts/cordis-config-files.spec.ts) pins discovery of Loader YAML and exclusion of translation records; and the [translation-prompt runnable expectation](../../../../scripts/translation-prompt.expected.spec.ts) pins the rendered system message, five reviewed example pairs, source request, and consumed response. Together these checks make pair drift, publication drift, configuration misclassification, and model-visible prompt drift review-visible.
+The verification contract covers each boundary independently. `verify-translation-pairing` pins pair completeness, hashes, switchers, and structure, while its discovery tests pin the named root policy documents and automatic README coverage; `project-doc-site.spec.ts` (historical path `../../../../scripts/project-doc-site.spec.ts`) pins locale-specific source selection for published pairs; [`cordis-config-files.spec.ts`](../../../../scripts/cordis-config-files.spec.ts) pins discovery of Loader YAML and exclusion of translation records; and the [translation-prompt runnable expectation](../../../../scripts/translation-prompt.expected.spec.ts) pins the rendered system message, five reviewed example pairs, source request, and consumed response. Together these checks make pair drift, publication drift, configuration misclassification, and model-visible prompt drift review-visible.
 
 ## Alternatives considered
 

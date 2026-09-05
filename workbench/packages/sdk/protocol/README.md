@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-sdk-protocol` lets a DeepSeek Harness runtime and its SDK clients exchange JSON-RPC 2.0 messages over newline-delimited byte streams: one transport class plus the named request, result, and notification types both wire ends speak. The serving side is the [`dsh-sdk-jsonrpc-server`](../server/README.md) plugin; the clients are the TypeScript [`dsh-sdk-client`](../client/README.md) and the [Python SDK](../../../python/README.md), which mirrors these shapes without importing them. Use this package when you implement or debug a wire end: framing rules, method names, payload types, and error semantics all live here. It is a pure library — no plugin, no configuration, no registrations.
+`dsh-sdk-protocol` defines the newline-delimited JSON-RPC 2.0 transport, request, result, and notification types shared with the [`dsh-sdk-jsonrpc-server`](../server/README.md) plugin. Use it when implementing or debugging a protocol peer. This pure library has no plugin configuration or registrations; standalone TypeScript and Python SDK clients are not included in this workspace.
 
 ## Table of Contents
 
@@ -88,8 +88,6 @@ Incoming lines are parsed one at a time: a frame with `id` and `method` is answe
 Read these pages when the wire contract is not enough. They move from the serving plugin to the clients and the runnable application.
 
 - [JSON-RPC serving plugin](../server/README.md) — the runtime plugin that serves this protocol over stdio.
-- [TypeScript SDK client](../client/README.md) — the client that drives this protocol.
-- [Python SDK](../../../python/README.md) — the Python counterpart that mirrors these shapes.
 - [SDK application bundle](../../bundle/sdk-app/README.md) — the `dsh --profile sdk` application that boots the server.
 - [TypeScript SDK and SDK subagent backend decision](../../../.agents/notes/implemented/feature/2026-07-27-typescript-sdk-and-sdk-subagent-backend.md) — the client contract this protocol serves.
 

@@ -87,7 +87,9 @@ async function openFollow(
 function pageEvents(page: SessionPage): SessionWireEvent[] {
   return page.records.flatMap(record => record.type === 'event'
     ? [record.event]
-    : decodeStorageRecord(chunkRow(record.event)).map(event => event as unknown as SessionWireEvent))
+    : record.type === 'chunks'
+      ? decodeStorageRecord(chunkRow(record.event)).map(event => event as unknown as SessionWireEvent)
+      : [])
 }
 
 function chunkRow(event: ChunkRowEvent): ChunkRow {

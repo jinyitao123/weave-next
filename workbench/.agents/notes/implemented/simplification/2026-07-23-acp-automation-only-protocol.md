@@ -6,6 +6,8 @@ English | [中文](2026-07-23-acp-automation-only-protocol.zh.md)
 
 > The automation-only boundary remains current. [Standard ACP v1 automation controls](../feature/2026-08-22-standard-acp-automation-controls.md) supersedes only this note's prompt-only method, configuration, MCP, update, and lifecycle inventory; it does not restore ACP as a UI.
 
+Migration scope: this note preserves decisions from the original runtime; components marked as historical paths are not included in the current Weave Workbench workspace.
+
 ## Problem
 
 The ACP bridge had become a second interactive product UI. It translated durable events into editor cards, terminal metadata, diffs, plans, titles, reasoning, commands, modes, model and permission pickers, session navigation, and human elicitation. Those responsibilities duplicated the TUI and the Web client while coupling an automation transport to UI services, persistence queries, presentation policy, and editor-specific conventions.
@@ -22,7 +24,7 @@ Image capability is truthful rather than structural: `initialize` advertises it 
 
 The bridge emits only committed semantic facts. A per-session promise chain preserves reasoning, assistant block, tool lifecycle, configuration, and usage-update order while assistant image references are asynchronously re-read and integrity-verified for ACP base64 delivery; a missing or corrupt object fails prompt delivery instead of becoming a placeholder. Raw chunks, todos, plans, titles, retry markers, terminal metadata, diffs, locations, and presentation projections remain off the ACP wire. Standard model and reasoning options, list/resume/close, and stdio/HTTP MCP are automation controls; session load/delete/fork, commands, modes, plan review, terminals, client filesystem operations, and human elicitation remain unsupported.
 
-One-shot `session/request_permission` remains. It is a machine policy channel for bridge-owned agents, not a human approval UI: the answerer accepts only an exact agent object in the bridge's live session map, delegates foreign or call-less requests, and maps failed RPCs to the fail-closed unavailable outcome. The client chooses allow once, reject once, or cancel, and the bridge never turns that response into a durable grant. Asking policy stays in the approval seam and its producers; [`dsh-subagent-acp`](../../../../packages/subagent/subagent-acp/README.md) uses this channel programmatically.
+One-shot `session/request_permission` remains. It is a machine policy channel for bridge-owned agents, not a human approval UI: the answerer accepts only an exact agent object in the bridge's live session map, delegates foreign or call-less requests, and maps failed RPCs to the fail-closed unavailable outcome. The client chooses allow once, reject once, or cancel, and the bridge never turns that response into a durable grant. Asking policy stays in the approval seam and its producers; `dsh-subagent-acp` (historical path `../../../../packages/subagent/subagent-acp/README.md`) uses this channel programmatically.
 
 The app composition contains the agent spine, persistence, checkpoint policy, derived session query, and ACP transport. The ACP bridge reads persistence directly for standard resumable summaries; it does not expose command, session-reference, plan-mode, permission-picker, or user-question presentation surfaces.
 

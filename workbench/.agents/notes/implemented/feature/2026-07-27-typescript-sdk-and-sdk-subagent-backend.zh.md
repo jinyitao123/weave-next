@@ -24,7 +24,7 @@ stdio JSON-RPC 对外服务接口（`@deepseek-ai/dsh-sdk-jsonrpc-server`，见[
 四层，依[测试政策](../../../../docs/testing.zh.md)：
 
 - **免密钥单元**——`sdk-client` 通过真实 stdio 驱动脚本化伪运行时（`tests/fake-runtime.ts`，环境变量脚本化、纯协议——即 Python `test_client.py` 的模式）；`subagent-dsh-sdk` 经真实提供方驱动同一伪运行时，覆盖逐次路由覆盖、可达子原因、typed 错误，以及 initialize/session-run/shutdown 诊断。三个包全部 100% 逐文件覆盖。
-- **免密钥 Loader 组合**——`subagent-dsh-sdk/tests/loader-composition.e2e.ts` 启动包自有测试组合（`packages/subagent/subagent-dsh-sdk/tests/fixtures/loader/`），其中子进程是真实的第二个 `dsh --profile sdk` 运行时，拥有独立 home 与有序 patch；工具结果与持久化请求 header 会证明提供方、模型、推理强度、maxTokens 与父会话 cwd，失败场景则固定与部分输出分离的模型可见子错误诊断。
+- **免密钥 Loader 组合**——`subagent-dsh-sdk/tests/loader-composition.e2e.ts` 启动包自有测试组合（已移除 `subagent-dsh-sdk` 包内的历史目录 `tests/fixtures/loader/`），其中子进程是真实的第二个 `dsh --profile sdk` 运行时，拥有独立 home 与有序 patch；工具结果与持久化请求 header 会证明提供方、模型、推理强度、maxTokens 与父会话 cwd，失败场景则固定与部分输出分离的模型可见子错误诊断。
 - **免密钥快照**——`snapshots/sdk/sdk.snapshot.ts` 通过真实 `dsh-sdk-client` 驱动真实 `dsh --profile sdk` 运行时，并通过有序 `llm-replay` patch 回放已录制 fixture（测试前置数据）。一个 DSH SDK 场景把模型选择的路由固定在委派工具、第二个 SDK 运行时及子级持久化请求 header 中；另一个场景固定安全诊断的规范化通知流、SDK 结果、持久日志与前台/后台失败文本。
 - **带密钥 e2e**——快照套件的 `DSH_SNAPSHOT=record` 模式即真实 API 路径（已提交 fixture 由它产出）；组合 e2e 设计上无需密钥。
 

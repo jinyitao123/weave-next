@@ -4,6 +4,8 @@ Status: implemented
 
 [English](2026-08-18-session-history-and-event-transport.md) | 中文
 
+历史快照的筛选与保留规则由[基于投影的会话历史](2026-09-06-projection-backed-session-history.zh.md)部分替代。本文的激活规则、原始实时日志、规范首次加载基线、游标连续性与 Gateway 职责继续有效。
+
 ## 问题
 
 浏览器同时消费三类生命周期不同的数据：可持久化并分页的 Session 日志、需要 opening baseline 才能在重连后收敛的进程内状态，以及无需重放的即时通知。

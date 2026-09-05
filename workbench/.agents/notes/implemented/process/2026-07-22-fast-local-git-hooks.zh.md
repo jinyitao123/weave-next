@@ -4,6 +4,8 @@ Status: implemented
 
 [English](2026-07-22-fast-local-git-hooks.md) | 中文
 
+迁移说明：本文保留原运行底座的决策依据；标注为历史路径的组件未包含在当前 Weave Workbench 工作区中。
+
 ## 问题
 
 agent（智能体）已经会运行能够覆盖自身改动的测试和检查，而提交、推送与 CI 可能分别重复其中范围越来越广的子集。因此，全量 pre-push 套件会拖慢每次推送，放大与当前改动无关的本地偶发失败，而且 CI 紧接着再次运行完整矩阵时不会提供新信号。
@@ -12,7 +14,7 @@ agent（智能体）已经会运行能够覆盖自身改动的测试和检查，
 
 ## 决策
 
-[lefthook.yml](../../../../lefthook.yml) 将两个钩子都保留为有界的本地检查点。Pre-commit 按顺序运行：不加载项目的 [Oxlint](2026-07-29-oxlint-linter.zh.md) 配置验证改动过的 JavaScript 和 TypeScript 文件，应用带[一次有界重试](2026-08-09-oxlint-only-fix-workflow.zh.md)的安全修复，并重新暂存这些文件；`git diff --cached --check` 拒绝暂存 diff 中的空白错误，vendor manifest（元数据清单）守卫检查 vendor 源码元数据。Pre-push 运行 `pnpm run typecheck`；该命令会先准备好生成的 Host Typert 约定，再运行 Client 增量类型检查。
+lefthook.yml (历史路径 `../../../../lefthook.yml`) 将两个钩子都保留为有界的本地检查点。Pre-commit 按顺序运行：不加载项目的 [Oxlint](2026-07-29-oxlint-linter.zh.md) 配置验证改动过的 JavaScript 和 TypeScript 文件，应用带[一次有界重试](2026-08-09-oxlint-only-fix-workflow.zh.md)的安全修复，并重新暂存这些文件；`git diff --cached --check` 拒绝暂存 diff 中的空白错误，vendor manifest（元数据清单）守卫检查 vendor 源码元数据。Pre-push 运行 `pnpm run typecheck`；该命令会先准备好生成的 Host Typert 约定，再运行 Client 增量类型检查。
 
 Pre-commit 不运行类型分析、测试、快照、文档检查、构建、`hygiene` 或门禁调度器。Pre-push 只增加仓库类型检查所需的 Host 约定构建。可选运行的 `check:all` 包脚本独立于这些钩子，从 [scripts/run-gates.ts](../../../../scripts/run-gates.ts) 中选择 `check-all` 调度器清单；它是贡献者命令，而非对 agent 的指令。
 

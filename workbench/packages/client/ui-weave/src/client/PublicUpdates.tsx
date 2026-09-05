@@ -185,7 +185,7 @@ export function PublicUpdates({ active, updates, truncated, position, remember, 
             const nextExpanded = isExpanded ? retainedExpanded.filter(item => item !== key) : [...retainedExpanded, key]
             follow.current = false
             setReadingHistory(true)
-            if (scroll.current !== null && active) rememberPosition(scroll.current, scrollOwner(scroll.current), nextExpanded)
+            if (scroll.current !== null) rememberPosition(scroll.current, scrollOwner(scroll.current), nextExpanded)
             setExpanded(nextExpanded)
           }}>{t(isExpanded ? 'task.updates.collapse' : 'task.updates.expand')}</button> : null}
           <div id={`${contentId}-${index}`}>

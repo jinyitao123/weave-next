@@ -4,6 +4,8 @@ Status: implemented
 
 [English](2026-09-03-workbench-container-deployment.md) | 中文
 
+迁移说明：本文保留原运行底座的决策依据；标注为历史路径的组件未包含在当前 Weave Workbench 工作区中。
+
 ## Problem
 
 Workbench profile 可以从开发仓库运行，但远程安装缺少可重复构建的镜像、持久化 Harness 主目录、私有 Weave 连接和明确的公网 authority 配置。直接把本地进程复制到服务器，既可能遗漏 Weave 可执行文件，也可能让凭据落入临时 shell 状态。
@@ -16,7 +18,7 @@ DSH 启动 token 交换仍是浏览器身份验证机制。带身份验证的地
 
 [Docker 构建上下文排除规则](../../../../.dockerignore) 排除所有目录层级的 `.env*` 文件。镜像会将构建工作区复制到运行阶段，因此本地环境文件必须在 Docker 接收上下文前排除；部署凭据仅通过运行时配置传入。
 
-[镜像构建](../../../../Dockerfile.workbench) 将 APT 下载包与索引、npm 工具下载和 pnpm 存储保留在 BuildKit 缓存中。中断后的下载可以续用缓存，软件包缓存不会进入运行镜像；构建仍要求锁定依赖和编译源码。
+[镜像构建](../../../../../Dockerfile.workbench) 将 APT 下载包与索引、npm 工具下载和 pnpm 存储保留在 BuildKit 缓存中。中断后的下载可以续用缓存，软件包缓存不会进入运行镜像；构建仍要求锁定依赖和编译源码。
 
 ## Alternatives considered
 

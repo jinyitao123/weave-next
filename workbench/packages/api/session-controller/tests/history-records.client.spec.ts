@@ -10,6 +10,15 @@ import {
 } from '../src/client/sessions/history-records.ts'
 
 describe('Session history record projection', () => {
+  it('retains the first and final cursor of a projection-backed history range', () => {
+    const record: SessionHistoryRecord = { type: 'projection', event: {
+      type: 'history/projection', seq: 10, time: 5, data: { key: 'workTask', throughSeq: 12_010 },
+    } }
+    const records = [record]
+    expect(historyEntries(records)).toBe(records)
+    expect(historyRecordFirstSeq(record)).toBe(10)
+    expect(historyRecordLastSeq(record)).toBe(12_010)
+  })
   it('retains an ordinary event and its point cursor', () => {
     const ordinary: SessionHistoryRecord = {
       type: 'event',

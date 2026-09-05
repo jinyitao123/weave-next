@@ -4,6 +4,8 @@ Status: implemented
 
 [English](2026-07-23-portable-required-pull-request-ci.md) | 中文
 
+迁移说明：本文保留原运行底座的决策依据；标注为历史路径的组件未包含在当前 Weave Workbench 工作区中。
+
 ## 问题
 
 分配到组织自有运行器标签的拉取请求必需作业，在 GitHub 无法为这些池分配运行器时会持续排队。工作流本身有效，GitHub 标准托管作业仍能通过，但 `all checks passed` 始终无法启动，原本健康的拉取请求因此无法满足分支保护要求。
@@ -12,7 +14,7 @@ Status: implemented
 
 ## 决策
 
-[CI](../../../../.github/workflows/ci.yml)（仅 pull request）在仅限本仓库使用的企业级 32 核运行器池上运行必需的主 Node 24 作业，以及稳定的 `all checks passed` 聚合流程。该聚合流程不执行代码检出或仓库门禁；但让它与所依赖的实质性作业共用企业级运行器池，可以避免这些作业已经成功后，必需判定结果又引入一项单独的标准托管计费依赖。必需的 Windows 作业在标准 `ubuntu-latest` 上通过 Wine 运行 Windows Node，覆盖阻断性检查范围；一个独立的原生 `windows-2025` 作业会自动启动，但不参与聚合流程（[双 Windows 决策](2026-08-08-native-windows-pull-request-ci.zh.md)）。标准托管 job 保留 Node 22.19、Node 26、Python SDK 单元测试套件，并在每个已发布原生目标上运行[安装后 wheel Python 运行时验证](../testing/2026-08-23-installed-python-wheel-black-box-ci.zh.md)；串行参考流程（在 `ci-master.yml` 中）仍是完整且未分片的跨平台定义。这些标准托管作业让可移植执行边界保持可观测，而不必在每个拉取请求中重复主清单。
+CI (历史路径 `../../../../.github/workflows/ci.yml`)（仅 pull request）在仅限本仓库使用的企业级 32 核运行器池上运行必需的主 Node 24 作业，以及稳定的 `all checks passed` 聚合流程。该聚合流程不执行代码检出或仓库门禁；但让它与所依赖的实质性作业共用企业级运行器池，可以避免这些作业已经成功后，必需判定结果又引入一项单独的标准托管计费依赖。必需的 Windows 作业在标准 `ubuntu-latest` 上通过 Wine 运行 Windows Node，覆盖阻断性检查范围；一个独立的原生 `windows-2025` 作业会自动启动，但不参与聚合流程（[双 Windows 决策](2026-08-08-native-windows-pull-request-ci.zh.md)）。标准托管 job 保留 Node 22.19、Node 26、Python SDK 单元测试套件，并在每个已发布原生目标上运行[安装后 wheel Python 运行时验证](../testing/2026-08-23-installed-python-wheel-black-box-ci.zh.md)；串行参考流程（在 `ci-master.yml` 中）仍是完整且未分片的跨平台定义。这些标准托管作业让可移植执行边界保持可观测，而不必在每个拉取请求中重复主清单。
 
 三项 Linux 主作业、Node 兼容性、Python SDK 单元测试套件、Python 运行时验证和 `windows node 24 / wine blocking` 继续作为 `all checks passed` 的依赖项；`windows node 24 / native complete` 被刻意排除。分支保护继续要求 `e2e` 和 `all checks passed`。剩余的企业级 Linux 运行器标签无法分配运行器时没有自动后备机制：标准作业会继续报告各自的约定，但无法产出缺失的必需结果。
 

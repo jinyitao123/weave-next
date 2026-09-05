@@ -41,7 +41,7 @@ const result = await ctx.codeRuntime.run({
 
 ### Choose a backend
 
-Backends declare two descriptors you can rely on: `language` — what the program must be written in, with `'typescript'` and `'python'` as the well-known values and only TypeScript shipped — and `isolation` — the execution substrate (`'worker-thread'`, `'process'`, `'container'`), a label for deployments and diagnostics, not a security claim. The shipped backend is [`dsh-code-runtime-worker-thread`](../code-runtime-worker-thread/README.md), which executes TypeScript in a fresh Node worker thread; [`dsh-code-runtime-python`](../code-runtime-python/README.md) owns the wire protocol for the CPython backend.
+Backends declare two descriptors you can rely on: `language` — what the program must be written in, with `'typescript'` and `'python'` as the well-known values and only TypeScript shipped — and `isolation` — the execution substrate (`'worker-thread'`, `'process'`, `'container'`), a label for deployments and diagnostics, not a security claim. The shipped backend is [`dsh-code-runtime-worker-thread`](../code-runtime-worker-thread/README.md), which executes TypeScript in a fresh Node worker thread.
 
 ### Name your bindings portably
 
@@ -98,7 +98,6 @@ Read these when the package-level contract is not enough. They move from the PTC
 
 - [PTC mode Agent Note](../../../.agents/notes/implemented/feature/2026-06-15-ptc.md) — how the tool registry consumes `ctx.codeRuntime` and presents `run_code` to the model.
 - [Worker-thread backend](../code-runtime-worker-thread/README.md) — the shipped TypeScript execution backend.
-- [Python protocol package](../code-runtime-python/README.md) — the wire protocol for the CPython backend.
 - [Code runtime subsystem reference](../../../docs/subsystems/code-runtime.md) — request/result vocabulary, bindings, and the `ctx.codeRuntime` cordis surface.
 - [Capability seams](../../../.agents/notes/implemented/architecture/2026-06-13-capability-seams.md) — the Service Definition / Service Provider / Consumer split.
 

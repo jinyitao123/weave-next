@@ -4,6 +4,8 @@ Status: implemented
 
 English | [中文](2026-08-03-per-session-agent-presets.zh.md)
 
+Migration scope: this note preserves decisions from the original runtime; components marked as historical paths are not included in the current Weave Workbench workspace.
+
 ## Problem
 
 One `dsh` process serves many sessions, but the composition that decides what an agent *is* — its tools, persona, prompt sections, delegation backends — is fixed for the whole process by the `cordis.yml` the launcher booted. A deployment that wants a benchmark-minimal agent beside a full coding agent has to run two processes, and the shipped workaround (`apps/cli/config/minimal.cordis.yml`, a `--config` overlay that disables tool rows) changes every session at once.
@@ -77,7 +79,7 @@ Which preset an unnamed session gets is a user setting (`agent-presets.default`)
 
 **Make the agent's scope key the preset.** Sessions on one preset would share a layer for free, but per-agent registrations — `installAgentLlmTarget`, per-agent tool restrictions — would then collide across sessions.
 
-**Run each preset as a child process.** [`subagent-dsh-sdk`](../../../../packages/subagent/subagent-dsh-sdk/README.md) already proves a full child harness works, and isolation would be absolute. It also means proxying streaming, approvals, and projections per session, which is a transport project rather than a composition one.
+**Run each preset as a child process.** `subagent-dsh-sdk` (historical path `../../../../packages/subagent/subagent-dsh-sdk/README.md`) already proves a full child harness works, and isolation would be absolute. It also means proxying streaming, approvals, and projections per session, which is a transport project rather than a composition one.
 
 **Give product subagents global enable settings and a separate settings page.** The process-wide value would compete with the preset as owner of model-visible tools and could not express two sessions using different compositions. Product providers stay host-side, while ordinary preset rows independently expose Codex and Claude Code tools.
 

@@ -26,7 +26,6 @@ The storage group gives a composition durable storage for everything that is not
 |---|---|---|
 | [`storage`](storage/README.md) | Connects registered backends with mounted data-form facilities | `ctx.storage` |
 | [`storage-json`](storage-json/README.md) | Stores each unit as one human-readable JSON file | registers backend `json` |
-| [`storage-sqlite`](storage-sqlite/README.md) | Stores units as JSON documents in one SQLite database | registers backend `sqlite` |
 | [`storage-domain`](storage-domain/README.md) | Provides schema-validated, change-emitting KV domains over routed backends | `ctx.storageDomain` |
 
 -----

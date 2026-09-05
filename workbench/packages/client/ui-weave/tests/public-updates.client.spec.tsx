@@ -118,7 +118,8 @@ describe('member following', () => {
     const longRecord = { ...update(1), text: '公开核对过程。'.repeat(180) + '保留的末尾说明。' }
     let position: WorkTaskReadingPosition | undefined
     const remember = (next: WorkTaskReadingPosition) => { position = next }
-    const view = render(<PublicUpdates active={true} updates={[longRecord]} truncated={false} position={position} remember={remember} t={t} />)
+    const view = render(<PublicUpdates active={true} updates={[longRecord]}
+      truncated={false} position={position} remember={remember} t={t} />)
     expect(view.queryByText(/保留的末尾说明/)).toBeNull()
     const expand = view.getByRole('button', { name: '展开本条记录' })
     expect(expand.getAttribute('aria-expanded')).toBe('false')
@@ -127,7 +128,8 @@ describe('member following', () => {
     expect(view.getByRole('button', { name: '回到最新记录' })).toBeTruthy()
     expect(position?.follow).toBe(false)
     view.unmount()
-    const returned = render(<PublicUpdates active={true} updates={[longRecord]} truncated={false} position={position} remember={remember} t={t} />)
+    const returned = render(<PublicUpdates active={true} updates={[longRecord]}
+      truncated={false} position={position} remember={remember} t={t} />)
     expect(returned.getByText(/保留的末尾说明/)).toBeTruthy()
     fireEvent.click(returned.getByRole('button', { name: '收起本条记录' }))
     expect(returned.queryByText(/保留的末尾说明/)).toBeNull()
@@ -224,14 +226,16 @@ describe('member following', () => {
     let position = { top: 120, follow: false, lastEvent: `attempt-1:1:${first.text.length}` }
     const remember = (next: typeof position) => { position = next }
     const view = render(<PublicUpdates active={true} updates={[first]} truncated={false} position={position} remember={remember} t={t} />)
-    view.rerender(<PublicUpdates active={true} updates={[first, update(2)]} truncated={false} position={position} remember={remember} t={t} />)
+    view.rerender(<PublicUpdates active={true} updates={[first, update(2)]}
+      truncated={false} position={position} remember={remember} t={t} />)
     const log = view.getByRole('log')
     Object.defineProperties(log, { scrollHeight: { value: 900 }, clientHeight: { value: 300 } })
     log.scrollTop = 40
     fireEvent.scroll(log)
     expect(position.lastEvent).toBe(`attempt-1:1:${first.text.length}`)
     view.unmount()
-    const returned = render(<PublicUpdates active={true} updates={[first, update(2)]} truncated={false} position={position} remember={remember} t={t} />)
+    const returned = render(<PublicUpdates active={true} updates={[first, update(2)]}
+      truncated={false} position={position} remember={remember} t={t} />)
     expect(returned.getByRole('log').scrollTop).toBe(40)
     expect(returned.getByRole('button', { name: '有新记录，回到最新' })).toBeTruthy()
   })

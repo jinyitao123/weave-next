@@ -9,7 +9,7 @@ kind: "package-group"
 
 ## 概述
 
-`terminal/` 组为 agent 提供持久且限定所有者范围的终端会话：shell 与 REPL 状态——cwd、导出的变量、激活的环境、正在运行的交互式子进程——都能跨工具调用存活。三个包共同覆盖整个家族：`terminal/` 提供限定所有者范围的 `ctx.terminals` 会话服务（会话获得不透明 id，每个操作都限制在所属 agent 内）；`terminal-bash/` 在共享沙箱策略下启动交互式 bash 或 pwsh shell；`tool-terminal/` 提供 6 个结果有界的面向模型工具。终端是单次 bash 与文件系统工具的补充：仅在需要交互式 stdin 或跨调用状态时使用。会话只存在于进程本地，harness 重启后不会恢复。
+`terminal/` 组为 agent 提供持久且限定所有者范围的终端会话：shell 与 REPL 状态——cwd、导出的变量、激活的环境、正在运行的交互式子进程——都能跨工具调用存活。两个包共同覆盖整个家族：`terminal/` 提供限定所有者范围的 `ctx.terminals` 会话服务（会话获得不透明 id，每个操作都限制在所属 agent 内）；`terminal-bash/` 在共享沙箱策略下启动交互式 bash 或 pwsh shell。终端是单次 bash 与文件系统工具的补充：仅在需要交互式 stdin 或跨调用状态时使用。会话只存在于进程本地，harness 重启后不会恢复。
 
 ## 目录
 
@@ -28,7 +28,6 @@ kind: "package-group"
 |---|---|---|
 | [`terminal/`](terminal/README.zh.md) | 会话服务：限定所有者范围的会话、不透明 id、精确到所有者的限制与等待完成的清理 | `ctx.terminals` |
 | [`terminal-bash/`](terminal-bash/README.zh.md) | shell 后端：在共享沙箱策略下启动交互式 bash 或 pwsh，带就绪检测与有界输出 | 注册后端到 `ctx.terminals` |
-| [`tool-terminal/`](tool-terminal/README.zh.md) | 6 个面向模型的工具，带所有者隔离与可选后台发送 | 注册到 `ctx.tools` |
 
 -----
 

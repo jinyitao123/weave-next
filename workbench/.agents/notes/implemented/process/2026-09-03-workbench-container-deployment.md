@@ -4,6 +4,8 @@ Status: implemented
 
 English | [中文](2026-09-03-workbench-container-deployment.zh.md)
 
+Migration scope: this note preserves decisions from the original runtime; components marked as historical paths are not included in the current Weave Workbench workspace.
+
 ## Problem
 
 The Workbench profile could run from a developer checkout, but a remote installation had no reproducible image, persistent Harness home, private Weave connection, or explicit public-authority configuration. Copying the local process to a server would either omit the Weave executable or expose credentials through ad hoc shell state.
@@ -16,7 +18,7 @@ The DSH launch-token exchange remains the browser authentication mechanism. The 
 
 The [Docker context exclusions](../../../../.dockerignore) omit `.env*` files at every directory depth. The image copies the build workspace into its runtime stage, so local environment files must be excluded before Docker receives the context; deployment credentials enter only through runtime configuration.
 
-The [image build](../../../../Dockerfile.workbench) keeps APT downloads and indexes, npm tool downloads, and the pnpm store in BuildKit caches. Interrupted downloads can resume without copying package caches into the runtime image; the frozen dependency lockfile and source build remain required.
+The [image build](../../../../../Dockerfile.workbench) keeps APT downloads and indexes, npm tool downloads, and the pnpm store in BuildKit caches. Interrupted downloads can resume without copying package caches into the runtime image; the frozen dependency lockfile and source build remain required.
 
 ## Alternatives considered
 

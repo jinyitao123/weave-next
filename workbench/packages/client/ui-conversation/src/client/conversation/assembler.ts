@@ -128,7 +128,7 @@ function conversationMatch(
   location: ConversationMatch['location'],
 ): ConversationMatch {
   if (role === 'start') {
-    if (input.type === 'chunks') {
+    if (input.type !== 'event') {
       throw new Error(`conversation Context ${key} received a packed start Match`)
     }
     return { event: input.event, role, location }
@@ -399,6 +399,8 @@ export class ConversationNodeAssembler implements ConversationViewSnapshotStore 
       role: ConversationMatch['role'],
     ) => ConversationPublication,
   ): ConversationPublication {
+    // Projection ranges carry journal continuity; they are not conversation events.
+    if (input.type === 'projection') return 'none'
     const event = input.event
     const matchedTargets = new Set<string>()
     let publication: ConversationPublication = 'none'

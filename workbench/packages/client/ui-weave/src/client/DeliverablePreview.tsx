@@ -44,7 +44,9 @@ function FilePreview({ contentType, body, title, imageUrl, labels, download }: P
     return { rows, limited }
   }, [body, contentType])
   if (table !== null) return <div className={css.preview}>
-    <div className={css.toolbar}><span>{labels.table}</span>{download === undefined ? null : <a href={download.url} download>{download.label}</a>}</div>
+    <div className={css.toolbar}>
+      <span>{labels.table}</span>{download === undefined ? null : <a href={download.url} download>{download.label}</a>}
+    </div>
     <div className={css.tableScroll} tabIndex={0} role="region" aria-label={labels.table}>
       <table><caption>{title}</caption><tbody>
         {table.rows.map((row, index) => <tr key={index}>{row.map((cell, column) => <td key={column}>{cell}</td>)}</tr>)}

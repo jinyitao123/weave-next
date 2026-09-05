@@ -41,7 +41,6 @@ kind: "package-reference"
 - name: '@deepseek-ai/dsh-sandbox-local'
 - name: '@deepseek-ai/dsh-sandbox-policy'
 - name: '@deepseek-ai/dsh-terminal-bash'
-- name: '@deepseek-ai/dsh-tool-terminal'
 ```
 
 `danger-full-access` 直接启动 shell。受限模式要求同一执行世界中存在 `ctx.sandbox` 提供方：缺少时，spawn 会在 shell 启动前失败。
@@ -117,7 +116,6 @@ shell 在整个生命周期内运行在有效的沙箱边界之下。当所有�
 
 - [终端子系统参考](../../../docs/subsystems/terminal.zh.md)——此后端实现的服务器约定与生成的 `ctx.terminals` 接口面。
 - [terminal 服务](../terminal/README.zh.md)——后端注册、所有者限制与清理语义。
-- [tool-terminal 工具](../tool-terminal/README.zh.md)——操作会话的面向模型工具。
 - [子进程 seam](../../../docs/subsystems/subprocess.zh.md)——负责 PTY 分配与进程树清理的终端原语。
 - [持久 PTY Agent Note](../../../.agents/notes/implemented/feature/2026-07-16-persistent-pty-sessions.zh.md)——能力设计与暂缓边界。
 - [持久 pwsh Agent Note](../../../.agents/notes/implemented/architecture/2026-08-11-pwsh-persistent-pty.zh.md)——Windows 基底与 pwsh 方言。
@@ -131,7 +129,7 @@ shell 在整个生命周期内运行在有效的沙箱边界之下。当所有�
 
 #### 模型看到什么
 
-此包不注册提示词或工具。模型通过 `@deepseek-ai/dsh-tool-terminal` 或其他 PTY 消费方可能收到有界的启动输出、发送增量、scrollback 页、就绪原因与清理错误。
+此包不注册提示词或工具。模型通过 PTY 消费方可能收到有界的启动输出、发送增量、scrollback 页、就绪原因与清理错误。
 
 #### Token 影响
 

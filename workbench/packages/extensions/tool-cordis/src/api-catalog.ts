@@ -808,30 +808,6 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
-    key: 'e2b',
-    summary: 'Creates one lazily consumable E2B SDK handle and deletes the sandbox at timeout or disposal.',
-    description: 'Creates one lazily consumable E2B SDK handle and deletes the sandbox at timeout or disposal. Creation begins at plugin construction; adapters await getSandbox before their first operation.',
-    methods: [
-      {
-        signature: 'readonly cwd: string',
-        description: 'Validated remote working directory shared by provider adapters.',
-        parameters: [],
-      },
-      {
-        signature: 'readonly runtimeRoot: string',
-        description: 'Remote directory reserved for adapter-owned process and terminal state.',
-        parameters: [],
-      },
-      {
-        signature: 'async getSandbox(): Promise<Sandbox>',
-        description: 'Return the shared live SDK handle.',
-        parameters: [],
-        returns: 'the created sandbox after the configured cwd exists.',
-        throws: ['when E2B rejects creation or the service is disposing.'],
-      },
-    ],
-  },
-  {
     key: 'fileReferences',
     summary: 'Host capability for cancellable file-reference discovery.',
     description: 'Host capability for cancellable file-reference discovery.',
@@ -998,23 +974,6 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
-    key: 'inspector',
-    summary: 'Shared Host/Client service façade over the realm\'s source publisher.',
-    description: 'Shared Host/Client service façade over the realm\'s source publisher.',
-    methods: [
-      {
-        signature: 'publish(topic: string, payload: InspectorJsonValue, monotonicMs?: number): void',
-        description: 'Publish one JSON observation without waiting for Worker delivery.',
-        parameters: [{ name: 'topic', description: 'Domain-owned topic name.' }, { name: 'payload', description: 'JSON value validated before it reaches the carrier.' }, { name: 'monotonicMs', description: 'Source-clock timestamp; defaults to `performance.now()`.' }],
-      },
-      {
-        signature: 'readonly cordis: CordisRuntimeTreeReader',
-        description: 'Read-only Cordis topology queries independent of CDP sessions.',
-        parameters: [],
-      },
-    ],
-  },
-  {
     key: 'invariants',
     summary: 'Package-owned invariant registry with global and regex-based selection.',
     description: 'Package-owned invariant registry with global and regex-based selection.',
@@ -1177,25 +1136,6 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Stream one model call as raw chunks (token-level deltas). Replay state is retained only when the same adapter instance owns its historical provider and the target provider. Final adapter selection remains fixed through asynchronous exact-model resolution and dispatch. Adapter selection, dispatch, and iteration failures become terminal `error` or `aborted` finish chunks; middleware, nested-call, cleanup, and consumer failures remain thrown.',
         parameters: [{ name: 'options', description: 'the full request; `options.provider` selects the adapter.' }],
         returns: 'the chunk stream, possibly wrapped by `llm/stream` listeners.',
-      },
-    ],
-  },
-  {
-    key: 'lsp',
-    summary: 'The LSP capability seam (`ctx.lsp`).',
-    description: 'The LSP capability seam (`ctx.lsp`). Owns provider registration/selection and normalized query execution; exposes exactly the four operations and no protocol escape hatch.',
-    methods: [
-      {
-        signature: 'registerProvider(provider: LspProvider): () => void',
-        description: 'Register a provider, atomically reserving its id and every normalized extension. Any conflict or invalid input publishes nothing and throws `LspError`; the returned disposer releases all reservations. Disposed with the calling fiber.',
-        parameters: [{ name: 'provider', description: 'the backend to register.' }],
-        returns: 'a synchronous disposer releasing the id and all extension reservations.',
-      },
-      {
-        signature: 'query(request: LspQueryRequest, signal?: AbortSignal): Promise<LspQueryResult>',
-        description: 'Select a provider by the file\'s extension and run one query. Selection is per-query and order-independent; no match throws `LspError` `LSP_UNAVAILABLE`.',
-        parameters: [{ name: 'request', description: 'the normalized query.' }, { name: 'signal', description: 'optional cancellation forwarded to the selected provider.' }],
-        returns: 'the normalized, closed-union result.',
       },
     ],
   },
@@ -1430,6 +1370,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Follow one Session log from its opening or resume cursor.',
         parameters: [{ name: 'request', description: 'durable address and last committed sequence already held by the caller.' }, { name: 'signal', description: 'cancellation owned by the Remote stream carrier.' }],
         returns: 'a complete opening snapshot followed by gap-free event frames.',
+      },
+      {
+        signature: 'registerHistoryProjection(definition: SessionHistoryProjection): () => void',
+        description: 'Declare snapshots whose complete Client facts are carried by one projection.',
+        parameters: [{ name: 'definition', description: 'domain-owned projection and log-only snapshot event types; exclude action receipts.' }],
+        returns: 'fiber-owned disposer; original logs, unregistered events, and live follow events stay intact.',
       },
       {
         signature: '@Remote({ mode: \'stream\' }) control(signal: AbortSignal): AsyncIterable<SessionControlFrame>',
@@ -3757,46 +3703,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type CordisInspectRequestId = Branded<\'CordisInspectRequestId\'>;',
   },
   {
-    name: 'CordisRuntimeConnection',
-    declaration: 'export type CordisRuntimeConnection = {\n    readonly state: \'connected\';\n} | {\n    readonly state: \'disconnected\';\n    readonly reason: string;\n};',
-  },
-  {
-    name: 'CordisRuntimeContext',
-    declaration: 'export interface CordisRuntimeContext {\n    readonly kind: \'context\';\n    readonly children: readonly CordisRuntimeNode[];\n}',
-  },
-  {
-    name: 'CordisRuntimeFiber',
-    declaration: 'export interface CordisRuntimeFiber {\n    readonly kind: \'fiber\';\n    readonly uid: number;\n    readonly children: readonly [\n        CordisRuntimeContext\n    ];\n}',
-  },
-  {
-    name: 'CordisRuntimeNode',
-    declaration: 'export type CordisRuntimeNode = CordisRuntimeContext | CordisRuntimeFiber;',
-  },
-  {
-    name: 'CordisRuntimeRealm',
-    declaration: 'export interface CordisRuntimeRealm {\n    readonly source: CordisRuntimeSource;\n    readonly connection: CordisRuntimeConnection;\n    readonly revision: number;\n    readonly truncated: boolean;\n    readonly root: CordisRuntimeContext;\n}',
-  },
-  {
-    name: 'CordisRuntimeSource',
-    declaration: 'export interface CordisRuntimeSource {\n    readonly sourceId: CordisRuntimeSourceId;\n    readonly kind: CordisRuntimeSourceKind;\n    readonly label: string;\n}',
-  },
-  {
-    name: 'CordisRuntimeSourceId',
-    declaration: 'export type CordisRuntimeSourceId = InspectorId<\'CordisRuntimeSourceId\'>;',
-  },
-  {
-    name: 'CordisRuntimeSourceKind',
-    declaration: 'export type CordisRuntimeSourceKind = \'host\' | \'client\';',
-  },
-  {
-    name: 'CordisRuntimeTree',
-    declaration: 'export interface CordisRuntimeTree {\n    readonly schemaVersion: typeof CORDIS_RUNTIME_TREE_SCHEMA_VERSION;\n    readonly host: CordisRuntimeRealm | null;\n    readonly clients: readonly CordisRuntimeRealm[];\n}',
-  },
-  {
-    name: 'CordisRuntimeTreeReader',
-    declaration: 'export interface CordisRuntimeTreeReader {\n    getTree(): Promise<CordisRuntimeTree>;\n}',
-  },
-  {
     name: 'CreateAgentOptions',
     declaration: 'export interface CreateAgentOptions {\n    readonly sessionId: SessionId;\n    readonly meta?: {\n        readonly cwd?: string;\n        readonly parentSession?: SessionId;\n        readonly seedLength?: number;\n        readonly origin?: \'subagent\';\n        readonly delegationDepth?: number;\n        readonly agentPreset?: string;\n    };\n    readonly seed?: readonly SessionEvent[];\n    readonly agentOptions?: AgentOptions;\n    readonly signal?: AbortSignal;\n    readonly setup?: AgentSetup;\n}',
   },
@@ -4121,22 +4027,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type IndexInjectionPlacement = \'head\' | \'body\';',
   },
   {
-    name: 'InspectorId',
-    declaration: 'export type InspectorId<Role extends string> = Branded<Role>;',
-  },
-  {
-    name: 'InspectorJsonObject',
-    declaration: 'export interface InspectorJsonObject {\n    readonly [key: string]: InspectorJsonValue;\n}',
-  },
-  {
-    name: 'InspectorJsonPrimitive',
-    declaration: 'export type InspectorJsonPrimitive = null | boolean | number | string;',
-  },
-  {
-    name: 'InspectorJsonValue',
-    declaration: 'export type InspectorJsonValue = InspectorJsonPrimitive | readonly InspectorJsonValue[] | InspectorJsonObject;',
-  },
-  {
     name: 'InvariantFailure',
     declaration: 'export type InvariantFailure = (message: string) => never;',
   },
@@ -4303,46 +4193,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'LlmRuntime',
     declaration: 'export class LlmRuntime extends TypertRemoteService {\n    constructor(ctx: Context);\n    registerAdapter(providers: string[], adapter: LlmAdapter): AdapterRegistrationHandle;\n    @Remote\n    listProviders(): LlmProviderInfo[];\n    registerConfigurableProviders(entries: readonly LlmConfigurableProvider[]): DirectoryRegistrationHandle;\n    @Remote\n    listConfigurableProviders(): LlmConfigurableProvider[];\n    registerModelDiscovery(settingsNs: string, discover: (request: LlmModelDiscoveryRequest, signal?: AbortSignal) => Promise<readonly LlmDiscoveredModel[]>): () => void;\n    async discoverModels(settingsNs: string, request: LlmModelDiscoveryRequest, signal?: AbortSignal): Promise<LlmDiscoveredModel[]>;\n    @Remote(\'discoverModels\')\n    async remoteDiscoverModels(settingsNs: string, request: LlmModelDiscoveryRequest, signal: AbortSignal): Promise<LlmDiscoveredModel[]>;\n    providerRetryPolicy(provider: string): ResolvedRetryPolicy;\n    imageRequestPricing(provider: string, model: string): LlmImageRequestPricing | undefined;\n    async listModels(provider: string): Promise<LlmModelInfo[]>;\n    async resolveModelInfo(provider: string, model: string, signal?: AbortSignal): Promise<LlmResolvedModelInfo>;\n    async resolveCallConfig(config: LlmCallConfig, signal?: AbortSignal): Promise<LlmCallConfig>;\n    async prepareCall(config: LlmCallConfig, signal?: AbortSignal): Promise<PreparedLlmCall>;\n    stream(options: GenerateOptions): AsyncIterable<StreamChunk>;\n}',
-  },
-  {
-    name: 'LspHover',
-    declaration: 'export interface LspHover {\n    readonly contents: string;\n    readonly range?: LspRange;\n}',
-  },
-  {
-    name: 'LspLocation',
-    declaration: 'export interface LspLocation {\n    readonly uri: string;\n    readonly range: LspRange;\n}',
-  },
-  {
-    name: 'LspOperation',
-    declaration: 'export type LspOperation = \'goToDefinition\' | \'findReferences\' | \'goToImplementation\' | \'hover\';',
-  },
-  {
-    name: 'LspPosition',
-    declaration: 'export interface LspPosition {\n    readonly line: number;\n    readonly character: number;\n}',
-  },
-  {
-    name: 'LspProvider',
-    declaration: 'export interface LspProvider {\n    readonly id: LspProviderId;\n    readonly extensionToLanguage: Readonly<Record<string, string>>;\n    query(request: LspProviderQuery, signal?: AbortSignal): Promise<LspQueryResult>;\n}',
-  },
-  {
-    name: 'LspProviderId',
-    declaration: 'export type LspProviderId = Branded<\'LspProviderId\'>;',
-  },
-  {
-    name: 'LspProviderQuery',
-    declaration: 'export interface LspProviderQuery extends LspQueryRequest {\n    readonly languageId: string;\n}',
-  },
-  {
-    name: 'LspQueryRequest',
-    declaration: 'export interface LspQueryRequest {\n    readonly operation: LspOperation;\n    readonly filePath: string;\n    readonly position: LspPosition;\n    readonly workspaceRoot: string;\n}',
-  },
-  {
-    name: 'LspQueryResult',
-    declaration: 'export type LspQueryResult = {\n    readonly kind: \'locations\';\n    readonly locations: readonly LspLocation[];\n    readonly resolvedWorkspaceUri: string;\n} | {\n    readonly kind: \'hover\';\n    readonly hover: LspHover | null;\n};',
-  },
-  {
-    name: 'LspRange',
-    declaration: 'export interface LspRange {\n    readonly start: LspPosition;\n    readonly end: LspPosition;\n}',
   },
   {
     name: 'ManualCompactAgentContext',
@@ -4893,8 +4743,12 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface SessionHeader {\n    readonly version: number;\n    readonly id: SessionId;\n    readonly createdAt: number;\n    readonly cwd?: string;\n    readonly parentSession?: SessionId;\n    readonly seedLength?: number;\n    readonly origin?: \'subagent\';\n    readonly delegationDepth?: number;\n    readonly agentPreset?: string;\n}',
   },
   {
+    name: 'SessionHistoryProjection',
+    declaration: 'export interface SessionHistoryProjection {\n    readonly key: Extract<keyof SessionProjectionMap, string>;\n    readonly eventTypes: readonly string[];\n}',
+  },
+  {
     name: 'SessionHistoryRecord',
-    declaration: 'export type SessionHistoryRecord = SessionEventEntry | SessionChunkRun;',
+    declaration: 'export type SessionHistoryRecord = SessionEventEntry | SessionChunkRun | SessionProjectionRun;',
   },
   {
     name: 'SessionId',
@@ -4954,7 +4808,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SessionPageRequest',
-    declaration: 'export interface SessionPageRequest {\n    readonly address: SessionAddress;\n    readonly throughSeq: number;\n    readonly beforeSeq?: number;\n    readonly maxMessages?: number;\n}',
+    declaration: 'export interface SessionPageRequest {\n    readonly address: SessionAddress;\n    readonly throughSeq: number;\n    readonly beforeSeq?: number;\n    readonly maxMessages?: number;\n    readonly projectionBaseline?: SessionProjectionReceipt;\n}',
   },
   {
     name: 'SessionPersistenceRevision',
@@ -4983,6 +4837,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SessionProjectionMap',
     declaration: 'export interface SessionProjectionMap {\n}',
+  },
+  {
+    name: 'SessionProjectionReceipt',
+    declaration: 'export interface SessionProjectionReceipt {\n    readonly asOfSeq: number;\n    readonly keys: readonly string[];\n}',
+  },
+  {
+    name: 'SessionProjectionRun',
+    declaration: 'export interface SessionProjectionRun {\n    readonly type: \'projection\';\n    readonly event: {\n        readonly type: \'history/projection\';\n        readonly seq: number;\n        readonly time: number;\n        readonly data: {\n            readonly key: string;\n            readonly throughSeq: number;\n        };\n    };\n}',
   },
   {
     name: 'SessionProjectionStateMap',

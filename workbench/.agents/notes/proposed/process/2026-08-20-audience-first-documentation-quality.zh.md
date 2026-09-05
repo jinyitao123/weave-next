@@ -4,13 +4,15 @@ Status: proposed
 
 [English](2026-08-20-audience-first-documentation-quality.md) | 中文
 
+迁移说明：本文保留原运行底座的决策依据；标注为历史路径的组件未包含在当前 Weave Workbench 工作区中。
+
 ## 问题
 
 文档系统拥有健全的放置、新鲜度、链接、双语和源等价性检查，却没有把「简短、直观、友好」定义成可供用户、新人、开发者和 agent（智能体）评审的结果。全部 `doc-sync`（文档同步门禁）检查和全部翻译配对均通过，但仍存在以下设计问题。前三项发现是设计重点；容量问题则解释了为什么增加更多常驻规则无法解决它们。
 
 ### 语义正确性可以在没有现行归属者的情况下通过检查
 
-这些门禁证明结构和生成内容的新鲜度，却不能证明维护中的正文仍指向实际机制。以前的 `dsh-doc-site-sync` 技能曾要求作者复用并不存在的 `en-docs` 侧边栏，还要求把章节加入已经移除的 `sectionOrder`；[website/docs.ts](../../../../website/docs.ts)实际拥有 `en-guide`、`en-develop`、`en-reference` 和 `sections`。已实现的[产品优先 README 决策](../../implemented/process/2026-07-22-product-first-root-readme.zh.md)描述了内部测试说明，以及 ACP、Python 与 JSON-RPC 界面章节，但[根 README](../../../../README.zh.md)并无这些内容；与此同时，已实现 Agent Note 必须跟随已交付事实。
+这些门禁证明结构和生成内容的新鲜度，却不能证明维护中的正文仍指向实际机制。以前的 `dsh-doc-site-sync` 技能曾要求作者复用并不存在的 `en-docs` 侧边栏，还要求把章节加入已经移除的 `sectionOrder`；website/docs.ts (历史路径 `../../../../website/docs.ts`)实际拥有 `en-guide`、`en-develop`、`en-reference` 和 `sections`。已实现的[产品优先 README 决策](../../implemented/process/2026-07-22-product-first-root-readme.zh.md)描述了内部测试说明，以及 ACP、Python 与 JSON-RPC 界面章节，但[根 README](../../../../README.zh.md)并无这些内容；与此同时，已实现 Agent Note 必须跟随已交付事实。
 
 预算策略也存在相同的分裂。[docs/AGENTS.md](../../../../docs/AGENTS.md#wordcount-budgets)为 `architecture.md` 规定 1,800 词目标和 5% 余量，但[预算 manifest（元数据清单）](../../../../scripts/doc-budgets.manifest.json)允许 2,400 词，而该文件实际包含 1,313 词。预算门禁之所以通过，是因为它只检查 manifest 上限，不检查目标或棘轮规则。因此，高影响正文需要一个具名真源或消费真源的聚焦检查；第二份手写副本不是新鲜度机制。
 

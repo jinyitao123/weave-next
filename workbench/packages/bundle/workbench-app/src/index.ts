@@ -2,8 +2,10 @@
 
 import { handleWeaveDeliverableRequest } from './deliverable-content.ts'
 import { randomUUID } from 'node:crypto'
+import { isDeepStrictEqual } from 'node:util'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-commands'
+import type {} from '@deepseek-ai/dsh-api-session-controller'
 import { FIRST_PARTY_SECTION_ORDER } from '@deepseek-ai/dsh-system-prompt'
 import { z } from 'zod'
 import { SessionId, type Session, type SessionEvent } from '@deepseek-ai/dsh-session'
@@ -76,6 +78,7 @@ export interface WorkTaskAttempt {
   readonly deliverableCount: number
   readonly deliverables: WorkTaskDeliverable[]
   readonly createdAt: number
+  /** Last change to the retained attempt fields; observation-only refreshes preserve it. */
   readonly updatedAt: number
 }
 
@@ -673,8 +676,14 @@ function syncAttempt(task: Omit<WorkTaskProjection, 'attempts'>, previous: WorkT
   const index = attempts.findIndex(candidate =>
     (task.runId !== '' && candidate.runId === task.runId)
     || (task.clientRequestId !== '' && candidate.clientRequestId === task.clientRequestId))
-  if (index < 0) attempts.push(attempt)
-  else attempts[index] = { ...attempt, createdAt: attempts[index]?.createdAt ?? createdAt }
+  const prior = attempts[index]
+  if (prior === undefined) attempts.push(attempt)
+  else {
+    const next = { ...attempt, createdAt: prior.createdAt }
+    // Observation time alone does not change the retained run attempt.
+    attempts[index] = isDeepStrictEqual({ ...next, updatedAt: 0 }, { ...prior, updatedAt: 0 })
+      ? prior : next
+  }
   return attempts
 }
 
@@ -913,7 +922,7 @@ export interface Config {
   readonly pollIntervalMs?: number
 }
 export const name = 'workbench-work-task'
-export const inject = ['sessions', 'sessionProjections', 'commands', 'systemPrompt', 'connection']
+export const inject = ['sessions', 'sessionProjections', 'sessionController', 'commands', 'systemPrompt', 'connection']
 
 /** Product policy that remains visible when a per-session agent preset shadows the deployment persona. */
 export const workbenchTeamRoutingSection = {
@@ -926,6 +935,7 @@ export const workbenchTeamRoutingSection = {
 export function apply(ctx: Context, config: Config = {}): void {
   ctx.effect(() => ctx.systemPrompt.section(workbenchTeamRoutingSection), 'workbench team-routing policy')
   ctx.sessionProjections.register(workTaskProjectionDefinition)
+  ctx.sessionController.registerHistoryProjection({ key: 'workTask', eventTypes: ['weave/work-task'] })
   const apiUrl = (config.apiUrl ?? process.env.WEAVE_API_URL ?? 'http://127.0.0.1:18080').replace(/\/$/, '')
   const apiKey = (config.apiKey ?? process.env.WEAVE_API_KEY ?? '').trim()
   const runtimeServerUrl = resolveRuntimeServerUrl(apiUrl, config.runtimeServerUrl ?? process.env.WEAVE_RUNTIME_SERVER_URL)
@@ -1255,8 +1265,8 @@ export function apply(ctx: Context, config: Config = {}): void {
         next = resyncAttempts({ ...next, pendingAction: latest.pendingAction,
           actionError: latest.actionError !== current.actionError ? latest.actionError : next.actionError,
           outcome: latest.outcome, outcomeNote: latest.outcomeNote, actionHistory: latest.actionHistory }, latest)
-        const materiallyChanged = JSON.stringify({ ...next, observedAt: 0, updatedAt: 0 })
-          !== JSON.stringify({ ...latest, observedAt: 0, updatedAt: 0 })
+        const materiallyChanged = !isDeepStrictEqual({ ...next, observedAt: 0, updatedAt: 0 },
+          { ...latest, observedAt: 0, updatedAt: 0 })
         if (materiallyChanged || next.observedAt - latest.observedAt >= 30_000) {
           next = { ...next, updatedAt: Date.now() }
           operation.publishing = true

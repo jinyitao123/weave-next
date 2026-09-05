@@ -91,9 +91,7 @@ Stdout 只承载 JSON-RPC 帧，客户端可以逐字节解析；诊断信息应
 当插件约定不够用时阅读以下页面。它们从协议格式进入客户端与可运行应用。
 
 - [SDK 协议格式](../protocol/README.zh.md) — 本插件服务的协议方法与载荷结构。
-- [TypeScript SDK 客户端](../client/README.zh.md) — 驱动本插件的客户端。
 - [SDK 应用组合包](../../bundle/sdk-app/README.zh.md) — 启动本插件的 `dsh --profile sdk` 应用。
-- [Python SDK](../../../python/README.zh.md) — 驱动同一服务器的 Python 客户端。
 - [SDK 运行时分发决策](../../../.agents/notes/implemented/architecture/2026-07-10-single-file-executable-sdk-runtime-distribution.zh.md) — 打包运行时为何服务封闭插件树。
 
 -----

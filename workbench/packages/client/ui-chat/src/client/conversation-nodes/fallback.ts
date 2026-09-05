@@ -17,6 +17,7 @@ export const unknownFallbackDefinition: ConversationNodeDefinition<UnknownSurfac
   target: 'chat',
   match: (event) => {
     if (event.type === 'chunkrow/text-chunks'
+      || event.type === 'history/projection'
       || event.type === 'chunkrow/reasoning-chunks'
       || event.type === 'chunkrow/tool-call-chunks') return null
     return isAppendSurfaceEvent(event) ? { id: String(event.seq), role: 'start' } : null

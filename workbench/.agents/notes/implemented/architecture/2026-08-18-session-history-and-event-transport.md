@@ -4,6 +4,8 @@ Status: implemented
 
 English | [中文](2026-08-18-session-history-and-event-transport.zh.md)
 
+The historical snapshot filtering and retention rule is partially superseded by [Projection-backed Session history](2026-09-06-projection-backed-session-history.md). This note's activation rules, raw live journal, canonical opening baseline, cursor continuity, and Gateway ownership remain in effect.
+
 ## Problem
 
 The browser consumes three kinds of data with different lifecycles: persistable, paginated Session logs; process-local state that needs an opening baseline to converge after reconnect; and immediate notifications that need no replay.

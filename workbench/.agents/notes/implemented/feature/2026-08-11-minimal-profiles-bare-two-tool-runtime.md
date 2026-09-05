@@ -4,6 +4,8 @@ Status: implemented
 
 English | [中文](2026-08-11-minimal-profiles-bare-two-tool-runtime.zh.md)
 
+Migration scope: this note preserves decisions from the original runtime; components marked as historical paths are not included in the current Weave Workbench workspace.
+
 ## Problem
 
 The Web `minimal` preset and standalone JSON-RPC minimal composition exposed persistent `bash` and `str_replace_editor`, but their supporting services did not match the intended training runtime. Both mounted context compaction, while the Web preset inherited the host's sandboxed filesystem and the JSON-RPC composition mounted `fs-sandbox` plus filesystem policy. A long session could therefore replace history, and the editor advertised and enforced a filesystem policy that the bare local reference runtime does not have.
@@ -16,7 +18,7 @@ The shipped Web minimal preset exposes persistent `bash` and `str_replace_editor
 
 The standalone [`@deepseek-ai/dsh-sdk-minimal` bundle](../../../../packages/bundle/sdk-minimal/README.md) remains a complete JSON-RPC process composition behind `dsh --profile sdk-minimal`. It mounts SDK startup and JSON-RPC serving, the local PTY and subprocess services required by the platform-selected persistent shell, `fs-local`, that shell's tool consumer, the editor, and uncompressed JSONL persistence under `$DSH_HOME/sessions`. It does not mount `token-meter`, `compaction-basic`, `fs-sandbox`, or `fs-observation-policy`. The persistent shell consumes the profile's danger-full-access sandbox policy; the editor is not confined by that policy. The [standalone-profile decision](../architecture/2026-08-24-standalone-sdk-minimal-profile.md) owns this bundle placement and its separation from `dsh-base`.
 
-`DSH_SYSTEM_PROMPT` selects the standalone persona, and `DSH_CONTEXT_WINDOW` supplies fallback capacity for a model without exact catalog metadata. The SDK client's JSON-RPC `initialize` request is the sole runtime model selection. [`minimal.py`](../../../../python/sdk/examples/minimal.py) may read `DSH_MODEL` only as the command's default `model` argument; an explicit `--model` needs no matching child environment value. Endpoint and credential variables stay owned by the DeepSeek adapter's existing environment-resolution path.
+`DSH_SYSTEM_PROMPT` selects the standalone persona, and `DSH_CONTEXT_WINDOW` supplies fallback capacity for a model without exact catalog metadata. The SDK client's JSON-RPC `initialize` request is the sole runtime model selection. `minimal.py` (historical path `../../../../python/sdk/examples/minimal.py`) may read `DSH_MODEL` only as the command's default `model` argument; an explicit `--model` needs no matching child environment value. Endpoint and credential variables stay owned by the DeepSeek adapter's existing environment-resolution path.
 
 ## Verification
 

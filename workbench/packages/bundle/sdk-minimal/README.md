@@ -64,7 +64,6 @@ The bundle's single insert is the complete application tree: SDK stdio startup a
 <a id="further-exploration"></a>
 ## Further Exploration
 
-- [Python SDK example](../../../python/sdk/examples/README.md) — launches this profile from Python against an explicit Harness home.
 - [SDK application bundle](../sdk-app/README.md) — the JSON-RPC application layer reused by full and minimal SDK profiles.
 - [Base bundle](../base/README.md) — the full product foundation that this profile deliberately omits.
 

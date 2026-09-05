@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-`dsh-terminal` 为 harness 提供持久且限定所有者范围的终端会话：会话让 shell 或 REPL 状态跨工具调用存活，且每个操作都被限制在创建它的那个确切 agent（智能体）内。本包提供 `ctx.terminals` 服务，负责生成不透明的会话 id、通过已注册的后端路由会话创建，并在所有者或服务 dispose（资源释放）时等待完全停稳的清理。它本身不定义任何终端机制：`dsh-terminal-bash` 之类的后端负责启动与就绪检测，`dsh-tool-terminal` 中的面向模型工具负责呈现。会话只存在于进程本地：harness 重启后不会恢复。
+`dsh-terminal` 为 harness 提供持久且限定所有者范围的终端会话：会话让 shell 或 REPL 状态跨工具调用存活，且每个操作都被限制在创建它的那个确切 agent（智能体）内。本包提供 `ctx.terminals` 服务，负责生成不透明的会话 id、通过已注册的后端路由会话创建，并在所有者或服务 dispose（资源释放）时等待完全停稳的清理。它本身不定义任何终端机制：`dsh-terminal-bash` 之类的后端负责启动与就绪检测，消费方负责呈现。会话只存在于进程本地：harness 重启后不会恢复。
 
 ## 目录
 
@@ -25,7 +25,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-当组合需要状态跨工具调用存活的终端会话时，挂载 `@deepseek-ai/dsh-terminal`。单独的服务本身没有用处：请与 `@deepseek-ai/dsh-terminal-bash` 之类的后端、`@deepseek-ai/dsh-tool-terminal` 之类的工具包配对，并在同一个组合中一起加载。
+当组合需要状态跨工具调用存活的终端会话时，挂载 `@deepseek-ai/dsh-terminal`。单独的服务本身没有用处：请与 `@deepseek-ai/dsh-terminal-bash` 之类的后端配对，再由消费方调用服务。
 
 ### 何时选择
 
@@ -38,7 +38,6 @@ kind: "package-reference"
 ```yaml
 - name: '@deepseek-ai/dsh-terminal'
 - name: '@deepseek-ai/dsh-terminal-bash'
-- name: '@deepseek-ai/dsh-tool-terminal'
 ```
 
 后端提供一个稳定类型——随附的 shell 后端提供 `shell`——工具按该类型打开会话。shell 后端还额外要求沙箱、沙箱策略与子进程提供方；完整组合见其 [README](../terminal-bash/README.zh.md)。
@@ -103,7 +102,6 @@ kind: "package-reference"
 - [终端子系统参考](../../../docs/subsystems/terminal.zh.md)——共享类型、后端与会话约定，以及生成的 `ctx.terminals` 接口面。
 - [terminal/ 包映射](../README.zh.md)——三包家族及其组合方式。
 - [terminal-bash 后端](../terminal-bash/README.zh.md)——提供 `shell` 类型的随附 shell 后端。
-- [tool-terminal 工具](../tool-terminal/README.zh.md)——操作会话的 6 个面向模型工具。
 - [持久 PTY Agent Note](../../../.agents/notes/implemented/feature/2026-07-16-persistent-pty-sessions.zh.md)——设计理由、备选方案与暂缓边界。
 
 -----
@@ -115,7 +113,7 @@ kind: "package-reference"
 
 #### 模型看到什么
 
-没有直接可见内容。此包不注册提示词或工具；可见 schema 与结果文本由 `@deepseek-ai/dsh-tool-terminal` 负责。
+没有直接可见内容。此包提供 `ctx.terminals` 及其 `registerBackend` 注册表，不注册提示词或工具。`ctx.terminals.spawn(owner, request)` 的消费方负责可见 schema，并决定哪些会话结果进入模型。
 
 #### Token 影响
 
@@ -123,7 +121,7 @@ kind: "package-reference"
 
 #### KV Cache 影响
 
-不会直接失效；请求前缀变更由 `@deepseek-ai/dsh-tool-terminal` 负责。
+不会直接失效；请求前缀变更由消费方负责。
 
 ## 已知限制与延期工作
 

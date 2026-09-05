@@ -3,6 +3,7 @@
   "compilerOptions": { "rootDir": "src", "outDir": "lib/types" },
   "include": ["src"],
   "references": [
+    { "path": "../../api/session-controller/tsconfig.host.json" },
     { "path": "../../../vendor/cordis" },
     { "path": "../../interaction/commands" },
     { "path": "../../core/session" },

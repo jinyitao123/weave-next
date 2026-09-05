@@ -687,7 +687,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SessionEventLikeEntry',
-    declaration: 'export type SessionEventLikeEntry = {\n    readonly type: \'event\';\n    readonly event: SessionEvent;\n} | {\n    readonly type: \'chunks\';\n    readonly event: ChunkRowEvent;\n};',
+    declaration: 'export type SessionEventLikeEntry = {\n    readonly type: \'event\';\n    readonly event: SessionEvent;\n} | {\n    readonly type: \'chunks\';\n    readonly event: ChunkRowEvent;\n} | SessionProjectionRun;',
   },
   {
     name: 'SessionEventSource',
@@ -712,6 +712,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SessionMaybeStandardProps',
     declaration: 'export interface SessionMaybeStandardProps {\n}',
+  },
+  {
+    name: 'SessionProjectionRun',
+    declaration: 'export interface SessionProjectionRun {\n    readonly type: \'projection\';\n    readonly event: {\n        readonly type: \'history/projection\';\n        readonly seq: number;\n        readonly time: number;\n        readonly data: {\n            readonly key: string;\n            readonly throughSeq: number;\n        };\n    };\n}',
   },
   {
     name: 'SessionProviderComponent',

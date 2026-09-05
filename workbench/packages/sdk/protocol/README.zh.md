@@ -9,7 +9,7 @@ kind: "package-library"
 
 ## 概述
 
-`dsh-sdk-protocol` 让 DeepSeek Harness 运行时与其 SDK 客户端通过按换行分帧的字节流交换 JSON-RPC 2.0 消息：一个传输类，加上协议两端共同使用的具名请求、结果与通知类型。服务端是 [`dsh-sdk-jsonrpc-server`](../server/README.zh.md) 插件；客户端是 TypeScript 的 [`dsh-sdk-client`](../client/README.zh.md) 与 [Python SDK](../../../python/README.zh.md)（后者复现这些结构但不导入它们）。当你实现或调试协议某一端时使用本包：分帧规则、方法名、载荷类型与错误语义都在这里。它是纯库——无插件、无配置、无注册。
+`dsh-sdk-protocol` 定义按换行分帧的 JSON-RPC 2.0 传输，以及与 [`dsh-sdk-jsonrpc-server`](../server/README.zh.md) 插件共享的请求、结果和通知类型。实现或调试协议对端时使用本包。本包是无插件配置和注册的纯库；当前工作区不包含独立 TypeScript 或 Python SDK 客户端。
 
 ## 目录
 
@@ -88,8 +88,6 @@ kind: "package-library"
 当协议约定不够用时阅读以下页面。它们从服务插件进入客户端与可运行应用。
 
 - [JSON-RPC 服务插件](../server/README.zh.md) — 通过 stdio 服务该协议的运行时插件。
-- [TypeScript SDK 客户端](../client/README.zh.md) — 驱动该协议的客户端。
-- [Python SDK](../../../python/README.zh.md) — 复现这些结构的 Python 对侧实现。
 - [SDK 应用组合包](../../bundle/sdk-app/README.zh.md) — 启动服务器的 `dsh --profile sdk` 应用。
 - [TypeScript SDK 与 SDK subagent 后端决策](../../../.agents/notes/implemented/feature/2026-07-27-typescript-sdk-and-sdk-subagent-backend.zh.md) — 该协议所服务的客户端约定。
 

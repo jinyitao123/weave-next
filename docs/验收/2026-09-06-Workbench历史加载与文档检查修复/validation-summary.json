@@ -1,0 +1,64 @@
+{
+  "baseCommit": "8e201fc8e5cdfb2e8ef37ed9293add9305e9300c",
+  "checks": {
+    "workbenchInstall": {
+      "exitCode": 0
+    },
+    "workbenchCheck": {
+      "exitCode": 0,
+      "profileTests": 1,
+      "packageTests": 265
+    },
+    "sessionController": {
+      "exitCode": 0,
+      "files": 35,
+      "tests": 427
+    },
+    "gui": {
+      "exitCode": 0,
+      "files": 301,
+      "passed": 4005,
+      "skipped": 1
+    },
+    "browser": {
+      "exitCode": 0,
+      "tests": 1
+    },
+    "fullLint": {
+      "command": "pnpm exec tsx scripts/run-oxlint.ts .",
+      "exitCode": 0
+    },
+    "docSync": {
+      "exitCode": 0,
+      "passed": 30,
+      "failed": 0,
+      "skipped": 0,
+      "seconds": 23.39
+    },
+    "depguard": {
+      "exitCode": 0,
+      "goFiles": 495,
+      "violations": 0
+    },
+    "productguard": {
+      "exitCode": 0
+    }
+  },
+  "sources": {
+    "workbench/packages/bundle/workbench-app/src/index.ts": "f68dc801bdc44a81c1cec6c0b56185d960a53061806d58bc6ea6d5990e356883",
+    "workbench/packages/api/session-controller/src/history.ts": "e8fb7c903a78f6b008d8dedaa2140274a3be6af8eb16e43375d44fdb650b1583",
+    "workbench/packages/api/session-controller/src/types.ts": "d3cdd9e0754cb23904082b498d4de6c16b6f51c64647e2d07bc8d83ddee3c88c",
+    "workbench/packages/api/session-controller/src/index.ts": "12bba75960097534031fc286241b9bdd33ec8e14b19036267cf49512e1b02d15",
+    "workbench/packages/api/session-controller/src/client/transport.ts": "937551ed835367ad1e9d9fd2258dc6ae8df223ccbfc2ed93f4b5ef70f3bf667a",
+    "workbench/packages/api/session-controller/src/client/sessions/history-records.ts": "41e7699a1a244cdda581e0e8f4d3cf94575dbc0711228e6977f21b587e19be2e",
+    "workbench/packages/client/ui-conversation/src/client/conversation/assembler.ts": "dd64807e1963d55115bfe97ae4a0666a4023ffdc272f21050518154d184160c9",
+    "workbench/packages/client/ui-chat/src/client/conversation-nodes/fallback.ts": "58ef58a001ed773c33d93db2e97e2e7c6572b6999a4bc2ea121c8262b1170eae",
+    "workbench/packages/client/ui-weave/src/client/WorkTaskPanel.tsx": "827016673b97b1c6ed9e637ec41556c44195458fa342344fe6b5bad8914018a4",
+    "workbench/apps/web/tests/workbench-history.e2e.ts": "d00bfa8cf0dbc8e7c4a35bf27eedf264d20dc194eebf208a7137941286a87249",
+    "workbench/scripts/run-gates.ts": "955578c8ad88b70d8d658cbddfef5b381b40041ccd04c89652897f69e4555e95",
+    "workbench/scripts/verify-archived-agent-notes.ts": "82b3060caa00ba5db47c1fb376227896383c7fcbd62eb4e198b5e12ea8991408"
+  },
+  "realBrowser": "real-history-results.json",
+  "livePoll": "live-poll-results.json",
+  "logPreservation": "persisted-history-retention.json"
+}

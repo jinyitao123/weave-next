@@ -18,6 +18,7 @@ import type {
   SessionPage,
   SessionPageRequest,
   SessionProjectionBaseline,
+  SessionProjectionReceipt,
 } from '../types.ts'
 import {
   historyEntries,
@@ -32,7 +33,7 @@ export {
 } from '../types.ts'
 
 /** Pagination fields bound to an already-addressed Session journal. */
-export type ClientSessionPageRequest = Omit<SessionPageRequest, 'address' | 'throughSeq'>
+export type ClientSessionPageRequest = Omit<SessionPageRequest, 'address' | 'throughSeq' | 'projectionBaseline'>
 
 /** Complete generated `ctx.remote.session` namespace. */
 export type SessionRemote = ClientRemote['session']
@@ -51,6 +52,11 @@ export type SessionJournalChange =
     readonly hasMore: boolean
   }
   | { readonly type: 'append'; readonly entry: SessionLiveEventEntry }
+
+function projectionReceipt(baseline: SessionProjectionBaseline): SessionProjectionReceipt | undefined {
+  const keys = Object.keys(baseline.values)
+  return keys.length === 0 ? undefined : { asOfSeq: baseline.asOfSeq, keys }
+}
 
 function toSessionJournalChange(
   change: RemoteJournalChange<SessionJournalPage, SessionHistoryRecord>,
@@ -136,6 +142,7 @@ export class SessionEventStream extends RemoteJournalStream<
   number,
   ClientSessionPageRequest
 > {
+  private projectionBaseline: SessionProjectionReceipt | undefined
   /**
    * @param remote - generated Session namespace and Gateway stream factory.
    * @param address - durable ordinary-Session or direct-subagent address.
@@ -155,7 +162,12 @@ export class SessionEventStream extends RemoteJournalStream<
       last: historyRecordLastSeq,
       compare: (left, right) => left - right,
       follows: (left, right) => right === left + 1,
-      publish: (change) => { options.publish(toSessionJournalChange(change)) },
+      publish: (change) => {
+        if (change.type === 'replace' && change.page.projections !== undefined) {
+          this.projectionBaseline = projectionReceipt(change.page.projections)
+        }
+        options.publish(toSessionJournalChange(change))
+      },
       ...(options.carrierFailed === undefined
         ? {}
         : { carrierFailed: options.carrierFailed }),
@@ -173,6 +185,7 @@ export class SessionEventStream extends RemoteJournalStream<
       ...(request.maxMessages === undefined ? {} : { maxMessages: request.maxMessages }),
     }, signal)) {
       if (frame.type === 'snapshot') {
+        this.validateProjectionRanges(frame.records, projectionReceipt(frame.projections))
         yield {
           type: 'opened',
           cursor: frame.cursor,
@@ -194,8 +207,10 @@ export class SessionEventStream extends RemoteJournalStream<
     throughSeq: number,
     signal: AbortSignal,
   ): Promise<SessionJournalPage> {
+    const projectionBaseline = this.projectionBaseline
     const result = await this.remote.session.page(
-      { address: this.address, throughSeq, ...request },
+      { address: this.address, throughSeq, ...request,
+        ...(projectionBaseline === undefined ? {} : { projectionBaseline }) },
       signal,
     )
     if (!result.ok) {
@@ -205,7 +220,21 @@ export class SessionEventStream extends RemoteJournalStream<
         result.error.details,
       )
     }
+    this.validateProjectionRanges(result.value.records, projectionBaseline)
     return result.value
+  }
+
+  private validateProjectionRanges(
+    records: readonly SessionHistoryRecord[],
+    receipt: SessionProjectionReceipt | undefined,
+  ): void {
+    for (const record of records) {
+      if (record.type !== 'projection') continue
+      if (receipt === undefined || !receipt.keys.includes(record.event.data.key)
+        || record.event.data.throughSeq > receipt.asOfSeq) {
+        throw new Error('session history projection range is not covered by the accepted baseline')
+      }
+    }
   }
 
   /** @inheritdoc */

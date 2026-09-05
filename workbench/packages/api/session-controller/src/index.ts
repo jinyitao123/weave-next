@@ -33,6 +33,7 @@ import type {
   SessionFollowRequest,
   SessionForkRequest,
   SessionForkValue,
+  SessionHistoryProjection,
   SessionListRequest,
   SessionListValue,
   SessionOpenWorkspacePathRequest,
@@ -378,6 +379,16 @@ export class SessionController extends TypertRemoteService {
   @Remote({ mode: 'stream' })
   follow(request: SessionFollowRequest, signal: AbortSignal): AsyncIterable<SessionFollowFrame> {
     return this.history.follow(request, signal)
+  }
+
+  /**
+   * Declare snapshots whose complete Client facts are carried by one projection.
+   * @param definition - domain-owned projection and log-only snapshot event types; exclude action receipts.
+   * @returns fiber-owned disposer; original logs, unregistered events, and live follow events stay intact.
+   */
+  registerHistoryProjection(definition: SessionHistoryProjection): () => void {
+    const dispose = this.ctx.effect(() => this.history.registerProjection(definition), 'sessionController.registerHistoryProjection()')
+    return () => void dispose()
   }
 
   /**

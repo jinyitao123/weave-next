@@ -4,6 +4,8 @@ Status: implemented
 
 [English](2026-08-11-minimal-profiles-bare-two-tool-runtime.md) | 中文
 
+迁移说明：本文保留原运行底座的决策依据；标注为历史路径的组件未包含在当前 Weave Workbench 工作区中。
+
 ## 问题
 
 Web `minimal` preset 与独立 JSON-RPC minimal 组合对外提供持久 `bash` 和 `str_replace_editor`，但支撑服务与目标训练运行时不一致。两者都挂载上下文压缩，而 Web preset 继承宿主的沙箱文件系统，JSON-RPC 组合则挂载 `fs-sandbox` 和文件系统策略。因此，长会话可能替换历史记录，编辑器也会宣告并实施裸本地参考运行时并不具备的文件系统策略。
@@ -16,7 +18,7 @@ Web `minimal` preset 与独立 JSON-RPC minimal 组合对外提供持久 `bash` 
 
 独立的 [`@deepseek-ai/dsh-sdk-minimal` 组合包](../../../../packages/bundle/sdk-minimal/README.zh.md)仍是 `dsh --profile sdk-minimal` 后面的完整 JSON-RPC 进程组合。它挂载 SDK 启动与 JSON-RPC 服务、按平台选择的持久 shell 所需的本地 PTY 和子进程服务、`fs-local`、该 shell 的工具消费方、editor，以及位于 `$DSH_HOME/sessions` 的未压缩 JSONL 持久化。它不挂载 `token-meter`、`compaction-basic`、`fs-sandbox` 或 `fs-observation-policy`。持久 shell 消费该 profile 的 danger-full-access 沙箱策略；编辑器不受该策略限制。[独立 profile 决策](../architecture/2026-08-24-standalone-sdk-minimal-profile.zh.md)负责该组合包的位置及其与 `dsh-base` 的分离。
 
-`DSH_SYSTEM_PROMPT` 选择独立组合的 persona，`DSH_CONTEXT_WINDOW` 为没有确切目录元数据的模型提供后备容量。SDK 客户端的 JSON-RPC `initialize` 请求是唯一运行时模型选择。[`minimal.py`](../../../../python/sdk/examples/minimal.py)可以只把 `DSH_MODEL` 读作命令的默认 `model` 参数；显式 `--model` 不需要匹配的子进程环境值。端点与凭据变量继续由 DeepSeek 适配器现有的环境解析路径持有。
+`DSH_SYSTEM_PROMPT` 选择独立组合的 persona，`DSH_CONTEXT_WINDOW` 为没有确切目录元数据的模型提供后备容量。SDK 客户端的 JSON-RPC `initialize` 请求是唯一运行时模型选择。`minimal.py` (历史路径 `../../../../python/sdk/examples/minimal.py`)可以只把 `DSH_MODEL` 读作命令的默认 `model` 参数；显式 `--model` 不需要匹配的子进程环境值。端点与凭据变量继续由 DeepSeek 适配器现有的环境解析路径持有。
 
 ## 验证
 

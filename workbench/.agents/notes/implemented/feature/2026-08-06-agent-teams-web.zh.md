@@ -4,6 +4,8 @@
 
 [English](2026-08-06-agent-teams-web.md) | 中文
 
+迁移说明：本文保留原运行底座的决策依据；标注为历史路径的组件未包含在当前 Weave Workbench 工作区中。
+
 ## 问题
 
 持久 Agent Teams runtime 负责 roster、mailbox 与 task 状态，但只提供模型工具和 Host service method。Web 用户需要查看 teammate 活动、按同样的 compare-and-set 规则管理共享任务，并打开 teammate 会话。Agent Teams 仍处于实验阶段，因此这些能力不能向稳定 API Proxy、Session Controller、Client UI package 或 Web bundle 增加 Team 专用 contract 或依赖。
@@ -18,7 +20,7 @@ Teammate navigation 使用既有 `{ parentSessionId, childSessionId, mode: 'cont
 
 `@deepseek-ai/dsh-experimental-agent-team-web-profile` 在稳定 Web bundle 之后只插入 UI。它与 Host 侧 `@deepseek-ai/dsh-experimental-agent-team-profile` 一起应用，后者已经插入 `ctx.agentTeams` 与模型工具。两个稳定 bundle 都不包含禁用的 Team row 或依赖。
 
-稳定 Web preset 仍会在自身 preset scope 内注册 continuable Subagent control。顶层 Agent Teams profile override 无法替换这些 registration，因此该实验性 composition 可能同时暴露 Team roster 与 legacy child control。Team-aware Web preset 暂缓实现；[Web profile README](../../../../packages/experimental/agent-team-web-profile/README.zh.md#known-limitations-and-deferred-work)负责记录当前限制。
+稳定 Web preset 仍会在自身 preset scope 内注册 continuable Subagent control。顶层 Agent Teams profile override 无法替换这些 registration，因此该实验性 composition 可能同时暴露 Team roster 与 legacy child control。Team-aware Web preset 暂缓实现；Web profile README (历史路径 `../../../../packages/experimental/agent-team-web-profile/README.zh.md#known-limitations-and-deferred-work`)负责记录当前限制。
 
 ## 边界
 

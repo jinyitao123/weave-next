@@ -4,13 +4,15 @@ Status: implemented
 
 [English](2026-07-27-dependabot-version-updates.md) | 中文
 
+迁移说明：本文保留原运行底座的决策依据；标注为历史路径的组件未包含在当前 Weave Workbench 工作区中。
+
 ## 问题
 
 来自包注册表的依赖与 GitHub Actions 依赖都需要定期更新机制。每个新版本一经发布便立即采用，会增加受到遭入侵的版本和早期回归影响的风险；但完全依靠手动更新，又会导致依赖版本差距持续扩大。以源码形式纳入仓库的 Cordis 不能当作注册表依赖处理，而共用一份锁文件的工作区必须通过同一棵包树更新。
 
 ## 决策
 
-默认分支包含 [`.github/dependabot.yml`](../../../../.github/dependabot.yml)，其中为包含 `native/landlock-run` 的根 pnpm 工作区、`python/sdk` uv 项目和 GitHub Actions 配置了每周一次的版本更新检查。每个更新项都将 `cooldown.default-days` 设为 `30`，因此某个版本只有在发布至少 30 天后才符合更新条件，并会在下一次每周检查时生成更新提案。[仓库内 Landlock 发布决策](2026-08-06-in-repository-landlock-release.zh.md)负责共享工作区边界。
+默认分支包含 `.github/dependabot.yml` (历史路径 `../../../../.github/dependabot.yml`)，其中为包含 `native/landlock-run` 的根 pnpm 工作区、`python/sdk` uv 项目和 GitHub Actions 配置了每周一次的版本更新检查。每个更新项都将 `cooldown.default-days` 设为 `30`，因此某个版本只有在发布至少 30 天后才符合更新条件，并会在下一次每周检查时生成更新提案。[仓库内 Landlock 发布决策](2026-08-06-in-repository-landlock-release.zh.md)负责共享工作区边界。
 
 根 pnpm 工作区的版本更新扫描排除 `vendor/**`，其中的源码和 manifest（元数据清单）只能通过 [vendoring 流程](../../../../vendor/README.md)变更。GitHub 仅将 `exclude-paths` 用于版本更新；如果安全更新 PR（Pull Request）涉及随源码纳入仓库的 manifest，则改由 vendoring 流程处理，以替代自动生成的 PR，而不会将其原样合并。Dependabot PR 会获得仓库的 `kind/dependency` 类型标签和 `area/infra` 区域标签，运行常规 PR 检查，并且仍须由维护者评审；该自动化不会合并这些 PR。
 

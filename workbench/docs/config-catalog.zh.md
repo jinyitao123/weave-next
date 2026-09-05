@@ -308,7 +308,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/api/session-controller/src/index.ts:67`](../packages/api/session-controller/src/index.ts)
+来源：[`packages/api/session-controller/src/index.ts:68`](../packages/api/session-controller/src/index.ts)
 
 <a id="deepseek-aidsh-api-settings-controller"></a>
 
@@ -588,24 +588,6 @@ export interface Config {
 
 来源：[`packages/credentials/credentials-local/src/index.ts:64`](../packages/credentials/credentials-local/src/index.ts)
 
-<a id="deepseek-aidsh-e2b"></a>
-
-## `@deepseek-ai/dsh-e2b`
-
-```ts config-catalog
-/** Configuration for the shared E2B sandbox owner. */
-export interface Config {
-  /** API key; omission reads `E2B_API_KEY`. It is never forwarded into the sandbox. */
-  apiKey?: string
-  /** Shared remote working directory, created before adapters receive the sandbox. */
-  cwd?: string
-  /** E2B sandbox lifetime in milliseconds; expiry always deletes the sandbox. */
-  timeoutMs?: number
-}
-```
-
-来源：[`packages/e2b/e2b/src/index.ts:43`](../packages/e2b/e2b/src/index.ts)
-
 <a id="deepseek-aidsh-experimental-agent-team"></a>
 
 ## `@deepseek-ai/dsh-experimental-agent-team`
@@ -629,74 +611,6 @@ export interface Config {
 ```
 
 来源：[`packages/experimental/agent-team/src/types.ts:125`](../packages/experimental/agent-team/src/types.ts)
-
-<a id="deepseek-aidsh-experimental-inspector"></a>
-
-## `@deepseek-ai/dsh-experimental-inspector`
-
-需要：`webServer`
-
-```ts config-catalog
-/** Host plugin configuration. Fetch capture is enabled by default. */
-export interface Config extends Omit<InspectorOptions, 'clientOrigins'> {
-  /** Browser origins allowed to open the Client ingest WebSocket. */
-  clientOrigins?: string[]
-}
-
-/** User-facing Host options; every memory and lifecycle bound is configurable. */
-export interface InspectorOptions {
-  /** Loopback address used by the Worker HTTP and WebSocket endpoint. */
-  readonly host?: '127.0.0.1'
-  /** First port to bind; occupied ports advance until one is available. */
-  readonly port?: number
-  /** Additional exact browser origins admitted to the Client ingest socket. */
-  readonly clientOrigins?: readonly string[]
-  /** Whether to observe calls made through the current global fetch function. */
-  readonly captureFetch?: boolean
-  /** Maximum request-body prefix retained for one fetch. */
-  readonly maxRequestBodyBytes?: number
-  /** Maximum response-body prefix retained for one fetch. */
-  readonly maxResponseBodyBytes?: number
-  /** Maximum raw bytes encoded into one body observation. */
-  readonly maxBodyChunkBytes?: number
-  /** Maximum total request and response body bytes retained by the Worker. */
-  readonly maxJournalBytes?: number
-  /** Maximum active and completed fetch requests retained by the Worker. */
-  readonly maxRetainedRequests?: number
-  /** Maximum encoded bytes accepted in one source transport frame. */
-  readonly maxSourceFrameBytes?: number
-  /** Maximum observation records accepted in one source batch. */
-  readonly maxSourceRecordsPerFrame?: number
-  /** Maximum records waiting in one producer queue. */
-  readonly maxQueuedRecords?: number
-  /** Maximum encoded bytes waiting in one producer queue. */
-  readonly maxQueuedBytes?: number
-  /** Maximum time allowed for the Worker to become ready. */
-  readonly startupTimeoutMs?: number
-  /** Grace period before a stopping Worker is terminated. */
-  readonly stopTimeoutMs?: number
-  /** Initial upper bound for randomized Client reconnect delay. */
-  readonly clientReconnectBaseMs?: number
-  /** Maximum upper bound for randomized Client reconnect delay. */
-  readonly clientReconnectMaxMs?: number
-  /** Deadline for one Worker-to-Client Runtime or Sources request. */
-  readonly clientRuntimeTimeoutMs?: number
-  /** Deadline for one non-CDP semantic query. */
-  readonly queryTimeoutMs?: number
-  /** Maximum live object handles retained per Client Runtime session. */
-  readonly maxClientRuntimeObjects?: number
-  /** Maximum descriptors returned by one Client property request. */
-  readonly maxClientRuntimeProperties?: number
-  /** Maximum encoded bytes read for one Client script or source map. */
-  readonly maxClientSourceBytes?: number
-  /** Maximum Context and Fiber nodes retained in one realm snapshot. */
-  readonly maxCordisNodes?: number
-  /** Disconnected Cordis snapshots retained after their live realm closes. */
-  readonly maxDisconnectedCordisTrees?: number
-}
-```
-
-来源：[`packages/experimental/inspector/src/index.ts:66`](../packages/experimental/inspector/src/index.ts)
 
 <a id="deepseek-aidsh-experimental-tool-agent-team"></a>
 
@@ -1396,48 +1310,6 @@ export type Config = Readonly<Record<string, never>>
 
 来源：[`packages/llm/llm-retry/src/index.ts:24`](../packages/llm/llm-retry/src/index.ts)
 
-<a id="deepseek-aidsh-lsp-stdio"></a>
-
-## `@deepseek-ai/dsh-lsp-stdio`
-
-需要：`fs` · `lsp` · `subprocess`
-
-```ts config-catalog
-/** Plugin configuration: provider id → local language-server configuration. */
-export interface Config {
-  /** Non-empty table of stable provider ids to independent local server configurations. */
-  servers: Record<string, LspLocalServerConfig>
-}
-
-/** One configured local language server and its host bounds. */
-export interface LspLocalServerConfig {
-  /** Executable to spawn (absolute, or resolved on PATH at load). */
-  command: string
-  /** Lowercase leading-dot extension → LSP language id (e.g. `{ '.ts': 'typescript' }`). */
-  extensionToLanguage: Record<string, string>
-  /** Arguments passed to the executable (no shell). Default `[]`. */
-  args?: string[]
-  /** Extra env vars merged on top of the scrubbed ambient env. Default `{}`. */
-  env?: Record<string, string>
-  /** Static `initialize` options forwarded to the server. Default `null`. */
-  initializationOptions?: unknown
-  /** Static answer to every `workspace/configuration` item. Default `null`. */
-  configuration?: unknown
-  /** Largest single framed message accepted from the server (bytes). Default 16000000. */
-  maxMessageBytes?: number
-  /** Largest stderr tail retained for diagnostics (bytes). Default 1000000. */
-  maxStderrBytes?: number
-  /** Largest source file this host will open (bytes). Default 4000000. */
-  maxDocumentBytes?: number
-  /** Graceful `shutdown`/`exit` budget before escalation (ms). Default 5000. */
-  shutdownTimeoutMs?: number
-  /** Request-cancel and SIGTERM→SIGKILL grace (ms). Default 2000. */
-  killGraceMs?: number
-}
-```
-
-来源：[`packages/lsp/lsp-stdio/src/index.ts:82`](../packages/lsp/lsp-stdio/src/index.ts)
-
 <a id="deepseek-aidsh-mcp-client"></a>
 
 ## `@deepseek-ai/dsh-mcp-client`
@@ -2067,21 +1939,6 @@ export interface Config {
 
 来源：[`packages/session/session-title/src/index.ts:79`](../packages/session/session-title/src/index.ts)
 
-<a id="deepseek-aidsh-session-title-all-prompts-llm"></a>
-
-## `@deepseek-ai/dsh-session-title-all-prompts-llm`
-
-需要：`sessionTitle` · `llm` · `sessions`
-
-```ts config-catalog
-/** Required LLM policy; this plugin adds no defaults. */
-export type Config = SessionTitleLlmConfig
-```
-
-依赖：[`SessionTitleLlmConfig`](../packages/session/session-title-llm/src/index.ts)
-
-来源：[`packages/session/session-title-all-prompts-llm/src/index.ts:15`](../packages/session/session-title-all-prompts-llm/src/index.ts)
-
 <a id="deepseek-aidsh-session-title-first-prompt-llm"></a>
 
 ## `@deepseek-ai/dsh-session-title-first-prompt-llm`
@@ -2276,223 +2133,6 @@ export interface Config {
 
 来源：[`packages/storage/storage-json/src/index.ts:28`](../packages/storage/storage-json/src/index.ts)
 
-<a id="deepseek-aidsh-storage-sqlite"></a>
-
-## `@deepseek-ai/dsh-storage-sqlite`
-
-需要：`storage`
-
-```ts config-catalog
-/** Plugin configuration. */
-export interface Config {
-  /**
-   * Filesystem path to the SQLite database file. The special value `:memory:`
-   * opens an in-process database (tests). On filesystems with POSIX modes,
-   * missing directories and databases are created owner-only; existing path
-   * modes are preserved. Filesystem setup errors other than an existing
-   * database fail the open. The backend does not protect confidentiality or
-   * integrity when another principal can replace the database entry in its
-   * parent directory.
-   */
-  path: string
-  /**
-   * SQLite `journal_mode` pragma. `wal` (the default) suits local disks; pick
-   * a rollback-journal mode (`delete`/`truncate`/`persist`) on filesystems
-   * where WAL's shared-memory files do not work (network mounts). See
-   * {@link JournalMode}.
-   */
-  journalMode?: JournalMode
-}
-
-/**
- * Journal modes the backend will run under. `wal` is the default; the
- * rollback-journal modes (`delete`/`truncate`/`persist`) exist for
- * filesystems where WAL's shared-memory files do not work (network mounts).
- * `memory`/`off` are excluded: dropping journal durability silently
- * contradicts the durability clause of the KV backend contract.
- */
-export type JournalMode = 'wal' | 'delete' | 'truncate' | 'persist'
-```
-
-来源：[`packages/storage/storage-sqlite/src/index.ts:24`](../packages/storage/storage-sqlite/src/index.ts)
-
-<a id="deepseek-aidsh-subagent-acp"></a>
-
-## `@deepseek-ai/dsh-subagent-acp`
-
-需要：`subagents` · `subprocess`
-
-```ts config-catalog
-/** Config: how to spawn and drive the child ACP agent process. */
-export interface Config {
-  /** Provider name on `ctx.subagents` (default `acp`). */
-  providerName: string
-  /** The executable to spawn for each run (the child ACP agent). */
-  command: string
-  /** Arguments passed to {@link command}. */
-  args: string[]
-  /**
-   * Working directory override for the child process and its ACP session.
-   * Must be non-empty; a relative path resolves against the harness launch
-   * directory at load, and the result must be an existing directory. When
-   * omitted, each child inherits its delegating parent session's cwd — and
-   * starting one from a parent session that has no cwd fails.
-   */
-  cwd?: string
-  /**
-   * How to auto-answer the child's `session/request_permission` prompts:
-   * `reject` (default — decline every prompt) or `allow` (approve via the first
-   * `allow_once` or `allow_always` option). No prompt is surfaced to a human.
-   */
-  permission: PermissionPolicy
-  /**
-   * Extra environment variables for the child process — e.g. the child
-   * harness's own `DEEPSEEK_API_KEY`. Forwarded on top of a credential-scrubbed
-   * copy of the parent env, so an explicit key here reaches the child while
-   * ambient secrets do not leak implicitly.
-   */
-  env: Record<string, string>
-  /**
-   * Grace period (ms) for the child's EOF-driven quiesce on dispose — its
-   * window to flush persistence and tear down its own nested subprocesses
-   * before the parent escalates to a signal. Must not exceed
-   * `MAX_TIMER_DELAY_MS`.
-   */
-  disposeEofGraceMs?: number
-  /** Failure-observation and termination-escalation grace (ms); must not exceed `MAX_TIMER_DELAY_MS`. */
-  disposeGraceMs?: number
-}
-
-/** Fixed response to child permission requests: reject by default, or select the first allow option. */
-export type PermissionPolicy = 'allow' | 'reject'
-```
-
-来源：[`packages/subagent/subagent-acp/src/index.ts:27`](../packages/subagent/subagent-acp/src/index.ts)
-
-<a id="deepseek-aidsh-subagent-claude-code"></a>
-
-## `@deepseek-ai/dsh-subagent-claude-code`
-
-需要：`subagents` · `subprocess`
-
-```ts config-catalog
-/** Deployment-owned model, permission, environment, and process-release settings. */
-export interface Config {
-  /** Provider name on `ctx.subagents` (default `claude-code`). */
-  providerName?: string
-  /** Native Claude model fixed for this instance; omitted to inherit Claude settings. */
-  model?: string
-  /**
-   * Explicit environment entries layered over the subprocess seam's
-   * credential-scrubbed parent environment.
-   */
-  env?: Record<string, string>
-  /**
-   * Native non-interactive mode fixed for this Provider instance. Defaults to
-   * `dontAsk`; `acceptEdits` accepts edits, `auto` uses the native classifier,
-   * `plan` returns a plan without approving execution, and
-   * `bypassPermissions` explicitly skips permission checks.
-   */
-  permissionMode?: ClaudeCodePermissionMode
-  /** Grace in milliseconds for Claude Code process-tree termination. */
-  disposeGraceMs?: number
-}
-
-/** Profile-selectable non-interactive Claude Code permission mode. */
-export type ClaudeCodePermissionMode = typeof CLAUDE_CODE_PERMISSION_MODES[number]
-```
-
-来源：[`packages/subagent/subagent-claude-code/src/index.ts:38`](../packages/subagent/subagent-claude-code/src/index.ts)
-
-<a id="deepseek-aidsh-subagent-codex"></a>
-
-## `@deepseek-ai/dsh-subagent-codex`
-
-需要：`subagents` · `subprocess`
-
-```ts config-catalog
-/** Deployment-owned model, permission, environment, and process-release settings. */
-export interface Config {
-  /** Provider name on `ctx.subagents` (default `codex`). */
-  providerName?: string
-  /** Native Codex model fixed for this instance; omitted to inherit Codex settings. */
-  model?: string
-  /**
-   * Explicit environment entries layered over the subprocess seam's
-   * credential-scrubbed parent environment.
-   */
-  env?: Record<string, string>
-  /** Native non-interactive permission mode fixed for this Provider instance. */
-  permissionMode?: CodexPermissionMode
-  /** Grace in milliseconds for app-server process-tree termination. */
-  disposeGraceMs?: number
-}
-
-/** Profile-selectable non-interactive Codex permission mode. */
-export type CodexPermissionMode =
-  | 'never'
-  | 'approve-for-me'
-  | 'dangerously-bypass-approvals-and-sandbox'
-```
-
-来源：[`packages/subagent/subagent-codex/src/index.ts:36`](../packages/subagent/subagent-codex/src/index.ts)
-
-<a id="deepseek-aidsh-subagent-dsh-sdk"></a>
-
-## `@deepseek-ai/dsh-subagent-dsh-sdk`
-
-需要：`subagents`
-
-```ts config-catalog
-/** Config: how to spawn and drive the child SDK runtime process. */
-export interface Config {
-  /** Provider name on `ctx.subagents` (default `dsh-sdk`). */
-  providerName: string
-  /** Explicit dsh CLI module, resolved and checked at plugin load; omission uses the SDK dependency. */
-  dshBin?: string
-  /** Named child profile (default `sdk`). */
-  profile: string
-  /** Ordered per-launch profile patch files, resolved and checked at plugin load. */
-  patches: string[]
-  /** Absolute isolated Harness home for every nested child process. */
-  dshHome: string
-  /**
-   * Working directory override for the child process and its SDK session
-   * workspace. Must be non-empty; a relative path resolves against the
-   * harness launch directory at load, and the result must be an existing
-   * directory. When omitted, each child inherits its delegating parent
-   * session's cwd — and starting one from a parent session that has no cwd
-   * fails.
-   */
-  cwd?: string
-  /** Provider route the child runtime initializes with (default `deepseek-official`). */
-  provider: string
-  /** Model the child runtime initializes with (default `deepseek-v4-flash`). */
-  model: string
-  /** Optional per-request output-token cap for the child runtime. */
-  maxTokens?: number
-  /**
-   * Extra environment variables for the child process — e.g. the child
-   * runtime's own `DEEPSEEK_API_KEY`. Forwarded on top of a credential-scrubbed copy of the parent
-   * env, so an explicit key here reaches the child while ambient secrets do
-   * not leak implicitly.
-   */
-  env: Record<string, string>
-  /** Bound (ms) on the protocol `shutdown` exchange during dispose. */
-  shutdownTimeoutMs?: number
-  /**
-   * Grace period (ms) for the child's EOF-driven quiesce on dispose — its
-   * window to flush persistence and tear down its own nested subprocesses
-   * before the parent escalates to a signal.
-   */
-  disposeEofGraceMs?: number
-  /** Termination confirmation window (ms), including forced exit on every platform. */
-  disposeGraceMs?: number
-}
-```
-
-来源：[`packages/subagent/subagent-dsh-sdk/src/index.ts:34`](../packages/subagent/subagent-dsh-sdk/src/index.ts)
-
 <a id="deepseek-aidsh-subagent-fork-in-process"></a>
 
 ## `@deepseek-ai/dsh-subagent-fork-in-process`
@@ -2524,22 +2164,6 @@ export interface Config {
 ```
 
 来源：[`packages/subagent/subagent-spawn-in-process/src/index.ts:25`](../packages/subagent/subagent-spawn-in-process/src/index.ts)
-
-<a id="deepseek-aidsh-subprocess-e2b"></a>
-
-## `@deepseek-ai/dsh-subprocess-e2b`
-
-需要：`e2b`
-
-```ts config-catalog
-/** Configuration for the E2B subprocess adapter. */
-export interface Config {
-  /** Remote status/liveness poll cadence in milliseconds; each tick is one control-plane request. */
-  pollMs?: number
-}
-```
-
-来源：[`packages/e2b/subprocess-e2b/src/index.ts:25`](../packages/e2b/subprocess-e2b/src/index.ts)
 
 <a id="deepseek-aidsh-system-prompt"></a>
 
@@ -2808,26 +2432,6 @@ export type CompletionDelivery = 'quiet' | 'wakeup'
 
 来源：[`packages/jobs/tool-jobs/src/index.ts:32`](../packages/jobs/tool-jobs/src/index.ts)
 
-<a id="deepseek-aidsh-tool-lsp"></a>
-
-## `@deepseek-ai/dsh-tool-lsp`
-
-需要：`tools` · `lsp` · `systemPrompt`
-
-```ts config-catalog
-/** Plugin configuration: result caps and the timeout budget. */
-export interface Config {
-  /** Largest number of rendered locations before an omission marker (default 100). */
-  maxLocations?: number
-  /** Largest complete rendered result in characters, including truncation metadata (default 16000). */
-  maxResultChars?: number
-  /** Tool-call timeout budget in ms (default 60000). */
-  timeoutMs?: number
-}
-```
-
-来源：[`packages/lsp/tool-lsp/src/index.ts:58`](../packages/lsp/tool-lsp/src/index.ts)
-
 <a id="deepseek-aidsh-tool-pwsh"></a>
 
 ## `@deepseek-ai/dsh-tool-pwsh`
@@ -2887,24 +2491,6 @@ export interface Config {
 ```
 
 来源：[`packages/workflow/tool-ralph/src/index.ts:22`](../packages/workflow/tool-ralph/src/index.ts)
-
-<a id="deepseek-aidsh-tool-session-query"></a>
-
-## `@deepseek-ai/dsh-tool-session-query`
-
-需要：`tools` · `systemPrompt` · `sessionQuery`
-
-```ts config-catalog
-/** Deployment-owned search count and timeout bounds. */
-export interface Config {
-  /** Maximum authorized hits returned by one search call. Defaults to 100. */
-  maxSearchResults?: number
-  /** Cooperative full-text search deadline in milliseconds. Defaults to 30000. */
-  searchTimeoutMs?: number
-}
-```
-
-来源：[`packages/session-query/tool-session-query/src/index.ts:29`](../packages/session-query/tool-session-query/src/index.ts)
 
 <a id="deepseek-aidsh-tool-skill"></a>
 
@@ -3031,24 +2617,6 @@ export interface Config {
 依赖：[`SubagentReportDelivery`](subsystems/subagent.zh.md)
 
 来源：[`packages/subagent/tool-subagent-report/src/index.ts:27`](../packages/subagent/tool-subagent-report/src/index.ts)
-
-<a id="deepseek-aidsh-tool-terminal"></a>
-
-## `@deepseek-ai/dsh-tool-terminal`
-
-需要：`terminals` · `tools` · `systemPrompt`
-
-```ts config-catalog
-/** Model-facing terminal tool configuration. */
-export interface Config {
-  /** Expose `run_in_background` and accept background sends (default true). */
-  enableRunInBackground?: boolean
-  /** Maximum UTF-8 bytes in one complete terminal or task-output result. */
-  maxResultBytes?: number
-}
-```
-
-来源：[`packages/terminal/tool-terminal/src/index.ts:36`](../packages/terminal/tool-terminal/src/index.ts)
 
 <a id="deepseek-aidsh-tool-todo"></a>
 
@@ -3325,30 +2893,6 @@ export interface Config {
 
 来源：[`packages/web/web-search-exa/src/index.ts:35`](../packages/web/web-search-exa/src/index.ts)
 
-<a id="deepseek-aidsh-web-search-perplexity"></a>
-
-## `@deepseek-ai/dsh-web-search-perplexity`
-
-需要：`web`
-
-```ts config-catalog
-/** Plugin config (all optional — `apply` fills env-var and constant defaults). */
-export interface Config {
-  /** Perplexity API key. Falls back to `$PERPLEXITY_API_KEY`. Empty → unavailable. */
-  apiKey?: string
-  /** Endpoint base; `/chat/completions` is appended. Defaults to the public API. */
-  baseURL?: string
-  /** Search model name. Defaults to `sonar`. */
-  model?: string
-  /** Upper bound on generated answer tokens. Defaults to 1024. */
-  maxTokens?: number
-  /** Recency window sent as `search_recency_filter`. Omitted = no filter. */
-  searchRecency?: 'day' | 'week' | 'month' | 'year'
-}
-```
-
-来源：[`packages/web/web-search-perplexity/src/index.ts:30`](../packages/web/web-search-perplexity/src/index.ts)
-
 <a id="deepseek-aidsh-webhook-github"></a>
 
 ## `@deepseek-ai/dsh-webhook-github`
@@ -3375,7 +2919,7 @@ export interface Config {
 
 ## `@deepseek-ai/dsh-workbench-app`
 
-需要：`sessions` · `sessionProjections` · `commands` · `systemPrompt` · `connection`
+需要：`sessions` · `sessionProjections` · `sessionController` · `commands` · `systemPrompt` · `connection`
 
 ```ts config-catalog
 /** Host-only WorkTask synchronization settings. */
@@ -3384,12 +2928,14 @@ export interface Config {
   readonly apiUrl?: string
   /** Business API credential; defaults to host-only `WEAVE_API_KEY`. */
   readonly apiKey?: string
+  /** Public or otherwise externally routable Weave URL advertised to new runtime nodes; defaults to `WEAVE_RUNTIME_SERVER_URL`. */
+  readonly runtimeServerUrl?: string
   /** Delay between non-terminal status reads in milliseconds. */
   readonly pollIntervalMs?: number
 }
 ```
 
-来源：[`packages/bundle/workbench-app/src/index.ts:817`](../packages/bundle/workbench-app/src/index.ts)
+来源：[`packages/bundle/workbench-app/src/index.ts:914`](../packages/bundle/workbench-app/src/index.ts)
 
 <a id="deepseek-aidsh-workflow-worker-thread"></a>
 
@@ -3476,15 +3022,12 @@ export interface Config {
 - `@deepseek-ai/dsh-commands`（[`packages/interaction/commands/src/index.ts`](../packages/interaction/commands/src/index.ts)）
 - `@deepseek-ai/dsh-cordis-client-runner`（[`packages/extensions/cordis-client-runner/src/index.ts`](../packages/extensions/cordis-client-runner/src/index.ts)）
 - `@deepseek-ai/dsh-deepseek-llm-api-extensions`（[`packages/llm/deepseek-llm-api-extensions/src/index.ts`](../packages/llm/deepseek-llm-api-extensions/src/index.ts)）
-- `@deepseek-ai/dsh-experimental-client-ui-agent-team`（[`packages/experimental/client-ui-agent-team/src/index.ts`](../packages/experimental/client-ui-agent-team/src/index.ts)）
-- `@deepseek-ai/dsh-fs-e2b` — 需要 `e2b`（[`packages/e2b/fs-e2b/src/index.ts`](../packages/e2b/fs-e2b/src/index.ts)）
 - `@deepseek-ai/dsh-fs-observation-policy`（[`packages/fs/fs-observation-policy/src/index.ts`](../packages/fs/fs-observation-policy/src/index.ts)）
 - `@deepseek-ai/dsh-goal-round-driver` — 需要 `agents` · `goals` · `sessions`（[`packages/goal/goal-round-driver/src/index.ts`](../packages/goal/goal-round-driver/src/index.ts)）
 - `@deepseek-ai/dsh-host-directory-picker-auto` — 需要 `webServer` · `loader`（[`packages/host/directory-picker-auto/src/index.ts`](../packages/host/directory-picker-auto/src/index.ts)）
 - `@deepseek-ai/dsh-host-directory-picker-native`（[`packages/host/directory-picker-native/src/index.ts`](../packages/host/directory-picker-native/src/index.ts)）
 - `@deepseek-ai/dsh-host-plugin-inventory` — 需要 `loader`（[`packages/host/plugin-inventory/src/index.ts`](../packages/host/plugin-inventory/src/index.ts)）
 - `@deepseek-ai/dsh-llm`（[`packages/llm/llm/src/index.ts`](../packages/llm/llm/src/index.ts)）
-- `@deepseek-ai/dsh-lsp`（[`packages/lsp/lsp/src/index.ts`](../packages/lsp/lsp/src/index.ts)）
 - `@deepseek-ai/dsh-schedule` — 需要 `agents` · `sessions` · `tools` · `sessionPersistence`（[`packages/schedule/schedule/src/index.ts`](../packages/schedule/schedule/src/index.ts)）
 - `@deepseek-ai/dsh-session`（[`packages/core/session/src/index.ts`](../packages/core/session/src/index.ts)）
 - `@deepseek-ai/dsh-session-checkpoint-policy` — 需要 `llm` · `sessionPersistence` · `sessions` · `tools`（[`packages/session/session-checkpoint-policy/src/index.ts`](../packages/session/session-checkpoint-policy/src/index.ts)）
@@ -3539,9 +3082,7 @@ export interface Config {
 - `@deepseek-ai/dsh-client-ui-slots`（[`packages/client/ui-slots/src/index.ts`](../packages/client/ui-slots/src/index.ts)）
 - `@deepseek-ai/dsh-client-web`（[`packages/client/web/src/index.ts`](../packages/client/web/src/index.ts)）
 - `@deepseek-ai/dsh-cmdline`（[`packages/boot/cmdline/src/index.ts`](../packages/boot/cmdline/src/index.ts)）
-- `@deepseek-ai/dsh-code-runtime-python`（[`packages/code-runtime/code-runtime-python/src/index.ts`](../packages/code-runtime/code-runtime-python/src/index.ts)）
 - `@deepseek-ai/dsh-experimental-agent-team-profile`（[`packages/experimental/agent-team-profile/src/index.ts`](../packages/experimental/agent-team-profile/src/index.ts)）
-- `@deepseek-ai/dsh-experimental-agent-team-web-profile`（[`packages/experimental/agent-team-web-profile/src/index.ts`](../packages/experimental/agent-team-web-profile/src/index.ts)）
 - `@deepseek-ai/dsh-experimental-webworker-packer`（[`packages/experimental/webworker-packer/src/index.ts`](../packages/experimental/webworker-packer/src/index.ts)）
 - `@deepseek-ai/dsh-experimental-webworker-runtime`（[`packages/experimental/webworker-runtime/src/index.ts`](../packages/experimental/webworker-runtime/src/index.ts)）
 - `@deepseek-ai/dsh-home-paths`（[`packages/util/home-paths/src/index.ts`](../packages/util/home-paths/src/index.ts)）
@@ -3553,7 +3094,6 @@ export interface Config {
 - `@deepseek-ai/dsh-output-retention`（[`packages/util/output-retention/src/index.ts`](../packages/util/output-retention/src/index.ts)）
 - `@deepseek-ai/dsh-sandbox-windows-acl`（[`packages/sandbox/sandbox-windows-acl/src/index.ts`](../packages/sandbox/sandbox-windows-acl/src/index.ts)）
 - `@deepseek-ai/dsh-scope`（[`packages/core/scope/src/index.ts`](../packages/core/scope/src/index.ts)）
-- `@deepseek-ai/dsh-sdk-client`（[`packages/sdk/client/src/index.ts`](../packages/sdk/client/src/index.ts)）
 - `@deepseek-ai/dsh-sdk-minimal`（[`packages/bundle/sdk-minimal/src/index.ts`](../packages/bundle/sdk-minimal/src/index.ts)）
 - `@deepseek-ai/dsh-sdk-protocol`（[`packages/sdk/protocol/src/index.ts`](../packages/sdk/protocol/src/index.ts)）
 - `@deepseek-ai/dsh-session-snapshot`（[`packages/test-support/session-snapshot/src/index.ts`](../packages/test-support/session-snapshot/src/index.ts)）

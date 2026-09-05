@@ -139,6 +139,24 @@ function fallbackDefinition(start: () => string): ConversationNodeDefinition<str
 }
 
 describe('ConversationNodeAssembler', () => {
+  it('keeps projection ranges out of domain matchers and fallback conversation nodes', () => {
+    const fallback = fallbackDefinition(() => 'visible event')
+    const match = vi.spyOn(fallback, 'match')
+    const assembler = new ConversationNodeAssembler(
+      new TestEventDefinitions([], fallback),
+      new TestViewDefinitions([testView()]),
+    )
+    const range: SessionEventLikeEntry = { type: 'projection', event: {
+      type: 'history/projection', seq: 0, time: 0, data: { key: 'workTask', throughSeq: 12_000 },
+    } }
+    const message = input(at(12_001, 'visible-message', {}))
+    assembler.replaceWindow([range, message], false)
+    assembler.flush()
+    expect(match).toHaveBeenCalledTimes(1)
+    expect(match).toHaveBeenCalledWith(message.event)
+    expect(testSnapshot(assembler)?.nodes.size).toBe(1)
+  })
+
   it('appends through an exact business-id Context without replaying unrelated Contexts', () => {
     const starts = vi.fn((
       _context: ConversationNodeContext<{ callSeq: number; results: number }>,

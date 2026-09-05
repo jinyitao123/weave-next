@@ -32,6 +32,7 @@ export function historyRecordFirstSeq(record: SessionHistoryRecord): number {
  */
 export function historyRecordLastSeq(record: SessionHistoryRecord): number {
   if (record.type === 'event') return record.event.seq
+  if (record.type === 'projection') return record.event.data.throughSeq
   const length = record.event.type === 'chunkrow/tool-call-chunks'
     ? record.event.data.args.length
     : record.event.data.texts.length

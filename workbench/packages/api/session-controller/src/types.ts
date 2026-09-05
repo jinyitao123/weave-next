@@ -63,6 +63,22 @@ export interface SessionProjectionBaseline {
   readonly values: SessionProjectionValues
 }
 
+/** Projection values already accepted from this Session's follow opening. */
+export interface SessionProjectionReceipt {
+  /** Inclusive event cursor covered by the accepted projection values. */
+  readonly asOfSeq: number
+  /** Keys whose values the Client retains at that cursor. */
+  readonly keys: readonly string[]
+}
+
+/** Domain assertion that these log-only snapshots have no independent Client history facts. */
+export interface SessionHistoryProjection {
+  /** Authoritative Client projection preserving all user-visible facts from these snapshots. */
+  readonly key: Extract<keyof SessionProjectionMap, string>
+  /** Snapshot event types; never conversation, tool, or action-receipt events. */
+  readonly eventTypes: readonly string[]
+}
+
 /** Typed known projections plus JSON-safe values contributed outside this compilation face. */
 export type SessionProjectionValues = Partial<SessionProjectionMap>
   & Readonly<Record<string, SessionProjectionValue>>
@@ -417,8 +433,23 @@ export interface SessionChunkRun {
   readonly event: ChunkRowEvent
 }
 
-/** One history-page record: a raw event or a packed Assistant delta run. */
-export type SessionHistoryRecord = SessionEventEntry | SessionChunkRun
+/** A contiguous run of domain-declared snapshots represented by an accepted projection. */
+export interface SessionProjectionRun {
+  readonly type: 'projection'
+  readonly event: {
+    readonly type: 'history/projection'
+    /** Inclusive first represented event sequence and its timestamp. */
+    readonly seq: number
+    readonly time: number
+    readonly data: {
+      readonly key: string
+      readonly throughSeq: number
+    }
+  }
+}
+
+/** One history record: a raw event, lossless chunk run, or projection-backed snapshot range. */
+export type SessionHistoryRecord = SessionEventEntry | SessionChunkRun | SessionProjectionRun
 
 /** Session event wire form; durable readers own recognition of merge-extensible event names. */
 export interface SessionWireEvent {
@@ -437,6 +468,8 @@ export interface SessionPageRequest {
   readonly throughSeq: number
   readonly beforeSeq?: number
   readonly maxMessages?: number
+  /** Accepted follow baseline allowing declared snapshots through its cursor to use range records. Omit for raw history. */
+  readonly projectionBaseline?: SessionProjectionReceipt
 }
 
 /** One live event request for a durable Session address. */

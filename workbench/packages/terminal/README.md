@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-The `terminal/` group gives agents persistent, owner-scoped terminal sessions: shell and REPL state — cwd, exported variables, activated environments, running interactive children — survives across tool calls. Three packages cover the family: `terminal/` provides the owner-scoped session service behind `ctx.terminals` (sessions get opaque ids, and every operation stays fenced to the owning agent); `terminal-bash/` starts an interactive bash or pwsh shell under the shared sandbox policy; and `tool-terminal/` exposes six model-facing tools with bounded results. A terminal complements the one-shot bash and filesystem tools: use it when work needs interactive stdin or cross-call state. Sessions are process-local and do not survive a harness restart.
+The `terminal/` group gives agents persistent, owner-scoped terminal sessions: shell and REPL state — cwd, exported variables, activated environments, running interactive children — survives across tool calls. Two packages cover the family: `terminal/` provides the owner-scoped session service behind `ctx.terminals` (sessions get opaque ids, and every operation stays fenced to the owning agent); `terminal-bash/` starts an interactive bash or pwsh shell under the shared sandbox policy. A terminal complements the one-shot bash and filesystem tools: use it when work needs interactive stdin or cross-call state. Sessions are process-local and do not survive a harness restart.
 
 ## Table of Contents
 
@@ -28,7 +28,6 @@ The family is one session service, one shell backend, and one set of model-facin
 |---|---|---|
 | [`terminal/`](terminal/README.md) | Session service: owner-scoped sessions with opaque ids, exact-owner fencing, and awaited cleanup | `ctx.terminals` |
 | [`terminal-bash/`](terminal-bash/README.md) | Shell backend: interactive bash or pwsh under the shared sandbox policy, with readiness detection and bounded output | registers a backend on `ctx.terminals` |
-| [`tool-terminal/`](tool-terminal/README.md) | Six model-facing tools with owner isolation and optional background sends | registers on `ctx.tools` |
 
 -----
 

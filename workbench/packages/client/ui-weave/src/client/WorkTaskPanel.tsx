@@ -315,7 +315,7 @@ function humanResponseText(value: unknown, t: PanelProps['t']): string {
   if (typeof value === 'number' || typeof value === 'bigint' || typeof value === 'symbol') return String(value)
   if (value === null || value === undefined) return ''
   if (Array.isArray(value)) return value.map(item => humanResponseText(item, t)).join(' · ')
-  if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+  if (typeof value === 'object') {
     const record = value as Record<string, unknown>
     if (Object.keys(record).length === 2 && typeof record.comments === 'string'
       && (record.decision === 'approve' || record.decision === 'reject')) {
@@ -511,18 +511,19 @@ export function WorkTaskPanel({
     const element = sceneScroller()
     if (element === null) return
     const targetTop = reading[`scene:${sceneKey}`]?.top ?? 0
-    let restoring = false
     let observer: ResizeObserver | undefined
     const restore = () => {
       element.scrollTop = targetTop
-      restoring = element.scrollTop + 1 < targetTop
-      if (!restoring) observer?.disconnect()
+      return element.scrollTop + 1 < targetTop
     }
-    restore()
+    let restoring = restore()
     // Projection and Markdown content can finish mounting after the scene itself.
     // Do not persist a browser-clamped position while its retained target is still loading.
     if (restoring && sceneRoot.current !== null && typeof ResizeObserver !== 'undefined') {
-      observer = new ResizeObserver(restore)
+      observer = new ResizeObserver(() => {
+        restoring = restore()
+        if (!restoring) observer?.disconnect()
+      })
       observer.observe(sceneRoot.current)
     }
     const stopRestoring = () => { restoring = false; observer?.disconnect() }
@@ -818,138 +819,138 @@ export function WorkTaskPanel({
   )}</div> : null
 
   const memberView = selectedMember === undefined ? null : (
-        <div key={selectedMember.agentId} data-weave-member-reader>
-          <button ref={backButton} type="button" className={css.backButton} onClick={closeMember}><IconChevronLeftOutline14 size={16} />{t('task.member.back')}</button>
-          <header className={css.memberWorkspaceHeader}>
-            <div className={css.memberWorkspaceIdentity}>
-              <span className={css.memberStatus} data-executing={(executing && selectedMember.status === 'running') || undefined} data-status={selectedMember.status} aria-hidden />
-              <div>
-                <h2>{selectedMember.name}</h2>
-                {selectedMember.duty.length > 80 ? <details className={css.memberDuty}>
-                  <summary>{t(selectedMember.role === 'lead' ? 'task.member.lead' : 'task.member.worker')}</summary>
-                  <p>{selectedMember.duty}</p>
-                </details> : <p>{selectedMember.duty === ''
-                  ? t(selectedMember.role === 'lead' ? 'task.member.lead' : 'task.member.worker')
-                  : selectedMember.duty}</p>}
-              </div>
-            </div>
-            <div className={css.memberWorkspaceMeta}>
-              <strong>{t(memberStatusKey(selectedMember.status))}</strong>
-              <details><summary>{t('task.diagnostics')}</summary>
-                <p>{t('task.member.runtime')} · {runtimeNameLabel(selectedMember.runtime, t)}</p>
-                {displayedRuntimes.filter(runtime => selectedMember.runtime.startsWith(runtime.name) || displayedRuntimes.length === 1)
-                  .map(runtime =>
-                    <p key={runtime.name}>{runtimeDetailLabel(runtime.detail, t)} · {t(statusKey(runtime.status))}</p>)}
-                <dl><dt>{t('task.member.identifier')}</dt><dd>{selectedMember.agentId}</dd></dl>
-              </details>
-            </div>
-          </header>
-
-          <div className={css.memberToolbar}>
-            <div className={css.followControls}>
-              <span>{t(terminal ? 'task.updates.recorded' : selectedMember.updateMode === 'live' ? 'task.updates.live' : 'task.updates.onCompletion')}</span>
-              <button type="button" className={css.secondaryButton} aria-pressed={followed.includes(selectedMember.agentId)} disabled={!followed.includes(selectedMember.agentId) && followed.length >= 3} onClick={() => { actions.toggleFollow(model.runId, selectedMember.agentId) }}>{t(followed.includes(selectedMember.agentId) ? 'task.member.unfollow' : 'task.member.follow')}</button>
-            </div>
-            <section className={css.memberWorkspaceActions} aria-label={t('task.correction.member')}>
-              {actionError === null ? null : <div className={css.actionError} role="alert">{actionError}</div>}
-              {canCorrect && beginMemberAdjustment !== undefined ? <button type="button" className={css.secondaryButton} onClick={() => {
-                void beginMemberAdjustment({ runId: model.runId, memberId: selectedMember.agentId, memberName: selectedMember.name, stages: selectedMember.stages.map(stage => ({ nodeId: stage.nodeId, name: stageLabel(stage.name, t), outputIds: stage.outputRefs, outputTitles: model.deliverables.filter(item => stage.outputRefs.includes(item.id)).map(item => deliverableTitle(item.title, t)) })) }).catch(() => { setActionError(t('task.action.offline')) })
-              }}>{t('task.member.proposeAdjustment')}</button> : activeCorrection !== undefined || model.pendingAction !== null ? null : <p className={css.muted}>{t(terminal ? 'task.member.recordOnly' : 'task.member.correctionUnavailable')}</p>}
-              {model.pendingAction?.kind !== 'correction-request' && model.pendingAction?.kind !== 'correction-confirm' ? null : <p role="status">{t(model.pendingAction.kind === 'correction-request' ? 'task.action.correctionPending' : 'task.action.correctionConfirmPending')}</p>}
-              {model.actionError === '' ? null : <p role="alert">{t(model.actionError === 'stop_unconfirmed' ? 'task.stop.unconfirmedHelp' : 'task.action.rejected')}</p>}
-              {correctionView(selectedMember.agentId)}
-            </section>
+    <div key={selectedMember.agentId} data-weave-member-reader>
+      <button ref={backButton} type="button" className={css.backButton} onClick={closeMember}><IconChevronLeftOutline14 size={16} />{t('task.member.back')}</button>
+      <header className={css.memberWorkspaceHeader}>
+        <div className={css.memberWorkspaceIdentity}>
+          <span className={css.memberStatus} data-executing={(executing && selectedMember.status === 'running') || undefined} data-status={selectedMember.status} aria-hidden />
+          <div>
+            <h2>{selectedMember.name}</h2>
+            {selectedMember.duty.length > 80 ? <details className={css.memberDuty}>
+              <summary>{t(selectedMember.role === 'lead' ? 'task.member.lead' : 'task.member.worker')}</summary>
+              <p>{selectedMember.duty}</p>
+            </details> : <p>{selectedMember.duty === ''
+              ? t(selectedMember.role === 'lead' ? 'task.member.lead' : 'task.member.worker')
+              : selectedMember.duty}</p>}
           </div>
-
-          <section className={css.memberWorkspaceActivity} aria-label={t('task.member.activity')}>
-            <div className={css.sectionHeader}>
-              <span>{t('task.member.activity')}</span>
-              <span>{selectedMember.stages.length}</span>
-            </div>
-            {selectedMember.stages.length === 0 ? <p className={css.muted}>{t('task.member.stages.empty')}</p> : (
-              <ol className={css.memberStages}>
-                {selectedMember.stages.map(stage => (
-                  <li key={stage.nodeId} data-status={stage.status} data-executing={(executing && stage.status === 'running') || undefined}>
-                    <div className={css.memberStageHeading}>
-                      <strong>{nodeLabel(stage.nodeId)}</strong>
-                      <span>{t(memberStatusKey(stage.status))}</span>
-                    </div>
-                    {stage.status !== 'failed' || stage.failureClass === '' ? null : (
-                      <div className={css.stageFailure} data-class={stage.failureClass}>
-                        <strong>{t(stage.failureClass === 'infrastructure'
-                          ? 'task.failure.infrastructure'
-                          : stage.failureClass === 'verification'
-                            ? 'task.failure.verification'
-                            : 'task.failure.work')}</strong>
-                        {stage.failureReason === '' ? null : <><span>{t(pendingStopStages.some(item => item.stage.nodeId === stage.nodeId)
-                          ? 'task.wait.runtimeStopHelp' : stageFailureKey(stage, recoverableStages.some(item => item.stage.nodeId === stage.nodeId)))}</span>
-                        <details><summary>{t('task.failure.details')}</summary><p>{stage.failureReason}</p></details></>}
-                        {!recoverableStages.some(item => item.stage.nodeId === stage.nodeId) ? null : retryNodeId === stage.nodeId ? (
-                          <div className={css.retryConfirm}>
-                            <span>{t('task.retry.impact')}</span>
-                            <div className={css.controlActions}>
-                              <button type="button" className={css.secondaryButton} onClick={() => { setRetryNodeId('') }}>{t('task.cancel')}</button>
-                              <button type="button" className={css.primaryButton} disabled={actionPending} onClick={() => { void submitStageRetry() }}>{t('task.retry.confirm')}</button>
-                            </div>
-                          </div>
-                        ) : <button type="button" className={css.memberCorrectionButton} onClick={() => { setRetryNodeId(stage.nodeId) }}>{t('task.retry.stage')}</button>}
-                      </div>
-                    )}
-                    {stage.startedAt === '' && stage.durationMs === 0 && stage.toolCalls === 0 ? null : (
-                      <div className={css.memberStageMetrics}>
-                        {stage.startedAt === '' ? null : <span>{t('task.member.started')} <time dateTime={stage.startedAt}>{new Date(stage.startedAt).toLocaleTimeString()}</time></span>}
-                        {stage.durationMs === 0 ? null : <span>{t('task.member.duration')} {durationLabel(stage.durationMs, t)}</span>}
-                        <span>{t('task.member.tools')} {stage.toolCalls}</span>
-                      </div>
-                    )}
-                    <PublicUpdates active={activeTab === 'progress'} updates={stage.publicUpdates} truncated={stage.publicUpdatesTruncated || stage.publicUpdatesState === 'partial'} position={reading[`${model.runId}:${selectedMember.agentId}:${stage.nodeId}`]} remember={(position) => { actions.rememberReading(`${model.runId}:${selectedMember.agentId}:${stage.nodeId}`, position) }} t={t} />
-                    {stage.tools.length === 0 ? null : (
-                      <div className={css.toolTimeline}>
-                        <span>{t('task.member.toolActivity')}</span>
-                        {stage.tools.map((tool, toolIndex) => (
-                          <div key={`${tool.callId}-${toolIndex}`} data-status={tool.status}>
-                            <span className={css.toolState} aria-hidden />
-                            <strong>{toolLabel(tool.name, t)}</strong>
-                            <small>{t(tool.status === 'running' ? 'task.member.tool.running' : tool.status === 'error' ? 'task.member.tool.error' : 'task.member.tool.ok')}</small>
-                            {tool.input === '' && tool.output === '' ? null : (
-                              <details className={css.toolDetail}>
-                                <summary>{t('task.member.tool.details')}</summary>
-                                {tool.input === '' ? null : <><span>{t('task.member.tool.input')}</span><pre>{tool.input}</pre></>}
-                                {tool.output === '' ? null : <><span>{t('task.member.tool.output')}</span><pre>{tool.output}</pre></>}
-                              </details>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                    {stage.inputs.length === 0 ? null : (
-                      <details className={css.inputDetails}>
-                        <summary>{t('task.member.input.details')}</summary>
-                        <div className={css.memberStageFacts}>
-                          {stage.inputs.map((input, inputIndex) => (
-                            <div className={css.inputFact} key={`${input.name}-${inputIndex}`}>
-                              <strong>{inputSourceLabel(input.source, t)}</strong>
-                              {input.summary === '' ? null : <div className={css.documentBody}><MarkdownText text={input.summary} labels={{ code: { copyLabel: t('task.document.copy'), copiedLabel: t('task.document.copied') }, footnotes: t('task.document.footnotes') }} /></div>}
-                              {input.nodeId === '' ? null : <DeliverableItems items={model.deliverables.filter(item => model.members.some(member => member.stages.some(prior => prior.nodeId === input.nodeId && prior.outputRefs.includes(item.id))))} sessionId={sessionId} runId={model.runId} {...deliverableView} selection={undefined} t={t} />}
-                            </div>
-                          ))}
-                        </div>
-                      </details>
-                    )}
-                    {stage.outputRefs.length === 0 ? null : (
-                      <div className={css.memberStageFacts}>
-                        <span>{t('task.member.outputs')}</span>
-                        <DeliverableItems items={model.deliverables.filter(item => stage.outputRefs.includes(item.id))}
-                          sessionId={sessionId} runId={model.runId} {...deliverableView} selection={undefined} t={t} />
-                        {stage.outputRefs.some(ref => !model.deliverables.some(item => item.id === ref)) ? <p className={css.muted}>{t('task.member.outputPending')}</p> : null}
-                      </div>
-                    )}
-                  </li>
-                ))}
-              </ol>
-            )}
-          </section>
         </div>
+        <div className={css.memberWorkspaceMeta}>
+          <strong>{t(memberStatusKey(selectedMember.status))}</strong>
+          <details><summary>{t('task.diagnostics')}</summary>
+            <p>{t('task.member.runtime')} · {runtimeNameLabel(selectedMember.runtime, t)}</p>
+            {displayedRuntimes.filter(runtime => selectedMember.runtime.startsWith(runtime.name) || displayedRuntimes.length === 1)
+              .map(runtime =>
+                <p key={runtime.name}>{runtimeDetailLabel(runtime.detail, t)} · {t(statusKey(runtime.status))}</p>)}
+            <dl><dt>{t('task.member.identifier')}</dt><dd>{selectedMember.agentId}</dd></dl>
+          </details>
+        </div>
+      </header>
+
+      <div className={css.memberToolbar}>
+        <div className={css.followControls}>
+          <span>{t(terminal ? 'task.updates.recorded' : selectedMember.updateMode === 'live' ? 'task.updates.live' : 'task.updates.onCompletion')}</span>
+          <button type="button" className={css.secondaryButton} aria-pressed={followed.includes(selectedMember.agentId)} disabled={!followed.includes(selectedMember.agentId) && followed.length >= 3} onClick={() => { actions.toggleFollow(model.runId, selectedMember.agentId) }}>{t(followed.includes(selectedMember.agentId) ? 'task.member.unfollow' : 'task.member.follow')}</button>
+        </div>
+        <section className={css.memberWorkspaceActions} aria-label={t('task.correction.member')}>
+          {actionError === null ? null : <div className={css.actionError} role="alert">{actionError}</div>}
+          {canCorrect && beginMemberAdjustment !== undefined ? <button type="button" className={css.secondaryButton} onClick={() => {
+            void beginMemberAdjustment({ runId: model.runId, memberId: selectedMember.agentId, memberName: selectedMember.name, stages: selectedMember.stages.map(stage => ({ nodeId: stage.nodeId, name: stageLabel(stage.name, t), outputIds: stage.outputRefs, outputTitles: model.deliverables.filter(item => stage.outputRefs.includes(item.id)).map(item => deliverableTitle(item.title, t)) })) }).catch(() => { setActionError(t('task.action.offline')) })
+          }}>{t('task.member.proposeAdjustment')}</button> : activeCorrection !== undefined || model.pendingAction !== null ? null : <p className={css.muted}>{t(terminal ? 'task.member.recordOnly' : 'task.member.correctionUnavailable')}</p>}
+          {model.pendingAction?.kind !== 'correction-request' && model.pendingAction?.kind !== 'correction-confirm' ? null : <p role="status">{t(model.pendingAction.kind === 'correction-request' ? 'task.action.correctionPending' : 'task.action.correctionConfirmPending')}</p>}
+          {model.actionError === '' ? null : <p role="alert">{t(model.actionError === 'stop_unconfirmed' ? 'task.stop.unconfirmedHelp' : 'task.action.rejected')}</p>}
+          {correctionView(selectedMember.agentId)}
+        </section>
+      </div>
+
+      <section className={css.memberWorkspaceActivity} aria-label={t('task.member.activity')}>
+        <div className={css.sectionHeader}>
+          <span>{t('task.member.activity')}</span>
+          <span>{selectedMember.stages.length}</span>
+        </div>
+        {selectedMember.stages.length === 0 ? <p className={css.muted}>{t('task.member.stages.empty')}</p> : (
+          <ol className={css.memberStages}>
+            {selectedMember.stages.map(stage => (
+              <li key={stage.nodeId} data-status={stage.status} data-executing={(executing && stage.status === 'running') || undefined}>
+                <div className={css.memberStageHeading}>
+                  <strong>{nodeLabel(stage.nodeId)}</strong>
+                  <span>{t(memberStatusKey(stage.status))}</span>
+                </div>
+                {stage.status !== 'failed' || stage.failureClass === '' ? null : (
+                  <div className={css.stageFailure} data-class={stage.failureClass}>
+                    <strong>{t(stage.failureClass === 'infrastructure'
+                      ? 'task.failure.infrastructure'
+                      : stage.failureClass === 'verification'
+                        ? 'task.failure.verification'
+                        : 'task.failure.work')}</strong>
+                    {stage.failureReason === '' ? null : <><span>{t(pendingStopStages.some(item => item.stage.nodeId === stage.nodeId)
+                      ? 'task.wait.runtimeStopHelp' : stageFailureKey(stage, recoverableStages.some(item => item.stage.nodeId === stage.nodeId)))}</span>
+                    <details><summary>{t('task.failure.details')}</summary><p>{stage.failureReason}</p></details></>}
+                    {!recoverableStages.some(item => item.stage.nodeId === stage.nodeId) ? null : retryNodeId === stage.nodeId ? (
+                      <div className={css.retryConfirm}>
+                        <span>{t('task.retry.impact')}</span>
+                        <div className={css.controlActions}>
+                          <button type="button" className={css.secondaryButton} onClick={() => { setRetryNodeId('') }}>{t('task.cancel')}</button>
+                          <button type="button" className={css.primaryButton} disabled={actionPending} onClick={() => { void submitStageRetry() }}>{t('task.retry.confirm')}</button>
+                        </div>
+                      </div>
+                    ) : <button type="button" className={css.memberCorrectionButton} onClick={() => { setRetryNodeId(stage.nodeId) }}>{t('task.retry.stage')}</button>}
+                  </div>
+                )}
+                {stage.startedAt === '' && stage.durationMs === 0 && stage.toolCalls === 0 ? null : (
+                  <div className={css.memberStageMetrics}>
+                    {stage.startedAt === '' ? null : <span>{t('task.member.started')} <time dateTime={stage.startedAt}>{new Date(stage.startedAt).toLocaleTimeString()}</time></span>}
+                    {stage.durationMs === 0 ? null : <span>{t('task.member.duration')} {durationLabel(stage.durationMs, t)}</span>}
+                    <span>{t('task.member.tools')} {stage.toolCalls}</span>
+                  </div>
+                )}
+                <PublicUpdates active={activeTab === 'progress'} updates={stage.publicUpdates} truncated={stage.publicUpdatesTruncated || stage.publicUpdatesState === 'partial'} position={reading[`${model.runId}:${selectedMember.agentId}:${stage.nodeId}`]} remember={(position) => { actions.rememberReading(`${model.runId}:${selectedMember.agentId}:${stage.nodeId}`, position) }} t={t} />
+                {stage.tools.length === 0 ? null : (
+                  <div className={css.toolTimeline}>
+                    <span>{t('task.member.toolActivity')}</span>
+                    {stage.tools.map((tool, toolIndex) => (
+                      <div key={`${tool.callId}-${toolIndex}`} data-status={tool.status}>
+                        <span className={css.toolState} aria-hidden />
+                        <strong>{toolLabel(tool.name, t)}</strong>
+                        <small>{t(tool.status === 'running' ? 'task.member.tool.running' : tool.status === 'error' ? 'task.member.tool.error' : 'task.member.tool.ok')}</small>
+                        {tool.input === '' && tool.output === '' ? null : (
+                          <details className={css.toolDetail}>
+                            <summary>{t('task.member.tool.details')}</summary>
+                            {tool.input === '' ? null : <><span>{t('task.member.tool.input')}</span><pre>{tool.input}</pre></>}
+                            {tool.output === '' ? null : <><span>{t('task.member.tool.output')}</span><pre>{tool.output}</pre></>}
+                          </details>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {stage.inputs.length === 0 ? null : (
+                  <details className={css.inputDetails}>
+                    <summary>{t('task.member.input.details')}</summary>
+                    <div className={css.memberStageFacts}>
+                      {stage.inputs.map((input, inputIndex) => (
+                        <div className={css.inputFact} key={`${input.name}-${inputIndex}`}>
+                          <strong>{inputSourceLabel(input.source, t)}</strong>
+                          {input.summary === '' ? null : <div className={css.documentBody}><MarkdownText text={input.summary} labels={{ code: { copyLabel: t('task.document.copy'), copiedLabel: t('task.document.copied') }, footnotes: t('task.document.footnotes') }} /></div>}
+                          {input.nodeId === '' ? null : <DeliverableItems items={model.deliverables.filter(item => model.members.some(member => member.stages.some(prior => prior.nodeId === input.nodeId && prior.outputRefs.includes(item.id))))} sessionId={sessionId} runId={model.runId} {...deliverableView} selection={undefined} t={t} />}
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                )}
+                {stage.outputRefs.length === 0 ? null : (
+                  <div className={css.memberStageFacts}>
+                    <span>{t('task.member.outputs')}</span>
+                    <DeliverableItems items={model.deliverables.filter(item => stage.outputRefs.includes(item.id))}
+                      sessionId={sessionId} runId={model.runId} {...deliverableView} selection={undefined} t={t} />
+                    {stage.outputRefs.some(ref => !model.deliverables.some(item => item.id === ref)) ? <p className={css.muted}>{t('task.member.outputPending')}</p> : null}
+                  </div>
+                )}
+              </li>
+            ))}
+          </ol>
+        )}
+      </section>
+    </div>
   )
 
   const historySection = model.actionHistory.length === 0 && model.corrections.length < 2 ? null : <details className={css.actionHistory}>
@@ -1045,7 +1046,9 @@ export function WorkTaskPanel({
     {model.deliverables.length === 0 ? <p className={css.muted}>{t('task.deliverables.empty')}</p> : <>
       <DeliverableItems items={[...finalDeliverables, ...summaryDeliverables]}
         sessionId={sessionId} runId={model.runId} {...deliverableView} t={t} />
-      {stageDeliverables.length === 0 ? null : stageDeliverables.length === 1 ? <DeliverableItems items={stageDeliverables} sessionId={sessionId} runId={model.runId} {...deliverableView} t={t} /> : <details className={css.stageDeliverables}>
+      {stageDeliverables.length === 0 ? null : stageDeliverables.length === 1 ? <DeliverableItems
+        items={stageDeliverables} sessionId={sessionId} runId={model.runId}
+        {...deliverableView} t={t} /> : <details className={css.stageDeliverables}>
         <summary>{t('task.deliverables.stageGroup', { count: stageDeliverables.length })}</summary>
         <DeliverableItems items={stageDeliverables} sessionId={sessionId} runId={model.runId} {...deliverableView} t={t} />
       </details>}
@@ -1092,57 +1095,57 @@ export function WorkTaskPanel({
       <div role="tabpanel" id={`${tabId}-progress-panel`} aria-labelledby={`${tabId}-progress-tab`} hidden={activeTab !== 'progress'}>
         {memberView}
         <div hidden={selectedMember !== undefined}>
-        {model.runId !== '' || model.teamCandidates.length === 0 ? null : (
-          <section className={css.teamChooser} aria-label={t('task.teamChooser')}>
-            <div className={css.sectionHeader}>
-              <span>{t('task.teamChooser')}</span>
-              <span>{t('task.teamChooser.count', { count: model.teamCandidates.length })}</span>
-            </div>
-            <p className={css.muted}>{t('task.teamChooser.notice')}</p>
-            <div className={css.teamCandidateList}>
-              {model.teamCandidates.map((team) => {
-                const dispatchable = team.status === 'active' && team.workflowAvailable
-                return (
-                  <div className={css.teamCandidate} data-dispatchable={dispatchable || undefined} key={team.teamId}>
-                    <div><strong>{team.name}</strong><span>{dispatchable ? t('teamList.dispatchable') : t('teamList.noWorkflow')}</span></div>
-                    {team.objective === '' ? null : <p>{team.objective}</p>}
-                    {!dispatchable || selectTeam === undefined ? null : (
-                      <button type="button" className={css.primaryButton} disabled={selectingTeamId !== ''}
-                        onClick={() => { void submitTeamSelection(team.teamId, team.name) }}>
-                        {selectingTeamId === team.teamId ? t('task.teamChooser.selecting') : t('teamList.select')}
-                      </button>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-          </section>
-        )}
-        {model.blocker === 'none' || model.actionError === 'stop_unconfirmed' ? null : (
-          <section className={css.issue} role="status">
-            <strong>{t('task.blocker')}</strong>
-            <span>{t(model.blocker === 'runtime-missing'
-              ? 'task.blocker.runtimeMissing'
-              : model.blocker === 'failed'
-                ? 'task.blocker.failed'
-                : 'task.blocker.queued')}</span>
-          </section>
-        )}
+          {model.runId !== '' || model.teamCandidates.length === 0 ? null : (
+            <section className={css.teamChooser} aria-label={t('task.teamChooser')}>
+              <div className={css.sectionHeader}>
+                <span>{t('task.teamChooser')}</span>
+                <span>{t('task.teamChooser.count', { count: model.teamCandidates.length })}</span>
+              </div>
+              <p className={css.muted}>{t('task.teamChooser.notice')}</p>
+              <div className={css.teamCandidateList}>
+                {model.teamCandidates.map((team) => {
+                  const dispatchable = team.status === 'active' && team.workflowAvailable
+                  return (
+                    <div className={css.teamCandidate} data-dispatchable={dispatchable || undefined} key={team.teamId}>
+                      <div><strong>{team.name}</strong><span>{dispatchable ? t('teamList.dispatchable') : t('teamList.noWorkflow')}</span></div>
+                      {team.objective === '' ? null : <p>{team.objective}</p>}
+                      {!dispatchable || selectTeam === undefined ? null : (
+                        <button type="button" className={css.primaryButton} disabled={selectingTeamId !== ''}
+                          onClick={() => { void submitTeamSelection(team.teamId, team.name) }}>
+                          {selectingTeamId === team.teamId ? t('task.teamChooser.selecting') : t('teamList.select')}
+                        </button>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </section>
+          )}
+          {model.blocker === 'none' || model.actionError === 'stop_unconfirmed' ? null : (
+            <section className={css.issue} role="status">
+              <strong>{t('task.blocker')}</strong>
+              <span>{t(model.blocker === 'runtime-missing'
+                ? 'task.blocker.runtimeMissing'
+                : model.blocker === 'failed'
+                  ? 'task.blocker.failed'
+                  : 'task.blocker.queued')}</span>
+            </section>
+          )}
 
-        {humanSection}
-        {model.humanTaskCount === 0 || model.humanTask !== null ? null : (
-          <section className={css.attention}>
-            <strong>{t('task.human')}</strong>
-            <span>{t('task.human.count', { count: model.humanTaskCount })}</span>
-          </section>
-        )}
-        {actionError === null ? null : <div className={css.actionError} role="alert">{actionError}</div>}
-        {model.actionError === '' ? null : <div className={css.actionError} role="alert">{t(model.actionError === 'stop_unconfirmed' ? 'task.stop.unconfirmedHelp' : 'task.action.rejected')}</div>}
-        {recoverySection}
-        {selectedMember === undefined ? correctionView() : null}
-        {selectedMember === undefined ? correctionControls : null}
-        {membersSection}
-        {historySection}
+          {humanSection}
+          {model.humanTaskCount === 0 || model.humanTask !== null ? null : (
+            <section className={css.attention}>
+              <strong>{t('task.human')}</strong>
+              <span>{t('task.human.count', { count: model.humanTaskCount })}</span>
+            </section>
+          )}
+          {actionError === null ? null : <div className={css.actionError} role="alert">{actionError}</div>}
+          {model.actionError === '' ? null : <div className={css.actionError} role="alert">{t(model.actionError === 'stop_unconfirmed' ? 'task.stop.unconfirmedHelp' : 'task.action.rejected')}</div>}
+          {recoverySection}
+          {selectedMember === undefined ? correctionView() : null}
+          {selectedMember === undefined ? correctionControls : null}
+          {membersSection}
+          {historySection}
         </div>
       </div>
       <div role="tabpanel" id={`${tabId}-outputs-panel`} aria-labelledby={`${tabId}-outputs-tab`} hidden={activeTab !== 'outputs'}>
@@ -1158,104 +1161,104 @@ export function WorkTaskPanel({
         </details>}
       </div>
       <div hidden={activeTab === 'progress' && selectedMember !== undefined}>
-      <details hidden={activeTab !== 'progress' || model.totalStages === 0} className={css.section} aria-label={t('task.progress')}>
-        <summary>{t('task.progress')} · {t('task.progress.count', { completed: model.completedStages, total: model.totalStages })}</summary>
-        {model.totalStages > 0 ? (
-          <div className={css.progressTrack} aria-valuemin={0} aria-valuemax={100} aria-valuenow={progressPercent} role="progressbar" aria-label={t('task.progress')}>
-            <span style={{ '--weave-progress': `${progressPercent}%` } as CSSProperties} />
-          </div>
-        ) : <p className={css.muted}>{t(
-          model.completedStages === 0
-            ? 'task.progress.pending'
-            : terminal
-              ? 'task.progress.recordedComplete'
-              : 'task.progress.partial',
-          { completed: model.completedStages },
-        )}</p>}
-        {model.latestStage === '' ? null : (
-          <div className={css.fact}>
-            <span>{t(terminal ? 'task.lastStage' : 'task.currentStage')}</span>
-            <strong>{stageLabel(model.latestStage, t)}</strong>
-          </div>
-        )}
-        {model.stages.length === 0 ? null : (
-          <ol className={css.stages}>
-            {model.stages.map((stage, index) => (
-              <li key={`${stage.name}-${index}`} data-status={stage.status}>
-                <span className={css.stageMark} aria-hidden />
-                <span>{stageLabel(stage.name, t)}</span>
-              </li>
-            ))}
-          </ol>
-        )}
-      </details>
-      {stopControls}
-      {!terminal || rerun === undefined ? null : <details className={css.secondaryActions}><summary>{t('task.moreActions')}</summary>
-        <section className={css.controlSection} aria-label={t('task.rerun')}>
-          {revisionOpen ? (
-            <div className={css.revisionBox}>
-              <label htmlFor={`weave-revision-${panelId}`}>{t('task.rerun.brief')}</label>
-              <textarea
-                id={`weave-revision-${panelId}`}
-                value={revisedBrief}
-                onChange={(event) => { setRevisedBrief(event.currentTarget.value) }}
-                placeholder={t('task.rerun.placeholder')}
-              />
-              <span>{t('task.rerun.notice')}</span>
-              <div className={css.controlActions}>
-                <button type="button" className={css.secondaryButton} onClick={() => { setRevisionOpen(false) }}>{t('task.cancel')}</button>
-                <button type="button" className={css.primaryButton} disabled={actionPending || revisedBrief.trim() === ''} onClick={() => { void submitRerun() }}>{t('task.rerun.confirm')}</button>
-              </div>
+        <details hidden={activeTab !== 'progress' || model.totalStages === 0} className={css.section} aria-label={t('task.progress')}>
+          <summary>{t('task.progress')} · {t('task.progress.count', { completed: model.completedStages, total: model.totalStages })}</summary>
+          {model.totalStages > 0 ? (
+            <div className={css.progressTrack} aria-valuemin={0} aria-valuemax={100} aria-valuenow={progressPercent} role="progressbar" aria-label={t('task.progress')}>
+              <span style={{ '--weave-progress': `${progressPercent}%` } as CSSProperties} />
             </div>
-          ) : (
-            <button type="button" className={css.secondaryButton} onClick={() => { setRevisedBrief(model.brief); setRevisionOpen(true) }}>{t('task.rerun')}</button>
+          ) : <p className={css.muted}>{t(
+            model.completedStages === 0
+              ? 'task.progress.pending'
+              : terminal
+                ? 'task.progress.recordedComplete'
+                : 'task.progress.partial',
+            { completed: model.completedStages },
+          )}</p>}
+          {model.latestStage === '' ? null : (
+            <div className={css.fact}>
+              <span>{t(terminal ? 'task.lastStage' : 'task.currentStage')}</span>
+              <strong>{stageLabel(model.latestStage, t)}</strong>
+            </div>
           )}
-        </section>
-      </details>}
-      {model.attempts.length < 2 ? null : (
-        <section className={css.section} aria-label={t('task.attempts')}>
-          <div className={css.sectionHeader}><span>{t('task.attempts')}</span><span>{model.attempts.length}</span></div>
-          <ol className={css.attemptList}>
-            {model.attempts.map((attempt, index) => (
-              <li key={attempt.clientRequestId || attempt.runId} data-current={attempt.runId === model.runId || undefined}>
-                <span>{t('task.attempt', { index: index + 1 })}</span>
-                <strong>{t(statusKey(attempt.status))}</strong>
-                {attempt.brief === '' ? null : (
-                  <details className={css.attemptBrief}>
-                    <summary>{t('task.attempt.brief')}</summary>
-                    <p>{attempt.brief}</p>
-                  </details>
-                )}
-              </li>
-            ))}
-          </ol>
-        </section>
-      )}
-      {model.runId === '' ? null : <details className={css.diagnostics}>
-        <summary>{t('task.diagnostics')}</summary>
-        <section className={css.section} aria-label={t('task.runtimes')}>
-          <div className={css.sectionHeader}><span>{t('task.runtimes')}</span><span>{model.runtimes.length}</span></div>
-          {model.runtimes.length === 0 ? <p className={css.muted}>{t(terminal ? 'task.runtimes.notRecorded' : 'task.runtimes.empty')}</p> : (
-            <div className={css.runtimeList}>
-              {displayedRuntimes.map((runtime, index) => (
-                <div className={css.runtime} key={`${runtime.name}-${index}`}>
-                  <span className={css.statusDot} data-status={runtime.status} aria-hidden />
-                  <span className={css.runtimeIdentity}>
-                    <strong>{runtimeNameLabel(runtime.name, t)}</strong>
-                    <span>{runtimeDetailLabel(runtime.detail, t)}</span>
-                  </span>
-                  <span className={css.runtimeStatus}>{t(statusKey(runtime.status))}</span>
-                </div>
+          {model.stages.length === 0 ? null : (
+            <ol className={css.stages}>
+              {model.stages.map((stage, index) => (
+                <li key={`${stage.name}-${index}`} data-status={stage.status}>
+                  <span className={css.stageMark} aria-hidden />
+                  <span>{stageLabel(stage.name, t)}</span>
+                </li>
               ))}
-            </div>
+            </ol>
           )}
-        </section>
-        <dl><dt>{t('task.runId')}</dt><dd>{model.runId}</dd><dt>{t('task.workflow')}</dt><dd>{model.workflowName}</dd></dl>
-        <dl>{model.members.map(member => <div key={member.agentId}>
-          <dt>{member.name} · {t('task.member.identifier')}</dt><dd>{member.agentId}</dd>
-        </div>)}</dl>
-        {model.tokensIn + model.tokensOut === 0 && model.costUSD === 0 ? null : <dl><dt>{t('task.usage')}</dt><dd>{model.tokensIn + model.tokensOut}</dd><dt>{t('task.cost')}</dt><dd>{model.costUSD.toFixed(4)}</dd></dl>}
-      </details>}
+        </details>
+        {stopControls}
+        {!terminal || rerun === undefined ? null : <details className={css.secondaryActions}><summary>{t('task.moreActions')}</summary>
+          <section className={css.controlSection} aria-label={t('task.rerun')}>
+            {revisionOpen ? (
+              <div className={css.revisionBox}>
+                <label htmlFor={`weave-revision-${panelId}`}>{t('task.rerun.brief')}</label>
+                <textarea
+                  id={`weave-revision-${panelId}`}
+                  value={revisedBrief}
+                  onChange={(event) => { setRevisedBrief(event.currentTarget.value) }}
+                  placeholder={t('task.rerun.placeholder')}
+                />
+                <span>{t('task.rerun.notice')}</span>
+                <div className={css.controlActions}>
+                  <button type="button" className={css.secondaryButton} onClick={() => { setRevisionOpen(false) }}>{t('task.cancel')}</button>
+                  <button type="button" className={css.primaryButton} disabled={actionPending || revisedBrief.trim() === ''} onClick={() => { void submitRerun() }}>{t('task.rerun.confirm')}</button>
+                </div>
+              </div>
+            ) : (
+              <button type="button" className={css.secondaryButton} onClick={() => { setRevisedBrief(model.brief); setRevisionOpen(true) }}>{t('task.rerun')}</button>
+            )}
+          </section>
+        </details>}
+        {model.attempts.length < 2 ? null : (
+          <section className={css.section} aria-label={t('task.attempts')}>
+            <div className={css.sectionHeader}><span>{t('task.attempts')}</span><span>{model.attempts.length}</span></div>
+            <ol className={css.attemptList}>
+              {model.attempts.map((attempt, index) => (
+                <li key={attempt.clientRequestId || attempt.runId} data-current={attempt.runId === model.runId || undefined}>
+                  <span>{t('task.attempt', { index: index + 1 })}</span>
+                  <strong>{t(statusKey(attempt.status))}</strong>
+                  {attempt.brief === '' ? null : (
+                    <details className={css.attemptBrief}>
+                      <summary>{t('task.attempt.brief')}</summary>
+                      <p>{attempt.brief}</p>
+                    </details>
+                  )}
+                </li>
+              ))}
+            </ol>
+          </section>
+        )}
+        {model.runId === '' ? null : <details className={css.diagnostics}>
+          <summary>{t('task.diagnostics')}</summary>
+          <section className={css.section} aria-label={t('task.runtimes')}>
+            <div className={css.sectionHeader}><span>{t('task.runtimes')}</span><span>{model.runtimes.length}</span></div>
+            {model.runtimes.length === 0 ? <p className={css.muted}>{t(terminal ? 'task.runtimes.notRecorded' : 'task.runtimes.empty')}</p> : (
+              <div className={css.runtimeList}>
+                {displayedRuntimes.map((runtime, index) => (
+                  <div className={css.runtime} key={`${runtime.name}-${index}`}>
+                    <span className={css.statusDot} data-status={runtime.status} aria-hidden />
+                    <span className={css.runtimeIdentity}>
+                      <strong>{runtimeNameLabel(runtime.name, t)}</strong>
+                      <span>{runtimeDetailLabel(runtime.detail, t)}</span>
+                    </span>
+                    <span className={css.runtimeStatus}>{t(statusKey(runtime.status))}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+          <dl><dt>{t('task.runId')}</dt><dd>{model.runId}</dd><dt>{t('task.workflow')}</dt><dd>{model.workflowName}</dd></dl>
+          <dl>{model.members.map(member => <div key={member.agentId}>
+            <dt>{member.name} · {t('task.member.identifier')}</dt><dd>{member.agentId}</dd>
+          </div>)}</dl>
+          {model.tokensIn + model.tokensOut === 0 && model.costUSD === 0 ? null : <dl><dt>{t('task.usage')}</dt><dd>{model.tokensIn + model.tokensOut}</dd><dt>{t('task.cost')}</dt><dd>{model.costUSD.toFixed(4)}</dd></dl>}
+        </details>}
       </div>
     </div>
   )

@@ -4,13 +4,15 @@ Status: proposed
 
 English | [中文](2026-08-20-audience-first-documentation-quality.zh.md)
 
+Migration scope: this note preserves decisions from the original runtime; components marked as historical paths are not included in the current Weave Workbench workspace.
+
 ## Problem
 
 The documentation system has strong placement, freshness, linking, bilingual, and source-equivalence checks, but it does not define “brief, intuitive, and friendly” as reviewable outcomes for users, newcomers, developers, and agents. All `doc-sync` checks and translation pairs pass, while the following design problems remain. The first three findings are the design priorities; the capacity finding explains why adding more standing rules will not solve them.
 
 ### Semantic correctness can pass without a current owner
 
-The gates prove structure and generated freshness, not that maintained prose still names the live mechanism. The former `dsh-doc-site-sync` skill told authors to reuse a nonexistent `en-docs` sidebar and to add sections to a removed `sectionOrder`; [website/docs.ts](../../../../website/docs.ts) owns `en-guide`, `en-develop`, `en-reference`, and `sections`. The implemented [product-first README decision](../../implemented/process/2026-07-22-product-first-root-readme.md) describes an internal-testing notice and ACP, Python, and JSON-RPC surface sections absent from the [root README](../../../../README.md), although implemented Agent Notes must track shipped facts.
+The gates prove structure and generated freshness, not that maintained prose still names the live mechanism. The former `dsh-doc-site-sync` skill told authors to reuse a nonexistent `en-docs` sidebar and to add sections to a removed `sectionOrder`; website/docs.ts (historical path `../../../../website/docs.ts`) owns `en-guide`, `en-develop`, `en-reference`, and `sections`. The implemented [product-first README decision](../../implemented/process/2026-07-22-product-first-root-readme.md) describes an internal-testing notice and ACP, Python, and JSON-RPC surface sections absent from the [root README](../../../../README.md), although implemented Agent Notes must track shipped facts.
 
 The budget policy has the same split. [docs/AGENTS.md](../../../../docs/AGENTS.md#wordcount-budgets) states a 1,800-word target and 5% headroom for `architecture.md`, but the [budget manifest](../../../../scripts/doc-budgets.manifest.json) allows 2,400 words while the file contains 1,313. The budget gate passes because it checks the manifest ceiling, not the target or ratchet rule. High-impact prose therefore needs a named source or a focused check that consumes the source; a second hand-written copy is not a freshness mechanism.
 

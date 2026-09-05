@@ -54,7 +54,7 @@ The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-a
 
 ### Adding a provider
 
-One optional asynchronous provider may be registered through `ctx.sessionTitle.register(provider)`; a second registration throws. The shipped model-backed providers are [first-prompt](../session-title-first-prompt-llm/README.md) and [all-prompts](../session-title-all-prompts-llm/README.md), both using the shared [LLM generation policy](../session-title-llm/README.md). A provider starts only after a marked loop-built request's exact route matches the logged `request/header`, and a newer revision supersedes and aborts older work.
+One optional asynchronous provider may be registered through `ctx.sessionTitle.register(provider)`; a second registration throws. The shipped model-backed provider is [first-prompt](../session-title-first-prompt-llm/README.md), using the shared [LLM generation policy](../session-title-llm/README.md). A provider starts only after a marked loop-built request's exact route matches the logged `request/header`, and a newer revision supersedes and aborts older work.
 
 ### Reading titles
 
@@ -106,7 +106,6 @@ Read these pages when the service contract is not enough. They move from the sub
 - [Session title subsystem](../../../docs/subsystems/session-title.md) — durable title state and the provider vocabulary types.
 - [Shared LLM title policy](../session-title-llm/README.md) — the model-backed generation helper both shipped providers use.
 - [First-message title provider](../session-title-first-prompt-llm/README.md) — titles from the first eligible human message.
-- [All-messages title provider](../session-title-all-prompts-llm/README.md) — titles from every eligible human message.
 - [Session package map](../README.md) — adjacent persistence, projection, title, and telemetry packages.
 
 -----

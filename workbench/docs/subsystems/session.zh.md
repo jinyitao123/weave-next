@@ -728,6 +728,13 @@ inspect( sessionId: SessionId, signal?: AbortSignal, ): Promise<{ meta: SessionH
 @Remote({ mode: 'stream' }) follow(request: SessionFollowRequest, signal: AbortSignal): AsyncIterable<SessionFollowFrame>
 
 /**
+ * Declare snapshots whose complete Client facts are carried by one projection.
+ * @param definition - domain-owned projection and log-only snapshot event types; exclude action receipts.
+ * @returns fiber-owned disposer; original logs, unregistered events, and live follow events stay intact.
+ */
+registerHistoryProjection(definition: SessionHistoryProjection): () => void
+
+/**
  * Stream a complete live-control baseline followed by replacement frames.
  * @param signal - cancellation owned by the Remote stream carrier.
  * @returns one complete baseline followed by live replacement frames.

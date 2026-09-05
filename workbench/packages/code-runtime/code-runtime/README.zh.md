@@ -41,7 +41,7 @@ const result = await ctx.codeRuntime.run({
 
 ### 选择后端
 
-后端声明两个你可以依赖的描述符：`language`——程序必须使用的源语言，已知值为 `'typescript'` 与 `'python'`，目前只有 TypeScript 已发布——以及 `isolation`——执行基底（`'worker-thread'`、`'process'`、`'container'`），仅供部署与诊断使用，不构成安全声明。已发布的后端是 [`dsh-code-runtime-worker-thread`](../code-runtime-worker-thread/README.zh.md)，在全新的 Node Worker 线程中执行 TypeScript；[`dsh-code-runtime-python`](../code-runtime-python/README.zh.md) 持有 CPython 后端的协议格式（wire protocol）。
+后端声明两个你可以依赖的描述符：`language`——程序必须使用的源语言，已知值为 `'typescript'` 与 `'python'`，目前只有 TypeScript 已发布——以及 `isolation`——执行基底（`'worker-thread'`、`'process'`、`'container'`），仅供部署与诊断使用，不构成安全声明。已发布的后端是 [`dsh-code-runtime-worker-thread`](../code-runtime-worker-thread/README.zh.md)，在全新的 Node Worker 线程中执行 TypeScript。
 
 ### 可移植地命名绑定
 
@@ -98,7 +98,6 @@ binding-global 与 error-class 名称是语言可移植的：必须匹配标识�
 
 - [PTC mode Agent Note](../../../.agents/notes/implemented/feature/2026-06-15-ptc.zh.md)——工具注册表如何消费 `ctx.codeRuntime` 并把 `run_code` 呈现给模型。
 - [Worker 线程后端](../code-runtime-worker-thread/README.zh.md)——已发布的 TypeScript 执行后端。
-- [Python 协议包](../code-runtime-python/README.zh.md)——CPython 后端的协议格式。
 - [代码运行时子系统参考](../../../docs/subsystems/code-runtime.zh.md)——请求／结果词汇、绑定与 `ctx.codeRuntime` 的 cordis 接口面。
 - [能力 seam](../../../.agents/notes/implemented/architecture/2026-06-13-capability-seams.zh.md)——Service Definition / Service Provider / Consumer 拆分。
 

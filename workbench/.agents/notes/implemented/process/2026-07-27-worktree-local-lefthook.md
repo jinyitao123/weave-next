@@ -4,9 +4,11 @@ Status: implemented
 
 English | [中文](2026-07-27-worktree-local-lefthook.zh.md)
 
+Migration scope: this note preserves decisions from the original runtime; components marked as historical paths are not included in the current Weave Workbench workspace.
+
 ## Problem
 
-Every `pnpm install` runs the root [`postinstall`](../../../../package.json), whose [`install-lefthook.mjs`](../../../../scripts/install-lefthook.mjs) invokes `lefthook install --force`. Linked Git worktrees otherwise share the common repository's default hooks directory, so an install in any worktree can rewrite hooks used by every other worktree.
+Every `pnpm install` runs the root [`postinstall`](../../../../package.json), whose `install-lefthook.mjs` (historical path `../../../../scripts/install-lefthook.mjs`) invokes `lefthook install --force`. Linked Git worktrees otherwise share the common repository's default hooks directory, so an install in any worktree can rewrite hooks used by every other worktree.
 
 Lefthook-generated hooks prefer an absolute binary path captured from the installing worktree before trying their current-worktree fallback. Shared hooks can therefore run another worktree's pinned binary until that worktree disappears, while concurrent installs write the same files.
 

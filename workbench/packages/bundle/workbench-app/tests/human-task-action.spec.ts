@@ -40,6 +40,7 @@ function host(overrides: Partial<WorkTaskProjection> = {}) {
     } } },
     sessions: { list: () => [session], get: (id: string) => id === session.id ? session : undefined, flush: async () => {} },
     sessionProjections: { register: () => {}, stateOf: () => state },
+    sessionController: { registerHistoryProjection: () => () => {} },
   }
   apply(ctx as unknown as Context, { apiUrl: 'http://weave.test', apiKey: 'test-only', pollIntervalMs: 500 })
   return { state: () => state, events, publish: (data: WorkTaskProjection) => { session.append('weave/work-task', data) }, action: (body: unknown) => routes.get('/api/weave.task-action')!(new Request('http://host/api/weave.task-action', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })), dispose: () => { for (const dispose of disposers.reverse()) dispose() } }
@@ -48,6 +49,35 @@ function host(overrides: Partial<WorkTaskProjection> = {}) {
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals() })
 
 describe('exact human wait actions', () => {
+  it('writes unchanged observations only at the freshness interval and retains the attempt change time', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(100_000)
+    let completedStages = 1
+    const fetcher = vi.fn<typeof fetch>(() => Promise.resolve(Response.json({ run_id: 'run-1', status: 'running',
+      observed_at: new Date(Date.now()).toISOString(), workflow_progress: { completed_stages: completedStages, total_stages: 3 },
+    })))
+    vi.stubGlobal('fetch', fetcher)
+    const app = host({ status: 'running', waitKind: '', humanTaskCount: 0 })
+    const snapshots = () => app.events.filter(event => event.type === 'weave/work-task')
+    try {
+      await vi.advanceTimersByTimeAsync(0)
+      const firstAttempt = app.state().task!.attempts[0]!
+      expect(snapshots()).toHaveLength(2)
+      await vi.advanceTimersByTimeAsync(29_999)
+      expect(fetcher).toHaveBeenCalledTimes(60)
+      expect(snapshots()).toHaveLength(2)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(snapshots()).toHaveLength(3)
+      expect(app.state().task!.observedAt).toBe(130_000)
+      expect(app.state().task!.attempts[0]).toEqual(firstAttempt)
+      completedStages = 2
+      await vi.advanceTimersByTimeAsync(500)
+      expect(snapshots()).toHaveLength(4)
+      expect(app.state().task!.attempts[0]).toMatchObject({ completedStages: 2,
+        createdAt: firstAttempt.createdAt, updatedAt: 130_500 })
+    } finally { app.dispose() }
+  })
+
   it('keeps the configured polling interval when publishing changing member activity', async () => {
     vi.useFakeTimers()
     const fetcher = vi.fn<typeof fetch>(() => Promise.resolve(Response.json({ run_id: 'run-1', status: 'running',

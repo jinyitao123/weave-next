@@ -1,3 +1,7 @@
+import { execFileSync, spawnSync } from 'node:child_process'
+import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
   extendArchiveManifest,
@@ -23,6 +27,46 @@ function fixture(): Map<string, Buffer> {
 }
 
 describe('archived Agent Notes', () => {
+  it('reads the committed archive from a nested workspace and rejects replaced seals', () => {
+    const repo = mkdtempSync(resolve(tmpdir(), 'weave-archive-git-'))
+    const workspace = resolve(repo, 'workbench')
+    const archive = resolve(workspace, '.agents/notes/archived')
+    const manifest = resolve(archive, 'manifest.json')
+    const artifacts = fixture()
+    const run = () => spawnSync(process.execPath, [
+      resolve(import.meta.dirname, '../node_modules/tsx/dist/cli.mjs'),
+      resolve(workspace, 'scripts/verify-archived-agent-notes.ts'),
+    ], { cwd: workspace, encoding: 'utf8' })
+    try {
+      mkdirSync(resolve(workspace, 'scripts'), { recursive: true })
+      writeFileSync(resolve(workspace, 'package.json'), '{"type":"module"}\n')
+      for (const name of ['verify-archived-agent-notes.ts', 'archived-agent-notes.ts', 'agent-note-tree.ts']) {
+        copyFileSync(resolve(import.meta.dirname, name), resolve(workspace, 'scripts', name))
+      }
+      for (const kind of ['feature', 'bug-fix', 'simplification', 'architecture', 'process', 'testing']) {
+        mkdirSync(resolve(archive, kind), { recursive: true })
+      }
+      writeFileSync(resolve(archive, 'AGENTS.md'), '# Frozen archive\n')
+      for (const [name, bytes] of artifacts) {
+        mkdirSync(dirname(resolve(archive, name)), { recursive: true })
+        writeFileSync(resolve(archive, name), bytes)
+      }
+      const sealed = extendArchiveManifest({ version: 1, files: {} }, artifacts)
+      writeFileSync(manifest, renderArchiveManifest(sealed.files))
+      execFileSync('git', ['init', '--quiet', repo])
+      execFileSync('git', ['-C', repo, 'add', '.'])
+      execFileSync('git', ['-C', repo, '-c', 'user.name=Archive Test', '-c', 'user.email=archive@example.invalid', 'commit', '--quiet', '-m', 'Seal fixture'])
+      const accepted = run()
+      expect(accepted.status, accepted.stderr).toBe(0)
+      writeFileSync(manifest, renderArchiveManifest({}))
+      const rejected = run()
+      expect(rejected.status).toBe(1)
+      expect(rejected.stderr).toContain('sealed manifest entry is missing')
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
   it('recognizes archived paths with POSIX and Windows separators', () => {
     expect(isArchivedAgentNotePath('.agents/notes/archived/process/example.md')).toBe(true)
     expect(isArchivedAgentNotePath('.agents\\notes\\archived\\process\\example.md')).toBe(true)

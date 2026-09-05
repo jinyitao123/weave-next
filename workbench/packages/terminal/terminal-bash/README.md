@@ -41,7 +41,6 @@ Mount the terminal service, a subprocess provider, the sandbox and policy servic
 - name: '@deepseek-ai/dsh-sandbox-local'
 - name: '@deepseek-ai/dsh-sandbox-policy'
 - name: '@deepseek-ai/dsh-terminal-bash'
-- name: '@deepseek-ai/dsh-tool-terminal'
 ```
 
 `danger-full-access` starts the shell directly. Confined modes require a same-world `ctx.sandbox` provider: without one, the spawn fails before the shell starts.
@@ -117,7 +116,6 @@ Read these pages when the package-level contract is not enough. They move from t
 
 - [Terminal subsystem reference](../../../docs/subsystems/terminal.md) — the service contract this backend implements and the generated `ctx.terminals` surface.
 - [terminal service](../terminal/README.md) — backend registration, owner fencing, and cleanup semantics.
-- [tool-terminal tools](../tool-terminal/README.md) — the model-facing tools that operate sessions.
 - [Subprocess seam](../../../docs/subsystems/subprocess.md) — the terminal primitive that owns PTY allocation and process-tree cleanup.
 - [Persistent PTY Agent Note](../../../.agents/notes/implemented/feature/2026-07-16-persistent-pty-sessions.md) — the capability design and deferred boundaries.
 - [Persistent pwsh Agent Note](../../../.agents/notes/implemented/architecture/2026-08-11-pwsh-persistent-pty.md) — the Windows substrate and the pwsh dialect.
@@ -131,7 +129,7 @@ Read these pages when the package-level contract is not enough. They move from t
 
 #### What the model sees
 
-This package registers no prompt or tool. Through `@deepseek-ai/dsh-tool-terminal` or another PTY consumer, the model may receive bounded startup output, send deltas, scrollback pages, readiness reasons, and cleanup errors.
+This package registers no prompt or tool. Through a PTY consumer, the model may receive bounded startup output, send deltas, scrollback pages, readiness reasons, and cleanup errors.
 
 #### Token effect
 

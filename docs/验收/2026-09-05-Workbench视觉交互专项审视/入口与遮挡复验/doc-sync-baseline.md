@@ -63,3 +63,27 @@ node node_modules/tsx/dist/cli.mjs scripts/verify-translation-pairing.ts \
 ```
 
 最后一条输出为 `9 named pair(s) consistent`。检查包含每组的英文、中文和 `.i18n.yaml` 一致性记录。三个 catalog 均先运行对应生成命令，再执行上述 `--check`，未手工修补行号。没有修改 checker、gate 或已有翻译配对规则，也没有为消除旧失败恢复已移除的独立产品入口。同步后未扩大运行全量 doc-sync，因此不将剩余项的预期结果表述为新的全量运行结果。
+
+## 2026-09-06 继续修复迁移遗留问题
+
+用户随后授权修复剩余问题，本轮基线更新为 `8e201fc`。以上记录保留原轮结论；本节记录新增处理范围和验证证据。
+
+### 退役网站的检查归属
+
+[第二阶段删除清单](../../../架构/2026-09-05-Workbench第二阶段删除清单.md) 的 A 类条目明确将 `workbench/website/` 归为“通用网站，非 Workbench 产品面”。当前 checkout 中该网站、`docs:build`/`docs:build:mpa` 脚本，以及 `project-doc-site.spec.ts`、`verify-doc-site-fragments.spec.ts` 均不存在。因此从 `run-gates.ts` 删除其构建与投影测试叶子，并同步 Windows 模式中相同旧网站的依赖关系；没有删掉现存文档的链接、类型、格式、双语、目录新鲜度或归档检查。`doc-sync` 从 32 个叶子收敛为 30 个实际存在的检查。
+
+### 保留严格检查的证据
+
+- 归档检查继续读取 Git 基线并比较每个封存哈希，仅将 `ref:path` 修正为相对工作区的 `ref:./path`。实际工作区通过 507 个冻结归档校验，归档内容及封存清单没有修改。
+- 新增回归在临时 Git 仓库内建立嵌套 `workbench/`，提交合法归档基线，运行真实 `verify-archived-agent-notes.ts` 得到退出码 0；随后删除工作区清单中的封存项，检查以退出码 1 和 `sealed manifest entry is missing` 拒绝。它证明路径修复没有绕过基线保护。
+- `run-gates.spec.ts` 与 `archived-agent-notes.spec.ts` 共 71 项测试通过；`doc-standard.spec.ts`、`gen-doc-graphs.spec.ts` 与 `gen-cordis-catalog-partition.spec.ts` 的 25 项测试通过。后者仍包含漏掉声明、错误分区等非法输入的拒绝用例。
+- 本轮修改的 8 个 TypeScript 脚本执行局部 `pnpm exec oxlint`，退出码为 0；`git diff --check -- workbench/scripts` 通过。
+- 清单清理仅删除文件系统中已不存在的服务、库、README 例外和 LSP 类型源；现存服务完整性、类型链接覆盖和生成物新鲜度规则保持执行。新 `SessionHistoryProjection` 登记为有明确 `session-controller/README.md` 归属的服务注册参数，未通过基础类型列表隐藏它。
+
+### 最终复验
+
+主线程源码及双语文档稳定后，重新生成 config、persistence、Cordis、Cordis inspect、client、tool、module graph 和文档图表，并同步中文内容。最终从 `workbench/` 执行 `pnpm run doc-sync`，退出码为 0，结果为 `30 passed, 0 failed, 0 skipped in 24.03s`。其中包括真实 Host 构建后的 doc-typecheck、服务类型链接覆盖、全部目录新鲜度、Markdown 相对链接、双语配对、README 内容要求和冻结归档检查。
+
+最后一次失败涉及终端包清理旧工具说明后缺少 Model Experience 的代码锚定，已补入现存 `ctx.terminals`、`registerBackend`、`spawn(owner, request)` 的间接贡献说明，中英文同步；全量 230 个 README 通过。历史机制旧 note 也已链接新投影历史决策，明确保留仍生效的 journal、canonical baseline 与 Gateway 规则。
+
+构建期间发现新增 e2e 被误归入 Client 编译项目，产生 800 个未跟踪的 `src/` 同名编译文件。主线程修正 Host include 与 Client exclude 后，按清单仅清理这些有对应 `.ts`/`.tsx` 源文件的 `.js`、`.js.map`、`.d.ts`、`.d.ts.map` 产物；检查确认残留为 0、`workbench/vendor` 无工作区改动。没有通过放宽源码扫描规则来隐藏这次污染。文档与检查脚本的 `git diff --check` 通过。

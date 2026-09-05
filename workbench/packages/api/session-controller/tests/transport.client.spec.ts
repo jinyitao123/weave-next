@@ -134,6 +134,50 @@ class ScriptedSessionRemote implements SessionTransportRemote {
 }
 
 describe('Session Client stream adapters', () => {
+  it('retains projection ranges across opening, live append, and older-page loading', async () => {
+    const range: SessionHistoryRecord = { type: 'projection', event: {
+      type: 'history/projection', seq: 11, time: 11, data: { key: 'workTask', throughSeq: 12_000 },
+    } }
+    const olderRange: SessionHistoryRecord = { type: 'projection', event: {
+      type: 'history/projection', seq: 1, time: 1, data: { key: 'workTask', throughSeq: 9 },
+    } }
+    const opening: SessionFollowFrame = { ...snapshot(12_000, [entry(10), range], true) as Extract<SessionFollowFrame, { type: 'snapshot' }>,
+      projections: { asOfSeq: 12_000, values: { workTask: null } },
+    }
+    const remote = new ScriptedSessionRemote(
+      [{ frames: [opening, entry(12_001)], hold: true }],
+      [{ ok: true, value: page([entry(0), olderRange]) }],
+    )
+    const changes: SessionJournalChange[] = []
+    const stream = new SessionEventStream(sessionClient(remote), ADDRESS, {
+      publish: (change) => { changes.push(change) }, failed: vi.fn(),
+    })
+    await stream.open({})
+    await vi.waitFor(() => { expect(changes).toHaveLength(2) })
+    await stream.prepend({ beforeSeq: 10 })
+    expect(changes.map(change => change.type)).toEqual(['replace', 'append', 'prepend'])
+    expect(remote.pageRequests).toEqual([{ address: ADDRESS, throughSeq: 12_001, beforeSeq: 10,
+      projectionBaseline: { asOfSeq: 12_000, keys: ['workTask'] },
+    }])
+    expect(changes[0]).toMatchObject({ entries: [entry(10), range] })
+    expect(changes[2]).toMatchObject({ entries: [entry(0), olderRange] })
+    await stream.dispose()
+  })
+
+  it.each([
+    { key: 'missing', throughSeq: 2 },
+    { key: 'workTask', throughSeq: 3 },
+  ])('rejects projection ranges not covered by the opening baseline (%j)', async (data) => {
+    const range: SessionHistoryRecord = { type: 'projection', event: { type: 'history/projection', seq: 0, time: 0, data } }
+    const opening: SessionFollowFrame = { ...snapshot(2, [range]) as Extract<SessionFollowFrame, { type: 'snapshot' }>,
+      projections: { asOfSeq: 2, values: { workTask: null } },
+    }
+    const remote = new ScriptedSessionRemote([{ frames: [opening], hold: true }], [])
+    const stream = new SessionEventStream(sessionClient(remote), ADDRESS, { publish: vi.fn(), failed: vi.fn() })
+    await expect(stream.open({})).rejects.toThrow('not covered by the accepted baseline')
+    await stream.dispose()
+  })
+
   it('validates a packed logical range before publishing one compact Client entry', async () => {
     const row = chunks(1)
     const remote = new ScriptedSessionRemote(

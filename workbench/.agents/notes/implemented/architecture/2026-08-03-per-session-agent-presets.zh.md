@@ -4,6 +4,8 @@ Status: implemented
 
 [English](2026-08-03-per-session-agent-presets.md) | 中文
 
+迁移说明：本文保留原运行底座的决策依据；标注为历史路径的组件未包含在当前 Weave Workbench 工作区中。
+
 ## 问题
 
 一个 `dsh` 进程服务多个会话，但决定 agent（智能体）究竟是什么的那套组装——它的工具、人设、提示词段落、委派后端——由启动器所引导的 `cordis.yml` 一次性固定给整个进程。若某个部署希望一个 benchmark 精简 agent 与一个完整编码 agent 并存，就必须跑两个进程；而现有的变通方案（`apps/cli/config/minimal.cordis.yml`，一个用来禁用工具行的 `--config` 覆盖层）会一次性改变所有会话。
@@ -78,7 +80,7 @@ Status: implemented
 
 **把 agent 的 scope 键设为 preset。** 同一 preset 上的会话就能免费共享一层，但按 agent 的注册——`installAgentLlmTarget`、按 agent 的工具限制——会跨会话相撞。
 
-**把每个 preset 作为子进程运行。** [`subagent-dsh-sdk`](../../../../packages/subagent/subagent-dsh-sdk/README.zh.md) 已经证明完整的子 harness 可行，隔离性也会是绝对的。但这同时意味着要按会话代理流式输出、审批与投影，那是一个传输层项目，而非组装问题。
+**把每个 preset 作为子进程运行。** `subagent-dsh-sdk` (历史路径 `../../../../packages/subagent/subagent-dsh-sdk/README.zh.md`) 已经证明完整的子 harness 可行，隔离性也会是绝对的。但这同时意味着要按会话代理流式输出、审批与投影，那是一个传输层项目，而非组装问题。
 
 **给产品 subagent 增加全局启用设置与独立设置页。** 进程级值会与 preset 争夺模型可见工具的所有权，也无法表达两个会话使用不同组装。产品 provider 留在宿主，普通 preset 行分别暴露 Codex 与 Claude Code 工具。
 

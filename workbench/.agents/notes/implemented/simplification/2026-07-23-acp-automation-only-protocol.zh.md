@@ -6,6 +6,8 @@ Status: implemented
 
 > 仅面向自动化的边界仍然有效。[标准 ACP v1 自动化控制](../feature/2026-08-22-standard-acp-automation-controls.zh.md)仅取代本说明中仅支持提示词的方法、配置、MCP、更新和生命周期清单；它不会把 ACP 恢复为 UI。
 
+迁移说明：本文保留原运行底座的决策依据；标注为历史路径的组件未包含在当前 Weave Workbench 工作区中。
+
 ## 问题
 
 ACP（Agent Client Protocol）桥接层已经变成第二套交互式产品 UI。它将持久事件转换为编辑器卡片、终端元数据、diff、计划、标题、推理（reasoning）、命令、模式、模型和权限选择器、会话导航以及面向人类的询问。这些职责与 TUI 和 Web 客户端重复，同时将自动化传输层与 UI 服务、持久化查询、展示策略和编辑器特定约定耦合在一起。
@@ -22,7 +24,7 @@ ACP 仍有一个有用的职责：另一个 agent（智能体）或自动化控�
 
 桥接层只发出已提交的语义事实。每个会话使用一条 Promise 链，在异步重新读取并校验助手图片引用、将其转换为 ACP base64 交付时，保持 reasoning、assistant 块、工具生命周期、配置和用量更新顺序；对象缺失或损坏会使提示词交付失败，而不是变成占位符。原始分片、待办事项、计划、标题、重试标记、终端元数据、diff、位置和展示投影不会进入 ACP wire。标准模型和 reasoning 选项、列出／恢复／关闭以及 stdio／HTTP MCP 属于自动化控制；会话加载／删除／fork、命令、模式、plan 评审、终端、客户端文件系统操作和面向人类的询问仍不受支持。
 
-保留一次性 `session/request_permission`。它是为桥接层拥有的 agent 提供的机器策略通道，而不是面向人类的审批 UI：应答者只接受桥接层当前会话映射中登记的同一 agent 对象；不属于桥接层当前 agent 的请求或未关联具体调用的请求会继续委派；RPC 失败则映射为故障时默认拒绝的 `unavailable` 结果。客户端可选择允许一次、拒绝一次或取消，桥接层绝不会将该响应转换为持久授权。询问策略仍归审批 seam 及其生产者所有；[`dsh-subagent-acp`](../../../../packages/subagent/subagent-acp/README.zh.md) 会以程序化方式使用该通道。
+保留一次性 `session/request_permission`。它是为桥接层拥有的 agent 提供的机器策略通道，而不是面向人类的审批 UI：应答者只接受桥接层当前会话映射中登记的同一 agent 对象；不属于桥接层当前 agent 的请求或未关联具体调用的请求会继续委派；RPC 失败则映射为故障时默认拒绝的 `unavailable` 结果。客户端可选择允许一次、拒绝一次或取消，桥接层绝不会将该响应转换为持久授权。询问策略仍归审批 seam 及其生产者所有；`dsh-subagent-acp` (历史路径 `../../../../packages/subagent/subagent-acp/README.zh.md`) 会以程序化方式使用该通道。
 
 应用组装包含 agent 主干、持久化、检查点策略、派生会话查询和 ACP 传输层。ACP 桥接层直接读取持久化以生成标准可恢复摘要；它不公开命令、会话引用、plan mode、权限选择器或用户问题展示接口。
 

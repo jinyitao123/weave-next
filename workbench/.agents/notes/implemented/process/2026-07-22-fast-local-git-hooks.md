@@ -4,6 +4,8 @@ Status: implemented
 
 English | [中文](2026-07-22-fast-local-git-hooks.zh.md)
 
+Migration scope: this note preserves decisions from the original runtime; components marked as historical paths are not included in the current Weave Workbench workspace.
+
 ## Problem
 
 An agent already runs the tests and checks that exercise its change, while commit, push, and CI can each repeat increasingly broad subsets of the same work. A full pre-push suite therefore delays every publication, amplifies unrelated local flakes, and gives no new signal when CI immediately runs the exhaustive matrix again.
@@ -12,7 +14,7 @@ Fast hooks still need to reject cheap, high-confidence defects before work leave
 
 ## Decision
 
-[lefthook.yml](../../../../lefthook.yml) keeps both hooks as bounded local checkpoints. Pre-commit runs sequentially: a project-free [Oxlint](2026-07-29-oxlint-linter.md) profile validates changed JavaScript and TypeScript, applies safe fixes with a [bounded retry](2026-08-09-oxlint-only-fix-workflow.md), and re-stages them; `git diff --cached --check` rejects staged whitespace errors, and the vendor manifest guard checks vendored-source metadata. Pre-push runs `pnpm run typecheck`, which prepares the generated Host Typert contracts before the Client incremental typecheck.
+lefthook.yml (historical path `../../../../lefthook.yml`) keeps both hooks as bounded local checkpoints. Pre-commit runs sequentially: a project-free [Oxlint](2026-07-29-oxlint-linter.md) profile validates changed JavaScript and TypeScript, applies safe fixes with a [bounded retry](2026-08-09-oxlint-only-fix-workflow.md), and re-stages them; `git diff --cached --check` rejects staged whitespace errors, and the vendor manifest guard checks vendored-source metadata. Pre-push runs `pnpm run typecheck`, which prepares the generated Host Typert contracts before the Client incremental typecheck.
 
 Pre-commit does not run type analysis, tests, snapshots, documentation checks, builds, hygiene, or the gate scheduler. Pre-push adds only the Host contract build required by repository typecheck. The opt-in `check:all` package script selects the `check-all` scheduler inventory in [scripts/run-gates.ts](../../../../scripts/run-gates.ts) independently of the hooks; it is a contributor command, not an agent instruction.
 

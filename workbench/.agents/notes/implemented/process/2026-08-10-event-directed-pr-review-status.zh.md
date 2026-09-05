@@ -4,6 +4,8 @@ Status: implemented
 
 [English](2026-08-10-event-directed-pr-review-status.md) | 中文
 
+迁移说明：本文保留原运行底座的决策依据；标注为历史路径的组件未包含在当前 Weave Workbench 工作区中。
+
 ## 问题
 
 Issue 所在 Project 中的状态记录了解决工作的下一步由谁负责。PR（Pull Request）的汇总评审状态可以回答 GitHub 是否认为该 PR 可合并，却无法表示这次交接：作者修复代码并重新请求评审后，先前的 `CHANGES_REQUESTED` 评审仍可能继续生效。
@@ -18,11 +20,11 @@ Issue 生命周期工作流把评审 webhook 视为命令。`pull_request.review
 
 处理器仅解析同一仓库内严格匹配的 `Fixes`、`Closes` 或 `Resolves` 引用。它不会更改终态、将没有 Project 状态的 Issue 添加到 Project、依赖 PR 元数据是否有效、查询 `reviewDecision`、重建评审轮次、从 Issue 反向查找 PR，或运行定时协调器。
 
-[Issue 生命周期](../../../../.github/workflows/issue-lifecycle.yml)仍不订阅 `pull_request.ready_for_review`；两条事件命令均不依赖该动作。[Issue 策略](../../../../.github/workflows/issue-policy.yml)保留 `ready_for_review`，因为人工提交的 PR 进入评审时，该工作流负责执行必需检查门禁。
+Issue 生命周期 (历史路径 `../../../../.github/workflows/issue-lifecycle.yml`)仍不订阅 `pull_request.ready_for_review`；两条事件命令均不依赖该动作。Issue 策略 (历史路径 `../../../../.github/workflows/issue-policy.yml`)保留 `ready_for_review`，因为人工提交的 PR 进入评审时，该工作流负责执行必需检查门禁。
 
 ## 验证
 
-[Issue 管理测试](../../../../.github/issue-management/policy.test.mjs)锁定事件到命令的映射、请求修改命令后重复请求评审所触发的状态转换、请求修改后的状态回退、终态保护，以及保留人工覆盖状态。[工作流测试](../../../../scripts/ci-workflow.spec.ts)锁定订阅事件、job 级无 `if` 且 token/看板步骤带 step 级门控（使 approved/commented 评审以 pass 呈现且不铸 token），以及独立的 `ready_for_review` 策略触发器。
+Issue 管理测试 (历史路径 `../../../../.github/issue-management/policy.test.mjs`)锁定事件到命令的映射、请求修改命令后重复请求评审所触发的状态转换、请求修改后的状态回退、终态保护，以及保留人工覆盖状态。[工作流测试](../../../../scripts/ci-workflow.spec.ts)锁定订阅事件、job 级无 `if` 且 token/看板步骤带 step 级门控（使 approved/commented 评审以 pass 呈现且不铸 token），以及独立的 `ready_for_review` 策略触发器。
 
 ## 考虑过的替代方案
 

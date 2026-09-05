@@ -1,0 +1,62 @@
+{
+  "date": "2026-09-05T23:27:40.451Z",
+  "passed": true,
+  "openings": [
+    {
+      "sessionId": "session-6a3a6d62-4c31-46bf-ab9a-ca253ba3b859",
+      "teamName": "design-studio 体验验收",
+      "status": "waiting",
+      "frameCharacters": 143111,
+      "frameUtf8Bytes": 175519,
+      "records": 118,
+      "cursor": 23243,
+      "baselineCursor": 23243,
+      "taskSnapshots": 0,
+      "representedSnapshots": 21090,
+      "ranges": 8,
+      "messages": 9,
+      "members": 4,
+      "attempts": 1,
+      "deliverables": 1
+    },
+    {
+      "sessionId": "session-6a3a6d62-4c31-46bf-ab9a-ca253ba3b859",
+      "teamName": "design-studio 体验验收",
+      "status": "waiting",
+      "frameCharacters": 143111,
+      "frameUtf8Bytes": 175519,
+      "records": 118,
+      "cursor": 23243,
+      "baselineCursor": 23243,
+      "taskSnapshots": 0,
+      "representedSnapshots": 21090,
+      "ranges": 8,
+      "messages": 9,
+      "members": 4,
+      "attempts": 1,
+      "deliverables": 1
+    }
+  ],
+  "views": [
+    {
+      "label": "large-history-opened",
+      "documentWidth": 1440,
+      "viewportWidth": 1440,
+      "nodes": 969,
+      "bodyCharacters": 1307,
+      "hasDialogue": true,
+      "sceneVisible": true
+    },
+    {
+      "label": "large-history-reloaded",
+      "documentWidth": 1440,
+      "viewportWidth": 1440,
+      "nodes": 969,
+      "bodyCharacters": 1307,
+      "hasDialogue": true,
+      "sceneVisible": true
+    }
+  ],
+  "pageErrors": [],
+  "heapUsedBytes": 60310428
+}

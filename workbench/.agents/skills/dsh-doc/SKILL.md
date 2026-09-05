@@ -94,7 +94,7 @@ After the structural pass, hunt the slop checklist with the cheapest probes firs
 
 ## Website publication
 
-The website is a tested projection, never a second copy: [website/docs.ts](../../../website/docs.ts) is the explicit public allowlist mapping canonical `docs/` sources into route trees, [scripts/project-doc-site.ts](../../../scripts/project-doc-site.ts) rewrites them into the disposable `website/.generated/` tree, and VitePress builds that tree. Repository Markdown stays the only editable content source; translations stay sibling pairs (`foo.md`, `foo.zh.md`, `foo.i18n.yaml`), never locale directories. Edit an already published page in its canonical source only; add one manifest entry for a new page; update source, manifest entry, and inbound links atomically for a move or removal; never edit `website/.generated/`, `website/.cache/`, or `website/.dist/`. Set every `DocsPage` field deliberately and honor the projector's link rules; see [references/website-sync.md](references/website-sync.md) for the fields, sidebar collections, and preview commands. Synchronizing content into the build does not publish it: deployment stays a separate, explicitly requested step.
+This workspace ships no standalone documentation website or VitePress projector. Edit canonical repository Markdown and its bilingual counterpart; validate it through the retained documentation checks. Product setup and deployment belong to the repository root README. See [the website scope reference](references/website-sync.md) for the removed upstream publishing path.
 
 ## Detailed references
 

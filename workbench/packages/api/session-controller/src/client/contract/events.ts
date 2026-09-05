@@ -1,15 +1,16 @@
 /** Observable contiguous Session event window consumed by domain assemblers. */
 import { notifySubscribers, type ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
-import type { ChunkRowEvent } from '../../types.ts'
+import type { ChunkRowEvent, SessionProjectionRun } from '../../types.ts'
 
 /** Standard Session event or compact historical Assistant run. */
-export type SessionEventLike = SessionEvent | ChunkRowEvent
+export type SessionEventLike = SessionEvent | ChunkRowEvent | SessionProjectionRun['event']
 
 /** Client history entry retaining its coarse transport discriminator. */
 export type SessionEventLikeEntry =
   | { readonly type: 'event'; readonly event: SessionEvent }
   | { readonly type: 'chunks'; readonly event: ChunkRowEvent }
+  | SessionProjectionRun
 
 /** Scalar live entry accepted by append-only Client paths. */
 export type SessionLiveEventEntry = Extract<SessionEventLikeEntry, { readonly type: 'event' }>

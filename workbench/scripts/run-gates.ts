@@ -401,7 +401,6 @@ function ciStaticGates(options: { ownsBuild: boolean }): Gate[] {
           docTypecheckScript: 'doc-typecheck:contracts-ready',
         }
         : {},
-      docsBuildScript: 'docs:build:mpa',
     }),
     pnpmScript('module-graph', 'verify-module-graph', { label: 'module graph' }),
     pnpmScript('knip', 'knip'),
@@ -490,7 +489,6 @@ function webSnapshotGate(needs: string[], after?: string[]): Gate {
 function ciWindowsBlockingGates(): Gate[] {
   return [
     ciBuildGate('windows-build', { label: 'build' }),
-    pnpmScript('windows-site', 'docs:build', { label: 'production site' }),
   ]
 }
 
@@ -501,20 +499,17 @@ function ciWindowsCompleteGates(): Gate[] {
   }))
   const coverageAfter = coverage.map(gate => gate.id)
   const observational = ciWindowsObservationalGates()
-    // The required production site replaces the observational MPA build; both
-    // VitePress modes write the same output directory and cannot overlap.
-    .filter(gate => gate.id !== 'build' && gate.id !== 'docs-site-build')
+    .filter(gate => gate.id !== 'build')
     .map(gate => ({
       ...gate,
       allowFailure: true,
       after: [...new Set([
         ...coverageAfter,
-        ...(gate.after ?? []).map(id => id === 'docs-site-build' ? 'windows-site' : id),
+        ...(gate.after ?? []),
       ])],
     }))
   return [
     ciBuildGate(),
-    pnpmScript('windows-site', 'docs:build', { label: 'production site' }),
     ...coverage,
     ...observational,
   ]
@@ -691,17 +686,15 @@ function docSyncLeafGates(options: {
   docTypecheckNeeds?: string[]
   docTypecheckEnv?: Record<string, string | undefined>
   docTypecheckScript?: 'doc-typecheck' | 'doc-typecheck:contracts-ready'
-  docsBuildScript?: 'docs:build' | 'docs:build:mpa'
 } = {}): Gate[] {
   const docTypecheckOptions: Partial<Gate> = {}
   if (options.docTypecheckNeeds !== undefined) docTypecheckOptions.needs = options.docTypecheckNeeds
   if (options.docTypecheckEnv !== undefined) docTypecheckOptions.env = options.docTypecheckEnv
   return [
-    // Stable FIFO starts the longest leaves first; only docs-site-build writes website/.generated.
+    // Stable FIFO starts the longest documentation leaves first.
     ...options.includeDocTypecheck === false
       ? []
       : [pnpmScript('doc-typecheck', options.docTypecheckScript ?? 'doc-typecheck', docTypecheckOptions)],
-    pnpmScript('docs-site-build', options.docsBuildScript ?? 'docs:build', { label: 'documentation build' }),
     pnpmScript('doc-graphs', 'verify-doc-graphs', { label: 'doc graphs' }),
     pnpmScript('markdown-links', 'verify-md-links', { label: 'markdown links', quick: true }),
     pnpmScript('type-equivalence', 'verify-type-equiv', { label: 'type equivalence', quick: true }),
@@ -733,9 +726,6 @@ function docSyncLeafGates(options: {
       label: 'documentation standard tests',
       quick: true,
     }),
-    pnpmExec('docs-site-projection', ['vitest', 'run', 'scripts/project-doc-site.spec.ts', 'scripts/verify-doc-site-fragments.spec.ts'], {
-      label: 'documentation site checks',
-    }),
     pnpmScript('package-readme-limitations', 'verify-package-readme-limitations', { label: 'package README limitations', quick: true }),
   ]
 }
@@ -743,7 +733,7 @@ function docSyncLeafGates(options: {
 /**
  * The quick comprehensive documentation-standard aggregate for `test:docs`.
  * It covers the prose, pairing, README, budget, and Agent Note gates
- * without builds, generator regeneration, or the VitePress site build.
+ * without builds or generator regeneration.
  */
 function docQuickLeafGates(): Gate[] {
   return docSyncLeafGates({ includeDocTypecheck: false }).filter(gate => gate.quick === true)

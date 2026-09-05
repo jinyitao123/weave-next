@@ -14,10 +14,12 @@ import type {
   SessionFollowRequest,
   SessionFollowFrame,
   SessionHistoryRecord,
+  SessionHistoryProjection,
   SessionPage,
   SessionPageRequest,
   SessionProjectionBaseline,
   SessionProjectionValues,
+  SessionProjectionReceipt,
   SessionWireEvent,
 } from './types.ts'
 
@@ -27,6 +29,7 @@ const MESSAGE_TYPES = new Set(['user/message', 'assistant/message'])
 /** Implements cold-safe history operations delegated by the Session Controller. */
 export class SessionHistoryController {
   private readonly closeFollowers = new Set<() => void>()
+  private readonly historyProjections = new Map<string, { readonly key: string; refs: number }>()
 
   /**
    * @param ctx - Host context carrying Session query and projection services.
@@ -40,6 +43,33 @@ export class SessionHistoryController {
       for (const close of this.closeFollowers) close()
       this.closeFollowers.clear()
     }, 'session-controller.history')
+  }
+
+  /**
+   * Register the domain owner of projection-backed history snapshots.
+   * @param definition - projection key and snapshot event types with no independent Client facts.
+   * @returns disposer releasing this registration without affecting other owners of the same key.
+   */
+  registerProjection(definition: SessionHistoryProjection): () => void {
+    const types = new Set(definition.eventTypes)
+    for (const type of types) {
+      const registered = this.historyProjections.get(type)
+      if (registered !== undefined && registered.key !== definition.key) {
+        throw new Error(`session history event ${JSON.stringify(type)} is already owned by projection ${JSON.stringify(registered.key)}`)
+      }
+    }
+    const registrations = [...types].map((type) => {
+      const registered = this.historyProjections.get(type) ?? { key: definition.key, refs: 0 }
+      registered.refs++
+      this.historyProjections.set(type, registered)
+      return { type, registered }
+    })
+    return () => {
+      for (const { type, registered } of registrations) {
+        registered.refs--
+        if (registered.refs === 0) this.historyProjections.delete(type)
+      }
+    }
   }
 
   /**
@@ -71,7 +101,7 @@ export class SessionHistoryController {
       request.maxMessages ?? DEFAULT_MAX_MESSAGES,
       request.throughSeq,
     )
-    const records = pageRecords(page.events)
+    const records = pageRecords(page.events, this.projectionKeys(request.projectionBaseline), request.projectionBaseline?.asOfSeq)
     return {
       records,
       hasMore: page.hasMore,
@@ -127,15 +157,19 @@ export class SessionHistoryController {
       const cursor = source.cursor
       snapshotCursor = cursor
       const page = paginate(events, undefined, request.maxMessages ?? DEFAULT_MAX_MESSAGES)
+      const projections = source.projections === undefined
+        ? { asOfSeq: cursor, values: {} }
+        : projectionBlock(source.projections)
       yield {
         type: 'snapshot',
         header: source.header,
         cursor,
-        records: pageRecords(page.events),
+        records: pageRecords(page.events, this.projectionKeys({
+          asOfSeq: projections.asOfSeq,
+          keys: Object.keys(projections.values),
+        }), projections.asOfSeq),
         hasMore: page.hasMore,
-        projections: source.projections === undefined
-          ? { asOfSeq: cursor, values: {} }
-          : projectionBlock(source.projections),
+        projections,
       }
       if (address.kind === 'session' && source.source === 'prepared') {
         const promotion = source.retain()
@@ -166,6 +200,15 @@ export class SessionHistoryController {
       disposeCreated()
       disposeEvent()
     }
+  }
+
+  private projectionKeys(receipt: SessionProjectionReceipt | undefined): ReadonlyMap<string, string> {
+    const keys = new Map<string, string>()
+    if (receipt === undefined) return keys
+    for (const [type, registration] of this.historyProjections) {
+      if (receipt.keys.includes(registration.key)) keys.set(type, registration.key)
+    }
+    return keys
   }
 
   private async sourceFor(
@@ -220,6 +263,12 @@ function validatePageRequest(request: SessionPageRequest): void {
   if (request.maxMessages !== undefined
     && (!Number.isSafeInteger(request.maxMessages) || request.maxMessages <= 0)) {
     reject('bad-request', 'maxMessages must be a positive safe integer', {})
+  }
+  if (request.projectionBaseline !== undefined
+    && (!Number.isSafeInteger(request.projectionBaseline.asOfSeq)
+      || request.projectionBaseline.asOfSeq < -1
+      || request.projectionBaseline.asOfSeq > request.throughSeq)) {
+    reject('bad-request', 'projection baseline must cover an integer cursor within the requested history', {})
   }
 }
 
@@ -343,8 +392,37 @@ function chunkEntryFor(row: ChunkRow): SessionChunkRun {
 }
 
 /** Encode one bounded logical page without changing its pagination cut. */
-function pageRecords(events: readonly SessionEvent[]): SessionHistoryRecord[] {
-  return packChunkRuns(events).map(record => isChunkRow(record)
-    ? chunkEntryFor(record)
-    : entryFor(record))
+function pageRecords(
+  events: readonly SessionEvent[],
+  projectionKeys: ReadonlyMap<string, string>,
+  asOfSeq = -1,
+): SessionHistoryRecord[] {
+  const result: SessionHistoryRecord[] = []
+  for (const record of packChunkRuns(events)) {
+    if (isChunkRow(record)) {
+      result.push(chunkEntryFor(record))
+      continue
+    }
+    // Surface records remain inspectable even if a provider declares their type.
+    const key = !('surfaceOp' in record) && record.seq <= asOfSeq
+      ? projectionKeys.get(record.type)
+      : undefined
+    if (key === undefined) {
+      result.push(entryFor(record))
+      continue
+    }
+    const previous = result.at(-1)
+    if (previous?.type === 'projection' && previous.event.data.key === key
+      && previous.event.data.throughSeq + 1 === record.seq) {
+      result[result.length - 1] = { ...previous, event: {
+        ...previous.event, data: { key, throughSeq: record.seq },
+      } }
+    } else {
+      result.push({ type: 'projection', event: {
+        type: 'history/projection', seq: record.seq, time: record.time,
+        data: { key, throughSeq: record.seq },
+      } })
+    }
+  }
+  return result
 }

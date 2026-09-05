@@ -109,7 +109,6 @@ Read these pages when this backend's view is not enough: the subsystem reference
 
 - [Storage subsystem](../../../docs/subsystems/storage.md) — the backend contract, domain semantics, and generated API.
 - [Storage package map](../README.md) — the family's packages and their repository position.
-- [SQLite storage backend](../storage-sqlite/README.md) — the point-update medium for high-frequency data.
 - [domain KV storage Agent Note](../../../.agents/notes/proposed/architecture/2026-07-24-domain-kv-storage-and-workspace.md) — the design behind the backend family and its deferred work.
 
 -----
