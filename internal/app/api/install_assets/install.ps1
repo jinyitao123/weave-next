@@ -40,4 +40,4 @@ try {
 Write-Host "Installed Weave runtime at $Bin"
 Write-Host "Status: Get-ScheduledTask -TaskName WeaveRuntime | Get-ScheduledTaskInfo"
 Write-Host "Logs: Task Scheduler > Task Scheduler Library > WeaveRuntime > History"
-Write-Host "Return to Weave runtime maintenance to check the node connection status."
+Write-Host "Return to Workbench runtime settings to check the node connection status."

@@ -3,11 +3,13 @@ package api
 import (
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/labstack/echo/v4"
 )
 
 var buildCommit = "unknown"
+var buildVersion = "development"
 
 // SetBuildCommit sets the source revision reported by the health endpoint.
 func SetBuildCommit(commit string) {
@@ -18,10 +20,19 @@ func SetBuildCommit(commit string) {
 	buildCommit = commit
 }
 
+// SetBuildVersion sets the product version reported by the health endpoint.
+func SetBuildVersion(version string) {
+	if strings.TrimSpace(version) == "" {
+		buildVersion = "development"
+		return
+	}
+	buildVersion = version
+}
+
 func (s *Server) handleHealth(c echo.Context) error {
 	response := map[string]string{
 		"status":       "ok",
-		"version":      "1.0.0",
+		"version":      buildVersion,
 		"build_commit": buildCommit,
 	}
 	if buildCommit == "unknown" && os.Getenv("WEAVE_DEV_MODE") == "true" {

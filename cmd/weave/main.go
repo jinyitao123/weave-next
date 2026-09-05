@@ -49,6 +49,7 @@ import (
 )
 
 var buildCommit = "unknown"
+var buildVersion = "development"
 
 func csvEnvOrDefault(name string, fallback []string) []string {
 	raw := strings.TrimSpace(os.Getenv(name))
@@ -122,6 +123,7 @@ func main() {
 	}
 
 	api.SetBuildCommit(buildCommit)
+	api.SetBuildVersion(buildVersion)
 
 	// "runtime" turns this binary into a remote runtime worker. "daemon" stays
 	// as a hidden alias so existing scripts keep working.

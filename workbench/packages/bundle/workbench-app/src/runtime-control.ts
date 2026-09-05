@@ -1,5 +1,7 @@
 /** Host-only runtime management proxy. Weave credentials never cross this boundary. */
 
+import { isIP } from 'node:net'
+import { networkInterfaces } from 'node:os'
 import { z } from 'zod'
 
 /** Secretless identity facts for one engine observed on a registered runtime. */
@@ -40,6 +42,65 @@ const mutationSchema = z.discriminatedUnion('action', [
 ])
 
 type Fetch = (input: string | URL, init?: RequestInit) => Promise<Response>
+
+function normalizedServiceUrl(value: string, name: string): URL {
+  const url = new URL(value.trim())
+  if (!['http:', 'https:'].includes(url.protocol) || url.username !== '' || url.password !== '' || url.search !== '' || url.hash !== '') {
+    throw new Error(`${name} must be an absolute HTTP(S) URL without credentials, query, or fragment`)
+  }
+  url.pathname = url.pathname.replace(/\/+$/u, '')
+  return url
+}
+
+function urlText(url: URL): string {
+  return url.href.replace(/\/$/u, '')
+}
+
+function privateIPv4Rank(address: string): number {
+  const octets = address.split('.').map(Number)
+  if (octets.length !== 4 || octets.some(value => !Number.isInteger(value) || value < 0 || value > 255)) return 4
+  const first = octets[0] ?? -1
+  const second = octets[1] ?? -1
+  if (first === 10 || (first === 172 && second >= 16 && second <= 31) || (first === 192 && second === 168)) return 0
+  if (first === 100 && second >= 64 && second <= 127) return 1
+  if (first === 169 && second === 254) return 4
+  if (first === 198 && (second === 18 || second === 19)) return 4
+  return 2
+}
+
+function localIPv4(interfaces: ReturnType<typeof networkInterfaces>): string | undefined {
+  return Object.values(interfaces).flatMap(items => items ?? [])
+    .filter(item => item.family === 'IPv4' && !item.internal && privateIPv4Rank(item.address) < 4)
+    .sort((left, right) => privateIPv4Rank(left.address) - privateIPv4Rank(right.address))[0]?.address
+}
+
+function needsReachableHost(hostname: string): boolean {
+  const host = hostname.replace(/^\[|\]$/gu, '').toLowerCase()
+  if (host === 'localhost' || host.endsWith('.localhost') || host === '0.0.0.0' || host === '::' || host === '::1') return true
+  if (isIP(host) === 4) return host.startsWith('127.')
+  return isIP(host) === 0 && !host.includes('.')
+}
+
+/**
+ * Resolve the Weave URL placed in one-time runtime connection commands.
+ * @param apiUrl - Weave URL used by the Workbench Host.
+ * @param configuredUrl - Optional public or otherwise externally routable deployment URL.
+ * @param interfaces - Host network interfaces, replaceable for deterministic tests.
+ * @returns A concrete HTTP(S) URL, preferring deployment configuration and then a reachable LAN address.
+ */
+export function resolveRuntimeServerUrl(
+  apiUrl: string,
+  configuredUrl?: string,
+  interfaces: ReturnType<typeof networkInterfaces> = networkInterfaces(),
+): string {
+  if (configuredUrl?.trim()) return urlText(normalizedServiceUrl(configuredUrl, 'runtimeServerUrl'))
+  const api = normalizedServiceUrl(apiUrl, 'apiUrl')
+  if (!needsReachableHost(api.hostname)) return urlText(api)
+  const address = localIPv4(interfaces)
+  if (address === undefined) return urlText(api)
+  api.hostname = address
+  return urlText(api)
+}
 
 function object(value: unknown): Record<string, unknown> | undefined {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -112,6 +173,7 @@ function failure(status: number): Response {
  * @param apiKey - Host-only bearer credential for Weave.
  * @param request - Authenticated browser request to proxy.
  * @param fetcher - HTTP implementation, replaceable in tests.
+ * @param runtimeServerUrl - Concrete URL that a runtime node can use to reach Weave.
  * @returns A browser-safe runtime response with no Weave credential or backend diagnostic text.
  */
 export async function handleWeaveRuntimeRequest(
@@ -119,6 +181,7 @@ export async function handleWeaveRuntimeRequest(
   apiKey: string,
   request: Request,
   fetcher: Fetch = fetch,
+  runtimeServerUrl: string = resolveRuntimeServerUrl(apiUrl),
 ): Promise<Response> {
   if (apiKey === '') return Response.json({ code: 'weave_disconnected' }, { status: 503 })
   const common = { headers: headers(apiKey), signal: AbortSignal.timeout(15_000) }
@@ -149,7 +212,8 @@ export async function handleWeaveRuntimeRequest(
     if (created === undefined || string(created.id) === '' || string(created.name) === '' || string(created.token) === '') {
       return Response.json({ code: 'runtime_token_missing' }, { status: 502 })
     }
-    return Response.json({ id: string(created.id), name: string(created.name), token: string(created.token) }, {
+    const result = { id: string(created.id), name: string(created.name), token: string(created.token), serverUrl: runtimeServerUrl }
+    return Response.json(result, {
       status: 201, headers: { 'Cache-Control': 'no-store' },
     })
   } catch {

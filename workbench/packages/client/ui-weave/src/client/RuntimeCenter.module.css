@@ -40,7 +40,7 @@ button:disabled { cursor: default; opacity: .5; }
 .dialog label small { color: var(--dsw-alias-label-tertiary); font-weight: 400; line-height: 17px; }
 .dialog input { box-sizing: border-box; width: 100%; padding: 8px 9px; border: 1px solid var(--dsw-alias-border-l3); border-radius: 7px; background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-primary); font: inherit; }
 .token, .install code { padding: 9px; overflow: auto; border-radius: 7px; background: var(--dsw-alias-markdown-code-block); overflow-wrap: anywhere; white-space: pre-wrap; font-size: 11px; }
-.install summary { cursor: pointer; color: var(--dsw-alias-label-secondary); font-size: 12px; }
+.install span { color: var(--dsw-alias-label-secondary); font-size: 12px; }
 .install code { display: block; margin-top: 7px; }
 @media (max-width: 520px) { .heading { flex-direction: column; } .runtime summary { grid-template-columns: 8px minmax(0, 1fr) auto; } .capacity { display: none; } .body dl { grid-template-columns: 1fr; } }
 @media (prefers-reduced-motion: no-preference) { .runtime summary, .headingActions button, .actions button { transition: color 140ms ease, background-color 140ms ease, border-color 140ms ease; } }

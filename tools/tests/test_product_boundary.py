@@ -24,13 +24,13 @@ class ProductBoundaryTests(unittest.TestCase):
         path.write_text(contents, encoding="utf-8")
         return path
 
-    def test_retired_business_ui_cannot_return_as_untracked_nested_source(self):
+    def test_retired_weave_ui_cannot_return_as_untracked_nested_source(self):
         self.source("weave-app/src/pages/project/NewPage.tsx", "export {};")
-        self.source("weave-app/src/api/conversations.ts", "export {};")
+        self.source("internal/app/webui/dist/index.html", "retired")
         errors = check(self.root)
         self.assertEqual(len(errors), 2, errors)
-        self.assertTrue(any("pages/project" in error for error in errors))
-        self.assertTrue(any("api/conversations.ts" in error for error in errors))
+        self.assertTrue(any("weave-app" in error for error in errors))
+        self.assertTrue(any("internal/app/webui" in error for error in errors))
 
     def test_all_six_retired_documents_are_rejected(self):
         for name in (
@@ -70,16 +70,14 @@ class ProductBoundaryTests(unittest.TestCase):
                     self.assertTrue(check(self.root))
                     path.unlink()
 
-    def test_runtime_engines_developer_tools_and_maintenance_ui_are_allowed(self):
+    def test_runtime_engines_and_developer_tools_are_allowed(self):
         self.source("internal/kernel/engine/codex.go", 'package engine\nconst name = "Codex"')
         self.source(".codex/config.toml", "# developer configuration")
-        self.source("weave-app/src/pages/RuntimesPage.tsx", "export {};")
         self.source("internal/app/bootstrap/bootstrap.go",
                     'package bootstrap\n// Codex remains a runtime engine.\n'
                     'type Result struct { APIURL string `json:"api_url"` }')
         self.source("internal/app/bootstrap/bootstrap_test.go",
                     'package bootstrap\nvar forbiddenField = "codex_toml"')
-        (self.root / "weave-app/src/features/conversation").mkdir(parents=True)
         self.assertEqual(check(self.root), [])
 
     def test_empty_wrong_or_incomplete_root_fails_closed(self):
@@ -97,7 +95,7 @@ class ProductBoundaryTests(unittest.TestCase):
              "--root", str(self.root)], capture_output=True, text=True,
         )
         self.assertEqual(result.returncode, 1)
-        self.assertIn("InboxPage.tsx", result.stderr)
+        self.assertIn("weave-app", result.stderr)
 
 
 if __name__ == "__main__":

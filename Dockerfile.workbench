@@ -1,15 +1,17 @@
 ARG NODE_IMAGE=node:22-slim
 ARG WEAVE_IMAGE=weave-platform:latest
+ARG NPM_REGISTRY=https://registry.npmjs.org
 
 FROM ${NODE_IMAGE} AS build
+ARG NPM_REGISTRY
 RUN --mount=type=cache,id=workbench-apt-cache,target=/var/cache/apt,sharing=locked \
   --mount=type=cache,id=workbench-apt-lists,target=/var/lib/apt/lists,sharing=locked \
-  --mount=type=cache,id=workbench-npm,target=/root/.npm,sharing=locked \
   rm -f /etc/apt/apt.conf.d/docker-clean \
   && apt-get update \
-  && apt-get install -y --no-install-recommends build-essential git musl-tools python3 ca-certificates \
-  && npm install --global pnpm@11.7.0 \
-  && printf 'registry=https://registry.npmmirror.com\nstore-dir=/pnpm/store\n' > /root/.npmrc
+  && apt-get install -y --no-install-recommends build-essential git musl-tools python3 ca-certificates
+RUN --mount=type=cache,id=workbench-npm,target=/root/.npm,sharing=locked \
+  npm install --global --no-audit --no-fund --registry="${NPM_REGISTRY}" pnpm@11.7.0 \
+  && printf 'registry=%s\nstore-dir=/pnpm/store\n' "${NPM_REGISTRY}" > /root/.npmrc
 WORKDIR /app
 COPY workbench/ .
 RUN --mount=type=cache,id=workbench-pnpm-store,target=/pnpm/store,sharing=locked \
@@ -28,12 +30,9 @@ FROM ${WEAVE_IMAGE} AS weave-runtime
 FROM ${NODE_IMAGE} AS runtime
 RUN --mount=type=cache,id=workbench-apt-cache,target=/var/cache/apt,sharing=locked \
   --mount=type=cache,id=workbench-apt-lists,target=/var/lib/apt/lists,sharing=locked \
-  --mount=type=cache,id=workbench-npm,target=/root/.npm,sharing=locked \
   rm -f /etc/apt/apt.conf.d/docker-clean \
   && apt-get update \
-  && apt-get install -y --no-install-recommends bash ca-certificates git ripgrep \
-  && npm install --global pnpm@11.7.0 \
-  && printf 'registry=https://registry.npmmirror.com\nstore-dir=/pnpm/store\n' > /root/.npmrc
+  && apt-get install -y --no-install-recommends bash ca-certificates git ripgrep
 WORKDIR /app
 COPY --from=build /app /app
 COPY --from=weave-runtime /usr/local/bin/weave /usr/local/bin/weave

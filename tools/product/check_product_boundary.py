@@ -15,37 +15,34 @@ RETIRED_PATHS = (
     "internal/app/api/agentsched.go",
     "console",
     "console-v2",
-    "weave-app/src/features/conversation",
-    "weave-app/src/features/projects",
-    "weave-app/src/pages/control-center",
-    "weave-app/src/pages/project",
-    "weave-app/src/workspace",
-    "weave-app/src/shell",
-    *(
-        f"weave-app/src/pages/{name}.tsx"
-        for name in (
-            "ActivityPage", "BoundaryPage", "ControlCenterPage", "ConversationPage",
-            "HumanTasksPage", "InboxPage", "LegacyProjectRedirect",
-            "RedirectConversation", "ScheduledPage",
-        )
-    ),
-    *(
-        f"weave-app/src/api/{name}.ts"
-        for name in (
-            "agents", "buildruns", "conversations", "deliverables", "features",
-            "humanTasks", "projects", "runs", "schedules", "settings", "sse",
-            "teams", "workflows",
-        )
-    ),
-    *(
-        f"weave-app/src/styles/{name}.css"
-        for name in (
-            "activity", "control-shell", "conversation", "human-tasks", "inbox",
-            "project-container", "project-data", "scheduled", "shell",
-        )
-    ),
-    "weave-app/scripts/ui-acceptance.mjs",
-    "weave-app/scripts/deliverable-side-panel-acceptance.mjs",
+    "workbench/.github",
+    "workbench/website",
+    "workbench/scripts/release",
+    "workbench/scripts/publish-npm-baseline.ts",
+    "workbench/scripts/build-python-release.py",
+    "workbench/scripts/install-lefthook.mjs",
+    "workbench/scripts/install-lefthook.spec.ts",
+    "workbench/lefthook.yml",
+    "workbench/python",
+    "workbench/packages/code-runtime/code-runtime-python",
+    "workbench/packages/e2b",
+    "workbench/packages/experimental/agent-team-web-profile",
+    "workbench/packages/experimental/client-ui-agent-team",
+    "workbench/packages/experimental/inspector",
+    "workbench/packages/lsp",
+    "workbench/packages/sdk/client",
+    "workbench/packages/session-query/tool-session-query",
+    "workbench/packages/session/session-title-all-prompts-llm",
+    "workbench/packages/storage/storage-sqlite",
+    "workbench/packages/subagent/subagent-acp",
+    "workbench/packages/subagent/subagent-claude-code",
+    "workbench/packages/subagent/subagent-codex",
+    "workbench/packages/subagent/subagent-dsh-sdk",
+    "workbench/packages/terminal/tool-terminal",
+    "workbench/packages/web/web-search-perplexity",
+    "weave-app",
+    "internal/app/webui",
+    "scripts/sync-webui.py",
     *(
         f"internal/app/api/{name}.go"
         for name in (

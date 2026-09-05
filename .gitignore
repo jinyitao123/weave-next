@@ -12,8 +12,6 @@ coverage.out
 __pycache__/
 
 # Node
-weave-app/node_modules/
-weave-app/dist/
 workbench/node_modules/
 workbench/website/node_modules/
 workbench/.dsh-build/
@@ -34,7 +32,6 @@ workbench/**/*.tsbuildinfo
 .env
 
 # never commit e2e auth state or prebuilt binaries
-weave-app/e2e/.auth/
 
 # 计划/ 自 2026-07-28 起纳入版本管理（原独立计划仓库历史已备份为 bundle）
 .demaike.env

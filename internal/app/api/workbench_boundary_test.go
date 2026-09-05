@@ -32,6 +32,17 @@ func TestWorkbenchBoundaryHasNoRetiredBusinessRoutes(t *testing.T) {
 	}
 }
 
+func TestWeaveServiceDoesNotServeAStandaloneBrowserUI(t *testing.T) {
+	s := workbenchBoundaryServer()
+	for _, path := range []string{"/", "/assets/retired.js", "/runtimes"} {
+		recorder := httptest.NewRecorder()
+		s.Echo.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, path, nil))
+		if recorder.Code != http.StatusNotFound {
+			t.Fatalf("GET %s returned %d: %s", path, recorder.Code, recorder.Body.String())
+		}
+	}
+}
+
 func TestWorkbenchBoundaryRetiredRequestsStayUnavailable(t *testing.T) {
 	s := workbenchBoundaryServer()
 	// Authenticate these probes so a still-registered route cannot pass merely

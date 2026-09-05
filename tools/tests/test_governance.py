@@ -131,8 +131,21 @@ class PlatformComposeTests(unittest.TestCase):
                                     env=env, capture_output=True, text=True, check=True)
             services = json.loads(result.stdout)["services"]
             self.assertEqual(services["weave"]["build"]["args"]["BUILD_COMMIT"], "governance-check")
+            self.assertEqual(services["weave"]["build"]["args"]["WEAVE_VERSION"], "0.1.0-dev")
+            self.assertEqual(services["weave"]["build"]["args"]["HTTP_PROXY"], "")
+            self.assertEqual(services["weave"]["build"]["args"]["http_proxy"], "")
+            self.assertEqual(
+                services["workbench"]["build"]["additional_contexts"]["weave-runtime"],
+                "service:weave",
+            )
+            self.assertEqual(services["workbench"]["build"]["args"]["WEAVE_IMAGE"], "weave-runtime")
+            self.assertEqual(services["workbench"]["build"]["args"]["HTTPS_PROXY"], "")
+            self.assertEqual(services["workbench"]["ports"][0]["target"], 3081)
+            self.assertEqual(services["workbench-gateway"]["network_mode"], "service:workbench")
             if profile:
                 self.assertEqual(services["runtime"]["environment"]["WEAVE_RUNTIME_TOKEN"], "")
+                self.assertEqual(services["runtime"]["environment"]["HTTP_PROXY"], "")
+                self.assertIn("weave", services["runtime"]["environment"]["NO_PROXY"])
         env["WEAVE_RUNTIME_TOKEN"] = "rtk_ci"
         result = subprocess.run(command + ["--profile", "runtime", "config", "--format", "json"],
                                 env=env, capture_output=True, text=True, check=True)

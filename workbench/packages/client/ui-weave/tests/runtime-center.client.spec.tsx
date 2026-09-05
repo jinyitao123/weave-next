@@ -52,8 +52,12 @@ describe('Weave runtime center', () => {
   })
 
   it('creates a node and presents its one-time token only after creation', async () => {
+    const writeText = vi.fn<(value: string) => Promise<void>>(() => Promise.resolve())
+    vi.stubGlobal('navigator', { clipboard: { writeText } })
     const fetcher = vi.fn<typeof fetch>(async (_input, init) => {
-      if (init?.method === 'POST') return Response.json({ id: 'runtime-2', name: '办公室 Mac', token: 'rtk_once_only' }, { status: 201 })
+      if (init?.method === 'POST') return Response.json({
+        id: 'runtime-2', name: '办公室 Mac', token: 'rtk_once_only', serverUrl: 'https://weave.example.com',
+      }, { status: 201 })
       return runtimeResponse()
     })
     vi.stubGlobal('fetch', fetcher)
@@ -64,6 +68,10 @@ describe('Weave runtime center', () => {
     fireEvent.click(view.getByRole('button', { name: '创建并获取令牌' }))
 
     expect(await view.findByText('rtk_once_only')).toBeTruthy()
+    expect(view.container.textContent).toContain("weave runtime --server 'https://weave.example.com' --runtime-token 'rtk_once_only'")
+    expect(view.container.textContent).not.toContain('<WEAVE')
+    fireEvent.click(view.getByRole('button', { name: '复制连接命令' }))
+    await waitFor(() => { expect(writeText).toHaveBeenCalledWith("weave runtime --server 'https://weave.example.com' --runtime-token 'rtk_once_only'") })
     await waitFor(() => { expect(fetcher).toHaveBeenCalledTimes(3) })
     const createInit = fetcher.mock.calls.find(([, init]) => init?.method === 'POST')?.[1]
     expect(typeof createInit?.body === 'string' ? JSON.parse(createInit.body) : null)

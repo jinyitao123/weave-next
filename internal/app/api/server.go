@@ -1,17 +1,11 @@
 package api
 
 import (
-	"bytes"
-	"compress/gzip"
 	"context"
 	"errors"
 	"fmt"
-	"io/fs"
 	"log/slog"
-	"mime"
-	"net/http"
 	"os"
-	"path"
 	"strconv"
 	"strings"
 	"sync"
@@ -28,7 +22,6 @@ import (
 	"github.com/jinyitao123/weave/internal/app/ownermem"
 	"github.com/jinyitao123/weave/internal/app/projects"
 	"github.com/jinyitao123/weave/internal/app/users"
-	"github.com/jinyitao123/weave/internal/app/webui"
 	"github.com/jinyitao123/weave/internal/base/deliverable"
 	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/base/fanout"
@@ -419,9 +412,9 @@ func (s *Server) registerRoutes() {
 
 	// Remote engine runtimes.
 	auth.GET("/runtimes", s.handleListRuntimes, orgScope)
-	auth.POST("/runtimes", s.handleCreateRuntime, orgScope)
+	auth.POST("/runtimes", s.handleCreateRuntime, RequireAnyRole("admin", "owner"), orgScope)
 	auth.PUT("/runtimes/:id", s.handleRenameRuntime, RequireAnyRole("admin", "owner"), orgScope)
-	auth.DELETE("/runtimes/:id", s.handleDeleteRuntime, orgScope)
+	auth.DELETE("/runtimes/:id", s.handleDeleteRuntime, RequireAnyRole("admin", "owner"), orgScope)
 	runtimeAPI := s.Echo.Group("/v1/runtime", s.runtimeAuthMiddleware())
 	runtimeAPI.POST("/hello", s.handleRuntimeHello)
 	runtimeAPI.POST("/heartbeat", s.handleRuntimeHeartbeat)
@@ -538,83 +531,6 @@ func (s *Server) registerRoutes() {
 	auth.DELETE("/agents/:name/memories/:id", s.handleDeleteMemory, memoryScope)
 	auth.POST("/agents/:name/memories/search", s.handleSearchMemories, memoryScope)
 
-	// Keep the UI fallback after every API route so it never shadows /v1.
-	s.registerWebUIRoutes()
-}
-
-func (s *Server) registerWebUIRoutes() {
-	uiFS, _ := webui.FS()
-	indexHTML, _ := fs.ReadFile(uiFS, "index.html")
-	indexHTMLGzip := gzipWebUIBytes(indexHTML)
-	fileServer := http.FileServer(http.FS(uiFS))
-
-	handler := func(c echo.Context) error {
-		requestPath := c.Request().URL.Path
-		if requestPath == "/v1" || strings.HasPrefix(requestPath, "/v1/") {
-			return echo.ErrNotFound
-		}
-
-		filePath := strings.TrimPrefix(requestPath, "/")
-		if info, err := fs.Stat(uiFS, filePath); err == nil && !info.IsDir() {
-			if strings.HasPrefix(filePath, "assets/") {
-				c.Response().Header().Set(echo.HeaderCacheControl, "public, max-age=31536000, immutable")
-			}
-			if acceptsGzip(c.Request().Header.Get(echo.HeaderAcceptEncoding)) && shouldGzipWebUIFile(filePath) {
-				body, err := fs.ReadFile(uiFS, filePath)
-				if err == nil {
-					c.Response().Header().Set(echo.HeaderContentEncoding, "gzip")
-					c.Response().Header().Add(echo.HeaderVary, "Accept-Encoding")
-					return c.Blob(http.StatusOK, webUIContentType(filePath, body), gzipWebUIBytes(body))
-				}
-			}
-			fileServer.ServeHTTP(c.Response(), c.Request())
-			return nil
-		}
-
-		if acceptsGzip(c.Request().Header.Get(echo.HeaderAcceptEncoding)) {
-			c.Response().Header().Set(echo.HeaderContentEncoding, "gzip")
-			c.Response().Header().Add(echo.HeaderVary, "Accept-Encoding")
-			return c.Blob(http.StatusOK, "text/html; charset=utf-8", indexHTMLGzip)
-		}
-		return c.Blob(http.StatusOK, "text/html; charset=utf-8", indexHTML)
-	}
-
-	s.Echo.GET("/*", handler)
-	s.Echo.HEAD("/*", handler)
-}
-
-func acceptsGzip(acceptEncoding string) bool {
-	for _, part := range strings.Split(acceptEncoding, ",") {
-		coding := strings.TrimSpace(strings.SplitN(part, ";", 2)[0])
-		if strings.EqualFold(coding, "gzip") {
-			return true
-		}
-	}
-	return false
-}
-
-func shouldGzipWebUIFile(filePath string) bool {
-	switch strings.ToLower(path.Ext(filePath)) {
-	case ".css", ".html", ".js", ".json", ".map", ".svg", ".txt", ".xml":
-		return true
-	default:
-		return false
-	}
-}
-
-func webUIContentType(filePath string, body []byte) string {
-	if contentType := mime.TypeByExtension(path.Ext(filePath)); contentType != "" {
-		return contentType
-	}
-	return http.DetectContentType(body)
-}
-
-func gzipWebUIBytes(body []byte) []byte {
-	var buffer bytes.Buffer
-	writer := gzip.NewWriter(&buffer)
-	_, _ = writer.Write(body)
-	_ = writer.Close()
-	return buffer.Bytes()
 }
 
 // Start runs the HTTP server.

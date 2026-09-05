@@ -753,10 +753,10 @@ describe('completion notices', () => {
     expect(notice).toContain('[notice truncated]\nDone; job_output.')
   })
 
-  it('keeps the complete PTY job id and collection action at the minimum PTY limit', async () => {
+  it('keeps the complete job id and collection action at the minimum limit', async () => {
     const { ctx } = await setup()
     for (let index = 0; index < 99; index += 1) {
-      const prior = producer({ kind: 'pty-send' })
+      const prior = producer({ kind: 'subagent' })
       ctx.jobs.start(prior.spec)
       prior.settle({ status: 'completed' })
       await tick()
@@ -765,7 +765,7 @@ describe('completion notices', () => {
     const owner = fakeAgent(ctx, 'sess-1', { inject })
     const target = producer({
       owner,
-      kind: 'pty-send',
+      kind: 'subagent',
       label: 'x'.repeat(1_000),
       outputLimitBytes: 64,
     })
@@ -777,15 +777,15 @@ describe('completion notices', () => {
     const content = (inject.mock.calls[0]?.[0] as { content?: Array<{ type: string; text?: string }> } | undefined)?.content
     const notice = content?.[0]?.text ?? ''
     expect(Buffer.byteLength(notice)).toBeLessThanOrEqual(64)
-    expect(notice).toBe('background job pty-send-100\n[notice truncated]\nDone; job_output.')
+    expect(notice).toBe('background job subagent-100\n[notice truncated]\nDone; job_output.')
   })
 
   it('reserves the collection-action tail when a producer supplies a smaller budget', async () => {
     const { ctx } = await setup()
     const inject = vi.fn()
     const owner = fakeAgent(ctx, 'sess-1', { inject })
-    const tiny = producer({ owner, kind: 'pty-send', label: 'x'.repeat(100), outputLimitBytes: 8 })
-    const short = producer({ owner, kind: 'pty-send', label: 'x'.repeat(100), outputLimitBytes: 32 })
+    const tiny = producer({ owner, kind: 'subagent', label: 'x'.repeat(100), outputLimitBytes: 8 })
+    const short = producer({ owner, kind: 'subagent', label: 'x'.repeat(100), outputLimitBytes: 32 })
     ctx.jobs.start(tiny.spec)
     ctx.jobs.start(short.spec)
 

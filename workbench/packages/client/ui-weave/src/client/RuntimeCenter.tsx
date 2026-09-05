@@ -24,7 +24,7 @@ interface RuntimeView {
   readonly createdAt: string
 }
 
-interface CreatedRuntime { readonly id: string; readonly name: string; readonly token: string }
+interface CreatedRuntime { readonly id: string; readonly name: string; readonly token: string; readonly serverUrl: string }
 type Props = PropsLocale<'weave'>
 type CenterProps = Props & { readonly onSnapshot?: (runtimes: readonly RuntimeView[]) => void }
 
@@ -70,6 +70,11 @@ function runtimeList(value: unknown): readonly RuntimeView[] | null {
   const items = object(value)?.runtimes
   if (!Array.isArray(items)) return null
   return items.map(runtime).filter((item): item is RuntimeView => item !== null)
+}
+
+function shellQuote(value: string): string {
+  const quote = String.fromCodePoint(39)
+  return `${quote}${value.replaceAll(quote, `${quote}"${quote}"${quote}`)}${quote}`
 }
 
 function engineLabel(engine: string, t: Props['t']): string {
@@ -160,7 +165,6 @@ export function RuntimeCenter({ t, onSnapshot }: CenterProps) {
   const [name, setName] = useState('')
   const [editing, setEditing] = useState<RuntimeView | null>(null)
   const [editedName, setEditedName] = useState('')
-  const [poolId, setPoolId] = useState('')
   const [removing, setRemoving] = useState<RuntimeView | null>(null)
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState('')
@@ -195,10 +199,10 @@ export function RuntimeCenter({ t, onSnapshot }: CenterProps) {
     const response = await mutate('POST', { action: 'create', name: name.trim() })
     if (response === null) return
     const value = object(await response.json() as unknown)
-    if (typeof value?.id !== 'string' || typeof value.name !== 'string' || typeof value.token !== 'string') {
+    if (typeof value?.id !== 'string' || typeof value.name !== 'string' || typeof value.token !== 'string' || typeof value.serverUrl !== 'string') {
       setError(t('runtimeCenter.error.token')); return
     }
-    setCreated({ id: value.id, name: value.name, token: value.token })
+    setCreated({ id: value.id, name: value.name, token: value.token, serverUrl: value.serverUrl })
     setCreating(false); setName('')
     await refresh()
   }
@@ -206,7 +210,7 @@ export function RuntimeCenter({ t, onSnapshot }: CenterProps) {
   const configure = async (event: FormEvent) => {
     event.preventDefault()
     if (editing === null || editedName.trim() === '') return
-    if (await mutate('PUT', { action: 'configure', id: editing.id, name: editedName.trim(), poolId: poolId.trim() }) === null) return
+    if (await mutate('PUT', { action: 'configure', id: editing.id, name: editedName.trim(), poolId: editing.poolId }) === null) return
     setEditing(null); setNotice(t('runtimeCenter.saved')); await refresh()
   }
 
@@ -220,6 +224,15 @@ export function RuntimeCenter({ t, onSnapshot }: CenterProps) {
     if (created === null) return
     try { await navigator.clipboard.writeText(created.token); setNotice(t('runtimeCenter.token.copied')) }
     catch { setNotice(t('runtimeCenter.token.copyFailed')) }
+  }
+
+  const connectionCommand = created === null ? '' : t('runtimeCenter.install.command', {
+    server: shellQuote(created.serverUrl), token: shellQuote(created.token),
+  })
+  const copyConnectionCommand = async () => {
+    if (connectionCommand === '') return
+    try { await navigator.clipboard.writeText(connectionCommand); setNotice(t('runtimeCenter.install.copied')) }
+    catch { setNotice(t('runtimeCenter.install.copyFailed')) }
   }
 
   const available = availableRuntimeCount(runtimes)
@@ -258,7 +271,7 @@ export function RuntimeCenter({ t, onSnapshot }: CenterProps) {
                   ))}
                 </dl>
                 <div className={css.actions}>
-                  <button type="button" onClick={() => { setEditing(item); setEditedName(item.name); setPoolId(item.poolId) }}>{t('runtimeCenter.configure')}</button>
+                  <button type="button" onClick={() => { setEditing(item); setEditedName(item.name) }}>{t('runtimeCenter.configure')}</button>
                   <button type="button" data-danger onClick={() => { setRemoving(item) }}>{t('runtimeCenter.remove')}</button>
                 </div>
               </div>
@@ -280,7 +293,6 @@ export function RuntimeCenter({ t, onSnapshot }: CenterProps) {
           <form className={css.dialog} role="dialog" aria-modal="true" aria-labelledby="runtime-edit-title" onSubmit={(event) => { void configure(event) }}>
             <strong id="runtime-edit-title">{t('runtimeCenter.configure.title')}</strong>
             <label>{t('runtimeCenter.name')}<input autoFocus value={editedName} maxLength={120} onChange={(event) => { setEditedName(event.currentTarget.value) }} /></label>
-            <label>{t('runtimeCenter.pool')}<input value={poolId} maxLength={80} onChange={(event) => { setPoolId(event.currentTarget.value) }} placeholder={t('runtimeCenter.pool.placeholder')} /><small>{t('runtimeCenter.pool.notice')}</small></label>
             <div className={css.actions}><button type="button" onClick={() => { setEditing(null) }}>{t('task.cancel')}</button><button type="submit" data-primary disabled={busy || editedName.trim() === ''}>{t('runtimeCenter.save')}</button></div>
           </form>
         </div>
@@ -298,8 +310,8 @@ export function RuntimeCenter({ t, onSnapshot }: CenterProps) {
           <section className={css.dialog} role="dialog" aria-modal="true" aria-labelledby="runtime-token-title">
             <strong id="runtime-token-title">{t('runtimeCenter.token.title')}</strong><p>{t('runtimeCenter.token.notice')}</p>
             <code className={css.token}>{created.token}</code>
-            <details className={css.install}><summary>{t('runtimeCenter.install')}</summary><code>{t('runtimeCenter.install.command', { token: created.token })}</code></details>
-            <div className={css.actions}><button type="button" onClick={() => { void copyToken() }}>{t('runtimeCenter.token.copy')}</button><button type="button" data-primary onClick={() => { setCreated(null) }}>{t('runtimeCenter.token.saved')}</button></div>
+            <div className={css.install}><span>{t('runtimeCenter.install')}</span><code>{connectionCommand}</code></div>
+            <div className={css.actions}><button type="button" onClick={() => { void copyToken() }}>{t('runtimeCenter.token.copy')}</button><button type="button" data-primary onClick={() => { void copyConnectionCommand() }}>{t('runtimeCenter.install.copy')}</button><button type="button" onClick={() => { setCreated(null) }}>{t('runtimeCenter.token.saved')}</button></div>
           </section>
         </div>
       )}

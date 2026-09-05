@@ -10,13 +10,13 @@ import { SessionId, type Session, type SessionEvent } from '@deepseek-ai/dsh-ses
 import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
 import { buildPilotReport } from './pilot-report.ts'
 import { inspectWeaveReadiness } from './readiness.ts'
-import { handleWeaveRuntimeRequest } from './runtime-control.ts'
+import { handleWeaveRuntimeRequest, resolveRuntimeServerUrl } from './runtime-control.ts'
 
 export { buildPilotReport } from './pilot-report.ts'
 export type { PilotReport, PilotReportTask } from './pilot-report.ts'
 export { inspectWeaveReadiness } from './readiness.ts'
 export type { WeaveReadiness, WeaveReadinessCheck, WeaveReadinessTone } from './readiness.ts'
-export { handleWeaveRuntimeRequest } from './runtime-control.ts'
+export { handleWeaveRuntimeRequest, resolveRuntimeServerUrl } from './runtime-control.ts'
 export type { WeaveRuntimeEngineView, WeaveRuntimeList, WeaveRuntimeView } from './runtime-control.ts'
 
 /** User-facing lifecycle of one Weave-dispatched task. */
@@ -831,6 +831,8 @@ export interface Config {
   readonly apiUrl?: string
   /** Business API credential; defaults to host-only `WEAVE_API_KEY`. */
   readonly apiKey?: string
+  /** Public or otherwise externally routable Weave URL advertised to new runtime nodes; defaults to `WEAVE_RUNTIME_SERVER_URL`. */
+  readonly runtimeServerUrl?: string
   /** Delay between non-terminal status reads in milliseconds. */
   readonly pollIntervalMs?: number
 }
@@ -850,6 +852,7 @@ export function apply(ctx: Context, config: Config = {}): void {
   ctx.sessionProjections.register(workTaskProjectionDefinition)
   const apiUrl = (config.apiUrl ?? process.env.WEAVE_API_URL ?? 'http://127.0.0.1:18080').replace(/\/$/, '')
   const apiKey = (config.apiKey ?? process.env.WEAVE_API_KEY ?? '').trim()
+  const runtimeServerUrl = resolveRuntimeServerUrl(apiUrl, config.runtimeServerUrl ?? process.env.WEAVE_RUNTIME_SERVER_URL)
   const connection = Reflect.get(ctx, 'connection') as {
     readonly fetch: { register(route: { readonly path: string; readonly methods: readonly ('GET' | 'HEAD' | 'POST' | 'PUT' | 'DELETE')[]; readonly fetch: (request: Request) => Promise<Response> }): () => Promise<void> }
   }
@@ -880,7 +883,7 @@ export function apply(ctx: Context, config: Config = {}): void {
   })
   connection.fetch.register({
     path: '/api/weave.runtimes', methods: ['GET', 'HEAD', 'POST', 'PUT', 'DELETE'],
-    fetch: request => handleWeaveRuntimeRequest(apiUrl, apiKey, request),
+    fetch: request => handleWeaveRuntimeRequest(apiUrl, apiKey, request, fetch, runtimeServerUrl),
   })
   connection.fetch.register({
     path: '/api/weave.deliverable', methods: ['GET', 'HEAD'],

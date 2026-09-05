@@ -140,6 +140,21 @@ func (c *Client) RuntimeCreate(ctx context.Context, name string) (json.RawMessag
 	return c.sendJSON(ctx, http.MethodPost, "/v1/runtimes", map[string]string{"name": name})
 }
 
+// Health returns the service liveness and build identity used by operator diagnostics.
+func (c *Client) Health(ctx context.Context) (json.RawMessage, error) {
+	return c.getJSON(ctx, "/v1/health")
+}
+
+// Ready returns the availability of dependencies required by Workbench.
+func (c *Client) Ready(ctx context.Context) (json.RawMessage, error) {
+	return c.getJSON(ctx, "/v1/ready")
+}
+
+// RuntimeList returns registered runtime health and capacity for operator diagnostics.
+func (c *Client) RuntimeList(ctx context.Context) (json.RawMessage, error) {
+	return c.getJSON(ctx, "/v1/runtimes")
+}
+
 func (c *Client) TeamList(ctx context.Context, status string, summary bool) (json.RawMessage, error) {
 	query := url.Values{}
 	if strings.TrimSpace(status) != "" {

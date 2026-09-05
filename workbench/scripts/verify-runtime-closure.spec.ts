@@ -149,7 +149,7 @@ describe('verifyRuntimeClosure', () => {
     ])
   })
 
-  it('retains the required workspace-peer closure check', async () => {
+  it('follows required workspace peers and ignores optional peers', async () => {
     const root = fixture({
       'python/sdk-runtime/package.json': { name: 'runtime', dependencies: { '@scope/root': 'workspace:^' } },
       'python/sdk-runtime/platforms.json': platforms,
@@ -164,7 +164,24 @@ describe('verifyRuntimeClosure', () => {
 
     const result = await verifyRuntimeClosure(root)
 
-    expect(result.workspacePackageCount).toBe(1)
-    expect(result.failures).toEqual(['runtime -> @scope/root -> @scope/required'])
+    expect(result.workspacePackageCount).toBe(2)
+    expect(result.failures).toEqual([])
+  })
+
+  it('reports a required workspace peer whose package was removed', async () => {
+    const root = fixture({
+      'python/sdk-runtime/package.json': { name: 'runtime', dependencies: { '@scope/root': 'workspace:^' } },
+      'python/sdk-runtime/platforms.json': platforms,
+      'packages/preset/agent-presets/presets/minimal/agent.cordis.yml': '[]\n',
+    })
+    workspace(root, '@scope/root', {
+      peerDependencies: { '@scope/removed': 'workspace:^' },
+    })
+
+    const result = await verifyRuntimeClosure(root)
+
+    expect(result.failures).toEqual([
+      'runtime -> @scope/root -> @scope/removed (workspace package missing)',
+    ])
   })
 })

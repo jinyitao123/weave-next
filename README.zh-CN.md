@@ -6,9 +6,29 @@
 
 用户在 Workbench 选择团队、确认任务、看进度、处理问题、领取成果。Weave 保存输入和工作流版本，协调执行，记录等待与恢复，并保存产出的工作。
 
-Workbench 是唯一受支持的业务入口。本仓库的内嵌界面只供维护者管理运行时。`weave` 命令负责服务部署、运行时维护和 Workbench 使用的 MCP 连接。独立业务 CLI 和 Codex/Claude 客户端接入教程退出现行支持；Codex、Claude 等执行引擎继续作为运行时的实现选择。
+Workbench 是唯一受支持的页面入口。运行节点的接入与任务相关状态放在 Workbench，服务诊断和机器进程维护使用 `weave` 命令、系统服务或 Compose。独立业务 CLI 和 Codex/Claude 客户端接入教程退出现行支持；Codex、Claude 等执行引擎继续作为运行时的实现选择。
 
 当前面向有维护者支持的私有设计伙伴试点。现行要求见[产品合同](docs/架构/2026-09-05-Weave-当前产品合同.md)、[工作对话方案](docs/架构/2026-09-05-Workbench-工作对话方案.md)和[统一验收清单](docs/验收/2026-09-05-Workbench统一验收清单.md)。历史版本和测试记录不能证明当前工作树已经通过验收。
+
+## 快速开始
+
+先安装带 Compose 的 Docker Desktop 或 Docker Engine，然后在 macOS、Linux 或 WSL2 的仓库目录执行：
+
+```sh
+./scripts/install-weave.sh
+```
+
+安装器会创建仅当前用户可读的 `.env`，启动 PostgreSQL 和 Weave，创建 Workbench 凭据，注册本机运行时，启动 Workbench，并打印可直接登录的浏览器地址。再次执行会继续使用原配置和数据。有匹配的正式版本镜像时会直接拉取 amd64 或 arm64 镜像；没有发布镜像的源码版本会在本机完成构建。
+
+打开页面后只需添加一个模型供应商，再创建或导入团队。首次派发前，Workbench 会显示服务、凭据、团队和运行时是否已经就绪。
+
+```sh
+docker compose -f docker-compose.platform.yml ps
+docker compose -f docker-compose.platform.yml logs -f workbench runtime
+docker compose -f docker-compose.platform.yml stop
+```
+
+安装中断时，可用 `docker compose -f docker-compose.platform.yml logs weave workbench runtime` 查看失败服务。端口冲突可在首次安装前设置 `WEAVE_API_PORT` 或 `WORKBENCH_PORT`；已有 `.env` 时直接修改其中对应值。升级时保留 `.env`、`data/workbench` 和 `data/workspaces`，删除它们会丢失凭据或本机 Workbench 数据。
 
 ## 职责
 
@@ -17,15 +37,15 @@ Workbench 是唯一受支持的业务入口。本仓库的内嵌界面只供维�
 | Workbench | 工作对话、选团队、确认任务、进度、人工决策、恢复操作和成果阅读 |
 | Weave API 与执行服务 | 持久任务、冻结工作流、排队、执行状态、权限、恢复、用量和成果保存 |
 | Runtime | 在配置好的机器上执行当前任务，返回实际产出和可提供的活动记录 |
-| 运行时管理界面 | 维护者登录、运行时注册、连接、容量和本机运行时控制 |
+| Workbench 设置 | 运行节点注册、连接状态、容量、改名和撤销 |
 
-Workbench 宿主连接 Weave HTTP API，并启动 `weave mcp serve` 作为内部连接。浏览器使用 Workbench，服务凭据留在宿主。运行时管理页面只用于维护，不是第二套业务产品。
+Workbench 宿主连接 Weave HTTP API，并启动 `weave mcp serve` 作为内部连接。浏览器只使用 Workbench，服务凭据留在宿主。底层诊断不进入页面。
 
 执行结束不等于成果可以采用。成果必须属于正确的运行且可以读取；文件缺失、活动不完整、用量未知和等待原因都要如实显示。恢复应保留已保存的工作，已请求停止和已确认停止必须区分。
 
 ## 维护者安装
 
-使用 PostgreSQL 16、[go.mod](go.mod) 指定的 Go 版本，以及 `workbench/package.json` 指定的 Node.js/pnpm 版本。后端、维护面和 Workbench 由同一提交一起构建和验证。
+使用 PostgreSQL 16、[go.mod](go.mod) 指定的 Go 版本、[.node-version](.node-version) 指定的 Node.js 22.19 或更高版本，以及 `workbench/package.json` 指定的 pnpm 版本。后端与 Workbench 由同一提交一起构建和验证。
 
 ### 本机启动 Weave
 
@@ -55,6 +75,8 @@ curl --fail http://127.0.0.1:8080/v1/health
 curl --fail http://127.0.0.1:8080/v1/ready
 ```
 
+配置 `WEAVE_API_URL` 与 `WEAVE_API_KEY` 后，可用 `weave doctor` 一次检查服务版本、依赖就绪状态和运行节点注册状态。机器进程由 `docker compose`、systemd 或 launchd 启停，避免浏览器直接控制宿主进程。
+
 ### 连接 Workbench
 
 在当前仓库执行：
@@ -71,6 +93,8 @@ pnpm workbench --host 127.0.0.1 --port 3080 --no-open
 
 在 `http://127.0.0.1:3080/` 使用 Workbench 本机登录流程。`WEAVE_COMMAND` 指向配套的 Weave 二进制，由 Workbench 启动 MCP 进程。派发前还需要可用团队和已配置的执行环境。页面打开或健康检查通过，只能证明入口可用，不能代替真实任务验收。
 
+Workbench 会在每条新运行节点连接命令中放入完整的 Weave 地址。部署服务时将 `WEAVE_RUNTIME_SERVER_URL` 设为公网或其他可路由的 Weave URL；裸机 Workbench 遇到回环 API 地址时，会回退到优先内网 IPv4 并保留已配置的 API 端口。
+
 ### 容器平台
 
 平台部署和验证统一使用 [docker-compose.platform.yml](docker-compose.platform.yml)：
@@ -79,15 +103,15 @@ pnpm workbench --host 127.0.0.1 --port 3080 --no-open
 cp .env.example .env
 # 填入实际生成的 JWT_SECRET、WEAVE_SECRET_KEY、WEAVE_ADMIN_PASS
 # 以及私有 POSTGRES_PASSWORD。不要把 shell 表达式写进 .env。
-scripts/refresh-weave.sh
+./scripts/install-weave.sh
 docker compose -f docker-compose.platform.yml ps
 ```
 
-该配置统一启动数据库、Weave、Workbench 和访问网关；可选运行时仍由 profile 控制。Weave 的 8080 端口提供 API 和运行时维护页面，Workbench 默认使用 3080，PostgreSQL 不发布主机端口。迁移已有部署时，应把 `WORKBENCH_DATA_PATH` 和 `WORKBENCH_WORKSPACE_PATH` 指向原数据位置。隔离验证应另设 Compose project、私有环境、新卷和端口覆盖。
+该配置统一启动数据库、Weave、Workbench 和访问网关；可选运行时仍由 profile 控制。Weave 的 8080 端口只提供 API，Workbench 默认使用 3080，PostgreSQL 不发布主机端口。迁移已有部署时，应把 `WORKBENCH_DATA_PATH` 和 `WORKBENCH_WORKSPACE_PATH` 指向原数据位置。隔离验证应另设 Compose project、私有环境、新卷和端口覆盖。
 
 可选的 `runtime` profile 使用 `runtime_data` 命名卷保存 `/data/runtime-workspaces`，包括 `.weave-public-events` 待上传记录。重建运行时容器会保留这些文件，删除该卷则会删除其中内容。
 
-维护者使用 `WEAVE_ADMIN_USER`（默认 `admin`）及自己配置的密码登录，没有默认密码。先注册运行时并保存 token，再启用可选的 `runtime` profile。只配置本次部署实际需要的模型引擎。
+维护者在 Workbench 设置中注册运行节点并保存 token，再启用可选的 `runtime` profile。服务端没有独立维护页面。只配置本次部署实际需要的模型引擎。
 
 ## 架构与边界
 
@@ -97,7 +121,6 @@ docker compose -f docker-compose.platform.yml ps
 | `internal/kernel` | 智能体、工作流、执行引擎、运行时和 MCP 机制 |
 | `internal/build` | 团队构建、编译、评测和恢复机制 |
 | `internal/app` | 面向 Workbench 的 API、MCP 连接、daemon 和产品组装 |
-| `weave-app` | 内嵌运行时维护界面和本机运行时控制 |
 | `workbench` | 唯一业务入口及其 TypeScript 运行底座 |
 | `cmd/weave` | 服务和维护命令入口 |
 
@@ -111,8 +134,6 @@ MCP 写入闸拒绝 `write_tools` 明确声明的工具。未声明的工具不�
 
 ```sh
 make ci
-npm --prefix weave-app ci
-make ui-embed
 make workbench-install
 make workbench-check
 make compose-check
@@ -122,7 +143,7 @@ TEST_DATABASE_URL='<isolated-postgresql-url>' make test-integration
 
 `make test` 覆盖 `./internal/... ./cmd/...`，数据库集成验证需要 PostgreSQL。容器健康、工程检查、实际 Workbench 使用和 [20 项真实任务试点](docs/验收/2026-09-05-20项真实任务试点台账.md)是不同的证据，必须记录对应源码与实际结果，待验项目不能写成通过。
 
-升级前备份 PostgreSQL、稳定的凭据密钥和 Workbench 的 `DSH_HOME`。数据库迁移单向递增，代码回退不等于数据库回退；恢复应先在隔离环境验证。
+升级前备份 PostgreSQL、稳定的凭据密钥和 `WORKBENCH_DATA_PATH` 指向的目录。数据库迁移单向递增，代码回退不等于数据库回退；恢复应先在隔离环境验证。
 
 [架构文档目录](docs/架构/README.md)索引现行合同及仍支撑 Workbench 的执行与迁移资料。[8 月 31 日发布基线](docs/验收/2026-08-31-Weave-Workbench-v0.1-设计伙伴版发布基线.md)保留当时的确切版本组合与验收事实，不代表当前源码版本。
 

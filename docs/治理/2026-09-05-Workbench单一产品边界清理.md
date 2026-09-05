@@ -11,7 +11,7 @@ Weave 只服务 Workbench。独立业务控制台、独立 Codex/Claude 接入�
 | 进度、调整与恢复 | `/runs/:id/activity`、human-tasks、corrections、stop、stage retry、resume | 主对话和工作现场的真实操作与回执 |
 | 领取成果 | `/deliverables`、`/deliverables/:id`、`/deliverables/:id/content` | Workbench 列表、预览与完整文件获取 |
 | 外部执行与增量过程 | `/runtime/*`、MCP/LLM 任务网关、daemon、Codex/Claude 等引擎 | 成员执行、心跳租约、公开输出与停止确认 |
-| 私有部署与维护 | serve/bootstrap/runtime、鉴权/API key、provider、runtime CRUD、运行时维护页面 | Workbench 可部署、可连接、可维护所需基础能力 |
+| 私有部署与维护 | serve/bootstrap/runtime/doctor、鉴权/API key、provider、runtime CRUD、Workbench 运行节点设置 | Workbench 可部署、可连接、可维护所需基础能力 |
 | 执行历史 | 数据库迁移、任务/成果/恢复存储与相应验证 | 保留真实历史与恢复依据，不删除业务数据 |
 
 Workbench 的项目导航与主对话由 Workbench 自己维护；它们不调用旧控制台 `/projects` 或 `/conversations` 管理接口。`POST /chat` 公开入口可退出，但团队自由协作仍调用内部 `handleChatRequest`，不能整删执行实现。`POST /mcp/tools` 是旧浏览器任意 URL 工具发现代理，与正式 MCP stdio、执行期 MCP 注册表和任务网关不同。
@@ -26,11 +26,11 @@ Workbench 的项目导航与主对话由 Workbench 自己维护；它们不调�
 
 清理前的工程和页面验证保留原有时间及适用版本，不能作为清理后通过依据。
 
-已删除旧业务页面及独占组件、接口封装、样式与资源；运行时维护前端只保留登录和运行节点管理。同步删除旧原生工作区/差异桥接和独占依赖，并重新生成后端嵌入的维护页面。旧对话、项目、收件箱、来源连接、单智能体调度、任意 URL MCP 工具代理等公共入口及其独占存储方法退出；团队执行使用的内部会话、项目归属、团队工作流调度、成果存储和迁移继续保留。
+已删除旧业务页面及独占组件、接口封装、样式与资源；随后删除独立运行时维护前端、Tauri 本机控制、后端静态嵌入和第二套前端构建链。运行节点注册、连接状态、容量、改名和撤销由 Workbench 设置承接；服务就绪与节点诊断由 `weave doctor` 承接；机器进程由系统服务或 Compose 管理。旧对话、项目、收件箱、来源连接、单智能体调度、任意 URL MCP 工具代理等公共入口及其独占存储方法退出；团队执行使用的内部会话、项目归属、团队工作流调度、成果存储和迁移继续保留。
 
 独立 `team`、`status`、`deliverable` 业务 CLI 与 Codex/Claude 客户端配置生成退出。保留 Workbench 使用的 21 项 MCP 工具，职责指引统一为主对话、确切任务、真实回执。旧 ontology/Neo4j 独立部署组合和六份与当前产品方向冲突的方案直接删除。中英文 README、当前产品合同、发布基线和架构索引已对齐；执行/迁移历史证据明确其原验证时间和适用范围。
 
-`make productguard` 检查已退出路径、客户端注册代码和真实 HTTP 注册表；`make ui-embed` 与 CI 的嵌入资源差异检查防止已删除的页面继续从旧构建产物提供。
+`make productguard` 检查已退出路径、客户端注册代码和真实 HTTP 注册表，并阻止 `weave-app`、后端静态页面嵌入及同步脚本重新出现。
 
 清理版本 `23c6b1d-dirty+20260905-workbench-only-e72e4124` 已通过带 race 和隔离 PostgreSQL 的 `make ci`，包括 `make test`、`make depguard`、四层预算和产品边界检查。维护前端干净离线安装、lint、设计令牌检查、类型与构建、实际 Rust 编译已通过。该版本已安装并通过真实服务健康检查。
 

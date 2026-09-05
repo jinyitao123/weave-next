@@ -4,7 +4,7 @@
  * graph. With auto peer installation disabled, either omission can otherwise
  * fail only when Cordis loads the packaged plugin.
  */
-import { globSync } from 'node:fs'
+import { existsSync, globSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { basename, dirname, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
@@ -13,6 +13,7 @@ import { isCordisGroupEntry, loadCordisYaml } from './cordis-yaml.ts'
 interface PackageManifest {
   name?: string
   dependencies?: Record<string, string>
+  devDependencies?: Record<string, string>
   optionalDependencies?: Record<string, string>
   peerDependencies?: Record<string, string>
   peerDependenciesMeta?: Record<string, { optional?: boolean }>
@@ -31,6 +32,7 @@ interface RuntimePlatform {
 type RuntimePlatformManifest = Record<string, RuntimePlatform>
 
 const AGENT_PRESET_GLOB = 'packages/preset/agent-presets/presets/*/agent.cordis.yml'
+const WORKBENCH_TARGETS = ['linux-arm64', 'linux-x64', 'macos-arm64', 'win-x64'] as const
 
 export interface RuntimeClosureResult {
   failures: string[]
@@ -46,13 +48,27 @@ export interface RuntimeClosureResult {
  */
 export async function verifyRuntimeClosure(
   root: string,
-  manifestPath = 'python/sdk-runtime/package.json',
+  manifestPath?: string,
 ): Promise<RuntimeClosureResult> {
-  const runtimeManifest = await loadManifest(resolve(root, manifestPath))
-  const runtimeName = runtimeManifest.name ?? manifestPath
+  const selectedManifest = manifestPath
+    ?? (existsSync(resolve(root, 'apps/cli/package.json'))
+      ? 'apps/cli/package.json'
+      : 'python/sdk-runtime/package.json')
+  const runtimeManifest = await loadManifest(resolve(root, selectedManifest))
+  const runtimeName = runtimeManifest.name ?? selectedManifest
   const workspace = await loadWorkspacePackages(root)
-  const runtimeDependencies = runtimeManifest.dependencies ?? {}
-  const platforms = await loadJson<RuntimePlatformManifest>(resolve(root, 'python/sdk-runtime/platforms.json'))
+  // The Docker runtime is built from the full Workbench workspace rather than
+  // a pruned published package, so build-time entries are part of its deployed
+  // module graph as well.
+  const runtimeDependencies = {
+    ...runtimeManifest.dependencies,
+    ...runtimeManifest.devDependencies,
+    ...runtimeManifest.optionalDependencies,
+  }
+  const platformPath = resolve(root, dirname(selectedManifest), 'platforms.json')
+  const platforms = existsSync(platformPath)
+    ? await loadJson<RuntimePlatformManifest>(platformPath)
+    : Object.fromEntries(WORKBENCH_TARGETS.map(target => [target, { tag: target, executable: target }]))
   const presetPaths = globSync(AGENT_PRESET_GLOB, { cwd: root }).sort()
   const targets = Object.keys(platforms).sort()
   const parents = new Map<string, string | undefined>()
@@ -66,7 +82,7 @@ export async function verifyRuntimeClosure(
 
   const failures: string[] = []
   if (presetPaths.length === 0) failures.push(`no agent presets matched ${AGENT_PRESET_GLOB}`)
-  if (targets.length === 0) failures.push('python/sdk-runtime/platforms.json defines no runtime targets')
+  if (targets.length === 0) failures.push(`${platformPath.slice(root.length + 1)} defines no runtime targets`)
   failures.push(...await missingPresetPlugins(root, runtimeDependencies, presetPaths, targets))
   for (let index = 0; index < queue.length; index += 1) {
     const packageName = queue[index]
@@ -76,9 +92,15 @@ export async function verifyRuntimeClosure(
     const peers = current.manifest.peerDependencies ?? {}
     const peerMeta = current.manifest.peerDependenciesMeta ?? {}
     for (const peer of Object.keys(peers).sort()) {
-      if (!workspace.has(peer) || peerMeta[peer]?.optional === true) continue
-      if (runtimeDependencies[peer]?.startsWith('workspace:') === true) continue
-      failures.push(`${formatChain(runtimeName, packageName, parents)} -> ${peer}`)
+      if (peerMeta[peer]?.optional === true || !peers[peer]?.startsWith('workspace:')) continue
+      if (!workspace.has(peer)) {
+        failures.push(`${formatChain(runtimeName, packageName, parents)} -> ${peer} (workspace package missing)`)
+        continue
+      }
+      if (!parents.has(peer)) {
+        parents.set(peer, packageName)
+        queue.push(peer)
+      }
     }
     const dependencies = {
       ...current.manifest.dependencies,
@@ -106,7 +128,7 @@ if (import.meta.main) {
   })
   const result = await verifyRuntimeClosure(root, values.manifest)
   if (result.failures.length > 0) {
-    console.error('verify-runtime-closure: preset plugins or required workspace peers are missing from python/sdk-runtime dependencies:')
+    console.error('verify-runtime-closure: preset plugins or required workspace peers are missing from the Workbench runtime dependencies:')
     for (const failure of result.failures) console.error(`  ${failure}`)
     process.exitCode = 1
   } else {

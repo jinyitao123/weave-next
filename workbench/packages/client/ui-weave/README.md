@@ -38,6 +38,8 @@ Public member updates use the observed runtime capability. Recent running facts 
 
 The browser uses existing keyed tool views, Session-header actions, details, input-dock, Settings, and Workspace project-activity slots. The Host owns the durable `workTask` projection, background polling, and authenticated task-action and content routes. Browser UI and stored viewing preferences create no second execution authority. New project navigation waits for the target Session view to commit before opening its scene, so the layout's Session-change cleanup cannot close the newly requested view.
 
+After runtime creation, the browser validates the Host-provided server URL and one-time token, renders the complete shell-quoted connection command, and copies that command directly. It never asks the user to replace a service-address placeholder.
+
 Deliverable bodies render only after expansion. Markdown uses the shared renderer; SVG previews use the authenticated content route as an image with sandbox CSP; HTML is a static sandboxed document with a restrictive CSP. CSV and TSV use bounded table previews of at most 200 rows and 40 columns; SVG images have explicit zoom controls. The UI offers the real full-content download when the preview is bounded. A download streams the complete retained artifact through `/api/weave.deliverable` to Weave's existing `/v1/deliverables/:id/content`, even when the projection preview was truncated. The Host binds downloads to the selected Session/run/deliverable and never exposes its business key. No local path or live application URL is inferred from generated prose.
 
 <a id="further-exploration"></a>

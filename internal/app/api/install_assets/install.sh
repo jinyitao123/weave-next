@@ -156,4 +156,4 @@ if [ "$METHOD" = systemd ]; then
 else
   echo "Logs: $LOG_FILE"
 fi
-echo "回到 Weave 运行时维护页，连接建立后即可查看节点状态"
+echo "回到 Workbench 的运行节点设置，连接建立后即可查看节点状态"

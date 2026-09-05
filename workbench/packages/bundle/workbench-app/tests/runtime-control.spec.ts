@@ -1,5 +1,27 @@
 import { describe, expect, it, vi } from 'vitest'
-import { handleWeaveRuntimeRequest } from '../src/runtime-control.ts'
+import { handleWeaveRuntimeRequest, resolveRuntimeServerUrl } from '../src/runtime-control.ts'
+
+describe('runtime server URL resolution', () => {
+  const interfaces = {
+    en0: [{ address: '192.168.1.9', netmask: '255.255.255.0', family: 'IPv4' as const, mac: '', internal: false, cidr: '192.168.1.9/24' }],
+    vpn0: [{ address: '198.18.0.1', netmask: '255.254.0.0', family: 'IPv4' as const, mac: '', internal: false, cidr: '198.18.0.1/15' }],
+  }
+
+  it('uses a configured public URL before the Host API address', () => {
+    expect(resolveRuntimeServerUrl('http://weave:8080', 'https://weave.example.com/', interfaces))
+      .toBe('https://weave.example.com')
+  })
+
+  it('replaces loopback and container-only hosts with the preferred LAN IPv4', () => {
+    expect(resolveRuntimeServerUrl('http://127.0.0.1:18081', undefined, interfaces)).toBe('http://192.168.1.9:18081')
+    expect(resolveRuntimeServerUrl('http://weave:8080', undefined, interfaces)).toBe('http://192.168.1.9:8080')
+  })
+
+  it('keeps an already reachable API URL', () => {
+    expect(resolveRuntimeServerUrl('https://weave.example.com', undefined, interfaces)).toBe('https://weave.example.com')
+    expect(resolveRuntimeServerUrl('http://10.0.0.8:8080', undefined, interfaces)).toBe('http://10.0.0.8:8080')
+  })
+})
 
 describe('Workbench runtime management proxy', () => {
   it('returns product runtime facts without credentials or backend failures', async () => {
@@ -43,8 +65,8 @@ describe('Workbench runtime management proxy', () => {
     })
     const created = await handleWeaveRuntimeRequest('http://weave.test', 'host-secret', new Request('http://host/api/weave.runtimes', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'create', name: '新节点' }),
-    }), fetcher)
-    expect(await created.json()).toEqual({ id: 'runtime-2', name: '新节点', token: 'rtk_once' })
+    }), fetcher, 'https://weave.example.com')
+    expect(await created.json()).toEqual({ id: 'runtime-2', name: '新节点', token: 'rtk_once', serverUrl: 'https://weave.example.com' })
     const configured = await handleWeaveRuntimeRequest('http://weave.test', 'host-secret', new Request('http://host/api/weave.runtimes', {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'configure', id: 'runtime-2', name: '主分析节点', poolId: 'fallback' }),

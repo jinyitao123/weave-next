@@ -87,6 +87,16 @@ export function repositoryVersion(root: string): string {
   return manifest.version
 }
 
+/** Resolve an orchestrator-supplied product version or the workspace fallback. */
+function clientVersion(root: string, environment: NodeJS.ProcessEnv): string {
+  const explicit = environment[CLIENT_VERSION_VARIABLE]?.trim()
+  if (explicit === undefined || explicit === '') return repositoryVersion(root)
+  if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(explicit)) {
+    throw new Error(`${CLIENT_VERSION_VARIABLE} must be a semantic version; got ${JSON.stringify(explicit)}`)
+  }
+  return explicit
+}
+
 /**
  * Read whether Git reports any staged, unstaged, untracked, or submodule change.
  * @param root - repository root whose worktree is inspected.
@@ -132,7 +142,7 @@ export function repositoryClientBuildEnvironment(
     ...inherited,
     DSH_CLIENT_COMMIT_HASH: repositoryCommitHash(root, environment),
     ...(dirty === true ? { DSH_CLIENT_GIT_DIRTY: 'true' } : {}),
-    DSH_CLIENT_VERSION: repositoryVersion(root),
+    DSH_CLIENT_VERSION: clientVersion(root, environment),
   }
 }
 
@@ -148,7 +158,7 @@ export function officialClientBuildEnvironment(
 ): Readonly<Record<`DSH_CLIENT_${string}`, string>> {
   return {
     DSH_CLIENT_COMMIT_HASH: repositoryCommitHash(root, environment),
-    DSH_CLIENT_VERSION: repositoryVersion(root),
+    DSH_CLIENT_VERSION: clientVersion(root, environment),
     ...OFFICIAL_CLIENT_BUILD_ENVIRONMENT,
   }
 }

@@ -125,6 +125,17 @@
         "lines_added": 16,
         "production_lines_added": 8
       }
+    },
+    {
+      "date": "2026-09-05",
+      "reason": "Remove the standalone runtime UI and embedded static server, then add the operator-only doctor command and boundary regressions. Production shrinks while focused diagnostics tests increase the reviewed total line count; no package or dependency growth.",
+      "record": "docs/治理/2026-09-05-Workbench单一产品边界清理.md",
+      "app": {
+        "previous_lines": 40983,
+        "previous_production_lines": 34754,
+        "lines_added": 20,
+        "production_lines_removed": 38
+      }
     }
   ],
   "migration_targets": {
@@ -185,8 +196,8 @@
     ]
   },
   "app": {
-    "lines": 40972,
-    "production_lines": 34743,
+    "lines": 41003,
+    "production_lines": 34716,
     "packages": 18,
     "external_dependencies": 7,
     "allowed_dependencies": [
