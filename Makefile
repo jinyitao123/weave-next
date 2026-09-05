@@ -58,7 +58,9 @@ docker-build:
 	./scripts/refresh-weave.sh
 
 docker-image:
-	BUILD_COMMIT=$(BUILD_COMMIT) docker compose -f docker-compose.platform.yml build weave
+	docker build \
+		--build-arg BUILD_COMMIT=$(BUILD_COMMIT) \
+		-t weave-platform .
 
 workbench-image: docker-image
 	docker build -f Dockerfile.workbench \
