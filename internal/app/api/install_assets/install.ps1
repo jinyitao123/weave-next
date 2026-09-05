@@ -40,4 +40,4 @@ try {
 Write-Host "Installed Weave runtime at $Bin"
 Write-Host "Status: Get-ScheduledTask -TaskName WeaveRuntime | Get-ScheduledTaskInfo"
 Write-Host "Logs: Task Scheduler > Task Scheduler Library > WeaveRuntime > History"
-Write-Host "Return to Weave Console: Settings -> Multi-runtime Configuration; this runtime should appear online within seconds."
+Write-Host "Return to Weave runtime maintenance to check the node connection status."

@@ -11,7 +11,7 @@ import { Field } from "../ui/Field";
 import { ConfirmModal } from "../ui/ConfirmModal";
 import { Modal } from "../ui/Modal";
 import { ErrorNotice, LoadingView } from "../ui/StatusViews";
-import { engineLabel } from "../workspace/labels";
+import { engineLabel } from "./runtime-labels";
 
 const dateTime = new Intl.DateTimeFormat("zh-CN", { dateStyle: "medium", timeStyle: "short" });
 
@@ -174,7 +174,7 @@ export function RuntimesPage() {
       });
       setLocalStatus(normalizedStatus(status));
       setCreated(null); setCopyNotice(null); setTokenStartError(null);
-      setLocalNotice("本机运行节点进程已启动；在线状态将在节点成功连接后自动更新");
+      setLocalNotice("本机运行节点进程已启动；节点成功连接后，请点击「刷新」查看在线状态");
       await inspectLocal();
     } catch {
       setTokenStartError("启动本机运行节点失败。请检查服务端地址、并发数与运行程序路径后重试。");
@@ -188,7 +188,7 @@ export function RuntimesPage() {
     setLocalAction("stop"); setLocalError(null); setLocalNotice(null);
     try {
       setLocalStatus(normalizedStatus(await platform.stopLocalRuntime()));
-      setLocalNotice("本机运行节点进程已停止；列表中的在线状态会稍后自动更新");
+      setLocalNotice("本机运行节点进程已停止；稍后点击「刷新」确认列表中的在线状态");
     } catch {
       setLocalError("停止本机运行节点失败，请刷新进程状态后重试。");
     } finally {
@@ -268,7 +268,7 @@ export function RuntimesPage() {
 		<form id="runtime-rename" className="form-stack" onSubmit={(event) => void rename(event)}><Field label="名称">{(control) => <input {...control} autoFocus value={renamed} onChange={(event) => setRenamed(event.target.value)} />}</Field><Field label="故障转移组" help="加入同一组的同引擎节点可自动承接故障迁移；留空表示不参与。">{(control) => <input {...control} value={editedPoolId} maxLength={80} onChange={(event) => setEditedPoolId(event.target.value)} placeholder="留空：不加入 Pool" />}</Field>{actionError && <ErrorNotice message={actionError} />}</form>
     </Modal>
 
-    <Modal open={!!created} title="保存运行节点令牌" description="令牌仅显示这一次，系统不会保存；请立即复制并妥善保管，确认后再关闭" onClose={() => undefined} footer={modalActions(<><Button disabled={localAction === "start"} onClick={acknowledgeCreatedToken}>我已安全保存</Button>{desktopLocalRuntime && <Button variant="primary" type="submit" form="runtime-local-start" loading={localAction === "start"} disabled={startDisabled}>{localAction !== "start" && <Play size={16} aria-hidden="true" />}{localAction === "start" ? "正在启动" : "在此电脑启动"}</Button>}</>)}>
+    <Modal open={!!created} title="保存运行节点令牌" description="令牌原文仅显示这一次；请立即复制并妥善保管，确认后再关闭" onClose={() => undefined} footer={modalActions(<><Button disabled={localAction === "start"} onClick={acknowledgeCreatedToken}>我已安全保存</Button>{desktopLocalRuntime && <Button variant="primary" type="submit" form="runtime-local-start" loading={localAction === "start"} disabled={startDisabled}>{localAction !== "start" && <Play size={16} aria-hidden="true" />}{localAction === "start" ? "正在启动" : "在此电脑启动"}</Button>}</>)}>
       <div className="runtime-token">
         <p>请立即复制并保存；此窗口关闭后无法再次读取。</p>
         <code>{created?.token}</code>

@@ -17,11 +17,6 @@ import (
 
 var ErrNotFound = errors.New("final deliverable not found")
 
-// ErrNotPromotable reports a message that cannot be promoted into a final
-// deliverable: it has no session outbox identity behind it (legacy message)
-// or its content is blank.
-var ErrNotPromotable = errors.New("message is not promotable")
-
 // FinalDeliverable is one immutable, user-visible final output.
 type FinalDeliverable struct {
 	ID             string          `json:"id"`
@@ -273,92 +268,6 @@ func encodeWorkflowOutput(output any) (string, string, error) {
 	return string(encoded), "application/json", nil
 }
 
-// PromoteMessage promotes one assistant message into an immutable final
-// deliverable, deriving the session/run identity from the session outbox row
-// recorded for the message's event. created is false when the promotion
-// already happened; the existing deliverable is returned unchanged.
-func (s *Store) PromoteMessage(
-	ctx context.Context,
-	workspaceID, userID, messageID, title string,
-) (FinalDeliverable, bool, error) {
-	messageID = strings.TrimSpace(messageID)
-	var conversationID, content, eventID, conversationUserID string
-	err := s.pool.QueryRow(ctx, `
-		SELECT m.conversation_id, m.content, COALESCE(m.event_id, ''), c.user_id
-		FROM weave_messages m
-		JOIN weave_conversations c
-		  ON c.workspace_id = m.workspace_id AND c.id = m.conversation_id
-		WHERE m.workspace_id=$1 AND m.id=$2 AND m.role='assistant'
-		  AND c.parent_message_id IS NULL
-	`, workspaceID, messageID).Scan(&conversationID, &content, &eventID, &conversationUserID)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return FinalDeliverable{}, false, ErrNotFound
-	}
-	if err != nil {
-		return FinalDeliverable{}, false, fmt.Errorf("read promotable message: %w", err)
-	}
-	if conversationUserID != userID {
-		return FinalDeliverable{}, false, ErrNotFound
-	}
-	if eventID == "" || strings.TrimSpace(content) == "" {
-		return FinalDeliverable{}, false, ErrNotPromotable
-	}
-	contentType := "text/markdown"
-	if LooksLikeHTMLDocument(content) {
-		contentType = "text/html"
-	}
-
-	var outboxUserID, leadAvatarID, sessionID, runID, runSnapshotID string
-	var projectID *string
-	err = s.pool.QueryRow(ctx, `
-		SELECT user_id, lead_avatar_id, session_id, active_run_id, run_snapshot_id, project_id
-		FROM weave_session_outbox
-		WHERE workspace_id=$1 AND event_id=$2
-		LIMIT 1
-	`, workspaceID, eventID).Scan(
-		&outboxUserID, &leadAvatarID, &sessionID, &runID, &runSnapshotID, &projectID,
-	)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return FinalDeliverable{}, false, ErrNotPromotable
-	}
-	if err != nil {
-		return FinalDeliverable{}, false, fmt.Errorf("read message outbox identity: %w", err)
-	}
-
-	metadata, err := json.Marshal(map[string]any{
-		"source":          "user_promotion",
-		"message_id":      messageID,
-		"conversation_id": conversationID,
-	})
-	if err != nil {
-		return FinalDeliverable{}, false, fmt.Errorf("encode promoted deliverable metadata: %w", err)
-	}
-	digest := sha256.Sum256([]byte(workspaceID + "\x1f" + "promote" + "\x1f" + messageID))
-	id := fmt.Sprintf("deliverable_%x", digest[:16])
-	if strings.TrimSpace(title) == "" {
-		title = "Promoted deliverable"
-	}
-	tag, err := s.pool.Exec(ctx, `
-		INSERT INTO weave_final_deliverables (
-			id, workspace_id, project_id, conversation_id, user_id, lead_avatar_id,
-			session_id, event_id, run_id, run_snapshot_id, title, content,
-			content_type, metadata, created_at
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
-		ON CONFLICT (workspace_id, user_id, lead_avatar_id, session_id, event_id)
-		DO NOTHING
-	`, id, workspaceID, projectID, conversationID, outboxUserID, leadAvatarID,
-		sessionID, "promote:"+messageID, runID, runSnapshotID, title, content,
-		contentType, metadata, time.Now())
-	if err != nil {
-		return FinalDeliverable{}, false, fmt.Errorf("insert promoted deliverable: %w", err)
-	}
-	deliverable, err := s.Get(ctx, workspaceID, id)
-	if err != nil {
-		return FinalDeliverable{}, false, fmt.Errorf("read promoted deliverable: %w", err)
-	}
-	return deliverable, tag.RowsAffected() == 1, nil
-}
-
 const deliverableColumns = `
 	id, workspace_id, project_id, conversation_id, user_id, lead_avatar_id,
 	session_id, event_id, run_id, run_snapshot_id, title, content,
@@ -377,27 +286,6 @@ func (s *Store) Get(ctx context.Context, workspaceID, id string) (FinalDeliverab
 	}
 	if err != nil {
 		return FinalDeliverable{}, fmt.Errorf("get final deliverable: %w", err)
-	}
-	return deliverable, nil
-}
-
-// LatestForConversation returns the newest deliverable projected for one conversation.
-func (s *Store) LatestForConversation(
-	ctx context.Context,
-	workspaceID, conversationID string,
-) (FinalDeliverable, error) {
-	deliverable, err := scanDeliverable(s.pool.QueryRow(ctx, `
-		SELECT `+deliverableColumns+`
-		FROM weave_final_deliverables
-		WHERE workspace_id=$1 AND conversation_id=$2 AND btrim(content) <> ''
-		ORDER BY created_at DESC, id DESC
-		LIMIT 1
-	`, workspaceID, strings.TrimSpace(conversationID)))
-	if errors.Is(err, pgx.ErrNoRows) {
-		return FinalDeliverable{}, ErrNotFound
-	}
-	if err != nil {
-		return FinalDeliverable{}, fmt.Errorf("get latest conversation deliverable: %w", err)
 	}
 	return deliverable, nil
 }

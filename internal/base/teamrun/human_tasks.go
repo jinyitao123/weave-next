@@ -49,7 +49,7 @@ func (r *HumanTaskReader) List(
 	rows, err := r.Pool.Query(ctx, `SELECT
 		r.workspace_id,r.project_id,r.run_id,r.status,r.team_id,r.workflow_id,
 		r.workflow_version,r.run_snapshot_id,r.source_kind,r.wait_detail,
-		r.created_at,r.updated_at
+		r.created_at,r.updated_at,r.team_run_generation,r.resume_generation
 		FROM weave_team_runs r
 		WHERE r.workspace_id=$1 AND r.status='parked' AND r.wait_kind='human'
 		  AND ($2::timestamptz IS NULL OR (r.updated_at,r.run_id)<($2,$3))
@@ -88,7 +88,7 @@ func (r *HumanTaskReader) Get(
 	item, err := scanHumanTask(r.Pool.QueryRow(ctx, `SELECT
 		r.workspace_id,r.project_id,r.run_id,r.status,r.team_id,r.workflow_id,
 		r.workflow_version,r.run_snapshot_id,r.source_kind,r.wait_detail,
-		r.created_at,r.updated_at,c.value
+		r.created_at,r.updated_at,r.team_run_generation,r.resume_generation,c.value
 		FROM weave_team_runs r
 		LEFT JOIN loom_store c
 		  ON c.namespace='teamrun-checkpoint:'||r.workspace_id AND c.key=r.run_id
@@ -130,7 +130,7 @@ func scanHumanTaskRow(row rowScanner, withCheckpoint bool) (HumanTaskItem, []byt
 		&item.Run.WorkspaceID, &projectID, &item.Run.RunID, &status,
 		&item.Run.TeamID, &item.Run.WorkflowID, &item.Run.WorkflowVersion,
 		&item.Run.RunSnapshotID, &sourceKind, &item.Run.WaitDetail,
-		&item.Run.CreatedAt, &item.Run.UpdatedAt,
+		&item.Run.CreatedAt, &item.Run.UpdatedAt, &item.Run.Generation, &item.Run.ResumeGeneration,
 	}
 	if withCheckpoint {
 		targets = append(targets, &checkpointRaw)

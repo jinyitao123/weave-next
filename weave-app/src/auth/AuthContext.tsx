@@ -66,12 +66,6 @@ export function AuthProvider({ children }: PropsWithChildren) {
       setUser(response.user);
       setStatus("authenticated");
     },
-    async devLogin(tenant) {
-      await api.devLogin(tenant);
-      const response = await refreshUser();
-      setUser(response);
-      setStatus("authenticated");
-    },
     refreshUser,
     logout,
   }), [logout, refreshUser, status, user]);

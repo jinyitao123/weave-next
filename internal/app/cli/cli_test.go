@@ -2,11 +2,10 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -22,150 +21,78 @@ func TestServerCommandsAreNotIntercepted(t *testing.T) {
 	}
 }
 
-func TestUnknownCommandReturnsNonzero(t *testing.T) {
-	var stderr bytes.Buffer
-	handled, code := Dispatch([]string{"unknown"}, &bytes.Buffer{}, &stderr)
-	if !handled || code == 0 || !strings.Contains(stderr.String(), `"unknown_command"`) {
-		t.Fatalf("Dispatch() = %v, %d, %s", handled, code, stderr.String())
+func TestRetiredBusinessAndUnknownCommandsCannotStartServerOrCallAPI(t *testing.T) {
+	t.Setenv(weaveclient.APIKeyEnv, "")
+	for _, args := range [][]string{
+		{"unknown"}, {"team", "samples"}, {"team", "up", "-f", "missing.yaml"},
+		{"team", "dispatch", "--team", "team-1", "--task", "work"},
+		{"status", "build", "build-1"}, {"status", "dispatch", "dispatch-1"},
+		{"status", "team-run", "run-1"}, {"deliverable", "list"}, {"deliverable", "get", "file-1"},
+	} {
+		var stdout, stderr bytes.Buffer
+		handled, code := Dispatch(args, &stdout, &stderr)
+		if !handled || code != 2 || stdout.Len() != 0 || !strings.Contains(stderr.String(), `"unknown_command"`) {
+			t.Fatalf("Dispatch(%v) = %v, %d, stdout=%s stderr=%s", args, handled, code, stdout.String(), stderr.String())
+		}
 	}
 }
 
-func TestTeamSamplesAndStatusFormatAPIJSON(t *testing.T) {
-	server := cliServer(t, func(response http.ResponseWriter, request *http.Request) {
-		switch request.URL.RequestURI() {
-		case "/v1/team-templates/samples":
-			_, _ = response.Write([]byte(`{"samples":[{"name":"code-review"}]}`))
-		case "/v1/internal/team-build-runs/build-1/progress":
-			_, _ = response.Write([]byte(`{"run_status":"ready"}`))
-		default:
-			t.Fatalf("unexpected request %s", request.URL.RequestURI())
-		}
-	})
-	defer server.Close()
-	setCLIEnv(t, server.URL)
-
+func TestMCPCommandRequiresServeAndConfiguration(t *testing.T) {
+	t.Setenv(weaveclient.APIKeyEnv, "")
 	for _, test := range []struct {
 		args []string
 		want string
 	}{
-		{args: []string{"team", "samples"}, want: `"code-review"`},
-		{args: []string{"status", "build", "build-1"}, want: `"ready"`},
+		{[]string{"mcp"}, "mcp_serve_required"},
+		{[]string{"mcp", "other"}, "mcp_serve_required"},
+		{[]string{"mcp", "serve", "extra"}, "mcp_serve_required"},
+		{[]string{"mcp", "serve"}, "configuration_invalid"},
 	} {
-		var stdout, stderr bytes.Buffer
-		handled, code := Dispatch(test.args, &stdout, &stderr)
-		if !handled || code != 0 || !strings.Contains(stdout.String(), test.want) {
-			t.Fatalf("Dispatch(%v) = %v, %d, stdout=%s stderr=%s", test.args, handled, code, stdout.String(), stderr.String())
-		}
-		var decoded any
-		if err := json.Unmarshal(stdout.Bytes(), &decoded); err != nil {
-			t.Fatalf("output is not JSON: %v", err)
+		var stderr bytes.Buffer
+		handled, code := Dispatch(test.args, &bytes.Buffer{}, &stderr)
+		if !handled || code != 2 || !strings.Contains(stderr.String(), test.want) {
+			t.Fatalf("Dispatch(%v) = %v, %d, %s", test.args, handled, code, stderr.String())
 		}
 	}
 }
 
-func TestTeamUpRequiresExplicitIdempotencyKey(t *testing.T) {
-	setCLIEnv(t, "http://127.0.0.1:1")
-	file := filepath.Join(t.TempDir(), "team.yaml")
-	if err := os.WriteFile(file, []byte("name: test\n"), 0o600); err != nil {
-		t.Fatal(err)
+func TestMCPTransportKeepsAPICallsAndRedactsFailures(t *testing.T) {
+	for _, status := range []int{http.StatusOK, http.StatusInternalServerError} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+				if request.Method != http.MethodGet || request.URL.Path != "/v1/team-templates/samples" ||
+					request.Header.Get("Authorization") != "Bearer wv_sk_cli_test" {
+					t.Errorf("unexpected MCP API request")
+					response.WriteHeader(http.StatusBadRequest)
+					return
+				}
+				response.WriteHeader(status)
+				if status == http.StatusOK {
+					_, _ = response.Write([]byte(`{"samples":[{"name":"code-review"}]}`))
+				} else {
+					_, _ = response.Write([]byte(`{"error":"private database failure"}`))
+				}
+			}))
+			defer server.Close()
+			t.Setenv(weaveclient.BaseURLEnv, server.URL)
+			t.Setenv(weaveclient.APIKeyEnv, "wv_sk_cli_test")
+			input := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"team_template_list","arguments":{}}}` + "\n"
+			var output bytes.Buffer
+			if err := runMCP(context.Background(), []string{"mcp", "serve"}, strings.NewReader(input), &output); err != nil {
+				t.Fatal(err)
+			}
+			var response map[string]any
+			if err := json.Unmarshal(output.Bytes(), &response); err != nil || response["id"] != float64(1) {
+				t.Fatalf("MCP response = %s, err=%v", output.String(), err)
+			}
+			want := "code-review"
+			if status != http.StatusOK {
+				want = "http_500"
+			}
+			if !strings.Contains(output.String(), want) || strings.Contains(output.String(), "private database") ||
+				strings.Contains(output.String(), "wv_sk_cli_test") {
+				t.Fatalf("MCP result = %s", output.String())
+			}
+		})
 	}
-	var stderr bytes.Buffer
-	_, code := Dispatch([]string{"team", "up", "-f", file}, &bytes.Buffer{}, &stderr)
-	if code != 2 || !strings.Contains(stderr.String(), `"idempotency_key_required"`) {
-		t.Fatalf("code=%d stderr=%s", code, stderr.String())
-	}
-}
-
-func TestTeamUpReadsFileAndCallsTemplateEndpoint(t *testing.T) {
-	server := cliServer(t, func(response http.ResponseWriter, request *http.Request) {
-		if request.Method != http.MethodPost || request.URL.Path != "/v1/teams:from-template" {
-			t.Fatalf("request = %s %s", request.Method, request.URL.Path)
-		}
-		var body map[string]any
-		if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
-			t.Fatal(err)
-		}
-		declarative, _ := body["declarative_spec"].(map[string]any)
-		if body["yaml"] != "name: test\n" || body["idempotency_key"] != "018f5f5a-c73c-7e31-8f4a-9b36797553a1" ||
-			declarative["schema_version"] != float64(1) {
-			t.Fatalf("body = %#v", body)
-		}
-		response.WriteHeader(http.StatusCreated)
-		_, _ = response.Write([]byte(`{"team_id":"team-1","status":"ready"}`))
-	})
-	defer server.Close()
-	setCLIEnv(t, server.URL)
-	file := filepath.Join(t.TempDir(), "team.yaml")
-	if err := os.WriteFile(file, []byte("name: test\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	specFile := filepath.Join(t.TempDir(), "workflow.json")
-	if err := os.WriteFile(specFile, []byte(`{"schema_version":1}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	var stdout, stderr bytes.Buffer
-	_, code := Dispatch([]string{
-		"team", "up", "-f", file, "--declarative-spec", specFile,
-		"--idempotency-key", "018f5f5a-c73c-7e31-8f4a-9b36797553a1",
-	}, &stdout, &stderr)
-	if code != 0 || !strings.Contains(stdout.String(), `"team_id": "team-1"`) {
-		t.Fatalf("code=%d stdout=%s stderr=%s", code, stdout.String(), stderr.String())
-	}
-}
-
-func TestTeamDispatchUsesUnifiedWorkflowEndpoint(t *testing.T) {
-	server := cliServer(t, func(response http.ResponseWriter, request *http.Request) {
-		switch request.Method + " " + request.URL.Path {
-		case "POST /v1/teams/team-1/dispatch":
-			response.WriteHeader(http.StatusCreated)
-			_, _ = response.Write([]byte(`{"run_id":"run-1","workflow_id":"workflow-1","workflow_version":1}`))
-		default:
-			t.Fatalf("unexpected request %s %s", request.Method, request.URL.Path)
-		}
-	})
-	defer server.Close()
-	setCLIEnv(t, server.URL)
-	var stdout, stderr bytes.Buffer
-	_, code := Dispatch([]string{"team", "dispatch", "--team", "team-1", "--task", "work"}, &stdout, &stderr)
-	if code != 0 || !strings.Contains(stdout.String(), `"client_request_id"`) || !strings.Contains(stdout.String(), `"workflow_id"`) {
-		t.Fatalf("code=%d stdout=%s stderr=%s", code, stdout.String(), stderr.String())
-	}
-}
-
-func TestConfigurationAndAPIErrorsAreStable(t *testing.T) {
-	t.Setenv(weaveclient.APIKeyEnv, "")
-	var stderr bytes.Buffer
-	_, code := Dispatch([]string{"team", "samples"}, &bytes.Buffer{}, &stderr)
-	if code != 2 || !strings.Contains(stderr.String(), `"configuration_invalid"`) {
-		t.Fatalf("code=%d stderr=%s", code, stderr.String())
-	}
-
-	server := cliServer(t, func(response http.ResponseWriter, request *http.Request) {
-		response.WriteHeader(http.StatusInternalServerError)
-		_, _ = response.Write([]byte(`{"error":"private database failure"}`))
-	})
-	defer server.Close()
-	setCLIEnv(t, server.URL)
-	stderr.Reset()
-	_, code = Dispatch([]string{"team", "samples"}, &bytes.Buffer{}, &stderr)
-	if code != 1 || !strings.Contains(stderr.String(), `"http_500"`) || strings.Contains(stderr.String(), "database") {
-		t.Fatalf("code=%d stderr=%s", code, stderr.String())
-	}
-}
-
-func cliServer(t *testing.T, handler http.HandlerFunc) *httptest.Server {
-	t.Helper()
-	return httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
-		if request.Header.Get("Authorization") != "Bearer wv_sk_cli_test" {
-			t.Fatalf("authorization = %q", request.Header.Get("Authorization"))
-		}
-		response.Header().Set("Content-Type", "application/json")
-		handler(response, request)
-	}))
-}
-
-func setCLIEnv(t *testing.T, baseURL string) {
-	t.Helper()
-	t.Setenv(weaveclient.BaseURLEnv, baseURL)
-	t.Setenv(weaveclient.APIKeyEnv, "wv_sk_cli_test")
 }

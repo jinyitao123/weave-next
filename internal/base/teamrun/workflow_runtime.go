@@ -31,6 +31,7 @@ const (
 type RuntimePark struct {
 	NodeID           string
 	CompletedOutputs map[string]json.RawMessage
+	DeliveryErrors   map[string]string
 	WaitKind         WaitKind
 	WaitDetail       json.RawMessage
 	// Corrections carries confirmed user directives across every subsequent
@@ -89,6 +90,12 @@ func validateWorkflowCheckpoint(checkpoint WorkflowCheckpointV1) error {
 	for nodeID, output := range checkpoint.CompletedOutputs {
 		if nodeID == "" || len(output) == 0 || !json.Valid(output) {
 			return fmt.Errorf("%w: checkpoint output is invalid", ErrTeamRunSnapshotUnavailable)
+		}
+	}
+	for nodeID, message := range checkpoint.DeliveryErrors {
+		if _, ok := checkpoint.CompletedOutputs[nodeID]; !ok || len(message) > 2048 ||
+			!strings.HasPrefix(message, "delivery_artifact_uncollected: ") {
+			return fmt.Errorf("%w: checkpoint delivery evidence is invalid", ErrTeamRunSnapshotUnavailable)
 		}
 	}
 	if len(checkpoint.Usage) != 0 {
@@ -371,7 +378,8 @@ func (r *WorkflowSerialRuntime) ResumeCheckpoint(
 		prepared.runInput,
 		serialMachineStart{
 			NodeID: checkpoint.NodeID, Outputs: outputs,
-			SourceKind: run.SourceKind, Now: r.now(), Run: run,
+			DeliveryErrors: checkpoint.DeliveryErrors,
+			SourceKind:     run.SourceKind, Now: r.now(), Run: run,
 			ArtifactHash:          prepared.envelope.ContentHash,
 			Candidate:             prepared.roundBoundCandidate(),
 			Usage:                 seedUsage,
@@ -753,7 +761,8 @@ func runtimeResultFromSerial(
 		}
 		return RuntimeResult{Status: RuntimeParked, Park: &RuntimePark{
 			NodeID: result.NodeID, CompletedOutputs: outputs,
-			WaitKind: result.WaitKind, WaitDetail: result.WaitDetail,
+			DeliveryErrors: result.DeliveryErrors,
+			WaitKind:       result.WaitKind, WaitDetail: result.WaitDetail,
 			Corrections:     append([]CorrectionDirectiveV1(nil), corrections...),
 			UsageCheckpoint: usageCheckpoint,
 			UsageComplete:   result.UsageComplete, UsageIncompleteReason: result.UsageIncompleteReason,

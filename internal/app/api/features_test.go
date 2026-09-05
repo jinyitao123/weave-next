@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -16,29 +15,6 @@ import (
 	"github.com/jinyitao123/weave/internal/kernel/teamcompiler"
 	"github.com/labstack/echo/v4"
 )
-
-func TestFeaturesExposeMetaTeamConfig(t *testing.T) {
-	for _, enabled := range []bool{false, true} {
-		e := echo.New()
-		recorder := httptest.NewRecorder()
-		ctx := e.NewContext(httptest.NewRequest(http.MethodGet, "/v1/features", nil), recorder)
-		server := &Server{Config: &config.Config{MetaTeamEnabled: enabled}}
-		if err := server.handleGetFeatures(ctx); err != nil {
-			t.Fatal(err)
-		}
-		var payload struct {
-			MetaTeam struct {
-				Enabled bool `json:"enabled"`
-			} `json:"metateam"`
-		}
-		if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
-			t.Fatal(err)
-		}
-		if payload.MetaTeam.Enabled != enabled {
-			t.Fatalf("enabled = %v, want %v", payload.MetaTeam.Enabled, enabled)
-		}
-	}
-}
 
 func TestChatRejectsMetaTeamNamesAndIntentsBeforeRegistryLookupWhenDisabled(t *testing.T) {
 	cases := []struct {
@@ -55,15 +31,12 @@ func TestChatRejectsMetaTeamNamesAndIntentsBeforeRegistryLookupWhenDisabled(t *t
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			body, _ := json.Marshal(map[string]any{
-				"agent": tc.agent, "message": "run", "intent": tc.intent, "stream": true,
-			})
 			e := echo.New()
 			recorder := httptest.NewRecorder()
-			ctx := e.NewContext(httptest.NewRequest(http.MethodPost, "/v1/chat", strings.NewReader(string(body))), recorder)
+			ctx := e.NewContext(httptest.NewRequest(http.MethodPost, "/v1/teams/test/dispatch", nil), recorder)
 			ctx.Request().Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
 			server := &Server{Config: &config.Config{MetaTeamEnabled: false}}
-			if err := server.handleChat(ctx); err != nil {
+			if err := server.handleChatRequest(ctx, ChatRequest{Agent: tc.agent, Message: "run", Intent: tc.intent, Stream: true}); err != nil {
 				t.Fatal(err)
 			}
 			if recorder.Code != http.StatusForbidden || !strings.Contains(recorder.Body.String(), `"code":"metateam_disabled"`) {

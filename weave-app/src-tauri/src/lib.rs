@@ -1,19 +1,15 @@
 use chrono::{SecondsFormat, Utc};
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::HashMap,
     fs,
     path::PathBuf,
     process::{Child, Command, Stdio},
     sync::Mutex,
 };
 use tauri::{AppHandle, Manager, RunEvent, State};
-use tauri_plugin_dialog::DialogExt;
-use uuid::Uuid;
 
 const KEYCHAIN_SERVICE: &str = "com.weave.desktop";
 const KEYCHAIN_ACCOUNT: &str = "session-token";
-const WORKSPACE_REGISTRY_FILE: &str = "workspace-handles.json";
 const RUNTIME_WORKSPACES_DIR: &str = "runtime-workspaces";
 
 #[derive(Default)]
@@ -24,18 +20,6 @@ struct RuntimeProcess {
 }
 
 struct RuntimeState(Mutex<RuntimeProcess>);
-
-struct WorkspaceRegistry {
-    file: PathBuf,
-    entries: Mutex<HashMap<Uuid, PathBuf>>,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct LocalWorkspaceSelection {
-    handle: Uuid,
-    display_name: String,
-}
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -94,148 +78,6 @@ fn clear_auth_token() -> Result<(), String> {
         Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
         Err(error) => Err(format!("clear credential: {error}")),
     }
-}
-
-fn persist_registry(
-    registry: &WorkspaceRegistry,
-    entries: &HashMap<Uuid, PathBuf>,
-) -> Result<(), String> {
-    let encoded = serde_json::to_vec(entries)
-        .map_err(|error| format!("encode workspace registry: {error}"))?;
-    fs::write(&registry.file, encoded)
-        .map_err(|error| format!("persist workspace registry: {error}"))
-}
-
-fn resolve_workspace(registry: &WorkspaceRegistry, handle: &str) -> Result<PathBuf, String> {
-    let handle = Uuid::parse_str(handle).map_err(|_| "invalid workspace handle".to_string())?;
-    let entries = registry
-        .entries
-        .lock()
-        .map_err(|_| "workspace registry is unavailable".to_string())?;
-    let path = entries
-        .get(&handle)
-        .ok_or_else(|| "workspace handle was not found".to_string())?;
-    let canonical = path
-        .canonicalize()
-        .map_err(|_| "workspace handle could not be resolved".to_string())?;
-    if !canonical.is_dir() {
-        return Err("workspace handle no longer identifies a directory".into());
-    }
-    Ok(canonical)
-}
-
-#[tauri::command]
-fn choose_local_workspace(
-    app: AppHandle,
-    registry: State<'_, WorkspaceRegistry>,
-) -> Result<Option<LocalWorkspaceSelection>, String> {
-    let Some(folder) = app.dialog().file().blocking_pick_folder() else {
-        return Ok(None);
-    };
-    let selected = folder
-        .into_path()
-        .map_err(|_| "selected location is not a local directory".to_string())?;
-    let canonical = selected
-        .canonicalize()
-        .map_err(|_| "selected workspace could not be resolved".to_string())?;
-    if !canonical.is_dir() {
-        return Err("selected workspace is not a directory".into());
-    }
-
-    let display_name = canonical
-        .file_name()
-        .and_then(|name| name.to_str())
-        .filter(|name| !name.is_empty())
-        .unwrap_or("Filesystem root")
-        .to_string();
-    let handle = Uuid::new_v4();
-    let mut entries = registry
-        .entries
-        .lock()
-        .map_err(|_| "workspace registry is unavailable".to_string())?;
-    entries.insert(handle, canonical);
-    if let Err(error) = persist_registry(&registry, &entries) {
-        entries.remove(&handle);
-        return Err(error);
-    }
-
-    Ok(Some(LocalWorkspaceSelection {
-        handle,
-        display_name,
-    }))
-}
-
-#[tauri::command]
-fn open_local_workspace(
-    handle: String,
-    registry: State<'_, WorkspaceRegistry>,
-) -> Result<(), String> {
-    let workspace = resolve_workspace(&registry, &handle)?;
-
-    #[cfg(target_os = "macos")]
-    let mut command = {
-        let mut command = Command::new("open");
-        command.arg(&workspace);
-        command
-    };
-    #[cfg(target_os = "windows")]
-    let mut command = {
-        let mut command = Command::new("explorer");
-        command.arg(&workspace);
-        command
-    };
-    #[cfg(target_os = "linux")]
-    let mut command = {
-        let mut command = Command::new("xdg-open");
-        command.arg(&workspace);
-        command
-    };
-    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
-    return Err("当前系统不支持打开本地工作目录".into());
-
-    let mut child = command
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .map_err(|_| "无法打开本地工作目录".to_string())?;
-    std::thread::spawn(move || {
-        let _ = child.wait();
-    });
-    Ok(())
-}
-
-#[tauri::command]
-fn open_diff(handle: String, registry: State<'_, WorkspaceRegistry>) -> Result<(), String> {
-    let workspace = resolve_workspace(&registry, &handle)?;
-    let git_status = Command::new("git")
-        .arg("-C")
-        .arg(&workspace)
-        .arg("rev-parse")
-        .arg("--is-inside-work-tree")
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .output()
-        .map_err(|_| "无法检查工作目录是否支持差异视图".to_string())?;
-    if !git_status.status.success() || git_status.stdout.as_slice() != b"true\n" {
-        return Err("不支持差异视图：工作目录不是 Git work tree".into());
-    }
-
-    let mut child = Command::new("git")
-        .arg("-C")
-        .arg(&workspace)
-        .arg("difftool")
-        .arg("--no-prompt")
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .map_err(|_| "无法启动差异视图".to_string())?;
-    std::thread::spawn(move || {
-        let _ = child.wait();
-    });
-    Ok(())
 }
 
 fn reap_runtime(process: &mut RuntimeProcess) {
@@ -371,41 +213,13 @@ fn stop_local_runtime(state: State<'_, RuntimeState>) -> Result<LocalRuntimeStat
     Ok(runtime_status(&process))
 }
 
-fn load_workspace_registry(app: &AppHandle) -> Result<WorkspaceRegistry, String> {
-    let directory = app_data_dir(app)?;
-    fs::create_dir_all(&directory)
-        .map_err(|error| format!("create app data directory: {error}"))?;
-    let file = directory.join(WORKSPACE_REGISTRY_FILE);
-    let entries = match fs::read(&file) {
-        Ok(encoded) => serde_json::from_slice(&encoded)
-            .map_err(|error| format!("decode workspace registry: {error}"))?,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => HashMap::new(),
-        Err(error) => return Err(format!("read workspace registry: {error}")),
-    };
-    Ok(WorkspaceRegistry {
-        file,
-        entries: Mutex::new(entries),
-    })
-}
-
 pub fn run() {
     let app = tauri::Builder::default()
-        .plugin(tauri_plugin_dialog::init())
         .manage(RuntimeState(Mutex::new(RuntimeProcess::default())))
-        .setup(|app| {
-            let registry = load_workspace_registry(app.handle()).map_err(
-                |error| -> Box<dyn std::error::Error> { Box::new(std::io::Error::other(error)) },
-            )?;
-            app.manage(registry);
-            Ok(())
-        })
         .invoke_handler(tauri::generate_handler![
             read_auth_token,
             write_auth_token,
             clear_auth_token,
-            choose_local_workspace,
-            open_local_workspace,
-            open_diff,
             start_local_runtime,
             inspect_local_runtime,
             stop_local_runtime,

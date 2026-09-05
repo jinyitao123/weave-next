@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"reflect"
+	"strings"
 
 	"github.com/jinyitao123/loom"
 	"github.com/jinyitao123/loom/stdlib"
@@ -76,7 +77,7 @@ type RuntimeCLIEvent struct {
 	Output string `json:"output,omitempty"`
 }
 
-// RuntimeCLIArtifact is the TeamRun-facing subset of one bounded outputs/ file.
+// RuntimeCLIArtifact is the TeamRun-facing subset of one bounded delivery file.
 type RuntimeCLIArtifact struct {
 	Path, ContentType, Content string
 }
@@ -86,6 +87,33 @@ type RuntimeCLIResult struct {
 	Attempts  []RuntimeCLIUsageAttempt
 	Events    []RuntimeCLIEvent
 	Artifacts []RuntimeCLIArtifact
+	// DeliveryError defers an uncollected reference until this node's result
+	// is actually selected for final delivery. Plans remain usable upstream.
+	DeliveryError string
+}
+
+// TextOutput resolves a single explicitly referenced delivery file to its
+// collected content. Structured outputs and ambiguous multi-file answers remain
+// separate; no host path is opened by the workflow process.
+func (r RuntimeCLIResult) TextOutput() (string, error) {
+	var selected *RuntimeCLIArtifact
+	for index := range r.Artifacts {
+		artifact := &r.Artifacts[index]
+		if !engine.ReferencesArtifact(r.Output, artifact.Path) && !engine.ReferencesArtifact(r.Output, "outputs/"+artifact.Path) {
+			continue
+		}
+		if selected != nil {
+			return r.Output, nil
+		}
+		selected = artifact
+	}
+	if selected == nil {
+		return r.Output, nil
+	}
+	if strings.TrimSpace(selected.Content) == "" {
+		return "", errors.New("referenced delivery file is empty")
+	}
+	return selected.Content, nil
 }
 
 // ObservedEvents returns the bounded physical-attempt events when available.
@@ -137,6 +165,12 @@ func (e *RuntimeCLIEntry) Execute(ctx context.Context, prompt string) (string, e
 func (e *RuntimeCLIEntry) ExecuteAccounted(ctx context.Context, prompt string) (RuntimeCLIResult, error) {
 	result, err := e.ExecuteResult(ctx, prompt)
 	accounted := RuntimeCLIResult{Output: result.Output}
+	for _, diagnostic := range result.Diagnostics {
+		if diagnostic.Code == "delivery_artifact_uncollected" {
+			accounted.DeliveryError = diagnostic.Code + ": " + diagnostic.Message
+			break
+		}
+	}
 	if len(result.Attempts) > 0 {
 		accounted.Attempts = make([]RuntimeCLIUsageAttempt, 0, len(result.Attempts))
 		for _, attempt := range result.Attempts {

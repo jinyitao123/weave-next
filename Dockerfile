@@ -26,6 +26,11 @@ RUN apk add --no-cache git ca-certificates
 
 WORKDIR /build
 
+COPY go.mod go.sum ./
+RUN --mount=type=cache,id=weave-gomod,target=/go/pkg/mod,sharing=locked \
+    --mount=type=cache,id=weave-gobuild,target=/root/.cache/go-build,sharing=locked \
+    go mod download
+
 COPY . .
 # Git metadata is excluded by .dockerignore, so the commit must be supplied by
 # the host (see `make docker-build`); plain `docker compose build` falls back
@@ -33,8 +38,12 @@ COPY . .
 ARG BUILD_COMMIT=unknown
 RUN rm -rf internal/app/webui/dist
 COPY --from=ui-builder /build/weave-app/dist ./internal/app/webui/dist
-RUN CGO_ENABLED=0 go build -ldflags "-X main.buildCommit=${BUILD_COMMIT}" -o /weave ./cmd/weave
-RUN mkdir -p /dist/runtime && \
+RUN --mount=type=cache,id=weave-gomod,target=/go/pkg/mod,sharing=locked \
+    --mount=type=cache,id=weave-gobuild,target=/root/.cache/go-build,sharing=locked \
+    CGO_ENABLED=0 go build -ldflags "-X main.buildCommit=${BUILD_COMMIT}" -o /weave ./cmd/weave
+RUN --mount=type=cache,id=weave-gomod,target=/go/pkg/mod,sharing=locked \
+    --mount=type=cache,id=weave-gobuild,target=/root/.cache/go-build,sharing=locked \
+    mkdir -p /dist/runtime && \
     for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64; do \
       os=${target%/*}; arch=${target#*/}; \
       out=/dist/runtime/weave-runtime-$os-$arch; \
@@ -60,7 +69,7 @@ RUN --mount=type=cache,target=/root/.npm \
       "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"
 # opencode + codex are ready out of the box. claude-code needs a post-install
 # native-binary download that can fail offline; make it best-effort so the image
-# always builds with the Demaike-critical engines (opencode) working. A claude
+# still includes the other execution engines. A claude
 # worker on a network-restricted host runs `claude install` once at deploy time.
 RUN node "$(npm root -g)/@anthropic-ai/claude-code/install.cjs" || \
     echo "claude native binary deferred — run 'claude install' at deploy if using the claude engine"

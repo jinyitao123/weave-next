@@ -1,278 +1,127 @@
 # Weave
 
-<p align="center">
-  <a href="README.md">English</a> | <a href="README.zh-CN.md">中文</a>
-</p>
+[English](README.md) | [中文](README.zh-CN.md)
 
-**给一个业务团队多个可用运行时，和一条清晰边界，你才敢让它实际产出。**
+**[Weave Workbench](https://github.com/jinyitao123/weave-workbench) 的执行后端。**
 
-Weave 是 [Loom](https://github.com/jinyitao123/loom) 的平台层。Loom 造一个能动手的心智；Weave 把它组织成元团队、业务团队和多运行时执行面。
+用户在 Workbench 选择团队、确认任务、看进度、处理问题、领取成果。Weave 保存输入和工作流版本，协调执行，记录等待与恢复，并保存产出的工作。
 
-## 一句话立意
+Workbench 是唯一受支持的业务入口。本仓库的内嵌界面只供维护者管理运行时。`weave` 命令负责服务部署、运行时维护和 Workbench 使用的 MCP 连接。独立业务 CLI 和 Codex/Claude 客户端接入教程退出现行支持；Codex、Claude 等执行引擎继续作为运行时的实现选择。
 
-所有把事交给别人的关系，都压在一条耦合上：**谁有权力去做，谁就担这件事的后果。** 你把活交给一个同事，他和你共担下行——他的名声、他的饭碗。正是这份共担，让托付是安全的。
+当前面向有维护者支持的私有设计伙伴试点。现行要求见[产品合同](docs/架构/2026-09-05-Weave-当前产品合同.md)、[工作对话方案](docs/架构/2026-09-05-Workbench-工作对话方案.md)和[统一验收清单](docs/验收/2026-09-05-Workbench统一验收清单.md)。历史版本和测试记录不能证明当前工作树已经通过验收。
 
-AI agent 掐断了这条耦合。它会动手——发邮件、动库存、调工具——但它不担你的任何风险。它激励不动、惩罚不到、对结果毫无利害。所以对人管用的两把锁——**对齐它的利益**、**信任它的判断**——两把都失效了。你交出去的是**劳动**，**风险却百分之百留在你这**。
+## 职责
 
-风险搬不动，就只剩最后一把锁，而且是结构性的：**在动作变得不可逆的那些点上，把 agent 的权力从结构上划死界，并让每一次跨越都看得见。** 这道边界——可逆的计算在哪里变成不可逆的后果——就是 Weave 存在的全部理由。
-
-所以 Weave 优化的是一个大多数 agent 平台连名字都没给的东西:**可托付性**。不是一个 agent 能有多自主，而是在你不盯着的时候，你能多安心地把活交给它。
-
-让一个 agent 可托付，要两样东西:
-
-- **确定性**——它的动作可预测、可回放。你没法治理一个你既预见不到、也重建不出的东西。*这是 Loom 的 graph 给的:一个 agent 是一张 JSON 步骤图，不是一个松散的 prompt 循环。graph 定死了先干什么后干什么;skill 只描述「什么算好」——只管* what*，从不管* how。*
-- **一条写边界**——业务团队默认只产出可检查的文件、代码、报告和素材；外部不可逆写动作没有明确产品路径就 fail-closed。
-
-**确定性 + 闸 = 一个你真能托付的东西。** Loom 让手稳，Weave 决定这只稳手的哪些动作能够抵达世界。一只你治不住的稳手仍是隐患;一道架在乱抖的手上的闸，没有可攥住的实物。两个都要。
-
-## Loom 与 Weave
-
-|  | Loom | Weave |
-|---|---|---|
-| **是** | 内核——一个能动手的心智 | 平台——那个心智触碰世界的、被治理的表面 |
-| **管的** | agent 的*内部*(它如何思考与执行) | agent 的*组织和运行*(团队、运行时、工具边界) |
-| **给你** | 确定性执行:agent 即数据，一张你读得懂的图 | 可运行的元团队、业务团队和多运行时 |
-| **意象** | 织布的织机 | 经纬——经线是担着险的人，纬线是不担险、来回穿的 agent，综片决定哪根线能穿过 |
-
-一个 agent 自己只是计算。Weave 给它团队身份、运行时选择和工具边界，让它能在业务流程里持续产出。
-
-## 具体说，Weave 是什么
-
-整套设计要守住的三个属性:
-
-- **常驻**——agent 作为长期运行时活着(服务器、用户自己的机器、或边缘一体机),不是一次性调用。活可以在你睡觉时进来。
-- **可寻址**——你像找同事一样找它:一个聊天、一个信箱。它记得你。
-- **可运行**——业务团队可以稳定接收输入、执行流程并生成可检查的业务产物。
-
-```
-┌─────────────────────────────────────────────┐
-│  Weave Console (React 19 + Vite)            │  ← 浏览器 UI
-├─────────────────────────────────────────────┤
-│  Weave API (Echo)                           │  ← REST + SSE
-│  ┌──────────────┬──────────┬─────────────┐  │
-│  │ Write Gate   │ Registry │ Memory      │  │  ← fail-closed writes
-│  │ Run Records  │ Compiler │ LLM Router  │  │
-│  └──────┬───────┴────┬─────┴──────┬──────┘  │
-├─────────┼────────────┼────────────┼──────────┤
-│   Loom 内核        Store (PGStore)  MCP Host │  ← 确定性执行
-└─────────────────────────────────────────────┘
-   PostgreSQL 16+          MCP Servers (HTTP)
-```
-
-## 箱子里有什么
-
-**内核——让一个 agent 可托付的那部分**
-
-| 能力 | 实现方式 |
+| 组成 | 负责什么 |
 |---|---|
-| **写动作边界** | 不可逆工具调用默认拒绝；需要落地时必须变成明确产品流程。 |
-| **运行记录** | 保留运行历史、SSE done 事件里的 `runtime_info` 与可定位的产物。 |
-| **确定性执行** | agent 编译成 Loom Graph。声明式 JSON graph 表达多步业务流(6 种步骤类型:chat、llm_call、llm_check、yield、transform、builtin)。 |
-| **护栏 & 预算** | 按 agent 的屏蔽词检查;按 agent 的 USD / token / step / 输出上限，带兜底模型。 |
-| **交接 vs 请教** | 两个协同动词，天生带人参与:*交接*把任务丢给你(以你的结果为准);*请教*问下属、把结果汇总回来，由主导者拍板。 |
+| Workbench | 工作对话、选团队、确认任务、进度、人工决策、恢复操作和成果阅读 |
+| Weave API 与执行服务 | 持久任务、冻结工作流、排队、执行状态、权限、恢复、用量和成果保存 |
+| Runtime | 在配置好的机器上执行当前任务，返回实际产出和可提供的活动记录 |
+| 运行时管理界面 | 维护者登录、运行时注册、连接、容量和本机运行时控制 |
 
-**常驻 & 可寻址**
+Workbench 宿主连接 Weave HTTP API，并启动 `weave mcp serve` 作为内部连接。浏览器使用 Workbench，服务凭据留在宿主。运行时管理页面只用于维护，不是第二套业务产品。
 
-| 能力 | 实现方式 |
-|---|---|
-| **常驻 & 多运行时** | agent 跑在服务器、用户自己的机器、或边缘侧——各自通过 API 领活。 |
-| **对话 & 恢复** | `/v1/chat` 运行一张 Loom Graph;`/v1/resume` 从 yield 断点继续。 |
-| **SSE 流式** | 实时 token 推送，自动拦截结构化内容块(chart / mermaid / SVG)。 |
+执行结束不等于成果可以采用。成果必须属于正确的运行且可以读取；文件缺失、活动不完整、用量未知和等待原因都要如实显示。恢复应保留已保存的工作，已请求停止和已确认停止必须区分。
 
-**平台服务**
+## 维护者安装
 
-| 能力 | 实现方式 |
-|---|---|
-| **LLM 路由** | 运行时可配置的多 Provider(OpenAI、DeepSeek、Gemini)——热切换无需重启。 |
-| **向量记忆** | 基于 pgvector 的语义记忆:自动提取、去重、召回。 |
-| **技能系统** | 可复用的 prompt 模块，渐进式披露(SemanticMatcher + KeywordMatcher)。 |
-| **MCP 集成** | 组合式 HTTP MCP Host，支持按工具名过滤、按服务器自定义 headers。 |
-| **多租户** | HS256 JWT token 租户隔离。 |
-| **控制台** | 随 Weave 内嵌的 React 19 界面：工作台/对话、Agent 配置（含记忆条目与技能正文）、团队、运行/最新存档、运行时与设置。 |
+使用 PostgreSQL 16 和 [go.mod](go.mod) 指定的 Go 版本。Workbench 有独立的 Node.js/pnpm 依赖与发布周期，应将两个仓库的确切版本一起记录、一起验证。
 
-## 快速开始
+### 本机启动 Weave
 
-### Docker Compose（推荐）
+先准备私有 PostgreSQL 数据库。服务端密钥只生成一次，重启时继续使用：
 
-```bash
-cd weave
+```sh
+export DATABASE_URL='postgres://weave:<database-password>@127.0.0.1:5432/weave?sslmode=disable'
+export JWT_SECRET="$(openssl rand -hex 32)"
+export WEAVE_SECRET_KEY="$(openssl rand -hex 32)"
+export WEAVE_API_URL='http://127.0.0.1:8080'
 
-# 配置环境变量
-cp deploy/.env.example deploy/.env
-# 编辑 deploy/.env:
-#   JWT_SECRET=$(openssl rand -hex 32)
-#   WEAVE_SECRET_KEY=$(openssl rand -hex 32)
-
-# 构建并启动
-docker compose up -d --build
-
-# 检查
-docker compose ps
-docker compose logs -f weave
-```
-
-凭据主密钥只生成一次，并在数据库的整个生命周期内保持不变。服务管理器或挂载
-secret 的部署可以改用文件，避免把值直接放进服务端环境：
-
-```bash
-install -d -m 700 "$HOME/.config/weave"
+go build -o ./bin/weave ./cmd/weave
 umask 077
-openssl rand -hex 32 > "$HOME/.config/weave/secret-key"
-unset WEAVE_SECRET_KEY
-export WEAVE_SECRET_KEY_FILE="$HOME/.config/weave/secret-key"
+./bin/weave bootstrap > bootstrap.json
+export WEAVE_API_KEY="$(jq -r '.api_key // empty' bootstrap.json)"
+./bin/weave serve
 ```
 
-`WEAVE_SECRET_KEY` 与 `WEAVE_SECRET_KEY_FILE` 必须且只能配置一个。缺失、同时
-配置或内容无效时，服务端会拒绝启动。不要把任一设置传给 `weave mcp serve`；
-面向 Codex 的 MCP 进程只需要 `WEAVE_API_URL` 和 `WEAVE_API_KEY`。
+首次 bootstrap 创建管理员及其名下的 API key；重复执行保留原账号和密钥，只有新建时才返回原始 key。后续启动应从秘密存储读取原 key，不要用空的 bootstrap 字段覆盖。bootstrap 输出包含明文凭据，应私密保存，转移到受控秘密存储后删除工作目录中的副本。
 
-启动后：
+`WEAVE_SECRET_KEY` 和 `WEAVE_SECRET_KEY_FILE` 只能设置一个。密钥为 32 字节，使用 64 位十六进制或标准 base64 编码；文件方式指向包含此值的普通文件。它应与数据库备份共同保全。这两个设置和 `DATABASE_URL` 都不应提供给 Workbench 或 MCP 子进程。
 
-| 服务 | 地址 | 说明 |
-|---|---|---|
-| **Weave + 控制台** | http://localhost:8080 | 同源管理界面、REST 与 SSE |
-| **PostgreSQL** | localhost:5432 | `weave/weave` |
+服务启动后，两个检查都应成功：
 
-默认登录：`admin` / `admin123`
-
-`make smoke` 用真实 Weave 进程 + PostgreSQL + 本地假 LLM 端到端自检一遍。
-
-### 配置 LLM Provider
-
-```bash
-# 取认证 token
-TOKEN=$(curl -s http://localhost:8080/v1/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"username":"admin","password":"admin123"}' | jq -r .token)
-
-# 加一个 OpenAI 兼容 provider
-curl -X POST http://localhost:8080/v1/providers \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "id": "deepseek",
-    "name": "DeepSeek",
-    "base_url": "https://api.deepseek.com",
-    "api_key": "sk-...",
-    "models": ["deepseek-chat"]
-  }'
+```sh
+curl --fail http://127.0.0.1:8080/v1/health
+curl --fail http://127.0.0.1:8080/v1/ready
 ```
 
-### 创建 Agent
+### 连接 Workbench
 
-```bash
-curl -X POST http://localhost:8080/v1/agents \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "assistant",
-    "model": "deepseek-chat",
-    "spec": { "identity": { "core": "You are a helpful assistant." } },
-    "guard": { "enabled": true, "blocked_terms": ["password", "secret"] },
-    "max_tokens": 4000
-  }'
+在单独检出的 Workbench 仓库执行：
+
+```sh
+pnpm install --frozen-lockfile
+pnpm build:workbench
+WEAVE_COMMAND='/absolute/path/to/weave-next/bin/weave' \
+WEAVE_API_URL='http://127.0.0.1:8080' \
+WEAVE_API_KEY='<owner-bound-api-key>' \
+pnpm workbench --host 127.0.0.1 --port 3080 --no-open
 ```
 
-### 对话
+在 `http://127.0.0.1:3080/` 使用 Workbench 本机登录流程。`WEAVE_COMMAND` 指向配套的 Weave 二进制，由 Workbench 启动 MCP 进程。派发前还需要可用团队和已配置的执行环境。页面打开或健康检查通过，只能证明入口可用，不能代替真实任务验收。
 
-```bash
-curl -X POST http://localhost:8080/v1/chat \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{ "agent": "assistant", "message": "你好！", "stream": true }'
+### 容器平台
+
+平台部署和验证统一使用 [docker-compose.platform.yml](docker-compose.platform.yml)：
+
+```sh
+cp .env.example .env
+# 填入实际生成的 JWT_SECRET、WEAVE_SECRET_KEY、WEAVE_ADMIN_PASS
+# 以及私有 POSTGRES_PASSWORD。不要把 shell 表达式写进 .env。
+scripts/refresh-weave.sh
+docker compose -f docker-compose.platform.yml ps
 ```
 
-### CLI 与 MCP 客户端
+该配置启动 Weave 和数据库；Workbench 单独安装。Weave 的 8080 端口提供 API 和运行时维护页面，PostgreSQL 不发布主机端口。刷新脚本始终更新主检出目录对应的平台，即使从 Git worktree 调用也是如此。隔离验证应另设 Compose project、私有环境、新卷和端口覆盖。
 
-`weave` 二进制可直接调用已经运行的 Weave 服务，不会加载服务端配置，也不会连接
-PostgreSQL：
+可选的 `runtime` profile 使用 `runtime_data` 命名卷保存 `/data/runtime-workspaces`，包括 `.weave-public-events` 待上传记录。重建运行时容器会保留这些文件，删除该卷则会删除其中内容。
 
-```bash
-export WEAVE_API_URL=http://127.0.0.1:8080 # 默认值
-export WEAVE_API_KEY=wv_sk_xxx
+维护者使用 `WEAVE_ADMIN_USER`（默认 `admin`）及自己配置的密码登录，没有默认密码。先注册运行时并保存 token，再启用可选的 `runtime` profile。只配置本次部署实际需要的模型引擎。
 
-weave team samples
-weave team up -f templates/code-review.yaml \
-  --idempotency-key 2bab1728-9dc0-4b61-a1f5-115fcaaf8e08
-weave team dispatch --team <team-id> --task "审查这次变更" \
-  --client-request-id 676506ec-1cf5-4c78-b324-29057591d3b5 --wait
-weave status build <build-id>
-weave status dispatch <client-request-id>
-weave status team-run <run-snapshot-id>
-weave deliverable list
-weave deliverable get <deliverable-id>
+## 架构与边界
+
+| 目录 | 职责 |
+|---|---|
+| `internal/base` | 不依赖运行时的协作状态、任务队列、执行记录和持久化 |
+| `internal/kernel` | 智能体、工作流、执行引擎、运行时和 MCP 机制 |
+| `internal/build` | 团队构建、编译、评测和恢复机制 |
+| `internal/app` | 面向 Workbench 的 API、MCP 连接、daemon 和产品组装 |
+| `weave-app` | 内嵌运行时维护界面和本机运行时控制 |
+| `cmd/weave` | 服务和维护命令入口 |
+
+四个内部层级不得向上导入。Go 模块保持 `github.com/jinyitao123/weave`，使用 Go modules 解析依赖，不使用 `vendor/`。[Loom](https://github.com/jinyitao123/loom) 提供图执行机制；冻结工作流不能保证模型回答或外部动作完全相同。
+
+MCP 写入闸拒绝 `write_tools` 明确声明的工具。未声明的工具不会仅凭名称自动阻断，CLI 引擎仍使用所在主机的权限。因此当前需要受信任的部署环境，不能把该机制当成覆盖所有外部动作的沙箱。
+
+运行时只采集能够归属本次执行的受支持 UTF-8 文件，单文件上限 256 KiB，合计上限 512 KiB。明确承诺但没有保存的文件属于交付失败，不能把路径回执当成完整成果。预览上限和采集上限不同，完整下载只能读取平台已经保存的内容。用量未知不能显示为费用为零。
+
+## 验证与记录
+
+```sh
+make ci
+npm --prefix weave-app ci
+make ui-embed
+make compose-check
+# 使用隔离数据库，不连接业务数据库：
+TEST_DATABASE_URL='<isolated-postgresql-url>' make test-integration
 ```
 
-建队所用 API key 的角色必须是 `admin`。模板、团队和 build 状态需要 `org`
-scope；派活、resume 和交付物需要 `chat` scope；team-run 状态需要 `runs`
-scope。`team_create` 不会代替调用方生成幂等键。同一次 dispatch 必须始终使用
-同一把 API key，因为请求归属与 key 绑定。CLI runtime 承载的 Lead 不接受异步
-dispatch。只有 Agent 显式调用 `save_deliverable` 才会产生交付物；v1 的交付物
-列表不支持按 team 或 run 过滤。
+`make test` 覆盖 `./internal/... ./cmd/...`，数据库集成验证需要 PostgreSQL。容器健康、工程检查、实际 Workbench 使用和 [20 项真实任务试点](docs/验收/2026-09-05-20项真实任务试点台账.md)是不同的证据，必须记录对应源码与实际结果，待验项目不能写成通过。
 
-Codex 从 `~/.codex/config.toml` 或受信任项目的 `.codex/config.toml` 读取本地
-stdio MCP server：
+升级前备份 PostgreSQL、稳定的凭据密钥和 Workbench 的 `DSH_HOME`。数据库迁移单向递增，代码回退不等于数据库回退；恢复应先在隔离环境验证。
 
-```toml
-[mcp_servers.weave]
-command = "/absolute/path/to/weave"
-args = ["mcp", "serve"]
-env = { WEAVE_API_URL = "http://127.0.0.1:8080" }
-env_vars = ["WEAVE_API_KEY"]
-```
+[架构文档目录](docs/架构/README.md)索引现行合同及仍支撑 Workbench 的执行与迁移资料。[8 月 31 日发布基线](docs/验收/2026-08-31-Weave-Workbench-v0.1-设计伙伴版发布基线.md)保留当时的确切版本组合与验收事实，不代表当前源码版本。
 
-启动 Codex 前先 export `WEAVE_API_KEY`。Claude Code 可用同一个进程注册：
-
-```bash
-claude mcp add --transport stdio \
-  --env WEAVE_API_URL=http://127.0.0.1:8080 \
-  --env WEAVE_API_KEY="$WEAVE_API_KEY" \
-  weave -- /absolute/path/to/weave mcp serve
-```
-
-## API 端点
-
-| 方法 | 路径 | 说明 |
-|---|---|---|
-| `POST` | `/v1/auth/login` | 用户名 / 密码登录 |
-| `GET` | `/v1/health` | 健康检查 |
-| `GET` | `/v1/ready` | 完整平台就绪检查 |
-| `GET/POST/PUT/DELETE` | `/v1/agents` | Agent 增删改查 |
-| `GET` | `/v1/agents/:name/topology` | 获取编译后的图拓扑 |
-| `POST` | `/v1/chat` | 对话（支持 `stream: true`、`profile`、`context`） |
-| `POST` | `/v1/resume` | 恢复被暂停的 Graph |
-| `GET/DELETE` | `/v1/sessions` | 会话管理 |
-| `GET` | `/v1/runs` | 运行历史与追踪 |
-| `GET` | `/v1/usage` | Token & 费用统计 |
-| `GET/POST/PUT/DELETE` | `/v1/providers` | LLM Provider 配置 |
-| `GET/PUT` | `/v1/settings/embedder` | Embedding Provider 配置 |
-| `GET/POST/PUT/DELETE` | `/v1/skills` | 技能增删改查 |
-| `GET/POST/DELETE` | `/v1/agents/:name/memories` | Agent 记忆增删查 |
-| `POST` | `/v1/agents/:name/memories/search` | 语义记忆搜索 |
-
-## 环境变量
-
-| 变量 | 必填 | 默认值 | 说明 |
-|---|---|---|---|
-| `DATABASE_URL` | 是 | — | PostgreSQL 连接字符串 |
-| `JWT_SECRET` | 是 | — | HS256 签名密钥 |
-| `WEAVE_SECRET_KEY` | 与密钥文件二选一 | — | 64 位十六进制或标准 base64 编码的 32 字节凭据主密钥 |
-| `WEAVE_SECRET_KEY_FILE` | 与直接密钥二选一 | — | 包含凭据主密钥的普通文件 |
-| `PORT` | 否 | `8080` | HTTP 监听端口 |
-| `WEAVE_DEV_MODE` | 否 | `false` | 开发端点开关（/v1/auth/token） |
-
-LLM Provider 和 Embedder 在运行时通过 API 配置，不走环境变量。
-
-## 与 Loom 的关系
-
-Weave 严格遵守 Loom 的分层规则：
-
-- Weave 是 **Layer 3**——只 import Loom，绝不修改 Loom。
-- 平台功能（记忆、团队、运行时、工具边界、路由）全在 `weave/internal/` 里，不在 `loom/` 里。
-- 扩展通过 `PGStore.Pool()` 直接访问连接池——不给内核加方法。
-
-一句话:内核让 agent 动手动得稳，平台负责把这些能力组织成可运行的团队和可控的工具边界。
-
-## License
+## 许可
 
 Apache-2.0

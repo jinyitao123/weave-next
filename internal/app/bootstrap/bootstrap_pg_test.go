@@ -2,6 +2,7 @@ package bootstrap
 
 import (
 	"context"
+	"encoding/json"
 	"reflect"
 	"strings"
 	"testing"
@@ -24,7 +25,7 @@ func TestEnsureIsIdempotentAndExplicitlyResetsPasswordRealPG(t *testing.T) {
 	service := Service{Users: userStore, Keys: keyStore}
 	options := Options{
 		WorkspaceID: workspaceID, Username: "admin",
-		APIURL: "http://127.0.0.1:8080", Command: "/usr/local/bin/weave",
+		APIURL: " http://127.0.0.1:8080/ ",
 	}
 	first, err := service.Ensure(ctx, options)
 	if err != nil {
@@ -38,10 +39,20 @@ func TestEnsureIsIdempotentAndExplicitlyResetsPasswordRealPG(t *testing.T) {
 	if _, err := userStore.Authenticate(ctx, workspaceID, "admin", first.GeneratedPassword); err != nil {
 		t.Fatalf("generated password cannot authenticate: %v", err)
 	}
-	for name, snippet := range first.MCP {
-		if !strings.Contains(snippet, "WEAVE_API_KEY") || strings.Contains(snippet, first.APIKey) ||
-			strings.Contains(snippet, "WEAVE_SECRET_KEY") {
-			t.Errorf("%s snippet does not use environment indirection: %q", name, snippet)
+	if first.APIURL != "http://127.0.0.1:8080" {
+		t.Fatalf("Workbench service address = %q", first.APIURL)
+	}
+	payload, err := json.Marshal(first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var connection map[string]json.RawMessage
+	if err := json.Unmarshal(payload, &connection); err != nil {
+		t.Fatal(err)
+	}
+	for _, retired := range []string{"mcp", "command", "codex_toml", "claude_command"} {
+		if _, exists := connection[retired]; exists {
+			t.Errorf("bootstrap still emits retired client configuration %q", retired)
 		}
 	}
 

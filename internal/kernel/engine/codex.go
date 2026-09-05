@@ -94,7 +94,7 @@ func (b *codexBackend) Run(ctx context.Context, spec RunSpec) (RunResult, error)
 	}
 	done := make(chan outcome, 1)
 	go func() {
-		parsed := parseCodexOutput(stdout)
+		parsed := parseCodexOutputWithEvents(stdout, spec.OnPublicEvent)
 		done <- outcome{parsed: parsed, err: cmd.Wait()}
 	}()
 
@@ -179,7 +179,39 @@ type codexOutput struct {
 const codexJSONLMaxEventBytes = 16 * 1024 * 1024
 
 func parseCodexOutput(stdout interface{ Read([]byte) (int, error) }) codexOutput {
+	return parseCodexOutputWithEvents(stdout, nil)
+}
+
+func parseCodexOutputWithEvents(stdout interface{ Read([]byte) (int, error) }, publish func(Event, bool)) codexOutput {
 	var output codexOutput
+	var lastMessageID, lastMessageText string
+	// Codex agent_message is public text. reasoning is a separate item type
+	// and is deliberately absent from this allowlist, including future variants.
+	public := func(item map[string]json.RawMessage, kind string) {
+		if publish == nil {
+			return
+		}
+		if jsonString(item["type"]) == "agent_message" {
+			text := jsonString(item["text"])
+			bounded := boundedCodexText(text)
+			id := jsonString(item["id"])
+			if text != "" && (id == "" || id != lastMessageID || bounded != lastMessageText) {
+				publish(Event{Kind: "text", CallID: id, Text: bounded}, len(text) > 4096)
+				lastMessageID, lastMessageText = id, bounded
+			}
+		} else if event, ok := codexToolEvent(item, kind); ok {
+			truncated := false
+			for _, field := range []string{"command", "aggregated_output", "arguments", "input", "result", "output", "changes", "query", "error"} {
+				raw := item[field]
+				value := string(raw)
+				if decoded := jsonString(raw); decoded != "" {
+					value = decoded
+				}
+				truncated = truncated || len(value) > 4096
+			}
+			publish(event, truncated)
+		}
+	}
 	scanner := bufio.NewScanner(stdout)
 	// Codex emits command/tool results as a single JSONL event. A worker may
 	// legitimately inspect a large artifact even when its final agent message is
@@ -198,11 +230,13 @@ func parseCodexOutput(stdout interface{ Read([]byte) (int, error) }) codexOutput
 			output.sessionID = jsonString(event["thread_id"])
 		case "item.started":
 			item := jsonObject(event["item"])
+			public(item, "tool_call")
 			if activity, ok := codexToolEvent(item, "tool_call"); ok && len(output.events) < 200 {
 				output.events = append(output.events, activity)
 			}
 		case "item.completed":
 			item := jsonObject(event["item"])
+			public(item, "tool_result")
 			switch jsonString(item["type"]) {
 			case "agent_message":
 				output.output = jsonString(item["text"])
@@ -210,6 +244,9 @@ func parseCodexOutput(stdout interface{ Read([]byte) (int, error) }) codexOutput
 			if activity, ok := codexToolEvent(item, "tool_result"); ok && len(output.events) < 200 {
 				output.events = append(output.events, activity)
 			}
+		case "item.updated":
+			item := jsonObject(event["item"])
+			public(item, "tool_call") // known in-progress tool snapshots remain running
 		case "turn.completed":
 			output.completionCount++
 			receipt, diagnostics := parseCodexUsage(event, string(line))

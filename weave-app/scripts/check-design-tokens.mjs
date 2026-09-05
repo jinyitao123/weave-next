@@ -7,7 +7,7 @@
  *   2. 禁止 hex / rgb() / rgba() 色值字面值，只能用语义色 token。
  *   3. 断点只允许三档：736 / 1080 / 1280（见 tokens.css 顶部断点契约）。
  *
- * 豁免：EXEMPT_FILES 中的文件整体豁免（遗留债务，UI-T03 起逐页清理后收紧）。
+ * 豁免：EXEMPT_FILES 中的文件整体豁免（保留基础样式的既有布局数值）。
  * 发现违规即以非零退出并打印清单。
  */
 import { readdirSync, readFileSync, statSync } from "node:fs";
@@ -17,14 +17,13 @@ import { fileURLToPath } from "node:url";
 const SRC = fileURLToPath(new URL("../src", import.meta.url));
 const TOKEN_FILE = "styles/tokens.css";
 
-// 遗留豁免（整体豁免该文件）：app.css 的既有字面值债务由 UI-T03 起逐页清理，
-// 清理完毕后从此列表移除并转为全量强制。
+// app.css 保留登录、运行时管理及原语的既有布局；其字面值仍是明确的样式债务。
 const EXEMPT_FILES = new Set(["styles/app.css"]);
 
 const ALLOWED_BREAKPOINTS = new Set(["736", "1080", "1280"]);
 
 /** 组件注入式局部变量白名单：由 React style 内联传入，不进入全局 token。 */
-const LOCAL_VAR_ALLOWLIST = new Set(["--branch-index", "--branch-offset"]);
+const LOCAL_VAR_ALLOWLIST = new Set();
 
 /** tokens.css 中定义的全局 token 集合（供未定义 token 检查使用）。 */
 const GLOBAL_TOKENS = new Set(
@@ -86,7 +85,7 @@ for (const path of walk(SRC)) {
     }
     for (const m of line.matchAll(/var\((--[a-zA-Z0-9-]+)\)/g)) {
       const token = m[1];
-      // 注入式局部变量（如 --branch-index 由组件 style 传入）白名单。
+      // 注入式局部变量白名单。
       if (LOCAL_VAR_ALLOWLIST.has(token)) continue;
       if (!GLOBAL_TOKENS.has(token) && !localDefs.has(token)) {
         violations.push(`${rel}:${index + 1}  引用了未定义的 token ${token}（应在 tokens.css 定义或在同文件赋值）  →  ${line.trim().slice(0, 120)}`);

@@ -19,6 +19,7 @@ import (
 	"github.com/jinyitao123/loom"
 	"github.com/jinyitao123/loom/contract"
 	"github.com/jinyitao123/weave/internal/base/deliverable"
+	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/kernel/loomruntime"
 	"github.com/jinyitao123/weave/internal/kernel/workflow"
@@ -45,12 +46,13 @@ const (
 )
 
 type serialMachineStart struct {
-	NodeID       string
-	Outputs      map[string]any
-	SourceKind   SourceKind
-	Now          time.Time
-	Run          TeamRun
-	ArtifactHash string
+	NodeID         string
+	Outputs        map[string]any
+	DeliveryErrors map[string]string
+	SourceKind     SourceKind
+	Now            time.Time
+	Run            TeamRun
+	ArtifactHash   string
 	// Candidate marks a round-bound team build candidate test run (snapshot
 	// build_round_no > 0). These runs charge the TeamBuild budget ledger from
 	// their measured usage only; parallel/fanout legs and CLI nodes without a
@@ -77,6 +79,7 @@ type serialMachineResult struct {
 	Status                serialMachineStatus
 	Output                any
 	Outputs               map[string]any
+	DeliveryErrors        map[string]string
 	NodeID                string
 	WaitKind              WaitKind
 	WaitDetail            json.RawMessage
@@ -104,11 +107,12 @@ func nodePhysicalUsageAttemptID(callID, physicalID string, index int) string {
 }
 
 type nodeUsageReport struct {
-	Totals      loomruntime.UsageTotals
-	Coverage    loomruntime.UsageCoverage
-	CLIAttempts []workflow.RuntimeCLIUsageAttempt
-	Events      []workflow.RuntimeCLIEvent
-	Artifacts   []workflow.RuntimeCLIArtifact
+	Totals        loomruntime.UsageTotals
+	Coverage      loomruntime.UsageCoverage
+	CLIAttempts   []workflow.RuntimeCLIUsageAttempt
+	Events        []workflow.RuntimeCLIEvent
+	Artifacts     []workflow.RuntimeCLIArtifact
+	DeliveryError string
 }
 
 func runSerialMachine(
@@ -173,6 +177,10 @@ func runSerialMachine(
 	for nodeID, output := range start.Outputs {
 		outputs[nodeID] = output
 	}
+	deliveryErrors := make(map[string]string, len(start.DeliveryErrors))
+	for nodeID, message := range start.DeliveryErrors {
+		deliveryErrors[nodeID] = message
+	}
 	current := start.NodeID
 	if current == "" {
 		current = graph.EntryNodeID
@@ -203,7 +211,8 @@ func runSerialMachine(
 					return fail(executionError(ErrorCodeExecutionUnrecoverable, err))
 				}
 				return serialMachineResult{Status: serialParked, Outputs: outputs, NodeID: current,
-					WaitKind: WaitCorrection, WaitDetail: encoded, Usage: usage,
+					DeliveryErrors: deliveryErrors,
+					WaitKind:       WaitCorrection, WaitDetail: encoded, Usage: usage,
 					UsageComplete: usageComplete, UsageIncompleteReason: usageIncompleteReason}
 			}
 		}
@@ -311,21 +320,38 @@ func runSerialMachine(
 						}
 					}
 				}
+				next, routed := edgeTarget(edges[current], machine.RouteFailure)
+				failure := ClassifyFailure(err)
+				retryable := !routed && failure.Class == FailureClassInfrastructure && failure.Retryable
 				if start.RecordActivity != nil {
-					failure := ClassifyFailure(err)
 					start.RecordActivity(ctx, "member_failed", node, memberID, memberVersion, map[string]any{
 						"duration_ms": time.Since(startedAt).Milliseconds(), "error_code": string(executionErrorCode(err)),
-						"failure_class": failure.Class, "failure_reason": failure.Reason, "retryable": false,
+						"failure_class": failure.Class, "failure_reason": failure.Reason, "retryable": retryable,
 					})
 				}
-				next, routed := edgeTarget(edges[current], machine.RouteFailure)
 				if routed {
 					current = next
 					continue
 				}
+				if retryable {
+					detail, encodeErr := json.Marshal(RuntimeWaitDetailV1{
+						SchemaVersion: 1, WaitType: "runtime", NodeID: node.ID,
+					})
+					if encodeErr != nil {
+						return fail(executionError(ErrorCodeExecutionUnrecoverable, encodeErr))
+					}
+					return serialMachineResult{Status: serialParked, Outputs: outputs, NodeID: node.ID,
+						DeliveryErrors: deliveryErrors,
+						WaitKind:       WaitRuntime, WaitDetail: detail, Usage: usage,
+						UsageComplete: usageComplete, UsageIncompleteReason: usageIncompleteReason}
+				}
 				return fail(err)
 			}
 			outputs[node.ID] = output
+			delete(deliveryErrors, node.ID)
+			if nodeUsage.DeliveryError != "" {
+				deliveryErrors[node.ID] = nodeUsage.DeliveryError
+			}
 			if start.RecordActivity != nil {
 				start.RecordActivity(ctx, "member_completed", node, memberID, memberVersion, map[string]any{
 					"duration_ms": time.Since(startedAt).Milliseconds(), "tool_calls": nodeUsage.Totals.ToolCalls,
@@ -372,6 +398,21 @@ func runSerialMachine(
 				return fail(executionError(ErrorCodeExecutionUnrecoverable, err))
 			}
 			outputs[node.ID] = output
+			delete(deliveryErrors, node.ID)
+			config := node.Config.(machine.TransformConfig)
+			references := append([]machine.ValueRef(nil), config.Items...)
+			if config.Value != nil {
+				references = append(references, *config.Value)
+			}
+			for _, reference := range config.Fields {
+				references = append(references, reference)
+			}
+			for _, reference := range references {
+				if message := valueDeliveryError(reference, outputs, deliveryErrors); message != "" &&
+					(deliveryErrors[node.ID] == "" || message < deliveryErrors[node.ID]) {
+					deliveryErrors[node.ID] = message
+				}
+			}
 			if start.RecordOutput != nil {
 				if err := start.RecordOutput(ctx, node, output, false); err != nil {
 					return fail(executionError(ErrorCodeDeliveryUnavailable, err))
@@ -427,7 +468,8 @@ func runSerialMachine(
 			}
 			return serialMachineResult{
 				Status: serialParked, Outputs: outputs, NodeID: joinNodeID,
-				WaitKind: WaitFanout, WaitDetail: detail, Usage: usage,
+				DeliveryErrors: deliveryErrors,
+				WaitKind:       WaitFanout, WaitDetail: detail, Usage: usage,
 				UsageComplete: usageComplete, UsageIncompleteReason: usageIncompleteReason,
 			}
 		case machine.NodeJoin:
@@ -493,6 +535,12 @@ func runSerialMachine(
 			if err != nil {
 				return fail(executionError(ErrorCodeOutputInvalid, err))
 			}
+			// Only the output chosen by the frozen deliver node is a final
+			// delivery claim. Upstream plans may mention files never authored
+			// by their own node; they must not prevent the actual author running.
+			if message := valueDeliveryError(config.Result, outputs, deliveryErrors); message != "" {
+				return fail(executionError(ErrorCodeDeliveryUnavailable, errors.New(message)))
+			}
 			encoded, err := json.Marshal(output)
 			if err != nil {
 				return fail(executionError(ErrorCodeOutputInvalid, err))
@@ -554,7 +602,8 @@ func runSerialMachine(
 				}
 				return serialMachineResult{
 					Status: serialParked, Outputs: outputs, NodeID: node.ID,
-					WaitKind: WaitHuman, WaitDetail: detail, Usage: usage,
+					DeliveryErrors: deliveryErrors,
+					WaitKind:       WaitHuman, WaitDetail: detail, Usage: usage,
 					UsageComplete: usageComplete, UsageIncompleteReason: usageIncompleteReason,
 				}
 			}
@@ -578,7 +627,8 @@ func runSerialMachine(
 			}
 			return serialMachineResult{
 				Status: serialParked, Outputs: outputs, NodeID: node.ID,
-				WaitKind: WaitTimer, WaitDetail: detail, Usage: usage,
+				DeliveryErrors: deliveryErrors,
+				WaitKind:       WaitTimer, WaitDetail: detail, Usage: usage,
 				UsageComplete: usageComplete, UsageIncompleteReason: usageIncompleteReason,
 			}
 		case machine.NodeHandoff:
@@ -597,6 +647,16 @@ func runSerialMachine(
 		ErrorCodeOutputInvalid,
 		errors.New("serial workflow ended without deliver"),
 	))
+}
+
+func valueDeliveryError(ref machine.ValueRef, outputs map[string]any, deliveryErrors map[string]string) string {
+	if ref.Source != machine.ValueNodeOutput {
+		return ""
+	}
+	if _, present := outputs[ref.NodeID]; !present && ref.Default != nil {
+		return valueDeliveryError(*ref.Default, outputs, deliveryErrors)
+	}
+	return deliveryErrors[ref.NodeID]
 }
 
 func activityValueSummary(value any) string {
@@ -927,6 +987,7 @@ func runAgentNode(
 	outputs map[string]any,
 	corrections []CorrectionDirectiveV1,
 ) (any, nodeUsageReport, error) {
+	ctx = execution.WithNodeID(ctx, node.ID)
 	var (
 		agentID      string
 		agentVersion int64
@@ -1026,7 +1087,15 @@ func runAgentNode(
 		if outcome.err != nil {
 			return nil, usage, executionError(ErrorCodeExecutionUnrecoverable, outcome.err)
 		}
-		normalizedOutput, err := normalizeAgentNodeOutput(node, outcome.result.Output)
+		output := outcome.result.Output
+		if node.Output != nil && node.Output.Type == machine.ValueText {
+			var err error
+			output, err = outcome.result.TextOutput()
+			if err != nil {
+				return nil, usage, executionError(ErrorCodeOutputInvalid, err)
+			}
+		}
+		normalizedOutput, err := normalizeAgentNodeOutput(node, output)
 		if err != nil {
 			return nil, usage, err
 		}
@@ -1142,9 +1211,10 @@ func runtimeCLIUsageReport(result workflow.RuntimeCLIResult) (nodeUsageReport, e
 	}
 	return nodeUsageReport{
 		Totals: accumulator.Totals(), Coverage: accumulator.Coverage(),
-		CLIAttempts: append([]workflow.RuntimeCLIUsageAttempt(nil), result.Attempts...),
-		Events:      result.ObservedEvents(200),
-		Artifacts:   append([]workflow.RuntimeCLIArtifact(nil), result.Artifacts...),
+		CLIAttempts:   append([]workflow.RuntimeCLIUsageAttempt(nil), result.Attempts...),
+		Events:        result.ObservedEvents(200),
+		Artifacts:     append([]workflow.RuntimeCLIArtifact(nil), result.Artifacts...),
+		DeliveryError: result.DeliveryError,
 	}, nil
 }
 

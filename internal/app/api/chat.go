@@ -20,7 +20,6 @@ import (
 	"github.com/jinyitao123/weave/internal/app/metateam"
 	"github.com/jinyitao123/weave/internal/app/projects"
 	"github.com/jinyitao123/weave/internal/base/execution"
-	"github.com/jinyitao123/weave/internal/base/realtime"
 	"github.com/jinyitao123/weave/internal/base/snapshot"
 	"github.com/jinyitao123/weave/internal/base/taskqueue"
 	"github.com/jinyitao123/weave/internal/build/teambuild"
@@ -782,14 +781,6 @@ func (s *Server) runChatSession(
 	return prepared.Run(ctx, state)
 }
 
-func (s *Server) handleChat(c echo.Context) error {
-	var req ChatRequest
-	if err := c.Bind(&req); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
-	}
-	return s.handleChatRequest(c, req)
-}
-
 func (s *Server) handleChatRequest(c echo.Context, req ChatRequest) error {
 	if req.Agent == "" || req.Message == "" {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "agent and message are required"})
@@ -1070,7 +1061,7 @@ func (s *Server) handleChatRequest(c echo.Context, req ChatRequest) error {
 	_ = s.appendSessionMessages(ctx, sessionKey, userMessage)
 
 	// Save session title from first user message.
-	saveSessionTitle(ctx, s.Store, sessionKey, req.Message)
+
 	if publishedWorkflowID != "" {
 		requestFinalized = true
 		return s.respondPublishedWorkflowChat(
@@ -1247,10 +1238,6 @@ func (s *Server) handleChatRequest(c echo.Context, req ChatRequest) error {
 		}); err != nil {
 			return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		}
-		s.Hub.Publish(tenant, userID, realtime.Event{
-			Type:           "message",
-			ConversationID: conversationID,
-		})
 	}
 	s.startOwnerMemoryFill(tenant, rec, userID, conversationID, req.Message, output, false)
 
@@ -1420,7 +1407,6 @@ func (s *Server) respondCreateTeamAuthorizationClarification(
 	}
 	userMessage := contract.Message{Role: "user", Content: injectAttachmentNotice(req.Message, attachments)}
 	_ = s.appendSessionMessages(ctx, sessionKey, userMessage)
-	saveSessionTitle(ctx, s.Store, sessionKey, req.Message)
 
 	output := "团队方案已生成。请点击方案卡片上的「继续构建」开始；如需调整，直接说明修改意见。"
 	_ = s.appendSessionMessages(ctx, sessionKey, contract.Message{Role: "assistant", Content: output})
@@ -1436,10 +1422,6 @@ func (s *Server) respondCreateTeamAuthorizationClarification(
 	}); err != nil {
 		return true, c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
-	s.Hub.Publish(workspaceID, userID, realtime.Event{
-		Type:           "message",
-		ConversationID: conversationID,
-	})
 	s.startOwnerMemoryFill(workspaceID, rec, userID, conversationID, req.Message, output, false)
 
 	resp := ChatResponse{

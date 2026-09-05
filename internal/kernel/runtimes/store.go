@@ -44,6 +44,7 @@ type EngineCapability struct {
 	BinaryVersion   string `json:"binary_version"`
 	AuthMode        string `json:"auth_mode"`
 	ProtocolVersion string `json:"protocol_version"`
+	PublicEvents    bool   `json:"public_events,omitempty"`
 	EndpointClass   string `json:"endpoint_class"`
 }
 
@@ -212,6 +213,9 @@ func canonicalEngineCapabilities(
 		capability.AuthMode = strings.TrimSpace(capability.AuthMode)
 		capability.ProtocolVersion = strings.TrimSpace(capability.ProtocolVersion)
 		capability.EndpointClass = strings.TrimSpace(capability.EndpointClass)
+		if capability.Engine != "codex" {
+			capability.PublicEvents = false
+		}
 		if !slices.Contains(engines, capability.Engine) {
 			return nil, fmt.Errorf("runtime engine capability %q was not advertised", capability.Engine)
 		}

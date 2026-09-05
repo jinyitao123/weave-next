@@ -2,25 +2,14 @@
 import argparse
 import json
 import pathlib
-import re
 import subprocess
 import sys
 
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
+from go_inventory import go_inventory
+
 MODULE = "github.com/jinyitao123/weave"
 BANDS = ("base", "kernel", "build", "app")
-
-
-def parse_imports(source: str) -> list[str]:
-    imports = []
-    for match in re.finditer(
-        r'^\s*import\s+(?:[._A-Za-z][._A-Za-z0-9]*\s+)?"([^"]+)"',
-        source,
-        re.MULTILINE,
-    ):
-        imports.append(match.group(1))
-    for block in re.finditer(r"^\s*import\s*\((.*?)^\s*\)", source, re.MULTILINE | re.DOTALL):
-        imports.extend(re.findall(r'"([^"]+)"', block.group(1)))
-    return imports
 
 
 def module_paths(root: pathlib.Path) -> list[str]:
@@ -66,6 +55,16 @@ def package_count(root: pathlib.Path, band: str) -> int:
     return len([line for line in result.stdout.splitlines() if line])
 
 
+def budget_violations(band: str, actual: dict, dependencies: set[str], limit: dict) -> list[str]:
+    failures = [
+        f"{band} {metric}: actual {value} exceeds budget {limit[metric]}"
+        for metric, value in actual.items() if value > limit[metric]
+    ]
+    for dependency in sorted(dependencies - set(limit["allowed_dependencies"])):
+        failures.append(f"{band} dependency is not approved: {dependency}")
+    return failures
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Check four-band Go size budgets.")
     parser.add_argument("--root", default=".", help="repository root to scan")
@@ -74,19 +73,23 @@ def main() -> int:
 
     root = pathlib.Path(args.root).resolve()
     budgets = json.loads((root / args.budgets).read_text(encoding="utf-8"))
+    inventory = go_inventory(root)
     modules = module_paths(root)
     failures = []
 
     for band in BANDS:
         files = sorted((root / "internal" / band).rglob("*.go"))
         dependencies = set()
-        for path in files:
-            for imported in parse_imports(path.read_text(encoding="utf-8")):
+        for file in inventory:
+            if not file["path"].startswith(f"internal/{band}/"):
+                continue
+            for imported in file["imports"]:
                 module = imported_module(imported, modules)
                 if module is not None:
                     dependencies.add(module)
         actual = {
             "lines": count_lines(files),
+            "production_lines": count_lines([path for path in files if not path.name.endswith("_test.go")]),
             "packages": package_count(root, band),
             "external_dependencies": len(dependencies),
         }
@@ -97,9 +100,13 @@ def main() -> int:
             f"packages {actual['packages']}/{limit['packages']}, "
             f"external_dependencies {actual['external_dependencies']}/{limit['external_dependencies']}"
         )
-        for metric, value in actual.items():
-            if value > limit[metric]:
-                failures.append(f"{band} {metric}: actual {value} exceeds budget {limit[metric]}")
+        print(f"  production lines {actual['production_lines']}/{limit['production_lines']}")
+        failures.extend(budget_violations(band, actual, dependencies, limit))
+        target = budgets["migration_targets"][band]
+        debt = [f"{metric} +{actual[metric] - ceiling}" for metric, ceiling in target.items()
+                if actual[metric] > ceiling]
+        if debt:
+            print(f"  unresolved migration debt against original target: {', '.join(debt)}")
 
     if failures:
         for failure in failures:

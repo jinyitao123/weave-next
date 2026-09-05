@@ -36,7 +36,7 @@ func TestCorrectionSafePointConfirmAndResume(t *testing.T) {
 		CompletedOutputs: map[string]json.RawMessage{
 			"research": json.RawMessage(`{"draft":true}`),
 			"review":   json.RawMessage(`{"accepted":false}`),
-		}, UsageComplete: true,
+		}, DeliveryErrors: map[string]string{"review": "delivery_artifact_uncollected: missing_review_file"}, UsageComplete: true,
 	}}
 	processed, err := h.executor.ProcessNext(context.Background(), "worker-1")
 	if err != nil || !processed {
@@ -73,6 +73,7 @@ func TestCorrectionSafePointConfirmAndResume(t *testing.T) {
 	}
 	_ = tx.Rollback(context.Background())
 	if checkpoint.NodeID != "review" || checkpoint.CompletedOutputs["review"] != nil || checkpoint.CompletedOutputs["research"] == nil ||
+		len(checkpoint.DeliveryErrors) != 0 ||
 		len(checkpoint.Corrections) != 1 || checkpoint.Corrections[0].Instruction != requested.Instruction {
 		t.Fatalf("correction was not applied to checkpoint: %#v", checkpoint)
 	}
@@ -100,7 +101,8 @@ func TestCorrectionCanBeRequestedWhileExternalMemberIsRunning(t *testing.T) {
 	h := newProcessNextHarness(t)
 	_, _ = h.seedRunningWorkflowTaskBeforeAdmission(t, "run-fanout-correction")
 	if _, err := h.pool.Exec(context.Background(), `UPDATE weave_team_runs
-		SET status='parked', wait_kind='fanout'
+		SET status='parked', current_executor_id=NULL, wait_kind='fanout',
+        wait_detail='{}', resume_token_hash='seed-token', checkpoint_ref='seed-checkpoint'
 		WHERE workspace_id='workspace-1' AND run_id='run-fanout-correction'`); err != nil {
 		t.Fatalf("park run for fanout: %v", err)
 	}

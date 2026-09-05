@@ -115,7 +115,6 @@ type CompilerExecutor struct {
 	Handler       OperationHandler
 	WorkerID      string
 	LeaseDuration time.Duration
-	PublishStep   func(context.Context, teambuild.OperationStep, string)
 }
 
 func NewCompilerExecutor(store CompilerOperationStore, handler OperationHandler) *CompilerExecutor {
@@ -123,13 +122,6 @@ func NewCompilerExecutor(store CompilerOperationStore, handler OperationHandler)
 		Store: store, Handler: handler,
 		WorkerID: "compiler-executor", LeaseDuration: 30 * time.Second,
 	}
-}
-
-func (e *CompilerExecutor) SetOperationStepPublisher(publisher func(context.Context, teambuild.OperationStep, string)) {
-	if e == nil {
-		return
-	}
-	e.PublishStep = publisher
 }
 
 func (e *CompilerExecutor) Execute(ctx context.Context, workspaceID, buildRunID string) (CompilerExecutionResult, error) {
@@ -220,16 +212,14 @@ func (e *CompilerExecutor) Execute(ctx context.Context, workspaceID, buildRunID 
 			outputHash = sha256Hex(evidence)
 		}
 		finishCtx := context.WithoutCancel(ctx)
-		var finished teambuild.OperationStep
 		if result.Skip {
-			finished, err = e.Store.SkipOperationStep(finishCtx, workspaceID, buildRunID, revision.RevisionNo, step.OperationID, workerID, step.LeaseEpoch, outputHash, evidence)
+			_, err = e.Store.SkipOperationStep(finishCtx, workspaceID, buildRunID, revision.RevisionNo, step.OperationID, workerID, step.LeaseEpoch, outputHash, evidence)
 		} else {
-			finished, err = e.Store.SucceedOperationStep(finishCtx, workspaceID, buildRunID, revision.RevisionNo, step.OperationID, workerID, step.LeaseEpoch, outputHash, evidence)
+			_, err = e.Store.SucceedOperationStep(finishCtx, workspaceID, buildRunID, revision.RevisionNo, step.OperationID, workerID, step.LeaseEpoch, outputHash, evidence)
 		}
 		if err != nil {
 			return CompilerExecutionResult{}, fmt.Errorf("compiler executor: persist operation completion: %w", err)
 		}
-		e.publishStep(finishCtx, finished)
 		// A passing candidate must enter the ordinary round/report ledger while
 		// the build run is still round_running. Yield after durably completing
 		// candidate_run so the controller can record that evidence before the
@@ -314,26 +304,17 @@ func (e *CompilerExecutor) finishFailure(ctx context.Context, step teambuild.Ope
 	if err != nil {
 		return fmt.Errorf("compiler executor: encode typed failure evidence: %w", err)
 	}
-	var finished teambuild.OperationStep
 	if failure.Retryable {
-		finished, err = e.Store.RetryOperationStep(ctx, step.WorkspaceID, step.BuildRunID, step.RevisionNo,
+		_, err = e.Store.RetryOperationStep(ctx, step.WorkspaceID, step.BuildRunID, step.RevisionNo,
 			step.OperationID, workerID, step.LeaseEpoch, string(failure.Class), failure.Code, evidence)
 	} else {
-		finished, err = e.Store.FailOperationStep(ctx, step.WorkspaceID, step.BuildRunID, step.RevisionNo,
+		_, err = e.Store.FailOperationStep(ctx, step.WorkspaceID, step.BuildRunID, step.RevisionNo,
 			step.OperationID, workerID, step.LeaseEpoch, string(failure.Class), failure.Code, evidence)
 	}
 	if err != nil {
 		return fmt.Errorf("compiler executor: persist typed operation failure: %w", err)
 	}
-	e.publishStep(ctx, finished)
 	return nil
-}
-
-func (e *CompilerExecutor) publishStep(ctx context.Context, step teambuild.OperationStep) {
-	if e == nil || e.PublishStep == nil {
-		return
-	}
-	e.PublishStep(ctx, step, "team_build_operation_updated")
 }
 
 func summarizeCompilerSteps(revisionNo int, steps []teambuild.OperationStep) CompilerExecutionResult {

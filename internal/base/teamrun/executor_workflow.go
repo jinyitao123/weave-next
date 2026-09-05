@@ -17,6 +17,9 @@ func (e *Executor) processConsumedWorkflowRun(ctx context.Context, task *taskque
 
 	executorID := executorIdentity(task.ID, workerID)
 	run, checkpoint, terminal, err := e.prepareWorkflowRunExecution(ctx, run, task, workerID, executorID)
+	if errors.Is(err, errRuntimeRetryOwnsExecution) {
+		return e.finishParkedTask(ctx, task, workerID, run)
+	}
 	if err != nil {
 		return err
 	}

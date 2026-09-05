@@ -2,4 +2,4 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-python3 "${ROOT_DIR}/tools/depguard/check_base_dependencies.py" "$@"
+python3 "${ROOT_DIR}/tools/depguard/check_base_dependencies.py" --root "${ROOT_DIR}" "$@"

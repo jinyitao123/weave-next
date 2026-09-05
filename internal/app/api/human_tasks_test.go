@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -111,11 +112,62 @@ func TestHumanTaskMembershipIsRecheckedAgainstDatabase(t *testing.T) {
 		t.Fatalf("revoke membership: %v", err)
 	}
 	ctx, recorder := newContext()
-	if err := server.requireCurrentWorkspaceMember(ctx); err != nil {
-		t.Fatalf("write forbidden response: %v", err)
+	err := server.requireCurrentWorkspaceMember(ctx)
+	var denied *echo.HTTPError
+	if !errors.As(err, &denied) || denied.Code != http.StatusForbidden {
+		t.Fatalf("revoked membership must stop the handler: %v", err)
 	}
+	ctx.Echo().HTTPErrorHandler(err, ctx)
 	if recorder.Code != http.StatusForbidden {
 		t.Fatalf("revoked membership status = %d, want 403", recorder.Code)
+	}
+}
+
+func TestHumanTaskHandlersStopAfterMembershipDenialRealPG(t *testing.T) {
+	pool := testutil.PostgresPool(t)
+	if err := db.Migrate(t.Context(), pool); err != nil {
+		t.Fatal(err)
+	}
+	workspaceID := "human-denied-" + uuid.NewString()
+	owner, err := users.NewStore(pool).Create(t.Context(), workspaceID, "owner", "password", "Owner", "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := &Server{OrgStore: org.NewStore(pool)}
+	if err := server.OrgStore.RemoveMember(t.Context(), workspaceID, owner.ID); err != nil {
+		t.Fatal(err)
+	}
+	for _, unavailable := range []bool{false, true} {
+		if unavailable {
+			server.OrgStore = nil
+		}
+		for _, route := range []struct {
+			method, path string
+			handler      echo.HandlerFunc
+		}{
+			{http.MethodGet, "/v1/human-tasks", server.handleListHumanTasks},
+			{http.MethodGet, "/v1/human-tasks/run-1", server.handleGetHumanTask},
+			{http.MethodPost, "/v1/human-tasks/run-1/complete", server.handleCompleteHumanTask},
+		} {
+			e := echo.New()
+			e.Add(route.method, route.path, route.handler, func(next echo.HandlerFunc) echo.HandlerFunc {
+				return func(c echo.Context) error {
+					c.Set("tenant", workspaceID)
+					c.Set("user_id", owner.ID)
+					return next(c)
+				}
+			})
+			recorder := httptest.NewRecorder()
+			e.ServeHTTP(recorder, httptest.NewRequest(route.method, route.path, nil))
+			status, message := http.StatusForbidden, "current workspace membership required"
+			if unavailable {
+				status, message = http.StatusServiceUnavailable, "workspace membership unavailable"
+			}
+			var response map[string]string
+			if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil || recorder.Code != status || response["error"] != message {
+				t.Fatalf("%s %s continued after membership denial: status=%d body=%s error=%v", route.method, route.path, recorder.Code, recorder.Body.String(), err)
+			}
+		}
 	}
 }
 

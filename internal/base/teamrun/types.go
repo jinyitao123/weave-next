@@ -51,6 +51,7 @@ const (
 	WaitFanout     WaitKind = "fanout"
 	WaitHuman      WaitKind = "human"
 	WaitCorrection WaitKind = "correction"
+	WaitRuntime    WaitKind = "runtime"
 )
 
 type TeamRun struct {

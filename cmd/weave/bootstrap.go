@@ -6,7 +6,6 @@ import (
 	"flag"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/jinyitao123/loom/pgstore"
@@ -23,8 +22,7 @@ func runBootstrapCommand(args []string, stdout, stderr io.Writer) int {
 	username := flags.String("username", bootstrapUsernameDefault(), "administrator username")
 	password := flags.String("password", strings.TrimSpace(os.Getenv("WEAVE_ADMIN_PASS")), "administrator password")
 	resetPassword := flags.Bool("reset-password", false, "explicitly reset the existing administrator password")
-	apiURL := flags.String("api-url", bootstrapAPIURLDefault(), "Weave API URL for MCP registration")
-	command := flags.String("command", bootstrapCommandDefault(), "absolute weave executable path")
+	apiURL := flags.String("api-url", bootstrapAPIURLDefault(), "Weave API URL for Workbench")
 	if err := flags.Parse(args); err != nil || flags.NArg() != 0 {
 		writeBootstrapError(stderr, "invalid_arguments", "")
 		return 2
@@ -53,7 +51,7 @@ func runBootstrapCommand(args []string, stdout, stderr io.Writer) int {
 		Users: users.NewStore(store.Pool()), Keys: apikeys.NewStore(store.Pool()),
 	}).Ensure(ctx, appbootstrap.Options{
 		WorkspaceID: *workspaceID, Username: *username, Password: *password,
-		ResetPassword: *resetPassword, APIURL: *apiURL, Command: *command,
+		ResetPassword: *resetPassword, APIURL: *apiURL,
 	})
 	if err != nil {
 		writeBootstrapError(stderr, "bootstrap_failed", err.Error())
@@ -84,18 +82,6 @@ func bootstrapAPIURLDefault() string {
 		port = "8080"
 	}
 	return "http://127.0.0.1:" + port
-}
-
-func bootstrapCommandDefault() string {
-	executable, err := os.Executable()
-	if err != nil {
-		return "weave"
-	}
-	absolute, err := filepath.Abs(executable)
-	if err != nil {
-		return executable
-	}
-	return absolute
 }
 
 func writeBootstrapError(writer io.Writer, code, detail string) {

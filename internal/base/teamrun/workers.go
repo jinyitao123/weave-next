@@ -8,9 +8,13 @@ import (
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jinyitao123/weave/internal/base/taskqueue"
 )
 
 type CancelGraceSweeper struct {
+	Tasks        *taskqueue.Store
 	Transactions TransactionBeginner
 	Runs         *PGStore
 	BatchSize    int
@@ -84,11 +88,39 @@ func (s *CancelGraceSweeper) Sweep(ctx context.Context) (int, error) {
 		return 0, fmt.Errorf("begin team run cancel grace sweep: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	runs, err := s.Runs.ListCancelGraceExpiredTx(ctx, tx, now, limit)
+	runs, err := s.Runs.listCancelRequestsTx(ctx, tx, now, limit, s.Tasks == nil)
 	if err != nil {
 		return 0, err
 	}
+	settled := 0
 	for _, run := range runs {
+		if s.Tasks != nil {
+			// Reapply the durable stop request after a crash between registration
+			// and task cancellation, while retaining the parent lock.
+			if _, err := s.Tasks.CancelRunTasksTx(ctx, tx, run.WorkspaceID, run.RunSnapshotID); err != nil {
+				return 0, err
+			}
+			stopped, err := s.Tasks.RunExecutionsStoppedTx(ctx, tx, run.WorkspaceID, run.RunSnapshotID)
+			if err != nil {
+				return 0, err
+			}
+			if stopped {
+				if _, err := s.Runs.ConfirmCancelTx(ctx, tx, ConfirmCancelRequest{
+					WorkspaceID: run.WorkspaceID, RunID: run.RunID, ExpectedStatus: run.Status,
+					ExpectedTeamRunGeneration: run.Generation, ExpectedExecutionLeaseEpoch: run.ExecutionLeaseEpoch,
+					ExpectedResumeGeneration: run.ResumeGeneration, IdempotencyKey: "teamrun-cancel-ack:" + run.RunID,
+					Actor: "teamrun-cancel-grace-sweeper", Source: "teamrun_worker", OccurredAt: now,
+				}); err != nil {
+					return 0, err
+				}
+				settled++
+				continue
+			}
+		}
+		if run.CancelGraceDeadlineAt == nil || now.Before(*run.CancelGraceDeadlineAt) {
+			continue
+		}
+		settled++
 		deadline := ""
 		if run.CancelGraceDeadlineAt != nil {
 			deadline = run.CancelGraceDeadlineAt.UTC().Format(time.RFC3339Nano)
@@ -115,7 +147,7 @@ func (s *CancelGraceSweeper) Sweep(ctx context.Context) (int, error) {
 	if err := tx.Commit(ctx); err != nil {
 		return 0, fmt.Errorf("commit team run cancel grace sweep: %w", err)
 	}
-	return len(runs), nil
+	return settled, nil
 }
 
 type CancelRequest struct {
@@ -221,10 +253,18 @@ func (s *CancelService) RequestCancel(
 	if err != nil {
 		return TeamRun{}, err
 	}
+	transactional, atomicCancel := s.Tasks.(interface {
+		CancelRunTasksTx(context.Context, pgx.Tx, string, string) (int, error)
+	})
+	if atomicCancel {
+		if _, err := transactional.CancelRunTasksTx(ctx, tx, cancelled.WorkspaceID, cancelled.RunSnapshotID); err != nil {
+			return TeamRun{}, err
+		}
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return TeamRun{}, fmt.Errorf("commit team run cancel request: %w", err)
 	}
-	if s.Tasks != nil {
+	if s.Tasks != nil && !atomicCancel {
 		if _, err := s.Tasks.CancelRunTasks(ctx, cancelled.WorkspaceID, cancelled.RunSnapshotID); err != nil {
 			return TeamRun{}, fmt.Errorf("cancel team run child tasks: %w", err)
 		}

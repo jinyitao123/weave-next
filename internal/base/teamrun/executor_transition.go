@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jinyitao123/weave/internal/base/taskqueue"
@@ -149,10 +150,13 @@ func (e *Executor) executeWithHeartbeat(
 	for {
 		select {
 		case <-ctx.Done():
+			cancel()
+			<-outcomes
 			return RuntimeResult{}, ctx.Err()
 		case <-ticker.C:
 			if err := e.Tasks.Heartbeat(ctx, task.ID, workerID); err != nil {
 				cancel()
+				<-outcomes
 				return RuntimeResult{}, fmt.Errorf("%w: %v", errTaskLeaseLost, err)
 			}
 		case outcome := <-outcomes:
@@ -179,6 +183,12 @@ func (e *Executor) reclaimRunning(
 	}
 	if run.Status != StatusRunning {
 		return TeamRun{}, nil, false, ErrTeamRunStateConflict
+	}
+	// The source task may outlive its parked acknowledgement. Once a durable
+	// retry owns this run, reclaiming that source must not steal its checkpoint.
+	if task.ID == run.SourceTaskID && run.CurrentExecutorID != nil &&
+		strings.HasPrefix(*run.CurrentExecutorID, "teamrun-runtime-retry:") {
+		return run, nil, false, errRuntimeRetryOwnsExecution
 	}
 	stateStore := loomruntime.NewPGTerminalStateStore()
 	if err := stateStore.LockTerminalRun(ctx, tx, run.WorkspaceID, run.RunID); err != nil {

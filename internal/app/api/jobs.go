@@ -16,7 +16,6 @@ import (
 	"github.com/jinyitao123/loom/stdlib"
 	"github.com/jinyitao123/weave/internal/app/conversation"
 	"github.com/jinyitao123/weave/internal/base/execution"
-	"github.com/jinyitao123/weave/internal/base/realtime"
 	"github.com/jinyitao123/weave/internal/base/taskqueue"
 	"github.com/jinyitao123/weave/internal/kernel/compiler"
 	"github.com/jinyitao123/weave/internal/kernel/engine"
@@ -676,7 +675,7 @@ func (s *Server) ExecuteChat(ctx context.Context, tenant string, req taskqueue.C
 		if !userTurnAlreadyPersisted {
 			_ = s.appendSessionMessages(ctx, sessionKey, userMessage)
 		}
-		saveSessionTitle(ctx, s.Store, sessionKey, req.Message)
+
 	}
 
 	var output, stopReason, runID string
@@ -869,7 +868,7 @@ func (s *Server) ExecuteChat(ctx context.Context, tenant string, req taskqueue.C
 		metadataCtx := contextWithAssistantAgent(ctx, req.Agent)
 		metadata := s.buildAssistantMetadata(metadataCtx, tenant, output)
 		metadata = mergeRuntimeAssignmentMetadata(metadata, req.RuntimeAssignment)
-		message, err := s.Conversations.AppendMessage(ctx, conversation.Message{
+		_, err := s.Conversations.AppendMessage(ctx, conversation.Message{
 			ConversationID: conversationID,
 			WorkspaceID:    tenant,
 			Role:           "assistant",
@@ -879,13 +878,6 @@ func (s *Server) ExecuteChat(ctx context.Context, tenant string, req taskqueue.C
 		if err != nil {
 			return nil, err
 		}
-		if err := s.Conversations.BumpUnread(ctx, tenant, userID, conversationID, message.ID); err != nil {
-			return nil, err
-		}
-		s.Hub.Publish(tenant, userID, realtime.Event{
-			Type:           "unread",
-			ConversationID: conversationID,
-		})
 	}
 	if sessionExecution == nil {
 		s.startOwnerMemoryFill(

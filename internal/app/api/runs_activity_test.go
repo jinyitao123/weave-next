@@ -218,30 +218,110 @@ func TestRefineRunActivityCompletenessKeepsToolTracePartialWhenCompletionIsMissi
 
 func TestRunActivityStageProgressCountsMemberStagesAndHumanWait(t *testing.T) {
 	members := []runActivityMember{
-		{Stages: []runActivityMemberStage{{Status: "completed"}, {Status: "running"}}},
-		{Stages: []runActivityMemberStage{{Status: "completed"}}},
+		{Stages: []runActivityMemberStage{{NodeID: "research", Status: "completed"}, {NodeID: "draft", Status: "running"}}},
+		{Stages: []runActivityMemberStage{{NodeID: "check", Status: "completed"}}},
 	}
-	completed, total := runActivityStageProgress(members, []map[string]any{{"node_id": "review"}})
+	stages := runActivityCurrentStages(members, []runActivityStage{{NodeID: "review", Status: "waiting"}})
+	completed, total := runActivityStageProgress(stages)
 	if completed != 2 || total != 4 {
 		t.Fatalf("progress = %d/%d, want 2/4", completed, total)
 	}
 }
 
-func TestRunActivityWorkflowProgressCanExceedMemberStageProgress(t *testing.T) {
-	members := []runActivityMember{
-		{Stages: []runActivityMemberStage{{Status: "completed"}}},
-		{Stages: []runActivityMemberStage{{Status: "completed"}}},
+func TestRunActivityTruncatedWindowDoesNotClaimCompleteToolHistory(t *testing.T) {
+	started := time.Date(2026, 8, 31, 8, 0, 0, 0, time.UTC)
+	members := []runActivityMember{{Stages: []runActivityMemberStage{{
+		NodeID: "draft", Status: "completed", StartedAt: &started, OutputRefs: []string{"saved-draft"},
+	}}}}
+	completeness := map[string]string{
+		"members": "complete", "activity_events": "partial", "deliverables": "complete",
+		"stages": "partial", "member_inputs": "partial", "member_outputs": "partial", "member_tool_activity": "partial",
 	}
-	completed, total := runActivityStageProgress(members, nil)
-	stages := []runActivityStage{{}, {}, {}, {}}
-	if workflowCompleted := len(stages); workflowCompleted > completed {
-		completed = workflowCompleted
+	refineRunActivityCompleteness(completeness, members, teamrun.StatusSucceeded)
+	if completeness["member_tool_activity"] != "partial" || completeness["stages"] != "partial" {
+		t.Fatalf("truncated history claimed complete: %#v", completeness)
 	}
-	if len(stages) > total {
-		total = len(stages)
+}
+
+func TestRunActivityProgressPreservesOutputsWithoutCompletingRework(t *testing.T) {
+	for _, status := range []string{"running", "failed", "completed"} {
+		t.Run(status, func(t *testing.T) {
+			members := []runActivityMember{{AgentID: "writer", Stages: []runActivityMemberStage{
+				{NodeID: "draft", Name: "Revised draft", Status: status, OutputRefs: []string{"saved-draft"}},
+				{NodeID: "check", Status: "completed", OutputRefs: []string{"saved-check"}},
+			}}}
+			recorded := []runActivityStage{
+				{NodeID: "draft", Name: "Old draft", Status: "completed"},
+				{NodeID: "check", Status: "completed"},
+				{NodeID: "transform", Status: "completed"},
+				{NodeID: "deliver", Status: "completed"},
+			}
+			stages := runActivityCurrentStages(members, recorded)
+			completed, total := runActivityStageProgress(stages)
+			wantCompleted := 3
+			if status == "completed" {
+				wantCompleted = 4
+			}
+			if stages[0].Status != status || stages[0].Name != "Revised draft" || completed != wantCompleted || total != 4 {
+				t.Fatalf("current stages = %#v, progress = %d/%d", stages, completed, total)
+			}
+			if members[0].Stages[0].OutputRefs[0] != "saved-draft" || recorded[0].Status != "completed" {
+				t.Fatal("current progress changed retained output evidence")
+			}
+		})
 	}
-	if completed != 4 || total != 4 {
-		t.Fatalf("progress = %d/%d, want workflow progress 4/4", completed, total)
+}
+
+func TestRunActivityMemberSummaryDoesNotHideAnotherStagesFailure(t *testing.T) {
+	for _, order := range [][]string{{"failed", "running"}, {"running", "failed"}, {"failed", "pending"}, {"pending", "failed"}} {
+		members := []runActivityMember{{Status: "pending", Stages: []runActivityMemberStage{
+			{NodeID: "draft", Status: order[0]}, {NodeID: "review", Status: order[1]},
+		}}}
+		summarizeRunActivityMembers(members)
+		if members[0].Status != "failed" {
+			t.Fatalf("failure hidden by stage order %v: %#v", order, members[0])
+		}
+	}
+	members := []runActivityMember{{Status: "failed", Stages: []runActivityMemberStage{
+		{NodeID: "draft", Status: "pending"}, {NodeID: "review", Status: "completed"},
+	}}}
+	summarizeRunActivityMembers(members)
+	if members[0].Status != "partially_completed" {
+		t.Fatalf("queued retry retained stale member failure: %#v", members[0])
+	}
+}
+
+func TestRunActivityToolWindowShowsCurrentWorkUntilMemberFinishes(t *testing.T) {
+	for _, previous := range []string{"completed", "failed"} {
+		for _, kind := range []string{"tool_started", "tool_completed"} {
+			t.Run(previous+"/"+kind, func(t *testing.T) {
+				old := time.Date(2026, 8, 31, 8, 0, 0, 0, time.UTC)
+				members := []runActivityMember{{AgentID: "writer", Status: previous, Stages: []runActivityMemberStage{{
+					NodeID: "draft", Status: previous, OutputRefs: []string{"saved-draft"},
+					StartedAt: &old, CompletedAt: &old, DurationMs: 40, ToolCalls: 2,
+					FailureClass: "infrastructure", FailureReason: "old failure", Retryable: true,
+				}}}}
+				applyRunActivityEvents(members, []teamrun.ActivityEvent{{
+					Kind: kind, MemberID: "writer", NodeID: "draft", OccurredAt: old.Add(time.Minute),
+					Detail: json.RawMessage(`{"tool_name":"read","tool_call_id":"current-call","status":"ok"}`),
+				}})
+				stage := members[0].Stages[0]
+				if stage.Status != "running" || members[0].Status != "running" || stage.CompletedAt != nil || stage.StartedAt != nil ||
+					stage.DurationMs != 0 || stage.ToolCalls != 0 || stage.FailureClass != "" || stage.FailureReason != "" || stage.Retryable {
+					t.Fatalf("stale lifecycle after current tool event: %#v", stage)
+				}
+				stages := runActivityCurrentStages(members, []runActivityStage{{NodeID: "draft", Status: "completed"}})
+				if completed, total := runActivityStageProgress(stages); completed != 0 || total != 1 || stages[0].Status != "running" {
+					t.Fatalf("rework reported complete: %#v %d/%d", stages, completed, total)
+				}
+				applyRunActivityEvents(members, []teamrun.ActivityEvent{{
+					Kind: "member_completed", MemberID: "writer", NodeID: "draft", OccurredAt: old.Add(2 * time.Minute),
+				}})
+				if members[0].Status != "completed" || members[0].Stages[0].OutputRefs[0] != "saved-draft" {
+					t.Fatal("completion or retained output was lost")
+				}
+			})
+		}
 	}
 }
 
@@ -257,6 +337,9 @@ func TestLatestRunActivityStageUsesNewestMemberBoundary(t *testing.T) {
 	}
 	if got := latestRunActivityStage(nil, []runActivityStage{{Name: "任务定义"}, {Name: "交付"}}); got != "交付" {
 		t.Fatalf("fallback stage = %q", got)
+	}
+	if got := latestRunActivityStage(nil, []runActivityStage{{Name: "起草", Status: "running"}, {Name: "交付", Status: "pending"}}); got != "起草" {
+		t.Fatalf("upcoming stage replaced current work: %q", got)
 	}
 }
 

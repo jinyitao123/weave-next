@@ -20,14 +20,12 @@ import (
 	"github.com/jinyitao123/weave/internal/app/daemon"
 	"github.com/jinyitao123/weave/internal/app/metateam"
 	"github.com/jinyitao123/weave/internal/app/projects"
-	"github.com/jinyitao123/weave/internal/app/schedules"
 	"github.com/jinyitao123/weave/internal/app/teamevaluations"
 	"github.com/jinyitao123/weave/internal/app/teamtemplates"
 	"github.com/jinyitao123/weave/internal/app/users"
 	"github.com/jinyitao123/weave/internal/base/db"
 	"github.com/jinyitao123/weave/internal/base/deliverable"
 	"github.com/jinyitao123/weave/internal/base/fanout"
-	"github.com/jinyitao123/weave/internal/base/realtime"
 	"github.com/jinyitao123/weave/internal/base/taskqueue"
 	"github.com/jinyitao123/weave/internal/build/teambuild"
 	"github.com/jinyitao123/weave/internal/build/teameval"
@@ -251,7 +249,6 @@ func main() {
 	}
 	srv.Descriptors = descriptors
 	srv.SystemProviders = router
-	srv.Hub = realtime.NewHub()
 
 	// Seed system agents.
 	designprompt.EnsureDesigner(srv.Registry, "default")
@@ -322,7 +319,7 @@ func main() {
 		srv.Tasks = taskStore
 		srv.Fanout = fanout.New(pool, fanout.RealClock{})
 		srv.FanoutReconciler = fanout.NewReconciler(
-			srv.Fanout, taskStore, srv.Conversations, srv.Hub,
+			srv.Fanout, taskStore, srv.Conversations,
 		)
 		if recovered, err := taskStore.RecoverStale(context.Background()); err != nil {
 			slog.Error("failed to recover stale tasks at startup", "error", err)
@@ -364,7 +361,6 @@ func main() {
 
 	// Initialize schedule store if PG pool is available.
 	if pool := srv.GetPool(); pool != nil {
-		srv.ScheduleStore = schedules.NewStore(pool)
 		srv.AgentSchedules = schedule.New(pool, schedule.RealClock{})
 	}
 
@@ -390,49 +386,12 @@ func main() {
 	} else {
 		controller := teamorch.NewController(srv.TeamBuild, phases, nil)
 		controller.RevisionPlanner = phases
-		if compiler, ok := controller.Compiler.(*teamorch.CompilerExecutor); ok {
-			compiler.SetOperationStepPublisher(func(ctx context.Context, step teambuild.OperationStep, eventType string) {
-				if srv.Hub == nil {
-					return
-				}
-				run, err := srv.TeamBuild.GetBuildRun(ctx, step.WorkspaceID, step.BuildRunID)
-				if err != nil || run.ConfirmedBy == "" {
-					return
-				}
-				srv.Hub.Publish(step.WorkspaceID, run.ConfirmedBy, realtime.Event{
-					Type:           eventType,
-					ConversationID: run.ConversationID,
-					Payload: map[string]any{
-						"build_run_id":    step.BuildRunID,
-						"revision_no":     step.RevisionNo,
-						"operation_id":    step.OperationID,
-						"operation_type":  step.OperationType,
-						"operation_index": step.OperationIndex,
-						"status":          step.Status,
-						"attempt":         step.Attempt,
-					},
-				})
-			})
-		}
 		synchronous := teamorch.NewService(
 			controller, phases,
 		)
 		queue := teamorch.NewExecutionQueue(store.Pool(), srv.TeamBuild, nil)
 		async := teamorch.NewAsyncService(queue, synchronous)
-		async.SetEventPublisher(func(ctx context.Context, run teambuild.TeamBuildRun, eventType string) {
-			if srv.Hub == nil || run.ConfirmedBy == "" {
-				return
-			}
-			srv.Hub.Publish(run.WorkspaceID, run.ConfirmedBy, realtime.Event{
-				Type:           eventType,
-				ConversationID: run.ConversationID,
-				Payload: map[string]any{
-					"build_run_id": run.BuildRunID,
-					"status":       run.Status,
-					"mode":         run.Mode,
-				},
-			})
-		})
+
 		srv.TeamBuildOrchestrator = teamBuildExecutionAdapter{
 			service: async,
 		}
@@ -468,7 +427,7 @@ func main() {
 		)
 	}
 
-	// Every due agent schedule is first written to the durable task ledger. The
+	// Every due team workflow schedule is first written to the durable task ledger. The
 	// worker then executes it with the same lease and restart recovery as chats.
 	if srv.AgentSchedules != nil && srv.Tasks != nil {
 		go func() {
@@ -476,7 +435,7 @@ func main() {
 			defer ticker.Stop()
 			for range ticker.C {
 				if err := srv.SweepSchedules(context.Background(), time.Now()); err != nil {
-					slog.Error("failed to sweep agent schedules", "error", err)
+					slog.Error("failed to sweep team workflow schedules", "error", err)
 				}
 			}
 		}()

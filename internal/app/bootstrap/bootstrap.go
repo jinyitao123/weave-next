@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
@@ -37,21 +36,20 @@ type Options struct {
 	Password      string
 	ResetPassword bool
 	APIURL        string
-	Command       string
 }
 
 type Result struct {
-	WorkspaceID       string            `json:"workspace_id"`
-	AdminUserID       string            `json:"admin_user_id"`
-	AdminUsername     string            `json:"admin_username"`
-	AdminCreated      bool              `json:"admin_created"`
-	PasswordReset     bool              `json:"password_reset"`
-	GeneratedPassword string            `json:"generated_password,omitempty"`
-	APIKeyID          string            `json:"api_key_id"`
-	APIKeyCreated     bool              `json:"api_key_created"`
-	APIKey            string            `json:"api_key,omitempty"`
-	APIKeyScopes      []string          `json:"api_key_scopes"`
-	MCP               map[string]string `json:"mcp"`
+	WorkspaceID       string   `json:"workspace_id"`
+	AdminUserID       string   `json:"admin_user_id"`
+	AdminUsername     string   `json:"admin_username"`
+	AdminCreated      bool     `json:"admin_created"`
+	PasswordReset     bool     `json:"password_reset"`
+	GeneratedPassword string   `json:"generated_password,omitempty"`
+	APIKeyID          string   `json:"api_key_id"`
+	APIKeyCreated     bool     `json:"api_key_created"`
+	APIKey            string   `json:"api_key,omitempty"`
+	APIKeyScopes      []string `json:"api_key_scopes"`
+	APIURL            string   `json:"api_url"`
 }
 
 type Service struct {
@@ -63,12 +61,11 @@ func (s Service) Ensure(ctx context.Context, options Options) (Result, error) {
 	options.WorkspaceID = strings.TrimSpace(options.WorkspaceID)
 	options.Username = strings.TrimSpace(options.Username)
 	options.APIURL = strings.TrimRight(strings.TrimSpace(options.APIURL), "/")
-	options.Command = strings.TrimSpace(options.Command)
 	if s.Users == nil || s.Keys == nil || options.WorkspaceID == "" || options.Username == "" ||
-		options.APIURL == "" || options.Command == "" {
-		return Result{}, errors.New("bootstrap stores, workspace, username, API URL, and command are required")
+		options.APIURL == "" {
+		return Result{}, errors.New("bootstrap stores, workspace, username, and API URL are required")
 	}
-	result := Result{WorkspaceID: options.WorkspaceID, AdminUsername: options.Username}
+	result := Result{WorkspaceID: options.WorkspaceID, AdminUsername: options.Username, APIURL: options.APIURL}
 	user, err := s.Users.GetByUsername(ctx, options.WorkspaceID, options.Username)
 	if err != nil {
 		password := options.Password
@@ -135,7 +132,6 @@ func (s Service) Ensure(ctx context.Context, options Options) (Result, error) {
 	}
 	result.APIKeyID = retained.ID
 	result.APIKeyScopes = scopes
-	result.MCP = registrationSnippets(options.Command, options.APIURL)
 	return result, nil
 }
 
@@ -145,18 +141,4 @@ func generatePassword() (string, error) {
 		return "", fmt.Errorf("generate bootstrap password: %w", err)
 	}
 	return base64.RawURLEncoding.EncodeToString(random), nil
-}
-
-func registrationSnippets(command, apiURL string) map[string]string {
-	commandTOML, apiTOML := strconv.Quote(command), strconv.Quote(apiURL)
-	codex := "[mcp_servers.weave]\ncommand = " + commandTOML +
-		"\nargs = [\"mcp\", \"serve\"]\nenv = { WEAVE_API_URL = " + apiTOML +
-		" }\nenv_vars = [\"WEAVE_API_KEY\"]"
-	claude := "claude mcp add --transport stdio --env WEAVE_API_URL=" + shellQuote(apiURL) +
-		` --env WEAVE_API_KEY="$WEAVE_API_KEY" weave -- ` + shellQuote(command) + " mcp serve"
-	return map[string]string{"codex_toml": codex, "claude_command": claude}
-}
-
-func shellQuote(value string) string {
-	return "'" + strings.ReplaceAll(value, "'", `'"'"'`) + "'"
 }

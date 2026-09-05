@@ -43,9 +43,26 @@ func TestExecutorProcessNextQueuedRunSucceeds(t *testing.T) {
 func TestCancelServiceCancelsEveryTaskInRunSnapshot(t *testing.T) {
 	h := newProcessNextHarness(t)
 	taskID := h.enqueueWorkflowTask(t, "run-cancel-tree")
-	run := h.readRun(t, "run-cancel-tree")
+	claimed, err := h.tasks.Claim(context.Background(), "seed-worker", taskqueue.ClaimFilter{
+		Kind: "team_workflow", WorkspaceID: "workspace-1", RunSnapshotID: "run-cancel-tree",
+		IdentityKind: taskqueue.IdentityTeamWorkflow,
+	})
+	if err != nil || claimed == nil {
+		t.Fatalf("claim cancellation seed: %v", err)
+	}
+	run, err := h.executor.Consumer.ConsumeClaimed(context.Background(), claimed, "seed-worker")
+	if err != nil {
+		t.Fatalf("establish queued cancellation seed: %v", err)
+	}
+	if _, err := h.pool.Exec(context.Background(), `
+		INSERT INTO weave_agents (id,workspace_id,name,role,spec) VALUES ('worker-1','workspace-1','worker','worker','{}');
+		INSERT INTO weave_agent_versions (agent_id,workspace_id,version,spec) VALUES ('worker-1','workspace-1',1,'{}');
+	`); err != nil {
+		t.Fatalf("seed engine child identity: %v", err)
+	}
 	child := &taskqueue.Task{
 		ID: "engine-child", WorkspaceID: run.WorkspaceID, Agent: "worker",
+		AgentID: "worker-1", AgentVersion: 1,
 		IdentityKind: taskqueue.IdentityAgent, IdentitySchemaVersion: 2,
 		ExecutionScope: execution.ScopeTeamWorkerLeaf, RunSnapshotID: run.RunSnapshotID,
 		Source: "dispatch", Kind: "engine_exec", Payload: json.RawMessage(`{"task":"work"}`),
@@ -61,7 +78,7 @@ func TestCancelServiceCancelsEveryTaskInRunSnapshot(t *testing.T) {
 	if err != nil || got.Status != StatusCancelled {
 		t.Fatalf("cancel run: status=%q err=%v", got.Status, err)
 	}
-	h.assertTask(t, taskID, taskqueue.StatusCancelled, "", "")
+	h.assertTask(t, taskID, taskqueue.StatusCancelRequested, "", "")
 	storedChild, err := h.tasks.Get(context.Background(), run.WorkspaceID, child.ID)
 	if err != nil || storedChild.Status != taskqueue.StatusCancelled {
 		t.Fatalf("engine child status=%q err=%v", storedChild.Status, err)
@@ -600,6 +617,7 @@ func (h *processNextHarness) assertTask(t *testing.T, taskID, status, runID, err
 func (h *processNextHarness) readRun(t *testing.T, runID string) TeamRun {
 	t.Helper()
 	tx := h.mustBeginTx(t)
+	defer func() { _ = tx.Rollback(context.Background()) }()
 	run, err := h.executor.Runs.GetForUpdateTx(context.Background(), tx, "workspace-1", runID)
 	if err != nil {
 		t.Fatalf("read run: %v", err)

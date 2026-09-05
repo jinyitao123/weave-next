@@ -156,4 +156,4 @@ if [ "$METHOD" = systemd ]; then
 else
   echo "Logs: $LOG_FILE"
 fi
-echo "回到 Weave 控制台的 设置 → 多运行时配置 查看该运行时将在数秒内转为在线"
+echo "回到 Weave 运行时维护页，连接建立后即可查看节点状态"

@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path"
+	"regexp"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -119,8 +120,15 @@ const (
 	MaxArtifactsTotalBytes = 512 * 1024
 )
 
-// ValidateArtifacts accepts only bounded UTF-8 files named relative to the
-// worker's outputs/ directory. Host paths and traversal are rejected.
+// ReferencesArtifact recognizes an explicit final-answer file reference, not a
+// filename embedded in another path or a prose substring.
+func ReferencesArtifact(output, name string) bool {
+	pattern := "(^|[\\s`\"'\\[(])" + regexp.QuoteMeta(name) + "($|[\\s`\"'\\]),:;!?]|\\.(?:\\s|$))"
+	return regexp.MustCompile(pattern).MatchString(output)
+}
+
+// ValidateArtifacts accepts only bounded UTF-8 files with relative delivery
+// names. Host paths and traversal are rejected.
 func ValidateArtifacts(artifacts []Artifact) error {
 	if len(artifacts) > MaxArtifactCount {
 		return fmt.Errorf("too many engine artifacts")

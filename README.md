@@ -1,356 +1,126 @@
 # Weave
 
-<p align="center">
-  <a href="README.md">English</a> | <a href="README.zh-CN.md">中文</a>
-</p>
+[English](README.md) | [中文](README.zh-CN.md)
 
-**Give an always-on agent an address, and a leash. Then you can hand it real work.**
+**The execution backend for [Weave Workbench](https://github.com/jinyitao123/weave-workbench).**
 
-Weave is the platform layer for [Loom](https://github.com/jinyitao123/loom). Loom builds a mind that can act. Weave decides which of its acts are allowed to touch the real world — and keeps every one of them on the record.
+Users choose a team, confirm the task, follow progress, resolve problems, and collect results in Workbench. Weave saves the inputs and workflow version, coordinates execution, records waiting and recovery, and stores the resulting work.
 
-## The one idea
+Workbench is the only supported business interface. This repository's embedded UI serves maintainers who manage runtimes. The `weave` command supports service deployment, runtime operation, and the MCP connection used by Workbench. Standalone business CLI commands and Codex/Claude client setup are retired. Codex, Claude, and other supported execution engines remain runtime implementation choices.
 
-Everything you hand to someone else rides on a single coupling: **whoever holds the authority to act also carries the accountability for the outcome.** A colleague you delegate to shares your downside — their name, their job. That shared stake is what makes delegation safe.
+The current scope is an invited, privately deployed pilot with maintainer support. See the [current product contract](docs/架构/2026-09-05-Weave-当前产品合同.md), [Workbench interaction plan](docs/架构/2026-09-05-Workbench-工作对话方案.md), and [acceptance checklist](docs/验收/2026-09-05-Workbench统一验收清单.md). Historical releases and tests do not certify the current working tree.
 
-An AI agent breaks that coupling. It will act — send the email, move the stock, call the tool — but it carries none of your risk. It can't be incentivized, can't be punished, has no stake in the outcome. So the two classic ways to make delegation safe — *align its interests* and *trust its judgment* — are both gone. You hand off the **labor** and keep **100% of the risk**.
+## Responsibilities
 
-When you can't transfer the risk, the only lever left is structural: **bound the agent's authority at the exact points where an action becomes irreversible, and keep every crossing legible.** That boundary — where reversible computation becomes irreversible consequence — is the whole reason Weave exists.
-
-So Weave optimizes for one property most agent platforms don't even name: **delegatability**. Not how autonomous an agent can be, but how safely you can hand it work while you are not watching.
-
-Two things make an agent delegatable:
-
-- **Determinism** — its actions are predictable and replayable. You cannot govern what you cannot foresee or reconstruct. *Loom's graph gives this: an agent is a JSON graph of steps, not a loose prompt loop. The graph fixes what happens in what order; a skill only describes what "good" looks like — the* what*, never the* how.
-- **A fail-closed write boundary** — irreversible external writes are not delegated to business teams by default, and the whole run is traced and replayable. *Weave gives this: a narrow execution boundary and the trace ledger.*
-
-**Determinism + the gate = something you can actually delegate to.** Loom makes the hand steady; Weave decides which acts of that steady hand may reach the world. A steady hand you cannot govern is still a liability; a gate on an unpredictable hand has nothing solid to hold. You need both.
-
-## Loom and Weave
-
-|  | Loom | Weave |
-|---|---|---|
-| **is** | the kernel — a mind that can act | the platform — the governed surface where that mind touches the world |
-| **its object** | the *interior* of an agent (how it thinks and executes) | the *boundary* of an agent (which actions cross, who approves, what is on record) |
-| **gives you** | deterministic execution: agent-as-data, a graph you can read | runnable teams: the write boundary, durable outputs, an addressable runtime |
-| **metaphor** | the loom that weaves | 经纬 — the warp (people, who bear the risk), the weft (agents, who bear none), and the *heddle* that decides which thread may cross |
-
-An agent on its own is just computation; it has no boundary. Weave is what gives it a **skin**: tools are its hands, a channel (chat / email) is its mouth, and the gate is the wrist a human can hold.
-
-## What Weave is, concretely
-
-Three properties the whole design is built to guarantee:
-
-- **Always-on** — agents run as persistent runtimes (a server, a user's own machine, or an edge box), not one-shot calls. Work can arrive while you sleep.
-- **Addressable** — you reach an agent the way you reach a colleague: a chat, an inbox. It remembers you.
-- **Accountable** — external write actions fail closed unless explicitly implemented as product flows; every run is traced and replayable. This is load-bearing, not a setting.
-
-```
-┌─────────────────────────────────────────────┐
-│  Weave Console (React 19 + Vite)            │  <- Browser UI
-├─────────────────────────────────────────────┤
-│  Weave API (Echo)                           │  <- REST + SSE
-│  ┌──────────────┬──────────┬─────────────┐  │
-│  │ Write Gate   │ Registry │ Memory      │  │  <- the leash: fail-closed writes, trace
-│  │ Audit / Trace│ Compiler │ LLM Router  │  │
-│  └──────┬───────┴────┬─────┴──────┬──────┘  │
-├─────────┼────────────┼────────────┼──────────┤
-│   Loom Kernel      Store (PGStore)  MCP Host │  <- deterministic execution
-└─────────────────────────────────────────────┘
-   PostgreSQL 16+          MCP Servers (HTTP)
-```
-
-## What's in the box
-
-**The kernel — what makes an agent delegatable**
-
-| Capability | How |
+| Component | Responsibility |
 |---|---|
-| **Write-action boundary** | Irreversible tool calls are rejected unless they are implemented as explicit product flows. Fail-closed: no product path, no write. |
-| **Audit & Trace** | Per-step trace recording, run history, `runtime_info` in SSE done events. Every run is replayable. |
-| **Deterministic execution** | Agents compile to a Loom Graph. Declarative JSON graphs express multi-step business flows (6 step types: chat, llm_call, llm_check, yield, transform, builtin). |
-| **Guardrails & Budget** | Per-agent blocked-term checks; per-agent USD / token / step / output limits with fallback models. |
-| **Handoff vs. Consult** | Two collaboration verbs, human-in-the-loop by design: *handoff* delegates a task (the delegate's result is final); *consult* asks sub-agents and aggregates their results back for the lead to decide. |
+| Workbench | Work conversation, team selection, task confirmation, progress, human decisions, recovery actions, and reading results |
+| Weave API and execution services | Durable tasks, frozen workflows, queueing, execution state, permissions, recovery, usage, and saved deliverables |
+| Runtime | Execute assigned work on a configured machine and return available outputs and activity |
+| Runtime management UI | Maintainer login, runtime registration, connection, capacity, and local runtime controls |
 
-**Always-on & addressable**
+Workbench's host connects to the Weave HTTP API and starts `weave mcp serve` as an internal bridge. The browser uses Workbench; service credentials remain on the host. The runtime management page is a maintenance surface, not another business client.
 
-| Capability | How |
-|---|---|
-| **Persistent & multi-runtime** | Agents run on the server, on a user's own machine, or at the edge — each claiming work over the API. |
-| **Chat & Resume** | `/v1/chat` runs a Loom Graph; `/v1/resume` continues from a yield. |
-| **SSE Streaming** | Real-time token streaming with structured block interception (chart / mermaid / SVG). |
+Execution ending does not establish that a result is usable. Saved outputs must belong to the correct run and remain readable. Missing files, incomplete activity, unavailable usage, and waiting reasons must be reported as such. Recovery should retain saved work; a stop request is distinct from confirmed termination.
 
-**Platform services**
+## Maintainer setup
 
-| Capability | How |
-|---|---|
-| **LLM Router** | Runtime-configurable providers (OpenAI, DeepSeek, Gemini) — hot-swap without restart. |
-| **Vector Memory** | pgvector-backed semantic memory with auto-remember, deduplication, and recall. |
-| **Skill System** | Reusable prompt modules with progressive disclosure (SemanticMatcher + KeywordMatcher). |
-| **MCP Integration** | Composite HTTP MCP host with per-tool filtering and per-server headers. |
-| **Multi-tenancy** | HS256 JWT token-based tenant isolation. |
-| **Console** | Embedded React 19 UI for workbench/chat, agent config (including memory records and skill bodies), teams, runs/latest checkpoints, runtimes, and settings. |
+Use PostgreSQL 16 and the Go version declared in [go.mod](go.mod). Workbench has its own Node.js/pnpm dependencies and release lifecycle. Record and validate the two source versions together.
 
-## Quickstart
+### Start Weave locally
 
-The invited Weave Workbench v0.1 deployment, recovery, and browser acceptance contract is documented in the [design-partner release baseline](docs/验收/2026-08-31-Weave-Workbench-v0.1-设计伙伴版发布基线.md).
+Prepare a private PostgreSQL database. Generate the server secrets once and keep them stable across restarts:
 
-### Headless quickstart (N-1 draft)
-
-Weave can be initialized and operated without opening the Console. Start
-PostgreSQL, set the server secrets, and run the idempotent bootstrap command
-before starting the API process:
-
-```bash
-export DATABASE_URL='postgres://weave:weave@127.0.0.1:5432/weave?sslmode=disable'
+```sh
+export DATABASE_URL='postgres://weave:<database-password>@127.0.0.1:5432/weave?sslmode=disable'
 export JWT_SECRET="$(openssl rand -hex 32)"
 export WEAVE_SECRET_KEY="$(openssl rand -hex 32)"
 export WEAVE_API_URL='http://127.0.0.1:8080'
 
-weave bootstrap > bootstrap.json
-export WEAVE_API_KEY="$(jq -r '.api_key' bootstrap.json)"
-weave serve
-```
-
-Generate the credential key once and keep it stable for the lifetime of the
-database. Service managers and mounted-secret deployments can use a file
-instead of placing the value directly in the server environment:
-
-```bash
-install -d -m 700 "$HOME/.config/weave"
+go build -o ./bin/weave ./cmd/weave
 umask 077
-openssl rand -hex 32 > "$HOME/.config/weave/secret-key"
-unset WEAVE_SECRET_KEY
-export WEAVE_SECRET_KEY_FILE="$HOME/.config/weave/secret-key"
+./bin/weave bootstrap > bootstrap.json
+export WEAVE_API_KEY="$(jq -r '.api_key // empty' bootstrap.json)"
+./bin/weave serve
 ```
 
-Set exactly one of `WEAVE_SECRET_KEY` and `WEAVE_SECRET_KEY_FILE`. The server
-fails at startup if neither is configured, both are configured, or the key is
-invalid. Never pass either setting to `weave mcp serve`; the Codex-facing MCP
-process needs only `WEAVE_API_URL` and `WEAVE_API_KEY`.
+Bootstrap creates an administrator and an owner-bound API key on first use. Repeating it retains the account and key; the raw key is only returned when created. On subsequent starts use the key already held in your secret store, rather than replacing it with an empty bootstrap field. Keep the bootstrap output private and remove the working copy after storing its credentials securely.
 
-The first run creates an active `admin` user, generates a password when none
-was supplied, and creates one owner-bound API key with exactly
-`admin,org,chat,runs` scopes. The password and raw key are printed only when
-created. A repeat run keeps both unchanged. Use
-`weave bootstrap --reset-password --password '<new value>'` for an explicit
-password reset; if the flag is supplied without a password, a new one is
-generated. `bootstrap.json` also contains ready-to-copy Codex TOML and Claude
-Code registration snippets; both read the key from `WEAVE_API_KEY` instead of
-embedding it in configuration.
+Set exactly one of `WEAVE_SECRET_KEY` and `WEAVE_SECRET_KEY_FILE`. The key is 32 bytes encoded as 64 hexadecimal characters or standard base64; the file setting points to a regular file containing that value. Preserve it with the database backup. Neither setting nor `DATABASE_URL` belongs in Workbench or the MCP child process.
 
-After registering `weave mcp serve`, the MCP surface covers provider and API
-key setup, runtime registration, team creation/status, human review, saved
-deliverables, and usage. A custom declarative workflow can also be passed by
-the CLI:
+Confirm both service endpoints respond successfully:
 
-```bash
-weave team up -f team.yaml --declarative-spec workflow.json \
-  --idempotency-key 2bab1728-9dc0-4b61-a1f5-115fcaaf8e08
+```sh
+curl --fail http://127.0.0.1:8080/v1/health
+curl --fail http://127.0.0.1:8080/v1/ready
 ```
 
-Keep `bootstrap.json` private and delete it after copying the generated
-credentials. On a later bootstrap run, `.api_key` is absent because raw keys
-are not recoverable; use the existing exported key or create a replacement
-through `apikey_create`.
+### Connect Workbench
 
-### Docker Compose (recommended)
+In the separately checked-out Workbench repository:
 
-```bash
-cd weave
+```sh
+pnpm install --frozen-lockfile
+pnpm build:workbench
+WEAVE_COMMAND='/absolute/path/to/weave-next/bin/weave' \
+WEAVE_API_URL='http://127.0.0.1:8080' \
+WEAVE_API_KEY='<owner-bound-api-key>' \
+pnpm workbench --host 127.0.0.1 --port 3080 --no-open
+```
 
-# Configure env
-cp deploy/.env.example deploy/.env
-# Edit deploy/.env:
-#   JWT_SECRET=$(openssl rand -hex 32)
+Use Workbench's local sign-in flow at `http://127.0.0.1:3080/`. `WEAVE_COMMAND` selects the matching Weave binary; Workbench starts its MCP process. A usable team and configured execution environment are also needed before dispatch. Opening the page or passing health checks alone does not prove a business task can complete.
 
-# Build & start (the standard platform refresh entry point)
+### Platform containers
+
+Use [docker-compose.platform.yml](docker-compose.platform.yml) for platform deployment and validation:
+
+```sh
+cp .env.example .env
+# Set actual generated JWT_SECRET, WEAVE_SECRET_KEY, WEAVE_ADMIN_PASS,
+# and a private POSTGRES_PASSWORD. Do not put shell expressions in .env.
 scripts/refresh-weave.sh
-
-# Check
-docker compose ps
-docker compose logs -f weave
+docker compose -f docker-compose.platform.yml ps
 ```
 
-After startup:
+This starts Weave and its database; Workbench is installed separately. Weave exposes port 8080 for API and runtime maintenance. PostgreSQL is not published to the host. The refresh script updates the main checkout's existing platform stack, including when invoked from a Git worktree. For an isolated test, use an explicit Compose project, private environment, separate volumes, and port overrides instead.
 
-| Service | URL | Description |
-|---|---|---|
-| **Weave + Console** | http://localhost:8080 | Same-origin management UI, REST, and SSE |
-| **PostgreSQL** | localhost:5432 | `weave/weave` |
+The optional `runtime` profile retains `/data/runtime-workspaces` in the `runtime_data` named volume, including the `.weave-public-events` spool. Recreating the runtime container preserves those files; removing its volume deletes them.
 
-Default login: `admin` / `admin123`
+The maintainer login uses `WEAVE_ADMIN_USER` (default `admin`) and the configured password; there is no default password. Register a runtime and store its token before enabling the optional `runtime` profile. Configure only the model engines required by that deployment.
 
-Run `make smoke` to verify the real Weave process end-to-end with PostgreSQL and a local fake LLM.
+## Architecture and boundaries
 
-### Configure an LLM Provider
+| Directory | Role |
+|---|---|
+| `internal/base` | Runtime-independent collaboration state, task queue, execution records, and persistence |
+| `internal/kernel` | Agents, workflows, execution engines, runtimes, and MCP mechanisms |
+| `internal/build` | Team construction, compilation, evaluation, and restore mechanisms |
+| `internal/app` | Workbench-facing API, MCP bridge, daemon, and product assembly |
+| `weave-app` | Embedded runtime maintenance UI and local runtime controls |
+| `cmd/weave` | Service and maintenance entry point |
 
-```bash
-# Get auth token
-TOKEN=$(curl -s http://localhost:8080/v1/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"username":"admin","password":"admin123"}' | jq -r .token)
+Dependencies must not import upward across the four bands. The Go module remains `github.com/jinyitao123/weave`; Go modules, rather than `vendor/`, resolve dependencies. [Loom](https://github.com/jinyitao123/loom) provides graph execution; freezing a graph does not guarantee identical model responses or external effects.
 
-# Add OpenAI-compatible provider
-curl -X POST http://localhost:8080/v1/providers \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "id": "openai",
-    "name": "OpenAI",
-    "base_url": "https://api.openai.com",
-    "api_key": "sk-...",
-    "models": ["gpt-4o", "gpt-4o-mini"]
-  }'
+MCP calls explicitly declared in `write_tools` are rejected by the write gate. Undeclared tools are not automatically rejected by name, and CLI engines run with their runtime host's permissions. This requires a trusted deployment environment; it is not a universal sandbox.
+
+Runtime collection accepts supported UTF-8 files attributable to the current execution, with a 256 KiB per-file and 512 KiB aggregate limit. A promised but unsaved file is a delivery failure, not a valid final receipt. Preview limits are separate from collection limits; complete downloads can only return content actually saved by Weave. Unknown usage is not zero cost.
+
+## Validation and records
+
+```sh
+make ci
+npm --prefix weave-app ci
+make ui-embed
+make compose-check
+# Use an isolated database, not a business database:
+TEST_DATABASE_URL='<isolated-postgresql-url>' make test-integration
 ```
 
-### Create an Agent
+`make test` covers `./internal/... ./cmd/...`; integration coverage requires PostgreSQL. Container health, engineering checks, actual Workbench use, and the [20-task pilot ledger](docs/验收/2026-09-05-20项真实任务试点台账.md) are separate evidence. Record exact source versions and results without promoting an unrun item to a pass.
 
-```bash
-curl -X POST http://localhost:8080/v1/agents \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "my-assistant",
-    "model": "gpt-4o-mini",
-    "spec": {
-      "identity": { "core": "You are a helpful assistant." },
-      "skills": [{ "name": "polite-tone" }],
-      "profiles": {
-        "formal": { "system_addition": "Use formal language.", "greeting": "Good day." },
-        "casual": { "system_addition": "Be casual.", "greeting": "Hey!" }
-      }
-    },
-    "guard": { "enabled": true, "blocked_terms": ["password", "secret"] },
-    "max_tokens": 4000
-  }'
-```
+Before an upgrade, back up PostgreSQL, the stable credential key, and Workbench's `DSH_HOME`. Database migrations move forward; reverting code alone does not undo them. Test restoration in an isolated environment.
 
-### Chat
-
-```bash
-curl -X POST http://localhost:8080/v1/chat \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "agent": "my-assistant",
-    "message": "Hello!",
-    "profile": "formal",
-    "stream": true
-  }'
-```
-
-### CLI and MCP clients
-
-The `weave` binary can call an already-running Weave service without loading
-server configuration or opening PostgreSQL:
-
-```bash
-export WEAVE_API_URL=http://127.0.0.1:8080 # default
-export WEAVE_API_KEY=wv_sk_xxx
-
-weave team samples
-weave team up -f templates/code-review.yaml \
-  --idempotency-key 2bab1728-9dc0-4b61-a1f5-115fcaaf8e08
-weave team dispatch --team <team-id> --task "Review this change" \
-  --client-request-id 676506ec-1cf5-4c78-b324-29057591d3b5 --wait
-weave status build <build-id>
-weave status dispatch <client-request-id>
-weave status team-run <run-snapshot-id>
-weave deliverable list
-weave deliverable get <deliverable-id>
-```
-
-Use an API key with role `admin` for team creation. The required scopes are
-`org` for templates, teams, and build status; `chat` for dispatch, resume, and
-deliverables; and `runs` for team-run status. `team_create` never invents an
-idempotency key, and YAML creation requires a complete `declarative_spec` in the
-same call. Keep the same API key throughout one dispatch because request
-ownership is key-specific. Published workflow node outputs are projected into
-the deliverable ledger and can be filtered by exact run; explicit
-`save_deliverable` remains available for conversation output.
-
-Published workflow CLI workers may also produce visible files by writing
-supported UTF-8 outputs below their reserved `outputs/` directory. The runtime
-returns only newly created, rewritten, or changed bounded files; Weave records them as
-immutable exact-run deliverables rather than exposing a runtime host path.
-
-Codex reads local stdio MCP servers from `~/.codex/config.toml` or a trusted
-project's `.codex/config.toml`:
-
-```toml
-[mcp_servers.weave]
-command = "/absolute/path/to/weave"
-args = ["mcp", "serve"]
-env = { WEAVE_API_URL = "http://127.0.0.1:8080" }
-env_vars = ["WEAVE_API_KEY"]
-```
-
-Export `WEAVE_API_KEY` before starting Codex. For Claude Code, register the
-same process with:
-
-```bash
-claude mcp add --transport stdio \
-  --env WEAVE_API_URL=http://127.0.0.1:8080 \
-  --env WEAVE_API_KEY="$WEAVE_API_KEY" \
-  weave -- /absolute/path/to/weave mcp serve
-```
-
-## API Endpoints
-
-| Method | Path | Description |
-|---|---|---|
-| `POST` | `/v1/auth/login` | Login with username/password |
-| `POST` | `/v1/auth/token` | Issue JWT token (dev mode) |
-| `GET` | `/v1/health` | Health check |
-| `GET` | `/v1/ready` | Full platform readiness check |
-| `GET/POST/PUT/DELETE` | `/v1/agents` | Agent CRUD |
-| `GET` | `/v1/agents/:name/topology` | Get compiled graph topology |
-| `POST` | `/v1/agents/:name/preview-prompt` | Preview assembled system prompt |
-| `POST` | `/v1/chat` | Chat (supports `stream: true`, `profile`, `context`) |
-| `POST` | `/v1/resume` | Resume yielded graph |
-| `GET/DELETE` | `/v1/sessions` | Session management |
-| `GET` | `/v1/runs` | Run history & traces |
-| `GET` | `/v1/usage` | Token & cost usage |
-| `GET/POST/PUT/DELETE` | `/v1/providers` | LLM provider config |
-| `GET/PUT` | `/v1/settings/embedder` | Embedding provider config |
-| `GET/POST/PUT/DELETE` | `/v1/skills` | Skill CRUD |
-| `GET/POST/DELETE` | `/v1/agents/:name/memories` | Agent memory CRUD |
-| `POST` | `/v1/agents/:name/memories/search` | Semantic memory search |
-
-## Configuration
-
-| Env Var | Required | Default | Description |
-|---|---|---|---|
-| `DATABASE_URL` | Yes | -- | PostgreSQL connection string |
-| `JWT_SECRET` | Yes | -- | HS256 signing key |
-| `WEAVE_SECRET_KEY` | One of key/key file | -- | 32-byte credential key as 64 hex characters or standard base64 |
-| `WEAVE_SECRET_KEY_FILE` | One of key/key file | -- | Regular file containing the credential key |
-| `PORT` | No | `8080` | HTTP listen port |
-| `WEAVE_DEV_MODE` | No | `false` | Enable dev endpoints (/v1/auth/token) |
-
-LLM providers and embedder are configured at runtime via the API, not env vars.
-
-## Project Structure
-
-```
-weave/
-├── cmd/weave/main.go           Entry point
-├── internal/
-│   ├── api/                    REST API (Echo): chat, sse, agents, teams
-│   ├── mcphost/                MCP HTTP host + write gate (fail-closed)
-│   ├── compiler/               AgentRecord -> Loom Graph
-│   ├── declarative/            Declarative graph factory (JSON -> Loom Graph)
-│   ├── registry/               Agent / Skill / team storage & types
-│   ├── llmrouter/              Multi-provider LLM routing
-│   ├── memory/                 Vector memory (pgvector)
-│   ├── embedder/               Embedding HTTP client
-│   ├── storeext/               PGStore platform extensions
-│   └── config/                 Env-based configuration
-├── console/                    Legacy UI source (kept for reference; excluded from builds)
-├── console-v2/                 Active React 19 + Vite UI embedded into Weave
-├── deploy/                     Docker deployment files
-└── docker-compose.yml          Full ecosystem compose
-```
+The [architecture index](docs/架构/README.md) indexes current contracts and the execution and migration references still supporting Workbench. The [August 31 release baseline](docs/验收/2026-08-31-Weave-Workbench-v0.1-设计伙伴版发布基线.md) retains its exact historical version pair and acceptance evidence; it does not describe the current source version.
 
 ## License
 

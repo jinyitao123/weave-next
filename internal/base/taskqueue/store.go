@@ -157,6 +157,19 @@ func (s *Store) enqueueTx(
 	if kind == "" {
 		kind = "chat"
 	}
+	// Serialize remote work admission with parent stop. A late worker must not
+	// enqueue a fresh process after cancellation has scanned the task tree.
+	if kind == "engine_exec" && task.RunSnapshotID != "" {
+		var status string
+		err := tx.QueryRow(ctx, `SELECT status FROM weave_team_runs
+			WHERE workspace_id=$1 AND run_snapshot_id=$2 FOR UPDATE`, task.WorkspaceID, task.RunSnapshotID).Scan(&status)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("check engine task parent: %w", err)
+		}
+		if err == nil && status != "queued" && status != "running" && status != "parked" {
+			return errors.New("engine task parent has stopped")
+		}
+	}
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO weave_task_queue (
 				id, workspace_id, project_id, agent, agent_id, agent_version,
@@ -353,7 +366,7 @@ func (s *Store) Heartbeat(ctx context.Context, id, workerID string) error {
 	tag, err := s.pool.Exec(ctx, `
 		UPDATE weave_task_queue
 		SET lease_expires_at=$1, updated_at=$2
-		WHERE id=$3 AND worker_id=$4 AND status=$5
+		WHERE id=$3 AND worker_id=$4 AND status=$5 AND lease_expires_at >= $2
 	`, leaseExpiresAt, now, id, workerID, StatusRunning)
 	if err != nil {
 		return fmt.Errorf("heartbeat task: %w", err)
@@ -444,7 +457,7 @@ func (s *Store) requeueClaimed(ctx context.Context, id, workerID string) error {
 		UPDATE weave_task_queue
 		SET status=$1, error=NULL, result=NULL, run_id=NULL, worker_id=NULL,
 			lease_expires_at=NULL, started_at=NULL, completed_at=NULL, updated_at=$2
-		WHERE id=$3 AND worker_id=$4 AND status=$5
+		WHERE id=$3 AND worker_id=$4 AND status=$5 AND lease_expires_at >= $2
 	`, StatusQueued, now, id, workerID, StatusRunning)
 	if err != nil {
 		return fmt.Errorf("requeue claimed task: %w", err)
@@ -455,14 +468,18 @@ func (s *Store) requeueClaimed(ctx context.Context, id, workerID string) error {
 	return nil
 }
 
-// Cancel marks a queued or running task in one workspace as cancelled.
+// Cancel closes queued work; active remote work must acknowledge process exit.
 func (s *Store) Cancel(ctx context.Context, workspaceID, id string) error {
 	now := s.clock.Now()
 	tag, err := s.pool.Exec(ctx, `
 		UPDATE weave_task_queue
-		SET status=$3, worker_id=NULL, lease_expires_at=NULL, completed_at=$4, updated_at=$4
+		SET status=CASE WHEN kind='engine_exec' AND worker_id IS NOT NULL THEN $7 ELSE $3 END,
+			worker_id=CASE WHEN kind='engine_exec' THEN worker_id ELSE NULL END,
+			lease_expires_at=CASE WHEN kind='engine_exec' THEN lease_expires_at ELSE NULL END,
+			completed_at=CASE WHEN kind='engine_exec' AND worker_id IS NOT NULL THEN NULL ELSE $4::timestamptz END,
+			updated_at=$4
 		WHERE workspace_id=$1 AND id=$2 AND status IN ($5, $6)
-	`, workspaceID, id, StatusCancelled, now, StatusQueued, StatusRunning)
+	`, workspaceID, id, StatusCancelled, now, StatusQueued, StatusRunning, StatusCancelRequested)
 	if err != nil {
 		return fmt.Errorf("cancel task: %w", err)
 	}
@@ -477,22 +494,76 @@ func (s *Store) Cancel(ctx context.Context, workspaceID, id string) error {
 // candidate driver stops waiting: queued roots and fanout legs must not remain
 // recoverable after their TeamRun has been cancelled.
 func (s *Store) CancelRunTasks(ctx context.Context, workspaceID, runSnapshotID string) (int, error) {
+	return s.cancelRunTasks(ctx, s.pool, workspaceID, runSnapshotID)
+}
+
+func (s *Store) CancelRunTasksTx(ctx context.Context, tx pgx.Tx, workspaceID, runSnapshotID string) (int, error) {
+	return s.cancelRunTasks(ctx, tx, workspaceID, runSnapshotID)
+}
+
+func (s *Store) cancelRunTasks(ctx context.Context, query taskQuerier, workspaceID, runSnapshotID string) (int, error) {
 	if workspaceID == "" || runSnapshotID == "" {
 		return 0, errors.New("workspace_id and run_snapshot_id are required")
 	}
-	now := s.clock.Now()
-	tag, err := s.pool.Exec(ctx, `
-		UPDATE weave_task_queue
-		SET status=$3, worker_id=NULL, lease_expires_at=NULL,
-			completed_at=$4, updated_at=$4
+	var count int
+	err := query.QueryRow(ctx, `WITH cancelled AS (UPDATE weave_task_queue
+		SET status=CASE WHEN worker_id IS NOT NULL THEN $8 ELSE $3 END,
+			completed_at=CASE WHEN worker_id IS NULL THEN $4::timestamptz ELSE NULL END, updated_at=$4
 		WHERE workspace_id=$1 AND run_snapshot_id=$2
-		  AND status IN ($5,$6,$7,$8)
-	`, workspaceID, runSnapshotID, StatusCancelled, now,
-		StatusQueued, StatusDispatched, StatusRunning, StatusCancelRequested)
+		  AND status IN ($5,$6,$7) RETURNING id)
+		SELECT count(*) FROM cancelled
+	`, workspaceID, runSnapshotID, StatusCancelled, s.clock.Now(),
+		StatusQueued, StatusDispatched, StatusRunning, StatusCancelRequested).Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("cancel run tasks: %w", err)
 	}
-	return int(tag.RowsAffected()), nil
+	return count, nil
+}
+
+// RuntimeLeaseExpiredError identifies a failed remote execution awaiting its
+// original worker's exit acknowledgement; expiry alone does not prove exit.
+const RuntimeLeaseExpiredError = "runtime offline: execution lease expired"
+
+// AcknowledgeExecutionStopped is called only after the worker has joined its
+// execution. It preserves an expired execution's failure and clears ownership.
+func (s *Store) AcknowledgeExecutionStopped(ctx context.Context, id, workerID string) error {
+	_, err := s.pool.Exec(ctx, `UPDATE weave_task_queue
+		SET status=CASE WHEN status=$3 THEN $4 ELSE $6 END,
+			error=CASE WHEN status=$8 THEN $7 ELSE error END,
+			worker_id=NULL, lease_expires_at=NULL, completed_at=$5, updated_at=$5
+		WHERE id=$1 AND worker_id=$2 AND (status=$3 OR (kind='engine_exec' AND
+			(status=$8 OR (status=$6 AND error=$7))))`,
+		id, workerID, StatusCancelRequested, StatusCancelled, s.clock.Now(), StatusFailed, RuntimeLeaseExpiredError, StatusRunning)
+	return err
+}
+
+// RunExecutionsStoppedTx requires per-task terminal acknowledgements, including
+// remote executions which failed after losing contact with their runtime.
+func (*Store) RunExecutionsStoppedTx(ctx context.Context, tx pgx.Tx, workspaceID, runSnapshotID string) (bool, error) {
+	var stopped bool
+	err := tx.QueryRow(ctx, `SELECT NOT EXISTS (SELECT 1 FROM weave_task_queue
+		WHERE workspace_id=$1 AND run_snapshot_id=$2
+		AND (status IN ('queued','dispatched','running','cancel_requested') OR worker_id IS NOT NULL))`,
+		workspaceID, runSnapshotID).Scan(&stopped)
+	return stopped, err
+}
+
+// RuntimeFailuresStopped reports whether every failed remote attempt has an
+// exit acknowledgement. Read projections and retry admission share this rule.
+func (s *Store) RuntimeFailuresStopped(ctx context.Context, workspaceID, runSnapshotID string) (bool, error) {
+	return runtimeFailuresStopped(ctx, s.pool, workspaceID, runSnapshotID)
+}
+
+func RuntimeFailuresStoppedTx(ctx context.Context, tx pgx.Tx, workspaceID, runSnapshotID string) (bool, error) {
+	return runtimeFailuresStopped(ctx, tx, workspaceID, runSnapshotID)
+}
+
+func runtimeFailuresStopped(ctx context.Context, query taskQuerier, workspaceID, runSnapshotID string) (bool, error) {
+	var stopped bool
+	err := query.QueryRow(ctx, `SELECT NOT EXISTS (SELECT 1 FROM weave_task_queue
+		WHERE workspace_id=$1 AND run_snapshot_id=$2 AND kind='engine_exec'
+		AND status='failed' AND worker_id IS NOT NULL)`, workspaceID, runSnapshotID).Scan(&stopped)
+	return stopped, err
 }
 
 // RequestCancelTask atomically records a durable cancellation request for a
@@ -526,15 +597,20 @@ func (s *Store) Supersede(ctx context.Context, workspaceID, contextKey, exceptID
 	return nil
 }
 
-// RecoverStale requeues tasks whose leases expired before the injected clock time.
+// RecoverStale requeues orchestration tasks, but exposes expired remote executions
+// as infrastructure failures so they cannot silently execute a second time.
 func (s *Store) RecoverStale(ctx context.Context) (int, error) {
 	now := s.clock.Now()
 	rows, err := s.pool.Query(ctx, `
 		UPDATE weave_task_queue
-		SET status=$1, worker_id=NULL, lease_expires_at=NULL, updated_at=$2
+		SET status=CASE WHEN kind='engine_exec' THEN $5 ELSE $1 END,
+			worker_id=CASE WHEN kind='engine_exec' THEN worker_id ELSE NULL END,
+			lease_expires_at=CASE WHEN kind='engine_exec' THEN lease_expires_at ELSE NULL END,
+			error=CASE WHEN kind='engine_exec' THEN $6 ELSE error END,
+			completed_at=CASE WHEN kind='engine_exec' THEN $2::timestamptz ELSE NULL END, updated_at=$2
 		WHERE status IN ($3, $4) AND lease_expires_at < $2
 		RETURNING id
-	`, StatusQueued, now, StatusRunning, StatusDispatched)
+	`, StatusQueued, now, StatusRunning, StatusDispatched, StatusFailed, RuntimeLeaseExpiredError)
 	if err != nil {
 		return 0, fmt.Errorf("recover stale tasks: %w", err)
 	}
@@ -663,8 +739,24 @@ func (s *Store) RequeueFailedLeg(ctx context.Context, workspaceID, groupID, agen
 // payload and identity. The expected snapshot and context prevent a caller
 // from reviving unrelated or superseded work.
 func (s *Store) RequeueFailedTask(ctx context.Context, workspaceID, id, runSnapshotID, contextKey string) (*Task, error) {
+	return s.requeueFailedTask(ctx, s.pool, workspaceID, id, runSnapshotID, contextKey)
+}
+
+// RequeueFailedTaskTx keeps the branch requeue in the transaction fencing its parent run.
+func (s *Store) RequeueFailedTaskTx(ctx context.Context, tx pgx.Tx, workspaceID, id, runSnapshotID, contextKey string) (*Task, error) {
+	if tx == nil {
+		return nil, errors.New("transaction is required")
+	}
+	return s.requeueFailedTask(ctx, tx, workspaceID, id, runSnapshotID, contextKey)
+}
+
+type taskQuerier interface {
+	QueryRow(context.Context, string, ...any) pgx.Row
+}
+
+func (s *Store) requeueFailedTask(ctx context.Context, query taskQuerier, workspaceID, id, runSnapshotID, contextKey string) (*Task, error) {
 	now := s.clock.Now()
-	row := s.pool.QueryRow(ctx, `
+	row := query.QueryRow(ctx, `
 		UPDATE weave_task_queue
 		SET status=$6,result=NULL,error=NULL,run_id=NULL,worker_id=NULL,
 			lease_expires_at=NULL,started_at=NULL,completed_at=NULL,updated_at=$7
@@ -683,7 +775,19 @@ func (s *Store) RequeueFailedTask(ctx context.Context, workspaceID, id, runSnaps
 
 // Get reads one task from a workspace.
 func (s *Store) Get(ctx context.Context, workspaceID, id string) (*Task, error) {
-	row := s.pool.QueryRow(ctx, `
+	return s.get(ctx, s.pool, workspaceID, id)
+}
+
+// GetTx reads a task using the caller's transaction and connection.
+func (s *Store) GetTx(ctx context.Context, tx pgx.Tx, workspaceID, id string) (*Task, error) {
+	if tx == nil {
+		return nil, errors.New("transaction is required")
+	}
+	return s.get(ctx, tx, workspaceID, id)
+}
+
+func (s *Store) get(ctx context.Context, query taskQuerier, workspaceID, id string) (*Task, error) {
+	row := query.QueryRow(ctx, `
 		SELECT `+taskColumns+`
 		FROM weave_task_queue
 		WHERE workspace_id=$1 AND id=$2

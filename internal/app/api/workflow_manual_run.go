@@ -5,9 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net/http"
-	"strings"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -19,13 +17,6 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-type workflowManualRunRequest struct {
-	ProjectID       json.RawMessage `json:"project_id"`
-	ConversationID  json.RawMessage `json:"conversation_id"`
-	Input           json.RawMessage `json:"input"`
-	WorkflowVersion *int            `json:"workflow_version,omitempty"`
-}
-
 type workflowManualRunResponse struct {
 	RunID           string `json:"run_id"`
 	WorkflowID      string `json:"workflow_id"`
@@ -35,9 +26,8 @@ type workflowManualRunResponse struct {
 	ConversationID  string `json:"conversation_id,omitempty"`
 }
 
-const legacyWorkflowManualRunPath = "/v1/internal/workflows/:id/run"
-
-func (s *Server) handleRunWorkflow(c echo.Context) error {
+// admitTeamWorkflowDispatch freezes and enqueues the team dispatch already validated by the product boundary.
+func (s *Server) admitTeamWorkflowDispatch(c echo.Context, workflowID string, request teamDispatchRequest) error {
 	if s.Workflow == nil || s.ScheduleTransactions == nil ||
 		s.Snapshots == nil || s.Tasks == nil {
 		return workflowError(
@@ -47,44 +37,9 @@ func (s *Server) handleRunWorkflow(c echo.Context) error {
 			"workflow run service unavailable",
 		)
 	}
-	var request workflowManualRunRequest
-	if c.Request().Body != http.NoBody && c.Request().ContentLength != 0 {
-		if err := decodeWorkflowBody(c, &request); err != nil {
-			return workflowSchemaError(c)
-		}
-	}
-	projectID := ""
-	if request.ProjectID != nil {
-		if err := decodeExactJSON(request.ProjectID, &projectID); err != nil {
-			return workflowSchemaError(c)
-		}
-		if projectID != strings.TrimSpace(projectID) {
-			if strings.TrimSpace(projectID) != "" {
-				return workflowSchemaError(c)
-			}
-			projectID = ""
-		}
-	}
-	conversationID := ""
-	if request.ConversationID != nil {
-		if err := decodeExactJSON(request.ConversationID, &conversationID); err != nil {
-			return workflowSchemaError(c)
-		}
-		if conversationID != strings.TrimSpace(conversationID) {
-			if strings.TrimSpace(conversationID) != "" {
-				return workflowSchemaError(c)
-			}
-			conversationID = ""
-		}
-	}
-	payload := json.RawMessage(`{}`)
-	if request.Input != nil {
-		if !json.Valid(request.Input) {
-			return workflowSchemaError(c)
-		}
-		payload = append(json.RawMessage(nil), request.Input...)
-	}
-	if request.WorkflowVersion != nil && *request.WorkflowVersion <= 0 {
+	projectID, conversationID := request.ProjectID, request.ConversationID
+	payload, err := json.Marshal(request.Task)
+	if err != nil {
 		return workflowSchemaError(c)
 	}
 	workspaceID := getTenant(c)
@@ -113,30 +68,24 @@ func (s *Server) handleRunWorkflow(c echo.Context) error {
 		tx,
 		workflow.WorkflowManualRunAdmissionRequest{
 			WorkspaceID:     workspaceID,
-			WorkflowID:      c.Param("id"),
+			WorkflowID:      workflowID,
 			WorkflowVersion: request.WorkflowVersion,
 			SourceRef:       sourceRef,
 			TriggerType:     triggerType,
 		},
 	)
 	if err != nil {
-		return s.respondWorkflowManualRunAdmissionError(c, tx, err, expectedTrigger)
+		return s.respondWorkflowManualRunAdmissionError(c, tx, workflowID, err, expectedTrigger)
 	}
 	if dispatchRunID, ok := c.Get("workflow_dispatch_run_id").(string); ok && dispatchRunID != "" {
 		admitted.RunID = dispatchRunID
 	}
 	if err := validateWorkflowManualRunSnapshot(
-		admitted, workspaceID, c.Param("id"), sourceRef, expectedTrigger,
+		admitted, workspaceID, workflowID, sourceRef, expectedTrigger,
 	); err != nil {
 		return workflowStoreFailure(c, err)
 	}
-	legacyRun := c.Path() == legacyWorkflowManualRunPath
-	if !legacyRun && (projectID == "" || conversationID == "") {
-		return c.JSON(http.StatusBadRequest, map[string]string{
-			"error": "workflow_attribution_required",
-		})
-	}
-	if legacyRun && conversationID != "" && projectID == "" {
+	if conversationID != "" && projectID == "" {
 		return workflowSchemaError(c)
 	}
 	if projectID != "" && s.Projects == nil {
@@ -193,15 +142,6 @@ func (s *Server) handleRunWorkflow(c echo.Context) error {
 			)
 		}
 		admitted.ProjectID = project.ID
-	}
-	if legacyRun && projectID == "" && conversationID == "" {
-		slog.Warn(
-			"legacy unattributed workflow run",
-			"source", "legacy_unattributed",
-			"workspace", workspaceID,
-			"workflow_id", c.Param("id"),
-			"operator", getUserID(c),
-		)
 	}
 
 	createdSnapshot, err := s.Snapshots.CreateTx(ctx, tx, admitted)
@@ -374,6 +314,7 @@ func (s *Server) workflowManualRunLead(
 func (s *Server) respondWorkflowManualRunAdmissionError(
 	c echo.Context,
 	tx pgx.Tx,
+	workflowID string,
 	err error,
 	triggerType ...string,
 ) error {
@@ -392,7 +333,7 @@ func (s *Server) respondWorkflowManualRunAdmissionError(
 			context.WithoutCancel(ctx),
 			workflow.FixedWorkflowAdmissionDenialAttempt{
 				WorkspaceID:         getTenant(c),
-				WorkflowID:          c.Param("id"),
+				WorkflowID:          workflowID,
 				WorkflowVersion:     denial.WorkflowVersion,
 				TriggerType:         auditTrigger,
 				AdmissionAttemptKey: uuid.NewString(),

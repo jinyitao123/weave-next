@@ -8,10 +8,10 @@ import (
 	"net/http"
 	"regexp"
 
+	"github.com/jinyitao123/weave/internal/app/metateam"
 	"github.com/jinyitao123/weave/internal/kernel/engine"
 	"github.com/jinyitao123/weave/internal/kernel/mcphost"
 	"github.com/jinyitao123/weave/internal/kernel/mcpregistry"
-	"github.com/jinyitao123/weave/internal/app/metateam"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 	"github.com/jinyitao123/weave/internal/kernel/runtimes"
 	"github.com/labstack/echo/v4"
@@ -352,7 +352,7 @@ func (s *Server) handleUpdateAgent(c echo.Context) error {
 		}
 	}
 
-	// Merge: preserve fields that the Console UI doesn't know about.
+	// Merge: preserve fields outside the mutable agent configuration contract.
 	// Load existing record and overlay incoming non-zero values.
 	ctx := c.Request().Context()
 	existing, _ := s.Registry.Get(ctx, tenant, name)
@@ -416,8 +416,8 @@ func (s *Server) handleUpdateAgent(c echo.Context) error {
 
 // mergeAgentRecord overlays incoming values onto existing.
 //
-// Console-managed fields are always overwritten (zero value = clear).
-// Fields not yet managed by Console UI use non-zero override to avoid
+// API-managed fields are always overwritten (zero value = clear).
+// Fields outside the partial update contract use non-zero override to avoid
 // accidental clearing when the frontend doesn't send them.
 func mergeAgentRecord(
 	existing, incoming *registry.AgentRecord,
@@ -448,7 +448,7 @@ func mergeAgentRecordWithPresence(
 ) *registry.AgentRecord {
 	merged := *existing // start with all existing values
 
-	// ── Console-managed fields: always overwrite (zero = clear) ──
+	// ── API-managed fields: always overwrite (zero = clear) ──
 
 	merged.Name = incoming.Name
 	// DisplayName uses non-zero override (like Model): partial patches from
@@ -510,7 +510,7 @@ func mergeAgentRecordWithPresence(
 	merged.TeamID = existing.TeamID
 	merged.Role = existing.Role
 
-	// ── Fields not yet in Console UI: non-zero override only ──
+	// ── Fields outside the partial update contract: non-zero override only ──
 	// These move to always-overwrite when the Advanced tab ships.
 
 	if incoming.OutputSchema != nil {

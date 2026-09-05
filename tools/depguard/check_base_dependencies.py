@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 import argparse
 import pathlib
-import re
 import sys
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
+from go_inventory import go_inventory
 
 MODULE = "github.com/jinyitao123/weave"
 ALLOWED_EXTERNAL_MODULES = {
@@ -11,19 +13,6 @@ ALLOWED_EXTERNAL_MODULES = {
     "github.com/jinyitao123/loom",
     "github.com/lattice-substrate/json-canon",
 }
-
-
-def parse_imports(source: str) -> list[str]:
-    imports = []
-    for match in re.finditer(
-        r'^\s*import\s+(?:[._A-Za-z][._A-Za-z0-9]*\s+)?"([^"]+)"',
-        source,
-        re.MULTILINE,
-    ):
-        imports.append(match.group(1))
-    for block in re.finditer(r"^\s*import\s*\((.*?)^\s*\)", source, re.MULTILINE | re.DOTALL):
-        imports.extend(re.findall(r'"([^"]+)"', block.group(1)))
-    return imports
 
 
 def external_module(import_path: str) -> str | None:
@@ -47,18 +36,20 @@ def main() -> int:
     args = parser.parse_args()
 
     root = pathlib.Path(args.root).resolve()
-    base = root / "internal" / "base"
     violations = []
     observed = set()
     scanned = 0
-    for path in sorted(base.rglob("*.go")):
+    for file in go_inventory(root):
+        if not file["path"].startswith("internal/base/"):
+            continue
+        path = pathlib.Path(file["path"])
         scanned += 1
-        for imported in parse_imports(path.read_text(encoding="utf-8")):
+        for imported in file["imports"]:
             module = external_module(imported)
             if module is None:
                 continue
             if module not in ALLOWED_EXTERNAL_MODULES:
-                violations.append((path.relative_to(root), imported))
+                violations.append((path, imported))
                 continue
             observed.add(module)
 

@@ -431,6 +431,30 @@ func (s *Server) handleRuntimeTaskFail(c echo.Context) error {
 	return c.NoContent(http.StatusNoContent)
 }
 
+// The runtime sends this acknowledgement only after waiting for execution exit.
+// Authentication remains pinned to the exact runtime and original task owner.
+func (s *Server) handleRuntimeTaskStopped(c echo.Context) error {
+	runtime, task, err := s.runtimeTask(c)
+	if err != nil {
+		return err
+	}
+	workerID := runtimes.RuntimeWorkerID(runtime.WorkspaceID, runtime.ID)
+	if task.WorkerID == "" && task.IsTerminal() {
+		return c.NoContent(http.StatusNoContent) // acknowledgement response was lost
+	}
+	if task.WorkerID != workerID {
+		return c.JSON(http.StatusForbidden, map[string]string{"error": "task is not claimed by this runtime"})
+	}
+	if task.Status != taskqueue.StatusRunning && task.Status != taskqueue.StatusCancelRequested &&
+		!(task.Status == taskqueue.StatusFailed && task.Error == taskqueue.RuntimeLeaseExpiredError) {
+		return c.JSON(http.StatusConflict, map[string]string{"error": "execution stop is not awaiting acknowledgement"})
+	}
+	if err := s.Tasks.AcknowledgeExecutionStopped(c.Request().Context(), task.ID, workerID); err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "cannot acknowledge execution stop"})
+	}
+	return c.NoContent(http.StatusNoContent)
+}
+
 func (s *Server) handleRuntimeTaskAttachment(c echo.Context) error {
 	runtime, task, err := s.claimedRuntimeTask(c)
 	if err != nil {

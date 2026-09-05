@@ -70,8 +70,8 @@ func (d *RenderTemplateDraftToolsDispatcher) ListTools(context.Context) ([]contr
 	}
 	return []contract.ToolDef{{
 		Name: ToolRenderTemplateDraft,
-		Description: "校验完整 team-template/v1 YAML 草稿并渲染 Console 审阅预览。只验证和规范化草稿，不创建 BuildRun、不写入 Agent/Team/Workflow；create 分支完成发现后必须调用本工具，成功后等待用户在 Console 一键提交。" +
-			" Validate a complete team-template/v1 YAML draft and render its Console review preview. This never creates or mutates platform assets.",
+		Description: "校验完整 team-template/v1 YAML 草稿并渲染 Workbench 审阅预览。只验证和规范化草稿，不创建 BuildRun、不写入 Agent/Team/Workflow；create 分支完成发现后必须调用本工具，成功后由 Workbench 主对话承接确认与提交。" +
+			" Validate a complete team-template/v1 YAML draft and render its Workbench review preview. This never creates or mutates platform assets.",
 		InputSchema: renderTemplateDraftInputSchema,
 	}}, nil
 }
@@ -128,6 +128,6 @@ func (d *RenderTemplateDraftToolsDispatcher) Dispatch(ctx context.Context, call 
 			SuccessCriteria: append([]string(nil), compilation.Template.Delivery.SuccessCriteria...),
 			MaxCostUSD:      compilation.Template.Budget.MaxCostUSD,
 		},
-		NextAction: "review_and_submit_from_console",
+		NextAction: "review_and_submit_from_workbench",
 	})
 }

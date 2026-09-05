@@ -14,4 +14,6 @@ Rules:
 - Use `make test`, which is fixed to `go test ./internal/... ./cmd/...`.
 - Do not use `vendor/`; Go modules are the source of dependency resolution.
 - Use `docker-compose.platform.yml` for platform validation.
+- Workbench is the only supported business interface. Keep MCP, HTTP, engines, storage and maintenance only to support Workbench; do not reintroduce standalone business consoles, client setup, or business CLI commands.
+- Run `make productguard`; refresh the embedded runtime UI with `make ui-embed` after frontend changes.
 - Do not add new product features during migration.

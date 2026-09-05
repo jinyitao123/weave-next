@@ -25,6 +25,8 @@ type humanTaskCursorV1 struct {
 }
 
 type humanTaskResponse struct {
+	InteractionID   string          `json:"interaction_id"`
+	NodeID          string          `json:"node_id"`
 	RunID           string          `json:"run_id"`
 	ProjectID       string          `json:"project_id,omitempty"`
 	TeamID          string          `json:"team_id"`
@@ -44,6 +46,7 @@ type humanTaskDetailResponse struct {
 }
 
 type completeHumanTaskRequest struct {
+	InteractionID  string          `json:"interaction_id,omitempty"`
 	Payload        json.RawMessage `json:"payload"`
 	IdempotencyKey string          `json:"idempotency_key"`
 }
@@ -78,6 +81,7 @@ func (s *Server) handleListHumanTasks(c echo.Context) error {
 	responses := make([]humanTaskResponse, 0, len(items))
 	for _, item := range items {
 		responses = append(responses, humanTaskResponse{
+			InteractionID: teamrun.HumanInteractionID(item.Run), NodeID: item.Detail.NodeID,
 			RunID: item.Run.RunID, ProjectID: item.Run.ProjectID, TeamID: item.Run.TeamID,
 			WorkflowID: item.Run.WorkflowID, WorkflowVersion: item.Run.WorkflowVersion,
 			Title: item.Detail.Task.Title, Instructions: item.Detail.Task.Instructions,
@@ -121,6 +125,7 @@ func (s *Server) handleGetHumanTask(c echo.Context) error {
 	}
 	detail := humanTaskDetailResponse{
 		humanTaskResponse: humanTaskResponse{
+			InteractionID: teamrun.HumanInteractionID(item.Run), NodeID: item.Detail.NodeID,
 			RunID: item.Run.RunID, ProjectID: item.Run.ProjectID, TeamID: item.Run.TeamID,
 			WorkflowID: item.Run.WorkflowID, WorkflowVersion: item.Run.WorkflowVersion,
 			Title: item.Detail.Task.Title, Instructions: item.Detail.Task.Instructions,
@@ -334,39 +339,37 @@ func (s *Server) handleCompleteHumanTask(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "request must contain one JSON object"})
 	}
 	request.IdempotencyKey = strings.TrimSpace(request.IdempotencyKey)
-	if request.IdempotencyKey == "" || len(request.IdempotencyKey) > 256 ||
+	request.InteractionID = strings.TrimSpace(request.InteractionID)
+	if request.IdempotencyKey == "" || len(request.IdempotencyKey) > 256 || len(request.InteractionID) > 256 ||
 		len(request.Payload) == 0 || len(request.Payload) > teamrun.HumanResumePayloadMaxBytes {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "payload or idempotency_key is invalid"})
 	}
 	workspaceID := getTenant(c)
 	runID := c.Param("run_id")
-	task, err := s.teamRunHumanTasks.Get(c.Request().Context(), workspaceID, runID)
-	canonical := json.RawMessage(nil)
-	if err == nil {
-		var problems []machine.RuntimeSchemaProblem
-		canonical, problems, err = validateAndCanonicalizeHumanPayload(task.Detail.ResumeSchema, request.Payload)
-		if len(problems) != 0 {
-			return c.JSON(http.StatusUnprocessableEntity, map[string]any{
-				"error": "payload violates resume_schema", "problems": problems,
-			})
-		}
-		if err != nil {
-			return c.JSON(http.StatusUnprocessableEntity, map[string]string{"error": "payload cannot be canonicalized"})
-		}
-	} else if !errors.Is(err, teamrun.ErrTeamRunIdentityMismatch) {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
-	} else {
-		canonical, err = frozen.CanonicalizeJSON(request.Payload)
-		if err != nil {
-			return c.JSON(http.StatusUnprocessableEntity, map[string]string{"error": "payload cannot be canonicalized"})
-		}
+	// Canonical bytes bind idempotent replay independently of the current
+	// question. Schema validation happens only after the service locks that wait.
+	canonical, err := frozen.CanonicalizeJSON(request.Payload)
+	if err != nil {
+		return c.JSON(http.StatusUnprocessableEntity, map[string]string{"error": "payload cannot be canonicalized"})
 	}
 	digest := sha256.Sum256(canonical)
 	result, err := s.teamRunHumanResume.Complete(c.Request().Context(), teamrun.CompleteHumanWaitRequest{
 		WorkspaceID: workspaceID, RunID: runID, Payload: canonical, PayloadDigest: digest[:],
+		InteractionID: request.InteractionID,
+		ValidatePayload: func(schema, payload json.RawMessage) error {
+			_, problems, validationErr := validateAndCanonicalizeHumanPayload(schema, payload)
+			if len(problems) > 0 {
+				return &humanPayloadValidationError{problems: problems}
+			}
+			return validationErr
+		},
 		IdempotencyKey: request.IdempotencyKey, Actor: getUserID(c), OccurredAt: time.Now().UTC(),
 	})
 	if err != nil {
+		var invalid *humanPayloadValidationError
+		if errors.As(err, &invalid) {
+			return c.JSON(http.StatusUnprocessableEntity, map[string]any{"error": "payload violates resume_schema", "problems": invalid.problems})
+		}
 		switch {
 		case errors.Is(err, teamrun.ErrTeamRunStateConflict), errors.Is(err, teamrun.ErrTeamRunResumeStale), errors.Is(err, teamrun.ErrTeamRunResumeInvalid):
 			return c.JSON(http.StatusConflict, map[string]string{"error": "human task already resolved or payload conflicts"})
@@ -382,13 +385,19 @@ func (s *Server) handleCompleteHumanTask(c echo.Context) error {
 	})
 }
 
+type humanPayloadValidationError struct {
+	problems []machine.RuntimeSchemaProblem
+}
+
+func (*humanPayloadValidationError) Error() string { return "payload violates resume_schema" }
+
 func (s *Server) requireCurrentWorkspaceMember(c echo.Context) error {
 	if s.OrgStore == nil {
-		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "workspace membership unavailable"})
+		return echo.NewHTTPError(http.StatusServiceUnavailable, map[string]string{"error": "workspace membership unavailable"})
 	}
 	members, err := s.OrgStore.ListMembers(c.Request().Context(), getTenant(c))
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "check workspace membership"})
+		return echo.NewHTTPError(http.StatusInternalServerError, map[string]string{"error": "check workspace membership"})
 	}
 	userID := getUserID(c)
 	for _, member := range members {
@@ -396,7 +405,7 @@ func (s *Server) requireCurrentWorkspaceMember(c echo.Context) error {
 			return nil
 		}
 	}
-	return c.JSON(http.StatusForbidden, map[string]string{"error": "current workspace membership required"})
+	return echo.NewHTTPError(http.StatusForbidden, map[string]string{"error": "current workspace membership required"})
 }
 
 func encodeHumanTaskCursor(updatedAt time.Time, runID string) (string, error) {

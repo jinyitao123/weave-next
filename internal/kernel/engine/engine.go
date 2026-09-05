@@ -44,6 +44,9 @@ type RunSpec struct {
 	EngineVersion string
 	// OutputSchema asks a supporting CLI to constrain its final message.
 	OutputSchema json.RawMessage
+	// OnPublicEvent receives only publicly emitted CLI messages and tools.
+	// It must return promptly and must never receive reasoning items.
+	OnPublicEvent func(Event, bool)
 }
 
 // RunResult is a worker's terminal outcome.
@@ -58,9 +61,9 @@ type RunResult struct {
 	// TeamRun activity ledger; callers must not infer events that the CLI did not
 	// report.
 	Events []Event
-	// Artifacts are bounded text files explicitly written below outputs/ by the
-	// worker. Runtime adapters collect them after a successful invocation so the
-	// server can persist real files instead of a path-only final message.
+	// Artifacts are bounded delivery files written by this invocation. Runtime
+	// adapters collect outputs/ and explicitly referenced root files so the server
+	// can persist real content; the workflow decides final versus failed evidence.
 	Artifacts []Artifact
 	// Attempts is populated by retrying remote executors. Each durable task ID
 	// appears at most once so downstream accumulators can deduplicate replays
@@ -99,8 +102,8 @@ type Event struct {
 	Output string `json:"output,omitempty"`
 }
 
-// Artifact is one user-visible UTF-8 file collected from a worker's outputs/
-// directory. Path is relative to outputs/ and never names a host path.
+// Artifact is one user-visible UTF-8 file collected by the runtime. Path is a
+// relative delivery name and never exposes a host path.
 type Artifact struct {
 	Path        string `json:"path"`
 	ContentType string `json:"content_type"`

@@ -52,6 +52,15 @@ func TestServeUsesSharedProtocolForInitializeListAndCall(t *testing.T) {
 	if instructions, _ := initialize["instructions"].(string); !strings.Contains(instructions, "call team_list") ||
 		!strings.Contains(instructions, "user-facing completion summary") ||
 		!strings.Contains(instructions, "Keep internal run IDs") ||
+		!strings.Contains(instructions, "Confirm team, task scope and deliverable before dispatch") ||
+		!strings.Contains(instructions, "honor prior explicit approval without asking again") ||
+		!strings.Contains(instructions, "If yielded or parked, inspect the waiting reason") ||
+		!strings.Contains(instructions, "ask the user only for a human task") ||
+		!strings.Contains(instructions, "Workbench shows progress, recovery and deliverables") ||
+		!strings.Contains(instructions, "Workbench owns the work conversation") ||
+		!strings.Contains(instructions, "Dispatch the original business task and materials") ||
+		!strings.Contains(instructions, "Follow the same run after dispatch") ||
+		strings.Contains(instructions, "Codex") || strings.Contains(instructions, "Claude") ||
 		len(instructions) > 900 {
 		t.Fatalf("initialize instructions = %q", instructions)
 	}

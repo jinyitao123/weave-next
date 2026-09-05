@@ -215,6 +215,9 @@ func retryableRuntimeFailure(err error) bool {
 		return false
 	}
 	message := strings.ToLower(err.Error())
+	if strings.Contains(message, taskqueue.RuntimeLeaseExpiredError) {
+		return false // require an acknowledged stop and an explicit stage retry
+	}
 	for _, marker := range []string{
 		" 502", " 503", " 504", "status 502", "status 503", "status 504",
 		"service unavailable", "temporarily unavailable", "rate limit", "too many requests",
@@ -283,6 +286,7 @@ func (e *Executor) execRemoteAttempt(
 
 	payload := e.buildExecPayloadWithSchema(tenant, rec, prompt, attachments, outputSchema)
 	payload.EngineVersion = capability.BinaryVersion
+	payload.NodeID = execution.NodeID(ctx)
 	encoded, err := json.Marshal(payload)
 	if err != nil {
 		return engine.RunResult{}, "", fmt.Errorf("encode remote engine task: %w", err)

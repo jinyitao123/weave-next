@@ -10,7 +10,6 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jinyitao123/weave/internal/base/execution"
-	"github.com/jinyitao123/weave/internal/base/realtime"
 	"github.com/jinyitao123/weave/internal/base/taskqueue"
 )
 
@@ -36,19 +35,18 @@ type Reconciler struct {
 	transactions coordinatorTransactions
 	clock        Clock
 	cards        CardUpdater
-	hub          *realtime.Hub
 	revisionMu   sync.Mutex
 	revisions    map[string]int
 }
 
 // NewReconciler creates the task-group completion reconciler.
-func NewReconciler(store *Store, enqueuer LegEnqueuer, cards CardUpdater, hub *realtime.Hub) *Reconciler {
+func NewReconciler(store *Store, enqueuer LegEnqueuer, cards CardUpdater) *Reconciler {
 	clock := Clock(RealClock{})
 	if store != nil && store.clock != nil {
 		clock = store.clock
 	}
 	return &Reconciler{
-		store: store, enqueuer: enqueuer, transactions: store.pool, clock: clock, cards: cards, hub: hub,
+		store: store, enqueuer: enqueuer, transactions: store.pool, clock: clock, cards: cards,
 		revisions: make(map[string]int),
 	}
 }
@@ -316,16 +314,7 @@ func (r *Reconciler) updateCard(ctx context.Context, snapshot Snapshot, terminal
 	); err != nil {
 		return fmt.Errorf("update task group card: %w", err)
 	}
-	if r.hub != nil {
-		r.hub.Publish(group.WorkspaceID, group.UserID, realtime.Event{
-			Type:           "message",
-			ConversationID: group.ConversationID,
-			Payload: map[string]string{
-				"message_id": group.CardMessageID,
-				"group_id":   group.ID,
-			},
-		})
-	}
+
 	return nil
 }
 

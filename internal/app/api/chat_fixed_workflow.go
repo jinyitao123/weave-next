@@ -14,10 +14,9 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jinyitao123/loom/contract"
 	"github.com/jinyitao123/weave/internal/app/conversation"
-	"github.com/jinyitao123/weave/internal/base/realtime"
-	"github.com/jinyitao123/weave/internal/kernel/registry"
 	"github.com/jinyitao123/weave/internal/base/snapshot"
 	"github.com/jinyitao123/weave/internal/base/taskqueue"
+	"github.com/jinyitao123/weave/internal/kernel/registry"
 	"github.com/jinyitao123/weave/internal/kernel/workflow"
 	"github.com/labstack/echo/v4"
 )
@@ -396,7 +395,7 @@ func (s *Server) respondPublishedWorkflowChat(
 		failRequest(created.RunID, err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
-	s.Hub.Publish(workspaceID, userID, realtime.Event{Type: "message", ConversationID: conversationID})
+
 	resp := ChatResponse{
 		Output: output, StopReason: "completed", SessionID: req.SessionID,
 		RunID: created.RunID, ProjectID: req.ProjectID,

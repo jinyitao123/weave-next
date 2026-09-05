@@ -124,7 +124,7 @@ func TestTeamDispatchWaitsForFixedWorkflowRun(t *testing.T) {
 }
 
 func TestTerminalTeamRunStatusUsesProductContract(t *testing.T) {
-	for _, status := range []string{"completed", "failed", "yielded"} {
+	for _, status := range []string{"completed", "failed", "yielded", "parked"} {
 		body := json.RawMessage(`{"runs":[{"run_id":"run-1","status":"` + status + `"}]}`)
 		if !terminalTeamRunStatus(body, "run-1") {
 			t.Fatalf("status %q was not terminal", status)
@@ -135,6 +135,48 @@ func TestTerminalTeamRunStatusUsesProductContract(t *testing.T) {
 		if terminalTeamRunStatus(body, "run-1") {
 			t.Fatalf("status %q was terminal", status)
 		}
+	}
+}
+
+func TestWaitTeamRunIgnoresSingleUnrelatedCompletedRun(t *testing.T) {
+	var polls atomic.Int32
+	client := newTestClient(t, http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/v1/runs" || request.URL.Query().Get("run_snapshot_id") != "root-1" {
+			t.Errorf("unexpected request %s", request.URL.String())
+		}
+		if polls.Add(1) == 1 {
+			writeJSON(response, http.StatusOK, `{"runs":[{"run_id":"child-1","status":"completed"}],"total":1}`)
+			return
+		}
+		writeJSON(response, http.StatusOK, `{"runs":[{"run_id":"root-1","status":"completed"}],"total":1}`)
+	}))
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	result, err := client.WaitTeamRun(ctx, "root-1")
+	if err != nil || polls.Load() != 2 || !strings.Contains(string(result), `"run_id":"root-1"`) {
+		t.Fatalf("result = %s, polls = %d, error = %v", result, polls.Load(), err)
+	}
+}
+
+func TestWaitTeamRunReturnsWaitingStateImmediately(t *testing.T) {
+	for _, status := range []string{"parked", "yielded"} {
+		t.Run(status, func(t *testing.T) {
+			var polls atomic.Int32
+			waiting := `{"runs":[{"run_id":"root-1","status":"` + status + `","park_reason":"runtime_offline"}],"total":1}`
+			client := newTestClient(t, http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
+				if polls.Add(1) == 1 {
+					writeJSON(response, http.StatusOK, waiting)
+					return
+				}
+				writeJSON(response, http.StatusOK, `{"runs":[{"run_id":"root-1","status":"completed"}],"total":1}`)
+			}))
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			result, err := client.WaitTeamRun(ctx, "root-1")
+			if err != nil || polls.Load() != 1 || string(result) != waiting {
+				t.Fatalf("result = %s, polls = %d, error = %v", result, polls.Load(), err)
+			}
+		})
 	}
 }
 

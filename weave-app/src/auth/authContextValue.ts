@@ -5,7 +5,6 @@ export interface AuthContextValue {
   status: "restoring" | "authenticated" | "anonymous";
   user: User | null;
   login(input: LoginRequest): Promise<void>;
-  devLogin(tenant: string): Promise<void>;
   refreshUser(signal?: AbortSignal): Promise<User>;
   logout(): Promise<void>;
 }

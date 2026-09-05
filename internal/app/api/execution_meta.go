@@ -325,7 +325,7 @@ func mergeAssistantExecutionSegments(metadata json.RawMessage, segments []assist
 
 // mergeTeamTemplateDraftMetadata promotes the last successfully rendered
 // template draft out of the execution trace. Message timelines intentionally
-// compact tool payloads, while the Console review card needs the complete
+// compact tool payloads, while Workbench review needs the complete
 // normalized YAML after a refresh.
 func mergeTeamTemplateDraftMetadata(metadata json.RawMessage, execution assistantExecutionMetadata) json.RawMessage {
 	for index := len(execution.ToolCalls) - 1; index >= 0; index-- {

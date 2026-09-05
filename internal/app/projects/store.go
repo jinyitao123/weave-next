@@ -1,4 +1,4 @@
-// Package projects persists workspace-scoped Project catalogs.
+// Package projects resolves workspace-scoped Projects for task execution.
 package projects
 
 import (
@@ -51,14 +51,7 @@ type Project struct {
 	SystemKind string `json:"system_kind"`
 }
 
-// ListFilter narrows one workspace's Project catalog.
-type ListFilter struct {
-	AvatarID        string
-	TeamID          string
-	IncludeArchived bool
-}
-
-// Store persists Projects and their ownership transfers.
+// Store resolves Project ownership and ensures the default execution Project.
 type Store struct {
 	pool  *pgxpool.Pool
 	clock Clock
@@ -70,51 +63,6 @@ func New(pool *pgxpool.Pool, clock Clock) *Store {
 		clock = RealClock{}
 	}
 	return &Store{pool: pool, clock: clock}
-}
-
-// Create adds an active Project owned by one Avatar.
-func (s *Store) Create(
-	ctx context.Context,
-	workspaceID, avatarID, name, description string,
-) (Project, error) {
-	return s.create(ctx, workspaceID, "", avatarID, name, description)
-}
-
-// CreateForTeam adds an active Project owned by one Team. avatar_id is a
-// compatibility mirror derived from the team's current lead.
-func (s *Store) CreateForTeam(
-	ctx context.Context,
-	workspaceID, teamID, name, description string,
-) (Project, error) {
-	return s.create(ctx, workspaceID, teamID, "", name, description)
-}
-
-func (s *Store) create(
-	ctx context.Context,
-	workspaceID, teamID, avatarID, name, description string,
-) (Project, error) {
-	name, err := normalizeName(name)
-	if err != nil {
-		return Project{}, err
-	}
-	teamID, avatarID, err = s.resolveProjectOwner(ctx, workspaceID, teamID, avatarID)
-	if err != nil {
-		return Project{}, err
-	}
-	now := s.clock.Now()
-	row := s.pool.QueryRow(ctx, `
-		INSERT INTO weave_projects (
-			id, workspace_id, team_id, avatar_id, name, description, created_at, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $7)
-		RETURNING `+projectColumns,
-		uuid.NewString(), workspaceID, teamID, avatarID, name,
-		strings.TrimSpace(description), now,
-	)
-	project, scanErr := scanProject(row)
-	if scanErr != nil {
-		return Project{}, classifyMutationError(scanErr)
-	}
-	return project, nil
 }
 
 // Get returns one Project, including archived Projects.
@@ -152,15 +100,6 @@ func (s *Store) EnsureUnclassified(
 	workspaceID, avatarID string,
 ) (Project, error) {
 	return s.ensureUnclassified(ctx, workspaceID, "", avatarID)
-}
-
-// EnsureUnclassifiedForTeam returns the active compatibility Project for a
-// Team. avatar_id is mirrored from the current lead.
-func (s *Store) EnsureUnclassifiedForTeam(
-	ctx context.Context,
-	workspaceID, teamID string,
-) (Project, error) {
-	return s.ensureUnclassified(ctx, workspaceID, teamID, "")
 }
 
 func (s *Store) ensureUnclassified(
@@ -209,207 +148,6 @@ func (s *Store) ensureUnclassified(
 	return project, nil
 }
 
-// List returns Projects from one workspace in stable product order.
-func (s *Store) List(ctx context.Context, workspaceID string, filter ListFilter) ([]Project, error) {
-	rows, err := s.pool.Query(ctx, `
-		SELECT `+projectColumns+`
-		FROM weave_projects
-		WHERE workspace_id=$1
-		  AND ($2='' OR avatar_id=$2)
-		  AND ($3='' OR team_id=$3)
-		  AND ($4 OR archived_at IS NULL)
-		ORDER BY (archived_at IS NOT NULL), COALESCE(last_activity_at, updated_at) DESC, id
-	`, workspaceID, strings.TrimSpace(filter.AvatarID), strings.TrimSpace(filter.TeamID), filter.IncludeArchived)
-	if err != nil {
-		return nil, fmt.Errorf("list projects: %w", err)
-	}
-	defer rows.Close()
-
-	result := make([]Project, 0)
-	for rows.Next() {
-		project, err := scanProject(rows)
-		if err != nil {
-			return nil, fmt.Errorf("scan project list: %w", err)
-		}
-		result = append(result, project)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("list projects: %w", err)
-	}
-	return result, nil
-}
-
-// Update changes user-editable Project metadata.
-func (s *Store) Update(
-	ctx context.Context,
-	workspaceID, id, name, description string,
-) (Project, error) {
-	name, err := normalizeName(name)
-	if err != nil {
-		return Project{}, err
-	}
-	row := s.pool.QueryRow(ctx, `
-		UPDATE weave_projects
-		SET name=$3, description=$4, updated_at=$5
-		WHERE workspace_id=$1 AND id=$2
-		RETURNING `+projectColumns,
-		workspaceID, id, name, strings.TrimSpace(description), s.clock.Now(),
-	)
-	project, scanErr := scanProject(row)
-	if errors.Is(scanErr, pgx.ErrNoRows) {
-		return Project{}, ErrNotFound
-	}
-	if scanErr != nil {
-		return Project{}, classifyMutationError(scanErr)
-	}
-	return project, nil
-}
-
-// Archive idempotently prevents a Project from accepting new work.
-func (s *Store) Archive(ctx context.Context, workspaceID, id string) (Project, error) {
-	now := s.clock.Now()
-	row := s.pool.QueryRow(ctx, `
-		UPDATE weave_projects
-		SET archived_at=COALESCE(archived_at, $3),
-		    updated_at=CASE WHEN archived_at IS NULL THEN $3 ELSE updated_at END
-		WHERE workspace_id=$1 AND id=$2
-		RETURNING `+projectColumns,
-		workspaceID, id, now,
-	)
-	project, err := scanProject(row)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return Project{}, ErrNotFound
-	}
-	if err != nil {
-		return Project{}, fmt.Errorf("archive project: %w", err)
-	}
-	return project, nil
-}
-
-// Restore idempotently reactivates an archived Project.
-func (s *Store) Restore(ctx context.Context, workspaceID, id string) (Project, error) {
-	now := s.clock.Now()
-	row := s.pool.QueryRow(ctx, `
-		UPDATE weave_projects
-		SET archived_at=NULL,
-		    updated_at=CASE WHEN archived_at IS NOT NULL THEN $3 ELSE updated_at END
-		WHERE workspace_id=$1 AND id=$2
-		RETURNING `+projectColumns,
-		workspaceID, id, now,
-	)
-	project, scanErr := scanProject(row)
-	if errors.Is(scanErr, pgx.ErrNoRows) {
-		return Project{}, ErrNotFound
-	}
-	if scanErr != nil {
-		return Project{}, classifyMutationError(scanErr)
-	}
-	return project, nil
-}
-
-// Move transfers current ownership to another Avatar and appends an audit row.
-func (s *Store) Move(
-	ctx context.Context,
-	workspaceID, id, avatarID, operatorID string,
-) (Project, error) {
-	return s.move(ctx, workspaceID, id, "", avatarID, operatorID)
-}
-
-// MoveForTeam transfers current ownership to another Team and appends an audit
-// row using the mirrored lead avatar IDs.
-func (s *Store) MoveForTeam(
-	ctx context.Context,
-	workspaceID, id, teamID, operatorID string,
-) (Project, error) {
-	return s.move(ctx, workspaceID, id, teamID, "", operatorID)
-}
-
-func (s *Store) move(
-	ctx context.Context,
-	workspaceID, id, teamID, avatarID, operatorID string,
-) (Project, error) {
-	var err error
-	teamID, avatarID, err = s.resolveProjectOwner(ctx, workspaceID, teamID, avatarID)
-	if err != nil {
-		return Project{}, err
-	}
-	operatorID = strings.TrimSpace(operatorID)
-	if operatorID == "" {
-		return Project{}, fmt.Errorf("move project: operator is required")
-	}
-
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return Project{}, fmt.Errorf("begin move project: %w", err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-
-	current, err := scanProject(tx.QueryRow(ctx, `
-		SELECT `+projectColumns+`
-		FROM weave_projects
-		WHERE workspace_id=$1 AND id=$2
-		FOR UPDATE
-	`, workspaceID, id))
-	if errors.Is(err, pgx.ErrNoRows) {
-		return Project{}, ErrNotFound
-	}
-	if err != nil {
-		return Project{}, fmt.Errorf("lock project for move: %w", err)
-	}
-	if current.TeamID == teamID {
-		return current, nil
-	}
-
-	now := s.clock.Now()
-	moved, err := scanProject(tx.QueryRow(ctx, `
-		UPDATE weave_projects
-		SET team_id=$3, avatar_id=$4, system_kind=NULL, updated_at=$5
-		WHERE workspace_id=$1 AND id=$2
-		RETURNING `+projectColumns,
-		workspaceID, id, teamID, avatarID, now,
-	))
-	if err != nil {
-		return Project{}, classifyMutationError(err)
-	}
-	if _, err := tx.Exec(ctx, `
-		INSERT INTO weave_project_move_audits (
-			id, workspace_id, project_id, from_avatar_id, to_avatar_id,
-			operator_id, created_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7)
-	`, uuid.NewString(), workspaceID, id, current.AvatarID, avatarID, operatorID, now); err != nil {
-		return Project{}, fmt.Errorf("audit project move: %w", err)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return Project{}, fmt.Errorf("commit project move: %w", err)
-	}
-	return moved, nil
-}
-
-// ListUnresolvedActive returns active legacy Projects that still lack a
-// canonical Team owner. It backs the operator clear-down query exposed in the
-// T2 handoff.
-func (s *Store) ListUnresolvedActive(ctx context.Context, workspaceID string) ([]Project, error) {
-	rows, err := s.pool.Query(ctx, `
-		SELECT `+projectColumns+`
-		FROM weave_projects
-		WHERE workspace_id=$1 AND archived_at IS NULL AND team_id IS NULL
-		ORDER BY updated_at DESC, id
-	`, workspaceID)
-	if err != nil {
-		return nil, fmt.Errorf("list unresolved projects: %w", err)
-	}
-	defer rows.Close()
-	result := make([]Project, 0)
-	for rows.Next() {
-		project, err := scanProject(rows)
-		if err != nil {
-			return nil, fmt.Errorf("scan unresolved project: %w", err)
-		}
-		result = append(result, project)
-	}
-	return result, rows.Err()
-}
-
 func (s *Store) resolveProjectOwner(ctx context.Context, workspaceID, teamID, avatarID string) (string, string, error) {
 	teamID = strings.TrimSpace(teamID)
 	avatarID = strings.TrimSpace(avatarID)
@@ -453,14 +191,6 @@ func (s *Store) resolveProjectOwner(ctx context.Context, workspaceID, teamID, av
 		return "", "", fmt.Errorf("resolve legacy project avatar: %w", err)
 	}
 	return teamID, avatarID, nil
-}
-
-func normalizeName(name string) (string, error) {
-	name = strings.TrimSpace(name)
-	if name == "" {
-		return "", ErrInvalidName
-	}
-	return name, nil
 }
 
 func classifyMutationError(err error) error {

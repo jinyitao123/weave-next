@@ -1,6 +1,202 @@
 {
-  "base": {"lines": 18490, "packages": 12, "external_dependencies": 4},
-  "kernel": {"lines": 59550, "packages": 32, "external_dependencies": 3},
-  "build": {"lines": 36653, "packages": 7, "external_dependencies": 4},
-  "app": {"lines": 39702, "packages": 19, "external_dependencies": 6}
+  "baseline": {
+    "date": "2026-09-05",
+    "source_commit": "23c6b1d",
+    "reason": "Explicit audited working-tree baseline, including pre-existing runtime retry work. No growth allowance. Original migration targets retained below; this does not retire that debt."
+  },
+  "amendments": [
+    {
+      "date": "2026-09-05",
+      "reason": "Authorized entry and recovery hardening: atomic retry/cancel fencing, stale source-task protection, exact-run/current-stage activity projection, and regression coverage. Exact reviewed limits with no spare allowance; package and dependency limits unchanged.",
+      "record": "docs/治理/2026-09-05-入口与恢复治理落地.md",
+      "base": {
+        "previous_lines": 21308,
+        "previous_production_lines": 19459,
+        "lines_added": 560,
+        "production_lines_added": 101
+      },
+      "app": {
+        "previous_lines": 42736,
+        "previous_production_lines": 38065,
+        "lines_added": 399,
+        "production_lines_added": 168
+      }
+    },
+    {
+      "date": "2026-09-05",
+      "reason": "Real Workbench acceptance fixes: task-scoped execution-stop acknowledgements, remote lease-expiry fencing, original-input propagation, bounded actual-file delivery and complete-content retrieval regressions. Exact reviewed limits; no package or dependency growth allowance.",
+      "record": "docs/验收/2026-09-05-Workbench真实联调.md",
+      "base": {
+        "previous_lines": 21868,
+        "previous_production_lines": 19560,
+        "lines_added": 321,
+        "production_lines_added": 147
+      },
+      "kernel": {
+        "previous_lines": 60854,
+        "previous_production_lines": 59666,
+        "lines_added": 231,
+        "production_lines_added": 97
+      },
+      "build": {
+        "previous_lines": 36985,
+        "previous_production_lines": 34673,
+        "lines_added": 76,
+        "production_lines_added": 7
+      },
+      "app": {
+        "previous_lines": 43135,
+        "previous_production_lines": 38233,
+        "lines_added": 305,
+        "production_lines_added": 57
+      }
+    },
+    {
+      "date": "2026-09-05",
+      "reason": "Authorized work-conversation implementation: bounded durable public runtime events, exact attempt projection, request-scoped stage retry replay, locked human-question identity and schema checks, honest uncollected delivery failures, and their regression coverage. Exact frozen-source limits; no package or dependency allowance added.",
+      "record": "docs/架构/2026-09-05-Workbench-工作对话方案.md",
+      "base": {
+        "previous_lines": 22189,
+        "previous_production_lines": 19707,
+        "lines_added": 426,
+        "production_lines_added": 146
+      },
+      "kernel": {
+        "previous_lines": 61085,
+        "previous_production_lines": 59763,
+        "lines_added": 447,
+        "production_lines_added": 178
+      },
+      "app": {
+        "previous_lines": 43440,
+        "previous_production_lines": 38290,
+        "lines_added": 1456,
+        "production_lines_added": 738
+      }
+    },
+    {
+      "date": "2026-09-05",
+      "reason": "Workbench-only product cleanup: remove retired consoles, client setup, business CLI and public wrappers, unused console stores/notifications, standalone agent and connector schedules. Retain actual team execution, recovery, workflow schedules and historical persistence. Exact integrated-source limits, including boundary and real PostgreSQL dispatch/schedule regressions; no spare package or dependency allowance. Correct the registered lead roster status exposed to Workbench.",
+      "record": "docs/治理/2026-09-05-Workbench单一产品边界清理.md",
+      "base": {
+        "previous_lines": 22615,
+        "previous_production_lines": 19853,
+        "lines_removed": 211,
+        "production_lines_removed": 211
+      },
+      "kernel": {
+        "previous_lines": 61532,
+        "previous_production_lines": 59941,
+        "lines_removed": 375,
+        "production_lines_removed": 398
+      },
+      "build": {
+        "previous_lines": 37061,
+        "previous_production_lines": 34680,
+        "lines_removed": 46,
+        "production_lines_removed": 46
+      },
+      "app": {
+        "previous_lines": 44896,
+        "previous_production_lines": 39028,
+        "lines_removed": 3940,
+        "production_lines_removed": 4293
+      }
+    },
+    {
+      "date": "2026-09-05",
+      "reason": "Real Workbench dispatch regression: preserve planned file references until the selected final delivery, carry missing-file evidence through checkpoint/transform and clear invalidated evidence on correction; distinguish unobserved members from executed failures. Exact reviewed production and regression limits, with no package or dependency growth.",
+      "record": "docs/验收/2026-09-05-Workbench真实联调.md",
+      "base": {
+        "previous_lines": 22404,
+        "previous_production_lines": 19642,
+        "lines_added": 102,
+        "production_lines_added": 62
+      },
+      "kernel": {
+        "previous_lines": 61157,
+        "previous_production_lines": 59543,
+        "lines_added": 283,
+        "production_lines_added": 59
+      },
+      "app": {
+        "previous_lines": 40956,
+        "previous_production_lines": 34735,
+        "lines_added": 16,
+        "production_lines_added": 8
+      }
+    }
+  ],
+  "migration_targets": {
+    "base": {
+      "lines": 18490,
+      "packages": 12,
+      "external_dependencies": 4
+    },
+    "kernel": {
+      "lines": 59550,
+      "packages": 32,
+      "external_dependencies": 3
+    },
+    "build": {
+      "lines": 36653,
+      "packages": 7,
+      "external_dependencies": 4
+    },
+    "app": {
+      "lines": 39702,
+      "packages": 19,
+      "external_dependencies": 6
+    }
+  },
+  "base": {
+    "lines": 22506,
+    "production_lines": 19704,
+    "packages": 11,
+    "external_dependencies": 4,
+    "allowed_dependencies": [
+      "github.com/google/uuid",
+      "github.com/jackc/pgx/v5",
+      "github.com/jinyitao123/loom",
+      "github.com/lattice-substrate/json-canon"
+    ]
+  },
+  "kernel": {
+    "lines": 61440,
+    "production_lines": 59602,
+    "packages": 33,
+    "external_dependencies": 3,
+    "allowed_dependencies": [
+      "github.com/google/uuid",
+      "github.com/jackc/pgx/v5",
+      "github.com/jinyitao123/loom"
+    ]
+  },
+  "build": {
+    "lines": 37015,
+    "production_lines": 34634,
+    "packages": 7,
+    "external_dependencies": 4,
+    "allowed_dependencies": [
+      "github.com/google/uuid",
+      "github.com/jackc/pgx/v5",
+      "github.com/jinyitao123/loom",
+      "gopkg.in/yaml.v3"
+    ]
+  },
+  "app": {
+    "lines": 40972,
+    "production_lines": 34743,
+    "packages": 18,
+    "external_dependencies": 7,
+    "allowed_dependencies": [
+      "github.com/golang-jwt/jwt/v5",
+      "github.com/google/uuid",
+      "github.com/jackc/pgx/v5",
+      "github.com/jinyitao123/loom",
+      "github.com/labstack/echo/v4",
+      "golang.org/x/crypto",
+      "gopkg.in/yaml.v3"
+    ]
+  }
 }

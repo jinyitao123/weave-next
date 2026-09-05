@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jinyitao123/weave/internal/base/taskqueue"
 )
@@ -35,6 +36,17 @@ func (e *Executor) ProcessNext(ctx context.Context, workerID string) (bool, erro
 }
 
 func (e *Executor) processClaimedWorkflowTask(ctx context.Context, task *taskqueue.Task, workerID string) error {
+	// Returning from the workflow handler means every local execution has been
+	// joined. Remote children retain their own independent exit acknowledgement.
+	if tasks, ok := e.Tasks.(interface {
+		AcknowledgeExecutionStopped(context.Context, string, string) error
+	}); ok {
+		defer func() {
+			ackCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+			defer cancel()
+			_ = tasks.AcknowledgeExecutionStopped(ackCtx, task.ID, workerID)
+		}()
+	}
 	if task.WorkerID == "" {
 		task.WorkerID = workerID
 	}
@@ -51,6 +63,8 @@ func (e *Executor) processClaimedWorkflowTask(ctx context.Context, task *taskque
 			return e.processHumanResume(ctx, task, workerID)
 		case "correction_resume":
 			return e.processCorrectionResume(ctx, task, workerID)
+		case "runtime_retry":
+			return e.processRuntimeRetry(ctx, task, workerID)
 		}
 	}
 

@@ -194,36 +194,6 @@ func productWorkflowStatus(status string) string {
 	}
 }
 
-// GetLatestForConversation returns the newest request owned by the current
-// user for a conversation. It is intentionally a read model: reconnecting
-// clients use it to converge on the durable execution without replaying the
-// original POST.
-func (s *Store) GetLatestForConversation(
-	ctx context.Context, workspaceID, userID, conversationID string,
-) (Request, error) {
-	conversationID = strings.TrimSpace(conversationID)
-	if conversationID == "" {
-		return Request{}, ErrNotFound
-	}
-	request, err := scanRequest(s.pool.QueryRow(ctx, `
-		SELECT workspace_id,user_id,client_request_id::text,request_fingerprint,
-			project_id,agent_id,COALESCE(session_id,''),COALESCE(conversation_id,''),
-			COALESCE(user_message_id,''),COALESCE(task_id,''),COALESCE(run_id,''),
-			status,response,COALESCE(error_code,''),created_at,updated_at
-		FROM weave_chat_requests
-		WHERE workspace_id=$1 AND user_id=$2 AND conversation_id=$3
-		ORDER BY created_at DESC, client_request_id DESC
-		LIMIT 1
-	`, workspaceID, userID, conversationID))
-	if errors.Is(err, pgx.ErrNoRows) {
-		return Request{}, ErrNotFound
-	}
-	if err != nil {
-		return Request{}, fmt.Errorf("get latest conversation chat request: %w", err)
-	}
-	return request, nil
-}
-
 func (s *Store) MarkAdmitted(
 	ctx context.Context,
 	workspaceID, userID, clientRequestID, sessionID, conversationID, userMessageID string,

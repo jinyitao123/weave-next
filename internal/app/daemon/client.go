@@ -96,6 +96,10 @@ func (c *runtimeClient) renew(ctx context.Context, taskID string) error {
 	return c.postTaskNoContent(ctx, taskID, "renew", nil)
 }
 
+func (c *runtimeClient) stopped(ctx context.Context, taskID string) error {
+	return c.postTaskNoContent(ctx, taskID, "stopped", nil)
+}
+
 func (c *runtimeClient) complete(ctx context.Context, taskID string, result runtimes.EngineExecResult) error {
 	return c.postTaskNoContent(ctx, taskID, "complete", result)
 }

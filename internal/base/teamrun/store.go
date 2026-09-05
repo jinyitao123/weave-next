@@ -231,11 +231,16 @@ func (store *PGStore) GetForUpdateTx(
 // ListCancelGraceExpiredTx locks a bounded batch of cancel requests whose
 // grace deadline has elapsed. Callers must finish each transition and commit
 // using the same transaction.
-func (*PGStore) ListCancelGraceExpiredTx(
+func (store *PGStore) ListCancelGraceExpiredTx(ctx context.Context, tx pgx.Tx, now time.Time, limit int) ([]TeamRun, error) {
+	return store.listCancelRequestsTx(ctx, tx, now, limit, true)
+}
+
+func (*PGStore) listCancelRequestsTx(
 	ctx context.Context,
 	tx pgx.Tx,
 	now time.Time,
 	limit int,
+	expiredOnly bool,
 ) ([]TeamRun, error) {
 	if err := requireTx(tx); err != nil {
 		return nil, err
@@ -249,10 +254,10 @@ func (*PGStore) ListCancelGraceExpiredTx(
 	rows, err := tx.Query(ctx, `SELECT `+teamRunColumns+`
 		FROM weave_team_runs
 		WHERE status='cancel_requested'
-			AND cancel_grace_deadline_at<=$1
+			AND (cancel_grace_deadline_at<=$1 OR NOT $3)
 		ORDER BY cancel_grace_deadline_at,workspace_id,run_id
 		FOR UPDATE SKIP LOCKED
-		LIMIT $2`, now, limit)
+		LIMIT $2`, now, limit, expiredOnly)
 	if err != nil {
 		return nil, fmt.Errorf("list expired team run cancel grace: %w", err)
 	}
@@ -861,7 +866,7 @@ func (store *PGStore) ParkTx(
 		return TeamRun{}, fmt.Errorf("executor, checkpoint, and resume token hash must be non-empty")
 	}
 	switch req.WaitKind {
-	case WaitTimer, WaitFanout, WaitHuman, WaitCorrection:
+	case WaitTimer, WaitFanout, WaitHuman, WaitCorrection, WaitRuntime:
 	default:
 		return TeamRun{}, fmt.Errorf("wait_kind %q is invalid", req.WaitKind)
 	}
@@ -1424,7 +1429,7 @@ func (store *PGStore) ResumeRunningTx(
 		return TeamRun{}, fmt.Errorf("executor_id and resume token hash must be non-empty")
 	}
 	switch req.ExpectedWaitKind {
-	case WaitTimer, WaitFanout, WaitCorrection:
+	case WaitTimer, WaitFanout, WaitCorrection, WaitRuntime:
 		if req.HumanTimeout || len(req.Payload) != 0 || len(req.PayloadDigest) != 0 {
 			return TeamRun{}, fmt.Errorf("payload is only allowed for human resume")
 		}

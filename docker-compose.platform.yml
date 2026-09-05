@@ -3,7 +3,7 @@
 # same image serves both roles: default entrypoint = server, `runtime ...` = remote runtime.
 #
 # First boot: `docker compose -f docker-compose.platform.yml up -d`
-# Then create a runtime in 设置 → 运行时 to get a one-time rtk_ token, put it in
+# Then register a runtime through Workbench or runtime maintenance, put its
 # WEAVE_RUNTIME_TOKEN, and start the runtime:
 #   WEAVE_RUNTIME_TOKEN=rtk_xxx docker compose -f docker-compose.platform.yml --profile runtime up -d
 services:
@@ -25,6 +25,7 @@ services:
     build:
       context: .
       args:
+        BUILD_COMMIT: ${BUILD_COMMIT:-unknown}
         NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
         OPENCODE_VERSION: ${OPENCODE_VERSION:-1.18.11}
         CODEX_VERSION: ${CODEX_VERSION:-0.146.0}
@@ -55,20 +56,26 @@ services:
       retries: 20
     restart: unless-stopped
 
-  # Remote runtime — opt-in (needs a runtime token created in the console
+  # Remote runtime — opt-in (needs a runtime token from Workbench or runtime maintenance
   # first). Talks to the server over HTTP only; no DB access. In production this
   # typically runs on a DIFFERENT machine via `weave runtime --server https://…`;
   # this service is the single-host / staging shape of the same thing.
   runtime:
     image: weave-platform
     profiles: ["runtime"]
+    # The CLI validates this when the runtime starts. Requiring it during
+    # interpolation also blocks first boot with the runtime profile disabled.
+    environment:
+      WEAVE_RUNTIME_TOKEN: ${WEAVE_RUNTIME_TOKEN:-}
     command:
       [
         "runtime",
         "--server", "http://weave:8080",
-        "--runtime-token", "${WEAVE_RUNTIME_TOKEN:?create a runtime in the console and set WEAVE_RUNTIME_TOKEN}",
         "--concurrency", "${WEAVE_RUNTIME_CONCURRENCY:-2}",
+        "--workspaces-root", "/data/runtime-workspaces",
       ]
+    volumes:
+      - runtime_data:/data/runtime-workspaces
     depends_on:
       weave:
         condition: service_healthy
@@ -76,3 +83,4 @@ services:
 
 volumes:
   pgdata:
+  runtime_data:

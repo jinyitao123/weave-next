@@ -32,6 +32,9 @@ type WorkflowCheckpointV1 struct {
 	ExecutionLeaseEpoch ExecutionLeaseEpoch        `json:"execution_lease_epoch"`
 	NodeID              string                     `json:"node_id"`
 	CompletedOutputs    map[string]json.RawMessage `json:"completed_outputs"`
+	// DeliveryErrors records uncollected references per completed node. These
+	// only block a deliver node that selects that output, including after resume.
+	DeliveryErrors map[string]string `json:"delivery_errors,omitempty"`
 	// Usage is the persisted serial-machine usage accumulator checkpoint
 	// (confirmed per-node contributions plus derived totals). Old checkpoints
 	// omit it and resume with zero usage.

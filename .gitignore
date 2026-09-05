@@ -9,6 +9,7 @@ bin/
 # Go
 *.test
 coverage.out
+__pycache__/
 
 # Node
 weave-app/node_modules/
@@ -30,7 +31,6 @@ weave-app/dist/
 
 # never commit e2e auth state or prebuilt binaries
 weave-app/e2e/.auth/
-deploy/weave
 
 # 计划/ 自 2026-07-28 起纳入版本管理（原独立计划仓库历史已备份为 bundle）
 .demaike.env
@@ -43,3 +43,6 @@ deploy/weave
 .weave-demo/
 /cacert.pem
 /loom-linux
+
+# Local review/build scratch files
+/tmp/

@@ -65,14 +65,35 @@ type HumanResumeTaskStore interface {
 	EnqueueTx(context.Context, pgx.Tx, *taskqueue.Task) error
 }
 
+// HumanInteractionID identifies one parked question, including a later visit
+// to the same workflow node. It remains stable while that wait is unchanged.
+func HumanInteractionID(run TeamRun) string {
+	if run.Status != StatusParked || run.WaitKind == nil || *run.WaitKind != WaitHuman {
+		return ""
+	}
+	detail, err := DecodeHumanWaitDetailV1(run.WaitDetail)
+	if err != nil {
+		return ""
+	}
+	identity, _ := json.Marshal([]any{run.WorkspaceID, run.RunID, detail.NodeID, run.Generation, run.ResumeGeneration})
+	digest := sha256.Sum256(identity)
+	return "human_" + hex.EncodeToString(digest[:16])
+}
+
 type CompleteHumanWaitRequest struct {
-	WorkspaceID    string
-	RunID          string
-	Payload        json.RawMessage
-	PayloadDigest  []byte
-	IdempotencyKey string
-	Actor          string
-	OccurredAt     time.Time
+	// InteractionID is optional for legacy tool callers. Product forms bind
+	// their answer to the exact question returned by the inbox/detail API.
+	InteractionID string
+	// ValidatePayload runs against the locked current question after replay
+	// and identity checks. The app supplies schema policy without an upward import.
+	ValidatePayload func(schema, payload json.RawMessage) error
+	WorkspaceID     string
+	RunID           string
+	Payload         json.RawMessage
+	PayloadDigest   []byte
+	IdempotencyKey  string
+	Actor           string
+	OccurredAt      time.Time
 }
 
 type CompleteHumanWaitResult struct {
@@ -98,7 +119,7 @@ func (s *HumanResumeService) Complete(
 	}
 	if req.WorkspaceID == "" || req.RunID == "" || req.IdempotencyKey == "" || req.Actor == "" ||
 		len(req.Payload) == 0 || len(req.Payload) > HumanResumePayloadMaxBytes || !json.Valid(req.Payload) ||
-		len(req.PayloadDigest) != sha256.Size {
+		len(req.PayloadDigest) != sha256.Size || len(req.InteractionID) > 256 {
 		return CompleteHumanWaitResult{}, errors.New("human resume request is invalid")
 	}
 	digest := sha256.Sum256(req.Payload)
@@ -127,18 +148,26 @@ func (s *HumanResumeService) Complete(
 		payloadDigest: append([]byte(nil), req.PayloadDigest...), actor: req.Actor,
 		source: "human_resume", occurredAt: now,
 	}
-	if locked.Status != StatusParked {
-		transition, present, readErr := readTransitionByKey(ctx, tx, req.WorkspaceID, req.RunID, req.IdempotencyKey)
-		if readErr != nil {
-			return CompleteHumanWaitResult{}, readErr
-		}
-		if !present || !sameTransition(transition, StatusParked, StatusRunning, meta, nil, nil) {
+	// A lost response can be retried after this run has reached another human
+	// question. Replay the recorded command before inspecting the current wait.
+	transition, present, readErr := readTransitionByKey(ctx, tx, req.WorkspaceID, req.RunID, req.IdempotencyKey)
+	if readErr != nil {
+		return CompleteHumanWaitResult{}, readErr
+	}
+	if present {
+		if !sameTransition(transition, StatusParked, StatusRunning, meta, nil, nil) {
 			return CompleteHumanWaitResult{}, ErrTeamRunStateConflict
 		}
 		if err := tx.Commit(ctx); err != nil {
 			return CompleteHumanWaitResult{}, fmt.Errorf("commit human resume replay: %w", err)
 		}
 		return CompleteHumanWaitResult{Run: locked, TaskID: taskID, Idempotent: true}, nil
+	}
+	if locked.Status != StatusParked {
+		return CompleteHumanWaitResult{}, ErrTeamRunStateConflict
+	}
+	if req.InteractionID != "" && req.InteractionID != HumanInteractionID(locked) {
+		return CompleteHumanWaitResult{}, ErrTeamRunResumeStale
 	}
 	if locked.WaitKind == nil || *locked.WaitKind != WaitHuman || locked.CheckpointRef == nil ||
 		*locked.CheckpointRef != CheckpointRef(locked.WorkspaceID, locked.RunID) {
@@ -147,6 +176,11 @@ func (s *HumanResumeService) Complete(
 	detail, err := DecodeHumanWaitDetailV1(locked.WaitDetail)
 	if err != nil {
 		return CompleteHumanWaitResult{}, fmt.Errorf("%w: %v", ErrTeamRunResumeInvalid, err)
+	}
+	if req.ValidatePayload != nil {
+		if err := req.ValidatePayload(detail.ResumeSchema, req.Payload); err != nil {
+			return CompleteHumanWaitResult{}, err
+		}
 	}
 	checkpoint, err := s.Checkpoints.GetTx(ctx, tx, locked.WorkspaceID, locked.RunID)
 	if err != nil {

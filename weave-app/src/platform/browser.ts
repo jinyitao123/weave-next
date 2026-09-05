@@ -19,21 +19,9 @@ class SessionTokenRepository implements TokenRepository {
 export const browserPlatform: PlatformAdapter = {
   kind: "browser",
   capabilities: {
-    localWorkspace: false,
-    folderOpener: false,
-    diffViewer: false,
     localRuntime: false,
   },
   tokens: new SessionTokenRepository(),
-  async chooseLocalWorkspace() {
-    return null;
-  },
-  async openLocalWorkspace() {
-    throw new Error("浏览器无法打开本机工作目录");
-  },
-  async openDiff() {
-    throw new Error("浏览器无法打开本机差异视图");
-  },
   async startLocalRuntime() {
     throw new Error("浏览器无法启动本机 Runtime");
   },

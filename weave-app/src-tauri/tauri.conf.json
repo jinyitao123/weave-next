@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Weave",
+  "productName": "Weave Runtime",
   "version": "1.0.0",
   "identifier": "com.weave.desktop",
   "build": {
@@ -13,7 +13,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "Weave",
+        "title": "Weave Runtime",
         "width": 1280,
         "height": 800,
         "minWidth": 736,

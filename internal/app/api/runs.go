@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"sort"
 	"strconv"
@@ -350,8 +351,20 @@ func (s *Server) handleRetryRunStage(c echo.Context) error {
 	if s.teamRunStageRetry == nil {
 		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "team_run_stage_retry_unavailable"})
 	}
+	var request struct {
+		IdempotencyKey string `json:"idempotency_key"`
+	}
+	decoder := json.NewDecoder(http.MaxBytesReader(c.Response(), c.Request().Body, 4096))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&request); err != nil && err != io.EOF {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid_stage_retry_request"})
+	}
+	if decoder.Decode(new(any)) != io.EOF || len(request.IdempotencyKey) > 256 || strings.TrimSpace(request.IdempotencyKey) != request.IdempotencyKey {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid_stage_retry_request"})
+	}
 	result, err := s.teamRunStageRetry.Retry(c.Request().Context(), teamrun.StageRetryRequest{
 		WorkspaceID: getTenant(c), RunID: c.Param("id"), NodeID: strings.TrimSpace(c.Param("node_id")),
+		IdempotencyKey: request.IdempotencyKey,
 	})
 	if err != nil {
 		switch {
@@ -377,11 +390,12 @@ type runActivityMember struct {
 }
 
 type runActivityMemberRuntime struct {
-	RuntimeID string `json:"runtime_id,omitempty"`
-	Name      string `json:"name,omitempty"`
-	Engine    string `json:"engine,omitempty"`
-	Provider  string `json:"provider,omitempty"`
-	Model     string `json:"model,omitempty"`
+	UpdateMode string `json:"update_mode"`
+	RuntimeID  string `json:"runtime_id,omitempty"`
+	Name       string `json:"name,omitempty"`
+	Engine     string `json:"engine,omitempty"`
+	Provider   string `json:"provider,omitempty"`
+	Model      string `json:"model,omitempty"`
 }
 
 type runActivityMemberInputRef struct {
@@ -395,22 +409,27 @@ type runActivityMemberInputRef struct {
 }
 
 type runActivityMemberStage struct {
-	NodeID        string                      `json:"node_id"`
-	Name          string                      `json:"name"`
-	Status        string                      `json:"status"`
-	Inputs        []runActivityMemberInputRef `json:"inputs"`
-	OutputRefs    []string                    `json:"output_refs"`
-	StartedAt     *time.Time                  `json:"started_at,omitempty"`
-	CompletedAt   *time.Time                  `json:"completed_at,omitempty"`
-	DurationMs    int64                       `json:"duration_ms,omitempty"`
-	ToolCalls     int                         `json:"tool_calls,omitempty"`
-	Tools         []runActivityTool           `json:"tools"`
-	FailureClass  string                      `json:"failure_class,omitempty"`
-	FailureReason string                      `json:"failure_reason,omitempty"`
-	Retryable     bool                        `json:"retryable,omitempty"`
+	CurrentTaskID          string                      `json:"current_task_id,omitempty"`
+	PublicUpdates          []runActivityPublicUpdate   `json:"public_updates,omitempty"`
+	PublicUpdatesTruncated bool                        `json:"public_updates_truncated,omitempty"`
+	PublicUpdatesState     string                      `json:"public_updates_state,omitempty"`
+	NodeID                 string                      `json:"node_id"`
+	Name                   string                      `json:"name"`
+	Status                 string                      `json:"status"`
+	Inputs                 []runActivityMemberInputRef `json:"inputs"`
+	OutputRefs             []string                    `json:"output_refs"`
+	StartedAt              *time.Time                  `json:"started_at,omitempty"`
+	CompletedAt            *time.Time                  `json:"completed_at,omitempty"`
+	DurationMs             int64                       `json:"duration_ms,omitempty"`
+	ToolCalls              int                         `json:"tool_calls,omitempty"`
+	Tools                  []runActivityTool           `json:"tools"`
+	FailureClass           string                      `json:"failure_class,omitempty"`
+	FailureReason          string                      `json:"failure_reason,omitempty"`
+	Retryable              bool                        `json:"retryable,omitempty"`
 }
 
 type runActivityTool struct {
+	TaskID      string     `json:"task_id,omitempty"`
 	CallID      string     `json:"call_id"`
 	Name        string     `json:"name"`
 	Status      string     `json:"status"`
@@ -491,7 +510,8 @@ func runActivityMemberInputs(inputs map[string]machine.InputBinding) []runActivi
 
 func runActivityBundleRuntime(bundle frozen.FrozenExecutionBundle) *runActivityMemberRuntime {
 	runtime := &runActivityMemberRuntime{
-		RuntimeID: bundle.Agent.RuntimeID, Engine: bundle.Agent.Engine,
+		UpdateMode: "on_completion",
+		RuntimeID:  bundle.Agent.RuntimeID, Engine: bundle.Agent.Engine,
 		Provider: bundle.PrimaryModel.ProviderID, Model: bundle.PrimaryModel.ModelID,
 	}
 	if bundle.Runtime != nil {
@@ -750,6 +770,18 @@ func applyRunActivityEvents(members []runActivityMember, events []teamrun.Activi
 			Retryable     bool              `json:"retryable"`
 		}
 		_ = json.Unmarshal(event.Detail, &detail)
+		// A long tool trace can outlive the window containing member_started.
+		// These events still prove current work, even when an older output exists.
+		if event.Kind == "tool_started" || event.Kind == "tool_completed" {
+			if stage.Status != "running" {
+				stage.StartedAt = nil
+				stage.DurationMs, stage.ToolCalls = 0, 0
+			}
+			stage.CompletedAt = nil
+			stage.FailureClass, stage.FailureReason = "", ""
+			stage.Retryable = false
+			stage.Status, members[index].Status = "running", "running"
+		}
 		switch event.Kind {
 		case "member_started":
 			occurred := event.OccurredAt
@@ -772,6 +804,8 @@ func applyRunActivityEvents(members []runActivityMember, events []teamrun.Activi
 			stage.DurationMs = detail.DurationMs
 			stage.ToolCalls = detail.ToolCalls
 			stage.Status = "completed"
+			stage.FailureClass, stage.FailureReason = "", ""
+			stage.Retryable = false
 		case "member_failed":
 			occurred := event.OccurredAt
 			stage.CompletedAt = &occurred
@@ -806,16 +840,34 @@ func applyRunActivityEvents(members []runActivityMember, events []teamrun.Activi
 			}
 		}
 	}
+	summarizeRunActivityMembers(members)
+}
+
+func summarizeRunActivityMembers(members []runActivityMember) {
 	for index := range members {
-		allCompleted := len(members[index].Stages) > 0
-		for _, stage := range members[index].Stages {
-			if stage.Status != "completed" {
-				allCompleted = false
-				break
-			}
+		member := &members[index]
+		if len(member.Stages) == 0 {
+			continue
 		}
-		if allCompleted {
-			members[index].Status = "completed"
+		counts := make(map[string]int)
+		for _, stage := range member.Stages {
+			counts[stage.Status]++
+		}
+		switch {
+		case counts["failed"] > 0:
+			member.Status = "failed"
+		case counts["running"] > 0:
+			member.Status = "running"
+		case counts["completed"] == len(member.Stages):
+			member.Status = "completed"
+		case counts["cancelled"] > 0:
+			member.Status = "cancelled"
+		case counts["completed"] > 0:
+			member.Status = "partially_completed"
+		case counts["pending"] == len(member.Stages):
+			member.Status = "pending"
+		case counts["not_recorded"] > 0:
+			member.Status = "not_recorded"
 		}
 	}
 }
@@ -844,6 +896,10 @@ func enrichRunActivityRuntimes(
 		}
 		if runtime, ok := byID[members[memberIndex].Runtime.RuntimeID]; ok {
 			members[memberIndex].Runtime.Name = runtime.Name
+			members[memberIndex].Runtime.UpdateMode = "on_completion"
+			if capability, exists := runtime.EngineCapabilities[members[memberIndex].Runtime.Engine]; exists && capability.Engine == "codex" && capability.PublicEvents {
+				members[memberIndex].Runtime.UpdateMode = "live"
+			}
 		}
 	}
 	for index := range activityRuntimes {
@@ -853,19 +909,36 @@ func enrichRunActivityRuntimes(
 	}
 }
 
-func runActivityStageProgress(members []runActivityMember, humanTasks []map[string]any) (int, int) {
-	total := 0
-	completed := 0
+// Current member execution overrides historical outputs for the same node.
+// Keep recorded non-member nodes such as transforms, delivery and human waits.
+func runActivityCurrentStages(members []runActivityMember, recorded []runActivityStage) []runActivityStage {
+	stages := append([]runActivityStage{}, recorded...)
+	byNode := make(map[string]int, len(stages))
+	for index, stage := range stages {
+		byNode[stage.NodeID] = index
+	}
 	for _, member := range members {
 		for _, stage := range member.Stages {
-			total++
-			if stage.Status == "completed" {
-				completed++
+			current := runActivityStage{NodeID: stage.NodeID, Name: stage.Name, Status: stage.Status}
+			if index, exists := byNode[stage.NodeID]; exists {
+				stages[index] = current
+			} else {
+				byNode[stage.NodeID] = len(stages)
+				stages = append(stages, current)
 			}
 		}
 	}
-	total += len(humanTasks)
-	return completed, total
+	return stages
+}
+
+func runActivityStageProgress(stages []runActivityStage) (int, int) {
+	completed := 0
+	for _, stage := range stages {
+		if stage.Status == "completed" {
+			completed++
+		}
+	}
+	return completed, len(stages)
 }
 
 func refineRunActivityCompleteness(
@@ -961,7 +1034,7 @@ func latestRunActivityStage(members []runActivityMember, fallback []runActivityS
 		return latestName
 	}
 	for index := len(fallback) - 1; index >= 0; index-- {
-		if fallback[index].Name != "" {
+		if fallback[index].Name != "" && fallback[index].Status != "pending" && fallback[index].Status != "not_recorded" {
 			return fallback[index].Name
 		}
 	}
@@ -1064,13 +1137,22 @@ func (s *Server) handleGetRunActivity(c echo.Context) error {
 	}
 	activityEvents := []teamrun.ActivityEvent{}
 	if s.teamRunActivities != nil {
-		if items, activityErr := s.teamRunActivities.List(c.Request().Context(), getTenant(c), run.RunID, 500); activityErr == nil {
+		if items, activityErr := s.teamRunActivities.List(c.Request().Context(), getTenant(c), run.RunID, 501); activityErr == nil {
+			completeness["activity_events"] = "complete"
+			if len(items) > 500 {
+				items = items[len(items)-500:]
+				completeness["activity_events"] = "partial"
+			}
 			activityEvents = items
 			applyRunActivityEvents(members, activityEvents)
-			completeness["activity_events"] = "complete"
 			completeness["member_tool_activity"] = "partial"
-			refineRunActivityCompleteness(completeness, members, run.Status)
 		}
+	}
+	s.projectRunPublicEvents(c.Request().Context(), run, members, activityEvents, completeness)
+	waitNodeID := s.reconcileRunActivityRecovery(c.Request().Context(), run, members)
+	summarizeRunActivityMembers(members)
+	if completeness["activity_events"] != "unavailable" {
+		refineRunActivityCompleteness(completeness, members, run.Status)
 	}
 	corrections := []teamrun.Correction{}
 	if s.teamRunCorrections != nil {
@@ -1085,13 +1167,8 @@ func (s *Server) handleGetRunActivity(c echo.Context) error {
 	}
 	observedAt := time.Now().UTC()
 	enrichRunActivityRuntimes(c.Request().Context(), s.Runtimes, getTenant(c), members, runtimes)
-	completedStages, totalStages := runActivityStageProgress(members, humanTasks)
-	if workflowCompleted := len(stages) - len(humanTasks); workflowCompleted > completedStages {
-		completedStages = workflowCompleted
-	}
-	if len(stages) > totalStages {
-		totalStages = len(stages)
-	}
+	stages = runActivityCurrentStages(members, stages)
+	completedStages, totalStages := runActivityStageProgress(stages)
 	return c.JSON(http.StatusOK, map[string]any{
 		"schema_version":           3,
 		"run_id":                   run.RunID,
@@ -1103,9 +1180,11 @@ func (s *Server) handleGetRunActivity(c echo.Context) error {
 		"run_snapshot_id":          run.RunSnapshotID,
 		"current_executor_id":      run.CurrentExecutorID,
 		"wait_kind":                run.WaitKind,
+		"wait_node_id":             waitNodeID,
 		"checkpoint_ref":           run.CheckpointRef,
 		"cancel_requested_at":      run.CancelRequestedAt,
 		"cancel_grace_deadline_at": run.CancelGraceDeadlineAt,
+		"stop_unconfirmed":         s.runActivityStopUnconfirmed(c.Request().Context(), run),
 		"created_at":               run.CreatedAt,
 		"started_at":               run.CreatedAt,
 		"updated_at":               run.UpdatedAt,

@@ -33,24 +33,28 @@ jobs:
           cache: true
       - name: Download modules
         run: go mod download
-      - name: Build
-        run: go build ./...
-      - name: Vet
-        run: go vet ./...
-      - name: Test
-        run: go test ./internal/... ./cmd/...
-      - name: Depguard
-        run: ./scripts/depguard.sh
-      - name: Base dependency whitelist
-        run: ./scripts/base-depguard.sh
-      - name: Four-band budgets
-        run: ./scripts/budgetguard.sh
+      - name: Build, test, and governance
+        run: make ci
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: weave-app/package-lock.json
+      - name: Install locked dependencies
+        run: npm --prefix weave-app ci --no-audit --no-fund
+      - name: Check and build UI
+        run: make ui-embed
+      - name: Verify embedded runtime UI matches source
+        run: git diff --exit-code -- internal/app/webui/dist
 
   compose-validate:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: Validate platform compose file
-        run: |
-          JWT_SECRET=ci WEAVE_ADMIN_PASS=ci WEAVE_RUNTIME_TOKEN=rtk_ci WEAVE_SECRET_KEY=ci \
-            docker compose -f docker-compose.platform.yml --profile runtime config -q
+        run: make compose-check

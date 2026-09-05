@@ -10,11 +10,7 @@ interface CardProps extends PropsWithChildren {
   className?: string;
 }
 
-/**
- * 统一卡片原语，替代既有 .stage-card / .workflow-launcher / .run-input-card /
- * .team-detail-card / .mcp-detail-card 五套手写容器。
- * 规则：卡片不嵌卡片；卡片内的分区用分隔线（.ui-card__section）而非再套一层卡片。
- */
+/** Maintenance section with optional heading and actions. */
 export function Card({ padding = "regular", interactive = false, header, footer, className, children }: CardProps) {
   const classNames = [`ui-card${padding === "compact" ? " ui-card--compact" : ""}${interactive ? " ui-card--interactive" : ""}`, className].filter(Boolean).join(" ");
   return (

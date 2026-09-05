@@ -228,6 +228,11 @@ func TestHumanFinalReviewSampleRealPGFullChain(t *testing.T) {
 	if detail.Code != http.StatusOK || !strings.Contains(detail.Body.String(), `"predecessor_outputs":{"draft":"deliverable_ref:artifact-m3-final"}`) {
 		t.Fatalf("human task detail status=%d body=%s", detail.Code, detail.Body.String())
 	}
+	var question humanTaskDetailResponse
+	if err := json.Unmarshal(detail.Body.Bytes(), &question); err != nil || question.InteractionID == "" || question.NodeID == "" ||
+		question.InteractionID != inbox.Tasks[0].InteractionID || question.NodeID != inbox.Tasks[0].NodeID {
+		t.Fatalf("human question identity missing or inconsistent: detail=%#v inbox=%#v error=%v", question, inbox.Tasks, err)
+	}
 	chapterPath := "/predecessor_outputs/chapters/第一~1章~0草稿"
 	longChapter := strings.Repeat("长", humanTaskGetMaxBytes)
 	checkpointTx, err := pool.Begin(ctx)
@@ -268,7 +273,52 @@ func TestHumanFinalReviewSampleRealPGFullChain(t *testing.T) {
 	if invalid.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("invalid resume payload status=%d body=%s", invalid.Code, invalid.Body.String())
 	}
-	validBody := `{"payload":{"decision":"approve","comments":"终审通过"},"idempotency_key":"m3-complete"}`
+	validJSON, err := json.Marshal(completeHumanTaskRequest{Payload: json.RawMessage(`{"decision":"approve","comments":"终审通过"}`),
+		IdempotencyKey: "m3-complete", InteractionID: question.InteractionID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	validBody := string(validJSON)
+	stale := completeHumanTaskThroughAPI(t, server, workspaceID, userID, runID,
+		`{"payload":{"decision":"approve","comments":"old question"},"idempotency_key":"m3-stale","interaction_id":"human_old_question"}`)
+	if stale.Code != http.StatusConflict {
+		t.Fatalf("stale question accepted: status=%d body=%s", stale.Code, stale.Body.String())
+	}
+	assertHumanRunStatus(t, ctx, pool, runs, workspaceID, runID, teamrun.StatusParked)
+	outsider := "outsider-" + prefix
+	if _, err := pool.Exec(ctx, `INSERT INTO weave_users (id,tenant_id,username,password,role)
+		VALUES ($1,$2,$1,'x','user')`, outsider, workspaceID); err != nil {
+		t.Fatal(err)
+	}
+	var tasksBefore int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM weave_task_queue WHERE workspace_id=$1`, workspaceID).Scan(&tasksBefore); err != nil {
+		t.Fatal(err)
+	}
+	for _, denied := range []struct {
+		method, path string
+		handler      echo.HandlerFunc
+	}{
+		{http.MethodGet, "/v1/human-tasks", server.handleListHumanTasks},
+		{http.MethodGet, "/v1/human-tasks/" + runID + "?path=/title", server.handleGetHumanTask},
+		{http.MethodPost, "/v1/human-tasks/" + runID + "/complete", server.handleCompleteHumanTask},
+	} {
+		recorder := httptest.NewRecorder()
+		request := humanTaskAPIContext(denied.method, denied.path, validBody, recorder, workspaceID, outsider)
+		request.SetParamNames("run_id")
+		request.SetParamValues(runID)
+		if err := denied.handler(request); err != nil {
+			request.Echo().HTTPErrorHandler(err, request)
+		}
+		var response map[string]string
+		if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil || recorder.Code != http.StatusForbidden || len(response) != 1 || response["error"] != "current workspace membership required" {
+			t.Fatalf("outsider reached %s: status=%d body=%s error=%v", denied.path, recorder.Code, recorder.Body.String(), err)
+		}
+	}
+	assertHumanRunStatus(t, ctx, pool, runs, workspaceID, runID, teamrun.StatusParked)
+	var tasksAfter int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM weave_task_queue WHERE workspace_id=$1`, workspaceID).Scan(&tasksAfter); err != nil || tasksAfter != tasksBefore {
+		t.Fatalf("outsider enqueued human continuation: before=%d after=%d error=%v", tasksBefore, tasksAfter, err)
+	}
 	completed := completeHumanTaskThroughAPI(t, server, workspaceID, userID, runID, validBody)
 	if completed.Code != http.StatusAccepted {
 		t.Fatalf("complete human task status=%d body=%s", completed.Code, completed.Body.String())
@@ -284,6 +334,10 @@ func TestHumanFinalReviewSampleRealPGFullChain(t *testing.T) {
 		t.Fatalf("process queued human continuation: processed=%v err=%v", processed, err)
 	}
 	assertHumanRunStatus(t, ctx, pool, runs, workspaceID, runID, teamrun.StatusSucceeded)
+	replay := completeHumanTaskThroughAPI(t, server, workspaceID, userID, runID, validBody)
+	if replay.Code != http.StatusAccepted || !strings.Contains(replay.Body.String(), `"idempotent":true`) {
+		t.Fatalf("lost successful response did not replay: status=%d body=%s", replay.Code, replay.Body.String())
+	}
 	remaining, _, err := reader.List(ctx, workspaceID, nil, "", 20)
 	if err != nil || len(remaining) != 0 {
 		t.Fatalf("human inbox after delivery: tasks=%d err=%v", len(remaining), err)

@@ -125,11 +125,11 @@ func ValidateWorkflowBlueprint(blueprint WorkflowBlueprint) []WorkflowBlueprintP
 				"parallel_workers is not used by rework templates",
 				"删除 parallel_workers；顺序返修由 primary 与 reviewer 组成。")
 		}
-			if blueprint.Finalizer != nil {
-				add("/finalizer", "blueprint_finalizer_forbidden",
-					"finalizer is not used by rework templates",
-					"删除 finalizer；返修模板直接交付主执行者通过校验的产物。")
-			}
+		if blueprint.Finalizer != nil {
+			add("/finalizer", "blueprint_finalizer_forbidden",
+				"finalizer is not used by rework templates",
+				"删除 finalizer；返修模板直接交付主执行者通过校验的产物。")
+		}
 		if blueprint.MaxIterations == nil {
 			add("/max_iterations", "blueprint_max_iterations_required",
 				"max_iterations is required for rework templates",
@@ -279,6 +279,9 @@ func withBlueprintProtocol(requirement, protocol string) string {
 
 func compileSynthesisBlueprint(blueprint WorkflowBlueprint) machine.GraphDefinition {
 	textOutput := machine.OutputContract{Type: machine.ValueText}
+	originalTask := blueprintLeadInputs()["run_input"]
+	finalizer := *blueprint.Finalizer
+	finalizer.ResultRequirement = withBlueprintProtocol(finalizer.ResultRequirement, synthesisNodeProtocol)
 	graph := machine.GraphDefinition{
 		SchemaVersion:  machine.SchemaVersionV1,
 		EntryNodeID:    "lead",
@@ -286,14 +289,15 @@ func compileSynthesisBlueprint(blueprint WorkflowBlueprint) machine.GraphDefinit
 		OutputContract: textOutput,
 		Nodes: []machine.Node{
 			{ID: "lead", Type: machine.NodeLead, Label: "Coordinate", Inputs: blueprintLeadInputs(), Output: &textOutput,
-				Config: machine.LeadConfig{Instruction: blueprint.LeadInstruction}},
+				Config: machine.LeadConfig{Instruction: withBlueprintProtocol(blueprint.LeadInstruction, synthesisNodeProtocol)}},
 			{ID: "parallel", Type: machine.NodeParallel, Label: "Parallel work",
 				Config: machine.ParallelConfig{JoinNodeID: "join"}},
 			{ID: "join", Type: machine.NodeJoin, Label: "Collect results",
 				Config: machine.JoinConfig{Policy: machine.JoinAllSuccess}},
-			blueprintWorkerNode("finalizer", "Synthesize", *blueprint.Finalizer, machine.WorkerConsult,
+			blueprintWorkerNode("finalizer", "Synthesize", finalizer, machine.WorkerConsult,
 				map[string]machine.InputBinding{
-					"results": {ExpectedType: machine.ValueJSON, Value: machine.ValueRef{Source: machine.ValueNodeOutput, NodeID: "join", Path: ""}},
+					"run_input": originalTask,
+					"results":   {ExpectedType: machine.ValueJSON, Value: machine.ValueRef{Source: machine.ValueNodeOutput, NodeID: "join", Path: ""}},
 				}),
 			{ID: "deliver", Type: machine.NodeDeliver, Label: "Deliver",
 				Config: machine.DeliverConfig{Result: machine.ValueRef{Source: machine.ValueNodeOutput, NodeID: "finalizer", Path: ""}}},
@@ -306,9 +310,10 @@ func compileSynthesisBlueprint(blueprint WorkflowBlueprint) machine.GraphDefinit
 	}
 	for index, worker := range blueprint.ParallelWorkers {
 		id := fmt.Sprintf("parallel-%02d", index+1)
+		worker.ResultRequirement = withBlueprintProtocol(worker.ResultRequirement, synthesisNodeProtocol)
 		graph.Nodes = append(graph.Nodes, blueprintWorkerNode(
 			id, fmt.Sprintf("Parallel work %d", index+1), worker, machine.WorkerDispatch,
-			map[string]machine.InputBinding{"brief": textNodeInput("lead", "", "")},
+			map[string]machine.InputBinding{"run_input": originalTask, "brief": textNodeInput("lead", "", "")},
 		))
 		graph.Edges = append(graph.Edges,
 			blueprintEdge("parallel-"+id, "parallel", id, machine.RouteBranch),
@@ -317,6 +322,8 @@ func compileSynthesisBlueprint(blueprint WorkflowBlueprint) machine.GraphDefinit
 	}
 	return graph
 }
+
+const synthesisNodeProtocol = "Execute only this node's assigned work and return that work as your response. The platform invokes teammates, waits for their results, and saves outputs; you do not need Weave dispatch or Workbench UI tools. For coordination, return a work brief instead of calling teammates or reporting missing platform controls. Treat run_input as the original task and source material; brief/results are upstream analysis and do not replace those materials."
 
 func blueprintLeadInputs() map[string]machine.InputBinding {
 	return map[string]machine.InputBinding{

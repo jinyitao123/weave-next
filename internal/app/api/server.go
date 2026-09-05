@@ -27,13 +27,11 @@ import (
 	"github.com/jinyitao123/weave/internal/app/conversation"
 	"github.com/jinyitao123/weave/internal/app/ownermem"
 	"github.com/jinyitao123/weave/internal/app/projects"
-	"github.com/jinyitao123/weave/internal/app/schedules"
 	"github.com/jinyitao123/weave/internal/app/users"
 	"github.com/jinyitao123/weave/internal/app/webui"
 	"github.com/jinyitao123/weave/internal/base/deliverable"
 	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/base/fanout"
-	"github.com/jinyitao123/weave/internal/base/realtime"
 	"github.com/jinyitao123/weave/internal/base/snapshot"
 	"github.com/jinyitao123/weave/internal/base/storeext"
 	"github.com/jinyitao123/weave/internal/base/taskqueue"
@@ -90,7 +88,6 @@ type Server struct {
 	Snapshots                 *snapshot.Store                     // nil if PG pool unavailable
 	TeamReader                *teamReader                         // nil if team-aware read dependencies are unavailable
 	AgentRunReader            loomruntime.AgentRunLifecycleReader // nil if PG pool unavailable
-	ScheduleStore             *schedules.Store                    // nil if PG pool unavailable
 	UserStore                 *users.Store                        // nil if PG pool unavailable
 	KeyStore                  *apikeys.Store                      // nil if PG pool unavailable
 	OrgStore                  *org.Store                          // nil if PG pool unavailable
@@ -117,7 +114,6 @@ type Server struct {
 	MCPResolver               mcphost.AccessResolver // optional override; defaults to MCPRegistry-backed resolver
 	Conversations             *conversation.Store    // nil if PG pool unavailable
 	OwnerMem                  OwnerMemoryStore       // nil if PG pool unavailable
-	Hub                       *realtime.Hub
 	sessionExecutionWorkers   *sessionExecutionWorkers
 	teamRunWorkers            *teamrun.Workers
 	teamRunCancel             *teamrun.CancelService
@@ -361,34 +357,13 @@ func (s *Server) registerRoutes() {
 
 	// Organization.
 	auth.GET("/workspace", s.handleGetWorkspace, orgScope)
-	auth.GET("/features", s.handleGetFeatures, orgScope)
 	auth.GET("/workspace/members", s.handleListMembers, orgScope)
 	auth.POST("/workspace/members", s.handleAddMember, RequireAnyRole("admin", "owner"), orgScope)
 	auth.DELETE("/workspace/members/:userID", s.handleRemoveMember, RequireAnyRole("admin", "owner"), orgScope)
-	auth.GET("/projects", s.handleListProjects, orgScope)
-	auth.POST("/projects", s.handleCreateProject, orgScope)
-	auth.POST("/projects/ensure-unclassified", s.handleEnsureUnclassifiedProject, orgScope)
-	auth.GET("/projects/:id", s.handleGetProject, orgScope)
-	auth.PUT("/projects/:id", s.handleUpdateProject, orgScope)
-	auth.DELETE("/projects/:id", s.handleArchiveProject, orgScope)
-	auth.POST("/projects/:id/restore", s.handleRestoreProject, orgScope)
-	auth.POST("/projects/:id/move", s.handleMoveProject, orgScope)
-	auth.GET("/projects/:id/collaborators", s.handleListProjectCollaborators, orgScope)
-	auth.POST("/projects/:id/collaborators", s.handleAddProjectCollaborator, RequireAnyRole("admin", "owner"), orgScope)
-	auth.DELETE("/projects/:id/collaborators/:teamId", s.handleRemoveProjectCollaborator, RequireAnyRole("admin", "owner"), orgScope)
-	auth.GET("/projects/:id/resources", s.handleListProjectResources, orgScope)
-	auth.POST("/projects/:id/resources", s.handleCreateProjectResource, orgScope)
-	auth.DELETE("/projects/:id/resources/:resourceID", s.handleDeleteProjectResource, orgScope)
-	auth.GET("/projects/:id/memories", s.handleListProjectMemories, memoryScope)
-	auth.POST("/projects/:id/memories", s.handleCreateProjectMemory, memoryScope)
-	auth.DELETE("/projects/:id/memories/:memoryID", s.handleDeleteProjectMemory, memoryScope)
-	auth.POST("/projects/:id/memories/search", s.handleSearchProjectMemories, memoryScope)
 	auth.GET("/deliverables", s.handleListFinalDeliverables, chatScope)
 	auth.GET("/deliverables/:id", s.handleGetFinalDeliverable, chatScope)
 	auth.GET("/deliverables/:id/content", s.handleDownloadFinalDeliverable, chatScope)
-	auth.GET("/conversations/:id/deliverable", s.handleGetConversationDeliverable, chatScope)
 	auth.GET("/teams", s.handleListTeams, orgScope)
-	auth.GET("/team-creation-options", s.handleGetTeamCreationOptions, orgScope)
 	auth.POST("/teams", s.handleCreateTeam, RequireRole("admin"), orgScope)
 	auth.POST("/teams:from-template", s.handleCreateTeamFromTemplate, RequireRole("admin"), orgScope)
 	auth.POST("/teams/:id/evaluations", s.handleEvaluateTeam, RequireRole("admin"), orgScope)
@@ -408,8 +383,6 @@ func (s *Server) registerRoutes() {
 	auth.POST("/workflows/:id/drafts", s.handleCreateWorkflowDraft, RequireAnyRole("admin", "owner"), orgScope)
 	auth.PUT("/workflows/:id/versions/:version", s.handleUpdateWorkflowDraft, RequireAnyRole("admin", "owner"), orgScope)
 	auth.POST("/workflows/:id/versions/:version/publish", s.handlePublishWorkflowVersion, RequireAnyRole("admin", "owner"), orgScope)
-	auth.POST("/workflows/:id/run", s.handleRunWorkflow, RequireAnyRole("admin", "owner"), orgScope)
-	auth.POST("/internal/workflows/:id/run", s.handleRunWorkflow, RequireAnyRole("admin", "owner"), orgScope)
 	auth.POST("/internal/team-build-runs", s.handleCreateTeamBuildRun, RequireRole("admin"), orgScope)
 	auth.GET("/internal/team-build-runs", s.handleListBuildRuns, orgScope)
 	auth.PUT("/team-build-runs/:id/blueprint", s.handlePlanTeamBlueprint, RequireRole("admin"), orgScope)
@@ -456,6 +429,8 @@ func (s *Server) registerRoutes() {
 	runtimeAPI.POST("/tasks/:id/renew", s.handleRuntimeTaskRenew)
 	runtimeAPI.POST("/tasks/:id/complete", s.handleRuntimeTaskComplete)
 	runtimeAPI.POST("/tasks/:id/fail", s.handleRuntimeTaskFail)
+	runtimeAPI.POST("/tasks/:id/stopped", s.handleRuntimeTaskStopped)
+	runtimeAPI.POST("/tasks/:id/events", s.handleRuntimeTaskEvents)
 	runtimeAPI.GET("/tasks/:id/attachments/:aid", s.handleRuntimeTaskAttachment)
 	// Task-scoped MCP gateway: a remote loom daemon dials one of these per MCP
 	// server index; auth is the runtime lease, the record is the frozen task
@@ -473,11 +448,6 @@ func (s *Server) registerRoutes() {
 	auth.GET("/agents/:name", s.handleGetAgent, agentsScope)
 	auth.GET("/agents/:name/team-memberships", s.handleGetAgentTeamMemberships, orgScope)
 	auth.GET("/agents/:name/run-summary", s.handleGetAgentRunSummary, orgScope)
-	auth.GET("/agents/:name/channels", s.handleListChannels, agentsScope)
-	auth.POST("/agents/:name/channels", s.handleCreateChannel, agentsScope)
-	auth.POST("/agents/:name/channels/reorder", s.handleReorderChannels, agentsScope)
-	auth.PATCH("/agents/:name/channels/:id", s.handleRenameChannel, agentsScope)
-	auth.DELETE("/agents/:name/channels/:id", s.handleDeleteChannel, agentsScope)
 	auth.GET("/agents/:name/memory-slots", s.handleGetMemorySlots, agentsScope)
 	auth.PUT("/agents/:name/memory-slots", s.handlePutMemorySlots, RequireRole("admin"), adminScope)
 	auth.GET("/agents/:name/memory-profile", s.handleGetMemoryProfile, RequireAnyRole("admin", "owner"), memoryScope)
@@ -497,8 +467,7 @@ func (s *Server) registerRoutes() {
 	auth.POST("/agents/upload", s.handleUploadAgent, agentsScope)
 	auth.POST("/agents/import/preview", s.handleImportPreview, agentsScope)
 
-	// MCP proxy (for Console to list tools from internal MCP servers).
-	auth.POST("/mcp/tools", s.handleMCPListTools, agentsScope)
+	// Execution MCP registry and maintenance.
 	auth.GET("/mcp-servers", s.handleListMCPServers, agentsScope)
 	auth.POST("/mcp-servers", s.handleCreateMCPServer, RequireRole("admin"), adminScope)
 	auth.GET("/mcp-servers/:id", s.handleGetMCPServer, agentsScope)
@@ -519,32 +488,11 @@ func (s *Server) registerRoutes() {
 	auth.POST("/skills/:id/import-legacy", s.handleImportLegacySkill, RequireRole("admin"), adminScope)
 
 	// Chat & Resume.
-	auth.POST("/chat", s.handleChat, chatScope)
 	auth.GET("/chat-requests/:id", s.handleGetChatRequest, chatScope)
-	auth.GET("/events", s.handleEvents, chatScope)
 	auth.POST("/resume", s.handleResume, chatScope)
-	auth.GET("/conversations", s.handleListConversations, chatScope)
-	auth.PATCH("/conversations/:id", s.handleRenameConversation, chatScope)
-	auth.GET("/conversations/:id/messages", s.handleListConversationMessages, chatScope)
-	auth.GET("/conversations/:id/chat-request", s.handleGetConversationChatRequest, chatScope)
-	auth.PATCH("/conversations/:id/messages/:message_id/assistant-execution-segments", s.handleUpdateAssistantExecutionSegments, chatScope)
-	auth.GET("/conversations/:id/threads", s.handleListThreads, chatScope)
-	auth.POST("/conversations/:id/threads", s.handleCreateThread, chatScope)
-	auth.POST("/conversations/:id/read", s.handleMarkConversationRead, chatScope)
-	auth.GET("/inbox/unread", s.handleListInboxUnread, chatScope)
 	auth.GET("/human-tasks", s.handleListHumanTasks, runsScope)
 	auth.GET("/human-tasks/:run_id", s.handleGetHumanTask, runsScope)
 	auth.POST("/human-tasks/:run_id/complete", s.handleCompleteHumanTask, runsScope)
-	auth.POST("/messages/:id/flag", s.handleFlagMessage, chatScope)
-	auth.DELETE("/messages/:id/flag", s.handleUnflagMessage, chatScope)
-	auth.POST("/messages/:id/deliverable", s.handlePromoteMessageDeliverable, chatScope)
-	auth.GET("/flags", s.handleListFlags, chatScope)
-	auth.GET("/flags/count", s.handleCountFlags, chatScope)
-
-	// Sessions.
-	auth.GET("/sessions", s.handleListSessions, chatScope)
-	auth.GET("/sessions/:id", s.handleGetSession, chatScope)
-	auth.DELETE("/sessions/:id", s.handleDeleteSession, chatScope)
 
 	// Runs.
 	auth.GET("/runs", s.handleListRuns, runsScope)
@@ -558,9 +506,6 @@ func (s *Server) registerRoutes() {
 	auth.GET("/runs/:id/trace", s.handleGetRunTrace, runsScope)
 	auth.GET("/runs/:id/state", s.handleGetRunState, runsScope)
 	auth.GET("/runs/:id/checkpoints", s.handleGetRunCheckpoints, runsScope)
-	auth.POST("/runs/:id/fork", s.handleForkRun, runsScope)
-	auth.GET("/task-groups", s.handleListTaskGroups, runsScope)
-	auth.GET("/task-groups/:id", s.handleGetTaskGroup, runsScope)
 
 	// Usage.
 	auth.GET("/usage", s.handleGetUsage, runsScope)
@@ -584,18 +529,8 @@ func (s *Server) registerRoutes() {
 	auth.POST("/jobs/:id/cancel", s.handleCancelJob, runsScope)
 
 	// Data sources (MCP server aggregation).
-	auth.GET("/sources", s.handleListSources, adminScope)
-
-	// Connector schedules.
-	auth.GET("/schedules", s.handleListSchedules, adminScope)
-	auth.GET("/schedules/one", s.handleGetSchedule, adminScope)
-	auth.PUT("/schedules", s.handleUpsertSchedule, adminScope)
-	auth.DELETE("/schedules", s.handleDeleteSchedule, adminScope)
 
 	// 数字员工定时上班（agent 调度）。
-	auth.GET("/agent-schedules", s.handleListAgentSchedules, agentsScope)
-	auth.PUT("/agent-schedules", s.handleUpsertAgentSchedule, agentsScope)
-	auth.DELETE("/agent-schedules", s.handleDeleteAgentSchedule, agentsScope)
 
 	// Memory.
 	auth.GET("/agents/:name/memories", s.handleListMemories, memoryScope)
@@ -847,6 +782,7 @@ func (s *Server) ConfigureTeamRunWorkers() {
 		// genuinely concurrent without introducing an unbounded worker pool.
 		ExecutorConcurrency: 4,
 		CancelGrace: &teamrun.CancelGraceSweeper{
+			Tasks:        s.Tasks,
 			Transactions: pool,
 			Runs:         runStore,
 			BatchSize:    temporaryTeamRunWorkerBatchSize,
@@ -871,7 +807,9 @@ func (s *Server) ConfigureTeamRunWorkers() {
 		Runs:         runStore,
 		Tasks:        s.Tasks,
 	}
-	s.teamRunStageRetry = &teamrun.StageRetryService{Runs: runStore, Tasks: s.Tasks}
+	s.teamRunStageRetry = &teamrun.StageRetryService{
+		Transactions: pool, Runs: runStore, Checkpoints: checkpointStore, Tasks: s.Tasks,
+	}
 	s.teamRunHumanResume = &teamrun.HumanResumeService{
 		Transactions: pool,
 		Runs:         runStore,

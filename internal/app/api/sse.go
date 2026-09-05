@@ -13,7 +13,6 @@ import (
 	"github.com/jinyitao123/loom/contract"
 	"github.com/jinyitao123/loom/stdlib"
 	"github.com/jinyitao123/weave/internal/app/conversation"
-	"github.com/jinyitao123/weave/internal/base/realtime"
 	"github.com/jinyitao123/weave/internal/base/streamctx"
 	"github.com/jinyitao123/weave/internal/build/teambuild"
 	"github.com/jinyitao123/weave/internal/kernel/compiler"
@@ -732,11 +731,6 @@ func (s *Server) handleChatStream(c echo.Context, tenant string, rec *registry.A
 				if runErr == nil {
 					runErr = err
 				}
-			} else {
-				s.Hub.Publish(tenant, userID, realtime.Event{
-					Type:           "message",
-					ConversationID: conversationID,
-				})
 			}
 		}
 		s.startOwnerMemoryFill(tenant, rec, userID, conversationID, req.Message, output, false)

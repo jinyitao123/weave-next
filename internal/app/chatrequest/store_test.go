@@ -108,7 +108,7 @@ func TestStoreAdmissionRunningAndTerminalTransitions(t *testing.T) {
 	}
 }
 
-func TestStoreQueuedReplayAndLatestConversationRequest(t *testing.T) {
+func TestStoreQueuedRequestsRemainIndependentlyAddressable(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
 
@@ -131,12 +131,13 @@ func TestStoreQueuedReplayAndLatestConversationRequest(t *testing.T) {
 		t.Fatalf("unexpected queued request: %#v", queued)
 	}
 
-	latest, err := store.GetLatestForConversation(ctx, "workspace-1", "user-1", "conversation-1")
-	if err != nil {
-		t.Fatalf("get latest for conversation: %v", err)
+	first, err := store.Get(ctx, "workspace-1", "user-1", firstID)
+	if err != nil || first.Status != "admitted" || first.UserMessageID != "message-user-1" {
+		t.Fatalf("first request changed after queuing second: %#v, err=%v", first, err)
 	}
-	if latest.ClientRequestID != secondID || latest.UserMessageID != "message-user-2" {
-		t.Fatalf("latest request = %#v, want second admitted request", latest)
+	replayed, err := store.Get(ctx, "workspace-1", "user-1", secondID)
+	if err != nil || replayed.Status != "queued" || replayed.TaskID != "task-1" || replayed.UserMessageID != "message-user-2" {
+		t.Fatalf("queued request replay = %#v, err=%v", replayed, err)
 	}
 }
 

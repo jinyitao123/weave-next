@@ -320,6 +320,15 @@ func (c *Client) TeamRunStop(ctx context.Context, runID, reason, idempotencyKey 
 	})
 }
 
+// TeamRunRetryStage reuses the caller's durable command key across uncertain
+// responses. A newly observed failure requires a new explicit command key.
+func (c *Client) TeamRunRetryStage(ctx context.Context, runID, nodeID, idempotencyKey string) (json.RawMessage, error) {
+	if strings.TrimSpace(runID) == "" || strings.TrimSpace(nodeID) == "" || strings.TrimSpace(idempotencyKey) == "" || strings.TrimSpace(idempotencyKey) != idempotencyKey || len(idempotencyKey) > 256 {
+		return nil, errors.New("run, stage, and a stable idempotency key are required")
+	}
+	return c.sendJSON(ctx, http.MethodPost, "/v1/runs/"+url.PathEscape(strings.TrimSpace(runID))+"/stages/"+url.PathEscape(strings.TrimSpace(nodeID))+"/retry", map[string]string{"idempotency_key": idempotencyKey})
+}
+
 func (c *Client) HumanTaskList(ctx context.Context, limit int, cursor string) (json.RawMessage, error) {
 	query := url.Values{}
 	if limit > 0 {
@@ -466,6 +475,7 @@ func workflowDispatchRunID(body json.RawMessage) string {
 	return response.RunID
 }
 
+// terminalTeamRunStatus ends polling, including waits that still need resolution.
 func terminalTeamRunStatus(body json.RawMessage, snapshotID string) bool {
 	var response struct {
 		Runs []struct {
@@ -483,11 +493,8 @@ func terminalTeamRunStatus(body json.RawMessage, snapshotID string) bool {
 			break
 		}
 	}
-	if status == "" && len(response.Runs) == 1 {
-		status = response.Runs[0].Status
-	}
 	switch status {
-	case "completed", "failed", "yielded", "succeeded", "cancelled", "abandoned":
+	case "completed", "failed", "yielded", "parked", "succeeded", "cancelled", "abandoned":
 		return true
 	default:
 		return false

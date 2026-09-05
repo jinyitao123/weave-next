@@ -1,13 +1,11 @@
 package api
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 
@@ -217,27 +215,5 @@ func (s *Server) dispatchTeamWorkflow(c echo.Context, team org.Team, request tea
 		return workflowError(c, http.StatusConflict, "workflow_team_mismatch", "selected workflow does not belong to the team")
 	}
 
-	input, _ := json.Marshal(request.Task)
-	body := map[string]any{"input": json.RawMessage(input)}
-	if request.WorkflowVersion != nil {
-		body["workflow_version"] = *request.WorkflowVersion
-	}
-	if request.ProjectID != "" {
-		body["project_id"] = request.ProjectID
-	}
-	if request.ConversationID != "" {
-		body["conversation_id"] = request.ConversationID
-	}
-	encoded, err := json.Marshal(body)
-	if err != nil {
-		return workflowStoreFailure(c, err)
-	}
-	c.SetPath(legacyWorkflowManualRunPath)
-	c.SetParamNames("id")
-	c.SetParamValues(workflowID)
-	requestBody := io.NopCloser(bytes.NewReader(encoded))
-	c.SetRequest(c.Request().Clone(c.Request().Context()))
-	c.Request().Body = requestBody
-	c.Request().ContentLength = int64(len(encoded))
-	return s.handleRunWorkflow(c)
+	return s.admitTeamWorkflowDispatch(c, workflowID, request)
 }

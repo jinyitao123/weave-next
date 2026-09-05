@@ -22,12 +22,6 @@ func (s *Server) metaTeamRunDisabled(agentName, intent string) bool {
 		intent == conversation.IntentCreateTeam || intent == "optimize_team")
 }
 
-func (s *Server) handleGetFeatures(c echo.Context) error {
-	return c.JSON(http.StatusOK, map[string]any{
-		"metateam": map[string]bool{"enabled": s.metaTeamEnabled()},
-	})
-}
-
 func metaTeamDisabledResponse(c echo.Context) error {
 	return c.JSON(http.StatusForbidden, map[string]string{
 		"code": "metateam_disabled", "error": "metateam_disabled",

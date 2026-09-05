@@ -84,7 +84,7 @@ func (e *LocalExecutor) ExecRemote(
 	})
 	// Keep files produced before a failed local engine invocation available for
 	// diagnosis. Callers retain the failed status and must not treat them as final.
-	result.Artifacts = CollectOutputArtifactsSince(workDir, outputsBefore)
+	CollectRunOutputArtifacts(workDir, outputsBefore, &result)
 	if result.Status != "completed" {
 		if runErr != nil {
 			return result, runErr

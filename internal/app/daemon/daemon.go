@@ -68,6 +68,7 @@ type service struct {
 	minBackoff         time.Duration
 	maxBackoff         time.Duration
 	active             atomic.Int32
+	publicSpool        *publicSpool
 }
 
 // Main parses daemon flags and runs until SIGINT or SIGTERM.
@@ -147,7 +148,15 @@ func newDaemon(cfg daemonConfig) (*service, error) {
 	if cfg.maxBackoff < cfg.minBackoff {
 		cfg.maxBackoff = cfg.minBackoff
 	}
+	spool, spoolErr := newPublicSpool(cfg.workspacesRoot, cfg.token)
+	if spoolErr != nil {
+		slog.Warn("runtime public progress unavailable; using completion updates", "error", spoolErr)
+	}
+	for index := range cfg.engineCapabilities {
+		cfg.engineCapabilities[index].PublicEvents = cfg.engineCapabilities[index].Engine == engine.Codex && spoolErr == nil
+	}
 	return &service{
+		publicSpool:        spool,
 		client:             client,
 		server:             cfg.server,
 		workspacesRoot:     cfg.workspacesRoot,
@@ -169,7 +178,8 @@ func (d *service) run(ctx context.Context) error {
 	}
 
 	var workers sync.WaitGroup
-	workers.Add(d.concurrency + 1)
+	workers.Add(d.concurrency + 2)
+	go func() { defer workers.Done(); d.publicEventsLoop(ctx) }()
 	go func() {
 		defer workers.Done()
 		d.heartbeatLoop(ctx)
@@ -260,50 +270,77 @@ func (d *service) processTask(ctx context.Context, task *taskqueue.Task) {
 	renewDone := make(chan struct{})
 	go func() {
 		defer close(renewDone)
-		d.renewLoop(taskCtx, cancelTask, task.ID, leaseLost)
+		d.renewLoop(taskCtx, cancelTask, task, leaseLost)
 	}()
 
+	// Engine adapters return only after their process group has exited.
 	result, runErr := d.executeTask(taskCtx, task)
-	if leaseLost.Load() || ctx.Err() != nil {
-		cancelTask()
-		<-renewDone
-		return
-	}
-
-	var report func(context.Context) error
-	if runErr != nil && result.Status == "" {
-		report = func(reportCtx context.Context) error {
-			return d.client.fail(reportCtx, task.ID, runErr.Error())
+	if !leaseLost.Load() && ctx.Err() == nil {
+		var report func(context.Context) error
+		if runErr != nil && result.Status == "" {
+			report = func(reportCtx context.Context) error { return d.client.fail(reportCtx, task.ID, runErr.Error()) }
+		} else {
+			report = func(reportCtx context.Context) error { return d.client.complete(reportCtx, task.ID, result) }
 		}
-	} else {
-		report = func(reportCtx context.Context) error {
-			return d.client.complete(reportCtx, task.ID, result)
+		if errors.Is(d.reportUntilAccepted(taskCtx, report), errLeaseLost) {
+			leaseLost.Store(true)
 		}
-	}
-	if errors.Is(d.reportUntilAccepted(taskCtx, report), errLeaseLost) {
-		leaseLost.Store(true)
 	}
 	cancelTask()
 	<-renewDone
+	if leaseLost.Load() || ctx.Err() != nil {
+		ackCtx := ctx
+		if ctx.Err() != nil {
+			var cancel context.CancelFunc
+			ackCtx, cancel = context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+			defer cancel()
+		}
+		_ = d.reportUntilAccepted(ackCtx, func(reportCtx context.Context) error {
+			return d.client.stopped(reportCtx, task.ID)
+		})
+	}
 }
 
-func (d *service) renewLoop(ctx context.Context, cancel context.CancelFunc, taskID string, leaseLost *atomic.Bool) {
+func (d *service) renewLoop(ctx context.Context, cancel context.CancelFunc, task *taskqueue.Task, leaseLost *atomic.Bool) {
+	ttl := time.Minute
+	if task.LeaseExpiresAt != nil && !task.UpdatedAt.IsZero() {
+		ttl = task.LeaseExpiresAt.Sub(task.UpdatedAt)
+	}
+	// Stop locally before the last confirmed lease can expire on the server.
+	// The per-request deadline also bounds a connection which silently hangs.
+	margin := min(ttl/10, 2*time.Second)
+	deadline := time.Now().Add(ttl - margin)
+	if task.LeaseExpiresAt != nil && task.LeaseExpiresAt.Add(-margin).Before(deadline) {
+		deadline = task.LeaseExpiresAt.Add(-margin)
+	}
 	backoff := newBackoff(d.minBackoff, d.maxBackoff)
 	delay := d.renewInterval
-	for waitFor(ctx, delay) {
-		err := d.client.renew(ctx, taskID)
+	for {
+		leaseCtx, endLease := context.WithDeadline(ctx, deadline)
+		if !waitFor(leaseCtx, delay) {
+			endLease()
+			if ctx.Err() == nil {
+				leaseLost.Store(true)
+				cancel()
+			}
+			return
+		}
+		started := time.Now()
+		err := d.client.renew(leaseCtx, task.ID)
+		endLease()
 		switch {
 		case err == nil:
+			deadline = started.Add(ttl - margin)
 			backoff.reset()
 			delay = d.renewInterval
-		case errors.Is(err, errLeaseLost):
+		case errors.Is(err, errLeaseLost), !time.Now().Before(deadline):
 			leaseLost.Store(true)
 			cancel()
 			return
 		case ctx.Err() != nil:
 			return
 		default:
-			slog.Warn("runtime task renewal failed; retrying", "task_id", taskID, "error", err)
+			slog.Warn("runtime task renewal failed; retrying", "task_id", task.ID, "error", err)
 			delay = backoff.next()
 		}
 	}
@@ -402,7 +439,9 @@ func (d *service) executeTask(ctx context.Context, task *taskqueue.Task) (runtim
 	if timeoutSeconds <= 0 {
 		timeoutSeconds = defaultTimeoutSeconds
 	}
+	publish, finishProgress := d.publicEventCapture(task.ID, request.Engine == engine.Codex && request.NodeID != "" && task.RunSnapshotID != "")
 	result, err := d.runEngine(ctx, request.Engine, engine.RunSpec{
+		OnPublicEvent: publish,
 		WorkDir:       workDir,
 		Prompt:        request.Prompt,
 		Model:         request.Model,
@@ -411,10 +450,11 @@ func (d *service) executeTask(ctx context.Context, task *taskqueue.Task) (runtim
 		EngineVersion: d.engineVersion(request.Engine),
 		OutputSchema:  request.OutputSchema,
 	})
+	finishProgress(&result)
 	// Preserve files written before an engine failure as observable, non-final
 	// workflow artifacts. The workflow layer still owns success/failure and will
 	// never promote these files to a final deliverable on a failed node.
-	result.Artifacts = runtimes.CollectOutputArtifactsSince(workDir, outputsBefore)
+	runtimes.CollectRunOutputArtifacts(workDir, outputsBefore, &result)
 	execResult := runtimes.CLIEngineExecResult(result)
 	if err != nil {
 		return execResult, err

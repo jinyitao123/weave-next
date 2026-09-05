@@ -6,7 +6,7 @@
  *   regular  ≤ 1080px  平板/中窗
  *   expanded ≤ 1280px  桌面窄窗
  *
- * 对比度闸门（WCAG AA）：由 scripts/ui-acceptance.mjs 双主题实测，必须全 PASS。
+ * 对比度闸门（WCAG AA）：运行时管理页使用语义色 token；颜色与对比度变更需分别检查两种主题。
  * PARITY-T01 起底色转中性（亮套白底、暗套近黑），主操作使用 --action-primary 近黑填充。
  *
  * 规则：
@@ -49,7 +49,7 @@
   --bg-secondary: #f7f7f5;
   --bg-tertiary: #ebebea;
   --bg-elevated: rgba(255, 255, 255, 0.9);
-  --sidebar: rgba(247, 247, 245, 0.84);
+
   --label-primary: #1d1d1f;
   --label-secondary: rgba(29, 29, 31, 0.68);
   --label-tertiary: #6e6e73;
@@ -76,7 +76,7 @@
   --radius-lg: 16px;
   --radius-xl: 22px;
   --radius-pill: 999px;
-  --sidebar-width: 240px;
+
   --content-max: 1120px;
   --motion-fast: 140ms;
   --motion-standard: 220ms;
@@ -128,7 +128,7 @@
     --bg-secondary: #262628;
     --bg-tertiary: #323234;
     --bg-elevated: rgba(44, 44, 46, 0.92);
-    --sidebar: rgba(38, 38, 40, 0.88);
+
     --label-primary: #f5f5f7;
     --label-secondary: rgba(245, 245, 247, 0.68);
     --label-tertiary: rgba(245, 245, 247, 0.55);
@@ -150,5 +150,5 @@
 }
 
 @media (prefers-reduced-transparency: reduce) {
-  :root { --bg-elevated: var(--bg-secondary); --sidebar: var(--bg-secondary); --glass-bg: var(--bg-secondary); --card-bg: var(--bg-primary); --card-blur: 0px; }
+  :root { --bg-elevated: var(--bg-secondary); --glass-bg: var(--bg-secondary); --card-bg: var(--bg-primary); --card-blur: 0px; }
 }

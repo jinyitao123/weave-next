@@ -245,6 +245,8 @@ func aggregateTeamRosters(
 			RuntimeID:   agent.RuntimeID,
 			Role:        agent.Role,
 			Duty:        deriveDuty("", agent),
+			// The registered lead has no separate worker enable toggle.
+			Enabled: true,
 		}
 		rosters[teamIndex].Lead = &summary
 	}
@@ -308,19 +310,6 @@ func deriveDuty(instruction string, rec registry.AgentRecord) string {
 		runes = runes[:80]
 	}
 	return strings.TrimSpace(string(runes))
-}
-
-func (s *Server) handleGetTeamCreationOptions(c echo.Context) error {
-	ctx := c.Request().Context()
-	workspaceID := getTenant(c)
-	if _, err := s.OrgStore.GetWorkspace(ctx, workspaceID); err != nil {
-		return c.JSON(http.StatusNotFound, map[string]string{"error": err.Error()})
-	}
-	options, err := s.OrgStore.TeamCreationOptions(ctx, workspaceID)
-	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
-	}
-	return c.JSON(http.StatusOK, options)
 }
 
 func (s *Server) handleCreateTeam(c echo.Context) error {

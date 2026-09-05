@@ -42,6 +42,7 @@ func checkpointFromPark(
 		ExecutionLeaseEpoch:   run.ExecutionLeaseEpoch,
 		NodeID:                park.NodeID,
 		CompletedOutputs:      park.CompletedOutputs,
+		DeliveryErrors:        park.DeliveryErrors,
 		Corrections:           append([]CorrectionDirectiveV1(nil), park.Corrections...),
 		Usage:                 park.UsageCheckpoint,
 		UsageComplete:         park.UsageComplete,
@@ -57,7 +58,8 @@ func (e *Executor) parkRunning(
 	executorID string,
 	park RuntimePark,
 ) (TeamRun, error) {
-	if park.WaitKind != WaitTimer && park.WaitKind != WaitFanout && park.WaitKind != WaitHuman && park.WaitKind != WaitCorrection {
+	if park.WaitKind != WaitTimer && park.WaitKind != WaitFanout && park.WaitKind != WaitHuman &&
+		park.WaitKind != WaitCorrection && park.WaitKind != WaitRuntime {
 		return TeamRun{}, executionError(
 			ErrorCodeUnexpectedInteractiveYield,
 			errors.New("workflow executor does not support this park kind"),

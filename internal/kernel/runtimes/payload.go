@@ -28,6 +28,7 @@ func CanonicalEngine(engine string) string {
 // decodes it and runs the engine locally. The MCP-boundary HMAC secret never
 // leaves the server — only the derived per-server tokens travel in Env.
 type EngineExecRequest struct {
+	NodeID         string                 `json:"node_id,omitempty"`
 	Agent          string                 `json:"agent"`
 	Engine         string                 `json:"engine"`
 	Model          string                 `json:"model"`

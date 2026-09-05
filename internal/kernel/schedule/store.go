@@ -1,4 +1,4 @@
-// Package schedule persists durable daily and one-time schedules.
+// Package schedule persists durable daily and one-time team-workflow schedules.
 package schedule
 
 import (
@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -18,7 +17,6 @@ const (
 	KindDaily = "daily"
 	KindOnce  = "once"
 
-	TargetAgent        = "agent"
 	TargetTeamWorkflow = "team_workflow"
 
 	OccurrencePending   = "pending"
@@ -43,7 +41,8 @@ type RealClock struct{}
 
 func (RealClock) Now() time.Time { return time.Now() }
 
-// Schedule is one durable agent or team-workflow schedule.
+// Schedule includes legacy identity fields for reading existing rows. Only
+// team-workflow targets participate in scheduling.
 type Schedule struct {
 	ID               string     `json:"id"`
 	WorkspaceID      string     `json:"workspace_id"`
@@ -60,21 +59,6 @@ type Schedule struct {
 	LastRunAt        *time.Time `json:"last_run_at,omitempty"`
 	CreatedAt        time.Time  `json:"created_at"`
 	UpdatedAt        time.Time  `json:"updated_at"`
-}
-
-// UpsertSchedule contains only caller-writable schedule fields. Cursor state is
-// deliberately absent and can only be changed through AdvanceCursorTx.
-type UpsertSchedule struct {
-	ID               string
-	TargetKind       string
-	Agent            string
-	Message          string
-	TargetWorkflowID string
-	Kind             string
-	TimeOfDay        string
-	RunAt            *time.Time
-	Timezone         string
-	Enabled          bool
 }
 
 // Occurrence is the immutable idempotency record for one workflow trigger.
@@ -112,67 +96,6 @@ func New(pool *pgxpool.Pool, clock Clock) *Store {
 	return &Store{pool: pool, clock: clock}
 }
 
-// Upsert creates or replaces caller-writable fields within one workspace.
-func (s *Store) Upsert(
-	ctx context.Context,
-	workspaceID string,
-	input UpsertSchedule,
-) (Schedule, error) {
-	normalized, err := normalizeUpsert(input)
-	if err != nil {
-		return Schedule{}, err
-	}
-	if normalized.ID == "" {
-		normalized.ID = "schedule-" + uuid.NewString()
-	}
-	now := s.clock.Now()
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return Schedule{}, fmt.Errorf("begin upsert schedule: %w", err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-	if err := ensureWorkspace(ctx, tx, workspaceID, now); err != nil {
-		return Schedule{}, err
-	}
-
-	row := tx.QueryRow(ctx, `
-		INSERT INTO weave_schedule (
-			id, workspace_id, target_kind, agent, message, target_workflow_id,
-			kind, time_of_day, run_at, timezone, enabled, created_at, updated_at
-		) VALUES (
-			$2, $1, $3, NULLIF($4, ''), $5, NULLIF($6, ''),
-			$7, $8, $9, $10, $11, $12, $12
-		)
-		ON CONFLICT (workspace_id, id) DO UPDATE SET
-			target_kind=EXCLUDED.target_kind,
-			agent=EXCLUDED.agent,
-			message=EXCLUDED.message,
-			target_workflow_id=EXCLUDED.target_workflow_id,
-			kind=EXCLUDED.kind,
-			time_of_day=EXCLUDED.time_of_day,
-			run_at=EXCLUDED.run_at,
-			timezone=EXCLUDED.timezone,
-			enabled=EXCLUDED.enabled,
-			updated_at=EXCLUDED.updated_at
-		RETURNING `+scheduleColumns,
-		workspaceID, normalized.ID, normalized.TargetKind, normalized.Agent,
-		nullableMessage(normalized), normalized.TargetWorkflowID, normalized.Kind,
-		normalized.TimeOfDay, normalized.RunAt, normalized.Timezone,
-		normalized.Enabled, now,
-	)
-	stored, err := scanSchedule(row)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return Schedule{}, fmt.Errorf("%w: %q", ErrScheduleNotFound, normalized.ID)
-	}
-	if err != nil {
-		return Schedule{}, fmt.Errorf("upsert schedule: %w", err)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return Schedule{}, fmt.Errorf("commit upsert schedule: %w", err)
-	}
-	return stored, nil
-}
-
 // ResolveScheduleTx locks and returns one exact workspace schedule. The caller
 // owns the transaction and is responsible for commit or rollback.
 func (s *Store) ResolveScheduleTx(
@@ -193,57 +116,6 @@ func (s *Store) ResolveScheduleTx(
 		return Schedule{}, fmt.Errorf("resolve schedule: %w", err)
 	}
 	return item, nil
-}
-
-func nullableMessage(input UpsertSchedule) any {
-	if input.TargetKind == TargetTeamWorkflow {
-		return nil
-	}
-	return input.Message
-}
-
-func normalizeUpsert(input UpsertSchedule) (UpsertSchedule, error) {
-	if input.TargetKind == "" {
-		input.TargetKind = TargetAgent
-	}
-	switch input.TargetKind {
-	case TargetAgent:
-		if input.Agent == "" || input.TargetWorkflowID != "" {
-			return UpsertSchedule{}, invalidSchedulef("agent target requires agent and forbids target_workflow_id")
-		}
-	case TargetTeamWorkflow:
-		if input.TargetWorkflowID == "" || input.Agent != "" || input.Message != "" {
-			return UpsertSchedule{}, invalidSchedulef("team_workflow target requires only target_workflow_id")
-		}
-	default:
-		return UpsertSchedule{}, invalidSchedulef("target_kind must be agent or team_workflow")
-	}
-	switch input.Kind {
-	case KindDaily:
-		if !validTimeOfDay(input.TimeOfDay) {
-			return UpsertSchedule{}, invalidSchedulef("time_of_day must be HH:MM (00:00-23:59)")
-		}
-		if input.RunAt != nil {
-			return UpsertSchedule{}, invalidSchedulef("daily schedule forbids run_at")
-		}
-		if input.Timezone == "" {
-			return UpsertSchedule{}, invalidSchedulef("timezone is required for daily schedules")
-		}
-	case KindOnce:
-		if input.RunAt == nil {
-			return UpsertSchedule{}, invalidSchedulef("run_at is required for once schedules")
-		}
-		input.TimeOfDay = ""
-		if input.Timezone == "" {
-			input.Timezone = "UTC"
-		}
-	default:
-		return UpsertSchedule{}, invalidSchedulef("kind must be daily or once")
-	}
-	if _, err := loadTimezone(input.Timezone); err != nil {
-		return UpsertSchedule{}, err
-	}
-	return input, nil
 }
 
 func validTimeOfDay(value string) bool {
@@ -269,42 +141,13 @@ func invalidSchedulef(format string, args ...any) error {
 	return fmt.Errorf("%w: %s", ErrInvalidSchedule, fmt.Sprintf(format, args...))
 }
 
-// List returns schedules owned by one workspace.
-func (s *Store) List(ctx context.Context, workspaceID string) ([]Schedule, error) {
-	rows, err := s.pool.Query(ctx, `
-		SELECT `+scheduleColumns+`
-		FROM weave_schedule
-		WHERE workspace_id=$1
-		ORDER BY created_at, id
-	`, workspaceID)
-	if err != nil {
-		return nil, fmt.Errorf("list schedules: %w", err)
-	}
-	defer rows.Close()
-	return collectSchedules(rows)
-}
-
-// Delete removes an exact workspace schedule.
-func (s *Store) Delete(ctx context.Context, workspaceID, id string) error {
-	tag, err := s.pool.Exec(ctx, `
-		DELETE FROM weave_schedule
-		WHERE workspace_id=$1 AND id=$2
-	`, workspaceID, id)
-	if err != nil {
-		return fmt.Errorf("delete schedule: %w", err)
-	}
-	if tag.RowsAffected() == 0 {
-		return fmt.Errorf("%w: %q", ErrScheduleNotFound, id)
-	}
-	return nil
-}
-
-// DueSchedules scans enabled schedules and evaluates each in its persisted timezone.
+// DueSchedules evaluates only enabled team-workflow schedules. Legacy agent
+// rows, including invalid old timezones, cannot block current workflow work.
 func (s *Store) DueSchedules(ctx context.Context, now time.Time) ([]Schedule, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT `+scheduleColumns+`
 		FROM weave_schedule
-		WHERE enabled
+		WHERE enabled AND target_kind='team_workflow'
 		ORDER BY created_at, id
 	`)
 	if err != nil {
@@ -339,7 +182,7 @@ func (s *Store) LockDueTx(
 	item, err := scanSchedule(tx.QueryRow(ctx, `
 		SELECT `+scheduleColumns+`
 		FROM weave_schedule
-		WHERE workspace_id=$1 AND id=$2
+		WHERE workspace_id=$1 AND id=$2 AND target_kind='team_workflow'
 		FOR UPDATE
 	`, workspaceID, scheduleID))
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -381,7 +224,7 @@ func dueScheduledForWithProbe(
 	sweepInstant time.Time,
 	probe timezoneProbe,
 ) (*DueOccurrence, error) {
-	if !item.Enabled {
+	if !item.Enabled || item.TargetKind != TargetTeamWorkflow {
 		return nil, nil
 	}
 	switch item.Kind {
@@ -430,34 +273,6 @@ func dueScheduledForWithProbe(
 	default:
 		return nil, fmt.Errorf("unsupported schedule kind %q", item.Kind)
 	}
-}
-
-// MarkRan is the compatibility wrapper for agent schedules. It locks the due
-// row and advances its cursor in one self-managed transaction.
-func (s *Store) MarkRan(ctx context.Context, workspaceID, id string, now time.Time) error {
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return fmt.Errorf("begin mark schedule ran: %w", err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-	item, err := s.LockDueTx(ctx, tx, workspaceID, id, now)
-	if err != nil {
-		return err
-	}
-	due, err := DueScheduledFor(*item, now)
-	if err != nil {
-		return err
-	}
-	if due == nil {
-		return ErrScheduleNotDue
-	}
-	if err := s.AdvanceCursorTx(ctx, tx, *item, due.ScheduledFor); err != nil {
-		return err
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("commit mark schedule ran: %w", err)
-	}
-	return nil
 }
 
 // AdvanceCursorTx records the logical occurrence instant while the caller owns
@@ -759,17 +574,6 @@ func (s *Store) CommitOccurrenceTx(
 	}
 	if tag.RowsAffected() != 1 {
 		return ErrOccurrenceNotPending
-	}
-	return nil
-}
-
-func ensureWorkspace(ctx context.Context, tx pgx.Tx, workspaceID string, now time.Time) error {
-	if _, err := tx.Exec(ctx, `
-		INSERT INTO weave_workspaces (id, slug, name, created_at)
-		VALUES ($1, $1, $1, $2)
-		ON CONFLICT DO NOTHING
-	`, workspaceID, now); err != nil {
-		return fmt.Errorf("ensure schedule workspace: %w", err)
 	}
 	return nil
 }

@@ -263,7 +263,6 @@ type AsyncService struct {
 	executor     *Service
 	lease        time.Duration
 	pollInterval time.Duration
-	publishEvent func(context.Context, teambuild.TeamBuildRun, string)
 
 	mu     sync.Mutex
 	cancel context.CancelFunc
@@ -275,13 +274,6 @@ func NewAsyncService(queue *ExecutionQueue, executor *Service) *AsyncService {
 		queue: queue, executor: executor,
 		lease: 30 * time.Second, pollInterval: time.Second,
 	}
-}
-
-func (s *AsyncService) SetEventPublisher(publisher func(context.Context, teambuild.TeamBuildRun, string)) {
-	if s == nil {
-		return
-	}
-	s.publishEvent = publisher
 }
 
 func (s *AsyncService) Submit(
@@ -377,11 +369,9 @@ func (s *AsyncService) execute(workerCtx context.Context, job ExecutionJob) {
 		return
 	}
 	if execErr != nil {
-		blockedRun, err := s.blockRunAfterExecutionFailure(finishCtx, job, execErr)
+		_, err := s.blockRunAfterExecutionFailure(finishCtx, job, execErr)
 		if err != nil {
 			slog.Error("block failed team build run failed", "build_run_id", job.BuildRunID, "error", err)
-		} else if blockedRun != nil {
-			s.publishBuildRunEvent(finishCtx, *blockedRun)
 		}
 		if err := s.queue.finish(finishCtx, job, ExecutionFailed, execErr.Error()); err != nil && !errors.Is(err, ErrExecutionLeaseLost) {
 			slog.Error("persist failed team build execution failed", "build_run_id", job.BuildRunID, "error", err)
@@ -396,16 +386,10 @@ func (s *AsyncService) execute(workerCtx context.Context, job ExecutionJob) {
 		if err := s.queue.releaseAfter(finishCtx, job, backoff); err != nil && !errors.Is(err, ErrExecutionLeaseLost) {
 			slog.Error("requeue still-active team build execution failed", "build_run_id", job.BuildRunID, "status", result.Status, "error", err)
 		}
-		if run, err := s.queue.runs.GetBuildRun(finishCtx, job.WorkspaceID, job.BuildRunID); err == nil {
-			s.publishBuildRunEvent(finishCtx, run)
-		}
 		return
 	}
 	if err := s.queue.finish(finishCtx, job, ExecutionSucceeded, ""); err != nil && !errors.Is(err, ErrExecutionLeaseLost) {
 		slog.Error("persist completed team build execution failed", "build_run_id", job.BuildRunID, "error", err)
-	}
-	if run, err := s.queue.runs.GetBuildRun(finishCtx, job.WorkspaceID, job.BuildRunID); err == nil {
-		s.publishBuildRunEvent(finishCtx, run)
 	}
 }
 
@@ -466,15 +450,4 @@ func classifyExecutionError(err error) string {
 	default:
 		return "infra"
 	}
-}
-
-func (s *AsyncService) publishBuildRunEvent(ctx context.Context, run teambuild.TeamBuildRun) {
-	if s == nil || s.publishEvent == nil {
-		return
-	}
-	eventType := "team_build_run_updated"
-	if run.Status == teambuild.StatusPassed {
-		eventType = "team_published"
-	}
-	s.publishEvent(ctx, run, eventType)
 }

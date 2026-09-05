@@ -8,11 +8,9 @@ const bridge: DesktopBridge | null = createTauriDesktopBridge(window);
 export const platform: PlatformAdapter = bridge
   ? createDesktopPlatform(bridge)
   : browserPlatform;
-export { isOpaqueUUIDHandle } from "./platform";
 
 export type {
   DesktopBridge,
-  LocalWorkspaceSelection,
   LocalRuntimeStartOptions,
   LocalRuntimeStatus,
   PlatformAdapter,

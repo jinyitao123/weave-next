@@ -47,7 +47,7 @@ export function LoginPage() {
       <aside className="login-context" aria-label="产品说明">
         <span>多运行时</span>
         <strong>让任务在合适的机器上执行。</strong>
-        <p>团队协作由 Codex 发起；此处只管理运行节点、容量和连接状态。</p>
+        <p>任务协作在 Workbench 中进行；此处只管理运行节点、容量和连接状态。</p>
       </aside>
     </main>
   );

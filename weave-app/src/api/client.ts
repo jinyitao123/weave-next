@@ -1,5 +1,5 @@
 import { ApiError, apiErrorFromResponse, normalizeThrownError } from "./errors";
-import type { DevTokenResponse, LoginRequest, LoginResponse, RefreshResponse } from "./types";
+import type { LoginRequest, LoginResponse, RefreshResponse } from "./types";
 import type { TokenRepository } from "../platform";
 
 interface RequestOptions extends Omit<RequestInit, "body"> {
@@ -8,11 +8,7 @@ interface RequestOptions extends Omit<RequestInit, "body"> {
   retryAfterRefresh?: boolean;
 }
 
-/**
- * API 核心客户端：token 生命周期与统一 JSON 请求/SSE 基础设施。
- * 各业务域方法通过 src/api/*.ts 模块以 Object.assign 挂载到同一实例，
- * 保持 `api` 单例聚合导出与既有调用方 import 路径不变。
- */
+/** Authenticated JSON requests and the existing login/token-refresh lifecycle. */
 export class ApiClient {
   #token: string | null = null;
   #refreshing: Promise<string> | null = null;
@@ -68,16 +64,6 @@ export class ApiClient {
     });
     await this.#acceptToken(response.token);
     return response;
-  }
-
-  async devLogin(tenant: string): Promise<string> {
-    const response = await this.request<DevTokenResponse>("/v1/auth/token", {
-      method: "POST",
-      body: { tenant },
-      authenticated: false,
-    });
-    await this.#acceptToken(response.token);
-    return response.token;
   }
 
   async refreshToken(): Promise<string> {

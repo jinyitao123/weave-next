@@ -11,10 +11,9 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jinyitao123/weave/internal/base/execution"
-	"github.com/jinyitao123/weave/internal/kernel/schedule"
 	"github.com/jinyitao123/weave/internal/base/snapshot"
 	"github.com/jinyitao123/weave/internal/base/taskqueue"
+	"github.com/jinyitao123/weave/internal/kernel/schedule"
 	"github.com/jinyitao123/weave/internal/kernel/workflow"
 )
 
@@ -107,11 +106,11 @@ const (
 	WorkflowScheduleStageCommitAfter         WorkflowScheduleStage = "transaction_commit_after"
 )
 
-// SweepSchedules enqueues every due schedule in the durable task ledger and
-// only then marks it as run. Execution is left to the leased task worker.
+// SweepSchedules admits due team-workflow occurrences into the durable task
+// ledger. Retired single-agent schedules remain stored but are never executed.
 func (s *Server) SweepSchedules(ctx context.Context, now time.Time) error {
 	if s.AgentSchedules == nil {
-		return fmt.Errorf("agent schedule store is not available")
+		return fmt.Errorf("workflow schedule store is not available")
 	}
 	if s.Tasks == nil {
 		return fmt.Errorf("task queue is not available")
@@ -122,15 +121,7 @@ func (s *Server) SweepSchedules(ctx context.Context, now time.Time) error {
 	}
 	var itemErrors []error
 	for _, item := range due {
-		var itemErr error
-		switch item.TargetKind {
-		case schedule.TargetAgent:
-			itemErr = s.sweepAgentSchedule(ctx, item, now)
-		case schedule.TargetTeamWorkflow:
-			itemErr = s.sweepWorkflowSchedule(ctx, item, now)
-		default:
-			itemErr = fmt.Errorf("unsupported schedule target kind %q", item.TargetKind)
-		}
+		itemErr := s.sweepWorkflowSchedule(ctx, item, now)
 		if itemErr != nil {
 			itemErrors = append(itemErrors, fmt.Errorf(
 				"sweep schedule %q in workspace %q: %w",
@@ -141,72 +132,14 @@ func (s *Server) SweepSchedules(ctx context.Context, now time.Time) error {
 	return errors.Join(itemErrors...)
 }
 
-func (s *Server) sweepAgentSchedule(
-	ctx context.Context,
-	item schedule.Schedule,
-	now time.Time,
-) error {
-	if s.Registry == nil {
-		return fmt.Errorf("agent registry is not available")
-	}
-	record, err := s.Registry.Get(ctx, item.WorkspaceID, item.Agent)
-	if err != nil {
-		return fmt.Errorf(
-			"resolve schedule %q agent %q in workspace %q: %w",
-			item.ID, item.Agent, item.WorkspaceID, err,
-		)
-	}
-	if record == nil {
-		return fmt.Errorf(
-			"resolve schedule %q agent %q in workspace %q: registry returned no record",
-			item.ID, item.Agent, item.WorkspaceID,
-		)
-	}
-	_, parseIDErr := uuid.Parse(record.ID)
-	if record.Name != item.Agent || parseIDErr != nil || record.Version < 1 ||
-		record.WorkspaceID != item.WorkspaceID {
-		return fmt.Errorf(
-			"resolve schedule %q agent %q in workspace %q: invalid registry identity %q/%q@%d in workspace %q",
-			item.ID, item.Agent, item.WorkspaceID,
-			record.Name, record.ID, record.Version, record.WorkspaceID,
-		)
-	}
-	payload, err := json.Marshal(struct {
-		Agent   string `json:"agent"`
-		Message string `json:"message"`
-	}{
-		Agent: item.Agent, Message: item.Message,
-	})
-	if err != nil {
-		return fmt.Errorf("marshal schedule %q task: %w", item.ID, err)
-	}
-	task := &taskqueue.Task{
-		ID:                    "task-" + uuid.NewString(),
-		WorkspaceID:           item.WorkspaceID,
-		Agent:                 record.Name,
-		AgentID:               record.ID,
-		AgentVersion:          record.Version,
-		IdentityKind:          taskqueue.IdentityAgent,
-		IdentitySchemaVersion: 2,
-		ExecutionScope:        execution.ScopeLegacyOrchestrator,
-		Source:                "calendar",
-		Kind:                  "chat",
-		Payload:               payload,
-	}
-	if err := s.Tasks.Enqueue(ctx, task); err != nil {
-		return fmt.Errorf("enqueue schedule %q: %w", item.ID, err)
-	}
-	if err := s.AgentSchedules.MarkRan(ctx, item.WorkspaceID, item.ID, now); err != nil {
-		return fmt.Errorf("mark schedule %q ran: %w", item.ID, err)
-	}
-	return nil
-}
-
 func (s *Server) sweepWorkflowSchedule(
 	ctx context.Context,
 	listed schedule.Schedule,
 	now time.Time,
 ) error {
+	if listed.TargetKind != schedule.TargetTeamWorkflow {
+		return fmt.Errorf("unsupported workflow schedule target %q", listed.TargetKind)
+	}
 	if s.WorkflowScheduleAdmission == nil {
 		return ErrWorkflowScheduleAdmissionUnavailable
 	}

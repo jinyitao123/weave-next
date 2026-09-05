@@ -450,6 +450,7 @@ func (s *CorrectionResumeService) Confirm(ctx context.Context, req ConfirmCorrec
 		checkpoint.NodeID = item.RestartNodeID
 		for _, nodeID := range item.AffectedNodeIDs {
 			delete(checkpoint.CompletedOutputs, nodeID)
+			delete(checkpoint.DeliveryErrors, nodeID)
 		}
 		checkpoint.Corrections = append(checkpoint.Corrections, CorrectionDirectiveV1{
 			SchemaVersion: 1, CorrectionID: item.CorrectionID, TargetKind: item.TargetKind,
