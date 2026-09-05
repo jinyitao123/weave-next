@@ -52,6 +52,8 @@ jobs:
       - name: Verify Workbench runtime closure
         working-directory: workbench
         run: pnpm run verify-runtime-closure
+      - name: Install native build dependencies
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
       - name: Build native isolation launcher
         working-directory: workbench/native/landlock-run
         run: |
