@@ -1,6 +1,4 @@
-# syntax=docker/dockerfile:1.7
-
-ARG NODE_IMAGE=node:24-bookworm
+ARG NODE_IMAGE=node:22-slim
 ARG WEAVE_IMAGE=weave-platform:latest
 
 FROM ${NODE_IMAGE} AS build
@@ -11,11 +9,11 @@ RUN --mount=type=cache,id=workbench-apt-cache,target=/var/cache/apt,sharing=lock
   && apt-get update \
   && apt-get install -y --no-install-recommends build-essential git musl-tools python3 ca-certificates \
   && npm install --global pnpm@11.7.0 \
-  && pnpm config set --global store-dir /pnpm/store
+  && printf 'registry=https://registry.npmmirror.com\nstore-dir=/pnpm/store\n' > /root/.npmrc
 WORKDIR /app
 COPY workbench/ .
 RUN --mount=type=cache,id=workbench-pnpm-store,target=/pnpm/store,sharing=locked \
-  pnpm install --frozen-lockfile
+  pnpm install --frozen-lockfile --network-concurrency=4 --fetch-retries=5 --fetch-timeout=300000
 RUN pnpm --dir native/landlock-run build:native
 ARG DSH_CLIENT_COMMIT_HASH
 ARG DSH_CLIENT_VERSION
@@ -35,12 +33,12 @@ RUN --mount=type=cache,id=workbench-apt-cache,target=/var/cache/apt,sharing=lock
   && apt-get update \
   && apt-get install -y --no-install-recommends bash ca-certificates git ripgrep \
   && npm install --global pnpm@11.7.0 \
-  && pnpm config set --global store-dir /pnpm/store
+  && printf 'registry=https://registry.npmmirror.com\nstore-dir=/pnpm/store\n' > /root/.npmrc
 WORKDIR /app
 COPY --from=build /app /app
 COPY --from=weave-runtime /usr/local/bin/weave /usr/local/bin/weave
 ENV NODE_ENV=production
 ENV DSH_HOME=/data/dsh
-EXPOSE 3080
+EXPOSE 3081
 ENTRYPOINT ["node", "/app/apps/cli/lib/bin.js", "--profile", "workbench"]
-CMD ["--host", "0.0.0.0", "--port", "3080", "--no-open"]
+CMD ["--host", "127.0.0.1", "--port", "3080", "--no-open"]
