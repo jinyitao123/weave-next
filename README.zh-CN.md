@@ -2,7 +2,7 @@
 
 [English](README.md) | [中文](README.zh-CN.md)
 
-**[Weave Workbench](https://github.com/jinyitao123/weave-workbench) 的执行后端。**
+**Weave Workbench 的完整产品仓库。**
 
 用户在 Workbench 选择团队、确认任务、看进度、处理问题、领取成果。Weave 保存输入和工作流版本，协调执行，记录等待与恢复，并保存产出的工作。
 
@@ -25,7 +25,7 @@ Workbench 宿主连接 Weave HTTP API，并启动 `weave mcp serve` 作为内部
 
 ## 维护者安装
 
-使用 PostgreSQL 16 和 [go.mod](go.mod) 指定的 Go 版本。Workbench 有独立的 Node.js/pnpm 依赖与发布周期，应将两个仓库的确切版本一起记录、一起验证。
+使用 PostgreSQL 16、[go.mod](go.mod) 指定的 Go 版本，以及 `workbench/package.json` 指定的 Node.js/pnpm 版本。后端、维护面和 Workbench 由同一提交一起构建和验证。
 
 ### 本机启动 Weave
 
@@ -57,12 +57,13 @@ curl --fail http://127.0.0.1:8080/v1/ready
 
 ### 连接 Workbench
 
-在单独检出的 Workbench 仓库执行：
+在当前仓库执行：
 
 ```sh
-pnpm install --frozen-lockfile
-pnpm build:workbench
-WEAVE_COMMAND='/absolute/path/to/weave-next/bin/weave' \
+make workbench-install
+make workbench-build
+cd workbench
+WEAVE_COMMAND='../bin/weave' \
 WEAVE_API_URL='http://127.0.0.1:8080' \
 WEAVE_API_KEY='<owner-bound-api-key>' \
 pnpm workbench --host 127.0.0.1 --port 3080 --no-open
@@ -82,7 +83,7 @@ scripts/refresh-weave.sh
 docker compose -f docker-compose.platform.yml ps
 ```
 
-该配置启动 Weave 和数据库；Workbench 单独安装。Weave 的 8080 端口提供 API 和运行时维护页面，PostgreSQL 不发布主机端口。刷新脚本始终更新主检出目录对应的平台，即使从 Git worktree 调用也是如此。隔离验证应另设 Compose project、私有环境、新卷和端口覆盖。
+该配置统一启动数据库、Weave、Workbench 和访问网关；可选运行时仍由 profile 控制。Weave 的 8080 端口提供 API 和运行时维护页面，Workbench 默认使用 3080，PostgreSQL 不发布主机端口。迁移已有部署时，应把 `WORKBENCH_DATA_PATH` 和 `WORKBENCH_WORKSPACE_PATH` 指向原数据位置。隔离验证应另设 Compose project、私有环境、新卷和端口覆盖。
 
 可选的 `runtime` profile 使用 `runtime_data` 命名卷保存 `/data/runtime-workspaces`，包括 `.weave-public-events` 待上传记录。重建运行时容器会保留这些文件，删除该卷则会删除其中内容。
 
@@ -97,6 +98,7 @@ docker compose -f docker-compose.platform.yml ps
 | `internal/build` | 团队构建、编译、评测和恢复机制 |
 | `internal/app` | 面向 Workbench 的 API、MCP 连接、daemon 和产品组装 |
 | `weave-app` | 内嵌运行时维护界面和本机运行时控制 |
+| `workbench` | 唯一业务入口及其 TypeScript 运行底座 |
 | `cmd/weave` | 服务和维护命令入口 |
 
 四个内部层级不得向上导入。Go 模块保持 `github.com/jinyitao123/weave`，使用 Go modules 解析依赖，不使用 `vendor/`。[Loom](https://github.com/jinyitao123/loom) 提供图执行机制；冻结工作流不能保证模型回答或外部动作完全相同。
@@ -111,6 +113,8 @@ MCP 写入闸拒绝 `write_tools` 明确声明的工具。未声明的工具不�
 make ci
 npm --prefix weave-app ci
 make ui-embed
+make workbench-install
+make workbench-check
 make compose-check
 # 使用隔离数据库，不连接业务数据库：
 TEST_DATABASE_URL='<isolated-postgresql-url>' make test-integration
@@ -124,4 +128,4 @@ TEST_DATABASE_URL='<isolated-postgresql-url>' make test-integration
 
 ## 许可
 
-Apache-2.0
+根仓库使用 MIT 许可证。`workbench/` 保留原 MIT 许可证和第三方声明，适用于该目录中的原始及衍生代码。

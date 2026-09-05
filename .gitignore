@@ -14,6 +14,10 @@ __pycache__/
 # Node
 weave-app/node_modules/
 weave-app/dist/
+workbench/node_modules/
+workbench/website/node_modules/
+workbench/.dsh-build/
+workbench/**/*.tsbuildinfo
 
 # Finder 复制产生的 "xxx 2/" 目录
 * 2/

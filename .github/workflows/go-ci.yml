@@ -52,6 +52,22 @@ jobs:
       - name: Verify embedded runtime UI matches source
         run: git diff --exit-code -- internal/app/webui/dist
 
+  workbench:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.7.0
+      - name: Install Workbench dependencies
+        working-directory: workbench
+        run: pnpm install --frozen-lockfile
+      - name: Build and test Workbench
+        run: make workbench-check
+
   compose-validate:
     runs-on: ubuntu-latest
     steps:

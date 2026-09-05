@@ -2,7 +2,7 @@
 
 [English](README.md) | [中文](README.zh-CN.md)
 
-**The execution backend for [Weave Workbench](https://github.com/jinyitao123/weave-workbench).**
+**The complete Weave Workbench product repository.**
 
 Users choose a team, confirm the task, follow progress, resolve problems, and collect results in Workbench. Weave saves the inputs and workflow version, coordinates execution, records waiting and recovery, and stores the resulting work.
 
@@ -25,7 +25,7 @@ Execution ending does not establish that a result is usable. Saved outputs must 
 
 ## Maintainer setup
 
-Use PostgreSQL 16 and the Go version declared in [go.mod](go.mod). Workbench has its own Node.js/pnpm dependencies and release lifecycle. Record and validate the two source versions together.
+Use PostgreSQL 16, the Go version declared in [go.mod](go.mod), and the Node.js/pnpm versions declared by `workbench/package.json`. The backend, maintenance UI, and Workbench are built and verified from one commit.
 
 ### Start Weave locally
 
@@ -57,12 +57,13 @@ curl --fail http://127.0.0.1:8080/v1/ready
 
 ### Connect Workbench
 
-In the separately checked-out Workbench repository:
+From this repository:
 
 ```sh
-pnpm install --frozen-lockfile
-pnpm build:workbench
-WEAVE_COMMAND='/absolute/path/to/weave-next/bin/weave' \
+make workbench-install
+make workbench-build
+cd workbench
+WEAVE_COMMAND='../bin/weave' \
 WEAVE_API_URL='http://127.0.0.1:8080' \
 WEAVE_API_KEY='<owner-bound-api-key>' \
 pnpm workbench --host 127.0.0.1 --port 3080 --no-open
@@ -82,7 +83,7 @@ scripts/refresh-weave.sh
 docker compose -f docker-compose.platform.yml ps
 ```
 
-This starts Weave and its database; Workbench is installed separately. Weave exposes port 8080 for API and runtime maintenance. PostgreSQL is not published to the host. The refresh script updates the main checkout's existing platform stack, including when invoked from a Git worktree. For an isolated test, use an explicit Compose project, private environment, separate volumes, and port overrides instead.
+This starts the database, Weave, Workbench, and its gateway together; the optional runtime remains profile-controlled. Weave exposes port 8080 for API and runtime maintenance, Workbench defaults to 3080, and PostgreSQL is not published to the host. For an existing deployment, point `WORKBENCH_DATA_PATH` and `WORKBENCH_WORKSPACE_PATH` at the previous data locations. For an isolated test, use an explicit Compose project, private environment, separate volumes, and port overrides.
 
 The optional `runtime` profile retains `/data/runtime-workspaces` in the `runtime_data` named volume, including the `.weave-public-events` spool. Recreating the runtime container preserves those files; removing its volume deletes them.
 
@@ -97,6 +98,7 @@ The maintainer login uses `WEAVE_ADMIN_USER` (default `admin`) and the configure
 | `internal/build` | Team construction, compilation, evaluation, and restore mechanisms |
 | `internal/app` | Workbench-facing API, MCP bridge, daemon, and product assembly |
 | `weave-app` | Embedded runtime maintenance UI and local runtime controls |
+| `workbench` | The only business interface and its TypeScript runtime foundation |
 | `cmd/weave` | Service and maintenance entry point |
 
 Dependencies must not import upward across the four bands. The Go module remains `github.com/jinyitao123/weave`; Go modules, rather than `vendor/`, resolve dependencies. [Loom](https://github.com/jinyitao123/loom) provides graph execution; freezing a graph does not guarantee identical model responses or external effects.
@@ -111,6 +113,8 @@ Runtime collection accepts supported UTF-8 files attributable to the current exe
 make ci
 npm --prefix weave-app ci
 make ui-embed
+make workbench-install
+make workbench-check
 make compose-check
 # Use an isolated database, not a business database:
 TEST_DATABASE_URL='<isolated-postgresql-url>' make test-integration
@@ -124,4 +128,4 @@ The [architecture index](docs/架构/README.md) indexes current contracts and th
 
 ## License
 
-Apache-2.0
+The root repository is MIT licensed. `workbench/` retains its original MIT license and third-party notices for the original and derived code in that directory.

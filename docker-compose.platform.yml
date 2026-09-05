@@ -81,6 +81,54 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  workbench:
+    build:
+      context: .
+      dockerfile: Dockerfile.workbench
+      args:
+        WEAVE_IMAGE: weave-platform
+        DSH_CLIENT_COMMIT_HASH: ${WORKBENCH_BUILD_COMMIT:-0000000}
+        DSH_CLIENT_VERSION: ${WEAVE_VERSION:-development}
+    image: weave-workbench
+    environment:
+      DSH_HOME: /data/dsh
+      WEAVE_API_URL: http://weave:8080
+      WEAVE_API_KEY: ${WEAVE_API_KEY:-}
+    command:
+      - --host
+      - 127.0.0.1
+      - --port
+      - "3080"
+      - --trusted-host
+      - ${WORKBENCH_PUBLIC_AUTHORITY:-127.0.0.1:3080}
+      - --no-open
+    ports:
+      - ${WORKBENCH_BIND_ADDRESS:-127.0.0.1}:${WORKBENCH_PORT:-3080}:3081
+    volumes:
+      - ${WORKBENCH_DATA_PATH:-./data/workbench}:/data/dsh
+      - ${WORKBENCH_WORKSPACE_PATH:-./data/workspaces}:/workspace
+    working_dir: /workspace
+    depends_on:
+      weave:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3080/').then(r=>process.exit(r.status===401||r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    restart: unless-stopped
+
+  workbench-gateway:
+    image: nginx:alpine
+    restart: unless-stopped
+    depends_on:
+      workbench:
+        condition: service_healthy
+    network_mode: service:workbench
+    volumes:
+      - ./workbench/deploy/workbench.nginx.conf:/etc/nginx/nginx.conf:ro
+
 volumes:
   pgdata:
   runtime_data:

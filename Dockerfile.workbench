@@ -13,13 +13,14 @@ RUN --mount=type=cache,id=workbench-apt-cache,target=/var/cache/apt,sharing=lock
   && npm install --global pnpm@11.7.0 \
   && pnpm config set --global store-dir /pnpm/store
 WORKDIR /app
-COPY . .
+COPY workbench/ .
 RUN --mount=type=cache,id=workbench-pnpm-store,target=/pnpm/store,sharing=locked \
   pnpm install --frozen-lockfile
 RUN pnpm --dir native/landlock-run build:native
 ARG DSH_CLIENT_COMMIT_HASH
-ARG DSH_CLIENT_VERSION=0.1.2-alpha.1
+ARG DSH_CLIENT_VERSION
 RUN test -n "$DSH_CLIENT_COMMIT_HASH" \
+  && test -n "$DSH_CLIENT_VERSION" \
   && DSH_CLIENT_COMMIT_HASH="$DSH_CLIENT_COMMIT_HASH" \
      DSH_CLIENT_VERSION="$DSH_CLIENT_VERSION" \
      pnpm run build:workbench
