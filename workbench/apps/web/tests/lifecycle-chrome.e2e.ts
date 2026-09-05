@@ -165,11 +165,12 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
     }
     // The blank frame renders the hero, not the resident composer: the
     // headline plus the guidance placeholder are the empty state's anchors.
-    await expect.poll(() => page.getByText('Into the Unknown', { exact: false }).count(), { timeout: 15_000 }).toBe(1)
+    const headline = await page.locator('[data-workbench]').count() > 0 ? 'Start a task' : 'Into the Unknown'
+    await expect.poll(() => page.getByText(headline, { exact: false }).count(), { timeout: 15_000 }).toBe(1)
     const input = page.locator('[data-composer-input]').first()
     await input.waitFor({ timeout: 10_000 })
     if (MODE !== 'record') {
-      await page.getByText('Into the Unknown', { exact: false }).hover()
+      await page.getByText(headline, { exact: false }).hover()
       await expect.poll(() => page.getByRole('tooltip').count()).toBe(0)
       // Golden of the hero's stable waiting state (captured before any send;
       // the conversation-region goldens belong to the other scenarios).
@@ -184,11 +185,17 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
       try {
         await input.press('Enter')
         if (MODE !== 'record') {
-          const liveTail = page.locator('[data-variant="think"][data-state="running"] [data-follow-end]')
-          await expect.poll(async () => await liveTail.evaluate(element => (
-            element.scrollWidth > element.clientWidth
-              && element.scrollLeft >= element.scrollWidth - element.clientWidth - 1
-          )), { timeout: 10_000, interval: 10 }).toBe(true)
+          const reasoning = page.locator('[data-variant="think"]').first()
+          const disclosure = reasoning.getByRole('button', { name: 'Think', exact: true })
+          await disclosure.waitFor({ state: 'visible', timeout: 10_000 })
+          expect(await disclosure.getAttribute('aria-expanded')).toBe('false')
+          expect(await disclosure.innerText()).toBe('Think')
+          expect(await reasoning.getByText(/^The user/).count()).toBe(0)
+          await disclosure.click()
+          await reasoning.getByText(/^The user/).waitFor({ state: 'visible', timeout: 10_000 })
+          expect(await disclosure.getAttribute('aria-expanded')).toBe('true')
+          await disclosure.click()
+          expect(await disclosure.getAttribute('aria-expanded')).toBe('false')
         }
         return await settled
       } finally {

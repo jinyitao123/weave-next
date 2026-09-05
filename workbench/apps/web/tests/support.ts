@@ -32,6 +32,18 @@ export async function newEnglishPage(browser: Browser, height = 1000): Promise<P
 }
 
 /**
+ * Select the exact golden owned by the loaded client profile.
+ * @param page - Booted page carrying its client profile marker.
+ * @param genericPath - Existing generic client golden ending in `.expected.md`.
+ * @returns Workbench's separate golden path, or the unchanged generic path.
+ */
+export async function clientProfileGoldenPath(page: Page, genericPath: string): Promise<string> {
+  return await page.locator('[data-workbench]').count() > 0
+    ? genericPath.replace(/\.expected\.md$/u, '.workbench.expected.md')
+    : genericPath
+}
+
+/**
  * Expand every currently eligible Turn-process group so a Tool-focused
  * scenario can exercise the original row contract beneath product-default
  * compact Chat presentation.
@@ -102,7 +114,9 @@ export function probeFreePort(): Promise<number> {
  */
 export async function connectFreshWorkspace(page: Page, root: string, name = 'workspace'): Promise<void> {
   mkdirSync(join(root, name), { recursive: true })
-  await page.getByRole('textbox', { name: 'Choose workspace' }).click()
+  // Read the loaded build's profile rather than the test process environment.
+  const workbench = await page.locator('[data-workbench]').count() > 0
+  await page.getByRole('textbox', { name: workbench ? 'Choose project' : 'Choose workspace', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: 'Select Workspace Directory' })
   await dialog.waitFor({ timeout: 10_000 })
   await dialog.getByRole('button', { name: 'Edit path' }).click()
@@ -112,7 +126,8 @@ export async function connectFreshWorkspace(page: Page, root: string, name = 'wo
   await dialog.getByRole('button', { name: 'Open', exact: true }).click()
   // The pick connected the workspace: the blank session's live composer
   // replaces the locked placeholder and enables.
-  await page.locator('[data-composer-input][contenteditable="true"][data-placeholder="Describe what you want to build... / commands, @ files or sessions"]')
+  const placeholder = workbench ? 'Describe the work you want completed...' : 'Describe what you want to build... / commands, @ files or sessions'
+  await page.locator(`[data-composer-input][contenteditable="true"][data-placeholder="${placeholder}"]`)
     .waitFor({ timeout: 15_000 })
 }
 
@@ -127,7 +142,8 @@ export async function connectFreshWorkspace(page: Page, root: string, name = 'wo
  */
 export async function connectFreshWorkspaceZh(page: Page, root: string, name = 'workspace'): Promise<void> {
   mkdirSync(join(root, name), { recursive: true })
-  await page.getByRole('textbox', { name: '选择工作区' }).click()
+  const workbench = await page.locator('[data-workbench]').count() > 0
+  await page.getByRole('textbox', { name: workbench ? '选择项目' : '选择工作区', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: '选择工作区目录' })
   await dialog.waitFor({ timeout: 10_000 })
   await dialog.getByRole('button', { name: '编辑路径' }).click()
@@ -135,7 +151,8 @@ export async function connectFreshWorkspaceZh(page: Page, root: string, name = '
   await pathInput.fill(join(root, name))
   await pathInput.press('Enter')
   await dialog.getByRole('button', { name: '打开', exact: true }).click()
-  await page.locator('[data-composer-input][contenteditable="true"][data-placeholder="描述你想要构建的内容… / 调用指令 @ 文件或对话"]')
+  const placeholder = workbench ? '描述你想完成的工作…' : '描述你想要构建的内容… / 调用指令 @ 文件或对话'
+  await page.locator(`[data-composer-input][contenteditable="true"][data-placeholder="${placeholder}"]`)
     .waitFor({ timeout: 15_000 })
 }
 

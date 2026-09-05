@@ -1,12 +1,13 @@
 // @vitest-environment jsdom
 
-import { cleanup, render } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { RunningToolCall, ToolResultNode } from '@deepseek-ai/dsh-client-ui-chat/client'
+import type { ChatConversationViewNode, RunningToolCall, ToolResultNode } from '@deepseek-ai/dsh-client-ui-chat/client'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import { TeamListRow, teamListModel } from '../src/client/TeamListRow.tsx'
 import { zh } from '../src/client/locales.ts'
+import { workTaskModel } from '../src/client/work-task-model.ts'
 
 type Props = Parameters<typeof TeamListRow>[0]
 const t: Props['t'] = makeTranslate(zh, commonZh)
@@ -28,14 +29,74 @@ function running(): RunningToolCall {
   }
 }
 
-function props(block: Props['block']): Props {
+function props(block: Props['block'], nodes: ChatConversationViewNode[] = [], projection: unknown = null): Props {
   return {
     callId: block.callId, toolName: 'mcp__weave__team_list', block,
     openFile: vi.fn(), t,
+    useChat: (select: (value: unknown) => unknown) => select({ nodes: { values: () => nodes } }),
+    useProjection: () => projection,
   } as unknown as Props
 }
 
 describe('TeamListRow', () => {
+
+  it.each(['user', 'steering', 'tool-call'] as const)('retires an old directory after a later %s decision without removing its team facts', (kind) => {
+    const block = settled(JSON.stringify([{
+      team_id: 'team-1', name: '材料核验团队', status: 'active', workflow_available: true,
+    }]))
+    const subsequent: ChatConversationViewNode = {
+      key: 'later-decision', id: 'later-decision', target: 'chat', kind, anchorSeq: 4,
+      location: { kind: 'session' }, visibility: 'visible',
+      data: kind === 'tool-call' ? { root: {
+        ...running(), name: 'mcp__weave__team_create', callId: 'create-team',
+      } } : { kind, seq: 4, time: 4_000, source: null, content: [{ type: 'text', text: '改为创建专门的核验团队' }] },
+    }
+    const selectTeam = vi.fn()
+    const view = render(<TeamListRow {...props(block)} selectTeam={selectTeam} />)
+    expect(view.getByRole('button', { name: '选用并查看方案' })).toBeTruthy()
+    view.rerender(<TeamListRow {...props(block, [subsequent])} selectTeam={selectTeam} />)
+    expect(view.queryByRole('button', { name: '选用并查看方案' })).toBeNull()
+    expect(view.getByText('该目录为历史记录，请以当前方案为准')).toBeTruthy()
+    expect(view.getByText('材料核验团队')).toBeTruthy()
+    expect(selectTeam).not.toHaveBeenCalled()
+  })
+
+  it('keeps the existing preparation as the current proposal instead of offering an older directory again', () => {
+    const selectTeam = vi.fn()
+    const projection = { ...workTaskModel([]), runId: '', status: 'preparing',
+      preparation: { callId: 'create-current', buildId: 'build-current', state: 'building', error: '' } }
+    const view = render(<TeamListRow {...props(settled(JSON.stringify([{
+      team_id: 'team-1', name: '材料核验团队', status: 'active', workflow_available: true,
+    }])), [], projection)} selectTeam={selectTeam} />)
+    expect(view.queryByRole('button', { name: '选用并查看方案' })).toBeNull()
+    expect(view.getByText('该目录为历史记录，请以当前方案为准')).toBeTruthy()
+    expect(view.getByText('材料核验团队')).toBeTruthy()
+    expect(selectTeam).not.toHaveBeenCalled()
+  })
+
+  it('submits a selection once, allows retry after failure, and keeps success selected', async () => {
+    let rejectSelection: (error: Error) => void = () => {}
+    const selectTeam = vi.fn().mockImplementationOnce(() => new Promise<void>((_resolve, reject) => { rejectSelection = reject }))
+      .mockResolvedValueOnce(undefined)
+    const view = render(<TeamListRow {...props(settled(JSON.stringify([{
+      team_id: 'team-1', name: '材料核验团队', status: 'active', workflow_available: true,
+    }])))} selectTeam={selectTeam} />)
+    const select = view.getByRole('button', { name: '选用并查看方案' })
+    fireEvent.click(select)
+    fireEvent.click(select)
+    expect(selectTeam).toHaveBeenCalledTimes(1)
+    expect(selectTeam).toHaveBeenCalledWith('team-1', '材料核验团队')
+    expect(view.getByRole('button', { name: '正在提交选择' }).hasAttribute('disabled')).toBe(true)
+    await act(async () => { rejectSelection(new Error('offline')) })
+    expect(view.getByRole('alert').textContent).toBe('选择未提交，请重试')
+    expect(view.container.textContent).not.toContain('offline')
+    fireEvent.click(view.getByRole('button', { name: '选用并查看方案' }))
+    await waitFor(() => { expect(view.getByRole('button', { name: '已选择，请在对话中查看方案' }).hasAttribute('disabled')).toBe(true) })
+    fireEvent.click(view.getByRole('button', { name: '已选择，请在对话中查看方案' }))
+    expect(selectTeam).toHaveBeenCalledTimes(2)
+    expect(view.queryByRole('alert')).toBeNull()
+  })
+
   it('renders candidate business facts and omits internal health and ids', () => {
     const payload = JSON.stringify([{
       team_id: 'team-secret-id', name: '超级项目论证团队', status: 'active',
@@ -44,7 +105,7 @@ describe('TeamListRow', () => {
       default_workflow_id: 'wf-internal', workflow_available: true, health: 'warning',
     }])
     const view = render(<TeamListRow {...props(settled(payload))} />)
-    expect(view.container.textContent).toContain('团队匹配')
+    expect(view.container.textContent).toContain('可用团队')
     expect(view.container.textContent).toContain('发现 1 个候选团队')
     expect(view.container.textContent).toContain('超级项目论证团队')
     expect(view.container.textContent).toContain('可通过默认工作流派发')

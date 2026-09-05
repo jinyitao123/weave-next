@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-`dsh-session-log-export` 让 Web 界面可以下载会话的完整历史：Session Header 中的 `Session log` 按钮与 `/export` 斜杠命令都会把会话树——会话本身、其子会话与附件——作为 ZIP 交给浏览器下载。本包拥有 Host 归档流、经过认证的 Fetch 路由以及浏览器控制和反馈。下载目标位置由浏览器选择。设置与用法在前，随后说明实现细节。
+`dsh-session-log-export` 让 Web 界面可以下载会话的完整历史：Session Header 中的 `Session log` 按钮与 `/export` 斜杠命令都会把会话树——会话本身、其子会话与附件——作为 ZIP 交给浏览器下载。本包拥有 Host 归档流、经过认证的 Fetch 路由以及浏览器控制和反馈。Workbench 不展示头部下载按钮，保留共享控制器、命令反馈和 Host 导出服务。下载目标位置由浏览器选择。设置与用法在前，随后说明实现细节。
 
 ## 目录
 
@@ -25,7 +25,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-当 Web bundle 需要让用户导出会话日志时使用本包。它需要 Connection、命令注册表、Session 查询与持久化以及附件服务。挂载插件，然后点击 Session Header 中的 `Session log` 或输入 `/export`；浏览器会下载 `dsh-session-<id>.zip`。
+当 Web bundle 需要让用户导出会话日志时使用本包。它需要 Connection、命令注册表、Session 查询与持久化以及附件服务。挂载插件后输入 `/export`，浏览器会下载 `dsh-session-<id>.zip`。非 Workbench 构建还会在 Session Header 展示 `Session log` 入口。
 
 ### 何时选择
 
@@ -73,7 +73,7 @@ Web bundle 将本包与 Connection、`dsh-commands`、`dsh-client-ui-commands` �
 
 ### 设计拆分
 
-本包有两个半包。Host 半包（[`src/index.ts`](src/index.ts)）注册 `/export` 命令，并向 Connection 贡献精确的 `GET`/`HEAD /api/session.export` Fetch 路由；[`src/archive.ts`](src/archive.ts) 构建有界 ZIP 流。浏览器半包（[`src/client/index.ts`](src/client/index.ts)）提供共享下载控制器和 UI，并观察 `command/executed`，因此只有提交命令的浏览器会启动下载。
+本包有两个半包。Host 半包（[`src/index.ts`](src/index.ts)）注册 `/export` 命令，并向 Connection 贡献精确的 `GET`/`HEAD /api/session.export` Fetch 路由；[`src/archive.ts`](src/archive.ts) 构建有界 ZIP 流。浏览器半包（[`src/client/index.ts`](src/client/index.ts)）提供共享下载控制器和 UI，并观察 `command/executed`，因此只有提交命令的浏览器会启动下载。头部工具注册在 Workbench 中仅贡献弹窗，其他构建则贡献按钮和同一个弹窗。
 
 ### 下载流程
 

@@ -1,0 +1,79 @@
+[
+  {
+    "name": "P01-final-review",
+    "note": "真实人审最终成果；首次深链后返回成果，焦点留在成果页签。",
+    "capturedAt": "2026-09-05T15:40:01.377Z",
+    "focus": "tab:成果",
+    "height": 900,
+    "pageScrollWidth": 1440,
+    "reducedMotion": false,
+    "title": "创建Workbench人审验收0905团队 — Weave Workbench",
+    "width": 1440
+  },
+  {
+    "name": "P02-member-header",
+    "note": "成员头部压缩，运行识别信息合并收起；与成果共用同一位置页签。",
+    "capturedAt": "2026-09-05T15:41:28.017Z",
+    "focus": "tab:进展",
+    "height": 900,
+    "pageScrollWidth": 1440,
+    "reducedMotion": false,
+    "title": "上线前本地知识库体验评审 — Weave Workbench",
+    "width": 1440
+  },
+  {
+    "name": "P03-reading-before",
+    "note": "成员长文中段，记录往返前主滚动位置。",
+    "capturedAt": "2026-09-05T15:41:28.421Z",
+    "focus": "tab:进展",
+    "height": 900,
+    "pageScrollWidth": 1440,
+    "reducedMotion": false,
+    "title": "上线前本地知识库体验评审 — Weave Workbench",
+    "width": 1440
+  },
+  {
+    "name": "P04-reading-after",
+    "note": "通过左侧对话卡进入阶段成果后返回进展；主滚动与同一标题位置实测保持。",
+    "capturedAt": "2026-09-05T15:41:29.237Z",
+    "focus": "tab:进展",
+    "height": 900,
+    "pageScrollWidth": 1440,
+    "reducedMotion": false,
+    "title": "上线前本地知识库体验评审 — Weave Workbench",
+    "width": 1440
+  },
+  {
+    "name": "P07-final-member-excerpt",
+    "note": "最终片段按首个正文段落显示，不裁切半行；技术信息按需展开。",
+    "capturedAt": "2026-09-05T15:54:44.583Z",
+    "focus": "null:design-studio 体验验收运行中断，等待原节点确认停止",
+    "height": 900,
+    "pageScrollWidth": 1440,
+    "reducedMotion": false,
+    "title": "上线前本地知识库体验评审 — Weave Workbench",
+    "width": 1440
+  },
+  {
+    "name": "P08-final-reading-roundtrip",
+    "note": "最终构建跨对话入口往返后，主滚动和可见章节标题坐标保持。",
+    "capturedAt": "2026-09-05T15:54:45.862Z",
+    "focus": "tab:进展",
+    "height": 900,
+    "pageScrollWidth": 1440,
+    "reducedMotion": false,
+    "title": "上线前本地知识库体验评审 — Weave Workbench",
+    "width": 1440
+  },
+  {
+    "name": "P09-narrow-reading",
+    "note": "390×844真实成员长文；单区域阅读，正文保持可访问。",
+    "capturedAt": "2026-09-05T15:55:16.811Z",
+    "focus": "null:(() => {\n  const preference = \"system\"\n  const systemDark = preference",
+    "height": 844,
+    "pageScrollWidth": 390,
+    "reducedMotion": false,
+    "title": "上线前本地知识库体验评审 — Weave Workbench",
+    "width": 390
+  }
+]

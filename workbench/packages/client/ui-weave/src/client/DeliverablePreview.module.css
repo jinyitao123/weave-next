@@ -1,13 +1,68 @@
-.tablePreview, .imagePreview { display: flex; min-width: 0; flex-direction: column; gap: 12px; }
-.tableScroll, .imageScroll { overflow: auto; max-height: 640px; overscroll-behavior: contain; }
-.tableScroll:focus-visible, .imageScroll:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: 2px; }
+.preview {
+  min-width: 0;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-base);
+}
+.toolbar {
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  min-height: 44px;
+  box-sizing: border-box;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 9px 9px 0 0;
+  background: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 20px;
+}
+.tableScroll, .imageScroll {
+  min-width: 0;
+  max-height: 640px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  border-radius: 0 0 9px 9px;
+}
+.tableScroll:focus-visible, .imageScroll:focus-visible {
+  outline: 2px solid var(--dsw-alias-brand-primary);
+  outline-offset: -2px;
+}
 .tableScroll table { border-collapse: collapse; min-width: 100%; font-size: 14px; line-height: 1.6; }
-.tableScroll caption { text-align: left; font-weight: 500; padding-bottom: 10px; }
-.tableScroll td { min-width: 88px; max-width: 400px; padding: 9px 12px; border: 1px solid var(--dsw-alias-border-l2); vertical-align: top; white-space: pre-wrap; overflow-wrap: anywhere; }
+.tableScroll caption { text-align: left; font-weight: 500; padding: 12px; color: var(--dsw-alias-label-primary); }
+.tableScroll td { min-width: 88px; max-width: 400px; padding: 9px 12px; border-top: 1px solid var(--dsw-alias-border-l2); border-right: 1px solid var(--dsw-alias-border-l2); vertical-align: top; white-space: pre-wrap; overflow-wrap: anywhere; }
+.tableScroll td:last-child { border-right: 0; }
 .tableScroll tr:nth-child(even) { background: var(--dsw-alias-interactive-bg-hover); }
-.tablePreview > p, .imagePreview > p { color: var(--dsw-alias-label-secondary); font-size: 13px; }
-.controls { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
-.controls button { min-width: 34px; min-height: 34px; padding: 4px 9px; border: 1px solid var(--dsw-alias-border-l1); border-radius: 5px; color: inherit; background: transparent; font: inherit; cursor: pointer; }
-.controls button:disabled { opacity: .5; cursor: default; }
-.controls output { min-width: 44px; text-align: center; font-variant-numeric: tabular-nums; font-size: 13px; }
-.imageScroll img { display: block; max-width: none; height: auto; }
+.preview .notice { margin: 0; padding: 12px; color: var(--dsw-alias-label-secondary); font-size: 13px; line-height: 1.6; }
+.controls { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
+.controls button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 30px;
+  min-height: 30px;
+  padding: 4px 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--dsw-alias-label-primary);
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+.controls button:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); }
+.controls button:active:not(:disabled) { background: var(--dsw-alias-interactive-bg-active); }
+.controls button:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: 1px; }
+.controls button:disabled { opacity: .4; cursor: default; }
+.controls output { min-width: 44px; text-align: center; font-variant-numeric: tabular-nums; font-size: 12px; line-height: 20px; }
+.imageScroll img { display: block; width: var(--weave-preview-width); max-width: none; height: auto; }
+@media (prefers-reduced-motion: no-preference) {
+  .controls button { transition: background-color 140ms ease, color 140ms ease; }
+}
+
+.toolbar a { color: var(--dsw-alias-label-primary); text-underline-offset: 3px; font-size: 13px; }
+.toolbar a:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: 3px; }

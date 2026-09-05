@@ -15,6 +15,6 @@
 .members li { display: flex; flex-wrap: wrap; gap: 8px; padding-block: 4px; }
 .outputs li { padding-block: 4px; }
 .outputs span { margin-inline-start: 8px; color: var(--dsw-alias-label-secondary); font-size: 12px; }
-.task button { border: 1px solid var(--dsw-alias-border-l1); border-radius: 8px; padding: 7px 10px; color: inherit; background: var(--dsw-alias-bg-layer-2); cursor: pointer; }
+.task button { border: 1px solid var(--dsw-alias-border-l1); border-radius: 8px; padding: 7px 10px; color: inherit; background: transparent; cursor: pointer; }
 .task footer { margin-top: 12px; }
 .task button:focus-visible { outline: 2px solid var(--dsw-alias-label-primary); outline-offset: 2px; }

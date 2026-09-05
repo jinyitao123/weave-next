@@ -27,7 +27,7 @@ import {
   compareOrRefreshGolden, fixtureUserPrompts,
   launchWebScaffold, recordFixture, watchConsole, webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
-import { connectFreshWorkspace, newEnglishPage, saveFailureShot } from './support.ts'
+import { clientProfileGoldenPath, connectFreshWorkspace, newEnglishPage, saveFailureShot } from './support.ts'
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('../../../snapshots/web/live-interactions', import.meta.url))
 const FIXTURE = join(SNAPSHOT_DIR, 'session.jsonl')
@@ -155,11 +155,11 @@ describe('web e2e: live-turn interactions (cancel / error / retry)', () => {
     // hang (prefix chunks delivered to the loop) before the stop click.
     await expect.poll(() => existsSync(marker), { timeout: 15_000 }).toBe(true)
     await expect.poll(
-      () => page.getByRole('status').filter({ hasText: 'Deep diving...' }).isVisible(),
+      () => page.getByRole('status').filter({ hasText: 'Working on your request…' }).isVisible(),
       { timeout: 10_000 },
     ).toBe(true)
     const loadingSnapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold!.workspaceCwd)
-    await compareOrRefreshGolden(LOADING_EXPECTED, loadingSnapshot, MODE)
+    await compareOrRefreshGolden(await clientProfileGoldenPath(page, LOADING_EXPECTED), loadingSnapshot, MODE)
 
     const input = page.locator('[data-composer-input]').first()
     await input.fill(RUNNING_DRAFT)
@@ -167,7 +167,7 @@ describe('web e2e: live-turn interactions (cancel / error / retry)', () => {
     await send.waitFor({ timeout: 10_000 })
     expect(await page.getByRole('button', { name: 'Stop generating', exact: true }).count()).toBe(0)
     const runningDraftSnapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold!.workspaceCwd)
-    await compareOrRefreshGolden(RUNNING_DRAFT_EXPECTED, runningDraftSnapshot, MODE)
+    await compareOrRefreshGolden(await clientProfileGoldenPath(page, RUNNING_DRAFT_EXPECTED), runningDraftSnapshot, MODE)
     await send.click()
     await expect.poll(() => input.textContent(), { timeout: 10_000 }).toBe('')
     const queuedRow = page.locator('[data-queue-dock]').getByRole('listitem').filter({ hasText: RUNNING_DRAFT })
@@ -187,13 +187,13 @@ describe('web e2e: live-turn interactions (cancel / error / retry)', () => {
     // Golden of the aborted end-state: the prompt bubble plus the frozen
     // partial ('partial' is the hang entry's replayed prefix) and no more.
     const snapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold!.workspaceCwd)
-    await compareOrRefreshGolden(CANCEL_EXPECTED, snapshot, MODE)
+    await compareOrRefreshGolden(await clientProfileGoldenPath(page, CANCEL_EXPECTED), snapshot, MODE)
     const expanded = await captureExpandedTurnProcessAria(
       page,
       '[class*="centerCol"]',
       scaffold!.workspaceCwd,
     )
-    await compareOrRefreshGolden(CANCEL_EXPANDED_EXPECTED, expanded, MODE)
+    await compareOrRefreshGolden(await clientProfileGoldenPath(page, CANCEL_EXPANDED_EXPECTED), expanded, MODE)
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
   }, 120_000)
@@ -325,6 +325,8 @@ describe('web e2e: live-turn interactions (cancel / error / retry)', () => {
       'session.jsonl', 'cancel.expected.md', 'cancel-expanded.expected.md',
       'loading.expected.md', 'running-draft.expected.md', 'error-auth.expected.md',
       'retry.expected.md', 'retry-expanded.expected.md', 'retry-exhausted.expected.md',
+      'loading.workbench.expected.md', 'running-draft.workbench.expected.md',
+      'cancel.workbench.expected.md', 'cancel-expanded.workbench.expected.md',
     ])
   })
 })

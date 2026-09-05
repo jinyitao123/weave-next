@@ -19,11 +19,16 @@ describe('clampWidth', () => {
 describe('Workbench split', () => {
   it('starts with 40/60 and preserves an explicit width within readable bounds', () => {
     expect(computeWorkbenchColumns(1280, 280, true, undefined, false))
-      .toEqual({ sidebar: 280, center: 400, details: 600 })
+      .toEqual({ sidebar: 280, center: 420, details: 580 })
     expect(computeWorkbenchColumns(1600, 280, true, 800, false))
       .toEqual({ sidebar: 280, center: 520, details: 800 })
     expect(computeWorkbenchColumns(1280, 280, true, 800, false))
-      .toEqual({ sidebar: 280, center: 360, details: 640 })
+      .toEqual({ sidebar: 280, center: 420, details: 580 })
+  })
+
+  it('keeps both columns readable at the split boundary', () => {
+    expect(computeWorkbenchColumns(1180, 280, true, undefined, false)).toEqual({ sidebar: 280, center: 420, details: 480 })
+    expect(computeWorkbenchColumns(1179, 280, true, undefined, false)).toEqual({ sidebar: 280, center: 0, details: 899 })
   })
 
   it('switches to the scene on small screens and only fills a desktop on explicit focus', () => {

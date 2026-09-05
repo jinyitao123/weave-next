@@ -150,6 +150,8 @@ export function workTaskHasUserVisibleCompletenessWarning(model: Pick<WorkTaskMo
 
 /** Durable, read-only projection used by the Weave work-task surfaces. */
 export interface WorkTaskModel {
+  readonly displayState?: string | undefined
+  readonly preparation?: { readonly callId: string; readonly buildId: string; readonly updatedAt?: number | undefined; readonly state: 'submitting' | 'building' | 'ready' | 'failed' | 'unknown'; readonly error: string; readonly steps?: readonly { readonly id: string; readonly label: string; readonly status: string; readonly attempt: number }[] | undefined } | undefined
   readonly detected: boolean
   readonly brief: string
   readonly status: WorkTaskStatus
@@ -286,7 +288,7 @@ export function projectedWorkTask(model: WorkTaskModel, projection: WorkTaskProj
     ...projection,
     detected: true,
     stages: model.runId === projection.runId ? model.stages : [],
-    teamCandidates: model.teamCandidates,
+    teamCandidates: projection.preparation === undefined ? model.teamCandidates : [],
     deliverables: projection.deliverables,
   }
 }

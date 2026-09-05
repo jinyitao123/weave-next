@@ -1,0 +1,8 @@
+Browser tab: 1, Title: "上线前本地知识库体验评审 — Weave Workbench", URL: "http://127.0.0.1:13081/".
+The following is a diff from the previous accessibility tree with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
+Removed element IDs: 3, 5, 8-15, 18-62, 64-65
++		386 button 搜索会话
++			387 image
+~		63 pop up button (collapsed) Secondary Actions: Expand
++			388 image
+The focused UI element is 1 AXWebArea 上线前本地知识库体验评审 — Weave Workbench, URL: 127.0.0.1:13081/

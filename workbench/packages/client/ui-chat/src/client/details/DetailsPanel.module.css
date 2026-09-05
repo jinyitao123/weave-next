@@ -49,6 +49,54 @@
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
+:global([data-workbench]) .root {
+  border-left: 0;
+}
+
+:global([data-workbench]) .header {
+  min-height: 54px;
+  box-sizing: border-box;
+  padding: 10px 20px;
+}
+
+:global([data-workbench]) .title {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+:global([data-workbench]) .close {
+  width: 30px;
+  height: 30px;
+  transition: background-color 140ms ease, color 140ms ease;
+}
+
+:global([data-workbench]) .close:focus-visible {
+  outline: 2px solid var(--dsw-alias-brand-primary);
+  outline-offset: 2px;
+}
+
+:global([data-workbench]) .body {
+  padding: 18px 24px 28px;
+}
+
+/* The task scene restores its own reading position. Native anchoring during
+   the column's opening transition would move that restored position again. */
+:global([data-workbench]) .body:has(:global([data-weave-work-task])) {
+  overflow-anchor: none;
+}
+
+@media (max-width: 768px) {
+  :global([data-workbench]) .body {
+    padding: 16px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :global([data-workbench]) .close {
+    transition: none;
+  }
+}
+
 .body {
   flex: 1;
   min-height: 0;

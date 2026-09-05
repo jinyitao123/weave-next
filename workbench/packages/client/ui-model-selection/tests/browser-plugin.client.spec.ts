@@ -329,6 +329,32 @@ describe('ui-model-selection dual entry', () => {
     expect(b.calls.models).toBe(3)
   })
 
+  it('revalidates a stale durable selection after model settings change and clears the block only after selection', async () => {
+    const b = await bench()
+    b.mint('s1')
+    b.setProjected(sid('s1'), {
+      lastUsed: null,
+      next: { provider: 'unconfigured', model: 'unconfigured' },
+    })
+    const face = b.seat().inject!(sid('s1'))
+    face.load()
+    await vi.waitFor(() => { expect(b.blockOf('s1')).toBeDefined() })
+
+    b.remote.emit('settings/document-updated', ['llm-deepseek', 1])
+    await vi.waitFor(() => { expect(b.calls.models).toBe(2) })
+    expect(face.directory.getSnapshot()).toMatchObject({
+      current: { provider: 'unconfigured', model: 'unconfigured' },
+      routable: false,
+      groups: GROUPS,
+    })
+    expect(b.calls.select).toBe(0)
+
+    await face.select({ provider: 'deepseek-official', model: 'deepseek-v4-flash' })
+    expect(face.directory.getSnapshot().routable).toBe(true)
+    expect(b.blockOf('s1')).toBeUndefined()
+    await b.fiber.dispose()
+  })
+
   it('never blocks on catalog membership alone', async () => {
     const b = await bench()
     b.mint('s1')

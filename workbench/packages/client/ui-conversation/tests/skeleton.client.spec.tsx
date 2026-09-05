@@ -335,6 +335,17 @@ describe('Hero chrome', () => {
 })
 
 describe('ConversationRoot resident composer', () => {
+  it.each(['workbench', 'official'])('places %s task docks in their intended scroll or sticky surface', (profile) => {
+    vi.stubEnv('DSH_CLIENT_BUILD_PROFILE', profile)
+    const b = mount(sessionSnapshotOf())
+    const dock = b.view.getByTestId('view-conversation.input.dock')
+    const composer = b.view.getByRole('textbox')
+    expect(dock.closest('[data-conversation-scroll]')).toBeTruthy()
+    expect(dock.closest('[data-composer-seat]') !== null).toBe(profile !== 'workbench')
+    expect(composer.closest('[data-composer-seat]')).toBeTruthy()
+    expect(b.view.getAllByTestId('view-conversation.input.dock')).toHaveLength(1)
+  })
+
   it('renders the composer inert with the blocker\u2019s own reason', () => {
     const b = mount(sessionSnapshotOf(), undefined, undefined, {
       composerBlock: { reason: 'select a model first' },

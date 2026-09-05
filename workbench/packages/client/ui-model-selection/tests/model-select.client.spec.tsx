@@ -178,6 +178,39 @@ describe('ModelSelect reasoning effort', () => {
     expect(screen.queryByText('Fast catalog description')).toBeNull()
   })
 
+  it('replaces an unconfigured route with readable guidance and opens the empty model list directly', () => {
+    const directory = createSnapshotStore(state({
+      current: { provider: 'unconfigured', model: 'unconfigured' },
+      routable: false,
+      groups: [],
+    }))
+    render(<ModelSelect locked={false} available directory={directory} load={vi.fn()} select={vi.fn()} t={t} />)
+    const trigger = screen.getByRole('button', { name: '选择模型' })
+    expect(trigger.textContent).toContain('尚未选择可用模型')
+    expect(screen.queryByText(/unconfigured/)).toBeNull()
+    fireEvent.click(trigger)
+    expect(screen.getByText(/打开侧栏的设置，在“模型”页完成配置/)).toBeTruthy()
+    expect(screen.queryByRole('slider')).toBeNull()
+  })
+
+  it('lets an unavailable session select a configured model without visiting an empty overview', async () => {
+    const directory = createSnapshotStore(state({
+      current: { provider: 'unconfigured', model: 'unconfigured' },
+      routable: false,
+    }))
+    const select = vi.fn(async (selection: ModelSelection) => {
+      directory.set(state({ current: selection }))
+      return true
+    })
+    render(<ModelSelect locked={false} available directory={directory} load={vi.fn()} select={select} t={t} />)
+    fireEvent.click(screen.getByRole('button', { name: '选择模型' }))
+    fireEvent.click(screen.getByRole('menuitemradio', { name: 'DeepSeek-V4-Flash' }))
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: '选择模型，当前 DeepSeek-V4-Flash，推理等级 高' })).toBeTruthy()
+    })
+    expect(select).toHaveBeenCalledWith({ provider: 'deepseek-official', model: 'deepseek-v4-flash' })
+  })
+
   it('shows loading until the catalog and Session projection are both ready', async () => {
     const directory = createSnapshotStore<ModelDirectoryState>(state({
       current: null,

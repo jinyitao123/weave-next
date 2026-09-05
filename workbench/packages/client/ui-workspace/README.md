@@ -7,9 +7,14 @@ kind: "package-reference"
 
 English | [中文](README.zh.md)
 
+
+Workbench task rows distinguish the selected task from hover through a quiet selected fill, stronger title weight, and visible keyboard focus. Reduced-motion preferences disable the color transition.
+
 ## Summary
 
 `dsh-client-ui-workspace` is the shared Workspace browser and picker of the dsh web client: users browse grouped or flat Session rows in the sidebar, pick a Workspace for a new session from the Session Intent hero, and manage Workspaces and Sessions with add, rename, reorder, search, fork, and archive actions; the same Workspace menu and add flow serve both surfaces. Pending user interactions surface as amber warning dots, and the shared sidebar projection hides subagent-origin sessions. Distinct canonical paths remain separate id-keyed Workspaces, and adding a folder goes through a directory-flow child hole that a composed picker package's client half fills.
+
+When a WorkTask wire projection provides a display state, sidebar rows and search results use that state directly. They distinguish parallel work, scheduled waits, interrupted execution, and preparation outcomes while retaining the legacy projection fallback.
 
 ## Table of Contents
 

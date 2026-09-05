@@ -231,6 +231,31 @@
   padding: 6px 8px;
 }
 
+:global([data-workbench]) .taskRow {
+  border-radius: 10px;
+  transition: background-color 140ms ease, box-shadow 140ms ease;
+}
+
+:global([data-workbench]) .taskRow.selected {
+  background: color-mix(in srgb, var(--dsw-alias-label-primary) 7%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--dsw-alias-label-primary) 4%, transparent);
+}
+
+:global([data-workbench]) .taskRow.selected > .title {
+  font-weight: 600;
+}
+
+:global([data-workbench]) .taskRow:focus-visible {
+  outline: 2px solid var(--dsw-alias-brand-primary);
+  outline-offset: -2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :global([data-workbench]) .taskRow {
+    transition: none;
+  }
+}
+
 .taskRow > .slot {
   grid-column: 1;
   grid-row: 1;

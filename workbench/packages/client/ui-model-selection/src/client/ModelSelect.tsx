@@ -95,7 +95,8 @@ export function ModelSelect(
     ? -1
     : choices.findIndex(c => c.selection.provider === state.current?.provider && c.selection.model === state.current.model)
   const currentChoice = choices[selectedIndex]
-  const reasoning = currentChoice?.model.reasoning
+  const unavailable = state.routable === false
+  const reasoning = unavailable ? undefined : currentChoice?.model.reasoning
   const effectiveEffort = state.current?.reasoningEffort ?? reasoning?.defaultEffort
   const effortChoices = useMemo<readonly EffortChoice[]>(() => reasoning === undefined
     ? []
@@ -146,7 +147,7 @@ export function ModelSelect(
   if (!available) return null
 
   const show = (): void => {
-    setPane('root')
+    setPane(unavailable || state.current === null || choices.length === 0 ? 'model' : 'root')
     setOpen(true)
     reload()
   }
@@ -244,12 +245,14 @@ export function ModelSelect(
   const waiting = state.current === null && state.status === 'loading'
   const modelLabel = waiting
     ? t('trigger.loading')
-    : currentChoice?.model.name
-      ?? (state.current === null ? t('trigger.fallback') : `${state.current.provider}/${state.current.model}`)
+    : unavailable
+      ? t('trigger.fallback')
+      : currentChoice?.model.name
+        ?? (state.current === null ? t('trigger.fallback') : `${state.current.provider}/${state.current.model}`)
   const triggerLabel = effortLabel === undefined ? modelLabel : `${modelLabel} · ${effortLabel}`
   const triggerAria = waiting
     ? t('trigger.loading')
-    : state.current === null
+    : state.current === null || unavailable
       ? t('trigger.selectAria')
       : effortLabel === undefined
         ? t('trigger.aria', { model: modelLabel })
@@ -414,7 +417,7 @@ export function ModelSelect(
                 })}
               </div>
               {state.status === 'ready' && choices.length === 0 && (
-                <div className={css.empty}>{t('empty.models')}</div>
+                <div className={css.empty}>{t('empty.models')} {t('empty.configure')}</div>
               )}
             </>
           )}

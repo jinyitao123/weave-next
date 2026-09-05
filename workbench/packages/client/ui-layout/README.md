@@ -7,6 +7,9 @@ kind: "package-reference"
 
 English | [中文](README.zh.md)
 
+
+The Workbench frame marks its product presentation so detail and navigation styling can follow its layout without changing other profiles.
+
 ## Summary
 
 This package provides the shell layout of the Web GUI: a three-column AppFrame with resizable sidebar and details panels, a concession chain that shrinks the details column and then auto-closes it when space runs out, and the `ctx.layout` panel-geometry service other plugins call to open or close the details column. It also seats the theme presenter, which projects the resolved color scheme, alias tokens, content font size, and `theme-color` metadata onto the document. Choose it for the standard window chrome; Workbench retains the scene width while panel open state resets on reload.
@@ -25,7 +28,7 @@ This package provides the shell layout of the Web GUI: a three-column AppFrame w
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount this plugin at the root slot to render navigation, conversation, and details. Workbench opens the conversation and work scene at an initial 40/60 ratio, with readable minimum widths. Drag the separator or use its left/right arrow keys to resize; the last scene width survives close and reload. Limited space first collapses navigation to its 56px rail, then switches between conversation and scene without an overlay. Explicit focus mode fills the content area; ordinary opening restores the split. Both content trees remain mounted; hidden views are excluded from keyboard and assistive navigation. Other profiles retain the standard details concession chain.
+Mount this plugin at the root slot to render navigation, conversation, and details. Workbench opens the conversation and work scene at an initial 40/60 ratio when the content area has at least 900px: conversation retains at least 420px and the scene at least 480px, before their internal padding. Drag the separator or use its left/right arrow keys to resize; the last scene width survives close and reload. Limited space first collapses navigation to its 56px rail, then switches between conversation and scene without an overlay. Explicit focus mode fills the content area; ordinary opening restores the split. Both content trees remain mounted; hidden views are excluded from keyboard and assistive navigation. Other profiles retain the standard details concession chain.
 
 ### Theme presentation
 

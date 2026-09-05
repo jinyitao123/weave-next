@@ -2,7 +2,15 @@
 import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-store'
 
 /** A bounded reader position retained when switching members or tabs. */
-export interface WorkTaskReadingPosition { readonly top: number; readonly follow: boolean; readonly lastEvent: string }
+export interface WorkTaskReadingPosition {
+  readonly top: number
+  readonly follow: boolean
+  readonly lastEvent: string
+  /** Visible records and their offsets keep retained text in place when older records expire. */
+  readonly anchors?: readonly { readonly event: string; readonly offset: number }[]
+  /** Expanded public records are reading preferences, never execution or delivery state. */
+  readonly expandedRecords?: readonly string[]
+}
 type WorkTaskViewState = {
   followed: Record<string, string[]>
   tabs: Record<string, 'progress' | 'outputs'>

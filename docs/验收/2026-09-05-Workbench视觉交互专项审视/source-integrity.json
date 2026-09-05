@@ -1,0 +1,10 @@
+{
+  "started": "2026-09-05T21:49:05.513782+08:00",
+  "finished": "2026-09-05T22:29:16.002532+08:00",
+  "head_before": "c5abcc5421ccc858c12501636ba1a9879891bcfc",
+  "head_after": "c5abcc5421ccc858c12501636ba1a9879891bcfc",
+  "tracked_diff_sha256_before": "ee96fb2d78a9f4eb514984cea4d32a8ff69a82cdd45c3b9229001f64cb211dac",
+  "tracked_diff_sha256_after": "ee96fb2d78a9f4eb514984cea4d32a8ff69a82cdd45c3b9229001f64cb211dac",
+  "tracked_diff_unchanged": true,
+  "scope": "Compared tracked worktree diff and HEAD only; audit documentation and evidence are newly created untracked files."
+}

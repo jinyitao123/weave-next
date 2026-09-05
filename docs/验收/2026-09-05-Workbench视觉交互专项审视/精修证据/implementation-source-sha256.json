@@ -1,0 +1,14 @@
+{
+  "capturedAt": "2026-09-05T16:25:13.484573+00:00",
+  "scope": "本轮精修主要源文件；不代表整仓变更清单",
+  "files": {
+    "workbench/packages/client/ui-weave/src/client/WorkTaskPanel.tsx": "ed2e63214cfbefd6a0d1011b9f056173d6269fa5d7bcfc7d3d2cd80b80c8b810",
+    "workbench/packages/client/ui-weave/src/client/WorkTaskPanel.module.css": "67fa18f68da5de77e74dd2bdbce538849d535867e8e1e3a0cf1732f734401755",
+    "workbench/packages/client/ui-weave/src/client/PublicUpdates.tsx": "fba02ae19d310092a0c0f14b6f92ef248a36b463ec4a491bbaf8914f81c02227",
+    "workbench/packages/client/ui-weave/src/client/DeliverablePreview.tsx": "9a07a5fb8f22491e8afaa1c7fa79c8712a3a7bd64809af9fabf5e07c2b9c1117",
+    "workbench/packages/client/ui-weave/src/client/DeliverablePreview.module.css": "a613fab96e1171e667a061fc0411b17bc979b3fd87d3b1c64ea741b07fe30511",
+    "workbench/packages/client/ui-weave/src/client/locales.ts": "3ae5fd7bcbbff2ed3f22b50e100da0a34747db75df1e687137706ccaff8befc0",
+    "workbench/packages/client/ui-weave/src/client/preview-locales.ts": "f8b1c20f72e6f678f2973d9475fb0d7b75a96dc972057d1966fbdbaf99560c56",
+    "workbench/packages/client/ui-chat/src/client/details/DetailsPanel.module.css": "e6e3eff972d0758fc6c8c83170dc3bee90255566cbbfc078a9895ecb7ab52aed"
+  }
+}

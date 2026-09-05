@@ -5,27 +5,10 @@
 }
 
 .header {
-  position: relative;
-  overflow: hidden;
   display: flex;
   align-items: center;
-  height: 24px;
+  min-height: 24px;
   min-width: 0;
-}
-
-.card[data-state='running'] .header::after {
-  content: '';
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: 300px;
-  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--dsw-alias-bg-base) 60%, transparent), transparent);
-  animation: weave-team-sweep 2.6s ease-out infinite;
-  pointer-events: none;
-}
-
-@keyframes weave-team-sweep {
-  0% { left: -300px; }
-  90%, 100% { left: 100%; }
 }
 
 .leading {
@@ -69,86 +52,110 @@
 .teams {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 270px), 1fr));
-  gap: 8px;
+  gap: 10px;
   max-height: 420px;
-  margin: 7px 0 5px 22px;
+  margin: 10px 0 6px 22px;
   overflow: auto;
+  overscroll-behavior: auto;
 }
 
 .team {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
   min-width: 0;
-  padding: 10px 12px;
-  border: 1px solid var(--dsw-alias-border-l1);
-  border-radius: 8px;
+  padding: 14px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
   background: var(--dsw-alias-bg-base);
+  overflow-wrap: anywhere;
 }
 
 .selectButton {
   width: 100%;
-  min-height: 32px;
-  margin-top: 9px;
+  min-height: 34px;
+  margin-top: 12px;
   padding: 6px 10px;
-  border: 1px solid var(--dsw-alias-border-l3);
-  border-radius: 6px;
-  background: var(--dsw-alias-bg-base);
+  border: 1px solid transparent;
+  border-radius: 8px;
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
+  background: var(--dsw-alias-bg-module-platform);
   color: var(--dsw-alias-label-primary);
-  font-size: 12px;
-  line-height: 18px;
+  font: inherit;
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 500;
   cursor: pointer;
 }
 
-.selectButton:hover {
+.selectButton:hover:not(:disabled) {
   background: var(--dsw-alias-interactive-bg-hover);
+  border-color: var(--dsw-alias-border-l2);
 }
 
+.selectButton:disabled { cursor: default; color: var(--dsw-alias-label-secondary); opacity: .55; }
+.selectButton:active:not(:disabled) { background: var(--dsw-alias-interactive-bg-active); transform: translateY(1px); }
+.selectButton:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: 3px; }
+
 .team[data-dispatchable] {
-  border-color: color-mix(in srgb, var(--dsw-alias-brand-primary) 32%, var(--dsw-alias-border-l1));
+  border-color: var(--dsw-alias-border-l2);
 }
 
 .teamHeader {
   display: flex;
-  align-items: baseline;
-  gap: 8px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 6px 8px;
   min-width: 0;
+  width: 100%;
 }
 
 .teamName {
-  flex: 1 1 auto;
-  overflow: hidden;
+  flex: 1 1 130px;
+  min-width: 0;
   color: var(--dsw-alias-label-primary);
-  font-size: 13px;
-  line-height: 18px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 22px;
+  letter-spacing: -.01em;
 }
 
 .workflowState {
   flex: none;
-  color: var(--dsw-alias-label-caption);
-  font-size: 10px;
-  line-height: 16px;
+  padding: 1px 6px;
+  border-radius: 5px;
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
+  background: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 20px;
+  white-space: nowrap;
 }
 
 .purpose,
 .fact {
   margin: 0;
   color: var(--dsw-alias-label-secondary);
-  font-size: 12px;
-  line-height: 17px;
+  font-size: 13px;
+  line-height: 20px;
 }
 
 .purpose {
-  margin-top: 4px;
+  margin-top: 10px;
+  color: var(--dsw-alias-label-primary);
 }
 
 .fact {
-  margin-top: 5px;
-  color: var(--dsw-alias-label-tertiary);
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 19px;
 }
 
 .fact span {
   margin-right: 6px;
-  color: var(--dsw-alias-label-caption);
+  color: var(--dsw-alias-label-secondary);
 }
 
 .errorDetail {
@@ -165,6 +172,6 @@
   font: var(--dsw-font-markdown-code-block-small);
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .card[data-state='running'] .header::after { display: none; }
+@media (prefers-reduced-motion: no-preference) {
+  .selectButton { transition: background-color var(--ds-transition-duration) var(--ds-ease-in-out), border-color var(--ds-transition-duration) var(--ds-ease-in-out), color var(--ds-transition-duration) var(--ds-ease-in-out); }
 }

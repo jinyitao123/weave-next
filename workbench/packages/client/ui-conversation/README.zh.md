@@ -34,6 +34,8 @@ target package 通过 declaration merge 扩展 snapshot 与 Location data map，
 <a id="shell-and-standard-props"></a>
 ## Shell 与标准 props
 
+Workbench 在同一行头部呈现会话标题与任务导航操作。当前标题截断时，悬停可查看完整文字。输入框上方的任务区随会话内容正常滚动，只有输入区保持吸附。
+
 Workbench 以本地化业务标签呈现标准只读和项目文件写入模式。标签不改变权限值、命令派发或完全访问确认机制。权限命令被拒绝或中断时，保留已记录模式并明确提示操作失败。
 
 本包注册 optional-Session `conversation` shell、strict Session header/body、View list、composer chain 与 bar、输入区域、Hero 区域、queue dock、草稿持久化和 phase 计算。`ctx.uiSession.provide()` 从同一个 Session binding 物化 Conversation 与 input source，并将 `inputActions` 作为稳定标准 prop 提供。

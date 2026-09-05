@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useRef, useState, type ReactNode } from 'react'
 import { IconSparkle16, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ToolCallViewProps } from '@deepseek-ai/dsh-client-ui-tool/client'
 import type { InjectFace, PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
@@ -112,8 +112,23 @@ function summary(model: TeamListModel, t: TeamListProps['t']): string {
 }
 
 function TeamCard({ team, t, selectTeam }: { team: TeamCandidate; t: TeamListProps['t']; selectTeam?: TeamListInjected['selectTeam'] }) {
+  const submitting = useRef(false)
+  const [selection, setSelection] = useState<'idle' | 'pending' | 'done' | 'error'>('idle')
   const purpose = team.objective || team.primaryScenario
   const dispatchable = team.status === 'active' && team.workflowAvailable
+  const select = async () => {
+    if (submitting.current || selectTeam === undefined) return
+    submitting.current = true
+    setSelection('pending')
+    try {
+      await selectTeam(team.teamId, team.name)
+      setSelection('done')
+    } catch {
+      setSelection('error')
+    } finally {
+      submitting.current = false
+    }
+  }
   return (
     <article
       className={css.team}
@@ -137,16 +152,31 @@ function TeamCard({ team, t, selectTeam }: { team: TeamCandidate; t: TeamListPro
         <p className={css.fact}><span>{t('teamList.success')}</span>{team.successCriteria}</p>
       ) : null}
       {!dispatchable || selectTeam === undefined ? null : (
-        <button className={css.selectButton} type="button" onClick={() => { void selectTeam(team.teamId, team.name) }}>
-          {t('teamList.select')}
+        <button className={css.selectButton} type="button" disabled={selection === 'pending' || selection === 'done'} onClick={() => { void select() }}>
+          {t(selection === 'pending' ? 'teamList.selecting' : selection === 'done' ? 'teamList.selected' : 'teamList.select')}
         </button>
       )}
+      {selection === 'error' ? <p role="alert">{t('teamList.selectionFailed')}</p> : null}
     </article>
   )
 }
 
 /** Render Weave's team-list result as candidate facts rather than raw MCP JSON. */
-export function TeamListRow({ block, selectTeam, t }: TeamListProps) {
+export function TeamListRow({ block, selectTeam, useChat, useProjection, t }: TeamListProps) {
+  const projection = useProjection('workTask')
+  const superseded = useChat((snapshot) => {
+    if (!('kind' in block)) return false
+    for (const node of snapshot.nodes.values()) {
+      if (node.anchorSeq <= block.seq) continue
+      if (node.kind === 'user' || node.kind === 'steering') return true
+      if (node.kind !== 'tool-call') continue
+      const root = (node.data as { root?: ToolCallViewProps['block'] }).root
+      if (root === undefined) continue
+      const name = 'kind' in root ? root.call?.name ?? '' : root.name
+      if (['mcp__weave__team_list', 'mcp__weave__team_create', 'mcp__weave__team_dispatch'].includes(name)) return true
+    }
+    return false
+  }) || (projection != null && (projection.runId !== '' || projection.preparation !== undefined))
   const model = teamListModel(block)
   return (
     <section className={css.card} data-tool="mcp__weave__team_list" data-state={model.state}>
@@ -156,9 +186,10 @@ export function TeamListRow({ block, selectTeam, t }: TeamListProps) {
         <span className={css.separator} aria-hidden />
         <span className={css.summary}>{summary(model, t)}</span>
       </header>
+      {superseded ? <p className={css.summary}>{t('teamList.superseded')}</p> : null}
       {model.state === 'ok' ? (
         <div className={css.teams} aria-label={summary(model, t)}>
-          {model.teams.map(team => <TeamCard key={team.teamId} team={team} t={t} selectTeam={selectTeam} />)}
+          {model.teams.map(team => <TeamCard key={team.teamId} team={team} t={t} selectTeam={superseded ? undefined : selectTeam} />)}
         </div>
       ) : null}
     </section>

@@ -1,0 +1,45 @@
+{
+  "date": "2026-09-05T17:55:42.553Z",
+  "provenance": "真实历史会话；独立 Chrome 原始 CDP，无 Network 或 Debugger 采集；点击由实时 DOM 矩形定位后发送鼠标事件",
+  "reading": [
+    {
+      "label": "before",
+      "top": 911,
+      "chapterY": 420.0625,
+      "memberOpen": true,
+      "expanded": [
+        "收起本条记录"
+      ],
+      "selectedTab": "进展"
+    },
+    {
+      "label": "tab-return",
+      "top": 911,
+      "chapterY": 420.0625,
+      "memberOpen": true,
+      "expanded": [
+        "收起本条记录"
+      ],
+      "selectedTab": "进展"
+    },
+    {
+      "label": "reload-reopen",
+      "top": 911,
+      "chapterY": 420.0625,
+      "memberOpen": true,
+      "expanded": [
+        "收起本条记录"
+      ],
+      "selectedTab": "进展"
+    }
+  ],
+  "readingPassed": true,
+  "output": {
+    "open": true,
+    "summaryHeight": 85.28125,
+    "summaryMinHeight": "64px",
+    "approved": true,
+    "summary": "记录终审决定并交付 · 最终成果数据10 小时前结论"
+  },
+  "passed": true
+}

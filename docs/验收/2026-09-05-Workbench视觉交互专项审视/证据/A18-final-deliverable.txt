@@ -1,0 +1,210 @@
+Browser tab: 1, Title: "创建Workbench人审验收0905团队 — Weave Workbench", URL: "http://127.0.0.1:13081/".
+0 AXWebArea 创建Workbench人审验收0905团队 — Weave Workbench, URL: 127.0.0.1:13081/
+	1 container
+		827 button 新建会话
+		3 button 收起侧边栏
+			828 image
+		5 button 新建会话
+			6 image
+			829 text 新会话
+		830 text 工作区
+		831 container
+			832 button (collapsed) Description: 搜索会话, Secondary Actions: Expand
+				833 image
+			834 text field (settable)
+		835 button 视图选项
+			836 image
+		15 button 添加工作区
+			16 image
+		837 outline 会话
+			838 container
+				839 row (expanded) 日冕, Secondary Actions: Collapse
+					840 image
+					841 text 日冕
+				842 row (selectable) 团队创建失败 Workbench验收团队与流程设计 团队创建失败 · Workbench 团队构建与运行体验验收
+					843 text 团队创建失败
+					844 text Workbench验收团队与流程设计
+					845 container Workbench 团队构建与运行体验验收
+						846 text 团队创建失败  ·  Workbench 团队构建与运行体验验收
+				847 row (selectable) 运行中断，等待原节点确认停止 上线前本地知识库体验评审 运行中断，等待原节点确认停止 · design-studio 体验验收
+					848 text 运行中断，等待原节点确认停止
+					849 text 上线前本地知识库体验评审
+					850 container design-studio 体验验收 · 1/4
+						851 text 运行中断，等待原节点确认停止  ·  design-studio 体验验收
+				852 row (selectable) 已停止 异步派发停止流程验收简报 已停止 · Workbench恢复验收四人组0905
+					853 text 已停止
+					854 text 异步派发停止流程验收简报
+					855 container Workbench恢复验收四人组0905 · 0/4
+						856 text 已停止  ·  Workbench恢复验收四人组0905
+				857 row (selected) 执行完成，成果待查看 创建Workbench人审验收0905团队 执行完成，成果待查看 · Workbench人审验收0905
+					858 text 执行完成，成果待查看
+					859 text 创建Workbench人审验收0905团队
+					860 container Workbench人审验收0905 · 2/2
+						861 text 执行完成，成果待查看  ·  Workbench人审验收0905
+				862 row (selectable) 状态待读取 创建Workbench恢复验收四人组 状态待读取
+					863 text 状态待读取
+					864 text 创建Workbench恢复验收四人组
+					865 text 状态待读取
+				866 row (selectable) 停止结果未确认 派发读书会简报任务 停止结果未确认 · Workbench轻量验收组0905
+					867 text 停止结果未确认
+					868 text 派发读书会简报任务
+					869 container Workbench轻量验收组0905 · 2/4
+						870 text 停止结果未确认  ·  Workbench轻量验收组0905
+				871 row (selectable) 创建结果待核实 日冕计划团队创建与研究派发 创建结果待核实 · 未标明团队
+					872 text 创建结果待核实
+					873 text 日冕计划团队创建与研究派发
+					874 container 未标明团队
+						875 text 创建结果待核实  ·  未标明团队
+				876 row (selectable) 创建结果待核实 超级工程推进与首批团队组建 创建结果待核实 · 未标明团队
+					877 text 创建结果待核实
+					878 text 超级工程推进与首批团队组建
+					879 container 未标明团队
+						880 text 创建结果待核实  ·  未标明团队
+				881 button (collapsed) 展开其余 3 个会话, Secondary Actions: Expand
+		62 pop up button (collapsed) 设置, Secondary Actions: Expand
+			882 image
+			883 text 设置
+		887 container
+			888 container 会话层级
+				889 button (disabled) 创建Workbench人审验收0905团队
+			890 button Description: 打开工作现场, Help: Workbench人审验收0905 · 2/2 个阶段
+				891 text Workbench人审验收0905
+				892 text 执行完成，成果待查看
+			893 button 会话记录
+				894 text 会话记录
+				895 image
+		896 container
+			901 button (collapsed) 系统提示词, Secondary Actions: Expand
+				902 image
+				903 image
+				904 text 系统提示词
+			905 text 请用现有 human-final-review 示例创建一个独立的“Workbench人审验收0905”团队，内部名 workbench-human-review-0905，保留示例自带的人工终审工作流。这是明确建队授权，现在只建队，不派发。
+			906 text 15:44
+			907 button 复制
+				908 image
+			909 button (collapsed) 3 次工具调用, Secondary Actions: Expand
+				910 text 3 次工具调用
+				911 image
+			912 container
+				913 text 已创建独立团队  Workbench人审验收0905 。
+			914 content list
+				915 container
+					916 AXListMarker •
+					917 text 内部名称： workbench-human-review-0905
+				918 container
+					919 AXListMarker •
+					920 text 基于示例： human-final-review
+				921 container
+					922 AXListMarker •
+					923 text 人工终审工作流：已保留
+				924 container
+					925 AXListMarker •
+					926 text 当前状态：已就绪
+				927 container
+					928 AXListMarker •
+					929 text 本次操作：仅建队，未派发任务
+			930 button (collapsed) 本轮用量 40.7K tok, Secondary Actions: Expand
+				931 image
+				932 image
+				933 text 本轮用量
+				934 text 40.7K tok
+			935 button 复制
+				936 image
+			937 button 在新对话中分支
+				938 image
+			939 text 15:44 用时 28秒 首 token 7.6秒 148 tok/s
+			940 text 请把下面这份完整待审稿提交给刚创建的“Workbench人审验收0905”团队，团队、范围和交付已经确认，无需再次确认；派发后等待我本人终审：读书会定于2026年9月9日14:30至15:00举行，共12人，其中3人远程。主题是中断后的工作恢复，负责人和材料链接待确定。
+			941 text 15:44
+			942 button 复制
+				943 image
+			944 button (collapsed) 2 次工具调用, Secondary Actions: Expand
+				945 text 2 次工具调用
+				946 image
+			947 container
+				948 text 已将待审稿提交给  Workbench人审验收0905  团队，范围与交付要求按你的确认执行。
+			949 container
+				950 text 当前状态： 等待本人终审 。
+				951 text 请查看待审交付稿后提交：
+			952 content list
+				953 container
+					954 AXListMarker •
+					955 text 通过 或 驳回
+				956 container
+					957 AXListMarker •
+					958 text 终审批注
+			959 button (collapsed) 本轮用量 49.1K tok · 缓存命中率 93.6%, Secondary Actions: Expand
+				960 image
+				961 image
+				962 text 本轮用量
+				963 text 49.1K tok · 缓存命中率 93.6%
+			964 button 复制
+				965 image
+			966 button 在新对话中分支
+				967 image
+			968 text 15:45 用时 31秒 首 token 10秒 37 tok/s
+			1027 button 回到底部
+				1028 image
+			969 container
+				970 text 执行完成，成果待查看
+				971 button 记录终审决定并交付 · 最终成果
+				972 button 阶段产物 · 1
+				973 button 查看进展与成果
+				974 button (collapsed) 操作回执, Secondary Actions: Expand
+					975 text 操作回执
+			976 container
+				977 text entry area (settable) 发消息或做任务… / 调用指令 @ 文件或对话
+				978 pop up button (collapsed) Description: 指令, Secondary Actions: Expand
+					979 image
+				980 button 访问模式，当前：可修改项目文件
+				981 pop up button (collapsed) Description: 选择模型，当前 gpt-5.6-sol，推理等级 中等, Help: gpt-5.6-sol · 中等, Secondary Actions: Expand
+					982 text gpt-5.6-sol
+					983 text 中等
+					984 image
+				985 pop up button (collapsed) Description: 上下文已用 6%, Secondary Actions: Expand
+				986 button (disabled) 发送消息
+			987 button (collapsed) 查看用量与运行明细, Secondary Actions: Expand
+				988 text 查看用量与运行明细
+		989 text 工作现场
+		990 button 关闭详情
+		991 container
+			992 text Workbench人审验收0905
+			993 heading 创建Workbench人审验收0905团队, Value: 1
+				994 text 创建Workbench人审验收0905团队
+			995 container
+				996 text 执行完成，成果待查看 2/2 个阶段
+			997 button (collapsed) 查看任务要求, Secondary Actions: Expand
+				998 text 查看任务要求
+			999 text 部分活动未被 Weave 记录
+			1000 tab group 工作现场
+				1001 tab (selectable, settable, boolean) 进展, Value: 0, ID: weave-task-session-12b588af-dd00-4029-82e6-0f567ab07999-scene-progress-tab
+				1002 tab (selected, settable, boolean) 成果, Value: 1, ID: weave-task-session-12b588af-dd00-4029-82e6-0f567ab07999-scene-outputs-tab
+			1003 button 全幅查看
+			1004 container Description: 成果, ID: weave-task-session-12b588af-dd00-4029-82e6-0f567ab07999-scene-outputs-panel
+				1005 container 交付物
+					1006 heading 交付物, Value: 2
+						1007 text 交付物
+					1008 text 最终交付结论已就绪
+					1009 container
+						1010 button (expanded) 记录终审决定并交付 · 最终成果 数据 6 小时前 结论 ›, Secondary Actions: Collapse
+							1011 text 记录终审决定并交付 · 最终成果
+							1012 text 数据
+							1013 text 6 小时前
+							1014 text 结论
+							1015 text ›
+						1016 text {
+  "comments": "内容准确，保留负责人和材料链接待确定。",
+  "decision": "approve"
+}
+						1017 link Description: 下载文件, Value: 127.0.0.1:13081/api/weave.deliverable?sessionId=session-12b588af-dd00-4029-82e6-0f567ab07999&runId=run-9a53aa88-5a92-512b-9ab3-36b98f22b9f9&id=deliverable_a54a02736b62e3054d36b7d39a503d42&mode=download
+					1018 button (collapsed) 阶段产物 · 1, Secondary Actions: Expand
+						1019 text 阶段产物 · 1
+				1020 button (collapsed) 这份交付可以采用吗, Secondary Actions: Expand
+					1021 text 这份交付可以采用吗
+			1022 button (collapsed) 其他操作, Secondary Actions: Expand
+				1023 text 其他操作
+			1024 button (collapsed) 运行识别信息, Secondary Actions: Expand
+				1025 text 运行识别信息
+		884 splitter Description: 调整导航栏宽度, Value: 280
+		1026 splitter Description: 调整对话与现场比例, Value: 696
+
+The focused UI element is 1010 button (expanded) 记录终审决定并交付 · 最终成果 数据 6 小时前 结论 ›, Secondary Actions: Collapse

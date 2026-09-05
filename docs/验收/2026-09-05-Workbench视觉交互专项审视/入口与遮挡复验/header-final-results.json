@@ -1,0 +1,84 @@
+{
+  "date": "2026-09-05T16:52:44.605Z",
+  "provenance": "真实历史会话、本地正式构建，只验证最终顶部入口宽度，不重复滚动流程",
+  "cases": [
+    {
+      "width": 390,
+      "documentWidth": 390,
+      "button": {
+        "x": 207.4375,
+        "y": 12,
+        "width": 150.5625,
+        "height": 30,
+        "top": 12,
+        "right": 358,
+        "bottom": 42,
+        "left": 207.4375
+      },
+      "spans": [
+        {
+          "text": "",
+          "width": 7,
+          "scrollWidth": 7
+        },
+        {
+          "text": "工作现场",
+          "width": 48,
+          "scrollWidth": 48
+        },
+        {
+          "text": "已停止",
+          "width": 46,
+          "scrollWidth": 46
+        }
+      ],
+      "title": {
+        "x": 76,
+        "y": 10,
+        "width": 119.4375,
+        "height": 34
+      },
+      "passed": true
+    },
+    {
+      "width": 1440,
+      "documentWidth": 1440,
+      "button": {
+        "x": 1257.4375,
+        "y": 12,
+        "width": 150.5625,
+        "height": 30,
+        "top": 12,
+        "right": 1408,
+        "bottom": 42,
+        "left": 1257.4375
+      },
+      "spans": [
+        {
+          "text": "",
+          "width": 7,
+          "scrollWidth": 7
+        },
+        {
+          "text": "工作现场",
+          "width": 48,
+          "scrollWidth": 48
+        },
+        {
+          "text": "已停止",
+          "width": 46,
+          "scrollWidth": 46
+        }
+      ],
+      "title": {
+        "x": 300,
+        "y": 10,
+        "width": 168,
+        "height": 34
+      },
+      "passed": true
+    }
+  ],
+  "errors": [],
+  "passed": true
+}

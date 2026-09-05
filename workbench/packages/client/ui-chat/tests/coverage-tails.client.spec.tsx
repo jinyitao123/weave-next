@@ -27,7 +27,7 @@ describe('tails', () => {
       />,
     )
     expect(view.getByText('思考')).toBeTruthy()
-    expect(view.getByText('thinking hard')).toBeTruthy()
+    expect(view.queryByText('thinking hard')).toBeNull()
     expect(view.getByText(/未知内容块/)).toBeTruthy()
     const stopped = render(
       <AssistantMarkdown

@@ -1,0 +1,107 @@
+{
+  "recordedAt": "2026-09-05T17:14:13.679634+00:00",
+  "checks": {
+    "workbenchInstallCheck": {
+      "exitCode": 0,
+      "testsPassed": 264
+    },
+    "finalWorkbenchBuild": {
+      "exitCode": 0,
+      "clientArtifacts": 218,
+      "scope": "Includes public record grid alignment and narrow member toolbar layout."
+    },
+    "gui": {
+      "exitCode": 0,
+      "filesPassed": 301,
+      "testsPassed": 4004,
+      "testsSkipped": 1,
+      "scope": "Behavior changes including conversation dock/header; followed by scene CSS-only polish, separately built and visually verified."
+    },
+    "browserCanonical": {
+      "exitCode": 0,
+      "testsPassed": 1
+    },
+    "browserCancelAndInventory": {
+      "exitCode": 0,
+      "testsPassed": 2
+    },
+    "depguard": {
+      "exitCode": 0,
+      "goFiles": 495,
+      "violations": 0
+    },
+    "productguard": {
+      "exitCode": 0
+    },
+    "aggregateDocSync": {
+      "exitCode": 1,
+      "note": "See doc-sync-baseline.md for verified baseline failures and generated-index fixes."
+    },
+    "sceneLayoutStyle": {
+      "exitCode": 0,
+      "testsPassed": 21,
+      "scope": "Scene spacing and typography revision before final CSS-only public record grid alignment."
+    },
+    "finalSceneVisual": {
+      "status": "passed",
+      "evidence": "../现场排版复验/README.md",
+      "scope": "1440 full reading, 390 team/member, pointer tab return and reload reopening, human-review output. Final interaction probe disables Network/Debugger collection due the pre-existing oversized session history."
+    }
+  },
+  "sourceSHA256": {
+    "workbench/apps/web/tests/lifecycle-chrome.e2e.ts": "1d991badce05177c366852de628673e29bc4ccb82ec549b88b9fd02a82d1bd56",
+    "workbench/apps/web/tests/live-interactions.e2e.ts": "1f5eb9bb1e07969219071f8503f1da7f9a10b8ce2c0bac40ca1f273e229758e9",
+    "workbench/apps/web/tests/onboarding-deepseek-config.e2e.ts": "b3dc61ea3d5b2e2f846d4e565ee63f86bc8d65889052661f0c61bbb92da8d393",
+    "workbench/apps/web/tests/support.ts": "67f3ad7ede2bc3733fa536e53a53341bb0d4fb0b960541817c23f11f576d886c",
+    "workbench/apps/web/tests/turn-tail-actions.e2e.ts": "c0c533cf1aeb9e44e18a59fb30965341c7f05daada4ca614b42cf4ffbe7b3296",
+    "workbench/packages/bundle/workbench-app/src/index.ts": "ae4b38d82db9e30a504fa919a4e7c9384276cac05901defd203fd7464f2d4a1f",
+    "workbench/packages/bundle/workbench-app/tests/work-task.spec.ts": "29241486b6438454a83ba513e76324ce7c9a1bce448d40dd55683f5dbe6fdd61",
+    "workbench/packages/client/ui-chat/src/client/chat/ChatView.tsx": "9b4da4e9bff2ed8f69143a235830c4a05bb5ebacefc161d58250e4354ab30b05",
+    "workbench/packages/client/ui-chat/src/client/chat/ReasoningRow.tsx": "04703d75edd267744b23766c91d758bd0856d1502587591d3dd52321562df67b",
+    "workbench/packages/client/ui-chat/src/client/details/DetailsPanel.module.css": "e6e3eff972d0758fc6c8c83170dc3bee90255566cbbfc078a9895ecb7ab52aed",
+    "workbench/packages/client/ui-chat/src/client/locale.ts": "78f4eeecfc8dbd2b521a6bb1032e854034475c2b79f72ad6c7e32424ada52644",
+    "workbench/packages/client/ui-chat/tests/chat-branch-tails.client.spec.tsx": "32797365dedf1f58a07f9896e65e6080f1ec610fa28cf0d0bda8e0b20ae61058",
+    "workbench/packages/client/ui-chat/tests/chat-view.client.spec.tsx": "880ba4569cbce59c4b66830b357a796d15d9f5e20f383ef1d0e745584f0caabc",
+    "workbench/packages/client/ui-chat/tests/coverage-tails.client.spec.tsx": "de908be202ff772434b4a538a6e4a691f76fb78533147af5154050ae9c622175",
+    "workbench/packages/client/ui-chat/tests/reasoning-row.client.spec.tsx": "20fb53fdf96739a68910ff46217bb3762b7a55fc2243ef25e5877848d972187b",
+    "workbench/packages/client/ui-conversation/src/client/skeleton/ConversationRoot.module.css": "0038cf6c8bd8763030817c08b12af06722cf8802c87d4453287e2b3b224fef7e",
+    "workbench/packages/client/ui-conversation/src/client/skeleton/ConversationRoot.tsx": "fe37a62853dc7754e8cda161d85386f572b1513f5feef2c5eab5db9aeb256c39",
+    "workbench/packages/client/ui-conversation/src/client/skeleton/ConversationSession.tsx": "4be93e974ad4f7ff111c135259bbd5c5b11cce5a18b866bbee9450f2fa729da3",
+    "workbench/packages/client/ui-conversation/tests/skeleton.client.spec.tsx": "3346ba1d32170221e26a47b7a413e1ee43426f0aa44f6e7eb6687828a40f8cd3",
+    "workbench/packages/client/ui-layout/src/client/AppFrame.tsx": "98d38e11af90b6026c7819521d450bd09adecc554b698ef52c91aff3751b7601",
+    "workbench/packages/client/ui-layout/src/client/columns.ts": "9b88357f542c1dc376888fea42191869300eaa3da3e184c7786418787dbef071",
+    "workbench/packages/client/ui-layout/tests/app-frame.client.spec.tsx": "c18fcd5cc8800e35891dcead100dadbc11975a92440e4b70605a8ac44df65bfe",
+    "workbench/packages/client/ui-layout/tests/columns.client.spec.ts": "a59a9e8866004c4f05201fd619b7138df75b2036d29221c112b28e0cd10f2317",
+    "workbench/packages/client/ui-model-selection/src/client/ModelSelect.tsx": "823e159d07c0570353112347b232bca38984e8786a75dda55ded6699b72742f9",
+    "workbench/packages/client/ui-model-selection/src/client/locales.ts": "441b65f4d6bcb3ce275ece25b623ea07205f4aea1288af11f320689f017c64c3",
+    "workbench/packages/client/ui-model-selection/tests/browser-plugin.client.spec.ts": "e4b2878975f95cb340943102b97b36963c9338433e6ced084c8cf434d4afc4f3",
+    "workbench/packages/client/ui-model-selection/tests/model-select.client.spec.tsx": "0707088683d8092acf682d5a9d67d3b3dfdbf9eb6a72f20fcf3ca6ddc20d23eb",
+    "workbench/packages/client/ui-weave/src/client/DeliverablePreview.module.css": "a613fab96e1171e667a061fc0411b17bc979b3fd87d3b1c64ea741b07fe30511",
+    "workbench/packages/client/ui-weave/src/client/DeliverablePreview.tsx": "9a07a5fb8f22491e8afaa1c7fa79c8712a3a7bd64809af9fabf5e07c2b9c1117",
+    "workbench/packages/client/ui-weave/src/client/ProjectActivity.module.css": "c8f39a2b700df062900926af1b8b57bde82565bedc41679d0847e02f04041319",
+    "workbench/packages/client/ui-weave/src/client/ProjectActivity.tsx": "d6df5e9687c4df9cb0928890d7e7a40dc64db6e1c6c4e780231603b72be24a0c",
+    "workbench/packages/client/ui-weave/src/client/PublicUpdates.tsx": "fba02ae19d310092a0c0f14b6f92ef248a36b463ec4a491bbaf8914f81c02227",
+    "workbench/packages/client/ui-weave/src/client/TeamListRow.module.css": "f11fb5c059b94b225ec26f720a8909868267af8a0c3bfe250e5001a4d45ed7b0",
+    "workbench/packages/client/ui-weave/src/client/TeamListRow.tsx": "a5febe1e90c27c4cd9e130fe61a46df0f3f51620fa26deebc9ad3aff72e0db64",
+    "workbench/packages/client/ui-weave/src/client/WorkTaskPanel.module.css": "529338b949c31258b405c60bedcbe59b1242bc986ab35acfa4974e05935b9bc2",
+    "workbench/packages/client/ui-weave/src/client/WorkTaskPanel.tsx": "e7b54d2a4bdd12791bcca3a978bbb46f9a4b907c7f8b877123998aa85be01b11",
+    "workbench/packages/client/ui-weave/src/client/locales.ts": "194fb2dfc5521c3fef243926a0172c30e98e5ee1cfe4ed729e5db8dbfd5f6787",
+    "workbench/packages/client/ui-weave/src/client/preview-locales.ts": "f8b1c20f72e6f678f2973d9475fb0d7b75a96dc972057d1966fbdbaf99560c56",
+    "workbench/packages/client/ui-weave/src/client/project-activity-locales.ts": "5682df5bdd473b5fd8ceac967931441bd4a4b3c5b1334873af99290b26d7b821",
+    "workbench/packages/client/ui-weave/src/client/view-store.ts": "4d0ac2e182879d16b08a0070d356b81715eb503c723320734b4bab2cbaa0339f",
+    "workbench/packages/client/ui-weave/src/client/work-task-model.ts": "61c7f208208204eee4d3b06f1267719267c23bfaaa92984d41530e521bf293b7",
+    "workbench/packages/client/ui-weave/tests/deliverable-preview.client.spec.tsx": "710384ef44c7fe0b4e3c0f1742ed5aabc1e3a3feb217b48532bc3f60ff270959",
+    "workbench/packages/client/ui-weave/tests/public-updates.client.spec.tsx": "396e991de961cc0e572b61750a58cb666c29ed53816a2bef908be54fa357fb2e",
+    "workbench/packages/client/ui-weave/tests/runtime-center.client.spec.tsx": "04378277bb46706d7ae2d30e957e9ec42c61716c1f1014148f88c8e3a6c71d4a",
+    "workbench/packages/client/ui-weave/tests/team-list-row.client.spec.tsx": "6299ea4d650355f1a4eaa920c1bee431f944c5a8ece33874d1f553cce9550117",
+    "workbench/packages/client/ui-weave/tests/work-task-recovery.client.spec.tsx": "c84a5b1d3e93759789f40ff7283fceb9bce79a564b70069c19d7e60e84564e77",
+    "workbench/packages/client/ui-workspace/src/client/locales.ts": "af06e70339f34925ba2f49dd0a17cfb65066a92100603d8f4d6b4ff550201c39",
+    "workbench/packages/client/ui-workspace/src/client/rows/Rows.module.css": "eb6848fb28028396299b4e38714bd0a0d10955ffd0180aa0ce06c95262820563",
+    "workbench/packages/client/ui-workspace/src/client/rows/Rows.tsx": "1b8478634d0f39da9323f23ff2e9b5ad691b10879b061130f776b939346e0490",
+    "workbench/packages/client/ui-workspace/src/client/tree.ts": "e429859c9a940bc5ccc4e6e925338b16e6b96cd801bf48ecc64f1e450427397a",
+    "workbench/packages/client/ui-workspace/tests/rows.client.spec.tsx": "3b9d2227af362b8771ef8a0e67eb3c3e50498da771b80b4734e2aabe3f1cb507",
+    "workbench/packages/extensions/cordis-client-runner/src/client/slot-catalog.ts": "8b0de5c72683f0d1511b8bbda429b3eb7b65d96f991b5c4acb6f17a7f5137cd3",
+    "workbench/packages/session-query/session-log-export/src/client/index.ts": "5ad6cd6deffd314b259777820880321398f87d3960defff7d0ca906042873b26",
+    "workbench/packages/session-query/session-log-export/tests/client-apply.client.spec.tsx": "1b0effc33948ef78a61b0c8b0dc131cc6994a82d011446ad0989cc690cdf25a2"
+  }
+}

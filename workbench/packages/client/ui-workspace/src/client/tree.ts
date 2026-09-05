@@ -25,6 +25,7 @@ type SessionPendingInteractions = ReadonlyMap<SessionId, SessionPendingInteracti
 
 /** Product-neutral task summary carried by an optional Session projection. */
 export interface SessionWorkTask {
+  readonly displayState?: string
   readonly status: 'preparing' | 'queued' | 'running' | 'waiting' | 'stopping' | 'completed' | 'failed' | 'stopped'
   readonly waitKind?: string
   readonly hasFinalDeliverable?: boolean
@@ -261,6 +262,7 @@ function sessionNode(
     ['preparing', 'queued', 'running', 'waiting', 'stopping', 'completed', 'failed', 'stopped'].includes(String(taskStatus))
   ) ? {
       status: taskStatus as SessionWorkTask['status'],
+      ...(typeof candidate?.displayState === 'string' ? { displayState: candidate.displayState } : {}),
       waitKind: typeof candidate?.waitKind === 'string' ? candidate.waitKind : '',
       stopUnconfirmed: candidate?.actionError === 'stop_unconfirmed',
       hasFinalDeliverable: Array.isArray(candidate?.deliverables) && candidate.deliverables.some(

@@ -1,0 +1,290 @@
+{
+  "source": "真实WorkBench，独立headless Chromium context；只操作既有会话阅读偏好",
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "locale": "zh-CN",
+  "trace": [
+    {
+      "time": "2026-09-05T16:16:01.233Z",
+      "text": "weave-reader-restore run-22ba5c5d-8562-5ea2-88e3-492548feddbd:progress: 0"
+    },
+    {
+      "time": "2026-09-05T16:16:01.332Z",
+      "text": "weave-reader-scroll run-22ba5c5d-8562-5ea2-88e3-492548feddbd:progress: 0 false"
+    },
+    {
+      "time": "2026-09-05T16:16:01.414Z",
+      "text": "weave-reader-scroll run-22ba5c5d-8562-5ea2-88e3-492548feddbd:progress: 0 false"
+    },
+    {
+      "time": "2026-09-05T16:16:01.711Z",
+      "text": "weave-reader-restore run-22ba5c5d-8562-5ea2-88e3-492548feddbd:progress:dd13c6a6-4456-42b9-86f2-340f74912951 0"
+    },
+    {
+      "time": "2026-09-05T16:16:09.013Z",
+      "text": "weave-reader-scroll run-22ba5c5d-8562-5ea2-88e3-492548feddbd:progress:dd13c6a6-4456-42b9-86f2-340f74912951 829 false"
+    },
+    {
+      "time": "2026-09-05T16:16:09.689Z",
+      "text": "weave-reader-restore run-22ba5c5d-8562-5ea2-88e3-492548feddbd:outputs: 0"
+    },
+    {
+      "time": "2026-09-05T16:16:09.697Z",
+      "text": "weave-reader-scroll run-22ba5c5d-8562-5ea2-88e3-492548feddbd:outputs: 0 false"
+    },
+    {
+      "time": "2026-09-05T16:16:09.919Z",
+      "text": "weave-reader-restore run-22ba5c5d-8562-5ea2-88e3-492548feddbd:progress:dd13c6a6-4456-42b9-86f2-340f74912951 829"
+    },
+    {
+      "time": "2026-09-05T16:16:09.932Z",
+      "text": "weave-reader-scroll run-22ba5c5d-8562-5ea2-88e3-492548feddbd:progress:dd13c6a6-4456-42b9-86f2-340f74912951 829 false"
+    },
+    {
+      "time": "2026-09-05T16:16:10.757Z",
+      "text": "weave-reader-restore run-22ba5c5d-8562-5ea2-88e3-492548feddbd:progress:dd13c6a6-4456-42b9-86f2-340f74912951 829"
+    },
+    {
+      "time": "2026-09-05T16:16:10.759Z",
+      "text": "weave-reader-scroll run-22ba5c5d-8562-5ea2-88e3-492548feddbd:progress:dd13c6a6-4456-42b9-86f2-340f74912951 829 false"
+    },
+    {
+      "time": "2026-09-05T16:16:10.916Z",
+      "text": "weave-reader-scroll run-22ba5c5d-8562-5ea2-88e3-492548feddbd:progress:dd13c6a6-4456-42b9-86f2-340f74912951 500 false"
+    },
+    {
+      "time": "2026-09-05T16:16:10.934Z",
+      "text": "weave-reader-scroll run-22ba5c5d-8562-5ea2-88e3-492548feddbd:progress:dd13c6a6-4456-42b9-86f2-340f74912951 381 false"
+    },
+    {
+      "time": "2026-09-05T16:16:10.950Z",
+      "text": "weave-reader-scroll run-22ba5c5d-8562-5ea2-88e3-492548feddbd:progress:dd13c6a6-4456-42b9-86f2-340f74912951 312 false"
+    }
+  ],
+  "states": [
+    {
+      "label": "P10-independent-reading-before",
+      "time": "2026-09-05T16:16:09.623Z",
+      "width": 1440,
+      "height": 900,
+      "devicePixelRatio": 1,
+      "scrollTop": 829,
+      "scrollHeight": 2354,
+      "clientHeight": 846,
+      "scrollerClass": "_8udmna_body",
+      "logY": -322.5,
+      "logHeight": 1502.390625,
+      "innerTop": 0,
+      "memberTitleY": -637.203125,
+      "expanded": true,
+      "headings": [
+        {
+          "text": "上线前体验验收工作简报",
+          "y": -195.109375
+        },
+        {
+          "text": "当前结论",
+          "y": -157.109375
+        },
+        {
+          "text": "所需输入",
+          "y": 24.890625
+        },
+        {
+          "text": "材料补齐后的验收工作范围",
+          "y": 464.890625
+        },
+        {
+          "text": "问题记录与优先级规则",
+          "y": 837.890625
+        },
+        {
+          "text": "上线前必须修复项摘要",
+          "y": 1055.890625
+        }
+      ]
+    },
+    {
+      "label": "P11-independent-tab-return",
+      "time": "2026-09-05T16:16:10.528Z",
+      "width": 1440,
+      "height": 900,
+      "devicePixelRatio": 1,
+      "scrollTop": 829,
+      "scrollHeight": 2354,
+      "clientHeight": 846,
+      "scrollerClass": "_8udmna_body",
+      "logY": -322.5,
+      "logHeight": 1502.390625,
+      "innerTop": 0,
+      "memberTitleY": -637.203125,
+      "expanded": true,
+      "headings": [
+        {
+          "text": "上线前体验验收工作简报",
+          "y": -195.109375
+        },
+        {
+          "text": "当前结论",
+          "y": -157.109375
+        },
+        {
+          "text": "所需输入",
+          "y": 24.890625
+        },
+        {
+          "text": "材料补齐后的验收工作范围",
+          "y": 464.890625
+        },
+        {
+          "text": "问题记录与优先级规则",
+          "y": 837.890625
+        },
+        {
+          "text": "上线前必须修复项摘要",
+          "y": 1055.890625
+        }
+      ]
+    },
+    {
+      "label": "P12-independent-reload-return",
+      "time": "2026-09-05T16:16:18.459Z",
+      "width": 1440,
+      "height": 900,
+      "devicePixelRatio": 1,
+      "scrollTop": 312,
+      "scrollHeight": 2354,
+      "clientHeight": 846,
+      "scrollerClass": "_8udmna_body",
+      "logY": 194.5,
+      "logHeight": 1502.390625,
+      "innerTop": 0,
+      "memberTitleY": -120.203125,
+      "expanded": true,
+      "headings": [
+        {
+          "text": "上线前体验验收工作简报",
+          "y": 321.890625
+        },
+        {
+          "text": "当前结论",
+          "y": 359.890625
+        },
+        {
+          "text": "所需输入",
+          "y": 541.890625
+        },
+        {
+          "text": "材料补齐后的验收工作范围",
+          "y": 981.890625
+        },
+        {
+          "text": "问题记录与优先级规则",
+          "y": 1354.890625
+        },
+        {
+          "text": "上线前必须修复项摘要",
+          "y": 1572.890625
+        }
+      ]
+    },
+    {
+      "label": "P13-independent-reload-settled",
+      "time": "2026-09-05T16:16:19.283Z",
+      "width": 1440,
+      "height": 900,
+      "devicePixelRatio": 1,
+      "scrollTop": 312,
+      "scrollHeight": 2354,
+      "clientHeight": 846,
+      "scrollerClass": "_8udmna_body",
+      "logY": 194.5,
+      "logHeight": 1502.390625,
+      "innerTop": 0,
+      "memberTitleY": -120.203125,
+      "expanded": true,
+      "headings": [
+        {
+          "text": "上线前体验验收工作简报",
+          "y": 321.890625
+        },
+        {
+          "text": "当前结论",
+          "y": 359.890625
+        },
+        {
+          "text": "所需输入",
+          "y": 541.890625
+        },
+        {
+          "text": "材料补齐后的验收工作范围",
+          "y": 981.890625
+        },
+        {
+          "text": "问题记录与优先级规则",
+          "y": 1354.890625
+        },
+        {
+          "text": "上线前必须修复项摘要",
+          "y": 1572.890625
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "storage": {
+    "weave.workbench.member-follow.v1.session-6a3a6d62-4c31-46bf-ab9a-ca253ba3b859": {
+      "followed": {},
+      "tabs": {
+        "run-22ba5c5d-8562-5ea2-88e3-492548feddbd": "progress"
+      },
+      "selectedMembers": {
+        "run-22ba5c5d-8562-5ea2-88e3-492548feddbd": "dd13c6a6-4456-42b9-86f2-340f74912951"
+      },
+      "reading": {
+        "scene:run-22ba5c5d-8562-5ea2-88e3-492548feddbd:progress:": {
+          "top": 0,
+          "follow": false,
+          "lastEvent": ""
+        },
+        "scene:run-22ba5c5d-8562-5ea2-88e3-492548feddbd:outputs:": {
+          "top": 0,
+          "follow": false,
+          "lastEvent": ""
+        },
+        "run-22ba5c5d-8562-5ea2-88e3-492548feddbd:dd13c6a6-4456-42b9-86f2-340f74912951:lead": {
+          "top": 312,
+          "follow": false,
+          "lastEvent": "task-f4497e44-8dd0-4167-971e-541ad9f85e10:4:1201",
+          "anchors": [
+            {
+              "event": "task-f4497e44-8dd0-4167-971e-541ad9f85e10:1",
+              "offset": 234.578125
+            },
+            {
+              "event": "task-f4497e44-8dd0-4167-971e-541ad9f85e10:4",
+              "offset": 335.578125
+            }
+          ],
+          "expandedRecords": [
+            "task-f4497e44-8dd0-4167-971e-541ad9f85e10:4"
+          ]
+        },
+        "scene:run-22ba5c5d-8562-5ea2-88e3-492548feddbd:progress:dd13c6a6-4456-42b9-86f2-340f74912951": {
+          "top": 312,
+          "follow": false,
+          "lastEvent": ""
+        }
+      },
+      "expandedOutputs": {},
+      "outputSelection": {}
+    }
+  },
+  "pass": {
+    "tab": true,
+    "reload": false,
+    "settled": false
+  }
+}

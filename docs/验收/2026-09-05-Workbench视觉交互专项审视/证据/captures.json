@@ -1,0 +1,366 @@
+[
+  {
+    "name": "A01-home-desktop",
+    "note": "1440×900 首页，空草稿、发送禁用",
+    "capturedAt": "2026-09-05T13:50:29.247Z",
+    "dark": false,
+    "dpr": 1,
+    "focus": "描述你想完成的工作…",
+    "height": 900,
+    "pageScrollWidth": 1440,
+    "reducedMotion": false,
+    "title": "Weave Workbench",
+    "width": 1440
+  },
+  {
+    "name": "A02-model-menu",
+    "note": "首页模型菜单与思考强度控件",
+    "capturedAt": "2026-09-05T13:50:48.522Z",
+    "dark": false,
+    "dpr": 1,
+    "focus": "选择模型，当前 gpt-5.6-sol，推理等级 中等",
+    "height": 900,
+    "pageScrollWidth": 1440,
+    "reducedMotion": false,
+    "title": "Weave Workbench",
+    "width": 1440
+  },
+  {
+    "name": "A03-conversation-desktop",
+    "note": "历史中断任务，会话顶部和输入上方状态区域",
+    "capturedAt": "2026-09-05T13:52:08.454Z",
+    "dark": false,
+    "dpr": 1,
+    "focus": "发消息或做任务… / 调用指令 @ 文件或对话",
+    "height": 900,
+    "pageScrollWidth": 1440,
+    "reducedMotion": false,
+    "title": "上线前本地知识库体验评审 — Weave Workbench",
+    "width": 1440
+  },
+  {
+    "name": "A04-sidebar-hover",
+    "note": "悬停当前任务，记录操作按钮出现和标题可用宽度变化",
+    "capturedAt": "2026-09-05T13:52:29.217Z",
+    "dark": false,
+    "dpr": 1,
+    "focus": "发消息或做任务… / 调用指令 @ 文件或对话",
+    "height": 900,
+    "pageScrollWidth": 1440,
+    "reducedMotion": false,
+    "title": "上线前本地知识库体验评审 — Weave Workbench",
+    "width": 1440
+  },
+  {
+    "name": "A05-member-desktop",
+    "note": "1440×900，成员详情首屏，长记录沿用已有展开状态",
+    "capturedAt": "2026-09-05T13:53:19.809Z",
+    "dark": false,
+    "dpr": 1,
+    "focus": "打开工作现场",
+    "height": 900,
+    "pageScrollWidth": 1440,
+    "reducedMotion": false,
+    "title": "上线前本地知识库体验评审 — Weave Workbench",
+    "width": 1440
+  },
+  {
+    "name": "A06-team-overview",
+    "note": "桌面工作现场总览，中断提示、团队动作与成员列表",
+    "capturedAt": "2026-09-05T13:54:53.897Z",
+    "dark": false,
+    "dpr": 1,
+    "focus": "查看 体验验收负责人 的工作",
+    "height": 900,
+    "pageScrollWidth": 1440,
+    "reducedMotion": false,
+    "title": "上线前本地知识库体验评审 — Weave Workbench",
+    "width": 1440
+  },
+  {
+    "name": "A07-reading-middle",
+    "note": "聚焦公开记录后 PageDown，记录内层阅读位置",
+    "capturedAt": "2026-09-05T13:54:55.176Z",
+    "dark": false,
+    "dpr": 1,
+    "focus": "成员公开更新记录",
+    "height": 900,
+    "pageScrollWidth": 1440,
+    "reducedMotion": false,
+    "title": "上线前本地知识库体验评审 — Weave Workbench",
+    "width": 1440
+  },
+  {
+    "name": "A08-member-to-outputs",
+    "note": "从成员页切成果后，导航回到任务层且焦点落到页面",
+    "capturedAt": "2026-09-05T13:55:51.431Z",
+    "dark": false,
+    "dpr": 1,
+    "focus": "(() => {\n  const preference = \"system\"\n  const systemDark = preference === 'system'\n    && typeof matchMedia !== 'undefi",
+    "height": 900,
+    "pageScrollWidth": 1440,
+    "reducedMotion": false,
+    "title": "上线前本地知识库体验评审 — Weave Workbench",
+    "width": 1440
+  },
+  {
+    "name": "A09-reading-return",
+    "note": "成果返回进展：同一成员和内层展开保留，核对外层位置",
+    "capturedAt": "2026-09-05T13:55:52.337Z",
+    "dark": false,
+    "dpr": 1,
+    "focus": "(() => {\n  const preference = \"system\"\n  const systemDark = preference === 'system'\n    && typeof matchMedia !== 'undefi",
+    "height": 900,
+    "pageScrollWidth": 1440,
+    "reducedMotion": false,
+    "title": "上线前本地知识库体验评审 — Weave Workbench",
+    "width": 1440
+  },
+  {
+    "name": "A10-keyboard-tab-loss",
+    "note": "从成员进展按右箭头切成果，再按Tab，验证焦点连续性",
+    "capturedAt": "2026-09-05T13:56:27.055Z",
+    "dark": false,
+    "dpr": 1,
+    "focus": "查看任务要求",
+    "height": 900,
+    "pageScrollWidth": 1440,
+    "reducedMotion": false,
+    "title": "上线前本地知识库体验评审 — Weave Workbench",
+    "width": 1440
+  },
+  {
+    "name": "A11-stage-document",
+    "note": "成果分组→文件两次展开后，实际阶段文档已可阅读",
+    "capturedAt": "2026-09-05T14:00:50.388Z",
+    "dark": false,
+    "dpr": 1,
+    "focus": {
+      "label": null,
+      "role": null,
+      "tag": "SUMMARY",
+      "text": "团队协调 · 阶段记录文档2 小时前阶段"
+    },
+    "height": 900,
+    "pageScrollWidth": 1440,
+    "reducedMotion": false,
+    "title": "上线前本地知识库体验评审 — Weave Workbench",
+    "width": 1440
+  },
+  {
+    "name": "A12-fullwidth-pressed",
+    "note": "按住全幅查看按钮，记录实际按下状态",
+    "capturedAt": "2026-09-05T14:00:50.891Z",
+    "dark": false,
+    "dpr": 1,
+    "focus": {
+      "label": null,
+      "role": null,
+      "tag": "BUTTON",
+      "text": "全幅查看"
+    },
+    "height": 900,
+    "pageScrollWidth": 1440,
+    "reducedMotion": false,
+    "title": "上线前本地知识库体验评审 — Weave Workbench",
+    "width": 1440
+  },
+  {
+    "name": "A13-output-fullwidth",
+    "note": "全幅阅读阶段文档，检查正文宽度和返回入口",
+    "capturedAt": "2026-09-05T14:02:27.899Z",
+    "dark": false,
+    "dpr": 1,
+    "focus": {
+      "label": null,
+      "role": null,
+      "tag": "BODY",
+      "text": ""
+    },
+    "height": 900,
+    "pageScrollWidth": 1440,
+    "reducedMotion": false,
+    "title": "上线前本地知识库体验评审 — Weave Workbench",
+    "width": 1440
+  },
+  {
+    "name": "A14-member-narrow",
+    "note": "768×900 成员详情，检查窄窗口返回对话与身份层级",
+    "capturedAt": "2026-09-05T14:02:29.735Z",
+    "dark": false,
+    "dpr": 1,
+    "focus": {
+      "label": null,
+      "role": null,
+      "tag": "BODY",
+      "text": ""
+    },
+    "height": 900,
+    "pageScrollWidth": 768,
+    "reducedMotion": false,
+    "title": "上线前本地知识库体验评审 — Weave Workbench",
+    "width": 768
+  },
+  {
+    "name": "A15-member-narrow-stable",
+    "note": "768×900，布局过渡结束后的成员详情。A14 为调整尺寸过渡帧，不用于判断裁切。",
+    "capturedAt": "2026-09-05T14:07:02.706Z",
+    "dark": false,
+    "dpr": 1,
+    "focus": {
+      "label": null,
+      "role": null,
+      "tag": "BODY",
+      "text": ""
+    },
+    "height": 900,
+    "pageScrollWidth": 768,
+    "reducedMotion": false,
+    "title": "上线前本地知识库体验评审 — Weave Workbench",
+    "width": 768
+  },
+  {
+    "name": "A16-member-390",
+    "note": "390×844 稳定布局，桌面应用极窄窗口探索，不作为已承诺手机端支持的验收。",
+    "capturedAt": "2026-09-05T14:08:53.254Z",
+    "dark": false,
+    "dpr": 1,
+    "focus": {
+      "label": null,
+      "role": null,
+      "tag": "BODY",
+      "text": ""
+    },
+    "height": 844,
+    "pageScrollWidth": 390,
+    "reducedMotion": false,
+    "title": "上线前本地知识库体验评审 — Weave Workbench",
+    "width": 390
+  },
+  {
+    "name": "A17-member-1024",
+    "note": "1024×768 稳定窗口，单工作现场模式。",
+    "capturedAt": "2026-09-05T14:09:40.705Z",
+    "dark": false,
+    "dpr": 1,
+    "focus": {
+      "label": null,
+      "role": null,
+      "tag": "BODY",
+      "text": ""
+    },
+    "height": 768,
+    "pageScrollWidth": 1024,
+    "reducedMotion": false,
+    "title": "上线前本地知识库体验评审 — Weave Workbench",
+    "width": 1024
+  },
+  {
+    "name": "A18-final-deliverable",
+    "note": "从会话最终成果入口一击打开真实 JSON 终审结论，展开并聚焦准确文件。",
+    "capturedAt": "2026-09-05T14:10:57.329Z",
+    "dark": false,
+    "dpr": 1,
+    "focus": {
+      "label": null,
+      "role": null,
+      "tag": "SUMMARY",
+      "text": "记录终审决定并交付 · 最终成果数据6 小时前结论"
+    },
+    "height": 900,
+    "pageScrollWidth": 1440,
+    "reducedMotion": false,
+    "title": "创建Workbench人审验收0905团队 — Weave Workbench",
+    "width": 1440
+  },
+  {
+    "name": "A19-creation-failure",
+    "note": "真实团队创建失败会话；任务说明占据失败卡大段篇幅。",
+    "capturedAt": "2026-09-05T14:11:23.596Z",
+    "dark": false,
+    "dpr": 1,
+    "focus": {
+      "label": "发消息或做任务… / 调用指令 @ 文件或对话",
+      "role": "textbox",
+      "tag": "DIV",
+      "text": ""
+    },
+    "height": 900,
+    "pageScrollWidth": 1440,
+    "reducedMotion": false,
+    "title": "Workbench验收团队与流程设计 — Weave Workbench",
+    "width": 1440
+  },
+  {
+    "name": "A20-creation-failure-scene",
+    "note": "创建失败工作现场，核对返回主对话和技术详情的层级。",
+    "capturedAt": "2026-09-05T14:11:24.712Z",
+    "dark": false,
+    "dpr": 1,
+    "focus": {
+      "label": null,
+      "role": null,
+      "tag": "BUTTON",
+      "text": "查看进展与成果"
+    },
+    "height": 900,
+    "pageScrollWidth": 1440,
+    "reducedMotion": false,
+    "title": "Workbench验收团队与流程设计 — Weave Workbench",
+    "width": 1440
+  },
+  {
+    "name": "A21-stage-group-open",
+    "note": "阶段分组及具体文件都已展开，作为切换前状态。",
+    "capturedAt": "2026-09-05T14:18:34.915Z",
+    "dark": false,
+    "dpr": 1,
+    "focus": {
+      "label": null,
+      "role": null,
+      "tag": "SUMMARY",
+      "text": "阶段产物 · 1"
+    },
+    "height": 900,
+    "pageScrollWidth": 1440,
+    "reducedMotion": false,
+    "title": "上线前本地知识库体验评审 — Weave Workbench",
+    "width": 1440
+  },
+  {
+    "name": "A22-stage-group-return",
+    "note": "只切进展再回成果，阶段分组自行收起，已展开文件被外层隐藏。",
+    "capturedAt": "2026-09-05T14:18:36.196Z",
+    "dark": false,
+    "dpr": 1,
+    "focus": {
+      "label": null,
+      "role": null,
+      "tag": "BODY",
+      "text": ""
+    },
+    "height": 900,
+    "pageScrollWidth": 1440,
+    "reducedMotion": false,
+    "title": "上线前本地知识库体验评审 — Weave Workbench",
+    "width": 1440
+  },
+  {
+    "name": "A23-stopped-conversation",
+    "note": "真实已停止会话卡片，补充运行终态审视；只查看，不触发停止操作。",
+    "capturedAt": "2026-09-05T14:22:07.237Z",
+    "dark": false,
+    "dpr": 1,
+    "focus": {
+      "label": "发消息或做任务… / 调用指令 @ 文件或对话",
+      "role": "textbox",
+      "tag": "DIV",
+      "text": ""
+    },
+    "height": 900,
+    "pageScrollWidth": 1440,
+    "reducedMotion": false,
+    "title": "异步派发停止流程验收简报 — Weave Workbench",
+    "width": 1440
+  }
+]

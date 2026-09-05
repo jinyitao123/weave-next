@@ -274,6 +274,14 @@ function sessionStatuses(
   }
   if (pending !== undefined) return subagents === undefined ? [pending] : [pending, subagents]
   if (node.workTask !== undefined) {
+    const displayKey = `task.state.${node.workTask.displayState ?? ''}`
+    const displayKeys = new Set(['task.state.preparing', 'task.state.queued', 'task.state.running', 'task.state.waiting', 'task.state.stopping', 'task.state.completed', 'task.state.failed', 'task.state.stopped', 'task.state.outputsMissing', 'task.state.stopUnconfirmed', 'task.state.human', 'task.state.correction', 'task.state.runtimeStop', 'task.state.retryable', 'task.state.parallel', 'task.state.fanout', 'task.state.timer', 'task.state.runtime', 'task.state.buildSubmitting', 'task.state.buildBuilding', 'task.state.buildReady', 'task.state.buildFailed', 'task.state.buildUnknown'])
+    if (displayKeys.has(displayKey)) {
+      const state: SessionStatus['state'] = node.workTask.displayState === 'completed' ? 'done'
+        : ['failed', 'stopped', 'outputsMissing', 'stopUnconfirmed', 'human', 'correction', 'runtimeStop', 'retryable', 'runtime', 'buildFailed', 'buildUnknown'].includes(node.workTask.displayState ?? '') ? 'warning' : 'ongoing'
+      const task: SessionStatus = { state, label: t(displayKey as Parameters<typeof t>[0]) }
+      return subagents === undefined ? [task] : [task, subagents]
+    }
     const task: SessionStatus = node.workTask.status === 'completed'
       ? node.workTask.hasFinalDeliverable === true
         ? { state: 'done', label: t('status.taskCompleted') }

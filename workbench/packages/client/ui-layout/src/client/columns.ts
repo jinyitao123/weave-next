@@ -39,7 +39,7 @@ export const DETAILS_MAX = 520
 export const DETAILS_DEFAULT = 360
 
 /** Workbench keeps the conversation and a readable work scene beside each other. */
-export const WORKBENCH_SPLIT_MIN = 840
+export const WORKBENCH_SPLIT_MIN = 900
 
 /**
  * Resolve Workbench's 40/60 initial split, preserving a dragged width on resize.
@@ -57,7 +57,7 @@ export function computeWorkbenchColumns(
   const available = Math.max(0, viewport - s)
   if (!details) return { sidebar: s, center: available, details: 0 }
   if (focus || available < WORKBENCH_SPLIT_MIN) return { sidebar: s, center: 0, details: available }
-  const width = clampWidth(preference ?? available * 0.6, 480, available - 360)
+  const width = clampWidth(preference ?? available * 0.6, 480, available - 420)
   return { sidebar: s, center: available - width, details: width }
 }
 

@@ -25,7 +25,7 @@ This package provides model selection in the Web GUI: the `/model` popup command
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount this plugin alongside `ui-conversation` and the commands package; the composer then shows the model seat next to the pending indicator, and `/model` opens the same directory as a popup. Both surfaces show the host-reported current selection when the exact provider/model pair remains in the advertised groups; a missing catalog row leaves the routable selection intact while the trigger prompts `Select model`.
+Mount this plugin alongside `ui-conversation` and the commands package; the composer then shows the model seat next to the pending indicator, and `/model` opens the same directory as a popup. Both surfaces show the host-reported current selection when the exact provider/model pair remains in the advertised groups; a missing catalog row leaves the routable selection intact and the trigger displays its provider/model identifier.
 
 ### Model and effort
 
@@ -33,7 +33,7 @@ Models stay grouped by provider. The compact overview keeps the current model, l
 
 ### Unroutable sessions
 
-When the Host reports that no adapter serves the session's route, this plugin raises a composer block and the input goes inert with its own copy; recovering clears it without a reload. A `null` before the first load or after one failed never blocks, and catalog membership never blocks either — a route serving a model it does not advertise is missing from the groups yet usable.
+When the Host reports that no adapter serves the session's route, the trigger says `No usable model selected` and opens the model list directly. The composer blocks submission while retaining its draft and keeping model selection available. An empty list directs the user to Settings in the sidebar and the Models page. Saving settings, updating adapters, or changing credential references refreshes the shared catalog and revalidates the current route. A durable selection that remains unavailable requires an explicit replacement; recovery clears the composer block without reloading the page. A `null` before the first load or after one failed never blocks, and catalog membership alone never blocks a route the Host can serve.
 
 -----
 
@@ -43,7 +43,7 @@ When the Host reports that no adapter serves the session's route, this plugin ra
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-Two entries over ONE per-session directory owned by `ModelDirectoryResolver` (`ctx.modelDirectories`): the `/model` popupSelect contribution (registered through `ctx.commandUi`) and the composer's named `conversation.input.model` seat both load the session's advisory directory through `session.models` and submit through `session.selectModel` via the same `ModelDirectory` instance, so a switch made in either entry is what the other shows next. Directory loads and selections share a generation counter so an older response never overwrites a newer one; a connection reset drops every resident projection and repulls the Host-restored selection. Directories are per-session, resolved lazily, and disposed with the session scope; addressed subagent sessions expose neither entry. Every resident directory refetches directly on forwarded `llm/adapters-updated` and `settings/document-updated` owner events.
+The `/model` popup and composer seat share each session's `ModelDirectory`, which combines the Host-generation catalog with the durable selection projection. Model selection uses `session.selectModel`; settings, adapter, and credential changes invalidate the shared catalog so every resident directory recomputes route availability. Catalog refreshes reject stale responses by generation, and the selection projection retains the session's choice across reconnects. Directories are resolved lazily and disposed with the session scope; addressed subagent sessions expose neither entry.
 
 </details>
 
@@ -79,6 +79,7 @@ These limits define the current model surface. They are current package constrai
 
 - **No create-time or addressed-subagent selection** — both entries require an existing ordinary session's Agent; there is no draft-phase model choice to fold into session creation, and subagent continuation deliberately exposes no independent model-selection contract.
 - **Directory names are presentation-only** — selection and persistence use provider/model/effort ids; a provider whose catalog or exact-model metadata lookup fails lists as an unselectable failure row until reload.
+- **Settings navigation remains in the sidebar** — the empty selector gives the configuration path; it does not open the settings dialog directly.
 - **No arbitrary effort input** — the composer offers only the exact model's adapter-advertised levels; an adapter without reasoning metadata leaves the Effort row absent.
 
 <a id="dev-note"></a>

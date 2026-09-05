@@ -4,12 +4,13 @@ import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
+import { SessionLogDownloadDialog } from '../src/client/Dialog.tsx'
 import { SessionLogDownloadHeaderAction } from '../src/client/HeaderAction.tsx'
 import { apply, inject } from '../src/client/index.ts'
 
 const SID = 'session-export-apply' as SessionId
 
-afterEach(() => { vi.unstubAllGlobals() })
+afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs() })
 
 function declare(slots: SlotRegistry): () => void {
   return slots.register({
@@ -48,6 +49,23 @@ describe('session-log-download browser plugin', () => {
     injected.dismiss(SID)
     expect(b.ctx.sessionLogDownload.store.getSnapshot().bySession[SID]?.open).toBe(false)
 
+    await b.fiber.dispose()
+    expect(b.slots.entries('conversation.session.header.utilities')).toHaveLength(0)
+  })
+
+  it('keeps command feedback without a Header download button in Workbench', async () => {
+    vi.stubEnv('DSH_CLIENT_BUILD_PROFILE', 'workbench')
+    const fetcher = vi.fn(async () => new Response('', { status: 500 }))
+    vi.stubGlobal('fetch', fetcher)
+    const b = await bench()
+    const entries = b.slots.entries('conversation.session.header.utilities')
+    expect(entries).toHaveLength(1)
+    expect(entries[0]?.component).toBe(SessionLogDownloadDialog)
+    b.ctx.emit('command/executed', SID, 'export', { kind: 'success' })
+    await vi.waitFor(() => {
+      expect(fetcher).toHaveBeenCalledOnce()
+      expect(b.ctx.sessionLogDownload.store.getSnapshot().bySession[SID]?.status).toBe('error')
+    })
     await b.fiber.dispose()
     expect(b.slots.entries('conversation.session.header.utilities')).toHaveLength(0)
   })

@@ -1,0 +1,14 @@
+{
+  "focusAfterArrow": {
+    "label": null,
+    "role": null,
+    "selectedTab": "成果",
+    "tag": "BODY"
+  },
+  "focusAfterTab": {
+    "label": null,
+    "role": null,
+    "tag": "SUMMARY",
+    "text": "查看任务要求"
+  }
+}

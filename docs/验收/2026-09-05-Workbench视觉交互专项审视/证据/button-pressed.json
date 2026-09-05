@@ -1,0 +1,23 @@
+{
+  "rest": {
+    "background": "rgba(0, 0, 0, 0)",
+    "box": {
+      "bottom": 381.984375,
+      "height": 32,
+      "left": 1338,
+      "right": 1408,
+      "top": 349.984375,
+      "width": 70,
+      "x": 1338,
+      "y": 349.984375
+    },
+    "color": "rgb(97, 102, 107)"
+  },
+  "pressed": {
+    "active": true,
+    "background": "rgba(38, 49, 72, 0.06)",
+    "color": "rgb(97, 102, 107)",
+    "hover": true,
+    "transform": "matrix(1, 0, 0, 1, 0, 1)"
+  }
+}

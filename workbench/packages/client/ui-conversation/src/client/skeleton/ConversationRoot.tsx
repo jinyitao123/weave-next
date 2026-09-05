@@ -354,7 +354,7 @@ export function ConversationRoot({
       {hero && <HeroGlow className={css.heroGlow} />}
       {hero && <HeroShell t={t} renderSlot={renderSlot} />}
       {hero && heroWorkspaceRow}
-      {zone !== undefined && renderSlot('conversation.input.dock', zone)}
+      {!workbench && zone !== undefined && renderSlot('conversation.input.dock', zone)}
       {inputBar}
     </div>
   )
@@ -381,6 +381,9 @@ export function ConversationRoot({
       {sessionId === undefined ? null : renderSlot('conversation.session.header', {})}
       <div className={css.scrollBody} data-conversation-scroll="">
         {sessionId === undefined ? null : renderSlot('conversation.session', {})}
+        {workbench && zone !== undefined ? <div className={css.flowDock} data-conversation-flow-dock="">
+          {renderSlot('conversation.input.dock', zone)}
+        </div> : null}
         {composerSeat}
       </div>
       {/* Width handles only while a transcript is on screen; the hero has no

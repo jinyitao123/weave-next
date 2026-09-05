@@ -57,6 +57,29 @@ function fireDrag(row: HTMLElement, kind: 'dragOver' | 'drop', clientY: number):
 }
 
 describe('workspace browser rows', () => {
+
+  it.each([
+    ['outputsMissing', '执行已结束，最终成果待核实'],
+    ['runtimeStop', '运行中断，等待原节点确认停止'],
+    ['retryable', '阶段中断，可重试'],
+    ['buildFailed', '团队创建失败'],
+    ['buildUnknown', '创建结果待核实'],
+  ] as const)('uses the shared %s display state for sidebar rows and search results', (displayState, label) => {
+    const node: SessionNode = {
+      id: sid('work'), title: 'Review brief', blank: false, running: false,
+      runningSubagentCount: 0, completed: true, updatedAt: 0,
+      workTask: { status: 'running', displayState, teamName: 'Research', completedStages: 0, totalStages: 0 },
+    }
+    const row = render(<SessionNodeItem node={node} currentId={undefined} now={0} onOpen={vi.fn()}
+      onRename={vi.fn()} onFork={vi.fn()} onArchive={vi.fn()} t={t} />)
+    expect(row.container.textContent).toContain(label)
+    expect(row.container.querySelector('[data-state="done"]')).toBeNull()
+    row.unmount()
+    const result = render(<SearchResultItem result={{ ...node, workspace: 'Workspace' }} currentId={undefined} onOpen={vi.fn()} t={t} />)
+    expect(result.container.textContent).toContain(label)
+    expect(result.container.querySelector('[data-state="done"]')).toBeNull()
+  })
+
   it('omits only an empty leading status slot in the hierarchy-free flat list', () => {
     const idle: SessionNode = {
       id: sid('flat'), title: 'Flat Session', blank: false, running: false,

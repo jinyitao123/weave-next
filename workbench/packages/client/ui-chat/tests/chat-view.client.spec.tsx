@@ -1066,7 +1066,8 @@ describe('ChatView', () => {
     expect(members).toHaveLength(3)
     expect(members.map(member => member.getAttribute('hidden')))
       .toEqual(['until-found', 'until-found', 'until-found'])
-    expect(members[0]?.textContent).toContain('inspect the repository')
+    expect(members[0]?.textContent).toContain('思考')
+    expect(members[0]?.textContent).not.toContain('inspect the repository')
     expect(members[1]?.textContent).toContain('bash:a')
     expect(members[2]?.textContent).toContain('subagent:b')
     expect(view.getByText('final answer')).toBeTruthy()
@@ -1284,7 +1285,7 @@ describe('ChatView', () => {
     expect(reasoning?.getAttribute('hidden')).toBe('until-found')
     expect(view.getByText('final answer')).toBeTruthy()
     fireEvent.click(toggle)
-    expect(view.getByText('private analysis')).toBeTruthy()
+    expect(view.queryByText('private analysis')).toBeNull()
   })
 
   it('folds a completed Turn even while the reader is away from the tail', () => {
@@ -1742,7 +1743,7 @@ describe('ChatView', () => {
     const view = render(<h.ChatView {...h.props} />)
     expect(view.getByTestId('tool-seat-r1')).toBeTruthy()
     expect(h.toolOwners[0]?.block).toMatchObject({ callId: 'r1', argsRaw: '{"command":"cmd-r1"}' })
-    expect(view.getByRole('status').textContent).toBe('深度求索中...')
+    expect(view.getByRole('status').textContent).toBe('正在处理你的请求…')
   })
 
   it('keeps the Tool renderer mounted when a running call settles into log order', () => {
@@ -1792,6 +1793,15 @@ describe('ChatView', () => {
     expect(unmounted).not.toHaveBeenCalled()
   })
 
+  it('does not show model activity while a user decision is pending', () => {
+    const h = makeHarness({ nodes: [user(1, 'question')] }, { running: true })
+    const waiting = bindSnapshotSelector(createSnapshotStore(new Map([[SID, { key: 'question-1', kind: 'question', sessionId: SID }]]) as unknown as SessionPendingInteractionSnapshot))
+    const view = render(<h.ChatView {...h.props} useSessionPendingInteraction={waiting} />)
+    expect(view.queryByText('正在处理你的请求…')).toBeNull()
+    view.rerender(<h.ChatView {...h.props} />)
+    expect(view.getByText('正在处理你的请求…')).toBeTruthy()
+  })
+
   it('the running clock uses turn/start, ignores steering, and stays out of the live region', () => {
     const startTime = Date.now() - 125_000
     const trigger: UserMessageNode = { ...user(1, 'go'), time: startTime + 1 }
@@ -1802,7 +1812,7 @@ describe('ChatView', () => {
     const view = render(<h.ChatView {...h.props} />)
     // Freshly mounted (as after a reload) yet already past the 15s gate.
     const status = view.getByRole('status')
-    expect(status.textContent).toMatch(/^深度求索中\.\.\.2分0\d秒$/)
+    expect(status.textContent).toMatch(/^正在处理你的请求…2分0\d秒$/)
     expect(status.querySelector('[aria-hidden="true"]')).not.toBeNull()
     act(() => {
       h.setSession({ queue: [{
@@ -1814,7 +1824,7 @@ describe('ChatView', () => {
         text: 'also',
       }] })
     })
-    expect(status.textContent).toMatch(/^深度求索中\.\.\.2分0\d秒$/)
+    expect(status.textContent).toMatch(/^正在处理你的请求…2分0\d秒$/)
   })
 
   it('hands each ordered root call to the keyed business-node slot', () => {

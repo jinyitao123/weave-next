@@ -1,0 +1,119 @@
+{
+  "provenance": "隔离预览测试数据，非真实运行",
+  "component": "workbench/packages/client/ui-weave/src/client/DeliverablePreview.tsx",
+  "cases": [
+    {
+      "width": 1440,
+      "kind": "csv",
+      "baseline": {
+        "width": 998,
+        "scrollWidth": 998,
+        "height": 234,
+        "scrollHeight": 234,
+        "pageWidth": 1440,
+        "viewport": 1440
+      },
+      "downloadVisible": true,
+      "rows": 4,
+      "columns": 8
+    },
+    {
+      "width": 1440,
+      "kind": "tsv",
+      "baseline": {
+        "width": 998,
+        "scrollWidth": 4519,
+        "height": 640,
+        "scrollHeight": 8325,
+        "pageWidth": 1440,
+        "viewport": 1440
+      },
+      "downloadVisible": true,
+      "rows": 200,
+      "columns": 40,
+      "scrollLeft": 3481,
+      "keyboardScroll": true
+    },
+    {
+      "width": 1440,
+      "kind": "svg",
+      "baseline": {
+        "width": 998,
+        "scrollWidth": 998,
+        "height": 499,
+        "scrollHeight": 499,
+        "pageWidth": 1440,
+        "viewport": 1440
+      },
+      "downloadVisible": true,
+      "zoom": {
+        "clientWidth": 998,
+        "scrollWidth": 1996
+      },
+      "scrollLeft": 958,
+      "keyboardScroll": true,
+      "fileReset": true,
+      "hiddenStatePreserved": true,
+      "horizontalInput": "native horizontal wheel"
+    },
+    {
+      "width": 390,
+      "kind": "csv",
+      "baseline": {
+        "width": 356,
+        "scrollWidth": 903,
+        "height": 279,
+        "scrollHeight": 279,
+        "pageWidth": 390,
+        "viewport": 390
+      },
+      "downloadVisible": true,
+      "rows": 4,
+      "columns": 8,
+      "scrollLeft": 507,
+      "keyboardScroll": true
+    },
+    {
+      "width": 390,
+      "kind": "tsv",
+      "baseline": {
+        "width": 356,
+        "scrollWidth": 4519,
+        "height": 640,
+        "scrollHeight": 8325,
+        "pageWidth": 390,
+        "viewport": 390
+      },
+      "downloadVisible": true,
+      "rows": 200,
+      "columns": 40,
+      "scrollLeft": 4123,
+      "keyboardScroll": true
+    },
+    {
+      "width": 390,
+      "kind": "svg",
+      "baseline": {
+        "width": 356,
+        "scrollWidth": 356,
+        "height": 178,
+        "scrollHeight": 178,
+        "pageWidth": 390,
+        "viewport": 390
+      },
+      "downloadVisible": true,
+      "zoom": {
+        "clientWidth": 356,
+        "scrollWidth": 712
+      },
+      "scrollLeft": 316,
+      "keyboardScroll": true,
+      "fileReset": true,
+      "hiddenStatePreserved": true,
+      "horizontalInput": "native horizontal wheel"
+    }
+  ],
+  "errors": [],
+  "cleanup": true,
+  "result": "passed"
+}

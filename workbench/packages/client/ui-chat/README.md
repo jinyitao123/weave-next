@@ -6,9 +6,14 @@ kind: "package-reference"
 
 English | [中文](README.zh.md)
 
+
+Workbench detail panels use the shell separator once, align their header and body insets, and retain visible keyboard focus on the close action. Reduced-motion preferences remove the close-button transition. A detail body containing the Workbench task scene disables native scroll anchoring so the column's opening transition does not change the scene's restored reading position.
+
 ## Summary
 
 The browser Chat target for Conversation assembly. It registers Chat event definitions and snapshot construction, supplies `useChat`, renders transcript nodes and details, and owns Chat-specific stores, actions, localization, and scroll restoration; historical image URLs resolve through the Conversation-owned per-session cache (`ctx.uiConversation.imageUrl`). Its Assistant and Turn Tail definitions fold packed historical Assistant runs without expanding their members. The flow tail renders the session's local submission echoes (`SessionSnapshot.pendingSubmissions`) with the same bubble as their eventual durable user nodes, hidden per render once a user/steering node or queue occurrence carries the echo's prompt `rpcId`, so the echo-to-durable swap is atomic.
+
+Collapsed reasoning rows show only their disclosure label; private process text becomes visible only when the reader opens that row. The running-turn label says “Working on your request…” and disappears while an effective user interaction is pending, without changing the underlying execution state.
 
 ## Table of Contents
 

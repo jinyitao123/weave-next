@@ -202,7 +202,8 @@ function TurnStatus({ startTime, t }: {
  * ordered business Node crosses the keyed renderer seat.
  */
 export function ChatView({
-  useSession, useChat, useSessions, useStore, actions, renderSlot, sessionId, openFile, loadOlder, loadImage, openView, chatScroll, forkAt,
+  useSession, useChat, useSessions, useSessionPendingInteraction, useStore, actions, renderSlot, sessionId,
+  openFile, loadOlder, loadImage, openView, chatScroll, forkAt,
   fileMentions, useTranscriptView, t,
 }: ChatViewSlotProps) {
   const order = useChat(s => s.order)
@@ -216,6 +217,7 @@ export function ChatView({
   // Workspace root off the session list row: path summaries display relative to it.
   const cwd = useSessions(s => s.byId[sessionId]?.cwd)
   const running = useSession(s => s.running)
+  const pendingInteraction = useSessionPendingInteraction(s => s.get(sessionId))
   const openState = useSession(s => s.openState)
   const openError = useSession(s => s.openError)
   const hasMore = useSession(s => s.hasMore)
@@ -617,7 +619,7 @@ export function ChatView({
               double-render the same wait. */}
           {/* Turn-level loading signal: rides the whole running turn (first-token
               wait, tool execution, streaming) so it never flickers per step. */}
-          {running && <TurnStatus startTime={runningTurnStart} t={t} />}
+          {running && pendingInteraction === undefined && <TurnStatus startTime={runningTurnStart} t={t} />}
           {pendingSteering.map(item => (
             <PendingSteeringBubble
               key={item.id}

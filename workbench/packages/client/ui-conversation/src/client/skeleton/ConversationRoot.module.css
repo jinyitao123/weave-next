@@ -149,45 +149,50 @@
   display: none;
 }
 
-/* A task's name stays readable when its conversation shares the window with the scene. */
-.workbenchHeader .titleRow {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  row-gap: 4px;
+/* Workbench keeps the session title and task navigation on one row. */
+:global([data-workbench]) .workbenchHeader {
+  padding: 10px 20px 9px;
 }
 
-.workbenchHeader .titleCluster {
-  display: contents;
+:global([data-workbench]) .workbenchHeader .titleRow {
+  min-height: 34px;
 }
 
-.workbenchHeader .crumbs {
-  grid-column: 1;
-  grid-row: 1;
+:global([data-workbench]) .workbenchHeader .titleCluster {
+  gap: 12px;
 }
 
-.workbenchHeader .crumbSeg:last-child {
+:global([data-workbench]) .workbenchHeader .crumbs {
   flex: 1;
 }
 
-.workbenchHeader .crumbCurrent {
+:global([data-workbench]) .workbenchHeader .crumbSeg:last-child {
+  flex: 1;
+}
+
+:global([data-workbench]) .workbenchHeader .crumbCurrent {
   max-width: 100%;
+  padding: 6px 0;
+  color: var(--dsw-alias-label-primary);
+  opacity: 1;
+  font-size: 14px;
+  line-height: 22px;
+  font-weight: 600;
   text-align: left;
 }
 
-.workbenchHeader .headerUtilities {
-  grid-column: 2;
-  grid-row: 1;
+:global([data-workbench]) .workbenchHeader .headerActions {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: min(60%, 240px);
+  padding: 0;
+}
+
+:global([data-workbench]) .workbenchHeader .headerUtilities {
   margin-left: 12px;
 }
 
-.workbenchHeader .headerActions {
-  grid-column: 1 / -1;
-  grid-row: 2;
-  min-width: 0;
-  padding: 0 8px 8px;
-}
-
-.workbenchHeader .headerActions:empty {
+:global([data-workbench]) .workbenchHeader .headerActions:empty {
   display: none;
 }
 
@@ -330,6 +335,17 @@
   flex-direction: column;
   gap: var(--dsh-composer-stack-gap);
 }
+
+/* Workbench task receipts occupy document space, so expanding or reading them
+   never grows the sticky input overlay over earlier conversation messages. */
+.flowDock {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 6px;
+  padding-bottom: 12px;
+}
+.flowDock:has(> :global([data-slot]):empty) { padding-bottom: 0; }
 
 /* Common seat for the composer chain (fallback + elected overlay siblings). */
 .composerSeat {

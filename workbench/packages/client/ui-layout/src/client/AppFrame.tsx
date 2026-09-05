@@ -222,6 +222,7 @@ export function AppFrame({
     <div
       ref={frameRef}
       className={css.frame}
+      data-workbench={workbench || undefined}
       style={{ gridTemplateColumns: `${cols.sidebar}px minmax(0, 1fr) ${cols.details}px` }}
       data-sidebar-collapsed={sidebarCollapsed || undefined}
       data-details-collapsed={!detailsOpen || undefined}

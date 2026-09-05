@@ -75,12 +75,13 @@ export function ConversationSessionHeader({
   const session = useSession(s => s)
   const conversation = useConversation(s => s)
   const hideChrome = session.blank && conversationPhase(session, conversation) === 'blank'
+  const workbench = process.env.DSH_CLIENT_BUILD_PROFILE === 'workbench'
 
   return (
     <header
       className={clsx(
         css.header, hideChrome && css.headerHidden,
-        process.env.DSH_CLIENT_BUILD_PROFILE === 'workbench' && css.workbenchHeader,
+        workbench && css.workbenchHeader,
       )}
       aria-hidden={hideChrome || undefined}
     >
@@ -100,6 +101,7 @@ export function ConversationSessionHeader({
                         last && css.crumbCurrent,
                       )}
                       disabled={last}
+                      title={workbench && last ? summary.displayTitle : undefined}
                       onClick={() => { open(summary.id) }}
                     >
                       {summary.displayTitle}

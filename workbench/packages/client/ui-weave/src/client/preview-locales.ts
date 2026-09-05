@@ -1,6 +1,8 @@
 /** Reading controls merged into the Weave locale namespace by its owner. */
 export const zh = {
   'task.preview.table': '表格预览',
+  'task.preview.image': '图纸预览',
+  'task.preview.zoomLevel': '缩放比例',
   'task.preview.tableLimited': '当前展示前 200 行、前 40 列，完整内容请下载文件。',
   'task.preview.zoomIn': '放大图纸',
   'task.preview.zoomOut': '缩小图纸',
@@ -12,6 +14,8 @@ export const zh = {
 /** English reading controls. */
 export const en = {
   'task.preview.table': 'Table preview',
+  'task.preview.image': 'Drawing preview',
+  'task.preview.zoomLevel': 'Zoom level',
   'task.preview.tableLimited': 'Showing the first 200 rows and 40 columns. Download the file for the complete contents.',
   'task.preview.zoomIn': 'Zoom in',
   'task.preview.zoomOut': 'Zoom out',
@@ -23,6 +27,8 @@ export const en = {
 /** Localized copy required by the reading component. */
 export interface DeliverablePreviewLabels {
   table: string
+  image: string
+  zoomLevel: string
   tableLimited: string
   zoomIn: string
   zoomOut: string
@@ -39,6 +45,7 @@ export interface DeliverablePreviewLabels {
 export function deliverablePreviewLabels(t: (key: keyof typeof zh) => string): DeliverablePreviewLabels {
   return {
     table: t('task.preview.table'), tableLimited: t('task.preview.tableLimited'),
+    image: t('task.preview.image'), zoomLevel: t('task.preview.zoomLevel'),
     zoomIn: t('task.preview.zoomIn'), zoomOut: t('task.preview.zoomOut'), zoomReset: t('task.preview.zoomReset'),
     imageLoading: t('task.preview.imageLoading'), imageUnavailable: t('task.preview.imageUnavailable'),
   }

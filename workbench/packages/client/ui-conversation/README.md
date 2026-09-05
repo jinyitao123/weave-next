@@ -34,6 +34,8 @@ Target packages declaration-merge their snapshot and Location data maps, then re
 <a id="shell-and-standard-props"></a>
 ## Shell and standard props
 
+Workbench keeps the Session title and task-navigation actions on one header row. A truncated current title exposes its full text on hover. The task dock above the input remains in the conversation scroll flow; the composer alone stays sticky.
+
 Workbench presents the standard read-only and workspace-write modes with localized task-facing labels. The labels do not alter the permission values, command dispatch, or full-access confirmation. A rejected or interrupted permission command keeps the recorded mode and shows an explicit failure message.
 
 The package registers the optional-Session `conversation` shell, strict Session header/body entries, View list, composer chain and bar, input regions, Hero regions, queue dock, draft persistence, and phase calculation. `ctx.uiSession.provide()` materializes the Conversation and input sources from the same Session binding and supplies `inputActions` as a stable standard prop.

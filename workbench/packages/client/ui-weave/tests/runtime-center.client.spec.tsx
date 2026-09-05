@@ -126,7 +126,7 @@ describe('Weave work scene presentation', () => {
     fireEvent.click(view.getByRole('tab', { name: '进展' }))
     fireEvent.click(view.getByRole('button', { name: '查看 汇总员 的工作' }))
     expect(view.getByRole('button', { name: '返回团队总览' })).toBeTruthy()
-    expect(view.container.textContent).toContain('成员执行记录')
+    expect(view.getByRole('region', { name: '执行记录' })).toBeTruthy()
     expect(view.container.textContent).toContain('npm test')
     expect(view.container.textContent).toContain('PASS')
     expect(view.container.textContent).not.toContain('exec_command')

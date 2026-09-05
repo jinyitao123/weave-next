@@ -24,6 +24,10 @@ export type WorkTaskStatus = 'preparing' | 'queued' | 'running' | 'waiting' | 's
 
 /** Durable product view of one Weave dispatch owned by a Workbench session. */
 export interface WorkTaskProjection {
+  /** Preparation remains visible until dispatch; a transport error does not prove creation failed. */
+  readonly preparation?: { readonly callId: string; readonly buildId: string; readonly updatedAt?: number | undefined; readonly state: 'submitting' | 'building' | 'ready' | 'failed' | 'unknown'; readonly error: string; readonly steps?: { readonly id: string; readonly label: string; readonly status: string; readonly attempt: number }[] | undefined } | undefined
+  /** Host-derived meaning shared by every task surface. */
+  readonly displayState?: string | undefined
   readonly brief: string
   readonly clientRequestId: string
   readonly runId: string
@@ -294,6 +298,8 @@ const correctionSchema = z.object({
 }).strict()
 const completenessSchema = z.record(z.string(), z.enum(['complete', 'partial', 'unavailable']))
 const taskSchema = z.object({
+  preparation: z.object({ callId: z.string(), buildId: z.string(), updatedAt: z.number().nonnegative().optional(), state: z.enum(['submitting', 'building', 'ready', 'failed', 'unknown']), error: z.string(), steps: z.array(z.object({ id: z.string(), label: z.string(), status: z.string(), attempt: z.number() }).strict()).optional() }).strict().optional(),
+  displayState: z.string().optional(),
   brief: z.string().default(''),
   clientRequestId: z.string(), runId: z.string(), teamId: z.string(), teamName: z.string(),
   workflowName: z.string(), status: statusSchema,
@@ -758,6 +764,9 @@ function snapshot(
 export function applyWorkTaskProjection(state: WorkTaskState, event: SessionEvent): WorkTaskState {
   if (event.type === 'weave/work-task') {
     const incoming = taskSchema.parse(event.data)
+    if (state.task !== null && state.task.runId !== '' && incoming.runId !== '' && incoming.runId !== state.task.runId
+      && state.task.attempts.some(attempt => attempt.runId === incoming.runId)) return state
+    if (state.task !== null && incoming.runId === state.task.runId && incoming.observedAt < state.task.observedAt) return state
     const receipts = new Map<string, WorkTaskActionReceipt>()
     for (const receipt of [...(state.task?.actionHistory ?? []), ...incoming.actionHistory]) {
       if (!receipts.has(receipt.id)) receipts.set(receipt.id, receipt)
@@ -772,15 +781,26 @@ export function applyWorkTaskProjection(state: WorkTaskState, event: SessionEven
   }
   if (event.type === 'tool/call' && event.data.name.startsWith('mcp__weave__')) {
     const pending = { name: event.data.name, args: parsed(event.data.arguments) }
-    return { ...state, pendingCalls: { ...state.pendingCalls, [event.data.callId]: pending } }
+    const creating = pending.name === 'mcp__weave__team_create' && (state.task === null || state.task.runId === '' || terminalStatus(state.task.status))
+    const task = creating ? { ...snapshot(null, {}, event.time, {
+      brief: text(object(pending.args)?.definition, ['purpose']),
+      teamName: text(object(pending.args)?.definition, ['display_name']),
+    }), attempts: state.task?.attempts ?? [], preparation: { callId: event.data.callId, buildId: '', state: 'submitting' as const, error: '' } } : state.task
+    return { ...state, task, pendingCalls: { ...state.pendingCalls, [event.data.callId]: pending } }
   }
   if (event.type !== 'tool/result') return state
   const callId = event.data.message.source.callId
   const call = state.pendingCalls[callId]
   if (call === undefined) return state
   const pendingCalls = Object.fromEntries(Object.entries(state.pendingCalls).filter(([id]) => id !== callId))
-  if (event.data.message.content[0].isError) return { ...state, pendingCalls }
   const value = resultValue(event)
+  if (event.data.message.content[0].isError) {
+    if (call.name !== 'mcp__weave__team_create' || state.task?.preparation?.callId !== callId) return { ...state, pendingCalls }
+    const code = text(value, ['code', 'error']) || (typeof value === 'string' ? value : '')
+    const failed = code.includes('template_build_failed')
+    return { ...state, pendingCalls, task: { ...state.task, status: failed ? 'failed' : 'preparing',
+      preparation: { ...state.task.preparation, state: failed ? 'failed' : 'unknown', error: code }, updatedAt: event.time } }
+  }
   if (call.name === 'mcp__weave__team_list' || call.name === 'mcp__weave__team_status') {
     const team = object(value)?.team
     const teams = { ...state.teams, ...listedTeams(call.name === 'mcp__weave__team_status' ? [team] : value) }
@@ -794,9 +814,15 @@ export function applyWorkTaskProjection(state: WorkTaskState, event: SessionEven
     const teamId = text(value, ['team_id', 'teamId', 'id'])
     const definition = object(call.args)?.definition
     const displayName = teamDisplayName(preferredText(definition, ['display_name', 'displayName', 'name']))
-    return teamId === '' || displayName === ''
-      ? { ...state, pendingCalls }
-      : { ...state, pendingCalls, teams: { ...state.teams, [teamId]: displayName } }
+    const teams = teamId === '' || displayName === '' ? state.teams : { ...state.teams, [teamId]: displayName }
+    const preparation = state.task?.preparation
+    const buildId = text(value, ['build_id', 'build_run_id'])
+    const ready = ['ready', 'active', 'completed'].includes(ownText(value, ['status']))
+    const task = state.task === null || preparation?.callId !== callId ? state.task : {
+      ...state.task, teamId, teamName: displayName || state.task.teamName,
+      preparation: { ...preparation, buildId, state: ready ? 'ready' as const : buildId !== '' ? 'building' as const : 'unknown' as const }, updatedAt: event.time,
+    }
+    return { ...state, pendingCalls, teams, task }
   }
   if (call.name === 'mcp__weave__team_dispatch') {
     const teamId = text(call.args, ['team_id', 'teamId', 'team'])
@@ -809,20 +835,70 @@ export function applyWorkTaskProjection(state: WorkTaskState, event: SessionEven
     return { ...state, pendingCalls, task }
   }
   if (state.task === null) return { ...state, pendingCalls }
+  if (call.name === 'mcp__weave__build_status' && text(call.args, ['build_id']) === state.task.preparation?.buildId) {
+    return { ...state, pendingCalls, task: buildSnapshot(state.task, value, event.time) }
+  }
   if (call.name === 'mcp__weave__dispatch_status'
     || call.name === 'mcp__weave__team_run_status'
     || call.name === 'mcp__weave__team_run_activity') {
-    return { ...state, pendingCalls, task: snapshot(state.task, value, event.time) }
+    const current = state.task
+    const targetRequests = [ownText(call.args, ['client_request_id']), ownText(value, ['client_request_id'])].filter(Boolean)
+    if (call.name === 'mcp__weave__dispatch_status' && targetRequests.some(id => id !== current.clientRequestId)) return { ...state, pendingCalls }
+    const targetRuns = [ownText(call.args, ['run_id']), ownText(value, ['run_id'])].filter(Boolean)
+    if (targetRuns.some(id => id !== current.runId)) return { ...state, pendingCalls }
+    const next = snapshot(state.task, value, event.time)
+    if (next.observedAt < state.task.observedAt || terminalStatus(state.task.status) && !terminalStatus(next.status) && (ownText(value, ['observed_at', 'observedAt']) === '' || next.observedAt <= state.task.observedAt)) return { ...state, pendingCalls }
+    return { ...state, pendingCalls, task: next }
   }
   return { ...state, pendingCalls }
 }
 
+function displayState(task: WorkTaskProjection): string {
+  if (task.pendingAction?.kind === 'stop' || task.status === 'stopping') return 'stopping'
+  if (task.actionError === 'stop_unconfirmed') return 'stopUnconfirmed'
+  if (task.runId === '' && task.preparation !== undefined) return `build${task.preparation.state.charAt(0).toUpperCase()}${task.preparation.state.slice(1)}`
+  if (task.status === 'completed') return task.deliverables.some(item => item.kind === 'final' || item.kind === 'summary') ? 'completed' : 'outputsMissing'
+  if (task.humanTask !== null || task.humanTaskCount > 0) return 'human'
+  if (task.corrections.some(item => item.status === 'ready')) return 'correction'
+  if (task.status !== 'waiting') return task.status
+  const interrupted = task.members.flatMap(member => member.stages).filter(stage => stage.status === 'failed' && stage.failureClass === 'infrastructure')
+  if (interrupted.some(stage => !stage.retryable && stage.failureReason === 'Reconnect the runtime and wait for the previous execution to confirm it has stopped.')) return 'runtimeStop'
+  if (interrupted.some(stage => stage.retryable)) return 'retryable'
+  if (task.waitKind === 'fanout' && task.members.some(member => member.status === 'running')) return 'parallel'
+  return task.waitKind || 'waiting'
+}
+
+function buildSnapshot(task: WorkTaskProjection, value: unknown, now: number): WorkTaskProjection {
+  const preparation = task.preparation
+  if (preparation === undefined || ownText(value, ['build_run_id', 'build_id']) !== preparation.buildId) return task
+  const rawStatus = ownText(value, ['run_status', 'status'])
+  const state = rawStatus === 'passed' ? 'ready' : ['blocked', 'cancelled', 'failed'].includes(rawStatus) ? 'failed' : 'building'
+  const sourceTime = Date.parse(ownText(value, ['updated_at']))
+  const sourceUpdatedAt = Number.isFinite(sourceTime) ? sourceTime : 0
+  const previousUpdatedAt = preparation.updatedAt ?? 0
+  if (sourceUpdatedAt > 0 && sourceUpdatedAt < previousUpdatedAt) return task
+  if (['ready', 'failed'].includes(preparation.state) && state === 'building'
+    && (sourceUpdatedAt <= previousUpdatedAt || previousUpdatedAt === 0)) return task
+  const rawSteps = object(value)?.steps
+  const steps = Array.isArray(rawSteps) ? rawSteps.flatMap((item) => {
+    const id = ownText(item, ['operation_id'])
+    const label = ownText(item, ['display_label', 'target_name'])
+    return id === '' || label === '' ? [] : [{ id, label, status: ownText(item, ['status']), attempt: count(item, ['attempt']) }]
+  }) : []
+  return { ...task, status: state === 'failed' ? 'failed' : 'preparing',
+    teamId: ownText(object(value)?.final_ref, ['team_id']) || task.teamId,
+    preparation: { ...preparation, state, steps, updatedAt: sourceUpdatedAt || previousUpdatedAt }, observedAt: now, updatedAt: now }
+}
+
 /** Projection definition registered with the Session projection registry. */
 export const workTaskProjectionDefinition = {
-  key: 'workTask', stateVersion: 12, stateSchema,
+  key: 'workTask', stateVersion: 13, stateSchema,
   init: (): WorkTaskState => ({ task: null, pendingCalls: {}, teams: {} }),
   apply: applyWorkTaskProjection,
-  wire: { list: true, viewSchema: taskSchema.nullable(), view: (state: WorkTaskState) => state.task },
+  wire: {
+    list: true, viewSchema: taskSchema.nullable(),
+    view: (state: WorkTaskState) => state.task === null ? null : { ...state.task, displayState: displayState(state.task) },
+  },
 } satisfies ProjectionDefinition<'workTask', WorkTaskState>
 
 /** Host-only WorkTask synchronization settings. */
@@ -843,7 +919,7 @@ export const inject = ['sessions', 'sessionProjections', 'commands', 'systemProm
 export const workbenchTeamRoutingSection = {
   name: 'workbench:team-routing',
   order: FIRST_PARTY_SECTION_ORDER.TEAM_POLICY + 10,
-  text: 'For substantive business work in Weave Workbench, first list the available Weave teams and match the request against each team\'s stated purpose, responsibilities, success criteria, default workflow availability, and health. If a suitable active team exists, first ensure the user has confirmed the selected team, task scope, and expected deliverables. Summarize only the unconfirmed choices and request their confirmation; when these choices are already explicitly confirmed in the conversation, dispatch the default workflow with wait=false without asking again. If no suitable team exists, say so plainly and collaborate with the user on a team definition. Once the user confirms the team definition, task scope, and expected deliverables, create the team with its agreed workflow and dispatch the original business task without repeating confirmation. Internal construction and evaluation steps are not additional user approval gates; do not perform the requested research or production work in the foreground. A successful Weave dispatch is already the durable task: do not create or update a DSH goal for it. After dispatch, make at most one activity or status call to confirm the handoff, then return the selected team and a short human-facing state such as queued, underway, waiting for input, completed, or needs attention. Do not include internal identifiers, raw workflow versions, orchestration phases, or backend enums unless the user explicitly asks for technical details. Do not poll the run in the foreground, and do not save a duplicate foreground deliverable; Workbench monitors the run and projects Weave\'s deliverables in the background. For follow-up questions and adjustments to an existing task, keep the current team and exact run; do not repeat team matching or dispatch a new task. A member reference provides context, not permission to modify work. Discuss ordinary questions. When the user explicitly requests a modification, submit the existing correction request for those targets, then present the computed impact for confirmation before applying it. Do not add a separate confirmation before submitting that explicitly requested correction, and never describe an accepted request as an applied change. When the run is terminal or the user later asks for the result, check whether an exact-run final deliverable exists. If execution ended with only stage records or no final deliverable, say that the final output is not yet confirmed and do not claim delivery is complete. Read any available final Weave deliverable and answer with a short user-facing completion summary: what was finished, the main findings or decisions, the files the user can open, and any user action still needed. Keep internal run IDs, deliverable IDs, runtime IDs, host paths, hashes, validation command names, and engine details out of the main answer unless the user explicitly asks for technical details. Never select free collaboration unless the user explicitly requests it. If Weave tools are unavailable, report that the Weave connection is not configured instead of pretending that team work was performed.',
+  text: 'For substantive business work in Weave Workbench, first list the available Weave teams and match the request against each team\'s stated purpose, responsibilities, success criteria, default workflow availability, and health. If a suitable active team exists, first ensure the user has confirmed the selected team, task scope, and expected deliverables. Summarize only the unconfirmed choices and request their confirmation; when these choices are already explicitly confirmed in the conversation, dispatch the default workflow with wait=false without asking again. If no suitable team exists, say so plainly and collaborate with the user on a team definition. Once the user confirms the team definition, task scope, and expected deliverables, create the team with its agreed workflow and dispatch the original business task without repeating confirmation only when that confirmation includes dispatch. If the user explicitly asks to create first and confirm dispatch separately, create the team, show the final task summary, and wait for that separate dispatch decision. Selecting a team card only selects a proposal; it does not authorize dispatch. Use the existing structured question or plan-review interaction to show the goal, expected outputs, actual members and workflow, missing materials, budget limits, and exactly which actions the decision authorizes. Preserve the displayed proposal and the user response in the conversation. Never treat your own claim of confirmation as a user decision. Do not replace a confirmed team or expand its task silently. If required materials are missing, obtain them before dispatch unless the user explicitly authorizes an assessment limited to those gaps. Reuse the same idempotency key for a repeated identical creation request and the same client_request_id for a repeated identical dispatch. After a creation transport error, verify the existing request outcome before creating another team. A build_id belongs to the current creation only; Workbench monitors its progress in the background. A failed creation stays the current issue until it is resolved or the user changes the proposal. Internal construction and evaluation steps are not additional user approval gates; do not perform the requested research or production work in the foreground. A successful Weave dispatch is already the durable task: do not create or update a DSH goal for it. After dispatch, make at most one activity or status call to confirm the handoff, then return the selected team and a short human-facing state such as queued, underway, waiting for input, completed, or needs attention. Do not include internal identifiers, raw workflow versions, orchestration phases, or backend enums unless the user explicitly asks for technical details. Do not poll the run in the foreground, and do not save a duplicate foreground deliverable; Workbench monitors the run and projects Weave\'s deliverables in the background. For follow-up questions and adjustments to an existing task, keep the current team and exact run; do not repeat team matching or dispatch a new task. A member reference provides context, not permission to modify work. Discuss ordinary questions. When the user explicitly requests a modification, submit the existing correction request for those targets, then present the computed impact for confirmation before applying it. Do not add a separate confirmation before submitting that explicitly requested correction, and never describe an accepted request as an applied change. When the run is terminal or the user later asks for the result, check whether an exact-run final deliverable exists. If execution ended with only stage records or no final deliverable, say that the final output is not yet confirmed and do not claim delivery is complete. Read any available final Weave deliverable and answer with a short user-facing completion summary: what was finished, the main findings or decisions, the files the user can open, and any user action still needed. Keep internal run IDs, deliverable IDs, runtime IDs, host paths, hashes, validation command names, and engine details out of the main answer unless the user explicitly asks for technical details. Never select free collaboration unless the user explicitly requests it. If Weave tools are unavailable, report that the Weave connection is not configured instead of pretending that team work was performed.',
 } as const
 
 /** Register the durable projection and keep non-terminal Weave runs synchronized outside the conversation turn. */
@@ -919,7 +995,9 @@ export function apply(ctx: Context, config: Config = {}): void {
     if (operation !== undefined) { operation.nextDelay = Math.min(operation.nextDelay ?? delay, delay); return }
     if (timers.has(key)) return
     const current = ctx.sessionProjections.stateOf(session, 'workTask')?.task
-    if (current === null || current === undefined || (current.clientRequestId === '' && current.runId === '')) return
+    if (current === null || current === undefined) return
+    const building = current.runId === '' && current.preparation?.buildId !== '' && current.preparation?.state === 'building'
+    if (current.clientRequestId === '' && current.runId === '' && !building) return
     if (!terminal(current)) terminalChecked.delete(key)
     if (terminal(current) && current.pendingAction === null && terminalChecked.has(key)) return
     timers.set(key, setTimeout(() => {
@@ -971,7 +1049,7 @@ export function apply(ctx: Context, config: Config = {}): void {
         const retryable = canRetryStage(current, input.nodeId)
         if (!retryable) return Response.json({ error: '这个阶段当前不能单独重试。' }, { status: 409 })
         pendingAction = { kind: 'stage-retry', targetRunId: current.runId, idempotencyKey: `workbench-stage-retry:${randomUUID()}`, clientRequestId: '', brief: '', requestedAt: Date.now(),
-          targetKind: '', targetMemberId: '', correctionId: '', disposition: '', instruction: '', nodeId: input.nodeId }
+          targetKind: '', targetMemberId: '', correctionId: '', disposition: '', instruction: current.members.flatMap(member => member.stages).find(stage => stage.nodeId === input.nodeId)?.name ?? '', nodeId: input.nodeId }
       } else if (input.action === 'human-complete') {
         if (current.status !== 'waiting' || current.waitKind !== 'human' || current.humanTask?.interactionId !== input.interactionId) {
           return Response.json({ error: '这个问题已经变化，请查看最新问题后回答。' }, { status: 409 })
@@ -1027,6 +1105,22 @@ export function apply(ctx: Context, config: Config = {}): void {
         headers.set('Authorization', `Bearer ${apiKey}`)
         if (!headers.has('Content-Type')) headers.set('Content-Type', 'application/json')
         return fetch(`${apiUrl}${path}`, { ...init, headers, signal: AbortSignal.any([operation.controller.signal, AbortSignal.timeout(15_000)]) })
+      }
+      if (current.runId === '' && current.preparation?.state === 'building' && current.preparation.buildId !== '') {
+        const response = await request(`/v1/internal/team-build-runs/${encodeURIComponent(current.preparation.buildId)}/progress`)
+        if (response.ok) {
+          const value = await response.json() as unknown
+          const latest = latestForRun()
+          if (latest?.preparation?.callId === current.preparation.callId && latest.preparation.state === 'building') {
+            const next = buildSnapshot(latest, value, Date.now())
+            if (next !== latest) {
+              operation.publishing = true
+              try { session.append('weave/work-task', next) } finally { operation.publishing = false }
+              await ctx.sessions.flush(session)
+            }
+          }
+        } else await response.body?.cancel()
+        return
       }
       if (current.pendingAction !== null) {
         const action = current.pendingAction
