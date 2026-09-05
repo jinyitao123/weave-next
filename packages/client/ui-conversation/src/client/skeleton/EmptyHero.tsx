@@ -42,12 +42,15 @@ export function WorkspaceChip({ buttonRef, label, menuOpen = false, onClick, t }
   onClick?: () => void
   t: HeroTranslate
 }) {
+  const action = process.env.DSH_CLIENT_BUILD_PROFILE === 'workbench'
+    ? t('hero.attachWorkspace')
+    : t('hero.chooseWorkspace')
   return (
     <button
       ref={buttonRef}
       type="button"
       className={css.workspace}
-      aria-label={t('hero.chooseWorkspace')}
+      aria-label={action}
       aria-haspopup="menu"
       aria-expanded={menuOpen}
       onClick={onClick}
@@ -55,7 +58,7 @@ export function WorkspaceChip({ buttonRef, label, menuOpen = false, onClick, t }
       {label === undefined
         ? <IconFolderClose16 className={css.folder} size={16} />
         : <IconFolderOpen16 className={css.folder} size={16} />}
-      <span className={css.workspaceLabel}>{label ?? t('hero.chooseWorkspace')}</span>
+      <span className={css.workspaceLabel}>{label ?? action}</span>
       <IconChevronDownOutline14 className={css.chevron} size={12} />
     </button>
   )
@@ -121,7 +124,8 @@ export function HeroShell({ t, renderSlot, children }: HeroShellProps) {
               fallback: <FishLogo size={34} className={css.fish} />,
             })}
           </span>
-          <span className={css.headlineText}>{t('hero.headline')}</span>
+          <span className={css.headlineText}>{t(process.env.DSH_CLIENT_BUILD_PROFILE === 'workbench'
+            ? 'hero.workbenchHeadline' : 'hero.headline')}</span>
           {process.env.DSH_CLIENT_BUILD_PROFILE === 'workbench'
             ? null
             : <span className={css.previewBadge}>{t('hero.preview')}</span>}

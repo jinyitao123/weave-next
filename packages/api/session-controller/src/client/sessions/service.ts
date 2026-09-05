@@ -59,6 +59,8 @@ export interface SessionSummary {
   updatedAt: number
   /** Current host-computed projection values retained by the object layer. */
   projectionValues?: Readonly<Partial<SessionProjectionMap>>
+  /** List projection keys that remain unknown until their Session is observed. */
+  projectionUnavailableKeys?: readonly string[]
 }
 
 /**
@@ -592,6 +594,9 @@ export class ClientSessions implements ISessions {
         ...(entry.projectionValues === undefined
           ? {}
           : { projectionValues: entry.projectionValues }),
+        ...(entry.projectionUnavailableKeys === undefined
+          ? {}
+          : { projectionUnavailableKeys: entry.projectionUnavailableKeys }),
         ...(entry.title !== undefined ? { title: entry.title } : {}),
         ...(entry.cwd !== undefined ? { cwd: entry.cwd } : {}),
         ...(entry.parentSessionId !== undefined ? { parentId: entry.parentSessionId } : {}),

@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/process/2026-09-03-workbench-container-deployment.md
-2026-09-03-workbench-container-deployment.md: fe0c81dc46ecbea9692f58360d3d6e36c084a8b6
-2026-09-03-workbench-container-deployment.zh.md: 71807c40e506236b3e07ef542ead6753c242fb98
+2026-09-03-workbench-container-deployment.md: 56f32870761f45356cf1bd88ff1f3a9d9d2dc39c
+2026-09-03-workbench-container-deployment.zh.md: 1fa493a6fe2756dd70750ff1ada56391c140a8ab

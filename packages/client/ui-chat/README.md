@@ -33,6 +33,8 @@ Chat shows a collapsed `System prompt` row for each non-empty initial or resumed
 
 A completed Turn shows an expandable usage row only when the loaded window includes `turn/start` and every started model attempt reports safe, exact usage. The row omits unavailable optional buckets. Incomplete or contradictory accounting hides the complete disclosure instead of presenting a partial total.
 
+Workbench also keeps the session-wide technical statistics behind a collapsed **Usage and execution details** control; the underlying recorded figures remain available on demand.
+
 -----
 
 <a id="turn-process-folding"></a>

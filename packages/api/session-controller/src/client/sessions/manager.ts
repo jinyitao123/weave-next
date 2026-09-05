@@ -923,10 +923,12 @@ export class SessionManager {
       const projectionStore = this.projectionStores.get(summary.sessionId)
       const title = projectionStore?.get('title')
       const projectionValues = projectionStore?.values()
+      const projectionUnavailableKeys = summary.projectionUnavailableKeys?.filter(key => !Object.hasOwn(projectionValues ?? {}, key))
       return {
         ...summary,
         ...(typeof title === 'string' && title !== '' ? { title } : {}),
         ...(projectionValues === undefined ? {} : { projectionValues }),
+        ...(projectionUnavailableKeys === undefined ? {} : { projectionUnavailableKeys }),
       }
     })
     const fresh = flattenLineage(merged, this.completedNotifications)
@@ -938,6 +940,7 @@ export class SessionManager {
         && prev.parentSessionId === entry.parentSessionId && prev.cwd === entry.cwd
         && prev.origin === entry.origin && prev.title === entry.title && prev.depth === entry.depth
         && prev.projectionValues === entry.projectionValues
+        && JSON.stringify(prev.projectionUnavailableKeys) === JSON.stringify(entry.projectionUnavailableKeys)
         && prev.completed === entry.completed
       ) return prev
       this.entryCache.set(entry.sessionId, entry)

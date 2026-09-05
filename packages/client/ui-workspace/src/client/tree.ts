@@ -25,7 +25,10 @@ type SessionPendingInteractions = ReadonlyMap<SessionId, SessionPendingInteracti
 
 /** Product-neutral task summary carried by an optional Session projection. */
 export interface SessionWorkTask {
-  readonly status: 'preparing' | 'queued' | 'running' | 'waiting' | 'completed' | 'failed'
+  readonly status: 'preparing' | 'queued' | 'running' | 'waiting' | 'stopping' | 'completed' | 'failed' | 'stopped'
+  readonly waitKind?: string
+  readonly hasFinalDeliverable?: boolean
+  readonly stopUnconfirmed?: boolean
   readonly teamName: string
   readonly completedStages: number
   readonly totalStages: number
@@ -42,6 +45,8 @@ export interface SessionNode {
   pendingInteraction?: SessionPendingInteractionStatus
   /** A durable background work task associated with this Session, when a product layer provides one. */
   workTask?: SessionWorkTask
+  /** The list has not recovered the current task projection from this Session's saved record. */
+  workTaskUnavailable?: boolean
   running: boolean
   /** Running descendants connected through uninterrupted subagent-origin lineage. */
   runningSubagentCount: number
@@ -253,9 +258,15 @@ function sessionNode(
     : undefined
   const taskStatus = candidate?.status
   const workTask: SessionWorkTask | undefined = (
-    ['preparing', 'queued', 'running', 'waiting', 'completed', 'failed'].includes(String(taskStatus))
+    ['preparing', 'queued', 'running', 'waiting', 'stopping', 'completed', 'failed', 'stopped'].includes(String(taskStatus))
   ) ? {
       status: taskStatus as SessionWorkTask['status'],
+      waitKind: typeof candidate?.waitKind === 'string' ? candidate.waitKind : '',
+      stopUnconfirmed: candidate?.actionError === 'stop_unconfirmed',
+      hasFinalDeliverable: Array.isArray(candidate?.deliverables) && candidate.deliverables.some(
+        (item: unknown) => typeof item === 'object' && item !== null && 'kind' in item
+          && (item.kind === 'final' || item.kind === 'summary'),
+      ),
       teamName: typeof candidate?.teamName === 'string' ? candidate.teamName : '',
       completedStages: typeof candidate?.completedStages === 'number' ? candidate.completedStages : 0,
       totalStages: typeof candidate?.totalStages === 'number' ? candidate.totalStages : 0,
@@ -264,6 +275,8 @@ function sessionNode(
     id: s.id,
     title: sessionTitle(s),
     blank: s.blank,
+    ...(projected === undefined && s.projectionUnavailableKeys?.includes('workTask')
+      ? { workTaskUnavailable: true } : {}),
     running: s.running,
     runningSubagentCount: descendants.get(s.id)?.runningCount ?? 0,
     completed: s.completed === true,

@@ -15,7 +15,7 @@ import type { ReactNode } from 'react'
 import type {
   PropsLocale, PropsRenderSlots, PropsRuntime, PropsStore,
 } from '@deepseek-ai/dsh-client-ui-slots'
-import { computeColumns, SIDEBAR_AUTO_COLLAPSE, SIDEBAR_DEFAULT } from './columns.ts'
+import { computeColumns, computeWorkbenchColumns, SIDEBAR_AUTO_COLLAPSE, SIDEBAR_DEFAULT, WORKBENCH_SPLIT_MIN } from './columns.ts'
 import { DocumentTitle } from './DocumentTitle.tsx'
 import type { createLayoutStore } from './stores.ts'
 import css from './AppFrame.module.css'
@@ -28,20 +28,29 @@ export type AppFrameProps =
   & PropsLocale<'common'>
 
 /** Center column grid item (session-body building block). */
-function CenterColumn(props: { children?: ReactNode }) {
-  return <div className={css.centerCol}>{props.children}</div>
+function CenterColumn(props: { children?: ReactNode; hidden: boolean }) {
+  return <div className={css.centerCol} {...(props.hidden ? { inert: '' } : {})} aria-hidden={props.hidden || undefined}>{props.children}</div>
 }
 
 /** Details column grid item; width 0 keeps the subtree mounted (never unmount on close). */
-function DetailsColumn(props: { children?: ReactNode }) {
-  return <div className={css.detailsCol}>{props.children}</div>
+function DetailsColumn(props: { children?: ReactNode; hidden: boolean }) {
+  return <div className={css.detailsCol} {...(props.hidden ? { inert: '' } : {})} aria-hidden={props.hidden || undefined}>{props.children}</div>
 }
 
 /**
  * One drag handle: pointer capture, rAF-throttled dx reports against the drag-start origin.
  * `side` keys the hover-reveal CSS to the owning column.
  */
-function DragHandle(props: { side: 'sidebar' | 'details'; left: number; onStart: () => void; onDrag: (dx: number) => void; onEnd: () => void }) {
+function DragHandle(props: {
+  side: 'sidebar' | 'details'
+  left: number
+  label: string
+  width: number
+  availableWidth: number
+  onStart: () => void
+  onDrag: (dx: number) => void
+  onEnd: () => void
+}) {
   const [dragging, setDragging] = useState(false)
   const origin = useRef(0)
   const latest = useRef(0)
@@ -73,6 +82,16 @@ function DragHandle(props: { side: 'sidebar' | 'details'; left: number; onStart:
     setDragging(false)
     callbacks.current.onEnd()
   }, [])
+  const onPointerCancel = useCallback(() => {
+    if (frame.current !== null) { cancelAnimationFrame(frame.current); frame.current = null }
+    setDragging(false)
+    callbacks.current.onEnd()
+  }, [])
+
+  useEffect(() => () => {
+    if (frame.current !== null) cancelAnimationFrame(frame.current)
+    callbacks.current.onEnd()
+  }, [])
 
   return (
     <div
@@ -80,9 +99,25 @@ function DragHandle(props: { side: 'sidebar' | 'details'; left: number; onStart:
       style={{ left: props.left }}
       data-side={props.side}
       data-dragging={dragging || undefined}
+      role="separator"
+      tabIndex={0}
+      aria-label={props.label}
+      aria-orientation="vertical"
+      aria-valuenow={props.width}
+      aria-valuemin={0}
+      aria-valuemax={props.availableWidth}
+      onKeyDown={(e) => {
+        if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
+        e.preventDefault()
+        callbacks.current.onStart()
+        callbacks.current.onDrag(e.key === 'ArrowLeft' ? -24 : 24)
+        callbacks.current.onEnd()
+      }}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
+      onPointerCancel={onPointerCancel}
+      onLostPointerCapture={onPointerCancel}
     />
   )
 }
@@ -143,15 +178,24 @@ export function AppFrame({
   // solver stays breakpoint-free: a narrow re-expand passes the preference
   // (or the default when the wide preference is closed) and the center
   // absorbs the squeeze.
+  const workbench = process.env.DSH_CLIENT_BUILD_PROFILE === 'workbench'
+  const detailsOpen = detailsSession !== undefined && panels.details > 0
   const narrow = viewport < SIDEBAR_AUTO_COLLAPSE
+    || (workbench && detailsOpen && viewport - (panels.sidebar || SIDEBAR_DEFAULT) < WORKBENCH_SPLIT_MIN)
   useEffect(() => { actions.setNarrow(narrow) }, [actions, narrow])
   const sidebarCollapsed = narrow ? !panels.narrowExpanded : panels.sidebar === 0
   const sidebarPreference = sidebarCollapsed
     ? 0
     : panels.sidebar === 0 ? SIDEBAR_DEFAULT : panels.sidebar
-  const cols = computeColumns(viewport, sidebarPreference, detailsSession === undefined ? 0 : panels.details)
-  const detailsOpen = detailsSession !== undefined && panels.details > 0
-  const detailsOverlay = detailsOpen && cols.details === 0
+  const panelCols = computeColumns(viewport, sidebarPreference, detailsSession === undefined ? 0 : panels.details)
+  const sceneColumns = workbench
+    ? computeWorkbenchColumns(viewport, sidebarPreference, detailsOpen, panels.detailsWidth, panels.detailsFocus)
+    : undefined
+  const detailsFocus = detailsOpen && (panels.detailsFocus || (workbench && sceneColumns?.center === 0))
+  const cols = sceneColumns ?? (detailsFocus
+    ? { sidebar: panelCols.sidebar, center: 0, details: Math.max(0, viewport - panelCols.sidebar) }
+    : panelCols)
+  const detailsOverlay = !workbench && !detailsFocus && detailsOpen && cols.details === 0
   const colsRef = useRef(cols)
   colsRef.current = cols
 
@@ -182,6 +226,8 @@ export function AppFrame({
       data-sidebar-collapsed={sidebarCollapsed || undefined}
       data-details-collapsed={!detailsOpen || undefined}
       data-details-overlay={detailsOverlay || undefined}
+      data-details-focus={detailsFocus || undefined}
+      data-details-narrow={workbench && detailsOpen && sceneColumns?.center === 0 && !panels.detailsFocus || undefined}
       data-dragging={dragging || undefined}
     >
       <DocumentTitle
@@ -205,8 +251,8 @@ export function AppFrame({
             the shell's own pending rendering. The conversation
             is session-maybe; SessionProvider withholds the strict details
             entry while no session is current. */}
-        <CenterColumn>{renderSlot('conversation', {})}</CenterColumn>
-        <DetailsColumn>
+        <CenterColumn hidden={detailsFocus}>{renderSlot('conversation', {})}</CenterColumn>
+        <DetailsColumn hidden={!detailsOpen}>
           <SessionProvider>{renderSlot('details', {})}</SessionProvider>
         </DetailsColumn>
       </>
@@ -214,8 +260,11 @@ export function AppFrame({
         {renderSlot('shell.overlay', {})}
       </div>
       {/* The collapsed rail is fixed-width: no resize handle while closed. */}
-      {!sidebarCollapsed && <DragHandle side="sidebar" left={cols.sidebar} onStart={onSidebarStart} onDrag={onSidebarDrag} onEnd={onDragEnd} />}
-      {cols.details > 0 && <DragHandle side="details" left={viewport - cols.details} onStart={onDetailsStart} onDrag={onDetailsDrag} onEnd={onDragEnd} />}
+      {!sidebarCollapsed && <DragHandle side="sidebar" left={cols.sidebar} width={cols.sidebar} availableWidth={viewport} label={t('layout.resizeSidebar')}
+        onStart={onSidebarStart} onDrag={onSidebarDrag} onEnd={onDragEnd} />}
+      {cols.details > 0 && !detailsFocus && <DragHandle side="details" left={viewport - cols.details}
+        width={cols.details} availableWidth={viewport} label={t('layout.resizeDetails')}
+        onStart={onDetailsStart} onDrag={onDetailsDrag} onEnd={onDragEnd} />}
     </div>
   )
 }

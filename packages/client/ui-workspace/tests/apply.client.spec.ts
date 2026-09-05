@@ -157,11 +157,17 @@ describe('ui-workspace apply', () => {
     await b.ctx.plugin({ inject: [...inject], apply }).await()
     // Registration declared the child holes (declaration = render authorization).
     expect(b.slots.spec('sidebar.workspaces.directoryFlow')).toMatchObject({ kind: 'single' })
+    expect(b.slots.spec('sidebar.workspaces.projectActivity')).toMatchObject({ kind: 'single', scope: 'root' })
     expect(b.slots.spec('conversation.hero.workspace.directoryFlow')).toMatchObject({ kind: 'single' })
 
     const browser = (b.slots.entries('sidebar.workspaces')[0]!.inject as () => WorkspaceBrowserInjected)()
     const picker = (b.slots.entries('conversation.hero.workspace')[0]!.inject as () => WorkspacePickerInjected)()
     expect(browser.hooks.directoryFlow.getSnapshot()).toBe(false)
+    expect(browser.hooks.projectActivity.getSnapshot()).toBe(false)
+    const disposeActivity = b.slots.register({ name: 'sidebar.workspaces.projectActivity' } as never, () => null)
+    expect(browser.hooks.projectActivity.getSnapshot()).toBe(true)
+    disposeActivity()
+    expect(browser.hooks.projectActivity.getSnapshot()).toBe(false)
     expect(browser.hooks.connectionGeneration.getSnapshot()).toBeUndefined()
     expect(picker.hooks.directoryFlow.getSnapshot()).toBe(false)
     // A flow occupant flips exactly its own surface, and the source notifies.

@@ -79,6 +79,7 @@ export function truncateUnicodeCodePoints(value: string, maximum: number): strin
 
 /** Owns list projection registration, bounded cold summaries, and authorized search. */
 export class ApiSessionList {
+  private readonly observedCold = new Map<SessionId, { signature: string; projections: SessionProjectionHints }>()
   /**
    * @param ctx - Host context carrying Session, query, persistence, and projection services.
    * @param coldBlankProbeMaxBytes - maximum physical artifact size eligible for a full observation.
@@ -93,7 +94,7 @@ export class ApiSessionList {
         stateSchema: sessionListMetadataSchema,
         init: () => ({ blank: true, lastPromptAt: null }),
         apply: applySessionListMetadata,
-        wire: { viewSchema: sessionListMetadataSchema, view: state => state },
+        wire: { list: true, viewSchema: sessionListMetadataSchema, view: state => state },
         stateVersion: 1,
       })
     })
@@ -119,6 +120,7 @@ export class ApiSessionList {
    */
   summaryFor(session: Session): SessionSummary {
     const projections = this.projectionsFor(session.header, session)
+    const projectionUnavailableKeys = this.unavailableKeys(projections)
     const metadata = projections?.values.sessionListMetadata
     return {
       sessionId: session.id,
@@ -127,6 +129,7 @@ export class ApiSessionList {
       blank: metadata?.blank ?? session.seq === 0,
       ...listFields(session.header),
       ...(projections === undefined ? {} : { projections }),
+      ...(projectionUnavailableKeys.length === 0 ? {} : { projectionUnavailableKeys }),
     }
   }
 
@@ -139,6 +142,10 @@ export class ApiSessionList {
     signal?.throwIfAborted()
     const records = await this.ctx.sessionQuery.listSessions(signal)
     signal?.throwIfAborted()
+    const listedIds = new Set(records.map(record => record.header.id))
+    for (const id of this.observedCold.keys()) {
+      if (!listedIds.has(id)) this.observedCold.delete(id)
+    }
     const items: SessionSummary[] = []
     const cold: SessionHeader[] = []
     for (const record of records) {
@@ -167,12 +174,16 @@ export class ApiSessionList {
     signal: AbortSignal | undefined,
   ): Promise<SessionSummary> {
     const cached = this.projectionsFor(header, undefined)
-    const projections = cached?.values.sessionListMetadata?.blank === false
-      ? cached
-      : await this.probeSmallCold(header, signal) ?? cached
+    const observed = cached?.values.sessionListMetadata?.blank === false && this.unavailableKeys(cached).length === 0
+      ? undefined
+      : await this.probeSmallCold(header, signal)
+    const projections = observed === undefined ? cached : cached === undefined ? observed : {
+      asOfSeq: Math.min(cached.asOfSeq, observed.asOfSeq), values: { ...cached.values, ...observed.values },
+    }
     const raced = this.ctx.sessions.get(header.id)
     if (raced !== undefined) return this.summaryFor(raced)
     const metadata = projections?.values.sessionListMetadata
+    const projectionUnavailableKeys = this.unavailableKeys(projections)
     return {
       sessionId: header.id,
       updatedAt: updatedAt(header, metadata),
@@ -181,6 +192,7 @@ export class ApiSessionList {
       blank: metadata?.blank ?? false,
       ...listFields(header),
       ...(projections === undefined ? {} : { projections }),
+      ...(projectionUnavailableKeys.length === 0 ? {} : { projectionUnavailableKeys }),
     }
   }
 
@@ -193,21 +205,33 @@ export class ApiSessionList {
     const location = persistence?.locate(header)
     if (location === undefined) return undefined
     signal?.throwIfAborted()
+    let signature: string
     try {
-      if ((await stat(location.path)).size > this.coldBlankProbeMaxBytes) return undefined
+      const file = await stat(location.path)
+      if (file.size > this.coldBlankProbeMaxBytes) return undefined
+      signature = JSON.stringify([header, location.path, file.size, file.mtimeMs, file.ctimeMs,
+        this.ctx.get('sessionProjections')?.listRequirements()])
     } catch {
       signal?.throwIfAborted()
       return undefined
     }
+    const remembered = this.observedCold.get(header.id)
+    if (remembered?.signature === signature) return remembered.projections
     try {
       using observation = await this.ctx.sessionQuery.observeSession(header.id, {
         ...(signal === undefined ? {} : { signal }),
         projectionMode: 'all',
       })
       const block = observation.projections
-      return block === undefined
-        ? undefined
-        : { asOfSeq: block.asOfSeq, values: block.values as SessionProjectionValues }
+      if (block === undefined) return undefined
+      const projections = { asOfSeq: block.asOfSeq, values: block.values as SessionProjectionValues }
+      // Observations may contain uncommitted recovery events. Retain only this
+      // process-local value, keyed by physical source and projection versions.
+      const listValues = Object.fromEntries((this.ctx.get('sessionProjections')?.listRequirements() ?? [])
+        .filter(({ key }) => Object.hasOwn(projections.values, key))
+        .map(({ key }) => [key, projections.values[key]])) as SessionProjectionValues
+      this.observedCold.set(header.id, { signature, projections: { ...projections, values: listValues } })
+      return projections
     } catch (error: unknown) {
       signal?.throwIfAborted()
       this.ctx.logger.warn(
@@ -215,6 +239,12 @@ export class ApiSessionList {
       )
       return undefined
     }
+  }
+
+  private unavailableKeys(projections: SessionProjectionHints | undefined): string[] {
+    return (this.ctx.get('sessionProjections')?.listRequirements() ?? [])
+      .filter(({ key }) => !Object.hasOwn(projections?.values ?? {}, key))
+      .map(({ key }) => key)
   }
 
   /**

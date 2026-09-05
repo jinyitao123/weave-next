@@ -34,6 +34,8 @@ Target packages declaration-merge their snapshot and Location data maps, then re
 <a id="shell-and-standard-props"></a>
 ## Shell and standard props
 
+Workbench presents the standard read-only and workspace-write modes with localized task-facing labels. The labels do not alter the permission values, command dispatch, or full-access confirmation. A rejected or interrupted permission command keeps the recorded mode and shows an explicit failure message.
+
 The package registers the optional-Session `conversation` shell, strict Session header/body entries, View list, composer chain and bar, input regions, Hero regions, queue dock, draft persistence, and phase calculation. `ctx.uiSession.provide()` materializes the Conversation and input sources from the same Session binding and supplies `inputActions` as a stable standard prop.
 
 View selection is deterministic: a registered persisted selection wins, otherwise registered `chat` wins, otherwise no View renders. It never chooses the first registered View. Shell phase combines Session lifecycle with the active-target set; no target-specific snapshot is read by the shell.
@@ -92,7 +94,10 @@ try {
 
 The selector must be a pure function of the owner currency. Its non-null return is delivered to the component as `matched`; `PropsRuntime<'conversation.composer'>` supplies the standard Session and global props. Chain order remains ascending `priority`, then registration order, and the first non-null selector wins. The shell keeps the default composer mounted beneath a takeover. Request state, listeners, response encoding, and any request-specific child slots belong to the business package; they are not carried by `SessionSnapshot` or declared by this core package.
 
+In Workbench, the task title and Session history occupy the first header row; live task actions sit below them so that opening the scene cannot squeeze the title out of view.
+
 <a id="model-experience"></a>
+
 ## Model Experience
 
 None, as this package renders browser state and sends user-admitted inputs through Session Controller APIs without constructing model requests.

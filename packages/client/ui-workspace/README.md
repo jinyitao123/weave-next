@@ -25,7 +25,7 @@ English | [中文](README.zh.md)
 <a id="use-this-package"></a>
 ## Use this package
 
-Use the sidebar to browse Workspaces and their Sessions, reorder them, and start new ones; use the picker in the Session Intent hero to choose a Workspace for a new session. An open Workspace shows five non-blank Sessions by default and keeps the selected blank **New Session** as one provisional extra row until its first prompt. **Show more** reveals the hidden remainder; closing and reopening the Workspace restores this folded projection.
+Use the sidebar to browse Workspaces and their Sessions, reorder them, and start new ones; use the picker in the Session Intent hero to choose a Workspace for a new session. An open Workspace shows five history rows by default. The selected blank **New Session** and ongoing background tasks remain visible outside that quota, in their existing order. **Show more** reveals the hidden remainder; closing and reopening the Workspace restores this folded projection.
 
 ### Reordering and view options
 
@@ -42,6 +42,8 @@ The Session row's Rename action opens a dialog prefilled with the row's display 
 ### Pending interactions
 
 Session rows render the runtime's live `pendingInteraction` classification: approvals report **Waiting for approval**, plan reviews report **Plan awaiting review**, and ordinary questions report **Waiting for answer**. Every pending interaction uses an amber warning dot that takes precedence over the running indicator.
+
+An optional work-task projection gives the Session title its own line, followed by live status and team identity on a second line. Hover details retain stage progress. Stopping and stopped remain distinct. Team-stage waits remain active; recoverable interruptions require attention. A completed task says **Task delivered** only with a final or summary deliverable; otherwise it says **Delivery unconfirmed**. Historical chat completion does not override these task facts. If a saved task projection has not been recovered, the row says **Status not loaded** and explains that opening the conversation loads its full record.
 
 -----
 
@@ -108,6 +110,6 @@ These limits define the search depth, the archive surface, and the picking carri
 <details>
 <summary>Working context for maintainers — click to expand</summary>
 
-None.
+Pending the coordinated development review: the optional project-activity entry opens the product-owned `sidebar.workspaces.projectActivity` slot for the selected Workspace. The main task owner will verify navigation, explicit Session membership, and output access after the three development batches are integrated.
 
 </details>

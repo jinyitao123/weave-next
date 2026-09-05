@@ -44,6 +44,8 @@ interface ProjectionDefinition<
   apply(state: NoInfer<S>, event: SessionEvent): NoInfer<S>
   /** Client view. Omit for host-only units. */
   wire?: K extends keyof SessionProjectionMap ? {
+    /** Require an available value in cold Session lists; missing cached values may trigger bounded observation. */
+    list?: boolean
     /** Validates the wire payload before it leaves the host. */
     viewSchema: ZodType<SessionProjectionMap[K]>
     /**
@@ -205,6 +207,12 @@ register< K extends Exclude<keyof SessionProjectionStateMap, keyof SessionProjec
  * @returns the exact disposer that unsubscribes.
  */
 onChanged(listener: ProjectionChangeListener): () => void
+
+/**
+ * Registered projection versions explicitly needed by Session-list consumers.
+ * @returns list-visible keys and the state versions that invalidate cached observations.
+ */
+listRequirements(): readonly { readonly key: string; readonly stateVersion: number }[]
 
 /**
  * Read one unit's current host state after materializing every registered

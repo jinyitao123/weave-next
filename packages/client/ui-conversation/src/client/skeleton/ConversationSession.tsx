@@ -78,7 +78,10 @@ export function ConversationSessionHeader({
 
   return (
     <header
-      className={clsx(css.header, hideChrome && css.headerHidden)}
+      className={clsx(
+        css.header, hideChrome && css.headerHidden,
+        process.env.DSH_CLIENT_BUILD_PROFILE === 'workbench' && css.workbenchHeader,
+      )}
       aria-hidden={hideChrome || undefined}
     >
       {!hideChrome && (

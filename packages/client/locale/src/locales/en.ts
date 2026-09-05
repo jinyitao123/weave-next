@@ -31,6 +31,8 @@ export const en = {
   'expand': 'Expand',
   'back': 'Back',
   'brand.localBuild': 'DSH Local Build',
+  'layout.resizeSidebar': 'Resize navigation',
+  'layout.resizeDetails': 'Resize conversation and work scene',
   'unknown': 'Unknown',
   'none': 'None',
   'truncated': 'Truncated',

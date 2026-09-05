@@ -14,6 +14,10 @@ The Workbench profile could run from a developer checkout, but a remote installa
 
 The DSH launch-token exchange remains the browser authentication mechanism. The authenticated URL is an operator-held secret; an unauthenticated request receives no application content. Weave server encryption keys never enter the Workbench container.
 
+The [Docker context exclusions](../../../../.dockerignore) omit `.env*` files at every directory depth. The image copies the build workspace into its runtime stage, so local environment files must be excluded before Docker receives the context; deployment credentials enter only through runtime configuration.
+
+The [image build](../../../../Dockerfile.workbench) keeps APT downloads and indexes, npm tool downloads, and the pnpm store in BuildKit caches. Interrupted downloads can resume without copying package caches into the runtime image; the frozen dependency lockfile and source build remain required.
+
 ## Alternatives considered
 
 **Run the repository directly under systemd.** This would couple deployment to the server's Node version, package-manager installation, native dependency toolchain, and mutable checkout.

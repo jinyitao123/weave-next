@@ -51,8 +51,18 @@ export interface DirectoryFlowOwnerProps {
   onError: (message: string) => void
 }
 
+/** Owner share for the optional project activity view. */
+export interface ProjectActivityOwnerProps {
+  /** Workspace whose explicitly associated Sessions are summarized. */
+  workspaceId: WorkspaceId
+  /** The operator closes this project view. */
+  onClose: () => void
+}
+
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface SlotMap {
+    /** Optional product view over a real Workspace's explicitly associated Sessions. */
+    'sidebar.workspaces.projectActivity': { kind: 'single'; scope: 'root'; owner: ProjectActivityOwnerProps }
     /** Directory-flow hole under the conversation empty-state picker (declared by the WorkspacePicker entry). */
     'conversation.hero.workspace.directoryFlow': { kind: 'single'; scope: 'root'; owner: DirectoryFlowOwnerProps }
     /** Directory-flow hole under the sidebar browsing region (declared by the WorkspaceBrowser entry). */
@@ -89,6 +99,8 @@ export type DirectoryPickingHooks = PropsHooks<DirectoryPickingInjected['hooks']
  */
 export type WorkspaceBrowserInjected = {
   hooks: DirectoryPickingInjected['hooks'] & {
+    /** True while a product contributes a project activity view. */
+    projectActivity: HostObservable<boolean>
     /** Current generation's Host description, bound by the slot renderer. */
     connectionGeneration: ConnectionGenerationState
   }
@@ -142,7 +154,7 @@ export type WorkspaceBrowserInjected = {
 /** Full browser props: shell owner share + viewing store + injected actions + the locale seat. */
 export type WorkspaceBrowserProps =
   PropsRuntime<'sidebar.workspaces'>
-  & PropsRenderSlots<'sidebar.workspaces.directoryFlow'>
+  & PropsRenderSlots<'sidebar.workspaces.directoryFlow' | 'sidebar.workspaces.projectActivity'>
   & PropsStore<ReturnType<typeof createWorkspaceViewStore>>
   & Omit<WorkspaceBrowserInjected, 'hooks'>
   & PropsHooks<WorkspaceBrowserInjected['hooks']>

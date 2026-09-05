@@ -38,6 +38,29 @@ export const DETAILS_MAX = 520
 /** Details width before any user drag. */
 export const DETAILS_DEFAULT = 360
 
+/** Workbench keeps the conversation and a readable work scene beside each other. */
+export const WORKBENCH_SPLIT_MIN = 840
+
+/**
+ * Resolve Workbench's 40/60 initial split, preserving a dragged width on resize.
+ * @param viewport - frame width in px.
+ * @param sidebar - effective sidebar width; zero selects its compact rail.
+ * @param details - whether the work scene is open.
+ * @param preference - last user-selected scene width, if any.
+ * @param focus - explicit full-width scene reading.
+ * @returns fixed tracks; center zero selects the scene without an overlay.
+ */
+export function computeWorkbenchColumns(
+  viewport: number, sidebar: number, details: boolean, preference: number | undefined, focus: boolean,
+): Columns {
+  const s = sidebar === 0 ? SIDEBAR_COLLAPSED : clampWidth(sidebar, SIDEBAR_MIN, SIDEBAR_MAX)
+  const available = Math.max(0, viewport - s)
+  if (!details) return { sidebar: s, center: available, details: 0 }
+  if (focus || available < WORKBENCH_SPLIT_MIN) return { sidebar: s, center: 0, details: available }
+  const width = clampWidth(preference ?? available * 0.6, 480, available - 360)
+  return { sidebar: s, center: available - width, details: width }
+}
+
 /**
  * Clamp a panel width into its contract range.
  * @param px - requested width.

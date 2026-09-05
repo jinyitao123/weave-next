@@ -5,7 +5,7 @@
  * test-sanctioned path: factory self-call + .create() gives the
  * real engine instance (same create path as production).
  */
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createLayoutStore } from '@deepseek-ai/dsh-client-ui-layout/src/client/stores.ts'
 import {
   DETAILS_DEFAULT, DETAILS_MAX, DETAILS_MIN,
@@ -15,11 +15,37 @@ import {
 const PERSIST_KEY = 'dsh.layout.panels'
 
 beforeEach(() => { localStorage.clear() })
+afterEach(() => { vi.unstubAllEnvs(); vi.restoreAllMocks() })
 
 describe('createLayoutStore', () => {
+  it('keeps Workbench usable when browser width storage cannot be read or written', () => {
+    vi.stubEnv('DSH_CLIENT_BUILD_PROFILE', 'workbench')
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('Storage unavailable') })
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('Quota exceeded') })
+    const instance = createLayoutStore().create()
+    expect(instance.store.getSnapshot().detailsWidth).toBeUndefined()
+    instance.actions.openDetails()
+    instance.actions.setDetails(700)
+    expect(instance.store.getSnapshot()).toMatchObject({ details: 700, detailsWidth: 700 })
+  })
+
+  it('restores the Workbench split width across close and reload without reopening the scene', () => {
+    vi.stubEnv('DSH_CLIENT_BUILD_PROFILE', 'workbench')
+    const first = createLayoutStore().create()
+    first.actions.openDetails()
+    first.actions.setDetails(750)
+    first.actions.closeDetails()
+    first.actions.openDetails()
+    expect(first.store.getSnapshot()).toMatchObject({ detailsWidth: 750, detailsFocus: false })
+    const restored = createLayoutStore().create()
+    expect(restored.store.getSnapshot()).toMatchObject({ details: 0, detailsWidth: 750, detailsFocus: false })
+    localStorage.setItem('weave.workbench.detailsWidth', 'invalid')
+    expect(createLayoutStore().create().store.getSnapshot().detailsWidth).toBeUndefined()
+  })
+
   it('initializes the sidebar at its default width, details closed, wide viewport assumed', () => {
     const { store } = createLayoutStore().create()
-    expect(store.getSnapshot()).toEqual({ sidebar: SIDEBAR_DEFAULT, details: 0, narrow: false, narrowExpanded: false })
+    expect(store.getSnapshot()).toEqual({ sidebar: SIDEBAR_DEFAULT, details: 0, detailsFocus: false, narrow: false, narrowExpanded: false })
   })
 
   it('each create() is an independent instance (factory is not a singleton)', () => {
@@ -55,7 +81,7 @@ describe('createLayoutStore', () => {
     actions.setSidebar(400)
     actions.setNarrow(true)
     actions.toggleSidebar()
-    expect(store.getSnapshot()).toEqual({ sidebar: 400, details: 0, narrow: true, narrowExpanded: true })
+    expect(store.getSnapshot()).toEqual({ sidebar: 400, details: 0, detailsFocus: false, narrow: true, narrowExpanded: true })
     actions.toggleSidebar()
     expect(store.getSnapshot().narrowExpanded).toBe(false)
     expect(store.getSnapshot().sidebar).toBe(400)
@@ -83,6 +109,15 @@ describe('createLayoutStore', () => {
     expect(store.getSnapshot().details).toBe(500)
     actions.closeDetails()
     expect(store.getSnapshot().details).toBe(0)
+    expect(store.getSnapshot().detailsFocus).toBe(false)
+  })
+
+  it('opens details as a primary workspace and ordinary panel opening exits focus', () => {
+    const { store, actions } = createLayoutStore().create()
+    actions.openDetailsFocus()
+    expect(store.getSnapshot()).toMatchObject({ details: DETAILS_DEFAULT, detailsFocus: true })
+    actions.openDetails()
+    expect(store.getSnapshot()).toMatchObject({ details: DETAILS_DEFAULT, detailsFocus: false })
   })
 
   it('does not persist panel geometry', () => {
@@ -96,6 +131,7 @@ describe('createLayoutStore', () => {
     expect(second.store.getSnapshot()).toEqual({
       sidebar: SIDEBAR_DEFAULT,
       details: 0,
+      detailsFocus: false,
       narrow: false,
       narrowExpanded: false,
     })

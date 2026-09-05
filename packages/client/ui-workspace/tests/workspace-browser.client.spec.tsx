@@ -85,6 +85,7 @@ function mount(overrides: Partial<WorkspaceBrowserProps> = {}) {
     insertSessionBefore: vi.fn(async () => {}),
     createWorkspace: vi.fn(async () => workspace('created', [])),
     useDirectoryFlow: bindSnapshotSelector({ getSnapshot: () => true, subscribe: () => () => {} }),
+    useProjectActivity: bindSnapshotSelector({ getSnapshot: () => false, subscribe: () => () => {} }),
     useConnectionGeneration: selector => selector(undefined),
     renderSlot: ((_name: string, owner: { open: boolean }) => (owner.open ? <div data-testid="directory-flow" /> : null)) as never,
     t,
@@ -101,6 +102,20 @@ function rerender(b: ReturnType<typeof mount>, overrides: Partial<WorkspaceBrows
 }
 
 describe('WorkspaceBrowser', () => {
+  it('opens project activity for the selected Workspace only when a product view is installed', () => {
+    const renderSlot = vi.fn(() => null)
+    const browser = mount({
+      useWorkspaces: hook(workspaceState([workspace('project', ['work'], '活动筹备')])),
+      useSessions: hook(sessionState([summary('work', 1)])),
+      useProjectActivity: hook(true), renderSlot: renderSlot as never,
+    })
+    fireEvent.click(screen.getByRole('button', { name: '查看“活动筹备”的项目进展' }))
+    expect(renderSlot).toHaveBeenCalledWith('sidebar.workspaces.projectActivity', expect.objectContaining({ workspaceId: 'project' }))
+    expect(browser.props.open).not.toHaveBeenCalled()
+    rerender(browser, { useProjectActivity: hook(false) })
+    expect(screen.queryByRole('button', { name: '查看“活动筹备”的项目进展' })).toBeNull()
+  })
+
   it('workspace hover card shows a POSIX home descendant as ~', () => {
     vi.useFakeTimers()
     try {
@@ -273,6 +288,22 @@ describe('WorkspaceBrowser', () => {
     expect(b.store.getSnapshot().groupExpansion).toEqual({ alpha: true })
     expect(screen.queryByText('session-6')).toBeNull()
     expect(screen.getByRole('button', { name: '展开其余 2 个会话' })).toBeTruthy()
+  })
+
+  it('keeps active background work visible beyond the folded history quota', () => {
+    const history = Array.from({ length: 6 }, (_, i) => summary(`history-${i}`, 10 - i))
+    // Only the optional, product-neutral row fields are present in this external record.
+    const active = summary('ongoing-work', 1, { projectionValues: { workTask: {
+      status: 'waiting', waitKind: 'runtime', teamName: 'Research', completedStages: 1, totalStages: 3,
+    } } as unknown as NonNullable<SessionSummary['projectionValues']> })
+    mount({
+      useSessions: hook(sessionState([...history, active])),
+      useWorkspaces: hook(workspaceState([workspace('alpha', [...history, active].map(item => item.id))])),
+    })
+    fireEvent.click(screen.getByText('alpha'))
+    expect(screen.getByText('ongoing-work')).toBeTruthy()
+    expect(screen.queryByText('history-5')).toBeNull()
+    expect(screen.getByRole('button', { name: '展开其余 1 个会话' })).toBeTruthy()
   })
 
   it('keeps the blank New Session outside the five-row folding quota', () => {

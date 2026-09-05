@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
-import { IconDataOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import css from './RuntimeCenter.module.css'
 
@@ -27,7 +26,6 @@ interface RuntimeView {
 
 interface CreatedRuntime { readonly id: string; readonly name: string; readonly token: string }
 type Props = PropsLocale<'weave'>
-type SidebarProps = PropsRuntime<'sidebar.footer.action'> & Props
 type CenterProps = Props & { readonly onSnapshot?: (runtimes: readonly RuntimeView[]) => void }
 
 function object(value: unknown): Record<string, unknown> | undefined {
@@ -309,65 +307,7 @@ export function RuntimeCenter({ t, onSnapshot }: CenterProps) {
   )
 }
 
-/** Global DSH sidebar entry for runtime-node availability and management. */
-export function RuntimeSidebarEntry({ wide, t }: SidebarProps) {
-  const [open, setOpen] = useState(false)
-  const [runtimes, setRuntimes] = useState<readonly RuntimeView[] | null>(null)
-  const [unavailable, setUnavailable] = useState(false)
-
-  const refreshSummary = useCallback(async () => {
-    try {
-      setRuntimes(await fetchRuntimes(t))
-      setUnavailable(false)
-    } catch {
-      setUnavailable(true)
-    }
-  }, [t])
-
-  useEffect(() => { void refreshSummary() }, [refreshSummary])
-  useEffect(() => {
-    if (!open) return
-    const close = (event: KeyboardEvent) => { if (event.key === 'Escape') setOpen(false) }
-    window.addEventListener('keydown', close)
-    return () => { window.removeEventListener('keydown', close) }
-  }, [open])
-
-  const available = runtimes === null ? 0 : availableRuntimeCount(runtimes)
-  const total = runtimes?.length ?? 0
-  const tone = runtimes === null
-    ? 'pending'
-    : unavailable || available === 0
-      ? 'attention'
-      : available < total
-        ? 'partial'
-        : 'healthy'
-  const summary = runtimes === null
-    ? t('runtimeCenter.sidebar.pending')
-    : t('runtimeCenter.summary', { available, total })
-  return (
-    <>
-      <button
-        type="button"
-        className={`${css.sidebarTrigger}${wide ? '' : ` ${css.sidebarRail}`}`}
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        aria-label={t('runtimeCenter.sidebar.aria', { summary })}
-        onClick={() => { setOpen(true); void refreshSummary() }}
-      >
-        <span className={css.sidebarIcon}>
-          <IconDataOutline16 size={wide ? 16 : 18} />
-          <span className={css.sidebarDot} data-tone={tone} aria-hidden />
-        </span>
-        {wide ? <><span className={css.sidebarLabel}>{t('runtimeCenter.title')}</span><small>{summary}</small></> : null}
-      </button>
-      {!open ? null : (
-        <div className={css.homeBackdrop} role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setOpen(false) }}>
-          <section className={css.homePanel} role="dialog" aria-modal="true" aria-label={t('runtimeCenter.title')}>
-            <button type="button" className={css.homeClose} autoFocus aria-label={t('runtimeCenter.close')} onClick={() => { setOpen(false) }}>×</button>
-            <RuntimeCenter t={t} onSnapshot={setRuntimes} />
-          </section>
-        </div>
-      )}
-    </>
-  )
+/** Runtime-node management page owned by the shared Settings shell. */
+export function RuntimeSettingsSection({ t }: Props & PropsRuntime<'settings.section'>) {
+  return <RuntimeCenter t={t} />
 }

@@ -116,10 +116,12 @@ function rowHalf(e: { clientY: number; currentTarget: HTMLElement }): 'before' |
  * @param props.t - the browser root's locale seat.
  * @returns the row element.
  */
-export function ProjectRowItem({ group, onToggle, onCreate, actions, drag, home, t }: {
+export function ProjectRowItem({ group, onToggle, onCreate, onActivity, actions, drag, home, t }: {
   group: GroupNode
   onToggle: () => void
   onCreate: () => void
+  /** Open the product's read-only project view when that view is installed. */
+  onActivity?: (() => void) | undefined
   /** Real-Workspace actions; absent for the ungrouped bucket (no menu shown). */
   actions?: { rename: () => void; delete: () => void } | undefined
   /** Present only for real Workspace rows in the grouped view. */
@@ -163,6 +165,11 @@ export function ProjectRowItem({ group, onToggle, onCreate, actions, drag, home,
         <span className={css.title}>{label}</span>
       </span>
       <span className={css.rowActions}>
+        {onActivity !== undefined && <button type="button" className={css.iconButton}
+          aria-label={t('project.activity.aria', { name: label })}
+          onClick={(event) => { event.stopPropagation(); onActivity() }}>
+          <IconFolderOpen16 />
+        </button>}
         {actions !== undefined && (
           <Menu
             open={menuOpen}
@@ -236,7 +243,7 @@ interface SessionStatus {
  * outranks completion reminders.
  */
 function sessionStatuses(
-  node: Pick<SessionNode, 'pendingInteraction' | 'workTask' | 'running' | 'runningSubagentCount' | 'completed'>,
+  node: Pick<SessionNode, 'pendingInteraction' | 'workTask' | 'workTaskUnavailable' | 'running' | 'runningSubagentCount' | 'completed'>,
   t: RowTranslate,
 ): readonly [SessionStatus, ...SessionStatus[]] {
   const subagents: SessionStatus | undefined = node.runningSubagentCount === 0
@@ -268,12 +275,20 @@ function sessionStatuses(
   if (pending !== undefined) return subagents === undefined ? [pending] : [pending, subagents]
   if (node.workTask !== undefined) {
     const task: SessionStatus = node.workTask.status === 'completed'
-      ? { state: 'done', label: t('status.taskCompleted') }
-      : node.workTask.status === 'failed'
-        ? { state: 'warning', label: t('status.taskFailed') }
-        : node.workTask.status === 'waiting'
-          ? { state: 'warning', label: t('status.taskWaiting') }
-          : { state: 'ongoing', label: t(node.workTask.status === 'queued' ? 'status.taskQueued' : 'status.taskRunning') }
+      ? node.workTask.hasFinalDeliverable === true
+        ? { state: 'done', label: t('status.taskCompleted') }
+        : { state: 'warning', label: t('status.taskDeliveryMissing') }
+      : node.workTask.status === 'stopping'
+        ? { state: 'ongoing', label: t('status.taskStopping') }
+        : node.workTask.status === 'stopped'
+          ? { state: 'warning', label: t('status.taskStopped') }
+          : node.workTask.status === 'failed'
+            ? { state: 'warning', label: t(node.workTask.stopUnconfirmed === true ? 'status.taskStopUnconfirmed' : 'status.taskFailed') }
+            : node.workTask.status === 'waiting'
+              ? node.workTask.waitKind === 'fanout' || node.workTask.waitKind === 'timer'
+                ? { state: 'ongoing', label: t('status.taskWaitingTeam') }
+                : { state: 'warning', label: t('status.taskWaiting') }
+              : { state: 'ongoing', label: t(node.workTask.status === 'queued' ? 'status.taskQueued' : 'status.taskRunning') }
     return subagents === undefined ? [task] : [task, subagents]
   }
   if (node.running) {
@@ -281,6 +296,7 @@ function sessionStatuses(
     return subagents === undefined ? [primary] : [primary, subagents]
   }
   if (subagents !== undefined) return [subagents]
+  if (node.workTaskUnavailable === true) return [{ state: 'warning', label: t('status.taskUnavailable') }]
   if (node.completed) return [{ state: 'done', label: t('status.completed') }]
   return [{ state: 'done', label: t('status.idle') }]
 }
@@ -404,7 +420,7 @@ export function SessionNodeItem({ node, currentId, now, onOpen, onRename, onFork
   const selected = node.id === currentId
   const statuses = sessionStatuses(node, t)
   const primaryStatus = statuses[0]
-  const showStatus = primaryStatus.state !== 'done' || row.completed
+  const showStatus = primaryStatus.state !== 'done' || row.completed || row.workTask !== undefined
   const [menuOpen, setMenuOpen] = useState(false)
   // Archive hides the row through the registry-global archive set and never
   // touches the session log, so it is not styled as destructive and needs no
@@ -420,6 +436,7 @@ export function SessionNodeItem({ node, currentId, now, onOpen, onRename, onFork
     <div
       className={clsx(
         css.sessionRow, selected && css.selected, menuOpen && css.menuOpen,
+        !row.blank && (row.workTask !== undefined || row.workTaskUnavailable === true) && css.taskRow,
         flat && !showStatus && css.flatSessionRowWithoutStatus,
         drag?.marker === 'before' && css.dropBefore, drag?.marker === 'after' && css.dropAfter,
       )}
@@ -465,11 +482,13 @@ export function SessionNodeItem({ node, currentId, now, onOpen, onRename, onFork
           (rename/fork/archive) would all act on content that does not
           exist — both trailing cells stay off until the first prompt. */}
       {!row.blank && row.workTask !== undefined
-        ? <span className={css.taskMeta}>{[
+        ? <span className={css.taskMeta} title={[
           taskTeamLabel(row.workTask.teamName, t),
           row.workTask.totalStages > 0 ? `${row.workTask.completedStages}/${row.workTask.totalStages}` : '',
-        ].filter(Boolean).join(' · ')}</span>
-        : !row.blank && <span className={css.time}>{timeLabel(row.updatedAt, now, t)}</span>}
+        ].filter(Boolean).join(' · ')}>{primaryStatus.label} · {taskTeamLabel(row.workTask.teamName, t)}</span>
+        : !row.blank && row.workTaskUnavailable === true
+          ? <span className={css.taskMeta} title={t('status.taskUnavailableHint')}>{t('status.taskUnavailable')}</span>
+          : !row.blank && <span className={css.time}>{timeLabel(row.updatedAt, now, t)}</span>}
       {!row.blank && (
         <span className={css.rowActions}>
           <Menu

@@ -29,6 +29,8 @@ export const zh = {
   'expand': '展开',
   'back': '返回',
   'brand.localBuild': 'DSH 本地构建',
+  'layout.resizeSidebar': '调整导航栏宽度',
+  'layout.resizeDetails': '调整对话与现场比例',
   'unknown': '未知',
   'none': '无',
   'truncated': '已截断',

@@ -11,7 +11,7 @@
  * resizes are driven through the ResizeObserver stub.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, render } from '@testing-library/react'
+import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import { useSyncExternalStore } from 'react'
 import { AppFrame } from '@deepseek-ai/dsh-client-ui-layout/src/client/AppFrame.tsx'
 import type { AppFrameProps } from '@deepseek-ai/dsh-client-ui-layout/src/client/AppFrame.tsx'
@@ -124,6 +124,7 @@ function drag(handle: Element, fromX: number, toX: number): void {
 }
 
 beforeEach(() => {
+  localStorage.clear()
   frameWidth = 1920
   selectedSession.current = 's-test' as SessionId
   selectedSessionBlank.current = false
@@ -153,6 +154,75 @@ afterEach(() => {
 })
 
 describe('AppFrame', () => {
+  it('excludes hidden Workbench views from keyboard and assistive navigation without losing their trees', () => {
+    vi.stubEnv('DSH_CLIENT_BUILD_PROFILE', 'workbench')
+    const { instance, getByTestId } = mountFrame()
+    const conversation = getByTestId('center-content')
+    const details = getByTestId('details-content')
+    expect(details.parentElement?.hasAttribute('inert')).toBe(true)
+    expect(conversation.parentElement?.hasAttribute('inert')).toBe(false)
+    act(() => { instance.actions.openDetailsFocus() })
+    expect(details.parentElement?.hasAttribute('inert')).toBe(false)
+    expect(conversation.parentElement?.getAttribute('aria-hidden')).toBe('true')
+    expect(conversation.parentElement?.hasAttribute('inert')).toBe(true)
+    act(() => { instance.actions.closeDetails() })
+    expect(getByTestId('center-content')).toBe(conversation)
+    expect(getByTestId('details-content')).toBe(details)
+    expect(conversation.parentElement?.hasAttribute('inert')).toBe(false)
+    expect(details.parentElement?.getAttribute('aria-hidden')).toBe('true')
+  })
+
+  it('resizes the Workbench split with the keyboard without replacing the conversation', () => {
+    vi.stubEnv('DSH_CLIENT_BUILD_PROFILE', 'workbench')
+    frameWidth = 1280
+    const { frame, instance, getByRole, getByTestId } = mountFrame()
+    const conversation = getByTestId('center-content')
+    act(() => { instance.actions.openDetails() })
+    fireEvent.keyDown(getByRole('separator', { name: 'layout.resizeDetails' }), { key: 'ArrowLeft' })
+    expect(tracks(frame)).toEqual([280, 624])
+    expect(instance.store.getSnapshot().detailsWidth).toBe(624)
+    const separator = getByRole('separator', { name: 'layout.resizeDetails' })
+    expect(separator.getAttribute('aria-valuenow')).toBe('624')
+    expect(separator.getAttribute('aria-valuemin')).toBe('0')
+    expect(separator.getAttribute('aria-valuemax')).toBe('1280')
+    expect(frame.dataset.dragging).toBeUndefined()
+    expect(getByTestId('center-content')).toBe(conversation)
+  })
+
+  it('ends a Workbench drag when the handle is removed by navigation collapse', () => {
+    vi.stubEnv('DSH_CLIENT_BUILD_PROFILE', 'workbench')
+    frameWidth = 1200
+    const { frame, instance } = mountFrame()
+    act(() => { instance.actions.openDetails() })
+    const handle = frame.querySelector('[data-side="sidebar"]')!
+    drag(handle, 280, 380)
+    expect(frame.dataset.sidebarCollapsed).toBe('true')
+    expect(frame.dataset.dragging).toBeUndefined()
+    expect(frame.querySelector('[data-side="sidebar"]')).toBeNull()
+  })
+
+  it('keeps Workbench side by side, concedes navigation first, and switches views without an overlay', () => {
+    vi.stubEnv('DSH_CLIENT_BUILD_PROFILE', 'workbench')
+    frameWidth = 1280
+    const { frame, instance, getByTestId, rerenderFrame } = mountFrame()
+    const conversation = getByTestId('center-content')
+    act(() => { instance.actions.openDetails() })
+    expect(tracks(frame)).toEqual([280, 600])
+    expect(frame.dataset.detailsFocus).toBeUndefined()
+    frameWidth = 1000
+    act(() => { fireResize?.(); vi.advanceTimersByTime(20) })
+    expect(tracks(frame)).toEqual([56, 566])
+    expect(frame.dataset.sidebarCollapsed).toBe('true')
+    frameWidth = 700
+    act(() => { fireResize?.(); vi.advanceTimersByTime(20) })
+    expect(tracks(frame)).toEqual([56, 644])
+    expect(frame.dataset.detailsFocus).toBe('true')
+    expect(frame.dataset.detailsOverlay).toBeUndefined()
+    act(() => { instance.actions.closeDetails(); rerenderFrame() })
+    expect(getByTestId('center-content')).toBe(conversation)
+    expect(frame.dataset.detailsFocus).toBeUndefined()
+  })
+
   it('localizes the product title when the build does not supply one', () => {
     mountFrame()
     expect(document.title).toBe('DSH Local Build')
@@ -176,6 +246,19 @@ describe('AppFrame', () => {
   it('renders three tracks from store state', () => {
     const { frame } = mountFrame()
     expect(tracks(frame)).toEqual([280, 0])
+  })
+
+  it('gives focused details the primary workspace without overlaying the conversation', () => {
+    const { frame, instance } = mountFrame()
+
+    act(() => { instance.actions.openDetailsFocus() })
+    expect(tracks(frame)).toEqual([280, 1640])
+    expect(frame.dataset.detailsFocus).toBe('true')
+    expect(frame.dataset.detailsOverlay).toBeUndefined()
+
+    act(() => { instance.actions.openDetails() })
+    expect(tracks(frame)).toEqual([280, 360])
+    expect(frame.dataset.detailsFocus).toBeUndefined()
   })
 
   it('renders the session pair with empty owner shares (sessionId is framework-standard)', () => {

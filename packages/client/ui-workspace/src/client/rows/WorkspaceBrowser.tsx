@@ -48,6 +48,8 @@ function collapsedSessionRows(sessions: readonly SessionNode[]): {
   let ordinaryCount = 0
   const rows = sessions.filter((session) => {
     if (session.blank) return true
+    if (session.workTask !== undefined
+      && !['completed', 'failed', 'stopped'].includes(session.workTask.status)) return true
     if (ordinaryCount >= COLLAPSED_SESSION_LIMIT) return false
     ordinaryCount += 1
     return true
@@ -256,6 +258,8 @@ type SessionTreeProps = Pick<
   onRenameRequest: (workspaceId: WorkspaceId, currentTitle: string) => void
   /** Open the browser-owned delete-confirmation dialog for a real Workspace group. */
   onDeleteRequest: (workspaceId: WorkspaceId, currentTitle: string) => void
+  /** Open the optional product project view for a real Workspace. */
+  onProjectActivity?: ((workspaceId: WorkspaceId) => void) | undefined
   /** Open the browser-owned session rename dialog. */
   onSessionRename: (sessionId: SessionNode['id'], currentTitle: string) => void
   /** Archive a session (row menu action; the row disappears on the state echo). */
@@ -267,7 +271,7 @@ type SessionTreeProps = Pick<
 /** The scrolling session tree; unmounting drops the sessions subscription and expand-all state. */
 function SessionTree({
   useSessions, useSessionPendingInteraction, startSession, open, forkSession, workspaces, archivedSessionIds,
-  onRenameRequest, onDeleteRequest, onSessionRename, onSessionArchive,
+  onRenameRequest, onDeleteRequest, onProjectActivity, onSessionRename, onSessionArchive,
   insertWorkspaceBefore, insertSessionBefore, orderBy,
   groupExpansion, setGroupExpanded,
   sessionOrderByAccount, sessionUpdatedAtByAccount, syncSessionOrderAccount, setSessionOrder, home, t,
@@ -512,6 +516,8 @@ function SessionTree({
                   }
                 }}
                 drag={workspaceDragProps}
+                onActivity={workspaceId === undefined || onProjectActivity === undefined
+                  ? undefined : () => { onProjectActivity(workspaceId) }}
                 actions={group.workspaceId === undefined
                   ? undefined
                   : {
@@ -820,6 +826,7 @@ export function WorkspaceBrowser({
   searchSessions,
   searchResultLimit,
   useDirectoryFlow,
+  useProjectActivity,
   useConnectionGeneration,
   renderSlot,
   t,
@@ -831,6 +838,11 @@ export function WorkspaceBrowser({
   // Live occupancy of this surface's directory-flow hole (the same source the
   // flow reads): a composition without a picking affordance can add nothing.
   const directoryFlowAvailable = useDirectoryFlow(occupied => occupied)
+  const projectActivityAvailable = useProjectActivity(occupied => occupied)
+  const [projectActivityId, setProjectActivityId] = useState<WorkspaceId | null>(null)
+  useEffect(() => {
+    if (!projectActivityAvailable) setProjectActivityId(null)
+  }, [projectActivityAvailable])
   const groupBy = useStore(s => s.groupBy)
   const orderBy = useStore(s => s.orderBy)
   const groupExpansion = useStore(s => s.groupExpansion)
@@ -1237,6 +1249,7 @@ export function WorkspaceBrowser({
                 onSessionRename={onSessionRename}
                 onSessionArchive={onSessionArchive}
                 forkSession={forkSession}
+                onProjectActivity={projectActivityAvailable ? setProjectActivityId : undefined}
                 workspaces={workspaces}
                 groupExpansion={groupExpansion}
                 setGroupExpanded={actions.setGroupExpanded}
@@ -1264,6 +1277,10 @@ export function WorkspaceBrowser({
               />
             ))}
       </div>
+
+      {projectActivityAvailable && projectActivityId !== null && renderSlot('sidebar.workspaces.projectActivity', {
+        workspaceId: projectActivityId, onClose: () => { setProjectActivityId(null) },
+      })}
 
       <Modal
         open={renameTarget !== null}

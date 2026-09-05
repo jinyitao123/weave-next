@@ -72,6 +72,17 @@ const mark = (session: Session, marks: string[]): SessionEvent =>
   session.append('test/mark', { marks })
 
 describe('SessionProjectionRegistry drive', () => {
+  it('lists only opted-in wire keys and removes the requirement when its owner unloads', async () => {
+    const { ctx } = await harness()
+    ctx.sessionProjections.register(countUnit())
+    const unit = marksUnit()
+    const dispose = ctx.sessionProjections.register({ ...unit, wire: { ...unit.wire, list: true } })
+    expect(ctx.sessionProjections.listRequirements()).toEqual([{ key: 'test/marks', stateVersion: 1 }])
+    dispose()
+    expect(ctx.sessionProjections.listRequirements()).toEqual([])
+    ctx.sessionProjections.register(marksUnit())
+    expect(ctx.sessionProjections.listRequirements()).toEqual([])
+  })
   it('drives a registered unit over committed events and snapshots the current value', async () => {
     const { ctx, session } = await harness()
     ctx.sessionProjections.register(marksUnit())

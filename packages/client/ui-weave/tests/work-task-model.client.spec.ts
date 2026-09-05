@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ChatConversationViewNode, ToolResultNode } from '@deepseek-ai/dsh-client-ui-chat/client'
-import { workTaskFactsStale, workTaskHasUserVisibleCompletenessWarning, workTaskModel } from '../src/client/work-task-model.ts'
+import { workTaskFactsStale, workTaskHasFinalDeliverable, workTaskHasUserVisibleCompletenessWarning, workTaskModel } from '../src/client/work-task-model.ts'
 
 let sequence = 1
 
@@ -30,6 +30,25 @@ function tool(name: string, args: unknown, value: unknown, isError = false): Cha
 }
 
 describe('workTaskModel', () => {
+  it.each(['timer', 'fanout', 'human', 'correction', 'runtime'])('preserves the exact %s wait in recorded activity', (waitKind) => {
+    const model = workTaskModel([tool('mcp__weave__team_run_activity', {}, {
+      run_id: 'run-1', status: 'parked', wait_kind: waitKind, wait_node_id: 'review',
+    })])
+    expect(model).toMatchObject({ status: 'waiting', waitKind, waitNodeId: 'review' })
+  })
+
+  it('does not let an old human decision override current run activity', () => {
+    const oldDecision = tool('mcp__weave__human_task_list', {}, [{ run_id: 'run-1' }])
+    const resumed = workTaskModel([oldDecision, tool('mcp__weave__team_run_activity', {}, {
+      run_id: 'run-1', status: 'running', human_tasks: [],
+    })])
+    expect(resumed).toMatchObject({ status: 'running', humanTaskCount: 0, waitKind: '', waitNodeId: '' })
+    const completed = workTaskModel([oldDecision, tool('mcp__weave__team_run_activity', {}, {
+      run_id: 'run-1', status: 'completed',
+    })])
+    expect(completed).toMatchObject({ status: 'completed', humanTaskCount: 0 })
+  })
+
   it('does not age terminal facts into a stale warning', () => {
     const observedAt = Date.parse('2026-08-31T08:00:00Z')
     const now = observedAt + 60_000
@@ -39,15 +58,15 @@ describe('workTaskModel', () => {
     expect(workTaskFactsStale('stopped', observedAt, now)).toBe(false)
   })
 
-  it('does not warn about internal partial fields after visible completed work is complete', () => {
+  it.each(['final', 'summary'] as const)('does not warn about internal partial fields after visible completed work has a %s output', (kind) => {
     expect(workTaskHasUserVisibleCompletenessWarning({
       status: 'completed',
       completedStages: 3,
       totalStages: 3,
-      members: [{ agentId: 'a', name: '分析员', duty: '', role: 'worker', status: 'completed', runtime: 'mac-codex-live', stages: [] }],
+      members: [{ agentId: 'a', name: '分析员', duty: '', role: 'worker', status: 'completed', runtime: 'mac-codex-live', updateMode: 'on_completion', stages: [] }],
       runtimes: [{ name: 'mac-codex-live', detail: 'codex', status: 'completed' }],
       deliverables: [{
-        id: 'final-file', title: 'final_observation.md', kind: 'final', contentType: 'text/markdown',
+        id: 'final-file', title: 'final_observation.md', kind, contentType: 'text/markdown',
         preview: '订单 75', content: '订单 75', truncated: false, createdAt: '',
       }],
       completeness: {
@@ -182,6 +201,21 @@ describe('workTaskModel', () => {
       ['最终产物 · 交付', 'summary'],
       ['final_observation.md', 'final'],
     ])
+    expect(workTaskHasFinalDeliverable(model)).toBe(true)
+  })
+
+  it.each(['stage', '', 'unknown'])('does not promote a filename-free %s artifact into final delivery', (artifactKind) => {
+    const model = workTaskModel([
+      tool('mcp__weave__team_run_activity', {}, { run_id: 'run-a', status: 'succeeded' }),
+      tool('mcp__weave__deliverable_list', { run_id: 'run-a' }, { deliverables: [{
+        run_id: 'run-a', id: 'output', title: '最终产物 · Deliver', content_type: 'text/markdown',
+        content: '阶段记录', metadata: {
+          source: 'published_workflow', artifact_kind: artifactKind, node_type: 'deliver', filename: '',
+        }, created_at: '2026-09-05T11:27:11.24615+08:00',
+      }] }),
+    ])
+    expect(model.deliverables[0]?.kind).toBe('stage')
+    expect(workTaskHasFinalDeliverable(model)).toBe(false)
   })
 
   it('keeps dispatch lifecycle authoritative when the terminal projection is missing', () => {
@@ -316,14 +350,15 @@ describe('workTaskModel', () => {
     expect(model).toMatchObject({ completedStages: 1, totalStages: 1, stages: [{ name: '物理复核', status: 'completed' }] })
     expect(model.members).toEqual([{
       agentId: 'worker-1', name: '物理复核员', duty: '复核数量级', role: 'worker', status: 'completed',
-      runtime: 'runtime-1 · openai/gpt-5.6-luna',
+      runtime: 'runtime-1 · openai/gpt-5.6-luna', updateMode: 'on_completion',
       stages: [{
         nodeId: 'physics', name: '物理复核', status: 'completed',
         inputs: [{ name: 'brief', expectedType: 'text', source: 'run_input', nodeId: '', path: '$', summary: '' }],
         outputRefs: ['file-1'],
         startedAt: '2026-08-30T10:00:00Z', completedAt: '2026-08-30T10:00:03Z', durationMs: 3000, toolCalls: 1,
         failureClass: '', failureReason: '', retryable: false,
-        tools: [{ callId: 'tool-1', name: 'calculator', status: 'ok',
+        currentTaskId: '', publicUpdatesState: 'unavailable', publicUpdates: [], publicUpdatesTruncated: false,
+        tools: [{ callId: 'tool-1', taskId: '', name: 'calculator', status: 'ok',
           startedAt: '2026-08-30T10:00:01Z', completedAt: '2026-08-30T10:00:02Z', input: '12 * 3', output: '36' }],
       }],
     }])

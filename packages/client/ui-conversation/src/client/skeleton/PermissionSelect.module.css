@@ -74,3 +74,10 @@
 .chevronOpen {
   transform: rotate(180deg);
 }
+
+.error {
+  max-width: 200px;
+  color: var(--dsw-alias-state-error-primary);
+  font-size: 13px;
+  line-height: 1.4;
+}

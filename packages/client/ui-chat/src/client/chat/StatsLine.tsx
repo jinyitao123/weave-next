@@ -181,6 +181,14 @@ export const StatsLine = memo(function StatsLine({ useChat, useProjection, t }: 
     return () => { observer.disconnect() }
   }, [line])
   if (groups.length === 0) return null
+  if (process.env.DSH_CLIENT_BUILD_PROFILE === 'workbench') {
+    return (
+      <details className={css.disclosure}>
+        <summary>{t('stats.details')}</summary>
+        <p>{line}</p>
+      </details>
+    )
+  }
   return (
     <Tooltip label={line} side="top" delayMs={500} disabled={!truncated}>
       <div ref={rootRef} className={css.root}>

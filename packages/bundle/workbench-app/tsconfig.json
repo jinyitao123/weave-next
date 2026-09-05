@@ -6,6 +6,7 @@
     { "path": "../../../vendor/cordis" },
     { "path": "../../interaction/commands" },
     { "path": "../../core/session" },
+    { "path": "../../workspace/workspace" },
     { "path": "../../session/session-projection" },
     { "path": "../../runtime-diagnostics/invariants" }
   ]

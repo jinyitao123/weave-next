@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  CENTER_MIN, clampWidth, computeColumns,
+  CENTER_MIN, clampWidth, computeColumns, computeWorkbenchColumns,
   DETAILS_DEFAULT, DETAILS_MIN, SIDEBAR_COLLAPSED, SIDEBAR_DEFAULT, SIDEBAR_MIN,
 } from '@deepseek-ai/dsh-client-ui-layout/src/client/columns.ts'
 
@@ -13,6 +13,26 @@ describe('clampWidth', () => {
     expect(clampWidth(250.4, 240, 420)).toBe(250)
     expect(clampWidth(100, 240, 420)).toBe(240)
     expect(clampWidth(9999, 240, 420)).toBe(420)
+  })
+})
+
+describe('Workbench split', () => {
+  it('starts with 40/60 and preserves an explicit width within readable bounds', () => {
+    expect(computeWorkbenchColumns(1280, 280, true, undefined, false))
+      .toEqual({ sidebar: 280, center: 400, details: 600 })
+    expect(computeWorkbenchColumns(1600, 280, true, 800, false))
+      .toEqual({ sidebar: 280, center: 520, details: 800 })
+    expect(computeWorkbenchColumns(1280, 280, true, 800, false))
+      .toEqual({ sidebar: 280, center: 360, details: 640 })
+  })
+
+  it('switches to the scene on small screens and only fills a desktop on explicit focus', () => {
+    expect(computeWorkbenchColumns(700, 0, true, undefined, false))
+      .toEqual({ sidebar: 56, center: 0, details: 644 })
+    expect(computeWorkbenchColumns(1280, 280, true, 600, true))
+      .toEqual({ sidebar: 280, center: 0, details: 1000 })
+    expect(computeWorkbenchColumns(700, 0, false, 600, false))
+      .toEqual({ sidebar: 56, center: 644, details: 0 })
   })
 })
 

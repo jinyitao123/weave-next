@@ -114,15 +114,19 @@ describe('workspace browser rows', () => {
   it('renders an active Workspace and keeps its create action separate from toggling', () => {
     const onToggle = vi.fn()
     const onCreate = vi.fn()
+    const onActivity = vi.fn()
     const group: GroupNode = {
       key: 'project', workspaceId: wid('project'), cwd: '/projects/project', createdAt: 0, label: 'Project',
       sessionCount: 1, expanded: true, containsCurrent: true, sessions: [],
     }
-    render(<ProjectRowItem group={group} onToggle={onToggle} onCreate={onCreate} t={t} />)
+    render(<ProjectRowItem group={group} onToggle={onToggle} onCreate={onCreate} onActivity={onActivity} t={t} />)
 
     expect(screen.getByRole('treeitem').getAttribute('aria-expanded')).toBe('true')
     fireEvent.click(screen.getByRole('button', { name: '在“Project”中新建会话' }))
     expect(onCreate).toHaveBeenCalledOnce()
+    expect(onToggle).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: '查看“Project”的项目进展' }))
+    expect(onActivity).toHaveBeenCalledOnce()
     expect(onToggle).not.toHaveBeenCalled()
     fireEvent.click(screen.getByText('Project'))
     expect(onToggle).toHaveBeenCalledOnce()
@@ -144,6 +148,40 @@ describe('workspace browser rows', () => {
     expect(row.hasAttribute('aria-expanded')).toBe(false)
     expect(screen.queryByRole('button', { name: /展开|收起/ })).toBeNull()
     fireEvent.click(row)
+    expect(onOpen).toHaveBeenCalledWith(node.id)
+  })
+
+  it.each([
+    ['completed', false, '', '成果待核实', 'warning'],
+    ['completed', true, '', '任务已交付', 'done'],
+    ['stopping', false, '', '正在停止', 'ongoing'],
+    ['stopped', false, '', '已停止', 'warning'],
+    ['waiting', false, 'fanout', '等待团队继续', 'ongoing'],
+    ['waiting', false, 'runtime', '任务等待处理', 'warning'],
+  ] as const)('shows %s as a visible task state', (status, hasFinalDeliverable, waitKind, label, state) => {
+    const node: SessionNode = {
+      id: sid('work'), title: 'Review brief', blank: false, running: false,
+      runningSubagentCount: 0, completed: true, updatedAt: 0,
+      workTask: { status, hasFinalDeliverable, waitKind, teamName: 'Research', completedStages: 2, totalStages: 3 },
+    }
+    const view = render(<SessionNodeItem node={node} currentId={undefined} now={0} onOpen={vi.fn()}
+      onRename={vi.fn()} onFork={vi.fn()} onArchive={vi.fn()} t={t} />)
+    expect(view.container.querySelector(`[data-state="${state}"]`)).not.toBeNull()
+    expect(screen.getByText(`${label} · Research`)).toBeTruthy()
+    expect(screen.getByText(`${label} · Research`).getAttribute('title')).toBe('Research · 2/3')
+  })
+
+  it('keeps unread task history visible without calling it completed', () => {
+    const onOpen = vi.fn()
+    const node: SessionNode = {
+      id: sid('cold'), title: 'Saved work', blank: false, running: false,
+      runningSubagentCount: 0, completed: true, updatedAt: 0, workTaskUnavailable: true,
+    }
+    const view = render(<SessionNodeItem node={node} currentId={undefined} now={0} onOpen={onOpen}
+      onRename={vi.fn()} onFork={vi.fn()} onArchive={vi.fn()} t={t} />)
+    expect(view.container.querySelector('[data-state="done"]')).toBeNull()
+    expect(screen.getByTitle('打开会话以载入完整记录。').textContent).toBe('状态待读取')
+    fireEvent.click(screen.getByRole('treeitem'))
     expect(onOpen).toHaveBeenCalledWith(node.id)
   })
 

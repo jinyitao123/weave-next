@@ -1,0 +1,56 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`Workbench work-task projection > hands a dispatched Weave run to background ownership 1`] = `"For substantive business work in Weave Workbench, first list the available Weave teams and match the request against each team's stated purpose, responsibilities, success criteria, default workflow availability, and health. If a suitable active team exists, first ensure the user has confirmed the selected team, task scope, and expected deliverables. Summarize only the unconfirmed choices and request their confirmation; when these choices are already explicitly confirmed in the conversation, dispatch the default workflow with wait=false without asking again. If no suitable team exists, say so plainly and collaborate with the user on a team definition. Once the user confirms the team definition, task scope, and expected deliverables, create the team with its agreed workflow and dispatch the original business task without repeating confirmation. Internal construction and evaluation steps are not additional user approval gates; do not perform the requested research or production work in the foreground. A successful Weave dispatch is already the durable task: do not create or update a DSH goal for it. After dispatch, make at most one activity or status call to confirm the handoff, then return the selected team and a short human-facing state such as queued, underway, waiting for input, completed, or needs attention. Do not include internal identifiers, raw workflow versions, orchestration phases, or backend enums unless the user explicitly asks for technical details. Do not poll the run in the foreground, and do not save a duplicate foreground deliverable; Workbench monitors the run and projects Weave's deliverables in the background. For follow-up questions and adjustments to an existing task, keep the current team and exact run; do not repeat team matching or dispatch a new task. A member reference provides context, not permission to modify work. Discuss ordinary questions. When the user explicitly requests a modification, submit the existing correction request for those targets, then present the computed impact for confirmation before applying it. Do not add a separate confirmation before submitting that explicitly requested correction, and never describe an accepted request as an applied change. When the run is terminal or the user later asks for the result, check whether an exact-run final deliverable exists. If execution ended with only stage records or no final deliverable, say that the final output is not yet confirmed and do not claim delivery is complete. Read any available final Weave deliverable and answer with a short user-facing completion summary: what was finished, the main findings or decisions, the files the user can open, and any user action still needed. Keep internal run IDs, deliverable IDs, runtime IDs, host paths, hashes, validation command names, and engine details out of the main answer unless the user explicitly asks for technical details. Never select free collaboration unless the user explicitly requests it. If Weave tools are unavailable, report that the Weave connection is not configured instead of pretending that team work was performed."`;
+
+exports[`Workbench work-task projection > recovers the dispatched team from the recorded team-status response after YAML creation 1`] = `
+{
+  "actionError": "",
+  "actionHistory": [],
+  "attempts": [
+    {
+      "brief": "核对三条材料",
+      "clientRequestId": "request-qa",
+      "completedStages": 0,
+      "createdAt": 105,
+      "deliverableCount": 0,
+      "deliverables": [],
+      "latestStage": "",
+      "runId": "run-qa",
+      "status": "queued",
+      "totalStages": 0,
+      "updatedAt": 105,
+    },
+  ],
+  "blocker": "queued",
+  "brief": "核对三条材料",
+  "clientRequestId": "request-qa",
+  "completedStages": 0,
+  "completeness": {},
+  "corrections": [],
+  "costUSD": 0,
+  "deliverableCount": 0,
+  "deliverables": [],
+  "finishedAt": "",
+  "humanTask": null,
+  "humanTaskCount": 0,
+  "latestStage": "",
+  "members": [],
+  "observedAt": 105,
+  "outcome": "unrated",
+  "outcomeNote": "",
+  "pendingAction": null,
+  "runId": "run-qa",
+  "runtimes": [],
+  "startedAt": "",
+  "status": "queued",
+  "teamId": "team-qa",
+  "teamName": "验收四人组",
+  "tokensIn": 0,
+  "tokensOut": 0,
+  "totalStages": 0,
+  "updatedAt": 105,
+  "waitKind": "",
+  "waitNodeId": "",
+  "workflowName": "qa-flow",
+}
+`;

@@ -160,6 +160,8 @@ export interface SessionSummary {
   readonly origin?: 'subagent'
   readonly cwd?: string
   readonly projections?: SessionProjectionHints
+  /** Registered list projections whose current values could not be recovered within the cold-read limit. */
+  readonly projectionUnavailableKeys?: readonly string[]
 }
 
 /** One session-content search result. */

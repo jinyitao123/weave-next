@@ -25,6 +25,8 @@ export interface ILayout {
   toggleSidebar(): void
   /** Open the details panel (no-op when already open). */
   openDetails(): void
+  /** Open details as the primary task workspace instead of a side panel. */
+  openDetailsFocus(): void
   /** Close the details panel. */
   closeDetails(): void
 }
@@ -52,6 +54,11 @@ export class LayoutController implements ILayout {
   /** Open the details panel (no-op when already open). */
   openDetails(): void {
     this.#require().openDetails()
+  }
+
+  /** Open details as the primary task workspace instead of a side panel. */
+  openDetailsFocus(): void {
+    this.#require().openDetailsFocus()
   }
 
   /** Close the details panel. */

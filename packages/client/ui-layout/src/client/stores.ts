@@ -20,7 +20,26 @@ import {
  * `narrowExpanded` is the manual override that re-expands the auto-collapsed
  * sidebar over the squeezed center without rewriting the width preference.
  */
-type LayoutState = { sidebar: number; details: number; narrow: boolean; narrowExpanded: boolean }
+type LayoutState = {
+  sidebar: number
+  details: number
+  detailsWidth?: number
+  detailsFocus: boolean
+  narrow: boolean
+  narrowExpanded: boolean
+}
+
+const WORKBENCH_WIDTH_KEY = 'weave.workbench.detailsWidth'
+
+/** Read only the Workbench width preference; open state is never persisted. */
+function workbenchWidth(): number | undefined {
+  if (process.env.DSH_CLIENT_BUILD_PROFILE !== 'workbench') return undefined
+  let raw: string | null
+  try { raw = localStorage.getItem(WORKBENCH_WIDTH_KEY) }
+  catch { return undefined } // Unavailable browser storage does not prevent opening the workbench.
+  const value = Number(raw)
+  return Number.isFinite(value) && value >= 480 && value <= 2400 ? value : undefined
+}
 
 /**
  * Annotation twin of the actions literal below (the export needs a declared
@@ -32,13 +51,14 @@ type LayoutActions = {
   toggleSidebar: (draft: LayoutState) => void
   setNarrow: (draft: LayoutState, narrow: boolean) => void
   openDetails: (draft: LayoutState) => void
+  openDetailsFocus: (draft: LayoutState) => void
   closeDetails: (draft: LayoutState) => void
 }
 
 /**
- * Create the layout panel store handle. The preference IS the width, so
- * closing a panel forgets its drag width — reopening restores the contract
- * default. Actions are the complete write set: drag writes clamp
+ * Create the layout panel store handle. Workbench retains a dragged scene
+ * width in browser storage; other profiles reopen at their default width.
+ * Actions are the complete write set: drag writes clamp
  * into the panel's contract range and never cross the open/closed line;
  * open/close transitions write 0 / the default explicitly. Below the
  * auto-collapse breakpoint (AppFrame feeds setNarrow) the sidebar toggle
@@ -47,10 +67,23 @@ type LayoutActions = {
  */
 export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutActions>  {
   const handle = defineStore({
-    init: (): LayoutState => ({ sidebar: SIDEBAR_DEFAULT, details: 0, narrow: false, narrowExpanded: false }),
+    init: (): LayoutState => {
+      const width = workbenchWidth()
+      return {
+        sidebar: SIDEBAR_DEFAULT, details: 0, detailsFocus: false, narrow: false, narrowExpanded: false,
+        ...(width === undefined ? {} : { detailsWidth: width }),
+      }
+    },
     actions: {
       setSidebar: (d, px: number) => { d.sidebar = clampWidth(px, SIDEBAR_MIN, SIDEBAR_MAX) },
-      setDetails: (d, px: number) => { d.details = clampWidth(px, DETAILS_MIN, DETAILS_MAX) },
+      setDetails: (d, px: number) => {
+        if (process.env.DSH_CLIENT_BUILD_PROFILE === 'workbench') {
+          d.detailsWidth = clampWidth(px, 480, 2400)
+          d.details = d.detailsWidth
+          try { localStorage.setItem(WORKBENCH_WIDTH_KEY, String(d.detailsWidth)) }
+          catch { /* The current width remains usable when browser persistence is unavailable. */ }
+        } else d.details = clampWidth(px, DETAILS_MIN, DETAILS_MAX)
+      },
       // Narrow toggles flip only the override: the width preference survives
       // untouched, so re-widening restores the pre-squeeze layout.
       toggleSidebar: (d) => {
@@ -64,8 +97,18 @@ export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutAction
         d.narrow = narrow
         d.narrowExpanded = false
       },
-      openDetails: (d) => { if (d.details === 0) d.details = DETAILS_DEFAULT },
-      closeDetails: (d) => { d.details = 0 },
+      openDetails: (d) => {
+        if (d.details === 0) d.details = DETAILS_DEFAULT
+        d.detailsFocus = false
+      },
+      openDetailsFocus: (d) => {
+        if (d.details === 0) d.details = DETAILS_DEFAULT
+        d.detailsFocus = true
+      },
+      closeDetails: (d) => {
+        d.details = 0
+        d.detailsFocus = false
+      },
     },
   })
   return handle

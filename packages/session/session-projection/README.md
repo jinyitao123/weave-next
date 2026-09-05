@@ -62,6 +62,8 @@ const dispose = ctx.sessionProjections.register(definition)
 const { asOfSeq, values } = ctx.sessionProjections.snapshot(session)
 ```
 
+Domains whose values belong in a cold Session list declare `wire.list: true`. `listRequirements()` identifies those keys and their state versions; other wire keys do not trigger list recovery. An omitted cached key is unknown, while a key with a null value has been computed.
+
 ### Persisted checkpoints
 
 Every unit's state is checkpointed — client-visible and host-only alike — through `checkpoint(session)`, and the sibling [session-projection-cache](../session-projection-cache/README.md) persists those checkpoints so cold reads skip full log loads. `restoreFloor` and `restore` implement the read recipe (cached state plus a forward tail replay) without a live session.

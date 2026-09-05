@@ -208,14 +208,44 @@
 }
 
 .taskMeta {
-  flex: none;
-  max-width: 42%;
+  grid-column: 2;
+  grid-row: 2;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 11px;
-  line-height: 20px;
+  font-size: 12px;
+  line-height: 18px;
   color: var(--dsw-alias-label-secondary);
+}
+
+/* Task titles use the full reading width; team and state form a quieter second line. */
+.sessionRow.taskRow {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  column-gap: 4px;
+  row-gap: 2px;
+  height: auto;
+  min-height: 52px;
+  box-sizing: border-box;
+  padding: 6px 8px;
+}
+
+.taskRow > .slot {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.taskRow > .title {
+  grid-column: 2;
+  grid-row: 1;
+  margin: 0;
+}
+
+.taskRow > .rowActions {
+  grid-column: 3;
+  grid-row: 1 / span 2;
+  margin-left: 4px;
 }
 
 .dot {

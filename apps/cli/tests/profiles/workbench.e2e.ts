@@ -46,6 +46,13 @@ describe('shipped Workbench profile', () => {
     expect(disconnected.output).toContain("name: '@deepseek-ai/dsh-client-ui-brand-workbench'")
     expect(disconnected.output).toContain("name: '@deepseek-ai/dsh-client-ui-weave'")
     expect(disconnected.output).toContain('You are Weave Workbench')
+    const personaText = disconnected.output.replace(/\s+/gu, ' ')
+    expect(personaText).toContain('confirmed the selected team, task scope, and expected deliverables')
+    expect(personaText).toContain('without asking again')
+    expect(personaText).toContain('Internal construction and evaluation do not add user approval steps')
+    expect(personaText).toContain('do not claim delivery is complete')
+    expect(personaText).toContain('do not repeat team matching or dispatch a new task')
+    expect(personaText).toContain('never describe an accepted request as an applied change')
     expect(disconnected.output).toMatch(
       /- id: agent-default-model\n(?:  .*\n){0,3}  config:\n    provider: unconfigured\n    model: unconfigured/,
     )

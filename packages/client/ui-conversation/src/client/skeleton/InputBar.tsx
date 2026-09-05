@@ -127,6 +127,9 @@ export function InputBar({
   // exists; the trigger itself is read-only rather than disabled so pointer
   // and keyboard users can reach the recovery action.
   const workspaceTrigger = inert && !removed && onRequestWorkspace !== undefined
+  const workspaceTriggerLabel = process.env.DSH_CLIENT_BUILD_PROFILE === 'workbench'
+    ? t('hero.attachWorkspace')
+    : t('hero.chooseWorkspace')
   const editorDisabled = removed || (locked && !workspaceTrigger)
   const editable = live && !locked && !machineBusy
   const canSteerQueue = !locked && !machineBusy && !commandMenuOpen && empty && running && subagent === null
@@ -417,7 +420,7 @@ export function InputBar({
               data-placeholder={placeholderText}
               // The placeholder was the textarea's accessible name; a div's
               // data attribute is not, so the label restores it.
-              aria-label={workspaceTrigger ? t('hero.chooseWorkspace') : placeholderText}
+              aria-label={workspaceTrigger ? workspaceTriggerLabel : placeholderText}
               aria-haspopup={workspaceTrigger ? 'menu' : undefined}
               aria-expanded={workspaceTrigger ? workspacePickerOpen : undefined}
               tabIndex={workspaceTrigger ? 0 : undefined}

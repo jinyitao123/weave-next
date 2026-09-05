@@ -61,6 +61,10 @@ function optionLabel(
   option: PermissionSelectValue['options'][number],
   t: ComposerBarProps['t'],
 ): string {
+  if (process.env.DSH_CLIENT_BUILD_PROFILE === 'workbench') {
+    if (option.value === 'read-only') return t('access.workbenchReadOnly')
+    if (option.value === 'workspace-write') return t('access.workbenchWorkspaceWrite')
+  }
   return option.value === FULL_ACCESS ? t('access.fullLabel') : displayName(option.name)
 }
 
@@ -77,6 +81,7 @@ export function PermissionSelect({ value, locked, command, t }: PermissionSelect
   const [open, setOpen] = useState(false)
   const [confirmation, setConfirmation] = useState<string | null>(null)
   const [acknowledged, setAcknowledged] = useState(false)
+  const [failed, setFailed] = useState(false)
 
   useEffect(() => {
     if (!locked && value !== undefined) return
@@ -99,10 +104,11 @@ export function PermissionSelect({ value, locked, command, t }: PermissionSelect
     })
 
   const submit = (id: string): void => {
+    setFailed(false)
     setPick(id)
     void command(`/permission ${id}`)
-      .catch(() => false)
-      .then(() => { setPick(null) })
+      .then((accepted) => { setFailed(!accepted) }, () => { setFailed(true) })
+      .finally(() => { setPick(null) })
   }
 
   const choose = (id: string): void => {
@@ -156,6 +162,7 @@ export function PermissionSelect({ value, locked, command, t }: PermissionSelect
           </button>
         }
       />
+      {failed ? <span className={css.error} role="alert">{t('access.changeFailed')}</span> : null}
       <RiskConfirmation
         open={confirmation !== null}
         title={t('access.confirm.title')}

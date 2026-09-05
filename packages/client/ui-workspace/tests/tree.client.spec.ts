@@ -34,6 +34,31 @@ const noAttention: ReadonlyMap<SessionId, SessionPendingInteractionBase> = new M
 const archived = (...ids: string[]): readonly SessionId[] => ids.map(sid)
 
 describe('deriveGroups', () => {
+  it('distinguishes unread task history from an observed ordinary conversation', () => {
+    const cold = { ...summary('cold', 10), projectionUnavailableKeys: ['workTask'] }
+    expect(deriveFlat(list(cold), noArchive, noAttention)[0]?.workTaskUnavailable).toBe(true)
+    const observed = { ...cold, projectionValues: { workTask: null } as unknown as NonNullable<SessionSummary['projectionValues']> }
+    expect(deriveFlat(list(observed), noArchive, noAttention)[0]?.workTaskUnavailable).toBeUndefined()
+    expect(deriveFlat(list(summary('ordinary', 10)), noArchive, noAttention)[0]?.workTaskUnavailable).toBeUndefined()
+  })
+
+  it.each(['stopping', 'stopped', 'completed', 'waiting'] as const)(
+    'preserves the %s task and authoritative final-delivery classification', (status) => {
+      const project = (kind: string) => deriveFlat(list({
+        ...summary('work', 10),
+        // The product-neutral row reader also receives partial/unknown external records.
+        projectionValues: { workTask: {
+          status, waitKind: 'fanout', teamName: 'Review team', completedStages: 2,
+          totalStages: 3, deliverables: [{ kind }],
+        } } as unknown as NonNullable<SessionSummary['projectionValues']>,
+      }), noArchive, noAttention)[0]?.workTask
+      expect(project('stage')).toMatchObject({ status, waitKind: 'fanout', hasFinalDeliverable: false })
+      expect(project('summary')?.hasFinalDeliverable).toBe(true)
+      expect(project('final')?.hasFinalDeliverable).toBe(true)
+      expect(project('unknown')?.hasFinalDeliverable).toBe(false)
+    },
+  )
+
   it('keeps Host Workspace and sessionIds order without Client recency sorting', () => {
     const sessions = list(summary('newer', 20), summary('older', 10))
     const workspaces = [workspace('first', ['older', 'newer']), workspace('empty', [])]

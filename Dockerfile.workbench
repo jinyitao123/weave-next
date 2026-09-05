@@ -4,13 +4,17 @@ ARG NODE_IMAGE=node:24-bookworm
 ARG WEAVE_IMAGE=weave-platform:latest
 
 FROM ${NODE_IMAGE} AS build
-RUN apt-get update \
+RUN --mount=type=cache,id=workbench-apt-cache,target=/var/cache/apt,sharing=locked \
+  --mount=type=cache,id=workbench-apt-lists,target=/var/lib/apt/lists,sharing=locked \
+  --mount=type=cache,id=workbench-npm,target=/root/.npm,sharing=locked \
+  rm -f /etc/apt/apt.conf.d/docker-clean \
+  && apt-get update \
   && apt-get install -y --no-install-recommends build-essential git musl-tools python3 ca-certificates \
-  && rm -rf /var/lib/apt/lists/* \
   && npm install --global pnpm@11.7.0
 WORKDIR /app
 COPY . .
-RUN pnpm install --frozen-lockfile
+RUN --mount=type=cache,id=workbench-pnpm-store,target=/pnpm/store,sharing=locked \
+  pnpm install --frozen-lockfile --store-dir=/pnpm/store
 RUN pnpm --dir native/landlock-run build:native
 ARG DSH_CLIENT_COMMIT_HASH
 ARG DSH_CLIENT_VERSION=0.1.2-alpha.1
@@ -22,9 +26,12 @@ RUN test -n "$DSH_CLIENT_COMMIT_HASH" \
 FROM ${WEAVE_IMAGE} AS weave-runtime
 
 FROM ${NODE_IMAGE} AS runtime
-RUN apt-get update \
+RUN --mount=type=cache,id=workbench-apt-cache,target=/var/cache/apt,sharing=locked \
+  --mount=type=cache,id=workbench-apt-lists,target=/var/lib/apt/lists,sharing=locked \
+  --mount=type=cache,id=workbench-npm,target=/root/.npm,sharing=locked \
+  rm -f /etc/apt/apt.conf.d/docker-clean \
+  && apt-get update \
   && apt-get install -y --no-install-recommends bash ca-certificates git ripgrep \
-  && rm -rf /var/lib/apt/lists/* \
   && npm install --global pnpm@11.7.0
 WORKDIR /app
 COPY --from=build /app /app

@@ -63,11 +63,26 @@ export interface WorkTaskMemberStage {
   readonly failureClass: 'work' | 'verification' | 'infrastructure' | 'cancelled' | ''
   readonly failureReason: string
   readonly retryable: boolean
+  readonly currentTaskId: string
+  readonly publicUpdatesState: 'live' | 'complete' | 'partial' | 'unavailable'
+  readonly publicUpdatesTruncated: boolean
+  readonly publicUpdates: readonly WorkTaskPublicUpdate[]
+}
+
+/** One public runtime message; never private reasoning or final delivery evidence. */
+export interface WorkTaskPublicUpdate {
+  readonly eventId: string
+  readonly taskId: string
+  readonly seq: number
+  readonly text: string
+  readonly occurredAt: string
+  readonly truncated: boolean
 }
 
 /** One bounded tool call observation recorded by Weave. */
 export interface WorkTaskMemberTool {
   readonly callId: string
+  readonly taskId: string
   readonly name: string
   readonly status: 'running' | 'ok' | 'error'
   readonly startedAt: string
@@ -84,6 +99,7 @@ export interface WorkTaskMember {
   readonly role: 'lead' | 'worker'
   readonly status: WorkTaskMemberStatus
   readonly runtime: string
+  readonly updateMode: 'live' | 'on_completion'
   readonly stages: readonly WorkTaskMemberStage[]
 }
 
@@ -91,12 +107,22 @@ export interface WorkTaskMember {
 export interface WorkTaskDeliverable {
   readonly id: string
   readonly title: string
+  /** `summary` is a filename-free final deliver-node output; both it and `final` carry `artifact_kind=final`. */
   readonly kind: 'final' | 'summary' | 'stage'
   readonly contentType: string
   readonly preview: string
   readonly content: string
   readonly truncated: boolean
   readonly createdAt: string
+}
+
+/**
+ * Whether Weave has recorded a final output, including a text-only delivery summary.
+ * @param model - Exact-run deliverables already classified from Weave metadata.
+ * @returns Whether final delivery is recorded independently of a filename or file bundle.
+ */
+export function workTaskHasFinalDeliverable(model: Pick<WorkTaskModel, 'deliverables'>): boolean {
+  return model.deliverables.some(item => item.kind === 'final' || item.kind === 'summary')
 }
 
 /**
@@ -115,7 +141,7 @@ export function workTaskHasUserVisibleCompletenessWarning(model: Pick<WorkTaskMo
   const finishedWithVisibleWork = model.status === 'completed'
     && model.members.length > 0
     && model.runtimes.length > 0
-    && model.deliverables.some(item => item.kind === 'final')
+    && workTaskHasFinalDeliverable(model)
     && model.totalStages > 0
     && model.completedStages >= model.totalStages
   if (finishedWithVisibleWork) return false
@@ -128,6 +154,8 @@ export interface WorkTaskModel {
   readonly brief: string
   readonly status: WorkTaskStatus
   readonly teamName: string
+  readonly waitKind: '' | 'timer' | 'fanout' | 'human' | 'correction' | 'runtime'
+  readonly waitNodeId: string
   readonly workflowName: string
   readonly runId: string
   readonly completedStages: number
@@ -139,12 +167,14 @@ export interface WorkTaskModel {
   readonly corrections: readonly WorkTaskCorrection[]
   readonly runtimes: readonly WorkTaskRuntime[]
   readonly humanTaskCount: number
+  readonly humanTask: WorkTaskHumanTask | null
   readonly deliverableCount: number
   readonly deliverables: readonly WorkTaskDeliverable[]
   readonly blocker: 'none' | 'queued' | 'runtime-missing' | 'failed'
   readonly attempts: readonly WorkTaskAttempt[]
   readonly pendingAction: WorkTaskPendingAction | null
   readonly actionError: string
+  readonly actionHistory: readonly WorkTaskActionReceipt[]
   readonly completeness: Readonly<Record<string, 'complete' | 'partial' | 'unavailable'>>
   readonly startedAt: string
   readonly finishedAt: string
@@ -183,9 +213,26 @@ export interface WorkTaskAttempt {
   readonly updatedAt: number
 }
 
+/** A response from Weave to a durably recorded user action; acceptance does not imply execution completion. */
+export interface WorkTaskActionReceipt {
+  readonly id: string
+  readonly action: WorkTaskPendingAction
+  readonly outcome: 'accepted' | 'rejected'
+  readonly resolvedAt: number
+}
+
+/** One exact human wait and the response shape declared by the workflow. */
+export interface WorkTaskHumanTask {
+  readonly interactionId: string
+  readonly nodeId: string
+  readonly title: string
+  readonly instructions: string
+  readonly resumeSchema: Readonly<Record<string, unknown>>
+}
+
 /** The sole unresolved local network action, persisted before it is sent. */
 export interface WorkTaskPendingAction {
-  readonly kind: 'stop' | 'rerun' | 'stage-retry' | 'correction-request' | 'correction-confirm'
+  readonly kind: 'stop' | 'rerun' | 'stage-retry' | 'correction-request' | 'correction-confirm' | 'human-complete'
   readonly targetRunId: string
   readonly idempotencyKey: string
   readonly clientRequestId: string
@@ -197,6 +244,8 @@ export interface WorkTaskPendingAction {
   readonly disposition: 'apply' | 'discard' | ''
   readonly instruction: string
   readonly nodeId: string
+  readonly humanPayload?: unknown
+  readonly humanInteractionId?: string
 }
 
 /** One durable correction request and its computed restart impact. */
@@ -253,6 +302,8 @@ const EMPTY_MODEL: WorkTaskModel = {
   detected: false,
   brief: '',
   status: 'preparing',
+  waitKind: '',
+  waitNodeId: '',
   teamName: '',
   workflowName: '',
   runId: '',
@@ -265,12 +316,14 @@ const EMPTY_MODEL: WorkTaskModel = {
   corrections: [],
   runtimes: [],
   humanTaskCount: 0,
+  humanTask: null,
   deliverableCount: 0,
   deliverables: [],
   blocker: 'none',
   attempts: [],
   pendingAction: null,
   actionError: '',
+  actionHistory: [],
   completeness: {},
   startedAt: '',
   finishedAt: '',
@@ -390,8 +443,8 @@ function deepDecimal(value: unknown, keys: readonly string[]): number {
 function normalizedStatus(raw: string): WorkTaskStatus {
   const value = raw.toLowerCase().replaceAll('-', '_')
   if (['completed', 'complete', 'succeeded', 'success', 'done'].includes(value)) return 'completed'
-  if (['cancelled', 'canceled', 'abandoned', 'stopped'].includes(value)) return 'stopped'
-  if (['failed', 'error'].includes(value)) return 'failed'
+  if (['cancelled', 'canceled', 'stopped'].includes(value)) return 'stopped'
+  if (['failed', 'error', 'abandoned'].includes(value)) return 'failed'
   if (value === 'cancel_requested') return 'stopping'
   if (['parked', 'waiting', 'yielded', 'waiting_for_human', 'needs_input', 'blocked', 'paused'].includes(value)) return 'waiting'
   if (['queued', 'pending'].includes(value)) return 'queued'
@@ -483,8 +536,8 @@ function memberStatus(value: unknown): WorkTaskMemberStatus {
   if (raw === 'completed' || raw === 'finished') return 'completed'
   if (raw === 'partially-completed') return 'partially-completed'
   if (raw === 'running' || raw === 'active') return 'running'
-  if (raw === 'failed') return 'failed'
-  if (raw === 'stopped' || raw === 'cancelled' || raw === 'abandoned') return 'stopped'
+  if (raw === 'failed' || raw === 'abandoned') return 'failed'
+  if (raw === 'stopped' || raw === 'cancelled') return 'stopped'
   if (raw === 'not-recorded' || raw === 'known') return 'not-recorded'
   return 'pending'
 }
@@ -502,6 +555,22 @@ function memberInputs(value: unknown): readonly WorkTaskMemberInput[] {
       path: deepString(item, ['path']), summary: deepString(item, ['summary']),
     }]
   })
+}
+
+function publicUpdates(value: unknown): WorkTaskPublicUpdate[] {
+  if (!Array.isArray(value)) return []
+  const updates = new Map<string, WorkTaskPublicUpdate>()
+  for (const candidate of value) {
+    const item = record(candidate)
+    if (item === null || item.kind !== 'text') continue
+    const taskId = deepString(item, ['task_id'])
+    const eventId = deepString(item, ['event_id'])
+    const seq = deepNumber(item, ['seq'])
+    if (taskId === '' || eventId === '' || (!Number.isSafeInteger(seq) || seq <= 0) || typeof item.text !== 'string') continue
+    updates.set(`${taskId}:${seq}`, { eventId, taskId, seq, text: item.text,
+      occurredAt: deepString(item, ['occurred_at']), truncated: item.truncated === true })
+  }
+  return [...updates.values()]
 }
 
 function memberStages(value: unknown): readonly WorkTaskMemberStage[] {
@@ -522,13 +591,16 @@ function memberStages(value: unknown): readonly WorkTaskMemberStage[] {
       failureClass: (['work', 'verification', 'infrastructure', 'cancelled'].includes(deepString(item, ['failure_class', 'failureClass']))
         ? deepString(item, ['failure_class', 'failureClass']) : '') as WorkTaskMemberStage['failureClass'],
       failureReason: deepString(item, ['failure_reason', 'failureReason']), retryable: item.retryable === true,
+      publicUpdates: publicUpdates(item.public_updates), publicUpdatesTruncated: item.public_updates_truncated === true,
+      currentTaskId: deepString(item, ['current_task_id']),
+      publicUpdatesState: ['live', 'complete', 'partial'].includes(String(item.public_updates_state)) ? item.public_updates_state as WorkTaskMemberStage['publicUpdatesState'] : 'unavailable',
       tools: rawTools.flatMap((candidate): WorkTaskMemberTool[] => {
         const tool = record(candidate)
         if (tool === null) return []
         const name = deepString(tool, ['name'])
         const status = deepString(tool, ['status'])
         if (name === '' || !['running', 'ok', 'error'].includes(status)) return []
-        return [{ callId: deepString(tool, ['call_id', 'callId']), name, status: status as WorkTaskMemberTool['status'],
+        return [{ callId: deepString(tool, ['call_id', 'callId']), taskId: deepString(tool, ['task_id']), name, status: status as WorkTaskMemberTool['status'],
           startedAt: deepString(tool, ['started_at', 'startedAt']), completedAt: deepString(tool, ['completed_at', 'completedAt']),
           input: deepString(tool, ['input']), output: deepString(tool, ['output']) }]
       }),
@@ -576,7 +648,7 @@ function memberList(value: unknown): readonly WorkTaskMember[] {
     return [{
       agentId, name: deepString(item, ['name', 'display_name']) || agentId,
       duty: deepString(item, ['duty']), role: deepString(item, ['role']) === 'lead' ? 'lead' : 'worker',
-      status: memberStatus(item), runtime: runtimeDetail, stages: memberStages(item.stages),
+      status: memberStatus(item), runtime: runtimeDetail, updateMode: runtime?.update_mode === 'live' ? 'live' : 'on_completion', stages: memberStages(item.stages),
     }]
   })
 }
@@ -702,10 +774,14 @@ export function workTaskModel(nodes: readonly ChatConversationViewNode[]): WorkT
   const candidates = teamCandidates(calls)
   const runId = deepString(statusValue, ['run_id', 'runId'])
     || deepString(dispatch?.value, ['run_id', 'runId'])
-  const humanValue = latest(calls, ['mcp__weave__human_task_list'])?.value
-  const humanTaskCount = matchingCount(humanValue, runId)
+  const humanValue = record(runActivity?.value)?.human_tasks ?? latest(calls, ['mcp__weave__human_task_list'])?.value
   let status = normalizedStatus(deepString(statusValue, ['status', 'state', 'run_status']))
+  const humanTaskCount = status === 'completed' || status === 'failed' || status === 'stopped' || status === 'stopping'
+    ? 0 : matchingCount(humanValue, runId)
   if (humanTaskCount > 0) status = 'waiting'
+  const rawWaitKind = record(statusValue)?.wait_kind
+  const waitKind = status !== 'waiting' ? '' : rawWaitKind === 'timer' || rawWaitKind === 'fanout'
+    || rawWaitKind === 'human' || rawWaitKind === 'correction' || rawWaitKind === 'runtime' ? rawWaitKind : ''
 
   const members = memberList(runActivity?.value ?? statusValue)
   const reportedStages = stageList(statusValue)
@@ -762,6 +838,8 @@ export function workTaskModel(nodes: readonly ChatConversationViewNode[]): WorkT
     detected,
     brief: deepString(dispatch?.args, ['task']),
     status,
+    waitKind,
+    waitNodeId: status === 'waiting' ? deepString(statusValue, ['wait_node_id']) : '',
     teamName: team.name,
     workflowName: deepString(dispatch?.value, ['workflow_name', 'workflow'])
       || deepString(dispatch?.args, ['workflow_name', 'workflow']),
@@ -775,12 +853,14 @@ export function workTaskModel(nodes: readonly ChatConversationViewNode[]): WorkT
     corrections,
     runtimes,
     humanTaskCount,
+    humanTask: null,
     deliverableCount,
     deliverables,
     blocker,
     attempts: [],
     pendingAction: null,
-    actionError: '',
+    actionError: deepString(statusValue, ['status', 'state', 'run_status']) === 'abandoned' && record(statusValue)?.stop_unconfirmed === true ? 'stop_unconfirmed' : '',
+    actionHistory: [],
     completeness: {},
     startedAt: deepString(statusValue, ['started_at', 'startedAt']),
     finishedAt: deepString(statusValue, ['ended_at', 'endedAt', 'terminal_at', 'terminalAt', 'finished_at', 'finishedAt']),

@@ -8,9 +8,12 @@
     { "path": "../../session/session-projection" },
     { "path": "../../runtime-diagnostics/invariants" },
     { "path": "../locale" },
+    { "path": "../store" },
     { "path": "../ui-renderer" },
     { "path": "../ui-tool" },
     { "path": "../ui-primitives" },
-    { "path": "../ui-slots" }
+    { "path": "../ui-slots" },
+    { "path": "../ui-workspace" },
+    { "path": "../ui-input-trigger" }
   ]
 }

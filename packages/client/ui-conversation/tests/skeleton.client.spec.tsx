@@ -329,7 +329,7 @@ describe('Hero chrome', () => {
     vi.stubEnv('DSH_CLIENT_BUILD_PROFILE', 'workbench')
     const renderSlot = vi.fn<HeroShellProps['renderSlot']>(() => null)
     const view = render(<HeroShell t={makeTranslate(en, commonEn)} renderSlot={renderSlot} />)
-    expect(view.getByText('Into the Unknown')).toBeTruthy()
+    expect(view.getByText('Start a task')).toBeTruthy()
     expect(view.queryByText('Preview')).toBeNull()
   })
 })
@@ -582,6 +582,21 @@ describe('ConversationRoot resident composer', () => {
     // The agent-preset chip sits in the same row, for the same reason: both
     // choices are only open before the first message.
     expect(b.slotCalls).toContain('conversation.hero.agentPreset')
+  })
+
+  it('presents project context and a business request in a Workbench build', () => {
+    vi.stubEnv('DSH_CLIENT_BUILD_PROFILE', 'workbench')
+    const b = mount(sessionSnapshotOf({ blank: true }), [{ ...workspace('one'), sessionIds: [SID] }])
+    expect(b.view.getByRole('button', { name: '选择项目' })).toBeTruthy()
+    expect(b.view.getByRole('textbox').getAttribute('data-placeholder')).toBe('描述你想完成的工作…')
+  })
+
+  it('keeps an unassigned Workbench session behind an explicit project choice', () => {
+    vi.stubEnv('DSH_CLIENT_BUILD_PROFILE', 'workbench')
+    const b = mount(sessionSnapshotOf({ blank: true }), [])
+    const trigger = b.view.getByRole('textbox', { name: '选择项目' })
+    expect(trigger.getAttribute('data-placeholder')).toBe('选择项目后开始')
+    expect(trigger.getAttribute('aria-haspopup')).toBe('menu')
   })
 
   it('prompt failure renders the promptError strip (ordinary failure, no transaction UI)', () => {

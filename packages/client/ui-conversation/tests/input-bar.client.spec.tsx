@@ -1302,6 +1302,39 @@ describe('command launcher chrome and control seats', () => {
     expect(launcher.getAttribute('aria-expanded')).toBe('true')
   })
 
+  it('localizes standard Workbench access labels while retaining their permission commands', () => {
+    vi.stubEnv('DSH_CLIENT_BUILD_PROFILE', 'workbench')
+    onTestFinished(() => { vi.unstubAllEnvs() })
+    const command = vi.fn(async () => true)
+    const { view } = bench({ permissions: {
+      currentValue: 'workspace-write', options: [
+        { value: 'read-only', name: 'read-only' },
+        { value: 'workspace-write', name: 'workspace-write' },
+      ],
+    }, command })
+    fireEvent.click(view.getByLabelText('访问模式，当前：可修改项目文件'))
+    fireEvent.click(view.getByRole('menuitem', { name: '只读访问' }))
+    expect(command).toHaveBeenCalledWith('/permission read-only')
+  })
+
+  it.each(['rejected', 'disconnected'])('keeps the recorded access mode and explains a %s permission change', async (failure) => {
+    const command = vi.fn(async () => {
+      if (failure === 'disconnected') throw new Error('connection closed')
+      return false
+    })
+    const { view } = bench({ permissions: {
+      currentValue: 'read-only', options: [
+        { value: 'read-only', name: 'read-only' },
+        { value: 'workspace-write', name: 'workspace-write' },
+      ],
+    }, command })
+    fireEvent.click(view.getByLabelText(/^访问模式/))
+    await act(async () => { fireEvent.click(view.getByRole('menuitem', { name: 'Workspace Write' })) })
+    expect(view.getByRole('alert').textContent).toBe('权限修改未获确认，请重试。')
+    expect(view.getByLabelText('访问模式，当前：Read Only').hasAttribute('disabled')).toBe(false)
+    expect(command).toHaveBeenCalledWith('/permission workspace-write')
+  })
+
   it('the Access chip renders the projection value and submits a non-Full-access pick directly', async () => {
     const command = vi.fn(() => Promise.resolve(true))
     const permissions = {

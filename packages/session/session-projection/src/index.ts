@@ -64,6 +64,8 @@ export interface ProjectionDefinition<
   apply(state: NoInfer<S>, event: SessionEvent): NoInfer<S>
   /** Client view. Omit for host-only units. */
   wire?: K extends keyof SessionProjectionMap ? {
+    /** Require an available value in cold Session lists; missing cached values may trigger bounded observation. */
+    list?: boolean
     /** Validates the wire payload before it leaves the host. */
     viewSchema: ZodType<SessionProjectionMap[K]>
     /**
@@ -132,7 +134,7 @@ interface ErasedDefinition {
   stateSchema: { parse(value: unknown): unknown }
   init(header: SessionHeader): unknown
   apply(state: unknown, event: SessionEvent): unknown
-  wire: { viewSchema: { parse(value: unknown): unknown }; view(state: unknown): unknown } | undefined
+  wire: { list?: boolean; viewSchema: { parse(value: unknown): unknown }; view(state: unknown): unknown } | undefined
   stateVersion: number
 }
 
@@ -235,6 +237,7 @@ export class SessionProjectionRegistry extends Service {
     definition: ProjectionDefinition<K, S>,
   ): () => void {
     const wire = definition.wire as {
+      list?: boolean
       viewSchema: ZodType
       view(state: S): unknown
     } | undefined
@@ -245,7 +248,7 @@ export class SessionProjectionRegistry extends Service {
       apply: (state, event) => definition.apply(state as S, event),
       wire: wire === undefined
         ? undefined
-        : { viewSchema: wire.viewSchema, view: state => wire.view(state as S) },
+        : { ...wire, view: state => wire.view(state as S) },
       stateVersion: definition.stateVersion,
     }
     if (!Number.isSafeInteger(definition.stateVersion) || definition.stateVersion < 0) {
@@ -287,6 +290,16 @@ export class SessionProjectionRegistry extends Service {
       }
     }, 'sessionProjections.onChanged()')
     return () => void dispose()
+  }
+
+  /**
+   * Registered projection versions explicitly needed by Session-list consumers.
+   * @returns list-visible keys and the state versions that invalidate cached observations.
+   */
+  listRequirements(): readonly { readonly key: string; readonly stateVersion: number }[] {
+    return [...this.registrations.values()]
+      .filter(({ def }) => def.wire?.list === true)
+      .map(({ def }) => ({ key: def.key, stateVersion: def.stateVersion }))
   }
 
   /**

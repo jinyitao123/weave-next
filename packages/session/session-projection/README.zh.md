@@ -62,6 +62,8 @@ const dispose = ctx.sessionProjections.register(definition)
 const { asOfSeq, values } = ctx.sessionProjections.snapshot(session)
 ```
 
+值需要出现在冷 Session 列表中的领域声明 `wire.list: true`。`listRequirements()` 给出这些键及其状态版本，其他 wire 键不会触发列表恢复。缓存缺少键表示未知，键的值为 null 则表示已经计算。
+
 ### 持久检查点
 
 每个单元的状态都会被检查点化——client-visible 与 host-only 一视同仁——通过 `checkpoint(session)`，同级包 [session-projection-cache](../session-projection-cache/README.zh.md) 持久化这些检查点，使冷读跳过全量日志加载。`restoreFloor` 与 `restore` 在无活动会话的情况下实现读取配方（缓存状态加正向尾部回放）。

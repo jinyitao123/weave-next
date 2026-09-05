@@ -48,6 +48,14 @@
   border-left: none;
 }
 
+.frame[data-details-focus] .centerCol {
+  visibility: hidden;
+}
+
+.frame[data-details-focus] .detailsCol {
+  border-left-color: var(--dsw-alias-border-l1);
+}
+
 /* When the center floor forces the details grid track to zero, an explicitly
    opened panel becomes a drawer instead of disappearing. This preserves the
    center-column concession contract while keeping the open action truthful. */
@@ -82,6 +90,11 @@
 
 .frame[data-dragging] .handle {
   transition: none;
+}
+
+.handle:focus-visible {
+  outline: 2px solid var(--dsw-alias-label-secondary);
+  outline-offset: -2px;
 }
 
 @media (prefers-reduced-motion: reduce) {

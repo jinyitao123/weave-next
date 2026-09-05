@@ -149,6 +149,48 @@
   display: none;
 }
 
+/* A task's name stays readable when its conversation shares the window with the scene. */
+.workbenchHeader .titleRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  row-gap: 4px;
+}
+
+.workbenchHeader .titleCluster {
+  display: contents;
+}
+
+.workbenchHeader .crumbs {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.workbenchHeader .crumbSeg:last-child {
+  flex: 1;
+}
+
+.workbenchHeader .crumbCurrent {
+  max-width: 100%;
+  text-align: left;
+}
+
+.workbenchHeader .headerUtilities {
+  grid-column: 2;
+  grid-row: 1;
+  margin-left: 12px;
+}
+
+.workbenchHeader .headerActions {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  min-width: 0;
+  padding: 0 8px 8px;
+}
+
+.workbenchHeader .headerActions:empty {
+  display: none;
+}
+
 /* figma Tab_Group 34:11441: 35px strip, gap 36, pad-left 8, tabs bottom-aligned. */
 .tabs {
   position: relative;

@@ -322,6 +322,7 @@ export function ConversationRoot({
   // bar is ONE session-maybe slot rendered unconditionally — inert is a prop,
   // not a different tree, so the textarea DOM survives the transition.
   const inert = sessionId === undefined || (hero && chipTitle === undefined)
+  const workbench = process.env.DSH_CLIENT_BUILD_PROFILE === 'workbench'
   // A raised block is the same inert posture with the blocker's own reason:
   // one disabled textarea, never a second tree. The no-workspace state wins
   // when both hold — picking a workspace is the earlier prerequisite.
@@ -331,7 +332,7 @@ export function ConversationRoot({
     ...(inert
       ? {
         disabled: true,
-        placeholder: t('placeholder.workspace'),
+        placeholder: t(workbench ? 'placeholder.workbenchWorkspace' : 'placeholder.workspace'),
         workspacePickerOpen: pickerOpen,
         onRequestWorkspace: () => { setPickerOpen(true) },
       }
@@ -340,7 +341,7 @@ export function ConversationRoot({
         // block keeps the model seat live because choosing a model is how the
         // user clears it.
         ? { blocked: composerBlock, placeholder: composerBlock.reason }
-        : hero ? { placeholder: t('placeholder.hero') } : {}),
+        : hero ? { placeholder: t(workbench ? 'placeholder.workbenchHero' : 'placeholder.hero') } : {}),
     overlay: sessionId === undefined ? undefined : renderSlot('conversation.input.overlay', {}),
     leftItems: zone === undefined ? null : renderSlot('conversation.input.left', zone),
     rightItems: zone === undefined ? null : renderSlot('conversation.input.right', zone),

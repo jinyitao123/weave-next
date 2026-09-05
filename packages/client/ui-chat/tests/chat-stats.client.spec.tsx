@@ -28,6 +28,7 @@ beforeEach(() => { vi.stubGlobal('ResizeObserver', ResizeObserverStub) })
 afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
+  vi.unstubAllEnvs()
   vi.restoreAllMocks()
   vi.useRealTimers()
 })
@@ -56,6 +57,18 @@ function makeSource(init: ChatUpdate = {}) {
     },
   }
 }
+
+describe('Workbench statistics disclosure', () => {
+  it('keeps technical details collapsed while retaining the recorded values', () => {
+    vi.stubEnv('DSH_CLIENT_BUILD_PROFILE', 'workbench')
+    const { source } = makeSource({ nodes: [assistant(1, 1)] })
+    const view = render(<StatsLine useChat={bindSnapshotSelector(source)} useProjection={() => undefined} t={t} />)
+    const disclosure = view.container.querySelector('details')!
+    expect(disclosure.open).toBe(false)
+    expect(disclosure.querySelector('summary')?.textContent).toBe('查看用量与运行明细')
+    expect(disclosure.querySelector('p')?.textContent).toContain('1 轮 · 1 步')
+  })
+})
 
 describe('deriveStats', () => {
   it('counts turns and steps and never folds node usage into accounting', () => {

@@ -47,6 +47,7 @@ type FeedRow = {
   running?: boolean
   blank?: boolean
   projections?: Record<string, unknown>
+  projectionUnavailableKeys?: readonly string[]
 }
 
 async function feedList(b: Bench, rows: FeedRow[]): Promise<void> {
@@ -56,6 +57,7 @@ async function feedList(b: Bench, rows: FeedRow[]): Promise<void> {
       ...(r.cwd !== undefined ? { cwd: r.cwd } : {}),
       ...(r.parentId !== undefined ? { parentSessionId: sid(r.parentId) } : {}),
       ...(r.origin !== undefined ? { origin: r.origin } : {}),
+      ...(r.projectionUnavailableKeys === undefined ? {} : { projectionUnavailableKeys: r.projectionUnavailableKeys }),
       ...(r.projections === undefined
         ? {}
         : { projections: { asOfSeq: 0, values: r.projections } }),
@@ -66,6 +68,16 @@ async function feedList(b: Bench, rows: FeedRow[]): Promise<void> {
 }
 
 describe('list store projection', () => {
+  it('keeps an unavailable list projection explicit until a newer value arrives', async () => {
+    const b = bench()
+    await feedList(b, [{ id: 'cold', projectionUnavailableKeys: ['agentPreset'] }])
+    expect(b.svc.list.getSnapshot().byId[sid('cold')]?.projectionUnavailableKeys).toEqual(['agentPreset'])
+    b.svc.handleControlFrame({ type: 'projection', sessionId: sid('cold'), key: 'agentPreset', value: 'standard', seq: 2 })
+    await Promise.resolve()
+    expect(b.svc.list.getSnapshot().byId[sid('cold')]?.projectionUnavailableKeys).toEqual([])
+    await feedList(b, [{ id: 'cold', projectionUnavailableKeys: ['agentPreset'] }])
+    expect(b.svc.list.getSnapshot().byId[sid('cold')]?.projectionUnavailableKeys).toEqual([])
+  })
   it('projects durable titles separately from cwd/id display fallbacks and parent links', async () => {
     const b = bench()
     b.svc.handleControlFrame({
