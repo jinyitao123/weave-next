@@ -40,28 +40,30 @@
 .tableScroll tr:nth-child(even) { background: var(--dsw-alias-interactive-bg-hover); }
 .preview .notice { margin: 0; padding: 12px; color: var(--dsw-alias-label-secondary); font-size: 13px; line-height: 1.6; }
 .controls { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
-.controls button {
+.controls button, .iconButton {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 30px;
-  min-height: 30px;
-  padding: 4px 8px;
+  box-sizing: border-box;
+  width: 32px;
+  height: 32px;
+  padding: 7px;
   border: 1px solid transparent;
-  border-radius: 6px;
-  color: var(--dsw-alias-label-primary);
+  border-radius: 9px;
+  color: var(--dsw-alias-label-secondary);
+  text-decoration: none;
   background: transparent;
   font: inherit;
   cursor: pointer;
 }
-.controls button:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); }
-.controls button:active:not(:disabled) { background: var(--dsw-alias-interactive-bg-active); }
-.controls button:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: 1px; }
+.controls button:hover:not(:disabled), .iconButton:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.controls button:active:not(:disabled), .iconButton:active { background: var(--dsw-alias-interactive-bg-active); }
+.controls button:focus-visible, .iconButton:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: 1px; }
 .controls button:disabled { opacity: .4; cursor: default; }
 .controls output { min-width: 44px; text-align: center; font-variant-numeric: tabular-nums; font-size: 12px; line-height: 20px; }
 .imageScroll img { display: block; width: var(--weave-preview-width); max-width: none; height: auto; }
 @media (prefers-reduced-motion: no-preference) {
-  .controls button { transition: background-color 140ms ease, color 140ms ease; }
+  .controls button, .iconButton { transition: background-color 140ms ease, color 140ms ease; }
 }
 
 .toolbar a { color: var(--dsw-alias-label-primary); text-underline-offset: 3px; font-size: 13px; }

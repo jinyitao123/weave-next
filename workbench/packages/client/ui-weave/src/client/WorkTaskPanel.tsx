@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { MarkdownText, IconChevronLeftOutline14, IconChevronRightOutline14, IconDownloadOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { MarkdownText, Tooltip, IconChevronLeftOutline14, IconChevronRightOutline14, IconDownloadOutline16, IconFullscreenOutline16, IconPanelLeftOutline16, IconCloseOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { CSSProperties } from 'react'
 import type { InjectFace, PropsLocale, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
 import type { WorkTaskDeliverable, WorkTaskMemberStage, WorkTaskMemberStatus, WorkTaskRuntime, WorkTaskStatus } from './work-task-model.ts'
@@ -403,7 +403,7 @@ function DeliverableItems({ items, sessionId, runId, expandedIds, selection, tog
             {visited.current.has(item.id) ? (
               <div className={css.deliverableBody} data-structured={structured || undefined}>
                 {structured ? null : <div className={css.deliverableActions}>
-                  <a href={deliverableUrl(item, sessionId, runId)} download><IconDownloadOutline16 />{t('task.deliverables.download')}</a>
+                  <Tooltip label={t('task.deliverables.download')}><a className={css.sceneIconButton} href={deliverableUrl(item, sessionId, runId)} download aria-label={t('task.deliverables.download')}><IconDownloadOutline16 /></a></Tooltip>
                   {item.truncated ? <span>{t('task.deliverables.truncated')}</span> : null}
                 </div>}
                 <DeliverableBody item={item} sessionId={sessionId} runId={runId} t={t} />
@@ -596,7 +596,7 @@ export function WorkTaskPanel({
         {model.preparation.steps.map(step => <li key={step.id}><strong>{step.label}</strong> · {t(step.status === 'succeeded' ? 'task.status.completed' : step.status === 'failed' ? 'task.status.failed' : step.status === 'running' ? 'task.status.running' : 'task.status.waiting')}
           {step.attempt > 1 ? <span> · {t('build.attempt', { count: step.attempt })}</span> : null}</li>)}
       </ol></details>}
-      {presentation === 'conversation' ? <button type="button" className={css.secondaryButton} onClick={openDetails}>{t('task.card.openScene')}</button> : returnToConversation === undefined ? null : <button type="button" className={css.secondaryButton} onClick={returnToConversation}>{t('build.back')}</button>}
+      {presentation === 'conversation' ? <button type="button" className={css.secondaryButton} onClick={openDetails}>{t('task.card.openScene')}</button> : returnToConversation === undefined ? null : <Tooltip label={t('build.back')} side="bottom"><button type="button" className={css.sceneIconButton} aria-label={t('build.back')} onClick={returnToConversation}><IconChevronLeftOutline14 size={16} /></button></Tooltip>}
       {model.preparation.error === '' ? null : <details className={css.diagnostics}><summary>{t('build.details')}</summary><pre>{model.preparation.error}</pre></details>}
     </section>
   )
@@ -828,7 +828,7 @@ export function WorkTaskPanel({
 
   const memberView = selectedMember === undefined ? null : (
     <div key={selectedMember.agentId} data-weave-member-reader>
-      <button ref={backButton} type="button" className={css.backButton} onClick={closeMember}><IconChevronLeftOutline14 size={16} />{t('task.member.back')}</button>
+      <Tooltip label={t('task.member.back')} side="bottom"><button ref={backButton} type="button" className={`${css.sceneIconButton} ${css.backButton}`} aria-label={t('task.member.back')} onClick={closeMember}><IconChevronLeftOutline14 size={16} /></button></Tooltip>
       <header className={css.memberWorkspaceHeader}>
         <div className={css.memberWorkspaceIdentity}>
           <span className={css.memberStatus} data-executing={(executing && selectedMember.status === 'running') || undefined} data-status={selectedMember.status} aria-hidden />
@@ -857,7 +857,9 @@ export function WorkTaskPanel({
       <div className={css.memberToolbar}>
         <div className={css.followControls}>
           <span>{t(terminal ? 'task.updates.recorded' : selectedMember.updateMode === 'live' ? 'task.updates.live' : 'task.updates.onCompletion')}</span>
-          <button type="button" className={css.secondaryButton} aria-pressed={followed.includes(selectedMember.agentId)} disabled={!followed.includes(selectedMember.agentId) && followed.length >= 3} onClick={() => { actions.toggleFollow(model.runId, selectedMember.agentId) }}>{t(followed.includes(selectedMember.agentId) ? 'task.member.unfollow' : 'task.member.follow')}</button>
+          <Tooltip label={t(followed.includes(selectedMember.agentId) ? 'task.member.unfollow' : 'task.member.follow')}><button type="button" className={css.sceneIconButton} aria-label={t(followed.includes(selectedMember.agentId) ? 'task.member.unfollow' : 'task.member.follow')} aria-pressed={followed.includes(selectedMember.agentId)} disabled={!followed.includes(selectedMember.agentId) && followed.length >= 3} onClick={() => { actions.toggleFollow(model.runId, selectedMember.agentId) }}>
+            <svg className={css.followIcon} width="17" height="17" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" aria-hidden="true"><path d="m10 2.5 2.3 4.65 5.2.75-3.75 3.65.88 5.15L10 14.27 5.37 16.7l.88-5.15L2.5 7.9l5.2-.75Z" /></svg>
+          </button></Tooltip>
         </div>
         <section className={css.memberWorkspaceActions} aria-label={t('task.correction.member')}>
           {actionError === null ? null : <div className={css.actionError} role="alert">{actionError}</div>}
@@ -1057,7 +1059,7 @@ export function WorkTaskPanel({
     {model.deliverables.length < 5 ? null : <div className={css.outputSearch}>
       <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden><circle cx="8.5" cy="8.5" r="5.5" /><path d="m13 13 4 4" /></svg>
       <input type="search" aria-label={t('task.overview.findOutput')} placeholder={t('task.overview.findOutput')} value={outputQuery} onChange={(event) => { setOutputQuery(event.currentTarget.value) }} />
-      {outputQuery === '' ? null : <button type="button" onClick={() => { setOutputQuery('') }}>{t('task.overview.clearSearch')}</button>}
+      {outputQuery === '' ? null : <Tooltip label={t('task.overview.clearSearch')}><button type="button" className={css.sceneIconButton} aria-label={t('task.overview.clearSearch')} onClick={() => { setOutputQuery('') }}><IconCloseOutline16 /></button></Tooltip>}
     </div>}
     {model.deliverables.length === 0 ? <p className={css.muted}>{t('task.deliverables.empty')}</p> : <>
       {visibleFinal.length + visibleStages.length > 0 ? null : <p className={css.resourceEmpty} role="status">{t('task.overview.noMatch')}</p>}
@@ -1074,9 +1076,9 @@ export function WorkTaskPanel({
   return (
     <div ref={sceneRoot} className={css.panel} data-weave-work-task onKeyDown={(event) => { if (event.key === 'Escape' && selectedMember !== undefined && activeTab === 'progress') { if (correctionOpen) setCorrectionOpen(false); else closeMember() } }} data-status={model.status} data-delivery={hasFinal ? 'ready' : 'missing'}>
       <div className={css.viewControls}><WorkTaskTabs selected={activeTab} select={selectTab} id={tabId} t={t} />
-        {expandDetails === undefined ? null : <button type="button" className={`${css.secondaryButton} ${css.fullWidthButton}`} onClick={expandDetails}>{t('task.fullWidth')}</button>}
-        <button type="button" className={`${css.secondaryButton} ${css.sideBySideButton}`} onClick={openDetails}>{t('task.sideBySide')}</button>
-        {returnToConversation === undefined ? null : <button type="button" className={`${css.secondaryButton} ${css.conversationReturn}`} onClick={returnToConversation}>{t('task.card.returnConversation')}</button>}
+        {expandDetails === undefined ? null : <Tooltip label={t('task.fullWidth')} side="bottom"><button type="button" className={`${css.sceneIconButton} ${css.fullWidthButton}`} aria-label={t('task.fullWidth')} onClick={expandDetails}><IconFullscreenOutline16 /></button></Tooltip>}
+        <Tooltip label={t('task.sideBySide')} side="bottom"><button type="button" className={`${css.sceneIconButton} ${css.sideBySideButton}`} aria-label={t('task.sideBySide')} onClick={openDetails}><IconPanelLeftOutline16 /></button></Tooltip>
+        {returnToConversation === undefined ? null : <Tooltip label={t('task.card.returnConversation')} side="bottom"><button type="button" className={`${css.sceneIconButton} ${css.conversationReturn}`} aria-label={t('task.card.returnConversation')} onClick={returnToConversation}><IconChevronLeftOutline14 size={16} /></button></Tooltip>}
       </div>
       <header className={css.hero} hidden={activeTab === 'progress' && selectedMember !== undefined}>
         <div className={css.eyebrow}>{teamDisplayName(model.teamName, t(model.runId === '' && model.status === 'preparing' ? 'task.team.pending' : 'task.team.unknown'))}</div>
