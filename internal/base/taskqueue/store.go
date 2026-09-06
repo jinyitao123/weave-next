@@ -759,7 +759,8 @@ func (s *Store) requeueFailedTask(ctx context.Context, query taskQuerier, worksp
 	row := query.QueryRow(ctx, `
 		UPDATE weave_task_queue
 		SET status=$6,result=NULL,error=NULL,run_id=NULL,worker_id=NULL,
-			lease_expires_at=NULL,started_at=NULL,completed_at=NULL,updated_at=$7
+            runtime_assignment=jsonb_set(COALESCE(runtime_assignment,'{}'::jsonb),'{retry_generation}',to_jsonb(COALESCE((runtime_assignment->>'retry_generation')::int,0)+1),true),
+            lease_expires_at=NULL,started_at=NULL,completed_at=NULL,updated_at=$7
 		WHERE workspace_id=$1 AND id=$2 AND run_snapshot_id=$3 AND context_key=$4 AND status=$5
 		RETURNING `+taskColumns,
 		workspaceID, id, runSnapshotID, contextKey, StatusFailed, StatusQueued, now)

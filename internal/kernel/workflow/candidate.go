@@ -8,11 +8,11 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/kernel/compiler"
 	"github.com/jinyitao123/weave/internal/kernel/credentials"
 	"github.com/jinyitao123/weave/internal/kernel/delivery"
 	"github.com/jinyitao123/weave/internal/kernel/freezer"
-	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 	"github.com/jinyitao123/weave/internal/kernel/schedule"
 	"github.com/jinyitao123/weave/internal/kernel/skills"
@@ -450,6 +450,9 @@ func buildCandidateBundle(
 		bundle.PrimaryModel = primary
 	}
 	for _, modelID := range agent.Fallback.Models {
+		if agent.Engine != "loom" {
+			continue
+		}
 		model, ok := models[modelID]
 		if !ok {
 			return frozen.FrozenExecutionBundle{}, errors.New("build publication candidate: fallback model binding is unavailable")

@@ -1,0 +1,4 @@
+=== RUN   TestRuntimePoolDoesNotReplayWorkAfterDisconnectedInvocationRealPG
+--- PASS: TestRuntimePoolDoesNotReplayWorkAfterDisconnectedInvocationRealPG (2.34s)
+PASS
+ok  	github.com/jinyitao123/weave/internal/kernel/runtimes	3.015s

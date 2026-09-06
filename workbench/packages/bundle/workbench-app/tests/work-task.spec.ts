@@ -436,6 +436,36 @@ describe('Workbench work-task projection', () => {
     })
   })
 
+  it('corrects a cached final label from run activity when the file count stays unchanged', () => {
+    let state = workTaskProjectionDefinition.init()
+    for (const item of [
+      call('dispatch', 'mcp__weave__team_dispatch', { team_id: 'team-1' }, 0),
+      result('dispatch', { run_id: 'run-1', status: 'running' }, 1),
+    ]) state = applyWorkTaskProjection(state, item)
+    state = applyWorkTaskProjection(state, event('weave/work-task', {
+      ...state.task, deliverableCount: 1,
+      deliverables: [{ id: 'lead-file', title: 'baseline.yaml', kind: 'final', contentType: 'application/yaml', preview: 'version: 1', content: 'version: 1', truncated: false, createdAt: '' }],
+    }, 2))
+    state = applyWorkTaskProjection(state, call('status', 'mcp__weave__team_run_activity', { run_id: 'run-1' }, 3))
+    state = applyWorkTaskProjection(state, result('status', { run_id: 'run-1', status: 'running', deliverables: [{ id: 'lead-file', kind: 'stage' }] }, 4))
+    expect(state.task?.deliverableCount).toBe(1)
+    expect(state.task?.deliverables[0]).toMatchObject({ id: 'lead-file', kind: 'stage', content: 'version: 1' })
+    expect(workTaskProjectionDefinition.wire.view(state)?.deliverables).toMatchInlineSnapshot(`
+      [
+        {
+          "content": "version: 1",
+          "contentType": "application/yaml",
+          "createdAt": "",
+          "id": "lead-file",
+          "kind": "stage",
+          "preview": "version: 1",
+          "title": "baseline.yaml",
+          "truncated": false,
+        },
+      ]
+    `)
+  })
+
   it.each(['final', 'summary'] as const)('retains a host %s output after the conversation turn ends', (kind) => {
     const state = workTaskProjectionDefinition.init()
     const next = applyWorkTaskProjection(state, event('weave/work-task', {

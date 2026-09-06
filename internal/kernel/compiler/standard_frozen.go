@@ -64,6 +64,11 @@ func (standardFrozenEnumerator) EnumerateDependencies(
 		return frozen.EnumeratedDependencyManifest{}, err
 	}
 	models := append([]string{agent.Model}, agent.Fallback.Models...)
+	// CLI model names are interpreted by the bound runtime, whose credentials
+	// are local. They are not workspace API-provider dependencies.
+	if agent.Engine != "loom" {
+		models = nil
+	}
 	dependencyCapacity := len(models)
 	if agent.Engine != "loom" {
 		dependencyCapacity++
@@ -172,32 +177,37 @@ func validateStandardFrozenBundle(bundle frozen.FrozenExecutionBundle) error {
 		bundle.Runtime.Engine != bundle.Agent.Engine {
 		return standardFrozenCompileError("CLI agent requires a matching runtime binding")
 	}
-	hasAgentModel := bundle.Agent.Model != ""
-	hasPrimaryModel := bundle.PrimaryModel.ModelID != ""
-	if hasAgentModel != hasPrimaryModel ||
-		(hasAgentModel && bundle.Agent.Model != bundle.PrimaryModel.ModelID) {
-		return standardFrozenCompileError("primary model binding does not match agent model")
-	}
-	if !hasAgentModel && len(bundle.Agent.Fallback.Models) > 0 {
-		return standardFrozenCompileError("fallback models require a primary model binding")
-	}
-	if len(bundle.Agent.Fallback.Models) != len(bundle.FallbackModels) {
-		return standardFrozenCompileError("fallback model bindings do not match agent fallback models")
-	}
-	seen := make(map[string]struct{}, len(bundle.FallbackModels)+1)
-	if hasPrimaryModel {
-		seen[bundle.PrimaryModel.ModelID] = struct{}{}
-	}
-	for index := range bundle.FallbackModels {
-		bindingModel := bundle.FallbackModels[index].ModelID
-		if bindingModel == "" || bundle.Agent.Fallback.Models[index] != bindingModel {
+	if bundle.Agent.Engine == "loom" {
+		hasAgentModel := bundle.Agent.Model != ""
+		hasPrimaryModel := bundle.PrimaryModel.ModelID != ""
+		if hasAgentModel != hasPrimaryModel ||
+			(hasAgentModel && bundle.Agent.Model != bundle.PrimaryModel.ModelID) {
+			return standardFrozenCompileError("primary model binding does not match agent model")
+		}
+		if !hasAgentModel && len(bundle.Agent.Fallback.Models) > 0 {
+			return standardFrozenCompileError("fallback models require a primary model binding")
+		}
+		if len(bundle.Agent.Fallback.Models) != len(bundle.FallbackModels) {
 			return standardFrozenCompileError("fallback model bindings do not match agent fallback models")
 		}
-		if _, duplicate := seen[bindingModel]; duplicate {
-			return standardFrozenCompileError("model bindings contain duplicate model ids")
+		seen := make(map[string]struct{}, len(bundle.FallbackModels)+1)
+		if hasPrimaryModel {
+			seen[bundle.PrimaryModel.ModelID] = struct{}{}
 		}
-		seen[bindingModel] = struct{}{}
+		for index := range bundle.FallbackModels {
+			bindingModel := bundle.FallbackModels[index].ModelID
+			if bindingModel == "" || bundle.Agent.Fallback.Models[index] != bindingModel {
+				return standardFrozenCompileError("fallback model bindings do not match agent fallback models")
+			}
+			if _, duplicate := seen[bindingModel]; duplicate {
+				return standardFrozenCompileError("model bindings contain duplicate model ids")
+			}
+			seen[bindingModel] = struct{}{}
+		}
+	} else if bundle.PrimaryModel.ModelID != "" || len(bundle.FallbackModels) != 0 {
+		return standardFrozenCompileError("CLI models must use the runtime binding")
 	}
+
 	for _, skill := range bundle.Skills {
 		if skill.SourceType == "builtin" && skill.Body == "" {
 			return standardFrozenCompileError("frozen builtin skill body is empty")
@@ -238,6 +248,9 @@ func mapStandardFrozenToLegacy(
 	for index := range bundle.FallbackModels {
 		fallbackModels[index] = bundle.FallbackModels[index].ModelID
 	}
+	if bundle.Agent.Engine != "loom" {
+		fallbackModels = append([]string(nil), bundle.Agent.Fallback.Models...)
+	}
 	memorySlots := make([]registry.MemorySlot, len(bundle.Agent.MemorySlots))
 	for index, slot := range bundle.Agent.MemorySlots {
 		memorySlots[index] = registry.MemorySlot{
@@ -254,7 +267,7 @@ func mapStandardFrozenToLegacy(
 		Engine:          bundle.Agent.Engine,
 		RuntimeID:       bundle.Agent.RuntimeID,
 		Version:         agentVersion,
-		Model:           bundle.PrimaryModel.ModelID,
+		Model:           bundle.Agent.Model,
 		Spec:            mapStandardFrozenSpec(bundle.Agent, profiles),
 		Permissions:     mapStandardFrozenPermissions(bundle.Agent.Permissions),
 		MemorySlots:     memorySlots,

@@ -1,0 +1,65 @@
+[
+  {
+    "task_id": "task-fd911a27-07ab-4e42-a70d-c525a17847ed",
+    "run_id": "run-b66d312c-b3ec-5250-9714-ce26ecfa7b40",
+    "status": "running",
+    "engine": "claude",
+    "frozen_model": "",
+    "agent_version": 3,
+    "error": null
+  },
+  {
+    "task_id": "task-5fe75eb0-fad1-4f61-af72-b2d2439219d5",
+    "run_id": "run-b66d312c-b3ec-5250-9714-ce26ecfa7b40",
+    "status": "running",
+    "engine": "claude",
+    "frozen_model": "",
+    "agent_version": 3,
+    "error": null
+  },
+  {
+    "task_id": "task-f5865b48-48a0-4ec2-abff-5421a93f2fc1",
+    "run_id": "run-764dba61-a460-5498-a172-9fe5a77ce835",
+    "status": "completed",
+    "engine": "codex",
+    "frozen_model": "",
+    "agent_version": 1,
+    "error": "Missing environment variable: `ONEAPI_API_KEY`."
+  },
+  {
+    "task_id": "task-e5a8cb4a-53b5-4a43-b8d1-c00d6d9f475d",
+    "run_id": "run-69813a97-f50c-5beb-b9a8-29d088e97175",
+    "status": "completed",
+    "engine": "codex",
+    "frozen_model": "",
+    "agent_version": 1,
+    "error": "unexpected status 404 Not Found: Model \"gpt-6-astra\" is not supported by any configured account in this group, url: https://oneapi.inocube.net/v1/responses, request id: 2cabfb6d-671d-4e4c-bc71-cb2124baadc0"
+  },
+  {
+    "task_id": "task-a5255fa9-cbef-4388-a46e-acc4d466e71a",
+    "run_id": "run-b66d312c-b3ec-5250-9714-ce26ecfa7b40",
+    "status": "completed",
+    "engine": "claude",
+    "frozen_model": "",
+    "agent_version": 4,
+    "error": null
+  },
+  {
+    "task_id": "task-4fb846c7-5f2a-4ab3-a778-16df88e2a5a6",
+    "run_id": "run-b66d312c-b3ec-5250-9714-ce26ecfa7b40",
+    "status": "queued",
+    "engine": "claude",
+    "frozen_model": "",
+    "agent_version": 3,
+    "error": null
+  },
+  {
+    "task_id": "task-c570c83e-21bb-4494-9c0b-38dcfcd8bde3",
+    "run_id": "run-b66d312c-b3ec-5250-9714-ce26ecfa7b40",
+    "status": "queued",
+    "engine": "claude",
+    "frozen_model": "",
+    "agent_version": 3,
+    "error": null
+  }
+]

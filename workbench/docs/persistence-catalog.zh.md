@@ -1053,7 +1053,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'weave/work-task': WorkTaskProjection
 ```
 
-来源：[`packages/bundle/workbench-app/src/index.ts:231`](../packages/bundle/workbench-app/src/index.ts)
+来源：[`packages/bundle/workbench-app/src/index.ts:232`](../packages/bundle/workbench-app/src/index.ts)
 
 <a id="weavework-task-action--log-only"></a>
 
@@ -1064,7 +1064,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'weave/work-task-action': { readonly pendingAction: WorkTaskPendingAction | null }
 ```
 
-来源：[`packages/bundle/workbench-app/src/index.ts:233`](../packages/bundle/workbench-app/src/index.ts)
+来源：[`packages/bundle/workbench-app/src/index.ts:234`](../packages/bundle/workbench-app/src/index.ts)
 
 ### `web/*`
 

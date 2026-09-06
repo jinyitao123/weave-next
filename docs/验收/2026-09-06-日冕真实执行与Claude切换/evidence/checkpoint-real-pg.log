@@ -1,0 +1,4 @@
+=== RUN   TestCLIProgressCheckpointAllowsFirstStageReclaimAndFencesOldWriterRealPG
+--- PASS: TestCLIProgressCheckpointAllowsFirstStageReclaimAndFencesOldWriterRealPG (0.33s)
+PASS
+ok  	github.com/jinyitao123/weave/internal/base/teamrun	0.974s

@@ -1,0 +1,8 @@
+{
+  "source_deliverable": "deliverable_a8e569c2b871366d6b43e83904713cc1",
+  "sha256": "445365b97714a8d1912c69ff328a7641e2e56065f1b30b89f13ed5e993d943d5",
+  "requirements": 42,
+  "missing_verification": [],
+  "status": "intermediate_only",
+  "note": "Full acceptance mapping and test results remain finalizer responsibilities"
+}

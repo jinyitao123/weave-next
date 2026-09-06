@@ -1,0 +1,36 @@
+{
+  "run_id": "run-6090ab9d-300c-5fc3-a37c-28b7110ec0b5",
+  "files": [
+    {
+      "id": "deliverable_409f013fc0ac7e066ea3988295c16070",
+      "node_id": "parallel-05",
+      "sha256": "cfb12b781363c547da87e6dec9fd937079cba25501b85ff6cbfabfbc508b10c2",
+      "bytes": 8016
+    },
+    {
+      "id": "deliverable_3eeae850846de2c1e1082288893fd645",
+      "node_id": "parallel-04",
+      "sha256": "cfb12b781363c547da87e6dec9fd937079cba25501b85ff6cbfabfbc508b10c2",
+      "bytes": 8016
+    },
+    {
+      "id": "deliverable_e195d5544193a8647ea6c5c370fefeab",
+      "node_id": "parallel-02",
+      "sha256": "cfb12b781363c547da87e6dec9fd937079cba25501b85ff6cbfabfbc508b10c2",
+      "bytes": 8016
+    },
+    {
+      "id": "deliverable_2c2c5889ca35a6240dcd607632308796",
+      "node_id": "parallel-01",
+      "sha256": "cfb12b781363c547da87e6dec9fd937079cba25501b85ff6cbfabfbc508b10c2",
+      "bytes": 8016
+    },
+    {
+      "id": "deliverable_4b42adbcc7431e46d535ad558e639752",
+      "node_id": "lead",
+      "sha256": "cfb12b781363c547da87e6dec9fd937079cba25501b85ff6cbfabfbc508b10c2",
+      "bytes": 8016
+    }
+  ],
+  "identical": true
+}

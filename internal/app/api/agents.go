@@ -29,6 +29,7 @@ type agentWriteRequest struct {
 	subAgentsPresent   bool
 	skillRefsPresent   bool
 	enginePresent      bool
+	modelPresent       bool
 	runtimeIDPresent   bool
 	mcpServersPresent  bool
 	permissionsPresent bool
@@ -49,6 +50,7 @@ func (r *agentWriteRequest) UnmarshalJSON(data []byte) error {
 	_, r.subAgentsPresent = fields["sub_agents"]
 	_, r.skillRefsPresent = fields["skill_refs"]
 	_, r.enginePresent = fields["engine"]
+	_, r.modelPresent = fields["model"]
 	_, r.runtimeIDPresent = fields["runtime_id"]
 	_, r.mcpServersPresent = fields["mcp_servers"]
 	_, r.permissionsPresent = fields["permissions"]
@@ -370,6 +372,7 @@ func (s *Server) handleUpdateAgent(c echo.Context) error {
 			subAgentsPresent:   req.subAgentsPresent,
 			skillRefsPresent:   req.skillRefsPresent,
 			enginePresent:      req.enginePresent,
+			modelPresent:       req.modelPresent,
 			runtimeIDPresent:   req.runtimeIDPresent,
 			mcpServersPresent:  req.mcpServersPresent,
 			permissionsPresent: req.permissionsPresent,
@@ -437,6 +440,7 @@ type agentMergePresence struct {
 	subAgentsPresent   bool
 	skillRefsPresent   bool
 	enginePresent      bool
+	modelPresent       bool
 	runtimeIDPresent   bool
 	mcpServersPresent  bool
 	permissionsPresent bool
@@ -462,7 +466,7 @@ func mergeAgentRecordWithPresence(
 	if presence.runtimeIDPresent {
 		merged.RuntimeID = incoming.RuntimeID
 	}
-	if incoming.Model != "" {
+	if incoming.Model != "" || (presence.modelPresent && engine.IsCLIEngine(merged.Engine)) {
 		merged.Model = incoming.Model
 	}
 	merged.Tags = incoming.Tags

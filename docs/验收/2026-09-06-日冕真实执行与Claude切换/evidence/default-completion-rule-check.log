@@ -1,0 +1,4 @@
+?   	github.com/jinyitao123/weave/internal/kernel/grounding	[no test files]
+?   	github.com/jinyitao123/weave/internal/kernel/execenv	[no test files]
+?   	github.com/jinyitao123/weave/internal/kernel/compiler	[no test files]
+ok  	github.com/jinyitao123/weave/internal/kernel/runtimes	2.144s

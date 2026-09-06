@@ -7,14 +7,15 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"github.com/jinyitao123/weave/internal/base/execution"
 	"io"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jinyitao123/weave/internal/base/fanout"
-	"github.com/jinyitao123/weave/internal/kernel/loomruntime"
 	"github.com/jinyitao123/weave/internal/base/taskqueue"
+	"github.com/jinyitao123/weave/internal/kernel/loomruntime"
 )
 
 type FanoutCheckpointReader struct {
@@ -346,6 +347,25 @@ func (r *FanoutParentRunResumer) advanceGraph(ctx context.Context, req fanout.Re
 		checkpoint.CompletedOutputs = make(map[string]json.RawMessage)
 	}
 	checkpoint.CompletedOutputs[checkpoint.NodeID] = encodedProjection
+	if checkpoint.ArtifactTaskIDs == nil {
+		checkpoint.ArtifactTaskIDs = map[string][]string{}
+	}
+	checkpoint.ArtifactTaskIDs[checkpoint.NodeID] = nil
+	for _, leg := range join.Legs {
+		if leg.DecisionState != fanout.LegDecisionSucceeded {
+			continue
+		}
+		id := execution.EngineTaskID(req.WorkspaceID, "fanout/"+leg.LegID)
+		var sourceID string
+		err := tx.QueryRow(ctx, `SELECT id FROM weave_task_queue WHERE workspace_id=$1 AND (id=$2 OR payload->>'logical_invocation_id'=$2) AND kind='engine_exec' AND run_snapshot_id=$3 AND status='completed' AND COALESCE(result->>'status','completed')='completed' ORDER BY created_at DESC,id DESC LIMIT 1`, req.WorkspaceID, id, req.RunSnapshotID).Scan(&sourceID)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return fanout.ResumeResult{}, err
+		}
+		if err == nil {
+			checkpoint.ArtifactTaskIDs[checkpoint.NodeID] = append(checkpoint.ArtifactTaskIDs[checkpoint.NodeID], sourceID)
+		}
+	}
+
 	checkpoint.TeamRunGeneration = run.Generation
 	checkpoint.ExecutionLeaseEpoch = run.ExecutionLeaseEpoch
 	checkpoint.WrittenAt = r.now()

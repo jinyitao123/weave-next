@@ -41,6 +41,8 @@ Public member updates use the observed runtime capability. Recent running facts 
 
 Project output links select the exact retained artifact in its original conversation. The sidebar's project activity entry reads only the linked Workspace Sessions' current persisted tasks, deduplicates an identical run by latest observation, and excludes archived or unlinked Sessions. Missing records are explicit. Every task and output link returns to its original conversation; a recorded final artifact does not imply quality acceptance.
 
+Settings includes member execution configuration. Changing engines clears the previous model override and fallback models. Saving applies the selected runtime and bounded retry policy to future tasks after workflow publication succeeds. Runtime details distinguish the configured endpoint and node default from models reported by execution receipts. Public attempt records describe observed execution history without implying model text or final delivery.
+
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 

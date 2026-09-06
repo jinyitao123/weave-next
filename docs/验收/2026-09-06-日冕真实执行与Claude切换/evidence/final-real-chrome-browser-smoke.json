@@ -1,0 +1,68 @@
+{
+  "date": "2026-09-06",
+  "browser": "Google Chrome",
+  "profile": "科训",
+  "served_from": "http://127.0.0.1:18182/app/index.html",
+  "result": "passed",
+  "checks": [
+    {
+      "name": "initial_load",
+      "observed": {
+        "title": "日冕计划 · 先期论证决策应用（离线 · baseline 1.1.0）",
+        "default_selected_scenario": "S-0.03c",
+        "travel_time_years": "141.667 yr",
+        "baseline_version": "1.1.0"
+      }
+    },
+    {
+      "name": "scenario_switch_to_0_05c",
+      "observed": {
+        "selected_scenario": "S-0.05c",
+        "travel_time_years": "85 yr",
+        "kinetic_energy_nonrel_j": "1.1234e+23 J"
+      }
+    },
+    {
+      "name": "input_recalculation",
+      "action": "payload mass set to 5000000000 kg",
+      "observed": {
+        "selected_scenario": "S-0.05c",
+        "input_mass_kg": "5e+09",
+        "kinetic_energy_nonrel_j": "5.6172e+23 J",
+        "energy_lower_bound_with_efficiency_j": "1.1234e+24 J"
+      }
+    },
+    {
+      "name": "scenario_switch_back_to_0_03c_after_input_change",
+      "observed": {
+        "selected_scenario": "S-0.03c",
+        "input_mass_kg": "5e+09",
+        "kinetic_energy_nonrel_j": "2.0222e+23 J",
+        "comparison_row_marker": "S-0.03c ◀"
+      }
+    },
+    {
+      "name": "export_current_scenario_json",
+      "observed": {
+        "downloaded_file": "/Users/jinyitao/Downloads/corona_scenario_S-0.03c_baseline-1.1.0.json",
+        "baseline_version": "1.1.0",
+        "selected_scenario_id": "S-0.03c",
+        "inputs_mass_kg": 5000000000,
+        "selected_kinetic_energy_nonrel_j": 2.02219915215784e+23,
+        "scenario_0_05c_kinetic_energy_nonrel_j": 5.6172198671051104e+23
+      }
+    },
+    {
+      "name": "openscad_preview_link",
+      "observed": {
+        "url": "http://127.0.0.1:18182/drawings/render/COR-DWG-004_preview.svg",
+        "label": "COR-DWG-004 居住舱概念模型 · OpenSCAD 实际渲染预览（内嵌位图）· CONCEPT ONLY · baseline_version: 1.1.0",
+        "visual_result": "Chrome rendered the embedded OpenSCAD preview image."
+      }
+    }
+  ],
+  "notes": [
+    "Codex In-app Browser was still blocked by browser URL policy for localhost and file URLs; this did not apply to the user-authorized real Chrome app validation.",
+    "This browser smoke test validates the delivered offline app interaction surface. It does not change the conceptual/non-certification boundary of the Corona deliverables."
+  ]
+}

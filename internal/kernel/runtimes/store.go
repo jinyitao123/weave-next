@@ -39,13 +39,16 @@ const (
 // engine. It lets operators distinguish a host subscription from a configured
 // API provider without uploading credentials or local configuration contents.
 type EngineCapability struct {
-	Engine          string `json:"engine"`
-	BinaryPath      string `json:"binary_path"`
-	BinaryVersion   string `json:"binary_version"`
-	AuthMode        string `json:"auth_mode"`
-	ProtocolVersion string `json:"protocol_version"`
-	PublicEvents    bool   `json:"public_events,omitempty"`
-	EndpointClass   string `json:"endpoint_class"`
+	Engine              string `json:"engine"`
+	BinaryPath          string `json:"binary_path"`
+	BinaryVersion       string `json:"binary_version"`
+	AuthMode            string `json:"auth_mode"`
+	ProtocolVersion     string `json:"protocol_version"`
+	PublicEvents        bool   `json:"public_events,omitempty"`
+	EndpointClass       string `json:"endpoint_class"`
+	ConfiguredEndpoint  string `json:"configured_endpoint,omitempty"`
+	ConfiguredModel     string `json:"configured_model,omitempty"`
+	ConfigurationSource string `json:"configuration_source,omitempty"`
 }
 
 // onlineWindow is how recent a heartbeat must be for a runtime to count as
@@ -213,7 +216,11 @@ func canonicalEngineCapabilities(
 		capability.AuthMode = strings.TrimSpace(capability.AuthMode)
 		capability.ProtocolVersion = strings.TrimSpace(capability.ProtocolVersion)
 		capability.EndpointClass = strings.TrimSpace(capability.EndpointClass)
-		if capability.Engine != "codex" {
+		if len(capability.ConfiguredEndpoint) > 256 || len(capability.ConfiguredModel) > 200 || len(capability.ConfigurationSource) > 40 {
+			return nil, fmt.Errorf("runtime engine configuration metadata is too long")
+		}
+		capability.ConfiguredEndpoint = SafeEndpointOrigin(capability.ConfiguredEndpoint)
+		if capability.Engine != "codex" && capability.Engine != "claude" {
 			capability.PublicEvents = false
 		}
 		if !slices.Contains(engines, capability.Engine) {

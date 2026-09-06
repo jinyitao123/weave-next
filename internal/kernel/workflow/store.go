@@ -293,16 +293,29 @@ func (s *Store) ListVersionsByWorkflows(
 }
 
 // CreateDraft clones the published version into the next version number.
-func (s *Store) CreateDraft(
-	ctx context.Context,
-	workspaceID, workflowID, createdBy string,
-) (*TeamWorkflowVersion, error) {
+func (s *Store) CreateDraft(ctx context.Context, workspaceID, workflowID, createdBy string) (*TeamWorkflowVersion, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("begin create workflow draft: %w", err)
+		return nil, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+	version, err := s.CreateDraftTx(ctx, tx, workspaceID, workflowID, createdBy)
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	return version, nil
+}
 
+// CreateDraftTx includes draft creation in a caller-owned configuration change.
+func (s *Store) CreateDraftTx(ctx context.Context, tx pgx.Tx, workspaceID, workflowID, createdBy string) (*TeamWorkflowVersion, error) {
+	if tx == nil {
+		return nil, errors.New("workflow draft transaction is required")
+	}
+
+	var err error
 	var status string
 	var publishedVersion *int
 	err = tx.QueryRow(ctx, `
@@ -375,26 +388,33 @@ func (s *Store) CreateDraft(
 		}
 		return nil, fmt.Errorf("insert workflow draft: %w", err)
 	}
-	if err := tx.Commit(ctx); err != nil {
-		return nil, fmt.Errorf("commit workflow draft: %w", err)
-	}
 	return version, nil
 }
 
 // UpdateDraft replaces mutable draft content using version and timestamp CAS.
-func (s *Store) UpdateDraft(
-	ctx context.Context,
-	workspaceID, workflowID string,
-	version int,
-	expectedUpdatedAt time.Time,
-	input DraftInput,
-) (*TeamWorkflowVersion, error) {
+func (s *Store) UpdateDraft(ctx context.Context, workspaceID, workflowID string, version int, expectedUpdatedAt time.Time, input DraftInput) (*TeamWorkflowVersion, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("begin update workflow draft: %w", err)
+		return nil, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+	updated, err := s.UpdateDraftTx(ctx, tx, workspaceID, workflowID, version, expectedUpdatedAt, input)
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	return updated, nil
+}
 
+// UpdateDraftTx preserves the draft CAS inside an atomic execution edit.
+func (s *Store) UpdateDraftTx(ctx context.Context, tx pgx.Tx, workspaceID, workflowID string, version int, expectedUpdatedAt time.Time, input DraftInput) (*TeamWorkflowVersion, error) {
+	if tx == nil {
+		return nil, errors.New("workflow draft transaction is required")
+	}
+
+	var err error
 	var status string
 	err = tx.QueryRow(ctx, `
 		SELECT status
@@ -428,9 +448,6 @@ func (s *Store) UpdateDraft(
 	}
 	if err != nil {
 		return nil, fmt.Errorf("update workflow draft: %w", err)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return nil, fmt.Errorf("commit workflow draft update: %w", err)
 	}
 	return updated, nil
 }

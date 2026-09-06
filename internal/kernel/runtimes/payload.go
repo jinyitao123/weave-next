@@ -28,20 +28,22 @@ func CanonicalEngine(engine string) string {
 // decodes it and runs the engine locally. The MCP-boundary HMAC secret never
 // leaves the server — only the derived per-server tokens travel in Env.
 type EngineExecRequest struct {
-	NodeID         string                 `json:"node_id,omitempty"`
-	Agent          string                 `json:"agent"`
-	Engine         string                 `json:"engine"`
-	Model          string                 `json:"model"`
-	Prompt         string                 `json:"prompt"`
-	OutputSchema   json.RawMessage        `json:"output_schema,omitempty"`
-	Record         *registry.AgentRecord  `json:"record"`
-	Env            map[string]string      `json:"env,omitempty"`
-	OneAPIBase     string                 `json:"oneapi_base,omitempty"`
-	OneAPIKey      string                 `json:"oneapi_key,omitempty"`
-	TimeoutSeconds int                    `json:"timeout_seconds,omitempty"`
-	EngineVersion  string                 `json:"engine_version,omitempty"`
-	Attachments    []EngineExecAttachment `json:"attachments,omitempty"`
-	Loom           *LoomExecInput         `json:"loom,omitempty"`
+	LogicalInvocationID string                 `json:"logical_invocation_id,omitempty"`
+	NodeID              string                 `json:"node_id,omitempty"`
+	Agent               string                 `json:"agent"`
+	Engine              string                 `json:"engine"`
+	Model               string                 `json:"model"`
+	Prompt              string                 `json:"prompt"`
+	OutputSchema        json.RawMessage        `json:"output_schema,omitempty"`
+	Record              *registry.AgentRecord  `json:"record"`
+	Env                 map[string]string      `json:"env,omitempty"`
+	OneAPIBase          string                 `json:"oneapi_base,omitempty"`
+	OneAPIKey           string                 `json:"oneapi_key,omitempty"`
+	TimeoutSeconds      int                    `json:"timeout_seconds,omitempty"`
+	EngineVersion       string                 `json:"engine_version,omitempty"`
+	Attachments         []EngineExecAttachment `json:"attachments,omitempty"`
+	InputFiles          []InputFile            `json:"input_files,omitempty"`
+	Loom                *LoomExecInput         `json:"loom,omitempty"`
 }
 
 // LoomExecInput is the loom-specific slice of an engine_exec payload. The
@@ -74,29 +76,33 @@ type EngineExecAttachment struct {
 // Usage is a pointer because encoding/json's omitempty cannot elide a zero
 // struct — CLI daemons keep producing the historical {"output": ...} shape.
 type EngineExecResult struct {
-	Output       string               `json:"output"`
-	StopReason   string               `json:"stop_reason,omitempty"`
-	Usage        *contract.Usage      `json:"usage,omitempty"`
-	RunID        string               `json:"run_id,omitempty"`
-	Status       string               `json:"status,omitempty"`
-	Error        string               `json:"error,omitempty"`
-	UsageReceipt *engine.UsageReceipt `json:"usage_receipt,omitempty"`
-	Diagnostics  []engine.Diagnostic  `json:"diagnostics,omitempty"`
-	Events       []engine.Event       `json:"events,omitempty"`
-	Artifacts    []engine.Artifact    `json:"artifacts,omitempty"`
+	Output                   string               `json:"output"`
+	RetrySafeBeforeExecution bool                 `json:"retry_safe_before_execution,omitempty"`
+	ReportedModels           []string             `json:"reported_models,omitempty"`
+	StopReason               string               `json:"stop_reason,omitempty"`
+	Usage                    *contract.Usage      `json:"usage,omitempty"`
+	RunID                    string               `json:"run_id,omitempty"`
+	Status                   string               `json:"status,omitempty"`
+	Error                    string               `json:"error,omitempty"`
+	UsageReceipt             *engine.UsageReceipt `json:"usage_receipt,omitempty"`
+	Diagnostics              []engine.Diagnostic  `json:"diagnostics,omitempty"`
+	Events                   []engine.Event       `json:"events,omitempty"`
+	Artifacts                []engine.Artifact    `json:"artifacts,omitempty"`
 }
 
 // CLIEngineExecResult preserves the complete external-engine outcome across
 // the daemon/server task boundary.
 func CLIEngineExecResult(result engine.RunResult) EngineExecResult {
 	return EngineExecResult{
-		Output:       result.Output,
-		Status:       result.Status,
-		Error:        result.Err,
-		UsageReceipt: result.Usage,
-		Diagnostics:  append([]engine.Diagnostic(nil), result.Diagnostics...),
-		Events:       append([]engine.Event(nil), result.Events...),
-		Artifacts:    append([]engine.Artifact(nil), result.Artifacts...),
+		Output:                   result.Output,
+		ReportedModels:           append([]string(nil), result.ReportedModels...),
+		RetrySafeBeforeExecution: result.RetrySafeBeforeExecution,
+		Status:                   result.Status,
+		Error:                    result.Err,
+		UsageReceipt:             result.Usage,
+		Diagnostics:              append([]engine.Diagnostic(nil), result.Diagnostics...),
+		Events:                   append([]engine.Event(nil), result.Events...),
+		Artifacts:                append([]engine.Artifact(nil), result.Artifacts...),
 	}
 }
 
@@ -108,10 +114,12 @@ func (result EngineExecResult) EngineRunResult() engine.RunResult {
 	}
 	return engine.RunResult{
 		Output: result.Output, Status: status, Err: result.Error,
-		Usage:       result.UsageReceipt,
-		Diagnostics: append([]engine.Diagnostic(nil), result.Diagnostics...),
-		Events:      append([]engine.Event(nil), result.Events...),
-		Artifacts:   append([]engine.Artifact(nil), result.Artifacts...),
+		ReportedModels:           append([]string(nil), result.ReportedModels...),
+		RetrySafeBeforeExecution: result.RetrySafeBeforeExecution,
+		Usage:                    result.UsageReceipt,
+		Diagnostics:              append([]engine.Diagnostic(nil), result.Diagnostics...),
+		Events:                   append([]engine.Event(nil), result.Events...),
+		Artifacts:                append([]engine.Artifact(nil), result.Artifacts...),
 	}
 }
 

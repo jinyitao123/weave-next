@@ -1,0 +1,12 @@
+=== RUN   TestCorrectionSafePointConfirmAndResume
+=== RUN   TestCorrectionSafePointConfirmAndResume/fresh
+=== RUN   TestCorrectionSafePointConfirmAndResume/recover_after_applied_commit
+--- PASS: TestCorrectionSafePointConfirmAndResume (0.91s)
+    --- PASS: TestCorrectionSafePointConfirmAndResume/fresh (0.45s)
+    --- PASS: TestCorrectionSafePointConfirmAndResume/recover_after_applied_commit (0.46s)
+=== RUN   TestCorrectionAndActivityLedgersAreWorkspaceIsolated
+--- PASS: TestCorrectionAndActivityLedgersAreWorkspaceIsolated (0.44s)
+=== RUN   TestCLIProgressCheckpointAllowsFirstStageReclaimAndFencesOldWriterRealPG
+--- PASS: TestCLIProgressCheckpointAllowsFirstStageReclaimAndFencesOldWriterRealPG (0.26s)
+PASS
+ok  	github.com/jinyitao123/weave/internal/base/teamrun	2.135s

@@ -411,6 +411,7 @@ func (s *Server) registerRoutes() {
 	auth.DELETE("/delivery-targets/:id", s.handleDeleteDeliveryTarget, RequireRole("admin"), adminScope)
 
 	// Remote engine runtimes.
+	auth.GET("/agent-execution-settings", s.handleListAgentExecutionSettings, orgScope)
 	auth.GET("/runtimes", s.handleListRuntimes, orgScope)
 	auth.POST("/runtimes", s.handleCreateRuntime, RequireAnyRole("admin", "owner"), orgScope)
 	auth.PUT("/runtimes/:id", s.handleRenameRuntime, RequireAnyRole("admin", "owner"), orgScope)
@@ -446,6 +447,7 @@ func (s *Server) registerRoutes() {
 	auth.GET("/agents/:name/memory-profile", s.handleGetMemoryProfile, RequireAnyRole("admin", "owner"), memoryScope)
 	auth.POST("/agents", s.handleCreateAgent, agentsScope)
 	auth.PUT("/agents/:name", s.handleUpdateAgent, agentsScope)
+	auth.PUT("/agents/:name/execution", s.handleConfigureAgentExecution, RequireAnyRole("admin", "owner"), orgScope)
 	auth.DELETE("/agents/:name", s.handleDeleteAgent, agentsScope)
 	auth.GET("/agents/:name/managed", s.handleListManaged, agentsScope)
 	auth.POST("/agents/:name/managed", s.handleLinkManages, RequireRole("admin"), agentsScope)

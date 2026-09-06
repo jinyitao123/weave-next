@@ -1,0 +1,29 @@
+OK | model_tests.log | 0.04s | bash -c cd outputs/model && python3 -m unittest discover -s tests -v
+OK | export_params.log | 0.02s | bash -c cd outputs/model && python3 tools/export_params.py
+OK | app_syntax.log | 0.17s | bash -c cd outputs/app && node --check calc.js && node --check app.js && node --check tests/app_check.js && node --check tests/dom_interaction_check.js && echo SYNTAX-OK
+OK | app_checks.log | 0.04s | bash -c cd outputs/app && node tests/app_check.js
+OK | app_dom_interaction.log | 0.04s | bash -c cd outputs/app && node tests/dom_interaction_check.js
+OK | svg_parse.log | 0.02s | python3 -c
+import xml.etree.ElementTree as ET, glob
+for f in sorted(glob.glob('outputs/drawings/*.svg')) + sorted(glob.glob('outputs/drawings/render/*.svg')):
+    root = ET.parse(f).getroot()
+    assert root.tag.endswith('svg'), f
+    print('XML-OK', f, root.get('width'), 'x', root.get('height'))
+print('SVG-PARSE-ALL-OK')
+
+OK | openscad_check.log | 0.19s | bash -c openscad --version && openscad -o outputs/drawings/render/COR-DWG-004_preview.png --imgsize=960,720 outputs/drawings/COR-DWG-004_habitat_concept.scad && ls -la outputs/drawings/render/
+OK | preview_wrap.log | 0.02s | python3 outputs/drawings/tools/wrap_preview.py
+OK | dxf_check.log | 0.01s | python3 -c
+txt = open('outputs/drawings/COR-DWG-004_habitat_section.dxf', encoding='ascii').read()
+assert 'SECTION' in txt and 'ENTITIES' in txt and txt.rstrip().endswith('EOF')
+assert 'AC1009' in txt
+import re
+ents = re.findall(r'^0\n(CIRCLE|LINE|LWPOLYLINE)$', txt, re.M)
+from collections import Counter
+print('DXF-OK entities:', dict(Counter(ents)))
+assert len(ents) >= 10
+
+OK | consistency_check.log | 0.02s | python3 outputs/verification/consistency_check.py
+OK | integrator_recheck.log | 0.02s | python3 outputs/verification/integrator_recheck.py
+==================================================
+RUN_CHECKS | ALL OK

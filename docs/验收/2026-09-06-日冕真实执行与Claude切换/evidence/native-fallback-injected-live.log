@@ -1,0 +1,5 @@
+=== RUN   TestModelFallbackReconcilesAttemptsInsteadOfReplayingAfterRestartRealPG
+    model_fallback_pg_test.go:116: injected primary rejection; real Claude fallback status=completed reported_models=[k3[1m] k3 kimi-for-coding-highspeed] output="fallback completed"
+--- PASS: TestModelFallbackReconcilesAttemptsInsteadOfReplayingAfterRestartRealPG (10.43s)
+PASS
+ok  	github.com/jinyitao123/weave/internal/kernel/runtimes	11.080s

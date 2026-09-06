@@ -32,6 +32,8 @@ type WorkflowCheckpointV1 struct {
 	ExecutionLeaseEpoch ExecutionLeaseEpoch        `json:"execution_lease_epoch"`
 	NodeID              string                     `json:"node_id"`
 	CompletedOutputs    map[string]json.RawMessage `json:"completed_outputs"`
+	// ArtifactTaskIDs binds each output to its immutable physical file sources.
+	ArtifactTaskIDs map[string][]string `json:"artifact_task_ids,omitempty"`
 	// DeliveryErrors records uncollected references per completed node. These
 	// only block a deliver node that selects that output, including after resume.
 	DeliveryErrors map[string]string `json:"delivery_errors,omitempty"`

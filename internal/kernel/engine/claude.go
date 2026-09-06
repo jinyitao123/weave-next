@@ -65,7 +65,7 @@ func (b *claudeBackend) Run(ctx context.Context, spec RunSpec) (RunResult, error
 	}
 	done := make(chan outcome, 1)
 	go func() {
-		parsed := parseClaudeOutput(stdout)
+		parsed := parseClaudeOutputWithEvents(stdout, spec.OnPublicEvent)
 		done <- outcome{parsed: parsed, err: cmd.Wait()}
 	}()
 
@@ -127,29 +127,60 @@ func claudeUsesHostOAuth(authMode string) bool {
 }
 
 func claudeModelForRun(model string, env map[string]string) string {
-	if claudeUsesHostOAuth(env["WEAVE_CLAUDE_AUTH_MODE"]) {
-		return ""
-	}
 	return strings.TrimSpace(model)
 }
 
 type claudeOutput struct {
-	output      string
-	sessionID   string
-	status      string
-	errText     string
-	resultSeen  bool
-	resultCount int
-	parseFailed bool
-	usage       *UsageReceipt
-	diagnostics []Diagnostic
-	events      []Event
+	output         string
+	sessionID      string
+	status         string
+	errText        string
+	resultSeen     bool
+	resultCount    int
+	parseFailed    bool
+	usage          *UsageReceipt
+	diagnostics    []Diagnostic
+	events         []Event
+	reportedModels []string
+	toolObserved   bool
 }
 
 func parseClaudeOutput(stdout io.Reader) claudeOutput {
+	return parseClaudeOutputWithEvents(stdout, nil)
+}
+
+func parseClaudeOutputWithEvents(stdout io.Reader, publish func(Event, bool)) claudeOutput {
 	var output claudeOutput
+	tools := map[string]string{}
+	emit := func(event Event) {
+		truncated := len(event.Text) > 4096 || len(event.Input) > 4096 || len(event.Output) > 4096
+		event.Text, event.Input, event.Output = boundedCodexText(event.Text), boundedCodexText(event.Input), boundedCodexText(event.Output)
+		if len(event.Tool) > 160 || len(event.CallID) > 200 {
+			return
+		}
+		if len(output.events) < 200 {
+			output.events = append(output.events, event)
+		}
+		if publish != nil {
+			publish(event, truncated)
+		}
+	}
+	observeModel := func(model string) {
+		model = strings.TrimSpace(model)
+		if model == "" || len(model) > 200 {
+			return
+		}
+		for _, prior := range output.reportedModels {
+			if prior == model {
+				return
+			}
+		}
+		if len(output.reportedModels) < 16 {
+			output.reportedModels = append(output.reportedModels, model)
+		}
+	}
 	scanner := bufio.NewScanner(stdout)
-	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
+	scanner.Buffer(make([]byte, 64*1024), codexJSONLMaxEventBytes)
 	for scanner.Scan() {
 		line := append([]byte(nil), scanner.Bytes()...)
 		var event map[string]json.RawMessage
@@ -162,25 +193,63 @@ func parseClaudeOutput(stdout io.Reader) claudeOutput {
 		case "system":
 			if jsonString(event["subtype"]) == "init" {
 				output.sessionID = jsonString(event["session_id"])
+				observeModel(jsonString(event["model"]))
 			}
-		case "assistant":
+		case "assistant", "user":
 			message := jsonObject(event["message"])
 			if message == nil {
 				continue
 			}
+			observeModel(jsonString(message["model"]))
 			var blocks []struct {
-				Type string `json:"type"`
-				Text string `json:"text"`
+				Type      string          `json:"type"`
+				Text      string          `json:"text"`
+				ID        string          `json:"id"`
+				Name      string          `json:"name"`
+				Input     json.RawMessage `json:"input"`
+				ToolUseID string          `json:"tool_use_id"`
+				Content   json.RawMessage `json:"content"`
+				IsError   bool            `json:"is_error"`
 			}
 			if json.Unmarshal(message["content"], &blocks) != nil {
 				continue
 			}
-			for _, block := range blocks {
-				if block.Type == "text" && block.Text != "" {
-					output.events = append(output.events, Event{Kind: "text", Text: block.Text})
+			for index, block := range blocks {
+				switch block.Type {
+				case "text":
+					if jsonString(event["type"]) == "assistant" && block.Text != "" {
+						id := jsonString(message["id"])
+						if id != "" {
+							id = fmt.Sprintf("%s:%d", id, index)
+						}
+						emit(Event{Kind: "text", CallID: id, Text: block.Text})
+					}
+				case "tool_use":
+					output.toolObserved = true
+					tools[block.ID] = block.Name
+					emit(Event{Kind: "tool_call", CallID: block.ID, Tool: block.Name, Input: string(block.Input), Status: "running"})
+				case "tool_result":
+					content := jsonString(block.Content)
+					if content == "" {
+						content = string(block.Content)
+					}
+					status := "ok"
+					if block.IsError {
+						status = "error"
+					}
+					emit(Event{Kind: "tool_result", CallID: block.ToolUseID, Tool: tools[block.ToolUseID], Output: content, Status: status})
 				}
 			}
 		case "result":
+			modelUsage := jsonObject(event["modelUsage"])
+			modelNames := make([]string, 0, len(modelUsage))
+			for name := range modelUsage {
+				modelNames = append(modelNames, name)
+			}
+			sort.Strings(modelNames)
+			for _, name := range modelNames {
+				observeModel(name)
+			}
 			output.resultSeen = true
 			output.resultCount++
 			output.output = jsonString(event["result"])
@@ -202,6 +271,7 @@ func parseClaudeOutput(stdout io.Reader) claudeOutput {
 		}
 	}
 	if err := scanner.Err(); err != nil {
+		_, _ = io.Copy(io.Discard, stdout)
 		if output.errText == "" {
 			output.errText = err.Error()
 		}
@@ -256,11 +326,14 @@ func parseClaudeUsage(event map[string]json.RawMessage, raw string) (*UsageRecei
 
 func claudeRunResult(parsed claudeOutput) RunResult {
 	return RunResult{
-		Output:      parsed.output,
-		SessionID:   parsed.sessionID,
-		Status:      parsed.status,
-		Usage:       parsed.usage,
-		Diagnostics: append([]Diagnostic(nil), parsed.diagnostics...),
+		Output:                   parsed.output,
+		SessionID:                parsed.sessionID,
+		Status:                   parsed.status,
+		Usage:                    parsed.usage,
+		Diagnostics:              append([]Diagnostic(nil), parsed.diagnostics...),
+		Events:                   append([]Event(nil), parsed.events...),
+		ReportedModels:           append([]string(nil), parsed.reportedModels...),
+		RetrySafeBeforeExecution: parsed.status == "failed" && parsed.resultCount == 1 && !parsed.parseFailed && !parsed.toolObserved,
 	}
 }
 

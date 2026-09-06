@@ -43,6 +43,7 @@ func checkpointFromPark(
 		NodeID:                park.NodeID,
 		CompletedOutputs:      park.CompletedOutputs,
 		DeliveryErrors:        park.DeliveryErrors,
+		ArtifactTaskIDs:       park.ArtifactTaskIDs,
 		Corrections:           append([]CorrectionDirectiveV1(nil), park.Corrections...),
 		Usage:                 park.UsageCheckpoint,
 		UsageComplete:         park.UsageComplete,

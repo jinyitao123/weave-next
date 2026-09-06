@@ -2,12 +2,41 @@ package api
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/jinyitao123/weave/internal/base/taskqueue"
 	"github.com/jinyitao123/weave/internal/kernel/engine"
 	"github.com/jinyitao123/weave/internal/kernel/runtimes"
 )
+
+func TestRepairLegacyUsageSummaryOnlyRepairsPartialUTF8Tail(t *testing.T) {
+	for _, unit := range []string{"界", "🌍"} {
+		for offset := 0; offset < 4; offset++ {
+			original := strings.Repeat("x", offset) + strings.Repeat(unit, 4096)
+			legacy := engine.UsageReceipt{RawSummary: original[:4096], InputTokens: 123, HasTokens: true}
+			wire, err := json.Marshal(legacy)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var decoded engine.UsageReceipt
+			if err := json.Unmarshal(wire, &decoded); err != nil {
+				t.Fatal(err)
+			}
+			repairLegacyUsageSummary(&decoded)
+			if len(decoded.RawSummary) > 4096 || !strings.HasPrefix(original, decoded.RawSummary) || decoded.InputTokens != 123 {
+				t.Fatalf("legacy receipt not repaired safely: bytes=%d", len(decoded.RawSummary))
+			}
+		}
+	}
+	for _, raw := range []string{strings.Repeat("x", 4097), strings.Repeat("x", 5000) + "\uFFFD", "ok\uFFFD"} {
+		receipt := &engine.UsageReceipt{RawSummary: raw}
+		repairLegacyUsageSummary(receipt)
+		if receipt.RawSummary != raw {
+			t.Fatal("unrelated summary modified")
+		}
+	}
+}
 
 func TestValidateRuntimeEngineExecResultBindsReceiptToAdmittedVersion(t *testing.T) {
 	payload, err := json.Marshal(runtimes.EngineExecRequest{

@@ -1,0 +1,13 @@
+{
+  "workspace_id": "default",
+  "run_id": "run-6090ab9d-300c-5fc3-a37c-28b7110ec0b5",
+  "correction_id": "84f88163-6f29-4dde-8d0a-fc2fe3012f7a",
+  "target_kind": "member",
+  "target_member_id": "9e7f884f-3775-4c4e-8154-fc828c3caeb8",
+  "instruction": "这是当前 Codex 修复任务在用户“20 项问题都解决掉”授权下登记的交付完整性复核，不改变 CR-001 的三速度 1.1.0 基线，也不要求其他专业重算。仅总装职责：从平台已传入文件构造用户实际可下载、独立使用的最终集合。已证实数字产品阶段的 app/index.html 链接 ../drawings/render/COR-DWG-004_preview.png，但平台只传递支持的 UTF-8 源文件，此 PNG 二进制不会收集；不要把宿主目录中存在误当作用户能下载。请自行选择可传递的预览表达（例如将真实渲染嵌入 UTF-8 SVG/HTML）或清楚提供完整可复现且不含失效链接的交付，并逐个核对 HTML/CSS/JS/验证脚本本地依赖。ASCII DXF 现已支持收集。最终集合内每个本地链接/必要资源都应有效，不得依赖其他成员宿主工作目录。应用界面写“导出当前情景”，当前 app.js 导出未传递 state.scenario_c，请核对并使导出内容保留当前选中情景同时保留基线要求的三情景完整参数。总装自己的实际验证与上游自检分开；Node 模拟 DOM 检查应如实命名，不可称为真实浏览器验证。保留全部原始检查结果及准确的 FINAL_ACCEPTANCE，发现可修复问题就在本节点修复并复验。",
+  "status": "requested",
+  "requested_generation": 8,
+  "requested_execution_lease_epoch": 4,
+  "requested_by": "1dedf447-514d-4057-a34d-6d1b8a8b721a",
+  "requested_at": "2026-09-06T10:26:47.953111Z"
+}

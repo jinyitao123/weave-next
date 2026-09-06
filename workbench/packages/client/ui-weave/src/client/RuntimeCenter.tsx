@@ -2,11 +2,15 @@ import { useCallback, useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import css from './RuntimeCenter.module.css'
+import { AgentExecutionPanel } from './AgentExecutionPanel.tsx'
 
 interface RuntimeEngineView {
   readonly engine: string
   readonly binaryVersion: string
   readonly authMode: 'chatgpt' | 'oauth' | 'provider' | 'unknown'
+  readonly configuredEndpoint: string
+  readonly configuredModel: string
+  readonly configurationSource: string
 }
 
 interface RuntimeView {
@@ -54,6 +58,10 @@ function runtime(value: unknown): RuntimeView | null {
         engine: capability.engine,
         binaryVersion: typeof capability.binaryVersion === 'string' ? capability.binaryVersion : '',
         authMode,
+        configurationSource: typeof capability.configurationSource === 'string' ? capability.configurationSource : '',
+        configuredEndpoint: typeof capability.configuredEndpoint === 'string' ? capability.configuredEndpoint : '',
+        configuredModel: typeof capability.configuredModel === 'string' ? capability.configuredModel : '',
+
       }]
     }),
     healthStatus,
@@ -86,7 +94,9 @@ function engineLabel(engine: string, t: Props['t']): string {
   return t('runtimeCenter.engine.other')
 }
 
-function authLabel(mode: RuntimeEngineView['authMode'], t: Props['t']): string {
+function authLabel(capability: RuntimeEngineView, t: Props['t']): string {
+  if (capability.configurationSource === 'host_settings') return t('runtimeCenter.auth.hostSettings')
+  const mode = capability.authMode
   if (mode === 'chatgpt') return t('runtimeCenter.auth.chatgpt')
   if (mode === 'oauth') return t('runtimeCenter.auth.oauth')
   if (mode === 'provider') return t('runtimeCenter.auth.provider')
@@ -98,7 +108,7 @@ function engineSummary(item: RuntimeView, t: Props['t']): string {
   return item.engines.map((engine) => {
     const capability = item.engineCapabilities.find(candidate => candidate.engine === engine)
     const label = engineLabel(engine, t)
-    return capability === undefined ? label : `${label} · ${authLabel(capability.authMode, t)}`
+    return capability === undefined ? label : `${label} · ${authLabel(capability, t)}`
   }).join(' / ')
 }
 
@@ -265,8 +275,11 @@ export function RuntimeCenter({ t, onSnapshot }: CenterProps) {
                     <div key={capability.engine}>
                       <dt>{engineLabel(capability.engine, t)}</dt>
                       <dd>{capability.binaryVersion === ''
-                        ? authLabel(capability.authMode, t)
-                        : t('runtimeCenter.engine.detail', { auth: authLabel(capability.authMode, t), version: capability.binaryVersion })}</dd>
+                        ? authLabel(capability, t)
+                        : t('runtimeCenter.engine.detail', { auth: authLabel(capability, t), version: capability.binaryVersion })}
+                      {capability.configuredEndpoint === '' ? null : <small>{t('runtimeCenter.configuredEndpoint')} · {capability.configuredEndpoint}</small>}
+                      {capability.configuredModel === '' ? null : <small>{t('runtimeCenter.configuredModel')} · {capability.configuredModel}</small>}
+                      </dd>
                     </div>
                   ))}
                 </dl>
@@ -279,6 +292,7 @@ export function RuntimeCenter({ t, onSnapshot }: CenterProps) {
           ))}
         </div>
       )}
+      <AgentExecutionPanel t={t} runtimes={runtimes} />
       {!creating ? null : (
         <div className={css.dialogBackdrop} role="presentation">
           <form className={css.dialog} role="dialog" aria-modal="true" aria-labelledby="runtime-create-title" onSubmit={(event) => { void create(event) }}>

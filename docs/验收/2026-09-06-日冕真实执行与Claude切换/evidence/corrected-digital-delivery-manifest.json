@@ -1,0 +1,399 @@
+{
+  "source": "platform deliverables API",
+  "files": [
+    {
+      "id": "deliverable_324438d4014344d196d6136333f69273",
+      "kind": "stage",
+      "node_id": "parallel-03",
+      "filename": "verification/results/svg_parse.log",
+      "created_at": "2026-09-06T18:12:47.147669+08:00",
+      "sha256": "5eca277c922a4e67eb23969bfea666a40a471cca9ea15507f0618f1c0562d648",
+      "bytes": 813,
+      "downloaded_path": "/private/tmp/weave-corona-validation-20260906/current-corrected-stages/parallel-03/deliverable_324438d4014344d196d6136333f69273/verification/results/svg_parse.log"
+    },
+    {
+      "id": "deliverable_c3d8cdf3876c9839d7ba1a2193aaff7a",
+      "kind": "stage",
+      "node_id": "parallel-03",
+      "filename": "verification/results/openscad_check.log",
+      "created_at": "2026-09-06T18:12:47.147341+08:00",
+      "sha256": "9e6684ff5c0019a9d17f31965fc2ad696faca9675312cf2abb05eb94e79504f1",
+      "bytes": 958,
+      "downloaded_path": "/private/tmp/weave-corona-validation-20260906/current-corrected-stages/parallel-03/deliverable_c3d8cdf3876c9839d7ba1a2193aaff7a/verification/results/openscad_check.log"
+    },
+    {
+      "id": "deliverable_392d27e66666bf57915858dbb5634197",
+      "kind": "stage",
+      "node_id": "parallel-03",
+      "filename": "verification/results/model_tests.log",
+      "created_at": "2026-09-06T18:12:47.146721+08:00",
+      "sha256": "856b286a524263935bcf1525a57e3d5bb9810e442cdc7242656b0bd174c1db66",
+      "bytes": 3339,
+      "downloaded_path": "/private/tmp/weave-corona-validation-20260906/current-corrected-stages/parallel-03/deliverable_392d27e66666bf57915858dbb5634197/verification/results/model_tests.log"
+    },
+    {
+      "id": "deliverable_c32ec13ee328e23a90dbe99c6b0f66bc",
+      "kind": "stage",
+      "node_id": "parallel-03",
+      "filename": "verification/results/export_params.log",
+      "created_at": "2026-09-06T18:12:47.146382+08:00",
+      "sha256": "c01f6058709cbf623a242139de0eafd95235a06cf8173eb36f0641c607d47224",
+      "bytes": 692,
+      "downloaded_path": "/private/tmp/weave-corona-validation-20260906/current-corrected-stages/parallel-03/deliverable_c32ec13ee328e23a90dbe99c6b0f66bc/verification/results/export_params.log"
+    },
+    {
+      "id": "deliverable_70cbdabbbfcf5b07f0f41f2409333f51",
+      "kind": "stage",
+      "node_id": "parallel-03",
+      "filename": "verification/results/dxf_check.log",
+      "created_at": "2026-09-06T18:12:47.14609+08:00",
+      "sha256": "756a92165d0ddd1c1e6987c0de84e73d7f25e569b8483b3c44ad49a3bc2113e9",
+      "bytes": 746,
+      "downloaded_path": "/private/tmp/weave-corona-validation-20260906/current-corrected-stages/parallel-03/deliverable_70cbdabbbfcf5b07f0f41f2409333f51/verification/results/dxf_check.log"
+    },
+    {
+      "id": "deliverable_a011a409fa71930dc278ba13c290349c",
+      "kind": "stage",
+      "node_id": "parallel-03",
+      "filename": "verification/results/consistency_check.log",
+      "created_at": "2026-09-06T18:12:47.145849+08:00",
+      "sha256": "684eed77891de8f1a31e66445ce7c8742b48ea671aea61dc3133d4e3ea2eeb87",
+      "bytes": 2525,
+      "downloaded_path": "/private/tmp/weave-corona-validation-20260906/current-corrected-stages/parallel-03/deliverable_a011a409fa71930dc278ba13c290349c/verification/results/consistency_check.log"
+    },
+    {
+      "id": "deliverable_65b1d4271befd4e654bed56f05e484b7",
+      "kind": "stage",
+      "node_id": "parallel-03",
+      "filename": "verification/results/app_syntax.log",
+      "created_at": "2026-09-06T18:12:47.145638+08:00",
+      "sha256": "1329bf34856aadd03edc30a2f067c62e995e444c2f0c696da4dbdd91caa2c3c5",
+      "bytes": 442,
+      "downloaded_path": "/private/tmp/weave-corona-validation-20260906/current-corrected-stages/parallel-03/deliverable_65b1d4271befd4e654bed56f05e484b7/verification/results/app_syntax.log"
+    },
+    {
+      "id": "deliverable_4d4f343d0c29ef20fe04e7109f94ba73",
+      "kind": "stage",
+      "node_id": "parallel-03",
+      "filename": "verification/results/app_checks.log",
+      "created_at": "2026-09-06T18:12:47.145407+08:00",
+      "sha256": "020af0020ad3ddccfc19026352c73861b8a97d78f8b6a803ec2e3ff9dd5bc295",
+      "bytes": 1350,
+      "downloaded_path": "/private/tmp/weave-corona-validation-20260906/current-corrected-stages/parallel-03/deliverable_4d4f343d0c29ef20fe04e7109f94ba73/verification/results/app_checks.log"
+    },
+    {
+      "id": "deliverable_65c66f6434e3cdf94758bc8a3e40fab2",
+      "kind": "stage",
+      "node_id": "parallel-03",
+      "filename": "model/tools/export_params.py",
+      "created_at": "2026-09-06T18:12:47.144891+08:00",
+      "sha256": "15c9dd696937ccdded3271cc7f3becfac8c8ff2ca6e2d502825bd86760615742",
+      "bytes": 2606,
+      "downloaded_path": "/private/tmp/weave-corona-validation-20260906/current-corrected-stages/parallel-03/deliverable_65c66f6434e3cdf94758bc8a3e40fab2/model/tools/export_params.py"
+    },
+    {
+      "id": "deliverable_269b6948ab86f729e6b45970edbc94c8",
+      "kind": "stage",
+      "node_id": "parallel-03",
+      "filename": "model/tests/test_model.py",
+      "created_at": "2026-09-06T18:12:47.144148+08:00",
+      "sha256": "8909393b6f3de2b8a9fc1fcf8bc61ab7a7fe44c27ba3c62435913ecf14343a66",
+      "bytes": 9572,
+      "downloaded_path": "/private/tmp/weave-corona-validation-20260906/current-corrected-stages/parallel-03/deliverable_269b6948ab86f729e6b45970edbc94c8/model/tests/test_model.py"
+    },
+    {
+      "id": "deliverable_43b9d749c7cde364595b78c8955a42b3",
+      "kind": "stage",
+      "node_id": "parallel-03",
+      "filename": "drawings/tools/make_dxf.py",
+      "created_at": "2026-09-06T18:12:47.143423+08:00",
+      "sha256": "fab9a7c52cd20e7dc8cf5a5f66e98f411e71c149f184a4a19c6cfe8f575f9395",
+      "bytes": 2626,
+      "downloaded_path": "/private/tmp/weave-corona-validation-20260906/current-corrected-stages/parallel-03/deliverable_43b9d749c7cde364595b78c8955a42b3/drawings/tools/make_dxf.py"
+    },
+    {
+      "id": "deliverable_0eba6e4184fcaea47c263f7e3b15dc5e",
+      "kind": "stage",
+      "node_id": "parallel-03",
+      "filename": "app/tests/sample_export_S-0.03c.json",
+      "created_at": "2026-09-06T18:12:47.143042+08:00",
+      "sha256": "db594201ca3b726e6b7aaadef7ecd267e1651d0c3f9e461bde13923dd3b22d7e",
+      "bytes": 3854,
+      "downloaded_path": "/private/tmp/weave-corona-validation-20260906/current-corrected-stages/parallel-03/deliverable_0eba6e4184fcaea47c263f7e3b15dc5e/app/tests/sample_export_S-0.03c.json"
+    },
+    {
+      "id": "deliverable_bbbc4039810c6498fa527f7dde7b8925",
+      "kind": "stage",
+      "node_id": "parallel-03",
+      "filename": "app/tests/app_check.js",
+      "created_at": "2026-09-06T18:12:47.142733+08:00",
+      "sha256": "53dcd1f7a55adf9f8fe433f75dde72191bc8aacafd115b811d73b4af9e011f82",
+      "bytes": 6169,
+      "downloaded_path": "/private/tmp/weave-corona-validation-20260906/current-corrected-stages/parallel-03/deliverable_bbbc4039810c6498fa527f7dde7b8925/app/tests/app_check.js"
+    },
+    {
+      "id": "deliverable_c5dd86f1ba3be39f83f37b6a909c4f77",
+      "kind": "stage",
+      "node_id": "parallel-03",
+      "filename": "verification/verification_checklist.md",
+      "created_at": "2026-09-06T18:12:47.142271+08:00",
+      "sha256": "feaaad1e0d92312b023f6f16de9d794a39b104868434c7eed592971b42928cdd",
+      "bytes": 5175,
+      "downloaded_path": "/private/tmp/weave-corona-validation-20260906/current-corrected-stages/parallel-03/deliverable_c5dd86f1ba3be39f83f37b6a909c4f77/verification/verification_checklist.md"
+    },
+    {
+      "id": "deliverable_0113d8189c5f7a69a615a4fef4be771e",
+      "kind": "stage",
+      "node_id": "parallel-03",
+      "filename": "verification/run_checks.sh",
+      "created_at": "2026-09-06T18:12:47.141761+08:00",
+      "sha256": "5421798721a8f6d29a064e5b30e5b39532a95aedd6ca27bb3af570bd273e3af4",
+      "bytes": 2859,
+      "downloaded_path": "/private/tmp/weave-corona-validation-20260906/current-corrected-stages/parallel-03/deliverable_0113d8189c5f7a69a615a4fef4be771e/verification/run_checks.sh"
+    },
+    {
+      "id": "deliverable_ff1ee8237a92b644aa9330a4589f254c",
+      "kind": "stage",
+      "node_id": "parallel-03",
+      "filename": "verification/consistency_check.py",
+      "created_at": "2026-09-06T18:12:47.140797+08:00",
+      "sha256": "0dc768568dd7c028967edc6b47b067f85cf5c73160c35f267aa86f622993148c",
+      "bytes": 7487,
+      "downloaded_path": "/private/tmp/weave-corona-validation-20260906/current-corrected-stages/parallel-03/deliverable_ff1ee8237a92b644aa9330a4589f254c/verification/consistency_check.py"
+    },
+    {
+      "id": "deliverable_50c6998a33d4e71981c18990d98841fe",
+      "kind": "stage",
+      "node_id": "parallel-03",
+      "filename": "verification/bounded_run.py",
+      "created_at": "2026-09-06T18:12:47.140275+08:00",
+      "sha256": "24b29086e462678750a68d9c2dcd6fb36be09fcb8002bfa6afda67c0c35f4400",
+      "bytes": 2008,
+      "downloaded_path": "/private/tmp/weave-corona-validation-20260906/current-corrected-stages/parallel-03/deliverable_50c6998a33d4e71981c18990d98841fe/verification/bounded_run.py"
+    },
+    {
+      "id": "deliverable_00b4106131d8d9b5bfbed821307ebc45",
+      "kind": "stage",
+      "node_id": "parallel-03",
+      "filename": "model/params.json",
+      "created_at": "2026-09-06T18:12:47.139743+08:00",
+      "sha256": "19cee44ce6d70eb5585055c80d2fb868c64d88e71125b4f1bc3ec6b611f4cdb8",
+      "bytes": 4638,
+      "downloaded_path": "/private/tmp/weave-corona-validation-20260906/current-corrected-stages/parallel-03/deliverable_00b4106131d8d9b5bfbed821307ebc45/model/params.json"
+    },
+    {
+      "id": "deliverable_df44fdce9e8f453e32ffef2419a3298c",
+      "kind": "stage",
+      "node_id": "parallel-03",
+      "filename": "model/miniyaml.py",
+      "created_at": "2026-09-06T18:12:47.139283+08:00",
+      "sha256": "575840738d8b620457311ea64616807a77413678e51307e111a6a2fe8327f317",
+      "bytes": 7166,
+      "downloaded_path": "/private/tmp/weave-corona-validation-20260906/current-corrected-stages/parallel-03/deliverable_df44fdce9e8f453e32ffef2419a3298c/model/miniyaml.py"
+    },
+    {
+      "id": "deliverable_ba94811c9ae842e64ac53e6990098650",
+      "kind": "stage",
+      "node_id": "parallel-03",
+      "filename": "model/corona_model.py",
+      "created_at": "2026-09-06T18:12:47.138469+08:00",
+      "sha256": "f32fdc9444c0f3331f993f6955a21531559f595deb8e4a5a3a71cdbe101db1b6",
+      "bytes": 11193,
+      "downloaded_path": "/private/tmp/weave-corona-validation-20260906/current-corrected-stages/parallel-03/deliverable_ba94811c9ae842e64ac53e6990098650/model/corona_model.py"
+    },
+    {
+      "id": "deliverable_0e26baed737056bc41fa366787255f5c",
+      "kind": "stage",
+      "node_id": "parallel-03",
+      "filename": "model/baseline_v1.1.0.yaml",
+      "created_at": "2026-09-06T18:12:47.137343+08:00",
+      "sha256": "592569b75758ccfb8d677bc2aab647a52f68b6b996fb5e1692bcb56f86bde8ce",
+      "bytes": 8262,
+      "downloaded_path": "/private/tmp/weave-corona-validation-20260906/current-corrected-stages/parallel-03/deliverable_0e26baed737056bc41fa366787255f5c/model/baseline_v1.1.0.yaml"
+    },
+    {
+      "id": "deliverable_d9c822402f81bf9a12a157f6fd18c1e5",
+      "kind": "stage",
+      "node_id": "parallel-03",
+      "filename": "model/README.md",
+      "created_at": "2026-09-06T18:12:47.136837+08:00",
+      "sha256": "c0585f9444718560bc41788d470646a024c50bc8ed23a073fee968fa47d09e4b",
+      "bytes": 2031,
+      "downloaded_path": "/private/tmp/weave-corona-validation-20260906/current-corrected-stages/parallel-03/deliverable_d9c822402f81bf9a12a157f6fd18c1e5/model/README.md"
+    },
+    {
+      "id": "deliverable_b2ee40d30b3a908a8b85f38fbcab9c6a",
+      "kind": "stage",
+      "node_id": "parallel-03",
+      "filename": "drawings/README.md",
+      "created_at": "2026-09-06T18:12:47.13599+08:00",
+      "sha256": "b82edf31f813df541331204c9847e4209d1dc35060cbd9d1b1f68e452d14a450",
+      "bytes": 2224,
+      "downloaded_path": "/private/tmp/weave-corona-validation-20260906/current-corrected-stages/parallel-03/deliverable_b2ee40d30b3a908a8b85f38fbcab9c6a/drawings/README.md"
+    },
+    {
+      "id": "deliverable_fcdd701bdbe164f97cc88ba90f3a89b6",
+      "kind": "stage",
+      "node_id": "parallel-03",
+      "filename": "drawings/COR-DWG-004_habitat_concept.scad",
+      "created_at": "2026-09-06T18:12:47.135457+08:00",
+      "sha256": "ef61f82d034324f008624549f5d7179d14b77021042d939898cfd09a1295dc0a",
+      "bytes": 3471,
+      "downloaded_path": "/private/tmp/weave-corona-validation-20260906/current-corrected-stages/parallel-03/deliverable_fcdd701bdbe164f97cc88ba90f3a89b6/drawings/COR-DWG-004_habitat_concept.scad"
+    },
+    {
+      "id": "deliverable_f78e2c3c67da0e4de8c73d97d04a42f8",
+      "kind": "stage",
+      "node_id": "parallel-03",
+      "filename": "drawings/COR-DWG-003_system_interfaces.svg",
+      "created_at": "2026-09-06T18:12:47.134632+08:00",
+      "sha256": "4a103db7fc97159a9bbbb46fad6e3759bb4310954d0b5bfedfa5baf63099207e",
+      "bytes": 9891,
+      "downloaded_path": "/private/tmp/weave-corona-validation-20260906/current-corrected-stages/parallel-03/deliverable_f78e2c3c67da0e4de8c73d97d04a42f8/drawings/COR-DWG-003_system_interfaces.svg"
+    },
+    {
+      "id": "deliverable_5c2dd3da81ecc8fc51368966de8442cd",
+      "kind": "stage",
+      "node_id": "parallel-03",
+      "filename": "drawings/COR-DWG-002_archive_payload_zones.svg",
+      "created_at": "2026-09-06T18:12:47.134199+08:00",
+      "sha256": "dad1475c640da52700ae99c6b5be3189c48fc2a414e23387e3f0526e9cb0374c",
+      "bytes": 9286,
+      "downloaded_path": "/private/tmp/weave-corona-validation-20260906/current-corrected-stages/parallel-03/deliverable_5c2dd3da81ecc8fc51368966de8442cd/drawings/COR-DWG-002_archive_payload_zones.svg"
+    },
+    {
+      "id": "deliverable_7e81a4d172d5933087af76e2f70032fe",
+      "kind": "stage",
+      "node_id": "parallel-03",
+      "filename": "drawings/COR-DWG-001_mission_architecture.svg",
+      "created_at": "2026-09-06T18:12:47.13358+08:00",
+      "sha256": "965f301d05151c3dc05c1ab146440a1e5d30b6c96a36628ac2112dd948a5f1fd",
+      "bytes": 9346,
+      "downloaded_path": "/private/tmp/weave-corona-validation-20260906/current-corrected-stages/parallel-03/deliverable_7e81a4d172d5933087af76e2f70032fe/drawings/COR-DWG-001_mission_architecture.svg"
+    },
+    {
+      "id": "deliverable_f03497fa081a78459608e25405d9542a",
+      "kind": "stage",
+      "node_id": "parallel-03",
+      "filename": "baseline/work_brief.md",
+      "created_at": "2026-09-06T18:12:47.132842+08:00",
+      "sha256": "a5927253aae08701bfecddbe6411f8ebac090ad351aa635804a279b18340a3f1",
+      "bytes": 5355,
+      "downloaded_path": "/private/tmp/weave-corona-validation-20260906/current-corrected-stages/parallel-03/deliverable_f03497fa081a78459608e25405d9542a/baseline/work_brief.md"
+    },
+    {
+      "id": "deliverable_96795d1e6dacde4fa2daa404ec7bc571",
+      "kind": "stage",
+      "node_id": "parallel-03",
+      "filename": "baseline/requirements_baseline.md",
+      "created_at": "2026-09-06T18:12:47.131838+08:00",
+      "sha256": "ed1db14e4fdf26e042dba9f5e821a0b5f3dba46d2c1e0eccff8d4f02ee8f6ec0",
+      "bytes": 7466,
+      "downloaded_path": "/private/tmp/weave-corona-validation-20260906/current-corrected-stages/parallel-03/deliverable_96795d1e6dacde4fa2daa404ec7bc571/baseline/requirements_baseline.md"
+    },
+    {
+      "id": "deliverable_17738e3fccb2d4de34c4354b32629fb4",
+      "kind": "stage",
+      "node_id": "parallel-03",
+      "filename": "baseline/interface_control.md",
+      "created_at": "2026-09-06T18:12:47.13106+08:00",
+      "sha256": "23433e1d4cebf632494c161b27b0d5c45d2a9fbd59cddabd3475d3e0aeed73c2",
+      "bytes": 4331,
+      "downloaded_path": "/private/tmp/weave-corona-validation-20260906/current-corrected-stages/parallel-03/deliverable_17738e3fccb2d4de34c4354b32629fb4/baseline/interface_control.md"
+    },
+    {
+      "id": "deliverable_cebf94508333f5317dda604f8fd17579",
+      "kind": "stage",
+      "node_id": "parallel-03",
+      "filename": "baseline/change_register.md",
+      "created_at": "2026-09-06T18:12:47.130351+08:00",
+      "sha256": "d4c2066f3deba509bf2281d4e116640b53f4a45cadfbbd3122a9452384fb31ee",
+      "bytes": 3755,
+      "downloaded_path": "/private/tmp/weave-corona-validation-20260906/current-corrected-stages/parallel-03/deliverable_cebf94508333f5317dda604f8fd17579/baseline/change_register.md"
+    },
+    {
+      "id": "deliverable_76594e212a8bedaeeb2e9c16f647ba35",
+      "kind": "stage",
+      "node_id": "parallel-03",
+      "filename": "baseline/baseline_v1.1.0.yaml",
+      "created_at": "2026-09-06T18:12:47.128892+08:00",
+      "sha256": "592569b75758ccfb8d677bc2aab647a52f68b6b996fb5e1692bcb56f86bde8ce",
+      "bytes": 8262,
+      "downloaded_path": "/private/tmp/weave-corona-validation-20260906/current-corrected-stages/parallel-03/deliverable_76594e212a8bedaeeb2e9c16f647ba35/baseline/baseline_v1.1.0.yaml"
+    },
+    {
+      "id": "deliverable_5d88059cb3a56a048fa87f109695384b",
+      "kind": "stage",
+      "node_id": "parallel-03",
+      "filename": "baseline/baseline_v1.0.0_superseded.yaml",
+      "created_at": "2026-09-06T18:12:47.1283+08:00",
+      "sha256": "b908c4a0694b954f6b4df72817f79a846d97c93130537cf79422268fbadcbb88",
+      "bytes": 1147,
+      "downloaded_path": "/private/tmp/weave-corona-validation-20260906/current-corrected-stages/parallel-03/deliverable_5d88059cb3a56a048fa87f109695384b/baseline/baseline_v1.0.0_superseded.yaml"
+    },
+    {
+      "id": "deliverable_9e9e16234265229c27d1165225824b8b",
+      "kind": "stage",
+      "node_id": "parallel-03",
+      "filename": "app/styles.css",
+      "created_at": "2026-09-06T18:12:47.127571+08:00",
+      "sha256": "15cc1974a70090c0441bbc238594be8b0cb429e422fe5b1298ba24717b47719a",
+      "bytes": 2450,
+      "downloaded_path": "/private/tmp/weave-corona-validation-20260906/current-corrected-stages/parallel-03/deliverable_9e9e16234265229c27d1165225824b8b/app/styles.css"
+    },
+    {
+      "id": "deliverable_864d4b49589d1d54291e84d9baf1170f",
+      "kind": "stage",
+      "node_id": "parallel-03",
+      "filename": "app/params.js",
+      "created_at": "2026-09-06T18:12:47.126643+08:00",
+      "sha256": "5f6c32d4995d1452b6720a235919f31ed9a3a7382e3f3f3ddf62e78cc8aca900",
+      "bytes": 4911,
+      "downloaded_path": "/private/tmp/weave-corona-validation-20260906/current-corrected-stages/parallel-03/deliverable_864d4b49589d1d54291e84d9baf1170f/app/params.js"
+    },
+    {
+      "id": "deliverable_5952ac87ccf32c098d9264577721d641",
+      "kind": "stage",
+      "node_id": "parallel-03",
+      "filename": "app/index.html",
+      "created_at": "2026-09-06T18:12:47.126068+08:00",
+      "sha256": "4dd5d49f588ad30405433a0e78433a7cce5f9ff32a6bd8ffac408f8e55886a86",
+      "bytes": 5406,
+      "downloaded_path": "/private/tmp/weave-corona-validation-20260906/current-corrected-stages/parallel-03/deliverable_5952ac87ccf32c098d9264577721d641/app/index.html"
+    },
+    {
+      "id": "deliverable_422d498528e5d87b921c7fdaf3ecaf6c",
+      "kind": "stage",
+      "node_id": "parallel-03",
+      "filename": "app/calc.js",
+      "created_at": "2026-09-06T18:12:47.125185+08:00",
+      "sha256": "dffd973c7bee0655b967f73cb04b9597fc3afa2c7b67ff27059aa5834de04859",
+      "bytes": 6106,
+      "downloaded_path": "/private/tmp/weave-corona-validation-20260906/current-corrected-stages/parallel-03/deliverable_422d498528e5d87b921c7fdaf3ecaf6c/app/calc.js"
+    },
+    {
+      "id": "deliverable_ca174db5de18004b253aa82c66125eb9",
+      "kind": "stage",
+      "node_id": "parallel-03",
+      "filename": "app/app.js",
+      "created_at": "2026-09-06T18:12:47.123964+08:00",
+      "sha256": "1daae426fcf7400bb9b2e19650c8c7a3c275c52a8fe5926e51195fc9ab63b74e",
+      "bytes": 7447,
+      "downloaded_path": "/private/tmp/weave-corona-validation-20260906/current-corrected-stages/parallel-03/deliverable_ca174db5de18004b253aa82c66125eb9/app/app.js"
+    },
+    {
+      "id": "deliverable_88e45676a6439269ba8ade00c7c61321",
+      "kind": "stage",
+      "node_id": "parallel-03",
+      "filename": "app/README.md",
+      "created_at": "2026-09-06T18:12:47.12308+08:00",
+      "sha256": "e7b1d540dfc49073049a9c0d2e0dd75eafbe19d20004406ce031422db258e2a2",
+      "bytes": 2391,
+      "downloaded_path": "/private/tmp/weave-corona-validation-20260906/current-corrected-stages/parallel-03/deliverable_88e45676a6439269ba8ade00c7c61321/app/README.md"
+    }
+  ],
+  "missing_generated_dxf": "drawings/COR-DWG-004_habitat_section.dxf",
+  "generator_received": true,
+  "independent_execution_performed": false,
+  "final_acceptance": false
+}

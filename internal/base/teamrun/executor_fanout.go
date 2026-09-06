@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/jinyitao123/weave/internal/base/execution"
 	"sort"
 	"strings"
 	"time"
@@ -253,8 +254,22 @@ func (r *WorkflowSerialRuntime) ExecuteFanoutLeg(
 	// Fanout legs still do not contribute to run-level usage settlement; that
 	// remains owned by T14B-2B. Their measured usage is retained in the
 	// activity ledger so the worksite can show honest member-level facts.
+	var retry struct {
+		Generation int `json:"retry_generation"`
+	}
+	if len(task.RuntimeAssignment) > 0 {
+		if err := json.Unmarshal(task.RuntimeAssignment, &retry); err != nil || retry.Generation < 0 {
+			return nil, executionError(ErrorCodeIdentityMismatch, errors.New("invalid explicit retry generation"))
+		}
+	}
+	invocationID := "fanout/" + leg.LegID
+	rootID := execution.EngineTaskID(task.WorkspaceID, invocationID)
+	if retry.Generation > 0 {
+		invocationID += fmt.Sprintf("/retry-%d", retry.Generation)
+	}
+	inputCtx := execution.WithAttemptLineage(execution.WithInputTaskIDs(ctx, nodeInputTaskIDs(branch, checkpoint.ArtifactTaskIDs)), rootID, "")
 	output, nodeUsage, err := runAgentNode(
-		ctx, branch, loaded.payload, entries, runInput, outputs, checkpoint.Corrections,
+		execution.WithInvocationID(inputCtx, invocationID), branch, loaded.payload, entries, runInput, outputs, checkpoint.Corrections,
 	)
 	if err != nil {
 		if recordErr := r.recordWorkflowArtifacts(ctx, parent, workflowArtifactOwner{

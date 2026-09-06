@@ -1,0 +1,42 @@
+{
+  "observed_at": "2026-09-06T09:03:18.231639+00:00",
+  "tasks": [
+    {
+      "id": "task-725cd448-f12f-52a1-bbd9-fa2ef1e3e881",
+      "kind": "team_workflow",
+      "status": "running",
+      "created_at": "2026-09-06T16:59:17.974076+08:00",
+      "worker_id": "teamrun:dl83xzxhqf9c:3"
+    },
+    {
+      "id": "task-bed16a0de79dec23cbdd6f81124d9c25",
+      "kind": "engine_exec",
+      "status": "running",
+      "created_at": "2026-09-06T16:59:18.488227+08:00",
+      "worker_id": "runtime:default:16b2e0c8-d8a9-494e-a1dc-61f397aceabf"
+    }
+  ],
+  "checkpoint": [
+    {
+      "schema_version": 1,
+      "stamp": {
+        "workspace_id": "default",
+        "workflow_id": "corona-prephase-a-lab-v3-luna-workflow",
+        "workflow_version": 5,
+        "run_snapshot_id": "run-6090ab9d-300c-5fc3-a37c-28b7110ec0b5"
+      },
+      "run_id": "run-6090ab9d-300c-5fc3-a37c-28b7110ec0b5",
+      "team_run_generation": 1,
+      "execution_lease_epoch": 1,
+      "node_id": "lead",
+      "completed_outputs": {},
+      "usage": {
+        "schema_version": 2,
+        "next_call_ordinals": {},
+        "calls": []
+      },
+      "usage_complete": true,
+      "written_at": "2026-09-06T08:59:18.482644Z"
+    }
+  ]
+}

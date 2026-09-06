@@ -9,6 +9,11 @@ import (
 )
 
 func TestCorrectionSafePointConfirmAndResume(t *testing.T) {
+	t.Run("fresh", func(t *testing.T) { testCorrectionSafePointConfirmAndResume(t, false) })
+	t.Run("recover_after_applied_commit", func(t *testing.T) { testCorrectionSafePointConfirmAndResume(t, true) })
+}
+
+func testCorrectionSafePointConfirmAndResume(t *testing.T, appliedBeforeRecovery bool) {
 	h := newProcessNextHarness(t)
 	_, _ = h.seedRunningWorkflowTaskBeforeAdmission(t, "run-correction")
 	corrections := &CorrectionStore{Transactions: h.pool, Runs: NewPGStore()}
@@ -78,12 +83,37 @@ func TestCorrectionSafePointConfirmAndResume(t *testing.T) {
 		t.Fatalf("correction was not applied to checkpoint: %#v", checkpoint)
 	}
 
-	h.executor.Now = func() time.Time { return h.now.Add(3 * time.Second) }
+	appliedAt := h.now.Add(3 * time.Second)
+	if appliedBeforeRecovery {
+		tx = h.mustBeginTx(t)
+		if err := corrections.MarkAppliedTx(context.Background(), tx, "workspace-1", "run-correction", requested.CorrectionID,
+			correctionResumeExecutorID("run-correction", "confirm-correction-once"), appliedAt); err != nil {
+			t.Fatalf("commit application before simulated restart: %v", err)
+		}
+		if err := tx.Commit(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	h.executor.Now = func() time.Time {
+		if appliedBeforeRecovery {
+			return appliedAt.Add(time.Second)
+		}
+		return appliedAt
+	}
 	processed, err = h.executor.ProcessNext(context.Background(), "worker-2")
 	if err != nil || !processed {
 		t.Fatalf("resume correction: processed=%v err=%v", processed, err)
 	}
 	h.assertRun(t, "run-correction", StatusSucceeded, nil)
+	items, err := corrections.List(context.Background(), "workspace-1", "run-correction", 20)
+	if err != nil || len(items) != 1 || items[0].AppliedAt == nil || !items[0].AppliedAt.Equal(appliedAt) {
+		t.Fatalf("application time changed during recovery: items=%+v err=%v", items, err)
+	}
+	var appliedEvents int
+	if err := h.pool.QueryRow(context.Background(), `SELECT count(*) FROM weave_team_run_correction_events
+		WHERE workspace_id='workspace-1' AND run_id='run-correction' AND event_kind='applied'`).Scan(&appliedEvents); err != nil || appliedEvents != 1 {
+		t.Fatalf("application audit event count=%d err=%v", appliedEvents, err)
+	}
 	active, present, err = corrections.GetActive(context.Background(), "workspace-1", "run-correction")
 	if err != nil || present {
 		t.Fatalf("applied correction remained active: present=%v item=%#v err=%v", present, active, err)

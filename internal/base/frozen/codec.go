@@ -1075,7 +1075,7 @@ func normalizeFrozenExecutionBundle(
 			return FrozenExecutionBundle{}, ErrFrozenDuplicateSetValue
 		}
 	}
-	if cloned.Agent.Model == "" {
+	if cloned.Agent.Model == "" || cloned.Agent.Engine != "loom" {
 		if cloned.PrimaryModel != (FrozenModelBinding{}) {
 			return FrozenExecutionBundle{}, ErrFrozenSchemaMismatch
 		}
@@ -1086,6 +1086,9 @@ func normalizeFrozenExecutionBundle(
 		if cloned.PrimaryModel.ModelID != cloned.Agent.Model {
 			return FrozenExecutionBundle{}, ErrFrozenSchemaMismatch
 		}
+	}
+	if cloned.Agent.Engine != "loom" && len(cloned.FallbackModels) != 0 {
+		return FrozenExecutionBundle{}, ErrFrozenSchemaMismatch
 	}
 	if cloned.FallbackModels == nil {
 		cloned.FallbackModels = []FrozenModelBinding{}

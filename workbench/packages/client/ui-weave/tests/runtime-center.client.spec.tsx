@@ -72,7 +72,7 @@ describe('Weave runtime center', () => {
     expect(view.container.textContent).not.toContain('<WEAVE')
     fireEvent.click(view.getByRole('button', { name: '复制连接命令' }))
     await waitFor(() => { expect(writeText).toHaveBeenCalledWith("weave runtime --server 'https://weave.example.com' --runtime-token 'rtk_once_only'") })
-    await waitFor(() => { expect(fetcher).toHaveBeenCalledTimes(3) })
+    await waitFor(() => { expect(fetcher.mock.calls.filter(([input]) => input === '/api/weave.runtimes')).toHaveLength(3) })
     const createInit = fetcher.mock.calls.find(([, init]) => init?.method === 'POST')?.[1]
     expect(typeof createInit?.body === 'string' ? JSON.parse(createInit.body) : null)
       .toEqual({ action: 'create', name: '办公室 Mac' })

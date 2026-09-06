@@ -44,3 +44,12 @@ button:disabled { cursor: default; opacity: .5; }
 .install code { display: block; margin-top: 7px; }
 @media (max-width: 520px) { .heading { flex-direction: column; } .runtime summary { grid-template-columns: 8px minmax(0, 1fr) auto; } .capacity { display: none; } .body dl { grid-template-columns: 1fr; } }
 @media (prefers-reduced-motion: no-preference) { .runtime summary, .headingActions button, .actions button { transition: color 140ms ease, background-color 140ms ease, border-color 140ms ease; } }
+
+.agentSection { border-top: 1px solid var(--dsw-alias-border-l2); padding-top: 16px; margin-top: 8px; }
+.agentList { display: grid; gap: 6px; max-height: 340px; overflow: auto; margin-top: 12px; }
+.agentRow { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; }
+.agentRow > span { min-width: 0; display: grid; gap: 4px; font-size: 12px; }
+.agentRow small, .body dd small { display: block; color: var(--dsw-alias-label-secondary); font-size: 11px; overflow-wrap: anywhere; }
+.agentRow button { flex-shrink: 0; border: 1px solid var(--dsw-alias-border-l3); border-radius: 6px; padding: 6px 10px; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-base); font: inherit; font-size: 12px; cursor: pointer; }
+.dialog select { box-sizing: border-box; width: 100%; padding: 8px 9px; border: 1px solid var(--dsw-alias-border-l3); border-radius: 7px; background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-primary); font: inherit; }
+.dialog { max-height: calc(100vh - 48px); overflow: auto; }

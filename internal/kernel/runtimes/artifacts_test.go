@@ -12,6 +12,56 @@ import (
 	"github.com/jinyitao123/weave/internal/kernel/engine"
 )
 
+func TestSourceDeliveryKeepsApplicationAndVerificationDependenciesAcrossRuntimeWire(t *testing.T) {
+	workDir := t.TempDir()
+	files := map[string]string{
+		"app/index.html":           `<link rel="stylesheet" href="style.css"><script src="calc.js"></script>`,
+		"app/style.css":            "body { color: black; }",
+		"app/calc.js":              "window.travelYears = distance => distance / 0.03;",
+		"app/tests/check.cjs":      "const assert = require('node:assert/strict'); assert.equal(1, 1);\n",
+		"model/recalc.py":          "print(4.25 / 0.03)\n",
+		"drawings/concept.dxf":     "0\nSECTION\n2\nENTITIES\n0\nENDSEC\n0\nEOF\n",
+		"verification/run.sh":      "#!/bin/sh\npython3 ../model/recalc.py\n",
+		"verification/results.log": "passed\n",
+	}
+	// A combined model, application, drawing and review package can exceed 64
+	// small files without approaching the unchanged total-byte transport limit.
+	for index := 0; index < 90; index++ {
+		files[fmt.Sprintf("review/requirement-%03d.md", index)] = "Verified requirement and its evidence.\n"
+	}
+	before := SnapshotOutputArtifacts(workDir)
+	for name, content := range files {
+		path := filepath.Join(workDir, "outputs", filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	result := engine.RunResult{Status: "completed", Output: "Saved `outputs/app/index.html` and its local dependencies."}
+	CollectRunOutputArtifacts(workDir, before, &result)
+	wire, err := json.Marshal(CLIEngineExecResult(result))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var received EngineExecResult
+	if err := json.Unmarshal(wire, &received); err != nil {
+		t.Fatal(err)
+	}
+	if received.Status != "completed" || len(received.Artifacts) != len(files) {
+		t.Fatalf("incomplete executable delivery: status=%s files=%d", received.Status, len(received.Artifacts))
+	}
+	for _, file := range received.Artifacts {
+		if want, ok := files[file.Path]; !ok || file.Content != want {
+			t.Fatalf("lost or changed dependency: %s", file.Path)
+		}
+	}
+	if stale := CollectOutputArtifactsSince(workDir, SnapshotOutputArtifacts(workDir)); len(stale) != 0 {
+		t.Fatalf("unchanged source files republished: %d", len(stale))
+	}
+}
+
 func TestCollectOutputArtifactsIncludesOnlyReferencedCurrentRootFiles(t *testing.T) {
 	workDir := t.TempDir()
 	write := func(name, content string) {
@@ -118,7 +168,7 @@ func TestCollectRunOutputArtifactsRejectsUncollectedExplicitDelivery(t *testing.
 	}{
 		{name: "single file limit", filename: "brief.md", reason: "file_exceeds_256_kib", content: strings.Repeat("x", engine.MaxArtifactBytes+1)},
 		{name: "total limit", filename: "outputs/z-brief.md", reason: "files_exceed_512_kib_total", content: "Final result", precedingFiles: 2, precedingBytes: engine.MaxArtifactBytes},
-		{name: "count limit", filename: "outputs/z-brief.md", reason: "file_count_exceeds_64", content: "Final result", precedingFiles: engine.MaxArtifactCount, precedingBytes: 1},
+		{name: "count limit", filename: "outputs/z-brief.md", reason: fmt.Sprintf("file_count_exceeds_%d", engine.MaxArtifactCount), content: "Final result", precedingFiles: engine.MaxArtifactCount, precedingBytes: 1},
 		{name: "stale root file", filename: "brief.md", reason: "file_not_written_by_this_invocation", content: "An earlier task's result", stale: true},
 		{name: "stale outputs file", filename: "outputs/brief.md", reason: "file_not_written_by_this_invocation", content: "An earlier task's result", stale: true},
 		{name: "unsupported root type", filename: "brief.pdf", reason: "unsupported_file_type", content: "%PDF-1.4"},

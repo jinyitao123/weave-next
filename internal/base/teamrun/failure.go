@@ -33,6 +33,9 @@ func ClassifyFailure(err error) FailureSummary {
 		return FailureSummary{Class: FailureClassCancelled, Reason: "execution was stopped"}
 	}
 	message := strings.ToLower(err.Error())
+	if strings.Contains(message, "runtime_model_fallback_exhausted") {
+		return FailureSummary{Class: FailureClassInfrastructure, Retryable: true, Reason: "configured model attempts were exhausted before any tool execution; recovery is required"}
+	}
 	if strings.Contains(message, "delivery_artifact_uncollected") {
 		reason := "the referenced result file was not saved as a deliverable"
 		for _, match := range [][2]string{
@@ -57,6 +60,15 @@ func ClassifyFailure(err error) FailureSummary {
 	case ErrorCodeDeliveryUnavailable:
 		return FailureSummary{Class: FailureClassVerification, Reason: "the stage result could not be preserved as a verified deliverable"}
 	}
+	if strings.Contains(message, "runtime_credentials_missing") || strings.Contains(message, "missing environment variable") {
+		return FailureSummary{Class: FailureClassInfrastructure, Reason: "the runtime provider credential is missing; configure runtime authentication before retrying"}
+	}
+	if strings.Contains(message, "runtime_result_rejected") {
+		return FailureSummary{Class: FailureClassInfrastructure, Reason: "the runtime result was rejected; repair the result transport before retrying"}
+	}
+	if strings.Contains(message, "model ") && strings.Contains(message, "is not supported") {
+		return FailureSummary{Class: FailureClassInfrastructure, Reason: "the requested model is unavailable; select a supported model and publish the workflow before retrying"}
+	}
 	for _, marker := range []string{
 		"timed out", "timeout", "deadline exceeded", "reconnecting", "connection reset",
 		"connection refused", "broken pipe", "unexpected eof", "stream disconnected",
@@ -69,5 +81,6 @@ func ClassifyFailure(err error) FailureSummary {
 				Reason: "the runtime connection or execution environment failed before the stage could finish"}
 		}
 	}
+
 	return FailureSummary{Class: FailureClassWork, Reason: "the stage could not complete its assigned work"}
 }

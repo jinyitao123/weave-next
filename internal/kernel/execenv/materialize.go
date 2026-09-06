@@ -19,7 +19,7 @@ const teamOrchestrationGuard = `# Platform orchestration boundary
 
 Complete only the current workflow node's assigned responsibilities. Do not spawn or delegate to native CLI sub-agents. Weave owns team delegation, parallelism, review, retries, and delivery through the published workflow.
 
-Return the complete assigned result in your final answer, not a completion receipt. For file deliverables, write supported UTF-8 files below outputs/ and explicitly reference their relative paths in the final answer. The platform collects only this invocation's new or rewritten files; local files elsewhere and unchanged files are not a delivery channel. Never claim that a file was saved to Workbench yourself.`
+Return the complete assigned result in your final answer, not a completion receipt. For file deliverables, write supported UTF-8 files below outputs/ and explicitly reference their relative paths in the final answer. The platform collects only this invocation's new or rewritten files; local files elsewhere and unchanged files are not a delivery channel. Binary images and archives are not collected. When a delivered page needs a binary visual, provide a supported UTF-8 representation such as an SVG or HTML file embedding the actual image, and keep the editable source. Verify that the files being delivered include every required local link, resource, and script dependency; a file existing on this host does not establish its delivery. Never claim that a file was saved to Workbench yourself.`
 
 // Attachment identifies a file to copy into an external CLI agent's workdir.
 type Attachment struct {

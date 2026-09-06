@@ -46,13 +46,14 @@ const (
 )
 
 type serialMachineStart struct {
-	NodeID         string
-	Outputs        map[string]any
-	DeliveryErrors map[string]string
-	SourceKind     SourceKind
-	Now            time.Time
-	Run            TeamRun
-	ArtifactHash   string
+	NodeID          string
+	Outputs         map[string]any
+	ArtifactTaskIDs map[string][]string
+	DeliveryErrors  map[string]string
+	SourceKind      SourceKind
+	Now             time.Time
+	Run             TeamRun
+	ArtifactHash    string
 	// Candidate marks a round-bound team build candidate test run (snapshot
 	// build_round_no > 0). These runs charge the TeamBuild budget ledger from
 	// their measured usage only; parallel/fanout legs and CLI nodes without a
@@ -67,6 +68,9 @@ type serialMachineStart struct {
 	// node, so the final terminal result still says so.
 	UsageComplete         bool
 	UsageIncompleteReason string
+	LoadArtifacts         func(context.Context, []string) ([]deliverable.WorkflowArtifact, error)
+	RecordCheckpoint      func(context.Context, WorkflowCheckpointV1) error
+	RecordDelivery        func(context.Context, string, string, string, any, []deliverable.WorkflowArtifact) error
 	RecordOutput          func(context.Context, machine.Node, any, bool) error
 	RecordArtifact        func(context.Context, machine.Node, deliverable.WorkflowArtifact, bool) error
 	CheckCorrection       func(context.Context, string, map[string]any) (*CorrectionWaitDetailV1, error)
@@ -79,6 +83,7 @@ type serialMachineResult struct {
 	Status                serialMachineStatus
 	Output                any
 	Outputs               map[string]any
+	ArtifactTaskIDs       map[string][]string
 	DeliveryErrors        map[string]string
 	NodeID                string
 	WaitKind              WaitKind
@@ -177,6 +182,10 @@ func runSerialMachine(
 	for nodeID, output := range start.Outputs {
 		outputs[nodeID] = output
 	}
+	artifactTaskIDs := make(map[string][]string, len(start.ArtifactTaskIDs))
+	for nodeID, ids := range start.ArtifactTaskIDs {
+		artifactTaskIDs[nodeID] = append([]string(nil), ids...)
+	}
 	deliveryErrors := make(map[string]string, len(start.DeliveryErrors))
 	for nodeID, message := range start.DeliveryErrors {
 		deliveryErrors[nodeID] = message
@@ -200,6 +209,28 @@ func runSerialMachine(
 				fmt.Errorf("node %q is unavailable", current),
 			))
 		}
+		if start.RecordCheckpoint != nil {
+			completed := make(map[string]json.RawMessage, len(outputs))
+			for id, output := range outputs {
+				encoded, err := json.Marshal(output)
+				if err != nil {
+					return fail(executionError(ErrorCodeOutputInvalid, err))
+				}
+				completed[id] = encoded
+			}
+			usageCheckpoint, err := usage.MarshalCheckpoint()
+			if err != nil {
+				return fail(executionError(ErrorCodeExecutionUnrecoverable, err))
+			}
+			checkpoint := checkpointFromPark(start.Run, RuntimePark{
+				NodeID: current, CompletedOutputs: completed, ArtifactTaskIDs: artifactTaskIDs,
+				DeliveryErrors: deliveryErrors, Corrections: start.Corrections, UsageCheckpoint: usageCheckpoint,
+				UsageComplete: usageComplete, UsageIncompleteReason: usageIncompleteReason,
+			}, time.Now().UTC())
+			if err := start.RecordCheckpoint(ctx, checkpoint); err != nil {
+				return fail(executionError(ErrorCodeExecutionUnrecoverable, err))
+			}
+		}
 		if start.CheckCorrection != nil {
 			detail, err := start.CheckCorrection(ctx, current, outputs)
 			if err != nil {
@@ -210,7 +241,7 @@ func runSerialMachine(
 				if err != nil {
 					return fail(executionError(ErrorCodeExecutionUnrecoverable, err))
 				}
-				return serialMachineResult{Status: serialParked, Outputs: outputs, NodeID: current,
+				return serialMachineResult{Status: serialParked, Outputs: outputs, ArtifactTaskIDs: artifactTaskIDs, NodeID: current,
 					DeliveryErrors: deliveryErrors,
 					WaitKind:       WaitCorrection, WaitDetail: encoded, Usage: usage,
 					UsageComplete: usageComplete, UsageIncompleteReason: usageIncompleteReason}
@@ -238,7 +269,7 @@ func runSerialMachine(
 				return fail(executionError(ErrorCodeExecutionUnrecoverable, err))
 			}
 			output, nodeUsage, err := runAgentNode(
-				ctx, node, payload, entries, runInput, outputs, start.Corrections,
+				execution.WithInvocationID(execution.WithInputTaskIDs(ctx, nodeInputTaskIDs(node, artifactTaskIDs)), fmt.Sprintf("%s/%d/%s", start.Run.RunSnapshotID, start.Run.ResumeGeneration, callID)), node, payload, entries, runInput, outputs, start.Corrections,
 			)
 			if len(nodeUsage.CLIAttempts) == 0 {
 				attemptID := nodeUsageAttemptID(callID)
@@ -340,7 +371,7 @@ func runSerialMachine(
 					if encodeErr != nil {
 						return fail(executionError(ErrorCodeExecutionUnrecoverable, encodeErr))
 					}
-					return serialMachineResult{Status: serialParked, Outputs: outputs, NodeID: node.ID,
+					return serialMachineResult{Status: serialParked, Outputs: outputs, ArtifactTaskIDs: artifactTaskIDs, NodeID: node.ID,
 						DeliveryErrors: deliveryErrors,
 						WaitKind:       WaitRuntime, WaitDetail: detail, Usage: usage,
 						UsageComplete: usageComplete, UsageIncompleteReason: usageIncompleteReason}
@@ -348,6 +379,12 @@ func runSerialMachine(
 				return fail(err)
 			}
 			outputs[node.ID] = output
+			delete(artifactTaskIDs, node.ID)
+			for _, attempt := range nodeUsage.CLIAttempts {
+				if attempt.AttemptID != "" {
+					artifactTaskIDs[node.ID] = []string{attempt.AttemptID}
+				}
+			}
 			delete(deliveryErrors, node.ID)
 			if nodeUsage.DeliveryError != "" {
 				deliveryErrors[node.ID] = nodeUsage.DeliveryError
@@ -367,7 +404,7 @@ func runSerialMachine(
 				for _, artifact := range nodeUsage.Artifacts {
 					if err := start.RecordArtifact(ctx, node, deliverable.WorkflowArtifact{
 						Path: artifact.Path, ContentType: artifact.ContentType, Content: artifact.Content,
-					}, true); err != nil {
+					}, false); err != nil {
 						return fail(executionError(ErrorCodeDeliveryUnavailable, err))
 					}
 				}
@@ -398,6 +435,7 @@ func runSerialMachine(
 				return fail(executionError(ErrorCodeExecutionUnrecoverable, err))
 			}
 			outputs[node.ID] = output
+			delete(artifactTaskIDs, node.ID)
 			delete(deliveryErrors, node.ID)
 			config := node.Config.(machine.TransformConfig)
 			references := append([]machine.ValueRef(nil), config.Items...)
@@ -408,6 +446,9 @@ func runSerialMachine(
 				references = append(references, reference)
 			}
 			for _, reference := range references {
+				if reference.Source == machine.ValueNodeOutput {
+					artifactTaskIDs[node.ID] = append(artifactTaskIDs[node.ID], artifactTaskIDs[reference.NodeID]...)
+				}
 				if message := valueDeliveryError(reference, outputs, deliveryErrors); message != "" &&
 					(deliveryErrors[node.ID] == "" || message < deliveryErrors[node.ID]) {
 					deliveryErrors[node.ID] = message
@@ -467,7 +508,7 @@ func runSerialMachine(
 				return fail(executionError(ErrorCodeRuntimeIncompatible, err))
 			}
 			return serialMachineResult{
-				Status: serialParked, Outputs: outputs, NodeID: joinNodeID,
+				Status: serialParked, Outputs: outputs, ArtifactTaskIDs: artifactTaskIDs, NodeID: joinNodeID,
 				DeliveryErrors: deliveryErrors,
 				WaitKind:       WaitFanout, WaitDetail: detail, Usage: usage,
 				UsageComplete: usageComplete, UsageIncompleteReason: usageIncompleteReason,
@@ -551,9 +592,29 @@ func runSerialMachine(
 					fmt.Errorf("deliver output violates contract: %s", problems[0].Code),
 				))
 			}
-			if start.RecordOutput != nil {
-				if err := start.RecordOutput(ctx, node, output, true); err != nil {
+			var artifacts []deliverable.WorkflowArtifact
+			if start.LoadArtifacts != nil && config.Result.Source == machine.ValueNodeOutput {
+				artifacts, err = start.LoadArtifacts(ctx, artifactTaskIDs[config.Result.NodeID])
+				if err != nil {
 					return fail(executionError(ErrorCodeDeliveryUnavailable, err))
+				}
+			}
+			if start.RecordDelivery != nil {
+				if err := start.RecordDelivery(ctx, node.ID, node.Label, string(node.Type), output, artifacts); err != nil {
+					return fail(executionError(ErrorCodeDeliveryUnavailable, err))
+				}
+			} else {
+				if start.RecordArtifact != nil {
+					for _, artifact := range artifacts {
+						if err := start.RecordArtifact(ctx, node, artifact, true); err != nil {
+							return fail(executionError(ErrorCodeDeliveryUnavailable, err))
+						}
+					}
+				}
+				if start.RecordOutput != nil {
+					if err := start.RecordOutput(ctx, node, output, true); err != nil {
+						return fail(executionError(ErrorCodeDeliveryUnavailable, err))
+					}
 				}
 			}
 			return serialMachineResult{
@@ -601,7 +662,7 @@ func runSerialMachine(
 					return fail(executionError(ErrorCodeRuntimeIncompatible, err))
 				}
 				return serialMachineResult{
-					Status: serialParked, Outputs: outputs, NodeID: node.ID,
+					Status: serialParked, Outputs: outputs, ArtifactTaskIDs: artifactTaskIDs, NodeID: node.ID,
 					DeliveryErrors: deliveryErrors,
 					WaitKind:       WaitHuman, WaitDetail: detail, Usage: usage,
 					UsageComplete: usageComplete, UsageIncompleteReason: usageIncompleteReason,
@@ -626,7 +687,7 @@ func runSerialMachine(
 				return fail(executionError(ErrorCodeRuntimeIncompatible, err))
 			}
 			return serialMachineResult{
-				Status: serialParked, Outputs: outputs, NodeID: node.ID,
+				Status: serialParked, Outputs: outputs, ArtifactTaskIDs: artifactTaskIDs, NodeID: node.ID,
 				DeliveryErrors: deliveryErrors,
 				WaitKind:       WaitTimer, WaitDetail: detail, Usage: usage,
 				UsageComplete: usageComplete, UsageIncompleteReason: usageIncompleteReason,
@@ -1631,4 +1692,22 @@ func decodeJSONValue(raw json.RawMessage, destination any) error {
 		return err
 	}
 	return nil
+}
+
+func nodeInputTaskIDs(node machine.Node, sources map[string][]string) []string {
+	seen := map[string]bool{}
+	var ids []string
+	for _, binding := range node.Inputs {
+		if binding.Value.Source != machine.ValueNodeOutput {
+			continue
+		}
+		for _, id := range sources[binding.Value.NodeID] {
+			if !seen[id] {
+				ids = append(ids, id)
+				seen[id] = true
+			}
+		}
+	}
+	sort.Strings(ids)
+	return ids
 }

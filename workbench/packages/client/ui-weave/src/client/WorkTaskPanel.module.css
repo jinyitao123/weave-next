@@ -345,10 +345,17 @@ pre.documentBody { white-space: pre-wrap; font: inherit; }
 
 /* Stable scene navigation and shared reading surfaces. */
 .viewControls { position: sticky; top: -18px; z-index: 2; padding-block: 8px; background: var(--dsw-alias-bg-base); border-bottom: 1px solid var(--dsw-alias-border-l1); }
-.conversationCard { border-radius: 14px; box-shadow: 0 2px 8px color-mix(in srgb, var(--dsw-alias-label-primary) 4%, transparent); }
-.dockContent { padding: 14px 16px; gap: 10px; }
-.dockHeading strong { font-size: 14px; line-height: 1.5; }
-.dockActions { gap: 6px; }
+.conversationCard { width: min(var(--dsh-chat-content-width, 920px), calc(100% - 64px)); border-radius: 10px; box-shadow: 0 1px 5px color-mix(in srgb, var(--dsw-alias-label-primary) 4%, transparent); }
+.dockContent { padding: 11px 14px; gap: 7px; }
+.dockHeading { gap: 5px 8px; line-height: 1.45; }
+.dockHeading strong { font-size: 13px; line-height: 1.45; }
+.dockActions { gap: 3px 5px; }
+.dockContent[data-weave-task-receipt][data-status='failed'] { gap: 5px; }
+.dockContent[data-weave-task-receipt][data-status='failed'] .stageFailure { gap: 3px; margin: 3px 0 1px; }
+.dockContent[data-weave-task-receipt][data-status='failed'] .stageFailure > strong { font-size: 13px; line-height: 1.45; }
+.dockContent[data-weave-task-receipt][data-status='failed'] .stageFailure > span { font-size: 12px; line-height: 1.45; }
+.dockContent[data-weave-task-receipt][data-status='failed'] .stageFailure > details > summary { min-height: 28px; padding-block: 2px; font-size: 12px; }
+.dockContent[data-weave-task-receipt][data-status='failed'] .dockActions { margin-top: 1px; }
 .dockContent[data-status='stopped'] { flex-direction: row; align-items: center; flex-wrap: wrap; }
 .dockContent[data-status='stopped'] > .dockActions { margin-left: auto; }
 .publicUpdateToggle::after { content: ''; width: 6px; height: 6px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); }

@@ -85,26 +85,8 @@ func (s *Server) admitTeamWorkflowDispatch(c echo.Context, workflowID string, re
 	); err != nil {
 		return workflowStoreFailure(c, err)
 	}
-	if conversationID != "" && projectID == "" {
-		return workflowSchemaError(c)
-	}
-	if projectID != "" && s.Projects == nil {
-		return workflowError(
-			c,
-			http.StatusServiceUnavailable,
-			"workflow_run_project_unavailable",
-			"project store unavailable for attributed workflow run",
-		)
-	}
-
 	var project projects.Project
 	conversationAgentID := ""
-	if projectID != "" {
-		project, err = loadWorkflowManualRunProject(ctx, tx, workspaceID, projectID)
-		if err != nil {
-			return workflowManualRunProjectError(c, err)
-		}
-	}
 	if conversationID != "" {
 		var conversationProjectID string
 		if err := tx.QueryRow(ctx, `
@@ -116,8 +98,24 @@ func (s *Server) admitTeamWorkflowDispatch(c echo.Context, workflowID string, re
 			return workflowError(c, http.StatusNotFound, "workflow_run_conversation_not_found", "conversation not found in current workspace")
 		} else if err != nil {
 			return workflowStoreFailure(c, fmt.Errorf("read workflow run conversation: %w", err))
-		} else if conversationProjectID != projectID {
+		} else if projectID != "" && conversationProjectID != projectID {
 			return workflowError(c, http.StatusConflict, "workflow_run_conversation_project_mismatch", "conversation does not belong to selected project")
+		} else if projectID == "" {
+			projectID = conversationProjectID
+		}
+	}
+	if projectID != "" && s.Projects == nil {
+		return workflowError(
+			c,
+			http.StatusServiceUnavailable,
+			"workflow_run_project_unavailable",
+			"project store unavailable for attributed workflow run",
+		)
+	}
+	if projectID != "" {
+		project, err = loadWorkflowManualRunProject(ctx, tx, workspaceID, projectID)
+		if err != nil {
+			return workflowManualRunProjectError(c, err)
 		}
 	}
 	if projectID != "" {

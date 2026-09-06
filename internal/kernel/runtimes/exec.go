@@ -75,7 +75,7 @@ func (e *Executor) ExecRemoteStructured(
 	return e.execRemote(ctx, tenant, rec, stamp, prompt, attachments, outputSchema)
 }
 
-func (e *Executor) execRemote(
+func (e *Executor) execRemoteOnce(
 	ctx context.Context,
 	tenant string,
 	rec *registry.AgentRecord,
@@ -97,13 +97,26 @@ func (e *Executor) execRemote(
 		return engine.RunResult{}, errors.New("remote engine executor: task queue is unavailable")
 	}
 
+	if taskID := logicalEngineTaskID(ctx, tenant); taskID != "" {
+		var exists bool
+		if err := e.runtimes.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM weave_task_queue WHERE workspace_id=$1 AND id=$2)`, tenant, taskID).Scan(&exists); err != nil {
+			return engine.RunResult{}, fmt.Errorf("reconcile engine invocation: %w", err)
+		}
+		if exists {
+			result, runtimeID, err := e.resumeEngineTask(ctx, tenant, taskID)
+			result.Attempts = appendUsageAttempt(result.Attempts, taskID, runtimeID, rec.Engine, result)
+			return result, err
+		}
+	}
+
 	// Frozen workflow workers predate the policy field. Explicit Pool
 	// membership is the administrator's opt-in for those records; a record on
 	// an unpooled runtime preserves the historical single-attempt behavior.
 	if rec.RuntimePolicyMode == "" {
 		selected, getErr := e.runtimes.Get(ctx, tenant, rec.RuntimeID)
 		if getErr != nil || selected.PoolID == "" {
-			result, taskID, err := e.execRemoteAttempt(ctx, tenant, rec, stamp, prompt, attachments, outputSchema, "", "")
+			traceID, parentID := execution.AttemptLineage(ctx)
+			result, taskID, err := e.execRemoteAttempt(ctx, tenant, rec, stamp, prompt, attachments, outputSchema, traceID, parentID)
 			result.Attempts = appendUsageAttempt(result.Attempts, taskID, rec.RuntimeID, rec.Engine, result)
 			return result, err
 		}
@@ -117,8 +130,10 @@ func (e *Executor) execRemote(
 	if err != nil {
 		return engine.RunResult{}, err
 	}
-	traceID := "runtime-attempts-" + uuid.NewString()
-	parentTaskID := ""
+	traceID, parentTaskID := execution.AttemptLineage(ctx)
+	if traceID == "" {
+		traceID = "runtime-attempts-" + uuid.NewString()
+	}
 	var lastErr error
 	var lastResult engine.RunResult
 	var attempts []engine.UsageAttempt
@@ -140,7 +155,7 @@ func (e *Executor) execRemote(
 			if taskID != "" {
 				parentTaskID = taskID
 			}
-			if ctx.Err() != nil || !retryableRuntimeFailure(attemptErr) {
+			if ctx.Err() != nil || !canRetryRuntimeAttempt(taskID, attemptErr) {
 				return result, attemptErr
 			}
 			_ = e.runtimes.RecordInfrastructureFailure(
@@ -210,6 +225,13 @@ func (e *Executor) runtimeCandidates(ctx context.Context, tenant string, rec *re
 	return candidates, nil
 }
 
+// Once an engine task may exist, a transport failure cannot prove that no
+// tools ran. Require the existing explicit stage recovery path instead of
+// starting another physical invocation on this or another runtime.
+func canRetryRuntimeAttempt(taskID string, err error) bool {
+	return taskID == "" && retryableRuntimeFailure(err)
+}
+
 func retryableRuntimeFailure(err error) bool {
 	if err == nil {
 		return false
@@ -244,11 +266,35 @@ func (e *Executor) execRemoteAttempt(
 	outputSchema json.RawMessage,
 	traceID, parentTaskID string,
 ) (engine.RunResult, string, error) {
+	inputFiles, err := e.inputFiles(ctx, tenant, stamp.RunSnapshotID)
+	if err != nil {
+		return engine.RunResult{}, "", fmt.Errorf("load upstream files: %w", err)
+	}
 	tx, err := e.runtimes.pool.Begin(ctx)
 	if err != nil {
 		return engine.RunResult{}, "", fmt.Errorf("begin runtime admission: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+
+	taskID := logicalEngineTaskID(ctx, tenant)
+	if taskID != "" {
+		// Serialize only this invocation. Competing reclaimed schedulers must
+		// observe the same committed task before attempting admission.
+		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, tenant+"/"+taskID); err != nil {
+			return engine.RunResult{}, "", err
+		}
+		var exists bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM weave_task_queue WHERE workspace_id=$1 AND id=$2)`, tenant, taskID).Scan(&exists); err != nil {
+			return engine.RunResult{}, "", err
+		}
+		if exists {
+			_ = tx.Rollback(ctx)
+			result, _, err := e.resumeEngineTask(ctx, tenant, taskID)
+			return result, taskID, err
+		}
+	} else {
+		taskID = "task-" + uuid.NewString()
+	}
 
 	var enginesJSON, capabilitiesJSON []byte
 	var lastHeartbeatAt *time.Time
@@ -287,12 +333,15 @@ func (e *Executor) execRemoteAttempt(
 	payload := e.buildExecPayloadWithSchema(tenant, rec, prompt, attachments, outputSchema)
 	payload.EngineVersion = capability.BinaryVersion
 	payload.NodeID = execution.NodeID(ctx)
+	payload.LogicalInvocationID, _ = execution.AttemptLineage(ctx)
+	payload.InputFiles = inputFiles
+	payload.Prompt = promptWithInputFiles(payload.Prompt, payload.InputFiles)
 	encoded, err := json.Marshal(payload)
 	if err != nil {
 		return engine.RunResult{}, "", fmt.Errorf("encode remote engine task: %w", err)
 	}
 	task := &taskqueue.Task{
-		ID:                    "task-" + uuid.NewString(),
+		ID:                    taskID,
 		WorkspaceID:           tenant,
 		Agent:                 rec.Name,
 		AgentID:               stamp.AgentID,
@@ -319,42 +368,60 @@ func (e *Executor) execRemoteAttempt(
 		return engine.RunResult{}, "", fmt.Errorf("enqueue remote engine task: %w", err)
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return engine.RunResult{}, "", fmt.Errorf("commit remote engine task: %w", err)
+		// A lost response may hide a successful commit. Keep the stable ID
+		// available for reconciliation; never cancel or enqueue a replacement.
+		return engine.RunResult{}, task.ID, fmt.Errorf("commit remote engine task: %w", err)
 	}
-	terminal, err := e.tasks.AwaitTerminal(ctx, tenant, task.ID, engineExecTimeout)
+	result, _, err := e.resumeEngineTask(ctx, tenant, task.ID)
+	return result, task.ID, err
+}
+
+func logicalEngineTaskID(ctx context.Context, tenant string) string {
+	return execution.EngineTaskID(tenant, execution.InvocationID(ctx))
+}
+
+func (e *Executor) resumeEngineTask(ctx context.Context, tenant, taskID string) (engine.RunResult, string, error) {
+	task, err := e.tasks.Get(ctx, tenant, taskID)
 	if err != nil {
-		// The caller owns the business-node lifetime. Once that context or the
-		// bounded wait ends, leaving the engine task runnable creates an orphan:
-		// a later candidate attempt may execute beside work whose parent TeamRun
-		// is already terminal. Cancelling the durable task also makes the daemon's
-		// next renew return lease-lost, which terminates the CLI child process.
-		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 5*time.Second)
-		_ = e.tasks.Cancel(cleanupCtx, tenant, task.ID)
-		cleanupCancel()
-		return engine.RunResult{}, task.ID, err
+		return engine.RunResult{}, "", err
+	}
+	var payload EngineExecRequest
+	if err := json.Unmarshal(task.Payload, &payload); err != nil {
+		return engine.RunResult{}, task.RuntimeID, err
+	}
+	terminal, err := e.tasks.AwaitTerminal(ctx, tenant, taskID, engineExecTimeout)
+	if err != nil {
+		// A scheduler shutdown detaches the waiter. Explicit stop cancels all
+		// run tasks transactionally. Deadlines still bound the physical work.
+		if execution.InvocationID(ctx) == "" || !errors.Is(ctx.Err(), context.Canceled) {
+			cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			_ = e.tasks.Cancel(cleanupCtx, tenant, taskID)
+			cancel()
+		}
+		return engine.RunResult{}, task.RuntimeID, err
 	}
 	if terminal.Status != taskqueue.StatusCompleted {
 		if terminal.Error != "" {
-			return engine.RunResult{}, task.ID, errors.New(terminal.Error)
+			return engine.RunResult{}, task.RuntimeID, errors.New(terminal.Error)
 		}
-		return engine.RunResult{}, task.ID, fmt.Errorf("remote engine task ended with status %q", terminal.Status)
+		return engine.RunResult{}, task.RuntimeID, fmt.Errorf("remote engine task ended with status %q", terminal.Status)
 	}
 	var result EngineExecResult
 	if err := json.Unmarshal(terminal.Result, &result); err != nil {
-		return engine.RunResult{}, task.ID, fmt.Errorf("decode remote engine result: %w", err)
+		return engine.RunResult{}, task.RuntimeID, fmt.Errorf("decode remote engine result: %w", err)
 	}
 	engineResult := result.EngineRunResult()
 	if engineResult.Usage != nil && engineResult.Usage.EngineVersion != payload.EngineVersion {
-		return engine.RunResult{}, task.ID, errors.New("remote engine usage receipt version does not match admitted binary")
+		return engine.RunResult{}, task.RuntimeID, errors.New("remote engine usage receipt version does not match admitted binary")
 	}
 	if engineResult.Status != "completed" {
 		message := engineResult.Err
 		if message == "" {
 			message = fmt.Sprintf("engine run ended with status %q", engineResult.Status)
 		}
-		return engineResult, task.ID, errors.New(message)
+		return engineResult, task.RuntimeID, errors.New(message)
 	}
-	return engineResult, task.ID, nil
+	return engineResult, task.RuntimeID, nil
 }
 
 func validateAgentExecutionStamp(

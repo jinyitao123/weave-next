@@ -4,10 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/jinyitao123/weave/internal/base/fileartifact"
 	"math"
 	"os"
 	"os/exec"
-	"path"
 	"regexp"
 	"strings"
 	"time"
@@ -115,9 +115,9 @@ func ValidateEvents(events []Event) error {
 }
 
 const (
-	MaxArtifactCount       = 64
-	MaxArtifactBytes       = 256 * 1024
-	MaxArtifactsTotalBytes = 512 * 1024
+	MaxArtifactCount       = fileartifact.MaxArtifactCount
+	MaxArtifactBytes       = fileartifact.MaxArtifactBytes
+	MaxArtifactsTotalBytes = fileartifact.MaxArtifactsTotalBytes
 )
 
 // ReferencesArtifact recognizes an explicit final-answer file reference, not a
@@ -127,33 +127,8 @@ func ReferencesArtifact(output, name string) bool {
 	return regexp.MustCompile(pattern).MatchString(output)
 }
 
-// ValidateArtifacts accepts only bounded UTF-8 files with relative delivery
-// names. Host paths and traversal are rejected.
-func ValidateArtifacts(artifacts []Artifact) error {
-	if len(artifacts) > MaxArtifactCount {
-		return fmt.Errorf("too many engine artifacts")
-	}
-	total := 0
-	seen := make(map[string]struct{}, len(artifacts))
-	for index, artifact := range artifacts {
-		name := strings.TrimSpace(artifact.Path)
-		if name == "" || len(name) > 512 || !utf8.ValidString(name) || strings.Contains(name, "\\") || path.IsAbs(name) || path.Clean(name) != name || name == "." || strings.HasPrefix(name, "../") {
-			return fmt.Errorf("engine artifact %d path is invalid", index)
-		}
-		if _, exists := seen[name]; exists {
-			return fmt.Errorf("engine artifact %d path is duplicated", index)
-		}
-		seen[name] = struct{}{}
-		if strings.TrimSpace(artifact.ContentType) == "" || len(artifact.ContentType) > 160 || !utf8.ValidString(artifact.ContentType) || !utf8.ValidString(artifact.Content) || len(artifact.Content) > MaxArtifactBytes {
-			return fmt.Errorf("engine artifact %d content is invalid", index)
-		}
-		total += len(artifact.Content)
-		if total > MaxArtifactsTotalBytes {
-			return fmt.Errorf("engine artifacts exceed total size bound")
-		}
-	}
-	return nil
-}
+// ValidateArtifacts verifies runtime-produced files before accepting a receipt.
+func ValidateArtifacts(artifacts []Artifact) error { return fileartifact.Validate(artifacts) }
 
 const (
 	UsageSourceCLIReported = "cli-reported"
@@ -253,7 +228,11 @@ func truncateRawSummary(raw string) string {
 	if len(raw) <= maxRawUsageSummary {
 		return raw
 	}
-	return raw[:maxRawUsageSummary]
+	raw = raw[:maxRawUsageSummary]
+	for !utf8.ValidString(raw) {
+		raw = raw[:len(raw)-1]
+	}
+	return raw
 }
 
 func appendRawSummary(current, line string) string {

@@ -69,6 +69,7 @@ type service struct {
 	maxBackoff         time.Duration
 	active             atomic.Int32
 	publicSpool        *publicSpool
+	resultSpool        *resultSpool
 }
 
 // Main parses daemon flags and runs until SIGINT or SIGTERM.
@@ -153,10 +154,15 @@ func newDaemon(cfg daemonConfig) (*service, error) {
 		slog.Warn("runtime public progress unavailable; using completion updates", "error", spoolErr)
 	}
 	for index := range cfg.engineCapabilities {
-		cfg.engineCapabilities[index].PublicEvents = cfg.engineCapabilities[index].Engine == engine.Codex && spoolErr == nil
+		cfg.engineCapabilities[index].PublicEvents = (cfg.engineCapabilities[index].Engine == engine.Codex || cfg.engineCapabilities[index].Engine == engine.Claude) && spoolErr == nil
+	}
+	results, err := newResultSpool(cfg.workspacesRoot, cfg.token)
+	if err != nil {
+		return nil, fmt.Errorf("initialize durable runtime results: %w", err)
 	}
 	return &service{
 		publicSpool:        spool,
+		resultSpool:        results,
 		client:             client,
 		server:             cfg.server,
 		workspacesRoot:     cfg.workspacesRoot,
@@ -178,7 +184,8 @@ func (d *service) run(ctx context.Context) error {
 	}
 
 	var workers sync.WaitGroup
-	workers.Add(d.concurrency + 2)
+	workers.Add(d.concurrency + 3)
+	go func() { defer workers.Done(); d.resultRecoveryLoop(ctx) }()
 	go func() { defer workers.Done(); d.publicEventsLoop(ctx) }()
 	go func() {
 		defer workers.Done()
@@ -275,20 +282,55 @@ func (d *service) processTask(ctx context.Context, task *taskqueue.Task) {
 
 	// Engine adapters return only after their process group has exited.
 	result, runErr := d.executeTask(taskCtx, task)
-	if !leaseLost.Load() && ctx.Err() == nil {
-		var report func(context.Context) error
-		if runErr != nil && result.Status == "" {
-			report = func(reportCtx context.Context) error { return d.client.fail(reportCtx, task.ID, runErr.Error()) }
+	journal := resultJournal{TaskID: task.ID, Result: result}
+	if runErr != nil && result.Status == "" {
+		journal.Failure = runErr.Error()
+	}
+	saved := false
+	if d.resultSpool != nil {
+		if err := d.resultSpool.save(journal); err != nil {
+			slog.Error("runtime result could not be journaled", "task_id", task.ID, "error", err)
 		} else {
-			report = func(reportCtx context.Context) error { return d.client.complete(reportCtx, task.ID, result) }
+			saved = true
+			defer d.resultSpool.release(task.ID)
 		}
-		if errors.Is(d.reportUntilAccepted(taskCtx, report), errLeaseLost) {
+	}
+	accepted := false
+	if !leaseLost.Load() {
+		reportCtx := taskCtx
+		stopReport := func() {}
+		if ctx.Err() != nil {
+			reportCtx, stopReport = context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		}
+		report := func(reportCtx context.Context) error {
+			if journal.Failure != "" {
+				return d.client.fail(reportCtx, task.ID, journal.Failure)
+			}
+			return d.client.complete(reportCtx, task.ID, result)
+		}
+		reportErr := d.reportUntilAccepted(reportCtx, report)
+		if isRejectedRuntimeResult(reportErr) {
+			slog.Error("runtime result rejected", "task_id", task.ID, "error", reportErr)
+			if saved {
+				d.resultSpool.retain(task.ID, "rejected")
+				saved = false
+			}
+			reportErr = d.reportUntilAccepted(reportCtx, func(ctx context.Context) error {
+				return d.client.fail(ctx, task.ID, "runtime_result_rejected: result validation failed; inspect runtime log")
+			})
+		}
+		stopReport()
+		accepted = reportErr == nil
+		if accepted && saved {
+			_ = d.resultSpool.acknowledge(task.ID)
+		}
+		if errors.Is(reportErr, errLeaseLost) {
 			leaseLost.Store(true)
 		}
 	}
 	cancelTask()
 	<-renewDone
-	if leaseLost.Load() || ctx.Err() != nil {
+	if !accepted && (leaseLost.Load() || ctx.Err() != nil && !saved) {
 		ackCtx := ctx
 		if ctx.Err() != nil {
 			var cancel context.CancelFunc
@@ -350,7 +392,7 @@ func (d *service) reportUntilAccepted(ctx context.Context, report func(context.C
 	backoff := newBackoff(d.minBackoff, d.maxBackoff)
 	for {
 		err := report(ctx)
-		if err == nil || errors.Is(err, errLeaseLost) || ctx.Err() != nil {
+		if err == nil || errors.Is(err, errLeaseLost) || isRejectedRuntimeResult(err) || ctx.Err() != nil {
 			return err
 		}
 		slog.Warn("runtime task result failed; retrying", "error", err)
@@ -358,6 +400,11 @@ func (d *service) reportUntilAccepted(ctx context.Context, report func(context.C
 			return ctx.Err()
 		}
 	}
+}
+
+func isRejectedRuntimeResult(err error) bool {
+	var status *httpStatusError
+	return errors.As(err, &status) && (status.code == 400 || status.code == 413 || status.code == 422)
 }
 
 func (d *service) executeTask(ctx context.Context, task *taskqueue.Task) (runtimes.EngineExecResult, error) {
@@ -372,7 +419,16 @@ func (d *service) executeTask(ctx context.Context, task *taskqueue.Task) (runtim
 		return runtimes.EngineExecResult{}, err
 	}
 
-	workDir, runEnv, err := execenv.Materialize(d.workspacesRoot, request.Record, request.Prompt, nil)
+	workspaceRoot := d.workspacesRoot
+	if request.NodeID != "" && task.RunSnapshotID != "" {
+		// Frozen workflow files belong to one physical invocation. Parallel tasks,
+		// correction generations and later runs cannot read stale worker outputs.
+		if filepath.Base(task.ID) != task.ID || task.ID == "." || task.ID == ".." {
+			return runtimes.EngineExecResult{}, fmt.Errorf("invalid invocation identity")
+		}
+		workspaceRoot = filepath.Join(workspaceRoot, ".invocations", task.ID)
+	}
+	workDir, runEnv, err := execenv.Materialize(workspaceRoot, request.Record, request.Prompt, nil)
 	if err != nil {
 		return runtimes.EngineExecResult{}, err
 	}
@@ -399,7 +455,7 @@ func (d *service) executeTask(ctx context.Context, task *taskqueue.Task) (runtim
 			}
 			attachments = append(attachments, execenv.Attachment{Filename: attachment.Filename, Path: local.Name()})
 		}
-		workDir, runEnv, err = execenv.Materialize(d.workspacesRoot, request.Record, request.Prompt, attachments)
+		workDir, runEnv, err = execenv.Materialize(workspaceRoot, request.Record, request.Prompt, attachments)
 		if err != nil {
 			return runtimes.EngineExecResult{}, err
 		}
@@ -407,6 +463,9 @@ func (d *service) executeTask(ctx context.Context, task *taskqueue.Task) (runtim
 
 	cliAuthMode := d.detectCLIAuthMode(ctx, request.Engine)
 	oneAPIBase, oneAPIKey := runtimeProviderConfig(request)
+	if err := validateRuntimeProviderConfig(request.Engine, cliAuthMode, oneAPIKey); err != nil {
+		return runtimes.EngineExecResult{}, err
+	}
 	if err := execenv.WriteEngineConfigWithAuthMode(request.Engine, workDir, request.Record, oneAPIBase, d.server, oneAPIKey, cliAuthMode); err != nil {
 		return runtimes.EngineExecResult{}, err
 	}
@@ -434,12 +493,15 @@ func (d *service) executeTask(ctx context.Context, task *taskqueue.Task) (runtim
 			delete(runEnv, key)
 		}
 	}
+	if err := materializeInputFiles(workDir, request.InputFiles); err != nil {
+		return runtimes.EngineExecResult{}, fmt.Errorf("materialize upstream files: %w", err)
+	}
 	outputsBefore := runtimes.SnapshotOutputArtifacts(workDir)
 	timeoutSeconds := request.TimeoutSeconds
 	if timeoutSeconds <= 0 {
 		timeoutSeconds = defaultTimeoutSeconds
 	}
-	publish, finishProgress := d.publicEventCapture(task.ID, request.Engine == engine.Codex && request.NodeID != "" && task.RunSnapshotID != "")
+	publish, finishProgress := d.publicEventCapture(task.ID, (request.Engine == engine.Codex || request.Engine == engine.Claude) && request.NodeID != "" && task.RunSnapshotID != "")
 	result, err := d.runEngine(ctx, request.Engine, engine.RunSpec{
 		OnPublicEvent: publish,
 		WorkDir:       workDir,
@@ -482,6 +544,14 @@ func runtimeProviderConfig(request runtimes.EngineExecRequest) (baseURL, apiKey 
 	baseURL = firstNonEmpty(request.OneAPIBase, os.Getenv("OPENAI_BASE_URL"))
 	apiKey = firstNonEmpty(request.OneAPIKey, os.Getenv("OPENAI_API_KEY"), os.Getenv("ONEAPI_API_KEY"))
 	return baseURL, apiKey
+}
+
+func validateRuntimeProviderConfig(engineName, authMode, apiKey string) error {
+	if engineName == engine.Codex &&
+		!strings.EqualFold(strings.TrimSpace(authMode), codexChatGPTAuthMode) && strings.TrimSpace(apiKey) == "" {
+		return errors.New("runtime_credentials_missing: ONEAPI_API_KEY")
+	}
+	return nil
 }
 
 func mergeRuntimeProviderEnv(env map[string]string, baseURL, apiKey string) {
@@ -719,12 +789,14 @@ func detectEngineCapabilities(ctx context.Context, detected []string) []runtimes
 				endpointClass = "anthropic_first_party"
 			}
 		}
-		capabilities = append(capabilities, runtimes.EngineCapability{
+		capability := runtimes.EngineCapability{
 			Engine: name, BinaryPath: binaryPath,
 			BinaryVersion: engine.BinaryVersion(ctx, binaryPath),
 			AuthMode:      authMode, ProtocolVersion: engineProtocolVersion(name),
 			EndpointClass: endpointClass,
-		})
+		}
+		describeEngineConfiguration(&capability)
+		capabilities = append(capabilities, capability)
 	}
 	return capabilities
 }

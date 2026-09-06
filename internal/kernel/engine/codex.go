@@ -34,11 +34,8 @@ func (b *codexBackend) Run(ctx context.Context, spec RunSpec) (RunResult, error)
 		"--skip-git-repo-check",
 		"--dangerously-bypass-approvals-and-sandbox",
 	}
-	// A ChatGPT subscription owns its Codex model selection independently of
-	// the API-provider model stored on the AgentRecord. Passing that provider
-	// model through can select an API-only model (for example gpt-5.2) which the
-	// same Codex CLI correctly rejects under ChatGPT authentication. Let the
-	// host Codex configuration choose its subscription-supported default.
+	// Empty model follows the host default; explicit CLI-native names are
+	// passed through under either native login or API authentication.
 	if model := codexModelForRun(spec.Model, spec.Env); model != "" {
 		args = append(args, "-m", model)
 	}
@@ -158,9 +155,6 @@ func codexModelName(model string) string {
 }
 
 func codexModelForRun(model string, env map[string]string) string {
-	if codexUsesHostChatGPTAuth(env["WEAVE_CODEX_AUTH_MODE"]) {
-		return ""
-	}
 	return codexModelName(model)
 }
 
@@ -171,6 +165,8 @@ type codexOutput struct {
 	errText         string
 	completionCount int
 	parseFailed     bool
+	failedTurnSeen  bool
+	toolObserved    bool
 	usage           *UsageReceipt
 	diagnostics     []Diagnostic
 	events          []Event
@@ -230,12 +226,18 @@ func parseCodexOutputWithEvents(stdout interface{ Read([]byte) (int, error) }, p
 			output.sessionID = jsonString(event["thread_id"])
 		case "item.started":
 			item := jsonObject(event["item"])
+			if kind := jsonString(item["type"]); kind != "agent_message" && kind != "reasoning" && kind != "" {
+				output.toolObserved = true
+			}
 			public(item, "tool_call")
 			if activity, ok := codexToolEvent(item, "tool_call"); ok && len(output.events) < 200 {
 				output.events = append(output.events, activity)
 			}
 		case "item.completed":
 			item := jsonObject(event["item"])
+			if kind := jsonString(item["type"]); kind != "agent_message" && kind != "reasoning" && kind != "" {
+				output.toolObserved = true
+			}
 			public(item, "tool_result")
 			switch jsonString(item["type"]) {
 			case "agent_message":
@@ -246,6 +248,9 @@ func parseCodexOutputWithEvents(stdout interface{ Read([]byte) (int, error) }, p
 			}
 		case "item.updated":
 			item := jsonObject(event["item"])
+			if kind := jsonString(item["type"]); kind != "agent_message" && kind != "reasoning" && kind != "" {
+				output.toolObserved = true
+			}
 			public(item, "tool_call") // known in-progress tool snapshots remain running
 		case "turn.completed":
 			output.completionCount++
@@ -256,6 +261,7 @@ func parseCodexOutputWithEvents(stdout interface{ Read([]byte) (int, error) }, p
 				output.status = "completed"
 			}
 		case "turn.failed":
+			output.failedTurnSeen = true
 			output.status = "failed"
 			output.errText = eventErrorMessage(event)
 			if output.errText == "" {
@@ -397,12 +403,13 @@ func parseCodexUsage(event map[string]json.RawMessage, raw string) (*UsageReceip
 
 func codexRunResult(parsed codexOutput) RunResult {
 	return RunResult{
-		Output:      parsed.output,
-		SessionID:   parsed.sessionID,
-		Status:      parsed.status,
-		Usage:       parsed.usage,
-		Diagnostics: append([]Diagnostic(nil), parsed.diagnostics...),
-		Events:      append([]Event(nil), parsed.events...),
+		RetrySafeBeforeExecution: parsed.status == "failed" && parsed.failedTurnSeen && !parsed.parseFailed && !parsed.toolObserved,
+		Output:                   parsed.output,
+		SessionID:                parsed.sessionID,
+		Status:                   parsed.status,
+		Usage:                    parsed.usage,
+		Diagnostics:              append([]Diagnostic(nil), parsed.diagnostics...),
+		Events:                   append([]Event(nil), parsed.events...),
 	}
 }
 

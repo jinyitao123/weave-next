@@ -9,6 +9,9 @@ export interface WeaveRuntimeEngineView {
   readonly engine: string
   readonly binaryVersion: string
   readonly authMode: 'chatgpt' | 'oauth' | 'provider' | 'unknown'
+  readonly configuredEndpoint?: string
+  readonly configuredModel?: string
+  readonly configurationSource?: string
 }
 
 /** Secretless scheduling facts for one registered Weave runtime. */
@@ -127,7 +130,11 @@ function engineCapabilities(value: unknown, engines: readonly string[]): readonl
   return engines.flatMap((engine): WeaveRuntimeEngineView[] => {
     const capability = object(items[engine])
     if (capability === undefined) return []
-    return [{ engine, binaryVersion: string(capability.binary_version), authMode: authMode(capability.auth_mode) }]
+    return [{ engine, binaryVersion: string(capability.binary_version), authMode: authMode(capability.auth_mode),
+      ...(string(capability.configured_endpoint) === '' ? {} : { configuredEndpoint: string(capability.configured_endpoint) }),
+      ...(string(capability.configured_model) === '' ? {} : { configuredModel: string(capability.configured_model) }),
+      ...(string(capability.configuration_source) === '' ? {} : { configurationSource: string(capability.configuration_source) }),
+    }]
   })
 }
 

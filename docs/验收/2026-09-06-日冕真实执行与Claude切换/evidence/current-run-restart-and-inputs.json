@@ -1,0 +1,377 @@
+{
+  "observed_at": "2026-09-06T09:08:17.558600+00:00",
+  "run_id": "run-6090ab9d-300c-5fc3-a37c-28b7110ec0b5",
+  "tasks": [
+    {
+      "id": "task-725cd448-f12f-52a1-bbd9-fa2ef1e3e881",
+      "kind": "team_workflow",
+      "status": "completed",
+      "created_at": "2026-09-06T16:59:17.974076+08:00",
+      "worker_id": null
+    },
+    {
+      "id": "task-bed16a0de79dec23cbdd6f81124d9c25",
+      "kind": "engine_exec",
+      "status": "completed",
+      "created_at": "2026-09-06T16:59:18.488227+08:00",
+      "worker_id": null,
+      "payload_keys": [
+        "agent",
+        "model",
+        "engine",
+        "prompt",
+        "record",
+        "node_id",
+        "engine_version",
+        "timeout_seconds",
+        "logical_invocation_id"
+      ],
+      "input_task_ids": null,
+      "input_files": null
+    },
+    {
+      "id": "flt1_dabc920781ce5bcf6a9d73e00f5a2ef9cc7e7105da2576603569e1159b1fd168",
+      "kind": "team_workflow",
+      "status": "running",
+      "created_at": "2026-09-06T17:04:39.6128+08:00",
+      "worker_id": "teamrun:dl841oqomnmw:1",
+      "payload_keys": [
+        "kind",
+        "leg_id",
+        "group_id",
+        "branch_id",
+        "input_ref",
+        "intent_id",
+        "generation",
+        "workspace_id",
+        "parent_run_id",
+        "branch_ordinal",
+        "schema_version",
+        "may_yield_proof",
+        "frozen_bundle_ref"
+      ],
+      "input_task_ids": null,
+      "input_files": null
+    },
+    {
+      "id": "flt1_621d09a0e832a4a521a9a65eb4c381d7508a80c26a10223fb1576f3b2655ba4f",
+      "kind": "team_workflow",
+      "status": "running",
+      "created_at": "2026-09-06T17:04:39.61444+08:00",
+      "worker_id": "teamrun:dl841oqommv4:3",
+      "payload_keys": [
+        "kind",
+        "leg_id",
+        "group_id",
+        "branch_id",
+        "input_ref",
+        "intent_id",
+        "generation",
+        "workspace_id",
+        "parent_run_id",
+        "branch_ordinal",
+        "schema_version",
+        "may_yield_proof",
+        "frozen_bundle_ref"
+      ],
+      "input_task_ids": null,
+      "input_files": null
+    },
+    {
+      "id": "flt1_bb229a6a33e95a742e5e54b265bb7bee29e1e15ebe354cbc631a4313be696d3b",
+      "kind": "team_workflow",
+      "status": "running",
+      "created_at": "2026-09-06T17:04:39.614784+08:00",
+      "worker_id": "teamrun:dl841oqombag:0",
+      "payload_keys": [
+        "kind",
+        "leg_id",
+        "group_id",
+        "branch_id",
+        "input_ref",
+        "intent_id",
+        "generation",
+        "workspace_id",
+        "parent_run_id",
+        "branch_ordinal",
+        "schema_version",
+        "may_yield_proof",
+        "frozen_bundle_ref"
+      ],
+      "input_task_ids": null,
+      "input_files": null
+    },
+    {
+      "id": "flt1_336925bca88dbd40b645a03870d841098f5dbe2443fa8a0995d5e8a64561d2f3",
+      "kind": "team_workflow",
+      "status": "running",
+      "created_at": "2026-09-06T17:04:39.615142+08:00",
+      "worker_id": "teamrun:dl841oqom5w0:2",
+      "payload_keys": [
+        "kind",
+        "leg_id",
+        "group_id",
+        "branch_id",
+        "input_ref",
+        "intent_id",
+        "generation",
+        "workspace_id",
+        "parent_run_id",
+        "branch_ordinal",
+        "schema_version",
+        "may_yield_proof",
+        "frozen_bundle_ref"
+      ],
+      "input_task_ids": null,
+      "input_files": null
+    },
+    {
+      "id": "flt1_ab55cfb1e766c20da22e755acd88c856ecc02db40107595569816fc33349604e",
+      "kind": "team_workflow",
+      "status": "queued",
+      "created_at": "2026-09-06T17:04:39.615441+08:00",
+      "worker_id": null,
+      "payload_keys": [
+        "kind",
+        "leg_id",
+        "group_id",
+        "branch_id",
+        "input_ref",
+        "intent_id",
+        "generation",
+        "workspace_id",
+        "parent_run_id",
+        "branch_ordinal",
+        "schema_version",
+        "may_yield_proof",
+        "frozen_bundle_ref"
+      ],
+      "input_task_ids": null,
+      "input_files": null
+    },
+    {
+      "id": "flt1_5d1b0a3a34a896227ceadab8a2ae0beb2310735d3a90486ddc6e51b24901666b",
+      "kind": "team_workflow",
+      "status": "queued",
+      "created_at": "2026-09-06T17:04:39.615788+08:00",
+      "worker_id": null,
+      "payload_keys": [
+        "kind",
+        "leg_id",
+        "group_id",
+        "branch_id",
+        "input_ref",
+        "intent_id",
+        "generation",
+        "workspace_id",
+        "parent_run_id",
+        "branch_ordinal",
+        "schema_version",
+        "may_yield_proof",
+        "frozen_bundle_ref"
+      ],
+      "input_task_ids": null,
+      "input_files": null
+    },
+    {
+      "id": "task-1f260abb04e55cee1efd30ebbf4a6bec",
+      "kind": "engine_exec",
+      "status": "running",
+      "created_at": "2026-09-06T17:04:39.649286+08:00",
+      "worker_id": "runtime:default:16b2e0c8-d8a9-494e-a1dc-61f397aceabf",
+      "payload_keys": [
+        "agent",
+        "model",
+        "engine",
+        "prompt",
+        "record",
+        "node_id",
+        "input_files",
+        "engine_version",
+        "timeout_seconds",
+        "logical_invocation_id"
+      ],
+      "input_task_ids": null,
+      "input_files": [
+        {
+          "path": "lead/model/baseline_frozen.yaml",
+          "sha256": "cfb12b781363c547da87e6dec9fd937079cba25501b85ff6cbfabfbc508b10c2",
+          "node_id": "lead",
+          "task_id": "task-bed16a0de79dec23cbdd6f81124d9c25",
+          "content_type": "application/yaml"
+        },
+        {
+          "path": "lead/review/change_control_register.md",
+          "sha256": "2494de35bf51dc1620a42d37c5a62a006e74e98d9e85fd973f4af8f87287915c",
+          "node_id": "lead",
+          "task_id": "task-bed16a0de79dec23cbdd6f81124d9c25",
+          "content_type": "text/markdown"
+        },
+        {
+          "path": "lead/review/interface_control.md",
+          "sha256": "bded6d00f05be613b16e1ff6e6a61a372da7f0d45236b79af2e6c8842a2b5f76",
+          "node_id": "lead",
+          "task_id": "task-bed16a0de79dec23cbdd6f81124d9c25",
+          "content_type": "text/markdown"
+        },
+        {
+          "path": "lead/review/requirements_baseline.md",
+          "sha256": "53c628a1cc4b88fb4d71e54ea0754186861e8c1ddbaae5a5614989e5c6ed4481",
+          "node_id": "lead",
+          "task_id": "task-bed16a0de79dec23cbdd6f81124d9c25",
+          "content_type": "text/markdown"
+        }
+      ]
+    },
+    {
+      "id": "task-05d61fb1f7f70d2ccf276048d315080d",
+      "kind": "engine_exec",
+      "status": "queued",
+      "created_at": "2026-09-06T17:04:41.637027+08:00",
+      "worker_id": null,
+      "payload_keys": [
+        "agent",
+        "model",
+        "engine",
+        "prompt",
+        "record",
+        "node_id",
+        "input_files",
+        "engine_version",
+        "timeout_seconds",
+        "logical_invocation_id"
+      ],
+      "input_task_ids": null,
+      "input_files": [
+        {
+          "path": "lead/model/baseline_frozen.yaml",
+          "sha256": "cfb12b781363c547da87e6dec9fd937079cba25501b85ff6cbfabfbc508b10c2",
+          "node_id": "lead",
+          "task_id": "task-bed16a0de79dec23cbdd6f81124d9c25",
+          "content_type": "application/yaml"
+        },
+        {
+          "path": "lead/review/change_control_register.md",
+          "sha256": "2494de35bf51dc1620a42d37c5a62a006e74e98d9e85fd973f4af8f87287915c",
+          "node_id": "lead",
+          "task_id": "task-bed16a0de79dec23cbdd6f81124d9c25",
+          "content_type": "text/markdown"
+        },
+        {
+          "path": "lead/review/interface_control.md",
+          "sha256": "bded6d00f05be613b16e1ff6e6a61a372da7f0d45236b79af2e6c8842a2b5f76",
+          "node_id": "lead",
+          "task_id": "task-bed16a0de79dec23cbdd6f81124d9c25",
+          "content_type": "text/markdown"
+        },
+        {
+          "path": "lead/review/requirements_baseline.md",
+          "sha256": "53c628a1cc4b88fb4d71e54ea0754186861e8c1ddbaae5a5614989e5c6ed4481",
+          "node_id": "lead",
+          "task_id": "task-bed16a0de79dec23cbdd6f81124d9c25",
+          "content_type": "text/markdown"
+        }
+      ]
+    },
+    {
+      "id": "task-3b0014b553bdaa5746c6a708d5c75ecd",
+      "kind": "engine_exec",
+      "status": "queued",
+      "created_at": "2026-09-06T17:04:41.637033+08:00",
+      "worker_id": null,
+      "payload_keys": [
+        "agent",
+        "model",
+        "engine",
+        "prompt",
+        "record",
+        "node_id",
+        "input_files",
+        "engine_version",
+        "timeout_seconds",
+        "logical_invocation_id"
+      ],
+      "input_task_ids": null,
+      "input_files": [
+        {
+          "path": "lead/model/baseline_frozen.yaml",
+          "sha256": "cfb12b781363c547da87e6dec9fd937079cba25501b85ff6cbfabfbc508b10c2",
+          "node_id": "lead",
+          "task_id": "task-bed16a0de79dec23cbdd6f81124d9c25",
+          "content_type": "application/yaml"
+        },
+        {
+          "path": "lead/review/change_control_register.md",
+          "sha256": "2494de35bf51dc1620a42d37c5a62a006e74e98d9e85fd973f4af8f87287915c",
+          "node_id": "lead",
+          "task_id": "task-bed16a0de79dec23cbdd6f81124d9c25",
+          "content_type": "text/markdown"
+        },
+        {
+          "path": "lead/review/interface_control.md",
+          "sha256": "bded6d00f05be613b16e1ff6e6a61a372da7f0d45236b79af2e6c8842a2b5f76",
+          "node_id": "lead",
+          "task_id": "task-bed16a0de79dec23cbdd6f81124d9c25",
+          "content_type": "text/markdown"
+        },
+        {
+          "path": "lead/review/requirements_baseline.md",
+          "sha256": "53c628a1cc4b88fb4d71e54ea0754186861e8c1ddbaae5a5614989e5c6ed4481",
+          "node_id": "lead",
+          "task_id": "task-bed16a0de79dec23cbdd6f81124d9c25",
+          "content_type": "text/markdown"
+        }
+      ]
+    },
+    {
+      "id": "task-c75ec961df5a7f85a7837185b561a9f2",
+      "kind": "engine_exec",
+      "status": "running",
+      "created_at": "2026-09-06T17:04:41.637036+08:00",
+      "worker_id": "runtime:default:fec94563-0d22-4c21-8036-861900652850",
+      "payload_keys": [
+        "agent",
+        "model",
+        "engine",
+        "prompt",
+        "record",
+        "node_id",
+        "input_files",
+        "engine_version",
+        "timeout_seconds",
+        "logical_invocation_id"
+      ],
+      "input_task_ids": null,
+      "input_files": [
+        {
+          "path": "lead/model/baseline_frozen.yaml",
+          "sha256": "cfb12b781363c547da87e6dec9fd937079cba25501b85ff6cbfabfbc508b10c2",
+          "node_id": "lead",
+          "task_id": "task-bed16a0de79dec23cbdd6f81124d9c25",
+          "content_type": "application/yaml"
+        },
+        {
+          "path": "lead/review/change_control_register.md",
+          "sha256": "2494de35bf51dc1620a42d37c5a62a006e74e98d9e85fd973f4af8f87287915c",
+          "node_id": "lead",
+          "task_id": "task-bed16a0de79dec23cbdd6f81124d9c25",
+          "content_type": "text/markdown"
+        },
+        {
+          "path": "lead/review/interface_control.md",
+          "sha256": "bded6d00f05be613b16e1ff6e6a61a372da7f0d45236b79af2e6c8842a2b5f76",
+          "node_id": "lead",
+          "task_id": "task-bed16a0de79dec23cbdd6f81124d9c25",
+          "content_type": "text/markdown"
+        },
+        {
+          "path": "lead/review/requirements_baseline.md",
+          "sha256": "53c628a1cc4b88fb4d71e54ea0754186861e8c1ddbaae5a5614989e5c6ed4481",
+          "node_id": "lead",
+          "task_id": "task-bed16a0de79dec23cbdd6f81124d9c25",
+          "content_type": "text/markdown"
+        }
+      ]
+    }
+  ]
+}

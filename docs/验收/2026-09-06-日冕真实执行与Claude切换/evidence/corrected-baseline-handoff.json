@@ -1,0 +1,40 @@
+{
+  "observed_at": "2026-09-06T10:07:21.876048+00:00",
+  "source": "platform deliverables API; stage artifacts only",
+  "final_acceptance": false,
+  "baseline_copies": [
+    {
+      "id": "deliverable_14da40a424f8ac74cc456065e907c9e7",
+      "kind": "stage",
+      "node_id": "parallel-06",
+      "filename": "baseline/baseline_v1.1.0.yaml",
+      "created_at": "2026-09-06T18:03:14.228805+08:00",
+      "sha256": "592569b75758ccfb8d677bc2aab647a52f68b6b996fb5e1692bcb56f86bde8ce",
+      "bytes": 8262,
+      "downloaded_path": "/private/tmp/weave-corona-validation-20260906/current-corrected-stages/parallel-06/deliverable_14da40a424f8ac74cc456065e907c9e7/baseline/baseline_v1.1.0.yaml"
+    },
+    {
+      "id": "deliverable_6c448e46541658c4ea8e8f97f2423dc5",
+      "kind": "stage",
+      "node_id": "parallel-01",
+      "filename": "baseline/baseline_v1.1.0.yaml",
+      "created_at": "2026-09-06T17:49:32.340603+08:00",
+      "sha256": "592569b75758ccfb8d677bc2aab647a52f68b6b996fb5e1692bcb56f86bde8ce",
+      "bytes": 8262,
+      "downloaded_path": "/private/tmp/weave-corona-validation-20260906/current-corrected-stages/parallel-01/deliverable_6c448e46541658c4ea8e8f97f2423dc5/baseline/baseline_v1.1.0.yaml"
+    },
+    {
+      "id": "deliverable_010b726913a56a7e6c0055cffd0b09e4",
+      "kind": "stage",
+      "node_id": "lead",
+      "filename": "baseline/baseline_v1.1.0.yaml",
+      "created_at": "2026-09-06T17:45:14.282117+08:00",
+      "sha256": "592569b75758ccfb8d677bc2aab647a52f68b6b996fb5e1692bcb56f86bde8ce",
+      "bytes": 8262,
+      "downloaded_path": "/private/tmp/weave-corona-validation-20260906/current-corrected-stages/lead/deliverable_010b726913a56a7e6c0055cffd0b09e4/baseline/baseline_v1.1.0.yaml"
+    }
+  ],
+  "unique_sha256": [
+    "592569b75758ccfb8d677bc2aab647a52f68b6b996fb5e1692bcb56f86bde8ce"
+  ]
+}

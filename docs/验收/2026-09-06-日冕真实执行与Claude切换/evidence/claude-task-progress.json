@@ -1,0 +1,57 @@
+[
+  {
+    "task_id": "task-fd911a27-07ab-4e42-a70d-c525a17847ed",
+    "status": "running",
+    "runtime_id": "16b2e0c8-d8a9-494e-a1dc-61f397aceabf",
+    "engine": "claude",
+    "agent": "corona-prephase-a-lab-v3-luna-archive-reliability-designer",
+    "agent_version": 3,
+    "created_at": "2026-09-06T14:15:59.058397+08:00",
+    "started_at": "2026-09-06T14:15:59.818878+08:00",
+    "completed_at": null
+  },
+  {
+    "task_id": "task-5fe75eb0-fad1-4f61-af72-b2d2439219d5",
+    "status": "running",
+    "runtime_id": "fec94563-0d22-4c21-8036-861900652850",
+    "engine": "claude",
+    "agent": "corona-prephase-a-lab-v3-luna-cost-risk-analyst",
+    "agent_version": 3,
+    "created_at": "2026-09-06T14:15:59.137261+08:00",
+    "started_at": "2026-09-06T14:16:00.093155+08:00",
+    "completed_at": null
+  },
+  {
+    "task_id": "task-a5255fa9-cbef-4388-a46e-acc4d466e71a",
+    "status": "completed",
+    "runtime_id": "16b2e0c8-d8a9-494e-a1dc-61f397aceabf",
+    "engine": "claude",
+    "agent": "corona-prephase-a-lab-v3-luna-mission-lead",
+    "agent_version": 4,
+    "created_at": "2026-09-06T14:12:22.987392+08:00",
+    "started_at": "2026-09-06T14:12:23.047374+08:00",
+    "completed_at": "2026-09-06T14:15:57.812886+08:00"
+  },
+  {
+    "task_id": "task-4fb846c7-5f2a-4ab3-a778-16df88e2a5a6",
+    "status": "queued",
+    "runtime_id": "16b2e0c8-d8a9-494e-a1dc-61f397aceabf",
+    "engine": "claude",
+    "agent": "corona-prephase-a-lab-v3-luna-mission-physics-analyst",
+    "agent_version": 3,
+    "created_at": "2026-09-06T14:15:59.13723+08:00",
+    "started_at": null,
+    "completed_at": null
+  },
+  {
+    "task_id": "task-c570c83e-21bb-4494-9c0b-38dcfcd8bde3",
+    "status": "queued",
+    "runtime_id": "16b2e0c8-d8a9-494e-a1dc-61f397aceabf",
+    "engine": "claude",
+    "agent": "corona-prephase-a-lab-v3-luna-digital-engineering-builder",
+    "agent_version": 3,
+    "created_at": "2026-09-06T14:15:59.132241+08:00",
+    "started_at": null,
+    "completed_at": null
+  }
+]

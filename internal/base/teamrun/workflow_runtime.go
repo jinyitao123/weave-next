@@ -31,6 +31,7 @@ const (
 type RuntimePark struct {
 	NodeID           string
 	CompletedOutputs map[string]json.RawMessage
+	ArtifactTaskIDs  map[string][]string
 	DeliveryErrors   map[string]string
 	WaitKind         WaitKind
 	WaitDetail       json.RawMessage
@@ -90,6 +91,16 @@ func validateWorkflowCheckpoint(checkpoint WorkflowCheckpointV1) error {
 	for nodeID, output := range checkpoint.CompletedOutputs {
 		if nodeID == "" || len(output) == 0 || !json.Valid(output) {
 			return fmt.Errorf("%w: checkpoint output is invalid", ErrTeamRunSnapshotUnavailable)
+		}
+	}
+	for nodeID, ids := range checkpoint.ArtifactTaskIDs {
+		if _, ok := checkpoint.CompletedOutputs[nodeID]; !ok || len(ids) > 512 {
+			return fmt.Errorf("%w: checkpoint file sources are invalid", ErrTeamRunSnapshotUnavailable)
+		}
+		for _, id := range ids {
+			if !strings.HasPrefix(id, "task-") || len(id) > 128 {
+				return fmt.Errorf("%w: checkpoint source identity is invalid", ErrTeamRunSnapshotUnavailable)
+			}
 		}
 	}
 	for nodeID, message := range checkpoint.DeliveryErrors {
@@ -333,6 +344,9 @@ func (r *WorkflowSerialRuntime) Execute(
 			Candidate:          prepared.roundBoundCandidate(),
 			RecordOutput:       r.workflowOutputRecorder(run),
 			RecordArtifact:     r.workflowArtifactRecorder(run),
+			LoadArtifacts:      r.workflowArtifactLoader(run),
+			RecordDelivery:     r.workflowDeliveryRecorder(run),
+			RecordCheckpoint:   r.serialCheckpointWriter(run, prepared.artifact),
 			CheckCorrection:    r.correctionBoundary(run, prepared.graph, prepared.payload),
 			RecordActivity:     r.activityRecorder(run),
 			LoadObservedEvents: r.observedEventLoader(run),
@@ -378,8 +392,9 @@ func (r *WorkflowSerialRuntime) ResumeCheckpoint(
 		prepared.runInput,
 		serialMachineStart{
 			NodeID: checkpoint.NodeID, Outputs: outputs,
-			DeliveryErrors: checkpoint.DeliveryErrors,
-			SourceKind:     run.SourceKind, Now: r.now(), Run: run,
+			DeliveryErrors:  checkpoint.DeliveryErrors,
+			ArtifactTaskIDs: checkpoint.ArtifactTaskIDs,
+			SourceKind:      run.SourceKind, Now: r.now(), Run: run,
 			ArtifactHash:          prepared.envelope.ContentHash,
 			Candidate:             prepared.roundBoundCandidate(),
 			Usage:                 seedUsage,
@@ -387,6 +402,9 @@ func (r *WorkflowSerialRuntime) ResumeCheckpoint(
 			UsageIncompleteReason: checkpoint.UsageIncompleteReason,
 			RecordOutput:          r.workflowOutputRecorder(run),
 			RecordArtifact:        r.workflowArtifactRecorder(run),
+			LoadArtifacts:         r.workflowArtifactLoader(run),
+			RecordDelivery:        r.workflowDeliveryRecorder(run),
+			RecordCheckpoint:      r.serialCheckpointWriter(run, prepared.artifact),
 			CheckCorrection:       r.correctionBoundary(run, prepared.graph, prepared.payload),
 			RecordActivity:        r.activityRecorder(run),
 			LoadObservedEvents:    r.observedEventLoader(run),
@@ -761,8 +779,9 @@ func runtimeResultFromSerial(
 		}
 		return RuntimeResult{Status: RuntimeParked, Park: &RuntimePark{
 			NodeID: result.NodeID, CompletedOutputs: outputs,
-			DeliveryErrors: result.DeliveryErrors,
-			WaitKind:       result.WaitKind, WaitDetail: result.WaitDetail,
+			DeliveryErrors:  result.DeliveryErrors,
+			ArtifactTaskIDs: result.ArtifactTaskIDs,
+			WaitKind:        result.WaitKind, WaitDetail: result.WaitDetail,
 			Corrections:     append([]CorrectionDirectiveV1(nil), corrections...),
 			UsageCheckpoint: usageCheckpoint,
 			UsageComplete:   result.UsageComplete, UsageIncompleteReason: result.UsageIncompleteReason,
@@ -780,5 +799,41 @@ func runtimeResultFromSerial(
 		return RuntimeResult{Status: RuntimeFailed}, executionError(
 			ErrorCodeRuntimeIncompatible, errors.New("serial runtime returned an invalid status"),
 		)
+	}
+}
+
+// CLI workflows reconcile immutable queue receipts when resuming a node. Keep
+// the pre-call ordinal and upstream files before execution begins so reclaim
+// can find the same physical task even before the first fanout or wait.
+func (r *WorkflowSerialRuntime) serialCheckpointWriter(run TeamRun, artifact *workflow.RuntimeArtifact) func(context.Context, WorkflowCheckpointV1) error {
+	if r.Transactions == nil || r.Runs == nil || r.Checkpoints == nil || artifact == nil || len(artifact.Entries) == 0 {
+		return nil
+	}
+	for _, entry := range artifact.Entries {
+		if entry.CLI == nil {
+			return nil
+		}
+	}
+	return r.progressCheckpointWriter(run)
+}
+
+func (r *WorkflowSerialRuntime) progressCheckpointWriter(run TeamRun) func(context.Context, WorkflowCheckpointV1) error {
+	return func(ctx context.Context, checkpoint WorkflowCheckpointV1) error {
+		tx, err := r.Transactions.Begin(ctx)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = tx.Rollback(ctx) }()
+		locked, err := r.Runs.GetForUpdateTx(ctx, tx, run.WorkspaceID, run.RunID)
+		if err != nil {
+			return err
+		}
+		if locked.Status != StatusRunning || locked.Generation != run.Generation || locked.ExecutionLeaseEpoch != run.ExecutionLeaseEpoch || locked.ResumeGeneration != run.ResumeGeneration {
+			return errTaskLeaseLost
+		}
+		if _, err := r.Checkpoints.PutTx(ctx, tx, checkpoint); err != nil {
+			return err
+		}
+		return tx.Commit(ctx)
 	}
 }

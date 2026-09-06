@@ -1,0 +1,13 @@
+{
+  "official_source": "https://files.openscad.org/snapshots/OpenSCAD-2026.09.03.dmg",
+  "bytes": 73381351,
+  "sha256": "0bb3511507c19d01dfd17c94777c7d55e27cdba21e6d2eb60127f20bce7a3f0a",
+  "installed_app": "/Applications/OpenSCAD.app",
+  "version": "OpenSCAD version 2026.09.03",
+  "system_assessment": {
+    "exit_code": 0,
+    "output": "/Applications/OpenSCAD.app: accepted\nsource=Notarized Developer ID"
+  },
+  "performed_by": "Codex repair task, not Weave team",
+  "autonomous_weave_closure_evidence": false
+}

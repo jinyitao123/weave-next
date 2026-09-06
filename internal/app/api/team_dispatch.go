@@ -128,7 +128,7 @@ func (s *Server) replayWorkflowDispatch(
 	}
 	var originalTask string
 	if contextKey != fingerprint || json.Unmarshal([]byte(payload), &originalTask) != nil || existingTeamID != team.ID ||
-		originalTask != request.Task || existing.ProjectID != request.ProjectID ||
+		originalTask != request.Task || (request.ProjectID != "" && existing.ProjectID != request.ProjectID) ||
 		(request.WorkflowID != "" && request.WorkflowID != existing.WorkflowID) ||
 		(request.WorkflowVersion != nil && *request.WorkflowVersion != existing.WorkflowVersion) {
 		return true, workflowError(c, http.StatusConflict, "client_request_conflict", "client_request_id was already used for different dispatch facts")

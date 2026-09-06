@@ -1,0 +1,18 @@
+{
+  "date": "2026-09-06",
+  "browser": "Codex In-app Browser",
+  "unlocked": true,
+  "attempts": [
+    {
+      "target": "http://127.0.0.1:18082/app/index.html",
+      "result": "blocked",
+      "error": "ERR_BLOCKED_BY_CLIENT"
+    },
+    {
+      "target": "file:///Users/jinyitao/Documents/日冕/Weave交付-20260906-6090ab9d/outputs/app/index.html",
+      "result": "blocked",
+      "error": "Browser URL policy blocked"
+    }
+  ],
+  "interpretation": "内置浏览器未能访问本机交付页面。该边界来自浏览器 URL 安全策略，不等同于应用运行失败；真实 Google Chrome 的后续验收见 final-real-chrome-browser-smoke.json。"
+}

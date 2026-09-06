@@ -328,7 +328,7 @@ func (s *Server) handleRuntimeTaskRenew(c echo.Context) error {
 }
 
 func (s *Server) handleRuntimeTaskComplete(c echo.Context) error {
-	runtime, task, err := s.claimedRuntimeTask(c)
+	runtime, task, err := s.runtimeTask(c)
 	if err != nil {
 		return err
 	}
@@ -338,12 +338,28 @@ func (s *Server) handleRuntimeTaskComplete(c echo.Context) error {
 	if err := c.Bind(&request); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
 	}
+	normalizeRuntimeUsage(task, &request)
 	if err := validateRuntimeEngineExecResult(task, request); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 	}
 	result, err := json.Marshal(request)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "cannot encode task result"})
+	}
+	if task.Status == taskqueue.StatusCompleted {
+		// The durable result may have committed before the response was lost.
+		// A byte-equivalent typed replay acknowledges that same result only.
+		var stored runtimes.EngineExecResult
+		if json.Unmarshal(task.Result, &stored) == nil {
+			canonical, _ := json.Marshal(stored)
+			if string(canonical) == string(result) {
+				return c.NoContent(http.StatusNoContent)
+			}
+		}
+		return c.JSON(http.StatusConflict, map[string]string{"error": "task already completed with another result"})
+	}
+	if task.WorkerID != runtimes.RuntimeWorkerID(runtime.WorkspaceID, runtime.ID) {
+		return c.JSON(http.StatusForbidden, map[string]string{"error": "task is not claimed by this runtime"})
 	}
 	if err := s.Tasks.CompleteClaimed(
 		c.Request().Context(),
@@ -355,6 +371,64 @@ func (s *Server) handleRuntimeTaskComplete(c echo.Context) error {
 		return c.JSON(http.StatusConflict, map[string]string{"error": "task lease lost"})
 	}
 	return c.NoContent(http.StatusNoContent)
+}
+
+// Older adapters cut a UTF-8 summary at byte 4096. JSON replaces up to three
+// trailing partial bytes with U+FFFD, expanding the wire value beyond the bound.
+// Remove only that recognizable tail; all other oversized receipts still fail
+// validation, and reported usage/provenance are never changed.
+func repairLegacyUsageSummary(receipt *engine.UsageReceipt) {
+	if receipt == nil || len(receipt.RawSummary) <= 4096 || len(receipt.RawSummary) > 4102 {
+		return
+	}
+	prefix := strings.TrimRight(receipt.RawSummary, "\uFFFD")
+	if len(prefix) >= 4093 && len(prefix) <= 4095 {
+		receipt.RawSummary = prefix
+	}
+}
+
+// Optional accounting must not discard a completed answer or its files. An
+// invalid receipt contributes no usage and leaves an explicit diagnostic.
+func normalizeRuntimeUsage(task *taskqueue.Task, result *runtimes.EngineExecResult) {
+	models := make([]string, 0, min(len(result.ReportedModels), 16))
+	for _, model := range result.ReportedModels {
+		if len(models) == 16 {
+			break
+		}
+		if model != "" && len(model) <= 200 && !strings.ContainsAny(model, "\n\r\t") {
+			models = append(models, model)
+		}
+	}
+	result.ReportedModels = models
+
+	if engine.ValidateDiagnostics(result.Diagnostics) != nil {
+		result.Diagnostics = []engine.Diagnostic{{Code: "diagnostics_invalid", Message: "Some execution diagnostics were invalid; work output is preserved"}}
+	}
+	if engine.ValidateEvents(result.Events) != nil {
+		result.Events = nil
+		result.RetrySafeBeforeExecution = false
+		result.Diagnostics = append(result.Diagnostics[:min(len(result.Diagnostics), 31)], engine.Diagnostic{Code: "events_invalid", Message: "Recorded activity was invalid; work output is preserved"})
+	}
+	if result.Status != "failed" || len(result.Artifacts) > 0 {
+		result.RetrySafeBeforeExecution = false
+	}
+	for _, event := range result.Events {
+		if event.Kind == "tool_call" || event.Kind == "tool_result" {
+			result.RetrySafeBeforeExecution = false
+		}
+	}
+	var payload runtimes.EngineExecRequest
+	if json.Unmarshal(task.Payload, &payload) != nil || !engine.IsCLIEngine(payload.Engine) || result.UsageReceipt == nil {
+		return
+	}
+	repairLegacyUsageSummary(result.UsageReceipt)
+	if validateRuntimeUsageReceipt(payload, result.UsageReceipt) == nil {
+		return
+	}
+	result.UsageReceipt = nil
+	result.Diagnostics = append(result.Diagnostics[:min(len(result.Diagnostics), 31)], engine.Diagnostic{
+		Code: "usage_invalid", Message: "CLI usage statistics are unavailable because the receipt is invalid; work output is preserved",
+	})
 }
 
 func validateRuntimeEngineExecResult(task *taskqueue.Task, result runtimes.EngineExecResult) error {
@@ -395,14 +469,18 @@ func validateRuntimeEngineExecResult(task *taskqueue.Task, result runtimes.Engin
 	if err := engine.ValidateArtifacts(result.Artifacts); err != nil {
 		return err
 	}
-	if err := engine.ValidateUsageReceipt(result.UsageReceipt); err != nil {
+	return validateRuntimeUsageReceipt(payload, result.UsageReceipt)
+}
+
+func validateRuntimeUsageReceipt(payload runtimes.EngineExecRequest, receipt *engine.UsageReceipt) error {
+	if err := engine.ValidateUsageReceipt(receipt); err != nil {
 		return err
 	}
-	if result.UsageReceipt != nil {
-		if result.UsageReceipt.Scope != engine.UsageScopeInvocation {
+	if receipt != nil {
+		if receipt.Scope != engine.UsageScopeInvocation {
 			return errors.New("resumed/session-cumulative CLI usage is not accepted")
 		}
-		if strings.TrimSpace(payload.EngineVersion) == "" || result.UsageReceipt.EngineVersion != payload.EngineVersion {
+		if strings.TrimSpace(payload.EngineVersion) == "" || receipt.EngineVersion != payload.EngineVersion {
 			return errors.New("usage receipt engine_version does not match the admitted runtime")
 		}
 	}

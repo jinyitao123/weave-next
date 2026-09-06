@@ -136,6 +136,35 @@
         "lines_added": 20,
         "production_lines_removed": 38
       }
+    },
+    {
+      "date": "2026-09-06",
+      "reason": "Authorized 20-issue execution and delivery repair baseline for v0.1.0: durable CLI receipts and idempotent correction recovery, upstream file provenance and UTF-8 artifact validation, member configuration publication, truthful public activity and usage preservation, with regression coverage. Exact measured ceilings; original migration targets and dependency allowlists retained. The new base/fileartifact package centralizes runtime-independent file validation shared by the execution bands.",
+      "record": "docs/发布/v0.1.0.md",
+      "base": {
+        "previous_lines": 22506,
+        "previous_production_lines": 19704,
+        "lines_added": 475,
+        "production_lines_added": 404,
+        "previous_packages": 11,
+        "packages": 12
+      },
+      "kernel": {
+        "previous_lines": 61440,
+        "previous_production_lines": 59602,
+        "lines_added": 1098,
+        "production_lines_added": 397,
+        "previous_packages": 33,
+        "packages": 33
+      },
+      "app": {
+        "previous_lines": 41003,
+        "previous_production_lines": 34716,
+        "lines_added": 1293,
+        "production_lines_added": 701,
+        "previous_packages": 18,
+        "packages": 17
+      }
     }
   ],
   "migration_targets": {
@@ -161,9 +190,9 @@
     }
   },
   "base": {
-    "lines": 22506,
-    "production_lines": 19704,
-    "packages": 11,
+    "lines": 22981,
+    "production_lines": 20108,
+    "packages": 12,
     "external_dependencies": 4,
     "allowed_dependencies": [
       "github.com/google/uuid",
@@ -173,8 +202,8 @@
     ]
   },
   "kernel": {
-    "lines": 61440,
-    "production_lines": 59602,
+    "lines": 62538,
+    "production_lines": 59999,
     "packages": 33,
     "external_dependencies": 3,
     "allowed_dependencies": [
@@ -196,9 +225,9 @@
     ]
   },
   "app": {
-    "lines": 41003,
-    "production_lines": 34716,
-    "packages": 18,
+    "lines": 42296,
+    "production_lines": 35417,
+    "packages": 17,
     "external_dependencies": 7,
     "allowed_dependencies": [
       "github.com/golang-jwt/jwt/v5",

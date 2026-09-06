@@ -1,0 +1,76 @@
+./scripts/depguard.sh
+depguard baseline: exact upward edges 11/11
+depguard ok: scanned 517 Go files, violations 0
+./scripts/productguard.sh
+product boundary: passed
+go test ./internal/... ./cmd/...
+ok  	github.com/jinyitao123/weave/internal/app/api	0.709s
+ok  	github.com/jinyitao123/weave/internal/app/apikeys	(cached)
+?   	github.com/jinyitao123/weave/internal/app/attachments	[no test files]
+ok  	github.com/jinyitao123/weave/internal/app/bootstrap	(cached)
+ok  	github.com/jinyitao123/weave/internal/app/chatrequest	(cached)
+ok  	github.com/jinyitao123/weave/internal/app/cli	(cached)
+?   	github.com/jinyitao123/weave/internal/app/conversation	[no test files]
+ok  	github.com/jinyitao123/weave/internal/app/daemon	(cached)
+ok  	github.com/jinyitao123/weave/internal/app/mcpprotocol	(cached)
+ok  	github.com/jinyitao123/weave/internal/app/mcpstdio	(cached)
+ok  	github.com/jinyitao123/weave/internal/app/metateam	(cached)
+?   	github.com/jinyitao123/weave/internal/app/ownermem	[no test files]
+?   	github.com/jinyitao123/weave/internal/app/projects	[no test files]
+ok  	github.com/jinyitao123/weave/internal/app/teamevaluations	(cached)
+ok  	github.com/jinyitao123/weave/internal/app/teamtemplates	(cached)
+?   	github.com/jinyitao123/weave/internal/app/users	[no test files]
+ok  	github.com/jinyitao123/weave/internal/app/weaveclient	(cached)
+?   	github.com/jinyitao123/weave/internal/base/db	[no test files]
+?   	github.com/jinyitao123/weave/internal/base/deliverable	[no test files]
+?   	github.com/jinyitao123/weave/internal/base/execution	[no test files]
+ok  	github.com/jinyitao123/weave/internal/base/fanout	(cached)
+?   	github.com/jinyitao123/weave/internal/base/fileartifact	[no test files]
+?   	github.com/jinyitao123/weave/internal/base/frozen	[no test files]
+?   	github.com/jinyitao123/weave/internal/base/snapshot	[no test files]
+?   	github.com/jinyitao123/weave/internal/base/storeext	[no test files]
+?   	github.com/jinyitao123/weave/internal/base/streamctx	[no test files]
+?   	github.com/jinyitao123/weave/internal/base/taskqueue	[no test files]
+ok  	github.com/jinyitao123/weave/internal/base/teamrun	(cached)
+?   	github.com/jinyitao123/weave/internal/base/testutil	[no test files]
+ok  	github.com/jinyitao123/weave/internal/build/teambuild	(cached)
+ok  	github.com/jinyitao123/weave/internal/build/teameval	(cached)
+?   	github.com/jinyitao123/weave/internal/build/teameval/gatecodes	[no test files]
+ok  	github.com/jinyitao123/weave/internal/build/teamforge	(cached)
+ok  	github.com/jinyitao123/weave/internal/build/teamorch	(cached)
+?   	github.com/jinyitao123/weave/internal/build/teamrestore	[no test files]
+ok  	github.com/jinyitao123/weave/internal/build/teamtemplate	(cached)
+?   	github.com/jinyitao123/weave/internal/kernel/audit	[no test files]
+?   	github.com/jinyitao123/weave/internal/kernel/compiler	[no test files]
+ok  	github.com/jinyitao123/weave/internal/kernel/config	(cached)
+?   	github.com/jinyitao123/weave/internal/kernel/credentials	[no test files]
+?   	github.com/jinyitao123/weave/internal/kernel/declarative	[no test files]
+?   	github.com/jinyitao123/weave/internal/kernel/declarative/designprompt	[no test files]
+?   	github.com/jinyitao123/weave/internal/kernel/declarative/schema	[no test files]
+?   	github.com/jinyitao123/weave/internal/kernel/delivery	[no test files]
+?   	github.com/jinyitao123/weave/internal/kernel/embedder	[no test files]
+ok  	github.com/jinyitao123/weave/internal/kernel/engine	(cached)
+?   	github.com/jinyitao123/weave/internal/kernel/execenv	[no test files]
+?   	github.com/jinyitao123/weave/internal/kernel/freezer	[no test files]
+?   	github.com/jinyitao123/weave/internal/kernel/grounding	[no test files]
+ok  	github.com/jinyitao123/weave/internal/kernel/llmrouter	(cached)
+ok  	github.com/jinyitao123/weave/internal/kernel/loomruntime	(cached)
+?   	github.com/jinyitao123/weave/internal/kernel/mcphost	[no test files]
+?   	github.com/jinyitao123/weave/internal/kernel/mcpprobe	[no test files]
+?   	github.com/jinyitao123/weave/internal/kernel/mcpregistry	[no test files]
+?   	github.com/jinyitao123/weave/internal/kernel/memory	[no test files]
+ok  	github.com/jinyitao123/weave/internal/kernel/org	(cached)
+?   	github.com/jinyitao123/weave/internal/kernel/otel	[no test files]
+?   	github.com/jinyitao123/weave/internal/kernel/registry	[no test files]
+?   	github.com/jinyitao123/weave/internal/kernel/revocation	[no test files]
+ok  	github.com/jinyitao123/weave/internal/kernel/runtimellm	(cached)
+ok  	github.com/jinyitao123/weave/internal/kernel/runtimes	(cached)
+ok  	github.com/jinyitao123/weave/internal/kernel/schedule	(cached)
+ok  	github.com/jinyitao123/weave/internal/kernel/secret	(cached)
+?   	github.com/jinyitao123/weave/internal/kernel/sessionexec	[no test files]
+?   	github.com/jinyitao123/weave/internal/kernel/skills	[no test files]
+?   	github.com/jinyitao123/weave/internal/kernel/teamcompiler	[no test files]
+ok  	github.com/jinyitao123/weave/internal/kernel/workflow	(cached)
+ok  	github.com/jinyitao123/weave/internal/kernel/workflow/machine	(cached)
+ok  	github.com/jinyitao123/weave/internal/kernel/workflowhealth	(cached)
+ok  	github.com/jinyitao123/weave/cmd/weave	(cached)

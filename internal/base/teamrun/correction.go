@@ -451,6 +451,7 @@ func (s *CorrectionResumeService) Confirm(ctx context.Context, req ConfirmCorrec
 		for _, nodeID := range item.AffectedNodeIDs {
 			delete(checkpoint.CompletedOutputs, nodeID)
 			delete(checkpoint.DeliveryErrors, nodeID)
+			delete(checkpoint.ArtifactTaskIDs, nodeID)
 		}
 		checkpoint.Corrections = append(checkpoint.Corrections, CorrectionDirectiveV1{
 			SchemaVersion: 1, CorrectionID: item.CorrectionID, TargetKind: item.TargetKind,
@@ -500,6 +501,19 @@ func (store *CorrectionStore) MarkAppliedTx(ctx context.Context, tx pgx.Tx, work
 	item, err := scanCorrection(tx.QueryRow(ctx, `UPDATE weave_team_run_corrections SET status='applied',applied_at=$4
 		WHERE workspace_id=$1 AND run_id=$2 AND correction_id=$3 AND status='confirmed' RETURNING `+correctionColumns,
 		workspaceID, runID, correctionID, occurredAt.UTC()))
+	if errors.Is(err, pgx.ErrNoRows) {
+		var alreadyApplied bool
+		if readErr := tx.QueryRow(ctx, `SELECT status='applied' FROM weave_team_run_corrections
+			WHERE workspace_id=$1 AND run_id=$2 AND correction_id=$3`, workspaceID, runID, correctionID).Scan(&alreadyApplied); readErr != nil {
+			return readErr
+		}
+		if alreadyApplied {
+			// Recovery can reclaim the same continuation after this commit.
+			// Keep its original application time and single audit event so the
+			// already-created engine attempt remains valid and reusable.
+			return nil
+		}
+	}
 	if err != nil {
 		return err
 	}

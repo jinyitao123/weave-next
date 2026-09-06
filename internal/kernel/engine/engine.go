@@ -12,6 +12,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/jinyitao123/weave/internal/base/fileartifact"
 	"os"
 	"path/filepath"
 	"strings"
@@ -51,12 +52,14 @@ type RunSpec struct {
 
 // RunResult is a worker's terminal outcome.
 type RunResult struct {
-	Output      string
-	SessionID   string
-	Status      string // "completed" | "failed" | "timeout"
-	Err         string
-	Usage       *UsageReceipt
-	Diagnostics []Diagnostic
+	Output                   string
+	ReportedModels           []string
+	RetrySafeBeforeExecution bool
+	SessionID                string
+	Status                   string // "completed" | "failed" | "timeout"
+	Err                      string
+	Usage                    *UsageReceipt
+	Diagnostics              []Diagnostic
 	// Events are bounded, CLI-observed execution facts. They are carried to the
 	// TeamRun activity ledger; callers must not infer events that the CLI did not
 	// report.
@@ -104,11 +107,7 @@ type Event struct {
 
 // Artifact is one user-visible UTF-8 file collected by the runtime. Path is a
 // relative delivery name and never exposes a host path.
-type Artifact struct {
-	Path        string `json:"path"`
-	ContentType string `json:"content_type"`
-	Content     string `json:"content"`
-}
+type Artifact = fileartifact.File
 
 // Backend runs one worker on a specific CLI runtime.
 type Backend interface {

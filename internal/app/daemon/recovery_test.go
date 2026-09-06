@@ -52,7 +52,7 @@ func TestRuntimeRecoveryWaitsForProcessExitBeforeAcknowledgement(t *testing.T) {
 				t.Fatal(err)
 			}
 			rec := &registry.AgentRecord{Name: "worker", ID: "agent-1", WorkspaceID: "workspace-1", Version: 1, Engine: engine.OpenCode}
-			payload, _ := json.Marshal(runtimes.EngineExecRequest{Record: rec, Agent: rec.Name, Engine: rec.Engine, Prompt: "fixture"})
+			payload, _ := json.Marshal(runtimes.EngineExecRequest{Record: rec, Agent: rec.Name, Engine: rec.Engine, Prompt: "fixture", OneAPIKey: "fixture-key"})
 			now := time.Now()
 			expiry := now.Add(120 * time.Millisecond)
 			task := &taskqueue.Task{ID: "task-1", WorkspaceID: rec.WorkspaceID, Agent: rec.Name, AgentID: rec.ID, AgentVersion: 1,
@@ -96,7 +96,7 @@ func TestRuntimeRecoveryLostCompletionResponseDoesNotExecuteAgain(t *testing.T) 
 	defer server.Close()
 	client, _ := newRuntimeClient(server.URL, "fixture", server.Client())
 	rec := &registry.AgentRecord{Name: "worker", ID: "agent-1", WorkspaceID: "workspace-1", Version: 1, Engine: engine.OpenCode}
-	payload, _ := json.Marshal(runtimes.EngineExecRequest{Record: rec, Agent: rec.Name, Engine: rec.Engine, Prompt: "fixture"})
+	payload, _ := json.Marshal(runtimes.EngineExecRequest{Record: rec, Agent: rec.Name, Engine: rec.Engine, Prompt: "fixture", OneAPIKey: "fixture-key"})
 	task := &taskqueue.Task{ID: "task-1", WorkspaceID: rec.WorkspaceID, Agent: rec.Name, AgentID: rec.ID, AgentVersion: 1, IdentityKind: taskqueue.IdentityAgent, IdentitySchemaVersion: 2, ExecutionScope: execution.ScopeLegacyOrchestrator, Payload: payload}
 	d := &service{client: client, server: server.URL, workspacesRoot: t.TempDir(), renewInterval: time.Second, minBackoff: time.Millisecond, maxBackoff: time.Millisecond,
 		runEngine: func(context.Context, string, engine.RunSpec) (engine.RunResult, error) {
@@ -108,5 +108,43 @@ func TestRuntimeRecoveryLostCompletionResponseDoesNotExecuteAgain(t *testing.T) 
 	d.processTask(ctx, task)
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) || executions.Load() != 1 || calls.Load() != 2 {
 		t.Fatalf("executions=%d reports=%d err=%v", executions.Load(), calls.Load(), ctx.Err())
+	}
+}
+
+func TestRuntimeRejectedResultFailsOnceInsteadOfRetryingForever(t *testing.T) {
+	var completions, failures, executions atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/complete"):
+			completions.Add(1)
+			w.WriteHeader(http.StatusBadRequest)
+		case strings.HasSuffix(r.URL.Path, "/fail"):
+			failures.Add(1)
+			var body map[string]string
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil || !strings.HasPrefix(body["error"], "runtime_result_rejected:") {
+				t.Error("missing actionable terminal failure")
+			}
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			t.Errorf("unexpected endpoint %s", r.URL.Path)
+			w.WriteHeader(http.StatusNoContent)
+		}
+	}))
+	defer server.Close()
+	client, _ := newRuntimeClient(server.URL, "fixture", server.Client())
+	rec := &registry.AgentRecord{Name: "worker", ID: "agent-1", WorkspaceID: "workspace-1", Version: 1, Engine: engine.OpenCode}
+	payload, _ := json.Marshal(runtimes.EngineExecRequest{Record: rec, Agent: rec.Name, Engine: rec.Engine, Prompt: "fixture"})
+	task := &taskqueue.Task{ID: "task-1", WorkspaceID: rec.WorkspaceID, Agent: rec.Name, AgentID: rec.ID, AgentVersion: 1,
+		IdentityKind: taskqueue.IdentityAgent, IdentitySchemaVersion: 2, ExecutionScope: execution.ScopeLegacyOrchestrator, Payload: payload}
+	d := &service{client: client, server: server.URL, workspacesRoot: t.TempDir(), renewInterval: time.Second, minBackoff: time.Millisecond, maxBackoff: time.Millisecond,
+		runEngine: func(context.Context, string, engine.RunSpec) (engine.RunResult, error) {
+			executions.Add(1)
+			return engine.RunResult{Status: "completed", Output: "saved locally"}, nil
+		}}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	d.processTask(ctx, task)
+	if ctx.Err() != nil || executions.Load() != 1 || completions.Load() != 1 || failures.Load() != 1 {
+		t.Fatalf("executions=%d completions=%d failures=%d err=%v", executions.Load(), completions.Load(), failures.Load(), ctx.Err())
 	}
 }

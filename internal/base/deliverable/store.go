@@ -86,6 +86,29 @@ func New(pool *pgxpool.Pool) *Store {
 // schedule, API validation, and candidate evaluation runs intentionally do not.
 // Replays are idempotent by run, node, artifact kind, and content hash.
 func (s *Store) RecordWorkflowOutput(ctx context.Context, output WorkflowOutput) error {
+	return s.RecordWorkflowOutputs(ctx, []WorkflowOutput{output})
+}
+
+// RecordWorkflowOutputs commits a complete final bundle atomically. A failed
+// file write cannot expose a partly published final delivery.
+func (s *Store) RecordWorkflowOutputs(ctx context.Context, outputs []WorkflowOutput) error {
+	if s == nil || s.pool == nil {
+		return errors.New("workflow deliverable store is unavailable")
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	for _, output := range outputs {
+		if err := s.recordWorkflowOutput(ctx, tx, output); err != nil {
+			return err
+		}
+	}
+	return tx.Commit(ctx)
+}
+
+func (s *Store) recordWorkflowOutput(ctx context.Context, tx pgx.Tx, output WorkflowOutput) error {
 	if s == nil || s.pool == nil {
 		return errors.New("workflow deliverable store is unavailable")
 	}
@@ -115,7 +138,7 @@ func (s *Store) RecordWorkflowOutput(ctx context.Context, output WorkflowOutput)
 	}
 
 	var projectID, triggerType, sourceRef, leadAvatarID string
-	err = s.pool.QueryRow(ctx, `
+	err = tx.QueryRow(ctx, `
 		SELECT COALESCE(snapshot.project_id, ''),
 		       snapshot.trigger_source_v2->>'type',
 		       snapshot.trigger_source_v2->>'source_ref', team.lead_avatar_id
@@ -136,7 +159,7 @@ func (s *Store) RecordWorkflowOutput(ctx context.Context, output WorkflowOutput)
 	var conversationID, userID string
 	switch triggerType {
 	case "conversation_explicit":
-		err = s.pool.QueryRow(ctx, `
+		err = tx.QueryRow(ctx, `
 			SELECT id, user_id FROM weave_conversations
 			WHERE workspace_id=$1 AND id=$2 AND parent_message_id IS NULL
 		`, output.WorkspaceID, sourceRef).Scan(&conversationID, &userID)
@@ -163,7 +186,7 @@ func (s *Store) RecordWorkflowOutput(ctx context.Context, output WorkflowOutput)
 	}
 	label := strings.TrimSpace(output.NodeLabel)
 	if label == "" && strings.TrimSpace(output.AgentID) != "" {
-		err := s.pool.QueryRow(ctx, `
+		err := tx.QueryRow(ctx, `
 			SELECT COALESCE(NULLIF(BTRIM(display_name), ''), name)
 			FROM weave_agents
 			WHERE workspace_id=$1 AND id=$2
@@ -212,7 +235,7 @@ func (s *Store) RecordWorkflowOutput(ctx context.Context, output WorkflowOutput)
 	if sessionID == "" {
 		sessionID = "workflow:" + output.RunSnapshotID
 	}
-	_, err = s.pool.Exec(ctx, `
+	_, err = tx.Exec(ctx, `
 		INSERT INTO weave_final_deliverables (
 			id, workspace_id, project_id, conversation_id, user_id, lead_avatar_id,
 			session_id, event_id, run_id, run_snapshot_id, title, content,

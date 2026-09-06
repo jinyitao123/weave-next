@@ -1,0 +1,62 @@
+{
+  "scope": "invocation",
+  "source": "cli-reported",
+  "cost_usd": 0.7267800000000001,
+  "has_cost": true,
+  "has_tokens": true,
+  "input_tokens": 385602,
+  "output_tokens": 11681,
+  "engine_version": "2.1.245 (Claude Code)",
+  "modelUsage": {
+    "kimi-for-coding-highspeed": {
+      "inputTokens": 839,
+      "outputTokens": 1286,
+      "cacheReadInputTokens": 512,
+      "cacheCreationInputTokens": 0,
+      "webSearchRequests": 0,
+      "costUSD": 0.036600999999999995,
+      "contextWindow": 262144,
+      "maxOutputTokens": 32000,
+      "canonicalModel": "kimi-for-coding-highspeed",
+      "provider": "firstParty"
+    },
+    "k3[1m]": {
+      "inputTokens": 45634,
+      "outputTokens": 11681,
+      "cacheReadInputTokens": 339968,
+      "cacheCreationInputTokens": 0,
+      "webSearchRequests": 0,
+      "costUSD": 0.690179,
+      "contextWindow": 1000000,
+      "maxOutputTokens": 32000,
+      "canonicalModel": "k3[1m]",
+      "provider": "firstParty"
+    }
+  },
+  "terminal_reason": "completed",
+  "subagent_stats": {
+    "spawned": 0,
+    "requested": {
+      "background": 0,
+      "foreground": 0,
+      "unset": 0
+    },
+    "started_in_background": 0,
+    "max_depth": 0,
+    "spawned_by_subagents": 0,
+    "completed": 0,
+    "failed": 0,
+    "killed": {
+      "parent": 0,
+      "user": 0,
+      "system": 0
+    },
+    "refused": {
+      "depth_limit": 0,
+      "concurrency_limit": 0,
+      "budget": 0
+    },
+    "by_type": {}
+  },
+  "raw_summary_truncated": true
+}

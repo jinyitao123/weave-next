@@ -1,0 +1,14 @@
+{
+  "binary_sha256": "bb973c7c3905c104e41e392e74406a5800ad9b7f0e0f7f6761ec8f288afaf0e8",
+  "services": {
+    "api_pid": 79775,
+    "runtime_pids": {
+      "a": 79776,
+      "b": 79777
+    }
+  },
+  "workbench_pid": 78156,
+  "deployment_condition": "no queued or running tasks before service replacement",
+  "run_id": "run-b66d312c-b3ec-5250-9714-ce26ecfa7b40",
+  "historical_run_status": "failed"
+}

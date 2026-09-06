@@ -17,6 +17,7 @@ import (
 	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/base/snapshot"
 	"github.com/jinyitao123/weave/internal/base/teamrun"
+	"github.com/jinyitao123/weave/internal/kernel/engine"
 	"github.com/jinyitao123/weave/internal/kernel/runtimes"
 	"github.com/jinyitao123/weave/internal/kernel/workflow/machine"
 	"github.com/labstack/echo/v4"
@@ -390,12 +391,17 @@ type runActivityMember struct {
 }
 
 type runActivityMemberRuntime struct {
-	UpdateMode string `json:"update_mode"`
-	RuntimeID  string `json:"runtime_id,omitempty"`
-	Name       string `json:"name,omitempty"`
-	Engine     string `json:"engine,omitempty"`
-	Provider   string `json:"provider,omitempty"`
-	Model      string `json:"model,omitempty"`
+	UpdateMode          string   `json:"update_mode"`
+	ConfiguredEndpoint  string   `json:"configured_endpoint,omitempty"`
+	ConfiguredModel     string   `json:"configured_model,omitempty"`
+	ConfigurationSource string   `json:"configuration_source,omitempty"`
+	AuthMode            string   `json:"auth_mode,omitempty"`
+	ReportedModels      []string `json:"reported_models,omitempty"`
+	RuntimeID           string   `json:"runtime_id,omitempty"`
+	Name                string   `json:"name,omitempty"`
+	Engine              string   `json:"engine,omitempty"`
+	Provider            string   `json:"provider,omitempty"`
+	Model               string   `json:"model,omitempty"`
 }
 
 type runActivityMemberInputRef struct {
@@ -513,6 +519,9 @@ func runActivityBundleRuntime(bundle frozen.FrozenExecutionBundle) *runActivityM
 		UpdateMode: "on_completion",
 		RuntimeID:  bundle.Agent.RuntimeID, Engine: bundle.Agent.Engine,
 		Provider: bundle.PrimaryModel.ProviderID, Model: bundle.PrimaryModel.ModelID,
+	}
+	if engine.IsCLIEngine(bundle.Agent.Engine) {
+		runtime.Model = bundle.Agent.Model
 	}
 	if bundle.Runtime != nil {
 		runtime.RuntimeID = bundle.Runtime.RuntimeID
@@ -707,11 +716,19 @@ func runActivityDeliverables(items []deliverable.FinalDeliverable) ([]runActivit
 	for _, item := range items {
 		var metadata struct {
 			ArtifactKind string `json:"artifact_kind"`
+			Source       string `json:"source"`
+			NodeType     string `json:"node_type"`
 			NodeID       string `json:"node_id"`
 			NodeLabel    string `json:"node_label"`
 		}
 		_ = json.Unmarshal(item.Metadata, &metadata)
 		kind := metadata.ArtifactKind
+		// Older serial executions labeled every successful node's files final.
+		// Only the workflow's delivery node establishes final delivery; keep
+		// those immutable historical files visible as stage material.
+		if metadata.Source == "published_workflow" && metadata.NodeType != "" && metadata.NodeType != "deliver" {
+			kind = "stage"
+		}
 		if kind == "" {
 			kind = "final"
 		}
@@ -897,7 +914,13 @@ func enrichRunActivityRuntimes(
 		if runtime, ok := byID[members[memberIndex].Runtime.RuntimeID]; ok {
 			members[memberIndex].Runtime.Name = runtime.Name
 			members[memberIndex].Runtime.UpdateMode = "on_completion"
-			if capability, exists := runtime.EngineCapabilities[members[memberIndex].Runtime.Engine]; exists && capability.Engine == "codex" && capability.PublicEvents {
+			if capability, exists := runtime.EngineCapabilities[members[memberIndex].Runtime.Engine]; exists {
+				members[memberIndex].Runtime.ConfiguredEndpoint = capability.ConfiguredEndpoint
+				members[memberIndex].Runtime.ConfiguredModel = capability.ConfiguredModel
+				members[memberIndex].Runtime.ConfigurationSource = capability.ConfigurationSource
+				members[memberIndex].Runtime.AuthMode = capability.AuthMode
+			}
+			if capability, exists := runtime.EngineCapabilities[members[memberIndex].Runtime.Engine]; exists && (capability.Engine == "codex" || capability.Engine == "claude") && capability.PublicEvents {
 				members[memberIndex].Runtime.UpdateMode = "live"
 			}
 		}
@@ -1088,9 +1111,13 @@ func (s *Server) handleGetRunActivity(c echo.Context) error {
 	deliverableRefs := []runActivityDeliverableRef{}
 	stages := []runActivityStage{}
 	if s.Deliverables != nil {
-		if items, deliverableErr := s.Deliverables.List(c.Request().Context(), getTenant(c), deliverable.ListFilter{RunID: run.RunID, Limit: 100}); deliverableErr == nil {
-			deliverableRefs, stages = runActivityDeliverables(items)
+		if items, deliverableErr := s.Deliverables.List(c.Request().Context(), getTenant(c), deliverable.ListFilter{RunID: run.RunID, Limit: 101}); deliverableErr == nil {
 			completeness["deliverables"] = "complete"
+			if len(items) > 100 {
+				items = items[:100]
+				completeness["deliverables"] = "partial"
+			}
+			deliverableRefs, stages = runActivityDeliverables(items)
 			// Workflow outputs prove completed nodes, but do not prove the
 			// unpublished remainder of the workflow graph.
 			if len(stages) > 0 {
@@ -1148,8 +1175,10 @@ func (s *Server) handleGetRunActivity(c echo.Context) error {
 			completeness["member_tool_activity"] = "partial"
 		}
 	}
-	s.projectRunPublicEvents(c.Request().Context(), run, members, activityEvents, completeness)
 	waitNodeID := s.reconcileRunActivityRecovery(c.Request().Context(), run, members)
+	// A claimed fanout leg may still be waiting for its physical CLI slot.
+	// Apply the current engine task after recovery projects the logical leg.
+	s.projectRunPublicEvents(c.Request().Context(), run, members, activityEvents, completeness)
 	summarizeRunActivityMembers(members)
 	if completeness["activity_events"] != "unavailable" {
 		refineRunActivityCompleteness(completeness, members, run.Status)

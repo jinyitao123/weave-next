@@ -22,6 +22,7 @@ func TestExecuteTaskPreservesFailedEngineReceiptAndArtifacts(t *testing.T) {
 	}
 	payload, err := json.Marshal(runtimes.EngineExecRequest{
 		Agent: record.Name, Engine: record.Engine, Model: record.Model, Prompt: "fixture", Record: record,
+		OneAPIKey:     "fixture-key",
 		EngineVersion: "opencode 1.2.10",
 	})
 	if err != nil {

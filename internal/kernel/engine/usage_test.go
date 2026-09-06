@@ -3,6 +3,7 @@ package engine
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"math"
 	"os"
 	"path/filepath"
@@ -10,7 +11,32 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
+
+func TestUsageSummaryByteLimitSurvivesUnicodeJSONRoundTrip(t *testing.T) {
+	for _, unit := range []string{"界", "🌍"} {
+		for offset := 0; offset < 4; offset++ {
+			raw := strings.Repeat("x", offset) + strings.Repeat(unit, 4096)
+			receipt, _ := newUsageReceipt(&reportedTokenUsage{InputTokens: 1}, nil, raw)
+			receipt.EngineVersion = "fixture 1"
+			wire, err := json.Marshal(receipt)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var received UsageReceipt
+			if err := json.Unmarshal(wire, &received); err != nil {
+				t.Fatal(err)
+			}
+			if !utf8.ValidString(receipt.RawSummary) || received.RawSummary != receipt.RawSummary {
+				t.Fatal("JSON changed a partial Unicode character")
+			}
+			if err := ValidateUsageReceipt(&received); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+}
 
 func TestParseClaudeUsageRealFixtureExplicitZero(t *testing.T) {
 	parsed := parseClaudeOutput(bytes.NewReader(readFixture(t, "claude-2.1.245.jsonl")))

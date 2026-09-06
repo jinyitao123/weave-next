@@ -1,0 +1,120 @@
+{
+  "observed_at": "2026-09-06T10:35:10.081817Z",
+  "run_id": "run-6090ab9d-300c-5fc3-a37c-28b7110ec0b5",
+  "status": "running",
+  "completed_stages": 8,
+  "total_stages": 9,
+  "completeness": {
+    "activity_events": "partial",
+    "corrections": "complete",
+    "deliverables": "partial",
+    "human_tasks": "complete",
+    "member_inputs": "partial",
+    "member_outputs": "unavailable",
+    "member_tool_activity": "partial",
+    "members": "complete",
+    "public_updates": "partial",
+    "run": "complete",
+    "runtimes": "complete",
+    "stages": "partial",
+    "usage": "unavailable"
+  },
+  "members": [
+    {
+      "agent_id": "f8007358-b55c-4c3d-9887-125e692749a4",
+      "name": "系统工程负责人",
+      "status": "completed",
+      "stages": [
+        {
+          "node_id": "lead",
+          "status": "completed",
+          "current_task_id": "task-5af8aeaf63a017199f09ec1b7856fbc7"
+        }
+      ]
+    },
+    {
+      "agent_id": "29879f50-400d-4d2c-af04-2dbf29b7b3b4",
+      "name": "数字产品与工程图开发员",
+      "status": "completed",
+      "stages": [
+        {
+          "node_id": "parallel-03",
+          "status": "completed",
+          "current_task_id": "task-d83fea8e5aa82eca0097753a0869ae03"
+        }
+      ]
+    },
+    {
+      "agent_id": "67e9f601-c872-4317-815b-5b127f6b5979",
+      "name": "推进能源与热控分析员",
+      "status": "completed",
+      "stages": [
+        {
+          "node_id": "parallel-05",
+          "status": "completed",
+          "current_task_id": "task-65f3eeb4b89f17738c9d50be28873f80"
+        }
+      ]
+    },
+    {
+      "agent_id": "88111727-fd15-4e57-9c91-adce72ade97d",
+      "name": "档案载荷与长期可靠性设计员",
+      "status": "completed",
+      "stages": [
+        {
+          "node_id": "parallel-01",
+          "status": "completed",
+          "current_task_id": "task-c3b6ca74328bc78b1b32cf8236e0787d"
+        }
+      ]
+    },
+    {
+      "agent_id": "9ba39feb-cef8-491b-8457-8e5f0e49e986",
+      "name": "任务物理与轨迹分析员",
+      "status": "completed",
+      "stages": [
+        {
+          "node_id": "parallel-04",
+          "status": "completed",
+          "current_task_id": "task-44f9c51a4bc360b33d0e124d89b6d6a8"
+        }
+      ]
+    },
+    {
+      "agent_id": "9e7f884f-3775-4c4e-8154-fc828c3caeb8",
+      "name": "独立验证与总装员",
+      "status": "running",
+      "stages": [
+        {
+          "node_id": "finalizer",
+          "status": "running",
+          "current_task_id": "task-78673c71d198d733cba2b1b3a12f7bd6"
+        }
+      ]
+    },
+    {
+      "agent_id": "abac50f0-bad8-484a-99c5-fa1106c3e804",
+      "name": "成本计划与风险分析员",
+      "status": "completed",
+      "stages": [
+        {
+          "node_id": "parallel-02",
+          "status": "completed",
+          "current_task_id": "task-fcf5c3c0657ad9b97f5d7f71aff4096d"
+        }
+      ]
+    },
+    {
+      "agent_id": "da841c2a-0f2a-4132-a193-9ed0f381a15e",
+      "name": "任务架构与需求工程师",
+      "status": "completed",
+      "stages": [
+        {
+          "node_id": "parallel-06",
+          "status": "completed",
+          "current_task_id": "task-680abe0ea11a7313263a1964e7eb4ea8"
+        }
+      ]
+    }
+  ]
+}

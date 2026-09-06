@@ -13,6 +13,7 @@ import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
 import { buildPilotReport } from './pilot-report.ts'
 import { inspectWeaveReadiness } from './readiness.ts'
 import { handleWeaveRuntimeRequest, resolveRuntimeServerUrl } from './runtime-control.ts'
+import { handleAgentExecutionRequest } from './agent-execution-control.ts'
 
 export { buildPilotReport } from './pilot-report.ts'
 export type { PilotReport, PilotReportTask } from './pilot-report.ts'
@@ -499,12 +500,12 @@ function publicUpdates(value: unknown): WorkTaskPublicUpdate[] {
   const updates = new Map<string, WorkTaskPublicUpdate>()
   for (const candidate of value) {
     const item = object(candidate)
-    if (item === undefined || item.kind !== 'text') continue
+    if (item === undefined || (item.kind !== 'text' && item.kind !== 'attempt')) continue
     const taskId = text(item, ['task_id'])
     const eventId = text(item, ['event_id'])
     const seq = count(item, ['seq'])
     if (taskId === '' || eventId === '' || (!Number.isSafeInteger(seq) || seq <= 0) || typeof item.text !== 'string') continue
-    updates.set(`${taskId}:${seq}`, { eventId, taskId, seq, text: item.text,
+    updates.set(item.kind === 'attempt' ? eventId : `${taskId}:${seq}`, { eventId, taskId, seq, text: item.text,
       occurredAt: text(item, ['occurred_at']), truncated: item.truncated === true })
   }
   return [...updates.values()]
@@ -581,6 +582,10 @@ function memberList(value: unknown): WorkTaskMember[] {
     const runtimeDetail = runtime === undefined ? '' : [
       preferredText(runtime, ['name', 'runtime_name', 'runtime_id', 'runtimeId']), text(runtime, ['engine']),
       [text(runtime, ['provider']), text(runtime, ['model'])].filter(Boolean).join('/'),
+      text(runtime, ['configured_endpoint']),
+      Array.isArray(runtime.reported_models) && runtime.reported_models.length > 0
+        ? `回执模型 ${runtime.reported_models.filter((model): model is string => typeof model === 'string').join(', ')}`
+        : text(runtime, ['configured_model']) === '' ? '' : `节点默认 ${text(runtime, ['configured_model'])}`,
     ].filter(Boolean).join(' · ')
     return [{
       agentId, name: text(item, ['name', 'display_name']) || agentId,
@@ -622,7 +627,7 @@ function deliverableList(value: unknown, runId: string): WorkTaskDeliverable[] {
     const filename = text(metadata, ['filename'])
     const nodeType = text(metadata, ['node_type'])
     const rawKind = text(metadata, ['artifact_kind'])
-    const kind = rawKind !== 'final'
+    const kind = rawKind !== 'final' || publishedWorkflow && nodeType !== '' && nodeType !== 'deliver'
       ? 'stage'
       : publishedWorkflow && filename === '' && nodeType === 'deliver'
         ? 'summary'
@@ -640,6 +645,16 @@ function deliverableList(value: unknown, runId: string): WorkTaskDeliverable[] {
       createdAt: text(item, ['created_at', 'createdAt']),
     }]
   })
+}
+
+function reconcileDeliverableKinds(items: WorkTaskDeliverable[], value: unknown): WorkTaskDeliverable[] {
+  const refs = object(value)?.deliverables
+  if (!Array.isArray(refs)) return items
+  const stages = new Set(refs.flatMap((ref) => {
+    const item = object(ref)
+    return item?.kind === 'stage' && typeof item.id === 'string' ? [item.id] : []
+  }))
+  return items.map(item => stages.has(item.id) && item.kind !== 'stage' ? { ...item, kind: 'stage' } : item)
 }
 
 function completeness(value: unknown): Readonly<Record<string, 'complete' | 'partial' | 'unavailable'>> {
@@ -744,7 +759,7 @@ function snapshot(
     humanTask: nextStatus === 'waiting' && waitKind(value) === 'human' && sameRun
       && previous.waitNodeId === text(value, ['wait_node_id']) ? previous.humanTask : null,
     deliverableCount: seed.deliverableCount ?? (sameRun ? previous.deliverableCount : 0),
-    deliverables: seed.deliverables ?? (sameRun ? previous.deliverables : []),
+    deliverables: reconcileDeliverableKinds(seed.deliverables ?? (sameRun ? previous.deliverables : []), value),
     blocker: runtimeMissing ? 'runtime-missing' : nextStatus === 'failed' ? 'failed' : nextStatus === 'queued' ? 'queued' : 'none',
     pendingAction: seed.pendingAction === undefined ? previous?.pendingAction ?? null : seed.pendingAction,
     actionError: text(value, ['status', 'state', 'run_status']) === 'abandoned' && object(value)?.stop_unconfirmed === true ? 'stop_unconfirmed'
@@ -966,6 +981,10 @@ export function apply(ctx: Context, config: Config = {}): void {
         },
       }))
     },
+  })
+  connection.fetch.register({
+    path: '/api/weave.agent-execution', methods: ['GET', 'PUT'],
+    fetch: request => handleAgentExecutionRequest(apiUrl, apiKey, request),
   })
   connection.fetch.register({
     path: '/api/weave.runtimes', methods: ['GET', 'HEAD', 'POST', 'PUT', 'DELETE'],

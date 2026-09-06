@@ -15,9 +15,11 @@ import (
 )
 
 var outputArtifactTypes = map[string]string{
+	".css": "text/css", ".js": "text/javascript", ".mjs": "text/javascript", ".cjs": "text/javascript",
+	".py": "text/x-python", ".sh": "text/x-shellscript", ".log": "text/plain",
 	".csv": "text/csv", ".html": "text/html", ".json": "application/json", ".jsonl": "application/x-ndjson",
 	".md": "text/markdown", ".svg": "image/svg+xml", ".tsv": "text/tab-separated-values",
-	".scad": "text/x-openscad", ".txt": "text/plain", ".yaml": "application/yaml", ".yml": "application/yaml",
+	".scad": "text/x-openscad", ".dxf": "image/vnd.dxf", ".txt": "text/plain", ".yaml": "application/yaml", ".yml": "application/yaml",
 }
 
 var ignoredOutputArtifactDirectories = map[string]struct{}{
@@ -168,7 +170,7 @@ func collectOutputArtifacts(workDir string, before OutputArtifactSnapshot, answe
 			continue
 		}
 		if len(artifacts) >= engine.MaxArtifactCount {
-			reject("file_count_exceeds_64")
+			reject(fmt.Sprintf("file_count_exceeds_%d", engine.MaxArtifactCount))
 			continue
 		}
 		if info.Size()+int64(total) > engine.MaxArtifactsTotalBytes {
