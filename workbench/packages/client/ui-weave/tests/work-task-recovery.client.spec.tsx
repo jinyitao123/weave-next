@@ -61,10 +61,14 @@ describe('Workbench recovery and delivery facts', () => {
       deliverables: [
         { id: 'final', title: '报告.md', kind: 'final', contentType: 'text/markdown', content: '正文', preview: '', truncated: false, createdAt: '' },
         { id: 'stage', title: '草稿.md', kind: 'stage', contentType: 'text/markdown', content: '草稿', preview: '', truncated: false, createdAt: '' },
+        { id: 'code', title: '辅助.py', kind: 'final', contentType: 'text/plain', content: '', preview: '', truncated: false, createdAt: '' },
+        { id: 'web', title: '应用.html', kind: 'final', contentType: 'text/html', content: '', preview: '', truncated: false, createdAt: '' },
+        { id: 'drawing', title: '示意.svg', kind: 'final', contentType: 'image/svg+xml', content: '', preview: '', truncated: false, createdAt: '' },
       ] })
     const view = render(<WorkTaskPanel {...props(projection)} />)
     const overview = within(view.getByRole('tabpanel', { name: '总览' }))
     expect(overview.queryByText('草稿.md')).toBeNull()
+    expect(overview.getAllByRole('button').slice(0, 3).map(button => button.textContent)).toEqual(['应用.html', '示意.svg', '报告.md'])
     expect(overview.getByText('输入引用 · 1')).toBeTruthy()
     expect(overview.getAllByText('/inputs/brief.md')).toHaveLength(1)
     expect(overview.getAllByRole('heading').map(heading => heading.textContent)).toMatchInlineSnapshot(`

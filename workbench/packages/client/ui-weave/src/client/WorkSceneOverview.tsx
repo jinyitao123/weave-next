@@ -38,8 +38,12 @@ export function WorkFileIcon({ contentType = '', title = '' }: { readonly conten
  */
 export function WorkSceneOverview({ deliverables, members, brief, openOutput, openOutputs, openMembers, t }: Props) {
   const final = deliverables.filter(item => item.kind !== 'stage')
-  // A compact format sample is an index, not a judgment of professional importance.
-  const sample = [...final.filter(item => item.kind === 'summary'), ...final.filter(item => item.kind === 'final')]
+  // Offer the delivery summary and visual files before auxiliary logs and code.
+  const priority = (item: WorkTaskDeliverable) => item.kind === 'summary' ? 0
+    : /\.html?$/iu.test(item.title) || item.contentType === 'text/html' ? 1
+      : /\.svg$/iu.test(item.title) || item.contentType.startsWith('image/') ? 2
+        : /\.(?:csv|tsv)$/iu.test(item.title) ? 3 : /\.(?:md|pdf)$/iu.test(item.title) ? 4 : 5
+  const sample = [...final].sort((a, b) => priority(a) - priority(b))
   const preview: WorkTaskDeliverable[] = []
   for (const item of sample) {
     if (preview.length < 3 && !preview.some(previous => previous.contentType === item.contentType)) preview.push(item)
