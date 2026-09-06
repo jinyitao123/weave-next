@@ -13,7 +13,7 @@ export interface WorkTaskReadingPosition {
 }
 type WorkTaskViewState = {
   followed: Record<string, string[]>
-  tabs: Record<string, 'progress' | 'outputs'>
+  tabs: Record<string, 'overview' | 'progress' | 'outputs'>
   selectedMembers: Record<string, string>
   reading: Record<string, WorkTaskReadingPosition>
   expandedOutputs: Record<string, string[]>
@@ -21,7 +21,7 @@ type WorkTaskViewState = {
 }
 type WorkTaskViewActions = {
   toggleFollow: (draft: WorkTaskViewState, runId: string, memberId: string) => void
-  selectTab: (draft: WorkTaskViewState, runId: string, tab: 'progress' | 'outputs') => void
+  selectTab: (draft: WorkTaskViewState, runId: string, tab: 'overview' | 'progress' | 'outputs') => void
   selectMember: (draft: WorkTaskViewState, runId: string, memberId: string) => void
   rememberReading: (draft: WorkTaskViewState, key: string, position: WorkTaskReadingPosition) => void
   expandOutput: (draft: WorkTaskViewState, runId: string, id: string, expanded: boolean) => void
@@ -37,7 +37,7 @@ export function createWorkTaskViewStore(): EngineStoreHandle<WorkTaskViewState, 
     init: (): WorkTaskViewState => ({ followed: {}, tabs: {}, selectedMembers: {}, reading: {}, expandedOutputs: {}, outputSelection: {} }),
     persist: 'weave.workbench.member-follow.v1',
     actions: {
-      selectTab: (draft, runId: string, tab: 'progress' | 'outputs') => { draft.tabs[runId] = tab },
+      selectTab: (draft, runId: string, tab: 'overview' | 'progress' | 'outputs') => { draft.tabs[runId] = tab },
       selectMember: (draft, runId: string, memberId: string) => { draft.selectedMembers[runId] = memberId; draft.tabs[runId] = 'progress' },
       rememberReading: (draft, key: string, position: WorkTaskReadingPosition) => {
         const entries = Object.entries(draft.reading).filter(([id]) => id !== key).slice(-99)

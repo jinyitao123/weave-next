@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-05-workbench-task-state-and-reading-continuity.md
-2026-09-05-workbench-task-state-and-reading-continuity.md: 30a3b7ba84b5763d73a26f2a7904090b558ec97b
-2026-09-05-workbench-task-state-and-reading-continuity.zh.md: 4c1183bb7133ce730c667da363fb831bc2528a57
+2026-09-05-workbench-task-state-and-reading-continuity.md: 31f9417496081041b62795b9d6de97d8aabd46c5
+2026-09-05-workbench-task-state-and-reading-continuity.zh.md: 7195143569818d088b5111acd045fafe57b5d80b

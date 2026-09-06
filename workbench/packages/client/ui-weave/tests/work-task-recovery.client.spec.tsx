@@ -54,6 +54,55 @@ function recordedTool(name: string, value: unknown, seq: number): ChatConversati
 
 describe('Workbench recovery and delivery facts', () => {
 
+  it('indexes completed outputs, recorded input references, and members without mixing stage files into the overview', () => {
+    const member = task().members[0]!
+    const input = { name: '任务材料', path: '/inputs/brief.md', source: 'file', nodeId: '', expectedType: 'text', summary: '' }
+    const projection = task({ status: 'completed', waitKind: '', brief: '核实三条路线', members: [{ ...member, status: 'completed', stages: [{ ...member.stages[0]!, inputs: [input, input] }] }],
+      deliverables: [
+        { id: 'final', title: '报告.md', kind: 'final', contentType: 'text/markdown', content: '正文', preview: '', truncated: false, createdAt: '' },
+        { id: 'stage', title: '草稿.md', kind: 'stage', contentType: 'text/markdown', content: '草稿', preview: '', truncated: false, createdAt: '' },
+      ] })
+    const view = render(<WorkTaskPanel {...props(projection)} />)
+    const overview = within(view.getByRole('tabpanel', { name: '总览' }))
+    expect(overview.queryByText('草稿.md')).toBeNull()
+    expect(overview.getByText('输入引用 · 1')).toBeTruthy()
+    expect(overview.getAllByText('/inputs/brief.md')).toHaveLength(1)
+    expect(overview.getAllByRole('heading').map(heading => heading.textContent)).toMatchInlineSnapshot(`
+      [
+        "输出内容",
+        "团队成员",
+        "来源",
+      ]
+    `)
+    act(() => { viewStore.actions.rememberReading('scene:run-1:progress:', { top: 900, follow: false, lastEvent: '' }) })
+    fireEvent.click(overview.getByRole('button', { name: '1 / 1 位已完成' }))
+    expect(viewStore.getSnapshot().reading['scene:run-1:progress:']?.top).toBe(0)
+    expect(view.getByRole('tab', { name: '进展' }).getAttribute('aria-selected')).toBe('true')
+    expect(view.getByRole('button', { name: '查看 复核员 的工作' })).toBeTruthy()
+    fireEvent.click(view.getByRole('tab', { name: '总览' }))
+    fireEvent.click(overview.getByRole('button', { name: '报告.md' }))
+    expect(viewStore.getSnapshot().outputSelection['run-1']?.id).toBe('final')
+    expect(view.getByRole('tab', { name: '成果' }).getAttribute('aria-selected')).toBe('true')
+  })
+
+  it('finds stage files by name and clears a conflicting filter when an exact output link arrives', async () => {
+    const deliverables = Array.from({ length: 6 }, (_, index) => ({ id: `file-${index}`, title: `File-${index}.md`, kind: index < 2 ? 'final' as const : 'stage' as const,
+      contentType: 'text/markdown', content: `Body ${index}`, preview: '', truncated: false, createdAt: '' }))
+    viewStore.actions.selectTab('run-1', 'outputs')
+    const view = render(<WorkTaskPanel {...props(task({ status: 'completed', waitKind: '', deliverables }))} />)
+    const outputs = within(view.getByRole('tabpanel', { name: '成果' }))
+    const search = outputs.getByRole('searchbox', { name: '查找文件名称' })
+    fireEvent.change(search, { target: { value: 'file-5' } })
+    expect(outputs.getByText('File-5.md')).toBeTruthy()
+    expect(outputs.queryByText('File-0.md')).toBeNull()
+    fireEvent.change(search, { target: { value: 'absent' } })
+    expect(outputs.getByRole('status').textContent).toBe('没有匹配的文件，试试其他名称。')
+    act(() => { viewStore.actions.showOutput('run-1', 'file-4') })
+    await waitFor(() => { expect((search as HTMLInputElement).value).toBe('') })
+    await waitFor(() => { expect(document.activeElement?.textContent).toContain('File-4.md') })
+    expect(outputs.getByText('File-4.md').closest('details')?.open).toBe(true)
+  })
+
   it('keeps tab focus, selected member, preview zoom, and outer reading position across tab changes', async () => {
     const image = { id: 'drawing', title: '流程.svg', kind: 'final' as const, contentType: 'image/svg+xml', content: '<svg/>', preview: '', truncated: false, createdAt: '' }
     const view = render(<div style={{ overflowY: 'auto', height: 500 }}><WorkTaskPanel {...props(task({ deliverables: [image] }))} /></div>)
@@ -66,7 +115,7 @@ describe('Workbench recovery and delivery facts', () => {
     fireEvent.keyDown(progress, { key: 'ArrowRight' })
     expect(document.activeElement).toBe(outputs)
     expect(scroller.scrollTop).toBe(0)
-    fireEvent.click(view.getByText('流程.svg'))
+    fireEvent.click(within(view.getByRole('tabpanel', { name: '成果' })).getByText('流程.svg'))
     const imageElement = await view.findByRole('img', { name: '流程.svg' })
     fireEvent.load(imageElement)
     fireEvent.click(view.getByRole('button', { name: '放大图纸' }))
@@ -117,7 +166,7 @@ describe('Workbench recovery and delivery facts', () => {
     const body = '{"decision":"approve","comments":"保留两项待确认信息。"}'
     const review = { id: 'review', title: '终审记录', kind: 'summary' as const, contentType: 'application/json', content: body, preview: '', truncated: false, createdAt: '' }
     const view = render(<WorkTaskPanel {...props(task({ status: 'completed', deliverables: [review] }))} />)
-    fireEvent.click(view.getByText('终审记录'))
+    fireEvent.click(view.getByRole('button', { name: '终审记录' }))
     expect(await view.findByText('终审通过')).toBeTruthy()
     expect(view.getByText('保留两项待确认信息。')).toBeTruthy()
     const original = view.getByText('查看原始记录').closest('details')!
@@ -180,7 +229,7 @@ describe('Workbench recovery and delivery facts', () => {
         content: '已核验', preview: '', truncated: false, createdAt: '' }] }))} />)
     expect(panel.getByRole('tab', { name: '进展' }).getAttribute('aria-selected')).toBe('true')
     fireEvent.click(panel.getByRole('tab', { name: /成果/u }))
-    expect(panel.getByText('核验报告')).toBeTruthy()
+    expect(within(panel.getByRole('tabpanel', { name: '成果' })).getByText('核验报告')).toBeTruthy()
   })
 
   it.each([
@@ -378,7 +427,7 @@ describe('Workbench recovery and delivery facts', () => {
     expect(view.getByText('已完成')).toBeTruthy()
     expect(view.queryByText(/文件包尚未同步/u)).toBeNull()
     expect(view.getByText('最终交付结论已就绪').textContent).toMatchInlineSnapshot('"最终交付结论已就绪"')
-    fireEvent.click(view.getByText('汇总交付 · 最终成果'))
+    fireEvent.click(view.getByRole('button', { name: '汇总交付 · 最终成果' }))
     expect(await view.findByText('验收结论已生成。')).toBeTruthy()
     view.unmount()
     const header = render(<WorkTaskHeader {...props(projection)} />)
@@ -402,7 +451,7 @@ describe('Workbench recovery and delivery facts', () => {
     const selected = view.getByRole('tab', { selected: true })
     expect(selected.textContent).toBe(status === 'running' ? '进展' : '成果')
     fireEvent.keyDown(selected, { key: 'ArrowRight' })
-    expect(view.getByRole('tab', { selected: true }).textContent).toBe(status === 'running' ? '成果' : '进展')
+    expect(view.getByRole('tab', { selected: true }).textContent).toBe(status === 'running' ? '成果' : '总览')
     expect(document.activeElement).toBe(view.getByRole('tab', { selected: true }))
   })
 
@@ -470,11 +519,11 @@ describe('Workbench recovery and delivery facts', () => {
     const image = { id: 'image', title: '说明图.svg', kind: 'final' as const, contentType: 'image/svg+xml', content: '<svg/>', preview: '', truncated: false, createdAt: '' }
     const html = { ...image, id: 'page', title: '报告.html', contentType: 'text/html', content: '<h1>报告</h1><script>alert(1)</script>' }
     const view = render(<WorkTaskPanel {...props(task({ status: 'completed', members: [], deliverables: [image, html] }))} />)
-    fireEvent.click(view.getByText('说明图.svg'))
+    fireEvent.click(view.getByRole('button', { name: '说明图.svg' }))
     expect((await view.findByRole('img', { name: '说明图.svg' })).getAttribute('src')).toContain('id=image&mode=preview')
-    fireEvent.click(view.getByText('报告.html'))
-    await waitFor(() => { expect(view.getByTitle('报告.html').getAttribute('sandbox')).toBe('') })
-    expect(view.getByTitle('报告.html').getAttribute('srcdoc')).toContain("default-src 'none'")
+    fireEvent.click(within(view.getByRole('tabpanel', { name: '成果' })).getByText('报告.html'))
+    await waitFor(() => { expect(view.container.querySelector('iframe[title="报告.html"]')!.getAttribute('sandbox')).toBe('') })
+    expect(view.container.querySelector('iframe[title="报告.html"]')!.getAttribute('srcdoc')).toContain("default-src 'none'")
     expect(within(view.getByRole('region', { name: '交付物' })).getAllByRole('link').every(link => link.getAttribute('href')?.startsWith('/api/weave.deliverable?'))).toBe(true)
   })
 
