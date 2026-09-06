@@ -163,8 +163,14 @@ func TestRuntimePublicEventsDurableIdentityReplayAndLateAttemptRealPG(t *testing
 	completeness := map[string]string{"activity_events": "complete"}
 	server.projectRunPublicEvents(ctx, teamrun.TeamRun{WorkspaceID: "ws", RunID: "run", RunSnapshotID: "snapshot"}, members, events, completeness)
 	stage := members[0].Stages[0]
-	if stage.CurrentTaskID != "task-new" || len(stage.PublicUpdates) != 2 || stage.PublicUpdates[0].Text != "current draft" || stage.Status != "cancelled" || stage.OutputRefs[0] != "saved" {
+	if stage.CurrentTaskID != "task-new" || len(stage.PublicUpdates) != 4 || stage.PublicUpdates[0].Text != "current draft" || stage.Status != "cancelled" || stage.OutputRefs[0] != "saved" {
 		t.Fatalf("late event revived or replaced current attempt: %+v", stage)
+	}
+	for i, want := range []struct{ kind, taskID, text string }{{"text", "task-new", "current draft"}, {"text", "task-new", "late captured text"}, {"attempt", "task-old", ""}, {"attempt", "task-new", ""}} {
+		update := stage.PublicUpdates[i]
+		if update.Kind != want.kind || update.TaskID != want.taskID || (want.text != "" && update.Text != want.text) {
+			t.Fatalf("wrong current text or physical attempt at %d: %+v", i, update)
+		}
 	}
 	var status string
 	if err := pool.QueryRow(ctx, `SELECT status FROM weave_team_runs WHERE run_id='run'`).Scan(&status); err != nil || status != "cancelled" {
