@@ -69,3 +69,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Validate platform compose file
         run: make compose-check
+      - name: Validate deployment scripts
+        run: |
+          bash -n scripts/deploy-main.sh
+          python3 -m unittest discover -s scripts -p 'test_deployment_state.py'
