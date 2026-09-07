@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>日冕计划 · 先期论证决策应用（概念级 · 0.03c 锁定情景）</title>
+<!--
+  追溯键: baseline_id=corona-baseline-1.0.0 baseline_version=1.0.0
+          content_digest=cfb12b781363c547da87e6dec9fd937079cba25501b85ff6cbfabfbc508b10c2
+  离线运行: 直接以浏览器打开本文件（file://），无云服务/无网络依赖。
+  计算内核 corona_core.js 与 outputs/model/corona_model.py 同公式同参数（RQ-APP-006）。
+  CCR-001 三情景比较仅留接口（compareScenariosStub），当前不实现。
+-->
+<style>
+  body{font-family:Helvetica,Arial,"PingFang SC",sans-serif;margin:0;background:#f4f6f9;color:#222}
+  header{background:#1e3a5f;color:#fff;padding:14px 24px}
+  header h1{margin:0;font-size:20px}
+  header .meta{font-size:11px;opacity:.85;margin-top:4px}
+  main{display:flex;flex-wrap:wrap;gap:16px;padding:16px 24px}
+  section{background:#fff;border:1px solid #d5dce6;border-radius:8px;padding:14px 18px;min-width:320px;flex:1}
+  h2{font-size:15px;margin:0 0 10px;color:#1e3a5f;border-bottom:1px solid #e3e8f0;padding-bottom:6px}
+  label{display:block;font-size:12px;margin:8px 0 2px}
+  input[type=range]{width:70%}
+  .val{font-variant-numeric:tabular-nums;font-weight:bold}
+  table{border-collapse:collapse;width:100%;font-size:12px}
+  td,th{border:1px solid #e0e5ec;padding:5px 8px;text-align:left}
+  th{background:#eef2f8}
+  .lbl{font-size:10px;padding:1px 6px;border-radius:8px;color:#fff;white-space:nowrap}
+  .vf{background:#2e7d32}.dr{background:#1565c0}.as{background:#b26a00}.uk{background:#b3261e}
+  .warn{background:#fff4f4;border:1px dashed #b3261e;border-radius:6px;padding:8px 10px;font-size:12px;margin-top:10px}
+  button{background:#1e3a5f;color:#fff;border:0;border-radius:6px;padding:8px 14px;font-size:13px;cursor:pointer;margin:4px 6px 4px 0}
+  button.sec{background:#4a6a94}
+  a{color:#1565c0}
+  .stub{opacity:.75}
+  footer{font-size:10px;color:#777;padding:10px 24px 20px}
+</style>
+</head>
+<body>
+<header>
+  <h1>日冕计划 · 先期论证决策应用 <span style="font-size:13px;font-weight:normal">（Level-0 / Pre-Phase A 概念级）</span></h1>
+  <div class="meta">baseline_id=corona-baseline-1.0.0 · version=1.0.0 · digest=cfb12b78…8b10c2 ·
+    巡航情景锁定 0.03c [verified_fact] · CCR-001（0.01c/0.05c）待平台确认，未纳入</div>
+</header>
+<main>
+  <section>
+    <h2>情景输入（0.03c 锁定）</h2>
+    <label>巡航速度 cruise_speed_c：<span class="val">0.03c（锁定）</span>
+      <span class="lbl vf">verified_fact</span></label>
+    <label>质量 mass_kg（对数）：<span class="val" id="vMass"></span></label>
+    <input type="range" id="inMass" min="3" max="10" step="0.05" value="9">
+    <label>推进效率 η <span class="lbl as">assumption 情景参数</span>：<span class="val" id="vEta"></span></label>
+    <input type="range" id="inEta" min="0.05" max="0.9" step="0.05" value="0.3">
+    <label>人工重力半径 radius_m：<span class="val" id="vRad"></span> m</label>
+    <input type="range" id="inRad" min="50" max="3000" step="10" value="1000">
+    <label>转速 rotation_rpm：<span class="val" id="vRpm"></span> rpm</label>
+    <input type="range" id="inRpm" min="0.2" max="6" step="0.05" value="2">
+    <label>尘埃质量 dust_mass_kg：<span class="val" id="vDust"></span></label>
+    <input type="range" id="inDust" min="-7" max="-4" step="0.25" value="-6">
+    <div class="warn">动能与能源投入均为<strong>下限口径</strong>，不含排气动能、推进剂、减速、备用与建造损耗，不得用作工程能源预算（任务书 §3）。</div>
+  </section>
+
+  <section>
+    <h2>实时导出量 <span class="lbl dr">derived_result</span></h2>
+    <table>
+      <tr><th>量</th><th>值</th><th>单位/说明</th></tr>
+      <tr><td>航行时间（匀速，不含加减速）</td><td class="val" id="oTravel"></td><td>yr · ICD-FML-001</td></tr>
+      <tr><td>光行时（单程信号）</td><td class="val" id="oLight"></td><td>yr</td></tr>
+      <tr><td>动能下限（非相对论）</td><td class="val" id="oKE"></td><td>J · ICD-FML-002</td></tr>
+      <tr><td>动能对照（相对论 (γ−1)mc²）</td><td class="val" id="oKEr"></td><td>J · 单列不混用</td></tr>
+      <tr><td>能源投入下限（KE/η）</td><td class="val" id="oEin"></td><td>J · η 为假设</td></tr>
+      <tr><td>动能 TNT 当量</td><td class="val" id="oTNT"></td><td>kg TNT · 换算约定 <span class="lbl as">assumption</span></td></tr>
+      <tr><td>人工重力</td><td class="val" id="oG"></td><td>m/s²（<span id="oGx"></span> ×g0）· ICD-FML-003</td></tr>
+      <tr><td>该半径下 1g 转速</td><td class="val" id="oRpm1g"></td><td>rpm</td></tr>
+      <tr><td>尘埃撞击能量</td><td class="val" id="oDust"></td><td>J（≈<span id="oDustTNT"></span> kg TNT）· ICD-FML-004</td></tr>
+      <tr><td>理想转向上限（Δv 10–15%）</td><td class="val" id="oTurn"></td><td>deg · ICD-FML-005</td></tr>
+    </table>
+    <div style="margin-top:10px">
+      <button id="btnExport">导出当前情景 JSON（含追溯键）</button>
+      <button class="sec" onclick="window.open('../drawings/DRW-ARCH-001_mission_architecture.svg')">打开概念图 DRW-ARCH-001</button>
+      <button class="sec" onclick="window.open('../drawings/DRW-ARCH-002_archive_payload_zones.svg')">DRW-ARCH-002</button>
+      <button class="sec" onclick="window.open('../drawings/DRW-ARCH-003_system_interfaces.svg')">DRW-ARCH-003</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>三路线证据状态（可分离，禁止跨路线外推 RQ-SCP-003）</h2>
+    <table id="routeTable">
+      <tr><th>路线</th><th>证据状态</th><th>成立条件（摘）</th><th>终止条件（摘）</th><th>主要未知项</th></tr>
+    </table>
+  </section>
+
+  <section class="stub">
+    <h2>三速度情景比较（接口预留 · 未实现）</h2>
+    <div class="warn" id="stubBox"></div>
+  </section>
+</main>
+<footer>
+  事实标签: <span class="lbl vf">verified_fact</span> <span class="lbl dr">derived_result</span>
+  <span class="lbl as">assumption</span> <span class="lbl uk">unknown</span> ｜
+  禁用声明: construction_ready / manufacturing_ready / flight_certified / whole_program_cost_committed ｜
+  参数唯一来源: outputs/model/baseline_frozen.yaml（本应用经 params.js 注入同一参数集）
+</footer>
+
+<script src="params.js"></script>
+<script src="corona_core.js"></script>
+<script>
+(function () {
+  "use strict";
+  var P = window.CORONA_PARAMS, C = window.CoronaCore;
+  function fmt(x) {
+    if (Math.abs(x) >= 1e6 || (Math.abs(x) < 1e-3 && x !== 0)) return x.toExponential(4);
+    return Number(x.toPrecision(6)).toString();
+  }
+  var ROUTES = [
+    { id: "laser_sail_precursor", name: "激光光帆先锋探测器",
+      evidence: "公开概念研究存在（克级，0.2c 内部工况）",
+      cond: "光帆材料/加速耐受闭合；4.25 ly 通信链路可解调",
+      stop: "通信链路或帆面工艺达不到量级",
+      unk: "材料性能、链路预算、尘埃通量实测" },
+    { id: "uncrewed_civilization_archive", name: "无人文明档案载荷",
+      evidence: "介质级单项研究存在，系统级缺失",
+      cond: "百年校验/迁移/再制造链闭合；行星保护路径明确",
+      stop: "单一介质达不到保存期且无冗余方案",
+      unk: "百年误码率、复苏成功率、运输质量/能源预算" },
+    { id: "crewed_interstellar_vehicle", name: "载人星际飞行器",
+      evidence: "远期研究对象，多项能力未成熟",
+      cond: "脉冲聚变推进出概念阶段；封闭生态百年验证",
+      stop: "18–24 月论证后推进或生态仍无闭合路径",
+      unk: "推进增益/散热、辐射防护、冬眠（不得作必要条件）" }
+  ];
+  function inputs() {
+    return {
+      mass_kg: Math.pow(10, parseFloat(document.getElementById("inMass").value)),
+      efficiency: parseFloat(document.getElementById("inEta").value),
+      radius_m: parseFloat(document.getElementById("inRad").value),
+      rotation_rpm: parseFloat(document.getElementById("inRpm").value),
+      dust_mass_kg: Math.pow(10, parseFloat(document.getElementById("inDust").value))
+    };
+  }
+  function refresh() {
+    var inp = inputs();
+    document.getElementById("vMass").textContent = fmt(inp.mass_kg) + " kg";
+    document.getElementById("vEta").textContent = inp.efficiency.toFixed(2);
+    document.getElementById("vRad").textContent = fmt(inp.radius_m);
+    document.getElementById("vRpm").textContent = inp.rotation_rpm.toFixed(2);
+    document.getElementById("vDust").textContent = fmt(inp.dust_mass_kg) + " kg";
+    var r = C.computeScenario(P, inp), o = r.outputs;
+    document.getElementById("oTravel").textContent = fmt(o.travel_time_yr.value);
+    document.getElementById("oLight").textContent = fmt(o.light_travel_time_yr.value);
+    document.getElementById("oKE").textContent = fmt(o.kinetic_energy_classical_j.value);
+    document.getElementById("oKEr").textContent = fmt(o.kinetic_energy_relativistic_j.value);
+    document.getElementById("oEin").textContent = fmt(o.energy_input_lower_bound_j.value);
+    document.getElementById("oTNT").textContent = fmt(o.kinetic_energy_tnt_equivalent_kg.value);
+    document.getElementById("oG").textContent = fmt(o.artificial_gravity_m_s2.value);
+    document.getElementById("oGx").textContent = o.artificial_gravity_g_multiple.value.toFixed(2);
+    document.getElementById("oRpm1g").textContent = fmt(o.rpm_for_1g_at_radius.value);
+    document.getElementById("oDust").textContent = fmt(o.dust_impact_energy_j.value);
+    document.getElementById("oDustTNT").textContent = fmt(o.dust_tnt_equivalent_kg.value);
+    document.getElementById("oTurn").textContent =
+      o.turn_limit_deg_dv_10_15pct.value.map(function (d) { return d.toFixed(2); }).join(" – ");
+    window.__lastScenario = r;
+  }
+  var tbl = document.getElementById("routeTable");
+  ROUTES.forEach(function (rt) {
+    var tr = document.createElement("tr");
+    tr.innerHTML = "<td><strong>" + rt.name + "</strong><br><span style='font-size:10px;color:#777'>" +
+      rt.id + "</span></td><td>" + rt.evidence + "</td><td>" + rt.cond + "</td><td>" +
+      rt.stop + "</td><td><span class='lbl uk'>unknown</span> " + rt.unk + "</td>";
+    tbl.appendChild(tr);
+  });
+  var stub = C.compareScenariosStub();
+  document.getElementById("stubBox").textContent =
+    "状态: " + stub.status + " — " + stub.reason + "。获批后将接受 cruise_speed_c_list=" +
+    JSON.stringify(stub.would_accept.cruise_speed_c_list) + "（接口结构不变，ICD-1.0.0 §6）。";
+  document.getElementById("btnExport").addEventListener("click", function () {
+    var blob = new Blob([JSON.stringify(window.__lastScenario, null, 2)],
+      { type: "application/json" });
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "corona_scenario_0.03c_baseline-1.0.0.json";
+    a.click();
+    URL.revokeObjectURL(a.href);
+  });
+  ["inMass", "inEta", "inRad", "inRpm", "inDust"].forEach(function (id) {
+    document.getElementById(id).addEventListener("input", refresh);
+  });
+  refresh();
+}());
+</script>
+</body>
+</html>

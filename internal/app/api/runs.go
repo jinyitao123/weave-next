@@ -18,6 +18,7 @@ import (
 	"github.com/jinyitao123/weave/internal/base/snapshot"
 	"github.com/jinyitao123/weave/internal/base/teamrun"
 	"github.com/jinyitao123/weave/internal/kernel/engine"
+	"github.com/jinyitao123/weave/internal/kernel/loomruntime"
 	"github.com/jinyitao123/weave/internal/kernel/runtimes"
 	"github.com/jinyitao123/weave/internal/kernel/workflow/machine"
 	"github.com/labstack/echo/v4"
@@ -58,6 +59,14 @@ func decodeRunActivityUsage(data []byte) (runActivityUsage, bool) {
 	var summary RunSummary
 	if json.Unmarshal(data, &summary) != nil || summary.RunID == "" {
 		return runActivityUsage{}, false
+	}
+	if summary.SchemaVersion == 3 {
+		inspection := loomruntime.InspectTerminalRecord(true, data)
+		if inspection.Err != nil || inspection.Entry == nil {
+			return runActivityUsage{}, false
+		}
+		total := inspection.Entry.SubtreeTotal
+		summary.TokensIn, summary.TokensOut, summary.CostUSD = total.InputTokens, total.OutputTokens, total.CostUSD
 	}
 	state := "complete"
 	if summary.UsageComplete != nil && !*summary.UsageComplete {
@@ -415,6 +424,8 @@ type runActivityMemberInputRef struct {
 }
 
 type runActivityMemberStage struct {
+	MemberRunID            string                      `json:"member_run_id,omitempty"`
+	CheckpointSavedAt      *time.Time                  `json:"checkpoint_saved_at,omitempty"`
 	CurrentTaskID          string                      `json:"current_task_id,omitempty"`
 	PublicUpdates          []runActivityPublicUpdate   `json:"public_updates,omitempty"`
 	PublicUpdatesTruncated bool                        `json:"public_updates_truncated,omitempty"`
@@ -1175,6 +1186,7 @@ func (s *Server) handleGetRunActivity(c echo.Context) error {
 			completeness["member_tool_activity"] = "partial"
 		}
 	}
+	s.projectMemberCheckpoints(c.Request().Context(), run, members)
 	waitNodeID := s.reconcileRunActivityRecovery(c.Request().Context(), run, members)
 	// A claimed fanout leg may still be waiting for its physical CLI slot.
 	// Apply the current engine task after recovery projects the logical leg.

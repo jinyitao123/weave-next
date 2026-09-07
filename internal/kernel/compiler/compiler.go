@@ -56,6 +56,9 @@ func lookupFactory(graphType string) (GraphFactory, bool) {
 
 // CompileOpts controls graph compilation behavior.
 type CompileOpts struct {
+	// DurableMember retains required checkpoints for the new frozen member
+	// protocol. Legacy graph factories keep their original options.
+	DurableMember        bool
 	Profile              string
 	Effort               contract.EffortLevel
 	ToolHooks            []contract.ToolHook     // injected hooks (e.g. SSE tool_result emitter)
@@ -184,6 +187,9 @@ func CompileAgent(tenant string, rec *registry.AgentRecord, llm contract.LLM, to
 	graphOpts := []loom.GraphOption{
 		loom.WithMaxIterations(50),
 		loom.WithCheckpointHistory(50),
+	}
+	if opts.DurableMember {
+		graphOpts = append(graphOpts, loom.WithCheckpointPolicy(loom.CheckpointRequired), loom.WithCheckpointHistory(-1))
 	}
 	if rec.StepBudget > 0 {
 		graphOpts = append(graphOpts, loom.WithStepBudget(rec.StepBudget))

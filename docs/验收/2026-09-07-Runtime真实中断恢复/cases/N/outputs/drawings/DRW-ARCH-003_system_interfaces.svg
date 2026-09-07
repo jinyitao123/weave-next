@@ -1,0 +1,124 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  日冕计划 · 概念工程图纸 (CONCEPT-LEVEL, 非施工/制造/认证图)
+  图号: DRW-ARCH-003  版本: 1.0.0  日期: 2026-09-07
+  图名: 推进、能源、热控、通信与档案接口图
+  追溯键: baseline_id=corona-baseline-1.0.0 baseline_version=1.0.0
+          content_digest=cfb12b781363c547da87e6dec9fd937079cba25501b85ff6cbfabfbc508b10c2
+  单位: W / J / c / yr / K（概念级接口图，连接线为功能接口非管路）
+  参数追踪表:
+    P3 动能下限 1Mt 4.0444e22 J / 5Mt 2.0222e23 J [derived_result] ICD-FML-002
+    P3b 能源投入下限 = KE/η, η∈{0.1,0.3,0.5} [derived_result, η 为 assumption 情景]
+    P5 尘埃 1mg→4.0444e7 J [derived_result] ICD-FML-004
+    P7 先锋回传 ≥25.5 yr @0.2c 路线内部工况 [derived_result] ICD-RTE-003
+    P9 驻留最低 Δv = 2×0.03c [derived_result]（加减速边界）
+  边界: 动能下限不得表述为完整推进能源预算；推进路线不指定主案（纪要 §三.1）
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="840" viewBox="0 0 1200 840" font-family="Helvetica, Arial, sans-serif">
+  <title>DRW-ARCH-003 推进/能源/热控/通信/档案接口图 (概念级)</title>
+  <desc>baseline corona-baseline-1.0.0; digest cfb12b78…8b10c2; 0.03c locked</desc>
+  <style>
+    .title{font-size:22px;font-weight:bold}
+    .h{font-size:14px;font-weight:bold}
+    .t{font-size:12px}
+    .s{font-size:10.5px;fill:#444}
+    .tag{font-size:9px;fill:#666}
+    .frame{fill:none;stroke:#333;stroke-width:2}
+    .sys{fill:#eef3fb;stroke:#2a4d8f;stroke-width:1.5}
+    .warn{fill:#fff4f4;stroke:#b3261e;stroke-width:1.2;stroke-dasharray:5 3}
+    .iface{stroke:#2e7d32;stroke-width:2;fill:none;marker-end:url(#ah)}
+    .iface2{stroke:#b26a00;stroke-width:2;fill:none;marker-end:url(#ah2);stroke-dasharray:6 3}
+    .lbl{font-size:10px;fill:#2e7d32;font-weight:bold}
+    .lbl2{font-size:10px;fill:#b26a00;font-weight:bold}
+  </style>
+  <defs>
+    <marker id="ah" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+      <path d="M0,0 L7,3 L0,6 Z" fill="#2e7d32"/>
+    </marker>
+    <marker id="ah2" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+      <path d="M0,0 L7,3 L0,6 Z" fill="#b26a00"/>
+    </marker>
+  </defs>
+
+  <rect x="8" y="8" width="1184" height="824" class="frame"/>
+  <text x="30" y="42" class="title">推进 / 能源 / 热控 / 通信 / 档案 · 系统接口图（概念级）</text>
+  <text x="30" y="64" class="tag">图号 DRW-ARCH-003 · 版本 1.0.0 · 2026-09-07 · baseline corona-baseline-1.0.0 · digest cfb12b78…8b10c2 · 非施工/制造/认证图</text>
+
+  <!-- 推进 -->
+  <rect x="60" y="110" width="300" height="180" class="sys"/>
+  <text x="76" y="136" class="h">推进（路线不指定主案）</text>
+  <text x="76" y="160" class="s">候选: 氘氚脉冲聚变（最易实现 [verified_fact]）</text>
+  <text x="76" y="178" class="s">　　  氘氘 / 氘氦3 / 脉冲裂变聚变 → 比较研究</text>
+  <text x="76" y="200" class="s">比较维度: 有效排气速度/推力/脉冲频率/增益/</text>
+  <text x="76" y="216" class="s">　　　　  燃料循环/中子损伤/散热/维护/质量比</text>
+  <text x="76" y="240" class="s">成熟度: 概念/建模/部件研究阶段 [verified_fact]</text>
+  <text x="76" y="262" class="tag">“连续工作且无法大修”要求已撤回（纪要 §三.4）</text>
+
+  <!-- 能源 -->
+  <rect x="460" y="110" width="300" height="180" class="sys"/>
+  <text x="476" y="136" class="h">能源（下限口径，非预算）</text>
+  <text x="476" y="160" class="s">KE 下限: 1Mt→4.0444e22 J；5Mt→2.0222e23 J [P3]</text>
+  <text x="476" y="182" class="s">能源投入下限 = KE/η [P3b]:</text>
+  <text x="476" y="200" class="s">　η=0.1→4.04e23 J；η=0.3→1.35e23 J；η=0.5→8.09e22 J</text>
+  <text x="476" y="222" class="s">η 为情景参数 [assumption]；不含排气动能/备用/损耗</text>
+  <text x="476" y="244" class="s">驻留情景最低 Δv=2×0.03c [P9] → 能源下限约 ×2</text>
+  <text x="476" y="266" class="tag">禁止表述为完整推进能源预算（任务书 §3）</text>
+
+  <!-- 热控 -->
+  <rect x="860" y="110" width="300" height="180" class="sys"/>
+  <text x="876" y="136" class="h">热控</text>
+  <text x="876" y="160" class="s">聚变废热 + 尘埃撞击热（4.04e7 J@1mg 事件 [P5]）</text>
+  <text x="876" y="182" class="s">散热路径: 辐射板（面积/温度预算未闭合 [unknown]）</text>
+  <text x="876" y="204" class="s">与推进脉冲频率、中子损伤耦合 → 联合课题</text>
+  <text x="876" y="226" class="s">档案舱低温需求 ↔ 散热排布冲突待评估</text>
+  <text x="876" y="248" class="tag">全部热参数为概念级占位 [assumption]</text>
+
+  <!-- 接口线：推进→能源, 能源→热控 -->
+  <path d="M360,160 L460,160" class="iface"/>
+  <text x="372" y="152" class="lbl">IF-1 推力/功率需求</text>
+  <path d="M760,160 L860,160" class="iface"/>
+  <text x="772" y="152" class="lbl">IF-2 废热流</text>
+
+  <!-- 通信 -->
+  <rect x="160" y="380" width="300" height="170" class="sys"/>
+  <text x="176" y="406" class="h">通信</text>
+  <text x="176" y="430" class="s">光行时 4.25 yr（单程）[verified_fact]</text>
+  <text x="176" y="452" class="s">先锋探测器: 0.2c 飞行 21.25 yr + 回传 4.25 yr</text>
+  <text x="176" y="470" class="s">　→ 最早回传 ≥25.5 yr [P7]</text>
+  <text x="176" y="492" class="s">链路预算（发射功率/口径/误码）未闭合 [unknown]</text>
+  <text x="176" y="514" class="tag">先锋数据不得作为第 20 年前母舰决策条件（纪要 §二.6）</text>
+
+  <!-- 档案系统 -->
+  <rect x="560" y="380" width="300" height="170" class="sys"/>
+  <text x="576" y="406" class="h">档案系统（路线 B，与运输解耦）</text>
+  <text x="576" y="430" class="s">存储: 石英 / DNA / 种子 / 微生物（分别研究）</text>
+  <text x="576" y="452" class="s">校验 + 版本迁移 + 读取设备再制造 + 复苏</text>
+  <text x="576" y="474" class="s">保存期 ≥141.67 yr + 驻留期 [derived_result/assumption]</text>
+  <text x="576" y="496" class="s">分区详图见 DRW-ARCH-002</text>
+  <text x="576" y="518" class="tag">任一介质 ≠ 完整文明备份（纪要 §三.5）</text>
+
+  <!-- 接口线：能源→通信/档案, 热控→档案 -->
+  <path d="M560,290 C560,330 480,330 420,380" class="iface"/>
+  <text x="452" y="330" class="lbl">IF-3 百年供电</text>
+  <path d="M650,290 C650,330 700,340 710,380" class="iface"/>
+  <text x="668" y="330" class="lbl">IF-4 档案舱供电/校验能耗</text>
+  <path d="M960,290 C960,350 880,360 800,400" class="iface"/>
+  <text x="900" y="345" class="lbl">IF-5 热排布↔低温冲突</text>
+  <path d="M310,380 C310,330 250,320 210,290" class="iface2"/>
+  <text x="222" y="330" class="lbl2">IF-6 通信电力（间歇深空链路）</text>
+
+  <!-- 撤销/否定项 -->
+  <rect x="60" y="580" width="1100" height="110" class="warn"/>
+  <text x="76" y="606" class="h" fill="#b3261e">已撤回 / 禁用项（诚实记录）</text>
+  <text x="76" y="630" class="t">· “1mg 尘埃约 450 MJ”已撤回 → 正确值 40.5 MJ（≈9.67 kg TNT [assumption 换算]）[verified_fact]</text>
+  <text x="76" y="650" class="t">· “发动机连续工作且无法大修”要求不再保留 · 冬眠不得作为任务成立必要条件 · 2.4–3.4 万亿元总投资口径已撤回</text>
+  <text x="76" y="672" class="tag">禁用声明: construction_ready / manufacturing_ready / flight_certified / whole_program_cost_committed</text>
+
+  <!-- 参数追踪表 -->
+  <rect x="30" y="706" width="1140" height="110" fill="#f7f9fc" stroke="#2a4d8f" stroke-width="1.3"/>
+  <text x="46" y="730" class="h">参数追踪表（→ outputs/model/results.json · baseline_frozen.yaml）</text>
+  <text x="46" y="752" class="s">P3 KE=0.5mv² ICD-FML-002 ｜ P3b E_in=KE/η ｜ P5 dust=40443983 J ICD-FML-004 ｜ P7 21.25+4.25=25.5 yr ｜ P9 Δv≥2×0.03c</text>
+  <text x="46" y="772" class="s">接口: IF-1 推力/功率 · IF-2 废热 · IF-3/4 供电 · IF-5 热-低温冲突 · IF-6 通信电力（概念级功能接口，非管路/电缆设计）</text>
+  <text x="46" y="792" class="s">追溯键: (corona-baseline-1.0.0, 1.0.0, cfb12b78…8b10c2) ｜ 事实标签: verified_fact / derived_result / assumption / unknown</text>
+  <text x="46" y="810" class="tag">CCR-001（0.01c/0.05c）待平台确认，本图不含三情景 ｜ 概念级边界: 非施工图/制造图/认证设计</text>
+</svg>

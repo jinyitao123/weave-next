@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-07T03:20:13.757151+00:00",
+  "change": "observer format support and observer-only reload, no task prompt/source/driver/runtime changes",
+  "reason": "C chose native outputs/model/run_tests.py and [summary] N/N checks passed -> PASS; registered model-test success criterion is unchanged",
+  "fault_injections_before_change": 0,
+  "C_task_id": "task-da13aae23759a549a25c021dabf21f7c",
+  "files": {
+    "probe/control.py": "78a4e27479245ab395068d8d666c1b968da290d2af63762dfd7d03c3335f5262",
+    "probe/milestone.py": "b9c2d821ea6e1f07d2b7d13af743ea20dcf96917f6358432d0d111bbfa351bb2",
+    "probe/test_milestone.py": "d8f0cd05dcf6cf1afa73f1dcb995013a1b0d46c9d537a8cfd10770dd7874a489"
+  },
+  "observer_tests_passed": 8
+}

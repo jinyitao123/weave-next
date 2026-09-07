@@ -49,9 +49,10 @@ type StageRetryService struct {
 }
 
 type RuntimeWaitDetailV1 struct {
-	SchemaVersion int    `json:"schema_version"`
-	WaitType      string `json:"wait_type"`
-	NodeID        string `json:"node_id"`
+	SchemaVersion   int    `json:"schema_version"`
+	WaitType        string `json:"wait_type"`
+	NodeID          string `json:"node_id"`
+	RecoveryBlocked bool   `json:"recovery_blocked,omitempty"`
 }
 
 type RuntimeRetryTaskPayloadV1 struct {
@@ -212,6 +213,9 @@ func (s *StageRetryService) retryRuntimeStageTx(ctx context.Context, tx pgx.Tx, 
 	if err != nil || detail.NodeID != request.NodeID {
 		return StageRetryResult{}, fmt.Errorf("%w: selected stage differs from runtime wait", ErrTeamRunStateConflict)
 	}
+	if detail.RecoveryBlocked {
+		return StageRetryResult{}, fmt.Errorf("%w: tool outcome requires reconciliation before continuing", ErrTeamRunResumeInvalid)
+	}
 	checkpoint, err := s.Checkpoints.GetTx(ctx, tx, run.WorkspaceID, run.RunID)
 	if err != nil {
 		return StageRetryResult{}, err
@@ -263,6 +267,13 @@ func requireRuntimeFailuresStoppedTx(ctx context.Context, tx pgx.Tx, run TeamRun
 	}
 	if !stopped {
 		return fmt.Errorf("%w: runtime execution stop is not yet acknowledged", ErrTeamRunStateConflict)
+	}
+	stopped, err = MembersStoppedTx(ctx, tx, run.WorkspaceID, run.RunID)
+	if err != nil {
+		return err
+	}
+	if !stopped {
+		return fmt.Errorf("%w: member execution stop is not yet acknowledged", ErrTeamRunStateConflict)
 	}
 	return nil
 }

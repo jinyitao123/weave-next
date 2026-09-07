@@ -103,6 +103,8 @@ function statusKey(status: WorkTaskStatus): typeof STATUS_KEYS[WorkTaskStatus] {
 }
 
 function stageFailureKey(stage: WorkTaskMemberStage, retryable: boolean) {
+  if (stage.failureReason === 'tool outcome requires reconciliation before continuing') return 'task.failure.reason.toolUnknown'
+  if (stage.memberRunId && retryable) return 'task.failure.reason.memberInterrupted'
   if (stage.failureReason === 'the referenced result file was not saved as a deliverable') return 'task.failure.reason.fileMissing'
   if (stage.failureClass === 'infrastructure') return retryable ? 'task.failure.reason.infrastructure' : 'task.failure.reason.infrastructureUnavailable'
   if (stage.failureClass === 'verification') return 'task.failure.reason.verification'
@@ -770,7 +772,7 @@ export function WorkTaskPanel({
             </button>
             {retryNodeId === stage.nodeId ? (
               <div className={css.retryConfirm}>
-                <span>{t('task.retry.impact')}</span>
+                <span>{t(stage.memberRunId ? 'task.retry.memberImpact' : 'task.retry.impact')}</span>
                 <div className={css.controlActions}>
                   <button type="button" className={css.secondaryButton} onClick={() => { setRetryNodeId('') }}>{t('task.cancel')}</button>
                   <button type="button" className={css.primaryButton} disabled={actionPending || model.pendingAction !== null} onClick={() => { void submitStageRetry() }}>{t('task.retry.confirm')}</button>
@@ -778,12 +780,12 @@ export function WorkTaskPanel({
               </div>
             ) : (
               <button type="button" className={css.primaryButton} disabled={actionPending || model.pendingAction !== null}
-                onClick={() => { setRetryNodeId(stage.nodeId) }}>{t('task.recovery.retry')}</button>
+                onClick={() => { setRetryNodeId(stage.nodeId) }}>{t(stage.memberRunId ? 'task.retry.memberContinue' : 'task.recovery.retry')}</button>
             )}
           </div>
         ))}
       </div>
-      <span className={css.recoveryImpact}>{t('task.retry.impact')}</span>
+      <span className={css.recoveryImpact}>{t(recoverableStages.some(item => item.stage.memberRunId) ? 'task.retry.memberImpact' : 'task.retry.impact')}</span>
     </section>
   )
 
@@ -885,6 +887,7 @@ export function WorkTaskPanel({
                   <strong>{nodeLabel(stage.nodeId)}</strong>
                   <span>{t(memberStatusKey(stage.status))}</span>
                 </div>
+                {!stage.checkpointSavedAt ? null : <p className={css.muted}>{t('task.member.progressSaved')} <time dateTime={stage.checkpointSavedAt}>{new Date(stage.checkpointSavedAt).toLocaleTimeString()}</time></p>}
                 {stage.status !== 'failed' || stage.failureClass === '' ? null : (
                   <div className={css.stageFailure} data-class={stage.failureClass}>
                     <strong>{t(stage.failureClass === 'infrastructure'
@@ -897,13 +900,13 @@ export function WorkTaskPanel({
                     <details><summary>{t('task.failure.details')}</summary><p>{stage.failureReason}</p></details></>}
                     {!recoverableStages.some(item => item.stage.nodeId === stage.nodeId) ? null : retryNodeId === stage.nodeId ? (
                       <div className={css.retryConfirm}>
-                        <span>{t('task.retry.impact')}</span>
+                        <span>{t(stage.memberRunId ? 'task.retry.memberImpact' : 'task.retry.impact')}</span>
                         <div className={css.controlActions}>
                           <button type="button" className={css.secondaryButton} onClick={() => { setRetryNodeId('') }}>{t('task.cancel')}</button>
                           <button type="button" className={css.primaryButton} disabled={actionPending} onClick={() => { void submitStageRetry() }}>{t('task.retry.confirm')}</button>
                         </div>
                       </div>
-                    ) : <button type="button" className={css.memberCorrectionButton} onClick={() => { setRetryNodeId(stage.nodeId) }}>{t('task.retry.stage')}</button>}
+                    ) : <button type="button" className={css.memberCorrectionButton} onClick={() => { setRetryNodeId(stage.nodeId) }}>{t(stage.memberRunId ? 'task.retry.memberContinue' : 'task.retry.stage')}</button>}
                   </div>
                 )}
                 {stage.startedAt === '' && stage.durationMs === 0 && stage.toolCalls === 0 ? null : (

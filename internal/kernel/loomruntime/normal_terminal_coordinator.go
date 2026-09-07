@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 )
 
 var ErrA4NormalTerminalUnsupported = errors.New(
@@ -19,6 +20,9 @@ var ErrA4NormalTerminalUnsupported = errors.New(
 type NormalTerminalCommit struct {
 	Candidate TerminalEntryV3
 	Owner     AttemptLeaseOwner
+	// BeforeLock binds a member result and its parent fence to this same
+	// terminal transaction. It runs before the member terminal locks.
+	BeforeLock func(context.Context, pgx.Tx) error
 }
 
 type NormalTerminalCoordinator interface {
@@ -144,6 +148,11 @@ func commitNormalTerminalPGWithOutcome(
 		return fail(TerminalMarkerPersistenceBegin, err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+	if commit.BeforeLock != nil {
+		if err := commit.BeforeLock(ctx, tx); err != nil {
+			return fail(TerminalMarkerPersistenceLockRun, err)
+		}
+	}
 
 	stateStore := NewPGTerminalStateStore()
 	if err := stateStore.LockTerminalRun(

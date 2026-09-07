@@ -245,6 +245,7 @@ type RuntimeGraphEntry struct {
 	AgentVersion int64
 	Graph        *loom.Graph
 	CLI          *RuntimeCLIEntry
+	Bundle       *frozen.FrozenExecutionBundle
 }
 
 type RuntimeArtifact struct {
@@ -436,6 +437,9 @@ func (l *RuntimeLoader) Load(
 		// the physical usage boundary. Outside a usage-scoped run the wiring
 		// is transparent, so direct graph execution keeps its old behavior.
 		opts = loomruntime.InstallFrozenUsageTracking(opts)
+		if bundle.FactoryKey == compiler.StandardFrozenToolsKey() {
+			opts = loomruntime.InstallFrozenMemberJournal(opts)
+		}
 
 		var graph *loom.Graph
 		if l.Registry == nil {
@@ -449,6 +453,7 @@ func (l *RuntimeLoader) Load(
 		}
 		artifact.Entries = append(artifact.Entries, RuntimeGraphEntry{
 			AgentID: bundle.Agent.AgentID, AgentVersion: bundle.Agent.AgentVersion, Graph: graph,
+			Bundle: &bundle,
 		})
 	}
 	return artifact, nil
@@ -587,4 +592,9 @@ func runtimeNilLike(value any) bool {
 	default:
 		return false
 	}
+}
+
+// DurableMember identifies the explicitly versioned member execution contract.
+func (entry RuntimeGraphEntry) DurableMember() bool {
+	return entry.Graph != nil && entry.Bundle != nil && entry.Bundle.FactoryKey == compiler.StandardFrozenToolsKey()
 }

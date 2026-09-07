@@ -1,0 +1,10 @@
+{
+  "started_at": "2026-09-07T09:25:18.987911+00:00",
+  "finished_at": "2026-09-07T09:25:40.326409+00:00",
+  "exit_code": 0,
+  "TEST_DATABASE_URL_set": true,
+  "command": [
+    "make",
+    "workbench-check"
+  ]
+}

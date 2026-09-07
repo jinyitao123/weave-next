@@ -1,0 +1,10 @@
+FAIL	github.com/jinyitao123/weave/internal/app/api [build failed]
+=== RUN   TestReclaimedMemberWaitsForExplicitContinuationRealPG
+--- PASS: TestReclaimedMemberWaitsForExplicitContinuationRealPG (0.35s)
+=== RUN   TestMemberContinuationReclaimRequiresAnotherUserCommandRealPG
+--- PASS: TestMemberContinuationReclaimRequiresAnotherUserCommandRealPG (0.28s)
+PASS
+ok  	github.com/jinyitao123/weave/internal/base/teamrun	1.405s
+FAIL
+# github.com/jinyitao123/weave/internal/app/api [github.com/jinyitao123/weave/internal/app/api.test]
+internal/app/api/loom_member_integration_pg_test.go:189:33: storeext.New(pool).GetValue undefined (type *storeext.PGExt has no field or method GetValue)

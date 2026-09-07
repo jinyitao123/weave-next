@@ -1,0 +1,6 @@
+ok  	github.com/jinyitao123/weave/internal/base/frozen	0.667s
+ok  	github.com/jinyitao123/weave/internal/kernel/compiler	0.935s
+?   	github.com/jinyitao123/weave/internal/kernel/freezer	[no test files]
+?   	github.com/jinyitao123/weave/internal/kernel/mcpregistry	[no test files]
+ok  	github.com/jinyitao123/weave/internal/kernel/workflow	1.166s
+ok  	github.com/jinyitao123/weave/internal/build/teameval	1.237s

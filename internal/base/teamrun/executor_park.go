@@ -41,6 +41,8 @@ func checkpointFromPark(
 		TeamRunGeneration:     run.Generation,
 		ExecutionLeaseEpoch:   run.ExecutionLeaseEpoch,
 		NodeID:                park.NodeID,
+		ActiveMember:          park.ActiveMember,
+		MemberBreakdown:       park.MemberBreakdown,
 		CompletedOutputs:      park.CompletedOutputs,
 		DeliveryErrors:        park.DeliveryErrors,
 		ArtifactTaskIDs:       park.ArtifactTaskIDs,
@@ -197,7 +199,7 @@ func (e *Executor) finishRuntimeResult(
 	case RuntimeCompleted:
 		succeeded, err := e.succeedRunning(
 			ctx, run, task, executorID, result.Usage, result.UsageCoverage,
-			result.UsageComplete, result.UsageIncompleteReason,
+			result.UsageComplete, result.UsageIncompleteReason, result.MemberBreakdown,
 		)
 		if err != nil {
 			return err

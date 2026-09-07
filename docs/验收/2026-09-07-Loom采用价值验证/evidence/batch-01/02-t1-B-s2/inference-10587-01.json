@@ -1,0 +1,22 @@
+{
+  "error": "",
+  "native_tool_attempt": false,
+  "output": "{\"content\":\"已收到 calculate_scenarios 真实回执：三个场景已计算并持久化——0.01c 巡航 425 年、动能 4.493775893684088e+21 J；0.03c 巡航 141.6667 年、动能 4.044398304315679e+22 J；0.05c 巡航 85 年、动能 1.1234439734210221e+23 J。按协议顺序，下一步调用 verify_results 对持久化结果进行独立验证并写入验证回执；在验证回执确认前不会声称成功，待其返回后再给出基线 ID、三组能量与巡航时间及 PASS 状态的最终结论。\",\"tool_calls\":[{\"name\":\"verify_results\",\"args_json\":\"{}\"}]}",
+  "reported_models": [
+    "k3[1m]",
+    "k3",
+    "kimi-for-coding-highspeed"
+  ],
+  "status": "completed",
+  "usage": {
+    "input_tokens": 24862,
+    "output_tokens": 188,
+    "cost_usd": 0.038904,
+    "has_tokens": true,
+    "has_cost": true,
+    "source": "cli-reported",
+    "scope": "invocation",
+    "engine_version": "2.1.245",
+    "raw_summary": "{\"is_error\":false,\"duration_api_ms\":19406,\"num_turns\":1,\"stop_reason\":\"end_turn\",\"session_id\":\"b4e73f64-336c-48e3-afb9-d8f59f024c51\",\"total_cost_usd\":0.038904,\"usage\":{\"input_tokens\":2078,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":22784,\"output_tokens\":188,\"output_tokens_details\":{\"thinking_tokens\":8},\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":0,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"not_available\",\"iterations\":[],\"speed\":\"standard\"},\"modelUsage\":{\"kimi-for-coding-highspeed\":{\"inputTokens\":787,\"outputTokens\":319,\"cacheReadInputTokens\":1024,\"cacheCreationInputTokens\":0,\"webSearchRequests\":0,\"costUSD\":0.012422,\"contextWindow\":262144,\"maxOutputTokens\":32000,\"canonicalModel\":\"kimi-for-coding-highspeed\",\"provider\":\"firstParty\"},\"k3[1m]\":{\"inputTokens\":2078,\"outputTokens\":188,\"cacheReadInputTokens\":22784,\"cacheCreationInputTokens\":0,\"webSearchRequests\":0,\"costUSD\":0.026482,\"contextWindow\":1000000,\"maxOutputTokens\":32000,\"canonicalModel\":\"k3[1m]\",\"provider\":\"firstParty\"}},\"permission_denials\":[],\"terminal_reason\":\"completed\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"subagent_stats\":{\"spawned\":0,\"requested\":{\"background\":0,\"foreground\":0,\"unset\":0},\"started_in_background\":0,\"max_depth\":0,\"spawned_by_subagents\":0,\"completed\":0,\"failed\":0,\"killed\":{\"parent\":0,\"user\":0,\"system\":0},\"refused\":{\"depth_limit\":0,\"concurrency_limit\":0,\"budget\":0},\"by_type\":{}},\"subtype\":\"success\",\"api_error_status\":null,\"result\":\"{\\\"content\\\":\\\"已收到 calculate_scenarios 真实回执：三个场景已计算并持久化——0.01c 巡航 425 年、动能 4.493775893684088e+21 J；0.03c 巡航 141.6667 年、动能 4.044398304315679e+22 J；0.05c 巡航 85 年、动能 1.1234439734210221e+23 J。按协议顺序，下一步调用 verify_results 对持久化结果进行独立验证并写入验证回执；在验证回执确认前不会声称成功，待其返回后再给出基线 ID、三组能量与巡航时间及 PASS 状态的最终结论。\\\",\\\"tool_calls\\\":[{\\\"name\\\":\\\"verify_results\\\",\\\"args_json\\\":\\\"{}\\\"}]}\",\"ttft_ms\":12519,\"ttft_stream_ms\":12036,\"time_to_request_ms\":45,\"type\":\"result\",\"duration_ms\":17018,\"uuid\":\"73933f6d-2b29-4e17-ac1c-968de705d86c\",\"queued_turn_count\":0}"
+  }
+}

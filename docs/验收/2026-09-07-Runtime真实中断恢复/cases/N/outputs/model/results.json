@@ -1,0 +1,121 @@
+{
+  "traceability": {
+    "baseline_id": "corona-baseline-1.0.0",
+    "baseline_version": "1.0.0",
+    "content_digest": "cfb12b781363c547da87e6dec9fd937079cba25501b85ff6cbfabfbc508b10c2"
+  },
+  "scope_note": "Level-0 / Pre-Phase A 概念级论证；不构成施工/制造/飞行认证依据。",
+  "scenario": {
+    "cruise_speed_c": 0.03,
+    "locked": true,
+    "pending_change": "CCR-001 (0.01c/0.05c 待平台确认，未纳入)",
+    "fact_label": "verified_fact"
+  },
+  "travel_time": {
+    "travel_time_yr": 141.66666666666669,
+    "light_travel_time_yr": 4.25,
+    "boundary": "匀速巡航，不含加速、减速与航向修正 [derived_result，边界标注]",
+    "fact_label": "derived_result"
+  },
+  "kinetic_energy": {
+    "crewed_1mt_classical_j": 4.044398304315679e+22,
+    "crewed_1mt_relativistic_j": 4.0471303222625495e+22,
+    "orbital_material_5mt_classical_j": 2.02219915215784e+23,
+    "relativistic_over_classical_ratio_1mt": 1.000675506649272,
+    "note": "动能下限，不含发动机效率、排气动能、推进剂、减速、备用与建造损耗；不得用作工程能源预算。",
+    "fact_label": "derived_result"
+  },
+  "efficiency_and_delta_v": {
+    "crewed_1mt_energy_input_lower_bound_j": {
+      "0.1": 4.044398304315679e+23,
+      "0.3": 1.3481327681052265e+23,
+      "0.5": 8.088796608631358e+22
+    },
+    "accel_decel_boundary": {
+      "flyby_min_delta_v_c": 0.03,
+      "rendezvous_min_delta_v_c": 0.06
+    },
+    "note": "效率 η 为情景参数 [assumption]；加减速边界为理想最低速度增量 [derived_result]。",
+    "fact_label": "derived_result"
+  },
+  "artificial_gravity": {
+    "radius_m": 1000,
+    "rotation_rpm": 2,
+    "centripetal_m_s2": 43.864908449286034,
+    "earth_g_multiple": 4.472975832652948,
+    "rpm_for_1g_at_1km": 0.9456528152601877,
+    "fact_label": "derived_result"
+  },
+  "dust_impact": {
+    "dust_mass_kg": 1e-06,
+    "relative_speed_c": 0.03,
+    "energy_j": 40443983.043156795,
+    "tnt_equivalent_kg": 9.666343939569023,
+    "tnt_note": "1 kg TNT = 4.184e6 J [assumption，常用换算约定]",
+    "unknowns": [
+      "尘埃通量",
+      "粒径分布",
+      "盾体面密度/间距/消耗率"
+    ],
+    "fact_label": "derived_result"
+  },
+  "turn_limit": {
+    "dv_10pct_turn_deg": 5.729577951308233,
+    "dv_15pct_turn_deg": 8.594366926962348,
+    "target_separations_deg": {
+      "proxima_barnard": 78,
+      "proxima_tau_ceti": 101,
+      "barnard_tau_ceti": 117
+    },
+    "conclusion": "10%–15% Δv 仅支持约 5.7°–8.6° 转向，无法在三目标间中途切换 [derived_result]。",
+    "fact_label": "derived_result"
+  },
+  "precursor_probe": {
+    "flight_yr": 21.25,
+    "data_return_yr": 4.25,
+    "earliest_roundtrip_yr": 25.5,
+    "note": "0.2c 为先锋探测器路线内部工况（ICD-RTE-003），不构成巡航情景扩展。",
+    "fact_label": "derived_result"
+  },
+  "route_sensitivity": {
+    "laser_sail_precursor": {
+      "name": "激光光帆先锋探测器",
+      "representative_mass_kg": 0.001,
+      "mass_fact_label": "assumption",
+      "kinetic_energy_lower_bound_j": 40443983043.1568,
+      "energy_input_lower_bound_j_by_efficiency": {
+        "0.1": 404439830431.568,
+        "0.3": 134813276810.52267,
+        "0.5": 80887966086.3136
+      },
+      "travel_time_yr": 141.66666666666669,
+      "separability_note": "本行为该路线独立数量级，不构成对其他路线可行性的外推。"
+    },
+    "uncrewed_civilization_archive": {
+      "name": "无人文明档案载荷",
+      "representative_mass_kg": 10000.0,
+      "mass_fact_label": "assumption",
+      "kinetic_energy_lower_bound_j": 4.0443983043156794e+17,
+      "energy_input_lower_bound_j_by_efficiency": {
+        "0.1": 4.044398304315679e+18,
+        "0.3": 1.3481327681052265e+18,
+        "0.5": 8.088796608631359e+17
+      },
+      "travel_time_yr": 141.66666666666669,
+      "separability_note": "本行为该路线独立数量级，不构成对其他路线可行性的外推。"
+    },
+    "crewed_interstellar_vehicle": {
+      "name": "载人星际飞行器",
+      "representative_mass_kg": 1000000000.0,
+      "mass_fact_label": "verified_fact",
+      "kinetic_energy_lower_bound_j": 4.044398304315679e+22,
+      "energy_input_lower_bound_j_by_efficiency": {
+        "0.1": 4.044398304315679e+23,
+        "0.3": 1.3481327681052265e+23,
+        "0.5": 8.088796608631358e+22
+      },
+      "travel_time_yr": 141.66666666666669,
+      "separability_note": "本行为该路线独立数量级，不构成对其他路线可行性的外推。"
+    }
+  }
+}

@@ -1,0 +1,12 @@
+=== RUN   TestReclaimedMemberWaitsForExplicitContinuationRealPG
+    member_recovery_pg_test.go:58: true succeed team run: team_run_state_conflict
+--- FAIL: TestReclaimedMemberWaitsForExplicitContinuationRealPG (0.35s)
+=== RUN   TestMemberContinuationReclaimRequiresAnotherUserCommandRealPG
+--- PASS: TestMemberContinuationReclaimRequiresAnotherUserCommandRealPG (0.27s)
+=== RUN   TestStageRetryRejectsUnknownToolOutcomeRealPG
+--- PASS: TestStageRetryRejectsUnknownToolOutcomeRealPG (0.28s)
+=== RUN   TestWorkflowMemberParkKeepsCallAndResumesItsOriginalRunRealPG
+--- PASS: TestWorkflowMemberParkKeepsCallAndResumesItsOriginalRunRealPG (0.29s)
+FAIL
+FAIL	github.com/jinyitao123/weave/internal/base/teamrun	2.028s
+FAIL

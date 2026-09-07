@@ -1,0 +1,91 @@
+{
+  "traceability": {
+    "baseline_id": "corona-baseline-1.0.0",
+    "baseline_version": "1.0.0",
+    "content_digest": "cfb12b781363c547da87e6dec9fd937079cba25501b85ff6cbfabfbc508b10c2"
+  },
+  "scope_note": "Level-0 / Pre-Phase A 概念级；动能/能源均为下限口径，非预算。",
+  "inputs": {
+    "cruise_speed_c": 0.03,
+    "mass_kg": 10000000000,
+    "efficiency": 0.3,
+    "radius_m": 1000,
+    "rotation_rpm": 1,
+    "dust_mass_kg": 0.000001
+  },
+  "outputs": {
+    "travel_time_yr": {
+      "value": 141.66666666666669,
+      "unit": "yr",
+      "formula": "ICD-FML-001",
+      "fact_label": "derived_result",
+      "boundary": "匀速，不含加减速"
+    },
+    "light_travel_time_yr": {
+      "value": 4.25,
+      "unit": "yr",
+      "fact_label": "verified_fact"
+    },
+    "kinetic_energy_classical_j": {
+      "value": 4.04439830431568e+23,
+      "unit": "J",
+      "formula": "ICD-FML-002",
+      "fact_label": "derived_result",
+      "note": "下限，非完整能源预算"
+    },
+    "kinetic_energy_relativistic_j": {
+      "value": 4.0471303222625494e+23,
+      "unit": "J",
+      "formula": "(γ−1)mc² 对照",
+      "fact_label": "derived_result"
+    },
+    "energy_input_lower_bound_j": {
+      "value": 1.3481327681052266e+24,
+      "unit": "J",
+      "fact_label": "derived_result",
+      "note": "η 为情景参数 [assumption]"
+    },
+    "kinetic_energy_tnt_equivalent_kg": {
+      "value": 96663439395690240,
+      "unit": "kg TNT",
+      "fact_label": "derived_result",
+      "note": "换算约定 [assumption]"
+    },
+    "artificial_gravity_m_s2": {
+      "value": 10.966227112321508,
+      "unit": "m/s²",
+      "formula": "ICD-FML-003",
+      "fact_label": "derived_result"
+    },
+    "artificial_gravity_g_multiple": {
+      "value": 1.118243958163237,
+      "unit": "×g0",
+      "fact_label": "derived_result"
+    },
+    "rpm_for_1g_at_radius": {
+      "value": 0.9456528152601877,
+      "unit": "rpm",
+      "fact_label": "derived_result"
+    },
+    "dust_impact_energy_j": {
+      "value": 40443983.043156795,
+      "unit": "J",
+      "formula": "ICD-FML-004",
+      "fact_label": "derived_result"
+    },
+    "dust_tnt_equivalent_kg": {
+      "value": 9.666343939569023,
+      "unit": "kg TNT",
+      "fact_label": "derived_result"
+    },
+    "turn_limit_deg_dv_10_15pct": {
+      "value": [
+        5.729577951308232,
+        8.594366926962348
+      ],
+      "unit": "deg",
+      "formula": "ICD-FML-005",
+      "fact_label": "derived_result"
+    }
+  }
+}

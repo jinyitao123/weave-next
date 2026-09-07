@@ -1,0 +1,22 @@
+{
+  "error": "",
+  "native_tool_attempt": false,
+  "output": "{\"content\":\"我将按流程先调用 inspect_workspace 查看冻结夹具结构并运行初始验收，确认三项注册失败的现状，然后再读取相关文件进行诊断。\",\"tool_calls\":[{\"name\":\"inspect_workspace\",\"args_json\":\"{}\"}]}",
+  "reported_models": [
+    "k3[1m]",
+    "k3",
+    "kimi-for-coding-highspeed"
+  ],
+  "status": "completed",
+  "usage": {
+    "input_tokens": 24498,
+    "output_tokens": 145,
+    "cost_usd": 0.0318475,
+    "has_tokens": true,
+    "has_cost": true,
+    "source": "cli-reported",
+    "scope": "invocation",
+    "engine_version": "2.1.245",
+    "raw_summary": "{\"is_error\":false,\"duration_api_ms\":10565,\"num_turns\":1,\"stop_reason\":\"end_turn\",\"session_id\":\"ff80c432-fd19-4fdf-ac22-f9276f5ea489\",\"total_cost_usd\":0.0318475,\"usage\":{\"input_tokens\":3250,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":21248,\"output_tokens\":145,\"output_tokens_details\":{\"thinking_tokens\":81},\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":0,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"not_available\",\"iterations\":[],\"speed\":\"standard\"},\"modelUsage\":{\"kimi-for-coding-highspeed\":{\"inputTokens\":0,\"outputTokens\":25,\"cacheReadInputTokens\":1447,\"cacheCreationInputTokens\":0,\"webSearchRequests\":0,\"costUSD\":0.0013484999999999999,\"contextWindow\":262144,\"maxOutputTokens\":32000,\"canonicalModel\":\"kimi-for-coding-highspeed\",\"provider\":\"firstParty\"},\"k3[1m]\":{\"inputTokens\":3250,\"outputTokens\":145,\"cacheReadInputTokens\":21248,\"cacheCreationInputTokens\":0,\"webSearchRequests\":0,\"costUSD\":0.030499,\"contextWindow\":1000000,\"maxOutputTokens\":32000,\"canonicalModel\":\"k3[1m]\",\"provider\":\"firstParty\"}},\"permission_denials\":[],\"terminal_reason\":\"completed\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"subagent_stats\":{\"spawned\":0,\"requested\":{\"background\":0,\"foreground\":0,\"unset\":0},\"started_in_background\":0,\"max_depth\":0,\"spawned_by_subagents\":0,\"completed\":0,\"failed\":0,\"killed\":{\"parent\":0,\"user\":0,\"system\":0},\"refused\":{\"depth_limit\":0,\"concurrency_limit\":0,\"budget\":0},\"by_type\":{}},\"subtype\":\"success\",\"api_error_status\":null,\"result\":\"{\\\"content\\\":\\\"我将按流程先调用 inspect_workspace 查看冻结夹具结构并运行初始验收，确认三项注册失败的现状，然后再读取相关文件进行诊断。\\\",\\\"tool_calls\\\":[{\\\"name\\\":\\\"inspect_workspace\\\",\\\"args_json\\\":\\\"{}\\\"}]}\",\"ttft_ms\":8238,\"ttft_stream_ms\":3606,\"time_to_request_ms\":55,\"type\":\"result\",\"duration_ms\":8293,\"uuid\":\"f8ccdef5-3b48-41ac-a422-9449af3afdb7\",\"queued_turn_count\":0}"
+  }
+}

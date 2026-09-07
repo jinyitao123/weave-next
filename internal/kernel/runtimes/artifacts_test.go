@@ -20,6 +20,7 @@ func TestSourceDeliveryKeepsApplicationAndVerificationDependenciesAcrossRuntimeW
 		"app/calc.js":              "window.travelYears = distance => distance / 0.03;",
 		"app/tests/check.cjs":      "const assert = require('node:assert/strict'); assert.equal(1, 1);\n",
 		"model/recalc.py":          "print(4.25 / 0.03)\n",
+		"model/derive_params.rb":   "require 'json'\nputs JSON.generate({speed: 0.03})\n",
 		"drawings/concept.dxf":     "0\nSECTION\n2\nENTITIES\n0\nENDSEC\n0\nEOF\n",
 		"verification/run.sh":      "#!/bin/sh\npython3 ../model/recalc.py\n",
 		"verification/results.log": "passed\n",

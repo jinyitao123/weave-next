@@ -1,0 +1,7 @@
+{
+  "source": "/Users/jinyitao/Downloads/corona_scenario_0.03c_baseline-1.0.0.json",
+  "downloaded_bytes": 2512,
+  "sha256": "353b49d1528f3fa39d75e034636467cca8da684237881044c96aa3babb357ab7",
+  "method": "Chrome native UI export button; mass slider incremented 1e9 -> 1e10 and rpm slider decremented 2 -> 1",
+  "observed_file_url": "file:// local, without app server"
+}

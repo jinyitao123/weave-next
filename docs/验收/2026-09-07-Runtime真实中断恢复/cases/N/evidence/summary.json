@@ -1,0 +1,77 @@
+{
+  "case": "N",
+  "summarized_at": "2026-09-07T03:13:00.367246+00:00",
+  "status": {
+    "case": "N",
+    "finished_at": "2026-09-07T03:08:56.878480+00:00",
+    "driver_exit": 0,
+    "milestone_observed": true,
+    "fault_injected": false,
+    "task_id": "task-12c3b74a36b2e690afffbc5ef247820b",
+    "workdir": "/private/tmp/weave-runtime-value-20260907-sqtugx3m/runtime-workspaces/.invocations/task-12c3b74a36b2e690afffbc5ef247820b/default/corona-prephase-a-lab-v3-luna-digital-engineering-builder/workdir",
+    "elapsed_seconds": 1311.559,
+    "status": "engine_completed",
+    "independent_acceptance": "pending"
+  },
+  "physical_tasks": [
+    {
+      "id": "task-12c3b74a36b2e690afffbc5ef247820b",
+      "status": "completed",
+      "worker_id": null,
+      "runtime_id": "488f724c-3a47-4816-823d-63dbbf4eecb7",
+      "created_at": "2026-09-07T10:47:05.393325+08:00",
+      "started_at": "2026-09-07T10:47:05.619668+08:00",
+      "completed_at": "2026-09-07T11:08:53.398658+08:00"
+    }
+  ],
+  "physical_task_count": 1,
+  "logical_invocation_id": "runtime-value-N/engineering/0",
+  "queue_status": "completed",
+  "queue_error": null,
+  "engine_status": "completed",
+  "reported_models": [
+    "k3[1m]",
+    "k3",
+    "kimi-for-coding-highspeed"
+  ],
+  "public_events": {
+    "count": 126,
+    "kinds": {
+      "tool_call": 58,
+      "tool_result": 58,
+      "text": 9,
+      "stream_end": 1
+    },
+    "sequence_unique": true,
+    "sequence_contiguous": true
+  },
+  "files": {
+    "count": 26,
+    "receipt_artifact_count": 26,
+    "receipt_hash_mismatches": [],
+    "files_without_receipt": []
+  },
+  "usage": {
+    "source": "cli-reported",
+    "scope": "invocation",
+    "input_tokens_including_cache": 2556099,
+    "output_tokens": 44596,
+    "cli_reported_cost_usd": 2.8489059999999995,
+    "cost_is_provider_invoice": false,
+    "raw_usage": null,
+    "session_id": null,
+    "turns": null,
+    "missing_is_unknown_not_zero": true
+  },
+  "scope": "real member execution, not full workflow or Workbench recovery",
+  "independent_acceptance": {
+    "at": "2026-09-07T03:10:48.744626+00:00",
+    "case": "N",
+    "engine_completed": true,
+    "artifact_checks_passed": true,
+    "browser_checks_passed": true,
+    "browser_final_hash_mismatches": [],
+    "scope": "full historical engineering member contract only; not whole-team acceptance",
+    "passed": true
+  }
+}

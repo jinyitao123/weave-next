@@ -3,6 +3,7 @@ package teamrun
 import (
 	"context"
 	"errors"
+	"github.com/jinyitao123/weave/internal/base/execution"
 	"strings"
 )
 
@@ -28,6 +29,9 @@ type FailureSummary struct {
 func ClassifyFailure(err error) FailureSummary {
 	if err == nil {
 		return FailureSummary{}
+	}
+	if errors.Is(err, execution.ErrMemberOutcomeUnknown) {
+		return FailureSummary{Class: FailureClassInfrastructure, Reason: "tool outcome requires reconciliation before continuing"}
 	}
 	if errors.Is(err, context.Canceled) || executionErrorCode(err) == ErrorCodeCancelled {
 		return FailureSummary{Class: FailureClassCancelled, Reason: "execution was stopped"}
@@ -59,6 +63,10 @@ func ClassifyFailure(err error) FailureSummary {
 		return FailureSummary{Class: FailureClassVerification, Reason: "the stage result did not satisfy its declared output requirements"}
 	case ErrorCodeDeliveryUnavailable:
 		return FailureSummary{Class: FailureClassVerification, Reason: "the stage result could not be preserved as a verified deliverable"}
+	}
+	if strings.Contains(message, "runtime_process_interrupted:") {
+		return FailureSummary{Class: FailureClassInfrastructure, Retryable: true,
+			Reason: "the runtime process was interrupted before the stage could finish"}
 	}
 	if strings.Contains(message, "runtime_credentials_missing") || strings.Contains(message, "missing environment variable") {
 		return FailureSummary{Class: FailureClassInfrastructure, Reason: "the runtime provider credential is missing; configure runtime authentication before retrying"}

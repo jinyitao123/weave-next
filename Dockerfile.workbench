@@ -1,12 +1,15 @@
 ARG NODE_IMAGE=node:22-slim
 ARG WEAVE_IMAGE=weave-platform:latest
 ARG NPM_REGISTRY=https://registry.npmjs.org
+ARG DEBIAN_MIRROR=http://deb.debian.org
 
 FROM ${NODE_IMAGE} AS build
 ARG NPM_REGISTRY
+ARG DEBIAN_MIRROR
 RUN --mount=type=cache,id=workbench-apt-cache,target=/var/cache/apt,sharing=locked \
   --mount=type=cache,id=workbench-apt-lists,target=/var/lib/apt/lists,sharing=locked \
   rm -f /etc/apt/apt.conf.d/docker-clean \
+  && sed -i "s|http://deb.debian.org|${DEBIAN_MIRROR}|g" /etc/apt/sources.list.d/debian.sources \
   && apt-get update \
   && apt-get install -y --no-install-recommends build-essential git musl-tools python3 ca-certificates
 RUN --mount=type=cache,id=workbench-npm,target=/root/.npm,sharing=locked \
@@ -28,9 +31,11 @@ RUN test -n "$DSH_CLIENT_COMMIT_HASH" \
 FROM ${WEAVE_IMAGE} AS weave-runtime
 
 FROM ${NODE_IMAGE} AS runtime
+ARG DEBIAN_MIRROR
 RUN --mount=type=cache,id=workbench-apt-cache,target=/var/cache/apt,sharing=locked \
   --mount=type=cache,id=workbench-apt-lists,target=/var/lib/apt/lists,sharing=locked \
   rm -f /etc/apt/apt.conf.d/docker-clean \
+  && sed -i "s|http://deb.debian.org|${DEBIAN_MIRROR}|g" /etc/apt/sources.list.d/debian.sources \
   && apt-get update \
   && apt-get install -y --no-install-recommends bash ca-certificates git ripgrep
 WORKDIR /app

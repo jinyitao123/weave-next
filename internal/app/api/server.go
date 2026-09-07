@@ -662,6 +662,11 @@ func (s *Server) ConfigureTeamRunWorkers() {
 		Corrections:    correctionStore,
 		Activities:     activityStore,
 	}
+	memberRunner, err := loomruntime.NewMemberRunner(storeext.New(pool))
+	if err != nil {
+		panic(fmt.Sprintf("configure frozen member runner: %v", err))
+	}
+	runtime.Members = memberRunner
 	checkpointReader := &teamrun.FanoutCheckpointReader{
 		Transactions: pool, Runs: runStore, Checkpoints: checkpointStore,
 	}

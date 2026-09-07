@@ -64,8 +64,23 @@ func (e *Executor) processRuntimeRetry(ctx context.Context, task *taskqueue.Task
 		checkpoint.TeamRunGeneration != run.Generation || checkpoint.ExecutionLeaseEpoch != run.ExecutionLeaseEpoch {
 		return reject()
 	}
+	// One accepted continuation authorizes one process entry. If its queue
+	// lease is reclaimed after a crash, wait for another user continuation.
+	memberReclaimed := false
+	if checkpoint.ActiveMember != nil {
+		inserted, err := tx.Exec(ctx, `INSERT INTO loom_store(namespace,key,value,updated_at)
+			VALUES($1,$2,$3,statement_timestamp()) ON CONFLICT(namespace,key) DO NOTHING`,
+			"member-retry-entry:"+run.WorkspaceID, task.ID, []byte(`{"schema_version":1}`))
+		if err != nil {
+			return err
+		}
+		memberReclaimed = inserted.RowsAffected() == 0
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return err
+	}
+	if memberReclaimed {
+		return e.parkInterruptedMember(ctx, run, task, workerID, executorID, checkpoint)
 	}
 	result, runErr := e.executeWithHeartbeat(ctx, task, workerID, func(execCtx context.Context) (RuntimeResult, error) {
 		return e.Runtime.ResumeCheckpoint(execCtx, run, task, checkpoint)
@@ -76,7 +91,7 @@ func (e *Executor) processRuntimeRetry(ctx context.Context, task *taskqueue.Task
 	}
 	if runErr != nil {
 		failed, failErr := e.failRunning(ctx, run, task, executorID, runErr,
-			result.Usage, result.UsageCoverage, result.UsageComplete, result.UsageIncompleteReason)
+			result.Usage, result.UsageCoverage, result.UsageComplete, result.UsageIncompleteReason, result.MemberBreakdown)
 		if failErr != nil {
 			return failErr
 		}

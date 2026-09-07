@@ -1,0 +1,21 @@
+{
+  "error": "",
+  "native_tool_attempt": false,
+  "output": "{\"content\":\"三个场景已计算并持久化：0.01c→425 年/4.4938e21 J，0.03c→141.6667 年/4.0444e22 J，0.05c→85 年/1.1234e23 J，均与基线 corona-prephase-a-v1 的输入一致。按协议顺序，下一步调用 verify_results 对持久化结果做独立验证并写入验证回执；收到真实验证回执后，我将据此汇报基线 id、三组能量与巡航时间及 PASS 状态，不会在回执到达前声称成功。\",\"tool_calls\":[{\"name\":\"verify_results\",\"args_json\":\"{}\"}]}",
+  "reported_models": [
+    "k3[1m]",
+    "k3"
+  ],
+  "status": "completed",
+  "usage": {
+    "input_tokens": 24838,
+    "output_tokens": 198,
+    "cost_usd": 0.026611999999999997,
+    "has_tokens": true,
+    "has_cost": true,
+    "source": "cli-reported",
+    "scope": "invocation",
+    "engine_version": "2.1.245",
+    "raw_summary": "{\"is_error\":false,\"duration_api_ms\":18841,\"num_turns\":1,\"stop_reason\":\"end_turn\",\"session_id\":\"f72498af-eef9-48db-bb89-b7b79649c8cc\",\"total_cost_usd\":0.026611999999999997,\"usage\":{\"input_tokens\":2054,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":22784,\"output_tokens\":198,\"output_tokens_details\":{\"thinking_tokens\":36},\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":0,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"not_available\",\"iterations\":[],\"speed\":\"standard\"},\"modelUsage\":{\"k3[1m]\":{\"inputTokens\":2054,\"outputTokens\":198,\"cacheReadInputTokens\":22784,\"cacheCreationInputTokens\":0,\"webSearchRequests\":0,\"costUSD\":0.026611999999999997,\"contextWindow\":1000000,\"maxOutputTokens\":32000,\"canonicalModel\":\"k3[1m]\",\"provider\":\"firstParty\"}},\"permission_denials\":[],\"terminal_reason\":\"completed\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"subagent_stats\":{\"spawned\":0,\"requested\":{\"background\":0,\"foreground\":0,\"unset\":0},\"started_in_background\":0,\"max_depth\":0,\"spawned_by_subagents\":0,\"completed\":0,\"failed\":0,\"killed\":{\"parent\":0,\"user\":0,\"system\":0},\"refused\":{\"depth_limit\":0,\"concurrency_limit\":0,\"budget\":0},\"by_type\":{}},\"subtype\":\"success\",\"api_error_status\":null,\"result\":\"{\\\"content\\\":\\\"三个场景已计算并持久化：0.01c→425 年/4.4938e21 J，0.03c→141.6667 年/4.0444e22 J，0.05c→85 年/1.1234e23 J，均与基线 corona-prephase-a-v1 的输入一致。按协议顺序，下一步调用 verify_results 对持久化结果做独立验证并写入验证回执；收到真实验证回执后，我将据此汇报基线 id、三组能量与巡航时间及 PASS 状态，不会在回执到达前声称成功。\\\",\\\"tool_calls\\\":[{\\\"name\\\":\\\"verify_results\\\",\\\"args_json\\\":\\\"{}\\\"}]}\",\"ttft_ms\":18637,\"ttft_stream_ms\":12935,\"time_to_request_ms\":48,\"type\":\"result\",\"duration_ms\":18891,\"uuid\":\"ddf992ef-571e-4e6e-a76c-1d610af79143\",\"queued_turn_count\":0}"
+  }
+}

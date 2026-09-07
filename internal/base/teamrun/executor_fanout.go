@@ -133,7 +133,7 @@ func (e *Executor) processFanoutResume(ctx context.Context, task *taskqueue.Task
 	if runErr != nil {
 		failed, failErr := e.failRunning(
 			ctx, run, task, executorID, runErr,
-			result.Usage, result.UsageCoverage, result.UsageComplete, result.UsageIncompleteReason,
+			result.Usage, result.UsageCoverage, result.UsageComplete, result.UsageIncompleteReason, result.MemberBreakdown,
 		)
 		if failErr != nil {
 			return failErr
