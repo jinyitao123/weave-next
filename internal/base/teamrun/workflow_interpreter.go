@@ -20,6 +20,7 @@ import (
 	"github.com/jinyitao123/loom/contract"
 	"github.com/jinyitao123/weave/internal/base/deliverable"
 	"github.com/jinyitao123/weave/internal/base/execution"
+	"github.com/jinyitao123/weave/internal/base/fileartifact"
 	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/kernel/loomruntime"
 	"github.com/jinyitao123/weave/internal/kernel/workflow"
@@ -46,6 +47,9 @@ const (
 )
 
 type serialMachineStart struct {
+	MemberBreakdown map[string]loomruntime.TerminalChildBreakdownV3
+	ActiveMember    *ActiveMemberInvocation
+	MemberContext   *workflowMemberContext
 	NodeID          string
 	Outputs         map[string]any
 	ArtifactTaskIDs map[string][]string
@@ -80,6 +84,8 @@ type serialMachineStart struct {
 }
 
 type serialMachineResult struct {
+	MemberBreakdown       map[string]loomruntime.TerminalChildBreakdownV3
+	ActiveMember          *ActiveMemberInvocation
 	Status                serialMachineStatus
 	Output                any
 	Outputs               map[string]any
@@ -112,12 +118,15 @@ func nodePhysicalUsageAttemptID(callID, physicalID string, index int) string {
 }
 
 type nodeUsageReport struct {
-	Totals        loomruntime.UsageTotals
-	Coverage      loomruntime.UsageCoverage
-	CLIAttempts   []workflow.RuntimeCLIUsageAttempt
-	Events        []workflow.RuntimeCLIEvent
-	Artifacts     []workflow.RuntimeCLIArtifact
-	DeliveryError string
+	MemberRunID           string
+	MemberReceipts        []loomruntime.ConfirmedUsageReceipt
+	MemberUsageIncomplete bool
+	Totals                loomruntime.UsageTotals
+	Coverage              loomruntime.UsageCoverage
+	CLIAttempts           []workflow.RuntimeCLIUsageAttempt
+	Events                []workflow.RuntimeCLIEvent
+	Artifacts             []workflow.RuntimeCLIArtifact
+	DeliveryError         string
 }
 
 func runSerialMachine(
@@ -129,6 +138,11 @@ func runSerialMachine(
 	start serialMachineStart,
 ) serialMachineResult {
 	usage := start.Usage
+	activeMember := start.ActiveMember
+	memberBreakdown := make(map[string]loomruntime.TerminalChildBreakdownV3, len(start.MemberBreakdown))
+	for id, contribution := range start.MemberBreakdown {
+		memberBreakdown[id] = contribution
+	}
 	// A fresh or legacy start is usage-complete; only an explicit
 	// usage_incomplete_reason (persisted across park/resume) marks the run
 	// incomplete. The flag is always paired with a non-empty reason.
@@ -138,7 +152,7 @@ func runSerialMachine(
 		usageComplete = start.UsageComplete
 	}
 	fail := func(err error) serialMachineResult {
-		return serialMachineResult{
+		return serialMachineResult{ActiveMember: activeMember, MemberBreakdown: memberBreakdown,
 			Status: serialFailed, Usage: usage, Err: err,
 			UsageComplete: usageComplete, UsageIncompleteReason: usageIncompleteReason,
 		}
@@ -194,6 +208,32 @@ func runSerialMachine(
 	if current == "" {
 		current = graph.EntryNodeID
 	}
+	writeCheckpoint := func() error {
+		if start.RecordCheckpoint == nil {
+			return nil
+		}
+		completed := make(map[string]json.RawMessage, len(outputs))
+		for id, output := range outputs {
+			encoded, err := json.Marshal(output)
+			if err != nil {
+				return executionError(ErrorCodeOutputInvalid, err)
+			}
+			completed[id] = encoded
+		}
+		usageCheckpoint, err := usage.MarshalCheckpoint()
+		if err != nil {
+			return executionError(ErrorCodeExecutionUnrecoverable, err)
+		}
+		checkpoint := checkpointFromPark(start.Run, RuntimePark{MemberBreakdown: memberBreakdown,
+			ActiveMember: activeMember, NodeID: current, CompletedOutputs: completed, ArtifactTaskIDs: artifactTaskIDs,
+			DeliveryErrors: deliveryErrors, Corrections: start.Corrections, UsageCheckpoint: usageCheckpoint,
+			UsageComplete: usageComplete, UsageIncompleteReason: usageIncompleteReason,
+		}, time.Now().UTC())
+		if err := start.RecordCheckpoint(ctx, checkpoint); err != nil {
+			return executionError(ErrorCodeExecutionUnrecoverable, err)
+		}
+		return nil
+	}
 	stepBudget := serialMachineStepBudget(graph)
 	for steps := 0; current != ""; steps++ {
 		if steps >= stepBudget {
@@ -209,27 +249,8 @@ func runSerialMachine(
 				fmt.Errorf("node %q is unavailable", current),
 			))
 		}
-		if start.RecordCheckpoint != nil {
-			completed := make(map[string]json.RawMessage, len(outputs))
-			for id, output := range outputs {
-				encoded, err := json.Marshal(output)
-				if err != nil {
-					return fail(executionError(ErrorCodeOutputInvalid, err))
-				}
-				completed[id] = encoded
-			}
-			usageCheckpoint, err := usage.MarshalCheckpoint()
-			if err != nil {
-				return fail(executionError(ErrorCodeExecutionUnrecoverable, err))
-			}
-			checkpoint := checkpointFromPark(start.Run, RuntimePark{
-				NodeID: current, CompletedOutputs: completed, ArtifactTaskIDs: artifactTaskIDs,
-				DeliveryErrors: deliveryErrors, Corrections: start.Corrections, UsageCheckpoint: usageCheckpoint,
-				UsageComplete: usageComplete, UsageIncompleteReason: usageIncompleteReason,
-			}, time.Now().UTC())
-			if err := start.RecordCheckpoint(ctx, checkpoint); err != nil {
-				return fail(executionError(ErrorCodeExecutionUnrecoverable, err))
-			}
+		if err := writeCheckpoint(); err != nil {
+			return fail(err)
 		}
 		if start.CheckCorrection != nil {
 			detail, err := start.CheckCorrection(ctx, current, outputs)
@@ -241,7 +262,7 @@ func runSerialMachine(
 				if err != nil {
 					return fail(executionError(ErrorCodeExecutionUnrecoverable, err))
 				}
-				return serialMachineResult{Status: serialParked, Outputs: outputs, ArtifactTaskIDs: artifactTaskIDs, NodeID: current,
+				return serialMachineResult{ActiveMember: activeMember, MemberBreakdown: memberBreakdown, Status: serialParked, Outputs: outputs, ArtifactTaskIDs: artifactTaskIDs, NodeID: current,
 					DeliveryErrors: deliveryErrors,
 					WaitKind:       WaitCorrection, WaitDetail: encoded, Usage: usage,
 					UsageComplete: usageComplete, UsageIncompleteReason: usageIncompleteReason}
@@ -264,14 +285,60 @@ func runSerialMachine(
 				start.RecordActivity(ctx, "member_started", node, memberID, memberVersion,
 					map[string]any{"input_names": inputNames, "input_summary": inputSummary})
 			}
-			callID, err := usage.NextCall(start.Run.RunID, node.ID)
-			if err != nil {
-				return fail(executionError(ErrorCodeExecutionUnrecoverable, err))
+			durable := isDurableMemberEntry(entries[runtimeEntryKey(memberID, memberVersion)])
+			callID := ""
+			if activeMember != nil {
+				if !durable || activeMember.NodeID != node.ID {
+					return fail(executionError(ErrorCodeIdentityMismatch, errors.New("pending member differs from current node")))
+				}
+				callID = activeMember.CallID
+			} else {
+				var err error
+				callID, err = usage.NextCall(start.Run.RunID, node.ID)
+				if err != nil {
+					return fail(executionError(ErrorCodeExecutionUnrecoverable, err))
+				}
+				if durable {
+					ordinal, _ := usage.CallOrdinal(callID)
+					activeMember = &ActiveMemberInvocation{NodeID: node.ID, CallID: callID, EntryOrdinal: ordinal}
+				}
 			}
-			output, nodeUsage, err := runAgentNode(
-				execution.WithInvocationID(execution.WithInputTaskIDs(ctx, nodeInputTaskIDs(node, artifactTaskIDs)), fmt.Sprintf("%s/%d/%s", start.Run.RunSnapshotID, start.Run.ResumeGeneration, callID)), node, payload, entries, runInput, outputs, start.Corrections,
-			)
-			if len(nodeUsage.CLIAttempts) == 0 {
+			nodeCtx := execution.WithInvocationID(execution.WithInputTaskIDs(ctx, nodeInputTaskIDs(node, artifactTaskIDs)), fmt.Sprintf("%s/%d/%s", start.Run.RunSnapshotID, start.Run.ResumeGeneration, callID))
+			if durable {
+				if start.MemberContext == nil || start.RecordCheckpoint == nil {
+					return fail(executionError(ErrorCodeRuntimeIncompatible, errors.New("durable member runner and parent checkpoint writer are required")))
+				}
+				if err := writeCheckpoint(); err != nil {
+					return fail(err)
+				}
+				memberCtx := *start.MemberContext
+				memberCtx.Active = *activeMember
+				nodeCtx = context.WithValue(nodeCtx, workflowMemberContextKey{}, memberCtx)
+			}
+			output, nodeUsage, err := runAgentNode(nodeCtx, node, payload, entries, runInput, outputs, start.Corrections)
+			if durable {
+				if nodeUsage.MemberRunID != "" {
+					teamID, workflowID, version, snapshotID := start.Run.TeamID, start.Run.WorkflowID, start.Run.WorkflowVersion, start.Run.RunSnapshotID
+					memberBreakdown[nodeUsage.MemberRunID] = loomruntime.TerminalChildBreakdownV3{
+						RunID: nodeUsage.MemberRunID, ParentRunID: start.Run.RunID, ParentSeq: int64(activeMember.EntryOrdinal) + 1,
+						Agent:  entries[runtimeEntryKey(memberID, memberVersion)].Bundle.Agent.Name,
+						TeamID: &teamID, WorkflowID: &workflowID, WorkflowVersion: &version, RunSnapshotID: &snapshotID,
+						SelfExclusive: loomruntime.TerminalUsage{InputTokens: nodeUsage.Totals.InputTokens, OutputTokens: nodeUsage.Totals.OutputTokens, CostUSD: nodeUsage.Totals.CostUSD, ToolCalls: nodeUsage.Totals.ToolCalls},
+					}
+				}
+				for _, receipt := range nodeUsage.MemberReceipts {
+					attemptID := nodePhysicalUsageAttemptID(callID, receipt.AttemptID, 0)
+					if usageErr := usage.StartAttempt(callID, attemptID); usageErr != nil {
+						return fail(usageErr)
+					}
+					if usageErr := usage.ConfirmAttemptWithMetadata(callID, attemptID, receipt.Usage, receipt.ToolCalls, receipt.Metadata); usageErr != nil {
+						return fail(usageErr)
+					}
+				}
+				if nodeUsage.MemberUsageIncomplete {
+					usageComplete, usageIncompleteReason = false, "member_model_response_lost"
+				}
+			} else if len(nodeUsage.CLIAttempts) == 0 {
 				attemptID := nodeUsageAttemptID(callID)
 				if startErr := usage.StartAttempt(callID, attemptID); startErr != nil {
 					return fail(executionError(ErrorCodeExecutionUnrecoverable, startErr))
@@ -352,6 +419,10 @@ func runSerialMachine(
 					}
 				}
 				next, routed := edgeTarget(edges[current], machine.RouteFailure)
+				recoveryBlocked := durable && errors.Is(err, loomruntime.ErrMemberOutcomeUnknown)
+				if recoveryBlocked {
+					routed = false
+				}
 				failure := ClassifyFailure(err)
 				retryable := !routed && failure.Class == FailureClassInfrastructure && failure.Retryable
 				if start.RecordActivity != nil {
@@ -361,25 +432,31 @@ func runSerialMachine(
 					})
 				}
 				if routed {
+					activeMember = nil
 					current = next
 					continue
 				}
-				if retryable {
+				if retryable || recoveryBlocked {
 					detail, encodeErr := json.Marshal(RuntimeWaitDetailV1{
 						SchemaVersion: 1, WaitType: "runtime", NodeID: node.ID,
+						RecoveryBlocked: recoveryBlocked,
 					})
 					if encodeErr != nil {
 						return fail(executionError(ErrorCodeExecutionUnrecoverable, encodeErr))
 					}
-					return serialMachineResult{Status: serialParked, Outputs: outputs, ArtifactTaskIDs: artifactTaskIDs, NodeID: node.ID,
+					return serialMachineResult{ActiveMember: activeMember, MemberBreakdown: memberBreakdown, Status: serialParked, Outputs: outputs, ArtifactTaskIDs: artifactTaskIDs, NodeID: node.ID,
 						DeliveryErrors: deliveryErrors,
 						WaitKind:       WaitRuntime, WaitDetail: detail, Usage: usage,
 						UsageComplete: usageComplete, UsageIncompleteReason: usageIncompleteReason}
 				}
 				return fail(err)
 			}
+			activeMember = nil
 			outputs[node.ID] = output
 			delete(artifactTaskIDs, node.ID)
+			if durable && nodeUsage.MemberRunID != "" {
+				artifactTaskIDs[node.ID] = []string{"member:" + nodeUsage.MemberRunID}
+			}
 			for _, attempt := range nodeUsage.CLIAttempts {
 				if attempt.AttemptID != "" {
 					artifactTaskIDs[node.ID] = []string{attempt.AttemptID}
@@ -507,7 +584,7 @@ func runSerialMachine(
 			if err != nil {
 				return fail(executionError(ErrorCodeRuntimeIncompatible, err))
 			}
-			return serialMachineResult{
+			return serialMachineResult{ActiveMember: activeMember, MemberBreakdown: memberBreakdown,
 				Status: serialParked, Outputs: outputs, ArtifactTaskIDs: artifactTaskIDs, NodeID: joinNodeID,
 				DeliveryErrors: deliveryErrors,
 				WaitKind:       WaitFanout, WaitDetail: detail, Usage: usage,
@@ -617,7 +694,7 @@ func runSerialMachine(
 					}
 				}
 			}
-			return serialMachineResult{
+			return serialMachineResult{ActiveMember: activeMember, MemberBreakdown: memberBreakdown,
 				Status: serialCompleted, Output: output, Usage: usage,
 				UsageComplete: usageComplete, UsageIncompleteReason: usageIncompleteReason,
 			}
@@ -661,7 +738,7 @@ func runSerialMachine(
 					}
 					return fail(executionError(ErrorCodeRuntimeIncompatible, err))
 				}
-				return serialMachineResult{
+				return serialMachineResult{ActiveMember: activeMember, MemberBreakdown: memberBreakdown,
 					Status: serialParked, Outputs: outputs, ArtifactTaskIDs: artifactTaskIDs, NodeID: node.ID,
 					DeliveryErrors: deliveryErrors,
 					WaitKind:       WaitHuman, WaitDetail: detail, Usage: usage,
@@ -686,7 +763,7 @@ func runSerialMachine(
 			if err != nil {
 				return fail(executionError(ErrorCodeRuntimeIncompatible, err))
 			}
-			return serialMachineResult{
+			return serialMachineResult{ActiveMember: activeMember, MemberBreakdown: memberBreakdown,
 				Status: serialParked, Outputs: outputs, ArtifactTaskIDs: artifactTaskIDs, NodeID: node.ID,
 				DeliveryErrors: deliveryErrors,
 				WaitKind:       WaitTimer, WaitDetail: detail, Usage: usage,
@@ -1196,7 +1273,30 @@ func runAgentNode(
 	}
 	graphOutcomes := make(chan graphOutcome, 1)
 	go func() {
-		result, err := entry.Graph.Run(execCtx, graphState, loom.NewMemStore())
+		var result *loom.RunResult
+		var err error
+		if isDurableMemberEntry(entry) {
+			member, ok := execCtx.Value(workflowMemberContextKey{}).(workflowMemberContext)
+			if !ok || member.Runner == nil {
+				err = errors.New("durable member entry requires a serial workflow owner; parallel entry is unsupported")
+			} else {
+				var attribution loomruntime.TerminalAttribution
+				attribution, err = member.attribution()
+				if err == nil {
+					delete(graphState, "__run_id")
+					result, err = member.Runner.Run(execCtx, loomruntime.MemberRequest{
+						WorkspaceID: member.Run.WorkspaceID, ParentRunID: member.Run.RunID,
+						RunSnapshotID: member.Run.RunSnapshotID, NodeID: node.ID, CallID: member.Active.CallID,
+						ParentGeneration: int64(member.Run.Generation), Bundle: *entry.Bundle,
+						ArtifactHash: member.ArtifactHash, Graph: entry.Graph, Input: graphState,
+						Attribution: attribution, ParentGuard: member.Guard,
+						RetryableFailure: func(err error) bool { return ClassifyFailure(err).Retryable },
+					})
+				}
+			}
+		} else {
+			result, err = entry.Graph.Run(execCtx, graphState, loom.NewMemStore())
+		}
 		graphOutcomes <- graphOutcome{result: result, err: err}
 	}()
 	var graphResult graphOutcome
@@ -1290,7 +1390,17 @@ func frozenNodeUsage(result *loom.RunResult) (nodeUsageReport, error) {
 	if err != nil {
 		return nodeUsageReport{}, err
 	}
-	return nodeUsageReport{Totals: accumulator.Totals(), Coverage: accumulator.Coverage()}, nil
+	files, err := fileartifact.MemberFiles(result.State)
+	if err != nil {
+		return nodeUsageReport{}, err
+	}
+	artifacts := make([]workflow.RuntimeCLIArtifact, 0, len(files))
+	for _, file := range files {
+		artifacts = append(artifacts, workflow.RuntimeCLIArtifact{Path: file.Path, ContentType: file.ContentType, Content: file.Content})
+	}
+	incomplete, _ := result.State["__member_usage_incomplete"].(bool)
+	return nodeUsageReport{MemberRunID: result.RunID, Totals: accumulator.Totals(), Coverage: accumulator.Coverage(),
+		MemberReceipts: accumulator.ConfirmedReceipts(), MemberUsageIncomplete: incomplete, Artifacts: artifacts}, nil
 }
 
 // validateAgentNodeOutput enforces the node-level Output contract at runtime.

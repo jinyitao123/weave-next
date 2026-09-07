@@ -165,6 +165,17 @@
         "previous_packages": 18,
         "packages": 17
       }
+    },
+    {
+      "date": "2026-09-06",
+      "reason": "Follow-up real PostgreSQL regression assertion now verifies two current-attempt text records plus two physical-attempt markers. Six test-only lines; production, packages, dependencies and migration targets unchanged.",
+      "record": "docs/发布/v0.1.0-CI复验.md",
+      "app": {
+        "previous_lines": 42296,
+        "previous_production_lines": 35417,
+        "lines_added": 6,
+        "production_lines_added": 0
+      }
     }
   ],
   "migration_targets": {
@@ -225,7 +236,7 @@
     ]
   },
   "app": {
-    "lines": 42296,
+    "lines": 42302,
     "production_lines": 35417,
     "packages": 17,
     "external_dependencies": 7,

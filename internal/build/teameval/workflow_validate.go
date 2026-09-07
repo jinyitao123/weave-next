@@ -274,7 +274,7 @@ func validateWorkflowForTeam(
 			continue
 		}
 
-		selectedFactory, factoryErr := workflowFactoryRegistry().SelectFactoryKey(record.GraphType)
+		selectedFactory, factoryErr := workflowFactoryRegistry().SelectAgentFactoryKey(*record)
 		factoryKey := machine.FactoryKey{
 			FactoryID:      selectedFactory.FactoryID,
 			FactoryVersion: selectedFactory.FactoryVersion,
@@ -352,7 +352,7 @@ func ValidateWorkflowForBlueprint(
 		return out, errors.New("create Blueprint lead is unavailable")
 	}
 	lead := machine.AgentVersionKey{AgentID: leadMember.Name, AgentVersion: 1}
-	standardFactory, factoryErr := workflowFactoryRegistry().SelectFactoryKey("standard")
+	standardFactory, factoryErr := workflowFactoryRegistry().SelectAgentFactoryKey(registry.AgentRecord{})
 	if factoryErr != nil {
 		return out, fmt.Errorf("resolve standard workflow factory: %w", factoryErr)
 	}
@@ -510,6 +510,7 @@ func WorkflowFactoryRegistry() *compiler.DescriptorRegistry {
 	workflowFactoryRegistryOnce.Do(func() {
 		registry := compiler.NewDescriptorRegistry()
 		_ = registry.Register(compiler.NewStandardFrozenDescriptor())
+		_ = registry.Register(compiler.NewStandardFrozenToolsDescriptor())
 		if descriptor, err := compiler.LookupDescriptor(DeclarativeFactoryKey); err == nil {
 			_ = registry.Register(descriptor)
 		} else {

@@ -116,7 +116,7 @@ describe('Weave work scene presentation', () => {
     expect(view.container.textContent).toContain('Daily Codex Runtime')
     expect(view.container.textContent).not.toContain('text/html')
     expect(view.container.textContent).not.toContain('exec_command')
-    expect(view.container.textContent).not.toContain('/private/source.json')
+    expect(view.getByText('/private/source.json').closest('details')?.open).toBe(false)
     expect(view.container.textContent).not.toContain('npm test')
     const diagnostics = Array.from(view.container.querySelectorAll('details')).find(item => item.querySelector('summary')?.textContent === '运行识别信息')
     expect(diagnostics?.open).toBe(false)
@@ -130,7 +130,7 @@ describe('Weave work scene presentation', () => {
     expect(view.container.textContent).toContain('npm test')
     expect(view.container.textContent).toContain('PASS')
     expect(view.container.textContent).not.toContain('exec_command')
-    expect(view.container.textContent).not.toContain('/private/source.json')
+    expect(view.getByText('/private/source.json').closest('details')?.open).toBe(false)
 
     fireEvent.click(view.getByRole('button', { name: '返回团队总览' }))
     expect(view.container.textContent).toContain('团队成员')

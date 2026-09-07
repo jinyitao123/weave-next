@@ -1,0 +1,8 @@
+{
+  "started_at": "2026-09-07T05:34:49.140615+00:00",
+  "finished_at": "2026-09-07T05:34:51.085028+00:00",
+  "exit_code": 1,
+  "real_postgres": true,
+  "real_http_mcp": true,
+  "model": "scripted deterministic unit fixture"
+}

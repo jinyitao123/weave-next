@@ -71,6 +71,14 @@ func (b *claudeBackend) Run(ctx context.Context, spec RunSpec) (RunResult, error
 
 	select {
 	case finished := <-done:
+		// Cancellation may race with process exit. A deliberate stop retains
+		// its authority even if the native exit also reports a signal.
+		if contextErr := runCtx.Err(); contextErr != nil {
+			result := claudeRunResult(finished.parsed)
+			result.Status, result.Err = "timeout", contextErr.Error()
+			bindUsageReceipt(&result, spec)
+			return result, fmt.Errorf("claude: %w", contextErr)
+		}
 		result, err := finishClaudeRun(finished.parsed, stderr.String(), finished.err)
 		bindUsageReceipt(&result, spec)
 		return result, err
@@ -343,6 +351,12 @@ func finishClaudeRun(parsed claudeOutput, stderr string, waitErr error) (RunResu
 		return result, nil
 	}
 	result.Status = "failed"
+	// Native process status is authoritative. Earlier CLI warnings on stderr
+	// must not hide a killed process behind an unrelated model/work error.
+	if reason := processTerminationReason(waitErr); reason != "" {
+		result.Err = reason
+		return result, fmt.Errorf("claude: %s", reason)
+	}
 	result.Err = parsed.errText
 	if result.Err == "" {
 		result.Err = strings.TrimSpace(stderr)

@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { MarkdownText, IconChevronLeftOutline14, IconChevronRightOutline14, IconDownloadOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { MarkdownText, Tooltip, IconChevronLeftOutline14, IconChevronRightOutline14, IconDownloadOutline16, IconFullscreenOutline16, IconPanelLeftOutline16, IconCloseOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { CSSProperties } from 'react'
 import type { InjectFace, PropsLocale, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
 import type { WorkTaskDeliverable, WorkTaskMemberStage, WorkTaskMemberStatus, WorkTaskRuntime, WorkTaskStatus } from './work-task-model.ts'
@@ -9,6 +9,7 @@ import { HumanTaskForm } from './HumanTaskForm.tsx'
 import { DeliverablePreview } from './DeliverablePreview.tsx'
 import { deliverablePreviewLabels } from './preview-locales.ts'
 import { PublicUpdates } from './PublicUpdates.tsx'
+import { WorkFileIcon, WorkSceneOverview } from './WorkSceneOverview.tsx'
 import type { WorkTaskMemberReference } from './member-reference.ts'
 import type { createWorkTaskViewStore } from './view-store.ts'
 
@@ -102,6 +103,8 @@ function statusKey(status: WorkTaskStatus): typeof STATUS_KEYS[WorkTaskStatus] {
 }
 
 function stageFailureKey(stage: WorkTaskMemberStage, retryable: boolean) {
+  if (stage.failureReason === 'tool outcome requires reconciliation before continuing') return 'task.failure.reason.toolUnknown'
+  if (stage.memberRunId && retryable) return 'task.failure.reason.memberInterrupted'
   if (stage.failureReason === 'the referenced result file was not saved as a deliverable') return 'task.failure.reason.fileMissing'
   if (stage.failureClass === 'infrastructure') return retryable ? 'task.failure.reason.infrastructure' : 'task.failure.reason.infrastructureUnavailable'
   if (stage.failureClass === 'verification') return 'task.failure.reason.verification'
@@ -366,7 +369,7 @@ function DeliverableItems({ items, sessionId, runId, expandedIds, selection, tog
     target.open = true
     target.querySelector('summary')?.focus()
     target.scrollIntoView({ block: 'nearest' })
-  }, [selection, runId])
+  }, [selection, runId, items])
   const latestIds = new Set<string>()
   for (const item of items) {
     if (!items.some(candidate => candidate.title === item.title && latestIds.has(candidate.id))) latestIds.add(item.id)
@@ -387,11 +390,11 @@ function DeliverableItems({ items, sessionId, runId, expandedIds, selection, tog
             ref={(element) => { if (element === null) itemsById.current.delete(item.id); else itemsById.current.set(item.id, element) }}
             onToggle={(event) => { if (event.currentTarget.open !== expanded) toggleOutput(item.id, event.currentTarget.open) }}>
             <summary>
-              <svg className={css.fileMark} viewBox="0 0 20 24" fill="none" aria-hidden="true"><path d="M4 2.5h8l4 4V21H4zM12 2.5V7h4M7 12h6M7 16h6" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" strokeLinecap="round" /></svg>
+              <WorkFileIcon contentType={item.contentType} title={item.title} />
               <span className={css.deliverableIdentity}>
                 <strong>{deliverableTitle(item.title, t)}</strong>
-                <span>{deliverableTypeLabel(item.contentType, t)}</span>
-                {metadata === '' ? null : <span>{metadata}</span>}
+                <span className={css.deliverableMetadata}><span>{deliverableTypeLabel(item.contentType, t)}</span>
+                  {metadata === '' ? null : <span>{metadata}</span>}</span>
               </span>
               <span className={css.deliverableKind}>{t(item.kind === 'final'
                 ? 'task.deliverables.final'
@@ -402,7 +405,7 @@ function DeliverableItems({ items, sessionId, runId, expandedIds, selection, tog
             {visited.current.has(item.id) ? (
               <div className={css.deliverableBody} data-structured={structured || undefined}>
                 {structured ? null : <div className={css.deliverableActions}>
-                  <a href={deliverableUrl(item, sessionId, runId)} download><IconDownloadOutline16 />{t('task.deliverables.download')}</a>
+                  <Tooltip label={t('task.deliverables.download')}><a className={css.sceneIconButton} href={deliverableUrl(item, sessionId, runId)} download aria-label={t('task.deliverables.download')}><IconDownloadOutline16 /></a></Tooltip>
                   {item.truncated ? <span>{t('task.deliverables.truncated')}</span> : null}
                 </div>}
                 <DeliverableBody item={item} sessionId={sessionId} runId={runId} t={t} />
@@ -415,23 +418,25 @@ function DeliverableItems({ items, sessionId, runId, expandedIds, selection, tog
   )
 }
 
-type WorkTab = 'progress' | 'outputs'
+type WorkTab = 'overview' | 'progress' | 'outputs'
 
 function WorkTaskTabs({ selected, select, id, t }: { readonly selected: WorkTab; readonly select: (tab: WorkTab) => void; readonly id: string; readonly t: PanelProps['t'] }) {
   const buttons = useRef(new Map<WorkTab, HTMLButtonElement>())
   return <div className={css.tabs} role="tablist" aria-label={t('task.workScene')}>
-    {(['progress', 'outputs'] as const).map(tab => <button key={tab} ref={(button) => {
+    {(['overview', 'progress', 'outputs'] as const).map(tab => <button key={tab} ref={(button) => {
       if (button === null) buttons.current.delete(tab); else buttons.current.set(tab, button)
     }}
     id={`${id}-${tab}-tab`} role="tab" aria-selected={selected === tab} aria-controls={`${id}-${tab}-panel`} tabIndex={selected === tab ? 0 : -1}
     onClick={() => { select(tab) }} onKeyDown={(event) => {
-      const next = event.key === 'Home' ? 'progress' : event.key === 'End' ? 'outputs'
-        : event.key === 'ArrowLeft' || event.key === 'ArrowRight' ? tab === 'progress' ? 'outputs' : 'progress' : null
-      if (next === null) return
+      const order = ['overview', 'progress', 'outputs'] as const
+      const index = order.indexOf(tab)
+      const next = event.key === 'Home' ? 'overview' : event.key === 'End' ? 'outputs'
+        : event.key === 'ArrowLeft' ? order[(index + 2) % 3] : event.key === 'ArrowRight' ? order[(index + 1) % 3] : null
+      if (next == null) return
       event.preventDefault()
       select(next)
       buttons.current.get(next)?.focus()
-    }}>{t(tab === 'progress' ? 'task.tab.progress' : 'task.tab.outputs')}</button>)}
+    }}>{t(tab === 'overview' ? 'task.tab.overview' : tab === 'progress' ? 'task.tab.progress' : 'task.tab.outputs')}</button>)}
   </div>
 }
 
@@ -485,7 +490,7 @@ export function WorkTaskPanel({
   const followed = useStore(state => state.followed[model.runId] ?? [])
   const selectedTab = useStore(state => state.tabs[model.runId])
   const initialTabs = useRef(new Map<string, WorkTab>())
-  if (!initialTabs.current.has(model.runId)) initialTabs.current.set(model.runId, model.status === 'completed' || model.status === 'stopped' && model.deliverables.length > 0 ? 'outputs' : 'progress')
+  if (!initialTabs.current.has(model.runId)) initialTabs.current.set(model.runId, model.status === 'completed' ? workTaskHasFinalDeliverable(model) ? 'overview' : 'outputs' : model.status === 'stopped' && model.deliverables.length > 0 ? 'overview' : 'progress')
   const selectedMemberId = useStore(state => state.selectedMembers[model.runId] ?? '')
   const reading = useStore(state => state.reading)
   const expandedIds = useStore(state => state.expandedOutputs[model.runId] ?? [])
@@ -550,6 +555,8 @@ export function WorkTaskPanel({
   const [correctionTarget, setCorrectionTarget] = useState('team')
   const [correctionInstruction, setCorrectionInstruction] = useState('')
   const [assessmentNote, setAssessmentNote] = useState('')
+  const [outputQuery, setOutputQuery] = useState('')
+  useEffect(() => { setOutputQuery('') }, [model.runId, outputSelection?.request])
   const [retryNodeId, setRetryNodeId] = useState('')
   const backButton = useRef<HTMLButtonElement>(null)
   const correctionButton = useRef<HTMLButtonElement>(null)
@@ -591,7 +598,7 @@ export function WorkTaskPanel({
         {model.preparation.steps.map(step => <li key={step.id}><strong>{step.label}</strong> · {t(step.status === 'succeeded' ? 'task.status.completed' : step.status === 'failed' ? 'task.status.failed' : step.status === 'running' ? 'task.status.running' : 'task.status.waiting')}
           {step.attempt > 1 ? <span> · {t('build.attempt', { count: step.attempt })}</span> : null}</li>)}
       </ol></details>}
-      {presentation === 'conversation' ? <button type="button" className={css.secondaryButton} onClick={openDetails}>{t('task.card.openScene')}</button> : returnToConversation === undefined ? null : <button type="button" className={css.secondaryButton} onClick={returnToConversation}>{t('build.back')}</button>}
+      {presentation === 'conversation' ? <button type="button" className={css.secondaryButton} onClick={openDetails}>{t('task.card.openScene')}</button> : returnToConversation === undefined ? null : <Tooltip label={t('build.back')} side="bottom"><button type="button" className={css.sceneIconButton} aria-label={t('build.back')} onClick={returnToConversation}><IconChevronLeftOutline14 size={16} /></button></Tooltip>}
       {model.preparation.error === '' ? null : <details className={css.diagnostics}><summary>{t('build.details')}</summary><pre>{model.preparation.error}</pre></details>}
     </section>
   )
@@ -601,9 +608,12 @@ export function WorkTaskPanel({
   const finalDeliverables = model.deliverables.filter(item => item.kind === 'final')
   const summaryDeliverables = model.deliverables.filter(item => item.kind === 'summary')
   const stageDeliverables = model.deliverables.filter(item => item.kind === 'stage')
+  const matchesOutput = (item: WorkTaskDeliverable) => item.title.toLocaleLowerCase().includes(outputQuery.trim().toLocaleLowerCase())
+  const visibleFinal = [...finalDeliverables, ...summaryDeliverables].filter(matchesOutput)
+  const visibleStages = stageDeliverables.filter(matchesOutput)
   const terminal = model.status === 'completed' || model.status === 'failed' || model.status === 'stopped'
   const compact = presentation === 'conversation'
-  const activeTab = selectedTab ?? initialTabs.current.get(model.runId) ?? 'progress'
+  const activeTab = selectedTab ?? initialTabs.current.get(model.runId) ?? 'overview'
   const selectTab = (tab: WorkTab) => { saveScenePosition(); actions.selectTab(model.runId, tab) }
   const tabId = `weave-task-${panelId}`
   const stale = workTaskFactsStale(model.status, model.observedAt)
@@ -762,7 +772,7 @@ export function WorkTaskPanel({
             </button>
             {retryNodeId === stage.nodeId ? (
               <div className={css.retryConfirm}>
-                <span>{t('task.retry.impact')}</span>
+                <span>{t(stage.memberRunId ? 'task.retry.memberImpact' : 'task.retry.impact')}</span>
                 <div className={css.controlActions}>
                   <button type="button" className={css.secondaryButton} onClick={() => { setRetryNodeId('') }}>{t('task.cancel')}</button>
                   <button type="button" className={css.primaryButton} disabled={actionPending || model.pendingAction !== null} onClick={() => { void submitStageRetry() }}>{t('task.retry.confirm')}</button>
@@ -770,12 +780,12 @@ export function WorkTaskPanel({
               </div>
             ) : (
               <button type="button" className={css.primaryButton} disabled={actionPending || model.pendingAction !== null}
-                onClick={() => { setRetryNodeId(stage.nodeId) }}>{t('task.recovery.retry')}</button>
+                onClick={() => { setRetryNodeId(stage.nodeId) }}>{t(stage.memberRunId ? 'task.retry.memberContinue' : 'task.recovery.retry')}</button>
             )}
           </div>
         ))}
       </div>
-      <span className={css.recoveryImpact}>{t('task.retry.impact')}</span>
+      <span className={css.recoveryImpact}>{t(recoverableStages.some(item => item.stage.memberRunId) ? 'task.retry.memberImpact' : 'task.retry.impact')}</span>
     </section>
   )
 
@@ -820,7 +830,7 @@ export function WorkTaskPanel({
 
   const memberView = selectedMember === undefined ? null : (
     <div key={selectedMember.agentId} data-weave-member-reader>
-      <button ref={backButton} type="button" className={css.backButton} onClick={closeMember}><IconChevronLeftOutline14 size={16} />{t('task.member.back')}</button>
+      <Tooltip label={t('task.member.back')} side="bottom"><button ref={backButton} type="button" className={`${css.sceneIconButton} ${css.backButton}`} aria-label={t('task.member.back')} onClick={closeMember}><IconChevronLeftOutline14 size={16} /></button></Tooltip>
       <header className={css.memberWorkspaceHeader}>
         <div className={css.memberWorkspaceIdentity}>
           <span className={css.memberStatus} data-executing={(executing && selectedMember.status === 'running') || undefined} data-status={selectedMember.status} aria-hidden />
@@ -849,7 +859,9 @@ export function WorkTaskPanel({
       <div className={css.memberToolbar}>
         <div className={css.followControls}>
           <span>{t(terminal ? 'task.updates.recorded' : selectedMember.updateMode === 'live' ? 'task.updates.live' : 'task.updates.onCompletion')}</span>
-          <button type="button" className={css.secondaryButton} aria-pressed={followed.includes(selectedMember.agentId)} disabled={!followed.includes(selectedMember.agentId) && followed.length >= 3} onClick={() => { actions.toggleFollow(model.runId, selectedMember.agentId) }}>{t(followed.includes(selectedMember.agentId) ? 'task.member.unfollow' : 'task.member.follow')}</button>
+          <Tooltip label={t(followed.includes(selectedMember.agentId) ? 'task.member.unfollow' : 'task.member.follow')}><button type="button" className={css.sceneIconButton} aria-label={t(followed.includes(selectedMember.agentId) ? 'task.member.unfollow' : 'task.member.follow')} aria-pressed={followed.includes(selectedMember.agentId)} disabled={!followed.includes(selectedMember.agentId) && followed.length >= 3} onClick={() => { actions.toggleFollow(model.runId, selectedMember.agentId) }}>
+            <svg className={css.followIcon} width="17" height="17" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" aria-hidden="true"><path d="m10 2.5 2.3 4.65 5.2.75-3.75 3.65.88 5.15L10 14.27 5.37 16.7l.88-5.15L2.5 7.9l5.2-.75Z" /></svg>
+          </button></Tooltip>
         </div>
         <section className={css.memberWorkspaceActions} aria-label={t('task.correction.member')}>
           {actionError === null ? null : <div className={css.actionError} role="alert">{actionError}</div>}
@@ -875,6 +887,7 @@ export function WorkTaskPanel({
                   <strong>{nodeLabel(stage.nodeId)}</strong>
                   <span>{t(memberStatusKey(stage.status))}</span>
                 </div>
+                {!stage.checkpointSavedAt ? null : <p className={css.muted}>{t('task.member.progressSaved')} <time dateTime={stage.checkpointSavedAt}>{new Date(stage.checkpointSavedAt).toLocaleTimeString()}</time></p>}
                 {stage.status !== 'failed' || stage.failureClass === '' ? null : (
                   <div className={css.stageFailure} data-class={stage.failureClass}>
                     <strong>{t(stage.failureClass === 'infrastructure'
@@ -887,13 +900,13 @@ export function WorkTaskPanel({
                     <details><summary>{t('task.failure.details')}</summary><p>{stage.failureReason}</p></details></>}
                     {!recoverableStages.some(item => item.stage.nodeId === stage.nodeId) ? null : retryNodeId === stage.nodeId ? (
                       <div className={css.retryConfirm}>
-                        <span>{t('task.retry.impact')}</span>
+                        <span>{t(stage.memberRunId ? 'task.retry.memberImpact' : 'task.retry.impact')}</span>
                         <div className={css.controlActions}>
                           <button type="button" className={css.secondaryButton} onClick={() => { setRetryNodeId('') }}>{t('task.cancel')}</button>
                           <button type="button" className={css.primaryButton} disabled={actionPending} onClick={() => { void submitStageRetry() }}>{t('task.retry.confirm')}</button>
                         </div>
                       </div>
-                    ) : <button type="button" className={css.memberCorrectionButton} onClick={() => { setRetryNodeId(stage.nodeId) }}>{t('task.retry.stage')}</button>}
+                    ) : <button type="button" className={css.memberCorrectionButton} onClick={() => { setRetryNodeId(stage.nodeId) }}>{t(stage.memberRunId ? 'task.retry.memberContinue' : 'task.retry.stage')}</button>}
                   </div>
                 )}
                 {stage.startedAt === '' && stage.durationMs === 0 && stage.toolCalls === 0 ? null : (
@@ -964,15 +977,18 @@ export function WorkTaskPanel({
     {model.corrections.slice(1).map(correction => <article key={correction.correctionId}><strong>{t(correction.status === 'applied' ? 'task.correction.applied' : correction.status === 'discarded' ? 'task.correction.discarded' : 'task.correction.ended')}</strong><p>{correction.instruction}</p><p>{t('task.correction.affected')} · {correction.affectedNodeIds.map(nodeLabel).join('、')}</p><p>{t('task.correction.preserved')} · {correction.preservedNodeIds.map(nodeLabel).join('、')}</p></article>)}
   </details>
 
+  const openOutputs = (id = '') => {
+    if (!compact) saveScenePosition()
+    setOutputQuery('')
+    if (id === '') actions.selectTab(model.runId, 'outputs')
+    else actions.showOutput(model.runId, id)
+    if (compact) openDetails()
+  }
+
   if (compact) {
     const finalOutput = [...finalDeliverables, ...summaryDeliverables][0]
     const context = pendingStopStages.length > 0 ? '' : model.humanTask?.title || activeCorrection?.instruction || activityHint
       || (terminal || model.latestStage === '' ? '' : stageLabel(model.latestStage, t))
-    const openOutputs = (id = '') => {
-      if (id === '') actions.selectTab(model.runId, 'outputs')
-      else actions.showOutput(model.runId, id)
-      openDetails()
-    }
     return <div className={`${css.panel} ${css.dockContent}`} data-weave-task-receipt data-status={model.status}>
       <div className={css.dockHeading} role="status">
         <span className={css.statusDot} data-executing={taskIsExecuting(model) || undefined} data-status={model.status === 'completed' && !hasFinal ? 'attention' : model.status} aria-hidden />
@@ -1016,18 +1032,18 @@ export function WorkTaskPanel({
   }
 
   const membersSection = (<section className={css.section} aria-label={t('task.members')}>
-    <div className={css.sectionHeader}><h2>{t('task.members')}</h2><span>{model.members.length}</span></div>
+    <div className={css.sectionHeader}><h2>{t('task.members')}</h2><span>{t('task.overview.completedMembers', { completed: model.members.filter(member => member.status === 'completed').length, total: model.members.length })}</span></div>
     {followed.length === 0 ? null : <nav className={css.followedMembers} aria-label={t('task.member.following')}>{model.members.filter(member => followed.includes(member.agentId)).map(member => <button type="button" key={member.agentId} className={css.secondaryButton} onClick={() => { setSelectedMemberId(member.agentId) }}>{member.name}<span>{t(memberStatusKey(member.status))}</span></button>)}</nav>}
     {model.members.length === 0 ? <p className={css.muted}>{t(terminal ? 'task.members.notRecorded' : 'task.members.pending')}</p> : (
       <div className={css.memberList}>
-        {model.members.map(member => (
+        {model.members.map((member, index) => (
           <button className={css.member} type="button" key={member.agentId}
             ref={(button) => {
               if (button === null) memberButtons.current.delete(member.agentId); else memberButtons.current.set(member.agentId, button)
             }}
             aria-label={t('task.member.open', { name: member.name })}
             onClick={() => { setSelectedMemberId(member.agentId) }}>
-            <span className={css.memberStatus} data-executing={(executing && member.status === 'running') || undefined} data-status={member.status} aria-hidden />
+            <span className={css.memberAvatar} data-tone={index % 3} aria-hidden>{member.name.slice(0, 1)}<span className={css.memberStatus} data-executing={(executing && member.status === 'running') || undefined} data-status={member.status} /></span>
             <span className={css.memberIdentity}>
               <strong>{member.name}</strong>
               <span>{member.stages.some(stage => stage.status === 'running') ? stageLabel(member.stages.find(stage => stage.status === 'running')?.name ?? '', t) : member.duty === '' ? t(member.role === 'lead' ? 'task.member.lead' : 'task.member.worker') : member.duty}</span>
@@ -1040,17 +1056,22 @@ export function WorkTaskPanel({
     )}
   </section>)
   const deliverySection = <section className={css.deliverySection} aria-label={t('task.deliverables')}>
-    <div className={css.sectionHeader}><h2>{t('task.deliverables')}</h2>
+    <div className={css.sectionHeader}><h2>{t('task.overview.outputs')}</h2>
       <span>{hasFinal ? finalDeliverables.length > 0 ? t('task.deliverables.finalReady', { count: finalDeliverables.length }) : t('task.deliverables.summaryReady') : t('task.deliverables.noFinal')}</span>
     </div>
+    {model.deliverables.length < 5 ? null : <div className={css.outputSearch}>
+      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden><circle cx="8.5" cy="8.5" r="5.5" /><path d="m13 13 4 4" /></svg>
+      <input type="search" aria-label={t('task.overview.findOutput')} placeholder={t('task.overview.findOutput')} value={outputQuery} onChange={(event) => { setOutputQuery(event.currentTarget.value) }} />
+      {outputQuery === '' ? null : <Tooltip label={t('task.overview.clearSearch')}><button type="button" className={css.sceneIconButton} aria-label={t('task.overview.clearSearch')} onClick={() => { setOutputQuery('') }}><IconCloseOutline16 /></button></Tooltip>}
+    </div>}
     {model.deliverables.length === 0 ? <p className={css.muted}>{t('task.deliverables.empty')}</p> : <>
-      <DeliverableItems items={[...finalDeliverables, ...summaryDeliverables]}
-        sessionId={sessionId} runId={model.runId} {...deliverableView} t={t} />
-      {stageDeliverables.length === 0 ? null : stageDeliverables.length === 1 ? <DeliverableItems
-        items={stageDeliverables} sessionId={sessionId} runId={model.runId}
+      {visibleFinal.length + visibleStages.length > 0 ? null : <p className={css.resourceEmpty} role="status">{t('task.overview.noMatch')}</p>}
+      <DeliverableItems items={visibleFinal} sessionId={sessionId} runId={model.runId} {...deliverableView} t={t} />
+      {visibleStages.length === 0 ? null : visibleStages.length === 1 || outputQuery.trim() !== '' ? <DeliverableItems
+        items={visibleStages} sessionId={sessionId} runId={model.runId}
         {...deliverableView} t={t} /> : <details className={css.stageDeliverables}>
-        <summary>{t('task.deliverables.stageGroup', { count: stageDeliverables.length })}</summary>
-        <DeliverableItems items={stageDeliverables} sessionId={sessionId} runId={model.runId} {...deliverableView} t={t} />
+        <summary>{t('task.deliverables.stageGroup', { count: visibleStages.length })}</summary>
+        <DeliverableItems items={visibleStages} sessionId={sessionId} runId={model.runId} {...deliverableView} t={t} />
       </details>}
     </>}
   </section>
@@ -1058,9 +1079,9 @@ export function WorkTaskPanel({
   return (
     <div ref={sceneRoot} className={css.panel} data-weave-work-task onKeyDown={(event) => { if (event.key === 'Escape' && selectedMember !== undefined && activeTab === 'progress') { if (correctionOpen) setCorrectionOpen(false); else closeMember() } }} data-status={model.status} data-delivery={hasFinal ? 'ready' : 'missing'}>
       <div className={css.viewControls}><WorkTaskTabs selected={activeTab} select={selectTab} id={tabId} t={t} />
-        {expandDetails === undefined ? null : <button type="button" className={`${css.secondaryButton} ${css.fullWidthButton}`} onClick={expandDetails}>{t('task.fullWidth')}</button>}
-        <button type="button" className={`${css.secondaryButton} ${css.sideBySideButton}`} onClick={openDetails}>{t('task.sideBySide')}</button>
-        {returnToConversation === undefined ? null : <button type="button" className={`${css.secondaryButton} ${css.conversationReturn}`} onClick={returnToConversation}>{t('task.card.returnConversation')}</button>}
+        {expandDetails === undefined ? null : <Tooltip label={t('task.fullWidth')} side="bottom"><button type="button" className={`${css.sceneIconButton} ${css.fullWidthButton}`} aria-label={t('task.fullWidth')} onClick={expandDetails}><IconFullscreenOutline16 /></button></Tooltip>}
+        <Tooltip label={t('task.sideBySide')} side="bottom"><button type="button" className={`${css.sceneIconButton} ${css.sideBySideButton}`} aria-label={t('task.sideBySide')} onClick={openDetails}><IconPanelLeftOutline16 /></button></Tooltip>
+        {returnToConversation === undefined ? null : <Tooltip label={t('task.card.returnConversation')} side="bottom"><button type="button" className={`${css.sceneIconButton} ${css.conversationReturn}`} aria-label={t('task.card.returnConversation')} onClick={returnToConversation}><IconChevronLeftOutline14 size={16} /></button></Tooltip>}
       </div>
       <header className={css.hero} hidden={activeTab === 'progress' && selectedMember !== undefined}>
         <div className={css.eyebrow}>{teamDisplayName(model.teamName, t(model.runId === '' && model.status === 'preparing' ? 'task.team.pending' : 'task.team.unknown'))}</div>
@@ -1081,7 +1102,7 @@ export function WorkTaskPanel({
           {requestDelivery === undefined ? null : <button type="button" className={css.primaryButton} disabled={actionDisabled} onClick={() => { void submitDeliveryReview() }}>{t('task.deliverables.reviewMissing')}</button>}
         </div>}
         {model.status !== 'waiting' || model.waitKind !== 'human' || model.humanTask !== null || returnToConversation === undefined ? null : <button type="button" className={css.primaryButton} onClick={returnToConversation}>{t('task.human.respond')}</button>}
-        {model.brief === '' ? null : <details className={css.briefDetails}><summary>{t('task.brief')}</summary><p>{model.brief}</p></details>}
+        {model.brief === '' || activeTab === 'overview' ? null : <details className={css.briefDetails}><summary>{t('task.brief')}</summary><p>{model.brief}</p></details>}
         {!stale && !incomplete ? null : <div className={css.truthLine}>
           {stale ? <span>{t('task.freshness.stale')}</span> : null}
           {incomplete ? <span>{t('task.completeness.partial')}</span> : null}
@@ -1091,6 +1112,13 @@ export function WorkTaskPanel({
             : model.pendingAction.kind === 'stage-retry' ? 'task.action.stageRetryPending' : model.pendingAction.kind === 'correction-request' ? 'task.action.correctionPending' : 'task.action.correctionConfirmPending',
         )}</div>}
       </header>
+
+      <div role="tabpanel" id={`${tabId}-overview-panel`} aria-labelledby={`${tabId}-overview-tab`} hidden={activeTab !== 'overview'}>
+        {model.status !== 'waiting' && model.status !== 'failed' && model.blocker === 'none' && activeCorrection === undefined ? null : <button type="button" className={css.attentionLink} onClick={() => { selectTab('progress'); setSelectedMemberId('') }}>
+          <span>{t('task.overview.attention')}</span><IconChevronRightOutline14 />
+        </button>}
+        <WorkSceneOverview deliverables={model.deliverables.map(item => ({ ...item, title: deliverableTitle(item.title, t) }))} members={model.members} brief={model.brief} openOutput={(id) => { openOutputs(id) }} openOutputs={() => { openOutputs() }} openMembers={() => { actions.rememberReading(`scene:${model.runId}:progress:`, { top: 0, follow: false, lastEvent: '' }); setSelectedMemberId('') }} t={t} />
+      </div>
 
       <div role="tabpanel" id={`${tabId}-progress-panel`} aria-labelledby={`${tabId}-progress-tab`} hidden={activeTab !== 'progress'}>
         {memberView}
@@ -1142,7 +1170,7 @@ export function WorkTaskPanel({
           {actionError === null ? null : <div className={css.actionError} role="alert">{actionError}</div>}
           {model.actionError === '' ? null : <div className={css.actionError} role="alert">{t(model.actionError === 'stop_unconfirmed' ? 'task.stop.unconfirmedHelp' : 'task.action.rejected')}</div>}
           {recoverySection}
-          {selectedMember === undefined ? correctionView() : null}
+          {selectedMember !== undefined ? null : activeCorrection !== undefined ? correctionView() : model.corrections.length === 0 ? null : <details className={css.pastCorrection}><summary>{t('task.overview.pastCorrection')}</summary>{correctionView()}</details>}
           {selectedMember === undefined ? correctionControls : null}
           {membersSection}
           {historySection}
@@ -1160,7 +1188,7 @@ export function WorkTaskPanel({
           </div>
         </details>}
       </div>
-      <div hidden={activeTab === 'progress' && selectedMember !== undefined}>
+      <div className={css.sceneSupplement} hidden={activeTab === 'overview' || activeTab === 'progress' && selectedMember !== undefined}>
         <details hidden={activeTab !== 'progress' || model.totalStages === 0} className={css.section} aria-label={t('task.progress')}>
           <summary>{t('task.progress')} · {t('task.progress.count', { completed: model.completedStages, total: model.totalStages })}</summary>
           {model.totalStages > 0 ? (

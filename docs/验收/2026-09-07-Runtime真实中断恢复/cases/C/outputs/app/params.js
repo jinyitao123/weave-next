@@ -1,0 +1,94 @@
+// 由 outputs/model/parameters.json 受控生成 (gen: 本构建脚本), 数值与冻结基线一致
+// 追溯键: baseline_id=corona-baseline-1.0.0 baseline_version=1.0.0 content_digest=cfb12b781363c547da87e6dec9fd937079cba25501b85ff6cbfabfbc508b10c2
+window.CORONA_PARAMS = {
+  "traceability": {
+    "baseline_id": "corona-baseline-1.0.0",
+    "baseline_version": "1.0.0",
+    "content_digest": "cfb12b781363c547da87e6dec9fd937079cba25501b85ff6cbfabfbc508b10c2",
+    "derived_from": "baseline_frozen.yaml",
+    "derivation": "derive_params.rb (YAML->JSON 受控格式转换, 无数值改动)"
+  },
+  "scenarios": {
+    "cruise_speed_c": [
+      0.03
+    ],
+    "locked": true
+  },
+  "constants": {
+    "speed_of_light_m_s": 299792458,
+    "standard_gravity_m_s2": 9.80665,
+    "proxima_distance_ly": 4.25,
+    "fact_label": "verified_fact"
+  },
+  "reference_cases": [
+    {
+      "id": "crewed_1mt",
+      "mass_kg": 1000000000,
+      "cruise_speed_c": 0.03
+    },
+    {
+      "id": "orbital_material_5mt",
+      "mass_kg": 5000000000,
+      "cruise_speed_c": 0.03
+    },
+    {
+      "id": "dust_1mg",
+      "mass_kg": 1e-06,
+      "relative_speed_c": 0.03
+    },
+    {
+      "id": "rotating_habitat",
+      "radius_m": 1000,
+      "rotation_rpm": 2
+    }
+  ],
+  "reference_checks": {
+    "travel_years_at_0_03c": {
+      "expected": 141.6666667,
+      "relative_tolerance": 0.001
+    },
+    "kinetic_energy_1mt_at_0_03c_j": {
+      "expected": "4.0443983e22",
+      "relative_tolerance": 0.01
+    },
+    "kinetic_energy_5mt_at_0_03c_j": {
+      "expected": "2.0221991e23",
+      "relative_tolerance": 0.01
+    },
+    "gravity_1km_2rpm_m_s2": {
+      "expected": 43.8649,
+      "relative_tolerance": 0.01
+    },
+    "dust_1mg_0_03c_j": {
+      "expected": 40443983,
+      "relative_tolerance": 0.01
+    }
+  },
+  "routes": [
+    {
+      "id": "laser_sail_precursor",
+      "name": "激光光帆先锋探测器"
+    },
+    {
+      "id": "uncrewed_civilization_archive",
+      "name": "无人文明档案载荷"
+    },
+    {
+      "id": "crewed_interstellar_vehicle",
+      "name": "载人星际飞行器"
+    }
+  ],
+  "truth_labels": [
+    "verified_fact",
+    "derived_result",
+    "assumption",
+    "unknown"
+  ],
+  "forbidden_claims": [
+    "construction_ready",
+    "manufacturing_ready",
+    "flight_certified",
+    "whole_program_cost_committed"
+  ]
+};
+if (typeof module !== 'undefined') { module.exports = window ? window.CORONA_PARAMS : {"traceability": {"baseline_id": "corona-baseline-1.0.0", "baseline_version": "1.0.0", "content_digest": "cfb12b781363c547da87e6dec9fd937079cba25501b85ff6cbfabfbc508b10c2", "derived_from": "baseline_frozen.yaml", "derivation": "derive_params.rb (YAML->JSON 受控格式转换, 无数值改动)"}, "scenarios": {"cruise_speed_c": [0.03], "locked": true}, "constants": {"speed_of_light_m_s": 299792458, "standard_gravity_m_s2": 9.80665, "proxima_distance_ly": 4.25, "fact_label": "verified_fact"}, "reference_cases": [{"id": "crewed_1mt", "mass_kg": 1000000000, "cruise_speed_c": 0.03}, {"id": "orbital_material_5mt", "mass_kg": 5000000000, "cruise_speed_c": 0.03}, {"id": "dust_1mg", "mass_kg": 1e-06, "relative_speed_c": 0.03}, {"id": "rotating_habitat", "radius_m": 1000, "rotation_rpm": 2}], "reference_checks": {"travel_years_at_0_03c": {"expected": 141.6666667, "relative_tolerance": 0.001}, "kinetic_energy_1mt_at_0_03c_j": {"expected": "4.0443983e22", "relative_tolerance": 0.01}, "kinetic_energy_5mt_at_0_03c_j": {"expected": "2.0221991e23", "relative_tolerance": 0.01}, "gravity_1km_2rpm_m_s2": {"expected": 43.8649, "relative_tolerance": 0.01}, "dust_1mg_0_03c_j": {"expected": 40443983, "relative_tolerance": 0.01}}, "routes": [{"id": "laser_sail_precursor", "name": "激光光帆先锋探测器"}, {"id": "uncrewed_civilization_archive", "name": "无人文明档案载荷"}, {"id": "crewed_interstellar_vehicle", "name": "载人星际飞行器"}], "truth_labels": ["verified_fact", "derived_result", "assumption", "unknown"], "forbidden_claims": ["construction_ready", "manufacturing_ready", "flight_certified", "whole_program_cost_committed"]}; }

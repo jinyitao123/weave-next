@@ -383,15 +383,11 @@ func (r *apiLockedWorkerRunner) StepFor(
 	if err := registry.ValidateTeamWorkerAgentRecord(record); err != nil {
 		return nil, teamcompiler.ErrTeamWorkerGraphIncompatible
 	}
-	proof, err := r.server.Descriptors.DescribeWorkerRoleProof(ctx, *record, nil)
-	if err != nil {
-		return nil, fmt.Errorf("verify exact team worker descriptor: %w", err)
-	}
-	if proof.Role != frozenWorker.RoleProof.Role ||
-		proof.AgentContentHash != frozenWorker.RoleProof.AgentContentHash ||
-		proof.CapabilitySchema != frozenWorker.RoleProof.CapabilitySchema ||
-		proof.CapabilityContentHash != frozenWorker.RoleProof.CapabilityContentHash {
-		return nil, teamcompiler.ErrTeamWorkerRoleIncompatible
+	if err := r.server.Descriptors.VerifyWorkerRoleProof(ctx, *record, compiler.FrozenWorkerRoleProof{
+		Role: frozenWorker.RoleProof.Role, AgentContentHash: frozenWorker.RoleProof.AgentContentHash,
+		CapabilitySchema: frozenWorker.RoleProof.CapabilitySchema, CapabilityContentHash: frozenWorker.RoleProof.CapabilityContentHash,
+	}); err != nil {
+		return nil, fmt.Errorf("%w: verify exact team worker descriptor: %v", teamcompiler.ErrTeamWorkerRoleIncompatible, err)
 	}
 	if engine.IsCLIEngine(record.Engine) {
 		return r.cliWorkerStep(record), nil

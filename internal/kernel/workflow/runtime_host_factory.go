@@ -121,6 +121,9 @@ func buildRuntimeHostsWithLLM(
 	newTransport func() runtimeMCPTransport,
 	llmOverride contract.LLM,
 ) (compiler.FrozenBuildOpts, io.Closer, error) {
+	if err := compiler.ValidateStandardMCPBindings(bundle); err != nil {
+		return compiler.FrozenBuildOpts{}, nil, err
+	}
 	for _, binding := range bundle.MCPBindings {
 		if binding.Transport != "http" {
 			detail := "MCP transport is not supported"
@@ -197,8 +200,12 @@ func buildRuntimeHostsWithLLM(
 			mcphost.WithHTTPClient(client),
 		)
 		clearRuntimeMCPHeaderStrings(headers)
+		var checkedHost contract.ToolDispatcher = host
+		if len(binding.Tools) != 0 {
+			checkedHost = &runtimeFrozenMCPDispatcher{inner: host, binding: binding}
+		}
 		writeGate := mcphost.NewWriteGateDispatcherForServer(
-			host,
+			checkedHost,
 			binding.WorkspaceID, bundle.Agent.Name, binding.ServerID, binding.URL, "",
 			binding.WriteTools,
 		)

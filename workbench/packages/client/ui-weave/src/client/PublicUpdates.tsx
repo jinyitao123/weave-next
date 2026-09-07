@@ -1,6 +1,6 @@
 /** Public runtime updates remain distinct from final deliverables and private reasoning. */
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
-import { MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
+import { MarkdownText, Tooltip, IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { WorkTaskPublicUpdate } from './work-task-model.ts'
 import type { WorkTaskReadingPosition } from './view-store.ts'
@@ -197,7 +197,7 @@ export function PublicUpdates({ active, updates, truncated, position, remember, 
         </article>
       })}
     </div>
-    {!readingHistory ? null : <button type="button" className={css.secondaryButton} onClick={() => {
+    {!readingHistory ? null : <Tooltip label={t(unread ? 'task.updates.latest' : 'task.updates.returnLatest')}><button type="button" className={`${css.sceneIconButton} ${css.latestRecordsButton}`} aria-label={t(unread ? 'task.updates.latest' : 'task.updates.returnLatest')} data-unread={unread || undefined} onClick={() => {
       const log = scroll.current
       if (!active || log === null) return
       const element = scrollOwner(log)
@@ -205,6 +205,6 @@ export function PublicUpdates({ active, updates, truncated, position, remember, 
       showLatest(log, element)
       log.focus({ preventScroll: true })
       rememberPosition(log, element)
-    }}>{t(unread ? 'task.updates.latest' : 'task.updates.returnLatest')}</button>}
+    }}><IconChevronDownOutline14 size={16} /></button></Tooltip>}
   </section>
 }

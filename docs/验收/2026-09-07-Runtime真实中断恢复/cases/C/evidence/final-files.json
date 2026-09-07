@@ -1,0 +1,117 @@
+[
+  {
+    "path": "outputs/app/README.md",
+    "sha256": "1d40456d5464f61423af5d888879b53873ebae2089ff5845490f70bf49138011",
+    "bytes": 1866
+  },
+  {
+    "path": "outputs/app/app.js",
+    "sha256": "5532e3931aa7c383b89a7d1802059dd2985528ffa54fc02f414c0bc7829bbb68",
+    "bytes": 6173
+  },
+  {
+    "path": "outputs/app/check_app.js",
+    "sha256": "4d6d186a6d2843b8c26d8605542bde303e9971c3b04025772fdf2d99120a5276",
+    "bytes": 5471
+  },
+  {
+    "path": "outputs/app/core.js",
+    "sha256": "4657af2c058c1e3827e1a2bab3bea25153ab1447f3b471ee905ead4c75b6f4a9",
+    "bytes": 5037
+  },
+  {
+    "path": "outputs/app/index.html",
+    "sha256": "5848397a1d4863884bc1a9c3b609d98eca055422f20e3419f828f64f03b22c7b",
+    "bytes": 7668
+  },
+  {
+    "path": "outputs/app/params.js",
+    "sha256": "cef99c7452cf7cce949674d2349172151dce51b6ef45343f4fe38ec3a49d00df",
+    "bytes": 4104
+  },
+  {
+    "path": "outputs/app/sample_export_0.03c.json",
+    "sha256": "12f035d285b112cff03fd9ec4acde1d6b9bbba23efc9cd21008773d19e662318",
+    "bytes": 2755
+  },
+  {
+    "path": "outputs/drawings/COR-DRW-001_architecture.svg",
+    "sha256": "3b77656289b47dded64012a9ab3c35a399e3f2ee97358fc69ceb3c7f6e2a3d45",
+    "bytes": 7375
+  },
+  {
+    "path": "outputs/drawings/COR-DRW-002_archive_layout.svg",
+    "sha256": "59775fdeecdee9bfd17781f1d9089004f19b243f2c9753deb56d0d45c53e4581",
+    "bytes": 6848
+  },
+  {
+    "path": "outputs/drawings/COR-DRW-003_interfaces.svg",
+    "sha256": "4b8acf59764563009070a8ae8ff1012856246cb0d63a96e616ab4249c58acaa7",
+    "bytes": 7576
+  },
+  {
+    "path": "outputs/drawings/COR-SCAD-001_concept_model.scad",
+    "sha256": "32d6f487a1a9c7843f357c5aab481af0b53a2333e88f9ff01a5a966ee7b42fe8",
+    "bytes": 4223
+  },
+  {
+    "path": "outputs/model/README.md",
+    "sha256": "284e1c659051afe28ace1a36fb64fe4f5bea0efbb888cb6d4de4b39975c06090",
+    "bytes": 2059
+  },
+  {
+    "path": "outputs/model/baseline_frozen.yaml",
+    "sha256": "cfb12b781363c547da87e6dec9fd937079cba25501b85ff6cbfabfbc508b10c2",
+    "bytes": 8016
+  },
+  {
+    "path": "outputs/model/corona_model.py",
+    "sha256": "d8c4db1464e5135fd04078546361a70df96744fa963fd61b2283aa52c6646596",
+    "bytes": 14149
+  },
+  {
+    "path": "outputs/model/derive_params.rb",
+    "sha256": "2d0780464c21cbe94558465d7b5f400fdb65c25a47a4809f05b7ad105ed3ffa2",
+    "bytes": 1633
+  },
+  {
+    "path": "outputs/model/output/model_results.json",
+    "sha256": "a7a8a3fab44e037047c2be6ab5b55b61cc90e181ea71f1b6d2b6632c1ce26262",
+    "bytes": 14856
+  },
+  {
+    "path": "outputs/model/output/reference_values.json",
+    "sha256": "0e516aadc6a350abc5c924497dfca5e71ce2fac0f77758f6cbc901b3133dff3b",
+    "bytes": 462
+  },
+  {
+    "path": "outputs/model/output/route_sensitivity.json",
+    "sha256": "a9475945fe9996ea5878ef001f6e89c2209b93b85f4681c63be3bb0bb7166c3b",
+    "bytes": 2533
+  },
+  {
+    "path": "outputs/model/output/test_results.json",
+    "sha256": "5e3b494201a6a13c4889f68fac3e50c142a195050afbae5710ad7a035536c2d0",
+    "bytes": 2804
+  },
+  {
+    "path": "outputs/model/parameters.json",
+    "sha256": "e8d1ca81adec63beef838885369873cfb63cff0ed010492ebb6342f78f1288a9",
+    "bytes": 2084
+  },
+  {
+    "path": "outputs/model/run_tests.py",
+    "sha256": "fc072d5b76c3f26e2bf98bc9001d4559da7bb203a7bf4b49d571f715250fe56a",
+    "bytes": 8532
+  },
+  {
+    "path": "outputs/verification/member_acceptance.json",
+    "sha256": "652ff400cd57a8de0249338eb5119d0acf74e14aae25c01b10a8827a8d1c0de9",
+    "bytes": 5754
+  },
+  {
+    "path": "outputs/verification/verification_log.md",
+    "sha256": "c15b74371af92be031116bf1e31028a76717f5d7dc96c3ff32846df39b050422",
+    "bytes": 6871
+  }
+]

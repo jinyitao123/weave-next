@@ -1,0 +1,99 @@
+{
+  "member": "corona-prephase-a-lab-v3-luna-digital-engineering-builder",
+  "generated_on": "2026-09-07",
+  "baseline_id": "corona-baseline-1.0.0",
+  "baseline_version": "1.0.0",
+  "content_digest": "cfb12b781363c547da87e6dec9fd937079cba25501b85ff6cbfabfbc508b10c2",
+  "content_digest_source": "shasum -a 256 outputs/model/baseline_frozen.yaml → outputs/verification/results/digest.log",
+  "reference_checks": {
+    "travel_time_yr": {
+      "value": 141.66666666666669,
+      "expected": 141.6666667,
+      "relative_tolerance": 0.001,
+      "result": "PASS",
+      "output_file": "outputs/model/results.json:travel_time.travel_time_yr",
+      "verified_by": "outputs/model/test_model.py::TestReferenceChecks.test_travel_time"
+    },
+    "kinetic_energy_1mt_j": {
+      "value": 4.044398304315679e+22,
+      "expected": 4.0443983e+22,
+      "relative_tolerance": 0.01,
+      "result": "PASS",
+      "output_file": "outputs/model/results.json:kinetic_energy.crewed_1mt_classical_j",
+      "verified_by": "outputs/model/test_model.py::TestReferenceChecks.test_kinetic_energy_1mt"
+    },
+    "kinetic_energy_5mt_j": {
+      "value": 2.02219915215784e+23,
+      "expected": 2.0221991e+23,
+      "relative_tolerance": 0.01,
+      "result": "PASS",
+      "output_file": "outputs/model/results.json:kinetic_energy.orbital_material_5mt_classical_j",
+      "verified_by": "outputs/model/test_model.py::TestReferenceChecks.test_kinetic_energy_5mt"
+    },
+    "artificial_gravity_m_s2": {
+      "value": 43.864908449286034,
+      "expected": 43.8649,
+      "relative_tolerance": 0.01,
+      "result": "PASS",
+      "output_file": "outputs/model/results.json:artificial_gravity.centripetal_m_s2",
+      "verified_by": "outputs/model/test_model.py::TestReferenceChecks.test_artificial_gravity"
+    },
+    "dust_impact_energy_j": {
+      "value": 40443983.043156795,
+      "expected": 40443983,
+      "relative_tolerance": 0.01,
+      "result": "PASS",
+      "output_file": "outputs/model/results.json:dust_impact.energy_j",
+      "verified_by": "outputs/model/test_model.py::TestReferenceChecks.test_dust_impact"
+    }
+  },
+  "model_test_command": "cd outputs/model && python3 test_model.py   # 有界退出, 20 tests OK, exit=0; 原始输出 outputs/verification/results/model_tests.log",
+  "model_output_paths": [
+    "outputs/model/baseline_frozen.yaml",
+    "outputs/model/baseline_frozen.json",
+    "outputs/model/corona_model.py",
+    "outputs/model/test_model.py",
+    "outputs/model/results.json"
+  ],
+  "app_entry": "outputs/app/index.html",
+  "app_files": [
+    "outputs/app/index.html",
+    "outputs/app/corona_core.js",
+    "outputs/app/params.js",
+    "outputs/app/params.json",
+    "outputs/app/test_core.js",
+    "outputs/app/sample_export_scenario.json"
+  ],
+  "app_test_command": "cd outputs/app && node test_core.js   # 有界退出, 11 checks PASS, exit=0; 原始输出 outputs/verification/results/app_core_tests.log",
+  "svg_paths": [
+    "outputs/drawings/DRW-ARCH-001_mission_architecture.svg",
+    "outputs/drawings/DRW-ARCH-002_archive_payload_zones.svg",
+    "outputs/drawings/DRW-ARCH-003_system_interfaces.svg"
+  ],
+  "openscad_path": "outputs/drawings/CAD-HAB-001_concept_habitat.scad",
+  "openscad_check": {
+    "command": "cd outputs/drawings && openscad -o /tmp/cad-hab-001-check.csg CAD-HAB-001_concept_habitat.scad && openscad -o /tmp/cad-hab-001-render.png --imgsize=800,600 CAD-HAB-001_concept_habitat.scad",
+    "openscad_version": "OpenSCAD version 2026.09.03",
+    "result": "PASS (parse+CSG dump exit=0; full CGAL render exit=0, 0.093s)",
+    "log": "outputs/verification/results/drawings_checks.log",
+    "note": "DISC-003 已消解: 本机 OpenSCAD 就绪并实际渲染通过（本轮真实命令为据）。渲染 PNG 为二进制不作交付物, .scad 源为可编辑交付物。"
+  },
+  "cross_artifact_check": {
+    "command": "cd outputs/verification && python3 cross_artifact_check.py",
+    "result": "PASS (27 PASS / 0 FAIL, exit=0)",
+    "log": "outputs/verification/results/cross_artifact.log"
+  },
+  "not_run": [
+    "浏览器 GUI 交互测试（打开 index.html 并人工点击滑块/导出按钮）: 本节点无浏览器自动化工具; 已用 node 有界测试替代覆盖计算内核/导出结构/情景锁定, GUI 层标 NOT_RUN",
+    "app_starts_without_cloud_dependency 的人工启动确认: 应用为纯静态 file:// 页面(无网络/无服务), 依赖完整性经脚本检查(见 member_verification_log.md §6), 但真实浏览器打开未执行 → NOT_RUN",
+    "需求验证矩阵(RQ 双向追踪): 属验证/总装成员职责, 本节点未执行",
+    "三路线比较/假设登记册/TRL/WBS/课题包/独立否定意见: 属论证成员职责, 本节点未执行",
+    "outputs/FINAL_ACCEPTANCE.md 总装: 属最终总装员职责, 本节点未执行",
+    "严重问题清零检查(no_open_severity_one_issue): 需独立否定意见闭环, 本节点未执行"
+  ],
+  "known_issues": [
+    "DISC-001: acceptance.json 硬门 three_speed_scenarios_present 与本轮批准的单一 0.03c 锁定冲突, 须平台裁定 (CCR-001 pending_platform_confirmation); 本节点产物只含 0.03c 情景, 三情景比较仅留接口 (DISC-002)",
+    "系统 Python 无 PyYAML: 模型经 baseline_frozen.json 机器可读副本读取参数, 加载时校验 YAML 实际 SHA-256 == 冻结摘要 == 副本内嵌值; ruby YAML 1.1 对无符号指数标量解析为字符串, 模型加载时统一归一为 float (已修复并测试)",
+    "SVG/OpenSCAD 为概念级表达, 结构尺寸为占位 assumption, 不构成施工/制造输入"
+  ]
+}

@@ -417,6 +417,7 @@ func HashDTO(value any, schema PreorderSchema) (string, error) {
 			ServerID: typed.ServerID, ServerRevision: typed.ServerRevision,
 			Transport: typed.Transport, URL: typed.URL, Command: typed.Command,
 			Args: typed.Args, Filter: typed.Filter, WriteTools: typed.WriteTools,
+			Tools:     typed.Tools,
 			AccessRef: typed.AccessRef,
 		}
 	case FrozenModelBinding:
@@ -632,7 +633,18 @@ func NormalizeFrozenAgentRecord(value FrozenAgentRecord) (FrozenAgentRecord, err
 		}
 	}
 	if cloned.GraphType == "standard" && string(cloned.FactoryInput) != "{}" {
-		return FrozenAgentRecord{}, errors.New("standard factory_input must be an empty object")
+		input, inputErr := DecodeStandardFactoryInputV2(cloned.FactoryInput)
+		if inputErr != nil {
+			return FrozenAgentRecord{}, inputErr
+		}
+		encoded, marshalErr := json.Marshal(input)
+		if marshalErr != nil {
+			return FrozenAgentRecord{}, marshalErr
+		}
+		cloned.FactoryInput, err = canonicalRequiredJSONObject(encoded)
+		if err != nil {
+			return FrozenAgentRecord{}, err
+		}
 	}
 	return cloned, nil
 }
@@ -686,6 +698,9 @@ func normalizeFrozenMCPBinding(value FrozenMCPBinding) (FrozenMCPBinding, error)
 		return FrozenMCPBinding{}, err
 	}
 	if cloned.WriteTools, err = canonicalStringSet(cloned.WriteTools); err != nil {
+		return FrozenMCPBinding{}, err
+	}
+	if cloned.Tools, err = NormalizeToolDefinitions(cloned.Tools); err != nil {
 		return FrozenMCPBinding{}, err
 	}
 	if err := ValidateCredentialReference(cloned.AccessRef); err != nil ||
@@ -1836,17 +1851,18 @@ type frozenSkillHashInput struct {
 }
 
 type frozenMCPHashInput struct {
-	SchemaVersion  int                 `json:"schema_version"`
-	WorkspaceID    string              `json:"workspace_id"`
-	ServerID       string              `json:"server_id"`
-	ServerRevision int64               `json:"server_revision"`
-	Transport      string              `json:"transport"`
-	URL            string              `json:"url"`
-	Command        string              `json:"command"`
-	Args           []string            `json:"args"`
-	Filter         []string            `json:"filter"`
-	WriteTools     []string            `json:"write_tools"`
-	AccessRef      CredentialReference `json:"access_ref"`
+	SchemaVersion  int                    `json:"schema_version"`
+	WorkspaceID    string                 `json:"workspace_id"`
+	ServerID       string                 `json:"server_id"`
+	ServerRevision int64                  `json:"server_revision"`
+	Transport      string                 `json:"transport"`
+	URL            string                 `json:"url"`
+	Command        string                 `json:"command"`
+	Args           []string               `json:"args"`
+	Filter         []string               `json:"filter"`
+	WriteTools     []string               `json:"write_tools"`
+	Tools          []FrozenToolDefinition `json:"tools,omitempty"`
+	AccessRef      CredentialReference    `json:"access_ref"`
 }
 
 type frozenModelHashInput struct {

@@ -16,6 +16,7 @@ func (e *Executor) processConsumedWorkflowRun(ctx context.Context, task *taskque
 	}
 
 	executorID := executorIdentity(task.ID, workerID)
+	wasRunning := run.Status == StatusRunning
 	run, checkpoint, terminal, err := e.prepareWorkflowRunExecution(ctx, run, task, workerID, executorID)
 	if errors.Is(err, errRuntimeRetryOwnsExecution) {
 		return e.finishParkedTask(ctx, task, workerID, run)
@@ -25,6 +26,9 @@ func (e *Executor) processConsumedWorkflowRun(ctx context.Context, task *taskque
 	}
 	if terminal {
 		return e.finishTerminalTask(ctx, task, workerID, run, nil)
+	}
+	if wasRunning && checkpoint != nil && checkpoint.ActiveMember != nil {
+		return e.parkInterruptedMember(ctx, run, task, workerID, executorID, *checkpoint)
 	}
 
 	result, runErr := e.executePreparedWorkflowRun(ctx, run, task, workerID, checkpoint)
@@ -36,7 +40,7 @@ func (e *Executor) processConsumedWorkflowRun(ctx context.Context, task *taskque
 	if runErr != nil {
 		failed, failErr := e.failRunning(
 			ctx, run, task, executorID, runErr,
-			result.Usage, result.UsageCoverage, result.UsageComplete, result.UsageIncompleteReason,
+			result.Usage, result.UsageCoverage, result.UsageComplete, result.UsageIncompleteReason, result.MemberBreakdown,
 		)
 		if failErr != nil {
 			return failErr

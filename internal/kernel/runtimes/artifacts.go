@@ -16,7 +16,7 @@ import (
 
 var outputArtifactTypes = map[string]string{
 	".css": "text/css", ".js": "text/javascript", ".mjs": "text/javascript", ".cjs": "text/javascript",
-	".py": "text/x-python", ".sh": "text/x-shellscript", ".log": "text/plain",
+	".py": "text/x-python", ".rb": "text/x-ruby", ".sh": "text/x-shellscript", ".log": "text/plain",
 	".csv": "text/csv", ".html": "text/html", ".json": "application/json", ".jsonl": "application/x-ndjson",
 	".md": "text/markdown", ".svg": "image/svg+xml", ".tsv": "text/tab-separated-values",
 	".scad": "text/x-openscad", ".dxf": "image/vnd.dxf", ".txt": "text/plain", ".yaml": "application/yaml", ".yml": "application/yaml",

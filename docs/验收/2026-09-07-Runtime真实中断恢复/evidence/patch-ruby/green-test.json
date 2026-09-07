@@ -1,0 +1,5 @@
+{
+  "at": "2026-09-07T03:37:46.935905+00:00",
+  "exit_code": 0,
+  "command": "go test ./internal/kernel/runtimes -run ^TestSourceDeliveryKeepsApplicationAndVerificationDependenciesAcrossRuntimeWire$ -count=1"
+}

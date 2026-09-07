@@ -50,6 +50,8 @@ export interface WorkTaskMemberInput {
 
 /** One workflow stage assigned to a member, including observed tools and outputs. */
 export interface WorkTaskMemberStage {
+  readonly memberRunId?: string | undefined
+  readonly checkpointSavedAt?: string | undefined
   readonly nodeId: string
   readonly name: string
   readonly status: WorkTaskMemberStatus
@@ -593,6 +595,8 @@ function memberStages(value: unknown): readonly WorkTaskMemberStage[] {
       failureClass: (['work', 'verification', 'infrastructure', 'cancelled'].includes(deepString(item, ['failure_class', 'failureClass']))
         ? deepString(item, ['failure_class', 'failureClass']) : '') as WorkTaskMemberStage['failureClass'],
       failureReason: deepString(item, ['failure_reason', 'failureReason']), retryable: item.retryable === true,
+      ...(deepString(item, ['member_run_id', 'memberRunId']) === '' ? {} : { memberRunId: deepString(item, ['member_run_id', 'memberRunId']) }),
+      ...(deepString(item, ['checkpoint_saved_at', 'checkpointSavedAt']) === '' ? {} : { checkpointSavedAt: deepString(item, ['checkpoint_saved_at', 'checkpointSavedAt']) }),
       publicUpdates: publicUpdates(item.public_updates), publicUpdatesTruncated: item.public_updates_truncated === true,
       currentTaskId: deepString(item, ['current_task_id']),
       publicUpdatesState: ['live', 'complete', 'partial'].includes(String(item.public_updates_state)) ? item.public_updates_state as WorkTaskMemberStage['publicUpdatesState'] : 'unavailable',

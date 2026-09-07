@@ -15,6 +15,7 @@ func TestRuntimeRetryRequiresNoPossiblyAdmittedInvocation(t *testing.T) {
 		{"task-maybe-committed", "commit remote engine task: connection reset", false},
 		{"task-started", "stream disconnected", false},
 		{"task-started", "deadline exceeded", false},
+		{"task-started", "runtime_process_interrupted: signal killed", false},
 		{"task-started", "runtime_credentials_missing: ONEAPI_API_KEY", false},
 		{"", "invalid execution identity", false},
 	} {

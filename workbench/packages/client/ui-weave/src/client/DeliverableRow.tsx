@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { IconDownloadOutline16, IconSparkle16, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconDownloadOutline16, IconSparkle16, StateDot, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ToolCallViewProps } from '@deepseek-ai/dsh-client-ui-tool/client'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import css from './DeliverableRow.module.css'
@@ -169,10 +169,9 @@ export function DeliverableRow({ block, t }: DeliverableProps) {
               <strong>{deliverable.title || t('deliverable.untitled')}</strong>
               <span>{deliverable.filename}</span>
             </div>
-            <button className={css.download} type="button" onClick={() => { download(deliverable) }}>
-              <IconDownloadOutline16 size={14} />
-              {t('deliverable.download')}
-            </button>
+            <Tooltip label={t('deliverable.download')}><button className={css.download} type="button" aria-label={t('deliverable.download')} onClick={() => { download(deliverable) }}>
+              <IconDownloadOutline16 />
+            </button></Tooltip>
           </div>
           <div className={css.previewLabel}>{t('deliverable.preview')}</div>
           <pre className={css.preview}>{deliverable.preview}</pre>

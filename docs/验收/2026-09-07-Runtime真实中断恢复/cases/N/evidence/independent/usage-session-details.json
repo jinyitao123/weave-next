@@ -1,0 +1,58 @@
+{
+  "at": "2026-09-07T03:28:31.898958+00:00",
+  "source": "complete JSON fields in bounded CLI raw_summary; final result text is truncated",
+  "raw_summary_complete_json": false,
+  "source_sha256": "8778dadd32a9c7c54dd88eadaaf25638877ee6bdfdd92df9d4d3d8d015a0c9e1",
+  "fields": {
+    "session_id": "c86cf1ca-4818-438e-b521-cc645a8a952e",
+    "num_turns": 59,
+    "usage": {
+      "input_tokens": 92789,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2463310,
+      "output_tokens": 44596,
+      "output_tokens_details": {
+        "thinking_tokens": 5419
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "not_available",
+      "iterations": [],
+      "speed": "standard"
+    },
+    "modelUsage": {
+      "kimi-for-coding-highspeed": {
+        "inputTokens": 2780,
+        "outputTokens": 970,
+        "cacheReadInputTokens": 512,
+        "cacheCreationInputTokens": 0,
+        "webSearchRequests": 0,
+        "costUSD": 0.038406,
+        "contextWindow": 262144,
+        "maxOutputTokens": 32000,
+        "canonicalModel": "kimi-for-coding-highspeed",
+        "provider": "firstParty"
+      },
+      "k3[1m]": {
+        "inputTokens": 92789,
+        "outputTokens": 44596,
+        "cacheReadInputTokens": 2463310,
+        "cacheCreationInputTokens": 0,
+        "webSearchRequests": 0,
+        "costUSD": 2.8104999999999993,
+        "contextWindow": 1000000,
+        "maxOutputTokens": 32000,
+        "canonicalModel": "k3[1m]",
+        "provider": "firstParty"
+      }
+    },
+    "total_cost_usd": 2.8489059999999995
+  }
+}

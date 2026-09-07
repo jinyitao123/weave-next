@@ -1,0 +1,7 @@
+=== RUN   TestStandardPublishedToolsRealModel
+2026/09/07 13:51:33 INFO step.end tenant=real-publication step=prompt_assemble run_id=c46f5a38-89bd-4f16-8908-b657df190d64 duration_ms=0
+    standard_tools_real_model_test.go:166: runtime LLM inference: claude: context deadline exceeded
+--- FAIL: TestStandardPublishedToolsRealModel (200.17s)
+FAIL
+FAIL	github.com/jinyitao123/weave/internal/kernel/workflow	200.620s
+FAIL

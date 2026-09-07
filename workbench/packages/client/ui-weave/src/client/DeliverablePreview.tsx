@@ -1,6 +1,7 @@
 /** In-place reading for retained tables and SVG drawings. */
 import { type CSSProperties, useMemo, useState } from 'react'
 import { csvParseRows, tsvParseRows } from 'd3-dsv'
+import { IconDownloadOutline16, IconRefreshOutline16, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { DeliverablePreviewLabels } from './preview-locales.ts'
 import css from './DeliverablePreview.module.css'
 
@@ -45,7 +46,10 @@ function FilePreview({ contentType, body, title, imageUrl, labels, download }: P
   }, [body, contentType])
   if (table !== null) return <div className={css.preview}>
     <div className={css.toolbar}>
-      <span>{labels.table}</span>{download === undefined ? null : <a href={download.url} download>{download.label}</a>}
+      <span>{labels.table}</span>
+      {download === undefined ? null : <Tooltip label={download.label}>
+        <a className={css.iconButton} href={download.url} download aria-label={download.label}><IconDownloadOutline16 /></a>
+      </Tooltip>}
     </div>
     <div className={css.tableScroll} tabIndex={0} role="region" aria-label={labels.table}>
       <table><caption>{title}</caption><tbody>
@@ -58,12 +62,15 @@ function FilePreview({ contentType, body, title, imageUrl, labels, download }: P
   if (contentType !== 'image/svg+xml') return null
   return <div className={css.preview}>
     <div className={css.toolbar}>
-      {download === undefined ? <span>{labels.image}</span> : <a href={download.url} download>{download.label}</a>}
+      {download === undefined ? <span>{labels.image}</span>
+        : <Tooltip label={download.label}>
+          <a className={css.iconButton} href={download.url} download aria-label={download.label}><IconDownloadOutline16 /></a>
+        </Tooltip>}
       <div className={css.controls} role="group" aria-label={labels.zoomLevel}>
-        <button type="button" disabled={zoom <= .5 || imageState !== 'ready'} onClick={() => { setZoom(value => Math.max(.5, value - .25)) }} aria-label={labels.zoomOut} title={labels.zoomOut}><ZoomIcon direction="out" /></button>
+        <Tooltip label={labels.zoomOut}><button type="button" disabled={zoom <= .5 || imageState !== 'ready'} onClick={() => { setZoom(value => Math.max(.5, value - .25)) }} aria-label={labels.zoomOut}><ZoomIcon direction="out" /></button></Tooltip>
         <output aria-live="polite" aria-label={labels.zoomLevel}>{Math.round(zoom * 100)}%</output>
-        <button type="button" disabled={zoom >= 4 || imageState !== 'ready'} onClick={() => { setZoom(value => Math.min(4, value + .25)) }} aria-label={labels.zoomIn} title={labels.zoomIn}><ZoomIcon direction="in" /></button>
-        <button type="button" disabled={imageState !== 'ready'} onClick={() => { setZoom(1) }}>{labels.zoomReset}</button>
+        <Tooltip label={labels.zoomIn}><button type="button" disabled={zoom >= 4 || imageState !== 'ready'} onClick={() => { setZoom(value => Math.min(4, value + .25)) }} aria-label={labels.zoomIn}><ZoomIcon direction="in" /></button></Tooltip>
+        <Tooltip label={labels.zoomReset}><button type="button" disabled={imageState !== 'ready'} onClick={() => { setZoom(1) }} aria-label={labels.zoomReset}><IconRefreshOutline16 /></button></Tooltip>
       </div>
     </div>
     {download?.notice ? <p className={css.notice}>{download.notice}</p> : null}

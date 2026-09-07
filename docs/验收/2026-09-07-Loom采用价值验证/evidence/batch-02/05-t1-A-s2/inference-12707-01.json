@@ -1,0 +1,22 @@
+{
+  "error": "",
+  "native_tool_attempt": false,
+  "output": "{\"content\":\"我需要先读取冻结的 Corona 基线输入及其 SHA-256，确认基线身份后再依次执行场景计算与独立验证；收到真实回执后才会决定下一步并汇报结果。\",\"tool_calls\":[{\"name\":\"read_baseline\",\"args_json\":\"{}\"}]}",
+  "reported_models": [
+    "k3[1m]",
+    "k3",
+    "kimi-for-coding-highspeed"
+  ],
+  "status": "completed",
+  "usage": {
+    "input_tokens": 24360,
+    "output_tokens": 107,
+    "cost_usd": 0.0160845,
+    "has_tokens": true,
+    "has_cost": true,
+    "source": "cli-reported",
+    "scope": "invocation",
+    "engine_version": "2.1.245",
+    "raw_summary": "{\"is_error\":false,\"duration_api_ms\":5241,\"num_turns\":1,\"stop_reason\":\"end_turn\",\"session_id\":\"eaad986b-6b5f-48ce-8ace-83d4ffe12017\",\"total_cost_usd\":0.0160845,\"usage\":{\"input_tokens\":0,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":24360,\"output_tokens\":107,\"output_tokens_details\":{\"thinking_tokens\":33},\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":0,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"not_available\",\"iterations\":[],\"speed\":\"standard\"},\"modelUsage\":{\"kimi-for-coding-highspeed\":{\"inputTokens\":0,\"outputTokens\":23,\"cacheReadInputTokens\":1309,\"cacheCreationInputTokens\":0,\"webSearchRequests\":0,\"costUSD\":0.0012295000000000001,\"contextWindow\":262144,\"maxOutputTokens\":32000,\"canonicalModel\":\"kimi-for-coding-highspeed\",\"provider\":\"firstParty\"},\"k3[1m]\":{\"inputTokens\":0,\"outputTokens\":107,\"cacheReadInputTokens\":24360,\"cacheCreationInputTokens\":0,\"webSearchRequests\":0,\"costUSD\":0.014855,\"contextWindow\":1000000,\"maxOutputTokens\":32000,\"canonicalModel\":\"k3[1m]\",\"provider\":\"firstParty\"}},\"permission_denials\":[],\"terminal_reason\":\"completed\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"subagent_stats\":{\"spawned\":0,\"requested\":{\"background\":0,\"foreground\":0,\"unset\":0},\"started_in_background\":0,\"max_depth\":0,\"spawned_by_subagents\":0,\"completed\":0,\"failed\":0,\"killed\":{\"parent\":0,\"user\":0,\"system\":0},\"refused\":{\"depth_limit\":0,\"concurrency_limit\":0,\"budget\":0},\"by_type\":{}},\"subtype\":\"success\",\"api_error_status\":null,\"result\":\"{\\\"content\\\":\\\"我需要先读取冻结的 Corona 基线输入及其 SHA-256，确认基线身份后再依次执行场景计算与独立验证；收到真实回执后才会决定下一步并汇报结果。\\\",\\\"tool_calls\\\":[{\\\"name\\\":\\\"read_baseline\\\",\\\"args_json\\\":\\\"{}\\\"}]}\",\"ttft_ms\":4572,\"ttft_stream_ms\":2653,\"time_to_request_ms\":45,\"type\":\"result\",\"duration_ms\":4602,\"uuid\":\"1bcecef2-1237-4504-b23f-fca2f0f2d82a\",\"queued_turn_count\":0}"
+  }
+}

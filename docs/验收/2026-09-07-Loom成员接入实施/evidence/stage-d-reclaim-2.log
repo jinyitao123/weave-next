@@ -1,0 +1,10 @@
+=== RUN   TestReclaimedMemberWaitsForExplicitContinuationRealPG
+--- PASS: TestReclaimedMemberWaitsForExplicitContinuationRealPG (0.34s)
+=== RUN   TestMemberContinuationReclaimRequiresAnotherUserCommandRealPG
+--- PASS: TestMemberContinuationReclaimRequiresAnotherUserCommandRealPG (0.27s)
+=== RUN   TestStageRetryRejectsUnknownToolOutcomeRealPG
+--- PASS: TestStageRetryRejectsUnknownToolOutcomeRealPG (0.26s)
+=== RUN   TestWorkflowMemberParkKeepsCallAndResumesItsOriginalRunRealPG
+--- PASS: TestWorkflowMemberParkKeepsCallAndResumesItsOriginalRunRealPG (0.29s)
+PASS
+ok  	github.com/jinyitao123/weave/internal/base/teamrun	1.923s

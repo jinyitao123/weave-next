@@ -1,0 +1,21 @@
+{
+  "baseline_id": "corona-prephase-a-v1",
+  "mass_kg": 1000000000,
+  "rows": [
+    {
+      "beta": 0.01,
+      "cruise_years": 425,
+      "kinetic_energy_j": 4.493775893684088e+21
+    },
+    {
+      "beta": 0.03,
+      "cruise_years": 141.66666666666669,
+      "kinetic_energy_j": 4.044398304315679e+22
+    },
+    {
+      "beta": 0.05,
+      "cruise_years": 85,
+      "kinetic_energy_j": 1.1234439734210221e+23
+    }
+  ]
+}

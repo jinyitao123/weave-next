@@ -222,6 +222,7 @@ func (r *manifestMetadataResolver) ResolveMetadata(
 	if !r.closed {
 		if reference.DependencyVersion == nil &&
 			(reference.DependencyType == "model_binding" ||
+				reference.DependencyType == "mcp_binding" ||
 				reference.DependencyType == "runtime_binding" && r.allowRuntimeDiscovery) {
 			var matched *frozen.FrozenDependencyRef
 			for index := range r.dependencies {

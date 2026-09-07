@@ -28,6 +28,7 @@ services:
         BUILD_COMMIT: ${BUILD_COMMIT:-unknown}
         WEAVE_VERSION: ${WEAVE_VERSION:-0.1.0-dev}
         NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmjs.org}
+        GOPROXY: ${GOPROXY:-https://proxy.golang.org,direct}
         OPENCODE_VERSION: ${OPENCODE_VERSION:-1.18.11}
         CODEX_VERSION: ${CODEX_VERSION:-0.146.0}
         CLAUDE_CODE_VERSION: ${CLAUDE_CODE_VERSION:-2.1.220}
@@ -121,6 +122,7 @@ services:
         DSH_CLIENT_COMMIT_HASH: ${WORKBENCH_BUILD_COMMIT:-0000000}
         DSH_CLIENT_VERSION: ${WEAVE_VERSION:-0.1.0-dev}
         NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmjs.org}
+        DEBIAN_MIRROR: ${DEBIAN_MIRROR:-http://deb.debian.org}
         HTTP_PROXY: ${DOCKER_BUILD_HTTP_PROXY:-}
         HTTPS_PROXY: ${DOCKER_BUILD_HTTPS_PROXY:-}
         ALL_PROXY: ${DOCKER_BUILD_ALL_PROXY:-}
