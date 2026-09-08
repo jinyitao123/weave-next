@@ -648,6 +648,30 @@ func publishTeamDeliveryCLI(t *testing.T, pool *pgxpool.Pool, key []byte, runtim
 	worker := &registry.AgentRecord{Name: "worker", Role: "worker", Engine: engine.Claude, RuntimeID: runtimeID, RuntimePolicyMode: "strict_pin", Model: "fixture-native", GraphType: "standard", Spec: stdlib.AgentSpec{SystemPrompt: "Compute the result and export the physical file."}}
 	worker.MCPServers = mcpServers
 	for _, record := range []*registry.AgentRecord{lead, worker} {
+		if len(record.MCPServers) > 0 {
+			// Exercise the public configuration entry before publication: a
+			// direct Registry.Put previously hid the obsolete CLI-MCP gate.
+			body, err := json.Marshal(record)
+			if err != nil {
+				t.Fatal(err)
+			}
+			request := httptest.NewRequest(http.MethodPut, "/v1/agents/"+record.Name, bytes.NewReader(body))
+			request.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+			response := httptest.NewRecorder()
+			c := echo.New().NewContext(request, response)
+			c.SetParamNames("name")
+			c.SetParamValues(record.Name)
+			c.Set("tenant", "ws")
+			c.Set("user_id", "user")
+			s := &Server{Registry: agents, Runtimes: runtimes.NewStore(pool), MCPRegistry: mcpregistry.New(pool, key)}
+			if err := s.handleUpdateAgent(c); err != nil || response.Code != http.StatusOK {
+				t.Fatalf("configure CLI MCP: error=%v status=%d body=%s", err, response.Code, response.Body.String())
+			}
+			if err := json.Unmarshal(response.Body.Bytes(), record); err != nil {
+				t.Fatal(err)
+			}
+			continue
+		}
 		if err := agents.Put(ctx, "ws", record); err != nil {
 			t.Fatal(err)
 		}
