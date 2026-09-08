@@ -1,0 +1,90 @@
+{
+  "results": [
+    {
+      "name": "native window mounts the real shared Workbench from packaged local assets",
+      "status": "passed",
+      "durationMs": 653
+    },
+    {
+      "name": "local Workbench has no Node, preload bridge, or remote navigation privilege",
+      "status": "passed",
+      "durationMs": 16
+    },
+    {
+      "name": "native sidebar menu controls the existing Workbench layout",
+      "status": "passed",
+      "durationMs": 9
+    },
+    {
+      "name": "the actual composer stays editable and retains its draft while settings open",
+      "status": "passed",
+      "durationMs": 43
+    },
+    {
+      "name": "right-clicking the actual composer opens its native editing menu",
+      "status": "passed",
+      "durationMs": 19
+    },
+    {
+      "name": "shared settings and a real history conversation open inside Workbench",
+      "status": "passed",
+      "durationMs": 260
+    },
+    {
+      "name": "switch closes the old frontend and clears its in-memory authentication",
+      "status": "passed",
+      "durationMs": 705
+    },
+    {
+      "name": "download evidence",
+      "bytes": 80,
+      "sha256": "096956fdf537e29e4857ea720a60902460651bd35440fcb00d0205604804699e"
+    },
+    {
+      "name": "native download saves exact bytes and distinguishes cancellation and failure",
+      "status": "passed",
+      "durationMs": 1026
+    },
+    {
+      "name": "external protocols are blocked and HTTPS opening requires native confirmation",
+      "status": "passed",
+      "durationMs": 10
+    },
+    {
+      "name": "disconnect retains the selected origin and closes the local client",
+      "status": "passed",
+      "durationMs": 28
+    },
+    {
+      "name": "restart restores window bounds, selected B, pinned instance, and scoped UI preferences",
+      "status": "passed",
+      "durationMs": 702
+    },
+    {
+      "name": "cancelled slow candidate cannot replace B after a late response",
+      "status": "passed",
+      "durationMs": 1192
+    },
+    {
+      "name": "connection loss preserves B and reports a retryable error",
+      "status": "passed",
+      "durationMs": 37
+    },
+    {
+      "name": "replacement at selected origin rejects the new instance",
+      "status": "passed",
+      "durationMs": 95
+    },
+    {
+      "name": "corrupt preference fails visibly without overwriting or silently falling back",
+      "status": "passed",
+      "durationMs": 500
+    }
+  ],
+  "launched": [
+    12187,
+    12210,
+    12243
+  ],
+  "errors": []
+}

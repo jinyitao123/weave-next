@@ -20,4 +20,4 @@ Mutating the existing Connection package would mix desktop selection with curren
 
 ## Consequences
 
-Focused tests cover preference reload, aborted and superseded attempts, disk-write failure, instance mismatch, owner replacement, and real loopback connection loss. Fixtures are not account or business acceptance. Atomic disk durability, candidate session cleanup, server instance checks and production wiring remain adapter responsibilities. The source library alone is not an installable desktop application.
+Focused tests cover preference reload, aborted and superseded attempts, disk-write failure, instance mismatch, owner replacement, and real loopback connection loss. Fixtures are not account or business acceptance. Atomic disk durability, candidate session cleanup, server instance checks and production wiring remain adapter responsibilities. The source library alone is not an installable desktop application; its [native preview adapter](2026-09-08-native-workbench-preview.md) owns that separate boundary.

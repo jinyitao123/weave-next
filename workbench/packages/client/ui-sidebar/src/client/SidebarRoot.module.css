@@ -15,7 +15,7 @@
   box-sizing: border-box;
   background: var(--dsw-specific-sidebar-fill);
   color: var(--dsw-alias-label-primary);
-  font-size: 14px;
+  font-size: 13px;
   /* The sidebar is elevated above the conversation surface, so a revealed
      scrollbar uses the l2 pair. .quietBars hides it without changing layout. */
   --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
@@ -93,9 +93,9 @@
   align-items: center;
   justify-content: flex-end;
   gap: 8px;
-  height: 60px;
+  height: 48px;
   padding: 8px 0 8px 4px;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
   box-sizing: border-box;
   overflow: hidden;
 }
@@ -147,10 +147,10 @@
   gap: 6px;
   min-width: 0;
   height: 24px;
-  font-size: 18px;
+  font-size: 15px;
   font-weight: 600;
   line-height: 24px;
-  letter-spacing: 0.04em;
+  letter-spacing: 0;
 }
 
 .fallbackBrandName {
@@ -243,24 +243,23 @@
   white-space: nowrap;
 }
 
-/* New Session: 38px bar, 12px radius (figma 133:7634 geometry, squared-off
-   corners); collapsed it renders as the rail's plain icon control. */
+/* The new-session action shares the sidebar row rhythm; the collapsed rail stays icon-only. */
 .newSession {
   flex: none;
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 6px;
-  height: 38px;
-  padding: 8px 16px;
-  margin: 0 2px 8px;
+  justify-content: flex-start;
+  gap: 9px;
+  height: 34px;
+  padding: 6px 10px;
+  margin: 0 0 8px;
   box-sizing: border-box;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 12px;
-  background: var(--dsw-alias-button-elevated-fill);
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
   color: var(--dsw-alias-label-primary);
-  font-size: 14px;
-  font-weight: 500;
+  font-size: 13px;
+  font-weight: 400;
   line-height: 22px;
   cursor: pointer;
   overflow: hidden;

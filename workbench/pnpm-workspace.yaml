@@ -25,6 +25,8 @@ peerDependencyRules:
 # is a hard install error). Every such package MUST be listed; we deny by
 # default and only allow scripts we need. esbuild genuinely needs its native binary.
 allowBuilds:
+  # Pinned desktop preview runtime; its installer fetches the matching Electron binary.
+  electron@44.2.0: true
   esbuild: true
   # Cross-platform boundary for the persistent PTY backend, including ConPTY on Windows.
   node-pty: true
