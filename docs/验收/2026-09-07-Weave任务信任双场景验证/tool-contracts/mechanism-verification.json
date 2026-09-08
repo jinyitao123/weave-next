@@ -1,0 +1,60 @@
+{
+  "date": "2026-09-08",
+  "code_commit": "acfa5233a4d3fdc427a035778424e8de1fcda1ce",
+  "scope": "managed MCP argument validation and published CLI task authority",
+  "status": "mechanism_checks_passed",
+  "deployed": false,
+  "business_revalidation": "not_run",
+  "checks": [
+    {
+      "name": "make test",
+      "postgresql": "isolated test schemas, production pgx encoding in publication and gateway fixtures",
+      "result": "passed"
+    },
+    {
+      "name": "targeted race checks",
+      "packages": [
+        "mcphost",
+        "engine",
+        "daemon",
+        "api"
+      ],
+      "result": "passed"
+    },
+    {
+      "name": "make depguard productguard",
+      "result": "passed"
+    },
+    {
+      "name": "git diff --check",
+      "result": "passed"
+    }
+  ],
+  "logs": [
+    {
+      "file": "logs/guards.log.gz",
+      "raw_bytes": 165,
+      "raw_sha256": "9de28120e4463c97514d91a39f56a7851f41e80de493f8358f6994dc43bd27ca",
+      "compressed_sha256": "b5fa4e5fd81ba61caf0c9fedac3f17771eb9de1f6404bbfd8d01385375f376d3"
+    },
+    {
+      "file": "logs/make-test.log.gz",
+      "raw_bytes": 5057,
+      "raw_sha256": "251a782508b6d77a82a58606213646b9096553fabdb6a4fd0dc8d750729bdf5a",
+      "compressed_sha256": "a33626ba9ac07096e60a798800ecbad0a93a4bf4fd8e7292dd50a80076323c32"
+    },
+    {
+      "file": "logs/race-tool-contracts.log.gz",
+      "raw_bytes": 248,
+      "raw_sha256": "9c92213f703f2ca0a726a4269de0a7f4ef00b0e867e4fd572e910a512740ce22",
+      "compressed_sha256": "f89f91b9e6e48cad42d351a96965526fb26bc377f8da7b5bf22b759d4f99df41"
+    }
+  ],
+  "remaining": [
+    "unmanaged native CLI network and filesystem capabilities are not a sandbox",
+    "business fixture direct-access restrictions and read-only acceptance",
+    "Loom persistent budget integration",
+    "new ecommerce and Corona end-to-end acceptance"
+  ],
+  "log_scope": "Final successful check logs only; earlier iteration logs were not retained."
+}
