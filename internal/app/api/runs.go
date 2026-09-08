@@ -1248,6 +1248,7 @@ func (s *Server) handleGetRunActivity(c echo.Context) error {
 		"total_stages":     totalStages,
 		"human_tasks":      humanTasks,
 		"deliverables":     deliverableRefs,
+		"delivery":         s.runDelivery(c.Request().Context(), run),
 		"activity_events":  activityEvents,
 		"corrections":      corrections,
 		"completeness":     completeness,

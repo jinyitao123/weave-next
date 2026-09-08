@@ -68,6 +68,9 @@ type RunResult struct {
 	// adapters collect outputs/ and explicitly referenced root files so the server
 	// can persist real content; the workflow decides final versus failed evidence.
 	Artifacts []Artifact
+	// ArtifactCollection records independent collection observations without
+	// rewriting the original engine status, session, error, or usage.
+	ArtifactCollection *fileartifact.CollectionEvidence
 	// Attempts is populated by retrying remote executors. Each durable task ID
 	// appears at most once so downstream accumulators can deduplicate replays
 	// without collapsing distinct physical spend.

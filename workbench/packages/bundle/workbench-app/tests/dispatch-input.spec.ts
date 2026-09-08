@@ -634,6 +634,7 @@ describe('Workbench-owned dispatch tool', () => {
 
   it.each([
     { code: 'team_not_found', status: 404 },
+    { code: 'dispatch_delivery_contract_invalid', status: 400 },
     { code: 'team_not_active', status: 409 },
     { code: 'no_default_workflow', status: 409 },
     { code: 'default_workflow_unavailable', status: 409 },

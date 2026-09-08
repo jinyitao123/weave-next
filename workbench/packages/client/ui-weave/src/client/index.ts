@@ -117,8 +117,11 @@ export function apply(ctx: ClientContext): void {
         return await taskAction(sessionId, { action: 'correction-confirm', runId, correctionId, disposition })
       },
       completeHumanTask: async (runId: string, interactionId: string, payload: unknown) => taskAction(sessionId, { action: 'human-complete', runId, interactionId, payload }),
-      assessOutcome: async (runId: string, outcome: 'adopted' | 'needs-revision', note: string) => {
-        return await taskAction(sessionId, { action: 'assess', runId, outcome, note })
+      assessOutcome: async (runId: string, deliveryRevisionId: string, outcome: 'adopted' | 'needs-revision', note: string) => {
+        return await taskAction(sessionId, { action: 'assess', runId, deliveryRevisionId, outcome, note })
+      },
+      recheckDelivery: async (runId: string, deliveryRevisionId: string, contractDigest: string) => {
+        return await taskAction(sessionId, { action: 'recheck', runId, deliveryRevisionId, contractDigest })
       },
     })
   }

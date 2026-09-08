@@ -516,7 +516,7 @@ func (d *service) executeTask(ctx context.Context, task *taskqueue.Task) (runtim
 	// Preserve files written before an engine failure as observable, non-final
 	// workflow artifacts. The workflow layer still owns success/failure and will
 	// never promote these files to a final deliverable on a failed node.
-	runtimes.CollectRunOutputArtifacts(workDir, outputsBefore, &result)
+	err = errors.Join(err, runtimes.CollectRunOutputArtifacts(workDir, outputsBefore, &result))
 	execResult := runtimes.CLIEngineExecResult(result)
 	if err != nil {
 		return execResult, err

@@ -6,6 +6,7 @@ import (
 	"net/url"
 
 	"github.com/jinyitao123/loom/contract"
+	"github.com/jinyitao123/weave/internal/base/fileartifact"
 	"github.com/jinyitao123/weave/internal/kernel/engine"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 )
@@ -76,24 +77,28 @@ type EngineExecAttachment struct {
 // Usage is a pointer because encoding/json's omitempty cannot elide a zero
 // struct — CLI daemons keep producing the historical {"output": ...} shape.
 type EngineExecResult struct {
-	Output                   string               `json:"output"`
-	RetrySafeBeforeExecution bool                 `json:"retry_safe_before_execution,omitempty"`
-	ReportedModels           []string             `json:"reported_models,omitempty"`
-	StopReason               string               `json:"stop_reason,omitempty"`
-	Usage                    *contract.Usage      `json:"usage,omitempty"`
-	RunID                    string               `json:"run_id,omitempty"`
-	Status                   string               `json:"status,omitempty"`
-	Error                    string               `json:"error,omitempty"`
-	UsageReceipt             *engine.UsageReceipt `json:"usage_receipt,omitempty"`
-	Diagnostics              []engine.Diagnostic  `json:"diagnostics,omitempty"`
-	Events                   []engine.Event       `json:"events,omitempty"`
-	Artifacts                []engine.Artifact    `json:"artifacts,omitempty"`
+	SessionID                string                           `json:"session_id,omitempty"`
+	ArtifactCollection       *fileartifact.CollectionEvidence `json:"artifact_collection,omitempty"`
+	Output                   string                           `json:"output"`
+	RetrySafeBeforeExecution bool                             `json:"retry_safe_before_execution,omitempty"`
+	ReportedModels           []string                         `json:"reported_models,omitempty"`
+	StopReason               string                           `json:"stop_reason,omitempty"`
+	Usage                    *contract.Usage                  `json:"usage,omitempty"`
+	RunID                    string                           `json:"run_id,omitempty"`
+	Status                   string                           `json:"status,omitempty"`
+	Error                    string                           `json:"error,omitempty"`
+	UsageReceipt             *engine.UsageReceipt             `json:"usage_receipt,omitempty"`
+	Diagnostics              []engine.Diagnostic              `json:"diagnostics,omitempty"`
+	Events                   []engine.Event                   `json:"events,omitempty"`
+	Artifacts                []engine.Artifact                `json:"artifacts,omitempty"`
 }
 
 // CLIEngineExecResult preserves the complete external-engine outcome across
 // the daemon/server task boundary.
 func CLIEngineExecResult(result engine.RunResult) EngineExecResult {
 	return EngineExecResult{
+		SessionID:                result.SessionID,
+		ArtifactCollection:       result.ArtifactCollection,
 		Output:                   result.Output,
 		ReportedModels:           append([]string(nil), result.ReportedModels...),
 		RetrySafeBeforeExecution: result.RetrySafeBeforeExecution,
@@ -113,7 +118,9 @@ func (result EngineExecResult) EngineRunResult() engine.RunResult {
 		status = "completed" // compatibility with pre-receipt daemons
 	}
 	return engine.RunResult{
-		Output: result.Output, Status: status, Err: result.Error,
+		SessionID:          result.SessionID,
+		ArtifactCollection: result.ArtifactCollection,
+		Output:             result.Output, Status: status, Err: result.Error,
 		ReportedModels:           append([]string(nil), result.ReportedModels...),
 		RetrySafeBeforeExecution: result.RetrySafeBeforeExecution,
 		Usage:                    result.UsageReceipt,

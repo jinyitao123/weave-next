@@ -121,7 +121,7 @@ export interface WorkTaskDeliverable {
 /**
  * Whether Weave has recorded a final output, including a text-only delivery summary.
  * @param model - Exact-run deliverables already classified from Weave metadata.
- * @returns Whether final delivery is recorded independently of a filename or file bundle.
+ * @returns Whether a final output can be opened, independently of delivery verification or user assessment.
  */
 export function workTaskHasFinalDeliverable(model: Pick<WorkTaskModel, 'deliverables'>): boolean {
   return model.deliverables.some(item => item.kind === 'final' || item.kind === 'summary')
@@ -187,7 +187,24 @@ export interface WorkTaskModel {
   readonly costUSD: number
   readonly outcome: 'unrated' | 'adopted' | 'needs-revision'
   readonly outcomeNote: string
+  /** Host-owned verification; missing historical reports remain unknown. */
+  readonly delivery?: WorkTaskDelivery | undefined
+  readonly outcomeRevisionId?: string | undefined
+  readonly outcomeAssessedAt?: number | undefined
   readonly observedAt: number
+}
+
+/** Saved Weave checks for one immutable delivery revision. */
+export interface WorkTaskDelivery {
+  readonly revisionId: string
+  readonly contractDigest: string
+  readonly verificationId: string
+  readonly verificationStatus: 'pending' | 'passed' | 'failed' | 'unknown'
+  readonly reason: string
+  readonly checks: readonly { readonly checkId: string; readonly status: 'pending' | 'passed' | 'failed' | 'unknown'; readonly reason: string }[]
+  readonly checkCounts: Readonly<Record<string, number>>
+  readonly available: boolean
+  readonly evidenceCompleteness: 'complete' | 'unavailable'
 }
 
 /**
@@ -292,6 +309,9 @@ export function projectedWorkTask(model: WorkTaskModel, projection: WorkTaskProj
     stages: model.runId === projection.runId ? model.stages : [],
     teamCandidates: projection.preparation === undefined ? model.teamCandidates : [],
     deliverables: projection.deliverables,
+    delivery: projection.delivery,
+    outcomeRevisionId: projection.outcomeRevisionId,
+    outcomeAssessedAt: projection.outcomeAssessedAt,
   }
 }
 

@@ -95,6 +95,8 @@ describe('ui-weave browser plugin', () => {
       beginMemberAdjustment(member: WorkTaskMemberReference): Promise<void>
       selectTeam(teamId: string, teamName: string): Promise<void>
       requestDelivery(): Promise<void>
+      assessOutcome(runId: string, deliveryRevisionId: string, outcome: 'adopted' | 'needs-revision', note: string): Promise<string | null>
+      recheckDelivery(runId: string, deliveryRevisionId: string, contractDigest: string): Promise<string | null>
     })('session-1', { selectTab, showOutput })
     await expect(injected.stopRun('run-1')).resolves.toBeNull()
     await expect(injected.rerun('run-1', 'revised brief')).resolves.toBeNull()
@@ -131,6 +133,14 @@ describe('ui-weave browser plugin', () => {
       { sessionId: 'session-1', action: 'rerun', runId: 'run-1', brief: 'revised brief' },
       { sessionId: 'session-1', action: 'stage-retry', runId: 'run-1', nodeId: 'physics' },
     ])
+    await expect(injected.assessOutcome('run-1', 'revision-shown', 'adopted', '可用')).resolves.toBeNull()
+    expect(JSON.parse(fetcher.mock.calls.at(-1)?.[1]?.body as string)).toEqual({
+      sessionId: 'session-1', action: 'assess', runId: 'run-1', deliveryRevisionId: 'revision-shown', outcome: 'adopted', note: '可用',
+    })
+    await expect(injected.recheckDelivery('run-1', 'revision-shown', 'contract-shown')).resolves.toBeNull()
+    expect(JSON.parse(fetcher.mock.calls.at(-1)?.[1]?.body as string)).toEqual({
+      sessionId: 'session-1', action: 'recheck', runId: 'run-1', deliveryRevisionId: 'revision-shown', contractDigest: 'contract-shown',
+    })
     await injected.selectTeam('team-2', '复核团队')
     expect(send).toHaveBeenLastCalledWith(expect.stringContaining('team-2'), 'ui-control')
     await injected.requestDelivery()

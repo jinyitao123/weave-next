@@ -25,6 +25,11 @@ import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import TypertRegistry from '@deepseek-ai/dsh-typert-registry'
 import WorkspaceRegistry from '@deepseek-ai/dsh-workspace'
+import CommandRuntime from '@deepseek-ai/dsh-commands'
+import LocalCredentialProvider from '@deepseek-ai/dsh-credentials-local'
+import { HostConnectionService } from '../../../client/connection/src/rpc-host.ts'
+import { BrowserAuth } from '../../../client/connection/src/browser-auth.ts'
+import * as WorkbenchApp from '../src/index.ts'
 import { installDispatchInputTool } from '../src/dispatch-input.ts'
 
 const SID = SessionId('ui-control-loader')
@@ -33,6 +38,7 @@ const CONTROL = '我选择团队“订单核对团队”。请先整理任务简
 const CONFIRM = '确认由订单核对团队执行，保留原始材料。'
 const FACTS = { team_id: 'orders', workflow_id: 'reconcile', workflow_version: 1 }
 const RECORDING = new URL('./fixtures/dispatch-input/session.jsonl', import.meta.url)
+const DELIVERY_RECORDING = new URL('./fixtures/delivery-verification/session.jsonl', import.meta.url)
 const contexts: Context[] = []
 const roots: string[] = []
 
@@ -60,7 +66,7 @@ class DispatchAdapter extends LlmAdapter {
 }
 
 /** A YAML-mounted owner composition; it creates no Agent until the public Host command does. */
-async function loaded() {
+async function loaded(workbench = false) {
   const root = await mkdtemp(join(tmpdir(), 'weave-dispatch-loader-'))
   roots.push(root)
   const adapter = new DispatchAdapter()
@@ -102,6 +108,17 @@ async function loaded() {
     '@deepseek-ai/dsh-storage-domain': { backend: 'json' },
     '@deepseek-ai/dsh-storage-json': { root: join(root, 'storage') },
     '@deepseek-ai/dsh-system-prompt': { persona: 'Preserve inputs and dispatch only after confirmation.' },
+  }
+  if (workbench) {
+    modules.delete('fixture:dispatch')
+    modules.set('@deepseek-ai/dsh-commands', CommandRuntime)
+    modules.set('@deepseek-ai/dsh-credentials-local', LocalCredentialProvider)
+    modules.set('fixture:connection', { inject: ['credentials'], async apply(ctx: Context) {
+      new HostConnectionService(ctx, [], await BrowserAuth.create(ctx.root, ctx.credentials, 1))
+    } })
+    modules.set('@deepseek-ai/dsh-workbench-app', WorkbenchApp)
+    configs['@deepseek-ai/dsh-credentials-local'] = { path: join(root, 'credentials.yaml'), watch: false }
+    configs['@deepseek-ai/dsh-workbench-app'] = { apiUrl: 'http://weave.fixture', apiKey: 'fixture-only', pollIntervalMs: 500 }
   }
   const configPath = join(root, 'cordis.yml')
   await writeFile(configPath, [...modules.keys()].map(name =>
@@ -152,6 +169,79 @@ afterEach(async () => {
 })
 
 describe('dispatch input through real Loader, Host prompts, and JSONL replay', () => {
+  it('persists independent delivery checks and version-bound browser assessments through the real Host composition and JSONL reader', async () => {
+    const delivery = { revision_id: 'revision-1', contract_digest: 'contract-1', verification_id: 'verification-1',
+      verification_status: 'unknown', checks: [{ check_id: 'invoice-check', status: 'unknown', reason: 'verifier_unavailable' }],
+      check_counts: { unknown: 1 }, available: true, evidence_completeness: 'complete' }
+    const fetcher = vi.fn<typeof fetch>(async (input) => {
+      const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url)
+      if (url.pathname === '/v1/deliverables') return Response.json({ deliverables: [{ id: 'file-1', run_id: 'delivery-run',
+        title: 'report.md', content: 'PASS', metadata: { artifact_kind: 'final' } }] })
+      return Response.json({ run_id: 'delivery-run', status: 'succeeded', members: [], completeness: { members: 'complete' }, delivery })
+    })
+    vi.stubGlobal('fetch', fetcher)
+    const { ctx, root, adapter } = await loaded(true)
+    await ctx.sessionController.create({ sessionId: SID, cwd: root })
+    const session = ctx.sessions.get(SID)!
+    session.append('weave/work-task', WorkbenchApp.workTaskProjectionDefinition.wire.viewSchema.parse({
+      runId: 'delivery-run', clientRequestId: 'delivery-request', teamId: 'orders', teamName: '订单团队', workflowName: 'reconcile',
+      status: 'running', completedStages: 0, totalStages: 1, latestStage: '', runtimes: [], humanTaskCount: 0,
+      deliverableCount: 0, blocker: 'none', updatedAt: Date.now(),
+    })!)
+    await vi.waitFor(() => {
+      expect(ctx.sessionProjections.stateOf(session, 'workTask')?.task).toMatchObject({ status: 'completed',
+        delivery: { verificationStatus: 'unknown', revisionId: 'revision-1' }, outcome: 'unrated', deliverableCount: 1 })
+    })
+    const connection = ctx.get('connection') as HostConnectionService
+    const route = connection.createSharedFetchHandler('/api')
+    const assess = (deliveryRevisionId: string) => route.fetch(new Request('http://host/api/weave.task-action', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'assess', sessionId: SID,
+        runId: 'delivery-run', deliveryRevisionId, outcome: 'adopted', note: '用户审阅了当前成果' }),
+    }))
+    expect((await assess('old-revision')).status).toBe(409)
+    expect((await assess('revision-1')).status).toBe(204)
+    expect(ctx.sessionProjections.stateOf(session, 'workTask')?.task).toMatchObject({ outcome: 'adopted', outcomeRevisionId: 'revision-1',
+      delivery: { verificationStatus: 'unknown' } })
+    expect(adapter.requests).toEqual([])
+    await ctx.sessions.flush(session)
+    const location = ctx.sessionPersistence.locate(session.header)!
+    const recorded = await readFile(location.path, 'utf8')
+    const header = session.header
+    if (process.env.DSH_SNAPSHOT === 'record') {
+      await mkdir(new URL('.', DELIVERY_RECORDING), { recursive: true })
+      await writeFile(DELIVERY_RECORDING, recorded)
+    }
+    await ctx.fiber.dispose()
+    contexts.splice(contexts.indexOf(ctx), 1)
+    expect((await assess('revision-1')).status).toBe(404)
+    const replay = await loaded(true)
+    const target = replay.ctx.sessionPersistence.locate(header)!
+    await mkdir(dirname(target.path), { recursive: true })
+    await writeFile(target.path, recorded)
+    const restored = await replay.ctx.sessionPersistence.inspect(SID)
+    let state = WorkbenchApp.workTaskProjectionDefinition.init()
+    for (const event of restored.events) state = WorkbenchApp.applyWorkTaskProjection(state, event)
+    expect(WorkbenchApp.workTaskProjectionDefinition.wire.view(state)).toMatchObject({ outcome: 'adopted', outcomeRevisionId: 'revision-1',
+      delivery: { verificationStatus: 'unknown' } })
+    expect(replay.adapter.requests).toEqual([])
+  })
+
+  it('replays the committed delivery assessment recording without model execution', async () => {
+    const recording = await readFile(DELIVERY_RECORDING, 'utf8')
+    const header = JSON.parse(recording.split('\n')[0] ?? '') as SessionHeader
+    const { ctx, adapter } = await loaded(true)
+    const target = ctx.sessionPersistence.locate(header)!
+    await mkdir(dirname(target.path), { recursive: true })
+    await writeFile(target.path, recording)
+    const restored = await ctx.sessionPersistence.inspect(header.id)
+    let state = WorkbenchApp.workTaskProjectionDefinition.init()
+    for (const event of restored.events) state = WorkbenchApp.applyWorkTaskProjection(state, event)
+    expect(WorkbenchApp.workTaskProjectionDefinition.wire.view(state)).toMatchObject({ status: 'completed', outcome: 'adopted',
+      outcomeRevisionId: 'revision-1', latestAssessment: { runId: 'delivery-run', revisionId: 'revision-1', outcome: 'adopted' },
+      delivery: { verificationStatus: 'unknown' } })
+    expect(adapter.requests).toEqual([])
+  })
+
   it('keeps generated UI controls out of the task body sent by the model-visible tool', async () => {
     const requests: { path: string; body: Record<string, unknown> }[] = []
     vi.stubGlobal('fetch', vi.fn<typeof fetch>(async (input, init) => {

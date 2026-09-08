@@ -70,17 +70,18 @@ type serialMachineStart struct {
 	// UsageComplete seeds the annotation across park/resume: false plus
 	// UsageIncompleteReason when an earlier segment already hit an unmeasured
 	// node, so the final terminal result still says so.
-	UsageComplete         bool
-	UsageIncompleteReason string
-	LoadArtifacts         func(context.Context, []string) ([]deliverable.WorkflowArtifact, error)
-	RecordCheckpoint      func(context.Context, WorkflowCheckpointV1) error
-	RecordDelivery        func(context.Context, string, string, string, any, []deliverable.WorkflowArtifact) error
-	RecordOutput          func(context.Context, machine.Node, any, bool) error
-	RecordArtifact        func(context.Context, machine.Node, deliverable.WorkflowArtifact, bool) error
-	CheckCorrection       func(context.Context, string, map[string]any) (*CorrectionWaitDetailV1, error)
-	RecordActivity        func(context.Context, string, machine.Node, string, int64, map[string]any)
-	LoadObservedEvents    func(context.Context, machine.Node, string) []workflow.RuntimeCLIEvent
-	Corrections           []CorrectionDirectiveV1
+	UsageComplete            bool
+	UsageIncompleteReason    string
+	LoadArtifacts            func(context.Context, []string) ([]deliverable.WorkflowArtifact, error)
+	LoadArtifactObservations func(context.Context, []string) ([]deliverable.SourceObservation, error)
+	RecordCheckpoint         func(context.Context, WorkflowCheckpointV1) error
+	RecordDelivery           func(context.Context, string, string, string, any, []deliverable.WorkflowArtifact, []deliverable.SourceObservation, *deliverable.OutputSelection) error
+	RecordOutput             func(context.Context, machine.Node, any, bool) error
+	RecordArtifact           func(context.Context, machine.Node, deliverable.WorkflowArtifact, bool) error
+	CheckCorrection          func(context.Context, string, map[string]any) (*CorrectionWaitDetailV1, error)
+	RecordActivity           func(context.Context, string, machine.Node, string, int64, map[string]any)
+	LoadObservedEvents       func(context.Context, machine.Node, string) []workflow.RuntimeCLIEvent
+	Corrections              []CorrectionDirectiveV1
 }
 
 type serialMachineResult struct {
@@ -653,12 +654,9 @@ func runSerialMachine(
 			if err != nil {
 				return fail(executionError(ErrorCodeOutputInvalid, err))
 			}
-			// Only the output chosen by the frozen deliver node is a final
-			// delivery claim. Upstream plans may mention files never authored
-			// by their own node; they must not prevent the actual author running.
-			if message := valueDeliveryError(config.Result, outputs, deliveryErrors); message != "" {
-				return fail(executionError(ErrorCodeDeliveryUnavailable, errors.New(message)))
-			}
+			// Historical collection diagnostics remain in the execution record.
+			// Business file requirements are evaluated by the delivery verifier;
+			// a model's prose about a file cannot change the engine's result.
 			encoded, err := json.Marshal(output)
 			if err != nil {
 				return fail(executionError(ErrorCodeOutputInvalid, err))
@@ -670,14 +668,28 @@ func runSerialMachine(
 				))
 			}
 			var artifacts []deliverable.WorkflowArtifact
+			var observations []deliverable.SourceObservation
+			var selection *deliverable.OutputSelection
 			if start.LoadArtifacts != nil && config.Result.Source == machine.ValueNodeOutput {
 				artifacts, err = start.LoadArtifacts(ctx, artifactTaskIDs[config.Result.NodeID])
 				if err != nil {
 					return fail(executionError(ErrorCodeDeliveryUnavailable, err))
 				}
 			}
+			if config.Result.Source == machine.ValueNodeOutput && start.LoadArtifactObservations != nil {
+				observations, err = start.LoadArtifactObservations(ctx, artifactTaskIDs[config.Result.NodeID])
+				if err != nil {
+					return fail(executionError(ErrorCodeDeliveryUnavailable, err))
+				}
+			} else if config.Result.Source == machine.ValueRunInput || config.Result.Source == machine.ValueLiteral {
+				digest, err := deliverable.CanonicalJSONDigest(encoded)
+				if err != nil {
+					return fail(executionError(ErrorCodeOutputInvalid, err))
+				}
+				selection = &deliverable.OutputSelection{Kind: string(config.Result.Source), ValueDigest: digest}
+			}
 			if start.RecordDelivery != nil {
-				if err := start.RecordDelivery(ctx, node.ID, node.Label, string(node.Type), output, artifacts); err != nil {
+				if err := start.RecordDelivery(ctx, node.ID, node.Label, string(node.Type), output, artifacts, observations, selection); err != nil {
 					return fail(executionError(ErrorCodeDeliveryUnavailable, err))
 				}
 			} else {

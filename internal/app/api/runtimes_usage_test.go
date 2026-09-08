@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jinyitao123/weave/internal/base/fileartifact"
 	"github.com/jinyitao123/weave/internal/base/taskqueue"
 	"github.com/jinyitao123/weave/internal/kernel/engine"
 	"github.com/jinyitao123/weave/internal/kernel/runtimes"
@@ -83,5 +84,38 @@ func TestValidateRuntimeEngineExecResultKeepsLegacyNoReceiptCompatible(t *testin
 	}
 	if err := validateRuntimeEngineExecResult(&taskqueue.Task{Payload: payload}, runtimes.EngineExecResult{Output: "ok"}); err != nil {
 		t.Fatalf("legacy result rejected: %v", err)
+	}
+}
+
+func TestValidateRuntimeCollectionReceiptRejectsMalformedEvidence(t *testing.T) {
+	payload, _ := json.Marshal(runtimes.EngineExecRequest{Engine: engine.Codex})
+	task := &taskqueue.Task{Payload: payload}
+	evidence := fileartifact.CollectionEvidence{SchemaVersion: 1, Complete: false, Limits: fileartifact.CollectionLimits{MaxFiles: 128, MaxFileBytes: 262144, MaxTotalBytes: 524288}, Issues: []fileartifact.CollectionIssue{{Path: "report.pdf", Reason: "unsupported_file_type", Kind: "limit", Claimed: true}}}
+	result := runtimes.EngineExecResult{Status: "completed", SessionID: "session-original", ArtifactCollection: &evidence}
+	if err := validateRuntimeEngineExecResult(task, result); err != nil {
+		t.Fatalf("valid independent collection evidence rejected: %v", err)
+	}
+	for _, mutate := range []func(*fileartifact.CollectionEvidence){
+		func(e *fileartifact.CollectionEvidence) { e.SchemaVersion = 2 },
+		func(e *fileartifact.CollectionEvidence) { e.Complete = true },
+		func(e *fileartifact.CollectionEvidence) { e.Limits.MaxFiles = 129 },
+		func(e *fileartifact.CollectionEvidence) {
+			e.Issues = []fileartifact.CollectionIssue{{Path: "/private/host", Reason: "unreadable", Kind: "error"}}
+		},
+		func(e *fileartifact.CollectionEvidence) {
+			e.Issues = []fileartifact.CollectionIssue{{Reason: "invented_success", Kind: "passed"}}
+		},
+	} {
+		copy := evidence
+		mutate(&copy)
+		result.ArtifactCollection = &copy
+		if err := validateRuntimeEngineExecResult(task, result); err == nil {
+			t.Fatalf("malformed evidence admitted: %#v", copy)
+		}
+	}
+	payload, _ = json.Marshal(runtimes.EngineExecRequest{Engine: runtimes.EngineLoom})
+	task.Payload = payload
+	if err := validateRuntimeEngineExecResult(task, runtimes.EngineExecResult{ArtifactCollection: &evidence}); err == nil {
+		t.Fatal("CLI collection evidence admitted on Loom engine carrier")
 	}
 }

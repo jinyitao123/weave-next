@@ -57,7 +57,7 @@ const revisionSchema = z.object({
 // prove this request has no revision; HTTP status alone cannot prove admission.
 const unregisteredSelectionErrors = new Set([
   'team_not_found', 'team_not_active', 'no_default_workflow', 'default_workflow_unavailable',
-  'workflow_team_mismatch', 'workflow_not_published',
+  'workflow_team_mismatch', 'workflow_not_published', 'dispatch_delivery_contract_invalid',
 ])
 
 function digest(text: string): string { return createHash('sha256').update(text, 'utf8').digest('hex') }

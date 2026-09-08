@@ -10,8 +10,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jinyitao123/loom/contract"
 	"github.com/jinyitao123/loom/stdlib"
+	"github.com/jinyitao123/weave/internal/app/deliveryverify"
 	"github.com/jinyitao123/weave/internal/base/db"
-	"github.com/jinyitao123/weave/internal/base/deliverable"
 	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/base/snapshot"
 	"github.com/jinyitao123/weave/internal/base/storeext"
@@ -128,7 +128,7 @@ func TestWorkflowPublishedMemberParkKeepsOriginalRunAndAccountingRealPG(t *testi
 	tasks := taskqueue.New(pool, nil, time.Minute)
 	snapshots := snapshot.NewStore(pool)
 	flows := workflow.New(pool, nil)
-	server := &Server{Store: teamDispatchPoolStore{pool: pool}, OrgStore: org.NewStore(pool), Registry: registry.New(pool), Workflow: flows, ScheduleTransactions: pool, Snapshots: snapshots, Tasks: tasks}
+	server := &Server{Store: teamDispatchPoolStore{pool: pool}, OrgStore: org.NewStore(pool), Registry: registry.New(pool), Workflow: flows, Deliverables: deliveryverify.NewStore(pool), ScheduleTransactions: pool, Snapshots: snapshots, Tasks: tasks}
 	request, _ := json.Marshal(teamDispatchRequest{Task: "calculate", ClientRequestID: "00000000-0000-4000-8000-000000000055"})
 	recorder := httptest.NewRecorder()
 	c := echo.New().NewContext(httptest.NewRequest(http.MethodPost, "/v1/teams/team/dispatch", bytes.NewReader(request)), recorder)
@@ -152,7 +152,7 @@ func TestWorkflowPublishedMemberParkKeepsOriginalRunAndAccountingRealPG(t *testi
 		t.Fatal(err)
 	}
 	lead, worker := &memberIntegrationModel{}, &memberIntegrationModel{fail: true, export: true}
-	runtime := &teamrun.WorkflowSerialRuntime{OutputRecorder: deliverable.New(pool), Members: members, Artifacts: flows, Loader: &workflow.RuntimeLoader{Registry: memberIntegrationDescriptors(t)}, HostFactory: memberIntegrationHosts{bundle.Agent.AgentID, lead, worker}, CredentialResolvers: func(string) (workflow.RuntimeCredentialResolver, error) { return memberIntegrationSecrets{}, nil }, Transactions: pool, Runs: runs, Checkpoints: checkpoints, Tasks: tasks, Snapshots: snapshots}
+	runtime := &teamrun.WorkflowSerialRuntime{OutputRecorder: deliveryverify.NewStore(pool), Members: members, Artifacts: flows, Loader: &workflow.RuntimeLoader{Registry: memberIntegrationDescriptors(t)}, HostFactory: memberIntegrationHosts{bundle.Agent.AgentID, lead, worker}, CredentialResolvers: func(string) (workflow.RuntimeCredentialResolver, error) { return memberIntegrationSecrets{}, nil }, Transactions: pool, Runs: runs, Checkpoints: checkpoints, Tasks: tasks, Snapshots: snapshots}
 	executor := &teamrun.Executor{Tasks: tasks, Transactions: pool, Runs: runs, Checkpoints: checkpoints, Runtime: runtime, Consumer: &teamrun.Consumer{Transactions: pool, Snapshots: snapshots, Runs: runs, Tasks: tasks}}
 	if ok, err := executor.ProcessNext(ctx, "first"); err != nil || !ok {
 		t.Fatalf("first=%v %v", ok, err)

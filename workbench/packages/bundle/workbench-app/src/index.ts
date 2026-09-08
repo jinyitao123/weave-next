@@ -26,6 +26,28 @@ export type { WeaveRuntimeEngineView, WeaveRuntimeList, WeaveRuntimeView } from 
 /** User-facing lifecycle of one Weave-dispatched task. */
 export type WorkTaskStatus = 'preparing' | 'queued' | 'running' | 'waiting' | 'stopping' | 'completed' | 'failed' | 'stopped'
 
+/** Saved Weave checks for one immutable delivery revision. */
+export interface WorkTaskDelivery {
+  readonly revisionId: string
+  readonly contractDigest: string
+  readonly verificationId: string
+  readonly verificationStatus: 'pending' | 'passed' | 'failed' | 'unknown'
+  readonly reason: string
+  readonly checks: { readonly checkId: string; readonly status: 'pending' | 'passed' | 'failed' | 'unknown'; readonly reason: string }[]
+  readonly checkCounts: Readonly<Record<string, number>>
+  readonly available: boolean
+  readonly evidenceCompleteness: 'complete' | 'unavailable'
+}
+
+/** Last user-authored assessment, retained when delivery evidence cannot be read. */
+export interface WorkTaskAssessment {
+  readonly runId: string
+  readonly revisionId: string
+  readonly outcome: 'adopted' | 'needs-revision'
+  readonly note: string
+  readonly assessedAt: number
+}
+
 /** Durable product view of one Weave dispatch owned by a Workbench session. */
 export interface WorkTaskProjection {
   /** Preparation remains visible until dispatch; a transport error does not prove creation failed. */
@@ -64,6 +86,11 @@ export interface WorkTaskProjection {
   readonly costUSD: number
   readonly outcome: 'unrated' | 'adopted' | 'needs-revision'
   readonly outcomeNote: string
+  /** Absent in historical session records that predate delivery verification. */
+  readonly delivery?: WorkTaskDelivery | undefined
+  readonly outcomeRevisionId?: string | undefined
+  readonly outcomeAssessedAt?: number | undefined
+  readonly latestAssessment?: WorkTaskAssessment | undefined
   readonly observedAt: number
   readonly updatedAt: number
 }
@@ -288,7 +315,8 @@ const browserTaskActionSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('correction-request'), sessionId: z.string(), runId: z.string(), targetKind: z.enum(['team', 'member']), targetMemberId: z.string(), instruction: z.string().trim().min(1).max(20_000) }).strict(),
   z.object({ action: z.literal('correction-confirm'), sessionId: z.string(), runId: z.string(), correctionId: z.string(), disposition: z.enum(['apply', 'discard']) }).strict(),
   z.object({ action: z.literal('human-complete'), sessionId: z.string(), runId: z.string(), interactionId: z.string(), payload: z.unknown().refine(value => value !== undefined) }).strict(),
-  z.object({ action: z.literal('assess'), sessionId: z.string(), runId: z.string(), outcome: z.enum(['adopted', 'needs-revision']), note: z.string().max(2_000) }).strict(),
+  z.object({ action: z.literal('assess'), sessionId: z.string(), runId: z.string(), deliveryRevisionId: z.string().min(1), outcome: z.enum(['adopted', 'needs-revision']), note: z.string().max(2_000) }).strict(),
+  z.object({ action: z.literal('recheck'), sessionId: z.string(), runId: z.string(), deliveryRevisionId: z.string().min(1), contractDigest: z.string().min(1) }).strict(),
 ])
 const pendingActionSchema = z.object({
   kind: z.enum(['stop', 'rerun', 'stage-retry', 'correction-request', 'correction-confirm', 'human-complete']), targetRunId: z.string(), idempotencyKey: z.string(),
@@ -305,6 +333,42 @@ const correctionSchema = z.object({
   preservedNodeIds: z.array(z.string()), requestedAt: z.string(),
 }).strict()
 const completenessSchema = z.record(z.string(), z.enum(['complete', 'partial', 'unavailable']))
+const verificationStatusSchema = z.enum(['pending', 'passed', 'failed', 'unknown'])
+const deliverySchema = z.object({
+  revisionId: z.string(), contractDigest: z.string(), verificationId: z.string(), verificationStatus: verificationStatusSchema,
+  reason: z.string(), checks: z.array(z.object({ checkId: z.string(), status: verificationStatusSchema, reason: z.string() }).strict()),
+  checkCounts: z.record(z.string(), z.number().int().nonnegative()), available: z.boolean(), evidenceCompleteness: z.enum(['complete', 'unavailable']),
+}).strict()
+const wireDeliverySchema = z.object({
+  revision_id: z.string().default(''), contract_digest: z.string().default(''), verification_id: z.string().default(''), verification_status: verificationStatusSchema,
+  reason: z.string().default(''), checks: z.array(z.object({ check_id: z.string(), status: verificationStatusSchema, reason: z.string() })),
+  check_counts: z.record(z.string(), z.number().int().nonnegative()), available: z.boolean(), evidence_completeness: z.enum(['complete', 'unavailable']),
+})
+
+function readDelivery(value: unknown): WorkTaskDelivery {
+  const parsed = wireDeliverySchema.safeParse(value)
+  if (!parsed.success) return { revisionId: '', contractDigest: '', verificationId: '', verificationStatus: 'unknown',
+    reason: 'delivery_verification_unavailable', checks: [], checkCounts: {}, available: false, evidenceCompleteness: 'unavailable' }
+  const item = parsed.data
+  return { revisionId: item.revision_id, contractDigest: item.contract_digest, verificationId: item.verification_id,
+    verificationStatus: item.verification_status, reason: item.reason,
+    checks: item.checks.map(check => ({ checkId: check.check_id, status: check.status, reason: check.reason })),
+    checkCounts: item.check_counts, available: item.available, evidenceCompleteness: item.evidence_completeness }
+}
+
+function assessmentForDelivery(previous: WorkTaskProjection | null, runId: string, delivery: WorkTaskDelivery | undefined):
+Pick<WorkTaskProjection, 'outcome' | 'outcomeNote' | 'outcomeRevisionId' | 'outcomeAssessedAt' | 'latestAssessment'> {
+  const receipt = previous?.runId === runId ? previous.latestAssessment
+    ?? (previous.outcome !== 'unrated' && previous.outcomeRevisionId !== undefined && previous.outcomeRevisionId !== ''
+      ? { runId, revisionId: previous.outcomeRevisionId, outcome: previous.outcome,
+        note: previous.outcomeNote, assessedAt: previous.outcomeAssessedAt ?? 0 }
+      : undefined) : undefined
+  const sameRevision = receipt?.runId === runId && delivery !== undefined && delivery.revisionId !== '' && receipt.revisionId === delivery.revisionId
+  return { ...(receipt?.runId === runId ? { latestAssessment: receipt } : {}), ...(sameRevision
+    ? { outcome: receipt.outcome, outcomeNote: receipt.note, outcomeRevisionId: receipt.revisionId, outcomeAssessedAt: receipt.assessedAt }
+    : { outcome: 'unrated' as const, outcomeNote: '', outcomeRevisionId: '', outcomeAssessedAt: 0 }) }
+}
+
 const taskSchema = z.object({
   preparation: z.object({ callId: z.string(), buildId: z.string(), updatedAt: z.number().nonnegative().optional(), state: z.enum(['submitting', 'building', 'ready', 'failed', 'unknown']), error: z.string(), steps: z.array(z.object({ id: z.string(), label: z.string(), status: z.string(), attempt: z.number() }).strict()).optional() }).strict().optional(),
   displayState: z.string().optional(),
@@ -330,6 +394,8 @@ const taskSchema = z.object({
   tokensIn: z.number().int().nonnegative().default(0), tokensOut: z.number().int().nonnegative().default(0),
   costUSD: z.number().nonnegative().default(0),
   outcome: z.enum(['unrated', 'adopted', 'needs-revision']).default('unrated'), outcomeNote: z.string().default(''),
+  delivery: deliverySchema.optional(), outcomeRevisionId: z.string().optional(), outcomeAssessedAt: z.number().nonnegative().optional(),
+  latestAssessment: z.object({ runId: z.string().min(1), revisionId: z.string().min(1), outcome: z.enum(['adopted', 'needs-revision']), note: z.string(), assessedAt: z.number().nonnegative() }).strict().optional(),
   observedAt: z.number().nonnegative().default(0),
   updatedAt: z.number().nonnegative(),
 }).strict()
@@ -741,6 +807,8 @@ function snapshot(
       || (sameRun ? previous.totalStages : 0)
   const retainedRuntimes = nextRuntimes.length === 0 ? (sameRun ? previous.runtimes : []) : nextRuntimes
   const observed = observedAt(value, now)
+  const delivery = Object.hasOwn(object(value) ?? {}, 'delivery') ? readDelivery(object(value)?.delivery)
+    : sameRun ? previous.delivery : undefined
   const base: Omit<WorkTaskProjection, 'attempts'> = {
     brief: seed.brief ?? previous?.brief ?? '',
     clientRequestId: text(value, ['client_request_id', 'clientRequestId']) || seed.clientRequestId || previous?.clientRequestId || '',
@@ -777,8 +845,8 @@ function snapshot(
     tokensIn: Math.floor(finiteNumber(value, ['tokens_in', 'tokensIn', 'input_tokens']) ?? (sameRun ? previous.tokensIn : 0)),
     tokensOut: Math.floor(finiteNumber(value, ['tokens_out', 'tokensOut', 'output_tokens']) ?? (sameRun ? previous.tokensOut : 0)),
     costUSD: finiteNumber(value, ['cost_usd', 'costUSD']) ?? (sameRun ? previous.costUSD : 0),
-    outcome: sameRun ? previous.outcome : 'unrated',
-    outcomeNote: sameRun ? previous.outcomeNote : '',
+    ...(delivery === undefined ? {} : { delivery }),
+    ...assessmentForDelivery(previous, nextRunId, delivery),
     observedAt: observed,
     updatedAt: now,
   }
@@ -821,7 +889,9 @@ export function applyWorkTaskProjection(state: WorkTaskState, event: SessionEven
     for (const receipt of [...(state.task?.actionHistory ?? []), ...incoming.actionHistory]) {
       if (!receipts.has(receipt.id)) receipts.set(receipt.id, receipt)
     }
-    return { ...state, task: { ...incoming, teamName: state.teams[incoming.teamId] || incoming.teamName,
+    const { latestAssessment: _assessment, ...incomingFacts } = incoming
+    return { ...state, task: { ...incomingFacts, ...assessmentForDelivery(incoming, incoming.runId, incoming.delivery),
+      teamName: state.teams[incoming.teamId] || incoming.teamName,
       actionHistory: [...receipts.values()] } }
   }
   if (event.type === 'weave/work-task-action') {
@@ -942,7 +1012,7 @@ function buildSnapshot(task: WorkTaskProjection, value: unknown, now: number): W
 
 /** Projection definition registered with the Session projection registry. */
 export const workTaskProjectionDefinition = {
-  key: 'workTask', stateVersion: 13, stateSchema,
+  key: 'workTask', stateVersion: 14, stateSchema,
   init: (): WorkTaskState => ({ task: null, pendingCalls: {}, teams: {} }),
   apply: applyWorkTaskProjection,
   wire: {
@@ -1058,6 +1128,37 @@ export function apply(ctx: Context, config: Config = {}): void {
   const terminalChecked = new Set<string>()
   const sessionKey = (session: Session): string => String(session.id)
   const terminal = (task: WorkTaskProjection): boolean => terminalStatus(task.status)
+  const recordAssessment = async (session: Session, runId: unknown, revisionId: unknown,
+    outcome: 'adopted' | 'needs-revision', note: string): Promise<string | null> => {
+    const current = ctx.sessionProjections.stateOf(session, 'workTask')?.task
+    const matches = (task: WorkTaskProjection | null | undefined): task is WorkTaskProjection => task != null
+      && task.status === 'completed' && task.runId === runId && typeof revisionId === 'string' && revisionId !== ''
+      && task.delivery?.revisionId === revisionId && task.delivery.available
+      && task.deliverables.some(item => item.kind === 'final' || item.kind === 'summary')
+    if (!matches(current)) return '交付版本已经变化，或尚未收到可评价的成果，请刷新后重试。'
+    let detail: unknown
+    try {
+      const response = await fetch(`${apiUrl}/v1/runs/${encodeURIComponent(current.runId)}/delivery`, {
+        headers: { Authorization: `Bearer ${apiKey}` }, signal: AbortSignal.timeout(10_000),
+      })
+      if (!response.ok) { await response.body?.cancel(); return '暂时无法核对交付版本，请稍后重试。' }
+      detail = await response.json() as unknown
+    } catch { return '暂时无法核对交付版本，请稍后重试。' }
+    const delivery = readDelivery(object(detail)?.delivery)
+    const latest = ctx.sessionProjections.stateOf(session, 'workTask')?.task
+    if (disposed || object(detail)?.run_id !== runId || object(detail)?.status !== 'succeeded'
+      || delivery.revisionId !== revisionId || !delivery.available || !matches(latest)) {
+      return '交付版本已经变化，请刷新后重新评价。'
+    }
+    const now = Date.now()
+    session.append('weave/work-task', { ...latest, outcome, outcomeNote: note,
+      outcomeRevisionId: delivery.revisionId, outcomeAssessedAt: now,
+      latestAssessment: { runId: latest.runId, revisionId: delivery.revisionId, outcome, note, assessedAt: now }, updatedAt: now })
+    await ctx.sessions.flush(session)
+    terminalChecked.delete(sessionKey(session))
+    schedule(session, 0)
+    return null
+  }
   const stop = (session: Session): void => {
     const key = sessionKey(session)
     const timer = timers.get(key)
@@ -1109,10 +1210,31 @@ export function apply(ctx: Context, config: Config = {}): void {
         return Response.json({ error: '当前任务状态已经变化，请刷新后重试。' }, { status: 409 })
       }
       if (input.action === 'assess') {
-        if (current.status !== 'completed' || !current.deliverables.some(item => item.kind === 'final' || item.kind === 'summary')) return Response.json({ error: '取得最终成果后才能判断交付结果。' }, { status: 409 })
-        session.append('weave/work-task', { ...current, outcome: input.outcome, outcomeNote: input.note.trim(), updatedAt: Date.now() })
-        await ctx.sessions.flush(session)
+        const error = await recordAssessment(session, input.runId, input.deliveryRevisionId, input.outcome, input.note.trim())
+        if (error !== null) return Response.json({ error }, { status: 409 })
         return new Response(null, { status: 204 })
+      }
+      if (input.action === 'recheck') {
+        if (current.delivery?.revisionId !== input.deliveryRevisionId
+          || current.delivery.contractDigest !== input.contractDigest || !current.delivery.available) {
+          return Response.json({ error: '交付版本已经变化，请刷新后重新核验。' }, { status: 409 })
+        }
+        try {
+          const response = await fetch(`${apiUrl}/v1/runs/${encodeURIComponent(current.runId)}/delivery/recheck`, {
+            method: 'POST', headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ revision_id: input.deliveryRevisionId, contract_digest: input.contractDigest }),
+            signal: AbortSignal.any([request.signal, AbortSignal.timeout(50_000)]),
+          })
+          if (!response.ok) {
+            await response.body?.cancel()
+            return Response.json({ error: response.status === 409 ? '交付版本已经变化，请刷新后重新核验。'
+              : response.status === 422 ? '这份历史成果缺少重查所需的证据，暂时无法重新核验。' : '核验请求未完成，请稍后重试。' }, { status: response.status === 409 ? 409 : 503 })
+          }
+          const result = object(await response.json() as unknown)
+          if (!disposed) { terminalChecked.delete(sessionKey(session)); schedule(session, 0) }
+          if (result?.current !== true) return Response.json({ error: '成果或核验记录已经变化，本次结果保留在历史中，请查看最新记录。' }, { status: 409 })
+          return new Response(null, { status: 204 })
+        } catch { return Response.json({ error: '核验结果暂时无法确认，请刷新后查看最新记录。' }, { status: 503 }) }
       }
       if (current.pendingAction !== null) return Response.json({ error: '已有一个操作正在处理中，请稍后再试。' }, { status: 409 })
       let pendingAction: WorkTaskPendingAction
@@ -1269,7 +1391,7 @@ export function apply(ctx: Context, config: Config = {}): void {
           } else {
             next = snapshot(latest, value, Date.now(), { pendingAction: null, actionError: '' })
           }
-          next = { ...next, ...(action.kind === 'rerun' ? {} : { outcome: latest.outcome, outcomeNote: latest.outcomeNote }), actionHistory: receipt(latest, action, 'accepted') }
+          next = { ...next, ...assessmentForDelivery(latest, next.runId, next.delivery), actionHistory: receipt(latest, action, 'accepted') }
           session.append('weave/work-task', next)
           await ctx.sessions.flush(session)
           if (action.kind === 'rerun') terminalChecked.delete(sessionKey(session))
@@ -1295,6 +1417,8 @@ export function apply(ctx: Context, config: Config = {}): void {
         const activity = await response.json() as unknown
         if (current.runId !== '' && object(activity)?.run_id !== current.runId) return
         let next = snapshot(current, activity, Date.now())
+        if (current.runId !== '' && !Object.hasOwn(object(activity) ?? {}, 'delivery')) next = { ...next,
+          delivery: { ...readDelivery(undefined), reason: 'delivery_verification_unsupported', evidenceCompleteness: 'complete' } }
         let supplementalReadsComplete = true
         const readSupplement = async (path: string): Promise<unknown> => {
           try {
@@ -1304,6 +1428,12 @@ export function apply(ctx: Context, config: Config = {}): void {
           } catch { /* A failed detail read keeps the observed activity and remains eligible for retry. */ }
           supplementalReadsComplete = false
           return undefined
+        }
+        if (terminal(next) && next.delivery?.verificationStatus === 'pending') {
+          const detail = await readSupplement(`/v1/runs/${encodeURIComponent(next.runId)}/delivery`)
+          const delivery = readDelivery(object(detail)?.run_id === next.runId ? object(detail)?.delivery : undefined)
+          next = { ...next, delivery: delivery.verificationStatus === 'pending'
+            ? { ...delivery, verificationStatus: 'unknown', reason: 'delivery_report_missing' } : delivery }
         }
         if (next.teamName === '' && next.teamId !== '') {
           const detail = await readSupplement(`/v1/teams/${encodeURIComponent(next.teamId)}?include=summary`)
@@ -1337,7 +1467,7 @@ export function apply(ctx: Context, config: Config = {}): void {
         if (latest === undefined || next.observedAt < latest.observedAt) return
         next = resyncAttempts({ ...next, pendingAction: latest.pendingAction,
           actionError: latest.actionError !== current.actionError ? latest.actionError : next.actionError,
-          outcome: latest.outcome, outcomeNote: latest.outcomeNote, actionHistory: latest.actionHistory }, latest)
+          ...assessmentForDelivery(latest, next.runId, next.delivery), actionHistory: latest.actionHistory }, latest)
         const materiallyChanged = !isDeepStrictEqual({ ...next, observedAt: 0, updatedAt: 0 },
           { ...latest, observedAt: 0, updatedAt: 0 })
         if (materiallyChanged || next.observedAt - latest.observedAt >= 30_000) {
@@ -1348,6 +1478,7 @@ export function apply(ctx: Context, config: Config = {}): void {
         }
         const settled = latestForRun()
         if (settled !== undefined && terminal(settled) && settled.pendingAction === null
+          && operation.nextDelay !== 0 && settled.delivery?.evidenceCompleteness !== 'unavailable'
           && supplementalReadsComplete && Array.isArray(object(activity)?.members)
           && settled.completeness.members !== 'unavailable') {
           terminalChecked.add(sessionKey(session)); stop(session); return
@@ -1501,18 +1632,13 @@ export function apply(ctx: Context, config: Config = {}): void {
     description: 'record whether the final Weave delivery is usable without invoking the model',
     recordInput: false,
     handler: async ({ agent, rawInput }) => {
-      const current = ctx.sessionProjections.stateOf(agent.session, 'workTask')?.task
-      let request: { runId?: unknown; outcome?: unknown; note?: unknown }
+      let request: { runId?: unknown; deliveryRevisionId?: unknown; outcome?: unknown; note?: unknown }
       try { request = JSON.parse(rawInput.trim()) as typeof request } catch { return { kind: 'error', text: 'Invalid Weave outcome assessment.' } }
       const outcome = request.outcome === 'adopted' || request.outcome === 'needs-revision' ? request.outcome : ''
       const note = typeof request.note === 'string' ? request.note.trim().slice(0, 2_000) : ''
-      if (current === null || current === undefined || current.status !== 'completed'
-        || !current.deliverables.some(item => item.kind === 'final' || item.kind === 'summary')
-        || request.runId !== current.runId || outcome === '') {
-        return { kind: 'error', text: 'A completed current run and a valid outcome are required.' }
-      }
-      agent.session.append('weave/work-task', { ...current, outcome, outcomeNote: note, updatedAt: Date.now() })
-      await ctx.sessions.flush(agent.session)
+      if (outcome === '') return { kind: 'error', text: 'Invalid Weave outcome assessment.' }
+      const error = await recordAssessment(agent.session, request.runId, request.deliveryRevisionId, outcome, note)
+      if (error !== null) return { kind: 'error', text: error }
       return { kind: 'success', text: 'Weave delivery outcome recorded.' }
     },
   }), 'workbench: delivery outcome command')

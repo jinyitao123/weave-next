@@ -169,6 +169,9 @@ func (s *Server) admitTeamWorkflowDispatch(c echo.Context, workflowID string, re
 		}
 		return workflowStoreFailure(c, fmt.Errorf("create manual workflow snapshot: %w", err))
 	}
+	if err := s.freezeDispatchDeliveryContractTx(ctx, tx, createdSnapshot, request); err != nil {
+		return workflowStoreFailure(c, fmt.Errorf("freeze workflow delivery contract: %w", err))
+	}
 	taskID := "task-" + uuid.NewString()
 	if dispatchTaskID, ok := c.Get("workflow_dispatch_task_id").(string); ok && dispatchTaskID != "" {
 		taskID = dispatchTaskID

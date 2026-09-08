@@ -55,18 +55,19 @@ type dispatchInputRevision struct {
 	IsClosed           bool
 	ConsumedRunID      string
 	ConsumedTaskID     string
+	DeliveryContract   json.RawMessage
 }
 
 const dispatchInputColumns = `input_revision_id, client_request_id, task_sha256,
 	workbench_session_id, registration_sha256, task, team_id, mode, workflow_id,
-	workflow_version, project_id, is_current, closed_at IS NOT NULL, COALESCE(consumed_run_id,''), COALESCE(consumed_task_id,'')`
+	workflow_version, project_id, is_current, closed_at IS NOT NULL, COALESCE(consumed_run_id,''), COALESCE(consumed_task_id,''), delivery_contract`
 
 func scanDispatchInput(row pgx.Row) (dispatchInputRevision, error) {
 	var input dispatchInputRevision
 	err := row.Scan(&input.InputRevisionID, &input.ClientRequestID, &input.TaskSHA256,
 		&input.WorkbenchSessionID, &input.RegistrationSHA256, &input.Task, &input.TeamID, &input.Mode,
 		&input.WorkflowID, &input.WorkflowVersion, &input.ProjectID, &input.IsCurrent, &input.IsClosed,
-		&input.ConsumedRunID, &input.ConsumedTaskID)
+		&input.ConsumedRunID, &input.ConsumedTaskID, &input.DeliveryContract)
 	return input, err
 }
 
@@ -186,6 +187,17 @@ func (s *Server) handleRegisterDispatchInput(c echo.Context) error {
 	if handled || err != nil {
 		return err
 	}
+	deliveryContract, err := parseDispatchDeliveryContract(request.Task)
+	if err != nil {
+		return workflowError(c, http.StatusBadRequest, "dispatch_delivery_contract_invalid", err.Error())
+	}
+	deliveryContractJSON := []byte(`{}`)
+	if deliveryContract != nil {
+		deliveryContractJSON, err = json.Marshal(deliveryContract)
+		if err != nil {
+			return workflowError(c, http.StatusBadRequest, "dispatch_delivery_contract_invalid", "delivery contract is invalid")
+		}
+	}
 	receipt := dispatchInputReceipt{
 		InputRevisionID: uuid.NewString(), ClientRequestID: uuid.NewString(), TaskSHA256: dispatchInputDigest([]byte(request.Task)),
 	}
@@ -197,12 +209,12 @@ func (s *Server) handleRegisterDispatchInput(c echo.Context) error {
 	sources, _ := json.Marshal(request.SourceMessages)
 	inserted, err := tx.Exec(ctx, `INSERT INTO weave_dispatch_input_revisions
 		(workspace_id,user_id,workbench_session_id,input_revision_id,registration_id,registration_sha256,
-		 source_messages,task,task_sha256,team_id,mode,workflow_id,workflow_version,project_id,client_request_id)
-		VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10,$11,$12,$13,$14,$15)
+		 source_messages,task,task_sha256,team_id,mode,workflow_id,workflow_version,project_id,client_request_id,delivery_contract)
+		VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10,$11,$12,$13,$14,$15,$16::jsonb)
 		ON CONFLICT (workspace_id,user_id,registration_id) DO NOTHING`,
 		workspaceID, userID, request.WorkbenchSessionID, receipt.InputRevisionID, request.RegistrationID, registrationSHA256,
 		string(sources), request.Task, receipt.TaskSHA256, request.TeamID, request.Mode, workflowID, version, request.ProjectID,
-		receipt.ClientRequestID)
+		receipt.ClientRequestID, string(deliveryContractJSON))
 	if err != nil {
 		return workflowStoreFailure(c, fmt.Errorf("create dispatch input revision: %w", err))
 	}

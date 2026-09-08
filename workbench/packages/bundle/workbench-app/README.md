@@ -49,6 +49,10 @@ The activity projection carries public runtime text, its transport completeness,
 
 Weave saves member execution settings and republishes affected workflows in one transaction. A conflicting draft or failed publication leaves both unchanged. Existing runs keep their frozen configuration. Native CLI model names use the selected runtime; the Host returns only editable fields and safe failure codes.
 
+Execution, delivery verification, and user assessment are independent task facts. The Host projects Weave's saved check summaries for the current immutable delivery revision. A final file or summary establishes that an output can be opened; neither file counts nor `PASS` prose establish verified delivery. Unknown requirements and failed checks remain visible. The pilot report exposes execution completion rate and separate verification counts.
+
+The assessment action carries the displayed delivery revision and checks it against Weave before saving the user's decision. The latest assessment receipt remains in the Session log during a temporary evidence-read failure; it applies again only when the same run and revision are observed. A different revision starts unrated. Rechecking the same revision preserves its assessment and reads saved results through Weave's bounded verification endpoint without dispatching members. The Host refreshes after the response even when an older terminal poll is in flight. A late assessment read cannot replace a newer verification report. The [delivery verification decision](../../../.agents/notes/implemented/bug-fix/2026-09-08-workbench-delivery-verification.md) explains these identities and limitations.
+
 <a id="surface-boundary"></a>
 ## Surface boundary
 
@@ -87,4 +91,5 @@ Stable while the Workbench persona and connected Weave tool roster remain unchan
 
 - **Credential discovery differs by host** — the repository launcher supports the macOS Keychain; other packaged hosts currently provide `WEAVE_API_KEY` through their process environment.
 - **Connection state has no dedicated card yet** — startup logs reveal an unavailable MCP process, while a Workbench-native connection indicator remains to be added.
-- **Input attribution remains a conversation window** — original user messages since the last accepted initial dispatch remain together. This prevents silent body replacement, but does not establish which later conversation messages belong to an independent new task. Typed task targeting and independent delivery acceptance remain separate work. Bound dispatch currently supports fixed workflows only; legacy raw HTTP callers do not receive its input-source guarantee.
+- **Input attribution remains a conversation window** — original user messages since the last accepted initial dispatch remain together. This prevents silent body replacement, but does not establish which later conversation messages belong to an independent new task. Typed task targeting remains separate work. Bound dispatch currently supports fixed workflows only; legacy raw HTTP callers do not receive its input-source guarantee.
+- **Assessment belongs to this Host** — user decisions persist in its Session log. They are not a shared cross-Host acceptance ledger. Historical deliveries without a revision remain readable but cannot receive a version-bound assessment or recheck. Verification can only resolve requirements supported by registered trusted checks; professional review and unsupported file formats remain explicit gaps.

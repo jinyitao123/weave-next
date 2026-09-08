@@ -12,6 +12,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jinyitao123/loom"
+	"github.com/jinyitao123/weave/internal/app/deliveryverify"
 	"github.com/jinyitao123/weave/internal/app/projects"
 	"github.com/jinyitao123/weave/internal/base/db"
 	"github.com/jinyitao123/weave/internal/base/frozen"
@@ -81,7 +82,7 @@ func newTeamDispatchTestServer(t *testing.T) (*Server, *pgxpool.Pool) {
 		t.Fatal(err)
 	}
 	server := &Server{Store: teamDispatchPoolStore{pool: pool}, OrgStore: org.NewStore(pool), Registry: registry.New(pool),
-		Workflow: workflow.New(pool, nil), ScheduleTransactions: pool, Snapshots: snapshot.NewStore(pool), Tasks: taskqueue.New(pool, nil, time.Minute)}
+		Workflow: workflow.New(pool, nil), Deliverables: deliveryverify.NewStore(pool), ScheduleTransactions: pool, Snapshots: snapshot.NewStore(pool), Tasks: taskqueue.New(pool, nil, time.Minute)}
 	return server, pool
 }
 

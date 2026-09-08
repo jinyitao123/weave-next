@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jinyitao123/weave/internal/base/fileartifact"
 	"github.com/jinyitao123/weave/internal/kernel/engine"
 )
 
@@ -159,7 +160,7 @@ func TestCollectOutputArtifactsKeepsOnlyBoundedRegularTextFiles(t *testing.T) {
 	}
 }
 
-func TestCollectRunOutputArtifactsRejectsUncollectedExplicitDelivery(t *testing.T) {
+func TestCollectRunOutputArtifactsPreservesEngineOutcomeWithUncollectedDelivery(t *testing.T) {
 	for _, test := range []struct {
 		name, filename, reason string
 		content                string
@@ -174,7 +175,7 @@ func TestCollectRunOutputArtifactsRejectsUncollectedExplicitDelivery(t *testing.
 		{name: "stale outputs file", filename: "outputs/brief.md", reason: "file_not_written_by_this_invocation", content: "An earlier task's result", stale: true},
 		{name: "unsupported root type", filename: "brief.pdf", reason: "unsupported_file_type", content: "%PDF-1.4"},
 		{name: "unsupported outputs type", filename: "outputs/brief.pdf", reason: "unsupported_file_type", content: "%PDF-1.4"},
-		{name: "invalid text", filename: "brief.md", reason: "file_unreadable_or_not_utf8", content: string([]byte{0xff, 0xfe})},
+		{name: "invalid text", filename: "brief.md", reason: "file_not_utf8", content: string([]byte{0xff, 0xfe})},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			workDir := t.TempDir()
@@ -202,9 +203,12 @@ func TestCollectRunOutputArtifactsRejectsUncollectedExplicitDelivery(t *testing.
 				write("outputs/partial.txt", "Already completed work")
 			}
 			answer := "Saved [final](" + filepath.ToSlash(filepath.Join(workDir, test.filename)) + ")."
-			result := engine.RunResult{Output: answer, Status: "completed"}
-			CollectRunOutputArtifacts(workDir, before, &result)
-			if result.Status != "failed" || !strings.Contains(result.Err, "delivery_artifact_uncollected: "+test.reason) || len(result.Diagnostics) != 1 {
+			result := engine.RunResult{Output: answer, Status: "completed", SessionID: "engine-session-1", Usage: &engine.UsageReceipt{InputTokens: 13, HasTokens: true}}
+			collectionErr := CollectRunOutputArtifacts(workDir, before, &result)
+			if (collectionErr != nil) != (test.reason == "file_not_utf8") {
+				t.Fatalf("technical error classification: %v", collectionErr)
+			}
+			if result.Status != "completed" || result.Err != "" || !collectionHasIssue(result.ArtifactCollection, test.reason, true) || len(result.Diagnostics) != 1 {
 				t.Fatalf("uncollected delivery accepted: status=%q error=%q diagnostics=%#v", result.Status, result.Err, result.Diagnostics)
 			}
 			if strings.Contains(result.Err, workDir) || result.Output != answer {
@@ -219,8 +223,8 @@ func TestCollectRunOutputArtifactsRejectsUncollectedExplicitDelivery(t *testing.
 					t.Fatal("uncollected final was transported")
 				}
 			}
-			// The existing daemon/server carrier must preserve failure and the
-			// available files together; no receipt-only success crosses the wire.
+			// The daemon/server carrier preserves execution facts, actual files,
+			// and collection gaps independently across JSON serialization.
 			wire, err := json.Marshal(CLIEngineExecResult(result))
 			if err != nil {
 				t.Fatal(err)
@@ -230,7 +234,7 @@ func TestCollectRunOutputArtifactsRejectsUncollectedExplicitDelivery(t *testing.
 				t.Fatal(err)
 			}
 			restored := remote.EngineRunResult()
-			if restored.Status != "failed" || restored.Err != result.Err || len(restored.Artifacts) != wantFiles || len(restored.Diagnostics) != 1 {
+			if restored.Status != "completed" || restored.Err != "" || restored.SessionID != "engine-session-1" || restored.Usage == nil || restored.Usage.InputTokens != 13 || !collectionHasIssue(restored.ArtifactCollection, test.reason, true) || len(restored.Artifacts) != wantFiles || len(restored.Diagnostics) != 1 {
 				t.Fatalf("remote delivery gap lost: %#v", restored)
 			}
 		})
@@ -270,7 +274,7 @@ func TestCollectRunOutputArtifactsRetainsOriginalFailureAndBoundsDiagnostics(t *
 		result.Diagnostics = append(result.Diagnostics, engine.Diagnostic{Code: "cli_note", Message: "Earlier note"})
 	}
 	CollectRunOutputArtifacts(workDir, before, &result)
-	if result.Status != "timeout" || result.Err != "original timeout" || len(result.Diagnostics) != 32 || result.Diagnostics[31].Code != "delivery_artifact_uncollected" {
+	if result.Status != "timeout" || result.Err != "original timeout" || len(result.Diagnostics) != 32 || result.Diagnostics[31].Code != "cli_note" || !collectionHasIssue(result.ArtifactCollection, "unsupported_file_type", true) {
 		t.Fatalf("original failure overwritten: %#v", result)
 	}
 	if err := engine.ValidateDiagnostics(result.Diagnostics); err != nil {
@@ -299,7 +303,7 @@ func TestCollectRunOutputArtifactsRejectsExplicitMissingOrExcludedPath(t *testin
 				}
 				result := engine.RunResult{Output: "Saved [file](" + reference + ":1).", Status: "completed"}
 				CollectRunOutputArtifacts(workDir, before, &result)
-				if result.Status != "failed" || len(result.Artifacts) != 0 || !strings.Contains(result.Err, "file_not_collected") || strings.Contains(result.Err, workDir) {
+				if result.Status != "completed" || result.Err != "" || len(result.Artifacts) != 0 || !collectionHasIssue(result.ArtifactCollection, "file_not_collected", true) {
 					t.Fatalf("uncollected delivery-path reference accepted: %#v", result)
 				}
 			}
@@ -326,13 +330,56 @@ func TestCollectRunOutputArtifactsDefersPlansAndInputReferences(t *testing.T) {
 	}
 }
 
-func TestCollectRunOutputArtifactsRejectsCreatedClaimAfterPlan(t *testing.T) {
+func TestCollectRunOutputArtifactsPreservesAllClaimsAfterPlan(t *testing.T) {
 	for _, claim := range []string{"Saved `outputs/report.md`.", "已将简报保存到 `outputs/report.md`。"} {
 		workDir := t.TempDir()
 		result := engine.RunResult{Status: "completed", Output: "Later: `outputs/future.md`.\n" + claim}
 		CollectRunOutputArtifacts(workDir, SnapshotOutputArtifacts(workDir), &result)
-		if result.Status != "failed" || !strings.Contains(result.Err, "outputs/report.md") {
+		if result.Status != "completed" || result.Err != "" || result.ArtifactCollection == nil || len(result.ArtifactCollection.Issues) != 2 || result.ArtifactCollection.Issues[0].Claimed || !result.ArtifactCollection.Issues[1].Claimed {
 			t.Fatalf("plan hid a false creation claim: %#v", result)
 		}
+	}
+}
+
+func collectionHasIssue(evidence *fileartifact.CollectionEvidence, reason string, claimed bool) bool {
+	if evidence == nil {
+		return false
+	}
+	for _, issue := range evidence.Issues {
+		if issue.Reason == reason && issue.Claimed == claimed {
+			return true
+		}
+	}
+	return false
+}
+
+func TestCollectRunOutputArtifactsKeepsTechnicalErrorsBeyondEvidenceLimit(t *testing.T) {
+	workDir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(workDir, "outputs"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for index := 0; index < fileartifact.MaxCollectionIssues+5; index++ {
+		if err := os.WriteFile(filepath.Join(workDir, "outputs", fmt.Sprintf("a-%03d.pdf", index)), []byte("unsupported"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(workDir, "outputs", "z-invalid.md"), []byte{0xff}, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	result := engine.RunResult{Status: "completed", SessionID: "original"}
+	err := CollectRunOutputArtifacts(workDir, nil, &result)
+	if err == nil || !strings.Contains(err.Error(), "file_not_utf8") || result.Status != "completed" || result.Err != "" || result.SessionID != "original" || result.ArtifactCollection.Complete || len(result.ArtifactCollection.Issues) != fileartifact.MaxCollectionIssues {
+		t.Fatalf("technical failure hidden by evidence truncation: %#v %v", result, err)
+	}
+	if err := fileartifact.ValidateCollectionEvidence(result.ArtifactCollection); err != nil {
+		t.Fatalf("unbounded evidence: %v", err)
+	}
+}
+
+func TestCollectRunOutputArtifactsReportsUnavailableWorkDirectory(t *testing.T) {
+	result := engine.RunResult{Status: "completed"}
+	err := CollectRunOutputArtifacts(filepath.Join(t.TempDir(), "gone"), nil, &result)
+	if err == nil || !strings.Contains(err.Error(), "work_directory_unreadable") || result.Status != "completed" || result.Err != "" {
+		t.Fatalf("missing runtime workspace was treated as no business files: %#v %v", result, err)
 	}
 }
