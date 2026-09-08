@@ -1,0 +1,18 @@
+{
+  "commit": "564b378170f44a8c717a0bf0709b288dbc5fda84",
+  "binary_sha256": "2ab3e5355e2dfde5365be55413353d407524f5dd7d8c671bed53bbd6ad48a2be",
+  "pids": {
+    "workbench": 48657,
+    "api": 56957,
+    "a": 56969,
+    "b": 56970
+  },
+  "health": {
+    "build_commit": "564b378170f44a8c717a0bf0709b288dbc5fda84",
+    "status": "ok",
+    "version": "development"
+  },
+  "ready_http_status": 200,
+  "business_acceptance": "not_run",
+  "workbench_source_commit": "406c8c73b2d5f129df7934677b6cc572d3b45b02"
+}

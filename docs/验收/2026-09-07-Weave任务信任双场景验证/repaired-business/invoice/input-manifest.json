@@ -1,0 +1,14 @@
+{
+  "fixture_run_id": "trust-repaired-invoice-20260908-remote004",
+  "task_sha256": "0f469edd5b57d300c31d268abb47188a05669bc8ca68b61d55b61708de9b8910",
+  "task_bytes": 1546,
+  "source_revision": "084489800bfd3f9f239503eda9e754bc267e98f5",
+  "source_task_bytes_equal": true,
+  "deployed_build": "564b378170f44a8c717a0bf0709b288dbc5fda84",
+  "business_dispatch_status": "not_dispatched",
+  "user_acceptance": "pending",
+  "workflow_id": "realreplicabench-gmail-calendar-mock-workflow",
+  "workflow_version": 2,
+  "configured_member_model": "deepseek-v4-flash-vision-exp",
+  "browser_blocker": "Mac locked; manual unlock required"
+}
