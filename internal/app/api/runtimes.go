@@ -285,7 +285,7 @@ func (s *Server) handleRuntimeClaim(c echo.Context) error {
 			// Never hand secrets to the daemon: loom payloads are redacted
 			// on a copy — the store snapshot keeps the full record for the
 			// task-scoped MCP gateway.
-			redacted, redactErr := runtimes.RedactClaimPayload(task.Payload)
+			redacted, redactErr := s.redactRuntimeClaim(task)
 			if redactErr != nil {
 				return c.JSON(http.StatusInternalServerError, map[string]string{"error": redactErr.Error()})
 			}

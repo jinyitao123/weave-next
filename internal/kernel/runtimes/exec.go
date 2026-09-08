@@ -16,6 +16,7 @@ import (
 	"github.com/jinyitao123/loom/contract"
 	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/base/taskqueue"
+	"github.com/jinyitao123/weave/internal/kernel/compiler"
 	"github.com/jinyitao123/weave/internal/kernel/engine"
 	"github.com/jinyitao123/weave/internal/kernel/execenv"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
@@ -331,6 +332,17 @@ func (e *Executor) execRemoteAttempt(
 	}
 
 	payload := e.buildExecPayloadWithSchema(tenant, rec, prompt, attachments, outputSchema)
+	payload.FrozenMCP = execenv.FrozenMCPInvocationFromContext(ctx)
+	if stamp.ExecutionScope == execution.ScopeTeamWorkerLeaf && len(rec.MCPServers) > 0 && payload.FrozenMCP == nil {
+		return engine.RunResult{}, "", errors.New("published worker MCP authority is unavailable")
+	}
+	if authority := payload.FrozenMCP; authority != nil {
+		if authority.WorkspaceID != tenant || authority.AgentID != stamp.AgentID || authority.AgentVersion != int64(stamp.AgentVersion) || authority.RunSnapshotID != stamp.RunSnapshotID || authority.FactoryKey != compiler.StandardFrozenCLIToolsKey() || len(authority.Bindings) != len(rec.MCPServers) {
+			return engine.RunResult{}, "", errors.New("frozen MCP invocation identity mismatch")
+		}
+		payload.BoundMCP = true
+		payload.Env = nil
+	}
 	payload.EngineVersion = capability.BinaryVersion
 	payload.NodeID = execution.NodeID(ctx)
 	payload.LogicalInvocationID, _ = execution.AttemptLineage(ctx)

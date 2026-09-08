@@ -329,7 +329,7 @@ func publishMemberIntegrationSample(t *testing.T, pool *pgxpool.Pool, key []byte
 func memberIntegrationDescriptors(t *testing.T) *compiler.DescriptorRegistry {
 	t.Helper()
 	descriptors := compiler.NewDescriptorRegistry()
-	for _, descriptor := range []compiler.GraphFactoryDescriptor{compiler.NewStandardFrozenDescriptor(), compiler.NewStandardFrozenToolsDescriptor()} {
+	for _, descriptor := range []compiler.GraphFactoryDescriptor{compiler.NewStandardFrozenDescriptor(), compiler.NewStandardFrozenToolsDescriptor(), compiler.NewStandardFrozenCLIToolsDescriptor()} {
 		if err := descriptors.Register(descriptor); err != nil {
 			t.Fatal(err)
 		}

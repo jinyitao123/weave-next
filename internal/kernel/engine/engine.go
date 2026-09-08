@@ -32,13 +32,21 @@ var ErrUnsupported = errors.New("engine: unsupported runtime")
 
 // RunSpec is one worker invocation. WorkDir is materialised by the caller
 // (execenv); Env carries provider credentials and per-run WEAVE_* values.
+// MCPServerEndpoint contains only a task gateway and the name of its token
+// environment variable. It never contains upstream or runtime credentials.
+type MCPServerEndpoint struct {
+	URL      string
+	TokenEnv string
+}
+
 type RunSpec struct {
-	WorkDir  string
-	Prompt   string
-	Model    string // e.g. "openai/gpt-5.5"; empty lets the CLI pick its default
-	Env      map[string]string
-	Timeout  time.Duration
-	ResumeID string // resume a prior session (optional)
+	MCPServers []MCPServerEndpoint
+	WorkDir    string
+	Prompt     string
+	Model      string // e.g. "openai/gpt-5.5"; empty lets the CLI pick its default
+	Env        map[string]string
+	Timeout    time.Duration
+	ResumeID   string // resume a prior session (optional)
 	// EngineVersion binds a CLI-reported usage receipt to the binary observed
 	// by the runtime capability probe. Callers must pass the exact advertised
 	// version rather than guessing it from the wire format.
@@ -152,6 +160,14 @@ func IsCLIEngine(name string) bool {
 // can resolve codex during capability discovery while /usr/bin/env cannot
 // later find the adjacent node binary from a narrowed task environment.
 func envWithCLIPath(env []string, cliPath string) []string {
+	filtered := make([]string, 0, len(env))
+	for _, entry := range env {
+		key, _, _ := strings.Cut(entry, "=")
+		if !platformCredentialEnv(key) {
+			filtered = append(filtered, entry)
+		}
+	}
+	env = filtered
 	if !filepath.IsAbs(cliPath) {
 		return env
 	}
@@ -180,4 +196,26 @@ func envWithCLIPath(env []string, cliPath string) []string {
 		return result
 	}
 	return append(append([]string(nil), env...), "PATH="+updated)
+}
+
+// CLI workers receive their scoped invocation values through RunSpec.Env.
+// Ambient task tokens and platform credentials belong to the parent service.
+func cliAmbientEnv() []string {
+	result := []string{}
+	for _, entry := range os.Environ() {
+		key, _, _ := strings.Cut(entry, "=")
+		if platformCredentialEnv(key) || strings.HasPrefix(key, "WEAVE_MCP_BOUNDARY_TOKEN_") {
+			continue
+		}
+		result = append(result, entry)
+	}
+	return result
+}
+
+func platformCredentialEnv(key string) bool {
+	switch key {
+	case "WEAVE_RUNTIME_TOKEN", "WEAVE_RUNTIME_TOKEN_FILE", "WEAVE_SECRET_KEY", "WEAVE_SECRET_KEY_FILE", "JWT_SECRET", "DATABASE_URL", "TEST_DATABASE_URL", "WEAVE_LIVE_DATABASE_URL":
+		return true
+	}
+	return false
 }

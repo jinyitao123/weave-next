@@ -112,6 +112,9 @@ func registerFrozenDescriptors() error {
 	if err := compiler.RegisterDescriptor(compiler.NewStandardFrozenToolsDescriptor()); err != nil {
 		return err
 	}
+	if err := compiler.RegisterDescriptor(compiler.NewStandardFrozenCLIToolsDescriptor()); err != nil {
+		return err
+	}
 	return compiler.RegisterDescriptor(declarative.NewFrozenDescriptor())
 }
 
@@ -249,6 +252,10 @@ func main() {
 		os.Exit(1)
 	}
 	if err := descriptors.Register(compiler.NewStandardFrozenToolsDescriptor()); err != nil {
+		slog.Error("failed to register server standard tools graph descriptor", "error", err)
+		os.Exit(1)
+	}
+	if err := descriptors.Register(compiler.NewStandardFrozenCLIToolsDescriptor()); err != nil {
 		slog.Error("failed to register server standard tools graph descriptor", "error", err)
 		os.Exit(1)
 	}

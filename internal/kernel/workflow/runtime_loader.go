@@ -48,9 +48,10 @@ type RuntimeCLIExecutor interface {
 }
 
 type RuntimeCLIEntry struct {
-	executor RuntimeCLIExecutor
-	record   *registry.AgentRecord
-	stamp    execution.AgentExecutionStamp
+	executor  RuntimeCLIExecutor
+	record    *registry.AgentRecord
+	stamp     execution.AgentExecutionStamp
+	frozenMCP *execenv.FrozenMCPInvocation
 }
 
 // RuntimeCLIUsageAttempt is the TeamRun-facing, lossless subset of one engine
@@ -230,6 +231,9 @@ func (e *RuntimeCLIEntry) ExecuteResult(ctx context.Context, prompt string) (eng
 	if e == nil || runtimeNilLike(e.executor) || e.record == nil {
 		return engine.RunResult{}, runtimeHostUnsupportedError("CLI runtime executor is unavailable")
 	}
+	if e.frozenMCP != nil {
+		ctx = execenv.WithFrozenMCPInvocation(ctx, *e.frozenMCP)
+	}
 	return e.executor.ExecRemote(
 		ctx,
 		e.record.WorkspaceID,
@@ -354,6 +358,10 @@ func (l *RuntimeLoader) Load(
 				}
 				return nil, err
 			}
+			if err := compiler.ValidateStandardMCPBindings(bundle); err != nil {
+				cleanup()
+				return nil, err
+			}
 			record := runtimeCLIAgentRecord(bundle)
 			cliEntry, entryErr := NewRuntimeCLIEntry(
 				l.CLIExecutor,
@@ -368,6 +376,9 @@ func (l *RuntimeLoader) Load(
 			if entryErr != nil {
 				cleanup()
 				return nil, entryErr
+			}
+			if bundle.FactoryKey == compiler.StandardFrozenCLIToolsKey() {
+				cliEntry.frozenMCP = &execenv.FrozenMCPInvocation{WorkspaceID: bundle.Agent.WorkspaceID, AgentID: bundle.Agent.AgentID, AgentVersion: bundle.Agent.AgentVersion, RunSnapshotID: l.RunSnapshotID, FactoryKey: bundle.FactoryKey, Bindings: bundle.MCPBindings}
 			}
 			artifact.Entries = append(artifact.Entries, RuntimeGraphEntry{
 				AgentID:      bundle.Agent.AgentID,

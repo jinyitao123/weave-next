@@ -266,6 +266,9 @@ func strictDecode[T any](raw []byte) (T, error) {
 	if err != nil {
 		return zero, err
 	}
+	if !toolSchemaNumbersPreserved(raw, canonical) {
+		return zero, errors.New("frozen tool schema canonicalization would change numeric meaning")
+	}
 	decoder := json.NewDecoder(bytes.NewReader(canonical))
 	decoder.DisallowUnknownFields()
 	var value T
@@ -633,7 +636,15 @@ func NormalizeFrozenAgentRecord(value FrozenAgentRecord) (FrozenAgentRecord, err
 		}
 	}
 	if cloned.GraphType == "standard" && string(cloned.FactoryInput) != "{}" {
-		input, inputErr := DecodeStandardFactoryInputV2(cloned.FactoryInput)
+		var version struct {
+			SchemaVersion int `json:"schema_version"`
+		}
+		_ = json.Unmarshal(cloned.FactoryInput, &version)
+		decode := DecodeStandardFactoryInputV2
+		if version.SchemaVersion == 3 {
+			decode = DecodeStandardFactoryInputV3
+		}
+		input, inputErr := decode(cloned.FactoryInput)
 		if inputErr != nil {
 			return FrozenAgentRecord{}, inputErr
 		}

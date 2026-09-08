@@ -242,7 +242,7 @@ func (s *Store) Claim(ctx context.Context, workerID string, filter ClaimFilter) 
 	now, leaseExpiresAt := s.leaseTimes()
 	row := s.pool.QueryRow(ctx, `
 		UPDATE weave_task_queue
-		SET status=$1, worker_id=$2, started_at=$3, lease_expires_at=$4, updated_at=$3
+		SET status=$1, worker_id=$2, started_at=$3, lease_expires_at=$4, updated_at=$3, claim_epoch=claim_epoch+1
 		WHERE id = (
 			SELECT id FROM weave_task_queue
 			WHERE status='queued'
@@ -302,7 +302,7 @@ func (s *Store) claimEngineTask(
 	now, leaseExpiresAt := s.leaseTimes()
 	row := tx.QueryRow(ctx, `
 		UPDATE weave_task_queue
-		SET status=$1, worker_id=$2, started_at=$3, lease_expires_at=$4, updated_at=$3
+		SET status=$1, worker_id=$2, started_at=$3, lease_expires_at=$4, updated_at=$3, claim_epoch=claim_epoch+1
 		WHERE id = (
 			SELECT id FROM weave_task_queue
 			WHERE status='queued'
@@ -932,7 +932,7 @@ const taskColumns = `
 	COALESCE(context_key, ''), COALESCE(trace_id, ''), COALESCE(parent_task_id, ''),
 	COALESCE(task_group_id, ''), subtask_deadline_at,
 	payload, result, COALESCE(error, ''), COALESCE(run_id, ''), COALESCE(worker_id, ''),
-	lease_expires_at, created_at, started_at, completed_at, updated_at`
+	lease_expires_at, created_at, started_at, completed_at, updated_at, claim_epoch`
 
 type rowScanner interface {
 	Scan(dest ...any) error
@@ -948,7 +948,7 @@ func scanTask(row rowScanner) (*Task, error) {
 		&task.ContextKey, &task.TraceID, &task.ParentTaskID,
 		&task.TaskGroupID, &task.SubtaskDeadlineAt,
 		&task.Payload, &task.Result, &task.Error, &task.RunID, &task.WorkerID,
-		&task.LeaseExpiresAt, &task.CreatedAt, &task.StartedAt, &task.CompletedAt, &task.UpdatedAt,
+		&task.LeaseExpiresAt, &task.CreatedAt, &task.StartedAt, &task.CompletedAt, &task.UpdatedAt, &task.ClaimEpoch,
 	); err != nil {
 		return nil, err
 	}

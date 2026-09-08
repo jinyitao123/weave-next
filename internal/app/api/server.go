@@ -431,7 +431,7 @@ func (s *Server) registerRoutes() {
 	// Task-scoped MCP gateway: a remote loom daemon dials one of these per MCP
 	// server index; auth is the runtime lease, the record is the frozen task
 	// snapshot, and upstream URLs/headers never leave the server.
-	runtimeAPI.Any("/tasks/:id/mcp/:idx", s.handleRuntimeTaskMCP)
+	s.Echo.Any("/v1/runtime/tasks/:id/mcp/:idx", s.handleRuntimeTaskMCP, s.taskMCPAuthMiddleware())
 	// Task-scoped LLM proxy: the same remote loom daemon proxies each model
 	// call (and its stream) back through the server so provider keys stay
 	// server-side; the daemon may only reach models this task's agent is

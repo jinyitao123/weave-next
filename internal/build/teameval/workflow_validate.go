@@ -511,6 +511,7 @@ func WorkflowFactoryRegistry() *compiler.DescriptorRegistry {
 		registry := compiler.NewDescriptorRegistry()
 		_ = registry.Register(compiler.NewStandardFrozenDescriptor())
 		_ = registry.Register(compiler.NewStandardFrozenToolsDescriptor())
+		_ = registry.Register(compiler.NewStandardFrozenCLIToolsDescriptor())
 		if descriptor, err := compiler.LookupDescriptor(DeclarativeFactoryKey); err == nil {
 			_ = registry.Register(descriptor)
 		} else {

@@ -640,12 +640,13 @@ func (f *teamDeliveryFixture) assertRunActivity(t *testing.T, ctx context.Contex
 
 }
 
-func publishTeamDeliveryCLI(t *testing.T, pool *pgxpool.Pool, key []byte, runtimeID string) (string, string) {
+func publishTeamDeliveryCLI(t *testing.T, pool *pgxpool.Pool, key []byte, runtimeID string, mcpServers ...registry.MCPServerConfig) (string, string) {
 	t.Helper()
 	ctx := t.Context()
 	agents := registry.New(pool)
 	lead := &registry.AgentRecord{Name: "lead", Role: "avatar", Engine: engine.Claude, RuntimeID: runtimeID, RuntimePolicyMode: "strict_pin", Model: "fixture-native", GraphType: "standard", Spec: stdlib.AgentSpec{SystemPrompt: "Return the brief."}}
 	worker := &registry.AgentRecord{Name: "worker", Role: "worker", Engine: engine.Claude, RuntimeID: runtimeID, RuntimePolicyMode: "strict_pin", Model: "fixture-native", GraphType: "standard", Spec: stdlib.AgentSpec{SystemPrompt: "Compute the result and export the physical file."}}
+	worker.MCPServers = mcpServers
 	for _, record := range []*registry.AgentRecord{lead, worker} {
 		if err := agents.Put(ctx, "ws", record); err != nil {
 			t.Fatal(err)

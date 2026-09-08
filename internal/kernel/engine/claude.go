@@ -34,6 +34,9 @@ func (b *claudeBackend) Run(ctx context.Context, spec RunSpec) (RunResult, error
 	mcpPath := filepath.Join(spec.WorkDir, ".weave-mcp.json")
 	if _, err := os.Stat(mcpPath); err == nil {
 		args = append(args, "--mcp-config="+mcpPath)
+		if len(spec.MCPServers) > 0 {
+			args = append(args, "--strict-mcp-config")
+		}
 	}
 	args = append(args, "--")
 
@@ -101,7 +104,7 @@ func (b *claudeBackend) Run(ctx context.Context, spec RunSpec) (RunResult, error
 
 func mergedClaudeEnv(overrides map[string]string) []string {
 	env := make(map[string]string)
-	for _, entry := range os.Environ() {
+	for _, entry := range cliAmbientEnv() {
 		if key, value, ok := strings.Cut(entry, "="); ok {
 			env[key] = value
 		}

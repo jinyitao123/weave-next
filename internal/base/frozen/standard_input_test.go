@@ -114,3 +114,27 @@ func TestStandardV2InputNormalizationIsStable(t *testing.T) {
 		prior = append([]byte(nil), raw...)
 	}
 }
+
+func TestFrozenToolSchemaRejectsCanonicalNumericLoss(t *testing.T) {
+	for _, schema := range []string{`{"type":"object","properties":{"n":{"const":9007199254740993}}}`, `{"type":"object","properties":{"n":{"minimum":0.123456789012345678901}}}`} {
+		if _, err := NormalizeToolDefinitions([]FrozenToolDefinition{{Name: "read", InputSchema: json.RawMessage(schema)}}); err == nil {
+			t.Fatalf("accepted changed numeric meaning: %s", schema)
+		}
+	}
+	for _, schema := range []string{`{"type":"object","properties":{"n":{"const":1e3}}}`, `{"type":"object","properties":{"n":{"minimum":0.1}}}`} {
+		if _, err := NormalizeToolDefinitions([]FrozenToolDefinition{{Name: "read", InputSchema: json.RawMessage(schema)}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestFrozenDecodeCannotHideToolSchemaPrecisionLoss(t *testing.T) {
+	raw := []byte(`{"nested":{"tools":[{"name":"calculate","input_schema":{"type":"object","properties":{"n":{"const":9007199254740993}}}}]}}`)
+	if _, err := strictDecode[map[string]any](raw); err == nil {
+		t.Fatal("envelope canonicalization hid schema precision loss")
+	}
+	raw = []byte(`{"nested":{"tools":[{"name":"calculate","input_schema":{"type":"object","properties":{"n":{"const":1e3}}}}]}}`)
+	if _, err := strictDecode[map[string]any](raw); err != nil {
+		t.Fatal(err)
+	}
+}

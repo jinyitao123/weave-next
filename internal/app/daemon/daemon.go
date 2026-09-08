@@ -419,6 +419,10 @@ func (d *service) executeTask(ctx context.Context, task *taskqueue.Task) (runtim
 		return runtimes.EngineExecResult{}, err
 	}
 
+	taskTargets, err := runtimeTaskMCPTargets(d.server, task, request)
+	if err != nil {
+		return runtimes.EngineExecResult{}, err
+	}
 	workspaceRoot := d.workspacesRoot
 	if request.NodeID != "" && task.RunSnapshotID != "" {
 		// Frozen workflow files belong to one physical invocation. Parallel tasks,
@@ -466,7 +470,7 @@ func (d *service) executeTask(ctx context.Context, task *taskqueue.Task) (runtim
 	if err := validateRuntimeProviderConfig(request.Engine, cliAuthMode, oneAPIKey); err != nil {
 		return runtimes.EngineExecResult{}, err
 	}
-	if err := execenv.WriteEngineConfigWithAuthMode(request.Engine, workDir, request.Record, oneAPIBase, d.server, oneAPIKey, cliAuthMode); err != nil {
+	if err := execenv.WriteEngineConfigWithAuthMode(request.Engine, workDir, request.Record, oneAPIBase, d.server, oneAPIKey, cliAuthMode, taskTargets...); err != nil {
 		return runtimes.EngineExecResult{}, err
 	}
 	if runEnv == nil {
@@ -480,6 +484,9 @@ func (d *service) executeTask(ctx context.Context, task *taskqueue.Task) (runtim
 		if token := secret.BoundaryToken(task.WorkspaceID, request.Record.Name, idx); token != "" {
 			runEnv[fmt.Sprintf("WEAVE_MCP_BOUNDARY_TOKEN_%d", idx)] = token
 		}
+	}
+	for idx, target := range taskTargets {
+		runEnv[fmt.Sprintf("WEAVE_MCP_BOUNDARY_TOKEN_%d", idx)] = target.Token
 	}
 	if cliAuthMode == codexChatGPTAuthMode && request.Engine == engine.Codex {
 		runEnv["WEAVE_CODEX_AUTH_MODE"] = codexChatGPTAuthMode
@@ -504,6 +511,7 @@ func (d *service) executeTask(ctx context.Context, task *taskqueue.Task) (runtim
 	publish, finishProgress := d.publicEventCapture(task.ID, (request.Engine == engine.Codex || request.Engine == engine.Claude) && request.NodeID != "" && task.RunSnapshotID != "")
 	result, err := d.runEngine(ctx, request.Engine, engine.RunSpec{
 		OnPublicEvent: publish,
+		MCPServers:    engineTaskMCPServers(taskTargets),
 		WorkDir:       workDir,
 		Prompt:        request.Prompt,
 		Model:         request.Model,
