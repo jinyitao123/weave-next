@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { createHash } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
-import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import { Session, SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
+import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { apply, applyWorkTaskProjection, workTaskProjectionDefinition, type WorkTaskProjection } from '../src/index.ts'
+import { prepareDispatchInput } from '../src/dispatch-input.ts'
 
 const urlOf = (input: Parameters<typeof fetch>[0]): string => typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
 function jsonBody(init: RequestInit | undefined): unknown {
@@ -19,7 +22,8 @@ function host(overrides: Partial<WorkTaskProjection> = {}) {
   })
   const events: SessionEvent[] = []
   const eventListeners: ((event: SessionEvent) => void)[] = []
-  const session = { id: 'session-1', append: (type: string, data: unknown) => {
+  const header = Session.create(SessionId('session-1')).header
+  const session = { id: header.id, header, events, append: (type: string, data: unknown) => {
     const event = { type, data, seq: events.length, time: Date.now() } as SessionEvent
     events.push(event); state = applyWorkTaskProjection(state, event)
     for (const listener of eventListeners) listener(event)
@@ -35,6 +39,7 @@ function host(overrides: Partial<WorkTaskProjection> = {}) {
     },
     systemPrompt: { section: () => () => {} },
     commands: { register: () => () => {} },
+    tools: { register: () => () => {} },
     connection: { fetch: { register: (route: { path: string; fetch: (request: Request) => Promise<Response> }) => {
       routes.set(route.path, route.fetch); return () => routes.delete(route.path)
     } } },
@@ -43,12 +48,51 @@ function host(overrides: Partial<WorkTaskProjection> = {}) {
     sessionController: { registerHistoryProjection: () => () => {} },
   }
   apply(ctx as unknown as Context, { apiUrl: 'http://weave.test', apiKey: 'test-only', pollIntervalMs: 500 })
-  return { state: () => state, events, publish: (data: WorkTaskProjection) => { session.append('weave/work-task', data) }, action: (body: unknown) => routes.get('/api/weave.task-action')!(new Request('http://host/api/weave.task-action', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })), dispose: () => { for (const dispose of disposers.reverse()) dispose() } }
+  return { state: () => state, events, session, publish: (data: WorkTaskProjection) => { session.append('weave/work-task', data) }, action: (body: unknown) => routes.get('/api/weave.task-action')!(new Request('http://host/api/weave.task-action', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })), dispose: () => { for (const dispose of disposers.reverse()) dispose() } }
 }
 
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals() })
 
 describe('exact human wait actions', () => {
+  it('reruns the exact edited brief with its admitted workflow and project, retaining the server request identity', async () => {
+    vi.useFakeTimers()
+    const brief = '  修改后的原文\r\nINV-440  \n'
+    const revision = { input_revision_id: '10000000-0000-4000-8000-000000000001',
+      client_request_id: '20000000-0000-4000-8000-000000000001',
+      task_sha256: createHash('sha256').update(brief, 'utf8').digest('hex') }
+    const posts: { url: string; body: unknown }[] = []
+    vi.stubGlobal('fetch', vi.fn<typeof fetch>((input, init) => {
+      const url = urlOf(input)
+      if (init?.method === 'POST') {
+        posts.push({ url, body: jsonBody(init) })
+        return Promise.resolve(Response.json(url.endsWith('/dispatch-inputs') ? revision
+          : { run_id: 'run-2', input_revision_id: revision.input_revision_id, client_request_id: revision.client_request_id, status: 'queued' }))
+      }
+      if (url.includes('/deliverables?')) return Promise.resolve(Response.json([]))
+      return Promise.resolve(Response.json({ run_id: url.includes('run-2') ? 'run-2' : 'run-1', status: 'completed', completeness: { members: 'complete' } }))
+    }))
+    const app = host({ status: 'completed', waitKind: '', humanTaskCount: 0 })
+    try {
+      app.session.append('user/message', createUserMessage({ content: [{ type: 'text', text: '原始请求 INV-440' }], source: { kind: 'user' } }))
+      const initial = prepareDispatchInput(app.session as unknown as Session, { team_id: 'team-1' })
+      const initialRevision = { input_revision_id: '10000000-0000-4000-8000-000000000009',
+        client_request_id: '20000000-0000-4000-8000-000000000009',
+        task_sha256: createHash('sha256').update(initial.task, 'utf8').digest('hex') }
+      app.session.append('weave/dispatch-input', { ...initial, state: 'accepted', revision: initialRevision,
+        result: { run_id: 'run-1', ...initialRevision, status: 'completed', workflow_id: 'wf-orders', workflow_version: 1, project_id: 'project-1' } })
+      expect((await app.action({ action: 'rerun', sessionId: 'session-1', runId: 'run-1', brief })).status).toBe(204)
+      await vi.advanceTimersByTimeAsync(0)
+      expect(posts).toHaveLength(2)
+      expect(posts[0]?.body).toMatchObject({ task: brief, team_id: 'team-1', mode: 'workflow', workbench_session_id: 'session-1',
+        workflow_id: 'wf-orders', workflow_version: 1, project_id: 'project-1', expected_revision_id: initialRevision.input_revision_id })
+      expect(posts[1]?.body).toEqual({ input_revision_id: revision.input_revision_id, client_request_id: revision.client_request_id })
+      expect(app.state().task).toMatchObject({ runId: 'run-2', clientRequestId: revision.client_request_id, brief, pendingAction: null })
+      expect(app.state().task?.actionHistory).toHaveLength(1)
+      expect(app.events.filter(event => event.type === 'weave/dispatch-input').at(-1)?.data)
+        .toMatchObject({ state: 'accepted', rerun: { targetRunId: 'run-1' }, task: brief })
+    } finally { app.dispose() }
+  })
+
   it('writes unchanged observations only at the freshness interval and retains the attempt change time', async () => {
     vi.useFakeTimers()
     vi.setSystemTime(100_000)

@@ -69,14 +69,24 @@ describe('Session control queue projection', () => {
     await iterator.next()
   })
 
-  it('projects the prompt rpcId from a user-rpc source and omits it elsewhere', async () => {
+  it('projects browser input and control rpcIds while omitting unrelated sources', async () => {
     const { control, inbox } = await harness()
     const identified = createUserMessage({
       content: [{ type: 'text', text: 'browser prompt' }],
       source: { kind: 'user', rpcId: 'req-42' as never },
     })
+    const controlMessage = createUserMessage({
+      content: [{ type: 'text', text: 'browser control' }],
+      source: { kind: 'plugin', plugin: 'ui-control', form: 'relay', rpcId: 'req-control' as never },
+    })
+    const unrelated = createUserMessage({
+      content: [{ type: 'text', text: 'unrelated plugin' }],
+      source: { kind: 'plugin', plugin: 'fixture', form: 'relay', rpcId: 'unrelated' } as never,
+    })
     inbox.append('next-turn', identified)
+    inbox.append('next-turn', controlMessage)
     inbox.append('next-step', message('plain steering'))
+    inbox.append('next-step', unrelated)
 
     const abort = new AbortController()
     const iterator = control.control(abort.signal)[Symbol.asyncIterator]()
@@ -85,9 +95,12 @@ describe('Session control queue projection', () => {
     const items = opened.value.value.queues['queue-session' as SessionId] ?? []
     expect(items.map(item => ({ id: item.id, placement: item.placement, rpcId: item.rpcId }))).toEqual([
       { id: identified.id, placement: 'queued', rpcId: 'req-42' },
-      { id: items[1]?.id, placement: 'steering', rpcId: undefined },
+      { id: controlMessage.id, placement: 'queued', rpcId: 'req-control' },
+      { id: items[2]?.id, placement: 'steering', rpcId: undefined },
+      { id: unrelated.id, placement: 'context', rpcId: undefined },
     ])
-    expect('rpcId' in (items[1] ?? {})).toBe(false)
+    expect('rpcId' in (items[2] ?? {})).toBe(false)
+    expect('rpcId' in (items[3] ?? {})).toBe(false)
 
     abort.abort()
     await iterator.next()

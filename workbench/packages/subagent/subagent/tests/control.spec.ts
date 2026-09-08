@@ -193,6 +193,17 @@ describe('subagent prompt Remote', () => {
     expect(followup.mock.calls[0]?.[3].source).toEqual({ kind: 'user', rpcId: REQUEST_ID })
   })
 
+  it('retains UI-control attribution when delivering to a continuable child', async () => {
+    const { subagents } = await bench({ [PARENT]: { status: 'idle' } })
+    const followup = vi.spyOn(subagents, 'followup').mockResolvedValue('m-control' as MessageId)
+    await expect(subagents.prompt({ ...promptRequest('Asia/Shanghai'), origin: 'ui-control' }, signal))
+      .resolves.toEqual({ messageId: 'm-control' })
+    expect(followup.mock.calls[0]?.[3].source).toEqual({
+      kind: 'plugin', plugin: 'ui-control', form: 'relay',
+      rpcId: REQUEST_ID, clientTimeZone: 'Asia/Shanghai',
+    })
+  })
+
   it('accepts UTC and rejects an empty, untrimmed, malformed, or unknown zone', async () => {
     const { subagents } = await bench({ [PARENT]: { status: 'idle' } })
     vi.spyOn(subagents, 'followup').mockResolvedValue('m-3' as MessageId)

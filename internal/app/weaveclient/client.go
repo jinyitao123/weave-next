@@ -79,8 +79,11 @@ type TeamCreateRequest struct {
 }
 
 type DispatchRequest struct {
-	TeamID          string
-	Task            string
+	TeamID string
+	Task   string
+	// TaskProvided preserves an explicit empty assertion on a bound request.
+	TaskProvided    bool
+	InputRevisionID string
 	Mode            string
 	WorkflowID      string
 	WorkflowVersion *int
@@ -200,17 +203,34 @@ func (c *Client) TeamCreate(ctx context.Context, request TeamCreateRequest) (jso
 
 func (c *Client) TeamDispatch(ctx context.Context, request DispatchRequest) (string, json.RawMessage, error) {
 	teamID := strings.TrimSpace(request.TeamID)
-	if teamID == "" || strings.TrimSpace(request.Task) == "" {
+	inputRevisionID := strings.TrimSpace(request.InputRevisionID)
+	if teamID == "" || inputRevisionID == "" && strings.TrimSpace(request.Task) == "" {
 		return "", nil, &Error{Code: "team_and_task_required"}
+	}
+	if inputRevisionID != "" {
+		parsedRevisionID, err := uuid.Parse(inputRevisionID)
+		if err != nil {
+			return "", nil, &Error{Code: "dispatch_input_revision_invalid"}
+		}
+		inputRevisionID = parsedRevisionID.String()
 	}
 	clientRequestID := strings.TrimSpace(request.ClientRequestID)
 	if clientRequestID == "" {
-		clientRequestID = uuid.NewString()
+		if inputRevisionID == "" {
+			clientRequestID = uuid.NewString()
+		}
 	} else if _, err := uuid.Parse(clientRequestID); err != nil {
 		return "", nil, &Error{Code: "invalid_client_request_id"}
 	}
-	body := map[string]any{
-		"task": request.Task, "client_request_id": clientRequestID,
+	body := map[string]any{}
+	if inputRevisionID != "" {
+		body["input_revision_id"] = inputRevisionID
+	}
+	if inputRevisionID == "" || request.TaskProvided || request.Task != "" {
+		body["task"] = request.Task
+	}
+	if clientRequestID != "" {
+		body["client_request_id"] = clientRequestID
 	}
 	if strings.TrimSpace(request.Mode) != "" {
 		body["mode"] = strings.TrimSpace(request.Mode)
@@ -228,6 +248,20 @@ func (c *Client) TeamDispatch(ctx context.Context, request DispatchRequest) (str
 		body["conversation_id"] = strings.TrimSpace(request.ConversationID)
 	}
 	result, err := c.sendJSON(ctx, http.MethodPost, "/v1/teams/"+url.PathEscape(teamID)+"/dispatch", body)
+	if err == nil && inputRevisionID != "" {
+		var receipt struct {
+			InputRevisionID string `json:"input_revision_id"`
+			ClientRequestID string `json:"client_request_id"`
+		}
+		if json.Unmarshal(result, &receipt) != nil || receipt.InputRevisionID != inputRevisionID ||
+			receipt.ClientRequestID == "" || clientRequestID != "" && receipt.ClientRequestID != clientRequestID {
+			return clientRequestID, nil, &Error{Code: "dispatch_input_receipt_invalid"}
+		}
+		if _, err := uuid.Parse(receipt.ClientRequestID); err != nil {
+			return clientRequestID, nil, &Error{Code: "dispatch_input_receipt_invalid"}
+		}
+		clientRequestID = receipt.ClientRequestID
+	}
 	if apiErr, ok := err.(*Error); ok && apiErr.StatusCode == http.StatusConflict &&
 		apiErr.Code == "client_request_in_progress" {
 		result, err = c.DispatchStatus(ctx, clientRequestID)

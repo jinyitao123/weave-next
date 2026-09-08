@@ -32,7 +32,8 @@ type teamDispatchPoolStore struct {
 
 func (s teamDispatchPoolStore) Pool() *pgxpool.Pool { return s.pool }
 
-func TestTeamWorkflowDispatchKeepsInputIdentityAndAdmissionRealPG(t *testing.T) {
+func newTeamDispatchTestServer(t *testing.T) (*Server, *pgxpool.Pool) {
+	t.Helper()
 	ctx := context.Background()
 	pool := testutil.PostgresPool(t)
 	if err := db.Migrate(ctx, pool); err != nil {
@@ -81,6 +82,12 @@ func TestTeamWorkflowDispatchKeepsInputIdentityAndAdmissionRealPG(t *testing.T) 
 	}
 	server := &Server{Store: teamDispatchPoolStore{pool: pool}, OrgStore: org.NewStore(pool), Registry: registry.New(pool),
 		Workflow: workflow.New(pool, nil), ScheduleTransactions: pool, Snapshots: snapshot.NewStore(pool), Tasks: taskqueue.New(pool, nil, time.Minute)}
+	return server, pool
+}
+
+func TestTeamWorkflowDispatchKeepsInputIdentityAndAdmissionRealPG(t *testing.T) {
+	ctx := context.Background()
+	server, pool := newTeamDispatchTestServer(t)
 	input := teamDispatchRequest{Task: "甲：三条材料。\n乙：保留换行与“引号”。", ClientRequestID: "00000000-0000-0000-0000-000000000001"}
 	dispatch := func(request teamDispatchRequest, wantStatus int) workflowManualRunResponse {
 		t.Helper()

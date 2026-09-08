@@ -33,7 +33,7 @@ kind: "package-reference"
 
 Client adapter 提供 `SessionEventStream`，即绑定到一个普通 Session 或 direct subagent address 的 Gateway `RemoteJournalStream`。它在读取首个 page 前打开 follow，只发布连续的 `replace`、`prepend` 和 `append` 变更，并通过 tail page 修复重连或 seq 缺口。普通 record 覆盖 `[event.seq, event.seq]`，packed row 覆盖 `[event.seq, event.seq + memberCount - 1]`，投影范围覆盖 `[event.seq, event.data.throughSeq]`。业务、persistence 或无法恢复的连续性错误会终止 stream，只有物理载体断开才触发自动恢复。`SessionControlStream` 是 Gateway `RemoteSnapshotStream`；每代都以完整的进程本地 baseline 开始，因此重连会替换 queue、jobs 和 projection 状态，而不会把瞬态值当作 durable event。
 
-Session 对象还承载本地提交回显：`session.beginSubmission` 在调用方序列化与 prompt 之前，同步把一条回显写入 `SessionSnapshot.pendingSubmissions`，会话 UI 因此能在点击提交的当帧显示消息。prompt 的 `requestId` 就是关联标识，Host 本就把它回显为 durable user source 的 `rpcId`，queue occurrence 也把它投影为 `SessionQueuedItem.rpcId`。回显在观察到其 durable event 或 queue occurrence 后延迟一个动画帧退休（该延迟保证 transcript 节点可渲染之前回显仍在），带标识的 prompt 失败或被放弃时立即退休，销毁时按 failed 退休；每次退休恰好触发一次注册的 `onRetire` 回调。回显只存在于 Client 内存，刷新与重连只从 durable event 重建会话。
+Session 对象还承载本地提交回显：`session.beginSubmission` 在调用方序列化与 prompt 之前，同步把一条回显写入 `SessionSnapshot.pendingSubmissions`，会话 UI 因此能在点击提交的当帧显示消息。prompt 的 `requestId` 就是关联标识。Host 在普通 `{ kind: 'user' }` 来源，以及由 `origin: 'ui-control'` 选定的 UI 自动控制来源 `{ kind: 'plugin', plugin: 'ui-control', form: 'relay' }` 上，将它回显为 `rpcId`；两种来源都保留可选的、经 Host 校验的 `clientTimeZone`。queue occurrence 把该标识投影为 `SessionQueuedItem.rpcId`。回显在观察到其 durable event 或 queue occurrence 后延迟一个动画帧退休（该延迟保证 transcript 节点可渲染之前回显仍在），带标识的 prompt 失败或被放弃时立即退休，销毁时按 failed 退休；每次退休恰好触发一次注册的 `onRetire` 回调。回显只存在于 Client 内存，刷新与重连只从 durable event 重建会话。
 
 -----
 

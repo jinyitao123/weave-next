@@ -18,6 +18,7 @@ import type {
   SessionControlFrame,
   SessionQueuedItem,
   SessionRequestId,
+  SessionPromptRequest,
   SessionError,
 } from '../../types.ts'
 import type { ClientFailure, ClientResult } from '../contract/result.ts'
@@ -207,6 +208,7 @@ export class Session implements SessionFace {
    * @param mode - queue appends after the current turn; steer interrupts it.
    * @param signal - optional caller cancellation for the complete admission round-trip.
    * @param requestId - identity from {@link beginSubmission}; a failed identified prompt retires its echo.
+   * @param origin - distinguishes generated UI controls from ordinary composer input.
    * @returns the prompt result (also mirrored into promptError on failure).
    */
   async prompt(
@@ -214,6 +216,7 @@ export class Session implements SessionFace {
     mode: 'queue' | 'steer',
     signal?: AbortSignal,
     requestId?: SessionRequestId,
+    origin?: SessionPromptRequest['origin'],
   ): Promise<ClientResult<{ accepted: true }>> {
     this.promptError = null
     this.lastAgentError = null
@@ -232,6 +235,7 @@ export class Session implements SessionFace {
           sessionId: this.sessionId,
           mode,
           content,
+          ...(origin === undefined ? {} : { origin }),
           clientTimeZone,
         }, signal))
       } else if (this.address.mode === 'one-shot') {
@@ -259,6 +263,7 @@ export class Session implements SessionFace {
             parentSessionId: this.address.parentSessionId,
             childSessionId: this.address.childSessionId,
             mode: this.address.mode,
+            ...(origin === undefined ? {} : { origin }),
             content: content.flatMap(part => part.type === 'text'
               ? [{ type: 'text' as const, text: part.text }]
               : []),
@@ -661,8 +666,12 @@ export class Session implements SessionFace {
     // fields are narrowed rather than trusted (same posture as Conversation
     // assembly matchers).
     const data = event.data as { readonly source?: unknown; readonly content?: unknown } | undefined
-    const source = data?.source as { readonly kind?: unknown; readonly rpcId?: unknown } | undefined
-    if (source?.kind !== 'user' || typeof source.rpcId !== 'string') return
+    const source = data?.source as
+      | { readonly kind?: unknown; readonly plugin?: unknown; readonly form?: unknown; readonly rpcId?: unknown }
+      | undefined
+    const browserSource = source?.kind === 'user'
+      || source?.kind === 'plugin' && source.plugin === 'ui-control' && source.form === 'relay'
+    if (!browserSource || typeof source.rpcId !== 'string') return
     this.scheduleObservedRetirement(source.rpcId as SessionRequestId, imageRefsIn(data?.content))
   }
 

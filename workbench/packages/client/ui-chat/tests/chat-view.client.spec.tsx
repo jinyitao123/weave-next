@@ -884,6 +884,26 @@ describe('ChatView', () => {
     expect(view.getAllByText('即发即显')).toHaveLength(1)
   })
 
+  it.each(['ui-control', 'other-plugin'])('deduplicates only identified browser controls when a %s context arrives', (plugin) => {
+    const h = makeHarness(
+      { nodes: [assistant(1, 'working')] },
+      { pendingSubmissions: [{ requestId: 'req-control' as never, time: 5_000, text: '选用此团队', images: [] }] },
+    )
+    const view = render(<h.ChatView {...h.props} />)
+    expect(view.getByText('选用此团队').closest('[data-submission-echo]')).not.toBeNull()
+
+    act(() => {
+      h.setChat({
+        nodes: [assistant(1, 'working'), {
+          ...context(2, '选用此团队'),
+          source: { kind: 'plugin', plugin, form: 'relay', rpcId: 'req-control' },
+          form: 'relay',
+        }],
+      })
+    })
+    expect(view.container.querySelector('[data-submission-echo]') === null).toBe(plugin === 'ui-control')
+  })
+
   it('hides an echo once its queue occurrence carries the rpcId (running-turn submission)', () => {
     const h = makeHarness(
       { nodes: [assistant(1, 'working')] },

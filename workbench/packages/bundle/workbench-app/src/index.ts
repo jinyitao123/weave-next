@@ -14,6 +14,7 @@ import { buildPilotReport } from './pilot-report.ts'
 import { inspectWeaveReadiness } from './readiness.ts'
 import { handleWeaveRuntimeRequest, resolveRuntimeServerUrl } from './runtime-control.ts'
 import { handleAgentExecutionRequest } from './agent-execution-control.ts'
+import { DispatchResponseError, installDispatchInputTool, latestDispatchInput, type DispatchInputFacts } from './dispatch-input.ts'
 
 export { buildPilotReport } from './pilot-report.ts'
 export type { PilotReport, PilotReportTask } from './pilot-report.ts'
@@ -282,7 +283,7 @@ const attemptSchema = z.object({
 
 const browserTaskActionSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('stop'), sessionId: z.string(), runId: z.string() }).strict(),
-  z.object({ action: z.literal('rerun'), sessionId: z.string(), runId: z.string(), brief: z.string().trim().min(1).max(100_000) }).strict(),
+  z.object({ action: z.literal('rerun'), sessionId: z.string(), runId: z.string(), brief: z.string().max(100_000).refine(value => value.trim().length > 0) }).strict(),
   z.object({ action: z.literal('stage-retry'), sessionId: z.string(), runId: z.string(), nodeId: z.string() }).strict(),
   z.object({ action: z.literal('correction-request'), sessionId: z.string(), runId: z.string(), targetKind: z.enum(['team', 'member']), targetMemberId: z.string(), instruction: z.string().trim().min(1).max(20_000) }).strict(),
   z.object({ action: z.literal('correction-confirm'), sessionId: z.string(), runId: z.string(), correctionId: z.string(), disposition: z.enum(['apply', 'discard']) }).strict(),
@@ -791,6 +792,26 @@ function snapshot(
  * @returns updated state, or the original reference for an unrelated event.
  */
 export function applyWorkTaskProjection(state: WorkTaskState, event: SessionEvent): WorkTaskState {
+  if (event.type === 'weave/dispatch-input') {
+    const input = event.data
+    // The exact-run action poller owns rerun projection and its action receipt together.
+    if (input.rerun !== null) return state
+    if (input.state === 'registered') return state
+    if (input.state === 'accepted') {
+      if (input.result === null) throw new Error('accepted dispatch input requires its run receipt')
+      return { ...state, task: snapshot(state.task, input.result, event.time, {
+        brief: input.task, teamId: input.facts.team_id, teamName: state.teams[input.facts.team_id] ?? input.facts.team_id,
+        workflowName: input.facts.workflow_id ?? '', clientRequestId: input.revision?.client_request_id ?? '',
+      }) }
+    }
+    if (input.state === 'rejected' || input.state === 'closed') return state.task === null ? state : { ...state, task: {
+      ...state.task, status: 'failed', actionError: input.errorCode, updatedAt: event.time,
+    } }
+    return { ...state, task: { ...snapshot(null, {}, event.time, {
+      brief: input.task, teamId: input.facts.team_id, teamName: state.teams[input.facts.team_id] ?? input.facts.team_id,
+      workflowName: input.facts.workflow_id ?? '',
+    }), attempts: state.task?.attempts ?? [] } }
+  }
   if (event.type === 'weave/work-task') {
     const incoming = taskSchema.parse(event.data)
     if (state.task !== null && state.task.runId !== '' && incoming.runId !== '' && incoming.runId !== state.task.runId
@@ -942,13 +963,28 @@ export interface Config {
   readonly pollIntervalMs?: number
 }
 export const name = 'workbench-work-task'
-export const inject = ['sessions', 'sessionProjections', 'sessionController', 'commands', 'systemPrompt', 'connection']
+export const inject = ['sessions', 'sessionProjections', 'sessionController', 'commands', 'systemPrompt', 'connection', 'tools']
+
+function rerunFacts(session: Session, task: WorkTaskProjection): DispatchInputFacts {
+  const accepted = session.events.findLast(event => event.type === 'weave/dispatch-input'
+    && event.data.state === 'accepted' && event.data.result?.run_id === task.runId)
+  if (accepted?.type !== 'weave/dispatch-input') return { team_id: task.teamId,
+    ...(task.workflowName === '' ? {} : { workflow_id: task.workflowName }) }
+  const input = accepted.data
+  const workflowId = text(input.result, ['workflow_id'])
+  const workflowVersion = finiteNumber(input.result, ['workflow_version'])
+  const projectId = text(input.result, ['project_id'])
+  return { ...input.facts,
+    ...(workflowId === '' ? {} : { workflow_id: workflowId }),
+    ...(workflowVersion === undefined ? {} : { workflow_version: workflowVersion }),
+    ...(projectId === '' ? {} : { project_id: projectId }) }
+}
 
 /** Product policy that remains visible when a per-session agent preset shadows the deployment persona. */
 export const workbenchTeamRoutingSection = {
   name: 'workbench:team-routing',
   order: FIRST_PARTY_SECTION_ORDER.TEAM_POLICY + 10,
-  text: 'For substantive business work in Weave Workbench, first list the available Weave teams and match the request against each team\'s stated purpose, responsibilities, success criteria, default workflow availability, and health. If a suitable active team exists, first ensure the user has confirmed the selected team, task scope, and expected deliverables. Summarize only the unconfirmed choices and request their confirmation; when these choices are already explicitly confirmed in the conversation, dispatch the default workflow with wait=false without asking again. If no suitable team exists, say so plainly and collaborate with the user on a team definition. Once the user confirms the team definition, task scope, and expected deliverables, create the team with its agreed workflow and dispatch the original business task without repeating confirmation only when that confirmation includes dispatch. If the user explicitly asks to create first and confirm dispatch separately, create the team, show the final task summary, and wait for that separate dispatch decision. Selecting a team card only selects a proposal; it does not authorize dispatch. Use the existing structured question or plan-review interaction to show the goal, expected outputs, actual members and workflow, missing materials, budget limits, and exactly which actions the decision authorizes. Preserve the displayed proposal and the user response in the conversation. Never treat your own claim of confirmation as a user decision. Do not replace a confirmed team or expand its task silently. If required materials are missing, obtain them before dispatch unless the user explicitly authorizes an assessment limited to those gaps. Reuse the same idempotency key for a repeated identical creation request and the same client_request_id for a repeated identical dispatch. After a creation transport error, verify the existing request outcome before creating another team. A build_id belongs to the current creation only; Workbench monitors its progress in the background. A failed creation stays the current issue until it is resolved or the user changes the proposal. Internal construction and evaluation steps are not additional user approval gates; do not perform the requested research or production work in the foreground. A successful Weave dispatch is already the durable task: do not create or update a DSH goal for it. After dispatch, make at most one activity or status call to confirm the handoff, then return the selected team and a short human-facing state such as queued, underway, waiting for input, completed, or needs attention. Do not include internal identifiers, raw workflow versions, orchestration phases, or backend enums unless the user explicitly asks for technical details. Do not poll the run in the foreground, and do not save a duplicate foreground deliverable; Workbench monitors the run and projects Weave\'s deliverables in the background. For follow-up questions and adjustments to an existing task, keep the current team and exact run; do not repeat team matching or dispatch a new task. A member reference provides context, not permission to modify work. Discuss ordinary questions. When the user explicitly requests a modification, submit the existing correction request for those targets, then present the computed impact for confirmation before applying it. Do not add a separate confirmation before submitting that explicitly requested correction, and never describe an accepted request as an applied change. When the run is terminal or the user later asks for the result, check whether an exact-run final deliverable exists. If execution ended with only stage records or no final deliverable, say that the final output is not yet confirmed and do not claim delivery is complete. Read any available final Weave deliverable and answer with a short user-facing completion summary: what was finished, the main findings or decisions, the files the user can open, and any user action still needed. Keep internal run IDs, deliverable IDs, runtime IDs, host paths, hashes, validation command names, and engine details out of the main answer unless the user explicitly asks for technical details. Never select free collaboration unless the user explicitly requests it. If Weave tools are unavailable, report that the Weave connection is not configured instead of pretending that team work was performed.',
+  text: 'For substantive business work in Weave Workbench, first list the available Weave teams and match the request against each team\'s stated purpose, responsibilities, success criteria, default workflow availability, and health. If a suitable active team exists, first ensure the user has confirmed the selected team, task scope, and expected deliverables. Summarize only the unconfirmed choices and request their confirmation; when these choices are already explicitly confirmed in the conversation, call weave_dispatch with the agreed team and workflow without asking again; Workbench attaches the original user inputs automatically. If no suitable team exists, say so plainly and collaborate with the user on a team definition. Once the user confirms the team definition, task scope, and expected deliverables, create the team with its agreed workflow and call weave_dispatch without repeating confirmation only when that confirmation includes dispatch. If the user explicitly asks to create first and confirm dispatch separately, create the team, show the final task summary, and wait for that separate dispatch decision. Selecting a team card only selects a proposal; it does not authorize dispatch. Use the existing structured question or plan-review interaction to show the goal, expected outputs, actual members and workflow, missing materials, budget limits, and exactly which actions the decision authorizes. Preserve the displayed proposal and the user response in the conversation. Never treat your own claim of confirmation as a user decision. Do not replace a confirmed team or expand its task silently. If required materials are missing, obtain them before dispatch unless the user explicitly authorizes an assessment limited to those gaps. Reuse the same idempotency key for repeated identical creation. Use weave_dispatch for initial dispatch; it owns the original input and idempotency key. Never copy a task body into an MCP dispatch call. Retry an unresolved weave_dispatch with the same team and workflow. After a creation transport error, verify the existing request outcome before creating another team. A build_id belongs to the current creation only; Workbench monitors its progress in the background. A failed creation stays the current issue until it is resolved or the user changes the proposal. Internal construction and evaluation steps are not additional user approval gates; do not perform the requested research or production work in the foreground. A successful Weave dispatch is already the durable task: do not create or update a DSH goal for it. After dispatch, make at most one activity or status call to confirm the handoff, then return the selected team and a short human-facing state such as queued, underway, waiting for input, completed, or needs attention. Do not include internal identifiers, raw workflow versions, orchestration phases, or backend enums unless the user explicitly asks for technical details. Do not poll the run in the foreground, and do not save a duplicate foreground deliverable; Workbench monitors the run and projects Weave\'s deliverables in the background. For follow-up questions and adjustments to an existing task, keep the current team and exact run; do not repeat team matching or dispatch a new task. A member reference provides context, not permission to modify work. Discuss ordinary questions. When the user explicitly requests a modification, submit the existing correction request for those targets, then present the computed impact for confirmation before applying it. Do not add a separate confirmation before submitting that explicitly requested correction, and never describe an accepted request as an applied change. When the run is terminal or the user later asks for the result, check whether an exact-run final deliverable exists. If execution ended with only stage records or no final deliverable, say that the final output is not yet confirmed and do not claim delivery is complete. Read any available final Weave deliverable and answer with a short user-facing completion summary: what was finished, the main findings or decisions, the files the user can open, and any user action still needed. Keep internal run IDs, deliverable IDs, runtime IDs, host paths, hashes, validation command names, and engine details out of the main answer unless the user explicitly asks for technical details. Never select free collaboration unless the user explicitly requests it. If Weave tools are unavailable, report that the Weave connection is not configured instead of pretending that team work was performed.',
 } as const
 
 /** Register the durable projection and keep non-terminal Weave runs synchronized outside the conversation turn. */
@@ -958,6 +994,15 @@ export function apply(ctx: Context, config: Config = {}): void {
   ctx.sessionController.registerHistoryProjection({ key: 'workTask', eventTypes: ['weave/work-task'] })
   const apiUrl = (config.apiUrl ?? process.env.WEAVE_API_URL ?? 'http://127.0.0.1:18080').replace(/\/$/, '')
   const apiKey = (config.apiKey ?? process.env.WEAVE_API_KEY ?? '').trim()
+  const dispatchInputs = apiKey === '' ? undefined : installDispatchInputTool(ctx, { apiUrl, apiKey }, (session) => {
+    const task = ctx.sessionProjections.stateOf(session, 'workTask')?.task
+    if (task === null || task === undefined || task.runId === '') return
+    if (task.pendingAction !== null) throw new Error('dispatch_input_pending: finish the current task action first')
+    const latest = latestDispatchInput(session)
+    const replay = latest?.state === 'accepted' && latest.result?.run_id === task.runId
+      && !session.events.some(event => event.type === 'user/message' && event.data.source.kind === 'user' && event.seq > latest.sourceThroughSeq)
+    if (!terminalStatus(task.status) && !replay) throw new Error('dispatch_current_run_active: use the current run for progress, correction or stop before starting a new task')
+  })
   const runtimeServerUrl = resolveRuntimeServerUrl(apiUrl, config.runtimeServerUrl ?? process.env.WEAVE_RUNTIME_SERVER_URL)
   const connection = Reflect.get(ctx, 'connection') as {
     readonly fetch: { register(route: { readonly path: string; readonly methods: readonly ('GET' | 'HEAD' | 'POST' | 'PUT' | 'DELETE')[]; readonly fetch: (request: Request) => Promise<Response> }): () => Promise<void> }
@@ -1176,10 +1221,14 @@ export function apply(ctx: Context, config: Config = {}): void {
             method: 'POST', body: JSON.stringify({ reason: 'workbench_user_requested', idempotency_key: action.idempotencyKey }),
           })
         } else if (action.kind === 'rerun') {
-          response = await request(`/v1/teams/${encodeURIComponent(current.teamId)}/dispatch`, {
-            method: 'POST', body: JSON.stringify({ task: action.brief, mode: 'workflow', client_request_id: action.clientRequestId,
-              ...(current.workflowName === '' ? {} : { workflow_id: current.workflowName }) }),
-          })
+          if (dispatchInputs === undefined) throw new Error('dispatch connection is unavailable')
+          try {
+            response = Response.json(await dispatchInputs.rerun(session, rerunFacts(session, current), action.clientRequestId,
+              AbortSignal.any([operation.controller.signal, AbortSignal.timeout(15_000)])))
+          } catch (error) {
+            if (!(error instanceof DispatchResponseError) || !error.rejected) throw error
+            response = Response.json({ code: error.code }, { status: 409 })
+          }
         } else if (action.kind === 'stage-retry') {
           response = await request(`/v1/runs/${encodeURIComponent(action.targetRunId)}/stages/${encodeURIComponent(action.nodeId)}/retry`, {
             method: 'POST', body: JSON.stringify({ idempotency_key: action.idempotencyKey }),
@@ -1205,7 +1254,7 @@ export function apply(ctx: Context, config: Config = {}): void {
           if (!sameAction(latest, action)) return
           let next: WorkTaskProjection
           if (action.kind === 'rerun') {
-            next = snapshot(latest, value, Date.now(), { brief: action.brief, clientRequestId: action.clientRequestId,
+            next = snapshot(latest, value, Date.now(), { brief: action.brief, clientRequestId: text(value, ['client_request_id']),
               runId: text(value, ['run_id', 'runId']), pendingAction: null, actionError: '' })
           } else if (action.kind === 'correction-request') {
             const correction = correctionList({ corrections: [value] })[0]
@@ -1311,7 +1360,8 @@ export function apply(ctx: Context, config: Config = {}): void {
   ctx.on('session/event', (session, event) => {
     // The active poll owns its next interval; its durable snapshot cannot trigger another immediate read.
     if (event.type === 'weave/work-task' && operations.get(sessionKey(session))?.publishing === true) return
-    if (event.type === 'tool/result' || event.type === 'weave/work-task' || event.type === 'weave/work-task-action') queueMicrotask(() => { schedule(session) })
+    if (event.type === 'tool/result' || event.type === 'weave/work-task' || event.type === 'weave/work-task-action'
+      || event.type === 'weave/dispatch-input') queueMicrotask(() => { schedule(session) })
   })
   // The plugin may mount after persistence has restored live Sessions, so
   // session/created alone is insufficient to resume background ownership.
@@ -1348,9 +1398,9 @@ export function apply(ctx: Context, config: Config = {}): void {
       const current = ctx.sessionProjections.stateOf(agent.session, 'workTask')?.task
       let request: { runId?: unknown; brief?: unknown }
       try { request = JSON.parse(rawInput.trim()) as { runId?: unknown; brief?: unknown } } catch { return { kind: 'error', text: 'Invalid Weave rerun request.' } }
-      const brief = typeof request.brief === 'string' ? request.brief.trim() : ''
+      const brief = typeof request.brief === 'string' ? request.brief : ''
       if (current === null || current === undefined || !terminal(current)
-        || typeof request.runId !== 'string' || request.runId !== current.runId || brief === '') {
+        || typeof request.runId !== 'string' || request.runId !== current.runId || brief.trim() === '' || brief.length > 100_000) {
         return { kind: 'error', text: 'A terminal current run and a complete revised brief are required.' }
       }
       if (current.pendingAction !== null) return { kind: 'error', text: 'Another Weave action is already pending.' }

@@ -365,6 +365,8 @@ func (s *Server) registerRoutes() {
 	auth.GET("/teams/:id/dispatch-rules", s.handleGetTeamDispatchRules, orgScope)
 	auth.PUT("/teams/:id/dispatch-rules", s.handlePutTeamDispatchRules, RequireAnyRole("admin", "owner"), orgScope)
 	auth.POST("/teams/:id/dispatch", s.handleDispatchTeam, orgScope, chatScope)
+	auth.POST("/workbench/dispatch-inputs", s.handleRegisterDispatchInput, orgScope, chatScope)
+	auth.POST("/workbench/dispatch-inputs/:input_revision_id/reconcile", s.handleReconcileDispatchInput, orgScope, chatScope)
 	auth.PUT("/teams/:id/roster", s.handleUpdateTeamRoster, RequireAnyRole("admin", "owner"), orgScope)
 	auth.GET("/teams/:id/workers/:worker/revocation-impact", s.handleGetTeamWorkerRevocationImpact, orgScope)
 	auth.PUT("/teams/:id", s.handleRenameTeam, RequireRole("admin"), orgScope)

@@ -300,11 +300,13 @@ export class SessionCommandController {
         { provider: selection.provider, model: selection.model },
       )
     }
-    const source: MessageSource = {
-      kind: 'user',
+    const browserMetadata = {
       rpcId: request.requestId,
       ...(clientTimeZone === undefined ? {} : { clientTimeZone }),
     }
+    const source: MessageSource = request.origin === 'ui-control'
+      ? { kind: 'plugin', plugin: 'ui-control', form: 'relay', ...browserMetadata }
+      : { kind: 'user', ...browserMetadata }
     const hasImage = request.content.some(part => part.type === 'image')
     const admit = async (): Promise<SessionPromptValue> => {
       try {
