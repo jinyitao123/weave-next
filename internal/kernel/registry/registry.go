@@ -299,16 +299,17 @@ func (gd *GraphDefinition) Validate() error {
 
 // AgentRecord wraps an AgentSpec with platform metadata.
 type AgentRecord struct {
-	Name        string  `json:"name"`
-	ID          string  `json:"id,omitempty"`
-	WorkspaceID string  `json:"workspace_id,omitempty"`
-	TeamID      string  `json:"team_id,omitempty"`
-	OwnerUserID *string `json:"owner_user_id,omitempty"`
-	DisplayName string  `json:"display_name,omitempty"`
-	Role        string  `json:"role,omitempty"`       // worker|avatar; empty defaults to worker
-	Visibility  string  `json:"visibility,omitempty"` // public|internal_tool|platform; empty defaults to public
-	Engine      string  `json:"engine,omitempty"`     // ""/"loom" in-process; "opencode"|"codex"|"claude" external CLI runtime
-	RuntimeID   string  `json:"runtime_id,omitempty"`
+	ToolLoopControl *frozen.ToolLoopControl `json:"tool_loop_control,omitempty"`
+	Name            string                  `json:"name"`
+	ID              string                  `json:"id,omitempty"`
+	WorkspaceID     string                  `json:"workspace_id,omitempty"`
+	TeamID          string                  `json:"team_id,omitempty"`
+	OwnerUserID     *string                 `json:"owner_user_id,omitempty"`
+	DisplayName     string                  `json:"display_name,omitempty"`
+	Role            string                  `json:"role,omitempty"`       // worker|avatar; empty defaults to worker
+	Visibility      string                  `json:"visibility,omitempty"` // public|internal_tool|platform; empty defaults to public
+	Engine          string                  `json:"engine,omitempty"`     // ""/"loom" in-process; "opencode"|"codex"|"claude" external CLI runtime
+	RuntimeID       string                  `json:"runtime_id,omitempty"`
 	// RuntimePolicyMode and RuntimePoolID are request-frozen execution facts.
 	// They are carried only by the resolved in-memory copy and never persisted
 	// into the AgentRecord or uploaded to a runtime daemon.
@@ -763,6 +764,12 @@ func (r *AgentRegistry) PutTx(ctx context.Context, tx pgx.Tx, tenant string, rec
 	// SkillRef binding contract (same convention as ValidateTeamWorkerAgentRecord:
 	// PutTx is the single enforcement point so create/update and every other
 	// registry write share the same validation).
+	if err := frozen.ValidateToolLoopControl(rec.ToolLoopControl); err != nil {
+		return err
+	}
+	if rec.ToolLoopControl != nil && ((rec.Engine != "" && rec.Engine != "loom") || (rec.GraphType != "" && rec.GraphType != "standard") || len(rec.SubAgents) > 0 || len(rec.Spec.SubAgents) > 0 || len(rec.Permissions.Ask) > 0) {
+		return fmt.Errorf("controlled tool loops require standard Loom serial leaves")
+	}
 	if err := validateSkillRefs(rec); err != nil {
 		return err
 	}

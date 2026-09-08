@@ -166,3 +166,55 @@ func TestStandardV3FreezesCLIWithoutLoomJournalContract(t *testing.T) {
 		t.Fatal("Loom accepted CLI v3 contract")
 	}
 }
+
+func TestControlledMemberPublicationPinsBudgetAndRejectsUnsupportedTopology(t *testing.T) {
+	descriptors := toolsTestRegistry(t)
+	record := toolsTestRecord()
+	record.MCPServers = nil
+	record.ToolLoopControl = &frozen.ToolLoopControl{SliceRounds: 2, InitialTotalRounds: 5}
+	key, err := descriptors.SelectAgentFactoryKey(record)
+	if err != nil || key != StandardFrozenToolsKey() {
+		t.Fatalf("key=%+v err=%v", key, err)
+	}
+	descriptor, err := descriptors.Lookup(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := descriptor.EnumerateDependencies.EncodeFactoryInput(t.Context(), record, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	agent, err := freezeDescriptorAgent(record, key, raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	capability, err := descriptor.DescribeCapability(t.Context(), agent)
+	if err != nil || !capability.MayYield || len(capability.InteractiveStepIDs) != 1 {
+		t.Fatalf("capability=%+v err=%v", capability, err)
+	}
+	proof, err := descriptors.DescribeWorkerRoleProof(t.Context(), record, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record.ToolLoopControl = &frozen.ToolLoopControl{SliceRounds: 2, InitialTotalRounds: 6}
+	if err := descriptors.VerifyWorkerRoleProof(t.Context(), record, proof); err == nil {
+		t.Fatal("budget change retained published role proof")
+	}
+	for _, change := range []func(*registry.AgentRecord){
+		func(r *registry.AgentRecord) { r.Engine = "codex" },
+		func(r *registry.AgentRecord) { r.GraphType = "declarative" },
+		func(r *registry.AgentRecord) { r.GraphType = ""; r.Spec.GraphType = "custom" },
+		func(r *registry.AgentRecord) { r.SubAgents = []registry.SubAgentRef{{Name: "child"}} },
+		func(r *registry.AgentRecord) { r.Permissions.Ask = []string{"write"} },
+		func(r *registry.AgentRecord) { r.ToolLoopControl = &frozen.ToolLoopControl{InitialTotalRounds: 3} },
+	} {
+		invalid := record
+		change(&invalid)
+		if _, err := descriptors.SelectAgentFactoryKey(invalid); err == nil {
+			t.Fatal("unsupported controlled topology selected")
+		}
+		if _, err := descriptor.EnumerateDependencies.EncodeFactoryInput(t.Context(), invalid, nil); err == nil {
+			t.Fatal("unsupported controlled topology frozen")
+		}
+	}
+}

@@ -518,6 +518,35 @@ describe('exact human wait actions', () => {
     } finally { app.dispose() }
   })
 
+  it('persists an explicit cumulative budget increase across a lost continuation response', async () => {
+    vi.useFakeTimers()
+    const requests: unknown[] = []
+    vi.stubGlobal('fetch', vi.fn<typeof fetch>(async (input, init) => {
+      const url = urlOf(input)
+      if (url.endsWith('/activity')) return Response.json({ run_id: 'run-1', status: 'parked', wait_kind: 'runtime', wait_node_id: 'review', members: [{ agent_id: 'reviewer', name: '复核员', status: 'waiting', stages: [{ node_id: 'review', status: 'waiting', retryable: true, budget_pause: { reason: 'total_limit', rounds_used: 2, authorized_total_rounds: 2 } }] }] })
+      if (url.endsWith('/retry')) {
+        requests.push(jsonBody(init))
+        if (requests.length === 1) throw new Error('Response lost')
+        return Response.json({ status: 'queued' })
+      }
+      throw new Error(`Unexpected path: ${url}`)
+    }))
+    const app = host({ status: 'running', waitKind: '', humanTaskCount: 0 })
+    try {
+      await vi.advanceTimersByTimeAsync(0)
+      const action = { action: 'stage-retry', sessionId: 'session-1', runId: 'run-1', nodeId: 'review' }
+      expect((await app.action(action)).status).toBe(409)
+      expect((await app.action({ ...action, authorizedTotalRounds: 2 })).status).toBe(409)
+      expect(requests).toHaveLength(0)
+      expect((await app.action({ ...action, authorizedTotalRounds: 3 })).status).toBe(204)
+      expect(app.state().task?.pendingAction?.authorizedTotalRounds).toBe(3)
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(requests).toHaveLength(2)
+      expect(requests[0]).toEqual(requests[1])
+      expect(requests[0]).toMatchObject({ authorized_total_rounds: 3 })
+    } finally { app.dispose() }
+  })
+
   it('reads the real detail fields and persists a matching answer before sending its original payload', async () => {
     vi.useFakeTimers()
     let queued = false

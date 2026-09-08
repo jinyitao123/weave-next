@@ -24,7 +24,7 @@ interface WorkTaskInjected {
   readonly selectTeam?: (teamId: string, teamName: string) => Promise<void>
   readonly stopRun?: (runId: string) => Promise<string | null>
   readonly rerun?: (runId: string, brief: string) => Promise<string | null>
-  readonly retryStage?: (runId: string, nodeId: string) => Promise<string | null>
+  readonly retryStage?: (runId: string, nodeId: string, authorizedTotalRounds?: number) => Promise<string | null>
   readonly requestCorrection?: (runId: string, targetKind: 'team' | 'member', targetMemberId: string, instruction: string) => Promise<string | null>
   readonly confirmCorrection?: (runId: string, correctionId: string, disposition: 'apply' | 'discard') => Promise<string | null>
   readonly completeHumanTask?: (runId: string, interactionId: string, payload: unknown) => Promise<string | null>
@@ -81,6 +81,7 @@ function taskStatusKey(model: ReturnType<typeof workTaskModel>) {
     'buildFailed': 'task.state.buildFailed',
     'buildUnknown': 'task.state.buildUnknown',
   } as const
+  if (model.status === 'waiting' && model.members.some(member => member.stages.some(stage => stage.nodeId === model.waitNodeId && stage.budgetPause !== undefined))) return 'task.budget.title'
   if (model.displayState !== undefined && Object.hasOwn(displayKeys, model.displayState)) {
     return displayKeys[model.displayState as keyof typeof displayKeys]
   }
@@ -123,6 +124,7 @@ function runtimeDisplayStatus(runtime: WorkTaskRuntime, runtimes: readonly WorkT
 }
 
 const MEMBER_STATUS_KEYS = {
+ waiting: 'task.status.waiting',
   pending: 'task.member.status.pending',
   running: 'task.member.status.running',
   'partially-completed': 'task.member.status.partiallyCompleted',
@@ -302,7 +304,7 @@ function interruptedInfrastructureStages(model: ReturnType<typeof workTaskModel>
   for (const member of model.members) {
     for (const stage of member.stages) {
       if (model.waitKind === 'runtime' && model.waitNodeId !== stage.nodeId) continue
-      if (stage.status !== 'failed' || stage.failureClass !== 'infrastructure'
+      if (!((stage.status === 'failed' && stage.failureClass === 'infrastructure') || (stage.status === 'waiting' && stage.budgetPause !== undefined))
         || (!stage.retryable && !runtimeStopPending(stage)) || stages.has(stage.nodeId)) continue
       stages.set(stage.nodeId, { memberId: member.agentId, memberName: member.name, stage })
     }
@@ -561,6 +563,7 @@ export function WorkTaskPanel({
   const [outputQuery, setOutputQuery] = useState('')
   useEffect(() => { setOutputQuery('') }, [model.runId, outputSelection?.request])
   const [retryNodeId, setRetryNodeId] = useState('')
+  const [budgetCeiling, setBudgetCeiling] = useState('')
   const backButton = useRef<HTMLButtonElement>(null)
   const correctionButton = useRef<HTMLButtonElement>(null)
   const correctionRegion = useRef<HTMLElement>(null)
@@ -647,6 +650,7 @@ export function WorkTaskPanel({
     return owner === undefined ? stageLabel(nodeId, t) : `${owner.name} · ${stageLabel(stage?.name ?? nodeId, t)}`
   }
   const interruptedStages = interruptedInfrastructureStages(model)
+  const budgetStage = model.status === 'waiting' ? model.members.flatMap(member => member.stages).find(stage => stage.nodeId === model.waitNodeId && stage.budgetPause !== undefined) : undefined
   const recoverableStages = retryStage === undefined ? [] : interruptedStages.filter(item => item.stage.retryable)
   const pendingStopStages = interruptedStages.filter(item => runtimeStopPending(item.stage))
   const pendingStopNotice = pendingStopStages.length === 0 ? null : <div className={css.stageFailure}>
@@ -683,7 +687,12 @@ export function WorkTaskPanel({
     if (retryStage === undefined || actionPending || retryNodeId === '') return
     setActionPending(true)
     setActionError(null)
-    const error = await retryStage(model.runId, retryNodeId)
+    const budget = recoverableStages.find(item => item.stage.nodeId === retryNodeId)?.stage.budgetPause
+    const ceiling = budget?.reason === 'total_limit' ? Number(budgetCeiling) : undefined
+    if (ceiling !== undefined && (!Number.isSafeInteger(ceiling) || ceiling <= budget!.authorizedTotalRounds)) {
+      setActionPending(false); setActionError(t('task.budget.invalid')); return
+    }
+    const error = ceiling === undefined ? await retryStage(model.runId, retryNodeId) : await retryStage(model.runId, retryNodeId, ceiling)
     setActionPending(false)
     if (error !== null) setActionError(error)
     else setRetryNodeId('')
@@ -762,12 +771,12 @@ export function WorkTaskPanel({
   }
 
   const recoverySection = recoverableStages.length === 0 ? null : (
-    <section className={css.recoveryCard} aria-label={t('task.recovery.title')}>
+    <section className={css.recoveryCard} aria-label={t(budgetStage === undefined ? 'task.recovery.title' : 'task.budget.title')}>
       <div className={css.recoveryHeading}>
         <span className={css.recoveryMark} aria-hidden />
         <div>
-          <strong>{t('task.recovery.title')}</strong>
-          <span>{t('task.recovery.description')}</span>
+          <strong>{t(budgetStage === undefined ? 'task.recovery.title' : 'task.budget.title')}</strong>
+          <span>{t(budgetStage === undefined ? 'task.recovery.description' : 'task.budget.help')}</span>
         </div>
       </div>
       <div className={css.recoveryStages}>
@@ -780,6 +789,7 @@ export function WorkTaskPanel({
             {retryNodeId === stage.nodeId ? (
               <div className={css.retryConfirm}>
                 <span>{t(stage.memberRunId ? 'task.retry.memberImpact' : 'task.retry.impact')}</span>
+                {stage.budgetPause?.reason !== 'total_limit' ? null : <label>{t('task.budget.ceiling')}<input type="number" min={stage.budgetPause.authorizedTotalRounds + 1} max={Number.MAX_SAFE_INTEGER} step={1} value={budgetCeiling} onChange={event => { setBudgetCeiling(event.currentTarget.value) }} /></label>}
                 <div className={css.controlActions}>
                   <button type="button" className={css.secondaryButton} onClick={() => { setRetryNodeId('') }}>{t('task.cancel')}</button>
                   <button type="button" className={css.primaryButton} disabled={actionPending || model.pendingAction !== null} onClick={() => { void submitStageRetry() }}>{t('task.retry.confirm')}</button>
@@ -787,7 +797,7 @@ export function WorkTaskPanel({
               </div>
             ) : (
               <button type="button" className={css.primaryButton} disabled={actionPending || model.pendingAction !== null}
-                onClick={() => { setRetryNodeId(stage.nodeId) }}>{t(stage.memberRunId ? 'task.retry.memberContinue' : 'task.recovery.retry')}</button>
+                onClick={() => { setBudgetCeiling(''); setRetryNodeId(stage.nodeId) }}>{t(stage.memberRunId ? 'task.retry.memberContinue' : 'task.recovery.retry')}</button>
             )}
           </div>
         ))}
@@ -913,7 +923,7 @@ export function WorkTaskPanel({
                           <button type="button" className={css.primaryButton} disabled={actionPending} onClick={() => { void submitStageRetry() }}>{t('task.retry.confirm')}</button>
                         </div>
                       </div>
-                    ) : <button type="button" className={css.memberCorrectionButton} onClick={() => { setRetryNodeId(stage.nodeId) }}>{t(stage.memberRunId ? 'task.retry.memberContinue' : 'task.retry.stage')}</button>}
+                    ) : <button type="button" className={css.memberCorrectionButton} onClick={() => { setBudgetCeiling(''); setRetryNodeId(stage.nodeId) }}>{t(stage.memberRunId ? 'task.retry.memberContinue' : 'task.retry.stage')}</button>}
                   </div>
                 )}
                 {stage.startedAt === '' && stage.durationMs === 0 && stage.toolCalls === 0 ? null : (
@@ -1013,6 +1023,7 @@ export function WorkTaskPanel({
       {stale ? <p className={css.dockNotice}>{t('task.freshness.stale')}</p> : null}
       {failureNotice}
       {pendingStopStages.length === 0 ? null : <p className={css.dockNotice}>{t('task.wait.runtimeStopHelp')}</p>}
+      {budgetStage?.budgetPause === undefined ? null : <p className={css.dockNotice}>{t('task.budget.usage', { used: budgetStage.budgetPause.roundsUsed, total: budgetStage.budgetPause.authorizedTotalRounds })} {t(budgetStage.budgetPause.reason === 'total_limit' ? 'task.budget.total' : budgetStage.budgetPause.reason === 'slice_limit' ? 'task.budget.slice' : 'task.budget.blocked')}</p>}
       {recoverySection}
       {humanSection === null ? null : <details className={css.dockForm}>
         <summary>{t('task.card.answer')}</summary>{humanSection}
@@ -1104,7 +1115,8 @@ export function WorkTaskPanel({
           recheckDelivery={recheckDelivery} disabled={actionDisabled} t={t} />
         {failureNotice}
         {pendingStopNotice}
-        {model.status !== 'waiting' || pendingStopStages.length > 0 ? null : <p>{t(model.waitKind === 'human' ? 'task.wait.humanHelp'
+        {budgetStage?.budgetPause === undefined ? null : <p>{t('task.budget.usage', { used: budgetStage.budgetPause.roundsUsed, total: budgetStage.budgetPause.authorizedTotalRounds })} {t(budgetStage.budgetPause.reason === 'total_limit' ? 'task.budget.total' : budgetStage.budgetPause.reason === 'slice_limit' ? 'task.budget.slice' : 'task.budget.blocked')}</p>}
+        {model.status !== 'waiting' || pendingStopStages.length > 0 || budgetStage !== undefined ? null : <p>{t(model.waitKind === 'human' ? 'task.wait.humanHelp'
           : model.waitKind === 'correction' ? 'task.wait.correctionHelp' : model.waitKind === 'runtime' ? 'task.wait.runtimeHelp'
             : model.waitKind === 'timer' ? 'task.wait.timerHelp' : model.waitKind === 'fanout' ? 'task.wait.fanoutHelp' : 'task.wait.unknownHelp')}</p>}
         {model.status !== 'completed' || hasFinal ? null : <div className={css.deliveryGap}>

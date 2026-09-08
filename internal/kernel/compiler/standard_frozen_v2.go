@@ -131,6 +131,9 @@ func (e standardToolsEnumerator) EnumerateDependencies(ctx context.Context, agen
 // SelectAgentFactoryKey is the explicit publication/admission policy. Generic
 // SelectFactoryKey retains its ambiguity check and old artifacts use Lookup.
 func (r *DescriptorRegistry) SelectAgentFactoryKey(record registry.AgentRecord) (frozen.FactoryKey, error) {
+	if err := validateControlledMemberRecord(record); err != nil {
+		return frozen.FactoryKey{}, err
+	}
 	graphType := record.GraphType
 	if graphType == "" {
 		graphType = record.Spec.GraphType
@@ -138,7 +141,7 @@ func (r *DescriptorRegistry) SelectAgentFactoryKey(record registry.AgentRecord) 
 	if graphType != "" && graphType != "standard" {
 		return r.SelectFactoryKey(graphType)
 	}
-	if len(record.MCPServers) > 0 {
+	if len(record.MCPServers) > 0 || record.ToolLoopControl != nil {
 		key := StandardFrozenToolsKey()
 		if engine.IsCLIEngine(record.Engine) {
 			key = StandardFrozenCLIToolsKey()
@@ -202,6 +205,23 @@ func ValidateStandardMCPBindings(bundle frozen.FrozenExecutionBundle) error {
 				return standardFrozenCompileError(fmt.Sprintf("member %q required tool %q is missing from MCP server %q", bundle.Agent.Name, name, server.ServerID))
 			}
 		}
+	}
+	return nil
+}
+
+func validateControlledMemberRecord(record registry.AgentRecord) error {
+	if record.ToolLoopControl == nil {
+		return nil
+	}
+	if err := frozen.ValidateToolLoopControl(record.ToolLoopControl); err != nil {
+		return err
+	}
+	graphType := record.GraphType
+	if graphType == "" {
+		graphType = record.Spec.GraphType
+	}
+	if (record.Engine != "" && record.Engine != "loom") || (graphType != "" && graphType != "standard") || len(record.SubAgents) > 0 || len(record.Spec.SubAgents) > 0 || len(record.Permissions.Ask) > 0 {
+		return normalizeCompilerError(CodeDependencyUnenumerable, fmt.Errorf("controlled tool loops require standard Loom serial leaves without interactive permissions"))
 	}
 	return nil
 }

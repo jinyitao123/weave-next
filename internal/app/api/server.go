@@ -693,6 +693,7 @@ func (s *Server) ConfigureTeamRunWorkers() {
 	}
 	coordinator.Tasks = s.Tasks
 	executor := &teamrun.Executor{
+		MemberBudgets:     loomruntime.MemberBudgetCoordinator{},
 		Tasks:             s.Tasks,
 		Consumer:          consumer,
 		Transactions:      pool,
@@ -736,7 +737,8 @@ func (s *Server) ConfigureTeamRunWorkers() {
 		Tasks:        s.Tasks,
 	}
 	s.teamRunStageRetry = &teamrun.StageRetryService{
-		Transactions: pool, Runs: runStore, Checkpoints: checkpointStore, Tasks: s.Tasks,
+		MemberBudgets: loomruntime.MemberBudgetCoordinator{},
+		Transactions:  pool, Runs: runStore, Checkpoints: checkpointStore, Tasks: s.Tasks,
 	}
 	s.teamRunHumanResume = &teamrun.HumanResumeService{
 		Transactions: pool,

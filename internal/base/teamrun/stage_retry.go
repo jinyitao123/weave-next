@@ -11,15 +11,19 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/base/fanout"
 	"github.com/jinyitao123/weave/internal/base/taskqueue"
 )
 
 type StageRetryRequest struct {
-	IdempotencyKey string
-	WorkspaceID    string
-	RunID          string
-	NodeID         string
+	Actor                 string
+	Automatic             bool
+	AuthorizedTotalRounds uint64
+	IdempotencyKey        string
+	WorkspaceID           string
+	RunID                 string
+	NodeID                string
 }
 
 type StageRetryResult struct {
@@ -41,18 +45,20 @@ type failedTaskRequeuer interface {
 }
 
 type StageRetryService struct {
-	Transactions TransactionBeginner
-	Runs         *PGStore
-	Checkpoints  *PGCheckpointStore
-	Tasks        failedTaskRequeuer
-	Now          func() time.Time
+	MemberBudgets MemberBudgetCoordinator
+	Transactions  TransactionBeginner
+	Runs          *PGStore
+	Checkpoints   *PGCheckpointStore
+	Tasks         failedTaskRequeuer
+	Now           func() time.Time
 }
 
 type RuntimeWaitDetailV1 struct {
-	SchemaVersion   int    `json:"schema_version"`
-	WaitType        string `json:"wait_type"`
-	NodeID          string `json:"node_id"`
-	RecoveryBlocked bool   `json:"recovery_blocked,omitempty"`
+	MemberBudgetPause *execution.MemberBudgetPause `json:"member_budget_pause,omitempty"`
+	SchemaVersion     int                          `json:"schema_version"`
+	WaitType          string                       `json:"wait_type"`
+	NodeID            string                       `json:"node_id"`
+	RecoveryBlocked   bool                         `json:"recovery_blocked,omitempty"`
 }
 
 type RuntimeRetryTaskPayloadV1 struct {
@@ -90,6 +96,9 @@ func (s *StageRetryService) Retry(ctx context.Context, request StageRetryRequest
 	}
 	if result, found, err := replayStageRetryReceiptTx(ctx, tx, request); err != nil || found {
 		return result, err
+	}
+	if (request.Automatic || request.AuthorizedTotalRounds != 0) && (run.Status != StatusParked || run.WaitKind == nil || *run.WaitKind != WaitRuntime) {
+		return StageRetryResult{}, ErrTeamRunResumeInvalid
 	}
 	var result StageRetryResult
 	switch {
@@ -224,14 +233,48 @@ func (s *StageRetryService) retryRuntimeStageTx(ctx context.Context, tx pgx.Tx, 
 		checkpoint.TeamRunGeneration+1 != run.Generation || checkpoint.ExecutionLeaseEpoch != run.ExecutionLeaseEpoch {
 		return StageRetryResult{}, fmt.Errorf("%w: runtime retry checkpoint differs", ErrTeamRunStateConflict)
 	}
+	if detail.MemberBudgetPause != nil && s.MemberBudgets == nil {
+		return StageRetryResult{}, ErrTeamRunResumeInvalid
+	}
+	if request.Automatic {
+		if detail.MemberBudgetPause == nil || request.AuthorizedTotalRounds != 0 {
+			return StageRetryResult{}, ErrTeamRunResumeInvalid
+		}
+		progress, err := s.MemberBudgets.HasProgress(ctx, tx, run.WorkspaceID, *detail.MemberBudgetPause)
+		if err != nil {
+			return StageRetryResult{}, err
+		}
+		if !progress {
+			return StageRetryResult{}, ErrTeamRunResumeInvalid
+		}
+	}
+	if detail.MemberBudgetPause != nil {
+		if checkpoint.ActiveMember == nil || checkpoint.ActiveMember.NodeID != request.NodeID || request.IdempotencyKey == "" {
+			return StageRetryResult{}, ErrTeamRunResumeInvalid
+		}
+		grantID := stageRetryReceiptID(request.IdempotencyKey)
+		if err := s.MemberBudgets.Authorize(ctx, tx, run.WorkspaceID, run.RunID, checkpoint.ActiveMember.CallID, grantID, *detail.MemberBudgetPause, request.AuthorizedTotalRounds); err != nil {
+			return StageRetryResult{}, fmt.Errorf("%w: %v", ErrTeamRunResumeInvalid, err)
+		}
+		checkpoint.ActiveMember.ResumeGrantID = grantID
+	} else if request.AuthorizedTotalRounds != 0 {
+		return StageRetryResult{}, ErrTeamRunResumeInvalid
+	}
 	key := runtimeRetryKey(run.RunID, request.NodeID, run.ResumeGeneration)
 	executorID := runtimeRetryExecutorID(run.RunID, request.NodeID, run.ResumeGeneration)
+	actor, source := request.Actor, "runtime_retry"
+	if actor == "" {
+		actor = "stage-retry"
+	}
+	if request.Automatic {
+		actor = "member-budget-policy"
+	}
 	resumed, err := s.Runs.ResumeRunningTx(ctx, tx, ResumeRequest{
 		WorkspaceID: run.WorkspaceID, RunID: run.RunID, ExpectedStatus: StatusParked,
 		ExpectedTeamRunGeneration: run.Generation, ExpectedExecutionLeaseEpoch: run.ExecutionLeaseEpoch,
 		ExpectedResumeGeneration: run.ResumeGeneration, ExpectedWaitKind: WaitRuntime,
 		ExpectedResumeTokenHash: run.ResumeTokenHash, ExecutorID: executorID,
-		IdempotencyKey: key, Actor: "stage-retry", Source: "runtime_retry", OccurredAt: now,
+		IdempotencyKey: key, Actor: actor, Source: source, OccurredAt: now,
 	})
 	if err != nil {
 		return StageRetryResult{}, err

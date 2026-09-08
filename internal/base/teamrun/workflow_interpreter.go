@@ -119,6 +119,7 @@ func nodePhysicalUsageAttemptID(callID, physicalID string, index int) string {
 }
 
 type nodeUsageReport struct {
+	MemberPause           *loomruntime.MemberBudgetPause
 	MemberRunID           string
 	MemberReceipts        []loomruntime.ConfirmedUsageReceipt
 	MemberUsageIncomplete bool
@@ -451,6 +452,17 @@ func runSerialMachine(
 						UsageComplete: usageComplete, UsageIncompleteReason: usageIncompleteReason}
 				}
 				return fail(err)
+			}
+			if nodeUsage.MemberPause != nil {
+				detail, encodeErr := json.Marshal(RuntimeWaitDetailV1{SchemaVersion: 1, WaitType: "runtime", NodeID: node.ID, MemberBudgetPause: nodeUsage.MemberPause})
+				if encodeErr != nil {
+					return fail(encodeErr)
+				}
+				if start.RecordActivity != nil {
+					start.RecordActivity(ctx, "member_paused", node, memberID, memberVersion, map[string]any{"budget": nodeUsage.MemberPause})
+				}
+				return serialMachineResult{ActiveMember: activeMember, MemberBreakdown: memberBreakdown, Status: serialParked, Outputs: outputs, ArtifactTaskIDs: artifactTaskIDs, NodeID: node.ID,
+					DeliveryErrors: deliveryErrors, WaitKind: WaitRuntime, WaitDetail: detail, Usage: usage, UsageComplete: usageComplete, UsageIncompleteReason: usageIncompleteReason}
 			}
 			activeMember = nil
 			outputs[node.ID] = output
@@ -1299,7 +1311,7 @@ func runAgentNode(
 					result, err = member.Runner.Run(execCtx, loomruntime.MemberRequest{
 						WorkspaceID: member.Run.WorkspaceID, ParentRunID: member.Run.RunID,
 						RunSnapshotID: member.Run.RunSnapshotID, NodeID: node.ID, CallID: member.Active.CallID,
-						ParentGeneration: int64(member.Run.Generation), Bundle: *entry.Bundle,
+						ParentGeneration: int64(member.Run.Generation), Bundle: *entry.Bundle, ResumeGrantID: member.Active.ResumeGrantID,
 						ArtifactHash: member.ArtifactHash, Graph: entry.Graph, Input: graphState,
 						Attribution: attribution, ParentGuard: member.Guard,
 						RetryableFailure: func(err error) bool { return ClassifyFailure(err).Retryable },
@@ -1336,6 +1348,16 @@ func runAgentNode(
 			ErrorCodeExecutionUnrecoverable,
 			errors.New("frozen graph returned no result"),
 		)
+	}
+	if isDurableMemberEntry(entry) {
+		pause, pauseErr := loomruntime.ReadMemberBudgetPause(result, entry.Graph.Name)
+		if pauseErr != nil {
+			return nil, usage, executionError(ErrorCodeExecutionUnrecoverable, pauseErr)
+		}
+		if pause != nil {
+			usage.MemberPause = pause
+			return nil, usage, nil
+		}
 	}
 	if result.Yielded || result.StopReason == loom.StopYielded {
 		return nil, usage, executionError(

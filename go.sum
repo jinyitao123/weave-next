@@ -15,6 +15,8 @@ github.com/jackc/puddle/v2 v2.2.2 h1:PR8nw+E/1w0GLuRFSmiioY6UooMp6KJv0/61nB7icHo
 github.com/jackc/puddle/v2 v2.2.2/go.mod h1:vriiEXHvEE654aYKXXjOvZM39qJ0q+azkZFrfEOc3H4=
 github.com/jinyitao123/loom v0.8.1 h1:gJhjYNdUjJIQKvoWFehcFXy4lH+uvwlyFF8ShS+QHfI=
 github.com/jinyitao123/loom v0.8.1/go.mod h1:AsO9UvDHHJCUC3Uu9zn9m4A2YS2gigTkDpVjc6Lp7po=
+github.com/jinyitao123/loom v0.8.2-0.20260908071214-d704baf1ae7f h1:UFIM7I+1Tm0V82ETEWhCHEktPC7KCRbsveTocXvH/Cg=
+github.com/jinyitao123/loom v0.8.2-0.20260908071214-d704baf1ae7f/go.mod h1:AsO9UvDHHJCUC3Uu9zn9m4A2YS2gigTkDpVjc6Lp7po=
 github.com/labstack/echo/v4 v4.15.4 h1:DL45vVYa+BWE+XuW+zZNd9H0YEdZ80UAWJGcTVW4EVs=
 github.com/labstack/echo/v4 v4.15.4/go.mod h1:CuMetKIRwsuO/qlAgMq+KTAalwGoB/h4tC+yPdrTj1g=
 github.com/labstack/gommon v0.5.0 h1:6VSQ2NOzsnEJ5W6+84E0RbcaDDmgB6NIAzWCczTEe6c=

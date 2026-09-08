@@ -107,8 +107,8 @@ export function apply(ctx: ClientContext): void {
       rerun: async (runId: string, brief: string) => {
         return await taskAction(sessionId, { action: 'rerun', runId, brief })
       },
-      retryStage: async (runId: string, nodeId: string) => {
-        return await taskAction(sessionId, { action: 'stage-retry', runId, nodeId })
+      retryStage: async (runId: string, nodeId: string, authorizedTotalRounds?: number) => {
+        return await taskAction(sessionId, { action: 'stage-retry', runId, nodeId, authorizedTotalRounds })
       },
       requestCorrection: async (runId: string, targetKind: 'team' | 'member', targetMemberId: string, instruction: string) => {
         return await taskAction(sessionId, { action: 'correction-request', runId, targetKind, targetMemberId, instruction })

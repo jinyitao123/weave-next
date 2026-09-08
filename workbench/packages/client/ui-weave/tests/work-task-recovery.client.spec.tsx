@@ -640,6 +640,24 @@ describe('Workbench recovery and delivery facts', () => {
     expect(header.getByText('停止状态未能确认')).toBeTruthy()
   })
 
+  it('shows a budget pause and requires an explicit new cumulative limit before continuing', async () => {
+    const projection = task()
+    const stage = { ...projection.members[0]!.stages[0]!, memberRunId: 'member-1', status: 'waiting' as const, failureClass: '' as const, failureReason: '', budgetPause: { reason: 'total_limit', roundsUsed: 2, authorizedTotalRounds: 2 } }
+    const paused = task({ members: [{ ...projection.members[0]!, status: 'waiting', stages: [stage] }] })
+    const retryStage = vi.fn().mockResolvedValue(null)
+    const view = render(<WorkTaskPanel {...props(paused)} retryStage={retryStage} />)
+    expect(view.getAllByText('执行已暂停，工作已保留').length).toBeGreaterThan(0)
+    expect(view.queryByText('执行环境中断')).toBeNull()
+    expect(view.getByText(/已用 2 轮，累计上限 2 轮/)).toBeTruthy()
+    fireEvent.click(view.getByRole('button', { name: '继续成员任务' }))
+    fireEvent.click(view.getByRole('button', { name: '确认重试' }))
+    await waitFor(() => { expect(view.getByText('请输入高于当前累计上限的整数。')).toBeTruthy() })
+    expect(retryStage).not.toHaveBeenCalled()
+    fireEvent.change(view.getByLabelText('新的累计轮次上限'), { target: { value: '3' } })
+    fireEvent.click(view.getByRole('button', { name: '确认重试' }))
+    await waitFor(() => { expect(retryStage).toHaveBeenCalledWith('run-1', 'review', 3) })
+  })
+
   it('keeps one conversation card per run and leaves durable receipts in the work scene', async () => {
     const retryStage = vi.fn(() => Promise.resolve(null))
     const projection = task()

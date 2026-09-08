@@ -142,6 +142,7 @@ export interface WorkTaskPendingAction {
   readonly disposition: 'apply' | 'discard' | ''
   readonly instruction: string
   readonly nodeId: string
+  readonly authorizedTotalRounds?: number | undefined
   readonly humanPayload?: unknown
   readonly humanInteractionId?: string | undefined
 }
@@ -154,7 +155,7 @@ export interface WorkTaskRuntime {
 }
 
 /** User-facing lifecycle state for one workflow member or stage. */
-export type WorkTaskMemberStatus = 'pending' | 'running' | 'partially-completed' | 'completed' | 'failed' | 'stopped' | 'not-recorded'
+export type WorkTaskMemberStatus = 'waiting' | 'pending' | 'running' | 'partially-completed' | 'completed' | 'failed' | 'stopped' | 'not-recorded'
 
 /** One declared input observed for a member stage. */
 export interface WorkTaskMemberInput {
@@ -168,6 +169,7 @@ export interface WorkTaskMemberInput {
 
 /** One workflow stage assigned to a member, including observed tools and outputs. */
 export interface WorkTaskMemberStage {
+ readonly budgetPause?: { readonly reason: string; readonly roundsUsed: number; readonly authorizedTotalRounds: number } | undefined
   readonly memberRunId?: string | undefined
   readonly checkpointSavedAt?: string | undefined
   readonly nodeId: string
@@ -272,11 +274,12 @@ declare module '@deepseek-ai/dsh-session-projection/types' {
 
 const statusSchema = z.enum(['preparing', 'queued', 'running', 'waiting', 'stopping', 'completed', 'failed', 'stopped'])
 const runtimeSchema = z.object({ name: z.string(), detail: z.string(), status: statusSchema }).strict()
-const memberStatusSchema = z.enum(['pending', 'running', 'partially-completed', 'completed', 'failed', 'stopped', 'not-recorded'])
+const memberStatusSchema = z.enum(['waiting', 'pending', 'running', 'partially-completed', 'completed', 'failed', 'stopped', 'not-recorded'])
 const memberInputSchema = z.object({
   name: z.string(), expectedType: z.string(), source: z.string(), nodeId: z.string(), path: z.string(), summary: z.string().default(''),
 }).strict()
 const memberStageSchema = z.object({
+ budgetPause: z.object({reason:z.string(),roundsUsed:z.number().int().nonnegative(),authorizedTotalRounds:z.number().int().positive()}).strict().optional(),
   nodeId: z.string(), name: z.string(), status: memberStatusSchema,
   inputs: z.array(memberInputSchema), outputRefs: z.array(z.string()),
   startedAt: z.string().default(''), completedAt: z.string().default(''),
@@ -311,7 +314,7 @@ const attemptSchema = z.object({
 const browserTaskActionSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('stop'), sessionId: z.string(), runId: z.string() }).strict(),
   z.object({ action: z.literal('rerun'), sessionId: z.string(), runId: z.string(), brief: z.string().max(100_000).refine(value => value.trim().length > 0) }).strict(),
-  z.object({ action: z.literal('stage-retry'), sessionId: z.string(), runId: z.string(), nodeId: z.string() }).strict(),
+  z.object({ action: z.literal('stage-retry'), sessionId: z.string(), runId: z.string(), nodeId: z.string(), authorizedTotalRounds: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional() }).strict(),
   z.object({ action: z.literal('correction-request'), sessionId: z.string(), runId: z.string(), targetKind: z.enum(['team', 'member']), targetMemberId: z.string(), instruction: z.string().trim().min(1).max(20_000) }).strict(),
   z.object({ action: z.literal('correction-confirm'), sessionId: z.string(), runId: z.string(), correctionId: z.string(), disposition: z.enum(['apply', 'discard']) }).strict(),
   z.object({ action: z.literal('human-complete'), sessionId: z.string(), runId: z.string(), interactionId: z.string(), payload: z.unknown().refine(value => value !== undefined) }).strict(),
@@ -319,6 +322,7 @@ const browserTaskActionSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('recheck'), sessionId: z.string(), runId: z.string(), deliveryRevisionId: z.string().min(1), contractDigest: z.string().min(1) }).strict(),
 ])
 const pendingActionSchema = z.object({
+ authorizedTotalRounds: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional(),
   kind: z.enum(['stop', 'rerun', 'stage-retry', 'correction-request', 'correction-confirm', 'human-complete']), targetRunId: z.string(), idempotencyKey: z.string(),
   clientRequestId: z.string(), brief: z.string(), requestedAt: z.number().nonnegative(),
   targetKind: z.enum(['team', 'member', '']).default(''), targetMemberId: z.string().default(''),
@@ -497,7 +501,7 @@ function canRetryStage(task: WorkTaskProjection, nodeId: string): boolean {
   return task.status === 'waiting'
     && (task.waitKind === 'fanout' || (task.waitKind === 'runtime' && task.waitNodeId === nodeId))
     && task.members.some(member => member.stages.some(stage => stage.nodeId === nodeId
-      && stage.status === 'failed' && stage.failureClass === 'infrastructure' && stage.retryable))
+      && ((stage.status === 'failed' && stage.failureClass === 'infrastructure') || (stage.status === 'waiting' && stage.budgetPause !== undefined)) && stage.retryable))
 }
 
 function resultValue(event: Extract<SessionEvent, { type: 'tool/result' }>): unknown {
@@ -543,6 +547,7 @@ function memberStatus(value: unknown): WorkTaskMemberStatus {
   const raw = text(value, ['status', 'state']).toLowerCase().replaceAll('_', '-')
   if (raw === 'completed' || raw === 'finished') return 'completed'
   if (raw === 'partially-completed') return 'partially-completed'
+  if (raw === 'waiting') return 'waiting'
   if (raw === 'running' || raw === 'active') return 'running'
   if (raw === 'failed') return 'failed'
   if (raw === 'stopped' || raw === 'cancelled') return 'stopped'
@@ -581,6 +586,16 @@ function publicUpdates(value: unknown): WorkTaskPublicUpdate[] {
   return [...updates.values()]
 }
 
+function memberBudgetPause(value: unknown): { budgetPause?: { reason: string; roundsUsed: number; authorizedTotalRounds: number } } {
+ const item = value as Record<string, unknown> | null
+ if (typeof item !== 'object' || item === null) return {}
+ const used = item.rounds_used ?? item.roundsUsed
+ const ceiling = item.authorized_total_rounds ?? item.authorizedTotalRounds
+ if (typeof item.reason !== 'string' || typeof used !== 'number' || typeof ceiling !== 'number'
+   || !Number.isSafeInteger(used) || !Number.isSafeInteger(ceiling) || used < 0 || ceiling < used) return {}
+ return { budgetPause: { reason: item.reason, roundsUsed: used, authorizedTotalRounds: ceiling } }
+}
+
 function memberStages(value: unknown): WorkTaskMemberStage[] {
   if (!Array.isArray(value)) return []
   return value.flatMap((candidate): WorkTaskMemberStage[] => {
@@ -599,6 +614,7 @@ function memberStages(value: unknown): WorkTaskMemberStage[] {
       failureClass: (['work', 'verification', 'infrastructure', 'cancelled'].includes(text(item, ['failure_class', 'failureClass']))
         ? text(item, ['failure_class', 'failureClass']) : '') as WorkTaskMemberStage['failureClass'],
       failureReason: text(item, ['failure_reason', 'failureReason']), retryable: item.retryable === true,
+      ...memberBudgetPause(item.budget_pause ?? item.budgetPause),
       ...(text(item, ['member_run_id', 'memberRunId']) === '' ? {} : { memberRunId: text(item, ['member_run_id', 'memberRunId']) }),
       ...(text(item, ['checkpoint_saved_at', 'checkpointSavedAt']) === '' ? {} : { checkpointSavedAt: text(item, ['checkpoint_saved_at', 'checkpointSavedAt']) }),
       publicUpdates: publicUpdates(item.public_updates), publicUpdatesTruncated: item.public_updates_truncated === true,
@@ -1249,7 +1265,12 @@ export function apply(ctx: Context, config: Config = {}): void {
       } else if (input.action === 'stage-retry') {
         const retryable = canRetryStage(current, input.nodeId)
         if (!retryable) return Response.json({ error: '这个阶段当前不能单独重试。' }, { status: 409 })
-        pendingAction = { kind: 'stage-retry', targetRunId: current.runId, idempotencyKey: `workbench-stage-retry:${randomUUID()}`, clientRequestId: '', brief: '', requestedAt: Date.now(),
+        const budget = current.members.flatMap(member => member.stages).find(stage => stage.nodeId === input.nodeId)?.budgetPause
+        if ((budget?.reason === 'total_limit' && (input.authorizedTotalRounds ?? 0) <= budget.authorizedTotalRounds)
+          || (input.authorizedTotalRounds !== undefined && (budget === undefined || input.authorizedTotalRounds < budget.authorizedTotalRounds))) {
+          return Response.json({ error: '请输入高于已用额度的新累计轮次上限。' }, { status: 409 })
+        }
+        pendingAction = { kind: 'stage-retry', authorizedTotalRounds: input.authorizedTotalRounds, targetRunId: current.runId, idempotencyKey: `workbench-stage-retry:${randomUUID()}`, clientRequestId: '', brief: '', requestedAt: Date.now(),
           targetKind: '', targetMemberId: '', correctionId: '', disposition: '', instruction: current.members.flatMap(member => member.stages).find(stage => stage.nodeId === input.nodeId)?.name ?? '', nodeId: input.nodeId }
       } else if (input.action === 'human-complete') {
         if (current.status !== 'waiting' || current.waitKind !== 'human' || current.humanTask?.interactionId !== input.interactionId) {
@@ -1353,7 +1374,7 @@ export function apply(ctx: Context, config: Config = {}): void {
           }
         } else if (action.kind === 'stage-retry') {
           response = await request(`/v1/runs/${encodeURIComponent(action.targetRunId)}/stages/${encodeURIComponent(action.nodeId)}/retry`, {
-            method: 'POST', body: JSON.stringify({ idempotency_key: action.idempotencyKey }),
+            method: 'POST', body: JSON.stringify({ idempotency_key: action.idempotencyKey, authorized_total_rounds: action.authorizedTotalRounds }),
           })
         } else if (action.kind === 'human-complete') {
           response = await request(`/v1/human-tasks/${encodeURIComponent(action.targetRunId)}/complete`, {

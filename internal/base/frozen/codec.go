@@ -635,6 +635,9 @@ func NormalizeFrozenAgentRecord(value FrozenAgentRecord) (FrozenAgentRecord, err
 			return FrozenAgentRecord{}, err
 		}
 	}
+	if err := ValidateToolLoopControl(cloned.Limits.ToolLoopControl); err != nil {
+		return FrozenAgentRecord{}, err
+	}
 	if cloned.GraphType == "standard" && string(cloned.FactoryInput) != "{}" {
 		var version struct {
 			SchemaVersion int `json:"schema_version"`

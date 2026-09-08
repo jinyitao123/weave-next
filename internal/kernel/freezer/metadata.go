@@ -832,6 +832,7 @@ func freezeAgent(record registry.AgentRecord, key frozen.FactoryKey, input json.
 			MaxTokens:       record.MaxTokens,
 			MaxOutputTokens: int64(record.MaxOutputTokens),
 			StepBudget:      record.StepBudget,
+			ToolLoopControl: record.ToolLoopControl,
 			MaxToolRepeats:  int64(record.MaxToolRepeats),
 		},
 		Fallback: frozen.FrozenFallback{
