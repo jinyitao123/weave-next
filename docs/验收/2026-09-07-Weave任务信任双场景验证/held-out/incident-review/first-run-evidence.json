@@ -1,0 +1,75 @@
+{
+  "schema_version": 1,
+  "recorded_at": "2026-09-10T00:24:46+08:00",
+  "sample": "incident-review-heldout-20260910",
+  "result": "FAIL_BEFORE_DISPATCH",
+  "stop_rule_applied": true,
+  "frozen_inputs_changed": false,
+  "correction_submitted": false,
+  "redispatched": false,
+  "team": {
+    "id": "5cbf562e-20d1-478a-92c2-a09011ea37fb",
+    "workspace_id": "default",
+    "name": "incident-review-heldout-20260910",
+    "display_name": "服务事件复核团队",
+    "status": "active",
+    "default_workflow_id": "incident-review-heldout-20260910-workflow",
+    "created_at": "2026-09-10T00:16:55.625943+08:00"
+  },
+  "team_build": {
+    "build_run_id": "aa552014-d2db-5ef3-9faa-811287872cb2",
+    "status": "ready",
+    "published_contract_checked_in_database": true
+  },
+  "workbench_first_attempt": {
+    "page_title": "服务事件复核与风险排序 — Weave Workbench",
+    "page_url": "http://127.0.0.1:13083/",
+    "user_message_time": "2026-09-10T00:18:00+08:00",
+    "requested_team_display_name": "服务事件复核团队",
+    "first_tool": "weave_dispatch",
+    "first_tool_input": {
+      "team_id": "服务事件复核团队"
+    },
+    "first_tool_result": "Error: team_not_found",
+    "worksite_status": "执行失败",
+    "delivery_verification": "尚无法确认",
+    "user_assessment": "尚未评价",
+    "subsequent_behavior": [
+      "searched the current working directory",
+      "attempted a non-public localhost web fetch",
+      "searched source files for a team list interface",
+      "inspected environment and local processes",
+      "searched broad filesystem paths until stopped"
+    ],
+    "stopped_by_observer": true,
+    "stop_reason": "The frozen first-result rule forbids correcting the team identifier or allowing unrelated host search to continue."
+  },
+  "database_observation": {
+    "observed_after_stop": true,
+    "team_run_count_for_team": 0,
+    "latest_team_run_before_attempt": {
+      "run_id": "run-54e09b98-9f24-547e-afc7-e0937ada51e3",
+      "created_at": "2026-09-09T22:39:57.213238+08:00"
+    },
+    "finding": "No TeamRun, run snapshot, delivery binding, or delivery verification was created for the held-out team."
+  },
+  "root_cause": {
+    "category": "team_identity_resolution_gap",
+    "finding": "Workbench reasoning selects a team by its human display name, while weave_dispatch requires the exact opaque team ID. The exposed tool set provides no bounded authoritative team discovery or name-to-ID resolution path.",
+    "repeated_prior_signal": "The Corona v3 path also required an operator-supplied exact team UUID after a natural-name dispatch failed.",
+    "contract_mechanism_reached": false,
+    "contract_mechanism_assessment": "The published contract exists on the frozen workflow, but this sample cannot judge run-time contract inheritance because admission was never reached."
+  },
+  "claim_boundary": {
+    "proves": [
+      "a newly built active team was not naturally dispatchable by its visible name",
+      "the first cold-start attempt created no TeamRun",
+      "the current fallback behavior searches the host instead of returning a bounded recovery path"
+    ],
+    "does_not_prove": [
+      "that the published delivery contract would fail after a valid dispatch",
+      "that the task members or arithmetic would fail",
+      "that the overall Weave business loop is complete"
+    ]
+  }
+}

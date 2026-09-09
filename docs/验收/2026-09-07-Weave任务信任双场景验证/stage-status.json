@@ -1,13 +1,13 @@
 {
   "schema_version": 1,
-  "as_of": "2026-09-09T23:35:00+08:00",
+  "as_of": "2026-09-10T00:24:46+08:00",
   "plan": "docs/计划/2026-09-07-Weave任务信任契约与双场景三阶段验证.md",
   "stages": [
     {
       "id": "stage-1",
       "name": "契约与首轮真实性审计",
       "status": "in_progress",
-      "next": "日冕 v4 已在两个运行环境完成 9/9，独立总装与外部复跑支持内容硬门槛 11/11，真实页面可切换三速度并导出有效 JSON；但 Workbench 交付核验仍为 unknown，用户尚未采用。下一步先修复并验证用户范围到交付合同的持久绑定，再请用户审阅候选结果。",
+      "next": "已发布交付合同链部署在 88697f1。第三保留样本的 active 团队和冻结合同均存在，但 Workbench 把展示名作为 team_id，首次调用 team_not_found，TeamRun 数量为 0。下一步先提供 workspace 内有界、权威的团队发现或名称解析，再用新的冻结样本复验；本次失败样本不修正、不重跑。",
       "evidence": [
         "repaired-business/invoice/final-verification.json",
         "repaired-business/invoice/weave-run-evidence.json",
@@ -15,7 +15,9 @@
         "repaired-business/corona/workbench-run-20260909/external-verification.json",
         "repaired-business/corona/workbench-run-20260909/prepared-rerun.json",
         "repaired-business/corona/workbench-run-20260909/v4-run-evidence.json",
-        "repaired-business/corona/workbench-run-20260909/v4-external-verification.json"
+        "repaired-business/corona/workbench-run-20260909/v4-external-verification.json",
+        "held-out/incident-review/pre-run-manifest.json",
+        "held-out/incident-review/first-run-evidence.json"
       ]
     },
     {

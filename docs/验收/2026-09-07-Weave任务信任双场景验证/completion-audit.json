@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "recorded_at": "2026-09-09T23:35:00+08:00",
+  "recorded_at": "2026-09-10T00:24:46+08:00",
   "record_kind": "evidence_bounded_exit_audit",
   "plan": {
     "path": "docs/计划/2026-09-07-Weave任务信任契约与双场景三阶段验证.md",
@@ -9,7 +9,7 @@
   "overall": "NOT_COMPLETE",
   "goal_status_changed": false,
   "stage_completion_claimed": true,
-  "scope": "Retained business evidence plus traceable b308259 deployment, externally verified Corona v4 content, and an evidence-bounded Loom decision. Corona v4 is not promoted to incremental recovery, platform delivery, user adoption, or generalization acceptance.",
+  "scope": "Retained business evidence plus traceable 88697f1 deployment, externally verified Corona v4 content, a failed frozen held-out cold-start attempt, and an evidence-bounded Loom decision. The published delivery-contract chain is deployed, but natural Workbench dispatch failed before TeamRun creation; no claim is promoted to business closure, user adoption, incremental recovery, or broad generalization.",
   "status_definitions": {
     "PARTIAL": "Some required evidence exists, but the exit is not satisfied in full.",
     "FAIL": "An observed result violates the exit.",
@@ -177,10 +177,12 @@
             "corona/input-manifest.json",
             "corona/verification.json",
             "repaired-business/corona/workbench-run-20260909/v4-run-evidence.json",
-            "repaired-business/corona/workbench-run-20260909/v4-external-verification.json"
+            "repaired-business/corona/workbench-run-20260909/v4-external-verification.json",
+            "held-out/incident-review/pre-run-manifest.json",
+            "held-out/incident-review/first-run-evidence.json"
           ],
-          "finding": "Both intended tasks, baselines and checks are recorded. Corona v4 came from an explicit Workbench request and produced a complete candidate, but the platform delivery contract did not preserve the explicit requirements and the older three-speed versus 0.03c historical contract conflict remains.",
-          "remaining": "Persist the user-confirmed scope as an itemized delivery contract bound to the run, and retain the historical contract conflict rather than silently rewriting it."
+          "finding": "The delivery contract now persists from a published template through the frozen workflow and is deployed at commit 88697f1. The third frozen held-out team contains that contract, but natural Workbench dispatch used its display name as team_id and failed before TeamRun creation. The older three-speed versus 0.03c historical Corona contract conflict remains.",
+          "remaining": "Provide bounded authoritative team discovery or name-to-ID resolution, then validate published-contract inheritance in a new frozen sample without correcting or rerunning the closed failed sample. Retain the historical Corona contract conflict rather than silently rewriting it."
         },
         {
           "id": "stage-1.exit-2",
@@ -206,10 +208,11 @@
             "corona/verification.json",
             "team-delivery/mechanism-verification.json",
             "repaired-business/corona/workbench-run-20260909/v4-run-evidence.json",
-            "repaired-business/corona/workbench-run-20260909/v4-external-verification.json"
+            "repaired-business/corona/workbench-run-20260909/v4-external-verification.json",
+            "held-out/incident-review/first-run-evidence.json"
           ],
-          "finding": "The deployed Workbench separates execution, delivery verification and user assessment. In the real Corona v4 sample it showed succeeded execution while delivery remained unknown; external verification independently passed the content gates and browser behavior without upgrading platform delivery or user adoption.",
-          "remaining": "Bind explicit user requirements into the delivery contract and verify that the Workbench terminal page reports each check, provenance and user decision without relying on an external filesystem audit."
+          "finding": "The deployed Workbench separates execution, delivery verification and user assessment. In Corona v4 it showed succeeded execution with unknown delivery; in the held-out cold start it showed failed execution, unconfirmed delivery and unrated user assessment after team_not_found. Neither state was promoted to business success.",
+          "remaining": "After fixing bounded team resolution, verify that a new natural Workbench run reaches admission, freezes the published contract and reports every check, provenance and user decision without an external filesystem audit."
         },
         {
           "id": "stage-1.exit-4",
@@ -234,9 +237,10 @@
             "corona/dispatch.json",
             "repaired-business/corona/workbench-run-20260909/v4-run-evidence.json",
             "repaired-business/corona/workbench-run-20260909/v4-external-verification.json",
-            "repaired-business/corona/workbench-run-20260909/deep-review-20260909.md"
+            "repaired-business/corona/workbench-run-20260909/deep-review-20260909.md",
+            "held-out/incident-review/first-run-evidence.json"
           ],
-          "finding": "Both scenarios were dispatched through Workbench with user-bound input. Corona v4 reached succeeded across two runtimes and its candidate passed external content and browser checks, but Workbench delivery is unknown and no Corona user adoption decision exists."
+          "finding": "Both original scenarios were dispatched through Workbench with user-bound input. The third frozen sample tested cold-start natural dispatch and failed before TeamRun creation because the visible team name was passed as team_id. Corona v4 content passed external checks, while Workbench delivery and user adoption remain incomplete."
         }
       ]
     },
@@ -435,6 +439,13 @@
       "sample": "corona/workbench-run-20260909-v4",
       "evidence": "repaired-business/corona/workbench-run-20260909/v4-external-verification.json",
       "limit": "FINAL_ACCEPTANCE claimed correction and failure recovery that did not occur in the run."
+    },
+    {
+      "id": "held_out_natural_team_resolution_failure",
+      "status": "FAIL_OBSERVED_BEFORE_DISPATCH",
+      "sample": "held-out/incident-review",
+      "evidence": "held-out/incident-review/first-run-evidence.json",
+      "limit": "The active team and published contract existed, but display-name dispatch returned team_not_found and created zero TeamRuns; the sample was stopped and not corrected or rerun."
     }
   ],
   "cross_sample_comparability": {
@@ -490,5 +501,20 @@
     "stage-2": "NOT_COMPLETE",
     "stage-3": "COMPLETE_BOUNDARY_DECISION",
     "overall": "NOT_COMPLETE"
+  },
+  "latest_held_out_workbench_attempt": {
+    "sample": "incident-review-heldout-20260910",
+    "team_id": "5cbf562e-20d1-478a-92c2-a09011ea37fb",
+    "team_display_name": "服务事件复核团队",
+    "published_contract_present": true,
+    "first_dispatch_input_team_id": "服务事件复核团队",
+    "first_dispatch_result": "team_not_found",
+    "team_run_count": 0,
+    "execution_status": "failed_before_dispatch",
+    "delivery_verification": "not_reached",
+    "user_assessment": "not_submitted",
+    "rerun": false,
+    "overall": "HELD_OUT_FAIL_IDENTITY_RESOLUTION",
+    "evidence": "held-out/incident-review/first-run-evidence.json"
   }
 }
