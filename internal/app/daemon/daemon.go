@@ -804,9 +804,28 @@ func detectEngineCapabilities(ctx context.Context, detected []string) []runtimes
 			EndpointClass: endpointClass,
 		}
 		describeEngineConfiguration(&capability)
+		describeEngineAvailability(&capability)
 		capabilities = append(capabilities, capability)
 	}
 	return capabilities
+}
+
+func describeEngineAvailability(capability *runtimes.EngineCapability) {
+	capability.Availability = runtimes.EngineAvailabilityUnknown
+	capability.UnavailableReason = ""
+	if capability.AuthMode == runtimes.AuthModeChatGPT || capability.AuthMode == runtimes.AuthModeOAuth {
+		capability.Availability = runtimes.EngineAvailabilityReady
+		return
+	}
+	if capability.Engine != engine.Codex || capability.AuthMode != runtimes.AuthModeProvider {
+		return
+	}
+	if firstNonEmpty(os.Getenv("OPENAI_API_KEY"), os.Getenv("ONEAPI_API_KEY")) == "" {
+		capability.Availability = runtimes.EngineAvailabilityUnavailable
+		capability.UnavailableReason = "provider_credentials_missing"
+		return
+	}
+	capability.Availability = runtimes.EngineAvailabilityReady
 }
 
 func engineProtocolVersion(name string) string {

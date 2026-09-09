@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/jinyitao123/loom/contract"
+	"github.com/jinyitao123/weave/internal/kernel/runtimes"
 )
 
 const skillNamespacePrefix = "skill:"
@@ -48,13 +49,15 @@ type providerSummaryJSON struct {
 }
 
 type runtimeSummaryJSON struct {
-	ID                 string     `json:"id"`
-	Name               string     `json:"name"`
-	Engines            []string   `json:"engines"`
-	Enabled            bool       `json:"enabled"`
-	Online             bool       `json:"online"`
-	FunctionalRevision int64      `json:"functional_revision"`
-	LastHeartbeatAt    *time.Time `json:"last_heartbeat_at,omitempty"`
+	ID                 string                               `json:"id"`
+	Name               string                               `json:"name"`
+	Engines            []string                             `json:"engines"`
+	Enabled            bool                                 `json:"enabled"`
+	Online             bool                                 `json:"online"`
+	FunctionalRevision int64                                `json:"functional_revision"`
+	LastHeartbeatAt    *time.Time                           `json:"last_heartbeat_at,omitempty"`
+	HealthStatus       string                               `json:"health_status"`
+	EngineCapabilities map[string]runtimes.EngineCapability `json:"engine_capabilities"`
 }
 
 type agentGraphPolicyJSON struct {
@@ -185,6 +188,8 @@ func (d *ReadToolsDispatcher) listCapabilities(ctx context.Context, call contrac
 				Online:             runtime.Online,
 				FunctionalRevision: runtime.FunctionalRevision,
 				LastHeartbeatAt:    runtime.LastHeartbeatAt,
+				HealthStatus:       runtime.HealthStatus,
+				EngineCapabilities: runtime.EngineCapabilities,
 			})
 		}
 	}
