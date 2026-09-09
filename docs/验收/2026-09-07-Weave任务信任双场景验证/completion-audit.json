@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "recorded_at": "2026-09-10T00:43:00+08:00",
+  "recorded_at": "2026-09-10T00:56:00+08:00",
   "record_kind": "evidence_bounded_exit_audit",
   "plan": {
     "path": "docs/计划/2026-09-07-Weave任务信任契约与双场景三阶段验证.md",
@@ -9,7 +9,7 @@
   "overall": "NOT_COMPLETE",
   "goal_status_changed": false,
   "stage_completion_claimed": true,
-  "scope": "Retained business evidence plus traceable 88697f1 deployment, externally verified Corona v4 content, a failed frozen held-out cold-start attempt, and an evidence-bounded Loom decision. The published delivery-contract chain is deployed, but natural Workbench dispatch failed before TeamRun creation; no claim is promoted to business closure, user adoption, incremental recovery, or broad generalization.",
+  "scope": "Retained business evidence plus traceable 88697f1 deployment, externally verified Corona v4 content, and two frozen held-out cold-start attempts. Workbench 564bdc63 repaired discovery and visible-name dispatch, and the follow-up TeamRun inherited the published delivery contract; execution then failed before computation because the selected provider-auth Codex runtime lacked ONEAPI_API_KEY. No claim is promoted to business closure, user adoption, incremental recovery, or broad generalization.",
   "status_definitions": {
     "PARTIAL": "Some required evidence exists, but the exit is not satisfied in full.",
     "FAIL": "An observed result violates the exit.",
@@ -179,10 +179,11 @@
             "repaired-business/corona/workbench-run-20260909/v4-run-evidence.json",
             "repaired-business/corona/workbench-run-20260909/v4-external-verification.json",
             "held-out/incident-review/pre-run-manifest.json",
-            "held-out/incident-review/first-run-evidence.json"
+            "held-out/incident-review/first-run-evidence.json",
+            "held-out/support-queue/first-run-evidence.json"
           ],
-          "finding": "The delivery contract now persists from a published template through the frozen workflow and is deployed at commit 88697f1. The third frozen held-out team contains that contract, but its Workbench instance lacked the MCP discovery subprocess because WEAVE_COMMAND pointed to a missing file; the remaining local dispatch used the display name as team_id and failed before TeamRun creation.",
-          "remaining": "Workbench commit 564bdc63 now validates explicit MCP command paths and resolves visible team names against active teams. Validate the repaired startup and published-contract inheritance in a new frozen sample without correcting or rerunning the closed failed sample. Retain the historical Corona contract conflict."
+          "finding": "The delivery contract persists from the published template into a real frozen TeamRun. Workbench 564bdc63 discovered the active team and resolved its visible name to the stable ID without operator input; run-7cb5a00a inherited workflow version 1 and contract digest a74e674e. Its first member then failed before computation because the selected provider-auth Codex runtime lacked ONEAPI_API_KEY.",
+          "remaining": "Make runtime readiness and team construction reject or avoid engine/runtime pairings whose required authentication is unavailable, then validate execution and artifact checks with a new frozen sample. Retain both closed failed samples and the historical Corona contract conflict."
         },
         {
           "id": "stage-1.exit-2",
@@ -209,10 +210,11 @@
             "team-delivery/mechanism-verification.json",
             "repaired-business/corona/workbench-run-20260909/v4-run-evidence.json",
             "repaired-business/corona/workbench-run-20260909/v4-external-verification.json",
-            "held-out/incident-review/first-run-evidence.json"
+            "held-out/incident-review/first-run-evidence.json",
+            "held-out/support-queue/first-run-evidence.json"
           ],
-          "finding": "The deployed Workbench separates execution, delivery verification and user assessment. In Corona v4 it showed succeeded execution with unknown delivery; in the held-out cold start it showed failed execution, unconfirmed delivery and unrated user assessment after team_not_found. Neither state was promoted to business success.",
-          "remaining": "Deploy Workbench commit 564bdc63 with a live MCP subprocess, then verify in a new natural run that admission freezes the published contract and reports every check, provenance and user decision without an external filesystem audit."
+          "finding": "The deployed Workbench separates execution, delivery verification and user assessment. The repaired follow-up displayed failed execution, unconfirmed delivery and unrated assessment after a real TeamRun stopped at its first member for missing runtime credentials; it did not promote the result to business success.",
+          "remaining": "Validate the same three-way projection when an authenticated runtime reaches final artifact collection and every published-contract check."
         },
         {
           "id": "stage-1.exit-4",
@@ -238,9 +240,10 @@
             "repaired-business/corona/workbench-run-20260909/v4-run-evidence.json",
             "repaired-business/corona/workbench-run-20260909/v4-external-verification.json",
             "repaired-business/corona/workbench-run-20260909/deep-review-20260909.md",
-            "held-out/incident-review/first-run-evidence.json"
+            "held-out/incident-review/first-run-evidence.json",
+            "held-out/support-queue/first-run-evidence.json"
           ],
-          "finding": "Both original scenarios were dispatched through Workbench with user-bound input. The third frozen sample tested cold-start natural dispatch and failed before TeamRun creation because the visible team name was passed as team_id. Corona v4 content passed external checks, while Workbench delivery and user adoption remain incomplete."
+          "finding": "Both original scenarios were dispatched through Workbench with user-bound input. The first cold-start held-out sample exposed missing MCP discovery and failed before TeamRun creation. Workbench 564bdc63 repaired that path: the second frozen sample resolved the visible name, created a TeamRun and inherited its contract, then failed before computation because runtime provider readiness was false-positive. Corona v4 content passed external checks, while machine delivery and user adoption remain incomplete."
         }
       ]
     },
@@ -463,7 +466,7 @@
     "Hash inventories attest to the files read at audit time; they do not upgrade model claims into verified business effects.",
     "Existing raw evidence and initial aggregate observations are preserved."
   ],
-  "updated_at": "2026-09-09T15:35:00+00:00",
+  "updated_at": "2026-09-09T16:56:00+00:00",
   "mechanism_updates": [
     {
       "source_commit": "1bad43f71692a89b1502dcc075305b32fe267dc2",
@@ -503,19 +506,24 @@
     "overall": "NOT_COMPLETE"
   },
   "latest_held_out_workbench_attempt": {
-    "sample": "incident-review-heldout-20260910",
-    "team_id": "5cbf562e-20d1-478a-92c2-a09011ea37fb",
-    "team_display_name": "服务事件复核团队",
+    "sample": "support-queue-heldout-20260910",
+    "team_id": "1e8ed3ba-3b29-4f82-873f-ffaf748843a3",
+    "team_display_name": "客服队列复核团队",
     "published_contract_present": true,
-    "first_dispatch_input_team_id": "服务事件复核团队",
-    "first_dispatch_result": "team_not_found",
-    "team_run_count": 0,
-    "execution_status": "failed_before_dispatch",
-    "delivery_verification": "not_reached",
+    "natural_name_dispatch": "passed",
+    "run_id": "run-7cb5a00a-973a-578b-be4c-a5857254409a",
+    "workflow_id": "support-queue-heldout-20260910-workflow",
+    "workflow_version": 1,
+    "contract_digest": "a74e674e6645545e9d48512e899b4995df836ef5fa9e90a90fb55f09ca64fdb9",
+    "execution_status": "failed",
+    "completed_stages": "0/4",
+    "error_code": "team_run_execution_unrecoverable",
+    "cause_summary": "runtime_credentials_missing: ONEAPI_API_KEY",
+    "delivery_verification": "unknown: delivery_report_missing",
     "user_assessment": "not_submitted",
     "rerun": false,
-    "overall": "HELD_OUT_FAIL_IDENTITY_RESOLUTION",
-    "evidence": "held-out/incident-review/first-run-evidence.json",
-    "root_cause": "invalid WEAVE_COMMAND removed MCP team discovery; local display-name dispatch then failed exact-ID admission"
+    "overall": "HELD_OUT_FAIL_RUNTIME_CREDENTIALS",
+    "evidence": "held-out/support-queue/first-run-evidence.json",
+    "root_cause": "selected provider-auth Codex runtime was admitted as healthy without its required provider credential"
   }
 }
