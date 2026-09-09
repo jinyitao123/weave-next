@@ -20,6 +20,7 @@ import (
 	"github.com/jinyitao123/loom/contract"
 	"github.com/jinyitao123/weave/internal/base/deliverable"
 	"github.com/jinyitao123/weave/internal/base/execution"
+	"github.com/jinyitao123/weave/internal/base/fanout"
 	"github.com/jinyitao123/weave/internal/base/fileartifact"
 	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/kernel/loomruntime"
@@ -317,7 +318,11 @@ func runSerialMachine(
 				memberCtx.Active = *activeMember
 				nodeCtx = context.WithValue(nodeCtx, workflowMemberContextKey{}, memberCtx)
 			}
-			output, nodeUsage, err := runAgentNode(nodeCtx, node, payload, entries, runInput, outputs, start.Corrections)
+			correctionContext, correctionErr := buildCorrectionFrozenContext(ctx, node, payload, start.Corrections, start.LoadArtifacts)
+			if correctionErr != nil {
+				return fail(executionError(ErrorCodeSnapshotUnavailable, correctionErr))
+			}
+			output, nodeUsage, err := runAgentNode(nodeCtx, node, payload, entries, runInput, outputs, start.Corrections, correctionContext)
 			if durable {
 				if nodeUsage.MemberRunID != "" {
 					teamID, workflowID, version, snapshotID := start.Run.TeamID, start.Run.WorkflowID, start.Run.WorkflowVersion, start.Run.RunSnapshotID
@@ -498,6 +503,17 @@ func runSerialMachine(
 						return fail(executionError(ErrorCodeDeliveryUnavailable, err))
 					}
 				}
+			}
+			if projection, joinNodeID, joinedArtifactIDs, replayed, replayErr := mergeFanoutCorrectionResult(
+				node, payload, output, artifactTaskIDs[node.ID], start.Corrections,
+			); replayErr != nil {
+				return fail(executionError(ErrorCodeSnapshotUnavailable, replayErr))
+			} else if replayed {
+				outputs[joinNodeID] = projection
+				artifactTaskIDs[joinNodeID] = joinedArtifactIDs
+				delete(deliveryErrors, joinNodeID)
+				current = joinNodeID
+				continue
 			}
 			if next, routed := edgeTarget(edges[current], machine.RouteBack); routed {
 				// A worker may itself be the machine-native loop latch. The
@@ -873,6 +889,7 @@ func buildCorrectionWaitDetail(
 		return CorrectionWaitDetailV1{}, errors.New("correction cannot be planned at this boundary")
 	}
 	restartNodeID := currentNodeID
+	var fanoutReplay *CorrectionFanoutReplayV1
 	if item.TargetKind == "team" {
 		restartNodeID = graph.EntryNodeID
 	} else if item.TargetKind == "member" {
@@ -886,20 +903,23 @@ func buildCorrectionWaitDetail(
 		if len(matching) == 0 {
 			return CorrectionWaitDetailV1{}, errors.New("target member has no node in the frozen workflow")
 		}
-		for _, nodeID := range matching {
-			if _, completed := outputs[nodeID]; completed {
-				restartNodeID = nodeID
-				break
+		if replay, ok := buildFanoutCorrectionReplay(graph, currentNodeID, matching, outputs[currentNodeID]); ok {
+			restartNodeID = replay.TargetNodeID
+			fanoutReplay = &replay
+		} else {
+			for _, nodeID := range matching {
+				if _, completed := outputs[nodeID]; completed {
+					restartNodeID = nodeID
+					break
+				}
 			}
-		}
-		// A fanout checkpoint stores one projection under the join node rather
-		// than one top-level output per member. Restarting at that join after
-		// invalidating its projection cannot resume. Re-enter the owning
-		// parallel segment so the targeted directive is applied while the
-		// complete fanout projection is rebuilt.
-		if restartNodeID == currentNodeID {
-			if parallelNodeID := machine.OwningParallelNode(graph, currentNodeID, matching); parallelNodeID != "" {
-				restartNodeID = parallelNodeID
+			// Older fanout projections do not carry per-leg immutable source
+			// identities. Preserve the conservative whole-segment behavior for
+			// those runs instead of guessing which artifacts belong to siblings.
+			if restartNodeID == currentNodeID {
+				if parallelNodeID := machine.OwningParallelNode(graph, currentNodeID, matching); parallelNodeID != "" {
+					restartNodeID = parallelNodeID
+				}
 			}
 		}
 	}
@@ -918,13 +938,300 @@ func buildCorrectionWaitDetail(
 			preserved = append(preserved, nodeID)
 		}
 	}
+	if fanoutReplay != nil {
+		for _, leg := range fanoutReplay.Legs {
+			if leg.NodeID != fanoutReplay.TargetNodeID {
+				preserved = append(preserved, leg.NodeID)
+			}
+		}
+		sort.Strings(preserved)
+		preserved = compactStrings(preserved)
+	}
 	sort.Strings(preserved)
 	return CorrectionWaitDetailV1{
 		SchemaVersion: 1, WaitType: "correction", CorrectionID: item.CorrectionID,
 		TargetKind: item.TargetKind, TargetMemberID: item.TargetMemberID, Instruction: item.Instruction,
 		SafeNodeID: currentNodeID, RestartNodeID: restartNodeID,
-		AffectedNodeIDs: affected, PreservedNodeIDs: preserved,
+		AffectedNodeIDs: affected, PreservedNodeIDs: preserved, FanoutReplay: fanoutReplay,
 	}, nil
+}
+
+func buildFanoutCorrectionReplay(
+	graph machine.GraphDefinition,
+	joinNodeID string,
+	matching []string,
+	value any,
+) (CorrectionFanoutReplayV1, bool) {
+	if len(matching) != 1 || value == nil {
+		return CorrectionFanoutReplayV1{}, false
+	}
+	parallelNodeID := machine.OwningParallelNode(graph, joinNodeID, matching)
+	if parallelNodeID == "" {
+		return CorrectionFanoutReplayV1{}, false
+	}
+	expected := map[string]bool{}
+	for _, edge := range graph.Edges {
+		if edge.FromNodeID == parallelNodeID && edge.Route == machine.RouteBranch {
+			expected[edge.ToNodeID] = true
+		}
+	}
+	return buildFanoutCorrectionReplaySnapshot(parallelNodeID, joinNodeID, matching[0], expected, value)
+}
+
+func buildFanoutCorrectionReplaySnapshot(
+	parallelNodeID, joinNodeID, targetNodeID string,
+	expected map[string]bool,
+	value any,
+) (CorrectionFanoutReplayV1, bool) {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return CorrectionFanoutReplayV1{}, false
+	}
+	var projection fanoutJoinProjectionV1
+	if decodeExact(encoded, &projection) != nil || projection.SchemaVersion != 1 || projection.Decision != "succeeded" || len(projection.Errors) != 0 {
+		return CorrectionFanoutReplayV1{}, false
+	}
+	if len(expected) < 2 || len(projection.Legs) != len(expected) || len(projection.Results) != len(expected) {
+		return CorrectionFanoutReplayV1{}, false
+	}
+	replay := CorrectionFanoutReplayV1{SchemaVersion: 1, ParallelNodeID: parallelNodeID, JoinNodeID: joinNodeID, TargetNodeID: targetNodeID}
+	seen, seenOrdinals := map[string]bool{}, map[int]bool{}
+	for _, leg := range projection.Legs {
+		projectedResult, resultPresent := projection.Results[leg.NodeID]
+		legDigest, legDigestErr := deliverable.CanonicalJSONDigest(leg.Result)
+		projectedDigest, projectedDigestErr := deliverable.CanonicalJSONDigest(projectedResult)
+		if !expected[leg.NodeID] || seen[leg.NodeID] || seenOrdinals[leg.BranchOrdinal] || leg.LegID == "" || leg.BranchOrdinal < 0 ||
+			leg.DecisionDisposition != string(fanout.LegDecisionSucceeded) || !json.Valid(leg.Result) || leg.ArtifactTaskIDs == nil {
+			return CorrectionFanoutReplayV1{}, false
+		}
+		if !resultPresent || legDigestErr != nil || projectedDigestErr != nil || legDigest != projectedDigest {
+			return CorrectionFanoutReplayV1{}, false
+		}
+		seen[leg.NodeID], seenOrdinals[leg.BranchOrdinal] = true, true
+		replay.Legs = append(replay.Legs, CorrectionFanoutReplayLegV1{
+			LegID: leg.LegID, NodeID: leg.NodeID, BranchOrdinal: leg.BranchOrdinal,
+			Result: append(json.RawMessage(nil), leg.Result...), ArtifactTaskIDs: append([]string{}, leg.ArtifactTaskIDs...),
+		})
+	}
+	for ordinal := 0; ordinal < len(replay.Legs); ordinal++ {
+		if !seenOrdinals[ordinal] {
+			return CorrectionFanoutReplayV1{}, false
+		}
+	}
+	sort.Slice(replay.Legs, func(i, j int) bool { return replay.Legs[i].BranchOrdinal < replay.Legs[j].BranchOrdinal })
+	hash, err := correctionFanoutSourceProjectionHash(replay)
+	if err != nil {
+		return CorrectionFanoutReplayV1{}, false
+	}
+	replay.SourceProjectionHash = hash
+	return replay, true
+}
+
+func correctionFanoutSourceProjectionHash(replay CorrectionFanoutReplayV1) (string, error) {
+	projection := fanoutJoinProjectionV1{
+		SchemaVersion: 1,
+		Decision:      "succeeded",
+		Results:       make(map[string]json.RawMessage, len(replay.Legs)),
+		Errors:        map[string]string{},
+		Legs:          make([]fanoutJoinLegV1, 0, len(replay.Legs)),
+	}
+	for _, leg := range replay.Legs {
+		result := append(json.RawMessage(nil), leg.Result...)
+		projection.Results[leg.NodeID] = result
+		projection.Legs = append(projection.Legs, fanoutJoinLegV1{
+			NodeID: leg.NodeID, LegID: leg.LegID, BranchOrdinal: leg.BranchOrdinal,
+			DecisionDisposition: string(fanout.LegDecisionSucceeded), Result: result,
+			Error: json.RawMessage("null"), ArtifactTaskIDs: append([]string{}, leg.ArtifactTaskIDs...),
+		})
+	}
+	sort.Slice(projection.Legs, func(i, j int) bool { return projection.Legs[i].BranchOrdinal < projection.Legs[j].BranchOrdinal })
+	encoded, err := json.Marshal(projection)
+	if err != nil {
+		return "", err
+	}
+	return deliverable.CanonicalJSONDigest(encoded)
+}
+
+func compactStrings(values []string) []string {
+	if len(values) < 2 {
+		return values
+	}
+	result := values[:1]
+	for _, value := range values[1:] {
+		if value != result[len(result)-1] {
+			result = append(result, value)
+		}
+	}
+	return result
+}
+
+func fanoutReplayForNode(
+	node machine.Node,
+	payload frozen.ArtifactPayloadV1,
+	corrections []CorrectionDirectiveV1,
+) *CorrectionFanoutReplayV1 {
+	for index := len(corrections) - 1; index >= 0; index-- {
+		correction := corrections[index]
+		if correction.FanoutReplay != nil && correction.FanoutReplay.TargetNodeID == node.ID &&
+			correctionAppliesToNode(correction, node, payload) {
+			return correction.FanoutReplay
+		}
+	}
+	return nil
+}
+
+func buildCorrectionFrozenContext(
+	ctx context.Context,
+	node machine.Node,
+	payload frozen.ArtifactPayloadV1,
+	corrections []CorrectionDirectiveV1,
+	loader func(context.Context, []string) ([]deliverable.WorkflowArtifact, error),
+) (string, error) {
+	replay := fanoutReplayForNode(node, payload, corrections)
+	if replay == nil {
+		return "", nil
+	}
+	if err := validateCorrectionFanoutReplay(*replay, "member", "frozen-member", node.ID); err != nil {
+		return "", err
+	}
+	var target *CorrectionFanoutReplayLegV1
+	for i := range replay.Legs {
+		if replay.Legs[i].NodeID == replay.TargetNodeID {
+			target = &replay.Legs[i]
+			break
+		}
+	}
+	if target == nil || loader == nil {
+		return "", errors.New("frozen correction target inputs are unavailable")
+	}
+	artifacts, err := verifiedCorrectionTargetArtifacts(ctx, *replay, loader)
+	if err != nil {
+		return "", err
+	}
+	return correctionFrozenPromptContext(*replay, *target, artifacts)
+}
+
+func verifiedCorrectionTargetArtifacts(
+	ctx context.Context,
+	replay CorrectionFanoutReplayV1,
+	loader func(context.Context, []string) ([]deliverable.WorkflowArtifact, error),
+) ([]deliverable.WorkflowArtifact, error) {
+	var artifacts []deliverable.WorkflowArtifact
+	for _, leg := range replay.Legs {
+		loaded, err := loader(ctx, leg.ArtifactTaskIDs)
+		if err != nil {
+			return nil, fmt.Errorf("load frozen fanout leg %s artifacts: %w", leg.NodeID, err)
+		}
+		actualManifest, err := correctionArtifactManifest(loaded)
+		if err != nil {
+			return nil, err
+		}
+		if !reflect.DeepEqual(actualManifest, leg.Artifacts) {
+			return nil, fmt.Errorf("frozen correction artifact manifest changed for leg %s", leg.NodeID)
+		}
+		if leg.NodeID == replay.TargetNodeID {
+			artifacts = loaded
+		}
+	}
+	return artifacts, nil
+}
+
+func correctionFrozenPromptContext(
+	replay CorrectionFanoutReplayV1,
+	target CorrectionFanoutReplayLegV1,
+	artifacts []deliverable.WorkflowArtifact,
+) (string, error) {
+	type promptArtifact struct {
+		Path        string `json:"path"`
+		ContentType string `json:"content_type"`
+		SHA256      string `json:"sha256"`
+		Content     string `json:"content"`
+	}
+	promptArtifacts := make([]promptArtifact, 0, len(artifacts))
+	total := 0
+	for _, artifact := range artifacts {
+		size := len([]byte(artifact.Content))
+		total += size
+		if total > maxCorrectionFrozenArtifactBytes {
+			return "", fmt.Errorf("correction artifacts exceed %d bytes", maxCorrectionFrozenArtifactBytes)
+		}
+		digest := sha256.Sum256([]byte(artifact.Content))
+		hash := hex.EncodeToString(digest[:])
+		promptArtifacts = append(promptArtifacts, promptArtifact{
+			Path: artifact.Path, ContentType: artifact.ContentType, SHA256: hash, Content: artifact.Content,
+		})
+	}
+	sort.Slice(promptArtifacts, func(i, j int) bool { return promptArtifacts[i].Path < promptArtifacts[j].Path })
+	encoded, err := json.Marshal(struct {
+		SourceProjectionHash string           `json:"source_projection_hash"`
+		PriorResult          json.RawMessage  `json:"prior_result"`
+		Artifacts            []promptArtifact `json:"artifacts"`
+	}{
+		SourceProjectionHash: replay.SourceProjectionHash,
+		PriorResult:          append(json.RawMessage(nil), target.Result...),
+		Artifacts:            promptArtifacts,
+	})
+	if err != nil {
+		return "", err
+	}
+	return string(encoded), nil
+}
+
+func mergeFanoutCorrectionResult(
+	node machine.Node,
+	payload frozen.ArtifactPayloadV1,
+	output any,
+	targetArtifactTaskIDs []string,
+	corrections []CorrectionDirectiveV1,
+) (fanoutJoinProjectionV1, string, []string, bool, error) {
+	replay := fanoutReplayForNode(node, payload, corrections)
+	if replay == nil {
+		return fanoutJoinProjectionV1{}, "", nil, false, nil
+	}
+	projection, joinedArtifactIDs, err := mergeFanoutCorrectionReplayResult(*replay, output, targetArtifactTaskIDs)
+	if err != nil {
+		return fanoutJoinProjectionV1{}, "", nil, false, err
+	}
+	return projection, replay.JoinNodeID, joinedArtifactIDs, true, nil
+}
+
+func mergeFanoutCorrectionReplayResult(
+	replay CorrectionFanoutReplayV1,
+	output any,
+	targetArtifactTaskIDs []string,
+) (fanoutJoinProjectionV1, []string, error) {
+	encodedOutput, err := json.Marshal(output)
+	if err != nil {
+		return fanoutJoinProjectionV1{}, nil, err
+	}
+	projection := fanoutJoinProjectionV1{
+		SchemaVersion: 1, Decision: "succeeded", Results: make(map[string]json.RawMessage, len(replay.Legs)),
+		Errors: map[string]string{}, Legs: make([]fanoutJoinLegV1, 0, len(replay.Legs)),
+	}
+	joinedArtifactIDs := make([]string, 0)
+	seenArtifactIDs := map[string]bool{}
+	for _, leg := range replay.Legs {
+		result := append(json.RawMessage(nil), leg.Result...)
+		artifactIDs := append([]string{}, leg.ArtifactTaskIDs...)
+		if leg.NodeID == replay.TargetNodeID {
+			result = append(json.RawMessage(nil), encodedOutput...)
+			artifactIDs = append([]string{}, targetArtifactTaskIDs...)
+		}
+		projection.Results[leg.NodeID] = result
+		projection.Legs = append(projection.Legs, fanoutJoinLegV1{
+			NodeID: leg.NodeID, LegID: leg.LegID, BranchOrdinal: leg.BranchOrdinal,
+			DecisionDisposition: string(fanout.LegDecisionSucceeded), Result: result,
+			Error: json.RawMessage("null"), ArtifactTaskIDs: artifactIDs,
+		})
+		for _, id := range artifactIDs {
+			if id != "" && !seenArtifactIDs[id] {
+				seenArtifactIDs[id] = true
+				joinedArtifactIDs = append(joinedArtifactIDs, id)
+			}
+		}
+	}
+	sort.Slice(projection.Legs, func(i, j int) bool { return projection.Legs[i].BranchOrdinal < projection.Legs[j].BranchOrdinal })
+	return projection, joinedArtifactIDs, nil
 }
 
 func downstreamNodeSet(graph machine.GraphDefinition, start string) map[string]struct{} {
@@ -1012,9 +1319,15 @@ type fanoutJoinProjectionV1 struct {
 
 type fanoutJoinLegV1 struct {
 	NodeID              string          `json:"node_id"`
+	LegID               string          `json:"leg_id,omitempty"`
+	BranchOrdinal       int             `json:"branch_ordinal,omitempty"`
 	DecisionDisposition string          `json:"decision_disposition"`
 	Result              json.RawMessage `json:"result"`
 	Error               json.RawMessage `json:"error"`
+	// A non-nil slice proves that the projection was created by a runtime
+	// which recorded the immutable physical sources for this exact leg. Empty
+	// is a valid, known inventory for a result that exported no files.
+	ArtifactTaskIDs []string `json:"artifact_task_ids"`
 }
 
 func buildFanoutParkPlan(
@@ -1148,6 +1461,7 @@ func runAgentNode(
 	runInput any,
 	outputs map[string]any,
 	corrections []CorrectionDirectiveV1,
+	frozenCorrectionContext string,
 ) (any, nodeUsageReport, error) {
 	ctx = execution.WithNodeID(ctx, node.ID)
 	var (
@@ -1204,6 +1518,9 @@ func runAgentNode(
 		if correctionAppliesToNode(correction, node, payload) {
 			prompt += "\n\nConfirmed user correction (apply to this execution):\n" + correction.Instruction
 		}
+	}
+	if frozenCorrectionContext != "" {
+		prompt += "\n\nFrozen prior execution snapshot (read-only; revise only within the confirmed correction):\n" + frozenCorrectionContext
 	}
 	nodeTimeout := agentNodeExecutionTimeout
 	nodeCtx := ctx
