@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "captured_at": "2026-09-10T04:27:18.531544+08:00",
+  "runtime_id": "fcfad0a6-51c9-4cdd-8e14-f9b105f22735",
+  "old_daemon_pid": 44079,
+  "old_daemon_started_at": "2026-09-10T02:35:20+08:00",
+  "reason": "old daemon repeatedly left member subprocesses stuck on completed small local tool calls; restart same runtime with exact repaired binary",
+  "interrupted_member_processes": [
+    {
+      "pid": 53811,
+      "node_id": "parallel-06"
+    },
+    {
+      "pid": 53976,
+      "node_id": "parallel-02"
+    }
+  ],
+  "runtime_binding_changed": false,
+  "external_effects": "none"
+}

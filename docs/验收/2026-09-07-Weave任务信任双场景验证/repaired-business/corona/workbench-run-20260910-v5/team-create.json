@@ -1,0 +1,9 @@
+{
+  "http_status": 201,
+  "response": {
+    "team_id": "2d393195-28d9-4d07-ae14-ddf8d0739ebb",
+    "build_run_id": "92587afc-6d73-56a1-af44-e9a76ae6e3a6",
+    "status": "ready",
+    "evaluation": "unevaluated"
+  }
+}

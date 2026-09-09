@@ -1,0 +1,166 @@
+{
+  "schema_version": 1,
+  "captured_at": "2026-09-10T04:20:09.193437+08:00",
+  "run": {
+    "run_id": "run-b265eff8-af4a-507c-ae7d-d1229e14f7ea",
+    "status": "parked",
+    "team_run_generation": 2,
+    "execution_lease_epoch": 1,
+    "resume_generation": 1,
+    "wait_kind": "fanout",
+    "wait_detail": {
+      "parked": true,
+      "group_id": "fg_21024dc7-3163-4f39-a504-13900dfebe91",
+      "intent_id": "fi_daeec11b-f056-4339-857f-46bf3ed56dcf",
+      "wait_type": "fanout_group",
+      "generation": "fg1_0e5efb9af6c1591ffdcc6402bba0db53740df117f2fe24f38462e72f6e63e809",
+      "join_node_id": "join",
+      "resume_token": "[REMOVED-RESUME-CAPABILITY]",
+      "parent_run_id": "run-b265eff8-af4a-507c-ae7d-d1229e14f7ea"
+    },
+    "run_snapshot_id": "run-b265eff8-af4a-507c-ae7d-d1229e14f7ea",
+    "updated_at": "2026-09-10T03:49:44.27493+08:00"
+  },
+  "tasks": [
+    {
+      "id": "flt1_5b762d7e1ac18ba903bf291b2e7fc2cfc5c7a7286960125d1009fca3d3a5b728",
+      "status": "queued",
+      "claim_epoch": 1,
+      "context_key": "fg_21024dc7-3163-4f39-a504-13900dfebe91",
+      "run_snapshot_id": "run-b265eff8-af4a-507c-ae7d-d1229e14f7ea",
+      "error": null,
+      "created_at": "2026-09-10T03:49:44.28508+08:00",
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-09-10T04:13:12.484247+08:00"
+    },
+    {
+      "id": "flt1_3b8b6d460d752fd3e3413c1db325a4c0def2bababa750e3d3c1956cf56478222",
+      "status": "running",
+      "claim_epoch": 1,
+      "context_key": "fg_21024dc7-3163-4f39-a504-13900dfebe91",
+      "run_snapshot_id": "run-b265eff8-af4a-507c-ae7d-d1229e14f7ea",
+      "error": null,
+      "created_at": "2026-09-10T03:49:44.287108+08:00",
+      "started_at": "2026-09-10T03:49:44.303266+08:00",
+      "completed_at": null,
+      "updated_at": "2026-09-10T04:20:04.209342+08:00"
+    },
+    {
+      "id": "flt1_18649343c364ef859c84f247f73d1475ae386d9422ddc1d2e051966d1120e5c6",
+      "status": "running",
+      "claim_epoch": 2,
+      "context_key": "fg_21024dc7-3163-4f39-a504-13900dfebe91",
+      "run_snapshot_id": "run-b265eff8-af4a-507c-ae7d-d1229e14f7ea",
+      "error": null,
+      "created_at": "2026-09-10T03:49:44.287643+08:00",
+      "started_at": "2026-09-10T04:12:45.352685+08:00",
+      "completed_at": null,
+      "updated_at": "2026-09-10T04:20:05.354374+08:00"
+    },
+    {
+      "id": "flt1_b7d5834384bdd475fb9862996ec99b6e070762d3723f670cad0951e78b18c436",
+      "status": "queued",
+      "claim_epoch": 1,
+      "context_key": "fg_21024dc7-3163-4f39-a504-13900dfebe91",
+      "run_snapshot_id": "run-b265eff8-af4a-507c-ae7d-d1229e14f7ea",
+      "error": null,
+      "created_at": "2026-09-10T03:49:44.288023+08:00",
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-09-10T04:13:39.398725+08:00"
+    },
+    {
+      "id": "flt1_313c44916304652d99f210eeff6e6915efd424c9d9a8bdef3d63a9799f3cd4c0",
+      "status": "running",
+      "claim_epoch": 1,
+      "context_key": "fg_21024dc7-3163-4f39-a504-13900dfebe91",
+      "run_snapshot_id": "run-b265eff8-af4a-507c-ae7d-d1229e14f7ea",
+      "error": null,
+      "created_at": "2026-09-10T03:49:44.288356+08:00",
+      "started_at": "2026-09-10T03:51:51.463533+08:00",
+      "completed_at": null,
+      "updated_at": "2026-09-10T04:19:51.466135+08:00"
+    },
+    {
+      "id": "flt1_a11b0eb161fcf01d3b4079469859aeedb4fc36563aee6f9d22fdb8e3522f7761",
+      "status": "running",
+      "claim_epoch": 1,
+      "context_key": "fg_21024dc7-3163-4f39-a504-13900dfebe91",
+      "run_snapshot_id": "run-b265eff8-af4a-507c-ae7d-d1229e14f7ea",
+      "error": null,
+      "created_at": "2026-09-10T03:49:44.288688+08:00",
+      "started_at": "2026-09-10T03:51:52.25042+08:00",
+      "completed_at": null,
+      "updated_at": "2026-09-10T04:19:52.252056+08:00"
+    }
+  ],
+  "retry_events": [
+    {
+      "event_id": "stage-retry-request:0afafcdeaf5d8c31eb4382159c2ae337a874025c5bab6173c7263c158e8856e1",
+      "kind": "stage_retry_requested",
+      "detail": {
+        "actor": "a9597692-f602-4dc3-817f-bb98eb84ed84",
+        "result": {
+          "run_id": "run-b265eff8-af4a-507c-ae7d-d1229e14f7ea",
+          "status": "queued",
+          "node_id": "parallel-03",
+          "affected_node_ids": [
+            "parallel-03"
+          ],
+          "preserved_completed_stages": true
+        },
+        "schema_version": 1,
+        "failure_task_id": "flt1_18649343c364ef859c84f247f73d1475ae386d9422ddc1d2e051966d1120e5c6",
+        "failure_generation": 2,
+        "failure_task_updated_at": "2026-09-10T03:51:52.264298+08:00",
+        "failure_resume_generation": 1
+      },
+      "occurred_at": "2026-09-10T04:12:43.617155+08:00"
+    },
+    {
+      "event_id": "stage-retry-request:4f663365956a00cf544022b383efbd6fa5a2fb14afbf60a31f349a0f00ed010f",
+      "kind": "stage_retry_requested",
+      "detail": {
+        "actor": "a9597692-f602-4dc3-817f-bb98eb84ed84",
+        "result": {
+          "run_id": "run-b265eff8-af4a-507c-ae7d-d1229e14f7ea",
+          "status": "queued",
+          "node_id": "parallel-01",
+          "affected_node_ids": [
+            "parallel-01"
+          ],
+          "preserved_completed_stages": true
+        },
+        "schema_version": 1,
+        "failure_task_id": "flt1_5b762d7e1ac18ba903bf291b2e7fc2cfc5c7a7286960125d1009fca3d3a5b728",
+        "failure_generation": 2,
+        "failure_task_updated_at": "2026-09-10T03:51:52.249335+08:00",
+        "failure_resume_generation": 1
+      },
+      "occurred_at": "2026-09-10T04:13:12.485656+08:00"
+    },
+    {
+      "event_id": "stage-retry-request:5ca82ef019bd580feeb5da8a873bc72099a7e75a694f0225cfb59ebd6140131c",
+      "kind": "stage_retry_requested",
+      "detail": {
+        "actor": "a9597692-f602-4dc3-817f-bb98eb84ed84",
+        "result": {
+          "run_id": "run-b265eff8-af4a-507c-ae7d-d1229e14f7ea",
+          "status": "queued",
+          "node_id": "parallel-04",
+          "affected_node_ids": [
+            "parallel-04"
+          ],
+          "preserved_completed_stages": true
+        },
+        "schema_version": 1,
+        "failure_task_id": "flt1_b7d5834384bdd475fb9862996ec99b6e070762d3723f670cad0951e78b18c436",
+        "failure_generation": 2,
+        "failure_task_updated_at": "2026-09-10T03:51:51.461895+08:00",
+        "failure_resume_generation": 1
+      },
+      "occurred_at": "2026-09-10T04:13:39.399512+08:00"
+    }
+  ]
+}

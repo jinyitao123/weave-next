@@ -1,0 +1,89 @@
+=== [A] 常量冻结源 (verified_fact) ===
+  C_LIGHT          = 299792458.0  m/s
+  G0               = 9.80665  m/s^2
+  DIST_PROXIMA     = 4.25  ly
+  LY_M             = 9460730472580800.0  m/ly
+  SEC_PER_YEAR     = 31557600.0  s/yr
+  AU_M             = 149597870700.0  m/AU
+  TNT_J_PER_KG     = 4184000.0  J/kg (assumption)
+  cruise_speed_c   = [0.01, 0.03, 0.05]  frozen
+
+=== [B] 单位检查 (dimensional_check) ===
+  V_KMPS             unit=km/s     dim=(L^1·T^-1)  v = beta*c;  [L T^-1]
+                      L^1·T^-1  DIM-OK
+  TIME_ALPHA         unit=yr       dim=(T^1)  t = D/v = 4.25ly/beta;  [T]
+                      T^1  DIM-OK
+  E_SAIL_1MT(1e9kg)  unit=J        dim=(M^1·L^2·T^-2)  E = 1/2 m v^2;  [M L^2 T^-2]=J
+                      M^1·L^2·T^-2  DIM-OK
+  E_SAIL_5MT         unit=J        dim=(M^1·L^2·T^-2)  E = 1/2 m v^2;  [M L^2 T^-2]=J
+                      M^1·L^2·T^-2  DIM-OK
+  dust_1mg           unit=J        dim=(M^1·L^2·T^-2)  E = 1/2 m v^2;  [M L^2 T^-2]=J
+                      M^1·L^2·T^-2  DIM-OK
+  artgrav_a          unit=m/s^2    dim=(L^1·T^-2)  a = omega^2 r;  [T^-2][L]=[L T^-2]
+                      L^1·T^-2  DIM-OK
+  ke_rel(1mt)        unit=J        dim=(M^1·L^2·T^-2)  Ek=(gamma-1)m c^2;  [M L^2 T^-2]=J
+                      M^1·L^2·T^-2  DIM-OK
+  gamma              unit=dimless  dim=(dimless)  gamma=1/sqrt(1-beta^2);  dimless
+                      dimless  DIM-OK
+  beam_power_ratio   unit=dimless  dim=(dimless)  P/P_ref = (beta/beta_ref)^2;  dimless
+                      dimless  DIM-OK
+
+=== [C] 三速度情景派生量复算 (derived_result) ===
+--- S-0.01c (v=2997.9246 km/s, gamma=1.000050) ---
+  TIME_ALPHA   = 425.0000 yr   (4.25ly / 0.01)
+  E_SAIL_1MT(1e9kg) = 4.493776e+21 J  (1.074038e+15 kg TNT = 1.074038e+12 t TNT)
+  E_SAIL_5MT    = 2.246888e+22 J  (5.370191e+15 kg TNT)
+  E_SAIL_1G(1g) = 4.493776e+09 J  (4.4938 GJ)  [P4 单帆动能]
+  dust_1mg     = 4.493776e+06 J  (1.0740 kg TNT)
+  相对论修正   = 0.0075 %  (<0.2%)
+  TIME_GLENS   = 0.86969 yr = 10.436 mo  (550.0AU)
+  TIME_HELIOP  = 0.18975 yr = 2.277 mo  (120.0AU)
+  TIME_PRECURSOR=1.58125 yr = 18.975 mo  (1000.0AU)
+  P_REL(0.2c)  = 0.00250  (= 400.0x reduction)
+
+--- S-0.03c (v=8993.7737 km/s, gamma=1.000450) ---
+  TIME_ALPHA   = 141.6667 yr   (4.25ly / 0.03)
+  E_SAIL_1MT(1e9kg) = 4.044398e+22 J  (9.666344e+15 kg TNT = 9.666344e+12 t TNT)
+  E_SAIL_5MT    = 2.022199e+23 J  (4.833172e+16 kg TNT)
+  E_SAIL_1G(1g) = 4.044398e+10 J  (40.4440 GJ)  [P4 单帆动能]
+  dust_1mg     = 4.044398e+07 J  (9.6663 kg TNT)
+  相对论修正   = 0.0676 %  (<0.2%)
+  TIME_GLENS   = 0.28990 yr = 3.479 mo  (550.0AU)
+  TIME_HELIOP  = 0.06325 yr = 0.759 mo  (120.0AU)
+  TIME_PRECURSOR=0.52708 yr = 6.325 mo  (1000.0AU)
+  P_REL(0.2c)  = 0.02250  (= 44.4x reduction)
+
+--- S-0.05c (v=14989.6229 km/s, gamma=1.001252) ---
+  TIME_ALPHA   = 85.0000 yr   (4.25ly / 0.05)
+  E_SAIL_1MT(1e9kg) = 1.123444e+23 J  (2.685096e+16 kg TNT = 2.685096e+13 t TNT)
+  E_SAIL_5MT    = 5.617220e+23 J  (1.342548e+17 kg TNT)
+  E_SAIL_1G(1g) = 1.123444e+11 J  (112.3444 GJ)  [P4 单帆动能]
+  dust_1mg     = 1.123444e+08 J  (26.8510 kg TNT)
+  相对论修正   = 0.1879 %  (<0.2%)
+  TIME_GLENS   = 0.17394 yr = 2.087 mo  (550.0AU)
+  TIME_HELIOP  = 0.03795 yr = 0.455 mo  (120.0AU)
+  TIME_PRECURSOR=0.31625 yr = 3.795 mo  (1000.0AU)
+  P_REL(0.2c)  = 0.06250  (= 16.0x reduction)
+
+--- P3 复核: 0.2c 束功率到三速度的降幅 (P ∝ v^2; 固定帆质量/加速距离) ---
+  0.2c -> 0.01c : 400.0x reduction  (P/P_ref=0.0025)
+  0.2c -> 0.03c : 44.4x reduction  (P/P_ref=0.0225)
+  0.2c -> 0.05c : 16.0x reduction  (P/P_ref=0.0625)
+
+=== [D] 人工重力 (与速度无关, reserved) ===
+  r=1000m, 2rpm -> a=43.864908 m/s^2 = 4.4730 g0
+  r=1000m, 1g0  -> rpm=0.94565 rpm
+
+=== [E] 0.03c 五项冻结锚点 vs acceptance 容差 (independent check) ===
+  travel_years_at_0_03c          computed=1.41666667e+02 expected=1.41666667e+02 rel_err=2.35e-10 tol=0.001 -> OK
+  kinetic_energy_1mt_at_0_03c_j  computed=4.04439830e+22 expected=4.04439830e+22 rel_err=1.07e-09 tol=0.010 -> OK
+  kinetic_energy_5mt_at_0_03c_j  computed=2.02219915e+23 expected=2.02219910e+23 rel_err=2.58e-08 tol=0.010 -> OK
+  gravity_1km_2rpm_m_s2          computed=4.38649084e+01 expected=4.38649000e+01 rel_err=1.93e-07 tol=0.010 -> OK
+  dust_1mg_0_03c_j               computed=4.04439830e+07 expected=4.04439830e+07 rel_err=1.07e-09 tol=0.010 -> OK
+  => 5/5 within tolerance
+
+=== [F] 事实纪律提醒 (below NOT a full propulsion budget) ===
+  E = 1/2 m v^2 仅为【动能下限】; 完整推进能源预算 = 束能量/帆效率/束源效率 -> unknown
+  克级(≈1g) 探测器可行性 不可外推为 大型无人载荷(≥1t)/载人飞船  => mass-scaling caveat
+  Starshot 0.2c/100GW 锚点 为 B级 (assumption/magnitude); 作为采购/建设依据需 A 级核验
+  1mt 此处指 1e9 kg (百万吨级) 质量参考; 非 1 百万载荷 的工程定义 (note 单位约定)

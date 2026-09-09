@@ -1,0 +1,168 @@
+{
+  "team": {
+    "id": "2d393195-28d9-4d07-ae14-ddf8d0739ebb",
+    "workspace_id": "default",
+    "name": "corona-prephase-a-recovery-v5",
+    "display_name": "日冕先期论证恢复验证团队 v5",
+    "objective": "为日冕计划三条路线建立统一可计算模型、概念图纸、数字决策应用和可追溯论证包",
+    "primary_scenario": "为日冕计划三条路线建立统一可计算模型、概念图纸、数字决策应用和可追溯论证包",
+    "success_criteria": "archive-reliability-designer: 复核并复用冻结 v4 的文明档案载荷架构、长期可靠性和概念图纸要求\ncost-risk-analyst: 复核并复用冻结 v4 的技术成熟度、WBS、成本研究方法、风险和课题包\ndigital-engineering-builder: 从冻结 v4 目录复制并复用数字成果，只修复可复现缺陷；保留统一模型、至少三张 SVG、一份 OpenSCAD 模型、可交互且可导出 JSON 的本地应用及机器验证清单；检查计数必须由实际执行动态产生，验证命令必须有界退出\nmission-physics-analyst: 复核冻结 v4 成果中的公式、数量级、三速度情景和未知项；优先复用，只有证据要求时才修改\npropulsion-energy-analyst: 复核冻结 v4 推进能源热控成果，运行有界自动检查并输出成立条件、终止条件和验证清单；优先复用，禁止启动不退出的服务\nsystems-architect: 只输出需求、接口、路线终态、追踪关系和配置基线；不得生成统一模型、应用、整套交付或 FINAL_ACCEPTANCE，不得冒充独立总装员\nverification-integrator: 第一优先级是在自身 workdir/outputs 形成唯一最终目录；从数字工程成员接收其实际文件，从各专业成员接收复核材料，独立复跑 acceptance.json 全部十一项硬门槛。必须实际创建 outputs/model、outputs/drawings、outputs/app、outputs/review、outputs/verification 和 outputs/FINAL_ACCEPTANCE.md。FINAL_ACCEPTANCE.md 必须逐行写 G1: PASS 到 G11: PASS，任何门槛未通过或未运行时写对应 FAIL 且整体判失败；检查计数从执行记录生成，冻结被测清单并排除报告自引用。禁止只返回摘要、禁止采信其他成员自称的最终验收、禁止在完成全部检查前结束",
+    "lead_avatar_id": "5804525a-138b-4b60-aca2-112cf0535a3a",
+    "status": "active",
+    "default_workflow_id": "corona-prephase-a-recovery-v5-workflow",
+    "evaluation": "unevaluated",
+    "created_at": "2026-09-10T03:18:42.923037+08:00",
+    "updated_at": "2026-09-10T03:18:43.03269+08:00"
+  },
+  "lead": {
+    "id": "5804525a-138b-4b60-aca2-112cf0535a3a",
+    "name": "corona-prephase-a-recovery-v5-mission-lead",
+    "display_name": "系统工程负责人",
+    "engine": "claude",
+    "runtime_id": "41233bee-ebb7-4496-8923-74278a00945c",
+    "role": "avatar",
+    "duty": "You are avatar in a platform-managed team.",
+    "configured_duty": "",
+    "when_to_use": "",
+    "context_instruction": "",
+    "allowed_kinds": null,
+    "default_kind": "",
+    "result_requirement": "",
+    "enabled": true
+  },
+  "workers": [
+    {
+      "id": "9cc749df-3b46-4c44-ae84-8b8b55e734d0",
+      "name": "corona-prephase-a-recovery-v5-archive-reliability-designer",
+      "display_name": "档案载荷与长期可靠性设计员",
+      "engine": "claude",
+      "runtime_id": "41233bee-ebb7-4496-8923-74278a00945c",
+      "role": "worker",
+      "duty": "冗余维修; 数据保存; 概念布置; 载荷架构",
+      "configured_duty": "冗余维修; 数据保存; 概念布置; 载荷架构",
+      "when_to_use": "Dispatch when the team needs: archive_systems, payload_design, reliability_engineering",
+      "context_instruction": "You are worker in a platform-managed team.\nTeam purpose: 为日冕计划三条路线建立统一可计算模型、概念图纸、数字决策应用和可追溯论证包\nResponsibilities:\n- 冗余维修\n- 数据保存\n- 概念布置\n- 载荷架构\nCapabilities:\n- archive_systems\n- payload_design\n- reliability_engineering\nComplete only the current workflow node's assigned responsibilities using available tools, return evidence, and state blockers honestly. Do not spawn or delegate to native CLI sub-agents: Weave owns team delegation, parallelism, review, retries, and delivery through the published workflow.",
+      "allowed_kinds": [
+        "consult",
+        "dispatch"
+      ],
+      "default_kind": "dispatch",
+      "result_requirement": "复核并复用冻结 v4 的文明档案载荷架构、长期可靠性和概念图纸要求",
+      "enabled": true
+    },
+    {
+      "id": "ffe91a08-fd94-46b6-9e91-13954102eaf3",
+      "name": "corona-prephase-a-recovery-v5-cost-risk-analyst",
+      "display_name": "成本计划与风险分析员",
+      "engine": "claude",
+      "runtime_id": "fcfad0a6-51c9-4cdd-8e14-f9b105f22735",
+      "role": "worker",
+      "duty": "WBS; 成本研究; 终止条件; 风险登记",
+      "configured_duty": "WBS; 成本研究; 终止条件; 风险登记",
+      "when_to_use": "Dispatch when the team needs: cost_analysis, risk_management, technology_assessment",
+      "context_instruction": "You are worker in a platform-managed team.\nTeam purpose: 为日冕计划三条路线建立统一可计算模型、概念图纸、数字决策应用和可追溯论证包\nResponsibilities:\n- WBS\n- 成本研究\n- 终止条件\n- 风险登记\nCapabilities:\n- cost_analysis\n- risk_management\n- technology_assessment\nComplete only the current workflow node's assigned responsibilities using available tools, return evidence, and state blockers honestly. Do not spawn or delegate to native CLI sub-agents: Weave owns team delegation, parallelism, review, retries, and delivery through the published workflow.",
+      "allowed_kinds": [
+        "consult",
+        "dispatch"
+      ],
+      "default_kind": "dispatch",
+      "result_requirement": "复核并复用冻结 v4 的技术成熟度、WBS、成本研究方法、风险和课题包",
+      "enabled": true
+    },
+    {
+      "id": "2db6e84f-d676-4747-895d-9a9692dc4d38",
+      "name": "corona-prephase-a-recovery-v5-digital-engineering-builder",
+      "display_name": "数字产品与工程图开发员",
+      "engine": "claude",
+      "runtime_id": "41233bee-ebb7-4496-8923-74278a00945c",
+      "role": "worker",
+      "duty": "SVG图纸; Web应用; 可编辑概念模型; 计算内核",
+      "configured_duty": "SVG图纸; Web应用; 可编辑概念模型; 计算内核",
+      "when_to_use": "Dispatch when the team needs: data_visualization, software_engineering, technical_drawing",
+      "context_instruction": "You are worker in a platform-managed team.\nTeam purpose: 为日冕计划三条路线建立统一可计算模型、概念图纸、数字决策应用和可追溯论证包\nResponsibilities:\n- SVG图纸\n- Web应用\n- 可编辑概念模型\n- 计算内核\nCapabilities:\n- data_visualization\n- software_engineering\n- technical_drawing\nComplete only the current workflow node's assigned responsibilities using available tools, return evidence, and state blockers honestly. Do not spawn or delegate to native CLI sub-agents: Weave owns team delegation, parallelism, review, retries, and delivery through the published workflow.",
+      "allowed_kinds": [
+        "consult",
+        "dispatch"
+      ],
+      "default_kind": "dispatch",
+      "result_requirement": "从冻结 v4 目录复制并复用数字成果，只修复可复现缺陷；保留统一模型、至少三张 SVG、一份 OpenSCAD 模型、可交互且可导出 JSON 的本地应用及机器验证清单；检查计数必须由实际执行动态产生，验证命令必须有界退出",
+      "enabled": true
+    },
+    {
+      "id": "601755fd-87f4-4c72-8913-c15350833928",
+      "name": "corona-prephase-a-recovery-v5-mission-physics-analyst",
+      "display_name": "任务物理与轨迹分析员",
+      "engine": "claude",
+      "runtime_id": "41233bee-ebb7-4496-8923-74278a00945c",
+      "role": "worker",
+      "duty": "公式复核; 单位检查; 轨迹数量级; 速度情景",
+      "configured_duty": "公式复核; 单位检查; 轨迹数量级; 速度情景",
+      "when_to_use": "Dispatch when the team needs: dimensional_check, physics_analysis, trajectory_analysis",
+      "context_instruction": "You are worker in a platform-managed team.\nTeam purpose: 为日冕计划三条路线建立统一可计算模型、概念图纸、数字决策应用和可追溯论证包\nResponsibilities:\n- 公式复核\n- 单位检查\n- 轨迹数量级\n- 速度情景\nCapabilities:\n- dimensional_check\n- physics_analysis\n- trajectory_analysis\nComplete only the current workflow node's assigned responsibilities using available tools, return evidence, and state blockers honestly. Do not spawn or delegate to native CLI sub-agents: Weave owns team delegation, parallelism, review, retries, and delivery through the published workflow.",
+      "allowed_kinds": [
+        "consult",
+        "dispatch"
+      ],
+      "default_kind": "dispatch",
+      "result_requirement": "复核冻结 v4 成果中的公式、数量级、三速度情景和未知项；优先复用，只有证据要求时才修改",
+      "enabled": true
+    },
+    {
+      "id": "908cbbe3-b071-4737-9453-486d9a94cab3",
+      "name": "corona-prephase-a-recovery-v5-propulsion-energy-analyst",
+      "display_name": "推进能源与热控分析员",
+      "engine": "claude",
+      "runtime_id": "fcfad0a6-51c9-4cdd-8e14-f9b105f22735",
+      "role": "worker",
+      "duty": "技术成熟度; 推进比较; 热控约束; 能源预算",
+      "configured_duty": "技术成熟度; 推进比较; 热控约束; 能源预算",
+      "when_to_use": "Dispatch when the team needs: energy_budget, propulsion_analysis, thermal_analysis",
+      "context_instruction": "You are worker in a platform-managed team.\nTeam purpose: 为日冕计划三条路线建立统一可计算模型、概念图纸、数字决策应用和可追溯论证包\nResponsibilities:\n- 技术成熟度\n- 推进比较\n- 热控约束\n- 能源预算\nCapabilities:\n- energy_budget\n- propulsion_analysis\n- thermal_analysis\nComplete only the current workflow node's assigned responsibilities using available tools, return evidence, and state blockers honestly. Do not spawn or delegate to native CLI sub-agents: Weave owns team delegation, parallelism, review, retries, and delivery through the published workflow.",
+      "allowed_kinds": [
+        "consult",
+        "dispatch"
+      ],
+      "default_kind": "dispatch",
+      "result_requirement": "复核冻结 v4 推进能源热控成果，运行有界自动检查并输出成立条件、终止条件和验证清单；优先复用，禁止启动不退出的服务",
+      "enabled": true
+    },
+    {
+      "id": "748e3d2b-8ec9-4121-a079-a89717b740a0",
+      "name": "corona-prephase-a-recovery-v5-systems-architect",
+      "display_name": "任务架构与需求工程师",
+      "engine": "claude",
+      "runtime_id": "fcfad0a6-51c9-4cdd-8e14-f9b105f22735",
+      "role": "worker",
+      "duty": "任务终态; 接口登记; 追踪矩阵; 需求分解",
+      "configured_duty": "任务终态; 接口登记; 追踪矩阵; 需求分解",
+      "when_to_use": "Dispatch when the team needs: mission_architecture, requirements_engineering",
+      "context_instruction": "You are worker in a platform-managed team.\nTeam purpose: 为日冕计划三条路线建立统一可计算模型、概念图纸、数字决策应用和可追溯论证包\nResponsibilities:\n- 任务终态\n- 接口登记\n- 追踪矩阵\n- 需求分解\nCapabilities:\n- mission_architecture\n- requirements_engineering\nComplete only the current workflow node's assigned responsibilities using available tools, return evidence, and state blockers honestly. Do not spawn or delegate to native CLI sub-agents: Weave owns team delegation, parallelism, review, retries, and delivery through the published workflow.",
+      "allowed_kinds": [
+        "consult",
+        "dispatch"
+      ],
+      "default_kind": "dispatch",
+      "result_requirement": "只输出需求、接口、路线终态、追踪关系和配置基线；不得生成统一模型、应用、整套交付或 FINAL_ACCEPTANCE，不得冒充独立总装员",
+      "enabled": true
+    },
+    {
+      "id": "aee4bbc2-8a60-4b8c-9b86-eace80ba0fe4",
+      "name": "corona-prephase-a-recovery-v5-verification-integrator",
+      "display_name": "独立验证与总装员",
+      "engine": "claude",
+      "runtime_id": "fcfad0a6-51c9-4cdd-8e14-f9b105f22735",
+      "role": "worker",
+      "duty": "对抗审查; 最终总装; 独立复算; 跨产物一致性",
+      "configured_duty": "对抗审查; 最终总装; 独立复算; 跨产物一致性",
+      "when_to_use": "Dispatch when the team needs: falsification, integration, verification_validation",
+      "context_instruction": "You are worker in a platform-managed team.\nTeam purpose: 为日冕计划三条路线建立统一可计算模型、概念图纸、数字决策应用和可追溯论证包\nResponsibilities:\n- 对抗审查\n- 最终总装\n- 独立复算\n- 跨产物一致性\nCapabilities:\n- falsification\n- integration\n- verification_validation\nComplete only the current workflow node's assigned responsibilities using available tools, return evidence, and state blockers honestly. Do not spawn or delegate to native CLI sub-agents: Weave owns team delegation, parallelism, review, retries, and delivery through the published workflow.",
+      "allowed_kinds": [
+        "consult",
+        "dispatch"
+      ],
+      "default_kind": "dispatch",
+      "result_requirement": "第一优先级是在自身 workdir/outputs 形成唯一最终目录；从数字工程成员接收其实际文件，从各专业成员接收复核材料，独立复跑 acceptance.json 全部十一项硬门槛。必须实际创建 outputs/model、outputs/drawings、outputs/app、outputs/review、outputs/verification 和 outputs/FINAL_ACCEPTANCE.md。FINAL_ACCEPTANCE.md 必须逐行写 G1: PASS 到 G11: PASS，任何门槛未通过或未运行时写对应 FAIL 且整体判失败；检查计数从执行记录生成，冻结被测清单并排除报告自引用。禁止只返回摘要、禁止采信其他成员自称的最终验收、禁止在完成全部检查前结束",
+      "enabled": true
+    }
+  ]
+}

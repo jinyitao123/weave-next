@@ -1,0 +1,56 @@
+cd workbench && CI=true pnpm install --frozen-lockfile
+native/landlock-run/packages/linux-arm64 | [WARN] Unsupported platform: wanted: {"cpu":["arm64"],"os":["linux"],"libc":["any"]} (current: {"os":"darwin","cpu":"arm64","libc":"unknown"})
+native/landlock-run/packages/linux-x64   | [WARN] Unsupported platform: wanted: {"cpu":["x64"],"os":["linux"],"libc":["any"]} (current: {"os":"darwin","cpu":"arm64","libc":"unknown"})
+Scope: all 246 workspace projects
+[WARN] There are cyclic workspace dependencies: /private/tmp/weave-trust-input-build-20260908/workbench/packages/client/locale, /private/tmp/weave-trust-input-build-20260908/workbench/packages/test-support/client-runtime, /private/tmp/weave-trust-input-build-20260908/workbench/packages/client/ui-chat, /private/tmp/weave-trust-input-build-20260908/workbench/packages/client/ui-layout, /private/tmp/weave-trust-input-build-20260908/workbench/packages/client/ui-theme; /private/tmp/weave-trust-input-build-20260908/workbench/packages/client/ui-conversation, /private/tmp/weave-trust-input-build-20260908/workbench/packages/client/ui-workspace; /private/tmp/weave-trust-input-build-20260908/workbench/packages/examples/agent-spine-demo, /private/tmp/weave-trust-input-build-20260908/workbench/packages/goal/goal; /private/tmp/weave-trust-input-build-20260908/workbench/packages/sandbox/sandbox-local, /private/tmp/weave-trust-input-build-20260908/workbench/packages/sandbox/sandbox-windows-acl; /private/tmp/weave-trust-input-build-20260908/workbench/packages/subagent/subagent-spawn-in-process, /private/tmp/weave-trust-input-build-20260908/workbench/packages/subagent/tool-subagent; /private/tmp/weave-trust-input-build-20260908/workbench/vendor/cordis, /private/tmp/weave-trust-input-build-20260908/workbench/vendor/include
+✓ Lockfile passes supply-chain policies (verified 1h ago)
+Lockfile is up to date, resolution step is skipped
+Progress: resolved 1, reused 0, downloaded 0, added 0
+Packages: +903
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+Progress: resolved 903, reused 898, downloaded 0, added 396
+Progress: resolved 903, reused 898, downloaded 0, added 769
+Progress: resolved 903, reused 898, downloaded 0, added 901
+Progress: resolved 903, reused 898, downloaded 0, added 903, done
+.../.pnpm/koffi@3.1.1/node_modules/koffi install$ node ./cnoke.cjs -P . -D src/koffi --prebuild --release
+.../.pnpm/koffi@3.1.1/node_modules/koffi install: Done
+
+devDependencies:
++ @deepseek-ai/dsh-web-fetch-http 0.1.2-alpha.1 <- packages/web/web-fetch-http
++ @stylistic/eslint-plugin 5.10.0
++ @testing-library/dom 10.4.1
++ @testing-library/react 16.3.2
++ @types/js-yaml 4.0.9
++ @types/jsdom 28.0.3
++ @types/mdast 4.0.4
++ @types/node 22.20.0
++ @types/spdx-expression-parse 4.0.0
++ @vitest/coverage-v8 4.1.8
++ @yarnpkg/cli-dist 4.17.1
++ eslint-plugin-sonarjs 4.1.0
++ execa 10.0.0
++ fast-check 4.8.0
++ istanbul-lib-report 3.0.1
++ js-yaml 4.2.0
++ jscpd 5.0.12
++ jsdom 29.1.1
++ knip 6.16.1
++ lightningcss 1.32.0
++ mdast-util-from-markdown 2.0.3
++ mdast-util-gfm 3.1.0
++ mermaid 11.16.0
++ micromark-extension-gfm 3.0.0
++ oxlint 1.76.0
++ oxlint-tsgolint 7.0.2001
++ publint 0.3.21
++ smol-toml 1.7.1
++ spdx-expression-parse 5.0.0
++ tsdown 0.22.2
++ tsx 4.22.4
++ typescript 6.0.3
++ vite-tsconfig-paths 6.1.1
++ vitest 4.1.8
+
+packages/subprocess/subprocess-local postinstall$ node scripts/ensure-spawn-helper.mjs
+packages/subprocess/subprocess-local postinstall: Done
+Done in 5.1s using pnpm v11.7.0

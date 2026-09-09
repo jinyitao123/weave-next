@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "interrupted_at": "2026-09-10T03:36:38.111293+08:00",
+  "signal": "SIGTERM",
+  "target_pid": 43828,
+  "target": "primary runtime carrying lead engine task",
+  "api_server_interrupted": false,
+  "secondary_runtime_interrupted": false,
+  "external_effect_scope": "none"
+}

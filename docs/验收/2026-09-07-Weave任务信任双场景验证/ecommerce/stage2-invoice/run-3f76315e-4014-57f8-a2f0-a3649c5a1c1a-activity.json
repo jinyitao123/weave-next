@@ -1,0 +1,201 @@
+{
+  "activity_events": [
+    {
+      "workspace_id": "default",
+      "run_id": "run-3f76315e-4014-57f8-a2f0-a3649c5a1c1a",
+      "seq": 1823,
+      "event_id": "f461bbd3-1072-4954-8f28-c228d7233f52",
+      "kind": "member_started",
+      "node_id": "execute",
+      "member_id": "2ecdefd3-c85a-4959-a3c8-a6a10f1501b5",
+      "member_version": 1,
+      "detail": {
+        "input_names": [
+          "task"
+        ],
+        "input_summary": {
+          "task": "\"继续使用刚才已发布的 Gmail/Calendar Mock MCP 验证团队和同一个默认工作流 v1，处理下面第二份独立任务。不要重建或修改团队，不把它当作 VBR-52 返修，不复用上一任务的数据或对象 ID。新隔离样本 trust-stage2-invoice-hold-20260908-remote002 已准备完毕，Runtime 的 http://127.0.0.1:3071/mcp 已切换到这个新样本；首轮运行已终止。请用 team_dispatch 发起新运行，以下正文原样作为 task 输入，不要增删业务事实。\\n\\n我是 Buyer Ops 的助理，要为 `VBR-52` 供应商会议简报准备 Gmail/Cal…"
+        }
+      },
+      "occurred_at": "2026-09-08T09:17:31.676997+08:00"
+    },
+    {
+      "workspace_id": "default",
+      "run_id": "run-3f76315e-4014-57f8-a2f0-a3649c5a1c1a",
+      "seq": 1824,
+      "event_id": "runtime:task-60beee981e41422250c649d1b7b3a707:1",
+      "kind": "runtime_public",
+      "node_id": "execute",
+      "member_id": "2ecdefd3-c85a-4959-a3c8-a6a10f1501b5",
+      "member_version": 1,
+      "detail": {
+        "event": {
+          "kind": "stream_end"
+        },
+        "task_id": "task-60beee981e41422250c649d1b7b3a707",
+        "task_seq": 1,
+        "truncated": true
+      },
+      "occurred_at": "2026-09-08T09:17:52.877372+08:00"
+    }
+  ],
+  "cancel_grace_deadline_at": null,
+  "cancel_requested_at": null,
+  "checkpoint_ref": null,
+  "completed_stages": 0,
+  "completeness": {
+    "activity_events": "complete",
+    "corrections": "complete",
+    "deliverables": "complete",
+    "human_tasks": "complete",
+    "member_inputs": "partial",
+    "member_outputs": "partial",
+    "member_tool_activity": "partial",
+    "members": "complete",
+    "public_updates": "partial",
+    "run": "complete",
+    "runtimes": "complete",
+    "stages": "unavailable",
+    "usage": "unavailable"
+  },
+  "corrections": [],
+  "cost_usd": 0,
+  "created_at": "2026-09-08T09:17:31.651151+08:00",
+  "current_executor_id": null,
+  "deliverables": [],
+  "finished_at": "2026-09-08T09:17:53.667071+08:00",
+  "human_tasks": [],
+  "latest_stage": "execute",
+  "members": [
+    {
+      "agent_id": "2ecdefd3-c85a-4959-a3c8-a6a10f1501b5",
+      "name": "单一业务执行员",
+      "duty": "保存未发送 Gmail 草稿; 修改标签与已读及星标状态; 写入前冻结任务合同; 创建 Mock Calendar 事件; 唯一 Mock 状态写入; 记录调用量与耗时",
+      "role": "worker",
+      "status": "cancelled",
+      "runtime": {
+        "update_mode": "live",
+        "configured_endpoint": "https://api.kimi.com",
+        "configured_model": "k3[1M]",
+        "configuration_source": "host_settings",
+        "auth_mode": "oauth",
+        "runtime_id": "fec94563-0d22-4c21-8036-861900652850",
+        "name": "corona-validation-a",
+        "engine": "claude"
+      },
+      "stages": [
+        {
+          "current_task_id": "task-60beee981e41422250c649d1b7b3a707",
+          "public_updates_truncated": true,
+          "public_updates_state": "partial",
+          "node_id": "execute",
+          "name": "execute",
+          "status": "cancelled",
+          "inputs": [
+            {
+              "name": "task",
+              "expected_type": "text",
+              "source": "run_input",
+              "summary": "\"继续使用刚才已发布的 Gmail/Calendar Mock MCP 验证团队和同一个默认工作流 v1，处理下面第二份独立任务。不要重建或修改团队，不把它当作 VBR-52 返修，不复用上一任务的数据或对象 ID。新隔离样本 trust-stage2-invoice-hold-20260908-remote002 已准备完毕，Runtime 的 http://127.0.0.1:3071/mcp 已切换到这个新样本；首轮运行已终止。请用 team_dispatch 发起新运行，以下正文原样作为 task 输入，不要增删业务事实。\\n\\n我是 Buyer Ops 的助理，要为 `VBR-52` 供应商会议简报准备 Gmail/Cal…"
+            }
+          ],
+          "output_refs": null,
+          "started_at": "2026-09-08T09:17:31.676997+08:00",
+          "tools": null,
+          "failure_class": "cancelled",
+          "failure_reason": "The run was stopped; completed outputs were preserved."
+        }
+      ]
+    },
+    {
+      "agent_id": "e755cf5d-25b4-4e5b-92be-cae5c8602e2c",
+      "name": "独立只读复核员",
+      "duty": "披露只读权限缺口; 核对业务结果与副作用; 汇总可核验证据; 独立查询 Mock 最终状态",
+      "role": "worker",
+      "status": "cancelled",
+      "runtime": {
+        "update_mode": "live",
+        "configured_endpoint": "https://api.kimi.com",
+        "configured_model": "k3[1M]",
+        "configuration_source": "host_settings",
+        "auth_mode": "oauth",
+        "runtime_id": "16b2e0c8-d8a9-494e-a1dc-61f397aceabf",
+        "name": "corona-validation-b",
+        "engine": "claude"
+      },
+      "stages": [
+        {
+          "node_id": "verify",
+          "name": "verify",
+          "status": "cancelled",
+          "inputs": [
+            {
+              "name": "execution",
+              "expected_type": "text",
+              "source": "node_output",
+              "node_id": "execute"
+            },
+            {
+              "name": "task",
+              "expected_type": "text",
+              "source": "run_input"
+            }
+          ],
+          "output_refs": null,
+          "tools": [],
+          "failure_class": "cancelled",
+          "failure_reason": "The run was stopped; completed outputs were preserved."
+        }
+      ]
+    }
+  ],
+  "observed_at": "2026-09-08T01:23:15.688249Z",
+  "project_id": "",
+  "revision": {
+    "execution_lease_epoch": 1,
+    "resume_generation": 0,
+    "team_run_generation": 3
+  },
+  "run_id": "run-3f76315e-4014-57f8-a2f0-a3649c5a1c1a",
+  "run_snapshot_id": "run-3f76315e-4014-57f8-a2f0-a3649c5a1c1a",
+  "runtimes": [
+    {
+      "runtime_id": "fec94563-0d22-4c21-8036-861900652850",
+      "name": "corona-validation-a",
+      "engine": "claude",
+      "status": "cancelled"
+    },
+    {
+      "runtime_id": "16b2e0c8-d8a9-494e-a1dc-61f397aceabf",
+      "name": "corona-validation-b",
+      "engine": "claude",
+      "status": "cancelled"
+    }
+  ],
+  "schema_version": 3,
+  "stages": [
+    {
+      "node_id": "execute",
+      "name": "execute",
+      "status": "cancelled"
+    },
+    {
+      "node_id": "verify",
+      "name": "verify",
+      "status": "cancelled"
+    }
+  ],
+  "started_at": "2026-09-08T09:17:31.651151+08:00",
+  "status": "cancelled",
+  "stop_unconfirmed": false,
+  "team_id": "104b1ef7-d0a9-43a9-88fe-447a00b1ed61",
+  "terminal_at": "2026-09-08T09:17:53.667071+08:00",
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "total_stages": 2,
+  "updated_at": "2026-09-08T09:17:53.667071+08:00",
+  "wait_kind": null,
+  "wait_node_id": "",
+  "workflow_id": "realreplicabench-gmail-calendar-mock-workflow",
+  "workflow_version": 1
+}
