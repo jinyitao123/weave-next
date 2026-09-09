@@ -1,0 +1,56 @@
+{
+  "runId": "run-02401d26-78a3-5025-b3d4-da6462140992",
+  "teamId": "708c6c24-11bb-4b13-82b1-c01d325a5b05",
+  "teamName": "退款批次增量复核团队二号",
+  "status": "completed",
+  "outcome": "adopted",
+  "outcomeNote": "已核对纠偏仅重跑数据计算员，独立复核员产物保持不变；修订内容与最终报告均符合冻结要求。",
+  "outcomeRevisionId": "delivery_b380cc3a507630cb894fe7f1abde352d7899cf9e45dcae3af9630a31a87df882",
+  "outcomeAssessedAt": 1788980049048,
+  "latestAssessment": {
+    "runId": "run-02401d26-78a3-5025-b3d4-da6462140992",
+    "revisionId": "delivery_b380cc3a507630cb894fe7f1abde352d7899cf9e45dcae3af9630a31a87df882",
+    "outcome": "adopted",
+    "note": "已核对纠偏仅重跑数据计算员，独立复核员产物保持不变；修订内容与最终报告均符合冻结要求。",
+    "assessedAt": 1788980049048
+  },
+  "delivery": {
+    "revisionId": "delivery_b380cc3a507630cb894fe7f1abde352d7899cf9e45dcae3af9630a31a87df882",
+    "contractDigest": "18debe616f6d2a1bd1ddbab238207c129281a1c91b06207037136d66f523edb8",
+    "verificationId": "verification_71649f8ff32c14a77b02ad05a9a46866834e1d56cde799107981b9bee13aab0a",
+    "verificationStatus": "passed",
+    "reason": "",
+    "checks": [
+      {
+        "checkId": "_coverage",
+        "status": "passed",
+        "reason": "explicit_requirements"
+      },
+      {
+        "checkId": "_output",
+        "status": "passed",
+        "reason": "output_type_valid"
+      },
+      {
+        "checkId": "artifact:refund-review",
+        "status": "passed",
+        "reason": "file_conditions_satisfied"
+      },
+      {
+        "checkId": "_external_effects",
+        "status": "passed",
+        "reason": "no_external_effects_required"
+      },
+      {
+        "checkId": "output-schema",
+        "status": "passed",
+        "reason": "published_output_schema_satisfied"
+      }
+    ],
+    "checkCounts": {
+      "passed": 5
+    },
+    "available": true,
+    "evidenceCompleteness": "complete"
+  }
+}

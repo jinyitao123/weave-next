@@ -1,13 +1,13 @@
 {
   "schema_version": 1,
-  "as_of": "2026-09-10T01:41:00+08:00",
+  "as_of": "2026-09-10T03:06:00+08:00",
   "plan": "docs/计划/2026-09-07-Weave任务信任契约与双场景三阶段验证.md",
   "stages": [
     {
       "id": "stage-1",
       "name": "契约与首轮真实性审计",
       "status": "in_progress",
-      "next": "路径修复后的编译器预检样本已通过：四名 Claude OAuth 成员完成，outputs/ 合同路径与候选身份正确映射，五项机器检查全部通过，Workbench 显示执行完成、核验通过、用户尚未评价。下一步由用户独立决定采用或退回该报告；本结果只闭合本地文本交付切片，历史电商复验和日冕增量恢复缺口保持原结论。",
+      "next": "修复后的电商 invoice 样本已复用发布工作流并经原始基准验证器 7/7，通过 Workbench 记录采用；新的冻结本地文本样本也完成 5/5 交付与采用。日冕 v4 外部内容 11/11 通过但平台交付未知、用户未评价，阶段一仍需保留业务闭环缺口。",
       "evidence": [
         "repaired-business/invoice/final-verification.json",
         "repaired-business/invoice/weave-run-evidence.json",
@@ -21,14 +21,16 @@
         "held-out/support-queue/first-run-evidence.json",
         "held-out/inventory-batch/first-run-evidence.json",
         "held-out/shipment-delay/build-attempt-evidence.json",
-        "held-out/returns-aging/first-run-evidence.json"
+        "held-out/returns-aging/first-run-evidence.json",
+        "held-out/correction-replay-02/verification-summary.json",
+        "held-out/correction-replay-02/user-assessment.json"
       ]
     },
     {
       "id": "stage-2",
       "name": "重复使用与中断接续",
       "status": "in_progress",
-      "next": "受管工具、CLI 发布绑定、领取校验和 Loom 持久预算恢复已通过真实 PostgreSQL 复核；日冕 v4 暴露恢复任务被全量重建、旧产物未绑定、成员纠偏扩大为整组重跑。下一步实现冻结产物输入与依赖驱动的最小重算，再用保留样本验证真实增量恢复。",
+      "next": "电商第二任务已复用工作流 v2，输入身份正确，修订后原始验证器 7/7 且无发送邮件；当前格式 fanout 也已仅重跑 calculator、完整保留 reviewer，并在固定预算内交付。阶段二剩余日冕业务材料/外部副作用恢复复验、自动可修复错误以及可比人工时间/A-B-C 数据。",
       "evidence": [
         "tool-contracts/mechanism-verification.json",
         "member-budget/mechanism-verification.json",
@@ -36,7 +38,12 @@
         "repaired-business/corona/workbench-run-20260909/external-verification.json",
         "repaired-business/corona/workbench-run-20260909/v4-run-evidence.json",
         "repaired-business/corona/workbench-run-20260909/v4-external-verification.json",
-        "repaired-business/corona/workbench-run-20260909/deep-review-20260909.md"
+        "repaired-business/corona/workbench-run-20260909/deep-review-20260909.md",
+        "held-out/correction-replay-02/verification-summary.json",
+        "held-out/correction-replay-02/final-activity.json",
+        "held-out/correction-replay-02/artifact-comparison.json",
+        "repaired-business/invoice/final-verification.json",
+        "repaired-business/invoice/weave-run-evidence.json"
       ]
     },
     {

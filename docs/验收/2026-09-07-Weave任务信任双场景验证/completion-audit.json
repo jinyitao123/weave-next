@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "recorded_at": "2026-09-10T01:41:00+08:00",
+  "recorded_at": "2026-09-10T03:06:00+08:00",
   "record_kind": "evidence_bounded_exit_audit",
   "plan": {
     "path": "docs/计划/2026-09-07-Weave任务信任契约与双场景三阶段验证.md",
@@ -9,7 +9,7 @@
   "overall": "NOT_COMPLETE",
   "goal_status_changed": false,
   "stage_completion_claimed": true,
-  "scope": "Retained business evidence plus frozen cold-start attempts. The latest compiler-checked sample selected an OAuth-authenticated Claude runtime, completed all four members, mapped an outputs/... published contract to the collector-relative artifact, and passed all five machine checks. Workbench showed completed execution, passed delivery and unrated user assessment separately. This closes one local text-delivery slice; it does not establish user adoption, ecommerce external effects, Corona incremental recovery, or broad generalization.",
+  "scope": "Retained business evidence plus frozen cold-start and correction-replay attempts. The latest current-format fanout run was dispatched through Workbench, corrected one completed member at the join safe point, preserved the sibling physical task and artifacts, changed only the requested calculator lines, passed all five delivery checks within budget, and received an adopted assessment for the exact delivery revision. This closes the exercised member-replay defect for one local text workflow; it does not establish Corona external-effect recovery, the historical ecommerce replay, or comparable A/B/C performance.",
   "status_definitions": {
     "PARTIAL": "Some required evidence exists, but the exit is not satisfied in full.",
     "FAIL": "An observed result violates the exit.",
@@ -183,23 +183,29 @@
             "held-out/support-queue/first-run-evidence.json",
             "held-out/inventory-batch/first-run-evidence.json",
             "held-out/shipment-delay/build-attempt-evidence.json",
-            "held-out/returns-aging/first-run-evidence.json"
+            "held-out/returns-aging/first-run-evidence.json",
+            "held-out/correction-replay-02/verification-summary.json",
+            "held-out/correction-replay-02/user-assessment.json"
           ],
-          "finding": "The compiler-checked returns-aging sample inherited workflow v1 and its published explicit contract, completed all four authenticated members, produced the required file, and passed coverage, output, artifact content, no-external-effects and output-schema checks. This proves one local text-delivery slice; the original ecommerce and Corona packages retain their documented gaps.",
+          "finding": "The compiler-checked returns-aging sample inherited workflow v1 and its published explicit contract, completed all four authenticated members, produced the required file, and passed coverage, output, artifact content, no-external-effects and output-schema checks. This proves one local text-delivery slice; the original ecommerce and Corona packages retain their documented gaps. A second frozen local text sample also completed a real Workbench correction cycle, passed delivery, and recorded an adopted assessment bound to the exact delivery revision.",
           "remaining": "Keep the positive claim limited to this frozen local sample. Historical ecommerce replay identity and Corona incremental recovery remain outside this result."
         },
         {
           "id": "stage-1.exit-2",
           "plan_exit": "历史电商任务是否真实可复验得到明确结论。",
-          "status": "INSUFFICIENT_EVIDENCE",
+          "status": "PASS",
           "evidence": [
             "ecommerce/assessment.md",
             "ecommerce/dispatch.json",
             "ecommerce/fixture/remote001/manifest.json",
-            "ecommerce/verification.json"
+            "ecommerce/verification.json",
+            "repaired-business/vendor/final-verification.json",
+            "repaired-business/vendor/weave-run-evidence.json",
+            "repaired-business/invoice/final-verification.json",
+            "repaired-business/invoice/weave-run-evidence.json"
           ],
-          "finding": "The fixed benchmark and new isolated first run are traceable; a complete identity/evidence chain for an earlier ecommerce run is not present in this package.",
-          "remaining": "Either recover the prior exact run chain or retain the bounded conclusion that this is a new baseline, not a completed historical replay."
+          "finding": "The prior exact historical chain remains unavailable, and that limitation is retained. Two new isolated tasks using the frozen open-source benchmark and the repaired published workflow produced decisive results: vendor business state passed 7/7 although its team run failed during verifier response, while invoice completed both members and, after a scoped correction, passed the original verifier 7/7 with no sent mail. This is a new reproducible baseline, not a reconstruction of the old run.",
+          "remaining": "No further historical reconstruction is claimed. Keep old-run provenance unavailable and use the new frozen runs as the current baseline."
         },
         {
           "id": "stage-1.exit-3",
@@ -216,9 +222,11 @@
             "held-out/incident-review/first-run-evidence.json",
             "held-out/support-queue/first-run-evidence.json",
             "held-out/inventory-batch/first-run-evidence.json",
-            "held-out/returns-aging/first-run-evidence.json"
+            "held-out/returns-aging/first-run-evidence.json",
+            "held-out/correction-replay-02/final-delivery.json",
+            "held-out/correction-replay-02/user-assessment.json"
           ],
-          "finding": "The current Workbench projection was truthful in both directions: the inventory sample displayed successful execution with failed delivery, and the returns-aging sample displayed successful execution with passed delivery; both kept user assessment independently unrated.",
+          "finding": "Workbench kept execution, five machine delivery checks, and revision-specific user assessment separate. The latest corrected run displayed completed execution and passed delivery before the operator recorded adopted for the exact revision.",
           "remaining": "No projection defect remains in this bounded positive/negative pair. Cross-Host user assessment authority remains later scope."
         },
         {
@@ -262,14 +270,16 @@
         {
           "id": "stage-2.exit-1",
           "plan_exit": "电商第二次任务无需重新设计流程，且没有跨输入污染。",
-          "status": "FAIL",
+          "status": "PASS",
           "evidence": [
             "ecommerce/stage2-invoice/dispatch.json",
             "ecommerce/stage2-invoice/verification.json",
-            "ecommerce/stage2-rubric-alignment.json"
+            "ecommerce/stage2-rubric-alignment.json",
+            "repaired-business/invoice/final-verification.json",
+            "repaired-business/invoice/weave-run-evidence.json"
           ],
-          "finding": "Team and workflow version 1 were reused, but two of three dispatches used the previous VBR-52 task and all three were cancelled.",
-          "remaining": "Input identity binding is implemented and its mechanism checks passed. Obtain a valid independent second task using a new isolated business sample; the fresh-conversation comparator remains NOT_RUN."
+          "finding": "The earlier invoice dispatch incident remains a retained failure. In the repaired isolated invoice run, the same published workflow v2 was reused without redesign, the input binding matched the new invoice task except for a final newline, both members completed, a scoped follow-up removed only the erroneous star, and the original benchmark verifier passed 7/7 with zero sent mail.",
+          "remaining": "No further work remains for the bounded repaired ecommerce reuse claim. Do not erase the earlier cross-input failure or generalize from two benchmark tasks to every input class."
         },
         {
           "id": "stage-2.exit-2",
@@ -279,10 +289,14 @@
             "corona/recovery-verification.json",
             "corona/dispatch.json",
             "repaired-business/corona/workbench-run-20260909/v4-run-evidence.json",
-            "repaired-business/corona/workbench-run-20260909/v4-external-verification.json"
+            "repaired-business/corona/workbench-run-20260909/v4-external-verification.json",
+            "held-out/correction-replay-02/correction-ready.json",
+            "held-out/correction-replay-02/final-activity.json",
+            "held-out/correction-replay-02/artifact-comparison.json",
+            "held-out/correction-replay-02/verification-summary.json"
           ],
-          "finding": "The older bounded receipt sample preserved confirmed operation hashes without duplicate physical matches. Corona v4 did not exercise recovery: its correction was discarded, old artifacts were not bound, and the digital result was rebuilt.",
-          "remaining": "Keep the no-duplicate claim limited to the recorded receipt set. Bind a prior artifact snapshot, apply a member-scoped correction, and prove only affected dependents rerun while identities, receipts and preserved artifacts remain auditable."
+          "finding": "The older bounded receipt sample preserved confirmed operation hashes. In the new current-format local fanout sample, the applied member correction restarted only parallel-01/calculator, preserved parallel-02/reviewer with the same physical task and artifact refs, changed exactly the requested two calculator lines, and rebuilt downstream join/finalizer/delivery successfully. Corona v4 itself did not exercise this recovery and had no bound old artifacts.",
+          "remaining": "Repeat the now-proven current-format member replay on Corona business materials or an equivalent side-effect-bearing workflow before extending the no-duplicate business claim beyond this local no-external-effects sample."
         },
         {
           "id": "stage-2.exit-3",
@@ -295,24 +309,29 @@
             "ecommerce/stage2-invoice/user-decisions.json",
             "corona/activity.json",
             "corona/user-decisions.json",
-            "repaired-business/corona/workbench-run-20260909/v4-run-evidence.json"
+            "repaired-business/corona/workbench-run-20260909/v4-run-evidence.json",
+            "repaired-business/invoice/weave-run-evidence.json",
+            "held-out/correction-replay-02/verification-summary.json",
+            "held-out/correction-replay-02/user-assessment.json"
           ],
-          "finding": "Corona v4 records wall-clock timestamps, USD cost, input/output tokens and two-runtime participation. Human handling time and a comparable A/B/C workload are still missing, and ecommerce invoice usage remains unavailable.",
-          "remaining": "Measure the specified dimensions prospectively in valid comparable runs; do not infer human time, treat unavailable zero fields as measured zero, or infer total cost from final-call usage."
+          "finding": "The repaired invoice evidence records member task timing, tool-call counts, model usage and costs, while the local correction sample records request, ready, confirmation and terminal timestamps, one confirmation, total usage and cost. Corona v4 records wall time, USD cost, input/output tokens and two-runtime participation. A consistently measured active human-handling duration and aligned A/B/C workload are still missing.",
+          "remaining": "Measure active human handling with a prospective timer and run aligned A/B/C comparators; timestamp gaps alone include model/runtime wait and are not human effort."
         },
         {
           "id": "stage-2.exit-4",
           "plan_exit": "普通可修复错误在契约预算内由系统继续推进，不依赖用户反复输入“继续”。",
-          "status": "INSUFFICIENT_EVIDENCE",
+          "status": "PARTIAL",
           "evidence": [
             "ecommerce/stage2-invoice/dispatch-incident.json",
             "corona/history/last-run-budget-exhaustion.json",
             "corona/recovery-verification.json",
             "repaired-business/corona/workbench-run-20260909/v4-external-verification.json",
-            "repaired-business/corona/workbench-run-20260909/deep-review-20260909.md"
+            "repaired-business/corona/workbench-run-20260909/deep-review-20260909.md",
+            "held-out/correction-replay-02/verification-summary.json",
+            "held-out/correction-replay-02/user-assessment.json"
           ],
-          "finding": "Mechanism tests cover durable budget pause/resume. In Corona v4, a member correction waited for a safe boundary, then expanded to all parallel siblings and was discarded; the run completed by full regeneration rather than bounded autonomous repair.",
-          "remaining": "Bind frozen prior artifacts, stop the affected member promptly, compute impact from data dependencies, and demonstrate one ordinary error repaired within the fixed budget without broad sibling reruns or repeated user continuation."
+          "finding": "Durable budget mechanisms remain covered by PostgreSQL tests. The new Workbench run accepted one explicit member correction, waited for the join safe point, presented the bounded impact, resumed after one confirmation, stayed within the fixed USD budget, and required no repeated “continue”. This was an operator-requested adjustment, not an autonomously detected ordinary error.",
+          "remaining": "Exercise the same bounded continuation on an actual ordinary recoverable fault without a user-authored correction instruction, or keep the autonomous-repair claim open."
         }
       ],
       "recovery_requirements_not_closed": [
@@ -474,14 +493,14 @@
     "constant_workload_speed_comparison": false,
     "CLI_vs_Loom_ranking_supported": false,
     "engine_success_rate_supported": false,
-    "user_acceptance": "ECOMMERCE_ADOPTED_CORONA_NOT_SUBMITTED"
+    "user_acceptance": "ECOMMERCE_ADOPTED_CORONA_NOT_SUBMITTED_LOCAL_CORRECTION_REPLAY_ADOPTED"
   },
   "audit_limits": [
     "This is an artifact/evidence audit, not new execution or product completion.",
     "Hash inventories attest to the files read at audit time; they do not upgrade model claims into verified business effects.",
     "Existing raw evidence and initial aggregate observations are preserved."
   ],
-  "updated_at": "2026-09-09T16:56:00+00:00",
+  "updated_at": "2026-09-09T19:06:00+00:00",
   "mechanism_updates": [
     {
       "source_commit": "1bad43f71692a89b1502dcc075305b32fe267dc2",
@@ -494,6 +513,12 @@
       "evidence": "held-out/returns-aging/first-run-evidence.json",
       "status": "PASSED",
       "business_acceptance": "LOCAL_TEXT_DELIVERY_MACHINE_PASS_USER_UNRATED"
+    },
+    {
+      "source_commit": "a197fa7952d44635e85c19bde544beb6fafe9aa1",
+      "evidence": "held-out/correction-replay-02/verification-summary.json",
+      "status": "PASSED_CURRENT_FORMAT_MEMBER_REPLAY",
+      "business_acceptance": "LOCAL_TEXT_DELIVERY_ADOPTED_EXACT_REVISION"
     }
   ],
   "latest_corona_workbench_run": {
@@ -548,5 +573,30 @@
     "rerun": false,
     "overall": "MACHINE_VERIFIED_USER_UNRATED",
     "evidence": "held-out/returns-aging/first-run-evidence.json"
+  },
+  "latest_incremental_correction_run": {
+    "run_id": "run-02401d26-78a3-5025-b3d4-da6462140992",
+    "team_id": "708c6c24-11bb-4b13-82b1-c01d325a5b05",
+    "execution_status": "succeeded",
+    "correction_status": "applied",
+    "restart_node_id": "parallel-01",
+    "preserved_node_ids": [
+      "lead",
+      "parallel-02"
+    ],
+    "calculator_physical_tasks": 2,
+    "reviewer_physical_tasks": 1,
+    "calculator_content_delta": "exactly source-version initial->corrected plus formula line",
+    "delivery_verification": "5/5 passed",
+    "cost_usd": 1.114399,
+    "budget_usd": 1.5,
+    "user_assessment": "adopted exact delivery revision",
+    "quality_finding": "lead node created role-like artifacts outside its coordination responsibility",
+    "scope_limit": "one current-format local text workflow with external_effects=none",
+    "evidence": [
+      "held-out/correction-replay-02/verification-summary.json",
+      "held-out/correction-replay-02/final-delivery.json",
+      "held-out/correction-replay-02/user-assessment.json"
+    ]
   }
 }
