@@ -1,0 +1,225 @@
+{
+  "schema_version": "1.0",
+  "captured_at": "2026-09-09T11:59:17.849529+08:00",
+  "execution_source_commit": "564b378170f44a8c717a0bf0709b288dbc5fda84",
+  "post_run_classifier_fix_commit": "e620e353c0d84d653f9c83600a0de71253e0e11b",
+  "input_revision_id": "8c7428eb-b4e2-49f5-8de6-420246e7ac63",
+  "client_request_id": "4bd30f74-63a4-442b-9b83-484ed30777a5",
+  "run": {
+    "workspace_id": "default",
+    "run_id": "run-e6cbc3ee-8bc8-51a3-96e7-f0ae012ef9e5",
+    "status": "failed",
+    "team_id": "104b1ef7-d0a9-43a9-88fe-447a00b1ed61",
+    "workflow_id": "realreplicabench-gmail-calendar-mock-workflow",
+    "workflow_version": 2,
+    "run_snapshot_id": "run-e6cbc3ee-8bc8-51a3-96e7-f0ae012ef9e5",
+    "source_kind": "manual",
+    "source_task_id": "task-14a3187b-0171-50fd-a26b-67e3f03f4a35",
+    "error_code": "team_run_execution_unrecoverable",
+    "cause_summary": "team_run_execution_unrecoverable: API Error: Connection lost mid-response. The response above may be incomplete.",
+    "created_at": "2026-09-09T11:31:30.238951+08:00",
+    "updated_at": "2026-09-09T11:34:06.391871+08:00",
+    "terminal_at": "2026-09-09T11:34:06.391871+08:00"
+  },
+  "activity_counts": {
+    "member_completed": 1,
+    "member_failed": 1,
+    "member_started": 2,
+    "runtime_public": 87,
+    "tool_completed": 36,
+    "tool_started": 36
+  },
+  "member_events": [
+    {
+      "seq": 1847,
+      "kind": "member_started",
+      "node_id": "execute",
+      "member_id": "2ecdefd3-c85a-4959-a3c8-a6a10f1501b5",
+      "member_version": 2,
+      "detail": {
+        "input_names": [
+          "task"
+        ],
+        "input_summary": {
+          "task": "\"我是 Buyer Ops 的助理，要为 `VBR-52` 供应商会议简报准备 Gmail/Calendar 工作状态。\\n\\n只能通过 `http://127.0.0.1:3071/mcp` 访问 Gmail Workspace/MCP，用 JSON-RPC `tools/list` 和 `tools/call` 调用工具。当前业务日期固定为 `2025-06-21`；价格信息冲突时以最新 final price 为准。所有线索都在 Gmail 邮箱里，没有额外附件。\\n\\n请先用 MCP 把 VBR-52 相关邮件读清楚，区分**当前有效**的工作线程和**过时或无关**的旧线索。\\n\\n创建顶层标签 `VBR-52`，把当前有…"
+        }
+      },
+      "occurred_at": "2026-09-09T11:31:30.295739+08:00"
+    },
+    {
+      "seq": 1946,
+      "kind": "member_completed",
+      "node_id": "execute",
+      "member_id": "2ecdefd3-c85a-4959-a3c8-a6a10f1501b5",
+      "member_version": 2,
+      "detail": {
+        "tool_calls": 22,
+        "duration_ms": 100045,
+        "input_tokens": 335933,
+        "output_tokens": 8318
+      },
+      "occurred_at": "2026-09-09T11:33:10.34128+08:00"
+    },
+    {
+      "seq": 1947,
+      "kind": "member_started",
+      "node_id": "verify",
+      "member_id": "e755cf5d-25b4-4e5b-92be-cae5c8602e2c",
+      "member_version": 3,
+      "detail": {
+        "input_names": [
+          "execution",
+          "task"
+        ],
+        "input_summary": {
+          "task": "\"我是 Buyer Ops 的助理，要为 `VBR-52` 供应商会议简报准备 Gmail/Calendar 工作状态。\\n\\n只能通过 `http://127.0.0.1:3071/mcp` 访问 Gmail Workspace/MCP，用 JSON-RPC `tools/list` 和 `tools/call` 调用工具。当前业务日期固定为 `2025-06-21`；价格信息冲突时以最新 final price 为准。所有线索都在 Gmail 邮箱里，没有额外附件。\\n\\n请先用 MCP 把 VBR-52 相关邮件读清楚，区分**当前有效**的工作线程和**过时或无关**的旧线索。\\n\\n创建顶层标签 `VBR-52`，把当前有…",
+          "execution": "\"全部自检通过。任务已完成——无需写文件（任务明确\\\"完成后直接结束，无需另外写文件\\\"），所有业务读写均已通过受管 MCP 工具落到 Mock 状态。\\n\\n## 执行报告\\n\\n**冻结合同**：见上方首段（唯一范围、原样地址 `http://127.0.0.1:3071/mcp`、允许/禁止操作、预期状态、复核线索、边界披露）。地址存在且无冲突，未触发停止。\\n\\n**只读探查 → 辨线**：搜索 `VBR-52` 共 6 封。按业务日期 `2025-06-21` 与内容判定：\\n\\n| 邮件 | 时间 | 类别 | 是否有效 | 标记 |\\n|---|---|---|---|---|\\n| vbr-001-brief | 0…"
+        }
+      },
+      "occurred_at": "2026-09-09T11:33:10.354146+08:00"
+    },
+    {
+      "seq": 2009,
+      "kind": "member_failed",
+      "node_id": "verify",
+      "member_id": "e755cf5d-25b4-4e5b-92be-cae5c8602e2c",
+      "member_version": 3,
+      "detail": {
+        "retryable": false,
+        "error_code": "team_run_execution_unrecoverable",
+        "duration_ms": 56025,
+        "failure_class": "work",
+        "failure_reason": "the stage could not complete its assigned work"
+      },
+      "occurred_at": "2026-09-09T11:34:06.379892+08:00"
+    }
+  ],
+  "runtime_tasks": [
+    {
+      "id": "task-90b0f6f4408ad423e6c1f56b2acac9ad",
+      "status": "completed",
+      "agent": "realreplicabench-gmail-calendar-mock-business-executor",
+      "source": "dispatch",
+      "runtime_id": "fec94563-0d22-4c21-8036-861900652850",
+      "agent_id": "2ecdefd3-c85a-4959-a3c8-a6a10f1501b5",
+      "agent_version": 2,
+      "created_at": "2026-09-09T11:31:30.307968+08:00",
+      "started_at": "2026-09-09T11:31:30.374525+08:00",
+      "completed_at": "2026-09-09T11:33:09.04967+08:00",
+      "result_status": "completed",
+      "error": null,
+      "reported_models": [
+        "deepseek-v4-flash-vision-exp"
+      ],
+      "usage_receipt": {
+        "scope": "invocation",
+        "source": "cli-reported",
+        "cost_usd": 0.539651,
+        "has_cost": true,
+        "has_tokens": true,
+        "raw_summary": "{\"is_error\":false,\"duration_api_ms\":88844,\"num_turns\":23,\"stop_reason\":\"end_turn\",\"session_id\":\"8960a2d6-66d1-42b4-9114-ca0b843d24c4\",\"total_cost_usd\":0.539651,\"usage\":{\"input_tokens\":32701,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":303232,\"output_tokens\":8318,\"output_tokens_details\":{\"thinking_tokens\":0},\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":0,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"\",\"iterations\":[],\"speed\":\"standard\"},\"modelUsage\":{\"deepseek-v4-flash-vision-exp\":{\"inputTokens\":34147,\"outputTokens\":8692,\"cacheReadInputTokens\":303232,\"cacheCreationInputTokens\":0,\"webSearchRequests\":0,\"costUSD\":0.539651,\"contextWindow\":200000,\"maxOutputTokens\":32000,\"canonicalModel\":\"deepseek-v4-flash-vision-exp\",\"provider\":\"firstParty\"}},\"permission_denials\":[],\"terminal_reason\":\"completed\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"subagent_stats\":{\"spawned\":0,\"requested\":{\"background\":0,\"foreground\":0,\"unset\":0},\"started_in_background\":0,\"max_depth\":0,\"spawned_by_subagents\":0,\"completed\":0,\"failed\":0,\"killed\":{\"parent\":0,\"user\":0,\"system\":0},\"refused\":{\"depth_limit\":0,\"concurrency_limit\":0,\"budget\":0},\"by_type\":{}},\"subtype\":\"success\",\"api_error_status\":null,\"result\":\"全部自检通过。任务已完成——无需写文件（任务明确\\\"完成后直接结束，无需另外写文件\\\"），所有业务读写均已通过受管 MCP 工具落到 Mock 状态。\\n\\n## 执行报告\\n\\n**冻结合同**：见上方首段（唯一范围、原样地址 `http://127.0.0.1:3071/mcp`、允许/禁止操作、预期状态、复核线索、边界披露）。地址存在且无冲突，未触发停止。\\n\\n**只读探查 → 辨线**：搜索 `VBR-52` 共 6 封。按业务日期 `2025-06-21` 与内容判定：\\n\\n| 邮件 | 时间 | 类别 | 是否有效 | 标记 |\\n|---|---|---|---|---|\\n| vbr-001-brief | 06-21 09:00 | 任务说明 | ✅ 有效 | 标签+已读 |\\n| vbr-002-capacity | 06-21 09:18 | 产能 24k/week（交期 17 天） | ✅ 有效 | 标签+已读 |\\n| vbr-003-quality | 06-21 09:36 | 质量 blocker（zipper seam AQL drift / CAPA-52） | ✅ 有效 | 标签+已读+**星标** |\\n| vbr-004-price | 06-21 09:54 | 最终单价 USD 7.42 | ✅ 有效 | 标签+已读+**星标** |\\n| vbr-005-meeting | 06-21 10:08 | 会议窗口 09:00-09:45 HKT | ✅ 有效 | 标签+已读 |\\n| vbr-006-old-price | 06-07 11:00 | 旧报价 USD 7.10 | ❌ 过时 | **未动** |\\n\\n**实际写入（真实工具调用为据）**：\\n1. 创建顶层标签 `VBR-52` → id `custom-1`（`createLabel` 返回 `created`）。\\n2. `batchModify`（成功 `modifiedCount:3`）：vbr-001/002/005 加 `VBR-52`、去 `UNREAD`。\\n3. `batchModify`（成功 `modifiedCount:2`）：vbr-003/004 加 `VBR-52`+`STARRED`、去 `UNREAD`。\\n4. 草稿 `createDraft` → id `draft-mttjltp4-rb9d6`（DRAFT 标签），to `buyer.ops@auroraretail.test`，主题 `[VBR-52] Vendor call brief — capacity, delivery, quality & final price`，正文含 24k/week、17 days after trim approval、zipper seam AQL drift + CAPA-52、USD 7.42、2025-06-21 09:00-09:45 HKT。\\n5. 日历事件 `createEvent` → id `cal-mttjly6e-ecec0`，`VBR-52 Harbor Stitch`，2025-06-21 09:00–09:45，guests `buyer.ops@auroraretail.test, account@harborstitch.test`，description 摘要产能/交期/质量/价格。\\n\\n**核验（读回，逐项符合）**：\\n- vbr-001/002/005：`INBOX, custom-1, IMPORTANT`（已含 VBR-52，无 UNREAD，无星标）✅\\n- vbr-003/004：`INBOX, custom-1, STARRED, IMPORTANT` ✅\\n- vbr-006（旧价）：`INBOX`（原样未改）✅\\n- 日历事件读回 `cal-mttjly6e-ecec0` 与写入一致 ✅\\n- 草稿经 `createDraft` 返回值确证存在；补充 `in:draft VBR-52` 搜索返回 0（Mock 搜索索引或不覆盖草稿字段，不代表草稿缺失，以创建返回为准）。\\n\\n**准确文本（逐字引用，未改写）**：`Current capacity is 24k/week.`/`Normal lead time is 17 days after trim approval.`/`zipper seam AQL drift`/`CAPA-52`/`",
+        "input_tokens": 335933,
+        "output_tokens": 8318,
+        "engine_version": "2.1.245 (Claude Code)"
+      },
+      "tool_call_count": 22,
+      "tool_counts": {
+        "mcp__mcp__calendar_createEvent": 1,
+        "mcp__mcp__calendar_list": 1,
+        "mcp__mcp__calendar_listEvents": 1,
+        "mcp__mcp__gmail_batchModify": 2,
+        "mcp__mcp__gmail_createDraft": 1,
+        "mcp__mcp__gmail_createLabel": 1,
+        "mcp__mcp__gmail_get": 12,
+        "mcp__mcp__gmail_listLabels": 1,
+        "mcp__mcp__gmail_search": 2
+      },
+      "native_tool_call_count": 0,
+      "session_id": "8960a2d6-66d1-42b4-9114-ca0b843d24c4",
+      "artifact_collection": {
+        "limits": {
+          "max_files": 128,
+          "max_file_bytes": 262144,
+          "max_total_bytes": 524288
+        },
+        "complete": true,
+        "schema_version": 1
+      }
+    },
+    {
+      "id": "task-3d4579df9f631ad839e5c7ae91eb7b3f",
+      "status": "completed",
+      "agent": "realreplicabench-gmail-calendar-mock-readonly-verifier",
+      "source": "dispatch",
+      "runtime_id": "16b2e0c8-d8a9-494e-a1dc-61f397aceabf",
+      "agent_id": "e755cf5d-25b4-4e5b-92be-cae5c8602e2c",
+      "agent_version": 3,
+      "created_at": "2026-09-09T11:33:10.357061+08:00",
+      "started_at": "2026-09-09T11:33:10.377964+08:00",
+      "completed_at": "2026-09-09T11:34:05.467537+08:00",
+      "result_status": "failed",
+      "error": "API Error: Connection lost mid-response. The response above may be incomplete.",
+      "reported_models": [
+        "deepseek-v4-flash-vision-exp",
+        "<synthetic>"
+      ],
+      "usage_receipt": {
+        "scope": "invocation",
+        "source": "cli-reported",
+        "cost_usd": 0.307987,
+        "has_cost": true,
+        "has_tokens": true,
+        "raw_summary": "{\"is_error\":true,\"duration_api_ms\":54561,\"num_turns\":15,\"stop_reason\":\"stop_sequence\",\"session_id\":\"dc7ef8f9-9519-4b28-a2bc-8e4c71b4a42c\",\"total_cost_usd\":0.307987,\"usage\":{\"input_tokens\":30479,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":60032,\"output_tokens\":2954,\"output_tokens_details\":{\"thinking_tokens\":0},\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":0,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"\",\"iterations\":[],\"speed\":\"standard\"},\"modelUsage\":{\"deepseek-v4-flash-vision-exp\":{\"inputTokens\":33634,\"outputTokens\":3729,\"cacheReadInputTokens\":93184,\"cacheCreationInputTokens\":0,\"webSearchRequests\":0,\"costUSD\":0.307987,\"contextWindow\":200000,\"maxOutputTokens\":32000,\"canonicalModel\":\"deepseek-v4-flash-vision-exp\",\"provider\":\"firstParty\"}},\"permission_denials\":[],\"terminal_reason\":\"api_error\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"subagent_stats\":{\"spawned\":0,\"requested\":{\"background\":0,\"foreground\":0,\"unset\":0},\"started_in_background\":0,\"max_depth\":0,\"spawned_by_subagents\":0,\"completed\":0,\"failed\":0,\"killed\":{\"parent\":0,\"user\":0,\"system\":0},\"refused\":{\"depth_limit\":0,\"concurrency_limit\":0,\"budget\":0},\"by_type\":{}},\"subtype\":\"success\",\"api_error_status\":null,\"result\":\"API Error: Connection lost mid-response. The response above may be incomplete.\",\"type\":\"result\",\"duration_ms\":53707,\"uuid\":\"80614be6-abb9-4251-a1e7-242e1b0def21\",\"queued_turn_count\":0}",
+        "input_tokens": 90511,
+        "output_tokens": 2954,
+        "engine_version": "2.1.245 (Claude Code)"
+      },
+      "tool_call_count": 14,
+      "tool_counts": {
+        "mcp__mcp__calendar_getEvent": 1,
+        "mcp__mcp__calendar_list": 1,
+        "mcp__mcp__calendar_listEvents": 1,
+        "mcp__mcp__gmail_get": 7,
+        "mcp__mcp__gmail_listLabels": 1,
+        "mcp__mcp__gmail_search": 3
+      },
+      "native_tool_call_count": 0,
+      "session_id": "dc7ef8f9-9519-4b28-a2bc-8e4c71b4a42c",
+      "artifact_collection": {
+        "limits": {
+          "max_files": 128,
+          "max_file_bytes": 262144,
+          "max_total_bytes": 524288
+        },
+        "complete": true,
+        "schema_version": 1
+      }
+    }
+  ],
+  "final_deliverables": [
+    {
+      "id": "deliverable_8d506a6e09233b3c4c29c66b51cdbf76",
+      "run_id": "run-e6cbc3ee-8bc8-51a3-96e7-f0ae012ef9e5",
+      "title": "阶段产物 · 单一业务执行员",
+      "content": "全部自检通过。任务已完成——无需写文件（任务明确\"完成后直接结束，无需另外写文件\"），所有业务读写均已通过受管 MCP 工具落到 Mock 状态。\n\n## 执行报告\n\n**冻结合同**：见上方首段（唯一范围、原样地址 `http://127.0.0.1:3071/mcp`、允许/禁止操作、预期状态、复核线索、边界披露）。地址存在且无冲突，未触发停止。\n\n**只读探查 → 辨线**：搜索 `VBR-52` 共 6 封。按业务日期 `2025-06-21` 与内容判定：\n\n| 邮件 | 时间 | 类别 | 是否有效 | 标记 |\n|---|---|---|---|---|\n| vbr-001-brief | 06-21 09:00 | 任务说明 | ✅ 有效 | 标签+已读 |\n| vbr-002-capacity | 06-21 09:18 | 产能 24k/week（交期 17 天） | ✅ 有效 | 标签+已读 |\n| vbr-003-quality | 06-21 09:36 | 质量 blocker（zipper seam AQL drift / CAPA-52） | ✅ 有效 | 标签+已读+**星标** |\n| vbr-004-price | 06-21 09:54 | 最终单价 USD 7.42 | ✅ 有效 | 标签+已读+**星标** |\n| vbr-005-meeting | 06-21 10:08 | 会议窗口 09:00-09:45 HKT | ✅ 有效 | 标签+已读 |\n| vbr-006-old-price | 06-07 11:00 | 旧报价 USD 7.10 | ❌ 过时 | **未动** |\n\n**实际写入（真实工具调用为据）**：\n1. 创建顶层标签 `VBR-52` → id `custom-1`（`createLabel` 返回 `created`）。\n2. `batchModify`（成功 `modifiedCount:3`）：vbr-001/002/005 加 `VBR-52`、去 `UNREAD`。\n3. `batchModify`（成功 `modifiedCount:2`）：vbr-003/004 加 `VBR-52`+`STARRED`、去 `UNREAD`。\n4. 草稿 `createDraft` → id `draft-mttjltp4-rb9d6`（DRAFT 标签），to `buyer.ops@auroraretail.test`，主题 `[VBR-52] Vendor call brief — capacity, delivery, quality & final price`，正文含 24k/week、17 days after trim approval、zipper seam AQL drift + CAPA-52、USD 7.42、2025-06-21 09:00-09:45 HKT。\n5. 日历事件 `createEvent` → id `cal-mttjly6e-ecec0`，`VBR-52 Harbor Stitch`，2025-06-21 09:00–09:45，guests `buyer.ops@auroraretail.test, account@harborstitch.test`，description 摘要产能/交期/质量/价格。\n\n**核验（读回，逐项符合）**：\n- vbr-001/002/005：`INBOX, custom-1, IMPORTANT`（已含 VBR-52，无 UNREAD，无星标）✅\n- vbr-003/004：`INBOX, custom-1, STARRED, IMPORTANT` ✅\n- vbr-006（旧价）：`INBOX`（原样未改）✅\n- 日历事件读回 `cal-mttjly6e-ecec0` 与写入一致 ✅\n- 草稿经 `createDraft` 返回值确证存在；补充 `in:draft VBR-52` 搜索返回 0（Mock 搜索索引或不覆盖草稿字段，不代表草稿缺失，以创建返回为准）。\n\n**准确文本（逐字引用，未改写）**：`Current capacity is 24k/week.`/`Normal lead time is 17 days after trim approval.`/`zipper seam AQL drift`/`CAPA-52`/`After carton change, final price is USD 7.42.`/`Ignore older USD 7.10 reference.`/`2025-06-21 09:00-09:45 HKT`。\n\n**调用量与耗时**：本次共 22 次受管 MCP 工具调用（查询与写入），全部经由预配置的受管 MCP 工具完成；未使用 Bash/curl/Python/WebFetch，未读 grader/private，未输出任何服务/API 密钥，未发送任何邮件，未委派写操作。过程无等待阻塞，实时完成。\n\n**未完成项**：无。所有职责内动作均已落实并通过读回核验。",
+      "content_type": "text/markdown",
+      "metadata": {
+        "source": "published_workflow",
+        "node_id": "execute",
+        "filename": "",
+        "node_type": "worker",
+        "node_label": "单一业务执行员",
+        "artifact_kind": "stage"
+      },
+      "created_at": "2026-09-09T11:33:10.341581+08:00"
+    }
+  ],
+  "assessment": {
+    "business_state": "passed_external_verifier_7_of_7",
+    "team_run": "failed_after_writer_completion",
+    "failure_boundary": "readonly_verifier provider connection lost mid-response",
+    "historical_classification": "work_non_retryable",
+    "retroactive_rewrite_performed": false,
+    "native_business_tool_calls_observed": 0
+  }
+}
