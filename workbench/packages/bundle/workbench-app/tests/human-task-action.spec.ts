@@ -508,6 +508,7 @@ describe('exact human wait actions', () => {
     try {
       await vi.advanceTimersByTimeAsync(0)
       expect((await app.action({ action: 'stage-retry', sessionId: 'session-1', runId: 'run-1', nodeId: 'review' })).status).toBe(204)
+      expect(Object.hasOwn(app.state().task?.pendingAction ?? {}, 'authorizedTotalRounds')).toBe(false)
       const identity = app.state().task?.pendingAction?.idempotencyKey
       expect(identity).toMatch(/^workbench-stage-retry:/)
       await vi.advanceTimersByTimeAsync(1000)

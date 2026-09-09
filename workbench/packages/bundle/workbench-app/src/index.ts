@@ -1270,7 +1270,8 @@ export function apply(ctx: Context, config: Config = {}): void {
           || (input.authorizedTotalRounds !== undefined && (budget === undefined || input.authorizedTotalRounds < budget.authorizedTotalRounds))) {
           return Response.json({ error: '请输入高于已用额度的新累计轮次上限。' }, { status: 409 })
         }
-        pendingAction = { kind: 'stage-retry', authorizedTotalRounds: input.authorizedTotalRounds, targetRunId: current.runId, idempotencyKey: `workbench-stage-retry:${randomUUID()}`, clientRequestId: '', brief: '', requestedAt: Date.now(),
+        pendingAction = { kind: 'stage-retry', ...(input.authorizedTotalRounds === undefined ? {} : { authorizedTotalRounds: input.authorizedTotalRounds }),
+          targetRunId: current.runId, idempotencyKey: `workbench-stage-retry:${randomUUID()}`, clientRequestId: '', brief: '', requestedAt: Date.now(),
           targetKind: '', targetMemberId: '', correctionId: '', disposition: '', instruction: current.members.flatMap(member => member.stages).find(stage => stage.nodeId === input.nodeId)?.name ?? '', nodeId: input.nodeId }
       } else if (input.action === 'human-complete') {
         if (current.status !== 'waiting' || current.waitKind !== 'human' || current.humanTask?.interactionId !== input.interactionId) {
