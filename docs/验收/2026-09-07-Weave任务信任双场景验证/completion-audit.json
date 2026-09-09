@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "recorded_at": "2026-09-10T01:25:00+08:00",
+  "recorded_at": "2026-09-10T01:41:00+08:00",
   "record_kind": "evidence_bounded_exit_audit",
   "plan": {
     "path": "docs/计划/2026-09-07-Weave任务信任契约与双场景三阶段验证.md",
@@ -9,7 +9,7 @@
   "overall": "NOT_COMPLETE",
   "goal_status_changed": false,
   "stage_completion_claimed": true,
-  "scope": "Retained business evidence plus three frozen held-out cold-start attempts. The newest sample selected an OAuth-authenticated Claude runtime and completed all members, but machine delivery failed because the product-facing outputs/... contract path did not match the collector-relative candidate path; the correct semantic report also omitted the five required literal markers. No claim is promoted to business closure, user adoption, incremental recovery, or broad generalization.",
+  "scope": "Retained business evidence plus frozen cold-start attempts. The latest compiler-checked sample selected an OAuth-authenticated Claude runtime, completed all four members, mapped an outputs/... published contract to the collector-relative artifact, and passed all five machine checks. Workbench showed completed execution, passed delivery and unrated user assessment separately. This closes one local text-delivery slice; it does not establish user adoption, ecommerce external effects, Corona incremental recovery, or broad generalization.",
   "status_definitions": {
     "PARTIAL": "Some required evidence exists, but the exit is not satisfied in full.",
     "FAIL": "An observed result violates the exit.",
@@ -181,10 +181,12 @@
             "held-out/incident-review/pre-run-manifest.json",
             "held-out/incident-review/first-run-evidence.json",
             "held-out/support-queue/first-run-evidence.json",
-            "held-out/inventory-batch/first-run-evidence.json"
+            "held-out/inventory-batch/first-run-evidence.json",
+            "held-out/shipment-delay/build-attempt-evidence.json",
+            "held-out/returns-aging/first-run-evidence.json"
           ],
-          "finding": "A third frozen sample selected an OAuth-authenticated Claude runtime, dispatched from Workbench by visible team reference, inherited workflow v1 and its published contract, and completed all four members. Execution succeeded, but delivery failed: the contract required outputs/inventory-batch-review.md while the collector candidate used inventory-batch-review.md; the semantically correct report also omitted all five frozen literal markers.",
-          "remaining": "Unify product-facing outputs/... contract paths with collector-relative artifact identities, then use a new frozen sample to test path and content checks together. Retain all three closed first results."
+          "finding": "The compiler-checked returns-aging sample inherited workflow v1 and its published explicit contract, completed all four authenticated members, produced the required file, and passed coverage, output, artifact content, no-external-effects and output-schema checks. This proves one local text-delivery slice; the original ecommerce and Corona packages retain their documented gaps.",
+          "remaining": "Keep the positive claim limited to this frozen local sample. Historical ecommerce replay identity and Corona incremental recovery remain outside this result."
         },
         {
           "id": "stage-1.exit-2",
@@ -202,7 +204,7 @@
         {
           "id": "stage-1.exit-3",
           "plan_exit": "当前页面没有把阶段完成或文本总结误报为成果核验通过。",
-          "status": "PARTIAL",
+          "status": "PASS",
           "evidence": [
             "ecommerce/browser-observations.json",
             "ecommerce/run-terminal.json",
@@ -213,10 +215,11 @@
             "repaired-business/corona/workbench-run-20260909/v4-external-verification.json",
             "held-out/incident-review/first-run-evidence.json",
             "held-out/support-queue/first-run-evidence.json",
-            "held-out/inventory-batch/first-run-evidence.json"
+            "held-out/inventory-batch/first-run-evidence.json",
+            "held-out/returns-aging/first-run-evidence.json"
           ],
-          "finding": "The deployed Workbench separates execution, delivery verification and user assessment. The authenticated held-out run displayed completed execution, failed verification and unrated assessment even though a readable semantically correct report existed.",
-          "remaining": "Validate the same three-way projection when every published-contract artifact and content check passes, then obtain an independent user assessment."
+          "finding": "The current Workbench projection was truthful in both directions: the inventory sample displayed successful execution with failed delivery, and the returns-aging sample displayed successful execution with passed delivery; both kept user assessment independently unrated.",
+          "remaining": "No projection defect remains in this bounded positive/negative pair. Cross-Host user assessment authority remains later scope."
         },
         {
           "id": "stage-1.exit-4",
@@ -244,9 +247,11 @@
             "repaired-business/corona/workbench-run-20260909/deep-review-20260909.md",
             "held-out/incident-review/first-run-evidence.json",
             "held-out/support-queue/first-run-evidence.json",
-            "held-out/inventory-batch/first-run-evidence.json"
+            "held-out/inventory-batch/first-run-evidence.json",
+            "held-out/shipment-delay/build-attempt-evidence.json",
+            "held-out/returns-aging/first-run-evidence.json"
           ],
-          "finding": "The newest frozen Workbench run used a visible team reference and an authenticated Claude runtime, completed every member, and inherited the published contract. Its machine delivery still failed on the outputs/ path namespace and exact content markers, so cold-start business delivery remains open."
+          "finding": "A compiler-checked new sample was dispatched once through Workbench by visible team name, used an authenticated Claude runtime, completed every member, and passed all published-contract checks. The original ecommerce and Corona business packages still contain separate external-effect, historical replay and recovery gaps."
         }
       ]
     },
@@ -483,6 +488,12 @@
       "evidence": "team-delivery/mechanism-verification.json",
       "status": "PASSED",
       "business_acceptance": "NOT_RUN_FOR_THIS_COMMIT"
+    },
+    {
+      "source_commit": "4901442941e0ae973babc4201e67e27126a9555d",
+      "evidence": "held-out/returns-aging/first-run-evidence.json",
+      "status": "PASSED",
+      "business_acceptance": "LOCAL_TEXT_DELIVERY_MACHINE_PASS_USER_UNRATED"
     }
   ],
   "latest_corona_workbench_run": {
@@ -516,27 +527,26 @@
     "overall": "NOT_COMPLETE"
   },
   "latest_held_out_workbench_attempt": {
-    "sample": "inventory-batch-heldout-20260910",
-    "team_id": "85a8e176-2890-45c1-8983-c2f402d94103",
-    "team_display_name": "库存批次复核团队",
+    "sample": "returns-aging-heldout-20260910",
+    "team_id": "d320918f-cbfe-4b9a-8058-ff2788b65a5b",
+    "team_display_name": "退货批次复核团队",
     "published_contract_present": true,
     "natural_name_dispatch": "passed",
     "authenticated_runtime_selection": "passed: claude oauth",
-    "run_id": "run-2ce7e31f-9370-5f70-af55-82a2b0dffce9",
-    "workflow_id": "inventory-batch-heldout-20260910-workflow",
+    "run_id": "run-243894c1-3407-5083-9e60-b1eb1fdd2bd8",
+    "workflow_id": "returns-aging-heldout-20260910-workflow",
     "workflow_version": 1,
-    "contract_digest": "bbc3ed83d5df0ee3d666859a95f87bf94cde7b2b104af3b541aceefff12b6c8a",
+    "contract_digest": "44bc9fe1d80050f89167afc91dfa27a534facc328170175e0b1b05a3e84281ac",
     "execution_status": "succeeded",
     "completed_members": "4/4",
-    "delivery_verification": "failed: required_file_missing",
-    "contract_path": "outputs/inventory-batch-review.md",
-    "candidate_path": "inventory-batch-review.md",
+    "delivery_verification": "passed: 5/5 checks",
+    "contract_path": "outputs/returns-aging-review.md",
+    "candidate_path": "returns-aging-review.md",
     "semantic_content": "correct",
-    "literal_content_markers": "0/5",
+    "literal_content_markers": "5/5",
     "user_assessment": "not_submitted",
     "rerun": false,
-    "overall": "HELD_OUT_EXECUTION_PASS_DELIVERY_FAIL",
-    "evidence": "held-out/inventory-batch/first-run-evidence.json",
-    "root_cause": "product-facing outputs/ contract paths and collector-relative artifact identities were compared literally; the model also omitted the required literal markers"
+    "overall": "MACHINE_VERIFIED_USER_UNRATED",
+    "evidence": "held-out/returns-aging/first-run-evidence.json"
   }
 }

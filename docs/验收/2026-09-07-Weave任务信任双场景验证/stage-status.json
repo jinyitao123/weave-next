@@ -1,13 +1,13 @@
 {
   "schema_version": 1,
-  "as_of": "2026-09-10T01:25:00+08:00",
+  "as_of": "2026-09-10T01:41:00+08:00",
   "plan": "docs/计划/2026-09-07-Weave任务信任契约与双场景三阶段验证.md",
   "stages": [
     {
       "id": "stage-1",
       "name": "契约与首轮真实性审计",
       "status": "in_progress",
-      "next": "第三个冻结样本已证明认证就绪回退生效：四名成员均使用 Claude OAuth runtime 并执行完成。机器交付仍因 outputs/ 合同路径与收集器相对路径不一致而失败，正确语义报告也未逐字包含五个合同标记。下一步修复通用路径身份并用另一个新冻结样本同时验证路径与内容；已有三个首结果均不修改、不重跑。",
+      "next": "路径修复后的编译器预检样本已通过：四名 Claude OAuth 成员完成，outputs/ 合同路径与候选身份正确映射，五项机器检查全部通过，Workbench 显示执行完成、核验通过、用户尚未评价。下一步由用户独立决定采用或退回该报告；本结果只闭合本地文本交付切片，历史电商复验和日冕增量恢复缺口保持原结论。",
       "evidence": [
         "repaired-business/invoice/final-verification.json",
         "repaired-business/invoice/weave-run-evidence.json",
@@ -19,7 +19,9 @@
         "held-out/incident-review/pre-run-manifest.json",
         "held-out/incident-review/first-run-evidence.json",
         "held-out/support-queue/first-run-evidence.json",
-        "held-out/inventory-batch/first-run-evidence.json"
+        "held-out/inventory-batch/first-run-evidence.json",
+        "held-out/shipment-delay/build-attempt-evidence.json",
+        "held-out/returns-aging/first-run-evidence.json"
       ]
     },
     {
