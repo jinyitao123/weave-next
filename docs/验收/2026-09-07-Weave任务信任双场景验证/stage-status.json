@@ -1,13 +1,13 @@
 {
   "schema_version": 1,
-  "as_of": "2026-09-10T00:24:46+08:00",
+  "as_of": "2026-09-10T00:43:00+08:00",
   "plan": "docs/计划/2026-09-07-Weave任务信任契约与双场景三阶段验证.md",
   "stages": [
     {
       "id": "stage-1",
       "name": "契约与首轮真实性审计",
       "status": "in_progress",
-      "next": "已发布交付合同链部署在 88697f1。第三保留样本的 active 团队和冻结合同均存在，但 Workbench 把展示名作为 team_id，首次调用 team_not_found，TeamRun 数量为 0。下一步先提供 workspace 内有界、权威的团队发现或名称解析，再用新的冻结样本复验；本次失败样本不修正、不重跑。",
+      "next": "第三保留样本的直接根因已收窄为 13083 实例使用不存在的 WEAVE_COMMAND，导致 MCP 团队发现缺席而本地派发仍可见。Workbench 564bdc63 已增加启动路径门禁和 active 团队名称解析，完整检查 399 项通过；下一步以正确命令启动并用新的冻结样本复验，本次失败样本不修正、不重跑。",
       "evidence": [
         "repaired-business/invoice/final-verification.json",
         "repaired-business/invoice/weave-run-evidence.json",

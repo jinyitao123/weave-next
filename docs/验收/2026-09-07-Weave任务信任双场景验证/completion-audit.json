@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "recorded_at": "2026-09-10T00:24:46+08:00",
+  "recorded_at": "2026-09-10T00:43:00+08:00",
   "record_kind": "evidence_bounded_exit_audit",
   "plan": {
     "path": "docs/计划/2026-09-07-Weave任务信任契约与双场景三阶段验证.md",
@@ -181,8 +181,8 @@
             "held-out/incident-review/pre-run-manifest.json",
             "held-out/incident-review/first-run-evidence.json"
           ],
-          "finding": "The delivery contract now persists from a published template through the frozen workflow and is deployed at commit 88697f1. The third frozen held-out team contains that contract, but natural Workbench dispatch used its display name as team_id and failed before TeamRun creation. The older three-speed versus 0.03c historical Corona contract conflict remains.",
-          "remaining": "Provide bounded authoritative team discovery or name-to-ID resolution, then validate published-contract inheritance in a new frozen sample without correcting or rerunning the closed failed sample. Retain the historical Corona contract conflict rather than silently rewriting it."
+          "finding": "The delivery contract now persists from a published template through the frozen workflow and is deployed at commit 88697f1. The third frozen held-out team contains that contract, but its Workbench instance lacked the MCP discovery subprocess because WEAVE_COMMAND pointed to a missing file; the remaining local dispatch used the display name as team_id and failed before TeamRun creation.",
+          "remaining": "Workbench commit 564bdc63 now validates explicit MCP command paths and resolves visible team names against active teams. Validate the repaired startup and published-contract inheritance in a new frozen sample without correcting or rerunning the closed failed sample. Retain the historical Corona contract conflict."
         },
         {
           "id": "stage-1.exit-2",
@@ -212,7 +212,7 @@
             "held-out/incident-review/first-run-evidence.json"
           ],
           "finding": "The deployed Workbench separates execution, delivery verification and user assessment. In Corona v4 it showed succeeded execution with unknown delivery; in the held-out cold start it showed failed execution, unconfirmed delivery and unrated user assessment after team_not_found. Neither state was promoted to business success.",
-          "remaining": "After fixing bounded team resolution, verify that a new natural Workbench run reaches admission, freezes the published contract and reports every check, provenance and user decision without an external filesystem audit."
+          "remaining": "Deploy Workbench commit 564bdc63 with a live MCP subprocess, then verify in a new natural run that admission freezes the published contract and reports every check, provenance and user decision without an external filesystem audit."
         },
         {
           "id": "stage-1.exit-4",
@@ -445,7 +445,7 @@
       "status": "FAIL_OBSERVED_BEFORE_DISPATCH",
       "sample": "held-out/incident-review",
       "evidence": "held-out/incident-review/first-run-evidence.json",
-      "limit": "The active team and published contract existed, but display-name dispatch returned team_not_found and created zero TeamRuns; the sample was stopped and not corrected or rerun."
+      "limit": "The active team and published contract existed, but an invalid WEAVE_COMMAND left MCP team discovery absent while local dispatch remained visible. Display-name dispatch returned team_not_found and created zero TeamRuns; the sample was stopped and not corrected or rerun."
     }
   ],
   "cross_sample_comparability": {
@@ -515,6 +515,7 @@
     "user_assessment": "not_submitted",
     "rerun": false,
     "overall": "HELD_OUT_FAIL_IDENTITY_RESOLUTION",
-    "evidence": "held-out/incident-review/first-run-evidence.json"
+    "evidence": "held-out/incident-review/first-run-evidence.json",
+    "root_cause": "invalid WEAVE_COMMAND removed MCP team discovery; local display-name dispatch then failed exact-ID admission"
   }
 }

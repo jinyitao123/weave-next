@@ -54,8 +54,10 @@
     "finding": "No TeamRun, run snapshot, delivery binding, or delivery verification was created for the held-out team."
   },
   "root_cause": {
-    "category": "team_identity_resolution_gap",
-    "finding": "Workbench reasoning selects a team by its human display name, while weave_dispatch requires the exact opaque team ID. The exposed tool set provides no bounded authoritative team discovery or name-to-ID resolution path.",
+    "category": "partial_workbench_connection_from_invalid_mcp_command",
+    "primary_finding": "The 13083 Workbench instance was started with WEAVE_COMMAND=../bin/weave, which resolved to a missing repository file. The weave MCP subprocess was therefore absent, so the implemented team_list discovery tool was not exposed while the local weave_dispatch tool remained available.",
+    "cascade": "Without team discovery, the foreground model passed the visible display name to an endpoint that required the exact opaque team ID. Registration returned team_not_found, and the foreground model fell back to unbounded host search.",
+    "product_boundary_defect": "Startup and readiness did not fail closed when discovery was absent, and weave_dispatch did not resolve an agreed visible team reference against the authoritative active-team list.",
     "repeated_prior_signal": "The Corona v3 path also required an operator-supplied exact team UUID after a natural-name dispatch failed.",
     "contract_mechanism_reached": false,
     "contract_mechanism_assessment": "The published contract exists on the frozen workflow, but this sample cannot judge run-time contract inheritance because admission was never reached."
@@ -71,5 +73,13 @@
       "that the task members or arithmetic would fail",
       "that the overall Weave business loop is complete"
     ]
+  },
+  "workbench_discovery_process": {
+    "configured_command": "../bin/weave",
+    "resolved_command": "/Users/jinyitao/Developer/weave-next/bin/weave",
+    "resolved_command_existed": false,
+    "weave_mcp_process_running": false,
+    "team_list_implemented_in_deployed_binary": true,
+    "effective_tool_surface_finding": "The broken MCP subprocess removed mcp__weave__team_list while the separately registered local weave_dispatch tool remained visible."
   }
 }
