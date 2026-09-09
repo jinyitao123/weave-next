@@ -34,6 +34,10 @@ type teamDispatchPoolStore struct {
 func (s teamDispatchPoolStore) Pool() *pgxpool.Pool { return s.pool }
 
 func newTeamDispatchTestServer(t *testing.T) (*Server, *pgxpool.Pool) {
+	return newTeamDispatchTestServerWithGraph(t, json.RawMessage(`{"schema_version":1,"entry_node_id":"deliver","input_contract":{"type":"text"},"output_contract":{"type":"text"},"nodes":[{"id":"deliver","type":"deliver","config":{"result":{"source":"run_input","path":""}}}],"edges":[]}`))
+}
+
+func newTeamDispatchTestServerWithGraph(t *testing.T, graph json.RawMessage) (*Server, *pgxpool.Pool) {
 	t.Helper()
 	ctx := context.Background()
 	pool := testutil.PostgresPool(t)
@@ -41,7 +45,6 @@ func newTeamDispatchTestServer(t *testing.T) (*Server, *pgxpool.Pool) {
 		t.Fatal(err)
 	}
 	trigger := json.RawMessage(`{"schema_version":1,"type":"conversation_explicit","config":{}}`)
-	graph := json.RawMessage(`{"schema_version":1,"entry_node_id":"deliver","input_contract":{"type":"text"},"output_contract":{"type":"text"},"nodes":[{"id":"deliver","type":"deliver","config":{"result":{"source":"run_input","path":""}}}],"edges":[]}`)
 	if _, report := machine.DecodeTriggerConfigV1(trigger); report != nil {
 		t.Fatalf("fixture trigger: %+v", report.Issues)
 	}

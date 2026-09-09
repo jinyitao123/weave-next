@@ -14,9 +14,10 @@ import (
 	"github.com/jinyitao123/weave/internal/kernel/workflow/machine"
 )
 
-// A machine contract is accepted only from the exact Host-bound user text.
+// A per-run contract is accepted only from the exact Host-bound user text.
 // The model-facing dispatch tool has no field that can replace these facts.
-// Output shape is always inherited from the admitted published graph.
+// Published workflow defaults are selected later during admission, and output
+// shape is always inherited from the admitted published graph.
 func parseDispatchDeliveryContract(task string) (*deliverable.DeliveryContract, error) {
 	const marker = "```weave-delivery-contract-v1"
 	var body strings.Builder
@@ -55,6 +56,7 @@ func parseDispatchDeliveryContract(task string) (*deliverable.DeliveryContract, 
 		Coverage               string                            `json:"coverage"`
 		RequiredArtifacts      []deliverable.ArtifactRequirement `json:"required_artifacts"`
 		RequiredChecks         []deliverable.CheckSpec           `json:"required_checks"`
+		ExternalEffects        string                            `json:"external_effects"`
 		ExternalEffectsCheckID string                            `json:"external_effects_check_id"`
 		Limitations            []string                          `json:"limitations"`
 	}
@@ -65,7 +67,7 @@ func parseDispatchDeliveryContract(task string) (*deliverable.DeliveryContract, 
 	}
 	contract := &deliverable.DeliveryContract{
 		Version: wire.Version, Coverage: wire.Coverage, RequiredArtifacts: wire.RequiredArtifacts,
-		RequiredChecks: wire.RequiredChecks, ExternalEffectsCheckID: wire.ExternalEffectsCheckID,
+		RequiredChecks: wire.RequiredChecks, ExternalEffects: wire.ExternalEffects, ExternalEffectsCheckID: wire.ExternalEffectsCheckID,
 		Limitations: wire.Limitations,
 	}
 	if err := deliverable.ValidateDeliveryContract(contract); err != nil {
@@ -99,13 +101,19 @@ func (s *Server) freezeDispatchDeliveryContractTx(ctx context.Context, tx pgx.Tx
 		return fmt.Errorf("frozen delivery graph is invalid")
 	}
 	contract := &deliverable.DeliveryContract{Version: 1, Coverage: "incomplete", Limitations: []string{"explicit_user_delivery_scope_missing"}}
+	if graph.DeliveryContract != nil {
+		contract = deliverable.CloneDeliveryContract(graph.DeliveryContract)
+	}
 	if request.inputBinding != nil && len(request.inputBinding.DeliveryContract) > 0 && string(request.inputBinding.DeliveryContract) != "{}" && string(request.inputBinding.DeliveryContract) != "null" {
-		contract = new(deliverable.DeliveryContract)
-		if err := json.Unmarshal(request.inputBinding.DeliveryContract, contract); err != nil {
+		contract, err = deliverable.DecodeDeliveryContract(request.inputBinding.DeliveryContract)
+		if err != nil {
 			return fmt.Errorf("read registered delivery contract: %w", err)
 		}
 	}
 	contract.Output = deliverable.OutputRequirement{Type: string(graph.OutputContract.Type), Schema: graph.OutputContract.Schema}
+	if err := deliverable.ValidateDeliveryContract(contract); err != nil {
+		return fmt.Errorf("validate frozen delivery contract: %w", err)
+	}
 	_, err = s.Deliverables.FreezeContractTx(ctx, tx, deliverable.ContractBinding{
 		WorkspaceID: snap.WorkspaceID, RunSnapshotID: snap.RunID, InputRevisionID: request.InputRevisionID,
 		WorkflowID: snap.WorkflowID, WorkflowVersion: snap.WorkflowVersion, PublishedDigest: envelope.ContentHash,

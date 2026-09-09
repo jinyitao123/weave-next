@@ -20,12 +20,14 @@ import (
 type VerificationStatus string
 
 const (
-	VerificationPending VerificationStatus = "pending"
-	VerificationPassed  VerificationStatus = "passed"
-	VerificationFailed  VerificationStatus = "failed"
-	VerificationUnknown VerificationStatus = "unknown"
-	CoverageExplicit                       = "explicit"
-	CoverageIncomplete                     = "incomplete"
+	VerificationPending     VerificationStatus = "pending"
+	VerificationPassed      VerificationStatus = "passed"
+	VerificationFailed      VerificationStatus = "failed"
+	VerificationUnknown     VerificationStatus = "unknown"
+	CoverageExplicit                           = "explicit"
+	CoverageIncomplete                         = "incomplete"
+	ExternalEffectsNone                        = "none"
+	ExternalEffectsRequired                    = "required"
 )
 
 var (
@@ -40,8 +42,50 @@ type DeliveryContract struct {
 	Output                 OutputRequirement     `json:"output"`
 	RequiredArtifacts      []ArtifactRequirement `json:"required_artifacts,omitempty"`
 	RequiredChecks         []CheckSpec           `json:"required_checks,omitempty"`
+	ExternalEffects        string                `json:"external_effects,omitempty"`
 	ExternalEffectsCheckID string                `json:"external_effects_check_id,omitempty"`
 	Limitations            []string              `json:"limitations,omitempty"`
+}
+
+// DecodeDeliveryContract strictly decodes one bounded contract. It is shared
+// by product templates and frozen workflow decoding so unknown fields cannot
+// silently disappear at either trust boundary.
+func DecodeDeliveryContract(raw []byte) (*DeliveryContract, error) {
+	if len(bytes.TrimSpace(raw)) == 0 || len(raw) > 512*1024 {
+		return nil, errors.New("delivery contract JSON is empty or too large")
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	var contract DeliveryContract
+	if err := decoder.Decode(&contract); err != nil {
+		return nil, fmt.Errorf("decode delivery contract: %w", err)
+	}
+	var extra any
+	if err := decoder.Decode(&extra); err != io.EOF {
+		return nil, errors.New("delivery contract JSON contains trailing data")
+	}
+	if err := ValidateDeliveryContract(&contract); err != nil {
+		return nil, err
+	}
+	return &contract, nil
+}
+
+func CloneDeliveryContract(contract *DeliveryContract) *DeliveryContract {
+	if contract == nil {
+		return nil
+	}
+	cloned := *contract
+	cloned.Output.Schema = bytes.Clone(contract.Output.Schema)
+	cloned.RequiredArtifacts = append([]ArtifactRequirement(nil), contract.RequiredArtifacts...)
+	for i := range cloned.RequiredArtifacts {
+		cloned.RequiredArtifacts[i].Contains = append([]string(nil), contract.RequiredArtifacts[i].Contains...)
+	}
+	cloned.RequiredChecks = append([]CheckSpec(nil), contract.RequiredChecks...)
+	for i := range cloned.RequiredChecks {
+		cloned.RequiredChecks[i].Parameters = bytes.Clone(contract.RequiredChecks[i].Parameters)
+	}
+	cloned.Limitations = append([]string(nil), contract.Limitations...)
+	return &cloned
 }
 
 type OutputRequirement struct {
@@ -270,6 +314,9 @@ func ValidateDeliveryContract(contract *DeliveryContract) error {
 	if len(contract.RequiredArtifacts) > fileartifact.MaxArtifactCount || len(contract.RequiredChecks) > 128 || len(contract.Limitations) > 128 {
 		return errors.New("delivery contract is too large")
 	}
+	if contract.Coverage == CoverageExplicit && len(contract.RequiredArtifacts) == 0 && len(contract.RequiredChecks) == 0 {
+		return errors.New("explicit delivery coverage requires at least one artifact or check")
+	}
 	if len(contract.Output.Schema) > 256*1024 || (len(contract.Output.Schema) > 0 && !json.Valid(contract.Output.Schema)) {
 		return errors.New("invalid output schema JSON")
 	}
@@ -292,6 +339,19 @@ func ValidateDeliveryContract(contract *DeliveryContract) error {
 				return errors.New("empty artifact content condition")
 			}
 		}
+	}
+	switch contract.ExternalEffects {
+	case "": // Legacy contracts retain the previous unknown-or-check behavior.
+	case ExternalEffectsNone:
+		if contract.ExternalEffectsCheckID != "" {
+			return errors.New("external effects none forbids an effects check")
+		}
+	case ExternalEffectsRequired:
+		if contract.ExternalEffectsCheckID == "" {
+			return errors.New("external effects required needs an effects check")
+		}
+	default:
+		return errors.New("unsupported external effects mode")
 	}
 	effectsFound := contract.ExternalEffectsCheckID == ""
 	for _, check := range contract.RequiredChecks {
@@ -534,7 +594,10 @@ func Verify(ctx context.Context, contract *DeliveryContract, candidate Candidate
 	} else if len(candidate.OutputSources) == 0 {
 		add("_selection", VerificationUnknown, "output_source_missing", nil)
 	}
-	externalFound := false
+	externalFound := contract.ExternalEffects == ExternalEffectsNone
+	if externalFound {
+		add("_external_effects", VerificationPassed, "no_external_effects_required", nil)
+	}
 	for _, check := range contract.RequiredChecks {
 		if check.ID == contract.ExternalEffectsCheckID {
 			externalFound = true

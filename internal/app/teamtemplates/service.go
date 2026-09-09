@@ -366,13 +366,14 @@ func compileDeclarativePlan(
 			StableRef: worker.StableRef, AgentID: worker.AgentID, AgentVersion: worker.AgentVersion,
 		})
 	}
-	frozen, err := teamforge.FreezeDeclarativeWorkflowSpecV1(
+	frozen, err := teamforge.FreezeDeclarativeWorkflowSpecWithDeliveryContractV1(
 		spec,
 		bindings,
 		teamforge.DeclarativeBuildBindingV1{
 			BuildRunID: buildRunID, BriefHash: briefHash, ContractHash: contractHash,
 			AssetScope: compiled.Brief.AllowedAssets, BaselineHash: teamforge.EmptyCreateBaselineHashV1,
 		},
+		compiled.Blueprint.Workflow.DeliveryContract,
 		func(trigger machine.TriggerConfig, graph machine.GraphDefinition) (machine.Report, error) {
 			return teameval.ValidateWorkflowForBlueprint(workspaceID, compiled.Blueprint, planned, trigger, graph)
 		},
@@ -383,6 +384,7 @@ func compileDeclarativePlan(
 	blueprint := compiled.Blueprint
 	blueprint.Workflow = teambuild.BlueprintWorkflowV1{
 		Mode: teambuild.BlueprintWorkflowDeclarativeV1, DeclarativeSpecHash: frozen.SpecHash,
+		DeliveryContract: compiled.Blueprint.Workflow.DeliveryContract,
 	}
 	if err := teambuild.ValidateTeamBlueprintV1(blueprint); err != nil {
 		return nil, err

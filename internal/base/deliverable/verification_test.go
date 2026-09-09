@@ -120,6 +120,46 @@ func TestVerificationCannotInferCoverageOrEffects(t *testing.T) {
 	}
 }
 
+func TestVerificationAcceptsExplicitNoExternalEffects(t *testing.T) {
+	contract := fixtureContract()
+	contract.RequiredChecks = nil
+	contract.ExternalEffectsCheckID = ""
+	contract.ExternalEffects = ExternalEffectsNone
+	report, err := Verify(context.Background(), contract, fixtureCandidate(t, fixtureOutputs()), NewVerifierRegistry())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Status != VerificationPassed {
+		t.Fatalf("local-only delivery remained unknown: %+v", report.Checks)
+	}
+	found := false
+	for _, check := range report.Checks {
+		if check.CheckID == "_external_effects" && check.Status == VerificationPassed && check.Reason == "no_external_effects_required" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("explicit no-effects evidence missing: %+v", report.Checks)
+	}
+}
+
+func TestDecodeDeliveryContractIsStrict(t *testing.T) {
+	valid := []byte(`{"version":1,"coverage":"explicit","output":{"type":"text"},"required_artifacts":[{"id":"report","path":"report.md"}],"external_effects":"none"}`)
+	if contract, err := DecodeDeliveryContract(valid); err != nil || contract.ExternalEffects != ExternalEffectsNone {
+		t.Fatalf("valid contract rejected: %+v %v", contract, err)
+	}
+	for _, raw := range [][]byte{
+		[]byte(`{"version":1,"coverage":"explicit","output":{"type":"text"},"external_effects":"none"}`),
+		[]byte(`{"version":1,"coverage":"explicit","output":{"type":"text"},"unknown":true}`),
+		[]byte(`{"version":1,"coverage":"explicit","output":{"type":"text"},"external_effects":"required"}`),
+		[]byte(`{"version":1,"coverage":"explicit","output":{"type":"text"},"external_effects":"none","external_effects_check_id":"effects"}`),
+	} {
+		if _, err := DecodeDeliveryContract(raw); err == nil {
+			t.Fatalf("invalid contract accepted: %s", raw)
+		}
+	}
+}
+
 func TestVerificationCollectionLimitsAreSpecific(t *testing.T) {
 	for _, scenario := range []struct {
 		name, path string

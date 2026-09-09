@@ -1,6 +1,10 @@
 package machine
 
-import "encoding/json"
+import (
+	"encoding/json"
+
+	"github.com/jinyitao123/weave/internal/base/deliverable"
+)
 
 const SchemaVersionV1 = 1
 
@@ -67,12 +71,13 @@ type Delivery struct {
 }
 
 type GraphDefinition struct {
-	SchemaVersion  int            `json:"schema_version"`
-	EntryNodeID    string         `json:"entry_node_id"`
-	InputContract  OutputContract `json:"input_contract"`
-	OutputContract OutputContract `json:"output_contract"`
-	Nodes          []Node         `json:"nodes"`
-	Edges          []Edge         `json:"edges"`
+	SchemaVersion    int                           `json:"schema_version"`
+	EntryNodeID      string                        `json:"entry_node_id"`
+	InputContract    OutputContract                `json:"input_contract"`
+	OutputContract   OutputContract                `json:"output_contract"`
+	DeliveryContract *deliverable.DeliveryContract `json:"delivery_contract,omitempty"`
+	Nodes            []Node                        `json:"nodes"`
+	Edges            []Edge                        `json:"edges"`
 }
 
 type ValueType string

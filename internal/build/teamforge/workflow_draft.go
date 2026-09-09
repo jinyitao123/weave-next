@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jinyitao123/weave/internal/base/deliverable"
 	"github.com/jinyitao123/weave/internal/kernel/workflow/machine"
 )
 
@@ -113,12 +114,13 @@ func cloneMachineGraph(graph machine.GraphDefinition) machine.GraphDefinition {
 		edges[i] = cloneMachineEdge(edge)
 	}
 	return machine.GraphDefinition{
-		SchemaVersion:  graph.SchemaVersion,
-		EntryNodeID:    graph.EntryNodeID,
-		InputContract:  cloneOutputContract(graph.InputContract),
-		OutputContract: cloneOutputContract(graph.OutputContract),
-		Nodes:          nodes,
-		Edges:          edges,
+		SchemaVersion:    graph.SchemaVersion,
+		EntryNodeID:      graph.EntryNodeID,
+		InputContract:    cloneOutputContract(graph.InputContract),
+		OutputContract:   cloneOutputContract(graph.OutputContract),
+		DeliveryContract: deliverable.CloneDeliveryContract(graph.DeliveryContract),
+		Nodes:            nodes,
+		Edges:            edges,
 	}
 }
 

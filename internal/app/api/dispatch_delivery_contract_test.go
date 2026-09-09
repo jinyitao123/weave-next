@@ -86,3 +86,59 @@ func TestDispatchDeliveryContractFreezesWithAdmissionRealPG(t *testing.T) {
 		t.Fatalf("retry created new contract: count=%d err=%v", count, err)
 	}
 }
+
+func TestPublishedDeliveryContractDefaultsNaturalWorkbenchDispatchRealPG(t *testing.T) {
+	graph := json.RawMessage(`{"schema_version":1,"entry_node_id":"deliver","input_contract":{"type":"text"},"output_contract":{"type":"text"},"delivery_contract":{"version":1,"coverage":"explicit","output":{"type":"text"},"required_artifacts":[{"id":"page","path":"outputs/index.html"}],"external_effects":"none"},"nodes":[{"id":"deliver","type":"deliver","config":{"result":{"source":"run_input","path":""}}}],"edges":[]}`)
+	server, _ := newTeamDispatchTestServerWithGraph(t, graph)
+	task := "请按已确认的团队范围完成本地页面，并整理好可以打开的结果。"
+	registration := dispatchInputRegistrationFixture("natural-contract-session", task, "")
+	registered, err := registerInputForTest(server, registration)
+	if err != nil || registered.Code != http.StatusCreated {
+		t.Fatalf("registration: %s %v", registered.Body.String(), err)
+	}
+	var receipt dispatchInputReceipt
+	if err := json.Unmarshal(registered.Body.Bytes(), &receipt); err != nil {
+		t.Fatal(err)
+	}
+	dispatched, err := boundDispatchForTest(server, map[string]any{"input_revision_id": receipt.InputRevisionID, "client_request_id": receipt.ClientRequestID}, "user")
+	if err != nil || dispatched.Code != http.StatusCreated {
+		t.Fatalf("dispatch: %s %v", dispatched.Body.String(), err)
+	}
+	var run workflowManualRunResponse
+	if err := json.Unmarshal(dispatched.Body.Bytes(), &run); err != nil {
+		t.Fatal(err)
+	}
+	state, err := server.Deliverables.GetDeliveryState(t.Context(), "ws", run.RunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	contract := state.Binding.Contract
+	if contract == nil || contract.Coverage != "explicit" || len(contract.RequiredArtifacts) != 1 || contract.RequiredArtifacts[0].Path != "outputs/index.html" || contract.ExternalEffects != "none" || contract.Output.Type != "text" {
+		t.Fatalf("published contract was not frozen for natural dispatch: %+v", contract)
+	}
+
+	overrideTask := "请改为交付报告。\n```weave-delivery-contract-v1\n" + `{"version":1,"coverage":"explicit","required_artifacts":[{"id":"report","path":"outputs/report.md"}],"external_effects":"none"}` + "\n```"
+	overrideRegistration := dispatchInputRegistrationFixture("override-contract-session", overrideTask, "")
+	overrideRegistered, err := registerInputForTest(server, overrideRegistration)
+	if err != nil || overrideRegistered.Code != http.StatusCreated {
+		t.Fatalf("override registration: %s %v", overrideRegistered.Body.String(), err)
+	}
+	if err := json.Unmarshal(overrideRegistered.Body.Bytes(), &receipt); err != nil {
+		t.Fatal(err)
+	}
+	overrideDispatched, err := boundDispatchForTest(server, map[string]any{"input_revision_id": receipt.InputRevisionID, "client_request_id": receipt.ClientRequestID}, "user")
+	if err != nil || overrideDispatched.Code != http.StatusCreated {
+		t.Fatalf("override dispatch: %s %v", overrideDispatched.Body.String(), err)
+	}
+	if err := json.Unmarshal(overrideDispatched.Body.Bytes(), &run); err != nil {
+		t.Fatal(err)
+	}
+	overrideState, err := server.Deliverables.GetDeliveryState(t.Context(), "ws", run.RunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	override := overrideState.Binding.Contract
+	if override == nil || len(override.RequiredArtifacts) != 1 || override.RequiredArtifacts[0].Path != "outputs/report.md" {
+		t.Fatalf("exact user contract did not override published default: %+v", override)
+	}
+}
