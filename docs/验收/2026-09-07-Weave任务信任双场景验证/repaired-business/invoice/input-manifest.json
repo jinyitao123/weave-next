@@ -1,14 +1,29 @@
 {
-  "fixture_run_id": "trust-repaired-invoice-20260908-remote004",
+  "fixture_run_id": "trust-repaired-invoice-20260909-remote007",
   "task_sha256": "0f469edd5b57d300c31d268abb47188a05669bc8ca68b61d55b61708de9b8910",
   "task_bytes": 1546,
   "source_revision": "084489800bfd3f9f239503eda9e754bc267e98f5",
   "source_task_bytes_equal": true,
-  "deployed_build": "564b378170f44a8c717a0bf0709b288dbc5fda84",
-  "business_dispatch_status": "not_dispatched",
-  "user_acceptance": "pending",
+  "deployed_build": "e620e353c0d84d653f9c83600a0de71253e0e11b",
+  "bridge_source_commit": "b308259",
+  "business_dispatch_status": "completed_after_scoped_correction",
+  "user_acceptance": "adopted",
   "workflow_id": "realreplicabench-gmail-calendar-mock-workflow",
   "workflow_version": 2,
   "configured_member_model": "deepseek-v4-flash-vision-exp",
-  "browser_blocker": "Mac locked; manual unlock required"
+  "workbench_initial_input": {
+    "task_sha256": "716d212c89d728768cf841363d36888ca56d25eb4a47985b4e2af882dcb2666d",
+    "task_bytes": 1545,
+    "difference_from_source": "final newline only"
+  },
+  "runs": {
+    "initial": "run-12b4226f-9da0-5722-8316-156859ed7505",
+    "minimal_correction": "run-cbf7416d-34ab-5582-a3cf-cad5e1aec647"
+  },
+  "external_verifier": {
+    "passed": true,
+    "score": 1.0,
+    "checks_passed": 7,
+    "checks_total": 7
+  }
 }
