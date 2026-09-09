@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "as_of": "2026-09-09T19:40:00+08:00",
+  "plan": "docs/计划/2026-09-07-Weave任务信任契约与双场景三阶段验证.md",
+  "stages": [
+    {
+      "id": "stage-1",
+      "name": "契约与首轮真实性审计",
+      "status": "in_progress",
+      "next": "电商修订后的 verifier 已连续 7/7，用户也已采用。日冕新隔离运行已启动，模型 34 项检查通过并留下基线、需求和评审材料，但运行因电脑睡眠停在中途，三种速度的修改仍待确认，没有形成完整交付。",
+      "evidence": [
+        "ecommerce/assessment.md",
+        "ecommerce/verification.json",
+        "corona/assessment.md",
+        "corona/verification.json",
+        "repaired-business/corona/fresh-run-evidence.json"
+      ]
+    },
+    {
+      "id": "stage-2",
+      "name": "重复使用与中断接续",
+      "status": "in_progress",
+      "next": "输入绑定已提交并完成本地只读部署核对；交付核验已提交 1bad43f 并通过 Go/真实 PostgreSQL、Workbench 构建与 395 项测试，尚未部署本批或开展新业务复验。继续工具契约与执行能力边界、Loom 联合持久预算，再验证有效第二任务和真实中断接续。",
+      "evidence": [
+        "ecommerce/stage2-invoice/assessment.md",
+        "corona/recovery-verification.json",
+        "completion-audit.json",
+        "input-binding/mechanism-verification.json",
+        "input-binding/deployment-readonly-check.json",
+        "team-delivery/mechanism-verification.json"
+      ]
+    },
+    {
+      "id": "stage-3",
+      "name": "Loom 边界和产品路线决策",
+      "status": "in_progress",
+      "blocked_by": [
+        "stage-1",
+        "stage-2"
+      ],
+      "next": "已形成 v0.1 边界决策，冻结扩大 Loom 范围，并保留原 A/B/C 对照阈值。缺少可比试验和阶段一、二业务出口，尚不能形成最终采用排序。",
+      "evidence": [
+        "../../计划/2026-09-08-Weave共用信任边界与Loom修复方案.md",
+        "loom-boundary-decision.md"
+      ]
+    }
+  ]
+}

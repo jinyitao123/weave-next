@@ -1,18 +1,17 @@
 {
-  "commit": "564b378170f44a8c717a0bf0709b288dbc5fda84",
-  "binary_sha256": "2ab3e5355e2dfde5365be55413353d407524f5dd7d8c671bed53bbd6ad48a2be",
+  "commit": "b308259cef039078c3cf305133dcc043616c3cfe",
+  "binary_sha256": "57a72d5c1dd5b6dd0c6296555182aaa083f5336bbea51359267d86a246b08a09",
   "pids": {
-    "workbench": 48657,
-    "api": 56957,
-    "a": 56969,
-    "b": 56970
+    "workbench": null,
+    "api": 4935,
+    "runtime": 4882
   },
   "health": {
-    "build_commit": "564b378170f44a8c717a0bf0709b288dbc5fda84",
+    "build_commit": "b308259cef039078c3cf305133dcc043616c3cfe",
     "status": "ok",
-    "version": "development"
+    "version": "1.0.0"
   },
   "ready_http_status": 200,
-  "business_acceptance": "not_run",
+  "business_acceptance": "invoice_passed_external_verifier_7_of_7_and_user_adopted; corona_fresh_run_partial_only",
   "workbench_source_commit": "406c8c73b2d5f129df7934677b6cc572d3b45b02"
 }
