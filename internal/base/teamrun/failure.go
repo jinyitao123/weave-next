@@ -79,7 +79,7 @@ func ClassifyFailure(err error) FailureSummary {
 	}
 	for _, marker := range []string{
 		"timed out", "timeout", "deadline exceeded", "reconnecting", "connection reset",
-		"connection refused", "broken pipe", "unexpected eof", "stream disconnected",
+		"connection refused", "connection lost", "broken pipe", "unexpected eof", "stream disconnected",
 		"service unavailable", "temporarily unavailable", "too many requests", "rate limit",
 		"status 502", "status 503", "status 504", "runtime offline", "运行时离线",
 		"runtime_pool_exhausted", "runtime_pinned_unavailable", "lease lost", "failed to start",
