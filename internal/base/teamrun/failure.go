@@ -44,6 +44,7 @@ func ClassifyFailure(err error) FailureSummary {
 		reason := "the referenced result file was not saved as a deliverable"
 		for _, match := range [][2]string{
 			{"file_exceeds_256_kib", "the result file exceeds the 256 KiB delivery limit"},
+			{"files_exceed_1_mib_total", "the result files exceed the 1 MiB total delivery limit"},
 			{"files_exceed_512_kib_total", "the result files exceed the 512 KiB total delivery limit"},
 			{"file_not_written_by_this_invocation", "the referenced result file was not produced by this execution"},
 			{"unsupported_file_type", "the result file type is not supported for delivery"},

@@ -211,7 +211,7 @@ func collectOutputArtifacts(workDir string, before OutputArtifactSnapshot, answe
 			continue
 		}
 		if info.Size()+int64(total) > engine.MaxArtifactsTotalBytes {
-			reject("files_exceed_512_kib_total", "limit")
+			reject("files_exceed_1_mib_total", "limit")
 			continue
 		}
 		content, err := os.ReadFile(name)

@@ -64,6 +64,27 @@ func TestSourceDeliveryKeepsApplicationAndVerificationDependenciesAcrossRuntimeW
 	}
 }
 
+func TestSourceDeliveryAcceptsCompletePackageAboveLegacyAggregateLimit(t *testing.T) {
+	workDir := t.TempDir()
+	before := SnapshotOutputArtifacts(workDir)
+	for index := 0; index < 3; index++ {
+		name := filepath.Join(workDir, "outputs", fmt.Sprintf("review/part-%d.md", index))
+		if err := os.MkdirAll(filepath.Dir(name), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(name, []byte(strings.Repeat("x", 180*1024)), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	result := engine.RunResult{Status: "completed", Output: "Saved the complete review package."}
+	if err := CollectRunOutputArtifacts(workDir, before, &result); err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Artifacts) != 3 || result.ArtifactCollection == nil || !result.ArtifactCollection.Complete {
+		t.Fatalf("package above the legacy aggregate limit was truncated: artifacts=%d collection=%+v", len(result.Artifacts), result.ArtifactCollection)
+	}
+}
+
 func TestCollectOutputArtifactsIncludesOnlyReferencedCurrentRootFiles(t *testing.T) {
 	workDir := t.TempDir()
 	write := func(name, content string) {
@@ -169,7 +190,7 @@ func TestCollectRunOutputArtifactsPreservesEngineOutcomeWithUncollectedDelivery(
 		precedingBytes         int
 	}{
 		{name: "single file limit", filename: "brief.md", reason: "file_exceeds_256_kib", content: strings.Repeat("x", engine.MaxArtifactBytes+1)},
-		{name: "total limit", filename: "outputs/z-brief.md", reason: "files_exceed_512_kib_total", content: "Final result", precedingFiles: 2, precedingBytes: engine.MaxArtifactBytes},
+		{name: "total limit", filename: "outputs/z-brief.md", reason: "files_exceed_1_mib_total", content: "Final result", precedingFiles: 4, precedingBytes: engine.MaxArtifactBytes},
 		{name: "count limit", filename: "outputs/z-brief.md", reason: fmt.Sprintf("file_count_exceeds_%d", engine.MaxArtifactCount), content: "Final result", precedingFiles: engine.MaxArtifactCount, precedingBytes: 1},
 		{name: "stale root file", filename: "brief.md", reason: "file_not_written_by_this_invocation", content: "An earlier task's result", stale: true},
 		{name: "stale outputs file", filename: "outputs/brief.md", reason: "file_not_written_by_this_invocation", content: "An earlier task's result", stale: true},

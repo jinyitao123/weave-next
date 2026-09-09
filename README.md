@@ -127,7 +127,7 @@ Dependencies must not import upward across the four bands. The Go module remains
 
 MCP calls explicitly declared in `write_tools` are rejected by the write gate. Undeclared tools are not automatically rejected by name, and CLI engines run with their runtime host's permissions. This requires a trusted deployment environment; it is not a universal sandbox.
 
-Runtime collection accepts supported UTF-8 files attributable to the current execution, with a 256 KiB per-file and 512 KiB aggregate limit. A promised but unsaved file is a delivery failure, not a valid final receipt. Preview limits are separate from collection limits; complete downloads can only return content actually saved by Weave. Unknown usage is not zero cost.
+Runtime collection accepts supported UTF-8 files attributable to the current execution, with a 256 KiB per-file and 1 MiB aggregate limit. A promised but unsaved file is a delivery failure, not a valid final receipt. Preview limits are separate from collection limits; complete downloads can only return content actually saved by Weave. Unknown usage is not zero cost.
 
 ## Validation and records
 
