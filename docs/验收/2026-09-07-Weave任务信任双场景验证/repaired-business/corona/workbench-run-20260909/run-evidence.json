@@ -1,0 +1,198 @@
+{
+  "schema_version": 1,
+  "captured_at": "2026-09-09T22:16:00+08:00",
+  "deployment_commit": "b308259cef039078c3cf305133dcc043616c3cfe",
+  "run": {
+    "run_id": "run-092cff35-4213-5002-8821-d7af190c955d",
+    "run_snapshot_id": "run-092cff35-4213-5002-8821-d7af190c955d",
+    "team_id": "64a9897b-fb40-416a-a43b-63f0e8aae8c3",
+    "workflow_id": "corona-prephase-a-lab-v3-workflow",
+    "workflow_version": 1,
+    "status": "succeeded",
+    "started_at": "2026-09-09T21:18:30.372547+08:00",
+    "finished_at": "2026-09-09T22:06:17.350123+08:00",
+    "terminal_at": "2026-09-09T22:06:17.350123+08:00",
+    "tokens_in": 3959086,
+    "tokens_out": 92253,
+    "cost_usd": 5.622185,
+    "completed_stages": 10,
+    "total_stages": 10
+  },
+  "input_revision_id": "22352b7f-28da-4dde-9109-a7c840b89765",
+  "members": [
+    {
+      "agent_id": "9872ffba-b07b-4069-a16f-0d617f07244f",
+      "name": "系统工程负责人",
+      "status": "completed",
+      "stages": [
+        {
+          "node_id": "lead",
+          "status": "completed",
+          "task_id": "task-a20a7e4f8844024b412c0ac381ef3ffe",
+          "output_ref_count": 0
+        }
+      ]
+    },
+    {
+      "agent_id": "28f2b943-1d8c-400e-b92a-54a7f4261c38",
+      "name": "独立验证与总装员",
+      "status": "completed",
+      "stages": [
+        {
+          "node_id": "finalizer",
+          "status": "completed",
+          "task_id": "task-9bbb12a43b04e2bcd42bff6f88677b31",
+          "output_ref_count": 1
+        }
+      ]
+    },
+    {
+      "agent_id": "3e956011-7ae7-4512-995a-3e7c3a78e926",
+      "name": "任务物理与轨迹分析员",
+      "status": "completed",
+      "stages": [
+        {
+          "node_id": "parallel-04",
+          "status": "completed",
+          "task_id": "task-fd0e94771f3d1a8fd19495e6558d4437",
+          "output_ref_count": 0
+        }
+      ]
+    },
+    {
+      "agent_id": "498a457f-8ace-45fa-a3af-5f226da77a35",
+      "name": "任务架构与需求工程师",
+      "status": "completed",
+      "stages": [
+        {
+          "node_id": "parallel-06",
+          "status": "completed",
+          "task_id": "task-1517b11ca6781f8d6b49b29021fb8b03",
+          "output_ref_count": 61
+        }
+      ]
+    },
+    {
+      "agent_id": "4c735bff-8fb7-4fb8-942e-7e0e76ea78cb",
+      "name": "档案载荷与长期可靠性设计员",
+      "status": "completed",
+      "stages": [
+        {
+          "node_id": "parallel-01",
+          "status": "completed",
+          "task_id": "task-ac6091ed61076e37ad43e3efc1a48a5f",
+          "output_ref_count": 8
+        }
+      ]
+    },
+    {
+      "agent_id": "8b909d1e-7b90-4a0c-9df7-b7d7bf30217f",
+      "name": "推进能源与热控分析员",
+      "status": "completed",
+      "stages": [
+        {
+          "node_id": "parallel-05",
+          "status": "completed",
+          "task_id": "task-bbebd308c8bf0a997f723ae66df78553",
+          "output_ref_count": 0
+        }
+      ]
+    },
+    {
+      "agent_id": "9170226c-69ac-4b36-8f7e-4680fed5d61f",
+      "name": "成本计划与风险分析员",
+      "status": "completed",
+      "stages": [
+        {
+          "node_id": "parallel-02",
+          "status": "completed",
+          "task_id": "task-91f94f92ae89b8d8bb576b010ace162e",
+          "output_ref_count": 0
+        }
+      ]
+    },
+    {
+      "agent_id": "93584a50-6f47-4242-beaf-f4f08e8bd5db",
+      "name": "数字产品与工程图开发员",
+      "status": "completed",
+      "stages": [
+        {
+          "node_id": "parallel-03",
+          "status": "completed",
+          "task_id": "task-651db172702c2e823e00e7684816dd73",
+          "output_ref_count": 28
+        }
+      ]
+    }
+  ],
+  "corrections": [
+    {
+      "correction_id": "772bddd2-a245-4b8a-af2a-d5b03c860d1e",
+      "status": "applied",
+      "target_kind": "team",
+      "safe_node_id": "parallel",
+      "restart_node_id": "lead",
+      "affected_node_ids": [
+        "deliver",
+        "finalizer",
+        "join",
+        "lead",
+        "parallel",
+        "parallel-01",
+        "parallel-02",
+        "parallel-03",
+        "parallel-04",
+        "parallel-05",
+        "parallel-06"
+      ],
+      "preserved_node_ids": null,
+      "confirmed_at": "2026-09-09T21:25:34.369163+08:00",
+      "applied_at": "2026-09-09T21:25:34.491557+08:00"
+    }
+  ],
+  "delivery": {
+    "status": "succeeded",
+    "contract": {
+      "version": 1,
+      "coverage": "incomplete",
+      "output": {
+        "type": "text"
+      },
+      "limitations": [
+        "explicit_user_delivery_scope_missing"
+      ]
+    },
+    "verification_status": "unknown",
+    "checks": [
+      {
+        "check_id": "_coverage",
+        "status": "unknown",
+        "reason": "requirements_not_explicit"
+      },
+      {
+        "check_id": "_limitation:0",
+        "status": "unknown",
+        "reason": "unsupported_requirement"
+      },
+      {
+        "check_id": "_output",
+        "status": "passed",
+        "reason": "output_type_valid"
+      },
+      {
+        "check_id": "_external_effects",
+        "status": "unknown",
+        "reason": "external_effects_scope_unverified"
+      }
+    ],
+    "final_output": "\"Track 1 passes: 34/34 tests OK, all 5 reference checks P\"",
+    "final_output_bytes": 56
+  },
+  "process_acceptance": {
+    "two_external_runtimes_required": true,
+    "distinct_runtimes_used_by_run": 1,
+    "status": "failed",
+    "reason": "all eight published members were rebound to the same runtime before dispatch"
+  },
+  "business_claim": "execution terminal succeeded, but full delivery and overall acceptance failed"
+}

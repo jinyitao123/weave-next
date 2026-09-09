@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "recorded_at": "2026-09-09T20:20:00+08:00",
+  "recorded_at": "2026-09-09T22:18:00+08:00",
   "record_kind": "evidence_bounded_exit_audit",
   "plan": {
     "path": "docs/计划/2026-09-07-Weave任务信任契约与双场景三阶段验证.md",
@@ -9,7 +9,7 @@
   "overall": "NOT_COMPLETE",
   "goal_status_changed": false,
   "stage_completion_claimed": false,
-  "scope": "Retained business evidence plus the traceable b308259 deployment and fresh Corona partial run; no complete Corona business acceptance or professional acceptance is asserted.",
+  "scope": "Retained business evidence plus traceable b308259 deployment, completed-but-unaccepted Corona Workbench run, and evidence-bounded Loom decision. Corona execution success is not promoted to delivery or overall acceptance.",
   "status_definitions": {
     "PARTIAL": "Some required evidence exists, but the exit is not satisfied in full.",
     "FAIL": "An observed result violates the exit.",
@@ -376,10 +376,10 @@
     },
     {
       "id": "missing_artifacts_with_completed_execution",
-      "status": "FAIL_BUSINESS_DELIVERY",
+      "status": "FAIL_BUSINESS_DELIVERY_REPRODUCED",
       "sample": "corona",
-      "evidence": "corona/verification.json",
-      "limit": "Business delivery fails; current UI acceptance labeling is not fully reverified."
+      "evidence": "repaired-business/corona/workbench-run-20260909/external-verification.json",
+      "limit": "The new run reached succeeded, but its final deliverable is truncated and candidate apps fail independent browser checks."
     },
     {
       "id": "confirmed_effects_repeated_after_recovery",
@@ -393,6 +393,18 @@
       "status": "NOT_VERIFIED",
       "sample": "ecommerce/stage2-invoice",
       "evidence": "ecommerce/stage2-invoice/verification.json"
+    },
+    {
+      "id": "false_final_acceptance_provenance",
+      "status": "FAIL_OBSERVED",
+      "sample": "corona/workbench-run-20260909",
+      "evidence": "repaired-business/corona/workbench-run-20260909/external-verification.json"
+    },
+    {
+      "id": "green_execution_with_unknown_delivery",
+      "status": "FAIL_OBSERVED_BUSINESS_TRUST",
+      "sample": "corona/workbench-run-20260909",
+      "evidence": "repaired-business/corona/workbench-run-20260909/run-evidence.json"
     }
   ],
   "cross_sample_comparability": {
@@ -418,5 +430,41 @@
       "status": "PASSED",
       "business_acceptance": "NOT_RUN_FOR_THIS_COMMIT"
     }
-  ]
+  ],
+  "latest_corona_workbench_run": {
+    "run_id": "run-092cff35-4213-5002-8821-d7af190c955d",
+    "execution_status": "succeeded",
+    "stage_count": "8/8",
+    "delivery_verification": "unknown",
+    "final_output_bytes": 56,
+    "distinct_runtimes_used": 1,
+    "required_distinct_runtimes": 2,
+    "external_acceptance": "FAIL",
+    "failures": [
+      "final output is truncated before completing the declared verification tracks",
+      "delivery contract coverage is incomplete and three checks remain unknown",
+      "FINAL_ACCEPTANCE provenance is false: it was created by the systems architect, not the verification integrator",
+      "systems-architect candidate app fails at startup with undefined.constants",
+      "digital-engineer app has a missing DOM target and shows an input error during scenario interaction"
+    ],
+    "evidence": [
+      "repaired-business/corona/workbench-run-20260909/run-evidence.json",
+      "repaired-business/corona/workbench-run-20260909/external-verification.json",
+      "repaired-business/corona/workbench-run-20260909/candidate-manifest.json",
+      "repaired-business/corona/workbench-run-20260909/assessment.md"
+    ],
+    "prepared_recovery": {
+      "team_id": "082ed3e9-219c-41c0-9ed8-c7f5c0d94467",
+      "team_name": "corona-prephase-a-lab-v4",
+      "two_runtimes_online": true,
+      "dispatch_status": "awaiting_new_user_bound_input",
+      "evidence": "repaired-business/corona/workbench-run-20260909/prepared-rerun.json"
+    }
+  },
+  "current_stage_summary": {
+    "stage-1": "NOT_COMPLETE",
+    "stage-2": "NOT_COMPLETE",
+    "stage-3": "COMPLETE_BOUNDARY_DECISION",
+    "overall": "NOT_COMPLETE"
+  }
 }
