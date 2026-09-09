@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "status": "frozen_not_dispatched",
+  "frozen_at": "2026-09-10T00:00:00+08:00",
+  "implementation_commit": "88697f19643bdf71f1b9007ed6d14356adfdc4e5",
+  "deployed_binary_sha256": "a8c8529764736f39ba13ec4617c7167429a9e9719c60e82ed728f930e9e21209",
+  "idempotency_key": "5c64a74a-a24e-51b9-8ff5-7d8de61cccd8",
+  "files": [
+    {
+      "path": "team-template.yaml",
+      "sha256": "959fd9ae02f8da817bdfb0f628247a9fc8935d8c3bbe9e666848c6ef13f31d2b"
+    },
+    {
+      "path": "task.txt",
+      "sha256": "06bba1ce45b165565b740c682d7a83668c80fb23c0f8bb960c0a5337be2d4b1c"
+    },
+    {
+      "path": "README.md",
+      "sha256": "7905462fda8b4a72fe00ecaaa3b79dc8ed70307c0d6c202dac77ee2f0d944dde"
+    }
+  ],
+  "stop_rule": "after dispatch, do not change code, template, task, contract, team, paths, or correction state; record the first result"
+}
