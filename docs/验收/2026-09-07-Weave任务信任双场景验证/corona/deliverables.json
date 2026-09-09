@@ -1,0 +1,279 @@
+{
+  "checked_at": "2026-09-08T01:38:32.350355+00:00",
+  "platform_records": [
+    {
+      "id": "deliverable_b38676356641cdf7bf9a60fb40c12295",
+      "run_id": "run-df96ebb6-6451-53b3-9a96-af76f616dce6",
+      "title": "阶段产物 · 需求统筹",
+      "metadata": {
+        "source": "published_workflow",
+        "node_id": "brief",
+        "filename": "",
+        "node_type": "lead",
+        "node_label": "需求统筹",
+        "artifact_kind": "stage"
+      },
+      "created_at": "2026-09-07T17:15:25.501984+08:00",
+      "content_chars": 509
+    },
+    {
+      "id": "deliverable_b1360e11b67fcb95c7f6ffe302ead2a4",
+      "run_id": "run-df96ebb6-6451-53b3-9a96-af76f616dce6",
+      "title": "阶段产物 · 需求统筹",
+      "metadata": {
+        "source": "published_workflow",
+        "node_id": "brief",
+        "filename": "",
+        "node_type": "lead",
+        "node_label": "需求统筹",
+        "artifact_kind": "stage"
+      },
+      "created_at": "2026-09-07T17:15:40.507+08:00",
+      "content_chars": 348
+    },
+    {
+      "id": "deliverable_94d712b376858bbcfcd94062e4e7310c",
+      "run_id": "run-df96ebb6-6451-53b3-9a96-af76f616dce6",
+      "title": "阶段产物 · 需求统筹",
+      "metadata": {
+        "source": "published_workflow",
+        "node_id": "brief",
+        "filename": "",
+        "node_type": "lead",
+        "node_label": "需求统筹",
+        "artifact_kind": "stage"
+      },
+      "created_at": "2026-09-07T17:16:51.715481+08:00",
+      "content_chars": 474
+    },
+    {
+      "id": "deliverable_5eebd2847eb84e14f6a961e8e7bacce7",
+      "run_id": "run-66a36200-9590-5776-92c6-7ff69f1f9623",
+      "title": "阶段产物 · 需求统筹",
+      "metadata": {
+        "source": "published_workflow",
+        "node_id": "brief",
+        "filename": "",
+        "node_type": "lead",
+        "node_label": "需求统筹",
+        "artifact_kind": "stage"
+      },
+      "created_at": "2026-09-07T18:16:35.659319+08:00",
+      "content_chars": 398
+    },
+    {
+      "id": "deliverable_65022a5c1b99cd6fa30a469a7a1ee21b",
+      "run_id": "run-d1adf010-b31c-579f-860c-df93990066f9",
+      "title": "阶段产物 · 需求统筹",
+      "metadata": {
+        "source": "published_workflow",
+        "node_id": "brief",
+        "filename": "",
+        "node_type": "lead",
+        "node_label": "需求统筹",
+        "artifact_kind": "stage"
+      },
+      "created_at": "2026-09-07T18:34:38.255569+08:00",
+      "content_chars": 416
+    },
+    {
+      "id": "deliverable_37e88fd262559bb9bfb03bbec7133450",
+      "run_id": "run-e3ab04c1-8586-5321-a7f5-6878ac7cc8a3",
+      "title": "阶段产物 · 需求统筹",
+      "metadata": {
+        "source": "published_workflow",
+        "node_id": "brief",
+        "filename": "",
+        "node_type": "lead",
+        "node_label": "需求统筹",
+        "artifact_kind": "stage"
+      },
+      "created_at": "2026-09-07T19:01:38.147484+08:00",
+      "content_chars": 470
+    },
+    {
+      "id": "deliverable_998744d3e60d9a548ffab438cb7a7e7d",
+      "run_id": "run-e3ab04c1-8586-5321-a7f5-6878ac7cc8a3",
+      "title": "阶段产物 · worker",
+      "metadata": {
+        "source": "published_workflow",
+        "node_id": "compute",
+        "filename": "",
+        "node_type": "worker",
+        "node_label": "worker",
+        "artifact_kind": "stage"
+      },
+      "created_at": "2026-09-07T19:01:58.044578+08:00",
+      "content_chars": 68
+    },
+    {
+      "id": "deliverable_fd98cef6fa3c8d3959b1581892ac3d4b",
+      "run_id": "run-e3ab04c1-8586-5321-a7f5-6878ac7cc8a3",
+      "title": "最终产物 · 交付",
+      "metadata": {
+        "source": "published_workflow",
+        "node_id": "deliver",
+        "filename": "",
+        "node_type": "deliver",
+        "node_label": "交付",
+        "artifact_kind": "final"
+      },
+      "created_at": "2026-09-07T19:01:58.048058+08:00",
+      "content_chars": 68
+    },
+    {
+      "id": "deliverable_76a873144085899ed79a44e30cd2c486",
+      "run_id": "run-362422e3-78da-5d7c-8a5b-0b745e961366",
+      "title": "阶段产物 · 需求统筹",
+      "metadata": {
+        "source": "published_workflow",
+        "node_id": "brief",
+        "filename": "",
+        "node_type": "lead",
+        "node_label": "需求统筹",
+        "artifact_kind": "stage"
+      },
+      "created_at": "2026-09-07T19:20:23.155771+08:00",
+      "content_chars": 648
+    },
+    {
+      "id": "deliverable_cf5e5b033c3ce24450f35c441ddeeb2c",
+      "run_id": "run-9561db30-c77b-5d22-97ce-6e0c959210eb",
+      "title": "阶段产物 · 需求统筹",
+      "metadata": {
+        "source": "published_workflow",
+        "node_id": "brief",
+        "filename": "",
+        "node_type": "lead",
+        "node_label": "需求统筹",
+        "artifact_kind": "stage"
+      },
+      "created_at": "2026-09-07T20:12:14.793872+08:00",
+      "content_chars": 585
+    },
+    {
+      "id": "deliverable_8731bc7e371f1b48d2182e1d3ef0ca22",
+      "run_id": "run-9de6fbde-0636-591c-b385-97dac48476cc",
+      "title": "阶段产物 · 需求统筹",
+      "metadata": {
+        "source": "published_workflow",
+        "node_id": "brief",
+        "filename": "",
+        "node_type": "lead",
+        "node_label": "需求统筹",
+        "artifact_kind": "stage"
+      },
+      "created_at": "2026-09-07T21:08:06.919797+08:00",
+      "content_chars": 1146
+    },
+    {
+      "id": "deliverable_99cfd9b5bd13ff7c0a103a815e6a613d",
+      "run_id": "run-9de6fbde-0636-591c-b385-97dac48476cc",
+      "title": "阶段产物 · worker",
+      "metadata": {
+        "source": "published_workflow",
+        "node_id": "compute",
+        "filename": "",
+        "node_type": "worker",
+        "node_label": "worker",
+        "artifact_kind": "stage"
+      },
+      "created_at": "2026-09-07T21:27:52.366731+08:00",
+      "content_chars": 1806
+    },
+    {
+      "id": "deliverable_ceeec0565a9faf364cde580a6ce490d3",
+      "run_id": "run-9de6fbde-0636-591c-b385-97dac48476cc",
+      "title": "最终产物 · 交付",
+      "metadata": {
+        "source": "published_workflow",
+        "node_id": "deliver",
+        "filename": "",
+        "node_type": "deliver",
+        "node_label": "交付",
+        "artifact_kind": "final"
+      },
+      "created_at": "2026-09-07T21:27:52.376732+08:00",
+      "content_chars": 1806
+    },
+    {
+      "id": "deliverable_119e89552b295cf54a0b363f51bc3917",
+      "run_id": "run-80210e96-f834-5db2-bef7-9c4a90ee13fa",
+      "title": "阶段产物 · 需求统筹",
+      "metadata": {
+        "source": "published_workflow",
+        "node_id": "brief",
+        "filename": "",
+        "node_type": "lead",
+        "node_label": "需求统筹",
+        "artifact_kind": "stage"
+      },
+      "created_at": "2026-09-07T22:04:21.947203+08:00",
+      "content_chars": 1066
+    },
+    {
+      "id": "deliverable_7d32d49a9f7d224240b8f7af8c87e2a3",
+      "run_id": "run-80210e96-f834-5db2-bef7-9c4a90ee13fa",
+      "title": "阶段产物 · worker",
+      "metadata": {
+        "source": "published_workflow",
+        "node_id": "compute",
+        "filename": "",
+        "node_type": "worker",
+        "node_label": "worker",
+        "artifact_kind": "stage"
+      },
+      "created_at": "2026-09-07T22:15:54.763884+08:00",
+      "content_chars": 2063
+    },
+    {
+      "id": "deliverable_21da77e99d0a95f0b13fbc5409bdb085",
+      "run_id": "run-80210e96-f834-5db2-bef7-9c4a90ee13fa",
+      "title": "最终产物 · 交付",
+      "metadata": {
+        "source": "published_workflow",
+        "node_id": "deliver",
+        "filename": "",
+        "node_type": "deliver",
+        "node_label": "交付",
+        "artifact_kind": "final"
+      },
+      "created_at": "2026-09-07T22:15:54.774085+08:00",
+      "content_chars": 2063
+    }
+  ],
+  "physical_working_tree_files": [
+    {
+      "path": "outputs/model/baseline_frozen.yaml",
+      "bytes": 8016,
+      "sha256": "cfb12b781363c547da87e6dec9fd937079cba25501b85ff6cbfabfbc508b10c2"
+    },
+    {
+      "path": "outputs/model/build_params.py",
+      "bytes": 6205,
+      "sha256": "09acc38d8ffef57b20422db596e34673a369455b274e13590cd5fc9823db6e44"
+    },
+    {
+      "path": "outputs/model/corona_model.py",
+      "bytes": 14389,
+      "sha256": "cfd581f2f451a570775fba212e2fbcf339a575b1c2790ae5efdcff0d7a2ceec3"
+    },
+    {
+      "path": "outputs/model/params.json",
+      "bytes": 4065,
+      "sha256": "3032ec35e912c48f919e36776d783ef027368474db52efb18ff49bfb36b1f76c"
+    },
+    {
+      "path": "outputs/model/test_model.py",
+      "bytes": 8646,
+      "sha256": "81bc8bc8bcb07c10ac3fd036d28b059ec070f2689a2ac429a51aed10c99ce20e"
+    },
+    {
+      "path": "outputs/verification/model_test_run.txt",
+      "bytes": 1702,
+      "sha256": "7c77352782561a9a917246b03beb80f465aa98df2caa02d89cfe3697f97de8cf"
+    }
+  ],
+  "attribution_limit": "Working files are the retained directory after several runs. Their presence is not a verified immutable deliverable of the latest run. Per-run platform records are listed separately.",
+  "complete_business_delivery": false
+}

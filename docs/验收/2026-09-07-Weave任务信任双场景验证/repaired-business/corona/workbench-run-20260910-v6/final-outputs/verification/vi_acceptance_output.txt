@@ -1,0 +1,26 @@
+AUTH: SHA-256 = f4777aaf587b4a81a4fef1932717bf95a0aa063fa21a8e390dfd2ecd8cc60ec4 -> MATCH (期望 f4777aaf587b4a81a4fef1932717bf95a0aa063fa21a8e390dfd2ecd8cc60ec4)
+INVENTORY: frozen 67 delivered files (SHA-256)
+=== verification-integrator 独立复跑十一项硬门槛 (2026-09-10 05:04:55) ===
+authoritative hard_gates: ['model_tests_pass', 'three_speed_scenarios_present', 'reference_calculations_within_tolerance', 'app_starts_without_cloud_dependency', 'app_exports_scenario_json', 'drawings_are_parseable_and_editable', 'all_drawings_marked_conceptual', 'requirements_have_verification_methods', 'claims_use_truth_labels', 'cross_artifact_parameter_consistency_passes', 'no_open_severity_one_issue']
+freeze audited inventory: 67 files
+GUI browser evidence: rc=0 all_ok=True
+G1 model_tests_pass: rc=0 -> PASS ; tail=['Ran 26 tests in 0.002s', '', 'OK']
+G2 three_speed_scenarios_present: PASS ; model speeds=[0.01, 0.03, 0.05] ids=['S-0.01c', 'S-0.03c', 'S-0.05c'] scenarios=3 js=True fd3bars=True
+   G3 anchor travel_years_at_0_03c              actual=1.416667e+02 exp=1.416667e+02 rel=2.353e-10 tol=0.001 PASS
+   G3 anchor kinetic_energy_1mt_at_0_03c_j      actual=4.044398e+22 exp=4.044398e+22 rel=1.067e-09 tol=0.01 PASS
+   G3 anchor kinetic_energy_5mt_at_0_03c_j      actual=2.022199e+23 exp=2.022199e+23 rel=2.579e-08 tol=0.01 PASS
+   G3 anchor gravity_1km_2rpm_m_s2              actual=4.386491e+01 exp=4.386490e+01 rel=1.926e-07 tol=0.01 PASS
+   G3 anchor dust_1mg_0_03c_j                   actual=4.044398e+07 exp=4.044398e+07 rel=1.067e-09 tol=0.01 PASS
+G3 reference_calculations_within_tolerance: independent PASS (n=5 worst=1.926e-07) ; model cross PASS -> PASS
+G4 app_starts_without_cloud_dependency: static external=[] ; gui load=True no_cloud=True (req=4 ext=0) -> PASS
+G5 app_exports_scenario_json: PASS ; {"filename":"corona_S-0.05c_scenario.json","scenario_id":"S-0.05c","baseline_id":"corona-prephase-a-v1","routes":3,"unknown_keys":["propulsion_efficiency","dust_flux_at_velocity","cost_reduction_evidence","sail_material_at_scale"],"truth_labels":["verified_fact","derived_result","assumption","unknown"],"consistent_with_page":true,"page_id":"S-0.05c"}
+G6 drawings_are_parseable_and_editable: svgs=4 scads=1 parse=FA-01_laser_sail_precursor.svg:OK;FB-01_uncrewed_archive_probe.svg:OK;FC-01_crewed_interstellar_vehicle.svg:OK;FD-01_speed_axis_scenario_comparison.svg:OK -> PASS
+G7 all_drawings_marked_conceptual: 4 svg + 1 scad, miss=none -> PASS
+G8 requirements_have_verification_methods: SA-REQ=14 missing=none ; traceability total=31 empty_vm=0 -> PASS
+G9 claims_use_truth_labels: labels=True app=True unknown_visible=True forbidden_hits=24 bad=none -> PASS
+G10 cross_artifact_parameter_consistency_passes: params==yaml=True js==json=True py==js(max=0.000e+00, mm=none) fd_drawing=True cfg=True -> PASS
+   G10 FD00 drawn=4.4900e+21 model=4.4938e+21 rel=8.402e-04 ok=True
+   G10 FD00 drawn=4.0400e+22 model=4.0444e+22 rel=1.088e-03 ok=True
+   G10 FD00 drawn=1.1200e+23 model=1.1234e+23 rel=3.066e-03 ok=True
+G11 no_open_severity_one_issue (pre-selfref): PASS ; {'content_S1_forbidden_three_speed_consistent': True, 'RK15_cross_artifact_consistent_G10': True, 'RK16_model_tests_real_G1': True, 'RKV6_1_check_count_consistent': True, 'RKV6_3_app_real_gui_G4_G5': True, 'RKV6_4_interrupt_resume_disc': True, 'RKV6_5_independent_rerun': True, 'RK17_no_masked_open_s1': True, 'RKCR2_3_runtime_indep_parallel': True}
+SELFREF AUDIT: ok=True selfref_bad=none bad_evid=none

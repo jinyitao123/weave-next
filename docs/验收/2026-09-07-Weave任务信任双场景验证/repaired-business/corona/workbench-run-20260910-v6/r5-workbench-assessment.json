@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "observed_at": "2026-09-10T07:07:00+08:00",
+  "source": "visible_builtin_workbench",
+  "session_title": "日冕隔离恢复验证复跑",
+  "run_id": "run-15fb877d-b973-5793-a585-de1c942b2009",
+  "delivery_revision_id": "delivery_7eee33883e215e29a10b5f1b3576a974bbed8842994553a97698a0575963d210",
+  "execution_status": "completed",
+  "saved_delivery_verification": {
+    "status": "unknown",
+    "evidence_completeness": "complete",
+    "check_count": 17,
+    "passed": 16,
+    "unknown": 1,
+    "unknown_check_id": "_limitation:0",
+    "unknown_reason": "unsupported_requirement",
+    "recheck_performed": true
+  },
+  "user_assessment": {
+    "outcome": "adopted",
+    "displayed_label": "可以采用",
+    "note": "第五轮已修复页脚两处失效链接；75 份最终文件齐全，文件清单与哈希一致，G1–G11、真实浏览器三档切换、JSON 导出、本地链接与敏感信息扫描均由平台外独立复核通过。Workbench 已登记 16 项通过，另有 1 项因未登记可判定检查而显示“尚无法确认”，不改变本次独立验收结论。"
+  },
+  "boundary": "Workbench assessment is Host-local and revision-specific. It does not convert the unsupported limitation check into passed delivery verification."
+}

@@ -1,0 +1,234 @@
+{
+  "checked_at": "2026-09-08T01:37:14.725490+00:00",
+  "scope": "live re-verification of historical real Corona interrupted member; not a new successful delivery sample",
+  "run_id": "run-d1adf010-b31c-579f-860c-df93990066f9",
+  "member_run_id": "6dd8c3a9-d88d-5f64-89d3-a1fab68b46a7",
+  "status": "PASS_LIMITED_RECOVERY_RECEIPTS",
+  "before_snapshot_sha256": "3f9af3d3471d866994ce8c6a4178fcd0869a6b4db30487a59d53316e13ed7da4",
+  "fault": {
+    "killed_pid": 64715,
+    "at": 1788777944.260759,
+    "member_run_id": "6dd8c3a9-d88d-5f64-89d3-a1fab68b46a7",
+    "checkpoint_seq": 38,
+    "confirmed_tools": 6
+  },
+  "attempt_before": 1,
+  "attempt_after": 2,
+  "checkpoint_before": 38,
+  "checkpoint_after": 48,
+  "confirmed_operations": [
+    {
+      "key": "6dd8c3a9-d88d-5f64-89d3-a1fab68b46a7/000000000003/chat/000000000001",
+      "kind": "model",
+      "before_sha256": "966b046f632def79738f753fc90e50fc48d04db1b4ed4957cd140a401f0d44d0",
+      "current_sha256": "966b046f632def79738f753fc90e50fc48d04db1b4ed4957cd140a401f0d44d0",
+      "unchanged": true
+    },
+    {
+      "key": "6dd8c3a9-d88d-5f64-89d3-a1fab68b46a7/000000000003/chat/000000000002",
+      "kind": "tool",
+      "before_sha256": "1f3586ebb0b6dbaf097681edb70275c9c8803ad25e49c08be17423f24863a0b8",
+      "current_sha256": "1f3586ebb0b6dbaf097681edb70275c9c8803ad25e49c08be17423f24863a0b8",
+      "unchanged": true
+    },
+    {
+      "key": "6dd8c3a9-d88d-5f64-89d3-a1fab68b46a7/000000000003/chat/000000000003",
+      "kind": "model",
+      "before_sha256": "2a8a503ed4025350745bdc266f888c8ebb5c4c47a66f22e94b661b0a40cd4bcc",
+      "current_sha256": "2a8a503ed4025350745bdc266f888c8ebb5c4c47a66f22e94b661b0a40cd4bcc",
+      "unchanged": true
+    },
+    {
+      "key": "6dd8c3a9-d88d-5f64-89d3-a1fab68b46a7/000000000003/chat/000000000004",
+      "kind": "tool",
+      "before_sha256": "fa64eb702a8b11a40583356b1e2ab459134ad021a350478d3f1a87a319fb8506",
+      "current_sha256": "fa64eb702a8b11a40583356b1e2ab459134ad021a350478d3f1a87a319fb8506",
+      "unchanged": true
+    },
+    {
+      "key": "6dd8c3a9-d88d-5f64-89d3-a1fab68b46a7/000000000003/chat/000000000005",
+      "kind": "model",
+      "before_sha256": "dcdf8368b4472d13c38e3c52104c2f19fab7aed8670e2a39471627615d405bd0",
+      "current_sha256": "dcdf8368b4472d13c38e3c52104c2f19fab7aed8670e2a39471627615d405bd0",
+      "unchanged": true
+    },
+    {
+      "key": "6dd8c3a9-d88d-5f64-89d3-a1fab68b46a7/000000000003/chat/000000000006",
+      "kind": "model",
+      "before_sha256": "786b581128d2a110bdfb72b73bf1da9baa06a482a4053541411e49adcab73f84",
+      "current_sha256": "786b581128d2a110bdfb72b73bf1da9baa06a482a4053541411e49adcab73f84",
+      "unchanged": true
+    },
+    {
+      "key": "6dd8c3a9-d88d-5f64-89d3-a1fab68b46a7/000000000003/chat/000000000007",
+      "kind": "tool",
+      "before_sha256": "58a3825e3eff81a99a352047e07d05e301e31c085481b511c307fd560b078737",
+      "current_sha256": "58a3825e3eff81a99a352047e07d05e301e31c085481b511c307fd560b078737",
+      "unchanged": true
+    },
+    {
+      "key": "6dd8c3a9-d88d-5f64-89d3-a1fab68b46a7/000000000003/chat/000000000008",
+      "kind": "model",
+      "before_sha256": "33c822803a7c9b6e5edde95d7b2c0edde1cc83972352e37c0f8a11d138a4603f",
+      "current_sha256": "33c822803a7c9b6e5edde95d7b2c0edde1cc83972352e37c0f8a11d138a4603f",
+      "unchanged": true
+    },
+    {
+      "key": "6dd8c3a9-d88d-5f64-89d3-a1fab68b46a7/000000000003/chat/000000000009",
+      "kind": "model",
+      "before_sha256": "2abd3d762a519b6710231a99e6c6a3ab54bc46ff2d96def8fb3db94fbe108740",
+      "current_sha256": "2abd3d762a519b6710231a99e6c6a3ab54bc46ff2d96def8fb3db94fbe108740",
+      "unchanged": true
+    },
+    {
+      "key": "6dd8c3a9-d88d-5f64-89d3-a1fab68b46a7/000000000003/chat/000000000010",
+      "kind": "tool",
+      "before_sha256": "2a3d8ce00c2a25a37355305beb266cf9411369f97de51d456d6d92ba8225177a",
+      "current_sha256": "2a3d8ce00c2a25a37355305beb266cf9411369f97de51d456d6d92ba8225177a",
+      "unchanged": true
+    },
+    {
+      "key": "6dd8c3a9-d88d-5f64-89d3-a1fab68b46a7/000000000003/chat/000000000011",
+      "kind": "model",
+      "before_sha256": "effb3b289ba38b7a67f3769abe31011c4f426a64d2321d32580d22b6bd8e196c",
+      "current_sha256": "effb3b289ba38b7a67f3769abe31011c4f426a64d2321d32580d22b6bd8e196c",
+      "unchanged": true
+    },
+    {
+      "key": "6dd8c3a9-d88d-5f64-89d3-a1fab68b46a7/000000000003/chat/000000000012",
+      "kind": "model",
+      "before_sha256": "555524e2e2d4e906bd6abd6a1fb93b1348506d17717a2a1b245da7cbb8f976b4",
+      "current_sha256": "555524e2e2d4e906bd6abd6a1fb93b1348506d17717a2a1b245da7cbb8f976b4",
+      "unchanged": true
+    },
+    {
+      "key": "6dd8c3a9-d88d-5f64-89d3-a1fab68b46a7/000000000003/chat/000000000013",
+      "kind": "tool",
+      "before_sha256": "620f9371a62f4ef0fd4021afa2ac8a663b5665cbbd5f7d6d419eae0d52ba0120",
+      "current_sha256": "620f9371a62f4ef0fd4021afa2ac8a663b5665cbbd5f7d6d419eae0d52ba0120",
+      "unchanged": true
+    },
+    {
+      "key": "6dd8c3a9-d88d-5f64-89d3-a1fab68b46a7/000000000003/chat/000000000014",
+      "kind": "model",
+      "before_sha256": "2e01ab8c30afde575c8e5a779967b27839a5576d4dfa5e434925bfe21dc7635a",
+      "current_sha256": "2e01ab8c30afde575c8e5a779967b27839a5576d4dfa5e434925bfe21dc7635a",
+      "unchanged": true
+    },
+    {
+      "key": "6dd8c3a9-d88d-5f64-89d3-a1fab68b46a7/000000000003/chat/000000000015",
+      "kind": "model",
+      "before_sha256": "5f5aaf3839df5ef2921cfbaf1159bd439dd40db14bd281446adb2e7b2af59d82",
+      "current_sha256": "5f5aaf3839df5ef2921cfbaf1159bd439dd40db14bd281446adb2e7b2af59d82",
+      "unchanged": true
+    },
+    {
+      "key": "6dd8c3a9-d88d-5f64-89d3-a1fab68b46a7/000000000003/chat/000000000016",
+      "kind": "tool",
+      "before_sha256": "37c042a565547c6418e0e0aa3820631955ed41dd17fc447e1693aa2528eb3d1e",
+      "current_sha256": "37c042a565547c6418e0e0aa3820631955ed41dd17fc447e1693aa2528eb3d1e",
+      "unchanged": true
+    },
+    {
+      "key": "6dd8c3a9-d88d-5f64-89d3-a1fab68b46a7/000000000003/chat/000000000017",
+      "kind": "model",
+      "before_sha256": "539969aad5ea0e5cc14a718a015e25f9f47ae8a1475bdfe5dcb34bcd216a544b",
+      "current_sha256": "539969aad5ea0e5cc14a718a015e25f9f47ae8a1475bdfe5dcb34bcd216a544b",
+      "unchanged": true
+    }
+  ],
+  "physical_tools": [
+    {
+      "key": "6dd8c3a9-d88d-5f64-89d3-a1fab68b46a7/000000000003/chat/000000000019",
+      "attempts": 1,
+      "physical_matches": 1,
+      "receipt_files": [
+        "tool-73937-007.json"
+      ],
+      "receipt_file_sha256": [
+        "9db89260906cb25f9ef60ac282a0d2502139c9c5f2e3aa64dbbb68847a7c2fb1"
+      ],
+      "confirmed_before_fault": false
+    },
+    {
+      "key": "6dd8c3a9-d88d-5f64-89d3-a1fab68b46a7/000000000003/chat/000000000002",
+      "attempts": 1,
+      "physical_matches": 1,
+      "receipt_files": [
+        "tool-73937-001.json"
+      ],
+      "receipt_file_sha256": [
+        "506cb7b48d4f28a304dc779ae97d5ebcaabecc0d013de65a723a775552c5b2b4"
+      ],
+      "confirmed_before_fault": true
+    },
+    {
+      "key": "6dd8c3a9-d88d-5f64-89d3-a1fab68b46a7/000000000003/chat/000000000004",
+      "attempts": 1,
+      "physical_matches": 1,
+      "receipt_files": [
+        "tool-73937-002.json"
+      ],
+      "receipt_file_sha256": [
+        "d8d27195aac8cc8b007e70c80fc88810856dd93a88c7184fa6f9d043a46c9772"
+      ],
+      "confirmed_before_fault": true
+    },
+    {
+      "key": "6dd8c3a9-d88d-5f64-89d3-a1fab68b46a7/000000000003/chat/000000000007",
+      "attempts": 1,
+      "physical_matches": 1,
+      "receipt_files": [
+        "tool-73937-003.json"
+      ],
+      "receipt_file_sha256": [
+        "e73f4d271282df8414953384c5382319f61f5cb58d1a25606935b674ca358130"
+      ],
+      "confirmed_before_fault": true
+    },
+    {
+      "key": "6dd8c3a9-d88d-5f64-89d3-a1fab68b46a7/000000000003/chat/000000000010",
+      "attempts": 1,
+      "physical_matches": 1,
+      "receipt_files": [
+        "tool-73937-004.json"
+      ],
+      "receipt_file_sha256": [
+        "84fd5792e1129552a810c6a19b08dcca39ad88589c72eb919c27117681cdd489"
+      ],
+      "confirmed_before_fault": true
+    },
+    {
+      "key": "6dd8c3a9-d88d-5f64-89d3-a1fab68b46a7/000000000003/chat/000000000013",
+      "attempts": 1,
+      "physical_matches": 1,
+      "receipt_files": [
+        "tool-73937-005.json"
+      ],
+      "receipt_file_sha256": [
+        "d171ac608d3cdca6a44e08652a4baa3363d1290bb0d6c69f280c86b4f2e7444b"
+      ],
+      "confirmed_before_fault": true
+    },
+    {
+      "key": "6dd8c3a9-d88d-5f64-89d3-a1fab68b46a7/000000000003/chat/000000000016",
+      "attempts": 1,
+      "physical_matches": 1,
+      "receipt_files": [
+        "tool-73937-006.json"
+      ],
+      "receipt_file_sha256": [
+        "13a94970f2d6ad68f3706f5f2912ea01c41bbf076ac85143dbf5688ead78810a"
+      ],
+      "confirmed_before_fault": true
+    }
+  ],
+  "full_delivery": "FAIL",
+  "budget_remaining_continuity": "NOT_VERIFIED",
+  "unknown_side_effect_pause": "NOT_RUN_IN_THIS_CASE",
+  "limits": [
+    "Only this recorded interruption and confirmed receipt set is covered.",
+    "No A/B comparator or recovery time benefit claim.",
+    "Later run failed; receipt preservation does not imply business completion."
+  ]
+}

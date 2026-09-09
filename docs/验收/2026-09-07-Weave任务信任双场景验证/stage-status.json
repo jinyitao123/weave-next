@@ -1,13 +1,13 @@
 {
   "schema_version": 1,
-  "as_of": "2026-09-10T03:06:00+08:00",
+  "as_of": "2026-09-10T07:08:00+08:00",
   "plan": "docs/计划/2026-09-07-Weave任务信任契约与双场景三阶段验证.md",
   "stages": [
     {
       "id": "stage-1",
       "name": "契约与首轮真实性审计",
-      "status": "in_progress",
-      "next": "修复后的电商 invoice 样本已复用发布工作流并经原始基准验证器 7/7，通过 Workbench 记录采用；新的冻结本地文本样本也完成 5/5 交付与采用。日冕 v4 外部内容 11/11 通过但平台交付未知、用户未评价，阶段一仍需保留业务闭环缺口。",
+      "status": "complete",
+      "next": "电商新基线已由原始验证器 7/7 证明；日冕第 5 次正式修订形成 75 件完整交付、平台外 G1-G11 与浏览器复核通过，并在 Workbench 对精确交付版本记录采用。平台核验仍保留一项不支持的跨运行产物绑定限制。",
       "evidence": [
         "repaired-business/invoice/final-verification.json",
         "repaired-business/invoice/weave-run-evidence.json",
@@ -23,14 +23,17 @@
         "held-out/shipment-delay/build-attempt-evidence.json",
         "held-out/returns-aging/first-run-evidence.json",
         "held-out/correction-replay-02/verification-summary.json",
-        "held-out/correction-replay-02/user-assessment.json"
+        "held-out/correction-replay-02/user-assessment.json",
+        "repaired-business/corona/workbench-run-20260910-v6/r5-run-delivery.json",
+        "repaired-business/corona/workbench-run-20260910-v6/r5-independent-verification/summary.json",
+        "repaired-business/corona/workbench-run-20260910-v6/r5-workbench-assessment.json"
       ]
     },
     {
       "id": "stage-2",
       "name": "重复使用与中断接续",
-      "status": "in_progress",
-      "next": "电商第二任务已复用工作流 v2，输入身份正确，修订后原始验证器 7/7 且无发送邮件；当前格式 fanout 也已仅重跑 calculator、完整保留 reviewer，并在固定预算内交付。阶段二剩余日冕业务材料/外部副作用恢复复验、自动可修复错误以及可比人工时间/A-B-C 数据。",
+      "status": "closed_by_stop_rule",
+      "next": "已取得电商重复使用、当前格式成员级纠偏、日冕持久检查点与精确阶段重试证据；但日冕最终采用来自后续完整修订，且仍缺可比人工时间、对齐 A/B/C 与带副作用恢复。按原停止规则冻结 Loom 扩张，不继续用不可比复跑补数字。",
       "evidence": [
         "tool-contracts/mechanism-verification.json",
         "member-budget/mechanism-verification.json",
@@ -43,14 +46,17 @@
         "held-out/correction-replay-02/final-activity.json",
         "held-out/correction-replay-02/artifact-comparison.json",
         "repaired-business/invoice/final-verification.json",
-        "repaired-business/invoice/weave-run-evidence.json"
+        "repaired-business/invoice/weave-run-evidence.json",
+        "repaired-business/corona/workbench-run-20260910-v6/pre-interruption.json",
+        "repaired-business/corona/workbench-run-20260910-v6/post-retry-durable-state.json",
+        "repaired-business/corona/workbench-run-20260910-v6/r5-workbench-assessment.json"
       ]
     },
     {
       "id": "stage-3",
       "name": "Loom 边界和产品路线决策",
       "status": "complete",
-      "next": "边界决策已更新到 v0.4：共用信任机制纳入主线；Loom 仅准入已发布标准串行叶子。日冕 v4 的内容通过不改变冻结并行、交互权限、跨主机恢复和业务验收职责的决定。",
+      "next": "边界决策更新到 v0.5：共用信任机制进入主线；Loom 仅准入已发布标准串行叶子。日冕最终采用不提供对齐收益证据，因此冻结范围不变。",
       "evidence": [
         "loom-boundary-decision.md",
         "tool-contracts/mechanism-verification.json",

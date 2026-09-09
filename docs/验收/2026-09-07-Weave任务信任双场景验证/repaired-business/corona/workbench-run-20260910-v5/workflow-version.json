@@ -1,0 +1,464 @@
+{
+  "workflow_id": "corona-prephase-a-recovery-v5-workflow",
+  "team_id": "2d393195-28d9-4d07-ae14-ddf8d0739ebb",
+  "version": 1,
+  "status": "published",
+  "trigger_config": {
+    "type": "conversation_explicit",
+    "config": {},
+    "schema_version": 1
+  },
+  "graph_definition": {
+    "edges": [
+      {
+        "id": "lead-parallel",
+        "route": "success",
+        "to_node_id": "parallel",
+        "from_node_id": "lead"
+      },
+      {
+        "id": "join-finalizer",
+        "route": "success",
+        "to_node_id": "finalizer",
+        "from_node_id": "join"
+      },
+      {
+        "id": "finalizer-deliver",
+        "route": "success",
+        "to_node_id": "deliver",
+        "from_node_id": "finalizer"
+      },
+      {
+        "id": "parallel-parallel-01",
+        "route": "branch",
+        "to_node_id": "parallel-01",
+        "from_node_id": "parallel"
+      },
+      {
+        "id": "parallel-01-join",
+        "route": "join",
+        "to_node_id": "join",
+        "from_node_id": "parallel-01"
+      },
+      {
+        "id": "parallel-parallel-02",
+        "route": "branch",
+        "to_node_id": "parallel-02",
+        "from_node_id": "parallel"
+      },
+      {
+        "id": "parallel-02-join",
+        "route": "join",
+        "to_node_id": "join",
+        "from_node_id": "parallel-02"
+      },
+      {
+        "id": "parallel-parallel-03",
+        "route": "branch",
+        "to_node_id": "parallel-03",
+        "from_node_id": "parallel"
+      },
+      {
+        "id": "parallel-03-join",
+        "route": "join",
+        "to_node_id": "join",
+        "from_node_id": "parallel-03"
+      },
+      {
+        "id": "parallel-parallel-04",
+        "route": "branch",
+        "to_node_id": "parallel-04",
+        "from_node_id": "parallel"
+      },
+      {
+        "id": "parallel-04-join",
+        "route": "join",
+        "to_node_id": "join",
+        "from_node_id": "parallel-04"
+      },
+      {
+        "id": "parallel-parallel-05",
+        "route": "branch",
+        "to_node_id": "parallel-05",
+        "from_node_id": "parallel"
+      },
+      {
+        "id": "parallel-05-join",
+        "route": "join",
+        "to_node_id": "join",
+        "from_node_id": "parallel-05"
+      },
+      {
+        "id": "parallel-parallel-06",
+        "route": "branch",
+        "to_node_id": "parallel-06",
+        "from_node_id": "parallel"
+      },
+      {
+        "id": "parallel-06-join",
+        "route": "join",
+        "to_node_id": "join",
+        "from_node_id": "parallel-06"
+      }
+    ],
+    "nodes": [
+      {
+        "id": "lead",
+        "type": "lead",
+        "label": "Coordinate",
+        "config": {
+          "instruction": "只负责冻结输入清单、协调分工和汇总决策；不得生成专业角色文件、统一模型、应用、图纸、验证报告或 FINAL_ACCEPTANCE Execute only this node's assigned work and return that work as your response. The platform invokes teammates, waits for their results, and saves outputs; you do not need Weave dispatch or Workbench UI tools. For coordination, return a work brief instead of calling teammates or reporting missing platform controls. Treat run_input as the original task and source material; brief/results are upstream analysis and do not replace those materials."
+        },
+        "inputs": {
+          "run_input": {
+            "value": {
+              "path": "",
+              "source": "run_input"
+            },
+            "expected_type": "text"
+          }
+        },
+        "output": {
+          "type": "text"
+        }
+      },
+      {
+        "id": "parallel",
+        "type": "parallel",
+        "label": "Parallel work",
+        "config": {
+          "join_node_id": "join"
+        }
+      },
+      {
+        "id": "join",
+        "type": "join",
+        "label": "Collect results",
+        "config": {
+          "policy": "all_success"
+        }
+      },
+      {
+        "id": "finalizer",
+        "type": "worker",
+        "label": "Synthesize",
+        "config": {
+          "kind": "consult",
+          "agent_id": "aee4bbc2-8a60-4b8c-9b86-eace80ba0fe4",
+          "agent_version": 1,
+          "result_requirement": "第一优先级是在自身 workdir/outputs 形成唯一最终目录；从数字工程成员接收其实际文件，从各专业成员接收复核材料，独立复跑 acceptance.json 全部十一项硬门槛。必须实际创建 outputs/model、outputs/drawings、outputs/app、outputs/review、outputs/verification 和 outputs/FINAL_ACCEPTANCE.md。FINAL_ACCEPTANCE.md 必须逐行写 G1: PASS 到 G11: PASS，任何门槛未通过或未运行时写对应 FAIL 且整体判失败；检查计数从执行记录生成，冻结被测清单并排除报告自引用。禁止只返回摘要、禁止采信其他成员自称的最终验收、禁止在完成全部检查前结束 Execute only this node's assigned work and return that work as your response. The platform invokes teammates, waits for their results, and saves outputs; you do not need Weave dispatch or Workbench UI tools. For coordination, return a work brief instead of calling teammates or reporting missing platform controls. Treat run_input as the original task and source material; brief/results are upstream analysis and do not replace those materials."
+        },
+        "inputs": {
+          "results": {
+            "value": {
+              "path": "",
+              "source": "node_output",
+              "node_id": "join"
+            },
+            "expected_type": "json"
+          },
+          "run_input": {
+            "value": {
+              "path": "",
+              "source": "run_input"
+            },
+            "expected_type": "text"
+          }
+        },
+        "output": {
+          "type": "text"
+        }
+      },
+      {
+        "id": "deliver",
+        "type": "deliver",
+        "label": "Deliver",
+        "config": {
+          "result": {
+            "path": "",
+            "source": "node_output",
+            "node_id": "finalizer"
+          }
+        }
+      },
+      {
+        "id": "parallel-01",
+        "type": "worker",
+        "label": "Parallel work 1",
+        "config": {
+          "kind": "dispatch",
+          "agent_id": "9cc749df-3b46-4c44-ae84-8b8b55e734d0",
+          "agent_version": 1,
+          "result_requirement": "复核并复用冻结 v4 的文明档案载荷架构、长期可靠性和概念图纸要求 Execute only this node's assigned work and return that work as your response. The platform invokes teammates, waits for their results, and saves outputs; you do not need Weave dispatch or Workbench UI tools. For coordination, return a work brief instead of calling teammates or reporting missing platform controls. Treat run_input as the original task and source material; brief/results are upstream analysis and do not replace those materials."
+        },
+        "inputs": {
+          "brief": {
+            "value": {
+              "path": "",
+              "source": "node_output",
+              "node_id": "lead"
+            },
+            "expected_type": "text"
+          },
+          "run_input": {
+            "value": {
+              "path": "",
+              "source": "run_input"
+            },
+            "expected_type": "text"
+          }
+        },
+        "output": {
+          "type": "text"
+        }
+      },
+      {
+        "id": "parallel-02",
+        "type": "worker",
+        "label": "Parallel work 2",
+        "config": {
+          "kind": "dispatch",
+          "agent_id": "ffe91a08-fd94-46b6-9e91-13954102eaf3",
+          "agent_version": 1,
+          "result_requirement": "复核并复用冻结 v4 的技术成熟度、WBS、成本研究方法、风险和课题包 Execute only this node's assigned work and return that work as your response. The platform invokes teammates, waits for their results, and saves outputs; you do not need Weave dispatch or Workbench UI tools. For coordination, return a work brief instead of calling teammates or reporting missing platform controls. Treat run_input as the original task and source material; brief/results are upstream analysis and do not replace those materials."
+        },
+        "inputs": {
+          "brief": {
+            "value": {
+              "path": "",
+              "source": "node_output",
+              "node_id": "lead"
+            },
+            "expected_type": "text"
+          },
+          "run_input": {
+            "value": {
+              "path": "",
+              "source": "run_input"
+            },
+            "expected_type": "text"
+          }
+        },
+        "output": {
+          "type": "text"
+        }
+      },
+      {
+        "id": "parallel-03",
+        "type": "worker",
+        "label": "Parallel work 3",
+        "config": {
+          "kind": "dispatch",
+          "agent_id": "2db6e84f-d676-4747-895d-9a9692dc4d38",
+          "agent_version": 1,
+          "result_requirement": "从冻结 v4 目录复制并复用数字成果，只修复可复现缺陷；保留统一模型、至少三张 SVG、一份 OpenSCAD 模型、可交互且可导出 JSON 的本地应用及机器验证清单；检查计数必须由实际执行动态产生，验证命令必须有界退出 Execute only this node's assigned work and return that work as your response. The platform invokes teammates, waits for their results, and saves outputs; you do not need Weave dispatch or Workbench UI tools. For coordination, return a work brief instead of calling teammates or reporting missing platform controls. Treat run_input as the original task and source material; brief/results are upstream analysis and do not replace those materials."
+        },
+        "inputs": {
+          "brief": {
+            "value": {
+              "path": "",
+              "source": "node_output",
+              "node_id": "lead"
+            },
+            "expected_type": "text"
+          },
+          "run_input": {
+            "value": {
+              "path": "",
+              "source": "run_input"
+            },
+            "expected_type": "text"
+          }
+        },
+        "output": {
+          "type": "text"
+        }
+      },
+      {
+        "id": "parallel-04",
+        "type": "worker",
+        "label": "Parallel work 4",
+        "config": {
+          "kind": "dispatch",
+          "agent_id": "601755fd-87f4-4c72-8913-c15350833928",
+          "agent_version": 1,
+          "result_requirement": "复核冻结 v4 成果中的公式、数量级、三速度情景和未知项；优先复用，只有证据要求时才修改 Execute only this node's assigned work and return that work as your response. The platform invokes teammates, waits for their results, and saves outputs; you do not need Weave dispatch or Workbench UI tools. For coordination, return a work brief instead of calling teammates or reporting missing platform controls. Treat run_input as the original task and source material; brief/results are upstream analysis and do not replace those materials."
+        },
+        "inputs": {
+          "brief": {
+            "value": {
+              "path": "",
+              "source": "node_output",
+              "node_id": "lead"
+            },
+            "expected_type": "text"
+          },
+          "run_input": {
+            "value": {
+              "path": "",
+              "source": "run_input"
+            },
+            "expected_type": "text"
+          }
+        },
+        "output": {
+          "type": "text"
+        }
+      },
+      {
+        "id": "parallel-05",
+        "type": "worker",
+        "label": "Parallel work 5",
+        "config": {
+          "kind": "dispatch",
+          "agent_id": "908cbbe3-b071-4737-9453-486d9a94cab3",
+          "agent_version": 1,
+          "result_requirement": "复核冻结 v4 推进能源热控成果，运行有界自动检查并输出成立条件、终止条件和验证清单；优先复用，禁止启动不退出的服务 Execute only this node's assigned work and return that work as your response. The platform invokes teammates, waits for their results, and saves outputs; you do not need Weave dispatch or Workbench UI tools. For coordination, return a work brief instead of calling teammates or reporting missing platform controls. Treat run_input as the original task and source material; brief/results are upstream analysis and do not replace those materials."
+        },
+        "inputs": {
+          "brief": {
+            "value": {
+              "path": "",
+              "source": "node_output",
+              "node_id": "lead"
+            },
+            "expected_type": "text"
+          },
+          "run_input": {
+            "value": {
+              "path": "",
+              "source": "run_input"
+            },
+            "expected_type": "text"
+          }
+        },
+        "output": {
+          "type": "text"
+        }
+      },
+      {
+        "id": "parallel-06",
+        "type": "worker",
+        "label": "Parallel work 6",
+        "config": {
+          "kind": "dispatch",
+          "agent_id": "748e3d2b-8ec9-4121-a079-a89717b740a0",
+          "agent_version": 1,
+          "result_requirement": "只输出需求、接口、路线终态、追踪关系和配置基线；不得生成统一模型、应用、整套交付或 FINAL_ACCEPTANCE，不得冒充独立总装员 Execute only this node's assigned work and return that work as your response. The platform invokes teammates, waits for their results, and saves outputs; you do not need Weave dispatch or Workbench UI tools. For coordination, return a work brief instead of calling teammates or reporting missing platform controls. Treat run_input as the original task and source material; brief/results are upstream analysis and do not replace those materials."
+        },
+        "inputs": {
+          "brief": {
+            "value": {
+              "path": "",
+              "source": "node_output",
+              "node_id": "lead"
+            },
+            "expected_type": "text"
+          },
+          "run_input": {
+            "value": {
+              "path": "",
+              "source": "run_input"
+            },
+            "expected_type": "text"
+          }
+        },
+        "output": {
+          "type": "text"
+        }
+      }
+    ],
+    "entry_node_id": "lead",
+    "input_contract": {
+      "type": "text"
+    },
+    "schema_version": 1,
+    "output_contract": {
+      "type": "text"
+    },
+    "delivery_contract": {
+      "output": {
+        "type": "text"
+      },
+      "version": 1,
+      "coverage": "explicit",
+      "limitations": [
+        "旧运行成果通过只读主机路径和哈希清单提供，尚非 Weave 原生跨运行产物绑定"
+      ],
+      "required_checks": [
+        {
+          "id": "output-schema",
+          "verifier_id": "weave.output-schema",
+          "verifier_version": "v1"
+        }
+      ],
+      "external_effects": "none",
+      "required_artifacts": [
+        {
+          "id": "final-acceptance",
+          "path": "outputs/FINAL_ACCEPTANCE.md",
+          "contains": [
+            "G1: PASS",
+            "G2: PASS",
+            "G3: PASS",
+            "G4: PASS",
+            "G5: PASS",
+            "G6: PASS",
+            "G7: PASS",
+            "G8: PASS",
+            "G9: PASS",
+            "G10: PASS",
+            "G11: PASS",
+            "overall: PASS"
+          ]
+        },
+        {
+          "id": "acceptance-json",
+          "path": "outputs/verification/acceptance.json"
+        },
+        {
+          "id": "browser-evidence",
+          "path": "outputs/verification/browser-evidence.json"
+        },
+        {
+          "id": "app-entry",
+          "path": "outputs/app/index.html"
+        },
+        {
+          "id": "app-runtime",
+          "path": "outputs/app/app.js"
+        },
+        {
+          "id": "model-source",
+          "path": "outputs/model/corona_model.py"
+        },
+        {
+          "id": "model-tests",
+          "path": "outputs/model/tests/test_model.py"
+        },
+        {
+          "id": "drawing-a",
+          "path": "outputs/drawings/FA-01_laser_sail_precursor.svg"
+        },
+        {
+          "id": "drawing-b",
+          "path": "outputs/drawings/FB-01_uncrewed_archive_probe.svg"
+        },
+        {
+          "id": "drawing-c",
+          "path": "outputs/drawings/FC-01_crewed_interstellar_vehicle.svg"
+        },
+        {
+          "id": "editable-model",
+          "path": "outputs/drawings/RH-01_rotating_habitat.scad"
+        },
+        {
+          "id": "review-index",
+          "path": "outputs/review/REVIEW_INDEX.md"
+        }
+      ]
+    }
+  },
+  "created_at": "2026-09-09T19:18:42.95511Z",
+  "updated_at": "2026-09-09T19:18:43.020943Z"
+}

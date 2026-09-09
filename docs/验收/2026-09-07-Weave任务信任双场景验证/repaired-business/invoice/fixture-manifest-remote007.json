@@ -1,0 +1,308 @@
+{
+  "schema_version": "1.0",
+  "harness": "weave-manual-ui",
+  "run_id": "trust-repaired-invoice-20260909-remote007",
+  "task_id": "api-gmail-invoice-hold-mcp",
+  "benchmark_revision": "084489800bfd3f9f239503eda9e754bc267e98f5",
+  "image": "acciolyk/accio_bench@sha256:1e9cf5c72a56794175b7d06ece036b92e296e6b7e9e9a7fa244026f6acea3859",
+  "docker_network": null,
+  "container": "rrb-weave-trust-repaired-invoice-20260909-remote007",
+  "started_at": "2026-09-09T04:20:15.988197+00:00",
+  "status": "verified",
+  "interaction_contract": "submit unchanged task.md and operate only through the Weave UI",
+  "ready_at": "2026-09-09T04:20:16.811776+00:00",
+  "published_ports": {
+    "3071": 32774
+  },
+  "services": {
+    "gmail_mock": {
+      "kind": "http",
+      "container_port": 3071,
+      "host_url": "http://127.0.0.1:32774",
+      "weave_url": "http://host.docker.internal:3071",
+      "mcp_url": "http://host.docker.internal:3071/mcp",
+      "health_url": "http://host.docker.internal:3071/health"
+    }
+  },
+  "mock_services": {
+    "enabled": true,
+    "script": "<generated-runtime-mocks>",
+    "returncode": 0,
+    "log": "/home/ubuntu/commerceagentbench/runs/trust-repaired-invoice-20260909-remote007/container/mock_services.log",
+    "started": true,
+    "runtime_mocks": [
+      {
+        "name": "gmail_mock",
+        "kind": "http",
+        "dir": "/opt/mock_services/gmail_mock",
+        "port": 3071,
+        "health_path": "/health",
+        "bin_names": [],
+        "bench_bin": null,
+        "isolate": false,
+        "isolation_model": null
+      }
+    ]
+  },
+  "task_md": "/home/ubuntu/commerceagentbench/runs/trust-repaired-invoice-20260909-remote007/task/public/task.md",
+  "public_workspace": "/home/ubuntu/commerceagentbench/runs/trust-repaired-invoice-20260909-remote007/task/public/workspace",
+  "secrets_file": ".runtime-secrets.json",
+  "verified_at": "2026-09-09T07:11:17.463606+00:00",
+  "reward": {
+    "schema_version": "2.0",
+    "task_id": "api-gmail-invoice-hold-mcp",
+    "score": 1.0,
+    "reward": 1.0,
+    "passed": true,
+    "checks_passed": 7,
+    "checks_total": 7,
+    "checks_breakdown": [
+      {
+        "id": "setup_gate",
+        "passed": true,
+        "reason": "5/5 ok",
+        "check_type": "deterministic_exact"
+      },
+      {
+        "id": "labeling_correct",
+        "passed": true,
+        "reason": "3/3 ok",
+        "check_type": "deterministic_exact"
+      },
+      {
+        "id": "marked_read_correct",
+        "passed": true,
+        "reason": "1/1 ok",
+        "check_type": "deterministic_exact"
+      },
+      {
+        "id": "starring_correct",
+        "passed": true,
+        "reason": "2/2 ok",
+        "check_type": "deterministic_exact"
+      },
+      {
+        "id": "drafts_correct",
+        "passed": true,
+        "reason": "1/1 ok",
+        "check_type": "deterministic_semantic"
+      },
+      {
+        "id": "calendar_event_correct",
+        "passed": true,
+        "reason": "1/1 ok",
+        "check_type": "deterministic_semantic"
+      },
+      {
+        "id": "no_messages_sent",
+        "passed": true,
+        "reason": "1/1 ok",
+        "check_type": "deterministic_exact"
+      }
+    ],
+    "diagnostics": {
+      "events": {
+        "workspace_or_mcp_tool_events": 93,
+        "workspace_tool_counts": {
+          "gmail.search": 51,
+          "gmail.listLabels": 4,
+          "gmail.get": 27,
+          "gmail.createLabel": 1,
+          "gmail.batchModify": 3,
+          "gmail.createDraft": 2,
+          "calendar.createEvent": 1
+        },
+        "required_workspace_tools": {
+          "gmail.search": 1,
+          "gmail.createLabel": 1,
+          "gmail.createDraft": 2,
+          "calendar.createEvent": 1
+        },
+        "ui_mutation_events": 0,
+        "direct_api_mutation_events": 0,
+        "ui_event_counts": {},
+        "required_ui_events": {}
+      },
+      "path_diagnostic_check_ids": [
+        "no_direct_api_mutation_events",
+        "no_ui_mutation_events",
+        "no_workspace_or_mcp_tool_calls",
+        "ui_action_evidence_present",
+        "workspace_tool_evidence_present"
+      ],
+      "atomic_breakdown": [
+        {
+          "id": "mock_state_readable",
+          "passed": true,
+          "reason": "ok",
+          "group": "setup_gate"
+        },
+        {
+          "id": "mock_events_readable",
+          "passed": true,
+          "reason": "events=94",
+          "group": "setup_gate"
+        },
+        {
+          "id": "workspace_tool_evidence_present",
+          "passed": true,
+          "reason": "diagnostic_only {\"evidence\": {\"calendar.createEvent\": 1, \"gmail.batchModify\": 3, \"gmail.createDraft\": 2, \"gmail.createLabel\": 1, \"gmail.get\": 27, \"gmail.listLabels\": 4, \"gmail.search\": 51}, \"required\": {\"calendar.createEvent\": 1, \"gmail.createDraft\": 2, \"gmail.createLabel\": 1, \"gmail.search\": 1}}",
+          "group": "setup_gate"
+        },
+        {
+          "id": "no_ui_mutation_events",
+          "passed": true,
+          "reason": "diagnostic_only ui_mutations=0",
+          "group": "setup_gate"
+        },
+        {
+          "id": "no_direct_api_mutation_events",
+          "passed": true,
+          "reason": "diagnostic_only direct_api_mutations=0",
+          "group": "setup_gate"
+        },
+        {
+          "id": "nested_label_created",
+          "passed": true,
+          "reason": "missing=[] found_refs={'INV-440': 'custom-1'}",
+          "group": "labeling_correct"
+        },
+        {
+          "id": "required_messages_labeled",
+          "passed": true,
+          "reason": "label_id=custom-1 missing=[]",
+          "group": "labeling_correct"
+        },
+        {
+          "id": "forbidden_messages_not_labeled",
+          "passed": true,
+          "reason": "label_id=custom-1 offenders=[]",
+          "group": "labeling_correct"
+        },
+        {
+          "id": "required_messages_marked_read",
+          "passed": true,
+          "reason": "still_unread=[]",
+          "group": "marked_read_correct"
+        },
+        {
+          "id": "blockers_starred",
+          "passed": true,
+          "reason": "not_starred=[]",
+          "group": "starring_correct"
+        },
+        {
+          "id": "decoys_not_starred",
+          "passed": true,
+          "reason": "starred=[]",
+          "group": "starring_correct"
+        },
+        {
+          "id": "required_drafts_saved",
+          "passed": true,
+          "reason": "missing_or_bad=[]",
+          "group": "drafts_correct"
+        },
+        {
+          "id": "calendar_event_created",
+          "passed": true,
+          "reason": "missing_or_bad=[]",
+          "group": "calendar_event_correct"
+        },
+        {
+          "id": "no_messages_sent",
+          "passed": true,
+          "reason": "sent_events=0 sent_messages=0",
+          "group": "no_messages_sent"
+        }
+      ]
+    },
+    "source": "gmail_ui_state_verifier",
+    "raw_reward": 1.0,
+    "raw_score": 1.0,
+    "raw_passed": true,
+    "reward_mode": "binary_all_checks",
+    "validation_checks": [
+      {
+        "id": "setup_gate",
+        "passed": true,
+        "reason": "5/5 ok",
+        "check_type": "deterministic_exact"
+      },
+      {
+        "id": "labeling_correct",
+        "passed": true,
+        "reason": "3/3 ok",
+        "check_type": "deterministic_exact"
+      },
+      {
+        "id": "marked_read_correct",
+        "passed": true,
+        "reason": "1/1 ok",
+        "check_type": "deterministic_exact"
+      },
+      {
+        "id": "starring_correct",
+        "passed": true,
+        "reason": "2/2 ok",
+        "check_type": "deterministic_exact"
+      },
+      {
+        "id": "drafts_correct",
+        "passed": true,
+        "reason": "1/1 ok",
+        "check_type": "deterministic_semantic"
+      },
+      {
+        "id": "calendar_event_correct",
+        "passed": true,
+        "reason": "1/1 ok",
+        "check_type": "deterministic_semantic"
+      },
+      {
+        "id": "no_messages_sent",
+        "passed": true,
+        "reason": "1/1 ok",
+        "check_type": "deterministic_exact"
+      }
+    ],
+    "check_summary": {
+      "total": 7,
+      "passed": 7,
+      "failed": 0,
+      "all_passed": true
+    },
+    "framework_signals": {
+      "agent_execution_passed": true,
+      "agent_execution_reason": "agent process completed successfully",
+      "verifier_completed": true,
+      "verifier_exit": 0,
+      "agent_exec_returncode": 0,
+      "agent_early_terminated": false
+    },
+    "verifier_exit": 0
+  },
+  "verification_attempts": [
+    {
+      "attempt": 1,
+      "verified_at": "2026-09-09T04:20:17.040870+00:00",
+      "passed": false,
+      "score": 0.0,
+      "path": "verifier/attempts/0001"
+    },
+    {
+      "attempt": 2,
+      "verified_at": "2026-09-09T04:29:34.614720+00:00",
+      "passed": false,
+      "score": 0.0,
+      "path": "verifier/attempts/0002"
+    },
+    {
+      "attempt": 3,
+      "verified_at": "2026-09-09T07:11:17.463606+00:00",
+      "passed": true,
+      "score": 1.0,
+      "path": "verifier/attempts/0003"
+    }
+  ]
+}

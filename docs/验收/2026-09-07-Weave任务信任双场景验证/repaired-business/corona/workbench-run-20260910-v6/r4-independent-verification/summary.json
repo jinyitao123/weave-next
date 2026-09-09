@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "source": "platform_saved_r4_candidate",
+  "artifact_count": 75,
+  "total_bytes": 544117,
+  "vi_run_gates_exit_code": 0,
+  "independent_reference_exit_code": 0,
+  "independent_sweep_exit_code": 0,
+  "acceptance_overall": "PASS",
+  "browser_all_ok": true,
+  "traceability_csv_present": true,
+  "traceability_md_present": true,
+  "local_link_check_missing_count": 2,
+  "independent_result": "FAIL"
+}
