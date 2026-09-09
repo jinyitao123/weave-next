@@ -327,13 +327,14 @@ func ValidateDeliveryContract(contract *DeliveryContract) error {
 	}
 	ids, paths := map[string]bool{}, map[string]bool{}
 	for _, item := range contract.RequiredArtifacts {
-		if item.ID == "" || strings.HasPrefix(item.ID, "_") || strings.HasPrefix(item.ID, "artifact:") || ids[item.ID] || paths[item.Path] || (item.SHA256 != "" && !validDigest(item.SHA256)) {
+		canonicalPath := canonicalDeliveryArtifactPath(item.Path)
+		if item.ID == "" || strings.HasPrefix(item.ID, "_") || strings.HasPrefix(item.ID, "artifact:") || ids[item.ID] || paths[canonicalPath] || (item.SHA256 != "" && !validDigest(item.SHA256)) {
 			return errors.New("invalid or duplicate required artifact")
 		}
 		if err := fileartifact.Validate([]fileartifact.File{{Path: item.Path, ContentType: "application/octet-stream"}}); err != nil {
 			return err
 		}
-		ids[item.ID], paths[item.Path] = true, true
+		ids[item.ID], paths[canonicalPath] = true, true
 		for _, needle := range item.Contains {
 			if needle == "" {
 				return errors.New("empty artifact content condition")
@@ -370,6 +371,13 @@ func ValidateDeliveryContract(contract *DeliveryContract) error {
 		return errors.New("external effects check must reference a required check")
 	}
 	return nil
+}
+
+// Runtime collectors expose paths relative to their reserved outputs/
+// directory. Product-facing contracts may spell the same location with the
+// directory prefix used in member instructions.
+func canonicalDeliveryArtifactPath(path string) string {
+	return strings.TrimPrefix(path, "outputs/")
 }
 
 func contractDigest(contract *DeliveryContract) (string, error) {
@@ -547,7 +555,8 @@ func Verify(ctx context.Context, contract *DeliveryContract, candidate Candidate
 		byPath[artifact.Path] = artifact
 	}
 	for _, required := range contract.RequiredArtifacts {
-		artifact, exists := byPath[required.Path]
+		candidatePath := canonicalDeliveryArtifactPath(required.Path)
+		artifact, exists := byPath[candidatePath]
 		if !exists {
 			status, reason := VerificationFailed, "required_file_missing"
 			for _, observation := range candidate.SourceObservations {
@@ -555,7 +564,7 @@ func Verify(ctx context.Context, contract *DeliveryContract, candidate Candidate
 					continue
 				}
 				for _, issue := range observation.Collection.Issues {
-					if (issue.Kind == "limit" || issue.Kind == "error") && (issue.Path == "" || issue.Path == required.Path) {
+					if (issue.Kind == "limit" || issue.Kind == "error") && (issue.Path == "" || issue.Path == required.Path || issue.Path == candidatePath) {
 						status, reason = VerificationUnknown, "required_file_collection_limited"
 					}
 				}

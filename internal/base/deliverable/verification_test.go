@@ -143,6 +143,23 @@ func TestVerificationAcceptsExplicitNoExternalEffects(t *testing.T) {
 	}
 }
 
+func TestVerificationMatchesProductFacingOutputsPath(t *testing.T) {
+	contract := fixtureContract()
+	contract.RequiredArtifacts[0].Path = "outputs/report.md"
+	report, err := Verify(context.Background(), contract, fixtureCandidate(t, fixtureOutputs()), fixtureEffectsRegistry(t, VerificationPassed))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Status != VerificationPassed {
+		t.Fatalf("outputs-prefixed contract did not match collected path: %+v", report.Checks)
+	}
+
+	contract.RequiredArtifacts = append(contract.RequiredArtifacts, ArtifactRequirement{ID: "duplicate", Path: "report.md"})
+	if err := ValidateDeliveryContract(contract); err == nil {
+		t.Fatal("logical duplicate artifact paths were accepted")
+	}
+}
+
 func TestDecodeDeliveryContractIsStrict(t *testing.T) {
 	valid := []byte(`{"version":1,"coverage":"explicit","output":{"type":"text"},"required_artifacts":[{"id":"report","path":"report.md"}],"external_effects":"none"}`)
 	if contract, err := DecodeDeliveryContract(valid); err != nil || contract.ExternalEffects != ExternalEffectsNone {
