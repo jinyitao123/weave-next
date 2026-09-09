@@ -283,7 +283,15 @@ func (d *service) processTask(ctx context.Context, task *taskqueue.Task) {
 	// Engine adapters return only after their process group has exited.
 	result, runErr := d.executeTask(taskCtx, task)
 	journal := resultJournal{TaskID: task.ID, Result: result}
-	if runErr != nil && result.Status == "" {
+	// A daemon shutdown cancels the process context even though the user did
+	// not cancel this task. Report that boundary as an infrastructure failure
+	// so the parent workflow can park at its durable checkpoint and offer an
+	// explicit continuation. Completing a synthetic timeout result would lose
+	// the process-interruption identity and terminalize the parent as work
+	// failure instead.
+	if ctx.Err() != nil && runErr != nil && result.Status != "completed" {
+		journal.Failure = "runtime_process_interrupted: daemon shutdown"
+	} else if runErr != nil && result.Status == "" {
 		journal.Failure = runErr.Error()
 	}
 	saved := false
