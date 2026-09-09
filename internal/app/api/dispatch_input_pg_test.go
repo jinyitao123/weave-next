@@ -190,8 +190,16 @@ func TestBoundDispatchInputProvenanceAndAtomicAdmissionRealPG(t *testing.T) {
 	if replay := register(secondRequest, http.StatusOK, ""); replay != second {
 		t.Fatal("old registration receipt changed")
 	}
-	restarted := *server
-	server = &restarted
+	server = &Server{
+		Store:                server.Store,
+		OrgStore:             server.OrgStore,
+		Registry:             server.Registry,
+		Workflow:             server.Workflow,
+		Deliverables:         server.Deliverables,
+		ScheduleTransactions: server.ScheduleTransactions,
+		Snapshots:            server.Snapshots,
+		Tasks:                server.Tasks,
+	}
 	if _, err := pool.Exec(ctx, `UPDATE weave_teams SET status='building' WHERE workspace_id='ws'; UPDATE weave_workflow_version_admission_statuses SET blocked=true WHERE workspace_id='ws'`); err != nil {
 		t.Fatal(err)
 	}
