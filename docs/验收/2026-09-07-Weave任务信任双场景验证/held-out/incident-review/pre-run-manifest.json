@@ -3,7 +3,7 @@
   "status": "frozen_not_dispatched",
   "frozen_at": "2026-09-10T00:00:00+08:00",
   "implementation_commit": "88697f19643bdf71f1b9007ed6d14356adfdc4e5",
-  "deployed_binary_sha256": "a8c8529764736f39ba13ec4617c7167429a9e9719c60e82ed728f930e9e21209",
+  "deployed_binary_sha256": "e5f7ba59d6578d25270e6edadd461d60b577574e38aefa01c496790f674304f9",
   "idempotency_key": "5c64a74a-a24e-51b9-8ff5-7d8de61cccd8",
   "files": [
     {
