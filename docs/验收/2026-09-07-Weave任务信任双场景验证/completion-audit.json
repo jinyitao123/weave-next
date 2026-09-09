@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "recorded_at": "2026-09-10T00:56:00+08:00",
+  "recorded_at": "2026-09-10T01:25:00+08:00",
   "record_kind": "evidence_bounded_exit_audit",
   "plan": {
     "path": "docs/计划/2026-09-07-Weave任务信任契约与双场景三阶段验证.md",
@@ -9,7 +9,7 @@
   "overall": "NOT_COMPLETE",
   "goal_status_changed": false,
   "stage_completion_claimed": true,
-  "scope": "Retained business evidence plus traceable 88697f1 deployment, externally verified Corona v4 content, and two frozen held-out cold-start attempts. Workbench 564bdc63 repaired discovery and visible-name dispatch, and the follow-up TeamRun inherited the published delivery contract; execution then failed before computation because the selected provider-auth Codex runtime lacked ONEAPI_API_KEY. No claim is promoted to business closure, user adoption, incremental recovery, or broad generalization.",
+  "scope": "Retained business evidence plus three frozen held-out cold-start attempts. The newest sample selected an OAuth-authenticated Claude runtime and completed all members, but machine delivery failed because the product-facing outputs/... contract path did not match the collector-relative candidate path; the correct semantic report also omitted the five required literal markers. No claim is promoted to business closure, user adoption, incremental recovery, or broad generalization.",
   "status_definitions": {
     "PARTIAL": "Some required evidence exists, but the exit is not satisfied in full.",
     "FAIL": "An observed result violates the exit.",
@@ -180,10 +180,11 @@
             "repaired-business/corona/workbench-run-20260909/v4-external-verification.json",
             "held-out/incident-review/pre-run-manifest.json",
             "held-out/incident-review/first-run-evidence.json",
-            "held-out/support-queue/first-run-evidence.json"
+            "held-out/support-queue/first-run-evidence.json",
+            "held-out/inventory-batch/first-run-evidence.json"
           ],
-          "finding": "The delivery contract persists from the published template into a real frozen TeamRun. Workbench 564bdc63 discovered the active team and resolved its visible name to the stable ID without operator input; run-7cb5a00a inherited workflow version 1 and contract digest a74e674e. Its first member then failed before computation because the selected provider-auth Codex runtime lacked ONEAPI_API_KEY.",
-          "remaining": "Make runtime readiness and team construction reject or avoid engine/runtime pairings whose required authentication is unavailable, then validate execution and artifact checks with a new frozen sample. Retain both closed failed samples and the historical Corona contract conflict."
+          "finding": "A third frozen sample selected an OAuth-authenticated Claude runtime, dispatched from Workbench by visible team reference, inherited workflow v1 and its published contract, and completed all four members. Execution succeeded, but delivery failed: the contract required outputs/inventory-batch-review.md while the collector candidate used inventory-batch-review.md; the semantically correct report also omitted all five frozen literal markers.",
+          "remaining": "Unify product-facing outputs/... contract paths with collector-relative artifact identities, then use a new frozen sample to test path and content checks together. Retain all three closed first results."
         },
         {
           "id": "stage-1.exit-2",
@@ -211,10 +212,11 @@
             "repaired-business/corona/workbench-run-20260909/v4-run-evidence.json",
             "repaired-business/corona/workbench-run-20260909/v4-external-verification.json",
             "held-out/incident-review/first-run-evidence.json",
-            "held-out/support-queue/first-run-evidence.json"
+            "held-out/support-queue/first-run-evidence.json",
+            "held-out/inventory-batch/first-run-evidence.json"
           ],
-          "finding": "The deployed Workbench separates execution, delivery verification and user assessment. The repaired follow-up displayed failed execution, unconfirmed delivery and unrated assessment after a real TeamRun stopped at its first member for missing runtime credentials; it did not promote the result to business success.",
-          "remaining": "Validate the same three-way projection when an authenticated runtime reaches final artifact collection and every published-contract check."
+          "finding": "The deployed Workbench separates execution, delivery verification and user assessment. The authenticated held-out run displayed completed execution, failed verification and unrated assessment even though a readable semantically correct report existed.",
+          "remaining": "Validate the same three-way projection when every published-contract artifact and content check passes, then obtain an independent user assessment."
         },
         {
           "id": "stage-1.exit-4",
@@ -241,9 +243,10 @@
             "repaired-business/corona/workbench-run-20260909/v4-external-verification.json",
             "repaired-business/corona/workbench-run-20260909/deep-review-20260909.md",
             "held-out/incident-review/first-run-evidence.json",
-            "held-out/support-queue/first-run-evidence.json"
+            "held-out/support-queue/first-run-evidence.json",
+            "held-out/inventory-batch/first-run-evidence.json"
           ],
-          "finding": "Both original scenarios were dispatched through Workbench with user-bound input. The first cold-start held-out sample exposed missing MCP discovery and failed before TeamRun creation. Workbench 564bdc63 repaired that path: the second frozen sample resolved the visible name, created a TeamRun and inherited its contract, then failed before computation because runtime provider readiness was false-positive. Corona v4 content passed external checks, while machine delivery and user adoption remain incomplete."
+          "finding": "The newest frozen Workbench run used a visible team reference and an authenticated Claude runtime, completed every member, and inherited the published contract. Its machine delivery still failed on the outputs/ path namespace and exact content markers, so cold-start business delivery remains open."
         }
       ]
     },
@@ -449,6 +452,13 @@
       "sample": "held-out/incident-review",
       "evidence": "held-out/incident-review/first-run-evidence.json",
       "limit": "The active team and published contract existed, but an invalid WEAVE_COMMAND left MCP team discovery absent while local dispatch remained visible. Display-name dispatch returned team_not_found and created zero TeamRuns; the sample was stopped and not corrected or rerun."
+    },
+    {
+      "id": "held_out_execution_success_delivery_failure",
+      "status": "FAIL_OBSERVED_BUSINESS_TRUST",
+      "sample": "held-out/inventory-batch",
+      "evidence": "held-out/inventory-batch/first-run-evidence.json",
+      "limit": "All four members completed and the semantic arithmetic was correct, but the published artifact path did not match the collector namespace and none of the five exact content markers were present. Workbench correctly displayed verification failure."
     }
   ],
   "cross_sample_comparability": {
@@ -506,24 +516,27 @@
     "overall": "NOT_COMPLETE"
   },
   "latest_held_out_workbench_attempt": {
-    "sample": "support-queue-heldout-20260910",
-    "team_id": "1e8ed3ba-3b29-4f82-873f-ffaf748843a3",
-    "team_display_name": "客服队列复核团队",
+    "sample": "inventory-batch-heldout-20260910",
+    "team_id": "85a8e176-2890-45c1-8983-c2f402d94103",
+    "team_display_name": "库存批次复核团队",
     "published_contract_present": true,
     "natural_name_dispatch": "passed",
-    "run_id": "run-7cb5a00a-973a-578b-be4c-a5857254409a",
-    "workflow_id": "support-queue-heldout-20260910-workflow",
+    "authenticated_runtime_selection": "passed: claude oauth",
+    "run_id": "run-2ce7e31f-9370-5f70-af55-82a2b0dffce9",
+    "workflow_id": "inventory-batch-heldout-20260910-workflow",
     "workflow_version": 1,
-    "contract_digest": "a74e674e6645545e9d48512e899b4995df836ef5fa9e90a90fb55f09ca64fdb9",
-    "execution_status": "failed",
-    "completed_stages": "0/4",
-    "error_code": "team_run_execution_unrecoverable",
-    "cause_summary": "runtime_credentials_missing: ONEAPI_API_KEY",
-    "delivery_verification": "unknown: delivery_report_missing",
+    "contract_digest": "bbc3ed83d5df0ee3d666859a95f87bf94cde7b2b104af3b541aceefff12b6c8a",
+    "execution_status": "succeeded",
+    "completed_members": "4/4",
+    "delivery_verification": "failed: required_file_missing",
+    "contract_path": "outputs/inventory-batch-review.md",
+    "candidate_path": "inventory-batch-review.md",
+    "semantic_content": "correct",
+    "literal_content_markers": "0/5",
     "user_assessment": "not_submitted",
     "rerun": false,
-    "overall": "HELD_OUT_FAIL_RUNTIME_CREDENTIALS",
-    "evidence": "held-out/support-queue/first-run-evidence.json",
-    "root_cause": "selected provider-auth Codex runtime was admitted as healthy without its required provider credential"
+    "overall": "HELD_OUT_EXECUTION_PASS_DELIVERY_FAIL",
+    "evidence": "held-out/inventory-batch/first-run-evidence.json",
+    "root_cause": "product-facing outputs/ contract paths and collector-relative artifact identities were compared literally; the model also omitted the required literal markers"
   }
 }
