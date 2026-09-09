@@ -4,6 +4,20 @@
   "loom_commit": "d704baf1ae7fee089c4b086db9a271a7b004e92b",
   "loom_module_version": "v0.8.2-0.20260908071214-d704baf1ae7f",
   "result": "mechanism_checks_passed",
+  "deployed_commit": "b308259cef039078c3cf305133dcc043616c3cfe",
+  "reverified_at": "2026-09-09T20:55:00+08:00",
+  "reverification": {
+    "real_postgresql": [
+      "TestWorkflowPublishedMemberParkKeepsOriginalRunAndAccountingRealPG",
+      "TestWorkflowPublishedMemberTotalBudgetRealPG",
+      "TestWorkflowPublishedMemberAutomaticSliceRealPG",
+      "TestMemberControlledBudgetGrantRealPG",
+      "TestMemberResumeAfterReceiptDoesNotRepeatEffectRealPG",
+      "TestMemberUnknownToolEffectIsNotReplayedRealPG",
+      "TestMemberResumePreservesOriginalToolLoopLimitRealPG"
+    ],
+    "result": "passed"
+  },
   "recorded_at": "2026-09-08T10:28:20.466988+00:00",
   "checks": {
     "make_test": "passed; dedicated PostgreSQL database with isolated schemas",

@@ -3,8 +3,25 @@
   "code_commit": "acfa5233a4d3fdc427a035778424e8de1fcda1ce",
   "scope": "managed MCP argument validation and published CLI task authority",
   "status": "mechanism_checks_passed",
-  "deployed": false,
-  "business_revalidation": "not_run",
+  "deployed": true,
+  "deployed_commit": "b308259cef039078c3cf305133dcc043616c3cfe",
+  "business_revalidation": "invoice isolated fixture passed external verifier 7/7 and was adopted by the user; Corona remains partial",
+  "reverified_at": "2026-09-09T20:55:00+08:00",
+  "reverification": {
+    "real_postgresql": [
+      "TestFrozenCLIMCPClaimAuthorityAndEffectsRealPG",
+      "TestPublishedCLIToTaskKeepsMCPContractAfterLiveEditsRealPG"
+    ],
+    "argument_contract": [
+      "TestToolContractArgumentsAndPrecision",
+      "TestHTTPHostValidatesFinalArgumentsBeforeUpstreamCall",
+      "TestToolContractValidatesFinalLoomHookArguments",
+      "TestToolContractRejectsResourceLimitInputs",
+      "TestFrozenToolsRejectSchemaDriftBeforeDispatch",
+      "TestFrozenToolsRejectRedirectedEndpoint"
+    ],
+    "result": "passed"
+  },
   "checks": [
     {
       "name": "make test",
@@ -53,7 +70,6 @@
   "remaining": [
     "unmanaged native CLI network and filesystem capabilities are not a sandbox",
     "business fixture direct-access restrictions and read-only acceptance",
-    "Loom persistent budget integration",
     "new ecommerce and Corona end-to-end acceptance"
   ],
   "log_scope": "Final successful check logs only; earlier iteration logs were not retained."
