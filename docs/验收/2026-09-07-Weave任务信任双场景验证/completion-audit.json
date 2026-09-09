@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "recorded_at": "2026-09-09T22:18:00+08:00",
+  "recorded_at": "2026-09-09T23:35:00+08:00",
   "record_kind": "evidence_bounded_exit_audit",
   "plan": {
     "path": "docs/计划/2026-09-07-Weave任务信任契约与双场景三阶段验证.md",
@@ -8,14 +8,15 @@
   },
   "overall": "NOT_COMPLETE",
   "goal_status_changed": false,
-  "stage_completion_claimed": false,
-  "scope": "Retained business evidence plus traceable b308259 deployment, completed-but-unaccepted Corona Workbench run, and evidence-bounded Loom decision. Corona execution success is not promoted to delivery or overall acceptance.",
+  "stage_completion_claimed": true,
+  "scope": "Retained business evidence plus traceable b308259 deployment, externally verified Corona v4 content, and an evidence-bounded Loom decision. Corona v4 is not promoted to incremental recovery, platform delivery, user adoption, or generalization acceptance.",
   "status_definitions": {
     "PARTIAL": "Some required evidence exists, but the exit is not satisfied in full.",
     "FAIL": "An observed result violates the exit.",
     "INSUFFICIENT_EVIDENCE": "Available evidence cannot decide the required claim.",
     "NOT_RUN": "The required experiment or artifact was not executed or produced.",
-    "DOCUMENTED_GAPS_ONLY": "Missing and unexecuted items are disclosed; this does not establish business success or complete the stage."
+    "DOCUMENTED_GAPS_ONLY": "Missing and unexecuted items are disclosed; this does not establish business success or complete the stage.",
+    "PASS": "The required exit is satisfied by the cited evidence within its stated boundary."
   },
   "packages": [
     {
@@ -174,10 +175,12 @@
             "ecommerce/input-manifest.json",
             "corona/contract.json",
             "corona/input-manifest.json",
-            "corona/verification.json"
+            "corona/verification.json",
+            "repaired-business/corona/workbench-run-20260909/v4-run-evidence.json",
+            "repaired-business/corona/workbench-run-20260909/v4-external-verification.json"
           ],
-          "finding": "Both intended tasks, baselines and checks are recorded. Corona retains a three-speed versus authorized 0.03c contract conflict; first ecommerce full submitted-text equality is not verified.",
-          "remaining": "Resolve the Corona acceptance conflict and close exact input-to-dispatch evidence. Do not change historical gates silently."
+          "finding": "Both intended tasks, baselines and checks are recorded. Corona v4 came from an explicit Workbench request and produced a complete candidate, but the platform delivery contract did not preserve the explicit requirements and the older three-speed versus 0.03c historical contract conflict remains.",
+          "remaining": "Persist the user-confirmed scope as an itemized delivery contract bound to the run, and retain the historical contract conflict rather than silently rewriting it."
         },
         {
           "id": "stage-1.exit-2",
@@ -201,10 +204,12 @@
             "ecommerce/run-terminal.json",
             "ecommerce/review-public-update.md",
             "corona/verification.json",
-            "team-delivery/mechanism-verification.json"
+            "team-delivery/mechanism-verification.json",
+            "repaired-business/corona/workbench-run-20260909/v4-run-evidence.json",
+            "repaired-business/corona/workbench-run-20260909/v4-external-verification.json"
           ],
-          "finding": "Commit 1bad43f separates persisted delivery checks, execution and version-bound user assessment in API/Host/UI. CLI/Loom database matrix, real Host/JSONL composition, UI and build tests passed. This commit has not been deployed or inspected in the rebuilt browser against real business samples.",
-          "remaining": "The service now reports the exact b308259 commit and passes health/ready. A complete terminal Workbench page on real negative and positive cases is still missing; mechanism and component tests do not establish browser or business acceptance."
+          "finding": "The deployed Workbench separates execution, delivery verification and user assessment. In the real Corona v4 sample it showed succeeded execution while delivery remained unknown; external verification independently passed the content gates and browser behavior without upgrading platform delivery or user adoption.",
+          "remaining": "Bind explicit user requirements into the delivery contract and verify that the Workbench terminal page reports each check, provenance and user decision without relying on an external filesystem audit."
         },
         {
           "id": "stage-1.exit-4",
@@ -226,9 +231,12 @@
           "status": "PARTIAL",
           "evidence": [
             "ecommerce/dispatch.json",
-            "corona/dispatch.json"
+            "corona/dispatch.json",
+            "repaired-business/corona/workbench-run-20260909/v4-run-evidence.json",
+            "repaired-business/corona/workbench-run-20260909/v4-external-verification.json",
+            "repaired-business/corona/workbench-run-20260909/deep-review-20260909.md"
           ],
-          "finding": "Ecommerce has a new first run. Corona now has a fresh isolated run with persisted baseline and 34 passing model checks, but the run is parked after retryable infrastructure failures and the follow-up dispatch is waiting for explicit scope confirmation."
+          "finding": "Both scenarios were dispatched through Workbench with user-bound input. Corona v4 reached succeeded across two runtimes and its candidate passed external content and browser checks, but Workbench delivery is unknown and no Corona user adoption decision exists."
         }
       ]
     },
@@ -254,10 +262,12 @@
           "status": "PARTIAL",
           "evidence": [
             "corona/recovery-verification.json",
-            "corona/dispatch.json"
+            "corona/dispatch.json",
+            "repaired-business/corona/workbench-run-20260909/v4-run-evidence.json",
+            "repaired-business/corona/workbench-run-20260909/v4-external-verification.json"
           ],
-          "finding": "One recorded logical member continues from attempt 1 to 2, checkpoint 38 to 48; 17 confirmed operation hashes are unchanged and six pre-fault tools each have one physical match. The later run failed.",
-          "remaining": "Do not generalize to unknown side effects or all interruption points. The recorded receipt set supports only the bounded recovery result."
+          "finding": "The older bounded receipt sample preserved confirmed operation hashes without duplicate physical matches. Corona v4 did not exercise recovery: its correction was discarded, old artifacts were not bound, and the digital result was rebuilt.",
+          "remaining": "Keep the no-duplicate claim limited to the recorded receipt set. Bind a prior artifact snapshot, apply a member-scoped correction, and prove only affected dependents rerun while identities, receipts and preserved artifacts remain auditable."
         },
         {
           "id": "stage-2.exit-3",
@@ -269,9 +279,10 @@
             "ecommerce/stage2-invoice/activity.json",
             "ecommerce/stage2-invoice/user-decisions.json",
             "corona/activity.json",
-            "corona/user-decisions.json"
+            "corona/user-decisions.json",
+            "repaired-business/corona/workbench-run-20260909/v4-run-evidence.json"
           ],
-          "finding": "The first ecommerce run has reported runtime duration and CLI usage. Invoice runs have terminal windows but usage is unavailable. Human time/intervention and complete cumulative Corona usage were not measured.",
+          "finding": "Corona v4 records wall-clock timestamps, USD cost, input/output tokens and two-runtime participation. Human handling time and a comparable A/B/C workload are still missing, and ecommerce invoice usage remains unavailable.",
           "remaining": "Measure the specified dimensions prospectively in valid comparable runs; do not infer human time, treat unavailable zero fields as measured zero, or infer total cost from final-call usage."
         },
         {
@@ -281,10 +292,12 @@
           "evidence": [
             "ecommerce/stage2-invoice/dispatch-incident.json",
             "corona/history/last-run-budget-exhaustion.json",
-            "corona/recovery-verification.json"
+            "corona/recovery-verification.json",
+            "repaired-business/corona/workbench-run-20260909/v4-external-verification.json",
+            "repaired-business/corona/workbench-run-20260909/deep-review-20260909.md"
           ],
-          "finding": "The invoice integrity incident required supervising-agent cancellation and the last Corona run exhausted 20 tool rounds with unfinished delivery. These failure samples do not establish ordinary-error autonomous repair within a frozen budget; repeated direct human continue requests were not measured.",
-          "remaining": "Preserve stop causes and remaining work/budget across continuation, exercise ordinary repair within a frozen budget, and measure required human intervention."
+          "finding": "Mechanism tests cover durable budget pause/resume. In Corona v4, a member correction waited for a safe boundary, then expanded to all parallel siblings and was discarded; the run completed by full regeneration rather than bounded autonomous repair.",
+          "remaining": "Bind frozen prior artifacts, stop the affected member promptly, compute impact from data dependencies, and demonstrate one ordinary error repaired within the fixed budget without broad sibling reruns or repeated user continuation."
         }
       ],
       "recovery_requirements_not_closed": [
@@ -306,47 +319,50 @@
           "requirement": "用户无需重述完整任务或重新建立团队。",
           "status": "INSUFFICIENT_EVIDENCE",
           "evidence": [
-            "corona/user-decisions.json"
+            "corona/user-decisions.json",
+            "repaired-business/corona/workbench-run-20260909/deep-review-20260909.md"
           ],
-          "finding": "A recorded continue action exists; the full user interaction burden was not measured."
+          "finding": "The user could request continuation in natural language, but operators restored the team, supplied the exact team ID and material path, and later prepared a v4 team. Low-burden continuation is not established."
         }
       ]
     },
     {
       "id": "stage-3",
-      "status": "NOT_COMPLETE",
+      "status": "COMPLETE",
       "exits": [
         {
           "id": "stage-3.exit-1",
           "plan_exit": "形成 loom-boundary-decision.md，逐项说明保留、扩大、冻结或退出的能力。",
-          "status": "PARTIAL",
+          "status": "PASS",
           "evidence": [
             "loom-boundary-decision.md"
           ],
-          "finding": "A v0.1 bounded decision freezes expansion and identifies retained capabilities; aligned A/B/C trials remain absent.",
-          "remaining": "Complete stages 1 and 2 and obtain eligible comparable evidence before finalizing an adoption or expansion decision."
+          "finding": "Loom boundary decision v0.4 explicitly retains, admits, freezes and excludes capabilities under current evidence.",
+          "remaining": "No stage-3 decision work remains. Expansion remains frozen until the listed aligned evidence exists."
         },
         {
           "id": "stage-3.exit-2",
           "plan_exit": "决策引用两个场景的真实证据，不引用模型自评作为采用依据。",
-          "status": "PARTIAL",
+          "status": "PASS",
           "evidence": [
             "loom-boundary-decision.md",
             "ecommerce/assessment.md",
-            "corona/assessment.md"
+            "corona/assessment.md",
+            "repaired-business/corona/workbench-run-20260909/v4-external-verification.json",
+            "repaired-business/corona/workbench-run-20260909/deep-review-20260909.md"
           ],
-          "finding": "The preliminary decision cites both scenarios' actual failures and bounded recovery, and separates shared product repairs from Loom-specific benefits.",
-          "remaining": "Complete stages 1 and 2 and obtain eligible comparable evidence before finalizing an adoption or expansion decision."
+          "finding": "The decision cites external evidence from both business scenarios, separates content success from process and delivery gaps, and does not rely on model self-assessment.",
+          "remaining": "Keep the decision updated if new comparable evidence changes the boundary."
         },
         {
           "id": "stage-3.exit-3",
           "plan_exit": "列出下一阶段唯一主线、明确冻结项和重新考虑冻结项的触发条件。",
-          "status": "PARTIAL",
+          "status": "PASS",
           "evidence": [
             "loom-boundary-decision.md"
           ],
-          "finding": "The preliminary decision identifies the shared trust repair work line, frozen expansion and original 80%/30%/15% reconsideration thresholds.",
-          "remaining": "Complete stages 1 and 2 and obtain eligible comparable evidence before finalizing an adoption or expansion decision."
+          "finding": "The decision sets one next product line, freezes Loom expansion, and retains the original 80%, 30% and 15% reconsideration thresholds.",
+          "remaining": "Reopen expansion only after aligned A/B/C trials satisfy the recorded thresholds without correctness or false-delivery defects."
         }
       ],
       "comparison_thresholds": {
@@ -405,6 +421,20 @@
       "status": "FAIL_OBSERVED_BUSINESS_TRUST",
       "sample": "corona/workbench-run-20260909",
       "evidence": "repaired-business/corona/workbench-run-20260909/run-evidence.json"
+    },
+    {
+      "id": "corona_v4_unknown_platform_delivery",
+      "status": "FAIL_OBSERVED_BUSINESS_TRUST",
+      "sample": "corona/workbench-run-20260909-v4",
+      "evidence": "repaired-business/corona/workbench-run-20260909/v4-external-verification.json",
+      "limit": "Content gates and browser behavior passed externally; Workbench delivery remained unknown and user assessment was not submitted."
+    },
+    {
+      "id": "corona_v4_false_recovery_claim",
+      "status": "FAIL_OBSERVED",
+      "sample": "corona/workbench-run-20260909-v4",
+      "evidence": "repaired-business/corona/workbench-run-20260909/v4-external-verification.json",
+      "limit": "FINAL_ACCEPTANCE claimed correction and failure recovery that did not occur in the run."
     }
   ],
   "cross_sample_comparability": {
@@ -415,14 +445,14 @@
     "constant_workload_speed_comparison": false,
     "CLI_vs_Loom_ranking_supported": false,
     "engine_success_rate_supported": false,
-    "user_acceptance": "NOT_REQUESTED_FOR_ALL_SAMPLES"
+    "user_acceptance": "ECOMMERCE_ADOPTED_CORONA_NOT_SUBMITTED"
   },
   "audit_limits": [
     "This is an artifact/evidence audit, not new execution or product completion.",
     "Hash inventories attest to the files read at audit time; they do not upgrade model claims into verified business effects.",
     "Existing raw evidence and initial aggregate observations are preserved."
   ],
-  "updated_at": "2026-09-08T03:35:24.512884+00:00",
+  "updated_at": "2026-09-09T15:35:00+00:00",
   "mechanism_updates": [
     {
       "source_commit": "1bad43f71692a89b1502dcc075305b32fe267dc2",
@@ -432,34 +462,28 @@
     }
   ],
   "latest_corona_workbench_run": {
-    "run_id": "run-092cff35-4213-5002-8821-d7af190c955d",
+    "run_id": "run-54e09b98-9f24-547e-afc7-e0937ada51e3",
+    "team_id": "082ed3e9-219c-41c0-9ed8-c7f5c0d94467",
+    "team_name": "corona-prephase-a-lab-v4",
     "execution_status": "succeeded",
-    "stage_count": "8/8",
+    "stage_count": "9/9",
+    "distinct_runtimes_used": 2,
+    "duration_seconds": 2882.056267,
+    "cost_usd": 11.853474,
+    "tokens_in": 13209426,
+    "tokens_out": 143032,
+    "external_content_acceptance": "11/11 hard gates passed",
+    "external_browser_acceptance": "passed: local load, three scenario switches, valid JSON export, zero external requests",
     "delivery_verification": "unknown",
-    "final_output_bytes": 56,
-    "distinct_runtimes_used": 1,
-    "required_distinct_runtimes": 2,
-    "external_acceptance": "FAIL",
-    "failures": [
-      "final output is truncated before completing the declared verification tracks",
-      "delivery contract coverage is incomplete and three checks remain unknown",
-      "FINAL_ACCEPTANCE provenance is false: it was created by the systems architect, not the verification integrator",
-      "systems-architect candidate app fails at startup with undefined.constants",
-      "digital-engineer app has a missing DOM target and shows an input error during scenario interaction"
-    ],
+    "user_assessment": "not_submitted",
+    "incremental_reuse": "failed: v3 model, drawings and app were rebuilt instead of bound and reused",
+    "correction_result": "discarded: member correction expanded to every parallel sibling plus downstream nodes",
+    "overall": "CONTENT_PASS_PROCESS_PARTIAL_BUSINESS_NOT_CLOSED",
     "evidence": [
-      "repaired-business/corona/workbench-run-20260909/run-evidence.json",
-      "repaired-business/corona/workbench-run-20260909/external-verification.json",
-      "repaired-business/corona/workbench-run-20260909/candidate-manifest.json",
-      "repaired-business/corona/workbench-run-20260909/assessment.md"
-    ],
-    "prepared_recovery": {
-      "team_id": "082ed3e9-219c-41c0-9ed8-c7f5c0d94467",
-      "team_name": "corona-prephase-a-lab-v4",
-      "two_runtimes_online": true,
-      "dispatch_status": "awaiting_new_user_bound_input",
-      "evidence": "repaired-business/corona/workbench-run-20260909/prepared-rerun.json"
-    }
+      "repaired-business/corona/workbench-run-20260909/v4-run-evidence.json",
+      "repaired-business/corona/workbench-run-20260909/v4-external-verification.json",
+      "repaired-business/corona/workbench-run-20260909/deep-review-20260909.md"
+    ]
   },
   "current_stage_summary": {
     "stage-1": "NOT_COMPLETE",
