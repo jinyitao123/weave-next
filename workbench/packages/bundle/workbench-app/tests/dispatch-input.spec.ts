@@ -22,6 +22,7 @@ function persisted(session: Session): SessionEvent[] {
 }
 
 interface HTTPRequest {
+  readonly method: string
   readonly path: string
   readonly body: Record<string, unknown>
   readonly signal: AbortSignal | null | undefined
@@ -29,8 +30,8 @@ interface HTTPRequest {
 
 function requestOf(input: Parameters<typeof fetch>[0], init: RequestInit | undefined): HTTPRequest {
   const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
-  if (typeof init?.body !== 'string') throw new Error('Expected a serialized request body')
-  return { path: new URL(url).pathname, body: JSON.parse(init.body) as Record<string, unknown>, signal: init.signal }
+  const body = typeof init?.body === 'string' ? JSON.parse(init.body) as Record<string, unknown> : {}
+  return { method: init?.method ?? 'GET', path: new URL(url).pathname, body, signal: init?.signal }
 }
 
 /** Stateful fake of external HTTP, retaining remote registration across lost responses. */
@@ -48,7 +49,9 @@ function api() {
     const intercepted = await beforeRequest?.(request)
     if (intercepted !== undefined) return intercepted
     let response: Response
-    if (request.path === '/v1/workbench/dispatch-inputs') {
+    if (request.path === '/v1/teams') {
+      response = Response.json([{ id: facts.team_id, name: facts.team_id, display_name: '订单团队', status: 'active' }])
+    } else if (request.path === '/v1/workbench/dispatch-inputs') {
       const id = String(request.body.registration_id)
       let revision = registrations.get(id)
       if (revision === undefined) {
@@ -197,6 +200,50 @@ describe('dispatch source inputs', () => {
 })
 
 describe('Workbench-owned dispatch tool', () => {
+  it('resolves an agreed visible team name after exact-ID admission rejects it', async () => {
+    const remote = api()
+    let rejected = false
+    remote.beforeRequest(async (request) => {
+      if (request.path === '/v1/workbench/dispatch-inputs' && !rejected) {
+        rejected = true
+        return Response.json({ code: 'team_not_found' }, { status: 404 })
+      }
+      if (request.path === '/v1/teams') return Response.json([
+        { team: { id: 'team-stable-id', name: 'incident-review', display_name: '服务事件复核团队', status: 'active' } },
+      ])
+      return undefined
+    })
+    const app = await host()
+    user(app.session, '复核三项服务事件并保存报告。')
+    const result = await app.execute({ team_id: '服务事件复核团队' })
+    expect(result.isError).toBe(false)
+    expect(remote.requests.map(request => [request.method, request.path])).toEqual([
+      ['POST', '/v1/workbench/dispatch-inputs'], ['GET', '/v1/teams'],
+      ['POST', '/v1/workbench/dispatch-inputs'], ['POST', '/v1/teams/team-stable-id/dispatch'],
+    ])
+    expect(remote.requests[2]!.body.team_id).toBe('team-stable-id')
+    expect(latestDispatchInput(app.session)?.facts.team_id).toBe('team-stable-id')
+  })
+
+  it('rejects an ambiguous visible team name without registering a different team', async () => {
+    const remote = api()
+    remote.beforeRequest(async (request) => {
+      if (request.path === '/v1/workbench/dispatch-inputs') {
+        return Response.json({ code: 'team_not_found' }, { status: 404 })
+      }
+      if (request.path === '/v1/teams') return Response.json([
+        { id: 'team-a', name: 'a', display_name: '同名团队', status: 'active' },
+        { id: 'team-b', name: 'b', display_name: '同名团队', status: 'active' },
+      ])
+      return undefined
+    })
+    const app = await host()
+    user(app.session, '执行已确认任务。')
+    expect((await app.execute({ team_id: '同名团队' })).isError).toBe(true)
+    expect(remote.requests).toHaveLength(2)
+    expect(latestDispatchInput(app.session)?.state).toBe('rejected')
+  })
+
   it('rejects model task text through the registered executor before transport', async () => {
     const remote = api()
     const app = await host()

@@ -27,6 +27,7 @@ export interface DispatchSourceMessage {
 export interface DispatchInputRecord {
   readonly registrationId: string
   readonly expectedRevisionId: string
+  readonly requestedTeamRef?: string
   readonly facts: DispatchInputFacts
   readonly sourceThroughSeq: number
   readonly sourceMessages: readonly DispatchSourceMessage[]
@@ -57,7 +58,7 @@ const revisionSchema = z.object({
 // prove this request has no revision; HTTP status alone cannot prove admission.
 const unregisteredSelectionErrors = new Set([
   'team_not_found', 'team_not_active', 'no_default_workflow', 'default_workflow_unavailable',
-  'workflow_team_mismatch', 'workflow_not_published', 'dispatch_delivery_contract_invalid',
+  'team_reference_ambiguous', 'workflow_team_mismatch', 'workflow_not_published', 'dispatch_delivery_contract_invalid',
 ])
 
 function digest(text: string): string { return createHash('sha256').update(text, 'utf8').digest('hex') }
@@ -129,7 +130,8 @@ export function decodeDispatchInput(value: unknown, sourceEvents: readonly Sessi
 }
 
 const recordSchema = z.object({
-  registrationId: z.uuid(), expectedRevisionId: z.union([z.literal(''), z.uuid()]), facts: factsSchema,
+  registrationId: z.uuid(), expectedRevisionId: z.union([z.literal(''), z.uuid()]),
+  requestedTeamRef: z.string().min(1).optional(), facts: factsSchema,
   sourceThroughSeq: z.number().int().nonnegative(),
   sourceMessages: z.array(z.object({ message_id: z.string().min(1), event_seq: z.number().int().nonnegative(),
     sha256: z.string().regex(/^[a-f0-9]{64}$/), content: z.json() }).strict()).min(1),
@@ -212,7 +214,7 @@ export function prepareDispatchInput(session: Session, facts: DispatchInputFacts
   }
   const task = taskText(messages)
   if (task.trim() === '') throw new Error('dispatch_input_empty')
-  return { registrationId: randomUUID(), expectedRevisionId, facts, sourceThroughSeq: last.event_seq,
+  return { registrationId: randomUUID(), expectedRevisionId, requestedTeamRef: facts.team_id, facts, sourceThroughSeq: last.event_seq,
     sourceMessages: messages, task, state: 'pending', rerun: null, revision: null, result: null, errorCode: '' }
 }
 
@@ -231,7 +233,7 @@ function prepareRerun(session: Session, facts: DispatchInputFacts, actionId: str
   const source = freezeSource(`workbench-rerun:${actionId}`, action.seq, [{ type: 'text', text: pending.brief }])
   const revision = ownedEvents(session).findLast(event => event.type === 'weave/dispatch-input' && event.data.revision !== null)
   const expectedRevisionId = revision?.type === 'weave/dispatch-input' ? revision.data.revision?.input_revision_id ?? '' : ''
-  return { registrationId: randomUUID(), expectedRevisionId,
+  return { registrationId: randomUUID(), expectedRevisionId, requestedTeamRef: facts.team_id,
     facts, sourceThroughSeq: action.seq, sourceMessages: [source], task: pending.brief, state: 'pending',
     rerun: { targetRunId: pending.targetRunId, actionId }, revision: null, result: null, errorCode: '' }
 }
@@ -284,6 +286,47 @@ async function post(
   return snapshotJsonValue(value) as Record<string, JsonValue>
 }
 
+function teamRecord(value: unknown): Record<string, unknown> | undefined {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined
+  const item = value as Record<string, unknown>
+  const nested = item.team
+  return typeof nested === 'object' && nested !== null && !Array.isArray(nested)
+    ? nested as Record<string, unknown> : item
+}
+
+async function resolveTeamReference(
+  connection: DispatchInputConnection, reference: string, signal: AbortSignal,
+): Promise<string> {
+  const response = await fetch(`${connection.apiUrl}/v1/teams?status=active&include=summary`, {
+    signal, headers: { Authorization: `Bearer ${connection.apiKey}`, Accept: 'application/json' },
+  })
+  let value: unknown
+  try { value = await response.json() as unknown } catch {
+    throw new DispatchResponseError(`team_resolution_response_invalid_${response.status}`, false)
+  }
+  if (!response.ok) throw new DispatchResponseError(`team_resolution_http_${response.status}`, false)
+  const entries = Array.isArray(value) ? value
+    : typeof value === 'object' && value !== null && Array.isArray((value as Record<string, unknown>).teams)
+      ? (value as { teams: unknown[] }).teams : undefined
+  if (entries === undefined) throw new DispatchResponseError('team_resolution_response_invalid', false)
+  const teams = entries.flatMap((entry) => {
+    const team = teamRecord(entry)
+    if (team === undefined) return []
+    const id = team.id
+    if (typeof id !== 'string' || id === '') return []
+    return [{ id, name: typeof team.name === 'string' ? team.name : '',
+      displayName: typeof team.display_name === 'string' ? team.display_name : '', status: team.status }]
+  }).filter(team => team.status === undefined || team.status === 'active')
+  const exactID = teams.find(team => team.id === reference)
+  if (exactID !== undefined) return exactID.id
+  const matches = teams.filter(team => team.name === reference || team.displayName === reference)
+  if (matches.length === 0) throw new DispatchResponseError('team_not_found', true)
+  if (matches.length > 1) throw new DispatchResponseError('team_reference_ambiguous', true)
+  const match = matches[0]
+  if (match === undefined) throw new DispatchResponseError('team_not_found', true)
+  return match.id
+}
+
 /**
  * Register the task-text-free product tool and retain its request before transport.
  * @param ctx - Host services owning tools and the durable session log.
@@ -299,6 +342,13 @@ export function installDispatchInputTool(
   const save = async (session: Session, record: DispatchInputRecord): Promise<void> => {
     session.append('weave/dispatch-input', record)
     await ctx.sessions.flush(session)
+  }
+  const retryFacts = (session: Session, facts: DispatchInputFacts): DispatchInputFacts => {
+    const latest = latestDispatchInput(session)
+    if (latest === undefined || !['pending', 'registered', 'accepted'].includes(latest.state)
+      || facts.team_id !== (latest.requestedTeamRef ?? latest.facts.team_id)) return facts
+    const requested = { ...facts, team_id: latest.facts.team_id }
+    return isDeepStrictEqual(requested, latest.facts) ? latest.facts : facts
   }
   const dispatch = async (
     session: Session, facts: DispatchInputFacts, signal: AbortSignal, actionId: string,
@@ -319,11 +369,20 @@ export function installDispatchInputTool(
     }
     try {
       if (record.revision === null) {
-        const registered = await post(connection, '/v1/workbench/dispatch-inputs', {
+        const register = () => post(connection, '/v1/workbench/dispatch-inputs', {
           registration_id: record.registrationId, workbench_session_id: String(session.id), expected_revision_id: record.expectedRevisionId,
           source_messages: record.sourceMessages.map(({ message_id, event_seq, sha256 }) => ({ message_id, event_seq, sha256 })),
           task: record.task, mode: 'workflow', ...record.facts,
         }, signal)
+        let registered: Record<string, JsonValue>
+        try { registered = await register() } catch (error) {
+          if (!(error instanceof DispatchResponseError) || error.code !== 'team_not_found') throw error
+          const teamID = await resolveTeamReference(connection, record.facts.team_id, signal)
+          if (teamID === record.facts.team_id) throw error
+          record = { ...record, facts: { ...record.facts, team_id: teamID } }
+          await save(session, record)
+          registered = await register()
+        }
         const revision = revisionSchema.parse(registered)
         if (revision.task_sha256 !== digest(record.task)) throw new DispatchResponseError('dispatch_input_digest_mismatch', false)
         record = { ...record, state: 'registered', revision: {
@@ -373,9 +432,9 @@ export function installDispatchInputTool(
   }
   ctx.tools.register(defineTool({
     name: 'weave_dispatch',
-    description: 'Dispatch the current user task to the agreed Weave team and published workflow. Use only when the user has authorized the team, task scope and expected outputs; existing explicit authorization is sufficient. Original user inputs are attached automatically and cannot be replaced with a rewritten task. Do not use for progress questions, recovery or rerunning an existing task. Repeating the same unresolved request is safe.',
+    description: 'Dispatch the current user task to the agreed Weave team and published workflow. team_id may be the exact visible team name, machine name, or stable ID; Workbench resolves names only against active teams and rejects ambiguity. Use only when the user has authorized the team, task scope and expected outputs; existing explicit authorization is sufficient. Original user inputs are attached automatically and cannot be replaced with a rewritten task. Do not use for progress questions, recovery or rerunning an existing task. Repeating the same unresolved request is safe.',
     parameters: {
-      team_id: { type: 'string', required: true, description: 'The agreed active team.' },
+      team_id: { type: 'string', required: true, description: 'The agreed active team by visible name, machine name, or stable ID.' },
       workflow_id: { type: 'string', description: 'The agreed published workflow; omit to use the team default.' },
       workflow_version: { type: 'integer', description: 'The agreed published version, when explicitly pinned.' },
       project_id: { type: 'string', description: 'The current Weave project, when one is selected.' },
@@ -386,7 +445,7 @@ export function installDispatchInputTool(
       if (exec.agent === undefined) throw new Error('weave_dispatch requires its supervising Workbench session')
       const session = exec.agent.session
       canDispatch?.(session)
-      return execute(session, parseFacts(input), exec.signal)
+      return execute(session, retryFacts(session, parseFacts(input)), exec.signal)
     },
   }))
   ctx.effect(() => async () => {
