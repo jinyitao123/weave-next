@@ -3,12 +3,14 @@
 BUILD_COMMIT := $(shell commit=$$(git rev-parse HEAD 2>/dev/null || echo unknown); if [ "$$commit" != unknown ] && [ -n "$$(git status --porcelain 2>/dev/null)" ]; then commit="$$commit-dirty"; fi; echo "$$commit")
 WEAVE_VERSION := $(shell tr -d '[:space:]' < VERSION)
 PNPM ?= pnpm
+# Archived acceptance probes under docs are standalone programs, not module packages.
+GO_PACKAGES := ./internal/... ./cmd/... ./tools/...
 
 install:
 	./scripts/install-weave.sh
 
 build:
-	go build ./...
+	go build $(GO_PACKAGES)
 
 test:
 	go test ./internal/... ./cmd/...
@@ -18,7 +20,7 @@ test-integration:
 	$(MAKE) test
 
 vet:
-	go vet ./...
+	go vet $(GO_PACKAGES)
 
 depguard:
 	./scripts/depguard.sh
