@@ -1,8 +1,11 @@
 package frozen
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"math/big"
 	"sort"
 	"strings"
 )
@@ -21,12 +24,22 @@ type StandardMCPDeclaration struct {
 }
 
 func DecodeStandardFactoryInputV2(raw []byte) (StandardFactoryInputV2, error) {
+	return decodeStandardFactoryInput(raw, 2)
+}
+
+// DecodeStandardFactoryInputV3 preserves CLI MCP declarations independently of
+// the Loom journal contract carried by version 2.
+func DecodeStandardFactoryInputV3(raw []byte) (StandardFactoryInputV2, error) {
+	return decodeStandardFactoryInput(raw, 3)
+}
+
+func decodeStandardFactoryInput(raw []byte, version int) (StandardFactoryInputV2, error) {
 	input, err := strictDecode[StandardFactoryInputV2](raw)
 	if err != nil {
 		return StandardFactoryInputV2{}, err
 	}
-	if input.SchemaVersion != 2 || input.MCPServers == nil {
-		return StandardFactoryInputV2{}, errors.New("standard v2 input requires schema_version 2 and mcp_servers")
+	if input.SchemaVersion != version || input.MCPServers == nil {
+		return StandardFactoryInputV2{}, fmt.Errorf("standard input requires schema_version %d and mcp_servers", version)
 	}
 	for index := range input.MCPServers {
 		server := &input.MCPServers[index]
@@ -68,9 +81,13 @@ func NormalizeToolDefinitions(tools []FrozenToolDefinition) ([]FrozenToolDefinit
 		if tool.Name == "" || strings.TrimSpace(tool.Name) != tool.Name {
 			return nil, errors.New("frozen tool name is invalid")
 		}
+		original := append([]byte(nil), tool.InputSchema...)
 		var err error
 		if tool.InputSchema, err = canonicalRequiredJSONObject(tool.InputSchema); err != nil {
 			return nil, err
+		}
+		if !sameJSONNumbers(original, tool.InputSchema) {
+			return nil, errors.New("frozen tool schema numbers cannot be represented without precision loss")
 		}
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].Name < result[j].Name })
@@ -93,4 +110,98 @@ func standardDeclarationStringSet(values []string) ([]string, error) {
 		normalized = []string{}
 	}
 	return normalized, nil
+}
+
+// JSON Schema numbers carry exact comparison semantics. JCS uses IEEE-754:
+// reject contracts whose canonical spelling would change those semantics.
+func sameJSONNumbers(before, after []byte) bool {
+	decode := func(raw []byte) (any, error) {
+		d := json.NewDecoder(bytes.NewReader(raw))
+		d.UseNumber()
+		var value any
+		err := d.Decode(&value)
+		return value, err
+	}
+	a, err := decode(before)
+	if err != nil {
+		return false
+	}
+	b, err := decode(after)
+	if err != nil {
+		return false
+	}
+	var equal func(any, any) bool
+	equal = func(a, b any) bool {
+		switch value := a.(type) {
+		case json.Number:
+			other, ok := b.(json.Number)
+			if !ok {
+				return false
+			}
+			x, ok := new(big.Rat).SetString(string(value))
+			if !ok {
+				return false
+			}
+			y, ok := new(big.Rat).SetString(string(other))
+			return ok && x.Cmp(y) == 0
+		case map[string]any:
+			other, ok := b.(map[string]any)
+			if !ok || len(value) != len(other) {
+				return false
+			}
+			for key, child := range value {
+				if !equal(child, other[key]) {
+					return false
+				}
+			}
+		case []any:
+			other, ok := b.([]any)
+			if !ok || len(value) != len(other) {
+				return false
+			}
+			for i, child := range value {
+				if !equal(child, other[i]) {
+					return false
+				}
+			}
+		}
+		return true
+	}
+	return equal(a, b)
+}
+
+// Decode admission checks schemas before the envelope's JCS spelling can hide
+// precision loss. Existing canonical artifact bytes remain unchanged.
+func toolSchemaNumbersPreserved(before, after []byte) bool {
+	before = bytes.TrimSpace(before)
+	if len(before) == 0 {
+		return true
+	}
+	switch before[0] {
+	case '{':
+		var a, b map[string]json.RawMessage
+		if json.Unmarshal(before, &a) != nil || json.Unmarshal(after, &b) != nil {
+			return false
+		}
+		for key, value := range a {
+			if key == "input_schema" {
+				if !sameJSONNumbers(value, b[key]) {
+					return false
+				}
+			} else if !toolSchemaNumbersPreserved(value, b[key]) {
+				return false
+			}
+		}
+	case '[':
+		var a, b []json.RawMessage
+		if json.Unmarshal(before, &a) != nil || json.Unmarshal(after, &b) != nil || len(a) != len(b) {
+			return false
+		}
+		for i, value := range a {
+			if !toolSchemaNumbersPreserved(value, b[i]) {
+				return false
+			}
+		}
+	}
+	return true
 }

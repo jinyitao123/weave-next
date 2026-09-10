@@ -1,0 +1,11 @@
+{
+  "at": "2026-09-08T01:02:54.050219+00:00",
+  "health": {
+    "ok": true,
+    "run_id": "trust-stage2-invoice-hold-20260908-remote002",
+    "transport": "public_http"
+  },
+  "pid": 66629,
+  "tools_count": 17,
+  "first_run_confirmed_terminal_before_switch": true
+}

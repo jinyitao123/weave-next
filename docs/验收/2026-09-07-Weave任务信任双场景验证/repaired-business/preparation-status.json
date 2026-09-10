@@ -1,0 +1,29 @@
+{
+  "source_commit": "564b378170f44a8c717a0bf0709b288dbc5fda84",
+  "checks": {
+    "make_test": "passed with real PostgreSQL",
+    "published_cli_mcp_from_configuration_api": "passed",
+    "depguard": "passed 11/11 existing upward edges",
+    "productguard": "passed"
+  },
+  "log": {
+    "path": "make-test.log.gz",
+    "raw_sha256": "375828517862c94921cc8076937f5cff0af1e9cc6073121cc5ec8fd927ae1bd4",
+    "raw_bytes": 5061,
+    "gzip_sha256": "9f8243e40763782ca1612748876978eb9cff3dc09b56a68a06824b6accb3adc8"
+  },
+  "publication": {
+    "workflow_id": "realreplicabench-gmail-calendar-mock-workflow",
+    "version": 2,
+    "writer_version": 2,
+    "reviewer_version": 3,
+    "configured_model": "deepseek-v4-flash-vision-exp",
+    "engine": "claude"
+  },
+  "limitations": [
+    "Two roles with differing tool filters on one registered server ID fail publication with workflow_frozen_manifest_mismatch; this sample uses separate registry connections to the same fixture endpoint.",
+    "Native CLI tools remain available. Managed filtering is enforced only on the managed MCP path; OS-level read-only isolation is unproven.",
+    "Workbench browser blocked by locked Mac; no fresh business task was dispatched.",
+    "Workbench JavaScript remains the already-built 406c8c7 version; Go API and both runtimes use 564b378."
+  ]
+}

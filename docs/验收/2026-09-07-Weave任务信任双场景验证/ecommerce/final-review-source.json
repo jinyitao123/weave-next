@@ -1,0 +1,10 @@
+{
+  "run_id": "run-e659f172-6876-521c-a6d8-50642aca9c18",
+  "deliverable_id": "deliverable_413597f07d2620197cf2d96c9966e689",
+  "source": "GET /v1/deliverables/deliverable_413597f07d2620197cf2d96c9966e689/content",
+  "retrieved_at": "2026-09-08T00:55:54.585679+00:00",
+  "sha256": "f2960d43693048b91f58299c035a5a4305da858ae2a52cb807192decb401176f",
+  "bytes": 4650,
+  "full_content": true,
+  "credential_saved": false
+}

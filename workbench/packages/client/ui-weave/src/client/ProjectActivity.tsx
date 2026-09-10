@@ -17,6 +17,7 @@ type ProjectActivityProps = PropsRuntime<'sidebar.workspaces.projectActivity'>
   & PropsLocale<'projectActivity'> & InjectFace<ProjectActivityInjected>
 
 const MEMBER_STATUS: Record<WorkTaskMemberStatus, ProjectActivityKey> = {
+  waiting: 'waiting',
   pending: 'memberPending', running: 'memberRunning', 'partially-completed': 'memberPartial',
   completed: 'memberCompleted', failed: 'memberFailed', stopped: 'memberStopped', 'not-recorded': 'memberUnknown',
 }

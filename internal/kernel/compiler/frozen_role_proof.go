@@ -171,7 +171,8 @@ func freezeDescriptorAgent(
 		Limits: frozen.FrozenAgentLimits{
 			MaxCostUSD: record.MaxCostUSD, MaxTokens: record.MaxTokens,
 			MaxOutputTokens: int64(record.MaxOutputTokens), StepBudget: record.StepBudget,
-			MaxToolRepeats: int64(record.MaxToolRepeats),
+			ToolLoopControl: record.ToolLoopControl,
+			MaxToolRepeats:  int64(record.MaxToolRepeats),
 		},
 		Fallback: frozen.FrozenFallback{
 			Models:  append([]string(nil), record.FallbackModels...),

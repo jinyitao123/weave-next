@@ -1,34 +1,21 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strconv"
 
 	"github.com/jinyitao123/weave/internal/kernel/mcphost"
 	"github.com/jinyitao123/weave/internal/kernel/runtimes"
+	"github.com/jinyitao123/weave/internal/kernel/secret"
 	"github.com/labstack/echo/v4"
 )
 
-// handleRuntimeTaskMCP is the task-scoped MCP gateway a remote loom daemon
-// dials for each of its agent's MCP servers. It is the loom counterpart of the
-// public /v1/mcp-boundary route, through the same governed ToolBroker, with
-// two deliberate differences that keep secrets on the server:
-//
-//   - Auth is the runtime lease (claimedRuntimeTask), not an HMAC boundary
-//     token — the daemon only ever holds its rtk_ runtime token.
-//   - The agent record comes from the task's frozen snapshot, not a live
-//     Registry.Get, so an agent edited after enqueue can't repoint a running
-//     task's MCP server. The daemon never receives the upstream URL or headers
-//     (redaction strips them from the claimed copy; see
-//     runtimes.RedactClaimPayload); they stay in the server-side payload and
-//     are applied here, inside the governed pipeline.
-//
-// Governance (resolve, authorize, fail-closed write gate, audit) is identical to
-// the public boundary — BuildMCPServerAt runs the same layers — so a remote
-// loom turn is gated exactly like a local one.
+// handleRuntimeTaskMCP reuses the governed gateway for legacy Loom tasks and
+// published CLI tasks. Each request rechecks the current claim before effects.
 func (s *Server) handleRuntimeTaskMCP(c echo.Context) error {
-	runtime, task, err := s.claimedRuntimeTask(c)
+	runtime, task, err := s.currentMCPTask(c)
 	if err != nil {
 		return err
 	}
@@ -39,7 +26,7 @@ func (s *Server) handleRuntimeTaskMCP(c echo.Context) error {
 	}
 	// The MCP facade is loom-only; CLI engines reach MCP through their own
 	// per-server boundary tokens delivered in the engine env.
-	if runtimes.CanonicalEngine(payload.Engine) != runtimes.EngineLoom || payload.Record == nil {
+	if (payload.FrozenMCP == nil && runtimes.CanonicalEngine(payload.Engine) != runtimes.EngineLoom) || payload.Record == nil {
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "MCP server not found"})
 	}
 
@@ -48,6 +35,58 @@ func (s *Server) handleRuntimeTaskMCP(c echo.Context) error {
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "MCP server not found"})
 	}
 
+	if payload.FrozenMCP != nil {
+		if _, scoped := c.Get(taskMCPClaimsContextKey).(secret.TaskMCPClaims); !scoped {
+			return echo.NewHTTPError(http.StatusForbidden, "task MCP token required")
+		}
+		binding := payload.FrozenMCP.Bindings[idx]
+		pool := s.GetPool()
+		if pool == nil {
+			pool = s.Pool
+		}
+		if pool == nil || s.MCPRegistry == nil {
+			return echo.NewHTTPError(http.StatusServiceUnavailable, "MCP credentials unavailable")
+		}
+		if binding.AccessRef.WorkspaceID != task.WorkspaceID || binding.AccessRef.ResourceID != binding.ServerID {
+			return echo.NewHTTPError(http.StatusForbidden, "MCP reference mismatch")
+		}
+		tx, err := pool.Begin(c.Request().Context())
+		if err != nil {
+			return echo.NewHTTPError(http.StatusServiceUnavailable, "MCP credentials unavailable")
+		}
+		defer func() { _ = tx.Rollback(c.Request().Context()) }()
+		material, err := s.MCPRegistry.ResolveMCPAccessTx(c.Request().Context(), tx, binding.AccessRef)
+		if err != nil {
+			return echo.NewHTTPError(http.StatusForbidden, "MCP access unavailable")
+		}
+		if err := tx.Commit(c.Request().Context()); err != nil {
+			return echo.NewHTTPError(http.StatusServiceUnavailable, "MCP credentials unavailable")
+		}
+
+		headers := map[string]string{}
+		for name, value := range material.Headers() {
+			headers[name] = string(value)
+		}
+		dispatcher, err := s.mcpAccessFactory().BuildFrozenServer(task.WorkspaceID, payload.Record, binding, headers, func(ctx context.Context) error {
+			gate, err := pool.Begin(ctx)
+			if err != nil {
+				return err
+			}
+			defer func() { _ = gate.Rollback(ctx) }()
+			if err := s.MCPRegistry.ValidateReferenceTx(ctx, gate, binding.AccessRef); err != nil {
+				return err
+			}
+			if err := gate.Commit(ctx); err != nil {
+				return err
+			}
+			_, _, err = s.currentMCPTask(c)
+			return err
+		})
+		if err != nil {
+			return echo.NewHTTPError(http.StatusForbidden, "MCP contract unavailable")
+		}
+		return handleStableGatewayRPC(c, dispatcher)
+	}
 	// The governing workspace is the runtime's own workspace (lease-verified),
 	// never a value read out of the task payload.
 	tenant := runtime.WorkspaceID

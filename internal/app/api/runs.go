@@ -362,7 +362,8 @@ func (s *Server) handleRetryRunStage(c echo.Context) error {
 		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "team_run_stage_retry_unavailable"})
 	}
 	var request struct {
-		IdempotencyKey string `json:"idempotency_key"`
+		IdempotencyKey        string `json:"idempotency_key"`
+		AuthorizedTotalRounds uint64 `json:"authorized_total_rounds,omitempty"`
 	}
 	decoder := json.NewDecoder(http.MaxBytesReader(c.Response(), c.Request().Body, 4096))
 	decoder.DisallowUnknownFields()
@@ -374,12 +375,14 @@ func (s *Server) handleRetryRunStage(c echo.Context) error {
 	}
 	result, err := s.teamRunStageRetry.Retry(c.Request().Context(), teamrun.StageRetryRequest{
 		WorkspaceID: getTenant(c), RunID: c.Param("id"), NodeID: strings.TrimSpace(c.Param("node_id")),
-		IdempotencyKey: request.IdempotencyKey,
+		IdempotencyKey: request.IdempotencyKey, AuthorizedTotalRounds: request.AuthorizedTotalRounds, Actor: getUserID(c),
 	})
 	if err != nil {
 		switch {
 		case errors.Is(err, teamrun.ErrTeamRunIdentityMismatch):
 			return c.JSON(http.StatusNotFound, map[string]string{"error": "run_not_found"})
+		case errors.Is(err, teamrun.ErrTeamRunResumeInvalid):
+			return c.JSON(http.StatusConflict, map[string]string{"error": "stage_resume_not_authorized"})
 		case errors.Is(err, teamrun.ErrTeamRunStateConflict):
 			return c.JSON(http.StatusConflict, map[string]string{"error": "stage_not_retryable"})
 		default:
@@ -423,26 +426,33 @@ type runActivityMemberInputRef struct {
 	Summary      string `json:"summary,omitempty"`
 }
 
+type runActivityMemberBudgetPause struct {
+	Reason                string `json:"reason"`
+	RoundsUsed            uint64 `json:"rounds_used"`
+	AuthorizedTotalRounds uint64 `json:"authorized_total_rounds"`
+}
+
 type runActivityMemberStage struct {
-	MemberRunID            string                      `json:"member_run_id,omitempty"`
-	CheckpointSavedAt      *time.Time                  `json:"checkpoint_saved_at,omitempty"`
-	CurrentTaskID          string                      `json:"current_task_id,omitempty"`
-	PublicUpdates          []runActivityPublicUpdate   `json:"public_updates,omitempty"`
-	PublicUpdatesTruncated bool                        `json:"public_updates_truncated,omitempty"`
-	PublicUpdatesState     string                      `json:"public_updates_state,omitempty"`
-	NodeID                 string                      `json:"node_id"`
-	Name                   string                      `json:"name"`
-	Status                 string                      `json:"status"`
-	Inputs                 []runActivityMemberInputRef `json:"inputs"`
-	OutputRefs             []string                    `json:"output_refs"`
-	StartedAt              *time.Time                  `json:"started_at,omitempty"`
-	CompletedAt            *time.Time                  `json:"completed_at,omitempty"`
-	DurationMs             int64                       `json:"duration_ms,omitempty"`
-	ToolCalls              int                         `json:"tool_calls,omitempty"`
-	Tools                  []runActivityTool           `json:"tools"`
-	FailureClass           string                      `json:"failure_class,omitempty"`
-	FailureReason          string                      `json:"failure_reason,omitempty"`
-	Retryable              bool                        `json:"retryable,omitempty"`
+	BudgetPause            *runActivityMemberBudgetPause `json:"budget_pause,omitempty"`
+	MemberRunID            string                        `json:"member_run_id,omitempty"`
+	CheckpointSavedAt      *time.Time                    `json:"checkpoint_saved_at,omitempty"`
+	CurrentTaskID          string                        `json:"current_task_id,omitempty"`
+	PublicUpdates          []runActivityPublicUpdate     `json:"public_updates,omitempty"`
+	PublicUpdatesTruncated bool                          `json:"public_updates_truncated,omitempty"`
+	PublicUpdatesState     string                        `json:"public_updates_state,omitempty"`
+	NodeID                 string                        `json:"node_id"`
+	Name                   string                        `json:"name"`
+	Status                 string                        `json:"status"`
+	Inputs                 []runActivityMemberInputRef   `json:"inputs"`
+	OutputRefs             []string                      `json:"output_refs"`
+	StartedAt              *time.Time                    `json:"started_at,omitempty"`
+	CompletedAt            *time.Time                    `json:"completed_at,omitempty"`
+	DurationMs             int64                         `json:"duration_ms,omitempty"`
+	ToolCalls              int                           `json:"tool_calls,omitempty"`
+	Tools                  []runActivityTool             `json:"tools"`
+	FailureClass           string                        `json:"failure_class,omitempty"`
+	FailureReason          string                        `json:"failure_reason,omitempty"`
+	Retryable              bool                          `json:"retryable,omitempty"`
 }
 
 type runActivityTool struct {
@@ -1248,6 +1258,7 @@ func (s *Server) handleGetRunActivity(c echo.Context) error {
 		"total_stages":     totalStages,
 		"human_tasks":      humanTasks,
 		"deliverables":     deliverableRefs,
+		"delivery":         s.runDelivery(c.Request().Context(), run),
 		"activity_events":  activityEvents,
 		"corrections":      corrections,
 		"completeness":     completeness,

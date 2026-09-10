@@ -28,6 +28,7 @@ type MemberRequest struct {
 	RunSnapshotID    string
 	NodeID           string
 	CallID           string
+	ResumeGrantID    string
 	ParentGeneration int64
 	Bundle           frozen.FrozenExecutionBundle
 	ArtifactHash     string
@@ -62,11 +63,13 @@ type memberExecution struct {
 	input         loom.State
 	// Journal fields are scoped to one serial graph step; replay reconstructs
 	// the existing generic ToolLoop from recorded model/tool responses.
-	step    string
-	segment string
-	cursor  int64
-	state   loom.State
-	fatal   error
+	step        string
+	segment     string
+	cursor      int64
+	state       loom.State
+	fatal       error
+	resumeDelta loom.State
+	budgetGrant *memberBudgetGrant
 }
 
 type memberExecutionKey struct{}
@@ -172,6 +175,17 @@ func (runner *MemberRunner) admit(ctx context.Context, request MemberRequest) (*
 			return nil, nil, err
 		}
 	}
+	pending := &memberExecution{runner: runner, request: request, runID: runID, checkpointSeq: seq, input: input}
+	paused, err := pending.prepareBudgetResumeTx(ctx, tx)
+	if err != nil {
+		return nil, nil, err
+	}
+	if paused != nil {
+		if err := tx.Commit(ctx); err != nil {
+			return nil, nil, err
+		}
+		return nil, paused, nil
+	}
 	var lease RunAttemptLease
 	if fresh {
 		record := expectedRunRecordFromAttribution(runID, request.Bundle.Agent.Name, request.Attribution, time.Now().UTC())
@@ -213,7 +227,8 @@ func (runner *MemberRunner) admit(ctx context.Context, request MemberRequest) (*
 	if err := tx.Commit(ctx); err != nil {
 		return nil, nil, err
 	}
-	return &memberExecution{runner: runner, request: request, runID: runID, lease: lease, checkpointSeq: seq, input: input}, nil, nil
+	pending.lease = lease
+	return pending, nil, nil
 }
 
 // guardTx checks both owners under their row locks. The parent lock always
@@ -299,7 +314,7 @@ func (runner *MemberRunner) Run(ctx context.Context, request MemberRequest) (out
 	store := &memberCheckpointStore{member: member}
 	var result *loom.RunResult
 	if member.checkpointSeq > 0 {
-		result, err = request.Graph.Resume(execCtx, member.runID, nil, store)
+		result, err = request.Graph.Resume(execCtx, member.runID, member.resumeDelta, store)
 	} else {
 		result, err = request.Graph.Run(execCtx, member.input, store)
 	}

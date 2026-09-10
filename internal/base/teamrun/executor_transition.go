@@ -39,6 +39,7 @@ func executionError(code ErrorCode, cause error) error {
 }
 
 type Executor struct {
+	MemberBudgets     MemberBudgetCoordinator
 	Tasks             ExecutorTaskStore
 	Consumer          *Consumer
 	Transactions      TransactionBeginner

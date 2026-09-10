@@ -1,0 +1,20 @@
+=== vi_run_gates.py — v6 十一项硬门槛独立复跑日志 ===
+authoritative acceptance.json SHA-256 = f4777aaf587b4a81a4fef1932717bf95a0aa063fa21a8e390dfd2ecd8cc60ec4
+check_count_from_execution = 11
+review_index paths: found=43 ok=False missing=['review/systems/verification/traceability_matrix.md']
+
+[OK] GG1 model_tests_pass  Test python3 -m unittest tests.test_model (in outputs/model)
+[OK] GG2 three_speed_scenarios_present  Inspection model/params.json + app/params.js + drawings/FD-01 三速度贯穿
+[OK] GG3 reference_calculations_within_tolerance  Analysis first-principles recompute (corona_model) vs acceptance.json reference_checks
+[OK] GG4 app_starts_without_cloud_dependency  Inspection static index.html + Demonstration real headless Chrome (CDP)
+[OK] GG5 app_exports_scenario_json  Demonstration real headless Chrome (CDP) real download + consistency with page
+[OK] GG6 drawings_are_parseable_and_editable  Test xmllint parse (>=3 SVG) + Inspection OpenSCAD editable source present
+[OK] GG7 all_drawings_marked_conceptual  Inspection concept-level ('概念级') label scan over all drawings
+[OK] GG8 requirements_have_verification_methods  Review of design + Inspection (需求表验证方法列 + traceability CSV method 列)
+[OK] GG9 claims_use_truth_labels  Inspection truth-label vocabulary + forbidden-claim (negation-context) scan
+[OK] GG10 cross_artifact_parameter_consistency_passes  Inspection + Test cross-consistency (params/baseline, params.js, py↔js, FD-01 displayed text)
+[FAIL] GG11 no_open_severity_one_issue  Review of design (severity-one closure via real execution traces + self-reference audit)
+
+OVERALL: FAIL
+audited_inventory files (excl cache & self-report) = 71
+elapsed = 3.9s

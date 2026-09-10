@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/jinyitao123/weave/internal/base/deliverable"
 	"github.com/jinyitao123/weave/internal/build/teambuild"
 	"github.com/jinyitao123/weave/internal/kernel/workflow/machine"
 )
@@ -85,13 +86,14 @@ type DeclarativeBuildBindingV1 struct {
 // the workflow_compile ChangeSet operation. SpecHash content-addresses every
 // other field in this document.
 type FrozenDeclarativeWorkflowSpecV1 struct {
-	SchemaVersion   int                          `json:"schema_version"`
-	SpecHash        string                       `json:"spec_hash"`
-	BuildBinding    DeclarativeBuildBindingV1    `json:"build_binding"`
-	WorkerBindings  []DeclarativeWorkerBindingV1 `json:"worker_bindings"`
-	Spec            DeclarativeWorkflowSpecV1    `json:"spec"`
-	TriggerConfig   json.RawMessage              `json:"trigger_config"`
-	GraphDefinition json.RawMessage              `json:"graph_definition"`
+	SchemaVersion    int                           `json:"schema_version"`
+	SpecHash         string                        `json:"spec_hash"`
+	BuildBinding     DeclarativeBuildBindingV1     `json:"build_binding"`
+	WorkerBindings   []DeclarativeWorkerBindingV1  `json:"worker_bindings"`
+	Spec             DeclarativeWorkflowSpecV1     `json:"spec"`
+	TriggerConfig    json.RawMessage               `json:"trigger_config"`
+	GraphDefinition  json.RawMessage               `json:"graph_definition"`
+	DeliveryContract *deliverable.DeliveryContract `json:"delivery_contract,omitempty"`
 }
 
 type DeclarativeWorkflowProblem struct {
@@ -469,6 +471,19 @@ func FreezeDeclarativeWorkflowSpecV1(
 	buildBinding DeclarativeBuildBindingV1,
 	validator DeclarativeMachineValidator,
 ) (FrozenDeclarativeWorkflowSpecV1, error) {
+	return FreezeDeclarativeWorkflowSpecWithDeliveryContractV1(spec, bindings, buildBinding, nil, validator)
+}
+
+// FreezeDeclarativeWorkflowSpecWithDeliveryContractV1 binds an administrator
+// contract to the compiled graph without making it part of the planner-owned
+// declarative workflow schema.
+func FreezeDeclarativeWorkflowSpecWithDeliveryContractV1(
+	spec DeclarativeWorkflowSpecV1,
+	bindings []DeclarativeWorkerBindingV1,
+	buildBinding DeclarativeBuildBindingV1,
+	deliveryContract *deliverable.DeliveryContract,
+	validator DeclarativeMachineValidator,
+) (FrozenDeclarativeWorkflowSpecV1, error) {
 	if strings.TrimSpace(buildBinding.BuildRunID) == "" ||
 		!isSHA256(strings.TrimSpace(buildBinding.BriefHash)) ||
 		!isSHA256(strings.TrimSpace(buildBinding.ContractHash)) ||
@@ -482,6 +497,7 @@ func FreezeDeclarativeWorkflowSpecV1(
 	if err != nil {
 		return FrozenDeclarativeWorkflowSpecV1{}, err
 	}
+	compiled.Graph.DeliveryContract = deliverable.CloneDeliveryContract(deliveryContract)
 	report, err := validator(compiled.Trigger, compiled.Graph)
 	if err != nil {
 		return FrozenDeclarativeWorkflowSpecV1{}, err
@@ -505,6 +521,7 @@ func FreezeDeclarativeWorkflowSpecV1(
 		SchemaVersion: DeclarativeWorkflowSpecSchemaVersionV1,
 		BuildBinding:  buildBinding, WorkerBindings: sortedBindings, Spec: spec,
 		TriggerConfig: triggerJSON, GraphDefinition: graphJSON,
+		DeliveryContract: deliverable.CloneDeliveryContract(deliveryContract),
 	}
 	hash, err := frozenDeclarativeSpecHashV1(frozen)
 	if err != nil {
@@ -526,6 +543,7 @@ func validateFrozenDeclarativeWorkflowSpecV1(frozen FrozenDeclarativeWorkflowSpe
 	if err != nil {
 		return fmt.Errorf("recompile frozen declarative_v1 spec: %w", err)
 	}
+	compiled.Graph.DeliveryContract = deliverable.CloneDeliveryContract(frozen.DeliveryContract)
 	triggerJSON, graphJSON, err := encodeWorkflowDraftJSON(compiled.Trigger, compiled.Graph)
 	if err != nil {
 		return err
@@ -589,6 +607,7 @@ func RebindFrozenDeclarativeWorkerBindingsV1(
 	if err != nil {
 		return FrozenDeclarativeWorkflowSpecV1{}, fmt.Errorf("rebind declarative worker identities: %w", err)
 	}
+	compiled.Graph.DeliveryContract = deliverable.CloneDeliveryContract(frozen.DeliveryContract)
 	frozen.WorkerBindings = rebound
 	frozen.TriggerConfig, frozen.GraphDefinition, err = encodeWorkflowDraftJSON(compiled.Trigger, compiled.Graph)
 	if err != nil {

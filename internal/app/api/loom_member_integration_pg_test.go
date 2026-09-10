@@ -10,8 +10,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jinyitao123/loom/contract"
 	"github.com/jinyitao123/loom/stdlib"
+	"github.com/jinyitao123/weave/internal/app/deliveryverify"
 	"github.com/jinyitao123/weave/internal/base/db"
-	"github.com/jinyitao123/weave/internal/base/deliverable"
 	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/base/snapshot"
 	"github.com/jinyitao123/weave/internal/base/storeext"
@@ -99,6 +99,12 @@ func (memberIntegrationSecrets) Resolve(context.Context, credentials.ResolveRequ
 }
 
 func TestWorkflowPublishedMemberParkKeepsOriginalRunAndAccountingRealPG(t *testing.T) {
+	runPublishedMemberRecovery(t, 0)
+}
+func TestWorkflowPublishedMemberTotalBudgetRealPG(t *testing.T)    { runPublishedMemberRecovery(t, 1) }
+func TestWorkflowPublishedMemberAutomaticSliceRealPG(t *testing.T) { runPublishedMemberRecovery(t, 2) }
+
+func runPublishedMemberRecovery(t *testing.T, totalRounds uint64) {
 	ctx := t.Context()
 	pool := testutil.PostgresPool(t)
 	if err := db.Migrate(ctx, pool); err != nil {
@@ -124,11 +130,11 @@ func TestWorkflowPublishedMemberParkKeepsOriginalRunAndAccountingRealPG(t *testi
 	if _, err = mcp.RecordProbeSuccess(ctx, "ws", registered.ID, "2025-03-26", json.RawMessage(`{}`), []mcpregistry.Tool{{Name: "compute", InputSchema: json.RawMessage(`{"type":"object"}`)}}); err != nil {
 		t.Fatal(err)
 	}
-	bundle, _, saved := publishMemberIntegrationSample(t, pool, key, "ws", "http://127.0.0.1:1", registered.ID, registered.FunctionalRevision, "compute", "Finish the assigned calculation.")
+	bundle, _, saved := publishMemberIntegrationSample(t, pool, key, "ws", "http://127.0.0.1:1", registered.ID, registered.FunctionalRevision, "compute", "Finish the assigned calculation.", totalRounds)
 	tasks := taskqueue.New(pool, nil, time.Minute)
 	snapshots := snapshot.NewStore(pool)
 	flows := workflow.New(pool, nil)
-	server := &Server{Store: teamDispatchPoolStore{pool: pool}, OrgStore: org.NewStore(pool), Registry: registry.New(pool), Workflow: flows, ScheduleTransactions: pool, Snapshots: snapshots, Tasks: tasks}
+	server := &Server{Store: teamDispatchPoolStore{pool: pool}, OrgStore: org.NewStore(pool), Registry: registry.New(pool), Workflow: flows, Deliverables: deliveryverify.NewStore(pool), ScheduleTransactions: pool, Snapshots: snapshots, Tasks: tasks}
 	request, _ := json.Marshal(teamDispatchRequest{Task: "calculate", ClientRequestID: "00000000-0000-4000-8000-000000000055"})
 	recorder := httptest.NewRecorder()
 	c := echo.New().NewContext(httptest.NewRequest(http.MethodPost, "/v1/teams/team/dispatch", bytes.NewReader(request)), recorder)
@@ -151,14 +157,18 @@ func TestWorkflowPublishedMemberParkKeepsOriginalRunAndAccountingRealPG(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	lead, worker := &memberIntegrationModel{}, &memberIntegrationModel{fail: true, export: true}
-	runtime := &teamrun.WorkflowSerialRuntime{OutputRecorder: deliverable.New(pool), Members: members, Artifacts: flows, Loader: &workflow.RuntimeLoader{Registry: memberIntegrationDescriptors(t)}, HostFactory: memberIntegrationHosts{bundle.Agent.AgentID, lead, worker}, CredentialResolvers: func(string) (workflow.RuntimeCredentialResolver, error) { return memberIntegrationSecrets{}, nil }, Transactions: pool, Runs: runs, Checkpoints: checkpoints, Tasks: tasks, Snapshots: snapshots}
-	executor := &teamrun.Executor{Tasks: tasks, Transactions: pool, Runs: runs, Checkpoints: checkpoints, Runtime: runtime, Consumer: &teamrun.Consumer{Transactions: pool, Snapshots: snapshots, Runs: runs, Tasks: tasks}}
+	lead, worker := &memberIntegrationModel{}, &memberIntegrationModel{fail: totalRounds == 0, export: true}
+	runtime := &teamrun.WorkflowSerialRuntime{OutputRecorder: deliveryverify.NewStore(pool), Members: members, Artifacts: flows, Loader: &workflow.RuntimeLoader{Registry: memberIntegrationDescriptors(t)}, HostFactory: memberIntegrationHosts{bundle.Agent.AgentID, lead, worker}, CredentialResolvers: func(string) (workflow.RuntimeCredentialResolver, error) { return memberIntegrationSecrets{}, nil }, Transactions: pool, Runs: runs, Checkpoints: checkpoints, Tasks: tasks, Snapshots: snapshots}
+	executor := &teamrun.Executor{MemberBudgets: loomruntime.MemberBudgetCoordinator{}, Tasks: tasks, Transactions: pool, Runs: runs, Checkpoints: checkpoints, Runtime: runtime, Consumer: &teamrun.Consumer{Transactions: pool, Snapshots: snapshots, Runs: runs, Tasks: tasks}}
 	if ok, err := executor.ProcessNext(ctx, "first"); err != nil || !ok {
 		t.Fatalf("first=%v %v", ok, err)
 	}
 	parked, err := runs.Get(ctx, "ws", dispatched.RunID)
-	if err != nil || parked.Status != teamrun.StatusParked {
+	wantStatus := teamrun.StatusParked
+	if totalRounds == 2 {
+		wantStatus = teamrun.StatusRunning
+	}
+	if err != nil || parked.Status != wantStatus {
 		if parked.CauseSummary != nil {
 			t.Log(*parked.CauseSummary)
 		}
@@ -177,18 +187,48 @@ func TestWorkflowPublishedMemberParkKeepsOriginalRunAndAccountingRealPG(t *testi
 		}
 		return cp
 	}
+	if totalRounds == 1 {
+		projected := []runActivityMember{{Stages: []runActivityMemberStage{{NodeID: "compute", Status: "running"}}}}
+		server.StoreExt = storeext.New(pool)
+		if node := server.reconcileRunActivityRecovery(ctx, parked, projected); node != "compute" {
+			t.Fatal("budget wait node missing")
+		}
+		stage := projected[0].Stages[0]
+		if stage.Status != "waiting" || stage.FailureClass != "" || !stage.Retryable || stage.BudgetPause == nil || stage.BudgetPause.RoundsUsed != 1 {
+			t.Fatalf("budget projected as failure or completion: %+v", stage)
+		}
+		raw, _ := json.Marshal(stage)
+		if strings.Contains(string(raw), "yield_token") {
+			t.Fatal("private resume token projected")
+		}
+	}
 	before := getCheckpoint()
 	if before.ActiveMember == nil {
 		t.Fatal("lost member pointer")
 	}
 	memberID := loomruntime.MemberRunID("ws", dispatched.RunID, dispatched.RunID, "compute", before.ActiveMember.CallID)
-	retry := &teamrun.StageRetryService{Transactions: pool, Runs: runs, Checkpoints: checkpoints, Tasks: tasks}
+	retry := &teamrun.StageRetryService{MemberBudgets: loomruntime.MemberBudgetCoordinator{}, Transactions: pool, Runs: runs, Checkpoints: checkpoints, Tasks: tasks}
 	command := teamrun.StageRetryRequest{WorkspaceID: "ws", RunID: dispatched.RunID, NodeID: "compute", IdempotencyKey: "continue-once"}
-	if _, err := retry.Retry(ctx, command); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := retry.Retry(ctx, command); err != nil {
-		t.Fatal(err)
+	if totalRounds != 2 {
+		if totalRounds == 1 {
+			if _, err := retry.Retry(ctx, command); err == nil {
+				t.Fatal("total budget renewed without an explicit increase")
+			}
+			command.AuthorizedTotalRounds = 2
+		}
+		if _, err := retry.Retry(ctx, command); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := retry.Retry(ctx, command); err != nil {
+			t.Fatal(err)
+		}
+		if totalRounds == 1 {
+			changed := command
+			changed.AuthorizedTotalRounds = 3
+			if _, err := retry.Retry(ctx, changed); err == nil {
+				t.Fatal("replayed request changed its allowance")
+			}
+		}
 	}
 	if cp := getCheckpoint(); cp.ActiveMember.CallID != before.ActiveMember.CallID {
 		t.Fatal("continue allocated another logical call")
@@ -201,7 +241,11 @@ func TestWorkflowPublishedMemberParkKeepsOriginalRunAndAccountingRealPG(t *testi
 	if err != nil || finished.Status != teamrun.StatusSucceeded {
 		t.Fatalf("finished=%+v err=%v", finished, err)
 	}
-	if lead.calls != 1 || worker.calls != 3 {
+	wantWorkerCalls := 3
+	if totalRounds > 0 {
+		wantWorkerCalls = 2
+	}
+	if lead.calls != 1 || worker.calls != wantWorkerCalls {
 		t.Fatalf("lead=%d worker=%d", lead.calls, worker.calls)
 	}
 	var count, attempt int
@@ -238,7 +282,7 @@ func TestWorkflowPublishedMemberParkKeepsOriginalRunAndAccountingRealPG(t *testi
 	}
 	_ = saved
 }
-func publishMemberIntegrationSample(t *testing.T, pool *pgxpool.Pool, key []byte, workspace, serverURL, serverID string, revision int64, toolName, prompt string) (frozen.FrozenExecutionBundle, compiler.FrozenResolver, *workflow.PublishedArtifactContent) {
+func publishMemberIntegrationSample(t *testing.T, pool *pgxpool.Pool, key []byte, workspace, serverURL, serverID string, revision int64, toolName, prompt string, budget ...uint64) (frozen.FrozenExecutionBundle, compiler.FrozenResolver, *workflow.PublishedArtifactContent) {
 	t.Helper()
 	ctx := t.Context()
 	providers := credentials.New(pool, key)
@@ -248,6 +292,9 @@ func publishMemberIntegrationSample(t *testing.T, pool *pgxpool.Pool, key []byte
 	agents := registry.New(pool)
 	lead := &registry.AgentRecord{Name: "lead", Role: "avatar", Engine: "loom", Model: "fixture-model", GraphType: "standard", Spec: stdlib.AgentSpec{SystemPrompt: "Return the brief."}}
 	worker := &registry.AgentRecord{Name: "worker", Role: "worker", Engine: "loom", Model: "fixture-model", GraphType: "standard", Spec: stdlib.AgentSpec{SystemPrompt: prompt}, MCPServers: []registry.MCPServerConfig{{ServerID: serverID, Filter: []string{toolName}}}}
+	if len(budget) > 0 && budget[0] > 0 {
+		worker.ToolLoopControl = &frozen.ToolLoopControl{SliceRounds: 1, InitialTotalRounds: budget[0]}
+	}
 	for _, record := range []*registry.AgentRecord{lead, worker} {
 		if err := agents.Put(ctx, workspace, record); err != nil {
 			t.Fatal(err)
@@ -329,7 +376,7 @@ func publishMemberIntegrationSample(t *testing.T, pool *pgxpool.Pool, key []byte
 func memberIntegrationDescriptors(t *testing.T) *compiler.DescriptorRegistry {
 	t.Helper()
 	descriptors := compiler.NewDescriptorRegistry()
-	for _, descriptor := range []compiler.GraphFactoryDescriptor{compiler.NewStandardFrozenDescriptor(), compiler.NewStandardFrozenToolsDescriptor()} {
+	for _, descriptor := range []compiler.GraphFactoryDescriptor{compiler.NewStandardFrozenDescriptor(), compiler.NewStandardFrozenToolsDescriptor(), compiler.NewStandardFrozenCLIToolsDescriptor()} {
 		if err := descriptors.Register(descriptor); err != nil {
 			t.Fatal(err)
 		}

@@ -8,6 +8,7 @@ import (
 
 	"github.com/jinyitao123/loom"
 	"github.com/jinyitao123/loom/contract"
+	"github.com/jinyitao123/loom/stdlib"
 	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/base/fileartifact"
 	"github.com/jinyitao123/weave/internal/base/frozen"
@@ -73,6 +74,9 @@ func memberBeforeStep(ctx context.Context, step string, state loom.State) error 
 	if err := member.guardTx(ctx, tx); err != nil {
 		return err
 	}
+	if err := member.consumeBudgetGrantTx(ctx, tx); err != nil {
+		return err
+	}
 	seq, err := member.writeBoundaryTx(ctx, tx)
 	if err != nil {
 		return err
@@ -80,6 +84,7 @@ func memberBeforeStep(ctx context.Context, step string, state loom.State) error 
 	if err := tx.Commit(ctx); err != nil {
 		return err
 	}
+	member.budgetGrant = nil
 	member.checkpointSeq, state["__seq"] = seq, seq
 	return nil
 }
@@ -93,6 +98,15 @@ func memberAfterStep(ctx context.Context, _ string, state loom.State) error {
 		return member.fatal
 	}
 	if yielded, _ := state["__yield"].(bool); yielded {
+		outcome, present, err := stdlib.ReadToolLoopOutcome(state)
+		if err != nil {
+			return err
+		}
+		if present && (outcome.Reason == stdlib.ToolLoopSliceLimit || outcome.Reason == stdlib.ToolLoopTotalLimit || outcome.Reason == stdlib.ToolLoopRepeatLimit || outcome.Reason == stdlib.ToolLoopProviderLength || outcome.Reason == stdlib.ToolLoopProviderStop) {
+			state["__member_step_complete"] = false
+			state["__yield_phase"] = "mid_step"
+			return nil
+		}
 		return errors.New("frozen member journal does not support interactive tool yields")
 	}
 	state["__member_step_complete"] = true

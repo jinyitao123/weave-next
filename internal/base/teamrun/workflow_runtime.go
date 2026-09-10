@@ -3,13 +3,17 @@ package teamrun
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jinyitao123/weave/internal/base/fileartifact"
 	"log/slog"
 	"math"
+	"sort"
 	"strings"
 	"time"
 
@@ -182,8 +186,24 @@ func validateWorkflowCheckpoint(checkpoint WorkflowCheckpointV1) error {
 			(correction.TargetKind == "team" && correction.TargetMemberID != "") {
 			return fmt.Errorf("%w: checkpoint correction is invalid", ErrTeamRunSnapshotUnavailable)
 		}
+		if correction.FanoutReplay != nil {
+			if !stringSliceContains(correction.AffectedNodes, correction.FanoutReplay.TargetNodeID) ||
+				!stringSliceContains(correction.AffectedNodes, correction.FanoutReplay.JoinNodeID) ||
+				validateCorrectionFanoutReplay(*correction.FanoutReplay, correction.TargetKind, correction.TargetMemberID, correction.FanoutReplay.TargetNodeID) != nil {
+				return fmt.Errorf("%w: checkpoint correction fanout replay is invalid", ErrTeamRunSnapshotUnavailable)
+			}
+		}
 	}
 	return nil
+}
+
+func stringSliceContains(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
 }
 
 type ArtifactReader interface {
@@ -289,8 +309,57 @@ func (r *WorkflowSerialRuntime) correctionBoundary(
 		if err != nil {
 			return nil, err
 		}
+		if detail.FanoutReplay != nil {
+			if err := freezeCorrectionFanoutArtifacts(ctx, detail.FanoutReplay, r.workflowArtifactLoader(run)); err != nil {
+				// A missing physical source makes the proposed selective replay
+				// unsafe. Stop before presenting an unprovable preservation plan.
+				return nil, fmt.Errorf("freeze correction artifact inputs: %w", err)
+			}
+		}
 		return &detail, nil
 	}
+}
+
+const maxCorrectionFrozenArtifactBytes = fileartifact.MaxArtifactsTotalBytes
+
+func freezeCorrectionFanoutArtifacts(
+	ctx context.Context,
+	replay *CorrectionFanoutReplayV1,
+	loader func(context.Context, []string) ([]deliverable.WorkflowArtifact, error),
+) error {
+	if replay == nil || loader == nil {
+		return errors.New("correction artifact loader is unavailable")
+	}
+	for i := range replay.Legs {
+		artifacts, err := loader(ctx, replay.Legs[i].ArtifactTaskIDs)
+		if err != nil {
+			return fmt.Errorf("load fanout leg %s artifacts: %w", replay.Legs[i].NodeID, err)
+		}
+		manifest, err := correctionArtifactManifest(artifacts)
+		if err != nil {
+			return fmt.Errorf("freeze fanout leg %s artifacts: %w", replay.Legs[i].NodeID, err)
+		}
+		replay.Legs[i].Artifacts = manifest
+	}
+	return nil
+}
+
+func correctionArtifactManifest(artifacts []deliverable.WorkflowArtifact) ([]CorrectionFrozenArtifactV1, error) {
+	manifest := make([]CorrectionFrozenArtifactV1, 0, len(artifacts))
+	total := 0
+	for _, artifact := range artifacts {
+		total += len([]byte(artifact.Content))
+		if total > maxCorrectionFrozenArtifactBytes {
+			return nil, fmt.Errorf("correction artifacts exceed %d bytes", maxCorrectionFrozenArtifactBytes)
+		}
+		digest := sha256.Sum256([]byte(artifact.Content))
+		manifest = append(manifest, CorrectionFrozenArtifactV1{
+			Path: artifact.Path, ContentType: artifact.ContentType, SizeBytes: len([]byte(artifact.Content)),
+			SHA256: hex.EncodeToString(digest[:]),
+		})
+	}
+	sort.Slice(manifest, func(i, j int) bool { return manifest[i].Path < manifest[j].Path })
+	return manifest, nil
 }
 
 func (r *WorkflowSerialRuntime) activityRecorder(run TeamRun) func(context.Context, string, machine.Node, string, int64, map[string]any) {
@@ -386,17 +455,18 @@ func (r *WorkflowSerialRuntime) Execute(
 		prepared.runInput,
 		serialMachineStart{
 			SourceKind: run.SourceKind, Now: r.now(), Run: run,
-			MemberContext:      r.memberContext(run, prepared.envelope.ContentHash),
-			ArtifactHash:       prepared.envelope.ContentHash,
-			Candidate:          prepared.roundBoundCandidate(),
-			RecordOutput:       r.workflowOutputRecorder(run),
-			RecordArtifact:     r.workflowArtifactRecorder(run),
-			LoadArtifacts:      r.workflowArtifactLoader(run),
-			RecordDelivery:     r.workflowDeliveryRecorder(run),
-			RecordCheckpoint:   r.serialCheckpointWriter(run, prepared.artifact),
-			CheckCorrection:    r.correctionBoundary(run, prepared.graph, prepared.payload),
-			RecordActivity:     r.activityRecorder(run),
-			LoadObservedEvents: r.observedEventLoader(run),
+			MemberContext:            r.memberContext(run, prepared.envelope.ContentHash),
+			ArtifactHash:             prepared.envelope.ContentHash,
+			Candidate:                prepared.roundBoundCandidate(),
+			RecordOutput:             r.workflowOutputRecorder(run),
+			RecordArtifact:           r.workflowArtifactRecorder(run),
+			LoadArtifacts:            r.workflowArtifactLoader(run),
+			LoadArtifactObservations: r.workflowArtifactObservationLoader(run),
+			RecordDelivery:           r.workflowDeliveryRecorder(run),
+			RecordCheckpoint:         r.serialCheckpointWriter(run, prepared.artifact),
+			CheckCorrection:          r.correctionBoundary(run, prepared.graph, prepared.payload),
+			RecordActivity:           r.activityRecorder(run),
+			LoadObservedEvents:       r.observedEventLoader(run),
 		},
 	)
 	return runtimeResultFromSerial(result, prepared.payload, nil)
@@ -444,20 +514,21 @@ func (r *WorkflowSerialRuntime) ResumeCheckpoint(
 			DeliveryErrors:  checkpoint.DeliveryErrors,
 			ArtifactTaskIDs: checkpoint.ArtifactTaskIDs,
 			SourceKind:      run.SourceKind, Now: r.now(), Run: run,
-			ArtifactHash:          prepared.envelope.ContentHash,
-			Candidate:             prepared.roundBoundCandidate(),
-			Usage:                 seedUsage,
-			UsageComplete:         checkpoint.UsageComplete,
-			UsageIncompleteReason: checkpoint.UsageIncompleteReason,
-			RecordOutput:          r.workflowOutputRecorder(run),
-			RecordArtifact:        r.workflowArtifactRecorder(run),
-			LoadArtifacts:         r.workflowArtifactLoader(run),
-			RecordDelivery:        r.workflowDeliveryRecorder(run),
-			RecordCheckpoint:      r.serialCheckpointWriter(run, prepared.artifact),
-			CheckCorrection:       r.correctionBoundary(run, prepared.graph, prepared.payload),
-			RecordActivity:        r.activityRecorder(run),
-			LoadObservedEvents:    r.observedEventLoader(run),
-			Corrections:           append([]CorrectionDirectiveV1(nil), checkpoint.Corrections...),
+			ArtifactHash:             prepared.envelope.ContentHash,
+			Candidate:                prepared.roundBoundCandidate(),
+			Usage:                    seedUsage,
+			UsageComplete:            checkpoint.UsageComplete,
+			UsageIncompleteReason:    checkpoint.UsageIncompleteReason,
+			RecordOutput:             r.workflowOutputRecorder(run),
+			RecordArtifact:           r.workflowArtifactRecorder(run),
+			LoadArtifacts:            r.workflowArtifactLoader(run),
+			LoadArtifactObservations: r.workflowArtifactObservationLoader(run),
+			RecordDelivery:           r.workflowDeliveryRecorder(run),
+			RecordCheckpoint:         r.serialCheckpointWriter(run, prepared.artifact),
+			CheckCorrection:          r.correctionBoundary(run, prepared.graph, prepared.payload),
+			RecordActivity:           r.activityRecorder(run),
+			LoadObservedEvents:       r.observedEventLoader(run),
+			Corrections:              append([]CorrectionDirectiveV1(nil), checkpoint.Corrections...),
 		},
 	)
 	return runtimeResultFromSerial(result, prepared.payload, checkpoint.Corrections)

@@ -11,6 +11,7 @@ import (
 	"github.com/jinyitao123/loom"
 	"github.com/jinyitao123/loom/stdlib"
 	"github.com/jinyitao123/weave/internal/base/execution"
+	"github.com/jinyitao123/weave/internal/base/fileartifact"
 	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/kernel/compiler"
 	"github.com/jinyitao123/weave/internal/kernel/credentials"
@@ -47,9 +48,10 @@ type RuntimeCLIExecutor interface {
 }
 
 type RuntimeCLIEntry struct {
-	executor RuntimeCLIExecutor
-	record   *registry.AgentRecord
-	stamp    execution.AgentExecutionStamp
+	executor  RuntimeCLIExecutor
+	record    *registry.AgentRecord
+	stamp     execution.AgentExecutionStamp
+	frozenMCP *execenv.FrozenMCPInvocation
 }
 
 // RuntimeCLIUsageAttempt is the TeamRun-facing, lossless subset of one engine
@@ -83,12 +85,15 @@ type RuntimeCLIArtifact struct {
 }
 
 type RuntimeCLIResult struct {
-	Output    string
-	Attempts  []RuntimeCLIUsageAttempt
-	Events    []RuntimeCLIEvent
-	Artifacts []RuntimeCLIArtifact
-	// DeliveryError defers an uncollected reference until this node's result
-	// is actually selected for final delivery. Plans remain usable upstream.
+	Status, Err, SessionID string
+	Diagnostics            []engine.Diagnostic
+	ArtifactCollection     *fileartifact.CollectionEvidence
+	Output                 string
+	Attempts               []RuntimeCLIUsageAttempt
+	Events                 []RuntimeCLIEvent
+	Artifacts              []RuntimeCLIArtifact
+	// DeliveryError is retained for old checkpoint compatibility. New collection
+	// observations travel in ArtifactCollection and never become engine errors.
 	DeliveryError string
 }
 
@@ -111,7 +116,7 @@ func (r RuntimeCLIResult) TextOutput() (string, error) {
 		return r.Output, nil
 	}
 	if strings.TrimSpace(selected.Content) == "" {
-		return "", errors.New("referenced delivery file is empty")
+		return r.Output, nil
 	}
 	return selected.Content, nil
 }
@@ -164,13 +169,9 @@ func (e *RuntimeCLIEntry) Execute(ctx context.Context, prompt string) (string, e
 // be committed before the failure route is chosen.
 func (e *RuntimeCLIEntry) ExecuteAccounted(ctx context.Context, prompt string) (RuntimeCLIResult, error) {
 	result, err := e.ExecuteResult(ctx, prompt)
-	accounted := RuntimeCLIResult{Output: result.Output}
-	for _, diagnostic := range result.Diagnostics {
-		if diagnostic.Code == "delivery_artifact_uncollected" {
-			accounted.DeliveryError = diagnostic.Code + ": " + diagnostic.Message
-			break
-		}
-	}
+	accounted := RuntimeCLIResult{Output: result.Output, Status: result.Status, Err: result.Err, SessionID: result.SessionID,
+		Diagnostics: append([]engine.Diagnostic(nil), result.Diagnostics...), ArtifactCollection: result.ArtifactCollection}
+	err = errors.Join(err, fileartifact.CollectionError(result.ArtifactCollection))
 	if len(result.Attempts) > 0 {
 		accounted.Attempts = make([]RuntimeCLIUsageAttempt, 0, len(result.Attempts))
 		for _, attempt := range result.Attempts {
@@ -229,6 +230,9 @@ func runtimeCLIEvent(event engine.Event) RuntimeCLIEvent {
 func (e *RuntimeCLIEntry) ExecuteResult(ctx context.Context, prompt string) (engine.RunResult, error) {
 	if e == nil || runtimeNilLike(e.executor) || e.record == nil {
 		return engine.RunResult{}, runtimeHostUnsupportedError("CLI runtime executor is unavailable")
+	}
+	if e.frozenMCP != nil {
+		ctx = execenv.WithFrozenMCPInvocation(ctx, *e.frozenMCP)
 	}
 	return e.executor.ExecRemote(
 		ctx,
@@ -354,6 +358,10 @@ func (l *RuntimeLoader) Load(
 				}
 				return nil, err
 			}
+			if err := compiler.ValidateStandardMCPBindings(bundle); err != nil {
+				cleanup()
+				return nil, err
+			}
 			record := runtimeCLIAgentRecord(bundle)
 			cliEntry, entryErr := NewRuntimeCLIEntry(
 				l.CLIExecutor,
@@ -368,6 +376,9 @@ func (l *RuntimeLoader) Load(
 			if entryErr != nil {
 				cleanup()
 				return nil, entryErr
+			}
+			if bundle.FactoryKey == compiler.StandardFrozenCLIToolsKey() {
+				cliEntry.frozenMCP = &execenv.FrozenMCPInvocation{WorkspaceID: bundle.Agent.WorkspaceID, AgentID: bundle.Agent.AgentID, AgentVersion: bundle.Agent.AgentVersion, RunSnapshotID: l.RunSnapshotID, FactoryKey: bundle.FactoryKey, Bindings: bundle.MCPBindings}
 			}
 			artifact.Entries = append(artifact.Entries, RuntimeGraphEntry{
 				AgentID:      bundle.Agent.AgentID,

@@ -237,6 +237,21 @@ describe('paging', () => {
 })
 
 describe('prompt and cancel errors', () => {
+  it('keeps UI-control origin on ordinary and subagent prompt transport', async () => {
+    const ordinary = makeSession()
+    await ordinary.session.prompt([{ type: 'text', text: 'select team' }], 'queue', undefined, undefined, 'ui-control')
+    expect(ordinary.api.callsOf('session.prompt')).toMatchObject([{ origin: 'ui-control' }])
+
+    const child = makeSession(new FakeApiClient(), {
+      address: { parentSessionId: PARENT, childSessionId: SID, mode: 'continuable' },
+    })
+    await child.session.prompt([{ type: 'text', text: 'review delivery' }], 'queue', undefined, undefined, 'ui-control')
+    expect(child.api.callsOf('subagents.prompt')).toMatchObject([{ origin: 'ui-control' }])
+    expect(child.api.callsOf('session.prompt')).toEqual([])
+    await ordinary.session.dispose()
+    await child.session.dispose()
+  })
+
   it('routes an addressed child through non-activating history, continuation prompt, and interrupt only', async () => {
     const api = new FakeApiClient()
     const session = new Session(SID, fakeRemote(api), {

@@ -1,0 +1,80 @@
+{
+  "evidence_version": "0.1",
+  "captured_at": "2026-09-09T16:40:00+08:00",
+  "scope": "fresh Corona Workbench run and its persisted outputs",
+  "workspace": "weave_aesthetic_0905",
+  "run": {
+    "run_id": "run-f69ca371-6280-543a-84c2-df3487c13b19",
+    "status": "parked",
+    "team_run_generation": 2,
+    "execution_lease_epoch": 1,
+    "resume_generation": 1,
+    "team_id": "1f57a72d-de9b-4a51-b582-a6fe1a09ddf3",
+    "workflow_id": "corona-prephase-a-lab-v3-luna-workflow",
+    "workflow_version": 5,
+    "run_snapshot_id": "run-f69ca371-6280-543a-84c2-df3487c13b19",
+    "source_kind": "manual",
+    "source_task_id": "task-2a596bce-04e6-56d5-b421-469767d6b779",
+    "checkpoint_ref": "teamrun-checkpoint:default/run-f69ca371-6280-543a-84c2-df3487c13b19",
+    "wait_kind": "fanout",
+    "created_at": "2026-09-09T15:24:09.874934+08:00",
+    "updated_at": "2026-09-09T15:29:43.986700+08:00"
+  },
+  "member_outcome": {
+    "completed": ["lead", "parallel-01", "parallel-02", "parallel-05"],
+    "failed_infrastructure_retryable": ["parallel-03", "parallel-04", "parallel-06"],
+    "failure_detail": "the runtime connection or execution environment failed before the stage could finish; provider stream recorded that the computer went to sleep mid-response"
+  },
+  "correction": {
+    "correction_id": "ce9f6c91-1f81-47cb-9349-a4d5c2218a78",
+    "status": "requested",
+    "instruction": "我刚想了一下，别只按 0.03c 做了。0.01c、0.03c 和 0.05c 都帮我比较一下，前面能保留的内容尽量保留，改动大的地方先告诉我。",
+    "requested_at": "2026-09-09T15:30:49.500740+08:00",
+    "confirmed_at": null,
+    "applied_at": null
+  },
+  "model_check": {
+    "command": "cd /Users/jinyitao/Documents/日冕/complex-validation/fresh-20260909/outputs/model && python3 -m unittest discover -s tests -v",
+    "result": "passed",
+    "tests_run": 34,
+    "failures": 0,
+    "errors": 0,
+    "checked_scenarios": ["S-0.01c", "S-0.03c", "S-0.05c"]
+  },
+  "delivery_boundary": {
+    "available": [
+      "baseline/anchors_reverified_2026-09-09.md",
+      "baseline/corona-prephase-a-v1_frozen_baseline.md",
+      "change/CR-001_artifact_matrix.csv",
+      "change/CR-001_impact_assessment.md",
+      "change/SAFE_POINT_cr001_before.md",
+      "dispatch/work_brief_parallel.md",
+      "drawings/archive_concept_drawing_requirements.md",
+      "model/README.md",
+      "model/baseline.yaml",
+      "model/corona_model.py",
+      "model/params.json",
+      "model/tests/test_model.py",
+      "requirements/requirements_baseline.md",
+      "review/REVIEW_INDEX_cost_risk.md",
+      "review/archive_branch_manifest.json",
+      "review/archive_long_term_reliability.md",
+      "review/archive_payload_architecture.md",
+      "review/cost_research_method.md",
+      "review/propulsion_energy_thermal_comparison.md",
+      "review/risk_register.md",
+      "review/techmaturity_assessment.md",
+      "review/termination_conditions.md",
+      "review/topic_package_next_phase.md",
+      "review/wbs.md"
+    ],
+    "missing_for_full_acceptance": [
+      "completed correction confirmation and restart",
+      "full parallel completion after restart",
+      "FINAL_ACCEPTANCE.md",
+      "verification outputs and complete drawings",
+      "explicit Workbench user assessment"
+    ],
+    "claim": "partial evidence only; no full business acceptance claim"
+  }
+}

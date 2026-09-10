@@ -44,12 +44,18 @@ type FrozenMemorySlot struct {
 	Description string `json:"description"`
 }
 
+type ToolLoopControl struct {
+	SliceRounds        uint64 `json:"slice_rounds"`
+	InitialTotalRounds uint64 `json:"initial_total_rounds"`
+}
+
 type FrozenAgentLimits struct {
-	MaxCostUSD      float64 `json:"max_cost_usd"`
-	MaxTokens       int64   `json:"max_tokens"`
-	MaxOutputTokens int64   `json:"max_output_tokens"`
-	StepBudget      int64   `json:"step_budget"`
-	MaxToolRepeats  int64   `json:"max_tool_repeats"`
+	ToolLoopControl *ToolLoopControl `json:"tool_loop_control,omitempty"`
+	MaxCostUSD      float64          `json:"max_cost_usd"`
+	MaxTokens       int64            `json:"max_tokens"`
+	MaxOutputTokens int64            `json:"max_output_tokens"`
+	StepBudget      int64            `json:"step_budget"`
+	MaxToolRepeats  int64            `json:"max_tool_repeats"`
 }
 
 type FrozenFallback struct {

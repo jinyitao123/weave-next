@@ -335,7 +335,36 @@ func (r *FanoutParentRunResumer) advanceGraph(ctx context.Context, req fanout.Re
 	if err != nil {
 		return fanout.ResumeResult{}, err
 	}
-	extended, err := joinProjectionWithLegs(projection, join)
+	artifactTaskIDs := make(map[string][]string, len(join.Legs))
+	joinedArtifactTaskIDs := make(map[string][]string, len(join.Legs))
+	for _, leg := range join.Legs {
+		if leg.DecisionState != fanout.LegDecisionSucceeded {
+			continue
+		}
+		_, embeddedIDs, decodeErr := decodeFanoutLegExecutionResult(leg.Result)
+		if decodeErr != nil {
+			return fanout.ResumeResult{}, decodeErr
+		}
+		if embeddedIDs != nil {
+			artifactTaskIDs[leg.BranchID] = append([]string{}, embeddedIDs...)
+			joinedArtifactTaskIDs[leg.BranchID] = append([]string{}, embeddedIDs...)
+			continue
+		}
+		id := execution.EngineTaskID(req.WorkspaceID, "fanout/"+leg.LegID)
+		var sourceID string
+		err := tx.QueryRow(ctx, `SELECT id FROM weave_task_queue WHERE workspace_id=$1 AND (id=$2 OR payload->>'logical_invocation_id'=$2) AND kind='engine_exec' AND run_snapshot_id=$3 AND status='completed' AND COALESCE(result->>'status','completed')='completed' ORDER BY created_at DESC,id DESC LIMIT 1`, req.WorkspaceID, id, req.RunSnapshotID).Scan(&sourceID)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return fanout.ResumeResult{}, err
+		}
+		if err == nil {
+			// A legacy CLI leg can still be bound to its deterministic physical
+			// engine result. Already-checkpointed legacy joins remain conservative
+			// because they never recorded this per-leg identity.
+			artifactTaskIDs[leg.BranchID] = []string{sourceID}
+			joinedArtifactTaskIDs[leg.BranchID] = []string{sourceID}
+		}
+	}
+	extended, err := joinProjectionWithLegs(projection, join, artifactTaskIDs)
 	if err != nil {
 		return fanout.ResumeResult{}, err
 	}
@@ -352,18 +381,7 @@ func (r *FanoutParentRunResumer) advanceGraph(ctx context.Context, req fanout.Re
 	}
 	checkpoint.ArtifactTaskIDs[checkpoint.NodeID] = nil
 	for _, leg := range join.Legs {
-		if leg.DecisionState != fanout.LegDecisionSucceeded {
-			continue
-		}
-		id := execution.EngineTaskID(req.WorkspaceID, "fanout/"+leg.LegID)
-		var sourceID string
-		err := tx.QueryRow(ctx, `SELECT id FROM weave_task_queue WHERE workspace_id=$1 AND (id=$2 OR payload->>'logical_invocation_id'=$2) AND kind='engine_exec' AND run_snapshot_id=$3 AND status='completed' AND COALESCE(result->>'status','completed')='completed' ORDER BY created_at DESC,id DESC LIMIT 1`, req.WorkspaceID, id, req.RunSnapshotID).Scan(&sourceID)
-		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-			return fanout.ResumeResult{}, err
-		}
-		if err == nil {
-			checkpoint.ArtifactTaskIDs[checkpoint.NodeID] = append(checkpoint.ArtifactTaskIDs[checkpoint.NodeID], sourceID)
-		}
+		checkpoint.ArtifactTaskIDs[checkpoint.NodeID] = append(checkpoint.ArtifactTaskIDs[checkpoint.NodeID], joinedArtifactTaskIDs[leg.BranchID]...)
 	}
 
 	checkpoint.TeamRunGeneration = run.Generation
@@ -419,6 +437,7 @@ func (r *FanoutParentRunResumer) advanceGraph(ctx context.Context, req fanout.Re
 func joinProjectionWithLegs(
 	projection fanout.JoinProjectionV1,
 	join fanout.JoinResultV1,
+	artifactTaskIDs map[string][]string,
 ) (fanoutJoinProjectionV1, error) {
 	raw, err := json.Marshal(projection)
 	if err != nil {
@@ -429,7 +448,7 @@ func joinProjectionWithLegs(
 		return fanoutJoinProjectionV1{}, err
 	}
 	extended.Legs = make([]fanoutJoinLegV1, 0, len(join.Legs))
-	for _, leg := range join.Legs {
+	for index, leg := range join.Legs {
 		errorValue := json.RawMessage("null")
 		if leg.ErrorCode != nil {
 			errorValue, err = json.Marshal(*leg.ErrorCode)
@@ -437,11 +456,25 @@ func joinProjectionWithLegs(
 				return fanoutJoinProjectionV1{}, err
 			}
 		}
+		var legArtifactTaskIDs []string
+		logicalResult, embeddedIDs, decodeErr := decodeFanoutLegExecutionResult(leg.Result)
+		if decodeErr != nil {
+			return fanoutJoinProjectionV1{}, decodeErr
+		}
+		if embeddedIDs != nil {
+			legArtifactTaskIDs = append([]string{}, embeddedIDs...)
+		} else if ids, known := artifactTaskIDs[leg.BranchID]; known {
+			legArtifactTaskIDs = append([]string{}, ids...)
+		}
+		extended.Results[leg.BranchID] = append(json.RawMessage(nil), logicalResult...)
 		extended.Legs = append(extended.Legs, fanoutJoinLegV1{
 			NodeID:              leg.BranchID,
+			LegID:               leg.LegID,
+			BranchOrdinal:       index,
 			DecisionDisposition: string(leg.DecisionState),
-			Result:              append(json.RawMessage(nil), leg.Result...),
+			Result:              append(json.RawMessage(nil), logicalResult...),
 			Error:               errorValue,
+			ArtifactTaskIDs:     legArtifactTaskIDs,
 		})
 	}
 	return extended, nil

@@ -14,6 +14,7 @@ func TestClassifyFailureSeparatesRecoveryAuthority(t *testing.T) {
 		retryable bool
 	}{
 		{name: "runtime timeout", err: executionError(ErrorCodeExecutionUnrecoverable, errors.New("Reconnecting... 2/5 (request timed out)")), class: FailureClassInfrastructure, retryable: true},
+		{name: "provider connection lost mid-response", err: executionError(ErrorCodeExecutionUnrecoverable, errors.New("API Error: Connection lost mid-response. The response above may be incomplete.")), class: FailureClassInfrastructure, retryable: true},
 		{name: "invalid work", err: executionError(ErrorCodeOutputInvalid, errors.New("missing result")), class: FailureClassWork},
 		{name: "schema verification", err: executionError(ErrorCodeNodeOutputInvalid, errors.New("schema mismatch")), class: FailureClassVerification},
 		{name: "unsupported runtime model", err: errors.New(`unexpected status 404 Not Found: Model "gpt-6-astra" is not supported`), class: FailureClassInfrastructure},

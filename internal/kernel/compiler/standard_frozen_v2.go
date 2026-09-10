@@ -8,6 +8,7 @@ import (
 
 	"github.com/jinyitao123/loom"
 	"github.com/jinyitao123/weave/internal/base/frozen"
+	"github.com/jinyitao123/weave/internal/kernel/engine"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 )
 
@@ -29,20 +30,57 @@ func NewStandardFrozenToolsDescriptor() GraphFactoryDescriptor {
 	return descriptor
 }
 
-type standardToolsEnumerator struct{}
+const StandardFrozenCLIToolsVersion = "3"
 
-func (standardToolsEnumerator) FreezeSchema() FreezeSchema {
-	return FreezeSchema{SchemaID: "weave-standard-factory-input/2", SchemaVersion: 2}
+func StandardFrozenCLIToolsKey() frozen.FactoryKey {
+	return frozen.FactoryKey{FactoryID: standardFrozenFactoryID, FactoryVersion: StandardFrozenCLIToolsVersion, CompilerABI: standardFrozenCompilerABI}
 }
 
-func (standardToolsEnumerator) EncodeFactoryInput(ctx context.Context, record registry.AgentRecord, encoder CredentialRefEncoder) (json.RawMessage, error) {
+func NewStandardFrozenCLIToolsDescriptor() GraphFactoryDescriptor {
+	descriptor := NewStandardFrozenToolsDescriptor()
+	descriptor.FactoryVersion = StandardFrozenCLIToolsVersion
+	descriptor.EnumerateDependencies = standardToolsEnumerator{cli: true}
+	descriptor.Compile = func(ctx context.Context, bundle frozen.FrozenExecutionBundle, _ FrozenResolver, opts FrozenBuildOpts) (*loom.Graph, frozen.CapabilityManifest, error) {
+		return compileStandardFrozenVersion(ctx, bundle, opts, StandardFrozenCLIToolsVersion)
+	}
+	return descriptor
+}
+
+type standardToolsEnumerator struct{ cli bool }
+
+func (e standardToolsEnumerator) version() int {
+	if e.cli {
+		return 3
+	}
+	return 2
+}
+
+func (e standardToolsEnumerator) validEngine(name string) bool {
+	if e.cli {
+		return engine.IsCLIEngine(name)
+	}
+	return name == "loom"
+}
+
+func (e standardToolsEnumerator) decode(raw []byte) (frozen.StandardFactoryInputV2, error) {
+	if e.cli {
+		return frozen.DecodeStandardFactoryInputV3(raw)
+	}
+	return frozen.DecodeStandardFactoryInputV2(raw)
+}
+
+func (e standardToolsEnumerator) FreezeSchema() FreezeSchema {
+	return FreezeSchema{SchemaID: fmt.Sprintf("weave-standard-factory-input/%d", e.version()), SchemaVersion: e.version()}
+}
+
+func (e standardToolsEnumerator) EncodeFactoryInput(ctx context.Context, record registry.AgentRecord, encoder CredentialRefEncoder) (json.RawMessage, error) {
 	if _, err := (standardFrozenEnumerator{}).EncodeFactoryInput(ctx, record, encoder); err != nil {
 		return nil, err
 	}
-	if record.Engine != "" && record.Engine != "loom" {
-		return nil, normalizeCompilerError(CodeDependencyUnenumerable, fmt.Errorf("standard v2 requires a Loom member"))
+	if !e.validEngine(record.Engine) && !(record.Engine == "" && !e.cli) {
+		return nil, normalizeCompilerError(CodeDependencyUnenumerable, fmt.Errorf("standard v%d member engine is unsupported", e.version()))
 	}
-	input := frozen.StandardFactoryInputV2{SchemaVersion: 2, MCPServers: []frozen.StandardMCPDeclaration{}}
+	input := frozen.StandardFactoryInputV2{SchemaVersion: e.version(), MCPServers: []frozen.StandardMCPDeclaration{}}
 	for _, server := range record.MCPServers {
 		if server.ServerID == "" || server.URL != "" || len(server.Headers) != 0 {
 			return nil, normalizeCompilerError(CodeDependencyUnenumerable, fmt.Errorf("member %q requires a managed MCP server reference", record.Name))
@@ -55,16 +93,16 @@ func (standardToolsEnumerator) EncodeFactoryInput(ctx context.Context, record re
 	if err != nil {
 		return nil, err
 	}
-	normalized, err := frozen.DecodeStandardFactoryInputV2(raw)
+	normalized, err := e.decode(raw)
 	if err != nil {
 		return nil, normalizeCompilerError(CodeDependencyUnenumerable, err)
 	}
 	return json.Marshal(normalized)
 }
 
-func (standardToolsEnumerator) EnumerateDependencies(ctx context.Context, agent frozen.FrozenAgentRecord, metadata MetadataResolver) (frozen.EnumeratedDependencyManifest, error) {
-	input, err := frozen.DecodeStandardFactoryInputV2(agent.FactoryInput)
-	if err != nil || agent.Engine != "loom" {
+func (e standardToolsEnumerator) EnumerateDependencies(ctx context.Context, agent frozen.FrozenAgentRecord, metadata MetadataResolver) (frozen.EnumeratedDependencyManifest, error) {
+	input, err := e.decode(agent.FactoryInput)
+	if err != nil || !e.validEngine(agent.Engine) {
 		return frozen.EnumeratedDependencyManifest{}, normalizeCompilerError(CodeDependencyUnenumerable, err)
 	}
 	common := agent
@@ -93,6 +131,9 @@ func (standardToolsEnumerator) EnumerateDependencies(ctx context.Context, agent 
 // SelectAgentFactoryKey is the explicit publication/admission policy. Generic
 // SelectFactoryKey retains its ambiguity check and old artifacts use Lookup.
 func (r *DescriptorRegistry) SelectAgentFactoryKey(record registry.AgentRecord) (frozen.FactoryKey, error) {
+	if err := validateControlledMemberRecord(record); err != nil {
+		return frozen.FactoryKey{}, err
+	}
 	graphType := record.GraphType
 	if graphType == "" {
 		graphType = record.Spec.GraphType
@@ -100,8 +141,11 @@ func (r *DescriptorRegistry) SelectAgentFactoryKey(record registry.AgentRecord) 
 	if graphType != "" && graphType != "standard" {
 		return r.SelectFactoryKey(graphType)
 	}
-	if (record.Engine == "" || record.Engine == "loom") && len(record.MCPServers) > 0 {
+	if len(record.MCPServers) > 0 || record.ToolLoopControl != nil {
 		key := StandardFrozenToolsKey()
+		if engine.IsCLIEngine(record.Engine) {
+			key = StandardFrozenCLIToolsKey()
+		}
 		if _, err := r.Lookup(key); err != nil {
 			return frozen.FactoryKey{}, err
 		}
@@ -117,20 +161,21 @@ func (r *DescriptorRegistry) SelectAgentFactoryKey(record registry.AgentRecord) 
 // ValidateStandardMCPBindings checks the frozen declaration, actual resolved
 // bindings and tool catalog together, before compilation or host construction.
 func ValidateStandardMCPBindings(bundle frozen.FrozenExecutionBundle) error {
-	if bundle.FactoryKey != StandardFrozenToolsKey() {
+	if bundle.FactoryKey != StandardFrozenToolsKey() && bundle.FactoryKey != StandardFrozenCLIToolsKey() {
 		return nil
 	}
-	input, err := frozen.DecodeStandardFactoryInputV2(bundle.Agent.FactoryInput)
+	e := standardToolsEnumerator{cli: bundle.FactoryKey == StandardFrozenCLIToolsKey()}
+	input, err := e.decode(bundle.Agent.FactoryInput)
 	if err != nil {
 		return normalizeCompilerError(CodeFactoryCompileFailed, err)
 	}
-	if bundle.Agent.Engine != "loom" || len(input.MCPServers) != len(bundle.MCPBindings) {
-		return standardFrozenCompileError("standard v2 MCP bindings do not match the member declaration")
+	if !e.validEngine(bundle.Agent.Engine) || len(input.MCPServers) != len(bundle.MCPBindings) {
+		return standardFrozenCompileError("standard MCP bindings do not match the member declaration")
 	}
 	bindings := make(map[string]frozen.FrozenMCPBinding, len(bundle.MCPBindings))
 	for _, binding := range bundle.MCPBindings {
 		if _, found := bindings[binding.ServerID]; found {
-			return standardFrozenCompileError("standard v2 MCP binding is repeated")
+			return standardFrozenCompileError("standard MCP binding is repeated")
 		}
 		bindings[binding.ServerID] = binding
 	}
@@ -160,6 +205,23 @@ func ValidateStandardMCPBindings(bundle frozen.FrozenExecutionBundle) error {
 				return standardFrozenCompileError(fmt.Sprintf("member %q required tool %q is missing from MCP server %q", bundle.Agent.Name, name, server.ServerID))
 			}
 		}
+	}
+	return nil
+}
+
+func validateControlledMemberRecord(record registry.AgentRecord) error {
+	if record.ToolLoopControl == nil {
+		return nil
+	}
+	if err := frozen.ValidateToolLoopControl(record.ToolLoopControl); err != nil {
+		return err
+	}
+	graphType := record.GraphType
+	if graphType == "" {
+		graphType = record.Spec.GraphType
+	}
+	if (record.Engine != "" && record.Engine != "loom") || (graphType != "" && graphType != "standard") || len(record.SubAgents) > 0 || len(record.Spec.SubAgents) > 0 || len(record.Permissions.Ask) > 0 {
+		return normalizeCompilerError(CodeDependencyUnenumerable, fmt.Errorf("controlled tool loops require standard Loom serial leaves without interactive permissions"))
 	}
 	return nil
 }

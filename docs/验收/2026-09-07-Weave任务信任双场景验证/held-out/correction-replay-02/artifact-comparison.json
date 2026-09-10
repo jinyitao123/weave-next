@@ -1,0 +1,116 @@
+{
+  "artifacts": [
+    {
+      "id": "deliverable_ea218b7858243f33e6366ee1823cb6a1",
+      "metadata": {
+        "id": "deliverable_ea218b7858243f33e6366ee1823cb6a1",
+        "workspace_id": "default",
+        "user_id": "a9597692-f602-4dc3-817f-bb98eb84ed84",
+        "lead_avatar_id": "703d830d-af88-4910-9537-83b284f720d4",
+        "session_id": "workflow:run-02401d26-78a3-5025-b3d4-da6462140992",
+        "event_id": "workflow-stage:run-02401d26-78a3-5025-b3d4-da6462140992:parallel-01:calculation.md:751400df57c134b9981b59b1",
+        "run_id": "run-02401d26-78a3-5025-b3d4-da6462140992",
+        "run_snapshot_id": "run-02401d26-78a3-5025-b3d4-da6462140992",
+        "title": "calculation.md",
+        "content": "# 退款批次逐行计算（计算节点交付）\n\n- source-version: initial\n- 计算节点：退款批次复核（计算）\n- 数据来源：仅采用用户给出的三个退款批次数据（case-a / case-b / case-c），未使用外部材料，未补写事实。\n- 计算公式：退款率 = 退款单数 / 订单数 × 100%，保留两位小数（%）。\n\n## 一、输入数据（源于用户，逐字）\n\n| 批次 | 订单 | 退款 | 平均审核（天） |\n|------|------|------|----------------|\n| case-a | 50 | 5 | 2 |\n| case-b | 40 | 6 | 5 |\n| case-c | 100 | 8 | 3 |\n\n## 二、逐行计算过程\n\n退款率 = 退款 / 订单 × 100%，保留两位小数。\n\n| 批次 | 计算式 | 精确值 | 退款率（2 位小数） |\n|------|--------|--------|---------------------|\n| case-a | 5 / 50 | 0.1000 | **10.00%** |\n| case-b | 6 / 40 | 0.1500 | **15.00%** |\n| case-c | 8 / 100 | 0.0800 | **8.00%** |\n\n### 舍入核验\n\n- case-a：5 / 50 = 0.1000，第三位小数为 0，直接保留两位得 10.00%，无进位争议。\n- case-b：6 / 40 = 0.1500，第三位小数为 0，保留两位得 15.00%。\n- case-c：8 / 100 = 0.0800，第三位小数为 0，保留两位得 8.00%。\n\n三个计算结果均为精确终止小数，不存在需要特殊进位（如 `.005`）的情况，四舍五入无歧义。\n\n### 交叉校验（整体占比，辅助判读）\n\n- 合计订单 = 50 + 40 + 100 = 190\n- 合计退款 = 5 + 6 + 8 = 19\n- 整体退款率 = 19 / 190 = 0.1000 → 10.00%（落在三批次 8.00%~15.00% 区间内，不属异常）\n\n## 三、结论\n\n- **退款率最高的批次（优先处理）**：**case-b（15.00%）**。\n  对比：case-a 10.00%，case-c 8.00%，均低于 case-b。\n- **平均审核时长最长的批次（风险最高）**：**case-b（5 天）**。\n  对比：max{2, 5, 3} = 5 天，case-b 为唯一达到 5 天的批次。\n\n两项指标同时指向 **case-b**，建议优先处置，并与平均审核时长风险最高的批次保持一致。\n\n## 四、备注\n\n- 本文件为计算节点的完整计算交付物。\n- 计算与独立复核结论一致（见 upstream 独立复核中间文件与报告），未发现计算错误或舍入争议。\n- 上游分析文件：`inputs/lead/data-calculator/calculation.md`、`inputs/lead/independent-reviewer/review.md`、`inputs/lead/report/summary-report.md`。\n",
+        "content_type": "text/markdown",
+        "metadata": {
+          "source": "published_workflow",
+          "node_id": "parallel-01",
+          "filename": "calculation.md",
+          "node_type": "worker",
+          "node_label": "Parallel work 1",
+          "artifact_kind": "stage"
+        },
+        "created_at": "2026-09-10T02:50:28.780869+08:00"
+      },
+      "computed_sha256": "751400df57c134b9981b59b1129b3816c55cf266677865050076ea7821eec98d",
+      "size_bytes": 2338,
+      "content": "# 退款批次逐行计算（计算节点交付）\n\n- source-version: initial\n- 计算节点：退款批次复核（计算）\n- 数据来源：仅采用用户给出的三个退款批次数据（case-a / case-b / case-c），未使用外部材料，未补写事实。\n- 计算公式：退款率 = 退款单数 / 订单数 × 100%，保留两位小数（%）。\n\n## 一、输入数据（源于用户，逐字）\n\n| 批次 | 订单 | 退款 | 平均审核（天） |\n|------|------|------|----------------|\n| case-a | 50 | 5 | 2 |\n| case-b | 40 | 6 | 5 |\n| case-c | 100 | 8 | 3 |\n\n## 二、逐行计算过程\n\n退款率 = 退款 / 订单 × 100%，保留两位小数。\n\n| 批次 | 计算式 | 精确值 | 退款率（2 位小数） |\n|------|--------|--------|---------------------|\n| case-a | 5 / 50 | 0.1000 | **10.00%** |\n| case-b | 6 / 40 | 0.1500 | **15.00%** |\n| case-c | 8 / 100 | 0.0800 | **8.00%** |\n\n### 舍入核验\n\n- case-a：5 / 50 = 0.1000，第三位小数为 0，直接保留两位得 10.00%，无进位争议。\n- case-b：6 / 40 = 0.1500，第三位小数为 0，保留两位得 15.00%。\n- case-c：8 / 100 = 0.0800，第三位小数为 0，保留两位得 8.00%。\n\n三个计算结果均为精确终止小数，不存在需要特殊进位（如 `.005`）的情况，四舍五入无歧义。\n\n### 交叉校验（整体占比，辅助判读）\n\n- 合计订单 = 50 + 40 + 100 = 190\n- 合计退款 = 5 + 6 + 8 = 19\n- 整体退款率 = 19 / 190 = 0.1000 → 10.00%（落在三批次 8.00%~15.00% 区间内，不属异常）\n\n## 三、结论\n\n- **退款率最高的批次（优先处理）**：**case-b（15.00%）**。\n  对比：case-a 10.00%，case-c 8.00%，均低于 case-b。\n- **平均审核时长最长的批次（风险最高）**：**case-b（5 天）**。\n  对比：max{2, 5, 3} = 5 天，case-b 为唯一达到 5 天的批次。\n\n两项指标同时指向 **case-b**，建议优先处置，并与平均审核时长风险最高的批次保持一致。\n\n## 四、备注\n\n- 本文件为计算节点的完整计算交付物。\n- 计算与独立复核结论一致（见 upstream 独立复核中间文件与报告），未发现计算错误或舍入争议。\n- 上游分析文件：`inputs/lead/data-calculator/calculation.md`、`inputs/lead/independent-reviewer/review.md`、`inputs/lead/report/summary-report.md`。\n"
+    },
+    {
+      "id": "deliverable_5b871be3134f813fa4dcdd01ecb038f5",
+      "metadata": {
+        "id": "deliverable_5b871be3134f813fa4dcdd01ecb038f5",
+        "workspace_id": "default",
+        "user_id": "a9597692-f602-4dc3-817f-bb98eb84ed84",
+        "lead_avatar_id": "703d830d-af88-4910-9537-83b284f720d4",
+        "session_id": "workflow:run-02401d26-78a3-5025-b3d4-da6462140992",
+        "event_id": "workflow-stage:run-02401d26-78a3-5025-b3d4-da6462140992:parallel-01:calculation.md:801e4c555e25a38dcc5b99e8",
+        "run_id": "run-02401d26-78a3-5025-b3d4-da6462140992",
+        "run_snapshot_id": "run-02401d26-78a3-5025-b3d4-da6462140992",
+        "title": "calculation.md",
+        "content": "# 退款批次逐行计算（计算节点交付）\n\n- source-version: corrected\n- 计算节点：退款批次复核（计算）\n- 数据来源：仅采用用户给出的三个退款批次数据（case-a / case-b / case-c），未使用外部材料，未补写事实。\n- 计算公式：退款率 = 退款单数 / 订单数 × 100%，保留两位小数（%）。\n- formula: refunds / orders\n\n## 一、输入数据（源于用户，逐字）\n\n| 批次 | 订单 | 退款 | 平均审核（天） |\n|------|------|------|----------------|\n| case-a | 50 | 5 | 2 |\n| case-b | 40 | 6 | 5 |\n| case-c | 100 | 8 | 3 |\n\n## 二、逐行计算过程\n\n退款率 = 退款 / 订单 × 100%，保留两位小数。\n\n| 批次 | 计算式 | 精确值 | 退款率（2 位小数） |\n|------|--------|--------|---------------------|\n| case-a | 5 / 50 | 0.1000 | **10.00%** |\n| case-b | 6 / 40 | 0.1500 | **15.00%** |\n| case-c | 8 / 100 | 0.0800 | **8.00%** |\n\n### 舍入核验\n\n- case-a：5 / 50 = 0.1000，第三位小数为 0，直接保留两位得 10.00%，无进位争议。\n- case-b：6 / 40 = 0.1500，第三位小数为 0，保留两位得 15.00%。\n- case-c：8 / 100 = 0.0800，第三位小数为 0，保留两位得 8.00%。\n\n三个计算结果均为精确终止小数，不存在需要特殊进位（如 `.005`）的情况，四舍五入无歧义。\n\n### 交叉校验（整体占比，辅助判读）\n\n- 合计订单 = 50 + 40 + 100 = 190\n- 合计退款 = 5 + 6 + 8 = 19\n- 整体退款率 = 19 / 190 = 0.1000 → 10.00%（落在三批次 8.00%~15.00% 区间内，不属异常）\n\n## 三、结论\n\n- **退款率最高的批次（优先处理）**：**case-b（15.00%）**。\n  对比：case-a 10.00%，case-c 8.00%，均低于 case-b。\n- **平均审核时长最长的批次（风险最高）**：**case-b（5 天）**。\n  对比：max{2, 5, 3} = 5 天，case-b 为唯一达到 5 天的批次。\n\n两项指标同时指向 **case-b**，建议优先处置，并与平均审核时长风险最高的批次保持一致。\n\n## 四、备注\n\n- 本文件为计算节点的完整计算交付物。\n- 计算与独立复核结论一致（见 upstream 独立复核中间文件与报告），未发现计算错误或舍入争议。\n- 上游分析文件：`inputs/lead/data-calculator/calculation.md`、`inputs/lead/independent-reviewer/review.md`、`inputs/lead/report/summary-report.md`。\n",
+        "content_type": "text/markdown",
+        "metadata": {
+          "source": "published_workflow",
+          "node_id": "parallel-01",
+          "filename": "calculation.md",
+          "node_type": "worker",
+          "node_label": "Parallel work 1",
+          "artifact_kind": "stage"
+        },
+        "created_at": "2026-09-10T02:51:32.826607+08:00"
+      },
+      "computed_sha256": "801e4c555e25a38dcc5b99e840088106b715ed5d4be3c9fb4d1ffe448eea5a60",
+      "size_bytes": 2368,
+      "content": "# 退款批次逐行计算（计算节点交付）\n\n- source-version: corrected\n- 计算节点：退款批次复核（计算）\n- 数据来源：仅采用用户给出的三个退款批次数据（case-a / case-b / case-c），未使用外部材料，未补写事实。\n- 计算公式：退款率 = 退款单数 / 订单数 × 100%，保留两位小数（%）。\n- formula: refunds / orders\n\n## 一、输入数据（源于用户，逐字）\n\n| 批次 | 订单 | 退款 | 平均审核（天） |\n|------|------|------|----------------|\n| case-a | 50 | 5 | 2 |\n| case-b | 40 | 6 | 5 |\n| case-c | 100 | 8 | 3 |\n\n## 二、逐行计算过程\n\n退款率 = 退款 / 订单 × 100%，保留两位小数。\n\n| 批次 | 计算式 | 精确值 | 退款率（2 位小数） |\n|------|--------|--------|---------------------|\n| case-a | 5 / 50 | 0.1000 | **10.00%** |\n| case-b | 6 / 40 | 0.1500 | **15.00%** |\n| case-c | 8 / 100 | 0.0800 | **8.00%** |\n\n### 舍入核验\n\n- case-a：5 / 50 = 0.1000，第三位小数为 0，直接保留两位得 10.00%，无进位争议。\n- case-b：6 / 40 = 0.1500，第三位小数为 0，保留两位得 15.00%。\n- case-c：8 / 100 = 0.0800，第三位小数为 0，保留两位得 8.00%。\n\n三个计算结果均为精确终止小数，不存在需要特殊进位（如 `.005`）的情况，四舍五入无歧义。\n\n### 交叉校验（整体占比，辅助判读）\n\n- 合计订单 = 50 + 40 + 100 = 190\n- 合计退款 = 5 + 6 + 8 = 19\n- 整体退款率 = 19 / 190 = 0.1000 → 10.00%（落在三批次 8.00%~15.00% 区间内，不属异常）\n\n## 三、结论\n\n- **退款率最高的批次（优先处理）**：**case-b（15.00%）**。\n  对比：case-a 10.00%，case-c 8.00%，均低于 case-b。\n- **平均审核时长最长的批次（风险最高）**：**case-b（5 天）**。\n  对比：max{2, 5, 3} = 5 天，case-b 为唯一达到 5 天的批次。\n\n两项指标同时指向 **case-b**，建议优先处置，并与平均审核时长风险最高的批次保持一致。\n\n## 四、备注\n\n- 本文件为计算节点的完整计算交付物。\n- 计算与独立复核结论一致（见 upstream 独立复核中间文件与报告），未发现计算错误或舍入争议。\n- 上游分析文件：`inputs/lead/data-calculator/calculation.md`、`inputs/lead/independent-reviewer/review.md`、`inputs/lead/report/summary-report.md`。\n"
+    },
+    {
+      "id": "deliverable_9a44dda0159912447f69917d89db0f14",
+      "metadata": {
+        "id": "deliverable_9a44dda0159912447f69917d89db0f14",
+        "workspace_id": "default",
+        "user_id": "a9597692-f602-4dc3-817f-bb98eb84ed84",
+        "lead_avatar_id": "703d830d-af88-4910-9537-83b284f720d4",
+        "session_id": "workflow:run-02401d26-78a3-5025-b3d4-da6462140992",
+        "event_id": "workflow-stage:run-02401d26-78a3-5025-b3d4-da6462140992:parallel-02:review.md:091d65fbc4ea76d72be74cd3",
+        "run_id": "run-02401d26-78a3-5025-b3d4-da6462140992",
+        "run_snapshot_id": "run-02401d26-78a3-5025-b3d4-da6462140992",
+        "title": "review.md",
+        "content": "# 退款批次独立复算与排序检查 — 复核依据\n\n- 节点：退款批次增量复核团队二号 — 独立复算并检查排序\n- 角色：独立复核员（本节点）\n- 数据来源：仅采用用户在 run_input 中给出的三行数据（case-a / case-b / case-c），未引入外部材料或补充事实。\n- 检查方式：以本轮真实 Python 重算为据（见下方法），不单纯引用上游计算/复核文件。\n\nreview-baseline: accepted\n\n## 一、独立复算（退款率，保留两位小数）\n\n退款率 = 退款 / 订单 × 100%，保留两位小数。\n\n| 批次 | 订单 | 退款 | 退款/订单（精确值） | 退款率（2 位小数） | 平均审核（天） |\n|------|------|------|---------------------|--------------------|----------------|\n| case-a | 50 | 5 | 5/50 = 0.100000 | 10.00% | 2 |\n| case-b | 40 | 6 | 6/40 = 0.150000 | 15.00% | 5 |\n| case-c | 100 | 8 | 8/100 = 0.080000 | 8.00% | 3 |\n\n重算依据（本轮 Python 输出摘要）：\n\n- case-a：5/50 = 0.100000 → 10.00%\n- case-b：6/40 = 0.150000 → 15.00%\n- case-c：8/100 = 0.080000 → 8.00%\n\n三者均为精确终止小数（无第三位小数），不存在需特殊进位（如 .005）的舍入争议。\n\n## 二、排序检查\n\n### 退款率降序（优先处理批次 = 最高退款率）\n\n| 排名 | 批次 | 退款率 |\n|------|------|--------|\n| 1 | case-b | 15.00% |\n| 2 | case-a | 10.00% |\n| 3 | case-c | 8.00% |\n\n退款率最高（优先处理）批次 = **case-b（15.00%）**。\n\n### 平均审核天数降序（风险最高批次 = 最大审核天数）\n\n| 排名 | 批次 | 平均审核（天） |\n|------|------|----------------|\n| 1 | case-b | 5 |\n| 2 | case-c | 3 |\n| 3 | case-a | 2 |\n\n平均审核天数 = max{2, 5, 3} = 5，风险最高批次 = **case-b（5 天）**。\n\n## 三、占比合理性交叉校验（辅助判读）\n\n- 合计订单 = 50 + 40 + 100 = 190\n- 合计退款 = 5 + 6 + 8 = 19\n- 整体退款率 = 19 / 190 = 0.100000 → 10.00%（落在三批次 8%~15% 区间内，不属异常）\n\n## 四、复核结论\n\n1. 优先处理批次：退款率最高 = **case-b（15.00%）**。\n2. 平均审核时长风险最高批次：平均审核天数最大 = **case-b（5 天）**。\n\n两项指标均指向 **case-b**，与上游计算员（`inputs/lead/data-calculator/calculation.md`）、独立复核员（`inputs/lead/independent-reviewer/review.md`）及结果整理员（`inputs/lead/report/summary-report.md`）结论一致。复核通过，无计算错误、无舍入争议、无排序错误。\n\n## 判定\n\nreview-baseline: accepted\n\n## 备注\n\n本文件为本节点独立复算与排序检查的可追溯依据。上游三份文件 SHA-256 已与 `inputs/manifest.json` 一致核对无误（计算 18813c85…、独立复核 5b11659f…、报告 e1efef57…）。\n",
+        "content_type": "text/markdown",
+        "metadata": {
+          "source": "published_workflow",
+          "node_id": "parallel-02",
+          "filename": "review.md",
+          "node_type": "worker",
+          "node_label": "Parallel work 2",
+          "artifact_kind": "stage"
+        },
+        "created_at": "2026-09-10T02:50:20.744376+08:00"
+      },
+      "computed_sha256": "091d65fbc4ea76d72be74cd353a9d149aecb7330f1bbda78d793a4f81fbd118e",
+      "size_bytes": 2805,
+      "content": "# 退款批次独立复算与排序检查 — 复核依据\n\n- 节点：退款批次增量复核团队二号 — 独立复算并检查排序\n- 角色：独立复核员（本节点）\n- 数据来源：仅采用用户在 run_input 中给出的三行数据（case-a / case-b / case-c），未引入外部材料或补充事实。\n- 检查方式：以本轮真实 Python 重算为据（见下方法），不单纯引用上游计算/复核文件。\n\nreview-baseline: accepted\n\n## 一、独立复算（退款率，保留两位小数）\n\n退款率 = 退款 / 订单 × 100%，保留两位小数。\n\n| 批次 | 订单 | 退款 | 退款/订单（精确值） | 退款率（2 位小数） | 平均审核（天） |\n|------|------|------|---------------------|--------------------|----------------|\n| case-a | 50 | 5 | 5/50 = 0.100000 | 10.00% | 2 |\n| case-b | 40 | 6 | 6/40 = 0.150000 | 15.00% | 5 |\n| case-c | 100 | 8 | 8/100 = 0.080000 | 8.00% | 3 |\n\n重算依据（本轮 Python 输出摘要）：\n\n- case-a：5/50 = 0.100000 → 10.00%\n- case-b：6/40 = 0.150000 → 15.00%\n- case-c：8/100 = 0.080000 → 8.00%\n\n三者均为精确终止小数（无第三位小数），不存在需特殊进位（如 .005）的舍入争议。\n\n## 二、排序检查\n\n### 退款率降序（优先处理批次 = 最高退款率）\n\n| 排名 | 批次 | 退款率 |\n|------|------|--------|\n| 1 | case-b | 15.00% |\n| 2 | case-a | 10.00% |\n| 3 | case-c | 8.00% |\n\n退款率最高（优先处理）批次 = **case-b（15.00%）**。\n\n### 平均审核天数降序（风险最高批次 = 最大审核天数）\n\n| 排名 | 批次 | 平均审核（天） |\n|------|------|----------------|\n| 1 | case-b | 5 |\n| 2 | case-c | 3 |\n| 3 | case-a | 2 |\n\n平均审核天数 = max{2, 5, 3} = 5，风险最高批次 = **case-b（5 天）**。\n\n## 三、占比合理性交叉校验（辅助判读）\n\n- 合计订单 = 50 + 40 + 100 = 190\n- 合计退款 = 5 + 6 + 8 = 19\n- 整体退款率 = 19 / 190 = 0.100000 → 10.00%（落在三批次 8%~15% 区间内，不属异常）\n\n## 四、复核结论\n\n1. 优先处理批次：退款率最高 = **case-b（15.00%）**。\n2. 平均审核时长风险最高批次：平均审核天数最大 = **case-b（5 天）**。\n\n两项指标均指向 **case-b**，与上游计算员（`inputs/lead/data-calculator/calculation.md`）、独立复核员（`inputs/lead/independent-reviewer/review.md`）及结果整理员（`inputs/lead/report/summary-report.md`）结论一致。复核通过，无计算错误、无舍入争议、无排序错误。\n\n## 判定\n\nreview-baseline: accepted\n\n## 备注\n\n本文件为本节点独立复算与排序检查的可追溯依据。上游三份文件 SHA-256 已与 `inputs/manifest.json` 一致核对无误（计算 18813c85…、独立复核 5b11659f…、报告 e1efef57…）。\n"
+    },
+    {
+      "id": "deliverable_fc3e8cd938e92185fd0623cd6e38294d",
+      "metadata": {
+        "id": "deliverable_fc3e8cd938e92185fd0623cd6e38294d",
+        "workspace_id": "default",
+        "user_id": "a9597692-f602-4dc3-817f-bb98eb84ed84",
+        "lead_avatar_id": "703d830d-af88-4910-9537-83b284f720d4",
+        "session_id": "workflow:run-02401d26-78a3-5025-b3d4-da6462140992",
+        "event_id": "workflow-final:run-02401d26-78a3-5025-b3d4-da6462140992:deliver:refund-review.md:e3534b9979f2bd6fc80f6e70",
+        "run_id": "run-02401d26-78a3-5025-b3d4-da6462140992",
+        "run_snapshot_id": "run-02401d26-78a3-5025-b3d4-da6462140992",
+        "title": "refund-review.md",
+        "content": "# 退款批次复核报告（结果整理）\n\n- 节点：退款批次增量复核团队二号 — 结果整理（报告）\n- 依据原任务：核对三个退款批次，计算退款率（保留两位小数），指出优先处理批次与平均审核时长风险最高的批次。\n- 数据来源：仅采用用户给出的三行数据（case-a / case-b / case-c），未使用外部材料，未补写事实。\n- 汇总来源：`inputs/parallel-01/calculation.md`（计算节点）、`inputs/parallel-02/review.md`（独立复核节点）。两份文件 SHA-256 均与 `inputs/manifest.json` 一致。\n\n## 结果（逐字，默认列顺序：批次 | 退款率 | 平均审核天数）\n\n```\ncase-a | 10.00% | 2\ncase-b | 15.00% | 5\ncase-c | 8.00% | 3\npriority: case-b\nduration-risk: case-b\n```\n\n## 一、计算\n\n退款率 = 退款 / 订单 × 100%，保留两位小数（%）。\n\n| 批次 | 订单 | 退款 | 退款率 | 平均审核（天） |\n|------|------|------|--------|----------------|\n| case-a | 50 | 5 | 10.00% | 2 |\n| case-b | 40 | 6 | 15.00% | 5 |\n| case-c | 100 | 8 | 8.00% | 3 |\n\n计算过程：\n\n- case-a：5 / 50 = 0.1000 → 10.00%\n- case-b：6 / 40 = 0.1500 → 15.00%\n- case-c：8 / 100 = 0.0800 → 8.00%\n\n三个结果均为精确终止小数，不存在需要特殊进位（如 `.005`）的舍入争议。\n\n## 二、结论\n\n1. 优先处理批次（退款率最高）＝ **case-b（15.00%）**。\n   - 排序：case-b 15.00% > case-a 10.00% > case-c 8.00%\n2. 平均审核时长风险最高批次（平均审核天数最大）＝ **case-b（5 天）**。\n   - 排序：case-b 5 天 > case-c 3 天 > case-a 2 天\n\n两项指标均指向 **case-b**，与计算节点（`inputs/parallel-01/calculation.md`）及独立复核节点（`inputs/parallel-02/review.md`）结论一致。\n\n## 三、占比合理性交叉校验（辅助判读）\n\n- 合计订单 = 50 + 40 + 100 = 190\n- 合计退款 = 5 + 6 + 8 = 19\n- 整体退款率 = 19 / 190 = 0.1000 → 10.00%（落在三批次 8.00%~15.00% 区间内，不属异常）\n\n## 四、核算判定\n\n- 计算节点：`inputs/parallel-01/calculation.md`，结论一致。\n- 独立复核节点：`inputs/parallel-02/review.md`，`review-baseline: accepted`，复核通过，无计算错误、无舍入争议、无排序错误。\n\n报告完成，无未决阻塞项。\n",
+        "content_type": "text/markdown",
+        "metadata": {
+          "source": "published_workflow",
+          "node_id": "deliver",
+          "filename": "refund-review.md",
+          "node_type": "deliver",
+          "node_label": "Deliver",
+          "artifact_kind": "final"
+        },
+        "created_at": "2026-09-10T02:52:06.866089+08:00"
+      },
+      "computed_sha256": "e3534b9979f2bd6fc80f6e70874d6cc81ed6c9c4d1551b2b215237a96ecb87f4",
+      "size_bytes": 2317,
+      "content": "# 退款批次复核报告（结果整理）\n\n- 节点：退款批次增量复核团队二号 — 结果整理（报告）\n- 依据原任务：核对三个退款批次，计算退款率（保留两位小数），指出优先处理批次与平均审核时长风险最高的批次。\n- 数据来源：仅采用用户给出的三行数据（case-a / case-b / case-c），未使用外部材料，未补写事实。\n- 汇总来源：`inputs/parallel-01/calculation.md`（计算节点）、`inputs/parallel-02/review.md`（独立复核节点）。两份文件 SHA-256 均与 `inputs/manifest.json` 一致。\n\n## 结果（逐字，默认列顺序：批次 | 退款率 | 平均审核天数）\n\n```\ncase-a | 10.00% | 2\ncase-b | 15.00% | 5\ncase-c | 8.00% | 3\npriority: case-b\nduration-risk: case-b\n```\n\n## 一、计算\n\n退款率 = 退款 / 订单 × 100%，保留两位小数（%）。\n\n| 批次 | 订单 | 退款 | 退款率 | 平均审核（天） |\n|------|------|------|--------|----------------|\n| case-a | 50 | 5 | 10.00% | 2 |\n| case-b | 40 | 6 | 15.00% | 5 |\n| case-c | 100 | 8 | 8.00% | 3 |\n\n计算过程：\n\n- case-a：5 / 50 = 0.1000 → 10.00%\n- case-b：6 / 40 = 0.1500 → 15.00%\n- case-c：8 / 100 = 0.0800 → 8.00%\n\n三个结果均为精确终止小数，不存在需要特殊进位（如 `.005`）的舍入争议。\n\n## 二、结论\n\n1. 优先处理批次（退款率最高）＝ **case-b（15.00%）**。\n   - 排序：case-b 15.00% > case-a 10.00% > case-c 8.00%\n2. 平均审核时长风险最高批次（平均审核天数最大）＝ **case-b（5 天）**。\n   - 排序：case-b 5 天 > case-c 3 天 > case-a 2 天\n\n两项指标均指向 **case-b**，与计算节点（`inputs/parallel-01/calculation.md`）及独立复核节点（`inputs/parallel-02/review.md`）结论一致。\n\n## 三、占比合理性交叉校验（辅助判读）\n\n- 合计订单 = 50 + 40 + 100 = 190\n- 合计退款 = 5 + 6 + 8 = 19\n- 整体退款率 = 19 / 190 = 0.1000 → 10.00%（落在三批次 8.00%~15.00% 区间内，不属异常）\n\n## 四、核算判定\n\n- 计算节点：`inputs/parallel-01/calculation.md`，结论一致。\n- 独立复核节点：`inputs/parallel-02/review.md`，`review-baseline: accepted`，复核通过，无计算错误、无舍入争议、无排序错误。\n\n报告完成，无未决阻塞项。\n"
+    }
+  ]
+}

@@ -85,13 +85,12 @@ curl --fail http://127.0.0.1:8080/v1/ready
 make workbench-install
 make workbench-build
 cd workbench
-WEAVE_COMMAND='../bin/weave' \
 WEAVE_API_URL='http://127.0.0.1:8080' \
 WEAVE_API_KEY='<owner-bound-api-key>' \
 pnpm workbench --host 127.0.0.1 --port 3080 --no-open
 ```
 
-在 `http://127.0.0.1:3080/` 使用 Workbench 本机登录流程。`WEAVE_COMMAND` 指向配套的 Weave 二进制，由 Workbench 启动 MCP 进程。派发前还需要可用团队和已配置的执行环境。页面打开或健康检查通过，只能证明入口可用，不能代替真实任务验收。
+在 `http://127.0.0.1:3080/` 使用 Workbench 本机登录流程。Workbench 默认从 `PATH` 启动 `weave mcp serve`；只有需要选择另一个受信任二进制时，才把 `WEAVE_COMMAND` 设为绝对可执行路径。显式路径不存在时，启动器会直接失败，不再打开连接不完整的 Workbench。派发前还需要可用团队和已配置的执行环境。页面打开或健康检查通过，只能证明入口可用，不能代替真实任务验收。
 
 Workbench 会在每条新运行节点连接命令中放入完整的 Weave 地址。部署服务时将 `WEAVE_RUNTIME_SERVER_URL` 设为公网或其他可路由的 Weave URL；裸机 Workbench 遇到回环 API 地址时，会回退到优先内网 IPv4 并保留已配置的 API 端口。
 
@@ -128,7 +127,7 @@ docker compose -f docker-compose.platform.yml ps
 
 MCP 写入闸拒绝 `write_tools` 明确声明的工具。未声明的工具不会仅凭名称自动阻断，CLI 引擎仍使用所在主机的权限。因此当前需要受信任的部署环境，不能把该机制当成覆盖所有外部动作的沙箱。
 
-运行时只采集能够归属本次执行的受支持 UTF-8 文件，单文件上限 256 KiB，合计上限 512 KiB。明确承诺但没有保存的文件属于交付失败，不能把路径回执当成完整成果。预览上限和采集上限不同，完整下载只能读取平台已经保存的内容。用量未知不能显示为费用为零。
+运行时只采集能够归属本次执行的受支持 UTF-8 文件，单文件上限 256 KiB，合计上限 1 MiB。明确承诺但没有保存的文件属于交付失败，不能把路径回执当成完整成果。预览上限和采集上限不同，完整下载只能读取平台已经保存的内容。用量未知不能显示为费用为零。
 
 ## 验证与记录
 

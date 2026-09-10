@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/jinyitao123/weave/internal/base/deliverable"
 	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/build/teambuild"
 )
@@ -337,14 +338,15 @@ type workflowTemplateOperationInputV1 struct {
 }
 
 type workflowLogicalBlueprintV1 struct {
-	Template        WorkflowBlueprintTemplate `json:"template"`
-	LeadInstruction string                    `json:"lead_instruction"`
-	PrimaryRef      string                    `json:"primary_ref,omitempty"`
-	ReviewerRef     string                    `json:"reviewer_ref,omitempty"`
-	ParallelRefs    []string                  `json:"parallel_refs,omitempty"`
-	FinalizerRef    string                    `json:"finalizer_ref,omitempty"`
-	MaxIterations   *int64                    `json:"max_iterations,omitempty"`
-	Requirements    map[string]string         `json:"requirements"`
+	Template         WorkflowBlueprintTemplate     `json:"template"`
+	LeadInstruction  string                        `json:"lead_instruction"`
+	PrimaryRef       string                        `json:"primary_ref,omitempty"`
+	ReviewerRef      string                        `json:"reviewer_ref,omitempty"`
+	ParallelRefs     []string                      `json:"parallel_refs,omitempty"`
+	FinalizerRef     string                        `json:"finalizer_ref,omitempty"`
+	MaxIterations    *int64                        `json:"max_iterations,omitempty"`
+	Requirements     map[string]string             `json:"requirements"`
+	DeliveryContract *deliverable.DeliveryContract `json:"delivery_contract,omitempty"`
 }
 
 // BindWorkflowTemplateOperationV1 resolves stable Blueprint member refs to
@@ -368,7 +370,7 @@ func BindWorkflowTemplateOperationV1(raw json.RawMessage, resolve func(string) (
 		}
 		return &WorkflowBlueprintWorker{AgentID: id, AgentVersion: version, ResultRequirement: input.Blueprint.Requirements[ref]}, nil
 	}
-	blueprint := WorkflowBlueprint{Template: input.Blueprint.Template, LeadInstruction: input.Blueprint.LeadInstruction, MaxIterations: input.Blueprint.MaxIterations}
+	blueprint := WorkflowBlueprint{Template: input.Blueprint.Template, LeadInstruction: input.Blueprint.LeadInstruction, MaxIterations: input.Blueprint.MaxIterations, DeliveryContract: deliverable.CloneDeliveryContract(input.Blueprint.DeliveryContract)}
 	var err error
 	if blueprint.Primary, err = bind(input.Blueprint.PrimaryRef); err != nil {
 		return WorkflowBlueprint{}, "", err
@@ -851,6 +853,10 @@ func (c *changeSetCompilerV1) compileWorkflowInput() (any, string, string, error
 		if c.declarative == nil {
 			return nil, "", "", errors.New("declarative_v1 workflow is missing its frozen spec")
 		}
+		matches, err := semanticEqual(workflow.DeliveryContract, c.declarative.DeliveryContract)
+		if err != nil || !matches {
+			return nil, "", "", errors.New("declarative_v1 frozen delivery contract does not match Blueprint")
+		}
 		frozen, err := c.rebindDeclarativeWorkerVersions()
 		if err != nil {
 			return nil, "", "", err
@@ -890,6 +896,7 @@ func (c *changeSetCompilerV1) compileWorkflowInput() (any, string, string, error
 	}
 	compiledInput := WorkflowBlueprint{
 		Template: WorkflowBlueprintTemplate(workflow.Template), LeadInstruction: params.LeadInstruction,
+		DeliveryContract: deliverable.CloneDeliveryContract(workflow.DeliveryContract),
 	}
 	if strings.TrimSpace(params.PrimaryRef) != "" {
 		value := resolve(params.PrimaryRef)
@@ -926,6 +933,7 @@ func (c *changeSetCompilerV1) compileWorkflowInput() (any, string, string, error
 		PrimaryRef: strings.TrimSpace(params.PrimaryRef), ReviewerRef: strings.TrimSpace(params.ReviewerRef),
 		ParallelRefs: sortedTrimmed(params.ParallelWorkerRefs), FinalizerRef: strings.TrimSpace(params.FinalizerRef),
 		MaxIterations: compiledInput.MaxIterations, Requirements: params.ResultRequirements,
+		DeliveryContract: deliverable.CloneDeliveryContract(workflow.DeliveryContract),
 	}
 	input := workflowTemplateOperationInputV1{Mode: teambuild.BlueprintWorkflowTemplate, Blueprint: logical, CompiledHash: compiledHash}
 	workflowHash, _, err := canonicalInput(input)
@@ -935,6 +943,7 @@ func (c *changeSetCompilerV1) compileWorkflowInput() (any, string, string, error
 func (c *changeSetCompilerV1) rebindDeclarativeWorkerVersions() (FrozenDeclarativeWorkflowSpecV1, error) {
 	frozen := *c.declarative
 	frozen.WorkerBindings = append([]DeclarativeWorkerBindingV1(nil), c.declarative.WorkerBindings...)
+	frozen.DeliveryContract = deliverable.CloneDeliveryContract(c.declarative.DeliveryContract)
 	changed := false
 	for index := range frozen.WorkerBindings {
 		binding := &frozen.WorkerBindings[index]
@@ -957,6 +966,7 @@ func (c *changeSetCompilerV1) rebindDeclarativeWorkerVersions() (FrozenDeclarati
 	if err != nil {
 		return FrozenDeclarativeWorkflowSpecV1{}, fmt.Errorf("rebind declarative worker versions: %w", err)
 	}
+	compiled.Graph.DeliveryContract = deliverable.CloneDeliveryContract(frozen.DeliveryContract)
 	frozen.TriggerConfig, frozen.GraphDefinition, err = encodeWorkflowDraftJSON(compiled.Trigger, compiled.Graph)
 	if err != nil {
 		return FrozenDeclarativeWorkflowSpecV1{}, fmt.Errorf("encode rebound declarative workflow: %w", err)

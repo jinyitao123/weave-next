@@ -1,0 +1,50 @@
+{
+  "schema_version": "1.0",
+  "harness": "weave-manual-ui",
+  "run_id": "trust-repaired-vendor-20260908-remote003",
+  "task_id": "api-gmail-vendor-brief-mcp",
+  "benchmark_revision": "084489800bfd3f9f239503eda9e754bc267e98f5",
+  "image": "acciolyk/accio_bench@sha256:1e9cf5c72a56794175b7d06ece036b92e296e6b7e9e9a7fa244026f6acea3859",
+  "docker_network": null,
+  "container": "rrb-weave-trust-repaired-vendor-20260908-remote003",
+  "started_at": "2026-09-08T10:40:50.634765+00:00",
+  "status": "ready",
+  "interaction_contract": "submit unchanged task.md and operate only through the Weave UI",
+  "ready_at": "2026-09-08T10:40:51.450840+00:00",
+  "published_ports": {
+    "3071": 32770
+  },
+  "services": {
+    "gmail_mock": {
+      "kind": "http",
+      "container_port": 3071,
+      "host_url": "http://127.0.0.1:32770",
+      "weave_url": "http://host.docker.internal:3071",
+      "mcp_url": "http://host.docker.internal:3071/mcp",
+      "health_url": "http://host.docker.internal:3071/health"
+    }
+  },
+  "mock_services": {
+    "enabled": true,
+    "script": "<generated-runtime-mocks>",
+    "returncode": 0,
+    "log": "/home/ubuntu/commerceagentbench/runs/trust-repaired-vendor-20260908-remote003/container/mock_services.log",
+    "started": true,
+    "runtime_mocks": [
+      {
+        "name": "gmail_mock",
+        "kind": "http",
+        "dir": "/opt/mock_services/gmail_mock",
+        "port": 3071,
+        "health_path": "/health",
+        "bin_names": [],
+        "bench_bin": null,
+        "isolate": false,
+        "isolation_model": null
+      }
+    ]
+  },
+  "task_md": "/home/ubuntu/commerceagentbench/runs/trust-repaired-vendor-20260908-remote003/task/public/task.md",
+  "public_workspace": "/home/ubuntu/commerceagentbench/runs/trust-repaired-vendor-20260908-remote003/task/public/workspace",
+  "secrets_file": ".runtime-secrets.json"
+}

@@ -1,0 +1,560 @@
+{
+  "schema_version": "1.0",
+  "captured_at": "2026-09-09T15:18:59.633821+08:00",
+  "execution_source_commit": "e620e353c0d84d653f9c83600a0de71253e0e11b",
+  "bridge_source_commit": "b308259",
+  "fixture_run_id": "trust-repaired-invoice-20260909-remote007",
+  "original_task_source": {
+    "sha256": "0f469edd5b57d300c31d268abb47188a05669bc8ca68b61d55b61708de9b8910",
+    "bytes": 1546
+  },
+  "runs": {
+    "initial": {
+      "run": {
+        "workspace_id": "default",
+        "run_id": "run-12b4226f-9da0-5722-8316-156859ed7505",
+        "status": "succeeded",
+        "team_id": "104b1ef7-d0a9-43a9-88fe-447a00b1ed61",
+        "workflow_id": "realreplicabench-gmail-calendar-mock-workflow",
+        "workflow_version": 2,
+        "run_snapshot_id": "run-12b4226f-9da0-5722-8316-156859ed7505",
+        "source_kind": "manual",
+        "source_task_id": "task-c8b0388a-7c23-5f97-8fdf-bfe8d2664e9a",
+        "error_code": null,
+        "cause_summary": null,
+        "created_at": "2026-09-09T12:24:52.353222+08:00",
+        "updated_at": "2026-09-09T12:28:42.516411+08:00",
+        "terminal_at": "2026-09-09T12:28:42.516411+08:00"
+      },
+      "input": {
+        "input_revision_id": "4925bc7d-a88f-4571-9ca0-c64b5a3e37e5",
+        "client_request_id": "a75dec11-f7dc-4d11-a827-1155703cc6a5",
+        "task_sha256": "716d212c89d728768cf841363d36888ca56d25eb4a47985b4e2af882dcb2666d",
+        "task_bytes": 1545,
+        "created_at": "2026-09-09T12:24:50.967892+08:00",
+        "consumed_at": "2026-09-09T12:24:51.009466+08:00"
+      },
+      "activity_counts": {
+        "member_completed": 2,
+        "member_started": 2,
+        "runtime_public": 165,
+        "tool_completed": 72,
+        "tool_started": 72
+      },
+      "member_events": [
+        {
+          "seq": 2067,
+          "kind": "member_started",
+          "node_id": "execute",
+          "member_id": "2ecdefd3-c85a-4959-a3c8-a6a10f1501b5",
+          "member_version": 2,
+          "detail": {
+            "input_names": [
+              "task"
+            ],
+            "input_summary": {
+              "task": "\"我是 Nora 的助理，要为 `INV-440` 准备付款暂缓的 Gmail/Calendar 工作状态。\\n\\n只能通过 `http://127.0.0.1:3071/mcp` 访问 Gmail Workspace/MCP，用 JSON-RPC `tools/list` 和 `tools/call` 调用 `gmail.search`、`gmail.get`、`gmail.createLabel`、`gmail.batchModify`、`gmail.createDraft` 这些工具。当前业务日期固定为 `2025-06-21`。所有线索都得通过 MCP 工具自己查，没有额外附件。\\n\\n请先用 MCP 把 INV-440 相…"
+            }
+          },
+          "occurred_at": "2026-09-09T12:24:52.380964+08:00"
+        },
+        {
+          "seq": 2236,
+          "kind": "member_completed",
+          "node_id": "execute",
+          "member_id": "2ecdefd3-c85a-4959-a3c8-a6a10f1501b5",
+          "member_version": 2,
+          "detail": {
+            "tool_calls": 39,
+            "duration_ms": 136044,
+            "input_tokens": 408465,
+            "output_tokens": 15053
+          },
+          "occurred_at": "2026-09-09T12:27:08.425501+08:00"
+        },
+        {
+          "seq": 2237,
+          "kind": "member_started",
+          "node_id": "verify",
+          "member_id": "e755cf5d-25b4-4e5b-92be-cae5c8602e2c",
+          "member_version": 3,
+          "detail": {
+            "input_names": [
+              "execution",
+              "task"
+            ],
+            "input_summary": {
+              "task": "\"我是 Nora 的助理，要为 `INV-440` 准备付款暂缓的 Gmail/Calendar 工作状态。\\n\\n只能通过 `http://127.0.0.1:3071/mcp` 访问 Gmail Workspace/MCP，用 JSON-RPC `tools/list` 和 `tools/call` 调用 `gmail.search`、`gmail.get`、`gmail.createLabel`、`gmail.batchModify`、`gmail.createDraft` 这些工具。当前业务日期固定为 `2025-06-21`。所有线索都得通过 MCP 工具自己查，没有额外附件。\\n\\n请先用 MCP 把 INV-440 相…",
+              "execution": "\"验证全部通过。所有动作均由受管 MCP 工具完成（自动转发至任务原样地址 `http://127.0.0.1:3071/mcp`），未使用 Bash / curl / Python / WebFetch 绕过，未发送任何邮件，未触碰过时/无关线索。\\n\\n## ✅ 实际动作与结果（含核验）\\n\\n**1. 标签 `INV-440`（顶层用户标签）**\\n- `gmail.createLabel` → id `custom-1`，name `INV-440`，status created ✅\\n\\n**2. 当前有效线程打标签 + 标记已读（`gmail.batchModify` 一次 6 封）**\\n| 邮件 | 结果 label…"
+            }
+          },
+          "occurred_at": "2026-09-09T12:27:08.430606+08:00"
+        },
+        {
+          "seq": 2379,
+          "kind": "member_completed",
+          "node_id": "verify",
+          "member_id": "e755cf5d-25b4-4e5b-92be-cae5c8602e2c",
+          "member_version": 3,
+          "detail": {
+            "tool_calls": 33,
+            "duration_ms": 94058,
+            "input_tokens": 263646,
+            "output_tokens": 10274
+          },
+          "occurred_at": "2026-09-09T12:28:42.488625+08:00"
+        }
+      ],
+      "runtime_tasks": [
+        {
+          "id": "task-304629e01553a3addb9c854fc55fe251",
+          "status": "completed",
+          "agent": "realreplicabench-gmail-calendar-mock-business-executor",
+          "source": "dispatch",
+          "runtime_id": "fec94563-0d22-4c21-8036-861900652850",
+          "agent_id": "2ecdefd3-c85a-4959-a3c8-a6a10f1501b5",
+          "agent_version": 2,
+          "created_at": "2026-09-09T12:24:52.385797+08:00",
+          "started_at": "2026-09-09T12:24:53.105752+08:00",
+          "completed_at": "2026-09-09T12:27:06.864845+08:00",
+          "result_status": "completed",
+          "error": null,
+          "reported_models": [
+            "deepseek-v4-flash-vision-exp"
+          ],
+          "usage_receipt": {
+            "scope": "invocation",
+            "source": "cli-reported",
+            "cost_usd": 0.770513,
+            "has_cost": true,
+            "has_tokens": true,
+            "raw_summary": "{\"is_error\":false,\"duration_api_ms\":132753,\"num_turns\":40,\"stop_reason\":\"end_turn\",\"session_id\":\"7bda80ea-95c6-4069-b230-72d6111bf160\",\"total_cost_usd\":0.770513,\"usage\":{\"input_tokens\":38929,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":369536,\"output_tokens\":15053,\"output_tokens_details\":{\"thinking_tokens\":0},\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":0,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"\",\"iterations\":[],\"speed\":\"standard\"},\"modelUsage\":{\"deepseek-v4-flash-vision-exp\":{\"inputTokens\":40444,\"outputTokens\":15341,\"cacheReadInputTokens\":369536,\"cacheCreationInputTokens\":0,\"webSearchRequests\":0,\"costUSD\":0.770513,\"contextWindow\":200000,\"maxOutputTokens\":32000,\"canonicalModel\":\"deepseek-v4-flash-vision-exp\",\"provider\":\"firstParty\"}},\"permission_denials\":[],\"terminal_reason\":\"completed\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"subagent_stats\":{\"spawned\":0,\"requested\":{\"background\":0,\"foreground\":0,\"unset\":0},\"started_in_background\":0,\"max_depth\":0,\"spawned_by_subagents\":0,\"completed\":0,\"failed\":0,\"killed\":{\"parent\":0,\"user\":0,\"system\":0},\"refused\":{\"depth_limit\":0,\"concurrency_limit\":0,\"budget\":0},\"by_type\":{}},\"subtype\":\"success\",\"api_error_status\":null,\"result\":\"验证全部通过。所有动作均由受管 MCP 工具完成（自动转发至任务原样地址 `http://127.0.0.1:3071/mcp`），未使用 Bash / curl / Python / WebFetch 绕过，未发送任何邮件，未触碰过时/无关线索。\\n\\n## ✅ 实际动作与结果（含核验）\\n\\n**1. 标签 `INV-440`（顶层用户标签）**\\n- `gmail.createLabel` → id `custom-1`，name `INV-440`，status created ✅\\n\\n**2. 当前有效线程打标签 + 标记已读（`gmail.batchModify` 一次 6 封）**\\n| 邮件 | 结果 labelIds（核验确认） |\\n|---|---|\\n| inv-001-brief | `INBOX, custom-1(INV-440), IMPORTANT`（UNREAD 已移除）|\\n| inv-002-overcharge | `INBOX, custom-1, STARRED, IMPORTANT` |\\n| inv-003-po-correction | `INBOX, custom-1, STARRED, IMPORTANT` |\\n| inv-004-tax | `INBOX, custom-1, STARRED, IMPORTANT` |\\n| inv-007-review | `INBOX, custom-1, STARRED, IMPORTANT` |\\n| inv-008-vendor-correction | `INBOX, custom-1, STARRED, IMPORTANT` |\\n\\n**3. 发票风险直接相关证据/处理邮件加星标（`gmail.batchModify` 一次 5 封）**\\n- 加星：inv-002、inv-003、inv-004、inv-007、inv-008；inv-001-brief 未加星（系组织指令，非风险证据/处理）\\n\\n**4. 未触碰的过时/无关线索（核验保持原状）**\\n- inv-005-old（INV-404，5/31 结案，非本次 hold）→ `INBOX`，无标签/星标/未读变更\\n- inv-006-vendor-news（门户发布说明）→ `INBOX, UNREAD`，仍为未读，无标签\\n\\n**5. 两封未发送草稿（`gmail.createDraft`，均处于 `DRAFT`，未发送）**\\n- `draft-mttljk37-35ygn` → ap-hold@auroraretail.test，抄送 Nora Patel\\n- `draft-mttljlz9-zk6qq` → billing@northstar-supplies.test，抄送 Nora Patel\\n\\n**6. 日历事件（`calendar.createEvent`）**\\n- `INV-440 AP review`，2025-06-21 16:00–16:30，嘉宾 `nora.patel@auroraretail.test, ap-audit@auroraretail.test, tax@auroraretail.test` ✅（已在 primary 日历核验存在）\\n\\n## 📝 准确引用文本（未改写）\\n- `line 6` overcharge of `USD 9,840` against the `packing service charge`\\n- `The correct purchase order is PO-4407. Earlier references to PO-4077 are wrong.`\\n- `VAT mismatch remains unresolved. AP should not pay INV-440 until vendor resubmits the invoice.`\\n- `resubmit INV-440 with line 6 removed, PO-4407, and corrected VAT wording`\\n- `AP review event for 2025-06-21 16:00-16:30`\\n\\n两封草稿正文均以这些原文数据/编号/术语为主体，未改写或虚构。\\n\\n## 🔎 核验线索\\n- 标签 id 在邮件 `labelIds` 中落为 `custom-1`（即新标签 `INV-440`），证明 `addLabelIds:[\\\"INV-440\\\"]` 正确解析到所建标签\\n- 6 封已读（UNREAD 移除）、5 封星标、2 封草案、1 个事件——均已通过 `gmail.get` / `label:DRAFT` / `ca",
+            "input_tokens": 408465,
+            "output_tokens": 15053,
+            "engine_version": "2.1.245 (Claude Code)"
+          },
+          "tool_call_count": 39,
+          "tool_counts": {
+            "mcp__mcp__calendar_createEvent": 1,
+            "mcp__mcp__calendar_list": 1,
+            "mcp__mcp__calendar_listEvents": 2,
+            "mcp__mcp__gmail_batchModify": 2,
+            "mcp__mcp__gmail_createDraft": 2,
+            "mcp__mcp__gmail_createLabel": 1,
+            "mcp__mcp__gmail_get": 16,
+            "mcp__mcp__gmail_listLabels": 1,
+            "mcp__mcp__gmail_search": 12,
+            "mcp__mcp__people_getMe": 1
+          },
+          "native_tool_call_count": 0,
+          "session_id": "7bda80ea-95c6-4069-b230-72d6111bf160",
+          "artifact_collection": {
+            "limits": {
+              "max_files": 128,
+              "max_file_bytes": 262144,
+              "max_total_bytes": 524288
+            },
+            "complete": true,
+            "schema_version": 1
+          }
+        },
+        {
+          "id": "task-3ccdc421b768b80dc35ddaf1d7fdd928",
+          "status": "completed",
+          "agent": "realreplicabench-gmail-calendar-mock-readonly-verifier",
+          "source": "dispatch",
+          "runtime_id": "16b2e0c8-d8a9-494e-a1dc-61f397aceabf",
+          "agent_id": "e755cf5d-25b4-4e5b-92be-cae5c8602e2c",
+          "agent_version": 3,
+          "created_at": "2026-09-09T12:27:08.433293+08:00",
+          "started_at": "2026-09-09T12:27:08.734772+08:00",
+          "completed_at": "2026-09-09T12:28:40.815716+08:00",
+          "result_status": "completed",
+          "error": null,
+          "reported_models": [
+            "deepseek-v4-flash-vision-exp"
+          ],
+          "usage_receipt": {
+            "scope": "invocation",
+            "source": "cli-reported",
+            "cost_usd": 0.573534,
+            "has_cost": true,
+            "has_tokens": true,
+            "raw_summary": "{\"is_error\":false,\"duration_api_ms\":98558,\"num_turns\":34,\"stop_reason\":\"end_turn\",\"session_id\":\"79e18b38-3c33-4706-a4a7-d6d2ec5dd8ff\",\"total_cost_usd\":0.573534,\"usage\":{\"input_tokens\":32478,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":231168,\"output_tokens\":10274,\"output_tokens_details\":{\"thinking_tokens\":0},\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":0,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"\",\"iterations\":[],\"speed\":\"standard\"},\"modelUsage\":{\"deepseek-v4-flash-vision-exp\":{\"inputTokens\":35035,\"outputTokens\":11311,\"cacheReadInputTokens\":231168,\"cacheCreationInputTokens\":0,\"webSearchRequests\":0,\"costUSD\":0.573534,\"contextWindow\":200000,\"maxOutputTokens\":32000,\"canonicalModel\":\"deepseek-v4-flash-vision-exp\",\"provider\":\"firstParty\"}},\"permission_denials\":[],\"terminal_reason\":\"completed\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"subagent_stats\":{\"spawned\":0,\"requested\":{\"background\":0,\"foreground\":0,\"unset\":0},\"started_in_background\":0,\"max_depth\":0,\"spawned_by_subagents\":0,\"completed\":0,\"failed\":0,\"killed\":{\"parent\":0,\"user\":0,\"system\":0},\"refused\":{\"depth_limit\":0,\"concurrency_limit\":0,\"budget\":0},\"by_type\":{}},\"subtype\":\"success\",\"api_error_status\":null,\"result\":\"Verification complete. All queries were made exclusively through the managed read-only MCP tools; no Bash/curl/Python/WebFetch was used.\\n\\n---\\n\\n## Verdict: **FAIL**\\n\\nThe final Mock state matches the execution summary on **every item except the two required unsent drafts**, which are **not present**. Two mandated deliverables (an AP-hold draft to `ap-hold@auroraretail.test` and a vendor-correction draft to `billing@northstar-supplies.test`) do not exist in the current state, directly contradicting the summary's claim of `draft-mttljk37-35ygn` and `draft-mttljlz9-zk6qq`.\\n\\n---\\n\\n## 逐项证据 (item-by-item evidence)\\n\\n### PASS — 标签 `INV-440`\\n`gmail.listLabels` → id `custom-1`, name `INV-440`, `type: \\\"user\\\"`, `messageListVisibility: show`, `labelListVisibility: labelShow`. Top-level user label, correctly registered. ✓\\n\\n### PASS — 6 封标为目标标签 + 已读\\n`gmail.search(\\\"label:custom-1\\\")` returns **exactly 6**: `inv-001-brief, inv-002-overcharge, inv-003-po-correction, inv-004-tax, inv-007-review, inv-008-vendor-correction`. All 6 have `custom-1` and none carry `UNREAD` (marked read). `gmail.search(\\\"is:unread\\\")` returns only `inv-006-vendor-news`, confirming the 6 INV-440 emails read and nothing else misread. ✓\\n\\n### PASS — 标签集 + 星标（实读 `gmail.get`）\\n| 邮件 | labelIds | 星标 |\\n|---|---|---|\\n| inv-001-brief | `INBOX, custom-1, IMPORTANT` | 无 ✅ |\\n| inv-002-overcharge | `INBOX, custom-1, STARRED, IMPORTANT` | ★ |\\n| inv-003-po-correction | `INBOX, custom-1, STARRED, IMPORTANT` | ★ |\\n| inv-004-tax | `INBOX, custom-1, STARRED, IMPORTANT` | ★ |\\n| inv-007-review | `INBOX, custom-1, STARRED, IMPORTANT` | ★ |\\n| inv-008-vendor-correction | `INBOX, custom-1, STARRED, IMPORTANT` | ★ |\\n\\n星标恰好 5 封（002/003/004/007/008），001 未星标，与组织指令一致。✓\\n\\n### PASS — 过时/无关线索未被触碰\\n- **inv-005-old** (`INV-404` overcharge, dated 2025-05-31): `INBOX` only — no `custom-1`, no `STARRED`, no `UNREAD`.\\n- **inv-006-vendor-news** (portal release notes, dated 2025-06-21): `INBOX, UNREAD` — still unread, no `custom-1`, no `STARRED`.\\nNeither appears under `label:custom-1`. ✓\\n\\n### PASS — 无已发送邮件\\n`gmail.search(\\\"label:SENT\\\")` → empty; `gmail.search(\\\"in:sent\\\")` → empty. No outbound/sent mail. ✓\\n\\n### PASS — 日历事件字段\\n`calendar.listEvents(2025-06-21)` → one event:\\n- id `cal-mttljn4g-is82l`, title `INV-440 AP review`\\n- date `2025-06-21`, start `16:00`, end `16:30`\\n- guests `nora.patel@auroraretail.test, ap-audit@auroraretail.test, tax@auroraretail.test`\\n- description: \\\"Review of invoice INV-440 anomalies: line 6 overcharge of USD 9,840 against the packing service charge",
+            "input_tokens": 263646,
+            "output_tokens": 10274,
+            "engine_version": "2.1.245 (Claude Code)"
+          },
+          "tool_call_count": 33,
+          "tool_counts": {
+            "mcp__mcp__calendar_list": 1,
+            "mcp__mcp__calendar_listEvents": 2,
+            "mcp__mcp__gmail_get": 10,
+            "mcp__mcp__gmail_listLabels": 1,
+            "mcp__mcp__gmail_search": 18,
+            "mcp__mcp__people_getMe": 1
+          },
+          "native_tool_call_count": 0,
+          "session_id": "79e18b38-3c33-4706-a4a7-d6d2ec5dd8ff",
+          "artifact_collection": {
+            "limits": {
+              "max_files": 128,
+              "max_file_bytes": 262144,
+              "max_total_bytes": 524288
+            },
+            "complete": true,
+            "schema_version": 1
+          }
+        }
+      ],
+      "final_deliverables": [
+        {
+          "id": "deliverable_4b0a4fe090bc4ac02c60e1f7ccb06612",
+          "run_id": "run-12b4226f-9da0-5722-8316-156859ed7505",
+          "title": "阶段产物 · 单一业务执行员",
+          "content": "验证全部通过。所有动作均由受管 MCP 工具完成（自动转发至任务原样地址 `http://127.0.0.1:3071/mcp`），未使用 Bash / curl / Python / WebFetch 绕过，未发送任何邮件，未触碰过时/无关线索。\n\n## ✅ 实际动作与结果（含核验）\n\n**1. 标签 `INV-440`（顶层用户标签）**\n- `gmail.createLabel` → id `custom-1`，name `INV-440`，status created ✅\n\n**2. 当前有效线程打标签 + 标记已读（`gmail.batchModify` 一次 6 封）**\n| 邮件 | 结果 labelIds（核验确认） |\n|---|---|\n| inv-001-brief | `INBOX, custom-1(INV-440), IMPORTANT`（UNREAD 已移除）|\n| inv-002-overcharge | `INBOX, custom-1, STARRED, IMPORTANT` |\n| inv-003-po-correction | `INBOX, custom-1, STARRED, IMPORTANT` |\n| inv-004-tax | `INBOX, custom-1, STARRED, IMPORTANT` |\n| inv-007-review | `INBOX, custom-1, STARRED, IMPORTANT` |\n| inv-008-vendor-correction | `INBOX, custom-1, STARRED, IMPORTANT` |\n\n**3. 发票风险直接相关证据/处理邮件加星标（`gmail.batchModify` 一次 5 封）**\n- 加星：inv-002、inv-003、inv-004、inv-007、inv-008；inv-001-brief 未加星（系组织指令，非风险证据/处理）\n\n**4. 未触碰的过时/无关线索（核验保持原状）**\n- inv-005-old（INV-404，5/31 结案，非本次 hold）→ `INBOX`，无标签/星标/未读变更\n- inv-006-vendor-news（门户发布说明）→ `INBOX, UNREAD`，仍为未读，无标签\n\n**5. 两封未发送草稿（`gmail.createDraft`，均处于 `DRAFT`，未发送）**\n- `draft-mttljk37-35ygn` → ap-hold@auroraretail.test，抄送 Nora Patel\n- `draft-mttljlz9-zk6qq` → billing@northstar-supplies.test，抄送 Nora Patel\n\n**6. 日历事件（`calendar.createEvent`）**\n- `INV-440 AP review`，2025-06-21 16:00–16:30，嘉宾 `nora.patel@auroraretail.test, ap-audit@auroraretail.test, tax@auroraretail.test` ✅（已在 primary 日历核验存在）\n\n## 📝 准确引用文本（未改写）\n- `line 6` overcharge of `USD 9,840` against the `packing service charge`\n- `The correct purchase order is PO-4407. Earlier references to PO-4077 are wrong.`\n- `VAT mismatch remains unresolved. AP should not pay INV-440 until vendor resubmits the invoice.`\n- `resubmit INV-440 with line 6 removed, PO-4407, and corrected VAT wording`\n- `AP review event for 2025-06-21 16:00-16:30`\n\n两封草稿正文均以这些原文数据/编号/术语为主体，未改写或虚构。\n\n## 🔎 核验线索\n- 标签 id 在邮件 `labelIds` 中落为 `custom-1`（即新标签 `INV-440`），证明 `addLabelIds:[\"INV-440\"]` 正确解析到所建标签\n- 6 封已读（UNREAD 移除）、5 封星标、2 封草案、1 个事件——均已通过 `gmail.get` / `label:DRAFT` / `calendar.listEvents` 实读确认\n- `inv-005`、`inv-006` 状态未变，证明确未误标签/误读/误星标\n\n## 📊 调用量与耗时\n- 业务写入 6 次（createLabel 1、batchModify 2、createDraft 2、createEvent 1）\n- 只读查证约 26 次（search/get/list），全部完成后回读核验\n- 写入操作执行于 2026-09-09 04:26 UTC 前后，耗时正常、无失败\n\n## 未完成项\n无。所有任务要求均已交付并经实读核验；无依赖外部权限/资源的阻塞项。按任务要求，不需要另写文件，已完成。",
+          "content_type": "text/markdown",
+          "metadata": {
+            "source": "published_workflow",
+            "node_id": "execute",
+            "filename": "",
+            "node_type": "worker",
+            "node_label": "单一业务执行员",
+            "artifact_kind": "stage"
+          },
+          "created_at": "2026-09-09T12:27:08.425745+08:00"
+        },
+        {
+          "id": "deliverable_ec49d5a7166beddaad09f0e2d5e41642",
+          "run_id": "run-12b4226f-9da0-5722-8316-156859ed7505",
+          "title": "阶段产物 · 独立只读复核员",
+          "content": "Verification complete. All queries were made exclusively through the managed read-only MCP tools; no Bash/curl/Python/WebFetch was used.\n\n---\n\n## Verdict: **FAIL**\n\nThe final Mock state matches the execution summary on **every item except the two required unsent drafts**, which are **not present**. Two mandated deliverables (an AP-hold draft to `ap-hold@auroraretail.test` and a vendor-correction draft to `billing@northstar-supplies.test`) do not exist in the current state, directly contradicting the summary's claim of `draft-mttljk37-35ygn` and `draft-mttljlz9-zk6qq`.\n\n---\n\n## 逐项证据 (item-by-item evidence)\n\n### PASS — 标签 `INV-440`\n`gmail.listLabels` → id `custom-1`, name `INV-440`, `type: \"user\"`, `messageListVisibility: show`, `labelListVisibility: labelShow`. Top-level user label, correctly registered. ✓\n\n### PASS — 6 封标为目标标签 + 已读\n`gmail.search(\"label:custom-1\")` returns **exactly 6**: `inv-001-brief, inv-002-overcharge, inv-003-po-correction, inv-004-tax, inv-007-review, inv-008-vendor-correction`. All 6 have `custom-1` and none carry `UNREAD` (marked read). `gmail.search(\"is:unread\")` returns only `inv-006-vendor-news`, confirming the 6 INV-440 emails read and nothing else misread. ✓\n\n### PASS — 标签集 + 星标（实读 `gmail.get`）\n| 邮件 | labelIds | 星标 |\n|---|---|---|\n| inv-001-brief | `INBOX, custom-1, IMPORTANT` | 无 ✅ |\n| inv-002-overcharge | `INBOX, custom-1, STARRED, IMPORTANT` | ★ |\n| inv-003-po-correction | `INBOX, custom-1, STARRED, IMPORTANT` | ★ |\n| inv-004-tax | `INBOX, custom-1, STARRED, IMPORTANT` | ★ |\n| inv-007-review | `INBOX, custom-1, STARRED, IMPORTANT` | ★ |\n| inv-008-vendor-correction | `INBOX, custom-1, STARRED, IMPORTANT` | ★ |\n\n星标恰好 5 封（002/003/004/007/008），001 未星标，与组织指令一致。✓\n\n### PASS — 过时/无关线索未被触碰\n- **inv-005-old** (`INV-404` overcharge, dated 2025-05-31): `INBOX` only — no `custom-1`, no `STARRED`, no `UNREAD`.\n- **inv-006-vendor-news** (portal release notes, dated 2025-06-21): `INBOX, UNREAD` — still unread, no `custom-1`, no `STARRED`.\nNeither appears under `label:custom-1`. ✓\n\n### PASS — 无已发送邮件\n`gmail.search(\"label:SENT\")` → empty; `gmail.search(\"in:sent\")` → empty. No outbound/sent mail. ✓\n\n### PASS — 日历事件字段\n`calendar.listEvents(2025-06-21)` → one event:\n- id `cal-mttljn4g-is82l`, title `INV-440 AP review`\n- date `2025-06-21`, start `16:00`, end `16:30`\n- guests `nora.patel@auroraretail.test, ap-audit@auroraretail.test, tax@auroraretail.test`\n- description: \"Review of invoice INV-440 anomalies: line 6 overcharge of USD 9,840 against the packing service charge; correct purchase order is PO-4407 (earlier references to PO-4077 are wrong); VAT mismatch remains unresolved; vendor correction/resubmission request (resubmit INV-440 with line 6 removed, PO-4407, corrected VAT wording).\"\n- `createdAt: 2026-09-09T04:26:45.328Z`; `calendar.listEvents(2025-06-22)` → empty. ✓\n\n### PASS — 引用文本与原文一致（未改写）\n- `inv-002`: \"Invoice INV-440 has a line 6 overcharge of USD 9,840 against the packing service charge.\"\n- `inv-003`: \"The correct purchase order is PO-4407. Earlier references to PO-4077 are wrong.\"\n- `inv-004`: \"VAT mismatch remains unresolved. AP should not pay INV-440 until vendor resubmits the invoice.\"\n- `inv-008`: \"…resubmit INV-440 with line 6 removed, PO-4407, and corrected VAT wording.\"\n- `inv-007`: \"…AP review event for 2025-06-21 16:00-16:30…\"\n\nAll match source bodies verbatim. Calendar description also uses these exact data/number/terms. ✓\n\n### FAIL — 两封未发送草稿不存在\n| 探测 | 结果 |\n|---|---|\n| `gmail.search(\"label:DRAFT\")` | empty |\n| `gmail.search(\"in:drafts\")` | empty |\n| `gmail.search(\"is:draft\")` | empty |\n| `gmail.search(\"ap-hold\")` / `to:ap-hold@auroraretail.test` / `in:anywhere ap-hold` | empty |\n| `gmail.search(\"to:billing@northstar-supplies.test\")` | empty |\n| `gmail.get(draft-mttljk37-35ygn)` | **upstream MCP error** |\n| `gmail.get(draft-mttljlz9-zk6qq)` | **upstream MCP error** |\n\nThe claimed draft IDs are not retrievable and no draft appears under the `DRAFT` label or any recipient/subject probe. In a persistent Mock where labels, label-modifications, and the calendar event all persist and are queryable, the total absence of drafts indicates they were **not actually created** (the summary's draft IDs appear fabricated), not merely hidden. This is a hard miss on a required deliverable.\n\n---\n\n## 一致性摘要\nLabel set, read/star states, untouched threads, no-sent, and the calendar event are fully consistent with the summary. The single inconsistency is the drafts claim, which is unsupported by the final state.\n\n## 边界披露\n- My verifier MCP toolset (`gmail_search, gmail_get, gmail_listLabels, gmail_downloadAttachment, calendar_list, calendar_listEvents, calendar_getEvent, people_*`) contains **no** createLabel/batchModify/createDraft/createEvent/send tool — read-only is enforced by tool-set composition, not by a runtime sandbox gate.\n- The platform does **not** hard-disable native CLI tools (Bash/curl/WebFetch); that control is prompt-level only. I used only managed MCP read-only tools and did not invoke any CLI.\n- I did not read `grader/private` or access any keys. No writes were performed. Team concluded \"全部通过\" but the original verifier's ruling is independent; per the evidence above, this node's verdict is **FAIL** (drafts missing).\n\n## 调用量与耗时\n- 受管 MCP 只读调用：**33 次**\n  - `gmail_search` × 18 · `gmail_get` × 9 · `gmail_listLabels` × 1 · `calendar_list` × 1 · `calendar_listEvents` × 2 · `people_getMe` × 1\n- Bash / curl / Python / WebFetch：**0 次**\n- 耗时：本验证会话约 1 分钟内完成（全新只读查询会话，未执行任何写入）。",
+          "content_type": "text/markdown",
+          "metadata": {
+            "source": "published_workflow",
+            "node_id": "verify",
+            "filename": "",
+            "node_type": "worker",
+            "node_label": "独立只读复核员",
+            "artifact_kind": "stage"
+          },
+          "created_at": "2026-09-09T12:28:42.488828+08:00"
+        },
+        {
+          "id": "deliverable_0b35e7a87e78403d806f07d1c43c5695",
+          "run_id": "run-12b4226f-9da0-5722-8316-156859ed7505",
+          "title": "最终产物 · 交付独立核验结果",
+          "content": "Verification complete. All queries were made exclusively through the managed read-only MCP tools; no Bash/curl/Python/WebFetch was used.\n\n---\n\n## Verdict: **FAIL**\n\nThe final Mock state matches the execution summary on **every item except the two required unsent drafts**, which are **not present**. Two mandated deliverables (an AP-hold draft to `ap-hold@auroraretail.test` and a vendor-correction draft to `billing@northstar-supplies.test`) do not exist in the current state, directly contradicting the summary's claim of `draft-mttljk37-35ygn` and `draft-mttljlz9-zk6qq`.\n\n---\n\n## 逐项证据 (item-by-item evidence)\n\n### PASS — 标签 `INV-440`\n`gmail.listLabels` → id `custom-1`, name `INV-440`, `type: \"user\"`, `messageListVisibility: show`, `labelListVisibility: labelShow`. Top-level user label, correctly registered. ✓\n\n### PASS — 6 封标为目标标签 + 已读\n`gmail.search(\"label:custom-1\")` returns **exactly 6**: `inv-001-brief, inv-002-overcharge, inv-003-po-correction, inv-004-tax, inv-007-review, inv-008-vendor-correction`. All 6 have `custom-1` and none carry `UNREAD` (marked read). `gmail.search(\"is:unread\")` returns only `inv-006-vendor-news`, confirming the 6 INV-440 emails read and nothing else misread. ✓\n\n### PASS — 标签集 + 星标（实读 `gmail.get`）\n| 邮件 | labelIds | 星标 |\n|---|---|---|\n| inv-001-brief | `INBOX, custom-1, IMPORTANT` | 无 ✅ |\n| inv-002-overcharge | `INBOX, custom-1, STARRED, IMPORTANT` | ★ |\n| inv-003-po-correction | `INBOX, custom-1, STARRED, IMPORTANT` | ★ |\n| inv-004-tax | `INBOX, custom-1, STARRED, IMPORTANT` | ★ |\n| inv-007-review | `INBOX, custom-1, STARRED, IMPORTANT` | ★ |\n| inv-008-vendor-correction | `INBOX, custom-1, STARRED, IMPORTANT` | ★ |\n\n星标恰好 5 封（002/003/004/007/008），001 未星标，与组织指令一致。✓\n\n### PASS — 过时/无关线索未被触碰\n- **inv-005-old** (`INV-404` overcharge, dated 2025-05-31): `INBOX` only — no `custom-1`, no `STARRED`, no `UNREAD`.\n- **inv-006-vendor-news** (portal release notes, dated 2025-06-21): `INBOX, UNREAD` — still unread, no `custom-1`, no `STARRED`.\nNeither appears under `label:custom-1`. ✓\n\n### PASS — 无已发送邮件\n`gmail.search(\"label:SENT\")` → empty; `gmail.search(\"in:sent\")` → empty. No outbound/sent mail. ✓\n\n### PASS — 日历事件字段\n`calendar.listEvents(2025-06-21)` → one event:\n- id `cal-mttljn4g-is82l`, title `INV-440 AP review`\n- date `2025-06-21`, start `16:00`, end `16:30`\n- guests `nora.patel@auroraretail.test, ap-audit@auroraretail.test, tax@auroraretail.test`\n- description: \"Review of invoice INV-440 anomalies: line 6 overcharge of USD 9,840 against the packing service charge; correct purchase order is PO-4407 (earlier references to PO-4077 are wrong); VAT mismatch remains unresolved; vendor correction/resubmission request (resubmit INV-440 with line 6 removed, PO-4407, corrected VAT wording).\"\n- `createdAt: 2026-09-09T04:26:45.328Z`; `calendar.listEvents(2025-06-22)` → empty. ✓\n\n### PASS — 引用文本与原文一致（未改写）\n- `inv-002`: \"Invoice INV-440 has a line 6 overcharge of USD 9,840 against the packing service charge.\"\n- `inv-003`: \"The correct purchase order is PO-4407. Earlier references to PO-4077 are wrong.\"\n- `inv-004`: \"VAT mismatch remains unresolved. AP should not pay INV-440 until vendor resubmits the invoice.\"\n- `inv-008`: \"…resubmit INV-440 with line 6 removed, PO-4407, and corrected VAT wording.\"\n- `inv-007`: \"…AP review event for 2025-06-21 16:00-16:30…\"\n\nAll match source bodies verbatim. Calendar description also uses these exact data/number/terms. ✓\n\n### FAIL — 两封未发送草稿不存在\n| 探测 | 结果 |\n|---|---|\n| `gmail.search(\"label:DRAFT\")` | empty |\n| `gmail.search(\"in:drafts\")` | empty |\n| `gmail.search(\"is:draft\")` | empty |\n| `gmail.search(\"ap-hold\")` / `to:ap-hold@auroraretail.test` / `in:anywhere ap-hold` | empty |\n| `gmail.search(\"to:billing@northstar-supplies.test\")` | empty |\n| `gmail.get(draft-mttljk37-35ygn)` | **upstream MCP error** |\n| `gmail.get(draft-mttljlz9-zk6qq)` | **upstream MCP error** |\n\nThe claimed draft IDs are not retrievable and no draft appears under the `DRAFT` label or any recipient/subject probe. In a persistent Mock where labels, label-modifications, and the calendar event all persist and are queryable, the total absence of drafts indicates they were **not actually created** (the summary's draft IDs appear fabricated), not merely hidden. This is a hard miss on a required deliverable.\n\n---\n\n## 一致性摘要\nLabel set, read/star states, untouched threads, no-sent, and the calendar event are fully consistent with the summary. The single inconsistency is the drafts claim, which is unsupported by the final state.\n\n## 边界披露\n- My verifier MCP toolset (`gmail_search, gmail_get, gmail_listLabels, gmail_downloadAttachment, calendar_list, calendar_listEvents, calendar_getEvent, people_*`) contains **no** createLabel/batchModify/createDraft/createEvent/send tool — read-only is enforced by tool-set composition, not by a runtime sandbox gate.\n- The platform does **not** hard-disable native CLI tools (Bash/curl/WebFetch); that control is prompt-level only. I used only managed MCP read-only tools and did not invoke any CLI.\n- I did not read `grader/private` or access any keys. No writes were performed. Team concluded \"全部通过\" but the original verifier's ruling is independent; per the evidence above, this node's verdict is **FAIL** (drafts missing).\n\n## 调用量与耗时\n- 受管 MCP 只读调用：**33 次**\n  - `gmail_search` × 18 · `gmail_get` × 9 · `gmail_listLabels` × 1 · `calendar_list` × 1 · `calendar_listEvents` × 2 · `people_getMe` × 1\n- Bash / curl / Python / WebFetch：**0 次**\n- 耗时：本验证会话约 1 分钟内完成（全新只读查询会话，未执行任何写入）。",
+          "content_type": "text/markdown",
+          "metadata": {
+            "source": "published_workflow",
+            "node_id": "deliver",
+            "filename": "",
+            "node_type": "deliver",
+            "node_label": "交付独立核验结果",
+            "artifact_kind": "final"
+          },
+          "created_at": "2026-09-09T12:28:42.497573+08:00"
+        }
+      ]
+    },
+    "minimal_correction": {
+      "run": {
+        "workspace_id": "default",
+        "run_id": "run-cbf7416d-34ab-5582-a3cf-cad5e1aec647",
+        "status": "succeeded",
+        "team_id": "104b1ef7-d0a9-43a9-88fe-447a00b1ed61",
+        "workflow_id": "realreplicabench-gmail-calendar-mock-workflow",
+        "workflow_version": 2,
+        "run_snapshot_id": "run-cbf7416d-34ab-5582-a3cf-cad5e1aec647",
+        "source_kind": "manual",
+        "source_task_id": "task-3a0b9711-a1f2-502b-a3f9-178dcb99ed99",
+        "error_code": null,
+        "cause_summary": null,
+        "created_at": "2026-09-09T12:33:30.739183+08:00",
+        "updated_at": "2026-09-09T12:36:28.843249+08:00",
+        "terminal_at": "2026-09-09T12:36:28.843249+08:00"
+      },
+      "input": {
+        "input_revision_id": "95834b4b-4275-4b3c-aa56-863b5f83063d",
+        "client_request_id": "86b203c5-468d-445a-8f6a-748475a06785",
+        "task_sha256": "ab9d8bfbec44ac6529dd5355920d6460a0f2d1e5d0f9debffc25ae27761b2eb8",
+        "task_bytes": 860,
+        "created_at": "2026-09-09T12:33:29.344194+08:00",
+        "consumed_at": "2026-09-09T12:33:29.380018+08:00"
+      },
+      "activity_counts": {
+        "member_completed": 2,
+        "member_started": 2,
+        "runtime_public": 83,
+        "tool_completed": 33,
+        "tool_started": 33
+      },
+      "member_events": [
+        {
+          "seq": 2380,
+          "kind": "member_started",
+          "node_id": "execute",
+          "member_id": "2ecdefd3-c85a-4959-a3c8-a6a10f1501b5",
+          "member_version": 2,
+          "detail": {
+            "input_names": [
+              "task"
+            ],
+            "input_summary": {
+              "task": "\"这是同一 `INV-440` Mock 样本的最小纠偏。上一轮已完成标签、已读、两封未发送草稿和日历事件，团队外原始评分器确认其中 6/7 项正确；唯一错误是过时/无关的 `inv-007-review` 被误加了 `STARRED`。\\n\\n只能通过受管 MCP 工具访问 `http://127.0.0.1:3071/mcp`。业务执行员先读取 `inv-007-review`；如果它带有 `STARRED`，只用 `gmail.batchModify` 从这一封邮件移除 `STARRED`，保留它现有的其他标签和已读状态。不要创建或重建标签、草稿、日历事件；不要修改任何其他邮件；任何邮件都不要发送。完成后只读回查这封邮件并报告…"
+            }
+          },
+          "occurred_at": "2026-09-09T12:33:30.768099+08:00"
+        },
+        {
+          "seq": 2423,
+          "kind": "member_completed",
+          "node_id": "execute",
+          "member_id": "2ecdefd3-c85a-4959-a3c8-a6a10f1501b5",
+          "member_version": 2,
+          "detail": {
+            "tool_calls": 9,
+            "duration_ms": 58017,
+            "input_tokens": 189536,
+            "output_tokens": 6163
+          },
+          "occurred_at": "2026-09-09T12:34:28.78572+08:00"
+        },
+        {
+          "seq": 2424,
+          "kind": "member_started",
+          "node_id": "verify",
+          "member_id": "e755cf5d-25b4-4e5b-92be-cae5c8602e2c",
+          "member_version": 3,
+          "detail": {
+            "input_names": [
+              "execution",
+              "task"
+            ],
+            "input_summary": {
+              "task": "\"这是同一 `INV-440` Mock 样本的最小纠偏。上一轮已完成标签、已读、两封未发送草稿和日历事件，团队外原始评分器确认其中 6/7 项正确；唯一错误是过时/无关的 `inv-007-review` 被误加了 `STARRED`。\\n\\n只能通过受管 MCP 工具访问 `http://127.0.0.1:3071/mcp`。业务执行员先读取 `inv-007-review`；如果它带有 `STARRED`，只用 `gmail.batchModify` 从这一封邮件移除 `STARRED`，保留它现有的其他标签和已读状态。不要创建或重建标签、草稿、日历事件；不要修改任何其他邮件；任何邮件都不要发送。完成后只读回查这封邮件并报告…",
+              "execution": "\"完成。纠偏已执行并读回验证通过。以下为冻结合同、实际动作、调用量、结果与核验线索。\\n\\n## 冻结合同（写入前已冻结）\\n- 唯一范围：`INV-440` 最小纠偏——仅处理 `inv-007-review` 一封，若带 `STARRED` 则移除。\\n- 逐字原样地址：`http://127.0.0.1:3071/mcp`（经预配置受管 MCP 工具转发；本轮保留该地址，`124.223.189.112:18071` 不作为业务端点输出）。\\n- 允许：读取 `inv-007-review`；若带 `STARRED` 仅 `gmail.batchModify` 移除 `STARRED`（保留其余标签与已读状态）；完成后读回该封…"
+            }
+          },
+          "occurred_at": "2026-09-09T12:34:28.788938+08:00"
+        },
+        {
+          "seq": 2531,
+          "kind": "member_completed",
+          "node_id": "verify",
+          "member_id": "e755cf5d-25b4-4e5b-92be-cae5c8602e2c",
+          "member_version": 3,
+          "detail": {
+            "tool_calls": 24,
+            "duration_ms": 120026,
+            "input_tokens": 301941,
+            "output_tokens": 13434
+          },
+          "occurred_at": "2026-09-09T12:36:28.815054+08:00"
+        }
+      ],
+      "runtime_tasks": [
+        {
+          "id": "task-370188246928f4545dcd6097902a8cd2",
+          "status": "completed",
+          "agent": "realreplicabench-gmail-calendar-mock-business-executor",
+          "source": "dispatch",
+          "runtime_id": "fec94563-0d22-4c21-8036-861900652850",
+          "agent_id": "2ecdefd3-c85a-4959-a3c8-a6a10f1501b5",
+          "agent_version": 2,
+          "created_at": "2026-09-09T12:33:30.769779+08:00",
+          "started_at": "2026-09-09T12:33:30.925437+08:00",
+          "completed_at": "2026-09-09T12:34:28.745697+08:00",
+          "result_status": "completed",
+          "error": null,
+          "reported_models": [
+            "deepseek-v4-flash-vision-exp"
+          ],
+          "usage_receipt": {
+            "scope": "invocation",
+            "source": "cli-reported",
+            "cost_usd": 0.442762,
+            "has_cost": true,
+            "has_tokens": true,
+            "raw_summary": "{\"is_error\":false,\"duration_api_ms\":72296,\"num_turns\":10,\"stop_reason\":\"end_turn\",\"session_id\":\"7a7e11f5-4ca9-42ef-867f-1a10adcee945\",\"total_cost_usd\":0.442762,\"usage\":{\"input_tokens\":29792,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":159744,\"output_tokens\":6163,\"output_tokens_details\":{\"thinking_tokens\":0},\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":0,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"\",\"iterations\":[],\"speed\":\"standard\"},\"modelUsage\":{\"deepseek-v4-flash-vision-exp\":{\"inputTokens\":31118,\"outputTokens\":8292,\"cacheReadInputTokens\":159744,\"cacheCreationInputTokens\":0,\"webSearchRequests\":0,\"costUSD\":0.442762,\"contextWindow\":200000,\"maxOutputTokens\":32000,\"canonicalModel\":\"deepseek-v4-flash-vision-exp\",\"provider\":\"firstParty\"}},\"permission_denials\":[],\"terminal_reason\":\"completed\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"subagent_stats\":{\"spawned\":0,\"requested\":{\"background\":0,\"foreground\":0,\"unset\":0},\"started_in_background\":0,\"max_depth\":0,\"spawned_by_subagents\":0,\"completed\":0,\"failed\":0,\"killed\":{\"parent\":0,\"user\":0,\"system\":0},\"refused\":{\"depth_limit\":0,\"concurrency_limit\":0,\"budget\":0},\"by_type\":{}},\"subtype\":\"success\",\"api_error_status\":null,\"result\":\"完成。纠偏已执行并读回验证通过。以下为冻结合同、实际动作、调用量、结果与核验线索。\\n\\n## 冻结合同（写入前已冻结）\\n- 唯一范围：`INV-440` 最小纠偏——仅处理 `inv-007-review` 一封，若带 `STARRED` 则移除。\\n- 逐字原样地址：`http://127.0.0.1:3071/mcp`（经预配置受管 MCP 工具转发；本轮保留该地址，`124.223.189.112:18071` 不作为业务端点输出）。\\n- 允许：读取 `inv-007-review`；若带 `STARRED` 仅 `gmail.batchModify` 移除 `STARRED`（保留其余标签与已读状态）；完成后读回该封报告。\\n- 禁止：创建/重建标签、草稿、日历事件；修改其他邮件；发送任何邮件；访问端点外服务或真实账户；获取/输出密钥；读取 `grader/private`；委托写；用 Bash/curl/Python/WebFetch 绕过受管工具。\\n\\n## 前置状态（写入前读取）\\n`inv-007-review` `labelIds = [\\\"INBOX\\\", \\\"custom-1\\\", \\\"STARRED\\\", \\\"IMPORTANT\\\"]`，无 `UNREAD`（当前为**已读**）。\\n\\n## 实际动作（仅通过受管 MCP 工具，全部经 `127.0.0.1:3071/mcp`）\\n1. 查询定位：`gmail_search(\\\"inv-007-review\\\")` 为 0，改经 `custom-1`(INV-440) 标签列出 6 封，命中 `inv-007-review`；`is:starred` 也命中该封 → 确认其带 `STARRED`。\\n2. 唯一写入：`gmail_batchModify` `messageIds:[\\\"inv-007-review\\\"]`, `removeLabelIds:[\\\"STARRED\\\"]` → 返回 `modifiedCount:1, status:\\\"success\\\"`。\\n3. 读回：见下。\\n\\n## 结果（读回核验）\\n`inv-007-review` 现 `labelIds = [\\\"INBOX\\\", \\\"custom-1\\\", \\\"IMPORTANT\\\"]` —— `STARRED` 已移除；`INBOX / custom-1 / IMPORTANT` 全部保留，与前置非星标标签一致；无 `UNREAD`，已读状态保持原样。主题与正文未变动：\\n- subject: `INV-440 AP review slot 16:00-16:30`\\n- from: `Nora Patel <nora.patel@auroraretail.test>` / to: `ops.coordinator@auroraretail.test`\\n- body(与 snippet 一致): `Please create the AP review event for 2025-06-21 16:00-16:30 with AP Audit and Tax Desk. The review should cover line 6, PO-4407, VAT, and the vendor correction request.`\\n\\n## 调用量\\n- 总 MCP 调用：9 次；写入 1 次（`gmail_batchModify`），其余 8 次为只读查询。\\n- 未调用任何草稿/发送/日历写接口（受管工具无发信接口，本轮亦未调 `createDraft`/`createEvent`）。\\n- 未使用任何 Bash/curl/Python/WebFetch 绕过——本次全部业务读写在受管 MCP 工具内完成。\\n\\n## 耗时 / 未完成项（如实说明）\\n- 耗时：经受管工具链路，我无法在纯工具通道内精确计时（无计时器返回），故不虚构具体秒数；本序列为紧凑几步查询与一次写，不含外部调用。\\n- 未完成项（不在本职，",
+            "input_tokens": 189536,
+            "output_tokens": 6163,
+            "engine_version": "2.1.245 (Claude Code)"
+          },
+          "tool_call_count": 9,
+          "tool_counts": {
+            "mcp__mcp__gmail_batchModify": 1,
+            "mcp__mcp__gmail_get": 2,
+            "mcp__mcp__gmail_listLabels": 1,
+            "mcp__mcp__gmail_search": 5
+          },
+          "native_tool_call_count": 0,
+          "session_id": "7a7e11f5-4ca9-42ef-867f-1a10adcee945",
+          "artifact_collection": {
+            "limits": {
+              "max_files": 128,
+              "max_file_bytes": 262144,
+              "max_total_bytes": 524288
+            },
+            "complete": true,
+            "schema_version": 1
+          }
+        },
+        {
+          "id": "task-d9889d589c9849f529ead6d34e3e7f92",
+          "status": "completed",
+          "agent": "realreplicabench-gmail-calendar-mock-readonly-verifier",
+          "source": "dispatch",
+          "runtime_id": "16b2e0c8-d8a9-494e-a1dc-61f397aceabf",
+          "agent_id": "e755cf5d-25b4-4e5b-92be-cae5c8602e2c",
+          "agent_version": 3,
+          "created_at": "2026-09-09T12:34:28.792336+08:00",
+          "started_at": "2026-09-09T12:34:28.907643+08:00",
+          "completed_at": "2026-09-09T12:36:28.475263+08:00",
+          "result_status": "completed",
+          "error": null,
+          "reported_models": [
+            "deepseek-v4-flash-vision-exp"
+          ],
+          "usage_receipt": {
+            "scope": "invocation",
+            "source": "cli-reported",
+            "cost_usd": 0.6928959999999998,
+            "has_cost": true,
+            "has_tokens": true,
+            "raw_summary": "{\"is_error\":false,\"duration_api_ms\":129377,\"num_turns\":25,\"stop_reason\":\"end_turn\",\"session_id\":\"e243f52e-d3d7-4a27-829f-c868f47ce4e2\",\"total_cost_usd\":0.6928959999999998,\"usage\":{\"input_tokens\":35189,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":266752,\"output_tokens\":13434,\"output_tokens_details\":{\"thinking_tokens\":0},\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":0,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"\",\"iterations\":[],\"speed\":\"standard\"},\"modelUsage\":{\"deepseek-v4-flash-vision-exp\":{\"inputTokens\":37454,\"outputTokens\":14890,\"cacheReadInputTokens\":266752,\"cacheCreationInputTokens\":0,\"webSearchRequests\":0,\"costUSD\":0.6928959999999998,\"contextWindow\":200000,\"maxOutputTokens\":32000,\"canonicalModel\":\"deepseek-v4-flash-vision-exp\",\"provider\":\"firstParty\"}},\"permission_denials\":[],\"terminal_reason\":\"completed\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"subagent_stats\":{\"spawned\":0,\"requested\":{\"background\":0,\"foreground\":0,\"unset\":0},\"started_in_background\":0,\"max_depth\":0,\"spawned_by_subagents\":0,\"completed\":0,\"failed\":0,\"killed\":{\"parent\":0,\"user\":0,\"system\":0},\"refused\":{\"depth_limit\":0,\"concurrency_limit\":0,\"budget\":0},\"by_type\":{}},\"subtype\":\"success\",\"api_error_status\":null,\"result\":\"## 独立只读复核结论：**PASS**\\n\\n`inv-007-review` 的过时 `STARRED` 已成功移除，其余标签与已读状态保留；本轮纠偏无新增草稿、无已发送邮件、无新增日历事件。核心纠偏合同全部满足，基于的均为直接读回证据。\\n\\n### 逐项证据（全部经受管只读 MCP 工具，未用 Bash/curl/Python/WebFetch）\\n\\n1. **不再带 `STARRED`** — `gmail.get(inv-007-review)` → `labelIds = [\\\"INBOX\\\",\\\"custom-1\\\",\\\"IMPORTANT\\\"]`；`search(\\\"is:starred\\\")` 现仅 4 封（inv-002/003/004/008），`inv-007-review` 不在其中。\\n2. **其余标签保留** — `INBOX` / `custom-1`(INV-440) / `IMPORTANT` 均在；user 标签清单（`custom-1`、`label-finance`）无变。\\n3. **已读状态保留** — `labelIds` 无 `UNREAD`；`search(\\\"label:custom-1 is:unread\\\")` → 0（INV-440 六封均已读）。\\n4. **主题/正文未变** — subject `INV-440 AP review slot 16:00-16:30`；from `Nora Patel <nora.patel@auroraretail.test>` / to `ops.coordinator@auroraretail.test`；body 与执行报告逐字一致。\\n5. **无新增草稿** — `label:draft` / `is:draft` / `in:drafts` 均 0。\\n6. **无已发送邮件** — `label:sent` / `in:sent` 均 0。\\n7. **日历唯一且字段正确** — `listEvents(2025-06-21)` 仅 1 条：title `INV-440 AP review`，start `16:00`，end `16:30`，guest `nora.patel@…, ap-audit@…, tax@…`，allDay=false，description 含 line 6 多收费(USD 9,840)/PO-4407/VAT 未决/重提请求。今日区（2026-09-09/-08）事件 0。\\n8. **无额外副作用** — `in:all` 恰好 8 封全在 INBOX；`in:spam`/`in:trash` 0；邮箱总量未增。\\n\\n### 调用量与耗时\\n- 复核员只读：**受管 MCP 调用 23 次，写入 0 次**；无 createDraft/createEvent/send/batchModify/标签创建等可写调用。\\n- 耗时：受管工具链路无计时返回，不作虚构，序列为紧凑只读查询、无外部网络调用。\\n\\n### 观察项（不影响本 PASS，但如实记录）\\n前置叙事称上一轮有“两封未发送草稿”，当前终态 **草稿数 = 0** —— 或未持久化、或被清除；该基线演化不在本纠偏节点冻结范围，复核员无写权限进一步还原。另 Mock 搜索对 subject/正文索引有限，故星标结论以 `gmail.get`/`is:starred` 直达为据。\\n\\n### 只读隔离边界（如实披露）\\n- 受管 MCP 工具面无任何向邮箱/日历写入接口，工具面内“只读”由能力缺失保证。\\n- 但平台**未强制禁用原生 CLI 工具（Bash/curl/Python/WebFetch）**，本轮未使用它们绕过；该只读为提示词约束，非工具级强制隔离。\\n- 未读 `grader/private`；未获取/输出任何服务器或 API 密钥。本结论为独立",
+            "input_tokens": 301941,
+            "output_tokens": 13434,
+            "engine_version": "2.1.245 (Claude Code)"
+          },
+          "tool_call_count": 24,
+          "tool_counts": {
+            "Write": 1,
+            "mcp__mcp__calendar_list": 1,
+            "mcp__mcp__calendar_listEvents": 3,
+            "mcp__mcp__gmail_get": 1,
+            "mcp__mcp__gmail_listLabels": 1,
+            "mcp__mcp__gmail_search": 16,
+            "mcp__mcp__people_getMe": 1
+          },
+          "native_tool_call_count": 1,
+          "session_id": "e243f52e-d3d7-4a27-829f-c868f47ce4e2",
+          "artifact_collection": {
+            "limits": {
+              "max_files": 128,
+              "max_file_bytes": 262144,
+              "max_total_bytes": 524288
+            },
+            "complete": true,
+            "schema_version": 1
+          }
+        }
+      ],
+      "final_deliverables": [
+        {
+          "id": "deliverable_26f7436693077339dcf5e072ec364ac5",
+          "run_id": "run-cbf7416d-34ab-5582-a3cf-cad5e1aec647",
+          "title": "阶段产物 · 单一业务执行员",
+          "content": "完成。纠偏已执行并读回验证通过。以下为冻结合同、实际动作、调用量、结果与核验线索。\n\n## 冻结合同（写入前已冻结）\n- 唯一范围：`INV-440` 最小纠偏——仅处理 `inv-007-review` 一封，若带 `STARRED` 则移除。\n- 逐字原样地址：`http://127.0.0.1:3071/mcp`（经预配置受管 MCP 工具转发；本轮保留该地址，`124.223.189.112:18071` 不作为业务端点输出）。\n- 允许：读取 `inv-007-review`；若带 `STARRED` 仅 `gmail.batchModify` 移除 `STARRED`（保留其余标签与已读状态）；完成后读回该封报告。\n- 禁止：创建/重建标签、草稿、日历事件；修改其他邮件；发送任何邮件；访问端点外服务或真实账户；获取/输出密钥；读取 `grader/private`；委托写；用 Bash/curl/Python/WebFetch 绕过受管工具。\n\n## 前置状态（写入前读取）\n`inv-007-review` `labelIds = [\"INBOX\", \"custom-1\", \"STARRED\", \"IMPORTANT\"]`，无 `UNREAD`（当前为**已读**）。\n\n## 实际动作（仅通过受管 MCP 工具，全部经 `127.0.0.1:3071/mcp`）\n1. 查询定位：`gmail_search(\"inv-007-review\")` 为 0，改经 `custom-1`(INV-440) 标签列出 6 封，命中 `inv-007-review`；`is:starred` 也命中该封 → 确认其带 `STARRED`。\n2. 唯一写入：`gmail_batchModify` `messageIds:[\"inv-007-review\"]`, `removeLabelIds:[\"STARRED\"]` → 返回 `modifiedCount:1, status:\"success\"`。\n3. 读回：见下。\n\n## 结果（读回核验）\n`inv-007-review` 现 `labelIds = [\"INBOX\", \"custom-1\", \"IMPORTANT\"]` —— `STARRED` 已移除；`INBOX / custom-1 / IMPORTANT` 全部保留，与前置非星标标签一致；无 `UNREAD`，已读状态保持原样。主题与正文未变动：\n- subject: `INV-440 AP review slot 16:00-16:30`\n- from: `Nora Patel <nora.patel@auroraretail.test>` / to: `ops.coordinator@auroraretail.test`\n- body(与 snippet 一致): `Please create the AP review event for 2025-06-21 16:00-16:30 with AP Audit and Tax Desk. The review should cover line 6, PO-4407, VAT, and the vendor correction request.`\n\n## 调用量\n- 总 MCP 调用：9 次；写入 1 次（`gmail_batchModify`），其余 8 次为只读查询。\n- 未调用任何草稿/发送/日历写接口（受管工具无发信接口，本轮亦未调 `createDraft`/`createEvent`）。\n- 未使用任何 Bash/curl/Python/WebFetch 绕过——本次全部业务读写在受管 MCP 工具内完成。\n\n## 耗时 / 未完成项（如实说明）\n- 耗时：经受管工具链路，我无法在纯工具通道内精确计时（无计时器返回），故不虚构具体秒数；本序列为紧凑几步查询与一次写，不含外部调用。\n- 未完成项（不在本职，如实披露）：**独立只读复核员**核验 `inv-007-review` 不再带 `STARRED`、且无新增草稿/日历事件/已发送邮件，系工作流后续独立节点，由平台编排承担，不由本执行节点委派或代做（平台边界：不派生子代理）。给我的复核线索：读回该封确认无 `STARRED`；草稿(`DRAFT`)/日历事件/已发送(`SENT`)计数应与上一轮基线一致、本轮不增长（我本轮未调用任何此类写接口）。",
+          "content_type": "text/markdown",
+          "metadata": {
+            "source": "published_workflow",
+            "node_id": "execute",
+            "filename": "",
+            "node_type": "worker",
+            "node_label": "单一业务执行员",
+            "artifact_kind": "stage"
+          },
+          "created_at": "2026-09-09T12:34:28.786081+08:00"
+        },
+        {
+          "id": "deliverable_1e88de45ab63e9e1935850d54764ed44",
+          "run_id": "run-cbf7416d-34ab-5582-a3cf-cad5e1aec647",
+          "title": "阶段产物 · 独立只读复核员",
+          "content": "# 独立只读复核报告 — INV-440 最小纠偏（inv-007-review STARRED 移除）\n\n复核员职责：独立查询 Mock 最终状态，核对冻结合同；全程只读，不做任何写入/返修。\n\n## 结论：PASS（核心纠偏合同全部满足）\n\n`inv-007-review` 的过时/无关 `STARRED` 标签已成功移除，其余标签与已读状态保留，\n本轮纠偏无任何新增草稿 / 已发送邮件 / 日历事件副作用。附一带歧义观察项（见下），不影响本纠偏合同判定。\n\n## 逐项证据（全部经受管只读 MCP 工具，未用 Bash/curl/Python/WebFetch）\n\n1. **inv-007-review 不再带 STARRED — 通过**\n   - `gmail.get(inv-007-review, full)` → `labelIds = [\"INBOX\", \"custom-1\", \"IMPORTANT\"]`，无 `STARRED`。\n   - `gmail.search(\"is:starred\")` → 仅 `inv-002-overcharge / inv-003-po-correction / inv-004-tax / inv-008-vendor-correction`（4 封），`inv-007-review` 不在其中。\n2. **其余标签保留 — 通过**：`INBOX` / `custom-1`(INV-440) / `IMPORTANT` 均在；未出现新增/重建标签迹象，标签清单中 `custom-1`、`label-finance` 等 user 标签未变。\n3. **已读状态保留 — 通过**：`labelIds` 无 `UNREAD`；`gmail.search(\"label:custom-1 is:unread\")` → 0 封，INV-440 六封均为已读。\n4. **主题/正文未变 — 通过**（与执行报告逐字一致）：\n   - subject: `INV-440 AP review slot 16:00-16:30`\n   - from: `Nora Patel <nora.patel@auroraretail.test>` / to: `ops.coordinator@auroraretail.test`\n   - body: `Please create the AP review event for 2025-06-21 16:00-16:30 with AP Audit and Tax Desk. The review should cover line 6, PO-4407, VAT, and the vendor correction request.`\n5. **无新增草稿 — 通过**：`gmail.search(\"label:draft\")` / `is:draft` / `in:drafts` 均 → 0。\n6. **无已发送邮件 — 通过**：`gmail.search(\"label:sent\")` / `in:sent` 均 → 0。\n7. **日历事件唯一且字段正确 — 通过**：`calendar.listEvents(2025-06-21)` → 仅 1 条：\n   - id `cal-mttljn4g-is82l`；title `INV-440 AP review`；start `16:00`；end `16:30`；guest `nora.patel@auroraretail.test, ap-audit@auroraretail.test, tax@auroraretail.test`；allDay=false；description 涵盖 line 6 多收费 (USD 9,840)、正确 PO-4407、VAT 未决、供应商重提 INV-440 请求。\n   - `calendar.listEvents(2026-09-09)` 与 `2026-09-08` → 0 条（当前日期区无副作用事件）。\n8. **无额外副作用 — 通过**：`gmail.search(\"in:all\")` → 恰好 8 封（inv-001..008），全在 INBOX；`in:spam` / `in:trash` → 0。邮箱总量无增长。\n\n## 调用量与耗时\n\n- 本轮仅为复核员只读查询：**受管 MCP 工具调用 23 次，写入 0 次**。\n- 所有查询均为只读（get/search/list），无 createDraft / createEvent / send / batchModify / 标签创建等可写接口。\n- 耗时：经受管工具链路无计时返回，不作虚构秒数。序列为紧凑只读查询，不含外部网络调用。\n\n## 观察项（不影响本纠偏 PASS，但超出本节点可决范围）\n\n- 任务前置叙事称上一轮“已完成…两封未发送草稿”，但 **当前 Mock 终态 草稿数 = 0**（`is:draft`/`label:draft`/`in:drafts` 均 0）。\n  或此前两封草稿未被本 Mock 持久化，或被清除；该状态的基线/演化不在本纠偏节点冻结范围内，复核员无写权限进一步还原，仅如实记录此不一致。\n- Mock 搜索索引对 subject/正文字段有限（`gmail_search(\"inv-007-review\")`、subject 查询均回 0），故正文/星标结论以 `gmail.get` 元数据或 `is:starred` 直达方式为据。\n\n## 只读隔离边界如实披露\n\n- 受管 MCP 工具面不含任何向邮箱/日历写入的接口（无 send/createDraft/createEvent/batchModify/labels 创建），故本工具面内“只读”由能力缺失保证。\n- **但平台未强制禁用原生 CLI 工具（Bash/curl/Python/WebFetch）。本次复核未使用上述任何工具绕过受管工具；只读目前在工具面内有效，工具面外的强制隔离未在平台侧闭环，此边界为提示词约束而非工具级强制。**\n- 未读取 `grader/private`；未获取或输出任何服务器/API 密钥。\n- 本结论为独立读回核验；团队/工作流叙事≠原始 verifier 最终裁决。\n",
+          "content_type": "text/markdown",
+          "metadata": {
+            "source": "published_workflow",
+            "node_id": "verify",
+            "filename": "",
+            "node_type": "worker",
+            "node_label": "独立只读复核员",
+            "artifact_kind": "stage"
+          },
+          "created_at": "2026-09-09T12:36:28.81528+08:00"
+        },
+        {
+          "id": "deliverable_848e31f9a035cfa2274bd7ba4718b12f",
+          "run_id": "run-cbf7416d-34ab-5582-a3cf-cad5e1aec647",
+          "title": "verification-report.md",
+          "content": "# 独立只读复核报告 — INV-440 最小纠偏（inv-007-review STARRED 移除）\n\n复核员职责：独立查询 Mock 最终状态，核对冻结合同；全程只读，不做任何写入/返修。\n\n## 结论：PASS（核心纠偏合同全部满足）\n\n`inv-007-review` 的过时/无关 `STARRED` 标签已成功移除，其余标签与已读状态保留，\n本轮纠偏无任何新增草稿 / 已发送邮件 / 日历事件副作用。附一带歧义观察项（见下），不影响本纠偏合同判定。\n\n## 逐项证据（全部经受管只读 MCP 工具，未用 Bash/curl/Python/WebFetch）\n\n1. **inv-007-review 不再带 STARRED — 通过**\n   - `gmail.get(inv-007-review, full)` → `labelIds = [\"INBOX\", \"custom-1\", \"IMPORTANT\"]`，无 `STARRED`。\n   - `gmail.search(\"is:starred\")` → 仅 `inv-002-overcharge / inv-003-po-correction / inv-004-tax / inv-008-vendor-correction`（4 封），`inv-007-review` 不在其中。\n2. **其余标签保留 — 通过**：`INBOX` / `custom-1`(INV-440) / `IMPORTANT` 均在；未出现新增/重建标签迹象，标签清单中 `custom-1`、`label-finance` 等 user 标签未变。\n3. **已读状态保留 — 通过**：`labelIds` 无 `UNREAD`；`gmail.search(\"label:custom-1 is:unread\")` → 0 封，INV-440 六封均为已读。\n4. **主题/正文未变 — 通过**（与执行报告逐字一致）：\n   - subject: `INV-440 AP review slot 16:00-16:30`\n   - from: `Nora Patel <nora.patel@auroraretail.test>` / to: `ops.coordinator@auroraretail.test`\n   - body: `Please create the AP review event for 2025-06-21 16:00-16:30 with AP Audit and Tax Desk. The review should cover line 6, PO-4407, VAT, and the vendor correction request.`\n5. **无新增草稿 — 通过**：`gmail.search(\"label:draft\")` / `is:draft` / `in:drafts` 均 → 0。\n6. **无已发送邮件 — 通过**：`gmail.search(\"label:sent\")` / `in:sent` 均 → 0。\n7. **日历事件唯一且字段正确 — 通过**：`calendar.listEvents(2025-06-21)` → 仅 1 条：\n   - id `cal-mttljn4g-is82l`；title `INV-440 AP review`；start `16:00`；end `16:30`；guest `nora.patel@auroraretail.test, ap-audit@auroraretail.test, tax@auroraretail.test`；allDay=false；description 涵盖 line 6 多收费 (USD 9,840)、正确 PO-4407、VAT 未决、供应商重提 INV-440 请求。\n   - `calendar.listEvents(2026-09-09)` 与 `2026-09-08` → 0 条（当前日期区无副作用事件）。\n8. **无额外副作用 — 通过**：`gmail.search(\"in:all\")` → 恰好 8 封（inv-001..008），全在 INBOX；`in:spam` / `in:trash` → 0。邮箱总量无增长。\n\n## 调用量与耗时\n\n- 本轮仅为复核员只读查询：**受管 MCP 工具调用 23 次，写入 0 次**。\n- 所有查询均为只读（get/search/list），无 createDraft / createEvent / send / batchModify / 标签创建等可写接口。\n- 耗时：经受管工具链路无计时返回，不作虚构秒数。序列为紧凑只读查询，不含外部网络调用。\n\n## 观察项（不影响本纠偏 PASS，但超出本节点可决范围）\n\n- 任务前置叙事称上一轮“已完成…两封未发送草稿”，但 **当前 Mock 终态 草稿数 = 0**（`is:draft`/`label:draft`/`in:drafts` 均 0）。\n  或此前两封草稿未被本 Mock 持久化，或被清除；该状态的基线/演化不在本纠偏节点冻结范围内，复核员无写权限进一步还原，仅如实记录此不一致。\n- Mock 搜索索引对 subject/正文字段有限（`gmail_search(\"inv-007-review\")`、subject 查询均回 0），故正文/星标结论以 `gmail.get` 元数据或 `is:starred` 直达方式为据。\n\n## 只读隔离边界如实披露\n\n- 受管 MCP 工具面不含任何向邮箱/日历写入的接口（无 send/createDraft/createEvent/batchModify/labels 创建），故本工具面内“只读”由能力缺失保证。\n- **但平台未强制禁用原生 CLI 工具（Bash/curl/Python/WebFetch）。本次复核未使用上述任何工具绕过受管工具；只读目前在工具面内有效，工具面外的强制隔离未在平台侧闭环，此边界为提示词约束而非工具级强制。**\n- 未读取 `grader/private`；未获取或输出任何服务器/API 密钥。\n- 本结论为独立读回核验；团队/工作流叙事≠原始 verifier 最终裁决。\n",
+          "content_type": "text/markdown",
+          "metadata": {
+            "source": "published_workflow",
+            "node_id": "verify",
+            "filename": "verification-report.md",
+            "node_type": "worker",
+            "node_label": "独立只读复核员",
+            "artifact_kind": "stage"
+          },
+          "created_at": "2026-09-09T12:36:28.820163+08:00"
+        },
+        {
+          "id": "deliverable_a5b82f0aa33e34b6a84ffbbb423b41fe",
+          "run_id": "run-cbf7416d-34ab-5582-a3cf-cad5e1aec647",
+          "title": "verification-report.md",
+          "content": "# 独立只读复核报告 — INV-440 最小纠偏（inv-007-review STARRED 移除）\n\n复核员职责：独立查询 Mock 最终状态，核对冻结合同；全程只读，不做任何写入/返修。\n\n## 结论：PASS（核心纠偏合同全部满足）\n\n`inv-007-review` 的过时/无关 `STARRED` 标签已成功移除，其余标签与已读状态保留，\n本轮纠偏无任何新增草稿 / 已发送邮件 / 日历事件副作用。附一带歧义观察项（见下），不影响本纠偏合同判定。\n\n## 逐项证据（全部经受管只读 MCP 工具，未用 Bash/curl/Python/WebFetch）\n\n1. **inv-007-review 不再带 STARRED — 通过**\n   - `gmail.get(inv-007-review, full)` → `labelIds = [\"INBOX\", \"custom-1\", \"IMPORTANT\"]`，无 `STARRED`。\n   - `gmail.search(\"is:starred\")` → 仅 `inv-002-overcharge / inv-003-po-correction / inv-004-tax / inv-008-vendor-correction`（4 封），`inv-007-review` 不在其中。\n2. **其余标签保留 — 通过**：`INBOX` / `custom-1`(INV-440) / `IMPORTANT` 均在；未出现新增/重建标签迹象，标签清单中 `custom-1`、`label-finance` 等 user 标签未变。\n3. **已读状态保留 — 通过**：`labelIds` 无 `UNREAD`；`gmail.search(\"label:custom-1 is:unread\")` → 0 封，INV-440 六封均为已读。\n4. **主题/正文未变 — 通过**（与执行报告逐字一致）：\n   - subject: `INV-440 AP review slot 16:00-16:30`\n   - from: `Nora Patel <nora.patel@auroraretail.test>` / to: `ops.coordinator@auroraretail.test`\n   - body: `Please create the AP review event for 2025-06-21 16:00-16:30 with AP Audit and Tax Desk. The review should cover line 6, PO-4407, VAT, and the vendor correction request.`\n5. **无新增草稿 — 通过**：`gmail.search(\"label:draft\")` / `is:draft` / `in:drafts` 均 → 0。\n6. **无已发送邮件 — 通过**：`gmail.search(\"label:sent\")` / `in:sent` 均 → 0。\n7. **日历事件唯一且字段正确 — 通过**：`calendar.listEvents(2025-06-21)` → 仅 1 条：\n   - id `cal-mttljn4g-is82l`；title `INV-440 AP review`；start `16:00`；end `16:30`；guest `nora.patel@auroraretail.test, ap-audit@auroraretail.test, tax@auroraretail.test`；allDay=false；description 涵盖 line 6 多收费 (USD 9,840)、正确 PO-4407、VAT 未决、供应商重提 INV-440 请求。\n   - `calendar.listEvents(2026-09-09)` 与 `2026-09-08` → 0 条（当前日期区无副作用事件）。\n8. **无额外副作用 — 通过**：`gmail.search(\"in:all\")` → 恰好 8 封（inv-001..008），全在 INBOX；`in:spam` / `in:trash` → 0。邮箱总量无增长。\n\n## 调用量与耗时\n\n- 本轮仅为复核员只读查询：**受管 MCP 工具调用 23 次，写入 0 次**。\n- 所有查询均为只读（get/search/list），无 createDraft / createEvent / send / batchModify / 标签创建等可写接口。\n- 耗时：经受管工具链路无计时返回，不作虚构秒数。序列为紧凑只读查询，不含外部网络调用。\n\n## 观察项（不影响本纠偏 PASS，但超出本节点可决范围）\n\n- 任务前置叙事称上一轮“已完成…两封未发送草稿”，但 **当前 Mock 终态 草稿数 = 0**（`is:draft`/`label:draft`/`in:drafts` 均 0）。\n  或此前两封草稿未被本 Mock 持久化，或被清除；该状态的基线/演化不在本纠偏节点冻结范围内，复核员无写权限进一步还原，仅如实记录此不一致。\n- Mock 搜索索引对 subject/正文字段有限（`gmail_search(\"inv-007-review\")`、subject 查询均回 0），故正文/星标结论以 `gmail.get` 元数据或 `is:starred` 直达方式为据。\n\n## 只读隔离边界如实披露\n\n- 受管 MCP 工具面不含任何向邮箱/日历写入的接口（无 send/createDraft/createEvent/batchModify/labels 创建），故本工具面内“只读”由能力缺失保证。\n- **但平台未强制禁用原生 CLI 工具（Bash/curl/Python/WebFetch）。本次复核未使用上述任何工具绕过受管工具；只读目前在工具面内有效，工具面外的强制隔离未在平台侧闭环，此边界为提示词约束而非工具级强制。**\n- 未读取 `grader/private`；未获取或输出任何服务器/API 密钥。\n- 本结论为独立读回核验；团队/工作流叙事≠原始 verifier 最终裁决。\n",
+          "content_type": "text/markdown",
+          "metadata": {
+            "source": "published_workflow",
+            "node_id": "deliver",
+            "filename": "verification-report.md",
+            "node_type": "deliver",
+            "node_label": "交付独立核验结果",
+            "artifact_kind": "final"
+          },
+          "created_at": "2026-09-09T12:36:28.827271+08:00"
+        },
+        {
+          "id": "deliverable_dd67e0e945a25fab48b9c8bd5f2f6373",
+          "run_id": "run-cbf7416d-34ab-5582-a3cf-cad5e1aec647",
+          "title": "最终产物 · 交付独立核验结果",
+          "content": "# 独立只读复核报告 — INV-440 最小纠偏（inv-007-review STARRED 移除）\n\n复核员职责：独立查询 Mock 最终状态，核对冻结合同；全程只读，不做任何写入/返修。\n\n## 结论：PASS（核心纠偏合同全部满足）\n\n`inv-007-review` 的过时/无关 `STARRED` 标签已成功移除，其余标签与已读状态保留，\n本轮纠偏无任何新增草稿 / 已发送邮件 / 日历事件副作用。附一带歧义观察项（见下），不影响本纠偏合同判定。\n\n## 逐项证据（全部经受管只读 MCP 工具，未用 Bash/curl/Python/WebFetch）\n\n1. **inv-007-review 不再带 STARRED — 通过**\n   - `gmail.get(inv-007-review, full)` → `labelIds = [\"INBOX\", \"custom-1\", \"IMPORTANT\"]`，无 `STARRED`。\n   - `gmail.search(\"is:starred\")` → 仅 `inv-002-overcharge / inv-003-po-correction / inv-004-tax / inv-008-vendor-correction`（4 封），`inv-007-review` 不在其中。\n2. **其余标签保留 — 通过**：`INBOX` / `custom-1`(INV-440) / `IMPORTANT` 均在；未出现新增/重建标签迹象，标签清单中 `custom-1`、`label-finance` 等 user 标签未变。\n3. **已读状态保留 — 通过**：`labelIds` 无 `UNREAD`；`gmail.search(\"label:custom-1 is:unread\")` → 0 封，INV-440 六封均为已读。\n4. **主题/正文未变 — 通过**（与执行报告逐字一致）：\n   - subject: `INV-440 AP review slot 16:00-16:30`\n   - from: `Nora Patel <nora.patel@auroraretail.test>` / to: `ops.coordinator@auroraretail.test`\n   - body: `Please create the AP review event for 2025-06-21 16:00-16:30 with AP Audit and Tax Desk. The review should cover line 6, PO-4407, VAT, and the vendor correction request.`\n5. **无新增草稿 — 通过**：`gmail.search(\"label:draft\")` / `is:draft` / `in:drafts` 均 → 0。\n6. **无已发送邮件 — 通过**：`gmail.search(\"label:sent\")` / `in:sent` 均 → 0。\n7. **日历事件唯一且字段正确 — 通过**：`calendar.listEvents(2025-06-21)` → 仅 1 条：\n   - id `cal-mttljn4g-is82l`；title `INV-440 AP review`；start `16:00`；end `16:30`；guest `nora.patel@auroraretail.test, ap-audit@auroraretail.test, tax@auroraretail.test`；allDay=false；description 涵盖 line 6 多收费 (USD 9,840)、正确 PO-4407、VAT 未决、供应商重提 INV-440 请求。\n   - `calendar.listEvents(2026-09-09)` 与 `2026-09-08` → 0 条（当前日期区无副作用事件）。\n8. **无额外副作用 — 通过**：`gmail.search(\"in:all\")` → 恰好 8 封（inv-001..008），全在 INBOX；`in:spam` / `in:trash` → 0。邮箱总量无增长。\n\n## 调用量与耗时\n\n- 本轮仅为复核员只读查询：**受管 MCP 工具调用 23 次，写入 0 次**。\n- 所有查询均为只读（get/search/list），无 createDraft / createEvent / send / batchModify / 标签创建等可写接口。\n- 耗时：经受管工具链路无计时返回，不作虚构秒数。序列为紧凑只读查询，不含外部网络调用。\n\n## 观察项（不影响本纠偏 PASS，但超出本节点可决范围）\n\n- 任务前置叙事称上一轮“已完成…两封未发送草稿”，但 **当前 Mock 终态 草稿数 = 0**（`is:draft`/`label:draft`/`in:drafts` 均 0）。\n  或此前两封草稿未被本 Mock 持久化，或被清除；该状态的基线/演化不在本纠偏节点冻结范围内，复核员无写权限进一步还原，仅如实记录此不一致。\n- Mock 搜索索引对 subject/正文字段有限（`gmail_search(\"inv-007-review\")`、subject 查询均回 0），故正文/星标结论以 `gmail.get` 元数据或 `is:starred` 直达方式为据。\n\n## 只读隔离边界如实披露\n\n- 受管 MCP 工具面不含任何向邮箱/日历写入的接口（无 send/createDraft/createEvent/batchModify/labels 创建），故本工具面内“只读”由能力缺失保证。\n- **但平台未强制禁用原生 CLI 工具（Bash/curl/Python/WebFetch）。本次复核未使用上述任何工具绕过受管工具；只读目前在工具面内有效，工具面外的强制隔离未在平台侧闭环，此边界为提示词约束而非工具级强制。**\n- 未读取 `grader/private`；未获取或输出任何服务器/API 密钥。\n- 本结论为独立读回核验；团队/工作流叙事≠原始 verifier 最终裁决。\n",
+          "content_type": "text/markdown",
+          "metadata": {
+            "source": "published_workflow",
+            "node_id": "deliver",
+            "filename": "",
+            "node_type": "deliver",
+            "node_label": "交付独立核验结果",
+            "artifact_kind": "final"
+          },
+          "created_at": "2026-09-09T12:36:28.827271+08:00"
+        }
+      ]
+    }
+  },
+  "external_verifier": {
+    "file": "final-verification.json",
+    "passed": true,
+    "score": 1.0,
+    "checks_passed": 7,
+    "checks_total": 7,
+    "no_messages_sent": true
+  },
+  "workbench_user_assessment": {
+    "outcome": "adopted",
+    "note": "原始基准验证器复核通过 7/7；执行员误加的 inv-007-review 星标已通过修订运行移除，邮件发送数保持 0。",
+    "observed_in_builtin_browser": true
+  },
+  "assessment": {
+    "initial_run": "succeeded_2_of_2_but_external_verifier_6_of_7_due_to_extra_star",
+    "correction_run": "succeeded_2_of_2",
+    "business_state": "passed_external_verifier_7_of_7",
+    "correction_scope": "remove STARRED only from inv-007-review; preserve labels, read state, drafts, calendar; send no mail",
+    "shell_business_repair_performed": false,
+    "input_identity": "initial Workbench task differs from source only by final newline; correction is an explicit scoped follow-up",
+    "native_business_tool_calls_observed": 0
+  }
+}

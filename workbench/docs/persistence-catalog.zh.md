@@ -1044,6 +1044,17 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 
 ### `weave/*`
 
+<a id="weavedispatch-input--log-only"></a>
+
+#### `weave/dispatch-input` — log-only
+
+```ts persistence-catalog
+/** Exact source messages and one immutable dispatch request; accepted advances its source watermark. */
+'weave/dispatch-input': DispatchInputRecord
+```
+
+来源：[`packages/bundle/workbench-app/src/dispatch-input.ts:45`](../packages/bundle/workbench-app/src/dispatch-input.ts)
+
 <a id="weavework-task--log-only"></a>
 
 #### `weave/work-task` — log-only
@@ -1053,7 +1064,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'weave/work-task': WorkTaskProjection
 ```
 
-来源：[`packages/bundle/workbench-app/src/index.ts:232`](../packages/bundle/workbench-app/src/index.ts)
+来源：[`packages/bundle/workbench-app/src/index.ts:264`](../packages/bundle/workbench-app/src/index.ts)
 
 <a id="weavework-task-action--log-only"></a>
 
@@ -1064,7 +1075,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'weave/work-task-action': { readonly pendingAction: WorkTaskPendingAction | null }
 ```
 
-来源：[`packages/bundle/workbench-app/src/index.ts:234`](../packages/bundle/workbench-app/src/index.ts)
+来源：[`packages/bundle/workbench-app/src/index.ts:266`](../packages/bundle/workbench-app/src/index.ts)
 
 ### `web/*`
 
