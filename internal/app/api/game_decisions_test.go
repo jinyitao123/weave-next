@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 
@@ -15,7 +16,7 @@ import (
 )
 
 func TestGameWorkflowRejectsToolMemoryAndGraphExpansion(t *testing.T) {
-	valid := frozen.ArtifactPayloadV1{GraphDefinition: json.RawMessage(`{"nodes":[{"type":"worker"},{"type":"deliver"}]}`), Bundles: []frozen.FrozenExecutionBundle{{Agent: frozen.FrozenAgentRecord{Role: "worker", Engine: "codex", Model: "frozen-model", RuntimeID: "runtime", Permissions: frozen.FrozenPermissions{Deny: []string{"*"}}, OutputSchema: json.RawMessage(`{"type":"object"}`)}}}}
+	valid := frozen.ArtifactPayloadV1{GraphDefinition: json.RawMessage(`{"nodes":[{"type":"worker"},{"type":"deliver"}]}`), Bundles: []frozen.FrozenExecutionBundle{{PrimaryModel: frozen.FrozenModelBinding{ProviderID: "provider", ModelID: "frozen-model"}, Agent: frozen.FrozenAgentRecord{Role: "worker", Engine: "loom", Model: "frozen-model", Permissions: frozen.FrozenPermissions{Deny: []string{"*"}}, OutputSchema: json.RawMessage(`{"type":"object"}`)}}}}
 	if err := validateGameWorkflow(valid); err != nil {
 		t.Fatal(err)
 	}
@@ -27,7 +28,7 @@ func TestGameWorkflowRejectsToolMemoryAndGraphExpansion(t *testing.T) {
 		func(p *frozen.ArtifactPayloadV1) {
 			p.Bundles[0].Agent.MemoryConfig = &frozen.FrozenMemoryConfig{Enabled: true}
 		},
-		func(p *frozen.ArtifactPayloadV1) { p.Bundles[0].Agent.Engine = "loom" },
+		func(p *frozen.ArtifactPayloadV1) { p.Bundles[0].Agent.Engine = "codex" },
 		func(p *frozen.ArtifactPayloadV1) { p.Bundles[0].Agent.Fallback.Models = []string{"other"} },
 	} {
 		raw, _ := json.Marshal(valid)
@@ -71,7 +72,14 @@ func TestGameInputAndChoiceRejectInjectionAndInvalidOutput(t *testing.T) {
 }
 
 func TestGameServiceAdmissionIdempotencyRoomIsolationAndCancellationRealPG(t *testing.T) {
-	s, pool := newTeamDispatchTestServer(t)
+	dependencies := []frozen.FrozenDependencyRef{}
+	digest, _ := frozen.ComputeManifestHash(dependencies)
+	bundle := frozen.FrozenExecutionBundle{SchemaVersion: 1, FactoryKey: frozen.FactoryKey{FactoryID: "standard", FactoryVersion: "1", CompilerABI: "weave-graph-abi-v1"}, Agent: frozen.FrozenAgentRecord{SchemaVersion: 1, WorkspaceID: "ws", AgentID: "worker", AgentVersion: 1, Name: "worker", Role: "worker", Engine: "loom", Model: "model", GraphType: "standard", FactoryInput: json.RawMessage(`{}`), Permissions: frozen.FrozenPermissions{Deny: []string{"*"}}, OutputSchema: json.RawMessage(`{"type":"object"}`)}, PrimaryModel: frozen.FrozenModelBinding{SchemaVersion: 1, WorkspaceID: "ws", ProviderID: "provider", ProviderRevision: 1, ModelID: "model", BaseURL: "https://provider.example", CredentialRef: frozen.CredentialReference{SchemaVersion: 1, WorkspaceID: "ws", Kind: frozen.CredentialProviderAPIKey, ResourceID: "provider", Slot: "api_key"}}, Dependencies: frozen.FrozenDependencyManifest{SchemaVersion: 1, Dependencies: dependencies, ManifestHash: digest}, Capability: frozen.CapabilityManifest{SchemaVersion: 2, Role: "worker", AgentContentHash: strings.Repeat("b", 64)}}
+	graph := json.RawMessage(`{"schema_version":1,"entry_node_id":"worker","input_contract":{"type":"text"},"output_contract":{"type":"text"},"nodes":[{"id":"worker","type":"worker","inputs":{"task":{"expected_type":"text","value":{"source":"run_input","path":""}}},"output":{"type":"text"},"config":{"agent_id":"worker","agent_version":1,"kind":"consult","result_requirement":"choose a candidate"}},{"id":"deliver","type":"deliver","config":{"result":{"source":"node_output","node_id":"worker","path":""}}}],"edges":[{"id":"delivery","from_node_id":"worker","to_node_id":"deliver","route":"success"}]}`)
+	s, pool := newTeamDispatchTestServerWithGraph(t, graph, bundle)
+	if _, err := pool.Exec(t.Context(), `INSERT INTO weave_agents(id,workspace_id,name,role,spec) VALUES('worker','ws','worker','worker','{}'); INSERT INTO weave_team_workers(workspace_id,team_id,worker_agent_id,allowed_kinds,default_kind) VALUES('ws','team','worker',ARRAY['consult'],'consult')`); err != nil {
+		t.Fatal(err)
+	}
 	s.teamRunCancel = &teamrun.CancelService{Transactions: pool, Runs: teamrun.NewPGStore(), Tasks: s.Tasks}
 	_, err := pool.Exec(context.Background(), `INSERT INTO weave_api_keys(id,tenant_id,name,key_hash,role,scopes) VALUES('game-key','ws','game','game-hash','service',ARRAY['game_decisions']),('other-key','ws','other','other-hash','service',ARRAY['game_decisions']); INSERT INTO weave_game_decision_bindings(workspace_id,api_key_id,team_id,workflow_id,workflow_version,created_by) VALUES('ws','game-key','team','flow',1,'user'),('ws','other-key','team','flow',1,'user');`)
 	if err != nil {

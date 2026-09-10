@@ -70,7 +70,7 @@ func memberBeforeStep(ctx context.Context, step string, state loom.State) error 
 	if err != nil {
 		return err
 	}
-	defer func() { _ = tx.Rollback(ctx) }()
+	defer tx.Rollback(ctx)
 	if err := member.guardTx(ctx, tx); err != nil {
 		return err
 	}
@@ -142,7 +142,9 @@ func (member *memberExecution) operation(ctx context.Context, kind string, input
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = tx.Rollback(ctx) }()
+	// Capture this transaction now. The response phase opens another one;
+	// cancellation can make that later BeginTx return a nil transaction.
+	defer tx.Rollback(ctx)
 	if err := member.guardTx(ctx, tx); err != nil {
 		return nil, err
 	}
@@ -245,7 +247,7 @@ func (member *memberExecution) operation(ctx context.Context, kind string, input
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = tx.Rollback(ctx) }()
+	defer tx.Rollback(ctx)
 	if err := member.guardTx(ctx, tx); err != nil {
 		return nil, err
 	}
