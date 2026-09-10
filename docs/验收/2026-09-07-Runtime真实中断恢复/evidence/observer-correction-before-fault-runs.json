@@ -1,0 +1,16 @@
+{
+  "at": "2026-09-07T02:57:22.401304+00:00",
+  "previous_false_event_seq": 44,
+  "valid_event_seq": 50,
+  "reason": "individual lowercase ok in a failed/truncated suite was mistaken for whole-suite OK",
+  "fix": "require untruncated complete suite summary; reject error/failure markers and zero tests",
+  "model_or_business_inputs_changed": false,
+  "faults_injected_before_fix": 0,
+  "normal_run_effect": "none; only observation metadata corrected; prior false record preserved",
+  "tests_passed": 6,
+  "new_source_hashes": {
+    "control.py": "4091c5887d9031ca548db1d8fb91f0e3d73de0650534348dc7a6f853fa876936",
+    "milestone.py": "4116ac2b8d1893dac353a6518a6c2df4fc3bc2c2c58acb292137a8aa0162d9a5",
+    "test_milestone.py": "d1cba3c272430709873a2dd0bd98087d9b58cfaf2f7397062745b2b9948ea6fe"
+  }
+}

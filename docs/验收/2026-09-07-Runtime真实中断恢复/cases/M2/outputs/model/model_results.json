@@ -1,0 +1,163 @@
+{
+  "traceability": {
+    "baseline_id": "corona-baseline-1.0.0",
+    "baseline_version": "1.0.0",
+    "content_digest": "cfb12b781363c547da87e6dec9fd937079cba25501b85ff6cbfabfbc508b10c2",
+    "derived_from": "baseline_frozen.yaml",
+    "generator": "make_params.py",
+    "fact_label": "verified_fact"
+  },
+  "scope": "Level-0 / Pre-Phase A 概念级；非施工/制造/飞行认证设计 [verified_fact]",
+  "locked_scenario": {
+    "cruise_speed_c": 0.03,
+    "locked": true,
+    "pending_change": "CCR-001（0.01c/0.05c 扩展）待平台确认，未纳入 [verified_fact]"
+  },
+  "reference_checks": {
+    "travel_time_yr": 141.66666666666669,
+    "kinetic_energy_1mt_j": 4.044398304315679e+22,
+    "kinetic_energy_5mt_j": 2.02219915215784e+23,
+    "artificial_gravity_m_s2": 43.864908449286034,
+    "dust_impact_energy_j": 40443983.043156795
+  },
+  "relativistic_comparison": {
+    "kinetic_energy_1mt_relativistic_j": 4.0471303222625495e+22,
+    "correction_pct": 0.0675506649272178,
+    "rule": "相对论对照单列，不得与非相对论下限混用 [verified_fact]（ICD-FML-002）"
+  },
+  "artificial_gravity": {
+    "reference_case": {
+      "radius_m": 1000,
+      "rotation_rpm": 2
+    },
+    "gravity_m_s2": 43.864908449286034,
+    "gravity_g": 4.472975832652948,
+    "rpm_for_1g_same_radius": 0.9456528152601877
+  },
+  "dust_impact": {
+    "mass_kg": 1e-06,
+    "relative_speed_c": 0.03,
+    "energy_j": 40443983.043156795,
+    "tnt_equivalent_kg": 9.666343939569023,
+    "retracted_claim": "旧稿『1毫克约450兆焦』已撤回，不得复现 [verified_fact]（纪要 §二.4）",
+    "unknowns": [
+      "尘埃通量",
+      "粒径分布",
+      "盾体面密度",
+      "间距",
+      "消耗率",
+      "补充方式",
+      "总质量"
+    ]
+  },
+  "accel_decel_scenarios": [
+    {
+      "accel_m_s2": 0.0980665,
+      "time_to_cruise_yr": 2.9061452387168667,
+      "accel_distance_ly": 0.043592178580753,
+      "boundary_note": "经典匀加速近似；β=0.03 时相对论修正 <0.1%，概念级可接受 [derived_result]"
+    },
+    {
+      "accel_m_s2": 0.980665,
+      "time_to_cruise_yr": 0.2906145238716866,
+      "accel_distance_ly": 0.0043592178580752995,
+      "boundary_note": "经典匀加速近似；β=0.03 时相对论修正 <0.1%，概念级可接受 [derived_result]"
+    },
+    {
+      "accel_m_s2": 9.80665,
+      "time_to_cruise_yr": 0.029061452387168663,
+      "accel_distance_ly": 0.00043592178580752997,
+      "boundary_note": "经典匀加速近似；β=0.03 时相对论修正 <0.1%，概念级可接受 [derived_result]"
+    }
+  ],
+  "efficiency_scenarios": [
+    {
+      "efficiency": 0.1,
+      "beam_energy_1mt_j": 4.044398304315679e+23,
+      "fact_label": "assumption（效率为情景假设，非工程承诺）"
+    },
+    {
+      "efficiency": 0.25,
+      "beam_energy_1mt_j": 1.6177593217262717e+23,
+      "fact_label": "assumption（效率为情景假设，非工程承诺）"
+    },
+    {
+      "efficiency": 0.5,
+      "beam_energy_1mt_j": 8.088796608631358e+22,
+      "fact_label": "assumption（效率为情景假设，非工程承诺）"
+    }
+  ],
+  "precursor_probe": {
+    "cruise_speed_c": 0.2,
+    "one_way_flight_yr": 21.25,
+    "data_return_yr": 4.25,
+    "earliest_data_arrival_yr": 25.5,
+    "rule": "先锋数据不得作为第 20 年以前母舰决策条件 [verified_fact]（纪要 §二.6）"
+  },
+  "turn_capability": {
+    "turn_limit_deg_at_10pct_dv": 5.729577951308233,
+    "turn_limit_deg_at_15pct_dv": 8.594366926962348,
+    "target_separations": {
+      "proxima_barnard_deg": 78.0,
+      "proxima_tau_ceti_deg": 101.0,
+      "barnard_tau_ceti_deg": 117.0
+    },
+    "midcourse_target_switch_feasible": false,
+    "conclusion": "10%–15% Δv 仅支持约 5.7°–8.6° 转向，三目标最小角距 78°；中途切换目标不可行，目标选择须在主加速前完成 [derived_result]"
+  },
+  "route_sensitivity": {
+    "locked_scenario_c": 0.03,
+    "travel_time_yr": 141.66666666666669,
+    "routes": {
+      "laser_sail_precursor": {
+        "characteristic_speed_c": 0.2,
+        "one_way_flight_yr": 21.25,
+        "note": "克级帆探测器；其可行性不得外推至另两条路线 [verified_fact]（RQ-SCP-003）"
+      },
+      "uncrewed_civilization_archive": {
+        "reference_mass_kg": 5000000000,
+        "kinetic_energy_lower_bound_j": 2.02219915215784e+23,
+        "note": "档案载荷质量规模自身待定 [unknown]；此处引用 5Mt 入轨物资参考工况仅作数量级锚点"
+      },
+      "crewed_interstellar_vehicle": {
+        "reference_mass_kg": 1000000000,
+        "kinetic_energy_lower_bound_j": 4.044398304315679e+22,
+        "note": "载人路线依赖推进/生态/辐射防护/在轨工业等未成熟能力 [verified_fact]（纪要 §一）"
+      }
+    },
+    "sensitivity": {
+      "ke_vs_mass": "动能与质量线性成正比：∂KE/KE = ∂m/m [derived_result]",
+      "ke_vs_speed_local": "动能随速度二次增长：β=0.03 处 ∂KE/KE = 2·∂β/β [derived_result]",
+      "cross_speed_comparison": "0.01c/0.05c 情景比较 = CCR-001 预留接口，当前未实现 [verified_fact]"
+    },
+    "separability_rule": "三路线可分离；禁止跨路线可行性外推 [verified_fact]"
+  },
+  "baseline_scenario_example": {
+    "inputs": {
+      "cruise_speed_c": 0.03,
+      "mass_kg": 1000000000,
+      "efficiency": 0.25,
+      "radius_m": 1000,
+      "rotation_rpm": 2,
+      "dust_mass_kg": 1e-06
+    },
+    "outputs": {
+      "travel_time_yr": 141.66666666666669,
+      "light_travel_time_yr": 4.25,
+      "kinetic_energy_j": 4.044398304315679e+22,
+      "kinetic_energy_relativistic_j": 4.0471303222625495e+22,
+      "relativistic_correction_pct": 0.0675506649272178,
+      "beam_energy_at_efficiency_j": 1.6177593217262717e+23,
+      "artificial_gravity_m_s2": 43.864908449286034,
+      "artificial_gravity_g": 4.472975832652948,
+      "rpm_for_1g_at_radius": 0.9456528152601877,
+      "dust_impact_energy_j": 40443983.043156795,
+      "dust_tnt_equivalent_kg": 9.666343939569023
+    },
+    "notes": {
+      "kinetic_energy": "仅自身动能下限，未计效率、排气动能、推进剂、减速、备用与建造损耗；不得用作完整推进能源预算 [verified_fact]",
+      "travel_time": "匀速巡航，不含加速、减速与航向修正 [verified_fact]",
+      "beam_energy": "源端能量 = 动能下限 / 端到端效率；效率为用户情景输入 [assumption]"
+    }
+  }
+}

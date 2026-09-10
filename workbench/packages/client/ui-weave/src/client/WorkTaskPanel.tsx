@@ -12,6 +12,7 @@ import { PublicUpdates } from './PublicUpdates.tsx'
 import { WorkFileIcon, WorkSceneOverview } from './WorkSceneOverview.tsx'
 import type { WorkTaskMemberReference } from './member-reference.ts'
 import type { createWorkTaskViewStore } from './view-store.ts'
+import { WorkTaskDeliveryState } from './WorkTaskDeliveryState.tsx'
 
 interface WorkTaskInjected {
   readonly openDetails: () => void
@@ -23,11 +24,12 @@ interface WorkTaskInjected {
   readonly selectTeam?: (teamId: string, teamName: string) => Promise<void>
   readonly stopRun?: (runId: string) => Promise<string | null>
   readonly rerun?: (runId: string, brief: string) => Promise<string | null>
-  readonly retryStage?: (runId: string, nodeId: string) => Promise<string | null>
+  readonly retryStage?: (runId: string, nodeId: string, authorizedTotalRounds?: number) => Promise<string | null>
   readonly requestCorrection?: (runId: string, targetKind: 'team' | 'member', targetMemberId: string, instruction: string) => Promise<string | null>
   readonly confirmCorrection?: (runId: string, correctionId: string, disposition: 'apply' | 'discard') => Promise<string | null>
   readonly completeHumanTask?: (runId: string, interactionId: string, payload: unknown) => Promise<string | null>
-  readonly assessOutcome?: (runId: string, outcome: 'adopted' | 'needs-revision', note: string) => Promise<string | null>
+  readonly assessOutcome?: (runId: string, deliveryRevisionId: string, outcome: 'adopted' | 'needs-revision', note: string) => Promise<string | null>
+  readonly recheckDelivery?: (runId: string, deliveryRevisionId: string, contractDigest: string) => Promise<string | null>
 }
 
 type PanelProps =
@@ -79,6 +81,7 @@ function taskStatusKey(model: ReturnType<typeof workTaskModel>) {
     'buildFailed': 'task.state.buildFailed',
     'buildUnknown': 'task.state.buildUnknown',
   } as const
+  if (model.status === 'waiting' && model.members.some(member => member.stages.some(stage => stage.nodeId === model.waitNodeId && stage.budgetPause !== undefined))) return 'task.budget.title'
   if (model.displayState !== undefined && Object.hasOwn(displayKeys, model.displayState)) {
     return displayKeys[model.displayState as keyof typeof displayKeys]
   }
@@ -103,6 +106,8 @@ function statusKey(status: WorkTaskStatus): typeof STATUS_KEYS[WorkTaskStatus] {
 }
 
 function stageFailureKey(stage: WorkTaskMemberStage, retryable: boolean) {
+  if (stage.failureReason === 'tool outcome requires reconciliation before continuing') return 'task.failure.reason.toolUnknown'
+  if (stage.memberRunId && retryable) return 'task.failure.reason.memberInterrupted'
   if (stage.failureReason === 'the referenced result file was not saved as a deliverable') return 'task.failure.reason.fileMissing'
   if (stage.failureClass === 'infrastructure') return retryable ? 'task.failure.reason.infrastructure' : 'task.failure.reason.infrastructureUnavailable'
   if (stage.failureClass === 'verification') return 'task.failure.reason.verification'
@@ -119,6 +124,7 @@ function runtimeDisplayStatus(runtime: WorkTaskRuntime, runtimes: readonly WorkT
 }
 
 const MEMBER_STATUS_KEYS = {
+ waiting: 'task.status.waiting',
   pending: 'task.member.status.pending',
   running: 'task.member.status.running',
   'partially-completed': 'task.member.status.partiallyCompleted',
@@ -298,7 +304,7 @@ function interruptedInfrastructureStages(model: ReturnType<typeof workTaskModel>
   for (const member of model.members) {
     for (const stage of member.stages) {
       if (model.waitKind === 'runtime' && model.waitNodeId !== stage.nodeId) continue
-      if (stage.status !== 'failed' || stage.failureClass !== 'infrastructure'
+      if (!((stage.status === 'failed' && stage.failureClass === 'infrastructure') || (stage.status === 'waiting' && stage.budgetPause !== undefined))
         || (!stage.retryable && !runtimeStopPending(stage)) || stages.has(stage.nodeId)) continue
       stages.set(stage.nodeId, { memberId: member.agentId, memberName: member.name, stage })
     }
@@ -477,7 +483,7 @@ export function WorkTaskHeader({ useChat, useProjection, openDetails, t }: Heade
 /** Persistent Weave task, team, runtime, and deliverable projection. */
 export function WorkTaskPanel({
   useChat, useProjection, useSessions, useStore, actions, sessionId, selectTeam,
-  stopRun, rerun, retryStage, requestCorrection, confirmCorrection, completeHumanTask, assessOutcome, returnToConversation,
+  stopRun, rerun, retryStage, requestCorrection, confirmCorrection, completeHumanTask, assessOutcome, recheckDelivery, returnToConversation,
   requestDelivery, beginMemberAdjustment, expandDetails, presentation, openDetails, activateScene, t,
 }: PanelProps) {
   const conversationModel = useChat(snapshot => workTaskModel(snapshot.nodes.values()))
@@ -553,9 +559,11 @@ export function WorkTaskPanel({
   const [correctionTarget, setCorrectionTarget] = useState('team')
   const [correctionInstruction, setCorrectionInstruction] = useState('')
   const [assessmentNote, setAssessmentNote] = useState('')
+  useEffect(() => { setAssessmentNote('') }, [model.runId, model.delivery?.revisionId])
   const [outputQuery, setOutputQuery] = useState('')
   useEffect(() => { setOutputQuery('') }, [model.runId, outputSelection?.request])
   const [retryNodeId, setRetryNodeId] = useState('')
+  const [budgetCeiling, setBudgetCeiling] = useState('')
   const backButton = useRef<HTMLButtonElement>(null)
   const correctionButton = useRef<HTMLButtonElement>(null)
   const correctionRegion = useRef<HTMLElement>(null)
@@ -626,6 +634,7 @@ export function WorkTaskPanel({
   }))
   const selectedMember = !compact ? model.members.find(member => member.agentId === selectedMemberId) : undefined
   const hasFinal = workTaskHasFinalDeliverable(model)
+  const canAssessDelivery = (model.delivery?.revisionId ?? '') !== '' && model.delivery?.available === true
   const actionDisabled = actionPending || model.pendingAction !== null
   const canCorrect = model.runId !== '' && !terminal && model.status !== 'stopping'
     && activeCorrection === undefined && requestCorrection !== undefined && model.pendingAction === null
@@ -641,6 +650,7 @@ export function WorkTaskPanel({
     return owner === undefined ? stageLabel(nodeId, t) : `${owner.name} · ${stageLabel(stage?.name ?? nodeId, t)}`
   }
   const interruptedStages = interruptedInfrastructureStages(model)
+  const budgetStage = model.status === 'waiting' ? model.members.flatMap(member => member.stages).find(stage => stage.nodeId === model.waitNodeId && stage.budgetPause !== undefined) : undefined
   const recoverableStages = retryStage === undefined ? [] : interruptedStages.filter(item => item.stage.retryable)
   const pendingStopStages = interruptedStages.filter(item => runtimeStopPending(item.stage))
   const pendingStopNotice = pendingStopStages.length === 0 ? null : <div className={css.stageFailure}>
@@ -677,7 +687,12 @@ export function WorkTaskPanel({
     if (retryStage === undefined || actionPending || retryNodeId === '') return
     setActionPending(true)
     setActionError(null)
-    const error = await retryStage(model.runId, retryNodeId)
+    const budget = recoverableStages.find(item => item.stage.nodeId === retryNodeId)?.stage.budgetPause
+    const ceiling = budget?.reason === 'total_limit' ? Number(budgetCeiling) : undefined
+    if (ceiling !== undefined && (!Number.isSafeInteger(ceiling) || ceiling <= budget!.authorizedTotalRounds)) {
+      setActionPending(false); setActionError(t('task.budget.invalid')); return
+    }
+    const error = ceiling === undefined ? await retryStage(model.runId, retryNodeId) : await retryStage(model.runId, retryNodeId, ceiling)
     setActionPending(false)
     if (error !== null) setActionError(error)
     else setRetryNodeId('')
@@ -718,12 +733,15 @@ export function WorkTaskPanel({
     finally { setActionPending(false) }
   }
   const submitAssessment = async (outcome: 'adopted' | 'needs-revision') => {
-    if (assessOutcome === undefined || actionPending) return
+    const deliveryRevisionId = model.delivery?.revisionId ?? ''
+    if (assessOutcome === undefined || actionPending || !canAssessDelivery) return
     setActionPending(true)
     setActionError(null)
-    const error = await assessOutcome(model.runId, outcome, assessmentNote.trim())
-    setActionPending(false)
-    if (error !== null) setActionError(error)
+    try {
+      const error = await assessOutcome(model.runId, deliveryRevisionId, outcome, assessmentNote.trim())
+      if (error !== null) setActionError(error)
+    } catch { setActionError(t('task.action.offline')) }
+    finally { setActionPending(false) }
   }
 
   const correctionView = (memberId = '') => {
@@ -753,12 +771,12 @@ export function WorkTaskPanel({
   }
 
   const recoverySection = recoverableStages.length === 0 ? null : (
-    <section className={css.recoveryCard} aria-label={t('task.recovery.title')}>
+    <section className={css.recoveryCard} aria-label={t(budgetStage === undefined ? 'task.recovery.title' : 'task.budget.title')}>
       <div className={css.recoveryHeading}>
         <span className={css.recoveryMark} aria-hidden />
         <div>
-          <strong>{t('task.recovery.title')}</strong>
-          <span>{t('task.recovery.description')}</span>
+          <strong>{t(budgetStage === undefined ? 'task.recovery.title' : 'task.budget.title')}</strong>
+          <span>{t(budgetStage === undefined ? 'task.recovery.description' : 'task.budget.help')}</span>
         </div>
       </div>
       <div className={css.recoveryStages}>
@@ -770,7 +788,8 @@ export function WorkTaskPanel({
             </button>
             {retryNodeId === stage.nodeId ? (
               <div className={css.retryConfirm}>
-                <span>{t('task.retry.impact')}</span>
+                <span>{t(stage.memberRunId ? 'task.retry.memberImpact' : 'task.retry.impact')}</span>
+                {stage.budgetPause?.reason !== 'total_limit' ? null : <label>{t('task.budget.ceiling')}<input type="number" min={stage.budgetPause.authorizedTotalRounds + 1} max={Number.MAX_SAFE_INTEGER} step={1} value={budgetCeiling} onChange={event => { setBudgetCeiling(event.currentTarget.value) }} /></label>}
                 <div className={css.controlActions}>
                   <button type="button" className={css.secondaryButton} onClick={() => { setRetryNodeId('') }}>{t('task.cancel')}</button>
                   <button type="button" className={css.primaryButton} disabled={actionPending || model.pendingAction !== null} onClick={() => { void submitStageRetry() }}>{t('task.retry.confirm')}</button>
@@ -778,12 +797,12 @@ export function WorkTaskPanel({
               </div>
             ) : (
               <button type="button" className={css.primaryButton} disabled={actionPending || model.pendingAction !== null}
-                onClick={() => { setRetryNodeId(stage.nodeId) }}>{t('task.recovery.retry')}</button>
+                onClick={() => { setBudgetCeiling(''); setRetryNodeId(stage.nodeId) }}>{t(stage.memberRunId ? 'task.retry.memberContinue' : 'task.recovery.retry')}</button>
             )}
           </div>
         ))}
       </div>
-      <span className={css.recoveryImpact}>{t('task.retry.impact')}</span>
+      <span className={css.recoveryImpact}>{t(recoverableStages.some(item => item.stage.memberRunId) ? 'task.retry.memberImpact' : 'task.retry.impact')}</span>
     </section>
   )
 
@@ -885,6 +904,7 @@ export function WorkTaskPanel({
                   <strong>{nodeLabel(stage.nodeId)}</strong>
                   <span>{t(memberStatusKey(stage.status))}</span>
                 </div>
+                {!stage.checkpointSavedAt ? null : <p className={css.muted}>{t('task.member.progressSaved')} <time dateTime={stage.checkpointSavedAt}>{new Date(stage.checkpointSavedAt).toLocaleTimeString()}</time></p>}
                 {stage.status !== 'failed' || stage.failureClass === '' ? null : (
                   <div className={css.stageFailure} data-class={stage.failureClass}>
                     <strong>{t(stage.failureClass === 'infrastructure'
@@ -897,13 +917,13 @@ export function WorkTaskPanel({
                     <details><summary>{t('task.failure.details')}</summary><p>{stage.failureReason}</p></details></>}
                     {!recoverableStages.some(item => item.stage.nodeId === stage.nodeId) ? null : retryNodeId === stage.nodeId ? (
                       <div className={css.retryConfirm}>
-                        <span>{t('task.retry.impact')}</span>
+                        <span>{t(stage.memberRunId ? 'task.retry.memberImpact' : 'task.retry.impact')}</span>
                         <div className={css.controlActions}>
                           <button type="button" className={css.secondaryButton} onClick={() => { setRetryNodeId('') }}>{t('task.cancel')}</button>
                           <button type="button" className={css.primaryButton} disabled={actionPending} onClick={() => { void submitStageRetry() }}>{t('task.retry.confirm')}</button>
                         </div>
                       </div>
-                    ) : <button type="button" className={css.memberCorrectionButton} onClick={() => { setRetryNodeId(stage.nodeId) }}>{t('task.retry.stage')}</button>}
+                    ) : <button type="button" className={css.memberCorrectionButton} onClick={() => { setBudgetCeiling(''); setRetryNodeId(stage.nodeId) }}>{t(stage.memberRunId ? 'task.retry.memberContinue' : 'task.retry.stage')}</button>}
                   </div>
                 )}
                 {stage.startedAt === '' && stage.durationMs === 0 && stage.toolCalls === 0 ? null : (
@@ -992,6 +1012,7 @@ export function WorkTaskPanel({
         <strong>{t(taskStatusKey(model))}</strong>
         {context === '' ? null : <span title={context}>{context}</span>}
       </div>
+      <WorkTaskDeliveryState model={model} executionLabel={t(statusKey(model.status))} compact t={t} />
       {model.pendingAction === null ? null : <p className={css.dockNotice}>{t(
         model.pendingAction.kind === 'human-complete' ? 'task.human.recorded' : model.pendingAction.kind === 'stop' ? 'task.action.stopPending'
           : model.pendingAction.kind === 'stage-retry' ? 'task.action.stageRetryPending' : model.pendingAction.kind === 'correction-request' ? 'task.action.correctionPending'
@@ -1002,6 +1023,7 @@ export function WorkTaskPanel({
       {stale ? <p className={css.dockNotice}>{t('task.freshness.stale')}</p> : null}
       {failureNotice}
       {pendingStopStages.length === 0 ? null : <p className={css.dockNotice}>{t('task.wait.runtimeStopHelp')}</p>}
+      {budgetStage?.budgetPause === undefined ? null : <p className={css.dockNotice}>{t('task.budget.usage', { used: budgetStage.budgetPause.roundsUsed, total: budgetStage.budgetPause.authorizedTotalRounds })} {t(budgetStage.budgetPause.reason === 'total_limit' ? 'task.budget.total' : budgetStage.budgetPause.reason === 'slice_limit' ? 'task.budget.slice' : 'task.budget.blocked')}</p>}
       {recoverySection}
       {humanSection === null ? null : <details className={css.dockForm}>
         <summary>{t('task.card.answer')}</summary>{humanSection}
@@ -1089,9 +1111,12 @@ export function WorkTaskPanel({
           {model.totalStages === 0 ? null : <span>{t('task.progress.count', { completed: model.completedStages, total: model.totalStages })}</span>}
           {activityHint === '' ? null : <span className={css.activityHint} title={activityHint}>{activityHint}</span>}
         </div>
+        <WorkTaskDeliveryState model={model} executionLabel={t(statusKey(model.status))}
+          recheckDelivery={recheckDelivery} disabled={actionDisabled} t={t} />
         {failureNotice}
         {pendingStopNotice}
-        {model.status !== 'waiting' || pendingStopStages.length > 0 ? null : <p>{t(model.waitKind === 'human' ? 'task.wait.humanHelp'
+        {budgetStage?.budgetPause === undefined ? null : <p>{t('task.budget.usage', { used: budgetStage.budgetPause.roundsUsed, total: budgetStage.budgetPause.authorizedTotalRounds })} {t(budgetStage.budgetPause.reason === 'total_limit' ? 'task.budget.total' : budgetStage.budgetPause.reason === 'slice_limit' ? 'task.budget.slice' : 'task.budget.blocked')}</p>}
+        {model.status !== 'waiting' || pendingStopStages.length > 0 || budgetStage !== undefined ? null : <p>{t(model.waitKind === 'human' ? 'task.wait.humanHelp'
           : model.waitKind === 'correction' ? 'task.wait.correctionHelp' : model.waitKind === 'runtime' ? 'task.wait.runtimeHelp'
             : model.waitKind === 'timer' ? 'task.wait.timerHelp' : model.waitKind === 'fanout' ? 'task.wait.fanoutHelp' : 'task.wait.unknownHelp')}</p>}
         {model.status !== 'completed' || hasFinal ? null : <div className={css.deliveryGap}>
@@ -1178,10 +1203,12 @@ export function WorkTaskPanel({
         {model.status !== 'completed' || !hasFinal || assessOutcome === undefined ? null : <details className={css.assessment}>
           <summary>{t('task.assessment')}</summary>
           <p>{t('task.assessment.notice')}</p>
-          <textarea aria-label={t('task.assessment.placeholder')} value={assessmentNote} onChange={(event) => { setAssessmentNote(event.currentTarget.value) }} placeholder={model.outcomeNote || t('task.assessment.placeholder')} />
+          {canAssessDelivery ? null : <p>{t((model.delivery?.revisionId ?? '') === '' ? 'task.assessment.revisionUnavailable' : 'task.assessment.deliveryUnavailable')}</p>}
+          {actionError === null ? null : <p role="alert">{actionError}</p>}
+          <textarea aria-label={t('task.assessment.placeholder')} disabled={!canAssessDelivery} value={assessmentNote} onChange={(event) => { setAssessmentNote(event.currentTarget.value) }} placeholder={model.outcomeRevisionId === model.delivery?.revisionId && model.outcomeNote || t('task.assessment.placeholder')} />
           <div className={css.controlActions}>
-            <button type="button" className={css.secondaryButton} disabled={actionDisabled} onClick={() => { void submitAssessment('needs-revision') }}>{t('task.assessment.needsRevision')}</button>
-            <button type="button" className={css.primaryButton} disabled={actionDisabled} onClick={() => { void submitAssessment('adopted') }}>{t('task.assessment.adopted')}</button>
+            <button type="button" className={css.secondaryButton} disabled={actionDisabled || !canAssessDelivery} onClick={() => { void submitAssessment('needs-revision') }}>{t('task.assessment.needsRevision')}</button>
+            <button type="button" className={css.primaryButton} disabled={actionDisabled || !canAssessDelivery} onClick={() => { void submitAssessment('adopted') }}>{t('task.assessment.adopted')}</button>
           </div>
         </details>}
       </div>

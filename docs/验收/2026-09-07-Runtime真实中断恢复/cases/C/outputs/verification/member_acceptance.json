@@ -1,0 +1,105 @@
+{
+  "schema": "member-acceptance/1.0",
+  "member": "luna-digital-engineering-builder",
+  "scope": "本节点职责: 统一模型、概念图纸 (SVG×3 + OpenSCAD)、离线应用、机器验证清单; 论证包与最终总装属其他节点, 不在此声明",
+  "run_date": "2026-09-07",
+  "baseline_id": "corona-baseline-1.0.0",
+  "baseline_version": "1.0.0",
+  "content_digest": "cfb12b781363c547da87e6dec9fd937079cba25501b85ff6cbfabfbc508b10c2",
+  "reference_checks": {
+    "travel_time_yr": {
+      "actual": 141.66666666666669,
+      "expected": 141.6666667,
+      "relative_tolerance": 0.001,
+      "pass": true,
+      "source_output_file": "outputs/model/output/reference_values.json"
+    },
+    "kinetic_energy_1mt_j": {
+      "actual": 4.04439830431568e+22,
+      "expected": 4.0443983e+22,
+      "relative_tolerance": 0.01,
+      "pass": true,
+      "source_output_file": "outputs/model/output/reference_values.json"
+    },
+    "kinetic_energy_5mt_j": {
+      "actual": 2.02219915215784e+23,
+      "expected": 2.0221991e+23,
+      "relative_tolerance": 0.01,
+      "pass": true,
+      "source_output_file": "outputs/model/output/reference_values.json"
+    },
+    "artificial_gravity_m_s2": {
+      "actual": 43.864908449286034,
+      "expected": 43.8649,
+      "relative_tolerance": 0.01,
+      "pass": true,
+      "source_output_file": "outputs/model/output/reference_values.json"
+    },
+    "dust_impact_energy_j": {
+      "actual": 40443983.043156795,
+      "expected": 40443983,
+      "relative_tolerance": 0.01,
+      "pass": true,
+      "source_output_file": "outputs/model/output/reference_values.json"
+    },
+    "note": "actual 值来自实际执行 `cd outputs/model && python3 run_tests.py` (exit=0, 17/17 PASS) 生成的输出文件; 原始输出见 outputs/verification/verification_log.md 与 outputs/model/output/test_results.json"
+  },
+  "model_test_command": "cd outputs/model && python3 run_tests.py",
+  "model_test_command_note": "有界、自行结束、无网络; 依赖 python3 标准库与 ruby 标准库 (psych YAML); 退出码 0=PASS / 1=FAIL; 实测 exit=0",
+  "model_output_paths": [
+    "outputs/model/output/reference_values.json",
+    "outputs/model/output/model_results.json",
+    "outputs/model/output/route_sensitivity.json",
+    "outputs/model/output/test_results.json"
+  ],
+  "app_entry": "outputs/app/index.html",
+  "app_check_command": "cd outputs/app && node check_app.js",
+  "app_check_result": "exit=0, 13/13 PASS (含与模型输出 1e-12 容差一致性、离线性、导出结构、事实标签、图纸链接)",
+  "svg_paths": [
+    "outputs/drawings/COR-DRW-001_architecture.svg",
+    "outputs/drawings/COR-DRW-002_archive_layout.svg",
+    "outputs/drawings/COR-DRW-003_interfaces.svg"
+  ],
+  "svg_checks": {
+    "xml_parse": "xmllint --noout 三文件 exit=0",
+    "render": "rsvg-convert 2.62.1 三文件均渲染成功 (PNG 314080/223797/218112 字节, 二进制渲染图不作为交付物)",
+    "concept_marking": "三图均在图签与 XML 注释标注'概念级 (Level-0 / Pre-Phase A)'、图号/版本/单位/假设/参数追踪表/追溯键 (INSP 已执行)"
+  },
+  "openscad_path": "outputs/drawings/COR-SCAD-001_concept_model.scad",
+  "openscad_check": {
+    "status": "NOT_RUN",
+    "reason": "OpenSCAD 本机未就绪: /opt/homebrew/bin/openscad 为悬挂符号链接, 目标 /Applications/OpenSCAD.app 不存在; 命令 exit=127。按 run_input 与 RQ-DRW-004 如实记录待检查, 不伪造通过。",
+    "partial_evidence_not_a_substitute": "python 括号配对静态检查 OK (module 3 个, echo 校核 2 处); 该检查不是 OpenSCAD 解析, 不得视为替代通过。",
+    "anomaly_note": "本会话早期一次探测中 `openscad --version` 曾返回 'OpenSCAD version 2026.09.03' 且 CSG 导出 exit=0, 此后二进制消失 (疑似临时挂载的运行时覆盖层卸载)。按当前可复现状态判定为未就绪, 待平台复核。"
+  },
+  "not_run": [
+    "openscad_parse_render: OpenSCAD 未就绪 (见 openscad_check), 待检查",
+    "browser_interactive_demo: 未在真实浏览器中执行人工交互 (滑杆/导出点击); 已执行 node 等价机器检查 (check_app.js) 验证计算内核、导出结构与离线性, 不宣称覆盖人工 DEMO",
+    "requirements_verification_matrix / final_acceptance: 属验证/总装节点职责, 本节点未执行",
+    "three_speed_scenario_check: 受 DISC-001 约束, 本轮批准范围为单一 0.03c, 该硬门按字面无法通过, 须平台裁定"
+  ],
+  "known_issues": [
+    {
+      "id": "DISC-001",
+      "statement": "acceptance.json 硬门 three_speed_scenarios_present 与本轮批准的单一 0.03c 锁定冲突 (CCR-001 pending_platform_confirmation); 本节点产物按批准范围仅含 0.03c, 差异须平台裁定",
+      "fact_label": "verified_fact"
+    },
+    {
+      "id": "DISC-002",
+      "statement": "任务书 §4.3 要求应用比较三速度情景; 当前应用仅实现 0.03c 并预留三情景接口, 未实现 0.01c/0.05c",
+      "fact_label": "verified_fact"
+    },
+    {
+      "id": "DISC-003",
+      "statement": "OpenSCAD 可执行检查未就绪 (悬挂符号链接), 已记录待检查; COR-SCAD-001 源码已交付且通过非替代的静态健全性检查",
+      "fact_label": "verified_fact"
+    },
+    {
+      "id": "KI-004",
+      "statement": "app 图纸链接使用相对路径 ../drawings/, 需 outputs/drawings 与 outputs/app 同目录树交付方可解析 (本轮两者同树交付)",
+      "fact_label": "verified_fact"
+    }
+  ],
+  "truth_labels": ["verified_fact", "derived_result", "assumption", "unknown"],
+  "forbidden_claims_check": "模型输出与应用产物扫描通过 (仅纪律性引用, 无违规声明); 见 test_results.json / check_app.js 输出"
+}

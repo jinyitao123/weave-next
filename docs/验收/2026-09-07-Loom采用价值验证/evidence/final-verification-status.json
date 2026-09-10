@@ -1,0 +1,25 @@
+{
+  "checked_at": "2026-09-07T01:49:39.534108+00:00",
+  "git_head": "5cbc3eb35c3f12a1818d4f813c372e17287ed118",
+  "existing_runtime_tests": {
+    "top_level_passed": 6,
+    "additional_subtests_passed": 2,
+    "skipped": 0,
+    "real_postgres_tests": 2
+  },
+  "shared_probe_identity_tests": {
+    "failed_subcases": 4,
+    "repaired": false
+  },
+  "t1_decimal_outputs_passed": 4,
+  "real_model_fixture": {
+    "faulted": "38 tests, one expected failure",
+    "repaired": "38 passed"
+  },
+  "depguard": "passed",
+  "productguard": "passed",
+  "full_make_test": "not run; no product code changes; targeted existing recovery suite used",
+  "workbench_check": "not run; no Workbench changes",
+  "links_and_evidence_consistency": "passed",
+  "adoption_decision": "retain A; evidence insufficient; stop invalid batch"
+}

@@ -1,0 +1,227 @@
+package compiler
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"slices"
+
+	"github.com/jinyitao123/loom"
+	"github.com/jinyitao123/weave/internal/base/frozen"
+	"github.com/jinyitao123/weave/internal/kernel/engine"
+	"github.com/jinyitao123/weave/internal/kernel/registry"
+)
+
+const StandardFrozenToolsVersion = "2"
+
+func StandardFrozenToolsKey() frozen.FactoryKey {
+	return frozen.FactoryKey{FactoryID: standardFrozenFactoryID, FactoryVersion: StandardFrozenToolsVersion, CompilerABI: standardFrozenCompilerABI}
+}
+
+// NewStandardFrozenToolsDescriptor adds declared, frozen MCP contracts while
+// preserving the v1 descriptor for already-published artifacts.
+func NewStandardFrozenToolsDescriptor() GraphFactoryDescriptor {
+	descriptor := NewStandardFrozenDescriptor()
+	descriptor.FactoryVersion = StandardFrozenToolsVersion
+	descriptor.EnumerateDependencies = standardToolsEnumerator{}
+	descriptor.Compile = func(ctx context.Context, bundle frozen.FrozenExecutionBundle, _ FrozenResolver, opts FrozenBuildOpts) (*loom.Graph, frozen.CapabilityManifest, error) {
+		return compileStandardFrozenVersion(ctx, bundle, opts, StandardFrozenToolsVersion)
+	}
+	return descriptor
+}
+
+const StandardFrozenCLIToolsVersion = "3"
+
+func StandardFrozenCLIToolsKey() frozen.FactoryKey {
+	return frozen.FactoryKey{FactoryID: standardFrozenFactoryID, FactoryVersion: StandardFrozenCLIToolsVersion, CompilerABI: standardFrozenCompilerABI}
+}
+
+func NewStandardFrozenCLIToolsDescriptor() GraphFactoryDescriptor {
+	descriptor := NewStandardFrozenToolsDescriptor()
+	descriptor.FactoryVersion = StandardFrozenCLIToolsVersion
+	descriptor.EnumerateDependencies = standardToolsEnumerator{cli: true}
+	descriptor.Compile = func(ctx context.Context, bundle frozen.FrozenExecutionBundle, _ FrozenResolver, opts FrozenBuildOpts) (*loom.Graph, frozen.CapabilityManifest, error) {
+		return compileStandardFrozenVersion(ctx, bundle, opts, StandardFrozenCLIToolsVersion)
+	}
+	return descriptor
+}
+
+type standardToolsEnumerator struct{ cli bool }
+
+func (e standardToolsEnumerator) version() int {
+	if e.cli {
+		return 3
+	}
+	return 2
+}
+
+func (e standardToolsEnumerator) validEngine(name string) bool {
+	if e.cli {
+		return engine.IsCLIEngine(name)
+	}
+	return name == "loom"
+}
+
+func (e standardToolsEnumerator) decode(raw []byte) (frozen.StandardFactoryInputV2, error) {
+	if e.cli {
+		return frozen.DecodeStandardFactoryInputV3(raw)
+	}
+	return frozen.DecodeStandardFactoryInputV2(raw)
+}
+
+func (e standardToolsEnumerator) FreezeSchema() FreezeSchema {
+	return FreezeSchema{SchemaID: fmt.Sprintf("weave-standard-factory-input/%d", e.version()), SchemaVersion: e.version()}
+}
+
+func (e standardToolsEnumerator) EncodeFactoryInput(ctx context.Context, record registry.AgentRecord, encoder CredentialRefEncoder) (json.RawMessage, error) {
+	if _, err := (standardFrozenEnumerator{}).EncodeFactoryInput(ctx, record, encoder); err != nil {
+		return nil, err
+	}
+	if !e.validEngine(record.Engine) && !(record.Engine == "" && !e.cli) {
+		return nil, normalizeCompilerError(CodeDependencyUnenumerable, fmt.Errorf("standard v%d member engine is unsupported", e.version()))
+	}
+	input := frozen.StandardFactoryInputV2{SchemaVersion: e.version(), MCPServers: []frozen.StandardMCPDeclaration{}}
+	for _, server := range record.MCPServers {
+		if server.ServerID == "" || server.URL != "" || len(server.Headers) != 0 {
+			return nil, normalizeCompilerError(CodeDependencyUnenumerable, fmt.Errorf("member %q requires a managed MCP server reference", record.Name))
+		}
+		input.MCPServers = append(input.MCPServers, frozen.StandardMCPDeclaration{
+			ServerID: server.ServerID, Filter: slices.Clone(server.Filter), WriteTools: slices.Clone(server.WriteTools),
+		})
+	}
+	raw, err := json.Marshal(input)
+	if err != nil {
+		return nil, err
+	}
+	normalized, err := e.decode(raw)
+	if err != nil {
+		return nil, normalizeCompilerError(CodeDependencyUnenumerable, err)
+	}
+	return json.Marshal(normalized)
+}
+
+func (e standardToolsEnumerator) EnumerateDependencies(ctx context.Context, agent frozen.FrozenAgentRecord, metadata MetadataResolver) (frozen.EnumeratedDependencyManifest, error) {
+	input, err := e.decode(agent.FactoryInput)
+	if err != nil || !e.validEngine(agent.Engine) {
+		return frozen.EnumeratedDependencyManifest{}, normalizeCompilerError(CodeDependencyUnenumerable, err)
+	}
+	common := agent
+	common.FactoryInput = json.RawMessage(`{}`)
+	manifest, err := (standardFrozenEnumerator{}).EnumerateDependencies(ctx, common, metadata)
+	if err != nil {
+		return frozen.EnumeratedDependencyManifest{}, err
+	}
+	for _, server := range input.MCPServers {
+		ownerVersion := agent.AgentVersion
+		resolved, err := metadata.ResolveMetadata(ctx, frozen.EnumeratedDependencyRef{
+			WorkspaceID: agent.WorkspaceID, OwnerType: "agent", OwnerID: agent.AgentID, OwnerAgentVersion: &ownerVersion,
+			DependencyType: "mcp_binding", DependencyKey: server.ServerID,
+		})
+		if err != nil {
+			return frozen.EnumeratedDependencyManifest{}, err
+		}
+		if resolved.Ref.DependencyVersion == nil {
+			return frozen.EnumeratedDependencyManifest{}, ErrFrozenManifestMismatch
+		}
+		manifest.Dependencies = append(manifest.Dependencies, resolved.Ref)
+	}
+	return manifest, nil
+}
+
+// SelectAgentFactoryKey is the explicit publication/admission policy. Generic
+// SelectFactoryKey retains its ambiguity check and old artifacts use Lookup.
+func (r *DescriptorRegistry) SelectAgentFactoryKey(record registry.AgentRecord) (frozen.FactoryKey, error) {
+	if err := validateControlledMemberRecord(record); err != nil {
+		return frozen.FactoryKey{}, err
+	}
+	graphType := record.GraphType
+	if graphType == "" {
+		graphType = record.Spec.GraphType
+	}
+	if graphType != "" && graphType != "standard" {
+		return r.SelectFactoryKey(graphType)
+	}
+	if len(record.MCPServers) > 0 || record.ToolLoopControl != nil {
+		key := StandardFrozenToolsKey()
+		if engine.IsCLIEngine(record.Engine) {
+			key = StandardFrozenCLIToolsKey()
+		}
+		if _, err := r.Lookup(key); err != nil {
+			return frozen.FactoryKey{}, err
+		}
+		return key, nil
+	}
+	key := frozen.FactoryKey{FactoryID: standardFrozenFactoryID, FactoryVersion: standardFrozenFactoryVersion, CompilerABI: standardFrozenCompilerABI}
+	if _, err := r.Lookup(key); err != nil {
+		return frozen.FactoryKey{}, err
+	}
+	return key, nil
+}
+
+// ValidateStandardMCPBindings checks the frozen declaration, actual resolved
+// bindings and tool catalog together, before compilation or host construction.
+func ValidateStandardMCPBindings(bundle frozen.FrozenExecutionBundle) error {
+	if bundle.FactoryKey != StandardFrozenToolsKey() && bundle.FactoryKey != StandardFrozenCLIToolsKey() {
+		return nil
+	}
+	e := standardToolsEnumerator{cli: bundle.FactoryKey == StandardFrozenCLIToolsKey()}
+	input, err := e.decode(bundle.Agent.FactoryInput)
+	if err != nil {
+		return normalizeCompilerError(CodeFactoryCompileFailed, err)
+	}
+	if !e.validEngine(bundle.Agent.Engine) || len(input.MCPServers) != len(bundle.MCPBindings) {
+		return standardFrozenCompileError("standard MCP bindings do not match the member declaration")
+	}
+	bindings := make(map[string]frozen.FrozenMCPBinding, len(bundle.MCPBindings))
+	for _, binding := range bundle.MCPBindings {
+		if _, found := bindings[binding.ServerID]; found {
+			return standardFrozenCompileError("standard MCP binding is repeated")
+		}
+		bindings[binding.ServerID] = binding
+	}
+	owners := map[string]string{}
+	for _, server := range input.MCPServers {
+		binding, ok := bindings[server.ServerID]
+		if !ok || binding.WorkspaceID != bundle.Agent.WorkspaceID || binding.Transport != "http" || len(binding.Tools) == 0 {
+			return standardFrozenCompileError(fmt.Sprintf("member %q MCP server %q lacks a supported, probed tool contract", bundle.Agent.Name, server.ServerID))
+		}
+		if !slices.Equal(server.Filter, binding.Filter) || !slices.Equal(server.WriteTools, binding.WriteTools) {
+			return standardFrozenCompileError(fmt.Sprintf("member %q MCP server %q policy differs from its declaration", bundle.Agent.Name, server.ServerID))
+		}
+		if _, err := frozen.NormalizeToolDefinitions(binding.Tools); err != nil {
+			return standardFrozenCompileError(fmt.Sprintf("member %q MCP server %q tool contract is invalid", bundle.Agent.Name, server.ServerID))
+		}
+		for _, tool := range binding.Tools {
+			if len(server.Filter) > 0 && !slices.Contains(server.Filter, tool.Name) {
+				return standardFrozenCompileError(fmt.Sprintf("member %q tool %q is outside MCP server %q filter", bundle.Agent.Name, tool.Name, server.ServerID))
+			}
+			if previous, exists := owners[tool.Name]; exists {
+				return standardFrozenCompileError(fmt.Sprintf("member %q tool %q conflicts between MCP servers %q and %q", bundle.Agent.Name, tool.Name, previous, server.ServerID))
+			}
+			owners[tool.Name] = server.ServerID
+		}
+		for _, name := range server.Filter {
+			if owners[name] != server.ServerID {
+				return standardFrozenCompileError(fmt.Sprintf("member %q required tool %q is missing from MCP server %q", bundle.Agent.Name, name, server.ServerID))
+			}
+		}
+	}
+	return nil
+}
+
+func validateControlledMemberRecord(record registry.AgentRecord) error {
+	if record.ToolLoopControl == nil {
+		return nil
+	}
+	if err := frozen.ValidateToolLoopControl(record.ToolLoopControl); err != nil {
+		return err
+	}
+	graphType := record.GraphType
+	if graphType == "" {
+		graphType = record.Spec.GraphType
+	}
+	if (record.Engine != "" && record.Engine != "loom") || (graphType != "" && graphType != "standard") || len(record.SubAgents) > 0 || len(record.Spec.SubAgents) > 0 || len(record.Permissions.Ask) > 0 {
+		return normalizeCompilerError(CodeDependencyUnenumerable, fmt.Errorf("controlled tool loops require standard Loom serial leaves without interactive permissions"))
+	}
+	return nil
+}

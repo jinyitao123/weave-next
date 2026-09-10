@@ -1,0 +1,18 @@
+{
+  "started_at": "2026-09-07T06:39:00.151855+00:00",
+  "finished_at": "2026-09-07T06:39:02.937239+00:00",
+  "exit_code": 0,
+  "TEST_DATABASE_URL_set": true,
+  "command": [
+    "go",
+    "test",
+    "./internal/base/frozen",
+    "./internal/kernel/compiler",
+    "./internal/kernel/freezer",
+    "./internal/kernel/mcpregistry",
+    "./internal/kernel/workflow",
+    "./internal/build/teameval",
+    "-count=1",
+    "-timeout=10m"
+  ]
+}

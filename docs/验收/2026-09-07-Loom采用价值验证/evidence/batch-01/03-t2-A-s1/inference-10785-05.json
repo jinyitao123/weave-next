@@ -1,0 +1,22 @@
+{
+  "error": "",
+  "native_tool_attempt": false,
+  "output": "{\"content\":\"验收脚本返回退出码 127（命令未找到），说明尽管三个修复均已应用，验收链路仍有未消除的问题，此时不能宣称成功。我将调用 verify_manifest 对三个修复与验收状态做权威核对并生成机器回执，根据其返回的真实结果判断是哪一个环节仍失败，再决定后续动作。\",\"tool_calls\":[{\"name\":\"verify_manifest\",\"args_json\":\"{}\"}]}",
+  "reported_models": [
+    "k3[1m]",
+    "k3",
+    "kimi-for-coding-highspeed"
+  ],
+  "status": "completed",
+  "usage": {
+    "input_tokens": 25464,
+    "output_tokens": 403,
+    "cost_usd": 0.055823,
+    "has_tokens": true,
+    "has_cost": true,
+    "source": "cli-reported",
+    "scope": "invocation",
+    "engine_version": "2.1.245",
+    "raw_summary": "{\"is_error\":false,\"duration_api_ms\":16802,\"num_turns\":1,\"stop_reason\":\"end_turn\",\"session_id\":\"10009d1c-f0fc-46d3-a3bd-ae60bb88c83e\",\"total_cost_usd\":0.055823,\"usage\":{\"input_tokens\":1656,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":23808,\"output_tokens\":403,\"output_tokens_details\":{\"thinking_tokens\":303},\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":0,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"not_available\",\"iterations\":[],\"speed\":\"standard\"},\"modelUsage\":{\"kimi-for-coding-highspeed\":{\"inputTokens\":733,\"outputTokens\":835,\"cacheReadInputTokens\":2048,\"cacheCreationInputTokens\":0,\"webSearchRequests\":0,\"costUSD\":0.025564000000000003,\"contextWindow\":262144,\"maxOutputTokens\":32000,\"canonicalModel\":\"kimi-for-coding-highspeed\",\"provider\":\"firstParty\"},\"k3[1m]\":{\"inputTokens\":1656,\"outputTokens\":403,\"cacheReadInputTokens\":23808,\"cacheCreationInputTokens\":0,\"webSearchRequests\":0,\"costUSD\":0.030258999999999994,\"contextWindow\":1000000,\"maxOutputTokens\":32000,\"canonicalModel\":\"k3[1m]\",\"provider\":\"firstParty\"}},\"permission_denials\":[],\"terminal_reason\":\"completed\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"subagent_stats\":{\"spawned\":0,\"requested\":{\"background\":0,\"foreground\":0,\"unset\":0},\"started_in_background\":0,\"max_depth\":0,\"spawned_by_subagents\":0,\"completed\":0,\"failed\":0,\"killed\":{\"parent\":0,\"user\":0,\"system\":0},\"refused\":{\"depth_limit\":0,\"concurrency_limit\":0,\"budget\":0},\"by_type\":{}},\"subtype\":\"success\",\"api_error_status\":null,\"result\":\"{\\\"content\\\":\\\"验收脚本返回退出码 127（命令未找到），说明尽管三个修复均已应用，验收链路仍有未消除的问题，此时不能宣称成功。我将调用 verify_manifest 对三个修复与验收状态做权威核对并生成机器回执，根据其返回的真实结果判断是哪一个环节仍失败，再决定后续动作。\\\",\\\"tool_calls\\\":[{\\\"name\\\":\\\"verify_manifest\\\",\\\"args_json\\\":\\\"{}\\\"}]}\",\"ttft_ms\":10951,\"ttft_stream_ms\":2878,\"time_to_request_ms\":45,\"type\":\"result\",\"duration_ms\":12042,\"uuid\":\"de43bf1f-e516-4a65-9885-1add9edd4a0d\",\"queued_turn_count\":0}"
+  }
+}

@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/kernel/secret"
 )
 
@@ -406,9 +407,16 @@ func (s *Store) RecordProbeSuccess(
 		return ProbeResult{}, err
 	}
 
+	definitions := make([]frozen.FrozenToolDefinition, 0, len(tools))
+	for _, tool := range tools {
+		definitions = append(definitions, frozen.FrozenToolDefinition{Name: tool.Name, InputSchema: tool.InputSchema})
+	}
+	if _, err := frozen.NormalizeToolDefinitions(definitions); err != nil {
+		return ProbeResult{}, errors.New("invalid MCP tool schema catalog")
+	}
 	discoveredAt := time.Now().UTC().Truncate(time.Microsecond)
 	for _, tool := range tools {
-		inputSchema := normalizeCatalogJSON(tool.InputSchema)
+		inputSchema := tool.InputSchema
 		annotations := normalizeCatalogJSON(tool.Annotations)
 		if _, err := tx.Exec(ctx, `
 			INSERT INTO weave_mcp_tools (

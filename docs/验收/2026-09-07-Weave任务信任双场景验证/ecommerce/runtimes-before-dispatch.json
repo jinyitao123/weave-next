@@ -1,0 +1,114 @@
+{
+  "runtimes": [
+    {
+      "id": "16b2e0c8-d8a9-494e-a1dc-61f397aceabf",
+      "name": "corona-validation-b",
+      "engines": [
+        "claude",
+        "codex",
+        "opencode"
+      ],
+      "engine_capabilities": {
+        "claude": {
+          "engine": "claude",
+          "binary_path": "/Users/jinyitao/.local/bin/claude",
+          "binary_version": "2.1.245 (Claude Code)",
+          "auth_mode": "oauth",
+          "protocol_version": "claude-stream-json-v1",
+          "public_events": true,
+          "endpoint_class": "host_configured",
+          "configured_endpoint": "https://api.kimi.com",
+          "configured_model": "k3[1M]",
+          "configuration_source": "host_settings"
+        },
+        "codex": {
+          "engine": "codex",
+          "binary_path": "/opt/homebrew/bin/codex",
+          "binary_version": "codex-cli 0.144.5",
+          "auth_mode": "provider",
+          "protocol_version": "codex-jsonl-v1",
+          "public_events": true,
+          "endpoint_class": "configured_provider",
+          "configured_endpoint": "https://oneapi.inocube.net",
+          "configuration_source": "runtime_environment"
+        },
+        "opencode": {
+          "engine": "opencode",
+          "binary_path": "/Users/jinyitao/.local/bin/opencode",
+          "binary_version": "1.2.10",
+          "auth_mode": "provider",
+          "protocol_version": "opencode-json-v1",
+          "endpoint_class": "configured_provider",
+          "configured_endpoint": "https://oneapi.inocube.net",
+          "configuration_source": "runtime_environment"
+        }
+      },
+      "functional_revision": 4,
+      "health_status": "healthy",
+      "total_slots": 1,
+      "active_slots": 0,
+      "consecutive_infra_failures": 0,
+      "enabled": true,
+      "revoked_at": null,
+      "deleted_at": null,
+      "online": true,
+      "last_heartbeat_at": "2026-09-08T08:26:32.257534+08:00",
+      "created_at": "2026-09-06T11:25:38.598391+08:00"
+    },
+    {
+      "id": "fec94563-0d22-4c21-8036-861900652850",
+      "name": "corona-validation-a",
+      "engines": [
+        "claude",
+        "codex",
+        "opencode"
+      ],
+      "engine_capabilities": {
+        "claude": {
+          "engine": "claude",
+          "binary_path": "/Users/jinyitao/.local/bin/claude",
+          "binary_version": "2.1.245 (Claude Code)",
+          "auth_mode": "oauth",
+          "protocol_version": "claude-stream-json-v1",
+          "public_events": true,
+          "endpoint_class": "host_configured",
+          "configured_endpoint": "https://api.kimi.com",
+          "configured_model": "k3[1M]",
+          "configuration_source": "host_settings"
+        },
+        "codex": {
+          "engine": "codex",
+          "binary_path": "/opt/homebrew/bin/codex",
+          "binary_version": "codex-cli 0.144.5",
+          "auth_mode": "provider",
+          "protocol_version": "codex-jsonl-v1",
+          "public_events": true,
+          "endpoint_class": "configured_provider",
+          "configured_endpoint": "https://oneapi.inocube.net",
+          "configuration_source": "runtime_environment"
+        },
+        "opencode": {
+          "engine": "opencode",
+          "binary_path": "/Users/jinyitao/.local/bin/opencode",
+          "binary_version": "1.2.10",
+          "auth_mode": "provider",
+          "protocol_version": "opencode-json-v1",
+          "endpoint_class": "configured_provider",
+          "configured_endpoint": "https://oneapi.inocube.net",
+          "configuration_source": "runtime_environment"
+        }
+      },
+      "functional_revision": 4,
+      "health_status": "healthy",
+      "total_slots": 1,
+      "active_slots": 0,
+      "consecutive_infra_failures": 0,
+      "enabled": true,
+      "revoked_at": null,
+      "deleted_at": null,
+      "online": true,
+      "last_heartbeat_at": "2026-09-08T08:26:32.257344+08:00",
+      "created_at": "2026-09-06T11:25:38.5804+08:00"
+    }
+  ]
+}

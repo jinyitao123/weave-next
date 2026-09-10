@@ -13,10 +13,10 @@ import (
 	"sync"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/kernel/compiler"
 	"github.com/jinyitao123/weave/internal/kernel/credentials"
 	"github.com/jinyitao123/weave/internal/kernel/delivery"
-	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/kernel/mcpregistry"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 	"github.com/jinyitao123/weave/internal/kernel/runtimes"
@@ -161,6 +161,7 @@ type Resolver struct {
 	workspaceID           string
 	sources               Sources
 	allowRuntimeDiscovery bool
+	allowMCPDiscovery     bool
 	cache                 map[dependencyCacheKey]ResolvedDependency
 	agentPins             map[dependencyCacheKey]agentCachePin
 	owners                map[agentVersionKey]registry.AgentRecord
@@ -192,6 +193,7 @@ func BeginFreeze(
 		workspaceID:           workspaceID,
 		sources:               sources,
 		allowRuntimeDiscovery: true,
+		allowMCPDiscovery:     true,
 		cache:                 make(map[dependencyCacheKey]ResolvedDependency),
 		agentPins:             make(map[dependencyCacheKey]agentCachePin),
 		owners:                make(map[agentVersionKey]registry.AgentRecord),
@@ -551,24 +553,29 @@ func (r *Resolver) resolveMCPLocked(ctx context.Context, ref frozen.EnumeratedDe
 	if declaration == nil || declaration.ServerID == "" || declaration.URL != "" || len(declaration.Headers) != 0 {
 		return ResolvedDependency{}, newError(CodeDependencyUnenumerable, nil)
 	}
-	binding, resolveErr := mcpregistry.ResolveMCPRevisionTx(
-		ctx, r.tx, r.workspaceID, ref.DependencyKey, ref.DependencyVersion,
-		mcpregistry.MCPAgentPolicy{
-			Filter:     append([]string(nil), declaration.Filter...),
-			WriteTools: append([]string(nil), declaration.WriteTools...),
-		},
-	)
+	policy := mcpregistry.MCPAgentPolicy{Filter: append([]string(nil), declaration.Filter...), WriteTools: append([]string(nil), declaration.WriteTools...)}
+	var binding frozen.FrozenMCPBinding
+	var resolveErr error
+	if ref.DependencyVersion == nil {
+		binding, resolveErr = mcpregistry.ResolveCurrentMCPToolsTx(ctx, r.tx, r.workspaceID, ref.DependencyKey, policy)
+	} else {
+		binding, resolveErr = mcpregistry.ResolveMCPRevisionTx(ctx, r.tx, r.workspaceID, ref.DependencyKey, ref.DependencyVersion, policy)
+	}
 	if resolveErr != nil {
 		return ResolvedDependency{}, classifySourceError(resolveErr, CodeDependencyVersionRequired, "resolve MCP revision")
 	}
-	if binding.WorkspaceID != r.workspaceID || binding.ServerID != ref.DependencyKey || binding.ServerRevision != *ref.DependencyVersion {
+	if binding.WorkspaceID != r.workspaceID || binding.ServerID != ref.DependencyKey ||
+		(ref.DependencyVersion != nil && binding.ServerRevision != *ref.DependencyVersion) {
 		return ResolvedDependency{}, newError(CodeFrozenManifestMismatch, nil)
 	}
+	resolvedRef := cloneRef(ref)
+	resolvedRef.DependencyVersion = int64Pointer(binding.ServerRevision)
 	resolved := ResolvedDependency{
-		Metadata:   metadataFor(ref, binding.ServerRevision, binding.ContentHash),
+		Metadata:   metadataFor(resolvedRef, binding.ServerRevision, binding.ContentHash),
 		MCPBinding: &binding,
 	}
 	r.storeLocked(ref, resolved)
+	r.storeLocked(resolvedRef, resolved)
 	return cloneResolved(resolved), nil
 }
 
@@ -717,8 +724,12 @@ func (r *Resolver) validateRef(ctx context.Context, ref frozen.EnumeratedDepende
 		return newError(CodeDependencyVersionRequired, nil)
 	}
 	switch ref.DependencyType {
-	case "agent", "mcp_binding", "delivery_target":
+	case "agent", "delivery_target":
 		if ref.DependencyVersion == nil {
+			return newError(CodeDependencyVersionRequired, nil)
+		}
+	case "mcp_binding":
+		if ref.DependencyVersion == nil && !r.allowMCPDiscovery {
 			return newError(CodeDependencyVersionRequired, nil)
 		}
 	case "skill":
@@ -821,6 +832,7 @@ func freezeAgent(record registry.AgentRecord, key frozen.FactoryKey, input json.
 			MaxTokens:       record.MaxTokens,
 			MaxOutputTokens: int64(record.MaxOutputTokens),
 			StepBudget:      record.StepBudget,
+			ToolLoopControl: record.ToolLoopControl,
 			MaxToolRepeats:  int64(record.MaxToolRepeats),
 		},
 		Fallback: frozen.FrozenFallback{

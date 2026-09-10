@@ -1,0 +1,7 @@
+{
+  "root": "/private/tmp/weave-runtime-value-20260907-sqtugx3m",
+  "inputs": "/Users/jinyitao/Developer/weave-next/docs/验收/2026-09-07-Runtime真实中断恢复/inputs",
+  "database_url": "postgres://jinyitao@127.0.0.1:5432/weave_runtime_value_95ff06d7?sslmode=disable",
+  "port": "56586",
+  "runtime_id": "488f724c-3a47-4816-823d-63dbbf4eecb7"
+}

@@ -1,0 +1,100 @@
+{
+  "checked_at": "2026-09-08T01:38:32.350355+00:00",
+  "execution": "TERMINAL_8_RUNS",
+  "business_delivery": "FAIL",
+  "user_acceptance": "NOT_REQUESTED",
+  "checks": [
+    {
+      "id": "model_unittest",
+      "status": "PASS",
+      "evidence": "history/model-tests-independent-20260908.json",
+      "scope": "22 generated tests; independently rerun, not independent proof of the full professional model"
+    },
+    {
+      "id": "travel_years_at_0_03c",
+      "actual": 141.66666666666666,
+      "expected": 141.6666667,
+      "relative_tolerance": 0.001,
+      "relative_error": 2.352942373719337e-10,
+      "status": "PASS"
+    },
+    {
+      "id": "kinetic_energy_1mt_at_0_03c_j",
+      "actual": 4.04439830431568e+22,
+      "expected": 4.0443983e+22,
+      "relative_tolerance": 0.01,
+      "relative_error": 1.0670758139752951e-09,
+      "status": "PASS"
+    },
+    {
+      "id": "kinetic_energy_5mt_at_0_03c_j",
+      "actual": 2.02219915215784e+23,
+      "expected": 2.0221991e+23,
+      "relative_tolerance": 0.01,
+      "relative_error": 2.579263333097929e-08,
+      "status": "PASS"
+    },
+    {
+      "id": "gravity_1km_2rpm_m_s2",
+      "actual": 43.864908449286034,
+      "expected": 43.8649,
+      "relative_tolerance": 0.01,
+      "relative_error": 1.9262066105867122e-07,
+      "status": "PASS"
+    },
+    {
+      "id": "dust_1mg_0_03c_j",
+      "actual": 40443983.043156795,
+      "expected": 40443983,
+      "relative_tolerance": 0.01,
+      "relative_error": 1.0670757923047728e-09,
+      "status": "PASS"
+    },
+    {
+      "id": "three_svg_drawings",
+      "status": "FAIL_MISSING"
+    },
+    {
+      "id": "openscad_source",
+      "status": "FAIL_MISSING"
+    },
+    {
+      "id": "openscad_render",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "offline_app_start_export",
+      "status": "FAIL_MISSING"
+    },
+    {
+      "id": "review_records",
+      "status": "FAIL_MISSING"
+    },
+    {
+      "id": "cross_artifact_consistency",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "final_acceptance_document",
+      "status": "FAIL_MISSING"
+    },
+    {
+      "id": "no_open_severity_one",
+      "status": "NOT_VERIFIED"
+    },
+    {
+      "id": "three_speed_scenarios_present",
+      "status": "CONTRACT_CONFLICT",
+      "detail": "Original acceptance gate requires three speeds while frozen authorized baseline permits only 0.03c; retained as unresolved, no silent gate deletion."
+    }
+  ],
+  "model_sha256": "cfd581f2f451a570775fba212e2fbcf339a575b1c2790ae5efdcff0d7a2ceec3",
+  "budget_stop_evidence": "history/last-run-budget-exhaustion.json",
+  "recovery": "recovery-verification.json",
+  "ui_reinspection": {
+    "url": "http://127.0.0.1:60868/",
+    "status": "BLOCKED_BY_BROWSER_CLIENT",
+    "time": "2026-09-08T01:38:32.350355+00:00"
+  },
+  "full_acceptance": false
+}

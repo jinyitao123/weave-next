@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "observed_at": "2026-09-08T01:25:45.394299+00:00",
+  "scenario": "same conversation new independent task",
+  "browser_session_id": "session-7c20621c-735c-4024-9f98-b8ad9df3b033",
+  "fixture_run_id": "trust-stage2-invoice-hold-20260908-remote002",
+  "submitted_at": "2026-09-08T09:04:00+08:00",
+  "assistant_final_at": "2026-09-08T09:18:00+08:00",
+  "frontend_model": "gpt-5.6-sol",
+  "first_token_ms_reported": 648000,
+  "retry_observed": "pi-ai stream idle timeout after 300000ms; retried once",
+  "runs": [
+    {
+      "run_id": "run-65e19805-25cf-5251-8b65-eaa15d823870",
+      "client_request_id": "63875390-e8c2-42dd-b9fd-331f3d52509b",
+      "input_case": "VBR-52",
+      "input_status": "WRONG_PREVIOUS_TASK",
+      "status": "cancelled"
+    },
+    {
+      "run_id": "run-3f76315e-4014-57f8-a2f0-a3649c5a1c1a",
+      "client_request_id": "bc0f4548-c606-4939-a07a-f6e15f84a308",
+      "input_case": "VBR-52 with invoice dispatch framing",
+      "input_status": "WRONG_PREVIOUS_TASK_WITH_MIXED_FRAMING",
+      "status": "cancelled"
+    },
+    {
+      "run_id": "run-c46e438e-e635-598b-bd4d-db27cfd56743",
+      "client_request_id": "a5f29b75-260b-4a50-a4f2-68cd4fae896e",
+      "input_case": "INV-440",
+      "input_status": "CORRECT_BODY_WITHOUT_TRAILING_NEWLINE",
+      "status": "cancelled_by_supervising_agent_after_integrity_incident"
+    }
+  ],
+  "trust_verdict": "FAIL_CROSS_TASK_INPUT",
+  "backend_confirmed_all_cancelled": true,
+  "partial_business_mutations_confirmed": true,
+  "write_attribution": "UNVERIFIABLE_FROM_CURRENT_MEMBER_ACTIVITY",
+  "inference": "Frontend tool arguments themselves contain the previous task. This is an observed model selection error accepted by the dispatch path, not proof of backend input substitution.",
+  "next_experiment": "A fresh conversation with the same unchanged published team and a fresh invoice fixture isolates prior-conversation interference; success would not establish a deterministic input-binding fix."
+}

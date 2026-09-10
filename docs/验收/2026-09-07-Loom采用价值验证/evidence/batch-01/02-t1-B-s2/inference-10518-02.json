@@ -1,0 +1,22 @@
+{
+  "error": "",
+  "native_tool_attempt": false,
+  "output": "{\"content\":\"已收到 read_baseline 真实回执：基线 corona-prephase-a-v1，质量 1e9 kg，距离 4.25 ly，光速 299792458 m/s，三档速度 0.01c/0.03c/0.05c，SHA-256 已记录。下一步按协议顺序调用 calculate_scenarios，依据该冻结输入计算并持久化三个场景；待其回执返回后再执行 verify_results 独立验证，在验证通过前不会声称成功。\",\"tool_calls\":[{\"name\":\"calculate_scenarios\",\"args_json\":\"{}\"}]}",
+  "reported_models": [
+    "k3[1m]",
+    "k3",
+    "kimi-for-coding-highspeed"
+  ],
+  "status": "completed",
+  "usage": {
+    "input_tokens": 24591,
+    "output_tokens": 176,
+    "cost_usd": 0.057671,
+    "has_tokens": true,
+    "has_cost": true,
+    "source": "cli-reported",
+    "scope": "invocation",
+    "engine_version": "2.1.245",
+    "raw_summary": "{\"is_error\":false,\"duration_api_ms\":13489,\"num_turns\":1,\"stop_reason\":\"end_turn\",\"session_id\":\"86525341-0375-40ab-8ded-24829c5ceb02\",\"total_cost_usd\":0.057671,\"usage\":{\"input_tokens\":2063,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":22528,\"output_tokens\":176,\"output_tokens_details\":{\"thinking_tokens\":33},\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":0,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"not_available\",\"iterations\":[],\"speed\":\"standard\"},\"modelUsage\":{\"kimi-for-coding-highspeed\":{\"inputTokens\":516,\"outputTokens\":1144,\"cacheReadInputTokens\":1024,\"cacheCreationInputTokens\":0,\"webSearchRequests\":0,\"costUSD\":0.031692,\"contextWindow\":262144,\"maxOutputTokens\":32000,\"canonicalModel\":\"kimi-for-coding-highspeed\",\"provider\":\"firstParty\"},\"k3[1m]\":{\"inputTokens\":2063,\"outputTokens\":176,\"cacheReadInputTokens\":22528,\"cacheCreationInputTokens\":0,\"webSearchRequests\":0,\"costUSD\":0.025979000000000002,\"contextWindow\":1000000,\"maxOutputTokens\":32000,\"canonicalModel\":\"k3[1m]\",\"provider\":\"firstParty\"}},\"permission_denials\":[],\"terminal_reason\":\"completed\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"subagent_stats\":{\"spawned\":0,\"requested\":{\"background\":0,\"foreground\":0,\"unset\":0},\"started_in_background\":0,\"max_depth\":0,\"spawned_by_subagents\":0,\"completed\":0,\"failed\":0,\"killed\":{\"parent\":0,\"user\":0,\"system\":0},\"refused\":{\"depth_limit\":0,\"concurrency_limit\":0,\"budget\":0},\"by_type\":{}},\"subtype\":\"success\",\"api_error_status\":null,\"result\":\"{\\\"content\\\":\\\"已收到 read_baseline 真实回执：基线 corona-prephase-a-v1，质量 1e9 kg，距离 4.25 ly，光速 299792458 m/s，三档速度 0.01c/0.03c/0.05c，SHA-256 已记录。下一步按协议顺序调用 calculate_scenarios，依据该冻结输入计算并持久化三个场景；待其回执返回后再执行 verify_results 独立验证，在验证通过前不会声称成功。\\\",\\\"tool_calls\\\":[{\\\"name\\\":\\\"calculate_scenarios\\\",\\\"args_json\\\":\\\"{}\\\"}]}\",\"ttft_ms\":7430,\"ttft_stream_ms\":3967,\"time_to_request_ms\":46,\"type\":\"result\",\"duration_ms\":7486,\"uuid\":\"68fa4268-cd29-46ab-bfcf-8e783e346887\",\"queued_turn_count\":0}"
+  }
+}

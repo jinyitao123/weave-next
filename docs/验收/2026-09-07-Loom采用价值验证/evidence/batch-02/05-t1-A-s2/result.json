@@ -1,0 +1,16 @@
+{
+  "candidate": "A",
+  "completed_at": "2026-09-07T01:32:42.301837Z",
+  "done": true,
+  "final": "{\"baseline_id\":\"corona-prephase-a-v1\",\"动能_J\":{\"0.01c\":4.493775893684088e+21,\"0.03c\":4.044398304315679e+22,\"0.05c\":1.1234439734210221e+23},\"巡航时间_年\":{\"0.01c\":425,\"0.03c\":141.66666666666669,\"0.05c\":85},\"验证\":\"PASS\"}",
+  "independent_correct": true,
+  "input_tokens": 98423,
+  "llm_calls": 4,
+  "loom_history_count": 0,
+  "loom_run_id": "",
+  "output_tokens": 614,
+  "scenario": "s2",
+  "task": "t1",
+  "tool_results": 3,
+  "validation": "T1 independent verification passed"
+}

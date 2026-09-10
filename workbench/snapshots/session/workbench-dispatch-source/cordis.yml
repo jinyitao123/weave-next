@@ -1,0 +1,8 @@
+# Real Host prompt admission and Workbench dispatch over the shipped headless profile.
+- insert:
+    - id: workspace-registry
+      name: '@deepseek-ai/dsh-workspace'
+    - id: api-session-controller
+      name: '@deepseek-ai/dsh-api-session-controller'
+    - id: workbench-dispatch-source-fixture
+      name: '../../../packages/bundle/workbench-app/tests/fixtures/dispatch-input/headless-plugin.ts'

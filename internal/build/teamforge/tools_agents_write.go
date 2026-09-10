@@ -16,8 +16,9 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jinyitao123/loom/contract"
 	"github.com/jinyitao123/loom/stdlib"
-	"github.com/jinyitao123/weave/internal/kernel/registry"
+	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/build/teambuild"
+	"github.com/jinyitao123/weave/internal/kernel/registry"
 )
 
 const (
@@ -53,6 +54,7 @@ var agentAssemblyWhitelist = map[string]bool{
 	"max_tokens":        true,
 	"max_output_tokens": true,
 	"step_budget":       true,
+	"tool_loop_control": true,
 	"max_tool_repeats":  true,
 	"fallback_models":   true,
 	"fallback_retries":  true,
@@ -78,8 +80,9 @@ var writeForbiddenHints = map[string]string{
 // the pointer configs use pointers so "absent" and "null" stay distinct for
 // the merge semantics.
 type agentWriteArgs struct {
-	BuildRunID string `json:"build_run_id"`
-	Name       string `json:"name"`
+	ToolLoopControl *frozen.ToolLoopControl `json:"tool_loop_control"`
+	BuildRunID      string                  `json:"build_run_id"`
+	Name            string                  `json:"name"`
 
 	DisplayName  string                         `json:"display_name"`
 	Role         string                         `json:"role"`
@@ -198,6 +201,7 @@ func buildAgentRecord(args *agentWriteArgs) *registry.AgentRecord {
 		MaxOutputTokens: args.MaxOutputTokens,
 		StepBudget:      args.StepBudget,
 		MaxToolRepeats:  args.MaxToolRepeats,
+		ToolLoopControl: args.ToolLoopControl,
 		FallbackModels:  args.FallbackModels,
 		FallbackRetries: args.FallbackRetries,
 		Spec: stdlib.AgentSpec{
@@ -284,6 +288,9 @@ func mergeAgentAssembly(
 	}
 	if presence["step_budget"] {
 		merged.StepBudget = args.StepBudget
+	}
+	if presence["tool_loop_control"] {
+		merged.ToolLoopControl = args.ToolLoopControl
 	}
 	if presence["max_tool_repeats"] {
 		merged.MaxToolRepeats = args.MaxToolRepeats

@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "source_commit": "406c8c73b2d5f129df7934677b6cc572d3b45b02",
+  "binary_sha256": "f222a451d72c50e0ecd1156a9619edfd7c65294740b6fe817598180f27b427b2",
+  "clean_checkout": true,
+  "api": "http://127.0.0.1:18081",
+  "workbench": "http://127.0.0.1:13081",
+  "health": {
+    "build_commit": "406c8c73b2d5f129df7934677b6cc572d3b45b02",
+    "status": "ok",
+    "version": "0.1.0"
+  },
+  "ready_http_status": 200,
+  "authenticated_me_http_status": 200,
+  "runtime_list_http_status": 200,
+  "owned_processes": {
+    "api": 48640,
+    "a": 48652,
+    "b": 48654,
+    "workbench": 48657
+  },
+  "workbench_browser_observation": {
+    "runtime_settings": "2/2 available",
+    "corona-validation-a": "0/1 occupied; available",
+    "corona-validation-b": "0/1 occupied; available",
+    "history_preserved": true
+  },
+  "business_acceptance": "not_run",
+  "preexisting_running_fanout": "present before restart; excluded from this acceptance sample"
+}

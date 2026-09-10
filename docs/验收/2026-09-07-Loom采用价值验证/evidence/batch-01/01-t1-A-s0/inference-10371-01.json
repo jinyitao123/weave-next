@@ -1,0 +1,22 @@
+{
+  "error": "",
+  "native_tool_attempt": false,
+  "output": "{\"content\":\"我先调用 read_baseline 读取冻结的 Corona 输入及其 SHA-256，确认基准数据无误后再进行三种速度场景的计算，最后独立验证。当前尚未有任何真实回执，不预设结果。\",\"tool_calls\":[{\"name\":\"read_baseline\",\"args_json\":\"{}\"}]}",
+  "reported_models": [
+    "k3[1m]",
+    "k3",
+    "kimi-for-coding-highspeed"
+  ],
+  "status": "completed",
+  "usage": {
+    "input_tokens": 24360,
+    "output_tokens": 104,
+    "cost_usd": 0.05039250000000001,
+    "has_tokens": true,
+    "has_cost": true,
+    "source": "cli-reported",
+    "scope": "invocation",
+    "engine_version": "2.1.245",
+    "raw_summary": "{\"is_error\":false,\"duration_api_ms\":8125,\"num_turns\":1,\"stop_reason\":\"end_turn\",\"session_id\":\"ff4789cb-18a5-478d-b1f8-cd24938ca245\",\"total_cost_usd\":0.05039250000000001,\"usage\":{\"input_tokens\":3624,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":20736,\"output_tokens\":104,\"output_tokens_details\":{\"thinking_tokens\":27},\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":0,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"not_available\",\"iterations\":[],\"speed\":\"standard\"},\"modelUsage\":{\"kimi-for-coding-highspeed\":{\"inputTokens\":0,\"outputTokens\":746,\"cacheReadInputTokens\":1309,\"cacheCreationInputTokens\":0,\"webSearchRequests\":0,\"costUSD\":0.0193045,\"contextWindow\":262144,\"maxOutputTokens\":32000,\"canonicalModel\":\"kimi-for-coding-highspeed\",\"provider\":\"firstParty\"},\"k3[1m]\":{\"inputTokens\":3624,\"outputTokens\":104,\"cacheReadInputTokens\":20736,\"cacheCreationInputTokens\":0,\"webSearchRequests\":0,\"costUSD\":0.031088000000000005,\"contextWindow\":1000000,\"maxOutputTokens\":32000,\"canonicalModel\":\"k3[1m]\",\"provider\":\"firstParty\"}},\"permission_denials\":[],\"terminal_reason\":\"completed\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"subagent_stats\":{\"spawned\":0,\"requested\":{\"background\":0,\"foreground\":0,\"unset\":0},\"started_in_background\":0,\"max_depth\":0,\"spawned_by_subagents\":0,\"completed\":0,\"failed\":0,\"killed\":{\"parent\":0,\"user\":0,\"system\":0},\"refused\":{\"depth_limit\":0,\"concurrency_limit\":0,\"budget\":0},\"by_type\":{}},\"subtype\":\"success\",\"api_error_status\":null,\"result\":\"{\\\"content\\\":\\\"我先调用 read_baseline 读取冻结的 Corona 输入及其 SHA-256，确认基准数据无误后再进行三种速度场景的计算，最后独立验证。当前尚未有任何真实回执，不预设结果。\\\",\\\"tool_calls\\\":[{\\\"name\\\":\\\"read_baseline\\\",\\\"args_json\\\":\\\"{}\\\"}]}\",\"ttft_ms\":4510,\"ttft_stream_ms\":2155,\"time_to_request_ms\":85,\"type\":\"result\",\"duration_ms\":4535,\"uuid\":\"240a48c4-42c8-4dda-8216-f98f45e57cc3\",\"queued_turn_count\":0}"
+  }
+}

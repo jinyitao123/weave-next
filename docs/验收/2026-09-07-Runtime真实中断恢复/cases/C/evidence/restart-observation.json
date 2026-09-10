@@ -1,0 +1,12 @@
+{
+  "recorded_at": "2026-09-07T03:21:09.303630+00:00",
+  "successful_test_to_injection_seconds": 130.194904,
+  "explanation": "Observer schema correction caused delay after first complete successful custom model suite; task and CLI remained untouched until registered coordinator SIGKILL. All-delivery unfinished at injection. This is qualitative evidence only.",
+  "files_at_fault": 11,
+  "file_hash_matches_after_restart": 11,
+  "missing_fault_files_after_restart": [],
+  "cli_pid_at_fault": 22379,
+  "same_cli_after_restart": true,
+  "same_cli_now": true,
+  "physical_engineering_tasks": 1
+}

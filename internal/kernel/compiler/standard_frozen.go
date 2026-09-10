@@ -33,8 +33,8 @@ func NewStandardFrozenDescriptor() GraphFactoryDescriptor {
 		FactoryVersion:        standardFrozenFactoryVersion,
 		CompilerABI:           standardFrozenCompilerABI,
 		EnumerateDependencies: standardFrozenEnumerator{},
-		DescribeCapability: func(context.Context, frozen.FrozenAgentRecord) (frozen.CapabilityManifest, error) {
-			return standardFrozenCapability(), nil
+		DescribeCapability: func(_ context.Context, agent frozen.FrozenAgentRecord) (frozen.CapabilityManifest, error) {
+			return standardAgentCapability(agent)
 		},
 		Compile: compileStandardFrozen,
 	}
@@ -49,6 +49,9 @@ func (standardFrozenEnumerator) EncodeFactoryInput(
 	record registry.AgentRecord,
 	_ CredentialRefEncoder,
 ) (json.RawMessage, error) {
+	if err := validateControlledMemberRecord(record); err != nil {
+		return nil, err
+	}
 	if err := ValidateFrozenSkillRefs(record); err != nil {
 		return nil, err
 	}
@@ -129,8 +132,20 @@ func compileStandardFrozen(
 	_ FrozenResolver,
 	opts FrozenBuildOpts,
 ) (*loom.Graph, frozen.CapabilityManifest, error) {
-	capability := standardFrozenCapability()
-	if err := validateStandardFrozenBundle(bundle); err != nil {
+	return compileStandardFrozenVersion(ctx, bundle, opts, standardFrozenFactoryVersion)
+}
+
+func compileStandardFrozenVersion(
+	ctx context.Context,
+	bundle frozen.FrozenExecutionBundle,
+	opts FrozenBuildOpts,
+	version string,
+) (*loom.Graph, frozen.CapabilityManifest, error) {
+	capability, err := standardAgentCapability(bundle.Agent)
+	if err != nil {
+		return nil, capability, err
+	}
+	if err := validateStandardFrozenBundleVersion(bundle, version); err != nil {
 		return nil, capability, err
 	}
 
@@ -138,6 +153,7 @@ func compileStandardFrozen(
 	if err != nil {
 		return nil, capability, err
 	}
+	compileOpts.DurableMember = version == StandardFrozenToolsVersion
 	graph, err := CompileAgent(
 		bundle.Agent.WorkspaceID,
 		&record,
@@ -153,9 +169,13 @@ func compileStandardFrozen(
 }
 
 func validateStandardFrozenBundle(bundle frozen.FrozenExecutionBundle) error {
+	return validateStandardFrozenBundleVersion(bundle, standardFrozenFactoryVersion)
+}
+
+func validateStandardFrozenBundleVersion(bundle frozen.FrozenExecutionBundle, version string) error {
 	wantKey := (frozen.FactoryKey{
 		FactoryID:      standardFrozenFactoryID,
-		FactoryVersion: standardFrozenFactoryVersion,
+		FactoryVersion: version,
 		CompilerABI:    standardFrozenCompilerABI,
 	})
 	if bundle.FactoryKey != wantKey {
@@ -164,7 +184,11 @@ func validateStandardFrozenBundle(bundle frozen.FrozenExecutionBundle) error {
 	if bundle.Agent.GraphType != standardFrozenFactoryID {
 		return standardFrozenCompileError("agent graph_type is not standard")
 	}
-	if err := requireStandardFrozenFactoryInput(bundle.Agent.FactoryInput, CodeFactoryCompileFailed); err != nil {
+	if version == standardFrozenFactoryVersion {
+		if err := requireStandardFrozenFactoryInput(bundle.Agent.FactoryInput, CodeFactoryCompileFailed); err != nil {
+			return err
+		}
+	} else if err := ValidateStandardMCPBindings(bundle); err != nil {
 		return err
 	}
 	if bundle.Agent.Engine == "loom" {
@@ -277,6 +301,7 @@ func mapStandardFrozenToLegacy(
 		MaxOutputTokens: maxOutputTokens,
 		StepBudget:      bundle.Agent.Limits.StepBudget,
 		MaxToolRepeats:  maxToolRepeats,
+		ToolLoopControl: bundle.Agent.Limits.ToolLoopControl,
 		FallbackModels:  fallbackModels,
 		FallbackRetries: fallbackRetries,
 		GraphType:       standardFrozenFactoryID,
@@ -504,4 +529,19 @@ func standardFrozenCapability() frozen.CapabilityManifest {
 		MayInvokeAgent:     false,
 		AgentStepIDs:       []string{},
 	}
+}
+
+func standardAgentCapability(agent frozen.FrozenAgentRecord) (frozen.CapabilityManifest, error) {
+	capability := standardFrozenCapability()
+	if agent.Limits.ToolLoopControl != nil {
+		if err := frozen.ValidateToolLoopControl(agent.Limits.ToolLoopControl); err != nil {
+			return capability, err
+		}
+		if agent.Engine != "loom" || agent.GraphType != "standard" {
+			return capability, standardFrozenCompileError("controlled tool loops require standard Loom members")
+		}
+		capability.MayYield = true
+		capability.InteractiveStepIDs = []string{"chat"}
+	}
+	return capability, nil
 }

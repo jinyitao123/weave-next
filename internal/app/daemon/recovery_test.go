@@ -75,6 +75,47 @@ func TestRuntimeRecoveryWaitsForProcessExitBeforeAcknowledgement(t *testing.T) {
 	}
 }
 
+func TestRuntimeShutdownReportsRecoverableProcessInterruption(t *testing.T) {
+	var completions, failures atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/fail"):
+			failures.Add(1)
+			var body map[string]string
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body["error"] != "runtime_process_interrupted: daemon shutdown" {
+				t.Errorf("unexpected shutdown failure: %#v err=%v", body, err)
+			}
+			w.WriteHeader(http.StatusNoContent)
+		case strings.HasSuffix(r.URL.Path, "/complete"):
+			completions.Add(1)
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			t.Errorf("unexpected endpoint %s", r.URL.Path)
+			w.WriteHeader(http.StatusBadRequest)
+		}
+	}))
+	defer server.Close()
+	client, err := newRuntimeClient(server.URL, "fixture", server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := &registry.AgentRecord{Name: "worker", ID: "agent-1", WorkspaceID: "workspace-1", Version: 1, Engine: engine.OpenCode}
+	payload, _ := json.Marshal(runtimes.EngineExecRequest{Record: rec, Agent: rec.Name, Engine: rec.Engine, Prompt: "fixture"})
+	task := &taskqueue.Task{ID: "task-1", WorkspaceID: rec.WorkspaceID, Agent: rec.Name, AgentID: rec.ID, AgentVersion: 1,
+		IdentityKind: taskqueue.IdentityAgent, IdentitySchemaVersion: 2, ExecutionScope: execution.ScopeLegacyOrchestrator, Payload: payload}
+	ctx, cancel := context.WithCancel(context.Background())
+	d := &service{client: client, server: server.URL, workspacesRoot: t.TempDir(), renewInterval: time.Hour,
+		minBackoff: time.Millisecond, maxBackoff: time.Millisecond, runEngine: func(runCtx context.Context, _ string, _ engine.RunSpec) (engine.RunResult, error) {
+			cancel()
+			<-runCtx.Done()
+			return engine.RunResult{Status: "timeout", Err: runCtx.Err().Error()}, runCtx.Err()
+		}}
+	d.processTask(ctx, task)
+	if failures.Load() != 1 || completions.Load() != 0 {
+		t.Fatalf("failures=%d completions=%d", failures.Load(), completions.Load())
+	}
+}
+
 func TestRuntimeRecoveryLostCompletionResponseDoesNotExecuteAgain(t *testing.T) {
 	var calls, executions atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

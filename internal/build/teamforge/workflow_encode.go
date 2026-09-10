@@ -79,6 +79,9 @@ func encodeWorkflowGraph(graph machine.GraphDefinition) (json.RawMessage, error)
 		"nodes":           nodes,
 		"edges":           edges,
 	}
+	if graph.DeliveryContract != nil {
+		payload["delivery_contract"] = graph.DeliveryContract
+	}
 	return json.Marshal(payload)
 }
 

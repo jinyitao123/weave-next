@@ -23,12 +23,82 @@ const (
 
 type teamDispatchRequest struct {
 	Task            string `json:"task"`
+	InputRevisionID string `json:"input_revision_id,omitempty"`
 	Mode            string `json:"mode,omitempty"`
 	WorkflowID      string `json:"workflow_id,omitempty"`
 	WorkflowVersion *int   `json:"workflow_version,omitempty"`
 	ClientRequestID string `json:"client_request_id,omitempty"`
 	ProjectID       string `json:"project_id,omitempty"`
 	ConversationID  string `json:"conversation_id,omitempty"`
+	inputBinding    *dispatchInputRevision
+}
+
+// Explicit empty values are checks, not permission to fill from another input.
+// A separate wire type retains omission without changing internal callers.
+type dispatchOptionalString struct {
+	value   string
+	present bool
+}
+
+func (s *dispatchOptionalString) UnmarshalJSON(data []byte) error {
+	if string(data) == "null" {
+		return errors.New("dispatch string cannot be null")
+	}
+	s.present = true
+	return json.Unmarshal(data, &s.value)
+}
+
+type dispatchOptionalInt struct {
+	value   int
+	present bool
+}
+
+func (v *dispatchOptionalInt) UnmarshalJSON(data []byte) error {
+	if string(data) == "null" {
+		return errors.New("dispatch version cannot be null")
+	}
+	v.present = true
+	return json.Unmarshal(data, &v.value)
+}
+
+type teamDispatchWireRequest struct {
+	Task            dispatchOptionalString `json:"task"`
+	InputRevisionID string                 `json:"input_revision_id"`
+	Mode            dispatchOptionalString `json:"mode"`
+	WorkflowID      dispatchOptionalString `json:"workflow_id"`
+	WorkflowVersion dispatchOptionalInt    `json:"workflow_version"`
+	ClientRequestID dispatchOptionalString `json:"client_request_id"`
+	ProjectID       dispatchOptionalString `json:"project_id"`
+	ConversationID  dispatchOptionalString `json:"conversation_id"`
+}
+
+func (wire teamDispatchWireRequest) request() teamDispatchRequest {
+	request := teamDispatchRequest{
+		Task: wire.Task.value, InputRevisionID: strings.TrimSpace(wire.InputRevisionID),
+		Mode: strings.TrimSpace(wire.Mode.value), WorkflowID: strings.TrimSpace(wire.WorkflowID.value),
+		ClientRequestID: strings.TrimSpace(wire.ClientRequestID.value), ProjectID: strings.TrimSpace(wire.ProjectID.value),
+		ConversationID: strings.TrimSpace(wire.ConversationID.value),
+	}
+	if wire.WorkflowVersion.present {
+		request.WorkflowVersion = &wire.WorkflowVersion.value
+	}
+	return request
+}
+
+func (wire teamDispatchWireRequest) matchesInput(teamID string, input dispatchInputRevision) bool {
+	for _, fact := range []struct {
+		provided dispatchOptionalString
+		stored   string
+	}{
+		{wire.Task, input.Task}, {wire.Mode, input.Mode}, {wire.WorkflowID, input.WorkflowID},
+		{wire.ClientRequestID, input.ClientRequestID}, {wire.ProjectID, input.ProjectID},
+		{wire.ConversationID, ""},
+	} {
+		if fact.provided.present && fact.provided.value != fact.stored {
+			return false
+		}
+	}
+	return teamID == input.TeamID && (!wire.WorkflowVersion.present || wire.WorkflowVersion.value == input.WorkflowVersion)
 }
 
 // handleDispatchTeam is the single product dispatch boundary. It freezes the
@@ -38,17 +108,43 @@ func (s *Server) handleDispatchTeam(c echo.Context) error {
 	if s.OrgStore == nil || s.Registry == nil || s.Workflow == nil {
 		return workflowError(c, http.StatusServiceUnavailable, "team_dispatch_unavailable", "team dispatch service unavailable")
 	}
-	var request teamDispatchRequest
-	if err := decodeWorkflowBody(c, &request); err != nil {
+	var wire teamDispatchWireRequest
+	if err := decodeWorkflowBody(c, &wire); err != nil {
 		return workflowError(c, http.StatusBadRequest, "team_dispatch_request_invalid", "team dispatch request invalid")
 	}
-	request.Task = strings.TrimSpace(request.Task)
-	request.Mode = strings.TrimSpace(request.Mode)
-	request.WorkflowID = strings.TrimSpace(request.WorkflowID)
-	request.ClientRequestID = strings.TrimSpace(request.ClientRequestID)
-	request.ProjectID = strings.TrimSpace(request.ProjectID)
-	request.ConversationID = strings.TrimSpace(request.ConversationID)
-	if request.Task == "" || (request.WorkflowVersion != nil && *request.WorkflowVersion <= 0) {
+	request := wire.request()
+	if request.InputRevisionID != "" {
+		if s.GetPool() == nil {
+			return workflowError(c, http.StatusServiceUnavailable, "dispatch_input_unavailable", "dispatch input storage unavailable")
+		}
+		revisionID, err := uuid.Parse(request.InputRevisionID)
+		if err != nil {
+			return workflowError(c, http.StatusBadRequest, "dispatch_input_revision_invalid", "input_revision_id must be a UUID")
+		}
+		input, err := s.loadDispatchInput(c.Request().Context(), getTenant(c), getUserID(c), revisionID.String())
+		if errors.Is(err, pgx.ErrNoRows) {
+			return workflowError(c, http.StatusNotFound, "dispatch_input_not_found", "dispatch input not found for the current user")
+		}
+		if err != nil {
+			return workflowStoreFailure(c, fmt.Errorf("read bound dispatch input: %w", err))
+		}
+		if !wire.matchesInput(c.Param("id"), input) {
+			return workflowError(c, http.StatusConflict, "dispatch_input_mismatch", "dispatch facts do not match the registered input")
+		}
+		request = input.dispatchRequest()
+		// An exact receipt replay is read-only even after a later input or team
+		// lifecycle change. It cannot create a new run with a different nonce.
+		if replayed, err := s.replayBoundDispatchInput(c, input, request); replayed || err != nil {
+			return err
+		}
+		if input.IsClosed {
+			return workflowError(c, http.StatusConflict, "dispatch_input_closed", "dispatch input was closed before admission")
+		}
+		if !input.IsCurrent {
+			return workflowError(c, http.StatusConflict, "dispatch_input_superseded", "dispatch input revision is no longer current")
+		}
+	}
+	if strings.TrimSpace(request.Task) == "" || (request.WorkflowVersion != nil && *request.WorkflowVersion <= 0) {
 		return workflowError(c, http.StatusBadRequest, "team_dispatch_request_invalid", "team dispatch request invalid")
 	}
 	if request.Mode == "" {
@@ -95,12 +191,13 @@ func workflowDispatchFingerprint(teamID string, request teamDispatchRequest) str
 	encoded, _ := json.Marshal(struct {
 		TeamID          string `json:"team_id"`
 		Task            string `json:"task"`
+		InputRevisionID string `json:"input_revision_id,omitempty"`
 		Mode            string `json:"mode"`
 		WorkflowID      string `json:"workflow_id,omitempty"`
 		WorkflowVersion *int   `json:"workflow_version,omitempty"`
 		ProjectID       string `json:"project_id,omitempty"`
 		ConversationID  string `json:"conversation_id,omitempty"`
-	}{teamID, request.Task, request.Mode, request.WorkflowID, request.WorkflowVersion, request.ProjectID, request.ConversationID})
+	}{teamID, request.Task, request.InputRevisionID, request.Mode, request.WorkflowID, request.WorkflowVersion, request.ProjectID, request.ConversationID})
 	digest := sha256.Sum256(encoded)
 	return "team-dispatch:" + request.ClientRequestID + ":" + fmt.Sprintf("%x", digest[:])
 }
@@ -135,6 +232,10 @@ func (s *Server) replayWorkflowDispatch(
 	}
 	existing.RunID = runID
 	existing.ConversationID = request.ConversationID
+	existing.InputRevisionID = request.InputRevisionID
+	if request.InputRevisionID != "" {
+		existing.ClientRequestID = request.ClientRequestID
+	}
 	return true, c.JSON(http.StatusOK, existing)
 }
 

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jinyitao123/weave/internal/base/deliverable"
 	"github.com/jinyitao123/weave/internal/build/teambuild"
 )
 
@@ -130,6 +131,20 @@ func TestCompileYAMLFieldMappings(t *testing.T) {
 	}
 }
 
+func TestCompileYAMLFreezesTypedDeliveryContract(t *testing.T) {
+	input := strings.Replace(validResearchTemplateYAML,
+		"delivery:\n  success_criteria: [数据可溯源, 覆盖全部指定竞品]",
+		"delivery:\n  success_criteria: [数据可溯源, 覆盖全部指定竞品]\n  contract:\n    version: 1\n    coverage: explicit\n    required_artifacts:\n      - id: report\n        path: outputs/report.md\n        content_type: text/markdown\n        contains: [核验结论]\n    external_effects: none", 1)
+	compiled, err := CompileYAML([]byte(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	contract := compiled.Blueprint.Workflow.DeliveryContract
+	if contract == nil || contract.Output.Type != "text" || contract.ExternalEffects != deliverable.ExternalEffectsNone || contract.RequiredArtifacts[0].Path != "outputs/report.md" {
+		t.Fatalf("delivery contract mapping lost: %+v", contract)
+	}
+}
+
 func TestCompileSupportsAllBuiltinTopologies(t *testing.T) {
 	maxIterations := 3
 	base := Template{
@@ -201,6 +216,7 @@ func TestParseYAMLLimits(t *testing.T) {
 		{name: "depth", data: []byte(deep), code: "template_yaml_depth_exceeded"},
 		{name: "unknown root", data: []byte(validResearchTemplateYAML + "surprise: true\n"), code: "template_yaml_unknown_field"},
 		{name: "unknown nested", data: []byte(strings.Replace(validResearchTemplateYAML, "execution_mode: toolloop", "execution_mode: toolloop\n      surprise: true", 1)), code: "template_yaml_unknown_field"},
+		{name: "delivery output is compiler owned", data: []byte(strings.Replace(validResearchTemplateYAML, "success_criteria: [数据可溯源, 覆盖全部指定竞品]", "success_criteria: [数据可溯源, 覆盖全部指定竞品]\n  contract:\n    version: 1\n    coverage: explicit\n    output: {type: text}", 1)), code: "template_yaml_unknown_field"},
 		{name: "multiple documents", data: []byte(validResearchTemplateYAML + "---\n{}\n"), code: "template_yaml_multiple_documents"},
 		{name: "malformed", data: []byte("schema: [\n"), code: "template_yaml_invalid"},
 	}

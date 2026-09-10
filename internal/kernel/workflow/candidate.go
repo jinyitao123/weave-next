@@ -132,7 +132,7 @@ func (b *CandidateBuilder) BuildTx(
 		if resolveErr != nil {
 			return nil, nil, resolveErr
 		}
-		key, selectErr := b.descriptors.SelectFactoryKey(record.GraphType)
+		key, selectErr := b.descriptors.SelectAgentFactoryKey(*record)
 		if selectErr != nil {
 			return nil, nil, selectErr
 		}

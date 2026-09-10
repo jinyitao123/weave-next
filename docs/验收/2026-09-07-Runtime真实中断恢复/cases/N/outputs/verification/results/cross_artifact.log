@@ -1,0 +1,30 @@
+CMD: cd outputs/verification && python3 cross_artifact_check.py
+PASS baseline digest cfb12b781363c547…
+PASS trace keys in outputs/drawings/DRW-ARCH-001_mission_architecture.svg 
+PASS trace keys in outputs/drawings/DRW-ARCH-002_archive_payload_zones.svg 
+PASS trace keys in outputs/drawings/DRW-ARCH-003_system_interfaces.svg 
+PASS trace keys in outputs/drawings/CAD-HAB-001_concept_habitat.scad 
+PASS trace keys in outputs/app/index.html 
+PASS trace keys in outputs/app/corona_core.js 
+PASS trace keys in outputs/app/sample_export_scenario.json 
+PASS trace keys in outputs/model/corona_model.py 
+PASS trace keys in outputs/model/results.json 
+PASS SVG count >= 3 3
+PASS SVG: travel 141.67 
+PASS SVG: KE 4.0444e22 
+PASS SVG: gravity 43.86 
+PASS SVG: dust 40.4MJ/4.04e7 
+PASS SVG: conceptual marking on all 3 
+PASS SVG: 0.01c/0.05c only in CCR-001 note context []
+PASS construction_ready line-context in app/index.html:100 
+PASS manufacturing_ready line-context in app/index.html:100 
+PASS flight_certified line-context in app/index.html:100 
+PASS whole_program_cost_committed line-context in app/index.html:100 
+PASS construction_ready line-context in model/corona_model.py:13 
+PASS manufacturing_ready line-context in model/corona_model.py:13 
+PASS flight_certified line-context in model/corona_model.py:13 
+PASS whole_program_cost_committed line-context in model/corona_model.py:13 
+PASS export travel_time == model 
+PASS export KE_1mt == model 
+CROSS-ARTIFACT: ALL-PASS
+exit=0

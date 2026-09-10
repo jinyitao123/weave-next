@@ -1,0 +1,17 @@
+{
+  "at": "2026-09-07T02:49:40.736260+00:00",
+  "rows": [
+    {
+      "pid": 15585,
+      "ppid": 1,
+      "pgid": 15585,
+      "command": "/private/tmp/weave-runtime-value-20260907-sqtugx3m/weave runtime --server http://127.0.0.1:56586 --workspaces-root /private/tmp/weave-runtime-value-20260907-sqtugx3m/runtime-workspaces --concurrency 1"
+    },
+    {
+      "pid": 15689,
+      "ppid": 15585,
+      "pgid": 15689,
+      "command": "/Users/jinyitao/.local/bin/claude -p --output-format stream-json --verbose --dangerously-skip-permissions --mcp-config=/private/tmp/weave-runtime-value-20260907-sqtugx3m/runtime-workspaces/.invocations/task-12c3b74a36b2e690afffbc5ef247820b/default/corona-prephase-a-lab-v3-luna-digital-engineering-builder/workdir/.weave-mcp.json --"
+    }
+  ]
+}

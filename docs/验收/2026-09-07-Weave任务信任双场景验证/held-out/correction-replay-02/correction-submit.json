@@ -1,0 +1,22 @@
+{
+  "http_status": 202,
+  "request": {
+    "target_kind": "member",
+    "target_member_id": "61771e94-d850-4d14-a397-2e4cf2686b22",
+    "instruction": "基于你已经完成的 outputs/calculation.md 做增量修订：保留三项数值和现有说明，新增一行 formula: refunds / orders，并把 source-version: initial 改为 source-version: corrected。不要修改其他成员产物。",
+    "idempotency_key": "ff3634a1-d3df-4ef3-8e55-7299d3ca2096"
+  },
+  "response": {
+    "workspace_id": "default",
+    "run_id": "run-02401d26-78a3-5025-b3d4-da6462140992",
+    "correction_id": "703a4c6c-e515-4a22-918f-e93bf0d5f235",
+    "target_kind": "member",
+    "target_member_id": "61771e94-d850-4d14-a397-2e4cf2686b22",
+    "instruction": "基于你已经完成的 outputs/calculation.md 做增量修订：保留三项数值和现有说明，新增一行 formula: refunds / orders，并把 source-version: initial 改为 source-version: corrected。不要修改其他成员产物。",
+    "status": "requested",
+    "requested_generation": 2,
+    "requested_execution_lease_epoch": 1,
+    "requested_by": "a9597692-f602-4dc3-817f-bb98eb84ed84",
+    "requested_at": "2026-09-09T18:49:41.036102Z"
+  }
+}

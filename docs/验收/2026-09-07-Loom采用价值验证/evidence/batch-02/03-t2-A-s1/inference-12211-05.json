@@ -1,0 +1,22 @@
+{
+  "error": "",
+  "native_tool_attempt": false,
+  "output": "{\"content\":\"验收已返回 exit_code=0，两轮 unittest 全部 OK（含此前失败的 test_lorentz_gamma），证明 gamma 期望值修正、timeout 可移植性与工作目录修复均已生效。最后一步调用 verify_manifest，核对三项修复与验收结果并持久化机器回执；待其返回 PASS 后才给出最终修复报告。\",\"tool_calls\":[{\"name\":\"verify_manifest\",\"args_json\":\"{}\"}]}",
+  "reported_models": [
+    "k3[1m]",
+    "k3",
+    "kimi-for-coding-highspeed"
+  ],
+  "status": "completed",
+  "usage": {
+    "input_tokens": 25996,
+    "output_tokens": 131,
+    "cost_usd": 0.048303,
+    "has_tokens": true,
+    "has_cost": true,
+    "source": "cli-reported",
+    "scope": "invocation",
+    "engine_version": "2.1.245",
+    "raw_summary": "{\"is_error\":false,\"duration_api_ms\":13970,\"num_turns\":1,\"stop_reason\":\"end_turn\",\"session_id\":\"92b6e4cc-0c0a-4d38-9faf-2a8168ae1541\",\"total_cost_usd\":0.048303,\"usage\":{\"input_tokens\":2188,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":23808,\"output_tokens\":131,\"output_tokens_details\":{\"thinking_tokens\":30},\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":0,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"not_available\",\"iterations\":[],\"speed\":\"standard\"},\"modelUsage\":{\"kimi-for-coding-highspeed\":{\"inputTokens\":897,\"outputTokens\":667,\"cacheReadInputTokens\":2048,\"cacheCreationInputTokens\":0,\"webSearchRequests\":0,\"costUSD\":0.022184,\"contextWindow\":262144,\"maxOutputTokens\":32000,\"canonicalModel\":\"kimi-for-coding-highspeed\",\"provider\":\"firstParty\"},\"k3[1m]\":{\"inputTokens\":2188,\"outputTokens\":131,\"cacheReadInputTokens\":23808,\"cacheCreationInputTokens\":0,\"webSearchRequests\":0,\"costUSD\":0.026118999999999996,\"contextWindow\":1000000,\"maxOutputTokens\":32000,\"canonicalModel\":\"k3[1m]\",\"provider\":\"firstParty\"}},\"permission_denials\":[],\"terminal_reason\":\"completed\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"subagent_stats\":{\"spawned\":0,\"requested\":{\"background\":0,\"foreground\":0,\"unset\":0},\"started_in_background\":0,\"max_depth\":0,\"spawned_by_subagents\":0,\"completed\":0,\"failed\":0,\"killed\":{\"parent\":0,\"user\":0,\"system\":0},\"refused\":{\"depth_limit\":0,\"concurrency_limit\":0,\"budget\":0},\"by_type\":{}},\"subtype\":\"success\",\"api_error_status\":null,\"result\":\"{\\\"content\\\":\\\"验收已返回 exit_code=0，两轮 unittest 全部 OK（含此前失败的 test_lorentz_gamma），证明 gamma 期望值修正、timeout 可移植性与工作目录修复均已生效。最后一步调用 verify_manifest，核对三项修复与验收结果并持久化机器回执；待其返回 PASS 后才给出最终修复报告。\\\",\\\"tool_calls\\\":[{\\\"name\\\":\\\"verify_manifest\\\",\\\"args_json\\\":\\\"{}\\\"}]}\",\"ttft_ms\":7680,\"ttft_stream_ms\":2679,\"time_to_request_ms\":54,\"type\":\"result\",\"duration_ms\":7740,\"uuid\":\"d6f374a9-cfa6-4e0f-b04f-a845b4111d1e\",\"queued_turn_count\":0}"
+  }
+}

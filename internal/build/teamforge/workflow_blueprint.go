@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/jinyitao123/weave/internal/base/deliverable"
 	"github.com/jinyitao123/weave/internal/kernel/workflow/machine"
 )
 
@@ -32,13 +33,14 @@ type WorkflowBlueprintWorker struct {
 // Rework templates require Primary + Reviewer + MaxIterations;
 // synthesis templates require ParallelWorkers + Finalizer.
 type WorkflowBlueprint struct {
-	Template        WorkflowBlueprintTemplate `json:"template"`
-	LeadInstruction string                    `json:"lead_instruction"`
-	Primary         *WorkflowBlueprintWorker  `json:"primary,omitempty"`
-	Reviewer        *WorkflowBlueprintWorker  `json:"reviewer,omitempty"`
-	ParallelWorkers []WorkflowBlueprintWorker `json:"parallel_workers"`
-	Finalizer       *WorkflowBlueprintWorker  `json:"finalizer,omitempty"`
-	MaxIterations   *int64                    `json:"max_iterations,omitempty"`
+	Template         WorkflowBlueprintTemplate     `json:"template"`
+	LeadInstruction  string                        `json:"lead_instruction"`
+	Primary          *WorkflowBlueprintWorker      `json:"primary,omitempty"`
+	Reviewer         *WorkflowBlueprintWorker      `json:"reviewer,omitempty"`
+	ParallelWorkers  []WorkflowBlueprintWorker     `json:"parallel_workers"`
+	Finalizer        *WorkflowBlueprintWorker      `json:"finalizer,omitempty"`
+	MaxIterations    *int64                        `json:"max_iterations,omitempty"`
+	DeliveryContract *deliverable.DeliveryContract `json:"delivery_contract,omitempty"`
 }
 
 // WorkflowBlueprintProblem is intentionally field-oriented and compact so a
@@ -66,6 +68,12 @@ func ValidateWorkflowBlueprint(blueprint WorkflowBlueprint) []WorkflowBlueprintP
 		problems = append(problems, WorkflowBlueprintProblem{
 			Path: path, Code: code, Message: message, Hint: hint,
 		})
+	}
+	if err := deliverable.ValidateDeliveryContract(blueprint.DeliveryContract); err != nil {
+		add("/delivery_contract", "blueprint_delivery_contract_invalid", err.Error(), "修正交付物、检查项和外部副作用声明。")
+	}
+	if blueprint.DeliveryContract != nil && blueprint.DeliveryContract.Output.Type != "text" {
+		add("/delivery_contract/output", "blueprint_delivery_output_mismatch", "built-in workflow output is text", "将交付合同 output.type 设为 text。")
 	}
 
 	if strings.TrimSpace(blueprint.LeadInstruction) == "" {
@@ -216,10 +224,11 @@ func compileReworkBlueprint(blueprint WorkflowBlueprint) machine.GraphDefinition
 		"End the final line with exactly PASS when accepted or REVISE when another iteration is required.",
 	)
 	graph := machine.GraphDefinition{
-		SchemaVersion:  machine.SchemaVersionV1,
-		EntryNodeID:    "lead",
-		InputContract:  textOutput,
-		OutputContract: textOutput,
+		SchemaVersion:    machine.SchemaVersionV1,
+		EntryNodeID:      "lead",
+		InputContract:    textOutput,
+		OutputContract:   textOutput,
+		DeliveryContract: deliverable.CloneDeliveryContract(blueprint.DeliveryContract),
 		Nodes: []machine.Node{
 			{ID: "lead", Type: machine.NodeLead, Label: "Coordinate", Inputs: blueprintLeadInputs(), Output: &textOutput,
 				Config: machine.LeadConfig{Instruction: blueprint.LeadInstruction}},
@@ -283,10 +292,11 @@ func compileSynthesisBlueprint(blueprint WorkflowBlueprint) machine.GraphDefinit
 	finalizer := *blueprint.Finalizer
 	finalizer.ResultRequirement = withBlueprintProtocol(finalizer.ResultRequirement, synthesisNodeProtocol)
 	graph := machine.GraphDefinition{
-		SchemaVersion:  machine.SchemaVersionV1,
-		EntryNodeID:    "lead",
-		InputContract:  textOutput,
-		OutputContract: textOutput,
+		SchemaVersion:    machine.SchemaVersionV1,
+		EntryNodeID:      "lead",
+		InputContract:    textOutput,
+		OutputContract:   textOutput,
+		DeliveryContract: deliverable.CloneDeliveryContract(blueprint.DeliveryContract),
 		Nodes: []machine.Node{
 			{ID: "lead", Type: machine.NodeLead, Label: "Coordinate", Inputs: blueprintLeadInputs(), Output: &textOutput,
 				Config: machine.LeadConfig{Instruction: withBlueprintProtocol(blueprint.LeadInstruction, synthesisNodeProtocol)}},

@@ -1,0 +1,27 @@
+test_concept_level_flag (test_model.TestFactLabelsAndForbiddenClaims.test_concept_level_flag) ... ok
+test_forbidden_claims_notice_present (test_model.TestFactLabelsAndForbiddenClaims.test_forbidden_claims_notice_present) ... ok
+test_no_forbidden_claims_as_assertions (test_model.TestFactLabelsAndForbiddenClaims.test_no_forbidden_claims_as_assertions) ... ok
+test_scenario_fact_labels (test_model.TestFactLabelsAndForbiddenClaims.test_scenario_fact_labels) ... ok
+test_trace_embedded_in_scenario (test_model.TestFactLabelsAndForbiddenClaims.test_trace_embedded_in_scenario) ... ok
+test_digest_matches_baseline_file (test_model.TestParamSource.test_digest_matches_baseline_file) ... ok
+test_no_extra_speed_scenarios_active (test_model.TestParamSource.test_no_extra_speed_scenarios_active) ... ok
+test_params_json_parseable (test_model.TestParamSource.test_params_json_parseable) ... ok
+test_single_locked_scenario (test_model.TestParamSource.test_single_locked_scenario) ... ok
+test_trace_triple (test_model.TestParamSource.test_trace_triple) ... ok
+test_artificial_gravity (test_model.TestPhysics.test_artificial_gravity) ... ok
+test_dust_impact (test_model.TestPhysics.test_dust_impact) ... ok
+test_kinetic_energy_lower_bound (test_model.TestPhysics.test_kinetic_energy_lower_bound) ... ok
+test_passive_transit (test_model.TestPhysics.test_passive_transit) ... ok
+test_route_separability (test_model.TestPhysics.test_route_separability) ... ok
+test_sail_beam_energy_lower_bound (test_model.TestPhysics.test_sail_beam_energy_lower_bound) ... ok
+test_stellar_geometry_framework (test_model.TestPhysics.test_stellar_geometry_framework) ... ok
+test_travel_time_profile_has_unknown_boundary (test_model.TestPhysics.test_travel_time_profile_has_unknown_boundary) ... ok
+test_travel_time_proxima (test_model.TestPhysics.test_travel_time_proxima) ... ok
+test_all_reference_checks_pass (test_model.TestReferenceChecks.test_all_reference_checks_pass) ... ok
+test_expected_kinds (test_model.TestReferenceChecks.test_expected_kinds) ... ok
+test_five_checks_present (test_model.TestReferenceChecks.test_five_checks_present) ... ok
+
+----------------------------------------------------------------------
+Ran 22 tests in 0.001s
+
+OK

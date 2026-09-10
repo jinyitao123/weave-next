@@ -18,6 +18,7 @@ import (
 )
 
 func TestServeUsesSharedProtocolForInitializeListAndCall(t *testing.T) {
+	t.Setenv("WEAVE_WORKBENCH_BOUND_DISPATCH", "")
 	api := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		if request.Method != http.MethodGet || request.URL.Path != "/v1/team-templates/samples" {
 			t.Fatalf("request = %s %s", request.Method, request.URL.Path)

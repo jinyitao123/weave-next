@@ -24,6 +24,7 @@ export interface PilotReportTask {
   readonly corrections: number
   readonly reruns: number
   readonly finalDeliverables: number
+  readonly verificationStatus: 'pending' | 'passed' | 'failed' | 'unknown'
   readonly outcome: WorkTaskProjection['outcome']
   readonly outcomeNote: string
 }
@@ -34,7 +35,8 @@ export interface PilotReport {
   readonly summary: {
     readonly tasks: number
     readonly completed: number
-    readonly successRate: number
+    readonly executionCompletionRate: number
+    readonly verification: Readonly<Record<'pending' | 'passed' | 'failed' | 'unknown', number>>
     readonly adopted: number
     readonly needsRevision: number
     readonly unrated: number
@@ -73,6 +75,7 @@ export function buildPilotReport(sessions: TaskSource, projections: ProjectionSo
       corrections: task.corrections.length,
       reruns: Math.max(0, task.attempts.length - 1),
       finalDeliverables: task.deliverables.filter(item => item.kind === 'final').length,
+      verificationStatus: task.delivery?.verificationStatus ?? 'unknown',
       outcome: task.outcome,
       outcomeNote: task.outcomeNote,
     }]
@@ -86,7 +89,13 @@ export function buildPilotReport(sessions: TaskSource, projections: ProjectionSo
     summary: {
       tasks: tasks.length,
       completed,
-      successRate: tasks.length === 0 ? 0 : Math.round(completed / tasks.length * 10_000) / 100,
+      executionCompletionRate: tasks.length === 0 ? 0 : Math.round(completed / tasks.length * 10_000) / 100,
+      verification: {
+        pending: tasks.filter(task => task.verificationStatus === 'pending').length,
+        passed: tasks.filter(task => task.verificationStatus === 'passed').length,
+        failed: tasks.filter(task => task.verificationStatus === 'failed').length,
+        unknown: tasks.filter(task => task.verificationStatus === 'unknown').length,
+      },
       adopted: tasks.filter(task => task.outcome === 'adopted').length,
       needsRevision: tasks.filter(task => task.outcome === 'needs-revision').length,
       unrated: tasks.filter(task => task.outcome === 'unrated').length,

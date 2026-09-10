@@ -4,10 +4,12 @@
 package teamtemplate
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
 
+	"github.com/jinyitao123/weave/internal/base/deliverable"
 	"github.com/jinyitao123/weave/internal/build/teambuild"
 )
 
@@ -69,7 +71,65 @@ type ExecutionPolicy struct {
 }
 
 type Delivery struct {
-	SuccessCriteria []string `yaml:"success_criteria" json:"success_criteria"`
+	SuccessCriteria []string          `yaml:"success_criteria" json:"success_criteria"`
+	Contract        *DeliveryContract `yaml:"contract,omitempty" json:"contract,omitempty"`
+}
+
+// DeliveryContract is the product-facing form. Output is intentionally absent:
+// built-in workflow compilation owns and binds the final output shape.
+type DeliveryContract struct {
+	Version                int                   `yaml:"version" json:"version"`
+	Coverage               string                `yaml:"coverage" json:"coverage"`
+	RequiredArtifacts      []ArtifactRequirement `yaml:"required_artifacts,omitempty" json:"required_artifacts,omitempty"`
+	RequiredChecks         []CheckSpec           `yaml:"required_checks,omitempty" json:"required_checks,omitempty"`
+	ExternalEffects        string                `yaml:"external_effects,omitempty" json:"external_effects,omitempty"`
+	ExternalEffectsCheckID string                `yaml:"external_effects_check_id,omitempty" json:"external_effects_check_id,omitempty"`
+	Limitations            []string              `yaml:"limitations,omitempty" json:"limitations,omitempty"`
+}
+
+type ArtifactRequirement struct {
+	ID          string   `yaml:"id" json:"id"`
+	Path        string   `yaml:"path" json:"path"`
+	ContentType string   `yaml:"content_type,omitempty" json:"content_type,omitempty"`
+	SHA256      string   `yaml:"sha256,omitempty" json:"sha256,omitempty"`
+	Contains    []string `yaml:"contains,omitempty" json:"contains,omitempty"`
+}
+
+type CheckSpec struct {
+	ID              string `yaml:"id" json:"id"`
+	VerifierID      string `yaml:"verifier_id" json:"verifier_id"`
+	VerifierVersion string `yaml:"verifier_version" json:"verifier_version"`
+	Parameters      any    `yaml:"parameters,omitempty" json:"parameters,omitempty"`
+}
+
+func (c *DeliveryContract) platformContract() (*deliverable.DeliveryContract, error) {
+	if c == nil {
+		return nil, nil
+	}
+	result := &deliverable.DeliveryContract{
+		Version: c.Version, Coverage: c.Coverage, ExternalEffects: c.ExternalEffects,
+		ExternalEffectsCheckID: c.ExternalEffectsCheckID, Limitations: append([]string(nil), c.Limitations...),
+	}
+	for _, item := range c.RequiredArtifacts {
+		result.RequiredArtifacts = append(result.RequiredArtifacts, deliverable.ArtifactRequirement{
+			ID: item.ID, Path: item.Path, ContentType: item.ContentType, SHA256: item.SHA256,
+			Contains: append([]string(nil), item.Contains...),
+		})
+	}
+	for _, item := range c.RequiredChecks {
+		var parameters json.RawMessage
+		if item.Parameters != nil {
+			raw, err := json.Marshal(item.Parameters)
+			if err != nil {
+				return nil, err
+			}
+			parameters = raw
+		}
+		result.RequiredChecks = append(result.RequiredChecks, deliverable.CheckSpec{
+			ID: item.ID, VerifierID: item.VerifierID, VerifierVersion: item.VerifierVersion, Parameters: parameters,
+		})
+	}
+	return result, nil
 }
 
 type Budget struct {
