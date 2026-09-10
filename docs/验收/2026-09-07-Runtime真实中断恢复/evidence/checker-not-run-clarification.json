@@ -1,0 +1,7 @@
+{
+  "at": "2026-09-07T03:25:54.993193+00:00",
+  "change": "Explicitly record OpenSCAD NOT_RUN when executable absent, requiring manifest declaration; do not silently skip compilation",
+  "basis": "Original plan permits executable validation OR explicit NOT_RUN",
+  "trigger": "Host application bundle disappeared during C; independent filesystem and native tool evidence recorded separately",
+  "checker_sha256": "50dcac0e6f3d0653580bbc3aa5808627411d86cb28c7bce3305de84553d3dbe0"
+}

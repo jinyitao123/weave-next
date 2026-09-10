@@ -317,12 +317,13 @@ func (s *Service) ensureRevision(
 		if bindErr != nil {
 			return teambuild.BlueprintRevision{}, fmt.Errorf("bind declarative evaluation roster: %w", bindErr)
 		}
-		frozen, freezeErr := teamforge.FreezeDeclarativeWorkflowSpecV1(
+		frozen, freezeErr := teamforge.FreezeDeclarativeWorkflowSpecWithDeliveryContractV1(
 			spec, bindings,
 			teamforge.DeclarativeBuildBindingV1{
 				BuildRunID: buildRunID, BriefHash: run.BriefHash, ContractHash: run.ContractHash,
 				AssetScope: preview.Snapshot.AssetScope, BaselineHash: preview.BaselineHash,
 			},
+			blueprint.Workflow.DeliveryContract,
 			func(trigger machine.TriggerConfig, graph machine.GraphDefinition) (machine.Report, error) {
 				return s.declarativeValidate(ctx, workspaceID, teamID, trigger, graph)
 			},

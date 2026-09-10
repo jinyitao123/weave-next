@@ -64,20 +64,20 @@ kind: "package-reference"
 
 ### 设计理念
 
-插件前置注册一个 `agent/pre-step` 监听器，先委托下游，需要注入且下游决策进入步骤时追加一条带来源的 `UserMessage`。每个读数都使用确切的快照来源 `{ kind: 'plugin', plugin: 'time-context', form: 'snapshot', sections: [{ name: 'time-context', text }] }`，不变式伴生插件会校验该形状，根据原始 `user-rpc` 消息重新派生当前轮次的浏览器策略，并检查时间戳时区与经过时长基线。
+插件前置注册一个 `agent/pre-step` 监听器，先委托下游，需要注入且下游决策进入步骤时追加一条带来源的 `UserMessage`。每个读数都使用确切的快照来源 `{ kind: 'plugin', plugin: 'time-context', form: 'snapshot', sections: [{ name: 'time-context', text }] }`，不变式伴生插件会校验该形状，根据普通 `user-rpc` 消息和来源为 `{ kind: 'plugin', plugin: 'ui-control', form: 'relay' }` 的浏览器控制消息重新派生当前轮次的浏览器策略，并检查时间戳时区与经过时长基线。两种浏览器来源都携带 `rpcId` 和可选的、经 Host 校验的 `clientTimeZone`；其他插件来源不提供浏览器时区。
 
 ### 源码地图
 
 | 文件 | 职责 |
 |---|---|
 | [`src/index.ts`](src/index.ts) | 插件入口：pre-step 监听器、到期调度、读数组合 |
-| [`src/request-zone.ts`](src/request-zone.ts) | 从开放轮次 `user-rpc` 来源派生浏览器时区策略 |
+| [`src/request-zone.ts`](src/request-zone.ts) | 从开放轮次的浏览器输入和控制来源派生浏览器时区策略 |
 | [`src/timestamp.ts`](src/timestamp.ts) | `Intl.DateTimeFormat` 创建与时间戳格式化 |
 | [`src/invariant.ts`](src/invariant.ts) | 快照约定的不变式伴生插件 |
 
 ### 主要流程
 
-需要注入时，插件采样挂钟时间，从开放轮次的 `user-rpc` 消息派生浏览器时区策略，解析显示时区（请求本地或回退），并渲染三行读数。正数间隔调度会扫描原始持久会话事件，查找最新一条归因于插件的消息——包括被压缩（compaction）遮蔽的读数——因此调度无需进程本地缓存也能在恢复后存续。读数记录的是已进入的步骤，不是已完成或已传输的请求；后续准备失败时，该读数可能留在历史中。
+需要注入时，插件采样挂钟时间，从开放轮次中已识别的浏览器输入和控制消息派生浏览器时区策略，解析显示时区（请求本地或回退），并渲染三行读数。正数间隔调度会扫描原始持久会话事件，查找最新一条归因于插件的消息——包括被压缩（compaction）遮蔽的读数——因此调度无需进程本地缓存也能在恢复后存续。读数记录的是已进入的步骤，不是已完成或已传输的请求；后续准备失败时，该读数可能留在历史中。
 
 </details>
 

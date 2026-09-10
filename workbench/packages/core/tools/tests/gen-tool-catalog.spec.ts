@@ -35,7 +35,7 @@ describe('gen-tool-catalog collectToolCatalog', () => {
       'schedule_list', 'send_message', 'send_message', 'skill', 'spawn_teammate',
       'str_replace_editor', 'subagent', 'team_task_create',
       'team_task_get', 'team_task_list', 'team_task_update', 'todo_write',
-      'update_goal', 'wait_agent', 'web_fetch', 'web_search', 'workflow', 'write',
+      'update_goal', 'wait_agent', 'weave_dispatch', 'web_fetch', 'web_search', 'workflow', 'write',
     ])
     // Every tool carries a JSON-Schema `parameters` object (what the model sees).
     for (const entry of catalog) {
@@ -66,6 +66,8 @@ describe('gen-tool-catalog collectToolCatalog', () => {
       list_agents: 'packages/subagent/tool-subagent-control/src/list-agents.ts',
       send_message: 'packages/subagent/tool-subagent-control/src/index.ts',
     })
+    const workbench = catalog.find(entry => entry.pkg === '@deepseek-ai/dsh-workbench-app')
+    expect(workbench?.sources).toEqual({ weave_dispatch: 'packages/bundle/workbench-app/src/dispatch-input.ts' })
   })
 
   it('harvests search tools without depending on the generator process PATH', async () => {

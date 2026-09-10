@@ -1,0 +1,19 @@
+=== RUN   TestWorkflowMemberParkKeepsCallAndResumesItsOriginalRunRealPG
+--- PASS: TestWorkflowMemberParkKeepsCallAndResumesItsOriginalRunRealPG (0.33s)
+=== RUN   TestMemberTerminalAccountingExcludesRegisteredChildOnce
+--- PASS: TestMemberTerminalAccountingExcludesRegisteredChildOnce (0.00s)
+PASS
+ok  	github.com/jinyitao123/weave/internal/base/teamrun	1.168s
+=== RUN   TestMemberResumeAfterReceiptDoesNotRepeatEffectRealPG
+--- PASS: TestMemberResumeAfterReceiptDoesNotRepeatEffectRealPG (0.34s)
+=== RUN   TestMemberUnknownToolEffectIsNotReplayedRealPG
+--- PASS: TestMemberUnknownToolEffectIsNotReplayedRealPG (0.29s)
+=== RUN   TestMemberAdmissionAndCheckpointFenceRealPG
+--- PASS: TestMemberAdmissionAndCheckpointFenceRealPG (0.27s)
+=== RUN   TestMemberAtomicHistoryFailureStopsBeforeEffectsRealPG
+--- PASS: TestMemberAtomicHistoryFailureStopsBeforeEffectsRealPG (0.28s)
+=== RUN   TestMemberResumePreservesOriginalToolLoopLimitRealPG
+2026/09/07 15:38:28 WARN loom/toolloop: tool budget exhausted, wrapping up max_iterations=3
+--- PASS: TestMemberResumePreservesOriginalToolLoopLimitRealPG (0.30s)
+PASS
+ok  	github.com/jinyitao123/weave/internal/kernel/loomruntime	2.846s

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import { snapshotJsonValue } from '@deepseek-ai/dsh-session'
 import { applyWorkTaskProjection, workbenchTeamRoutingSection, workTaskProjectionDefinition } from '../src/index.ts'
 
 const event = (type: string, data: unknown, seq = 0, time = 100): SessionEvent => ({
@@ -22,6 +23,24 @@ const result = (id: string, value: unknown, seq: number, isError = false): Sessi
 }, seq, 100 + seq)
 
 describe('Workbench work-task projection', () => {
+
+  it('persists mixed legacy and durable member progress through the lossless session boundary', () => {
+    let state = workTaskProjectionDefinition.init()
+    for (const item of [
+      call('dispatch', 'mcp__weave__team_dispatch', { team_id: 'team-1' }, 0),
+      result('dispatch', { run_id: 'run-1', status: 'running' }, 1),
+      call('activity', 'mcp__weave__team_run_activity', { run_id: 'run-1' }, 2),
+      result('activity', { run_id: 'run-1', status: 'running', members: [
+        { agent_id: 'lead', name: 'lead', status: 'completed', stages: [{ node_id: 'brief', status: 'completed' }] },
+        { agent_id: 'worker', name: 'worker', status: 'running', stages: [{ node_id: 'compute', status: 'running',
+          member_run_id: 'member-1', checkpoint_saved_at: '2026-09-07T09:17:16Z' }] },
+      ] }, 3),
+    ]) state = applyWorkTaskProjection(state, item)
+    expect(state.task?.members[0]?.stages[0]).not.toHaveProperty('memberRunId')
+    expect(state.task?.members[1]?.stages[0]).toMatchObject({ memberRunId: 'member-1', checkpointSavedAt: '2026-09-07T09:17:16Z' })
+    expect(snapshotJsonValue(state.task)).toEqual(state.task)
+    expect(applyWorkTaskProjection(state, event('weave/work-task', snapshotJsonValue(state.task), 4)).task).toEqual(state.task)
+  })
 
   it('correlates runless dispatch-status replies with the exact current request', () => {
     let state = workTaskProjectionDefinition.init()

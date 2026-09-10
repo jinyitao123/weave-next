@@ -5,16 +5,18 @@ import type { UserMessage } from '@deepseek-ai/dsh-llm'
 
 const IANA_TIME_ZONE = /^[A-Za-z][A-Za-z0-9_+.-]*(?:\/[A-Za-z0-9_+.-]+)+$/
 
-/** Browser-zone facts derived from user-rpc messages in one open turn. */
+/** Browser-zone facts derived from browser input and control messages in one open turn. */
 export type BrowserTimeZoneContext =
   | { readonly kind: 'resolved'; readonly timeZone: string }
   | { readonly kind: 'mixed'; readonly timeZones: readonly string[] }
   | { readonly kind: 'missing' }
 
-/** Read and validate a Host-canonicalized browser zone from one ordinary user-rpc message. */
+/** Read a Host-canonicalized browser zone from ordinary input or a browser control. */
 function browserTimeZone(message: UserMessage): string | undefined {
   const source = message.source
-  const value = source.kind === 'user'
+  const browserSource = source.kind === 'user'
+    || source.kind === 'plugin' && source.plugin === 'ui-control' && source.form === 'relay'
+  const value = browserSource
     && 'rpcId' in source
     && typeof source.rpcId === 'string'
     && 'clientTimeZone' in source
@@ -43,7 +45,7 @@ function browserTimeZone(message: UserMessage): string | undefined {
  * Derive the unique, mixed, or missing browser zone for one open turn.
  * @param messages - Entered and proposed user messages belonging to the turn.
  * @returns Sorted, duplicate-free browser-zone facts.
- * @throws TypeError when a user-rpc source carries an invalid or noncanonical zone.
+ * @throws TypeError when a browser source carries an invalid or noncanonical zone.
  */
 export function deriveBrowserTimeZoneContext(
   messages: readonly UserMessage[],

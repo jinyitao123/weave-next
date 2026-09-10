@@ -1,0 +1,11 @@
+{
+  "at": "2026-09-07T03:34:34.883588+00:00",
+  "change": "Numeric manifest field adapter accepts value or actual; shell-free test command adapter removes only exact cd outputs/model && prefix and comments",
+  "basis": "Uniform contract required named numeric reference checks and source files, without prescribing object property spelling",
+  "business_thresholds_changed": false,
+  "independent_output_file_consistency_checked": [
+    "N",
+    "C"
+  ],
+  "checker_sha256": "9241d228d9bd04f16577186a27f117de70562bbbc7e35dfbbcf66b0a189dd616"
+}

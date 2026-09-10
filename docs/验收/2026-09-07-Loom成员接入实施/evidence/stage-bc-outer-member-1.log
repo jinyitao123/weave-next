@@ -1,0 +1,20 @@
+FAIL	github.com/jinyitao123/weave/internal/base/teamrun [build failed]
+=== RUN   TestMemberResumeAfterReceiptDoesNotRepeatEffectRealPG
+--- PASS: TestMemberResumeAfterReceiptDoesNotRepeatEffectRealPG (0.36s)
+=== RUN   TestMemberUnknownToolEffectIsNotReplayedRealPG
+--- PASS: TestMemberUnknownToolEffectIsNotReplayedRealPG (0.28s)
+=== RUN   TestMemberAdmissionAndCheckpointFenceRealPG
+--- PASS: TestMemberAdmissionAndCheckpointFenceRealPG (0.30s)
+=== RUN   TestMemberAtomicHistoryFailureStopsBeforeEffectsRealPG
+--- PASS: TestMemberAtomicHistoryFailureStopsBeforeEffectsRealPG (0.25s)
+=== RUN   TestMemberResumePreservesOriginalToolLoopLimitRealPG
+2026/09/07 15:32:47 WARN loom/toolloop: tool budget exhausted, wrapping up max_iterations=3
+--- PASS: TestMemberResumePreservesOriginalToolLoopLimitRealPG (0.28s)
+PASS
+ok  	github.com/jinyitao123/weave/internal/kernel/loomruntime	2.263s
+FAIL
+# github.com/jinyitao123/weave/internal/base/teamrun [github.com/jinyitao123/weave/internal/base/teamrun.test]
+internal/base/teamrun/workflow_member_pg_test.go:44:64: cannot use h.executor.Runs (variable of interface type ExecutorRunStore) as *PGStore value in struct literal: need type assertion
+internal/base/teamrun/workflow_member_pg_test.go:44:94: cannot use h.executor.Checkpoints (variable of interface type ExecutorCheckpointStore) as *PGCheckpointStore value in struct literal: need type assertion
+internal/base/teamrun/workflow_member_pg_test.go:80:58: cannot use h.executor.Runs (variable of interface type ExecutorRunStore) as *PGStore value in struct literal: need type assertion
+internal/base/teamrun/workflow_member_pg_test.go:80:88: cannot use h.executor.Checkpoints (variable of interface type ExecutorCheckpointStore) as *PGCheckpointStore value in struct literal: need type assertion

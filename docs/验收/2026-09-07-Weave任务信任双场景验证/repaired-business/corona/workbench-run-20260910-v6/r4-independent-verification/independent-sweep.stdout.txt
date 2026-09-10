@@ -1,0 +1,70 @@
+==========================================================================
+GATE 2  three_speed_scenarios_present
+==========================================================================
+  FAIL:
+    - outputs/review/physics/physics_three_speed_scenarios.csv  (FILE MISSING)
+    - outputs/review/propulsion/07_corona_v4_pet_comparison_matrix.csv  (FILE MISSING)
+==========================================================================
+GATE 8  requirements_have_verification_methods
+==========================================================================
+  outputs/review/systems/requirements/requirements_decomposition.md: 需求编号=17  验证方法术语=存  → PASS
+  outputs/review/systems/verification/traceability_matrix.md: 需求编号=57  验证方法术语=存  → PASS
+  outputs/review/systems/verification/traceability_matrix.csv: 需求编号=31  验证方法术语=存  → PASS
+  SA-REQ-* 条数=14；含验证方法值的表格行=9
+==========================================================================
+GATE 9  claims_use_truth_labels
+==========================================================================
+  含 truth label（verified_fact/derived_result/assumption/unknown）的文档数 = 46
+    - outputs/FINAL_ACCEPTANCE.md
+    - outputs/app/app.js
+    - outputs/app/model.js
+    - outputs/app/params.js
+    - outputs/model/README.md
+    - outputs/model/corona_model.py
+    - outputs/model/tests/test_model.py
+    - outputs/review/archive/06_corona_v6_archive_payload_architecture_v1.0.md
+    - outputs/review/archive/07_corona_v6_archive_long_term_reliability_v1.0.md
+    - outputs/review/archive/08_corona_v6_archive_concept_drawing_requirements_v1.0.md
+    - outputs/review/archive/archive-reliability-node-workbrief-v6.md
+    - outputs/review/archive/index_archive_reliability_designer_v1.0.md
+    - outputs/review/archive/support/reliability_model.py
+    - outputs/review/archive/support/reliability_model_output.txt
+    - outputs/review/cost_risk/REVIEW_INDEX_cost_risk.md
+    - outputs/review/cost_risk/cost_research_method.md
+    - outputs/review/cost_risk/risk_register.md
+    - outputs/review/cost_risk/techmaturity_assessment.md
+    - outputs/review/cost_risk/termination_conditions.md
+    - outputs/review/cost_risk/topic_package_next_phase.md
+    - outputs/review/cost_risk/verification/cost_risk_recomputed_2026-09-09.txt
+    - outputs/review/cost_risk/verification/cost_risk_recomputed_2026-09-10.txt
+    - outputs/review/cost_risk/wbs.md
+    - outputs/review/physics/README.md
+    - outputs/review/physics/physics_recompute_v6_fixed.py
+    - outputs/review/physics/physics_v6_fixed_recompute_evidence.txt
+    - outputs/review/physics/physics_v6_independent_recompute.py
+    - outputs/review/physics/physics_v6_recompute_evidence.txt
+    - outputs/review/physics/physics_v6_review_verification.md
+    - outputs/review/physics/physics_v6_this_node_independent_check.py
+    - outputs/review/physics/physics_v6_this_node_independent_check_evidence.txt
+    - outputs/review/propulsion/06_corona_v6_propulsion_energy_thermal_analyst_v1.0.md
+    - outputs/review/propulsion/README.md
+    - outputs/review/propulsion/checks/pet_check_output.txt
+    - outputs/review/propulsion/scripts/pet_check.py
+    - outputs/review/systems/config/config_baseline_register.md
+    - outputs/review/systems/interfaces/interface_register.md
+    - outputs/review/systems/requirements/requirements_decomposition.md
+    - outputs/review/systems/routes/route_terminal_states.md
+    - outputs/review/systems/verification/systems_param_consistency_check.py
+    - outputs/review/systems/verification/systems_param_consistency_check.txt
+    - outputs/review/systems/verification/traceability_matrix.csv
+    - outputs/review/systems/verification/traceability_matrix.md
+    - outputs/verification/gui_verify.js
+    - outputs/verification/independent_acceptance_sweep.py
+    - outputs/verification/vi_run_gates.py
+  review/*.md 总数 = 25；含 truth label 数 = 21
+==========================================================================
+事实纪律: forbidden_claims 未作肯定式声称（gate 7/11 相关）
+==========================================================================
+  PASS — 全部 42 处禁语命中均位于 forbidden_claims 列表定义 / 否定 / 枚举 / 红线语境，无肯定式声称
+==========================================================================
+SUMMARY: gate2=FAIL gate8=PASS gate9=PASS forbidden=PASS

@@ -1,0 +1,21 @@
+=== RUN   TestWorkflowMemberParkKeepsCallAndResumesItsOriginalRunRealPG
+    workflow_member_pg_test.go:102: second={MemberBreakdown:map[55d1d191-a2da-5da9-acb8-8b22414abfef:{RunID:55d1d191-a2da-5da9-acb8-8b22414abfef ParentRunID:run-persistent-member ParentSeq:1 Agent:worker TeamID:0x26de58432f00 WorkflowID:0x26de58432f10 WorkflowVersion:0x26de585a2270 RunSnapshotID:0x26de58432f20 SelfExclusive:{InputTokens:0 OutputTokens:0 CostUSD:0 ToolCalls:0}}] ActiveMember:0x26de585a41e0 Status:failed Output:<nil> Outputs:map[] ArtifactTaskIDs:map[] DeliveryErrors:map[] NodeID: WaitKind: WaitDetail:[] Usage:{nextCallOrdinals:map[worker:1] calls:map[uc1_6f71f021e191160e192fd9dd4f6da65421b73d7b901d8881389e5b025cdb3bbb:{RunID:run-persistent-member Step:worker CallOrdinal:0 Attempts:map[]}] attemptOwners:map[]} UsageComplete:true UsageIncompleteReason: Err:team_run_execution_unrecoverable: frozen member invocation is already owned}
+--- FAIL: TestWorkflowMemberParkKeepsCallAndResumesItsOriginalRunRealPG (0.29s)
+=== RUN   TestMemberTerminalAccountingExcludesRegisteredChildOnce
+--- PASS: TestMemberTerminalAccountingExcludesRegisteredChildOnce (0.00s)
+FAIL
+FAIL	github.com/jinyitao123/weave/internal/base/teamrun	1.704s
+=== RUN   TestMemberResumeAfterReceiptDoesNotRepeatEffectRealPG
+--- PASS: TestMemberResumeAfterReceiptDoesNotRepeatEffectRealPG (0.34s)
+=== RUN   TestMemberUnknownToolEffectIsNotReplayedRealPG
+--- PASS: TestMemberUnknownToolEffectIsNotReplayedRealPG (0.27s)
+=== RUN   TestMemberAdmissionAndCheckpointFenceRealPG
+--- PASS: TestMemberAdmissionAndCheckpointFenceRealPG (0.26s)
+=== RUN   TestMemberAtomicHistoryFailureStopsBeforeEffectsRealPG
+--- PASS: TestMemberAtomicHistoryFailureStopsBeforeEffectsRealPG (0.25s)
+=== RUN   TestMemberResumePreservesOriginalToolLoopLimitRealPG
+2026/09/07 15:35:29 WARN loom/toolloop: tool budget exhausted, wrapping up max_iterations=3
+--- PASS: TestMemberResumePreservesOriginalToolLoopLimitRealPG (0.30s)
+PASS
+ok  	github.com/jinyitao123/weave/internal/kernel/loomruntime	2.295s
+FAIL

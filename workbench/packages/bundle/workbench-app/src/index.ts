@@ -14,6 +14,7 @@ import { buildPilotReport } from './pilot-report.ts'
 import { inspectWeaveReadiness } from './readiness.ts'
 import { handleWeaveRuntimeRequest, resolveRuntimeServerUrl } from './runtime-control.ts'
 import { handleAgentExecutionRequest } from './agent-execution-control.ts'
+import { DispatchResponseError, installDispatchInputTool, latestDispatchInput, type DispatchInputFacts } from './dispatch-input.ts'
 
 export { buildPilotReport } from './pilot-report.ts'
 export type { PilotReport, PilotReportTask } from './pilot-report.ts'
@@ -24,6 +25,28 @@ export type { WeaveRuntimeEngineView, WeaveRuntimeList, WeaveRuntimeView } from 
 
 /** User-facing lifecycle of one Weave-dispatched task. */
 export type WorkTaskStatus = 'preparing' | 'queued' | 'running' | 'waiting' | 'stopping' | 'completed' | 'failed' | 'stopped'
+
+/** Saved Weave checks for one immutable delivery revision. */
+export interface WorkTaskDelivery {
+  readonly revisionId: string
+  readonly contractDigest: string
+  readonly verificationId: string
+  readonly verificationStatus: 'pending' | 'passed' | 'failed' | 'unknown'
+  readonly reason: string
+  readonly checks: { readonly checkId: string; readonly status: 'pending' | 'passed' | 'failed' | 'unknown'; readonly reason: string }[]
+  readonly checkCounts: Readonly<Record<string, number>>
+  readonly available: boolean
+  readonly evidenceCompleteness: 'complete' | 'unavailable'
+}
+
+/** Last user-authored assessment, retained when delivery evidence cannot be read. */
+export interface WorkTaskAssessment {
+  readonly runId: string
+  readonly revisionId: string
+  readonly outcome: 'adopted' | 'needs-revision'
+  readonly note: string
+  readonly assessedAt: number
+}
 
 /** Durable product view of one Weave dispatch owned by a Workbench session. */
 export interface WorkTaskProjection {
@@ -63,6 +86,11 @@ export interface WorkTaskProjection {
   readonly costUSD: number
   readonly outcome: 'unrated' | 'adopted' | 'needs-revision'
   readonly outcomeNote: string
+  /** Absent in historical session records that predate delivery verification. */
+  readonly delivery?: WorkTaskDelivery | undefined
+  readonly outcomeRevisionId?: string | undefined
+  readonly outcomeAssessedAt?: number | undefined
+  readonly latestAssessment?: WorkTaskAssessment | undefined
   readonly observedAt: number
   readonly updatedAt: number
 }
@@ -114,6 +142,7 @@ export interface WorkTaskPendingAction {
   readonly disposition: 'apply' | 'discard' | ''
   readonly instruction: string
   readonly nodeId: string
+  readonly authorizedTotalRounds?: number | undefined
   readonly humanPayload?: unknown
   readonly humanInteractionId?: string | undefined
 }
@@ -126,7 +155,7 @@ export interface WorkTaskRuntime {
 }
 
 /** User-facing lifecycle state for one workflow member or stage. */
-export type WorkTaskMemberStatus = 'pending' | 'running' | 'partially-completed' | 'completed' | 'failed' | 'stopped' | 'not-recorded'
+export type WorkTaskMemberStatus = 'waiting' | 'pending' | 'running' | 'partially-completed' | 'completed' | 'failed' | 'stopped' | 'not-recorded'
 
 /** One declared input observed for a member stage. */
 export interface WorkTaskMemberInput {
@@ -140,6 +169,9 @@ export interface WorkTaskMemberInput {
 
 /** One workflow stage assigned to a member, including observed tools and outputs. */
 export interface WorkTaskMemberStage {
+ readonly budgetPause?: { readonly reason: string; readonly roundsUsed: number; readonly authorizedTotalRounds: number } | undefined
+  readonly memberRunId?: string | undefined
+  readonly checkpointSavedAt?: string | undefined
   readonly nodeId: string
   readonly name: string
   readonly status: WorkTaskMemberStatus
@@ -242,11 +274,12 @@ declare module '@deepseek-ai/dsh-session-projection/types' {
 
 const statusSchema = z.enum(['preparing', 'queued', 'running', 'waiting', 'stopping', 'completed', 'failed', 'stopped'])
 const runtimeSchema = z.object({ name: z.string(), detail: z.string(), status: statusSchema }).strict()
-const memberStatusSchema = z.enum(['pending', 'running', 'partially-completed', 'completed', 'failed', 'stopped', 'not-recorded'])
+const memberStatusSchema = z.enum(['waiting', 'pending', 'running', 'partially-completed', 'completed', 'failed', 'stopped', 'not-recorded'])
 const memberInputSchema = z.object({
   name: z.string(), expectedType: z.string(), source: z.string(), nodeId: z.string(), path: z.string(), summary: z.string().default(''),
 }).strict()
 const memberStageSchema = z.object({
+ budgetPause: z.object({reason:z.string(),roundsUsed:z.number().int().nonnegative(),authorizedTotalRounds:z.number().int().positive()}).strict().optional(),
   nodeId: z.string(), name: z.string(), status: memberStatusSchema,
   inputs: z.array(memberInputSchema), outputRefs: z.array(z.string()),
   startedAt: z.string().default(''), completedAt: z.string().default(''),
@@ -255,6 +288,7 @@ const memberStageSchema = z.object({
     startedAt: z.string(), completedAt: z.string(), input: z.string().default(''), output: z.string().default('') }).strict()).default([]),
   failureClass: z.enum(['work', 'verification', 'infrastructure', 'cancelled', '']).default(''),
   failureReason: z.string().default(''), retryable: z.boolean().default(false),
+  memberRunId: z.string().optional(), checkpointSavedAt: z.string().optional(),
   currentTaskId: z.string().default(''), publicUpdatesState: z.enum(['live', 'complete', 'partial', 'unavailable']).default('unavailable'),
   publicUpdatesTruncated: z.boolean().default(false),
   publicUpdates: z.array(z.object({
@@ -279,14 +313,16 @@ const attemptSchema = z.object({
 
 const browserTaskActionSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('stop'), sessionId: z.string(), runId: z.string() }).strict(),
-  z.object({ action: z.literal('rerun'), sessionId: z.string(), runId: z.string(), brief: z.string().trim().min(1).max(100_000) }).strict(),
-  z.object({ action: z.literal('stage-retry'), sessionId: z.string(), runId: z.string(), nodeId: z.string() }).strict(),
+  z.object({ action: z.literal('rerun'), sessionId: z.string(), runId: z.string(), brief: z.string().max(100_000).refine(value => value.trim().length > 0) }).strict(),
+  z.object({ action: z.literal('stage-retry'), sessionId: z.string(), runId: z.string(), nodeId: z.string(), authorizedTotalRounds: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional() }).strict(),
   z.object({ action: z.literal('correction-request'), sessionId: z.string(), runId: z.string(), targetKind: z.enum(['team', 'member']), targetMemberId: z.string(), instruction: z.string().trim().min(1).max(20_000) }).strict(),
   z.object({ action: z.literal('correction-confirm'), sessionId: z.string(), runId: z.string(), correctionId: z.string(), disposition: z.enum(['apply', 'discard']) }).strict(),
   z.object({ action: z.literal('human-complete'), sessionId: z.string(), runId: z.string(), interactionId: z.string(), payload: z.unknown().refine(value => value !== undefined) }).strict(),
-  z.object({ action: z.literal('assess'), sessionId: z.string(), runId: z.string(), outcome: z.enum(['adopted', 'needs-revision']), note: z.string().max(2_000) }).strict(),
+  z.object({ action: z.literal('assess'), sessionId: z.string(), runId: z.string(), deliveryRevisionId: z.string().min(1), outcome: z.enum(['adopted', 'needs-revision']), note: z.string().max(2_000) }).strict(),
+  z.object({ action: z.literal('recheck'), sessionId: z.string(), runId: z.string(), deliveryRevisionId: z.string().min(1), contractDigest: z.string().min(1) }).strict(),
 ])
 const pendingActionSchema = z.object({
+ authorizedTotalRounds: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional(),
   kind: z.enum(['stop', 'rerun', 'stage-retry', 'correction-request', 'correction-confirm', 'human-complete']), targetRunId: z.string(), idempotencyKey: z.string(),
   clientRequestId: z.string(), brief: z.string(), requestedAt: z.number().nonnegative(),
   targetKind: z.enum(['team', 'member', '']).default(''), targetMemberId: z.string().default(''),
@@ -301,6 +337,42 @@ const correctionSchema = z.object({
   preservedNodeIds: z.array(z.string()), requestedAt: z.string(),
 }).strict()
 const completenessSchema = z.record(z.string(), z.enum(['complete', 'partial', 'unavailable']))
+const verificationStatusSchema = z.enum(['pending', 'passed', 'failed', 'unknown'])
+const deliverySchema = z.object({
+  revisionId: z.string(), contractDigest: z.string(), verificationId: z.string(), verificationStatus: verificationStatusSchema,
+  reason: z.string(), checks: z.array(z.object({ checkId: z.string(), status: verificationStatusSchema, reason: z.string() }).strict()),
+  checkCounts: z.record(z.string(), z.number().int().nonnegative()), available: z.boolean(), evidenceCompleteness: z.enum(['complete', 'unavailable']),
+}).strict()
+const wireDeliverySchema = z.object({
+  revision_id: z.string().default(''), contract_digest: z.string().default(''), verification_id: z.string().default(''), verification_status: verificationStatusSchema,
+  reason: z.string().default(''), checks: z.array(z.object({ check_id: z.string(), status: verificationStatusSchema, reason: z.string() })),
+  check_counts: z.record(z.string(), z.number().int().nonnegative()), available: z.boolean(), evidence_completeness: z.enum(['complete', 'unavailable']),
+})
+
+function readDelivery(value: unknown): WorkTaskDelivery {
+  const parsed = wireDeliverySchema.safeParse(value)
+  if (!parsed.success) return { revisionId: '', contractDigest: '', verificationId: '', verificationStatus: 'unknown',
+    reason: 'delivery_verification_unavailable', checks: [], checkCounts: {}, available: false, evidenceCompleteness: 'unavailable' }
+  const item = parsed.data
+  return { revisionId: item.revision_id, contractDigest: item.contract_digest, verificationId: item.verification_id,
+    verificationStatus: item.verification_status, reason: item.reason,
+    checks: item.checks.map(check => ({ checkId: check.check_id, status: check.status, reason: check.reason })),
+    checkCounts: item.check_counts, available: item.available, evidenceCompleteness: item.evidence_completeness }
+}
+
+function assessmentForDelivery(previous: WorkTaskProjection | null, runId: string, delivery: WorkTaskDelivery | undefined):
+Pick<WorkTaskProjection, 'outcome' | 'outcomeNote' | 'outcomeRevisionId' | 'outcomeAssessedAt' | 'latestAssessment'> {
+  const receipt = previous?.runId === runId ? previous.latestAssessment
+    ?? (previous.outcome !== 'unrated' && previous.outcomeRevisionId !== undefined && previous.outcomeRevisionId !== ''
+      ? { runId, revisionId: previous.outcomeRevisionId, outcome: previous.outcome,
+        note: previous.outcomeNote, assessedAt: previous.outcomeAssessedAt ?? 0 }
+      : undefined) : undefined
+  const sameRevision = receipt?.runId === runId && delivery !== undefined && delivery.revisionId !== '' && receipt.revisionId === delivery.revisionId
+  return { ...(receipt?.runId === runId ? { latestAssessment: receipt } : {}), ...(sameRevision
+    ? { outcome: receipt.outcome, outcomeNote: receipt.note, outcomeRevisionId: receipt.revisionId, outcomeAssessedAt: receipt.assessedAt }
+    : { outcome: 'unrated' as const, outcomeNote: '', outcomeRevisionId: '', outcomeAssessedAt: 0 }) }
+}
+
 const taskSchema = z.object({
   preparation: z.object({ callId: z.string(), buildId: z.string(), updatedAt: z.number().nonnegative().optional(), state: z.enum(['submitting', 'building', 'ready', 'failed', 'unknown']), error: z.string(), steps: z.array(z.object({ id: z.string(), label: z.string(), status: z.string(), attempt: z.number() }).strict()).optional() }).strict().optional(),
   displayState: z.string().optional(),
@@ -326,6 +398,8 @@ const taskSchema = z.object({
   tokensIn: z.number().int().nonnegative().default(0), tokensOut: z.number().int().nonnegative().default(0),
   costUSD: z.number().nonnegative().default(0),
   outcome: z.enum(['unrated', 'adopted', 'needs-revision']).default('unrated'), outcomeNote: z.string().default(''),
+  delivery: deliverySchema.optional(), outcomeRevisionId: z.string().optional(), outcomeAssessedAt: z.number().nonnegative().optional(),
+  latestAssessment: z.object({ runId: z.string().min(1), revisionId: z.string().min(1), outcome: z.enum(['adopted', 'needs-revision']), note: z.string(), assessedAt: z.number().nonnegative() }).strict().optional(),
   observedAt: z.number().nonnegative().default(0),
   updatedAt: z.number().nonnegative(),
 }).strict()
@@ -427,7 +501,7 @@ function canRetryStage(task: WorkTaskProjection, nodeId: string): boolean {
   return task.status === 'waiting'
     && (task.waitKind === 'fanout' || (task.waitKind === 'runtime' && task.waitNodeId === nodeId))
     && task.members.some(member => member.stages.some(stage => stage.nodeId === nodeId
-      && stage.status === 'failed' && stage.failureClass === 'infrastructure' && stage.retryable))
+      && ((stage.status === 'failed' && stage.failureClass === 'infrastructure') || (stage.status === 'waiting' && stage.budgetPause !== undefined)) && stage.retryable))
 }
 
 function resultValue(event: Extract<SessionEvent, { type: 'tool/result' }>): unknown {
@@ -473,6 +547,7 @@ function memberStatus(value: unknown): WorkTaskMemberStatus {
   const raw = text(value, ['status', 'state']).toLowerCase().replaceAll('_', '-')
   if (raw === 'completed' || raw === 'finished') return 'completed'
   if (raw === 'partially-completed') return 'partially-completed'
+  if (raw === 'waiting') return 'waiting'
   if (raw === 'running' || raw === 'active') return 'running'
   if (raw === 'failed') return 'failed'
   if (raw === 'stopped' || raw === 'cancelled') return 'stopped'
@@ -511,6 +586,16 @@ function publicUpdates(value: unknown): WorkTaskPublicUpdate[] {
   return [...updates.values()]
 }
 
+function memberBudgetPause(value: unknown): { budgetPause?: { reason: string; roundsUsed: number; authorizedTotalRounds: number } } {
+ const item = value as Record<string, unknown> | null
+ if (typeof item !== 'object' || item === null) return {}
+ const used = item.rounds_used ?? item.roundsUsed
+ const ceiling = item.authorized_total_rounds ?? item.authorizedTotalRounds
+ if (typeof item.reason !== 'string' || typeof used !== 'number' || typeof ceiling !== 'number'
+   || !Number.isSafeInteger(used) || !Number.isSafeInteger(ceiling) || used < 0 || ceiling < used) return {}
+ return { budgetPause: { reason: item.reason, roundsUsed: used, authorizedTotalRounds: ceiling } }
+}
+
 function memberStages(value: unknown): WorkTaskMemberStage[] {
   if (!Array.isArray(value)) return []
   return value.flatMap((candidate): WorkTaskMemberStage[] => {
@@ -529,6 +614,9 @@ function memberStages(value: unknown): WorkTaskMemberStage[] {
       failureClass: (['work', 'verification', 'infrastructure', 'cancelled'].includes(text(item, ['failure_class', 'failureClass']))
         ? text(item, ['failure_class', 'failureClass']) : '') as WorkTaskMemberStage['failureClass'],
       failureReason: text(item, ['failure_reason', 'failureReason']), retryable: item.retryable === true,
+      ...memberBudgetPause(item.budget_pause ?? item.budgetPause),
+      ...(text(item, ['member_run_id', 'memberRunId']) === '' ? {} : { memberRunId: text(item, ['member_run_id', 'memberRunId']) }),
+      ...(text(item, ['checkpoint_saved_at', 'checkpointSavedAt']) === '' ? {} : { checkpointSavedAt: text(item, ['checkpoint_saved_at', 'checkpointSavedAt']) }),
       publicUpdates: publicUpdates(item.public_updates), publicUpdatesTruncated: item.public_updates_truncated === true,
       currentTaskId: text(item, ['current_task_id']),
       publicUpdatesState: ['live', 'complete', 'partial'].includes(String(item.public_updates_state)) ? item.public_updates_state as WorkTaskMemberStage['publicUpdatesState'] : 'unavailable',
@@ -735,6 +823,8 @@ function snapshot(
       || (sameRun ? previous.totalStages : 0)
   const retainedRuntimes = nextRuntimes.length === 0 ? (sameRun ? previous.runtimes : []) : nextRuntimes
   const observed = observedAt(value, now)
+  const delivery = Object.hasOwn(object(value) ?? {}, 'delivery') ? readDelivery(object(value)?.delivery)
+    : sameRun ? previous.delivery : undefined
   const base: Omit<WorkTaskProjection, 'attempts'> = {
     brief: seed.brief ?? previous?.brief ?? '',
     clientRequestId: text(value, ['client_request_id', 'clientRequestId']) || seed.clientRequestId || previous?.clientRequestId || '',
@@ -771,8 +861,8 @@ function snapshot(
     tokensIn: Math.floor(finiteNumber(value, ['tokens_in', 'tokensIn', 'input_tokens']) ?? (sameRun ? previous.tokensIn : 0)),
     tokensOut: Math.floor(finiteNumber(value, ['tokens_out', 'tokensOut', 'output_tokens']) ?? (sameRun ? previous.tokensOut : 0)),
     costUSD: finiteNumber(value, ['cost_usd', 'costUSD']) ?? (sameRun ? previous.costUSD : 0),
-    outcome: sameRun ? previous.outcome : 'unrated',
-    outcomeNote: sameRun ? previous.outcomeNote : '',
+    ...(delivery === undefined ? {} : { delivery }),
+    ...assessmentForDelivery(previous, nextRunId, delivery),
     observedAt: observed,
     updatedAt: now,
   }
@@ -786,6 +876,26 @@ function snapshot(
  * @returns updated state, or the original reference for an unrelated event.
  */
 export function applyWorkTaskProjection(state: WorkTaskState, event: SessionEvent): WorkTaskState {
+  if (event.type === 'weave/dispatch-input') {
+    const input = event.data
+    // The exact-run action poller owns rerun projection and its action receipt together.
+    if (input.rerun !== null) return state
+    if (input.state === 'registered') return state
+    if (input.state === 'accepted') {
+      if (input.result === null) throw new Error('accepted dispatch input requires its run receipt')
+      return { ...state, task: snapshot(state.task, input.result, event.time, {
+        brief: input.task, teamId: input.facts.team_id, teamName: state.teams[input.facts.team_id] ?? input.facts.team_id,
+        workflowName: input.facts.workflow_id ?? '', clientRequestId: input.revision?.client_request_id ?? '',
+      }) }
+    }
+    if (input.state === 'rejected' || input.state === 'closed') return state.task === null ? state : { ...state, task: {
+      ...state.task, status: 'failed', actionError: input.errorCode, updatedAt: event.time,
+    } }
+    return { ...state, task: { ...snapshot(null, {}, event.time, {
+      brief: input.task, teamId: input.facts.team_id, teamName: state.teams[input.facts.team_id] ?? input.facts.team_id,
+      workflowName: input.facts.workflow_id ?? '',
+    }), attempts: state.task?.attempts ?? [] } }
+  }
   if (event.type === 'weave/work-task') {
     const incoming = taskSchema.parse(event.data)
     if (state.task !== null && state.task.runId !== '' && incoming.runId !== '' && incoming.runId !== state.task.runId
@@ -795,7 +905,9 @@ export function applyWorkTaskProjection(state: WorkTaskState, event: SessionEven
     for (const receipt of [...(state.task?.actionHistory ?? []), ...incoming.actionHistory]) {
       if (!receipts.has(receipt.id)) receipts.set(receipt.id, receipt)
     }
-    return { ...state, task: { ...incoming, teamName: state.teams[incoming.teamId] || incoming.teamName,
+    const { latestAssessment: _assessment, ...incomingFacts } = incoming
+    return { ...state, task: { ...incomingFacts, ...assessmentForDelivery(incoming, incoming.runId, incoming.delivery),
+      teamName: state.teams[incoming.teamId] || incoming.teamName,
       actionHistory: [...receipts.values()] } }
   }
   if (event.type === 'weave/work-task-action') {
@@ -916,7 +1028,7 @@ function buildSnapshot(task: WorkTaskProjection, value: unknown, now: number): W
 
 /** Projection definition registered with the Session projection registry. */
 export const workTaskProjectionDefinition = {
-  key: 'workTask', stateVersion: 13, stateSchema,
+  key: 'workTask', stateVersion: 14, stateSchema,
   init: (): WorkTaskState => ({ task: null, pendingCalls: {}, teams: {} }),
   apply: applyWorkTaskProjection,
   wire: {
@@ -937,13 +1049,28 @@ export interface Config {
   readonly pollIntervalMs?: number
 }
 export const name = 'workbench-work-task'
-export const inject = ['sessions', 'sessionProjections', 'sessionController', 'commands', 'systemPrompt', 'connection']
+export const inject = ['sessions', 'sessionProjections', 'sessionController', 'commands', 'systemPrompt', 'connection', 'tools']
+
+function rerunFacts(session: Session, task: WorkTaskProjection): DispatchInputFacts {
+  const accepted = session.events.findLast(event => event.type === 'weave/dispatch-input'
+    && event.data.state === 'accepted' && event.data.result?.run_id === task.runId)
+  if (accepted?.type !== 'weave/dispatch-input') return { team_id: task.teamId,
+    ...(task.workflowName === '' ? {} : { workflow_id: task.workflowName }) }
+  const input = accepted.data
+  const workflowId = text(input.result, ['workflow_id'])
+  const workflowVersion = finiteNumber(input.result, ['workflow_version'])
+  const projectId = text(input.result, ['project_id'])
+  return { ...input.facts,
+    ...(workflowId === '' ? {} : { workflow_id: workflowId }),
+    ...(workflowVersion === undefined ? {} : { workflow_version: workflowVersion }),
+    ...(projectId === '' ? {} : { project_id: projectId }) }
+}
 
 /** Product policy that remains visible when a per-session agent preset shadows the deployment persona. */
 export const workbenchTeamRoutingSection = {
   name: 'workbench:team-routing',
   order: FIRST_PARTY_SECTION_ORDER.TEAM_POLICY + 10,
-  text: 'For substantive business work in Weave Workbench, first list the available Weave teams and match the request against each team\'s stated purpose, responsibilities, success criteria, default workflow availability, and health. If a suitable active team exists, first ensure the user has confirmed the selected team, task scope, and expected deliverables. Summarize only the unconfirmed choices and request their confirmation; when these choices are already explicitly confirmed in the conversation, dispatch the default workflow with wait=false without asking again. If no suitable team exists, say so plainly and collaborate with the user on a team definition. Once the user confirms the team definition, task scope, and expected deliverables, create the team with its agreed workflow and dispatch the original business task without repeating confirmation only when that confirmation includes dispatch. If the user explicitly asks to create first and confirm dispatch separately, create the team, show the final task summary, and wait for that separate dispatch decision. Selecting a team card only selects a proposal; it does not authorize dispatch. Use the existing structured question or plan-review interaction to show the goal, expected outputs, actual members and workflow, missing materials, budget limits, and exactly which actions the decision authorizes. Preserve the displayed proposal and the user response in the conversation. Never treat your own claim of confirmation as a user decision. Do not replace a confirmed team or expand its task silently. If required materials are missing, obtain them before dispatch unless the user explicitly authorizes an assessment limited to those gaps. Reuse the same idempotency key for a repeated identical creation request and the same client_request_id for a repeated identical dispatch. After a creation transport error, verify the existing request outcome before creating another team. A build_id belongs to the current creation only; Workbench monitors its progress in the background. A failed creation stays the current issue until it is resolved or the user changes the proposal. Internal construction and evaluation steps are not additional user approval gates; do not perform the requested research or production work in the foreground. A successful Weave dispatch is already the durable task: do not create or update a DSH goal for it. After dispatch, make at most one activity or status call to confirm the handoff, then return the selected team and a short human-facing state such as queued, underway, waiting for input, completed, or needs attention. Do not include internal identifiers, raw workflow versions, orchestration phases, or backend enums unless the user explicitly asks for technical details. Do not poll the run in the foreground, and do not save a duplicate foreground deliverable; Workbench monitors the run and projects Weave\'s deliverables in the background. For follow-up questions and adjustments to an existing task, keep the current team and exact run; do not repeat team matching or dispatch a new task. A member reference provides context, not permission to modify work. Discuss ordinary questions. When the user explicitly requests a modification, submit the existing correction request for those targets, then present the computed impact for confirmation before applying it. Do not add a separate confirmation before submitting that explicitly requested correction, and never describe an accepted request as an applied change. When the run is terminal or the user later asks for the result, check whether an exact-run final deliverable exists. If execution ended with only stage records or no final deliverable, say that the final output is not yet confirmed and do not claim delivery is complete. Read any available final Weave deliverable and answer with a short user-facing completion summary: what was finished, the main findings or decisions, the files the user can open, and any user action still needed. Keep internal run IDs, deliverable IDs, runtime IDs, host paths, hashes, validation command names, and engine details out of the main answer unless the user explicitly asks for technical details. Never select free collaboration unless the user explicitly requests it. If Weave tools are unavailable, report that the Weave connection is not configured instead of pretending that team work was performed.',
+  text: 'For substantive business work in Weave Workbench, first list the available Weave teams and match the request against each team\'s stated purpose, responsibilities, success criteria, default workflow availability, and health. If a suitable active team exists, first ensure the user has confirmed the selected team, task scope, and expected deliverables. Summarize only the unconfirmed choices and request their confirmation; when these choices are already explicitly confirmed in the conversation, call weave_dispatch with the agreed team and workflow without asking again; Workbench attaches the original user inputs automatically. If no suitable team exists, say so plainly and collaborate with the user on a team definition. Once the user confirms the team definition, task scope, and expected deliverables, create the team with its agreed workflow and call weave_dispatch without repeating confirmation only when that confirmation includes dispatch. If the user explicitly asks to create first and confirm dispatch separately, create the team, show the final task summary, and wait for that separate dispatch decision. Selecting a team card only selects a proposal; it does not authorize dispatch. Use the existing structured question or plan-review interaction to show the goal, expected outputs, actual members and workflow, missing materials, budget limits, and exactly which actions the decision authorizes. Preserve the displayed proposal and the user response in the conversation. Never treat your own claim of confirmation as a user decision. Do not replace a confirmed team or expand its task silently. If required materials are missing, obtain them before dispatch unless the user explicitly authorizes an assessment limited to those gaps. Reuse the same idempotency key for repeated identical creation. Use weave_dispatch for initial dispatch; it owns the original input and idempotency key. Never copy a task body into an MCP dispatch call. Retry an unresolved weave_dispatch with the same team and workflow. After a creation transport error, verify the existing request outcome before creating another team. A build_id belongs to the current creation only; Workbench monitors its progress in the background. A failed creation stays the current issue until it is resolved or the user changes the proposal. Internal construction and evaluation steps are not additional user approval gates; do not perform the requested research or production work in the foreground. A successful Weave dispatch is already the durable task: do not create or update a DSH goal for it. After dispatch, make at most one activity or status call to confirm the handoff, then return the selected team and a short human-facing state such as queued, underway, waiting for input, completed, or needs attention. Do not include internal identifiers, raw workflow versions, orchestration phases, or backend enums unless the user explicitly asks for technical details. Do not poll the run in the foreground, and do not save a duplicate foreground deliverable; Workbench monitors the run and projects Weave\'s deliverables in the background. For follow-up questions and adjustments to an existing task, keep the current team and exact run; do not repeat team matching or dispatch a new task. A member reference provides context, not permission to modify work. Discuss ordinary questions. When the user explicitly requests a modification, submit the existing correction request for those targets, then present the computed impact for confirmation before applying it. Do not add a separate confirmation before submitting that explicitly requested correction, and never describe an accepted request as an applied change. When the run is terminal or the user later asks for the result, check whether an exact-run final deliverable exists. If execution ended with only stage records or no final deliverable, say that the final output is not yet confirmed and do not claim delivery is complete. Read any available final Weave deliverable and answer with a short user-facing completion summary: what was finished, the main findings or decisions, the files the user can open, and any user action still needed. Keep internal run IDs, deliverable IDs, runtime IDs, host paths, hashes, validation command names, and engine details out of the main answer unless the user explicitly asks for technical details. Never select free collaboration unless the user explicitly requests it. If Weave tools are unavailable, report that the Weave connection is not configured instead of pretending that team work was performed.',
 } as const
 
 /** Register the durable projection and keep non-terminal Weave runs synchronized outside the conversation turn. */
@@ -953,6 +1080,15 @@ export function apply(ctx: Context, config: Config = {}): void {
   ctx.sessionController.registerHistoryProjection({ key: 'workTask', eventTypes: ['weave/work-task'] })
   const apiUrl = (config.apiUrl ?? process.env.WEAVE_API_URL ?? 'http://127.0.0.1:18080').replace(/\/$/, '')
   const apiKey = (config.apiKey ?? process.env.WEAVE_API_KEY ?? '').trim()
+  const dispatchInputs = apiKey === '' ? undefined : installDispatchInputTool(ctx, { apiUrl, apiKey }, (session) => {
+    const task = ctx.sessionProjections.stateOf(session, 'workTask')?.task
+    if (task === null || task === undefined || task.runId === '') return
+    if (task.pendingAction !== null) throw new Error('dispatch_input_pending: finish the current task action first')
+    const latest = latestDispatchInput(session)
+    const replay = latest?.state === 'accepted' && latest.result?.run_id === task.runId
+      && !session.events.some(event => event.type === 'user/message' && event.data.source.kind === 'user' && event.seq > latest.sourceThroughSeq)
+    if (!terminalStatus(task.status) && !replay) throw new Error('dispatch_current_run_active: use the current run for progress, correction or stop before starting a new task')
+  })
   const runtimeServerUrl = resolveRuntimeServerUrl(apiUrl, config.runtimeServerUrl ?? process.env.WEAVE_RUNTIME_SERVER_URL)
   const connection = Reflect.get(ctx, 'connection') as {
     readonly fetch: { register(route: { readonly path: string; readonly methods: readonly ('GET' | 'HEAD' | 'POST' | 'PUT' | 'DELETE')[]; readonly fetch: (request: Request) => Promise<Response> }): () => Promise<void> }
@@ -1008,6 +1144,37 @@ export function apply(ctx: Context, config: Config = {}): void {
   const terminalChecked = new Set<string>()
   const sessionKey = (session: Session): string => String(session.id)
   const terminal = (task: WorkTaskProjection): boolean => terminalStatus(task.status)
+  const recordAssessment = async (session: Session, runId: unknown, revisionId: unknown,
+    outcome: 'adopted' | 'needs-revision', note: string): Promise<string | null> => {
+    const current = ctx.sessionProjections.stateOf(session, 'workTask')?.task
+    const matches = (task: WorkTaskProjection | null | undefined): task is WorkTaskProjection => task != null
+      && task.status === 'completed' && task.runId === runId && typeof revisionId === 'string' && revisionId !== ''
+      && task.delivery?.revisionId === revisionId && task.delivery.available
+      && task.deliverables.some(item => item.kind === 'final' || item.kind === 'summary')
+    if (!matches(current)) return '交付版本已经变化，或尚未收到可评价的成果，请刷新后重试。'
+    let detail: unknown
+    try {
+      const response = await fetch(`${apiUrl}/v1/runs/${encodeURIComponent(current.runId)}/delivery`, {
+        headers: { Authorization: `Bearer ${apiKey}` }, signal: AbortSignal.timeout(10_000),
+      })
+      if (!response.ok) { await response.body?.cancel(); return '暂时无法核对交付版本，请稍后重试。' }
+      detail = await response.json() as unknown
+    } catch { return '暂时无法核对交付版本，请稍后重试。' }
+    const delivery = readDelivery(object(detail)?.delivery)
+    const latest = ctx.sessionProjections.stateOf(session, 'workTask')?.task
+    if (disposed || object(detail)?.run_id !== runId || object(detail)?.status !== 'succeeded'
+      || delivery.revisionId !== revisionId || !delivery.available || !matches(latest)) {
+      return '交付版本已经变化，请刷新后重新评价。'
+    }
+    const now = Date.now()
+    session.append('weave/work-task', { ...latest, outcome, outcomeNote: note,
+      outcomeRevisionId: delivery.revisionId, outcomeAssessedAt: now,
+      latestAssessment: { runId: latest.runId, revisionId: delivery.revisionId, outcome, note, assessedAt: now }, updatedAt: now })
+    await ctx.sessions.flush(session)
+    terminalChecked.delete(sessionKey(session))
+    schedule(session, 0)
+    return null
+  }
   const stop = (session: Session): void => {
     const key = sessionKey(session)
     const timer = timers.get(key)
@@ -1059,10 +1226,31 @@ export function apply(ctx: Context, config: Config = {}): void {
         return Response.json({ error: '当前任务状态已经变化，请刷新后重试。' }, { status: 409 })
       }
       if (input.action === 'assess') {
-        if (current.status !== 'completed' || !current.deliverables.some(item => item.kind === 'final' || item.kind === 'summary')) return Response.json({ error: '取得最终成果后才能判断交付结果。' }, { status: 409 })
-        session.append('weave/work-task', { ...current, outcome: input.outcome, outcomeNote: input.note.trim(), updatedAt: Date.now() })
-        await ctx.sessions.flush(session)
+        const error = await recordAssessment(session, input.runId, input.deliveryRevisionId, input.outcome, input.note.trim())
+        if (error !== null) return Response.json({ error }, { status: 409 })
         return new Response(null, { status: 204 })
+      }
+      if (input.action === 'recheck') {
+        if (current.delivery?.revisionId !== input.deliveryRevisionId
+          || current.delivery.contractDigest !== input.contractDigest || !current.delivery.available) {
+          return Response.json({ error: '交付版本已经变化，请刷新后重新核验。' }, { status: 409 })
+        }
+        try {
+          const response = await fetch(`${apiUrl}/v1/runs/${encodeURIComponent(current.runId)}/delivery/recheck`, {
+            method: 'POST', headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ revision_id: input.deliveryRevisionId, contract_digest: input.contractDigest }),
+            signal: AbortSignal.any([request.signal, AbortSignal.timeout(50_000)]),
+          })
+          if (!response.ok) {
+            await response.body?.cancel()
+            return Response.json({ error: response.status === 409 ? '交付版本已经变化，请刷新后重新核验。'
+              : response.status === 422 ? '这份历史成果缺少重查所需的证据，暂时无法重新核验。' : '核验请求未完成，请稍后重试。' }, { status: response.status === 409 ? 409 : 503 })
+          }
+          const result = object(await response.json() as unknown)
+          if (!disposed) { terminalChecked.delete(sessionKey(session)); schedule(session, 0) }
+          if (result?.current !== true) return Response.json({ error: '成果或核验记录已经变化，本次结果保留在历史中，请查看最新记录。' }, { status: 409 })
+          return new Response(null, { status: 204 })
+        } catch { return Response.json({ error: '核验结果暂时无法确认，请刷新后查看最新记录。' }, { status: 503 }) }
       }
       if (current.pendingAction !== null) return Response.json({ error: '已有一个操作正在处理中，请稍后再试。' }, { status: 409 })
       let pendingAction: WorkTaskPendingAction
@@ -1077,7 +1265,13 @@ export function apply(ctx: Context, config: Config = {}): void {
       } else if (input.action === 'stage-retry') {
         const retryable = canRetryStage(current, input.nodeId)
         if (!retryable) return Response.json({ error: '这个阶段当前不能单独重试。' }, { status: 409 })
-        pendingAction = { kind: 'stage-retry', targetRunId: current.runId, idempotencyKey: `workbench-stage-retry:${randomUUID()}`, clientRequestId: '', brief: '', requestedAt: Date.now(),
+        const budget = current.members.flatMap(member => member.stages).find(stage => stage.nodeId === input.nodeId)?.budgetPause
+        if ((budget?.reason === 'total_limit' && (input.authorizedTotalRounds ?? 0) <= budget.authorizedTotalRounds)
+          || (input.authorizedTotalRounds !== undefined && (budget === undefined || input.authorizedTotalRounds < budget.authorizedTotalRounds))) {
+          return Response.json({ error: '请输入高于已用额度的新累计轮次上限。' }, { status: 409 })
+        }
+        pendingAction = { kind: 'stage-retry', ...(input.authorizedTotalRounds === undefined ? {} : { authorizedTotalRounds: input.authorizedTotalRounds }),
+          targetRunId: current.runId, idempotencyKey: `workbench-stage-retry:${randomUUID()}`, clientRequestId: '', brief: '', requestedAt: Date.now(),
           targetKind: '', targetMemberId: '', correctionId: '', disposition: '', instruction: current.members.flatMap(member => member.stages).find(stage => stage.nodeId === input.nodeId)?.name ?? '', nodeId: input.nodeId }
       } else if (input.action === 'human-complete') {
         if (current.status !== 'waiting' || current.waitKind !== 'human' || current.humanTask?.interactionId !== input.interactionId) {
@@ -1171,13 +1365,17 @@ export function apply(ctx: Context, config: Config = {}): void {
             method: 'POST', body: JSON.stringify({ reason: 'workbench_user_requested', idempotency_key: action.idempotencyKey }),
           })
         } else if (action.kind === 'rerun') {
-          response = await request(`/v1/teams/${encodeURIComponent(current.teamId)}/dispatch`, {
-            method: 'POST', body: JSON.stringify({ task: action.brief, mode: 'workflow', client_request_id: action.clientRequestId,
-              ...(current.workflowName === '' ? {} : { workflow_id: current.workflowName }) }),
-          })
+          if (dispatchInputs === undefined) throw new Error('dispatch connection is unavailable')
+          try {
+            response = Response.json(await dispatchInputs.rerun(session, rerunFacts(session, current), action.clientRequestId,
+              AbortSignal.any([operation.controller.signal, AbortSignal.timeout(15_000)])))
+          } catch (error) {
+            if (!(error instanceof DispatchResponseError) || !error.rejected) throw error
+            response = Response.json({ code: error.code }, { status: 409 })
+          }
         } else if (action.kind === 'stage-retry') {
           response = await request(`/v1/runs/${encodeURIComponent(action.targetRunId)}/stages/${encodeURIComponent(action.nodeId)}/retry`, {
-            method: 'POST', body: JSON.stringify({ idempotency_key: action.idempotencyKey }),
+            method: 'POST', body: JSON.stringify({ idempotency_key: action.idempotencyKey, authorized_total_rounds: action.authorizedTotalRounds }),
           })
         } else if (action.kind === 'human-complete') {
           response = await request(`/v1/human-tasks/${encodeURIComponent(action.targetRunId)}/complete`, {
@@ -1200,7 +1398,7 @@ export function apply(ctx: Context, config: Config = {}): void {
           if (!sameAction(latest, action)) return
           let next: WorkTaskProjection
           if (action.kind === 'rerun') {
-            next = snapshot(latest, value, Date.now(), { brief: action.brief, clientRequestId: action.clientRequestId,
+            next = snapshot(latest, value, Date.now(), { brief: action.brief, clientRequestId: text(value, ['client_request_id']),
               runId: text(value, ['run_id', 'runId']), pendingAction: null, actionError: '' })
           } else if (action.kind === 'correction-request') {
             const correction = correctionList({ corrections: [value] })[0]
@@ -1215,7 +1413,7 @@ export function apply(ctx: Context, config: Config = {}): void {
           } else {
             next = snapshot(latest, value, Date.now(), { pendingAction: null, actionError: '' })
           }
-          next = { ...next, ...(action.kind === 'rerun' ? {} : { outcome: latest.outcome, outcomeNote: latest.outcomeNote }), actionHistory: receipt(latest, action, 'accepted') }
+          next = { ...next, ...assessmentForDelivery(latest, next.runId, next.delivery), actionHistory: receipt(latest, action, 'accepted') }
           session.append('weave/work-task', next)
           await ctx.sessions.flush(session)
           if (action.kind === 'rerun') terminalChecked.delete(sessionKey(session))
@@ -1241,6 +1439,8 @@ export function apply(ctx: Context, config: Config = {}): void {
         const activity = await response.json() as unknown
         if (current.runId !== '' && object(activity)?.run_id !== current.runId) return
         let next = snapshot(current, activity, Date.now())
+        if (current.runId !== '' && !Object.hasOwn(object(activity) ?? {}, 'delivery')) next = { ...next,
+          delivery: { ...readDelivery(undefined), reason: 'delivery_verification_unsupported', evidenceCompleteness: 'complete' } }
         let supplementalReadsComplete = true
         const readSupplement = async (path: string): Promise<unknown> => {
           try {
@@ -1250,6 +1450,12 @@ export function apply(ctx: Context, config: Config = {}): void {
           } catch { /* A failed detail read keeps the observed activity and remains eligible for retry. */ }
           supplementalReadsComplete = false
           return undefined
+        }
+        if (terminal(next) && next.delivery?.verificationStatus === 'pending') {
+          const detail = await readSupplement(`/v1/runs/${encodeURIComponent(next.runId)}/delivery`)
+          const delivery = readDelivery(object(detail)?.run_id === next.runId ? object(detail)?.delivery : undefined)
+          next = { ...next, delivery: delivery.verificationStatus === 'pending'
+            ? { ...delivery, verificationStatus: 'unknown', reason: 'delivery_report_missing' } : delivery }
         }
         if (next.teamName === '' && next.teamId !== '') {
           const detail = await readSupplement(`/v1/teams/${encodeURIComponent(next.teamId)}?include=summary`)
@@ -1283,7 +1489,7 @@ export function apply(ctx: Context, config: Config = {}): void {
         if (latest === undefined || next.observedAt < latest.observedAt) return
         next = resyncAttempts({ ...next, pendingAction: latest.pendingAction,
           actionError: latest.actionError !== current.actionError ? latest.actionError : next.actionError,
-          outcome: latest.outcome, outcomeNote: latest.outcomeNote, actionHistory: latest.actionHistory }, latest)
+          ...assessmentForDelivery(latest, next.runId, next.delivery), actionHistory: latest.actionHistory }, latest)
         const materiallyChanged = !isDeepStrictEqual({ ...next, observedAt: 0, updatedAt: 0 },
           { ...latest, observedAt: 0, updatedAt: 0 })
         if (materiallyChanged || next.observedAt - latest.observedAt >= 30_000) {
@@ -1294,6 +1500,7 @@ export function apply(ctx: Context, config: Config = {}): void {
         }
         const settled = latestForRun()
         if (settled !== undefined && terminal(settled) && settled.pendingAction === null
+          && operation.nextDelay !== 0 && settled.delivery?.evidenceCompleteness !== 'unavailable'
           && supplementalReadsComplete && Array.isArray(object(activity)?.members)
           && settled.completeness.members !== 'unavailable') {
           terminalChecked.add(sessionKey(session)); stop(session); return
@@ -1306,7 +1513,8 @@ export function apply(ctx: Context, config: Config = {}): void {
   ctx.on('session/event', (session, event) => {
     // The active poll owns its next interval; its durable snapshot cannot trigger another immediate read.
     if (event.type === 'weave/work-task' && operations.get(sessionKey(session))?.publishing === true) return
-    if (event.type === 'tool/result' || event.type === 'weave/work-task' || event.type === 'weave/work-task-action') queueMicrotask(() => { schedule(session) })
+    if (event.type === 'tool/result' || event.type === 'weave/work-task' || event.type === 'weave/work-task-action'
+      || event.type === 'weave/dispatch-input') queueMicrotask(() => { schedule(session) })
   })
   // The plugin may mount after persistence has restored live Sessions, so
   // session/created alone is insufficient to resume background ownership.
@@ -1343,9 +1551,9 @@ export function apply(ctx: Context, config: Config = {}): void {
       const current = ctx.sessionProjections.stateOf(agent.session, 'workTask')?.task
       let request: { runId?: unknown; brief?: unknown }
       try { request = JSON.parse(rawInput.trim()) as { runId?: unknown; brief?: unknown } } catch { return { kind: 'error', text: 'Invalid Weave rerun request.' } }
-      const brief = typeof request.brief === 'string' ? request.brief.trim() : ''
+      const brief = typeof request.brief === 'string' ? request.brief : ''
       if (current === null || current === undefined || !terminal(current)
-        || typeof request.runId !== 'string' || request.runId !== current.runId || brief === '') {
+        || typeof request.runId !== 'string' || request.runId !== current.runId || brief.trim() === '' || brief.length > 100_000) {
         return { kind: 'error', text: 'A terminal current run and a complete revised brief are required.' }
       }
       if (current.pendingAction !== null) return { kind: 'error', text: 'Another Weave action is already pending.' }
@@ -1446,18 +1654,13 @@ export function apply(ctx: Context, config: Config = {}): void {
     description: 'record whether the final Weave delivery is usable without invoking the model',
     recordInput: false,
     handler: async ({ agent, rawInput }) => {
-      const current = ctx.sessionProjections.stateOf(agent.session, 'workTask')?.task
-      let request: { runId?: unknown; outcome?: unknown; note?: unknown }
+      let request: { runId?: unknown; deliveryRevisionId?: unknown; outcome?: unknown; note?: unknown }
       try { request = JSON.parse(rawInput.trim()) as typeof request } catch { return { kind: 'error', text: 'Invalid Weave outcome assessment.' } }
       const outcome = request.outcome === 'adopted' || request.outcome === 'needs-revision' ? request.outcome : ''
       const note = typeof request.note === 'string' ? request.note.trim().slice(0, 2_000) : ''
-      if (current === null || current === undefined || current.status !== 'completed'
-        || !current.deliverables.some(item => item.kind === 'final' || item.kind === 'summary')
-        || request.runId !== current.runId || outcome === '') {
-        return { kind: 'error', text: 'A completed current run and a valid outcome are required.' }
-      }
-      agent.session.append('weave/work-task', { ...current, outcome, outcomeNote: note, updatedAt: Date.now() })
-      await ctx.sessions.flush(agent.session)
+      if (outcome === '') return { kind: 'error', text: 'Invalid Weave outcome assessment.' }
+      const error = await recordAssessment(agent.session, request.runId, request.deliveryRevisionId, outcome, note)
+      if (error !== null) return { kind: 'error', text: error }
       return { kind: 'success', text: 'Weave delivery outcome recorded.' }
     },
   }), 'workbench: delivery outcome command')

@@ -4,9 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"sync"
+	"time"
 
 	"github.com/jinyitao123/loom/contract"
+	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/kernel/mcpregistry"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 )
@@ -39,6 +42,18 @@ func NewMCPAccessFactory(
 		resolver: resolver, audit: audit,
 		newHost: func(access mcpregistry.ResolvedAccess) contract.ToolDispatcher {
 			opts := []HostOption{WithHeaders(access.Headers)}
+			if !access.Legacy {
+				definitions := make([]contract.ToolDef, 0, len(access.Definitions))
+				for _, tool := range access.Definitions {
+					definitions = append(definitions, contract.ToolDef{Name: tool.Name, Description: tool.Description,
+						InputSchema: tool.InputSchema, ReadOnly: tool.ReadOnly})
+				}
+				bound, err := NewToolContract(definitions)
+				if err != nil {
+					return NewRejectedMCPDispatcher(err)
+				}
+				opts = append(opts, WithToolContract(bound))
+			}
 			// Effective runtime allowlist: the agent's explicit filter if set,
 			// otherwise the catalog-vetted tool set for registry refs. This pins
 			// a no-filter registry ref to its last-probed catalog so tools added
@@ -273,3 +288,30 @@ func (d *rejectedMCPDispatcher) Dispatch(context.Context, contract.ToolCall) (*c
 
 var _ contract.ToolDispatcher = (*failClosedComposite)(nil)
 var _ contract.ToolDispatcher = (*rejectedMCPDispatcher)(nil)
+
+// BuildFrozenServer uses only published connection and policy facts. Credential
+// material must be resolved after the caller verifies current access and claim.
+// The regular write gate and audit wrappers remain shared with live access.
+func (f *MCPAccessFactory) BuildFrozenServer(workspaceID string, rec *registry.AgentRecord, binding frozen.FrozenMCPBinding, headers map[string]string, guards ...func(context.Context) error) (contract.ToolDispatcher, error) {
+	if f == nil || rec == nil || binding.WorkspaceID != workspaceID || binding.ServerID == "" || binding.Transport != "http" || len(binding.Tools) == 0 {
+		return nil, fmt.Errorf("%w: invalid frozen MCP binding", ErrFailClosed)
+	}
+	names := make([]string, 0, len(binding.Tools))
+	for _, tool := range binding.Tools {
+		names = append(names, tool.Name)
+	}
+	host := NewHTTPHost(binding.URL, WithHeaders(headers), WithFilter(names), WithHTTPClient(&http.Client{Timeout: 30 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}))
+	if len(guards) > 0 {
+		WithDispatchGuard(guards[0])(host)
+	}
+	checked := NewFrozenMCPDispatcher(host, binding)
+	bound, err := checked.BoundContract()
+	if err != nil {
+		return nil, err
+	}
+	WithToolContract(bound)(host)
+	access := mcpregistry.ResolvedAccess{ServerID: binding.ServerID, URL: binding.URL, Filter: names, WriteTools: binding.WriteTools, Definitions: binding.Tools}
+	factory := *f
+	factory.newHost = func(mcpregistry.ResolvedAccess) contract.ToolDispatcher { return checked }
+	return factory.buildOne(workspaceID, rec, "", access).dispatcher, nil
+}

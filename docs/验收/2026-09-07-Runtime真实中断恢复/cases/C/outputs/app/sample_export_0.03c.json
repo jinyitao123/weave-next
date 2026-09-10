@@ -1,0 +1,85 @@
+{
+  "schema": "corona-scenario-export/1.0",
+  "scenario": {
+    "traceability": {
+      "baseline_id": "corona-baseline-1.0.0",
+      "baseline_version": "1.0.0",
+      "content_digest": "cfb12b781363c547da87e6dec9fd937079cba25501b85ff6cbfabfbc508b10c2",
+      "derived_from": "baseline_frozen.yaml",
+      "derivation": "derive_params.rb (YAML->JSON 受控格式转换, 无数值改动)"
+    },
+    "scenario": {
+      "cruise_speed_c": 0.03,
+      "locked": true,
+      "fact_label": "verified_fact"
+    },
+    "inputs": {
+      "mass_kg": 1000000000,
+      "efficiency": 0.3,
+      "radius_m": 1000,
+      "rotation_rpm": 2,
+      "dust_mass_kg": 0.000001
+    },
+    "outputs": {
+      "travel_time_yr": {
+        "value": 141.66666666666669,
+        "unit": "yr",
+        "formula": "proxima_distance_ly / cruise_speed_c",
+        "fact_label": "derived_result",
+        "note": "匀速巡航下限, 不含加速/减速/航向修正"
+      },
+      "kinetic_energy_nonrel_j": {
+        "value": 4.044398304315679e+22,
+        "unit": "J",
+        "formula": "0.5 * mass_kg * (cruise_speed_c * c)^2",
+        "fact_label": "derived_result",
+        "note": "自身动能下限, 非完整推进能源预算"
+      },
+      "kinetic_energy_rel_j": {
+        "value": 4.0471303222625495e+22,
+        "unit": "J",
+        "formula": "(gamma-1) * m * c^2",
+        "fact_label": "derived_result",
+        "note": "相对论对照, 与非相对论分列"
+      },
+      "equivalent_tnt_mt": {
+        "value": 9666343.939569023,
+        "unit": "Gt TNT",
+        "formula": "E / 4.184e6 / 1e9",
+        "fact_label": "derived_result",
+        "note": "换算约定 1 kg TNT = 4.184e6 J [assumption]"
+      },
+      "min_input_energy_j": {
+        "value": 1.3481327681052265e+23,
+        "unit": "J",
+        "formula": "kinetic_energy_nonrel_j / efficiency",
+        "fact_label": "derived_result",
+        "note": "单边加速最小输入能量下限; 效率为情景假设 [assumption]"
+      },
+      "artificial_gravity_m_s2": {
+        "value": 43.864908449286034,
+        "unit": "m/s^2",
+        "formula": "(2*pi*rpm/60)^2 * radius_m",
+        "fact_label": "derived_result"
+      },
+      "artificial_gravity_g0": {
+        "value": 4.472975832652948,
+        "unit": "g0",
+        "formula": "a / 9.80665",
+        "fact_label": "derived_result"
+      },
+      "dust_impact_energy_j": {
+        "value": 40443983.043156795,
+        "unit": "J",
+        "formula": "0.5 * dust_mass_kg * (relative_speed_c * c)^2",
+        "fact_label": "derived_result"
+      },
+      "dust_impact_tnt_kg": {
+        "value": 9.666343939569023,
+        "unit": "kg TNT",
+        "formula": "E / 4.184e6",
+        "fact_label": "derived_result"
+      }
+    }
+  }
+}

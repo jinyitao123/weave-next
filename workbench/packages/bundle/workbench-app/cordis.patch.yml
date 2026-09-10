@@ -15,10 +15,10 @@
       workflow availability, and health. Before dispatch, ensure the user has
       confirmed the selected team, task scope, and expected deliverables. Ask
       only about unconfirmed choices; existing explicit confirmation is enough
-      to dispatch with wait=false without asking again. If no suitable team
+      to call weave_dispatch without asking again. Original user inputs are attached automatically; do not copy a task body into an MCP dispatch call. If no suitable team
       exists, define one with the user; after they confirm the team, task scope,
       and expected deliverables, create the agreed team and workflow and
-      dispatch the original task. Internal construction and evaluation do not
+      call weave_dispatch for the original task. Internal construction and evaluation do not
       add user approval steps. Do not perform the requested
       research or production work in the foreground. A successful Weave dispatch
       is already the durable task: do not create or update a DSH goal for it. After
@@ -114,6 +114,7 @@
         env:
           WEAVE_API_URL: !!js process.env.WEAVE_API_URL ?? 'http://127.0.0.1:18080'
           WEAVE_API_KEY: !!js process.env.WEAVE_API_KEY
+          WEAVE_WORKBENCH_BOUND_DISPATCH: '1'
         failOnStartupError: false
 
     - id: ui-brand-workbench

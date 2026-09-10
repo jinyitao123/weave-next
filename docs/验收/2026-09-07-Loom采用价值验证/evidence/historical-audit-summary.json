@@ -1,0 +1,27 @@
+{
+  "window_requested_days": 30,
+  "available_record_first": "2026-09-05",
+  "available_record_last": "2026-09-06",
+  "engine_exec_total": 37,
+  "completed": 34,
+  "failed": 2,
+  "cancelled": 1,
+  "sample_size": 20,
+  "sample_completed": 17,
+  "sample_failed": 2,
+  "sample_cancelled": 1,
+  "known_infrastructure_interruptions": 2,
+  "observed_rework_amount": "unknown",
+  "t2_source_tasks": [
+    "task-3b0014b553bdaa5746c6a708d5c75ecd",
+    "task-d83fea8e5aa82eca0097753a0869ae03"
+  ],
+  "t2_source_elapsed_seconds": [
+    1549.1,
+    1395.7
+  ],
+  "t2_source_tool_calls": [
+    76,
+    73
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "created_at": "2026-09-10T03:45:07.425904+08:00",
+  "repair_commit": "73dbafb96323f86fdd7e136a225730519d2e0e83",
+  "source_manifest_sha256": "584cc020b0bac241977362a057ebc8c7096a570760f0b32c39c1aa47fcc6cf8a",
+  "acceptance_sha256": "f4777aaf587b4a81a4fef1932717bf95a0aa063fa21a8e390dfd2ecd8cc60ec4",
+  "primary_runtime_id": "e584a15f-bd26-4fff-a697-8caf20150a7d",
+  "secondary_runtime_id": "fcfad0a6-51c9-4cdd-8e14-f9b105f22735",
+  "files": {
+    "team-template-v6.yaml": {
+      "bytes": 7444,
+      "sha256": "d6de61ee72336dacf8b2feb81cba4021a61109d3036d57842d82f09d2679c75e"
+    },
+    "task.txt": {
+      "bytes": 1898,
+      "sha256": "620ab5074a3598bcf608906e8ffebd99ce40f560ab54abc700f70b4bc5a7f53a"
+    }
+  },
+  "external_effects": "none"
+}

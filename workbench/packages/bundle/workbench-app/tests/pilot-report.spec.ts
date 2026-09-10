@@ -30,7 +30,8 @@ describe('Workbench pilot report', () => {
       { stateOf: () => ({ task: task() }) },
     )
     expect(report.summary).toMatchObject({
-      tasks: 1, completed: 1, successRate: 100, adopted: 1, totalCostUSD: 0.25, averageDurationMs: 60_000,
+      tasks: 1, completed: 1, executionCompletionRate: 100, verification: { pending: 0, passed: 0, failed: 0, unknown: 1 },
+      adopted: 1, totalCostUSD: 0.25, averageDurationMs: 60_000,
     })
     expect(report.tasks[0]).toMatchObject({ team: 'Commerce reconciliation', outcome: 'adopted', finalDeliverables: 1 })
     const serialized = JSON.stringify(report)

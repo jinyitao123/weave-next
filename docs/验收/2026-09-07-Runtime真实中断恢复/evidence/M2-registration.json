@@ -1,0 +1,23 @@
+{
+  "registered_at": "2026-09-07T04:30:19.945226+00:00",
+  "case": "M2",
+  "reason": "Original M never reached fault milestone; actual host clamshell sleep caused lease expiry. Keep M as unplanned outcome and run the still-missing registered member SIGKILL scenario with a fresh identity.",
+  "task_scope_and_inputs_unchanged": true,
+  "snapshot_id": "runtime-value-M2",
+  "invocation_id": "runtime-value-M2/engineering/0",
+  "fault": "SIGKILL actual native CLI process group after full model-test success and >=2 model source files, before full delivery; Runtime/API stay alive",
+  "original_M_preserved": true,
+  "runtime_binary": "/private/tmp/weave-runtime-value-20260907-sqtugx3m/weave",
+  "runtime_binary_sha256": "977207178a4695e3589333c024fdfbbd1da6fd9c85142fee961b952b775a9236",
+  "runtime_pid": 15585,
+  "ruby_patch_not_loaded_in_runtime": true,
+  "driver_change": "Only adds M2 to permitted case names; original production Executor semantics unchanged. Existing API and runtime processes are preserved.",
+  "files": {
+    "probe/main.go": "d96a5300248733d37195d8a02532810b0b7342a90d8e47526bb9be86c43ad188",
+    "probe/control.py": "e89baac68f0be4f893ca912d29336422adcb17d4d784993dd8cbcacfe5f1af52",
+    "probe/milestone.py": "b9c2d821ea6e1f07d2b7d13af743ea20dcf96917f6358432d0d111bbfa351bb2",
+    "probe/seed_extra_case.go": "dba98c5df75be48bc0169bedf494d26729a8f35b2156ca1e54f6d59cc29ebaf4"
+  },
+  "extra_driver_sha256": "5b60f7afeb7f212087ee3f2bdf88d7438d3bd627d6fd5eaf19bfd99564993055",
+  "observer_null_result_fix": "Absence of engine result is recorded as task_failed_without_engine_receipt, rather than crashing or labeling engine status as known."
+}

@@ -8,7 +8,7 @@ import (
 
 func TestDeliveryCaptureFailureRequiresProductRepairWithoutRuntimeRetry(t *testing.T) {
 	for marker, expected := range map[string]string{
-		"file_exceeds_256_kib": "256 KiB", "files_exceed_512_kib_total": "512 KiB",
+		"file_exceeds_256_kib": "256 KiB", "files_exceed_1_mib_total": "1 MiB", "files_exceed_512_kib_total": "512 KiB",
 		"file_not_written_by_this_invocation": "not produced by this execution", "unsupported_file_type": "not supported",
 		"file_read_failed": "not saved",
 	} {

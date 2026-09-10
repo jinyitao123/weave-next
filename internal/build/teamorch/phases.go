@@ -2739,6 +2739,7 @@ func (p *ProductionPhases) driveCandidateRun(
 	}
 	coordinator.Tasks = p.Deps.Tasks
 	executor := &teamrun.Executor{
+		MemberBudgets:      loomruntime.MemberBudgetCoordinator{},
 		Tasks:              p.Deps.Tasks,
 		Consumer:           consumer,
 		Transactions:       p.Deps.Pool,

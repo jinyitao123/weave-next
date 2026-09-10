@@ -33,7 +33,7 @@ func (r *DescriptorRegistry) DescribeWorkerRoleProof(
 	if graphType == "" {
 		graphType = record.Spec.GraphType
 	}
-	key, err := r.SelectFactoryKey(graphType)
+	key, err := r.SelectAgentFactoryKey(record)
 	if err != nil {
 		return FrozenWorkerRoleProof{}, err
 	}
@@ -43,6 +43,10 @@ func (r *DescriptorRegistry) DescribeWorkerRoleProof(
 	if graphType != key.FactoryID {
 		return FrozenWorkerRoleProof{}, ErrFactoryUnknown
 	}
+	return r.describeWorkerRoleProofAtKey(ctx, record, encoder, key)
+}
+
+func (r *DescriptorRegistry) describeWorkerRoleProofAtKey(ctx context.Context, record registry.AgentRecord, encoder CredentialRefEncoder, key frozen.FactoryKey) (FrozenWorkerRoleProof, error) {
 	descriptor, err := r.Lookup(key)
 	if err != nil {
 		return FrozenWorkerRoleProof{}, err
@@ -82,6 +86,28 @@ func (r *DescriptorRegistry) DescribeWorkerRoleProof(
 		CapabilitySchema:      capability.SchemaVersion,
 		CapabilityContentHash: capabilityHash,
 	}, nil
+}
+
+// VerifyWorkerRoleProof accepts an existing v1 admission proof only when the
+// exact immutable record still reproduces it. New admissions use the selected
+// factory, while active snapshots do not change identity after an upgrade.
+func (r *DescriptorRegistry) VerifyWorkerRoleProof(ctx context.Context, record registry.AgentRecord, expected FrozenWorkerRoleProof) error {
+	current, err := r.DescribeWorkerRoleProof(ctx, record, nil)
+	if err == nil && current == expected {
+		return nil
+	}
+	key, keyErr := r.SelectAgentFactoryKey(record)
+	if keyErr == nil && key == StandardFrozenToolsKey() {
+		legacyKey := NewStandardFrozenDescriptor().Key()
+		legacy, legacyErr := r.describeWorkerRoleProofAtKey(ctx, record, nil, legacyKey)
+		if legacyErr == nil && legacy == expected {
+			return nil
+		}
+	}
+	if err != nil {
+		return err
+	}
+	return ErrFrozenCapabilityMismatch
 }
 
 type rejectingCredentialRefEncoder struct{}
@@ -145,7 +171,8 @@ func freezeDescriptorAgent(
 		Limits: frozen.FrozenAgentLimits{
 			MaxCostUSD: record.MaxCostUSD, MaxTokens: record.MaxTokens,
 			MaxOutputTokens: int64(record.MaxOutputTokens), StepBudget: record.StepBudget,
-			MaxToolRepeats: int64(record.MaxToolRepeats),
+			ToolLoopControl: record.ToolLoopControl,
+			MaxToolRepeats:  int64(record.MaxToolRepeats),
 		},
 		Fallback: frozen.FrozenFallback{
 			Models:  append([]string(nil), record.FallbackModels...),

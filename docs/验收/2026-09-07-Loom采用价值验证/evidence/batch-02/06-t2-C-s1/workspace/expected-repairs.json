@@ -1,0 +1,8 @@
+{
+  "repair_ids": [
+    "fix_gamma_expectation",
+    "fix_timeout_portability",
+    "fix_workdir"
+  ],
+  "acceptance": "acceptance.sh exits 0"
+}

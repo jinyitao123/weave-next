@@ -1,0 +1,80 @@
+{
+  "app_dir": "/tmp/corona-v6-formal-rerun.AFx1ng/outputs/app",
+  "chrome": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+  "checks": [
+    {
+      "name": "app_loads_local",
+      "ok": true,
+      "detail": "AppAPI/CoronaModel 存在"
+    },
+    {
+      "name": "default_scenario_0_03c",
+      "ok": true,
+      "detail": "initial=S-0.03c"
+    },
+    {
+      "name": "switch_S-0.01c",
+      "ok": true,
+      "detail": "{\"id\":\"S-0.01c\",\"c\":\"0.01\",\"ta\":425,\"ke\":4.493775893684088e+21,\"v\":2997.92458}"
+    },
+    {
+      "name": "switch_S-0.03c",
+      "ok": true,
+      "detail": "{\"id\":\"S-0.03c\",\"c\":\"0.03\",\"ta\":141.66666666666669,\"ke\":4.044398304315679e+22,\"v\":8993.77374}"
+    },
+    {
+      "name": "switch_S-0.05c",
+      "ok": true,
+      "detail": "{\"id\":\"S-0.05c\",\"c\":\"0.05\",\"ta\":85,\"ke\":1.1234439734210221e+23,\"v\":14989.6229}"
+    },
+    {
+      "name": "export_scenario_json",
+      "ok": true,
+      "detail": "{\"filename\":\"corona_S-0.05c_scenario.json\",\"scenario_id\":\"S-0.05c\",\"baseline_id\":\"corona-prephase-a-v1\",\"routes\":3,\"unknown_keys\":[\"propulsion_efficiency\",\"dust_flux_at_velocity\",\"cost_reduction_evidence\",\"sail_material_at_scale\"],\"truth_labels\":[\"verified_fact\",\"derived_result\",\"assumption\",\"unknown\"],\"consistent_with_page\":true,\"page_id\":\"S-0.05c\"}"
+    },
+    {
+      "name": "no_cloud_dependency",
+      "ok": true,
+      "detail": "requests=4 external=0"
+    },
+    {
+      "name": "gui_harness",
+      "ok": true,
+      "detail": "CDP 驱动真实 Chrome 完成"
+    }
+  ],
+  "scenario_switch": {
+    "S-0.01c": {
+      "id": "S-0.01c",
+      "c": "0.01",
+      "ta": 425,
+      "ke": 4.493775893684088e+21,
+      "v": 2997.92458
+    },
+    "S-0.03c": {
+      "id": "S-0.03c",
+      "c": "0.03",
+      "ta": 141.66666666666669,
+      "ke": 4.044398304315679e+22,
+      "v": 8993.77374
+    },
+    "S-0.05c": {
+      "id": "S-0.05c",
+      "c": "0.05",
+      "ta": 85,
+      "ke": 1.1234439734210221e+23,
+      "v": 14989.6229
+    }
+  },
+  "export": {
+    "filename": "corona_S-0.05c_scenario.json",
+    "baseline_id": "corona-prephase-a-v1",
+    "scenario_id": "S-0.05c",
+    "consistent_with_page": true
+  },
+  "network": {
+    "total": 4,
+    "external": []
+  },
+  "all_ok": true
+}

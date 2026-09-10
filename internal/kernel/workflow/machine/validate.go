@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+
+	"github.com/jinyitao123/weave/internal/base/deliverable"
 )
 
 const (
@@ -123,6 +125,11 @@ func validateTypedBasics(ctx ValidationContext) Report {
 	validateGraphComplexity(&report, graph)
 	validateContractBasic(&report, "/input_contract", graph.InputContract)
 	validateContractBasic(&report, "/output_contract", graph.OutputContract)
+	if err := deliverable.ValidateDeliveryContract(graph.DeliveryContract); err != nil {
+		report.Add(PhaseDTO, "/delivery_contract", CodeContractInvalid, err.Error())
+	} else if graph.DeliveryContract != nil && !deliveryOutputMatches(graph.DeliveryContract.Output, graph.OutputContract) {
+		report.Add(PhaseDTO, "/delivery_contract/output", CodeContractInvalid, "delivery output must match graph output_contract")
+	}
 
 	for index := range graph.Nodes {
 		node := graph.Nodes[index]
@@ -181,6 +188,21 @@ func validateTypedBasics(ctx ValidationContext) Report {
 	}
 
 	return report
+}
+
+func deliveryOutputMatches(delivery deliverable.OutputRequirement, graph OutputContract) bool {
+	if delivery.Type != string(graph.Type) {
+		return false
+	}
+	if bytes.Equal(delivery.Schema, graph.Schema) {
+		return true
+	}
+	if len(delivery.Schema) == 0 || len(graph.Schema) == 0 {
+		return false
+	}
+	deliveryDigest, deliveryErr := deliverable.CanonicalJSONDigest(delivery.Schema)
+	graphDigest, graphErr := deliverable.CanonicalJSONDigest(graph.Schema)
+	return deliveryErr == nil && graphErr == nil && deliveryDigest == graphDigest
 }
 
 // validateGraphComplexity enforces the intrinsic machine-v1 bounds before

@@ -34,6 +34,9 @@ func (b *claudeBackend) Run(ctx context.Context, spec RunSpec) (RunResult, error
 	mcpPath := filepath.Join(spec.WorkDir, ".weave-mcp.json")
 	if _, err := os.Stat(mcpPath); err == nil {
 		args = append(args, "--mcp-config="+mcpPath)
+		if len(spec.MCPServers) > 0 {
+			args = append(args, "--strict-mcp-config")
+		}
 	}
 	args = append(args, "--")
 
@@ -71,6 +74,14 @@ func (b *claudeBackend) Run(ctx context.Context, spec RunSpec) (RunResult, error
 
 	select {
 	case finished := <-done:
+		// Cancellation may race with process exit. A deliberate stop retains
+		// its authority even if the native exit also reports a signal.
+		if contextErr := runCtx.Err(); contextErr != nil {
+			result := claudeRunResult(finished.parsed)
+			result.Status, result.Err = "timeout", contextErr.Error()
+			bindUsageReceipt(&result, spec)
+			return result, fmt.Errorf("claude: %w", contextErr)
+		}
 		result, err := finishClaudeRun(finished.parsed, stderr.String(), finished.err)
 		bindUsageReceipt(&result, spec)
 		return result, err
@@ -93,7 +104,7 @@ func (b *claudeBackend) Run(ctx context.Context, spec RunSpec) (RunResult, error
 
 func mergedClaudeEnv(overrides map[string]string) []string {
 	env := make(map[string]string)
-	for _, entry := range os.Environ() {
+	for _, entry := range cliAmbientEnv() {
 		if key, value, ok := strings.Cut(entry, "="); ok {
 			env[key] = value
 		}
@@ -343,6 +354,12 @@ func finishClaudeRun(parsed claudeOutput, stderr string, waitErr error) (RunResu
 		return result, nil
 	}
 	result.Status = "failed"
+	// Native process status is authoritative. Earlier CLI warnings on stderr
+	// must not hide a killed process behind an unrelated model/work error.
+	if reason := processTerminationReason(waitErr); reason != "" {
+		result.Err = reason
+		return result, fmt.Errorf("claude: %s", reason)
+	}
 	result.Err = parsed.errText
 	if result.Err == "" {
 		result.Err = strings.TrimSpace(stderr)

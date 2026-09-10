@@ -1,0 +1,95 @@
+{
+  "source": "Actual 2026-09-06 published Loom bundle; canonical bytes produced with unchanged HEAD frozen package",
+  "source_sha256": "7589bd46a6a821955afd520045ba7280b9ea42e5635f5a1cd6e51319a8b567a0",
+  "baseline_head": "5cbc3eb35c3f12a1818d4f813c372e17287ed118",
+  "input": {
+    "agent": {
+      "name": "loom-validation-0906-physics",
+      "role": "worker",
+      "guard": null,
+      "model": "",
+      "engine": "loom",
+      "limits": {
+        "max_tokens": 0,
+        "step_budget": 0,
+        "max_cost_usd": 0,
+        "max_tool_repeats": 0,
+        "max_output_tokens": 0
+      },
+      "agent_id": "6ab22221-c064-48ed-bd79-8c3d466b6c18",
+      "fallback": {
+        "models": null,
+        "retries": 0
+      },
+      "identity": {
+        "raw": "只执行本节点指令。禁止子代理和对外发送。使用真实工具核对输入和结果，不能用自评代替执行证据。回复简洁。",
+        "core": "只执行本节点指令。禁止子代理和对外发送。使用真实工具核对输入和结果，不能用自评代替执行证据。回复简洁。",
+        "extended": ""
+      },
+      "profiles": {},
+      "compaction": {
+        "enabled": false,
+        "token_threshold": 0
+      },
+      "graph_type": "standard",
+      "runtime_id": "",
+      "permissions": {
+        "ask": null,
+        "deny": null,
+        "allow": null
+      },
+      "display_name": "Loom 对照验证·物理复算员",
+      "memory_slots": [],
+      "workspace_id": "default",
+      "agent_version": 2,
+      "factory_input": {},
+      "memory_config": {
+        "scope": "",
+        "top_k": 0,
+        "enabled": false,
+        "auto_remember": false
+      },
+      "output_schema": null,
+      "system_prompt": "只执行本节点指令。禁止子代理和对外发送。使用真实工具核对输入和结果，不能用自评代替执行证据。回复简洁。",
+      "schema_version": 1
+    },
+    "skills": [],
+    "runtime": null,
+    "capability": {
+      "role": "worker",
+      "may_yield": false,
+      "agent_step_ids": null,
+      "schema_version": 2,
+      "may_invoke_agent": false,
+      "agent_content_hash": "512c96cfb8a020b2e5c14811ec8f9b9922a0d1b849cc018a936d441fb88a09ee",
+      "interactive_step_ids": null,
+      "interactive_tool_ids": null
+    },
+    "credentials": [],
+    "factory_key": {
+      "factory_id": "standard",
+      "compiler_abi": "weave-graph-abi-v1",
+      "factory_version": "1"
+    },
+    "dependencies": {
+      "dependencies": [
+        {
+          "owner_id": "6ab22221-c064-48ed-bd79-8c3d466b6c18",
+          "owner_type": "agent",
+          "content_hash": "512c96cfb8a020b2e5c14811ec8f9b9922a0d1b849cc018a936d441fb88a09ee",
+          "workspace_id": "default",
+          "dependency_key": "6ab22221-c064-48ed-bd79-8c3d466b6c18",
+          "dependency_type": "agent",
+          "dependency_version": 2,
+          "owner_agent_version": 2
+        }
+      ],
+      "manifest_hash": "b7361ef1f2f846023e97c699eddfb62e40580ab6a3d4753007616f9338dc6a27",
+      "schema_version": 1
+    },
+    "mcp_bindings": [],
+    "schema_version": 1,
+    "fallback_models": []
+  },
+  "canonical": "{\"agent\":{\"agent_id\":\"6ab22221-c064-48ed-bd79-8c3d466b6c18\",\"agent_version\":2,\"compaction\":{\"enabled\":false,\"token_threshold\":0},\"display_name\":\"Loom 对照验证·物理复算员\",\"engine\":\"loom\",\"factory_input\":{},\"fallback\":{\"models\":[],\"retries\":0},\"graph_type\":\"standard\",\"guard\":null,\"identity\":{\"core\":\"只执行本节点指令。禁止子代理和对外发送。使用真实工具核对输入和结果，不能用自评代替执行证据。回复简洁。\",\"extended\":\"\",\"raw\":\"只执行本节点指令。禁止子代理和对外发送。使用真实工具核对输入和结果，不能用自评代替执行证据。回复简洁。\"},\"limits\":{\"max_cost_usd\":0,\"max_output_tokens\":0,\"max_tokens\":0,\"max_tool_repeats\":0,\"step_budget\":0},\"memory_config\":{\"auto_remember\":false,\"enabled\":false,\"scope\":\"\",\"top_k\":0},\"memory_slots\":null,\"model\":\"\",\"name\":\"loom-validation-0906-physics\",\"output_schema\":null,\"permissions\":{\"allow\":[],\"ask\":[],\"deny\":[]},\"profiles\":{},\"role\":\"worker\",\"runtime_id\":\"\",\"schema_version\":1,\"system_prompt\":\"只执行本节点指令。禁止子代理和对外发送。使用真实工具核对输入和结果，不能用自评代替执行证据。回复简洁。\",\"workspace_id\":\"default\"},\"capability\":{\"agent_content_hash\":\"512c96cfb8a020b2e5c14811ec8f9b9922a0d1b849cc018a936d441fb88a09ee\",\"agent_step_ids\":[],\"interactive_step_ids\":[],\"interactive_tool_ids\":[],\"may_invoke_agent\":false,\"may_yield\":false,\"role\":\"worker\",\"schema_version\":2},\"credentials\":[],\"dependencies\":{\"dependencies\":[{\"content_hash\":\"512c96cfb8a020b2e5c14811ec8f9b9922a0d1b849cc018a936d441fb88a09ee\",\"dependency_key\":\"6ab22221-c064-48ed-bd79-8c3d466b6c18\",\"dependency_type\":\"agent\",\"dependency_version\":2,\"owner_agent_version\":2,\"owner_id\":\"6ab22221-c064-48ed-bd79-8c3d466b6c18\",\"owner_type\":\"agent\",\"workspace_id\":\"default\"}],\"manifest_hash\":\"b7361ef1f2f846023e97c699eddfb62e40580ab6a3d4753007616f9338dc6a27\",\"schema_version\":1},\"factory_key\":{\"compiler_abi\":\"weave-graph-abi-v1\",\"factory_id\":\"standard\",\"factory_version\":\"1\"},\"fallback_models\":[],\"mcp_bindings\":[],\"runtime\":null,\"schema_version\":1,\"skills\":[]}"
+}

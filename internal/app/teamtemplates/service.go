@@ -174,8 +174,13 @@ func (s *Service) Instantiate(ctx context.Context, workspaceID, userID string, r
 		return Outcome{}, fmt.Errorf("fingerprint team template: %w", err)
 	}
 	if s.runtimeSelector != nil {
-		if assignment, selectErr := s.runtimeSelector.Select(ctx, workspaceID, engine.Codex, "", ""); selectErr == nil {
-			applyTemplateDefaultRuntime(&compiled, assignment.RuntimeID)
+		for _, engineName := range []string{engine.Codex, engine.Claude, engine.OpenCode} {
+			assignment, selectErr := s.runtimeSelector.Select(ctx, workspaceID, engineName, "", "")
+			if selectErr != nil {
+				continue
+			}
+			applyTemplateDefaultRuntime(&compiled, assignment.RuntimeID, engineName)
+			break
 		}
 	}
 	applyTemplateDefaultModel(&compiled, s.defaultModel)
@@ -252,11 +257,12 @@ type RuntimeSelector interface {
 	Select(context.Context, string, string, string, string) (runtimes.Assignment, error)
 }
 
-func applyTemplateDefaultRuntime(compiled *teamtemplate.Compilation, runtimeID string) {
-	if compiled == nil || strings.TrimSpace(runtimeID) == "" {
+func applyTemplateDefaultRuntime(compiled *teamtemplate.Compilation, runtimeID, engineName string) {
+	if compiled == nil || strings.TrimSpace(runtimeID) == "" || strings.TrimSpace(engineName) == "" {
 		return
 	}
 	runtimeID = strings.TrimSpace(runtimeID)
+	engineName = strings.TrimSpace(engineName)
 	for i := range compiled.Blueprint.Members {
 		member := &compiled.Blueprint.Members[i]
 		if member.ExecutionPolicy.EngineClass != teambuild.BlueprintEngineStandard || strings.TrimSpace(member.ModelRef) != "" {
@@ -264,7 +270,7 @@ func applyTemplateDefaultRuntime(compiled *teamtemplate.Compilation, runtimeID s
 		}
 		member.ExecutionPolicy = teambuild.BlueprintExecutionPolicyV1{
 			EngineClass:   teambuild.BlueprintEngineCLI,
-			Engine:        engine.Codex,
+			Engine:        engineName,
 			ExecutionMode: teambuild.BlueprintExecutionRuntime,
 			RuntimeRef:    runtimeID,
 		}
@@ -276,7 +282,7 @@ func applyTemplateDefaultRuntime(compiled *teamtemplate.Compilation, runtimeID s
 		}
 		member.ExecutionPolicy = &teamtemplate.ExecutionPolicy{
 			EngineClass:   teambuild.BlueprintEngineCLI,
-			Engine:        engine.Codex,
+			Engine:        engineName,
 			ExecutionMode: teambuild.BlueprintExecutionRuntime,
 			RuntimeRef:    runtimeID,
 		}
@@ -366,13 +372,14 @@ func compileDeclarativePlan(
 			StableRef: worker.StableRef, AgentID: worker.AgentID, AgentVersion: worker.AgentVersion,
 		})
 	}
-	frozen, err := teamforge.FreezeDeclarativeWorkflowSpecV1(
+	frozen, err := teamforge.FreezeDeclarativeWorkflowSpecWithDeliveryContractV1(
 		spec,
 		bindings,
 		teamforge.DeclarativeBuildBindingV1{
 			BuildRunID: buildRunID, BriefHash: briefHash, ContractHash: contractHash,
 			AssetScope: compiled.Brief.AllowedAssets, BaselineHash: teamforge.EmptyCreateBaselineHashV1,
 		},
+		compiled.Blueprint.Workflow.DeliveryContract,
 		func(trigger machine.TriggerConfig, graph machine.GraphDefinition) (machine.Report, error) {
 			return teameval.ValidateWorkflowForBlueprint(workspaceID, compiled.Blueprint, planned, trigger, graph)
 		},
@@ -383,6 +390,7 @@ func compileDeclarativePlan(
 	blueprint := compiled.Blueprint
 	blueprint.Workflow = teambuild.BlueprintWorkflowV1{
 		Mode: teambuild.BlueprintWorkflowDeclarativeV1, DeclarativeSpecHash: frozen.SpecHash,
+		DeliveryContract: compiled.Blueprint.Workflow.DeliveryContract,
 	}
 	if err := teambuild.ValidateTeamBlueprintV1(blueprint); err != nil {
 		return nil, err

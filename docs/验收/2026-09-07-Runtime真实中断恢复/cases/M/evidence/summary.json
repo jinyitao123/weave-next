@@ -1,0 +1,75 @@
+{
+  "case": "M",
+  "summarized_at": "2026-09-07T04:30:45.216943+00:00",
+  "status": {
+    "case": "M",
+    "finished_at": "2026-09-07T03:56:00.987495Z",
+    "driver_exit": 1,
+    "milestone_observed": false,
+    "fault_injected": false,
+    "task_id": "task-eb655f8682c14216d8fedd168fc2e77c",
+    "workdir": "/private/tmp/weave-runtime-value-20260907-sqtugx3m/runtime-workspaces/.invocations/task-eb655f8682c14216d8fedd168fc2e77c/default/corona-prephase-a-lab-v3-luna-digital-engineering-builder/workdir",
+    "elapsed_seconds": 1287.347225,
+    "status": "task_failed_without_engine_receipt",
+    "independent_acceptance": "NOT_RUN: model-test milestone not reached",
+    "record_reconciled_at": "2026-09-07T04:27:53.414279+00:00",
+    "reason": "Unplanned host clamshell sleep caused lease expiry; original observer then failed to handle null queue result. Original watcher error and task receipt preserved."
+  },
+  "physical_tasks": [
+    {
+      "id": "task-eb655f8682c14216d8fedd168fc2e77c",
+      "status": "failed",
+      "worker_id": null,
+      "runtime_id": "488f724c-3a47-4816-823d-63dbbf4eecb7",
+      "created_at": "2026-09-07T11:34:33.649722+08:00",
+      "started_at": "2026-09-07T11:34:34.320405+08:00",
+      "completed_at": "2026-09-07T11:56:00.283941+08:00"
+    }
+  ],
+  "physical_task_count": 1,
+  "logical_invocation_id": "runtime-value-M/engineering/0",
+  "queue_status": "failed",
+  "queue_error": "runtime offline: execution lease expired",
+  "engine_status": null,
+  "reported_models": null,
+  "public_events": {
+    "count": 46,
+    "kinds": {
+      "tool_call": 22,
+      "tool_result": 22,
+      "text": 1,
+      "stream_end": 1
+    },
+    "sequence_unique": true,
+    "sequence_contiguous": true
+  },
+  "files": {
+    "count": 7,
+    "receipt_artifact_count": 0,
+    "receipt_hash_mismatches": [],
+    "files_without_receipt": [
+      "outputs/model/baseline_frozen.yaml",
+      "outputs/model/corona_model.py",
+      "outputs/model/params.json",
+      "outputs/review/INTEGRATION_NOTE.md",
+      "outputs/review/change_control_register.md",
+      "outputs/review/interface_control.md",
+      "outputs/review/requirements_baseline.md"
+    ]
+  },
+  "usage": {
+    "source": null,
+    "scope": null,
+    "input_tokens_including_cache": null,
+    "output_tokens": null,
+    "cli_reported_cost_usd": null,
+    "cost_is_provider_invoice": false,
+    "raw_usage": null,
+    "session_id": null,
+    "turns": null,
+    "raw_summary_complete_json": true,
+    "missing_is_unknown_not_zero": true
+  },
+  "scope": "real member execution, not full workflow or Workbench recovery",
+  "independent_acceptance": null
+}

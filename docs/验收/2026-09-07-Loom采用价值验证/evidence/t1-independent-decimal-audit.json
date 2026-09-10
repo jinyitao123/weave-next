@@ -1,0 +1,113 @@
+{
+  "method": "separate Python Decimal 60-digit post-run calculation; not pre-registered blind review",
+  "rows": [
+    {
+      "case": "01-t1-A-s0",
+      "input_sha256": "1319294327c96df29603c03b2c281d9008dd678b35d0332ed8997cf4369091e2",
+      "passed": true,
+      "final_numbers_present_and_correct": true,
+      "checks": [
+        {
+          "beta": "0.01",
+          "energy_j": "4493775893684088200000.0000",
+          "cruise_years": "425",
+          "passed": true
+        },
+        {
+          "beta": "0.03",
+          "energy_j": "40443983043156793800000.0000",
+          "cruise_years": "141.666666666666666666666666666666666666666666666666666666667",
+          "passed": true
+        },
+        {
+          "beta": "0.05",
+          "energy_j": "112344397342102205000000.0000",
+          "cruise_years": "85",
+          "passed": true
+        }
+      ],
+      "text_review": "unblinded audit; independent_formula wording in probe receipt is overstated; same Go implementation was used at run time"
+    },
+    {
+      "case": "02-t1-B-s2",
+      "input_sha256": "1319294327c96df29603c03b2c281d9008dd678b35d0332ed8997cf4369091e2",
+      "passed": true,
+      "final_numbers_present_and_correct": true,
+      "checks": [
+        {
+          "beta": "0.01",
+          "energy_j": "4493775893684088200000.0000",
+          "cruise_years": "425",
+          "passed": true
+        },
+        {
+          "beta": "0.03",
+          "energy_j": "40443983043156793800000.0000",
+          "cruise_years": "141.666666666666666666666666666666666666666666666666666666667",
+          "passed": true
+        },
+        {
+          "beta": "0.05",
+          "energy_j": "112344397342102205000000.0000",
+          "cruise_years": "85",
+          "passed": true
+        }
+      ],
+      "text_review": "unblinded audit; independent_formula wording in probe receipt is overstated; same Go implementation was used at run time"
+    },
+    {
+      "case": "04-t1-C-s2",
+      "input_sha256": "1319294327c96df29603c03b2c281d9008dd678b35d0332ed8997cf4369091e2",
+      "passed": true,
+      "final_numbers_present_and_correct": true,
+      "checks": [
+        {
+          "beta": "0.01",
+          "energy_j": "4493775893684088200000.0000",
+          "cruise_years": "425",
+          "passed": true
+        },
+        {
+          "beta": "0.03",
+          "energy_j": "40443983043156793800000.0000",
+          "cruise_years": "141.666666666666666666666666666666666666666666666666666666667",
+          "passed": true
+        },
+        {
+          "beta": "0.05",
+          "energy_j": "112344397342102205000000.0000",
+          "cruise_years": "85",
+          "passed": true
+        }
+      ],
+      "text_review": "unblinded audit; independent_formula wording in probe receipt is overstated; same Go implementation was used at run time"
+    },
+    {
+      "case": "05-t1-A-s2",
+      "input_sha256": "1319294327c96df29603c03b2c281d9008dd678b35d0332ed8997cf4369091e2",
+      "passed": true,
+      "final_numbers_present_and_correct": true,
+      "checks": [
+        {
+          "beta": "0.01",
+          "energy_j": "4493775893684088200000.0000",
+          "cruise_years": "425",
+          "passed": true
+        },
+        {
+          "beta": "0.03",
+          "energy_j": "40443983043156793800000.0000",
+          "cruise_years": "141.666666666666666666666666666666666666666666666666666666667",
+          "passed": true
+        },
+        {
+          "beta": "0.05",
+          "energy_j": "112344397342102205000000.0000",
+          "cruise_years": "85",
+          "passed": true
+        }
+      ],
+      "text_review": "unblinded audit; independent_formula wording in probe receipt is overstated; same Go implementation was used at run time"
+    }
+  ]
+}

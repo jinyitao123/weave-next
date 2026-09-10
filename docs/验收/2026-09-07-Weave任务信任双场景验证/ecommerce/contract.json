@@ -1,0 +1,81 @@
+{
+  "schema_version": 1,
+  "sample_id": "ecommerce-stage1-vendor-brief",
+  "scenario": "ecommerce",
+  "source_project": {
+    "name": "RealReplicaBench",
+    "current_upstream_name": "CommerceAgentBench",
+    "repository": "https://github.com/Accio-org/RealReplicaBench.git",
+    "revision": "084489800bfd3f9f239503eda9e754bc267e98f5"
+  },
+  "task_id": "api-gmail-vendor-brief-mcp",
+  "task_fit": {
+    "user": "Buyer Ops assistant",
+    "job": "prepare the VBR-52 vendor brief working state in Gmail and Calendar",
+    "weave_may": [
+      "read the task-scoped Gmail mock through MCP",
+      "label and mark current evidence read",
+      "star the quality blocker and final-price evidence",
+      "save an unsent draft",
+      "create the required calendar event"
+    ],
+    "weave_must_not": [
+      "send any email",
+      "modify stale or unrelated evidence",
+      "use production accounts",
+      "report success without the original verifier"
+    ]
+  },
+  "input_baseline": {
+    "business_date": "2025-06-21",
+    "task_text": "datasets_domain_v1/api/gmail/vendor-brief-mcp/task.md",
+    "task_config": "datasets_domain_v1/api/gmail/vendor-brief-mcp/task.toml",
+    "rubric": "datasets_domain_v1/api/gmail/vendor-brief-mcp/rubric.json",
+    "fixture_image": "acciolyk/accio_bench@sha256:1e9cf5c72a56794175b7d06ece036b92e296e6b7e9e9a7fa244026f6acea3859"
+  },
+  "delivery_contract": {
+    "artifact_policy": "no standalone file required",
+    "business_state": [
+      "VBR-52 label is created and applied only to current relevant evidence",
+      "required evidence is marked read",
+      "quality blocker and final price are starred without starring decoys",
+      "the required unsent draft contains the expected facts",
+      "the calendar event contains the expected time, guests, and facts",
+      "no email is sent"
+    ],
+    "verification": "run the original deterministic verifier and preserve reward.json, final_reward.json, and verifier.log"
+  },
+  "execution_contract": {
+    "business_entry": "Workbench in-app browser",
+    "team": "RealReplicaBench Gmail/Calendar Mock MCP 验证团队",
+    "workflow": "published default workflow",
+    "runtime_requirement": "a real Runtime executes the work",
+    "human_decisions": [
+      "confirm the exact team and task before first dispatch",
+      "accept or return the result after the original verifier"
+    ],
+    "team_id": "104b1ef7-d0a9-43a9-88fe-447a00b1ed61",
+    "workflow_id": "realreplicabench-gmail-calendar-mock-workflow",
+    "workflow_version": 1,
+    "fixture_run_id": "trust-stage1-vendor-brief-20260908-remote001",
+    "configured_runtime_model": "k3[1M]",
+    "execution_shape": "writer validates scope before mutations, then independent reviewer",
+    "readonly_enforcement": "instruction contract; tool-level isolation unproven"
+  },
+  "evidence_required": [
+    "input-manifest.json",
+    "dispatch.json",
+    "activity.json",
+    "deliverables.json",
+    "verification.json",
+    "user-decisions.json",
+    "assessment.md"
+  ],
+  "exit": {
+    "execution_ended": "the Weave run reaches a recorded terminal state",
+    "delivery_verified": "the original verifier returns passed=true and no zero-tolerance invariant is violated",
+    "accepted": "the user explicitly accepts the verified result",
+    "partial": "the run ends without all verifier checks passing",
+    "failed": "execution cannot continue or task identity/evidence is invalid"
+  }
+}

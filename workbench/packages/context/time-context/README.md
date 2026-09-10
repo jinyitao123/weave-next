@@ -64,20 +64,20 @@ This section explains the design of the plugin; the observable behavior is cover
 
 ### Design concept
 
-The plugin prepends an `agent/pre-step` listener that delegates first and appends one sourced `UserMessage` when an injection is due and the downstream decision enters the step. Each reading uses the exact snapshot source `{ kind: 'plugin', plugin: 'time-context', form: 'snapshot', sections: [{ name: 'time-context', text }] }`, and the invariant companion validates that shape, re-derives the current-turn browser policy from the original `user-rpc` messages, and checks the timestamp zone and elapsed baseline.
+The plugin prepends an `agent/pre-step` listener that delegates first and appends one sourced `UserMessage` when an injection is due and the downstream decision enters the step. Each reading uses the exact snapshot source `{ kind: 'plugin', plugin: 'time-context', form: 'snapshot', sections: [{ name: 'time-context', text }] }`, and the invariant companion validates that shape, re-derives the current-turn browser policy from ordinary `user-rpc` messages and browser controls with `{ kind: 'plugin', plugin: 'ui-control', form: 'relay' }`, and checks the timestamp zone and elapsed baseline. Both browser sources carry `rpcId` and an optional Host-validated `clientTimeZone`; other plugin sources do not contribute a browser zone.
 
 ### Source map
 
 | File | Role |
 |---|---|
 | [`src/index.ts`](src/index.ts) | Plugin entry: pre-step listener, due scheduling, reading composition |
-| [`src/request-zone.ts`](src/request-zone.ts) | Browser-zone policy derivation from open-turn `user-rpc` sources |
+| [`src/request-zone.ts`](src/request-zone.ts) | Browser-zone policy derivation from open-turn browser input and control sources |
 | [`src/timestamp.ts`](src/timestamp.ts) | `Intl.DateTimeFormat` creation and timestamp formatting |
 | [`src/invariant.ts`](src/invariant.ts) | Invariant companion for the snapshot contract |
 
 ### Main flow
 
-When an injection is due, the plugin samples the wall clock, derives the browser-zone policy from the open turn's `user-rpc` messages, resolves the display zone (request-local or fallback), and renders the three-line reading. Positive-interval scheduling scans raw durable session events for the latest plugin-attributed message — including one shadowed by compaction — so the schedule survives resume without a process-local cache. A reading records an entered step, not a completed or transmitted request; a later preparation failure can leave it in history.
+When an injection is due, the plugin samples the wall clock, derives the browser-zone policy from the open turn's recognized browser input and control messages, resolves the display zone (request-local or fallback), and renders the three-line reading. Positive-interval scheduling scans raw durable session events for the latest plugin-attributed message — including one shadowed by compaction — so the schedule survives resume without a process-local cache. A reading records an entered step, not a completed or transmitted request; a later preparation failure can leave it in history.
 
 </details>
 

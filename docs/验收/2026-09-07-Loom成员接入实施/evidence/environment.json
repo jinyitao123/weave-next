@@ -1,0 +1,8 @@
+{
+  "root": "/var/folders/m7/whht5pn51_l_vfv955r1hvmh0000gn/T/weave-loom-members-20260907-mk330n64",
+  "database_name": "weave_loom_members_88bc4ea5",
+  "database_url": "postgresql://jinyitao@127.0.0.1:5432/weave_loom_members_88bc4ea5?sslmode=disable",
+  "created_at": "2026-09-07T05:25:35.403810+00:00",
+  "source_head": "5cbc3eb35c3f12a1818d4f813c372e17287ed118",
+  "purpose": "Loom member integration stages A-D; isolated test data"
+}

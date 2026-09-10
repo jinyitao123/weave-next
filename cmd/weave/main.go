@@ -18,13 +18,13 @@ import (
 	"github.com/jinyitao123/weave/internal/app/cli"
 	"github.com/jinyitao123/weave/internal/app/conversation"
 	"github.com/jinyitao123/weave/internal/app/daemon"
+	"github.com/jinyitao123/weave/internal/app/deliveryverify"
 	"github.com/jinyitao123/weave/internal/app/metateam"
 	"github.com/jinyitao123/weave/internal/app/projects"
 	"github.com/jinyitao123/weave/internal/app/teamevaluations"
 	"github.com/jinyitao123/weave/internal/app/teamtemplates"
 	"github.com/jinyitao123/weave/internal/app/users"
 	"github.com/jinyitao123/weave/internal/base/db"
-	"github.com/jinyitao123/weave/internal/base/deliverable"
 	"github.com/jinyitao123/weave/internal/base/fanout"
 	"github.com/jinyitao123/weave/internal/base/taskqueue"
 	"github.com/jinyitao123/weave/internal/build/teambuild"
@@ -107,6 +107,12 @@ func (a teamTemplateExecutionAdapter) Submit(ctx context.Context, workspaceID, b
 
 func registerFrozenDescriptors() error {
 	if err := compiler.RegisterDescriptor(compiler.NewStandardFrozenDescriptor()); err != nil {
+		return err
+	}
+	if err := compiler.RegisterDescriptor(compiler.NewStandardFrozenToolsDescriptor()); err != nil {
+		return err
+	}
+	if err := compiler.RegisterDescriptor(compiler.NewStandardFrozenCLIToolsDescriptor()); err != nil {
 		return err
 	}
 	return compiler.RegisterDescriptor(declarative.NewFrozenDescriptor())
@@ -245,6 +251,14 @@ func main() {
 		slog.Error("failed to register server standard graph descriptor", "error", err)
 		os.Exit(1)
 	}
+	if err := descriptors.Register(compiler.NewStandardFrozenToolsDescriptor()); err != nil {
+		slog.Error("failed to register server standard tools graph descriptor", "error", err)
+		os.Exit(1)
+	}
+	if err := descriptors.Register(compiler.NewStandardFrozenCLIToolsDescriptor()); err != nil {
+		slog.Error("failed to register server standard tools graph descriptor", "error", err)
+		os.Exit(1)
+	}
 	if err := descriptors.Register(declarative.NewFrozenDescriptor()); err != nil {
 		slog.Error("failed to register server declarative graph descriptor", "error", err)
 		os.Exit(1)
@@ -301,7 +315,7 @@ func main() {
 		srv.Runtimes = runtimes.NewStore(pool)
 		srv.Projects = projects.New(pool, projects.RealClock{})
 		srv.Attachments = attachments.New(pool)
-		srv.Deliverables = deliverable.New(pool)
+		srv.Deliverables = deliveryverify.NewStore(pool)
 		srv.Audit = audit.New(pool, audit.RealClock{})
 		srv.Conversations = conversation.New(pool, conversation.RealClock{})
 		srv.Credentials = credentials.New(pool, secretKey)

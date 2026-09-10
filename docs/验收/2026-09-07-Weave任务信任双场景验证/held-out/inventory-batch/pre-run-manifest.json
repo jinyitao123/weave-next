@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "status": "frozen_not_dispatched",
+  "frozen_at": "2026-09-10T01:18:13+08:00",
+  "api_implementation_commit": "7db2359bcf90a4fadf9645a6b1514144d21a432b",
+  "workbench_implementation_commit": "564bdc6383fa1240408f4dcbc76932b93ef258f7",
+  "deployed_binary_sha256": "e5c877a69bbb1e4b535324515a8c2c93820744955a926d8488866ca6c0ea8cc2",
+  "workbench_mcp_command": "/Users/jinyitao/.local/bin/weave",
+  "idempotency_key": "0614fbd6-0c6e-45ce-a77f-f4c467cd5226",
+  "files": [
+    {
+      "path": "team-template.yaml",
+      "sha256": "63f6aa33ba2805f7eee95496799589f1959825ee323a8e89aa4f1b40f53d4392"
+    },
+    {
+      "path": "task.txt",
+      "sha256": "c2f8356fca8a5c86030a10e57123374a5cf328055aba84ebc517a726b0333d65"
+    },
+    {
+      "path": "README.md",
+      "sha256": "8830e319e69e12d86800f220e7e79b76e426cdc98c3aee71505430403bca516f"
+    }
+  ],
+  "stop_rule": "after dispatch, do not change code, startup configuration, template, task, contract, team, paths, or correction state; record the first result"
+}

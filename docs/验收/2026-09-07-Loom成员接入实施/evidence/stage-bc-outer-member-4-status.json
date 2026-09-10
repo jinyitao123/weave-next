@@ -1,0 +1,16 @@
+{
+  "started_at": "2026-09-07T07:38:24.841936+00:00",
+  "finished_at": "2026-09-07T07:38:28.955471+00:00",
+  "exit_code": 0,
+  "TEST_DATABASE_URL_set": true,
+  "command": [
+    "go",
+    "test",
+    "./internal/base/teamrun",
+    "./internal/kernel/loomruntime",
+    "-run",
+    "TestWorkflowMember|TestMember",
+    "-count=1",
+    "-v"
+  ]
+}

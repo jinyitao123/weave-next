@@ -42,9 +42,10 @@ export interface IConversation {
   /**
    * Send a prompt into the caller scope's session (queued turn).
    * @param text - prompt text, sent verbatim as one text block.
+   * @param origin - identifies generated UI controls so they retain their source on the Host.
    * @returns completion; business failures reject (and land in promptError).
    */
-  send(text: string): Promise<void>
+  send(text: string, origin?: 'ui-control'): Promise<void>
   /**
    * Apply one edit, remove, or strict steer operation to a pending queue occurrence.
    * @param itemId - agent-owned inbox occurrence identity.
@@ -175,10 +176,11 @@ export class ConversationController extends Service implements IConversation {
    * session snapshot's promptError (object-layer state); the rejection here
    * exists for caller choreography (the composer restores the draft on it).
    * @param text - prompt text, sent verbatim as one text block.
+   * @param origin - identifies generated UI controls so they retain their source on the Host.
    */
-  async send(text: string): Promise<void> {
+  async send(text: string, origin?: 'ui-control'): Promise<void> {
     const session = this.scopedSession('send')
-    const result = await session.prompt([{ type: 'text', text }], 'queue')
+    const result = await session.prompt([{ type: 'text', text }], 'queue', undefined, undefined, origin)
     if (!result.ok) throw new Error(`conversation.send failed: ${result.error.code}: ${result.error.message}`)
   }
 

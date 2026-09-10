@@ -1,0 +1,75 @@
+// 由 outputs/model 冻结参数生成的浏览器注入副本（file:// 下 fetch 受限，故用 script 注入）
+window.CORONA_PARAMS = {
+  "traceability": {
+    "baseline_id": "corona-baseline-1.0.0",
+    "baseline_version": "1.0.0",
+    "content_digest": "cfb12b781363c547da87e6dec9fd937079cba25501b85ff6cbfabfbc508b10c2"
+  },
+  "constants": {
+    "speed_of_light_m_s": 299792458,
+    "standard_gravity_m_s2": 9.80665,
+    "proxima_distance_ly": 4.25,
+    "fact_label": "verified_fact"
+  },
+  "scenario": {
+    "cruise_speed_c": 0.03,
+    "locked": true,
+    "pending_change": "CCR-001: 0.01c/0.05c 待平台确认，比较功能仅留接口"
+  },
+  "reference_cases": [
+    {
+      "id": "crewed_1mt",
+      "mass_kg": 1000000000,
+      "cruise_speed_c": 0.03
+    },
+    {
+      "id": "orbital_material_5mt",
+      "mass_kg": 5000000000,
+      "cruise_speed_c": 0.03
+    },
+    {
+      "id": "dust_1mg",
+      "mass_kg": 1e-06,
+      "relative_speed_c": 0.03
+    },
+    {
+      "id": "rotating_habitat",
+      "radius_m": 1000,
+      "rotation_rpm": 2
+    }
+  ],
+  "reference_results": {
+    "travel_time_yr": 141.66666666666669,
+    "kinetic_energy_1mt_j": 4.044398304315679e+22,
+    "kinetic_energy_5mt_j": 2.02219915215784e+23,
+    "artificial_gravity_m_s2": 43.864908449286034,
+    "dust_impact_energy_j": 40443983.043156795
+  },
+  "routes": [
+    {
+      "id": "laser_sail_precursor",
+      "name": "激光光帆先锋探测器"
+    },
+    {
+      "id": "uncrewed_civilization_archive",
+      "name": "无人文明档案载荷"
+    },
+    {
+      "id": "crewed_interstellar_vehicle",
+      "name": "载人星际飞行器"
+    }
+  ],
+  "truth_labels": [
+    "verified_fact",
+    "derived_result",
+    "assumption",
+    "unknown"
+  ],
+  "forbidden_claims": [
+    "construction_ready",
+    "manufacturing_ready",
+    "flight_certified",
+    "whole_program_cost_committed"
+  ],
+  "tnt_j_per_kg": 4184000.0
+};

@@ -34,6 +34,7 @@ type ExecutionScope = execution.Scope
 
 // Task is one durable unit of work in the task queue.
 type Task struct {
+	ClaimEpoch            int64           `json:"claim_epoch"`
 	ID                    string          `json:"id"`
 	WorkspaceID           string          `json:"workspace_id"`
 	ProjectID             string          `json:"project_id,omitempty"`

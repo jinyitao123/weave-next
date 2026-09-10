@@ -1,0 +1,20 @@
+{
+  "error": "\u003cnil\u003e",
+  "history": [
+    {
+      "seq": 1,
+      "last_step": "load",
+      "saved_at": "2026-09-06T23:35:20.111174+08:00"
+    },
+    {
+      "seq": 3,
+      "last_step": "verify",
+      "saved_at": "2026-09-06T23:35:20.16774+08:00"
+    },
+    {
+      "seq": 4,
+      "last_step": "summarize",
+      "saved_at": "2026-09-06T23:35:31.436372+08:00"
+    }
+  ]
+}

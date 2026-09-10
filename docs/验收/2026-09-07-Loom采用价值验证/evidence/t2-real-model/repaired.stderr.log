@@ -1,0 +1,55 @@
+test_constants_inherited (test_baseline.TestBaselineLoading.test_constants_inherited) ... ok
+test_digest_matches_frozen_record (test_baseline.TestBaselineLoading.test_digest_matches_frozen_record)
+content_digest 实际计算值与冻结登记一致（防静默改动）。 ... ok
+test_digest_mismatch_rejected (test_baseline.TestBaselineLoading.test_digest_mismatch_rejected)
+篡改参数源必须被拒绝（RQ-MDL-001 防呆）。 ... ok
+test_reference_cases (test_baseline.TestBaselineLoading.test_reference_cases) ... ok
+test_reference_checks_present (test_baseline.TestBaselineLoading.test_reference_checks_present) ... ok
+test_routes_separable (test_baseline.TestBaselineLoading.test_routes_separable) ... ok
+test_scope_lock_single_0_03c (test_baseline.TestBaselineLoading.test_scope_lock_single_0_03c)
+RQ-SCP-001：唯一批准情景 0.03c；不得含 0.01c/0.05c。 ... ok
+test_traceability_triple (test_baseline.TestBaselineLoading.test_traceability_triple) ... ok
+test_truth_labels_and_forbidden_claims (test_baseline.TestBaselineLoading.test_truth_labels_and_forbidden_claims) ... ok
+test_comments_and_block_scalars (test_baseline.TestMiniYAML.test_comments_and_block_scalars) ... ok
+test_scalar_and_list_parsing (test_baseline.TestMiniYAML.test_scalar_and_list_parsing) ... ok
+test_artificial_gravity (test_computations.TestEightCategories.test_artificial_gravity) ... ok
+test_dust_impact_and_withdrawn_value_absent (test_computations.TestEightCategories.test_dust_impact_and_withdrawn_value_absent)
+RQ-MDL-006：撤回值 450MJ 不得复现。 ... ok
+test_efficiency_mass_scenarios_keep_unknowns (test_computations.TestEightCategories.test_efficiency_mass_scenarios_keep_unknowns) ... ok
+test_eight_categories_present (test_computations.TestEightCategories.test_eight_categories_present)
+任务书 §4.1 八类计算全覆盖。 ... ok
+test_kinetic_energy_lower_bound_discipline (test_computations.TestEightCategories.test_kinetic_energy_lower_bound_discipline) ... ok
+test_precursor_return (test_computations.TestEightCategories.test_precursor_return) ... ok
+test_records_carry_rq_mdl_010_fields (test_computations.TestEightCategories.test_records_carry_rq_mdl_010_fields)
+每条关键数值带单位、公式、输入、输出、来源与事实标签。 ... ok
+test_route_sensitivity_separability (test_computations.TestEightCategories.test_route_sensitivity_separability) ... ok
+test_target_geometry (test_computations.TestEightCategories.test_target_geometry) ... ok
+test_travel_time (test_computations.TestEightCategories.test_travel_time) ... ok
+test_all_five_reference_checks_pass (test_computations.TestReferenceTolerances.test_all_five_reference_checks_pass) ... ok
+test_run_model_cli_bounded (test_discipline.TestCLIContract.test_run_model_cli_bounded) ... ok
+test_fact_labels_restricted_to_four (test_discipline.TestScopeDiscipline.test_fact_labels_restricted_to_four) ... ok
+test_kinetic_energy_never_called_full_budget (test_discipline.TestScopeDiscipline.test_kinetic_energy_never_called_full_budget)
+RQ-MDL-004：任何输出不得把动能下限表述为完整推进能源预算。 ... ok
+test_no_expanded_speed_scenarios_in_categories (test_discipline.TestScopeDiscipline.test_no_expanded_speed_scenarios_in_categories)
+RQ-SCP-001：八类计算输出不得把 0.01c/0.05c 作为已实现情景。 ... ok
+test_no_forbidden_claims_in_model_source (test_discipline.TestScopeDiscipline.test_no_forbidden_claims_in_model_source)
+RQ-SCP-005：模型源码与输出不得出现四类禁用声明（作为肯定性声明）。 ... ok
+test_artificial_gravity_icd_fml_003 (test_physics.TestFormulas.test_artificial_gravity_icd_fml_003) ... ok
+test_dust_impact_icd_fml_004 (test_physics.TestFormulas.test_dust_impact_icd_fml_004) ... ok
+test_kinetic_energy_classical_icd_fml_002 (test_physics.TestFormulas.test_kinetic_energy_classical_icd_fml_002) ... ok
+test_kinetic_energy_relativistic_contrast (test_physics.TestFormulas.test_kinetic_energy_relativistic_contrast)
+相对论对照 (γ-1)mc² 应略高于非相对论值（0.03c 下约 0.07%）。 ... ok
+test_light_travel_time (test_physics.TestFormulas.test_light_travel_time) ... ok
+test_lorentz_gamma_bounds (test_physics.TestFormulas.test_lorentz_gamma_bounds) ... ok
+test_precursor_return (test_physics.TestFormulas.test_precursor_return) ... ok
+test_propulsion_energy_lower_bound (test_physics.TestFormulas.test_propulsion_energy_lower_bound) ... ok
+test_rpm_for_1g (test_physics.TestFormulas.test_rpm_for_1g)
+纪要 §二.3：同一半径取得 1g 转速约 0.95 rpm。 ... ok
+test_travel_time_icd_fml_001 (test_physics.TestFormulas.test_travel_time_icd_fml_001) ... ok
+test_turn_angle_limit_icd_fml_005 (test_physics.TestFormulas.test_turn_angle_limit_icd_fml_005)
+纪要 §二.5：10%–15% Δv 仅支持约 5.7°–8.6° 转向。 ... ok
+
+----------------------------------------------------------------------
+Ran 38 tests in 0.040s
+
+OK
