@@ -14,6 +14,7 @@ func TestCodexTaskMCPDisablesAmbientServersWithoutTokenArguments(t *testing.T) {
 	cli := filepath.Join(work, "fixture-codex")
 	script := `#!/bin/sh
 if [ "$1" != "mcp" ] || [ "$2" != "list" ]; then exit 3; fi
+if [ "$#" != 3 ] || [ "$3" != "--json" ]; then exit 5; fi
 if [ -n "$WEAVE_RUNTIME_TOKEN" ] || [ -n "$WEAVE_SECRET_KEY" ] || [ -n "$WEAVE_MCP_BOUNDARY_TOKEN_99" ]; then exit 4; fi
 printf '%s' '[{"name":"host_tools","enabled":true},{"name":"previous_task","enabled":false}]'
 `
@@ -53,6 +54,7 @@ func TestCodexDenyAllRemovesAmbientToolsAndPassesOutputSchema(t *testing.T) {
 	work := t.TempDir()
 	cli := filepath.Join(work, "fixture-codex")
 	script := `#!/bin/sh
+if [ "$1" = "--disable" ] && [ "$2" = "plugins" ]; then shift 2; fi
 if [ "$1" = "mcp" ]; then printf '%s' '[{"name":"ambient","enabled":true}]'; exit 0; fi
 printf '%s\n' "$@" > "$(dirname "$0")/args"
 printf '%s\n' '{"type":"item.completed","item":{"type":"agent_message","text":"{}"}}' '{"type":"turn.completed","usage":{"input_tokens":1,"output_tokens":1}}'
