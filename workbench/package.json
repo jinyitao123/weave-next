@@ -133,10 +133,15 @@
     "hygiene": "tsx scripts/run-gates.ts hygiene",
     "workbench": "tsx scripts/workbench.ts",
     "mock:llm": "node --import tsx packages/test-support/llm-mock-server/src/bin.ts",
-    "dev:web": "tsx scripts/dev-web.ts --poll"
+    "dev:web": "tsx scripts/dev-web.ts --poll",
+    "desktop:build": "node apps/desktop/scripts/build.mjs",
+    "desktop:dev": "pnpm run desktop:build && electron apps/desktop/dist",
+    "desktop:package": "pnpm run desktop:build && node apps/desktop/scripts/package.mjs",
+    "desktop:test": "pnpm run desktop:build && node apps/desktop/scripts/smoke.mjs"
   },
   "devDependencies": {
     "@deepseek-ai/dsh-web-fetch-http": "workspace:^",
+    "@electron/packager": "20.3.0",
     "@stylistic/eslint-plugin": "^5.10.0",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/react": "^16.3.2",
@@ -147,6 +152,7 @@
     "@types/spdx-expression-parse": "^4.0.0",
     "@vitest/coverage-v8": "^4.1.8",
     "@yarnpkg/cli-dist": "4.17.1",
+    "electron": "44.2.0",
     "eslint-plugin-sonarjs": "^4.1.0",
     "execa": "^10.0.0",
     "fast-check": "^4.8.0",
@@ -162,6 +168,7 @@
     "micromark-extension-gfm": "^3.0.0",
     "oxlint": "1.76.0",
     "oxlint-tsgolint": "7.0.2001",
+    "playwright": "1.61.1",
     "publint": "^0.3.21",
     "smol-toml": "^1.7.1",
     "spdx-expression-parse": "^5.0.0",

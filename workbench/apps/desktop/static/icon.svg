@@ -1,0 +1,5 @@
+<!-- Native form of packages/client/ui-brand-workbench/src/client/Brand.tsx. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <rect x="80" y="80" width="864" height="864" rx="194" fill="#242626"/>
+  <g transform="translate(80 80) scale(27)"><path d="M7 9.5 11.1 23h3.2l1.7-6.2 1.7 6.2h3.2L25 9.5h-3.3l-2.4 9-1.8-6.6h-3l-1.8 6.6-2.4-9H7Z" fill="#fff"/></g>
+</svg>

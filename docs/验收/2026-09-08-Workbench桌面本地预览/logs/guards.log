@@ -1,0 +1,5 @@
+./scripts/depguard.sh
+depguard baseline: exact upward edges 11/11
+depguard ok: scanned 542 Go files, violations 0
+./scripts/productguard.sh
+product boundary: passed

@@ -1,0 +1,74 @@
+{
+  "baseline_sha": "da0e5c7eb5ba0f85c6381bd395418dba77f8aaf9",
+  "notice": "Synthetic field examples from source review, not observed responses or runnable requests.",
+  "samples": [
+    {
+      "id": "host-input-receipt",
+      "field_status": "existing_at_baseline",
+      "source": "workbench/packages/api/session-controller/src/types.ts:SessionPromptValue",
+      "value": {
+        "accepted": true
+      },
+      "proves": "Agent inbox admission only"
+    },
+    {
+      "id": "workflow-dispatch-fields",
+      "field_status": "existing_at_baseline",
+      "source": "internal/app/api/team_dispatch.go:teamDispatchRequest",
+      "value": {
+        "task": "fixture input, never dispatch",
+        "mode": "workflow",
+        "workflow_id": "fixture-workflow",
+        "workflow_version": 1,
+        "client_request_id": "00000000-0000-4000-8000-000000000001",
+        "conversation_id": "fixture-session",
+        "project_id": "fixture-project"
+      }
+    },
+    {
+      "id": "workflow-acceptance-fields",
+      "field_status": "existing_at_baseline",
+      "source": "internal/app/api/workflow_manual_run.go:workflowManualRunResponse",
+      "value": {
+        "run_id": "fixture-run",
+        "task_id": "fixture-task",
+        "workflow_id": "fixture-workflow",
+        "workflow_version": 1,
+        "conversation_id": "fixture-session"
+      },
+      "proves": "Business association, not execution or delivery completion"
+    },
+    {
+      "id": "stop-request-receipt",
+      "field_status": "existing_at_baseline",
+      "source": "internal/app/api/runs.go:handleStopRun",
+      "value": {
+        "run_id": "fixture-run",
+        "status": "<status returned by RequestCancel>",
+        "idempotency_key": "fixture-stop-once"
+      },
+      "status_note": "status is illustrative; actual value comes from the cancel service and is not frozen by this example",
+      "proves": "Cancellation accepted, not final stop"
+    },
+    {
+      "id": "user-assessment",
+      "field_status": "existing_at_baseline",
+      "source": "workbench/packages/bundle/workbench-app/src/index.ts:weave-assess",
+      "value": {
+        "outcome": "adopted",
+        "outcomeNote": "synthetic user assessment"
+      },
+      "proves": "Session-local user assessment, not server delivery verification"
+    },
+    {
+      "id": "independent-delivery-facts",
+      "field_status": "proposed_consumer_requirement",
+      "wire_schema": null,
+      "requirements": [
+        "Show engine completion without declaring delivery verified",
+        "Keep missing required evidence unresolved",
+        "Keep user acceptance independent from both execution and verification"
+      ]
+    }
+  ]
+}

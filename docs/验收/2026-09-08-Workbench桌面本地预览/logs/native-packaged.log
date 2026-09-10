@@ -1,0 +1,15 @@
+PASS native window mounts the real shared Workbench from packaged local assets
+PASS local Workbench has no Node, preload bridge, or remote navigation privilege
+PASS native sidebar menu controls the existing Workbench layout
+PASS the actual composer stays editable and retains its draft while settings open
+PASS right-clicking the actual composer opens its native editing menu
+PASS shared settings and a real history conversation open inside Workbench
+PASS switch closes the old frontend and clears its in-memory authentication
+PASS native download saves exact bytes and distinguishes cancellation and failure
+PASS external protocols are blocked and HTTPS opening requires native confirmation
+PASS disconnect retains the selected origin and closes the local client
+PASS restart restores window bounds, selected B, pinned instance, and scoped UI preferences
+PASS cancelled slow candidate cannot replace B after a late response
+PASS connection loss preserves B and reports a retryable error
+PASS replacement at selected origin rejects the new instance
+PASS corrupt preference fails visibly without overwriting or silently falling back

@@ -169,7 +169,7 @@ export interface WorkTaskMemberInput {
 
 /** One workflow stage assigned to a member, including observed tools and outputs. */
 export interface WorkTaskMemberStage {
- readonly budgetPause?: { readonly reason: string; readonly roundsUsed: number; readonly authorizedTotalRounds: number } | undefined
+  readonly budgetPause?: { readonly reason: string; readonly roundsUsed: number; readonly authorizedTotalRounds: number } | undefined
   readonly memberRunId?: string | undefined
   readonly checkpointSavedAt?: string | undefined
   readonly nodeId: string
@@ -279,7 +279,9 @@ const memberInputSchema = z.object({
   name: z.string(), expectedType: z.string(), source: z.string(), nodeId: z.string(), path: z.string(), summary: z.string().default(''),
 }).strict()
 const memberStageSchema = z.object({
- budgetPause: z.object({reason:z.string(),roundsUsed:z.number().int().nonnegative(),authorizedTotalRounds:z.number().int().positive()}).strict().optional(),
+  budgetPause: z.object({
+    reason: z.string(), roundsUsed: z.number().int().nonnegative(), authorizedTotalRounds: z.number().int().positive(),
+  }).strict().optional(),
   nodeId: z.string(), name: z.string(), status: memberStatusSchema,
   inputs: z.array(memberInputSchema), outputRefs: z.array(z.string()),
   startedAt: z.string().default(''), completedAt: z.string().default(''),
@@ -322,7 +324,7 @@ const browserTaskActionSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('recheck'), sessionId: z.string(), runId: z.string(), deliveryRevisionId: z.string().min(1), contractDigest: z.string().min(1) }).strict(),
 ])
 const pendingActionSchema = z.object({
- authorizedTotalRounds: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional(),
+  authorizedTotalRounds: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional(),
   kind: z.enum(['stop', 'rerun', 'stage-retry', 'correction-request', 'correction-confirm', 'human-complete']), targetRunId: z.string(), idempotencyKey: z.string(),
   clientRequestId: z.string(), brief: z.string(), requestedAt: z.number().nonnegative(),
   targetKind: z.enum(['team', 'member', '']).default(''), targetMemberId: z.string().default(''),
@@ -587,13 +589,13 @@ function publicUpdates(value: unknown): WorkTaskPublicUpdate[] {
 }
 
 function memberBudgetPause(value: unknown): { budgetPause?: { reason: string; roundsUsed: number; authorizedTotalRounds: number } } {
- const item = value as Record<string, unknown> | null
- if (typeof item !== 'object' || item === null) return {}
- const used = item.rounds_used ?? item.roundsUsed
- const ceiling = item.authorized_total_rounds ?? item.authorizedTotalRounds
- if (typeof item.reason !== 'string' || typeof used !== 'number' || typeof ceiling !== 'number'
+  const item = value as Record<string, unknown> | null
+  if (typeof item !== 'object' || item === null) return {}
+  const used = item.rounds_used ?? item.roundsUsed
+  const ceiling = item.authorized_total_rounds ?? item.authorizedTotalRounds
+  if (typeof item.reason !== 'string' || typeof used !== 'number' || typeof ceiling !== 'number'
    || !Number.isSafeInteger(used) || !Number.isSafeInteger(ceiling) || used < 0 || ceiling < used) return {}
- return { budgetPause: { reason: item.reason, roundsUsed: used, authorizedTotalRounds: ceiling } }
+  return { budgetPause: { reason: item.reason, roundsUsed: used, authorizedTotalRounds: ceiling } }
 }
 
 function memberStages(value: unknown): WorkTaskMemberStage[] {
@@ -1266,8 +1268,10 @@ export function apply(ctx: Context, config: Config = {}): void {
         const retryable = canRetryStage(current, input.nodeId)
         if (!retryable) return Response.json({ error: '这个阶段当前不能单独重试。' }, { status: 409 })
         const budget = current.members.flatMap(member => member.stages).find(stage => stage.nodeId === input.nodeId)?.budgetPause
+        const invalidBudgetIncrease = input.authorizedTotalRounds !== undefined
+          && (budget === undefined || input.authorizedTotalRounds < budget.authorizedTotalRounds)
         if ((budget?.reason === 'total_limit' && (input.authorizedTotalRounds ?? 0) <= budget.authorizedTotalRounds)
-          || (input.authorizedTotalRounds !== undefined && (budget === undefined || input.authorizedTotalRounds < budget.authorizedTotalRounds))) {
+          || invalidBudgetIncrease) {
           return Response.json({ error: '请输入高于已用额度的新累计轮次上限。' }, { status: 409 })
         }
         pendingAction = { kind: 'stage-retry', ...(input.authorizedTotalRounds === undefined ? {} : { authorizedTotalRounds: input.authorizedTotalRounds }),

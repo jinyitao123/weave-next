@@ -5,14 +5,14 @@ export const NS = 'weave'
 
 /** Simplified Chinese dictionary and key-set source of truth. */
 export const zh = {
- 'task.budget.title': '执行已暂停，工作已保留',
- 'task.budget.help': '从已保存的进度继续，累计用量不会重置。',
- 'task.budget.usage': '已用 {used} 轮，累计上限 {total} 轮。',
- 'task.budget.total': '总额度已用尽；继续需要明确新的累计上限。',
- 'task.budget.slice': '本片段额度已用完，请核对已有进展后继续。',
- 'task.budget.blocked': '检测到重复调用或模型输出异常，请在监督对话中核对后调整任务。',
- 'task.budget.ceiling': '新的累计轮次上限',
- 'task.budget.invalid': '请输入高于当前累计上限的整数。',
+  'task.budget.title': '执行已暂停，工作已保留',
+  'task.budget.help': '从已保存的进度继续，累计用量不会重置。',
+  'task.budget.usage': '已用 {used} 轮，累计上限 {total} 轮。',
+  'task.budget.total': '总额度已用尽；继续需要明确新的累计上限。',
+  'task.budget.slice': '本片段额度已用完，请核对已有进展后继续。',
+  'task.budget.blocked': '检测到重复调用或模型输出异常，请在监督对话中核对后调整任务。',
+  'task.budget.ceiling': '新的累计轮次上限',
+  'task.budget.invalid': '请输入高于当前累计上限的整数。',
 
   ...previewZh,
   'runtimeCenter.eyebrow': '执行资源',
@@ -513,14 +513,14 @@ export type WeaveKey = keyof typeof zh
 
 /** English dictionary checked against the Chinese key set. */
 export const en = {
- 'task.budget.title': 'Execution paused; work is preserved',
- 'task.budget.help': 'Continue from saved progress. Cumulative usage will not reset.',
- 'task.budget.usage': '{used} rounds used; cumulative limit {total}.',
- 'task.budget.total': 'The total allowance is exhausted. Continuing requires an explicit new cumulative limit.',
- 'task.budget.slice': 'This slice is exhausted. Review the saved progress before continuing.',
- 'task.budget.blocked': 'Repeated calls or an abnormal model stop require review and a task adjustment in the supervising conversation.',
- 'task.budget.ceiling': 'New cumulative round limit',
- 'task.budget.invalid': 'Enter an integer greater than the current cumulative limit.',
+  'task.budget.title': 'Execution paused; work is preserved',
+  'task.budget.help': 'Continue from saved progress. Cumulative usage will not reset.',
+  'task.budget.usage': '{used} rounds used; cumulative limit {total}.',
+  'task.budget.total': 'The total allowance is exhausted. Continuing requires an explicit new cumulative limit.',
+  'task.budget.slice': 'This slice is exhausted. Review the saved progress before continuing.',
+  'task.budget.blocked': 'Repeated calls or an abnormal model stop require review and a task adjustment in the supervising conversation.',
+  'task.budget.ceiling': 'New cumulative round limit',
+  'task.budget.invalid': 'Enter an integer greater than the current cumulative limit.',
 
   ...previewEn,
   'runtimeCenter.eyebrow': 'Execution resources',

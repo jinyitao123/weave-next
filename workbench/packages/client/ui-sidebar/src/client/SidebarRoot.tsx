@@ -172,6 +172,7 @@ export function SidebarRoot({
           <button
             type="button"
             className={clsx(css.iconButton, css.toggle)}
+            data-native-toggle-sidebar
             aria-label={collapsed ? t('toggle.open') : t('toggle.collapse')}
             onClick={() => { toggleSidebar() }}
           >
@@ -191,6 +192,7 @@ export function SidebarRoot({
         <button
           type="button"
           className={css.newSession}
+          data-native-new-session
           aria-label={t('session.new.label')}
           onClick={() => { startSession() }}
         >
