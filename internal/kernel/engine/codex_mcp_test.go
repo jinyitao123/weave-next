@@ -54,7 +54,7 @@ func TestCodexDenyAllRemovesAmbientToolsAndPassesOutputSchema(t *testing.T) {
 	cli := filepath.Join(work, "fixture-codex")
 	script := `#!/bin/sh
 if [ "$1" = "mcp" ]; then printf '%s' '[{"name":"ambient","enabled":true}]'; exit 0; fi
-printf '%s\n' "$@" > "$PWD/args"
+printf '%s\n' "$@" > "$(dirname "$0")/args"
 printf '%s\n' '{"type":"item.completed","item":{"type":"agent_message","text":"{}"}}' '{"type":"turn.completed","usage":{"input_tokens":1,"output_tokens":1}}'
 `
 	if err := os.WriteFile(cli, []byte(script), 0700); err != nil {
