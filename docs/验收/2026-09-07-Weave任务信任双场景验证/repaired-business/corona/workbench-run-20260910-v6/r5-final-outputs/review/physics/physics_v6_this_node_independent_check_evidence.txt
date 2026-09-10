@@ -1,0 +1,75 @@
+=== [A] 常量冻结源 (verified_fact / assumption) ===
+  C_LIGHT=299792458.0 m/s  G0=9.80665 m/s^2  DIST_PROXIMA=4.25 ly
+  LY_M=9.460730e+15 m/ly  SEC_PER_YEAR=31557600.0 s/yr  AU_M=1.495979e+11 m/AU
+  TNT_J_PER_KG=4184000.0 J/kg (assumption)  cruise_speed_c=[0.01, 0.03, 0.05] (frozen)
+
+=== [B] 公式与单位检查 (dimensional_check) ===
+  V_KMPS     =14989.6      km/s     v=βc -> [L T^-1]
+  TIME_ALPHA =85           yr       t=D/v -> [T]
+  E_1MT      =1.12344e+23  J        E=½mv² -> [M L^2 T^-2]=J
+  E_5MT      =5.61722e+23  J        E=½mv² -> [M L^2 T^-2]=J
+  E_1G       =1.12344e+11  J        E=½mv² -> [M L^2 T^-2]=J
+  dust_1mg   =1.12344e+08  J        E=½mv² -> [M L^2 T^-2]=J
+  artgrav_a  =43.8649      m/s^2    a=ω²r -> [L T^-2]
+  ke_rel     =1.12555e+23  J        E_k=(γ-1)mc² -> [M L^2 T^-2]=J
+  gamma      =1.00125      dimless  γ=1/√(1-β²) -> dimless
+  beam_pow   =0.0625       dimless  P/P_ref=(β/β_ref)² -> dimless
+
+=== [C] 三速度情景派生量 (derived_result) ===
+--- S-0.01c  v=2997.9246 km/s  γ=1.000050 ---
+  TIME_ALPHA(4.25ly)=425.0000 yr
+  E_1MT=4.493776e+21 J (TNT 1.0740e+12 t)
+  E_5MT=2.246888e+22 J
+  E_1G=4.493776e+09 J = 4.4938 GJ [P4 单帆动能]
+  dust_1mg=4.493776e+06 J = TNT 1.0740 kg
+  rel_corr=0.0075 %  (<0.2%)
+  TIME_GLENS(550AU)=0.86969 yr = 10.436 mo
+  TIME_HELIOP(120AU)=0.18975 yr = 2.277 mo
+  TIME_PRECURSOR(1000AU)=1.58125 yr = 18.975 mo
+  P_REL(0.2c)=0.00250 (= 400.0x reduction)
+
+--- S-0.03c  v=8993.7737 km/s  γ=1.000450 ---
+  TIME_ALPHA(4.25ly)=141.6667 yr
+  E_1MT=4.044398e+22 J (TNT 9.6663e+12 t)
+  E_5MT=2.022199e+23 J
+  E_1G=4.044398e+10 J = 40.4440 GJ [P4 单帆动能]
+  dust_1mg=4.044398e+07 J = TNT 9.6663 kg
+  rel_corr=0.0676 %  (<0.2%)
+  TIME_GLENS(550AU)=0.28990 yr = 3.479 mo
+  TIME_HELIOP(120AU)=0.06325 yr = 0.759 mo
+  TIME_PRECURSOR(1000AU)=0.52708 yr = 6.325 mo
+  P_REL(0.2c)=0.02250 (= 44.4x reduction)
+
+--- S-0.05c  v=14989.6229 km/s  γ=1.001252 ---
+  TIME_ALPHA(4.25ly)=85.0000 yr
+  E_1MT=1.123444e+23 J (TNT 2.6851e+13 t)
+  E_5MT=5.617220e+23 J
+  E_1G=1.123444e+11 J = 112.3444 GJ [P4 单帆动能]
+  dust_1mg=1.123444e+08 J = TNT 26.8510 kg
+  rel_corr=0.1879 %  (<0.2%)
+  TIME_GLENS(550AU)=0.17394 yr = 2.087 mo
+  TIME_HELIOP(120AU)=0.03795 yr = 0.455 mo
+  TIME_PRECURSOR(1000AU)=0.31625 yr = 3.795 mo
+  P_REL(0.2c)=0.06250 (= 16.0x reduction)
+
+=== [D] 数量级闭环：FD-01 脚注「1mt ½mv² 动能 → 4.49e21–1.12e23 J」 ===
+  E_1MT(0.01c) = 4.4938e+21 J ; E_1MT(0.05c) = 1.1234e+23 J
+  FD-01 脚注声称区间 [4.49e21, 1.12e23] J；实测计算 [4.4938e+21, 1.1234e+23] J
+  低端相对差=8.41e-04  高端相对差=3.07e-03
+
+=== [E] 0.03c 五项锚点 vs 权威 acceptance.json (动态读入) ===
+  name                                 computed       expected    rel_err     tol  verdict
+  travel_years_at_0_03c            1.416667e+02   1.416667e+02   2.35e-10   0.001  OK
+  kinetic_energy_1mt_at_0_03c_j    4.044398e+22   4.044398e+22   1.07e-09   0.010  OK
+  kinetic_energy_5mt_at_0_03c_j    2.022199e+23   2.022199e+23   2.58e-08   0.010  OK
+  gravity_1km_2rpm_m_s2            4.386491e+01   4.386490e+01   1.93e-07   0.010  OK
+  dust_1mg_0_03c_j                 4.044398e+07   4.044398e+07   1.07e-09   0.010  OK
+  => result: 5/5 within tolerance
+
+=== [F] 事实纪律 / 未知项 (unknown, 不作为已验证事实) ===
+  E=½mv² 仅为动能下限；完整推进能源预算 = 束能量/帆效率/束源效率 -> unknown (U1,U2)
+  尘埃通量/密度 unknown (U3)；引力透镜焦点精确值未知，采用近似量级 (U4)
+  克级(≈1g) 可行性不可外推至 ≥1t 无人载荷/载人飞船 -> mass-scaling (U5)
+  Starshot 0.2c/100GW 为 B级 assumption，采购/建设依据需 A级核验 (U6)
+  推进选型 (U7)；人工重力医学必需性 (U8) 均未以假设掩盖
+  1mt 此处指 1e9 kg (百万吨级) 质量参考，非 1 百万载荷工程定义 (假定约定)

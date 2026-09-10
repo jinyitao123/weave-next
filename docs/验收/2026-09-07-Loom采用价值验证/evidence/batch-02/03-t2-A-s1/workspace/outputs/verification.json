@@ -1,0 +1,10 @@
+{
+  "acceptance_exit": 0,
+  "checks": {
+    "fix_gamma_expectation": true,
+    "fix_timeout_portability": true,
+    "fix_workdir": true
+  },
+  "output": "test_cruise_years (test_physics.PhysicsTests.test_cruise_years) ... ok\ntest_kinetic_energy (test_physics.PhysicsTests.test_kinetic_energy) ... ok\ntest_lorentz_gamma (test_physics.PhysicsTests.test_lorentz_gamma) ... ok\n\n----------------------------------------------------------------------\nRan 3 tests in 0.000s\n\nOK\ntest_cruise_years (test_physics.PhysicsTests.test_cruise_years) ... ok\ntest_kinetic_energy (test_physics.PhysicsTests.test_kinetic_energy) ... ok\ntest_lorentz_gamma (test_physics.PhysicsTests.test_lorentz_gamma) ... ok\n\n----------------------------------------------------------------------\nRan 3 tests in 0.000s\n\nOK\n",
+  "passed": true
+}

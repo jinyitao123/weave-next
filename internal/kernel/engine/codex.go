@@ -34,6 +34,14 @@ func (b *codexBackend) Run(ctx context.Context, spec RunSpec) (RunResult, error)
 		"--skip-git-repo-check",
 		"--dangerously-bypass-approvals-and-sandbox",
 	}
+	if len(spec.MCPServers) > 0 {
+		taskArgs, err := codexTaskMCPArgs(ctx, cliPath, spec)
+		if err != nil {
+			return failedCodexResult(err)
+		}
+		args = append(args, taskArgs...)
+	}
+
 	// Empty model follows the host default; explicit CLI-native names are
 	// passed through under either native login or API authentication.
 	if model := codexModelForRun(spec.Model, spec.Env); model != "" {
@@ -119,7 +127,7 @@ func (b *codexBackend) Run(ctx context.Context, spec RunSpec) (RunResult, error)
 
 func codexEnv(overrides map[string]string, workDir string) []string {
 	env := make(map[string]string)
-	for _, entry := range os.Environ() {
+	for _, entry := range cliAmbientEnv() {
 		if key, value, ok := strings.Cut(entry, "="); ok {
 			env[key] = value
 		}

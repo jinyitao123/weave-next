@@ -1,0 +1,32 @@
+req_id,requirement,category,verification_method,hard_gate,scenarios_covered,evidence_path,verification_status,responsible_node
+SA-REQ-G-01,三速度情景 0.01c/0.03c/0.05c 贯穿模型/应用/图纸/论证，无单 0.03c 残留,Content,Inspection,gate 2 three_speed_scenarios_present,"S-0.01c,S-0.03c,S-0.05c",outputs/review/systems/requirements/requirements_decomposition.md §2.1,待独立复跑(数字工程修复后),verification-integrator
+SA-REQ-G-02,所有数值同源于 corona-prephase-a-v1，禁止自造,Content,Inspection,gate 10 cross_artifact_parameter_consistency_passes,"S-0.01c,S-0.03c,S-0.05c",outputs/review/systems/config/config_items.yaml CI-01..CI-08,本节点一致性核对通过(转发),systems-architect
+SA-REQ-G-03,每条需求具备允许的验证方法，可双向追溯,Process,Review of design,gate 8 requirements_have_verification_methods,"S-0.01c,S-0.03c,S-0.05c",outputs/review/systems/verification/traceability_matrix.csv,本节点已编制,systems-architect
+SA-REQ-G-04,关键陈述带真值标签，缺证据项显式保留 unknown,Content,Inspection,gate 9 claims_use_truth_labels,"S-0.01c,S-0.03c,S-0.05c",outputs/review/systems/routes/route_terminal_states.md §1(真值标签),本节点已标注待独立复跑,verification-integrator
+SA-REQ-G-05,无未关闭一级严重问题；内容层S1与过程层S2/S3分列,Process,Review of design,gate 11 no_open_severity_one_issue,"S-0.01c,S-0.03c,S-0.05c",outputs/review/systems/interfaces/interface_register.md IFM-12/13/14,待独立复跑,verification-integrator
+SA-REQ-A-01,路线A终态=近端可交付科学前驱原型；三档均可达近端目标,Content,Analysis,gate 2,"S-0.01c,S-0.03c,S-0.05c",outputs/review/systems/routes/route_terminal_states.md §2.2,本节点定义待独立复跑,verification-integrator
+SA-REQ-A-02,路线A不以抵达恒星为成功；禁用 construction_ready/制造/认证/总预算断言,Content,Inspection,gate 7 all_drawings_marked_conceptual + 事实纪律,"S-0.01c,S-0.03c,S-0.05c",outputs/review/systems/routes/route_terminal_states.md §2.2 + baseline.yaml forbidden_claims,本节点定义待独立复跑,verification-integrator
+SA-REQ-B-01,路线B终态可描述为被动载荷或独立近端档案任务，不预设口径,Content,Review of design,gate 9,"S-0.01c,S-0.03c,S-0.05c",outputs/review/systems/routes/route_terminal_states.md §2.3,本节点定义多代语义未决项保留 unknown,systems-architect
+SA-REQ-B-02,路线B多代/治理/伦理未决项以 unknown 显式保留,Content,Inspection,gate 9,"S-0.01c,S-0.03c,S-0.05c",outputs/review/systems/routes/route_terminal_states.md §2.3,本节点保留(未决),systems-architect
+SA-REQ-C-01,路线C终态=观察/边界定位；百年尺度不可承诺载人时间表,Content,Analysis,gate 9,"S-0.01c,S-0.03c,S-0.05c",outputs/review/systems/routes/route_terminal_states.md §2.4,本节点定义待独立复跑,verification-integrator
+SA-REQ-C-02,路线C不因速度轴变化改变载人不可承诺结论；不授权载人研发,Content,Review of design,gate 9,"S-0.01c,S-0.03c,S-0.05c",outputs/review/systems/routes/route_terminal_states.md §2.4,本节点定义,systems-architect
+SA-REQ-I-01,各专业间接口登记在册，契约明确,Process,Review of design,gate 10,"S-0.01c,S-0.03c,S-0.05c",outputs/review/systems/interfaces/interface_register.md,本节点已登记,systems-architect
+SA-REQ-I-02,生产者与独立总装员分属不同运行时(平台编排，不虚构UUID),Process,Inspection,gate 11(过程层OP-1),S-0.01c/S-0.03c/S-0.05c,outputs/review/systems/interfaces/interface_register.md IFM-13,依赖平台编排真实参与,Weave
+SA-REQ-T-01,需求↔情景↔验证方法↔证据↔硬门槛双向可追踪,Process,Review of design,gate 8/gate 9,"S-0.01c,S-0.03c,S-0.05c",outputs/review/systems/verification/traceability_matrix.csv,本节点已编制,systems-architect
+REQ-V4-C-01,统一计算模型可运行源码+机器可读参数+测试,Content,Test,gate 1 model_tests_pass,"S-0.01c,S-0.03c,S-0.05c","outputs/model/(corona_model.py,params.json,tests/test_model.py)",待独立复跑,digital-engineering / verification-integrator
+REQ-V4-C-03,五项0.03c参考锚点在容差内复算,Content,Test,gate 3 reference_calculations_within_tolerance,S-0.03c,outputs/model/anchors_reverified_2026-09-09.txt + acceptance.json reference_checks,本节点一致性核对5/5 OK;独立复跑待办,verification-integrator
+REQ-V4-C-04,数字应用本地可运行、无云依赖、计算同源,Content,Demonstration,gate 4 app_starts_without_cloud_dependency,"S-0.01c,S-0.03c,S-0.05c",outputs/app/(待数字工程修复),未执行,digital-engineering
+REQ-V4-C-05,应用可切换三速度情景并实时更新派生结果,Content,Demonstration,gate 5 app_exports_scenario_json(相关),"S-0.01c,S-0.03c,S-0.05c",outputs/app/(待数字工程修复),未执行,digital-engineering
+REQ-V4-C-06,应用可导出当前情景JSON,Content,Demonstration,gate 5 app_exports_scenario_json,"S-0.01c,S-0.03c,S-0.05c",outputs/app/(待数字工程修复),未执行,digital-engineering
+REQ-V4-C-07,概念图纸≥3张SVG+1份可编辑OpenSCAD可解析可编辑,Content,Inspection,gate 6 drawings_are_parseable_and_editable,"S-0.01c,S-0.03c,S-0.05c",outputs/drawings/(待数字工程产物),未生成(本节点不产出图纸),digital-engineering
+REQ-V4-C-08,全部图纸标注概念级,Content,Inspection,gate 7 all_drawings_marked_conceptual,"S-0.01c,S-0.03c,S-0.05c",outputs/drawings/(待数字工程产物),未生成,digital-engineering
+REQ-V4-C-09,需求具备验证方法，可与证据/假设/未知/结果双向追踪,Process,Review of design,gate 8,"S-0.01c,S-0.03c,S-0.05c",outputs/review/systems/verification/traceability_matrix.csv,本节点已编制,systems-architect
+REQ-V4-C-10,每条关键陈述带真值标签,Content,Inspection,gate 9,"S-0.01c,S-0.03c,S-0.05c",outputs/review/systems/routes/route_terminal_states.md,本节点已标注待独立复跑,verification-integrator
+REQ-V4-C-11,无未关闭一级严重问题(内容+过程分列),Process,Review of design,gate 11,"S-0.01c,S-0.03c,S-0.05c",outputs/review/systems/interfaces/interface_register.md IFM-12..14,待独立复跑,verification-integrator
+REQ-V4-P-01,至少两个外部运行时真实参与执行,Process,Inspection,gate 11(过程层),——,outputs/review/systems/interfaces/interface_register.md IFM-13,依赖平台编排真实参与,Weave
+REQ-V4-P-02,真独立总装员：不复用成员自称结论,Process,Demonstration,gate 1-11,——,outputs/FINAL_ACCEPTANCE.md(待复跑),未执行,verification-integrator
+REQ-V4-P-03,11项硬门槛逐项复跑，未通过/未运行→判失败,Process,Demonstration,gate 1-11,——,outputs/FINAL_ACCEPTANCE.md + outputs/verification/acceptance.json,未执行,verification-integrator
+REQ-V4-P-04,唯一最终结果目录；六路径存在,Process,Inspection,gate 4-11(过程层OP-2),——,outputs/model|drawings|app|review|verification|FINAL_ACCEPTANCE.md,未生成,verification-integrator
+REQ-V4-P-05,所有最终成果来自同一参数模型,Process,Inspection,gate 10,"S-0.01c,S-0.03c,S-0.05c",outputs/review/systems/config/config_items.yaml CI-01..CI-08,本节点一致性核对(转发),systems-architect
+REQ-V4-P-06,先修好页面计算/情景切换/导出，再复跑,Process,Demonstration,gate 4/5/10,"S-0.01c,S-0.03c,S-0.05c",outputs/app/(待数字工程),未执行,digital-engineering
+REQ-V4-P-07,保留既有日冕材料与三速度范围，不推出新基线,Process,Inspection,gate 10,"S-0.01c,S-0.03c,S-0.05c",outputs/review/systems/config/config_baseline_register.md,本节点确认沿用,systems-architect

@@ -1,0 +1,6 @@
+=== RUN   TestStandardToolsPublicationReachesActualMCPAndPreservesFrozenContractRealPG
+    standard_tools_publication_pg_test.go:96: ERROR: invalid input syntax for type json (SQLSTATE 22P02)
+--- FAIL: TestStandardToolsPublicationReachesActualMCPAndPreservesFrozenContractRealPG (0.31s)
+FAIL
+FAIL	github.com/jinyitao123/weave/internal/kernel/workflow	0.936s
+FAIL

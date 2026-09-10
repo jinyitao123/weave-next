@@ -231,6 +231,7 @@ func (s *Server) planDeclarativeWorkflow(
 	blueprint.Workflow = teambuild.BlueprintWorkflowV1{
 		Mode:                teambuild.BlueprintWorkflowDeclarativeV1,
 		DeclarativeSpecHash: frozen.SpecHash,
+		DeliveryContract:    blueprint.Workflow.DeliveryContract,
 	}
 	if err := validateBlueprintAgainstRun(run, blueprint); err != nil {
 		return blueprintPlanResult{}, err
@@ -327,7 +328,7 @@ func (s *Server) freezeDeclarativeWorkflow(
 	bindings []teamforge.DeclarativeWorkerBindingV1,
 	binding teamforge.DeclarativeBuildBindingV1,
 ) (teamforge.FrozenDeclarativeWorkflowSpecV1, error) {
-	return teamforge.FreezeDeclarativeWorkflowSpecV1(spec, bindings, binding,
+	return teamforge.FreezeDeclarativeWorkflowSpecWithDeliveryContractV1(spec, bindings, binding, blueprint.Workflow.DeliveryContract,
 		func(trigger machine.TriggerConfig, graph machine.GraphDefinition) (machine.Report, error) {
 			if run.Mode == teambuild.ModeCreate {
 				planned := make([]teameval.PlannedWorkerBinding, 0, len(bindings))

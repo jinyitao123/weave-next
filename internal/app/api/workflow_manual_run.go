@@ -19,6 +19,8 @@ import (
 
 type workflowManualRunResponse struct {
 	RunID           string `json:"run_id"`
+	InputRevisionID string `json:"input_revision_id,omitempty"`
+	ClientRequestID string `json:"client_request_id,omitempty"`
 	WorkflowID      string `json:"workflow_id"`
 	WorkflowVersion int    `json:"workflow_version"`
 	TaskID          string `json:"task_id"`
@@ -49,6 +51,9 @@ func (s *Server) admitTeamWorkflowDispatch(c echo.Context, workflowID string, re
 		return workflowStoreFailure(c, fmt.Errorf("begin manual workflow run: %w", err))
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+	if handled, err := s.lockBoundDispatchInput(c, tx, request); handled || err != nil {
+		return err
+	}
 
 	sourceRef := getUserID(c)
 	if sourceRef == "" {
@@ -164,6 +169,9 @@ func (s *Server) admitTeamWorkflowDispatch(c echo.Context, workflowID string, re
 		}
 		return workflowStoreFailure(c, fmt.Errorf("create manual workflow snapshot: %w", err))
 	}
+	if err := s.freezeDispatchDeliveryContractTx(ctx, tx, createdSnapshot, request); err != nil {
+		return workflowStoreFailure(c, fmt.Errorf("freeze workflow delivery contract: %w", err))
+	}
 	taskID := "task-" + uuid.NewString()
 	if dispatchTaskID, ok := c.Get("workflow_dispatch_task_id").(string); ok && dispatchTaskID != "" {
 		taskID = dispatchTaskID
@@ -187,18 +195,26 @@ func (s *Server) admitTeamWorkflowDispatch(c echo.Context, workflowID string, re
 	if err := s.Tasks.EnqueueTx(ctx, tx, task); err != nil {
 		return workflowStoreFailure(c, fmt.Errorf("enqueue manual workflow task: %w", err))
 	}
+	if err := consumeDispatchInputTx(ctx, tx, workspaceID, getUserID(c), request.InputRevisionID, createdSnapshot.RunID, task.ID); err != nil {
+		return workflowStoreFailure(c, err)
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return workflowStoreFailure(c, fmt.Errorf("commit manual workflow run: %w", err))
 	}
 
-	return c.JSON(http.StatusCreated, workflowManualRunResponse{
+	response := workflowManualRunResponse{
 		RunID:           createdSnapshot.RunID,
 		WorkflowID:      createdSnapshot.WorkflowID,
 		WorkflowVersion: createdSnapshot.WorkflowVersion,
 		TaskID:          task.ID,
 		ProjectID:       createdSnapshot.ProjectID,
 		ConversationID:  conversationID,
-	})
+		InputRevisionID: request.InputRevisionID,
+	}
+	if request.InputRevisionID != "" {
+		response.ClientRequestID = request.ClientRequestID
+	}
+	return c.JSON(http.StatusCreated, response)
 }
 
 func loadWorkflowManualRunProject(

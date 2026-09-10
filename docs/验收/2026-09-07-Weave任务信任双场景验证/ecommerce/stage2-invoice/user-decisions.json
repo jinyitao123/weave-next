@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "recorded_at": "2026-09-08T01:49:32.003031+00:00",
+  "scope_authorization": "Continued under the already authorized two-scenario three-stage validation; no new approval is inferred from this aggregate.",
+  "source_limit": "Actions below are reconstructed from the archived incident, not new human messages.",
+  "operator_actions": [
+    {
+      "at": "2026-09-08T09:04:00+08:00",
+      "actor": "Codex acting within the user-authorized validation",
+      "action": "Submitted the independent invoice task in the existing Workbench conversation."
+    },
+    {
+      "at": null,
+      "actor": "Codex acting within the user-authorized validation",
+      "action": "Cancelled all three incident runs after detecting cross-task input contamination.",
+      "time_status": "Exact operator action time is not retained; backend terminal times remain in activity.json."
+    }
+  ],
+  "user_result_acceptance": "NOT_REQUESTED",
+  "direct_human_intervention_count": "NOT_MEASURED",
+  "human_handling_time_ms": null,
+  "user_result_modification_count": null,
+  "stop_reason": "Integrity incident; third correct-body run also cancelled by supervising agent.",
+  "source": {
+    "path": "ecommerce/stage2-invoice/dispatch-incident.json",
+    "sha256": "ef9bde27ee25297ddc1a6ce48b719121b7c2c9eb75f5ae76fd40fe99f89e0e35"
+  }
+}

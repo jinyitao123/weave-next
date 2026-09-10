@@ -1,0 +1,11 @@
+version: 1
+scenario: workbench-dispatch-source
+profile: headless
+composition: workbench-dispatch-source
+recording: authored
+header:
+  class: workbench-dispatch-source
+  pin: true
+  systemPromptSource: text-turn
+workspace:
+  final: true

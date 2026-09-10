@@ -1,0 +1,123 @@
+{
+  "checked_at": "2026-09-08T01:38:32.350355+00:00",
+  "source": "live database and archived publication; no new business dispatch in this audit",
+  "business_entry": "Workbench in-app browser (historical runs)",
+  "published_artifact": {
+    "workflow_id": "flow",
+    "workflow_version": 1,
+    "content_hash": "ebf9b12c8816d2b710a56e15d02a2885b64e912ae00910e25c6ea96f3e6746bd",
+    "artifact_schema_version": 1
+  },
+  "runs": [
+    {
+      "run_id": "run-df96ebb6-6451-53b3-9a96-af76f616dce6",
+      "team_id": "team",
+      "workflow_id": "flow",
+      "workflow_version": 1,
+      "status": "failed",
+      "source_kind": "manual",
+      "source_task_id": "task-7022f410-ff5f-55eb-bf02-0c17c0257d08",
+      "created_at": "2026-09-07T17:14:10.777421+08:00",
+      "terminal_at": "2026-09-07T17:39:09.498405+08:00",
+      "error_code": "team_run_execution_unrecoverable",
+      "cause_summary": "team_run_execution_unrecoverable: openai: HTTP 503: runtime LLM tool \"run_python\" args must be a JSON object"
+    },
+    {
+      "run_id": "run-66a36200-9590-5776-92c6-7ff69f1f9623",
+      "team_id": "team",
+      "workflow_id": "flow",
+      "workflow_version": 1,
+      "status": "failed",
+      "source_kind": "manual",
+      "source_task_id": "task-4d9751a5-0b1c-5394-91a2-d54550a66b4e",
+      "created_at": "2026-09-07T18:16:22.448248+08:00",
+      "terminal_at": "2026-09-07T18:21:12.040021+08:00",
+      "error_code": "team_run_execution_unrecoverable",
+      "cause_summary": "team_run_execution_unrecoverable: openai: HTTP 503: inference protocol trailing data"
+    },
+    {
+      "run_id": "run-d1adf010-b31c-579f-860c-df93990066f9",
+      "team_id": "team",
+      "workflow_id": "flow",
+      "workflow_version": 1,
+      "status": "failed",
+      "source_kind": "manual",
+      "source_task_id": "task-4b5b40f4-fd81-59e5-bef3-5394c099c1c6",
+      "created_at": "2026-09-07T18:34:22.511695+08:00",
+      "terminal_at": "2026-09-07T18:51:13.171136+08:00",
+      "error_code": "team_run_execution_unrecoverable",
+      "cause_summary": "team_run_execution_unrecoverable: openai: HTTP 503: native tool attempted; acceptance rejected"
+    },
+    {
+      "run_id": "run-e3ab04c1-8586-5321-a7f5-6878ac7cc8a3",
+      "team_id": "team",
+      "workflow_id": "flow",
+      "workflow_version": 1,
+      "status": "succeeded",
+      "source_kind": "manual",
+      "source_task_id": "task-7e9ed15b-9514-5a86-969d-d4019e146c4f",
+      "created_at": "2026-09-07T19:01:25.617695+08:00",
+      "terminal_at": "2026-09-07T19:01:58.056327+08:00",
+      "error_code": null,
+      "cause_summary": null
+    },
+    {
+      "run_id": "run-362422e3-78da-5d7c-8a5b-0b745e961366",
+      "team_id": "team",
+      "workflow_id": "flow",
+      "workflow_version": 1,
+      "status": "failed",
+      "source_kind": "manual",
+      "source_task_id": "task-9dd48c1d-c09c-5588-9626-2a83f397e120",
+      "created_at": "2026-09-07T19:20:10.927861+08:00",
+      "terminal_at": "2026-09-07T19:41:31.394952+08:00",
+      "error_code": "team_run_execution_unrecoverable",
+      "cause_summary": "team_run_execution_unrecoverable: openai: HTTP 503: native inference HTTP 400: {\"error\":{\"message\":\"tool_call_id  is not found\",\"type\":\"invalid_request_error\"}}"
+    },
+    {
+      "run_id": "run-9561db30-c77b-5d22-97ce-6e0c959210eb",
+      "team_id": "team",
+      "workflow_id": "flow",
+      "workflow_version": 1,
+      "status": "failed",
+      "source_kind": "manual",
+      "source_task_id": "task-3fa008dc-516f-574f-849d-b681c95fb5d4",
+      "created_at": "2026-09-07T20:12:03.003604+08:00",
+      "terminal_at": "2026-09-07T20:23:57.279192+08:00",
+      "error_code": "team_run_execution_unrecoverable",
+      "cause_summary": "team_run_execution_unrecoverable: openai: http: Post \"http://127.0.0.1:59315/v1/chat/completions\": EOF"
+    },
+    {
+      "run_id": "run-9de6fbde-0636-591c-b385-97dac48476cc",
+      "team_id": "team",
+      "workflow_id": "flow",
+      "workflow_version": 1,
+      "status": "succeeded",
+      "source_kind": "manual",
+      "source_task_id": "task-3790b6a2-4261-51b6-8e55-078827e92c95",
+      "created_at": "2026-09-07T21:07:49.39942+08:00",
+      "terminal_at": "2026-09-07T21:27:52.395179+08:00",
+      "error_code": null,
+      "cause_summary": null
+    },
+    {
+      "run_id": "run-80210e96-f834-5db2-bef7-9c4a90ee13fa",
+      "team_id": "team",
+      "workflow_id": "flow",
+      "workflow_version": 1,
+      "status": "succeeded",
+      "source_kind": "manual",
+      "source_task_id": "task-7e5fc1b1-a3fd-5e3f-904a-71e8c2d454f4",
+      "created_at": "2026-09-07T22:04:04.092441+08:00",
+      "terminal_at": "2026-09-07T22:15:54.789956+08:00",
+      "error_code": null,
+      "cause_summary": null
+    }
+  ],
+  "original_prompt": {
+    "path": "docs/验收/2026-09-07-Loom成员接入实施/cases/stage-d/prompt.txt",
+    "sha256": "a6164c23d8f80e602cfe240682f85364107ca20c6828a9b5db3664f5eb3dc1cf"
+  },
+  "new_stage1_run": "NOT_RUN_AFTER_TRUST_PLAN_CREATED",
+  "scope_limit": "These are retained real-material runs made earlier in this same investigation, not new isolated replications of the later trust contract."
+}

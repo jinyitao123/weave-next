@@ -18,7 +18,7 @@ type File struct {
 const (
 	MaxArtifactCount       = 128
 	MaxArtifactBytes       = 256 * 1024
-	MaxArtifactsTotalBytes = 512 * 1024
+	MaxArtifactsTotalBytes = 1024 * 1024
 )
 
 // Validate accepts only bounded UTF-8 files with relative delivery

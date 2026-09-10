@@ -283,7 +283,15 @@ func (d *service) processTask(ctx context.Context, task *taskqueue.Task) {
 	// Engine adapters return only after their process group has exited.
 	result, runErr := d.executeTask(taskCtx, task)
 	journal := resultJournal{TaskID: task.ID, Result: result}
-	if runErr != nil && result.Status == "" {
+	// A daemon shutdown cancels the process context even though the user did
+	// not cancel this task. Report that boundary as an infrastructure failure
+	// so the parent workflow can park at its durable checkpoint and offer an
+	// explicit continuation. Completing a synthetic timeout result would lose
+	// the process-interruption identity and terminalize the parent as work
+	// failure instead.
+	if ctx.Err() != nil && runErr != nil && result.Status != "completed" {
+		journal.Failure = "runtime_process_interrupted: daemon shutdown"
+	} else if runErr != nil && result.Status == "" {
 		journal.Failure = runErr.Error()
 	}
 	saved := false
@@ -419,6 +427,10 @@ func (d *service) executeTask(ctx context.Context, task *taskqueue.Task) (runtim
 		return runtimes.EngineExecResult{}, err
 	}
 
+	taskTargets, err := runtimeTaskMCPTargets(d.server, task, request)
+	if err != nil {
+		return runtimes.EngineExecResult{}, err
+	}
 	workspaceRoot := d.workspacesRoot
 	if request.NodeID != "" && task.RunSnapshotID != "" {
 		// Frozen workflow files belong to one physical invocation. Parallel tasks,
@@ -466,7 +478,7 @@ func (d *service) executeTask(ctx context.Context, task *taskqueue.Task) (runtim
 	if err := validateRuntimeProviderConfig(request.Engine, cliAuthMode, oneAPIKey); err != nil {
 		return runtimes.EngineExecResult{}, err
 	}
-	if err := execenv.WriteEngineConfigWithAuthMode(request.Engine, workDir, request.Record, oneAPIBase, d.server, oneAPIKey, cliAuthMode); err != nil {
+	if err := execenv.WriteEngineConfigWithAuthMode(request.Engine, workDir, request.Record, oneAPIBase, d.server, oneAPIKey, cliAuthMode, taskTargets...); err != nil {
 		return runtimes.EngineExecResult{}, err
 	}
 	if runEnv == nil {
@@ -480,6 +492,9 @@ func (d *service) executeTask(ctx context.Context, task *taskqueue.Task) (runtim
 		if token := secret.BoundaryToken(task.WorkspaceID, request.Record.Name, idx); token != "" {
 			runEnv[fmt.Sprintf("WEAVE_MCP_BOUNDARY_TOKEN_%d", idx)] = token
 		}
+	}
+	for idx, target := range taskTargets {
+		runEnv[fmt.Sprintf("WEAVE_MCP_BOUNDARY_TOKEN_%d", idx)] = target.Token
 	}
 	if cliAuthMode == codexChatGPTAuthMode && request.Engine == engine.Codex {
 		runEnv["WEAVE_CODEX_AUTH_MODE"] = codexChatGPTAuthMode
@@ -504,6 +519,7 @@ func (d *service) executeTask(ctx context.Context, task *taskqueue.Task) (runtim
 	publish, finishProgress := d.publicEventCapture(task.ID, (request.Engine == engine.Codex || request.Engine == engine.Claude) && request.NodeID != "" && task.RunSnapshotID != "")
 	result, err := d.runEngine(ctx, request.Engine, engine.RunSpec{
 		OnPublicEvent: publish,
+		MCPServers:    engineTaskMCPServers(taskTargets),
 		WorkDir:       workDir,
 		Prompt:        request.Prompt,
 		Model:         request.Model,
@@ -516,7 +532,7 @@ func (d *service) executeTask(ctx context.Context, task *taskqueue.Task) (runtim
 	// Preserve files written before an engine failure as observable, non-final
 	// workflow artifacts. The workflow layer still owns success/failure and will
 	// never promote these files to a final deliverable on a failed node.
-	runtimes.CollectRunOutputArtifacts(workDir, outputsBefore, &result)
+	err = errors.Join(err, runtimes.CollectRunOutputArtifacts(workDir, outputsBefore, &result))
 	execResult := runtimes.CLIEngineExecResult(result)
 	if err != nil {
 		return execResult, err
@@ -796,9 +812,28 @@ func detectEngineCapabilities(ctx context.Context, detected []string) []runtimes
 			EndpointClass: endpointClass,
 		}
 		describeEngineConfiguration(&capability)
+		describeEngineAvailability(&capability)
 		capabilities = append(capabilities, capability)
 	}
 	return capabilities
+}
+
+func describeEngineAvailability(capability *runtimes.EngineCapability) {
+	capability.Availability = runtimes.EngineAvailabilityUnknown
+	capability.UnavailableReason = ""
+	if capability.AuthMode == runtimes.AuthModeChatGPT || capability.AuthMode == runtimes.AuthModeOAuth {
+		capability.Availability = runtimes.EngineAvailabilityReady
+		return
+	}
+	if capability.Engine != engine.Codex || capability.AuthMode != runtimes.AuthModeProvider {
+		return
+	}
+	if firstNonEmpty(os.Getenv("OPENAI_API_KEY"), os.Getenv("ONEAPI_API_KEY")) == "" {
+		capability.Availability = runtimes.EngineAvailabilityUnavailable
+		capability.UnavailableReason = "provider_credentials_missing"
+		return
+	}
+	capability.Availability = runtimes.EngineAvailabilityReady
 }
 
 func engineProtocolVersion(name string) string {

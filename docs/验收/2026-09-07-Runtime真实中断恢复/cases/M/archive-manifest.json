@@ -1,0 +1,104 @@
+{
+  "case": "M",
+  "archived_at": "2026-09-07T04:50:06.895178+00:00",
+  "source_workdir": "/private/tmp/weave-runtime-value-20260907-sqtugx3m/runtime-workspaces/.invocations/task-eb655f8682c14216d8fedd168fc2e77c/default/corona-prephase-a-lab-v3-luna-digital-engineering-builder/workdir",
+  "files": [
+    {
+      "path": "evidence/driver-result.json",
+      "sha256": "4b8bcb46900252c5e625d5275fe8ed1a7c2d6096593d57a7b530e22d4cf41a7a",
+      "bytes": 893
+    },
+    {
+      "path": "evidence/driver-result.json.start.json",
+      "sha256": "7401095ae406b46465e9f80da069c78814e5c55b681283d226045774b5513ca4",
+      "bytes": 223
+    },
+    {
+      "path": "evidence/failure-classification.json",
+      "sha256": "833801c47dc56b4fbf6c7a059bf8e25a600e3afa46662edcdb7ac87221507798",
+      "bytes": 497
+    },
+    {
+      "path": "evidence/filesystem-events.jsonl",
+      "sha256": "d5acbe23bef15a397c802dd40a5909d99c6b60e2aec9c52c57e5d505bfe0b4cd",
+      "bytes": 3339
+    },
+    {
+      "path": "evidence/final-files.json",
+      "sha256": "33c627e617c99d5ecfb2477161731945cc0976e77c92f69fa4de8242ce6230b6",
+      "bytes": 1116
+    },
+    {
+      "path": "evidence/public-events.json",
+      "sha256": "080abd0f3e7d974ed81218d6d697a68e2a8daa655ae89d195d7a00c79e6ee0bd",
+      "bytes": 59481
+    },
+    {
+      "path": "evidence/status.json",
+      "sha256": "c91d069d5993a588412323816ed0eb652e17564630f8cde7dc4d3f69b9a8efc8",
+      "bytes": 805
+    },
+    {
+      "path": "evidence/summary.json",
+      "sha256": "e10243106de50526269aff6881ae587fb9cbd257a0ae224459d33dcf2adf427a",
+      "bytes": 2632
+    },
+    {
+      "path": "evidence/task-receipt.json",
+      "sha256": "d179e0a68764bd0f449b0c9941feb96eec8242a7bc2261998fc95ab8a342874f",
+      "bytes": 63710
+    },
+    {
+      "path": "evidence/unaccepted-runtime-result.json",
+      "sha256": "20ed9fb0822c49d604aa1f4613f68bb13e617a696a72bf6ea7be251ee4769f76",
+      "bytes": 105057
+    },
+    {
+      "path": "evidence/unplanned-host-sleep.json",
+      "sha256": "fc98e756c7345c6ff3474f610426a39b2bd7c19df71ef709edcd6d18db056427",
+      "bytes": 775
+    },
+    {
+      "path": "evidence/watcher-interruption.json",
+      "sha256": "8ae30132900854ad9d19bc52b0d0e50b1d30758abdedaf35cae76453f14fb0ef",
+      "bytes": 182
+    },
+    {
+      "path": "outputs/model/baseline_frozen.yaml",
+      "sha256": "cfb12b781363c547da87e6dec9fd937079cba25501b85ff6cbfabfbc508b10c2",
+      "bytes": 8016
+    },
+    {
+      "path": "outputs/model/corona_model.py",
+      "sha256": "0eb5e8903d2a68607de0b92d80bb249cf507eae93f17dc73218af43807b74ab8",
+      "bytes": 16691
+    },
+    {
+      "path": "outputs/model/params.json",
+      "sha256": "2aea16489c9e77eab28cddba220c31354fc6911fc7815ba3b9bf17acf3f7619a",
+      "bytes": 5450
+    },
+    {
+      "path": "outputs/review/INTEGRATION_NOTE.md",
+      "sha256": "15cc20e6cb428c84d88f872364b1603890449795ccee811a16c3c82ccd701dc1",
+      "bytes": 2167
+    },
+    {
+      "path": "outputs/review/change_control_register.md",
+      "sha256": "2494de35bf51dc1620a42d37c5a62a006e74e98d9e85fd973f4af8f87287915c",
+      "bytes": 7849
+    },
+    {
+      "path": "outputs/review/interface_control.md",
+      "sha256": "bded6d00f05be613b16e1ff6e6a61a372da7f0d45236b79af2e6c8842a2b5f76",
+      "bytes": 5435
+    },
+    {
+      "path": "outputs/review/requirements_baseline.md",
+      "sha256": "53c628a1cc4b88fb4d71e54ea0754186861e8c1ddbaae5a5614989e5c6ed4481",
+      "bytes": 9182
+    }
+  ],
+  "credentials_excluded": true,
+  "source_files_not_modified": true
+}

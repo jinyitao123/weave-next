@@ -1,0 +1,17 @@
+{
+  "status": "incomplete",
+  "phase": "D",
+  "first_sample_run_id": "run-df96ebb6-6451-53b3-9a96-af76f616dce6",
+  "observed_at": "2026-09-07T09:53:42.112184+00:00",
+  "first_sample_outcome": "failed",
+  "product_fix": "omit absent optional checkpoint fields before strict session persistence",
+  "checks": "backend passed; Workbench build + 1 browser + 272 regression checks passed",
+  "unmet_exits": [
+    "successful model tests before intended process kill",
+    "Workbench continuation after intended process kill",
+    "independent final model/drawing/application validation"
+  ],
+  "current_blocker": "Mac locked; manual user unlock required for Workbench dispatch and browser continuation",
+  "next_transport": "direct JSON argument objects in acceptance-only inference gateway; no production HostFactory replacement",
+  "files_generated": 0
+}

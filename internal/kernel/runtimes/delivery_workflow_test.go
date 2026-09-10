@@ -130,8 +130,8 @@ func TestWorkflowFinalDeliveryUsesCurrentStageFileEvidenceAfterResume(t *testing
 				if json.Unmarshal(got.Output, &delivered) != nil || err != nil || got.Status != teamrun.RuntimeCompleted || delivered.Output != body {
 					t.Fatalf("real file not delivered, or lead's plan blocked delivery: result=%#v err=%v", got, err)
 				}
-			} else if err == nil || got.Status != teamrun.RuntimeFailed || !strings.Contains(err.Error(), "delivery_artifact_uncollected") {
-				t.Fatalf("missing current file passed final boundary: result=%#v err=%v", got, err)
+			} else if err != nil || got.Status != teamrun.RuntimeCompleted || accounted.ArtifactCollection == nil || len(accounted.ArtifactCollection.Issues) == 0 || len(accounted.Artifacts) != 0 {
+				t.Fatalf("missing file lost its evidence or rewrote completed execution: result=%#v accounted=%#v err=%v", got, accounted, err)
 			}
 		})
 	}

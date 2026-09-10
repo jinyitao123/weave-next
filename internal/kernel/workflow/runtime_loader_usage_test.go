@@ -2,12 +2,14 @@ package workflow
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/jinyitao123/weave/internal/base/execution"
+	"github.com/jinyitao123/weave/internal/base/fileartifact"
 	"github.com/jinyitao123/weave/internal/kernel/engine"
 	"github.com/jinyitao123/weave/internal/kernel/execenv"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
@@ -70,7 +72,7 @@ func TestRuntimeCLIEntryCarriesDeferredDeliveryEvidence(t *testing.T) {
 		t.Fatal(err)
 	}
 	result, err := entry.ExecuteAccounted(t.Context(), "plan only")
-	if err != nil || result.DeliveryError != `delivery_artifact_uncollected: file_not_collected: "outputs/report.md"` {
+	if err != nil || result.DeliveryError != "" || result.Status != "completed" || len(result.Diagnostics) != 1 || result.Diagnostics[0].Message != `file_not_collected: "outputs/report.md"` {
 		t.Fatalf("delivery evidence was lost or failed early: result=%#v err=%v", result, err)
 	}
 }
@@ -116,8 +118,8 @@ func TestRuntimeCLITextOutputUsesCollectedFileInsteadOfReceipt(t *testing.T) {
 		}
 	}
 	empty := RuntimeCLIResult{Output: "Created `brief.md`.", Artifacts: []RuntimeCLIArtifact{{Path: "brief.md", Content: " "}}}
-	if _, err := empty.TextOutput(); err == nil {
-		t.Fatal("empty delivery file accepted as completed text")
+	if output, err := empty.TextOutput(); err != nil || output != empty.Output {
+		t.Fatal("empty file rewrote the execution outcome instead of leaving it for delivery verification")
 	}
 	multiple := RuntimeCLIResult{Output: "See `brief.md` and `facts.csv`.", Artifacts: []RuntimeCLIArtifact{
 		{Path: "brief.md", Content: body}, {Path: "facts.csv", Content: "fact\nmeeting\n"},
@@ -144,7 +146,7 @@ func TestRuntimeCLITextOutputResolvesOnlyCollectedCurrentAbsoluteReferences(t *t
 			runResult := engine.RunResult{Output: answer, Status: "completed"}
 			runtimes.CollectRunOutputArtifacts(workDir, before, &runResult)
 			if location == "other/brief.md" {
-				if runResult.Status != "failed" || len(runResult.Artifacts) != 0 || len(runResult.Diagnostics) != 1 {
+				if runResult.Status != "completed" || runResult.Err != "" || len(runResult.Artifacts) != 0 || len(runResult.Diagnostics) != 1 || runResult.ArtifactCollection == nil || len(runResult.ArtifactCollection.Issues) != 1 {
 					t.Fatalf("out-of-scope file became a receipt-only success: %#v", runResult)
 				}
 				return
@@ -163,5 +165,24 @@ func TestRuntimeCLITextOutputResolvesOnlyCollectedCurrentAbsoluteReferences(t *t
 				t.Fatalf("text delivery = %q, want %q, error = %v", got, want, err)
 			}
 		})
+	}
+}
+
+func TestRuntimeCLIEntryPreservesEngineIdentityAndReturnsTechnicalCollectionError(t *testing.T) {
+	for _, kind := range []string{"limit", "error"} {
+		original := engine.RunResult{Status: "completed", SessionID: "session-original", Output: "Saved report", Usage: &engine.UsageReceipt{InputTokens: 7, HasTokens: true}, ArtifactCollection: &fileartifact.CollectionEvidence{SchemaVersion: 1, Complete: false, Limits: fileartifact.CollectionLimits{MaxFiles: 128, MaxFileBytes: 262144, MaxTotalBytes: 524288}, Issues: []fileartifact.CollectionIssue{{Path: "report.md", Reason: "fixture_reason", Kind: kind, Claimed: true}}}}
+		encoded, _ := json.Marshal(runtimes.CLIEngineExecResult(original))
+		var wire runtimes.EngineExecResult
+		if err := json.Unmarshal(encoded, &wire); err != nil {
+			t.Fatal(err)
+		}
+		entry, err := NewRuntimeCLIEntry(runtimeCLIReceiptExecutor{result: wire.EngineRunResult()}, &registry.AgentRecord{}, execution.AgentExecutionStamp{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		result, err := entry.ExecuteAccounted(t.Context(), "collect")
+		if (err != nil) != (kind == "error") || result.Status != "completed" || result.Err != "" || result.SessionID != "session-original" || result.DeliveryError != "" || len(result.Attempts) != 1 || result.Attempts[0].InputTokens != 7 || result.ArtifactCollection == nil || result.ArtifactCollection.Issues[0].Kind != kind {
+			t.Fatalf("independent execution and collection facts lost: %#v %v", result, err)
+		}
 	}
 }

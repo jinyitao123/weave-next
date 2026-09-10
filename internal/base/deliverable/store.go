@@ -41,17 +41,20 @@ type FinalDeliverable struct {
 // the same user-visible artifact ledger as explicitly declared deliverables;
 // metadata distinguishes intermediate stages from the final delivery.
 type WorkflowOutput struct {
-	WorkspaceID   string
-	RunID         string
-	RunSnapshotID string
-	NodeID        string
-	NodeLabel     string
-	NodeType      string
-	AgentID       string
-	Output        any
-	Artifact      *WorkflowArtifact
-	Final         bool
-	CreatedAt     time.Time
+	WorkspaceID        string
+	RunID              string
+	RunSnapshotID      string
+	NodeID             string
+	NodeLabel          string
+	NodeType           string
+	AgentID            string
+	Output             any
+	Artifact           *WorkflowArtifact
+	Final              bool
+	CreatedAt          time.Time
+	Sources            []ArtifactSource
+	Selection          *OutputSelection
+	SourceObservations []SourceObservation
 }
 
 // WorkflowArtifact is one runtime-produced file whose path is relative to the
@@ -60,6 +63,16 @@ type WorkflowArtifact struct {
 	Path        string
 	ContentType string
 	Content     string
+	Sources     []ArtifactSource
+}
+
+// ArtifactSource identifies the immutable physical result selected by deliver.
+type ArtifactSource struct {
+	TaskID        string `json:"task_id,omitempty"`
+	MemberRunID   string `json:"member_run_id,omitempty"`
+	ResultDigest  string `json:"result_digest"`
+	RunSnapshotID string `json:"run_snapshot_id"`
+	ParentRunID   string `json:"parent_run_id"`
 }
 
 // ListFilter narrows a workspace-scoped deliverable list.
@@ -73,7 +86,8 @@ type ListFilter struct {
 
 // Store reads immutable final deliverables.
 type Store struct {
-	pool *pgxpool.Pool
+	pool      *pgxpool.Pool
+	verifiers *VerifierRegistry
 }
 
 // New creates a final deliverable store.
@@ -100,12 +114,19 @@ func (s *Store) RecordWorkflowOutputs(ctx context.Context, outputs []WorkflowOut
 		return err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+	if err := s.recordWorkflowOutputsTx(ctx, tx, outputs); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+func (s *Store) recordWorkflowOutputsTx(ctx context.Context, tx pgx.Tx, outputs []WorkflowOutput) error {
 	for _, output := range outputs {
 		if err := s.recordWorkflowOutput(ctx, tx, output); err != nil {
 			return err
 		}
 	}
-	return tx.Commit(ctx)
+	return nil
 }
 
 func (s *Store) recordWorkflowOutput(ctx context.Context, tx pgx.Tx, output WorkflowOutput) error {
@@ -133,7 +154,7 @@ func (s *Store) recordWorkflowOutput(ctx context.Context, tx pgx.Tx, output Work
 	if err != nil {
 		return fmt.Errorf("encode workflow deliverable: %w", err)
 	}
-	if strings.TrimSpace(content) == "" {
+	if output.Artifact == nil && strings.TrimSpace(content) == "" {
 		return nil
 	}
 
@@ -240,11 +261,11 @@ func (s *Store) recordWorkflowOutput(ctx context.Context, tx pgx.Tx, output Work
 			id, workspace_id, project_id, conversation_id, user_id, lead_avatar_id,
 			session_id, event_id, run_id, run_snapshot_id, title, content,
 			content_type, metadata, created_at
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14::jsonb,$15)
 		ON CONFLICT DO NOTHING
 	`, id, output.WorkspaceID, nullableProjectID, nullableConversationID, userID, leadAvatarID,
 		sessionID, eventID, output.RunID, output.RunSnapshotID, title, content,
-		contentType, metadata, createdAt)
+		contentType, string(metadata), createdAt)
 	if err != nil {
 		return fmt.Errorf("insert workflow deliverable: %w", err)
 	}
@@ -302,7 +323,7 @@ func (s *Store) Get(ctx context.Context, workspaceID, id string) (FinalDeliverab
 	deliverable, err := scanDeliverable(s.pool.QueryRow(ctx, `
 		SELECT `+deliverableColumns+`
 		FROM weave_final_deliverables
-		WHERE workspace_id=$1 AND id=$2 AND btrim(content) <> ''
+		WHERE workspace_id=$1 AND id=$2 AND (btrim(content) <> '' OR COALESCE(metadata->>'filename','') <> '')
 	`, workspaceID, strings.TrimSpace(id)))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return FinalDeliverable{}, ErrNotFound
@@ -329,7 +350,7 @@ func (s *Store) List(
 		SELECT `+deliverableColumns+`
 		FROM weave_final_deliverables
 		WHERE workspace_id=$1
-		  AND btrim(content) <> ''
+		  AND (btrim(content) <> '' OR COALESCE(metadata->>'filename','') <> '')
 		  AND ($2='' OR project_id=$2)
 		  AND ($3='' OR conversation_id=$3)
 		  AND ($4='' OR run_id=$4)

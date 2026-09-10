@@ -49,25 +49,56 @@ type Correction struct {
 }
 
 type CorrectionDirectiveV1 struct {
-	SchemaVersion  int      `json:"schema_version"`
-	CorrectionID   string   `json:"correction_id"`
-	TargetKind     string   `json:"target_kind"`
-	TargetMemberID string   `json:"target_member_id,omitempty"`
-	Instruction    string   `json:"instruction"`
-	AffectedNodes  []string `json:"affected_node_ids"`
+	SchemaVersion  int                       `json:"schema_version"`
+	CorrectionID   string                    `json:"correction_id"`
+	TargetKind     string                    `json:"target_kind"`
+	TargetMemberID string                    `json:"target_member_id,omitempty"`
+	Instruction    string                    `json:"instruction"`
+	AffectedNodes  []string                  `json:"affected_node_ids"`
+	FanoutReplay   *CorrectionFanoutReplayV1 `json:"fanout_replay,omitempty"`
+}
+
+// CorrectionFanoutReplayV1 freezes the completed fanout projection used by a
+// member-scoped correction. The target member receives its exact prior result
+// and immutable artifacts as read-only inputs; successful sibling legs are
+// carried into the replacement join projection without being executed again.
+type CorrectionFanoutReplayV1 struct {
+	SchemaVersion        int                           `json:"schema_version"`
+	ParallelNodeID       string                        `json:"parallel_node_id"`
+	JoinNodeID           string                        `json:"join_node_id"`
+	TargetNodeID         string                        `json:"target_node_id"`
+	SourceProjectionHash string                        `json:"source_projection_hash"`
+	Legs                 []CorrectionFanoutReplayLegV1 `json:"legs"`
+}
+
+type CorrectionFanoutReplayLegV1 struct {
+	LegID           string                       `json:"leg_id"`
+	NodeID          string                       `json:"node_id"`
+	BranchOrdinal   int                          `json:"branch_ordinal"`
+	Result          json.RawMessage              `json:"result"`
+	ArtifactTaskIDs []string                     `json:"artifact_task_ids"`
+	Artifacts       []CorrectionFrozenArtifactV1 `json:"artifacts"`
+}
+
+type CorrectionFrozenArtifactV1 struct {
+	Path        string `json:"path"`
+	ContentType string `json:"content_type"`
+	SizeBytes   int    `json:"size_bytes"`
+	SHA256      string `json:"sha256"`
 }
 
 type CorrectionWaitDetailV1 struct {
-	SchemaVersion    int      `json:"schema_version"`
-	WaitType         string   `json:"wait_type"`
-	CorrectionID     string   `json:"correction_id"`
-	TargetKind       string   `json:"target_kind"`
-	TargetMemberID   string   `json:"target_member_id,omitempty"`
-	Instruction      string   `json:"instruction"`
-	SafeNodeID       string   `json:"safe_node_id"`
-	RestartNodeID    string   `json:"restart_node_id"`
-	AffectedNodeIDs  []string `json:"affected_node_ids"`
-	PreservedNodeIDs []string `json:"preserved_node_ids"`
+	SchemaVersion    int                       `json:"schema_version"`
+	WaitType         string                    `json:"wait_type"`
+	CorrectionID     string                    `json:"correction_id"`
+	TargetKind       string                    `json:"target_kind"`
+	TargetMemberID   string                    `json:"target_member_id,omitempty"`
+	Instruction      string                    `json:"instruction"`
+	SafeNodeID       string                    `json:"safe_node_id"`
+	RestartNodeID    string                    `json:"restart_node_id"`
+	AffectedNodeIDs  []string                  `json:"affected_node_ids"`
+	PreservedNodeIDs []string                  `json:"preserved_node_ids"`
+	FanoutReplay     *CorrectionFanoutReplayV1 `json:"fanout_replay,omitempty"`
 }
 
 func DecodeCorrectionWaitDetailV1(raw json.RawMessage) (CorrectionWaitDetailV1, error) {
@@ -85,7 +116,73 @@ func DecodeCorrectionWaitDetailV1(raw json.RawMessage) (CorrectionWaitDetailV1, 
 		(detail.TargetKind == "team" && detail.TargetMemberID != "") || len(detail.AffectedNodeIDs) == 0 {
 		return CorrectionWaitDetailV1{}, errors.New("correction wait detail fields are invalid")
 	}
+	if detail.FanoutReplay != nil {
+		if !stringSliceContains(detail.AffectedNodeIDs, detail.FanoutReplay.TargetNodeID) ||
+			!stringSliceContains(detail.AffectedNodeIDs, detail.FanoutReplay.JoinNodeID) {
+			return CorrectionWaitDetailV1{}, errors.New("correction fanout replay impact is incomplete")
+		}
+		if err := validateCorrectionFanoutReplay(*detail.FanoutReplay, detail.TargetKind, detail.TargetMemberID, detail.RestartNodeID); err != nil {
+			return CorrectionWaitDetailV1{}, fmt.Errorf("correction fanout replay is invalid: %w", err)
+		}
+	}
 	return detail, nil
+}
+
+func validateCorrectionFanoutReplay(replay CorrectionFanoutReplayV1, targetKind, targetMemberID, restartNodeID string) error {
+	if replay.SchemaVersion != 1 || targetKind != "member" || targetMemberID == "" ||
+		replay.ParallelNodeID == "" || replay.JoinNodeID == "" || replay.TargetNodeID == "" ||
+		replay.ParallelNodeID == replay.JoinNodeID || replay.ParallelNodeID == replay.TargetNodeID || replay.JoinNodeID == replay.TargetNodeID ||
+		replay.TargetNodeID != restartNodeID || !validSHA256(replay.SourceProjectionHash) || len(replay.Legs) < 2 {
+		return errors.New("fanout replay identity is incomplete")
+	}
+	seenNodes, seenLegs, seenOrdinals := map[string]bool{}, map[string]bool{}, map[int]bool{}
+	seenArtifactTaskIDs := map[string]bool{}
+	targetPresent := false
+	for _, leg := range replay.Legs {
+		if leg.LegID == "" || leg.NodeID == "" || leg.BranchOrdinal < 0 || !json.Valid(leg.Result) || leg.ArtifactTaskIDs == nil || leg.Artifacts == nil ||
+			leg.NodeID == replay.ParallelNodeID || leg.NodeID == replay.JoinNodeID ||
+			seenNodes[leg.NodeID] || seenLegs[leg.LegID] || seenOrdinals[leg.BranchOrdinal] {
+			return errors.New("fanout replay leg is invalid")
+		}
+		seenNodes[leg.NodeID], seenLegs[leg.LegID], seenOrdinals[leg.BranchOrdinal] = true, true, true
+		targetPresent = targetPresent || leg.NodeID == replay.TargetNodeID
+		for _, id := range leg.ArtifactTaskIDs {
+			if strings.TrimSpace(id) == "" || seenArtifactTaskIDs[id] {
+				return errors.New("fanout replay artifact source identity is invalid")
+			}
+			seenArtifactTaskIDs[id] = true
+		}
+		seenPaths := map[string]bool{}
+		totalArtifactBytes := 0
+		for _, artifact := range leg.Artifacts {
+			if artifact.Path == "" || artifact.ContentType == "" || artifact.SizeBytes < 0 || !validSHA256(artifact.SHA256) || seenPaths[artifact.Path] {
+				return errors.New("frozen fanout artifact is invalid")
+			}
+			seenPaths[artifact.Path] = true
+			totalArtifactBytes += artifact.SizeBytes
+			if totalArtifactBytes > maxCorrectionFrozenArtifactBytes {
+				return errors.New("frozen fanout artifacts exceed size bound")
+			}
+		}
+	}
+	if !targetPresent {
+		return errors.New("fanout replay target leg is missing")
+	}
+	for ordinal := 0; ordinal < len(replay.Legs); ordinal++ {
+		if !seenOrdinals[ordinal] {
+			return errors.New("fanout replay branch ordinals are incomplete")
+		}
+	}
+	actualProjectionHash, err := correctionFanoutSourceProjectionHash(replay)
+	if err != nil || actualProjectionHash != replay.SourceProjectionHash {
+		return errors.New("fanout replay source projection changed")
+	}
+	return nil
+}
+
+func validSHA256(value string) bool {
+	decoded, err := hex.DecodeString(value)
+	return err == nil && len(decoded) == sha256.Size && value == strings.ToLower(value)
 }
 
 type RequestCorrectionRequest struct {
@@ -457,6 +554,7 @@ func (s *CorrectionResumeService) Confirm(ctx context.Context, req ConfirmCorrec
 			SchemaVersion: 1, CorrectionID: item.CorrectionID, TargetKind: item.TargetKind,
 			TargetMemberID: item.TargetMemberID, Instruction: item.Instruction,
 			AffectedNodes: append([]string(nil), item.AffectedNodeIDs...),
+			FanoutReplay:  cloneCorrectionFanoutReplay(detail.FanoutReplay),
 		})
 	}
 	checkpoint.TeamRunGeneration = resumed.Generation
@@ -477,6 +575,21 @@ func (s *CorrectionResumeService) Confirm(ctx context.Context, req ConfirmCorrec
 		return ConfirmCorrectionResult{}, err
 	}
 	return ConfirmCorrectionResult{Run: resumed, TaskID: taskID}, nil
+}
+
+func cloneCorrectionFanoutReplay(source *CorrectionFanoutReplayV1) *CorrectionFanoutReplayV1 {
+	if source == nil {
+		return nil
+	}
+	copy := *source
+	copy.Legs = make([]CorrectionFanoutReplayLegV1, len(source.Legs))
+	for i, leg := range source.Legs {
+		copy.Legs[i] = leg
+		copy.Legs[i].Result = append(json.RawMessage(nil), leg.Result...)
+		copy.Legs[i].ArtifactTaskIDs = append([]string{}, leg.ArtifactTaskIDs...)
+		copy.Legs[i].Artifacts = append([]CorrectionFrozenArtifactV1{}, leg.Artifacts...)
+	}
+	return &copy
 }
 
 type CorrectionResumeTaskPayloadV1 struct {

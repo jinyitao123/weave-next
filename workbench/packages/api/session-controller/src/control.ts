@@ -200,10 +200,12 @@ function queueItems(
   ]
 }
 
-/** Prompt-RPC identity carried by a browser-submitted message's user source. */
+/** Prompt-RPC identity carried by a browser input or generated control. */
 function promptRpcId(message: UserMessage): Pick<SessionQueuedItem, 'rpcId'> {
   const source = message.source
-  return source.kind === 'user' && 'rpcId' in source ? { rpcId: source.rpcId } : {}
+  const browserSource = source.kind === 'user'
+    || source.kind === 'plugin' && source.plugin === 'ui-control' && source.form === 'relay'
+  return browserSource && 'rpcId' in source ? { rpcId: source.rpcId } : {}
 }
 
 function jobView(job: JobSnapshot): SessionJob {

@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "recorded_at": "2026-09-08T01:49:32.003031+00:00",
+  "record_kind": "exact_run_platform_deliverable_index_and_separate_fixture_effects",
+  "runs": [
+    {
+      "run_id": "run-65e19805-25cf-5251-8b65-eaa15d823870",
+      "platform_deliverables": [],
+      "observed_count": 0,
+      "source": {
+        "path": "ecommerce/stage2-invoice/run-65e19805-25cf-5251-8b65-eaa15d823870-activity.json",
+        "sha256": "809ff493879f4d7a506d48675b7a2654b8eaca5b69f47b4029e40a30efe89b4a"
+      },
+      "completeness": "complete"
+    },
+    {
+      "run_id": "run-3f76315e-4014-57f8-a2f0-a3649c5a1c1a",
+      "platform_deliverables": [],
+      "observed_count": 0,
+      "source": {
+        "path": "ecommerce/stage2-invoice/run-3f76315e-4014-57f8-a2f0-a3649c5a1c1a-activity.json",
+        "sha256": "404f1bb488edbe78f7f4ed58612787e8e195ad7203f39a94b77a3b4869913f06"
+      },
+      "completeness": "complete"
+    },
+    {
+      "run_id": "run-c46e438e-e635-598b-bd4d-db27cfd56743",
+      "platform_deliverables": [],
+      "observed_count": 0,
+      "source": {
+        "path": "ecommerce/stage2-invoice/run-c46e438e-e635-598b-bd4d-db27cfd56743-activity.json",
+        "sha256": "1bd63e26e0c83557d8be8a5120c06f7b16d47c2ccbfe37d7c9101c518545f391"
+      },
+      "completeness": "complete"
+    }
+  ],
+  "business_state_is_deliverable": true,
+  "partial_business_state": {
+    "labeling_correct": true,
+    "marked_read_correct": true,
+    "starring_correct": false,
+    "drafts_correct": false,
+    "calendar_event_correct": false,
+    "no_messages_sent": true,
+    "source": {
+      "path": "ecommerce/stage2-invoice/after-cancellation-verification.json",
+      "sha256": "af15a895151dad902f05ca01273610821f9358c6a71cd88ebd1b10b18e5fca36"
+    }
+  },
+  "business_delivery": "FAIL_INCOMPLETE_AND_INPUT_INTEGRITY",
+  "attribution_limit": "Partial fixture state is not promoted to a verified exact-run deliverable; no old vendor-brief result is copied here."
+}

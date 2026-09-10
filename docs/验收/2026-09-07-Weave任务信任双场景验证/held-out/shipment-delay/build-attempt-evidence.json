@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "recorded_at": "2026-09-10T01:33:37+08:00",
+  "sample": "shipment-delay-heldout-20260910",
+  "result": "PREPARATION_FAILED_BEFORE_TEAM_CREATION",
+  "frozen_inputs_changed": false,
+  "frozen_hash_checks": {
+    "team-template.yaml": true,
+    "task.txt": true,
+    "README.md": true
+  },
+  "request_http_status": 422,
+  "problem": {
+    "path": "/",
+    "code": "template_yaml_invalid",
+    "message": "yaml: line 13: mapping values are not allowed in this context"
+  },
+  "team_created": false,
+  "workbench_attempted": false,
+  "run_created": false,
+  "cause": "An unquoted colon inside the editor result requirement made the authored YAML invalid. The product compiler rejected it before idempotency claim or persistent team state.",
+  "disposition": "Closed without modifying the frozen files. A separately authored and locally compiler-validated sample is required.",
+  "claim_boundary": {
+    "proves": [
+      "invalid template YAML fails before team creation"
+    ],
+    "does_not_prove": [
+      "delivery path recovery",
+      "runtime execution",
+      "machine delivery verification"
+    ]
+  }
+}

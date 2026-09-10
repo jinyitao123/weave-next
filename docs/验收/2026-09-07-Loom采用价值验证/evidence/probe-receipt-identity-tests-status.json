@@ -1,0 +1,14 @@
+{
+  "command": [
+    "go",
+    "test",
+    "-count=1",
+    "-json",
+    "docs/\u9a8c\u6536/2026-09-07-Loom\u91c7\u7528\u4ef7\u503c\u9a8c\u8bc1/probe/main.go",
+    "docs/\u9a8c\u6536/2026-09-07-Loom\u91c7\u7528\u4ef7\u503c\u9a8c\u8bc1/probe/receipt_audit_test.go",
+    "-run",
+    "TestReceiptRejectsConflictingOperationIdentity"
+  ],
+  "exit_code": 1,
+  "expected_safety_status": "four conflict cases should reject; archived shared probe does not"
+}

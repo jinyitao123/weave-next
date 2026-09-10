@@ -21,8 +21,6 @@ var agentNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*$`)
 
 var errInvalidAgentRuntime = errors.New("invalid agent runtime binding")
 
-var ErrCLINewMCPRefPendingR4 = errors.New("CLI engines with MCP server refs are unavailable until MCP-R4")
-
 type agentWriteRequest struct {
 	registry.AgentRecord
 	ownerUserIDPresent bool
@@ -154,13 +152,6 @@ func (s *Server) agentMCPResolver() mcphost.AccessResolver {
 func (s *Server) validateAgentMCPAccess(ctx context.Context, tenant string, rec *registry.AgentRecord) error {
 	if rec == nil || len(rec.MCPServers) == 0 {
 		return nil
-	}
-	if engine.IsCLIEngine(rec.Engine) {
-		for _, server := range rec.MCPServers {
-			if server.ServerID != "" {
-				return ErrCLINewMCPRefPendingR4
-			}
-		}
 	}
 	_, err := s.agentMCPResolver().ResolveAgent(ctx, tenant, rec)
 	return err

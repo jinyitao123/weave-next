@@ -91,6 +91,16 @@ func (s *Server) reconcileRunActivityRecovery(ctx context.Context, run teamrun.T
 		var err error
 		stopped, err = s.Tasks.RuntimeFailuresStopped(ctx, run.WorkspaceID, run.RunSnapshotID)
 		stopKnown = err == nil
+		if stopKnown && stopped && s.StoreExt != nil {
+			tx, beginErr := s.StoreExt.BeginTx(ctx)
+			if beginErr != nil {
+				stopKnown = false
+			} else {
+				memberStopped, memberErr := teamrun.MembersStoppedTx(ctx, tx, run.WorkspaceID, run.RunID)
+				_ = tx.Rollback(ctx)
+				stopped, stopKnown = memberStopped, memberErr == nil
+			}
+		}
 	}
 	for memberIndex := range members {
 		member := &members[memberIndex]
@@ -106,6 +116,18 @@ func (s *Server) reconcileRunActivityRecovery(ctx context.Context, run teamrun.T
 			}
 			if *run.WaitKind == teamrun.WaitRuntime && waitNode != "" && stage.NodeID == waitNode {
 				stage.Retryable = stopped && stopKnown
+				detail, _ := teamrun.DecodeRuntimeWaitDetailV1(run.WaitDetail)
+				if pause := detail.MemberBudgetPause; pause != nil {
+					stage.BudgetPause = &runActivityMemberBudgetPause{Reason: string(pause.Reason), RoundsUsed: pause.RoundsUsed, AuthorizedTotalRounds: pause.AuthorizedTotalRounds}
+					stage.Status, member.Status = "waiting", "waiting"
+					stage.FailureClass, stage.FailureReason = "", ""
+					stage.Retryable = stage.Retryable && !detail.RecoveryBlocked && (pause.Reason == "slice_limit" || pause.Reason == "total_limit")
+					continue
+				}
+				if detail.RecoveryBlocked {
+					stage.Retryable = false
+					stage.FailureReason = "tool outcome requires reconciliation before continuing"
+				}
 				stage.Status = "failed"
 				stage.FailureClass = string(teamrun.FailureClassInfrastructure)
 				if stage.FailureReason == "" {

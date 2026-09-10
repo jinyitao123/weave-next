@@ -1,0 +1,6 @@
+=== RUN   TestWorkflowPublishedMemberParkKeepsOriginalRunAndAccountingRealPG
+    loom_member_integration_pg_test.go:91: ERROR: invalid input syntax for type json (SQLSTATE 22P02)
+--- FAIL: TestWorkflowPublishedMemberParkKeepsOriginalRunAndAccountingRealPG (0.31s)
+FAIL
+FAIL	github.com/jinyitao123/weave/internal/app/api	0.924s
+FAIL

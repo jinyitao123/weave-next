@@ -1,0 +1,12 @@
+{
+  "case": "C",
+  "source": "only files durably stored in task result artifacts, no local workspace supplementation",
+  "receipt_artifact_count": 22,
+  "command": [
+    "python3",
+    "run_tests.py"
+  ],
+  "exit_code": 1,
+  "missing_file": "outputs/model/derive_params.rb",
+  "passed": false
+}

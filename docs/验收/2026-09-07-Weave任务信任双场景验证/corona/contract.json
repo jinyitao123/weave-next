@@ -1,0 +1,69 @@
+{
+  "schema_version": 1,
+  "sample_id": "corona-stage1-complete-delivery",
+  "scenario": "corona",
+  "task_fit": {
+    "user": "Pre-Phase A project lead",
+    "job": "produce a traceable model, engineering concepts, decision application, review, and verification package",
+    "weave_may": [
+      "read the frozen reference and lead inputs",
+      "compute and test the approved single 0.03c baseline",
+      "produce the contracted conceptual artifacts",
+      "surface conflicts and unknowns"
+    ],
+    "weave_must_not": [
+      "change the frozen input baseline",
+      "silently expand to unapproved speed scenarios",
+      "claim construction, manufacturing, or flight readiness",
+      "treat a text summary as the contracted artifact package"
+    ]
+  },
+  "input_baseline": {
+    "baseline_id": "corona-baseline-1.0.0",
+    "baseline_version": "1.0.0",
+    "approved_cruise_speed_c": [0.03],
+    "frozen_digest": "cfb12b781363c547da87e6dec9fd937079cba25501b85ff6cbfabfbc508b10c2",
+    "root": "docs/验收/2026-09-07-Loom成员接入实施/cases/stage-d/inputs"
+  },
+  "delivery_contract": {
+    "required_paths": [
+      "outputs/model/",
+      "outputs/drawings/",
+      "outputs/app/",
+      "outputs/review/",
+      "outputs/verification/",
+      "outputs/FINAL_ACCEPTANCE.md"
+    ],
+    "required_checks": [
+      "model unittest exits successfully",
+      "five reference calculations are independently within tolerance",
+      "at least three SVG drawings are parseable, editable, conceptual, and traceable",
+      "an OpenSCAD source is present and its render status is reported honestly",
+      "the offline HTML application works and exports scenario JSON",
+      "cross-artifact parameters and trace keys are consistent",
+      "no open severity-one issue remains"
+    ]
+  },
+  "execution_contract": {
+    "business_entry": "Workbench in-app browser",
+    "workflow": "published fixed serial workflow",
+    "runtime_requirement": "managed Loom member tools execute the work",
+    "recovery_requirement": "after a confirmed checkpoint, a new attempt continues the same logical member without repeating confirmed effects"
+  },
+  "evidence_required": [
+    "input-manifest.json",
+    "dispatch.json",
+    "activity.json",
+    "deliverables.json",
+    "verification.json",
+    "user-decisions.json",
+    "assessment.md"
+  ],
+  "exit": {
+    "execution_ended": "all stages reach a recorded terminal state",
+    "delivery_verified": "all required paths and independent checks pass",
+    "accepted": "the user explicitly accepts the verified package",
+    "partial": "the run ends with any required path or check missing",
+    "failed": "execution cannot continue or a zero-tolerance invariant is violated"
+  }
+}

@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/jinyitao123/weave/internal/base/deliverable"
 	"github.com/jinyitao123/weave/internal/build/teambuild"
 )
 
@@ -73,6 +74,11 @@ func Validate(template Template) error {
 	validateTemplateParameters(c, template.Template, template.TemplateParameters)
 	validateMembers(c, template)
 	validateStringList(c, "/delivery/success_criteria", template.Delivery.SuccessCriteria, true)
+	if contract, err := template.Delivery.Contract.platformContract(); err != nil {
+		c.add("/delivery/contract", "template_delivery_contract_invalid", err.Error())
+	} else if err := deliverable.ValidateDeliveryContract(contract); err != nil {
+		c.add("/delivery/contract", "template_delivery_contract_invalid", err.Error())
+	}
 	if template.Budget.MaxCostUSD <= 0 || math.IsNaN(template.Budget.MaxCostUSD) || math.IsInf(template.Budget.MaxCostUSD, 0) {
 		c.add("/budget/max_cost_usd", "template_budget_invalid", "max_cost_usd must be finite and greater than zero")
 	}
@@ -255,6 +261,14 @@ func normalizeTemplate(template Template) Template {
 		}
 	}
 	template.Delivery.SuccessCriteria = trimStrings(template.Delivery.SuccessCriteria)
+	if template.Delivery.Contract != nil {
+		contract := *template.Delivery.Contract
+		contract.Coverage = strings.TrimSpace(contract.Coverage)
+		contract.ExternalEffects = strings.TrimSpace(contract.ExternalEffects)
+		contract.ExternalEffectsCheckID = strings.TrimSpace(contract.ExternalEffectsCheckID)
+		contract.Limitations = trimStrings(contract.Limitations)
+		template.Delivery.Contract = &contract
+	}
 	return template
 }
 
@@ -343,12 +357,17 @@ func compileBlueprint(template Template) teambuild.TeamBlueprintV1 {
 		MaxIterations:      template.TemplateParameters.MaxIterations,
 		ResultRequirements: copyStringMap(template.TemplateParameters.ResultRequirements),
 	}
+	deliveryContract, _ := template.Delivery.Contract.platformContract()
+	if deliveryContract != nil {
+		deliveryContract.Output = deliverable.OutputRequirement{Type: "text"}
+	}
 	return teambuild.TeamBlueprintV1{
 		SchemaVersion: teambuild.BlueprintSchemaVersionV1,
 		Mode:          teambuild.ModeCreate, NewTeamName: template.Name, TeamDisplayName: template.DisplayName,
 		Purpose: template.Purpose, Members: members, LeadRef: template.Lead,
 		Workflow: teambuild.BlueprintWorkflowV1{
 			Mode: teambuild.BlueprintWorkflowTemplate, Template: template.Template, TemplateParameters: &params,
+			DeliveryContract: deliveryContract,
 		},
 		RevisionPolicy: teambuild.BlueprintRevisionPolicyV1{
 			MaxRevisions: 2, AllowedPatchPaths: defaultPatchPaths(members, params),

@@ -1,0 +1,12 @@
+=== RUN   TestMemberResumeAfterReceiptDoesNotRepeatEffectRealPG
+    member_run_pg_test.go:221: assemble terminal schema-v3 attribution: terminal State tenant does not match namespace
+--- FAIL: TestMemberResumeAfterReceiptDoesNotRepeatEffectRealPG (0.34s)
+=== RUN   TestMemberUnknownToolEffectIsNotReplayedRealPG
+--- PASS: TestMemberUnknownToolEffectIsNotReplayedRealPG (0.30s)
+=== RUN   TestMemberAdmissionAndCheckpointFenceRealPG
+--- PASS: TestMemberAdmissionAndCheckpointFenceRealPG (0.25s)
+=== RUN   TestMemberAtomicHistoryFailureStopsBeforeEffectsRealPG
+--- PASS: TestMemberAtomicHistoryFailureStopsBeforeEffectsRealPG (0.25s)
+FAIL
+FAIL	github.com/jinyitao123/weave/internal/kernel/loomruntime	1.935s
+FAIL

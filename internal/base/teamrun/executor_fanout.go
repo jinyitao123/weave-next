@@ -54,6 +54,13 @@ func (e *Executor) processFanoutLeg(ctx context.Context, task *taskqueue.Task, w
 		errors.Is(runErr, errTaskLeaseLost)) {
 		return runErr
 	}
+	physicalResult := result.Output
+	if runErr == nil {
+		_, _, decodeErr := decodeFanoutLegExecutionResult(result.Output)
+		if decodeErr != nil {
+			runErr = executionError(ErrorCodeOutputInvalid, decodeErr)
+		}
+	}
 	now := e.now()
 	completion := FanoutLegCompletion{
 		WorkspaceID: task.WorkspaceID, GroupID: payload.GroupID, LegID: payload.LegID,
@@ -71,7 +78,11 @@ func (e *Executor) processFanoutLeg(ctx context.Context, task *taskqueue.Task, w
 		completion.ErrorCode = fanoutCompletionError(runErr)
 	} else {
 		completion.Terminal = "succeeded"
-		completion.Result = result.Output
+		// The coordinator stores the physical envelope so the parent can bind
+		// each logical result to the exact artifact sources without racing the
+		// final task-queue write. The parent unwraps it before projecting the
+		// workflow-visible join result.
+		completion.Result = physicalResult
 	}
 	if err := e.Fanout.RecordLegCompletion(ctx, completion); err != nil {
 		return err
@@ -79,7 +90,40 @@ func (e *Executor) processFanoutLeg(ctx context.Context, task *taskqueue.Task, w
 	if runErr != nil {
 		return e.Tasks.FailClaimed(ctx, task.ID, workerID, completion.ErrorCode)
 	}
-	return e.Tasks.CompleteClaimed(ctx, task.ID, workerID, result.Output, payload.ParentRunID)
+	return e.Tasks.CompleteClaimed(ctx, task.ID, workerID, physicalResult, payload.ParentRunID)
+}
+
+const fanoutLegExecutionResultKind = "fanout_leg_execution"
+
+type fanoutLegExecutionResultV1 struct {
+	SchemaVersion   int             `json:"schema_version"`
+	InternalKind    string          `json:"__weave_internal_kind"`
+	Output          json.RawMessage `json:"output"`
+	ArtifactTaskIDs []string        `json:"artifact_task_ids"`
+}
+
+func decodeFanoutLegExecutionResult(raw json.RawMessage) (json.RawMessage, []string, error) {
+	if !json.Valid(raw) {
+		return nil, nil, errors.New("fanout leg result is not valid JSON")
+	}
+	var probe struct {
+		InternalKind string `json:"__weave_internal_kind"`
+	}
+	if json.Unmarshal(raw, &probe) != nil || probe.InternalKind != fanoutLegExecutionResultKind {
+		return append(json.RawMessage(nil), raw...), nil, nil
+	}
+	var result fanoutLegExecutionResultV1
+	if err := decodeExact(raw, &result); err != nil || result.SchemaVersion != 1 || !json.Valid(result.Output) || result.ArtifactTaskIDs == nil {
+		return nil, nil, errors.New("fanout leg execution result is invalid")
+	}
+	seen := map[string]bool{}
+	for _, id := range result.ArtifactTaskIDs {
+		if strings.TrimSpace(id) == "" || seen[id] {
+			return nil, nil, errors.New("fanout leg artifact source identity is invalid")
+		}
+		seen[id] = true
+	}
+	return append(json.RawMessage(nil), result.Output...), append([]string{}, result.ArtifactTaskIDs...), nil
 }
 
 func fanoutCompletionError(err error) string {
@@ -133,7 +177,7 @@ func (e *Executor) processFanoutResume(ctx context.Context, task *taskqueue.Task
 	if runErr != nil {
 		failed, failErr := e.failRunning(
 			ctx, run, task, executorID, runErr,
-			result.Usage, result.UsageCoverage, result.UsageComplete, result.UsageIncompleteReason,
+			result.Usage, result.UsageCoverage, result.UsageComplete, result.UsageIncompleteReason, result.MemberBreakdown,
 		)
 		if failErr != nil {
 			return failErr
@@ -269,7 +313,7 @@ func (r *WorkflowSerialRuntime) ExecuteFanoutLeg(
 	}
 	inputCtx := execution.WithAttemptLineage(execution.WithInputTaskIDs(ctx, nodeInputTaskIDs(branch, checkpoint.ArtifactTaskIDs)), rootID, "")
 	output, nodeUsage, err := runAgentNode(
-		execution.WithInvocationID(inputCtx, invocationID), branch, loaded.payload, entries, runInput, outputs, checkpoint.Corrections,
+		execution.WithInvocationID(inputCtx, invocationID), branch, loaded.payload, entries, runInput, outputs, checkpoint.Corrections, "",
 	)
 	if err != nil {
 		if recordErr := r.recordWorkflowArtifacts(ctx, parent, workflowArtifactOwner{
@@ -302,7 +346,23 @@ func (r *WorkflowSerialRuntime) ExecuteFanoutLeg(
 	}, nodeUsage.Artifacts, false); err != nil {
 		return nil, executionError(ErrorCodeDeliveryUnavailable, err)
 	}
-	encoded, err := json.Marshal(output)
+	encodedOutput, err := json.Marshal(output)
+	if err != nil {
+		return nil, executionError(ErrorCodeOutputInvalid, err)
+	}
+	artifactTaskIDs := []string{}
+	if nodeUsage.MemberRunID != "" {
+		artifactTaskIDs = []string{"member:" + nodeUsage.MemberRunID}
+	}
+	for _, attempt := range nodeUsage.CLIAttempts {
+		if attempt.AttemptID != "" {
+			artifactTaskIDs = []string{attempt.AttemptID}
+		}
+	}
+	encoded, err := json.Marshal(fanoutLegExecutionResultV1{
+		SchemaVersion: 1, InternalKind: fanoutLegExecutionResultKind,
+		Output: encodedOutput, ArtifactTaskIDs: artifactTaskIDs,
+	})
 	if err != nil {
 		return nil, executionError(ErrorCodeOutputInvalid, err)
 	}

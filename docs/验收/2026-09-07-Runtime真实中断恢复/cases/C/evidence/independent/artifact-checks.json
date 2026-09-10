@@ -1,0 +1,141 @@
+{
+  "case": "C",
+  "at": "2026-09-07T03:34:42.154295+00:00",
+  "checks": [
+    {
+      "check": "exact_frozen_baseline",
+      "passed": true,
+      "detail": "/private/tmp/weave-runtime-value-20260907-sqtugx3m/runtime-workspaces/.invocations/task-da13aae23759a549a25c021dabf21f7c/default/corona-prephase-a-lab-v3-luna-digital-engineering-builder/workdir/outputs/model/baseline_frozen.yaml"
+    },
+    {
+      "check": "machine_manifest_present",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "trace_keys",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "reference_travel_time_yr",
+      "passed": true,
+      "detail": {
+        "actual": 141.66666666666669,
+        "independent_expected": "141.666666666666666666666666666666666666666666666666666666667",
+        "relative_error": "1.6470588235294117647058823529411764705882353E-16",
+        "relative_tolerance": "0.001"
+      }
+    },
+    {
+      "check": "reference_kinetic_energy_1mt_j",
+      "passed": true,
+      "detail": {
+        "actual": 4.04439830431568e+22,
+        "independent_expected": "4.044398304315679380E+22",
+        "relative_error": "1.5329845216738742843287461737905915439926002E-16",
+        "relative_tolerance": "0.01"
+      }
+    },
+    {
+      "check": "reference_kinetic_energy_5mt_j",
+      "passed": true,
+      "detail": {
+        "actual": 2.02219915215784e+23,
+        "independent_expected": "2.0221991521578396900E+23",
+        "relative_error": "1.5329845216738742843287461737905915439926002E-16",
+        "relative_tolerance": "0.01"
+      }
+    },
+    {
+      "check": "reference_artificial_gravity_m_s2",
+      "passed": true,
+      "detail": {
+        "actual": 43.864908449286034,
+        "independent_expected": "43.864908449286034",
+        "relative_error": "0",
+        "relative_tolerance": "0.01"
+      }
+    },
+    {
+      "check": "reference_dust_impact_energy_j",
+      "passed": true,
+      "detail": {
+        "actual": 40443983.043156795,
+        "independent_expected": "40443983.04315679380",
+        "relative_error": "2.967066816142982485797573239594693310953420E-17",
+        "relative_tolerance": "0.01"
+      }
+    },
+    {
+      "check": "model_tests_rerun",
+      "passed": true,
+      "detail": {
+        "command": [
+          "python3",
+          "run_tests.py"
+        ],
+        "exit_code": 0,
+        "cwd": "/private/tmp/weave-runtime-value-20260907-sqtugx3m/runtime-workspaces/.invocations/task-da13aae23759a549a25c021dabf21f7c/default/corona-prephase-a-lab-v3-luna-digital-engineering-builder/workdir/outputs/model"
+      }
+    },
+    {
+      "check": "at_least_three_svg",
+      "passed": true,
+      "detail": 3
+    },
+    {
+      "check": "svg_parse:COR-DRW-002_archive_layout.svg",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "svg_concept_mark:COR-DRW-002_archive_layout.svg",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "svg_parse:COR-DRW-001_architecture.svg",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "svg_concept_mark:COR-DRW-001_architecture.svg",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "svg_parse:COR-DRW-003_interfaces.svg",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "svg_concept_mark:COR-DRW-003_interfaces.svg",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "openscad_source",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "openscad_not_run_declared",
+      "passed": true,
+      "detail": {
+        "status": "NOT_RUN",
+        "reason": "OpenSCAD executable absent; registered contract permits explicit NOT_RUN",
+        "binary": "/Applications/OpenSCAD.app/Contents/MacOS/OpenSCAD"
+      }
+    },
+    {
+      "check": "app_entry_present",
+      "passed": true,
+      "detail": "/private/tmp/weave-runtime-value-20260907-sqtugx3m/runtime-workspaces/.invocations/task-da13aae23759a549a25c021dabf21f7c/default/corona-prephase-a-lab-v3-luna-digital-engineering-builder/workdir/outputs/app/index.html"
+    }
+  ],
+  "browser_acceptance": "NOT_RUN",
+  "artifact_checks_passed": true,
+  "passed": false,
+  "scope": "backend artifact checks; independent browser manipulation/export and traceability review remain required"
+}

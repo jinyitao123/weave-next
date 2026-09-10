@@ -1,0 +1,224 @@
+{
+  "schema_version": 1,
+  "recorded_at": "2026-09-08T07:20:29.053456+00:00",
+  "source_commit": "1bad43f71692a89b1502dcc075305b32fe267dc2",
+  "source_branch": "codex/team-delivery-verification-20260908",
+  "mechanism_status": "PASSED",
+  "deployment_status": "NOT_RUN_FOR_THIS_COMMIT",
+  "business_acceptance_status": "NOT_RUN_FOR_THIS_COMMIT",
+  "overall_three_stage_goal": "NOT_COMPLETE",
+  "checks": [
+    {
+      "command": "make test",
+      "result": "PASSED",
+      "database": "dedicated local test PostgreSQL; credentials omitted",
+      "log": "logs/make-test.log.gz",
+      "note": "Includes real PostgreSQL delivery store, dispatch contract, two-engine four-case matrix, stale-fence and recheck API tests."
+    },
+    {
+      "command": "make depguard",
+      "result": "PASSED",
+      "log": "logs/depguard.log.gz"
+    },
+    {
+      "command": "make productguard",
+      "result": "PASSED",
+      "log": "logs/productguard.log.gz"
+    },
+    {
+      "command": "make workbench-install",
+      "result": "PASSED",
+      "pnpm": "11.7.0",
+      "log": "logs/workbench-install.log.gz"
+    },
+    {
+      "command": "make workbench-check",
+      "result": "PASSED",
+      "profile_tests": 1,
+      "workbench_tests": 395,
+      "workbench_test_files": 29,
+      "log": "logs/workbench-check.log.gz"
+    },
+    {
+      "command": "pnpm run test:docs",
+      "result": "PASSED",
+      "gates": 15,
+      "log": "logs/test-docs.log.gz"
+    },
+    {
+      "command": "pnpm run doc-sync",
+      "result": "PASSED",
+      "gates": 30,
+      "log": "logs/doc-sync.log.gz",
+      "initial_failures": "Generated source-line references and their bilingual pairing records were updated; original failures retained."
+    },
+    {
+      "command": "pnpm run lint",
+      "result": "PASSED",
+      "log": "logs/lint.log.gz",
+      "initial_failures": "New test formatting; repaired without changing assertions."
+    },
+    {
+      "command": "pnpm exec tsc -b packages/bundle/workbench-app packages/client/ui-weave",
+      "result": "PASSED",
+      "log": null,
+      "note": "Tool output retained in task; no standalone original log was captured."
+    },
+    {
+      "command": "go test -race ./internal/base/deliverable -count=1",
+      "result": "PASSED",
+      "database": "same dedicated test PostgreSQL",
+      "reported_duration_seconds": 5.248,
+      "log": null,
+      "note": "Independent agent tool output verified; original standalone log was not captured. Not recreated."
+    },
+    {
+      "command": "pnpm exec vitest run packages/bundle/workbench-app/tests/pilot-report.spec.ts packages/bundle/workbench-app/tests/human-task-action.spec.ts",
+      "result": "PASSED",
+      "tests": 32,
+      "log": null,
+      "note": "Focused rerun after test formatting fixes; no original standalone log was captured."
+    },
+    {
+      "command": "git diff --cached --check",
+      "result": "PASSED",
+      "log": null
+    }
+  ],
+  "implemented": [
+    "Frozen delivery requirements bind admission input, exact published artifact and run snapshot in the existing transaction.",
+    "CLI and Loom load actual result provenance and share the delivery verifier; business findings do not rewrite original execution receipts.",
+    "Immutable verification reports bind exact output revisions; stale or cancelled attempts cannot promote new output.",
+    "Recheck reconstructs saved results and observes them without enqueuing members or writing files.",
+    "Workbench displays execution, verification and user assessment independently, with assessment bound to a delivery revision."
+  ],
+  "remaining": [
+    "No production external-effects verifier; the external adapter in these tests uses an isolated PostgreSQL fixture table.",
+    "No new ecommerce benchmark run, unintended-effect inventory, or real interruption acceptance.",
+    "No new Corona real deliverable, runnable application, binary artifact or professional acceptance.",
+    "Managed MCP argument validation and CLI published-tool binding are designed but unimplemented.",
+    "Loom opt-in control exists only in its separate local commit; Weave still depends on Loom v0.8.1 and has no controlled-continuation integration.",
+    "No rebuilt-browser visual acceptance of this commit; current live local services were not restarted.",
+    "Workbench foreground harness changes are explicitly deferred."
+  ],
+  "loom_separate_local_commit": "d704baf1ae7fee089c4b086db9a271a7b004e92b",
+  "logs": [
+    {
+      "path": "logs/make-test.log.gz",
+      "record": "original tool-command output",
+      "decompressed_sha256": "7025f3835beda01d2654cc7eec3c8da523fbbc3a19f30cb1a2c6f79512c5361f",
+      "decompressed_bytes": 5026,
+      "compression": "gzip",
+      "sha256": "67c0809e32a740ea35cacc31b6dc09fc56b4d1bf860f5f170ac59e88e76ac789",
+      "bytes": 771
+    },
+    {
+      "path": "logs/depguard.log.gz",
+      "record": "original tool-command output",
+      "decompressed_sha256": "ec672924a9a76209c5aa9bd46b1e06fc6302305fd1248907402d8ebfcdd1441d",
+      "decompressed_bytes": 114,
+      "compression": "gzip",
+      "sha256": "4adc5a57b9a46b686f52e0eadc57f9b000592d597c9276e861ebe9cac71d92ab",
+      "bytes": 115
+    },
+    {
+      "path": "logs/productguard.log.gz",
+      "record": "original tool-command output",
+      "decompressed_sha256": "a1c90981ede66ecfc281cb45e146bf5edf5be24dd2e51594df84aaad60d6c3db",
+      "decompressed_bytes": 51,
+      "compression": "gzip",
+      "sha256": "7a915af8270dc8e2fc7b10d82cd9b692e0eb42a02264bc887abcf764d48378fa",
+      "bytes": 65
+    },
+    {
+      "path": "logs/workbench-install.log.gz",
+      "record": "original tool-command output",
+      "decompressed_sha256": "45e0cbcd192fbf4320ccf2e4b524250395cb5d7199281fc93dfadc8ac464c8d0",
+      "decompressed_bytes": 1954,
+      "compression": "gzip",
+      "sha256": "76d7ca88c0c453c80cf6416ebfad588a85eb2b06392057598d2861e914021d31",
+      "bytes": 603
+    },
+    {
+      "path": "logs/workbench-check.log.gz",
+      "record": "original tool-command output",
+      "decompressed_sha256": "69f27a169a183d272b7a01e148cac9b83b78c4442e9be66b749c1c4a8f627d7e",
+      "decompressed_bytes": 281506,
+      "compression": "gzip",
+      "sha256": "7ed5994eb15ae9388a3011331ffec093ade6986dd26ae595570eab68bca8eb79",
+      "bytes": 27649
+    },
+    {
+      "path": "logs/test-docs.log.gz",
+      "record": "original tool-command output",
+      "decompressed_sha256": "d9c006d29424768f433cc0a757ebc732cfc0ca3119beb5810a1294a6bb966c52",
+      "decompressed_bytes": 1426,
+      "compression": "gzip",
+      "sha256": "d8180e7a29162feda5a1c64559533bce77d5f17b7bf4d4127d4b27769cc7c755",
+      "bytes": 471
+    },
+    {
+      "path": "logs/doc-sync.log.gz",
+      "record": "original tool-command output",
+      "decompressed_sha256": "b7cbdfcea7541f6d7cf15ea9322f79ed38241994ae04f95f868da9c0a70e1f1e",
+      "decompressed_bytes": 2514,
+      "compression": "gzip",
+      "sha256": "4a5185f9f04f9979debe3907ffbc6cf66e512a262e1fe11386b93785f7f3692b",
+      "bytes": 708
+    },
+    {
+      "path": "logs/lint.log.gz",
+      "record": "original tool-command output",
+      "decompressed_sha256": "1ba26a6704d2f4d08871a1310eab883e9e5c841f9470c2fa668dbfe28f46a1f8",
+      "decompressed_bytes": 162281,
+      "compression": "gzip",
+      "sha256": "0c020a824c26d653ce34679284f40d722100e2a4d78f5b59f162b0c09b14a15c",
+      "bytes": 14323
+    },
+    {
+      "path": "logs/dispatch-admission.log.gz",
+      "record": "original tool-command output",
+      "decompressed_sha256": "5ea23dc47af6ac0745fb2b2eaee4c375d68382e5f2261fc7add07b15fd36f6c7",
+      "decompressed_bytes": 58,
+      "compression": "gzip",
+      "sha256": "0577600d833f1403d83ab46bc8f0c8e2d88156695ecfaa2ca052d61e4a5bdcd1",
+      "bytes": 76
+    },
+    {
+      "path": "logs/run-delivery-api.log.gz",
+      "record": "original tool-command output",
+      "decompressed_sha256": "6bd665a023b96d6ecf609ed4616486131b9a01a887cdfcb142362e39aecc258d",
+      "decompressed_bytes": 175,
+      "compression": "gzip",
+      "sha256": "25f150a7c6232ac9d27d5dd826dec3c32a1ed382d0135a1c35521f1aaeaf5b1d",
+      "bytes": 151
+    },
+    {
+      "path": "logs/doc-sync-initial-failure.log.gz",
+      "record": "original tool-command output",
+      "decompressed_sha256": "bf1c9f9b94166d1f0aadda5574b4eaf356a4dc52a4c64ad6883620d6c3c9938e",
+      "decompressed_bytes": 3298,
+      "compression": "gzip",
+      "sha256": "3e9a6a9243ce4775b086db475a1ecd38672918862ba08ef7b12a7a13d4efe09a",
+      "bytes": 920
+    },
+    {
+      "path": "logs/doc-sync-pairing-failure.log.gz",
+      "record": "original tool-command output",
+      "decompressed_sha256": "c97b15c2557a0b521b4b1cf327ea31ac0a3fc0b788252ddbc8d9ebf49755c616",
+      "decompressed_bytes": 3330,
+      "compression": "gzip",
+      "sha256": "f71eb00bd4aecc3d96bac6d8ddc2be9cb649c9195229e487f118446fe6e306b9",
+      "bytes": 988
+    },
+    {
+      "path": "logs/lint-initial-failure.log.gz",
+      "record": "original tool-command output",
+      "decompressed_sha256": "aeb4c2716819954739f3c8a1e38562a37ecde2fd713db11fbcba4d72b78b1ef0",
+      "decompressed_bytes": 132764,
+      "compression": "gzip",
+      "sha256": "97b03cd28247d3e1449729c299f05327132623a16a0a36424f7d1b29b88ee4ed",
+      "bytes": 13420
+    }
+  ]
+}

@@ -141,11 +141,13 @@ function observedRpcIds(
   const observed = new Set<string>()
   for (const key of order) {
     const node = nodes.get(key)
-    if (node === undefined || (node.kind !== 'user' && node.kind !== 'steering')) continue
+    if (node === undefined || (node.kind !== 'user' && node.kind !== 'steering' && node.kind !== 'context')) continue
     const source = (node.data as { readonly source?: unknown }).source as
-      | { readonly kind?: unknown; readonly rpcId?: unknown }
+      | { readonly kind?: unknown; readonly plugin?: unknown; readonly form?: unknown; readonly rpcId?: unknown }
       | undefined
-    if (source?.kind === 'user' && typeof source.rpcId === 'string') observed.add(source.rpcId)
+    const browserSource = source?.kind === 'user'
+      || source?.kind === 'plugin' && source.plugin === 'ui-control' && source.form === 'relay'
+    if (browserSource && typeof source.rpcId === 'string') observed.add(source.rpcId)
   }
   for (const item of queue) {
     if (item.rpcId !== undefined) observed.add(item.rpcId)

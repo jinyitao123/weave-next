@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { createHash } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
-import type { SessionEvent } from '@deepseek-ai/dsh-session'
-import { apply, applyWorkTaskProjection, workTaskProjectionDefinition, type WorkTaskProjection } from '../src/index.ts'
+import { Session, SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
+import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import { apply, applyWorkTaskProjection, workTaskProjectionDefinition, type WorkTaskProjection, type WorkTaskDelivery } from '../src/index.ts'
+import { prepareDispatchInput } from '../src/dispatch-input.ts'
 
 const urlOf = (input: Parameters<typeof fetch>[0]): string => typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
 function jsonBody(init: RequestInit | undefined): unknown {
@@ -19,12 +22,14 @@ function host(overrides: Partial<WorkTaskProjection> = {}) {
   })
   const events: SessionEvent[] = []
   const eventListeners: ((event: SessionEvent) => void)[] = []
-  const session = { id: 'session-1', append: (type: string, data: unknown) => {
+  const header = Session.create(SessionId('session-1')).header
+  const session = { id: header.id, header, events, append: (type: string, data: unknown) => {
     const event = { type, data, seq: events.length, time: Date.now() } as SessionEvent
     events.push(event); state = applyWorkTaskProjection(state, event)
     for (const listener of eventListeners) listener(event)
   } }
   session.append('weave/work-task', initial)
+  const commands = new Map<string, (input: { agent: { session: typeof session }; rawInput: string }) => Promise<unknown>>()
   const routes = new Map<string, (request: Request) => Promise<Response>>()
   const disposers: (() => unknown)[] = []
   const ctx = {
@@ -34,7 +39,13 @@ function host(overrides: Partial<WorkTaskProjection> = {}) {
       return () => {}
     },
     systemPrompt: { section: () => () => {} },
-    commands: { register: () => () => {} },
+    commands: { register: (command: {
+      name: string
+      handler: (input: { agent: { session: typeof session }; rawInput: string }) => Promise<unknown>
+    }) => {
+      commands.set(command.name, command.handler); return () => commands.delete(command.name)
+    } },
+    tools: { register: () => () => {} },
     connection: { fetch: { register: (route: { path: string; fetch: (request: Request) => Promise<Response> }) => {
       routes.set(route.path, route.fetch); return () => routes.delete(route.path)
     } } },
@@ -43,12 +54,282 @@ function host(overrides: Partial<WorkTaskProjection> = {}) {
     sessionController: { registerHistoryProjection: () => () => {} },
   }
   apply(ctx as unknown as Context, { apiUrl: 'http://weave.test', apiKey: 'test-only', pollIntervalMs: 500 })
-  return { state: () => state, events, publish: (data: WorkTaskProjection) => { session.append('weave/work-task', data) }, action: (body: unknown) => routes.get('/api/weave.task-action')!(new Request('http://host/api/weave.task-action', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })), dispose: () => { for (const dispose of disposers.reverse()) dispose() } }
+  return { state: () => state, events, session, command: (body: unknown) => commands.get('weave-assess')!({ agent: { session }, rawInput: JSON.stringify(body) }), publish: (data: WorkTaskProjection) => { session.append('weave/work-task', data) }, action: (body: unknown) => routes.get('/api/weave.task-action')!(new Request('http://host/api/weave.task-action', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })), dispose: () => { for (const dispose of disposers.reverse()) dispose() } }
 }
 
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals() })
 
+function delivery(revisionId = 'revision-1', verificationStatus: WorkTaskDelivery['verificationStatus'] = 'unknown'): WorkTaskDelivery {
+  return { revisionId, contractDigest: 'contract-1', verificationId: `report-${verificationStatus}`, verificationStatus, reason: '',
+    checks: [{ checkId: 'required-check', status: verificationStatus,
+      reason: verificationStatus === 'unknown' ? 'verifier_unavailable' : '' }],
+    checkCounts: { [verificationStatus]: 1 }, available: true, evidenceCompleteness: 'complete' }
+}
+
+function wireDelivery(item: WorkTaskDelivery) {
+  return { revision_id: item.revisionId, contract_digest: item.contractDigest, verification_id: item.verificationId,
+    verification_status: item.verificationStatus, reason: item.reason, available: item.available,
+    evidence_completeness: item.evidenceCompleteness,
+    checks: item.checks.map(check => ({ check_id: check.checkId, status: check.status, reason: check.reason })),
+    check_counts: item.checkCounts }
+}
+
+const finalFile = { id: 'file-1', title: 'report.md', kind: 'final' as const, contentType: 'text/markdown', preview: 'PASS', content: 'PASS', truncated: false, createdAt: '' }
+
+describe('delivery revision assessments', () => {
+  it.each(['passed', 'failed', 'unknown'] as const)('records the user decision independently from %s checks after reading the current Weave revision', async (verificationStatus) => {
+    vi.useFakeTimers()
+    const saved = delivery('revision-1', verificationStatus)
+    const fetcher = vi.fn<typeof fetch>(() => Promise.resolve(Response.json({ run_id: 'run-1', status: 'succeeded', delivery: wireDelivery(saved) })))
+    vi.stubGlobal('fetch', fetcher)
+    const app = host({ status: 'completed', waitKind: '', humanTaskCount: 0, deliverables: [finalFile], delivery: saved })
+    try {
+      expect((await app.action({ action: 'assess', sessionId: 'session-1', runId: 'run-1', deliveryRevisionId: 'revision-1', outcome: 'adopted', note: '  可用  ' })).status).toBe(204)
+      expect(fetcher.mock.calls.map(call => urlOf(call[0]))).toEqual(['http://weave.test/v1/runs/run-1/delivery'])
+      expect(app.state().task).toMatchObject({ outcome: 'adopted', outcomeRevisionId: 'revision-1', outcomeNote: '可用', delivery: saved })
+      expect(app.state().task!.outcomeAssessedAt).toBeGreaterThan(0)
+    } finally { app.dispose() }
+  })
+
+  it('rejects absent and old displayed revisions before any network request', async () => {
+    vi.useFakeTimers()
+    const fetcher = vi.fn<typeof fetch>()
+    vi.stubGlobal('fetch', fetcher)
+    const app = host({ status: 'completed', waitKind: '', deliverables: [finalFile], delivery: delivery('revision-2') })
+    try {
+      const request = { action: 'assess', sessionId: 'session-1', runId: 'run-1', outcome: 'adopted', note: '' }
+      expect((await app.action(request)).status).toBe(400)
+      expect((await app.action({ ...request, deliveryRevisionId: 'revision-1' })).status).toBe(409)
+      expect(await app.command({ ...request, deliveryRevisionId: 'revision-1' })).toMatchObject({ kind: 'error' })
+      expect(fetcher).not.toHaveBeenCalled()
+      expect(app.state().task?.outcome).toBe('unrated')
+    } finally { app.dispose() }
+  })
+
+  it.each(['revision-changed', 'wrong-run', 'unavailable'] as const)('keeps the local decision unrated when Weave returns %s', async (condition) => {
+    vi.useFakeTimers()
+    vi.stubGlobal('fetch', vi.fn<typeof fetch>(() => Promise.resolve(condition === 'unavailable' ? new Response(null, { status: 503 })
+      : Response.json({ run_id: condition === 'wrong-run' ? 'other-run' : 'run-1', status: 'succeeded', delivery: wireDelivery(delivery('revision-2')) }))))
+    const app = host({ status: 'completed', waitKind: '', deliverables: [finalFile], delivery: delivery() })
+    try {
+      const response = await app.action({ action: 'assess', sessionId: 'session-1', runId: 'run-1', deliveryRevisionId: 'revision-1', outcome: 'adopted', note: '' })
+      expect(response.status).toBe(409)
+      expect(app.state().task?.outcome).toBe('unrated')
+    } finally { app.dispose() }
+  })
+
+  it('rejects a late assessment read after the local delivery is replaced', async () => {
+    vi.useFakeTimers()
+    let resolveRead: ((response: Response) => void) | undefined
+    let readStarted: (() => void) | undefined
+    const started = new Promise<void>((resolve) => { readStarted = resolve })
+    vi.stubGlobal('fetch', vi.fn<typeof fetch>(() => new Promise((resolve) => { resolveRead = resolve; readStarted!() })))
+    const app = host({ status: 'completed', waitKind: '', deliverables: [finalFile], delivery: delivery() })
+    try {
+      const pending = app.action({ action: 'assess', sessionId: 'session-1', runId: 'run-1', deliveryRevisionId: 'revision-1', outcome: 'adopted', note: '' })
+      await started
+      app.publish({ ...app.state().task!, delivery: delivery('revision-2'), updatedAt: Date.now() })
+      resolveRead!(Response.json({ run_id: 'run-1', status: 'succeeded', delivery: wireDelivery(delivery()) }))
+      expect((await pending).status).toBe(409)
+      expect(app.state().task).toMatchObject({ delivery: { revisionId: 'revision-2' }, outcome: 'unrated' })
+    } finally { app.dispose() }
+  })
+
+  it.each(['revision-1', 'revision-2'])('preserves an assessment only when polling retains %s', async (revisionId) => {
+    vi.useFakeTimers()
+    const refreshed = delivery(revisionId, 'failed')
+    vi.stubGlobal('fetch', vi.fn<typeof fetch>(input => Promise.resolve(urlOf(input).includes('/deliverables?')
+      ? Response.json({ deliverables: [{ id: finalFile.id, run_id: 'run-1', title: finalFile.title, content: 'PASS', metadata: { artifact_kind: 'final' } }] })
+      : Response.json({ run_id: 'run-1', status: 'succeeded', members: [], completeness: { members: 'complete' }, delivery: wireDelivery(refreshed) }))))
+    const app = host({ status: 'completed', waitKind: '', deliverables: [finalFile], delivery: delivery('revision-1', 'passed'),
+      outcome: 'adopted', outcomeNote: '原版已读', outcomeRevisionId: 'revision-1', outcomeAssessedAt: 10 })
+    try {
+      await vi.advanceTimersByTimeAsync(0)
+      expect(app.state().task).toMatchObject({ delivery: refreshed, outcome: revisionId === 'revision-1' ? 'adopted' : 'unrated',
+        outcomeRevisionId: revisionId === 'revision-1' ? 'revision-1' : '' })
+      expect(app.events[0]!.data).toMatchObject({ outcome: 'adopted', outcomeRevisionId: 'revision-1' })
+    } finally { app.dispose() }
+  })
+
+  it('rechecks a terminal pending report once and settles an explicit unknown instead of fabricating a running verification job', async () => {
+    vi.useFakeTimers()
+    const pending = delivery('revision-1', 'pending')
+    const fetcher = vi.fn<typeof fetch>(input => Promise.resolve(urlOf(input).includes('/deliverables?') ? Response.json([])
+      : Response.json({ run_id: 'run-1', status: 'succeeded', members: [], completeness: { members: 'complete' }, delivery: wireDelivery(pending) })))
+    vi.stubGlobal('fetch', fetcher)
+    const app = host({ status: 'running', waitKind: '', humanTaskCount: 0 })
+    try {
+      await vi.advanceTimersByTimeAsync(0)
+      expect(fetcher.mock.calls.some(call => urlOf(call[0]).endsWith('/delivery'))).toBe(true)
+      expect(app.state().task?.delivery).toMatchObject({ verificationStatus: 'unknown', reason: 'delivery_report_missing' })
+      const reads = fetcher.mock.calls.length
+      await vi.advanceTimersByTimeAsync(2_000)
+      expect(fetcher).toHaveBeenCalledTimes(reads)
+    } finally { app.dispose() }
+  })
+  it('a late assessment read must retain the newer same-revision verification', async () => {
+    vi.useFakeTimers()
+    let finish: ((value: Response) => void) | undefined
+    let started: (() => void) | undefined
+    const begun = new Promise<void>((resolve) => { started = resolve })
+    vi.stubGlobal('fetch', vi.fn<typeof fetch>(() => new Promise((resolve) => { finish = resolve; started!() })))
+    const old = delivery('revision-1', 'passed')
+    const fresh = delivery('revision-1', 'failed')
+    const app = host({ status: 'completed', waitKind: '', deliverables: [finalFile], delivery: old })
+    try {
+      const pending = app.action({ action: 'assess', sessionId: 'session-1', runId: 'run-1', deliveryRevisionId: 'revision-1', outcome: 'adopted', note: '' })
+      await begun
+      app.publish({ ...app.state().task!, delivery: fresh, updatedAt: Date.now() })
+      finish!(Response.json({ run_id: 'run-1', status: 'succeeded', delivery: wireDelivery(old) }))
+      expect((await pending).status).toBe(204)
+      expect(app.state().task?.delivery?.verificationId).toBe(fresh.verificationId)
+    } finally { app.dispose() }
+  })
+  it('an unavailable read followed by the same revision must retain its assessment', async () => {
+    vi.useFakeTimers()
+    let reads = 0
+    const saved = delivery('revision-1', 'passed')
+    const unavailable = { verification_status: 'unknown', reason: 'delivery_verification_unavailable', checks: [], check_counts: {}, available: false, evidence_completeness: 'unavailable' }
+    vi.stubGlobal('fetch', vi.fn<typeof fetch>(input => Promise.resolve(urlOf(input).includes('/deliverables?')
+      ? Response.json({ deliverables: [{ id: finalFile.id, run_id: 'run-1', title: finalFile.title, content: 'PASS', metadata: { artifact_kind: 'final' } }] })
+      : Response.json({ run_id: 'run-1', status: 'succeeded', members: [], completeness: { members: ++reads === 1 ? 'unavailable' : 'complete' }, delivery: reads === 1 ? unavailable : wireDelivery(saved) }))))
+    const app = host({ status: 'completed', waitKind: '', deliverables: [finalFile], delivery: saved, outcome: 'adopted', outcomeRevisionId: 'revision-1', outcomeNote: 'accepted', outcomeAssessedAt: 10 })
+    try {
+      await vi.advanceTimersByTimeAsync(500)
+      expect(reads).toBe(2)
+      expect(app.state().task?.delivery?.revisionId).toBe('revision-1')
+      expect(app.state().task?.outcome).toBe('adopted')
+    } finally { app.dispose() }
+  })
+  it('recheck during a stale terminal poll must schedule a fresh observation', async () => {
+    vi.useFakeTimers()
+    let resolveFiles: ((value: Response) => void) | undefined
+    let activityReads = 0
+    const old = delivery('revision-1', 'passed')
+    const fresh = delivery('revision-1', 'failed')
+    vi.stubGlobal('fetch', vi.fn<typeof fetch>((input, init) => {
+      const url = urlOf(input)
+      if (url.endsWith('/delivery/recheck') && init?.method === 'POST') return Promise.resolve(Response.json({ current: true, report: { verification_id: fresh.verificationId } }))
+      if (url.includes('/deliverables?')) return new Promise((resolve) => { resolveFiles = resolve })
+      return Promise.resolve(Response.json({ run_id: 'run-1', status: 'succeeded', members: [], completeness: { members: 'complete' }, delivery: wireDelivery(++activityReads === 1 ? old : fresh) }))
+    }))
+    const app = host({ status: 'completed', waitKind: '', deliverables: [finalFile], delivery: old })
+    try {
+      await vi.advanceTimersByTimeAsync(0)
+      expect(resolveFiles).toBeTypeOf('function')
+      expect((await app.action({ action: 'recheck', sessionId: 'session-1', runId: 'run-1', deliveryRevisionId: 'revision-1', contractDigest: 'contract-1' })).status).toBe(204)
+      resolveFiles!(Response.json({ deliverables: [{ id: finalFile.id, run_id: 'run-1', title: finalFile.title, content: 'PASS', metadata: { artifact_kind: 'final' } }] }))
+      await vi.advanceTimersByTimeAsync(2000)
+      expect(activityReads).toBeGreaterThan(1)
+    } finally { app.dispose() }
+  })
+  it('a terminal unavailable delivery read must remain eligible for retry', async () => {
+    vi.useFakeTimers()
+    let activityReads = 0
+    const unavailable = { verification_status: 'unknown', reason: 'delivery_verification_unavailable', checks: [], check_counts: {}, available: false, evidence_completeness: 'unavailable' }
+    vi.stubGlobal('fetch', vi.fn<typeof fetch>(input => Promise.resolve(urlOf(input).includes('/deliverables?')
+      ? Response.json([]) : Response.json({ run_id: 'run-1', status: 'succeeded', members: [], completeness: { members: 'complete' },
+        delivery: ++activityReads === 1 ? unavailable : wireDelivery(delivery()) }))))
+    const app = host({ status: 'completed', waitKind: '', delivery: delivery() })
+    try {
+      await vi.advanceTimersByTimeAsync(2000)
+      expect(activityReads).toBeGreaterThan(1)
+      expect(app.state().task?.delivery?.revisionId).toBe('revision-1')
+    } finally { app.dispose() }
+  })
+
+})
+
+function observation(app: ReturnType<typeof host>, id: string, name: string, args: unknown, value: unknown) {
+  app.session.append('tool/call', { turn: 1, step: 1, callId: id, name, arguments: JSON.stringify(args) })
+  app.session.append('tool/result', { turn: 1, step: 1, message: { id: `message-${id}`, role: 'user', source: { kind: 'tool', callId: id },
+    content: [{ type: 'tool-result', toolCallId: id, isError: false, content: [{ type: 'text', text: JSON.stringify(value) }] }] } })
+}
+const priorAssessment = { status: 'completed' as const, waitKind: '' as const, deliverables: [finalFile], delivery: delivery('revision-1', 'passed'),
+  outcome: 'adopted' as const, outcomeRevisionId: 'revision-1', outcomeNote: 'accepted', outcomeAssessedAt: 10 }
+describe('durable assessment identity', () => {
+  it('a new run with an identical delivery revision does not inherit the old receipt', () => {
+    vi.useFakeTimers()
+    const app = host(priorAssessment)
+    try {
+      expect(app.state().task?.latestAssessment?.revisionId).toBe('revision-1')
+      observation(app, 'dispatch-new', 'mcp__weave__team_dispatch', { team_id: 'team-1' },
+        { run_id: 'run-2', client_request_id: 'request-2', status: 'succeeded', delivery: wireDelivery(delivery('revision-1', 'passed')) })
+      expect(app.state().task).toMatchObject({ runId: 'run-2', outcome: 'unrated', outcomeRevisionId: '' })
+      expect(app.state().task?.latestAssessment).toBeUndefined()
+    } finally { app.dispose() }
+  })
+  it('same run keeps old receipt in history across a new revision and only applies it to its original revision', () => {
+    vi.useFakeTimers()
+    const app = host(priorAssessment)
+    try {
+      observation(app, 'new', 'mcp__weave__team_run_activity', { run_id: 'run-1' },
+        { run_id: 'run-1', status: 'succeeded', delivery: wireDelivery(delivery('revision-2', 'passed')) })
+      expect(app.state().task).toMatchObject({ outcome: 'unrated', outcomeRevisionId: '', latestAssessment: { revisionId: 'revision-1', outcome: 'adopted' } })
+      observation(app, 'old', 'mcp__weave__team_run_activity', { run_id: 'run-1' },
+        { run_id: 'run-1', status: 'succeeded', delivery: wireDelivery(delivery('revision-1', 'failed')) })
+      expect(app.state().task).toMatchObject({ outcome: 'adopted', outcomeRevisionId: 'revision-1', delivery: { verificationStatus: 'failed' } })
+    } finally { app.dispose() }
+  })
+  it('an unknown persisted snapshot restores its original assessment after session reload', () => {
+    vi.useFakeTimers()
+    const app = host(priorAssessment)
+    let saved: WorkTaskProjection
+    try {
+      observation(app, 'unknown', 'mcp__weave__team_run_activity', { run_id: 'run-1' },
+        { run_id: 'run-1', status: 'succeeded', delivery: { verification_status: 'unknown', reason: 'delivery_verification_unavailable', checks: [], check_counts: {}, available: false, evidence_completeness: 'unavailable' } })
+      saved = JSON.parse(JSON.stringify(app.state().task)) as WorkTaskProjection
+      expect(saved).toMatchObject({ outcome: 'unrated', outcomeRevisionId: '', latestAssessment: { revisionId: 'revision-1', outcome: 'adopted' } })
+    } finally { app.dispose() }
+    const restored = host(saved!)
+    try {
+      observation(restored, 'restored', 'mcp__weave__team_run_activity', { run_id: 'run-1' },
+        { run_id: 'run-1', status: 'succeeded', delivery: wireDelivery(delivery('revision-1', 'unknown')) })
+      expect(restored.state().task).toMatchObject({ outcome: 'adopted', outcomeNote: 'accepted', outcomeAssessedAt: 10, outcomeRevisionId: 'revision-1', delivery: { verificationStatus: 'unknown' } })
+    } finally { restored.dispose() }
+  })
+})
+
 describe('exact human wait actions', () => {
+  it('reruns the exact edited brief with its admitted workflow and project, retaining the server request identity', async () => {
+    vi.useFakeTimers()
+    const brief = '  修改后的原文\r\nINV-440  \n'
+    const revision = { input_revision_id: '10000000-0000-4000-8000-000000000001',
+      client_request_id: '20000000-0000-4000-8000-000000000001',
+      task_sha256: createHash('sha256').update(brief, 'utf8').digest('hex') }
+    const posts: { url: string; body: unknown }[] = []
+    vi.stubGlobal('fetch', vi.fn<typeof fetch>((input, init) => {
+      const url = urlOf(input)
+      if (init?.method === 'POST') {
+        posts.push({ url, body: jsonBody(init) })
+        return Promise.resolve(Response.json(url.endsWith('/dispatch-inputs') ? revision
+          : { run_id: 'run-2', input_revision_id: revision.input_revision_id, client_request_id: revision.client_request_id, status: 'queued' }))
+      }
+      if (url.includes('/deliverables?')) return Promise.resolve(Response.json([]))
+      return Promise.resolve(Response.json({ run_id: url.includes('run-2') ? 'run-2' : 'run-1', status: 'completed', completeness: { members: 'complete' } }))
+    }))
+    const app = host({ status: 'completed', waitKind: '', humanTaskCount: 0 })
+    try {
+      app.session.append('user/message', createUserMessage({ content: [{ type: 'text', text: '原始请求 INV-440' }], source: { kind: 'user' } }))
+      const initial = prepareDispatchInput(app.session as unknown as Session, { team_id: 'team-1' })
+      const initialRevision = { input_revision_id: '10000000-0000-4000-8000-000000000009',
+        client_request_id: '20000000-0000-4000-8000-000000000009',
+        task_sha256: createHash('sha256').update(initial.task, 'utf8').digest('hex') }
+      app.session.append('weave/dispatch-input', { ...initial, state: 'accepted', revision: initialRevision,
+        result: { run_id: 'run-1', ...initialRevision, status: 'completed', workflow_id: 'wf-orders', workflow_version: 1, project_id: 'project-1' } })
+      expect((await app.action({ action: 'rerun', sessionId: 'session-1', runId: 'run-1', brief })).status).toBe(204)
+      await vi.advanceTimersByTimeAsync(0)
+      expect(posts).toHaveLength(2)
+      expect(posts[0]?.body).toMatchObject({ task: brief, team_id: 'team-1', mode: 'workflow', workbench_session_id: 'session-1',
+        workflow_id: 'wf-orders', workflow_version: 1, project_id: 'project-1', expected_revision_id: initialRevision.input_revision_id })
+      expect(posts[1]?.body).toEqual({ input_revision_id: revision.input_revision_id, client_request_id: revision.client_request_id })
+      expect(app.state().task).toMatchObject({ runId: 'run-2', clientRequestId: revision.client_request_id, brief, pendingAction: null })
+      expect(app.state().task?.actionHistory).toHaveLength(1)
+      expect(app.events.filter(event => event.type === 'weave/dispatch-input').at(-1)?.data)
+        .toMatchObject({ state: 'accepted', rerun: { targetRunId: 'run-1' }, task: brief })
+    } finally { app.dispose() }
+  })
+
   it('writes unchanged observations only at the freshness interval and retains the attempt change time', async () => {
     vi.useFakeTimers()
     vi.setSystemTime(100_000)
@@ -227,6 +508,7 @@ describe('exact human wait actions', () => {
     try {
       await vi.advanceTimersByTimeAsync(0)
       expect((await app.action({ action: 'stage-retry', sessionId: 'session-1', runId: 'run-1', nodeId: 'review' })).status).toBe(204)
+      expect(Object.hasOwn(app.state().task?.pendingAction ?? {}, 'authorizedTotalRounds')).toBe(false)
       const identity = app.state().task?.pendingAction?.idempotencyKey
       expect(identity).toMatch(/^workbench-stage-retry:/)
       await vi.advanceTimersByTimeAsync(1000)
@@ -234,6 +516,35 @@ describe('exact human wait actions', () => {
       expect(app.state().task?.actionHistory).toHaveLength(1)
       expect((await app.action({ action: 'stage-retry', sessionId: 'session-1', runId: 'run-1', nodeId: 'review' })).status).toBe(204)
       expect(app.state().task?.pendingAction?.idempotencyKey).not.toBe(identity)
+    } finally { app.dispose() }
+  })
+
+  it('persists an explicit cumulative budget increase across a lost continuation response', async () => {
+    vi.useFakeTimers()
+    const requests: unknown[] = []
+    vi.stubGlobal('fetch', vi.fn<typeof fetch>(async (input, init) => {
+      const url = urlOf(input)
+      if (url.endsWith('/activity')) return Response.json({ run_id: 'run-1', status: 'parked', wait_kind: 'runtime', wait_node_id: 'review', members: [{ agent_id: 'reviewer', name: '复核员', status: 'waiting', stages: [{ node_id: 'review', status: 'waiting', retryable: true, budget_pause: { reason: 'total_limit', rounds_used: 2, authorized_total_rounds: 2 } }] }] })
+      if (url.endsWith('/retry')) {
+        requests.push(jsonBody(init))
+        if (requests.length === 1) throw new Error('Response lost')
+        return Response.json({ status: 'queued' })
+      }
+      throw new Error(`Unexpected path: ${url}`)
+    }))
+    const app = host({ status: 'running', waitKind: '', humanTaskCount: 0 })
+    try {
+      await vi.advanceTimersByTimeAsync(0)
+      const action = { action: 'stage-retry', sessionId: 'session-1', runId: 'run-1', nodeId: 'review' }
+      expect((await app.action(action)).status).toBe(409)
+      expect((await app.action({ ...action, authorizedTotalRounds: 2 })).status).toBe(409)
+      expect(requests).toHaveLength(0)
+      expect((await app.action({ ...action, authorizedTotalRounds: 3 })).status).toBe(204)
+      expect(app.state().task?.pendingAction?.authorizedTotalRounds).toBe(3)
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(requests).toHaveLength(2)
+      expect(requests[0]).toEqual(requests[1])
+      expect(requests[0]).toMatchObject({ authorized_total_rounds: 3 })
     } finally { app.dispose() }
   })
 

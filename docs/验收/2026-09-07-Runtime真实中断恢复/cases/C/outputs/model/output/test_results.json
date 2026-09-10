@@ -1,0 +1,98 @@
+{
+  "traceability": {
+    "baseline_id": "corona-baseline-1.0.0",
+    "baseline_version": "1.0.0",
+    "content_digest": "cfb12b781363c547da87e6dec9fd937079cba25501b85ff6cbfabfbc508b10c2"
+  },
+  "total_checks": 17,
+  "passed": 17,
+  "failed": 0,
+  "verdict": "PASS",
+  "checks": [
+    {
+      "check": "baseline_digest_verified_and_params_derived",
+      "pass": true,
+      "detail": "OK: parameters.json derived, digest verified cfb12b78…10c2"
+    },
+    {
+      "check": "scenario_locked_single_0.03c",
+      "pass": true,
+      "detail": "cruise_speed_c=[0.03]"
+    },
+    {
+      "check": "reference_tolerance:travel_time_yr",
+      "pass": true,
+      "detail": "actual=141.66666666666669 expected=141.6666667 rel_tol=0.001"
+    },
+    {
+      "check": "reference_tolerance:kinetic_energy_1mt_j",
+      "pass": true,
+      "detail": "actual=4.04439830431568e+22 expected=4.0443983e+22 rel_tol=0.01"
+    },
+    {
+      "check": "reference_tolerance:kinetic_energy_5mt_j",
+      "pass": true,
+      "detail": "actual=2.02219915215784e+23 expected=2.0221991e+23 rel_tol=0.01"
+    },
+    {
+      "check": "reference_tolerance:artificial_gravity_m_s2",
+      "pass": true,
+      "detail": "actual=43.864908449286034 expected=43.8649 rel_tol=0.01"
+    },
+    {
+      "check": "reference_tolerance:dust_impact_energy_j",
+      "pass": true,
+      "detail": "actual=40443983.043156795 expected=40443983.0 rel_tol=0.01"
+    },
+    {
+      "check": "calc1_travel_time_and_light_time",
+      "pass": true,
+      "detail": "light_time=4.25 yr"
+    },
+    {
+      "check": "calc2_relativistic_comparison_separate",
+      "pass": true,
+      "detail": "nonrel=4.044398e+22 rel=4.047130e+22 (分列不混用)"
+    },
+    {
+      "check": "calc3_accel_decel_efficiency_mass_scenarios",
+      "pass": true,
+      "detail": "η=0.1/0.3/0.5 最小输入能量均大于动能下限且随η递减"
+    },
+    {
+      "check": "calc4_artificial_gravity",
+      "pass": true,
+      "detail": "a=43.8649 m/s^2, rpm@1g=0.9457"
+    },
+    {
+      "check": "calc5_dust_impact",
+      "pass": true,
+      "detail": "1mg=4.044398e+07 J ≈ 9.67 kg TNT"
+    },
+    {
+      "check": "calc6_turn_limits",
+      "pass": true,
+      "detail": "10%→5.7296°, 15%→8.5944°"
+    },
+    {
+      "check": "calc7_precursor_return_time",
+      "pass": true,
+      "detail": "flight=21.25 + return=4.25 = 25.5 yr"
+    },
+    {
+      "check": "calc8_route_sensitivity",
+      "pass": true,
+      "detail": "三路线分别给出; 载人路线含质量敏感性, 另两条保留 unknown"
+    },
+    {
+      "check": "truth_labels_present_on_all_results",
+      "pass": true,
+      "detail": "mislabeled=none"
+    },
+    {
+      "check": "no_forbidden_claims_in_model_output",
+      "pass": true,
+      "detail": "found=none"
+    }
+  ]
+}

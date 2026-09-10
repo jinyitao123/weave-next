@@ -3,6 +3,7 @@ package teamrun
 import (
 	"context"
 	"errors"
+	"github.com/jinyitao123/weave/internal/base/execution"
 	"strings"
 )
 
@@ -29,6 +30,9 @@ func ClassifyFailure(err error) FailureSummary {
 	if err == nil {
 		return FailureSummary{}
 	}
+	if errors.Is(err, execution.ErrMemberOutcomeUnknown) {
+		return FailureSummary{Class: FailureClassInfrastructure, Reason: "tool outcome requires reconciliation before continuing"}
+	}
 	if errors.Is(err, context.Canceled) || executionErrorCode(err) == ErrorCodeCancelled {
 		return FailureSummary{Class: FailureClassCancelled, Reason: "execution was stopped"}
 	}
@@ -40,6 +44,7 @@ func ClassifyFailure(err error) FailureSummary {
 		reason := "the referenced result file was not saved as a deliverable"
 		for _, match := range [][2]string{
 			{"file_exceeds_256_kib", "the result file exceeds the 256 KiB delivery limit"},
+			{"files_exceed_1_mib_total", "the result files exceed the 1 MiB total delivery limit"},
 			{"files_exceed_512_kib_total", "the result files exceed the 512 KiB total delivery limit"},
 			{"file_not_written_by_this_invocation", "the referenced result file was not produced by this execution"},
 			{"unsupported_file_type", "the result file type is not supported for delivery"},
@@ -60,6 +65,10 @@ func ClassifyFailure(err error) FailureSummary {
 	case ErrorCodeDeliveryUnavailable:
 		return FailureSummary{Class: FailureClassVerification, Reason: "the stage result could not be preserved as a verified deliverable"}
 	}
+	if strings.Contains(message, "runtime_process_interrupted:") {
+		return FailureSummary{Class: FailureClassInfrastructure, Retryable: true,
+			Reason: "the runtime process was interrupted before the stage could finish"}
+	}
 	if strings.Contains(message, "runtime_credentials_missing") || strings.Contains(message, "missing environment variable") {
 		return FailureSummary{Class: FailureClassInfrastructure, Reason: "the runtime provider credential is missing; configure runtime authentication before retrying"}
 	}
@@ -71,7 +80,7 @@ func ClassifyFailure(err error) FailureSummary {
 	}
 	for _, marker := range []string{
 		"timed out", "timeout", "deadline exceeded", "reconnecting", "connection reset",
-		"connection refused", "broken pipe", "unexpected eof", "stream disconnected",
+		"connection refused", "connection lost", "broken pipe", "unexpected eof", "stream disconnected",
 		"service unavailable", "temporarily unavailable", "too many requests", "rate limit",
 		"status 502", "status 503", "status 504", "runtime offline", "运行时离线",
 		"runtime_pool_exhausted", "runtime_pinned_unavailable", "lease lost", "failed to start",

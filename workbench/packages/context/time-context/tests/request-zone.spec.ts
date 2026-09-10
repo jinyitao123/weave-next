@@ -46,6 +46,29 @@ describe('browser request-zone context', () => {
     ])).toThrow(/browser time zone must be canonical/)
   })
 
+  it('preserves a browser control turn zone without accepting metadata from unrelated plugins', () => {
+    const control = createUserMessage({
+      content: [{ type: 'text', text: '选用此团队' }],
+      source: {
+        kind: 'plugin', plugin: 'ui-control', form: 'relay',
+        rpcId: 'control-rpc', clientTimeZone: 'Asia/Shanghai',
+      } as never,
+    })
+    expect(deriveBrowserTimeZoneContext([control])).toEqual({
+      kind: 'resolved', timeZone: 'Asia/Shanghai',
+    })
+    for (const source of [
+      { kind: 'plugin', plugin: 'other', form: 'relay' },
+      { kind: 'plugin', plugin: 'ui-control', form: 'inject' },
+    ]) {
+      const unrelated = createUserMessage({
+        content: [{ type: 'text', text: 'plugin context' }],
+        source: { ...source, rpcId: 'unrelated', clientTimeZone: 'Asia/Shanghai' } as never,
+      })
+      expect(deriveBrowserTimeZoneContext([unrelated])).toEqual({ kind: 'missing' })
+    }
+  })
+
   it('renders one explicit model policy for every context', () => {
     expect(renderBrowserTimeZoneContext({ kind: 'resolved', timeZone: 'Asia/Shanghai' }))
       .toContain('Interpret otherwise-unqualified dates and times in this zone.')

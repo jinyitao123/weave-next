@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  图号: COR-DRW-003  版本: 1.0.0  等级: 概念级 (Level-0 / Pre-Phase A) — 非施工图、非制造图、非认证设计
+  追溯键: baseline_id=corona-baseline-1.0.0 baseline_version=1.0.0
+          content_digest=cfb12b781363c547da87e6dec9fd937079cba25501b85ff6cbfabfbc508b10c2
+  单位: 能量 J, 功率 W (仅数量级占位, 未定), 时间 yr; 接口线为功能接口示意
+  接口依据: outputs/review/interface_control.md (ICD-1.0.0) — 本图引用其接口编号
+  参数来源: outputs/model/baseline_frozen.yaml + outputs/model/output/model_results.json
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="1240" height="900" viewBox="0 0 1240 900" font-family="Helvetica, 'PingFang SC', sans-serif">
+  <title>COR-DRW-003 推进/能源/热控/通信/档案接口图 (概念级)</title>
+  <desc>五大功能域概念级接口图, 引用 ICD-1.0.0 接口编号, 单一 0.03c 情景</desc>
+
+  <rect x="0" y="0" width="1240" height="900" fill="#f7f8fa"/>
+  <rect x="20" y="20" width="1200" height="860" fill="none" stroke="#333" stroke-width="2"/>
+  <rect x="20" y="20" width="1200" height="60" fill="#4a148c"/>
+  <text x="40" y="57" fill="#fff" font-size="24" font-weight="bold">COR-DRW-003 · 推进 · 能源 · 热控 · 通信 · 档案 接口图 · 概念级 · v1.0.0</text>
+
+  <text x="40" y="106" font-size="13" fill="#b00" font-weight="bold">边界: 概念级功能接口示意; 推进/能源具体方案未定; 脉冲聚变仍处概念/建模/部件研究阶段 [verified_fact 来源: 纪要 §三.1]</text>
+
+  <defs><marker id="ar3" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><polygon points="0,0 8,4 0,8" fill="#333"/></marker></defs>
+
+  <!-- 能源 (中心) -->
+  <g>
+    <rect x="470" y="360" width="300" height="150" fill="#fef7e0" stroke="#f9ab00" stroke-width="2.5"/>
+    <text x="490" y="392" font-size="16" font-weight="bold" fill="#8d5800">能源域 (PWR)</text>
+    <text x="490" y="416" font-size="11">向推进/热控/通信/档案供电 (功率预算 [unknown])</text>
+    <text x="490" y="436" font-size="11">动能下限参考: 1Mt@0.03c ≈ 4.0444e22 J [derived_result]</text>
+    <text x="490" y="456" font-size="11" fill="#b00">动能下限 ≠ 能源预算 (未计效率/推进剂/减速) [verified_fact]</text>
+    <text x="490" y="482" font-size="10" fill="#555">接口: ICD-DLV-002/003 数值仅引用模型输出</text>
+  </g>
+
+  <!-- 推进 -->
+  <g>
+    <rect x="80" y="150" width="300" height="150" fill="#fce8e6" stroke="#d93025" stroke-width="2"/>
+    <text x="100" y="182" font-size="16" font-weight="bold" fill="#a50e0e">推进域 (PROP)</text>
+    <text x="100" y="206" font-size="11">候选: 脉冲聚变 (氘氚最容易实现) [verified_fact 来源: ITER]</text>
+    <text x="100" y="224" font-size="11">氘氘 / 氘氦3 / 脉冲裂变聚变进入比较研究, 不指定主案</text>
+    <text x="100" y="242" font-size="11" fill="#b00">排气速度/增益/脉冲频率/中子损伤 [unknown→比较研究]</text>
+    <text x="100" y="266" font-size="10" fill="#555">接口 IF-P1: 推力/功率需求 → 能源域</text>
+    <text x="100" y="284" font-size="10" fill="#555">接口 IF-P2: 推进剂质量比 → 质量预算 (任务书 §四.2)</text>
+  </g>
+
+  <!-- 热控 -->
+  <g>
+    <rect x="860" y="150" width="300" height="150" fill="#e8f0fe" stroke="#3367d6" stroke-width="2"/>
+    <text x="880" y="182" font-size="16" font-weight="bold" fill="#17429b">热控域 (THM)</text>
+    <text x="880" y="206" font-size="11">推进废热 / 设备废热排散</text>
+    <text x="880" y="224" font-size="11">散热能力与辐射板面积为功率的强函数</text>
+    <text x="880" y="242" font-size="11" fill="#b00">排热功率谱 [unknown] (依赖推进方案)</text>
+    <text x="880" y="266" font-size="10" fill="#555">接口 IF-T1: 废热负载 ← 能源/推进域</text>
+    <text x="880" y="284" font-size="10" fill="#555">接口 IF-T2: 存储温度窗口 → 档案域</text>
+  </g>
+
+  <!-- 通信 -->
+  <g>
+    <rect x="80" y="580" width="300" height="150" fill="#e6f4ea" stroke="#188038" stroke-width="2"/>
+    <text x="100" y="612" font-size="16" font-weight="bold" fill="#0b572a">通信域 (COM)</text>
+    <text x="100" y="636" font-size="11">光行时 4.25 yr → 单向时延 ≥ 4.25 yr [derived_result]</text>
+    <text x="100" y="654" font-size="11">先锋回传最早 ≈ 25.5 yr [derived_result]</text>
+    <text x="100" y="672" font-size="11" fill="#b00">星际链路预算/频段/口径 [unknown]</text>
+    <text x="100" y="696" font-size="10" fill="#555">接口 IF-C1: 遥测/档案校验流量 → 档案域</text>
+    <text x="100" y="714" font-size="10" fill="#555">ICD-RTE-003: 先锋 0.2c 为路线内部参数</text>
+  </g>
+
+  <!-- 档案 -->
+  <g>
+    <rect x="860" y="580" width="300" height="150" fill="#f3e8fd" stroke="#9334e6" stroke-width="2"/>
+    <text x="880" y="612" font-size="16" font-weight="bold" fill="#6b1fa0">档案域 (ARC)</text>
+    <text x="880" y="636" font-size="11">长期存储 + 校验 + 解码说明 (分区见 COR-DRW-002)</text>
+    <text x="880" y="654" font-size="11">读取设备再制造、版本迁移 [verified_fact]</text>
+    <text x="880" y="672" font-size="11" fill="#b00">百年级介质稳定性 [unknown]</text>
+    <text x="880" y="696" font-size="10" fill="#555">接口 IF-A1: 功率/温度需求 → 能源/热控域</text>
+    <text x="880" y="714" font-size="10" fill="#555">接口 IF-A2: 校验流量 → 通信域</text>
+  </g>
+
+  <!-- 接口连线 -->
+  <g stroke="#333" stroke-width="2" fill="none">
+    <line x1="380" y1="260" x2="470" y2="390" marker-end="url(#ar3)"/>
+    <line x1="860" y1="260" x2="770" y2="390" marker-end="url(#ar3)"/>
+    <line x1="380" y1="620" x2="470" y2="500" marker-end="url(#ar3)"/>
+    <line x1="860" y1="620" x2="770" y2="500" marker-end="url(#ar3)"/>
+    <line x1="380" y1="655" x2="860" y2="655" marker-end="url(#ar3)"/>
+  </g>
+  <text x="392" y="312" font-size="10" fill="#555">IF-P1/IF-T1 功率与废热</text>
+  <text x="620" y="312" font-size="10" fill="#555">IF-T1 废热</text>
+  <text x="392" y="560" font-size="10" fill="#555">IF-C1 功率/数据</text>
+  <text x="640" y="560" font-size="10" fill="#555">IF-A1 功率/温度</text>
+  <text x="580" y="645" font-size="10" fill="#555">IF-A2 / IF-C1 校验流量</text>
+
+  <!-- 机动约束注记 -->
+  <g>
+    <rect x="470" y="530" width="300" height="60" fill="#fff" stroke="#888" stroke-dasharray="4,3"/>
+    <text x="482" y="552" font-size="11" font-weight="bold">机动约束 (PROP↔任务):</text>
+    <text x="482" y="572" font-size="10">10–15% Δv → 转向 ≤5.7°–8.6° [derived_result]; 主加速前选定目标</text>
+  </g>
+
+  <!-- 参数追踪表 -->
+  <g>
+    <rect x="60" y="768" width="1120" height="96" fill="#eee" stroke="#333"/>
+    <text x="70" y="790" font-size="11" font-weight="bold">参数追踪表 (唯一参数源: outputs/model/baseline_frozen.yaml; 公式接口 ICD-FML-001..005):</text>
+    <text x="70" y="808" font-size="10">travel_time_yr=141.6667 (ICD-FML-001) · KE_1Mt=4.0444e22 J (ICD-FML-002) · a_1km/2rpm=43.8649 m/s² (ICD-FML-003)</text>
+    <text x="70" y="825" font-size="10">dust_1mg=4.0444e7 J (ICD-FML-004) · turn_limit 5.73°–8.59° (ICD-FML-005) · light_time=4.25 yr</text>
+    <text x="70" y="845" font-size="10">追溯键: corona-baseline-1.0.0 / 1.0.0 / cfb12b78…8b10c2 | 图号 COR-DRW-003 · v1.0.0 · 概念级 | 全部数值与 outputs/model/output/reference_values.json 一致</text>
+  </g>
+</svg>

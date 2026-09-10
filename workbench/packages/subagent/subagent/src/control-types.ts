@@ -105,6 +105,8 @@ export interface SubagentPromptRequest {
   readonly mode: 'continuable'
   /** Content delivered as the child's user message. */
   readonly content: ContentBlock[]
+  /** UI-generated control text; absence identifies ordinary composer input. */
+  readonly origin?: 'ui-control'
   /** Optional browser zone sampled for this exact human prompt. */
   readonly clientTimeZone?: string
 }
