@@ -7,8 +7,7 @@ if (!token && process.env.GUANDAN_WEAVE_DEV_AUTH === '1' && ['127.0.0.1', 'local
   token = (await response.json()).token;
 }
 if (!token) throw new Error('An operator API key or explicit loopback development authentication is required');
-const runtimeID = process.env.GUANDAN_RUNTIME_ID;
-if (!runtimeID) throw new Error('GUANDAN_RUNTIME_ID is required');
+const model = process.env.GUANDAN_PLAYER_MODEL || 'deepseek-v4-flash';
 async function api(path, body, method = 'POST') {
   const response = await fetch(base + path, { method, headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
   const result = await response.json();
@@ -23,17 +22,18 @@ const instruction = '你是掼蛋玩家。输入是冻结的本座手牌、公�
 async function agent(name, role) {
   const existing = agents.find(a => a.name === name);
   if (existing) {
-    if (existing.runtime_id !== runtimeID || existing.engine !== 'codex') throw new Error(`${name} has a different runtime binding; publish an explicit new version instead of mutating it implicitly`);
+    if (existing.runtime_id || existing.engine !== 'loom' || existing.model !== model) throw new Error(`${name} has a different execution binding; publish an explicit new version instead of mutating it implicitly`);
+    if (role === 'worker' && (!existing.tool_loop_control || existing.tool_loop_control.slice_rounds !== 1 || existing.tool_loop_control.initial_total_rounds !== 1)) throw new Error(`${name} requires an explicit durable single-round publication upgrade`);
     return existing;
   }
-  return api('/v1/agents', { name, display_name: role === 'worker' ? '掼蛋智能玩家' : '掼蛋决策协调', role, engine: 'codex', model: 'gpt-6-astra', runtime_id: runtimeID, spec: { system_prompt: instruction }, permissions: { deny: ['*'], allow: [], ask: [] }, mcp_servers: [], memory_config: { enabled: false, auto_remember: false }, compaction: { enabled: false }, ...(role === 'worker' ? { output_schema: schema } : {}), max_output_tokens: 600 });
+  return api('/v1/agents', { name, display_name: role === 'worker' ? '掼蛋 Loom 智能玩家' : '掼蛋决策协调', role, engine: 'loom', model, spec: { system_prompt: instruction }, permissions: { deny: ['*'], allow: [], ask: [] }, mcp_servers: [], memory_config: { enabled: false, auto_remember: false }, compaction: { enabled: false }, ...(role === 'worker' ? { output_schema: schema, tool_loop_control: { slice_rounds: 1, initial_total_rounds: 1 } } : {}), max_output_tokens: 4096 });
 }
-const lead = await agent('guandan-player-lead', 'avatar');
-const worker = await agent('guandan-player', 'worker');
+const lead = await agent('guandan-loom-player-lead', 'avatar');
+const worker = await agent('guandan-loom-player', 'worker');
 const teams = await api('/v1/teams', undefined, 'GET');
 const teamList = Array.isArray(teams) ? teams : teams.teams || [];
-let team = teamList.find(t => t.name === 'guandan-player');
-if (!team) team = await api('/v1/teams', { name: 'guandan-player', display_name: '掼蛋智能玩家', objective: '从当前合法候选中决策一次出牌', primary_scenario: '六桌现场演示', success_criteria: '输出属于当前候选且保留运行证据', lead_avatar_id: lead.id, workers: [{ worker_agent_id: worker.id, duty: '候选决策', when_to_use: '轮到AI时', context_instruction: instruction, allowed_kinds: ['consult'], default_kind: 'consult', result_requirement: '合法候选 JSON' }] });
+let team = teamList.find(t => t.name === 'guandan-loom-player');
+if (!team) team = await api('/v1/teams', { name: 'guandan-loom-player', display_name: '掼蛋 Loom 智能玩家', objective: '从当前合法候选中决策一次出牌', primary_scenario: '六桌现场演示', success_criteria: '输出属于当前候选且保留 Loom 运行证据', lead_avatar_id: lead.id, workers: [{ worker_agent_id: worker.id, duty: '候选决策', when_to_use: '轮到AI时', context_instruction: instruction, allowed_kinds: ['consult'], default_kind: 'consult', result_requirement: '合法候选 JSON' }] });
 const workflows = await api(`/v1/teams/${team.id}/workflows`, undefined, 'GET');
 const workflowList = Array.isArray(workflows) ? workflows : workflows.workflows || [];
 let workflow = workflowList.find(w => w.name === 'decide_move_v1');
@@ -56,4 +56,4 @@ if (!workflow.published_version) {
   const published = await api(`/v1/workflows/${workflow.id}/versions/1/publish`, {});
   console.log('publication', JSON.stringify(published));
 }
-console.log(JSON.stringify({ base_url: base, team_id: team.id, workflow_id: workflow.id, workflow_version: workflow.published_version || 1, agent_id: worker.id, runtime_id: runtimeID, engine: 'codex', model: worker.model }));
+console.log(JSON.stringify({ base_url: base, team_id: team.id, workflow_id: workflow.id, workflow_version: workflow.published_version || 1, agent_id: worker.id, engine: 'loom', model: worker.model }));

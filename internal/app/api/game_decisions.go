@@ -95,7 +95,7 @@ func gameServiceKey(c echo.Context) string {
 }
 
 // The service key is deliberately narrower than generic team dispatch: one
-// native, deny-all worker and one final delivery, with no external targets.
+// Loom, deny-all worker and one final delivery, with no external targets.
 func validateGameWorkflow(payload frozen.ArtifactPayloadV1) error {
 	var graph struct {
 		Nodes []struct {
@@ -125,8 +125,8 @@ func validateGameWorkflow(payload frozen.ArtifactPayloadV1) error {
 				denyAll = true
 			}
 		}
-		if a.Engine != "codex" || a.Model == "" || a.RuntimeID == "" || !denyAll || len(bundle.MCPBindings) != 0 || len(bundle.Skills) != 0 || len(bundle.FallbackModels) != 0 || len(a.Fallback.Models) != 0 || (a.MemoryConfig != nil && (a.MemoryConfig.Enabled || a.MemoryConfig.AutoRemember)) || len(a.OutputSchema) == 0 {
-			return fmt.Errorf("decision worker requires a frozen native Codex model, deny-all tools, schema, and no memory, skills or fallback models")
+		if a.Engine != "loom" || a.Model == "" || a.RuntimeID != "" || bundle.Runtime != nil || bundle.PrimaryModel.ModelID != a.Model || bundle.PrimaryModel.ProviderID == "" || !denyAll || len(bundle.MCPBindings) != 0 || len(bundle.Skills) != 0 || len(bundle.FallbackModels) != 0 || len(a.Fallback.Models) != 0 || (a.MemoryConfig != nil && (a.MemoryConfig.Enabled || a.MemoryConfig.AutoRemember)) || len(a.OutputSchema) == 0 {
+			return fmt.Errorf("decision worker requires a frozen Loom provider/model, no CLI runtime, deny-all tools, schema, and no memory, skills or fallback models")
 		}
 	}
 	if workers != 1 {
@@ -209,6 +209,17 @@ func (s *Server) handleAdmitGameDecision(c echo.Context) error {
 	}
 	if storedHash != inputHash {
 		return workflowError(c, 409, "game_input_conflict", "same request id has different frozen input")
+	}
+	artifact, err := s.Workflow.GetArtifact(c.Request().Context(), getTenant(c), b.WorkflowID, b.WorkflowVersion)
+	if err != nil {
+		return workflowStoreFailure(c, err)
+	}
+	payload, err := frozen.DecodeArtifactEnvelopeV1(frozen.ArtifactEnvelopeV1{WorkspaceID: artifact.WorkspaceID, WorkflowID: artifact.WorkflowID, WorkflowVersion: artifact.WorkflowVersion, ArtifactSchemaVersion: artifact.ArtifactSchemaVersion, CanonicalizationAlgorithm: artifact.CanonicalizationAlgorithm, CanonicalizationVersion: artifact.CanonicalizationVersion, HashAlgorithm: artifact.HashAlgorithm, ContentHash: artifact.ContentHash, Payload: artifact.Payload})
+	if err != nil {
+		return workflowStoreFailure(c, err)
+	}
+	if err := validateGameWorkflow(payload); err != nil {
+		return workflowError(c, 409, "unsafe_game_workflow", err.Error())
 	}
 	c.Response().Header().Set("X-Game-Decision-ID", decisionID)
 	c.Response().Header().Set("X-Game-Input-Hash", inputHash)
