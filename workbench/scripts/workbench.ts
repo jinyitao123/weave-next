@@ -1,6 +1,7 @@
 /** Launch the Workbench profile with an optional API key from the macOS Keychain. */
 import { execFileSync, spawnSync } from 'node:child_process'
-import { resolve } from 'node:path'
+import { accessSync, constants } from 'node:fs'
+import { isAbsolute, resolve } from 'node:path'
 
 /** Keychain service reserved for the local Weave Workbench API credential. */
 export const WORKBENCH_KEYCHAIN_SERVICE = 'weave-workbench-api-key'
@@ -32,6 +33,17 @@ export function workbenchEnvironment(
     : { ...environment, WEAVE_API_KEY: credential }
 }
 
+/** Normalize an explicit MCP binary path and fail before opening a partially connected Workbench. */
+export function validateWeaveCommand(environment: NodeJS.ProcessEnv, cwd: string): NodeJS.ProcessEnv {
+  const command = environment.WEAVE_COMMAND?.trim()
+  if (command === undefined || command === '' || (!command.includes('/') && !command.includes('\\'))) return { ...environment }
+  const absolute = isAbsolute(command) ? command : resolve(cwd, command)
+  try { accessSync(absolute, constants.X_OK) } catch {
+    throw new Error(`WEAVE_COMMAND is not an executable file: ${absolute}`)
+  }
+  return { ...environment, WEAVE_COMMAND: absolute }
+}
+
 /** Start the supported `dsh --profile workbench` application path. */
 function main(): void {
   const root = resolve(import.meta.dirname, '..')
@@ -42,7 +54,7 @@ function main(): void {
     ...process.argv.slice(2),
   ], {
     cwd: root,
-    env: workbenchEnvironment(process.env),
+    env: validateWeaveCommand(workbenchEnvironment(process.env), root),
     stdio: 'inherit',
   })
   if (result.error !== undefined) throw result.error

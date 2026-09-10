@@ -9,6 +9,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/jinyitao123/weave/internal/base/deliverable"
 )
 
 const (
@@ -95,6 +97,7 @@ type BlueprintWorkflowV1 struct {
 	CustomSpecRef            string                                 `json:"custom_spec_ref,omitempty"`
 	DeclarativeSpecHash      string                                 `json:"declarative_spec_hash,omitempty"`
 	TemplateGapAuthorization *TemplateGapAuthorizationV1            `json:"template_gap_authorization,omitempty"`
+	DeliveryContract         *deliverable.DeliveryContract          `json:"delivery_contract,omitempty"`
 }
 
 // BlueprintWorkflowTemplateParametersV1 is the complete parameter surface
@@ -342,6 +345,9 @@ func isBlueprintCLIEngine(engine string) bool {
 }
 
 func validateBlueprintWorkflow(c *blueprintProblemCollector, workflow BlueprintWorkflowV1, members map[string]BlueprintMemberV1) {
+	if err := deliverable.ValidateDeliveryContract(workflow.DeliveryContract); err != nil {
+		c.add("/workflow/delivery_contract", "blueprint_delivery_contract_invalid", err.Error())
+	}
 	switch workflow.Mode {
 	case BlueprintWorkflowTemplate:
 		if strings.TrimSpace(workflow.CustomSpecRef) != "" {
@@ -355,6 +361,9 @@ func validateBlueprintWorkflow(c *blueprintProblemCollector, workflow BlueprintW
 		}
 		validateBlueprintTemplate(c, workflow.Template, workflow.TemplateParameters, members)
 	case BlueprintWorkflowCustom:
+		if workflow.DeliveryContract != nil {
+			c.add("/workflow/delivery_contract", "blueprint_delivery_contract_forbidden", "custom mode requires delivery requirements to be part of its separately authorized frozen specification")
+		}
 		if strings.TrimSpace(workflow.Template) != "" {
 			c.add("/workflow/template", "blueprint_workflow_template_forbidden", "custom mode forbids template")
 		}
@@ -941,6 +950,7 @@ func normalizeBlueprintWorkflow(value BlueprintWorkflowV1) BlueprintWorkflowV1 {
 	normalized.Template = strings.TrimSpace(value.Template)
 	normalized.CustomSpecRef = strings.TrimSpace(value.CustomSpecRef)
 	normalized.DeclarativeSpecHash = strings.TrimSpace(value.DeclarativeSpecHash)
+	normalized.DeliveryContract = deliverable.CloneDeliveryContract(value.DeliveryContract)
 	if value.TemplateParameters != nil {
 		params := *value.TemplateParameters
 		params.LeadInstruction = normalizeText(params.LeadInstruction)

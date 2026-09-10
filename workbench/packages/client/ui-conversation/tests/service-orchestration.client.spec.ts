@@ -43,10 +43,19 @@ describe('ConversationController', () => {
     await b.scoped.updateQueue('item-1' as never, { kind: 'remove' })
     await b.scoped.cancel()
     await b.scoped.loadOlder()
-    expect(b.prompt).toHaveBeenCalledWith([{ type: 'text', text: 'hello' }], 'queue')
+    expect(b.prompt).toHaveBeenCalledWith([{ type: 'text', text: 'hello' }], 'queue', undefined, undefined, undefined)
     expect(b.updateQueue).toHaveBeenCalledWith('item-1', { kind: 'remove' })
     expect(b.cancel).toHaveBeenCalledOnce()
     expect(b.loadOlder).toHaveBeenCalledOnce()
+    await b.runtime.dispose()
+  })
+
+  it('preserves the origin of generated UI controls through the scoped session', async () => {
+    const b = await bench()
+    await b.scoped.send('select the team', 'ui-control')
+    expect(b.prompt).toHaveBeenCalledWith(
+      [{ type: 'text', text: 'select the team' }], 'queue', undefined, undefined, 'ui-control',
+    )
     await b.runtime.dispose()
   })
 

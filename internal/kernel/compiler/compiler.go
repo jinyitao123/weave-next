@@ -12,6 +12,7 @@ import (
 	"github.com/jinyitao123/loom"
 	"github.com/jinyitao123/loom/contract"
 	"github.com/jinyitao123/loom/stdlib"
+	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/kernel/grounding"
 	"github.com/jinyitao123/weave/internal/kernel/llmrouter"
 	"github.com/jinyitao123/weave/internal/kernel/memory"
@@ -56,6 +57,9 @@ func lookupFactory(graphType string) (GraphFactory, bool) {
 
 // CompileOpts controls graph compilation behavior.
 type CompileOpts struct {
+	// DurableMember retains required checkpoints for the new frozen member
+	// protocol. Legacy graph factories keep their original options.
+	DurableMember        bool
 	Profile              string
 	Effort               contract.EffortLevel
 	ToolHooks            []contract.ToolHook     // injected hooks (e.g. SSE tool_result emitter)
@@ -161,6 +165,14 @@ func CompileAgent(tenant string, rec *registry.AgentRecord, llm contract.LLM, to
 		}
 	}
 
+	if rec.ToolLoopControl != nil {
+		if err := frozen.ValidateToolLoopControl(rec.ToolLoopControl); err != nil {
+			return nil, err
+		}
+		if !opts.DurableMember || len(rec.SubAgents) > 0 || len(rec.Spec.SubAgents) > 0 || len(rec.Permissions.Ask) > 0 {
+			return nil, fmt.Errorf("controlled tool loops require a durable serial leaf without interactive permissions")
+		}
+	}
 	// --- Determine graph topology ---
 	hasGuard := rec.Guard != nil && rec.Guard.Enabled
 	hasMemory := opts.MemoryService != nil
@@ -184,6 +196,9 @@ func CompileAgent(tenant string, rec *registry.AgentRecord, llm contract.LLM, to
 	graphOpts := []loom.GraphOption{
 		loom.WithMaxIterations(50),
 		loom.WithCheckpointHistory(50),
+	}
+	if opts.DurableMember {
+		graphOpts = append(graphOpts, loom.WithCheckpointPolicy(loom.CheckpointRequired), loom.WithCheckpointHistory(-1))
 	}
 	if rec.StepBudget > 0 {
 		graphOpts = append(graphOpts, loom.WithStepBudget(rec.StepBudget))
@@ -251,7 +266,7 @@ func CompileAgent(tenant string, rec *registry.AgentRecord, llm contract.LLM, to
 
 	// --- Step: Chat (ToolLoop) ---
 	toolHooks := append([]contract.ToolHook{}, opts.ToolHooks...)
-	if rec.MaxToolRepeats > 0 {
+	if rec.MaxToolRepeats > 0 && rec.ToolLoopControl == nil {
 		toolHooks = append(toolHooks, newLoopDetector(rec.MaxToolRepeats).hook())
 	}
 
@@ -262,6 +277,11 @@ func CompileAgent(tenant string, rec *registry.AgentRecord, llm contract.LLM, to
 		MaxTokens:     rec.MaxOutputTokens,
 		Effort:        effort,
 		ToolHooks:     toolHooks,
+	}
+	if rec.ToolLoopControl != nil {
+		toolLoopOpts.MaxToolRepeats = rec.MaxToolRepeats
+		toolLoopOpts.MaxIterations = int(rec.ToolLoopControl.SliceRounds)
+		toolLoopOpts.Control = &stdlib.ToolLoopControl{ID: "chat", InitialTotalRounds: rec.ToolLoopControl.InitialTotalRounds}
 	}
 	if hasSubAgents {
 		toolLoopOpts.StatePatchPolicy = subAgentRoutes.statePatchPolicy()
@@ -320,6 +340,7 @@ func CompileAgent(tenant string, rec *registry.AgentRecord, llm contract.LLM, to
 		afterHooks = append(afterHooks, otel.TraceEnd(opts.Store))
 		afterHooks = append(afterHooks, otel.AuditHook(opts.Store, tenant, rec.Name))
 	}
+	memoryHookStart := len(afterHooks)
 	if opts.MemoryService != nil && opts.AutoRemember {
 		hookLLM := opts.HookLLM
 		if hookLLM == nil {
@@ -334,6 +355,16 @@ func CompileAgent(tenant string, rec *registry.AgentRecord, llm contract.LLM, to
 			afterHooks = append(afterHooks, memory.AutoRememberHook(
 				hookLLM, opts.MemoryService, model, tenant, rec.Name, opts.MemoryScope, opts.OnMemoryUpdate,
 			))
+		}
+	}
+	if rec.ToolLoopControl != nil {
+		for i, hook := range afterHooks[memoryHookStart:] {
+			afterHooks[memoryHookStart+i] = func(ctx context.Context, step string, state loom.State) error {
+				if yielded, _ := state["__yield"].(bool); yielded {
+					return nil
+				}
+				return hook(ctx, step, state)
+			}
 		}
 	}
 	if rec.MaxCostUSD > 0 {

@@ -1,0 +1,22 @@
+{
+  "id": "deliverable_967e5ccf26bd0832ba7f3b79ce039ca5",
+  "workspace_id": "default",
+  "user_id": "1dedf447-514d-4057-a34d-6d1b8a8b721a",
+  "lead_avatar_id": "c49cc9c8-ad11-4343-ab46-7d23bdd15be1",
+  "session_id": "workflow:run-41e8a7b7-e2ca-5ac1-99c9-f20be9cb5df8",
+  "event_id": "workflow-stage:run-41e8a7b7-e2ca-5ac1-99c9-f20be9cb5df8:physics::55dec12c20da0579df33d027",
+  "run_id": "run-41e8a7b7-e2ca-5ac1-99c9-f20be9cb5df8",
+  "run_snapshot_id": "run-41e8a7b7-e2ca-5ac1-99c9-f20be9cb5df8",
+  "title": "阶段产物 · Loom 对照验证·物理复算员",
+  "content": "## 复算结果（m = 1×10⁹ kg，c = 299,792,458 m/s，距离 = 4.25 ly）\n\n| β (v/c) | 经典动能 0.5·m·(βc)² (J) | 匀速巡航时间 4.25/β (年） |\n|---|---|---|\n| 0.01 | 4.4938×10²¹ | 425.00 |\n| 0.03 | 4.0444×10²² | 141.67 |\n| 0.05 | 1.1234×10²³ | 85.00 |\n\n**基线 SHA-256**：`95ef8f8a35d79596ee25f01ecb391c5a5ca2ab16885609f84454a0921b0d13b1`（941 字节，`baseline_id: corona-prephase-a-v1`，status: frozen_for_validation；文件内 mass_kg=1e9、c=299792458、距离 4.25 ly 与本次复算输入一致）\n\n## 工具证据\n\n- 无 load_baseline / calculate_scenarios / verify_results 工具，改用本机 Python（Bash 工具），共 2 次真实调用：\n  1. **第 1 次调用**：`open().read()` 真实读取 baseline.yaml → 输出上述 SHA-256 与文件全文；计算三档动能/时间。其中一条手写参考常数的断言失败（AssertionError，我预填的常数 4.4943879018e23 本身有误，非计算错误）。\n  2. **第 2 次调用**：改用解析参考值（c² = 8.9875517873681764×10¹⁶、KE(0.01c) = 4.4937758936840882×10²¹ J 及 9×/25× 比例关系）重新断言，全部 **PASS**。\n\n## 边界声明\n\n以上动能仅为**经典（非相对论）自身动能下限**：未含相对论修正（β≤0.05 时 γ−1 与 β²/2 之差 <0.2%，不影响量级）；未含加速/减速段能耗、推进效率、燃料/工质质量、帆/束流耦合损耗及任务余量。巡航时间为纯匀速段，不含加减速时间。",
+  "content_type": "text/markdown",
+  "metadata": {
+    "source": "published_workflow",
+    "node_id": "physics",
+    "filename": "",
+    "node_type": "worker",
+    "node_label": "Loom 对照验证·物理复算员",
+    "artifact_kind": "stage"
+  },
+  "created_at": "2026-09-06T23:22:58.020404+08:00"
+}

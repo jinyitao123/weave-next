@@ -1,0 +1,6 @@
+=== RUN   TestStandardPublishedToolsRealModel
+2026/09/07 14:12:45 INFO step.end tenant=real-publication step=prompt_assemble run_id=9f6e4481-6032-4399-befb-3101ed489f6e duration_ms=0
+2026/09/07 14:45:44 INFO step.end tenant=real-publication step=chat run_id=9f6e4481-6032-4399-befb-3101ed489f6e duration_ms=989832 tokens_in=32526 tokens_out=629 cost_usd=0.120944
+--- PASS: TestStandardPublishedToolsRealModel (990.39s)
+PASS
+ok  	github.com/jinyitao123/weave/internal/kernel/workflow	991.661s

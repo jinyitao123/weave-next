@@ -1042,6 +1042,17 @@ Source: [`packages/core/session/src/types.ts:249`](../packages/core/session/src/
 
 ### `weave/*`
 
+<a id="weavedispatch-input--log-only"></a>
+
+#### `weave/dispatch-input` — log-only
+
+```ts persistence-catalog
+/** Exact source messages and one immutable dispatch request; accepted advances its source watermark. */
+'weave/dispatch-input': DispatchInputRecord
+```
+
+Source: [`packages/bundle/workbench-app/src/dispatch-input.ts:44`](../packages/bundle/workbench-app/src/dispatch-input.ts)
+
 <a id="weavework-task--log-only"></a>
 
 #### `weave/work-task` — log-only
@@ -1051,7 +1062,7 @@ Source: [`packages/core/session/src/types.ts:249`](../packages/core/session/src/
 'weave/work-task': WorkTaskProjection
 ```
 
-Source: [`packages/bundle/workbench-app/src/index.ts:232`](../packages/bundle/workbench-app/src/index.ts)
+Source: [`packages/bundle/workbench-app/src/index.ts:262`](../packages/bundle/workbench-app/src/index.ts)
 
 <a id="weavework-task-action--log-only"></a>
 
@@ -1062,7 +1073,7 @@ Source: [`packages/bundle/workbench-app/src/index.ts:232`](../packages/bundle/wo
 'weave/work-task-action': { readonly pendingAction: WorkTaskPendingAction | null }
 ```
 
-Source: [`packages/bundle/workbench-app/src/index.ts:234`](../packages/bundle/workbench-app/src/index.ts)
+Source: [`packages/bundle/workbench-app/src/index.ts:264`](../packages/bundle/workbench-app/src/index.ts)
 
 ### `web/*`
 

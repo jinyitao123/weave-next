@@ -3,10 +3,17 @@ package teamrun
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/jinyitao123/weave/internal/base/fileartifact"
 	"log/slog"
+	"math"
+	"sort"
 	"strings"
 	"time"
 
@@ -29,6 +36,8 @@ const (
 )
 
 type RuntimePark struct {
+	MemberBreakdown  map[string]loomruntime.TerminalChildBreakdownV3
+	ActiveMember     *ActiveMemberInvocation
 	NodeID           string
 	CompletedOutputs map[string]json.RawMessage
 	ArtifactTaskIDs  map[string][]string
@@ -50,9 +59,10 @@ type RuntimePark struct {
 }
 
 type RuntimeResult struct {
-	Status RuntimeResultStatus
-	Output json.RawMessage
-	Park   *RuntimePark
+	MemberBreakdown map[string]loomruntime.TerminalChildBreakdownV3
+	Status          RuntimeResultStatus
+	Output          json.RawMessage
+	Park            *RuntimePark
 	// Usage is the accumulated confirmed logical usage of the serial machine.
 	// It is set on every terminal outcome (completed, parked, failed) so a
 	// failed run still charges its observed usage.
@@ -98,7 +108,12 @@ func validateWorkflowCheckpoint(checkpoint WorkflowCheckpointV1) error {
 			return fmt.Errorf("%w: checkpoint file sources are invalid", ErrTeamRunSnapshotUnavailable)
 		}
 		for _, id := range ids {
-			if !strings.HasPrefix(id, "task-") || len(id) > 128 {
+			valid := strings.HasPrefix(id, "task-") && len(id) <= 128
+			if strings.HasPrefix(id, "member:") {
+				_, err := uuid.Parse(strings.TrimPrefix(id, "member:"))
+				valid = err == nil
+			}
+			if !valid {
 				return fmt.Errorf("%w: checkpoint source identity is invalid", ErrTeamRunSnapshotUnavailable)
 			}
 		}
@@ -122,12 +137,46 @@ func validateWorkflowCheckpoint(checkpoint WorkflowCheckpointV1) error {
 				checkpoint.RunID,
 			)
 		}
+		if checkpoint.ActiveMember != nil {
+			ordinal, present := accumulator.CallOrdinal(checkpoint.ActiveMember.CallID)
+			if !present || checkpoint.ActiveMember.NodeID != checkpoint.NodeID || ordinal != checkpoint.ActiveMember.EntryOrdinal {
+				return fmt.Errorf("%w: pending member identity differs from usage checkpoint", ErrTeamRunSnapshotUnavailable)
+			}
+		}
+	} else if checkpoint.ActiveMember != nil {
+		return fmt.Errorf("%w: pending member requires a usage checkpoint", ErrTeamRunSnapshotUnavailable)
 	}
 	if checkpoint.UsageIncompleteReason != "" && checkpoint.UsageComplete {
 		return fmt.Errorf(
 			"%w: checkpoint usage_incomplete_reason requires usage_complete=false",
 			ErrTeamRunSnapshotUnavailable,
 		)
+	}
+	memberUsage := loomruntime.TerminalUsage{}
+	for id, child := range checkpoint.MemberBreakdown {
+		u := child.SelfExclusive
+		if id == "" || id == checkpoint.RunID || child.RunID != id || child.ParentRunID != checkpoint.RunID ||
+			child.ParentSeq < 1 || child.Agent == "" || child.WorkflowID == nil || *child.WorkflowID != checkpoint.Stamp.WorkflowID ||
+			child.WorkflowVersion == nil || *child.WorkflowVersion != checkpoint.Stamp.WorkflowVersion ||
+			child.RunSnapshotID == nil || *child.RunSnapshotID != checkpoint.Stamp.RunSnapshotID ||
+			u.InputTokens < 0 || u.OutputTokens < 0 || u.ToolCalls < 0 || u.CostUSD < 0 || math.IsNaN(u.CostUSD) || math.IsInf(u.CostUSD, 0) {
+			return fmt.Errorf("%w: checkpoint member contribution is invalid", ErrTeamRunSnapshotUnavailable)
+		}
+		memberUsage.InputTokens += u.InputTokens
+		memberUsage.OutputTokens += u.OutputTokens
+		memberUsage.ToolCalls += u.ToolCalls
+		memberUsage.CostUSD += u.CostUSD
+	}
+	if len(checkpoint.MemberBreakdown) > 0 {
+		accumulator, err := loomruntime.UnmarshalUsageAccumulator(checkpoint.Usage)
+		if err != nil {
+			return fmt.Errorf("%w: member contributions require usage", ErrTeamRunSnapshotUnavailable)
+		}
+		total := accumulator.Totals()
+		if memberUsage.InputTokens > total.InputTokens || memberUsage.OutputTokens > total.OutputTokens ||
+			memberUsage.ToolCalls > total.ToolCalls || memberUsage.CostUSD-total.CostUSD > 1e-12 {
+			return fmt.Errorf("%w: member contribution exceeds recorded usage", ErrTeamRunSnapshotUnavailable)
+		}
 	}
 	for _, correction := range checkpoint.Corrections {
 		if correction.SchemaVersion != 1 || correction.CorrectionID == "" ||
@@ -137,8 +186,24 @@ func validateWorkflowCheckpoint(checkpoint WorkflowCheckpointV1) error {
 			(correction.TargetKind == "team" && correction.TargetMemberID != "") {
 			return fmt.Errorf("%w: checkpoint correction is invalid", ErrTeamRunSnapshotUnavailable)
 		}
+		if correction.FanoutReplay != nil {
+			if !stringSliceContains(correction.AffectedNodes, correction.FanoutReplay.TargetNodeID) ||
+				!stringSliceContains(correction.AffectedNodes, correction.FanoutReplay.JoinNodeID) ||
+				validateCorrectionFanoutReplay(*correction.FanoutReplay, correction.TargetKind, correction.TargetMemberID, correction.FanoutReplay.TargetNodeID) != nil {
+				return fmt.Errorf("%w: checkpoint correction fanout replay is invalid", ErrTeamRunSnapshotUnavailable)
+			}
+		}
 	}
 	return nil
+}
+
+func stringSliceContains(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
 }
 
 type ArtifactReader interface {
@@ -168,6 +233,7 @@ type WorkflowOutputRecorder interface {
 }
 
 type WorkflowSerialRuntime struct {
+	Members     *loomruntime.MemberRunner
 	Artifacts   ArtifactReader
 	Loader      *workflow.RuntimeLoader
 	HostFactory workflow.RuntimeHostFactory
@@ -243,8 +309,57 @@ func (r *WorkflowSerialRuntime) correctionBoundary(
 		if err != nil {
 			return nil, err
 		}
+		if detail.FanoutReplay != nil {
+			if err := freezeCorrectionFanoutArtifacts(ctx, detail.FanoutReplay, r.workflowArtifactLoader(run)); err != nil {
+				// A missing physical source makes the proposed selective replay
+				// unsafe. Stop before presenting an unprovable preservation plan.
+				return nil, fmt.Errorf("freeze correction artifact inputs: %w", err)
+			}
+		}
 		return &detail, nil
 	}
+}
+
+const maxCorrectionFrozenArtifactBytes = fileartifact.MaxArtifactsTotalBytes
+
+func freezeCorrectionFanoutArtifacts(
+	ctx context.Context,
+	replay *CorrectionFanoutReplayV1,
+	loader func(context.Context, []string) ([]deliverable.WorkflowArtifact, error),
+) error {
+	if replay == nil || loader == nil {
+		return errors.New("correction artifact loader is unavailable")
+	}
+	for i := range replay.Legs {
+		artifacts, err := loader(ctx, replay.Legs[i].ArtifactTaskIDs)
+		if err != nil {
+			return fmt.Errorf("load fanout leg %s artifacts: %w", replay.Legs[i].NodeID, err)
+		}
+		manifest, err := correctionArtifactManifest(artifacts)
+		if err != nil {
+			return fmt.Errorf("freeze fanout leg %s artifacts: %w", replay.Legs[i].NodeID, err)
+		}
+		replay.Legs[i].Artifacts = manifest
+	}
+	return nil
+}
+
+func correctionArtifactManifest(artifacts []deliverable.WorkflowArtifact) ([]CorrectionFrozenArtifactV1, error) {
+	manifest := make([]CorrectionFrozenArtifactV1, 0, len(artifacts))
+	total := 0
+	for _, artifact := range artifacts {
+		total += len([]byte(artifact.Content))
+		if total > maxCorrectionFrozenArtifactBytes {
+			return nil, fmt.Errorf("correction artifacts exceed %d bytes", maxCorrectionFrozenArtifactBytes)
+		}
+		digest := sha256.Sum256([]byte(artifact.Content))
+		manifest = append(manifest, CorrectionFrozenArtifactV1{
+			Path: artifact.Path, ContentType: artifact.ContentType, SizeBytes: len([]byte(artifact.Content)),
+			SHA256: hex.EncodeToString(digest[:]),
+		})
+	}
+	sort.Slice(manifest, func(i, j int) bool { return manifest[i].Path < manifest[j].Path })
+	return manifest, nil
 }
 
 func (r *WorkflowSerialRuntime) activityRecorder(run TeamRun) func(context.Context, string, machine.Node, string, int64, map[string]any) {
@@ -340,16 +455,18 @@ func (r *WorkflowSerialRuntime) Execute(
 		prepared.runInput,
 		serialMachineStart{
 			SourceKind: run.SourceKind, Now: r.now(), Run: run,
-			ArtifactHash:       prepared.envelope.ContentHash,
-			Candidate:          prepared.roundBoundCandidate(),
-			RecordOutput:       r.workflowOutputRecorder(run),
-			RecordArtifact:     r.workflowArtifactRecorder(run),
-			LoadArtifacts:      r.workflowArtifactLoader(run),
-			RecordDelivery:     r.workflowDeliveryRecorder(run),
-			RecordCheckpoint:   r.serialCheckpointWriter(run, prepared.artifact),
-			CheckCorrection:    r.correctionBoundary(run, prepared.graph, prepared.payload),
-			RecordActivity:     r.activityRecorder(run),
-			LoadObservedEvents: r.observedEventLoader(run),
+			MemberContext:            r.memberContext(run, prepared.envelope.ContentHash),
+			ArtifactHash:             prepared.envelope.ContentHash,
+			Candidate:                prepared.roundBoundCandidate(),
+			RecordOutput:             r.workflowOutputRecorder(run),
+			RecordArtifact:           r.workflowArtifactRecorder(run),
+			LoadArtifacts:            r.workflowArtifactLoader(run),
+			LoadArtifactObservations: r.workflowArtifactObservationLoader(run),
+			RecordDelivery:           r.workflowDeliveryRecorder(run),
+			RecordCheckpoint:         r.serialCheckpointWriter(run, prepared.artifact),
+			CheckCorrection:          r.correctionBoundary(run, prepared.graph, prepared.payload),
+			RecordActivity:           r.activityRecorder(run),
+			LoadObservedEvents:       r.observedEventLoader(run),
 		},
 	)
 	return runtimeResultFromSerial(result, prepared.payload, nil)
@@ -391,24 +508,27 @@ func (r *WorkflowSerialRuntime) ResumeCheckpoint(
 		prepared.artifact,
 		prepared.runInput,
 		serialMachineStart{
-			NodeID: checkpoint.NodeID, Outputs: outputs,
+			MemberBreakdown: checkpoint.MemberBreakdown, NodeID: checkpoint.NodeID, Outputs: outputs,
+			ActiveMember:    checkpoint.ActiveMember,
+			MemberContext:   r.memberContext(run, prepared.envelope.ContentHash),
 			DeliveryErrors:  checkpoint.DeliveryErrors,
 			ArtifactTaskIDs: checkpoint.ArtifactTaskIDs,
 			SourceKind:      run.SourceKind, Now: r.now(), Run: run,
-			ArtifactHash:          prepared.envelope.ContentHash,
-			Candidate:             prepared.roundBoundCandidate(),
-			Usage:                 seedUsage,
-			UsageComplete:         checkpoint.UsageComplete,
-			UsageIncompleteReason: checkpoint.UsageIncompleteReason,
-			RecordOutput:          r.workflowOutputRecorder(run),
-			RecordArtifact:        r.workflowArtifactRecorder(run),
-			LoadArtifacts:         r.workflowArtifactLoader(run),
-			RecordDelivery:        r.workflowDeliveryRecorder(run),
-			RecordCheckpoint:      r.serialCheckpointWriter(run, prepared.artifact),
-			CheckCorrection:       r.correctionBoundary(run, prepared.graph, prepared.payload),
-			RecordActivity:        r.activityRecorder(run),
-			LoadObservedEvents:    r.observedEventLoader(run),
-			Corrections:           append([]CorrectionDirectiveV1(nil), checkpoint.Corrections...),
+			ArtifactHash:             prepared.envelope.ContentHash,
+			Candidate:                prepared.roundBoundCandidate(),
+			Usage:                    seedUsage,
+			UsageComplete:            checkpoint.UsageComplete,
+			UsageIncompleteReason:    checkpoint.UsageIncompleteReason,
+			RecordOutput:             r.workflowOutputRecorder(run),
+			RecordArtifact:           r.workflowArtifactRecorder(run),
+			LoadArtifacts:            r.workflowArtifactLoader(run),
+			LoadArtifactObservations: r.workflowArtifactObservationLoader(run),
+			RecordDelivery:           r.workflowDeliveryRecorder(run),
+			RecordCheckpoint:         r.serialCheckpointWriter(run, prepared.artifact),
+			CheckCorrection:          r.correctionBoundary(run, prepared.graph, prepared.payload),
+			RecordActivity:           r.activityRecorder(run),
+			LoadObservedEvents:       r.observedEventLoader(run),
+			Corrections:              append([]CorrectionDirectiveV1(nil), checkpoint.Corrections...),
 		},
 	)
 	return runtimeResultFromSerial(result, prepared.payload, checkpoint.Corrections)
@@ -746,16 +866,16 @@ func runtimeResultFromSerial(
 	switch result.Status {
 	case serialCompleted:
 		if len(payload.DeliveryTargets) != 0 {
-			return RuntimeResult{Status: RuntimeFailed}, executionError(
+			return RuntimeResult{MemberBreakdown: result.MemberBreakdown, Status: RuntimeFailed}, executionError(
 				ErrorCodeDeliveryUnavailable,
 				errors.New("delivery outbox is unavailable"),
 			)
 		}
 		encoded, err := json.Marshal(map[string]any{"output": result.Output})
 		if err != nil {
-			return RuntimeResult{Status: RuntimeFailed}, executionError(ErrorCodeOutputInvalid, err)
+			return RuntimeResult{MemberBreakdown: result.MemberBreakdown, Status: RuntimeFailed}, executionError(ErrorCodeOutputInvalid, err)
 		}
-		return RuntimeResult{
+		return RuntimeResult{MemberBreakdown: result.MemberBreakdown,
 			Status: RuntimeCompleted, Output: encoded, Usage: result.Usage.Totals(),
 			UsageCoverage:         coveragePtr,
 			UsageComplete:         result.UsageComplete,
@@ -766,19 +886,20 @@ func runtimeResultFromSerial(
 		for nodeID, output := range result.Outputs {
 			encoded, err := json.Marshal(output)
 			if err != nil {
-				return RuntimeResult{Status: RuntimeFailed}, executionError(ErrorCodeRuntimeIncompatible, err)
+				return RuntimeResult{MemberBreakdown: result.MemberBreakdown, Status: RuntimeFailed}, executionError(ErrorCodeRuntimeIncompatible, err)
 			}
 			outputs[nodeID] = encoded
 		}
 		usageCheckpoint, err := result.Usage.MarshalCheckpoint()
 		if err != nil {
-			return RuntimeResult{Status: RuntimeFailed}, executionError(
+			return RuntimeResult{MemberBreakdown: result.MemberBreakdown, Status: RuntimeFailed}, executionError(
 				ErrorCodeRuntimeIncompatible,
 				fmt.Errorf("encode serial usage checkpoint: %w", err),
 			)
 		}
-		return RuntimeResult{Status: RuntimeParked, Park: &RuntimePark{
+		return RuntimeResult{MemberBreakdown: result.MemberBreakdown, Status: RuntimeParked, Park: &RuntimePark{MemberBreakdown: result.MemberBreakdown,
 			NodeID: result.NodeID, CompletedOutputs: outputs,
+			ActiveMember:    result.ActiveMember,
 			DeliveryErrors:  result.DeliveryErrors,
 			ArtifactTaskIDs: result.ArtifactTaskIDs,
 			WaitKind:        result.WaitKind, WaitDetail: result.WaitDetail,
@@ -789,14 +910,14 @@ func runtimeResultFromSerial(
 			UsageCoverage: coveragePtr,
 			UsageComplete: result.UsageComplete, UsageIncompleteReason: result.UsageIncompleteReason}, nil
 	case serialFailed:
-		return RuntimeResult{
+		return RuntimeResult{MemberBreakdown: result.MemberBreakdown,
 			Status: RuntimeFailed, Usage: result.Usage.Totals(),
 			UsageCoverage:         coveragePtr,
 			UsageComplete:         result.UsageComplete,
 			UsageIncompleteReason: result.UsageIncompleteReason,
 		}, result.Err
 	default:
-		return RuntimeResult{Status: RuntimeFailed}, executionError(
+		return RuntimeResult{MemberBreakdown: result.MemberBreakdown, Status: RuntimeFailed}, executionError(
 			ErrorCodeRuntimeIncompatible, errors.New("serial runtime returned an invalid status"),
 		)
 	}
@@ -809,10 +930,13 @@ func (r *WorkflowSerialRuntime) serialCheckpointWriter(run TeamRun, artifact *wo
 	if r.Transactions == nil || r.Runs == nil || r.Checkpoints == nil || artifact == nil || len(artifact.Entries) == 0 {
 		return nil
 	}
+	allCLI, hasDurable := true, false
 	for _, entry := range artifact.Entries {
-		if entry.CLI == nil {
-			return nil
-		}
+		allCLI = allCLI && entry.CLI != nil
+		hasDurable = hasDurable || isDurableMemberEntry(entry)
+	}
+	if !allCLI && !hasDurable {
+		return nil
 	}
 	return r.progressCheckpointWriter(run)
 }
@@ -836,4 +960,53 @@ func (r *WorkflowSerialRuntime) progressCheckpointWriter(run TeamRun) func(conte
 		}
 		return tx.Commit(ctx)
 	}
+}
+
+type workflowMemberContext struct {
+	Runner       *loomruntime.MemberRunner
+	Run          TeamRun
+	ArtifactHash string
+	Active       ActiveMemberInvocation
+	Guard        func(context.Context, pgx.Tx) error
+}
+
+type workflowMemberContextKey struct{}
+
+func isDurableMemberEntry(entry workflow.RuntimeGraphEntry) bool {
+	return entry.DurableMember()
+}
+
+func (r *WorkflowSerialRuntime) memberContext(run TeamRun, artifactHash string) *workflowMemberContext {
+	if r.Members == nil || r.Runs == nil {
+		return nil
+	}
+	return &workflowMemberContext{Runner: r.Members, Run: run, ArtifactHash: artifactHash,
+		Guard: func(ctx context.Context, tx pgx.Tx) error {
+			locked, err := r.Runs.GetForUpdateTx(ctx, tx, run.WorkspaceID, run.RunID)
+			if err != nil {
+				return err
+			}
+			if locked.Status != StatusRunning || locked.Generation != run.Generation ||
+				locked.ExecutionLeaseEpoch != run.ExecutionLeaseEpoch || locked.ResumeGeneration != run.ResumeGeneration {
+				return errTaskLeaseLost
+			}
+			return nil
+		},
+	}
+}
+
+func (member workflowMemberContext) attribution() (loomruntime.TerminalAttribution, error) {
+	if member.Active.EntryOrdinal >= uint64(^uint64(0)>>1) {
+		return loomruntime.TerminalAttribution{}, errors.New("member entry ordinal overflow")
+	}
+	seq := int64(member.Active.EntryOrdinal) + 1
+	return loomruntime.NewTerminalAttribution(loomruntime.TerminalAttributionInput{
+		Scope: loomruntime.TerminalAttributionFixedWorkflow, WorkspaceID: member.Run.WorkspaceID,
+		TeamID: &member.Run.TeamID, WorkflowID: &member.Run.WorkflowID, WorkflowVersion: &member.Run.WorkflowVersion,
+		RunSnapshotID: &member.Run.RunSnapshotID, ParentRunID: &member.Run.RunID, ParentSeq: &seq,
+		AggregationParentRunID: &member.Run.RunID,
+	}, &loomruntime.TerminalSnapshotEvidence{
+		WorkspaceID: member.Run.WorkspaceID, RunID: member.Run.RunSnapshotID, TeamID: member.Run.TeamID,
+		Mode: "fixed_workflow", WorkflowID: &member.Run.WorkflowID, WorkflowVersion: &member.Run.WorkflowVersion,
+	})
 }

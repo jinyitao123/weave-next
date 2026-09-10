@@ -33,6 +33,10 @@ const (
 	AuthModeOAuth    = "oauth"
 	AuthModeProvider = "provider"
 	AuthModeUnknown  = "unknown"
+
+	EngineAvailabilityReady       = "ready"
+	EngineAvailabilityUnavailable = "unavailable"
+	EngineAvailabilityUnknown     = "unknown"
 )
 
 // EngineCapability is the secretless, daemon-observed identity of one CLI
@@ -49,6 +53,8 @@ type EngineCapability struct {
 	ConfiguredEndpoint  string `json:"configured_endpoint,omitempty"`
 	ConfiguredModel     string `json:"configured_model,omitempty"`
 	ConfigurationSource string `json:"configuration_source,omitempty"`
+	Availability        string `json:"availability,omitempty"`
+	UnavailableReason   string `json:"unavailable_reason,omitempty"`
 }
 
 // onlineWindow is how recent a heartbeat must be for a runtime to count as
@@ -216,7 +222,9 @@ func canonicalEngineCapabilities(
 		capability.AuthMode = strings.TrimSpace(capability.AuthMode)
 		capability.ProtocolVersion = strings.TrimSpace(capability.ProtocolVersion)
 		capability.EndpointClass = strings.TrimSpace(capability.EndpointClass)
-		if len(capability.ConfiguredEndpoint) > 256 || len(capability.ConfiguredModel) > 200 || len(capability.ConfigurationSource) > 40 {
+		capability.Availability = strings.TrimSpace(capability.Availability)
+		capability.UnavailableReason = strings.TrimSpace(capability.UnavailableReason)
+		if len(capability.ConfiguredEndpoint) > 256 || len(capability.ConfiguredModel) > 200 || len(capability.ConfigurationSource) > 40 || len(capability.UnavailableReason) > 80 {
 			return nil, fmt.Errorf("runtime engine configuration metadata is too long")
 		}
 		capability.ConfiguredEndpoint = SafeEndpointOrigin(capability.ConfiguredEndpoint)
@@ -236,6 +244,17 @@ func canonicalEngineCapabilities(
 		}
 		if capability.EndpointClass == "" {
 			return nil, fmt.Errorf("runtime engine capability %q has no endpoint class", capability.Engine)
+		}
+		switch capability.Availability {
+		case "", EngineAvailabilityReady, EngineAvailabilityUnavailable, EngineAvailabilityUnknown:
+		default:
+			return nil, fmt.Errorf("runtime engine capability %q has invalid availability", capability.Engine)
+		}
+		if capability.Availability != EngineAvailabilityUnavailable && capability.UnavailableReason != "" {
+			return nil, fmt.Errorf("runtime engine capability %q has an unavailable reason while available", capability.Engine)
+		}
+		if capability.Availability == EngineAvailabilityUnavailable && capability.UnavailableReason == "" {
+			return nil, fmt.Errorf("runtime engine capability %q has no unavailable reason", capability.Engine)
 		}
 		if _, exists := result[capability.Engine]; exists {
 			return nil, fmt.Errorf("runtime engine capability %q is duplicated", capability.Engine)

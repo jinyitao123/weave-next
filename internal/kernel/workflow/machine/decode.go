@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/jinyitao123/weave/internal/base/deliverable"
 )
 
 const maxSafeIntegerText = "9007199254740991"
@@ -112,7 +114,7 @@ func DecodeGraphDefinitionV1(raw json.RawMessage) (GraphDefinition, *Report) {
 	if issue != nil {
 		return result, reportFor(issue)
 	}
-	if issue = rejectUnknown(object, "", "schema_version", "entry_node_id", "input_contract", "output_contract", "nodes", "edges"); issue != nil {
+	if issue = rejectUnknown(object, "", "schema_version", "entry_node_id", "input_contract", "output_contract", "delivery_contract", "nodes", "edges"); issue != nil {
 		return result, reportFor(issue)
 	}
 
@@ -142,6 +144,13 @@ func DecodeGraphDefinitionV1(raw json.RawMessage) (GraphDefinition, *Report) {
 	}
 	if result.OutputContract, issue = decodeOutputContract(object["output_contract"], "/output_contract"); issue != nil {
 		return GraphDefinition{}, reportFor(issue)
+	}
+	if raw, ok := object["delivery_contract"]; ok {
+		contract, err := deliverable.DecodeDeliveryContract(raw)
+		if err != nil {
+			return GraphDefinition{}, reportFor(newDTOError("/delivery_contract", CodeContractInvalid, err.Error()))
+		}
+		result.DeliveryContract = contract
 	}
 
 	nodeValues, issue := arrayValues(object["nodes"], "/nodes")

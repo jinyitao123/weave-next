@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/base/snapshot"
 )
 
@@ -25,13 +26,15 @@ type WorkflowRunStamp struct {
 }
 
 type WorkflowCheckpointV1 struct {
-	SchemaVersion       int                        `json:"schema_version"`
-	Stamp               WorkflowRunStamp           `json:"stamp"`
-	RunID               string                     `json:"run_id"`
-	TeamRunGeneration   TeamRunGeneration          `json:"team_run_generation"`
-	ExecutionLeaseEpoch ExecutionLeaseEpoch        `json:"execution_lease_epoch"`
-	NodeID              string                     `json:"node_id"`
-	CompletedOutputs    map[string]json.RawMessage `json:"completed_outputs"`
+	MemberBreakdown     map[string]execution.TerminalChildBreakdownV3 `json:"member_breakdown,omitempty"`
+	ActiveMember        *ActiveMemberInvocation                       `json:"active_member,omitempty"`
+	SchemaVersion       int                                           `json:"schema_version"`
+	Stamp               WorkflowRunStamp                              `json:"stamp"`
+	RunID               string                                        `json:"run_id"`
+	TeamRunGeneration   TeamRunGeneration                             `json:"team_run_generation"`
+	ExecutionLeaseEpoch ExecutionLeaseEpoch                           `json:"execution_lease_epoch"`
+	NodeID              string                                        `json:"node_id"`
+	CompletedOutputs    map[string]json.RawMessage                    `json:"completed_outputs"`
 	// ArtifactTaskIDs binds each output to its immutable physical file sources.
 	ArtifactTaskIDs map[string][]string `json:"artifact_task_ids,omitempty"`
 	// DeliveryErrors records uncollected references per completed node. These

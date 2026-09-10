@@ -1,0 +1,13 @@
+test_completed_unittest_summary_with_host_exit_suffix (test_milestone.MilestoneTests.test_completed_unittest_summary_with_host_exit_suffix) ... ok
+test_custom_counted_summary (test_milestone.MilestoneTests.test_custom_counted_summary) ... ok
+test_custom_summary_requires_all_checks_and_exit (test_milestone.MilestoneTests.test_custom_summary_requires_all_checks_and_exit) ... ok
+test_empty_suite_not_valid (test_milestone.MilestoneTests.test_empty_suite_not_valid) ... ok
+test_failed_suite_after_earlier_ok (test_milestone.MilestoneTests.test_failed_suite_after_earlier_ok) ... ok
+test_individual_ok_is_not_suite_success (test_milestone.MilestoneTests.test_individual_ok_is_not_suite_success) ... ok
+test_pytest_summary (test_milestone.MilestoneTests.test_pytest_summary) ... ok
+test_truncated_output_is_not_evidence (test_milestone.MilestoneTests.test_truncated_output_is_not_evidence) ... ok
+
+----------------------------------------------------------------------
+Ran 8 tests in 0.000s
+
+OK

@@ -74,6 +74,28 @@ type UsageAccumulator struct {
 	attemptOwners    map[string]string
 }
 
+type ConfirmedUsageReceipt struct {
+	AttemptID string
+	Usage     contract.Usage
+	ToolCalls int
+	Metadata  UsageAttemptMetadata
+}
+
+// ConfirmedReceipts preserves physical identities when a parent receives the
+// same member's growing usage across recovery attempts.
+func (a UsageAccumulator) ConfirmedReceipts() []ConfirmedUsageReceipt {
+	var receipts []ConfirmedUsageReceipt
+	for _, call := range a.calls {
+		for id, attempt := range call.Attempts {
+			if attempt.Confirmed {
+				receipts = append(receipts, ConfirmedUsageReceipt{id, attempt.Usage, attempt.ToolCalls, attempt.Metadata})
+			}
+		}
+	}
+	sort.Slice(receipts, func(i, j int) bool { return receipts[i].AttemptID < receipts[j].AttemptID })
+	return receipts
+}
+
 // NewUsageAccumulator returns an empty run-level usage accumulator.
 func NewUsageAccumulator() UsageAccumulator {
 	return UsageAccumulator{
@@ -146,6 +168,11 @@ func writeUsageIdentityPart(writer usageIdentityWriter, value []byte) {
 }
 
 // NextCall allocates the next deterministic logical-call ID for a run step.
+func (a UsageAccumulator) CallOrdinal(callID string) (uint64, bool) {
+	call, ok := a.calls[callID]
+	return call.CallOrdinal, ok
+}
+
 func (a *UsageAccumulator) NextCall(runID, step string) (string, error) {
 	if a == nil {
 		return "", fmt.Errorf("usage accumulator is nil")

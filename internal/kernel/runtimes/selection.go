@@ -23,18 +23,19 @@ var (
 
 // CandidateFact is the server-observed capability state used for selection.
 type CandidateFact struct {
-	RuntimeID         string   `json:"runtime_id"`
-	Name              string   `json:"name"`
-	Engines           []string `json:"engines"`
-	RuntimeRevision   int64    `json:"runtime_revision"`
-	PoolID            string   `json:"pool_id,omitempty"`
-	HealthStatus      string   `json:"health_status"`
-	TotalSlots        int      `json:"total_slots"`
-	ActiveSlots       int      `json:"active_slots"`
-	Enabled           bool     `json:"enabled"`
-	Online            bool     `json:"online"`
-	Eligible          bool     `json:"eligible"`
-	UnavailableReason string   `json:"unavailable_reason,omitempty"`
+	RuntimeID          string   `json:"runtime_id"`
+	Name               string   `json:"name"`
+	Engines            []string `json:"engines"`
+	RuntimeRevision    int64    `json:"runtime_revision"`
+	PoolID             string   `json:"pool_id,omitempty"`
+	HealthStatus       string   `json:"health_status"`
+	TotalSlots         int      `json:"total_slots"`
+	ActiveSlots        int      `json:"active_slots"`
+	Enabled            bool     `json:"enabled"`
+	Online             bool     `json:"online"`
+	Eligible           bool     `json:"eligible"`
+	UnavailableReason  string   `json:"unavailable_reason,omitempty"`
+	EngineAvailability string   `json:"engine_availability,omitempty"`
 }
 
 // Assignment is the explainable Runtime decision for one admission.
@@ -97,6 +98,10 @@ func (s *Store) Select(
 			TotalSlots: runtime.TotalSlots, ActiveSlots: runtime.ActiveSlots,
 			Enabled: runtime.Enabled, Online: runtime.Online,
 		}
+		capability, capabilityExists := runtime.EngineCapabilities[engine]
+		if capabilityExists {
+			fact.EngineAvailability = capability.Availability
+		}
 		switch {
 		case !runtime.Enabled:
 			fact.UnavailableReason = "runtime_disabled"
@@ -108,6 +113,8 @@ func (s *Store) Select(
 			fact.UnavailableReason = "runtime_quarantined"
 		case !containsEngine(runtime.Engines, engine):
 			fact.UnavailableReason = "engine_unavailable"
+		case capabilityExists && capability.Availability == EngineAvailabilityUnavailable:
+			fact.UnavailableReason = capability.UnavailableReason
 		default:
 			fact.Eligible = true
 			eligible = append(eligible, runtime)

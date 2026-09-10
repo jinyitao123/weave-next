@@ -36,7 +36,7 @@ export interface WorkTaskTeamCandidate {
 }
 
 /** User-facing lifecycle state for one workflow member or stage. */
-export type WorkTaskMemberStatus = 'pending' | 'running' | 'partially-completed' | 'completed' | 'failed' | 'stopped' | 'not-recorded'
+export type WorkTaskMemberStatus = 'waiting' | 'pending' | 'running' | 'partially-completed' | 'completed' | 'failed' | 'stopped' | 'not-recorded'
 
 /** One declared input observed for a member stage. */
 export interface WorkTaskMemberInput {
@@ -50,6 +50,9 @@ export interface WorkTaskMemberInput {
 
 /** One workflow stage assigned to a member, including observed tools and outputs. */
 export interface WorkTaskMemberStage {
+ readonly budgetPause?: { readonly reason: string; readonly roundsUsed: number; readonly authorizedTotalRounds: number } | undefined
+  readonly memberRunId?: string | undefined
+  readonly checkpointSavedAt?: string | undefined
   readonly nodeId: string
   readonly name: string
   readonly status: WorkTaskMemberStatus
@@ -119,7 +122,7 @@ export interface WorkTaskDeliverable {
 /**
  * Whether Weave has recorded a final output, including a text-only delivery summary.
  * @param model - Exact-run deliverables already classified from Weave metadata.
- * @returns Whether final delivery is recorded independently of a filename or file bundle.
+ * @returns Whether a final output can be opened, independently of delivery verification or user assessment.
  */
 export function workTaskHasFinalDeliverable(model: Pick<WorkTaskModel, 'deliverables'>): boolean {
   return model.deliverables.some(item => item.kind === 'final' || item.kind === 'summary')
@@ -185,7 +188,24 @@ export interface WorkTaskModel {
   readonly costUSD: number
   readonly outcome: 'unrated' | 'adopted' | 'needs-revision'
   readonly outcomeNote: string
+  /** Host-owned verification; missing historical reports remain unknown. */
+  readonly delivery?: WorkTaskDelivery | undefined
+  readonly outcomeRevisionId?: string | undefined
+  readonly outcomeAssessedAt?: number | undefined
   readonly observedAt: number
+}
+
+/** Saved Weave checks for one immutable delivery revision. */
+export interface WorkTaskDelivery {
+  readonly revisionId: string
+  readonly contractDigest: string
+  readonly verificationId: string
+  readonly verificationStatus: 'pending' | 'passed' | 'failed' | 'unknown'
+  readonly reason: string
+  readonly checks: readonly { readonly checkId: string; readonly status: 'pending' | 'passed' | 'failed' | 'unknown'; readonly reason: string }[]
+  readonly checkCounts: Readonly<Record<string, number>>
+  readonly available: boolean
+  readonly evidenceCompleteness: 'complete' | 'unavailable'
 }
 
 /**
@@ -246,6 +266,7 @@ export interface WorkTaskPendingAction {
   readonly disposition: 'apply' | 'discard' | ''
   readonly instruction: string
   readonly nodeId: string
+  readonly authorizedTotalRounds?: number | undefined
   readonly humanPayload?: unknown
   readonly humanInteractionId?: string
 }
@@ -290,6 +311,9 @@ export function projectedWorkTask(model: WorkTaskModel, projection: WorkTaskProj
     stages: model.runId === projection.runId ? model.stages : [],
     teamCandidates: projection.preparation === undefined ? model.teamCandidates : [],
     deliverables: projection.deliverables,
+    delivery: projection.delivery,
+    outcomeRevisionId: projection.outcomeRevisionId,
+    outcomeAssessedAt: projection.outcomeAssessedAt,
   }
 }
 
@@ -537,6 +561,7 @@ function memberStatus(value: unknown): WorkTaskMemberStatus {
   const raw = deepString(value, ['status', 'state']).toLowerCase().replaceAll('_', '-')
   if (raw === 'completed' || raw === 'finished') return 'completed'
   if (raw === 'partially-completed') return 'partially-completed'
+  if (raw === 'waiting') return 'waiting'
   if (raw === 'running' || raw === 'active') return 'running'
   if (raw === 'failed' || raw === 'abandoned') return 'failed'
   if (raw === 'stopped' || raw === 'cancelled') return 'stopped'
@@ -575,6 +600,16 @@ function publicUpdates(value: unknown): WorkTaskPublicUpdate[] {
   return [...updates.values()]
 }
 
+function memberBudgetPause(value: unknown): { budgetPause?: { reason: string; roundsUsed: number; authorizedTotalRounds: number } } {
+ const item = value as Record<string, unknown> | null
+ if (typeof item !== 'object' || item === null) return {}
+ const used = item.rounds_used ?? item.roundsUsed
+ const ceiling = item.authorized_total_rounds ?? item.authorizedTotalRounds
+ if (typeof item.reason !== 'string' || typeof used !== 'number' || typeof ceiling !== 'number'
+   || !Number.isSafeInteger(used) || !Number.isSafeInteger(ceiling) || used < 0 || ceiling < used) return {}
+ return { budgetPause: { reason: item.reason, roundsUsed: used, authorizedTotalRounds: ceiling } }
+}
+
 function memberStages(value: unknown): readonly WorkTaskMemberStage[] {
   if (!Array.isArray(value)) return []
   return value.flatMap((candidate): WorkTaskMemberStage[] => {
@@ -593,6 +628,9 @@ function memberStages(value: unknown): readonly WorkTaskMemberStage[] {
       failureClass: (['work', 'verification', 'infrastructure', 'cancelled'].includes(deepString(item, ['failure_class', 'failureClass']))
         ? deepString(item, ['failure_class', 'failureClass']) : '') as WorkTaskMemberStage['failureClass'],
       failureReason: deepString(item, ['failure_reason', 'failureReason']), retryable: item.retryable === true,
+      ...memberBudgetPause(item.budget_pause ?? item.budgetPause),
+      ...(deepString(item, ['member_run_id', 'memberRunId']) === '' ? {} : { memberRunId: deepString(item, ['member_run_id', 'memberRunId']) }),
+      ...(deepString(item, ['checkpoint_saved_at', 'checkpointSavedAt']) === '' ? {} : { checkpointSavedAt: deepString(item, ['checkpoint_saved_at', 'checkpointSavedAt']) }),
       publicUpdates: publicUpdates(item.public_updates), publicUpdatesTruncated: item.public_updates_truncated === true,
       currentTaskId: deepString(item, ['current_task_id']),
       publicUpdatesState: ['live', 'complete', 'partial'].includes(String(item.public_updates_state)) ? item.public_updates_state as WorkTaskMemberStage['publicUpdatesState'] : 'unavailable',

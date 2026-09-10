@@ -1,0 +1,42 @@
+{
+  "id": "488f724c-3a47-4816-823d-63dbbf4eecb7",
+  "engines": [
+    "claude",
+    "codex",
+    "opencode"
+  ],
+  "engine_capabilities": {
+    "codex": {
+      "engine": "codex",
+      "auth_mode": "provider",
+      "binary_path": "/opt/homebrew/bin/codex",
+      "public_events": true,
+      "binary_version": "codex-cli 0.144.5",
+      "endpoint_class": "configured_provider",
+      "protocol_version": "codex-jsonl-v1",
+      "configuration_source": "runtime_environment"
+    },
+    "claude": {
+      "engine": "claude",
+      "auth_mode": "oauth",
+      "binary_path": "/Users/jinyitao/.local/bin/claude",
+      "public_events": true,
+      "binary_version": "2.1.245 (Claude Code)",
+      "endpoint_class": "host_configured",
+      "configured_model": "k3[1M]",
+      "protocol_version": "claude-stream-json-v1",
+      "configured_endpoint": "https://api.kimi.com",
+      "configuration_source": "host_settings"
+    },
+    "opencode": {
+      "engine": "opencode",
+      "auth_mode": "provider",
+      "binary_path": "/Users/jinyitao/.local/bin/opencode",
+      "binary_version": "1.2.10",
+      "endpoint_class": "configured_provider",
+      "protocol_version": "opencode-json-v1",
+      "configuration_source": "runtime_environment"
+    }
+  },
+  "last_heartbeat_at": "2026-09-07T10:46:19.568475+08:00"
+}

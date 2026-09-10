@@ -365,6 +365,8 @@ func (s *Server) registerRoutes() {
 	auth.GET("/teams/:id/dispatch-rules", s.handleGetTeamDispatchRules, orgScope)
 	auth.PUT("/teams/:id/dispatch-rules", s.handlePutTeamDispatchRules, RequireAnyRole("admin", "owner"), orgScope)
 	auth.POST("/teams/:id/dispatch", s.handleDispatchTeam, orgScope, chatScope)
+	auth.POST("/workbench/dispatch-inputs", s.handleRegisterDispatchInput, orgScope, chatScope)
+	auth.POST("/workbench/dispatch-inputs/:input_revision_id/reconcile", s.handleReconcileDispatchInput, orgScope, chatScope)
 	auth.PUT("/teams/:id/roster", s.handleUpdateTeamRoster, RequireAnyRole("admin", "owner"), orgScope)
 	auth.GET("/teams/:id/workers/:worker/revocation-impact", s.handleGetTeamWorkerRevocationImpact, orgScope)
 	auth.PUT("/teams/:id", s.handleRenameTeam, RequireRole("admin"), orgScope)
@@ -429,7 +431,7 @@ func (s *Server) registerRoutes() {
 	// Task-scoped MCP gateway: a remote loom daemon dials one of these per MCP
 	// server index; auth is the runtime lease, the record is the frozen task
 	// snapshot, and upstream URLs/headers never leave the server.
-	runtimeAPI.Any("/tasks/:id/mcp/:idx", s.handleRuntimeTaskMCP)
+	s.Echo.Any("/v1/runtime/tasks/:id/mcp/:idx", s.handleRuntimeTaskMCP, s.taskMCPAuthMiddleware())
 	// Task-scoped LLM proxy: the same remote loom daemon proxies each model
 	// call (and its stream) back through the server so provider keys stay
 	// server-side; the daemon may only reach models this task's agent is
@@ -493,6 +495,9 @@ func (s *Server) registerRoutes() {
 	auth.GET("/runs", s.handleListRuns, runsScope)
 	auth.GET("/runs/:id", s.handleGetRun, runsScope)
 	auth.GET("/runs/:id/activity", s.handleGetRunActivity, runsScope)
+	auth.GET("/runs/:id/delivery", s.handleGetRunDelivery, runsScope)
+	auth.POST("/runs/:id/delivery/recheck", s.handleRecheckRunDelivery, runsScope)
+	auth.GET("/runs/:id/delivery/verifications/:verification_id", s.handleGetRunVerification, runsScope)
 	auth.POST("/runs/:id/stop", s.handleStopRun, runsScope)
 	auth.POST("/runs/:id/stages/:node_id/retry", s.handleRetryRunStage, runsScope)
 	auth.GET("/runs/:id/corrections", s.handleListRunCorrections, runsScope)
@@ -662,6 +667,11 @@ func (s *Server) ConfigureTeamRunWorkers() {
 		Corrections:    correctionStore,
 		Activities:     activityStore,
 	}
+	memberRunner, err := loomruntime.NewMemberRunner(storeext.New(pool))
+	if err != nil {
+		panic(fmt.Sprintf("configure frozen member runner: %v", err))
+	}
+	runtime.Members = memberRunner
 	checkpointReader := &teamrun.FanoutCheckpointReader{
 		Transactions: pool, Runs: runStore, Checkpoints: checkpointStore,
 	}
@@ -683,6 +693,7 @@ func (s *Server) ConfigureTeamRunWorkers() {
 	}
 	coordinator.Tasks = s.Tasks
 	executor := &teamrun.Executor{
+		MemberBudgets:     loomruntime.MemberBudgetCoordinator{},
 		Tasks:             s.Tasks,
 		Consumer:          consumer,
 		Transactions:      pool,
@@ -726,7 +737,8 @@ func (s *Server) ConfigureTeamRunWorkers() {
 		Tasks:        s.Tasks,
 	}
 	s.teamRunStageRetry = &teamrun.StageRetryService{
-		Transactions: pool, Runs: runStore, Checkpoints: checkpointStore, Tasks: s.Tasks,
+		MemberBudgets: loomruntime.MemberBudgetCoordinator{},
+		Transactions:  pool, Runs: runStore, Checkpoints: checkpointStore, Tasks: s.Tasks,
 	}
 	s.teamRunHumanResume = &teamrun.HumanResumeService{
 		Transactions: pool,

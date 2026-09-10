@@ -1,0 +1,19 @@
+CMD: cd outputs/drawings && for f in *.svg; do xmllint --noout $f; done
+DRW-ARCH-001_mission_architecture.svg XML-PARSE-OK
+DRW-ARCH-002_archive_payload_zones.svg XML-PARSE-OK
+DRW-ARCH-003_system_interfaces.svg XML-PARSE-OK
+exit=0
+
+CMD: openscad --version
+OpenSCAD version 2026.09.03
+CMD: openscad -o /tmp/cad-hab-001-check.csg CAD-HAB-001_concept_habitat.scad
+ECHO: "CAD-HAB-001 v1.0.0 baseline=corona-baseline-1.0.0 digest=cfb12b78...8b10c2"
+ECHO: "R_m=1000 rpm=2 -> g=43.8649 m/s^2 [derived_result]"
+exit=0
+CMD: openscad -o /tmp/cad-hab-001-render.png --imgsize=800,600 --camera=0,0,0,55,0,25,600 CAD-HAB-001_concept_habitat.scad
+CGAL Polyhedrons in cache: 0
+CGAL cache size in bytes: 0
+Total rendering time: 0:00:00.099
+exit=0
+-rw-r--r--@ 1 jinyitao  wheel   2377 Sep  7 11:04 /tmp/cad-hab-001-check.csg
+-rw-r--r--@ 1 jinyitao  wheel  69529 Sep  7 11:04 /tmp/cad-hab-001-render.png

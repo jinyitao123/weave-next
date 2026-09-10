@@ -1,0 +1,5 @@
+ok  	github.com/jinyitao123/weave/internal/kernel/loomruntime	3.343s
+ok  	github.com/jinyitao123/weave/internal/kernel/workflow	1.785s
+ok  	github.com/jinyitao123/weave/internal/base/teamrun	13.744s
+ok  	github.com/jinyitao123/weave/internal/app/api	5.444s
+ok  	github.com/jinyitao123/weave/cmd/weave	1.463s

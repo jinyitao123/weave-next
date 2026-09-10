@@ -781,6 +781,35 @@ describe('subagent ownership fence', () => {
     }
     expect(followup).toHaveBeenCalledTimes(3)
   })
+
+  it('admits UI-generated controls as plugin messages while preserving their exact content', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(AgentRegistry)
+    const session = ctx.sessions.create(sid('session-ui-control'), { meta: { cwd: '/proj' } })
+    const followup = vi.fn()
+    const steer = vi.fn()
+    const agent = { id: session.id, session, status: 'idle', ctx, followup, steer } as unknown as Agent
+    ctx.agents.register(agent)
+    const remote = createSessionTestRemote(ctx, {
+      defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp',
+    })
+    const content = [{ type: 'text' as const, text: '我选择团队，请先让我确认。' }]
+    for (const mode of ['queue', 'steer'] as const) {
+      const request = promptRequest({
+        sessionId: agent.id, mode, content, origin: 'ui-control', clientTimeZone: 'Asia/Shanghai',
+      })
+      await expect(remote.prompt(request)).resolves.toMatchObject({ ok: true })
+      expect(mode === 'queue' ? followup : steer).toHaveBeenCalledWith(expect.objectContaining({
+        content,
+        source: {
+          kind: 'plugin', plugin: 'ui-control', form: 'relay',
+          rpcId: request.requestId, clientTimeZone: 'Asia/Shanghai',
+        },
+      }))
+    }
+    await ctx.fiber.dispose()
+  })
 })
 
 describe('degenerate composition (no persistence, no factory)', () => {

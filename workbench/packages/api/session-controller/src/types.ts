@@ -338,6 +338,8 @@ export interface SessionPromptRequest {
   readonly sessionId: SessionId
   readonly mode: 'queue' | 'steer'
   readonly content: readonly PromptContentPart[]
+  /** UI-generated control text; absence identifies ordinary composer input. */
+  readonly origin?: 'ui-control'
   readonly clientTimeZone?: string
 }
 
@@ -398,6 +400,8 @@ declare module '@deepseek-ai/dsh-llm' {
   interface MessageSourceMap {
     /** Browser prompt correlation and optional Host-validated time zone. */
     'user-rpc': { kind: 'user'; rpcId: SessionRequestId; clientTimeZone?: string }
+    /** Browser-generated controls retain request correlation and Host-validated time zone. */
+    'ui-control-rpc': { kind: 'plugin'; plugin: 'ui-control'; form: 'relay'; rpcId: SessionRequestId; clientTimeZone?: string }
   }
 }
 

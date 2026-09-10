@@ -20,6 +20,8 @@ import (
 	"github.com/jinyitao123/loom/contract"
 	"github.com/jinyitao123/weave/internal/base/deliverable"
 	"github.com/jinyitao123/weave/internal/base/execution"
+	"github.com/jinyitao123/weave/internal/base/fanout"
+	"github.com/jinyitao123/weave/internal/base/fileartifact"
 	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/kernel/loomruntime"
 	"github.com/jinyitao123/weave/internal/kernel/workflow"
@@ -46,6 +48,9 @@ const (
 )
 
 type serialMachineStart struct {
+	MemberBreakdown map[string]loomruntime.TerminalChildBreakdownV3
+	ActiveMember    *ActiveMemberInvocation
+	MemberContext   *workflowMemberContext
 	NodeID          string
 	Outputs         map[string]any
 	ArtifactTaskIDs map[string][]string
@@ -66,20 +71,23 @@ type serialMachineStart struct {
 	// UsageComplete seeds the annotation across park/resume: false plus
 	// UsageIncompleteReason when an earlier segment already hit an unmeasured
 	// node, so the final terminal result still says so.
-	UsageComplete         bool
-	UsageIncompleteReason string
-	LoadArtifacts         func(context.Context, []string) ([]deliverable.WorkflowArtifact, error)
-	RecordCheckpoint      func(context.Context, WorkflowCheckpointV1) error
-	RecordDelivery        func(context.Context, string, string, string, any, []deliverable.WorkflowArtifact) error
-	RecordOutput          func(context.Context, machine.Node, any, bool) error
-	RecordArtifact        func(context.Context, machine.Node, deliverable.WorkflowArtifact, bool) error
-	CheckCorrection       func(context.Context, string, map[string]any) (*CorrectionWaitDetailV1, error)
-	RecordActivity        func(context.Context, string, machine.Node, string, int64, map[string]any)
-	LoadObservedEvents    func(context.Context, machine.Node, string) []workflow.RuntimeCLIEvent
-	Corrections           []CorrectionDirectiveV1
+	UsageComplete            bool
+	UsageIncompleteReason    string
+	LoadArtifacts            func(context.Context, []string) ([]deliverable.WorkflowArtifact, error)
+	LoadArtifactObservations func(context.Context, []string) ([]deliverable.SourceObservation, error)
+	RecordCheckpoint         func(context.Context, WorkflowCheckpointV1) error
+	RecordDelivery           func(context.Context, string, string, string, any, []deliverable.WorkflowArtifact, []deliverable.SourceObservation, *deliverable.OutputSelection) error
+	RecordOutput             func(context.Context, machine.Node, any, bool) error
+	RecordArtifact           func(context.Context, machine.Node, deliverable.WorkflowArtifact, bool) error
+	CheckCorrection          func(context.Context, string, map[string]any) (*CorrectionWaitDetailV1, error)
+	RecordActivity           func(context.Context, string, machine.Node, string, int64, map[string]any)
+	LoadObservedEvents       func(context.Context, machine.Node, string) []workflow.RuntimeCLIEvent
+	Corrections              []CorrectionDirectiveV1
 }
 
 type serialMachineResult struct {
+	MemberBreakdown       map[string]loomruntime.TerminalChildBreakdownV3
+	ActiveMember          *ActiveMemberInvocation
 	Status                serialMachineStatus
 	Output                any
 	Outputs               map[string]any
@@ -112,12 +120,16 @@ func nodePhysicalUsageAttemptID(callID, physicalID string, index int) string {
 }
 
 type nodeUsageReport struct {
-	Totals        loomruntime.UsageTotals
-	Coverage      loomruntime.UsageCoverage
-	CLIAttempts   []workflow.RuntimeCLIUsageAttempt
-	Events        []workflow.RuntimeCLIEvent
-	Artifacts     []workflow.RuntimeCLIArtifact
-	DeliveryError string
+	MemberPause           *loomruntime.MemberBudgetPause
+	MemberRunID           string
+	MemberReceipts        []loomruntime.ConfirmedUsageReceipt
+	MemberUsageIncomplete bool
+	Totals                loomruntime.UsageTotals
+	Coverage              loomruntime.UsageCoverage
+	CLIAttempts           []workflow.RuntimeCLIUsageAttempt
+	Events                []workflow.RuntimeCLIEvent
+	Artifacts             []workflow.RuntimeCLIArtifact
+	DeliveryError         string
 }
 
 func runSerialMachine(
@@ -129,6 +141,11 @@ func runSerialMachine(
 	start serialMachineStart,
 ) serialMachineResult {
 	usage := start.Usage
+	activeMember := start.ActiveMember
+	memberBreakdown := make(map[string]loomruntime.TerminalChildBreakdownV3, len(start.MemberBreakdown))
+	for id, contribution := range start.MemberBreakdown {
+		memberBreakdown[id] = contribution
+	}
 	// A fresh or legacy start is usage-complete; only an explicit
 	// usage_incomplete_reason (persisted across park/resume) marks the run
 	// incomplete. The flag is always paired with a non-empty reason.
@@ -138,7 +155,7 @@ func runSerialMachine(
 		usageComplete = start.UsageComplete
 	}
 	fail := func(err error) serialMachineResult {
-		return serialMachineResult{
+		return serialMachineResult{ActiveMember: activeMember, MemberBreakdown: memberBreakdown,
 			Status: serialFailed, Usage: usage, Err: err,
 			UsageComplete: usageComplete, UsageIncompleteReason: usageIncompleteReason,
 		}
@@ -194,6 +211,32 @@ func runSerialMachine(
 	if current == "" {
 		current = graph.EntryNodeID
 	}
+	writeCheckpoint := func() error {
+		if start.RecordCheckpoint == nil {
+			return nil
+		}
+		completed := make(map[string]json.RawMessage, len(outputs))
+		for id, output := range outputs {
+			encoded, err := json.Marshal(output)
+			if err != nil {
+				return executionError(ErrorCodeOutputInvalid, err)
+			}
+			completed[id] = encoded
+		}
+		usageCheckpoint, err := usage.MarshalCheckpoint()
+		if err != nil {
+			return executionError(ErrorCodeExecutionUnrecoverable, err)
+		}
+		checkpoint := checkpointFromPark(start.Run, RuntimePark{MemberBreakdown: memberBreakdown,
+			ActiveMember: activeMember, NodeID: current, CompletedOutputs: completed, ArtifactTaskIDs: artifactTaskIDs,
+			DeliveryErrors: deliveryErrors, Corrections: start.Corrections, UsageCheckpoint: usageCheckpoint,
+			UsageComplete: usageComplete, UsageIncompleteReason: usageIncompleteReason,
+		}, time.Now().UTC())
+		if err := start.RecordCheckpoint(ctx, checkpoint); err != nil {
+			return executionError(ErrorCodeExecutionUnrecoverable, err)
+		}
+		return nil
+	}
 	stepBudget := serialMachineStepBudget(graph)
 	for steps := 0; current != ""; steps++ {
 		if steps >= stepBudget {
@@ -209,27 +252,8 @@ func runSerialMachine(
 				fmt.Errorf("node %q is unavailable", current),
 			))
 		}
-		if start.RecordCheckpoint != nil {
-			completed := make(map[string]json.RawMessage, len(outputs))
-			for id, output := range outputs {
-				encoded, err := json.Marshal(output)
-				if err != nil {
-					return fail(executionError(ErrorCodeOutputInvalid, err))
-				}
-				completed[id] = encoded
-			}
-			usageCheckpoint, err := usage.MarshalCheckpoint()
-			if err != nil {
-				return fail(executionError(ErrorCodeExecutionUnrecoverable, err))
-			}
-			checkpoint := checkpointFromPark(start.Run, RuntimePark{
-				NodeID: current, CompletedOutputs: completed, ArtifactTaskIDs: artifactTaskIDs,
-				DeliveryErrors: deliveryErrors, Corrections: start.Corrections, UsageCheckpoint: usageCheckpoint,
-				UsageComplete: usageComplete, UsageIncompleteReason: usageIncompleteReason,
-			}, time.Now().UTC())
-			if err := start.RecordCheckpoint(ctx, checkpoint); err != nil {
-				return fail(executionError(ErrorCodeExecutionUnrecoverable, err))
-			}
+		if err := writeCheckpoint(); err != nil {
+			return fail(err)
 		}
 		if start.CheckCorrection != nil {
 			detail, err := start.CheckCorrection(ctx, current, outputs)
@@ -241,7 +265,7 @@ func runSerialMachine(
 				if err != nil {
 					return fail(executionError(ErrorCodeExecutionUnrecoverable, err))
 				}
-				return serialMachineResult{Status: serialParked, Outputs: outputs, ArtifactTaskIDs: artifactTaskIDs, NodeID: current,
+				return serialMachineResult{ActiveMember: activeMember, MemberBreakdown: memberBreakdown, Status: serialParked, Outputs: outputs, ArtifactTaskIDs: artifactTaskIDs, NodeID: current,
 					DeliveryErrors: deliveryErrors,
 					WaitKind:       WaitCorrection, WaitDetail: encoded, Usage: usage,
 					UsageComplete: usageComplete, UsageIncompleteReason: usageIncompleteReason}
@@ -264,14 +288,64 @@ func runSerialMachine(
 				start.RecordActivity(ctx, "member_started", node, memberID, memberVersion,
 					map[string]any{"input_names": inputNames, "input_summary": inputSummary})
 			}
-			callID, err := usage.NextCall(start.Run.RunID, node.ID)
-			if err != nil {
-				return fail(executionError(ErrorCodeExecutionUnrecoverable, err))
+			durable := isDurableMemberEntry(entries[runtimeEntryKey(memberID, memberVersion)])
+			callID := ""
+			if activeMember != nil {
+				if !durable || activeMember.NodeID != node.ID {
+					return fail(executionError(ErrorCodeIdentityMismatch, errors.New("pending member differs from current node")))
+				}
+				callID = activeMember.CallID
+			} else {
+				var err error
+				callID, err = usage.NextCall(start.Run.RunID, node.ID)
+				if err != nil {
+					return fail(executionError(ErrorCodeExecutionUnrecoverable, err))
+				}
+				if durable {
+					ordinal, _ := usage.CallOrdinal(callID)
+					activeMember = &ActiveMemberInvocation{NodeID: node.ID, CallID: callID, EntryOrdinal: ordinal}
+				}
 			}
-			output, nodeUsage, err := runAgentNode(
-				execution.WithInvocationID(execution.WithInputTaskIDs(ctx, nodeInputTaskIDs(node, artifactTaskIDs)), fmt.Sprintf("%s/%d/%s", start.Run.RunSnapshotID, start.Run.ResumeGeneration, callID)), node, payload, entries, runInput, outputs, start.Corrections,
-			)
-			if len(nodeUsage.CLIAttempts) == 0 {
+			nodeCtx := execution.WithInvocationID(execution.WithInputTaskIDs(ctx, nodeInputTaskIDs(node, artifactTaskIDs)), fmt.Sprintf("%s/%d/%s", start.Run.RunSnapshotID, start.Run.ResumeGeneration, callID))
+			if durable {
+				if start.MemberContext == nil || start.RecordCheckpoint == nil {
+					return fail(executionError(ErrorCodeRuntimeIncompatible, errors.New("durable member runner and parent checkpoint writer are required")))
+				}
+				if err := writeCheckpoint(); err != nil {
+					return fail(err)
+				}
+				memberCtx := *start.MemberContext
+				memberCtx.Active = *activeMember
+				nodeCtx = context.WithValue(nodeCtx, workflowMemberContextKey{}, memberCtx)
+			}
+			correctionContext, correctionErr := buildCorrectionFrozenContext(ctx, node, payload, start.Corrections, start.LoadArtifacts)
+			if correctionErr != nil {
+				return fail(executionError(ErrorCodeSnapshotUnavailable, correctionErr))
+			}
+			output, nodeUsage, err := runAgentNode(nodeCtx, node, payload, entries, runInput, outputs, start.Corrections, correctionContext)
+			if durable {
+				if nodeUsage.MemberRunID != "" {
+					teamID, workflowID, version, snapshotID := start.Run.TeamID, start.Run.WorkflowID, start.Run.WorkflowVersion, start.Run.RunSnapshotID
+					memberBreakdown[nodeUsage.MemberRunID] = loomruntime.TerminalChildBreakdownV3{
+						RunID: nodeUsage.MemberRunID, ParentRunID: start.Run.RunID, ParentSeq: int64(activeMember.EntryOrdinal) + 1,
+						Agent:  entries[runtimeEntryKey(memberID, memberVersion)].Bundle.Agent.Name,
+						TeamID: &teamID, WorkflowID: &workflowID, WorkflowVersion: &version, RunSnapshotID: &snapshotID,
+						SelfExclusive: loomruntime.TerminalUsage{InputTokens: nodeUsage.Totals.InputTokens, OutputTokens: nodeUsage.Totals.OutputTokens, CostUSD: nodeUsage.Totals.CostUSD, ToolCalls: nodeUsage.Totals.ToolCalls},
+					}
+				}
+				for _, receipt := range nodeUsage.MemberReceipts {
+					attemptID := nodePhysicalUsageAttemptID(callID, receipt.AttemptID, 0)
+					if usageErr := usage.StartAttempt(callID, attemptID); usageErr != nil {
+						return fail(usageErr)
+					}
+					if usageErr := usage.ConfirmAttemptWithMetadata(callID, attemptID, receipt.Usage, receipt.ToolCalls, receipt.Metadata); usageErr != nil {
+						return fail(usageErr)
+					}
+				}
+				if nodeUsage.MemberUsageIncomplete {
+					usageComplete, usageIncompleteReason = false, "member_model_response_lost"
+				}
+			} else if len(nodeUsage.CLIAttempts) == 0 {
 				attemptID := nodeUsageAttemptID(callID)
 				if startErr := usage.StartAttempt(callID, attemptID); startErr != nil {
 					return fail(executionError(ErrorCodeExecutionUnrecoverable, startErr))
@@ -352,6 +426,10 @@ func runSerialMachine(
 					}
 				}
 				next, routed := edgeTarget(edges[current], machine.RouteFailure)
+				recoveryBlocked := durable && errors.Is(err, loomruntime.ErrMemberOutcomeUnknown)
+				if recoveryBlocked {
+					routed = false
+				}
 				failure := ClassifyFailure(err)
 				retryable := !routed && failure.Class == FailureClassInfrastructure && failure.Retryable
 				if start.RecordActivity != nil {
@@ -361,25 +439,42 @@ func runSerialMachine(
 					})
 				}
 				if routed {
+					activeMember = nil
 					current = next
 					continue
 				}
-				if retryable {
+				if retryable || recoveryBlocked {
 					detail, encodeErr := json.Marshal(RuntimeWaitDetailV1{
 						SchemaVersion: 1, WaitType: "runtime", NodeID: node.ID,
+						RecoveryBlocked: recoveryBlocked,
 					})
 					if encodeErr != nil {
 						return fail(executionError(ErrorCodeExecutionUnrecoverable, encodeErr))
 					}
-					return serialMachineResult{Status: serialParked, Outputs: outputs, ArtifactTaskIDs: artifactTaskIDs, NodeID: node.ID,
+					return serialMachineResult{ActiveMember: activeMember, MemberBreakdown: memberBreakdown, Status: serialParked, Outputs: outputs, ArtifactTaskIDs: artifactTaskIDs, NodeID: node.ID,
 						DeliveryErrors: deliveryErrors,
 						WaitKind:       WaitRuntime, WaitDetail: detail, Usage: usage,
 						UsageComplete: usageComplete, UsageIncompleteReason: usageIncompleteReason}
 				}
 				return fail(err)
 			}
+			if nodeUsage.MemberPause != nil {
+				detail, encodeErr := json.Marshal(RuntimeWaitDetailV1{SchemaVersion: 1, WaitType: "runtime", NodeID: node.ID, MemberBudgetPause: nodeUsage.MemberPause})
+				if encodeErr != nil {
+					return fail(encodeErr)
+				}
+				if start.RecordActivity != nil {
+					start.RecordActivity(ctx, "member_paused", node, memberID, memberVersion, map[string]any{"budget": nodeUsage.MemberPause})
+				}
+				return serialMachineResult{ActiveMember: activeMember, MemberBreakdown: memberBreakdown, Status: serialParked, Outputs: outputs, ArtifactTaskIDs: artifactTaskIDs, NodeID: node.ID,
+					DeliveryErrors: deliveryErrors, WaitKind: WaitRuntime, WaitDetail: detail, Usage: usage, UsageComplete: usageComplete, UsageIncompleteReason: usageIncompleteReason}
+			}
+			activeMember = nil
 			outputs[node.ID] = output
 			delete(artifactTaskIDs, node.ID)
+			if durable && nodeUsage.MemberRunID != "" {
+				artifactTaskIDs[node.ID] = []string{"member:" + nodeUsage.MemberRunID}
+			}
 			for _, attempt := range nodeUsage.CLIAttempts {
 				if attempt.AttemptID != "" {
 					artifactTaskIDs[node.ID] = []string{attempt.AttemptID}
@@ -408,6 +503,17 @@ func runSerialMachine(
 						return fail(executionError(ErrorCodeDeliveryUnavailable, err))
 					}
 				}
+			}
+			if projection, joinNodeID, joinedArtifactIDs, replayed, replayErr := mergeFanoutCorrectionResult(
+				node, payload, output, artifactTaskIDs[node.ID], start.Corrections,
+			); replayErr != nil {
+				return fail(executionError(ErrorCodeSnapshotUnavailable, replayErr))
+			} else if replayed {
+				outputs[joinNodeID] = projection
+				artifactTaskIDs[joinNodeID] = joinedArtifactIDs
+				delete(deliveryErrors, joinNodeID)
+				current = joinNodeID
+				continue
 			}
 			if next, routed := edgeTarget(edges[current], machine.RouteBack); routed {
 				// A worker may itself be the machine-native loop latch. The
@@ -507,7 +613,7 @@ func runSerialMachine(
 			if err != nil {
 				return fail(executionError(ErrorCodeRuntimeIncompatible, err))
 			}
-			return serialMachineResult{
+			return serialMachineResult{ActiveMember: activeMember, MemberBreakdown: memberBreakdown,
 				Status: serialParked, Outputs: outputs, ArtifactTaskIDs: artifactTaskIDs, NodeID: joinNodeID,
 				DeliveryErrors: deliveryErrors,
 				WaitKind:       WaitFanout, WaitDetail: detail, Usage: usage,
@@ -576,12 +682,9 @@ func runSerialMachine(
 			if err != nil {
 				return fail(executionError(ErrorCodeOutputInvalid, err))
 			}
-			// Only the output chosen by the frozen deliver node is a final
-			// delivery claim. Upstream plans may mention files never authored
-			// by their own node; they must not prevent the actual author running.
-			if message := valueDeliveryError(config.Result, outputs, deliveryErrors); message != "" {
-				return fail(executionError(ErrorCodeDeliveryUnavailable, errors.New(message)))
-			}
+			// Historical collection diagnostics remain in the execution record.
+			// Business file requirements are evaluated by the delivery verifier;
+			// a model's prose about a file cannot change the engine's result.
 			encoded, err := json.Marshal(output)
 			if err != nil {
 				return fail(executionError(ErrorCodeOutputInvalid, err))
@@ -593,14 +696,28 @@ func runSerialMachine(
 				))
 			}
 			var artifacts []deliverable.WorkflowArtifact
+			var observations []deliverable.SourceObservation
+			var selection *deliverable.OutputSelection
 			if start.LoadArtifacts != nil && config.Result.Source == machine.ValueNodeOutput {
 				artifacts, err = start.LoadArtifacts(ctx, artifactTaskIDs[config.Result.NodeID])
 				if err != nil {
 					return fail(executionError(ErrorCodeDeliveryUnavailable, err))
 				}
 			}
+			if config.Result.Source == machine.ValueNodeOutput && start.LoadArtifactObservations != nil {
+				observations, err = start.LoadArtifactObservations(ctx, artifactTaskIDs[config.Result.NodeID])
+				if err != nil {
+					return fail(executionError(ErrorCodeDeliveryUnavailable, err))
+				}
+			} else if config.Result.Source == machine.ValueRunInput || config.Result.Source == machine.ValueLiteral {
+				digest, err := deliverable.CanonicalJSONDigest(encoded)
+				if err != nil {
+					return fail(executionError(ErrorCodeOutputInvalid, err))
+				}
+				selection = &deliverable.OutputSelection{Kind: string(config.Result.Source), ValueDigest: digest}
+			}
 			if start.RecordDelivery != nil {
-				if err := start.RecordDelivery(ctx, node.ID, node.Label, string(node.Type), output, artifacts); err != nil {
+				if err := start.RecordDelivery(ctx, node.ID, node.Label, string(node.Type), output, artifacts, observations, selection); err != nil {
 					return fail(executionError(ErrorCodeDeliveryUnavailable, err))
 				}
 			} else {
@@ -617,7 +734,7 @@ func runSerialMachine(
 					}
 				}
 			}
-			return serialMachineResult{
+			return serialMachineResult{ActiveMember: activeMember, MemberBreakdown: memberBreakdown,
 				Status: serialCompleted, Output: output, Usage: usage,
 				UsageComplete: usageComplete, UsageIncompleteReason: usageIncompleteReason,
 			}
@@ -661,7 +778,7 @@ func runSerialMachine(
 					}
 					return fail(executionError(ErrorCodeRuntimeIncompatible, err))
 				}
-				return serialMachineResult{
+				return serialMachineResult{ActiveMember: activeMember, MemberBreakdown: memberBreakdown,
 					Status: serialParked, Outputs: outputs, ArtifactTaskIDs: artifactTaskIDs, NodeID: node.ID,
 					DeliveryErrors: deliveryErrors,
 					WaitKind:       WaitHuman, WaitDetail: detail, Usage: usage,
@@ -686,7 +803,7 @@ func runSerialMachine(
 			if err != nil {
 				return fail(executionError(ErrorCodeRuntimeIncompatible, err))
 			}
-			return serialMachineResult{
+			return serialMachineResult{ActiveMember: activeMember, MemberBreakdown: memberBreakdown,
 				Status: serialParked, Outputs: outputs, ArtifactTaskIDs: artifactTaskIDs, NodeID: node.ID,
 				DeliveryErrors: deliveryErrors,
 				WaitKind:       WaitTimer, WaitDetail: detail, Usage: usage,
@@ -772,6 +889,7 @@ func buildCorrectionWaitDetail(
 		return CorrectionWaitDetailV1{}, errors.New("correction cannot be planned at this boundary")
 	}
 	restartNodeID := currentNodeID
+	var fanoutReplay *CorrectionFanoutReplayV1
 	if item.TargetKind == "team" {
 		restartNodeID = graph.EntryNodeID
 	} else if item.TargetKind == "member" {
@@ -785,20 +903,23 @@ func buildCorrectionWaitDetail(
 		if len(matching) == 0 {
 			return CorrectionWaitDetailV1{}, errors.New("target member has no node in the frozen workflow")
 		}
-		for _, nodeID := range matching {
-			if _, completed := outputs[nodeID]; completed {
-				restartNodeID = nodeID
-				break
+		if replay, ok := buildFanoutCorrectionReplay(graph, currentNodeID, matching, outputs[currentNodeID]); ok {
+			restartNodeID = replay.TargetNodeID
+			fanoutReplay = &replay
+		} else {
+			for _, nodeID := range matching {
+				if _, completed := outputs[nodeID]; completed {
+					restartNodeID = nodeID
+					break
+				}
 			}
-		}
-		// A fanout checkpoint stores one projection under the join node rather
-		// than one top-level output per member. Restarting at that join after
-		// invalidating its projection cannot resume. Re-enter the owning
-		// parallel segment so the targeted directive is applied while the
-		// complete fanout projection is rebuilt.
-		if restartNodeID == currentNodeID {
-			if parallelNodeID := machine.OwningParallelNode(graph, currentNodeID, matching); parallelNodeID != "" {
-				restartNodeID = parallelNodeID
+			// Older fanout projections do not carry per-leg immutable source
+			// identities. Preserve the conservative whole-segment behavior for
+			// those runs instead of guessing which artifacts belong to siblings.
+			if restartNodeID == currentNodeID {
+				if parallelNodeID := machine.OwningParallelNode(graph, currentNodeID, matching); parallelNodeID != "" {
+					restartNodeID = parallelNodeID
+				}
 			}
 		}
 	}
@@ -817,13 +938,300 @@ func buildCorrectionWaitDetail(
 			preserved = append(preserved, nodeID)
 		}
 	}
+	if fanoutReplay != nil {
+		for _, leg := range fanoutReplay.Legs {
+			if leg.NodeID != fanoutReplay.TargetNodeID {
+				preserved = append(preserved, leg.NodeID)
+			}
+		}
+		sort.Strings(preserved)
+		preserved = compactStrings(preserved)
+	}
 	sort.Strings(preserved)
 	return CorrectionWaitDetailV1{
 		SchemaVersion: 1, WaitType: "correction", CorrectionID: item.CorrectionID,
 		TargetKind: item.TargetKind, TargetMemberID: item.TargetMemberID, Instruction: item.Instruction,
 		SafeNodeID: currentNodeID, RestartNodeID: restartNodeID,
-		AffectedNodeIDs: affected, PreservedNodeIDs: preserved,
+		AffectedNodeIDs: affected, PreservedNodeIDs: preserved, FanoutReplay: fanoutReplay,
 	}, nil
+}
+
+func buildFanoutCorrectionReplay(
+	graph machine.GraphDefinition,
+	joinNodeID string,
+	matching []string,
+	value any,
+) (CorrectionFanoutReplayV1, bool) {
+	if len(matching) != 1 || value == nil {
+		return CorrectionFanoutReplayV1{}, false
+	}
+	parallelNodeID := machine.OwningParallelNode(graph, joinNodeID, matching)
+	if parallelNodeID == "" {
+		return CorrectionFanoutReplayV1{}, false
+	}
+	expected := map[string]bool{}
+	for _, edge := range graph.Edges {
+		if edge.FromNodeID == parallelNodeID && edge.Route == machine.RouteBranch {
+			expected[edge.ToNodeID] = true
+		}
+	}
+	return buildFanoutCorrectionReplaySnapshot(parallelNodeID, joinNodeID, matching[0], expected, value)
+}
+
+func buildFanoutCorrectionReplaySnapshot(
+	parallelNodeID, joinNodeID, targetNodeID string,
+	expected map[string]bool,
+	value any,
+) (CorrectionFanoutReplayV1, bool) {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return CorrectionFanoutReplayV1{}, false
+	}
+	var projection fanoutJoinProjectionV1
+	if decodeExact(encoded, &projection) != nil || projection.SchemaVersion != 1 || projection.Decision != "succeeded" || len(projection.Errors) != 0 {
+		return CorrectionFanoutReplayV1{}, false
+	}
+	if len(expected) < 2 || len(projection.Legs) != len(expected) || len(projection.Results) != len(expected) {
+		return CorrectionFanoutReplayV1{}, false
+	}
+	replay := CorrectionFanoutReplayV1{SchemaVersion: 1, ParallelNodeID: parallelNodeID, JoinNodeID: joinNodeID, TargetNodeID: targetNodeID}
+	seen, seenOrdinals := map[string]bool{}, map[int]bool{}
+	for _, leg := range projection.Legs {
+		projectedResult, resultPresent := projection.Results[leg.NodeID]
+		legDigest, legDigestErr := deliverable.CanonicalJSONDigest(leg.Result)
+		projectedDigest, projectedDigestErr := deliverable.CanonicalJSONDigest(projectedResult)
+		if !expected[leg.NodeID] || seen[leg.NodeID] || seenOrdinals[leg.BranchOrdinal] || leg.LegID == "" || leg.BranchOrdinal < 0 ||
+			leg.DecisionDisposition != string(fanout.LegDecisionSucceeded) || !json.Valid(leg.Result) || leg.ArtifactTaskIDs == nil {
+			return CorrectionFanoutReplayV1{}, false
+		}
+		if !resultPresent || legDigestErr != nil || projectedDigestErr != nil || legDigest != projectedDigest {
+			return CorrectionFanoutReplayV1{}, false
+		}
+		seen[leg.NodeID], seenOrdinals[leg.BranchOrdinal] = true, true
+		replay.Legs = append(replay.Legs, CorrectionFanoutReplayLegV1{
+			LegID: leg.LegID, NodeID: leg.NodeID, BranchOrdinal: leg.BranchOrdinal,
+			Result: append(json.RawMessage(nil), leg.Result...), ArtifactTaskIDs: append([]string{}, leg.ArtifactTaskIDs...),
+		})
+	}
+	for ordinal := 0; ordinal < len(replay.Legs); ordinal++ {
+		if !seenOrdinals[ordinal] {
+			return CorrectionFanoutReplayV1{}, false
+		}
+	}
+	sort.Slice(replay.Legs, func(i, j int) bool { return replay.Legs[i].BranchOrdinal < replay.Legs[j].BranchOrdinal })
+	hash, err := correctionFanoutSourceProjectionHash(replay)
+	if err != nil {
+		return CorrectionFanoutReplayV1{}, false
+	}
+	replay.SourceProjectionHash = hash
+	return replay, true
+}
+
+func correctionFanoutSourceProjectionHash(replay CorrectionFanoutReplayV1) (string, error) {
+	projection := fanoutJoinProjectionV1{
+		SchemaVersion: 1,
+		Decision:      "succeeded",
+		Results:       make(map[string]json.RawMessage, len(replay.Legs)),
+		Errors:        map[string]string{},
+		Legs:          make([]fanoutJoinLegV1, 0, len(replay.Legs)),
+	}
+	for _, leg := range replay.Legs {
+		result := append(json.RawMessage(nil), leg.Result...)
+		projection.Results[leg.NodeID] = result
+		projection.Legs = append(projection.Legs, fanoutJoinLegV1{
+			NodeID: leg.NodeID, LegID: leg.LegID, BranchOrdinal: leg.BranchOrdinal,
+			DecisionDisposition: string(fanout.LegDecisionSucceeded), Result: result,
+			Error: json.RawMessage("null"), ArtifactTaskIDs: append([]string{}, leg.ArtifactTaskIDs...),
+		})
+	}
+	sort.Slice(projection.Legs, func(i, j int) bool { return projection.Legs[i].BranchOrdinal < projection.Legs[j].BranchOrdinal })
+	encoded, err := json.Marshal(projection)
+	if err != nil {
+		return "", err
+	}
+	return deliverable.CanonicalJSONDigest(encoded)
+}
+
+func compactStrings(values []string) []string {
+	if len(values) < 2 {
+		return values
+	}
+	result := values[:1]
+	for _, value := range values[1:] {
+		if value != result[len(result)-1] {
+			result = append(result, value)
+		}
+	}
+	return result
+}
+
+func fanoutReplayForNode(
+	node machine.Node,
+	payload frozen.ArtifactPayloadV1,
+	corrections []CorrectionDirectiveV1,
+) *CorrectionFanoutReplayV1 {
+	for index := len(corrections) - 1; index >= 0; index-- {
+		correction := corrections[index]
+		if correction.FanoutReplay != nil && correction.FanoutReplay.TargetNodeID == node.ID &&
+			correctionAppliesToNode(correction, node, payload) {
+			return correction.FanoutReplay
+		}
+	}
+	return nil
+}
+
+func buildCorrectionFrozenContext(
+	ctx context.Context,
+	node machine.Node,
+	payload frozen.ArtifactPayloadV1,
+	corrections []CorrectionDirectiveV1,
+	loader func(context.Context, []string) ([]deliverable.WorkflowArtifact, error),
+) (string, error) {
+	replay := fanoutReplayForNode(node, payload, corrections)
+	if replay == nil {
+		return "", nil
+	}
+	if err := validateCorrectionFanoutReplay(*replay, "member", "frozen-member", node.ID); err != nil {
+		return "", err
+	}
+	var target *CorrectionFanoutReplayLegV1
+	for i := range replay.Legs {
+		if replay.Legs[i].NodeID == replay.TargetNodeID {
+			target = &replay.Legs[i]
+			break
+		}
+	}
+	if target == nil || loader == nil {
+		return "", errors.New("frozen correction target inputs are unavailable")
+	}
+	artifacts, err := verifiedCorrectionTargetArtifacts(ctx, *replay, loader)
+	if err != nil {
+		return "", err
+	}
+	return correctionFrozenPromptContext(*replay, *target, artifacts)
+}
+
+func verifiedCorrectionTargetArtifacts(
+	ctx context.Context,
+	replay CorrectionFanoutReplayV1,
+	loader func(context.Context, []string) ([]deliverable.WorkflowArtifact, error),
+) ([]deliverable.WorkflowArtifact, error) {
+	var artifacts []deliverable.WorkflowArtifact
+	for _, leg := range replay.Legs {
+		loaded, err := loader(ctx, leg.ArtifactTaskIDs)
+		if err != nil {
+			return nil, fmt.Errorf("load frozen fanout leg %s artifacts: %w", leg.NodeID, err)
+		}
+		actualManifest, err := correctionArtifactManifest(loaded)
+		if err != nil {
+			return nil, err
+		}
+		if !reflect.DeepEqual(actualManifest, leg.Artifacts) {
+			return nil, fmt.Errorf("frozen correction artifact manifest changed for leg %s", leg.NodeID)
+		}
+		if leg.NodeID == replay.TargetNodeID {
+			artifacts = loaded
+		}
+	}
+	return artifacts, nil
+}
+
+func correctionFrozenPromptContext(
+	replay CorrectionFanoutReplayV1,
+	target CorrectionFanoutReplayLegV1,
+	artifacts []deliverable.WorkflowArtifact,
+) (string, error) {
+	type promptArtifact struct {
+		Path        string `json:"path"`
+		ContentType string `json:"content_type"`
+		SHA256      string `json:"sha256"`
+		Content     string `json:"content"`
+	}
+	promptArtifacts := make([]promptArtifact, 0, len(artifacts))
+	total := 0
+	for _, artifact := range artifacts {
+		size := len([]byte(artifact.Content))
+		total += size
+		if total > maxCorrectionFrozenArtifactBytes {
+			return "", fmt.Errorf("correction artifacts exceed %d bytes", maxCorrectionFrozenArtifactBytes)
+		}
+		digest := sha256.Sum256([]byte(artifact.Content))
+		hash := hex.EncodeToString(digest[:])
+		promptArtifacts = append(promptArtifacts, promptArtifact{
+			Path: artifact.Path, ContentType: artifact.ContentType, SHA256: hash, Content: artifact.Content,
+		})
+	}
+	sort.Slice(promptArtifacts, func(i, j int) bool { return promptArtifacts[i].Path < promptArtifacts[j].Path })
+	encoded, err := json.Marshal(struct {
+		SourceProjectionHash string           `json:"source_projection_hash"`
+		PriorResult          json.RawMessage  `json:"prior_result"`
+		Artifacts            []promptArtifact `json:"artifacts"`
+	}{
+		SourceProjectionHash: replay.SourceProjectionHash,
+		PriorResult:          append(json.RawMessage(nil), target.Result...),
+		Artifacts:            promptArtifacts,
+	})
+	if err != nil {
+		return "", err
+	}
+	return string(encoded), nil
+}
+
+func mergeFanoutCorrectionResult(
+	node machine.Node,
+	payload frozen.ArtifactPayloadV1,
+	output any,
+	targetArtifactTaskIDs []string,
+	corrections []CorrectionDirectiveV1,
+) (fanoutJoinProjectionV1, string, []string, bool, error) {
+	replay := fanoutReplayForNode(node, payload, corrections)
+	if replay == nil {
+		return fanoutJoinProjectionV1{}, "", nil, false, nil
+	}
+	projection, joinedArtifactIDs, err := mergeFanoutCorrectionReplayResult(*replay, output, targetArtifactTaskIDs)
+	if err != nil {
+		return fanoutJoinProjectionV1{}, "", nil, false, err
+	}
+	return projection, replay.JoinNodeID, joinedArtifactIDs, true, nil
+}
+
+func mergeFanoutCorrectionReplayResult(
+	replay CorrectionFanoutReplayV1,
+	output any,
+	targetArtifactTaskIDs []string,
+) (fanoutJoinProjectionV1, []string, error) {
+	encodedOutput, err := json.Marshal(output)
+	if err != nil {
+		return fanoutJoinProjectionV1{}, nil, err
+	}
+	projection := fanoutJoinProjectionV1{
+		SchemaVersion: 1, Decision: "succeeded", Results: make(map[string]json.RawMessage, len(replay.Legs)),
+		Errors: map[string]string{}, Legs: make([]fanoutJoinLegV1, 0, len(replay.Legs)),
+	}
+	joinedArtifactIDs := make([]string, 0)
+	seenArtifactIDs := map[string]bool{}
+	for _, leg := range replay.Legs {
+		result := append(json.RawMessage(nil), leg.Result...)
+		artifactIDs := append([]string{}, leg.ArtifactTaskIDs...)
+		if leg.NodeID == replay.TargetNodeID {
+			result = append(json.RawMessage(nil), encodedOutput...)
+			artifactIDs = append([]string{}, targetArtifactTaskIDs...)
+		}
+		projection.Results[leg.NodeID] = result
+		projection.Legs = append(projection.Legs, fanoutJoinLegV1{
+			NodeID: leg.NodeID, LegID: leg.LegID, BranchOrdinal: leg.BranchOrdinal,
+			DecisionDisposition: string(fanout.LegDecisionSucceeded), Result: result,
+			Error: json.RawMessage("null"), ArtifactTaskIDs: artifactIDs,
+		})
+		for _, id := range artifactIDs {
+			if id != "" && !seenArtifactIDs[id] {
+				seenArtifactIDs[id] = true
+				joinedArtifactIDs = append(joinedArtifactIDs, id)
+			}
+		}
+	}
+	sort.Slice(projection.Legs, func(i, j int) bool { return projection.Legs[i].BranchOrdinal < projection.Legs[j].BranchOrdinal })
+	return projection, joinedArtifactIDs, nil
 }
 
 func downstreamNodeSet(graph machine.GraphDefinition, start string) map[string]struct{} {
@@ -911,9 +1319,15 @@ type fanoutJoinProjectionV1 struct {
 
 type fanoutJoinLegV1 struct {
 	NodeID              string          `json:"node_id"`
+	LegID               string          `json:"leg_id,omitempty"`
+	BranchOrdinal       int             `json:"branch_ordinal,omitempty"`
 	DecisionDisposition string          `json:"decision_disposition"`
 	Result              json.RawMessage `json:"result"`
 	Error               json.RawMessage `json:"error"`
+	// A non-nil slice proves that the projection was created by a runtime
+	// which recorded the immutable physical sources for this exact leg. Empty
+	// is a valid, known inventory for a result that exported no files.
+	ArtifactTaskIDs []string `json:"artifact_task_ids"`
 }
 
 func buildFanoutParkPlan(
@@ -1047,6 +1461,7 @@ func runAgentNode(
 	runInput any,
 	outputs map[string]any,
 	corrections []CorrectionDirectiveV1,
+	frozenCorrectionContext string,
 ) (any, nodeUsageReport, error) {
 	ctx = execution.WithNodeID(ctx, node.ID)
 	var (
@@ -1103,6 +1518,9 @@ func runAgentNode(
 		if correctionAppliesToNode(correction, node, payload) {
 			prompt += "\n\nConfirmed user correction (apply to this execution):\n" + correction.Instruction
 		}
+	}
+	if frozenCorrectionContext != "" {
+		prompt += "\n\nFrozen prior execution snapshot (read-only; revise only within the confirmed correction):\n" + frozenCorrectionContext
 	}
 	nodeTimeout := agentNodeExecutionTimeout
 	nodeCtx := ctx
@@ -1196,7 +1614,30 @@ func runAgentNode(
 	}
 	graphOutcomes := make(chan graphOutcome, 1)
 	go func() {
-		result, err := entry.Graph.Run(execCtx, graphState, loom.NewMemStore())
+		var result *loom.RunResult
+		var err error
+		if isDurableMemberEntry(entry) {
+			member, ok := execCtx.Value(workflowMemberContextKey{}).(workflowMemberContext)
+			if !ok || member.Runner == nil {
+				err = errors.New("durable member entry requires a serial workflow owner; parallel entry is unsupported")
+			} else {
+				var attribution loomruntime.TerminalAttribution
+				attribution, err = member.attribution()
+				if err == nil {
+					delete(graphState, "__run_id")
+					result, err = member.Runner.Run(execCtx, loomruntime.MemberRequest{
+						WorkspaceID: member.Run.WorkspaceID, ParentRunID: member.Run.RunID,
+						RunSnapshotID: member.Run.RunSnapshotID, NodeID: node.ID, CallID: member.Active.CallID,
+						ParentGeneration: int64(member.Run.Generation), Bundle: *entry.Bundle, ResumeGrantID: member.Active.ResumeGrantID,
+						ArtifactHash: member.ArtifactHash, Graph: entry.Graph, Input: graphState,
+						Attribution: attribution, ParentGuard: member.Guard,
+						RetryableFailure: func(err error) bool { return ClassifyFailure(err).Retryable },
+					})
+				}
+			}
+		} else {
+			result, err = entry.Graph.Run(execCtx, graphState, loom.NewMemStore())
+		}
 		graphOutcomes <- graphOutcome{result: result, err: err}
 	}()
 	var graphResult graphOutcome
@@ -1224,6 +1665,16 @@ func runAgentNode(
 			ErrorCodeExecutionUnrecoverable,
 			errors.New("frozen graph returned no result"),
 		)
+	}
+	if isDurableMemberEntry(entry) {
+		pause, pauseErr := loomruntime.ReadMemberBudgetPause(result, entry.Graph.Name)
+		if pauseErr != nil {
+			return nil, usage, executionError(ErrorCodeExecutionUnrecoverable, pauseErr)
+		}
+		if pause != nil {
+			usage.MemberPause = pause
+			return nil, usage, nil
+		}
 	}
 	if result.Yielded || result.StopReason == loom.StopYielded {
 		return nil, usage, executionError(
@@ -1290,7 +1741,17 @@ func frozenNodeUsage(result *loom.RunResult) (nodeUsageReport, error) {
 	if err != nil {
 		return nodeUsageReport{}, err
 	}
-	return nodeUsageReport{Totals: accumulator.Totals(), Coverage: accumulator.Coverage()}, nil
+	files, err := fileartifact.MemberFiles(result.State)
+	if err != nil {
+		return nodeUsageReport{}, err
+	}
+	artifacts := make([]workflow.RuntimeCLIArtifact, 0, len(files))
+	for _, file := range files {
+		artifacts = append(artifacts, workflow.RuntimeCLIArtifact{Path: file.Path, ContentType: file.ContentType, Content: file.Content})
+	}
+	incomplete, _ := result.State["__member_usage_incomplete"].(bool)
+	return nodeUsageReport{MemberRunID: result.RunID, Totals: accumulator.Totals(), Coverage: accumulator.Coverage(),
+		MemberReceipts: accumulator.ConfirmedReceipts(), MemberUsageIncomplete: incomplete, Artifacts: artifacts}, nil
 }
 
 // validateAgentNodeOutput enforces the node-level Output contract at runtime.

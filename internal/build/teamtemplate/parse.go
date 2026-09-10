@@ -31,9 +31,21 @@ var templateYAMLShape = &yamlShape{fields: map[string]*yamlShape{
 			"runtime_ref": nil, "internal_graph_ref": nil,
 		}},
 	}}},
-	"lead":     nil,
-	"delivery": {fields: map[string]*yamlShape{"success_criteria": {element: nil}}},
-	"budget":   {fields: map[string]*yamlShape{"max_cost_usd": nil}},
+	"lead": nil,
+	"delivery": {fields: map[string]*yamlShape{
+		"success_criteria": {element: nil},
+		"contract": {fields: map[string]*yamlShape{
+			"version": nil, "coverage": nil, "external_effects": nil, "external_effects_check_id": nil,
+			"limitations": {element: nil},
+			"required_artifacts": {element: &yamlShape{fields: map[string]*yamlShape{
+				"id": nil, "path": nil, "content_type": nil, "sha256": nil, "contains": {element: nil},
+			}}},
+			"required_checks": {element: &yamlShape{fields: map[string]*yamlShape{
+				"id": nil, "verifier_id": nil, "verifier_version": nil, "parameters": {allowAny: true},
+			}}},
+		}},
+	}},
+	"budget": {fields: map[string]*yamlShape{"max_cost_usd": nil}},
 }}
 
 // ParseYAML strictly parses one bounded team-template/v1 YAML document.

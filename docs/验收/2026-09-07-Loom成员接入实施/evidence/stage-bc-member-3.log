@@ -1,0 +1,10 @@
+=== RUN   TestMemberResumeAfterReceiptDoesNotRepeatEffectRealPG
+--- PASS: TestMemberResumeAfterReceiptDoesNotRepeatEffectRealPG (0.33s)
+=== RUN   TestMemberUnknownToolEffectIsNotReplayedRealPG
+--- PASS: TestMemberUnknownToolEffectIsNotReplayedRealPG (0.28s)
+=== RUN   TestMemberAdmissionAndCheckpointFenceRealPG
+--- PASS: TestMemberAdmissionAndCheckpointFenceRealPG (0.26s)
+=== RUN   TestMemberAtomicHistoryFailureStopsBeforeEffectsRealPG
+--- PASS: TestMemberAtomicHistoryFailureStopsBeforeEffectsRealPG (0.27s)
+PASS
+ok  	github.com/jinyitao123/weave/internal/kernel/loomruntime	1.909s

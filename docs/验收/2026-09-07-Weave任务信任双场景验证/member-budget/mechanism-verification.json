@@ -1,0 +1,93 @@
+{
+  "schema_version": 1,
+  "source_commit": "406c8c73b2d5f129df7934677b6cc572d3b45b02",
+  "loom_commit": "d704baf1ae7fee089c4b086db9a271a7b004e92b",
+  "loom_module_version": "v0.8.2-0.20260908071214-d704baf1ae7f",
+  "result": "mechanism_checks_passed",
+  "deployed_commit": "b308259cef039078c3cf305133dcc043616c3cfe",
+  "reverified_at": "2026-09-09T20:55:00+08:00",
+  "reverification": {
+    "real_postgresql": [
+      "TestWorkflowPublishedMemberParkKeepsOriginalRunAndAccountingRealPG",
+      "TestWorkflowPublishedMemberTotalBudgetRealPG",
+      "TestWorkflowPublishedMemberAutomaticSliceRealPG",
+      "TestMemberControlledBudgetGrantRealPG",
+      "TestMemberResumeAfterReceiptDoesNotRepeatEffectRealPG",
+      "TestMemberUnknownToolEffectIsNotReplayedRealPG",
+      "TestMemberResumePreservesOriginalToolLoopLimitRealPG"
+    ],
+    "result": "passed"
+  },
+  "recorded_at": "2026-09-08T10:28:20.466988+00:00",
+  "checks": {
+    "make_test": "passed; dedicated PostgreSQL database with isolated schemas",
+    "workbench_check": "passed; profile e2e and 397 tests",
+    "member_budget_race": "passed on committed source; PostgreSQL",
+    "dependency_and_product_guards": "passed",
+    "final_parent_budget": "passed",
+    "final_ui_budget": "109 passed",
+    "release_workbench_build": "passed from clean detached source commit"
+  },
+  "covered": [
+    "published optional budget and capability proof",
+    "original member identity and cumulative usage across slice continuation",
+    "total exhaustion cannot acquire new budget without explicit absolute ceiling",
+    "grant consumption and new journal segment commit or roll back together",
+    "crash after consumed grant replays the same slice and confirmed effects",
+    "same request key cannot change its ceiling",
+    "ordinary tool text is insufficient for automatic continuation",
+    "new confirmed file export can continue inside the existing total allowance",
+    "budget pause is publicly waiting and omits private yield token",
+    "Workbench persists ceiling and request identity across a lost response"
+  ],
+  "limits": [
+    "deterministic fixture models and tools; no fresh real business acceptance",
+    "final successful logs only; earlier iterative failure logs are not retained",
+    "automatic progress predicate establishes changed file export, not business correctness",
+    "controlled continuation supports published standard serial Loom leaves only"
+  ],
+  "logs": [
+    {
+      "file": "logs/make-test.log.gz",
+      "raw_bytes": 5058,
+      "raw_sha256": "a672dc502c541b6a1e09851d9ffd7f81aa45e9ea7b95b2d4a18bfde27f8159ce",
+      "gzip_sha256": "59efaccc6e3789af133d9bf6c765721ddacbd13fe900494b2d7d4e452047145a"
+    },
+    {
+      "file": "logs/workbench-check.log.gz",
+      "raw_bytes": 258390,
+      "raw_sha256": "1380b4680bd15736ceb6589347819173ebf7de803ffb71639c3efe861d7d1858",
+      "gzip_sha256": "b60752296d34fe18d530fa9b3ddfabab47c9a4e3b5cf1e9a623778f1752a5b47"
+    },
+    {
+      "file": "logs/race-member-budget.log.gz",
+      "raw_bytes": 127,
+      "raw_sha256": "d758e610432527addf0daef3c35c62c86906af32646646167a3fa5452170c810",
+      "gzip_sha256": "14b72ae8d33fc11ee02762b65fb9f9aca7073ac434a2690bd1626d0435df7c65"
+    },
+    {
+      "file": "logs/guards.log.gz",
+      "raw_bytes": 165,
+      "raw_sha256": "95cdcaf6b9361559d21a6ae78040d1e28dfec0a399015a1bacfd812f745db2bd",
+      "gzip_sha256": "5b542aa3b80bf9f2cb3b5f98a89c33f37ba4023986ad95ce866e09135a43a1d9"
+    },
+    {
+      "file": "logs/final-parent-budget.log.gz",
+      "raw_bytes": 121,
+      "raw_sha256": "a986b42c6fcd9baaeeb7caca5783855974cf09bb9c633ee2e5b85da8106ae0ca",
+      "gzip_sha256": "36ca113e2b76d803caaa6ee9d636f4606fa24b9f8eaafc405929a95df6417e3c"
+    },
+    {
+      "file": "logs/final-ui-budget.log.gz",
+      "raw_bytes": 922,
+      "raw_sha256": "7822db81d3a4b199d4e723887baa44a744a36fb84d8e3d8608e5c7dd52577d62",
+      "gzip_sha256": "1058ba09e0e1388337925f5188665ffead7be2b8d43429546ab76e04544c483f"
+    },
+    {
+      "file": "logs/release-workbench-build.log.gz",
+      "raw_bytes": 266185,
+      "raw_sha256": "79078c663a292a6f24a47031ba2adc5f318c2b38017d97f791f59b861938da30",
+      "gzip_sha256": "cfe9dc50ca10daab104a15cf588876d6a41a587ce037a650c5f4315b47c025b1"
+    }
+  ]
+}

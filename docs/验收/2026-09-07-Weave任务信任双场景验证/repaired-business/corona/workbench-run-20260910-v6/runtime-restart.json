@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "rotated_at": "2026-09-10T03:53:54.704763+08:00",
+  "runtime_id": "e584a15f-bd26-4fff-a697-8caf20150a7d",
+  "reason": "local validation runtime credential was one-time and not persisted; reissued in local store after deliberate process interruption",
+  "method_scope": "local test environment operator repair",
+  "raw_token_persisted": false,
+  "restart_pid": 50818,
+  "log_path": "/tmp/weave-runtime-e584a15f-bd26-4fff-a697-8caf20150a7d-restart.log"
+}

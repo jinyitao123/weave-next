@@ -12,7 +12,7 @@ import type { MessageId } from '@deepseek-ai/dsh-llm/brand'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
-import type { PromptContentPart, QueueAction, SessionRequestId } from '../../types.ts'
+import type { PromptContentPart, QueueAction, SessionPromptRequest, SessionRequestId } from '../../types.ts'
 import type { ClientResult } from './result.ts'
 import type { PendingSubmissionImage, SessionSnapshot } from './snapshot.ts'
 
@@ -77,6 +77,7 @@ export interface ISession {
    * @param mode - 'queue' appends a turn; 'steer' interrupts the running one.
    * @param signal - optional caller cancellation for the complete admission round-trip.
    * @param requestId - identity from {@link beginSubmission}; a failed identified prompt retires its echo.
+   * @param origin - distinguishes generated UI controls from ordinary composer input.
    * @returns acceptance, or the business error (also mirrored into snapshot.promptError).
    */
   prompt(
@@ -84,6 +85,7 @@ export interface ISession {
     mode: 'queue' | 'steer',
     signal?: AbortSignal,
     requestId?: SessionRequestId,
+    origin?: SessionPromptRequest['origin'],
   ): Promise<ClientResult<{ accepted: true }>>
   /**
    * Resolve one durable image referenced by this session.

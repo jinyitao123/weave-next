@@ -12,6 +12,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jinyitao123/loom"
+	"github.com/jinyitao123/weave/internal/app/deliveryverify"
 	"github.com/jinyitao123/weave/internal/app/projects"
 	"github.com/jinyitao123/weave/internal/base/db"
 	"github.com/jinyitao123/weave/internal/base/frozen"
@@ -32,14 +33,18 @@ type teamDispatchPoolStore struct {
 
 func (s teamDispatchPoolStore) Pool() *pgxpool.Pool { return s.pool }
 
-func TestTeamWorkflowDispatchKeepsInputIdentityAndAdmissionRealPG(t *testing.T) {
+func newTeamDispatchTestServer(t *testing.T) (*Server, *pgxpool.Pool) {
+	return newTeamDispatchTestServerWithGraph(t, json.RawMessage(`{"schema_version":1,"entry_node_id":"deliver","input_contract":{"type":"text"},"output_contract":{"type":"text"},"nodes":[{"id":"deliver","type":"deliver","config":{"result":{"source":"run_input","path":""}}}],"edges":[]}`))
+}
+
+func newTeamDispatchTestServerWithGraph(t *testing.T, graph json.RawMessage) (*Server, *pgxpool.Pool) {
+	t.Helper()
 	ctx := context.Background()
 	pool := testutil.PostgresPool(t)
 	if err := db.Migrate(ctx, pool); err != nil {
 		t.Fatal(err)
 	}
 	trigger := json.RawMessage(`{"schema_version":1,"type":"conversation_explicit","config":{}}`)
-	graph := json.RawMessage(`{"schema_version":1,"entry_node_id":"deliver","input_contract":{"type":"text"},"output_contract":{"type":"text"},"nodes":[{"id":"deliver","type":"deliver","config":{"result":{"source":"run_input","path":""}}}],"edges":[]}`)
 	if _, report := machine.DecodeTriggerConfigV1(trigger); report != nil {
 		t.Fatalf("fixture trigger: %+v", report.Issues)
 	}
@@ -80,7 +85,13 @@ func TestTeamWorkflowDispatchKeepsInputIdentityAndAdmissionRealPG(t *testing.T) 
 		t.Fatal(err)
 	}
 	server := &Server{Store: teamDispatchPoolStore{pool: pool}, OrgStore: org.NewStore(pool), Registry: registry.New(pool),
-		Workflow: workflow.New(pool, nil), ScheduleTransactions: pool, Snapshots: snapshot.NewStore(pool), Tasks: taskqueue.New(pool, nil, time.Minute)}
+		Workflow: workflow.New(pool, nil), Deliverables: deliveryverify.NewStore(pool), ScheduleTransactions: pool, Snapshots: snapshot.NewStore(pool), Tasks: taskqueue.New(pool, nil, time.Minute)}
+	return server, pool
+}
+
+func TestTeamWorkflowDispatchKeepsInputIdentityAndAdmissionRealPG(t *testing.T) {
+	ctx := context.Background()
+	server, pool := newTeamDispatchTestServer(t)
 	input := teamDispatchRequest{Task: "甲：三条材料。\n乙：保留换行与“引号”。", ClientRequestID: "00000000-0000-0000-0000-000000000001"}
 	dispatch := func(request teamDispatchRequest, wantStatus int) workflowManualRunResponse {
 		t.Helper()

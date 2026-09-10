@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
+	"sort"
 	"time"
 
 	"github.com/google/uuid"
@@ -273,6 +275,7 @@ func (e *Executor) commitFrozenNormalTerminal(
 	usageCoverage *loomruntime.UsageCoverage,
 	usageComplete bool,
 	usageIncompleteReason string,
+	memberBreakdown ...map[string]loomruntime.TerminalChildBreakdownV3,
 ) error {
 	records, err := e.runtimeRecordStore()
 	if err != nil {
@@ -335,6 +338,11 @@ func (e *Executor) commitFrozenNormalTerminal(
 	)
 	if err != nil {
 		return err
+	}
+	if len(memberBreakdown) > 0 {
+		if err := applyMemberTerminalBreakdown(&candidate, memberBreakdown[0]); err != nil {
+			return err
+		}
 	}
 	if err := coordinator.CommitNormalTerminal(
 		ctx,
@@ -502,4 +510,47 @@ func writeFanoutYieldMarkerTx(
 		return fmt.Errorf("write fanout yielded marker: %w", err)
 	}
 	return nil
+}
+
+func applyMemberTerminalBreakdown(candidate *loomruntime.TerminalEntryV3, contributions map[string]loomruntime.TerminalChildBreakdownV3) error {
+	if len(contributions) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(contributions))
+	for id := range contributions {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	self := candidate.SelfExclusive
+	children := make([]loomruntime.TerminalChildBreakdownV3, 0, len(ids))
+	for _, id := range ids {
+		child := contributions[id]
+		if child.RunID != id || child.ParentRunID != candidate.RunID {
+			return errors.New("member terminal contribution identity mismatch")
+		}
+		self.InputTokens -= child.SelfExclusive.InputTokens
+		self.OutputTokens -= child.SelfExclusive.OutputTokens
+		self.CostUSD -= child.SelfExclusive.CostUSD
+		self.ToolCalls -= child.SelfExclusive.ToolCalls
+		children = append(children, child)
+	}
+	if math.Abs(self.CostUSD) < 1e-12 {
+		self.CostUSD = 0
+	}
+	if self.InputTokens < 0 || self.OutputTokens < 0 || self.CostUSD < 0 || self.ToolCalls < 0 {
+		return fmt.Errorf("member contribution exceeds parent accumulated usage")
+	}
+	candidate.SelfExclusive = self
+	candidate.TokensIn, candidate.TokensOut, candidate.CostUSD, candidate.ToolCalls = self.InputTokens, self.OutputTokens, self.CostUSD, self.ToolCalls
+	candidate.ChildBreakdown = children
+	// Derive in the validator's deterministic order to avoid floating-point
+	// differences caused by subtracting and then adding cost contributions.
+	candidate.SubtreeTotal = self
+	for _, child := range children {
+		candidate.SubtreeTotal.InputTokens += child.SelfExclusive.InputTokens
+		candidate.SubtreeTotal.OutputTokens += child.SelfExclusive.OutputTokens
+		candidate.SubtreeTotal.CostUSD += child.SelfExclusive.CostUSD
+		candidate.SubtreeTotal.ToolCalls += child.SelfExclusive.ToolCalls
+	}
+	return loomruntime.ValidateTerminalV3(*candidate)
 }

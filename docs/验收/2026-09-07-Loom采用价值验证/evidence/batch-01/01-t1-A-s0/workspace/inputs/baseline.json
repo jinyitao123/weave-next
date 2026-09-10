@@ -1,0 +1,7 @@
+{
+  "baseline_id": "corona-prephase-a-v1",
+  "mass_kg": 1000000000,
+  "distance_ly": 4.25,
+  "speed_of_light_m_s": 299792458,
+  "cruise_speed_c": [0.01, 0.03, 0.05]
+}

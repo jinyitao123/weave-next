@@ -7,7 +7,7 @@ import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import type { ChatConversationViewNode } from '@deepseek-ai/dsh-client-ui-chat/client'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import { WorkTaskConversationCard, WorkTaskHeader, WorkTaskPanel } from '../src/client/WorkTaskPanel.tsx'
-import { workTaskModel, type WorkTaskProjection } from '../src/client/work-task-model.ts'
+import { workTaskModel, type WorkTaskDelivery, type WorkTaskProjection } from '../src/client/work-task-model.ts'
 import { createWorkTaskViewStore } from '../src/client/view-store.ts'
 import { zh } from '../src/client/locales.ts'
 
@@ -53,6 +53,103 @@ function recordedTool(name: string, value: unknown, seq: number): ChatConversati
 }
 
 describe('Workbench recovery and delivery facts', () => {
+  const output = { id: 'final', title: '最终报告.md', kind: 'summary' as const, contentType: 'text/markdown', content: 'PASS，全部要求均已满足。', preview: '', truncated: false, createdAt: '' }
+  const delivery: WorkTaskDelivery = { revisionId: 'revision-1', contractDigest: 'contract-1', verificationId: 'verification-1', verificationStatus: 'passed', reason: '',
+    checks: [{ checkId: 'required-file', status: 'passed', reason: 'Recorded file content matches.' }], checkCounts: { passed: 1 }, available: true, evidenceCompleteness: 'complete' }
+
+  it.each([
+    ['pending', '等待核验'], ['passed', '核验通过'], ['failed', '核验未通过'], ['unknown', '尚无法确认'],
+  ] as const)('keeps successful execution and user adoption separate from %s verification', (verificationStatus, label) => {
+    const projection = task({ status: 'completed', waitKind: '', members: [], deliverables: [output], delivery: { ...delivery, verificationStatus,
+      checks: [{ checkId: 'required-file', status: verificationStatus, reason: 'Recorded file content matches.' }] }, outcome: 'adopted', outcomeRevisionId: delivery.revisionId, outcomeNote: '我已核对用途' })
+    const view = render(<WorkTaskPanel {...props(projection)} />)
+    const states = within(view.getByRole('region', { name: '执行、交付核验与用户评价' }))
+    expect(states.getByText('已完成')).toBeTruthy()
+    expect(states.getByText('可以采用')).toBeTruthy()
+    expect(states.getByText(label, { selector: 'dd' })).toBeTruthy()
+    fireEvent.click(states.getByText('查看核验记录 · 1 项检查'))
+    expect(states.getAllByText(label)).toHaveLength(2)
+    expect(states.getByText('Recorded file content matches.')).toBeTruthy()
+    expect(states.getByText('交付版本 revision-1')).toBeTruthy()
+    expect(states.getByText('已记录的评价意见：我已核对用途')).toBeTruthy()
+  })
+
+  it('keeps PASS prose readable while legacy assessment remains unavailable', async () => {
+    viewStore.actions.selectTab('run-1', 'outputs')
+    const assessOutcome = vi.fn()
+    const view = render(<WorkTaskPanel {...props(task({ status: 'completed', waitKind: '', members: [], deliverables: [output], outcome: 'adopted' }))} assessOutcome={assessOutcome} />)
+    const states = view.getByRole('region', { name: '执行、交付核验与用户评价' })
+    expect(states.textContent).toMatchInlineSnapshot('"执行状态已完成交付核验尚无法确认用户评价尚未评价成果可以打开不代表交付已通过核验。核验依据已记录的检查，正文中的 PASS 等结论不作为核验依据。尚未取得交付核验记录，无法确认是否满足交付要求。查看核验记录 · 0 项检查核验证据尚未完整取得。尚未记录可供查看的检查。"')
+    expect(within(states).getByText('尚未评价')).toBeTruthy()
+    fireEvent.click(within(view.getByRole('tabpanel', { name: '成果' })).getByText('最终报告.md'))
+    expect(await view.findByText('PASS，全部要求均已满足。')).toBeTruthy()
+    fireEvent.click(view.getByText('这份交付可以采用吗'))
+    expect(view.getByText('这份成果没有可识别的交付版本，暂不能记录评价。已有内容仍可阅读。')).toBeTruthy()
+    const adopt = view.getByRole('button', { name: '可以采用' }) as HTMLButtonElement
+    expect(adopt.disabled).toBe(true)
+    fireEvent.click(adopt)
+    expect(assessOutcome).not.toHaveBeenCalled()
+  })
+
+  it('submits the displayed revision and keeps a later revision free of the prior assessment', async () => {
+    viewStore.actions.selectTab('run-1', 'outputs')
+    let resolveAssessment!: (error: string | null) => void
+    const assessOutcome = vi.fn(() => new Promise<string | null>((resolve) => { resolveAssessment = resolve }))
+    const initial = task({ status: 'completed', waitKind: '', members: [], deliverables: [output], delivery })
+    const view = render(<WorkTaskPanel {...props(initial)} assessOutcome={assessOutcome} />)
+    fireEvent.click(view.getByText('这份交付可以采用吗'))
+    fireEvent.change(view.getByRole('textbox'), { target: { value: ' 此版本可用 ' } })
+    fireEvent.click(view.getByRole('button', { name: '可以采用' }))
+    expect(assessOutcome).toHaveBeenCalledWith('run-1', 'revision-1', 'adopted', '此版本可用')
+    view.rerender(<WorkTaskPanel {...props({ ...initial, delivery: { ...delivery, revisionId: 'revision-2' } })} assessOutcome={assessOutcome} />)
+    await act(async () => { resolveAssessment('交付版本已经变化，请刷新后重试。') })
+    expect(within(view.getByRole('tabpanel', { name: '成果' })).getByRole('alert').textContent).toBe('交付版本已经变化，请刷新后重试。')
+    expect((view.getByRole('textbox') as HTMLTextAreaElement).value).toBe('')
+    expect(assessOutcome).toHaveBeenCalledTimes(1)
+    expect(within(view.getByRole('region', { name: '执行、交付核验与用户评价' })).getByText('尚未评价')).toBeTruthy()
+  })
+
+  it('shows a same-revision reassessment without converting user judgment into verification', () => {
+    const projection = task({ status: 'completed', waitKind: '', members: [], deliverables: [output], delivery, outcome: 'adopted', outcomeRevisionId: delivery.revisionId })
+    const view = render(<WorkTaskConversationCard {...props(projection) as unknown as Parameters<typeof WorkTaskConversationCard>[0]} />)
+    view.rerender(<WorkTaskConversationCard {...props({ ...projection, delivery: { ...delivery, verificationId: 'verification-2', verificationStatus: 'failed' } }) as unknown as Parameters<typeof WorkTaskConversationCard>[0]} />)
+    const states = view.getByRole('region', { name: '执行、交付核验与用户评价' })
+    expect(states.textContent).toMatchInlineSnapshot('"执行状态已完成交付核验核验未通过用户评价可以采用"')
+    view.rerender(<WorkTaskConversationCard {...props({ ...projection, delivery: { ...delivery, revisionId: 'revision-2' } }) as unknown as Parameters<typeof WorkTaskConversationCard>[0]} />)
+    expect(within(view.getByRole('region', { name: '执行、交付核验与用户评价' })).getByText('尚未评价')).toBeTruthy()
+  })
+
+  it.each([null, '交付版本已经变化，请刷新后重试。'])('rechecks the displayed revision without rerunning members: %s', async (error) => {
+    let resolveRecheck!: (result: string | null) => void
+    const recheckDelivery = vi.fn(() => new Promise<string | null>((resolve) => { resolveRecheck = resolve }))
+    const rerun = vi.fn()
+    const projection = task({ status: 'completed', waitKind: '', members: [], deliverables: [output], delivery: { ...delivery, verificationStatus: 'unknown' } })
+    const view = render(<WorkTaskPanel {...props(projection)} rerun={rerun} recheckDelivery={recheckDelivery} />)
+    fireEvent.click(view.getByText('查看核验记录 · 1 项检查'))
+    expect(view.getByText('只对已保存成果重新执行已登记的检查，不重跑成员。尚未支持的检查不会因此自动补齐。')).toBeTruthy()
+    fireEvent.click(view.getByRole('button', { name: '重新核验' }))
+    expect(recheckDelivery).toHaveBeenCalledWith('run-1', 'revision-1', 'contract-1')
+    expect((view.getByRole('button', { name: '正在核验' }) as HTMLButtonElement).disabled).toBe(true)
+    view.rerender(<WorkTaskPanel {...props({ ...projection, delivery: { ...projection.delivery!, revisionId: 'revision-2', contractDigest: 'contract-2' } })} rerun={rerun} recheckDelivery={recheckDelivery} />)
+    await act(async () => { resolveRecheck(error) })
+    expect(recheckDelivery).toHaveBeenCalledTimes(1)
+    expect(rerun).not.toHaveBeenCalled()
+    const states = within(view.getByRole('region', { name: '执行、交付核验与用户评价' }))
+    expect(states.getByText('尚无法确认', { selector: 'dd' })).toBeTruthy()
+    if (error !== null) expect(states.getByRole('alert').textContent).toBe(error)
+    else expect(states.queryByRole('alert')).toBeNull()
+  })
+
+  it.each([undefined, { ...delivery, revisionId: '' }, { ...delivery, contractDigest: '' }, { ...delivery, available: false }])('disables rechecking when saved evidence is unavailable', (savedDelivery) => {
+    const recheckDelivery = vi.fn()
+    const view = render(<WorkTaskPanel {...props(task({ status: 'completed', waitKind: '', members: [], deliverables: [output], delivery: savedDelivery }))} recheckDelivery={recheckDelivery} />)
+    fireEvent.click(view.getByText(/查看核验记录/u))
+    expect(view.getByText('缺少交付版本或对应要求，暂不能重新核验。')).toBeTruthy()
+    const button = view.getByRole('button', { name: '重新核验' }) as HTMLButtonElement
+    expect(button.disabled).toBe(true)
+    fireEvent.click(button)
+    expect(recheckDelivery).not.toHaveBeenCalled()
+  })
 
   it('indexes completed outputs, recorded input references, and members without mixing stage files into the overview', () => {
     const member = task().members[0]!
@@ -271,7 +368,7 @@ describe('Workbench recovery and delivery facts', () => {
     expect(card.queryByText('复核员 · 复核')).toBeNull()
     expect(card.getByText(help)).toBeTruthy()
     expect(card.container.querySelector('[data-executing]')).toBeNull()
-    expect(card.container.querySelector('[data-weave-task-receipt]')?.textContent).toMatchInlineSnapshot('"等待运行节点确认停止请先恢复运行节点的连接，等待原执行确认停止；确认后会显示重试入口，已完成的工作会保留。查看进展与成果"')
+    expect(card.container.querySelector('[data-weave-task-receipt]')?.textContent).toMatchInlineSnapshot('"等待运行节点确认停止执行状态等待中交付核验尚无法确认用户评价尚未评价请先恢复运行节点的连接，等待原执行确认停止；确认后会显示重试入口，已完成的工作会保留。查看进展与成果"')
     expect(card.queryByRole('button', { name: /重试/u })).toBeNull()
     expect(card.queryByText(/当前状态不支持单独恢复/u)).toBeNull()
     card.rerender(<WorkTaskConversationCard
@@ -366,7 +463,7 @@ describe('Workbench recovery and delivery facts', () => {
     expect(view.getByText('the referenced result file was not saved as a deliverable')).toBeTruthy()
     view.unmount()
     const card = render(<WorkTaskConversationCard {...props(projection) as unknown as Parameters<typeof WorkTaskConversationCard>[0]} />)
-    expect(card.container.querySelector('[data-weave-task-receipt]')?.textContent).toMatchInlineSnapshot('"运行失败复核员 · 复核本阶段提到的结果文件尚未被保存为可领取的成果。查看具体原因the referenced result file was not saved as a deliverable查看进展与成果"')
+    expect(card.container.querySelector('[data-weave-task-receipt]')?.textContent).toMatchInlineSnapshot('"运行失败执行状态运行失败交付核验尚无法确认用户评价尚未评价复核员 · 复核本阶段提到的结果文件尚未被保存为可领取的成果。查看具体原因the referenced result file was not saved as a deliverable查看进展与成果"')
     expect(card.queryByText('正在匹配合适团队')).toBeNull()
   })
 
@@ -407,7 +504,7 @@ describe('Workbench recovery and delivery facts', () => {
     expect(view.getByText('已完成研究记录')).toBeTruthy()
     expect(view.queryByText(/份最终产物已就绪/u)).toBeNull()
     expect(view.container.querySelector('[data-weave-work-task] > header p')?.textContent).toMatchInlineSnapshot(
-      '"执行已结束，但尚未取得最终成果。阶段记录可供查看，不能作为已交付的最终结果。"',
+      '"成果可以打开不代表交付已通过核验。核验依据已记录的检查，正文中的 PASS 等结论不作为核验依据。"',
     )
     view.unmount()
     const header = render(<WorkTaskHeader {...props(projection)} />)
@@ -428,7 +525,7 @@ describe('Workbench recovery and delivery facts', () => {
     const projection = task(recorded)
     const view = render(<WorkTaskPanel {...props(projection)} />)
     expect(view.queryByText('执行已结束，最终成果待核实')).toBeNull()
-    expect(view.getByText('已完成')).toBeTruthy()
+    expect(view.getByText('已完成', { selector: 'strong' })).toBeTruthy()
     expect(view.queryByText(/文件包尚未同步/u)).toBeNull()
     expect(view.getByText('最终交付结论已就绪').textContent).toMatchInlineSnapshot('"最终交付结论已就绪"')
     fireEvent.click(view.getByRole('button', { name: '汇总交付 · 最终成果' }))
@@ -541,6 +638,24 @@ describe('Workbench recovery and delivery facts', () => {
     view.unmount()
     const header = render(<WorkTaskHeader {...props(task(recorded))} />)
     expect(header.getByText('停止状态未能确认')).toBeTruthy()
+  })
+
+  it('shows a budget pause and requires an explicit new cumulative limit before continuing', async () => {
+    const projection = task()
+    const stage = { ...projection.members[0]!.stages[0]!, memberRunId: 'member-1', status: 'waiting' as const, failureClass: '' as const, failureReason: '', budgetPause: { reason: 'total_limit', roundsUsed: 2, authorizedTotalRounds: 2 } }
+    const paused = task({ members: [{ ...projection.members[0]!, status: 'waiting', stages: [stage] }] })
+    const retryStage = vi.fn().mockResolvedValue(null)
+    const view = render(<WorkTaskPanel {...props(paused)} retryStage={retryStage} />)
+    expect(view.getAllByText('执行已暂停，工作已保留').length).toBeGreaterThan(0)
+    expect(view.queryByText('执行环境中断')).toBeNull()
+    expect(view.getByText(/已用 2 轮，累计上限 2 轮/)).toBeTruthy()
+    fireEvent.click(view.getByRole('button', { name: '继续成员任务' }))
+    fireEvent.click(view.getByRole('button', { name: '确认重试' }))
+    await waitFor(() => { expect(view.getByText('请输入高于当前累计上限的整数。')).toBeTruthy() })
+    expect(retryStage).not.toHaveBeenCalled()
+    fireEvent.change(view.getByLabelText('新的累计轮次上限'), { target: { value: '3' } })
+    fireEvent.click(view.getByRole('button', { name: '确认重试' }))
+    await waitFor(() => { expect(retryStage).toHaveBeenCalledWith('run-1', 'review', 3) })
   })
 
   it('keeps one conversation card per run and leaves durable receipts in the work scene', async () => {

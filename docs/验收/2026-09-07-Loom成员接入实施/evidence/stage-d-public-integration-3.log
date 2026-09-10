@@ -1,0 +1,6 @@
+=== RUN   TestWorkflowPublishedMemberParkKeepsOriginalRunAndAccountingRealPG
+    loom_member_integration_pg_test.go:110: ERROR: published workflow versions are immutable (SQLSTATE 23514)
+--- FAIL: TestWorkflowPublishedMemberParkKeepsOriginalRunAndAccountingRealPG (0.34s)
+FAIL
+FAIL	github.com/jinyitao123/weave/internal/app/api	1.196s
+FAIL

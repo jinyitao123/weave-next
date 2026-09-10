@@ -39,6 +39,7 @@ func executionError(code ErrorCode, cause error) error {
 }
 
 type Executor struct {
+	MemberBudgets     MemberBudgetCoordinator
 	Tasks             ExecutorTaskStore
 	Consumer          *Consumer
 	Transactions      TransactionBeginner
@@ -338,10 +339,11 @@ func (e *Executor) succeedRunning(
 	usageCoverage *loomruntime.UsageCoverage,
 	usageComplete bool,
 	usageIncompleteReason string,
+	memberBreakdown ...map[string]loomruntime.TerminalChildBreakdownV3,
 ) (TeamRun, error) {
 	if err := e.commitFrozenNormalTerminal(
 		ctx, run, "success", "completed", usage, usageCoverage,
-		usageComplete, usageIncompleteReason,
+		usageComplete, usageIncompleteReason, memberBreakdown...,
 	); err != nil {
 		return TeamRun{}, err
 	}
@@ -382,6 +384,7 @@ func (e *Executor) failRunning(
 	usageCoverage *loomruntime.UsageCoverage,
 	usageComplete bool,
 	usageIncompleteReason string,
+	memberBreakdown ...map[string]loomruntime.TerminalChildBreakdownV3,
 ) (TeamRun, error) {
 	code := ErrorCodeExecutionUnrecoverable
 	var classified *ExecutionError
@@ -391,7 +394,7 @@ func (e *Executor) failRunning(
 	}
 	if err := e.commitFrozenNormalTerminal(
 		ctx, run, "failed", string(code), usage, usageCoverage,
-		usageComplete, usageIncompleteReason,
+		usageComplete, usageIncompleteReason, memberBreakdown...,
 	); err != nil {
 		return TeamRun{}, err
 	}

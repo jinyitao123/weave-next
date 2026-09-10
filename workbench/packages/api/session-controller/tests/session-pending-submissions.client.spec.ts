@@ -31,7 +31,12 @@ function imageRef(id: string): ImageAttachmentRef {
 }
 
 /** A durable browser-prompt user/message whose source echoes `rpcId`. */
-function promptEvent(seq: number, rpcId: SessionRequestId, refs: readonly ImageAttachmentRef[] = []): SessionEvent {
+function promptEvent(
+  seq: number,
+  rpcId: SessionRequestId,
+  refs: readonly ImageAttachmentRef[] = [],
+  origin?: 'ui-control',
+): SessionEvent {
   return {
     seq,
     time: 1_700_000_000_000 + seq,
@@ -42,7 +47,9 @@ function promptEvent(seq: number, rpcId: SessionRequestId, refs: readonly ImageA
         ...refs.map(attachment => ({ type: 'image' as const, attachment })),
         { type: 'text' as const, text: '发送' },
       ],
-      source: { kind: 'user', rpcId },
+      source: origin === 'ui-control'
+        ? { kind: 'plugin', plugin: 'ui-control', form: 'relay', rpcId }
+        : { kind: 'user', rpcId },
     }),
   } as unknown as SessionEvent
 }
@@ -129,7 +136,7 @@ describe('prompt-coupled retirement', () => {
 })
 
 describe('observed retirement', () => {
-  it('a live durable event carrying the rpcId retires the echo one frame later with the admitted refs', async () => {
+  it.each([undefined, 'ui-control'] as const)('a live durable %s event carrying the rpcId retires the echo one frame later with admitted refs', async (origin) => {
     const { api, session } = makeSession()
     api.onHistory = () => Promise.resolve(ok(historyValue([])))
     await session.open()
@@ -140,7 +147,7 @@ describe('observed retirement', () => {
       onRetire: retirement => retirements.push(retirement),
     })
     const refs = [imageRef('att-1')]
-    await api.pushFollow(SID, { type: 'event', event: promptEvent(0, handle.requestId, refs) as never })
+    await api.pushFollow(SID, { type: 'event', event: promptEvent(0, handle.requestId, refs, origin) as never })
     // Synchronously after the append the echo is still in the snapshot; the
     // render-time dedupe owns the overlap frame.
     expect(session.getSnapshot().pendingSubmissions).toHaveLength(1)

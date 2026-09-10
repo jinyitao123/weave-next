@@ -1,0 +1,22 @@
+{
+  "error": "",
+  "native_tool_attempt": false,
+  "output": "{\"content\":\"第一步：读取冻结的 Corona 基线输入及其 SHA-256，以确认计算所用的基线数据未被篡改。拿到真实回执后，我将依次调用 calculate_scenarios 计算 0.01c/0.03c/0.05c 三个场景，再调用 verify_results 独立核验并生成核验回执，最后才汇报结果。\",\"tool_calls\":[{\"name\":\"read_baseline\",\"args_json\":\"{}\"}]}",
+  "reported_models": [
+    "k3[1m]",
+    "k3",
+    "kimi-for-coding-highspeed"
+  ],
+  "status": "completed",
+  "usage": {
+    "input_tokens": 24360,
+    "output_tokens": 119,
+    "cost_usd": 0.045188500000000006,
+    "has_tokens": true,
+    "has_cost": true,
+    "source": "cli-reported",
+    "scope": "invocation",
+    "engine_version": "2.1.245",
+    "raw_summary": "{\"is_error\":false,\"duration_api_ms\":13102,\"num_turns\":1,\"stop_reason\":\"end_turn\",\"session_id\":\"a812f9b3-e19c-40bb-8657-c967a033d7fc\",\"total_cost_usd\":0.045188500000000006,\"usage\":{\"input_tokens\":3112,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":21248,\"output_tokens\":119,\"output_tokens_details\":{\"thinking_tokens\":11},\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":0,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"not_available\",\"iterations\":[],\"speed\":\"standard\"},\"modelUsage\":{\"kimi-for-coding-highspeed\":{\"inputTokens\":0,\"outputTokens\":615,\"cacheReadInputTokens\":1309,\"cacheCreationInputTokens\":0,\"webSearchRequests\":0,\"costUSD\":0.0160295,\"contextWindow\":262144,\"maxOutputTokens\":32000,\"canonicalModel\":\"kimi-for-coding-highspeed\",\"provider\":\"firstParty\"},\"k3[1m]\":{\"inputTokens\":3112,\"outputTokens\":119,\"cacheReadInputTokens\":21248,\"cacheCreationInputTokens\":0,\"webSearchRequests\":0,\"costUSD\":0.029159000000000004,\"contextWindow\":1000000,\"maxOutputTokens\":32000,\"canonicalModel\":\"k3[1m]\",\"provider\":\"firstParty\"}},\"permission_denials\":[],\"terminal_reason\":\"completed\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"subagent_stats\":{\"spawned\":0,\"requested\":{\"background\":0,\"foreground\":0,\"unset\":0},\"started_in_background\":0,\"max_depth\":0,\"spawned_by_subagents\":0,\"completed\":0,\"failed\":0,\"killed\":{\"parent\":0,\"user\":0,\"system\":0},\"refused\":{\"depth_limit\":0,\"concurrency_limit\":0,\"budget\":0},\"by_type\":{}},\"subtype\":\"success\",\"api_error_status\":null,\"result\":\"{\\\"content\\\":\\\"第一步：读取冻结的 Corona 基线输入及其 SHA-256，以确认计算所用的基线数据未被篡改。拿到真实回执后，我将依次调用 calculate_scenarios 计算 0.01c/0.03c/0.05c 三个场景，再调用 verify_results 独立核验并生成核验回执，最后才汇报结果。\\\",\\\"tool_calls\\\":[{\\\"name\\\":\\\"read_baseline\\\",\\\"args_json\\\":\\\"{}\\\"}]}\",\"ttft_ms\":7536,\"ttft_stream_ms\":6757,\"time_to_request_ms\":54,\"type\":\"result\",\"duration_ms\":9814,\"uuid\":\"26ead711-ccc0-4f46-9eb6-c4cc3b31d3c4\",\"queued_turn_count\":0}"
+  }
+}

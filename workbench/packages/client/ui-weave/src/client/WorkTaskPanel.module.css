@@ -62,6 +62,20 @@
 .briefDetails { width: 100%; color: var(--dsw-alias-label-secondary); }
 .briefDetails p, .attemptBrief p { white-space: pre-wrap; color: var(--dsw-alias-label-primary); }
 .truthLine { display: flex; flex-wrap: wrap; gap: 12px; color: var(--dsw-alias-state-warn-primary); font-size: 13px; }
+.deliveryState { width: 100%; font-size: 13px; }
+.resultDimensions { display: flex; flex-wrap: wrap; gap: 8px 24px; margin: 8px 0; }
+.resultDimensions > div { display: flex; flex-direction: column; gap: 3px; }
+.resultDimensions dt { color: var(--dsw-alias-label-secondary); }
+.resultDimensions dd { margin: 0; font-weight: 500; }
+.deliveryState [data-verification-status='passed'] { color: var(--dsw-alias-state-success-primary); }
+.deliveryState [data-verification-status='failed'] { color: var(--dsw-alias-state-error-primary); }
+.deliveryState [data-verification-status='unknown'], .deliveryState [data-verification-status='pending'] { color: var(--dsw-alias-state-warn-primary); }
+.deliveryState p { margin-block: 6px; overflow-wrap: anywhere; }
+.verificationDetails { margin-top: 8px; }
+.verificationChecks { list-style: none; margin: 0; padding: 0; }
+.verificationChecks li { padding-block: 8px; border-top: 1px solid var(--dsw-alias-border-l1); }
+.verificationChecks li > div { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; }
+.verificationChecks strong, .deliveryRevision { overflow-wrap: anywhere; }
 .deliveryGap { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; }
 .primaryButton, .secondaryButton, .dangerButton, .memberCorrectionButton {
   display: inline-flex; align-items: center; justify-content: center; align-self: flex-start;

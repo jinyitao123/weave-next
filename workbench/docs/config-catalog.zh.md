@@ -2919,7 +2919,7 @@ export interface Config {
 
 ## `@deepseek-ai/dsh-workbench-app`
 
-需要：`sessions` · `sessionProjections` · `sessionController` · `commands` · `systemPrompt` · `connection`
+需要：`sessions` · `sessionProjections` · `sessionController` · `commands` · `systemPrompt` · `connection` · `tools`
 
 ```ts config-catalog
 /** Host-only WorkTask synchronization settings. */
@@ -2935,7 +2935,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/bundle/workbench-app/src/index.ts:929`](../packages/bundle/workbench-app/src/index.ts)
+来源：[`packages/bundle/workbench-app/src/index.ts:1025`](../packages/bundle/workbench-app/src/index.ts)
 
 <a id="deepseek-aidsh-workflow-worker-thread"></a>
 

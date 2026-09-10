@@ -1,0 +1,145 @@
+package teamrun
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"strings"
+	"testing"
+
+	"github.com/jinyitao123/loom"
+	"github.com/jinyitao123/loom/contract"
+	"github.com/jinyitao123/loom/stdlib"
+	"github.com/jinyitao123/weave/internal/base/frozen"
+	"github.com/jinyitao123/weave/internal/base/storeext"
+	"github.com/jinyitao123/weave/internal/kernel/compiler"
+	"github.com/jinyitao123/weave/internal/kernel/loomruntime"
+	"github.com/jinyitao123/weave/internal/kernel/workflow"
+	"github.com/jinyitao123/weave/internal/kernel/workflow/machine"
+)
+
+type workflowMemberTestLLM struct {
+	fail  bool
+	calls int
+}
+
+func (m *workflowMemberTestLLM) Chat(context.Context, contract.ChatRequest) (*contract.ChatResponse, error) {
+	m.calls++
+	if m.fail {
+		return nil, errors.New("connection reset")
+	}
+	return &contract.ChatResponse{Content: "finished", Usage: contract.Usage{InputTokens: 5, OutputTokens: 2, CostUSD: .01}}, nil
+}
+func (*workflowMemberTestLLM) Stream(context.Context, contract.ChatRequest) (<-chan contract.StreamChunk, error) {
+	return nil, errors.New("unused")
+}
+
+func TestWorkflowMemberParkKeepsCallAndResumesItsOriginalRunRealPG(t *testing.T) {
+	h := newProcessNextHarness(t)
+	taskID, run := h.seedRunningWorkflowTask(t, "run-persistent-member")
+	runner, err := loomruntime.NewMemberRunner(storeext.New(h.pool))
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtime := &WorkflowSerialRuntime{Transactions: h.pool, Runs: NewPGStore(), Checkpoints: NewPGCheckpointStore(), Members: runner}
+	bundle := frozen.FrozenExecutionBundle{FactoryKey: compiler.StandardFrozenToolsKey(), Agent: frozen.FrozenAgentRecord{WorkspaceID: run.WorkspaceID, AgentID: "worker-agent", AgentVersion: 1, Name: "worker"}}
+	model := &workflowMemberTestLLM{fail: true}
+	makeArtifact := func() *workflow.RuntimeArtifact {
+		opts := loomruntime.InstallFrozenMemberJournal(loomruntime.InstallFrozenUsageTracking(compiler.FrozenBuildOpts{LLM: model, Tools: &compiler.NoOpDispatcher{}}))
+		graph := loom.NewGraph("persistent-workflow-worker", "chat", loom.WithCheckpointPolicy(loom.CheckpointRequired), loom.WithCheckpointHistory(-1))
+		graph.SetHooks(loom.HookPoints{Before: opts.Hooks.BeforeStepHooks, After: opts.Hooks.AfterStepHooks})
+		graph.AddStep("chat", stdlib.NewToolLoopStep(opts.ExecutionLLMWrapper(opts.LLM), opts.Tools, stdlib.ToolLoopOpts{Model: "fixture"}), loom.End())
+		return &workflow.RuntimeArtifact{Entries: []workflow.RuntimeGraphEntry{{AgentID: bundle.Agent.AgentID, AgentVersion: 1, Graph: graph, Bundle: &bundle}}}
+	}
+	graph := machine.GraphDefinition{EntryNodeID: "worker", OutputContract: machine.OutputContract{Type: machine.ValueText}, Nodes: []machine.Node{
+		{ID: "worker", Type: machine.NodeWorker, Config: machine.WorkerConfig{AgentID: bundle.Agent.AgentID, AgentVersion: 1, Kind: machine.WorkerConsult, ResultRequirement: "Finish"}, Output: &machine.OutputContract{Type: machine.ValueText}},
+		{ID: "deliver", Type: machine.NodeDeliver, Config: machine.DeliverConfig{Result: machine.ValueRef{Source: machine.ValueNodeOutput, NodeID: "worker"}}},
+	}, Edges: []machine.Edge{{FromNodeID: "worker", ToNodeID: "deliver", Route: machine.RouteSuccess}}}
+	payload := frozen.ArtifactPayloadV1{Bundles: []frozen.FrozenExecutionBundle{bundle}}
+	artifact := makeArtifact()
+	first := runSerialMachine(t.Context(), graph, payload, artifact, "input", serialMachineStart{Run: run, ArtifactHash: strings.Repeat("a", 64), MemberContext: runtime.memberContext(run, strings.Repeat("a", 64)), RecordCheckpoint: runtime.serialCheckpointWriter(run, artifact)})
+	if first.Status != serialParked || first.ActiveMember == nil || first.ActiveMember.EntryOrdinal != 0 {
+		t.Fatalf("first=%+v", first)
+	}
+	firstRunID := loomruntime.MemberRunID(run.WorkspaceID, run.RunID, run.RunSnapshotID, "worker", first.ActiveMember.CallID)
+	result, err := runtimeResultFromSerial(first, payload, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, err := h.tasks.Get(t.Context(), run.WorkspaceID, taskID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parked, err := h.executor.parkRunning(t.Context(), run, task, *run.CurrentExecutorID, *result.Park)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.pool.Exec(t.Context(), `UPDATE weave_task_queue SET status='completed' WHERE id=$1`, taskID); err != nil {
+		t.Fatal(err)
+	}
+	retry := &StageRetryService{Transactions: h.pool, Runs: NewPGStore(), Checkpoints: NewPGCheckpointStore(), Tasks: h.tasks}
+	request := StageRetryRequest{WorkspaceID: run.WorkspaceID, RunID: run.RunID, NodeID: "worker", IdempotencyKey: "continue-member-once"}
+	if _, err := retry.Retry(t.Context(), request); err != nil {
+		t.Fatal(err)
+	}
+	resumed := h.readRun(t, run.RunID)
+	checkpoint := retryCheckpoint(t, h, resumed)
+	if checkpoint.ActiveMember == nil || checkpoint.ActiveMember.CallID != first.ActiveMember.CallID {
+		t.Fatalf("lost active invocation on park: %+v", checkpoint)
+	}
+	if _, err := retry.Retry(t.Context(), request); err != nil {
+		t.Fatalf("duplicate continue: %v", err)
+	}
+	usage, err := loomruntime.UnmarshalUsageAccumulator(checkpoint.Usage)
+	if err != nil {
+		t.Fatal(err)
+	}
+	model.fail = false
+	artifact = makeArtifact()
+	second := runSerialMachine(t.Context(), graph, payload, artifact, "input", serialMachineStart{Run: resumed, NodeID: checkpoint.NodeID, Usage: usage, ActiveMember: checkpoint.ActiveMember, MemberBreakdown: checkpoint.MemberBreakdown,
+		MemberContext: runtime.memberContext(resumed, strings.Repeat("a", 64)), RecordCheckpoint: runtime.serialCheckpointWriter(resumed, artifact)})
+	if second.Status != serialCompleted || second.Output != "finished" {
+		t.Fatalf("second=%+v", second)
+	}
+	if len(second.MemberBreakdown) != 1 || second.MemberBreakdown[firstRunID].RunID != firstRunID {
+		t.Fatalf("new member was allocated: %+v", second.MemberBreakdown)
+	}
+	if second.Usage.Totals().InputTokens != 5 || second.UsageComplete || second.UsageIncompleteReason != "member_model_response_lost" {
+		t.Fatalf("usage=%+v complete=%v reason=%s", second.Usage.Totals(), second.UsageComplete, second.UsageIncompleteReason)
+	}
+	var count, attempt int
+	if err := h.pool.QueryRow(t.Context(), `SELECT count(*) FROM weave_workflow_member_runs`).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.pool.QueryRow(t.Context(), `SELECT attempt_generation FROM weave_run_attempt_leases WHERE run_id=$1`, firstRunID).Scan(&attempt); err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 || attempt != 2 || model.calls != 2 {
+		t.Fatalf("members=%d attempts=%d model=%d parked=%s", count, attempt, model.calls, parked.Status)
+	}
+	finalCheckpoint := retryCheckpoint(t, h, resumed)
+	if finalCheckpoint.ActiveMember != nil || finalCheckpoint.NodeID != "deliver" || string(finalCheckpoint.CompletedOutputs["worker"]) != `"finished"` {
+		t.Fatalf("member result was not accepted once: %+v", finalCheckpoint)
+	}
+}
+
+func TestMemberTerminalAccountingExcludesRegisteredChildOnce(t *testing.T) {
+	candidate := loomruntime.TerminalEntryV3{SchemaVersion: 3, RunID: "parent", Agent: "root", Tenant: "workspace", AttributionScope: loomruntime.TerminalAttributionLegacyUnattributed,
+		Status: "success", StopReason: "completed", StartedAt: "2026-09-07T00:00:00Z", EndedAt: "2026-09-07T00:00:01Z", DurationMs: 1000, TokensIn: 10, TokensOut: 5, CostUSD: .03, ToolCalls: 2,
+		SelfExclusive: loomruntime.TerminalUsage{InputTokens: 10, OutputTokens: 5, CostUSD: .03, ToolCalls: 2}, SubtreeTotal: loomruntime.TerminalUsage{InputTokens: 10, OutputTokens: 5, CostUSD: .03, ToolCalls: 2}, ChildBreakdown: []loomruntime.TerminalChildBreakdownV3{},
+	}
+	err := applyMemberTerminalBreakdown(&candidate, map[string]loomruntime.TerminalChildBreakdownV3{"child": {RunID: "child", ParentRunID: "parent", ParentSeq: 1, Agent: "member", SelfExclusive: loomruntime.TerminalUsage{InputTokens: 6, OutputTokens: 3, CostUSD: .02, ToolCalls: 2}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if candidate.SelfExclusive.InputTokens != 4 || candidate.SubtreeTotal.InputTokens != 10 || candidate.TokensIn != 4 || candidate.ToolCalls != 0 {
+		t.Fatalf("duplicate member charge: %+v", candidate)
+	}
+	raw, err := json.Marshal(candidate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if inspected := loomruntime.InspectTerminalRecord(true, raw); inspected.Err != nil {
+		t.Fatal(inspected.Err)
+	}
+}

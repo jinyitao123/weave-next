@@ -1,0 +1,385 @@
+{
+  "traceability": {
+    "baseline_id": "corona-baseline-1.0.0",
+    "baseline_version": "1.0.0",
+    "content_digest": "cfb12b781363c547da87e6dec9fd937079cba25501b85ff6cbfabfbc508b10c2"
+  },
+  "results": {
+    "travel_time": {
+      "travel_time_yr": {
+        "value": 141.66666666666669,
+        "unit": "yr",
+        "formula": "travel_time_yr = proxima_distance_ly / cruise_speed_c",
+        "inputs": {
+          "proxima_distance_ly": 4.25,
+          "cruise_speed_c": 0.03
+        },
+        "fact_label": "derived_result",
+        "note": "匀速巡航下限; 不含加速、减速与航向修正; 区分'飞离太阳系'与'抵达目标恒星系统'"
+      },
+      "light_travel_time_yr": {
+        "value": 4.25,
+        "unit": "yr",
+        "formula": "light_travel_time_yr = proxima_distance_ly",
+        "inputs": {
+          "proxima_distance_ly": 4.25
+        },
+        "fact_label": "derived_result",
+        "note": "光行时, 即单向通信/数据回传最低时延"
+      }
+    },
+    "kinetic_energy": {
+      "crewed_1mt": {
+        "kinetic_energy_nonrel_j": {
+          "value": 4.04439830431568e+22,
+          "unit": "J",
+          "formula": "kinetic_energy_j = 0.5 * mass_kg * (cruise_speed_c * c)^2",
+          "inputs": {
+            "mass_kg": 1000000000,
+            "cruise_speed_c": 0.03,
+            "speed_of_light_m_s": 299792458
+          },
+          "fact_label": "derived_result",
+          "note": "自身动能下限; 未计发动机效率/排气动能/推进剂/减速/备用/建造损耗, 不得用作工程能源预算"
+        },
+        "kinetic_energy_rel_j": {
+          "value": 4.0471303222625495e+22,
+          "unit": "J",
+          "formula": "kinetic_energy_rel_j = (gamma-1) * mass_kg * c^2",
+          "inputs": {
+            "mass_kg": 1000000000,
+            "cruise_speed_c": 0.03,
+            "speed_of_light_m_s": 299792458
+          },
+          "fact_label": "derived_result",
+          "note": "相对论对照, 与非相对论值分列, 不得混用"
+        }
+      },
+      "orbital_material_5mt": {
+        "kinetic_energy_nonrel_j": {
+          "value": 2.02219915215784e+23,
+          "unit": "J",
+          "formula": "kinetic_energy_j = 0.5 * mass_kg * (cruise_speed_c * c)^2",
+          "inputs": {
+            "mass_kg": 5000000000,
+            "cruise_speed_c": 0.03,
+            "speed_of_light_m_s": 299792458
+          },
+          "fact_label": "derived_result",
+          "note": "自身动能下限; 未计发动机效率/排气动能/推进剂/减速/备用/建造损耗, 不得用作工程能源预算"
+        },
+        "kinetic_energy_rel_j": {
+          "value": 2.0235651611312747e+23,
+          "unit": "J",
+          "formula": "kinetic_energy_rel_j = (gamma-1) * mass_kg * c^2",
+          "inputs": {
+            "mass_kg": 5000000000,
+            "cruise_speed_c": 0.03,
+            "speed_of_light_m_s": 299792458
+          },
+          "fact_label": "derived_result",
+          "note": "相对论对照, 与非相对论值分列, 不得混用"
+        }
+      }
+    },
+    "accel_decel_efficiency": {
+      "crewed_1mt": {
+        "min_input_energy_by_efficiency_j": {
+          "0.1": {
+            "value": 4.04439830431568e+23,
+            "unit": "J",
+            "formula": "min_input_energy_j = kinetic_energy_nonrel_j / efficiency",
+            "inputs": {
+              "mass_kg": 1000000000,
+              "cruise_speed_c": 0.03,
+              "efficiency": 0.1
+            },
+            "fact_label": "derived_result",
+            "note": "η 为情景假设值 [assumption]; 结果为单边加速的最小输入能量下限, 非完整能源预算; 减速需求同量级, 合计约 2×"
+          },
+          "0.3": {
+            "value": 1.3481327681052267e+23,
+            "unit": "J",
+            "formula": "min_input_energy_j = kinetic_energy_nonrel_j / efficiency",
+            "inputs": {
+              "mass_kg": 1000000000,
+              "cruise_speed_c": 0.03,
+              "efficiency": 0.3
+            },
+            "fact_label": "derived_result",
+            "note": "η 为情景假设值 [assumption]; 结果为单边加速的最小输入能量下限, 非完整能源预算; 减速需求同量级, 合计约 2×"
+          },
+          "0.5": {
+            "value": 8.08879660863136e+22,
+            "unit": "J",
+            "formula": "min_input_energy_j = kinetic_energy_nonrel_j / efficiency",
+            "inputs": {
+              "mass_kg": 1000000000,
+              "cruise_speed_c": 0.03,
+              "efficiency": 0.5
+            },
+            "fact_label": "derived_result",
+            "note": "η 为情景假设值 [assumption]; 结果为单边加速的最小输入能量下限, 非完整能源预算; 减速需求同量级, 合计约 2×"
+          }
+        },
+        "accel_plus_decel_note": "若任务终态为进入目标恒星系统并驻留, 需与加速同量级的减速能力 [verified_fact 来源: 纪要 §二.1]; 本项仅概念级下限"
+      },
+      "orbital_material_5mt": {
+        "min_input_energy_by_efficiency_j": {
+          "0.1": {
+            "value": 2.0221991521578396e+24,
+            "unit": "J",
+            "formula": "min_input_energy_j = kinetic_energy_nonrel_j / efficiency",
+            "inputs": {
+              "mass_kg": 5000000000,
+              "cruise_speed_c": 0.03,
+              "efficiency": 0.1
+            },
+            "fact_label": "derived_result",
+            "note": "η 为情景假设值 [assumption]; 结果为单边加速的最小输入能量下限, 非完整能源预算; 减速需求同量级, 合计约 2×"
+          },
+          "0.3": {
+            "value": 6.740663840526133e+23,
+            "unit": "J",
+            "formula": "min_input_energy_j = kinetic_energy_nonrel_j / efficiency",
+            "inputs": {
+              "mass_kg": 5000000000,
+              "cruise_speed_c": 0.03,
+              "efficiency": 0.3
+            },
+            "fact_label": "derived_result",
+            "note": "η 为情景假设值 [assumption]; 结果为单边加速的最小输入能量下限, 非完整能源预算; 减速需求同量级, 合计约 2×"
+          },
+          "0.5": {
+            "value": 4.04439830431568e+23,
+            "unit": "J",
+            "formula": "min_input_energy_j = kinetic_energy_nonrel_j / efficiency",
+            "inputs": {
+              "mass_kg": 5000000000,
+              "cruise_speed_c": 0.03,
+              "efficiency": 0.5
+            },
+            "fact_label": "derived_result",
+            "note": "η 为情景假设值 [assumption]; 结果为单边加速的最小输入能量下限, 非完整能源预算; 减速需求同量级, 合计约 2×"
+          }
+        },
+        "accel_plus_decel_note": "若任务终态为进入目标恒星系统并驻留, 需与加速同量级的减速能力 [verified_fact 来源: 纪要 §二.1]; 本项仅概念级下限"
+      }
+    },
+    "artificial_gravity": {
+      "reference_case_m_s2": {
+        "value": 43.864908449286034,
+        "unit": "m/s^2",
+        "formula": "artificial_gravity_m_s2 = (2*pi*rotation_rpm/60)^2 * radius_m",
+        "inputs": {
+          "radius_m": 1000,
+          "rotation_rpm": 2
+        },
+        "fact_label": "derived_result"
+      },
+      "reference_case_in_g0": {
+        "value": 4.472975832652948,
+        "unit": "g0 (9.80665 m/s^2)",
+        "formula": "g_ratio = artificial_gravity_m_s2 / standard_gravity_m_s2",
+        "inputs": {
+          "artificial_gravity_m_s2": 43.864908449286034,
+          "standard_gravity_m_s2": 9.80665
+        },
+        "fact_label": "derived_result"
+      },
+      "rpm_for_1g_at_1km": {
+        "value": 0.9456528152601877,
+        "unit": "rpm",
+        "formula": "rpm = 60/(2*pi) * sqrt(standard_gravity_m_s2 / radius_m)",
+        "inputs": {
+          "radius_m": 1000,
+          "target_m_s2": 9.80665
+        },
+        "fact_label": "derived_result",
+        "note": "同一 1km 半径取得 1g 所需转速 ≈ 0.95 rpm"
+      },
+      "design_note": "舱体半径、转速、允许重力与人体适应性为联合设计变量 [verified_fact 来源: 纪要 §二.3]"
+    },
+    "dust_impact": {
+      "dust_1mg_energy_j": {
+        "value": 40443983.043156795,
+        "unit": "J",
+        "formula": "dust_impact_energy_j = 0.5 * dust_mass_kg * (relative_speed_c * c)^2",
+        "inputs": {
+          "dust_mass_kg": 1e-06,
+          "relative_speed_c": 0.03,
+          "speed_of_light_m_s": 299792458
+        },
+        "fact_label": "derived_result"
+      },
+      "dust_1mg_tnt_kg": {
+        "value": 9.666343939569023,
+        "unit": "kg TNT",
+        "formula": "tnt_kg = dust_impact_energy_j / 4.184e6",
+        "inputs": {
+          "dust_impact_energy_j": 40443983.043156795
+        },
+        "fact_label": "derived_result",
+        "note": "换算约定 1 kg TNT = 4.184e6 J [assumption]"
+      },
+      "dust_10mg_energy_j": {
+        "value": 404439830.431568,
+        "unit": "J",
+        "formula": "dust_impact_energy_j = 0.5 * dust_mass_kg * (relative_speed_c * c)^2",
+        "inputs": {
+          "dust_mass_kg": 1e-05,
+          "relative_speed_c": 0.03
+        },
+        "fact_label": "derived_result",
+        "note": "10mg 对照工况 ≈ 405 MJ"
+      },
+      "withdrawn_note": "旧稿'1mg≈450MJ'已撤回, 不得复现 [verified_fact 来源: 纪要 §二.4]; 尘埃通量/粒径分布/盾体面密度等为 [unknown]"
+    },
+    "target_geometry": {
+      "separation_angles_deg": {
+        "proxima_barnard": {
+          "value": 78.0,
+          "unit": "deg",
+          "formula": "公开天球坐标计算 (来源: 纪要 §二.5)",
+          "inputs": {},
+          "fact_label": "verified_fact"
+        },
+        "proxima_tau_ceti": {
+          "value": 101.0,
+          "unit": "deg",
+          "formula": "公开天球坐标计算 (来源: 纪要 §二.5)",
+          "inputs": {},
+          "fact_label": "verified_fact"
+        },
+        "barnard_tau_ceti": {
+          "value": 117.0,
+          "unit": "deg",
+          "formula": "公开天球坐标计算 (来源: 纪要 §二.5)",
+          "inputs": {},
+          "fact_label": "verified_fact"
+        }
+      },
+      "turn_limit_deg": {
+        "delta_v_10pct": {
+          "value": 5.729577951308233,
+          "unit": "deg",
+          "formula": "turn_angle_deg ≈ degrees(Δv/v) 小角近似",
+          "inputs": {
+            "delta_v_fraction": 0.1
+          },
+          "fact_label": "derived_result"
+        },
+        "delta_v_15pct": {
+          "value": 8.594366926962348,
+          "unit": "deg",
+          "formula": "turn_angle_deg ≈ degrees(Δv/v) 小角近似",
+          "inputs": {
+            "delta_v_fraction": 0.15
+          },
+          "fact_label": "derived_result"
+        }
+      },
+      "conclusion": "10%–15% Δv 仅支持约 5.7°–8.6° 转向, 无法支持三目标中途切换; 目标选择须在主加速前完成 [verified_fact 来源: 纪要 §二.5]"
+    },
+    "precursor_probe": {
+      "flight_time_yr_at_0_2c": {
+        "value": 21.25,
+        "unit": "yr",
+        "formula": "flight_time_yr = proxima_distance_ly / 0.2c",
+        "inputs": {
+          "proxima_distance_ly": 4.25,
+          "probe_speed_c": 0.2
+        },
+        "fact_label": "derived_result",
+        "note": "0.2c 为先锋探测器路线自身参数, 非巡航情景扩展"
+      },
+      "data_return_time_yr": {
+        "value": 4.25,
+        "unit": "yr",
+        "formula": "data_return_time_yr = proxima_distance_ly (光速回传)",
+        "inputs": {
+          "proxima_distance_ly": 4.25
+        },
+        "fact_label": "derived_result"
+      },
+      "earliest_data_at_earth_yr": {
+        "value": 25.5,
+        "unit": "yr",
+        "formula": "earliest_return_yr = flight_time_yr + data_return_time_yr",
+        "inputs": {
+          "flight_time_yr": 21.25,
+          "data_return_time_yr": 4.25
+        },
+        "fact_label": "derived_result",
+        "note": "最低约 25.5 年; 先锋数据不得作为第 20 年以前母舰决策条件 [verified_fact 来源: 纪要 §二.6]"
+      }
+    },
+    "route_sensitivity": {
+      "laser_sail_precursor": {
+        "route_id": "laser_sail_precursor",
+        "route_name": "激光光帆先锋探测器",
+        "mass_note": "克级光帆探测器自身质量与光帆/激光阵参数为 [unknown]; 其 0.2c 工况见 precursor_probe; 不得外推至其他路线",
+        "sensitivity_at_0_03c": {
+          "value": null,
+          "unit": "-",
+          "formula": "-",
+          "inputs": {},
+          "fact_label": "unknown",
+          "note": "该路线质量基线未定义, 敏感性待运输/载荷方案论证后回填"
+        }
+      },
+      "uncrewed_civilization_archive": {
+        "route_id": "uncrewed_civilization_archive",
+        "route_name": "无人文明档案载荷",
+        "mass_note": "档案载荷质量规模未在基线中定义 [unknown]; 运输方案另行论证",
+        "sensitivity_at_0_03c": {
+          "value": null,
+          "unit": "-",
+          "formula": "-",
+          "inputs": {},
+          "fact_label": "unknown",
+          "note": "该路线质量基线未定义, 敏感性待运输/载荷方案论证后回填"
+        }
+      },
+      "crewed_interstellar_vehicle": {
+        "route_id": "crewed_interstellar_vehicle",
+        "route_name": "载人星际飞行器",
+        "mass_note": "参考工况 crewed_1mt = 1e9 kg [verified_fact 来源: 基线 reference_cases]",
+        "sensitivity_at_0_03c": {
+          "value": {
+            "mass_x0.9": {
+              "mass_kg": 900000000.0,
+              "kinetic_energy_nonrel_j": 3.6399584738841117e+22,
+              "min_input_energy_eta0.3_j": 1.213319491294704e+23
+            },
+            "mass_x1.0": {
+              "mass_kg": 1000000000.0,
+              "kinetic_energy_nonrel_j": 4.04439830431568e+22,
+              "min_input_energy_eta0.3_j": 1.3481327681052267e+23
+            },
+            "mass_x1.1": {
+              "mass_kg": 1100000000.0,
+              "kinetic_energy_nonrel_j": 4.4488381347472475e+22,
+              "min_input_energy_eta0.3_j": 1.4829460449157492e+23
+            }
+          },
+          "unit": "见子项单位",
+          "formula": "kinetic_energy_nonrel_j(mass_kg, 0.03c); min_input = KE/0.3",
+          "inputs": {
+            "cruise_speed_c": 0.03,
+            "efficiency": 0.3
+          },
+          "fact_label": "derived_result",
+          "note": "巡航速度锁定 0.03c; 质量 ±10% 敏感性; η=0.3 为 [assumption]"
+        }
+      }
+    }
+  },
+  "reference_values": {
+    "travel_time_yr": 141.66666666666669,
+    "kinetic_energy_1mt_j": 4.04439830431568e+22,
+    "kinetic_energy_5mt_j": 2.02219915215784e+23,
+    "artificial_gravity_m_s2": 43.864908449286034,
+    "dust_impact_energy_j": 40443983.043156795
+  }
+}

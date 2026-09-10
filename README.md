@@ -85,13 +85,12 @@ From this repository:
 make workbench-install
 make workbench-build
 cd workbench
-WEAVE_COMMAND='../bin/weave' \
 WEAVE_API_URL='http://127.0.0.1:8080' \
 WEAVE_API_KEY='<owner-bound-api-key>' \
 pnpm workbench --host 127.0.0.1 --port 3080 --no-open
 ```
 
-Use Workbench's local sign-in flow at `http://127.0.0.1:3080/`. `WEAVE_COMMAND` selects the matching Weave binary; Workbench starts its MCP process. A usable team and configured execution environment are also needed before dispatch. Opening the page or passing health checks alone does not prove a business task can complete.
+Use Workbench's local sign-in flow at `http://127.0.0.1:3080/`. Workbench starts `weave mcp serve` from `PATH`; set `WEAVE_COMMAND` to an absolute executable path only when selecting another trusted binary. The launcher rejects an explicit missing path instead of opening a partially connected Workbench. A usable team and configured execution environment are also needed before dispatch. Opening the page or passing health checks alone does not prove a business task can complete.
 
 Workbench puts a complete Weave address in each new runtime connection command. Set `WEAVE_RUNTIME_SERVER_URL` to the public or otherwise routable Weave URL for a deployed service; a bare-host Workbench falls back from a loopback API URL to the preferred LAN IPv4 and keeps the configured API port.
 
@@ -128,7 +127,7 @@ Dependencies must not import upward across the four bands. The Go module remains
 
 MCP calls explicitly declared in `write_tools` are rejected by the write gate. Undeclared tools are not automatically rejected by name, and CLI engines run with their runtime host's permissions. This requires a trusted deployment environment; it is not a universal sandbox.
 
-Runtime collection accepts supported UTF-8 files attributable to the current execution, with a 256 KiB per-file and 512 KiB aggregate limit. A promised but unsaved file is a delivery failure, not a valid final receipt. Preview limits are separate from collection limits; complete downloads can only return content actually saved by Weave. Unknown usage is not zero cost.
+Runtime collection accepts supported UTF-8 files attributable to the current execution, with a 256 KiB per-file and 1 MiB aggregate limit. A promised but unsaved file is a delivery failure, not a valid final receipt. Preview limits are separate from collection limits; complete downloads can only return content actually saved by Weave. Unknown usage is not zero cost.
 
 ## Validation and records
 

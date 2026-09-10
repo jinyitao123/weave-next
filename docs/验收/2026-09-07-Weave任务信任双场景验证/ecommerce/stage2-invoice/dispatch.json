@@ -1,0 +1,154 @@
+{
+  "schema_version": 1,
+  "recorded_at": "2026-09-08T01:49:32.003031+00:00",
+  "entry": "Workbench in-app browser",
+  "record_kind": "aggregate_of_archived_incident_and_per_run_activity",
+  "fixture_run_id": "trust-stage2-invoice-hold-20260908-remote002",
+  "browser_session_id": "session-7c20621c-735c-4024-9f98-b8ad9df3b033",
+  "submitted_at": "2026-09-08T09:04:00+08:00",
+  "runs": [
+    {
+      "run_id": "run-65e19805-25cf-5251-8b65-eaa15d823870",
+      "client_request_id": "63875390-e8c2-42dd-b9fd-331f3d52509b",
+      "input_case": "VBR-52",
+      "input_status": "WRONG_PREVIOUS_TASK",
+      "status": "cancelled",
+      "activity_source": {
+        "path": "ecommerce/stage2-invoice/run-65e19805-25cf-5251-8b65-eaa15d823870-activity.json",
+        "sha256": "809ff493879f4d7a506d48675b7a2654b8eaca5b69f47b4029e40a30efe89b4a"
+      },
+      "backend_status": "cancelled",
+      "started_at": "2026-09-08T09:15:37.112933+08:00",
+      "terminal_at": "2026-09-08T09:15:59.570413+08:00",
+      "observed_duration_ms": 22457,
+      "stop_unconfirmed": false,
+      "team_id": "104b1ef7-d0a9-43a9-88fe-447a00b1ed61",
+      "workflow_id": "realreplicabench-gmail-calendar-mock-workflow",
+      "workflow_version": 1,
+      "usage": {
+        "status": "UNAVAILABLE",
+        "source_completeness": "unavailable",
+        "tokens_in": null,
+        "tokens_out": null,
+        "cost_usd": null,
+        "note": "Raw activity fields contain zero while completeness.usage is unavailable; zero is not treated as measured usage."
+      },
+      "deliverables_count": 0,
+      "completeness": {
+        "activity_events": "complete",
+        "corrections": "complete",
+        "deliverables": "complete",
+        "human_tasks": "complete",
+        "member_inputs": "partial",
+        "member_outputs": "partial",
+        "member_tool_activity": "partial",
+        "members": "complete",
+        "public_updates": "partial",
+        "run": "complete",
+        "runtimes": "complete",
+        "stages": "unavailable",
+        "usage": "unavailable"
+      }
+    },
+    {
+      "run_id": "run-3f76315e-4014-57f8-a2f0-a3649c5a1c1a",
+      "client_request_id": "bc0f4548-c606-4939-a07a-f6e15f84a308",
+      "input_case": "VBR-52 with invoice dispatch framing",
+      "input_status": "WRONG_PREVIOUS_TASK_WITH_MIXED_FRAMING",
+      "status": "cancelled",
+      "activity_source": {
+        "path": "ecommerce/stage2-invoice/run-3f76315e-4014-57f8-a2f0-a3649c5a1c1a-activity.json",
+        "sha256": "404f1bb488edbe78f7f4ed58612787e8e195ad7203f39a94b77a3b4869913f06"
+      },
+      "backend_status": "cancelled",
+      "started_at": "2026-09-08T09:17:31.651151+08:00",
+      "terminal_at": "2026-09-08T09:17:53.667071+08:00",
+      "observed_duration_ms": 22016,
+      "stop_unconfirmed": false,
+      "team_id": "104b1ef7-d0a9-43a9-88fe-447a00b1ed61",
+      "workflow_id": "realreplicabench-gmail-calendar-mock-workflow",
+      "workflow_version": 1,
+      "usage": {
+        "status": "UNAVAILABLE",
+        "source_completeness": "unavailable",
+        "tokens_in": null,
+        "tokens_out": null,
+        "cost_usd": null,
+        "note": "Raw activity fields contain zero while completeness.usage is unavailable; zero is not treated as measured usage."
+      },
+      "deliverables_count": 0,
+      "completeness": {
+        "activity_events": "complete",
+        "corrections": "complete",
+        "deliverables": "complete",
+        "human_tasks": "complete",
+        "member_inputs": "partial",
+        "member_outputs": "partial",
+        "member_tool_activity": "partial",
+        "members": "complete",
+        "public_updates": "partial",
+        "run": "complete",
+        "runtimes": "complete",
+        "stages": "unavailable",
+        "usage": "unavailable"
+      }
+    },
+    {
+      "run_id": "run-c46e438e-e635-598b-bd4d-db27cfd56743",
+      "client_request_id": "a5f29b75-260b-4a50-a4f2-68cd4fae896e",
+      "input_case": "INV-440",
+      "input_status": "CORRECT_BODY_WITHOUT_TRAILING_NEWLINE",
+      "status": "cancelled_by_supervising_agent_after_integrity_incident",
+      "activity_source": {
+        "path": "ecommerce/stage2-invoice/run-c46e438e-e635-598b-bd4d-db27cfd56743-activity.json",
+        "sha256": "1bd63e26e0c83557d8be8a5120c06f7b16d47c2ccbfe37d7c9101c518545f391"
+      },
+      "backend_status": "cancelled",
+      "started_at": "2026-09-08T09:18:27.691185+08:00",
+      "terminal_at": "2026-09-08T09:21:49.784984+08:00",
+      "observed_duration_ms": 202094,
+      "stop_unconfirmed": false,
+      "team_id": "104b1ef7-d0a9-43a9-88fe-447a00b1ed61",
+      "workflow_id": "realreplicabench-gmail-calendar-mock-workflow",
+      "workflow_version": 1,
+      "usage": {
+        "status": "UNAVAILABLE",
+        "source_completeness": "unavailable",
+        "tokens_in": null,
+        "tokens_out": null,
+        "cost_usd": null,
+        "note": "Raw activity fields contain zero while completeness.usage is unavailable; zero is not treated as measured usage."
+      },
+      "deliverables_count": 0,
+      "completeness": {
+        "activity_events": "complete",
+        "corrections": "complete",
+        "deliverables": "complete",
+        "human_tasks": "complete",
+        "member_inputs": "partial",
+        "member_outputs": "partial",
+        "member_tool_activity": "partial",
+        "members": "complete",
+        "public_updates": "partial",
+        "run": "complete",
+        "runtimes": "complete",
+        "stages": "unavailable",
+        "usage": "unavailable"
+      }
+    }
+  ],
+  "dispatch_integrity": "FAIL_CROSS_TASK_INPUT",
+  "correct_dispatches_observed": 1,
+  "wrong_previous_input_dispatches_observed": 2,
+  "backend_confirmed_all_cancelled": true,
+  "fresh_conversation_comparator": "NOT_RUN",
+  "limits": [
+    "Frontend tool arguments already contain the wrong prior task; this is not proof of backend substitution.",
+    "The archive runs-after-dispatch.json only lists the first sample and is not authoritative for the three incident runs.",
+    "Correct body in the third dispatch does not repair the earlier integrity violation or make the cancelled third run a completed sample."
+  ],
+  "source": {
+    "path": "ecommerce/stage2-invoice/dispatch-incident.json",
+    "sha256": "ef9bde27ee25297ddc1a6ce48b719121b7c2c9eb75f5ae76fd40fe99f89e0e35"
+  }
+}

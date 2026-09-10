@@ -1,0 +1,98 @@
+{
+  "case": "M2",
+  "summarized_at": "2026-09-07T04:47:17.344125+00:00",
+  "status": {
+    "case": "M2",
+    "finished_at": "2026-09-07T04:37:30.562451+00:00",
+    "driver_exit": 1,
+    "milestone_observed": true,
+    "fault_injected": true,
+    "task_id": "task-6a50568ad2baec98cfd34b88ea32b01c",
+    "workdir": "/private/tmp/weave-runtime-value-20260907-sqtugx3m/runtime-workspaces/.invocations/task-6a50568ad2baec98cfd34b88ea32b01c/default/corona-prephase-a-lab-v3-luna-digital-engineering-builder/workdir",
+    "elapsed_seconds": 430.042,
+    "status": "engine_failed",
+    "independent_acceptance": "pending",
+    "same_invocation_reconnect_exit": 1,
+    "engineering_physical_tasks": 1
+  },
+  "physical_tasks": [
+    {
+      "id": "task-6a50568ad2baec98cfd34b88ea32b01c",
+      "status": "completed",
+      "worker_id": null,
+      "runtime_id": "488f724c-3a47-4816-823d-63dbbf4eecb7",
+      "created_at": "2026-09-07T12:30:21.155521+08:00",
+      "started_at": "2026-09-07T12:30:21.682402+08:00",
+      "completed_at": "2026-09-07T12:37:27.416364+08:00"
+    }
+  ],
+  "physical_task_count": 1,
+  "logical_invocation_id": "runtime-value-M2/engineering/0",
+  "queue_status": "completed",
+  "queue_error": null,
+  "engine_status": "failed",
+  "reported_models": [
+    "k3[1m]",
+    "k3"
+  ],
+  "public_events": {
+    "count": 60,
+    "kinds": {
+      "tool_call": 28,
+      "tool_result": 28,
+      "text": 3,
+      "stream_end": 1
+    },
+    "sequence_unique": true,
+    "sequence_contiguous": true
+  },
+  "files": {
+    "count": 9,
+    "receipt_artifact_count": 9,
+    "receipt_hash_mismatches": [],
+    "files_without_receipt": []
+  },
+  "usage": {
+    "source": null,
+    "scope": null,
+    "input_tokens_including_cache": null,
+    "output_tokens": null,
+    "cli_reported_cost_usd": null,
+    "cost_is_provider_invoice": false,
+    "raw_usage": null,
+    "session_id": null,
+    "turns": null,
+    "raw_summary_complete_json": true,
+    "missing_is_unknown_not_zero": true
+  },
+  "scope": "real member execution, not full workflow or Workbench recovery",
+  "fault": {
+    "before": "2026-09-07T04:37:27.385863+00:00",
+    "after": "2026-09-07T04:37:27.386511+00:00",
+    "milestone_task_seq": 59,
+    "cli_pid_before": 34406,
+    "cli_still_same_after_restart": null,
+    "file_count_before": 9,
+    "missing_before_files_at_end": [],
+    "unchanged_before_files_at_end": [
+      "outputs/model/baseline_frozen.yaml",
+      "outputs/model/corona_model.py",
+      "outputs/model/make_params.py",
+      "outputs/model/model_results.json",
+      "outputs/model/params.json",
+      "outputs/model/test_model.py",
+      "outputs/review/change_control_register.md",
+      "outputs/review/interface_control.md",
+      "outputs/review/requirements_baseline.md"
+    ],
+    "changed_before_files_at_end": [],
+    "public_events_after_milestone": 1,
+    "changed_files_are_not_automatically_rework": true
+  },
+  "independent_acceptance": {
+    "passed": false,
+    "result": "partial model usable; full delivery intentionally interrupted",
+    "partial_model_verification": "receipt-only-verification.json",
+    "full_delivery_not_run": true
+  }
+}

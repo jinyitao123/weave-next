@@ -1,0 +1,11 @@
+{
+  "actual_error": "[claude-code:unrecognized_model] {\"model\":\"kimi-for-coding-highspeed\",\"query_source\":\"generate_session_title\"}\n[claude-code:unrecognized_model] {\"model\":\"k3[1m]\",\"query_source\":\"sdk\"}",
+  "artifacts_returned_to_caller": 9,
+  "case": "M2",
+  "engine_status": "failed",
+  "production_failure_class": "work",
+  "production_reason": "the stage could not complete its assigned work",
+  "production_retryable": false,
+  "scope": "production classifier applied to actual member result; not proof of Workbench action availability",
+  "task_id": "task-6a50568ad2baec98cfd34b88ea32b01c"
+}

@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 )
 
@@ -32,6 +33,7 @@ type ResolvedAccess struct {
 	Filter      []string
 	WriteTools  []string
 	Tools       []string
+	Definitions []frozen.FrozenToolDefinition
 	Legacy      bool
 	LegacyIndex int
 }
@@ -137,10 +139,25 @@ func (r *Resolver) ResolveAgent(
 			URL: resolved.URL, Headers: cloneStringMap(resolved.Headers),
 			Command: resolved.Command, Args: cloneStrings(resolved.Args), Env: cloneStringMap(resolved.Env),
 			Filter: cloneStrings(cfg.Filter), WriteTools: cloneStrings(cfg.WriteTools), Tools: sortedToolNames(exposed),
+			Definitions: exposedToolDefinitions(catalog.Tools, exposed),
 			LegacyIndex: -1,
 		})
 	}
 	return accesses, nil
+}
+
+func exposedToolDefinitions(tools []Tool, exposed map[string]struct{}) []frozen.FrozenToolDefinition {
+	definitions := make([]frozen.FrozenToolDefinition, 0, len(exposed))
+	for _, tool := range tools {
+		if _, ok := exposed[tool.Name]; ok {
+			definitions = append(definitions, frozen.FrozenToolDefinition{
+				Name: tool.Name, Description: tool.Description,
+				InputSchema: append([]byte(nil), tool.InputSchema...),
+				ReadOnly:    tool.ReadOnlyHint != nil && *tool.ReadOnlyHint,
+			})
+		}
+	}
+	return definitions
 }
 
 func sortedToolNames(tools map[string]struct{}) []string {

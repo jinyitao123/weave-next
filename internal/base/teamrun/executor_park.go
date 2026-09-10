@@ -41,6 +41,8 @@ func checkpointFromPark(
 		TeamRunGeneration:     run.Generation,
 		ExecutionLeaseEpoch:   run.ExecutionLeaseEpoch,
 		NodeID:                park.NodeID,
+		ActiveMember:          park.ActiveMember,
+		MemberBreakdown:       park.MemberBreakdown,
 		CompletedOutputs:      park.CompletedOutputs,
 		DeliveryErrors:        park.DeliveryErrors,
 		ArtifactTaskIDs:       park.ArtifactTaskIDs,
@@ -163,6 +165,39 @@ func (e *Executor) parkRunning(
 			return TeamRun{}, err
 		}
 	}
+	if park.WaitKind == WaitRuntime {
+		detail, err := DecodeRuntimeWaitDetailV1(park.WaitDetail)
+		if err != nil {
+			return TeamRun{}, err
+		}
+		if detail.MemberBudgetPause != nil && !detail.RecoveryBlocked {
+			runs, runsOK := e.Runs.(*PGStore)
+			checkpoints, checkpointsOK := e.Checkpoints.(*PGCheckpointStore)
+			tasks, tasksOK := e.Tasks.(failedTaskRequeuer)
+			if runsOK && checkpointsOK && tasksOK && e.MemberBudgets != nil {
+				progress, err := e.MemberBudgets.HasProgress(ctx, tx, run.WorkspaceID, *detail.MemberBudgetPause)
+				if err != nil {
+					return TeamRun{}, err
+				}
+				if progress {
+					request := StageRetryRequest{WorkspaceID: run.WorkspaceID, RunID: run.RunID, NodeID: detail.NodeID, Automatic: true,
+						IdempotencyKey: fmt.Sprintf("member-slice:%s:%d", detail.MemberBudgetPause.MemberRunID, detail.MemberBudgetPause.CheckpointSeq)}
+					service := StageRetryService{MemberBudgets: e.MemberBudgets, Runs: runs, Checkpoints: checkpoints, Tasks: tasks, Now: e.Now}
+					result, err := service.retryRuntimeStageTx(ctx, tx, parked, request)
+					if err != nil {
+						return TeamRun{}, err
+					}
+					if err := recordStageRetryReceiptTx(ctx, tx, parked, request, result); err != nil {
+						return TeamRun{}, err
+					}
+					parked, err = runs.GetForUpdateTx(ctx, tx, run.WorkspaceID, run.RunID)
+					if err != nil {
+						return TeamRun{}, err
+					}
+				}
+			}
+		}
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return TeamRun{}, fmt.Errorf("commit team run park: %w", err)
 	}
@@ -197,7 +232,7 @@ func (e *Executor) finishRuntimeResult(
 	case RuntimeCompleted:
 		succeeded, err := e.succeedRunning(
 			ctx, run, task, executorID, result.Usage, result.UsageCoverage,
-			result.UsageComplete, result.UsageIncompleteReason,
+			result.UsageComplete, result.UsageIncompleteReason, result.MemberBreakdown,
 		)
 		if err != nil {
 			return err
@@ -232,7 +267,7 @@ func (e *Executor) finishParkedTask(
 	run TeamRun,
 ) error {
 	output, err := json.Marshal(map[string]any{
-		"status": "parked", "run_id": run.RunID,
+		"status": string(run.Status), "run_id": run.RunID,
 	})
 	if err != nil {
 		return err

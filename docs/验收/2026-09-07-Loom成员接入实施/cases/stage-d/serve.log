@@ -1,0 +1,7 @@
+panic: DATABASE_URL is required
+
+goroutine 1 [running]:
+main.must(...)
+	/Users/jinyitao/Developer/weave-next/docs/验收/2026-09-07-Loom成员接入实施/probe/main.go:53
+main.main()
+	/Users/jinyitao/Developer/weave-next/docs/验收/2026-09-07-Loom成员接入实施/probe/main.go:107 +0x15fc

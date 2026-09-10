@@ -1,0 +1,504 @@
+{
+  "server": {
+    "id": "01ada273-fe11-49bd-96b4-9c236f4dbd15",
+    "workspace_id": "default",
+    "slug": "trust-repaired-gmail-20260908",
+    "display_name": "电商隔离验收 MCP",
+    "transport": "streamable_http",
+    "url": "http://127.0.0.1:3071/mcp",
+    "functional_revision": 1,
+    "enabled": true,
+    "status": "online",
+    "protocol_version": "2025-03-26",
+    "server_info": {
+      "name": "gmail_mock_workspace",
+      "version": "0.1.0"
+    },
+    "last_probed_at": "2026-09-08T19:19:37.131537+08:00",
+    "last_handshake_at": "2026-09-08T19:19:37.131537+08:00",
+    "created_by": "1dedf447-514d-4057-a34d-6d1b8a8b721a",
+    "created_at": "2026-09-08T19:19:37.001014+08:00",
+    "updated_at": "2026-09-08T19:19:37.131537+08:00",
+    "headers": {},
+    "env": {},
+    "tool_count": 17,
+    "agent_count": 0
+  },
+  "tools": [
+    {
+      "server_id": "01ada273-fe11-49bd-96b4-9c236f4dbd15",
+      "name": "calendar.createEvent",
+      "description": "Create a new event in a calendar.",
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "title"
+        ],
+        "properties": {
+          "end": {
+            "type": "string"
+          },
+          "date": {
+            "type": "string"
+          },
+          "start": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "guests": {
+            "type": "string"
+          },
+          "location": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          }
+        }
+      },
+      "annotations": {},
+      "discovered_at": "2026-09-08T19:19:37.131537+08:00"
+    },
+    {
+      "server_id": "01ada273-fe11-49bd-96b4-9c236f4dbd15",
+      "name": "calendar.getEvent",
+      "description": "Get the details of a specific calendar event.",
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        }
+      },
+      "annotations": {},
+      "discovered_at": "2026-09-08T19:19:37.131537+08:00"
+    },
+    {
+      "server_id": "01ada273-fe11-49bd-96b4-9c236f4dbd15",
+      "name": "calendar.list",
+      "description": "List all of the user's calendars.",
+      "input_schema": {
+        "type": "object",
+        "properties": {}
+      },
+      "annotations": {},
+      "discovered_at": "2026-09-08T19:19:37.131537+08:00"
+    },
+    {
+      "server_id": "01ada273-fe11-49bd-96b4-9c236f4dbd15",
+      "name": "calendar.listEvents",
+      "description": "List events from a calendar.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string"
+          }
+        }
+      },
+      "annotations": {},
+      "discovered_at": "2026-09-08T19:19:37.131537+08:00"
+    },
+    {
+      "server_id": "01ada273-fe11-49bd-96b4-9c236f4dbd15",
+      "name": "gmail.batchModify",
+      "description": "Bulk modify up to 1,000 Gmail messages at once.",
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "messageIds"
+        ],
+        "properties": {
+          "messageIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 1000,
+            "minItems": 1
+          },
+          "addLabelIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100
+          },
+          "removeLabelIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100
+          }
+        }
+      },
+      "annotations": {},
+      "discovered_at": "2026-09-08T19:19:37.131537+08:00"
+    },
+    {
+      "server_id": "01ada273-fe11-49bd-96b4-9c236f4dbd15",
+      "name": "gmail.createDraft",
+      "description": "Create a draft email message.",
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "to",
+          "subject",
+          "body"
+        ],
+        "properties": {
+          "cc": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            ]
+          },
+          "to": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            ]
+          },
+          "bcc": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            ]
+          },
+          "body": {
+            "type": "string"
+          },
+          "isHtml": {
+            "type": "boolean"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "threadId": {
+            "type": "string"
+          }
+        }
+      },
+      "annotations": {},
+      "discovered_at": "2026-09-08T19:19:37.131537+08:00"
+    },
+    {
+      "server_id": "01ada273-fe11-49bd-96b4-9c236f4dbd15",
+      "name": "gmail.createLabel",
+      "description": "Create a new Gmail label. Labels help organize emails into categories.",
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "labelListVisibility": {
+            "enum": [
+              "labelShow",
+              "labelHide",
+              "labelShowIfUnread"
+            ],
+            "type": "string"
+          },
+          "messageListVisibility": {
+            "enum": [
+              "show",
+              "hide"
+            ],
+            "type": "string"
+          }
+        }
+      },
+      "annotations": {},
+      "discovered_at": "2026-09-08T19:19:37.131537+08:00"
+    },
+    {
+      "server_id": "01ada273-fe11-49bd-96b4-9c236f4dbd15",
+      "name": "gmail.downloadAttachment",
+      "description": "Downloads an attachment from a Gmail message to a local file.",
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "messageId",
+          "attachmentId",
+          "localPath"
+        ],
+        "properties": {
+          "localPath": {
+            "type": "string"
+          },
+          "messageId": {
+            "type": "string"
+          },
+          "attachmentId": {
+            "type": "string"
+          }
+        }
+      },
+      "annotations": {},
+      "discovered_at": "2026-09-08T19:19:37.131537+08:00"
+    },
+    {
+      "server_id": "01ada273-fe11-49bd-96b4-9c236f4dbd15",
+      "name": "gmail.get",
+      "description": "Get the full content of a specific email message.",
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "messageId"
+        ],
+        "properties": {
+          "format": {
+            "enum": [
+              "minimal",
+              "full",
+              "raw",
+              "metadata"
+            ],
+            "type": "string"
+          },
+          "messageId": {
+            "type": "string"
+          }
+        }
+      },
+      "annotations": {},
+      "discovered_at": "2026-09-08T19:19:37.131537+08:00"
+    },
+    {
+      "server_id": "01ada273-fe11-49bd-96b4-9c236f4dbd15",
+      "name": "gmail.listLabels",
+      "description": "List all Gmail labels in the user's mailbox.",
+      "input_schema": {
+        "type": "object",
+        "properties": {}
+      },
+      "annotations": {},
+      "discovered_at": "2026-09-08T19:19:37.131537+08:00"
+    },
+    {
+      "server_id": "01ada273-fe11-49bd-96b4-9c236f4dbd15",
+      "name": "gmail.modify",
+      "description": "Modify a Gmail message.",
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "messageId"
+        ],
+        "properties": {
+          "messageId": {
+            "type": "string"
+          },
+          "addLabelIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100
+          },
+          "removeLabelIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100
+          }
+        }
+      },
+      "annotations": {},
+      "discovered_at": "2026-09-08T19:19:37.131537+08:00"
+    },
+    {
+      "server_id": "01ada273-fe11-49bd-96b4-9c236f4dbd15",
+      "name": "gmail.modifyThread",
+      "description": "Modify labels on all messages in a Gmail thread.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "threadId": {
+            "type": "string"
+          },
+          "addLabelIds": {
+            "type": "array"
+          },
+          "removeLabelIds": {
+            "type": "array"
+          }
+        }
+      },
+      "annotations": {},
+      "discovered_at": "2026-09-08T19:19:37.131537+08:00"
+    },
+    {
+      "server_id": "01ada273-fe11-49bd-96b4-9c236f4dbd15",
+      "name": "gmail.search",
+      "description": "Search for emails in Gmail using query parameters.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string"
+          },
+          "labelIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "pageToken": {
+            "type": "string"
+          },
+          "maxResults": {
+            "type": "number"
+          },
+          "includeSpamTrash": {
+            "type": "boolean"
+          }
+        }
+      },
+      "annotations": {},
+      "discovered_at": "2026-09-08T19:19:37.131537+08:00"
+    },
+    {
+      "server_id": "01ada273-fe11-49bd-96b4-9c236f4dbd15",
+      "name": "gmail.send",
+      "description": "Send an email message.",
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "to",
+          "subject",
+          "body"
+        ],
+        "properties": {
+          "cc": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            ]
+          },
+          "to": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            ]
+          },
+          "bcc": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            ]
+          },
+          "body": {
+            "type": "string"
+          },
+          "isHtml": {
+            "type": "boolean"
+          },
+          "subject": {
+            "type": "string"
+          }
+        }
+      },
+      "annotations": {},
+      "discovered_at": "2026-09-08T19:19:37.131537+08:00"
+    },
+    {
+      "server_id": "01ada273-fe11-49bd-96b4-9c236f4dbd15",
+      "name": "gmail.sendDraft",
+      "description": "Send a previously created draft email.",
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "draftId"
+        ],
+        "properties": {
+          "draftId": {
+            "type": "string"
+          }
+        }
+      },
+      "annotations": {},
+      "discovered_at": "2026-09-08T19:19:37.131537+08:00"
+    },
+    {
+      "server_id": "01ada273-fe11-49bd-96b4-9c236f4dbd15",
+      "name": "people.getMe",
+      "description": "Get the authenticated user profile.",
+      "input_schema": {
+        "type": "object",
+        "properties": {}
+      },
+      "annotations": {},
+      "discovered_at": "2026-09-08T19:19:37.131537+08:00"
+    },
+    {
+      "server_id": "01ada273-fe11-49bd-96b4-9c236f4dbd15",
+      "name": "people.getUserProfile",
+      "description": "Get a user's profile information.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string"
+          }
+        }
+      },
+      "annotations": {},
+      "discovered_at": "2026-09-08T19:19:37.131537+08:00"
+    }
+  ]
+}

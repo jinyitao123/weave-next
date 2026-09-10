@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jinyitao123/weave/internal/base/fileartifact"
 	"github.com/jinyitao123/weave/internal/base/taskqueue"
 	"github.com/jinyitao123/weave/internal/kernel/engine"
 	"github.com/jinyitao123/weave/internal/kernel/runtimes"
@@ -284,7 +285,7 @@ func (s *Server) handleRuntimeClaim(c echo.Context) error {
 			// Never hand secrets to the daemon: loom payloads are redacted
 			// on a copy — the store snapshot keeps the full record for the
 			// task-scoped MCP gateway.
-			redacted, redactErr := runtimes.RedactClaimPayload(task.Payload)
+			redacted, redactErr := s.redactRuntimeClaim(task)
 			if redactErr != nil {
 				return c.JSON(http.StatusInternalServerError, map[string]string{"error": redactErr.Error()})
 			}
@@ -441,7 +442,7 @@ func validateRuntimeEngineExecResult(task *taskqueue.Task, result runtimes.Engin
 	}
 	if !engine.IsCLIEngine(payload.Engine) {
 		if result.UsageReceipt != nil || len(result.Diagnostics) > 0 || len(result.Events) > 0 ||
-			len(result.Artifacts) > 0 || result.Status != "" || result.Error != "" {
+			len(result.Artifacts) > 0 || result.Status != "" || result.Error != "" || result.SessionID != "" || result.ArtifactCollection != nil {
 			return errors.New("CLI result fields are forbidden for a non-CLI task")
 		}
 		return nil
@@ -467,6 +468,9 @@ func validateRuntimeEngineExecResult(task *taskqueue.Task, result runtimes.Engin
 		return err
 	}
 	if err := engine.ValidateArtifacts(result.Artifacts); err != nil {
+		return err
+	}
+	if err := fileartifact.ValidateCollectionEvidence(result.ArtifactCollection); err != nil {
 		return err
 	}
 	return validateRuntimeUsageReceipt(payload, result.UsageReceipt)

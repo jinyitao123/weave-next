@@ -6,9 +6,10 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.10.0
-	github.com/jinyitao123/loom v0.8.1
+	github.com/jinyitao123/loom v0.8.2-0.20260908071214-d704baf1ae7f
 	github.com/labstack/echo/v4 v4.15.4
 	github.com/lattice-substrate/json-canon v0.3.4
+	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	golang.org/x/crypto v0.54.0
 	gopkg.in/yaml.v3 v3.0.1
 )

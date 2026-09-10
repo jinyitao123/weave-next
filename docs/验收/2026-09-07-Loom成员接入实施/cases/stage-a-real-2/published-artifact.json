@@ -1,0 +1,433 @@
+{
+  "workspace_id": "real-publication",
+  "workflow_id": "flow",
+  "workflow_version": 1,
+  "artifact_schema_version": 1,
+  "canonicalization_algorithm": "rfc8785+jcs-preorder",
+  "canonicalization_version": 1,
+  "hash_algorithm": "sha256",
+  "content_hash": "cbfcfeb69724c9626f1d07c1a0d92abe2dfbab8477e697afe76735d5a2749b71",
+  "payload": {
+    "team": {
+      "team_id": "team",
+      "workers": [
+        {
+          "duty": "Compute",
+          "enabled": true,
+          "team_id": "team",
+          "when_to_use": "",
+          "default_kind": "consult",
+          "workspace_id": "real-publication",
+          "allowed_kinds": [
+            "consult"
+          ],
+          "schema_version": 1,
+          "worker_agent_id": "4ab1b34e-9391-4960-a590-c7c9d2540bab",
+          "result_requirement": "You are validating a published engineering member's tool wiring. Use run_python to read baseline_frozen.yaml first. It is the sole input; preserve it unchanged. Create model.py that reads this file and computes classical kinetic energy for the crewed_1mt and orbital_material_5mt cases, dust impact energy, cruise travel years and rotating habitat gravity. Standard library only; support the simple YAML subset needed without external packages. Write results.json with numeric keys energy_1mt_j, energy_5mt_j, dust_j, travel_years, gravity_m_s2, and string key baseline_sha256. Write test_model.py with independently derived checks; execute model.py and the tests through run_python. Write report.md explaining units, baseline identity, the single approved speed, and conceptual limits. Deliver all four files. Do not merely print code. Never claim an action without tool results. No native CLI tools. You decide the tool sequence and implementation.",
+          "context_instruction": ""
+        }
+      ],
+      "workspace_id": "real-publication",
+      "lead_agent_id": "e0644c28-8961-4e62-b403-8bea74483941",
+      "lead_agent_version": 1,
+      "lead_agent_content_hash": "9d6e056bab1b404fa93f2bd94c89b6027a0b4cfea14c14cc40d888a8fe8c94ee"
+    },
+    "bundles": [
+      {
+        "agent": {
+          "name": "worker",
+          "role": "worker",
+          "guard": null,
+          "model": "fixture-model",
+          "engine": "loom",
+          "limits": {
+            "max_tokens": 0,
+            "step_budget": 0,
+            "max_cost_usd": 0,
+            "max_tool_repeats": 0,
+            "max_output_tokens": 0
+          },
+          "agent_id": "4ab1b34e-9391-4960-a590-c7c9d2540bab",
+          "fallback": {
+            "models": null,
+            "retries": 0
+          },
+          "identity": {
+            "raw": "You are validating a published engineering member's tool wiring. Use run_python to read baseline_frozen.yaml first. It is the sole input; preserve it unchanged. Create model.py that reads this file and computes classical kinetic energy for the crewed_1mt and orbital_material_5mt cases, dust impact energy, cruise travel years and rotating habitat gravity. Standard library only; support the simple YAML subset needed without external packages. Write results.json with numeric keys energy_1mt_j, energy_5mt_j, dust_j, travel_years, gravity_m_s2, and string key baseline_sha256. Write test_model.py with independently derived checks; execute model.py and the tests through run_python. Write report.md explaining units, baseline identity, the single approved speed, and conceptual limits. Deliver all four files. Do not merely print code. Never claim an action without tool results. No native CLI tools. You decide the tool sequence and implementation.",
+            "core": "You are validating a published engineering member's tool wiring. Use run_python to read baseline_frozen.yaml first. It is the sole input; preserve it unchanged. Create model.py that reads this file and computes classical kinetic energy for the crewed_1mt and orbital_material_5mt cases, dust impact energy, cruise travel years and rotating habitat gravity. Standard library only; support the simple YAML subset needed without external packages. Write results.json with numeric keys energy_1mt_j, energy_5mt_j, dust_j, travel_years, gravity_m_s2, and string key baseline_sha256. Write test_model.py with independently derived checks; execute model.py and the tests through run_python. Write report.md explaining units, baseline identity, the single approved speed, and conceptual limits. Deliver all four files. Do not merely print code. Never claim an action without tool results. No native CLI tools. You decide the tool sequence and implementation.",
+            "extended": ""
+          },
+          "profiles": {},
+          "compaction": null,
+          "graph_type": "standard",
+          "runtime_id": "",
+          "permissions": {
+            "ask": null,
+            "deny": null,
+            "allow": null
+          },
+          "display_name": "",
+          "memory_slots": [],
+          "workspace_id": "real-publication",
+          "agent_version": 1,
+          "factory_input": {
+            "mcp_servers": [
+              {
+                "filter": [
+                  "run_python"
+                ],
+                "server_id": "aa84a475-0136-4b24-bb0b-fda74fae19aa",
+                "write_tools": []
+              }
+            ],
+            "schema_version": 2
+          },
+          "memory_config": null,
+          "output_schema": null,
+          "system_prompt": "You are validating a published engineering member's tool wiring. Use run_python to read baseline_frozen.yaml first. It is the sole input; preserve it unchanged. Create model.py that reads this file and computes classical kinetic energy for the crewed_1mt and orbital_material_5mt cases, dust impact energy, cruise travel years and rotating habitat gravity. Standard library only; support the simple YAML subset needed without external packages. Write results.json with numeric keys energy_1mt_j, energy_5mt_j, dust_j, travel_years, gravity_m_s2, and string key baseline_sha256. Write test_model.py with independently derived checks; execute model.py and the tests through run_python. Write report.md explaining units, baseline identity, the single approved speed, and conceptual limits. Deliver all four files. Do not merely print code. Never claim an action without tool results. No native CLI tools. You decide the tool sequence and implementation.",
+          "schema_version": 1
+        },
+        "skills": [],
+        "runtime": null,
+        "capability": {
+          "role": "worker",
+          "may_yield": false,
+          "agent_step_ids": null,
+          "schema_version": 2,
+          "may_invoke_agent": false,
+          "agent_content_hash": "64976c4b0b1e3ca725d6679605a14e92f3deb60bff967031a8fd7d4b3d8a9eb3",
+          "interactive_step_ids": null,
+          "interactive_tool_ids": null
+        },
+        "credentials": [
+          {
+            "kind": "mcp_server_access",
+            "slot": "access",
+            "resource_id": "aa84a475-0136-4b24-bb0b-fda74fae19aa",
+            "workspace_id": "real-publication",
+            "schema_version": 1,
+            "credential_version": null
+          },
+          {
+            "kind": "provider_api_key",
+            "slot": "api_key",
+            "resource_id": "fixture",
+            "workspace_id": "real-publication",
+            "schema_version": 1,
+            "credential_version": null
+          }
+        ],
+        "factory_key": {
+          "factory_id": "standard",
+          "compiler_abi": "weave-graph-abi-v1",
+          "factory_version": "2"
+        },
+        "dependencies": {
+          "dependencies": [
+            {
+              "owner_id": "4ab1b34e-9391-4960-a590-c7c9d2540bab",
+              "owner_type": "agent",
+              "content_hash": "64976c4b0b1e3ca725d6679605a14e92f3deb60bff967031a8fd7d4b3d8a9eb3",
+              "workspace_id": "real-publication",
+              "dependency_key": "4ab1b34e-9391-4960-a590-c7c9d2540bab",
+              "dependency_type": "agent",
+              "dependency_version": 1,
+              "owner_agent_version": 1
+            },
+            {
+              "owner_id": "4ab1b34e-9391-4960-a590-c7c9d2540bab",
+              "owner_type": "agent",
+              "content_hash": "cd5ee5d0e9f5249dddb4e75fdca6093eae84e06edea3b43261dd65d2af7fbf5f",
+              "workspace_id": "real-publication",
+              "dependency_key": "aa84a475-0136-4b24-bb0b-fda74fae19aa",
+              "dependency_type": "mcp_binding",
+              "dependency_version": 1,
+              "owner_agent_version": 1
+            },
+            {
+              "owner_id": "4ab1b34e-9391-4960-a590-c7c9d2540bab",
+              "owner_type": "agent",
+              "content_hash": "07fbe84cb95b3e2d1791f03f87ad445cbe71976bb4e0fdcac881a367f693ba45",
+              "workspace_id": "real-publication",
+              "dependency_key": "fixture-model",
+              "dependency_type": "model_binding",
+              "dependency_version": 1,
+              "owner_agent_version": 1
+            }
+          ],
+          "manifest_hash": "4dd5dc6c47b0a91893275e18dd8130d25fff2198f583f28663c431c52e2f99e4",
+          "schema_version": 1
+        },
+        "mcp_bindings": [
+          {
+            "url": "http://127.0.0.1:51913",
+            "args": null,
+            "tools": [
+              {
+                "name": "run_python",
+                "read_only": false,
+                "description": "Execute Python 3 in the task directory. Read files, write model and tests, run them; stdout/stderr and exit code are returned. Do not install packages or access paths outside this directory.",
+                "input_schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "description": "Python 3 source executed in the task output directory. Use standard library only; read input files, write your own model and tests, and execute them."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            ],
+            "filter": [
+              "run_python"
+            ],
+            "command": "",
+            "server_id": "aa84a475-0136-4b24-bb0b-fda74fae19aa",
+            "transport": "http",
+            "access_ref": {
+              "kind": "mcp_server_access",
+              "slot": "access",
+              "resource_id": "aa84a475-0136-4b24-bb0b-fda74fae19aa",
+              "workspace_id": "real-publication",
+              "schema_version": 1,
+              "credential_version": null
+            },
+            "write_tools": null,
+            "content_hash": "cd5ee5d0e9f5249dddb4e75fdca6093eae84e06edea3b43261dd65d2af7fbf5f",
+            "workspace_id": "real-publication",
+            "schema_version": 1,
+            "server_revision": 1
+          }
+        ],
+        "primary_model": {
+          "base_url": "http://127.0.0.1:51913",
+          "model_id": "fixture-model",
+          "provider_id": "fixture",
+          "content_hash": "07fbe84cb95b3e2d1791f03f87ad445cbe71976bb4e0fdcac881a367f693ba45",
+          "workspace_id": "real-publication",
+          "credential_ref": {
+            "kind": "provider_api_key",
+            "slot": "api_key",
+            "resource_id": "fixture",
+            "workspace_id": "real-publication",
+            "schema_version": 1,
+            "credential_version": null
+          },
+          "schema_version": 1,
+          "json_object_mode": false,
+          "provider_revision": 1
+        },
+        "schema_version": 1,
+        "fallback_models": []
+      },
+      {
+        "agent": {
+          "name": "lead",
+          "role": "avatar",
+          "guard": null,
+          "model": "fixture-model",
+          "engine": "loom",
+          "limits": {
+            "max_tokens": 0,
+            "step_budget": 0,
+            "max_cost_usd": 0,
+            "max_tool_repeats": 0,
+            "max_output_tokens": 0
+          },
+          "agent_id": "e0644c28-8961-4e62-b403-8bea74483941",
+          "fallback": {
+            "models": null,
+            "retries": 0
+          },
+          "identity": {
+            "raw": "Return the brief.",
+            "core": "Return the brief.",
+            "extended": ""
+          },
+          "profiles": {},
+          "compaction": null,
+          "graph_type": "standard",
+          "runtime_id": "",
+          "permissions": {
+            "ask": null,
+            "deny": null,
+            "allow": null
+          },
+          "display_name": "",
+          "memory_slots": [],
+          "workspace_id": "real-publication",
+          "agent_version": 1,
+          "factory_input": {},
+          "memory_config": null,
+          "output_schema": null,
+          "system_prompt": "Return the brief.",
+          "schema_version": 1
+        },
+        "skills": [],
+        "runtime": null,
+        "capability": {
+          "role": "avatar",
+          "may_yield": false,
+          "agent_step_ids": null,
+          "schema_version": 2,
+          "may_invoke_agent": false,
+          "agent_content_hash": "9d6e056bab1b404fa93f2bd94c89b6027a0b4cfea14c14cc40d888a8fe8c94ee",
+          "interactive_step_ids": null,
+          "interactive_tool_ids": null
+        },
+        "credentials": [
+          {
+            "kind": "provider_api_key",
+            "slot": "api_key",
+            "resource_id": "fixture",
+            "workspace_id": "real-publication",
+            "schema_version": 1,
+            "credential_version": null
+          }
+        ],
+        "factory_key": {
+          "factory_id": "standard",
+          "compiler_abi": "weave-graph-abi-v1",
+          "factory_version": "1"
+        },
+        "dependencies": {
+          "dependencies": [
+            {
+              "owner_id": "e0644c28-8961-4e62-b403-8bea74483941",
+              "owner_type": "agent",
+              "content_hash": "9d6e056bab1b404fa93f2bd94c89b6027a0b4cfea14c14cc40d888a8fe8c94ee",
+              "workspace_id": "real-publication",
+              "dependency_key": "e0644c28-8961-4e62-b403-8bea74483941",
+              "dependency_type": "agent",
+              "dependency_version": 1,
+              "owner_agent_version": 1
+            },
+            {
+              "owner_id": "e0644c28-8961-4e62-b403-8bea74483941",
+              "owner_type": "agent",
+              "content_hash": "07fbe84cb95b3e2d1791f03f87ad445cbe71976bb4e0fdcac881a367f693ba45",
+              "workspace_id": "real-publication",
+              "dependency_key": "fixture-model",
+              "dependency_type": "model_binding",
+              "dependency_version": 1,
+              "owner_agent_version": 1
+            }
+          ],
+          "manifest_hash": "3666d6574e3a8d8e025a0384b8157f3bb1805ede08eba8a92e1ec3294a05c6b1",
+          "schema_version": 1
+        },
+        "mcp_bindings": [],
+        "primary_model": {
+          "base_url": "http://127.0.0.1:51913",
+          "model_id": "fixture-model",
+          "provider_id": "fixture",
+          "content_hash": "07fbe84cb95b3e2d1791f03f87ad445cbe71976bb4e0fdcac881a367f693ba45",
+          "workspace_id": "real-publication",
+          "credential_ref": {
+            "kind": "provider_api_key",
+            "slot": "api_key",
+            "resource_id": "fixture",
+            "workspace_id": "real-publication",
+            "schema_version": 1,
+            "credential_version": null
+          },
+          "schema_version": 1,
+          "json_object_mode": false,
+          "provider_revision": 1
+        },
+        "schema_version": 1,
+        "fallback_models": []
+      }
+    ],
+    "schema_version": 1,
+    "trigger_config": {
+      "type": "conversation_explicit",
+      "config": {},
+      "schema_version": 1
+    },
+    "delivery_targets": [],
+    "graph_definition": {
+      "edges": [
+        {
+          "id": "a",
+          "route": "success",
+          "to_node_id": "compute",
+          "from_node_id": "brief"
+        },
+        {
+          "id": "b",
+          "route": "success",
+          "to_node_id": "deliver",
+          "from_node_id": "compute"
+        }
+      ],
+      "nodes": [
+        {
+          "id": "brief",
+          "type": "lead",
+          "config": {
+            "instruction": "Brief"
+          },
+          "inputs": {
+            "task": {
+              "value": {
+                "path": "",
+                "source": "run_input"
+              },
+              "expected_type": "text"
+            }
+          },
+          "output": {
+            "type": "text"
+          }
+        },
+        {
+          "id": "compute",
+          "type": "worker",
+          "config": {
+            "kind": "consult",
+            "agent_id": "4ab1b34e-9391-4960-a590-c7c9d2540bab",
+            "agent_version": 1,
+            "result_requirement": "Execute the configured tool task"
+          },
+          "inputs": {
+            "task": {
+              "value": {
+                "path": "",
+                "source": "run_input"
+              },
+              "expected_type": "text"
+            }
+          },
+          "output": {
+            "type": "text"
+          }
+        },
+        {
+          "id": "deliver",
+          "type": "deliver",
+          "config": {
+            "result": {
+              "path": "",
+              "source": "node_output",
+              "node_id": "compute"
+            }
+          }
+        }
+      ],
+      "entry_node_id": "brief",
+      "input_contract": {
+        "type": "text"
+      },
+      "schema_version": 1,
+      "output_contract": {
+        "type": "text"
+      }
+    }
+  },
+  "created_at": "2026-09-07T14:12:45.956229+08:00"
+}

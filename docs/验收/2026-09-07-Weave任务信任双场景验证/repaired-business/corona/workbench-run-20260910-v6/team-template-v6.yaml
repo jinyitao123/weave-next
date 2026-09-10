@@ -1,0 +1,118 @@
+schema: team-template/v1
+name: corona-prephase-a-recovery-v6
+display_name: 日冕先期论证恢复验证团队 v6
+purpose: 为日冕计划三条路线建立统一可计算模型、概念图纸、数字决策应用和可追溯论证包
+template: research_synthesis
+template_parameters:
+  lead_instruction: 只负责冻结输入清单、协调分工和汇总决策；不得生成专业角色文件、统一模型、应用、图纸、验证报告或 FINAL_ACCEPTANCE
+  parallel_worker_refs:
+    - systems-architect
+    - mission-physics-analyst
+    - propulsion-energy-analyst
+    - archive-reliability-designer
+    - cost-risk-analyst
+    - digital-engineering-builder
+  finalizer_ref: verification-integrator
+  result_requirements:
+    systems-architect: 只输出需求、接口、路线终态、追踪关系和配置基线；不得生成统一模型、应用、整套交付或 FINAL_ACCEPTANCE，不得冒充独立总装员
+    mission-physics-analyst: 复核冻结 v4 成果中的公式、数量级、三速度情景和未知项；优先复用，只有证据要求时才修改
+    propulsion-energy-analyst: 复核冻结 v4 推进能源热控成果，运行有界自动检查并输出成立条件、终止条件和验证清单；优先复用，禁止启动不退出的服务
+    archive-reliability-designer: 复核并复用冻结 v4 的文明档案载荷架构、长期可靠性和概念图纸要求
+    cost-risk-analyst: 复核并复用冻结 v4 的技术成熟度、WBS、成本研究方法、风险和课题包
+    digital-engineering-builder: 从冻结 v4 目录复制并复用数字成果，只修复可复现缺陷；保留统一模型、至少三张 SVG、一份 OpenSCAD 模型、可交互且可导出 JSON 的本地应用及机器验证清单；检查计数必须由实际执行动态产生，验证命令必须有界退出
+    verification-integrator: >-
+      第一优先级是在自身 workdir/outputs 形成唯一最终目录；从数字工程成员接收其实际文件，从各专业成员接收复核材料，独立复跑 acceptance.json 全部十一项硬门槛。必须实际创建 outputs/model、outputs/drawings、outputs/app、outputs/review、outputs/verification 和 outputs/FINAL_ACCEPTANCE.md。FINAL_ACCEPTANCE.md 必须逐行写 G1: PASS 到 G11: PASS，任何门槛未通过或未运行时写对应 FAIL 且整体判失败；检查计数从执行记录生成，冻结被测清单并排除报告自引用。禁止只返回摘要、禁止采信其他成员自称的最终验收、禁止在完成全部检查前结束
+members:
+  - name: mission-lead
+    display_name: 系统工程负责人
+    role: avatar
+    responsibilities: [需求基线, 接口管理, 变更控制, 最终决策]
+    capabilities: [systems_engineering, configuration_management]
+    execution_policy: {engine_class: cli, engine: claude, execution_mode: runtime, runtime_ref: e584a15f-bd26-4fff-a697-8caf20150a7d}
+  - name: systems-architect
+    display_name: 任务架构与需求工程师
+    role: worker
+    responsibilities: [任务终态, 需求分解, 接口登记, 追踪矩阵]
+    capabilities: [mission_architecture, requirements_engineering]
+    execution_policy: {engine_class: cli, engine: claude, execution_mode: runtime, runtime_ref: fcfad0a6-51c9-4cdd-8e14-f9b105f22735}
+  - name: mission-physics-analyst
+    display_name: 任务物理与轨迹分析员
+    role: worker
+    responsibilities: [公式复核, 轨迹数量级, 速度情景, 单位检查]
+    capabilities: [physics_analysis, trajectory_analysis, dimensional_check]
+    execution_policy: {engine_class: cli, engine: claude, execution_mode: runtime, runtime_ref: e584a15f-bd26-4fff-a697-8caf20150a7d}
+  - name: propulsion-energy-analyst
+    display_name: 推进能源与热控分析员
+    role: worker
+    responsibilities: [推进比较, 能源预算, 热控约束, 技术成熟度]
+    capabilities: [propulsion_analysis, energy_budget, thermal_analysis]
+    execution_policy: {engine_class: cli, engine: claude, execution_mode: runtime, runtime_ref: fcfad0a6-51c9-4cdd-8e14-f9b105f22735}
+  - name: archive-reliability-designer
+    display_name: 档案载荷与长期可靠性设计员
+    role: worker
+    responsibilities: [载荷架构, 数据保存, 冗余维修, 概念布置]
+    capabilities: [payload_design, reliability_engineering, archive_systems]
+    execution_policy: {engine_class: cli, engine: claude, execution_mode: runtime, runtime_ref: e584a15f-bd26-4fff-a697-8caf20150a7d}
+  - name: cost-risk-analyst
+    display_name: 成本计划与风险分析员
+    role: worker
+    responsibilities: [WBS, 成本研究, 风险登记, 终止条件]
+    capabilities: [cost_analysis, risk_management, technology_assessment]
+    execution_policy: {engine_class: cli, engine: claude, execution_mode: runtime, runtime_ref: fcfad0a6-51c9-4cdd-8e14-f9b105f22735}
+  - name: digital-engineering-builder
+    display_name: 数字产品与工程图开发员
+    role: worker
+    responsibilities: [计算内核, Web应用, SVG图纸, 可编辑概念模型]
+    capabilities: [software_engineering, data_visualization, technical_drawing]
+    execution_policy: {engine_class: cli, engine: claude, execution_mode: runtime, runtime_ref: e584a15f-bd26-4fff-a697-8caf20150a7d}
+  - name: verification-integrator
+    display_name: 独立验证与总装员
+    role: worker
+    responsibilities: [独立复算, 对抗审查, 跨产物一致性, 最终总装]
+    capabilities: [verification_validation, falsification, integration]
+    execution_policy: {engine_class: cli, engine: claude, execution_mode: runtime, runtime_ref: fcfad0a6-51c9-4cdd-8e14-f9b105f22735}
+lead: mission-lead
+delivery:
+  success_criteria:
+    - 日冕十一项硬门槛由独立总装员实际复跑且全部通过
+    - 模型图纸应用论证包使用同一参数基线和三速度情景
+    - 最终成果来自独立总装员自身 outputs 目录并可由真实浏览器复验
+    - 已知计数漂移和报告自引用问题已消除
+  contract:
+    version: 1
+    coverage: explicit
+    required_artifacts:
+      - id: final-acceptance
+        path: outputs/FINAL_ACCEPTANCE.md
+        contains: ["G1: PASS", "G2: PASS", "G3: PASS", "G4: PASS", "G5: PASS", "G6: PASS", "G7: PASS", "G8: PASS", "G9: PASS", "G10: PASS", "G11: PASS", "overall: PASS"]
+      - id: acceptance-json
+        path: outputs/verification/acceptance.json
+      - id: browser-evidence
+        path: outputs/verification/browser-evidence.json
+      - id: app-entry
+        path: outputs/app/index.html
+      - id: app-runtime
+        path: outputs/app/app.js
+      - id: model-source
+        path: outputs/model/corona_model.py
+      - id: model-tests
+        path: outputs/model/tests/test_model.py
+      - id: drawing-a
+        path: outputs/drawings/FA-01_laser_sail_precursor.svg
+      - id: drawing-b
+        path: outputs/drawings/FB-01_uncrewed_archive_probe.svg
+      - id: drawing-c
+        path: outputs/drawings/FC-01_crewed_interstellar_vehicle.svg
+      - id: editable-model
+        path: outputs/drawings/RH-01_rotating_habitat.scad
+      - id: review-index
+        path: outputs/review/REVIEW_INDEX.md
+    required_checks:
+      - id: output-schema
+        verifier_id: weave.output-schema
+        verifier_version: v1
+    external_effects: none
+    limitations:
+      - 旧运行成果通过只读主机路径和哈希清单提供，尚非 Weave 原生跨运行产物绑定
+budget:
+  max_cost_usd: 15

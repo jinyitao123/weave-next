@@ -44,12 +44,18 @@ type FrozenMemorySlot struct {
 	Description string `json:"description"`
 }
 
+type ToolLoopControl struct {
+	SliceRounds        uint64 `json:"slice_rounds"`
+	InitialTotalRounds uint64 `json:"initial_total_rounds"`
+}
+
 type FrozenAgentLimits struct {
-	MaxCostUSD      float64 `json:"max_cost_usd"`
-	MaxTokens       int64   `json:"max_tokens"`
-	MaxOutputTokens int64   `json:"max_output_tokens"`
-	StepBudget      int64   `json:"step_budget"`
-	MaxToolRepeats  int64   `json:"max_tool_repeats"`
+	ToolLoopControl *ToolLoopControl `json:"tool_loop_control,omitempty"`
+	MaxCostUSD      float64          `json:"max_cost_usd"`
+	MaxTokens       int64            `json:"max_tokens"`
+	MaxOutputTokens int64            `json:"max_output_tokens"`
+	StepBudget      int64            `json:"step_budget"`
+	MaxToolRepeats  int64            `json:"max_tool_repeats"`
 }
 
 type FrozenFallback struct {
@@ -142,17 +148,19 @@ type CredentialReference struct {
 type FrozenMCPBinding struct {
 	SchemaVersion int `json:"schema_version"`
 
-	WorkspaceID    string              `json:"workspace_id"`
-	ServerID       string              `json:"server_id"`
-	ServerRevision int64               `json:"server_revision"`
-	Transport      string              `json:"transport"`
-	URL            string              `json:"url"`
-	Command        string              `json:"command"`
-	Args           []string            `json:"args"`
-	Filter         []string            `json:"filter"`
-	WriteTools     []string            `json:"write_tools"`
-	AccessRef      CredentialReference `json:"access_ref"`
-	ContentHash    string              `json:"content_hash"`
+	WorkspaceID    string   `json:"workspace_id"`
+	ServerID       string   `json:"server_id"`
+	ServerRevision int64    `json:"server_revision"`
+	Transport      string   `json:"transport"`
+	URL            string   `json:"url"`
+	Command        string   `json:"command"`
+	Args           []string `json:"args"`
+	Filter         []string `json:"filter"`
+	WriteTools     []string `json:"write_tools"`
+	// Omitted for legacy bindings so their canonical bytes and hashes remain stable.
+	Tools       []FrozenToolDefinition `json:"tools,omitempty"`
+	AccessRef   CredentialReference    `json:"access_ref"`
+	ContentHash string                 `json:"content_hash"`
 }
 
 type FrozenModelBinding struct {

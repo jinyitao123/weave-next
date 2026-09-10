@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"github.com/jinyitao123/weave/internal/base/execution"
 	"io"
 	"math"
 	"strconv"
@@ -11,26 +12,8 @@ import (
 
 const terminalSchemaVersionV3 = 3
 
-// TerminalUsage is the shared usage shape for exclusive, breakdown, and subtree values.
-type TerminalUsage struct {
-	InputTokens  int     `json:"input_tokens"`
-	OutputTokens int     `json:"output_tokens"`
-	CostUSD      float64 `json:"cost_usd"`
-	ToolCalls    int     `json:"tool_calls,omitempty"`
-}
-
-// TerminalChildBreakdownV3 records one descendant's exclusive usage.
-type TerminalChildBreakdownV3 struct {
-	RunID           string        `json:"run_id"`
-	ParentRunID     string        `json:"parent_run_id"`
-	ParentSeq       int64         `json:"parent_seq"`
-	Agent           string        `json:"agent"`
-	TeamID          *string       `json:"team_id,omitempty"`
-	WorkflowID      *string       `json:"workflow_id,omitempty"`
-	WorkflowVersion *int          `json:"workflow_version,omitempty"`
-	RunSnapshotID   *string       `json:"run_snapshot_id,omitempty"`
-	SelfExclusive   TerminalUsage `json:"self_exclusive"`
-}
+type TerminalUsage = execution.TerminalUsage
+type TerminalChildBreakdownV3 = execution.TerminalChildBreakdownV3
 
 // TerminalEntryV3 is the exact schema-v3 terminal candidate.
 type TerminalEntryV3 struct {

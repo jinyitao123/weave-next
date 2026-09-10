@@ -1,0 +1,33 @@
+{
+  "at": "2026-09-07T06:45:55.616103+00:00",
+  "command": [
+    "/usr/bin/python3",
+    "test_model.py"
+  ],
+  "checks": {
+    "energy_1mt_j": true,
+    "energy_5mt_j": true,
+    "dust_j": true,
+    "travel_years": true,
+    "gravity_m_s2": true,
+    "baseline_unchanged": true,
+    "tests_exit_zero": true
+  },
+  "expected": {
+    "energy_1mt_j": 4.04439830431568e+22,
+    "energy_5mt_j": 2.02219915215784e+23,
+    "dust_j": 40443983.043156795,
+    "travel_years": 141.66666666666669,
+    "gravity_m_s2": 43.864908449286034
+  },
+  "actual": {
+    "energy_1mt_j": 4.04439830431568e+22,
+    "energy_5mt_j": 2.02219915215784e+23,
+    "dust_j": 40443983.043156795,
+    "travel_years": 141.66666666666666,
+    "gravity_m_s2": 43.864908449286034,
+    "baseline_sha256": "cfb12b781363c547da87e6dec9fd937079cba25501b85ff6cbfabfbc508b10c2"
+  },
+  "test_output": "PASS - results.json exists - results.json\nPASS - key energy_1mt_j is numeric - 4.04439830431568e+22\nPASS - key energy_5mt_j is numeric - 2.02219915215784e+23\nPASS - key dust_j is numeric - 40443983.043156795\nPASS - key travel_years is numeric - 141.66666666666666\nPASS - key gravity_m_s2 is numeric - 43.864908449286034\nPASS - baseline_sha256 is str - 'cfb12b781363c547da87e6dec9fd937079cba25501b85ff6cbfabfbc508b10c2'\nPASS - baseline file sha256 == frozen digest - cfb12b781363c547da87e6dec9fd937079cba25501b85ff6cbfabfbc508b10c2\nPASS - results baseline_sha256 == file digest - cfb12b781363c547da87e6dec9fd937079cba25501b85ff6cbfabfbc508b10c2\nPASS - energy_1mt_j first principles - expected 4.0443983043e+22\nPASS - energy_5mt_j first principles - expected 2.0221991522e+23\nPASS - energy_5mt_j == 5 x energy_1mt_j - ratio 5.000000000000000\nPASS - dust_j first principles - expected 4.0443983043e+07\nPASS - travel_years first principles - expected 141.6666666667\nPASS - travel_years == 4.25 / 0.03 - expected 141.6666666667\nPASS - gravity_m_s2 first principles - expected 43.8649084493\nparsed reference_checks entries: 5\nPASS - reference_check travel_years_at_0_03c -> travel_years - actual=1.4166666667e+02 expected=1.4166666670e+02 rel_tol=0.001\nPASS - reference_check kinetic_energy_1mt_at_0_03c_j -> energy_1mt_j - actual=4.0443983043e+22 expected=4.0443983000e+22 rel_tol=0.01\nPASS - reference_check kinetic_energy_5mt_at_0_03c_j -> energy_5mt_j - actual=2.0221991522e+23 expected=2.0221991000e+23 rel_tol=0.01\nPASS - reference_check gravity_1km_2rpm_m_s2 -> gravity_m_s2 - actual=4.3864908449e+01 expected=4.3864900000e+01 rel_tol=0.01\nPASS - reference_check dust_1mg_0_03c_j -> dust_j - actual=4.0443983043e+07 expected=4.0443983000e+07 rel_tol=0.01\nPASS - all five quantities covered by reference_checks - missing=[]\n\nRESULT: all independent checks passed\n",
+  "passed": true
+}

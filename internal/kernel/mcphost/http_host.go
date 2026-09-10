@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -26,10 +27,15 @@ const (
 
 // HTTPHost implements contract.ToolDispatcher by calling an MCP server over HTTP.
 type HTTPHost struct {
-	baseURL    string
-	httpClient *http.Client
-	filter     map[string]bool // if non-empty, only expose these tool names
-	headers    map[string]string
+	baseURL            string
+	httpClient         *http.Client
+	filter             map[string]bool // if non-empty, only expose these tool names
+	headers            map[string]string
+	dispatchGuard      func(context.Context) error
+	toolContract       *ToolContract
+	contractMu         sync.Mutex
+	liveContract       *ToolContract
+	liveContractDigest [32]byte
 
 	initOnce    sync.Once
 	initialized bool
@@ -40,6 +46,18 @@ type HTTPHost struct {
 
 // HostOption configures an HTTPHost.
 type HostOption func(*HTTPHost)
+
+// WithToolContract validates the final outgoing arguments against an immutable
+// caller-owned catalog. A live tool listing cannot replace this contract.
+func WithToolContract(bound *ToolContract) HostOption {
+	return func(h *HTTPHost) { h.toolContract = bound }
+}
+
+// WithDispatchGuard rechecks dynamic authority at the final outgoing effect
+// boundary, after any initialization or remote catalog requests.
+func WithDispatchGuard(guard func(context.Context) error) HostOption {
+	return func(h *HTTPHost) { h.dispatchGuard = guard }
+}
 
 // WithTimeout sets the HTTP request timeout.
 func WithTimeout(d time.Duration) HostOption {
@@ -374,7 +392,14 @@ func (h *HTTPHost) listMCPTools(ctx context.Context) ([]MCPTool, error) {
 
 	tools := make([]MCPTool, 0, len(response.Tools))
 	for _, wire := range response.Tools {
-		inputSchema := normalizeJSONObject(wire.InputSchema)
+		inputSchema := append(json.RawMessage(nil), wire.InputSchema...)
+		value, err := parseToolJSON(inputSchema, maxToolSchemaBytes)
+		if err != nil {
+			return nil, fmt.Errorf("%w: mcp_tool_schema_invalid", ErrFailClosed)
+		}
+		if _, ok := value.(map[string]any); !ok {
+			return nil, fmt.Errorf("%w: mcp_tool_schema_not_object", ErrFailClosed)
+		}
 		annotations := normalizeJSONObject(wire.Annotations)
 		var annotationHints struct {
 			ReadOnlyHint *bool `json:"readOnlyHint"`
@@ -434,7 +459,6 @@ func (h *HTTPHost) ListTools(ctx context.Context) ([]contract.ToolDef, error) {
 
 // Dispatch calls the MCP server's tools/call method.
 func (h *HTTPHost) Dispatch(ctx context.Context, call contract.ToolCall) (*contract.ToolResult, error) {
-	h.ensureInitialized(ctx)
 	// Enforce filter on dispatch — block tools not in the allowlist.
 	if len(h.filter) > 0 && !h.filter[call.Name] {
 		return &contract.ToolResult{
@@ -442,6 +466,19 @@ func (h *HTTPHost) Dispatch(ctx context.Context, call contract.ToolCall) (*contr
 			Content: fmt.Sprintf("tool %q is not available for this agent", call.Name),
 			IsError: true,
 		}, nil
+	}
+	bound, err := h.contractForDispatch(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if rejected := bound.Validate(call); rejected != nil {
+		return rejected, nil
+	}
+	h.ensureInitialized(ctx)
+	if h.dispatchGuard != nil {
+		if err := h.dispatchGuard(ctx); err != nil {
+			return nil, fmt.Errorf("%w: MCP dispatch authority expired", ErrFailClosed)
+		}
 	}
 
 	params := map[string]any{
@@ -479,6 +516,35 @@ func (h *HTTPHost) Dispatch(ctx context.Context, call contract.ToolCall) (*contr
 		Content: content,
 		IsError: resp.IsError,
 	}, nil
+}
+
+func (h *HTTPHost) contractForDispatch(ctx context.Context) (*ToolContract, error) {
+	if h.toolContract != nil {
+		return h.toolContract, nil
+	}
+	// Legacy inline access has no published catalog. It must still validate
+	// the actual call against the current server definition, without claiming
+	// that this constitutes publication binding.
+	tools, err := h.ListTools(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("%w: mcp_tool_catalog_unavailable", ErrFailClosed)
+	}
+	raw, err := json.Marshal(tools)
+	if err != nil {
+		return nil, fmt.Errorf("%w: mcp_tool_catalog_invalid", ErrFailClosed)
+	}
+	digest := sha256.Sum256(raw)
+	h.contractMu.Lock()
+	defer h.contractMu.Unlock()
+	if h.liveContract != nil && h.liveContractDigest == digest {
+		return h.liveContract, nil
+	}
+	bound, err := NewToolContract(tools)
+	if err != nil {
+		return nil, err
+	}
+	h.liveContract, h.liveContractDigest = bound, digest
+	return bound, nil
 }
 
 // Compile-time interface check.

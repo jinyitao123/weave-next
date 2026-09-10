@@ -1,0 +1,4 @@
+=== RUN   TestWorkflowPublishedMemberParkKeepsOriginalRunAndAccountingRealPG
+--- PASS: TestWorkflowPublishedMemberParkKeepsOriginalRunAndAccountingRealPG (0.40s)
+PASS
+ok  	github.com/jinyitao123/weave/internal/app/api	1.203s

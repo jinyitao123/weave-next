@@ -1,0 +1,6 @@
+=== RUN   TestStandardToolsPublicationReachesActualMCPAndPreservesFrozenContractRealPG
+    standard_tools_publication_pg_test.go:115: workflow_provider_revision_required: workspace, provider, and name are required
+--- FAIL: TestStandardToolsPublicationReachesActualMCPAndPreservesFrozenContractRealPG (0.30s)
+FAIL
+FAIL	github.com/jinyitao123/weave/internal/kernel/workflow	0.823s
+FAIL

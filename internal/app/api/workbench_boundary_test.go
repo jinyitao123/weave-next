@@ -112,6 +112,8 @@ func TestWorkbenchBoundaryRequiredRoutesRemainAuthenticated(t *testing.T) {
 		{http.MethodGet, "/teams/:id"},
 		{http.MethodPost, "/teams:from-template"},
 		{http.MethodPost, "/teams/:id/dispatch"},
+		{http.MethodPost, "/workbench/dispatch-inputs"},
+		{http.MethodPost, "/workbench/dispatch-inputs/:input_revision_id/reconcile"},
 		{http.MethodGet, "/providers"},
 		{http.MethodPost, "/providers"},
 		{http.MethodPost, "/auth/api-keys"},
