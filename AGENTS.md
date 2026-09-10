@@ -20,3 +20,9 @@ Rules:
 - Do not restore standalone DeepSeek Harness branding, publishing workflows, or user-facing configuration. Compatibility names may remain only where the migration plan explicitly allows them.
 - Run `make productguard`; runtime administration belongs in Workbench or the operator CLI.
 - Do not add new product features during migration.
+
+Approved 2026-09-10 scoped exception: the Guandan demonstration may admit
+server-to-server candidate-selection decisions through a dedicated service key
+bound to one published Team/Workflow version. Reuse the existing workflow engine,
+run ledger and delivery projection. This does not open arbitrary team dispatch
+or Workbench user-event impersonation to service clients.
