@@ -34,12 +34,18 @@ func (b *codexBackend) Run(ctx context.Context, spec RunSpec) (RunResult, error)
 		"--skip-git-repo-check",
 		"--dangerously-bypass-approvals-and-sandbox",
 	}
-	if len(spec.MCPServers) > 0 {
+	if len(spec.MCPServers) > 0 || spec.DisableTools {
+		if spec.DisableTools && len(spec.MCPServers) > 0 {
+			return failedCodexResult(errors.New("deny-all invocation cannot bind MCP tools"))
+		}
 		taskArgs, err := codexTaskMCPArgs(ctx, cliPath, spec)
 		if err != nil {
 			return failedCodexResult(err)
 		}
 		args = append(args, taskArgs...)
+	}
+	if spec.DisableTools {
+		args = append(args, "--disable", "shell_tool", "--disable", "unified_exec", "--disable", "multi_agent", "--disable", "apps", "--disable", "plugins", "--disable", "skill_search", "--enable", "skip_host_skill_discovery", "-c", `web_search="disabled"`)
 	}
 
 	// Empty model follows the host default; explicit CLI-native names are
