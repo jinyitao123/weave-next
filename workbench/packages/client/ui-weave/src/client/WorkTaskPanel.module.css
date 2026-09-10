@@ -20,7 +20,7 @@
 .panel button, .panel textarea, .panel select { font: inherit; }
 .panel button, .panel a, .panel summary { -webkit-tap-highlight-color: transparent; }
 .panel button:focus-visible, .panel a:focus-visible, .panel summary:focus-visible,
-.panel input:focus-visible, .panel textarea:focus-visible, .panel select:focus-visible, .headerPill:focus-visible {
+.panel input:focus-visible, .panel textarea:focus-visible, .panel select:focus-visible, .headerSceneButton:focus-visible {
   outline: 2px solid var(--dsw-alias-brand-primary);
   outline-offset: 3px;
 }
@@ -38,7 +38,7 @@
 .hero > *, .memberWorkspaceIdentity > div, .memberWorkspaceMeta > div { min-width: 0; max-width: 100%; }
 .eyebrow { color: var(--dsw-alias-label-secondary); font-size: 12px; font-weight: 500; letter-spacing: .01em; }
 .taskTitle { font-size: 21px; font-weight: 600; line-height: 1.45; letter-spacing: -.02em; text-wrap: pretty; }
-.statusLine, .headerPill { display: inline-flex; align-items: center; gap: 8px; }
+.statusLine { display: inline-flex; align-items: center; gap: 8px; }
 .statusLine { flex-wrap: wrap; row-gap: 4px; }
 .statusLine > strong { flex-shrink: 0; }
 .statusLine > span:last-child { color: var(--dsw-alias-label-secondary); font-size: 13px; }
@@ -47,8 +47,8 @@
 .statusDot[data-status='running'], .memberStatus[data-status='running'] { background: var(--dsw-alias-brand-primary); }
 .statusDot[data-status='waiting'], .statusDot[data-status='attention'], .statusDot[data-status='stopping'], .memberStatus[data-status='partially-completed'] { background: var(--dsw-alias-state-warn-primary); }
 .statusDot[data-status='failed'], .memberStatus[data-status='failed'] { background: var(--dsw-alias-state-error-primary); }
-.headerPill { padding: 5px 9px; border: 0; border-radius: 6px; color: var(--dsw-alias-label-primary); background: transparent; cursor: pointer; font-size: 12px; }
-.headerPill:hover { background: var(--dsw-alias-interactive-bg-hover); }
+
+.headerSceneButton:hover { background: var(--dsw-alias-interactive-bg-hover); }
 .section, .deliverySection, .memberWorkspaceActivity, .teamChooser { padding: 20px 0; border-top: 1px solid var(--dsw-alias-border-l1); }
 .sectionHeader { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 4px 16px; margin-bottom: 12px; }
 .sectionHeader h2, .sectionHeader h3 { font-size: 16px; line-height: 1.5; font-weight: 600; }
@@ -326,11 +326,12 @@ pre.documentBody { white-space: pre-wrap; font: inherit; }
 .publicUpdateToggle:hover { color: var(--dsw-alias-label-primary); text-decoration-color: currentColor; }
 .publicUpdates > button { margin-top: 8px; }
 
-.headerPill { max-width: 100%; min-width: 0; min-height: 30px; gap: 6px; padding: 5px 8px; border: 1px solid var(--dsw-alias-border-l1); border-radius: 8px; font-size: 12px; }
-.headerLabel { flex: none; font-weight: 500; }
-.headerState { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--dsw-alias-label-secondary); }
-.headerState::before { content: '·'; padding-right: 6px; }
-.headerChevron { flex: none; color: var(--dsw-alias-label-secondary); }
+.headerSceneButton { position: relative; display: inline-flex; align-items: center; justify-content: center; flex: none; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 8px; color: var(--dsw-alias-label-secondary); background: transparent; cursor: pointer; }
+.headerSceneButton:hover { color: var(--dsw-alias-label-primary); }
+:global([data-workbench]:not([data-details-collapsed])) .headerSceneButton { color: var(--dsw-alias-label-primary); background: var(--dsw-alias-interactive-bg-hover); }
+.headerSceneButton:active { background: var(--dsw-alias-interactive-bg-hover); transform: translateY(1px); }
+.headerStatusDot { position: absolute; top: 4px; right: 3px; width: 5px; height: 5px; box-shadow: 0 0 0 2px var(--dsw-alias-bg-base); }
+.headerAccessible { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
 @media (max-width: 620px) {
   .hero { gap: 8px; padding-bottom: 16px; }
@@ -354,7 +355,7 @@ pre.documentBody { white-space: pre-wrap; font: inherit; }
 @media (prefers-reduced-motion: no-preference) {
   .statusDot[data-executing] { animation: workPulse 1.8s ease-in-out infinite; }
   .memberStages > li[data-executing] .publicUpdateLog > article:last-child { animation: publicArrival 900ms ease-out; }
-  .panel button, .headerPill { transition: background-color var(--ds-transition-duration) var(--ds-ease-in-out), border-color var(--ds-transition-duration) var(--ds-ease-in-out), color var(--ds-transition-duration) var(--ds-ease-in-out), box-shadow var(--ds-transition-duration) var(--ds-ease-in-out); }
+  .panel button, .headerSceneButton { transition: background-color var(--ds-transition-duration) var(--ds-ease-in-out), border-color var(--ds-transition-duration) var(--ds-ease-in-out), color var(--ds-transition-duration) var(--ds-ease-in-out), box-shadow var(--ds-transition-duration) var(--ds-ease-in-out); }
 }
 @keyframes workPulse {
   0%, 100% { opacity: 1; box-shadow: 0 0 0 0 color-mix(in srgb, var(--dsw-alias-brand-primary) 25%, transparent); }

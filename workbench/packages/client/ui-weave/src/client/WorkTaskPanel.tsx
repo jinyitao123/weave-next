@@ -124,7 +124,7 @@ function runtimeDisplayStatus(runtime: WorkTaskRuntime, runtimes: readonly WorkT
 }
 
 const MEMBER_STATUS_KEYS = {
- waiting: 'task.status.waiting',
+  waiting: 'task.status.waiting',
   pending: 'task.member.status.pending',
   running: 'task.member.status.running',
   'partially-completed': 'task.member.status.partiallyCompleted',
@@ -460,23 +460,24 @@ export function WorkTaskHeader({ useChat, useProjection, openDetails, t }: Heade
   const projection = useProjection('workTask')
   const model = projectedWorkTask(conversationModel, projection)
   useFreshnessDeadline(model)
-  if (!model.detected) return (
-    <button className={css.headerPill} type="button" onClick={openDetails} aria-label={t('task.open')}>
-      <span>{t('task.header.scene')}</span><IconChevronRightOutline14 size={14} />
-    </button>
-  )
   const progress = model.totalStages > 0
     ? t('task.progress.count', { completed: model.completedStages, total: model.totalStages })
     : model.completedStages > 0
       ? t('task.progress.completedCount', { completed: model.completedStages })
       : null
+  const status = model.detected ? t(taskStatusKey(model)) : ''
+  const label = [t('task.header.scene'), status, progress].filter(Boolean).join(' · ')
   return (
-    <button className={css.headerPill} type="button" onClick={openDetails} aria-label={t('task.open')} title={[teamDisplayName(model.teamName, model.teamName), progress].filter(Boolean).join(' · ')}>
-      <span className={css.statusDot} data-executing={taskIsExecuting(model) || undefined} data-status={model.status === 'completed' && !workTaskHasFinalDeliverable(model) ? 'attention' : model.status} aria-hidden />
-      <span className={css.headerLabel}>{t('task.header.scene')}</span>
-      <span className={css.headerState}>{t(taskStatusKey(model))}</span>
-      <IconChevronRightOutline14 size={14} className={css.headerChevron} />
-    </button>
+    <Tooltip label={label} side="bottom" delayMs={250}>
+      <button className={css.headerSceneButton} type="button" onClick={openDetails} aria-label={t('task.open')} data-work-scene-entry>
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.55" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <rect x="3.25" y="4.25" width="17.5" height="15.5" rx="2.5" />
+          <path d="M14.5 4.5v15M6.75 8h4.5M6.75 11.5h4.5M17.5 8v3.5M17.5 15.5h.01" />
+        </svg>
+        <span className={css.headerAccessible}><span>{t('task.header.scene')}</span>{model.detected && <span>{status}</span>}</span>
+        {model.detected && <span className={`${css.statusDot} ${css.headerStatusDot}`} data-executing={taskIsExecuting(model) || undefined} data-status={model.status === 'completed' && !workTaskHasFinalDeliverable(model) ? 'attention' : model.status} aria-hidden />}
+      </button>
+    </Tooltip>
   )
 }
 
@@ -688,8 +689,10 @@ export function WorkTaskPanel({
     setActionPending(true)
     setActionError(null)
     const budget = recoverableStages.find(item => item.stage.nodeId === retryNodeId)?.stage.budgetPause
+    const authorizedTotalRounds = budget?.reason === 'total_limit' ? budget.authorizedTotalRounds : undefined
     const ceiling = budget?.reason === 'total_limit' ? Number(budgetCeiling) : undefined
-    if (ceiling !== undefined && (!Number.isSafeInteger(ceiling) || ceiling <= budget!.authorizedTotalRounds)) {
+    if (ceiling !== undefined
+      && (authorizedTotalRounds === undefined || !Number.isSafeInteger(ceiling) || ceiling <= authorizedTotalRounds)) {
       setActionPending(false); setActionError(t('task.budget.invalid')); return
     }
     const error = ceiling === undefined ? await retryStage(model.runId, retryNodeId) : await retryStage(model.runId, retryNodeId, ceiling)
@@ -789,7 +792,7 @@ export function WorkTaskPanel({
             {retryNodeId === stage.nodeId ? (
               <div className={css.retryConfirm}>
                 <span>{t(stage.memberRunId ? 'task.retry.memberImpact' : 'task.retry.impact')}</span>
-                {stage.budgetPause?.reason !== 'total_limit' ? null : <label>{t('task.budget.ceiling')}<input type="number" min={stage.budgetPause.authorizedTotalRounds + 1} max={Number.MAX_SAFE_INTEGER} step={1} value={budgetCeiling} onChange={event => { setBudgetCeiling(event.currentTarget.value) }} /></label>}
+                {stage.budgetPause?.reason !== 'total_limit' ? null : <label>{t('task.budget.ceiling')}<input type="number" min={stage.budgetPause.authorizedTotalRounds + 1} max={Number.MAX_SAFE_INTEGER} step={1} value={budgetCeiling} onChange={(event) => { setBudgetCeiling(event.currentTarget.value) }} /></label>}
                 <div className={css.controlActions}>
                   <button type="button" className={css.secondaryButton} onClick={() => { setRetryNodeId('') }}>{t('task.cancel')}</button>
                   <button type="button" className={css.primaryButton} disabled={actionPending || model.pendingAction !== null} onClick={() => { void submitStageRetry() }}>{t('task.retry.confirm')}</button>

@@ -1,0 +1,8 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Weave Workbench Preview</title><link rel="stylesheet" href="shell.css"></head>
+<body>
+<header><div class="brand"><strong>Workbench</strong><span class="preview">预览环境</span></div><div class="toolbar"><span id="download-status" role="status"></span><span id="service-chip" class="chip">尚未连接</span><button id="reload" class="quiet" disabled>重新连接</button><button id="settings" class="quiet">连接设置</button><button id="disconnect" class="quiet" disabled>断开</button></div></header>
+<main id="panel"><section class="connection-card"><div class="overline">设置 / 连接</div><h1>工作空间服务</h1><p class="intro">选择桌面使用的服务。切换服务会重新打开工作区。</p><form id="connection-form"><label for="origin">服务地址</label><input id="origin" type="url" autocomplete="off" spellcheck="false" required><div id="presets" class="presets"></div><div id="instance" class="hint"></div><p id="notice" class="notice" role="status"></p><pre id="detail" hidden></pre><button id="connect" class="primary" type="submit">连接工作空间</button><div class="secondary"><button id="cancel" type="button" hidden>取消连接</button><button id="back" type="button" hidden>返回工作空间</button></div></form><footer><span class="dot"></span>验证环境<p>两个本地服务用于检查连接、切换和下载体验。<br>此预览不连接真实账号，不创建业务任务。</p></footer></section></main>
+<script type="module" src="renderer.js"></script>
+</body></html>

@@ -1834,7 +1834,7 @@ web_search and web_fetch keep provider selection behind ctx.web so model-visible
 
 ### `weave_dispatch`
 
-Dispatch the current user task to the agreed Weave team and published workflow. Use only when the user has authorized the team, task scope and expected outputs; existing explicit authorization is sufficient. Original user inputs are attached automatically and cannot be replaced with a rewritten task. Do not use for progress questions, recovery or rerunning an existing task. Repeating the same unresolved request is safe.
+Dispatch the current user task to the agreed Weave team and published workflow. team_id may be the exact visible team name, machine name, or stable ID; Workbench resolves names only against active teams and rejects ambiguity. Use only when the user has authorized the team, task scope and expected outputs; existing explicit authorization is sufficient. Original user inputs are attached automatically and cannot be replaced with a rewritten task. Do not use for progress questions, recovery or rerunning an existing task. Repeating the same unresolved request is safe.
 
 ```json
 {
@@ -1842,7 +1842,7 @@ Dispatch the current user task to the agreed Weave team and published workflow. 
   "properties": {
     "team_id": {
       "type": "string",
-      "description": "The agreed active team."
+      "description": "The agreed active team by visible name, machine name, or stable ID."
     },
     "workflow_id": {
       "type": "string",

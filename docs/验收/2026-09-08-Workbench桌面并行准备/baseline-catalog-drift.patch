@@ -1,0 +1,13 @@
+--- workbench/docs/config-catalog.md
++++ generated-from-da0e5c7/workbench/docs/config-catalog.md
+@@ -2936 +2936 @@
+-Source: [`packages/bundle/workbench-app/src/index.ts:929`](../packages/bundle/workbench-app/src/index.ts)
++Source: [`packages/bundle/workbench-app/src/index.ts:934`](../packages/bundle/workbench-app/src/index.ts)
+--- workbench/docs/persistence-catalog.md
++++ generated-from-da0e5c7/workbench/docs/persistence-catalog.md
+@@ -1054 +1054 @@
+-Source: [`packages/bundle/workbench-app/src/index.ts:232`](../packages/bundle/workbench-app/src/index.ts)
++Source: [`packages/bundle/workbench-app/src/index.ts:234`](../packages/bundle/workbench-app/src/index.ts)
+@@ -1065 +1065 @@
+-Source: [`packages/bundle/workbench-app/src/index.ts:234`](../packages/bundle/workbench-app/src/index.ts)
++Source: [`packages/bundle/workbench-app/src/index.ts:236`](../packages/bundle/workbench-app/src/index.ts)

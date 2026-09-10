@@ -50,7 +50,7 @@ export interface WorkTaskMemberInput {
 
 /** One workflow stage assigned to a member, including observed tools and outputs. */
 export interface WorkTaskMemberStage {
- readonly budgetPause?: { readonly reason: string; readonly roundsUsed: number; readonly authorizedTotalRounds: number } | undefined
+  readonly budgetPause?: { readonly reason: string; readonly roundsUsed: number; readonly authorizedTotalRounds: number } | undefined
   readonly memberRunId?: string | undefined
   readonly checkpointSavedAt?: string | undefined
   readonly nodeId: string
@@ -601,13 +601,13 @@ function publicUpdates(value: unknown): WorkTaskPublicUpdate[] {
 }
 
 function memberBudgetPause(value: unknown): { budgetPause?: { reason: string; roundsUsed: number; authorizedTotalRounds: number } } {
- const item = value as Record<string, unknown> | null
- if (typeof item !== 'object' || item === null) return {}
- const used = item.rounds_used ?? item.roundsUsed
- const ceiling = item.authorized_total_rounds ?? item.authorizedTotalRounds
- if (typeof item.reason !== 'string' || typeof used !== 'number' || typeof ceiling !== 'number'
+  const item = value as Record<string, unknown> | null
+  if (typeof item !== 'object' || item === null) return {}
+  const used = item.rounds_used ?? item.roundsUsed
+  const ceiling = item.authorized_total_rounds ?? item.authorizedTotalRounds
+  if (typeof item.reason !== 'string' || typeof used !== 'number' || typeof ceiling !== 'number'
    || !Number.isSafeInteger(used) || !Number.isSafeInteger(ceiling) || used < 0 || ceiling < used) return {}
- return { budgetPause: { reason: item.reason, roundsUsed: used, authorizedTotalRounds: ceiling } }
+  return { budgetPause: { reason: item.reason, roundsUsed: used, authorizedTotalRounds: ceiling } }
 }
 
 function memberStages(value: unknown): readonly WorkTaskMemberStage[] {

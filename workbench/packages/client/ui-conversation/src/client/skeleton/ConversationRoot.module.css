@@ -481,6 +481,7 @@
    vs design card 776) so blur scales in userSpace with it. z-index -1 keeps
    it behind the in-flow hero content inside this stacking context. */
 .heroGlow {
+  display: none;
   position: absolute;
   left: 50%;
   bottom: 92px;

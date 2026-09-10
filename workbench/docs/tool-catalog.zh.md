@@ -1842,7 +1842,7 @@ web_search 和 web_fetch 将提供方选择置于 ctx.web 之后，使模型可�
 
 ### `weave_dispatch`
 
-将当前用户任务派发给约定的 Weave 团队及已发布工作流。仅在用户已授权团队、任务范围和预期输出时使用；已有明确授权即可。系统自动附加用户原始输入，不允许用改写的任务替换。不要用于进度询问、恢复或重跑已有任务。重复提交同一尚未确定结果的请求是安全的。
+将当前用户任务派发给约定的 Weave 团队及已发布工作流。`team_id` 可以使用界面显示的准确团队名、机器名或稳定 ID；Workbench 只在活跃团队中解析名称，并拒绝有歧义的结果。仅在用户已授权团队、任务范围和预期输出时使用；已有明确授权即可。系统自动附加用户原始输入，不允许用改写的任务替换。不要用于进度询问、恢复或重跑已有任务。重复提交同一尚未确定结果的请求是安全的。
 
 ```json
 {
@@ -1850,7 +1850,7 @@ web_search 和 web_fetch 将提供方选择置于 ctx.web 之后，使模型可�
   "properties": {
     "team_id": {
       "type": "string",
-      "description": "The agreed active team."
+      "description": "The agreed active team by visible name, machine name, or stable ID."
     },
     "workflow_id": {
       "type": "string",
