@@ -27,7 +27,7 @@ func codexProviderName(provider string) string {
 	return provider
 }
 
-func WriteCodexHomeWithAuthMode(workDir string, rec *registry.AgentRecord, oneapiBase, boundaryBase, apiKeyEnvName, authMode string) error {
+func WriteCodexHomeWithAuthMode(workDir string, rec *registry.AgentRecord, oneapiBase, boundaryBase, apiKeyEnvName, authMode string, targets ...TaskMCPTarget) error {
 	if codexUsesHostChatGPTAuth(authMode) {
 		return nil
 	}
@@ -37,7 +37,7 @@ func WriteCodexHomeWithAuthMode(workDir string, rec *registry.AgentRecord, oneap
 		oneapiBase,
 		boundaryBase,
 		apiKeyEnvName,
-		codexExternalSkillRoots(workDir),
+		codexExternalSkillRoots(workDir), targets...,
 	)
 }
 
@@ -49,7 +49,7 @@ func writeCodexHomeWithExternalSkillRoots(
 	workDir string,
 	rec *registry.AgentRecord,
 	oneapiBase, boundaryBase, apiKeyEnvName string,
-	externalSkillRoots []string,
+	externalSkillRoots []string, targets ...TaskMCPTarget,
 ) error {
 	if rec == nil {
 		return fmt.Errorf("execenv: nil agent record")
@@ -70,7 +70,7 @@ func writeCodexHomeWithExternalSkillRoots(
 
 	mcp := make(map[string]any)
 	for idx, server := range rec.MCPServers {
-		targetURL, token, host, ok := mcpServerTarget(rec, server, idx, boundaryBase)
+		targetURL, token, host, ok := mcpServerTarget(rec, server, idx, boundaryBase, targets...)
 		if !ok {
 			continue
 		}

@@ -1,0 +1,141 @@
+{
+  "schema_version": 1,
+  "recorded_at": "2026-09-10T01:26:52+08:00",
+  "sample": "inventory-batch-heldout-20260910",
+  "result": "EXECUTION_SUCCEEDED_DELIVERY_FAILED",
+  "stop_rule_applied": true,
+  "frozen_inputs_changed": false,
+  "frozen_hash_checks": {
+    "team-template.yaml": true,
+    "task.txt": true,
+    "README.md": true
+  },
+  "correction_submitted": false,
+  "redispatched": false,
+  "team": {
+    "id": "85a8e176-2890-45c1-8983-c2f402d94103",
+    "workspace_id": "default",
+    "name": "inventory-batch-heldout-20260910",
+    "display_name": "库存批次复核团队",
+    "status": "active",
+    "default_workflow_id": "inventory-batch-heldout-20260910-workflow"
+  },
+  "team_build": {
+    "build_run_id": "c06cf274-7a75-51eb-be65-fb7a00b1a095",
+    "status": "ready",
+    "members": 4,
+    "selected_engine": "claude",
+    "runtime_id": "84da6261-475b-4724-9086-8b8439f8699e",
+    "runtime_name": "Mac Local Runtime B",
+    "auth_mode": "oauth",
+    "fallback_assessment": "PASS_CREDENTIAL_AWARE_SELECTION"
+  },
+  "frozen_environment": {
+    "api_implementation_commit": "7db2359bcf90a4fadf9645a6b1514144d21a432b",
+    "workbench_implementation_commit": "564bdc6383fa1240408f4dcbc76932b93ef258f7",
+    "deployed_binary_sha256": "e5c877a69bbb1e4b535324515a8c2c93820744955a926d8488866ca6c0ea8cc2",
+    "workbench_mcp_command": "/Users/jinyitao/.local/bin/weave"
+  },
+  "workbench_first_attempt": {
+    "page_title": "库存批次滞留率与库龄复核 — Weave Workbench",
+    "page_url": "http://127.0.0.1:13083/",
+    "requested_team_display_name": "库存批次复核团队",
+    "team_discovery": "10 candidates returned, including Inventory Batch Heldout 20260910 with a dispatchable default workflow",
+    "dispatch_tool": "weave_dispatch",
+    "dispatch_tool_input": {
+      "team_id": "inventory-batch-heldout-20260910"
+    },
+    "run_id": "run-2ce7e31f-9370-5f70-af55-82a2b0dffce9",
+    "worksite_status": "执行完成，成果待查看",
+    "displayed_completed_stages": "4/4",
+    "delivery_verification": "核验未通过",
+    "user_assessment": "尚未评价"
+  },
+  "run": {
+    "run_id": "run-2ce7e31f-9370-5f70-af55-82a2b0dffce9",
+    "team_id": "85a8e176-2890-45c1-8983-c2f402d94103",
+    "status": "succeeded",
+    "workflow_id": "inventory-batch-heldout-20260910-workflow",
+    "workflow_version": 1,
+    "input_revision_id": "0d0b05c1-4bcb-47f7-adfe-e50d0e223c53",
+    "started_at": "2026-09-10T01:20:46.635196+08:00",
+    "terminal_at": "2026-09-10T01:22:46.7688+08:00",
+    "api_stages": [
+      "lead",
+      "parallel-01",
+      "parallel-02",
+      "join",
+      "finalizer",
+      "deliver"
+    ],
+    "completed_members": 4,
+    "failed_members": 0
+  },
+  "delivery": {
+    "contract_digest": "bbc3ed83d5df0ee3d666859a95f87bf94cde7b2b104af3b541aceefff12b6c8a",
+    "revision_id": "delivery_b2801365f6f77540f9a9d2e65f80280f561015c7aa3eb08f577237c859efb61c",
+    "verification_id": "verification_f885f78b3559d1f4ac3f0db193a7516029deb7dbfdc7076c8e98d883e9867ea2",
+    "verification_status": "failed",
+    "checks": {
+      "coverage": "passed",
+      "output": "passed",
+      "required_artifact": "failed: required_file_missing",
+      "external_effects": "passed",
+      "output_schema": "passed"
+    },
+    "contract_required_path": "outputs/inventory-batch-review.md",
+    "candidate_path": "inventory-batch-review.md",
+    "candidate_sha256": "233571b08e2367c6c930220c7a596ee9bdee9156a7e4de0063f5f9aca76d51fa",
+    "physical_path_suffix": "outputs/inventory-batch-review.md",
+    "candidate_available": true
+  },
+  "independent_content_verification": {
+    "artifact_sha256": "233571b08e2367c6c930220c7a596ee9bdee9156a7e4de0063f5f9aca76d51fa",
+    "arithmetic": {
+      "batch-a": "10.00%",
+      "batch-b": "5.00%",
+      "batch-c": "20.00%",
+      "priority": "batch-c",
+      "aging-risk": "batch-b"
+    },
+    "semantic_business_result": "correct",
+    "required_literal_markers": {
+      "batch-a | 10.00% | 8": false,
+      "batch-b | 5.00% | 6": false,
+      "batch-c | 20.00% | 10": false,
+      "priority: batch-c": false,
+      "aging-risk: batch-b": false
+    },
+    "contract_content_result_if_path_matched": "failed: file_content_condition_missing"
+  },
+  "root_cause": {
+    "primary_category": "artifact_path_namespace_mismatch",
+    "primary_finding": "Runtime collection intentionally records files relative to the reserved outputs directory, while team-template contracts accept and preserve product-facing outputs/... paths; verification compared the strings literally.",
+    "secondary_category": "literal_contract_noncompliance",
+    "secondary_finding": "The final report contains the correct arithmetic and decisions in Chinese prose and tables but omits all five exact literal markers required by the frozen contract.",
+    "product_boundary_assessment": "Execution success is truthful and distinct from delivery success. The Workbench correctly exposed the failed machine verification and did not infer success from the report text."
+  },
+  "verdict": {
+    "natural_name_dispatch": "PASS",
+    "authenticated_runtime_selection": "PASS",
+    "runtime_execution": "PASS",
+    "semantic_content": "PASS",
+    "delivery_verification": "FAIL",
+    "user_assessment": "NOT_SUBMITTED",
+    "overall": "HELD_OUT_EXECUTION_PASS_DELIVERY_FAIL"
+  },
+  "claim_boundary": {
+    "proves": [
+      "credential-aware template construction selected an OAuth-authenticated Claude runtime instead of unavailable provider-auth Codex",
+      "a visible team name can establish one frozen TeamRun through Workbench without operator-supplied UUID",
+      "all four team members can execute to a successful terminal run",
+      "Workbench keeps successful execution separate from failed delivery verification and absent user assessment"
+    ],
+    "does_not_prove": [
+      "that outputs-prefixed contracts match the collector path namespace",
+      "that the final artifact obeyed its five exact content markers",
+      "that the machine delivery contract passed",
+      "that the user adopted the result or the overall business loop is complete"
+    ]
+  }
+}

@@ -4,8 +4,33 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jinyitao123/weave/internal/base/deliverable"
 	"github.com/jinyitao123/weave/internal/kernel/workflow/machine"
 )
+
+func TestCompileWorkflowBlueprintCarriesDeliveryContract(t *testing.T) {
+	blueprint := WorkflowBlueprint{
+		Template: WorkflowBlueprintResearchSummary, LeadInstruction: "Coordinate",
+		ParallelWorkers: []WorkflowBlueprintWorker{
+			{AgentID: "researcher", AgentVersion: 1, ResultRequirement: "Research"},
+			{AgentID: "reviewer", AgentVersion: 1, ResultRequirement: "Review"},
+		},
+		Finalizer: &WorkflowBlueprintWorker{AgentID: "editor", AgentVersion: 1, ResultRequirement: "Deliver"},
+		DeliveryContract: &deliverable.DeliveryContract{
+			Version: 1, Coverage: deliverable.CoverageExplicit,
+			Output: deliverable.OutputRequirement{Type: "text"}, ExternalEffects: deliverable.ExternalEffectsNone,
+			RequiredArtifacts: []deliverable.ArtifactRequirement{{ID: "report", Path: "outputs/report.md"}},
+		},
+	}
+	compiled, problems := CompileWorkflowBlueprint(blueprint)
+	if len(problems) != 0 || compiled.Graph.DeliveryContract == nil || compiled.Graph.DeliveryContract.RequiredArtifacts[0].Path != "outputs/report.md" {
+		t.Fatalf("compiled graph lost contract: problems=%+v contract=%+v", problems, compiled.Graph.DeliveryContract)
+	}
+	compiled.Graph.DeliveryContract.RequiredArtifacts[0].Path = "changed"
+	if blueprint.DeliveryContract.RequiredArtifacts[0].Path != "outputs/report.md" {
+		t.Fatal("compiled graph aliases mutable blueprint contract")
+	}
+}
 
 func TestSynthesisBlueprintPreservesOriginalTaskAfterFreeze(t *testing.T) {
 	for _, template := range []WorkflowBlueprintTemplate{WorkflowBlueprintResearchSummary, WorkflowBlueprintParallelReview} {

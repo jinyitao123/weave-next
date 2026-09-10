@@ -1,0 +1,74 @@
+name: Deploy main
+
+on:
+  workflow_run:
+    workflows: ["Go CI"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: deploy-main-server
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_branch == 'main' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Select the tested main commit
+        id: target
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const repo = context.repo;
+            const { data: branch } = await github.rest.repos.getBranch({ ...repo, branch: 'main' });
+            const sha = branch.commit.sha;
+            if (context.eventName === 'workflow_run' && context.payload.workflow_run.head_sha !== sha) {
+              core.info('A newer main commit exists; this deployment is superseded.');
+              core.setOutput('deploy', 'false');
+              return;
+            }
+            const { data } = await github.rest.actions.listWorkflowRuns({
+              ...repo, workflow_id: 'go-ci.yml', branch: 'main', event: 'push', head_sha: sha, per_page: 100,
+            });
+            if (!data.workflow_runs.some(run => run.head_sha === sha && run.status === 'completed' && run.conclusion === 'success')) {
+              throw new Error('The current main commit has no successful Go CI run.');
+            }
+            if (!/^[0-9a-f]{40}$/.test(sha)) throw new Error('Invalid commit SHA');
+            core.setOutput('sha', sha);
+            core.setOutput('deploy', 'true');
+      - name: Deploy the exact commit
+        if: steps.target.outputs.deploy == 'true'
+        env:
+          DEPLOY_SHA: ${{ steps.target.outputs.sha }}
+          DEPLOY_HOST: ${{ vars.WEAVE_DEPLOY_HOST }}
+          DEPLOY_USER: ${{ vars.WEAVE_DEPLOY_USER }}
+          DEPLOY_KEY: ${{ secrets.WEAVE_DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.WEAVE_DEPLOY_KNOWN_HOSTS }}
+          DEPLOY_GITHUB_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$DEPLOY_HOST" && test -n "$DEPLOY_USER"
+          test -n "$DEPLOY_KEY" && test -n "$DEPLOY_KNOWN_HOSTS"
+          umask 077
+          ssh_dir="$(mktemp -d)"
+          trap 'rm -rf "$ssh_dir"' EXIT
+          printf '%s\n' "$DEPLOY_KEY" > "$ssh_dir/id_ed25519"
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$ssh_dir/known_hosts"
+          printf '%s\n' "$DEPLOY_GITHUB_TOKEN" | ssh -T -i "$ssh_dir/id_ed25519" \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$ssh_dir/known_hosts" \
+            -o ConnectTimeout=20 -o ServerAliveInterval=30 -o ServerAliveCountMax=6 \
+            "$DEPLOY_USER@$DEPLOY_HOST" "deploy $DEPLOY_SHA"

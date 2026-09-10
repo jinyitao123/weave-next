@@ -33,8 +33,8 @@ func NewStandardFrozenDescriptor() GraphFactoryDescriptor {
 		FactoryVersion:        standardFrozenFactoryVersion,
 		CompilerABI:           standardFrozenCompilerABI,
 		EnumerateDependencies: standardFrozenEnumerator{},
-		DescribeCapability: func(context.Context, frozen.FrozenAgentRecord) (frozen.CapabilityManifest, error) {
-			return standardFrozenCapability(), nil
+		DescribeCapability: func(_ context.Context, agent frozen.FrozenAgentRecord) (frozen.CapabilityManifest, error) {
+			return standardAgentCapability(agent)
 		},
 		Compile: compileStandardFrozen,
 	}
@@ -49,6 +49,9 @@ func (standardFrozenEnumerator) EncodeFactoryInput(
 	record registry.AgentRecord,
 	_ CredentialRefEncoder,
 ) (json.RawMessage, error) {
+	if err := validateControlledMemberRecord(record); err != nil {
+		return nil, err
+	}
 	if err := ValidateFrozenSkillRefs(record); err != nil {
 		return nil, err
 	}
@@ -138,7 +141,10 @@ func compileStandardFrozenVersion(
 	opts FrozenBuildOpts,
 	version string,
 ) (*loom.Graph, frozen.CapabilityManifest, error) {
-	capability := standardFrozenCapability()
+	capability, err := standardAgentCapability(bundle.Agent)
+	if err != nil {
+		return nil, capability, err
+	}
 	if err := validateStandardFrozenBundleVersion(bundle, version); err != nil {
 		return nil, capability, err
 	}
@@ -295,6 +301,7 @@ func mapStandardFrozenToLegacy(
 		MaxOutputTokens: maxOutputTokens,
 		StepBudget:      bundle.Agent.Limits.StepBudget,
 		MaxToolRepeats:  maxToolRepeats,
+		ToolLoopControl: bundle.Agent.Limits.ToolLoopControl,
 		FallbackModels:  fallbackModels,
 		FallbackRetries: fallbackRetries,
 		GraphType:       standardFrozenFactoryID,
@@ -522,4 +529,19 @@ func standardFrozenCapability() frozen.CapabilityManifest {
 		MayInvokeAgent:     false,
 		AgentStepIDs:       []string{},
 	}
+}
+
+func standardAgentCapability(agent frozen.FrozenAgentRecord) (frozen.CapabilityManifest, error) {
+	capability := standardFrozenCapability()
+	if agent.Limits.ToolLoopControl != nil {
+		if err := frozen.ValidateToolLoopControl(agent.Limits.ToolLoopControl); err != nil {
+			return capability, err
+		}
+		if agent.Engine != "loom" || agent.GraphType != "standard" {
+			return capability, standardFrozenCompileError("controlled tool loops require standard Loom members")
+		}
+		capability.MayYield = true
+		capability.InteractiveStepIDs = []string{"chat"}
+	}
+	return capability, nil
 }

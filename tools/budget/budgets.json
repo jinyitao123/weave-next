@@ -176,6 +176,52 @@
         "lines_added": 6,
         "production_lines_added": 0
       }
+    },
+    {
+      "date": "2026-09-10",
+      "source_commit": "cf9c6e984435b2025553a9171fbb620e2f330ccd",
+      "reason": "Integrate authorized, verified task-trust repairs: immutable dispatch inputs and delivery contracts, published MCP authority and claim fencing, persistent member pause/continuation, scoped correction/stage retries and complete artifact collection. Exact audited ceilings without spare growth; original migration targets and upward-edge limits retained. Kernel reuses json-canon for strict JSON parsing and jsonschema/v6 for published argument validation. App deliveryverify registers kernel-backed checks without an upward base import.",
+      "record": "docs/治理/2026-09-10-信任修复主线集成核对.md",
+      "base": {
+        "previous_lines": 22981,
+        "previous_production_lines": 20108,
+        "lines_added": 4566,
+        "production_lines_added": 2877,
+        "previous_packages": 12,
+        "packages": 12,
+        "previous_external_dependencies": 4,
+        "external_dependencies": 4
+      },
+      "kernel": {
+        "previous_lines": 62538,
+        "previous_production_lines": 59999,
+        "lines_added": 4800,
+        "production_lines_added": 2475,
+        "previous_packages": 33,
+        "packages": 33,
+        "previous_external_dependencies": 3,
+        "external_dependencies": 5
+      },
+      "build": {
+        "previous_lines": 37015,
+        "previous_production_lines": 34634,
+        "lines_added": 236,
+        "production_lines_added": 162,
+        "previous_packages": 7,
+        "packages": 7,
+        "previous_external_dependencies": 4,
+        "external_dependencies": 4
+      },
+      "app": {
+        "previous_lines": 42302,
+        "previous_production_lines": 35417,
+        "lines_added": 4113,
+        "production_lines_added": 1278,
+        "previous_packages": 17,
+        "packages": 18,
+        "previous_external_dependencies": 7,
+        "external_dependencies": 7
+      }
     }
   ],
   "migration_targets": {
@@ -201,8 +247,8 @@
     }
   },
   "base": {
-    "lines": 22981,
-    "production_lines": 20108,
+    "lines": 27547,
+    "production_lines": 22985,
     "packages": 12,
     "external_dependencies": 4,
     "allowed_dependencies": [
@@ -213,19 +259,21 @@
     ]
   },
   "kernel": {
-    "lines": 62538,
-    "production_lines": 59999,
+    "lines": 67338,
+    "production_lines": 62474,
     "packages": 33,
-    "external_dependencies": 3,
+    "external_dependencies": 5,
     "allowed_dependencies": [
       "github.com/google/uuid",
       "github.com/jackc/pgx/v5",
-      "github.com/jinyitao123/loom"
+      "github.com/jinyitao123/loom",
+      "github.com/lattice-substrate/json-canon",
+      "github.com/santhosh-tekuri/jsonschema/v6"
     ]
   },
   "build": {
-    "lines": 37015,
-    "production_lines": 34634,
+    "lines": 37251,
+    "production_lines": 34796,
     "packages": 7,
     "external_dependencies": 4,
     "allowed_dependencies": [
@@ -236,9 +284,9 @@
     ]
   },
   "app": {
-    "lines": 42302,
-    "production_lines": 35417,
-    "packages": 17,
+    "lines": 46415,
+    "production_lines": 36695,
+    "packages": 18,
     "external_dependencies": 7,
     "allowed_dependencies": [
       "github.com/golang-jwt/jwt/v5",

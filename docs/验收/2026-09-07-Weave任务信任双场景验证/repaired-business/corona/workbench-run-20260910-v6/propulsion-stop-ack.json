@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "recorded_at": "2026-09-09T20:34:29.645788+00:00",
+  "action": "runtime_stop_acknowledgement",
+  "task_id": "task-6a64ba48793154493728c5d6d9ef1eac",
+  "runtime_pid": 54608,
+  "old_execution_pid": 54491,
+  "old_execution_process_absent": true,
+  "http_status": 204,
+  "credential_recorded": false,
+  "basis": "The original CLI process was explicitly terminated and its PID was absent before the existing authenticated runtime stop endpoint was called."
+}

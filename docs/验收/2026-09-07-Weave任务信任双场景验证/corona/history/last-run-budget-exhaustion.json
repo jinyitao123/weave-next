@@ -1,0 +1,18 @@
+{
+  "observed_at": "2026-09-08T00:53:20.748723+00:00",
+  "source_file": "native-model-90208-089.json",
+  "source_sha256": "e783dcc85a2b4ab2eb443ff1585e1e40562d425f61acd42756bb9cd318356048",
+  "request_at": "2026-09-07T14:15:54.723004Z",
+  "tool_count": 0,
+  "last_message": {
+    "content": "[loom] The tool-call budget for this turn is exhausted (20 rounds used). Do not request any more tool calls. In the language of this conversation: summarize what you have found so far, state clearly what remains unfinished, and suggest how the remaining work should be handled (for example, delegating it as a background task).",
+    "role": "user"
+  },
+  "response_finish_reasons": [
+    "stop"
+  ],
+  "weave_compiler_source": "internal/kernel/compiler/compiler.go:267",
+  "loom_version": "v0.8.1",
+  "loom_source": "stdlib/toolloop.go:333-371",
+  "finding": "Tool loop exhausted 20 rounds, instructed final summary with no tools, then returned nil error. This explains this final stop; it does not establish the causes of all earlier runs."
+}

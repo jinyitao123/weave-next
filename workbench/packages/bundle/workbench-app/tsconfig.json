@@ -9,6 +9,7 @@
     { "path": "../../core/session" },
     { "path": "../../workspace/workspace" },
     { "path": "../../session/session-projection" },
-    { "path": "../../runtime-diagnostics/invariants" }
+    { "path": "../../runtime-diagnostics/invariants" },
+    { "path": "../../core/tools" }
   ]
 }

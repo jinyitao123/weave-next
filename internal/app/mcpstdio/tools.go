@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 
 	"github.com/jinyitao123/loom/contract"
@@ -46,15 +47,23 @@ type researchTeamMember struct {
 }
 
 type ToolDispatcher struct {
-	client *weaveclient.Client
+	client              *weaveclient.Client
+	boundDispatchHidden bool
 }
 
 func NewToolDispatcher(client *weaveclient.Client) *ToolDispatcher {
-	return &ToolDispatcher{client: client}
+	return &ToolDispatcher{client: client, boundDispatchHidden: os.Getenv("WEAVE_WORKBENCH_BOUND_DISPATCH") == "1"}
 }
 
 func (d *ToolDispatcher) ListTools(context.Context) ([]contract.ToolDef, error) {
-	return append([]contract.ToolDef(nil), toolDefinitions...), nil
+	listed := make([]contract.ToolDef, 0, len(toolDefinitions))
+	for _, definition := range toolDefinitions {
+		if d.boundDispatchHidden && definition.Name == "team_dispatch" {
+			continue
+		}
+		listed = append(listed, definition)
+	}
+	return listed, nil
 }
 
 func (d *ToolDispatcher) Dispatch(ctx context.Context, call contract.ToolCall) (*contract.ToolResult, error) {
@@ -148,23 +157,30 @@ func (d *ToolDispatcher) Dispatch(ctx context.Context, call contract.ToolCall) (
 		return documentResult(call.ID, result, err), nil
 	case "team_dispatch":
 		var input struct {
-			TeamID          string `json:"team_id"`
-			Task            string `json:"task"`
-			Mode            string `json:"mode"`
-			WorkflowID      string `json:"workflow_id"`
-			WorkflowVersion *int   `json:"workflow_version"`
-			ClientRequestID string `json:"client_request_id"`
-			ProjectID       string `json:"project_id"`
-			ConversationID  string `json:"conversation_id"`
-			Wait            bool   `json:"wait"`
+			TeamID          string          `json:"team_id"`
+			Task            json.RawMessage `json:"task"`
+			InputRevisionID string          `json:"input_revision_id"`
+			ClientRequestID json.RawMessage `json:"client_request_id"`
+			Wait            bool            `json:"wait"`
 		}
 		if err := decodeArguments(call.Args, &input); err != nil {
 			return toolError(call.ID, "invalid_arguments"), nil
 		}
+		if strings.TrimSpace(input.InputRevisionID) == "" {
+			return toolError(call.ID, "dispatch_input_required"), nil
+		}
+		var task string
+		if len(input.Task) > 0 && (bytes.Equal(bytes.TrimSpace(input.Task), []byte("null")) || json.Unmarshal(input.Task, &task) != nil) {
+			return toolError(call.ID, "invalid_arguments"), nil
+		}
+		var clientRequestID string
+		if len(input.ClientRequestID) > 0 && (json.Unmarshal(input.ClientRequestID, &clientRequestID) != nil ||
+			clientRequestID == "" || strings.TrimSpace(clientRequestID) != clientRequestID) {
+			return toolError(call.ID, "invalid_client_request_id"), nil
+		}
 		request := weaveclient.DispatchRequest{
-			TeamID: input.TeamID, Task: input.Task,
-			Mode: input.Mode, WorkflowID: input.WorkflowID, WorkflowVersion: input.WorkflowVersion,
-			ClientRequestID: input.ClientRequestID, ProjectID: input.ProjectID, ConversationID: input.ConversationID,
+			TeamID: input.TeamID, Task: task, TaskProvided: len(input.Task) > 0,
+			InputRevisionID: input.InputRevisionID, ClientRequestID: clientRequestID,
 		}
 		var id string
 		var result json.RawMessage
@@ -597,8 +613,8 @@ var toolDefinitions = []contract.ToolDef{
 	},
 	{
 		Name:        "team_dispatch",
-		Description: "Dispatch a task through the team's published default workflow and return the durable run immediately by default. Set mode=free_collab explicitly only when free collaboration is intended; workflow failures never fall back silently. workflow_id overrides the team default and workflow_version pins an exact published version. A client_request_id UUID makes retries converge in either mode and rejects changed dispatch facts. Persistent clients should leave wait=false and observe the returned run with team_run_activity; set wait=true only for an explicitly requested synchronous terminal wait. Errors: team_not_found, team_not_active, no_default_workflow, default_workflow_unavailable, workflow_team_mismatch, workflow_not_published, team_lead_unavailable, invalid_client_request_id, client_request_conflict, http_401, http_403.",
-		InputSchema: json.RawMessage(`{"type":"object","properties":{"team_id":{"type":"string"},"task":{"type":"string"},"mode":{"type":"string","enum":["workflow","free_collab"],"default":"workflow"},"workflow_id":{"type":"string"},"workflow_version":{"type":"integer","minimum":1},"client_request_id":{"type":"string","format":"uuid"},"project_id":{"type":"string"},"conversation_id":{"type":"string"},"wait":{"type":"boolean","default":false}},"required":["team_id","task"],"additionalProperties":false}`),
+		Description: "Dispatch the exact input revision already registered by Workbench through its fixed published workflow. Workbench owns the original user input and its confirmation; never reconstruct task text or invent a revision. The revision fixes the team, workflow, task and client_request_id. Omit task to use the saved original; if supplied it must match byte for byte. An identical consumed revision replays its existing run, while old unconsumed revisions or changed facts are rejected. Leave wait=false and observe the returned run with team_run_activity unless a synchronous wait was explicitly requested. Errors: dispatch_input_required, dispatch_input_not_found, dispatch_input_mismatch, dispatch_input_superseded, team_not_found, team_not_active, workflow_not_published, http_401, http_403.",
+		InputSchema: json.RawMessage(`{"type":"object","properties":{"team_id":{"type":"string"},"input_revision_id":{"type":"string","format":"uuid"},"task":{"type":"string"},"client_request_id":{"type":"string","format":"uuid"},"wait":{"type":"boolean","default":false}},"required":["team_id","input_revision_id"],"additionalProperties":false}`),
 	},
 	{
 		Name: "build_status", ReadOnly: true,

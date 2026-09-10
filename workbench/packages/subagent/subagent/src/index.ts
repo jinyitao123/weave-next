@@ -33,7 +33,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { scopeTarget } from '@deepseek-ai/dsh-scope'
 import type { Scoped } from '@deepseek-ai/dsh-scope'
 import { assertObjectJsonSchema } from '@deepseek-ai/dsh-tools'
-import type { ContentBlock, MessageId } from '@deepseek-ai/dsh-llm'
+import type { ContentBlock, MessageId, MessageSource } from '@deepseek-ai/dsh-llm'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
@@ -448,11 +448,13 @@ export class SubagentRuntime extends TypertRemoteService {
         { parentSessionId },
       )
     }
-    const source: BrowserPromptSource = {
-      kind: 'user',
+    const browserMetadata = {
       rpcId: request.requestId,
       ...(canonicalTimeZone === undefined ? {} : { clientTimeZone: canonicalTimeZone }),
     }
+    const source: BrowserPromptSource | MessageSource = request.origin === 'ui-control'
+      ? { kind: 'plugin', plugin: 'ui-control', form: 'relay', ...browserMetadata }
+      : { kind: 'user', ...browserMetadata }
     const content: ContentBlock[] = [...request.content]
     try {
       return { messageId: await this.followup(parent, childSessionId, content, { source, signal }) }

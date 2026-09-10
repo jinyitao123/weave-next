@@ -33,7 +33,7 @@ func ResolveCurrentMCPToolsTx(ctx context.Context, tx pgx.Tx, workspaceID, serve
 		return frozen.FrozenMCPBinding{}, err
 	}
 	if binding.Transport != "http" {
-		return frozen.FrozenMCPBinding{}, coded(ErrFrozenManifestMismatch, fmt.Sprintf("MCP server %q requires HTTP transport for a frozen Loom member", serverID))
+		return frozen.FrozenMCPBinding{}, coded(ErrFrozenManifestMismatch, fmt.Sprintf("MCP server %q requires HTTP transport for a frozen member", serverID))
 	}
 	rows, err := tx.Query(ctx, `SELECT name, description, input_schema, COALESCE(read_only_hint,false)
 		FROM weave_mcp_tools WHERE workspace_id=$1 AND server_id=$2 ORDER BY name`, workspaceID, serverID)

@@ -6,7 +6,9 @@ import (
 	"net/url"
 
 	"github.com/jinyitao123/loom/contract"
+	"github.com/jinyitao123/weave/internal/base/fileartifact"
 	"github.com/jinyitao123/weave/internal/kernel/engine"
+	"github.com/jinyitao123/weave/internal/kernel/execenv"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 )
 
@@ -28,22 +30,25 @@ func CanonicalEngine(engine string) string {
 // decodes it and runs the engine locally. The MCP-boundary HMAC secret never
 // leaves the server — only the derived per-server tokens travel in Env.
 type EngineExecRequest struct {
-	LogicalInvocationID string                 `json:"logical_invocation_id,omitempty"`
-	NodeID              string                 `json:"node_id,omitempty"`
-	Agent               string                 `json:"agent"`
-	Engine              string                 `json:"engine"`
-	Model               string                 `json:"model"`
-	Prompt              string                 `json:"prompt"`
-	OutputSchema        json.RawMessage        `json:"output_schema,omitempty"`
-	Record              *registry.AgentRecord  `json:"record"`
-	Env                 map[string]string      `json:"env,omitempty"`
-	OneAPIBase          string                 `json:"oneapi_base,omitempty"`
-	OneAPIKey           string                 `json:"oneapi_key,omitempty"`
-	TimeoutSeconds      int                    `json:"timeout_seconds,omitempty"`
-	EngineVersion       string                 `json:"engine_version,omitempty"`
-	Attachments         []EngineExecAttachment `json:"attachments,omitempty"`
-	InputFiles          []InputFile            `json:"input_files,omitempty"`
-	Loom                *LoomExecInput         `json:"loom,omitempty"`
+	FrozenMCP           *execenv.FrozenMCPInvocation `json:"frozen_mcp,omitempty"`
+	TaskMCP             []execenv.TaskMCPTarget      `json:"task_mcp,omitempty"`
+	BoundMCP            bool                         `json:"bound_mcp,omitempty"`
+	LogicalInvocationID string                       `json:"logical_invocation_id,omitempty"`
+	NodeID              string                       `json:"node_id,omitempty"`
+	Agent               string                       `json:"agent"`
+	Engine              string                       `json:"engine"`
+	Model               string                       `json:"model"`
+	Prompt              string                       `json:"prompt"`
+	OutputSchema        json.RawMessage              `json:"output_schema,omitempty"`
+	Record              *registry.AgentRecord        `json:"record"`
+	Env                 map[string]string            `json:"env,omitempty"`
+	OneAPIBase          string                       `json:"oneapi_base,omitempty"`
+	OneAPIKey           string                       `json:"oneapi_key,omitempty"`
+	TimeoutSeconds      int                          `json:"timeout_seconds,omitempty"`
+	EngineVersion       string                       `json:"engine_version,omitempty"`
+	Attachments         []EngineExecAttachment       `json:"attachments,omitempty"`
+	InputFiles          []InputFile                  `json:"input_files,omitempty"`
+	Loom                *LoomExecInput               `json:"loom,omitempty"`
 }
 
 // LoomExecInput is the loom-specific slice of an engine_exec payload. The
@@ -76,24 +81,28 @@ type EngineExecAttachment struct {
 // Usage is a pointer because encoding/json's omitempty cannot elide a zero
 // struct — CLI daemons keep producing the historical {"output": ...} shape.
 type EngineExecResult struct {
-	Output                   string               `json:"output"`
-	RetrySafeBeforeExecution bool                 `json:"retry_safe_before_execution,omitempty"`
-	ReportedModels           []string             `json:"reported_models,omitempty"`
-	StopReason               string               `json:"stop_reason,omitempty"`
-	Usage                    *contract.Usage      `json:"usage,omitempty"`
-	RunID                    string               `json:"run_id,omitempty"`
-	Status                   string               `json:"status,omitempty"`
-	Error                    string               `json:"error,omitempty"`
-	UsageReceipt             *engine.UsageReceipt `json:"usage_receipt,omitempty"`
-	Diagnostics              []engine.Diagnostic  `json:"diagnostics,omitempty"`
-	Events                   []engine.Event       `json:"events,omitempty"`
-	Artifacts                []engine.Artifact    `json:"artifacts,omitempty"`
+	SessionID                string                           `json:"session_id,omitempty"`
+	ArtifactCollection       *fileartifact.CollectionEvidence `json:"artifact_collection,omitempty"`
+	Output                   string                           `json:"output"`
+	RetrySafeBeforeExecution bool                             `json:"retry_safe_before_execution,omitempty"`
+	ReportedModels           []string                         `json:"reported_models,omitempty"`
+	StopReason               string                           `json:"stop_reason,omitempty"`
+	Usage                    *contract.Usage                  `json:"usage,omitempty"`
+	RunID                    string                           `json:"run_id,omitempty"`
+	Status                   string                           `json:"status,omitempty"`
+	Error                    string                           `json:"error,omitempty"`
+	UsageReceipt             *engine.UsageReceipt             `json:"usage_receipt,omitempty"`
+	Diagnostics              []engine.Diagnostic              `json:"diagnostics,omitempty"`
+	Events                   []engine.Event                   `json:"events,omitempty"`
+	Artifacts                []engine.Artifact                `json:"artifacts,omitempty"`
 }
 
 // CLIEngineExecResult preserves the complete external-engine outcome across
 // the daemon/server task boundary.
 func CLIEngineExecResult(result engine.RunResult) EngineExecResult {
 	return EngineExecResult{
+		SessionID:                result.SessionID,
+		ArtifactCollection:       result.ArtifactCollection,
 		Output:                   result.Output,
 		ReportedModels:           append([]string(nil), result.ReportedModels...),
 		RetrySafeBeforeExecution: result.RetrySafeBeforeExecution,
@@ -113,7 +122,9 @@ func (result EngineExecResult) EngineRunResult() engine.RunResult {
 		status = "completed" // compatibility with pre-receipt daemons
 	}
 	return engine.RunResult{
-		Output: result.Output, Status: status, Err: result.Error,
+		SessionID:          result.SessionID,
+		ArtifactCollection: result.ArtifactCollection,
+		Output:             result.Output, Status: status, Err: result.Error,
 		ReportedModels:           append([]string(nil), result.ReportedModels...),
 		RetrySafeBeforeExecution: result.RetrySafeBeforeExecution,
 		Usage:                    result.UsageReceipt,
@@ -123,27 +134,20 @@ func (result EngineExecResult) EngineRunResult() engine.RunResult {
 	}
 }
 
-// RedactClaimPayload returns the payload bytes a daemon may see for one
-// claimed engine_exec task. CLI payloads never expose server-held model
-// credentials or boundary-token Env values; the daemon derives those from its
-// local runtime process environment and the task identity. Legacy inline MCP
-// entries also lose headers and all URL components except the origin needed by
-// the daemon's remote-URL allowlist. Loom payloads
-// lose every server-held secret: Record.MCPServers (upstream URLs and headers
-// stay in the server-side task snapshot for the task-scoped gateway), Env
-// (boundary tokens), and the OneAPI credentials; the daemon only learns the
-// server count via Loom.MCPServerCount. The input bytes are never mutated —
-// redaction decodes into a fresh value and re-encodes.
+// RedactClaimPayload removes server credentials on a fresh decoded copy.
+// Published CLI claims additionally lose the frozen authority and every MCP
+// connection. The claim handler supplies only task gateway URLs and tokens.
+// Legacy CLI entries retain their compatibility boundary metadata; Loom only
+// receives a gateway count. Malformed payloads fail closed.
 func RedactClaimPayload(raw json.RawMessage) (json.RawMessage, error) {
 	if len(raw) == 0 {
 		return raw, nil
 	}
 	var payload EngineExecRequest
 	if err := json.Unmarshal(raw, &payload); err != nil {
-		// Foreign/legacy payload shape: redaction only applies to payloads
-		// this package marshalled, which always decode.
-		return raw, nil
+		return nil, fmt.Errorf("invalid engine claim payload")
 	}
+	payload.TaskMCP = nil
 	if CanonicalEngine(payload.Engine) != EngineLoom {
 		return redactCLIClaimPayload(raw, payload)
 	}
@@ -162,6 +166,7 @@ func RedactClaimPayload(raw json.RawMessage) (json.RawMessage, error) {
 	}
 	payload.Loom.MCPServerCount = count
 	payload.Engine = EngineLoom
+	payload.FrozenMCP = nil
 	payload.Env = nil
 	payload.OneAPIBase = ""
 	payload.OneAPIKey = ""
@@ -173,6 +178,15 @@ func RedactClaimPayload(raw json.RawMessage) (json.RawMessage, error) {
 }
 
 func redactCLIClaimPayload(raw json.RawMessage, payload EngineExecRequest) (json.RawMessage, error) {
+	if payload.FrozenMCP != nil {
+		payload.BoundMCP = true
+		if payload.Record != nil {
+			recordCopy := *payload.Record
+			recordCopy.MCPServers = nil
+			payload.Record = &recordCopy
+		}
+	}
+	payload.FrozenMCP = nil
 	payload.Env = nil
 	payload.OneAPIBase = ""
 	payload.OneAPIKey = ""

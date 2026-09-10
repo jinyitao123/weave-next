@@ -1,0 +1,146 @@
+{
+  "schema_version": 1,
+  "checked_at": "2026-09-09T23:34:00+08:00",
+  "run_id": "run-54e09b98-9f24-547e-afc7-e0937ada51e3",
+  "candidate_root": "/Users/jinyitao/.weave/runtime-workspaces-b/.invocations/task-dabc5c0a1dfdc1ee2dea7963c4c6d215/default/corona-prephase-a-lab-v4-verification-integrator/workdir/outputs",
+  "checks": [
+    {
+      "id": "model_tests",
+      "status": "passed",
+      "command": "python3 -m unittest tests.test_model",
+      "exit_code": 0,
+      "observed": "Ran 26 tests; OK"
+    },
+    {
+      "id": "producer_machine_checks",
+      "status": "passed",
+      "command": "python3 run_checks.py from outputs/verification",
+      "exit_code": 0,
+      "observed": "VERIFY_PASS; 18 named checks; report string still says 24 fields/36 checked while implementation performs 8 fields x 3 scenarios = 24 comparisons"
+    },
+    {
+      "id": "reference_checks",
+      "status": "passed",
+      "command": "python3 independent_reference_check.py",
+      "exit_code": 0,
+      "observed": "5/5 within tolerance; worst relative error 1.926e-07"
+    },
+    {
+      "id": "cwd_independent_sweep",
+      "status": "passed",
+      "commands": [
+        "from outputs: python3 verification/independent_acceptance_sweep.py",
+        "from /tmp: python3 <absolute path>/independent_acceptance_sweep.py"
+      ],
+      "exit_codes": [
+        0,
+        0
+      ],
+      "observed": "gate2, gate8, gate9 and forbidden-claim scan pass from both directories"
+    },
+    {
+      "id": "real_browser_gui",
+      "status": "passed",
+      "command": "node gui_verify.js <app_dir>",
+      "exit_code": 0,
+      "observed": {
+        "app_loads_local": true,
+        "default_scenario": "S-0.03c",
+        "scenario_switch": [
+          "S-0.01c",
+          "S-0.03c",
+          "S-0.05c"
+        ],
+        "export_filename": "corona_S-0.05c_scenario.json",
+        "external_requests": 0
+      }
+    },
+    {
+      "id": "required_paths",
+      "status": "passed",
+      "paths": {
+        "model": true,
+        "drawings": true,
+        "app": true,
+        "review": true,
+        "verification": true,
+        "FINAL_ACCEPTANCE.md": true
+      }
+    },
+    {
+      "id": "two_runtime_execution",
+      "status": "passed",
+      "observed": {
+        "producer_runtime": "41233bee-ebb7-4496-8923-74278a00945c",
+        "verifier_runtime": "84da6261-475b-4724-9086-8b8439f8699e",
+        "verifier_task": "task-dabc5c0a1dfdc1ee2dea7963c4c6d215"
+      }
+    },
+    {
+      "id": "workbench_delivery_contract",
+      "status": "failed",
+      "observed": {
+        "revision_id": "delivery_bc4e6a878fb121db8554fb6a2cb8c3e56d3f41503335d73e6a4a8810cf824a0c",
+        "contract_digest": "fc95c698941b3eafd556277098f020d367618afdd8d6fdce3ed534828bbea6d9",
+        "verification_id": "verification_ccb944570dd087ca0121c0010bdbaca503d140500e57b0039354406e8934fddd",
+        "verification_status": "unknown",
+        "checks": [
+          {
+            "check_id": "_coverage",
+            "status": "unknown",
+            "reason": "requirements_not_explicit"
+          },
+          {
+            "check_id": "_limitation:0",
+            "status": "unknown",
+            "reason": "unsupported_requirement"
+          },
+          {
+            "check_id": "_output",
+            "status": "passed",
+            "reason": "output_type_valid"
+          },
+          {
+            "check_id": "_external_effects",
+            "status": "unknown",
+            "reason": "external_effects_scope_unverified"
+          }
+        ],
+        "check_counts": {
+          "passed": 1,
+          "unknown": 3
+        },
+        "available": true,
+        "evidence_completeness": "complete"
+      }
+    },
+    {
+      "id": "incremental_reuse",
+      "status": "failed",
+      "observed": "digital node rebuilt model, drawings and app because v3 artifacts were not bound as member inputs"
+    },
+    {
+      "id": "member_correction_scope",
+      "status": "failed",
+      "observed": "member-targeted correction planned restart at parallel and affected every parallel member plus join, finalizer and deliver; plan was discarded"
+    },
+    {
+      "id": "final_acceptance_process_claims",
+      "status": "failed",
+      "observed": "FINAL_ACCEPTANCE claims correction recovery and failure/restart preservation as achieved, but the correction was discarded and no failure recovery occurred"
+    },
+    {
+      "id": "truth_label_count_reconciliation",
+      "status": "failed",
+      "observed": "FINAL_ACCEPTANCE says 41 labeled text products; final external sweep reports 42 because the report itself enters the scan set"
+    }
+  ],
+  "summary": {
+    "content_hard_gates": "11/11 passed by finalizer and external rerun",
+    "platform_delivery": "unknown",
+    "user_assessment": "not_submitted",
+    "incremental_recovery": "failed",
+    "overfit_excluded": false
+  },
+  "overall": "content_pass_process_partial_business_not_closed"
+}

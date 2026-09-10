@@ -1,0 +1,133 @@
+{
+  "schema_version": 1,
+  "recorded_at": "2026-09-08T01:49:32.003031+00:00",
+  "sample_id": "trust-stage2-invoice-hold-20260908-remote002",
+  "task_id": "api-gmail-invoice-hold-mcp",
+  "execution": "THREE_CANCELLED_RUNS",
+  "business_trust": "FAIL_CROSS_TASK_INPUT",
+  "delivery": "FAIL_INCOMPLETE",
+  "user_acceptance": "NOT_REQUESTED",
+  "original_verifier": {
+    "baseline": {
+      "checks_passed": 2,
+      "checks_total": 7,
+      "passed": false,
+      "source": {
+        "path": "ecommerce/stage2-invoice/baseline-verification.json",
+        "sha256": "278fe32c998a25f1764fc7b8b31d66b1e87bdd8f1ec8bf7760e95e3879a5c14f"
+      }
+    },
+    "after_cancellation": {
+      "checks_passed": 4,
+      "checks_total": 7,
+      "passed": false,
+      "score": 0.0,
+      "checks_breakdown": [
+        {
+          "id": "setup_gate",
+          "passed": true,
+          "reason": "5/5 ok",
+          "check_type": "deterministic_exact"
+        },
+        {
+          "id": "labeling_correct",
+          "passed": true,
+          "reason": "3/3 ok",
+          "check_type": "deterministic_exact"
+        },
+        {
+          "id": "marked_read_correct",
+          "passed": true,
+          "reason": "1/1 ok",
+          "check_type": "deterministic_exact"
+        },
+        {
+          "id": "starring_correct",
+          "passed": false,
+          "reason": "1/2 ok; FAILED: blockers_starred[not_starred=['inv-002-overcharge', 'inv-003-po-correction', 'inv-004-tax', 'inv-008-vendor-correction']]",
+          "check_type": "deterministic_exact"
+        },
+        {
+          "id": "drafts_correct",
+          "passed": false,
+          "reason": "0/1 ok; FAILED: required_drafts_saved[missing_or_bad=[{'ap-hold': 'no matching drafts'}, {'vendor-correction': 'no matching drafts'}]]",
+          "check_type": "deterministic_semantic"
+        },
+        {
+          "id": "calendar_event_correct",
+          "passed": false,
+          "reason": "0/1 ok; FAILED: calendar_event_created[missing_or_bad=[{'ap-review': 'no matching calendar events'}]]",
+          "check_type": "deterministic_semantic"
+        },
+        {
+          "id": "no_messages_sent",
+          "passed": true,
+          "reason": "1/1 ok",
+          "check_type": "deterministic_exact"
+        }
+      ],
+      "source": {
+        "path": "ecommerce/stage2-invoice/after-cancellation-verification.json",
+        "sha256": "af15a895151dad902f05ca01273610821f9358c6a71cd88ebd1b10b18e5fca36"
+      }
+    },
+    "framework_signal_limit": "Generic harness agent_execution_passed fields are not independent evidence of Weave execution, successful task identity, or business completion."
+  },
+  "checks": [
+    {
+      "id": "same_published_team_and_workflow",
+      "status": "PASS_LIMITED",
+      "evidence": "All three per-run activity snapshots identify the same team and workflow version 1."
+    },
+    {
+      "id": "new_input_bound_without_prior_case_contamination",
+      "status": "FAIL",
+      "wrong_input_runs": [
+        "run-65e19805-25cf-5251-8b65-eaa15d823870",
+        "run-3f76315e-4014-57f8-a2f0-a3649c5a1c1a"
+      ]
+    },
+    {
+      "id": "all_dispatches_cancelled_in_backend",
+      "status": "PASS",
+      "source": "dispatch-incident.json and per-run activity status=cancelled, stop_unconfirmed=false"
+    },
+    {
+      "id": "physical_exit_and_no_post_stop_mutations",
+      "status": "NOT_VERIFIED",
+      "reason": "No continuous post-stop state or process evidence in this sample package."
+    },
+    {
+      "id": "partial_fixture_writes_attributed_to_exact_run",
+      "status": "UNVERIFIABLE",
+      "reason": "Archived member tools and outputs are partial."
+    },
+    {
+      "id": "fresh_conversation_same_team_comparator",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "final_user_result_acceptance",
+      "status": "NOT_REQUESTED"
+    }
+  ],
+  "comparable_metrics": {
+    "shared_rubric_categories": 7,
+    "first_sample_checks_passed": 7,
+    "second_sample_checks_passed_after_cancellation": 4,
+    "different_workload_and_stopping_condition": true,
+    "completed_valid_second_sample": false,
+    "wrong_input_dispatches_observed": 2,
+    "dispatches_observed": 3,
+    "human_intervention_count": null,
+    "human_handling_time_ms": null,
+    "user_result_modification_count": null,
+    "task_completion_elapsed_ms": null,
+    "usage": null
+  },
+  "limits": [
+    "The post-cancellation 4/7 is a fixture-state snapshot, not a valid completed run score.",
+    "Do not rank CLI against Loom or infer success probabilities from these samples.",
+    "No human-time or direct single-agent comparator was measured."
+  ]
+}

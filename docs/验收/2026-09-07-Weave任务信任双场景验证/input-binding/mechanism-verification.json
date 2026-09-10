@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "as_of": "2026-09-08T03:35:24.512884+00:00",
+  "commit": "ce5fe66701083237398df038998899aa6d57fe7c",
+  "scope": "Original input binding, durable HTTP uncertainty, explicit rerun and frozen fork ownership; mechanism checks only",
+  "checks": [
+    {
+      "name": "make workbench-install workbench-check",
+      "status": "PASS",
+      "details": "29 focused test files / 361 tests; full source and built-client checks; one real-profile composition e2e"
+    },
+    {
+      "name": "recorded dispatch source replay",
+      "status": "PASS",
+      "details": "1 targeted composition test replay, 76 skipped; no snapshot refresh"
+    },
+    {
+      "name": "doc sync",
+      "status": "PASS",
+      "details": "30/30 pairs"
+    },
+    {
+      "name": "clean checkout release build",
+      "status": "PASS"
+    },
+    {
+      "name": "make test / depguard / productguard",
+      "status": "PASS_RECORDED_PRIOR_TO_COMMIT",
+      "raw_log": "not archived in this package; command results recorded during implementation"
+    },
+    {
+      "name": "isolated PostgreSQL dispatch admission and race tests",
+      "status": "PASS_RECORDED_PRIOR_TO_COMMIT",
+      "raw_log": "not archived in this package; isolated empty database, no acceptance database mutation"
+    }
+  ],
+  "logs": [
+    {
+      "path": "logs/workbench-check.log",
+      "sha256": "6a306f5e3f25b5f5b6ede0b15e2a4fd5139a9a7bd7a430bf3e3970c2b38a7436"
+    },
+    {
+      "path": "logs/dispatch-source-replay.log",
+      "sha256": "586a1bdaaf50c3dead5f8d16df7ce90de316abc3513a052fd31f81450f9b2813"
+    },
+    {
+      "path": "logs/doc-sync.log",
+      "sha256": "a89dbf65cc86a52f99f156b6125a804aa5c412450eb4b397182e4eed3cce24ad"
+    },
+    {
+      "path": "logs/release-install.log",
+      "sha256": "fa4b3e93bfd3235fe4d0fbeef9c7185c95c0f6aeb4cecb2b4b8b2b58d8fd1465"
+    },
+    {
+      "path": "logs/release-build.log",
+      "sha256": "e972a400968bfd6bcea0ca025aee7233d7190397f96e8903f909fe7976de91bd"
+    }
+  ],
+  "limitations": [
+    "This is not a fresh CLI or Loom business acceptance run.",
+    "Task-target semantics for independent new work versus supplementation remain incomplete.",
+    "Delivery verification, tool permission coverage and ToolLoop persistent budget are not implemented by this commit."
+  ],
+  "deployment_check": "deployment-readonly-check.json"
+}

@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/jinyitao123/loom/contract"
+	"github.com/jinyitao123/weave/internal/kernel/mcphost"
 )
 
 const ProtocolVersion = "2025-03-26"
@@ -126,7 +127,7 @@ func (a Adapter) Handle(ctx context.Context, request Request) (Result, error) {
 		}
 		content := result.Content
 		if result.IsError && a.RedactToolErrors {
-			content = "upstream MCP error"
+			content = mcphost.RedactedToolError(content)
 		}
 		return Result{Response: &Response{
 			JSONRPC: "2.0", ID: responseID(request.ID),

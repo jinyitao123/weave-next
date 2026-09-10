@@ -18,7 +18,7 @@ const openCodeSchema = "https://opencode.ai/config.json"
 // WriteOpenCodeConfig adds OpenCode provider and boundary-only MCP defaults.
 // Unknown non-MCP keys and local MCP entries are preserved, while every remote
 // MCP entry must exactly match a connection generated for the current record.
-func WriteOpenCodeConfig(workDir string, rec *registry.AgentRecord, oneapiBase, boundaryBase, apiKeyEnvValue string) error {
+func WriteOpenCodeConfig(workDir string, rec *registry.AgentRecord, oneapiBase, boundaryBase, apiKeyEnvValue string, targets ...TaskMCPTarget) error {
 	if rec == nil {
 		return fmt.Errorf("execenv: nil agent record")
 	}
@@ -44,7 +44,7 @@ func WriteOpenCodeConfig(workDir string, rec *registry.AgentRecord, oneapiBase, 
 	}
 	mcp := make(map[string]any)
 	for idx, server := range rec.MCPServers {
-		targetURL, token, host, ok := mcpServerTarget(rec, server, idx, boundaryBase)
+		targetURL, token, host, ok := mcpServerTarget(rec, server, idx, boundaryBase, targets...)
 		if !ok {
 			continue
 		}

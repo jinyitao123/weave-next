@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"os/exec"
 	"sort"
 	"strings"
@@ -96,7 +95,7 @@ func (b *opencodeBackend) Run(ctx context.Context, spec RunSpec) (RunResult, err
 
 func mergedEnv(overrides map[string]string) []string {
 	env := make(map[string]string)
-	for _, entry := range os.Environ() {
+	for _, entry := range cliAmbientEnv() {
 		if key, value, ok := strings.Cut(entry, "="); ok {
 			env[key] = value
 		}

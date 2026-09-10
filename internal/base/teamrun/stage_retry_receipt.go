@@ -17,6 +17,9 @@ func stageRetryReceiptID(key string) string {
 }
 
 type stageRetryReceipt struct {
+	Actor                   string            `json:"actor,omitempty"`
+	Automatic               bool              `json:"automatic,omitempty"`
+	AuthorizedTotalRounds   uint64            `json:"authorized_total_rounds,omitempty"`
 	SchemaVersion           int               `json:"schema_version"`
 	FailureGeneration       TeamRunGeneration `json:"failure_generation"`
 	FailureResumeGeneration ResumeGeneration  `json:"failure_resume_generation"`
@@ -40,7 +43,7 @@ func replayStageRetryReceiptTx(ctx context.Context, tx pgx.Tx, request StageRetr
 		return StageRetryResult{}, false, err
 	}
 	var receipt stageRetryReceipt
-	if nodeID != request.NodeID || json.Unmarshal(raw, &receipt) != nil || receipt.SchemaVersion != 1 || receipt.Result.RunID != request.RunID || receipt.Result.NodeID != request.NodeID {
+	if nodeID != request.NodeID || json.Unmarshal(raw, &receipt) != nil || receipt.SchemaVersion != 1 || receipt.Result.RunID != request.RunID || receipt.Result.NodeID != request.NodeID || receipt.AuthorizedTotalRounds != request.AuthorizedTotalRounds || receipt.Automatic != request.Automatic {
 		return StageRetryResult{}, false, ErrTeamRunStateConflict
 	}
 	receipt.Result.Replayed = true
@@ -51,7 +54,7 @@ func recordStageRetryReceiptTx(ctx context.Context, tx pgx.Tx, run TeamRun, requ
 	if request.IdempotencyKey == "" {
 		return nil
 	} // compatibility for older callers
-	receipt := stageRetryReceipt{SchemaVersion: 1, FailureGeneration: run.Generation, FailureResumeGeneration: run.ResumeGeneration,
+	receipt := stageRetryReceipt{Actor: request.Actor, Automatic: request.Automatic, AuthorizedTotalRounds: request.AuthorizedTotalRounds, SchemaVersion: 1, FailureGeneration: run.Generation, FailureResumeGeneration: run.ResumeGeneration,
 		FailureTaskID: result.failureTaskID, Result: result}
 	if !result.failureTaskUpdatedAt.IsZero() {
 		receipt.FailureTaskUpdatedAt = &result.failureTaskUpdatedAt

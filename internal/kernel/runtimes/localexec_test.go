@@ -4,7 +4,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"testing"
 
 	"github.com/jinyitao123/weave/internal/base/execution"
@@ -83,7 +82,7 @@ printf '%s\n' '{"type":"turn.completed","usage":{"input_tokens":10,"cached_input
 	}
 }
 
-func TestLocalExecutorRejectsUnsavedFinalReceiptAndKeepsPartialWork(t *testing.T) {
+func TestLocalExecutorPreservesCompletedReceiptAndCollectionGap(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("test helper is a POSIX shell script")
 	}
@@ -108,7 +107,7 @@ printf '%s\n' '{"type":"turn.completed","usage":{"input_tokens":10,"cached_input
 	result, err := NewLocalExecutor(t.TempDir(), "", "", "").ExecRemote(t.Context(), record.WorkspaceID, record,
 		execution.AgentExecutionStamp{AgentID: record.ID, AgentVersion: record.Version, ExecutionScope: execution.ScopeLegacyOrchestrator},
 		"Write the report", nil)
-	if err == nil || result.Status != "failed" || !strings.Contains(err.Error(), "delivery_artifact_uncollected: unsupported_file_type") {
+	if err != nil || result.Status != "completed" || result.Err != "" || !collectionHasIssue(result.ArtifactCollection, "unsupported_file_type", true) {
 		t.Fatalf("receipt-only invocation accepted: status=%q error=%v", result.Status, err)
 	}
 	if len(result.Artifacts) != 1 || result.Artifacts[0].Path != "partial.txt" || result.Artifacts[0].Content != "Already completed work" || result.Usage == nil {

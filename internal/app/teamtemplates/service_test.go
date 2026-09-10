@@ -153,6 +153,33 @@ func TestInstantiatePrefersAvailableCodexRuntimeForUnconfiguredMembers(t *testin
 	}
 }
 
+func TestInstantiateFallsBackToAuthenticatedClaudeRuntime(t *testing.T) {
+	builds := &memoryBuildStore{}
+	selector := &engineRuntimeSelector{assignments: map[string]runtimes.Assignment{
+		engine.Claude: {RuntimeID: "runtime-claude", Engine: engine.Claude, Mode: runtimes.SelectionAuto},
+	}}
+	service := New(&memoryIdempotencyStore{}, builds, &memorySubmitter{builds: builds}, Options{
+		Policy: testPolicy(), DefaultModel: "gpt-5.6-luna", RuntimeSelector: selector,
+	})
+	if _, err := service.Instantiate(context.Background(), "workspace-1", "user-1", Request{
+		YAML: validTemplateYAML, IdempotencyKey: uuid.NewString(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(selector.engines, ",") != "codex,claude" {
+		t.Fatalf("selection order = %v", selector.engines)
+	}
+	var blueprint teambuild.TeamBlueprintV1
+	if err := json.Unmarshal(builds.revision.BlueprintJSON, &blueprint); err != nil {
+		t.Fatal(err)
+	}
+	for _, member := range blueprint.Members {
+		if member.ModelRef != "" || member.ExecutionPolicy.Engine != engine.Claude || member.ExecutionPolicy.RuntimeRef != "runtime-claude" {
+			t.Fatalf("member %q execution = %#v model = %q", member.Name, member.ExecutionPolicy, member.ModelRef)
+		}
+	}
+}
+
 func TestInstantiatePropagatesUnexpectedAuthorizationFailure(t *testing.T) {
 	builds := &memoryBuildStore{authorizeErr: errors.New("authorization store failed")}
 	submitter := &memorySubmitter{builds: builds}
@@ -445,6 +472,20 @@ type staticRuntimeSelector struct {
 	assignment runtimes.Assignment
 	err        error
 	calls      int
+}
+
+type engineRuntimeSelector struct {
+	assignments map[string]runtimes.Assignment
+	engines     []string
+}
+
+func (s *engineRuntimeSelector) Select(_ context.Context, _, engineName, _, _ string) (runtimes.Assignment, error) {
+	s.engines = append(s.engines, engineName)
+	assignment, ok := s.assignments[engineName]
+	if !ok {
+		return runtimes.Assignment{}, runtimes.ErrNoEligibleRuntime
+	}
+	return assignment, nil
 }
 
 func (s *staticRuntimeSelector) Select(_ context.Context, _, _, _, _ string) (runtimes.Assignment, error) {
