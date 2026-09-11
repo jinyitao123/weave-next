@@ -14,6 +14,7 @@ func TestGameStrategyV2Contract(t *testing.T) {
 	snapshot := map[string]any{"source": "local_ontology_candidate", "catalog_version": "local-1", "content_hash": fmt.Sprintf("%x", h[:]), "definition": definition}
 	valid := gameTestInput("room-1")
 	valid["schema_version"] = "guandan-decision-v2"
+	valid["control_revision"] = 0
 	valid["strategy_snapshot"] = snapshot
 	raw, _ := json.Marshal(valid)
 	if _, err := validateGameInput(raw); err != nil {
