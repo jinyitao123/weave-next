@@ -234,7 +234,7 @@ func validateGameInput(raw json.RawMessage) ([]byte, error) {
 		return nil, err
 	}
 	allowed := map[string]bool{}
-	for _, k := range []string{"schema_version", "round_id", "room_id", "seat", "sequence", "policy_revision", "published_version", "state_hash", "candidate_set_hash", "own_hand", "public_history", "remaining_counts", "teammate_seat", "strategy", "legal_candidates", "strategy_snapshot"} {
+	for _, k := range []string{"schema_version", "round_id", "room_id", "seat", "sequence", "control_revision", "policy_revision", "published_version", "state_hash", "candidate_set_hash", "own_hand", "public_history", "remaining_counts", "teammate_seat", "strategy", "legal_candidates", "strategy_snapshot", "inference"} {
 		allowed[k] = true
 	}
 	for k := range input {
@@ -260,15 +260,33 @@ func validateGameInput(raw json.RawMessage) ([]byte, error) {
 	}
 	var schema string
 	_ = json.Unmarshal(input["schema_version"], &schema)
-	if schema != "guandan-decision-v1" && schema != "guandan-decision-v2" {
+	if schema != "guandan-decision-v1" && schema != "guandan-decision-v2" && schema != "guandan-decision-v3" {
 		return nil, fmt.Errorf("unsupported decision schema")
+	}
+	if rawRevision, present := input["control_revision"]; present || schema == "guandan-decision-v3" {
+		var controlRevision *int
+		if json.Unmarshal(rawRevision, &controlRevision) != nil || controlRevision == nil || *controlRevision < 0 {
+			return nil, fmt.Errorf("invalid control revision")
+		}
 	}
 	if schema == "guandan-decision-v1" {
 		if _, present := input["strategy_snapshot"]; present {
 			return nil, fmt.Errorf("strategy snapshot requires v2")
 		}
-	} else if err := validateGameStrategy(input["strategy_snapshot"], input["strategy"], input["published_version"]); err != nil {
-		return nil, err
+		if _, present := input["inference"]; present {
+			return nil, fmt.Errorf("inference snapshot requires v3")
+		}
+	} else {
+		if err := validateGameStrategy(input["strategy_snapshot"], input["strategy"], input["published_version"]); err != nil {
+			return nil, err
+		}
+		if schema == "guandan-decision-v2" {
+			if _, present := input["inference"]; present {
+				return nil, fmt.Errorf("inference snapshot requires v3")
+			}
+		} else if err := validateGameInference(input["inference"], input); err != nil {
+			return nil, err
+		}
 	}
 	var candidates []struct {
 		ID string `json:"candidate_id"`
