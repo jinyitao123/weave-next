@@ -40,4 +40,33 @@ func TestGameStrategyV2Contract(t *testing.T) {
 			}
 		})
 	}
+	publication := map[string]any{"project_id": "project-test", "ontology_id": "ontology-test", "version": "V260911.16", "publish_id": "publication-test", "document_hash": fmt.Sprintf("%x", h[:])}
+	snapshot["source"] = "ontology_published"
+	snapshot["publication"] = publication
+	valid["published_version"] = "V260911.16:publication-test"
+	raw, _ = json.Marshal(valid)
+	if _, err := validateGameInput(raw); err != nil {
+		t.Fatalf("published policy rejected: %v", err)
+	}
+	for name, change := range map[string]func(map[string]any){
+		"missing-publication":         func(v map[string]any) { delete(v["strategy_snapshot"].(map[string]any), "publication") },
+		"publication-drift":           func(v map[string]any) { v["published_version"] = "V260911.15:other" },
+		"candidate-publication-claim": func(v map[string]any) { v["strategy_snapshot"].(map[string]any)["source"] = "local_ontology_candidate" },
+		"publication-unknown-field": func(v map[string]any) {
+			v["strategy_snapshot"].(map[string]any)["publication"].(map[string]any)["tools"] = []string{"*"}
+		},
+		"bad-publication-hash": func(v map[string]any) {
+			v["strategy_snapshot"].(map[string]any)["publication"].(map[string]any)["document_hash"] = "bad"
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			var v map[string]any
+			_ = json.Unmarshal(raw, &v)
+			change(v)
+			b, _ := json.Marshal(v)
+			if _, err := validateGameInput(b); err == nil {
+				t.Fatal("invalid publication accepted")
+			}
+		})
+	}
 }

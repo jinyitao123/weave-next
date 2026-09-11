@@ -267,7 +267,7 @@ func validateGameInput(raw json.RawMessage) ([]byte, error) {
 		if _, present := input["strategy_snapshot"]; present {
 			return nil, fmt.Errorf("strategy snapshot requires v2")
 		}
-	} else if err := validateGameStrategy(input["strategy_snapshot"], input["strategy"]); err != nil {
+	} else if err := validateGameStrategy(input["strategy_snapshot"], input["strategy"], input["published_version"]); err != nil {
 		return nil, err
 	}
 	var candidates []struct {

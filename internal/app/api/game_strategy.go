@@ -12,8 +12,15 @@ const gameStrategySemantics = `If strategy_snapshot is present, use its definiti
 
 // Narrow, versioned game-policy data. These enums never grant tools or change
 // workflow permissions; the application remains the authority on legal moves.
-func validateGameStrategy(raw, strategy json.RawMessage) error {
+func validateGameStrategy(raw, strategy, publication json.RawMessage) error {
 	var snapshot struct {
+		Publication *struct {
+			ProjectID    string `json:"project_id"`
+			OntologyID   string `json:"ontology_id"`
+			Version      string `json:"version"`
+			PublishID    string `json:"publish_id"`
+			DocumentHash string `json:"document_hash"`
+		} `json:"publication,omitempty"`
 		Source         string `json:"source"`
 		CatalogVersion string `json:"catalog_version"`
 		ContentHash    string `json:"content_hash"`
@@ -37,8 +44,22 @@ func validateGameStrategy(raw, strategy json.RawMessage) error {
 	id := regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}$`)
 	s := snapshot.Definition
 	var selected string
-	if json.Unmarshal(strategy, &selected) != nil || selected != s.ID || snapshot.Source != "local_ontology_candidate" || !id.MatchString(snapshot.CatalogVersion) || !id.MatchString(s.ID) || !id.MatchString(s.Version) || s.Name == "" || len(s.Name) > 96 || (s.Objective != "team_finish" && s.Objective != "self_finish") || len(s.Preferences) < 1 || len(s.Preferences) > 12 {
+	if json.Unmarshal(strategy, &selected) != nil || selected != s.ID || !id.MatchString(snapshot.CatalogVersion) || !id.MatchString(s.ID) || !id.MatchString(s.Version) || s.Name == "" || len(s.Name) > 96 || (s.Objective != "team_finish" && s.Objective != "self_finish") || len(s.Preferences) < 1 || len(s.Preferences) > 12 {
 		return fmt.Errorf("invalid strategy identity or objective")
+	}
+	switch snapshot.Source {
+	case "local_ontology_candidate":
+		if snapshot.Publication != nil {
+			return fmt.Errorf("local candidate cannot claim publication")
+		}
+	case "ontology_published":
+		p := snapshot.Publication
+		var effective string
+		if p == nil || !id.MatchString(p.ProjectID) || !id.MatchString(p.OntologyID) || !id.MatchString(p.PublishID) || !regexp.MustCompile(`^V[0-9]+\.[0-9]+$`).MatchString(p.Version) || !regexp.MustCompile(`^[a-f0-9]{64}$`).MatchString(p.DocumentHash) || json.Unmarshal(publication, &effective) != nil || effective != p.Version+":"+p.PublishID {
+			return fmt.Errorf("published strategy requires matching publication provenance")
+		}
+	default:
+		return fmt.Errorf("unsupported strategy source")
 	}
 	seen := map[string]bool{}
 	for _, p := range s.Preferences {
