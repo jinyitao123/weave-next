@@ -117,6 +117,7 @@ type InvocationTask struct {
 	CapabilityID string
 	Revision     int64
 	Input        json.RawMessage
+	Plan         capability.Plan
 }
 
 type ExecutionStore interface {

@@ -60,3 +60,23 @@ func TestPublishUsesCanonicalDefinitionHash(t *testing.T) {
 		t.Fatal("resource order should not change the published hash")
 	}
 }
+
+func TestCompileProducesStablePlanAndRejectsNonLoopCycle(t *testing.T) {
+	d := fixtureDefinition()
+	revision, err := Publish(d, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := Compile(revision)
+	if err != nil || len(plan.Steps) != 2 || plan.Steps[0].ID != "write" || plan.Steps[1].ID != "check" {
+		t.Fatalf("plan=%+v err=%v", plan, err)
+	}
+	d.Relations = []Relation{{From: "write", To: "check", Kind: RelationSequence}, {From: "check", To: "write", Kind: RelationCondition}}
+	revision, err = Publish(d, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Compile(revision); !errors.Is(err, ErrInvalidRevision) {
+		t.Fatalf("expected cycle rejection, got %v", err)
+	}
+}
