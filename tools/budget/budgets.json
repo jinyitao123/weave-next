@@ -244,6 +244,35 @@
         "previous_packages": 18,
         "packages": 19
       }
+    },
+    {
+      "date": "2026-09-12",
+      "reason": "Authorized published-capability service evolution, immutable contract slice: add stable service applications, separately rotatable credentials, exact workflow-artifact capability releases, explicit version grants, retained invocation and early-cancellation identities, bounded JSON contracts, and enforced Codex deny-all execution. Exact reviewed working-tree ceilings with no spare line allowance. One app package is added for the capability application boundary; dependency allowlists and upward-edge limits remain unchanged.",
+      "record": "docs/计划/2026-09-12-已发布能力服务调用层分批实施计划.md",
+      "base": {
+        "previous_lines": 27547,
+        "previous_production_lines": 22985,
+        "lines_added": 12,
+        "production_lines_added": 12,
+        "previous_packages": 12,
+        "packages": 12
+      },
+      "kernel": {
+        "previous_lines": 67410,
+        "previous_production_lines": 62480,
+        "lines_added": 63,
+        "production_lines_added": 18,
+        "previous_packages": 33,
+        "packages": 33
+      },
+      "app": {
+        "previous_lines": 46630,
+        "previous_production_lines": 36843,
+        "lines_added": 1102,
+        "production_lines_added": 812,
+        "previous_packages": 19,
+        "packages": 20
+      }
     }
   ],
   "migration_targets": {
@@ -269,8 +298,8 @@
     }
   },
   "base": {
-    "lines": 27547,
-    "production_lines": 22985,
+    "lines": 27559,
+    "production_lines": 22997,
     "packages": 12,
     "external_dependencies": 4,
     "allowed_dependencies": [
@@ -281,8 +310,8 @@
     ]
   },
   "kernel": {
-    "lines": 67410,
-    "production_lines": 62480,
+    "lines": 67473,
+    "production_lines": 62498,
     "packages": 33,
     "external_dependencies": 5,
     "allowed_dependencies": [
@@ -306,9 +335,9 @@
     ]
   },
   "app": {
-    "lines": 46630,
-    "production_lines": 36843,
-    "packages": 19,
+    "lines": 47732,
+    "production_lines": 37655,
+    "packages": 20,
     "external_dependencies": 7,
     "allowed_dependencies": [
       "github.com/golang-jwt/jwt/v5",
