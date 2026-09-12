@@ -187,15 +187,20 @@ func (s *PGStore) GetInvocation(ctx context.Context, workspaceID, applicationID,
 	}
 	var invocation Invocation
 	var raw []byte
-	err := s.pool.QueryRow(ctx, `
+	query := `
 		SELECT workspace_id, application_id, request_id, invocation_id, task_id,
-			capability_id, revision, input, status, result_state
+			capability_id, revision, input, status, result_state, result, COALESCE(error, '')
 		FROM weave_capability_invocations
-		WHERE workspace_id=$1 AND application_id=$2 AND invocation_id=$3
-	`, workspaceID, applicationID, invocationID).Scan(
+		WHERE workspace_id=$1 AND invocation_id=$2`
+	args := []any{workspaceID, invocationID}
+	if applicationID != "" {
+		query = query + " AND application_id=$3"
+		args = []any{workspaceID, invocationID, applicationID}
+	}
+	err := s.pool.QueryRow(ctx, query, args...).Scan(
 		&invocation.WorkspaceID, &invocation.ApplicationID, &invocation.RequestID, &invocation.InvocationID,
 		&invocation.TaskID, &invocation.CapabilityID, &invocation.Revision, &raw,
-		&invocation.Status, &invocation.ResultState)
+		&invocation.Status, &invocation.ResultState, &invocation.Result, &invocation.Error)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Invocation{}, ErrInvocationNotFound
 	}
@@ -239,4 +244,70 @@ func (s *PGStore) CancelInvocation(ctx context.Context, workspaceID, application
 		return Invocation{}, fmt.Errorf("commit capability cancellation: %w", err)
 	}
 	return s.GetInvocation(ctx, workspaceID, applicationID, invocationID)
+}
+
+func (s *PGStore) ClaimTask(ctx context.Context) (InvocationTask, bool, error) {
+	if err := s.ready(); err != nil {
+		return InvocationTask{}, false, err
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return InvocationTask{}, false, fmt.Errorf("begin capability task claim: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	var task InvocationTask
+	var raw []byte
+	err = tx.QueryRow(ctx, `
+		UPDATE weave_capability_invocation_tasks
+		SET status='running'
+		WHERE task_id = (
+			SELECT task_id FROM weave_capability_invocation_tasks
+			WHERE status='queued' ORDER BY created_at, task_id LIMIT 1 FOR UPDATE SKIP LOCKED
+		)
+		RETURNING task_id, workspace_id, invocation_id, capability_id, revision, payload
+	`).Scan(&task.TaskID, &task.WorkspaceID, &task.InvocationID, &task.CapabilityID, &task.Revision, &raw)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return InvocationTask{}, false, nil
+	}
+	if err != nil {
+		return InvocationTask{}, false, fmt.Errorf("claim capability task: %w", err)
+	}
+	task.Input = raw
+	if _, err := tx.Exec(ctx, `UPDATE weave_capability_invocations SET status='running' WHERE workspace_id=$1 AND invocation_id=$2`, task.WorkspaceID, task.InvocationID); err != nil {
+		return InvocationTask{}, false, fmt.Errorf("mark invocation running: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return InvocationTask{}, false, fmt.Errorf("commit capability task claim: %w", err)
+	}
+	return task, true, nil
+}
+
+func (s *PGStore) CompleteTask(ctx context.Context, task InvocationTask, result json.RawMessage, executeErr error) (Invocation, error) {
+	if err := s.ready(); err != nil {
+		return Invocation{}, err
+	}
+	status, resultState := "completed", "available"
+	if executeErr != nil {
+		status, resultState = "failed", "unavailable"
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return Invocation{}, fmt.Errorf("begin capability task completion: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if _, err := tx.Exec(ctx, `UPDATE weave_capability_invocation_tasks SET status=$2 WHERE task_id=$1 AND status='running'`, task.TaskID, status); err != nil {
+		return Invocation{}, fmt.Errorf("complete capability task: %w", err)
+	}
+	var errorText *string
+	if executeErr != nil {
+		value := executeErr.Error()
+		errorText = &value
+	}
+	if _, err := tx.Exec(ctx, `UPDATE weave_capability_invocations SET status=$3, result_state=$4, result=$5::jsonb, error=$6 WHERE workspace_id=$1 AND invocation_id=$2`, task.WorkspaceID, task.InvocationID, status, resultState, string(result), errorText); err != nil {
+		return Invocation{}, fmt.Errorf("write capability invocation result: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return Invocation{}, fmt.Errorf("commit capability task completion: %w", err)
+	}
+	return s.GetInvocation(ctx, task.WorkspaceID, "", task.InvocationID)
 }

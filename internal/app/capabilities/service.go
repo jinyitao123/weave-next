@@ -106,6 +106,42 @@ type Invocation struct {
 	Input         json.RawMessage `json:"input"`
 	Status        string          `json:"status"`
 	ResultState   string          `json:"result_state"`
+	Result        json.RawMessage `json:"result,omitempty"`
+	Error         string          `json:"error,omitempty"`
+}
+
+type InvocationTask struct {
+	TaskID       string
+	WorkspaceID  string
+	InvocationID string
+	CapabilityID string
+	Revision     int64
+	Input        json.RawMessage
+}
+
+type ExecutionStore interface {
+	ClaimTask(context.Context) (InvocationTask, bool, error)
+	CompleteTask(context.Context, InvocationTask, json.RawMessage, error) (Invocation, error)
+}
+
+type TaskExecutor interface {
+	Execute(context.Context, InvocationTask) (json.RawMessage, error)
+}
+
+// RunOne claims at most one durable capability task and writes its terminal
+// invocation state. The executor owns engine-specific behavior; this package
+// owns state transitions and recovery facts.
+func RunOne(ctx context.Context, store ExecutionStore, executor TaskExecutor) (bool, error) {
+	if store == nil || executor == nil {
+		return false, errors.New("capability execution dependencies are not configured")
+	}
+	task, claimed, err := store.ClaimTask(ctx)
+	if err != nil || !claimed {
+		return claimed, err
+	}
+	result, executeErr := executor.Execute(ctx, task)
+	_, err = store.CompleteTask(ctx, task, result, executeErr)
+	return true, err
 }
 
 type InvokeRequest struct {
@@ -224,7 +260,7 @@ func (m *MemoryStore) GetInvocation(_ context.Context, workspaceID, applicationI
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for _, invocation := range m.invokes {
-		if invocation.WorkspaceID == workspaceID && invocation.ApplicationID == applicationID && invocation.InvocationID == invocationID {
+		if invocation.WorkspaceID == workspaceID && (applicationID == "" || invocation.ApplicationID == applicationID) && invocation.InvocationID == invocationID {
 			return invocation, nil
 		}
 	}
@@ -243,6 +279,38 @@ func (m *MemoryStore) CancelInvocation(_ context.Context, workspaceID, applicati
 			m.invokes[key] = invocation
 			return invocation, nil
 		}
+	}
+	return Invocation{}, ErrInvocationNotFound
+}
+
+func (m *MemoryStore) ClaimTask(_ context.Context) (InvocationTask, bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for key, invocation := range m.invokes {
+		if invocation.Status != "queued" {
+			continue
+		}
+		invocation.Status = "running"
+		m.invokes[key] = invocation
+		return InvocationTask{TaskID: invocation.TaskID, WorkspaceID: invocation.WorkspaceID, InvocationID: invocation.InvocationID, CapabilityID: invocation.CapabilityID, Revision: invocation.Revision, Input: invocation.Input}, true, nil
+	}
+	return InvocationTask{}, false, nil
+}
+
+func (m *MemoryStore) CompleteTask(_ context.Context, task InvocationTask, result json.RawMessage, executeErr error) (Invocation, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for key, invocation := range m.invokes {
+		if invocation.TaskID != task.TaskID {
+			continue
+		}
+		if executeErr != nil {
+			invocation.Status, invocation.ResultState, invocation.Error = "failed", "unavailable", executeErr.Error()
+		} else {
+			invocation.Status, invocation.ResultState, invocation.Result = "completed", "available", result
+		}
+		m.invokes[key] = invocation
+		return invocation, nil
 	}
 	return Invocation{}, ErrInvocationNotFound
 }

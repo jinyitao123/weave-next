@@ -51,3 +51,31 @@ func TestPGStorePersistsRevisionAndInvocationReplay(t *testing.T) {
 		t.Fatal("different workspace should not see the published revision")
 	}
 }
+
+func TestPGStoreRunsOneCapabilityTask(t *testing.T) {
+	pool := testutil.PostgresPool(t)
+	if err := db.Migrate(t.Context(), pool); err != nil {
+		t.Fatal(err)
+	}
+	store := NewPGStore(pool)
+	service := NewService(store, store)
+	d := capability.Definition{SchemaVersion: 1, CapabilityID: "cap-run", Name: "Run", InputSchema: json.RawMessage(`{"type":"object"}`), OutputSchema: json.RawMessage(`{"type":"object"}`), Roles: []capability.Role{{ID: "r", Name: "Runner"}}, Steps: []capability.Step{{ID: "s", Name: "Run", RoleID: "r", Kind: capability.StepWorker, Instruction: "run"}}}
+	if err := service.SaveDraft(t.Context(), DraftRequest{WorkspaceID: "ws-run", Definition: d}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Publish(t.Context(), "ws-run", "cap-run", 1); err != nil {
+		t.Fatal(err)
+	}
+	invocation, _, err := service.Invoke(t.Context(), InvokeRequest{WorkspaceID: "ws-run", ApplicationID: "app", InvocationID: "inv-run", RequestID: "req-run", CapabilityID: "cap-run", Revision: 1, Input: json.RawMessage(`{"x":1}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	processed, err := RunOne(t.Context(), store, fixtureExecutor{})
+	if err != nil || !processed {
+		t.Fatalf("processed=%v err=%v", processed, err)
+	}
+	completed, err := service.GetInvocation(t.Context(), "ws-run", "app", invocation.InvocationID)
+	if err != nil || completed.Status != "completed" || completed.ResultState != "available" || string(completed.Result) != `{"ok": true}` {
+		t.Fatalf("completed=%+v err=%v", completed, err)
+	}
+}
