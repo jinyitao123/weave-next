@@ -356,6 +356,8 @@ func (s *Server) registerRoutes() {
 	auth.POST("/auth/api-keys", s.handleCreateAPIKey, RequireRole("admin"), adminScope)
 	auth.GET("/auth/api-keys", s.handleListAPIKeys, RequireRole("admin"), adminScope)
 	auth.DELETE("/auth/api-keys/:id", s.handleDeleteAPIKey, RequireRole("admin"), adminScope)
+	auth.GET("/capability-management", s.handleGetCapabilityManagement, RequireRole("admin"), adminScope)
+	auth.POST("/capability-management/actions", s.handleCapabilityManagementAction, RequireRole("admin"), adminScope)
 
 	// Organization.
 	auth.GET("/workspace", s.handleGetWorkspace, orgScope)

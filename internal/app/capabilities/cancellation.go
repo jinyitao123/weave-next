@@ -17,12 +17,49 @@ func (service *InvocationService) CancelInvocation(
 	ctx context.Context,
 	request CancelInvocationRequest,
 ) (CancellationReceipt, error) {
+	return service.cancelInvocation(ctx, request, "")
+}
+
+// AdminCancelInvocation records a workspace administrator as the cancellation
+// actor while reusing the same durable queue and TeamRun control path.
+func (service *InvocationService) AdminCancelInvocation(
+	ctx context.Context,
+	workspaceID, userID, invocationID, reason string,
+) (CancellationReceipt, error) {
+	if service == nil || service.Store == nil || service.Store.pool == nil ||
+		invalidIdentity(workspaceID) || invalidIdentity(userID) || invalidIdentity(invocationID) {
+		return CancellationReceipt{}, ErrInvalid
+	}
+	var appID, requestID string
+	err := service.Store.pool.QueryRow(ctx, `
+		SELECT app_id,request_id FROM weave_capability_invocations
+		WHERE workspace_id=$1 AND invocation_id=$2
+	`, workspaceID, invocationID).Scan(&appID, &requestID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return CancellationReceipt{}, ErrNotFound
+	}
+	if err != nil {
+		return CancellationReceipt{}, fmt.Errorf("resolve administrator capability cancellation: %w", err)
+	}
+	return service.cancelInvocation(ctx, CancelInvocationRequest{
+		Principal: Principal{WorkspaceID: workspaceID, AppID: appID},
+		RequestID: requestID, InvocationID: invocationID, Reason: reason,
+	}, userID)
+}
+
+func (service *InvocationService) cancelInvocation(
+	ctx context.Context,
+	request CancelInvocationRequest,
+	adminUserID string,
+) (CancellationReceipt, error) {
 	if service == nil || service.Store == nil || service.Store.pool == nil ||
 		service.Tasks == nil || service.Cancel == nil {
 		return CancellationReceipt{}, fmt.Errorf("%w: cancellation dependencies are incomplete", ErrDisabled)
 	}
+	admin := adminUserID != ""
 	if invalidIdentity(request.Principal.WorkspaceID) || invalidIdentity(request.Principal.AppID) ||
-		invalidIdentity(request.Principal.CredentialID) ||
+		(!admin && invalidIdentity(request.Principal.CredentialID)) ||
+		(admin && invalidIdentity(adminUserID)) ||
 		(request.RequestID == "" && request.InvocationID == "") ||
 		request.RequestID != "" && !requestIdentityPattern.MatchString(request.RequestID) ||
 		request.InvocationID != "" && invalidIdentity(request.InvocationID) ||
@@ -30,7 +67,7 @@ func (service *InvocationService) CancelInvocation(
 		len(request.Reason) > 256 {
 		return CancellationReceipt{}, ErrInvalid
 	}
-	if !request.Principal.HasScope("cancel") {
+	if !admin && !request.Principal.HasScope("cancel") {
 		return CancellationReceipt{}, ErrScopeDenied
 	}
 
@@ -60,8 +97,26 @@ func (service *InvocationService) CancelInvocation(
 	if err := lockRequestIdentity(ctx, tx, request.Principal, request.RequestID); err != nil {
 		return CancellationReceipt{}, err
 	}
-	if _, err := service.lockActivePrincipalTx(ctx, tx, request.Principal, "cancel"); err != nil {
-		return CancellationReceipt{}, err
+	if admin {
+		var role string
+		err := tx.QueryRow(ctx, `
+			SELECT role FROM weave_users
+			WHERE tenant_id=$1 AND id=$2 AND disabled=false
+			FOR KEY SHARE
+		`, request.Principal.WorkspaceID, adminUserID).Scan(&role)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return CancellationReceipt{}, ErrScopeDenied
+		}
+		if err != nil {
+			return CancellationReceipt{}, fmt.Errorf("validate capability administrator: %w", err)
+		}
+		if role != "admin" {
+			return CancellationReceipt{}, ErrScopeDenied
+		}
+	} else {
+		if _, err := service.lockActivePrincipalTx(ctx, tx, request.Principal, "cancel"); err != nil {
+			return CancellationReceipt{}, err
+		}
 	}
 	invocation, present, err := loadInvocationByRequestTx(
 		ctx, tx, request.Principal.WorkspaceID, request.Principal.AppID, request.RequestID,
@@ -110,14 +165,18 @@ func (service *InvocationService) CancelInvocation(
 		if present {
 			invocationID = &invocation.InvocationID
 		}
+		var credentialID, requestedBy any = request.Principal.CredentialID, nil
+		if admin {
+			credentialID, requestedBy = nil, adminUserID
+		}
 		tag, err := tx.Exec(ctx, `
 			INSERT INTO weave_capability_invocation_cancellations(
 				workspace_id,app_id,request_id,invocation_id,requested_credential_id,
-				reason,requested_at
-			) VALUES($1,$2,$3,$4,$5,$6,$7)
+				requested_by_user_id,reason,requested_at
+			) VALUES($1,$2,$3,$4,$5,$6,$7,$8)
 			ON CONFLICT DO NOTHING
 		`, request.Principal.WorkspaceID, request.Principal.AppID, request.RequestID,
-			invocationID, request.Principal.CredentialID, request.Reason, now)
+			invocationID, credentialID, requestedBy, request.Reason, now)
 		if err != nil {
 			return CancellationReceipt{}, fmt.Errorf("insert capability cancellation: %w", err)
 		}
@@ -147,7 +206,11 @@ func (service *InvocationService) CancelInvocation(
 	if present {
 		// The durable cancellation row and queue fence have already committed.
 		// Reconciliation repeats this call after a crash or transient failure.
-		_ = service.cancelTeamRun(ctx, invocation, effectiveReason, effectiveRequestedAt)
+		actor := "service-app:" + invocation.AppID
+		if admin {
+			actor = "workspace-admin:" + adminUserID
+		}
+		_ = service.cancelTeamRun(ctx, invocation, effectiveReason, effectiveRequestedAt, actor)
 	}
 	status := "cancelled_before_submit"
 	if present {
@@ -163,11 +226,11 @@ func (service *InvocationService) CancelInvocation(
 }
 
 func (service *InvocationService) cancelTeamRun(
-	ctx context.Context, invocation Invocation, reason string, now time.Time,
+	ctx context.Context, invocation Invocation, reason string, now time.Time, actor string,
 ) error {
 	_, err := service.Cancel.RequestCancel(ctx, teamrun.CancelRequest{
 		WorkspaceID: invocation.WorkspaceID, RunID: invocation.RunID,
-		CancelActor: "service-app:" + invocation.AppID, CancelReason: reason,
+		CancelActor: actor, CancelReason: reason,
 		GraceDeadline:  now.Add(capabilityCancelGrace),
 		IdempotencyKey: "capability-cancel:" + invocation.AppID + ":" + invocation.RequestID,
 	})
@@ -242,7 +305,8 @@ func (service *InvocationService) SweepControls(ctx context.Context, limit int) 
 	}
 
 	rows, err := tx.Query(ctx, `
-		SELECT `+qualifiedInvocationColumns("invocation")+`,cancellation.reason,cancellation.requested_at
+			SELECT `+qualifiedInvocationColumns("invocation")+`,cancellation.reason,
+			       cancellation.requested_at,cancellation.requested_by_user_id
 		FROM weave_capability_invocation_cancellations AS cancellation
 		JOIN weave_capability_invocations AS invocation
 		  ON invocation.workspace_id=cancellation.workspace_id
@@ -267,6 +331,7 @@ func (service *InvocationService) SweepControls(ctx context.Context, limit int) 
 		invocation  Invocation
 		reason      string
 		requestedAt time.Time
+		requestedBy *string
 	}
 	pending := make([]pendingControl, 0, limit)
 	for rows.Next() {
@@ -279,7 +344,7 @@ func (service *InvocationService) SweepControls(ctx context.Context, limit int) 
 			&item.invocation.InputHash, &item.invocation.RequestFingerprint,
 			&item.invocation.ConcurrencyKey, &item.invocation.RunID, &item.invocation.TaskID,
 			&item.invocation.AcceptedAt, &item.invocation.DeadlineAt,
-			&item.reason, &item.requestedAt,
+			&item.reason, &item.requestedAt, &item.requestedBy,
 		); err != nil {
 			rows.Close()
 			return 0, fmt.Errorf("scan pending capability cancellation: %w", err)
@@ -302,7 +367,13 @@ func (service *InvocationService) SweepControls(ctx context.Context, limit int) 
 		return 0, fmt.Errorf("commit capability control sweep: %w", err)
 	}
 	for _, item := range pending {
-		if err := service.cancelTeamRun(ctx, item.invocation, item.reason, item.requestedAt); err != nil {
+		actor := "service-app:" + item.invocation.AppID
+		if item.requestedBy != nil {
+			actor = "workspace-admin:" + *item.requestedBy
+		}
+		if err := service.cancelTeamRun(
+			ctx, item.invocation, item.reason, item.requestedAt, actor,
+		); err != nil {
 			return len(pending), fmt.Errorf("request capability TeamRun cancellation: %w", err)
 		}
 	}
