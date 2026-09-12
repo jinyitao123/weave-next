@@ -25,16 +25,17 @@ type mutableCapabilityClock struct{ now time.Time }
 func (clock *mutableCapabilityClock) Now() time.Time { return clock.now }
 
 type invocationHarness struct {
-	pool       *pgxpool.Pool
-	clock      *mutableCapabilityClock
-	store      *Store
-	service    *InvocationService
-	adminID    string
-	app        ServiceApp
-	credential Credential
-	principal  Principal
-	capability Capability
-	release    Release
+	pool          *pgxpool.Pool
+	clock         *mutableCapabilityClock
+	store         *Store
+	service       *InvocationService
+	adminID       string
+	app           ServiceApp
+	credential    Credential
+	rawCredential string
+	principal     Principal
+	capability    Capability
+	release       Release
 }
 
 func newInvocationHarness(t *testing.T, appLimit, grantLimit int) *invocationHarness {
@@ -112,7 +113,7 @@ func newInvocationHarness(t *testing.T, appLimit, grantLimit int) *invocationHar
 	}
 	return &invocationHarness{
 		pool: pool, clock: clock, store: store, service: service, adminID: admin.ID,
-		app: app, credential: credential, principal: principal,
+		app: app, credential: credential, rawCredential: raw, principal: principal,
 		capability: capability, release: release,
 	}
 }
@@ -330,6 +331,82 @@ func TestInvocationCapacityClaimFenceResultPolicyAndDeadlineRealPG(t *testing.T)
 	status, err = restarted.Get(ctx, h.principal, runningDeadline.Invocation.InvocationID)
 	if err != nil || status.ExecutionStatus != "cancel_requested" || status.CancellationStatus != "requested" {
 		t.Fatalf("execution deadline projection=%+v error=%v", status, err)
+	}
+}
+
+func TestCapabilityManagementLifecycleAndAdminCancellationRealPG(t *testing.T) {
+	h := newInvocationHarness(t, 2, 2)
+	ctx := context.Background()
+	receipt := h.submit(t, "managed-request", validOrderInput("managed"), nil)
+
+	snapshot, err := h.store.ManagementSnapshot(ctx, h.app.WorkspaceID, h.service)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snapshot.Apps) != 1 || len(snapshot.Credentials) != 1 ||
+		len(snapshot.Capabilities) != 1 || len(snapshot.Releases) != 1 ||
+		len(snapshot.Grants) != 1 || len(snapshot.Invocations) != 1 ||
+		len(snapshot.Workflows) != 1 ||
+		snapshot.Invocations[0].Invocation.InvocationID != receipt.Invocation.InvocationID {
+		t.Fatalf("management snapshot = %+v", snapshot)
+	}
+
+	cancelled, err := h.service.AdminCancelInvocation(
+		ctx, h.app.WorkspaceID, h.adminID, receipt.Invocation.InvocationID,
+		"administrator stopped the invocation",
+	)
+	if err != nil || cancelled.Status != "requested" {
+		t.Fatalf("administrator cancellation = %+v error=%v", cancelled, err)
+	}
+	var requestedBy *string
+	var requestedCredential *string
+	if err := h.pool.QueryRow(ctx, `
+		SELECT requested_by_user_id,requested_credential_id
+		FROM weave_capability_invocation_cancellations
+		WHERE workspace_id=$1 AND app_id=$2 AND request_id=$3
+	`, h.app.WorkspaceID, h.app.ID, receipt.Invocation.RequestID).Scan(
+		&requestedBy, &requestedCredential,
+	); err != nil || requestedBy == nil || *requestedBy != h.adminID || requestedCredential != nil {
+		t.Fatalf("administrator cancellation actor user=%v credential=%v error=%v",
+			requestedBy, requestedCredential, err)
+	}
+
+	if err := h.store.SetReleaseEnabled(
+		ctx, h.app.WorkspaceID, h.capability.ID, h.release.Version, h.adminID, false,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.service.Submit(ctx, SubmitInvocationRequest{
+		Principal: h.principal, CapabilityID: h.capability.ID, ReleaseVersion: 1,
+		RequestID: "disabled-release", Input: json.RawMessage(validOrderInput("disabled")),
+	}); !errors.Is(err, ErrGrantUnavailable) {
+		t.Fatalf("disabled release submit error = %v", err)
+	}
+	status, err := h.service.Get(ctx, h.principal, receipt.Invocation.InvocationID)
+	if err != nil || status.Invocation.InvocationID != receipt.Invocation.InvocationID {
+		t.Fatalf("historical read after release disable = %+v error=%v", status, err)
+	}
+	if err := h.store.SetReleaseEnabled(
+		ctx, h.app.WorkspaceID, h.capability.ID, h.release.Version, h.adminID, true,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.store.SetCapabilityEnabled(
+		ctx, h.app.WorkspaceID, h.capability.ID, h.adminID, false,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.service.Submit(ctx, SubmitInvocationRequest{
+		Principal: h.principal, CapabilityID: h.capability.ID, ReleaseVersion: 1,
+		RequestID: "disabled-capability", Input: json.RawMessage(validOrderInput("disabled")),
+	}); !errors.Is(err, ErrGrantUnavailable) {
+		t.Fatalf("disabled capability submit error = %v", err)
+	}
+	if err := h.store.SetAppEnabled(ctx, h.app.WorkspaceID, h.app.ID, h.adminID, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.store.ValidateCredential(ctx, h.rawCredential); !errors.Is(err, ErrCredentialInvalid) {
+		t.Fatalf("invalid credential after app disable = %v", err)
 	}
 }
 

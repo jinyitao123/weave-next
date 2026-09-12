@@ -29,7 +29,13 @@ func (service *InvocationService) Get(
 	if err := service.validateActivePrincipal(ctx, principal, "read"); err != nil {
 		return InvocationStatus{}, err
 	}
+	return service.getInvocationStatus(ctx, principal.WorkspaceID, principal.AppID, invocationID)
+}
 
+func (service *InvocationService) getInvocationStatus(
+	ctx context.Context,
+	workspaceID, appID, invocationID string,
+) (InvocationStatus, error) {
 	var (
 		invocation                  Invocation
 		outputContract, limitsJSON  json.RawMessage
@@ -59,7 +65,7 @@ func (service *InvocationService) Get(
 		  ON run.workspace_id=invocation.workspace_id AND run.run_id=invocation.run_id
 		WHERE invocation.workspace_id=$1 AND invocation.app_id=$2
 		  AND invocation.invocation_id=$3
-	`, principal.WorkspaceID, principal.AppID, invocationID)
+	`, workspaceID, appID, invocationID)
 	if err := row.Scan(
 		&invocation.WorkspaceID, &invocation.AppID, &invocation.InvocationID,
 		&invocation.RequestID, &invocation.CapabilityID, &invocation.ReleaseVersion,

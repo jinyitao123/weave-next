@@ -303,6 +303,19 @@
         "previous_packages": 20,
         "packages": 20
       }
+    },
+    {
+      "date": "2026-09-12",
+      "reason": "Authorized published-capability service evolution, Workbench management slice: add workspace-administrator lifecycle operations for calling applications, one-time credentials, capabilities, immutable releases, exact-version grants, invocation observation and durable administrator cancellation; add a Host-only closed management proxy and the bilingual Workbench Settings journey with real browser coverage. Exact reviewed Go working-tree ceilings with no spare line allowance. Package and dependency limits, original migration targets and upward-edge limits remain unchanged.",
+      "record": "docs/计划/2026-09-12-已发布能力服务调用层分批实施计划.md",
+      "app": {
+        "previous_lines": 49704,
+        "previous_production_lines": 39104,
+        "lines_added": 623,
+        "production_lines_added": 544,
+        "previous_packages": 20,
+        "packages": 20
+      }
     }
   ],
   "migration_targets": {
@@ -365,8 +378,8 @@
     ]
   },
   "app": {
-    "lines": 49704,
-    "production_lines": 39104,
+    "lines": 50327,
+    "production_lines": 39648,
     "packages": 20,
     "external_dependencies": 7,
     "allowed_dependencies": [
