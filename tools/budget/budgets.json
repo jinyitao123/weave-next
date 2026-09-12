@@ -273,6 +273,36 @@
         "previous_packages": 19,
         "packages": 20
       }
+    },
+    {
+      "date": "2026-09-12",
+      "source_commit": "420e360d",
+      "reason": "Authorized published-capability service evolution, atomic invocation slice: add separately authenticated submit, read and cancel routes; JCS request identity and exact immutable-release admission; atomic snapshot, delivery-contract, queue and invocation persistence; durable pre-submit and in-flight cancellation fences; restart-safe queue and execution deadlines; scoped result-contract projection; and real PostgreSQL regressions. Exact reviewed working-tree ceilings with no spare line allowance. Package and dependency limits, original migration targets and upward-edge limits remain unchanged.",
+      "record": "docs/计划/2026-09-12-已发布能力服务调用层分批实施计划.md",
+      "base": {
+        "previous_lines": 27559,
+        "previous_production_lines": 22997,
+        "lines_added": 95,
+        "production_lines_added": 70,
+        "previous_packages": 12,
+        "packages": 12
+      },
+      "kernel": {
+        "previous_lines": 67473,
+        "previous_production_lines": 62498,
+        "lines_added": 1,
+        "production_lines_added": 1,
+        "previous_packages": 33,
+        "packages": 33
+      },
+      "app": {
+        "previous_lines": 47732,
+        "previous_production_lines": 37655,
+        "lines_added": 1972,
+        "production_lines_added": 1449,
+        "previous_packages": 20,
+        "packages": 20
+      }
     }
   ],
   "migration_targets": {
@@ -298,8 +328,8 @@
     }
   },
   "base": {
-    "lines": 27559,
-    "production_lines": 22997,
+    "lines": 27654,
+    "production_lines": 23067,
     "packages": 12,
     "external_dependencies": 4,
     "allowed_dependencies": [
@@ -310,8 +340,8 @@
     ]
   },
   "kernel": {
-    "lines": 67473,
-    "production_lines": 62498,
+    "lines": 67474,
+    "production_lines": 62499,
     "packages": 33,
     "external_dependencies": 5,
     "allowed_dependencies": [
@@ -335,8 +365,8 @@
     ]
   },
   "app": {
-    "lines": 47732,
-    "production_lines": 37655,
+    "lines": 49704,
+    "production_lines": 39104,
     "packages": 20,
     "external_dependencies": 7,
     "allowed_dependencies": [
