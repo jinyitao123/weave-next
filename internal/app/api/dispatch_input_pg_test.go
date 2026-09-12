@@ -139,7 +139,9 @@ func TestBoundDispatchInputProvenanceAndAtomicAdmissionRealPG(t *testing.T) {
 		InputRevisionID: first.InputRevisionID, Task: resolvedFirst.Task, Mode: "workflow", WorkflowID: "flow",
 		WorkflowVersion: &resolvedFirst.WorkflowVersion, ClientRequestID: first.ClientRequestID, inputBinding: &resolvedFirst,
 	}
-	if err := server.admitTeamWorkflowDispatch(staleContext, "flow", staleRequest); err != nil || staleRecorder.Code != http.StatusConflict ||
+	staleRunID, staleTaskID := deterministicWorkflowDispatchIDs("ws", "user", staleRequest.ClientRequestID)
+	staleIdentity := workflowDispatchIdentity{RunID: staleRunID, TaskID: staleTaskID, ContextKey: workflowDispatchFingerprint("team", staleRequest)}
+	if err := server.admitTeamWorkflowDispatch(staleContext, "flow", staleRequest, staleIdentity); err != nil || staleRecorder.Code != http.StatusConflict ||
 		!strings.Contains(staleRecorder.Body.String(), "dispatch_input_superseded") {
 		t.Fatalf("in-transaction stale revision admitted: status=%d body=%s err=%v", staleRecorder.Code, staleRecorder.Body.String(), err)
 	}
@@ -377,7 +379,10 @@ func TestDispatchInputReconcileFencesDelayedAdmissionRealPG(t *testing.T) {
 		t.Fatalf("late dispatch escaped fence: status=%d body=%s err=%v", recorder.Code, recorder.Body.String(), err)
 	}
 	staleContext, staleRecorder := dispatchInputTestContext([]byte(`{}`), "/v1/teams/team/dispatch", "ws", "user")
-	if err := server.admitTeamWorkflowDispatch(staleContext, "flow", resolved.dispatchRequest()); err != nil ||
+	staleRequest := resolved.dispatchRequest()
+	staleRunID, staleTaskID := deterministicWorkflowDispatchIDs("ws", "user", staleRequest.ClientRequestID)
+	staleIdentity := workflowDispatchIdentity{RunID: staleRunID, TaskID: staleTaskID, ContextKey: workflowDispatchFingerprint("team", staleRequest)}
+	if err := server.admitTeamWorkflowDispatch(staleContext, "flow", staleRequest, staleIdentity); err != nil ||
 		staleRecorder.Code != http.StatusConflict || !strings.Contains(staleRecorder.Body.String(), "dispatch_input_closed") {
 		t.Fatalf("in-transaction admission escaped fence: status=%d body=%s err=%v", staleRecorder.Code, staleRecorder.Body.String(), err)
 	}
