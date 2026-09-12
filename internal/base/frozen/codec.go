@@ -383,6 +383,18 @@ func requireJSONEOF(decoder *json.Decoder) error {
 	return fmt.Errorf("decode frozen DTO trailing data: %w", err)
 }
 
+// CanonicalizeJSONRFC8785 validates one complete JSON value and returns its
+// RFC 8785/JCS representation. Capability invocations use this exact function
+// for the versioned input hash; callers must retain the returned bytes instead
+// of relying on JSONB's implementation-defined text representation.
+func CanonicalizeJSONRFC8785(raw json.RawMessage) (json.RawMessage, error) {
+	canonical, err := canonicalizeStrictJSON(raw)
+	if err != nil {
+		return nil, err
+	}
+	return append(json.RawMessage(nil), canonical...), nil
+}
+
 func Canonicalize(value any, schema PreorderSchema) ([]byte, error) {
 	normalized, err := normalizedForSchema(value, schema)
 	if err != nil {
