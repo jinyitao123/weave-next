@@ -17,6 +17,7 @@ import (
 	"github.com/jinyitao123/loom/pgstore"
 	"github.com/jinyitao123/weave/internal/app/apikeys"
 	"github.com/jinyitao123/weave/internal/app/attachments"
+	"github.com/jinyitao123/weave/internal/app/capabilities"
 	"github.com/jinyitao123/weave/internal/app/chatrequest"
 	"github.com/jinyitao123/weave/internal/app/conversation"
 	"github.com/jinyitao123/weave/internal/app/ownermem"
@@ -83,6 +84,7 @@ type Server struct {
 	AgentRunReader            loomruntime.AgentRunLifecycleReader // nil if PG pool unavailable
 	UserStore                 *users.Store                        // nil if PG pool unavailable
 	KeyStore                  *apikeys.Store                      // nil if PG pool unavailable
+	Capabilities              *capabilities.InvocationService     // nil until workflow/task stores are configured
 	OrgStore                  *org.Store                          // nil if PG pool unavailable
 	Projects                  *projects.Store                     // nil if PG pool unavailable
 	Attachments               *attachments.Store                  // nil if PG pool unavailable
@@ -324,6 +326,13 @@ func (s *Server) registerRoutes() {
 
 	// Authenticated endpoints.
 	auth := s.Echo.Group("/v1", AuthMiddleware(s.Config.JWTSecret, keyStoreGetter, userStoreGetter))
+	capabilityServiceGetter := func() *capabilities.InvocationService { return s.Capabilities }
+	s.Echo.POST("/v1/capabilities/:id/versions/:version/invocations", s.handleSubmitCapabilityInvocation,
+		ServiceAppAuthMiddleware(capabilityServiceGetter), RequireServiceScope("invoke"))
+	s.Echo.GET("/v1/invocations/:id", s.handleGetCapabilityInvocation,
+		ServiceAppAuthMiddleware(capabilityServiceGetter), RequireServiceScope("read"))
+	s.Echo.POST("/v1/invocations:cancel", s.handleCancelCapabilityInvocation,
+		ServiceAppAuthMiddleware(capabilityServiceGetter), RequireServiceScope("cancel"))
 	adminScope := RequireScope("admin")
 	agentsScope := RequireScope("agents")
 	chatScope := RequireScope("chat")
@@ -566,6 +575,16 @@ func (s *Server) Start() error {
 		s.workflowHealthWorkers.Start()
 		defer s.workflowHealthWorkers.Stop()
 	}
+	if s.Capabilities != nil {
+		ctx, cancel := context.WithCancel(context.Background())
+		var controls sync.WaitGroup
+		controls.Add(1)
+		go func() {
+			defer controls.Done()
+			s.runCapabilityControlLoop(ctx)
+		}()
+		defer func() { cancel(); controls.Wait() }()
+	}
 	return s.Echo.Start(":" + s.Config.Port)
 }
 
@@ -735,6 +754,13 @@ func (s *Server) ConfigureTeamRunWorkers() {
 		Transactions: pool,
 		Runs:         runStore,
 		Tasks:        s.Tasks,
+	}
+	if s.Deliverables != nil {
+		s.Capabilities = &capabilities.InvocationService{
+			Store:    capabilities.New(pool, capabilities.RealClock{}),
+			Dispatch: s.workflowDispatchService(), Tasks: s.Tasks,
+			Runs: runStore, Cancel: s.teamRunCancel,
+		}
 	}
 	s.teamRunStageRetry = &teamrun.StageRetryService{
 		MemberBudgets: loomruntime.MemberBudgetCoordinator{},

@@ -159,9 +159,29 @@ func seedNoToolArtifact(t *testing.T, pool *pgxpool.Pool, workspaceID, teamID, w
 		t.Fatal(err)
 	}
 	if _, err := tx.Exec(ctx, `
+		INSERT INTO weave_agents(id,workspace_id,name,display_name,role,spec,version,deleted)
+		VALUES('worker-order-check',$1,'worker-order-check','订单材料检查','worker',
+		       '{"role":"worker"}',1,false)
+	`, workspaceID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO weave_agent_versions(workspace_id,agent_id,version,spec)
+		VALUES($1,'worker-order-check',1,'{"role":"worker"}')
+	`, workspaceID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(ctx, `
 		INSERT INTO weave_teams(id,workspace_id,name,lead_avatar_id,status)
 		VALUES($1,$2,$1,$3,'active')
 	`, teamID, workspaceID, "lead-"+teamID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO weave_team_workers(
+			workspace_id,team_id,worker_agent_id,allowed_kinds,default_kind,enabled
+		) VALUES($1,$2,'worker-order-check',ARRAY['consult']::text[],'consult',true)
+	`, workspaceID, teamID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := tx.Exec(ctx, `
