@@ -14,6 +14,8 @@ func TestCodexTaskMCPDisablesAmbientServersWithoutTokenArguments(t *testing.T) {
 	cli := filepath.Join(work, "fixture-codex")
 	script := `#!/bin/sh
 if [ "$1" != "mcp" ] || [ "$2" != "list" ]; then exit 3; fi
+if [ "$#" != 3 ] || [ "$3" != "--json" ]; then exit 5; fi
+if [ "$(pwd -P)" != "$(cd "$(dirname "$0")" && pwd -P)" ]; then exit 6; fi
 if [ -n "$WEAVE_RUNTIME_TOKEN" ] || [ -n "$WEAVE_SECRET_KEY" ] || [ -n "$WEAVE_MCP_BOUNDARY_TOKEN_99" ]; then exit 4; fi
 printf '%s' '[{"name":"host_tools","enabled":true},{"name":"previous_task","enabled":false}]'
 `
