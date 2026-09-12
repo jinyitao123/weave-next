@@ -267,7 +267,7 @@ func CompileAgent(tenant string, rec *registry.AgentRecord, llm contract.LLM, to
 	// --- Step: Chat (ToolLoop) ---
 	toolHooks := append([]contract.ToolHook{}, opts.ToolHooks...)
 	if rec.MaxToolRepeats > 0 && rec.ToolLoopControl == nil {
-		toolHooks = append(toolHooks, newLoopDetector(rec.MaxToolRepeats).hook())
+		toolHooks = append(toolHooks, stdlib.NewToolRepeatGuard(rec.MaxToolRepeats))
 	}
 
 	toolLoopOpts := stdlib.ToolLoopOpts{
@@ -298,12 +298,10 @@ func CompileAgent(tenant string, rec *registry.AgentRecord, llm contract.LLM, to
 		if threshold <= 0 {
 			threshold = 6000
 		}
-		toolLoopOpts.Compaction = &stdlib.CompactionPolicy{
-			Trigger: func(_ []contract.Message, tokenCount int) bool {
-				return tokenCount > threshold
-			},
-			Compactor: buildLLMCompactor(activeLLM, model),
-		}
+		toolLoopOpts.Compaction = stdlib.NewSummaryCompactionPolicy(activeLLM, stdlib.SummaryCompactionOpts{
+			Model:          model,
+			TokenThreshold: threshold,
+		})
 	}
 
 	// Determine chat's next step.
@@ -459,60 +457,6 @@ func buildGuardChecks(cfg *registry.GuardConfig) []stdlib.StepHook {
 // ---------------------------------------------------------------------------
 // Compaction
 // ---------------------------------------------------------------------------
-
-// buildLLMCompactor creates a Compactor that uses the LLM to summarize old messages.
-func buildLLMCompactor(llm contract.LLM, model string) func(ctx context.Context, msgs []contract.Message) ([]contract.Message, error) {
-	return func(ctx context.Context, msgs []contract.Message) ([]contract.Message, error) {
-		if len(msgs) <= 4 {
-			return msgs, nil // too few to compact
-		}
-
-		// Keep system prompt + last 2 messages; summarize the middle.
-		var systemMsg *contract.Message
-		start := 0
-		if msgs[0].Role == "system" {
-			systemMsg = &msgs[0]
-			start = 1
-		}
-
-		keepLast := 2
-		if len(msgs)-start <= keepLast {
-			return msgs, nil
-		}
-
-		toSummarize := msgs[start : len(msgs)-keepLast]
-		tail := msgs[len(msgs)-keepLast:]
-
-		// Build summary prompt.
-		var sb strings.Builder
-		for _, m := range toSummarize {
-			sb.WriteString(fmt.Sprintf("[%s]: %s\n", m.Role, m.Content))
-		}
-
-		resp, err := llm.Chat(ctx, contract.ChatRequest{
-			Model: model,
-			Messages: []contract.Message{
-				{Role: "system", Content: "Summarize the following conversation into a concise paragraph. Preserve key facts, decisions, and context. Output only the summary."},
-				{Role: "user", Content: sb.String()},
-			},
-		})
-		if err != nil {
-			return msgs, nil // compaction failed, keep originals
-		}
-
-		// Rebuild: system + summary + tail.
-		var result []contract.Message
-		if systemMsg != nil {
-			result = append(result, *systemMsg)
-		}
-		result = append(result, contract.Message{
-			Role:    "assistant",
-			Content: "[Previous conversation summary]\n" + resp.Content,
-		})
-		result = append(result, tail...)
-		return result, nil
-	}
-}
 
 // ---------------------------------------------------------------------------
 // Sub-agent routing
