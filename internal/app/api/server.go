@@ -17,6 +17,7 @@ import (
 	"github.com/jinyitao123/loom/pgstore"
 	"github.com/jinyitao123/weave/internal/app/apikeys"
 	"github.com/jinyitao123/weave/internal/app/attachments"
+	appcapabilities "github.com/jinyitao123/weave/internal/app/capabilities"
 	"github.com/jinyitao123/weave/internal/app/chatrequest"
 	"github.com/jinyitao123/weave/internal/app/conversation"
 	"github.com/jinyitao123/weave/internal/app/ownermem"
@@ -102,6 +103,7 @@ type Server struct {
 	Skills                    *importskills.Store                 // nil if PG pool unavailable
 	Audit                     *audit.Store                        // nil if PG pool unavailable
 	Credentials               *credentials.Store                  // nil if WEAVE_SECRET_KEY is not configured
+	Capabilities              *appcapabilities.Service            // nil if PG persistence is unavailable
 	SystemProviders           credentials.SystemProviderSource
 	MCPRegistry               *mcpregistry.Store     // nil if WEAVE_SECRET_KEY is not configured
 	MCPResolver               mcphost.AccessResolver // optional override; defaults to MCPRegistry-backed resolver
@@ -248,6 +250,8 @@ func NewServer(cfg *config.Config, store loom.Store, models *llmrouter.Resolver)
 	if ps, ok := store.(*pgstore.PGStore); ok {
 		s.StoreExt = storeext.New(ps.Pool())
 		s.Pool = ps.Pool()
+		capabilityStore := appcapabilities.NewPGStore(ps.Pool())
+		s.Capabilities = appcapabilities.NewService(capabilityStore, capabilityStore)
 		s.TeamWorkers = registry.NewTeamWorkerRepository(ps.Pool())
 		s.TeamForgeDrafts = teamforge.NewDraftRegistry()
 		s.ChatRequests = chatrequest.New(ps.Pool(), chatrequest.RealClock{})
@@ -328,6 +332,7 @@ func (s *Server) registerRoutes() {
 	agentsScope := RequireScope("agents")
 	chatScope := RequireScope("chat")
 	runsScope := RequireScope("runs")
+	capabilitiesScope := RequireScope("capabilities")
 	memoryScope := RequireScope("memory")
 	orgScope := RequireScope("org")
 
@@ -336,6 +341,12 @@ func (s *Server) registerRoutes() {
 	auth.GET("/auth/me", s.handleMe)
 	auth.PUT("/auth/me", s.handleUpdateMe)
 	auth.PUT("/auth/me/password", s.handleChangeMyPassword)
+
+	// Developer capability contract endpoints. Execution is admitted here;
+	// runtime scheduling is intentionally a separate follow-up integration.
+	auth.POST("/capabilities/drafts", s.handleSaveCapabilityDraft, RequireAnyRole("admin", "owner"), capabilitiesScope)
+	auth.POST("/capabilities/:capabilityID/versions/:revision/publish", s.handlePublishCapability, RequireAnyRole("admin", "owner"), capabilitiesScope)
+	auth.POST("/capabilities/:capabilityID/versions/:revision/invocations", s.handleInvokeCapability, capabilitiesScope)
 
 	// User management (admin or owner).
 	auth.GET("/users", s.handleListUsers, RequireAnyRole("admin", "owner"), adminScope)
