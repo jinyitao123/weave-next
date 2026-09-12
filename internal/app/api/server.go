@@ -347,6 +347,8 @@ func (s *Server) registerRoutes() {
 	auth.POST("/capabilities/drafts", s.handleSaveCapabilityDraft, RequireAnyRole("admin", "owner"), capabilitiesScope)
 	auth.POST("/capabilities/:capabilityID/versions/:revision/publish", s.handlePublishCapability, RequireAnyRole("admin", "owner"), capabilitiesScope)
 	auth.POST("/capabilities/:capabilityID/versions/:revision/invocations", s.handleInvokeCapability, capabilitiesScope)
+	auth.GET("/invocations/:invocationID", s.handleGetCapabilityInvocation, capabilitiesScope)
+	auth.POST("/invocations/:invocationID/cancel", s.handleCancelCapabilityInvocation, capabilitiesScope)
 
 	// User management (admin or owner).
 	auth.GET("/users", s.handleListUsers, RequireAnyRole("admin", "owner"), adminScope)

@@ -48,3 +48,26 @@ func TestServiceRejectsChangedIdempotentRequest(t *testing.T) {
 		t.Fatalf("expected conflict, got %v", err)
 	}
 }
+
+func TestServiceCancelsQueuedInvocation(t *testing.T) {
+	store := NewMemoryStore()
+	service := NewService(store, store)
+	d := capability.Definition{SchemaVersion: 1, CapabilityID: "cap-1", Name: "Review", InputSchema: json.RawMessage(`{"type":"object"}`), OutputSchema: json.RawMessage(`{"type":"object"}`), Roles: []capability.Role{{ID: "r", Name: "Reviewer"}}, Steps: []capability.Step{{ID: "s", Name: "Review", RoleID: "r", Kind: capability.StepWorker, Instruction: "review"}}}
+	if err := service.SaveDraft(context.Background(), DraftRequest{WorkspaceID: "ws", Definition: d}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Publish(context.Background(), "ws", "cap-1", 1); err != nil {
+		t.Fatal(err)
+	}
+	invocation, _, err := service.Invoke(context.Background(), InvokeRequest{WorkspaceID: "ws", ApplicationID: "app", InvocationID: "inv-1", RequestID: "req-1", CapabilityID: "cap-1", Revision: 1, Input: json.RawMessage(`{"x":1}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cancelled, err := service.CancelInvocation(context.Background(), "ws", "app", invocation.InvocationID)
+	if err != nil || cancelled.Status != "cancelled" {
+		t.Fatalf("cancelled=%+v err=%v", cancelled, err)
+	}
+	if _, err := service.CancelInvocation(context.Background(), "ws", "app", invocation.InvocationID); !errors.Is(err, ErrInvocationTerminal) {
+		t.Fatalf("expected terminal error, got %v", err)
+	}
+}

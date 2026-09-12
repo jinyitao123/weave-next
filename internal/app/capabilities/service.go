@@ -19,6 +19,8 @@ var (
 	ErrNotFound            = errors.New("capability not found")
 	ErrRevisionNotFound    = errors.New("published capability revision not found")
 	ErrIdempotencyConflict = errors.New("invocation request id already used with different input")
+	ErrInvocationNotFound  = errors.New("invocation not found")
+	ErrInvocationTerminal  = errors.New("invocation is already terminal")
 )
 
 type DraftStore interface {
@@ -30,6 +32,22 @@ type DraftStore interface {
 
 type InvocationStore interface {
 	ClaimInvocation(context.Context, Invocation) (Invocation, bool, error)
+	GetInvocation(context.Context, string, string, string) (Invocation, error)
+	CancelInvocation(context.Context, string, string, string) (Invocation, error)
+}
+
+func (s *Service) GetInvocation(ctx context.Context, workspaceID, applicationID, invocationID string) (Invocation, error) {
+	if s == nil || s.invocations == nil {
+		return Invocation{}, errors.New("capability invocation service is not configured")
+	}
+	return s.invocations.GetInvocation(ctx, workspaceID, applicationID, invocationID)
+}
+
+func (s *Service) CancelInvocation(ctx context.Context, workspaceID, applicationID, invocationID string) (Invocation, error) {
+	if s == nil || s.invocations == nil {
+		return Invocation{}, errors.New("capability invocation service is not configured")
+	}
+	return s.invocations.CancelInvocation(ctx, workspaceID, applicationID, invocationID)
 }
 
 type Service struct {
@@ -200,4 +218,31 @@ func (m *MemoryStore) ClaimInvocation(_ context.Context, invocation Invocation) 
 	}
 	m.invokes[key] = invocation
 	return invocation, false, nil
+}
+
+func (m *MemoryStore) GetInvocation(_ context.Context, workspaceID, applicationID, invocationID string) (Invocation, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, invocation := range m.invokes {
+		if invocation.WorkspaceID == workspaceID && invocation.ApplicationID == applicationID && invocation.InvocationID == invocationID {
+			return invocation, nil
+		}
+	}
+	return Invocation{}, ErrInvocationNotFound
+}
+
+func (m *MemoryStore) CancelInvocation(_ context.Context, workspaceID, applicationID, invocationID string) (Invocation, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for key, invocation := range m.invokes {
+		if invocation.WorkspaceID == workspaceID && invocation.ApplicationID == applicationID && invocation.InvocationID == invocationID {
+			if invocation.Status == "completed" || invocation.Status == "failed" || invocation.Status == "cancelled" {
+				return Invocation{}, ErrInvocationTerminal
+			}
+			invocation.Status = "cancelled"
+			m.invokes[key] = invocation
+			return invocation, nil
+		}
+	}
+	return Invocation{}, ErrInvocationNotFound
 }

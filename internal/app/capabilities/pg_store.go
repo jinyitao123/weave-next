@@ -180,3 +180,63 @@ func (s *PGStore) ClaimInvocation(ctx context.Context, invocation Invocation) (I
 	}
 	return stored, !created, nil
 }
+
+func (s *PGStore) GetInvocation(ctx context.Context, workspaceID, applicationID, invocationID string) (Invocation, error) {
+	if err := s.ready(); err != nil {
+		return Invocation{}, err
+	}
+	var invocation Invocation
+	var raw []byte
+	err := s.pool.QueryRow(ctx, `
+		SELECT workspace_id, application_id, request_id, invocation_id, task_id,
+			capability_id, revision, input, status, result_state
+		FROM weave_capability_invocations
+		WHERE workspace_id=$1 AND application_id=$2 AND invocation_id=$3
+	`, workspaceID, applicationID, invocationID).Scan(
+		&invocation.WorkspaceID, &invocation.ApplicationID, &invocation.RequestID, &invocation.InvocationID,
+		&invocation.TaskID, &invocation.CapabilityID, &invocation.Revision, &raw,
+		&invocation.Status, &invocation.ResultState)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Invocation{}, ErrInvocationNotFound
+	}
+	if err != nil {
+		return Invocation{}, fmt.Errorf("get capability invocation: %w", err)
+	}
+	invocation.Input = raw
+	return invocation, nil
+}
+
+func (s *PGStore) CancelInvocation(ctx context.Context, workspaceID, applicationID, invocationID string) (Invocation, error) {
+	if err := s.ready(); err != nil {
+		return Invocation{}, err
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return Invocation{}, fmt.Errorf("begin capability cancellation: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	var status, taskID string
+	if err := tx.QueryRow(ctx, `
+		SELECT status, COALESCE(task_id, '') FROM weave_capability_invocations
+		WHERE workspace_id=$1 AND application_id=$2 AND invocation_id=$3 FOR UPDATE
+	`, workspaceID, applicationID, invocationID).Scan(&status, &taskID); errors.Is(err, pgx.ErrNoRows) {
+		return Invocation{}, ErrInvocationNotFound
+	} else if err != nil {
+		return Invocation{}, fmt.Errorf("lock capability invocation: %w", err)
+	}
+	if status == "completed" || status == "failed" || status == "cancelled" {
+		return Invocation{}, ErrInvocationTerminal
+	}
+	if _, err := tx.Exec(ctx, `UPDATE weave_capability_invocations SET status='cancelled', result_state='unavailable' WHERE workspace_id=$1 AND application_id=$2 AND invocation_id=$3`, workspaceID, applicationID, invocationID); err != nil {
+		return Invocation{}, fmt.Errorf("cancel capability invocation: %w", err)
+	}
+	if taskID != "" {
+		if _, err := tx.Exec(ctx, `UPDATE weave_capability_invocation_tasks SET status='cancelled' WHERE task_id=$1 AND status='queued'`, taskID); err != nil {
+			return Invocation{}, fmt.Errorf("cancel capability invocation task: %w", err)
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return Invocation{}, fmt.Errorf("commit capability cancellation: %w", err)
+	}
+	return s.GetInvocation(ctx, workspaceID, applicationID, invocationID)
+}
