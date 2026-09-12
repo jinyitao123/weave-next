@@ -256,15 +256,18 @@ func (s *PGStore) ClaimTask(ctx context.Context) (InvocationTask, bool, error) {
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	var task InvocationTask
-	var raw []byte
+	var raw, definitionRaw []byte
+	var definitionHash string
 	err = tx.QueryRow(ctx, `
-		UPDATE weave_capability_invocation_tasks
-		SET status='running'
-		WHERE task_id = (
+		WITH next_task AS (
 			SELECT task_id FROM weave_capability_invocation_tasks
 			WHERE status='queued' ORDER BY created_at, task_id LIMIT 1 FOR UPDATE SKIP LOCKED
 		)
-		RETURNING task_id, workspace_id, invocation_id, capability_id, revision, payload
+		UPDATE weave_capability_invocation_tasks AS task
+		SET status='running'
+		FROM next_task
+		WHERE task.task_id=next_task.task_id
+		RETURNING task.task_id, task.workspace_id, task.invocation_id, task.capability_id, task.revision, task.payload
 	`).Scan(&task.TaskID, &task.WorkspaceID, &task.InvocationID, &task.CapabilityID, &task.Revision, &raw)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return InvocationTask{}, false, nil
@@ -273,6 +276,18 @@ func (s *PGStore) ClaimTask(ctx context.Context) (InvocationTask, bool, error) {
 		return InvocationTask{}, false, fmt.Errorf("claim capability task: %w", err)
 	}
 	task.Input = raw
+	if err := tx.QueryRow(ctx, `SELECT definition_hash, definition FROM weave_capability_revisions WHERE workspace_id=$1 AND capability_id=$2 AND revision=$3`, task.WorkspaceID, task.CapabilityID, task.Revision).Scan(&definitionHash, &definitionRaw); err != nil {
+		return InvocationTask{}, false, fmt.Errorf("load capability revision for task: %w", err)
+	}
+	var definition capability.Definition
+	if err := json.Unmarshal(definitionRaw, &definition); err != nil {
+		return InvocationTask{}, false, fmt.Errorf("decode capability revision for task: %w", err)
+	}
+	plan, err := capability.Compile(capability.PublishedRevision{SchemaVersion: capability.SchemaVersionV1, CapabilityID: task.CapabilityID, Revision: task.Revision, Definition: definition, DefinitionHash: definitionHash})
+	if err != nil {
+		return InvocationTask{}, false, fmt.Errorf("compile capability task: %w", err)
+	}
+	task.Plan = plan
 	if _, err := tx.Exec(ctx, `UPDATE weave_capability_invocations SET status='running' WHERE workspace_id=$1 AND invocation_id=$2`, task.WorkspaceID, task.InvocationID); err != nil {
 		return InvocationTask{}, false, fmt.Errorf("mark invocation running: %w", err)
 	}
