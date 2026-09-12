@@ -32,17 +32,83 @@ type memberOperation struct {
 // replay restores the exact original usage receipts without allocating new
 // logical or physical calls. Outside a MemberRunner it remains transparent.
 func InstallFrozenMemberJournal(opts compiler.FrozenBuildOpts) compiler.FrozenBuildOpts {
+	journal := memberExecutionJournal{}
 	caller := opts.ExecutionLLMWrapper
 	opts.ExecutionLLMWrapper = func(inner contract.LLM) contract.LLM {
 		if caller != nil {
 			inner = caller(inner)
 		}
-		return &memberJournalLLM{inner: inner}
+		return stdlib.NewJournaledLLM(inner, journal)
 	}
-	opts.Tools = &memberJournalTools{inner: opts.Tools}
+	opts.Tools = stdlib.NewJournaledToolDispatcher(opts.Tools, journal, stdlib.JournaledToolOpts{SerializeWhenActive: true})
 	opts.Hooks.BeforeStepHooks = append([]loom.StepHook{memberBeforeStep}, opts.Hooks.BeforeStepHooks...)
 	opts.Hooks.AfterStepHooks = append(opts.Hooks.AfterStepHooks, memberAfterStep)
 	return opts
+}
+
+type memberExecutionJournal struct{}
+
+func (memberExecutionJournal) Active(ctx context.Context) bool {
+	_, active := ctx.Value(memberExecutionKey{}).(*memberExecution)
+	return active
+}
+
+func (memberExecutionJournal) Execute(ctx context.Context, operation stdlib.JournalOperation, perform stdlib.JournalPerform) (json.RawMessage, error) {
+	member, active := ctx.Value(memberExecutionKey{}).(*memberExecution)
+	if !active {
+		response, err := perform()
+		if err != nil {
+			return nil, err
+		}
+		return json.Marshal(response)
+	}
+	input := operation.Input
+	switch operation.Kind {
+	case stdlib.OperationModel:
+	case stdlib.OperationTool:
+		call, ok := input.(contract.ToolCall)
+		if !ok {
+			return nil, errors.New("member tool journal input is invalid")
+		}
+		args, err := frozen.CanonicalizeJSON([]byte(call.Args))
+		if err != nil {
+			member.fatal = err
+			return nil, err
+		}
+		call.Args = string(args)
+		input = call
+	default:
+		return nil, errors.New("member journal operation kind is invalid")
+	}
+	raw, err := member.operation(ctx, string(operation.Kind), input, func() (any, error) {
+		return perform()
+	})
+	if err != nil {
+		if operation.Kind == stdlib.OperationTool {
+			if errors.Is(err, ErrMemberOutcomeUnknown) {
+				err = errors.Join(stdlib.ErrJournalOutcomeUnknown, err)
+			}
+			member.fatal = err
+		}
+		return nil, err
+	}
+	if operation.Kind == stdlib.OperationTool {
+		var result contract.ToolResult
+		if err := json.Unmarshal(raw, &result); err != nil {
+			return nil, err
+		}
+		if !result.IsError {
+			files, present, err := fileartifact.DecodeMemberReceipt(result.Content)
+			if err != nil {
+				member.fatal = err
+				return nil, err
+			}
+			if present {
+				member.state[fileartifact.MemberStateKey] = files
+			}
+		}
+	}
+	return raw, nil
 }
 
 func memberBeforeStep(ctx context.Context, step string, state loom.State) error {
@@ -289,81 +355,4 @@ func (member *memberExecution) restoreOperationUsage(ctx context.Context, op mem
 		member.state["__member_usage_incomplete"] = true
 	}
 	return nil
-}
-
-type memberJournalLLM struct{ inner contract.LLM }
-
-func (llm *memberJournalLLM) Chat(ctx context.Context, request contract.ChatRequest) (*contract.ChatResponse, error) {
-	member, ok := ctx.Value(memberExecutionKey{}).(*memberExecution)
-	if !ok {
-		return llm.inner.Chat(ctx, request)
-	}
-	raw, err := member.operation(ctx, "model", request, func() (any, error) { return llm.inner.Chat(ctx, request) })
-	if err != nil {
-		return nil, err
-	}
-	var response contract.ChatResponse
-	if err := json.Unmarshal(raw, &response); err != nil {
-		return nil, err
-	}
-	return &response, nil
-}
-
-func (llm *memberJournalLLM) Stream(ctx context.Context, request contract.ChatRequest) (<-chan contract.StreamChunk, error) {
-	if _, ok := ctx.Value(memberExecutionKey{}).(*memberExecution); ok {
-		return nil, ErrUsageStreamUnsupported
-	}
-	return llm.inner.Stream(ctx, request)
-}
-
-type memberJournalTools struct{ inner contract.ToolDispatcher }
-
-func (tools *memberJournalTools) ListTools(ctx context.Context) ([]contract.ToolDef, error) {
-	definitions, err := tools.inner.ListTools(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if _, ok := ctx.Value(memberExecutionKey{}).(*memberExecution); ok {
-		// The first member journal protocol executes the model's batch in
-		// order. Read-only is a scheduler hint, not an expanded permission.
-		definitions = append([]contract.ToolDef(nil), definitions...)
-		for index := range definitions {
-			definitions[index].ReadOnly = false
-		}
-	}
-	return definitions, nil
-}
-
-func (tools *memberJournalTools) Dispatch(ctx context.Context, call contract.ToolCall) (*contract.ToolResult, error) {
-	member, ok := ctx.Value(memberExecutionKey{}).(*memberExecution)
-	if !ok {
-		return tools.inner.Dispatch(ctx, call)
-	}
-	canonicalCall := call
-	args, err := frozen.CanonicalizeJSON([]byte(call.Args))
-	if err != nil {
-		member.fatal = err
-		return nil, err
-	}
-	canonicalCall.Args = string(args)
-	raw, err := member.operation(ctx, "tool", canonicalCall, func() (any, error) { return tools.inner.Dispatch(ctx, call) })
-	if err != nil {
-		member.fatal = err
-		return nil, err
-	}
-	var result contract.ToolResult
-	if err := json.Unmarshal(raw, &result); err != nil {
-		return nil, err
-	}
-	if !result.IsError {
-		files, present, err := fileartifact.DecodeMemberReceipt(result.Content)
-		if err != nil {
-			member.fatal = err
-			return nil, err
-		}
-		if present {
-			member.state[fileartifact.MemberStateKey] = files
-		}
-	}
-	return &result, nil
 }
