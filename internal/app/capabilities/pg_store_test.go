@@ -31,13 +31,17 @@ func TestPGStorePersistsRevisionAndInvocationReplay(t *testing.T) {
 	}
 	request := InvokeRequest{WorkspaceID: "ws-a", ApplicationID: "app", InvocationID: "inv-a", RequestID: "req-a", CapabilityID: "cap-pg", Revision: 1, Input: json.RawMessage(`{"value":1}`)}
 	first, replayed, err := service.Invoke(context.Background(), request)
-	if err != nil || replayed {
+	if err != nil || replayed || first.TaskID == "" {
 		t.Fatalf("first invocation=%+v replayed=%v err=%v", first, replayed, err)
 	}
 	request.InvocationID = "inv-retry"
 	second, replayed, err := service.Invoke(context.Background(), request)
 	if err != nil || !replayed || second.InvocationID != "inv-a" {
 		t.Fatalf("replayed invocation=%+v replayed=%v err=%v", second, replayed, err)
+	}
+	var taskCount int
+	if err := pool.QueryRow(t.Context(), `SELECT count(*) FROM weave_capability_invocation_tasks WHERE workspace_id=$1 AND invocation_id=$2 AND status='queued'`, "ws-a", "inv-a").Scan(&taskCount); err != nil || taskCount != 1 {
+		t.Fatalf("queued capability task count=%d err=%v", taskCount, err)
 	}
 	if _, _, err := service.Invoke(context.Background(), InvokeRequest{WorkspaceID: "ws-b", ApplicationID: "app", InvocationID: "inv-b", RequestID: "req-a", CapabilityID: "cap-pg", Revision: 1, Input: json.RawMessage(`{"value":1}`)}); err == nil {
 		t.Fatal("different workspace should not see the published revision")

@@ -78,7 +78,7 @@ func (s *Server) handleInvokeCapability(c echo.Context) error {
 	}
 	return c.JSON(http.StatusAccepted, map[string]any{
 		"invocation_id": invocation.InvocationID, "capability_id": invocation.CapabilityID,
-		"revision": invocation.Revision, "status": invocation.Status,
+		"revision": invocation.Revision, "task_id": invocation.TaskID, "status": invocation.Status,
 		"result_state": invocation.ResultState, "replayed": replayed,
 	})
 }
