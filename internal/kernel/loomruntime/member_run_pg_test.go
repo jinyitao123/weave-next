@@ -294,7 +294,7 @@ func TestMemberUnknownToolEffectIsNotReplayedRealPG(t *testing.T) {
 		t.Fatal("execution continued after transport lost the effect receipt")
 	}
 	next := h.nextEpoch(t)
-	if _, err := runner.Run(t.Context(), next); !errors.Is(err, ErrMemberOutcomeUnknown) {
+	if _, err := runner.Run(t.Context(), next); !errors.Is(err, ErrMemberOutcomeUnknown) || !errors.Is(err, stdlib.ErrJournalOutcomeUnknown) {
 		t.Fatalf("expected reconciliation, got %v", err)
 	}
 	if h.tools.calls.Load() != 1 || h.model.calls.Load() != 1 {
