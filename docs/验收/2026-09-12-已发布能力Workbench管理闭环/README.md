@@ -3,6 +3,8 @@
 日期：2026-09-12
 状态：3C 管理切片通过；不代表完整故障矩阵或业务结果验收通过。
 
+实现提交：`248c118c`
+
 ## 验收环境
 
 - 独立工作树：`/Users/jinyitao/Developer/weave-next-capability-service`
