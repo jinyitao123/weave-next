@@ -6,9 +6,11 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jinyitao123/weave/internal/base/capability"
+	"github.com/jinyitao123/weave/internal/base/frozen"
 )
 
 // PGStore is the durable implementation of DraftStore and InvocationStore.
@@ -40,7 +42,7 @@ func (s *PGStore) SaveDraft(ctx context.Context, workspaceID string, definition 
 		VALUES ($1,$2,$3::jsonb,now())
 		ON CONFLICT (workspace_id, capability_id) DO UPDATE
 		SET definition=EXCLUDED.definition, updated_at=now()
-	`, workspaceID, definition.CapabilityID, raw)
+	`, workspaceID, definition.CapabilityID, string(raw))
 	if err != nil {
 		return fmt.Errorf("save capability draft: %w", err)
 	}
@@ -81,7 +83,7 @@ func (s *PGStore) SaveRevision(ctx context.Context, workspaceID string, revision
 		INSERT INTO weave_capability_revisions (workspace_id, capability_id, revision, definition_hash, definition)
 		VALUES ($1,$2,$3,$4,$5::jsonb)
 		ON CONFLICT (workspace_id, capability_id, revision) DO NOTHING
-	`, workspaceID, revision.CapabilityID, revision.Revision, revision.DefinitionHash, raw)
+	`, workspaceID, revision.CapabilityID, revision.Revision, revision.DefinitionHash, string(raw))
 	if err != nil {
 		return fmt.Errorf("save capability revision: %w", err)
 	}
@@ -132,29 +134,39 @@ func (s *PGStore) ClaimInvocation(ctx context.Context, invocation Invocation) (I
 		return Invocation{}, false, fmt.Errorf("begin invocation claim: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+	taskID := "cap-task-" + uuid.NewString()
 	result, err := tx.Exec(ctx, `
 		INSERT INTO weave_capability_invocations (
 			workspace_id, application_id, request_id, invocation_id,
-			capability_id, revision, input, status, result_state
-		) VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9)
+			capability_id, revision, input, status, result_state, task_id
+		) VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10)
 		ON CONFLICT (workspace_id, application_id, request_id) DO NOTHING
 	`, invocation.WorkspaceID, invocation.ApplicationID, invocation.RequestID,
 		invocation.InvocationID, invocation.CapabilityID, invocation.Revision,
-		input, invocation.Status, invocation.ResultState)
+		string(input), invocation.Status, invocation.ResultState, taskID)
 	if err != nil {
 		return Invocation{}, false, fmt.Errorf("claim invocation: %w", err)
 	}
 	created := result.RowsAffected() == 1
+	if created {
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO weave_capability_invocation_tasks (
+				task_id, workspace_id, invocation_id, capability_id, revision, payload
+			) VALUES ($1,$2,$3,$4,$5,$6::jsonb)
+			`, taskID, invocation.WorkspaceID, invocation.InvocationID, invocation.CapabilityID, invocation.Revision, string(input)); err != nil {
+			return Invocation{}, false, fmt.Errorf("enqueue capability invocation: %w", err)
+		}
+	}
 	var stored Invocation
 	var raw []byte
 	err = tx.QueryRow(ctx, `
 		SELECT workspace_id, application_id, request_id, invocation_id,
-			capability_id, revision, input, status, result_state
+			capability_id, revision, input, status, result_state, COALESCE(task_id, '')
 		FROM weave_capability_invocations
 		WHERE workspace_id=$1 AND application_id=$2 AND request_id=$3
 	`, invocation.WorkspaceID, invocation.ApplicationID, invocation.RequestID).Scan(
 		&stored.WorkspaceID, &stored.ApplicationID, &stored.RequestID, &stored.InvocationID,
-		&stored.CapabilityID, &stored.Revision, &raw, &stored.Status, &stored.ResultState)
+		&stored.CapabilityID, &stored.Revision, &raw, &stored.Status, &stored.ResultState, &stored.TaskID)
 	if err != nil {
 		return Invocation{}, false, fmt.Errorf("read invocation claim: %w", err)
 	}
@@ -162,7 +174,8 @@ func (s *PGStore) ClaimInvocation(ctx context.Context, invocation Invocation) (I
 	if err := tx.Commit(ctx); err != nil {
 		return Invocation{}, false, fmt.Errorf("commit invocation claim: %w", err)
 	}
-	if stored.CapabilityID != invocation.CapabilityID || stored.Revision != invocation.Revision || string(stored.Input) != string(invocation.Input) {
+	storedInput, canonicalErr := frozen.CanonicalizeJSON(stored.Input)
+	if canonicalErr != nil || stored.CapabilityID != invocation.CapabilityID || stored.Revision != invocation.Revision || string(storedInput) != string(invocation.Input) {
 		return Invocation{}, false, ErrIdempotencyConflict
 	}
 	return stored, !created, nil

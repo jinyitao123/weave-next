@@ -26,7 +26,7 @@ func TestServicePublishesAndReplaysInvocation(t *testing.T) {
 	}
 	req := InvokeRequest{WorkspaceID: "ws", ApplicationID: "app", InvocationID: "inv-1", RequestID: "req-1", CapabilityID: "cap-1", Revision: 1, Input: json.RawMessage(`{"x":1}`)}
 	first, replayed, err := service.Invoke(context.Background(), req)
-	if err != nil || replayed || first.Status != "accepted" || first.ResultState != "unavailable" {
+	if err != nil || replayed || first.Status != "queued" || first.ResultState != "unavailable" || first.TaskID == "" {
 		t.Fatalf("first=%+v replayed=%v err=%v", first, replayed, err)
 	}
 	second, replayed, err := service.Invoke(context.Background(), req)

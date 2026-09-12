@@ -81,6 +81,7 @@ type Invocation struct {
 	WorkspaceID   string          `json:"workspace_id"`
 	ApplicationID string          `json:"application_id"`
 	InvocationID  string          `json:"invocation_id"`
+	TaskID        string          `json:"task_id,omitempty"`
 	RequestID     string          `json:"request_id"`
 	CapabilityID  string          `json:"capability_id"`
 	Revision      int64           `json:"revision"`
@@ -124,7 +125,7 @@ func (s *Service) Invoke(ctx context.Context, request InvokeRequest) (Invocation
 		WorkspaceID: request.WorkspaceID, ApplicationID: request.ApplicationID,
 		InvocationID: request.InvocationID, RequestID: request.RequestID,
 		CapabilityID: request.CapabilityID, Revision: request.Revision,
-		Input: canonicalInput, Status: "accepted", ResultState: "unavailable",
+		Input: canonicalInput, Status: "queued", ResultState: "unavailable",
 	}
 	if invocation.InvocationID == "" {
 		invocation.InvocationID = uuid.NewString()
@@ -193,6 +194,9 @@ func (m *MemoryStore) ClaimInvocation(_ context.Context, invocation Invocation) 
 			return Invocation{}, false, ErrIdempotencyConflict
 		}
 		return existing, true, nil
+	}
+	if invocation.TaskID == "" {
+		invocation.TaskID = "cap-task-memory-" + invocation.InvocationID
 	}
 	m.invokes[key] = invocation
 	return invocation, false, nil
