@@ -222,6 +222,28 @@
         "previous_external_dependencies": 7,
         "external_dependencies": 7
       }
+    },
+    {
+      "date": "2026-09-12",
+      "source_commit": "19859554",
+      "reason": "Authorized published-capability service evolution, first integration slice: preserve explicit Agent tool-loop controls and frozen output schemas, fix Codex MCP working-directory parity and Loom cancellation rollback binding, then extract the entrypoint-independent published-workflow admission, snapshot, delivery-contract and queue transaction service used by existing Workbench paths. Exact reviewed working-tree ceilings with no spare line allowance. One app package is added for the shared application boundary; dependency allowlists, original migration targets and upward-edge limits remain unchanged.",
+      "record": "docs/计划/2026-09-12-已发布能力服务调用层分批实施计划.md",
+      "kernel": {
+        "previous_lines": 67338,
+        "previous_production_lines": 62474,
+        "lines_added": 72,
+        "production_lines_added": 6,
+        "previous_packages": 33,
+        "packages": 33
+      },
+      "app": {
+        "previous_lines": 46415,
+        "previous_production_lines": 36695,
+        "lines_added": 215,
+        "production_lines_added": 148,
+        "previous_packages": 18,
+        "packages": 19
+      }
     }
   ],
   "migration_targets": {
@@ -259,8 +281,8 @@
     ]
   },
   "kernel": {
-    "lines": 67338,
-    "production_lines": 62474,
+    "lines": 67410,
+    "production_lines": 62480,
     "packages": 33,
     "external_dependencies": 5,
     "allowed_dependencies": [
@@ -284,9 +306,9 @@
     ]
   },
   "app": {
-    "lines": 46415,
-    "production_lines": 36695,
-    "packages": 18,
+    "lines": 46630,
+    "production_lines": 36843,
+    "packages": 19,
     "external_dependencies": 7,
     "allowed_dependencies": [
       "github.com/golang-jwt/jwt/v5",
