@@ -83,6 +83,42 @@ func (s *Server) handleInvokeCapability(c echo.Context) error {
 	})
 }
 
+func capabilityApplicationID(c echo.Context) string {
+	applicationID, _ := c.Get(apiKeyIDContextKey).(string)
+	if applicationID == "" {
+		applicationID, _ = c.Get("user_id").(string)
+	}
+	return applicationID
+}
+
+func (s *Server) handleGetCapabilityInvocation(c echo.Context) error {
+	if s.Capabilities == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "capability service unavailable"})
+	}
+	workspaceID, _ := c.Get("tenant").(string)
+	invocation, err := s.Capabilities.GetInvocation(c.Request().Context(), workspaceID, capabilityApplicationID(c), c.Param("invocationID"))
+	if err != nil {
+		return capabilityHTTPError(c, err)
+	}
+	return c.JSON(http.StatusOK, map[string]any{
+		"invocation_id": invocation.InvocationID, "task_id": invocation.TaskID,
+		"capability_id": invocation.CapabilityID, "revision": invocation.Revision,
+		"status": invocation.Status, "result_state": invocation.ResultState,
+	})
+}
+
+func (s *Server) handleCancelCapabilityInvocation(c echo.Context) error {
+	if s.Capabilities == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "capability service unavailable"})
+	}
+	workspaceID, _ := c.Get("tenant").(string)
+	invocation, err := s.Capabilities.CancelInvocation(c.Request().Context(), workspaceID, capabilityApplicationID(c), c.Param("invocationID"))
+	if err != nil {
+		return capabilityHTTPError(c, err)
+	}
+	return c.JSON(http.StatusOK, map[string]any{"invocation_id": invocation.InvocationID, "task_id": invocation.TaskID, "status": invocation.Status})
+}
+
 func capabilityHTTPError(c echo.Context, err error) error {
 	status := http.StatusBadRequest
 	code := "capability_request_invalid"
@@ -91,6 +127,10 @@ func capabilityHTTPError(c echo.Context, err error) error {
 		status, code = http.StatusNotFound, "capability_not_found"
 	case errors.Is(err, appcapabilities.ErrIdempotencyConflict):
 		status, code = http.StatusConflict, "idempotency_conflict"
+	case errors.Is(err, appcapabilities.ErrInvocationNotFound):
+		status, code = http.StatusNotFound, "invocation_not_found"
+	case errors.Is(err, appcapabilities.ErrInvocationTerminal):
+		status, code = http.StatusConflict, "invocation_terminal"
 	}
 	return c.JSON(status, map[string]string{"code": code, "error": err.Error()})
 }
