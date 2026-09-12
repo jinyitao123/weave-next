@@ -104,6 +104,7 @@ func (s *Server) handleGetCapabilityInvocation(c echo.Context) error {
 		"invocation_id": invocation.InvocationID, "task_id": invocation.TaskID,
 		"capability_id": invocation.CapabilityID, "revision": invocation.Revision,
 		"status": invocation.Status, "result_state": invocation.ResultState,
+		"result": invocation.Result, "error": invocation.Error,
 	})
 }
 

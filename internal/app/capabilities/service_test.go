@@ -71,3 +71,29 @@ func TestServiceCancelsQueuedInvocation(t *testing.T) {
 		t.Fatalf("expected terminal error, got %v", err)
 	}
 }
+
+type fixtureExecutor struct{}
+
+func (fixtureExecutor) Execute(context.Context, InvocationTask) (json.RawMessage, error) {
+	return json.RawMessage(`{"ok":true}`), nil
+}
+
+func TestRunOneCompletesClaimedTask(t *testing.T) {
+	store := NewMemoryStore()
+	service := NewService(store, store)
+	d := capability.Definition{SchemaVersion: 1, CapabilityID: "cap-1", Name: "Review", InputSchema: json.RawMessage(`{"type":"object"}`), OutputSchema: json.RawMessage(`{"type":"object"}`), Roles: []capability.Role{{ID: "r", Name: "Reviewer"}}, Steps: []capability.Step{{ID: "s", Name: "Review", RoleID: "r", Kind: capability.StepWorker, Instruction: "review"}}}
+	_ = service.SaveDraft(context.Background(), DraftRequest{WorkspaceID: "ws", Definition: d})
+	_, _ = service.Publish(context.Background(), "ws", "cap-1", 1)
+	invocation, _, _ := service.Invoke(context.Background(), InvokeRequest{WorkspaceID: "ws", ApplicationID: "app", InvocationID: "inv-1", RequestID: "req-1", CapabilityID: "cap-1", Revision: 1, Input: json.RawMessage(`{"x":1}`)})
+	if invocation.TaskID == "" {
+		t.Fatal("expected queued task")
+	}
+	processed, err := RunOne(context.Background(), store, fixtureExecutor{})
+	if err != nil || !processed {
+		t.Fatalf("processed=%v err=%v", processed, err)
+	}
+	completed, err := service.GetInvocation(context.Background(), "ws", "app", invocation.InvocationID)
+	if err != nil || completed.Status != "completed" || completed.ResultState != "available" {
+		t.Fatalf("completed=%+v err=%v", completed, err)
+	}
+}
