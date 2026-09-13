@@ -67,8 +67,8 @@ func TestServiceCancelsQueuedInvocation(t *testing.T) {
 	if err != nil || cancelled.Status != "cancelled" {
 		t.Fatalf("cancelled=%+v err=%v", cancelled, err)
 	}
-	if _, err := service.CancelInvocation(context.Background(), "ws", "app", invocation.InvocationID); !errors.Is(err, ErrInvocationTerminal) {
-		t.Fatalf("expected terminal error, got %v", err)
+	if again, err := service.CancelInvocation(context.Background(), "ws", "app", invocation.InvocationID); err != nil || again.Status != "cancelled" {
+		t.Fatalf("expected idempotent cancellation, got %v", err)
 	}
 }
 

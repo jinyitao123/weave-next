@@ -63,6 +63,7 @@ func TestPublishUsesCanonicalDefinitionHash(t *testing.T) {
 
 func TestCompileProducesStablePlanAndRejectsNonLoopCycle(t *testing.T) {
 	d := fixtureDefinition()
+	d.Steps[1].MaxIterations = 0
 	revision, err := Publish(d, 1)
 	if err != nil {
 		t.Fatal(err)

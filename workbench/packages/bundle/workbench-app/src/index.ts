@@ -14,6 +14,7 @@ import { buildPilotReport } from './pilot-report.ts'
 import { inspectWeaveReadiness } from './readiness.ts'
 import { handleWeaveRuntimeRequest, resolveRuntimeServerUrl } from './runtime-control.ts'
 import { handleAgentExecutionRequest } from './agent-execution-control.ts'
+import { handleCapabilityRequest } from './capability-control.ts'
 import { DispatchResponseError, installDispatchInputTool, latestDispatchInput, type DispatchInputFacts } from './dispatch-input.ts'
 
 export { buildPilotReport } from './pilot-report.ts'
@@ -1127,6 +1128,10 @@ export function apply(ctx: Context, config: Config = {}): void {
   connection.fetch.register({
     path: '/api/weave.runtimes', methods: ['GET', 'HEAD', 'POST', 'PUT', 'DELETE'],
     fetch: request => handleWeaveRuntimeRequest(apiUrl, apiKey, request, fetch, runtimeServerUrl),
+  })
+  connection.fetch.register({
+    path: '/api/weave.capabilities', methods: ['GET', 'POST'],
+    fetch: request => handleCapabilityRequest(apiUrl, apiKey, request),
   })
   connection.fetch.register({
     path: '/api/weave.deliverable', methods: ['GET', 'HEAD'],
