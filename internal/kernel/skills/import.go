@@ -125,9 +125,8 @@ func (i *Importer) Import(ctx context.Context, workspaceID, skillID, operatorID 
 		return nil, coded(CodeSkillImportFailed, "begin import transaction")
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	var lockedWorkspace string
-	if err := tx.QueryRow(ctx, `SELECT id FROM weave_workspaces WHERE id=$1 FOR UPDATE`, workspaceID).Scan(&lockedWorkspace); err != nil {
-		return nil, coded(CodeSkillImportFailed, "lock import workspace")
+	if err := lockImportNamespace(ctx, tx, workspaceID); err != nil {
+		return nil, coded(CodeSkillImportFailed, "lock Skill import namespace")
 	}
 	if response, found, err := i.readReceipt(ctx, tx, workspaceID, request.IdempotencyKey, requestHash); found || err != nil {
 		if err == nil {
@@ -345,4 +344,12 @@ func ImportCode(err error) string {
 		return codedErr.Code()
 	}
 	return CodeSkillImportFailed
+}
+
+// lockImportNamespace serializes receipt checks and first-version creation
+// without locking a product workspace row. The caller owns workspace admission.
+// This lock ends with the caller's transaction, including rollback/cancellation.
+func lockImportNamespace(ctx context.Context, tx pgx.Tx, workspaceID string) error {
+	_, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, "weave/skill-import/v1:"+workspaceID)
+	return err
 }
