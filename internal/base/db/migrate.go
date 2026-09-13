@@ -171,6 +171,12 @@ func migrationFiles(files fs.FS) ([]string, error) {
 		}
 		return found[i].version < found[j].version
 	})
+	for i := 1; i < len(found); i++ {
+		if found[i-1].version == found[i].version {
+			return nil, fmt.Errorf("duplicate migration version %04d: %q and %q",
+				found[i].version, strings.TrimPrefix(found[i-1].path, "migrations/"), strings.TrimPrefix(found[i].path, "migrations/"))
+		}
+	}
 	paths := make([]string, len(found))
 	for i := range found {
 		paths[i] = found[i].path
