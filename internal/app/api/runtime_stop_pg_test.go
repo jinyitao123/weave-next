@@ -10,14 +10,15 @@ import (
 
 	"github.com/jinyitao123/weave/internal/base/db"
 	"github.com/jinyitao123/weave/internal/base/execution"
-	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 	"github.com/jinyitao123/weave/internal/base/testutil"
 	"github.com/jinyitao123/weave/internal/kernel/runtimes"
+	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 	"github.com/labstack/echo/v4"
 )
 
 func TestRuntimeStopAcknowledgementAuthenticatesOwnerAndReplays(t *testing.T) {
-	ctx := context.Background()
+	subject := execution.Subject{WorkspaceID: "ws", UserID: "alice"}
+	ctx := execution.WithSubject(context.Background(), subject)
 	pool := testutil.PostgresPool(t)
 	if err := db.Migrate(ctx, pool); err != nil {
 		t.Fatal(err)
@@ -43,7 +44,7 @@ func TestRuntimeStopAcknowledgementAuthenticatesOwnerAndReplays(t *testing.T) {
 	if err := tasks.Enqueue(ctx, task); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := pool.Exec(ctx, `UPDATE weave_task_queue SET status='cancel_requested',worker_id=$2,lease_expires_at=NOW()+INTERVAL '1 minute' WHERE id=$1`, task.ID, runtimes.RuntimeWorkerID("ws", owner.ID)); err != nil {
+	if _, err := pool.Exec(ctx, `UPDATE weave_task_queue SET status='cancel_requested',claim_epoch=1,worker_id=$2,lease_expires_at=NOW()+INTERVAL '1 minute' WHERE id=$1`, task.ID, runtimes.RuntimeWorkerID("ws", owner.ID)); err != nil {
 		t.Fatal(err)
 	}
 	server := &Server{Tasks: tasks}
@@ -52,6 +53,8 @@ func TestRuntimeStopAcknowledgementAuthenticatesOwnerAndReplays(t *testing.T) {
 		rec := httptest.NewRecorder()
 		e := echo.New()
 		c := e.NewContext(httptest.NewRequest(http.MethodPost, "/v1/runtime/tasks/remote/stopped", nil), rec)
+		c.Request().Header.Set("X-Weave-Task-Epoch", "1")
+		c.Request().Header.Set("X-Weave-Task-Subject", subject.Digest())
 		c.SetParamNames("id")
 		c.SetParamValues(task.ID)
 		c.Set(runtimeContextKey, runtime)

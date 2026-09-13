@@ -12,12 +12,12 @@ import (
 	"time"
 
 	"github.com/jinyitao123/weave/internal/base/execution"
-	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 	"github.com/jinyitao123/weave/internal/kernel/compiler"
 	"github.com/jinyitao123/weave/internal/kernel/engine"
 	"github.com/jinyitao123/weave/internal/kernel/execenv"
 	"github.com/jinyitao123/weave/internal/kernel/runtimes"
 	"github.com/jinyitao123/weave/internal/kernel/secret"
+	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 	"github.com/labstack/echo/v4"
 )
 
@@ -38,7 +38,7 @@ func taskMCPBindingDigest(payload runtimes.EngineExecRequest, index int) (string
 
 func validFrozenMCPTask(task *taskqueue.Task, payload runtimes.EngineExecRequest) bool {
 	a := payload.FrozenMCP
-	return task.Kind == "engine_exec" && engine.IsCLIEngine(payload.Engine) && task.RunSnapshotID != "" && task.ExecutionScope == execution.ScopeTeamWorkerLeaf && a != nil && payload.BoundMCP && a.FactoryKey == compiler.StandardFrozenCLIToolsKey() && a.WorkspaceID == task.WorkspaceID && a.AgentID == task.AgentID && a.AgentVersion == int64(task.AgentVersion) && a.RunSnapshotID == task.RunSnapshotID && payload.Record != nil && payload.Record.Engine == payload.Engine && payload.Record.ID == task.AgentID && payload.Record.Version == task.AgentVersion && payload.Record.WorkspaceID == task.WorkspaceID && len(a.Bindings) > 0 && len(a.Bindings) == len(payload.Record.MCPServers)
+	return task.Subject.Validate() == nil && payload.Subject == task.Subject && task.Kind == "engine_exec" && engine.IsCLIEngine(payload.Engine) && task.RunSnapshotID != "" && task.ExecutionScope == execution.ScopeTeamWorkerLeaf && a != nil && payload.BoundMCP && a.FactoryKey == compiler.StandardFrozenCLIToolsKey() && a.WorkspaceID == task.WorkspaceID && a.AgentID == task.AgentID && a.AgentVersion == int64(task.AgentVersion) && a.RunSnapshotID == task.RunSnapshotID && payload.Record != nil && payload.Record.Engine == payload.Engine && payload.Record.ID == task.AgentID && payload.Record.Version == task.AgentVersion && payload.Record.WorkspaceID == task.WorkspaceID && len(a.Bindings) > 0 && len(a.Bindings) == len(payload.Record.MCPServers)
 }
 
 func activeMCPClaim(task *taskqueue.Task, runtime *runtimes.Runtime, now time.Time) bool {
@@ -126,5 +126,6 @@ func (s *Server) currentMCPTask(c echo.Context) (*runtimes.Runtime, *taskqueue.T
 	if err != nil || digest != claims.BindingDigest {
 		return nil, nil, deny
 	}
+	setExecutionSubject(c, task.Subject)
 	return runtime, task, nil
 }

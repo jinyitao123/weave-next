@@ -2,13 +2,14 @@ package api
 
 import (
 	"encoding/json"
+	"github.com/jinyitao123/weave/internal/base/execution"
 	"strings"
 	"testing"
 
 	"github.com/jinyitao123/weave/internal/base/fileartifact"
-	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 	"github.com/jinyitao123/weave/internal/kernel/engine"
 	"github.com/jinyitao123/weave/internal/kernel/runtimes"
+	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 )
 
 func TestRepairLegacyUsageSummaryOnlyRepairsPartialUTF8Tail(t *testing.T) {
@@ -40,14 +41,14 @@ func TestRepairLegacyUsageSummaryOnlyRepairsPartialUTF8Tail(t *testing.T) {
 }
 
 func TestValidateRuntimeEngineExecResultBindsReceiptToAdmittedVersion(t *testing.T) {
-	payload, err := json.Marshal(runtimes.EngineExecRequest{
+	payload, err := json.Marshal(runtimes.EngineExecRequest{Subject: execution.Subject{WorkspaceID: "workspace-1", UserID: "user-1"},
 		Engine: engine.Codex, EngineVersion: "codex-cli 0.144.5",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	task := &taskqueue.Task{ID: "task-1", RuntimeID: "runtime-1", Payload: payload}
-	valid := runtimes.EngineExecResult{
+	task := &taskqueue.Task{WorkspaceID: "workspace-1", Subject: execution.Subject{WorkspaceID: "workspace-1", UserID: "user-1"}, ID: "task-1", RuntimeID: "runtime-1", Payload: payload}
+	valid := runtimes.EngineExecResult{Subject: execution.Subject{WorkspaceID: "workspace-1", UserID: "user-1"},
 		Status: "completed",
 		UsageReceipt: &engine.UsageReceipt{
 			InputTokens: 1, OutputTokens: 0, HasTokens: true,
@@ -78,20 +79,20 @@ func TestValidateRuntimeEngineExecResultBindsReceiptToAdmittedVersion(t *testing
 }
 
 func TestValidateRuntimeEngineExecResultKeepsLegacyNoReceiptCompatible(t *testing.T) {
-	payload, err := json.Marshal(runtimes.EngineExecRequest{Engine: engine.Claude})
+	payload, err := json.Marshal(runtimes.EngineExecRequest{Subject: execution.Subject{WorkspaceID: "workspace-1", UserID: "user-1"}, Engine: engine.Claude})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := validateRuntimeEngineExecResult(&taskqueue.Task{Payload: payload}, runtimes.EngineExecResult{Output: "ok"}); err != nil {
+	if err := validateRuntimeEngineExecResult(&taskqueue.Task{WorkspaceID: "workspace-1", Subject: execution.Subject{WorkspaceID: "workspace-1", UserID: "user-1"}, Payload: payload}, runtimes.EngineExecResult{Subject: execution.Subject{WorkspaceID: "workspace-1", UserID: "user-1"}, Output: "ok"}); err != nil {
 		t.Fatalf("legacy result rejected: %v", err)
 	}
 }
 
 func TestValidateRuntimeCollectionReceiptRejectsMalformedEvidence(t *testing.T) {
-	payload, _ := json.Marshal(runtimes.EngineExecRequest{Engine: engine.Codex})
-	task := &taskqueue.Task{Payload: payload}
+	payload, _ := json.Marshal(runtimes.EngineExecRequest{Subject: execution.Subject{WorkspaceID: "workspace-1", UserID: "user-1"}, Engine: engine.Codex})
+	task := &taskqueue.Task{WorkspaceID: "workspace-1", Subject: execution.Subject{WorkspaceID: "workspace-1", UserID: "user-1"}, Payload: payload}
 	evidence := fileartifact.CollectionEvidence{SchemaVersion: 1, Complete: false, Limits: fileartifact.CollectionLimits{MaxFiles: 128, MaxFileBytes: 262144, MaxTotalBytes: 524288}, Issues: []fileartifact.CollectionIssue{{Path: "report.pdf", Reason: "unsupported_file_type", Kind: "limit", Claimed: true}}}
-	result := runtimes.EngineExecResult{Status: "completed", SessionID: "session-original", ArtifactCollection: &evidence}
+	result := runtimes.EngineExecResult{Subject: execution.Subject{WorkspaceID: "workspace-1", UserID: "user-1"}, Status: "completed", SessionID: "session-original", ArtifactCollection: &evidence}
 	if err := validateRuntimeEngineExecResult(task, result); err != nil {
 		t.Fatalf("valid independent collection evidence rejected: %v", err)
 	}
@@ -113,9 +114,9 @@ func TestValidateRuntimeCollectionReceiptRejectsMalformedEvidence(t *testing.T) 
 			t.Fatalf("malformed evidence admitted: %#v", copy)
 		}
 	}
-	payload, _ = json.Marshal(runtimes.EngineExecRequest{Engine: runtimes.EngineLoom})
+	payload, _ = json.Marshal(runtimes.EngineExecRequest{Subject: execution.Subject{WorkspaceID: "workspace-1", UserID: "user-1"}, Engine: runtimes.EngineLoom})
 	task.Payload = payload
-	if err := validateRuntimeEngineExecResult(task, runtimes.EngineExecResult{ArtifactCollection: &evidence}); err == nil {
+	if err := validateRuntimeEngineExecResult(task, runtimes.EngineExecResult{Subject: execution.Subject{WorkspaceID: "workspace-1", UserID: "user-1"}, ArtifactCollection: &evidence}); err == nil {
 		t.Fatal("CLI collection evidence admitted on Loom engine carrier")
 	}
 }

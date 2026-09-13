@@ -12,10 +12,10 @@ import (
 	"time"
 
 	"github.com/jinyitao123/weave/internal/base/execution"
-	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 	"github.com/jinyitao123/weave/internal/kernel/engine"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 	"github.com/jinyitao123/weave/internal/kernel/runtimes"
+	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 )
 
 func TestRuntimeRecoveryWaitsForProcessExitBeforeAcknowledgement(t *testing.T) {
@@ -52,10 +52,10 @@ func TestRuntimeRecoveryWaitsForProcessExitBeforeAcknowledgement(t *testing.T) {
 				t.Fatal(err)
 			}
 			rec := &registry.AgentRecord{Name: "worker", ID: "agent-1", WorkspaceID: "workspace-1", Version: 1, Engine: engine.OpenCode}
-			payload, _ := json.Marshal(runtimes.EngineExecRequest{Record: rec, Agent: rec.Name, Engine: rec.Engine, Prompt: "fixture", OneAPIKey: "fixture-key"})
+			payload, _ := json.Marshal(runtimes.EngineExecRequest{Subject: execution.Subject{WorkspaceID: "workspace-1", UserID: "user-1"}, Record: rec, Agent: rec.Name, Engine: rec.Engine, Prompt: "fixture", OneAPIKey: "fixture-key"})
 			now := time.Now()
 			expiry := now.Add(120 * time.Millisecond)
-			task := &taskqueue.Task{ID: "task-1", WorkspaceID: rec.WorkspaceID, Agent: rec.Name, AgentID: rec.ID, AgentVersion: 1,
+			task := &taskqueue.Task{Subject: execution.Subject{WorkspaceID: "workspace-1", UserID: "user-1"}, ID: "task-1", WorkspaceID: rec.WorkspaceID, Agent: rec.Name, AgentID: rec.ID, AgentVersion: 1,
 				IdentityKind: taskqueue.IdentityAgent, IdentitySchemaVersion: 2, ExecutionScope: execution.ScopeLegacyOrchestrator,
 				Payload: payload, UpdatedAt: now, LeaseExpiresAt: &expiry}
 			d := &service{client: client, server: server.URL, workspacesRoot: t.TempDir(), renewInterval: time.Millisecond,
@@ -100,8 +100,8 @@ func TestRuntimeShutdownReportsRecoverableProcessInterruption(t *testing.T) {
 		t.Fatal(err)
 	}
 	rec := &registry.AgentRecord{Name: "worker", ID: "agent-1", WorkspaceID: "workspace-1", Version: 1, Engine: engine.OpenCode}
-	payload, _ := json.Marshal(runtimes.EngineExecRequest{Record: rec, Agent: rec.Name, Engine: rec.Engine, Prompt: "fixture"})
-	task := &taskqueue.Task{ID: "task-1", WorkspaceID: rec.WorkspaceID, Agent: rec.Name, AgentID: rec.ID, AgentVersion: 1,
+	payload, _ := json.Marshal(runtimes.EngineExecRequest{Subject: execution.Subject{WorkspaceID: "workspace-1", UserID: "user-1"}, Record: rec, Agent: rec.Name, Engine: rec.Engine, Prompt: "fixture"})
+	task := &taskqueue.Task{Subject: execution.Subject{WorkspaceID: "workspace-1", UserID: "user-1"}, ID: "task-1", WorkspaceID: rec.WorkspaceID, Agent: rec.Name, AgentID: rec.ID, AgentVersion: 1,
 		IdentityKind: taskqueue.IdentityAgent, IdentitySchemaVersion: 2, ExecutionScope: execution.ScopeLegacyOrchestrator, Payload: payload}
 	ctx, cancel := context.WithCancel(context.Background())
 	d := &service{client: client, server: server.URL, workspacesRoot: t.TempDir(), renewInterval: time.Hour,
@@ -137,8 +137,8 @@ func TestRuntimeRecoveryLostCompletionResponseDoesNotExecuteAgain(t *testing.T) 
 	defer server.Close()
 	client, _ := newRuntimeClient(server.URL, "fixture", server.Client())
 	rec := &registry.AgentRecord{Name: "worker", ID: "agent-1", WorkspaceID: "workspace-1", Version: 1, Engine: engine.OpenCode}
-	payload, _ := json.Marshal(runtimes.EngineExecRequest{Record: rec, Agent: rec.Name, Engine: rec.Engine, Prompt: "fixture", OneAPIKey: "fixture-key"})
-	task := &taskqueue.Task{ID: "task-1", WorkspaceID: rec.WorkspaceID, Agent: rec.Name, AgentID: rec.ID, AgentVersion: 1, IdentityKind: taskqueue.IdentityAgent, IdentitySchemaVersion: 2, ExecutionScope: execution.ScopeLegacyOrchestrator, Payload: payload}
+	payload, _ := json.Marshal(runtimes.EngineExecRequest{Subject: execution.Subject{WorkspaceID: "workspace-1", UserID: "user-1"}, Record: rec, Agent: rec.Name, Engine: rec.Engine, Prompt: "fixture", OneAPIKey: "fixture-key"})
+	task := &taskqueue.Task{Subject: execution.Subject{WorkspaceID: "workspace-1", UserID: "user-1"}, ID: "task-1", WorkspaceID: rec.WorkspaceID, Agent: rec.Name, AgentID: rec.ID, AgentVersion: 1, IdentityKind: taskqueue.IdentityAgent, IdentitySchemaVersion: 2, ExecutionScope: execution.ScopeLegacyOrchestrator, Payload: payload}
 	d := &service{client: client, server: server.URL, workspacesRoot: t.TempDir(), renewInterval: time.Second, minBackoff: time.Millisecond, maxBackoff: time.Millisecond,
 		runEngine: func(context.Context, string, engine.RunSpec) (engine.RunResult, error) {
 			executions.Add(1)
@@ -174,8 +174,8 @@ func TestRuntimeRejectedResultFailsOnceInsteadOfRetryingForever(t *testing.T) {
 	defer server.Close()
 	client, _ := newRuntimeClient(server.URL, "fixture", server.Client())
 	rec := &registry.AgentRecord{Name: "worker", ID: "agent-1", WorkspaceID: "workspace-1", Version: 1, Engine: engine.OpenCode}
-	payload, _ := json.Marshal(runtimes.EngineExecRequest{Record: rec, Agent: rec.Name, Engine: rec.Engine, Prompt: "fixture"})
-	task := &taskqueue.Task{ID: "task-1", WorkspaceID: rec.WorkspaceID, Agent: rec.Name, AgentID: rec.ID, AgentVersion: 1,
+	payload, _ := json.Marshal(runtimes.EngineExecRequest{Subject: execution.Subject{WorkspaceID: "workspace-1", UserID: "user-1"}, Record: rec, Agent: rec.Name, Engine: rec.Engine, Prompt: "fixture"})
+	task := &taskqueue.Task{Subject: execution.Subject{WorkspaceID: "workspace-1", UserID: "user-1"}, ID: "task-1", WorkspaceID: rec.WorkspaceID, Agent: rec.Name, AgentID: rec.ID, AgentVersion: 1,
 		IdentityKind: taskqueue.IdentityAgent, IdentitySchemaVersion: 2, ExecutionScope: execution.ScopeLegacyOrchestrator, Payload: payload}
 	d := &service{client: client, server: server.URL, workspacesRoot: t.TempDir(), renewInterval: time.Second, minBackoff: time.Millisecond, maxBackoff: time.Millisecond,
 		runEngine: func(context.Context, string, engine.RunSpec) (engine.RunResult, error) {

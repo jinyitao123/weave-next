@@ -3,14 +3,16 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"github.com/jinyitao123/weave/internal/base/execution"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/jinyitao123/weave/internal/base/fileartifact"
-	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 	"github.com/jinyitao123/weave/internal/kernel/engine"
 	"github.com/jinyitao123/weave/internal/kernel/runtimes"
+	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 	"github.com/labstack/echo/v4"
 )
 
@@ -362,6 +364,13 @@ func (s *Server) handleRuntimeTaskComplete(c echo.Context) error {
 	if task.WorkerID != runtimes.RuntimeWorkerID(runtime.WorkspaceID, runtime.ID) {
 		return c.JSON(http.StatusForbidden, map[string]string{"error": "task is not claimed by this runtime"})
 	}
+	var usage *execution.TerminalUsage
+	if request.UsageReceipt != nil && request.UsageReceipt.HasTokens {
+		usage = &execution.TerminalUsage{InputTokens: request.UsageReceipt.InputTokens, OutputTokens: request.UsageReceipt.OutputTokens, CostUSD: request.UsageReceipt.CostUSD}
+	}
+	if err := s.Tasks.RecordClaimUsage(c.Request().Context(), task.ID, task.WorkerID, task.ClaimEpoch, usage); err != nil {
+		return c.JSON(http.StatusConflict, map[string]string{"error": "task usage receipt rejected"})
+	}
 	if err := s.Tasks.CompleteClaimed(
 		c.Request().Context(),
 		task.ID,
@@ -435,6 +444,12 @@ func normalizeRuntimeUsage(task *taskqueue.Task, result *runtimes.EngineExecResu
 func validateRuntimeEngineExecResult(task *taskqueue.Task, result runtimes.EngineExecResult) error {
 	if task == nil {
 		return errors.New("task is required")
+	}
+	if err := task.Subject.Validate(); err != nil {
+		return err
+	}
+	if result.ClaimEpoch != task.ClaimEpoch || result.Subject != task.Subject {
+		return errors.New("runtime result subject mismatch")
 	}
 	var payload runtimes.EngineExecRequest
 	if err := json.Unmarshal(task.Payload, &payload); err != nil {
@@ -569,6 +584,10 @@ func (s *Server) runtimeTask(c echo.Context) (*runtimes.Runtime, *taskqueue.Task
 	if err != nil || task.Kind != "engine_exec" || task.RuntimeID != runtime.ID {
 		return nil, nil, echo.NewHTTPError(http.StatusNotFound, "task not found")
 	}
+	if err := validateRuntimeTaskProof(c, task); err != nil {
+		return nil, nil, err
+	}
+	setExecutionSubject(c, task.Subject)
 	return runtime, task, nil
 }
 
@@ -598,4 +617,17 @@ func runtimeTaskHasAttachment(task *taskqueue.Task, attachmentID string) bool {
 		}
 	}
 	return false
+}
+
+// Runtime authentication establishes the Host; the immutable task stamp and
+// physical epoch establish which actor and invocation a receipt belongs to.
+func validateRuntimeTaskProof(c echo.Context, task *taskqueue.Task) error {
+	if task.Subject.Validate() != nil || task.Subject.WorkspaceID != task.WorkspaceID {
+		return echo.NewHTTPError(http.StatusForbidden, "task actor unavailable")
+	}
+	epoch, err := strconv.ParseInt(c.Request().Header.Get("X-Weave-Task-Epoch"), 10, 64)
+	if err != nil || epoch != task.ClaimEpoch || epoch < 1 || c.Request().Header.Get("X-Weave-Task-Subject") != task.Subject.Digest() {
+		return echo.NewHTTPError(http.StatusConflict, "task actor or physical invocation mismatch")
+	}
+	return nil
 }

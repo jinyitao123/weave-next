@@ -19,12 +19,12 @@ import (
 	"time"
 
 	"github.com/jinyitao123/weave/internal/base/execution"
-	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 	"github.com/jinyitao123/weave/internal/kernel/config"
 	"github.com/jinyitao123/weave/internal/kernel/engine"
 	"github.com/jinyitao123/weave/internal/kernel/execenv"
 	"github.com/jinyitao123/weave/internal/kernel/runtimes"
 	"github.com/jinyitao123/weave/internal/kernel/secret"
+	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 )
 
 const (
@@ -272,6 +272,7 @@ func (d *service) claimLoop(ctx context.Context) {
 }
 
 func (d *service) processTask(ctx context.Context, task *taskqueue.Task) {
+	ctx = withTaskProof(ctx, task.Subject, task.ClaimEpoch)
 	taskCtx, cancelTask := context.WithCancel(ctx)
 	leaseLost := &atomic.Bool{}
 	renewDone := make(chan struct{})
@@ -282,7 +283,7 @@ func (d *service) processTask(ctx context.Context, task *taskqueue.Task) {
 
 	// Engine adapters return only after their process group has exited.
 	result, runErr := d.executeTask(taskCtx, task)
-	journal := resultJournal{TaskID: task.ID, Result: result}
+	journal := resultJournal{TaskID: task.ID, Result: result, Subject: task.Subject, ClaimEpoch: task.ClaimEpoch}
 	// A daemon shutdown cancels the process context even though the user did
 	// not cancel this task. Report that boundary as an infrastructure failure
 	// so the parent workflow can park at its durable checkpoint and offer an
@@ -416,6 +417,11 @@ func isRejectedRuntimeResult(err error) bool {
 }
 
 func (d *service) executeTask(ctx context.Context, task *taskqueue.Task) (runtimes.EngineExecResult, error) {
+	ctx, err := taskqueue.BindTaskSubject(ctx, task)
+	if err != nil {
+		return runtimes.EngineExecResult{}, err
+	}
+	ctx = withTaskProof(ctx, task.Subject, task.ClaimEpoch)
 	var request runtimes.EngineExecRequest
 	if err := json.Unmarshal(task.Payload, &request); err != nil {
 		return runtimes.EngineExecResult{}, fmt.Errorf("runtime: decode task payload: %w", err)
@@ -440,7 +446,7 @@ func (d *service) executeTask(ctx context.Context, task *taskqueue.Task) (runtim
 		}
 		workspaceRoot = filepath.Join(workspaceRoot, ".invocations", task.ID)
 	}
-	workDir, runEnv, err := execenv.Materialize(workspaceRoot, request.Record, request.Prompt, nil)
+	workDir, runEnv, err := execenv.Materialize(ctx, workspaceRoot, request.Record, request.Prompt, nil)
 	if err != nil {
 		return runtimes.EngineExecResult{}, err
 	}
@@ -467,7 +473,7 @@ func (d *service) executeTask(ctx context.Context, task *taskqueue.Task) (runtim
 			}
 			attachments = append(attachments, execenv.Attachment{Filename: attachment.Filename, Path: local.Name()})
 		}
-		workDir, runEnv, err = execenv.Materialize(workspaceRoot, request.Record, request.Prompt, attachments)
+		workDir, runEnv, err = execenv.Materialize(ctx, workspaceRoot, request.Record, request.Prompt, attachments)
 		if err != nil {
 			return runtimes.EngineExecResult{}, err
 		}
@@ -511,13 +517,22 @@ func (d *service) executeTask(ctx context.Context, task *taskqueue.Task) (runtim
 	if err := materializeInputFiles(workDir, request.InputFiles); err != nil {
 		return runtimes.EngineExecResult{}, fmt.Errorf("materialize upstream files: %w", err)
 	}
+	for key, value := range task.Subject.Environment() {
+		runEnv[key] = value
+	}
 	outputsBefore := runtimes.SnapshotOutputArtifacts(workDir)
 	timeoutSeconds := request.TimeoutSeconds
 	if timeoutSeconds <= 0 {
 		timeoutSeconds = defaultTimeoutSeconds
 	}
-	publish, finishProgress := d.publicEventCapture(task.ID, (request.Engine == engine.Codex || request.Engine == engine.Claude) && request.NodeID != "" && task.RunSnapshotID != "")
+	publish, finishProgress := d.publicEventCapture(task, (request.Engine == engine.Codex || request.Engine == engine.Claude) && request.NodeID != "" && task.RunSnapshotID != "")
+	if task.DeadlineAt != nil {
+		var stop context.CancelFunc
+		ctx, stop = context.WithDeadline(ctx, *task.DeadlineAt)
+		defer stop()
+	}
 	result, err := d.runEngine(ctx, request.Engine, engine.RunSpec{
+		Subject:       task.Subject,
 		OnPublicEvent: publish,
 		MCPServers:    engineTaskMCPServers(taskTargets),
 		WorkDir:       workDir,
@@ -534,6 +549,8 @@ func (d *service) executeTask(ctx context.Context, task *taskqueue.Task) (runtim
 	// never promote these files to a final deliverable on a failed node.
 	err = errors.Join(err, runtimes.CollectRunOutputArtifacts(workDir, outputsBefore, &result))
 	execResult := runtimes.CLIEngineExecResult(result)
+	execResult.Subject = task.Subject
+	execResult.ClaimEpoch = task.ClaimEpoch
 	if err != nil {
 		return execResult, err
 	}
@@ -595,6 +612,12 @@ func agentExecutionStampForTask(
 ) (execution.AgentExecutionStamp, error) {
 	if task == nil {
 		return execution.AgentExecutionStamp{}, errors.New("runtime: task is required")
+	}
+	if err := task.Subject.Validate(); err != nil {
+		return execution.AgentExecutionStamp{}, err
+	}
+	if task.Subject.WorkspaceID != task.WorkspaceID || request.Subject != task.Subject {
+		return execution.AgentExecutionStamp{}, execution.ErrSubjectMismatch
 	}
 	if task.IdentityKind != taskqueue.IdentityAgent {
 		return execution.AgentExecutionStamp{}, fmt.Errorf(

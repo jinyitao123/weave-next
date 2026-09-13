@@ -15,11 +15,11 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jinyitao123/loom/contract"
 	"github.com/jinyitao123/weave/internal/base/execution"
-	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 	"github.com/jinyitao123/weave/internal/kernel/compiler"
 	"github.com/jinyitao123/weave/internal/kernel/engine"
 	"github.com/jinyitao123/weave/internal/kernel/execenv"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
+	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 )
 
 // Keep the engine task ceiling aligned with the teamrun agent-node ceiling.
@@ -331,7 +331,12 @@ func (e *Executor) execRemoteAttempt(
 		return engine.RunResult{}, "", fmt.Errorf("员工所在运行时未上报引擎 %q 版本，未入队", rec.Engine)
 	}
 
+	subject, err := execution.RequireSubject(ctx, tenant)
+	if err != nil {
+		return engine.RunResult{}, "", err
+	}
 	payload := e.buildExecPayloadWithSchema(tenant, rec, prompt, attachments, outputSchema)
+	payload.Subject = subject
 	payload.FrozenMCP = execenv.FrozenMCPInvocationFromContext(ctx)
 	if stamp.ExecutionScope == execution.ScopeTeamWorkerLeaf && len(rec.MCPServers) > 0 && payload.FrozenMCP == nil {
 		return engine.RunResult{}, "", errors.New("published worker MCP authority is unavailable")
@@ -352,7 +357,12 @@ func (e *Executor) execRemoteAttempt(
 	if err != nil {
 		return engine.RunResult{}, "", fmt.Errorf("encode remote engine task: %w", err)
 	}
+	deadline := time.Now().Add(engineExecTimeout)
+	if limit, ok := ctx.Deadline(); ok && limit.Before(deadline) {
+		deadline = limit
+	}
 	task := &taskqueue.Task{
+		DeadlineAt: &deadline, OutcomeSensitive: true,
 		ID:                    taskID,
 		WorkspaceID:           tenant,
 		Agent:                 rec.Name,
@@ -393,6 +403,10 @@ func logicalEngineTaskID(ctx context.Context, tenant string) string {
 }
 
 func (e *Executor) resumeEngineTask(ctx context.Context, tenant, taskID string) (engine.RunResult, string, error) {
+	subject, err := execution.RequireSubject(ctx, tenant)
+	if err != nil {
+		return engine.RunResult{}, "", err
+	}
 	task, err := e.tasks.Get(ctx, tenant, taskID)
 	if err != nil {
 		return engine.RunResult{}, "", err
@@ -400,6 +414,9 @@ func (e *Executor) resumeEngineTask(ctx context.Context, tenant, taskID string) 
 	var payload EngineExecRequest
 	if err := json.Unmarshal(task.Payload, &payload); err != nil {
 		return engine.RunResult{}, task.RuntimeID, err
+	}
+	if task.Subject != subject || payload.Subject != subject {
+		return engine.RunResult{}, task.RuntimeID, execution.ErrSubjectMismatch
 	}
 	terminal, err := e.tasks.AwaitTerminal(ctx, tenant, taskID, engineExecTimeout)
 	if err != nil {
@@ -421,6 +438,9 @@ func (e *Executor) resumeEngineTask(ctx context.Context, tenant, taskID string) 
 	var result EngineExecResult
 	if err := json.Unmarshal(terminal.Result, &result); err != nil {
 		return engine.RunResult{}, task.RuntimeID, fmt.Errorf("decode remote engine result: %w", err)
+	}
+	if terminal.Subject != subject || result.Subject != subject || result.ClaimEpoch != terminal.ClaimEpoch {
+		return engine.RunResult{}, task.RuntimeID, execution.ErrSubjectMismatch
 	}
 	engineResult := result.EngineRunResult()
 	if engineResult.Usage != nil && engineResult.Usage.EngineVersion != payload.EngineVersion {

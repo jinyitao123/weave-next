@@ -9,10 +9,10 @@ import (
 	"testing"
 
 	"github.com/jinyitao123/weave/internal/base/execution"
-	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 	"github.com/jinyitao123/weave/internal/kernel/engine"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 	"github.com/jinyitao123/weave/internal/kernel/runtimes"
+	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 )
 
 func TestExecuteTaskPreservesFailedEngineReceiptAndArtifacts(t *testing.T) {
@@ -20,7 +20,7 @@ func TestExecuteTaskPreservesFailedEngineReceiptAndArtifacts(t *testing.T) {
 		Name: "worker", ID: "agent-1", WorkspaceID: "workspace-1", Version: 1,
 		Engine: engine.OpenCode, Model: "deepseek/deepseek-chat",
 	}
-	payload, err := json.Marshal(runtimes.EngineExecRequest{
+	payload, err := json.Marshal(runtimes.EngineExecRequest{Subject: execution.Subject{WorkspaceID: "workspace-1", UserID: "user-1"},
 		Agent: record.Name, Engine: record.Engine, Model: record.Model, Prompt: "fixture", Record: record,
 		OneAPIKey:     "fixture-key",
 		EngineVersion: "opencode 1.2.10",
@@ -28,7 +28,7 @@ func TestExecuteTaskPreservesFailedEngineReceiptAndArtifacts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	task := &taskqueue.Task{
+	task := &taskqueue.Task{Subject: execution.Subject{WorkspaceID: "workspace-1", UserID: "user-1"},
 		ID: "task-1", WorkspaceID: record.WorkspaceID, Agent: record.Name,
 		AgentID: record.ID, AgentVersion: record.Version,
 		IdentityKind: taskqueue.IdentityAgent, IdentitySchemaVersion: 2,
@@ -77,8 +77,8 @@ func TestExecuteTaskSeparatesCompletedEngineFromCollectionFailures(t *testing.T)
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			record := &registry.AgentRecord{Name: "worker", ID: "agent-1", WorkspaceID: "workspace-1", Version: 1, Engine: engine.OpenCode}
-			payload, _ := json.Marshal(runtimes.EngineExecRequest{Agent: record.Name, Engine: record.Engine, Prompt: "fixture", Record: record, OneAPIKey: "fixture-key"})
-			task := &taskqueue.Task{ID: "task-1", WorkspaceID: record.WorkspaceID, Agent: record.Name, AgentID: record.ID, AgentVersion: 1, IdentityKind: taskqueue.IdentityAgent, IdentitySchemaVersion: 2, ExecutionScope: execution.ScopeLegacyOrchestrator, Payload: payload}
+			payload, _ := json.Marshal(runtimes.EngineExecRequest{Subject: execution.Subject{WorkspaceID: "workspace-1", UserID: "user-1"}, Agent: record.Name, Engine: record.Engine, Prompt: "fixture", Record: record, OneAPIKey: "fixture-key"})
+			task := &taskqueue.Task{Subject: execution.Subject{WorkspaceID: "workspace-1", UserID: "user-1"}, ID: "task-1", WorkspaceID: record.WorkspaceID, Agent: record.Name, AgentID: record.ID, AgentVersion: 1, IdentityKind: taskqueue.IdentityAgent, IdentitySchemaVersion: 2, ExecutionScope: execution.ScopeLegacyOrchestrator, Payload: payload}
 			d := &service{workspacesRoot: t.TempDir(), runEngine: func(_ context.Context, _ string, spec engine.RunSpec) (engine.RunResult, error) {
 				if err := os.MkdirAll(filepath.Join(spec.WorkDir, "outputs"), 0o700); err != nil {
 					t.Fatal(err)

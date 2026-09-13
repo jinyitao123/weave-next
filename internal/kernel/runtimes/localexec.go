@@ -49,7 +49,11 @@ func (e *LocalExecutor) ExecRemote(
 	if err := validateAgentExecutionStamp(tenant, rec, stamp); err != nil {
 		return engine.RunResult{}, fmt.Errorf("local engine executor: %w", err)
 	}
-	workDir, menv, err := execenv.Materialize(e.workspacesRoot, rec, prompt, attachments)
+	subject, err := execution.RequireSubject(ctx, tenant)
+	if err != nil {
+		return engine.RunResult{}, err
+	}
+	workDir, menv, err := execenv.Materialize(ctx, e.workspacesRoot, rec, prompt, attachments)
 	if err != nil {
 		return engine.RunResult{}, err
 	}
@@ -75,6 +79,7 @@ func (e *LocalExecutor) ExecRemote(
 	}
 	outputsBefore := SnapshotOutputArtifacts(workDir)
 	result, runErr := backend.Run(ctx, engine.RunSpec{
+		Subject:       subject,
 		WorkDir:       workDir,
 		Prompt:        promptWithAttachmentNotice(prompt, attachments),
 		Model:         rec.Model,

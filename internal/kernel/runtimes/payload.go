@@ -6,6 +6,7 @@ import (
 	"net/url"
 
 	"github.com/jinyitao123/loom/contract"
+	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/base/fileartifact"
 	"github.com/jinyitao123/weave/internal/kernel/engine"
 	"github.com/jinyitao123/weave/internal/kernel/execenv"
@@ -30,6 +31,7 @@ func CanonicalEngine(engine string) string {
 // decodes it and runs the engine locally. The MCP-boundary HMAC secret never
 // leaves the server — only the derived per-server tokens travel in Env.
 type EngineExecRequest struct {
+	Subject             execution.Subject            `json:"subject"`
 	FrozenMCP           *execenv.FrozenMCPInvocation `json:"frozen_mcp,omitempty"`
 	TaskMCP             []execenv.TaskMCPTarget      `json:"task_mcp,omitempty"`
 	BoundMCP            bool                         `json:"bound_mcp,omitempty"`
@@ -81,6 +83,8 @@ type EngineExecAttachment struct {
 // Usage is a pointer because encoding/json's omitempty cannot elide a zero
 // struct — CLI daemons keep producing the historical {"output": ...} shape.
 type EngineExecResult struct {
+	ClaimEpoch               int64                            `json:"claim_epoch"`
+	Subject                  execution.Subject                `json:"subject"`
 	SessionID                string                           `json:"session_id,omitempty"`
 	ArtifactCollection       *fileartifact.CollectionEvidence `json:"artifact_collection,omitempty"`
 	Output                   string                           `json:"output"`
