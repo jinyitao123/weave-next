@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jinyitao123/weave/internal/app/teamrestore"
 	"github.com/jinyitao123/weave/internal/build/teambuild"
-	"github.com/jinyitao123/weave/internal/build/teamrestore"
 	"github.com/labstack/echo/v4"
 )
 
@@ -985,7 +985,7 @@ func (s *Server) handleRollbackBuildRun(c echo.Context) error {
 		s.OrgStore,
 		s.Registry,
 		s.Registry,
-		workflowPublicationRestorer{pool: s.Pool, workflows: s.Workflow, authority: s.PublicationAuthority, publications: s.ProductPublication},
+		teamrestore.NewWorkflowPublicationRestorer(s.Pool, s.Workflow, s.PublicationAuthority, s.ProductPublication),
 		s.Audit,
 	)
 	result, err := service.Rollback(

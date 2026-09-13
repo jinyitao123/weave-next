@@ -1,4 +1,4 @@
-package api
+package teamrestore
 
 import (
 	"context"
@@ -87,7 +87,7 @@ func TestWorkflowRollbackPublicationReplaysFixedRequestRealPG(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	restorer := workflowPublicationRestorer{pool: pool, workflows: flows, authority: authority, publications: productPublication}
+	restorer := NewWorkflowPublicationRestorer(pool, flows, authority, productPublication)
 	baselineGraph := json.RawMessage(strings.Replace(string(graph), "Answer", "Restore the frozen answer", 1))
 	ref := teambuild.BaselineWorkflowRef{WorkflowID: "restore-flow", TeamID: "restore-team", Published: &teambuild.BaselineWorkflowPublished{
 		Trigger: trigger, Graph: baselineGraph, ContentHash: strings.Repeat("a", 64),
