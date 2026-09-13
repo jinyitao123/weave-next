@@ -29,6 +29,41 @@ func TestConfigFromEnv(t *testing.T) {
 	}
 }
 
+func TestCapabilityPlanUsesStableDraftIdentity(t *testing.T) {
+	var savedIDs []string
+	client := newTestClient(t, http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		switch request.URL.Path {
+		case "/v1/capabilities/generate":
+			writeJSON(response, http.StatusOK, `{"definition":{"capability_id":"generated","name":"核对","description":"核对资料","input_schema":{"type":"object"},"output_schema":{"type":"object"},"runtime":{"engine":"loom","model":"model"},"roles":[{"id":"role","name":"核对员","description":"核对"}],"steps":[{"id":"step","name":"核对","role_id":"role","kind":"worker","instruction":"核对"}]}}`)
+		case "/v1/capabilities/drafts":
+			var body struct {
+				Definition map[string]any `json:"definition"`
+			}
+			if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
+				t.Fatal(err)
+			}
+			savedIDs = append(savedIDs, body.Definition["capability_id"].(string))
+			writeJSON(response, http.StatusAccepted, `{"status":"draft_saved"}`)
+		default:
+			t.Fatalf("unexpected request %s", request.URL.Path)
+		}
+	}))
+	request := CapabilityPlanRequest{Prompt: "核对资料", Model: "model", IdempotencyKey: "018f5f5a-c73c-7e31-8f4a-9b36797553a2"}
+	if _, err := client.CapabilityPlan(context.Background(), request); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.CapabilityPlan(context.Background(), request); err != nil {
+		t.Fatal(err)
+	}
+	if len(savedIDs) != 2 || savedIDs[0] == "" || savedIDs[0] != savedIDs[1] {
+		t.Fatalf("saved ids = %#v", savedIDs)
+	}
+	request.IdempotencyKey = "not-a-uuid"
+	if _, err := client.CapabilityPlan(context.Background(), request); err == nil {
+		t.Fatal("CapabilityPlan accepted an invalid idempotency key")
+	}
+}
+
 func TestTeamCreateRequiresCallerIdempotencyKey(t *testing.T) {
 	client := newTestClient(t, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 		t.Fatal("unexpected HTTP request")

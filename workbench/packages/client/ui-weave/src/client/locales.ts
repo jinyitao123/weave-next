@@ -1,12 +1,12 @@
 import { zh as previewZh, en as previewEn } from './preview-locales.ts'
-import { zh as capabilityZh, en as capabilityEn } from './capability-locales.ts'
+import { zh as applicationZh, en as applicationEn } from './application-locales.ts'
 
 /** Dictionary namespace owned by the Weave presentation plugin. */
 export const NS = 'weave'
 
 /** Simplified Chinese dictionary and key-set source of truth. */
 export const zh = {
-  ...capabilityZh,
+  ...applicationZh,
   'task.budget.title': '执行已暂停，工作已保留',
   'task.budget.help': '从已保存的进度继续，累计用量不会重置。',
   'task.budget.usage': '已用 {used} 轮，累计上限 {total} 轮。',
@@ -515,7 +515,7 @@ export type WeaveKey = keyof typeof zh
 
 /** English dictionary checked against the Chinese key set. */
 export const en = {
-  ...capabilityEn,
+  ...applicationEn,
   'task.budget.title': 'Execution paused; work is preserved',
   'task.budget.help': 'Continue from saved progress. Cumulative usage will not reset.',
   'task.budget.usage': '{used} rounds used; cumulative limit {total}.',

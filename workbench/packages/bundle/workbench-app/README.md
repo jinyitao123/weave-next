@@ -9,7 +9,9 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-The Host exposes a fixed capability-operation proxy at `/api/weave.capabilities`. Its configured Weave credential needs the explicit `capabilities:manage`, `capabilities:invoke`, `capabilities:read` and `capabilities:cancel` scopes for the full developer settings journey. Draft debugging uses the manage scope and submits a frozen editor document, never a publication request. The browser cannot choose an upstream URL or read that credential.
+The `/api/weave.capability-apps` proxy manages applications, exact-version grants and application credentials. It accepts a fixed operation set through the Host's manage scope. Only a newly issued application key is returned once; list responses contain credential metadata without key hashes or raw secrets.
+
+Reusable capability authoring stays in the main Workbench conversation. The foreground agent lists existing capabilities first, asks Weave to generate and save a reviewable draft when reuse does not fit, presents only the business proposal, and publishes an immutable revision only after the user confirms that exact proposal. Workbench does not expose a manual definition editor. Application identities, exact-version grants and one-time credentials remain in Settings as a separate administration flow.
 
 This bundle turns the general DSH Web runtime into Weave Workbench without changing the agent loop. It adds the Workbench browser identity, connects the local `weave mcp serve` process when a business API key is present, and gives the foreground agent one product rule: match an existing team before dispatching work, or state that no suitable team exists and help define one. A Host-side WorkTask projection records the dispatch and keeps its Weave status synchronized after the foreground turn ends. The same authenticated Host exposes a bounded runtime-node registry to the main Workbench surface. The dispatched Weave run is the durable task; the foreground agent does not create a shadow DSH goal, poll it to completion, or save a duplicate deliverable.
 
@@ -65,6 +67,8 @@ The Workbench client keeps the DSH session, optional project workspace, provider
 
 `WEAVE_API_KEY` is passed only from the trusted host process to the local MCP subprocess and authenticated Weave requests. It is not embedded in client artifacts and is not added to model context. Runtime-list responses expose only display, health, capacity, and scheduling facts; mutation responses expose a newly created runtime token once. `WEAVE_RUNTIME_SERVER_URL` contains no credential and is returned only as the connection address paired with that one-time token. `WEAVE_SECRET_KEY` and `WEAVE_SECRET_KEY_FILE` belong exclusively to the Weave server because they encrypt stored credentials; this bundle never reads or forwards either value.
 
+The current desktop Host uses one configured Weave credential and therefore represents one signed-in developer identity. Cross-workspace data is isolated by that credential's workspace. A shared multi-user Host requires delegated per-user identity before it can preserve individual attribution; until that exists, one Host must not be shared by multiple signed-in users.
+
 <a id="dev-note"></a>
 ## Dev Note
 
@@ -78,6 +82,10 @@ None.
 #### What the model sees
 
 The profile registers the rule as a dedicated Workbench prompt section and fixes the foreground agent to the standard full-capability preset, so a session mode cannot shadow it. The foreground agent must list and match Weave teams for substantive business work, using tools such as `mcp__weave__team_list`, then confirm the selected team, task scope, and expected deliverables before calling `weave_dispatch` for the published workflow without a task-body argument. Existing explicit confirmation is sufficient; internal construction and evaluation add no user approval step. After dispatch it may make at most one status call to confirm the handoff, then it returns the selected team and a short human-facing state. It must not include internal identifiers, raw workflow versions, orchestration phases, or backend enums unless the user explicitly requests technical details. It must not create a DSH goal, poll the Weave run in the foreground, or save a duplicate deliverable. Workbench owns background status projection; the model checks for an exact-run final deliverable when the run is terminal or the user later requests it. If only stage records exist, it reports that final output remains unconfirmed. When a final deliverable exists, it reads it and answers with a short user-facing completion summary: what finished, the main findings or decisions, the files the user can open, and any action still needed. Internal run IDs, deliverable IDs, runtime IDs, host paths, hashes, validation command names, and engine details stay out of the main answer unless the user asks for technical details. With no match it must say so and collaborate on a team definition. It may use free collaboration only after an explicit user request, and it must report an unavailable Weave connection honestly.
+
+### Workbench capability-authoring persona
+
+The same conversation first calls `mcp__weave__capability_list` and reuses a suitable published capability when possible. Otherwise it calls `mcp__weave__capability_plan` with a stable idempotency key to create or revise one draft, summarizes purpose, responsibilities, flow, inputs and outputs in business language, and waits for confirmation. It calls `mcp__weave__capability_publish` only after the user confirms the proposal and publication. Published revisions remain immutable. Raw definitions, schemas and internal execution details stay out of the user-facing flow.
 
 #### Token effect
 
