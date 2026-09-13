@@ -86,6 +86,7 @@ type Relation struct {
 }
 
 type RuntimeRequirement struct {
+	Model        string   `json:"model,omitempty"`
 	Engine       string   `json:"engine,omitempty"`
 	Capabilities []string `json:"capabilities,omitempty"`
 	Pool         string   `json:"pool,omitempty"`
@@ -192,6 +193,16 @@ func (d Definition) Validate() error {
 }
 
 func Publish(d Definition, revision int64) (PublishedRevision, error) {
+	// Detach every slice, map and RawMessage from the mutable draft.
+	encoded, err := json.Marshal(d)
+	if err != nil {
+		return PublishedRevision{}, fmt.Errorf("%w: encode definition: %v", ErrInvalidDefinition, err)
+	}
+	var copied Definition
+	if err := json.Unmarshal(encoded, &copied); err != nil {
+		return PublishedRevision{}, err
+	}
+	d = copied
 	d.Resources.ToolIDs = append([]string(nil), d.Resources.ToolIDs...)
 	d.Resources.DataRefs = append([]string(nil), d.Resources.DataRefs...)
 	d.Resources.CredentialRefs = append([]string(nil), d.Resources.CredentialRefs...)
@@ -199,10 +210,10 @@ func Publish(d Definition, revision int64) (PublishedRevision, error) {
 	if err := d.Validate(); err != nil {
 		return PublishedRevision{}, err
 	}
-	if revision < 1 {
+	if revision < 1 || revision > frozen.MaxJCSSafeInteger {
 		return PublishedRevision{}, fmt.Errorf("%w: revision must be positive", ErrInvalidRevision)
 	}
-	definitionHash, err := frozen.HashCanonicalJSON(mustJSON(d))
+	definitionHash, err := frozen.HashCanonicalJSON(encodedDefinition(d))
 	if err != nil {
 		return PublishedRevision{}, fmt.Errorf("%w: definition canonicalization: %v", ErrInvalidRevision, err)
 	}
@@ -219,7 +230,11 @@ func (r PublishedRevision) Validate() error {
 	if err := r.Definition.Validate(); err != nil {
 		return fmt.Errorf("%w: %v", ErrInvalidRevision, err)
 	}
-	want, err := frozen.HashCanonicalJSON(mustJSON(r.Definition))
+	raw, err := json.Marshal(r.Definition)
+	if err != nil {
+		return fmt.Errorf("%w: malformed definition", ErrInvalidRevision)
+	}
+	want, err := frozen.HashCanonicalJSON(raw)
 	if err != nil || want != r.DefinitionHash {
 		return fmt.Errorf("%w: definition hash mismatch", ErrInvalidRevision)
 	}
@@ -241,11 +256,9 @@ func validateObjectSchema(path string, raw json.RawMessage) error {
 	return nil
 }
 
-func mustJSON(value any) []byte {
-	encoded, err := json.Marshal(value)
-	if err != nil {
-		panic(err)
-	}
+func encodedDefinition(value Definition) []byte {
+	// Only used after Publish has successfully marshaled and detached the DTO.
+	encoded, _ := json.Marshal(value)
 	return encoded
 }
 
