@@ -13,6 +13,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jinyitao123/loom/contract"
 	"github.com/jinyitao123/weave/internal/base/capability"
+	"github.com/jinyitao123/weave/internal/base/execution"
+	"github.com/jinyitao123/weave/internal/kernel/mcphost"
 	"github.com/labstack/echo/v4"
 )
 
@@ -77,51 +79,75 @@ var capabilityGenerationSchema = json.RawMessage(`{
 
 const capabilityGenerationSystemPrompt = `你是企业能力与团队流程设计师。把用户描述转换为可执行的多角色业务能力方案。
 可用步骤为 worker、collect、condition、approval、tool。worker 负责需要判断、创作、研究或操作环境的工作；collect 只整理绑定值；condition 使用 condition_path 和 operator 做确定性判断；approval 表示必须由人确认后才能继续；tool 调用已登记工具并填写 tool_id。
-branch_when 只用于当前步骤依赖 condition 时选择 true 或 false 分支，否则为 null。loop_to 为 -1 表示不循环；需要循环时由 condition 步骤指回更早步骤，并给出 1 到 20 的 max_iterations。循环必须有明确停止条件。
+branch_when 只用于当前步骤依赖 condition 时选择 true 或 false 分支，否则为 null。loop_to 为 null 表示不循环；需要循环时由 condition 步骤指回更早步骤，并给出 1 到 20 的 max_iterations。循环必须有明确停止条件。
 最后一步必须是 worker，负责把前面结果整理为完整业务交付，并严格返回 output_fields。不得把内部流程状态作为最终结果。
 depends_on 和 uses_steps 只能引用当前步骤之前的下标。控制依赖和数据来源分别填写。工具和外部访问只在业务确实需要时使用，不得声称已经取得尚未执行的结果。
 优先使用 2 到 6 个角色和 2 到 12 个步骤。字段名使用稳定的英文 snake_case，字段标签和说明使用用户语言。输出必须严格满足给定结构。`
 
 func (s *Server) handleGenerateCapability(c echo.Context) error {
-	if s.Models == nil {
-		return c.JSON(http.StatusServiceUnavailable, map[string]string{"code": "capability_generation_unavailable"})
-	}
 	var request generateCapabilityRequest
 	if err := decodeCapabilityBody(c, &request); err != nil || strings.TrimSpace(request.Prompt) == "" || len(request.Prompt) > 12000 {
 		return c.JSON(http.StatusBadRequest, map[string]string{"code": "capability_request_invalid"})
 	}
 	workspaceID, _ := c.Get("tenant").(string)
-	if err := s.validateCapabilityRuntime(c.Request().Context(), workspaceID, capability.RuntimeRequirement{Engine: "loom", Model: request.Model}); err != nil {
-		return c.JSON(http.StatusUnprocessableEntity, map[string]string{"code": "capability_runtime_unavailable"})
-	}
-	llm, err := s.Models.ForWorkspace(c.Request().Context(), workspaceID)
-	if err != nil {
-		return capabilityHTTPError(c, err)
-	}
-	temperature := 0.2
-	generationContext, cancel := context.WithTimeout(c.Request().Context(), 90*time.Second)
+	generationContext, cancel := context.WithTimeout(c.Request().Context(), 5*time.Minute)
 	defer cancel()
-	response, err := llm.Chat(generationContext, contract.ChatRequest{
-		Model: request.Model,
-		Messages: []contract.Message{
-			{Role: "system", Content: capabilityGenerationSystemPrompt},
-			{Role: "user", Content: request.Prompt},
-		},
-		Schema: &capabilityGenerationSchema, MaxTokens: 5000, Temperature: &temperature,
-	})
-	if err != nil {
-		return c.JSON(http.StatusBadGateway, map[string]string{"code": "capability_generation_failed"})
+	var content string
+	usedRemote := false
+	if s.Models != nil && request.Model != "" {
+		if available, _ := s.Models.CanResolve(generationContext, workspaceID, request.Model); available {
+			llm, err := s.Models.ForWorkspace(generationContext, workspaceID)
+			if err != nil {
+				return capabilityHTTPError(c, err)
+			}
+			temperature := 0.2
+			response, err := llm.Chat(generationContext, contract.ChatRequest{
+				Model: request.Model,
+				Messages: []contract.Message{
+					{Role: "system", Content: capabilityGenerationSystemPrompt},
+					{Role: "user", Content: request.Prompt},
+				},
+				Schema: &capabilityGenerationSchema, MaxTokens: 5000, Temperature: &temperature,
+			})
+			if err != nil || response == nil {
+				return c.JSON(http.StatusBadGateway, map[string]string{"code": "capability_generation_failed"})
+			}
+			content = response.Content
+		}
 	}
-	if response == nil {
-		return c.JSON(http.StatusBadGateway, map[string]string{"code": "capability_generation_failed"})
+	if content == "" {
+		if s.Runtimes == nil || s.engineExecutorFor(true) == nil {
+			return c.JSON(http.StatusUnprocessableEntity, map[string]string{"code": "capability_runtime_unavailable"})
+		}
+		record, err := s.selectCapabilityRuntime(generationContext, workspaceID, capability.RuntimeRequirement{Engine: "codex"})
+		if err != nil {
+			return c.JSON(http.StatusUnprocessableEntity, map[string]string{"code": "capability_runtime_unavailable"})
+		}
+		structured, ok := s.engineExecutorFor(true).(mcphost.StructuredRemoteEngineExecutor)
+		if !ok {
+			return c.JSON(http.StatusUnprocessableEntity, map[string]string{"code": "capability_runtime_unavailable"})
+		}
+		record.Spec.SystemPrompt = capabilityGenerationSystemPrompt
+		record.OutputSchema = &capabilityGenerationSchema
+		result, err := structured.ExecRemoteStructured(generationContext, workspaceID, record, execution.AgentExecutionStamp{
+			AgentID: record.ID, AgentVersion: record.Version, ExecutionScope: execution.ScopeTeamWorkerLeaf, RunSnapshotID: "capability-plan-" + uuid.NewString(),
+		}, request.Prompt, nil, capabilityGenerationSchema)
+		if err != nil {
+			return c.JSON(http.StatusBadGateway, map[string]string{"code": "capability_generation_failed"})
+		}
+		content = result.Output
+		usedRemote = true
 	}
 	var proposal generatedCapabilityProposal
-	if err := decodeGeneratedCapability(response.Content, &proposal); err != nil {
+	if err := decodeGeneratedCapability(content, &proposal); err != nil {
 		return c.JSON(http.StatusUnprocessableEntity, map[string]string{"code": "capability_generation_invalid"})
 	}
 	definition, err := buildGeneratedCapability(proposal, request.Model)
 	if err != nil {
 		return c.JSON(http.StatusUnprocessableEntity, map[string]string{"code": "capability_generation_invalid"})
+	}
+	if usedRemote {
+		definition.Runtime = capability.RuntimeRequirement{Engine: "codex"}
 	}
 	return c.JSON(http.StatusOK, map[string]any{"definition": definition})
 }
