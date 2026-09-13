@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/jinyitao123/weave/internal/app/kernelbindings"
 	"io"
 	"math/big"
 
@@ -318,7 +319,7 @@ func readLoomStoreValue(
 
 func (s *Server) rootTerminalSink() (loomruntime.TerminalSink, error) {
 	if s.StoreExt != nil {
-		return loomruntime.NewLineageTerminalSink(s.StoreExt)
+		return loomruntime.NewLineageTerminalSink(kernelbindings.WithTerminalActivity(s.StoreExt))
 	}
 	return loomruntime.NewLineageTerminalSink(
 		loomTerminalRecordStore{store: s.Store},

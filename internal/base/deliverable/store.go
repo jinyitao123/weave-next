@@ -86,13 +86,18 @@ type ListFilter struct {
 
 // Store reads immutable final deliverables.
 type Store struct {
-	pool      *pgxpool.Pool
-	verifiers *VerifierRegistry
+	pool              *pgxpool.Pool
+	verifiers         *VerifierRegistry
+	conversationOwner ConversationOwner
 }
 
 // New creates a final deliverable store.
-func New(pool *pgxpool.Pool) *Store {
-	return &Store{pool: pool}
+func New(pool *pgxpool.Pool, options ...StoreOption) *Store {
+	s := &Store{pool: pool}
+	for _, option := range options {
+		option(s)
+	}
+	return s
 }
 
 // RecordWorkflowOutput persists one output from a user-triggered published
@@ -180,16 +185,21 @@ func (s *Store) recordWorkflowOutput(ctx context.Context, tx pgx.Tx, output Work
 	var conversationID, userID string
 	switch triggerType {
 	case "conversation_explicit":
-		err = tx.QueryRow(ctx, `
-			SELECT id, user_id FROM weave_conversations
-			WHERE workspace_id=$1 AND id=$2 AND parent_message_id IS NULL
-		`, output.WorkspaceID, sourceRef).Scan(&conversationID, &userID)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil
+		if s.conversationOwner == nil {
+			return ErrConversationOwnerUnavailable
 		}
+		var found bool
+		userID, found, err = s.conversationOwner(ctx, tx, output.WorkspaceID, sourceRef)
 		if err != nil {
 			return fmt.Errorf("resolve workflow deliverable conversation: %w", err)
 		}
+		if !found {
+			return nil
+		}
+		if strings.TrimSpace(userID) == "" {
+			return errors.New("workflow deliverable conversation owner is empty")
+		}
+		conversationID = sourceRef
 	case "manual":
 		userID = strings.TrimSpace(sourceRef)
 		if userID == "" || userID == "manual" {

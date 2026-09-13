@@ -115,12 +115,17 @@ type RestoreTeamState struct {
 
 // Store provides workspace-scoped organization operations.
 type Store struct {
-	pool *pgxpool.Pool
+	pool           *pgxpool.Pool
+	memberProfiles MemberProfiles
 }
 
 // NewStore creates an organization store.
-func NewStore(pool *pgxpool.Pool) *Store {
-	return &Store{pool: pool}
+func NewStore(pool *pgxpool.Pool, options ...StoreOption) *Store {
+	s := &Store{pool: pool}
+	for _, option := range options {
+		option(s)
+	}
+	return s
 }
 
 // GetWorkspace returns a workspace by ID.
@@ -138,10 +143,8 @@ func (s *Store) GetWorkspace(ctx context.Context, id string) (Workspace, error) 
 // ListMembers returns all members in a workspace.
 func (s *Store) ListMembers(ctx context.Context, workspaceID string) ([]Member, error) {
 	rows, err := s.pool.Query(ctx,
-		`SELECT m.workspace_id, m.user_id, m.role, m.created_at,
-		        COALESCE(u.username, ''), COALESCE(u.display_name, ''), u.id IS NULL
+		`SELECT m.workspace_id, m.user_id, m.role, m.created_at
 		 FROM weave_members m
-		 LEFT JOIN weave_users u ON u.id=m.user_id AND u.tenant_id=m.workspace_id
 		 WHERE m.workspace_id=$1
 		 ORDER BY m.created_at`, workspaceID)
 	if err != nil {
@@ -157,15 +160,34 @@ func (s *Store) ListMembers(ctx context.Context, workspaceID string) ([]Member, 
 			&member.UserID,
 			&member.Role,
 			&member.CreatedAt,
-			&member.Username,
-			&member.DisplayName,
-			&member.Deleted,
 		); err != nil {
 			return nil, err
 		}
 		members = append(members, member)
 	}
-	return members, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	rows.Close()
+	if len(members) == 0 {
+		return members, nil
+	}
+	if s.memberProfiles == nil {
+		return nil, ErrMemberProfilesUnavailable
+	}
+	ids := make([]string, len(members))
+	for i := range members {
+		ids[i] = members[i].UserID
+	}
+	profiles, err := s.memberProfiles(ctx, workspaceID, ids)
+	if err != nil {
+		return nil, fmt.Errorf("read member profiles: %w", err)
+	}
+	for i := range members {
+		profile, found := profiles[members[i].UserID]
+		members[i].Username, members[i].DisplayName, members[i].Deleted = profile.Username, profile.DisplayName, !found
+	}
+	return members, nil
 }
 
 // AddMember adds or updates a member in a workspace.

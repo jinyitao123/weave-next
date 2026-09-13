@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/jinyitao123/weave/internal/app/kernelbindings"
 	"log/slog"
 	"os"
 	"strconv"
@@ -222,7 +223,7 @@ func NewServer(cfg *config.Config, store loom.Store, models *llmrouter.Resolver)
 	e.HideBanner = true
 	var agentRegistry *registry.AgentRegistry
 	if ps, ok := store.(*pgstore.PGStore); ok {
-		agentRegistry = registry.New(ps.Pool())
+		agentRegistry = kernelbindings.NewRegistry(ps.Pool())
 	}
 
 	e.Use(middleware.Recover())
@@ -684,7 +685,7 @@ func (s *Server) ConfigureTeamRunWorkers() {
 		Corrections:    correctionStore,
 		Activities:     activityStore,
 	}
-	memberRunner, err := loomruntime.NewMemberRunner(storeext.New(pool))
+	memberRunner, err := loomruntime.NewMemberRunner(kernelbindings.WithTerminalActivity(storeext.New(pool)))
 	if err != nil {
 		panic(fmt.Sprintf("configure frozen member runner: %v", err))
 	}
