@@ -658,3 +658,25 @@ func apiError(status int, body []byte) error {
 	}
 	return &Error{Code: code, StatusCode: status, Problems: response.Problems}
 }
+
+func (c *Client) CapabilityInvoke(ctx context.Context, capabilityID string, revision int64, requestID string, input json.RawMessage) (json.RawMessage, error) {
+	if strings.TrimSpace(capabilityID) == "" || revision < 1 || strings.TrimSpace(requestID) == "" || !json.Valid(input) {
+		return nil, &Error{Code: "invalid_arguments"}
+	}
+	return c.sendJSON(ctx, http.MethodPost, "/v1/capabilities/"+url.PathEscape(capabilityID)+"/versions/"+strconv.FormatInt(revision, 10)+"/invocations", map[string]any{"request_id": requestID, "input": json.RawMessage(input)})
+}
+func (c *Client) CapabilityInvocation(ctx context.Context, invocationID string) (json.RawMessage, error) {
+	if strings.TrimSpace(invocationID) == "" {
+		return nil, &Error{Code: "invalid_arguments"}
+	}
+	return c.getJSON(ctx, "/v1/invocations/"+url.PathEscape(invocationID)+"/events")
+}
+func (c *Client) CapabilityHistory(ctx context.Context) (json.RawMessage, error) {
+	return c.getJSON(ctx, "/v1/capability-invocations")
+}
+func (c *Client) CapabilityResume(ctx context.Context, invocationID, stepID string, response json.RawMessage) (json.RawMessage, error) {
+	if strings.TrimSpace(invocationID) == "" || strings.TrimSpace(stepID) == "" || !json.Valid(response) {
+		return nil, &Error{Code: "invalid_arguments"}
+	}
+	return c.sendJSON(ctx, http.MethodPost, "/v1/invocations/"+url.PathEscape(invocationID)+"/resume", map[string]any{"step_id": stepID, "response": json.RawMessage(response)})
+}
