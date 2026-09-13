@@ -397,12 +397,17 @@ func ValidAgentVisibility(v string) bool {
 
 // AgentRegistry provides CRUD operations on agent specs.
 type AgentRegistry struct {
-	pool *pgxpool.Pool
+	pool           *pgxpool.Pool
+	memberVerifier WorkspaceMemberVerifier
 }
 
 // New creates an AgentRegistry backed by PostgreSQL.
-func New(pool *pgxpool.Pool) *AgentRegistry {
-	return &AgentRegistry{pool: pool}
+func New(pool *pgxpool.Pool, options ...Option) *AgentRegistry {
+	r := &AgentRegistry{pool: pool}
+	for _, option := range options {
+		option(r)
+	}
+	return r
 }
 
 // Get retrieves the latest version of an agent.
@@ -749,7 +754,7 @@ func (r *AgentRegistry) PutTx(ctx context.Context, tx pgx.Tx, tenant string, rec
 		version++
 	}
 	if ownerUserIDRequiresValidation(agentExists, existingOwnerUserID, rec.OwnerUserID) {
-		isMember, err := workspaceMemberExists(ctx, tx, tenant, *rec.OwnerUserID)
+		isMember, err := r.workspaceMemberExists(ctx, tx, tenant, *rec.OwnerUserID)
 		if err != nil {
 			return err
 		}
@@ -874,26 +879,7 @@ var ErrOwnerNotWorkspaceMember = errors.New("agent owner is not a workspace memb
 // IsWorkspaceMember reports whether a live user belongs to the workspace.
 // The join checks both the membership row and the user's tenant boundary.
 func (r *AgentRegistry) IsWorkspaceMember(ctx context.Context, workspaceID, userID string) (bool, error) {
-	return workspaceMemberExists(ctx, r.pool, workspaceID, userID)
-}
-
-type queryRower interface {
-	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
-}
-
-func workspaceMemberExists(ctx context.Context, q queryRower, workspaceID, userID string) (bool, error) {
-	var exists bool
-	err := q.QueryRow(ctx, `
-		SELECT EXISTS (
-			SELECT 1
-			FROM weave_members AS member
-			JOIN weave_users AS owner_user
-			  ON owner_user.id=member.user_id
-			 AND owner_user.tenant_id=member.workspace_id
-			WHERE member.workspace_id=$1 AND member.user_id=$2
-		)
-	`, workspaceID, userID).Scan(&exists)
-	return exists, err
+	return r.workspaceMemberExists(ctx, r.pool, workspaceID, userID)
 }
 
 func ownerUserIDRequiresValidation(agentExists bool, existingOwnerUserID, newOwnerUserID *string) bool {

@@ -96,16 +96,21 @@ type LegSnapshot struct {
 
 // Store persists fan-out task groups.
 type Store struct {
-	pool  *pgxpool.Pool
-	clock Clock
+	pool                *pgxpool.Pool
+	clock               Clock
+	conversationProject ConversationProject
 }
 
 // New creates a fan-out store.
-func New(pool *pgxpool.Pool, clock Clock) *Store {
+func New(pool *pgxpool.Pool, clock Clock, options ...StoreOption) *Store {
 	if clock == nil {
 		clock = RealClock{}
 	}
-	return &Store{pool: pool, clock: clock}
+	s := &Store{pool: pool, clock: clock}
+	for _, option := range options {
+		option(s)
+	}
+	return s
 }
 
 // CreateGroup inserts an active task group after ensuring its workspace exists.
@@ -123,14 +128,20 @@ func (s *Store) CreateGroup(ctx context.Context, group Group) (Group, error) {
 	if err := ensureWorkspace(ctx, tx, group.WorkspaceID, now); err != nil {
 		return Group{}, err
 	}
+	if group.ProjectID == "" && group.ConversationID != "" {
+		if s.conversationProject == nil {
+			return Group{}, ErrConversationProjectUnavailable
+		}
+		group.ProjectID, err = s.conversationProject(ctx, tx, group.WorkspaceID, group.ConversationID)
+		if err != nil {
+			return Group{}, fmt.Errorf("resolve group project: %w", err)
+		}
+	}
 	row := tx.QueryRow(ctx, `
 		INSERT INTO weave_task_group (
 				id, workspace_id, project_id, avatar_agent, user_id, status, original_request,
 				quorum, deadline_at, card_message_id, conversation_id, created_at, updated_at
-			) VALUES ($1, $2, COALESCE(NULLIF($3, ''), (
-				SELECT project_id FROM weave_conversations
-				WHERE workspace_id=$2 AND id=NULLIF($11, '')
-			)), $4, $5, $6, $7, $8, $9, NULLIF($10, ''), $11, $12, $12)
+			) VALUES ($1, $2, NULLIF($3, ''), $4, $5, $6, $7, $8, $9, NULLIF($10, ''), $11, $12, $12)
 			RETURNING `+groupColumns,
 		group.ID, group.WorkspaceID, group.ProjectID, group.AvatarAgent, group.UserID, StatusActive,
 		group.OriginalRequest, group.Quorum, group.DeadlineAt, group.CardMessageID,

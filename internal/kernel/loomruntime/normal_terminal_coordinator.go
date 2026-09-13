@@ -154,7 +154,7 @@ func commitNormalTerminalPGWithOutcome(
 		}
 	}
 
-	stateStore := NewPGTerminalStateStore()
+	stateStore := terminalStateStoreFor(store)
 	if err := stateStore.LockTerminalRun(
 		ctx,
 		tx,

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"github.com/jinyitao123/weave/internal/app/kernelbindings"
 	"io"
 	"log/slog"
 	"os"
@@ -41,7 +42,6 @@ import (
 	"github.com/jinyitao123/weave/internal/kernel/llmrouter"
 	"github.com/jinyitao123/weave/internal/kernel/mcpregistry"
 	"github.com/jinyitao123/weave/internal/kernel/memory"
-	"github.com/jinyitao123/weave/internal/kernel/org"
 	"github.com/jinyitao123/weave/internal/kernel/runtimes"
 	"github.com/jinyitao123/weave/internal/kernel/schedule"
 	"github.com/jinyitao123/weave/internal/kernel/secret"
@@ -281,7 +281,7 @@ func main() {
 
 	// Initialize user and API key stores if PG pool is available.
 	if pool := srv.GetPool(); pool != nil {
-		srv.OrgStore = org.NewStore(pool)
+		srv.OrgStore = kernelbindings.NewOrganization(pool)
 		if srv.TeamBuild != nil && srv.Registry != nil && srv.Workflow != nil {
 			srv.TeamBuild.SetBaselineSources(srv.OrgStore, srv.Registry, srv.Workflow)
 		}
@@ -343,7 +343,7 @@ func main() {
 	if pool := srv.GetPool(); pool != nil {
 		taskStore := taskqueue.New(pool, taskqueue.RealClock{}, 60*time.Second)
 		srv.Tasks = taskStore
-		srv.Fanout = fanout.New(pool, fanout.RealClock{})
+		srv.Fanout = kernelbindings.NewFanout(pool, fanout.RealClock{})
 		srv.FanoutReconciler = fanout.NewReconciler(
 			srv.Fanout, taskStore, srv.Conversations,
 		)

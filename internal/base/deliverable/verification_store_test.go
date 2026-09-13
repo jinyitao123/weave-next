@@ -14,6 +14,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jinyitao123/weave/internal/base/db"
+	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/base/fileartifact"
 	"github.com/jinyitao123/weave/internal/base/snapshot"
 	"github.com/jinyitao123/weave/internal/base/testutil"
@@ -52,7 +53,8 @@ func newVerificationHarness(t *testing.T, registry *VerifierRegistry) *verificat
 func (h *verificationHarness) seedSnapshot(t *testing.T, id string) {
 	t.Helper()
 	_, err := snapshot.NewStore(h.pool).Create(context.Background(), snapshot.TeamRunSnapshot{
-		RunID: id, WorkspaceID: "workspace-1", TeamID: "team-1", SnapshotSchemaVersion: 2, Mode: "fixed_workflow",
+		Subject: execution.Subject{WorkspaceID: "workspace-1", UserID: "user-1"},
+		RunID:   id, WorkspaceID: "workspace-1", TeamID: "team-1", SnapshotSchemaVersion: 2, Mode: "fixed_workflow",
 		WorkflowID: "workflow-1", WorkflowVersion: 1, ArtifactWorkflowID: "workflow-1", ArtifactWorkflowVersion: 1,
 		AdmissionDecision: json.RawMessage(`{"schema_version":1,"team_active":true,"workflow_active":true,"workers_enabled":true,"version_blocked":false,"decided_at":"2026-09-08T00:00:00Z"}`),
 		RunAssociations:   json.RawMessage(`{"schema_version":1,"parent_run_id":null,"source_snapshot_id":null,"task_group_id":null}`),
@@ -103,8 +105,8 @@ func (h *verificationHarness) source(t *testing.T, fence VerificationFence, engi
 		if err != nil {
 			t.Fatal(err)
 		}
-		_, err = h.pool.Exec(ctx, `INSERT INTO weave_task_queue(id,workspace_id,kind,status,identity_kind,identity_schema_version,workflow_id,workflow_version,run_snapshot_id,result,payload)
-			VALUES ($1,$2,'engine_exec','completed','team_workflow',2,'workflow-1',1,$3,$4::jsonb,'{}'::jsonb)`, id, fence.WorkspaceID, fence.RunSnapshotID, string(raw))
+		_, err = h.pool.Exec(ctx, `INSERT INTO weave_task_queue(id,workspace_id,kind,status,identity_kind,identity_schema_version,workflow_id,workflow_version,run_snapshot_id,result,payload,actor_subject)
+			VALUES ($1,$2,'engine_exec','completed','team_workflow',2,'workflow-1',1,$3,$4::jsonb,'{}'::jsonb,jsonb_build_object('workspace_id',$2::text,'user_id','user-1'))`, id, fence.WorkspaceID, fence.RunSnapshotID, string(raw))
 	} else {
 		source.MemberRunID = id
 		raw, err = json.Marshal(map[string]any{"result": map[string]any{"RunID": id, "StopReason": "completed", "State": map[string]any{fileartifact.MemberStateKey: files}}, "error": ""})

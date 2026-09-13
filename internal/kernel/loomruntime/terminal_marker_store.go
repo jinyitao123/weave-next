@@ -532,7 +532,7 @@ func scanTerminalMarker(row rowScanner) (TerminalMarkerV1, error) {
 	return m, nil
 }
 
-type PGTerminalStateStore struct{}
+type PGTerminalStateStore struct{ activityProjector TerminalActivityProjector }
 
 func NewPGTerminalStateStore() *PGTerminalStateStore { return &PGTerminalStateStore{} }
 func (*PGTerminalStateStore) LockTerminalRun(ctx context.Context, tx pgx.Tx, workspaceID, runID string) error {
@@ -568,11 +568,10 @@ func (*PGTerminalStateStore) ReadTerminalMarkerForUpdate(ctx context.Context, tx
 func markerArgs(m TerminalMarkerV1) []any {
 	return []any{m.WorkspaceID, m.RunID, m.SchemaVersion, m.AttemptGeneration, m.AttemptID, m.Agent, string(m.AttributionScope), m.TeamID, m.WorkflowID, m.WorkflowVersion, m.RunSnapshotID, m.ConversationID, m.ParentRunID, m.ParentSeq, m.AggregationParentRunID, m.TaskGroupID, m.RunStartedAt, string(m.Phase), string(m.Status), m.StopReason, string(m.Source), m.TerminalAt, string(m.EvidenceKind), m.CheckpointGraph, m.CheckpointSeq, m.CheckpointSavedAt, m.UsageInputTokens, m.UsageOutputTokens, m.UsageCostUSD, m.UsageToolCalls, string(m.AuditState), m.AuditSchemaVersion, string(m.LineageState), m.LastErrorCode}
 }
-func (*PGTerminalStateStore) ApplyTerminalMarkerTransition(ctx context.Context, tx pgx.Tx, c TerminalMarkerV1) (TerminalMarkerV1, error) {
+func (s *PGTerminalStateStore) ApplyTerminalMarkerTransition(ctx context.Context, tx pgx.Tx, c TerminalMarkerV1) (TerminalMarkerV1, error) {
 	if tx == nil {
 		return TerminalMarkerV1{}, fmt.Errorf("tx must be non-nil")
 	}
-	s := NewPGTerminalStateStore()
 	cur, present, err := s.ReadTerminalMarkerForUpdate(ctx, tx, c.WorkspaceID, c.RunID)
 	if err != nil {
 		return TerminalMarkerV1{}, err
@@ -605,19 +604,9 @@ func (*PGTerminalStateStore) ApplyTerminalMarkerTransition(ctx context.Context, 
 	if err != nil {
 		return TerminalMarkerV1{}, fmt.Errorf("apply terminal marker transition: %w", err)
 	}
-	if out.ConversationID != nil {
-		if _, err := tx.Exec(ctx, `
-			UPDATE weave_projects AS project
-			SET last_activity_at=GREATEST(
-				COALESCE(project.last_activity_at, project.updated_at),
-				$3
-			)
-			FROM weave_conversations AS conversation
-			WHERE conversation.workspace_id=$1 AND conversation.id=$2
-			  AND project.workspace_id=conversation.workspace_id
-			  AND project.id=conversation.project_id
-		`, out.WorkspaceID, *out.ConversationID, out.TerminalAt); err != nil {
-			return TerminalMarkerV1{}, fmt.Errorf("update project terminal activity: %w", err)
+	if out.ConversationID != nil && s.activityProjector != nil {
+		if err := s.activityProjector.ProjectTerminalActivityTx(ctx, tx, out.WorkspaceID, *out.ConversationID, out.TerminalAt); err != nil {
+			return TerminalMarkerV1{}, fmt.Errorf("project terminal activity: %w", err)
 		}
 	}
 	return out, nil

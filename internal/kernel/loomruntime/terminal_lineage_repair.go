@@ -223,7 +223,7 @@ func repairTerminalLineageSnapshot(
 		finished = true
 		return report, false, nil
 	}
-	if _, err := NewPGTerminalStateStore().
+	if _, err := terminalStateStoreFor(repairer.records).
 		ApplyTerminalMarkerTransition(ctx, tx, candidate); err != nil {
 		return report, false, newTerminalLineageRepairError(
 			TerminalLineageRepairFinalizeWrite,

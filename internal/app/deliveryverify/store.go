@@ -4,6 +4,7 @@ package deliveryverify
 import (
 	"context"
 	"encoding/json"
+	"github.com/jinyitao123/weave/internal/app/kernelbindings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jinyitao123/weave/internal/base/deliverable"
@@ -14,7 +15,7 @@ import (
 // NewStore registers application checks while keeping workflow schema machinery
 // out of the runtime-independent deliverable package.
 func NewStore(pool *pgxpool.Pool) *deliverable.Store {
-	return deliverable.NewWithVerifiers(pool, newRegistry(frozenInputReader(pool)))
+	return deliverable.NewWithVerifiers(pool, newRegistry(frozenInputReader(pool)), kernelbindings.DeliverableOptions()...)
 }
 
 // NewRegistry includes the application's built-in checks. Explicitly configured

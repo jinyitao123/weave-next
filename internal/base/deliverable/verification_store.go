@@ -11,8 +11,10 @@ import (
 	"github.com/jinyitao123/weave/internal/base/fileartifact"
 )
 
-func NewWithVerifiers(pool *pgxpool.Pool, registry *VerifierRegistry) *Store {
-	return &Store{pool: pool, verifiers: registry}
+func NewWithVerifiers(pool *pgxpool.Pool, registry *VerifierRegistry, options ...StoreOption) *Store {
+	s := New(pool, options...)
+	s.verifiers = registry
+	return s
 }
 
 type deliveryQuery interface {
