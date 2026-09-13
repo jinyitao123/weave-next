@@ -24,6 +24,7 @@ var (
 	ErrInvocationTerminal  = errors.New("invocation is already terminal")
 	ErrClaimLost           = errors.New("capability execution claim lost")
 	ErrRevisionConflict    = errors.New("published revision already exists with different content")
+	ErrQuotaExceeded       = errors.New("capability quota exceeded")
 )
 
 type DraftStore interface {
@@ -128,25 +129,30 @@ func (s *Service) Publish(ctx context.Context, workspaceID, capabilityID string,
 }
 
 type Invocation struct {
-	CapabilityName string            `json:"-"`
-	StepNames      map[string]string `json:"-"`
-	ResultSteps    []string          `json:"-"`
-	CredentialID   string            `json:"-"`
-	CallerKind     string            `json:"caller_kind"`
-	RunKind        string            `json:"run_kind"`
-	DefinitionHash string            `json:"definition_hash"`
-	WorkspaceID    string            `json:"workspace_id"`
-	ApplicationID  string            `json:"application_id"`
-	InvocationID   string            `json:"invocation_id"`
-	TaskID         string            `json:"task_id,omitempty"`
-	RequestID      string            `json:"request_id"`
-	CapabilityID   string            `json:"capability_id"`
-	Revision       int64             `json:"revision"`
-	Input          json.RawMessage   `json:"input"`
-	Status         string            `json:"status"`
-	ResultState    string            `json:"result_state"`
-	Result         json.RawMessage   `json:"result,omitempty"`
-	Error          string            `json:"error,omitempty"`
+	CapabilityName string                    `json:"-"`
+	StepNames      map[string]string         `json:"-"`
+	ResultSteps    []string                  `json:"-"`
+	CredentialID   string                    `json:"-"`
+	CallerKind     string                    `json:"caller_kind"`
+	RunKind        string                    `json:"run_kind"`
+	DefinitionHash string                    `json:"definition_hash"`
+	WorkspaceID    string                    `json:"workspace_id"`
+	ApplicationID  string                    `json:"application_id"`
+	InvocationID   string                    `json:"invocation_id"`
+	TaskID         string                    `json:"task_id,omitempty"`
+	RequestID      string                    `json:"request_id"`
+	CapabilityID   string                    `json:"capability_id"`
+	Revision       int64                     `json:"revision"`
+	Input          json.RawMessage           `json:"input"`
+	Status         string                    `json:"status"`
+	ResultState    string                    `json:"result_state"`
+	Result         json.RawMessage           `json:"result,omitempty"`
+	Error          string                    `json:"error,omitempty"`
+	ActorUserID    string                    `json:"actor_user_id,omitempty"`
+	RuntimeID      string                    `json:"runtime_id,omitempty"`
+	UsedSteps      int                       `json:"used_steps"`
+	MaxSteps       int                       `json:"max_steps"`
+	Checkpoint     capability.ExecutionState `json:"-"`
 }
 
 type InvocationTask struct {
@@ -159,6 +165,10 @@ type InvocationTask struct {
 	Revision     int64
 	Input        json.RawMessage
 	Plan         capability.Plan
+	State        capability.ExecutionState
+	ActorUserID  string
+	UsedSteps    int
+	MaxSteps     int
 }
 
 type ExecutionStore interface {
@@ -181,7 +191,7 @@ func RunOne(ctx context.Context, store ExecutionStore, executor TaskExecutor) (b
 	if err != nil || !claimed {
 		return claimed, err
 	}
-	runCtx, cancel := context.WithTimeout(ctx, 120*time.Second)
+	runCtx, cancel := context.WithTimeout(ctx, 45*time.Minute)
 	done := make(chan struct{})
 	monitored := make(chan struct{})
 	go func() {
@@ -192,8 +202,9 @@ func RunOne(ctx context.Context, store ExecutionStore, executor TaskExecutor) (b
 		if !ok {
 			return
 		}
-		ticker := time.NewTicker(100 * time.Millisecond)
+		ticker := time.NewTicker(250 * time.Millisecond)
 		defer ticker.Stop()
+		renewAt := time.Now().Add(30 * time.Second)
 		for {
 			select {
 			case <-done:
@@ -206,6 +217,18 @@ func RunOne(ctx context.Context, store ExecutionStore, executor TaskExecutor) (b
 					cancel()
 					return
 				}
+				if time.Now().Before(renewAt) {
+					continue
+				}
+				if renew, ok := store.(interface {
+					RenewTask(context.Context, InvocationTask) error
+				}); ok {
+					if err := renew.RenewTask(runCtx, task); err != nil {
+						cancel()
+						return
+					}
+				}
+				renewAt = time.Now().Add(30 * time.Second)
 			}
 		}
 	}()
@@ -218,6 +241,13 @@ func RunOne(ctx context.Context, store ExecutionStore, executor TaskExecutor) (b
 	<-monitored
 	finishCtx, finishCancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer finishCancel()
+	if ctx.Err() != nil {
+		if abandon, ok := store.(interface {
+			AbandonTask(context.Context, InvocationTask) error
+		}); ok {
+			return true, abandon.AbandonTask(finishCtx, task)
+		}
+	}
 	_, err = store.CompleteTask(finishCtx, task, result, executeErr)
 	return true, err
 }
@@ -241,6 +271,8 @@ type InvokeRequest struct {
 	CapabilityID  string
 	Revision      int64
 	Input         json.RawMessage
+	ActorUserID   string
+	MaxSteps      int
 }
 
 func (s *Service) Invoke(ctx context.Context, request InvokeRequest) (Invocation, bool, error) {
@@ -277,7 +309,10 @@ func (s *Service) Invoke(ctx context.Context, request InvokeRequest) (Invocation
 		WorkspaceID: request.WorkspaceID, ApplicationID: request.ApplicationID,
 		InvocationID: request.InvocationID, RequestID: request.RequestID,
 		CapabilityID: request.CapabilityID, Revision: request.Revision,
-		Input: canonicalInput, Status: "queued", ResultState: "unavailable",
+		Input: canonicalInput, Status: "queued", ResultState: "unavailable", ActorUserID: request.ActorUserID, MaxSteps: request.MaxSteps,
+	}
+	if invocation.MaxSteps <= 0 {
+		invocation.MaxSteps = 100
 	}
 	if request.CredentialID != "" {
 		invocation.CallerKind = "application"

@@ -170,6 +170,22 @@ func (s *PGStore) claimInvocation(ctx context.Context, invocation Invocation, de
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	taskID := "cap-task-" + uuid.NewString()
+	var quotaMaxSteps, quotaMaxActive int
+	if err := tx.QueryRow(ctx, `SELECT max_steps_per_invocation,max_active_invocations FROM weave_capability_quotas WHERE workspace_id=$1`, invocation.WorkspaceID).Scan(&quotaMaxSteps, &quotaMaxActive); errors.Is(err, pgx.ErrNoRows) {
+		quotaMaxSteps, quotaMaxActive = 100, 20
+	} else if err != nil {
+		return Invocation{}, false, err
+	}
+	if invocation.MaxSteps <= 0 || invocation.MaxSteps > quotaMaxSteps {
+		invocation.MaxSteps = quotaMaxSteps
+	}
+	var active int
+	if err := tx.QueryRow(ctx, `SELECT count(*) FROM weave_capability_invocations WHERE workspace_id=$1 AND status IN ('queued','running','waiting','cancel_requested') AND NOT (application_id=$2 AND request_id=$3)`, invocation.WorkspaceID, invocation.ApplicationID, invocation.RequestID).Scan(&active); err != nil {
+		return Invocation{}, false, err
+	}
+	if active >= quotaMaxActive {
+		return Invocation{}, false, ErrQuotaExceeded
+	}
 	if invocation.CredentialID != "" {
 		if invocation.RunKind != "published" || debug != nil {
 			return Invocation{}, false, ErrAccessDenied
@@ -184,12 +200,12 @@ func (s *PGStore) claimInvocation(ctx context.Context, invocation Invocation, de
 	result, err := tx.Exec(ctx, `
 		INSERT INTO weave_capability_invocations (
 			workspace_id, application_id, request_id, invocation_id,
-   capability_id, revision, input, status, result_state, task_id,run_kind,definition_hash,credential_id,caller_kind
-  ) VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10,$11,$12,NULLIF($13,''),$14)
+   capability_id, revision, input, status, result_state, task_id,run_kind,definition_hash,credential_id,caller_kind,actor_user_id,max_steps
+  ) VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10,$11,$12,NULLIF($13,''),$14,$15,$16)
 		ON CONFLICT (workspace_id, application_id, request_id) DO NOTHING
 	`, invocation.WorkspaceID, invocation.ApplicationID, invocation.RequestID,
 		invocation.InvocationID, invocation.CapabilityID, invocation.Revision,
-		string(input), invocation.Status, invocation.ResultState, taskID, invocation.RunKind, invocation.DefinitionHash, invocation.CredentialID, invocation.CallerKind)
+		string(input), invocation.Status, invocation.ResultState, taskID, invocation.RunKind, invocation.DefinitionHash, invocation.CredentialID, invocation.CallerKind, invocation.ActorUserID, invocation.MaxSteps)
 	if err != nil {
 		return Invocation{}, false, fmt.Errorf("claim invocation: %w", err)
 	}
@@ -266,6 +282,11 @@ func (s *PGStore) GetInvocation(ctx context.Context, workspaceID, applicationID,
 		return Invocation{}, fmt.Errorf("get capability invocation: %w", err)
 	}
 	invocation.Input = raw
+	var checkpointRaw []byte
+	_ = s.pool.QueryRow(ctx, `SELECT actor_user_id,runtime_id,used_steps,max_steps,checkpoint FROM weave_capability_invocations WHERE workspace_id=$1 AND invocation_id=$2`, workspaceID, invocationID).Scan(&invocation.ActorUserID, &invocation.RuntimeID, &invocation.UsedSteps, &invocation.MaxSteps, &checkpointRaw)
+	if len(checkpointRaw) > 0 {
+		_ = json.Unmarshal(checkpointRaw, &invocation.Checkpoint)
+	}
 	var definitionRaw []byte
 	if invocation.RunKind == "debug" {
 		err = s.pool.QueryRow(ctx, `SELECT definition FROM weave_capability_debug_snapshots WHERE workspace_id=$1 AND invocation_id=$2`, workspaceID, invocationID).Scan(&definitionRaw)
@@ -304,6 +325,9 @@ func (s *PGStore) CancelInvocation(ctx context.Context, workspaceID, application
 		return Invocation{}, fmt.Errorf("lock capability invocation: %w", err)
 	}
 	if status == "cancelled" || status == "cancel_requested" {
+		if err := tx.Commit(ctx); err != nil {
+			return Invocation{}, err
+		}
 		return s.GetInvocation(ctx, workspaceID, applicationID, invocationID)
 	}
 	if status == "completed" || status == "failed" {
@@ -317,8 +341,13 @@ func (s *PGStore) CancelInvocation(ctx context.Context, workspaceID, application
 		return Invocation{}, fmt.Errorf("cancel capability invocation: %w", err)
 	}
 	if taskID != "" {
-		if _, err := tx.Exec(ctx, `UPDATE weave_capability_invocation_tasks SET status='cancelled' WHERE task_id=$1 AND status='queued'`, taskID); err != nil {
+		if _, err := tx.Exec(ctx, `UPDATE weave_capability_invocation_tasks SET status='cancelled',claim_token=NULL,deadline_at=NULL WHERE task_id=$1 AND status IN ('queued','waiting')`, taskID); err != nil {
 			return Invocation{}, fmt.Errorf("cancel capability invocation task: %w", err)
+		}
+	}
+	if next == "cancelled" {
+		if _, err := tx.Exec(ctx, `UPDATE weave_capability_human_tasks SET status='cancelled',completed_at=now() WHERE workspace_id=$1 AND invocation_id=$2 AND status='waiting'`, workspaceID, invocationID); err != nil {
+			return Invocation{}, fmt.Errorf("cancel capability human task: %w", err)
 		}
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -358,6 +387,13 @@ func (s *PGStore) ClaimTask(ctx context.Context) (InvocationTask, bool, error) {
 		return InvocationTask{}, false, fmt.Errorf("claim capability task: %w", err)
 	}
 	task.Input = raw
+	var checkpointRaw []byte
+	if err := tx.QueryRow(ctx, `SELECT checkpoint,actor_user_id,used_steps,max_steps FROM weave_capability_invocations WHERE workspace_id=$1 AND invocation_id=$2`, task.WorkspaceID, task.InvocationID).Scan(&checkpointRaw, &task.ActorUserID, &task.UsedSteps, &task.MaxSteps); err != nil {
+		return InvocationTask{}, false, err
+	}
+	if len(checkpointRaw) > 0 {
+		_ = json.Unmarshal(checkpointRaw, &task.State)
+	}
 	if callerKind == "application" {
 		err := authorizeApplicationGrant(ctx, tx, Invocation{WorkspaceID: task.WorkspaceID, ApplicationID: applicationID, CapabilityID: task.CapabilityID, Revision: task.Revision})
 		if err != nil {
@@ -410,7 +446,7 @@ func (s *PGStore) ClaimTask(ctx context.Context) (InvocationTask, bool, error) {
 		return InvocationTask{}, false, fmt.Errorf("compile capability task: %w", err)
 	}
 	task.Plan = plan
-	if _, err := tx.Exec(ctx, `UPDATE weave_capability_invocations SET status='running' WHERE workspace_id=$1 AND invocation_id=$2`, task.WorkspaceID, task.InvocationID); err != nil {
+	if _, err := tx.Exec(ctx, `UPDATE weave_capability_invocations SET status='running',started_at=COALESCE(started_at,now()) WHERE workspace_id=$1 AND invocation_id=$2`, task.WorkspaceID, task.InvocationID); err != nil {
 		return InvocationTask{}, false, fmt.Errorf("mark invocation running: %w", err)
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -424,7 +460,10 @@ func (s *PGStore) CompleteTask(ctx context.Context, task InvocationTask, result 
 		return Invocation{}, err
 	}
 	status, resultState := "completed", "available"
-	if executeErr != nil {
+	var pause *capability.PauseError
+	if errors.As(executeErr, &pause) {
+		status, resultState = "waiting", "unavailable"
+	} else if executeErr != nil {
 		status, resultState = "failed", "unavailable"
 	}
 	tx, err := s.pool.Begin(ctx)
@@ -468,12 +507,21 @@ func (s *PGStore) CompleteTask(ctx context.Context, task InvocationTask, result 
 	if changed.RowsAffected() != 1 {
 		return Invocation{}, ErrClaimLost
 	}
+	if pause != nil && status == "waiting" {
+		schema := pause.Schema
+		if len(schema) == 0 {
+			schema = json.RawMessage(`{"type":"object"}`)
+		}
+		if _, err := tx.Exec(ctx, `INSERT INTO weave_capability_human_tasks(workspace_id,invocation_id,step_id,title,response_schema,status) VALUES($1,$2,$3,$4,$5::jsonb,'waiting') ON CONFLICT(workspace_id,invocation_id,step_id) DO UPDATE SET title=EXCLUDED.title,response_schema=EXCLUDED.response_schema,status='waiting',response=NULL,completed_at=NULL`, task.WorkspaceID, task.InvocationID, pause.StepID, pause.Title, string(schema)); err != nil {
+			return Invocation{}, err
+		}
+	}
 	var errorText *string
-	if executeErr != nil {
+	if executeErr != nil && pause == nil {
 		value := executeErr.Error()
 		errorText = &value
 	}
-	if _, err := tx.Exec(ctx, `UPDATE weave_capability_invocations SET status=$3, result_state=$4, result=$5::jsonb, error=$6 WHERE workspace_id=$1 AND invocation_id=$2`, task.WorkspaceID, task.InvocationID, status, resultState, resultValue, errorText); err != nil {
+	if _, err := tx.Exec(ctx, `UPDATE weave_capability_invocations SET status=$3, result_state=$4, result=$5::jsonb, error=$6,completed_at=CASE WHEN $3 IN ('completed','failed','cancelled') THEN now() ELSE NULL END WHERE workspace_id=$1 AND invocation_id=$2`, task.WorkspaceID, task.InvocationID, status, resultState, resultValue, errorText); err != nil {
 		return Invocation{}, fmt.Errorf("write capability invocation result: %w", err)
 	}
 	if err := tx.Commit(ctx); err != nil {

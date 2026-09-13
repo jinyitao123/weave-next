@@ -15,6 +15,7 @@ import { inspectWeaveReadiness } from './readiness.ts'
 import { handleWeaveRuntimeRequest, resolveRuntimeServerUrl } from './runtime-control.ts'
 import { handleAgentExecutionRequest } from './agent-execution-control.ts'
 import { handleCapabilityAppsRequest } from './capability-apps-control.ts'
+import { handleCapabilityOperationsRequest } from './capability-operations-control.ts'
 import { DispatchResponseError, installDispatchInputTool, latestDispatchInput, type DispatchInputFacts } from './dispatch-input.ts'
 
 export { buildPilotReport } from './pilot-report.ts'
@@ -1080,7 +1081,7 @@ export const workbenchTeamRoutingSection = {
 export const workbenchCapabilityAuthoringSection = {
   name: 'workbench:capability-authoring',
   order: FIRST_PARTY_SECTION_ORDER.TEAM_POLICY + 11,
-  text: 'When the user wants a reusable capability, keep the work in the main conversation. Call capability_list first and reuse a suitable published capability when possible. If none fits, gather only the missing business goal, expected inputs, expected outputs, and success criteria, then call capability_plan to create a reviewable draft. Present its purpose, roles, flow, inputs, and outputs in business language without raw definitions, JSON, code, schemas, internal identifiers, or engine details. A draft is not callable. Call capability_publish only after the user explicitly confirms that exact proposal and publication; existing confirmation is sufficient. Published revisions are immutable, so later changes use a revised draft and a new revision. Do not send the user to a manual capability editor. Application access and exact-version grants remain separate administration actions.',
+  text: 'When the user wants a reusable capability, keep the work in the main conversation. Call capability_list first and reuse a suitable published capability when possible. If none fits, gather only the missing business goal, expected inputs, expected outputs, and success criteria, then call capability_plan to create a reviewable draft. Present its purpose, roles, flow, inputs, and outputs in business language without raw definitions, JSON, code, schemas, internal identifiers, or engine details. A draft is not callable. Call capability_publish only after the user explicitly confirms that exact proposal and publication; existing confirmation is sufficient. Published revisions are immutable, so later changes use a revised draft and a new revision. When publication is confirmed and the user asks to run it, call capability_invoke with the business input, then capability_status. If it is waiting for a human decision, present that decision and use capability_resume after the user answers. Use capability_history for prior runs. Do not send the user to a manual capability editor. Application access and exact-version grants remain separate administration actions.',
 } as const
 
 /** Register the durable projection and keep non-terminal Weave runs synchronized outside the conversation turn. */
@@ -1140,6 +1141,10 @@ export function apply(ctx: Context, config: Config = {}): void {
   connection.fetch.register({
     path: '/api/weave.capability-apps', methods: ['GET', 'POST'],
     fetch: request => handleCapabilityAppsRequest(apiUrl, apiKey, request),
+  })
+  connection.fetch.register({
+    path: '/api/weave.capability-operations', methods: ['GET', 'POST'],
+    fetch: request => handleCapabilityOperationsRequest(apiUrl, apiKey, request),
   })
   connection.fetch.register({
     path: '/api/weave.deliverable', methods: ['GET', 'HEAD'],

@@ -12,11 +12,12 @@ import (
 )
 
 const (
-	authSourceContextKey = "auth_source"
-	scopesContextKey     = "scopes"
-	apiKeyIDContextKey   = "api_key_id"
-	authSourceAPIKey     = "apikey"
-	authSourceJWT        = "jwt"
+	authSourceContextKey     = "auth_source"
+	scopesContextKey         = "scopes"
+	apiKeyIDContextKey       = "api_key_id"
+	workbenchActorContextKey = "workbench_actor_id"
+	authSourceAPIKey         = "apikey"
+	authSourceJWT            = "jwt"
 )
 
 // Claims holds the JWT claims for Weave authentication.
@@ -128,6 +129,11 @@ func OptionalAuthMiddleware(jwtSecret string, keyStoreGetter func() *apikeys.Sto
 
 func setAPIKeyContext(c echo.Context, key *apikeys.APIKey) {
 	userID := key.OwnerUserID
+	actor := strings.TrimSpace(c.Request().Header.Get("X-Weave-Actor-ID"))
+	if key.Role == "admin" && validWorkbenchActor(actor) {
+		userID = "workbench:" + actor
+		c.Set(workbenchActorContextKey, actor)
+	}
 	if userID == "" {
 		// Upgrade compatibility for an old key whose historical creator cannot
 		// be resolved. It remains authenticated but cannot impersonate a member.
@@ -139,6 +145,18 @@ func setAPIKeyContext(c echo.Context, key *apikeys.APIKey) {
 	c.Set(authSourceContextKey, authSourceAPIKey)
 	c.Set(scopesContextKey, key.Scopes)
 	c.Set(apiKeyIDContextKey, key.ID)
+}
+
+func validWorkbenchActor(value string) bool {
+	if len(value) != 64 {
+		return false
+	}
+	for _, char := range value {
+		if (char < '0' || char > '9') && (char < 'a' || char > 'f') {
+			return false
+		}
+	}
+	return true
 }
 
 func resolveJWTUser(ctx context.Context, userStoreGetter func() *users.Store, claims *Claims) (*users.User, bool) {
