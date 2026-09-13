@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -23,6 +24,7 @@ import (
 	"github.com/jinyitao123/weave/internal/kernel/mcpregistry"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 	"github.com/jinyitao123/weave/internal/kernel/runtimes"
+	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 )
 
 type capabilityToolUnusedRemote struct{ calls atomic.Int64 }
@@ -33,7 +35,7 @@ func (r *capabilityToolUnusedRemote) ExecRemote(context.Context, string, *regist
 }
 
 func TestCapabilityPublicationToDirectToolExecutionRealPG(t *testing.T) {
-	ctx := t.Context()
+	ctx := execution.WithSubject(t.Context(), execution.Subject{WorkspaceID: "ws-direct", UserID: "user"})
 	seed := testutil.PostgresPool(t)
 	if err := db.Migrate(ctx, seed); err != nil {
 		t.Fatal(err)
@@ -102,7 +104,8 @@ func TestCapabilityPublicationToDirectToolExecutionRealPG(t *testing.T) {
 	if _, err := mcp.RecordProbeSuccess(ctx, "ws-direct", registered.ID, "2025-03-26", json.RawMessage(`{}`), []mcpregistry.Tool{{Name: "calculate", InputSchema: inputSchema, ReadOnlyHint: &readOnly}}); err != nil {
 		t.Fatal(err)
 	}
-	store := appcapabilities.NewPGStore(pool)
+	queue := taskqueue.New(pool, taskqueue.RealClock{}, time.Second)
+	store := appcapabilities.NewPGStoreWithTaskQueue(pool, queue)
 	service := appcapabilities.NewService(store, store)
 	definition := capability.Definition{SchemaVersion: 1, CapabilityID: "cap-direct", Name: "Direct calculation",
 		InputSchema: json.RawMessage(`{"type":"object"}`), OutputSchema: json.RawMessage(`{"type":"object"}`),
@@ -125,10 +128,25 @@ func TestCapabilityPublicationToDirectToolExecutionRealPG(t *testing.T) {
 	runner := &capabilityruntime.Runner{Remote: unusedRemote, ListRuntimes: func(context.Context, string) ([]runtimes.Runtime, error) {
 		return []runtimes.Runtime{{ID: "runtime", Enabled: true, Online: true, Engines: []string{"codex"}, TotalSlots: 1}}, nil
 	}}
-	server := &Server{Pool: pool, MCPRegistry: mcp}
-	processed, err := appcapabilities.RunOne(ctx, store, appcapabilities.RuntimeTaskExecutor{Runner: runner, Store: store, DirectTools: server.capabilityDirectTools(store)})
-	if err != nil || !processed {
-		t.Fatalf("processed=%v err=%v", processed, err)
+	server := &Server{Pool: pool, MCPRegistry: mcp, Tasks: queue}
+	worker := taskqueue.NewWorker(queue, 1)
+	if err := worker.Register("capability_invocation", taskqueue.IdentityCapability, appcapabilities.PlatformTaskHandler{
+		Store: store, Executor: appcapabilities.RuntimeTaskExecutor{Runner: runner, Store: store, DirectTools: server.capabilityDirectTools(store)},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	worker.Start()
+	defer worker.Stop()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		completed, readErr := service.GetInvocation(ctx, "ws-direct", "app", invocation.InvocationID)
+		if readErr == nil && completed.Status == "completed" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("capability platform task did not complete: %+v %v", completed, readErr)
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 	completed, err := service.GetInvocation(ctx, "ws-direct", "app", invocation.InvocationID)
 	var delivered struct {
@@ -137,7 +155,7 @@ func TestCapabilityPublicationToDirectToolExecutionRealPG(t *testing.T) {
 		} `json:"calculate"`
 	}
 	decodeErr := json.Unmarshal(completed.Result, &delivered)
-	if err != nil || decodeErr != nil || completed.Status != "completed" || delivered.Calculate.Total != 42 || effects.Load() != 1 || unusedRemote.calls.Load() != 0 {
+	if err != nil || decodeErr != nil || completed.Status != "completed" || delivered.Calculate.Total != 42 || effects.Load() != 1 || unusedRemote.calls.Load() != 0 || completed.PhysicalUsage.ToolCalls != 1 || completed.UnreportedAttempts != 0 {
 		t.Fatalf("completed=%+v effects=%d remote=%d err=%v", completed, effects.Load(), unusedRemote.calls.Load(), err)
 	}
 }

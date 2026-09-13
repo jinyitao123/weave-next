@@ -20,6 +20,7 @@ type Request struct {
 	RunKind      string
 	WorkspaceID  string
 	InvocationID string
+	ActivationID string
 	Plan         capability.Plan
 	Input        json.RawMessage
 	State        capability.ExecutionState
@@ -53,7 +54,11 @@ func (r *Runner) Execute(ctx context.Context, request Request, recorder Recorder
 	if r == nil || recorder == nil {
 		return nil, errors.New("capability execution dependencies are not configured")
 	}
-	ctx = execution.WithInvocationID(ctx, request.InvocationID)
+	activationID := request.ActivationID
+	if activationID == "" {
+		activationID = request.InvocationID
+	}
+	ctx = execution.WithInvocationID(ctx, activationID)
 	requirement := request.Plan.Runtime
 	if err := r.ValidateRuntime(ctx, request.WorkspaceID, requirement); err != nil {
 		return nil, err

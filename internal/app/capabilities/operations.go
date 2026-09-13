@@ -52,8 +52,12 @@ func (o PGExecutionObserver) Checkpoint(ctx context.Context, state capability.Ex
 	if event.Type == "step_completed" {
 		increment = 1
 	}
-	tag, err := tx.Exec(ctx, `UPDATE weave_capability_invocations i SET checkpoint=$5::jsonb,used_steps=used_steps+$6
- FROM weave_capability_invocation_tasks t WHERE i.workspace_id=$1 AND i.invocation_id=$2 AND i.task_id=$3 AND t.task_id=$3 AND t.claim_token=$4 AND i.status='running' AND t.status='running' AND t.deadline_at>now() AND i.used_steps+$6<=i.max_steps`, o.Task.WorkspaceID, o.Task.InvocationID, o.Task.TaskID, o.Task.ClaimToken, string(raw), increment)
+	tag, err := tx.Exec(ctx, `UPDATE weave_capability_invocations i SET checkpoint=$6::jsonb,used_steps=used_steps+$7
+ FROM weave_task_queue t WHERE i.workspace_id=$1 AND i.invocation_id=$2 AND i.task_id=$3
+ AND t.workspace_id=i.workspace_id AND t.id=i.task_id AND t.capability_invocation_id=i.invocation_id
+ AND t.worker_id=$4 AND t.claim_epoch=$5 AND i.status='running' AND t.status='running'
+ AND t.lease_expires_at>now() AND (t.deadline_at IS NULL OR t.deadline_at>now()) AND i.used_steps+$7<=i.max_steps`,
+		o.Task.WorkspaceID, o.Task.InvocationID, o.Task.TaskID, o.Task.WorkerID, o.Task.ClaimEpoch, string(raw), increment)
 	if err != nil {
 		return err
 	}
@@ -135,7 +139,8 @@ func (s *PGStore) ResumeHuman(ctx context.Context, workspaceID, applicationID, i
 	defer func() { _ = tx.Rollback(ctx) }()
 	var raw []byte
 	var schema json.RawMessage
-	if err := tx.QueryRow(ctx, `SELECT i.checkpoint,h.response_schema FROM weave_capability_invocations i JOIN weave_capability_human_tasks h ON h.workspace_id=i.workspace_id AND h.invocation_id=i.invocation_id WHERE i.workspace_id=$1 AND i.application_id=$2 AND i.invocation_id=$3 AND i.status='waiting' AND h.step_id=$4 AND h.status='waiting' FOR UPDATE OF i,h`, workspaceID, applicationID, invocationID, stepID).Scan(&raw, &schema); errors.Is(err, pgx.ErrNoRows) {
+	var taskID string
+	if err := tx.QueryRow(ctx, `SELECT i.checkpoint,h.response_schema,i.task_id FROM weave_capability_invocations i JOIN weave_capability_human_tasks h ON h.workspace_id=i.workspace_id AND h.invocation_id=i.invocation_id WHERE i.workspace_id=$1 AND i.application_id=$2 AND i.invocation_id=$3 AND i.status='waiting' AND h.step_id=$4 AND h.status='waiting' FOR UPDATE OF i,h`, workspaceID, applicationID, invocationID, stepID).Scan(&raw, &schema, &taskID); errors.Is(err, pgx.ErrNoRows) {
 		return Invocation{}, ErrInvocationNotFound
 	} else if err != nil {
 		return Invocation{}, err
@@ -153,10 +158,10 @@ func (s *PGStore) ResumeHuman(ctx context.Context, workspaceID, applicationID, i
 	if _, err = tx.Exec(ctx, `UPDATE weave_capability_human_tasks SET status='completed',response=$4::jsonb,completed_at=now() WHERE workspace_id=$1 AND invocation_id=$2 AND step_id=$3 AND status='waiting'`, workspaceID, invocationID, stepID, string(response)); err != nil {
 		return Invocation{}, err
 	}
-	if _, err = tx.Exec(ctx, `UPDATE weave_capability_invocation_tasks SET status='queued',claim_token=NULL,deadline_at=NULL WHERE workspace_id=$1 AND invocation_id=$2 AND status='waiting'`, workspaceID, invocationID); err != nil {
+	if _, err = tx.Exec(ctx, `UPDATE weave_capability_invocations SET status='queued',checkpoint=$3::jsonb,error=NULL WHERE workspace_id=$1 AND invocation_id=$2`, workspaceID, invocationID, string(raw)); err != nil {
 		return Invocation{}, err
 	}
-	if _, err = tx.Exec(ctx, `UPDATE weave_capability_invocations SET status='queued',checkpoint=$3::jsonb,error=NULL WHERE workspace_id=$1 AND invocation_id=$2`, workspaceID, invocationID, string(raw)); err != nil {
+	if _, err = s.queue.ResumeTaskTx(ctx, tx, workspaceID, taskID, "capability_invocation", invocationID); err != nil {
 		return Invocation{}, err
 	}
 	if _, err = tx.Exec(ctx, `INSERT INTO weave_capability_invocation_events(workspace_id,invocation_id,event_type,step_id,detail) VALUES($1,$2,'human_completed',$3,$4::jsonb)`, workspaceID, invocationID, stepID, string(response)); err != nil {

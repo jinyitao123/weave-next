@@ -567,12 +567,6 @@ func (s *Server) registerRoutes() {
 
 // Start runs the HTTP server.
 func (s *Server) Start() error {
-	if s.Capabilities != nil && s.Pool != nil && s.Models != nil {
-		ctx, cancel := context.WithCancel(context.Background())
-		done := make(chan struct{})
-		go func() { defer close(done); s.serveCapabilityTasks(ctx) }()
-		defer func() { cancel(); <-done }()
-	}
 	s.reconcileOrphanedChatRequests()
 	if s.sessionExecutionWorkers != nil && !sessionExecutionWorkersDisabled() {
 		s.sessionExecutionWorkers.Start()

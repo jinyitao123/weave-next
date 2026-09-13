@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 
 	"github.com/jinyitao123/weave/internal/kernel/capability"
 	"github.com/jinyitao123/weave/internal/kernel/capabilityruntime"
@@ -34,7 +35,8 @@ func (e RuntimeTaskExecutor) Execute(ctx context.Context, task InvocationTask) (
 	}
 	return e.Runner.Execute(ctx, capabilityruntime.Request{
 		RunKind: task.RunKind, WorkspaceID: task.WorkspaceID, InvocationID: task.InvocationID,
-		Plan: task.Plan, Input: task.Input, State: task.State, Tools: tools,
+		ActivationID: fmt.Sprintf("%s/%d", task.TaskID, task.ClaimEpoch),
+		Plan:         task.Plan, Input: task.Input, State: task.State, Tools: tools,
 	}, invocationRecorder{PGExecutionObserver{Store: e.Store, Task: task}})
 }
 
