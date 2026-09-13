@@ -6,7 +6,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/jinyitao123/weave/internal/base/taskqueue"
+	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 )
 
 func TestCLIProgressCheckpointAllowsFirstStageReclaimAndFencesOldWriterRealPG(t *testing.T) {

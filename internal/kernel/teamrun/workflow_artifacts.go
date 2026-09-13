@@ -10,7 +10,7 @@ import (
 	"github.com/jinyitao123/loom"
 	"github.com/jinyitao123/weave/internal/base/deliverable"
 	"github.com/jinyitao123/weave/internal/base/fileartifact"
-	"github.com/jinyitao123/weave/internal/base/taskqueue"
+	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 )
 
 // Only artifacts belonging to the exact selected physical results can become

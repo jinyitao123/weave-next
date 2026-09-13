@@ -1,6 +1,6 @@
 package fanout
 
-import "github.com/jinyitao123/weave/internal/base/taskqueue"
+import "github.com/jinyitao123/weave/internal/kernel/taskqueue"
 
 type TaskLegMapping struct {
 	State    LegDecisionState
