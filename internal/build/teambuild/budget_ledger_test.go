@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 func TestEvaluateBudgetUsageUsesOnlyStrictExceededDimensions(t *testing.T) {
@@ -154,29 +156,14 @@ func TestBudgetReauthorizationResetsBudgetFailureRealPG(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	step, err := store.ClaimReadyOperationStep(
-		ctx, authorized.WorkspaceID, authorized.BuildRunID, 1, "worker", time.Minute,
-	)
+	step, err := store.NextReadyOperationStep(ctx, authorized.WorkspaceID, authorized.BuildRunID, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.RetryOperationStep(
+	if _, err := store.FinishOperationStep(
 		ctx, step.WorkspaceID, step.BuildRunID, step.RevisionNo,
-		step.OperationID, "worker", step.LeaseEpoch,
-		BudgetExhaustedReason, BudgetExhaustedReason, json.RawMessage(`{"gate":"G1"}`),
-	); err != nil {
-		t.Fatalf("retry budget failure class: %v", err)
-	}
-	step, err = store.ClaimReadyOperationStep(
-		ctx, authorized.WorkspaceID, authorized.BuildRunID, 1, "worker", time.Minute,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := store.FailOperationStep(
-		ctx, step.WorkspaceID, step.BuildRunID, step.RevisionNo,
-		step.OperationID, "worker", step.LeaseEpoch,
-		BudgetExhaustedReason, BudgetExhaustedReason, json.RawMessage(`{"gate":"G1"}`),
+		step.OperationID, OperationStatusFailed, "",
+		BudgetExhaustedReason, BudgetExhaustedReason, json.RawMessage(`{"gate":"G1"}`), allowCompilerStepFinish,
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -231,23 +218,19 @@ func TestBudgetReauthorizationResetsBudgetFailureRealPG(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
-	candidate, err := store.ClaimReadyOperationStep(
-		ctx, restored.WorkspaceID, restored.BuildRunID, 1, "worker", time.Minute,
-	)
+	candidate, err := store.NextReadyOperationStep(ctx, restored.WorkspaceID, restored.BuildRunID, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
 	finalHash := strings.Repeat("b", 64)
-	if _, err := store.SucceedOperationStep(
+	if _, err := store.FinishOperationStep(
 		ctx, candidate.WorkspaceID, candidate.BuildRunID, candidate.RevisionNo,
-		candidate.OperationID, "worker", candidate.LeaseEpoch, finalHash,
-		json.RawMessage(`{"candidate":"completed"}`),
+		candidate.OperationID, OperationStatusSucceeded, finalHash, "", "",
+		json.RawMessage(`{"candidate":"completed"}`), allowCompilerStepFinish,
 	); err != nil {
 		t.Fatal(err)
 	}
-	publish, err := store.ClaimReadyOperationStep(
-		ctx, restored.WorkspaceID, restored.BuildRunID, 1, "worker", time.Minute,
-	)
+	publish, err := store.NextReadyOperationStep(ctx, restored.WorkspaceID, restored.BuildRunID, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -262,10 +245,10 @@ func TestBudgetReauthorizationResetsBudgetFailureRealPG(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.SucceedOperationStep(
+	if _, err := store.FinishOperationStep(
 		ctx, publish.WorkspaceID, publish.BuildRunID, publish.RevisionNo,
-		publish.OperationID, "worker", publish.LeaseEpoch, finalHash,
-		json.RawMessage(`{"publication":"completed"}`),
+		publish.OperationID, OperationStatusSucceeded, finalHash, "", "",
+		json.RawMessage(`{"publication":"completed"}`), allowCompilerStepFinish,
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -330,16 +313,14 @@ func TestBudgetOperationRecoveryGuardRejectsOtherTerminalsRealPG(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
-	failedStep, err := store.ClaimReadyOperationStep(
-		ctx, compileFailed.WorkspaceID, compileFailed.BuildRunID, 1, "worker", time.Minute,
-	)
+	failedStep, err := store.NextReadyOperationStep(ctx, compileFailed.WorkspaceID, compileFailed.BuildRunID, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	failedStep, err = store.FailOperationStep(
+	failedStep, err = store.FinishOperationStep(
 		ctx, failedStep.WorkspaceID, failedStep.BuildRunID, failedStep.RevisionNo,
-		failedStep.OperationID, "worker", failedStep.LeaseEpoch,
-		"compile_failure", "compile_failed", json.RawMessage(`{"compile":false}`),
+		failedStep.OperationID, OperationStatusFailed, "",
+		"compile_failure", "compile_failed", json.RawMessage(`{"compile":false}`), allowCompilerStepFinish,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -356,17 +337,15 @@ func TestBudgetOperationRecoveryGuardRejectsOtherTerminalsRealPG(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
-	succeededStep, err := store.ClaimReadyOperationStep(
-		ctx, succeeded.WorkspaceID, succeeded.BuildRunID, 1, "worker", time.Minute,
-	)
+	succeededStep, err := store.NextReadyOperationStep(ctx, succeeded.WorkspaceID, succeeded.BuildRunID, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	succeededStep, err = store.SucceedOperationStep(
+	succeededStep, err = store.FinishOperationStep(
 		ctx, succeededStep.WorkspaceID, succeededStep.BuildRunID, succeededStep.RevisionNo,
-		succeededStep.OperationID, "worker", succeededStep.LeaseEpoch,
-		"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-		json.RawMessage(`{"compiled":true}`),
+		succeededStep.OperationID, OperationStatusSucceeded,
+		"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "", "",
+		json.RawMessage(`{"compiled":true}`), allowCompilerStepFinish,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -379,13 +358,15 @@ func TestBudgetOperationRecoveryGuardRejectsOtherTerminalsRealPG(t *testing.T) {
 func forceBudgetTestStepPending(ctx context.Context, store *Store, step OperationStep) error {
 	_, err := store.pool.Exec(ctx, `
 		UPDATE weave_team_build_operation_steps
-		SET status='pending', lease_owner=NULL, lease_until=NULL,
+		SET status='pending',
 			error_class=NULL, error_code=NULL, evidence_json=NULL,
-			output_hash=NULL, completed_at=NULL, updated_at=updated_at
+			output_hash=NULL, started_at=NULL, completed_at=NULL, updated_at=updated_at
 		WHERE workspace_id=$1 AND build_run_id=$2 AND revision_no=$3 AND operation_id=$4
 	`, step.WorkspaceID, step.BuildRunID, step.RevisionNo, step.OperationID)
 	return err
 }
+
+func allowCompilerStepFinish(context.Context, pgx.Tx) error { return nil }
 
 func moveBudgetTestRunToPublishing(t *testing.T, ctx context.Context, store *Store, run TeamBuildRun) {
 	t.Helper()

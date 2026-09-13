@@ -16,6 +16,7 @@ import (
 
 	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/build/teameval/gatecodes"
+	"github.com/jinyitao123/weave/internal/kernel/workflow"
 )
 
 const (
@@ -757,9 +758,14 @@ type BaselineSnapshot struct {
 	Roster        []BaselineRosterEntry `json:"roster"`
 	AgentPins     []BaselineAgentPin    `json:"agent_pins"`
 	Workflows     []BaselineWorkflowRef `json:"workflows"`
-	AssetScope    AssetScope            `json:"asset_scope"`
-	CapturedAt    string                `json:"captured_at"`
-	ContentHash   string                `json:"content_hash,omitempty"`
+	// WorkflowIdentities and WorkflowVersions are the complete mutable product
+	// catalog facts used for the publication CAS. Immutable artifacts remain in
+	// Workflows, so publication never reads the artifact store inside its tx.
+	WorkflowIdentities []workflow.TeamWorkflow        `json:"workflow_identities"`
+	WorkflowVersions   []workflow.TeamWorkflowVersion `json:"workflow_versions"`
+	AssetScope         AssetScope                     `json:"asset_scope"`
+	CapturedAt         string                         `json:"captured_at"`
+	ContentHash        string                         `json:"content_hash,omitempty"`
 }
 
 // Hash returns the sha256 of the strict canonical snapshot JSON with the

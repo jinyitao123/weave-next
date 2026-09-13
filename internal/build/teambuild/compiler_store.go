@@ -19,13 +19,12 @@ var (
 	ErrCompilerBundleInvalid          = errors.New("compiler authorization bundle is invalid")
 	ErrBlueprintRevisionNotAppendSafe = errors.New("blueprint revision is not append-safe")
 	ErrNoReadyOperationStep           = errors.New("no ready compiler operation step")
-	ErrOperationStepLeaseLost         = errors.New("compiler operation step lease lost")
+	ErrOperationStepConflict          = errors.New("compiler operation step is no longer pending")
 	ErrEvaluationOnlyRevision         = errors.New("evaluation-only run forbids blueprint revisions")
 )
 
 const (
 	OperationStatusPending   = "pending"
-	OperationStatusRunning   = "running"
 	OperationStatusSucceeded = "succeeded"
 	OperationStatusSkipped   = "skipped"
 	OperationStatusFailed    = "failed"
@@ -134,10 +133,6 @@ type OperationStep struct {
 	Status         string
 	DependsOn      []string
 	InputHash      string
-	LeaseOwner     string
-	LeaseEpoch     int64
-	LeaseUntil     *time.Time
-	Attempt        int
 	ErrorClass     string
 	ErrorCode      string
 	EvidenceJSON   json.RawMessage
@@ -148,25 +143,9 @@ type OperationStep struct {
 	CompletedAt    *time.Time
 }
 
-// OperationAttempt is immutable once it leaves running. Retryable failures
-// therefore preserve typed evidence without making the operation step itself
-// terminal; the next claim creates a new fenced attempt on the same revision.
-type OperationAttempt struct {
-	WorkspaceID  string
-	BuildRunID   string
-	RevisionNo   int
-	OperationID  string
-	Attempt      int
-	LeaseEpoch   int64
-	WorkerID     string
-	Status       string
-	ErrorClass   string
-	ErrorCode    string
-	EvidenceJSON json.RawMessage
-	OutputHash   string
-	StartedAt    time.Time
-	CompletedAt  *time.Time
-}
+// ExecutionFence is supplied by the platform queue. It verifies the current
+// physical task claim in the same transaction that records business progress.
+type ExecutionFence func(context.Context, pgx.Tx) error
 
 type compilerChangeSetDocument struct {
 	SchemaVersion int                       `json:"schema_version"`
@@ -1181,32 +1160,6 @@ func (s *Store) requireLatestCompilerRevisionTx(
 	return &BlueprintRevisionToken{RevisionNo: revisionNo, BlueprintHash: blueprintHash, ChangeSetHash: changeSetHash}, nil
 }
 
-func (s *Store) latestCompilerBaselineCapturedAtTx(
-	ctx context.Context,
-	tx pgx.Tx,
-	workspaceID, buildRunID string,
-) (time.Time, error) {
-	var capturedAt *time.Time
-	err := tx.QueryRow(ctx, `
-		SELECT baseline_captured_at
-		FROM weave_team_build_blueprint_revisions
-		WHERE workspace_id=$1 AND build_run_id=$2
-		ORDER BY revision_no DESC
-		LIMIT 1
-		FOR UPDATE
-	`, workspaceID, buildRunID).Scan(&capturedAt)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return time.Time{}, fmt.Errorf("%w: compiler-v1 run has no persisted revision", ErrCompilerBundleInvalid)
-	}
-	if err != nil {
-		return time.Time{}, err
-	}
-	if capturedAt == nil || !validUTCTimestamp(*capturedAt) {
-		return time.Time{}, fmt.Errorf("%w: optimize revision has no valid baseline_captured_at", ErrCompilerBundleInvalid)
-	}
-	return capturedAt.UTC(), nil
-}
-
 func decodeJSONObject(raw json.RawMessage, target any) error {
 	if len(raw) == 0 || !json.Valid(raw) {
 		return errors.New("valid JSON is required")
@@ -1307,11 +1260,7 @@ func (s *Store) ListOperationSteps(
 	ctx context.Context, workspaceID, buildRunID string, revisionNo int,
 ) ([]OperationStep, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT workspace_id, build_run_id, revision_no, operation_id,
-			operation_index, operation_type, status, depends_on, input_hash,
-			lease_owner, lease_epoch, lease_until, attempt,
-			error_class, error_code, evidence_json, output_hash,
-			created_at, updated_at, started_at, completed_at
+		SELECT `+operationStepColumns+`
 		FROM weave_team_build_operation_steps
 		WHERE workspace_id=$1 AND build_run_id=$2 AND revision_no=$3
 		ORDER BY operation_index
@@ -1334,74 +1283,17 @@ func (s *Store) ListOperationSteps(
 	return steps, nil
 }
 
-// ListOperationAttempts returns the immutable attempt ledger for one step.
-func (s *Store) ListOperationAttempts(
-	ctx context.Context, workspaceID, buildRunID string, revisionNo int, operationID string,
-) ([]OperationAttempt, error) {
-	rows, err := s.pool.Query(ctx, `
-		SELECT workspace_id, build_run_id, revision_no, operation_id,
-			attempt, lease_epoch, worker_id, status,
-			error_class, error_code, evidence_json, output_hash,
-			started_at, completed_at
-		FROM weave_team_build_operation_attempts
-		WHERE workspace_id=$1 AND build_run_id=$2 AND revision_no=$3 AND operation_id=$4
-		ORDER BY attempt
-	`, workspaceID, buildRunID, revisionNo, operationID)
-	if err != nil {
-		return nil, fmt.Errorf("list compiler operation attempts: %w", err)
-	}
-	defer rows.Close()
-	var attempts []OperationAttempt
-	for rows.Next() {
-		attempt, err := scanOperationAttempt(rows)
-		if err != nil {
-			return nil, fmt.Errorf("list compiler operation attempts: %w", err)
-		}
-		attempts = append(attempts, attempt)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("list compiler operation attempts: %w", err)
-	}
-	return attempts, nil
-}
-
-// ClaimReadyOperationStep leases one dependency-ready operation. Repeating a
-// claim by the same worker returns its live lease without increasing attempt;
-// an expired running lease is resumable with a strictly larger fence epoch.
-func (s *Store) ClaimReadyOperationStep(
-	ctx context.Context,
-	workspaceID, buildRunID string,
-	revisionNo int,
-	workerID string,
-	leaseDuration time.Duration,
+// NextReadyOperationStep selects one dependency-ready business operation.
+// Physical ownership is already held by the platform task claim; this method
+// does not create another claim, lease, retry counter, or attempt record.
+func (s *Store) NextReadyOperationStep(
+	ctx context.Context, workspaceID, buildRunID string, revisionNo int,
 ) (OperationStep, error) {
-	if strings.TrimSpace(workerID) == "" || leaseDuration <= 0 {
-		return OperationStep{}, fmt.Errorf("claim compiler operation step: %w: worker and positive lease are required", ErrCompilerBundleInvalid)
-	}
-	now := s.clock.Now()
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return OperationStep{}, fmt.Errorf("begin claim compiler operation step: %w", err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-	if step, err := scanOperationStep(tx.QueryRow(ctx, operationStepSelect+`
-		WHERE workspace_id=$1 AND build_run_id=$2 AND revision_no=$3
-		  AND status='running' AND lease_owner=$4 AND lease_until>$5
-		ORDER BY operation_index LIMIT 1
-	`, workspaceID, buildRunID, revisionNo, workerID, now)); err == nil {
-		if err := tx.Commit(ctx); err != nil {
-			return OperationStep{}, fmt.Errorf("commit idempotent compiler operation claim: %w", err)
-		}
-		return step, nil
-	} else if !errors.Is(err, pgx.ErrNoRows) {
-		return OperationStep{}, fmt.Errorf("find existing compiler operation lease: %w", err)
-	}
-
-	candidate, err := scanOperationStep(tx.QueryRow(ctx, `
+	step, err := scanOperationStep(s.pool.QueryRow(ctx, `
 		SELECT `+operationStepAliasColumns+`
 		FROM weave_team_build_operation_steps s
 		WHERE s.workspace_id=$1 AND s.build_run_id=$2 AND s.revision_no=$3
-		  AND (s.status='pending' OR (s.status='running' AND s.lease_until<=$4))
+		  AND s.status='pending'
 		  AND NOT EXISTS (
 			SELECT 1
 			FROM jsonb_array_elements_text(s.depends_on) dependency(operation_id)
@@ -1414,173 +1306,29 @@ func (s *Store) ClaimReadyOperationStep(
 			   OR prerequisite.status NOT IN ('succeeded','skipped')
 		  )
 		ORDER BY s.operation_index
-		FOR UPDATE OF s SKIP LOCKED
 		LIMIT 1
-	`, workspaceID, buildRunID, revisionNo, now))
+	`, workspaceID, buildRunID, revisionNo))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return OperationStep{}, ErrNoReadyOperationStep
 	}
 	if err != nil {
-		return OperationStep{}, fmt.Errorf("claim compiler operation step: %w", err)
-	}
-	if candidate.Status == OperationStatusRunning {
-		expiryEvidence := json.RawMessage(`{"reason":"lease_expired"}`)
-		command, err := tx.Exec(ctx, `
-			UPDATE weave_team_build_operation_attempts
-			SET status='retryable_failed',
-				error_class='runtime_infrastructure_failure', error_code='operation_lease_expired',
-				evidence_json=$7, completed_at=$6
-			WHERE workspace_id=$1 AND build_run_id=$2 AND revision_no=$3
-			  AND operation_id=$4 AND attempt=$5 AND status='running'
-		`, workspaceID, buildRunID, revisionNo, candidate.OperationID, candidate.Attempt, now, expiryEvidence)
-		if err != nil {
-			return OperationStep{}, fmt.Errorf("close expired compiler operation attempt: %w", err)
-		}
-		if command.RowsAffected() != 1 {
-			return OperationStep{}, errors.New("close expired compiler operation attempt: attempt row is missing")
-		}
-	}
-	step, err := scanOperationStep(tx.QueryRow(ctx, `
-		UPDATE weave_team_build_operation_steps step
-		SET status='running', lease_owner=$5, lease_epoch=step.lease_epoch+1,
-			lease_until=$7, attempt=step.attempt+1,
-			started_at=COALESCE(step.started_at,$6), updated_at=$6
-		WHERE workspace_id=$1 AND build_run_id=$2 AND revision_no=$3 AND operation_id=$4
-		RETURNING `+operationStepReturningColumns,
-		workspaceID, buildRunID, revisionNo, candidate.OperationID, workerID, now, now.Add(leaseDuration)))
-	if err != nil {
-		return OperationStep{}, fmt.Errorf("claim compiler operation step: %w", err)
-	}
-	if _, err := tx.Exec(ctx, `
-		INSERT INTO weave_team_build_operation_attempts (
-			workspace_id, build_run_id, revision_no, operation_id,
-			attempt, lease_epoch, worker_id, status, started_at
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,'running',$8)
-	`, workspaceID, buildRunID, revisionNo, step.OperationID,
-		step.Attempt, step.LeaseEpoch, workerID, now); err != nil {
-		return OperationStep{}, fmt.Errorf("record compiler operation attempt: %w", err)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return OperationStep{}, fmt.Errorf("commit compiler operation claim: %w", err)
+		return OperationStep{}, fmt.Errorf("select ready compiler operation step: %w", err)
 	}
 	return step, nil
 }
 
-// RenewOperationStepLease extends only the current live fencing token.
-func (s *Store) RenewOperationStepLease(
+// FinishOperationStep records only the operation's business result. The
+// injected platform fence locks and validates the current task claim in this
+// same transaction, so cancellation, expiry, or claim replacement wins before
+// a stale handler can publish success.
+func (s *Store) FinishOperationStep(
 	ctx context.Context, workspaceID, buildRunID string, revisionNo int,
-	operationID, workerID string, leaseEpoch int64, leaseDuration time.Duration,
+	operationID, status, outputHash, errorClass, errorCode string,
+	evidenceJSON json.RawMessage, fence ExecutionFence,
 ) (OperationStep, error) {
-	if leaseDuration <= 0 {
-		return OperationStep{}, errors.New("renew compiler operation step: positive lease is required")
+	if status != OperationStatusSucceeded && status != OperationStatusSkipped && status != OperationStatusFailed {
+		return OperationStep{}, errors.New("finish compiler operation step: terminal business status is required")
 	}
-	now := s.clock.Now()
-	step, err := scanOperationStep(s.pool.QueryRow(ctx, `
-		UPDATE weave_team_build_operation_steps
-		SET lease_until=$7, updated_at=$6
-		WHERE workspace_id=$1 AND build_run_id=$2 AND revision_no=$3
-		  AND operation_id=$4 AND status='running'
-		  AND lease_owner=$5 AND lease_epoch=$8
-		  AND lease_until>$6
-		RETURNING `+operationStepColumns,
-		workspaceID, buildRunID, revisionNo, operationID, workerID, now,
-		now.Add(leaseDuration), leaseEpoch))
-	if errors.Is(err, pgx.ErrNoRows) {
-		return OperationStep{}, ErrOperationStepLeaseLost
-	}
-	return step, err
-}
-
-func (s *Store) SucceedOperationStep(
-	ctx context.Context, workspaceID, buildRunID string, revisionNo int,
-	operationID, workerID string, leaseEpoch int64,
-	outputHash string, evidenceJSON json.RawMessage,
-) (OperationStep, error) {
-	return s.finishOperationStep(ctx, workspaceID, buildRunID, revisionNo,
-		operationID, workerID, leaseEpoch, OperationStatusSucceeded,
-		outputHash, "", "", evidenceJSON)
-}
-
-func (s *Store) SkipOperationStep(
-	ctx context.Context, workspaceID, buildRunID string, revisionNo int,
-	operationID, workerID string, leaseEpoch int64,
-	outputHash string, evidenceJSON json.RawMessage,
-) (OperationStep, error) {
-	return s.finishOperationStep(ctx, workspaceID, buildRunID, revisionNo,
-		operationID, workerID, leaseEpoch, OperationStatusSkipped,
-		outputHash, "", "", evidenceJSON)
-}
-
-func (s *Store) FailOperationStep(
-	ctx context.Context, workspaceID, buildRunID string, revisionNo int,
-	operationID, workerID string, leaseEpoch int64,
-	errorClass, errorCode string, evidenceJSON json.RawMessage,
-) (OperationStep, error) {
-	return s.finishOperationStep(ctx, workspaceID, buildRunID, revisionNo,
-		operationID, workerID, leaseEpoch, OperationStatusFailed,
-		"", errorClass, errorCode, evidenceJSON)
-}
-
-// RetryOperationStep preserves the current typed attempt failure and returns
-// the operation to pending. It does not change revision identity and carries
-// no business deadline; a later claim creates attempt+1 with a new fence.
-func (s *Store) RetryOperationStep(
-	ctx context.Context, workspaceID, buildRunID string, revisionNo int,
-	operationID, workerID string, leaseEpoch int64,
-	errorClass, errorCode string, evidenceJSON json.RawMessage,
-) (OperationStep, error) {
-	if errorClass != "compile_failure" && errorClass != "runtime_infrastructure_failure" &&
-		errorClass != "budget_exhausted" {
-		return OperationStep{}, errors.New("retry compiler operation step: failure class is not retryable")
-	}
-	if strings.TrimSpace(errorCode) == "" {
-		return OperationStep{}, errors.New("retry compiler operation step: error_code is required")
-	}
-	if _, err := canonicalJSONObject(evidenceJSON); err != nil {
-		return OperationStep{}, fmt.Errorf("retry compiler operation step: evidence must be a JSON object: %w", err)
-	}
-	now := s.clock.Now()
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return OperationStep{}, fmt.Errorf("begin retry compiler operation step: %w", err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-	command, err := tx.Exec(ctx, `
-		UPDATE weave_team_build_operation_attempts
-		SET status='retryable_failed', error_class=$8, error_code=$9,
-			evidence_json=$10, completed_at=$7
-		WHERE workspace_id=$1 AND build_run_id=$2 AND revision_no=$3
-		  AND operation_id=$4 AND lease_epoch=$6 AND worker_id=$5 AND status='running'
-	`, workspaceID, buildRunID, revisionNo, operationID, workerID, leaseEpoch, now,
-		errorClass, errorCode, evidenceJSON)
-	if err != nil || command.RowsAffected() != 1 {
-		return OperationStep{}, ErrOperationStepLeaseLost
-	}
-	step, err := scanOperationStep(tx.QueryRow(ctx, `
-		UPDATE weave_team_build_operation_steps step
-		SET status='pending', lease_owner=NULL, lease_until=NULL, updated_at=$7
-		WHERE workspace_id=$1 AND build_run_id=$2 AND revision_no=$3
-		  AND operation_id=$4 AND status='running'
-		  AND lease_owner=$5 AND lease_epoch=$6 AND lease_until>$7
-		RETURNING `+operationStepReturningColumns,
-		workspaceID, buildRunID, revisionNo, operationID, workerID, leaseEpoch, now))
-	if errors.Is(err, pgx.ErrNoRows) {
-		return OperationStep{}, ErrOperationStepLeaseLost
-	}
-	if err != nil {
-		return OperationStep{}, fmt.Errorf("retry compiler operation step: %w", err)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return OperationStep{}, fmt.Errorf("commit retry compiler operation step: %w", err)
-	}
-	return step, nil
-}
-
-func (s *Store) finishOperationStep(
-	ctx context.Context, workspaceID, buildRunID string, revisionNo int,
-	operationID, workerID string, leaseEpoch int64, status,
-	outputHash, errorClass, errorCode string, evidenceJSON json.RawMessage,
-) (OperationStep, error) {
 	if _, err := canonicalJSONObject(evidenceJSON); err != nil {
 		return OperationStep{}, fmt.Errorf("finish compiler operation step: evidence must be a JSON object: %w", err)
 	}
@@ -1590,43 +1338,37 @@ func (s *Store) finishOperationStep(
 	if status == OperationStatusFailed && (!compilerFailureClasses[errorClass] || strings.TrimSpace(errorCode) == "") {
 		return OperationStep{}, errors.New("finish compiler operation step: typed error class and code are required")
 	}
+	if fence == nil {
+		return OperationStep{}, errors.New("finish compiler operation step: platform execution fence is required")
+	}
 	now := s.clock.Now()
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return OperationStep{}, fmt.Errorf("begin finish compiler operation step: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	command, err := tx.Exec(ctx, `
-		UPDATE weave_team_build_operation_attempts
-		SET status=$8, error_class=$9, error_code=$10,
-			evidence_json=$11, output_hash=$12, completed_at=$7
-		WHERE workspace_id=$1 AND build_run_id=$2 AND revision_no=$3
-		  AND operation_id=$4 AND worker_id=$5 AND lease_epoch=$6 AND status='running'
-	`, workspaceID, buildRunID, revisionNo, operationID, workerID, leaseEpoch, now,
-		status, nullableString(errorClass), nullableString(errorCode), evidenceJSON, nullableString(outputHash))
-	if err != nil || command.RowsAffected() != 1 {
-		return OperationStep{}, ErrOperationStepLeaseLost
+	if err = fence(ctx, tx); err != nil {
+		return OperationStep{}, fmt.Errorf("finish compiler operation step: platform claim is no longer current: %w", err)
 	}
 	step, err := scanOperationStep(tx.QueryRow(ctx, `
 		UPDATE weave_team_build_operation_steps
-		SET status=$8, lease_owner=NULL, lease_until=NULL,
-			error_class=$9, error_code=$10, evidence_json=$11, output_hash=$12,
-			completed_at=$7, updated_at=$7
+		SET status=$6, error_class=$7, error_code=$8,
+			evidence_json=$9, output_hash=$10,
+			started_at=$5, completed_at=$5, updated_at=$5
 		WHERE workspace_id=$1 AND build_run_id=$2 AND revision_no=$3
-		  AND operation_id=$4 AND status='running'
-		  AND lease_owner=$5 AND lease_epoch=$6 AND lease_until>$7
+		  AND operation_id=$4 AND status='pending'
 		RETURNING `+operationStepColumns,
-		workspaceID, buildRunID, revisionNo, operationID, workerID, leaseEpoch, now,
-		status, nullableString(errorClass), nullableString(errorCode), evidenceJSON,
+		workspaceID, buildRunID, revisionNo, operationID, now, status,
+		nullableString(errorClass), nullableString(errorCode), evidenceJSON,
 		nullableString(outputHash)))
 	if errors.Is(err, pgx.ErrNoRows) {
-		return OperationStep{}, ErrOperationStepLeaseLost
+		return OperationStep{}, ErrOperationStepConflict
 	}
 	if err != nil {
 		return OperationStep{}, fmt.Errorf("finish compiler operation step: %w", err)
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return OperationStep{}, fmt.Errorf("commit finish compiler operation step: %w", err)
+		return OperationStep{}, fmt.Errorf("commit compiler operation step: %w", err)
 	}
 	return step, nil
 }
@@ -1634,23 +1376,13 @@ func (s *Store) finishOperationStep(
 const operationStepColumns = `
 	workspace_id, build_run_id, revision_no, operation_id,
 	operation_index, operation_type, status, depends_on, input_hash,
-	lease_owner, lease_epoch, lease_until, attempt,
 	error_class, error_code, evidence_json, output_hash,
 	created_at, updated_at, started_at, completed_at
-`
-
-const operationStepReturningColumns = `
-	step.workspace_id, step.build_run_id, step.revision_no, step.operation_id,
-	step.operation_index, step.operation_type, step.status, step.depends_on, step.input_hash,
-	step.lease_owner, step.lease_epoch, step.lease_until, step.attempt,
-	step.error_class, step.error_code, step.evidence_json, step.output_hash,
-	step.created_at, step.updated_at, step.started_at, step.completed_at
 `
 
 const operationStepAliasColumns = `
 	s.workspace_id, s.build_run_id, s.revision_no, s.operation_id,
 	s.operation_index, s.operation_type, s.status, s.depends_on, s.input_hash,
-	s.lease_owner, s.lease_epoch, s.lease_until, s.attempt,
 	s.error_class, s.error_code, s.evidence_json, s.output_hash,
 	s.created_at, s.updated_at, s.started_at, s.completed_at
 `
@@ -1660,12 +1392,11 @@ const operationStepSelect = `SELECT ` + operationStepColumns + ` FROM weave_team
 func scanOperationStep(row rowScanner) (OperationStep, error) {
 	var step OperationStep
 	var dependenciesRaw []byte
-	var leaseOwner, errorClass, errorCode, outputHash *string
+	var errorClass, errorCode, outputHash *string
 	var evidenceRaw []byte
 	if err := row.Scan(
 		&step.WorkspaceID, &step.BuildRunID, &step.RevisionNo, &step.OperationID,
 		&step.OperationIndex, &step.OperationType, &step.Status, &dependenciesRaw, &step.InputHash,
-		&leaseOwner, &step.LeaseEpoch, &step.LeaseUntil, &step.Attempt,
 		&errorClass, &errorCode, &evidenceRaw, &outputHash,
 		&step.CreatedAt, &step.UpdatedAt, &step.StartedAt, &step.CompletedAt,
 	); err != nil {
@@ -1673,9 +1404,6 @@ func scanOperationStep(row rowScanner) (OperationStep, error) {
 	}
 	if err := json.Unmarshal(dependenciesRaw, &step.DependsOn); err != nil {
 		return OperationStep{}, fmt.Errorf("decode operation dependencies: %w", err)
-	}
-	if leaseOwner != nil {
-		step.LeaseOwner = *leaseOwner
 	}
 	if errorClass != nil {
 		step.ErrorClass = *errorClass
@@ -1688,29 +1416,4 @@ func scanOperationStep(row rowScanner) (OperationStep, error) {
 	}
 	step.EvidenceJSON = append(json.RawMessage(nil), evidenceRaw...)
 	return step, nil
-}
-
-func scanOperationAttempt(row rowScanner) (OperationAttempt, error) {
-	var attempt OperationAttempt
-	var errorClass, errorCode, outputHash *string
-	var evidenceRaw []byte
-	if err := row.Scan(
-		&attempt.WorkspaceID, &attempt.BuildRunID, &attempt.RevisionNo, &attempt.OperationID,
-		&attempt.Attempt, &attempt.LeaseEpoch, &attempt.WorkerID, &attempt.Status,
-		&errorClass, &errorCode, &evidenceRaw, &outputHash,
-		&attempt.StartedAt, &attempt.CompletedAt,
-	); err != nil {
-		return OperationAttempt{}, err
-	}
-	if errorClass != nil {
-		attempt.ErrorClass = *errorClass
-	}
-	if errorCode != nil {
-		attempt.ErrorCode = *errorCode
-	}
-	if outputHash != nil {
-		attempt.OutputHash = *outputHash
-	}
-	attempt.EvidenceJSON = append(json.RawMessage(nil), evidenceRaw...)
-	return attempt, nil
 }

@@ -550,7 +550,7 @@ func (p *ProductionPhases) handleCompilerCandidate(ctx context.Context, operatio
 	}
 	evaluation, err := p.Evaluate(ctx, teamorch.RoundContext{
 		WorkspaceID: operation.WorkspaceID, BuildRunID: operation.BuildRunID,
-		RoundNo: operation.Revision.RevisionNo, CandidateAttempt: operation.Step.Attempt,
+		RoundNo: operation.Revision.RevisionNo, CandidateAttempt: operation.PhysicalAttempt,
 		FrozenWorkflowID: workflowID, FrozenWorkflowVersion: workflowVersion,
 		Run: operation.Run,
 	})
@@ -571,7 +571,7 @@ func (p *ProductionPhases) handleCompilerCandidate(ctx context.Context, operatio
 	}
 	return teamorch.OperationResult{Evaluation: &evaluation}, &teamorch.OperationError{
 		Class: evaluation.Diagnosis.Class, Code: code,
-		Retryable: candidateFailureRetryable(evaluation.Diagnosis, operation.Step.Attempt),
+		Retryable: candidateFailureRetryable(evaluation.Diagnosis, operation.PhysicalAttempt),
 		Evidence:  evidence, Evaluation: &evaluation,
 	}
 }
