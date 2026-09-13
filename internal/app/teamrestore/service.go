@@ -56,8 +56,7 @@ type AgentRestoreStore interface {
 }
 
 // WorkflowRestorer materializes and publishes one baseline workflow through
-// the product publication boundary. Builder owns only the rollback sequence;
-// product draft transactions and kernel receipts stay in the app adapter.
+// the product publication boundary.
 type WorkflowRestorer interface {
 	RestoreWorkflow(context.Context, string, string, string, string, teambuild.BaselineWorkflowRef) (WorkflowRestoreResult, error)
 }

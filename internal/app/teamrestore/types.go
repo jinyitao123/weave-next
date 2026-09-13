@@ -1,5 +1,5 @@
-// Package teamrestore implements the manual stepwise baseline rollback for
-// team build runs (plan §7.2 / §10.4, ticket TEAM-FORGE-T15B). The service
+// Package teamrestore implements the product-owned manual baseline rollback
+// for team build runs. The service
 // restores only from the server-frozen BaselineSnapshot of one optimize run:
 // the inputs are workspace + build run + operator, nothing else is accepted.
 // Each restore step runs in its own transaction with an idempotency key (or
