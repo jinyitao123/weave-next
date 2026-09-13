@@ -19,7 +19,7 @@ func (s *Store) ValidateReferenceTx(
 	tx pgx.Tx,
 	ref frozen.CredentialReference,
 ) error {
-	if err := validateProviderReferenceSourceInput(s, tx, ref); err != nil {
+	if err := validateProviderReferenceSourceInput(ctx, s, tx, ref); err != nil {
 		return err
 	}
 
@@ -27,9 +27,9 @@ func (s *Store) ValidateReferenceTx(
 	err := tx.QueryRow(ctx, `
 		SELECT enabled, revoked_at, deleted_at
 		FROM weave_provider_credentials
-		WHERE workspace_id=$1 AND id=$2
+		WHERE workspace_id=$1 AND id=$2 AND credential_scope=$3 AND credential_user_id=$4 AND credential_service_id=$5
 		FOR SHARE
-	`, ref.WorkspaceID, ref.ResourceID).Scan(
+	`, ref.WorkspaceID, ref.ResourceID, ref.Scope, ref.UserID, ref.ServiceID).Scan(
 		&state.enabled, &state.revokedAt, &state.deletedAt,
 	)
 	if err != nil {
@@ -43,7 +43,7 @@ func (s *Store) ResolveProviderAPIKeyTx(
 	tx pgx.Tx,
 	ref frozen.CredentialReference,
 ) (string, error) {
-	if err := validateProviderReferenceSourceInput(s, tx, ref); err != nil {
+	if err := validateProviderReferenceSourceInput(ctx, s, tx, ref); err != nil {
 		return "", err
 	}
 
@@ -52,9 +52,9 @@ func (s *Store) ResolveProviderAPIKeyTx(
 	err := tx.QueryRow(ctx, `
 		SELECT api_key_cipher, enabled, revoked_at, deleted_at
 		FROM weave_provider_credentials
-		WHERE workspace_id=$1 AND id=$2
+		WHERE workspace_id=$1 AND id=$2 AND credential_scope=$3 AND credential_user_id=$4 AND credential_service_id=$5
 		FOR SHARE
-	`, ref.WorkspaceID, ref.ResourceID).Scan(
+	`, ref.WorkspaceID, ref.ResourceID, ref.Scope, ref.UserID, ref.ServiceID).Scan(
 		&ciphertext, &state.enabled, &state.revokedAt, &state.deletedAt,
 	)
 	if err != nil {
@@ -82,11 +82,15 @@ type providerReferenceState struct {
 }
 
 func validateProviderReferenceSourceInput(
+	ctx context.Context,
 	store *Store,
 	tx pgx.Tx,
 	ref frozen.CredentialReference,
 ) error {
 	if err := ValidateReferenceV1(ref); err != nil {
+		return err
+	}
+	if err := AuthorizeReference(ctx, ref); err != nil {
 		return err
 	}
 	if ref.Kind != frozen.CredentialProviderAPIKey || ref.Slot != "api_key" {

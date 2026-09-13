@@ -75,6 +75,12 @@ func (s *Store) MirrorSystemProvider(
 	}
 	targetID := "system/" + systemProviderID
 	sourceConfig.ID = targetID
+	sourceConfig.CredentialScope = frozen.CredentialScopeWorkspaceService
+	sourceConfig.CredentialUserID = ""
+	sourceConfig.CredentialServiceID = "system-provider:" + systemProviderID
+	if err := AuthorizeReference(ctx, providerConfigReference(workspaceID, sourceConfig)); err != nil {
+		return SystemProviderMirrorResult{}, err
+	}
 	normalized, err := normalizeMirroredProviderConfig(workspaceID, sourceConfig)
 	if err != nil {
 		return SystemProviderMirrorResult{}, err
@@ -132,11 +138,11 @@ func (s *Store) MirrorSystemProvider(
 		if _, err := tx.Exec(ctx, `
 			INSERT INTO weave_provider_credentials (
 			  workspace_id, id, name, base_url, api_key_cipher, models,
-			  json_object_mode, latest_revision, source_kind, source_provider_id
-			) VALUES ($1, $2, $3, $4, $5, $6, $7, 0, 'system_mirror', $8)
+			  json_object_mode, latest_revision, source_kind, source_provider_id,credential_scope,credential_user_id,credential_service_id
+			) VALUES ($1, $2, $3, $4, $5, $6, $7, 0, 'system_mirror', $8,$9,$10,$11)
 		`, workspaceID, targetID, normalized.Name, normalized.BaseURL,
 			sourceCiphertext, normalized.Models, normalized.JSONObjectMode,
-			systemProviderID,
+			systemProviderID, normalized.CredentialScope, normalized.CredentialUserID, normalized.CredentialServiceID,
 		); err != nil {
 			return SystemProviderMirrorResult{}, fmt.Errorf("create mirrored provider head: %w", err)
 		}
@@ -223,7 +229,7 @@ func (s *Store) MirrorSystemProvider(
 			  json_object_mode, content_hash
 			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		`, revision.WorkspaceID, revision.ProviderID, revision.Revision,
-			revision.Name, revision.BaseURL, modelsJSON, revision.JSONObjectMode,
+			revision.Name, revision.BaseURL, string(modelsJSON), revision.JSONObjectMode,
 			revision.ContentHash,
 		); err != nil {
 			return SystemProviderMirrorResult{}, fmt.Errorf("insert mirrored ProviderRevision: %w", err)

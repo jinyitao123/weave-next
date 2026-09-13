@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/base/frozen"
 )
 
@@ -17,13 +18,16 @@ const CodeDependencyVersionRequired = "workflow_dependency_version_required"
 var ErrDependencyVersionRequired = &Error{code: CodeDependencyVersionRequired}
 
 type modelProviderCandidate struct {
-	providerID       string
-	latestRevision   int64
-	sourceKind       string
-	sourceProviderID *string
-	enabled          bool
-	revokedAt        *time.Time
-	deletedAt        *time.Time
+	credentialScope     frozen.CredentialScope
+	credentialUserID    string
+	credentialServiceID string
+	providerID          string
+	latestRevision      int64
+	sourceKind          string
+	sourceProviderID    *string
+	enabled             bool
+	revokedAt           *time.Time
+	deletedAt           *time.Time
 }
 
 // GetProviderRevisionTx reads and locks one exact immutable provider revision
@@ -45,6 +49,9 @@ func GetProviderRevisionTx(
 			CodeDependencyVersionRequired,
 			"exact workspace, provider, and revision identity are required",
 		)
+	}
+	if _, _, err := getProviderHeadTx(ctx, tx, workspaceID, providerID, false); err != nil {
+		return ProviderRevision{}, err
 	}
 	return getProviderRevisionTx(
 		ctx, tx, workspaceID, providerID, revision, true,
@@ -71,9 +78,12 @@ func ResolveModelRevisionTx(
 		)
 	}
 
+	if _, err := execution.RequireSubject(ctx, workspaceID); err != nil {
+		return frozen.FrozenModelBinding{}, err
+	}
 	rows, err := tx.Query(ctx, `
 		SELECT id, latest_revision, source_kind, source_provider_id,
-		       enabled, revoked_at, deleted_at
+		       enabled, revoked_at, deleted_at,credential_scope,credential_user_id,credential_service_id
 		FROM weave_provider_credentials
 		WHERE workspace_id=$1 AND $2=ANY(models)
 		FOR SHARE
@@ -90,9 +100,13 @@ func ResolveModelRevisionTx(
 		if err := rows.Scan(
 			&candidate.providerID, &candidate.latestRevision,
 			&candidate.sourceKind, &candidate.sourceProviderID,
-			&candidate.enabled, &candidate.revokedAt, &candidate.deletedAt,
+			&candidate.enabled, &candidate.revokedAt, &candidate.deletedAt, &candidate.credentialScope, &candidate.credentialUserID, &candidate.credentialServiceID,
 		); err != nil {
 			return frozen.FrozenModelBinding{}, fmt.Errorf("scan model provider head: %w", err)
+		}
+		ref := frozen.CredentialReference{SchemaVersion: frozen.FrozenSchemaVersion, WorkspaceID: workspaceID, Kind: frozen.CredentialProviderAPIKey, ResourceID: candidate.providerID, Slot: "api_key", Scope: candidate.credentialScope, UserID: candidate.credentialUserID, ServiceID: candidate.credentialServiceID}
+		if AuthorizeReference(ctx, ref) != nil {
+			continue
 		}
 		switch candidate.sourceKind {
 		case "workspace":
@@ -110,6 +124,15 @@ func ResolveModelRevisionTx(
 		return frozen.FrozenModelBinding{}, fmt.Errorf("read model provider heads: %w", err)
 	}
 
+	personal := make([]modelProviderCandidate, 0)
+	for _, candidate := range workspaceCandidates {
+		if candidate.credentialScope == frozen.CredentialScopeUser {
+			personal = append(personal, candidate)
+		}
+	}
+	if len(personal) > 0 {
+		workspaceCandidates = personal
+	}
 	candidates := workspaceCandidates
 	if len(candidates) == 0 {
 		candidates = systemCandidates
@@ -175,8 +198,9 @@ func ResolveModelRevisionTx(
 		BaseURL:          revision.BaseURL,
 		JSONObjectMode:   revision.JSONObjectMode,
 		CredentialRef: frozen.CredentialReference{
-			SchemaVersion:     frozen.FrozenSchemaVersion,
-			WorkspaceID:       workspaceID,
+			SchemaVersion: frozen.FrozenSchemaVersion,
+			WorkspaceID:   workspaceID,
+			Scope:         selected.credentialScope, UserID: selected.credentialUserID, ServiceID: selected.credentialServiceID,
 			Kind:              frozen.CredentialProviderAPIKey,
 			ResourceID:        revision.ProviderID,
 			Slot:              "api_key",

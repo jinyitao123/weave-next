@@ -797,6 +797,21 @@ func ValidateCredentialReference(value CredentialReference) error {
 	if value.WorkspaceID == "" || value.ResourceID == "" || value.CredentialVersion != nil {
 		return ErrFrozenCredentialInvalid
 	}
+	if strings.TrimSpace(value.UserID) != value.UserID || strings.TrimSpace(value.ServiceID) != value.ServiceID {
+		return ErrFrozenCredentialInvalid
+	}
+	switch value.Scope {
+	case CredentialScopeUser:
+		if value.UserID == "" || value.ServiceID != "" {
+			return ErrFrozenCredentialInvalid
+		}
+	case CredentialScopeWorkspaceService:
+		if value.ServiceID == "" || value.UserID != "" {
+			return ErrFrozenCredentialInvalid
+		}
+	default:
+		return ErrFrozenCredentialInvalid
+	}
 	switch value.Kind {
 	case CredentialProviderAPIKey:
 		if value.Slot != "api_key" {
@@ -1653,6 +1668,9 @@ func compareSkill(left, right FrozenSkill) int {
 func compareCredential(left, right CredentialReference) int {
 	for _, pair := range [][2]string{
 		{left.WorkspaceID, right.WorkspaceID},
+		{string(left.Scope), string(right.Scope)},
+		{left.UserID, right.UserID},
+		{left.ServiceID, right.ServiceID},
 		{string(left.Kind), string(right.Kind)},
 		{left.ResourceID, right.ResourceID},
 		{left.Slot, right.Slot},

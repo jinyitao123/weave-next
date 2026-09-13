@@ -124,6 +124,7 @@ func ResolveMCPRevisionTx(
 		Filter:         append([]string(nil), policy.Filter...),
 		WriteTools:     append([]string(nil), policy.WriteTools...),
 		AccessRef: frozen.CredentialReference{
+			Scope: frozen.CredentialScopeWorkspaceService, ServiceID: "mcp:" + serverID,
 			SchemaVersion:     frozen.FrozenSchemaVersion,
 			WorkspaceID:       workspaceID,
 			Kind:              frozen.CredentialMCPServerAccess,

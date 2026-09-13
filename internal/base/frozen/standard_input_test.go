@@ -70,7 +70,7 @@ func TestFrozenMCPHashBindsToolDefinition(t *testing.T) {
 	binding := FrozenMCPBinding{
 		SchemaVersion: 1, WorkspaceID: "w", ServerID: "s", ServerRevision: 1,
 		Transport: "http", URL: "http://localhost:1234/mcp",
-		AccessRef: CredentialReference{SchemaVersion: 1, Kind: CredentialMCPServerAccess, WorkspaceID: "w", ResourceID: "s", Slot: "access"},
+		AccessRef: CredentialReference{Scope: CredentialScopeWorkspaceService, ServiceID: "mcp:s", SchemaVersion: 1, Kind: CredentialMCPServerAccess, WorkspaceID: "w", ResourceID: "s", Slot: "access"},
 		Tools:     []FrozenToolDefinition{{Name: "calculate", InputSchema: json.RawMessage(`{"type":"object","properties":{}}`)}},
 	}
 	original, err := HashDTO(binding, PreorderFrozenMCPBinding)

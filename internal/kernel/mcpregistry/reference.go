@@ -8,8 +8,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jinyitao123/weave/internal/kernel/credentials"
 	"github.com/jinyitao123/weave/internal/base/frozen"
+	"github.com/jinyitao123/weave/internal/kernel/credentials"
 	"github.com/jinyitao123/weave/internal/kernel/secret"
 )
 
@@ -20,7 +20,7 @@ func (s *Store) ValidateReferenceTx(
 	tx pgx.Tx,
 	ref frozen.CredentialReference,
 ) error {
-	if err := validateMCPReferenceInput(s, tx, ref); err != nil {
+	if err := validateMCPReferenceInput(ctx, s, tx, ref); err != nil {
 		return err
 	}
 
@@ -44,7 +44,7 @@ func (s *Store) ResolveMCPAccessTx(
 	tx pgx.Tx,
 	ref frozen.CredentialReference,
 ) (credentials.SecretMaterial, error) {
-	if err := validateMCPReferenceInput(s, tx, ref); err != nil {
+	if err := validateMCPReferenceInput(ctx, s, tx, ref); err != nil {
 		return credentials.SecretMaterial{}, err
 	}
 
@@ -104,6 +104,7 @@ type mcpReferenceState struct {
 }
 
 func validateMCPReferenceInput(
+	ctx context.Context,
 	store *Store,
 	tx pgx.Tx,
 	ref frozen.CredentialReference,
@@ -112,6 +113,12 @@ func validateMCPReferenceInput(
 		if errors.Is(err, credentials.ErrCredentialVersionUnsupported) {
 			return err
 		}
+		return newMCPReferenceError(nil)
+	}
+	if err := credentials.AuthorizeReference(ctx, ref); err != nil {
+		return err
+	}
+	if ref.Scope != frozen.CredentialScopeWorkspaceService || ref.ServiceID != "mcp:"+ref.ResourceID {
 		return newMCPReferenceError(nil)
 	}
 	if ref.Kind != frozen.CredentialMCPServerAccess || ref.Slot != "access" {

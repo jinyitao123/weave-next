@@ -9,6 +9,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/kernel/llmrouter"
 	"github.com/jinyitao123/weave/internal/kernel/secret"
 )
@@ -41,8 +42,11 @@ func New(pool *pgxpool.Pool, key []byte) *Store {
 
 // List returns decrypted provider configurations for one workspace.
 func (s *Store) List(ctx context.Context, workspaceID string) ([]llmrouter.ProviderConfig, error) {
+	if _, err := execution.RequireSubject(ctx, workspaceID); err != nil {
+		return nil, err
+	}
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, name, base_url, api_key_cipher, models, json_object_mode
+		SELECT id, name, base_url, api_key_cipher, models, json_object_mode,credential_scope,credential_user_id,credential_service_id
 		FROM weave_provider_credentials
 		WHERE workspace_id=$1
 		  AND enabled
@@ -57,8 +61,11 @@ func (s *Store) List(ctx context.Context, workspaceID string) ([]llmrouter.Provi
 
 	configs := make([]llmrouter.ProviderConfig, 0)
 	for rows.Next() {
-		cfg, err := s.scanProvider(rows)
+		cfg, err := s.scanProvider(ctx, workspaceID, rows)
 		if err != nil {
+			if errors.Is(err, ErrCredentialUnavailable) {
+				continue
+			}
 			if errors.Is(err, ErrDecrypt) {
 				// One undecryptable row (rotated WEAVE_SECRET_KEY, corrupt
 				// ciphertext) must not take the workspace's other providers —
@@ -96,6 +103,9 @@ func (s *Store) Upsert(ctx context.Context, workspaceID string, cfg llmrouter.Pr
 // Delete idempotently closes a provider's live security state. Immutable
 // functional revisions remain available for frozen publication and audit.
 func (s *Store) Delete(ctx context.Context, workspaceID, id string) error {
+	if _, err := s.GetHead(ctx, workspaceID, id); err != nil {
+		return err
+	}
 	_, err := s.pool.Exec(ctx, `
 		UPDATE weave_provider_credentials
 		SET enabled=false,
@@ -164,10 +174,13 @@ type rowScanner interface {
 	Scan(dest ...any) error
 }
 
-func (s *Store) scanProvider(row rowScanner) (llmrouter.ProviderConfig, error) {
+func (s *Store) scanProvider(ctx context.Context, workspaceID string, row rowScanner) (llmrouter.ProviderConfig, error) {
 	var cfg llmrouter.ProviderConfig
 	var ciphertext string
-	if err := row.Scan(&cfg.ID, &cfg.Name, &cfg.BaseURL, &ciphertext, &cfg.Models, &cfg.JSONObjectMode); err != nil {
+	if err := row.Scan(&cfg.ID, &cfg.Name, &cfg.BaseURL, &ciphertext, &cfg.Models, &cfg.JSONObjectMode, &cfg.CredentialScope, &cfg.CredentialUserID, &cfg.CredentialServiceID); err != nil {
+		return llmrouter.ProviderConfig{}, err
+	}
+	if err := AuthorizeReference(ctx, providerConfigReference(workspaceID, cfg)); err != nil {
 		return llmrouter.ProviderConfig{}, err
 	}
 	plaintext, err := secret.Open(s.key, ciphertext)
