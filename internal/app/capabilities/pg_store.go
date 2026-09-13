@@ -181,7 +181,7 @@ func (s *PGStore) claimInvocation(ctx context.Context, invocation Invocation, de
 		invocation.MaxSteps = quotaMaxSteps
 	}
 	var active int
-	if err := tx.QueryRow(ctx, `SELECT count(*) FROM weave_capability_invocations WHERE workspace_id=$1 AND status IN ('queued','running','waiting','cancel_requested') AND NOT (application_id=$2 AND request_id=$3)`, invocation.WorkspaceID, invocation.ApplicationID, invocation.RequestID).Scan(&active); err != nil {
+	if err := tx.QueryRow(ctx, `SELECT count(*) FROM weave_capability_invocations WHERE workspace_id=$1 AND status IN ('queued','running','waiting','reconciling','cancel_requested') AND NOT (application_id=$2 AND request_id=$3)`, invocation.WorkspaceID, invocation.ApplicationID, invocation.RequestID).Scan(&active); err != nil {
 		return Invocation{}, false, err
 	}
 	if active >= quotaMaxActive {
@@ -335,7 +335,7 @@ func (s *PGStore) CancelInvocation(ctx context.Context, workspaceID, application
 		return Invocation{}, ErrInvocationTerminal
 	}
 	next := "cancelled"
-	if status == "running" {
+	if status == "running" || status == "reconciling" {
 		next = "cancel_requested"
 	}
 	if _, err := tx.Exec(ctx, `UPDATE weave_capability_invocations SET status=$4, result_state='unavailable' WHERE workspace_id=$1 AND application_id=$2 AND invocation_id=$3`, workspaceID, applicationID, invocationID, next); err != nil {

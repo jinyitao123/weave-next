@@ -42,17 +42,21 @@ func (s *PGStore) AbandonTask(ctx context.Context, task InvocationTask) error {
 		return err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	tag, err := tx.Exec(ctx, `UPDATE weave_capability_invocation_tasks SET status='queued',claim_token=NULL,deadline_at=NULL WHERE task_id=$1 AND workspace_id=$2 AND invocation_id=$3 AND claim_token=$4 AND status='running'`, task.TaskID, task.WorkspaceID, task.InvocationID, task.ClaimToken)
+	tag, err := tx.Exec(ctx, `UPDATE weave_capability_invocation_tasks
+	 SET status='reconciling',
+	 execution_consumed_ms=LEAST(execution_budget_ms,execution_consumed_ms+GREATEST(0,EXTRACT(EPOCH FROM (now()-claim_started_at))*1000)::bigint),
+	 claim_token=NULL,deadline_at=NULL,claim_started_at=NULL
+	 WHERE task_id=$1 AND workspace_id=$2 AND invocation_id=$3 AND claim_token=$4 AND status='running'`, task.TaskID, task.WorkspaceID, task.InvocationID, task.ClaimToken)
 	if err != nil {
 		return err
 	}
 	if tag.RowsAffected() != 1 {
 		return ErrClaimLost
 	}
-	if _, err := tx.Exec(ctx, `UPDATE weave_capability_invocations SET status='queued',error=NULL WHERE workspace_id=$1 AND invocation_id=$2 AND status='running'`, task.WorkspaceID, task.InvocationID); err != nil {
+	if _, err := tx.Exec(ctx, `UPDATE weave_capability_invocations SET status='reconciling',error=NULL WHERE workspace_id=$1 AND invocation_id=$2 AND status='running'`, task.WorkspaceID, task.InvocationID); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(ctx, `INSERT INTO weave_capability_invocation_events(workspace_id,invocation_id,event_type,detail) VALUES($1,$2,'execution_interrupted','{}')`, task.WorkspaceID, task.InvocationID); err != nil {
+	if _, err := tx.Exec(ctx, `INSERT INTO weave_capability_invocation_events(workspace_id,invocation_id,event_type,detail) VALUES($1,$2,'execution_outcome_unknown','{}')`, task.WorkspaceID, task.InvocationID); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)

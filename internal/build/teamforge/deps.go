@@ -2,13 +2,11 @@ package teamforge
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jinyitao123/weave/internal/base/deliverable"
-	"github.com/jinyitao123/weave/internal/base/frozen"
-	"github.com/jinyitao123/weave/internal/base/taskqueue"
+	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 	"github.com/jinyitao123/weave/internal/kernel/credentials"
 	"github.com/jinyitao123/weave/internal/kernel/mcpregistry"
 	"github.com/jinyitao123/weave/internal/kernel/org"
@@ -119,23 +117,14 @@ type DeliverableReader interface {
 	List(ctx context.Context, workspaceID string, filter deliverable.ListFilter) ([]deliverable.FinalDeliverable, error)
 }
 
-// WriteDeps aggregates the narrow write surfaces backing the teamforge write
-// tools (plan §10.2). Production implementations are the existing stores; the
-// narrow shapes force writes through AgentRegistry.PutTx and validation
-// through credentials.ResolveModelRevisionTx so the tools never touch raw
-// SQL or bypass versioning.
+// WriteDeps contains product asset commands. Transaction ownership stays
+// with the command implementation, outside the builder tool surface.
 type WriteDeps struct {
-	// Pool begins the transaction that carries F2 model resolution and PutTx
-	// atomically; any validation failure rolls the whole write back.
-	Pool *pgxpool.Pool
-	// Agents persists assembled records via PutTx, the registry's only
-	// caller-owned-transaction write entry.
+	// Agents commits the model binding check and immutable agent version atomically.
 	Agents AgentWriter
 	// AgentLoad reads the current record for patch merging and the
 	// create-v1 existence guard.
 	AgentLoad AgentLoader
-	// Models resolves the F2 provider revision binding inside the tx.
-	Models ModelRevisionResolver
 	// Runtimes reads one workspace runtime for the engine binding rule.
 	Runtimes RuntimeGetter
 	// Teams creates one active team aggregate (lead + initial roster) through
@@ -154,9 +143,22 @@ type WriteDeps struct {
 	Workflows WorkflowWriter
 }
 
-// AgentWriter is satisfied by *registry.AgentRegistry.PutTx.
+// AgentWriteRequest carries the already authorized and assembled asset command.
+type AgentWriteRequest struct {
+	WorkspaceID   string
+	Record        registry.AgentRecord
+	InternalGraph bool
+}
+
+// AgentWriteResult is returned only after the command committed successfully.
+type AgentWriteResult struct {
+	Record registry.AgentRecord
+	JSON   json.RawMessage
+}
+
+// AgentWriter preserves provider validation and version creation as one operation.
 type AgentWriter interface {
-	PutTx(ctx context.Context, tx pgx.Tx, workspaceID string, rec *registry.AgentRecord) error
+	CommitAgent(context.Context, AgentWriteRequest) (AgentWriteResult, error)
 }
 
 // AgentLoader is satisfied by *registry.AgentRegistry.Get.
@@ -165,29 +167,6 @@ type AgentLoader interface {
 	// List resolves a caller-supplied stable agent ID that Get (name-keyed)
 	// cannot resolve. *registry.AgentRegistry satisfies both methods.
 	List(ctx context.Context, workspaceID string) ([]registry.AgentRecord, error)
-}
-
-// ModelRevisionResolver matches the signature of the free function
-// credentials.ResolveModelRevisionTx; CredentialModelResolver binds it.
-type ModelRevisionResolver interface {
-	ResolveModelRevisionTx(
-		ctx context.Context,
-		tx pgx.Tx,
-		workspaceID, modelID string,
-	) (frozen.FrozenModelBinding, error)
-}
-
-// CredentialModelResolver is the production adapter for the package-level
-// function credentials.ResolveModelRevisionTx (which is not a method).
-type CredentialModelResolver struct{}
-
-// ResolveModelRevisionTx delegates to credentials.ResolveModelRevisionTx.
-func (CredentialModelResolver) ResolveModelRevisionTx(
-	ctx context.Context,
-	tx pgx.Tx,
-	workspaceID, modelID string,
-) (frozen.FrozenModelBinding, error) {
-	return credentials.ResolveModelRevisionTx(ctx, tx, workspaceID, modelID)
 }
 
 // RuntimeGetter is satisfied by *runtimes.Store.Get.

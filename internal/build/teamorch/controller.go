@@ -1,13 +1,6 @@
-// Package teamorch implements the in-process round controller that drives a
-// TeamBuildRun through the three-round build/evaluate loop (§9 of the team
-// forge plan).
-//
-// Design decision (reviewer ruling, recorded in the T10 ticket): the first
-// version drives rounds from a Go controller instead of the meta team's own
-// TeamWorkflow. A TeamWorkflow path would freeze artifacts and its serial
-// machine does not support handoff; the three-round loop is inherently
-// stateful and would require a new graph node type, which is over-engineering
-// for the skeleton. A future ticket may rework the loop as a TeamWorkflow.
+// Package teamorch owns builder round and operation decisions. Product
+// construction adapters supply phase work and atomic asset commands; controllers
+// do not assemble concrete runtime hosts or own database transactions.
 package teamorch
 
 import (
@@ -27,9 +20,8 @@ import (
 // for transitions driven by the round controller.
 const DefaultActor = "round-controller"
 
-// Phases is the per-round work injected into the controller. The production
-// wiring (architect agent run, GateEvaluator, candidate test runs, publish)
-// lands in T11; this ticket only provides the skeleton and persistence.
+// Phases is the product-neutral round-work port injected into the controller.
+// Production runtime, evaluation and persistence assembly belongs to app adapters.
 type Phases interface {
 	// Build runs the build phase for one round. Errors abort Run and leave
 	// the run in round_running so a later invocation resumes the round from
@@ -129,8 +121,8 @@ type Result struct {
 	Rounds int `json:"rounds"`
 }
 
-// Controller drives one TeamBuildRun through its rounds (§9). Every state
-// change goes through teambuild.Store's CAS state machine; a concurrent
+// Controller drives one TeamBuildRun through its rounds. Every state
+// change goes through BuildRunPort's atomic commands; a concurrent
 // writer that moves the run out from under the controller surfaces as an
 // error from Run.
 //
@@ -141,7 +133,7 @@ type Result struct {
 // host it in their own worker loop following the controllable Start/Stop
 // shape of internal/teamrun/workers.go.
 type Controller struct {
-	Store  *teambuild.Store
+	Store  BuildRunPort
 	Phases Phases
 	// Compiler executes persisted compiler-v1 operation DAGs. It is selected
 	// only by TeamBuildRun.ExecutionStrategy; legacy runs never call it.
@@ -157,7 +149,7 @@ type Controller struct {
 }
 
 // NewController creates a round controller. clock may be nil (real clock).
-func NewController(store *teambuild.Store, phases Phases, clock teambuild.Clock) *Controller {
+func NewController(store BuildRunPort, phases Phases, clock teambuild.Clock) *Controller {
 	controller := &Controller{Store: store, Phases: phases, Actor: DefaultActor, Clock: clock}
 	if handler, ok := phases.(OperationHandler); ok && store != nil {
 		controller.Compiler = NewCompilerExecutor(store, handler)
@@ -969,7 +961,7 @@ func (c *Controller) handleCompilerBusinessQuality(
 			"blueprint_patch_invalid", revisionNo)
 		return result, false, stopErr
 	}
-	if err := validateCompilerPatchExecutable(currentBlueprint, patch); err != nil {
+	if err := ValidateCompilerPatchExecutable(currentBlueprint, patch); err != nil {
 		result, stopErr := c.blockCompilerWithPersistedReport(ctx, workspaceID, buildRunID, actor,
 			"blueprint_patch_path_not_executable", revisionNo)
 		return result, false, stopErr
@@ -1045,7 +1037,8 @@ func (c *Controller) stopCompilerDiagnosisWithReason(
 	return c.stopCompilerDiagnosis(ctx, workspaceID, buildRunID, actor, roundNo, roundsLen, eval)
 }
 
-func validateCompilerPatchExecutable(blueprint teambuild.TeamBlueprintV1, patch teambuild.BlueprintPatchV1) error {
+// ValidateCompilerPatchExecutable rejects patches that have no deterministic operation handler.
+func ValidateCompilerPatchExecutable(blueprint teambuild.TeamBlueprintV1, patch teambuild.BlueprintPatchV1) error {
 	for _, change := range patch.Changes {
 		parts := strings.Split(change.Path, "/")
 		if change.Path == "/purpose" || change.Path == "/lead_ref" {
@@ -1243,22 +1236,7 @@ func (c *Controller) recordRound(
 		ReportRef:    reportHash,
 		Conclusion:   eval.Conclusion,
 	}
-	tx, err := c.Store.BeginTx(ctx)
-	if err != nil {
-		return teambuild.Round{}, fmt.Errorf("begin round persistence: %w", err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-	if _, err := c.Store.SaveRoundReportTx(ctx, tx, workspaceID, buildRunID, report); err != nil {
-		return teambuild.Round{}, fmt.Errorf("save round report: %w", err)
-	}
-	round, err := c.Store.RecordRoundResultTx(ctx, tx, workspaceID, buildRunID, result)
-	if err != nil {
-		return teambuild.Round{}, fmt.Errorf("record round result: %w", err)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return teambuild.Round{}, fmt.Errorf("commit round persistence: %w", err)
-	}
-	return round, nil
+	return c.Store.RecordEvaluatedRound(ctx, workspaceID, buildRunID, report, result)
 }
 
 func (c *Controller) now() time.Time {

@@ -148,3 +148,47 @@ func TestCapabilityExecutionDeadlineCarriesAcrossClaimsRealPG(t *testing.T) {
 		t.Fatalf("resumed execution budget was reset: %v", remaining)
 	}
 }
+
+func TestCapabilityUnknownOutcomeRequiresReceiptBeforeRetryRealPG(t *testing.T) {
+	_, store, invocation := executionFixture(t)
+	first, claimed, err := store.ClaimTask(t.Context())
+	if err != nil || !claimed {
+		t.Fatalf("claim: %v %v", claimed, err)
+	}
+	if err := store.AbandonTask(t.Context(), first); err != nil {
+		t.Fatal(err)
+	}
+	stored, err := store.GetInvocation(t.Context(), invocation.WorkspaceID, invocation.ApplicationID, invocation.InvocationID)
+	if err != nil || stored.Status != "reconciling" {
+		t.Fatalf("unknown outcome = %+v %v", stored, err)
+	}
+	if _, claimed, err := store.ClaimTask(t.Context()); err != nil || claimed {
+		t.Fatalf("unknown outcome was dispatched again: %v %v", claimed, err)
+	}
+	if _, err := store.ReconcileTask(t.Context(), invocation.WorkspaceID, invocation.InvocationID, Reconciliation{Decision: ReconcileRetrySafe}); err == nil {
+		t.Fatal("reconciliation without physical receipt succeeded")
+	}
+	reconciled, err := store.ReconcileTask(t.Context(), invocation.WorkspaceID, invocation.InvocationID, Reconciliation{
+		Decision: ReconcileRetrySafe, ReceiptID: "runtime-stop-1",
+	})
+	if err != nil || reconciled.Status != "queued" {
+		t.Fatalf("retry-safe reconciliation = %+v %v", reconciled, err)
+	}
+	second, claimed, err := store.ClaimTask(t.Context())
+	if err != nil || !claimed {
+		t.Fatalf("reconciled claim: %v %v", claimed, err)
+	}
+	if err := store.AbandonTask(t.Context(), second); err != nil {
+		t.Fatal(err)
+	}
+	cancelled, err := store.CancelInvocation(t.Context(), invocation.WorkspaceID, invocation.ApplicationID, invocation.InvocationID)
+	if err != nil || cancelled.Status != "cancel_requested" {
+		t.Fatalf("cancel uncertain task = %+v %v", cancelled, err)
+	}
+	final, err := store.ReconcileTask(t.Context(), invocation.WorkspaceID, invocation.InvocationID, Reconciliation{
+		Decision: ReconcileRetrySafe, ReceiptID: "runtime-stop-2",
+	})
+	if err != nil || final.Status != "cancelled" {
+		t.Fatalf("cancel reconciliation = %+v %v", final, err)
+	}
+}

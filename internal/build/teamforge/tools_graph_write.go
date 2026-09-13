@@ -4,7 +4,7 @@ package teamforge
 // one draft per build_run_id + agent name in dispatcher memory: step
 // operations accumulate on the draft, tf_graph_validate runs the full
 // validator, and tf_graph_commit lands one immutable agent version through
-// WriteGate.writeTx + AgentRegistry.PutTx. Every call is receipt-gated on
+// the atomic product AgentWriter command. Every call is receipt-gated on
 // AssetRef{Kind: "agent"} and audited through the shared write skeleton
 // (writegate.go); wiring (next / condition true|false) is maintained by the
 // tools, never written as raw fields by the model.
@@ -16,7 +16,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jinyitao123/loom/contract"
 	"github.com/jinyitao123/weave/internal/build/teambuild"
 	"github.com/jinyitao123/weave/internal/build/teameval"
@@ -637,7 +636,7 @@ func (d *GraphWriteToolsDispatcher) commitGraphDraft(
 	}
 	merged := buildCommittedRecord(record, draft)
 
-	// F13 pre-gate (re-checked inside the tx below): a CLI engine cannot host
+	// F13 pre-gate (re-checked by the atomic product command): a CLI engine cannot host
 	// an internal graph, so the commit is rejected before any transaction is
 	// opened.
 	if engine.IsCLIEngine(merged.Engine) {
@@ -649,29 +648,12 @@ func (d *GraphWriteToolsDispatcher) commitGraphDraft(
 		return toolError(call.ID, err.Error())
 	}
 
-	var committedVersion int
-	if err := d.gate.writeTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
-		// F13 inside the tx: engine cannot race onto a CLI engine between the
-		// pre-gate and the version write.
-		if engine.IsCLIEngine(merged.Engine) {
-			return fmt.Errorf(
-				"%w: agent %q is on engine %q; employee internal graphs require the loom engine",
-				ErrWriteCLIGraphConflict, merged.Name, merged.Engine)
-		}
-		if err := d.gate.resolveModel(ctx, tx, &merged); err != nil {
-			return err
-		}
-		if d.gate.deps.Agents == nil {
-			return errors.New("agent registry write is unavailable")
-		}
-		if err := d.gate.deps.Agents.PutTx(ctx, tx, d.gate.workspaceID, &merged); err != nil {
-			return err
-		}
-		committedVersion = merged.Version
-		return nil
-	}); err != nil {
+	committed, err := d.gate.commitAgent(ctx, merged, true)
+	if err != nil {
 		return toolError(call.ID, err.Error())
 	}
+	committedVersion := committed.Record.Version
+
 	d.drafts.delete(input.BuildRunID, record.Name)
 	result, _ := toolJSON(call.ID, graphCommitJSON{
 		BuildRunID:     input.BuildRunID,

@@ -160,7 +160,7 @@ func (s *Store) SaveRoundReportTx(
 			workspace_id, build_run_id, round_no, report_hash, report_json, created_at
 		) VALUES ($1, $2, $3, $4, $5::jsonb, $6)
 		RETURNING workspace_id, build_run_id, round_no, report_hash, report_json, created_at
-	`, workspaceID, buildRunID, report.RoundNo, reportHash, reportJSON,
+	`, workspaceID, buildRunID, report.RoundNo, reportHash, string(reportJSON),
 		s.clock.Now().UTC()).Scan(
 		&saved.WorkspaceID, &saved.BuildRunID, &saved.RoundNo,
 		&saved.ReportHash, &storedJSON, &saved.CreatedAt,
