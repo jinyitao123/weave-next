@@ -352,8 +352,13 @@ func (s *Server) registerRoutes() {
 	capabilityAPI.POST("/capabilities/:capabilityID/debug", s.handleDebugCapability, requireCapabilityAccess("manage"))
 	capabilityAPI.POST("/capabilities/:capabilityID/versions/:revision/publish", s.handlePublishCapability, requireCapabilityAccess("manage"))
 	capabilityAPI.POST("/capabilities/:capabilityID/versions/:revision/invocations", s.handleInvokeCapability, requireCapabilityAccess("invoke"))
+	capabilityAPI.GET("/capability-invocations", s.handleListCapabilityInvocations, requireCapabilityAccess("read"))
 	capabilityAPI.GET("/invocations/:invocationID", s.handleGetCapabilityInvocation, requireCapabilityAccess("read"))
+	capabilityAPI.GET("/invocations/:invocationID/events", s.handleGetCapabilityInvocationEvents, requireCapabilityAccess("read"))
+	capabilityAPI.POST("/invocations/:invocationID/resume", s.handleResumeCapabilityInvocation, requireCapabilityAccess("invoke"))
 	capabilityAPI.POST("/invocations/:invocationID/cancel", s.handleCancelCapabilityInvocation, requireCapabilityAccess("cancel"))
+	capabilityAPI.GET("/capability-quotas", s.handleCapabilityQuota, requireCapabilityAccess("manage"))
+	capabilityAPI.PUT("/capability-quotas", s.handleCapabilityQuota, requireCapabilityAccess("manage"))
 	capabilityAPI.GET("/capability-apps", s.handleCapabilityApps, requireCapabilityAccess("manage"))
 	capabilityAPI.POST("/capability-apps/actions", s.handleCapabilityAppAction, requireCapabilityAccess("manage"))
 

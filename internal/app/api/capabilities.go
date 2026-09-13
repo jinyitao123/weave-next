@@ -48,7 +48,7 @@ func (s *Server) handleDebugCapability(c echo.Context) error {
 		return c.JSON(422, map[string]string{"code": "capability_runtime_unavailable"})
 	}
 	invocation, replayed, err := s.Capabilities.Debug(c.Request().Context(), appcapabilities.DebugRequest{
-		WorkspaceID: workspace, ApplicationID: capabilityApplicationID(c), RequestID: request.RequestID, Definition: request.Definition, Input: request.Input,
+		WorkspaceID: workspace, ApplicationID: capabilityApplicationID(c), RequestID: request.RequestID, Definition: request.Definition, Input: request.Input, ActorUserID: getUserID(c), MaxSteps: 100,
 	})
 	if err != nil {
 		return capabilityHTTPError(c, err)
@@ -155,9 +155,14 @@ func (s *Server) handleInvokeCapability(c echo.Context) error {
 			return capabilityHTTPError(c, err)
 		}
 	}
+	quota, quotaErr := appcapabilities.NewPGStore(s.Pool).GetQuota(c.Request().Context(), workspaceID)
+	if quotaErr != nil {
+		return capabilityHTTPError(c, quotaErr)
+	}
 	invocation, replayed, err := s.Capabilities.Invoke(c.Request().Context(), appcapabilities.InvokeRequest{
 		WorkspaceID: workspaceID, ApplicationID: applicationID, CredentialID: credentialID,
 		RequestID: request.RequestID, CapabilityID: c.Param("capabilityID"), Revision: revision, Input: request.Input,
+		ActorUserID: getUserID(c), MaxSteps: quota.MaxStepsPerInvocation,
 	})
 	if err != nil {
 		return capabilityHTTPError(c, err)
@@ -176,6 +181,9 @@ func capabilityApplicationID(c echo.Context) string {
 		return p.AppID
 	}
 	applicationID, _ := c.Get(apiKeyIDContextKey).(string)
+	if actor, _ := c.Get(workbenchActorContextKey).(string); applicationID != "" && actor != "" {
+		return applicationID + ":workbench:" + actor
+	}
 	if applicationID == "" {
 		applicationID, _ = c.Get("user_id").(string)
 	}
@@ -198,7 +206,7 @@ func (s *Server) handleGetCapabilityInvocation(c echo.Context) error {
 		"invocation_id": invocation.InvocationID, "task_id": invocation.TaskID,
 		"capability_id": invocation.CapabilityID,
 		"status":        invocation.Status, "result_state": invocation.ResultState,
-		"result": invocation.Result, "error": publicCapabilityError(invocation),
+		"result": invocation.Result, "error": publicCapabilityError(invocation), "actor_user_id": invocation.ActorUserID, "runtime_id": invocation.RuntimeID, "used_steps": invocation.UsedSteps, "max_steps": invocation.MaxSteps,
 		"failure_reason": publicCapabilityFailure(invocation),
 	}
 	if invocation.RunKind == "published" {
@@ -237,6 +245,8 @@ func capabilityHTTPError(c echo.Context, err error) error {
 		status, code = http.StatusNotFound, "invocation_not_found"
 	case errors.Is(err, appcapabilities.ErrInvocationTerminal):
 		status, code = http.StatusConflict, "invocation_terminal"
+	case errors.Is(err, appcapabilities.ErrQuotaExceeded):
+		status, code = http.StatusTooManyRequests, "capability_quota_exceeded"
 	}
 	message := code
 	if status == http.StatusBadRequest {
@@ -298,8 +308,15 @@ func requireCapabilityAccess(action string) echo.MiddlewareFunc {
 			}
 			if c.Get(authSourceContextKey) == authSourceAPIKey {
 				scopes, _ := c.Get(scopesContextKey).([]string)
+				roles, _ := c.Get("roles").([]string)
+				isAdmin := false
+				for _, role := range roles {
+					if role == "admin" {
+						isAdmin = true
+					}
+				}
 				for _, scope := range scopes {
-					if scope == "capabilities:"+action {
+					if scope == "capabilities:"+action || (scope == "admin" && isAdmin) {
 						return next(c)
 					}
 				}
@@ -308,4 +325,66 @@ func requireCapabilityAccess(action string) echo.MiddlewareFunc {
 			return RequireAnyRole("admin", "owner", "developer")(next)(c)
 		}
 	}
+}
+
+type resumeCapabilityRequest struct {
+	StepID   string          `json:"step_id"`
+	Response json.RawMessage `json:"response"`
+}
+
+func (s *Server) handleListCapabilityInvocations(c echo.Context) error {
+	store := appcapabilities.NewPGStore(s.Pool)
+	workspace, _ := c.Get("tenant").(string)
+	items, err := store.ListInvocations(c.Request().Context(), workspace, capabilityApplicationID(c), getUserID(c))
+	if err != nil {
+		return capabilityHTTPError(c, err)
+	}
+	return c.JSON(http.StatusOK, map[string]any{"invocations": items})
+}
+func (s *Server) handleGetCapabilityInvocationEvents(c echo.Context) error {
+	store := appcapabilities.NewPGStore(s.Pool)
+	workspace, _ := c.Get("tenant").(string)
+	inv, err := s.Capabilities.GetInvocation(c.Request().Context(), workspace, capabilityApplicationID(c), c.Param("invocationID"))
+	if err != nil {
+		return capabilityHTTPError(c, err)
+	}
+	events, err := store.ListEvents(c.Request().Context(), workspace, inv.InvocationID)
+	if err != nil {
+		return capabilityHTTPError(c, err)
+	}
+	human, _ := store.GetHumanTask(c.Request().Context(), workspace, inv.InvocationID)
+	return c.JSON(http.StatusOK, map[string]any{"invocation": inv, "events": events, "human_task": human})
+}
+func (s *Server) handleResumeCapabilityInvocation(c echo.Context) error {
+	var request resumeCapabilityRequest
+	if err := decodeCapabilityBody(c, &request); err != nil {
+		return c.JSON(400, map[string]string{"code": "capability_request_invalid"})
+	}
+	workspace, _ := c.Get("tenant").(string)
+	store := appcapabilities.NewPGStore(s.Pool)
+	inv, err := store.ResumeHuman(c.Request().Context(), workspace, capabilityApplicationID(c), c.Param("invocationID"), request.StepID, request.Response)
+	if err != nil {
+		return capabilityHTTPError(c, err)
+	}
+	return c.JSON(http.StatusAccepted, inv)
+}
+func (s *Server) handleCapabilityQuota(c echo.Context) error {
+	workspace, _ := c.Get("tenant").(string)
+	store := appcapabilities.NewPGStore(s.Pool)
+	if c.Request().Method == http.MethodGet {
+		q, err := store.GetQuota(c.Request().Context(), workspace)
+		if err != nil {
+			return capabilityHTTPError(c, err)
+		}
+		return c.JSON(200, q)
+	}
+	var q appcapabilities.Quota
+	if err := decodeCapabilityBody(c, &q); err != nil {
+		return c.JSON(400, map[string]string{"code": "capability_request_invalid"})
+	}
+	q, err := store.SetQuota(c.Request().Context(), workspace, q)
+	if err != nil {
+		return capabilityHTTPError(c, err)
+	}
+	return c.JSON(200, q)
 }

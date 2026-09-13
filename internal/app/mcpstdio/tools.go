@@ -132,6 +132,45 @@ func (d *ToolDispatcher) Dispatch(ctx context.Context, call contract.ToolCall) (
 			result, err = compactCapabilityPublication(result)
 		}
 		return documentResult(call.ID, result, err), nil
+	case "capability_invoke":
+		var input struct {
+			CapabilityID string          `json:"capability_id"`
+			Revision     int64           `json:"revision"`
+			RequestID    string          `json:"request_id"`
+			Input        json.RawMessage `json:"input"`
+		}
+		if err := decodeArguments(call.Args, &input); err != nil {
+			return toolError(call.ID, "invalid_arguments"), nil
+		}
+		result, err := d.client.CapabilityInvoke(ctx, input.CapabilityID, input.Revision, input.RequestID, input.Input)
+		return documentResult(call.ID, result, err), nil
+	case "capability_status":
+		var input struct {
+			InvocationID string `json:"invocation_id"`
+		}
+		if err := decodeArguments(call.Args, &input); err != nil {
+			return toolError(call.ID, "invalid_arguments"), nil
+		}
+		result, err := d.client.CapabilityInvocation(ctx, input.InvocationID)
+		return documentResult(call.ID, result, err), nil
+	case "capability_history":
+		var input struct{}
+		if err := decodeArguments(call.Args, &input); err != nil {
+			return toolError(call.ID, "invalid_arguments"), nil
+		}
+		result, err := d.client.CapabilityHistory(ctx)
+		return documentResult(call.ID, result, err), nil
+	case "capability_resume":
+		var input struct {
+			InvocationID string          `json:"invocation_id"`
+			StepID       string          `json:"step_id"`
+			Response     json.RawMessage `json:"response"`
+		}
+		if err := decodeArguments(call.Args, &input); err != nil {
+			return toolError(call.ID, "invalid_arguments"), nil
+		}
+		result, err := d.client.CapabilityResume(ctx, input.InvocationID, input.StepID, input.Response)
+		return documentResult(call.ID, result, err), nil
 	case "provider_list":
 		var input struct{}
 		if err := decodeArguments(call.Args, &input); err != nil {
@@ -709,9 +748,13 @@ type toolAccessPolicy struct {
 var toolAccessPolicies = map[string]toolAccessPolicy{
 	"team_template_list":  {Role: "any", Scopes: []string{"org"}},
 	"team_create":         {Role: "admin", Scopes: []string{"org"}},
-	"capability_list":     {Role: "admin", Scopes: []string{"capabilities:manage"}},
-	"capability_plan":     {Role: "admin", Scopes: []string{"capabilities:manage"}},
-	"capability_publish":  {Role: "admin", Scopes: []string{"capabilities:manage"}},
+	"capability_list":     {Role: "admin", Scopes: []string{"admin"}},
+	"capability_plan":     {Role: "admin", Scopes: []string{"admin"}},
+	"capability_publish":  {Role: "admin", Scopes: []string{"admin"}},
+	"capability_invoke":   {Role: "any", Scopes: []string{"admin"}},
+	"capability_status":   {Role: "any", Scopes: []string{"admin"}},
+	"capability_history":  {Role: "any", Scopes: []string{"admin"}},
+	"capability_resume":   {Role: "any", Scopes: []string{"admin"}},
 	"provider_list":       {Role: "any", Scopes: []string{"admin"}},
 	"provider_add":        {Role: "admin", Scopes: []string{"admin"}},
 	"apikey_create":       {Role: "admin", Scopes: []string{"admin"}},
@@ -760,6 +803,10 @@ var toolDefinitions = []contract.ToolDef{
 		Description: "Publish one exact reviewed capability draft as an immutable revision. Use only after the user confirms the proposal, expected inputs, outputs and publication. Later changes require a new revision. Requires capability management access.",
 		InputSchema: json.RawMessage(`{"type":"object","properties":{"capability_id":{"type":"string","minLength":1},"revision":{"type":"integer","minimum":1}},"required":["capability_id","revision"],"additionalProperties":false}`),
 	},
+	{Name: "capability_invoke", Description: "Run one published capability revision with business input. Returns a durable invocation that can be followed with capability_status.", InputSchema: json.RawMessage(`{"type":"object","properties":{"capability_id":{"type":"string"},"revision":{"type":"integer","minimum":1},"request_id":{"type":"string"},"input":{"type":"object"}},"required":["capability_id","revision","request_id","input"],"additionalProperties":false}`)},
+	{Name: "capability_status", ReadOnly: true, Description: "Read one capability run, its execution history, quota usage and any pending human confirmation.", InputSchema: json.RawMessage(`{"type":"object","properties":{"invocation_id":{"type":"string"}},"required":["invocation_id"],"additionalProperties":false}`)},
+	{Name: "capability_history", ReadOnly: true, Description: "List capability runs belonging to the current user.", InputSchema: json.RawMessage(`{"type":"object","additionalProperties":false}`)},
+	{Name: "capability_resume", Description: "Complete the pending human confirmation for a capability run and resume from its checkpoint.", InputSchema: json.RawMessage(`{"type":"object","properties":{"invocation_id":{"type":"string"},"step_id":{"type":"string"},"response":{}},"required":["invocation_id","step_id","response"],"additionalProperties":false}`)},
 	{
 		Name: "provider_list", ReadOnly: true,
 		Description: "List configured model providers without secret values. Requires admin access. Returns provider metadata and immutable revision facts. Errors: http_401, http_403, http_500.",

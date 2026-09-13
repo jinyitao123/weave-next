@@ -13,7 +13,40 @@ func (s *PGStore) TaskActive(ctx context.Context, task InvocationTask) (bool, er
 	return active, err
 }
 
-// Expired executions fail closed; they are never blindly retried after a crash.
+func (s *PGStore) RenewTask(ctx context.Context, task InvocationTask) error {
+	tag, err := s.pool.Exec(ctx, `UPDATE weave_capability_invocation_tasks SET deadline_at=now()+interval '150 seconds' WHERE task_id=$1 AND workspace_id=$2 AND invocation_id=$3 AND claim_token=$4 AND status='running'`, task.TaskID, task.WorkspaceID, task.InvocationID, task.ClaimToken)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() != 1 {
+		return ErrClaimLost
+	}
+	return nil
+}
+
+func (s *PGStore) AbandonTask(ctx context.Context, task InvocationTask) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	tag, err := tx.Exec(ctx, `UPDATE weave_capability_invocation_tasks SET status='queued',claim_token=NULL,deadline_at=NULL WHERE task_id=$1 AND workspace_id=$2 AND invocation_id=$3 AND claim_token=$4 AND status='running'`, task.TaskID, task.WorkspaceID, task.InvocationID, task.ClaimToken)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() != 1 {
+		return ErrClaimLost
+	}
+	if _, err := tx.Exec(ctx, `UPDATE weave_capability_invocations SET status='queued',error=NULL WHERE workspace_id=$1 AND invocation_id=$2 AND status='running'`, task.WorkspaceID, task.InvocationID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO weave_capability_invocation_events(workspace_id,invocation_id,event_type,detail) VALUES($1,$2,'execution_interrupted','{}')`, task.WorkspaceID, task.InvocationID); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+// Expired executions resume from their last durable checkpoint. Cancellation still terminates.
 func (s *PGStore) expireTasks(ctx context.Context) error {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -43,15 +76,21 @@ func (s *PGStore) expireTasks(ctx context.Context) error {
 		return err
 	}
 	for _, item := range items {
-		status := "failed"
+		status := "queued"
+		errorText := ""
 		if item.status == "cancel_requested" {
-			status = "cancelled"
+			status, errorText = "cancelled", "cancelled"
 		}
-		if _, err := tx.Exec(ctx, `UPDATE weave_capability_invocations SET status=$3,result_state='unavailable',result=NULL,error='execution_deadline_expired' WHERE workspace_id=$1 AND invocation_id=$2`, item.workspace, item.id, status); err != nil {
+		if _, err := tx.Exec(ctx, `UPDATE weave_capability_invocations SET status=$3,result_state='unavailable',result=NULL,error=NULLIF($4,'') WHERE workspace_id=$1 AND invocation_id=$2`, item.workspace, item.id, status, errorText); err != nil {
 			return err
 		}
-		if _, err := tx.Exec(ctx, `UPDATE weave_capability_invocation_tasks SET status=$2 WHERE task_id=$1`, item.task, status); err != nil {
+		if _, err := tx.Exec(ctx, `UPDATE weave_capability_invocation_tasks SET status=$2,claim_token=NULL,deadline_at=NULL WHERE task_id=$1`, item.task, status); err != nil {
 			return err
+		}
+		if status == "queued" {
+			if _, err := tx.Exec(ctx, `INSERT INTO weave_capability_invocation_events(workspace_id,invocation_id,event_type,detail) VALUES($1,$2,'execution_recovered','{}')`, item.workspace, item.id); err != nil {
+				return err
+			}
 		}
 	}
 	return tx.Commit(ctx)

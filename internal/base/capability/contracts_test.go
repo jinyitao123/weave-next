@@ -72,7 +72,10 @@ func TestCompileProducesStablePlanAndRejectsNonLoopCycle(t *testing.T) {
 	if err != nil || len(plan.Steps) != 2 || plan.Steps[0].ID != "write" || plan.Steps[1].ID != "check" {
 		t.Fatalf("plan=%+v err=%v", plan, err)
 	}
-	d.Relations = []Relation{{From: "write", To: "check", Kind: RelationSequence}, {From: "check", To: "write", Kind: RelationCondition}}
+	truth := true
+	d.Steps[1].Kind = StepCondition
+	d.Steps[1].Condition = &Predicate{Left: ValueRef{Source: "literal", Literal: json.RawMessage(`true`)}, Operator: "truthy"}
+	d.Relations = []Relation{{From: "write", To: "check", Kind: RelationSequence}, {From: "check", To: "write", Kind: RelationCondition, When: &truth}}
 	revision, err = Publish(d, 1)
 	if err != nil {
 		t.Fatal(err)

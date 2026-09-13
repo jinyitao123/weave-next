@@ -21,6 +21,7 @@ const (
 	StepTransform StepKind = "transform"
 	StepCondition StepKind = "condition"
 	StepWait      StepKind = "wait"
+	StepTool      StepKind = "tool"
 	StepDeliver   StepKind = "deliver"
 )
 
@@ -54,6 +55,7 @@ type Definition struct {
 	Relations     []Relation          `json:"relations"`
 	Runtime       RuntimeRequirement  `json:"runtime"`
 	Resources     ResourceRequirement `json:"resources"`
+	Result        *ValueRef           `json:"result,omitempty"`
 }
 
 type Role struct {
@@ -71,18 +73,31 @@ type Step struct {
 	InputBindings map[string]ValueRef `json:"input_bindings,omitempty"`
 	OutputSchema  json.RawMessage     `json:"output_schema,omitempty"`
 	MaxIterations int                 `json:"max_iterations,omitempty"`
+	Condition     *Predicate          `json:"condition,omitempty"`
+	ToolID        string              `json:"tool_id,omitempty"`
+	ApprovalTitle string              `json:"approval_title,omitempty"`
 }
 
 type ValueRef struct {
-	Source string `json:"source"` // input | step_output | literal
-	Path   string `json:"path,omitempty"`
-	StepID string `json:"step_id,omitempty"`
+	Source  string          `json:"source"` // input | step_output | literal
+	Path    string          `json:"path,omitempty"`
+	StepID  string          `json:"step_id,omitempty"`
+	Literal json.RawMessage `json:"literal,omitempty"`
+}
+
+// Predicate is intentionally small and portable. It is evaluated by the
+// capability runner without asking a model to decide deterministic routing.
+type Predicate struct {
+	Left     ValueRef  `json:"left"`
+	Operator string    `json:"operator"` // eq | ne | gt | gte | lt | lte | truthy | empty
+	Right    *ValueRef `json:"right,omitempty"`
 }
 
 type Relation struct {
 	From string       `json:"from"`
 	To   string       `json:"to"`
 	Kind RelationKind `json:"kind"`
+	When *bool        `json:"when,omitempty"`
 }
 
 type RuntimeRequirement struct {
@@ -150,12 +165,21 @@ func (d Definition) Validate() error {
 			return invalid("steps."+step.ID+".role_id", "references an unknown role")
 		}
 		switch step.Kind {
-		case StepWorker, StepTransform, StepCondition, StepWait, StepDeliver:
+		case StepWorker, StepTransform, StepCondition, StepWait, StepTool, StepDeliver:
 		default:
 			return invalid("steps."+step.ID+".kind", "is unsupported")
 		}
 		if step.Kind == StepWorker && strings.TrimSpace(step.Instruction) == "" {
 			return invalid("steps."+step.ID+".instruction", "is required for worker steps")
+		}
+		if step.Kind == StepCondition && step.Condition == nil {
+			return invalid("steps."+step.ID+".condition", "is required for condition steps")
+		}
+		if step.Kind == StepTool && strings.TrimSpace(step.ToolID) == "" {
+			return invalid("steps."+step.ID+".tool_id", "is required for tool steps")
+		}
+		if step.Kind == StepWait && strings.TrimSpace(step.ApprovalTitle) == "" {
+			return invalid("steps."+step.ID+".approval_title", "is required for wait steps")
 		}
 		if step.MaxIterations < 0 {
 			return invalid("steps."+step.ID+".max_iterations", "cannot be negative")
@@ -177,6 +201,9 @@ func (d Definition) Validate() error {
 		default:
 			return invalid(fmt.Sprintf("relations[%d].kind", i), "is unsupported")
 		}
+		if relation.Kind == RelationCondition && relation.When == nil {
+			return invalid(fmt.Sprintf("relations[%d].when", i), "is required for condition relations")
+		}
 		if relation.Kind == RelationLoop {
 			bounded := false
 			for _, step := range d.Steps {
@@ -189,7 +216,32 @@ func (d Definition) Validate() error {
 			}
 		}
 	}
+	if d.Result != nil {
+		if err := validateValueRef(*d.Result, steps); err != nil {
+			return invalid("result", err.Error())
+		}
+	}
 	return nil
+}
+
+func validateValueRef(ref ValueRef, steps map[string]struct{}) error {
+	switch ref.Source {
+	case "input":
+		if ref.StepID != "" {
+			return errors.New("input cannot name a step")
+		}
+	case "step_output":
+		if _, ok := steps[ref.StepID]; !ok {
+			return errors.New("references an unknown step")
+		}
+	case "literal":
+		if len(ref.Literal) == 0 || !json.Valid(ref.Literal) {
+			return errors.New("literal must contain valid JSON")
+		}
+	default:
+		return errors.New("source is unsupported")
+	}
+	return validPointer(ref.Path)
 }
 
 // Drafts can be incomplete while their author is editing roles and steps.

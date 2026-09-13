@@ -13,6 +13,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jinyitao123/loom/contract"
 	"github.com/jinyitao123/weave/internal/base/capability"
+	"github.com/jinyitao123/weave/internal/base/execution"
+	"github.com/jinyitao123/weave/internal/kernel/mcphost"
 	"github.com/labstack/echo/v4"
 )
 
@@ -35,13 +37,21 @@ type generatedCapabilityRole struct {
 }
 
 type generatedCapabilityStep struct {
-	Name        string `json:"name"`
-	RoleIndex   int    `json:"role_index"`
-	Kind        string `json:"kind"`
-	Instruction string `json:"instruction"`
-	DependsOn   []int  `json:"depends_on"`
-	UsesInput   bool   `json:"uses_input"`
-	UsesSteps   []int  `json:"uses_steps"`
+	Name           string `json:"name"`
+	RoleIndex      int    `json:"role_index"`
+	Kind           string `json:"kind"`
+	Instruction    string `json:"instruction"`
+	DependsOn      []int  `json:"depends_on"`
+	UsesInput      bool   `json:"uses_input"`
+	UsesSteps      []int  `json:"uses_steps"`
+	BranchWhen     *bool  `json:"branch_when"`
+	ConditionPath  string `json:"condition_path"`
+	ConditionOp    string `json:"condition_operator"`
+	ConditionValue any    `json:"condition_value"`
+	ToolID         string `json:"tool_id"`
+	ApprovalTitle  string `json:"approval_title"`
+	LoopTo         *int   `json:"loop_to"`
+	MaxIterations  int    `json:"max_iterations"`
 }
 
 type generatedCapabilityProposal struct {
@@ -62,58 +72,82 @@ var capabilityGenerationSchema = json.RawMessage(`{
     "input_fields":{"type":"array","maxItems":24,"items":{"$ref":"#/$defs/field"}},
     "output_fields":{"type":"array","maxItems":24,"items":{"$ref":"#/$defs/field"}},
     "roles":{"type":"array","minItems":1,"maxItems":8,"items":{"type":"object","additionalProperties":false,"required":["name","responsibilities"],"properties":{"name":{"type":"string","minLength":1,"maxLength":120},"responsibilities":{"type":"string","minLength":1,"maxLength":1000}}}},
-    "steps":{"type":"array","minItems":1,"maxItems":24,"items":{"type":"object","additionalProperties":false,"required":["name","role_index","kind","instruction","depends_on","uses_input","uses_steps"],"properties":{"name":{"type":"string","minLength":1,"maxLength":160},"role_index":{"type":"integer","minimum":0,"maximum":7},"kind":{"enum":["worker","collect"]},"instruction":{"type":"string","maxLength":4000},"depends_on":{"type":"array","maxItems":23,"items":{"type":"integer","minimum":0,"maximum":23}},"uses_input":{"type":"boolean"},"uses_steps":{"type":"array","maxItems":23,"items":{"type":"integer","minimum":0,"maximum":23}}}}}
+    "steps":{"type":"array","minItems":1,"maxItems":24,"items":{"type":"object","additionalProperties":false,"required":["name","role_index","kind","instruction","depends_on","uses_input","uses_steps","branch_when","condition_path","condition_operator","condition_value","tool_id","approval_title","loop_to","max_iterations"],"properties":{"name":{"type":"string","minLength":1,"maxLength":160},"role_index":{"type":"integer","minimum":0,"maximum":7},"kind":{"enum":["worker","collect","condition","approval","tool"]},"instruction":{"type":"string","maxLength":4000},"depends_on":{"type":"array","maxItems":23,"items":{"type":"integer","minimum":0,"maximum":23}},"uses_input":{"type":"boolean"},"uses_steps":{"type":"array","maxItems":23,"items":{"type":"integer","minimum":0,"maximum":23}},"branch_when":{"type":["boolean","null"]},"condition_path":{"type":"string"},"condition_operator":{"enum":["eq","ne","gt","gte","lt","lte","truthy","empty",""]},"condition_value":{},"tool_id":{"type":"string"},"approval_title":{"type":"string"},"loop_to":{"type":["integer","null"],"minimum":0,"maximum":23},"max_iterations":{"type":"integer","minimum":0,"maximum":20}}}}}
   },
   "$defs":{"field":{"type":"object","additionalProperties":false,"required":["key","label","description","type","required"],"properties":{"key":{"type":"string","minLength":1,"maxLength":80},"label":{"type":"string","minLength":1,"maxLength":160},"description":{"type":"string","maxLength":500},"type":{"enum":["string","number","integer","boolean","object","array"]},"required":{"type":"boolean"}}}}
 }`)
 
-const capabilityGenerationSystemPrompt = `你是企业能力设计师。把用户描述转换为可执行的多角色业务能力方案。
-只设计当前可运行的串行、并行和汇合步骤。不得设计条件分支、循环、人工等待、工具调用或外部凭据。
-角色写清职责，步骤写清可直接执行的任务。worker 步骤必须有完整 instruction；collect 步骤只汇总已有结果且 instruction 为空。
-depends_on 和 uses_steps 只能引用当前步骤之前的下标。控制依赖和数据来源分别填写，不得因为使用原始输入而虚构步骤依赖。
-优先使用 2 到 6 个角色和 2 到 12 个步骤；只有需求确实简单时才减少。字段名使用稳定的英文 snake_case，字段标签和说明使用用户语言。
-输出必须严格满足给定结构。`
+const capabilityGenerationSystemPrompt = `你是企业能力与团队流程设计师。把用户描述转换为可执行的多角色业务能力方案。
+可用步骤为 worker、collect、condition、approval、tool。worker 负责需要判断、创作、研究或操作环境的工作；collect 只整理绑定值；condition 使用 condition_path 和 operator 做确定性判断；approval 表示必须由人确认后才能继续；tool 调用已登记工具并填写 tool_id。
+branch_when 只用于当前步骤依赖 condition 时选择 true 或 false 分支，否则为 null。loop_to 为 null 表示不循环；需要循环时由 condition 步骤指回更早步骤，并给出 1 到 20 的 max_iterations。循环必须有明确停止条件。
+最后一步必须是 worker，负责把前面结果整理为完整业务交付，并严格返回 output_fields。不得把内部流程状态作为最终结果。
+depends_on 和 uses_steps 只能引用当前步骤之前的下标。控制依赖和数据来源分别填写。工具和外部访问只在业务确实需要时使用，不得声称已经取得尚未执行的结果。
+优先使用 2 到 6 个角色和 2 到 12 个步骤。字段名使用稳定的英文 snake_case，字段标签和说明使用用户语言。输出必须严格满足给定结构。`
 
 func (s *Server) handleGenerateCapability(c echo.Context) error {
-	if s.Models == nil {
-		return c.JSON(http.StatusServiceUnavailable, map[string]string{"code": "capability_generation_unavailable"})
-	}
 	var request generateCapabilityRequest
 	if err := decodeCapabilityBody(c, &request); err != nil || strings.TrimSpace(request.Prompt) == "" || len(request.Prompt) > 12000 {
 		return c.JSON(http.StatusBadRequest, map[string]string{"code": "capability_request_invalid"})
 	}
 	workspaceID, _ := c.Get("tenant").(string)
-	if err := s.validateCapabilityRuntime(c.Request().Context(), workspaceID, capability.RuntimeRequirement{Engine: "loom", Model: request.Model}); err != nil {
-		return c.JSON(http.StatusUnprocessableEntity, map[string]string{"code": "capability_runtime_unavailable"})
-	}
-	llm, err := s.Models.ForWorkspace(c.Request().Context(), workspaceID)
-	if err != nil {
-		return capabilityHTTPError(c, err)
-	}
-	temperature := 0.2
-	generationContext, cancel := context.WithTimeout(c.Request().Context(), 90*time.Second)
+	generationContext, cancel := context.WithTimeout(c.Request().Context(), 5*time.Minute)
 	defer cancel()
-	response, err := llm.Chat(generationContext, contract.ChatRequest{
-		Model: request.Model,
-		Messages: []contract.Message{
-			{Role: "system", Content: capabilityGenerationSystemPrompt},
-			{Role: "user", Content: request.Prompt},
-		},
-		Schema: &capabilityGenerationSchema, MaxTokens: 5000, Temperature: &temperature,
-	})
-	if err != nil {
-		return c.JSON(http.StatusBadGateway, map[string]string{"code": "capability_generation_failed"})
+	var content string
+	usedRemote := false
+	if s.Models != nil && request.Model != "" {
+		if available, _ := s.Models.CanResolve(generationContext, workspaceID, request.Model); available {
+			llm, err := s.Models.ForWorkspace(generationContext, workspaceID)
+			if err != nil {
+				return capabilityHTTPError(c, err)
+			}
+			temperature := 0.2
+			response, err := llm.Chat(generationContext, contract.ChatRequest{
+				Model: request.Model,
+				Messages: []contract.Message{
+					{Role: "system", Content: capabilityGenerationSystemPrompt},
+					{Role: "user", Content: request.Prompt},
+				},
+				Schema: &capabilityGenerationSchema, MaxTokens: 5000, Temperature: &temperature,
+			})
+			if err != nil || response == nil {
+				return c.JSON(http.StatusBadGateway, map[string]string{"code": "capability_generation_failed"})
+			}
+			content = response.Content
+		}
 	}
-	if response == nil {
-		return c.JSON(http.StatusBadGateway, map[string]string{"code": "capability_generation_failed"})
+	if content == "" {
+		if s.Runtimes == nil || s.engineExecutorFor(true) == nil {
+			return c.JSON(http.StatusUnprocessableEntity, map[string]string{"code": "capability_runtime_unavailable"})
+		}
+		record, err := s.selectCapabilityRuntime(generationContext, workspaceID, capability.RuntimeRequirement{Engine: "codex"})
+		if err != nil {
+			return c.JSON(http.StatusUnprocessableEntity, map[string]string{"code": "capability_runtime_unavailable"})
+		}
+		structured, ok := s.engineExecutorFor(true).(mcphost.StructuredRemoteEngineExecutor)
+		if !ok {
+			return c.JSON(http.StatusUnprocessableEntity, map[string]string{"code": "capability_runtime_unavailable"})
+		}
+		record.Spec.SystemPrompt = capabilityGenerationSystemPrompt
+		record.OutputSchema = &capabilityGenerationSchema
+		result, err := structured.ExecRemoteStructured(generationContext, workspaceID, record, execution.AgentExecutionStamp{
+			AgentID: record.ID, AgentVersion: record.Version, ExecutionScope: execution.ScopeTeamWorkerLeaf, RunSnapshotID: "capability-plan-" + uuid.NewString(),
+		}, request.Prompt, nil, capabilityGenerationSchema)
+		if err != nil {
+			return c.JSON(http.StatusBadGateway, map[string]string{"code": "capability_generation_failed"})
+		}
+		content = result.Output
+		usedRemote = true
 	}
 	var proposal generatedCapabilityProposal
-	if err := decodeGeneratedCapability(response.Content, &proposal); err != nil {
+	if err := decodeGeneratedCapability(content, &proposal); err != nil {
 		return c.JSON(http.StatusUnprocessableEntity, map[string]string{"code": "capability_generation_invalid"})
 	}
 	definition, err := buildGeneratedCapability(proposal, request.Model)
 	if err != nil {
 		return c.JSON(http.StatusUnprocessableEntity, map[string]string{"code": "capability_generation_invalid"})
+	}
+	if usedRemote {
+		definition.Runtime = capability.RuntimeRequirement{Engine: "codex"}
 	}
 	return c.JSON(http.StatusOK, map[string]any{"definition": definition})
 }
@@ -158,9 +192,37 @@ func buildGeneratedCapability(proposal generatedCapabilityProposal, model string
 		}
 		kind := capability.StepWorker
 		instruction := strings.TrimSpace(generated.Instruction)
-		if generated.Kind == "collect" {
+		var condition *capability.Predicate
+		switch generated.Kind {
+		case "worker":
+			if instruction == "" {
+				return capability.Definition{}, capability.ErrInvalidDefinition
+			}
+		case "collect":
 			kind, instruction = capability.StepTransform, ""
-		} else if generated.Kind != "worker" || instruction == "" {
+		case "approval":
+			kind, instruction = capability.StepWait, ""
+			if strings.TrimSpace(generated.ApprovalTitle) == "" {
+				return capability.Definition{}, capability.ErrInvalidDefinition
+			}
+		case "tool":
+			kind, instruction = capability.StepTool, ""
+			if strings.TrimSpace(generated.ToolID) == "" {
+				return capability.Definition{}, capability.ErrInvalidDefinition
+			}
+		case "condition":
+			kind, instruction = capability.StepCondition, ""
+			left := capability.ValueRef{Source: "input", Path: generated.ConditionPath}
+			condition = &capability.Predicate{Left: left, Operator: generated.ConditionOp}
+			if generated.ConditionOp != "truthy" && generated.ConditionOp != "empty" {
+				raw, err := json.Marshal(generated.ConditionValue)
+				if err != nil {
+					return capability.Definition{}, err
+				}
+				right := capability.ValueRef{Source: "literal", Literal: raw}
+				condition.Right = &right
+			}
+		default:
 			return capability.Definition{}, capability.ErrInvalidDefinition
 		}
 		dependencies := uniqueEarlierIndexes(generated.DependsOn, index)
@@ -181,13 +243,22 @@ func buildGeneratedCapability(proposal generatedCapabilityProposal, model string
 			}
 		}
 		for _, dependency := range dependencies {
-			kind := capability.RelationSequence
-			if len(dependencies) > 1 {
-				kind = capability.RelationJoin
+			relationKind := capability.RelationSequence
+			if proposal.Steps[dependency].Kind == "condition" && generated.BranchWhen != nil {
+				relationKind = capability.RelationCondition
+			} else if len(dependencies) > 1 {
+				relationKind = capability.RelationJoin
 			}
-			relations = append(relations, capability.Relation{From: stepIDs[dependency], To: stepIDs[index], Kind: kind})
+			relations = append(relations, capability.Relation{From: stepIDs[dependency], To: stepIDs[index], Kind: relationKind, When: generated.BranchWhen})
 		}
-		steps[index] = capability.Step{ID: stepIDs[index], Name: strings.TrimSpace(generated.Name), RoleID: roles[generated.RoleIndex].ID, Kind: kind, Instruction: instruction, InputBindings: bindings}
+		steps[index] = capability.Step{ID: stepIDs[index], Name: strings.TrimSpace(generated.Name), RoleID: roles[generated.RoleIndex].ID, Kind: kind, Instruction: instruction, InputBindings: bindings, Condition: condition, ToolID: strings.TrimSpace(generated.ToolID), ApprovalTitle: strings.TrimSpace(generated.ApprovalTitle)}
+		if generated.LoopTo != nil {
+			if kind != capability.StepCondition || *generated.LoopTo >= index || generated.MaxIterations < 1 {
+				return capability.Definition{}, capability.ErrInvalidDefinition
+			}
+			steps[*generated.LoopTo].MaxIterations = generated.MaxIterations
+			relations = append(relations, capability.Relation{From: stepIDs[index], To: stepIDs[*generated.LoopTo], Kind: capability.RelationLoop})
+		}
 	}
 	inputSchema, err := generatedObjectSchema(proposal.InputFields)
 	if err != nil {
@@ -197,11 +268,26 @@ func buildGeneratedCapability(proposal generatedCapabilityProposal, model string
 	if err != nil {
 		return capability.Definition{}, err
 	}
+	if len(steps) == 0 || steps[len(steps)-1].Kind != capability.StepWorker {
+		return capability.Definition{}, capability.ErrInvalidDefinition
+	}
+	steps[len(steps)-1].OutputSchema = outputSchema
+	toolIDs := []string{}
+	for _, step := range steps {
+		if step.Kind == capability.StepTool && !containsStringValue(toolIDs, step.ToolID) {
+			toolIDs = append(toolIDs, step.ToolID)
+		}
+	}
+	runtime := capability.RuntimeRequirement{Engine: "loom", Model: model}
+	if len(toolIDs) > 0 {
+		runtime = capability.RuntimeRequirement{Engine: "codex"}
+	}
 	definition := capability.Definition{
 		SchemaVersion: capability.SchemaVersionV1, CapabilityID: uuid.NewString(),
 		Name: strings.TrimSpace(proposal.Name), Description: strings.TrimSpace(proposal.Description),
 		InputSchema: inputSchema, OutputSchema: outputSchema, Roles: roles, Steps: steps, Relations: relations,
-		Runtime: capability.RuntimeRequirement{Engine: "loom", Model: model}, Resources: capability.ResourceRequirement{},
+		Runtime: runtime, Resources: capability.ResourceRequirement{ToolIDs: toolIDs},
+		Result: &capability.ValueRef{Source: "step_output", StepID: steps[len(steps)-1].ID},
 	}
 	published, err := capability.Publish(definition, 1)
 	if err != nil {
@@ -272,4 +358,13 @@ func generatedObjectSchema(fields []generatedCapabilityField) (json.RawMessage, 
 		}
 	}
 	return json.Marshal(map[string]any{"type": "object", "properties": properties, "required": required})
+}
+
+func containsStringValue(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
 }

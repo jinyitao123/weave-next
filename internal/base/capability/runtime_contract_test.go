@@ -77,22 +77,15 @@ func TestParallelJoinPreservesBindingsAndOriginalInput(t *testing.T) {
 	}
 }
 
-func TestCompileRejectsUnsupportedSemanticsAndBadBindings(t *testing.T) {
-	for _, kind := range []string{"loop", "condition", "tool", "future", "schema"} {
+func TestCompileRejectsBadBindingsAndSchema(t *testing.T) {
+	for _, kind := range []string{"future", "schema"} {
 		t.Run(kind, func(t *testing.T) {
 			d := fixtureDefinition()
 			d.Steps[1].MaxIterations = 0
-			switch kind {
-			case "loop":
-				d.Relations[0].Kind = RelationLoop
-				d.Steps[1].MaxIterations = 2
-			case "condition":
-				d.Relations[0].Kind = RelationCondition
-			case "tool":
-				d.Resources.ToolIDs = []string{"unbound"}
-			case "future":
-				d.Steps[0].InputBindings = map[string]ValueRef{"bad": {Source: "step_output", StepID: "check"}}
-			case "schema":
+			if kind == "future" {
+				d.Steps[0].InputBindings = map[string]ValueRef{"future": {Source: "step_output", StepID: "check"}}
+			}
+			if kind == "schema" {
 				d.OutputSchema = json.RawMessage(`{"type":"invalid-type"}`)
 			}
 			r, err := Publish(d, 1)
@@ -100,7 +93,7 @@ func TestCompileRejectsUnsupportedSemanticsAndBadBindings(t *testing.T) {
 				t.Fatal(err)
 			}
 			if _, err := Compile(r); err == nil {
-				t.Fatal("unsupported definition compiled")
+				t.Fatal("invalid definition compiled")
 			}
 		})
 	}

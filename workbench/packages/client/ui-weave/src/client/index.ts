@@ -17,6 +17,7 @@ import { ProjectActivity } from './ProjectActivity.tsx'
 import { NS as projectNS, zh as projectZh, en as projectEn, type ProjectActivityKey } from './project-activity-locales.ts'
 import { RuntimeSettingsSection } from './RuntimeCenter.tsx'
 import { ApplicationSettingsSection } from './ApplicationCenter.tsx'
+import { CapabilityOperationsSettingsSection } from './CapabilityOperationsCenter.tsx'
 import { TeamListRow } from './TeamListRow.tsx'
 import { WorkTaskCommandRow } from './WorkTaskCommandRow.tsx'
 import { WorkTaskConversationCard, WorkTaskHeader, WorkTaskPanel } from './WorkTaskPanel.tsx'
@@ -184,6 +185,9 @@ export function apply(ctx: ClientContext): void {
   ctx.slots.inject('settings.section', () => ctx.slots.register({
     name: 'settings.section', id: 'weave-runtimes', order: -20, label: () => t('runtimeCenter.title'), locale: NS,
   }, RuntimeSettingsSection))
+  ctx.slots.inject('settings.section', () => ctx.slots.register({
+    name: 'settings.section', id: 'weave-capability-operations', order: -10, label: () => t('capabilityOps.title'), locale: NS,
+  }, CapabilityOperationsSettingsSection))
   ctx.slots.inject('settings.section', () => ctx.slots.register({
     name: 'settings.section', id: 'weave-capability-apps', order: -5, label: () => t('app.title'), locale: NS,
   }, ApplicationSettingsSection))
