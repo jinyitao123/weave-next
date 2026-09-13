@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/jinyitao123/loom/contract"
-	"github.com/jinyitao123/weave/internal/base/fanout"
-	"github.com/jinyitao123/weave/internal/base/taskqueue"
+	"github.com/jinyitao123/weave/internal/kernel/fanout"
+	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 )
 
 // BuiltinTaskStatusServerURL is the stable server identity used by builtin

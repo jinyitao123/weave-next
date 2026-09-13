@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/jinyitao123/weave/internal/base/deliverable"
-	"github.com/jinyitao123/weave/internal/base/fanout"
+	"github.com/jinyitao123/weave/internal/kernel/fanout"
 )
 
 func TestFanoutJoinProjectionUnwrapsLogicalResultAndBindsArtifactSources(t *testing.T) {

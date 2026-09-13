@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/jinyitao123/weave/internal/base/taskqueue"
+	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 )
 
 func (e *Executor) processConsumedWorkflowRun(ctx context.Context, task *taskqueue.Task, workerID string, run TeamRun) error {

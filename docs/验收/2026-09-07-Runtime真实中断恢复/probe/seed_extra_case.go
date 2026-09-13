@@ -12,7 +12,7 @@ import (
 
  "github.com/jinyitao123/loom/pgstore"
  "github.com/jinyitao123/weave/internal/base/snapshot"
- "github.com/jinyitao123/weave/internal/base/taskqueue"
+ "github.com/jinyitao123/weave/internal/kernel/taskqueue"
  "github.com/jinyitao123/weave/internal/kernel/registry"
 )
 

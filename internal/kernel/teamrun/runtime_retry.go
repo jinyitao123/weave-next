@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/jinyitao123/weave/internal/base/taskqueue"
+	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 )
 
 var errRuntimeRetryOwnsExecution = errors.New("runtime retry owns workflow execution")

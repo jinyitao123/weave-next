@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jinyitao123/weave/internal/base/taskqueue"
+	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 )
 
 func TestStageRetryLostResponseCannotConsumeSecondDisconnectionAfterServerRestart(t *testing.T) {

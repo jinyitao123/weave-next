@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/jinyitao123/weave/internal/base/taskqueue"
+	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 )
 
 // ProcessNext claims and executes at most one team_workflow task.

@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/jinyitao123/weave/internal/base/taskqueue"
+	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 )
 
 func (e *Executor) processCorrectionResume(ctx context.Context, task *taskqueue.Task, workerID string) error {
