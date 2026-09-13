@@ -113,7 +113,7 @@ func New(pool *pgxpool.Pool, clock Clock, options ...StoreOption) *Store {
 	return s
 }
 
-// CreateGroup inserts an active task group after ensuring its workspace exists.
+// CreateGroup inserts an active task group in a product-established workspace.
 func (s *Store) CreateGroup(ctx context.Context, group Group) (Group, error) {
 	if group.ID == "" {
 		group.ID = "tg_" + uuid.NewString()
@@ -125,9 +125,6 @@ func (s *Store) CreateGroup(ctx context.Context, group Group) (Group, error) {
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	if err := ensureWorkspace(ctx, tx, group.WorkspaceID, now); err != nil {
-		return Group{}, err
-	}
 	if group.ProjectID == "" && group.ConversationID != "" {
 		if s.conversationProject == nil {
 			return Group{}, ErrConversationProjectUnavailable
@@ -187,17 +184,6 @@ func (s *Store) GroupExists(ctx context.Context, workspaceID, groupID string) (b
 		return false, fmt.Errorf("check task group existence: %w", err)
 	}
 	return exists, nil
-}
-
-func ensureWorkspace(ctx context.Context, tx pgx.Tx, workspaceID string, now time.Time) error {
-	if _, err := tx.Exec(ctx, `
-		INSERT INTO weave_workspaces (id, slug, name, created_at)
-		VALUES ($1, $1, $1, $2)
-		ON CONFLICT DO NOTHING
-	`, workspaceID, now); err != nil {
-		return fmt.Errorf("ensure task group workspace: %w", err)
-	}
-	return nil
 }
 
 // TerminalLegCounts returns terminal and total leg counts for one workspace group.

@@ -82,19 +82,6 @@ func (s *Store) List(ctx context.Context, workspaceID string) ([]llmrouter.Provi
 	return configs, rows.Err()
 }
 
-// Upsert encrypts and persists a provider configuration in one workspace.
-// A masked or empty API key preserves an existing ciphertext.
-// ensureWorkspace bootstraps the workspace row so credential upserts satisfy
-// the foreign key, matching the pattern in users.Create and registry.Put.
-func (s *Store) ensureWorkspace(ctx context.Context, workspaceID string) error {
-	_, err := s.pool.Exec(ctx, `
-		INSERT INTO weave_workspaces (id, slug, name)
-		VALUES ($1, $1, $1)
-		ON CONFLICT DO NOTHING
-	`, workspaceID)
-	return err
-}
-
 func (s *Store) Upsert(ctx context.Context, workspaceID string, cfg llmrouter.ProviderConfig) error {
 	_, err := s.UpsertRevision(ctx, workspaceID, cfg)
 	return err
@@ -140,9 +127,6 @@ func (s *Store) GetEmbedder(ctx context.Context, workspaceID string) (EmbedderCo
 // UpsertEmbedder encrypts and persists an embedder configuration for one workspace.
 // A masked or empty API key preserves an existing ciphertext.
 func (s *Store) UpsertEmbedder(ctx context.Context, workspaceID string, cfg EmbedderConfig) error {
-	if err := s.ensureWorkspace(ctx, workspaceID); err != nil {
-		return err
-	}
 	ciphertext, err := s.embedderCipherForUpdate(ctx, workspaceID, cfg.APIKey)
 	if err != nil {
 		return err

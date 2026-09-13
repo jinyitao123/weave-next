@@ -104,13 +104,6 @@ func (s *Store) MirrorSystemProvider(
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	if _, err := tx.Exec(ctx, `
-		INSERT INTO weave_workspaces (id, slug, name)
-		VALUES ($1, $1, $1)
-		ON CONFLICT DO NOTHING
-	`, workspaceID); err != nil {
-		return SystemProviderMirrorResult{}, fmt.Errorf("ensure mirror workspace: %w", err)
-	}
-	if _, err := tx.Exec(ctx, `
 		SELECT pg_advisory_xact_lock(hashtextextended($1, 0))
 	`, fmt.Sprintf("%d:%s%d:%s", len(workspaceID), workspaceID, len(targetID), targetID)); err != nil {
 		return SystemProviderMirrorResult{}, fmt.Errorf("lock system provider mirror identity: %w", err)

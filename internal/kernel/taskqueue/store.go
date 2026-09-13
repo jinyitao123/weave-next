@@ -84,9 +84,6 @@ func (s *Store) RecordDispatch(
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	if err := ensureWorkspace(ctx, tx, workspaceID, now); err != nil {
-		return err
-	}
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO weave_task_queue (
 			id, workspace_id, agent, identity_kind, identity_schema_version,
@@ -105,7 +102,8 @@ func (s *Store) RecordDispatch(
 	return nil
 }
 
-// Enqueue inserts a queued task after ensuring its workspace exists.
+// Enqueue inserts a queued task in a workspace established by the product.
+// Execution admission never creates or mutates the product directory.
 func (s *Store) Enqueue(ctx context.Context, task *Task) error {
 	if task == nil {
 		return fmt.Errorf("task is required")
@@ -117,9 +115,6 @@ func (s *Store) Enqueue(ctx context.Context, task *Task) error {
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	if err := ensureWorkspace(ctx, tx, task.WorkspaceID, now); err != nil {
-		return err
-	}
 	if err := s.enqueueTx(ctx, tx, task, now); err != nil {
 		return err
 	}
@@ -216,17 +211,6 @@ func (s *Store) enqueueTx(
 		nullIfEmpty(task.ContextKey), nullIfEmpty(task.TraceID), nullIfEmpty(task.ParentTaskID),
 		task.TaskGroupID, task.SubtaskDeadlineAt, task.Payload, now, task.BuildRunID, string(encodedSubject), task.DeadlineAt, task.OutcomeSensitive || kind == "engine_exec" || kind == "team_build", task.CapabilityInvocationID); err != nil {
 		return fmt.Errorf("enqueue task: %w", err)
-	}
-	return nil
-}
-
-func ensureWorkspace(ctx context.Context, tx pgx.Tx, workspaceID string, now time.Time) error {
-	if _, err := tx.Exec(ctx, `
-		INSERT INTO weave_workspaces (id, slug, name, created_at)
-		VALUES ($1, $1, $1, $2)
-		ON CONFLICT DO NOTHING
-	`, workspaceID, now); err != nil {
-		return fmt.Errorf("ensure task workspace: %w", err)
 	}
 	return nil
 }

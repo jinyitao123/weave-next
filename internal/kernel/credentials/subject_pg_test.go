@@ -17,6 +17,9 @@ func TestProviderStoredOwnershipCannotBeRewrittenByReference(t *testing.T) {
 	if err := db.Migrate(context.Background(), pool); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := pool.Exec(context.Background(), `INSERT INTO weave_workspaces(id,slug,name) VALUES('workspace','workspace','workspace')`); err != nil {
+		t.Fatal(err)
+	}
 	store := New(pool, []byte("0123456789abcdef0123456789abcdef"))
 	alice := execution.WithSubject(context.Background(), execution.Subject{WorkspaceID: "workspace", UserID: "alice"})
 	bob := execution.WithSubject(context.Background(), execution.Subject{WorkspaceID: "workspace", UserID: "bob"})
