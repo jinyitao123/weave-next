@@ -13,10 +13,10 @@ import (
 
 // AuthorizeBuildRun atomically freezes the run (brief/contract/baseline),
 // transitions planning -> authorized, and mints the build authorization
-// receipt from the frozen facts. The optimize baseline is always captured
-// server-side inside this transaction from the live Team/Roster/Agents/
-// Workflows; client-supplied baselines are no longer accepted, so the legacy
-// baseline parameter is ignored and kept only for call-site compatibility.
+// receipt from the frozen facts. Immutable workflow artifacts are read before
+// the product transaction starts; inside it, the exact product facts are
+// locked and verified with the Team/Roster/Agents/Workflow rows. A caller can
+// never supply its own baseline.
 func (s *Store) AuthorizeBuildRun(
 	ctx context.Context,
 	workspaceID, buildRunID, confirmedBy string,
@@ -28,6 +28,29 @@ func (s *Store) AuthorizeBuildRun(
 	}
 	if strings.TrimSpace(confirmedBy) == "" {
 		return TeamBuildRun{}, BuildAuthorizationReceipt{}, errors.New("authorize build run: confirmed_by is required")
+	}
+	initial, err := s.GetBuildRun(ctx, workspaceID, buildRunID)
+	if err != nil {
+		return TeamBuildRun{}, BuildAuthorizationReceipt{}, fmt.Errorf("authorize build run: %w", err)
+	}
+	var preparedWorkflows frozenBaselineWorkflowFacts
+	var baselineCapturedAt time.Time
+	if initial.Mode == ModeOptimize {
+		baselineCapturedAt = s.clock.Now().UTC()
+		if initial.EffectiveExecutionStrategy() == ExecutionStrategyCompilerV1 {
+			revision, loadErr := s.GetLatestBlueprintRevision(ctx, workspaceID, buildRunID)
+			if loadErr != nil {
+				return TeamBuildRun{}, BuildAuthorizationReceipt{}, fmt.Errorf("authorize build run: %w", loadErr)
+			}
+			if revision.BaselineCapturedAt == nil {
+				return TeamBuildRun{}, BuildAuthorizationReceipt{}, fmt.Errorf("authorize build run: %w", ErrCompilerBundleInvalid)
+			}
+			baselineCapturedAt = *revision.BaselineCapturedAt
+		}
+		preparedWorkflows, err = s.freezeBaselineWorkflows(ctx, workspaceID, initial.Brief)
+		if err != nil {
+			return TeamBuildRun{}, BuildAuthorizationReceipt{}, fmt.Errorf("authorize build run: %w", err)
+		}
 	}
 
 	tx, err := s.pool.Begin(ctx)
@@ -58,6 +81,9 @@ func (s *Store) AuthorizeBuildRun(
 	if status != StatusPlanning {
 		return TeamBuildRun{}, BuildAuthorizationReceipt{}, fmt.Errorf("authorize build run: %w", ErrBuildRunNotPlanning)
 	}
+	if initial.Status != StatusPlanning || initial.Mode != mode || initial.ExecutionStrategy != executionStrategy || initial.BriefHash != briefHash || initial.ContractHash != contractHash {
+		return TeamBuildRun{}, BuildAuthorizationReceipt{}, fmt.Errorf("authorize build run: %w", ErrBuildRunNotPlanning)
+	}
 
 	var brief BuildBrief
 	var contract EvaluationContract
@@ -85,16 +111,8 @@ func (s *Store) AuthorizeBuildRun(
 	var revisionToken *BlueprintRevisionToken
 	switch mode {
 	case ModeOptimize:
-		var snapshot BaselineSnapshot
-		if executionStrategy == ExecutionStrategyCompilerV1 {
-			capturedAt, err := s.latestCompilerBaselineCapturedAtTx(ctx, tx, workspaceID, buildRunID)
-			if err != nil {
-				return TeamBuildRun{}, BuildAuthorizationReceipt{}, fmt.Errorf("authorize build run: %w", err)
-			}
-			snapshot, err = s.captureBaselineTxAt(ctx, tx, workspaceID, brief, capturedAt)
-		} else {
-			snapshot, err = s.captureBaselineTx(ctx, tx, workspaceID, brief)
-		}
+		snapshot, captureErr := s.captureBaselineTxAt(ctx, tx, workspaceID, brief, baselineCapturedAt, preparedWorkflows)
+		err = captureErr
 		if err != nil {
 			return TeamBuildRun{}, BuildAuthorizationReceipt{}, fmt.Errorf("authorize build run: %w", err)
 		}

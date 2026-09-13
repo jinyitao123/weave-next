@@ -144,7 +144,11 @@ func (d *Dispatcher) ExecuteTask(ctx context.Context, task taskqueue.Task) (task
 		encoded, _ := json.Marshal(teamorch.Result{Status: run.Status})
 		return taskqueue.TaskResult{Result: encoded}, nil
 	}
-	result, err := d.Executor.Execute(ctx, task.WorkspaceID, task.BuildRunID)
+	result, err := d.Executor.Execute(
+		teamorch.WithCompilerExecutionFence(ctx, d.Tasks.ValidateCurrentTaskTx),
+		task.WorkspaceID,
+		task.BuildRunID,
+	)
 	if err != nil {
 		if ctx.Err() == nil {
 			if blockErr := d.blockAfterFailure(ctx, task, err); blockErr != nil {

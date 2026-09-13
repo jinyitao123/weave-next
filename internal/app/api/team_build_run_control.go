@@ -193,7 +193,6 @@ type buildRunOperationStepResponse struct {
 	DisplayLabel        string                       `json:"display_label,omitempty"`
 	Status              string                       `json:"status"`
 	DependsOn           []string                     `json:"depends_on"`
-	Attempt             int                          `json:"attempt"`
 	ErrorClass          string                       `json:"error_class,omitempty"`
 	ErrorCode           string                       `json:"error_code,omitempty"`
 	ErrorDetail         string                       `json:"error_detail,omitempty"`
@@ -712,7 +711,6 @@ func buildRunOperationStepView(step teambuild.OperationStep, display buildRunOpe
 		DisplayLabel:   display.DisplayLabel,
 		Status:         step.Status,
 		DependsOn:      dependsOn,
-		Attempt:        step.Attempt,
 		ErrorClass:     step.ErrorClass,
 		ErrorCode:      step.ErrorCode,
 		ErrorDetail:    errorDetail,

@@ -134,6 +134,10 @@ func TestBuildDispatchUsesSinglePlatformTaskRealPG(t *testing.T) {
 		t.Fatalf("private queue retained: %v %v", retired, err)
 	}
 	d.Executor = buildExecutorFunc(func(ctx context.Context, ws, id string) (teamorch.Result, error) {
+		current, ok := execution.CurrentTaskFromContext(ctx)
+		if !ok || current.ID != taskID(ws, id) || current.WorkspaceID != ws || current.WorkerID == "" || current.ClaimEpoch < 1 {
+			return teamorch.Result{}, fmt.Errorf("build lost current task claim")
+		}
 		for _, edge := range [][2]string{{teambuild.StatusAuthorized, teambuild.StatusRoundRunning}, {teambuild.StatusRoundRunning, teambuild.StatusPublishing}} {
 			if _, err := d.Runs.TransitionStatus(ctx, ws, id, edge[0], edge[1], "test", "advance"); err != nil {
 				return teamorch.Result{}, err
@@ -156,6 +160,10 @@ func TestBuildDispatchUsesSinglePlatformTaskRealPG(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := d.Worker.Register("chat", taskqueue.IdentityAgent, taskqueue.ChatHandler{Executor: chatExecutorFunc(func(ctx context.Context, ws string, req taskqueue.ChatExecRequest) (*taskqueue.ChatExecResult, error) {
+		current, ok := execution.CurrentTaskFromContext(ctx)
+		if !ok || current.ID != chatTask.ID || current.WorkspaceID != ws || current.WorkerID == "" || current.ClaimEpoch < 1 {
+			return nil, fmt.Errorf("chat lost current task claim")
+		}
 		if ws != run.WorkspaceID || req.Agent != agent.Name || req.ExecutionStamp == nil || req.ExecutionStamp.AgentID != agent.ID {
 			return nil, fmt.Errorf("chat lost durable identity")
 		}
@@ -260,6 +268,11 @@ func TestBuildLeaseLossRequiresStopBeforeExplicitResumeRealPG(t *testing.T) {
 	if err != nil || first == nil {
 		t.Fatalf("claim=%#v %v", first, err)
 	}
+	originalDeadline := *first.DeadlineAt
+	firstUsage := &execution.TerminalUsage{InputTokens: 11, OutputTokens: 3, CostUSD: 0.12, ToolCalls: 1}
+	if err := d.Tasks.RecordClaimUsage(ctx, first.ID, first.WorkerID, first.ClaimEpoch, firstUsage); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := d.Pool.Exec(ctx, `UPDATE weave_task_queue SET lease_expires_at=now()-interval '1 minute' WHERE id=$1`, first.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -290,11 +303,29 @@ func TestBuildLeaseLossRequiresStopBeforeExplicitResumeRealPG(t *testing.T) {
 	if err != nil || next == nil || next.ClaimEpoch != 2 {
 		t.Fatalf("resumed claim=%#v %v", next, err)
 	}
+	if next.DeadlineAt == nil || !next.DeadlineAt.Equal(originalDeadline) {
+		t.Fatalf("resume extended absolute deadline: first=%s next=%v", originalDeadline, next.DeadlineAt)
+	}
+	secondUsage := &execution.TerminalUsage{InputTokens: 7, OutputTokens: 2, CostUSD: 0.08, ToolCalls: 2}
+	if err := d.Tasks.RecordClaimUsage(ctx, next.ID, next.WorkerID, next.ClaimEpoch, secondUsage); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.Tasks.RecordClaimUsage(ctx, next.ID, next.WorkerID, next.ClaimEpoch, secondUsage); err != nil {
+		t.Fatalf("usage replay was not idempotent: %v", err)
+	}
 	if err := d.Tasks.CompleteClaimed(ctx, first.ID, first.WorkerID, json.RawMessage(`{"late":true}`), ""); err == nil {
 		t.Fatal("old execution overwrote new attempt")
 	}
 	if err := d.Tasks.CompleteClaimed(ctx, next.ID, next.WorkerID, json.RawMessage(`{"resumed":true}`), ""); err != nil {
 		t.Fatal(err)
+	}
+	completed, err := d.Tasks.Get(ctx, run.WorkspaceID, next.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if completed.PhysicalUsage.InputTokens != 18 || completed.PhysicalUsage.OutputTokens != 5 ||
+		completed.PhysicalUsage.ToolCalls != 3 || completed.PhysicalUsage.CostUSD != 0.2 || completed.UnreportedAttempts != 0 {
+		t.Fatalf("physical usage changed across resume: %#v unreported=%d", completed.PhysicalUsage, completed.UnreportedAttempts)
 	}
 }
 

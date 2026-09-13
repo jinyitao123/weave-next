@@ -35,8 +35,8 @@ func (s *Store) SetBaselineSources(
 
 // PreviewCompilerBaseline captures the server-owned planning baseline. It
 // accepts only the build-run identity, so callers cannot inject a snapshot or
-// timestamp. The run lock serializes this preview with authorization while
-// live asset locks make the optimize snapshot internally consistent.
+// timestamp. Immutable workflow facts are frozen first; the run and mutable
+// product facts are then locked and compared before the snapshot is accepted.
 func (s *Store) PreviewCompilerBaseline(
 	ctx context.Context,
 	workspaceID, buildRunID string,
@@ -44,20 +44,37 @@ func (s *Store) PreviewCompilerBaseline(
 	if strings.TrimSpace(workspaceID) == "" || strings.TrimSpace(buildRunID) == "" {
 		return CompilerBaselinePreview{}, fmt.Errorf("preview compiler baseline: %w", ErrBuildRunNotFound)
 	}
+	initial, err := s.GetBuildRun(ctx, workspaceID, buildRunID)
+	if err != nil {
+		return CompilerBaselinePreview{}, fmt.Errorf("preview compiler baseline: %w", err)
+	}
+	if initial.Status != StatusPlanning {
+		return CompilerBaselinePreview{}, fmt.Errorf("preview compiler baseline: %w", ErrBuildRunNotPlanning)
+	}
+	if initial.Mode == ModeCreate {
+		return CompilerBaselinePreview{BaselineHash: emptyCreateBaselineHashV1}, nil
+	}
+	if initial.Mode != ModeOptimize {
+		return CompilerBaselinePreview{}, fmt.Errorf("preview compiler baseline: invalid mode %q", initial.Mode)
+	}
+	capturedAt := s.clock.Now().UTC().Round(time.Microsecond)
+	prepared, err := s.freezeBaselineWorkflows(ctx, workspaceID, initial.Brief)
+	if err != nil {
+		return CompilerBaselinePreview{}, fmt.Errorf("preview compiler baseline: %w", err)
+	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return CompilerBaselinePreview{}, fmt.Errorf("begin preview compiler baseline: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	var mode, status string
-	var briefRaw []byte
+	var mode, status, briefHash string
 	err = tx.QueryRow(ctx, `
-		SELECT mode, status, brief_json
+		SELECT mode, status, brief_hash
 		FROM weave_team_build_runs
 		WHERE workspace_id=$1 AND build_run_id=$2
 		FOR UPDATE
-	`, workspaceID, buildRunID).Scan(&mode, &status, &briefRaw)
+	`, workspaceID, buildRunID).Scan(&mode, &status, &briefHash)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return CompilerBaselinePreview{}, fmt.Errorf("preview compiler baseline: %w", ErrBuildRunNotFound)
 	}
@@ -67,24 +84,13 @@ func (s *Store) PreviewCompilerBaseline(
 	if status != StatusPlanning {
 		return CompilerBaselinePreview{}, fmt.Errorf("preview compiler baseline: %w", ErrBuildRunNotPlanning)
 	}
-	if mode == ModeCreate {
-		if err := tx.Commit(ctx); err != nil {
-			return CompilerBaselinePreview{}, fmt.Errorf("commit preview compiler baseline: %w", err)
-		}
-		return CompilerBaselinePreview{BaselineHash: emptyCreateBaselineHashV1}, nil
-	}
-	if mode != ModeOptimize {
-		return CompilerBaselinePreview{}, fmt.Errorf("preview compiler baseline: invalid mode %q", mode)
-	}
-	var brief BuildBrief
-	if err := json.Unmarshal(briefRaw, &brief); err != nil {
-		return CompilerBaselinePreview{}, fmt.Errorf("preview compiler baseline: decode stored brief: %w", err)
+	if mode != initial.Mode || briefHash != initial.BriefHash {
+		return CompilerBaselinePreview{}, fmt.Errorf("preview compiler baseline: %w", ErrBuildRunNotPlanning)
 	}
 	// PostgreSQL timestamptz persists microsecond precision. Bind the preview
 	// snapshot to that precision before hashing so authorization can recapture
 	// the same instant after the timestamp has made a database round trip.
-	capturedAt := s.clock.Now().UTC().Round(time.Microsecond)
-	snapshot, err := s.captureBaselineTxAt(ctx, tx, workspaceID, brief, capturedAt)
+	snapshot, err := s.captureBaselineTxAt(ctx, tx, workspaceID, initial.Brief, capturedAt, prepared)
 	if err != nil {
 		return CompilerBaselinePreview{}, fmt.Errorf("preview compiler baseline: %w", err)
 	}
@@ -134,10 +140,10 @@ func (s *Store) VerifyEvaluationBaselineTx(
 		return "", fmt.Errorf("verify evaluation baseline: %w: run is not publishing", ErrEvaluationPublishCAS)
 	}
 	var brief BuildBrief
-	var frozen BaselineSnapshot
 	if err := json.Unmarshal(briefRaw, &brief); err != nil {
 		return "", fmt.Errorf("verify evaluation baseline: decode brief: %w", err)
 	}
+	var frozen BaselineSnapshot
 	if err := json.Unmarshal(baselineRaw, &frozen); err != nil {
 		return "", fmt.Errorf("verify evaluation baseline: decode frozen baseline: %w", err)
 	}
@@ -145,8 +151,16 @@ func (s *Store) VerifyEvaluationBaselineTx(
 	if err != nil {
 		return "", fmt.Errorf("verify evaluation baseline: decode captured_at: %w", err)
 	}
-	current, err := s.captureBaselineTxAt(ctx, tx, workspaceID, brief, capturedAt)
+	workflowIDs := make([]string, 0, len(frozen.WorkflowIdentities))
+	for _, identity := range frozen.WorkflowIdentities {
+		workflowIDs = append(workflowIDs, identity.ID)
+	}
+	prepared := frozenBaselineWorkflowFacts{workflowIDs: workflowIDs, identities: frozen.WorkflowIdentities, versions: frozen.WorkflowVersions, refs: frozen.Workflows}
+	current, err := s.captureBaselineTxAt(ctx, tx, workspaceID, brief, capturedAt, prepared)
 	if err != nil {
+		if errors.Is(err, workflow.ErrVersionConflict) {
+			return "", fmt.Errorf("verify evaluation baseline: %w: workflow catalog changed", ErrEvaluationBaselineChanged)
+		}
 		return "", fmt.Errorf("verify evaluation baseline: %w", err)
 	}
 	if current.ContentHash != frozen.ContentHash {
@@ -156,32 +170,22 @@ func (s *Store) VerifyEvaluationBaselineTx(
 	return frozen.ContentHash, nil
 }
 
-// captureBaselineTx reads the live target Team, Roster, referenced Agents,
-// and Workflows inside the caller-owned authorize transaction, then builds,
-// hashes, validates, and closure-checks the full optimize baseline. The
-// caller owns the transaction and must commit or roll back afterwards; any
-// error leaves the run in planning.
-func (s *Store) captureBaselineTx(
-	ctx context.Context,
-	tx pgx.Tx,
-	workspaceID string,
-	brief BuildBrief,
-) (BaselineSnapshot, error) {
-	return s.captureBaselineTxAt(ctx, tx, workspaceID, brief, s.clock.Now().UTC())
-}
-
+// captureBaselineTxAt verifies the pre-read immutable workflow facts against
+// locked product revisions, then reads the live Team, Roster and Agents in the
+// caller-owned transaction and builds the complete optimize snapshot.
 func (s *Store) captureBaselineTxAt(
 	ctx context.Context,
 	tx pgx.Tx,
 	workspaceID string,
 	brief BuildBrief,
 	capturedAt time.Time,
+	prepared frozenBaselineWorkflowFacts,
 ) (BaselineSnapshot, error) {
 	if !validUTCTimestamp(capturedAt) {
 		return BaselineSnapshot{}, fmt.Errorf("capture baseline: %w: captured_at must be a valid UTC timestamp", ErrBaselineSnapshotInvalid)
 	}
-	orgStore, agents, workflows, artifacts := s.baselineSources()
-	if !baselineReaderAvailable(orgStore) || !baselineReaderAvailable(agents) || workflows == nil || artifacts == nil {
+	orgStore, agents, workflows, _ := s.baselineSources()
+	if !baselineReaderAvailable(orgStore) || !baselineReaderAvailable(agents) || workflows == nil {
 		return BaselineSnapshot{}, fmt.Errorf("%w", ErrBaselineSourceUnavailable)
 	}
 	if tx == nil {
@@ -191,28 +195,10 @@ func (s *Store) captureBaselineTxAt(
 	}
 	scope := cloneAssetScope(brief.AllowedAssets)
 
-	// Fast-fail existence check without locking: the authoritative locked
-	// team read below is the one captured by the snapshot.
-	if _, err := orgStore.GetTeam(ctx, workspaceID, brief.TeamID); err != nil {
-		if errors.Is(err, org.ErrTeamNotFound) {
-			return BaselineSnapshot{}, fmt.Errorf(
-				"capture baseline: %w: %v", ErrBaselineTargetNotFound, err,
-			)
-		}
-		return BaselineSnapshot{}, fmt.Errorf(
-			"capture baseline: %w: %v", ErrBaselineSnapshotFailed, err,
-		)
+	if err := workflows.VerifyBaselineWorkflowsTx(ctx, tx, workspaceID, prepared.workflowIDs, prepared.identities, prepared.versions); err != nil {
+		return BaselineSnapshot{}, fmt.Errorf("capture baseline: verify workflow facts: %w", errors.Join(ErrBaselineSnapshotFailed, err))
 	}
-
-	// Lock and read the scoped workflows before the team/roster rows so the
-	// lock order matches the publication candidate builder (workspace ->
-	// workflow -> team) and cannot deadlock against a concurrent publish.
-	workflowReads, err := s.captureBaselineWorkflowsTx(
-		ctx, tx, workflows, artifacts, workspaceID, brief.TeamID, scope,
-	)
-	if err != nil {
-		return BaselineSnapshot{}, err
-	}
+	workflowReads := append([]BaselineWorkflowRef(nil), prepared.refs...)
 
 	// Lock workspace + team + roster rows in the same order as roster writers
 	// (workspace -> team), then read the authoritative team and dispatch rules.
@@ -345,11 +331,13 @@ func (s *Store) captureBaselineTxAt(
 			GroupDeadlineSec: rules.GroupDeadlineSec,
 			Quorum:           rules.Quorum,
 		},
-		Roster:     roster,
-		AgentPins:  pins,
-		Workflows:  workflowReads,
-		AssetScope: scope,
-		CapturedAt: capturedAt.UTC().Format(time.RFC3339Nano),
+		Roster:             roster,
+		AgentPins:          pins,
+		Workflows:          workflowReads,
+		WorkflowIdentities: append([]workflow.TeamWorkflow(nil), prepared.identities...),
+		WorkflowVersions:   append([]workflow.TeamWorkflowVersion(nil), prepared.versions...),
+		AssetScope:         scope,
+		CapturedAt:         capturedAt.UTC().Format(time.RFC3339Nano),
 	}
 	sort.Slice(snapshot.Roster, func(i, j int) bool {
 		return snapshot.Roster[i].AgentID < snapshot.Roster[j].AgentID
@@ -395,22 +383,24 @@ func (s *Store) baselineSources() (
 	return s.orgStore, s.agents, s.workflows, s.artifacts
 }
 
-// captureBaselineWorkflowsTx locks and reads every scoped workflow's identity,
-// published facts, and mutable draft inside the caller-owned transaction. The
-// published artifact/dependency/version rows are immutable once written, so
-// after the workflow row is locked (through the draft lock when one exists)
-// the exact published reads are stable. A workflow without a draft has no
-// publish path, so its published identity can only change through archive; the
-// snapshot therefore reflects the state at read time and any later mutation
-// fails the downstream candidate admission instead of being silently frozen.
-func (s *Store) captureBaselineWorkflowsTx(
-	ctx context.Context,
-	tx pgx.Tx,
-	workflows WorkflowBaselineReader,
-	artifacts workflow.PublicationReader,
-	workspaceID, teamID string,
-	scope AssetScope,
-) ([]BaselineWorkflowRef, error) {
+type frozenBaselineWorkflowFacts struct {
+	workflowIDs []string
+	identities  []workflow.TeamWorkflow
+	versions    []workflow.TeamWorkflowVersion
+	refs        []BaselineWorkflowRef
+}
+
+// freezeBaselineWorkflows reads immutable artifacts and the product catalog
+// before the product transaction starts. The transaction later verifies the
+// exact product identities and complete version set before using these facts.
+func (s *Store) freezeBaselineWorkflows(
+	ctx context.Context, workspaceID string, brief BuildBrief,
+) (frozenBaselineWorkflowFacts, error) {
+	_, _, workflows, artifacts := s.baselineSources()
+	if workflows == nil || artifacts == nil {
+		return frozenBaselineWorkflowFacts{}, ErrBaselineSourceUnavailable
+	}
+	teamID, scope := brief.TeamID, cloneAssetScope(brief.AllowedAssets)
 	workflowIDs := make([]string, 0)
 	for _, ref := range scope.Refs {
 		if ref.Kind == "workflow" && ref.ID != "" {
@@ -422,57 +412,39 @@ func (s *Store) captureBaselineWorkflowsTx(
 
 	versions, err := workflows.ListVersionsByWorkflows(ctx, workspaceID, workflowIDs)
 	if err != nil {
-		return nil, fmt.Errorf(
+		return frozenBaselineWorkflowFacts{}, fmt.Errorf(
 			"capture baseline: %w: list workflow versions: %v",
 			ErrBaselineSnapshotFailed,
 			err,
 		)
 	}
 
-	refs := make([]BaselineWorkflowRef, 0, len(workflowIDs))
+	facts := frozenBaselineWorkflowFacts{workflowIDs: make([]string, 0, len(workflowIDs)), identities: make([]workflow.TeamWorkflow, 0, len(workflowIDs)), versions: versions, refs: make([]BaselineWorkflowRef, 0, len(workflowIDs))}
 	for _, workflowID := range workflowIDs {
-		var (
-			identity workflow.TeamWorkflow
-			draft    *workflow.TeamWorkflowVersion
-		)
+		var draft *workflow.TeamWorkflowVersion
 		draftVersion := findWorkflowDraftVersion(versions, workflowID)
 		if draftVersion != nil {
-			read, err := workflows.ResolvePublicationDraftTx(
-				ctx, tx, workspaceID, workflowID, *draftVersion,
-			)
-			if err != nil {
-				return nil, fmt.Errorf(
-					"capture baseline: %w: lock workflow %q draft: %v",
-					ErrBaselineSnapshotFailed,
-					workflowID,
-					err,
-				)
-			}
-			identity = read.Workflow
-			draft = &read.Draft
-		} else {
-			workflowRow, err := workflows.Get(ctx, workspaceID, workflowID)
-			if err != nil {
-				if errors.Is(err, workflow.ErrNotFound) && workflowID == FirstOptimizeWorkflowID(teamID) {
-					continue
-				}
-				return nil, fmt.Errorf(
-					"capture baseline: %w: read workflow %q: %v",
-					ErrBaselineSnapshotFailed,
-					workflowID,
-					err,
-				)
-			}
-			identity = *workflowRow
+			draft = findWorkflowVersion(versions, workflowID, *draftVersion)
 		}
+		workflowRow, err := workflows.Get(ctx, workspaceID, workflowID)
+		if err != nil {
+			if errors.Is(err, workflow.ErrNotFound) && workflowID == FirstOptimizeWorkflowID(teamID) {
+				facts.versions = removeWorkflowVersions(facts.versions, workflowID)
+				continue
+			}
+			return frozenBaselineWorkflowFacts{}, fmt.Errorf("capture baseline: %w: read workflow %q: %v", ErrBaselineSnapshotFailed, workflowID, err)
+		}
+		identity := *workflowRow
 		if identity.WorkspaceID != workspaceID || identity.ID != workflowID {
-			return nil, fmt.Errorf(
+			return frozenBaselineWorkflowFacts{}, fmt.Errorf(
 				"capture baseline: %w: workflow %q is not scoped to workspace %q",
 				ErrBaselineSnapshotInvalid,
 				workflowID,
 				workspaceID,
 			)
 		}
+		facts.workflowIDs = append(facts.workflowIDs, workflowID)
+		facts.identities = append(facts.identities, identity)
 		ref := BaselineWorkflowRef{
 			WorkflowID: identity.ID,
 			TeamID:     identity.TeamID,
@@ -482,22 +454,20 @@ func (s *Store) captureBaselineWorkflowsTx(
 		}
 		if identity.PublishedVersion != nil {
 			publishedVersion := *identity.PublishedVersion
-			versionRow, err := workflows.GetVersion(
-				ctx, workspaceID, workflowID, publishedVersion,
-			)
-			if err != nil {
-				return nil, fmt.Errorf(
+			versionRow := findWorkflowVersion(versions, workflowID, publishedVersion)
+			if versionRow == nil {
+				return frozenBaselineWorkflowFacts{}, fmt.Errorf(
 					"capture baseline: %w: read workflow %q published version: %v",
 					ErrBaselineSnapshotFailed,
 					workflowID,
-					err,
+					workflow.ErrNotFound,
 				)
 			}
 			artifact, err := artifacts.GetArtifact(
 				ctx, workspaceID, workflowID, publishedVersion,
 			)
 			if err != nil {
-				return nil, fmt.Errorf(
+				return frozenBaselineWorkflowFacts{}, fmt.Errorf(
 					"capture baseline: %w: read workflow %q published artifact: %v",
 					ErrBaselineSnapshotFailed,
 					workflowID,
@@ -508,7 +478,7 @@ func (s *Store) captureBaselineWorkflowsTx(
 				ctx, workspaceID, workflowID, publishedVersion,
 			)
 			if err != nil {
-				return nil, fmt.Errorf(
+				return frozenBaselineWorkflowFacts{}, fmt.Errorf(
 					"capture baseline: %w: read workflow %q dependencies: %v",
 					ErrBaselineSnapshotFailed,
 					workflowID,
@@ -519,7 +489,7 @@ func (s *Store) captureBaselineWorkflowsTx(
 				versionRow.TriggerConfig, versionRow.GraphDefinition,
 			)
 			if err != nil {
-				return nil, fmt.Errorf(
+				return frozenBaselineWorkflowFacts{}, fmt.Errorf(
 					"capture baseline: %w: hash workflow %q published content: %v",
 					ErrBaselineSnapshotInvalid,
 					workflowID,
@@ -561,7 +531,7 @@ func (s *Store) captureBaselineWorkflowsTx(
 				draft.TriggerConfig, draft.GraphDefinition,
 			)
 			if err != nil {
-				return nil, fmt.Errorf(
+				return frozenBaselineWorkflowFacts{}, fmt.Errorf(
 					"capture baseline: %w: hash workflow %q draft content: %v",
 					ErrBaselineSnapshotInvalid,
 					workflowID,
@@ -576,9 +546,29 @@ func (s *Store) captureBaselineWorkflowsTx(
 				ContentHash: draftHash,
 			}
 		}
-		refs = append(refs, ref)
+		facts.refs = append(facts.refs, ref)
 	}
-	return refs, nil
+	return facts, nil
+}
+
+func findWorkflowVersion(versions []workflow.TeamWorkflowVersion, workflowID string, version int) *workflow.TeamWorkflowVersion {
+	for index := range versions {
+		if versions[index].WorkflowID == workflowID && versions[index].Version == version {
+			copy := versions[index]
+			return &copy
+		}
+	}
+	return nil
+}
+
+func removeWorkflowVersions(versions []workflow.TeamWorkflowVersion, workflowID string) []workflow.TeamWorkflowVersion {
+	filtered := versions[:0]
+	for _, version := range versions {
+		if version.WorkflowID != workflowID {
+			filtered = append(filtered, version)
+		}
+	}
+	return filtered
 }
 
 func findWorkflowDraftVersion(

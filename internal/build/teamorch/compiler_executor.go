@@ -8,15 +8,12 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"sync"
-	"time"
 
+	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/build/teambuild"
 	"github.com/jinyitao123/weave/internal/build/teameval"
 	"github.com/jinyitao123/weave/internal/build/teamforge"
 )
-
-var ErrCompilerExecutionPending = errors.New("compiler execution has no locally claimable ready operation")
 
 // CompilerOperationStore is the durable operation-DAG surface used by the
 // compiler executor. *teambuild.Store is the production implementation.
@@ -24,12 +21,8 @@ type CompilerOperationStore interface {
 	GetBuildRun(context.Context, string, string) (teambuild.TeamBuildRun, error)
 	GetLatestBlueprintRevision(context.Context, string, string) (teambuild.BlueprintRevision, error)
 	ListOperationSteps(context.Context, string, string, int) ([]teambuild.OperationStep, error)
-	ClaimReadyOperationStep(context.Context, string, string, int, string, time.Duration) (teambuild.OperationStep, error)
-	RenewOperationStepLease(context.Context, string, string, int, string, string, int64, time.Duration) (teambuild.OperationStep, error)
-	SucceedOperationStep(context.Context, string, string, int, string, string, int64, string, json.RawMessage) (teambuild.OperationStep, error)
-	SkipOperationStep(context.Context, string, string, int, string, string, int64, string, json.RawMessage) (teambuild.OperationStep, error)
-	FailOperationStep(context.Context, string, string, int, string, string, int64, string, string, json.RawMessage) (teambuild.OperationStep, error)
-	RetryOperationStep(context.Context, string, string, int, string, string, int64, string, string, json.RawMessage) (teambuild.OperationStep, error)
+	NextReadyOperationStep(context.Context, string, string, int) (teambuild.OperationStep, error)
+	FinishOperationStep(context.Context, string, string, int, string, string, string, string, string, json.RawMessage, teambuild.ExecutionFence) (teambuild.OperationStep, error)
 }
 
 // OperationContext contains only persisted, hash-bound compiler inputs. A
@@ -44,6 +37,9 @@ type OperationContext struct {
 	Operation   teamforge.ChangeOperationV1
 	Step        teambuild.OperationStep
 	Steps       []teambuild.OperationStep
+	// PhysicalAttempt comes from the platform task claim. It is never stored as
+	// a second Builder-owned attempt or lease.
+	PhysicalAttempt int
 }
 
 // OperationHandler performs one closed ChangeSet operation. Product construction
@@ -60,8 +56,8 @@ type OperationResult struct {
 }
 
 // OperationError is the only handler failure accepted by the executor.
-// Retryable failures preserve an immutable attempt and return the step to
-// pending on the same Blueprint revision.
+// Retryable failures leave business progress pending; the platform task owns
+// the physical attempt receipt and schedules the next claim.
 type OperationError struct {
 	Class      teameval.FailureClass
 	Code       string
@@ -101,34 +97,40 @@ type compilerDriver interface {
 	Execute(context.Context, string, string) (CompilerExecutionResult, error)
 }
 
-// CompilerExecutor executes one persisted revision. Lease duration is only a
-// liveness fence: it is renewed while the handler runs and never limits total
-// business execution time.
+// CompilerExecutor executes one deterministic business step inside the
+// platform task that already owns claim, lease, deadline, retry, and cancel.
 type CompilerExecutor struct {
-	Store         CompilerOperationStore
-	Handler       OperationHandler
-	WorkerID      string
-	LeaseDuration time.Duration
+	Store   CompilerOperationStore
+	Handler OperationHandler
 }
 
 func NewCompilerExecutor(store CompilerOperationStore, handler OperationHandler) *CompilerExecutor {
-	return &CompilerExecutor{
-		Store: store, Handler: handler,
-		WorkerID: "compiler-executor", LeaseDuration: 30 * time.Second,
+	return &CompilerExecutor{Store: store, Handler: handler}
+}
+
+type compilerExecutionFenceKey struct{}
+
+// WithCompilerExecutionFence binds the platform's current-claim validator to
+// one task handler invocation without importing taskqueue into Builder.
+func WithCompilerExecutionFence(ctx context.Context, fence teambuild.ExecutionFence) context.Context {
+	return context.WithValue(ctx, compilerExecutionFenceKey{}, fence)
+}
+
+func compilerExecutionFence(ctx context.Context) (teambuild.ExecutionFence, error) {
+	fence, _ := ctx.Value(compilerExecutionFenceKey{}).(teambuild.ExecutionFence)
+	if fence == nil {
+		return nil, errors.New("compiler executor: platform execution fence is required")
 	}
+	return fence, nil
 }
 
 func (e *CompilerExecutor) Execute(ctx context.Context, workspaceID, buildRunID string) (CompilerExecutionResult, error) {
 	if e == nil || e.Store == nil || e.Handler == nil {
 		return CompilerExecutionResult{}, errors.New("compiler executor: store and operation handler are required")
 	}
-	workerID := strings.TrimSpace(e.WorkerID)
-	if workerID == "" {
-		workerID = "compiler-executor"
-	}
-	lease := e.LeaseDuration
-	if lease <= 0 {
-		lease = 30 * time.Second
+	fence, err := compilerExecutionFence(ctx)
+	if err != nil {
+		return CompilerExecutionResult{}, err
 	}
 	revision, err := e.Store.GetLatestBlueprintRevision(ctx, workspaceID, buildRunID)
 	if err != nil {
@@ -146,87 +148,88 @@ func (e *CompilerExecutor) Execute(ctx context.Context, workspaceID, buildRunID 
 	for _, operation := range changeSet.Operations {
 		operations[operation.OperationID] = operation
 	}
-
-	for {
-		if err := ctx.Err(); err != nil {
-			return CompilerExecutionResult{RevisionNo: revision.RevisionNo, Cancelled: true}, nil
-		}
-		run, err := e.Store.GetBuildRun(ctx, workspaceID, buildRunID)
-		if err != nil {
-			return CompilerExecutionResult{}, fmt.Errorf("compiler executor: load build run: %w", err)
-		}
-		if run.Status == teambuild.StatusCancelled {
-			return CompilerExecutionResult{RevisionNo: revision.RevisionNo, Cancelled: true}, nil
-		}
-		steps, err := e.Store.ListOperationSteps(ctx, workspaceID, buildRunID, revision.RevisionNo)
-		if err != nil {
-			return CompilerExecutionResult{}, fmt.Errorf("compiler executor: list operation steps: %w", err)
-		}
-		step, err := e.Store.ClaimReadyOperationStep(ctx, workspaceID, buildRunID, revision.RevisionNo, workerID, lease)
-		if errors.Is(err, teambuild.ErrNoReadyOperationStep) {
-			return summarizeCompilerSteps(revision.RevisionNo, steps), nil
-		}
-		if err != nil {
-			return CompilerExecutionResult{}, fmt.Errorf("compiler executor: claim ready operation: %w", err)
-		}
-		operation, ok := operations[step.OperationID]
-		if !ok || string(operation.Type) != step.OperationType || !knownCompilerOperation(operation.Type) {
-			failure := &OperationError{Class: teameval.FailureClassCompile, Code: "compiler_operation_identity_mismatch", Evidence: json.RawMessage(`{"source":"persisted_change_set"}`)}
-			if finishErr := e.finishFailure(context.WithoutCancel(ctx), step, workerID, failure); finishErr != nil {
-				return CompilerExecutionResult{}, finishErr
-			}
-			return CompilerExecutionResult{RevisionNo: revision.RevisionNo, Failure: failure}, nil
-		}
-		result, opErr := e.handleWithLease(ctx, lease, workerID, OperationContext{
-			WorkspaceID: workspaceID, BuildRunID: buildRunID, Run: run,
-			Revision: revision, Blueprint: blueprint, ChangeSet: changeSet,
-			Operation: operation, Step: step, Steps: steps,
-		})
-		if opErr != nil {
-			failure := normalizeOperationError(opErr, result.Evaluation)
-			if finishErr := e.finishFailure(context.WithoutCancel(ctx), step, workerID, failure); finishErr != nil {
-				return CompilerExecutionResult{}, finishErr
-			}
-			return CompilerExecutionResult{
-				RevisionNo: revision.RevisionNo,
-				Cancelled:  failure.Class == teameval.FailureClassCancelled,
-				Failure:    failure, Evaluation: failure.Evaluation,
-			}, nil
-		}
-		evidence, err := normalizeOperationEvidence(result.Evidence, operation)
-		if err != nil {
-			failure := &OperationError{Class: teameval.FailureClassCompile, Code: "compiler_operation_evidence_invalid", Cause: err}
-			if finishErr := e.finishFailure(context.WithoutCancel(ctx), step, workerID, failure); finishErr != nil {
-				return CompilerExecutionResult{}, finishErr
-			}
-			return CompilerExecutionResult{RevisionNo: revision.RevisionNo, Failure: failure}, nil
-		}
-		outputHash := result.OutputHash
-		if outputHash == "" {
-			outputHash = sha256Hex(evidence)
-		}
-		finishCtx := context.WithoutCancel(ctx)
-		if result.Skip {
-			_, err = e.Store.SkipOperationStep(finishCtx, workspaceID, buildRunID, revision.RevisionNo, step.OperationID, workerID, step.LeaseEpoch, outputHash, evidence)
-		} else {
-			_, err = e.Store.SucceedOperationStep(finishCtx, workspaceID, buildRunID, revision.RevisionNo, step.OperationID, workerID, step.LeaseEpoch, outputHash, evidence)
-		}
-		if err != nil {
-			return CompilerExecutionResult{}, fmt.Errorf("compiler executor: persist operation completion: %w", err)
-		}
-		// A passing candidate must enter the ordinary round/report ledger while
-		// the build run is still round_running. Yield after durably completing
-		// candidate_run so the controller can record that evidence before the
-		// dependent publish operation transitions the run through publishing to
-		// passed. A restart can recover the same evaluation from EvidenceJSON.
-		if operation.Type == teamforge.OperationCandidateRun && result.Evaluation != nil {
-			return CompilerExecutionResult{
-				RevisionNo: revision.RevisionNo,
-				Pending:    true,
-				Evaluation: result.Evaluation,
-			}, nil
-		}
+	if err := ctx.Err(); err != nil {
+		return CompilerExecutionResult{RevisionNo: revision.RevisionNo, Cancelled: true}, nil
 	}
+	run, err := e.Store.GetBuildRun(ctx, workspaceID, buildRunID)
+	if err != nil {
+		return CompilerExecutionResult{}, fmt.Errorf("compiler executor: load build run: %w", err)
+	}
+	if run.Status == teambuild.StatusCancelled {
+		return CompilerExecutionResult{RevisionNo: revision.RevisionNo, Cancelled: true}, nil
+	}
+	steps, err := e.Store.ListOperationSteps(ctx, workspaceID, buildRunID, revision.RevisionNo)
+	if err != nil {
+		return CompilerExecutionResult{}, fmt.Errorf("compiler executor: list operation steps: %w", err)
+	}
+	step, err := e.Store.NextReadyOperationStep(ctx, workspaceID, buildRunID, revision.RevisionNo)
+	if errors.Is(err, teambuild.ErrNoReadyOperationStep) {
+		return summarizeCompilerSteps(revision.RevisionNo, steps), nil
+	}
+	if err != nil {
+		return CompilerExecutionResult{}, fmt.Errorf("compiler executor: select ready operation: %w", err)
+	}
+	physicalAttempt := 1
+	if current, ok := execution.CurrentTaskFromContext(ctx); ok && current.ClaimEpoch > 0 {
+		physicalAttempt = int(current.ClaimEpoch)
+	}
+	operation, ok := operations[step.OperationID]
+	if !ok || string(operation.Type) != step.OperationType || !knownCompilerOperation(operation.Type) {
+		failure := &OperationError{Class: teameval.FailureClassCompile, Code: "compiler_operation_identity_mismatch", Evidence: json.RawMessage(`{"source":"persisted_change_set"}`)}
+		if finishErr := e.finishFailure(context.WithoutCancel(ctx), step, failure, fence); finishErr != nil {
+			return CompilerExecutionResult{}, finishErr
+		}
+		return CompilerExecutionResult{RevisionNo: revision.RevisionNo, Failure: failure}, nil
+	}
+	result, opErr := e.Handler.HandleOperation(ctx, OperationContext{
+		WorkspaceID: workspaceID, BuildRunID: buildRunID, Run: run,
+		Revision: revision, Blueprint: blueprint, ChangeSet: changeSet,
+		Operation: operation, Step: step, Steps: steps, PhysicalAttempt: physicalAttempt,
+	})
+	if ctx.Err() != nil {
+		return CompilerExecutionResult{RevisionNo: revision.RevisionNo, Cancelled: true}, nil
+	}
+	if opErr != nil {
+		failure := normalizeOperationError(opErr, result.Evaluation)
+		if !failure.Retryable {
+			if finishErr := e.finishFailure(context.WithoutCancel(ctx), step, failure, fence); finishErr != nil {
+				return CompilerExecutionResult{}, finishErr
+			}
+		}
+		return CompilerExecutionResult{
+			RevisionNo: revision.RevisionNo,
+			Cancelled:  failure.Class == teameval.FailureClassCancelled,
+			Failure:    failure, Evaluation: failure.Evaluation,
+		}, nil
+	}
+	evidence, err := normalizeOperationEvidence(result.Evidence, operation)
+	if err != nil {
+		failure := &OperationError{Class: teameval.FailureClassCompile, Code: "compiler_operation_evidence_invalid", Cause: err}
+		if finishErr := e.finishFailure(context.WithoutCancel(ctx), step, failure, fence); finishErr != nil {
+			return CompilerExecutionResult{}, finishErr
+		}
+		return CompilerExecutionResult{RevisionNo: revision.RevisionNo, Failure: failure}, nil
+	}
+	outputHash := result.OutputHash
+	if outputHash == "" {
+		outputHash = sha256Hex(evidence)
+	}
+	status := teambuild.OperationStatusSucceeded
+	if result.Skip {
+		status = teambuild.OperationStatusSkipped
+	}
+	if _, err = e.Store.FinishOperationStep(context.WithoutCancel(ctx), workspaceID, buildRunID, revision.RevisionNo,
+		step.OperationID, status, outputHash, "", "", evidence, fence); err != nil {
+		return CompilerExecutionResult{}, fmt.Errorf("compiler executor: persist operation completion: %w", err)
+	}
+	if operation.Type == teamforge.OperationCandidateRun && result.Evaluation != nil {
+		return CompilerExecutionResult{RevisionNo: revision.RevisionNo, Pending: true, Evaluation: result.Evaluation}, nil
+	}
+	steps, err = e.Store.ListOperationSteps(ctx, workspaceID, buildRunID, revision.RevisionNo)
+	if err != nil {
+		return CompilerExecutionResult{}, fmt.Errorf("compiler executor: reload operation steps: %w", err)
+	}
+	return summarizeCompilerSteps(revision.RevisionNo, steps), nil
 }
 
 func knownCompilerOperation(operationType teamforge.ChangeOperationTypeV1) bool {
@@ -242,69 +245,13 @@ func knownCompilerOperation(operationType teamforge.ChangeOperationTypeV1) bool 
 	}
 }
 
-func (e *CompilerExecutor) handleWithLease(ctx context.Context, lease time.Duration, workerID string, operation OperationContext) (OperationResult, error) {
-	handlerCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	stop := make(chan struct{})
-	var renewalErr error
-	var renewalMu sync.Mutex
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		interval := lease / 3
-		if interval <= 0 {
-			interval = time.Millisecond
-		}
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-stop:
-				return
-			case <-handlerCtx.Done():
-				return
-			case <-ticker.C:
-				_, err := e.Store.RenewOperationStepLease(handlerCtx, operation.WorkspaceID, operation.BuildRunID,
-					operation.Revision.RevisionNo, operation.Step.OperationID, workerID, operation.Step.LeaseEpoch, lease)
-				if err != nil {
-					renewalMu.Lock()
-					renewalErr = err
-					renewalMu.Unlock()
-					cancel()
-					return
-				}
-			}
-		}
-	}()
-	result, err := e.Handler.HandleOperation(handlerCtx, operation)
-	close(stop)
-	<-done
-	renewalMu.Lock()
-	leaseErr := renewalErr
-	renewalMu.Unlock()
-	if leaseErr != nil {
-		return result, &OperationError{Class: teameval.FailureClassRuntimeInfrastructure,
-			Code: "operation_lease_renewal_failed", Retryable: true, Cause: leaseErr}
-	}
-	if ctx.Err() != nil {
-		return result, &OperationError{Class: teameval.FailureClassCancelled,
-			Code: "compiler_operation_cancelled", Evidence: json.RawMessage(`{"cancelled":true}`), Cause: ctx.Err()}
-	}
-	return result, err
-}
-
-func (e *CompilerExecutor) finishFailure(ctx context.Context, step teambuild.OperationStep, workerID string, failure *OperationError) error {
+func (e *CompilerExecutor) finishFailure(ctx context.Context, step teambuild.OperationStep, failure *OperationError, fence teambuild.ExecutionFence) error {
 	evidence, err := normalizeFailureEvidence(failure)
 	if err != nil {
 		return fmt.Errorf("compiler executor: encode typed failure evidence: %w", err)
 	}
-	if failure.Retryable {
-		_, err = e.Store.RetryOperationStep(ctx, step.WorkspaceID, step.BuildRunID, step.RevisionNo,
-			step.OperationID, workerID, step.LeaseEpoch, string(failure.Class), failure.Code, evidence)
-	} else {
-		_, err = e.Store.FailOperationStep(ctx, step.WorkspaceID, step.BuildRunID, step.RevisionNo,
-			step.OperationID, workerID, step.LeaseEpoch, string(failure.Class), failure.Code, evidence)
-	}
+	_, err = e.Store.FinishOperationStep(ctx, step.WorkspaceID, step.BuildRunID, step.RevisionNo,
+		step.OperationID, teambuild.OperationStatusFailed, "", string(failure.Class), failure.Code, evidence, fence)
 	if err != nil {
 		return fmt.Errorf("compiler executor: persist typed operation failure: %w", err)
 	}

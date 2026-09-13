@@ -154,9 +154,9 @@ func (s *Store) ReauthorizeBudgetBlockedRun(
 	}
 	if _, err := tx.Exec(ctx, `
 		UPDATE weave_team_build_operation_steps
-		SET status='pending', lease_owner=NULL, lease_until=NULL,
-			error_class=NULL, error_code=NULL, evidence_json=NULL,
-			output_hash=NULL, completed_at=NULL, updated_at=$3
+		SET status='pending', error_class=NULL, error_code=NULL,
+			evidence_json=NULL, output_hash=NULL,
+			started_at=NULL, completed_at=NULL, updated_at=$3
 		WHERE workspace_id=$1 AND build_run_id=$2
 		  AND status='failed' AND error_class='budget_exhausted'
 	`, workspaceID, buildRunID, now); err != nil {
