@@ -98,7 +98,7 @@ export function CapabilityOperationsSettingsSection({ t }: Props) {
     <h4>{t('capabilityOps.history')}</h4>
     {rows.length === 0 ? <p>{t('capabilityOps.empty')}</p> : rows.map((run) => {
       const invocationId = String(run.invocation_id)
-      const canStop = ['running', 'queued', 'waiting'].includes(String(run.status))
+      const canStop = ['running', 'queued', 'waiting', 'reconciling'].includes(String(run.status))
       const isSelected = selected === invocationId
       return <article className={css.row} key={invocationId}>
         <div>

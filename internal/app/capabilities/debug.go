@@ -31,6 +31,9 @@ func (s *Service) Debug(ctx context.Context, request DebugRequest) (Invocation, 
 	if err != nil {
 		return Invocation{}, false, err
 	}
+	if len(snapshot.Definition.Resources.Tools) > 0 {
+		return Invocation{}, false, fmt.Errorf("%w: tool steps require a published revision", capability.ErrInvalidDefinition)
+	}
 	if _, err := capability.CompileDebug(snapshot); err != nil {
 		return Invocation{}, false, err
 	}

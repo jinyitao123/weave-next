@@ -23,6 +23,7 @@ type Request struct {
 	Plan         capability.Plan
 	Input        json.RawMessage
 	State        capability.ExecutionState
+	Tools        capability.ToolStepExecutor
 }
 
 // Recorder binds engine observations and checkpoints to the caller's claim.
@@ -68,9 +69,6 @@ func (r *Runner) Execute(ctx context.Context, request Request, recorder Recorder
 		}
 		steps = remoteSteps{task: request, executor: r.Remote, record: record, recordRun: recorder.RecordRun}
 	} else {
-		if len(request.Plan.Resources.ToolIDs) > 0 {
-			return nil, errors.New("capability_tool_runtime_required")
-		}
 		if r.ResolveModel == nil || r.TerminalSink == nil {
 			return nil, errors.New("capability model execution dependencies are not configured")
 		}
@@ -86,6 +84,17 @@ func (r *Runner) Execute(ctx context.Context, request Request, recorder Recorder
 			InvocationID: request.InvocationID, Model: requirement.Model, LLM: llm,
 			Store: r.Store, TerminalSink: sink, RecordRun: recorder.RecordRun}
 	}
+	if len(request.Plan.Resources.Tools) > 0 {
+		if request.Tools == nil {
+			return nil, errors.New("capability frozen tool execution dependencies are not configured")
+		}
+		steps = combinedSteps{StepExecutor: steps, ToolStepExecutor: request.Tools}
+	}
 	result, _, err := capability.ExecutePlanResumable(ctx, request.Plan, request.Input, steps, request.State, recorder)
 	return result, err
+}
+
+type combinedSteps struct {
+	capability.StepExecutor
+	capability.ToolStepExecutor
 }

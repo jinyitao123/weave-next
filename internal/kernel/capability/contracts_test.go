@@ -61,6 +61,24 @@ func TestPublishUsesCanonicalDefinitionHash(t *testing.T) {
 	}
 }
 
+func TestToolStepRequiresExactUnambiguousMCPResource(t *testing.T) {
+	d := fixtureDefinition()
+	d.Steps[0].Kind = StepTool
+	d.Steps[0].ToolID = "calculate"
+	d.Resources.ToolIDs = []string{"calculate"}
+	if err := d.Validate(); !errors.Is(err, ErrInvalidDefinition) {
+		t.Fatalf("bare tool name granted execution authority: %v", err)
+	}
+	d.Resources.Tools = []ToolReference{{MCPServerID: "finance", ToolName: "calculate"}}
+	if err := d.Validate(); err != nil {
+		t.Fatalf("exact MCP reference rejected: %v", err)
+	}
+	d.Resources.Tools = append(d.Resources.Tools, ToolReference{MCPServerID: "shadow", ToolName: "calculate"})
+	if err := d.Validate(); !errors.Is(err, ErrInvalidDefinition) {
+		t.Fatalf("ambiguous MCP tool accepted: %v", err)
+	}
+}
+
 func TestCompileProducesStablePlanAndRejectsNonLoopCycle(t *testing.T) {
 	d := fixtureDefinition()
 	d.Steps[1].MaxIterations = 0
