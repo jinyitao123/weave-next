@@ -39,6 +39,9 @@ export interface WorkTaskDelivery {
   readonly checkCounts: Readonly<Record<string, number>>
   readonly available: boolean
   readonly evidenceCompleteness: 'complete' | 'unavailable'
+  readonly inputRevisionKind?: '' | 'initial' | 'revision' | undefined
+  readonly parentRunId?: string | undefined
+  readonly parentMaterialCount?: number | undefined
 }
 
 /** Last user-authored assessment, retained when delivery evidence cannot be read. */
@@ -346,22 +349,26 @@ const deliverySchema = z.object({
   revisionId: z.string(), contractDigest: z.string(), verificationId: z.string(), verificationStatus: verificationStatusSchema,
   reason: z.string(), checks: z.array(z.object({ checkId: z.string(), status: verificationStatusSchema, reason: z.string() }).strict()),
   checkCounts: z.record(z.string(), z.number().int().nonnegative()), available: z.boolean(), evidenceCompleteness: z.enum(['complete', 'unavailable']),
+  inputRevisionKind: z.enum(['', 'initial', 'revision']).optional(), parentRunId: z.string().optional(), parentMaterialCount: z.number().int().nonnegative().optional(),
 }).strict()
 const wireDeliverySchema = z.object({
   revision_id: z.string().default(''), contract_digest: z.string().default(''), verification_id: z.string().default(''), verification_status: verificationStatusSchema,
   reason: z.string().default(''), checks: z.array(z.object({ check_id: z.string(), status: verificationStatusSchema, reason: z.string() })),
   check_counts: z.record(z.string(), z.number().int().nonnegative()), available: z.boolean(), evidence_completeness: z.enum(['complete', 'unavailable']),
+  input_revision_kind: z.enum(['initial', 'revision']).default('initial'), parent_run_id: z.string().default(''), parent_material_count: z.number().int().nonnegative().default(0),
 })
 
 function readDelivery(value: unknown): WorkTaskDelivery {
   const parsed = wireDeliverySchema.safeParse(value)
   if (!parsed.success) return { revisionId: '', contractDigest: '', verificationId: '', verificationStatus: 'unknown',
-    reason: 'delivery_verification_unavailable', checks: [], checkCounts: {}, available: false, evidenceCompleteness: 'unavailable' }
+    reason: 'delivery_verification_unavailable', checks: [], checkCounts: {}, available: false, evidenceCompleteness: 'unavailable',
+    inputRevisionKind: '', parentRunId: '', parentMaterialCount: 0 }
   const item = parsed.data
   return { revisionId: item.revision_id, contractDigest: item.contract_digest, verificationId: item.verification_id,
     verificationStatus: item.verification_status, reason: item.reason,
     checks: item.checks.map(check => ({ checkId: check.check_id, status: check.status, reason: check.reason })),
-    checkCounts: item.check_counts, available: item.available, evidenceCompleteness: item.evidence_completeness }
+    checkCounts: item.check_counts, available: item.available, evidenceCompleteness: item.evidence_completeness,
+    inputRevisionKind: item.input_revision_kind, parentRunId: item.parent_run_id, parentMaterialCount: item.parent_material_count }
 }
 
 function assessmentForDelivery(previous: WorkTaskProjection | null, runId: string, delivery: WorkTaskDelivery | undefined):

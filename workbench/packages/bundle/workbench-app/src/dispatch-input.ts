@@ -373,6 +373,9 @@ export function installDispatchInputTool(
           registration_id: record.registrationId, workbench_session_id: String(session.id), expected_revision_id: record.expectedRevisionId,
           source_messages: record.sourceMessages.map(({ message_id, event_seq, sha256 }) => ({ message_id, event_seq, sha256 })),
           task: record.task, mode: 'workflow', ...record.facts,
+          ...(record.rerun === null ? {} : { revision_context: {
+            parent_input_revision_id: record.expectedRevisionId, parent_run_id: record.rerun.targetRunId,
+          } }),
         }, signal)
         let registered: Record<string, JsonValue>
         try { registered = await register() } catch (error) {

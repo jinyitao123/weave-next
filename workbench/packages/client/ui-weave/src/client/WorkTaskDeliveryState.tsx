@@ -73,6 +73,7 @@ export function WorkTaskDeliveryState({ model, executionLabel, compact = false, 
       <details className={css.verificationDetails}>
         <summary>{t('task.verification.checks', { count: delivery?.checks.length ?? 0 })}</summary>
         {!delivery?.revisionId ? null : <p className={css.deliveryRevision}>{t('task.verification.revision', { revision: delivery.revisionId })}</p>}
+        {delivery?.inputRevisionKind !== 'revision' ? null : <p>{t('task.verification.revisionSource', { count: delivery.parentMaterialCount ?? 0 })}</p>}
         {delivery?.evidenceCompleteness === 'complete' ? null : <p>{t('task.verification.evidenceUnavailable')}</p>}
         {!delivery?.checks.length ? <p>{t('task.verification.noChecks')}</p> : <ul className={css.verificationChecks}>
           {delivery.checks.map(check => <li key={check.checkId}>

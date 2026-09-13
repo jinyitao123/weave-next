@@ -206,6 +206,9 @@ export interface WorkTaskDelivery {
   readonly checkCounts: Readonly<Record<string, number>>
   readonly available: boolean
   readonly evidenceCompleteness: 'complete' | 'unavailable'
+  readonly inputRevisionKind?: '' | 'initial' | 'revision' | undefined
+  readonly parentRunId?: string | undefined
+  readonly parentMaterialCount?: number | undefined
 }
 
 /**

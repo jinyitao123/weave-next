@@ -22,6 +22,9 @@ type runDeliverySummary struct {
 	CheckCounts          map[string]int                 `json:"check_counts"`
 	Available            bool                           `json:"available"`
 	EvidenceCompleteness string                         `json:"evidence_completeness"`
+	InputRevisionKind    string                         `json:"input_revision_kind,omitempty"`
+	ParentRunID          string                         `json:"parent_run_id,omitempty"`
+	ParentMaterialCount  int                            `json:"parent_material_count,omitempty"`
 }
 
 type runDeliveryCheck struct {
@@ -47,7 +50,18 @@ func (s *Server) runDelivery(ctx context.Context, run teamrun.TeamRun) runDelive
 		unknown.Reason = "delivery_binding_mismatch"
 		return unknown
 	}
-	return projectRunDelivery(run.Status, state)
+	result := projectRunDelivery(run.Status, state)
+	s.attachDeliveryLineage(ctx, run.WorkspaceID, state.Binding.InputRevisionID, &result)
+	return result
+}
+
+func (s *Server) attachDeliveryLineage(ctx context.Context, workspaceID, inputRevisionID string, result *runDeliverySummary) {
+	if s.GetPool() == nil || inputRevisionID == "" {
+		return
+	}
+	_ = s.GetPool().QueryRow(ctx, `SELECT revision_kind,COALESCE(parent_run_id,''),jsonb_array_length(parent_materials)
+		FROM weave_dispatch_input_revisions WHERE workspace_id=$1 AND input_revision_id=$2`,
+		workspaceID, inputRevisionID).Scan(&result.InputRevisionKind, &result.ParentRunID, &result.ParentMaterialCount)
 }
 
 func projectRunDelivery(status teamrun.Status, state deliverable.DeliveryState) runDeliverySummary {
@@ -96,7 +110,9 @@ func (s *Server) handleGetRunDelivery(c echo.Context) error {
 	if state.Binding.WorkspaceID != run.WorkspaceID || state.Binding.RunSnapshotID != run.RunSnapshotID || (state.Binding.RunID != "" && state.Binding.RunID != run.RunID) {
 		return c.JSON(http.StatusConflict, map[string]string{"error": "delivery_binding_mismatch"})
 	}
-	return c.JSON(http.StatusOK, map[string]any{"run_id": run.RunID, "status": run.Status, "delivery": projectRunDelivery(run.Status, state), "binding": state.Binding, "report": state.Report})
+	delivery := projectRunDelivery(run.Status, state)
+	s.attachDeliveryLineage(c.Request().Context(), run.WorkspaceID, state.Binding.InputRevisionID, &delivery)
+	return c.JSON(http.StatusOK, map[string]any{"run_id": run.RunID, "status": run.Status, "delivery": delivery, "binding": state.Binding, "report": state.Report})
 }
 
 func (s *Server) handleRecheckRunDelivery(c echo.Context) error {

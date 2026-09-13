@@ -569,7 +569,10 @@ describe('Workbench-owned dispatch tool', () => {
     expect(rerun.rerun).toEqual({ targetRunId: original.result!.run_id, actionId })
     expect(rerun.sourceMessages).toHaveLength(1)
     expect(rerun.sourceMessages[0]?.message_id).toBe(`workbench-rerun:${actionId}`)
-    expect(remote.requests.filter(request => request.path.endsWith('dispatch-inputs')).at(-1)?.body.task).toBe(brief)
+    expect(remote.requests.filter(request => request.path.endsWith('dispatch-inputs')).at(-1)?.body).toMatchObject({
+      task: brief,
+      revision_context: { parent_input_revision_id: original.revision!.input_revision_id, parent_run_id: originalRunId },
+    })
     const requestCount = remote.requests.length
     expect(await app.service.rerun(app.session, facts, actionId, new AbortController().signal)).toEqual(result)
     expect(remote.requests).toHaveLength(requestCount)
