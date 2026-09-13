@@ -27,6 +27,7 @@ const (
 	IdentityAgent        IdentityKind = "agent"
 	IdentityTeamWorkflow IdentityKind = "team_workflow"
 	IdentityAudit        IdentityKind = "audit"
+	IdentityTeamBuild    IdentityKind = "team_build"
 )
 
 // ExecutionScope is the shared durable Agent execution scope.
@@ -34,6 +35,8 @@ type ExecutionScope = execution.Scope
 
 // Task is one durable unit of work in the task queue.
 type Task struct {
+	BuildRunID            string          `json:"build_run_id,omitempty"`
+	AvailableAt           time.Time       `json:"available_at"`
 	ClaimEpoch            int64           `json:"claim_epoch"`
 	ID                    string          `json:"id"`
 	WorkspaceID           string          `json:"workspace_id"`

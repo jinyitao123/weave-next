@@ -50,12 +50,14 @@ type cancelBuildRunRequest struct {
 // durable execution job. The build run itself remains the source of truth for
 // business status and is read through the existing GET endpoint.
 type TeamBuildExecutionSubmission struct {
+	TaskID      string `json:"task_id,omitempty"`
 	WorkspaceID string `json:"workspace_id"`
 	BuildRunID  string `json:"build_run_id"`
 	Status      string `json:"status"`
 }
 
 type submitBuildRunResponse struct {
+	TaskID      string `json:"task_id,omitempty"`
 	WorkspaceID string `json:"workspace_id"`
 	BuildRunID  string `json:"build_run_id"`
 	RunStatus   string `json:"run_status"`
@@ -64,6 +66,7 @@ type submitBuildRunResponse struct {
 }
 
 type TeamBuildExecutionService interface {
+	Cancel(context.Context, string, string, string, string) (teambuild.TeamBuildRun, error)
 	Submit(
 		ctx context.Context, workspaceID, buildRunID string,
 	) (TeamBuildExecutionSubmission, error)
@@ -503,6 +506,7 @@ func (s *Server) handleSubmitBuildRun(c echo.Context) error {
 		return mapTeamBuildRunControlError(c, err)
 	}
 	return c.JSON(http.StatusAccepted, submitBuildRunResponse{
+		TaskID:      submission.TaskID,
 		WorkspaceID: submission.WorkspaceID,
 		BuildRunID:  submission.BuildRunID,
 		RunStatus:   run.Status,
@@ -556,16 +560,10 @@ func (s *Server) handleCancelBuildRun(c echo.Context) error {
 			"build_run_cancel_reason_required", "cancel reason is required",
 		)
 	}
-	run, err := s.TeamBuild.GetBuildRun(
-		c.Request().Context(), getTenant(c), c.Param("id"),
-	)
-	if err != nil {
-		return mapTeamBuildRunControlError(c, err)
+	if s.TeamBuildOrchestrator == nil {
+		return teamBuildRunUnavailable(c)
 	}
-	cancelled, err := s.TeamBuild.TransitionStatus(
-		c.Request().Context(), getTenant(c), c.Param("id"),
-		run.Status, teambuild.StatusCancelled, getUserID(c), request.Reason,
-	)
+	cancelled, err := s.TeamBuildOrchestrator.Cancel(c.Request().Context(), getTenant(c), c.Param("id"), getUserID(c), request.Reason)
 	if err != nil {
 		return mapTeamBuildRunControlError(c, err)
 	}
