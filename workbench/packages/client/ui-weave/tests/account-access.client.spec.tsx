@@ -4,6 +4,7 @@ import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
+import { personalSessionStarter } from '../src/client/personal-session.ts'
 import { AccountAccess, AccountButton } from '../src/client/AccountAccess.tsx'
 import { AccountController, type AccountUser, type AccountProps } from '../src/client/account-controller.ts'
 import { zh } from '../src/client/locales.ts'
@@ -267,4 +268,42 @@ describe('Workbench account access', () => {
     expect(view.queryByRole('alert')).toBeNull()
   })
 
+})
+
+
+it('projects Host management only from a current administrator account', async () => {
+  const administrator = host(alice).controller()
+  expect(administrator.hostManagement.getSnapshot()).toBe(false)
+  await administrator.refresh()
+  expect(administrator.hostManagement.getSnapshot()).toBe(true)
+  administrator.expire()
+  expect(administrator.hostManagement.getSnapshot()).toBe(false)
+  const member = host(bob).controller()
+  await member.refresh()
+  expect(member.hostManagement.getSnapshot()).toBe(false)
+})
+
+it('creates a personal task without a host path and ignores a result after account expiry', async () => {
+  const account = host(bob).controller()
+  await account.refresh()
+  const created = defer<import('@deepseek-ai/dsh-session/types').SessionId>()
+  const sessions = { create: vi.fn(() => created.promise), open: vi.fn() }
+  const start = personalSessionStarter(account, sessions)
+  const pending = start()
+  expect(start()).toBe(pending)
+  expect(sessions.create).toHaveBeenCalledExactlyOnceWith({})
+  account.expire()
+  created.resolve('personal' as import('@deepseek-ai/dsh-session/types').SessionId)
+  await expect(pending).rejects.toThrow('Account has changed')
+  expect(sessions.open).not.toHaveBeenCalled()
+  await expect(start()).rejects.toThrow('Account is unavailable')
+})
+
+it('opens the personal task returned for the current account', async () => {
+  const account = host(bob).controller()
+  await account.refresh()
+  const sessions = { create: vi.fn(async () => 'personal' as import('@deepseek-ai/dsh-session/types').SessionId), open: vi.fn() }
+  await personalSessionStarter(account, sessions)()
+  expect(sessions.create).toHaveBeenCalledExactlyOnceWith({})
+  expect(sessions.open).toHaveBeenCalledExactlyOnceWith('personal')
 })

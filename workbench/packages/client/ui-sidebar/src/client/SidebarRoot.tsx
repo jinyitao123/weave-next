@@ -53,10 +53,22 @@ export function SidebarRoot({
   collapsed,
   width,
   startSession,
+  startPersonalSession,
+  useHostManagement,
   toggleSidebar,
   t,
   renderSlot,
 }: SidebarRootComponentProps) {
+  const canManageHost = useHostManagement?.(value => value) ?? process.env.DSH_CLIENT_BUILD_PROFILE !== 'workbench'
+  const [creating, setCreating] = useState(false)
+  const [createFailed, setCreateFailed] = useState(false)
+  const beginSession = (): void => {
+    if (canManageHost) { startSession(); return }
+    if (creating || startPersonalSession === undefined) return
+    setCreating(true)
+    setCreateFailed(false)
+    void startPersonalSession().catch(() => { setCreateFailed(true) }).finally(() => { setCreating(false) })
+  }
   // Wide content stays mounted while the collapse animates (fading via
   // .collapsed .wide), unmounts at settle, and remounts right away on expand.
   const [settled, setSettled] = useState(collapsed)
@@ -145,7 +157,7 @@ export function SidebarRoot({
             type="button"
             className={clsx(css.brand, css.wide)}
             aria-label={t('session.new.label')}
-            onClick={() => { startSession() }}
+            onClick={beginSession} disabled={creating || (!canManageHost && startPersonalSession === undefined)}
           >
             <span className={css.brandIdentity} aria-hidden="true">
               <span className={css.brandMark}>
@@ -194,12 +206,14 @@ export function SidebarRoot({
           className={css.newSession}
           data-native-new-session
           aria-label={t('session.new.label')}
-          onClick={() => { startSession() }}
+          onClick={beginSession} disabled={creating || (!canManageHost && startPersonalSession === undefined)}
         >
           <IconNewChatOutline16 size={wide ? 14 : 18} />
           {wide && <span className={clsx(css.newSessionLabel, css.wide)}>{t('session.new')}</span>}
         </button>
       </Tooltip>
+
+      {createFailed && <p role="alert">{t('session.new.error')}</p>}
 
       {/* The browsing region fills the column between the controls and the
           foot in both states; its rail icon column rides the same slot. */}
@@ -215,9 +229,9 @@ export function SidebarRoot({
         <div className={css.footerActions}>
           {renderSlot('sidebar.footer.action', { wide })}
         </div>
-        <div className={css.settingsArea}>
+        {canManageHost && <div className={css.settingsArea}>
           {renderSlot('sidebar.settings', { wide })}
-        </div>
+        </div>}
       </div>
     </div>
   )

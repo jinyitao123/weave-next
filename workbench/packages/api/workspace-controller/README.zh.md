@@ -8,6 +8,8 @@ kind: "package-reference"
 
 ## 概述
 
+Host 产品可通过 `setSessionVisibility()` 为每个请求和持续流绑定当前用户的会话可见性。分组基线、成员变更和命令回执只返回可见的会话编号；移动、归档涉及不可见目标或锚点时，在写入前按会话不可用拒绝。工作区目录与原始分组仍由共享注册表保存，过滤不新增用户业务状态。
+
 `@deepseek-ai/dsh-api-workspace-controller` 拥有 Host 的 `ctx.workspaceController` 服务和生成的 Client `ctx.remote.workspace` namespace。它的 Remote 方法负责创建、重命名、移除和重排 Workspace，在 Workspace 内重排 Session，从 Workspace 导航中归档 Session，以及跟随完整的 Workspace 投影。当 Client 必须修改或跟随 Workspace 导航时，请通过 API Gateway 使用它。本包同时拥有 `ctx.directoryPickerController` 与生成的 `ctx.remote.directoryPicker` namespace，因为它承载的选目录 seam 是抽象的，自身从不作为 Loader entry。
 
 ## 目录

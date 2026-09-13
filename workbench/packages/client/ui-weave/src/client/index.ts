@@ -16,6 +16,7 @@ import { DeliverableRow } from './DeliverableRow.tsx'
 import { ProjectActivity } from './ProjectActivity.tsx'
 import { NS as projectNS, zh as projectZh, en as projectEn, type ProjectActivityKey } from './project-activity-locales.ts'
 import { RuntimeSettingsSection } from './RuntimeCenter.tsx'
+import { personalSessionStarter } from './personal-session.ts'
 import { AccountAccess, AccountButton } from './AccountAccess.tsx'
 import { AccountController, type AccountInjected } from './account-controller.ts'
 import { ApplicationSettingsSection } from './ApplicationCenter.tsx'
@@ -42,6 +43,10 @@ export function apply(ctx: ClientContext, config: Config = {}): void {
   if (process.env.DSH_CLIENT_BUILD_PROFILE === 'workbench') {
     const account = new AccountController(window.fetch.bind(window), () => { window.location.reload() })
     ctx.effect(() => account.install(window, config.accountCheckIntervalMs ?? 30_000), 'ui-weave: account access')
+    ctx.slots.provideRoot({
+      hooks: { hostManagement: account.hostManagement },
+      props: { startPersonalSession: personalSessionStarter(account, ctx.sessions) },
+    })
     const accountProps = (): AccountInjected => ({
       hooks: { account }, login: account.login, logout: account.logout, retry: account.retry,
     })

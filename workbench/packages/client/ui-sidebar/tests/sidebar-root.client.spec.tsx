@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import type {
   SidebarFooterActionOwnerProps, SidebarRootComponentProps, SidebarSectionOwnerProps,
@@ -28,7 +28,7 @@ type AttentionSnapshot = Parameters<Parameters<SidebarRootComponentProps['useSes
 const noAttention: AttentionSnapshot = new Map()
 const useSessionPendingInteraction: SidebarRootComponentProps['useSessionPendingInteraction'] = selector => selector(noAttention)
 
-function mountShell({ collapsed = false, width = 300 }: { collapsed?: boolean; width?: number } = {}) {
+function mountShell({ collapsed = false, width = 300, canManageHost = true, startPersonalSession }: { collapsed?: boolean; width?: number; canManageHost?: boolean; startPersonalSession?: () => Promise<void> } = {}) {
   const startSession = vi.fn()
   const toggleSidebar = vi.fn()
   let regionOwner: SidebarSectionOwnerProps | undefined
@@ -41,6 +41,7 @@ function mountShell({ collapsed = false, width = 300 }: { collapsed?: boolean; w
     <SidebarRoot
       collapsed={current.collapsed} width={current.width}
       useSessions={neverHook} useSessionPendingInteraction={useSessionPendingInteraction} useWorkspaces={neverHook}
+      useHostManagement={selector => selector(canManageHost)} startPersonalSession={startPersonalSession}
       startSession={startSession} toggleSidebar={toggleSidebar} t={t}
       renderSlot={((
         key: string,
@@ -174,5 +175,28 @@ describe('SidebarRoot shell', () => {
     const b = mountShell({ collapsed: true })
     expect(b.regionOwner().wide).toBe(false)
     expect(screen.getByRole('button', { name: 'Open sidebar' })).toBeTruthy()
+  })
+})
+
+
+describe('Workbench account role navigation', () => {
+  it('shows personal tasks and account controls without Host settings for ordinary members', async () => {
+    vi.stubEnv('DSH_CLIENT_BUILD_PROFILE', 'workbench')
+    const startPersonalSession = vi.fn(async () => {})
+    const shell = mountShell({ canManageHost: false, startPersonalSession })
+    expect(screen.queryByTestId('settings-seat')).toBeNull()
+    expect(screen.getByTestId('footer-action-seat')).toBeTruthy()
+    expect(screen.getByTestId('region')).toBeTruthy()
+    await act(async () => { fireEvent.click(screen.getAllByRole('button', { name: 'New session' })[0]!) })
+    expect(startPersonalSession).toHaveBeenCalledOnce()
+    expect(shell.startSession).not.toHaveBeenCalled()
+  })
+
+  it('keeps shared project creation and Host settings for administrators', () => {
+    vi.stubEnv('DSH_CLIENT_BUILD_PROFILE', 'workbench')
+    const shell = mountShell({ canManageHost: true })
+    expect(screen.getByTestId('settings-seat')).toBeTruthy()
+    fireEvent.click(screen.getAllByRole('button', { name: 'New session' })[0]!)
+    expect(shell.startSession).toHaveBeenCalledOnce()
   })
 })

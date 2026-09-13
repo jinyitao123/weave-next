@@ -66,6 +66,7 @@ function mount(overrides: Partial<WorkspaceBrowserProps> = {}) {
   const store = createWorkspaceViewStore().create()
   const props: WorkspaceBrowserProps = {
     wide: true,
+    useHostManagement: hook(true),
     expandSidebar: vi.fn(),
     useSessions: hook(sessionState([])),
     useSessionPendingInteraction: hook(noPendingInteraction),
@@ -1347,4 +1348,22 @@ describe('WorkspaceBrowser', () => {
     const row = screen.getByText('Needle A').closest('[role="treeitem"]') as HTMLElement
     expect(row.hasAttribute('draggable')).toBe(false)
   })
+})
+
+
+it('ordinary members see their task list without shared project controls or directory flow', () => {
+  const renderSlot = vi.fn(() => null)
+  const b = mount({
+    useHostManagement: hook(false),
+    useSessions: hook(sessionState([summary('my-task', 1)])),
+    useWorkspaces: hook(workspaceState([workspace('shared', ['my-task'], 'Shared confidential project')])),
+    useProjectActivity: hook(true), renderSlot: renderSlot as never,
+  })
+  expect(screen.queryByText('Shared confidential project')).toBeNull()
+  expect(screen.queryByRole('button', { name: '添加工作区' })).toBeNull()
+  expect(screen.queryByRole('button', { name: /项目进展/ })).toBeNull()
+  expect(screen.queryByRole('button', { name: /新建.*Shared/ })).toBeNull()
+  expect(renderSlot).not.toHaveBeenCalled()
+  expect(screen.getByText('my-task')).toBeTruthy()
+  expect(b.props.startSession).not.toHaveBeenCalled()
 })

@@ -18,6 +18,7 @@ import {
 import type {
   SessionListState, SessionSearchResultItem,
 } from '@deepseek-ai/dsh-api-session-controller/client'
+import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { WorkspaceId, WorkspaceView } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { WorkspaceBrowserProps } from '../contract/slots.ts'
@@ -800,6 +801,8 @@ function SearchResults({
   )
 }
 
+const NO_SHARED_WORKSPACES: readonly WorkspaceView[] = []
+
 /**
  * Render the browsing region.
  * @param props - composed slot props (shell owner share + store + injected actions).
@@ -811,6 +814,7 @@ export function WorkspaceBrowser({
   useSessions,
   useSessionPendingInteraction,
   useWorkspaces,
+  useHostManagement,
   useStore,
   actions,
   startSession,
@@ -831,19 +835,23 @@ export function WorkspaceBrowser({
   renderSlot,
   t,
 }: WorkspaceBrowserProps) {
+  const canManageHost = useHostManagement?.(value => value) ?? process.env.DSH_CLIENT_BUILD_PROFILE !== 'workbench'
   const home = useConnectionGeneration(generation => generation?.host.home)
-  const workspaces = useWorkspaces(state => state.items)
-  const workspacePhase = useWorkspaces(state => state.phase)
+  const sharedWorkspaces = useWorkspaces(state => state.items)
+  const workspaces = canManageHost ? sharedWorkspaces : NO_SHARED_WORKSPACES
+  const sharedWorkspacePhase = useWorkspaces(state => state.phase)
+  const workspacePhase = canManageHost ? sharedWorkspacePhase : 'ready'
   const archivedSessionIds = useWorkspaces(state => state.archivedSessionIds)
   // Live occupancy of this surface's directory-flow hole (the same source the
   // flow reads): a composition without a picking affordance can add nothing.
-  const directoryFlowAvailable = useDirectoryFlow(occupied => occupied)
-  const projectActivityAvailable = useProjectActivity(occupied => occupied)
+  const directoryFlowAvailable = useDirectoryFlow(occupied => occupied) && canManageHost
+  const projectActivityAvailable = useProjectActivity(occupied => occupied) && canManageHost
   const [projectActivityId, setProjectActivityId] = useState<WorkspaceId | null>(null)
   useEffect(() => {
     if (!projectActivityAvailable) setProjectActivityId(null)
   }, [projectActivityAvailable])
-  const groupBy = useStore(s => s.groupBy)
+  const selectedGrouping = useStore(s => s.groupBy)
+  const groupBy = canManageHost ? selectedGrouping : 'flat'
   const orderBy = useStore(s => s.orderBy)
   const groupExpansion = useStore(s => s.groupExpansion)
   const sessionOrderByAccount = useStore(s => s.sessionOrderByAccount)
@@ -1145,7 +1153,7 @@ export function WorkspaceBrowser({
           </div>
         )}
         <div className={clsx(css.headerActions, wide && searchExpanded && css.headerActionsHidden)}>
-          {wide && (
+          {wide && canManageHost && (
             <ViewOptionsMenu
               groupBy={groupBy}
               orderBy={orderBy}
@@ -1174,7 +1182,7 @@ export function WorkspaceBrowser({
           )}
         </div>
         {/* Add flow + its error dialog (same package — direct composition). */}
-        <WorkspacePickFlow
+        {canManageHost && <WorkspacePickFlow
           t={t}
           open={wsPickerOpen}
           anchorRef={wsPlusRef}
@@ -1189,7 +1197,7 @@ export function WorkspaceBrowser({
             startSession(workspaceId)
           }}
           onClose={() => { setWsPickerOpen(false) }}
-        />
+        />}
       </div>
 
       {/* The collapsed rail keeps search as its own 36px control. */}

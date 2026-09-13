@@ -61,6 +61,12 @@ export class AccountController implements HostObservable<AccountView> {
   /** Read the latest immutable public account projection. */
   getSnapshot = (): AccountView => this.view
 
+  /** Only a currently authenticated administrator can manage shared Host resources. */
+  readonly hostManagement: HostObservable<boolean> = {
+    getSnapshot: () => this.view.status === 'authenticated' && this.view.user?.role === 'admin',
+    subscribe: listener => this.subscribe(listener),
+  }
+
   /** Subscribe for the framework's generated hook. */
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener)
