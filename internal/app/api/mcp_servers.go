@@ -19,7 +19,11 @@ func (s *Server) handleListMCPServers(c echo.Context) error {
 	if err != nil {
 		return handleMCPRegistryError(c, err)
 	}
-	return c.JSON(http.StatusOK, servers)
+	views, err := projectMCPServers(c.Request().Context(), s.Registry, getTenant(c), servers)
+	if err != nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "工具使用情况暂时不可用，请稍后重试"})
+	}
+	return c.JSON(http.StatusOK, views)
 }
 
 func (s *Server) handleCreateMCPServer(c echo.Context) error {
@@ -36,7 +40,7 @@ func (s *Server) handleCreateMCPServer(c echo.Context) error {
 	if err != nil {
 		return handleMCPRegistryError(c, err)
 	}
-	return c.JSON(http.StatusCreated, server)
+	return s.writeMCPServerProductView(c, http.StatusCreated, server)
 }
 
 func (s *Server) handleGetMCPServer(c echo.Context) error {
@@ -47,7 +51,7 @@ func (s *Server) handleGetMCPServer(c echo.Context) error {
 	if err != nil {
 		return handleMCPRegistryError(c, err)
 	}
-	return c.JSON(http.StatusOK, server)
+	return s.writeMCPServerProductView(c, http.StatusOK, server)
 }
 
 func (s *Server) handleUpdateMCPServer(c echo.Context) error {
@@ -64,7 +68,7 @@ func (s *Server) handleUpdateMCPServer(c echo.Context) error {
 	if err != nil {
 		return handleMCPRegistryError(c, err)
 	}
-	return c.JSON(http.StatusOK, server)
+	return s.writeMCPServerProductView(c, http.StatusOK, server)
 }
 
 func (s *Server) handleDeleteMCPServer(c echo.Context) error {
@@ -93,7 +97,7 @@ func (s *Server) handleProbeMCPServer(c echo.Context) error {
 			return handleMCPRegistryError(c, err)
 		}
 	}
-	return c.JSON(http.StatusOK, result)
+	return s.writeMCPCatalogProductView(c, result)
 }
 
 func (s *Server) handleGetMCPServerTools(c echo.Context) error {
@@ -106,7 +110,7 @@ func (s *Server) handleGetMCPServerTools(c echo.Context) error {
 	if err != nil {
 		return handleMCPRegistryError(c, err)
 	}
-	return c.JSON(http.StatusOK, result)
+	return s.writeMCPCatalogProductView(c, result)
 }
 
 func bindMCPServerRequest(c echo.Context) (mcpregistry.UpsertServerRequest, error) {

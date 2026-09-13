@@ -565,37 +565,6 @@ func (s *Store) listCachedToolsTx(ctx context.Context, tx pgx.Tx, workspaceID, i
 	return tools, rows.Err()
 }
 
-// ListAgentNames returns current, non-deleted agents that reference a registry
-// server by stable ID. It reads the persisted JSON so it also sees refs before
-// the runtime AgentRecord type begins consuming server_id in R3.
-func (s *Store) ListAgentNames(ctx context.Context, workspaceID, id string) ([]string, error) {
-	if _, err := s.Get(ctx, workspaceID, id); err != nil {
-		return nil, err
-	}
-	rows, err := s.pool.Query(ctx, `
-		SELECT a.name
-		FROM weave_agents a
-		WHERE a.workspace_id=$1
-		  AND a.deleted=false
-		  AND COALESCE(a.spec->'mcp_servers', '[]'::jsonb)
-		      @> jsonb_build_array(jsonb_build_object('server_id', $2::text))
-		ORDER BY a.name
-	`, workspaceID, id)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	names := make([]string, 0)
-	for rows.Next() {
-		var name string
-		if err := rows.Scan(&name); err != nil {
-			return nil, err
-		}
-		names = append(names, name)
-	}
-	return names, rows.Err()
-}
-
 func normalizeCatalogJSON(raw json.RawMessage) json.RawMessage {
 	if len(raw) == 0 || string(raw) == "null" {
 		return json.RawMessage(`{}`)
@@ -611,13 +580,7 @@ const serverViewSelect = `
 	       s.created_by, s.created_at, s.updated_at, s.deleted_at,
 	       s.headers_cipher, s.env_cipher,
 	       (SELECT COUNT(*) FROM weave_mcp_tools t
-	         WHERE t.workspace_id=s.workspace_id AND t.server_id=s.id),
-	       (SELECT COUNT(*)
-	          FROM weave_agents a
-	         WHERE a.workspace_id=s.workspace_id
-	           AND a.deleted=false
-	           AND COALESCE(a.spec->'mcp_servers', '[]'::jsonb)
-	               @> jsonb_build_array(jsonb_build_object('server_id', s.id)))
+	         WHERE t.workspace_id=s.workspace_id AND t.server_id=s.id)
 	FROM weave_mcp_servers s
 `
 
@@ -628,13 +591,7 @@ const serverMetadataSelect = `
 	       s.server_info, s.last_error, s.last_probed_at, s.last_handshake_at,
 	       s.created_by, s.created_at, s.updated_at, s.deleted_at,
 	       (SELECT COUNT(*) FROM weave_mcp_tools t
-	         WHERE t.workspace_id=s.workspace_id AND t.server_id=s.id),
-	       (SELECT COUNT(*)
-	          FROM weave_agents a
-	         WHERE a.workspace_id=s.workspace_id
-	           AND a.deleted=false
-	           AND COALESCE(a.spec->'mcp_servers', '[]'::jsonb)
-	               @> jsonb_build_array(jsonb_build_object('server_id', s.id)))
+	         WHERE t.workspace_id=s.workspace_id AND t.server_id=s.id)
 	FROM weave_mcp_servers s
 `
 
@@ -659,7 +616,7 @@ func (s *Store) scanView(row rowScanner) (ServerView, error) {
 		&view.Status, &view.ProtocolVersion, &serverInfo, &view.LastError,
 		&view.LastProbedAt, &view.LastHandshakeAt, &view.CreatedBy,
 		&view.CreatedAt, &view.UpdatedAt, &view.DeletedAt, &headersCipher, &envCipher,
-		&view.ToolCount, &view.AgentCount,
+		&view.ToolCount,
 	)
 	if err != nil {
 		return ServerView{}, err
@@ -695,7 +652,7 @@ func scanMetadata(row rowScanner) (ServerMetadata, error) {
 		&item.Status, &item.ProtocolVersion, &serverInfo, &item.LastError,
 		&item.LastProbedAt, &item.LastHandshakeAt, &item.CreatedBy,
 		&item.CreatedAt, &item.UpdatedAt, &item.DeletedAt,
-		&item.ToolCount, &item.AgentCount,
+		&item.ToolCount,
 	)
 	if err != nil {
 		return ServerMetadata{}, err
