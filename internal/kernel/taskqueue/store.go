@@ -258,12 +258,19 @@ func (s *Store) Claim(ctx context.Context, workerID string, filter ClaimFilter) 
 		SET status=$1, worker_id=$2, started_at=$3, lease_expires_at=$4, updated_at=$3, claim_epoch=claim_epoch+1, unreported_attempts=unreported_attempts+1
 		WHERE id = (
 			SELECT id FROM weave_task_queue
-			WHERE status='queued' AND available_at <= $3
-				AND kind <> 'engine_exec'
+				WHERE status='queued' AND available_at <= $3
+					AND kind <> 'engine_exec'
 				AND kind=$5
 				AND identity_kind=$6
-				AND ($7='' OR workspace_id=$7)
-				AND ($8='' OR run_snapshot_id=$8)
+					AND ($7='' OR workspace_id=$7)
+					AND ($8='' OR run_snapshot_id=$8)
+					AND (parent_task_id IS NULL OR EXISTS (
+						SELECT 1 FROM weave_task_queue parent
+						WHERE parent.workspace_id=weave_task_queue.workspace_id
+						  AND parent.id=weave_task_queue.parent_task_id
+						  AND parent.actor_subject=weave_task_queue.actor_subject
+						  AND parent.status IN ('queued','dispatched','running')
+					))
 			ORDER BY priority DESC, created_at
 			FOR UPDATE SKIP LOCKED
 			LIMIT 1
@@ -318,11 +325,18 @@ func (s *Store) claimEngineTask(
 		SET status=$1, worker_id=$2, started_at=$3, lease_expires_at=$4, updated_at=$3, claim_epoch=claim_epoch+1, unreported_attempts=unreported_attempts+1
 		WHERE id = (
 			SELECT id FROM weave_task_queue
-			WHERE status='queued' AND available_at <= $3
+				WHERE status='queued' AND available_at <= $3
 				AND kind='engine_exec'
 				AND workspace_id=$5
-				AND runtime_id=$6
-				AND identity_kind=$7
+					AND runtime_id=$6
+					AND identity_kind=$7
+					AND (parent_task_id IS NULL OR EXISTS (
+						SELECT 1 FROM weave_task_queue parent
+						WHERE parent.workspace_id=weave_task_queue.workspace_id
+						  AND parent.id=weave_task_queue.parent_task_id
+						  AND parent.actor_subject=weave_task_queue.actor_subject
+						  AND parent.status IN ('queued','dispatched','running')
+					))
 			ORDER BY priority DESC, created_at
 			FOR UPDATE SKIP LOCKED
 			LIMIT 1
