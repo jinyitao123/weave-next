@@ -9,10 +9,10 @@ import (
 	"github.com/jinyitao123/loom"
 	"github.com/jinyitao123/loom/contract"
 	"github.com/jinyitao123/weave/internal/base/execution"
-	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 	"github.com/jinyitao123/weave/internal/kernel/compiler"
 	"github.com/jinyitao123/weave/internal/kernel/loomruntime"
 	"github.com/jinyitao123/weave/internal/kernel/runtimes"
+	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 )
 
 // executeLoomTask runs one loom turn in the daemon process. This is the edge
@@ -28,6 +28,11 @@ import (
 // inlined in the record (there is no durable store here to resolve empty bodies
 // from); the server bakes them in before enqueue.
 func (d *service) executeLoomTask(ctx context.Context, task *taskqueue.Task, request runtimes.EngineExecRequest) (string, error) {
+	ctx, err := taskqueue.BindTaskSubject(ctx, task)
+	if err != nil {
+		return "", err
+	}
+	ctx = withTaskProof(ctx, task.Subject, task.ClaimEpoch)
 	stamp, err := agentExecutionStampForTask(task, request)
 	if err != nil {
 		return "", err
@@ -86,7 +91,7 @@ func (d *service) executeLoomTask(ctx context.Context, task *taskqueue.Task, req
 		Messages:        messages,
 		LastUserMessage: loomInput.LastUserMessage,
 		SessionID:       loomInput.SessionID,
-		UserID:          loomInput.UserID,
+		UserID:          task.Subject.UserID,
 		Profile:         loomInput.Profile,
 		Context:         loomInput.Context,
 	}))

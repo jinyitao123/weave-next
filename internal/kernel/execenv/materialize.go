@@ -2,9 +2,11 @@
 package execenv
 
 import (
+	"context"
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"github.com/jinyitao123/weave/internal/base/execution"
 	"os"
 	"path/filepath"
 	"strings"
@@ -31,7 +33,7 @@ type Attachment struct {
 // stable per-workspace, per-agent directory. Prompt is accepted as part of the
 // materialization boundary but is passed to the CLI by the engine, not written
 // to disk or copied into the environment.
-func Materialize(root string, rec *registry.AgentRecord, prompt string, attachments []Attachment) (workDir string, env map[string]string, err error) {
+func Materialize(ctx context.Context, root string, rec *registry.AgentRecord, prompt string, attachments []Attachment) (workDir string, env map[string]string, err error) {
 	if rec == nil {
 		return "", nil, errors.New("execenv: nil agent record")
 	}
@@ -49,8 +51,12 @@ func Materialize(root string, rec *registry.AgentRecord, prompt string, attachme
 		return "", nil, fmt.Errorf("execenv: workspace ID: %w", err)
 	}
 
-	workDir = filepath.Join(root, workspace, rec.Name, "workdir")
-	if err := os.MkdirAll(workDir, 0o755); err != nil {
+	subject, err := execution.RequireSubject(ctx, rec.WorkspaceID)
+	if err != nil {
+		return "", nil, err
+	}
+	workDir = filepath.Join(root, ".subjects", subject.Digest(), workspace, rec.Name, "workdir")
+	if err := os.MkdirAll(workDir, 0o700); err != nil {
 		return "", nil, fmt.Errorf("execenv: create workdir: %w", err)
 	}
 	if err := writeFileIfChanged(filepath.Join(workDir, "AGENTS.md"), agentInstructions(rec), 0o644); err != nil {
@@ -81,7 +87,7 @@ func Materialize(root string, rec *registry.AgentRecord, prompt string, attachme
 	}
 
 	_ = prompt
-	return workDir, map[string]string{}, nil
+	return workDir, subject.Environment(), nil
 }
 
 func agentInstructions(rec *registry.AgentRecord) []byte {

@@ -14,19 +14,23 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/kernel/engine"
 	"github.com/jinyitao123/weave/internal/kernel/runtimes"
+	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 )
 
 const publicJournalMaxBytes = 16 * 1024 * 1024
 const publicJournalMaxFiles = 64
 
 type publicJournal struct {
-	TaskID    string                 `json:"task_id"`
-	Next      int64                  `json:"next"`
-	Events    []runtimes.PublicEvent `json:"events"`
-	Done      bool                   `json:"done"`
-	Truncated bool                   `json:"truncated"`
+	Subject    execution.Subject      `json:"subject"`
+	ClaimEpoch int64                  `json:"claim_epoch"`
+	TaskID     string                 `json:"task_id"`
+	Next       int64                  `json:"next"`
+	Events     []runtimes.PublicEvent `json:"events"`
+	Done       bool                   `json:"done"`
+	Truncated  bool                   `json:"truncated"`
 }
 
 // Each atomic file contains both the unacknowledged events and the next
@@ -259,7 +263,7 @@ func (s *publicSpool) flush(ctx context.Context, client *runtimeClient) error {
 			continue
 		}
 		batch := journal.Events[:min(len(journal.Events), runtimes.PublicEventBatchLimit)]
-		reportCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		reportCtx, cancel := context.WithTimeout(withTaskProof(ctx, journal.Subject, journal.ClaimEpoch), 5*time.Second)
 		ack, err := client.publicEvents(reportCtx, journal.TaskID, batch)
 		cancel()
 		if err != nil {
@@ -304,11 +308,15 @@ func (d *service) publicEventsLoop(ctx context.Context) {
 	}
 }
 
-func (d *service) publicEventCapture(taskID string, enabled bool) (func(engine.Event, bool), func(*engine.RunResult)) {
+func (d *service) publicEventCapture(task *taskqueue.Task, enabled bool) (func(engine.Event, bool), func(*engine.RunResult)) {
 	if !enabled || d.publicSpool == nil {
 		return nil, func(*engine.RunResult) {}
 	}
+	taskID := task.ID
 	err := d.publicSpool.begin(taskID)
+	if err == nil {
+		err = d.publicSpool.bindTask(task)
+	}
 	started := err == nil
 	if err != nil {
 		slog.Warn("runtime public progress unavailable for this execution", "task_id", taskID, "error", err)
@@ -333,4 +341,19 @@ func (d *service) publicEventCapture(taskID string, enabled bool) (func(engine.E
 		}
 	}
 	return publish, finish
+}
+
+func (s *publicSpool) bindTask(task *taskqueue.Task) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	journal, err := s.read(s.path(task.ID))
+	if err != nil {
+		return err
+	}
+	if journal.ClaimEpoch != 0 && (journal.ClaimEpoch != task.ClaimEpoch || journal.Subject != task.Subject) {
+		return execution.ErrSubjectMismatch
+	}
+	journal.ClaimEpoch = task.ClaimEpoch
+	journal.Subject = task.Subject
+	return s.save(journal)
 }

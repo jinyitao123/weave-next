@@ -11,8 +11,8 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 	"github.com/jinyitao123/weave/internal/kernel/runtimes"
+	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 )
 
 var errLeaseLost = errors.New("daemon: task lease lost")
@@ -157,6 +157,7 @@ func (c *runtimeClient) do(ctx context.Context, method, path string, body any) (
 		return nil, fmt.Errorf("daemon: create request: %w", err)
 	}
 	request.Header.Set("Authorization", "Bearer "+c.token)
+	writeTaskProof(ctx, request.Header)
 	if body != nil {
 		request.Header.Set("Content-Type", "application/json")
 	}

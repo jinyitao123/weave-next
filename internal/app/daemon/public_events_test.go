@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -113,7 +114,7 @@ func TestPublicJournalUploadsWhileExecutionIsStillActive(t *testing.T) {
 	defer server.Close()
 	client, _ := newRuntimeClient(server.URL, "token", server.Client())
 	d := &service{publicSpool: spool, client: client}
-	publish, finish := d.publicEventCapture("task-live", true)
+	publish, finish := d.publicEventCapture(&taskqueue.Task{ID: "task-live"}, true)
 	publish(engine.Event{Kind: "tool_call", Tool: "shell", CallID: "call", Status: "running"}, false)
 	ctx, cancel := context.WithCancel(context.Background())
 	var workers sync.WaitGroup
@@ -192,7 +193,7 @@ func TestPublicJournalCapacityAndDiskFailureDegradeExplicitly(t *testing.T) {
 		t.Fatal(err)
 	}
 	d := &service{publicSpool: &publicSpool{dir: broken, prefix: "test-", active: map[string]bool{}}}
-	publish, finish := d.publicEventCapture("disk-failed", true)
+	publish, finish := d.publicEventCapture(&taskqueue.Task{ID: "disk-failed"}, true)
 	publish(engine.Event{Kind: "text", Text: "public"}, false)
 	result := engine.RunResult{Status: "completed", Output: "retained final"}
 	finish(&result)

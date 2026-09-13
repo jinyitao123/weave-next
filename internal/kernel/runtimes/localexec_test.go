@@ -32,7 +32,7 @@ func TestLocalExecutorPreservesEngineReceipt(t *testing.T) {
 		Engine: engine.Codex,
 	}
 	result, err := NewLocalExecutor(t.TempDir(), "", "", "").ExecRemote(
-		t.Context(), record.WorkspaceID, record,
+		execution.WithSubject(t.Context(), execution.Subject{WorkspaceID: record.WorkspaceID, UserID: "user-1"}), record.WorkspaceID, record,
 		execution.AgentExecutionStamp{
 			AgentID: record.ID, AgentVersion: record.Version,
 			ExecutionScope: execution.ScopeLegacyOrchestrator,
@@ -68,7 +68,7 @@ printf '%s\n' '{"type":"turn.completed","usage":{"input_tokens":10,"cached_input
 	}
 	t.Setenv("WEAVE_ENGINE_CODEX_PATH", script)
 	record := &registry.AgentRecord{Name: "writer", ID: "writer-1", WorkspaceID: "workspace-1", Version: 1, Engine: engine.Codex}
-	result, err := NewLocalExecutor(t.TempDir(), "", "", "").ExecRemote(t.Context(), record.WorkspaceID, record,
+	result, err := NewLocalExecutor(t.TempDir(), "", "", "").ExecRemote(execution.WithSubject(t.Context(), execution.Subject{WorkspaceID: record.WorkspaceID, UserID: "user-1"}), record.WorkspaceID, record,
 		execution.AgentExecutionStamp{AgentID: record.ID, AgentVersion: record.Version, ExecutionScope: execution.ScopeLegacyOrchestrator},
 		"Write the report", nil)
 	if err != nil || result.Status != "completed" || len(result.Artifacts) != 1 {
@@ -104,7 +104,7 @@ printf '%s\n' '{"type":"turn.completed","usage":{"input_tokens":10,"cached_input
 	}
 	t.Setenv("WEAVE_ENGINE_CODEX_PATH", script)
 	record := &registry.AgentRecord{Name: "writer", ID: "writer-1", WorkspaceID: "workspace-1", Version: 1, Engine: engine.Codex}
-	result, err := NewLocalExecutor(t.TempDir(), "", "", "").ExecRemote(t.Context(), record.WorkspaceID, record,
+	result, err := NewLocalExecutor(t.TempDir(), "", "", "").ExecRemote(execution.WithSubject(t.Context(), execution.Subject{WorkspaceID: record.WorkspaceID, UserID: "user-1"}), record.WorkspaceID, record,
 		execution.AgentExecutionStamp{AgentID: record.ID, AgentVersion: record.Version, ExecutionScope: execution.ScopeLegacyOrchestrator},
 		"Write the report", nil)
 	if err != nil || result.Status != "completed" || result.Err != "" || !collectionHasIssue(result.ArtifactCollection, "unsupported_file_type", true) {

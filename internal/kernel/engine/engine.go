@@ -12,6 +12,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/base/fileartifact"
 	"os"
 	"path/filepath"
@@ -40,6 +41,7 @@ type MCPServerEndpoint struct {
 }
 
 type RunSpec struct {
+	Subject    execution.Subject
 	MCPServers []MCPServerEndpoint
 	WorkDir    string
 	Prompt     string

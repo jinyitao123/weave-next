@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jinyitao123/weave/internal/kernel/credentials"
 	"github.com/jinyitao123/weave/internal/base/frozen"
+	"github.com/jinyitao123/weave/internal/kernel/credentials"
 )
 
 var _ credentials.TxReferenceSource = (*Store)(nil)
@@ -18,6 +18,9 @@ func (s *Store) ValidateReferenceTx(
 	tx pgx.Tx,
 	ref frozen.CredentialReference,
 ) error {
+	if err := credentials.AuthorizeReference(ctx, ref); err != nil {
+		return err
+	}
 	if err := validateRuntimeReferenceInput(s, tx, ref); err != nil {
 		return err
 	}
@@ -43,6 +46,9 @@ func (s *Store) ResolveRuntimeAccessTx(
 	ref frozen.CredentialReference,
 	expectedEngine string,
 ) (credentials.SecretMaterial, error) {
+	if err := credentials.AuthorizeReference(ctx, ref); err != nil {
+		return credentials.SecretMaterial{}, err
+	}
 	if err := validateRuntimeReferenceInput(s, tx, ref); err != nil {
 		return credentials.SecretMaterial{}, err
 	}
@@ -93,7 +99,7 @@ func validateRuntimeReferenceInput(
 		}
 		return newRuntimeReferenceError(nil)
 	}
-	if ref.Kind != frozen.CredentialRuntimeAccess || ref.Slot != "access" {
+	if ref.Scope != frozen.CredentialScopeWorkspaceService || ref.ServiceID != "runtime:"+ref.ResourceID || ref.Kind != frozen.CredentialRuntimeAccess || ref.Slot != "access" {
 		return newRuntimeReferenceError(nil)
 	}
 	if store == nil || store.pool == nil || nilRuntimeReferenceInterface(tx) {

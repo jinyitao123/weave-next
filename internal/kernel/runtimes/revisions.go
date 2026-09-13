@@ -192,6 +192,8 @@ func ResolveRuntimeRevisionTx(
 		RuntimeRevision: *functionalRevision,
 		Engines:         engines,
 		AccessRef: frozen.CredentialReference{
+			Scope:             frozen.CredentialScopeWorkspaceService,
+			ServiceID:         "runtime:" + runtimeID,
 			SchemaVersion:     frozen.FrozenSchemaVersion,
 			WorkspaceID:       workspaceID,
 			Kind:              frozen.CredentialRuntimeAccess,
