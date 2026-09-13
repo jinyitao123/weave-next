@@ -1,15 +1,5 @@
 [
   {
-    "path": "internal/base/deliverable/store.go",
-    "table": "weave_agents",
-    "count": 1
-  },
-  {
-    "path": "internal/base/deliverable/store.go",
-    "table": "weave_teams",
-    "count": 1
-  },
-  {
     "path": "internal/kernel/fanout/reconciler.go",
     "table": "weave_agents",
     "count": 2

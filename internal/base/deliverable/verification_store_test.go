@@ -42,7 +42,7 @@ func newVerificationHarness(t *testing.T, registry *VerifierRegistry) *verificat
 		  VALUES ('workspace-1','workflow-1',1,'{"schema_version":1}'::jsonb,'{"schema_version":1}'::jsonb,'fixture');
 		UPDATE weave_team_workflow_versions SET status='published',published_at=now() WHERE workspace_id='workspace-1' AND workflow_id='workflow-1';
 		INSERT INTO weave_published_artifact_contents(workspace_id,workflow_id,workflow_version,artifact_schema_version,canonicalization_algorithm,canonicalization_version,hash_algorithm,content_hash,payload)
-		  VALUES ('workspace-1','workflow-1',1,1,'rfc8785+jcs-preorder',1,'sha256',$1,'{"schema_version":1}'::jsonb);
+		  VALUES ('workspace-1','workflow-1',1,1,'rfc8785+jcs-preorder',1,'sha256',$1,'{"schema_version":1,"team":{"workspace_id":"workspace-1","team_id":"team-1","lead_agent_id":"lead-1"}}'::jsonb);
 	`, strings.Repeat("a", 64))
 	if err != nil {
 		t.Fatalf("seed verification graph: %v", err)
