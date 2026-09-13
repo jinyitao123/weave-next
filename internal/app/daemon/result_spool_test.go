@@ -9,7 +9,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/jinyitao123/weave/internal/kernel/runtimes"
+	"github.com/jinyitao123/weave/internal/kernel/runtimeprotocol"
 )
 
 func TestRestartReplaysDurableResultWithoutExecutingCLI(t *testing.T) {
@@ -18,7 +18,7 @@ func TestRestartReplaysDurableResultWithoutExecutingCLI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	journal := resultJournal{TaskID: "task-one", Result: runtimes.EngineExecResult{Status: "completed", Output: "complete answer"}}
+	journal := resultJournal{TaskID: "task-one", Result: runtimeprotocol.ExecutionReceipt{Versioned: runtimeprotocol.NewVersioned(), SchemaVersion: runtimeprotocol.ReceiptSchemaV1, TaskID: "task-one", Status: "completed", Output: "complete answer"}}
 	if err := first.save(journal); err != nil {
 		t.Fatal(err)
 	}
@@ -31,7 +31,7 @@ func TestRestartReplaysDurableResultWithoutExecutingCLI(t *testing.T) {
 		if r.URL.Path != "/v1/runtime/tasks/task-one/complete" {
 			t.Errorf("unexpected execution endpoint: %s", r.URL.Path)
 		}
-		var got runtimes.EngineExecResult
+		var got runtimeprotocol.ExecutionReceipt
 		if err := json.NewDecoder(r.Body).Decode(&got); err != nil || got.Output != journal.Result.Output {
 			t.Error("lost result body")
 		}

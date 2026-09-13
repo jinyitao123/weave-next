@@ -15,15 +15,14 @@ import (
 	"time"
 
 	"github.com/jinyitao123/weave/internal/base/execution"
-	"github.com/jinyitao123/weave/internal/kernel/runtimes"
+	"github.com/jinyitao123/weave/internal/kernel/runtimeprotocol"
 )
 
 type resultJournal struct {
-	Subject    execution.Subject         `json:"subject"`
-	ClaimEpoch int64                     `json:"claim_epoch"`
-	TaskID     string                    `json:"task_id"`
-	Result     runtimes.EngineExecResult `json:"result"`
-	Failure    string                    `json:"failure,omitempty"`
+	Subject    execution.Subject                `json:"subject"`
+	ClaimEpoch int64                            `json:"claim_epoch"`
+	TaskID     string                           `json:"task_id"`
+	Result     runtimeprotocol.ExecutionReceipt `json:"result"`
 }
 
 type resultSpool struct {
@@ -130,11 +129,7 @@ func (s *resultSpool) replay(ctx context.Context, client *runtimeClient) error {
 			continue
 		}
 		reportCtx := withTaskProof(ctx, journal.Subject, journal.ClaimEpoch)
-		if journal.Failure != "" {
-			err = client.fail(reportCtx, journal.TaskID, journal.Failure)
-		} else {
-			err = client.complete(reportCtx, journal.TaskID, journal.Result)
-		}
+		err = client.complete(reportCtx, journal.Result)
 		if err == nil {
 			if err = s.acknowledge(journal.TaskID); err != nil {
 				return err

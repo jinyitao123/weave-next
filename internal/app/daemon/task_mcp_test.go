@@ -3,32 +3,26 @@ package daemon
 import (
 	"testing"
 
-	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
-	"github.com/jinyitao123/weave/internal/kernel/execenv"
-	"github.com/jinyitao123/weave/internal/kernel/registry"
-	"github.com/jinyitao123/weave/internal/kernel/runtimes"
+	"github.com/jinyitao123/weave/internal/kernel/runtimeprotocol"
 )
 
-func TestTaskMCPConfigRejectsUnboundOrCrossTaskTargets(t *testing.T) {
-	task := &taskqueue.Task{ID: "task", ClaimEpoch: 2}
-	payload := runtimes.EngineExecRequest{BoundMCP: true, Record: &registry.AgentRecord{}, TaskMCP: []execenv.TaskMCPTarget{{URL: "/v1/runtime/tasks/task/mcp/0", Token: "tmcp1.opaque.signature"}}}
+func TestTaskMCPConfigRejectsCrossTaskTargets(t *testing.T) {
+	task := &runtimeprotocol.ExecutionClaim{TaskID: "task", ClaimEpoch: 2}
+	payload := runtimeprotocol.ExecutionRequest{TaskMCP: []runtimeprotocol.TaskMCPTarget{{URL: "/v1/runtime/tasks/task/mcp/0", Token: "tmcp1.opaque.signature"}}}
 	targets, err := runtimeTaskMCPTargets("https://server.example/", task, payload)
 	if err != nil || len(targets) != 1 || targets[0].URL != "https://server.example/v1/runtime/tasks/task/mcp/0" {
 		t.Fatalf("targets=%v err=%v", targets, err)
 	}
-	for _, mutate := range []func(*runtimes.EngineExecRequest){
-		func(p *runtimes.EngineExecRequest) { p.BoundMCP = false },
-		func(p *runtimes.EngineExecRequest) { p.TaskMCP = nil },
-		func(p *runtimes.EngineExecRequest) {
-			p.TaskMCP = []execenv.TaskMCPTarget{{URL: "/v1/runtime/tasks/other/mcp/0", Token: "tmcp1.opaque.signature"}}
+	for _, mutate := range []func(*runtimeprotocol.ExecutionRequest){
+		func(p *runtimeprotocol.ExecutionRequest) {
+			p.TaskMCP = []runtimeprotocol.TaskMCPTarget{{URL: "/v1/runtime/tasks/other/mcp/0", Token: "tmcp1.opaque.signature"}}
 		},
-		func(p *runtimes.EngineExecRequest) {
-			p.TaskMCP = []execenv.TaskMCPTarget{{URL: "https://upstream.example/tool", Token: "tmcp1.opaque.signature"}}
+		func(p *runtimeprotocol.ExecutionRequest) {
+			p.TaskMCP = []runtimeprotocol.TaskMCPTarget{{URL: "https://upstream.example/tool", Token: "tmcp1.opaque.signature"}}
 		},
-		func(p *runtimes.EngineExecRequest) {
-			p.Record = &registry.AgentRecord{MCPServers: []registry.MCPServerConfig{{ServerID: "live"}}}
+		func(p *runtimeprotocol.ExecutionRequest) {
+			p.TaskMCP = []runtimeprotocol.TaskMCPTarget{{URL: "/v1/runtime/tasks/task/mcp/0", Token: "wrong"}}
 		},
-		func(p *runtimes.EngineExecRequest) { p.FrozenMCP = &execenv.FrozenMCPInvocation{} },
 	} {
 		candidate := payload
 		mutate(&candidate)

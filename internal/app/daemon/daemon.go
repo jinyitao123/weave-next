@@ -22,9 +22,9 @@ import (
 	"github.com/jinyitao123/weave/internal/kernel/config"
 	"github.com/jinyitao123/weave/internal/kernel/engine"
 	"github.com/jinyitao123/weave/internal/kernel/execenv"
-	"github.com/jinyitao123/weave/internal/kernel/runtimes"
-	"github.com/jinyitao123/weave/internal/kernel/secret"
-	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
+	"github.com/jinyitao123/weave/internal/kernel/runtimeagent"
+	"github.com/jinyitao123/weave/internal/kernel/runtimehost"
+	"github.com/jinyitao123/weave/internal/kernel/runtimeprotocol"
 )
 
 const (
@@ -47,7 +47,7 @@ type daemonConfig struct {
 	httpClient         *http.Client
 	runEngine          runEngineFunc
 	detectedEngines    []string
-	engineCapabilities []runtimes.EngineCapability
+	engineCapabilities []runtimeprotocol.EngineCapability
 	renewInterval      time.Duration
 	heartbeatInterval  time.Duration
 	minBackoff         time.Duration
@@ -61,7 +61,7 @@ type service struct {
 	concurrency        int
 	runEngine          runEngineFunc
 	detectedEngines    []string
-	engineCapabilities []runtimes.EngineCapability
+	engineCapabilities []runtimeprotocol.EngineCapability
 	claimWaitSeconds   int
 	renewInterval      time.Duration
 	heartbeatInterval  time.Duration
@@ -271,7 +271,7 @@ func (d *service) claimLoop(ctx context.Context) {
 	}
 }
 
-func (d *service) processTask(ctx context.Context, task *taskqueue.Task) {
+func (d *service) processTask(ctx context.Context, task *runtimeprotocol.ExecutionClaim) {
 	ctx = withTaskProof(ctx, task.Subject, task.ClaimEpoch)
 	taskCtx, cancelTask := context.WithCancel(ctx)
 	leaseLost := &atomic.Bool{}
@@ -283,7 +283,6 @@ func (d *service) processTask(ctx context.Context, task *taskqueue.Task) {
 
 	// Engine adapters return only after their process group has exited.
 	result, runErr := d.executeTask(taskCtx, task)
-	journal := resultJournal{TaskID: task.ID, Result: result, Subject: task.Subject, ClaimEpoch: task.ClaimEpoch}
 	// A daemon shutdown cancels the process context even though the user did
 	// not cancel this task. Report that boundary as an infrastructure failure
 	// so the parent workflow can park at its durable checkpoint and offer an
@@ -291,17 +290,18 @@ func (d *service) processTask(ctx context.Context, task *taskqueue.Task) {
 	// the process-interruption identity and terminalize the parent as work
 	// failure instead.
 	if ctx.Err() != nil && runErr != nil && result.Status != "completed" {
-		journal.Failure = "runtime_process_interrupted: daemon shutdown"
+		result = failedExecutionReceipt(task, "runtime_process_interrupted: daemon shutdown")
 	} else if runErr != nil && result.Status == "" {
-		journal.Failure = runErr.Error()
+		result = failedExecutionReceipt(task, runErr.Error())
 	}
+	journal := resultJournal{TaskID: task.TaskID, Result: result, Subject: task.Subject, ClaimEpoch: task.ClaimEpoch}
 	saved := false
 	if d.resultSpool != nil {
 		if err := d.resultSpool.save(journal); err != nil {
-			slog.Error("runtime result could not be journaled", "task_id", task.ID, "error", err)
+			slog.Error("runtime result could not be journaled", "task_id", task.TaskID, "error", err)
 		} else {
 			saved = true
-			defer d.resultSpool.release(task.ID)
+			defer d.resultSpool.release(task.TaskID)
 		}
 	}
 	accepted := false
@@ -312,26 +312,24 @@ func (d *service) processTask(ctx context.Context, task *taskqueue.Task) {
 			reportCtx, stopReport = context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 		}
 		report := func(reportCtx context.Context) error {
-			if journal.Failure != "" {
-				return d.client.fail(reportCtx, task.ID, journal.Failure)
-			}
-			return d.client.complete(reportCtx, task.ID, result)
+			return d.client.complete(reportCtx, result)
 		}
 		reportErr := d.reportUntilAccepted(reportCtx, report)
 		if isRejectedRuntimeResult(reportErr) {
-			slog.Error("runtime result rejected", "task_id", task.ID, "error", reportErr)
+			slog.Error("runtime result rejected", "task_id", task.TaskID, "error", reportErr)
 			if saved {
-				d.resultSpool.retain(task.ID, "rejected")
+				d.resultSpool.retain(task.TaskID, "rejected")
 				saved = false
 			}
+			rejected := failedExecutionReceipt(task, "runtime_result_rejected: result validation failed; inspect runtime log")
 			reportErr = d.reportUntilAccepted(reportCtx, func(ctx context.Context) error {
-				return d.client.fail(ctx, task.ID, "runtime_result_rejected: result validation failed; inspect runtime log")
+				return d.client.complete(ctx, rejected)
 			})
 		}
 		stopReport()
 		accepted = reportErr == nil
 		if accepted && saved {
-			_ = d.resultSpool.acknowledge(task.ID)
+			_ = d.resultSpool.acknowledge(task.TaskID)
 		}
 		if errors.Is(reportErr, errLeaseLost) {
 			leaseLost.Store(true)
@@ -347,21 +345,26 @@ func (d *service) processTask(ctx context.Context, task *taskqueue.Task) {
 			defer cancel()
 		}
 		_ = d.reportUntilAccepted(ackCtx, func(reportCtx context.Context) error {
-			return d.client.stopped(reportCtx, task.ID)
+			return d.client.stopped(reportCtx, task)
 		})
 	}
 }
 
-func (d *service) renewLoop(ctx context.Context, cancel context.CancelFunc, task *taskqueue.Task, leaseLost *atomic.Bool) {
+func failedExecutionReceipt(task *runtimeprotocol.ExecutionClaim, message string) runtimeprotocol.ExecutionReceipt {
+	return runtimeprotocol.ExecutionReceipt{Versioned: runtimeprotocol.NewVersioned(), SchemaVersion: runtimeprotocol.ReceiptSchemaV1,
+		TaskID: task.TaskID, ClaimEpoch: task.ClaimEpoch, Subject: task.Subject, Status: "failed", Error: message}
+}
+
+func (d *service) renewLoop(ctx context.Context, cancel context.CancelFunc, task *runtimeprotocol.ExecutionClaim, leaseLost *atomic.Bool) {
 	ttl := time.Minute
-	if task.LeaseExpiresAt != nil && !task.UpdatedAt.IsZero() {
-		ttl = task.LeaseExpiresAt.Sub(task.UpdatedAt)
+	if !task.LeaseExpiresAt.IsZero() && !task.LeaseIssuedAt.IsZero() {
+		ttl = task.LeaseExpiresAt.Sub(task.LeaseIssuedAt)
 	}
 	// Stop locally before the last confirmed lease can expire on the server.
 	// The per-request deadline also bounds a connection which silently hangs.
 	margin := min(ttl/10, 2*time.Second)
 	deadline := time.Now().Add(ttl - margin)
-	if task.LeaseExpiresAt != nil && task.LeaseExpiresAt.Add(-margin).Before(deadline) {
+	if !task.LeaseExpiresAt.IsZero() && task.LeaseExpiresAt.Add(-margin).Before(deadline) {
 		deadline = task.LeaseExpiresAt.Add(-margin)
 	}
 	backoff := newBackoff(d.minBackoff, d.maxBackoff)
@@ -377,7 +380,7 @@ func (d *service) renewLoop(ctx context.Context, cancel context.CancelFunc, task
 			return
 		}
 		started := time.Now()
-		err := d.client.renew(leaseCtx, task.ID)
+		err := d.client.renew(leaseCtx, task)
 		endLease()
 		switch {
 		case err == nil:
@@ -391,7 +394,7 @@ func (d *service) renewLoop(ctx context.Context, cancel context.CancelFunc, task
 		case ctx.Err() != nil:
 			return
 		default:
-			slog.Warn("runtime task renewal failed; retrying", "task_id", task.ID, "error", err)
+			slog.Warn("runtime task renewal failed; retrying", "task_id", task.TaskID, "error", err)
 			delay = backoff.next()
 		}
 	}
@@ -416,89 +419,80 @@ func isRejectedRuntimeResult(err error) bool {
 	return errors.As(err, &status) && (status.code == 400 || status.code == 413 || status.code == 422)
 }
 
-func (d *service) executeTask(ctx context.Context, task *taskqueue.Task) (runtimes.EngineExecResult, error) {
-	ctx, err := taskqueue.BindTaskSubject(ctx, task)
+func (d *service) executeTask(ctx context.Context, task *runtimeprotocol.ExecutionClaim) (runtimeprotocol.ExecutionReceipt, error) {
+	ctx, err := execution.BindSubject(ctx, task.Subject)
 	if err != nil {
-		return runtimes.EngineExecResult{}, err
+		return runtimeprotocol.ExecutionReceipt{}, err
 	}
 	ctx = withTaskProof(ctx, task.Subject, task.ClaimEpoch)
-	var request runtimes.EngineExecRequest
-	if err := json.Unmarshal(task.Payload, &request); err != nil {
-		return runtimes.EngineExecResult{}, fmt.Errorf("runtime: decode task payload: %w", err)
+	request := task.Request
+	if request.Engine == runtimeprotocol.EngineLoom {
+		return d.executeLoomTask(ctx, task, request)
 	}
 	if !engine.IsCLIEngine(request.Engine) {
-		return runtimes.EngineExecResult{}, fmt.Errorf("runtime: unsupported CLI engine %q", request.Engine)
+		return runtimeprotocol.ExecutionReceipt{}, fmt.Errorf("runtime: unsupported CLI engine %q", request.Engine)
 	}
 	if _, err := agentExecutionStampForTask(task, request); err != nil {
-		return runtimes.EngineExecResult{}, err
+		return runtimeprotocol.ExecutionReceipt{}, err
 	}
-
+	record, err := runtimeagent.Decode(*task)
+	if err != nil {
+		return runtimeprotocol.ExecutionReceipt{}, err
+	}
 	taskTargets, err := runtimeTaskMCPTargets(d.server, task, request)
 	if err != nil {
-		return runtimes.EngineExecResult{}, err
+		return runtimeprotocol.ExecutionReceipt{}, err
 	}
 	workspaceRoot := d.workspacesRoot
 	if request.NodeID != "" && task.RunSnapshotID != "" {
-		// Frozen workflow files belong to one physical invocation. Parallel tasks,
-		// correction generations and later runs cannot read stale worker outputs.
-		if filepath.Base(task.ID) != task.ID || task.ID == "." || task.ID == ".." {
-			return runtimes.EngineExecResult{}, fmt.Errorf("invalid invocation identity")
+		if filepath.Base(task.TaskID) != task.TaskID || task.TaskID == "." || task.TaskID == ".." {
+			return runtimeprotocol.ExecutionReceipt{}, fmt.Errorf("invalid invocation identity")
 		}
-		workspaceRoot = filepath.Join(workspaceRoot, ".invocations", task.ID)
+		workspaceRoot = filepath.Join(workspaceRoot, ".invocations", task.TaskID)
 	}
-	workDir, runEnv, err := execenv.Materialize(ctx, workspaceRoot, request.Record, request.Prompt, nil)
+	workDir, runEnv, err := execenv.Materialize(ctx, workspaceRoot, record, request.Prompt, nil)
 	if err != nil {
-		return runtimes.EngineExecResult{}, err
+		return runtimeprotocol.ExecutionReceipt{}, err
 	}
 	if len(request.Attachments) > 0 {
 		downloadDir, err := os.MkdirTemp(workDir, ".weave-attachments-")
 		if err != nil {
-			return runtimes.EngineExecResult{}, fmt.Errorf("runtime: create attachment temp directory: %w", err)
+			return runtimeprotocol.ExecutionReceipt{}, fmt.Errorf("runtime: create attachment temp directory: %w", err)
 		}
 		defer os.RemoveAll(downloadDir)
-
 		attachments := make([]execenv.Attachment, 0, len(request.Attachments))
 		for _, attachment := range request.Attachments {
 			local, err := os.CreateTemp(downloadDir, "attachment-")
 			if err != nil {
-				return runtimes.EngineExecResult{}, fmt.Errorf("runtime: create attachment temp file: %w", err)
+				return runtimeprotocol.ExecutionReceipt{}, fmt.Errorf("runtime: create attachment temp file: %w", err)
 			}
-			downloadErr := d.client.downloadAttachment(ctx, task.ID, attachment.ID, local)
+			downloadErr := d.client.downloadAttachment(ctx, task.TaskID, attachment.ID, local)
 			closeErr := local.Close()
 			if downloadErr != nil {
-				return runtimes.EngineExecResult{}, downloadErr
+				return runtimeprotocol.ExecutionReceipt{}, downloadErr
 			}
 			if closeErr != nil {
-				return runtimes.EngineExecResult{}, fmt.Errorf("runtime: close attachment temp file: %w", closeErr)
+				return runtimeprotocol.ExecutionReceipt{}, fmt.Errorf("runtime: close attachment temp file: %w", closeErr)
 			}
 			attachments = append(attachments, execenv.Attachment{Filename: attachment.Filename, Path: local.Name()})
 		}
-		workDir, runEnv, err = execenv.Materialize(ctx, workspaceRoot, request.Record, request.Prompt, attachments)
+		workDir, runEnv, err = execenv.Materialize(ctx, workspaceRoot, record, request.Prompt, attachments)
 		if err != nil {
-			return runtimes.EngineExecResult{}, err
+			return runtimeprotocol.ExecutionReceipt{}, err
 		}
 	}
-
 	cliAuthMode := d.detectCLIAuthMode(ctx, request.Engine)
 	oneAPIBase, oneAPIKey := runtimeProviderConfig(request)
 	if err := validateRuntimeProviderConfig(request.Engine, cliAuthMode, oneAPIKey); err != nil {
-		return runtimes.EngineExecResult{}, err
+		return runtimeprotocol.ExecutionReceipt{}, err
 	}
-	if err := execenv.WriteEngineConfigWithAuthMode(request.Engine, workDir, request.Record, oneAPIBase, d.server, oneAPIKey, cliAuthMode, taskTargets...); err != nil {
-		return runtimes.EngineExecResult{}, err
+	if err := execenv.WriteEngineConfigWithAuthMode(request.Engine, workDir, record, oneAPIBase, d.server, oneAPIKey, cliAuthMode, taskTargets...); err != nil {
+		return runtimeprotocol.ExecutionReceipt{}, err
 	}
 	if runEnv == nil {
 		runEnv = make(map[string]string)
 	}
-	for key, value := range request.Env {
-		runEnv[key] = value
-	}
 	mergeRuntimeProviderEnv(runEnv, oneAPIBase, oneAPIKey)
-	for idx := range request.Record.MCPServers {
-		if token := secret.BoundaryToken(task.WorkspaceID, request.Record.Name, idx); token != "" {
-			runEnv[fmt.Sprintf("WEAVE_MCP_BOUNDARY_TOKEN_%d", idx)] = token
-		}
-	}
 	for idx, target := range taskTargets {
 		runEnv[fmt.Sprintf("WEAVE_MCP_BOUNDARY_TOKEN_%d", idx)] = target.Token
 	}
@@ -515,12 +509,12 @@ func (d *service) executeTask(ctx context.Context, task *taskqueue.Task) (runtim
 		}
 	}
 	if err := materializeInputFiles(workDir, request.InputFiles); err != nil {
-		return runtimes.EngineExecResult{}, fmt.Errorf("materialize upstream files: %w", err)
+		return runtimeprotocol.ExecutionReceipt{}, fmt.Errorf("materialize upstream files: %w", err)
 	}
 	for key, value := range task.Subject.Environment() {
 		runEnv[key] = value
 	}
-	outputsBefore := runtimes.SnapshotOutputArtifacts(workDir)
+	outputsBefore := runtimehost.SnapshotOutputArtifacts(workDir)
 	timeoutSeconds := request.TimeoutSeconds
 	if timeoutSeconds <= 0 {
 		timeoutSeconds = defaultTimeoutSeconds
@@ -531,37 +525,27 @@ func (d *service) executeTask(ctx context.Context, task *taskqueue.Task) (runtim
 		ctx, stop = context.WithDeadline(ctx, *task.DeadlineAt)
 		defer stop()
 	}
-	result, err := d.runEngine(ctx, request.Engine, engine.RunSpec{
-		Subject:       task.Subject,
-		OnPublicEvent: publish,
-		MCPServers:    engineTaskMCPServers(taskTargets),
-		WorkDir:       workDir,
-		Prompt:        request.Prompt,
-		Model:         request.Model,
-		Env:           runEnv,
-		Timeout:       time.Duration(timeoutSeconds) * time.Second,
-		EngineVersion: d.engineVersion(request.Engine),
-		OutputSchema:  request.OutputSchema,
-	})
+	result, err := d.runEngine(ctx, request.Engine, engine.RunSpec{Subject: task.Subject, OnPublicEvent: publish,
+		MCPServers: engineTaskMCPServers(taskTargets), WorkDir: workDir, Prompt: request.Prompt, Model: request.Model,
+		Env: runEnv, Timeout: time.Duration(timeoutSeconds) * time.Second, EngineVersion: d.engineVersion(request.Engine), OutputSchema: request.OutputSchema})
 	finishProgress(&result)
-	// Preserve files written before an engine failure as observable, non-final
-	// workflow artifacts. The workflow layer still owns success/failure and will
-	// never promote these files to a final deliverable on a failed node.
-	err = errors.Join(err, runtimes.CollectRunOutputArtifacts(workDir, outputsBefore, &result))
-	execResult := runtimes.CLIEngineExecResult(result)
-	execResult.Subject = task.Subject
-	execResult.ClaimEpoch = task.ClaimEpoch
+	err = errors.Join(err, runtimehost.CollectRunOutputArtifacts(workDir, outputsBefore, &result))
+	receipt := runtimeprotocol.ExecutionReceipt{Versioned: runtimeprotocol.NewVersioned(), SchemaVersion: runtimeprotocol.ReceiptSchemaV1,
+		TaskID: task.TaskID, Subject: task.Subject, ClaimEpoch: task.ClaimEpoch, SessionID: result.SessionID,
+		ArtifactCollection: result.ArtifactCollection, Output: result.Output, RetrySafeBeforeExecution: result.RetrySafeBeforeExecution,
+		ReportedModels: append([]string(nil), result.ReportedModels...), Status: result.Status, Error: result.Err, UsageReceipt: result.Usage,
+		Diagnostics: append([]engine.Diagnostic(nil), result.Diagnostics...), Events: append([]engine.Event(nil), result.Events...), Artifacts: append([]engine.Artifact(nil), result.Artifacts...)}
 	if err != nil {
-		return execResult, err
+		return receipt, err
 	}
 	if result.Status != "completed" {
 		message := result.Err
 		if message == "" {
 			message = fmt.Sprintf("engine run ended with status %q", result.Status)
 		}
-		return execResult, errors.New(message)
+		return receipt, errors.New(message)
 	}
-	return execResult, nil
+	return receipt, nil
 }
 
 func (d *service) engineVersion(name string) string {
@@ -573,9 +557,9 @@ func (d *service) engineVersion(name string) string {
 	return "unavailable"
 }
 
-func runtimeProviderConfig(request runtimes.EngineExecRequest) (baseURL, apiKey string) {
-	baseURL = firstNonEmpty(request.OneAPIBase, os.Getenv("OPENAI_BASE_URL"))
-	apiKey = firstNonEmpty(request.OneAPIKey, os.Getenv("OPENAI_API_KEY"), os.Getenv("ONEAPI_API_KEY"))
+func runtimeProviderConfig(request runtimeprotocol.ExecutionRequest) (baseURL, apiKey string) {
+	baseURL = os.Getenv("OPENAI_BASE_URL")
+	apiKey = firstNonEmpty(os.Getenv("OPENAI_API_KEY"), os.Getenv("ONEAPI_API_KEY"))
 	return baseURL, apiKey
 }
 
@@ -606,67 +590,25 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
-func agentExecutionStampForTask(
-	task *taskqueue.Task,
-	request runtimes.EngineExecRequest,
-) (execution.AgentExecutionStamp, error) {
+func agentExecutionStampForTask(task *runtimeprotocol.ExecutionClaim, request runtimeprotocol.ExecutionRequest) (execution.AgentExecutionStamp, error) {
 	if task == nil {
-		return execution.AgentExecutionStamp{}, errors.New("runtime: task is required")
+		return execution.AgentExecutionStamp{}, errors.New("runtime: claim is required")
 	}
-	if err := task.Subject.Validate(); err != nil {
+	if err := task.Validate(); err != nil {
 		return execution.AgentExecutionStamp{}, err
 	}
-	if task.Subject.WorkspaceID != task.WorkspaceID || request.Subject != task.Subject {
-		return execution.AgentExecutionStamp{}, execution.ErrSubjectMismatch
+	if request.SchemaVersion != task.Request.SchemaVersion || request.FrozenAgentHash != task.Request.FrozenAgentHash {
+		return execution.AgentExecutionStamp{}, errors.New("runtime: execution request does not match claim")
 	}
-	if task.IdentityKind != taskqueue.IdentityAgent {
-		return execution.AgentExecutionStamp{}, fmt.Errorf(
-			"runtime: task identity kind %q is not an agent", task.IdentityKind,
-		)
-	}
-	if task.IdentitySchemaVersion != 2 {
-		return execution.AgentExecutionStamp{}, fmt.Errorf(
-			"runtime: unsupported agent identity schema %d", task.IdentitySchemaVersion,
-		)
-	}
-	if task.WorkspaceID == "" || task.Agent == "" ||
-		task.AgentID == "" || task.AgentVersion < 1 ||
-		!task.ExecutionScope.Valid() {
-		return execution.AgentExecutionStamp{}, errors.New(
-			"runtime: invalid schema-two agent execution identity",
-		)
-	}
-	if task.WorkflowID != "" || task.WorkflowVersion != 0 {
-		return execution.AgentExecutionStamp{}, errors.New(
-			"runtime: agent task contains workflow identity",
-		)
-	}
-	teamScoped := task.ExecutionScope == execution.ScopeTeamFreeCollab ||
-		task.ExecutionScope == execution.ScopeTeamWorkerLeaf
+	teamScoped := task.Agent.ExecutionScope == execution.ScopeTeamFreeCollab || task.Agent.ExecutionScope == execution.ScopeTeamWorkerLeaf
 	if teamScoped != (task.RunSnapshotID != "") {
-		return execution.AgentExecutionStamp{}, errors.New(
-			"runtime: team agent task requires exact run snapshot identity",
-		)
+		return execution.AgentExecutionStamp{}, errors.New("runtime: team agent claim requires exact run snapshot identity")
 	}
-	if request.Record == nil {
-		return execution.AgentExecutionStamp{}, errors.New(
-			"runtime: task missing agent record",
-		)
+	if _, err := runtimeagent.Decode(*task); err != nil {
+		return execution.AgentExecutionStamp{}, err
 	}
-	if request.Record.WorkspaceID != task.WorkspaceID ||
-		request.Record.Name != task.Agent ||
-		request.Record.ID != task.AgentID ||
-		request.Record.Version != task.AgentVersion {
-		return execution.AgentExecutionStamp{}, errors.New(
-			"runtime: task identity does not match payload agent record",
-		)
-	}
-	return execution.AgentExecutionStamp{
-		AgentID:        task.AgentID,
-		AgentVersion:   task.AgentVersion,
-		ExecutionScope: task.ExecutionScope,
-		RunSnapshotID:  task.RunSnapshotID,
-	}, nil
+	return execution.AgentExecutionStamp{AgentID: task.Agent.ID, AgentVersion: task.Agent.Version,
+		ExecutionScope: task.Agent.ExecutionScope, RunSnapshotID: task.RunSnapshotID}, nil
 }
 
 func (d *service) detectCLIAuthMode(ctx context.Context, engineName string) string {
@@ -806,29 +748,29 @@ func detectEngines() []string {
 	return engines
 }
 
-func detectEngineCapabilities(ctx context.Context, detected []string) []runtimes.EngineCapability {
-	capabilities := make([]runtimes.EngineCapability, 0, len(detected))
+func detectEngineCapabilities(ctx context.Context, detected []string) []runtimeprotocol.EngineCapability {
+	capabilities := make([]runtimeprotocol.EngineCapability, 0, len(detected))
 	for _, name := range detected {
 		configuredPath := config.ResolveEngineCLIPath(name)
 		binaryPath, err := exec.LookPath(configuredPath)
 		if err != nil {
 			continue
 		}
-		authMode := runtimes.AuthModeProvider
+		authMode := runtimeprotocol.AuthModeProvider
 		endpointClass := "configured_provider"
 		switch name {
 		case engine.Codex:
 			if codexLoggedInWithChatGPT(ctx, binaryPath) {
-				authMode = runtimes.AuthModeChatGPT
+				authMode = runtimeprotocol.AuthModeChatGPT
 				endpointClass = "openai_subscription"
 			}
 		case engine.Claude:
 			if claudeLoggedInWithFirstPartyOAuth(ctx, binaryPath) {
-				authMode = runtimes.AuthModeOAuth
+				authMode = runtimeprotocol.AuthModeOAuth
 				endpointClass = "anthropic_first_party"
 			}
 		}
-		capability := runtimes.EngineCapability{
+		capability := runtimeprotocol.EngineCapability{
 			Engine: name, BinaryPath: binaryPath,
 			BinaryVersion: engine.BinaryVersion(ctx, binaryPath),
 			AuthMode:      authMode, ProtocolVersion: engineProtocolVersion(name),
@@ -841,22 +783,22 @@ func detectEngineCapabilities(ctx context.Context, detected []string) []runtimes
 	return capabilities
 }
 
-func describeEngineAvailability(capability *runtimes.EngineCapability) {
-	capability.Availability = runtimes.EngineAvailabilityUnknown
+func describeEngineAvailability(capability *runtimeprotocol.EngineCapability) {
+	capability.Availability = runtimeprotocol.EngineAvailabilityUnknown
 	capability.UnavailableReason = ""
-	if capability.AuthMode == runtimes.AuthModeChatGPT || capability.AuthMode == runtimes.AuthModeOAuth {
-		capability.Availability = runtimes.EngineAvailabilityReady
+	if capability.AuthMode == runtimeprotocol.AuthModeChatGPT || capability.AuthMode == runtimeprotocol.AuthModeOAuth {
+		capability.Availability = runtimeprotocol.EngineAvailabilityReady
 		return
 	}
-	if capability.Engine != engine.Codex || capability.AuthMode != runtimes.AuthModeProvider {
+	if capability.Engine != engine.Codex || capability.AuthMode != runtimeprotocol.AuthModeProvider {
 		return
 	}
 	if firstNonEmpty(os.Getenv("OPENAI_API_KEY"), os.Getenv("ONEAPI_API_KEY")) == "" {
-		capability.Availability = runtimes.EngineAvailabilityUnavailable
+		capability.Availability = runtimeprotocol.EngineAvailabilityUnavailable
 		capability.UnavailableReason = "provider_credentials_missing"
 		return
 	}
-	capability.Availability = runtimes.EngineAvailabilityReady
+	capability.Availability = runtimeprotocol.EngineAvailabilityReady
 }
 
 func engineProtocolVersion(name string) string {

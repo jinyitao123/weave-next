@@ -7,12 +7,12 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/jinyitao123/weave/internal/kernel/runtimes"
+	"github.com/jinyitao123/weave/internal/kernel/runtimeprotocol"
 )
 
 func TestMaterializeUpstreamFileVerifiesContentBeforeWriting(t *testing.T) {
 	content := "frozen: true\nvelocity: 0.05\n"
-	file := runtimes.InputFile{TaskID: "task-source", NodeID: "lead", Path: "lead/baseline_frozen.yaml", ContentType: "application/yaml", Content: content, SHA256: fmt.Sprintf("%x", sha256.Sum256([]byte(content)))}
+	file := runtimeprotocol.InputFile{TaskID: "task-source", NodeID: "lead", Path: "lead/baseline_frozen.yaml", ContentType: "application/yaml", Content: content, SHA256: fmt.Sprintf("%x", sha256.Sum256([]byte(content)))}
 	for _, corrupt := range []string{"", "hash", "path"} {
 		t.Run(corrupt, func(t *testing.T) {
 			root := t.TempDir()
@@ -23,7 +23,7 @@ func TestMaterializeUpstreamFileVerifiesContentBeforeWriting(t *testing.T) {
 			if corrupt == "path" {
 				input.Path = "lead/../../outside.yaml"
 			}
-			err := materializeInputFiles(root, []runtimes.InputFile{input})
+			err := materializeInputFiles(root, []runtimeprotocol.InputFile{input})
 			if corrupt != "" {
 				if err == nil {
 					t.Fatal("corrupt file accepted")

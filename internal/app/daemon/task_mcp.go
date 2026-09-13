@@ -5,30 +5,26 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 	"github.com/jinyitao123/weave/internal/kernel/engine"
 	"github.com/jinyitao123/weave/internal/kernel/execenv"
-	"github.com/jinyitao123/weave/internal/kernel/runtimes"
+	"github.com/jinyitao123/weave/internal/kernel/runtimeprotocol"
 	"github.com/jinyitao123/weave/internal/kernel/secret"
 )
 
-func runtimeTaskMCPTargets(server string, task *taskqueue.Task, request runtimes.EngineExecRequest) ([]execenv.TaskMCPTarget, error) {
-	if !request.BoundMCP {
-		if len(request.TaskMCP) != 0 || request.FrozenMCP != nil {
-			return nil, fmt.Errorf("runtime: unexpected task MCP authority")
-		}
+func runtimeTaskMCPTargets(server string, task *runtimeprotocol.ExecutionClaim, request runtimeprotocol.ExecutionRequest) ([]execenv.TaskMCPTarget, error) {
+	if len(request.TaskMCP) == 0 {
 		return nil, nil
 	}
-	if task == nil || task.ClaimEpoch <= 0 || filepath.Base(task.ID) != task.ID || task.ID == "." || task.ID == ".." || request.Record == nil || len(request.Record.MCPServers) != 0 || request.FrozenMCP != nil || len(request.TaskMCP) == 0 {
+	if task == nil || task.ClaimEpoch <= 0 || filepath.Base(task.TaskID) != task.TaskID || task.TaskID == "." || task.TaskID == ".." {
 		return nil, fmt.Errorf("runtime: missing or unredacted task MCP claim")
 	}
-	targets := append([]execenv.TaskMCPTarget(nil), request.TaskMCP...)
-	for index := range targets {
-		expected := fmt.Sprintf("/v1/runtime/tasks/%s/mcp/%d", task.ID, index)
-		if targets[index].URL != expected || !strings.HasPrefix(targets[index].Token, secret.TaskMCPTokenPrefix) {
+	targets := make([]execenv.TaskMCPTarget, len(request.TaskMCP))
+	for index, target := range request.TaskMCP {
+		expected := fmt.Sprintf("/v1/runtime/tasks/%s/mcp/%d", task.TaskID, index)
+		if target.URL != expected || !strings.HasPrefix(target.Token, secret.TaskMCPTokenPrefix) {
 			return nil, fmt.Errorf("runtime: invalid task MCP target")
 		}
-		targets[index].URL = strings.TrimRight(server, "/") + expected
+		targets[index] = execenv.TaskMCPTarget{URL: strings.TrimRight(server, "/") + expected, Token: target.Token}
 	}
 	return targets, nil
 }

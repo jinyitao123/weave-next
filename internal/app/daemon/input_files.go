@@ -5,12 +5,12 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/jinyitao123/weave/internal/kernel/runtimes"
+	"github.com/jinyitao123/weave/internal/kernel/runtimeprotocol"
 )
 
 // Called only in the task's own isolated workdir, before the engine starts.
-func materializeInputFiles(workDir string, files []runtimes.InputFile) error {
-	if err := runtimes.ValidateInputFiles(files); err != nil {
+func materializeInputFiles(workDir string, files []runtimeprotocol.InputFile) error {
+	if err := runtimeprotocol.ValidateInputFiles(files); err != nil {
 		return err
 	}
 	if len(files) == 0 {

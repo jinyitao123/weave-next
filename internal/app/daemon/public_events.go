@@ -16,21 +16,20 @@ import (
 
 	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/kernel/engine"
-	"github.com/jinyitao123/weave/internal/kernel/runtimes"
-	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
+	"github.com/jinyitao123/weave/internal/kernel/runtimeprotocol"
 )
 
 const publicJournalMaxBytes = 16 * 1024 * 1024
 const publicJournalMaxFiles = 64
 
 type publicJournal struct {
-	Subject    execution.Subject      `json:"subject"`
-	ClaimEpoch int64                  `json:"claim_epoch"`
-	TaskID     string                 `json:"task_id"`
-	Next       int64                  `json:"next"`
-	Events     []runtimes.PublicEvent `json:"events"`
-	Done       bool                   `json:"done"`
-	Truncated  bool                   `json:"truncated"`
+	Subject    execution.Subject             `json:"subject"`
+	ClaimEpoch int64                         `json:"claim_epoch"`
+	TaskID     string                        `json:"task_id"`
+	Next       int64                         `json:"next"`
+	Events     []runtimeprotocol.PublicEvent `json:"events"`
+	Done       bool                          `json:"done"`
+	Truncated  bool                          `json:"truncated"`
 }
 
 // Each atomic file contains both the unacknowledged events and the next
@@ -99,7 +98,7 @@ func (s *publicSpool) read(path string) (publicJournal, error) {
 	if err := json.Unmarshal(data, &journal); err != nil {
 		return journal, err
 	}
-	if journal.TaskID == "" || s.path(journal.TaskID) != path || journal.Next < 1 || journal.Next > runtimes.PublicEventLimit+1 || len(journal.Events) > runtimes.PublicEventLimit {
+	if journal.TaskID == "" || s.path(journal.TaskID) != path || journal.Next < 1 || journal.Next > runtimeprotocol.PublicEventLimit+1 || len(journal.Events) > runtimeprotocol.PublicEventLimit {
 		return journal, errors.New("invalid public journal identity")
 	}
 	return journal, nil
@@ -193,16 +192,16 @@ func (s *publicSpool) append(taskID string, event engine.Event, truncated bool) 
 		return errors.New("public journal already finished")
 	}
 	journal.Truncated = journal.Truncated || truncated
-	if journal.Next >= runtimes.PublicEventLimit && event.Kind != "stream_end" {
+	if journal.Next >= runtimeprotocol.PublicEventLimit && event.Kind != "stream_end" {
 		journal.Truncated = true
 		return s.save(journal)
 	}
-	item := runtimes.PublicEvent{Seq: journal.Next, OccurredAt: time.Now().UTC(), Event: event, Truncated: truncated}
+	item := runtimeprotocol.PublicEvent{Seq: journal.Next, OccurredAt: time.Now().UTC(), Event: event, Truncated: truncated}
 	if event.Kind == "stream_end" {
 		item.Truncated = journal.Truncated
 		journal.Done = true
 	}
-	if err := runtimes.ValidatePublicEvent(item); err != nil {
+	if err := runtimeprotocol.ValidatePublicEvent(item); err != nil {
 		return err
 	}
 	journal.Events = append(journal.Events, item)
@@ -218,8 +217,8 @@ func (s *publicSpool) finish(taskID string, partial bool) error {
 	return err
 }
 
-func (c *runtimeClient) publicEvents(ctx context.Context, taskID string, events []runtimes.PublicEvent) (int64, error) {
-	response, err := c.do(ctx, http.MethodPost, "/v1/runtime/tasks/"+url.PathEscape(taskID)+"/events", map[string]any{"events": events})
+func (c *runtimeClient) publicEvents(ctx context.Context, taskID string, events []runtimeprotocol.PublicEvent) (int64, error) {
+	response, err := c.do(ctx, http.MethodPost, "/v1/runtime/tasks/"+url.PathEscape(taskID)+"/events", runtimeprotocol.PublicEventsRequest{Versioned: runtimeprotocol.NewVersioned(), Events: events})
 	if err != nil {
 		return 0, err
 	}
@@ -227,10 +226,11 @@ func (c *runtimeClient) publicEvents(ctx context.Context, taskID string, events 
 	if err := expectStatus(response, http.StatusOK); err != nil {
 		return 0, err
 	}
-	var ack struct {
-		AckSeq int64 `json:"ack_seq"`
-	}
+	var ack runtimeprotocol.PublicEventsResponse
 	if err := json.NewDecoder(response.Body).Decode(&ack); err != nil {
+		return 0, err
+	}
+	if err := ack.Versioned.Validate(); err != nil {
 		return 0, err
 	}
 	if len(events) == 0 || ack.AckSeq != events[len(events)-1].Seq {
@@ -262,7 +262,7 @@ func (s *publicSpool) flush(ctx context.Context, client *runtimeClient) error {
 		if len(journal.Events) == 0 {
 			continue
 		}
-		batch := journal.Events[:min(len(journal.Events), runtimes.PublicEventBatchLimit)]
+		batch := journal.Events[:min(len(journal.Events), runtimeprotocol.PublicEventBatchLimit)]
 		reportCtx, cancel := context.WithTimeout(withTaskProof(ctx, journal.Subject, journal.ClaimEpoch), 5*time.Second)
 		ack, err := client.publicEvents(reportCtx, journal.TaskID, batch)
 		cancel()
@@ -308,11 +308,11 @@ func (d *service) publicEventsLoop(ctx context.Context) {
 	}
 }
 
-func (d *service) publicEventCapture(task *taskqueue.Task, enabled bool) (func(engine.Event, bool), func(*engine.RunResult)) {
+func (d *service) publicEventCapture(task *runtimeprotocol.ExecutionClaim, enabled bool) (func(engine.Event, bool), func(*engine.RunResult)) {
 	if !enabled || d.publicSpool == nil {
 		return nil, func(*engine.RunResult) {}
 	}
-	taskID := task.ID
+	taskID := task.TaskID
 	err := d.publicSpool.begin(taskID)
 	if err == nil {
 		err = d.publicSpool.bindTask(task)
@@ -343,10 +343,10 @@ func (d *service) publicEventCapture(task *taskqueue.Task, enabled bool) (func(e
 	return publish, finish
 }
 
-func (s *publicSpool) bindTask(task *taskqueue.Task) error {
+func (s *publicSpool) bindTask(task *runtimeprotocol.ExecutionClaim) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	journal, err := s.read(s.path(task.ID))
+	journal, err := s.read(s.path(task.TaskID))
 	if err != nil {
 		return err
 	}

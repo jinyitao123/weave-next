@@ -63,6 +63,42 @@ func Result(receipt runtimeprotocol.ExecutionReceipt) runtimes.EngineExecResult 
 	}
 }
 
+func ResultForTask(task *taskqueue.Task, receipt runtimeprotocol.ExecutionReceipt) (runtimes.EngineExecResult, error) {
+	if task == nil {
+		return runtimes.EngineExecResult{}, errors.New("runtime task is required")
+	}
+	claim := runtimeprotocol.ExecutionClaim{TaskID: task.ID, ClaimEpoch: task.ClaimEpoch, Subject: task.Subject}
+	if err := receipt.ValidateFor(claim); err != nil {
+		return runtimes.EngineExecResult{}, err
+	}
+	return Result(receipt), nil
+}
+
+func LeaseForTask(task *taskqueue.Task, request runtimeprotocol.LeaseRequest) error {
+	if task == nil {
+		return errors.New("runtime task is required")
+	}
+	return request.ValidateFor(runtimeprotocol.ExecutionClaim{TaskID: task.ID, ClaimEpoch: task.ClaimEpoch, Subject: task.Subject})
+}
+
+func StoppedForTask(task *taskqueue.Task, receipt runtimeprotocol.StoppedReceipt) error {
+	if task == nil {
+		return errors.New("runtime task is required")
+	}
+	return receipt.ValidateFor(runtimeprotocol.ExecutionClaim{TaskID: task.ID, ClaimEpoch: task.ClaimEpoch, Subject: task.Subject})
+}
+
+func PlatformCapabilities(values []runtimeprotocol.EngineCapability) []runtimes.EngineCapability {
+	result := make([]runtimes.EngineCapability, len(values))
+	for i, value := range values {
+		result[i] = runtimes.EngineCapability{Engine: value.Engine, BinaryPath: value.BinaryPath, BinaryVersion: value.BinaryVersion,
+			AuthMode: value.AuthMode, ProtocolVersion: value.ProtocolVersion, PublicEvents: value.PublicEvents,
+			EndpointClass: value.EndpointClass, ConfiguredEndpoint: value.ConfiguredEndpoint, ConfiguredModel: value.ConfiguredModel,
+			ConfigurationSource: value.ConfigurationSource, Availability: value.Availability, UnavailableReason: value.UnavailableReason}
+	}
+	return result
+}
+
 func attachments(values []runtimes.EngineExecAttachment) []runtimeprotocol.Attachment {
 	result := make([]runtimeprotocol.Attachment, len(values))
 	for i, value := range values {

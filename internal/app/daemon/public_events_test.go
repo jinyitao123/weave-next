@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -15,7 +14,7 @@ import (
 	"time"
 
 	"github.com/jinyitao123/weave/internal/kernel/engine"
-	"github.com/jinyitao123/weave/internal/kernel/runtimes"
+	"github.com/jinyitao123/weave/internal/kernel/runtimeprotocol"
 )
 
 func TestPublicJournalReplaysLostResponseAndRestartWithoutReexecution(t *testing.T) {
@@ -33,9 +32,7 @@ func TestPublicJournalReplaysLostResponseAndRestartWithoutReexecution(t *testing
 	requests := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests++
-		var batch struct {
-			Events []runtimes.PublicEvent `json:"events"`
-		}
+		var batch runtimeprotocol.PublicEventsRequest
 		if err := json.NewDecoder(r.Body).Decode(&batch); err != nil {
 			t.Error(err)
 			return
@@ -55,7 +52,7 @@ func TestPublicJournalReplaysLostResponseAndRestartWithoutReexecution(t *testing
 			_ = conn.Close() // Backend applied it, but the daemon received no ACK.
 			return
 		}
-		_ = json.NewEncoder(w).Encode(map[string]int64{"ack_seq": batch.Events[len(batch.Events)-1].Seq})
+		_ = json.NewEncoder(w).Encode(runtimeprotocol.PublicEventsResponse{Versioned: runtimeprotocol.NewVersioned(), AckSeq: batch.Events[len(batch.Events)-1].Seq})
 	}))
 	defer server.Close()
 	client, _ := newRuntimeClient(server.URL, "private-token", server.Client())
@@ -98,14 +95,12 @@ func TestPublicJournalUploadsWhileExecutionIsStillActive(t *testing.T) {
 	}
 	arrived := make(chan struct{}, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var batch struct {
-			Events []runtimes.PublicEvent `json:"events"`
-		}
+		var batch runtimeprotocol.PublicEventsRequest
 		if err := json.NewDecoder(r.Body).Decode(&batch); err != nil {
 			t.Error(err)
 			return
 		}
-		_ = json.NewEncoder(w).Encode(map[string]int64{"ack_seq": batch.Events[len(batch.Events)-1].Seq})
+		_ = json.NewEncoder(w).Encode(runtimeprotocol.PublicEventsResponse{Versioned: runtimeprotocol.NewVersioned(), AckSeq: batch.Events[len(batch.Events)-1].Seq})
 		select {
 		case arrived <- struct{}{}:
 		default:
@@ -114,7 +109,7 @@ func TestPublicJournalUploadsWhileExecutionIsStillActive(t *testing.T) {
 	defer server.Close()
 	client, _ := newRuntimeClient(server.URL, "token", server.Client())
 	d := &service{publicSpool: spool, client: client}
-	publish, finish := d.publicEventCapture(&taskqueue.Task{ID: "task-live"}, true)
+	publish, finish := d.publicEventCapture(&runtimeprotocol.ExecutionClaim{TaskID: "task-live"}, true)
 	publish(engine.Event{Kind: "tool_call", Tool: "shell", CallID: "call", Status: "running"}, false)
 	ctx, cancel := context.WithCancel(context.Background())
 	var workers sync.WaitGroup
@@ -150,7 +145,7 @@ func TestPublicJournalCapacityAndDiskFailureDegradeExplicitly(t *testing.T) {
 	}
 	// Seed the real persisted counter near its limit to exercise the final slot
 	// without doing hundreds of unrelated fsync operations in this regression.
-	journal := publicJournal{TaskID: "task-bound", Next: runtimes.PublicEventLimit - 1}
+	journal := publicJournal{TaskID: "task-bound", Next: runtimeprotocol.PublicEventLimit - 1}
 	if err := spool.save(journal); err != nil {
 		t.Fatal(err)
 	}
@@ -163,7 +158,7 @@ func TestPublicJournalCapacityAndDiskFailureDegradeExplicitly(t *testing.T) {
 		t.Fatal(err)
 	}
 	journal, err = spool.read(spool.path("task-bound"))
-	if err != nil || len(journal.Events) != 2 || journal.Events[1].Seq != runtimes.PublicEventLimit || !journal.Events[1].Truncated {
+	if err != nil || len(journal.Events) != 2 || journal.Events[1].Seq != runtimeprotocol.PublicEventLimit || !journal.Events[1].Truncated {
 		t.Fatalf("event bound lost its explicit end: %+v %v", journal, err)
 	}
 	info, _ := os.Stat(spool.path("task-bound"))
@@ -193,7 +188,7 @@ func TestPublicJournalCapacityAndDiskFailureDegradeExplicitly(t *testing.T) {
 		t.Fatal(err)
 	}
 	d := &service{publicSpool: &publicSpool{dir: broken, prefix: "test-", active: map[string]bool{}}}
-	publish, finish := d.publicEventCapture(&taskqueue.Task{ID: "disk-failed"}, true)
+	publish, finish := d.publicEventCapture(&runtimeprotocol.ExecutionClaim{TaskID: "disk-failed"}, true)
 	publish(engine.Event{Kind: "text", Text: "public"}, false)
 	result := engine.RunResult{Status: "completed", Output: "retained final"}
 	finish(&result)

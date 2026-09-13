@@ -13,10 +13,11 @@ import (
 	"github.com/jinyitao123/weave/internal/base/db"
 	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/base/snapshot"
-	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 	"github.com/jinyitao123/weave/internal/base/testutil"
 	"github.com/jinyitao123/weave/internal/kernel/engine"
+	"github.com/jinyitao123/weave/internal/kernel/runtimeprotocol"
 	"github.com/jinyitao123/weave/internal/kernel/runtimes"
+	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 	"github.com/jinyitao123/weave/internal/kernel/teamrun"
 	"github.com/labstack/echo/v4"
 )
@@ -83,15 +84,17 @@ func TestRuntimePublicEventsDurableIdentityReplayAndLateAttemptRealPG(t *testing
 		return rec.Code
 	}
 	at := time.Now().UTC().Truncate(time.Microsecond)
-	item := func(seq int64, text string) runtimes.PublicEvent {
-		return runtimes.PublicEvent{Seq: seq, OccurredAt: at, Event: engine.Event{Kind: "text", Text: text}}
+	item := func(seq int64, text string) runtimeprotocol.PublicEvent {
+		return runtimeprotocol.PublicEvent{Seq: seq, OccurredAt: at, Event: engine.Event{Kind: "text", Text: text}}
 	}
-	body := func(events ...runtimes.PublicEvent) any { return map[string]any{"events": events} }
+	body := func(events ...runtimeprotocol.PublicEvent) any {
+		return runtimeprotocol.PublicEventsRequest{Versioned: runtimeprotocol.NewVersioned(), Events: events}
+	}
 	first := item(1, "old draft")
 	if got := post(other, "task-old", body(first)); got != http.StatusNotFound {
 		t.Fatalf("other runtime injected progress: %d", got)
 	}
-	if got := post(owner, "task-old", map[string]any{"run_id": "another-run", "events": []runtimes.PublicEvent{first}}); got != http.StatusBadRequest {
+	if got := post(owner, "task-old", map[string]any{"protocol_version": runtimeprotocol.ProtocolVersion, "run_id": "another-run", "events": []runtimeprotocol.PublicEvent{first}}); got != http.StatusBadRequest {
 		t.Fatalf("client-selected run accepted: %d", got)
 	}
 	private := first
@@ -131,7 +134,7 @@ func TestRuntimePublicEventsDurableIdentityReplayAndLateAttemptRealPG(t *testing
 	}
 	// The first journal arrives after a retry has started. It remains an old
 	// physical task's evidence, never the retry's current message.
-	end := runtimes.PublicEvent{Seq: 3, OccurredAt: at, Event: engine.Event{Kind: "stream_end"}, Truncated: true}
+	end := runtimeprotocol.PublicEvent{Seq: 3, OccurredAt: at, Event: engine.Event{Kind: "stream_end"}, Truncated: true}
 	if got := post(owner, "task-old", body(end)); got != http.StatusOK {
 		t.Fatal(got)
 	}
