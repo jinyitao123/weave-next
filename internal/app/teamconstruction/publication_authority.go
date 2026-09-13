@@ -7,6 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jinyitao123/weave/internal/app/workflowcatalog"
 	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/kernel/workflow"
@@ -19,10 +20,10 @@ type publicationProductReadTxKey struct{}
 
 type PublicationAuthority struct {
 	pool    *pgxpool.Pool
-	builder *workflow.CandidateBuilder
+	builder *workflowcatalog.CandidateBuilder
 }
 
-func NewPublicationAuthority(pool *pgxpool.Pool, builder *workflow.CandidateBuilder) *PublicationAuthority {
+func NewPublicationAuthority(pool *pgxpool.Pool, builder *workflowcatalog.CandidateBuilder) *PublicationAuthority {
 	authority := &PublicationAuthority{pool: pool}
 	authority.builder = builder.WithCredentialAuthority(authority)
 	return authority

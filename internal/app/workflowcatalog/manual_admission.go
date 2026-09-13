@@ -1,51 +1,28 @@
-package workflow
+package workflowcatalog
 
 import (
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"regexp"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/base/snapshot"
+	workflowdef "github.com/jinyitao123/weave/internal/kernel/workflow"
 	"github.com/jinyitao123/weave/internal/kernel/workflow/machine"
 )
 
-var workflowCandidateContentHashPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
-
-// WorkflowCandidateRunAdmissionRequest identifies one admin test run of a
-// frozen publication candidate. The candidate's own content hash binds the
-// workflow version, so no version travels in the request.
-type WorkflowCandidateRunAdmissionRequest struct {
-	WorkspaceID string
-	WorkflowID  string
-	BuildRunID  string
-	// RoundNo is the team build round that produced the candidate. Zero
-	// keeps the pre-T14B-2A admin API behavior (candidate test run outside a
-	// build round); positive values are persisted on the snapshot and paired
-	// with the candidate identity.
-	RoundNo     int
-	ContentHash string
-	SourceRef   string
-	TriggerType string
-}
-
-// AdmitWorkflowCandidateRunTx is the sibling of AdmitWorkflowManualRunTx for
-// frozen candidates: it skips the published_version requirement and validates
-// the candidate envelope by content hash instead of the published artifact.
-// Every remaining gate (team active, roster, graph validity) is identical to
-// the published path, and the produced snapshot keeps the exact fixed
-// workflow shape plus the candidate run identity.
-func (s *Store) AdmitWorkflowCandidateRunTx(
+// AdmitWorkflowManualRunTx applies the same frozen publication and live
+// admission gates as scheduled execution without creating schedule state.
+func (s *Store) AdmitWorkflowManualRunTx(
 	ctx context.Context,
 	tx pgx.Tx,
-	request WorkflowCandidateRunAdmissionRequest,
-) (snapshot.TeamRunSnapshot, error) {
-	if err := validateWorkflowCandidateRunAdmissionRequest(tx, request); err != nil {
+	request workflowdef.WorkflowManualRunAdmissionRequest) (snapshot.TeamRunSnapshot, error) {
+	if err := validateWorkflowManualRunAdmissionRequest(tx, request); err != nil {
 		return snapshot.TeamRunSnapshot{}, err
 	}
 
@@ -62,59 +39,78 @@ func (s *Store) AdmitWorkflowCandidateRunTx(
 	}
 
 	var (
-		workflowStatus string
-		teamID         string
+		workflowStatus   string
+		teamID           string
+		publishedVersion *int
 	)
 	if err := tx.QueryRow(ctx, `
-		SELECT status, team_id
+		SELECT status, team_id, published_version
 		FROM weave_team_workflows
 		WHERE workspace_id=$1 AND id=$2
 		FOR SHARE
 	`, request.WorkspaceID, request.WorkflowID).Scan(
-		&workflowStatus, &teamID,
+		&workflowStatus, &teamID, &publishedVersion,
 	); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return snapshot.TeamRunSnapshot{}, ErrNotFound
+			return snapshot.TeamRunSnapshot{}, workflowdef.ErrNotFound
 		}
 		return snapshot.TeamRunSnapshot{}, fmt.Errorf("workflow is unavailable: %w", err)
 	}
-	if workflowStatus == WorkflowStatusArchived {
-		return snapshot.TeamRunSnapshot{}, ErrArchived
+	if workflowStatus == workflowdef.WorkflowStatusArchived {
+		return snapshot.TeamRunSnapshot{}, workflowdef.ErrArchived
 	}
-	if workflowStatus != WorkflowStatusActive {
-		return snapshot.TeamRunSnapshot{}, manualRunAdmissionDenied(
-			"workflow is not active",
-		)
+	if workflowStatus != workflowdef.WorkflowStatusActive || (publishedVersion == nil && request.WorkflowVersion == nil) {
+		return snapshot.TeamRunSnapshot{}, workflowdef.ErrNotPublished
+	}
+	selectedVersion := 0
+	if request.WorkflowVersion != nil {
+		selectedVersion = *request.WorkflowVersion
+	} else {
+		selectedVersion = *publishedVersion
 	}
 
-	candidate, err := s.GetCandidateTx(
-		ctx, tx, request.WorkspaceID, request.WorkflowID, request.ContentHash,
+	var versionStatus string
+	if err := tx.QueryRow(ctx, `
+		SELECT status
+		FROM weave_team_workflow_versions
+		WHERE workspace_id=$1 AND workflow_id=$2 AND version=$3
+		FOR SHARE
+	`, request.WorkspaceID, request.WorkflowID, selectedVersion).Scan(&versionStatus); err != nil {
+		return snapshot.TeamRunSnapshot{}, manualRunAdmissionReadError(
+			err, "published workflow version is unavailable",
+		)
+	}
+	if versionStatus != workflowdef.VersionStatusPublished {
+		return snapshot.TeamRunSnapshot{}, workflowdef.ErrNotPublished
+	}
+
+	envelope, err := s.readWorkflowScheduleArtifact(
+		ctx, request.WorkspaceID, request.WorkflowID, selectedVersion,
 	)
 	if err != nil {
 		return snapshot.TeamRunSnapshot{}, err
 	}
-	if candidate.ContentHash != request.ContentHash {
+	payload, err := frozen.DecodeArtifactEnvelopeV1(envelope)
+	if err != nil {
 		return snapshot.TeamRunSnapshot{}, manualRunAdmissionDenied(
-			"candidate content hash does not match request",
-		)
-	}
-	payload := candidate.Payload
-	if payload.Team.WorkspaceID != request.WorkspaceID ||
-		payload.Team.TeamID != teamID {
-		return snapshot.TeamRunSnapshot{}, manualRunAdmissionDenied(
-			"candidate Artifact team does not match workflow",
+			"published Artifact is invalid",
 		)
 	}
 	_, triggerReport := machine.DecodeTriggerConfigV1(payload.TriggerConfig)
 	if triggerReport != nil && len(triggerReport.Issues) != 0 {
 		return snapshot.TeamRunSnapshot{}, manualRunAdmissionDenied(
-			"candidate trigger is invalid",
+			"published trigger is invalid",
 		)
 	}
 	_, graphReport := machine.DecodeGraphDefinitionV1(payload.GraphDefinition)
 	if graphReport != nil && len(graphReport.Issues) != 0 {
 		return snapshot.TeamRunSnapshot{}, manualRunAdmissionDenied(
-			"candidate graph is invalid",
+			"published graph is invalid",
+		)
+	}
+	if payload.Team.WorkspaceID != request.WorkspaceID || payload.Team.TeamID != teamID {
+		return snapshot.TeamRunSnapshot{}, manualRunAdmissionDenied(
+			"published Artifact team does not match workflow",
 		)
 	}
 
@@ -129,19 +125,18 @@ func (s *Store) AdmitWorkflowCandidateRunTx(
 			err, "workflow team is unavailable",
 		)
 	}
-	if teamStatus != "active" && teamStatus != "building" {
+	if teamStatus != "active" {
 		return snapshot.TeamRunSnapshot{}, manualRunAdmissionDenied(
-			"workflow team is not publishable",
+			"workflow team is not active",
 		)
 	}
-	// Reuse the published path's roster gate. The version-blocked half of
-	// EvaluateFixedWorkflowAdmissionTx is intentionally skipped: admission
-	// status rows only exist for published versions (the DB insert guard
-	// enforces that), so a frozen draft candidate can never be blocked.
-	if err := evaluateFixedWorkflowRosterGateTx(
-		ctx, tx, request.WorkspaceID, lockedTeamID,
-		payload.GraphDefinition, candidate.WorkflowVersion,
-	); err != nil {
+	if err := s.EvaluateFixedWorkflowAdmissionTx(ctx, tx, workflowdef.FixedWorkflowAdmissionRequest{
+		WorkspaceID:     request.WorkspaceID,
+		TeamID:          lockedTeamID,
+		WorkflowID:      request.WorkflowID,
+		WorkflowVersion: selectedVersion,
+		GraphDefinition: payload.GraphDefinition,
+	}); err != nil {
 		return snapshot.TeamRunSnapshot{}, err
 	}
 
@@ -159,7 +154,7 @@ func (s *Store) AdmitWorkflowCandidateRunTx(
 	}
 	triggerType := strings.TrimSpace(request.TriggerType)
 	if triggerType == "" {
-		triggerType = "api"
+		triggerType = "manual"
 	}
 	triggerSource, err := json.Marshal(struct {
 		SchemaVersion int    `json:"schema_version"`
@@ -177,46 +172,48 @@ func (s *Store) AdmitWorkflowCandidateRunTx(
 		SnapshotSchemaVersion:   2,
 		Mode:                    "fixed_workflow",
 		WorkflowID:              request.WorkflowID,
-		WorkflowVersion:         candidate.WorkflowVersion,
-		ArtifactWorkflowID:      candidate.WorkflowID,
-		ArtifactWorkflowVersion: candidate.WorkflowVersion,
+		WorkflowVersion:         selectedVersion,
+		ArtifactWorkflowID:      envelope.WorkflowID,
+		ArtifactWorkflowVersion: envelope.WorkflowVersion,
 		AdmissionDecision:       admissionDecision,
 		RunAssociations: json.RawMessage(
 			`{"schema_version":1,"parent_run_id":null,"source_snapshot_id":null,"task_group_id":null}`,
 		),
-		TriggerSourceV2:      triggerSource,
-		BuildRunID:           request.BuildRunID,
-		BuildRoundNo:         request.RoundNo,
-		CandidateContentHash: request.ContentHash,
+		TriggerSourceV2: triggerSource,
 	}, nil
 }
 
-func validateWorkflowCandidateRunAdmissionRequest(
+func validateWorkflowManualRunAdmissionRequest(
 	tx pgx.Tx,
-	request WorkflowCandidateRunAdmissionRequest,
-) error {
+	request workflowdef.WorkflowManualRunAdmissionRequest) error {
 	if interfaceNil(tx) {
 		return manualRunAdmissionDenied("transaction is required")
 	}
 	for name, value := range map[string]string{
 		"workspace":  request.WorkspaceID,
 		"workflow":   request.WorkflowID,
-		"build_run":  request.BuildRunID,
 		"source_ref": request.SourceRef,
-		"content":    request.ContentHash,
 	} {
 		if value == "" || value != strings.TrimSpace(value) {
 			return manualRunAdmissionDenied(name + " identity is invalid")
 		}
 	}
-	if !workflowCandidateContentHashPattern.MatchString(request.ContentHash) {
-		return manualRunAdmissionDenied("candidate content hash is invalid")
-	}
-	if request.RoundNo < 0 {
-		return manualRunAdmissionDenied("candidate round_no is invalid")
-	}
-	if request.TriggerType != "" && request.TriggerType != "api" {
+	if request.TriggerType != "" && request.TriggerType != "conversation_explicit" {
 		return manualRunAdmissionDenied("trigger type is invalid")
 	}
+	if request.WorkflowVersion != nil && *request.WorkflowVersion <= 0 {
+		return manualRunAdmissionDenied("workflow version is invalid")
+	}
 	return nil
+}
+
+func manualRunAdmissionReadError(err error, context string) error {
+	if errors.Is(err, pgx.ErrNoRows) {
+		return manualRunAdmissionDenied(context)
+	}
+	return fmt.Errorf("%s: %w", context, err)
+}
+
+func manualRunAdmissionDenied(context string) error {
+	return fmt.Errorf("%w: %s", workflowdef.ErrWorkflowScheduleAdmissionDenied, context)
 }

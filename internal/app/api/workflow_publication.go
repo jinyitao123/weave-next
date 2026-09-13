@@ -96,14 +96,14 @@ func (s *Server) handleGetWorkflowVersionDependencies(c echo.Context) error {
 		}
 		return workflowStoreFailure(c, err)
 	}
-	artifact, err := s.Workflow.GetArtifact(ctx, workspaceID, workflowID, versionNumber)
+	artifact, err := s.WorkflowArtifacts.GetArtifact(ctx, workspaceID, workflowID, versionNumber)
 	if err != nil {
 		if errors.Is(err, workflow.ErrNotFound) {
 			return workflowError(c, http.StatusNotFound, "artifact_not_found", "artifact not found")
 		}
 		return workflowStoreFailure(c, err)
 	}
-	dependencies, err := s.Workflow.ListDependencies(ctx, workspaceID, workflowID, versionNumber)
+	dependencies, err := s.WorkflowArtifacts.ListDependencies(ctx, workspaceID, workflowID, versionNumber)
 	if err != nil {
 		return workflowStoreFailure(c, err)
 	}

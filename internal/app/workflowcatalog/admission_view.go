@@ -1,4 +1,4 @@
-package workflow
+package workflowcatalog
 
 import (
 	"context"
@@ -23,80 +23,23 @@ type VersionAdmissionView struct {
 }
 
 // GetVersionAdmissionView reads one version's admission status row, latest
-// audit, and roster-tightening facts inside one repeatable-read snapshot. It
-// returns ErrNotFound when the version has no admission status row (a draft or
-// a version that was never evaluated).
+// audit, and roster-tightening facts. Frozen execution facts are read through
+// their owner before opening a product-only repeatable-read transaction.
 func (s *Store) GetVersionAdmissionView(
 	ctx context.Context,
 	workspaceID, workflowID string,
 	version int,
 ) (*VersionAdmissionView, error) {
-	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{
-		IsoLevel:   pgx.RepeatableRead,
-		AccessMode: pgx.ReadOnly,
-	})
+	if s.artifacts == nil {
+		return nil, errors.New("frozen publication reader unavailable")
+	}
+	admission, err := s.artifacts.ReadAdmission(ctx, workspaceID, workflowID, version)
 	if err != nil {
-		return nil, fmt.Errorf("begin workflow version admission view read: %w", err)
+		return nil, err
 	}
-	defer func() { _ = tx.Rollback(ctx) }()
+	view := &VersionAdmissionView{Blocked: admission.Blocked, LatestBlockReason: admission.LatestBlockReason, LatestAuditAt: admission.LatestAuditAt}
 
-	view := &VersionAdmissionView{}
-	err = tx.QueryRow(ctx, `
-		SELECT blocked
-		FROM weave_workflow_version_admission_statuses
-		WHERE workspace_id=$1 AND workflow_id=$2 AND workflow_version=$3
-	`, workspaceID, workflowID, version).Scan(&view.Blocked)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, fmt.Errorf(
-			"%w: workflow %q version %d admission status",
-			ErrNotFound,
-			workflowID,
-			version,
-		)
-	}
-	if err != nil {
-		return nil, fmt.Errorf("read workflow version admission status: %w", err)
-	}
-
-	var (
-		auditReason  string
-		auditBlocked bool
-		auditAt      time.Time
-	)
-	err = tx.QueryRow(ctx, `
-		SELECT reason, new_blocked, created_at
-		FROM weave_workflow_version_admission_audits
-		WHERE workspace_id=$1 AND workflow_id=$2 AND workflow_version=$3
-		ORDER BY created_at DESC, audit_id COLLATE "C" DESC
-		LIMIT 1
-	`, workspaceID, workflowID, version).Scan(&auditReason, &auditBlocked, &auditAt)
-	switch {
-	case err == nil:
-		latest := auditAt
-		view.LatestAuditAt = &latest
-		if view.Blocked && auditBlocked {
-			reason := auditReason
-			view.LatestBlockReason = &reason
-		}
-	case errors.Is(err, pgx.ErrNoRows):
-	default:
-		return nil, fmt.Errorf("read latest workflow version admission audit: %w", err)
-	}
-
-	var teamID string
-	if err := tx.QueryRow(ctx, `
-		SELECT team_id
-		FROM weave_team_workflows
-		WHERE workspace_id=$1 AND id=$2
-	`, workspaceID, workflowID).Scan(&teamID); err != nil {
-		return nil, fmt.Errorf("read admission view workflow team: %w", err)
-	}
-
-	artifact, err := scanArtifact(tx.QueryRow(ctx, `
-		SELECT `+artifactColumns+`
-		FROM weave_published_artifact_contents
-		WHERE workspace_id=$1 AND workflow_id=$2 AND workflow_version=$3
-	`, workspaceID, workflowID, version))
+	artifact, err := s.artifacts.GetArtifact(ctx, workspaceID, workflowID, version)
 	if err != nil {
 		return nil, fmt.Errorf("read admission view artifact: %w", err)
 	}
@@ -114,6 +57,24 @@ func (s *Store) GetVersionAdmissionView(
 	if err != nil {
 		return nil, fmt.Errorf("decode admission view artifact: %w", err)
 	}
+	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{
+		IsoLevel:   pgx.RepeatableRead,
+		AccessMode: pgx.ReadOnly,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("begin workflow version admission view read: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	var teamID string
+	if err := tx.QueryRow(ctx, `
+		SELECT team_id
+		FROM weave_team_workflows
+		WHERE workspace_id=$1 AND id=$2
+	`, workspaceID, workflowID).Scan(&teamID); err != nil {
+		return nil, fmt.Errorf("read admission view workflow team: %w", err)
+	}
+
 	if payload.Team.WorkspaceID != workspaceID || payload.Team.TeamID != teamID {
 		return nil, errors.New("admission view artifact team does not match workflow")
 	}

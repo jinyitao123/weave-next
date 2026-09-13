@@ -15,12 +15,12 @@ package teameval
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jinyitao123/weave/internal/base/deliverable"
 	"github.com/jinyitao123/weave/internal/base/frozen"
-	"github.com/jinyitao123/weave/internal/base/snapshot"
 	"github.com/jinyitao123/weave/internal/build/teambuild"
 	"github.com/jinyitao123/weave/internal/build/teameval/gatecodes"
 	"github.com/jinyitao123/weave/internal/kernel/audit"
@@ -158,8 +158,8 @@ type Deps struct {
 	// SkillsNamespace reads the legacy skill namespace (skill:<workspace>)
 	// exactly like the platform skills API.
 	SkillsNamespace NamespaceReader
-	// Snapshots reads immutable team-run snapshots.
-	Snapshots SnapshotReader
+	// CandidateEvidence reads server-verified build associations and execution identities.
+	CandidateEvidence CandidateEvidenceReader
 	// Tasks reads durable task queue records.
 	Tasks TaskReader
 	// Deliverables reads immutable final deliverables.
@@ -204,10 +204,19 @@ type NamespaceReader interface {
 	List(ctx context.Context, ns, prefix string) ([]string, error)
 }
 
-// SnapshotReader is satisfied by *snapshot.Store.
-type SnapshotReader interface {
-	GetByRunID(ctx context.Context, workspaceID, runID string) (*snapshot.TeamRunSnapshot, error)
-	ListByTeam(ctx context.Context, workspaceID, teamID string) ([]snapshot.TeamRunSnapshot, error)
+// CandidateSnapshotEvidence is a product-owned read projection. The execution
+// snapshot itself never stores build or round metadata.
+type CandidateSnapshotEvidence struct {
+	RunID           string
+	WorkflowID      string
+	WorkflowVersion int
+	BuildRunID      string
+	BuildRoundNo    int
+	CreatedAt       time.Time
+}
+
+type CandidateEvidenceReader interface {
+	ListByTeam(context.Context, string, string) ([]CandidateSnapshotEvidence, error)
 }
 
 // TaskReader is satisfied by *taskqueue.Store.

@@ -29,6 +29,7 @@ import (
 	"github.com/jinyitao123/weave/internal/app/teamevaluations"
 	"github.com/jinyitao123/weave/internal/app/teamtemplates"
 	"github.com/jinyitao123/weave/internal/app/users"
+	"github.com/jinyitao123/weave/internal/app/workflowcatalog"
 	"github.com/jinyitao123/weave/internal/base/db"
 	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/build/teambuild"
@@ -50,7 +51,6 @@ import (
 	"github.com/jinyitao123/weave/internal/kernel/secret"
 	"github.com/jinyitao123/weave/internal/kernel/skills"
 	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
-	"github.com/jinyitao123/weave/internal/kernel/workflow"
 	"github.com/jinyitao123/weave/internal/kernel/workflow/machine"
 )
 
@@ -287,7 +287,7 @@ func main() {
 	if pool := srv.GetPool(); pool != nil {
 		srv.OrgStore = kernelbindings.NewOrganization(pool)
 		if srv.TeamBuild != nil && srv.Registry != nil && srv.Workflow != nil {
-			srv.TeamBuild.SetBaselineSources(srv.OrgStore, srv.Registry, srv.Workflow)
+			srv.TeamBuild.SetBaselineSources(srv.OrgStore, srv.Registry, srv.Workflow, srv.WorkflowArtifacts)
 		}
 		designseed.EnsureDesignStudio(srv.Registry, srv.OrgStore, "default")
 		if err := metateam.EnsureMetaTeamIfEnabled(
@@ -403,7 +403,7 @@ func main() {
 	// Initialize schedule store if PG pool is available.
 	if pool := srv.GetPool(); pool != nil {
 		srv.AgentSchedules = schedule.New(pool, schedule.RealClock{})
-		candidateBuilder := workflow.NewCandidateBuilder(
+		candidateBuilder := workflowcatalog.NewCandidateBuilder(
 			srv.Workflow,
 			srv.Registry,
 			srv.DeliveryTargets,
@@ -474,7 +474,7 @@ func main() {
 		Pool: store.Pool(), Store: store, Build: srv.TeamBuild,
 		KernelPublication: srv.KernelPublication,
 		Agents:            srv.Registry, TeamWorkers: srv.TeamWorkers, Teams: srv.OrgStore,
-		Workflows: srv.Workflow, MCPs: srv.MCPRegistry, Providers: srv.Credentials,
+		Workflows: srv.Workflow, Artifacts: srv.WorkflowArtifacts, MCPs: srv.MCPRegistry, Providers: srv.Credentials,
 		Runtimes: srv.Runtimes, Tasks: srv.Tasks,
 		Deliverables: srv.Deliverables, Snapshots: srv.Snapshots, Audit: srv.Audit,
 		Delivery: srv.DeliveryTargets, Skills: srv.Skills, Schedules: srv.AgentSchedules,
@@ -511,7 +511,7 @@ func main() {
 			srv.TeamBuild,
 			teamTemplateExecutionAdapter{service: srv.TeamBuildOrchestrator},
 			teamevaluations.Options{
-				OrgStore: srv.OrgStore, Registry: srv.Registry, Workflows: srv.Workflow,
+				OrgStore: srv.OrgStore, Registry: srv.Registry, Workflows: srv.Workflow, Artifacts: srv.WorkflowArtifacts,
 				DeclarativeValidator: func(
 					ctx context.Context,
 					workspaceID, teamID string,

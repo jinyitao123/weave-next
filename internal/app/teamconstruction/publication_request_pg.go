@@ -292,3 +292,47 @@ func (s *pgPublicationRequests) findCandidate(ctx context.Context, workspaceID, 
 	}
 	return record, true, nil
 }
+
+// findCandidateForBuild resolves product provenance from the durable admission
+// association. The kernel snapshot deliberately carries no builder round data.
+func (s *pgPublicationRequests) findCandidateForBuild(ctx context.Context, workspaceID, buildRunID string, roundNo int, sourceRole, runID, contentHash string) (CandidateRequestRecord, error) {
+	if _, err := execution.RequireSubject(ctx, workspaceID); err != nil {
+		return CandidateRequestRecord{}, err
+	}
+	rows, err := s.pool.Query(ctx, `SELECT request_id FROM weave_team_candidate_requests WHERE workspace_id=$1 AND target->>'build_run_id'=$2 AND (target->>'round_no')::int=$3 AND target->>'source_role'=$4 AND receipt IS NOT NULL AND ($5='' OR receipt->>'run_id'=$5) AND ($6='' OR request->'candidate'->>'content_hash'=$6) ORDER BY request_id`, workspaceID, buildRunID, roundNo, sourceRole, runID, contentHash)
+	if err != nil {
+		return CandidateRequestRecord{}, err
+	}
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err = rows.Scan(&id); err != nil {
+			rows.Close()
+			return CandidateRequestRecord{}, err
+		}
+		ids = append(ids, id)
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return CandidateRequestRecord{}, err
+	}
+	if len(ids) == 0 {
+		return CandidateRequestRecord{}, publication.ErrInvalidReceipt
+	}
+	var result CandidateRequestRecord
+	for _, id := range ids {
+		record, found, err := s.findCandidate(ctx, workspaceID, id)
+		if err != nil {
+			return CandidateRequestRecord{}, err
+		}
+		if !found || record.Receipt == nil {
+			return CandidateRequestRecord{}, publication.ErrInvalidReceipt
+		}
+		if result.Receipt != nil && (result.Target.ExpectedAssetVersion != record.Target.ExpectedAssetVersion || result.Request.Candidate.ContentHash != record.Request.Candidate.ContentHash) {
+			return CandidateRequestRecord{}, publication.ErrRequestConflict
+		}
+		result = record
+	}
+	return result, nil
+}

@@ -61,10 +61,10 @@ func (e *GateEvaluator) gateRunTerminalConsistent(ctx context.Context, ev Evalua
 	if ev.Team == nil {
 		return Fail(GateRunTerminalConsistent, evidence, "team not found")
 	}
-	if e.deps.Snapshots == nil || e.deps.Runs == nil || e.deps.Tasks == nil || e.deps.Deliverables == nil {
+	if e.deps.CandidateEvidence == nil || e.deps.Runs == nil || e.deps.Tasks == nil || e.deps.Deliverables == nil {
 		return Fail(GateRunTerminalConsistent, evidence, "evidence stores are unavailable")
 	}
-	snapshots, err := e.deps.Snapshots.ListByTeam(ctx, ev.WorkspaceID(), ev.TeamID())
+	snapshots, err := e.deps.CandidateEvidence.ListByTeam(ctx, ev.WorkspaceID(), ev.TeamID())
 	if err != nil {
 		return Fail(GateRunTerminalConsistent, evidence, "read run snapshots: "+err.Error())
 	}
@@ -240,8 +240,8 @@ func (e *GateEvaluator) gateNoGovernanceViolation(ctx context.Context, ev Evalua
 			)
 		}
 	}
-	if e.deps.Runs != nil && e.deps.Tasks != nil && e.deps.Snapshots != nil {
-		snapshots, err := e.deps.Snapshots.ListByTeam(ctx, ev.WorkspaceID(), ev.TeamID())
+	if e.deps.Runs != nil && e.deps.Tasks != nil && e.deps.CandidateEvidence != nil {
+		snapshots, err := e.deps.CandidateEvidence.ListByTeam(ctx, ev.WorkspaceID(), ev.TeamID())
 		if err == nil {
 			for _, snap := range snapshots {
 				if snap.BuildRunID != ev.BuildRun.BuildRunID || snap.RunID == "" {

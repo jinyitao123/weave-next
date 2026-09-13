@@ -1,4 +1,4 @@
-package workflow
+package workflowcatalog
 
 import (
 	"context"
@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jinyitao123/weave/internal/base/frozen"
+	workflowdef "github.com/jinyitao123/weave/internal/kernel/workflow"
 )
 
 const workflowColumns = `
@@ -26,43 +27,35 @@ const versionColumns = `
 	graph_definition, created_by, created_at, updated_at, published_at
 `
 
-// PublicationDraftRead is the locked workflow and exact mutable draft used to
-// build a publication candidate in the caller-owned transaction.
-type PublicationDraftRead struct {
-	Workflow TeamWorkflow
-	Draft    TeamWorkflowVersion
-}
-
 // Store persists team workflows and mutable draft versions.
 type Store struct {
-	pool  *pgxpool.Pool
-	clock Clock
+	pool      *pgxpool.Pool
+	clock     workflowdef.Clock
+	artifacts workflowdef.PublicationReader
 }
 
 // New creates a workflow store with an injected clock.
-func New(pool *pgxpool.Pool, clock Clock) *Store {
+func New(pool *pgxpool.Pool, clock workflowdef.Clock, artifacts workflowdef.PublicationReader) *Store {
 	if clock == nil {
-		clock = RealClock{}
+		clock = workflowdef.RealClock{}
 	}
-	return &Store{pool: pool, clock: clock}
+	return &Store{pool: pool, clock: clock, artifacts: artifacts}
 }
 
 // Create atomically creates a workflow and its initial version-one draft.
 func (s *Store) Create(
 	ctx context.Context,
-	workflow *TeamWorkflow,
-	initial DraftInput,
-) (*TeamWorkflowVersion, error) {
+	workflow *workflowdef.TeamWorkflow, initial workflowdef.DraftInput) (*workflowdef.TeamWorkflowVersion, error) {
 	if workflow == nil {
 		return nil, errors.New("create workflow: workflow is required")
 	}
 
 	created := *workflow
 	if created.Status == "" {
-		created.Status = WorkflowStatusActive
+		created.Status = workflowdef.WorkflowStatusActive
 	}
-	if created.Status == WorkflowStatusArchived {
-		return nil, fmt.Errorf("%w: workflow %q", ErrArchived, created.ID)
+	if created.Status == workflowdef.WorkflowStatusArchived {
+		return nil, fmt.Errorf("%w: workflow %q", workflowdef.ErrArchived, created.ID)
 	}
 	created.PublishedVersion = nil
 	created.CreatedAt = s.clock.Now()
@@ -111,14 +104,14 @@ func (s *Store) Create(
 func (s *Store) Get(
 	ctx context.Context,
 	workspaceID, workflowID string,
-) (*TeamWorkflow, error) {
+) (*workflowdef.TeamWorkflow, error) {
 	workflow, err := scanWorkflow(s.pool.QueryRow(ctx, `
 		SELECT `+workflowColumns+`
 		FROM weave_team_workflows
 		WHERE workspace_id=$1 AND id=$2
 	`, workspaceID, workflowID))
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, fmt.Errorf("%w: workflow %q", ErrNotFound, workflowID)
+		return nil, fmt.Errorf("%w: workflow %q", workflowdef.ErrNotFound, workflowID)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get workflow: %w", err)
@@ -131,7 +124,7 @@ func (s *Store) GetVersion(
 	ctx context.Context,
 	workspaceID, workflowID string,
 	version int,
-) (*TeamWorkflowVersion, error) {
+) (*workflowdef.TeamWorkflowVersion, error) {
 	workflowVersion, err := scanVersion(s.pool.QueryRow(ctx, `
 		SELECT `+versionColumns+`
 		FROM weave_team_workflow_versions
@@ -140,7 +133,7 @@ func (s *Store) GetVersion(
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, fmt.Errorf(
 			"%w: workflow %q version %d",
-			ErrNotFound,
+			workflowdef.ErrNotFound,
 			workflowID,
 			version,
 		)
@@ -158,18 +151,18 @@ func (s *Store) ResolvePublicationDraftTx(
 	tx pgx.Tx,
 	workspaceID, workflowID string,
 	version int,
-) (*PublicationDraftRead, error) {
+) (*workflowdef.PublicationDraftRead, error) {
 	if tx == nil {
 		return nil, errors.New("resolve publication draft: transaction is required")
 	}
 	if workspaceID == "" || workspaceID != strings.TrimSpace(workspaceID) ||
 		workflowID == "" || workflowID != strings.TrimSpace(workflowID) {
-		return nil, fmt.Errorf("%w: workflow %q", ErrNotFound, workflowID)
+		return nil, fmt.Errorf("%w: workflow %q", workflowdef.ErrNotFound, workflowID)
 	}
 	if version < 1 {
 		return nil, fmt.Errorf(
 			"%w: workflow %q version %d",
-			ErrVersionConflict,
+			workflowdef.ErrVersionConflict,
 			workflowID,
 			version,
 		)
@@ -183,7 +176,7 @@ func (s *Store) ResolvePublicationDraftTx(
 		FOR SHARE
 	`, workspaceID).Scan(&lockedWorkspaceID)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, fmt.Errorf("%w: workflow %q", ErrNotFound, workflowID)
+		return nil, fmt.Errorf("%w: workflow %q", workflowdef.ErrNotFound, workflowID)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("lock publication workspace: %w", err)
@@ -196,13 +189,13 @@ func (s *Store) ResolvePublicationDraftTx(
 		FOR UPDATE
 	`, workspaceID, workflowID))
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, fmt.Errorf("%w: workflow %q", ErrNotFound, workflowID)
+		return nil, fmt.Errorf("%w: workflow %q", workflowdef.ErrNotFound, workflowID)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("lock publication workflow: %w", err)
 	}
-	if workflow.Status == WorkflowStatusArchived {
-		return nil, fmt.Errorf("%w: workflow %q", ErrArchived, workflowID)
+	if workflow.Status == workflowdef.WorkflowStatusArchived {
+		return nil, fmt.Errorf("%w: workflow %q", workflowdef.ErrArchived, workflowID)
 	}
 
 	draft, err := scanVersion(tx.QueryRow(ctx, `
@@ -215,7 +208,7 @@ func (s *Store) ResolvePublicationDraftTx(
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, fmt.Errorf(
 			"%w: workflow %q version %d",
-			ErrVersionConflict,
+			workflowdef.ErrVersionConflict,
 			workflowID,
 			version,
 		)
@@ -223,14 +216,14 @@ func (s *Store) ResolvePublicationDraftTx(
 	if err != nil {
 		return nil, fmt.Errorf("lock publication workflow draft: %w", err)
 	}
-	return &PublicationDraftRead{Workflow: *workflow, Draft: *draft}, nil
+	return &workflowdef.PublicationDraftRead{Workflow: *workflow, Draft: *draft}, nil
 }
 
 // ListByTeam returns one team's workflows in stable creation and ID order.
 func (s *Store) ListByTeam(
 	ctx context.Context,
 	workspaceID, teamID string,
-) ([]TeamWorkflow, error) {
+) ([]workflowdef.TeamWorkflow, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT `+workflowColumns+`
 		FROM weave_team_workflows
@@ -242,7 +235,7 @@ func (s *Store) ListByTeam(
 	}
 	defer rows.Close()
 
-	workflows := make([]TeamWorkflow, 0)
+	workflows := make([]workflowdef.TeamWorkflow, 0)
 	for rows.Next() {
 		workflow, err := scanWorkflow(rows)
 		if err != nil {
@@ -263,8 +256,8 @@ func (s *Store) ListVersionsByWorkflows(
 	ctx context.Context,
 	workspaceID string,
 	workflowIDs []string,
-) ([]TeamWorkflowVersion, error) {
-	versions := make([]TeamWorkflowVersion, 0)
+) ([]workflowdef.TeamWorkflowVersion, error) {
+	versions := make([]workflowdef.TeamWorkflowVersion, 0)
 	if len(workflowIDs) == 0 {
 		return versions, nil
 	}
@@ -293,7 +286,7 @@ func (s *Store) ListVersionsByWorkflows(
 }
 
 // CreateDraft clones the published version into the next version number.
-func (s *Store) CreateDraft(ctx context.Context, workspaceID, workflowID, createdBy string) (*TeamWorkflowVersion, error) {
+func (s *Store) CreateDraft(ctx context.Context, workspaceID, workflowID, createdBy string) (*workflowdef.TeamWorkflowVersion, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return nil, err
@@ -310,7 +303,7 @@ func (s *Store) CreateDraft(ctx context.Context, workspaceID, workflowID, create
 }
 
 // CreateDraftTx includes draft creation in a caller-owned configuration change.
-func (s *Store) CreateDraftTx(ctx context.Context, tx pgx.Tx, workspaceID, workflowID, createdBy string) (*TeamWorkflowVersion, error) {
+func (s *Store) CreateDraftTx(ctx context.Context, tx pgx.Tx, workspaceID, workflowID, createdBy string) (*workflowdef.TeamWorkflowVersion, error) {
 	if tx == nil {
 		return nil, errors.New("workflow draft transaction is required")
 	}
@@ -325,13 +318,13 @@ func (s *Store) CreateDraftTx(ctx context.Context, tx pgx.Tx, workspaceID, workf
 		FOR UPDATE
 	`, workspaceID, workflowID).Scan(&status, &publishedVersion)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, fmt.Errorf("%w: workflow %q", ErrNotFound, workflowID)
+		return nil, fmt.Errorf("%w: workflow %q", workflowdef.ErrNotFound, workflowID)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("lock workflow for draft creation: %w", err)
 	}
-	if status == WorkflowStatusArchived {
-		return nil, fmt.Errorf("%w: workflow %q", ErrArchived, workflowID)
+	if status == workflowdef.WorkflowStatusArchived {
+		return nil, fmt.Errorf("%w: workflow %q", workflowdef.ErrArchived, workflowID)
 	}
 
 	var draftExists bool
@@ -344,10 +337,10 @@ func (s *Store) CreateDraftTx(ctx context.Context, tx pgx.Tx, workspaceID, workf
 		return nil, fmt.Errorf("check existing workflow draft: %w", err)
 	}
 	if draftExists {
-		return nil, fmt.Errorf("%w: workflow %q", ErrDraftExists, workflowID)
+		return nil, fmt.Errorf("%w: workflow %q", workflowdef.ErrDraftExists, workflowID)
 	}
 	if publishedVersion == nil {
-		return nil, fmt.Errorf("%w: workflow %q has no source version", ErrVersionConflict, workflowID)
+		return nil, fmt.Errorf("%w: workflow %q has no source version", workflowdef.ErrVersionConflict, workflowID)
 	}
 
 	var nextVersion int
@@ -365,7 +358,7 @@ func (s *Store) CreateDraftTx(ctx context.Context, tx pgx.Tx, workspaceID, workf
 		&nextVersion, &triggerConfig, &graphDefinition,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, fmt.Errorf("%w: workflow %q published source is missing", ErrVersionConflict, workflowID)
+		return nil, fmt.Errorf("%w: workflow %q published source is missing", workflowdef.ErrVersionConflict, workflowID)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("read published workflow source: %w", err)
@@ -384,7 +377,7 @@ func (s *Store) CreateDraftTx(ctx context.Context, tx pgx.Tx, workspaceID, workf
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.ConstraintName == "uniq_weave_team_workflow_versions_draft" {
-			return nil, fmt.Errorf("%w: workflow %q", ErrDraftExists, workflowID)
+			return nil, fmt.Errorf("%w: workflow %q", workflowdef.ErrDraftExists, workflowID)
 		}
 		return nil, fmt.Errorf("insert workflow draft: %w", err)
 	}
@@ -392,7 +385,7 @@ func (s *Store) CreateDraftTx(ctx context.Context, tx pgx.Tx, workspaceID, workf
 }
 
 // UpdateDraft replaces mutable draft content using version and timestamp CAS.
-func (s *Store) UpdateDraft(ctx context.Context, workspaceID, workflowID string, version int, expectedUpdatedAt time.Time, input DraftInput) (*TeamWorkflowVersion, error) {
+func (s *Store) UpdateDraft(ctx context.Context, workspaceID, workflowID string, version int, expectedUpdatedAt time.Time, input workflowdef.DraftInput) (*workflowdef.TeamWorkflowVersion, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return nil, err
@@ -409,7 +402,7 @@ func (s *Store) UpdateDraft(ctx context.Context, workspaceID, workflowID string,
 }
 
 // UpdateDraftTx preserves the draft CAS inside an atomic execution edit.
-func (s *Store) UpdateDraftTx(ctx context.Context, tx pgx.Tx, workspaceID, workflowID string, version int, expectedUpdatedAt time.Time, input DraftInput) (*TeamWorkflowVersion, error) {
+func (s *Store) UpdateDraftTx(ctx context.Context, tx pgx.Tx, workspaceID, workflowID string, version int, expectedUpdatedAt time.Time, input workflowdef.DraftInput) (*workflowdef.TeamWorkflowVersion, error) {
 	if tx == nil {
 		return nil, errors.New("workflow draft transaction is required")
 	}
@@ -423,13 +416,13 @@ func (s *Store) UpdateDraftTx(ctx context.Context, tx pgx.Tx, workspaceID, workf
 		FOR UPDATE
 	`, workspaceID, workflowID).Scan(&status)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, fmt.Errorf("%w: workflow %q", ErrNotFound, workflowID)
+		return nil, fmt.Errorf("%w: workflow %q", workflowdef.ErrNotFound, workflowID)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("lock workflow for draft update: %w", err)
 	}
-	if status == WorkflowStatusArchived {
-		return nil, fmt.Errorf("%w: workflow %q", ErrArchived, workflowID)
+	if status == workflowdef.WorkflowStatusArchived {
+		return nil, fmt.Errorf("%w: workflow %q", workflowdef.ErrArchived, workflowID)
 	}
 
 	updated, err := scanVersion(tx.QueryRow(ctx, `
@@ -444,7 +437,7 @@ func (s *Store) UpdateDraftTx(ctx context.Context, tx pgx.Tx, workspaceID, workf
 		input.TriggerConfig, input.GraphDefinition, s.clock.Now(),
 	))
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, fmt.Errorf("%w: workflow %q version %d", ErrVersionConflict, workflowID, version)
+		return nil, fmt.Errorf("%w: workflow %q version %d", workflowdef.ErrVersionConflict, workflowID, version)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("update workflow draft: %w", err)
@@ -457,7 +450,7 @@ func (s *Store) UpdateDraftTx(ctx context.Context, tx pgx.Tx, workspaceID, workf
 // matches the frozen baseline content, in which case no draft was created and
 // Version is nil.
 type RestoreDraftResult struct {
-	Version         *TeamWorkflowVersion
+	Version         *workflowdef.TeamWorkflowVersion
 	AlreadyRestored bool
 }
 
@@ -474,8 +467,7 @@ func (s *Store) CreateRestoreDraftTx(
 	tx pgx.Tx,
 	workspaceID, workflowID, createdBy string,
 	expectedContentHash string,
-	input DraftInput,
-) (*RestoreDraftResult, error) {
+	input workflowdef.DraftInput) (*RestoreDraftResult, error) {
 	if tx == nil {
 		return nil, errors.New("create restore workflow draft: transaction is required")
 	}
@@ -496,13 +488,13 @@ func (s *Store) CreateRestoreDraftTx(
 		FOR UPDATE
 	`, workspaceID, workflowID).Scan(&status, &publishedVersion)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, fmt.Errorf("%w: workflow %q", ErrNotFound, workflowID)
+		return nil, fmt.Errorf("%w: workflow %q", workflowdef.ErrNotFound, workflowID)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("lock workflow for restore draft: %w", err)
 	}
-	if status == WorkflowStatusArchived {
-		return nil, fmt.Errorf("%w: workflow %q", ErrArchived, workflowID)
+	if status == workflowdef.WorkflowStatusArchived {
+		return nil, fmt.Errorf("%w: workflow %q", workflowdef.ErrArchived, workflowID)
 	}
 
 	// Content-idempotent replay: when the published content already equals the
@@ -541,7 +533,7 @@ func (s *Store) CreateRestoreDraftTx(
 		return nil, fmt.Errorf("check existing workflow draft: %w", err)
 	}
 	if draftExists {
-		return nil, fmt.Errorf("%w: workflow %q", ErrDraftExists, workflowID)
+		return nil, fmt.Errorf("%w: workflow %q", workflowdef.ErrDraftExists, workflowID)
 	}
 
 	var nextVersion int
@@ -566,7 +558,7 @@ func (s *Store) CreateRestoreDraftTx(
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.ConstraintName == "uniq_weave_team_workflow_versions_draft" {
-			return nil, fmt.Errorf("%w: workflow %q", ErrDraftExists, workflowID)
+			return nil, fmt.Errorf("%w: workflow %q", workflowdef.ErrDraftExists, workflowID)
 		}
 		return nil, fmt.Errorf("insert restore workflow draft: %w", err)
 	}
@@ -607,12 +599,12 @@ func (s *Store) Archive(ctx context.Context, workspaceID, workflowID string) err
 		FOR UPDATE
 	`, workspaceID, workflowID).Scan(&status)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return fmt.Errorf("%w: workflow %q", ErrNotFound, workflowID)
+		return fmt.Errorf("%w: workflow %q", workflowdef.ErrNotFound, workflowID)
 	}
 	if err != nil {
 		return fmt.Errorf("lock workflow for archive: %w", err)
 	}
-	if status == WorkflowStatusActive {
+	if status == workflowdef.WorkflowStatusActive {
 		if _, err := tx.Exec(ctx, `
 			UPDATE weave_team_workflows
 			SET status='archived', updated_at=$3
@@ -647,13 +639,13 @@ func (s *Store) DeletePureDraft(
 		FOR UPDATE
 	`, workspaceID, workflowID).Scan(&publishedVersion)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return fmt.Errorf("%w: workflow %q", ErrNotFound, workflowID)
+		return fmt.Errorf("%w: workflow %q", workflowdef.ErrNotFound, workflowID)
 	}
 	if err != nil {
 		return fmt.Errorf("lock workflow for pure draft deletion: %w", err)
 	}
 	if publishedVersion != nil {
-		return fmt.Errorf("%w: workflow %q", ErrNotPureDraft, workflowID)
+		return fmt.Errorf("%w: workflow %q", workflowdef.ErrNotPureDraft, workflowID)
 	}
 
 	versionRows, err := tx.Query(ctx, `
@@ -690,23 +682,25 @@ func (s *Store) DeletePureDraft(
 				SELECT 1 FROM weave_team_workflow_versions
 				WHERE workspace_id=$1 AND workflow_id=$2 AND status <> 'draft'
 				UNION ALL
-				SELECT 1 FROM weave_published_artifact_contents
-				WHERE workspace_id=$1 AND workflow_id=$2
+				SELECT 1 FROM weave_team_publication_requests
+				WHERE workspace_id=$1 AND command->'request'->'candidate'->>'workflow_id'=$2
 				UNION ALL
-				SELECT 1 FROM weave_workflow_version_admission_statuses
-				WHERE workspace_id=$1 AND workflow_id=$2
-				UNION ALL
-				SELECT 1 FROM weave_workflow_version_admission_audits
-				WHERE workspace_id=$1 AND workflow_id=$2
-				UNION ALL
-				SELECT 1 FROM weave_team_run_snapshots
-				WHERE workspace_id=$1 AND workflow_id=$2
+				SELECT 1 FROM weave_team_candidate_requests
+				WHERE workspace_id=$1 AND request->'candidate'->>'workflow_id'=$2
 			)
 	`, workspaceID, workflowID).Scan(&versionCount, &hasHistory); err != nil {
 		return fmt.Errorf("check workflow publication history: %w", err)
 	}
+	if s.artifacts == nil {
+		return errors.New("frozen publication reader unavailable")
+	}
+	frozenHistory, err := s.artifacts.HasHistory(ctx, workspaceID, workflowID)
+	if err != nil {
+		return err
+	}
+	hasHistory = hasHistory || frozenHistory
 	if versionCount == 0 || hasHistory {
-		return fmt.Errorf("%w: workflow %q", ErrNotPureDraft, workflowID)
+		return fmt.Errorf("%w: workflow %q", workflowdef.ErrNotPureDraft, workflowID)
 	}
 
 	if _, err := tx.Exec(ctx, `
@@ -719,12 +713,6 @@ func (s *Store) DeletePureDraft(
 		DELETE FROM weave_team_workflow_versions
 		WHERE workspace_id=$1 AND workflow_id=$2 AND status='draft'
 	`, workspaceID, workflowID); err != nil {
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) &&
-			pgErr.Code == "23503" &&
-			pgErr.ConstraintName == "weave_team_run_snapshots_workflow_version_fk" {
-			return fmt.Errorf("%w: workflow %q", ErrNotPureDraft, workflowID)
-		}
 		return fmt.Errorf("delete workflow drafts: %w", err)
 	}
 	if _, err := tx.Exec(ctx, `
@@ -743,8 +731,8 @@ type rowScanner interface {
 	Scan(dest ...any) error
 }
 
-func scanWorkflow(row rowScanner) (*TeamWorkflow, error) {
-	var workflow TeamWorkflow
+func scanWorkflow(row rowScanner) (*workflowdef.TeamWorkflow, error) {
+	var workflow workflowdef.TeamWorkflow
 	err := row.Scan(
 		&workflow.WorkspaceID,
 		&workflow.ID,
@@ -762,8 +750,8 @@ func scanWorkflow(row rowScanner) (*TeamWorkflow, error) {
 	return &workflow, nil
 }
 
-func scanVersion(row rowScanner) (*TeamWorkflowVersion, error) {
-	var version TeamWorkflowVersion
+func scanVersion(row rowScanner) (*workflowdef.TeamWorkflowVersion, error) {
+	var version workflowdef.TeamWorkflowVersion
 	var triggerConfig, graphDefinition []byte
 	err := row.Scan(
 		&version.WorkspaceID,

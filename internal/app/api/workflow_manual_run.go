@@ -289,7 +289,7 @@ func (s *Server) workflowManualRunLead(
 	ctx context.Context,
 	admitted snapshot.TeamRunSnapshot,
 ) (string, int, error) {
-	artifact, err := s.Workflow.GetArtifact(
+	artifact, err := s.WorkflowArtifacts.GetArtifact(
 		ctx, admitted.WorkspaceID, admitted.WorkflowID, admitted.WorkflowVersion,
 	)
 	if err != nil {
@@ -343,7 +343,7 @@ func (s *Server) respondWorkflowManualRunAdmissionError(
 		if len(triggerType) > 0 && triggerType[0] != "" {
 			auditTrigger = triggerType[0]
 		}
-		record, auditErr := s.Workflow.RecordFixedWorkflowAdmissionDenial(
+		record, auditErr := s.WorkflowArtifacts.RecordFixedWorkflowAdmissionDenial(
 			context.WithoutCancel(ctx),
 			workflow.FixedWorkflowAdmissionDenialAttempt{
 				WorkspaceID:         getTenant(c),

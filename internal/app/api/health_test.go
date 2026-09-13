@@ -14,7 +14,7 @@ import (
 	"github.com/jinyitao123/weave/internal/kernel/mcpregistry"
 
 	orgstore "github.com/jinyitao123/weave/internal/app/org"
-	"github.com/jinyitao123/weave/internal/kernel/workflow"
+	"github.com/jinyitao123/weave/internal/app/workflowcatalog"
 	"github.com/labstack/echo/v4"
 )
 
@@ -37,7 +37,7 @@ func TestHandleReadyReportsReady(t *testing.T) {
 		Pool:            testutil.PostgresPool(t),
 		KeyStore:        &apikeys.Store{},
 		OrgStore:        &orgstore.Store{},
-		Workflow:        &workflow.Store{},
+		Workflow:        &workflowcatalog.Store{},
 		Credentials:     &credentials.Store{},
 		DeliveryTargets: &delivery.Store{},
 		MCPRegistry:     &mcpregistry.Store{},

@@ -22,13 +22,15 @@ import (
 func (s *Store) SetBaselineSources(
 	orgStore OrganizationBaselineReader,
 	agents AgentBaselineReader,
-	workflows *workflow.Store,
+	workflows WorkflowBaselineReader,
+	artifacts workflow.PublicationReader,
 ) {
 	s.baselineMu.Lock()
 	defer s.baselineMu.Unlock()
 	s.orgStore = orgStore
 	s.agents = agents
 	s.workflows = workflows
+	s.artifacts = artifacts
 }
 
 // PreviewCompilerBaseline captures the server-owned planning baseline. It
@@ -178,8 +180,8 @@ func (s *Store) captureBaselineTxAt(
 	if !validUTCTimestamp(capturedAt) {
 		return BaselineSnapshot{}, fmt.Errorf("capture baseline: %w: captured_at must be a valid UTC timestamp", ErrBaselineSnapshotInvalid)
 	}
-	orgStore, agents, workflows := s.baselineSources()
-	if !baselineReaderAvailable(orgStore) || !baselineReaderAvailable(agents) || workflows == nil {
+	orgStore, agents, workflows, artifacts := s.baselineSources()
+	if !baselineReaderAvailable(orgStore) || !baselineReaderAvailable(agents) || workflows == nil || artifacts == nil {
 		return BaselineSnapshot{}, fmt.Errorf("%w", ErrBaselineSourceUnavailable)
 	}
 	if tx == nil {
@@ -206,7 +208,7 @@ func (s *Store) captureBaselineTxAt(
 	// lock order matches the publication candidate builder (workspace ->
 	// workflow -> team) and cannot deadlock against a concurrent publish.
 	workflowReads, err := s.captureBaselineWorkflowsTx(
-		ctx, tx, workflows, workspaceID, brief.TeamID, scope,
+		ctx, tx, workflows, artifacts, workspaceID, brief.TeamID, scope,
 	)
 	if err != nil {
 		return BaselineSnapshot{}, err
@@ -385,11 +387,12 @@ func (s *Store) captureBaselineTxAt(
 func (s *Store) baselineSources() (
 	orgStore OrganizationBaselineReader,
 	agents AgentBaselineReader,
-	workflows *workflow.Store,
+	workflows WorkflowBaselineReader,
+	artifacts workflow.PublicationReader,
 ) {
 	s.baselineMu.RLock()
 	defer s.baselineMu.RUnlock()
-	return s.orgStore, s.agents, s.workflows
+	return s.orgStore, s.agents, s.workflows, s.artifacts
 }
 
 // captureBaselineWorkflowsTx locks and reads every scoped workflow's identity,
@@ -403,7 +406,8 @@ func (s *Store) baselineSources() (
 func (s *Store) captureBaselineWorkflowsTx(
 	ctx context.Context,
 	tx pgx.Tx,
-	workflows *workflow.Store,
+	workflows WorkflowBaselineReader,
+	artifacts workflow.PublicationReader,
 	workspaceID, teamID string,
 	scope AssetScope,
 ) ([]BaselineWorkflowRef, error) {
@@ -489,7 +493,7 @@ func (s *Store) captureBaselineWorkflowsTx(
 					err,
 				)
 			}
-			artifact, err := workflows.GetArtifact(
+			artifact, err := artifacts.GetArtifact(
 				ctx, workspaceID, workflowID, publishedVersion,
 			)
 			if err != nil {
@@ -500,7 +504,7 @@ func (s *Store) captureBaselineWorkflowsTx(
 					err,
 				)
 			}
-			dependencies, err := workflows.ListDependencies(
+			dependencies, err := artifacts.ListDependencies(
 				ctx, workspaceID, workflowID, publishedVersion,
 			)
 			if err != nil {

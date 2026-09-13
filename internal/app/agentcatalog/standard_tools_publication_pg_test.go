@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,12 +16,15 @@ import (
 	"github.com/jinyitao123/weave/internal/kernel/workflow"
 
 	"github.com/jinyitao123/weave/internal/app/agentcatalog"
+	"github.com/jinyitao123/weave/internal/app/teamconstruction"
+	"github.com/jinyitao123/weave/internal/kernel/publicationservice"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jinyitao123/loom"
 	"github.com/jinyitao123/loom/contract"
 	"github.com/jinyitao123/loom/stdlib"
+	"github.com/jinyitao123/weave/internal/app/workflowcatalog"
 	"github.com/jinyitao123/weave/internal/base/db"
 	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/base/frozen"
@@ -184,7 +188,7 @@ func TestStandardToolsPublicationReachesActualMCPAndPreservesFrozenContractRealP
 	if _, err := mcp.RecordProbeSuccess(ctx, workspace, registered.ID, "2025-03-26", json.RawMessage(`{}`), []mcpregistry.Tool{{Name: "different", InputSchema: schema}}); err != nil {
 		t.Fatal(err)
 	}
-	fresh, err := workflow.New(pool, nil).GetArtifact(ctx, workspace, "flow", saved.WorkflowVersion)
+	fresh, err := workflow.NewArtifactStore(pool, nil).GetArtifact(ctx, workspace, "flow", saved.WorkflowVersion)
 	if err != nil || fresh.ContentHash != saved.ContentHash || string(fresh.Payload) != string(saved.Payload) {
 		t.Fatal("published artifact changed with live catalog")
 	}
@@ -201,6 +205,9 @@ func TestStandardToolsPublicationReachesActualMCPAndPreservesFrozenContractRealP
 func publishStandardToolSample(t *testing.T, pool *pgxpool.Pool, key []byte, workspace, serverURL, serverID string, revision int64, toolName, prompt string) (frozen.FrozenExecutionBundle, compiler.FrozenResolver, *workflow.PublishedArtifactContent) {
 	t.Helper()
 	ctx := execution.WithSubject(t.Context(), execution.Subject{WorkspaceID: workspace, UserID: "test"})
+	if _, err := pool.Exec(ctx, `INSERT INTO weave_users(id,tenant_id,username,password) VALUES ('test',$1,'test','unused') ON CONFLICT(id) DO NOTHING`, workspace); err != nil {
+		t.Fatal(err)
+	}
 	providers := credentials.New(pool, key)
 	if err := providers.Upsert(ctx, workspace, llmrouter.ProviderConfig{ID: "fixture", Name: "Fixture", CredentialScope: frozen.CredentialScopeUser, CredentialUserID: "test", BaseURL: serverURL, APIKey: "test-provider-secret", Models: []string{"fixture-model"}}); err != nil {
 		t.Fatal(err)
@@ -220,33 +227,50 @@ func publishStandardToolSample(t *testing.T, pool *pgxpool.Pool, key []byte, wor
 		t.Fatal(err)
 	}
 	graph := json.RawMessage(fmt.Sprintf(`{"schema_version":1,"entry_node_id":"brief","input_contract":{"type":"text"},"output_contract":{"type":"text"},"nodes":[{"id":"brief","type":"lead","config":{"instruction":"Brief"},"inputs":{"task":{"value":{"source":"run_input","path":""},"expected_type":"text"}},"output":{"type":"text"}},{"id":"compute","type":"worker","config":{"kind":"consult","agent_id":%q,"agent_version":%d,"result_requirement":"Execute the configured tool task"},"inputs":{"task":{"value":{"source":"run_input","path":""},"expected_type":"text"}},"output":{"type":"text"}},{"id":"deliver","type":"deliver","config":{"result":{"source":"node_output","node_id":"compute","path":""}}}],"edges":[{"id":"a","from_node_id":"brief","to_node_id":"compute","route":"success"},{"id":"b","from_node_id":"compute","to_node_id":"deliver","route":"success"}]}`, worker.ID, worker.Version))
-	store := workflow.New(pool, nil)
+	store := workflowcatalog.New(pool, nil, workflow.NewArtifactStore(pool, nil))
 	draft, err := store.Create(ctx, &workflow.TeamWorkflow{ID: "flow", WorkspaceID: workspace, TeamID: "team", Name: "Tool flow"}, workflow.DraftInput{CreatedBy: "test", TriggerConfig: json.RawMessage(`{"schema_version":1,"type":"conversation_explicit","config":{}}`), GraphDefinition: graph})
 	if err != nil {
 		t.Fatal(err)
 	}
 	descriptors := publicationDescriptors(t)
-	builder := workflow.NewCandidateBuilder(store, agents, delivery.New(pool, key), skills.New(pool), providers, schedule.New(pool, nil), descriptors)
+	builder := workflowcatalog.NewCandidateBuilder(store, agents, delivery.New(pool, key), skills.New(pool), providers, schedule.New(pool, nil), descriptors)
+	authority := teamconstruction.NewPublicationAuthority(pool, builder)
 	tx, err := pool.Begin(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer tx.Rollback(context.Background())
-	candidate, report, err := builder.BuildTx(ctx, tx, workflow.CandidateInput{WorkspaceID: workspace, WorkflowID: "flow", WorkflowVersion: draft.Version})
+	candidate, report, err := authority.BuildCandidateTx(ctx, tx, workflow.CandidateInput{WorkspaceID: workspace, WorkflowID: "flow", WorkflowVersion: draft.Version})
 	if err != nil || candidate == nil || report != nil && len(report.Issues) > 0 {
 		t.Fatalf("build publication: err=%+v report=%+v", err, report)
 	}
-	publication, err := workflow.PublicationFromCandidate(candidate)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := store.InsertPublicationTx(ctx, tx, publication); err != nil {
-		t.Fatal(err)
-	}
+	// Commit the product read/materialization transaction before the separate
+	// Kernel publication transaction, just as the product service does.
 	if err := tx.Commit(ctx); err != nil {
 		t.Fatal(err)
 	}
-	saved, err := store.GetArtifact(ctx, workspace, "flow", draft.Version)
+	connection, err := url.Parse(os.Getenv("TEST_DATABASE_URL"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	query := connection.Query()
+	query.Set("search_path", pool.Config().ConnConfig.RuntimeParams["search_path"])
+	connection.RawQuery = query.Encode()
+	kernel, err := publicationservice.Open(ctx, connection.String(), authority)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer kernel.Close()
+	product := teamconstruction.NewProductPublication(pool, kernel, authority.AuthorizeProduct)
+	command, err := teamconstruction.PublicationCommandForCandidate("standard-tools-publication", candidate, teamconstruction.PublicationTarget{TeamID: "team"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	receipt, err := product.Publish(ctx, command)
+	if err != nil || receipt.State != teamconstruction.PublicationActivated {
+		t.Fatalf("publish configured tool workflow: %+v %v", receipt, err)
+	}
+	saved, err := workflow.NewArtifactStore(pool, nil).GetArtifact(ctx, workspace, "flow", draft.Version)
 	if err != nil {
 		t.Fatal(err)
 	}

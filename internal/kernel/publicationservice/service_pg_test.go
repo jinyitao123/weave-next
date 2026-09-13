@@ -15,10 +15,11 @@ import (
 	"github.com/jinyitao123/weave/internal/base/db"
 	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/base/frozen"
+	"github.com/jinyitao123/weave/internal/base/snapshot"
 	"github.com/jinyitao123/weave/internal/base/testutil"
 	"github.com/jinyitao123/weave/internal/kernel/publication"
 	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
-	"github.com/jinyitao123/weave/internal/kernel/workflow"
+	"github.com/jinyitao123/weave/internal/kernel/teamrun"
 	"github.com/jinyitao123/weave/internal/kernel/workflow/machine"
 )
 
@@ -173,8 +174,8 @@ func TestCandidateAdmissionOwnsSnapshotTaskAndReceiptRealPG(t *testing.T) {
 	var taskActor, snapshotActor execution.Subject
 	var taskActorRaw, snapshotActorRaw []byte
 	var candidateHash string
-	var buildRunID *string
-	if err = pool.QueryRow(ctx, `SELECT q.actor_subject,s.actor_subject,s.candidate_content_hash,s.build_run_id FROM weave_task_queue q JOIN weave_team_run_snapshots s ON s.run_id=q.run_snapshot_id WHERE q.id=$1`, receipt.TaskID).Scan(&taskActorRaw, &snapshotActorRaw, &candidateHash, &buildRunID); err != nil {
+	var taskSource, snapshotSource string
+	if err = pool.QueryRow(ctx, `SELECT q.actor_subject,s.actor_subject,s.candidate_content_hash,q.source_ref,s.source_ref FROM weave_task_queue q JOIN weave_team_run_snapshots s ON s.run_id=q.run_snapshot_id WHERE q.id=$1`, receipt.TaskID).Scan(&taskActorRaw, &snapshotActorRaw, &candidateHash, &taskSource, &snapshotSource); err != nil {
 		t.Fatal(err)
 	}
 	if err = json.Unmarshal(taskActorRaw, &taskActor); err != nil {
@@ -183,8 +184,23 @@ func TestCandidateAdmissionOwnsSnapshotTaskAndReceiptRealPG(t *testing.T) {
 	if err = json.Unmarshal(snapshotActorRaw, &snapshotActor); err != nil {
 		t.Fatal(err)
 	}
-	if taskActor != receipt.Subject || snapshotActor != receipt.Subject || candidateHash != publish.Candidate.ContentHash || buildRunID != nil {
+	if taskActor != receipt.Subject || snapshotActor != receipt.Subject || candidateHash != publish.Candidate.ContentHash || taskSource != request.SourceRef || snapshotSource != request.SourceRef {
 		t.Fatal("candidate identity was coupled to product build or changed actor")
+	}
+	for _, table := range []string{"weave_task_queue", "weave_team_run_snapshots"} {
+		if _, err = pool.Exec(ctx, "UPDATE "+table+" SET source_ref='other-source'"); err == nil {
+			t.Fatal("immutable execution source rewritten", table)
+		}
+	}
+	tasks := taskqueue.New(pool, nil, time.Minute)
+	claimed, err := tasks.Claim(ctx, "candidate-consumer", taskqueue.ClaimFilter{Kind: "team_workflow", WorkspaceID: "workspace", IdentityKind: taskqueue.IdentityTeamWorkflow})
+	if err != nil || claimed == nil {
+		t.Fatal("claim candidate", err)
+	}
+	consumer := &teamrun.Consumer{Transactions: pool, Snapshots: snapshot.NewStore(pool), Runs: teamrun.NewPGStore(), Tasks: tasks}
+	run, err := consumer.ConsumeClaimed(ctx, claimed, "candidate-consumer")
+	if err != nil || run.RunID != receipt.RunID {
+		t.Fatal("generic source candidate could not establish its TeamRun", err)
 	}
 	other := execution.WithSubject(context.Background(), execution.Subject{WorkspaceID: "workspace", UserID: "bob"})
 	if _, err = service.AdmitCandidate(other, request); !errors.Is(err, execution.ErrSubjectMismatch) {
@@ -229,23 +245,10 @@ func TestCandidateConflictChecksPersistedDependenciesRealPG(t *testing.T) {
 	}
 }
 
-func TestDraftDependenciesRemainMutableWhileFrozenDependenciesDoNotRealPG(t *testing.T) {
+func TestFrozenDependenciesRejectChangesRealPG(t *testing.T) {
 	ctx, service, pool, publish := publicationPGFixture(t)
 	if _, err := service.Publish(ctx, publish); err != nil {
 		t.Fatal(err)
-	}
-	if _, err := pool.Exec(ctx, `INSERT INTO weave_workspaces(id,slug,name) VALUES('workspace','workspace','Workspace');
-	INSERT INTO weave_agents(id,workspace_id,name,role,spec) VALUES('lead','workspace','lead','avatar','{}');
-	INSERT INTO weave_teams(id,workspace_id,name,lead_avatar_id,status) VALUES('team','workspace','Team','lead','building');
-	INSERT INTO weave_team_workflows(workspace_id,id,team_id,name) VALUES('workspace','draft','team','Draft');
-	INSERT INTO weave_team_workflow_versions(workspace_id,workflow_id,version,status,trigger_config,graph_definition,created_by)
-	VALUES('workspace','draft',1,'draft','{"schema_version":1}','{"schema_version":1}','alice');
-	INSERT INTO weave_draft_workflow_dependencies(workspace_id,workflow_id,workflow_version,owner_type,owner_id,dependency_type,dependency_key,content_hash)
-	VALUES('workspace','draft',1,'workflow','draft','factory','draft-factory',repeat('a',64));`); err != nil {
-		t.Fatal(err)
-	}
-	if err := workflow.New(pool, nil).DeletePureDraft(ctx, "workspace", "draft"); err != nil {
-		t.Fatal("draft with dependencies cannot be deleted:", err)
 	}
 	if _, err := pool.Exec(ctx, `UPDATE weave_team_workflow_dependencies SET content_hash=repeat('b',64) WHERE workflow_id='workflow'`); err == nil {
 		t.Fatal("frozen dependency updated")

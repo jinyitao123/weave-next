@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"math/big"
 	"regexp"
-	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -49,13 +48,9 @@ type TeamRunSnapshot struct {
 	TriggerSource           string            `json:"trigger_source,omitempty"`
 	TriggerSourceV2         json.RawMessage   `json:"trigger_source_v2,omitempty"`
 	RuntimeAssignment       json.RawMessage   `json:"runtime_assignment,omitempty"`
-	BuildRunID              string            `json:"build_run_id,omitempty"`
-	// BuildRoundNo is the team build round that produced the candidate.
-	// Zero means no round binding (legacy snapshots and admin API candidate
-	// runs); when present it must be paired with the candidate identity.
-	BuildRoundNo         int       `json:"build_round_no,omitempty"`
-	CandidateContentHash string    `json:"candidate_content_hash,omitempty"`
-	CreatedAt            time.Time `json:"created_at"`
+	SourceRef               string            `json:"source_ref,omitempty"`
+	CandidateContentHash    string            `json:"candidate_content_hash,omitempty"`
+	CreatedAt               time.Time         `json:"created_at"`
 }
 
 // Store provides create-only persistence and workspace-scoped lookup.
@@ -121,7 +116,7 @@ func (s *Store) CreateTx(
 				artifact_workflow_id, artifact_workflow_version,
 				inline_dependencies, run_associations, trigger_source,
 					trigger_source_v2, runtime_assignment,
-					build_run_id, build_round_no, candidate_content_hash, actor_subject
+					candidate_content_hash, actor_subject, source_ref
 				) VALUES (
 					$1, $2, NULLIF($3, ''), $4, $5, $6,
 					NULLIF($7, ''), NULLIF($8, 0),
@@ -129,7 +124,7 @@ func (s *Store) CreateTx(
 					$12::jsonb, NULL, $13::jsonb,
 					NULLIF($14, ''), NULLIF($15, 0),
 					$16::jsonb, $17::jsonb, $18, $19::jsonb, $20::jsonb,
-					NULLIF($21, ''), NULLIF($22, 0), NULLIF($23, ''), $24::jsonb
+					NULLIF($21, ''), $22::jsonb, $23
 			)
 			RETURNING `+snapshotColumns,
 		snapshot.RunID,
@@ -152,9 +147,7 @@ func (s *Store) CreateTx(
 		triggerType,
 		jsonArgument(snapshot.TriggerSourceV2),
 		jsonArgument(snapshot.RuntimeAssignment),
-		snapshot.BuildRunID,
-		snapshot.BuildRoundNo,
-		snapshot.CandidateContentHash, string(encodedSubject),
+		snapshot.CandidateContentHash, string(encodedSubject), snapshot.SourceRef,
 	))
 	if err != nil {
 		var pgErr *pgconn.PgError
@@ -236,7 +229,7 @@ const snapshotColumns = `
 		COALESCE(artifact_workflow_version, 0),
 		admission_decision, inline_dependencies, run_associations, trigger_source,
 		trigger_source_v2, runtime_assignment,
-			build_run_id, build_round_no, candidate_content_hash, created_at, actor_subject
+			candidate_content_hash, created_at, actor_subject, source_ref
 	`
 
 type rowScanner interface {
@@ -269,8 +262,7 @@ func scanSnapshot(row rowScanner) (*TeamRunSnapshot, error) {
 	var associations []byte
 	var triggerSourceV2 []byte
 	var runtimeAssignment []byte
-	var buildRunID, candidateContentHash *string
-	var buildRoundNo *int64
+	var candidateContentHash *string
 	var legacyTriggerSource string
 	var projectID *string
 	if err := row.Scan(
@@ -295,10 +287,8 @@ func scanSnapshot(row rowScanner) (*TeamRunSnapshot, error) {
 		&legacyTriggerSource,
 		&triggerSourceV2,
 		&runtimeAssignment,
-		&buildRunID,
-		&buildRoundNo,
 		&candidateContentHash,
-		&snapshot.CreatedAt, &actorSubject,
+		&snapshot.CreatedAt, &actorSubject, &snapshot.SourceRef,
 	); err != nil {
 		return nil, err
 	}
@@ -318,14 +308,8 @@ func scanSnapshot(row rowScanner) (*TeamRunSnapshot, error) {
 	snapshot.RunAssociations = append(json.RawMessage(nil), associations...)
 	snapshot.TriggerSourceV2 = append(json.RawMessage(nil), triggerSourceV2...)
 	snapshot.RuntimeAssignment = append(json.RawMessage(nil), runtimeAssignment...)
-	if buildRunID != nil {
-		snapshot.BuildRunID = *buildRunID
-	}
 	if candidateContentHash != nil {
 		snapshot.CandidateContentHash = *candidateContentHash
-	}
-	if buildRoundNo != nil {
-		snapshot.BuildRoundNo = int(*buildRoundNo)
 	}
 	if snapshot.SnapshotSchemaVersion == 1 {
 		snapshot.TriggerSource = legacyTriggerSource
@@ -374,6 +358,14 @@ func validateSnapshotV2(snapshot TeamRunSnapshot) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("trigger_source_v2: %w", err)
 	}
+	if triggerType == "api" {
+		var trigger struct {
+			SourceRef string `json:"source_ref"`
+		}
+		if err := json.Unmarshal(snapshot.TriggerSourceV2, &trigger); err != nil || snapshot.SourceRef == "" || snapshot.SourceRef != trigger.SourceRef {
+			return "", errors.New("api source_ref must match immutable snapshot source")
+		}
+	}
 	if snapshot.TriggerSource != "" && snapshot.TriggerSource != triggerType {
 		return "", fmt.Errorf(
 			"legacy trigger_source %q does not match typed source %q",
@@ -381,37 +373,15 @@ func validateSnapshotV2(snapshot TeamRunSnapshot) (string, error) {
 			triggerType,
 		)
 	}
-	if err := validateCandidateIdentity(
-		snapshot.BuildRunID, snapshot.BuildRoundNo, snapshot.CandidateContentHash,
-	); err != nil {
+	if err := validateCandidateIdentity(snapshot.CandidateContentHash); err != nil {
 		return "", fmt.Errorf("candidate identity: %w", err)
 	}
 	return triggerType, nil
 }
 
-func validateCandidateIdentity(buildRunID string, buildRoundNo int, contentHash string) error {
-	trimmedRunID := strings.TrimSpace(buildRunID)
-	trimmedHash := strings.TrimSpace(contentHash)
-	if trimmedRunID == "" && trimmedHash == "" {
-		if buildRoundNo != 0 {
-			return errors.New("build_round_no must be paired with candidate identity")
-		}
-		return nil
-	}
-	if buildRunID != trimmedRunID || contentHash != trimmedHash {
-		return errors.New("candidate identity must not contain surrounding whitespace")
-	}
-	if trimmedHash == "" {
-		return errors.New("build_run_id requires candidate_content_hash")
-	}
-	if trimmedRunID == "" && buildRoundNo != 0 {
-		return errors.New("build_round_no requires product build_run_id")
-	}
-	if !candidateHashPattern.MatchString(trimmedHash) {
+func validateCandidateIdentity(contentHash string) error {
+	if contentHash != "" && !candidateHashPattern.MatchString(contentHash) {
 		return errors.New("candidate_content_hash must be 64 lowercase hex characters")
-	}
-	if buildRoundNo != 0 && buildRoundNo < 1 {
-		return errors.New("build_round_no must be positive when present")
 	}
 	return nil
 }

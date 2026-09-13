@@ -38,6 +38,7 @@ import (
 	"github.com/jinyitao123/weave/internal/kernel/config"
 	"github.com/jinyitao123/weave/internal/kernel/credentials"
 	"github.com/jinyitao123/weave/internal/kernel/delivery"
+	"github.com/jinyitao123/weave/internal/kernel/executionport"
 	"github.com/jinyitao123/weave/internal/kernel/fanout"
 	"github.com/jinyitao123/weave/internal/kernel/llmrouter"
 	"github.com/jinyitao123/weave/internal/kernel/loomruntime"
@@ -47,6 +48,7 @@ import (
 	"github.com/jinyitao123/weave/internal/kernel/publication"
 
 	orgstore "github.com/jinyitao123/weave/internal/app/org"
+	"github.com/jinyitao123/weave/internal/app/workflowcatalog"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 	"github.com/jinyitao123/weave/internal/kernel/runtimellm"
 	"github.com/jinyitao123/weave/internal/kernel/runtimes"
@@ -76,8 +78,8 @@ type Server struct {
 	FanoutReconciler          *fanout.Reconciler       // nil if fan-out completion is unavailable
 	Tasks                     *taskqueue.Store         // nil if PG pool unavailable
 	Runtimes                  *runtimes.Store          // nil if PG pool unavailable
-	LocalExec                 mcphost.RemoteEngineExecutor
-	RemoteExec                mcphost.RemoteEngineExecutor
+	LocalExec                 executionport.RemoteEngineExecutor
+	RemoteExec                executionport.RemoteEngineExecutor
 	engineExecMu              sync.Mutex
 	TaskWorker                *taskqueue.Worker // nil if Tasks is nil
 	AgentSchedules            *schedule.Store   // nil if PG pool unavailable
@@ -85,16 +87,17 @@ type Server struct {
 	WorkflowScheduleAdmission WorkflowScheduleAdmissionService
 	WorkflowScheduleStepHook  func(context.Context, WorkflowScheduleStage) error
 	RunLifecycleHook          loomruntime.RunLifecycleHook
-	Snapshots                 *snapshot.Store                      // nil if PG pool unavailable
-	TeamReader                *teamReader                          // nil if team-aware read dependencies are unavailable
-	AgentRunReader            loomruntime.AgentRunLifecycleReader  // nil if PG pool unavailable
-	UserStore                 *users.Store                         // nil if PG pool unavailable
-	KeyStore                  *apikeys.Store                       // nil if PG pool unavailable
-	OrgStore                  *orgstore.Store                      // nil if PG pool unavailable
-	Projects                  *projects.Store                      // nil if PG pool unavailable
-	Attachments               *attachments.Store                   // nil if PG pool unavailable
-	ChatRequests              *chatrequest.Store                   // nil if PG pool unavailable
-	Workflow                  *workflow.Store                      // nil if PG pool unavailable
+	Snapshots                 *snapshot.Store                     // nil if PG pool unavailable
+	TeamReader                *teamReader                         // nil if team-aware read dependencies are unavailable
+	AgentRunReader            loomruntime.AgentRunLifecycleReader // nil if PG pool unavailable
+	UserStore                 *users.Store                        // nil if PG pool unavailable
+	KeyStore                  *apikeys.Store                      // nil if PG pool unavailable
+	OrgStore                  *orgstore.Store                     // nil if PG pool unavailable
+	Projects                  *projects.Store                     // nil if PG pool unavailable
+	Attachments               *attachments.Store                  // nil if PG pool unavailable
+	ChatRequests              *chatrequest.Store                  // nil if PG pool unavailable
+	WorkflowArtifacts         *workflow.ArtifactStore
+	Workflow                  *workflowcatalog.Store               // nil if PG pool unavailable
 	KernelPublication         publication.Service                  // nil until the process-owned kernel publication unit is configured
 	ProductPublication        *teamconstruction.ProductPublication // nil until product activation is bound to kernel receipts
 	PublicationAuthority      *teamconstruction.PublicationAuthority
@@ -132,7 +135,7 @@ type Server struct {
 	workflowHealthWorkers     *workflowHealthWorkers
 }
 
-func (s *Server) engineExecutorFor(remote bool) mcphost.RemoteEngineExecutor {
+func (s *Server) engineExecutorFor(remote bool) executionport.RemoteEngineExecutor {
 	s.engineExecMu.Lock()
 	defer s.engineExecMu.Unlock()
 
@@ -158,7 +161,7 @@ func (s *Server) engineExecutorFor(remote bool) mcphost.RemoteEngineExecutor {
 // teamRunCLIExecutor keeps published TeamWorkflow execution on the runtime
 // path frozen into each CLI AgentRecord. The local executor would silently
 // ignore runtime_id and run every worker inside the server container.
-func (s *Server) teamRunCLIExecutor() mcphost.RemoteEngineExecutor {
+func (s *Server) teamRunCLIExecutor() executionport.RemoteEngineExecutor {
 	return s.engineExecutorFor(true)
 }
 
@@ -268,7 +271,8 @@ func NewServer(cfg *config.Config, store loom.Store, models *llmrouter.Resolver)
 		s.ChatRequests = chatrequest.New(ps.Pool(), chatrequest.RealClock{})
 		s.Attachments = attachments.New(ps.Pool())
 		s.OwnerMem = ownermem.New(ps.Pool(), ownermem.RealClock{})
-		s.Workflow = workflow.New(ps.Pool(), workflow.RealClock{})
+		s.WorkflowArtifacts = workflow.NewArtifactStore(ps.Pool(), workflow.RealClock{})
+		s.Workflow = workflowcatalog.New(ps.Pool(), workflow.RealClock{}, s.WorkflowArtifacts)
 		healthStore, healthErr := workflowhealth.New(ps.Pool(), workflowhealth.Policy{
 			WindowSize: cfg.HealthWindowSize, MinSamples: cfg.HealthMinSamples,
 			WarningFailureRate: cfg.HealthWarningFailureRate, WarningSlowRate: cfg.HealthWarningSlowRate,
@@ -281,7 +285,7 @@ func NewServer(cfg *config.Config, store loom.Store, models *llmrouter.Resolver)
 			s.workflowHealthWorkers = &workflowHealthWorkers{store: healthStore}
 		}
 		s.TeamBuild = teambuild.New(ps.Pool(), teambuild.RealClock{})
-		s.WorkflowScheduleAdmission = NewWorkflowScheduleAdmissionService(s.Workflow)
+		s.WorkflowScheduleAdmission = NewWorkflowScheduleAdmissionService(s.Workflow, s.WorkflowArtifacts)
 		s.ScheduleTransactions = ps.Pool()
 		s.Snapshots = snapshot.NewStore(ps.Pool())
 		expectedRuns, err := loomruntime.NewExpectedRunRegistry(s.StoreExt)
@@ -657,7 +661,7 @@ func (s *Server) ConfigureTeamRunWorkers() {
 		Tasks:        s.Tasks,
 	}
 	runtime := &teamrun.WorkflowSerialRuntime{
-		Artifacts: s.Workflow,
+		Artifacts: s.WorkflowArtifacts,
 		Loader: &workflow.RuntimeLoader{
 			Registry: s.Descriptors, CLIExecutor: s.teamRunCLIExecutor(),
 		},

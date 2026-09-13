@@ -11,10 +11,13 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jinyitao123/weave/internal/app/agentcatalog"
+	"github.com/jinyitao123/weave/internal/app/workflowcatalog"
 	"github.com/jinyitao123/weave/internal/base/db"
 	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/base/frozen"
+	"github.com/jinyitao123/weave/internal/base/snapshot"
 	"github.com/jinyitao123/weave/internal/base/testutil"
 	"github.com/jinyitao123/weave/internal/kernel/compiler"
 	"github.com/jinyitao123/weave/internal/kernel/credentials"
@@ -62,7 +65,7 @@ func TestPublicationAuthorityRefreshesCurrentUserAndExactDependencyProofsRealPG(
 			if _, err := pool.Exec(ctx, `INSERT INTO weave_teams(id,workspace_id,name,lead_avatar_id,status)VALUES('team','authority','Team',$1,'building')`, lead.ID); err != nil {
 				t.Fatal(err)
 			}
-			flows := workflow.New(pool, nil)
+			flows := workflowcatalog.New(pool, nil, workflow.NewArtifactStore(pool, nil))
 			draft, err := flows.Create(ctx, &workflow.TeamWorkflow{ID: "flow", WorkspaceID: "authority", TeamID: "team", Name: "Flow"}, workflow.DraftInput{CreatedBy: "alice", TriggerConfig: json.RawMessage(`{"schema_version":1,"type":"conversation_explicit","config":{}}`), GraphDefinition: json.RawMessage(`{"schema_version":1,"entry_node_id":"lead","input_contract":{"type":"text"},"output_contract":{"type":"text"},"nodes":[{"id":"lead","type":"lead","config":{"instruction":"Answer"},"inputs":{"task":{"value":{"source":"run_input","path":""},"expected_type":"text"}},"output":{"type":"text"}},{"id":"deliver","type":"deliver","config":{"result":{"source":"node_output","node_id":"lead","path":""}}}],"edges":[{"id":"done","from_node_id":"lead","to_node_id":"deliver","route":"success"}]}`)})
 			if err != nil {
 				t.Fatal(err)
@@ -71,7 +74,7 @@ func TestPublicationAuthorityRefreshesCurrentUserAndExactDependencyProofsRealPG(
 			if err := descriptors.Register(compiler.NewStandardFrozenDescriptor()); err != nil {
 				t.Fatal(err)
 			}
-			builder := workflow.NewCandidateBuilder(flows, agents, delivery.New(pool, key), skills.New(pool), providers, schedule.New(pool, nil), descriptors)
+			builder := workflowcatalog.NewCandidateBuilder(flows, agents, delivery.New(pool, key), skills.New(pool), providers, schedule.New(pool, nil), descriptors)
 			authority := NewPublicationAuthority(pool, builder)
 			tx, err := pool.Begin(ctx)
 			if err != nil {
@@ -192,6 +195,15 @@ func TestPublicationAuthorityRefreshesCurrentUserAndExactDependencyProofsRealPG(
 			if err != nil {
 				t.Fatal(err)
 			}
+			evidenceReader := candidateEvidenceReader{requests: product.requests, snapshots: snapshot.NewStore(pool)}
+			evidence, err := evidenceReader.ListByTeam(ctx, "authority", "team")
+			if err != nil || len(evidence) != 1 || evidence[0].BuildRunID != candidateTarget.BuildRunID || evidence[0].BuildRoundNo != candidateTarget.RoundNo || evidence[0].RunID != trial.Receipt.RunID {
+				t.Fatal("product candidate evidence lost its verified build association", err)
+			}
+			foreignEvidence, err := evidenceReader.ListByTeam(other, "authority", "team")
+			if err != nil || len(foreignEvidence) != 0 {
+				t.Fatal("candidate evidence crossed actor boundary", err)
+			}
 			// A kernel receipt cannot carry access across product interruption or
 			// candidate recovery. Current authorization must be checked again.
 			if _, err = pool.Exec(ctx, `UPDATE weave_provider_credentials SET enabled=false WHERE workspace_id='authority' AND id='provider'`); err != nil {
@@ -224,6 +236,20 @@ func TestPublicationAuthorityRefreshesCurrentUserAndExactDependencyProofsRealPG(
 			version, err = flows.GetVersion(ctx, "authority", "flow", draft.Version)
 			if err != nil || version.Status != "published" {
 				t.Fatal("product catalog did not activate", err)
+			}
+			readConfig := pool.Config()
+			readConfig.MaxConns = 1
+			readPool, err := pgxpool.NewWithConfig(ctx, readConfig)
+			if err != nil {
+				t.Fatal(err)
+			}
+			readCtx, stopRead := context.WithTimeout(ctx, 3*time.Second)
+			readCatalog := workflowcatalog.New(readPool, nil, workflow.NewArtifactStore(readPool, nil))
+			view, err := readCatalog.GetVersionAdmissionView(readCtx, "authority", "flow", draft.Version)
+			stopRead()
+			readPool.Close()
+			if err != nil || view.Blocked || view.Tightened {
+				t.Fatal("product view held its transaction while reading frozen facts", err)
 			}
 			if _, err = pool.Exec(ctx, `UPDATE weave_provider_credentials SET enabled=false WHERE workspace_id='authority' AND id='provider'`); err != nil {
 				t.Fatal(err)

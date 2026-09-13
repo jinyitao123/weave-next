@@ -10,6 +10,7 @@ import (
 
 	"github.com/jinyitao123/weave/internal/app/agentcatalog"
 	"github.com/jinyitao123/weave/internal/app/teamconstruction"
+	"github.com/jinyitao123/weave/internal/app/workflowcatalog"
 	"github.com/jinyitao123/weave/internal/base/db"
 	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/base/testutil"
@@ -41,7 +42,7 @@ func TestWorkflowRollbackPublicationReplaysFixedRequestRealPG(t *testing.T) {
 	if _, err := pool.Exec(ctx, `INSERT INTO weave_teams(id,workspace_id,name,lead_avatar_id,status) VALUES('restore-team','restore-ws','Restore Team',$1,'active')`, lead.ID); err != nil {
 		t.Fatal(err)
 	}
-	flows := workflow.New(pool, nil)
+	flows := workflowcatalog.New(pool, nil, workflow.NewArtifactStore(pool, nil))
 	trigger := json.RawMessage(`{"schema_version":1,"type":"conversation_explicit","config":{}}`)
 	graph := json.RawMessage(`{"schema_version":1,"entry_node_id":"lead","input_contract":{"type":"text"},"output_contract":{"type":"text"},"nodes":[{"id":"lead","type":"lead","config":{"instruction":"Answer"},"inputs":{"task":{"value":{"source":"run_input","path":""},"expected_type":"text"}},"output":{"type":"text"}},{"id":"deliver","type":"deliver","config":{"result":{"source":"node_output","node_id":"lead","path":""}}}],"edges":[{"id":"done","from_node_id":"lead","to_node_id":"deliver","route":"success"}]}`)
 	draft, err := flows.Create(ctx, &workflow.TeamWorkflow{WorkspaceID: "restore-ws", ID: "restore-flow", TeamID: "restore-team", Name: "Restore Flow"}, workflow.DraftInput{CreatedBy: "operator", TriggerConfig: trigger, GraphDefinition: graph})
@@ -53,7 +54,7 @@ func TestWorkflowRollbackPublicationReplaysFixedRequestRealPG(t *testing.T) {
 		t.Fatal(err)
 	}
 	key := []byte(strings.Repeat("r", 32))
-	builder := workflow.NewCandidateBuilder(flows, agents, delivery.New(pool, key), skills.New(pool), credentials.New(pool, key), schedule.New(pool, nil), descriptors)
+	builder := workflowcatalog.NewCandidateBuilder(flows, agents, delivery.New(pool, key), skills.New(pool), credentials.New(pool, key), schedule.New(pool, nil), descriptors)
 	authority := teamconstruction.NewPublicationAuthority(pool, builder)
 	connection, err := url.Parse(os.Getenv("TEST_DATABASE_URL"))
 	if err != nil {

@@ -269,7 +269,7 @@ func (s *Server) planTeamBlueprint(
 		}
 	}
 
-	s.TeamBuild.SetBaselineSources(s.OrgStore, s.Registry, s.Workflow)
+	s.TeamBuild.SetBaselineSources(s.OrgStore, s.Registry, s.Workflow, s.WorkflowArtifacts)
 	preview, err := s.TeamBuild.PreviewCompilerBaseline(ctx, workspaceID, buildRunID)
 	if err != nil {
 		return blueprintPlanResult{}, err
@@ -830,7 +830,7 @@ func (s *Server) expandCompactTeamBlueprint(
 	newTeamName := strings.TrimSpace(run.Brief.NewTeamName)
 	pinsByName := map[string]teambuild.BaselineAgentPin{}
 	if run.Mode == teambuild.ModeOptimize {
-		s.TeamBuild.SetBaselineSources(s.OrgStore, s.Registry, s.Workflow)
+		s.TeamBuild.SetBaselineSources(s.OrgStore, s.Registry, s.Workflow, s.WorkflowArtifacts)
 		preview, err := s.TeamBuild.PreviewCompilerBaseline(ctx, workspaceID, buildRunID)
 		if err != nil {
 			return teambuild.TeamBlueprintV1{}, err

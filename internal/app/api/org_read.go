@@ -310,7 +310,7 @@ func (s *Server) currentTeamWorkflowHealth(
 	if selected == nil || selected.PublishedVersion == nil {
 		return unknown("default_workflow_unavailable"), nil
 	}
-	artifact, err := s.Workflow.GetArtifact(ctx, workspaceID, selected.ID, *selected.PublishedVersion)
+	artifact, err := s.WorkflowArtifacts.GetArtifact(ctx, workspaceID, selected.ID, *selected.PublishedVersion)
 	if errors.Is(err, workflow.ErrNotFound) {
 		return unknown("default_workflow_unavailable"), nil
 	}

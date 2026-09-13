@@ -43,6 +43,7 @@ type Task struct {
 	StoppedEpoch           int64                   `json:"stopped_epoch"`
 	StoppedWorkerID        string                  `json:"stopped_worker_id,omitempty"`
 	Subject                execution.Subject       `json:"subject"`
+	SourceRef              string                  `json:"source_ref,omitempty"`
 	BuildRunID             string                  `json:"build_run_id,omitempty"`
 	CapabilityInvocationID string                  `json:"capability_invocation_id,omitempty"`
 	AvailableAt            time.Time               `json:"available_at"`

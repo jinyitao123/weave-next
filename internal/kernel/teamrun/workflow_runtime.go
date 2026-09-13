@@ -19,8 +19,8 @@ import (
 
 	"github.com/jinyitao123/weave/internal/base/deliverable"
 	"github.com/jinyitao123/weave/internal/base/frozen"
-	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 	"github.com/jinyitao123/weave/internal/kernel/loomruntime"
+	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 	"github.com/jinyitao123/weave/internal/kernel/workflow"
 	"github.com/jinyitao123/weave/internal/kernel/workflow/machine"
 )
@@ -242,7 +242,7 @@ type WorkflowSerialRuntime struct {
 	// run ID and candidate content hash so a test harness can bind a scripted
 	// LLM to exactly the candidate under test. A nil field keeps the
 	// production HostFactory for every run (zero behavior change).
-	HostFactoryForSnapshot func(buildRunID, candidateHash string) workflow.RuntimeHostFactory
+	HostFactoryForSnapshot func(sourceRef, candidateHash string) workflow.RuntimeHostFactory
 	CredentialResolvers    RuntimeCredentialResolverFactory
 	Transactions           TransactionBeginner
 	Runs                   *PGStore
@@ -457,7 +457,7 @@ func (r *WorkflowSerialRuntime) Execute(
 			SourceKind: run.SourceKind, Now: r.now(), Run: run,
 			MemberContext:            r.memberContext(run, prepared.envelope.ContentHash),
 			ArtifactHash:             prepared.envelope.ContentHash,
-			Candidate:                prepared.roundBoundCandidate(),
+			Candidate:                prepared.candidateRun(),
 			RecordOutput:             r.workflowOutputRecorder(run),
 			RecordArtifact:           r.workflowArtifactRecorder(run),
 			LoadArtifacts:            r.workflowArtifactLoader(run),
@@ -515,7 +515,7 @@ func (r *WorkflowSerialRuntime) ResumeCheckpoint(
 			ArtifactTaskIDs: checkpoint.ArtifactTaskIDs,
 			SourceKind:      run.SourceKind, Now: r.now(), Run: run,
 			ArtifactHash:             prepared.envelope.ContentHash,
-			Candidate:                prepared.roundBoundCandidate(),
+			Candidate:                prepared.candidateRun(),
 			Usage:                    seedUsage,
 			UsageComplete:            checkpoint.UsageComplete,
 			UsageIncompleteReason:    checkpoint.UsageIncompleteReason,
@@ -564,22 +564,14 @@ type loadedWorkflowGraph struct {
 	payload  frozen.ArtifactPayloadV1
 	graph    machine.GraphDefinition
 	envelope frozen.ArtifactEnvelopeV1
-	// buildRunID and candidateHash identify the frozen candidate snapshot
-	// when the run is an admin candidate test run; both are empty for
-	// published-artifact runs.
-	buildRunID    string
+	// The source is an opaque execution association. Product build rounds and
+	// ledger ownership stay in the server's admission request records.
+	sourceRef     string
 	candidateHash string
-	// buildRoundNo is the team build round that produced the candidate. Only
-	// round-bound candidate runs (buildRoundNo > 0) charge the TeamBuild
-	// budget ledger from their measured usage; parallel/fanout legs and CLI
-	// nodes without a usage receipt run normally and the run result is
-	// annotated usage-complete=false. Generic candidate test runs and
-	// published runs keep their existing behavior without annotation.
-	buildRoundNo int
 }
 
-func (g loadedWorkflowGraph) roundBoundCandidate() bool {
-	return g.buildRoundNo > 0
+func (g loadedWorkflowGraph) candidateRun() bool {
+	return g.candidateHash != ""
 }
 
 type preparedWorkflowRuntime struct {
@@ -690,8 +682,7 @@ func (r *WorkflowSerialRuntime) loadFrozenGraph(
 		)
 	}
 	candidateHash := ""
-	buildRunID := ""
-	buildRoundNo := 0
+	sourceRef := ""
 	if r.Snapshots != nil {
 		runSnapshot, err := r.Snapshots.GetByRunID(
 			ctx, run.WorkspaceID, run.RunSnapshotID,
@@ -710,8 +701,7 @@ func (r *WorkflowSerialRuntime) loadFrozenGraph(
 			)
 		}
 		candidateHash = runSnapshot.CandidateContentHash
-		buildRunID = runSnapshot.BuildRunID
-		buildRoundNo = runSnapshot.BuildRoundNo
+		sourceRef = runSnapshot.SourceRef
 	}
 	var artifact *workflow.PublishedArtifactContent
 	var err error
@@ -774,8 +764,7 @@ func (r *WorkflowSerialRuntime) loadFrozenGraph(
 	}
 	return loadedWorkflowGraph{
 		payload: payload, graph: graph, envelope: envelope,
-		buildRunID: buildRunID, candidateHash: candidateHash,
-		buildRoundNo: buildRoundNo,
+		sourceRef: sourceRef, candidateHash: candidateHash,
 	}, nil
 }
 
@@ -785,7 +774,7 @@ func (r *WorkflowSerialRuntime) loadFrozenGraph(
 // keeps HostFactory.
 func (r *WorkflowSerialRuntime) hostFactoryFor(loaded loadedWorkflowGraph) workflow.RuntimeHostFactory {
 	if r.HostFactoryForSnapshot != nil && loaded.candidateHash != "" {
-		return r.HostFactoryForSnapshot(loaded.buildRunID, loaded.candidateHash)
+		return r.HostFactoryForSnapshot(loaded.sourceRef, loaded.candidateHash)
 	}
 	return r.HostFactory
 }

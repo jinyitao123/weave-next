@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	orgstore "github.com/jinyitao123/weave/internal/app/org"
+	"github.com/jinyitao123/weave/internal/app/workflowcatalog"
 	"github.com/jinyitao123/weave/internal/base/db"
 	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/base/frozen"
@@ -285,7 +286,7 @@ type evaluationPGFixture struct {
 	contract    teambuild.EvaluationContract
 	builds      *teambuild.Store
 	org         *orgstore.Store
-	workflows   *workflow.Store
+	workflows   *workflowcatalog.Store
 	service     *Service
 }
 
@@ -355,7 +356,7 @@ func newEvaluationPGFixture(t *testing.T) *evaluationPGFixture {
 	}
 	triggerJSON, _ := json.Marshal(compiled.Trigger)
 	graphJSON := strictFixtureGraphJSON(t, compiled.Graph)
-	workflowStore := workflow.New(pool, workflow.RealClock{})
+	workflowStore := workflowcatalog.New(pool, workflow.RealClock{}, workflow.NewArtifactStore(pool, workflow.RealClock{}))
 	if _, err := workflowStore.Create(ctx, &workflow.TeamWorkflow{
 		WorkspaceID: workspaceID, ID: workflowID, TeamID: created.Team.ID,
 		Name: workflowID, Description: blueprint.Purpose,
@@ -364,10 +365,10 @@ func newEvaluationPGFixture(t *testing.T) *evaluationPGFixture {
 	}
 	contract := realEvaluationContract()
 	builds := teambuild.New(pool, teambuild.RealClock{})
-	builds.SetBaselineSources(orgStore, agents, workflowStore)
+	builds.SetBaselineSources(orgStore, agents, workflowStore, workflow.NewArtifactStore(pool, nil))
 	seedTemplateLineage(t, ctx, builds, workspaceID, created.Team.ID, prefix, blueprint, contract)
 	service := New(NewPGIdempotencyStore(pool), builds, noopEvaluationSubmitter{}, Options{
-		OrgStore: orgStore, Registry: agents, Workflows: workflowStore,
+		OrgStore: orgStore, Registry: agents, Workflows: workflowStore, Artifacts: workflow.NewArtifactStore(pool, nil),
 	})
 	return &evaluationPGFixture{
 		ctx: ctx, pool: pool, workspaceID: workspaceID, team: created.Team,

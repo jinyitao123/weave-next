@@ -6,7 +6,9 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"github.com/jinyitao123/weave/internal/kernel/workflow"
 	"strings"
+	"time"
 
 	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/base/frozen"
@@ -148,4 +150,18 @@ func candidateRequestDigest(ctx context.Context, target CandidateTarget, request
 	}
 	hash := sha256.Sum256(append([]byte("weave.product-candidate/v1\x00"), canonical...))
 	return hex.EncodeToString(hash[:]), nil
+}
+
+// restoreProductCandidate combines immutable kernel facts with the original
+// product CAS token; a kernel candidate creation time cannot replace that token.
+func restoreProductCandidate(record CandidateRequestRecord) (*workflow.PublicationCandidate, error) {
+	candidate, err := workflow.CandidateFromEnvelope(record.Request.Candidate)
+	if err != nil {
+		return nil, err
+	}
+	candidate.ExpectedUpdatedAt, err = time.Parse(time.RFC3339Nano, record.Target.ExpectedAssetVersion)
+	if err != nil {
+		return nil, publication.ErrInvalidRequest
+	}
+	return candidate, nil
 }

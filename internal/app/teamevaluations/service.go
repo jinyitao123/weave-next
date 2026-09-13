@@ -18,6 +18,7 @@ import (
 
 	"github.com/google/uuid"
 	orgstore "github.com/jinyitao123/weave/internal/app/org"
+	"github.com/jinyitao123/weave/internal/app/workflowcatalog"
 	"github.com/jinyitao123/weave/internal/build/teambuild"
 	"github.com/jinyitao123/weave/internal/build/teamforge"
 	org "github.com/jinyitao123/weave/internal/kernel/orgspec"
@@ -74,7 +75,7 @@ type Outcome struct {
 }
 
 type BuildStore interface {
-	SetBaselineSources(teambuild.OrganizationBaselineReader, teambuild.AgentBaselineReader, *workflow.Store)
+	SetBaselineSources(teambuild.OrganizationBaselineReader, teambuild.AgentBaselineReader, teambuild.WorkflowBaselineReader, workflow.PublicationReader)
 	CreateBuildRun(context.Context, string, string, teambuild.CreateRunParams) (teambuild.TeamBuildRun, error)
 	GetBuildRun(context.Context, string, string) (teambuild.TeamBuildRun, error)
 	GetLatestBlueprintRevision(context.Context, string, string) (teambuild.BlueprintRevision, error)
@@ -99,7 +100,8 @@ type DeclarativeValidator func(
 type Options struct {
 	OrgStore             *orgstore.Store
 	Registry             *agentcatalog.AgentRegistry
-	Workflows            *workflow.Store
+	Workflows            *workflowcatalog.Store
+	Artifacts            workflow.PublicationReader
 	DeclarativeValidator DeclarativeValidator
 	RunTTL               time.Duration
 	Now                  func() time.Time
@@ -111,7 +113,8 @@ type Service struct {
 	submitter           Submitter
 	org                 *orgstore.Store
 	registry            *agentcatalog.AgentRegistry
-	workflows           *workflow.Store
+	workflows           *workflowcatalog.Store
+	artifacts           workflow.PublicationReader
 	declarativeValidate DeclarativeValidator
 	runTTL              time.Duration
 	now                 func() time.Time
@@ -126,7 +129,7 @@ func New(idempotency IdempotencyStore, builds BuildStore, submitter Submitter, o
 	}
 	return &Service{
 		idempotency: idempotency, builds: builds, submitter: submitter,
-		org: options.OrgStore, registry: options.Registry, workflows: options.Workflows,
+		org: options.OrgStore, registry: options.Registry, workflows: options.Workflows, artifacts: options.Artifacts,
 		declarativeValidate: options.DeclarativeValidator,
 		runTTL:              options.RunTTL, now: options.Now,
 	}
@@ -207,7 +210,7 @@ func (s *Service) Evaluate(
 		}
 		return evaluationOutcome(verified), nil
 	}
-	s.builds.SetBaselineSources(s.org, s.registry, s.workflows)
+	s.builds.SetBaselineSources(s.org, s.registry, s.workflows, s.artifacts)
 	run, err := s.ensureBuildRun(ctx, workspaceID, record.CreatedBy, buildRunID, teamID, brief, normalizedContract)
 	if err != nil {
 		return Outcome{}, err

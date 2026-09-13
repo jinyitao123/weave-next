@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jinyitao123/weave/internal/app/workflowcatalog"
 	"github.com/jinyitao123/weave/internal/base/snapshot"
 	"github.com/jinyitao123/weave/internal/kernel/schedule"
 	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
@@ -55,16 +56,18 @@ type WorkflowScheduleAdmissionRequest struct {
 // NewWorkflowScheduleAdmissionService adapts the workflow-owned admission
 // store to the API-owned schedule request boundary.
 func NewWorkflowScheduleAdmissionService(
-	store *workflow.Store,
+	store *workflowcatalog.Store,
+	artifacts *workflow.ArtifactStore,
 ) WorkflowScheduleAdmissionService {
-	if store == nil {
+	if store == nil || artifacts == nil {
 		return nil
 	}
-	return workflowScheduleAdmissionAdapter{store: store}
+	return workflowScheduleAdmissionAdapter{store: store, artifacts: artifacts}
 }
 
 type workflowScheduleAdmissionAdapter struct {
-	store *workflow.Store
+	store     *workflowcatalog.Store
+	artifacts *workflow.ArtifactStore
 }
 
 func (a workflowScheduleAdmissionAdapter) AdmitWorkflowScheduleTx(
@@ -89,7 +92,7 @@ func (a workflowScheduleAdmissionAdapter) RecordFixedWorkflowAdmissionDenial(
 	ctx context.Context,
 	attempt workflow.FixedWorkflowAdmissionDenialAttempt,
 ) (*workflow.FixedWorkflowAdmissionDenialRecord, error) {
-	return a.store.RecordFixedWorkflowAdmissionDenial(ctx, attempt)
+	return a.artifacts.RecordFixedWorkflowAdmissionDenial(ctx, attempt)
 }
 
 // WorkflowScheduleStage identifies a completed transactional write boundary.
