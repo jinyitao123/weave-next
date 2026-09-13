@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/kernel/llmrouter"
 	"github.com/jinyitao123/weave/internal/kernel/secret"
@@ -56,19 +57,22 @@ func (e *Error) Is(target error) bool {
 }
 
 type ProviderHead struct {
-	WorkspaceID      string     `json:"workspace_id,omitempty"`
-	ID               string     `json:"id"`
-	Name             string     `json:"name"`
-	BaseURL          string     `json:"base_url"`
-	APIKey           string     `json:"api_key,omitempty"`
-	Models           []string   `json:"models"`
-	JSONObjectMode   bool       `json:"json_object_mode,omitempty"`
-	LatestRevision   int64      `json:"latest_revision"`
-	SourceKind       string     `json:"source_kind"`
-	SourceProviderID *string    `json:"source_provider_id,omitempty"`
-	Enabled          bool       `json:"enabled"`
-	RevokedAt        *time.Time `json:"revoked_at,omitempty"`
-	DeletedAt        *time.Time `json:"deleted_at,omitempty"`
+	CredentialScope     frozen.CredentialScope `json:"credential_scope"`
+	CredentialUserID    string                 `json:"credential_user_id,omitempty"`
+	CredentialServiceID string                 `json:"credential_service_id,omitempty"`
+	WorkspaceID         string                 `json:"workspace_id,omitempty"`
+	ID                  string                 `json:"id"`
+	Name                string                 `json:"name"`
+	BaseURL             string                 `json:"base_url"`
+	APIKey              string                 `json:"api_key,omitempty"`
+	Models              []string               `json:"models"`
+	JSONObjectMode      bool                   `json:"json_object_mode,omitempty"`
+	LatestRevision      int64                  `json:"latest_revision"`
+	SourceKind          string                 `json:"source_kind"`
+	SourceProviderID    *string                `json:"source_provider_id,omitempty"`
+	Enabled             bool                   `json:"enabled"`
+	RevokedAt           *time.Time             `json:"revoked_at,omitempty"`
+	DeletedAt           *time.Time             `json:"deleted_at,omitempty"`
 }
 
 type ProviderRevision struct {
@@ -105,6 +109,9 @@ func (s *Store) UpsertRevision(
 	if err != nil {
 		return ProviderRevisionResult{}, err
 	}
+	if err := AuthorizeReference(ctx, providerConfigReference(workspaceID, normalized)); err != nil {
+		return ProviderRevisionResult{}, err
+	}
 	contentHash, err := hashProviderRevision(normalized)
 	if err != nil {
 		return ProviderRevisionResult{}, coded(
@@ -133,11 +140,11 @@ func (s *Store) UpsertRevision(
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO weave_provider_credentials (
 		  workspace_id, id, name, base_url, api_key_cipher, models,
-		  json_object_mode
-		) VALUES ($1, $2, $3, $4, $5, $6, $7)
+		  json_object_mode,credential_scope,credential_user_id,credential_service_id
+		) VALUES ($1, $2, $3, $4, $5, $6, $7,$8,$9,$10)
 		ON CONFLICT (workspace_id, id) DO NOTHING
 	`, workspaceID, normalized.ID, normalized.Name, normalized.BaseURL,
-		initialCipher, normalized.Models, normalized.JSONObjectMode,
+		initialCipher, normalized.Models, normalized.JSONObjectMode, normalized.CredentialScope, normalized.CredentialUserID, normalized.CredentialServiceID,
 	); err != nil {
 		return ProviderRevisionResult{}, fmt.Errorf("create provider head: %w", err)
 	}
@@ -145,6 +152,9 @@ func (s *Store) UpsertRevision(
 	head, ciphertext, err := getProviderHeadTx(ctx, tx, workspaceID, normalized.ID, true)
 	if err != nil {
 		return ProviderRevisionResult{}, err
+	}
+	if head.CredentialScope != normalized.CredentialScope || head.CredentialUserID != normalized.CredentialUserID || head.CredentialServiceID != normalized.CredentialServiceID {
+		return ProviderRevisionResult{}, coded(CodeCredentialUnavailable, "provider credential owner cannot change")
 	}
 	if !head.Enabled || head.RevokedAt != nil || head.DeletedAt != nil {
 		return ProviderRevisionResult{}, coded(
@@ -205,7 +215,7 @@ func (s *Store) UpsertRevision(
 			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 			RETURNING created_at
 		`, revision.WorkspaceID, revision.ProviderID, revision.Revision,
-			revision.Name, revision.BaseURL, modelsJSON, revision.JSONObjectMode,
+			revision.Name, revision.BaseURL, string(modelsJSON), revision.JSONObjectMode,
 			revision.ContentHash,
 		).Scan(&revision.CreatedAt)
 		if err != nil {
@@ -263,10 +273,13 @@ func (s *Store) ListMetadata(
 	ctx context.Context,
 	workspaceID string,
 ) ([]ProviderHead, error) {
+	if _, err := execution.RequireSubject(ctx, workspaceID); err != nil {
+		return nil, err
+	}
 	rows, err := s.pool.Query(ctx, `
 		SELECT workspace_id, id, name, base_url, models, json_object_mode,
 		       latest_revision, source_kind, source_provider_id, enabled,
-		       revoked_at, deleted_at
+		       revoked_at, deleted_at,credential_scope,credential_user_id,credential_service_id
 		FROM weave_provider_credentials
 		WHERE workspace_id=$1
 		  AND enabled
@@ -285,9 +298,12 @@ func (s *Store) ListMetadata(
 		if err := rows.Scan(
 			&head.WorkspaceID, &head.ID, &head.Name, &head.BaseURL, &head.Models,
 			&head.JSONObjectMode, &head.LatestRevision, &head.SourceKind,
-			&head.SourceProviderID, &head.Enabled, &head.RevokedAt, &head.DeletedAt,
+			&head.SourceProviderID, &head.Enabled, &head.RevokedAt, &head.DeletedAt, &head.CredentialScope, &head.CredentialUserID, &head.CredentialServiceID,
 		); err != nil {
 			return nil, err
+		}
+		if AuthorizeReference(ctx, headReference(head)) != nil {
+			continue
 		}
 		head.APIKey = MaskedKey
 		heads = append(heads, head)
@@ -311,6 +327,9 @@ func (s *Store) GetRevision(
 			CodeProviderRevisionRequired,
 			"provider revision is outside the JCS safe integer range",
 		)
+	}
+	if _, _, err := getProviderHeadTx(ctx, s.pool, workspaceID, providerID, false); err != nil {
+		return ProviderRevision{}, err
 	}
 	return getProviderRevisionTx(
 		ctx, s.pool, workspaceID, providerID, revision, false,
@@ -346,6 +365,9 @@ func (s *Store) ResolveProviderRevisionTx(
 		)
 	}
 
+	if _, _, err := getProviderHeadTx(ctx, tx, workspaceID, providerID, false); err != nil {
+		return ProviderRevision{}, err
+	}
 	var (
 		storedWorkspaceID string
 		storedProviderID  string
@@ -473,14 +495,14 @@ func getProviderHeadTx(
 	err := querier.QueryRow(ctx, `
 		SELECT workspace_id, id, name, base_url, api_key_cipher, models,
 		       json_object_mode, latest_revision, source_kind, source_provider_id,
-		       enabled, revoked_at, deleted_at
+		       enabled, revoked_at, deleted_at,credential_scope,credential_user_id,credential_service_id
 		FROM weave_provider_credentials
 		WHERE workspace_id=$1 AND id=$2`+lock,
 		workspaceID, providerID,
 	).Scan(
 		&head.WorkspaceID, &head.ID, &head.Name, &head.BaseURL, &ciphertext,
 		&head.Models, &head.JSONObjectMode, &head.LatestRevision, &head.SourceKind,
-		&head.SourceProviderID, &head.Enabled, &head.RevokedAt, &head.DeletedAt,
+		&head.SourceProviderID, &head.Enabled, &head.RevokedAt, &head.DeletedAt, &head.CredentialScope, &head.CredentialUserID, &head.CredentialServiceID,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ProviderHead{}, "", coded(
@@ -490,6 +512,9 @@ func getProviderHeadTx(
 	}
 	if err != nil {
 		return ProviderHead{}, "", fmt.Errorf("read provider head: %w", err)
+	}
+	if err := AuthorizeReference(ctx, headReference(head)); err != nil {
+		return ProviderHead{}, "", err
 	}
 	head.APIKey = MaskedKey
 	return head, ciphertext, nil

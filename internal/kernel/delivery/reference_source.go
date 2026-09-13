@@ -10,8 +10,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jinyitao123/weave/internal/kernel/credentials"
 	"github.com/jinyitao123/weave/internal/base/frozen"
+	"github.com/jinyitao123/weave/internal/kernel/credentials"
 	"github.com/jinyitao123/weave/internal/kernel/secret"
 )
 
@@ -22,7 +22,7 @@ func (s *Store) ValidateReferenceTx(
 	tx pgx.Tx,
 	ref frozen.CredentialReference,
 ) error {
-	slot, headerName, err := validateDeliveryReferenceInput(s, tx, ref)
+	slot, headerName, err := validateDeliveryReferenceInput(ctx, s, tx, ref)
 	if err != nil {
 		return err
 	}
@@ -63,7 +63,7 @@ func (s *Store) ResolveDeliveryAccessTx(
 	tx pgx.Tx,
 	ref frozen.CredentialReference,
 ) (credentials.SecretMaterial, error) {
-	slot, headerName, err := validateDeliveryReferenceInput(s, tx, ref)
+	slot, headerName, err := validateDeliveryReferenceInput(ctx, s, tx, ref)
 	if err != nil {
 		return credentials.SecretMaterial{}, err
 	}
@@ -158,10 +158,18 @@ type deliveryReferenceState struct {
 }
 
 func validateDeliveryReferenceInput(
+	ctx context.Context,
 	store *Store,
 	tx pgx.Tx,
 	ref frozen.CredentialReference,
 ) (string, string, error) {
+	if err := credentials.AuthorizeReference(ctx, ref); err != nil {
+		return "", "", err
+	}
+	if ref.Scope != frozen.CredentialScopeWorkspaceService || ref.ServiceID != "delivery:"+ref.ResourceID {
+		return "", "", newDeliveryReferenceError(nil)
+	}
+
 	if err := credentials.ValidateReferenceV1(ref); err != nil {
 		if errors.Is(err, credentials.ErrCredentialVersionUnsupported) {
 			return "", "", newDeliveryReferenceVersionError(err)

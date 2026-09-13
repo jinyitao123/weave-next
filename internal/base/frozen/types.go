@@ -136,7 +136,10 @@ const (
 )
 
 type CredentialReference struct {
-	SchemaVersion int `json:"schema_version"`
+	SchemaVersion int             `json:"schema_version"`
+	Scope         CredentialScope `json:"scope"`
+	UserID        string          `json:"user_id,omitempty"`
+	ServiceID     string          `json:"service_id,omitempty"`
 
 	WorkspaceID       string         `json:"workspace_id"`
 	Kind              CredentialKind `json:"kind"`
@@ -144,6 +147,13 @@ type CredentialReference struct {
 	Slot              string         `json:"slot"`
 	CredentialVersion *int64         `json:"credential_version"`
 }
+
+type CredentialScope string
+
+const (
+	CredentialScopeUser             CredentialScope = "user"
+	CredentialScopeWorkspaceService CredentialScope = "workspace_service"
+)
 
 type FrozenMCPBinding struct {
 	SchemaVersion int `json:"schema_version"`

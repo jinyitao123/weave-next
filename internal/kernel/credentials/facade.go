@@ -77,7 +77,7 @@ func (f *TxCredentialFacade) Validate(
 	ctx context.Context,
 	ref frozen.CredentialReference,
 ) error {
-	if err := f.validateReference(ref); err != nil {
+	if err := f.validateReference(ctx, ref); err != nil {
 		return err
 	}
 
@@ -105,7 +105,7 @@ func (f *TxCredentialFacade) Resolve(
 	request ResolveRequest,
 ) (SecretMaterial, error) {
 	ref := request.Reference
-	if err := f.validateReference(ref); err != nil {
+	if err := f.validateReference(ctx, ref); err != nil {
 		return SecretMaterial{}, err
 	}
 	if ref.Kind == frozen.CredentialRuntimeAccess {
@@ -149,9 +149,13 @@ func (f *TxCredentialFacade) Resolve(
 }
 
 func (f *TxCredentialFacade) validateReference(
+	ctx context.Context,
 	ref frozen.CredentialReference,
 ) error {
 	if err := ValidateReferenceV1(ref); err != nil {
+		return normalizeFacadeError(err)
+	}
+	if err := AuthorizeReference(ctx, ref); err != nil {
 		return normalizeFacadeError(err)
 	}
 	if f == nil ||

@@ -688,6 +688,7 @@ func frozenTarget(revision Revision) frozen.FrozenDeliveryTarget {
 		bindings = append(bindings, frozen.FrozenDeliveryCredentialBinding{
 			HeaderName: name,
 			CredentialRef: frozen.CredentialReference{
+				Scope: frozen.CredentialScopeWorkspaceService, ServiceID: "delivery:" + revision.TargetID,
 				SchemaVersion: frozen.FrozenSchemaVersion,
 				WorkspaceID:   revision.WorkspaceID,
 				Kind:          frozen.CredentialDeliveryTargetAccess,
@@ -709,6 +710,7 @@ func frozenTarget(revision Revision) frozen.FrozenDeliveryTarget {
 		TimeoutSeconds:     revision.TimeoutSeconds,
 		CredentialBindings: bindings,
 		AccessRef: frozen.CredentialReference{
+			Scope: frozen.CredentialScopeWorkspaceService, ServiceID: "delivery:" + revision.TargetID,
 			SchemaVersion: frozen.FrozenSchemaVersion,
 			WorkspaceID:   revision.WorkspaceID,
 			Kind:          frozen.CredentialDeliveryTargetAccess,

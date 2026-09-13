@@ -2,145 +2,198 @@ package llmrouter
 
 import (
 	"context"
+	"errors"
 	"sync"
 
 	"github.com/jinyitao123/loom/contract"
+	"github.com/jinyitao123/weave/internal/base/execution"
+	"github.com/jinyitao123/weave/internal/base/frozen"
 )
 
-// ProviderSource supplies the self-configured providers of one workspace.
-// *credentials.Store satisfies this interface.
+// ProviderSource must return only credentials this trusted subject may read.
+// The resolver independently verifies every returned scope before routing.
 type ProviderSource interface {
-	List(ctx context.Context, workspaceID string) ([]ProviderConfig, error)
+	List(context.Context, string) ([]ProviderConfig, error)
 }
 
-// Resolver resolves per-workspace contract.LLM snapshots.
-//
-// A snapshot is a Router built from the system Router (env providers +
-// DEFAULT_MODEL fallback, re-keyed under the "system/" namespace) plus the
-// workspace's own providers; a workspace-declared model overrides the system
-// entry for that model only. Snapshots are immutable by convention: after
-// build no write method (RegisterProvider/RemoveProvider/Register) is ever
-// called on them — provider CRUD invalidates the cache instead.
+type resolverKey struct{ workspaceID, subjectDigest string }
+
+// Resolver partitions immutable provider clients by the platform subject.
+// Shared service routes are never cached; their authorization is checked again
+// on every Chat/Stream, including calls through previously returned snapshots.
 type Resolver struct {
 	mu     sync.RWMutex
-	system *Router                 // env providers + DEFAULT_MODEL fallback; never mutated after wiring
-	source ProviderSource          // nil = no credentials store → system only
-	cache  map[string]contract.LLM // workspaceID → snapshot ("" = shared system-only snapshot)
-	gen    map[string]uint64       // cache key → generation; bumped by Invalidate
-	epoch  uint64                  // bumped by SetSource; stales every in-flight build
+	system *Router
+	source ProviderSource
+	cache  map[resolverKey]*subjectRouter
+	gen    map[string]uint64
+	epoch  uint64
 }
 
-// NewResolver creates a Resolver over the process-wide system Router.
 func NewResolver(system *Router) *Resolver {
-	return &Resolver{
-		system: system,
-		cache:  make(map[string]contract.LLM),
-		gen:    make(map[string]uint64),
-	}
+	return &Resolver{system: system, cache: make(map[resolverKey]*subjectRouter), gen: make(map[string]uint64)}
 }
-
-// SetSource wires the workspace provider source and drops all cached snapshots.
 func (r *Resolver) SetSource(src ProviderSource) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.source = src
-	r.cache = make(map[string]contract.LLM)
-	// Builds already in flight read the old source's data; bump the epoch so
-	// none of them can land in the fresh cache.
+	r.cache = make(map[resolverKey]*subjectRouter)
 	r.epoch++
 }
 
-// ForWorkspace returns the LLM snapshot for one workspace. Without any
-// workspace configuration it still returns a non-nil system-only snapshot;
-// it only fails when the provider source itself fails.
 func (r *Resolver) ForWorkspace(ctx context.Context, workspaceID string) (contract.LLM, error) {
-	r.mu.RLock()
-	source := r.source
-	key := workspaceID
-	if source == nil {
-		// All workspaces share the system-only snapshot.
-		key = ""
-	}
-	if snap, ok := r.cache[key]; ok {
-		r.mu.RUnlock()
-		return snap, nil
-	}
-	startGen := r.gen[key]
-	startEpoch := r.epoch
-	r.mu.RUnlock()
-
-	// Build without holding the lock (source.List does IO).
-	snap, err := r.build(ctx, workspaceID, source)
+	subject, err := execution.RequireSubject(ctx, workspaceID)
 	if err != nil {
 		return nil, err
 	}
-
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.source != source || r.epoch != startEpoch {
-		// SetSource raced with this build; serve the snapshot without caching
-		// it under a stale key.
-		return snap, nil
-	}
-	if r.gen[key] != startGen {
-		// Invalidate ran while this build was reading the store: the snapshot
-		// may predate that CRUD (e.g. it can still hold a deleted provider's
-		// decrypted key), so it must never enter the cache. Serve a
-		// post-invalidate snapshot if one already landed; otherwise serve this
-		// one uncached — the next request rebuilds from fresh data.
-		if cached, ok := r.cache[key]; ok {
+	key := resolverKey{workspaceID, subject.Digest()}
+	// An authorization callback can change the visible shared routes. Its state
+	// is not a cache version, so none of those snapshots may enter the cache.
+	cacheable := subject.ServiceID == "" && !frozen.HasServiceReferenceAuthorization(ctx)
+	r.mu.RLock()
+	source := r.source
+	generation, epoch := r.gen[workspaceID], r.epoch
+	if cacheable {
+		if cached := r.cache[key]; cached != nil {
+			r.mu.RUnlock()
 			return cached, nil
 		}
-		return snap, nil
 	}
-	if cached, ok := r.cache[key]; ok {
-		// A concurrent build won; both snapshots are equivalent.
-		return cached, nil
+	r.mu.RUnlock()
+	snap, shared, err := r.build(ctx, subject, source)
+	if err != nil {
+		return nil, err
 	}
-	r.cache[key] = snap
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.epoch != epoch || r.gen[workspaceID] != generation {
+		return nil, errors.New("model credentials changed during routing; resolve again")
+	}
+	snap.current = func() bool {
+		r.mu.RLock()
+		defer r.mu.RUnlock()
+		return r.epoch == epoch && r.gen[workspaceID] == generation
+	}
+
+	if cacheable && !shared {
+		if cached := r.cache[key]; cached != nil {
+			return cached, nil
+		}
+		r.cache[key] = snap
+	}
 	return snap, nil
 }
 
-// Invalidate drops the cached snapshot of one workspace and marks in-flight
-// builds for that workspace stale. Provider CRUD calls it after a successful
-// write.
 func (r *Resolver) Invalidate(workspaceID string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	delete(r.cache, workspaceID)
+	for key := range r.cache {
+		if key.workspaceID == workspaceID {
+			delete(r.cache, key)
+		}
+	}
 	r.gen[workspaceID]++
 }
-
-// CanResolve reports whether the workspace snapshot can dispatch the model
-// (workspace provider, system provider, or — for "" — the default fallback).
-// Diagnostics only: the startup upgrade scan uses it to name agents whose
-// models were configured in another workspace on pre-scoping deployments.
 func (r *Resolver) CanResolve(ctx context.Context, workspaceID, model string) (bool, error) {
-	snap, err := r.ForWorkspace(ctx, workspaceID)
+	llm, err := r.ForWorkspace(ctx, workspaceID)
 	if err != nil {
 		return false, err
 	}
-	router, ok := snap.(*Router)
-	if !ok {
-		return true, nil
-	}
-	_, err = router.resolve(model)
+	snap := llm.(*subjectRouter)
+	_, err = snap.router.resolve(model)
 	return err == nil, nil
 }
 
-func (r *Resolver) build(ctx context.Context, workspaceID string, source ProviderSource) (contract.LLM, error) {
-	snap := r.system.cloneAsSystem()
-	if source != nil {
-		cfgs, err := source.List(ctx, workspaceID)
-		if err != nil {
-			return nil, err
+func (r *Resolver) build(ctx context.Context, subject execution.Subject, source ProviderSource) (*subjectRouter, bool, error) {
+	configs := []ProviderConfig{}
+	fallback := ""
+	if r.system != nil {
+		r.system.mu.RLock()
+		fallback = r.system.fallback
+		for id, cfg := range r.system.providers {
+			copy := *cfg
+			copy.ID = "system/" + id
+			copy.Models = append([]string(nil), cfg.Models...)
+			configs = append(configs, copy)
 		}
-		for _, cfg := range cfgs {
-			// Registering after the system clone lets a workspace model win
-			// the models-map entry while system providers keep their own
-			// namespaced provider/client entries.
-			snap.RegisterProvider(cfg)
+		r.system.mu.RUnlock()
+	}
+	if source != nil {
+		owned, err := source.List(ctx, subject.WorkspaceID)
+		if err != nil {
+			return nil, false, err
+		}
+		configs = append(configs, owned...)
+	}
+	snap := &subjectRouter{router: New(fallback), subject: subject, refs: make(map[string]frozen.CredentialReference)}
+	shared := false
+	// Personal routes override only their named models after authorized service
+	// routes. API keys and provider clients are never shared between subjects.
+	for _, scope := range []frozen.CredentialScope{frozen.CredentialScopeWorkspaceService, frozen.CredentialScopeUser} {
+		for _, cfg := range configs {
+			if cfg.CredentialScope != scope {
+				continue
+			}
+			ref := providerReference(subject.WorkspaceID, cfg)
+			if frozen.AuthorizeCredentialReference(ctx, ref) != nil {
+				continue
+			}
+			if scope == frozen.CredentialScopeWorkspaceService {
+				shared = true
+			}
+			snap.router.RegisterProvider(cfg)
+			snap.refs[cfg.ID] = ref
 		}
 	}
-	return snap, nil
+	return snap, shared, nil
+}
+
+func providerReference(workspaceID string, cfg ProviderConfig) frozen.CredentialReference {
+	return frozen.CredentialReference{
+		SchemaVersion: frozen.FrozenSchemaVersion, WorkspaceID: workspaceID, Kind: frozen.CredentialProviderAPIKey, ResourceID: cfg.ID, Slot: "api_key",
+		Scope: cfg.CredentialScope, UserID: cfg.CredentialUserID, ServiceID: cfg.CredentialServiceID,
+	}
+}
+
+type subjectRouter struct {
+	current func() bool
+	router  *Router
+	subject execution.Subject
+	refs    map[string]frozen.CredentialReference
+}
+
+func (s *subjectRouter) authorize(ctx context.Context, model string) error {
+	if s.current == nil || !s.current() {
+		return errors.New("model credential snapshot is no longer current")
+	}
+
+	subject, err := execution.RequireSubject(ctx, s.subject.WorkspaceID)
+	if err != nil {
+		return err
+	}
+	if subject != s.subject {
+		return execution.ErrSubjectMismatch
+	}
+	if model == "" {
+		model = s.router.fallback
+	}
+	s.router.mu.RLock()
+	providerID := s.router.models[model]
+	s.router.mu.RUnlock()
+	if ref, ok := s.refs[providerID]; ok {
+		return frozen.AuthorizeCredentialReference(ctx, ref)
+	}
+	return errors.New("no authorized model provider")
+}
+func (s *subjectRouter) Chat(ctx context.Context, req contract.ChatRequest) (*contract.ChatResponse, error) {
+	if err := s.authorize(ctx, req.Model); err != nil {
+		return nil, err
+	}
+	return s.router.Chat(ctx, req)
+}
+func (s *subjectRouter) Stream(ctx context.Context, req contract.ChatRequest) (<-chan contract.StreamChunk, error) {
+	if err := s.authorize(ctx, req.Model); err != nil {
+		return nil, err
+	}
+	return s.router.Stream(ctx, req)
 }

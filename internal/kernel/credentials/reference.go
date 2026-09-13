@@ -136,7 +136,27 @@ func (e *TxEncoder) EncodeReference(
 		Slot:              slot,
 		CredentialVersion: nil,
 	}
+	if ref.Kind == frozen.CredentialProviderAPIKey {
+		head, _, err := getProviderHeadTx(ctx, e.tx, e.workspaceID, resourceID, false)
+		if err != nil {
+			return frozen.CredentialReference{}, err
+		}
+		ref.Scope, ref.UserID, ref.ServiceID = head.CredentialScope, head.CredentialUserID, head.CredentialServiceID
+	} else {
+		ref.Scope = frozen.CredentialScopeWorkspaceService
+		switch ref.Kind {
+		case frozen.CredentialMCPServerAccess:
+			ref.ServiceID = "mcp:" + resourceID
+		case frozen.CredentialRuntimeAccess:
+			ref.ServiceID = "runtime:" + resourceID
+		case frozen.CredentialDeliveryTargetAccess:
+			ref.ServiceID = "delivery:" + resourceID
+		}
+	}
 	if err := ValidateReferenceV1(ref); err != nil {
+		return frozen.CredentialReference{}, err
+	}
+	if err := AuthorizeReference(ctx, ref); err != nil {
 		return frozen.CredentialReference{}, err
 	}
 

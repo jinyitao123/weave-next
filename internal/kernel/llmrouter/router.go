@@ -8,6 +8,7 @@ import (
 
 	"github.com/jinyitao123/loom/contract"
 	"github.com/jinyitao123/loom/provider/openai"
+	"github.com/jinyitao123/weave/internal/base/frozen"
 )
 
 // DefaultAttemptTimeoutSeconds bounds one provider request, including a
@@ -18,12 +19,15 @@ const DefaultAttemptTimeoutSeconds = 900
 
 // ProviderConfig describes a configured LLM provider.
 type ProviderConfig struct {
-	ID             string   `json:"id"`
-	Name           string   `json:"name"`
-	BaseURL        string   `json:"base_url"`
-	APIKey         string   `json:"api_key,omitempty"`
-	Models         []string `json:"models"`                     // model IDs served by this provider
-	JSONObjectMode bool     `json:"json_object_mode,omitempty"` // use json_object instead of json_schema
+	CredentialScope     frozen.CredentialScope `json:"credential_scope"`
+	CredentialUserID    string                 `json:"credential_user_id,omitempty"`
+	CredentialServiceID string                 `json:"credential_service_id,omitempty"`
+	ID                  string                 `json:"id"`
+	Name                string                 `json:"name"`
+	BaseURL             string                 `json:"base_url"`
+	APIKey              string                 `json:"api_key,omitempty"`
+	Models              []string               `json:"models"`                     // model IDs served by this provider
+	JSONObjectMode      bool                   `json:"json_object_mode,omitempty"` // use json_object instead of json_schema
 	// ThinkingDefaultMode 中文：DeepSeek 方言 thinking 开关的无 tools 默认值
 	// （"enabled"/"disabled"）。空串 = 未 opt-in：请求体绝不下发 thinking 键，
 	// OpenAI/OneAPI 等兼容端点请求零变化。由调用方按 provider profile 显式声明，
@@ -107,29 +111,6 @@ func (r *Router) RegisterProvider(cfg ProviderConfig) {
 	for _, m := range stored.Models {
 		r.models[m] = stored.ID
 	}
-}
-
-// cloneAsSystem copies the Router with every provider re-keyed under the
-// "system/" namespace. Workspace providers registered on the clone can then
-// only take over individual models — never a whole system provider entry.
-// Client instances are shared by reference (stateless HTTP clients).
-func (r *Router) cloneAsSystem() *Router {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	snap := New(r.fallback)
-	for id, cfg := range r.providers {
-		copied := *cfg
-		copied.ID = "system/" + id
-		snap.providers[copied.ID] = &copied
-	}
-	for id, client := range r.clients {
-		snap.clients["system/"+id] = client
-	}
-	for model, providerID := range r.models {
-		snap.models[model] = "system/" + providerID
-	}
-	return snap
 }
 
 // RemoveProvider removes a provider and its model mappings.
