@@ -66,7 +66,7 @@ func rebuildBundle(t *testing.T, engineName string) frozen.FrozenExecutionBundle
 		refs = append(refs, frozen.FrozenDependencyRef{EnumeratedDependencyRef: frozen.EnumeratedDependencyRef{WorkspaceID: "ws", OwnerType: "agent", OwnerID: agent.AgentID, OwnerAgentVersion: &version, DependencyType: kind, DependencyKey: key, DependencyVersion: &version}, ContentHash: hash})
 	}
 	if engineName == "loom" {
-		binding := frozen.FrozenModelBinding{SchemaVersion: 1, WorkspaceID: "ws", ProviderID: "provider-1", ProviderRevision: 1, ModelID: agent.Model, BaseURL: "https://fixture.invalid/v1", CredentialRef: frozen.CredentialReference{SchemaVersion: 1, WorkspaceID: "ws", Kind: frozen.CredentialProviderAPIKey, ResourceID: "provider-1", Slot: "api_key"}}
+		binding := frozen.FrozenModelBinding{SchemaVersion: 1, WorkspaceID: "ws", ProviderID: "provider-1", ProviderRevision: 1, ModelID: agent.Model, BaseURL: "https://fixture.invalid/v1", CredentialRef: frozen.CredentialReference{SchemaVersion: 1, WorkspaceID: "ws", Kind: frozen.CredentialProviderAPIKey, ResourceID: "provider-1", Slot: "api_key", Scope: frozen.CredentialScopeWorkspaceService, ServiceID: "provider:provider-1"}}
 		hash, err := frozen.HashDTO(binding, frozen.PreorderFrozenModelBinding)
 		if err != nil {
 			t.Fatal(err)
@@ -77,7 +77,7 @@ func rebuildBundle(t *testing.T, engineName string) frozen.FrozenExecutionBundle
 	} else {
 		agent.RuntimeID = "runtime-1"
 		agent.Fallback.Models = []string{"native-backup"}
-		runtime := frozen.FrozenRuntimeBinding{SchemaVersion: 1, WorkspaceID: "ws", RuntimeID: agent.RuntimeID, Engine: engineName, RuntimeRevision: 1, AccessRef: frozen.CredentialReference{SchemaVersion: 1, WorkspaceID: "ws", Kind: frozen.CredentialRuntimeAccess, ResourceID: agent.RuntimeID, Slot: "access"}}
+		runtime := frozen.FrozenRuntimeBinding{SchemaVersion: 1, WorkspaceID: "ws", RuntimeID: agent.RuntimeID, Engine: engineName, RuntimeRevision: 1, AccessRef: frozen.CredentialReference{SchemaVersion: 1, WorkspaceID: "ws", Kind: frozen.CredentialRuntimeAccess, ResourceID: agent.RuntimeID, Slot: "access", Scope: frozen.CredentialScopeWorkspaceService, ServiceID: "runtime:" + agent.RuntimeID}}
 		hash, err := frozen.HashDTO(runtime, frozen.PreorderFrozenRuntimeBinding)
 		if err != nil {
 			t.Fatal(err)

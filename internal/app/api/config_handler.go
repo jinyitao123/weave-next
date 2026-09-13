@@ -1,11 +1,14 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
 
+	"github.com/jinyitao123/weave/internal/base/execution"
+	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/kernel/credentials"
 	"github.com/jinyitao123/weave/internal/kernel/llmrouter"
 	"github.com/labstack/echo/v4"
@@ -40,8 +43,11 @@ func (s *Server) handleAddProvider(c echo.Context) error {
 	if req.ID == "" {
 		req.ID = req.Name
 	}
-
 	tenant := getTenant(c)
+	if err := bindUserProviderOwner(c.Request().Context(), tenant, &req); err != nil {
+		return c.JSON(http.StatusForbidden, map[string]string{"error": "user credential identity is required"})
+	}
+
 	if _, err := s.Credentials.UpsertRevision(c.Request().Context(), tenant, req); err != nil {
 		var coded *credentials.Error
 		if errors.As(err, &coded) {
@@ -68,8 +74,11 @@ func (s *Server) handleUpdateProvider(c echo.Context) error {
 	if req.Name == "" {
 		req.Name = id
 	}
-
 	tenant := getTenant(c)
+	if err := bindUserProviderOwner(c.Request().Context(), tenant, &req); err != nil {
+		return c.JSON(http.StatusForbidden, map[string]string{"error": "user credential identity is required"})
+	}
+
 	if _, err := s.Credentials.UpsertRevision(c.Request().Context(), tenant, req); err != nil {
 		var coded *credentials.Error
 		if errors.As(err, &coded) {
@@ -175,11 +184,25 @@ func (s *Server) handleMirrorSystemProvider(c echo.Context) error {
 	}
 
 	tenant := getTenant(c)
-	result, err := s.Credentials.MirrorSystemProvider(
+	systemProviderID := c.Param("id")
+	ctx := credentials.WithServiceReferenceAuthorization(
 		c.Request().Context(),
+		func(_ context.Context, subject execution.Subject, ref frozen.CredentialReference) error {
+			if subject.UserID == "" || subject.WorkspaceID != tenant ||
+				ref.WorkspaceID != tenant ||
+				ref.Scope != frozen.CredentialScopeWorkspaceService ||
+				ref.ResourceID != "system/"+systemProviderID ||
+				ref.ServiceID != "system-provider:"+systemProviderID {
+				return execution.ErrSubjectMismatch
+			}
+			return nil
+		},
+	)
+	result, err := s.Credentials.MirrorSystemProvider(
+		ctx,
 		tenant,
 		getUserID(c),
-		c.Param("id"),
+		systemProviderID,
 		s.SystemProviders,
 	)
 	if err != nil {
@@ -199,6 +222,17 @@ func (s *Server) handleMirrorSystemProvider(c echo.Context) error {
 		status = http.StatusCreated
 	}
 	return c.JSON(status, result)
+}
+
+func bindUserProviderOwner(ctx context.Context, workspaceID string, config *llmrouter.ProviderConfig) error {
+	subject, err := execution.RequireSubject(ctx, workspaceID)
+	if err != nil || subject.UserID == "" {
+		return execution.ErrSubjectMismatch
+	}
+	config.CredentialScope = frozen.CredentialScopeUser
+	config.CredentialUserID = subject.UserID
+	config.CredentialServiceID = ""
+	return nil
 }
 
 func providerStoreError(c echo.Context, coded *credentials.Error) error {
