@@ -14,9 +14,10 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jinyitao123/loom/contract"
 	"github.com/jinyitao123/weave/internal/app/conversation"
-	"github.com/jinyitao123/weave/internal/app/workflowdispatch"
 	"github.com/jinyitao123/weave/internal/base/snapshot"
+	"github.com/jinyitao123/weave/internal/base/taskqueue"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
+	"github.com/jinyitao123/weave/internal/kernel/workflow"
 	"github.com/labstack/echo/v4"
 )
 
@@ -159,23 +160,25 @@ func (s *Server) admitPublishedWorkflowChat(
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	service := s.workflowDispatchService()
-	prepared, err := service.PrepareTx(ctx, tx, workflowdispatch.AdmissionRequest{
+	admitted, err := s.Workflow.AdmitWorkflowManualRunTx(ctx, tx, workflow.WorkflowManualRunAdmissionRequest{
 		WorkspaceID: workspaceID,
 		WorkflowID:  workflowID,
 		SourceRef:   conversationID,
 		TriggerType: "conversation_explicit",
-		RunID:       "run-" + uuid.NewString(),
 	})
 	if err != nil {
 		return snapshot.TeamRunSnapshot{}, "", fmt.Errorf("admit conversation workflow run: %w", err)
 	}
-	admitted := prepared.Snapshot()
+	if err := validateWorkflowManualRunSnapshot(
+		admitted, workspaceID, workflowID, conversationID, "conversation_explicit",
+	); err != nil {
+		return snapshot.TeamRunSnapshot{}, "", err
+	}
 	project, err := loadWorkflowManualRunProject(ctx, tx, workspaceID, projectID)
 	if err != nil {
 		return snapshot.TeamRunSnapshot{}, "", err
 	}
-	leadAvatarID, _, err := service.Lead(ctx, admitted)
+	leadAvatarID, _, err := s.workflowManualRunLead(ctx, admitted)
 	if err != nil {
 		return snapshot.TeamRunSnapshot{}, "", err
 	}
@@ -193,21 +196,39 @@ func (s *Server) admitPublishedWorkflowChat(
 	if conversationProjectID != projectID || conversationAgentID != leadAvatarID {
 		return snapshot.TeamRunSnapshot{}, "", errors.New("conversation does not match admitted workflow project and lead")
 	}
+	admitted.ProjectID = project.ID
+	created, err := s.Snapshots.CreateTx(ctx, tx, admitted)
+	if err != nil {
+		return snapshot.TeamRunSnapshot{}, "", fmt.Errorf("create conversation workflow snapshot: %w", err)
+	}
 	payload, err := json.Marshal(message)
 	if err != nil {
 		return snapshot.TeamRunSnapshot{}, "", fmt.Errorf("encode conversation workflow input: %w", err)
 	}
-	receipt, err := service.PersistTx(ctx, tx, prepared, workflowdispatch.PersistRequest{
-		ProjectID: project.ID, TaskID: "task-" + uuid.NewString(),
-		TaskSource: "session", Payload: payload, SkipDeliveryContract: true,
-	})
-	if err != nil {
-		return snapshot.TeamRunSnapshot{}, "", fmt.Errorf("persist conversation workflow: %w", err)
+	task := newPublishedWorkflowChatTask(created, payload)
+	if err := s.Tasks.EnqueueTx(ctx, tx, task); err != nil {
+		return snapshot.TeamRunSnapshot{}, "", fmt.Errorf("enqueue conversation workflow: %w", err)
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return snapshot.TeamRunSnapshot{}, "", fmt.Errorf("commit conversation workflow run: %w", err)
 	}
-	return receipt.Snapshot, receipt.TaskID, nil
+	return *created, task.ID, nil
+}
+
+func newPublishedWorkflowChatTask(created *snapshot.TeamRunSnapshot, payload json.RawMessage) *taskqueue.Task {
+	return &taskqueue.Task{
+		ID:                    "task-" + uuid.NewString(),
+		WorkspaceID:           created.WorkspaceID,
+		ProjectID:             created.ProjectID,
+		IdentityKind:          taskqueue.IdentityTeamWorkflow,
+		IdentitySchemaVersion: 2,
+		WorkflowID:            created.WorkflowID,
+		WorkflowVersion:       created.WorkflowVersion,
+		RunSnapshotID:         created.RunID,
+		Source:                "session",
+		Kind:                  "team_workflow",
+		Payload:               payload,
+	}
 }
 
 func decodePublishedWorkflowChatOutput(raw json.RawMessage) (string, error) {

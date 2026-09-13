@@ -117,16 +117,12 @@ func (h *memberPGHarness) nextEpoch(t *testing.T) MemberRequest {
 }
 
 type memberTestModel struct {
-	calls               atomic.Int64
-	exhaust             bool
-	cancelAfterResponse context.CancelFunc
+	calls   atomic.Int64
+	exhaust bool
 }
 
 func (m *memberTestModel) Chat(_ context.Context, request contract.ChatRequest) (*contract.ChatResponse, error) {
 	m.calls.Add(1)
-	if m.cancelAfterResponse != nil {
-		defer m.cancelAfterResponse()
-	}
 	response := &contract.ChatResponse{Content: "done", Usage: contract.Usage{InputTokens: 3, OutputTokens: 4, CostUSD: .01}}
 	for _, msg := range request.Messages {
 		if msg.Role == "tool" && !m.exhaust {
@@ -284,29 +280,6 @@ func TestMemberResumeAfterReceiptDoesNotRepeatEffectRealPG(t *testing.T) {
 	}
 	if historyCount != seq {
 		t.Fatalf("atomic history=%d latest seq=%d", historyCount, seq)
-	}
-}
-
-func TestMemberCancellationBeforeResponseTransactionDoesNotPanicRealPG(t *testing.T) {
-	h := newMemberPGHarness(t)
-	runner, err := NewMemberRunner(h.records)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithCancel(t.Context())
-	defer cancel()
-	h.model.cancelAfterResponse = cancel
-	if _, err := runner.Run(ctx, h.request); err == nil {
-		t.Fatal("cancelled response transaction succeeded")
-	}
-	if h.model.calls.Load() != 1 || h.tools.calls.Load() != 0 {
-		t.Fatalf("unexpected effects models=%d tools=%d", h.model.calls.Load(), h.tools.calls.Load())
-	}
-	// The pre-call intent remains durable, but a cancelled owner cannot append
-	// the response. A failed second BeginTx must not replace a deferred tx receiver.
-	var pending int
-	if err := h.pool.QueryRow(t.Context(), `SELECT count(*) FROM loom_store WHERE namespace='member-operation:workspace' AND NOT (convert_from(value,'UTF8')::jsonb ? 'response')`).Scan(&pending); err != nil || pending != 1 {
-		t.Fatalf("pending intent=%d err=%v", pending, err)
 	}
 }
 

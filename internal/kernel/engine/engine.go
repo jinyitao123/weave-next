@@ -40,16 +40,13 @@ type MCPServerEndpoint struct {
 }
 
 type RunSpec struct {
-	// DisableTools is derived from the frozen deny-all permission policy. It
-	// requests a model-only invocation, including disabling inherited host MCP.
-	DisableTools bool
-	MCPServers   []MCPServerEndpoint
-	WorkDir      string
-	Prompt       string
-	Model        string // e.g. "openai/gpt-5.5"; empty lets the CLI pick its default
-	Env          map[string]string
-	Timeout      time.Duration
-	ResumeID     string // resume a prior session (optional)
+	MCPServers []MCPServerEndpoint
+	WorkDir    string
+	Prompt     string
+	Model      string // e.g. "openai/gpt-5.5"; empty lets the CLI pick its default
+	Env        map[string]string
+	Timeout    time.Duration
+	ResumeID   string // resume a prior session (optional)
 	// EngineVersion binds a CLI-reported usage receipt to the binary observed
 	// by the runtime capability probe. Callers must pass the exact advertised
 	// version rather than guessing it from the wire format.

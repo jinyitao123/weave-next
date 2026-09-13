@@ -23,15 +23,14 @@ var errInvalidAgentRuntime = errors.New("invalid agent runtime binding")
 
 type agentWriteRequest struct {
 	registry.AgentRecord
-	ownerUserIDPresent     bool
-	subAgentsPresent       bool
-	skillRefsPresent       bool
-	enginePresent          bool
-	modelPresent           bool
-	runtimeIDPresent       bool
-	mcpServersPresent      bool
-	permissionsPresent     bool
-	toolLoopControlPresent bool
+	ownerUserIDPresent bool
+	subAgentsPresent   bool
+	skillRefsPresent   bool
+	enginePresent      bool
+	modelPresent       bool
+	runtimeIDPresent   bool
+	mcpServersPresent  bool
+	permissionsPresent bool
 }
 
 func (r *agentWriteRequest) UnmarshalJSON(data []byte) error {
@@ -53,7 +52,6 @@ func (r *agentWriteRequest) UnmarshalJSON(data []byte) error {
 	_, r.runtimeIDPresent = fields["runtime_id"]
 	_, r.mcpServersPresent = fields["mcp_servers"]
 	_, r.permissionsPresent = fields["permissions"]
-	_, r.toolLoopControlPresent = fields["tool_loop_control"]
 	return nil
 }
 
@@ -362,14 +360,13 @@ func (s *Server) handleUpdateAgent(c echo.Context) error {
 			}
 		}
 		merged := mergeAgentRecordWithPresence(existing, &incoming, agentMergePresence{
-			subAgentsPresent:       req.subAgentsPresent,
-			skillRefsPresent:       req.skillRefsPresent,
-			enginePresent:          req.enginePresent,
-			modelPresent:           req.modelPresent,
-			runtimeIDPresent:       req.runtimeIDPresent,
-			mcpServersPresent:      req.mcpServersPresent,
-			permissionsPresent:     req.permissionsPresent,
-			toolLoopControlPresent: req.toolLoopControlPresent,
+			subAgentsPresent:   req.subAgentsPresent,
+			skillRefsPresent:   req.skillRefsPresent,
+			enginePresent:      req.enginePresent,
+			modelPresent:       req.modelPresent,
+			runtimeIDPresent:   req.runtimeIDPresent,
+			mcpServersPresent:  req.mcpServersPresent,
+			permissionsPresent: req.permissionsPresent,
 		})
 		applyAgentContextDefaults(merged)
 		if err := validateAvatarCapabilities(merged); err != nil {
@@ -421,25 +418,23 @@ func mergeAgentRecord(
 	subAgentsPresent, skillRefsPresent bool,
 ) *registry.AgentRecord {
 	return mergeAgentRecordWithPresence(existing, incoming, agentMergePresence{
-		subAgentsPresent:       subAgentsPresent,
-		skillRefsPresent:       skillRefsPresent,
-		enginePresent:          true,
-		runtimeIDPresent:       true,
-		mcpServersPresent:      true,
-		permissionsPresent:     true,
-		toolLoopControlPresent: true,
+		subAgentsPresent:   subAgentsPresent,
+		skillRefsPresent:   skillRefsPresent,
+		enginePresent:      true,
+		runtimeIDPresent:   true,
+		mcpServersPresent:  true,
+		permissionsPresent: true,
 	})
 }
 
 type agentMergePresence struct {
-	subAgentsPresent       bool
-	skillRefsPresent       bool
-	enginePresent          bool
-	modelPresent           bool
-	runtimeIDPresent       bool
-	mcpServersPresent      bool
-	permissionsPresent     bool
-	toolLoopControlPresent bool
+	subAgentsPresent   bool
+	skillRefsPresent   bool
+	enginePresent      bool
+	modelPresent       bool
+	runtimeIDPresent   bool
+	mcpServersPresent  bool
+	permissionsPresent bool
 }
 
 func mergeAgentRecordWithPresence(
@@ -500,9 +495,6 @@ func mergeAgentRecordWithPresence(
 	merged.MaxCostUSD = incoming.MaxCostUSD
 	merged.MaxTokens = incoming.MaxTokens
 	merged.MaxOutputTokens = incoming.MaxOutputTokens
-	if presence.toolLoopControlPresent {
-		merged.ToolLoopControl = incoming.ToolLoopControl
-	}
 	merged.StepBudget = incoming.StepBudget
 	merged.MaxToolRepeats = incoming.MaxToolRepeats
 	merged.FallbackModels = incoming.FallbackModels
