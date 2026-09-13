@@ -1,10 +1,5 @@
 [
   {
-    "path": "internal/kernel/skills/import.go",
-    "table": "weave_workspaces",
-    "count": 1
-  },
-  {
     "path": "internal/kernel/workflow/admission_gate.go",
     "table": "weave_team_workers",
     "count": 1
