@@ -5,14 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
-	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jinyitao123/weave/internal/build/teambuild"
 	org "github.com/jinyitao123/weave/internal/kernel/orgspec"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
-	"github.com/jinyitao123/weave/internal/kernel/workflow"
-	"github.com/jinyitao123/weave/internal/kernel/workflow/machine"
 )
 
 // TxBeginner supplies the caller-owned transaction used by every restore step.
@@ -58,30 +55,11 @@ type AgentRestoreStore interface {
 	) (*registry.AgentVersionRestoreResult, error)
 }
 
-// WorkflowRestoreStore creates the frozen-content draft and inserts the
-// restored publication inside a caller-owned transaction.
-type WorkflowRestoreStore interface {
-	Get(context.Context, string, string) (*workflow.TeamWorkflow, error)
-	CreateRestoreDraftTx(
-		context.Context,
-		pgx.Tx,
-		string, // workspaceID
-		string, // workflowID
-		string, // createdBy
-		string, // expectedContentHash
-		workflow.DraftInput,
-	) (*workflow.RestoreDraftResult, error)
-	InsertPublicationTx(context.Context, pgx.Tx, workflow.Publication) error
-}
-
-// CandidateBuilder validates the frozen draft and produces the publication
-// candidate inside the caller-owned transaction.
-type CandidateBuilder interface {
-	BuildTx(
-		context.Context,
-		pgx.Tx,
-		workflow.CandidateInput,
-	) (*workflow.PublicationCandidate, *machine.Report, error)
+// WorkflowRestorer materializes and publishes one baseline workflow through
+// the product publication boundary. Builder owns only the rollback sequence;
+// product draft transactions and kernel receipts stay in the app adapter.
+type WorkflowRestorer interface {
+	RestoreWorkflow(context.Context, string, string, string, string, teambuild.BaselineWorkflowRef) (WorkflowRestoreResult, error)
 }
 
 // AuditRecorder persists one best-effort audit entry.
@@ -98,8 +76,7 @@ type Service struct {
 	orgStore  OrgRestoreStore
 	roster    RosterRestoreStore
 	agents    AgentRestoreStore
-	workflows WorkflowRestoreStore
-	builder   CandidateBuilder
+	workflows WorkflowRestorer
 	audit     AuditRecorder
 }
 
@@ -111,17 +88,16 @@ func New(
 	orgStore OrgRestoreStore,
 	roster RosterRestoreStore,
 	agents AgentRestoreStore,
-	workflows WorkflowRestoreStore,
-	builder CandidateBuilder,
+	workflows WorkflowRestorer,
 	auditRecorder AuditRecorder,
 ) *Service {
 	if pool == nil || builds == nil || orgStore == nil || roster == nil ||
-		agents == nil || workflows == nil || builder == nil {
+		agents == nil || workflows == nil {
 		panic("teamrestore: all service dependencies are required")
 	}
 	return &Service{
 		pool: pool, builds: builds, orgStore: orgStore, roster: roster,
-		agents: agents, workflows: workflows, builder: builder, audit: auditRecorder,
+		agents: agents, workflows: workflows, audit: auditRecorder,
 	}
 }
 
@@ -193,7 +169,7 @@ func (s *Service) Rollback(
 	result = s.recordStepAudit(ctx, workspaceID, buildRunID, "rollback.step.roster", "ok", result)
 
 	// Step 3: Workflows — one transaction per baseline workflow.
-	workflowResults, stepErr := s.restoreWorkflows(ctx, workspaceID, baseline, operatorID)
+	workflowResults, stepErr := s.restoreWorkflows(ctx, workspaceID, buildRunID, baseline, operatorID)
 	result.WorkflowResults = workflowResults
 	if stepErr != nil {
 		result = setStep(result, StepWorkflows, StepFailed, stepErr.Error())
@@ -330,7 +306,7 @@ func (s *Service) restoreTeamRoster(
 // other failure stops the step and leaves earlier workflows published.
 func (s *Service) restoreWorkflows(
 	ctx context.Context,
-	workspaceID string,
+	workspaceID, buildRunID string,
 	baseline *teambuild.BaselineSnapshot,
 	operatorID string,
 ) ([]WorkflowRestoreResult, error) {
@@ -346,94 +322,13 @@ func (s *Service) restoreWorkflows(
 			})
 			continue
 		}
-		restored, err := s.restoreWorkflow(ctx, workspaceID, ref, operatorID)
+		restored, err := s.workflows.RestoreWorkflow(ctx, workspaceID, buildRunID, baseline.Team.TeamID, operatorID, ref)
 		if err != nil {
 			return results, fmt.Errorf("restore workflow %q: %w", ref.WorkflowID, err)
 		}
 		results = append(results, restored)
 	}
 	return results, nil
-}
-
-func (s *Service) restoreWorkflow(
-	ctx context.Context,
-	workspaceID string,
-	ref teambuild.BaselineWorkflowRef,
-	operatorID string,
-) (WorkflowRestoreResult, error) {
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return WorkflowRestoreResult{}, fmt.Errorf("begin workflow restore: %w", err)
-	}
-	draftResult, err := s.workflows.CreateRestoreDraftTx(
-		ctx,
-		tx,
-		workspaceID,
-		ref.WorkflowID,
-		operatorID,
-		ref.Published.ContentHash,
-		workflow.DraftInput{
-			TriggerConfig:   append(json.RawMessage(nil), ref.Published.Trigger...),
-			GraphDefinition: append(json.RawMessage(nil), ref.Published.Graph...),
-			CreatedBy:       operatorID,
-		},
-	)
-	if err != nil {
-		_ = tx.Rollback(ctx)
-		return WorkflowRestoreResult{}, err
-	}
-	if draftResult.AlreadyRestored {
-		version := 0
-		if current, getErr := s.workflows.Get(ctx, workspaceID, ref.WorkflowID); getErr == nil &&
-			current.PublishedVersion != nil {
-			version = *current.PublishedVersion
-		}
-		if err := tx.Commit(ctx); err != nil {
-			_ = tx.Rollback(ctx)
-			return WorkflowRestoreResult{}, fmt.Errorf("commit workflow no-op restore: %w", err)
-		}
-		return WorkflowRestoreResult{
-			WorkflowID: ref.WorkflowID,
-			Version:    version,
-			Restored:   false,
-			Reason:     "published content already at baseline",
-		}, nil
-	}
-
-	candidate, report, err := s.builder.BuildTx(ctx, tx, workflow.CandidateInput{
-		WorkspaceID:     workspaceID,
-		WorkflowID:      ref.WorkflowID,
-		WorkflowVersion: draftResult.Version.Version,
-	})
-	if err != nil {
-		_ = tx.Rollback(ctx)
-		return WorkflowRestoreResult{}, fmt.Errorf("build publication candidate: %w", err)
-	}
-	if report == nil || len(report.Issues) != 0 {
-		_ = tx.Rollback(ctx)
-		return WorkflowRestoreResult{}, fmt.Errorf(
-			"candidate validation failed: %s",
-			candidateIssueSummary(report),
-		)
-	}
-	publication, err := workflow.PublicationFromCandidate(candidate)
-	if err != nil {
-		_ = tx.Rollback(ctx)
-		return WorkflowRestoreResult{}, fmt.Errorf("convert publication candidate: %w", err)
-	}
-	if err := s.workflows.InsertPublicationTx(ctx, tx, publication); err != nil {
-		_ = tx.Rollback(ctx)
-		return WorkflowRestoreResult{}, fmt.Errorf("publish restored workflow: %w", err)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		_ = tx.Rollback(ctx)
-		return WorkflowRestoreResult{}, fmt.Errorf("commit workflow restore: %w", err)
-	}
-	return WorkflowRestoreResult{
-		WorkflowID: ref.WorkflowID,
-		Version:    publication.WorkflowVersion,
-		Restored:   true,
-	}, nil
 }
 
 // failRollback writes the failure audit detail (done/failed/pending with the
@@ -480,18 +375,4 @@ func (s *Service) recordStepAudit(
 		return appendAuditWarning(result, fmt.Sprintf("audit %s failed: %v", tool, err))
 	}
 	return result
-}
-
-func candidateIssueSummary(report *machine.Report) string {
-	if report == nil {
-		return "empty validation report"
-	}
-	parts := make([]string, 0, len(report.Issues))
-	for _, issue := range report.Issues {
-		parts = append(parts, fmt.Sprintf("%d:%s", issue.Phase, issue.Message))
-	}
-	if len(parts) == 0 {
-		return "unknown validation issue"
-	}
-	return strings.Join(parts, "; ")
 }

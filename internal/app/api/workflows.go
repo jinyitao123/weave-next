@@ -12,6 +12,9 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jinyitao123/weave/internal/app/teamconstruction"
+	"github.com/jinyitao123/weave/internal/base/execution"
+	"github.com/jinyitao123/weave/internal/kernel/publication"
 	"github.com/jinyitao123/weave/internal/kernel/workflow"
 	"github.com/jinyitao123/weave/internal/kernel/workflow/machine"
 	"github.com/labstack/echo/v4"
@@ -211,16 +214,11 @@ func (s *Server) runWorkflowPublicationPreflight(
 	if err != nil {
 		return nil, workflowStoreFailure(c, err)
 	}
-	builder := workflow.NewCandidateBuilder(
-		s.Workflow,
-		s.Registry,
-		s.DeliveryTargets,
-		s.Skills,
-		s.Credentials,
-		s.AgentSchedules,
-		s.Descriptors,
-	)
-	candidate, report, err := builder.BuildTx(ctx, tx, workflow.CandidateInput{
+	if s.PublicationAuthority == nil {
+		_ = tx.Rollback(ctx)
+		return nil, workflowError(c, http.StatusServiceUnavailable, "workflow_store_unavailable", "workflow publication service unavailable")
+	}
+	candidate, report, err := s.PublicationAuthority.BuildCandidateTx(ctx, tx, workflow.CandidateInput{
 		WorkspaceID:     getTenant(c),
 		WorkflowID:      c.Param("id"),
 		WorkflowVersion: versionNumber,
@@ -283,7 +281,7 @@ func (s *Server) handleValidateWorkflowVersion(c echo.Context) error {
 }
 
 func (s *Server) handlePublishWorkflowVersion(c echo.Context) error {
-	if s.Workflow == nil || s.OrgStore == nil {
+	if s.Workflow == nil || s.OrgStore == nil || s.ProductPublication == nil {
 		return workflowError(
 			c,
 			http.StatusServiceUnavailable,
@@ -330,7 +328,17 @@ func (s *Server) handlePublishWorkflowVersion(c echo.Context) error {
 	if candidate == nil || !candidate.ExpectedUpdatedAt.Equal(preflight.version.UpdatedAt) {
 		return mapWorkflowPublishError(c, workflow.ErrVersionConflict)
 	}
-	publication, err := workflow.PublicationFromCandidate(candidate)
+	// Candidate building uses the product read transaction only. Publication has
+	// its own durable request and kernel transaction, so the product lock must
+	// not be held across that boundary.
+	if err := tx.Rollback(ctx); err != nil && !errors.Is(err, pgx.ErrTxClosed) {
+		return workflowStoreFailure(c, err)
+	}
+	requestID := "workflow-publish:" + candidate.WorkflowID + ":" + candidate.ContentHash
+	command, err := teamconstruction.PublicationCommandForCandidate(requestID, candidate, teamconstruction.PublicationTarget{
+		TeamID:               candidate.Payload.Team.TeamID,
+		ExpectedAssetVersion: preflight.version.UpdatedAt.UTC().Format(time.RFC3339Nano),
+	})
 	if err != nil {
 		var coded interface{ Code() string }
 		if errors.As(err, &coded) && coded.Code() != "" {
@@ -338,11 +346,8 @@ func (s *Server) handlePublishWorkflowVersion(c echo.Context) error {
 		}
 		return workflowStoreFailure(c, err)
 	}
-	if err := s.Workflow.InsertPublicationTx(ctx, tx, publication); err != nil {
+	if _, err := s.ProductPublication.Publish(ctx, command); err != nil {
 		return mapWorkflowPublishError(c, err)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return workflowStoreFailure(c, err)
 	}
 	published, err := s.Workflow.GetVersion(
 		ctx,
@@ -361,13 +366,21 @@ func mapWorkflowPublishError(c echo.Context, err error) error {
 	case errors.Is(err, workflow.ErrNotFound):
 		return workflowError(c, http.StatusNotFound, "workflow_not_found", "workflow not found")
 	case errors.Is(err, workflow.ErrArchived),
-		errors.Is(err, workflow.ErrVersionConflict):
+		errors.Is(err, workflow.ErrVersionConflict),
+		errors.Is(err, publication.ErrRequestConflict):
 		return workflowError(
 			c,
 			http.StatusConflict,
 			"workflow_version_conflict",
 			"workflow version conflict",
 		)
+	case errors.Is(err, publication.ErrInvalidRequest),
+		errors.Is(err, publication.ErrInvalidReceipt):
+		return workflowError(c, http.StatusUnprocessableEntity, "workflow_publication_invalid", "workflow publication could not be verified")
+	case errors.Is(err, execution.ErrSubjectMismatch):
+		return workflowError(c, http.StatusConflict, "workflow_publication_owner_conflict", "workflow publication is already owned by another operator")
+	case errors.Is(err, execution.ErrSubjectRequired):
+		return workflowError(c, http.StatusUnauthorized, "workflow_publication_identity_required", "authenticated publication identity is required")
 	default:
 		return workflowStoreFailure(c, err)
 	}

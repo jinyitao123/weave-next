@@ -13,6 +13,7 @@ import (
 
 	"github.com/jinyitao123/weave/internal/app/kernelbindings"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jinyitao123/loom/pgstore"
 	"github.com/jinyitao123/weave/internal/app/api"
 	"github.com/jinyitao123/weave/internal/app/apikeys"
@@ -43,11 +44,13 @@ import (
 	"github.com/jinyitao123/weave/internal/kernel/llmrouter"
 	"github.com/jinyitao123/weave/internal/kernel/mcpregistry"
 	"github.com/jinyitao123/weave/internal/kernel/memory"
+	"github.com/jinyitao123/weave/internal/kernel/publicationservice"
 	"github.com/jinyitao123/weave/internal/kernel/runtimes"
 	"github.com/jinyitao123/weave/internal/kernel/schedule"
 	"github.com/jinyitao123/weave/internal/kernel/secret"
 	"github.com/jinyitao123/weave/internal/kernel/skills"
 	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
+	"github.com/jinyitao123/weave/internal/kernel/workflow"
 	"github.com/jinyitao123/weave/internal/kernel/workflow/machine"
 )
 
@@ -400,6 +403,57 @@ func main() {
 	// Initialize schedule store if PG pool is available.
 	if pool := srv.GetPool(); pool != nil {
 		srv.AgentSchedules = schedule.New(pool, schedule.RealClock{})
+		candidateBuilder := workflow.NewCandidateBuilder(
+			srv.Workflow,
+			srv.Registry,
+			srv.DeliveryTargets,
+			srv.Skills,
+			srv.Credentials,
+			srv.AgentSchedules,
+			srv.Descriptors,
+		)
+		authority := teamconstruction.NewPublicationAuthority(pool, candidateBuilder)
+		srv.PublicationAuthority = authority
+		kernelPublication, err := publicationservice.Open(context.Background(), cfg.DatabaseURL, authority)
+		if err != nil {
+			slog.Error("failed to initialize publication service", "error", err)
+			os.Exit(1)
+		}
+		defer kernelPublication.Close()
+		srv.KernelPublication = kernelPublication
+		productPublication := teamconstruction.NewProductPublication(pool, kernelPublication, authority.AuthorizeProduct)
+		productPublication.SetActivationEffect(func(ctx context.Context, tx pgx.Tx, record teamconstruction.PublicationRequestRecord) error {
+			if record.Command.Target.BuildRunID == "" {
+				return nil
+			}
+			baselineHash, err := srv.TeamBuild.VerifyEvaluationBaselineTx(ctx, tx, record.Subject.WorkspaceID, record.Command.Target.BuildRunID)
+			if err != nil {
+				return err
+			}
+			actor := record.Subject.UserID
+			if actor == "" {
+				actor = record.Subject.ServiceID
+			}
+			_, err = teamconstruction.MarkBuildPublicationTx(ctx, tx, srv.TeamBuild, record.Subject.WorkspaceID, record.Command.Target.BuildRunID, actor, teambuild.FinalRef{
+				Ref: record.Receipt.Revision.ContentHash, TeamID: record.Command.Target.TeamID,
+			}, baselineHash)
+			return err
+		})
+		productPublication.SetCandidateAssociation(func(ctx context.Context, tx pgx.Tx, record teamconstruction.CandidateRequestRecord) error {
+			if record.Target.BuildRunID == "" || record.Receipt == nil {
+				return nil
+			}
+			_, err := srv.TeamBuild.RecordUsageSourceTx(ctx, tx, record.Subject.WorkspaceID, record.Target.BuildRunID, teambuild.BuildUsageSource{
+				WorkspaceID: record.Subject.WorkspaceID,
+				BuildRunID:  record.Target.BuildRunID,
+				RoundNo:     record.Target.RoundNo,
+				SourceKind:  teambuild.UsageSourceKindCandidateRuntime,
+				SourceRole:  record.Target.SourceRole,
+				SourceRunID: record.Receipt.RunID,
+			})
+			return err
+		})
+		srv.ProductPublication = productPublication
 	}
 
 	srv.ConfigureTeamRunWorkers()
@@ -418,7 +472,8 @@ func main() {
 	// unavailable without weakening its dependency checks.
 	if phases, err := teamconstruction.NewPhases(teamconstruction.Dependencies{
 		Pool: store.Pool(), Store: store, Build: srv.TeamBuild,
-		Agents: srv.Registry, TeamWorkers: srv.TeamWorkers, Teams: srv.OrgStore,
+		KernelPublication: srv.KernelPublication,
+		Agents:            srv.Registry, TeamWorkers: srv.TeamWorkers, Teams: srv.OrgStore,
 		Workflows: srv.Workflow, MCPs: srv.MCPRegistry, Providers: srv.Credentials,
 		Runtimes: srv.Runtimes, Tasks: srv.Tasks,
 		Deliverables: srv.Deliverables, Snapshots: srv.Snapshots, Audit: srv.Audit,

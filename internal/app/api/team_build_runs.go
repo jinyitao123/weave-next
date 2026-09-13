@@ -2,17 +2,22 @@ package api
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
+	"github.com/jinyitao123/weave/internal/app/teamconstruction"
+	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/base/snapshot"
-	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 	"github.com/jinyitao123/weave/internal/build/teambuild"
+	"github.com/jinyitao123/weave/internal/kernel/publication"
 	"github.com/jinyitao123/weave/internal/kernel/workflow"
 	"github.com/labstack/echo/v4"
 )
@@ -61,7 +66,7 @@ type candidatePublishResponse struct {
 // resolve the candidate envelope instead of the published artifact.
 func (s *Server) handleCandidateTestRun(c echo.Context) error {
 	if s.Workflow == nil || s.TeamBuild == nil ||
-		s.ScheduleTransactions == nil || s.Snapshots == nil || s.Tasks == nil {
+		s.ScheduleTransactions == nil || s.ProductPublication == nil {
 		return workflowError(
 			c,
 			http.StatusServiceUnavailable,
@@ -99,54 +104,54 @@ func (s *Server) handleCandidateTestRun(c echo.Context) error {
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	admitted, err := s.Workflow.AdmitWorkflowCandidateRunTx(
-		ctx,
-		tx,
-		workflow.WorkflowCandidateRunAdmissionRequest{
-			WorkspaceID: workspaceID,
-			WorkflowID:  request.WorkflowID,
-			BuildRunID:  request.BuildRunID,
-			ContentHash: request.ContentHash,
-			SourceRef:   request.BuildRunID,
-			TriggerType: "api",
-		},
-	)
+	candidate, err := s.Workflow.GetCandidateTx(ctx, tx, workspaceID, request.WorkflowID, request.ContentHash)
 	if err != nil {
-		return s.respondCandidateRunAdmissionError(c, tx, request.WorkflowID, err)
+		return mapCandidatePublishError(c, err)
 	}
-	if err := validateCandidateRunSnapshot(
-		admitted, workspaceID, request.WorkflowID,
-		request.BuildRunID, request.ContentHash,
-	); err != nil {
+	if candidate.ContentHash != request.ContentHash {
+		return workflowError(c, http.StatusConflict, "candidate_hash_mismatch", "candidate content hash does not match request")
+	}
+	_ = tx.Rollback(ctx)
+	version, err := s.Workflow.GetVersion(ctx, workspaceID, candidate.WorkflowID, candidate.WorkflowVersion)
+	if err != nil {
+		return mapCandidatePublishError(c, err)
+	}
+	envelope, err := workflow.CandidateEnvelope(candidate)
+	if err != nil {
 		return workflowStoreFailure(c, err)
 	}
-	createdSnapshot, err := s.Snapshots.CreateTx(ctx, tx, admitted)
+	canonicalInput, err := frozen.CanonicalizeJSON(payload)
 	if err != nil {
-		return workflowStoreFailure(c, fmt.Errorf("create candidate test run snapshot: %w", err))
+		return workflowSchemaError(c)
 	}
-	task := &taskqueue.Task{
-		ID:                    "task-" + uuid.NewString(),
-		WorkspaceID:           createdSnapshot.WorkspaceID,
-		IdentityKind:          taskqueue.IdentityTeamWorkflow,
-		IdentitySchemaVersion: 2,
-		WorkflowID:            createdSnapshot.WorkflowID,
-		WorkflowVersion:       createdSnapshot.WorkflowVersion,
-		RunSnapshotID:         createdSnapshot.RunID,
-		Source:                "api",
-		Kind:                  "team_workflow",
-		Payload:               payload,
+	identity := sha256.Sum256(append([]byte(request.BuildRunID+"\x00"+request.WorkflowID+"\x00"+request.ContentHash+"\x00"), canonicalInput...))
+	inputHash := sha256.Sum256(canonicalInput)
+	requestID := "candidate-api:" + hex.EncodeToString(identity[:])
+	record, err := s.ProductPublication.AdmitCandidate(ctx, teamconstruction.CandidateTarget{
+		ExpectedAssetVersion: version.UpdatedAt.UTC().Format(time.RFC3339Nano),
+		BuildRunID:           request.BuildRunID,
+		RoundNo:              0,
+		SourceRole:           teambuild.SourceRoleFixedWorkflowRoot,
+	}, publication.CandidateRunRequest{
+		Version:      publication.ContractVersion,
+		RequestID:    requestID,
+		Candidate:    envelope,
+		Input:        payload,
+		InputVersion: "sha256:" + hex.EncodeToString(inputHash[:]),
+		SourceRef:    request.BuildRunID,
+		Purpose:      "admin-candidate-test",
+	})
+	if err != nil {
+		return mapWorkflowPublishError(c, err)
 	}
-	if err := s.Tasks.EnqueueTx(ctx, tx, task); err != nil {
-		return workflowStoreFailure(c, fmt.Errorf("enqueue candidate test run task: %w", err))
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return workflowStoreFailure(c, fmt.Errorf("commit candidate test run: %w", err))
+	if record.Receipt == nil {
+		return workflowStoreFailure(c, errors.New("candidate admission receipt unavailable"))
 	}
 	return c.JSON(http.StatusCreated, candidateTestRunResponse{
-		RunID:           createdSnapshot.RunID,
-		WorkflowID:      createdSnapshot.WorkflowID,
-		WorkflowVersion: createdSnapshot.WorkflowVersion,
-		TaskID:          task.ID,
+		RunID:           record.Receipt.RunID,
+		WorkflowID:      record.Receipt.Revision.WorkflowID,
+		WorkflowVersion: record.Receipt.Revision.WorkflowVersion,
+		TaskID:          record.Receipt.TaskID,
 		BuildRunID:      request.BuildRunID,
 		ContentHash:     request.ContentHash,
 	})
@@ -157,7 +162,7 @@ func (s *Server) handleCandidateTestRun(c echo.Context) error {
 // insert the publication (with the updated_at CAS), then mark the TeamBuildRun
 // publishing -> passed with the final publication reference.
 func (s *Server) handleCandidatePublish(c echo.Context) error {
-	if s.Workflow == nil || s.TeamBuild == nil || s.ScheduleTransactions == nil {
+	if s.Workflow == nil || s.TeamBuild == nil || s.ScheduleTransactions == nil || s.ProductPublication == nil {
 		return workflowError(
 			c,
 			http.StatusServiceUnavailable,
@@ -201,7 +206,17 @@ func (s *Server) handleCandidatePublish(c echo.Context) error {
 			"candidate content hash does not match request",
 		)
 	}
-	publication, err := workflow.PublicationFromCandidate(candidate)
+	_ = tx.Rollback(ctx)
+	version, err := s.Workflow.GetVersion(ctx, workspaceID, candidate.WorkflowID, candidate.WorkflowVersion)
+	if err != nil {
+		return mapCandidatePublishError(c, err)
+	}
+	requestID := "team-build-publish:" + request.BuildRunID + ":" + request.ContentHash
+	command, err := teamconstruction.PublicationCommandForCandidate(requestID, candidate, teamconstruction.PublicationTarget{
+		BuildRunID:           request.BuildRunID,
+		TeamID:               candidate.Payload.Team.TeamID,
+		ExpectedAssetVersion: version.UpdatedAt.UTC().Format(time.RFC3339Nano),
+	})
 	if err != nil {
 		var coded interface{ Code() string }
 		if errors.As(err, &coded) && coded.Code() != "" {
@@ -209,21 +224,14 @@ func (s *Server) handleCandidatePublish(c echo.Context) error {
 		}
 		return workflowStoreFailure(c, err)
 	}
-	if err := s.Workflow.InsertPublicationTx(ctx, tx, publication); err != nil {
+	record, err := s.ProductPublication.Publish(ctx, command)
+	if err != nil {
 		return mapWorkflowPublishError(c, err)
 	}
-	if err := tx.Commit(ctx); err != nil {
-		return workflowStoreFailure(c, fmt.Errorf("commit candidate publish: %w", err))
+	if record.Receipt == nil {
+		return workflowStoreFailure(c, errors.New("candidate publication receipt unavailable"))
 	}
-	finalRef := teambuild.FinalRef{
-		Ref: fmt.Sprintf(
-			"workflow:%s:%s:v%d",
-			workspaceID, publication.WorkflowID, publication.WorkflowVersion,
-		),
-	}
-	updated, err := s.TeamBuild.MarkPublished(
-		ctx, workspaceID, request.BuildRunID, getUserID(c), finalRef,
-	)
+	updated, err := s.TeamBuild.GetBuildRun(ctx, workspaceID, request.BuildRunID)
 	if err != nil {
 		return workflowError(
 			c,
@@ -233,9 +241,9 @@ func (s *Server) handleCandidatePublish(c echo.Context) error {
 		)
 	}
 	return c.JSON(http.StatusOK, candidatePublishResponse{
-		WorkflowID:      publication.WorkflowID,
-		WorkflowVersion: publication.WorkflowVersion,
-		ContentHash:     publication.Artifact.ContentHash,
+		WorkflowID:      record.Receipt.Revision.WorkflowID,
+		WorkflowVersion: record.Receipt.Revision.WorkflowVersion,
+		ContentHash:     record.Receipt.Revision.ContentHash,
 		BuildRunID:      request.BuildRunID,
 		BuildRunStatus:  updated.Status,
 	})

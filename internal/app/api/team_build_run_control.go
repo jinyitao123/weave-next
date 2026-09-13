@@ -13,7 +13,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/jinyitao123/weave/internal/build/teambuild"
 	"github.com/jinyitao123/weave/internal/build/teamrestore"
-	"github.com/jinyitao123/weave/internal/kernel/workflow"
 	"github.com/labstack/echo/v4"
 )
 
@@ -962,7 +961,7 @@ func (s *Server) handleRollbackBuildRun(c echo.Context) error {
 	if s.Pool == nil || s.TeamBuild == nil || s.OrgStore == nil ||
 		s.Registry == nil || s.Workflow == nil || s.Audit == nil ||
 		s.DeliveryTargets == nil || s.Skills == nil || s.Credentials == nil ||
-		s.AgentSchedules == nil || s.Descriptors == nil {
+		s.AgentSchedules == nil || s.Descriptors == nil || s.ProductPublication == nil || s.PublicationAuthority == nil {
 		return workflowError(
 			c,
 			http.StatusServiceUnavailable,
@@ -982,23 +981,13 @@ func (s *Server) handleRollbackBuildRun(c echo.Context) error {
 			"rollback requires confirm: true",
 		)
 	}
-	builder := workflow.NewCandidateBuilder(
-		s.Workflow,
-		s.Registry,
-		s.DeliveryTargets,
-		s.Skills,
-		s.Credentials,
-		s.AgentSchedules,
-		s.Descriptors,
-	)
 	service := teamrestore.New(
 		s.Pool,
 		s.TeamBuild,
 		s.OrgStore,
 		s.Registry,
 		s.Registry,
-		s.Workflow,
-		builder,
+		workflowPublicationRestorer{pool: s.Pool, workflows: s.Workflow, authority: s.PublicationAuthority, publications: s.ProductPublication},
 		s.Audit,
 	)
 	result, err := service.Rollback(

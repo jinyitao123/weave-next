@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/jinyitao123/weave/internal/app/agentcatalog"
 	orgstore "github.com/jinyitao123/weave/internal/app/org"
 	"github.com/jinyitao123/weave/internal/base/db"
 	"github.com/jinyitao123/weave/internal/base/testutil"
@@ -25,7 +26,7 @@ func TestPublishWorkflowPGDoesNotGateUnevaluatedTeam(t *testing.T) {
 	}
 	prefix := "publish-gate-" + uuid.NewString()[:8]
 	workspaceID := "workspace-" + prefix
-	agents := registry.New(pool)
+	agents := agentcatalog.New(pool)
 	lead := registry.AgentRecord{Name: prefix + "-lead", DisplayName: "负责人", Role: "avatar"}
 	worker := registry.AgentRecord{Name: prefix + "-worker", DisplayName: "执行者", Role: "worker"}
 	for _, agent := range []*registry.AgentRecord{&lead, &worker} {

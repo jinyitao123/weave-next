@@ -7,7 +7,10 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/jinyitao123/weave/internal/app/teamconstruction"
+	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/kernel/engine"
+	"github.com/jinyitao123/weave/internal/kernel/publication"
 	"github.com/jinyitao123/weave/internal/kernel/workflow"
 	"github.com/labstack/echo/v4"
 )
@@ -43,7 +46,8 @@ func (s *Server) handleListAgentExecutionSettings(c echo.Context) error {
 // A member edit and every current workflow that refers to it publish together.
 // Existing runs keep their frozen bundles; a failed preflight changes nothing.
 func (s *Server) handleConfigureAgentExecution(c echo.Context) error {
-	if s.Registry == nil || s.Workflow == nil || s.ScheduleTransactions == nil || s.Runtimes == nil {
+	if s.Registry == nil || s.Workflow == nil || s.ScheduleTransactions == nil || s.Runtimes == nil ||
+		s.Pool == nil || s.ProductPublication == nil || s.PublicationAuthority == nil {
 		return workflowError(c, 503, "workflow_store_unavailable", "执行配置服务不可用")
 	}
 	var request agentExecutionRequest
@@ -57,6 +61,15 @@ func (s *Server) handleConfigureAgentExecution(c echo.Context) error {
 		}
 	}
 	ctx, workspaceID := c.Request().Context(), getTenant(c)
+	requestID, requestDigest, subject, err := newAgentExecutionRequestIdentity(ctx, workspaceID, c.Param("name"), request)
+	if err != nil {
+		return mapAgentExecutionRequestError(c, err)
+	}
+	if prepared, found, err := findAgentExecutionPlan(ctx, s.Pool, workspaceID, requestID, requestDigest, subject); err != nil {
+		return mapAgentExecutionRequestError(c, err)
+	} else if found {
+		return s.finishAgentExecutionPlan(c, prepared)
+	}
 	record, err := s.Registry.Get(ctx, workspaceID, c.Param("name"))
 	if err != nil {
 		return c.JSON(404, map[string]string{"error": "智能体不存在"})
@@ -82,6 +95,15 @@ func (s *Server) handleConfigureAgentExecution(c echo.Context) error {
 		return workflowStoreFailure(c, err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, requestID); err != nil {
+		return workflowStoreFailure(c, err)
+	}
+	if prepared, found, err := loadAgentExecutionPlan(ctx, tx, workspaceID, requestID, requestDigest, subject); err != nil {
+		return mapAgentExecutionRequestError(c, err)
+	} else if found {
+		_ = tx.Rollback(ctx)
+		return s.finishAgentExecutionPlan(c, prepared)
+	}
 	if err := s.Registry.PutTx(ctx, tx, workspaceID, record); err != nil {
 		return agentWritePutErrorResponse(c, err)
 	}
@@ -105,8 +127,7 @@ func (s *Server) handleConfigureAgentExecution(c echo.Context) error {
 	if err := rows.Err(); err != nil {
 		return workflowStoreFailure(c, err)
 	}
-	published := make([]map[string]any, 0, len(workflows))
-	builder := workflow.NewCandidateBuilder(s.Workflow, s.Registry, s.DeliveryTargets, s.Skills, s.Credentials, s.AgentSchedules, s.Descriptors)
+	commands := make([]teamconstruction.PublicationCommand, 0, len(workflows))
 	actor := getUserID(c)
 	if actor == "" {
 		actor = "workbench"
@@ -132,26 +153,81 @@ func (s *Server) handleConfigureAgentExecution(c echo.Context) error {
 		if err != nil {
 			return workflowStoreFailure(c, err)
 		}
-		candidate, report, err := builder.BuildTx(ctx, tx, workflow.CandidateInput{WorkspaceID: workspaceID, WorkflowID: id, WorkflowVersion: draft.Version})
+		candidate, report, err := s.PublicationAuthority.BuildCandidateTx(ctx, tx, workflow.CandidateInput{WorkspaceID: workspaceID, WorkflowID: id, WorkflowVersion: draft.Version})
 		if err != nil {
 			return workflowStoreFailure(c, err)
 		}
 		if candidate == nil || report != nil && len(report.Issues) > 0 {
 			return c.JSON(422, map[string]any{"error": "更新后的工作流未通过发布检查，配置未保存", "code": "workflow_candidate_invalid", "issues": report})
 		}
-		publication, err := workflow.PublicationFromCandidate(candidate)
+		childRequestID := requestID + ":" + id + ":" + candidate.ContentHash
+		command, err := teamconstruction.PublicationCommandForCandidate(childRequestID, candidate, teamconstruction.PublicationTarget{
+			TeamID: candidate.Payload.Team.TeamID,
+		})
 		if err != nil {
 			return workflowStoreFailure(c, err)
 		}
-		if err := s.Workflow.InsertPublicationTx(ctx, tx, publication); err != nil {
+		if _, err := s.ProductPublication.ReserveTx(ctx, tx, command); err != nil {
 			return mapWorkflowPublishError(c, err)
 		}
-		published = append(published, map[string]any{"workflow_id": id, "version": draft.Version})
+		commands = append(commands, command)
+	}
+	plan := agentExecutionPublicationPlan{Subject: subject, RequestID: requestID, RequestDigest: requestDigest,
+		AgentName: record.Name, Request: request, AgentVersion: record.Version, PublicationCommands: commands}
+	if err := insertAgentExecutionPlan(ctx, tx, plan); err != nil {
+		return workflowStoreFailure(c, err)
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return workflowStoreFailure(c, err)
 	}
-	return c.JSON(http.StatusOK, map[string]any{"version": record.Version, "published_workflows": published, "changed": true})
+	return s.finishAgentExecutionPlan(c, plan)
+}
+
+func mapAgentExecutionRequestError(c echo.Context, err error) error {
+	switch {
+	case errors.Is(err, execution.ErrSubjectRequired):
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "需要已登录的操作身份"})
+	case errors.Is(err, execution.ErrSubjectMismatch), errors.Is(err, publication.ErrRequestConflict):
+		return c.JSON(http.StatusConflict, map[string]string{"error": "这次配置请求与已保存的操作记录不一致"})
+	default:
+		return workflowStoreFailure(c, err)
+	}
+}
+
+func (s *Server) finishAgentExecutionPlan(c echo.Context, plan agentExecutionPublicationPlan) error {
+	if plan.State == "completed" {
+		return c.JSONBlob(http.StatusOK, plan.Response)
+	}
+	completed := make(map[string]struct{}, len(plan.CompletedPublications))
+	for _, requestID := range plan.CompletedPublications {
+		completed[requestID] = struct{}{}
+	}
+	published := make([]map[string]any, 0, len(plan.PublicationCommands))
+	for _, command := range plan.PublicationCommands {
+		requestID := command.Request.RequestID
+		if _, ok := completed[requestID]; !ok {
+			if _, err := s.ProductPublication.Publish(c.Request().Context(), command); err != nil {
+				return mapWorkflowPublishError(c, err)
+			}
+			if err := recordAgentExecutionPublication(c.Request().Context(), s.Pool, plan, requestID); err != nil {
+				return workflowStoreFailure(c, err)
+			}
+		}
+		published = append(published, map[string]any{
+			"workflow_id": command.Request.Candidate.WorkflowID,
+			"version":     command.Request.Candidate.WorkflowVersion,
+		})
+	}
+	response, err := json.Marshal(map[string]any{
+		"version": plan.AgentVersion, "published_workflows": published, "changed": true,
+	})
+	if err != nil {
+		return workflowStoreFailure(c, err)
+	}
+	if err := completeAgentExecutionPlan(c.Request().Context(), s.Pool, plan, response); err != nil {
+		return workflowStoreFailure(c, err)
+	}
+	return c.JSONBlob(http.StatusOK, response)
 }
 
 func replaceExecutionAgentVersion(value any, agentID string, version int) {

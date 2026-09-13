@@ -17,6 +17,7 @@ import (
 	"github.com/jinyitao123/loom"
 	"github.com/jinyitao123/loom/contract"
 	"github.com/jinyitao123/loom/pgstore"
+	"github.com/jinyitao123/weave/internal/app/agentcatalog"
 	"github.com/jinyitao123/weave/internal/app/apikeys"
 	"github.com/jinyitao123/weave/internal/app/attachments"
 	appcapabilities "github.com/jinyitao123/weave/internal/app/capabilities"
@@ -24,6 +25,7 @@ import (
 	"github.com/jinyitao123/weave/internal/app/conversation"
 	"github.com/jinyitao123/weave/internal/app/ownermem"
 	"github.com/jinyitao123/weave/internal/app/projects"
+	"github.com/jinyitao123/weave/internal/app/teamconstruction"
 	"github.com/jinyitao123/weave/internal/app/users"
 	"github.com/jinyitao123/weave/internal/base/deliverable"
 	"github.com/jinyitao123/weave/internal/base/execution"
@@ -42,6 +44,7 @@ import (
 	"github.com/jinyitao123/weave/internal/kernel/mcphost"
 	"github.com/jinyitao123/weave/internal/kernel/mcpregistry"
 	"github.com/jinyitao123/weave/internal/kernel/memory"
+	"github.com/jinyitao123/weave/internal/kernel/publication"
 
 	orgstore "github.com/jinyitao123/weave/internal/app/org"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
@@ -62,7 +65,7 @@ import (
 type Server struct {
 	Echo                      *echo.Echo
 	Store                     loom.Store
-	Registry                  *registry.AgentRegistry
+	Registry                  *agentcatalog.AgentRegistry
 	Descriptors               *compiler.DescriptorRegistry
 	TeamAssembler             teamcompiler.TeamInteractionAssembler // optional test seam; nil uses the production assembler
 	Models                    *llmrouter.Resolver
@@ -82,31 +85,34 @@ type Server struct {
 	WorkflowScheduleAdmission WorkflowScheduleAdmissionService
 	WorkflowScheduleStepHook  func(context.Context, WorkflowScheduleStage) error
 	RunLifecycleHook          loomruntime.RunLifecycleHook
-	Snapshots                 *snapshot.Store                     // nil if PG pool unavailable
-	TeamReader                *teamReader                         // nil if team-aware read dependencies are unavailable
-	AgentRunReader            loomruntime.AgentRunLifecycleReader // nil if PG pool unavailable
-	UserStore                 *users.Store                        // nil if PG pool unavailable
-	KeyStore                  *apikeys.Store                      // nil if PG pool unavailable
-	OrgStore                  *orgstore.Store                     // nil if PG pool unavailable
-	Projects                  *projects.Store                     // nil if PG pool unavailable
-	Attachments               *attachments.Store                  // nil if PG pool unavailable
-	ChatRequests              *chatrequest.Store                  // nil if PG pool unavailable
-	Workflow                  *workflow.Store                     // nil if PG pool unavailable
-	WorkflowHealth            *workflowhealth.Store               // nil if PG pool unavailable
-	TeamBuild                 *teambuild.Store                    // nil if PG pool unavailable
-	TeamBuildOrchestrator     TeamBuildExecutionService           // nil until the production meta-team controller is configured
-	TeamTemplates             TeamTemplateService                 // nil until the template fast path is configured
-	TeamEvaluations           TeamEvaluationService               // nil until post-template evaluation is configured
-	TeamForgeDrafts           *teamforge.DraftRegistry            // shared in-memory draft registry; nil disables teamforge wiring
-	Pool                      *pgxpool.Pool                       // nil if PG pool unavailable
-	TeamWorkers               *registry.TeamWorkerRepository      // nil if PG pool unavailable
-	DeliveryTargets           *delivery.Store                     // nil if WEAVE_SECRET_KEY is not configured
-	Deliverables              *deliverable.Store                  // nil if PG pool unavailable
-	SkillImporter             *importskills.Importer              // nil if PG pool unavailable
-	Skills                    *importskills.Store                 // nil if PG pool unavailable
-	Audit                     *audit.Store                        // nil if PG pool unavailable
-	Credentials               *credentials.Store                  // nil if WEAVE_SECRET_KEY is not configured
-	Capabilities              *appcapabilities.Service            // nil if PG persistence is unavailable
+	Snapshots                 *snapshot.Store                      // nil if PG pool unavailable
+	TeamReader                *teamReader                          // nil if team-aware read dependencies are unavailable
+	AgentRunReader            loomruntime.AgentRunLifecycleReader  // nil if PG pool unavailable
+	UserStore                 *users.Store                         // nil if PG pool unavailable
+	KeyStore                  *apikeys.Store                       // nil if PG pool unavailable
+	OrgStore                  *orgstore.Store                      // nil if PG pool unavailable
+	Projects                  *projects.Store                      // nil if PG pool unavailable
+	Attachments               *attachments.Store                   // nil if PG pool unavailable
+	ChatRequests              *chatrequest.Store                   // nil if PG pool unavailable
+	Workflow                  *workflow.Store                      // nil if PG pool unavailable
+	KernelPublication         publication.Service                  // nil until the process-owned kernel publication unit is configured
+	ProductPublication        *teamconstruction.ProductPublication // nil until product activation is bound to kernel receipts
+	PublicationAuthority      *teamconstruction.PublicationAuthority
+	WorkflowHealth            *workflowhealth.Store              // nil if PG pool unavailable
+	TeamBuild                 *teambuild.Store                   // nil if PG pool unavailable
+	TeamBuildOrchestrator     TeamBuildExecutionService          // nil until the production meta-team controller is configured
+	TeamTemplates             TeamTemplateService                // nil until the template fast path is configured
+	TeamEvaluations           TeamEvaluationService              // nil until post-template evaluation is configured
+	TeamForgeDrafts           *teamforge.DraftRegistry           // shared in-memory draft registry; nil disables teamforge wiring
+	Pool                      *pgxpool.Pool                      // nil if PG pool unavailable
+	TeamWorkers               *agentcatalog.TeamWorkerRepository // nil if PG pool unavailable
+	DeliveryTargets           *delivery.Store                    // nil if WEAVE_SECRET_KEY is not configured
+	Deliverables              *deliverable.Store                 // nil if PG pool unavailable
+	SkillImporter             *importskills.Importer             // nil if PG pool unavailable
+	Skills                    *importskills.Store                // nil if PG pool unavailable
+	Audit                     *audit.Store                       // nil if PG pool unavailable
+	Credentials               *credentials.Store                 // nil if WEAVE_SECRET_KEY is not configured
+	Capabilities              *appcapabilities.Service           // nil if PG persistence is unavailable
 	CapabilityAccess          *appcapabilities.AccessStore
 	SystemProviders           credentials.SystemProviderSource
 	MCPRegistry               *mcpregistry.Store     // nil if WEAVE_SECRET_KEY is not configured
@@ -223,7 +229,7 @@ func (s *Server) memoryForStrict(ctx context.Context, tenant string) (*memory.Se
 func NewServer(cfg *config.Config, store loom.Store, models *llmrouter.Resolver) *Server {
 	e := echo.New()
 	e.HideBanner = true
-	var agentRegistry *registry.AgentRegistry
+	var agentRegistry *agentcatalog.AgentRegistry
 	if ps, ok := store.(*pgstore.PGStore); ok {
 		agentRegistry = kernelbindings.NewRegistry(ps.Pool())
 	}
@@ -257,7 +263,7 @@ func NewServer(cfg *config.Config, store loom.Store, models *llmrouter.Resolver)
 		capabilityStore := appcapabilities.NewPGStore(ps.Pool())
 		s.Capabilities = appcapabilities.NewService(capabilityStore, capabilityStore)
 		s.CapabilityAccess = appcapabilities.NewAccessStore(ps.Pool())
-		s.TeamWorkers = registry.NewTeamWorkerRepository(ps.Pool())
+		s.TeamWorkers = agentcatalog.NewTeamWorkerRepository(ps.Pool())
 		s.TeamForgeDrafts = teamforge.NewDraftRegistry()
 		s.ChatRequests = chatrequest.New(ps.Pool(), chatrequest.RealClock{})
 		s.Attachments = attachments.New(ps.Pool())
