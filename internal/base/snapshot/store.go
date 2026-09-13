@@ -401,8 +401,11 @@ func validateCandidateIdentity(buildRunID string, buildRoundNo int, contentHash 
 	if buildRunID != trimmedRunID || contentHash != trimmedHash {
 		return errors.New("candidate identity must not contain surrounding whitespace")
 	}
-	if trimmedRunID == "" || trimmedHash == "" {
-		return errors.New("build_run_id and candidate_content_hash must be set together")
+	if trimmedHash == "" {
+		return errors.New("build_run_id requires candidate_content_hash")
+	}
+	if trimmedRunID == "" && buildRoundNo != 0 {
+		return errors.New("build_round_no requires product build_run_id")
 	}
 	if !candidateHashPattern.MatchString(trimmedHash) {
 		return errors.New("candidate_content_hash must be 64 lowercase hex characters")

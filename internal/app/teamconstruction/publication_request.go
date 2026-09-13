@@ -26,7 +26,8 @@ var ErrPublicationTransition = errors.New("publication request transition is inv
 // PublicationTarget is product-owned activation intent. It never travels to
 // the kernel. ExpectedAssetVersion fences activation against a later user edit.
 type PublicationTarget struct {
-	BuildRunID           string `json:"build_run_id"`
+	ReuseActiveRevision  bool   `json:"reuse_active_revision,omitempty"`
+	BuildRunID           string `json:"build_run_id,omitempty"`
 	TeamID               string `json:"team_id"`
 	ExpectedAssetVersion string `json:"expected_asset_version"`
 }
@@ -86,11 +87,19 @@ func (f PublicationFlow) Publish(ctx context.Context, command PublicationCommand
 	if err = record.Verify(ctx, command); err != nil {
 		return PublicationRequestRecord{}, err
 	}
+	// Replaying the same request rechecks current kernel authorization without
+	// creating another revision. A saved receipt is not a permanent access grant.
+	receipt, callErr := f.Kernel.Publish(ctx, record.Command.Request)
+	if callErr != nil {
+		return record, callErr
+	}
+	if err = receipt.Verify(ctx, record.Command.Request); err != nil {
+		return record, err
+	}
+	if record.Receipt != nil && *record.Receipt != receipt {
+		return record, publication.ErrRequestConflict
+	}
 	if record.State == PublicationPending {
-		receipt, callErr := f.Kernel.Publish(ctx, record.Command.Request)
-		if callErr != nil {
-			return record, callErr
-		}
 		next, transitionErr := record.AcceptRevision(ctx, receipt)
 		if transitionErr != nil {
 			return record, transitionErr
@@ -209,10 +218,13 @@ func (r PublicationRequestRecord) Activated(ctx context.Context) (PublicationReq
 }
 
 func validPublicationTarget(target PublicationTarget) bool {
-	for _, value := range []string{target.BuildRunID, target.TeamID, target.ExpectedAssetVersion} {
+	for _, value := range []string{target.TeamID, target.ExpectedAssetVersion} {
 		if value == "" || len(value) > 512 || strings.TrimSpace(value) != value || strings.ContainsAny(value, "\x00\r\n") {
 			return false
 		}
+	}
+	if target.BuildRunID != "" && (len(target.BuildRunID) > 512 || strings.TrimSpace(target.BuildRunID) != target.BuildRunID || strings.ContainsAny(target.BuildRunID, "\x00\r\n")) {
+		return false
 	}
 	return true
 }

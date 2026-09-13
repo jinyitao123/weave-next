@@ -93,8 +93,7 @@ func ResolveModelRevisionTx(
 	}
 	defer rows.Close()
 
-	workspaceCandidates := make([]modelProviderCandidate, 0, 1)
-	systemCandidates := make([]modelProviderCandidate, 0, 1)
+	var resolvedCandidates []modelProviderCandidate
 	for rows.Next() {
 		var candidate modelProviderCandidate
 		if err := rows.Scan(
@@ -104,6 +103,17 @@ func ResolveModelRevisionTx(
 		); err != nil {
 			return frozen.FrozenModelBinding{}, fmt.Errorf("scan model provider head: %w", err)
 		}
+		resolvedCandidates = append(resolvedCandidates, candidate)
+	}
+	if err := rows.Err(); err != nil {
+		return frozen.FrozenModelBinding{}, fmt.Errorf("read model provider heads: %w", err)
+	}
+	rows.Close()
+	// Authorization may consult the same owner transaction. Release its active
+	// row reader before invoking that port; the FOR SHARE locks remain held.
+	workspaceCandidates := make([]modelProviderCandidate, 0, 1)
+	systemCandidates := make([]modelProviderCandidate, 0, 1)
+	for _, candidate := range resolvedCandidates {
 		ref := frozen.CredentialReference{SchemaVersion: frozen.FrozenSchemaVersion, WorkspaceID: workspaceID, Kind: frozen.CredentialProviderAPIKey, ResourceID: candidate.providerID, Slot: "api_key", Scope: candidate.credentialScope, UserID: candidate.credentialUserID, ServiceID: candidate.credentialServiceID}
 		if AuthorizeReference(ctx, ref) != nil {
 			continue
@@ -120,10 +130,6 @@ func ResolveModelRevisionTx(
 			)
 		}
 	}
-	if err := rows.Err(); err != nil {
-		return frozen.FrozenModelBinding{}, fmt.Errorf("read model provider heads: %w", err)
-	}
-
 	personal := make([]modelProviderCandidate, 0)
 	for _, candidate := range workspaceCandidates {
 		if candidate.credentialScope == frozen.CredentialScopeUser {

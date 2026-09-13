@@ -16,9 +16,10 @@ import (
 // CandidateTarget supplies the product usage-source association without making
 // the execution kernel interpret build rounds or evaluation roles.
 type CandidateTarget struct {
-	BuildRunID string `json:"build_run_id"`
-	RoundNo    int    `json:"round_no"`
-	SourceRole string `json:"source_role"`
+	ExpectedAssetVersion string `json:"expected_asset_version,omitempty"`
+	BuildRunID           string `json:"build_run_id"`
+	RoundNo              int    `json:"round_no"`
+	SourceRole           string `json:"source_role"`
 }
 
 // CandidateRequestRecord holds only the fixed request and the kernel admission
@@ -70,15 +71,20 @@ func (f CandidateAdmissionFlow) Admit(ctx context.Context, target CandidateTarge
 	if err = record.Verify(ctx, target, request); err != nil {
 		return CandidateRequestRecord{}, err
 	}
-	if record.Receipt != nil {
-		return record, nil
-	}
+	// The stable admission request rechecks current authorization on recovery;
+	// its idempotent kernel receipt always names the original task.
 	receipt, err := f.Kernel.AdmitCandidate(ctx, record.Request)
 	if err != nil {
 		return record, err
 	}
 	if err = receipt.Verify(ctx, request); err != nil {
 		return record, err
+	}
+	if record.Receipt != nil {
+		if *record.Receipt != receipt {
+			return record, publication.ErrRequestConflict
+		}
+		return record, nil
 	}
 	record.Receipt = &receipt
 	record, err = f.Requests.RecordAdmission(ctx, record)

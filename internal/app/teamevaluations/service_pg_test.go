@@ -8,6 +8,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jinyitao123/weave/internal/app/agentcatalog"
+	"github.com/jinyitao123/weave/internal/app/teamconstruction"
+
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	orgstore "github.com/jinyitao123/weave/internal/app/org"
@@ -119,21 +122,21 @@ func TestPostTemplateEvaluationPGAtomicCertification(t *testing.T) {
 	if err != nil {
 		t.Fatalf("encode publication artifact: %v", err)
 	}
-	if err := fixture.workflows.InsertPublicationTx(fixture.ctx, tx, workflow.Publication{
-		WorkspaceID: fixture.workspaceID, WorkflowID: fixture.workflowID, WorkflowVersion: 1,
-		ExpectedUpdatedAt: version.UpdatedAt,
-		Artifact: workflow.PublishedArtifactContent{
-			WorkspaceID: fixture.workspaceID, WorkflowID: fixture.workflowID, WorkflowVersion: 1,
-			ArtifactSchemaVersion:     frozen.ArtifactSchemaVersion,
-			CanonicalizationAlgorithm: frozen.ArtifactCanonicalizationAlgorithm,
-			CanonicalizationVersion:   frozen.ArtifactCanonicalizationVersion,
-			HashAlgorithm:             frozen.ArtifactHashAlgorithm, ContentHash: contentHash,
-			Payload: payloadJSON,
-		},
-	}); err != nil {
-		t.Fatalf("InsertPublicationTx() error = %v", err)
+	// Frozen content is a pre-existing kernel receipt fixture. Its independent
+	// writes do not participate in the product certification transaction below.
+	if _, err := fixture.pool.Exec(fixture.ctx, `INSERT INTO weave_published_artifact_contents(workspace_id,workflow_id,workflow_version,artifact_schema_version,canonicalization_algorithm,canonicalization_version,hash_algorithm,content_hash,payload) VALUES($1,$2,1,$3,$4,$5,$6,$7,$8::jsonb)`, fixture.workspaceID, fixture.workflowID, frozen.ArtifactSchemaVersion, frozen.ArtifactCanonicalizationAlgorithm, frozen.ArtifactCanonicalizationVersion, frozen.ArtifactHashAlgorithm, contentHash, string(payloadJSON)); err != nil {
+		t.Fatal(err)
 	}
-	if _, err := fixture.builds.MarkPublishedTx(fixture.ctx, tx, fixture.workspaceID, outcome.BuildRunID, "judge", teambuild.FinalRef{
+	if _, err := fixture.pool.Exec(fixture.ctx, `INSERT INTO weave_workflow_version_admission_statuses(workspace_id,workflow_id,workflow_version,blocked)VALUES($1,$2,1,false)`, fixture.workspaceID, fixture.workflowID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(fixture.ctx, `UPDATE weave_team_workflow_versions SET status='published',published_at=now(),updated_at=now() WHERE workspace_id=$1 AND workflow_id=$2 AND version=1`, fixture.workspaceID, fixture.workflowID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(fixture.ctx, `UPDATE weave_team_workflows SET published_version=1,updated_at=now() WHERE workspace_id=$1 AND id=$2`, fixture.workspaceID, fixture.workflowID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := teamconstruction.MarkBuildPublicationTx(fixture.ctx, tx, fixture.builds, fixture.workspaceID, outcome.BuildRunID, "judge", teambuild.FinalRef{
 		Ref: contentHash, TeamID: fixture.team.ID,
 	}, baselineHash); err != nil {
 		t.Fatalf("MarkPublishedTx() error = %v", err)
@@ -295,7 +298,7 @@ func newEvaluationPGFixture(t *testing.T) *evaluationPGFixture {
 	}
 	prefix := "eval" + strings.ReplaceAll(uuid.NewString()[:8], "-", "")
 	workspaceID := "workspace-" + prefix
-	agents := registry.New(pool)
+	agents := agentcatalog.New(pool)
 	lead := registry.AgentRecord{Name: prefix + "-lead", DisplayName: "负责人", Role: "avatar"}
 	primary := registry.AgentRecord{Name: prefix + "-primary", DisplayName: "执行者", Role: "worker"}
 	reviewer := registry.AgentRecord{Name: prefix + "-reviewer", DisplayName: "评审者", Role: "worker"}

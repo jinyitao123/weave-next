@@ -212,8 +212,8 @@ func TestPublicationRequestActivationFailureRetainsRevision(t *testing.T) {
 	if _, err := flow.Publish(ctx, command); err != nil {
 		t.Fatal(err)
 	}
-	if store.publishCalls != 1 || store.activations != 1 {
-		t.Fatal("retry repeated kernel publication")
+	if store.publishCalls != 2 || len(store.published) != 1 || store.activations != 1 {
+		t.Fatal("retry must reauthorize the same revision exactly once")
 	}
 }
 
@@ -325,8 +325,8 @@ func TestCandidateAdmissionInterruptedReceiptNeverAdmitsAnotherTask(t *testing.T
 	if _, err = flow.Admit(ctx, target, request); err != nil {
 		t.Fatal("equivalent JSON failed idempotency:", err)
 	}
-	if store.admitCalls != 2 {
-		t.Fatal("stored receipt replay called kernel again")
+	if store.admitCalls != 3 || len(store.admitted) != 1 {
+		t.Fatal("stored receipt replay must reauthorize the original task")
 	}
 	other := execution.WithSubject(context.Background(), execution.Subject{WorkspaceID: "workspace", UserID: "bob"})
 	if _, err = flow.Admit(other, target, request); !errors.Is(err, execution.ErrSubjectMismatch) {
