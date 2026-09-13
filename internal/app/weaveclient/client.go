@@ -19,6 +19,24 @@ import (
 
 const maxResponseBytes = 16 << 20
 
+type delegatedUserAuthorizationKey struct{}
+
+// WithDelegatedUserAuthorization binds one platform user proof to one outbound
+// request chain. The token is never stored on the shared Client.
+func WithDelegatedUserAuthorization(ctx context.Context, authorization string) (context.Context, error) {
+	authorization = strings.TrimSpace(authorization)
+	if !strings.HasPrefix(authorization, "Bearer ") || len(authorization) <= len("Bearer ") ||
+		strings.ContainsAny(authorization, "\r\n\t") || strings.Contains(authorization[len("Bearer "):], " ") {
+		return nil, &Error{Code: "delegated_user_authorization_invalid"}
+	}
+	return context.WithValue(ctx, delegatedUserAuthorizationKey{}, authorization), nil
+}
+
+func delegatedUserAuthorization(ctx context.Context) (string, bool) {
+	authorization, ok := ctx.Value(delegatedUserAuthorizationKey{}).(string)
+	return authorization, ok && authorization != ""
+}
+
 var stableCodePattern = regexp.MustCompile(`^[a-z][a-z0-9_]{0,80}$`)
 
 type Error struct {
@@ -620,6 +638,9 @@ func (c *Client) send(ctx context.Context, method, path string, input any) ([]by
 		return nil, &Error{Code: "invalid_request"}
 	}
 	request.Header.Set("Authorization", "Bearer "+c.apiKey)
+	if delegated, ok := delegatedUserAuthorization(ctx); ok {
+		request.Header.Set("X-Weave-User-Authorization", delegated)
+	}
 	request.Header.Set("Accept", "application/json")
 	if input != nil {
 		request.Header.Set("Content-Type", "application/json")
