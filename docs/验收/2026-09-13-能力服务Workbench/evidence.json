@@ -1,0 +1,26 @@
+{
+  "provider": "controlled HTTP fixture",
+  "runtime": "existing Loom runner",
+  "result": {
+    "capability_id": "browser-capability",
+    "error": "",
+    "invocation_id": "b60ac13e-2ac8-4b2c-94e6-dfb2fc2b7d79",
+    "result": {
+      "a": {
+        "value": 7
+      },
+      "b": {
+        "value": 7
+      },
+      "merge": {
+        "left": 7,
+        "right": 7
+      }
+    },
+    "result_state": "available",
+    "revision": 1,
+    "status": "completed",
+    "task_id": "cap-task-92a919b0-bd67-4269-84d8-894a80aac382"
+  },
+  "mobileOverflow": false
+}

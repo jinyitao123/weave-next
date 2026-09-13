@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jinyitao123/weave/internal/base/capability"
@@ -21,9 +22,12 @@ var (
 	ErrIdempotencyConflict = errors.New("invocation request id already used with different input")
 	ErrInvocationNotFound  = errors.New("invocation not found")
 	ErrInvocationTerminal  = errors.New("invocation is already terminal")
+	ErrClaimLost           = errors.New("capability execution claim lost")
+	ErrRevisionConflict    = errors.New("published revision already exists with different content")
 )
 
 type DraftStore interface {
+	ListDrafts(context.Context, string) ([]capability.Definition, error)
 	SaveDraft(context.Context, string, capability.Definition) error
 	GetDraft(context.Context, string, string) (capability.Definition, error)
 	SaveRevision(context.Context, string, capability.PublishedRevision) error
@@ -64,12 +68,36 @@ type DraftRequest struct {
 	Definition  capability.Definition
 }
 
+func (s *Service) GetDraft(ctx context.Context, workspaceID, id string) (capability.Definition, error) {
+	if s == nil || s.drafts == nil {
+		return capability.Definition{}, errors.New("draft store unavailable")
+	}
+	return s.drafts.GetDraft(ctx, workspaceID, id)
+}
+func (s *Service) ListDrafts(ctx context.Context, workspaceID string) ([]capability.Definition, error) {
+	if s == nil || s.drafts == nil {
+		return nil, errors.New("draft store unavailable")
+	}
+	return s.drafts.ListDrafts(ctx, workspaceID)
+}
+func (m *MemoryStore) ListDrafts(_ context.Context, workspaceID string) ([]capability.Definition, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	result := []capability.Definition{}
+	for key, d := range m.drafts {
+		if strings.HasPrefix(key, workspaceID+"\x00") {
+			result = append(result, cloneValue(d))
+		}
+	}
+	return result, nil
+}
+
 func (s *Service) SaveDraft(ctx context.Context, request DraftRequest) error {
 	if s == nil || s.drafts == nil {
 		return errors.New("capability draft store is not configured")
 	}
 	if strings.TrimSpace(request.WorkspaceID) == "" {
-		return errors.New("workspace id is required")
+		return fmt.Errorf("%w: workspace id is required", capability.ErrInvalidDefinition)
 	}
 	if err := request.Definition.Validate(); err != nil {
 		return err
@@ -87,6 +115,9 @@ func (s *Service) Publish(ctx context.Context, workspaceID, capabilityID string,
 	}
 	published, err := capability.Publish(draft, revision)
 	if err != nil {
+		return capability.PublishedRevision{}, err
+	}
+	if _, err := capability.Compile(published); err != nil {
 		return capability.PublishedRevision{}, err
 	}
 	if err := s.drafts.SaveRevision(ctx, workspaceID, published); err != nil {
@@ -111,6 +142,7 @@ type Invocation struct {
 }
 
 type InvocationTask struct {
+	ClaimToken   string
 	TaskID       string
 	WorkspaceID  string
 	InvocationID string
@@ -140,9 +172,55 @@ func RunOne(ctx context.Context, store ExecutionStore, executor TaskExecutor) (b
 	if err != nil || !claimed {
 		return claimed, err
 	}
-	result, executeErr := executor.Execute(ctx, task)
-	_, err = store.CompleteTask(ctx, task, result, executeErr)
+	runCtx, cancel := context.WithTimeout(ctx, 120*time.Second)
+	done := make(chan struct{})
+	monitored := make(chan struct{})
+	go func() {
+		defer close(monitored)
+		active, ok := store.(interface {
+			TaskActive(context.Context, InvocationTask) (bool, error)
+		})
+		if !ok {
+			return
+		}
+		ticker := time.NewTicker(100 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-runCtx.Done():
+				return
+			case <-ticker.C:
+				ok, err := active.TaskActive(runCtx, task)
+				if err != nil || !ok {
+					cancel()
+					return
+				}
+			}
+		}
+	}()
+	result, executeErr := executeSafely(runCtx, executor, task)
+	if executeErr == nil {
+		executeErr = runCtx.Err()
+	}
+	close(done)
+	cancel()
+	<-monitored
+	finishCtx, finishCancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer finishCancel()
+	_, err = store.CompleteTask(finishCtx, task, result, executeErr)
 	return true, err
+}
+
+func executeSafely(ctx context.Context, executor TaskExecutor, task InvocationTask) (result json.RawMessage, err error) {
+	defer func() {
+		if recover() != nil {
+			result = nil
+			err = errors.New("capability executor panicked")
+		}
+	}()
+	return executor.Execute(ctx, task)
 }
 
 type InvokeRequest struct {
@@ -160,21 +238,28 @@ func (s *Service) Invoke(ctx context.Context, request InvokeRequest) (Invocation
 		return Invocation{}, false, errors.New("capability invocation service is not configured")
 	}
 	if strings.TrimSpace(request.WorkspaceID) == "" || strings.TrimSpace(request.ApplicationID) == "" || strings.TrimSpace(request.RequestID) == "" {
-		return Invocation{}, false, errors.New("workspace, application, and request id are required")
+		return Invocation{}, false, fmt.Errorf("%w: workspace, application, and request id are required", capability.ErrInvalidDefinition)
 	}
 	if request.Revision < 1 || strings.TrimSpace(request.CapabilityID) == "" {
-		return Invocation{}, false, errors.New("capability id and positive revision are required")
+		return Invocation{}, false, fmt.Errorf("%w: capability id and positive revision are required", capability.ErrInvalidDefinition)
 	}
 	var input map[string]any
 	if len(request.Input) == 0 || json.Unmarshal(request.Input, &input) != nil || input == nil {
-		return Invocation{}, false, errors.New("input must be a JSON object")
+		return Invocation{}, false, fmt.Errorf("%w: input must be a JSON object", capability.ErrInvalidDefinition)
 	}
 	canonicalInput, err := frozen.CanonicalizeJSON(request.Input)
 	if err != nil {
-		return Invocation{}, false, fmt.Errorf("input must be canonicalizable JSON: %w", err)
+		return Invocation{}, false, fmt.Errorf("%w: input must be canonicalizable JSON", capability.ErrInvalidDefinition)
 	}
-	if _, err := s.drafts.GetRevision(ctx, request.WorkspaceID, request.CapabilityID, request.Revision); err != nil {
-		return Invocation{}, false, fmt.Errorf("%w: %v", ErrRevisionNotFound, err)
+	published, err := s.drafts.GetRevision(ctx, request.WorkspaceID, request.CapabilityID, request.Revision)
+	if err != nil {
+		return Invocation{}, false, err
+	}
+	if _, err := capability.Compile(published); err != nil {
+		return Invocation{}, false, err
+	}
+	if err := capability.ValidateValue(published.Definition.InputSchema, canonicalInput); err != nil {
+		return Invocation{}, false, fmt.Errorf("%w: input schema: %v", capability.ErrInvalidDefinition, err)
 	}
 	invocation := Invocation{
 		WorkspaceID: request.WorkspaceID, ApplicationID: request.ApplicationID,
@@ -209,7 +294,7 @@ func NewMemoryStore() *MemoryStore {
 func (m *MemoryStore) SaveDraft(_ context.Context, workspaceID string, definition capability.Definition) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.drafts[workspaceID+"\x00"+definition.CapabilityID] = definition
+	m.drafts[workspaceID+"\x00"+definition.CapabilityID] = cloneValue(definition)
 	return nil
 }
 
@@ -220,13 +305,17 @@ func (m *MemoryStore) GetDraft(_ context.Context, workspaceID, capabilityID stri
 	if !ok {
 		return capability.Definition{}, ErrNotFound
 	}
-	return d, nil
+	return cloneValue(d), nil
 }
 
 func (m *MemoryStore) SaveRevision(_ context.Context, workspaceID string, revision capability.PublishedRevision) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.revisions[workspaceID+"\x00"+revision.CapabilityID+"\x00"+fmt.Sprint(revision.Revision)] = revision
+	key := workspaceID + "\x00" + revision.CapabilityID + "\x00" + fmt.Sprint(revision.Revision)
+	if existing, ok := m.revisions[key]; ok && existing.DefinitionHash != revision.DefinitionHash {
+		return ErrRevisionConflict
+	}
+	m.revisions[key] = cloneValue(revision)
 	return nil
 }
 
@@ -237,7 +326,7 @@ func (m *MemoryStore) GetRevision(_ context.Context, workspaceID, capabilityID s
 	if !ok {
 		return capability.PublishedRevision{}, ErrRevisionNotFound
 	}
-	return r, nil
+	return cloneValue(r), nil
 }
 
 func (m *MemoryStore) ClaimInvocation(_ context.Context, invocation Invocation) (Invocation, bool, error) {
@@ -248,21 +337,21 @@ func (m *MemoryStore) ClaimInvocation(_ context.Context, invocation Invocation) 
 		if string(existing.Input) != string(invocation.Input) || existing.CapabilityID != invocation.CapabilityID || existing.Revision != invocation.Revision {
 			return Invocation{}, false, ErrIdempotencyConflict
 		}
-		return existing, true, nil
+		return cloneValue(existing), true, nil
 	}
 	if invocation.TaskID == "" {
 		invocation.TaskID = "cap-task-memory-" + invocation.InvocationID
 	}
-	m.invokes[key] = invocation
-	return invocation, false, nil
+	m.invokes[key] = cloneValue(invocation)
+	return cloneValue(invocation), false, nil
 }
 
 func (m *MemoryStore) GetInvocation(_ context.Context, workspaceID, applicationID, invocationID string) (Invocation, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for _, invocation := range m.invokes {
-		if invocation.WorkspaceID == workspaceID && (applicationID == "" || invocation.ApplicationID == applicationID) && invocation.InvocationID == invocationID {
-			return invocation, nil
+		if applicationID != "" && invocation.WorkspaceID == workspaceID && invocation.ApplicationID == applicationID && invocation.InvocationID == invocationID {
+			return cloneValue(invocation), nil
 		}
 	}
 	return Invocation{}, ErrInvocationNotFound
@@ -273,10 +362,17 @@ func (m *MemoryStore) CancelInvocation(_ context.Context, workspaceID, applicati
 	defer m.mu.Unlock()
 	for key, invocation := range m.invokes {
 		if invocation.WorkspaceID == workspaceID && invocation.ApplicationID == applicationID && invocation.InvocationID == invocationID {
-			if invocation.Status == "completed" || invocation.Status == "failed" || invocation.Status == "cancelled" {
+			if invocation.Status == "cancelled" || invocation.Status == "cancel_requested" {
+				return cloneValue(invocation), nil
+			}
+			if invocation.Status == "completed" || invocation.Status == "failed" {
 				return Invocation{}, ErrInvocationTerminal
 			}
-			invocation.Status = "cancelled"
+			if invocation.Status == "running" {
+				invocation.Status = "cancel_requested"
+			} else {
+				invocation.Status = "cancelled"
+			}
 			m.invokes[key] = invocation
 			return invocation, nil
 		}
@@ -291,9 +387,14 @@ func (m *MemoryStore) ClaimTask(_ context.Context) (InvocationTask, bool, error)
 		if invocation.Status != "queued" {
 			continue
 		}
+		revision := m.revisions[invocation.WorkspaceID+"\x00"+invocation.CapabilityID+"\x00"+fmt.Sprint(invocation.Revision)]
+		plan, err := capability.Compile(revision)
+		if err != nil {
+			return InvocationTask{}, false, err
+		}
 		invocation.Status = "running"
 		m.invokes[key] = invocation
-		return InvocationTask{TaskID: invocation.TaskID, WorkspaceID: invocation.WorkspaceID, InvocationID: invocation.InvocationID, CapabilityID: invocation.CapabilityID, Revision: invocation.Revision, Input: invocation.Input}, true, nil
+		return InvocationTask{Plan: plan, TaskID: invocation.TaskID, WorkspaceID: invocation.WorkspaceID, InvocationID: invocation.InvocationID, CapabilityID: invocation.CapabilityID, Revision: invocation.Revision, Input: append(json.RawMessage(nil), invocation.Input...)}, true, nil
 	}
 	return InvocationTask{}, false, nil
 }
@@ -302,16 +403,47 @@ func (m *MemoryStore) CompleteTask(_ context.Context, task InvocationTask, resul
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for key, invocation := range m.invokes {
-		if invocation.TaskID != task.TaskID {
+		if invocation.TaskID != task.TaskID || invocation.WorkspaceID != task.WorkspaceID || invocation.InvocationID != task.InvocationID {
 			continue
+		}
+		if invocation.Status != "running" && invocation.Status != "cancel_requested" {
+			return Invocation{}, ErrClaimLost
+		}
+		if invocation.Status == "cancel_requested" {
+			invocation.Status = "cancelled"
+			invocation.Result = nil
+			invocation.ResultState = "unavailable"
+			m.invokes[key] = invocation
+			return cloneValue(invocation), nil
+		}
+		if executeErr == nil && !json.Valid(result) {
+			executeErr = errors.New("invalid execution output")
 		}
 		if executeErr != nil {
 			invocation.Status, invocation.ResultState, invocation.Error = "failed", "unavailable", executeErr.Error()
 		} else {
 			invocation.Status, invocation.ResultState, invocation.Result = "completed", "available", result
 		}
-		m.invokes[key] = invocation
-		return invocation, nil
+		m.invokes[key] = cloneValue(invocation)
+		return cloneValue(invocation), nil
 	}
 	return Invocation{}, ErrInvocationNotFound
+}
+
+func cloneValue[T any](value T) T {
+	raw, _ := json.Marshal(value)
+	var copied T
+	_ = json.Unmarshal(raw, &copied)
+	return copied
+}
+
+func (m *MemoryStore) TaskActive(_ context.Context, task InvocationTask) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, i := range m.invokes {
+		if i.WorkspaceID == task.WorkspaceID && i.InvocationID == task.InvocationID && i.TaskID == task.TaskID {
+			return i.Status == "running", nil
+		}
+	}
+	return false, nil
 }

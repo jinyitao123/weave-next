@@ -332,7 +332,6 @@ func (s *Server) registerRoutes() {
 	agentsScope := RequireScope("agents")
 	chatScope := RequireScope("chat")
 	runsScope := RequireScope("runs")
-	capabilitiesScope := RequireScope("capabilities")
 	memoryScope := RequireScope("memory")
 	orgScope := RequireScope("org")
 
@@ -344,11 +343,12 @@ func (s *Server) registerRoutes() {
 
 	// Developer capability contract endpoints. Execution is admitted here;
 	// runtime scheduling is intentionally a separate follow-up integration.
-	auth.POST("/capabilities/drafts", s.handleSaveCapabilityDraft, RequireAnyRole("admin", "owner"), capabilitiesScope)
-	auth.POST("/capabilities/:capabilityID/versions/:revision/publish", s.handlePublishCapability, RequireAnyRole("admin", "owner"), capabilitiesScope)
-	auth.POST("/capabilities/:capabilityID/versions/:revision/invocations", s.handleInvokeCapability, capabilitiesScope)
-	auth.GET("/invocations/:invocationID", s.handleGetCapabilityInvocation, capabilitiesScope)
-	auth.POST("/invocations/:invocationID/cancel", s.handleCancelCapabilityInvocation, capabilitiesScope)
+	auth.POST("/capabilities/drafts", s.handleSaveCapabilityDraft, requireCapabilityAccess("manage"))
+	auth.GET("/capabilities/drafts", s.handleListCapabilityDrafts, requireCapabilityAccess("manage"))
+	auth.POST("/capabilities/:capabilityID/versions/:revision/publish", s.handlePublishCapability, requireCapabilityAccess("manage"))
+	auth.POST("/capabilities/:capabilityID/versions/:revision/invocations", s.handleInvokeCapability, requireCapabilityAccess("invoke"))
+	auth.GET("/invocations/:invocationID", s.handleGetCapabilityInvocation, requireCapabilityAccess("read"))
+	auth.POST("/invocations/:invocationID/cancel", s.handleCancelCapabilityInvocation, requireCapabilityAccess("cancel"))
 
 	// User management (admin or owner).
 	auth.GET("/users", s.handleListUsers, RequireAnyRole("admin", "owner"), adminScope)
@@ -555,6 +555,12 @@ func (s *Server) registerRoutes() {
 
 // Start runs the HTTP server.
 func (s *Server) Start() error {
+	if s.Capabilities != nil && s.Pool != nil && s.Models != nil {
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan struct{})
+		go func() { defer close(done); s.serveCapabilityTasks(ctx) }()
+		defer func() { cancel(); <-done }()
+	}
 	s.reconcileOrphanedChatRequests()
 	if worker, ok := s.TeamBuildOrchestrator.(interface {
 		Start()

@@ -15,7 +15,7 @@ func (e *recordingStepExecutor) ExecuteStep(_ context.Context, step PlanStep, _ 
 }
 
 func TestExecutePlanRunsCompiledOrderAndAssemblesOutputs(t *testing.T) {
-	plan := Plan{Steps: []PlanStep{{ID: "first"}, {ID: "second"}}}
+	plan := Plan{InputSchema: json.RawMessage(`{}`), OutputSchema: json.RawMessage(`{}`), Steps: []PlanStep{{ID: "first"}, {ID: "second", Dependencies: []string{"first"}}}}
 	executor := &recordingStepExecutor{}
 	result, err := ExecutePlan(context.Background(), plan, json.RawMessage(`{"input":1}`), executor)
 	if err != nil {
