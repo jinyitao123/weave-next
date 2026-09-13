@@ -68,8 +68,12 @@ func (s *Store) ReconcileTaskTx(ctx context.Context, tx pgx.Tx, workspaceID, id 
  started_at=CASE WHEN $4='queued' THEN NULL ELSE started_at END
  WHERE workspace_id=$1 AND id=$2 AND claim_epoch=$3 AND stopped_epoch=$3 AND stopped_worker_id IS NOT NULL
  AND worker_id IS NULL AND status IN ('failed','completed','cancelled')
- AND (status<>'cancelled' OR $4='cancelled')
- AND ($4<>'queued' OR deadline_at IS NULL OR deadline_at>$8)
+	 AND (status<>'cancelled' OR $4='cancelled')
+	 AND ($4<>'queued' OR deadline_at IS NULL OR deadline_at>$8)
+	 AND ($4<>'queued' OR parent_task_id IS NULL OR EXISTS (
+	   SELECT 1 FROM weave_task_queue parent WHERE parent.workspace_id=weave_task_queue.workspace_id
+	   AND parent.id=weave_task_queue.parent_task_id AND parent.actor_subject=weave_task_queue.actor_subject
+	   AND parent.status IN ('queued','dispatched','running')))
  AND ($9::jsonb IS NULL OR actor_subject=$9::jsonb)
  RETURNING `+taskColumns, workspaceID, id, expectedEpoch, result.Status, result.Result, result.RunID, result.Error, now, subjectFilter(ctx)))
 	if err != nil {
