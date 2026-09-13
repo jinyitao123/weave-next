@@ -7,6 +7,8 @@ func (s *PGStore) TaskActive(ctx context.Context, task InvocationTask) (bool, er
 	err := s.pool.QueryRow(ctx, `SELECT EXISTS(
  SELECT 1 FROM weave_capability_invocation_tasks t JOIN weave_capability_invocations i ON i.workspace_id=t.workspace_id AND i.invocation_id=t.invocation_id
  WHERE t.task_id=$1 AND t.workspace_id=$2 AND t.invocation_id=$3 AND t.claim_token=$4 AND t.status='running' AND i.status='running' AND t.deadline_at>now()
+ AND t.claim_started_at IS NOT NULL
+ AND t.execution_consumed_ms+GREATEST(0,EXTRACT(EPOCH FROM (now()-t.claim_started_at))*1000)<t.execution_budget_ms
  AND (i.caller_kind='developer' OR EXISTS(SELECT 1 FROM weave_capability_apps a JOIN weave_capability_grants g ON g.workspace_id=a.workspace_id AND g.app_id=a.id
  WHERE a.workspace_id=i.workspace_id AND a.id=i.application_id AND a.enabled AND g.enabled AND g.capability_id=i.capability_id AND g.revision=i.revision)))`,
 		task.TaskID, task.WorkspaceID, task.InvocationID, task.ClaimToken).Scan(&active)
@@ -16,11 +18,13 @@ func (s *PGStore) TaskActive(ctx context.Context, task InvocationTask) (bool, er
 func (s *PGStore) RenewTask(ctx context.Context, task InvocationTask) error {
 	// Renewal extends a live claim; it cannot resurrect an expired lease or
 	// grant more time after cancellation or application authorization revocation.
-	tag, err := s.pool.Exec(ctx, `UPDATE weave_capability_invocation_tasks t SET deadline_at=now()+interval '150 seconds'
+	tag, err := s.pool.Exec(ctx, `UPDATE weave_capability_invocation_tasks t
+	 SET deadline_at=LEAST(now()+interval '150 seconds',t.claim_started_at+((t.execution_budget_ms-t.execution_consumed_ms)*interval '1 millisecond'))
  FROM weave_capability_invocations i
  WHERE t.task_id=$1 AND t.workspace_id=$2 AND t.invocation_id=$3 AND t.claim_token=$4
  AND i.workspace_id=t.workspace_id AND i.invocation_id=t.invocation_id AND i.task_id=t.task_id
- AND t.status='running' AND i.status='running' AND t.deadline_at>now()
+ AND t.status='running' AND i.status='running' AND t.deadline_at>now() AND t.claim_started_at IS NOT NULL
+ AND t.execution_consumed_ms+GREATEST(0,EXTRACT(EPOCH FROM (now()-t.claim_started_at))*1000)<t.execution_budget_ms
  AND (i.caller_kind='developer' OR EXISTS(SELECT 1 FROM weave_capability_apps a JOIN weave_capability_grants g ON g.workspace_id=a.workspace_id AND g.app_id=a.id
  WHERE a.workspace_id=i.workspace_id AND a.id=i.application_id AND a.enabled AND g.enabled AND g.capability_id=i.capability_id AND g.revision=i.revision))`, task.TaskID, task.WorkspaceID, task.InvocationID, task.ClaimToken)
 	if err != nil {

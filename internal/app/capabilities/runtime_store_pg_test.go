@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/jinyitao123/weave/internal/base/execution"
+	"github.com/jinyitao123/weave/internal/kernel/capability"
 )
 
 func TestCapabilityRuntimeBindingsRejectStaleClaimsRealPG(t *testing.T) {
@@ -103,5 +104,47 @@ func TestCapabilityLiveClaimCanRenewRealPG(t *testing.T) {
 	var deadline time.Time
 	if err := pool.QueryRow(t.Context(), `SELECT deadline_at FROM weave_capability_invocation_tasks WHERE task_id=$1`, task.TaskID).Scan(&deadline); err != nil || time.Until(deadline) < time.Minute {
 		t.Fatalf("live claim did not renew: %v %v", deadline, err)
+	}
+}
+
+func TestCapabilityExecutionDeadlineCarriesAcrossClaimsRealPG(t *testing.T) {
+	pool, store, invocation := executionFixture(t)
+	if _, err := pool.Exec(t.Context(), `UPDATE weave_capability_invocation_tasks
+	 SET execution_budget_ms=10000,execution_consumed_ms=6000
+	 WHERE task_id=$1`, invocation.TaskID); err != nil {
+		t.Fatal(err)
+	}
+	first, claimed, err := store.ClaimTask(t.Context())
+	if err != nil || !claimed {
+		t.Fatalf("first claim: %v %v", claimed, err)
+	}
+	remaining := time.Until(first.ExecutionDeadline)
+	if remaining <= 3*time.Second || remaining > 5*time.Second {
+		t.Fatalf("first remaining execution budget = %v", remaining)
+	}
+	if _, err := pool.Exec(t.Context(), `UPDATE weave_capability_invocation_tasks
+	 SET claim_started_at=now()-interval '2 seconds'
+	 WHERE task_id=$1`, first.TaskID); err != nil {
+		t.Fatal(err)
+	}
+	pause := &capability.PauseError{StepID: "human", Title: "confirm"}
+	if _, err := store.CompleteTask(t.Context(), first, nil, pause); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(t.Context(), `UPDATE weave_capability_invocation_tasks
+	 SET status='queued' WHERE task_id=$1 AND status='waiting'`, first.TaskID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(t.Context(), `UPDATE weave_capability_invocations
+	 SET status='queued' WHERE workspace_id=$1 AND invocation_id=$2 AND status='waiting'`, first.WorkspaceID, first.InvocationID); err != nil {
+		t.Fatal(err)
+	}
+	second, claimed, err := store.ClaimTask(t.Context())
+	if err != nil || !claimed {
+		t.Fatalf("second claim: %v %v", claimed, err)
+	}
+	remaining = time.Until(second.ExecutionDeadline)
+	if remaining <= time.Second || remaining > 3*time.Second {
+		t.Fatalf("resumed execution budget was reset: %v", remaining)
 	}
 }

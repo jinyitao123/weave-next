@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -388,7 +389,12 @@ func (s *PGStore) ClaimTask(ctx context.Context) (InvocationTask, bool, error) {
 	}
 	task.Input = raw
 	var checkpointRaw []byte
-	if err := tx.QueryRow(ctx, `SELECT checkpoint,actor_user_id,used_steps,max_steps FROM weave_capability_invocations WHERE workspace_id=$1 AND invocation_id=$2`, task.WorkspaceID, task.InvocationID).Scan(&checkpointRaw, &task.ActorUserID, &task.UsedSteps, &task.MaxSteps); err != nil {
+	var executionBudgetMS, executionConsumedMS int64
+	if err := tx.QueryRow(ctx, `SELECT i.checkpoint,i.actor_user_id,i.used_steps,i.max_steps,t.execution_budget_ms,t.execution_consumed_ms
+	 FROM weave_capability_invocations i JOIN weave_capability_invocation_tasks t
+	 ON t.workspace_id=i.workspace_id AND t.invocation_id=i.invocation_id AND t.task_id=i.task_id
+	 WHERE i.workspace_id=$1 AND i.invocation_id=$2`, task.WorkspaceID, task.InvocationID).Scan(
+		&checkpointRaw, &task.ActorUserID, &task.UsedSteps, &task.MaxSteps, &executionBudgetMS, &executionConsumedMS); err != nil {
 		return InvocationTask{}, false, err
 	}
 	if len(checkpointRaw) > 0 {
@@ -410,9 +416,15 @@ func (s *PGStore) ClaimTask(ctx context.Context) (InvocationTask, bool, error) {
 		}
 	}
 	task.ClaimToken = uuid.NewString()
-	if _, err := tx.Exec(ctx, `UPDATE weave_capability_invocation_tasks SET status='running',claim_token=$2,deadline_at=now()+interval '150 seconds' WHERE task_id=$1`, task.TaskID, task.ClaimToken); err != nil {
+	var claimStartedAt time.Time
+	if err := tx.QueryRow(ctx, `UPDATE weave_capability_invocation_tasks
+	 SET status='running',claim_token=$2,claim_started_at=now(),
+	 deadline_at=LEAST(now()+interval '150 seconds',now()+((execution_budget_ms-execution_consumed_ms)*interval '1 millisecond'))
+	 WHERE task_id=$1 AND execution_consumed_ms<execution_budget_ms
+	 RETURNING claim_started_at`, task.TaskID, task.ClaimToken).Scan(&claimStartedAt); err != nil {
 		return InvocationTask{}, false, err
 	}
+	task.ExecutionDeadline = claimStartedAt.Add(time.Duration(executionBudgetMS-executionConsumedMS) * time.Millisecond)
 	var source pgx.Row
 	if task.RunKind == "debug" {
 		source = tx.QueryRow(ctx, `SELECT definition_hash,definition FROM weave_capability_debug_snapshots WHERE workspace_id=$1 AND invocation_id=$2`, task.WorkspaceID, task.InvocationID)
@@ -500,7 +512,12 @@ func (s *PGStore) CompleteTask(ctx context.Context, task InvocationTask, result 
 	if status == "completed" {
 		resultValue = string(result)
 	}
-	changed, err := tx.Exec(ctx, `UPDATE weave_capability_invocation_tasks SET status=$2 WHERE task_id=$1 AND workspace_id=$3 AND invocation_id=$4 AND status='running' AND claim_token=$5 AND deadline_at>now()`, task.TaskID, status, task.WorkspaceID, task.InvocationID, task.ClaimToken)
+	changed, err := tx.Exec(ctx, `UPDATE weave_capability_invocation_tasks
+	 SET status=$2,
+	 execution_consumed_ms=LEAST(execution_budget_ms,execution_consumed_ms+GREATEST(0,EXTRACT(EPOCH FROM (now()-claim_started_at))*1000)::bigint),
+	 claim_started_at=NULL,claim_token=NULL,deadline_at=NULL
+	 WHERE task_id=$1 AND workspace_id=$3 AND invocation_id=$4 AND status='running' AND claim_token=$5 AND deadline_at>now()
+	 AND execution_consumed_ms+GREATEST(0,EXTRACT(EPOCH FROM (now()-claim_started_at))*1000)<execution_budget_ms`, task.TaskID, status, task.WorkspaceID, task.InvocationID, task.ClaimToken)
 	if err != nil {
 		return Invocation{}, fmt.Errorf("complete capability task: %w", err)
 	}
