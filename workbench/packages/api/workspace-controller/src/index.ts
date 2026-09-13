@@ -1,7 +1,8 @@
 /** Host Workspace Remote owner: explicit commands and reconnect-safe state. */
 
 import { Context } from '@deepseek-ai/cordis'
-import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
+import { Remote, TypertRemoteFailure, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { WorkspaceCommands } from './commands.ts'
 import { DirectoryPickerController } from './directory-picker.ts'
 import { WorkspaceFeed } from './feed.ts'
@@ -18,7 +19,10 @@ import type {
   WorkspaceOrderValue,
   WorkspaceRenameRequest,
   WorkspaceValue,
+  WorkspaceView,
 } from './types.ts'
+
+type SessionVisibility = (id: SessionId) => Promise<boolean>
 
 export type * from './types.ts'
 export { DirectoryPickerController } from './directory-picker.ts'
@@ -36,6 +40,17 @@ export class WorkspaceController extends TypertRemoteService {
 
   private readonly commands: WorkspaceCommands
   private readonly feed: WorkspaceFeed
+  private sessionVisibility: (() => SessionVisibility) | undefined
+
+  /**
+   * Install the product's request-bound Session visibility policy.
+   * @param policy - captures the current caller and returns a live visibility check.
+   * @returns disposer that withdraws this policy if it is still installed.
+   */
+  setSessionVisibility(policy: () => SessionVisibility): () => void {
+    this.sessionVisibility = policy
+    return () => { if (this.sessionVisibility === policy) this.sessionVisibility = undefined }
+  }
 
   /** @param ctx - Host context containing the Workspace registry. */
   constructor(ctx: Context) {
@@ -55,8 +70,10 @@ export class WorkspaceController extends TypertRemoteService {
    * @returns the Workspace and whether this call created it.
    */
   @Remote('create')
-  create(request: WorkspaceCreateRequest): Promise<WorkspaceCreateValue> {
-    return this.commands.create(request)
+  async create(request: WorkspaceCreateRequest): Promise<WorkspaceCreateValue> {
+    const visible = this.sessionVisibility?.()
+    const result = await this.commands.create(request)
+    return { ...result, workspace: await visibleWorkspace(result.workspace, visible) }
   }
 
   /**
@@ -65,8 +82,10 @@ export class WorkspaceController extends TypertRemoteService {
    * @returns the updated Workspace projection.
    */
   @Remote('rename')
-  rename(request: WorkspaceRenameRequest): Promise<WorkspaceValue> {
-    return this.commands.rename(request)
+  async rename(request: WorkspaceRenameRequest): Promise<WorkspaceValue> {
+    const visible = this.sessionVisibility?.()
+    const result = await this.commands.rename(request)
+    return { workspace: await visibleWorkspace(result.workspace, visible) }
   }
 
   /**
@@ -95,8 +114,12 @@ export class WorkspaceController extends TypertRemoteService {
    * @returns the updated Workspace projection.
    */
   @Remote('insertSessionBefore')
-  insertSessionBefore(request: WorkspaceInsertSessionBeforeRequest): Promise<WorkspaceValue> {
-    return this.commands.insertSessionBefore(request)
+  async insertSessionBefore(request: WorkspaceInsertSessionBeforeRequest): Promise<WorkspaceValue> {
+    const visible = this.sessionVisibility?.()
+    await requireVisibleSession(request.sessionId, visible)
+    if (request.beforeSessionId !== undefined) await requireVisibleSession(request.beforeSessionId, visible)
+    const result = await this.commands.insertSessionBefore(request)
+    return { workspace: await visibleWorkspace(result.workspace, visible) }
   }
 
   /**
@@ -105,8 +128,11 @@ export class WorkspaceController extends TypertRemoteService {
    * @returns the complete resulting archive set.
    */
   @Remote('archiveSession')
-  archiveSession(request: WorkspaceArchiveSessionRequest): Promise<WorkspaceArchiveValue> {
-    return this.commands.archiveSession(request)
+  async archiveSession(request: WorkspaceArchiveSessionRequest): Promise<WorkspaceArchiveValue> {
+    const visible = this.sessionVisibility?.()
+    await requireVisibleSession(request.sessionId, visible)
+    const result = await this.commands.archiveSession(request)
+    return { archivedSessionIds: await visibleSessionIds(result.archivedSessionIds, visible) }
   }
 
   /**
@@ -116,7 +142,47 @@ export class WorkspaceController extends TypertRemoteService {
    */
   @Remote({ mode: 'stream' })
   follow(signal: AbortSignal): AsyncIterable<WorkspaceFollowFrame> {
-    return this.feed.follow(signal)
+    const visible = this.sessionVisibility?.()
+    const source = this.feed.follow(signal)
+    if (visible === undefined) return source
+    return (async function* () {
+      for await (const frame of source) {
+        signal.throwIfAborted()
+        switch (frame.type) {
+          case 'baseline':
+            yield { type: 'baseline', value: {
+              items: await Promise.all(frame.value.items.map(workspace => visibleWorkspace(workspace, visible))),
+              archivedSessionIds: await visibleSessionIds(frame.value.archivedSessionIds, visible),
+            } } satisfies WorkspaceFollowFrame
+            break
+          case 'upsert':
+            yield { type: 'upsert', workspace: await visibleWorkspace(frame.workspace, visible) } satisfies WorkspaceFollowFrame
+            break
+          case 'archived':
+            yield { type: 'archived', archivedSessionIds: await visibleSessionIds(frame.archivedSessionIds, visible) } satisfies WorkspaceFollowFrame
+            break
+          case 'remove':
+          case 'order':
+            yield frame
+        }
+      }
+    })()
+  }
+}
+
+async function visibleSessionIds(ids: readonly SessionId[], visible: SessionVisibility | undefined): Promise<readonly SessionId[]> {
+  if (visible === undefined) return ids
+  const allowed = await Promise.all(ids.map(id => visible(id)))
+  return ids.filter((_, index) => allowed[index] === true)
+}
+
+async function visibleWorkspace(workspace: WorkspaceView, visible: SessionVisibility | undefined): Promise<WorkspaceView> {
+  return { ...workspace, sessionIds: await visibleSessionIds(workspace.sessionIds, visible) }
+}
+
+async function requireVisibleSession(id: SessionId, visible: SessionVisibility | undefined): Promise<void> {
+  if (visible !== undefined && !await visible(id)) {
+    throw new TypertRemoteFailure({ code: 'session-not-found', message: 'Session is unavailable', details: { sessionId: id } })
   }
 }
 

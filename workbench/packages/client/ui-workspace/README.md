@@ -16,6 +16,8 @@ Workbench task rows distinguish the selected task from hover through a quiet sel
 
 When a WorkTask wire projection provides a display state, sidebar rows and search results use that state directly. They distinguish parallel work, scheduled waits, interrupted execution, and preparation outcomes while retaining the legacy projection fallback.
 
+When the product withdraws Host management access, the browser shows a flat personal Session list and does not mount shared project, project activity, or directory-selection controls. Personal Session actions remain available through their existing owner-checked Host commands.
+
 ## Table of Contents
 
 - [Use this package](#use-this-package)

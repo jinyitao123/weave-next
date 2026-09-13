@@ -16,6 +16,8 @@ The optional `shell.access` entry reports an account identity through `onAccessC
 
 This package provides the shell layout of the Web GUI: a three-column AppFrame with resizable sidebar and details panels, a concession chain that shrinks the details column and then auto-closes it when space runs out, and the `ctx.layout` panel-geometry service other plugins call to open or close the details column. It also seats the theme presenter, which projects the resolved color scheme, alias tokens, content font size, and `theme-color` metadata onto the document. Choose it for the standard window chrome; Workbench retains the scene width while panel open state resets on reload.
 
+The shell also declares the optional `useHostManagement` projection and `startPersonalSession` command. The account-owning product supplies them as root standard sources; generic UI packages consume this contract without importing account implementation. Workbench hides Host management when the projection is absent. Other build profiles retain their existing navigation.
+
 ## Table of Contents
 
 - [Use this package](#use-this-package)

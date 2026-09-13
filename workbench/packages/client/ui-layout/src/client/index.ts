@@ -12,6 +12,7 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-client-ui-theme/client'
+import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
 import type { PanelActions } from './service.ts'
 import { AppFrame } from './AppFrame.tsx'
 import { createLayoutStore } from './stores.ts'
@@ -34,6 +35,12 @@ declare module '@deepseek-ai/cordis' {
 }
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
+  interface GlobalStandardProps {
+    /** Optional product access projection; Workbench defaults to no Host management. */
+    useHostManagement?: SnapshotSelectorHook<boolean>
+    /** Create a personal task without choosing a shared Host directory. */
+    startPersonalSession?: () => Promise<void>
+  }
   interface SlotMap {
     /** Account entry can grant or withdraw access before business views mount. */
     'shell.access': { kind: 'single'; scope: 'root'; owner: ShellAccessOwnerProps }

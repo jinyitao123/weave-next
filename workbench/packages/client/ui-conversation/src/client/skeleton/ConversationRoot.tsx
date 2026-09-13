@@ -4,6 +4,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
+import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 import type { ConversationSlotProps, InputZone } from '../contract/slots.ts'
 import { conversationPhase } from '../contract/snapshot.ts'
@@ -131,8 +132,17 @@ function WidthHandle(props: {
 export function ConversationRoot({
   sessionId, useSession, useSessions, useSessionPendingInteraction,
   useWorkspaces, useConversation, useInput, useComposerBlock,
-  renderSlot, renderSlotChain, selectWorkspace, t,
+  renderSlot, renderSlotChain, selectWorkspace, useHostManagement, startPersonalSession, t,
 }: ConversationRootProps) {
+  const canManageHost = useHostManagement?.(value => value) ?? process.env.DSH_CLIENT_BUILD_PROFILE !== 'workbench'
+  const [creatingPersonal, setCreatingPersonal] = useState(false)
+  const [personalFailed, setPersonalFailed] = useState(false)
+  const beginPersonal = (): void => {
+    if (creatingPersonal || startPersonalSession === undefined) return
+    setCreatingPersonal(true)
+    setPersonalFailed(false)
+    void startPersonalSession().catch(() => { setPersonalFailed(true) }).finally(() => { setCreatingPersonal(false) })
+  }
   const session = useSession(s => s)
   const pendingInteraction = useSessionPendingInteraction(snapshot =>
     sessionId === undefined ? undefined : snapshot.get(sessionId))
@@ -292,14 +302,14 @@ export function ConversationRoot({
 
   const heroWorkspaceRow = (
     <div className={css.heroWorkspaceRow}>
-      <WorkspaceChip
+      {canManageHost && <WorkspaceChip
         buttonRef={pickerAnchor}
         label={chipTitle}
         menuOpen={pickerOpen}
         onClick={() => { setPickerOpen(open => !open) }}
         t={t}
-      />
-      {renderSlot('conversation.hero.workspace', {
+      />}
+      {canManageHost && renderSlot('conversation.hero.workspace', {
         open: pickerOpen,
         anchorRef: pickerAnchor,
         selectedId: pendingWorkspaceId ?? sessionWorkspace?.workspaceId,
@@ -312,6 +322,8 @@ export function ConversationRoot({
         },
         onClose: () => { setPickerOpen(false) },
       })}
+      {!canManageHost && sessionId === undefined && <Button variant="primary" disabled={creatingPersonal || startPersonalSession === undefined} onClick={beginPersonal}>{t('hero.personalStart')}</Button>}
+      {personalFailed && <p role="alert">{t('hero.personalError')}</p>}
       {renderSlot('conversation.hero.agentPreset', {})}
     </div>
   )
@@ -321,7 +333,7 @@ export function ConversationRoot({
   // blank session whose workspace vanished (deleted from the sidebar). The
   // bar is ONE session-maybe slot rendered unconditionally — inert is a prop,
   // not a different tree, so the textarea DOM survives the transition.
-  const inert = sessionId === undefined || (hero && chipTitle === undefined)
+  const inert = sessionId === undefined || (canManageHost && hero && chipTitle === undefined)
   const workbench = process.env.DSH_CLIENT_BUILD_PROFILE === 'workbench'
   // A raised block is the same inert posture with the blocker's own reason:
   // one disabled textarea, never a second tree. The no-workspace state wins
@@ -332,9 +344,8 @@ export function ConversationRoot({
     ...(inert
       ? {
         disabled: true,
-        placeholder: t(workbench ? 'placeholder.workbenchWorkspace' : 'placeholder.workspace'),
-        workspacePickerOpen: pickerOpen,
-        onRequestWorkspace: () => { setPickerOpen(true) },
+        placeholder: t(!canManageHost ? 'placeholder.personalStart' : workbench ? 'placeholder.workbenchWorkspace' : 'placeholder.workspace'),
+        ...(canManageHost ? { workspacePickerOpen: pickerOpen, onRequestWorkspace: () => { setPickerOpen(true) } } : {}),
       }
       : blocked
         // `blocked`, not `disabled`: the bar refuses input either way, but a

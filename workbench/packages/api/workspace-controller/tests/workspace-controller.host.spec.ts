@@ -331,3 +331,96 @@ describe('WorkspaceController follow', () => {
     await expect(closing).resolves.toEqual({ done: true, value: undefined })
   })
 })
+
+describe('WorkspaceController request-bound Session visibility', () => {
+  async function sharedWorkspace() {
+    const fixture = await harness()
+    const created = await fixture.controller.create({ path: stageDir(fixture.root, 'shared') })
+    const workspace = fixture.ctx.workspaceRegistry.get(created.workspace.workspaceId)!
+    const owners = new Map<string, string>()
+    for (const [id, owner] of [['alice-one', 'alice'], ['bob-one', 'bob'], ['alice-two', 'alice'], ['bob-two', 'bob']].reverse()) {
+      const session = fixture.ctx.sessions.create(SessionId(id!), { meta: { cwd: created.workspace.path } })
+      owners.set(session.id, owner!)
+      await workspace.attachSession(session.id)
+    }
+    let actor = 'alice'
+    const policy = () => {
+      const captured = actor
+      return async (id: SessionId) => owners.get(id) === captured
+    }
+    fixture.controller.setSessionVisibility(policy)
+    return { ...fixture, workspace, as: (value: string) => { actor = value }, policy }
+  }
+
+  it('filters baseline and later grouping/archive frames for each captured caller', async () => {
+    const { controller, workspace, as, ctx } = await sharedWorkspace()
+    const aliceAbort = new AbortController()
+    const bobAbort = new AbortController()
+    const aliceFrames = controller.follow(aliceAbort.signal)[Symbol.asyncIterator]()
+    as('bob')
+    const bobFrames = controller.follow(bobAbort.signal)[Symbol.asyncIterator]()
+    const aliceBaseline = await nextFrame(aliceFrames)
+    const bobBaseline = await nextFrame(bobFrames)
+    expect(JSON.stringify(aliceBaseline)).not.toContain('bob-')
+    expect(JSON.stringify(bobBaseline)).not.toContain('alice-')
+    expect(aliceBaseline).toMatchObject({ type: 'baseline', value: { items: [{ sessionIds: ['alice-one', 'alice-two'] }] } })
+    expect(bobBaseline).toMatchObject({ type: 'baseline', value: { items: [{ sessionIds: ['bob-one', 'bob-two'] }] } })
+
+    await workspace.setTitle('Shared project')
+    expect(await nextFrame(aliceFrames)).toMatchObject({ type: 'upsert', workspace: { sessionIds: ['alice-one', 'alice-two'] } })
+    expect(await nextFrame(bobFrames)).toMatchObject({ type: 'upsert', workspace: { sessionIds: ['bob-one', 'bob-two'] } })
+    await ctx.workspaceRegistry.archiveSession(SessionId('alice-one'))
+    expect(await nextFrame(aliceFrames)).toEqual({ type: 'archived', archivedSessionIds: ['alice-one'] })
+    expect(await nextFrame(bobFrames)).toEqual({ type: 'archived', archivedSessionIds: [] })
+    await ctx.workspaceRegistry.archiveSession(SessionId('bob-one'))
+    expect(await nextFrame(aliceFrames)).toEqual({ type: 'archived', archivedSessionIds: ['alice-one'] })
+    expect(await nextFrame(bobFrames)).toEqual({ type: 'archived', archivedSessionIds: ['bob-one'] })
+    aliceAbort.abort(); bobAbort.abort()
+    await aliceFrames.return?.(); await bobFrames.return?.()
+  })
+
+  it('filters idempotent creation, rename, move, and archive receipts without changing stored membership', async () => {
+    const { controller, workspace, as, ctx } = await sharedWorkspace()
+    expect((await controller.create({ path: workspace.path })).workspace.sessionIds).toEqual(['alice-one', 'alice-two'])
+    expect((await controller.rename({ workspaceId: workspace.id, title: 'Renamed' })).workspace.sessionIds).toEqual(['alice-one', 'alice-two'])
+    expect((await controller.insertSessionBefore({ workspaceId: workspace.id, sessionId: SessionId('alice-two'), beforeSessionId: SessionId('alice-one') })).workspace.sessionIds).toEqual(['alice-two', 'alice-one'])
+    await ctx.workspaceRegistry.archiveSession(SessionId('bob-one'))
+    expect(await controller.archiveSession({ sessionId: SessionId('alice-one') })).toEqual({ archivedSessionIds: ['alice-one'] })
+    as('bob')
+    expect((await controller.create({ path: workspace.path })).workspace.sessionIds).toEqual(['bob-one', 'bob-two'])
+    expect(await controller.archiveSession({ sessionId: SessionId('bob-two') })).toEqual({ archivedSessionIds: ['bob-one', 'bob-two'] })
+    expect(workspace.sessionIds).toHaveLength(4)
+  })
+
+  it('refuses foreign move targets, anchors, and archive targets before any registry mutation', async () => {
+    const { controller, workspace, ctx } = await sharedWorkspace()
+    const originalOrder = [...workspace.sessionIds]
+    const archive = vi.spyOn(ctx.workspaceRegistry, 'archiveSession')
+    const move = vi.spyOn(workspace, 'insertSessionBefore')
+    for (const sessionId of ['bob-one', 'unknown']) {
+      await expect(controller.archiveSession({ sessionId: SessionId(sessionId) })).rejects.toMatchObject({ failure: { code: 'session-not-found', message: 'Session is unavailable' } })
+      await expect(controller.insertSessionBefore({ workspaceId: workspace.id, sessionId: SessionId(sessionId) })).rejects.toMatchObject({ failure: { code: 'session-not-found', message: 'Session is unavailable' } })
+      await expect(controller.insertSessionBefore({ workspaceId: workspace.id, sessionId: SessionId('alice-one'), beforeSessionId: SessionId(sessionId) })).rejects.toMatchObject({ failure: { code: 'session-not-found', message: 'Session is unavailable' } })
+    }
+    expect(archive).not.toHaveBeenCalled()
+    expect(move).not.toHaveBeenCalled()
+    expect(workspace.sessionIds).toEqual(originalOrder)
+  })
+
+  it('captures visibility before an asynchronous command and safely replaces policy registrations', async () => {
+    const { controller, workspace, as, ctx, policy } = await sharedWorkspace()
+    const gate = deferred<undefined>()
+    const resolve = ctx.workspaceRegistry.resolveByPath.bind(ctx.workspaceRegistry)
+    vi.spyOn(ctx.workspaceRegistry, 'resolveByPath').mockImplementationOnce(async path => { await gate.promise; return resolve(path) })
+    const response = controller.create({ path: workspace.path })
+    as('bob')
+    gate.resolve(undefined)
+    expect((await response).workspace.sessionIds).toEqual(['alice-one', 'alice-two'])
+    const old = controller.setSessionVisibility(() => async () => false)
+    const current = controller.setSessionVisibility(policy)
+    old()
+    expect((await controller.create({ path: workspace.path })).workspace.sessionIds).toEqual(['bob-one', 'bob-two'])
+    current()
+    expect((await controller.create({ path: workspace.path })).workspace.sessionIds).toHaveLength(4)
+  })
+})

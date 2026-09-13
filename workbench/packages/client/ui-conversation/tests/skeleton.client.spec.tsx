@@ -122,6 +122,9 @@ function mount(
     composerBlock?: { reason: string }
     /** Mutable view ledger used by registration-order regressions. */
     viewTabs?: ViewTab[]
+    canManageHost?: boolean
+    noSession?: boolean
+    startPersonalSession?: () => Promise<void>
   } = {},
 ) {
   const root = sid('root')
@@ -284,7 +287,9 @@ function mount(
       : (opts?.fallback ?? null)
   )) as ConversationRootProps['renderSlotChain']
   const props: ConversationRootProps = {
-    sessionId: SID,
+    sessionId: options.noSession ? undefined : SID,
+    useHostManagement: selector => selector(options.canManageHost ?? true),
+    startPersonalSession: options.startPersonalSession,
     SessionProvider: ({ children }) => children,
     useSession,
     useConversation,
@@ -683,5 +688,27 @@ describe('ConversationRoot resident composer', () => {
   it('hero phase renders no width handles (no transcript to size)', () => {
     const b = mount(sessionSnapshotOf({ blank: true }))
     expect(b.view.container.querySelector('[data-width-handle]')).toBeNull()
+  })
+})
+
+
+describe('personal task entry', () => {
+  it('starts without choosing a directory and never renders the shared project picker', async () => {
+    vi.stubEnv('DSH_CLIENT_BUILD_PROFILE', 'workbench')
+    const startPersonalSession = vi.fn(async () => {})
+    const b = mount(sessionSnapshotOf(), [], undefined, { canManageHost: false, noSession: true, startPersonalSession })
+    expect(b.view.queryByRole('button', { name: '选择项目' })).toBeNull()
+    expect(b.slotCalls).not.toContain('conversation.hero.workspace')
+    await act(async () => { fireEvent.click(b.view.getByRole('button', { name: '新建任务' })) })
+    expect(startPersonalSession).toHaveBeenCalledOnce()
+    expect(b.retargetWorkspace).not.toHaveBeenCalled()
+  })
+
+  it('keeps a personal blank session writable when it has no shared project', () => {
+    vi.stubEnv('DSH_CLIENT_BUILD_PROFILE', 'workbench')
+    const b = mount(sessionSnapshotOf({ openState: 'open' }), [], undefined, { canManageHost: false, summaryBlank: true })
+    expect(b.view.queryByRole('button', { name: '选择项目' })).toBeNull()
+    expect(b.slotCalls).not.toContain('conversation.hero.workspace')
+    expect(b.view.container.querySelector('[data-composer-input]')?.getAttribute('aria-disabled')).not.toBe('true')
   })
 })

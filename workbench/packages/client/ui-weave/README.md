@@ -17,6 +17,8 @@ Reusable capability authoring remains in the main conversation through Weave too
 
 `dsh-client-ui-weave` turns durable Weave MCP call results into a visible work task and places runtime-node management in the same Workbench surface. Users can follow the selected team, progress, member activity, runtime placement, human decisions, and exact-run deliverables without reading internal identifiers or tool vocabulary.
 
+The current account role controls Host management entrances. Members create personal tasks without choosing a directory, see a flat personal task list, and can archive their own tasks. Administrators retain shared project and Host settings controls. Personal creation sends no path or workspace override, deduplicates pending clicks, and discards navigation after account expiry; the Host remains the authorization and directory authority.
+
 ## Table of Contents
 
 - [Use this package](#use-this-package)
