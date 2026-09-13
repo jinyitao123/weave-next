@@ -6,7 +6,7 @@ package teamforge
 // of copying them:
 //   - WriteGate.authorize              — per-call BuildAuthorizationReceipt gate
 //   - WriteGate.requireBuildRunContext — call-envelope ↔ receipt run binding
-//   - WriteGate.writeTx                — begin/commit/rollback orchestration
+//   - WriteGate.commitAgent            — atomic product asset command
 //   - WriteGate.recordAudit / recordAudit — audit every outcome (T02 convention)
 //   - toolError and the validation helpers — IsError results and shared rules
 //
@@ -23,9 +23,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jinyitao123/loom/contract"
-	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/build/teambuild"
 	"github.com/jinyitao123/weave/internal/kernel/engine"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
@@ -280,25 +278,13 @@ func (g *WriteGate) resolveBuildRunID(rawArgs string) (string, error) {
 	return runID, nil
 }
 
-// writeTx orchestrates one atomic write: begin, mutate, commit. Any error
-// from mutate (model resolution, PutTx, ...) rolls the whole transaction
-// back, so a failed validation never lands a partial version.
-func (g *WriteGate) writeTx(ctx context.Context, mutate func(ctx context.Context, tx pgx.Tx) error) error {
-	if g.deps.Pool == nil {
-		return errors.New("write transaction store unavailable")
+// commitAgent delegates the atomic asset command after the tool's authorization
+// and assembly checks. Database transactions are not part of this port.
+func (g *WriteGate) commitAgent(ctx context.Context, record registry.AgentRecord, internalGraph bool) (AgentWriteResult, error) {
+	if g.deps.Agents == nil {
+		return AgentWriteResult{}, errors.New("agent registry write is unavailable")
 	}
-	tx, err := g.deps.Pool.Begin(ctx)
-	if err != nil {
-		return fmt.Errorf("begin write transaction: %w", err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-	if err := mutate(ctx, tx); err != nil {
-		return err
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("commit write transaction: %w", err)
-	}
-	return nil
+	return g.deps.Agents.CommitAgent(ctx, AgentWriteRequest{WorkspaceID: g.workspaceID, Record: record, InternalGraph: internalGraph})
 }
 
 // recordAudit writes one best-effort audit row for every write outcome
@@ -315,8 +301,8 @@ func (g *WriteGate) recordAudit(
 // validateWriteRecord runs the write-time validation stack shared by all
 // assembly writers: engine name, engine/runtime binding, avatar
 // capabilities, and the F13 CLI-vs-graph guard. All checks run before any
-// version is committed; model resolution (F2) additionally runs inside the
-// write tx right before PutTx.
+// version is committed; model resolution (F2) runs in the atomic
+// product command before the immutable agent version is committed.
 func (g *WriteGate) validateWriteRecord(
 	ctx context.Context,
 	rec *registry.AgentRecord,
@@ -443,54 +429,7 @@ func (g *WriteGate) validateCLIGraphConflict(existing, rec *registry.AgentRecord
 	return nil
 }
 
-// resolveModel is the F2 write gate: every written version's model must
-// resolve to a workspace ProviderRevision before PutTx lands it. The check
-// runs inside the write tx so the provider head cannot be revoked between
-// validation and commit.
-func (g *WriteGate) resolveModel(ctx context.Context, tx pgx.Tx, rec *registry.AgentRecord) error {
-	if rec.Model == "" {
-		return nil
-	}
-	if g.deps.Models == nil {
-		return errors.New("model resolver unavailable")
-	}
-	binding, err := g.deps.Models.ResolveModelRevisionTx(ctx, tx, g.workspaceID, rec.Model)
-	if err != nil {
-		return fmt.Errorf("%w: model %q: %v", ErrWriteModelUnresolvable, rec.Model, err)
-	}
-	if err := validateEngineModelBindingWrite(rec.Engine, binding); err != nil {
-		return err
-	}
-	return nil
-}
-
-func validateEngineModelBindingWrite(engineName string, binding frozen.FrozenModelBinding) error {
-	var requiredProvider string
-	switch engineName {
-	case engine.Codex, engine.OpenCode:
-		requiredProvider = "system/openai"
-	case engine.Claude:
-		requiredProvider = "system/anthropic"
-	default:
-		return nil
-	}
-	if binding.ProviderID != requiredProvider {
-		return fmt.Errorf(
-			"%w: engine %q requires a model from provider %q, got model %q from provider %q; "+
-				"read tf_list_capabilities.agent_model_policy and providers before retrying",
-			ErrWriteModelEngineMismatch,
-			engineName,
-			requiredProvider,
-			binding.ModelID,
-			binding.ProviderID,
-		)
-	}
-	return nil
-}
-
-// applyAgentContextDefaultsWrite replicates the platform context-management
-// defaults (api/agents.go): compaction and memory are enabled unless the
-// record explicitly configures them.
+// applyAgentContextDefaultsWrite preserves the platform context defaults.
 func applyAgentContextDefaultsWrite(rec *registry.AgentRecord) {
 	if rec.Compaction == nil {
 		rec.Compaction = registry.DefaultCompactionConfig()

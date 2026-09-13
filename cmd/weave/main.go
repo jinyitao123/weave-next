@@ -21,12 +21,13 @@ import (
 	"github.com/jinyitao123/weave/internal/app/deliveryverify"
 	"github.com/jinyitao123/weave/internal/app/metateam"
 	"github.com/jinyitao123/weave/internal/app/projects"
+	"github.com/jinyitao123/weave/internal/app/teamconstruction"
 	"github.com/jinyitao123/weave/internal/app/teamevaluations"
 	"github.com/jinyitao123/weave/internal/app/teamtemplates"
 	"github.com/jinyitao123/weave/internal/app/users"
 	"github.com/jinyitao123/weave/internal/base/db"
-	"github.com/jinyitao123/weave/internal/base/fanout"
-	"github.com/jinyitao123/weave/internal/base/taskqueue"
+	"github.com/jinyitao123/weave/internal/kernel/fanout"
+	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 	"github.com/jinyitao123/weave/internal/build/teambuild"
 	"github.com/jinyitao123/weave/internal/build/teameval"
 	"github.com/jinyitao123/weave/internal/build/teamorch"
@@ -387,7 +388,7 @@ func main() {
 	// stores, routed LLM, candidate runtime, and role-scoped teamforge tools as
 	// the rest of the server. Missing optional secure stores keep the service
 	// unavailable without weakening its dependency checks.
-	if phases, err := teamorch.NewPhases(teamorch.PhaseDeps{
+	if phases, err := teamconstruction.NewPhases(teamconstruction.Dependencies{
 		Pool: store.Pool(), Store: store, Build: srv.TeamBuild,
 		Agents: srv.Registry, TeamWorkers: srv.TeamWorkers, Teams: srv.OrgStore,
 		Workflows: srv.Workflow, MCPs: srv.MCPRegistry, Providers: srv.Credentials,

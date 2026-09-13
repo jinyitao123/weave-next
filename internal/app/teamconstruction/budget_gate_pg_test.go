@@ -1,4 +1,4 @@
-package teamorch
+package teamconstruction
 
 import (
 	"context"
@@ -11,6 +11,7 @@ import (
 	"github.com/jinyitao123/weave/internal/base/testutil"
 	"github.com/jinyitao123/weave/internal/build/teambuild"
 	"github.com/jinyitao123/weave/internal/build/teameval"
+	"github.com/jinyitao123/weave/internal/build/teamorch"
 	"github.com/jinyitao123/weave/internal/kernel/loomruntime"
 	"github.com/jinyitao123/weave/internal/kernel/org"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
@@ -48,12 +49,12 @@ func TestCLIReceiptTerminalFlowsIntoEvaluationReportRealPG(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	phases := &ProductionPhases{Deps: PhaseDeps{
+	phases := &ProductionPhases{Deps: Dependencies{
 		Pool: pool, Agents: registry.New(pool), TeamWorkers: registry.NewTeamWorkerRepository(pool),
 	}}
 	report := phases.assembleReport(
 		ctx,
-		RoundContext{WorkspaceID: entry.Tenant, RoundNo: 1, Run: teambuild.TeamBuildRun{}},
+		teamorch.RoundContext{WorkspaceID: entry.Tenant, RoundNo: 1, Run: teambuild.TeamBuildRun{}},
 		&org.Team{ID: "team-cli-report", Name: "team-cli-report"},
 		&workflow.PublicationCandidate{ContentHash: "candidate-hash", WorkflowID: "workflow-cli", WorkflowVersion: 1},
 		[]candidateScenarioRun{{Scenario: evaluationScenario{ID: "scenario-1"}, RunID: entry.RunID, Status: "success"}},
@@ -103,7 +104,7 @@ func TestCLIReportedCandidateUsageBlocksBeforeRuntimeDependenciesRealPG(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	round := RoundContext{WorkspaceID: run.WorkspaceID, BuildRunID: run.BuildRunID, RoundNo: 1, Run: run}
+	round := teamorch.RoundContext{WorkspaceID: run.WorkspaceID, BuildRunID: run.BuildRunID, RoundNo: 1, Run: run}
 	// The candidate terminal marker is populated from the TeamRun terminal,
 	// whose CLI self-exclusive usage is sourced only from the validated
 	// cli-reported receipt. No price/token estimate is introduced here.
@@ -120,7 +121,7 @@ func TestCLIReportedCandidateUsageBlocksBeforeRuntimeDependenciesRealPG(t *testi
 	// Build is the only dependency supplied. Reaching target resolution,
 	// candidate runtime, or semantic judge would fail this test; G1 must return
 	// first without any candidate/LLM call.
-	phases := &ProductionPhases{Deps: PhaseDeps{Build: builds}}
+	phases := &ProductionPhases{Deps: Dependencies{Build: builds}}
 	evaluation, err := phases.Evaluate(ctx, round)
 	if err != nil {
 		t.Fatal(err)

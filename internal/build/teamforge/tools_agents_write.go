@@ -9,11 +9,9 @@ package teamforge
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strings"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jinyitao123/loom/contract"
 	"github.com/jinyitao123/loom/stdlib"
 	"github.com/jinyitao123/weave/internal/base/frozen"
@@ -362,27 +360,11 @@ func (d *WriteToolsDispatcher) createAgent(ctx context.Context, call contract.To
 		return toolError(call.ID, err.Error()), nil
 	}
 
-	var payload string
-	if err := d.gate.writeTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
-		if err := d.gate.resolveModel(ctx, tx, rec); err != nil {
-			return err
-		}
-		if d.gate.deps.Agents == nil {
-			return errors.New("agent registry write is unavailable")
-		}
-		if err := d.gate.deps.Agents.PutTx(ctx, tx, d.gate.workspaceID, rec); err != nil {
-			return err
-		}
-		data, err := json.Marshal(rec)
-		if err != nil {
-			return err
-		}
-		payload = string(data)
-		return nil
-	}); err != nil {
+	committed, err := d.gate.commitAgent(ctx, *rec, false)
+	if err != nil {
 		return toolError(call.ID, err.Error()), nil
 	}
-	return &contract.ToolResult{CallID: call.ID, Content: payload}, nil
+	return &contract.ToolResult{CallID: call.ID, Content: string(committed.JSON)}, nil
 }
 
 // updateAgent implements tf_update_agent: a whitelist-field patch over the
@@ -437,25 +419,9 @@ func (d *WriteToolsDispatcher) updateAgent(ctx context.Context, call contract.To
 		return toolError(call.ID, err.Error()), nil
 	}
 
-	var payload string
-	if err := d.gate.writeTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
-		if err := d.gate.resolveModel(ctx, tx, merged); err != nil {
-			return err
-		}
-		if d.gate.deps.Agents == nil {
-			return errors.New("agent registry write is unavailable")
-		}
-		if err := d.gate.deps.Agents.PutTx(ctx, tx, d.gate.workspaceID, merged); err != nil {
-			return err
-		}
-		data, err := json.Marshal(merged)
-		if err != nil {
-			return err
-		}
-		payload = string(data)
-		return nil
-	}); err != nil {
+	committed, err := d.gate.commitAgent(ctx, *merged, false)
+	if err != nil {
 		return toolError(call.ID, err.Error()), nil
 	}
-	return &contract.ToolResult{CallID: call.ID, Content: payload}, nil
+	return &contract.ToolResult{CallID: call.ID, Content: string(committed.JSON)}, nil
 }

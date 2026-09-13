@@ -1,6 +1,6 @@
-package teamorch
+package teamconstruction
 
-// Production round phases (ticket T12): the build phase drives the meta-team
+// Product construction adapters: the build phase drives the meta-team
 // employees through mcphost.AgentRunner with the teamforge tool set decided
 // by teamforge.DecideToolSet; the evaluate phase freezes a publication
 // candidate, runs it through the teamrun executor, gathers evidence, and
@@ -26,16 +26,18 @@ import (
 	"github.com/jinyitao123/loom/contract"
 	"github.com/jinyitao123/loom/pgstore"
 	"github.com/jinyitao123/loom/stdlib"
+	"github.com/jinyitao123/weave/internal/app/teamassets"
 	"github.com/jinyitao123/weave/internal/base/deliverable"
 	"github.com/jinyitao123/weave/internal/base/execution"
-	"github.com/jinyitao123/weave/internal/base/fanout"
+	"github.com/jinyitao123/weave/internal/kernel/fanout"
 	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/base/snapshot"
 	"github.com/jinyitao123/weave/internal/base/storeext"
-	"github.com/jinyitao123/weave/internal/base/taskqueue"
+	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 	"github.com/jinyitao123/weave/internal/build/teambuild"
 	"github.com/jinyitao123/weave/internal/build/teameval"
 	"github.com/jinyitao123/weave/internal/build/teamforge"
+	"github.com/jinyitao123/weave/internal/build/teamorch"
 	"github.com/jinyitao123/weave/internal/kernel/audit"
 	"github.com/jinyitao123/weave/internal/kernel/compiler"
 	"github.com/jinyitao123/weave/internal/kernel/credentials"
@@ -55,13 +57,9 @@ import (
 	"github.com/jinyitao123/weave/internal/kernel/workflow/machine"
 )
 
-// PhaseDeps aggregates every store and seam the production phases need. The
-// assembly deliberately mirrors internal/api/teamforge_wiring.go's deps
-// semantics (read side teamForgeDeps, write side teamForgeWriteDeps) so the
-// controller's agent runs receive exactly the same teamforge tool surface as
-// the conversation wiring — keep the two in sync when the tool surface
-// changes.
-type PhaseDeps struct {
+// Dependencies belongs to the product composition layer. Builder controllers
+// receive only phase and operation ports; database stores never cross those ports.
+type Dependencies struct {
 	// Pool begins the candidate-build and credential transactions.
 	Pool *pgxpool.Pool
 	// Store is the loom namespace store used by AgentRunner and the
@@ -118,7 +116,7 @@ type PhaseDeps struct {
 // Phases interface plus the publish step that runs after the controller
 // reports publishing.
 type ProductionPhases struct {
-	Deps PhaseDeps
+	Deps Dependencies
 
 	builder *workflow.CandidateBuilder
 
@@ -129,7 +127,7 @@ type ProductionPhases struct {
 // NewPhases validates the dependency set and constructs the production
 // phases. It fails fast when a required store is missing so wiring mistakes
 // surface at startup instead of mid-round.
-func NewPhases(deps PhaseDeps) (*ProductionPhases, error) {
+func NewPhases(deps Dependencies) (*ProductionPhases, error) {
 	if deps.Pool == nil || deps.Store == nil || deps.Build == nil ||
 		deps.Agents == nil || deps.TeamWorkers == nil || deps.Teams == nil ||
 		deps.Workflows == nil || deps.MCPs == nil || deps.Providers == nil ||
@@ -171,25 +169,11 @@ func (p *ProductionPhases) llmForWorkspace(
 	return nil, errors.New("workspace LLM unavailable")
 }
 
-// ErrBlueprintPatchPlannerBudgetExhausted is returned before starting the
-// planner when no budget balance remains, or after charging the planner when
-// that final charge reaches/exceeds a frozen limit. The controller maps both
-// cases to the stable budget_exhausted terminal class and never appends a
-// Blueprint revision.
-var ErrBlueprintPatchPlannerBudgetExhausted = errors.New("blueprint patch planner budget exhausted")
-
-// ErrCompilerPublishBudgetExhausted reports a G5 rejection that has already
-// committed publishing -> blocked atomically. Callers must preserve the
-// budget failure class instead of wrapping it as retryable infrastructure.
-var ErrCompilerPublishBudgetExhausted = errors.New("compiler publish budget exhausted")
-
-// PlanBlueprintPatch invokes the dedicated read-only patch planner only after
-// the controller has persisted a complete business-quality report. The
-// planner returns one strict document; all application, compilation, CAS and
-// storage authority stays in the platform controller/store.
+// PlanBlueprintPatch runs the read-only planner against persisted report evidence.
+// The builder validates patch semantics; this product adapter owns asset and budget access.
 func (p *ProductionPhases) PlanBlueprintPatch(
 	ctx context.Context,
-	round RoundContext,
+	round teamorch.RoundContext,
 	report teambuild.EvaluationReport,
 	diagnosis teameval.TypedDiagnosis,
 ) (teambuild.BlueprintPatchV1, error) {
@@ -219,7 +203,7 @@ func (p *ProductionPhases) PlanBlueprintPatch(
 	valueHashes := make(map[string]string, len(blueprint.RevisionPolicy.AllowedPatchPaths))
 	for _, path := range blueprint.RevisionPolicy.AllowedPatchPaths {
 		probe := teambuild.BlueprintPatchV1{Changes: []teambuild.BlueprintFieldPatchV1{{Path: path}}}
-		if err := validateCompilerPatchExecutable(blueprint, probe); err != nil {
+		if err := teamorch.ValidateCompilerPatchExecutable(blueprint, probe); err != nil {
 			continue
 		}
 		hash, err := teambuild.BlueprintPatchValueHashV1(blueprint, path)
@@ -248,7 +232,7 @@ func (p *ProductionPhases) PlanBlueprintPatch(
 			return teambuild.BlueprintPatchV1{}, fmt.Errorf("evaluate blueprint patch budget before planner: %w", err)
 		}
 		if len(preDecision.ExceededDims) > 0 {
-			return teambuild.BlueprintPatchV1{}, fmt.Errorf("%w: no balance before planner", ErrBlueprintPatchPlannerBudgetExhausted)
+			return teambuild.BlueprintPatchV1{}, fmt.Errorf("%w: no balance before planner", teamorch.ErrBlueprintPatchPlannerBudgetExhausted)
 		}
 	}
 	payload, err := json.Marshal(struct {
@@ -284,7 +268,7 @@ func (p *ProductionPhases) PlanBlueprintPatch(
 		return teambuild.BlueprintPatchV1{}, fmt.Errorf("evaluate blueprint patch budget: %w", err)
 	}
 	if len(decision.ExceededDims) > 0 {
-		return teambuild.BlueprintPatchV1{}, fmt.Errorf("%w: planner charge consumed remaining balance", ErrBlueprintPatchPlannerBudgetExhausted)
+		return teambuild.BlueprintPatchV1{}, fmt.Errorf("%w: planner charge consumed remaining balance", teamorch.ErrBlueprintPatchPlannerBudgetExhausted)
 	}
 	patch, err := decodeBlueprintPatchPlannerOutput(planned.Output)
 	if err != nil {
@@ -301,7 +285,7 @@ func (p *ProductionPhases) PlanBlueprintPatch(
 
 type buildBlueprintPatchPlannerExecutor struct {
 	phases *ProductionPhases
-	round  RoundContext
+	round  teamorch.RoundContext
 }
 
 func (e buildBlueprintPatchPlannerExecutor) Execute(
@@ -577,7 +561,7 @@ func baselineReportKey(buildRunID string) string {
 // an association with a final marker but no ledger row is backfilled
 // idempotently, while an association without a final marker returns
 // ErrUsageSourcePending and never re-runs that role.
-func (p *ProductionPhases) Build(ctx context.Context, round RoundContext) error {
+func (p *ProductionPhases) Build(ctx context.Context, round teamorch.RoundContext) error {
 	if err := p.reconcileBuildUsage(ctx, round); err != nil {
 		return fmt.Errorf("build phase: reconcile usage round %d: %w", round.RoundNo, err)
 	}
@@ -704,7 +688,7 @@ func (p *ProductionPhases) Build(ctx context.Context, round RoundContext) error 
 
 type buildConstructionRoleExecutor struct {
 	phases *ProductionPhases
-	round  RoundContext
+	round  teamorch.RoundContext
 }
 
 func (e buildConstructionRoleExecutor) Execute(
@@ -761,7 +745,7 @@ var _ teambuild.ConstructionRoleExecutor = buildConstructionRoleExecutor{}
 // short-circuits a re-run, an admitted-but-unsettled baseline candidate run is
 // recharged and reused from its final terminal marker, and a draft created by
 // a crashed baseline attempt is reused instead of minting a second one.
-func (p *ProductionPhases) Baseline(ctx context.Context, round RoundContext) error {
+func (p *ProductionPhases) Baseline(ctx context.Context, round teamorch.RoundContext) error {
 	if round.Run.Mode != teambuild.ModeOptimize {
 		return nil
 	}
@@ -960,7 +944,7 @@ func candidateFromBaselineSnapshot(
 // never started while the admitted run is still in flight.
 func (p *ProductionPhases) reconcileBaselineUsage(
 	ctx context.Context,
-	round RoundContext,
+	round teamorch.RoundContext,
 ) (*teambuild.BuildUsageSource, error) {
 	uncharged, err := p.Deps.Build.ListUnchargedUsageSources(
 		ctx, round.WorkspaceID, round.BuildRunID, round.RoundNo,
@@ -1000,7 +984,7 @@ func (p *ProductionPhases) reconcileBaselineUsage(
 // losing either usage record.
 func (p *ProductionPhases) reconcileScenarioUsage(
 	ctx context.Context,
-	round RoundContext,
+	round teamorch.RoundContext,
 	roles []string,
 ) (map[string]*teambuild.BuildUsageSource, error) {
 	wanted := make(map[string]bool, len(roles))
@@ -1048,7 +1032,7 @@ func (p *ProductionPhases) baselineDraftVersion(
 	ctx context.Context,
 	workspaceID, workflowID string,
 ) (int, error) {
-	version, err := p.Deps.Workflows.CreateDraft(ctx, workspaceID, workflowID, DefaultActor)
+	version, err := p.Deps.Workflows.CreateDraft(ctx, workspaceID, workflowID, teamorch.DefaultActor)
 	if err == nil {
 		return version.Version, nil
 	}
@@ -1109,7 +1093,7 @@ func (p *ProductionPhases) readBaselineReport(
 // started again while its run is still in flight.
 func (p *ProductionPhases) reconcileBuildUsage(
 	ctx context.Context,
-	round RoundContext,
+	round teamorch.RoundContext,
 ) error {
 	sources, err := p.Deps.Build.ListUnchargedUsageSources(
 		ctx,
@@ -1130,7 +1114,7 @@ func (p *ProductionPhases) reconcileBuildUsage(
 
 func (p *ProductionPhases) backfillUsageSource(
 	ctx context.Context,
-	round RoundContext,
+	round teamorch.RoundContext,
 	source teambuild.BuildUsageSource,
 ) error {
 	tx, err := p.Deps.Pool.Begin(ctx)
@@ -1174,7 +1158,7 @@ func (p *ProductionPhases) backfillUsageSource(
 // so an accounted role is complete and must not run again.
 func (p *ProductionPhases) accountedBuildRoles(
 	ctx context.Context,
-	round RoundContext,
+	round teamorch.RoundContext,
 ) (map[string]bool, error) {
 	sources, err := p.Deps.Build.ListUsageSources(
 		ctx,
@@ -1201,7 +1185,7 @@ func (p *ProductionPhases) accountedBuildRoles(
 // transaction, so a crash between the two is exactly what reconcile recovers.
 func (p *ProductionPhases) accountBuildRunUsage(
 	ctx context.Context,
-	round RoundContext,
+	round teamorch.RoundContext,
 	role, runID string,
 ) error {
 	if runID == "" {
@@ -1242,7 +1226,7 @@ func (p *ProductionPhases) accountBuildRunUsage(
 // budget ledger identity for the round. Historical ledger rows that predate
 // marker tool-call attribution remain zero; append-only usage is never rewritten.
 func usageChargeFromMarker(
-	round RoundContext,
+	round teamorch.RoundContext,
 	role, runID string,
 	marker loomruntime.TerminalMarkerV1,
 ) teambuild.BudgetCharge {
@@ -1263,7 +1247,7 @@ func usageChargeFromMarker(
 // usageChargeFromCandidateMarker maps one final candidate-runtime terminal
 // marker into the T14A budget ledger identity for the round.
 func usageChargeFromCandidateMarker(
-	round RoundContext,
+	round teamorch.RoundContext,
 	sourceRole string,
 	runID string,
 	marker loomruntime.TerminalMarkerV1,
@@ -1290,7 +1274,7 @@ func usageChargeFromCandidateMarker(
 // is the round's existing candidate runtime when one is already associated.
 func (p *ProductionPhases) reconcileCandidateUsage(
 	ctx context.Context,
-	round RoundContext,
+	round teamorch.RoundContext,
 ) (*teambuild.BuildUsageSource, error) {
 	uncharged, err := p.Deps.Build.ListUnchargedUsageSources(
 		ctx,
@@ -1340,7 +1324,7 @@ func (p *ProductionPhases) reconcileCandidateUsage(
 // either still executing or lost, and no zero usage is ever fabricated.
 func (p *ProductionPhases) backfillCandidateUsageSource(
 	ctx context.Context,
-	round RoundContext,
+	round teamorch.RoundContext,
 	source teambuild.BuildUsageSource,
 ) error {
 	tx, err := p.Deps.Pool.Begin(ctx)
@@ -1384,7 +1368,7 @@ func (p *ProductionPhases) backfillCandidateUsageSource(
 // rows were committed with admission and must still carry the round identity.
 func (p *ProductionPhases) reuseCandidateRun(
 	ctx context.Context,
-	round RoundContext,
+	round teamorch.RoundContext,
 	source teambuild.BuildUsageSource,
 ) (*workflow.PublicationCandidate, string, string, error) {
 	tx, err := p.Deps.Pool.Begin(ctx)
@@ -1447,7 +1431,7 @@ func (p *ProductionPhases) reuseCandidateRun(
 // terminal, attribution, and checkpoint protocol.
 func (p *ProductionPhases) runControlledAgent(
 	ctx context.Context,
-	round RoundContext,
+	round teamorch.RoundContext,
 	rec *registry.AgentRecord,
 	message, role, evidenceHash string,
 ) (mcphost.AgentRunResult, error) {
@@ -1464,7 +1448,7 @@ func (p *ProductionPhases) runControlledAgent(
 
 func (p *ProductionPhases) agentRunner(
 	ctx context.Context,
-	round RoundContext,
+	round teamorch.RoundContext,
 	rec *registry.AgentRecord,
 	role, sourceReportHash string,
 ) (*mcphost.AgentRunner, error) {
@@ -1593,7 +1577,7 @@ func (p *ProductionPhases) agentRunner(
 // receipt reissue disables the write tools instead of panicking.
 func (p *ProductionPhases) platformToolsForAgent(
 	ctx context.Context,
-	round RoundContext,
+	round teamorch.RoundContext,
 	rec *registry.AgentRecord,
 ) []contract.ToolDispatcher {
 	// ProductionPhases.Build is the explicitly retained legacy direct-write
@@ -1680,10 +1664,8 @@ func (p *ProductionPhases) teamForgeDeps() teamforge.Deps {
 // api wiring.
 func (p *ProductionPhases) teamForgeWriteDeps() teamforge.WriteDeps {
 	return teamforge.WriteDeps{
-		Pool:          p.Deps.Pool,
-		Agents:        p.Deps.Agents,
+		Agents:        &teamassets.AgentWriter{Pool: p.Deps.Pool, Registry: p.Deps.Agents},
 		AgentLoad:     p.Deps.Agents,
-		Models:        teamforge.CredentialModelResolver{},
 		Runtimes:      p.Deps.Runtimes,
 		Teams:         p.Deps.Teams,
 		TeamDesign:    p.Deps.Teams,
@@ -1696,7 +1678,7 @@ func (p *ProductionPhases) teamForgeWriteDeps() teamforge.WriteDeps {
 // Evaluate freezes the round's candidate, runs it through the teamrun
 // executor, gathers run/task/artifact evidence, evaluates every hard gate,
 // and assembles the immutable round report.
-func (p *ProductionPhases) Evaluate(ctx context.Context, round RoundContext) (RoundEvaluation, error) {
+func (p *ProductionPhases) Evaluate(ctx context.Context, round teamorch.RoundContext) (teamorch.RoundEvaluation, error) {
 	workspaceID := round.WorkspaceID
 	if round.Run.EffectiveExecutionStrategy() == teambuild.ExecutionStrategyCompilerV1 {
 		decision, err := p.Deps.Build.EvaluateBudget(
@@ -1704,7 +1686,7 @@ func (p *ProductionPhases) Evaluate(ctx context.Context, round RoundContext) (Ro
 			round.Run.RoundBudget, round.Run.TotalBudget,
 		)
 		if err != nil {
-			return RoundEvaluation{}, fmt.Errorf("evaluate phase: candidate budget preflight: %w", err)
+			return teamorch.RoundEvaluation{}, fmt.Errorf("evaluate phase: candidate budget preflight: %w", err)
 		}
 		if len(decision.ExceededDims) > 0 {
 			return budgetExhaustedEvaluation(teambuild.EvaluationReport{SchemaVersion: 1}, "", decision), nil
@@ -1713,11 +1695,11 @@ func (p *ProductionPhases) Evaluate(ctx context.Context, round RoundContext) (Ro
 
 	team, err := p.targetTeam(ctx, workspaceID, round.Run)
 	if err != nil {
-		return RoundEvaluation{}, err
+		return teamorch.RoundEvaluation{}, err
 	}
 	if team == nil {
 		report := p.failedTeamReport(round, "target team was not created by the build phase")
-		return RoundEvaluation{
+		return teamorch.RoundEvaluation{
 			Conclusion:      teambuild.ConclusionRevise,
 			FailureCategory: teameval.GateTeamShape,
 			Diagnosis: teameval.TypedDiagnosis{
@@ -1744,7 +1726,7 @@ func (p *ProductionPhases) Evaluate(ctx context.Context, round RoundContext) (Ro
 	// instead of repeating already charged candidate executions.
 	existing, err := p.reconcileScenarioUsage(ctx, round, roles)
 	if err != nil {
-		return RoundEvaluation{}, fmt.Errorf(
+		return teamorch.RoundEvaluation{}, fmt.Errorf(
 			"evaluate phase: reconcile candidate usage round %d: %w",
 			round.RoundNo,
 			err,
@@ -1812,7 +1794,7 @@ func (p *ProductionPhases) Evaluate(ctx context.Context, round RoundContext) (Ro
 			StageOutputs: stageOutputs,
 		})
 		if _, err := p.reconcileScenarioUsage(ctx, round, []string{roles[index]}); err != nil {
-			return RoundEvaluation{}, fmt.Errorf(
+			return teamorch.RoundEvaluation{}, fmt.Errorf(
 				"evaluate phase: settle scenario %s usage: %w", scenario.ID, err,
 			)
 		}
@@ -1821,7 +1803,7 @@ func (p *ProductionPhases) Evaluate(ctx context.Context, round RoundContext) (Ro
 			round.Run.RoundBudget, round.Run.TotalBudget,
 		)
 		if err != nil {
-			return RoundEvaluation{}, fmt.Errorf(
+			return teamorch.RoundEvaluation{}, fmt.Errorf(
 				"evaluate phase: scenario %s budget gate: %w", scenario.ID, err,
 			)
 		}
@@ -1852,7 +1834,7 @@ func (p *ProductionPhases) Evaluate(ctx context.Context, round RoundContext) (Ro
 		}
 	}
 	if _, err := p.reconcileScenarioUsage(ctx, round, roles); err != nil {
-		return RoundEvaluation{}, fmt.Errorf(
+		return teamorch.RoundEvaluation{}, fmt.Errorf(
 			"evaluate phase: settle candidate usage round %d: %w",
 			round.RoundNo,
 			err,
@@ -1885,7 +1867,7 @@ func (p *ProductionPhases) Evaluate(ctx context.Context, round RoundContext) (Ro
 			round.Run.RoundBudget, round.Run.TotalBudget,
 		)
 		if budgetErr != nil {
-			return RoundEvaluation{}, fmt.Errorf("evaluate phase: semantic judge budget gate: %w", budgetErr)
+			return teamorch.RoundEvaluation{}, fmt.Errorf("evaluate phase: semantic judge budget gate: %w", budgetErr)
 		}
 		if len(decision.ExceededDims) > 0 {
 			return budgetExhaustedEvaluation(report, candidateRef, decision), nil
@@ -1978,7 +1960,7 @@ func (p *ProductionPhases) Evaluate(ctx context.Context, round RoundContext) (Ro
 			report.InfraErrors = append(report.InfraErrors, detail)
 		}
 	}
-	return RoundEvaluation{
+	return teamorch.RoundEvaluation{
 		CandidateRef:    candidateRef,
 		Gates:           mapGateResults(gates),
 		Conclusion:      conclusion,
@@ -1992,12 +1974,12 @@ func budgetExhaustedEvaluation(
 	report teambuild.EvaluationReport,
 	candidateRef string,
 	decision teambuild.BudgetDecision,
-) RoundEvaluation {
+) teamorch.RoundEvaluation {
 	detail := "budget_exhausted"
 	if len(decision.ExceededDims) > 0 {
 		detail += ": " + strings.Join(decision.ExceededDims, ", ")
 	}
-	return RoundEvaluation{
+	return teamorch.RoundEvaluation{
 		CandidateRef: candidateRef, Conclusion: teambuild.ConclusionBlocked,
 		FailureCategory: string(teameval.FailureClassBudgetExhausted), Report: report,
 		Diagnosis: teameval.TypedDiagnosis{
@@ -2089,25 +2071,25 @@ func (p *ProductionPhases) PublishStep(ctx context.Context, workspaceID, buildRu
 	}
 	if len(decision.ExceededDims) > 0 {
 		if _, err := p.Deps.Build.BlockPublishingBudgetTx(
-			ctx, tx, workspaceID, buildRunID, DefaultActor,
+			ctx, tx, workspaceID, buildRunID, teamorch.DefaultActor,
 		); err != nil {
 			return fmt.Errorf("publish step: G5 atomic block: %w", err)
 		}
 		if err := tx.Commit(ctx); err != nil {
 			return fmt.Errorf("publish step: commit G5 atomic block: %w", err)
 		}
-		return ErrCompilerPublishBudgetExhausted
+		return teamorch.ErrCompilerPublishBudgetExhausted
 	}
 	if blocksIncompleteUsage(roundReport.Report, lockedRun.Brief) {
 		if _, err := p.Deps.Build.BlockPublishingBudgetTx(
-			ctx, tx, workspaceID, buildRunID, DefaultActor,
+			ctx, tx, workspaceID, buildRunID, teamorch.DefaultActor,
 		); err != nil {
 			return fmt.Errorf("publish step: incomplete-usage atomic block: %w", err)
 		}
 		if err := tx.Commit(ctx); err != nil {
 			return fmt.Errorf("publish step: commit incomplete-usage atomic block: %w", err)
 		}
-		return ErrCompilerPublishBudgetExhausted
+		return teamorch.ErrCompilerPublishBudgetExhausted
 	}
 	verifiedBaselineHash, err := p.Deps.Build.VerifyEvaluationBaselineTx(ctx, tx, workspaceID, buildRunID)
 	if err != nil {
@@ -2124,7 +2106,7 @@ func (p *ProductionPhases) PublishStep(ctx context.Context, workspaceID, buildRu
 			return fmt.Errorf("publish step: activate team: %w", err)
 		}
 	}
-	if _, err := p.Deps.Build.MarkPublishedTx(ctx, tx, workspaceID, buildRunID, DefaultActor, teambuild.FinalRef{
+	if _, err := p.Deps.Build.MarkPublishedTx(ctx, tx, workspaceID, buildRunID, teamorch.DefaultActor, teambuild.FinalRef{
 		Ref:    candidate.ContentHash,
 		TeamID: candidate.Payload.Team.TeamID,
 	}, verifiedBaselineHash); err != nil {
@@ -2302,7 +2284,7 @@ func (p *ProductionPhases) settlePublishUsageTx(
 		if !present || marker.Phase != loomruntime.TerminalMarkerPhaseFinal {
 			return fmt.Errorf("%w: source %s/%s", ErrUsageSourcePending, source.SourceKind, source.SourceRunID)
 		}
-		round := RoundContext{
+		round := teamorch.RoundContext{
 			WorkspaceID: run.WorkspaceID, BuildRunID: run.BuildRunID,
 			RoundNo: source.RoundNo, Run: run,
 		}
@@ -2335,7 +2317,7 @@ func (p *ProductionPhases) blockEvaluationPublicationCAS(
 		return fmt.Errorf("publish step: atomic publication: %w", cause)
 	}
 	if _, err := p.Deps.Build.TransitionStatus(ctx, run.WorkspaceID, run.BuildRunID,
-		teambuild.StatusPublishing, teambuild.StatusBlocked, DefaultActor,
+		teambuild.StatusPublishing, teambuild.StatusBlocked, teamorch.DefaultActor,
 		"evaluation_baseline_cas_failed"); err != nil {
 		return fmt.Errorf("publish step: block evaluation CAS failure: %v (original: %w)", err, cause)
 	}
@@ -2412,7 +2394,7 @@ func (p *ProductionPhases) targetTeam(
 // workflow) and its latest draft, then builds and runs the candidate.
 func (p *ProductionPhases) buildAndRunCandidate(
 	ctx context.Context,
-	round RoundContext,
+	round teamorch.RoundContext,
 	team *org.Team,
 ) (*workflow.PublicationCandidate, string, string, error) {
 	workflowID, draftVersion, err := p.candidateWorkflowVersion(ctx, round, team)
@@ -2431,7 +2413,7 @@ func (p *ProductionPhases) buildAndRunCandidate(
 
 func (p *ProductionPhases) candidateWorkflowVersion(
 	ctx context.Context,
-	round RoundContext,
+	round teamorch.RoundContext,
 	team *org.Team,
 ) (string, int, error) {
 	workspaceID := round.WorkspaceID
@@ -2571,7 +2553,7 @@ func (p *ProductionPhases) latestDraftVersion(
 // (baseline_workflow_root) in the T14B usage-source ledger.
 func (p *ProductionPhases) buildAndRunCandidateFor(
 	ctx context.Context,
-	round RoundContext,
+	round teamorch.RoundContext,
 	team *org.Team,
 	workflowID string,
 	draftVersion int,
@@ -2611,7 +2593,7 @@ func (p *ProductionPhases) buildAndRunCandidateFor(
 		if !errors.Is(err, workflow.ErrCandidateNotFound) {
 			return nil, "", "", fmt.Errorf("check existing candidate: %w", err)
 		}
-		if err := p.Deps.Workflows.InsertCandidateTx(ctx, tx, candidate, DefaultActor); err != nil {
+		if err := p.Deps.Workflows.InsertCandidateTx(ctx, tx, candidate, teamorch.DefaultActor); err != nil {
 			return nil, "", "", fmt.Errorf("insert candidate: %w", err)
 		}
 	}
@@ -2766,7 +2748,7 @@ func (p *ProductionPhases) driveCandidateRun(
 			IdlePollInterval: 100 * time.Millisecond,
 		},
 		func(loopCtx context.Context) (bool, error) {
-			return executor.ProcessNext(loopCtx, DefaultActor)
+			return executor.ProcessNext(loopCtx, teamorch.DefaultActor)
 		},
 		func(loopCtx context.Context) (int, error) {
 			return reconciler.Sweep(loopCtx)
@@ -2814,16 +2796,16 @@ func (p *ProductionPhases) cancelCandidateRun(
 			ExpectedTeamRunGeneration: run.Generation, ExpectedExecutionLeaseEpoch: run.ExecutionLeaseEpoch,
 			ExpectedResumeGeneration: run.ResumeGeneration,
 			IdempotencyKey:           "candidate-driver-cancel-queued:" + runID,
-			Actor:                    DefaultActor, Source: "candidate_driver", OccurredAt: now,
+			Actor:                    teamorch.DefaultActor, Source: "candidate_driver", OccurredAt: now,
 		})
 	case teamrun.StatusRunning, teamrun.StatusParked:
 		run, err = runStore.RequestCancelTx(ctx, tx, teamrun.RequestCancelRequest{
 			WorkspaceID: workspaceID, RunID: runID, ExpectedStatus: run.Status,
 			ExpectedTeamRunGeneration: run.Generation, ExpectedExecutionLeaseEpoch: run.ExecutionLeaseEpoch,
 			ExpectedResumeGeneration: run.ResumeGeneration,
-			CancelActor:              DefaultActor, CancelReason: "candidate driver ended before TeamRun terminal",
+			CancelActor:              teamorch.DefaultActor, CancelReason: "candidate driver ended before TeamRun terminal",
 			GraceDeadlineAt: now, IdempotencyKey: "candidate-driver-request-cancel:" + runID,
-			Actor: DefaultActor, Source: "candidate_driver", OccurredAt: now,
+			Actor: teamorch.DefaultActor, Source: "candidate_driver", OccurredAt: now,
 		})
 		if err == nil {
 			_, err = runStore.ConfirmCancelTx(ctx, tx, teamrun.ConfirmCancelRequest{
@@ -2831,7 +2813,7 @@ func (p *ProductionPhases) cancelCandidateRun(
 				ExpectedTeamRunGeneration: run.Generation, ExpectedExecutionLeaseEpoch: run.ExecutionLeaseEpoch,
 				ExpectedResumeGeneration: run.ResumeGeneration,
 				IdempotencyKey:           "candidate-driver-confirm-cancel:" + runID,
-				Actor:                    DefaultActor, Source: "candidate_driver", OccurredAt: now,
+				Actor:                    teamorch.DefaultActor, Source: "candidate_driver", OccurredAt: now,
 			})
 		}
 	case teamrun.StatusCancelRequested:
@@ -2840,7 +2822,7 @@ func (p *ProductionPhases) cancelCandidateRun(
 			ExpectedTeamRunGeneration: run.Generation, ExpectedExecutionLeaseEpoch: run.ExecutionLeaseEpoch,
 			ExpectedResumeGeneration: run.ResumeGeneration,
 			IdempotencyKey:           "candidate-driver-confirm-cancel:" + runID,
-			Actor:                    DefaultActor, Source: "candidate_driver", OccurredAt: now,
+			Actor:                    teamorch.DefaultActor, Source: "candidate_driver", OccurredAt: now,
 		})
 	default:
 		err = fmt.Errorf("candidate run %q has unsupported cancellation status %q", runID, run.Status)
@@ -3009,7 +2991,7 @@ func (p *ProductionPhases) readTeamRunStatus(
 // table's immutability trigger protects it afterwards.
 func (p *ProductionPhases) insertDeliverableEvidence(
 	ctx context.Context,
-	round RoundContext,
+	round teamorch.RoundContext,
 	team *org.Team,
 	runID, status string,
 ) error {
@@ -3333,7 +3315,7 @@ func (p *ProductionPhases) evaluateGates(
 // configuration, the candidate test run, and the gate results.
 func (p *ProductionPhases) assembleReport(
 	ctx context.Context,
-	round RoundContext,
+	round teamorch.RoundContext,
 	team *org.Team,
 	candidate *workflow.PublicationCandidate,
 	runs []candidateScenarioRun,
@@ -3440,7 +3422,7 @@ func (p *ProductionPhases) assembleReport(
 }
 
 func semanticEvaluationPackage(
-	round RoundContext,
+	round teamorch.RoundContext,
 	runs []candidateScenarioRun,
 ) ([]byte, string, error) {
 	scenarios := make([]semanticEvaluationScenarioV1, 0, len(runs))
@@ -3538,7 +3520,7 @@ func reasonCitesScenario(reason string, validScenarioIDs map[string]bool) bool {
 
 func (p *ProductionPhases) semanticRubricEvaluation(
 	ctx context.Context,
-	round RoundContext,
+	round teamorch.RoundContext,
 	runs []candidateScenarioRun,
 ) (semanticRubricEvaluation, error) {
 	payload, evidenceHash, err := semanticEvaluationPackage(round, runs)
@@ -3562,7 +3544,7 @@ func (p *ProductionPhases) semanticRubricEvaluation(
 
 type buildSemanticJudgeExecutor struct {
 	phases *ProductionPhases
-	round  RoundContext
+	round  teamorch.RoundContext
 }
 
 func (e buildSemanticJudgeExecutor) Execute(
@@ -3786,7 +3768,7 @@ func (p *ProductionPhases) candidateRunUsage(
 // roster workers) for the report's asset-version traceability.
 func (p *ProductionPhases) loadEvaluatedAssets(
 	ctx context.Context,
-	round RoundContext,
+	round teamorch.RoundContext,
 	team *org.Team,
 ) ([]teambuild.VersionedRef, error) {
 	agents, err := p.Deps.Agents.List(ctx, round.WorkspaceID)
@@ -3850,7 +3832,7 @@ func mapGateResults(gates []teameval.GateResult) []teambuild.HardGateResult {
 // infraEvaluation reports an evaluation-infrastructure failure: the report is
 // persisted as evidence, the controller stops the run as blocked without
 // consuming the improvement counter.
-func (p *ProductionPhases) infraEvaluation(round RoundContext, detail, errorCode string) RoundEvaluation {
+func (p *ProductionPhases) infraEvaluation(round teamorch.RoundContext, detail, errorCode string) teamorch.RoundEvaluation {
 	report := teambuild.EvaluationReport{
 		SchemaVersion:   1,
 		Conclusion:      teambuild.ConclusionBlocked,
@@ -3858,7 +3840,7 @@ func (p *ProductionPhases) infraEvaluation(round RoundContext, detail, errorCode
 		HardGateResults: []teambuild.HardGateResult{},
 		ScenarioResults: []teambuild.ScenarioResult{},
 	}
-	return RoundEvaluation{
+	return teamorch.RoundEvaluation{
 		Conclusion:      teambuild.ConclusionBlocked,
 		InfraError:      true,
 		FailureCategory: "evaluation_infrastructure_error",
@@ -3871,7 +3853,7 @@ func (p *ProductionPhases) infraEvaluation(round RoundContext, detail, errorCode
 
 // failedTeamReport is the business-side report when the build phase did not
 // create the target team; the team-shape gate fails with the evidence text.
-func (p *ProductionPhases) failedTeamReport(round RoundContext, detail string) teambuild.EvaluationReport {
+func (p *ProductionPhases) failedTeamReport(round teamorch.RoundContext, detail string) teambuild.EvaluationReport {
 	return teambuild.EvaluationReport{
 		SchemaVersion:       1,
 		Conclusion:          teambuild.ConclusionRevise,

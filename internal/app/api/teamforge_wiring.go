@@ -9,6 +9,7 @@ import (
 	"github.com/jinyitao123/loom/contract"
 	conversationstore "github.com/jinyitao123/weave/internal/app/conversation"
 	"github.com/jinyitao123/weave/internal/app/metateam"
+	"github.com/jinyitao123/weave/internal/app/teamassets"
 	"github.com/jinyitao123/weave/internal/build/teambuild"
 	"github.com/jinyitao123/weave/internal/build/teamforge"
 )
@@ -62,17 +63,12 @@ func (s *Server) teamForgeDeps() teamforge.Deps {
 	return deps
 }
 
-// teamForgeWriteDeps assembles the production write-side WriteDeps mapping
-// from the Server stores (plan §10.2 / T08 survey): Pool→the new Server pool
-// field, Agents/AgentLoad→Registry, Models→CredentialModelResolver{},
-// Runtimes→Runtimes, Teams/DispatchRules→OrgStore, Roster→Registry,
-// Workflows→Workflow.
+// teamForgeWriteDeps binds atomic product asset commands and narrow readers.
+// Model resolution and the agent version commit remain inside AgentWriter.
 func (s *Server) teamForgeWriteDeps() teamforge.WriteDeps {
 	return teamforge.WriteDeps{
-		Pool:          s.Pool,
-		Agents:        s.Registry,
+		Agents:        &teamassets.AgentWriter{Pool: s.Pool, Registry: s.Registry},
 		AgentLoad:     s.Registry,
-		Models:        teamforge.CredentialModelResolver{},
 		Runtimes:      s.Runtimes,
 		Teams:         s.OrgStore,
 		TeamDesign:    s.OrgStore,
