@@ -26,6 +26,9 @@ func TestServeUsesSharedProtocolForInitializeListAndCall(t *testing.T) {
 		if request.Header.Get("Authorization") != "Bearer wv_sk_mcp_test" {
 			t.Fatalf("authorization = %q", request.Header.Get("Authorization"))
 		}
+		if request.Header.Get("X-Weave-User-Authorization") != "Bearer user-jwt" {
+			t.Fatalf("delegated authorization was not propagated")
+		}
 		_, _ = response.Write([]byte(`{"samples":[{"name":"code-review"}]}`))
 	}))
 	defer api.Close()
@@ -34,7 +37,7 @@ func TestServeUsesSharedProtocolForInitializeListAndCall(t *testing.T) {
 		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`,
 		`{"jsonrpc":"2.0","method":"notifications/initialized"}`,
 		`{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}`,
-		`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"team_template_list","arguments":{}}}`,
+		`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"team_template_list","arguments":{},"_meta":{"weave_user_authorization":"Bearer user-jwt"}}}`,
 		`not-json`,
 	}, "\n") + "\n"
 	var output bytes.Buffer
@@ -167,7 +170,7 @@ func TestServeReturnsStableToolErrorWithoutRawHTTPBody(t *testing.T) {
 		_, _ = response.Write([]byte(`{"error":"private database password"}`))
 	}))
 	defer api.Close()
-	input := `{"jsonrpc":"2.0","id":"call","method":"tools/call","params":{"name":"team_template_list","arguments":{}}}` + "\n"
+	input := `{"jsonrpc":"2.0","id":"call","method":"tools/call","params":{"name":"team_template_list","arguments":{},"_meta":{"weave_user_authorization":"Bearer user-jwt"}}}` + "\n"
 	var output bytes.Buffer
 	if err := Serve(context.Background(), strings.NewReader(input), &output, mcpClient(t, api.URL)); err != nil {
 		t.Fatal(err)
@@ -178,13 +181,36 @@ func TestServeReturnsStableToolErrorWithoutRawHTTPBody(t *testing.T) {
 	}
 }
 
+func TestServeRejectsToolCallsWithoutTrustedUserMetadata(t *testing.T) {
+	called := false
+	api := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { called = true }))
+	defer api.Close()
+	for _, params := range []string{
+		`{"name":"team_template_list","arguments":{}}`,
+		`{"name":"team_template_list","arguments":{"_meta":{"weave_user_authorization":"Bearer argument-token"}}}`,
+		`{"name":"team_template_list","arguments":{},"_meta":{"weave_user_authorization":"bad token"}}`,
+	} {
+		var output bytes.Buffer
+		input := `{"jsonrpc":"2.0","id":"call","method":"tools/call","params":` + params + `}` + "\n"
+		if err := Serve(context.Background(), strings.NewReader(input), &output, mcpClient(t, api.URL)); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(output.String(), `"code":-32602`) {
+			t.Fatalf("untrusted metadata response = %s", output.String())
+		}
+	}
+	if called {
+		t.Fatal("untrusted tool call reached the platform API")
+	}
+}
+
 func TestServeReturnsFieldProblemsForCorrectableValidationErrors(t *testing.T) {
 	api := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		response.WriteHeader(http.StatusUnprocessableEntity)
 		_, _ = response.Write([]byte(`{"problems":[{"path":"/lead","code":"template_lead_unknown","message":"lead must reference a member"}]}`))
 	}))
 	defer api.Close()
-	input := `{"jsonrpc":"2.0","id":"call","method":"tools/call","params":{"name":"team_create","arguments":{"sample":"market-research","idempotency_key":"018f5f5a-c73c-7e31-8f4a-9b36797553a1"}}}` + "\n"
+	input := `{"jsonrpc":"2.0","id":"call","method":"tools/call","params":{"name":"team_create","arguments":{"sample":"market-research","idempotency_key":"018f5f5a-c73c-7e31-8f4a-9b36797553a1"},"_meta":{"weave_user_authorization":"Bearer user-jwt"}}}` + "\n"
 	var output bytes.Buffer
 	if err := Serve(context.Background(), strings.NewReader(input), &output, mcpClient(t, api.URL)); err != nil {
 		t.Fatal(err)

@@ -15,6 +15,7 @@ import (
 )
 
 const maxMessageBytes = 16 << 20
+const UserAuthorizationMetaKey = "weave_user_authorization"
 
 const serverInstructions = "Workbench owns the work conversation; call team_list for a matching team. Confirm team, task scope and deliverable before dispatch; honor prior explicit approval without asking again. Dispatch the original business task and materials. Use an available default workflow; explain gaps and never silently substitute a team or free_collab. Create a team only after approval. For reusable capabilities, call capability_list first; capability_plan creates a draft, and capability_publish requires user confirmation. Use capability_invoke after publication; follow it with capability_status or capability_resume. Follow the same run after dispatch. If yielded or parked, inspect the waiting reason; ask the user only for a human task. Workbench shows progress, recovery and deliverables. On completion, match the run in deliverable_list and call deliverable_get. Give a user-facing completion summary with findings and files. Keep internal run IDs, deliverable IDs, runtime IDs, host paths, hashes, commands and engine details out unless asked."
 
@@ -45,7 +46,14 @@ func Serve(ctx context.Context, input io.Reader, output io.Writer, client *weave
 			}
 			continue
 		}
-		result, err := adapter.Handle(ctx, request)
+		requestContext, err := bindToolUserAuthorization(ctx, request)
+		if err != nil {
+			if err := encoder.Encode(mcpprotocol.ErrorResponse(request.ID, err)); err != nil {
+				return fmt.Errorf("write MCP response: %w", err)
+			}
+			continue
+		}
+		result, err := adapter.Handle(requestContext, request)
 		if err != nil {
 			if err := encoder.Encode(mcpprotocol.ErrorResponse(request.ID, err)); err != nil {
 				return fmt.Errorf("write MCP response: %w", err)
@@ -63,4 +71,29 @@ func Serve(ctx context.Context, input io.Reader, output io.Writer, client *weave
 		return fmt.Errorf("read MCP request: %w", err)
 	}
 	return nil
+}
+
+func bindToolUserAuthorization(ctx context.Context, request mcpprotocol.Request) (context.Context, error) {
+	if request.Method != "tools/call" {
+		return ctx, nil
+	}
+	var params struct {
+		Meta map[string]json.RawMessage `json:"_meta"`
+	}
+	if err := json.Unmarshal(request.Params, &params); err != nil {
+		return nil, mcpprotocol.ErrInvalidCallParams
+	}
+	raw, ok := params.Meta[UserAuthorizationMetaKey]
+	if !ok {
+		return nil, mcpprotocol.ErrInvalidCallParams
+	}
+	var authorization string
+	if err := json.Unmarshal(raw, &authorization); err != nil {
+		return nil, mcpprotocol.ErrInvalidCallParams
+	}
+	requestContext, err := weaveclient.WithDelegatedUserAuthorization(ctx, authorization)
+	if err != nil {
+		return nil, mcpprotocol.ErrInvalidCallParams
+	}
+	return requestContext, nil
 }

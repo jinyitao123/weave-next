@@ -348,6 +348,36 @@ func TestAPIErrorDoesNotExposeRawBody(t *testing.T) {
 	}
 }
 
+func TestDelegatedUserAuthorizationIsPerRequest(t *testing.T) {
+	requests := make(chan *http.Request, 2)
+	client := newTestClient(t, http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		requests <- request.Clone(request.Context())
+		writeJSON(response, http.StatusOK, `{"samples":[]}`)
+	}))
+	delegated, err := WithDelegatedUserAuthorization(context.Background(), "Bearer user-jwt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.TeamTemplateList(delegated); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.TeamTemplateList(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	first, second := <-requests, <-requests
+	if first.Header.Get("X-Weave-User-Authorization") != "Bearer user-jwt" {
+		t.Fatal("delegated proof was not sent")
+	}
+	if second.Header.Get("X-Weave-User-Authorization") != "" {
+		t.Fatal("delegated proof leaked to another request")
+	}
+	for _, invalid := range []string{"", "user-jwt", "Bearer ", "Bearer a b", "Bearer a\nb"} {
+		if _, err := WithDelegatedUserAuthorization(context.Background(), invalid); err == nil {
+			t.Fatalf("invalid delegated authorization accepted: %q", invalid)
+		}
+	}
+}
+
 func newTestClient(t *testing.T, handler http.Handler) *Client {
 	t.Helper()
 	server := httptest.NewServer(handler)
