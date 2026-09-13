@@ -41,7 +41,7 @@ function mountShell({ collapsed = false, width = 300, canManageHost = true, star
     <SidebarRoot
       collapsed={current.collapsed} width={current.width}
       useSessions={neverHook} useSessionPendingInteraction={useSessionPendingInteraction} useWorkspaces={neverHook}
-      useHostManagement={selector => selector(canManageHost)} startPersonalSession={startPersonalSession}
+      useHostManagement={selector => selector(canManageHost)} {...(startPersonalSession === undefined ? {} : { startPersonalSession })}
       startSession={startSession} toggleSidebar={toggleSidebar} t={t}
       renderSlot={((
         key: string,

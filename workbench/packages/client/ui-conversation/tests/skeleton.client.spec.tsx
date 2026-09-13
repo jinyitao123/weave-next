@@ -289,7 +289,7 @@ function mount(
   const props: ConversationRootProps = {
     sessionId: options.noSession ? undefined : SID,
     useHostManagement: selector => selector(options.canManageHost ?? true),
-    startPersonalSession: options.startPersonalSession,
+    ...(options.startPersonalSession === undefined ? {} : { startPersonalSession: options.startPersonalSession }),
     SessionProvider: ({ children }) => children,
     useSession,
     useConversation,
