@@ -16,6 +16,8 @@ type DebugRequest struct {
 	RequestID     string
 	Definition    capability.Definition
 	Input         json.RawMessage
+	ActorUserID   string
+	MaxSteps      int
 }
 
 func (s *Service) Debug(ctx context.Context, request DebugRequest) (Invocation, bool, error) {
@@ -39,11 +41,14 @@ func (s *Service) Debug(ctx context.Context, request DebugRequest) (Invocation, 
 	if err := capability.ValidateValue(snapshot.Definition.InputSchema, input); err != nil {
 		return Invocation{}, false, fmt.Errorf("%w: debug input schema: %v", capability.ErrInvalidDefinition, err)
 	}
+	if request.MaxSteps <= 0 {
+		request.MaxSteps = 100
+	}
 	return s.invocations.ClaimDebugInvocation(ctx, Invocation{
 		CallerKind:  "developer",
 		WorkspaceID: request.WorkspaceID, ApplicationID: request.ApplicationID, InvocationID: uuid.NewString(),
 		RequestID: request.RequestID, CapabilityID: snapshot.Definition.CapabilityID, RunKind: "debug",
-		DefinitionHash: snapshot.DefinitionHash, Input: input, Status: "queued", ResultState: "unavailable",
+		DefinitionHash: snapshot.DefinitionHash, Input: input, Status: "queued", ResultState: "unavailable", ActorUserID: request.ActorUserID, MaxSteps: request.MaxSteps,
 	}, snapshot)
 }
 

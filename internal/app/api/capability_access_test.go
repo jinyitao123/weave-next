@@ -15,6 +15,7 @@ func TestCapabilityAccessRequiresExplicitOperationScope(t *testing.T) {
 		status               int
 	}{
 		{"empty key", authSourceAPIKey, "invoke", nil, []string{"admin"}, 403},
+		{"Workbench admin key", authSourceAPIKey, "invoke", []string{"admin"}, []string{"admin"}, 204},
 		{"invoke only", authSourceAPIKey, "manage", []string{"capabilities:invoke"}, []string{"admin"}, 403},
 		{"read only", authSourceAPIKey, "cancel", []string{"capabilities:read"}, nil, 403},
 		{"allowed", authSourceAPIKey, "invoke", []string{"capabilities:invoke"}, nil, 204},

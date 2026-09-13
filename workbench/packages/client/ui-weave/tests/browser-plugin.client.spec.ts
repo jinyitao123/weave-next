@@ -5,6 +5,7 @@ import { apply, inject } from '../src/client/index.ts'
 import { DeliverableRow } from '../src/client/DeliverableRow.tsx'
 import { RuntimeSettingsSection } from '../src/client/RuntimeCenter.tsx'
 import { ApplicationSettingsSection } from '../src/client/ApplicationCenter.tsx'
+import { CapabilityOperationsSettingsSection } from '../src/client/CapabilityOperationsCenter.tsx'
 import { TeamListRow } from '../src/client/TeamListRow.tsx'
 import { WorkTaskConversationCard, WorkTaskHeader, WorkTaskPanel } from '../src/client/WorkTaskPanel.tsx'
 import type { InputTriggerSource } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
@@ -76,11 +77,13 @@ describe('ui-weave browser plugin', () => {
     expect(slots.entries('conversation.input.dock')[0]?.component).toBe(WorkTaskConversationCard)
     expect(slots.entries('sidebar.footer.action')).toHaveLength(0)
     const settings = slots.entries('settings.section')
-    expect(settings).toHaveLength(2)
+    expect(settings).toHaveLength(3)
     expect(settings[0]?.options).toMatchObject({ id: 'weave-runtimes', order: -20 })
     expect(settings[0]?.component).toBe(RuntimeSettingsSection)
-    expect(settings[1]?.options).toMatchObject({ id: 'weave-capability-apps', order: -5 })
-    expect(settings[1]?.component).toBe(ApplicationSettingsSection)
+    expect(settings[1]?.options).toMatchObject({ id: 'weave-capability-operations', order: -10 })
+    expect(settings[1]?.component).toBe(CapabilityOperationsSettingsSection)
+    expect(settings[2]?.options).toMatchObject({ id: 'weave-capability-apps', order: -5 })
+    expect(settings[2]?.component).toBe(ApplicationSettingsSection)
     expect(slots.entries('shell.overlay')).toHaveLength(0)
     const commands = slots.entries('conversation.chat.commandview')
     expect(commands).toHaveLength(6)

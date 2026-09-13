@@ -61,6 +61,7 @@ func TestServeUsesSharedProtocolForInitializeListAndCall(t *testing.T) {
 		!strings.Contains(instructions, "Workbench owns the work conversation") ||
 		!strings.Contains(instructions, "capability_plan creates a draft") ||
 		!strings.Contains(instructions, "capability_publish requires user confirmation") ||
+		!strings.Contains(instructions, "capability_invoke") || !strings.Contains(instructions, "capability_resume") ||
 		!strings.Contains(instructions, "Dispatch the original business task and materials") ||
 		!strings.Contains(instructions, "Follow the same run after dispatch") ||
 		strings.Contains(instructions, "Codex") || strings.Contains(instructions, "Claude") ||
@@ -68,11 +69,11 @@ func TestServeUsesSharedProtocolForInitializeListAndCall(t *testing.T) {
 		t.Fatalf("initialize instructions = %q", instructions)
 	}
 	tools := responses[1]["result"].(map[string]any)["tools"].([]any)
-	if len(tools) != 24 {
+	if len(tools) != 28 {
 		t.Fatalf("tool count = %d", len(tools))
 	}
 	wantNames := []string{
-		"team_template_list", "team_create", "capability_list", "capability_plan", "capability_publish", "provider_list", "provider_add", "apikey_create",
+		"team_template_list", "team_create", "capability_list", "capability_plan", "capability_publish", "capability_invoke", "capability_status", "capability_history", "capability_resume", "provider_list", "provider_add", "apikey_create",
 		"runtime_create", "team_list", "team_status", "usage_summary",
 		"team_dispatch", "build_status", "dispatch_status",
 		"team_run_status", "team_run_activity", "team_run_stop", "human_task_list", "human_task_get", "human_task_complete",
@@ -123,9 +124,13 @@ func TestToolRoleScopeTableIsFrozen(t *testing.T) {
 	want := map[string]toolAccessPolicy{
 		"team_template_list":  {Role: "any", Scopes: []string{"org"}},
 		"team_create":         {Role: "admin", Scopes: []string{"org"}},
-		"capability_list":     {Role: "admin", Scopes: []string{"capabilities:manage"}},
-		"capability_plan":     {Role: "admin", Scopes: []string{"capabilities:manage"}},
-		"capability_publish":  {Role: "admin", Scopes: []string{"capabilities:manage"}},
+		"capability_list":     {Role: "admin", Scopes: []string{"admin"}},
+		"capability_plan":     {Role: "admin", Scopes: []string{"admin"}},
+		"capability_publish":  {Role: "admin", Scopes: []string{"admin"}},
+		"capability_invoke":   {Role: "any", Scopes: []string{"admin"}},
+		"capability_status":   {Role: "any", Scopes: []string{"admin"}},
+		"capability_history":  {Role: "any", Scopes: []string{"admin"}},
+		"capability_resume":   {Role: "any", Scopes: []string{"admin"}},
 		"provider_list":       {Role: "any", Scopes: []string{"admin"}},
 		"provider_add":        {Role: "admin", Scopes: []string{"admin"}},
 		"apikey_create":       {Role: "admin", Scopes: []string{"admin"}},
