@@ -36,6 +36,20 @@ type testRecorder struct {
 	bindErr    error
 }
 
+type testDirectTools struct {
+	calls int
+	input json.RawMessage
+}
+
+func (e *testDirectTools) ExecuteTool(_ context.Context, step capability.PlanStep, input json.RawMessage) (json.RawMessage, error) {
+	e.calls++
+	e.input = append(json.RawMessage(nil), input...)
+	if step.ToolID != "calculate" {
+		return nil, errors.New("wrong tool")
+	}
+	return json.RawMessage(`{"total":42}`), nil
+}
+
 func (r *testRecorder) BindRuntime(_ context.Context, id string) error {
 	r.runtimeID = id
 	return r.bindErr
@@ -112,6 +126,25 @@ func TestRunnerPreservesRemoteIdentityInputAndDeadline(t *testing.T) {
 				t.Fatalf("checkpoint events=%+v", recorder.events)
 			}
 		})
+	}
+}
+
+func TestRunnerUsesInvocationDirectToolsInsteadOfRemoteDelegation(t *testing.T) {
+	remoteCalls := 0
+	runner := testRunner(t, testRemote{call: func(context.Context, string, *registry.AgentRecord, execution.AgentExecutionStamp, string, json.RawMessage) (engine.RunResult, error) {
+		remoteCalls++
+		return engine.RunResult{}, errors.New("tool was delegated to model")
+	}})
+	tools := &testDirectTools{}
+	request := remoteRequest()
+	request.Plan.Resources.Tools = []capability.ToolReference{{MCPServerID: "server", ToolName: "calculate"}}
+	request.Plan.Steps = []capability.PlanStep{{ID: "tool", Kind: capability.StepTool, ToolID: "calculate", InputBindings: map[string]capability.ValueRef{"count": {Source: "input", Path: "/count"}}, OutputSchema: json.RawMessage(`{"type":"object","required":["total"]}`)}}
+	request.Plan.InputSchema = json.RawMessage(`{"type":"object","required":["count"]}`)
+	request.Input = json.RawMessage(`{"count":3}`)
+	request.Tools = tools
+	result, err := runner.Execute(t.Context(), request, &testRecorder{})
+	if err != nil || tools.calls != 1 || remoteCalls != 0 || string(tools.input) != `{"count":3}` || string(result) != `{"tool":{"total":42}}` {
+		t.Fatalf("result=%s tools=%d remote=%d input=%s err=%v", result, tools.calls, remoteCalls, tools.input, err)
 	}
 }
 

@@ -59,12 +59,3 @@ func (e remoteSteps) ExecuteStep(ctx context.Context, step capability.PlanStep, 
 	}
 	return raw, nil
 }
-
-// ExecuteTool preserves the existing delegated-tool path. It is not a
-// direct tool dispatcher and does not assert an independent operation receipt.
-func (e remoteSteps) ExecuteTool(ctx context.Context, step capability.PlanStep, input json.RawMessage) (json.RawMessage, error) {
-	worker := step
-	worker.Kind = capability.StepWorker
-	worker.Instruction = "Use the runtime tool named " + step.ToolID + " with the supplied input. Perform the real operation and return its result."
-	return e.ExecuteStep(ctx, worker, input)
-}

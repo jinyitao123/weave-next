@@ -170,6 +170,7 @@ type InvocationTask struct {
 	UsedSteps         int
 	MaxSteps          int
 	ExecutionDeadline time.Time
+	ToolBindings      []frozen.FrozenMCPBinding
 }
 
 type ExecutionStore interface {

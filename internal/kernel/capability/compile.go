@@ -3,6 +3,7 @@ package capability
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -61,7 +62,7 @@ func Compile(revision PublishedRevision) (Plan, error) {
 				return Plan{}, fmt.Errorf("%w: step %s schema: %v", ErrInvalidRevision, step.ID, err)
 			}
 		}
-		if step.Kind == StepTool && !containsString(definition.Resources.ToolIDs, step.ToolID) {
+		if step.Kind == StepTool && !slices.ContainsFunc(definition.Resources.Tools, func(ref ToolReference) bool { return ref.ToolName == step.ToolID }) {
 			return Plan{}, fmt.Errorf("%w: tool %s is not declared", ErrInvalidRevision, step.ToolID)
 		}
 		steps[step.ID] = step

@@ -89,3 +89,27 @@ func TestGeneratedObjectSchemaRejectsUnsafeOrDuplicateKeys(t *testing.T) {
 		}
 	}
 }
+
+func TestBuildGeneratedCapabilityKeepsExactToolServerReference(t *testing.T) {
+	proposal := generatedCapabilityProposal{
+		Name: "计算并说明", Description: "计算后整理结果",
+		InputFields:  []generatedCapabilityField{{Key: "count", Label: "数量", Type: "integer", Required: true}},
+		OutputFields: []generatedCapabilityField{{Key: "answer", Label: "答案", Type: "string", Required: true}},
+		Roles:        []generatedCapabilityRole{{Name: "处理人", Responsibilities: "执行计算并说明"}},
+		Steps: []generatedCapabilityStep{
+			{Name: "计算", RoleIndex: 0, Kind: "tool", UsesInput: true, ToolID: "calculate", MCPServerID: "server-1"},
+			{Name: "说明", RoleIndex: 0, Kind: "worker", Instruction: "整理计算结果", DependsOn: []int{0}, UsesSteps: []int{0}},
+		},
+	}
+	definition, err := buildGeneratedCapability(proposal, "model")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(definition.Resources.Tools) != 1 || definition.Resources.Tools[0].MCPServerID != "server-1" || definition.Resources.Tools[0].ToolName != "calculate" {
+		t.Fatalf("exact tool reference was not retained: %+v", definition.Resources.Tools)
+	}
+	proposal.Steps[0].MCPServerID = ""
+	if _, err := buildGeneratedCapability(proposal, "model"); err == nil {
+		t.Fatal("tool without an MCP server was accepted")
+	}
+}

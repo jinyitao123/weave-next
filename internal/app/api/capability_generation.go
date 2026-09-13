@@ -49,6 +49,7 @@ type generatedCapabilityStep struct {
 	ConditionOp    string `json:"condition_operator"`
 	ConditionValue any    `json:"condition_value"`
 	ToolID         string `json:"tool_id"`
+	MCPServerID    string `json:"mcp_server_id"`
 	ApprovalTitle  string `json:"approval_title"`
 	LoopTo         *int   `json:"loop_to"`
 	MaxIterations  int    `json:"max_iterations"`
@@ -63,6 +64,14 @@ type generatedCapabilityProposal struct {
 	Steps        []generatedCapabilityStep  `json:"steps"`
 }
 
+type capabilityGenerationTool struct {
+	MCPServerID string          `json:"mcp_server_id"`
+	ToolName    string          `json:"tool_name"`
+	Description string          `json:"description,omitempty"`
+	InputSchema json.RawMessage `json:"input_schema"`
+	ReadOnly    bool            `json:"read_only"`
+}
+
 var capabilityGenerationSchema = json.RawMessage(`{
   "type":"object","additionalProperties":false,
   "required":["name","description","input_fields","output_fields","roles","steps"],
@@ -72,13 +81,13 @@ var capabilityGenerationSchema = json.RawMessage(`{
     "input_fields":{"type":"array","maxItems":24,"items":{"$ref":"#/$defs/field"}},
     "output_fields":{"type":"array","maxItems":24,"items":{"$ref":"#/$defs/field"}},
     "roles":{"type":"array","minItems":1,"maxItems":8,"items":{"type":"object","additionalProperties":false,"required":["name","responsibilities"],"properties":{"name":{"type":"string","minLength":1,"maxLength":120},"responsibilities":{"type":"string","minLength":1,"maxLength":1000}}}},
-    "steps":{"type":"array","minItems":1,"maxItems":24,"items":{"type":"object","additionalProperties":false,"required":["name","role_index","kind","instruction","depends_on","uses_input","uses_steps","branch_when","condition_path","condition_operator","condition_value","tool_id","approval_title","loop_to","max_iterations"],"properties":{"name":{"type":"string","minLength":1,"maxLength":160},"role_index":{"type":"integer","minimum":0,"maximum":7},"kind":{"enum":["worker","collect","condition","approval","tool"]},"instruction":{"type":"string","maxLength":4000},"depends_on":{"type":"array","maxItems":23,"items":{"type":"integer","minimum":0,"maximum":23}},"uses_input":{"type":"boolean"},"uses_steps":{"type":"array","maxItems":23,"items":{"type":"integer","minimum":0,"maximum":23}},"branch_when":{"type":["boolean","null"]},"condition_path":{"type":"string"},"condition_operator":{"enum":["eq","ne","gt","gte","lt","lte","truthy","empty",""]},"condition_value":{},"tool_id":{"type":"string"},"approval_title":{"type":"string"},"loop_to":{"type":["integer","null"],"minimum":0,"maximum":23},"max_iterations":{"type":"integer","minimum":0,"maximum":20}}}}}
+    "steps":{"type":"array","minItems":1,"maxItems":24,"items":{"type":"object","additionalProperties":false,"required":["name","role_index","kind","instruction","depends_on","uses_input","uses_steps","branch_when","condition_path","condition_operator","condition_value","tool_id","mcp_server_id","approval_title","loop_to","max_iterations"],"properties":{"name":{"type":"string","minLength":1,"maxLength":160},"role_index":{"type":"integer","minimum":0,"maximum":7},"kind":{"enum":["worker","collect","condition","approval","tool"]},"instruction":{"type":"string","maxLength":4000},"depends_on":{"type":"array","maxItems":23,"items":{"type":"integer","minimum":0,"maximum":23}},"uses_input":{"type":"boolean"},"uses_steps":{"type":"array","maxItems":23,"items":{"type":"integer","minimum":0,"maximum":23}},"branch_when":{"type":["boolean","null"]},"condition_path":{"type":"string"},"condition_operator":{"enum":["eq","ne","gt","gte","lt","lte","truthy","empty",""]},"condition_value":{},"tool_id":{"type":"string"},"mcp_server_id":{"type":"string"},"approval_title":{"type":"string"},"loop_to":{"type":["integer","null"],"minimum":0,"maximum":23},"max_iterations":{"type":"integer","minimum":0,"maximum":20}}}}}
   },
   "$defs":{"field":{"type":"object","additionalProperties":false,"required":["key","label","description","type","required"],"properties":{"key":{"type":"string","minLength":1,"maxLength":80},"label":{"type":"string","minLength":1,"maxLength":160},"description":{"type":"string","maxLength":500},"type":{"enum":["string","number","integer","boolean","object","array"]},"required":{"type":"boolean"}}}}
 }`)
 
 const capabilityGenerationSystemPrompt = `你是企业能力与团队流程设计师。把用户描述转换为可执行的多角色业务能力方案。
-可用步骤为 worker、collect、condition、approval、tool。worker 负责需要判断、创作、研究或操作环境的工作；collect 只整理绑定值；condition 使用 condition_path 和 operator 做确定性判断；approval 表示必须由人确认后才能继续；tool 调用已登记工具并填写 tool_id。
+可用步骤为 worker、collect、condition、approval、tool。worker 负责需要判断、创作、研究或操作环境的工作；collect 只整理绑定值；condition 使用 condition_path 和 operator 做确定性判断；approval 表示必须由人确认后才能继续；tool 调用已登记工具，必须填写准确的 mcp_server_id 和 tool_id。不得只凭裸工具名猜测服务或权限。
 branch_when 只用于当前步骤依赖 condition 时选择 true 或 false 分支，否则为 null。loop_to 为 null 表示不循环；需要循环时由 condition 步骤指回更早步骤，并给出 1 到 20 的 max_iterations。循环必须有明确停止条件。
 最后一步必须是 worker，负责把前面结果整理为完整业务交付，并严格返回 output_fields。不得把内部流程状态作为最终结果。
 depends_on 和 uses_steps 只能引用当前步骤之前的下标。控制依赖和数据来源分别填写。工具和外部访问只在业务确实需要时使用，不得声称已经取得尚未执行的结果。
@@ -92,6 +101,7 @@ func (s *Server) handleGenerateCapability(c echo.Context) error {
 	workspaceID, _ := c.Get("tenant").(string)
 	generationContext, cancel := context.WithTimeout(c.Request().Context(), 5*time.Minute)
 	defer cancel()
+	systemPrompt := s.capabilityGenerationPrompt(generationContext, workspaceID)
 	var content string
 	usedRemote := false
 	if s.Models != nil && request.Model != "" {
@@ -104,7 +114,7 @@ func (s *Server) handleGenerateCapability(c echo.Context) error {
 			response, err := llm.Chat(generationContext, contract.ChatRequest{
 				Model: request.Model,
 				Messages: []contract.Message{
-					{Role: "system", Content: capabilityGenerationSystemPrompt},
+					{Role: "system", Content: systemPrompt},
 					{Role: "user", Content: request.Prompt},
 				},
 				Schema: &capabilityGenerationSchema, MaxTokens: 5000, Temperature: &temperature,
@@ -127,7 +137,7 @@ func (s *Server) handleGenerateCapability(c echo.Context) error {
 		if !ok {
 			return c.JSON(http.StatusUnprocessableEntity, map[string]string{"code": "capability_runtime_unavailable"})
 		}
-		record.Spec.SystemPrompt = capabilityGenerationSystemPrompt
+		record.Spec.SystemPrompt = systemPrompt
 		record.OutputSchema = &capabilityGenerationSchema
 		result, err := structured.ExecRemoteStructured(generationContext, workspaceID, record, execution.AgentExecutionStamp{
 			AgentID: record.ID, AgentVersion: record.Version, ExecutionScope: execution.ScopeTeamWorkerLeaf, RunSnapshotID: "capability-plan-" + uuid.NewString(),
@@ -150,6 +160,31 @@ func (s *Server) handleGenerateCapability(c echo.Context) error {
 		definition.Runtime = capability.RuntimeRequirement{Engine: "codex"}
 	}
 	return c.JSON(http.StatusOK, map[string]any{"definition": definition})
+}
+
+func (s *Server) capabilityGenerationPrompt(ctx context.Context, workspaceID string) string {
+	available := []capabilityGenerationTool{}
+	if s.MCPRegistry != nil {
+		servers, err := s.MCPRegistry.ListMetadata(ctx, workspaceID)
+		if err == nil {
+			for _, server := range servers {
+				if !server.Enabled || server.RevokedAt != nil || server.DeletedAt != nil || server.LastHandshakeAt == nil || server.Transport != "streamable_http" {
+					continue
+				}
+				catalog, catalogErr := s.MCPRegistry.Catalog(ctx, workspaceID, server.ID)
+				if catalogErr != nil {
+					continue
+				}
+				for _, tool := range catalog.Tools {
+					available = append(available, capabilityGenerationTool{MCPServerID: server.ID, ToolName: tool.Name,
+						Description: tool.Description, InputSchema: tool.InputSchema, ReadOnly: tool.ReadOnlyHint != nil && *tool.ReadOnlyHint})
+				}
+			}
+		}
+	}
+	raw, _ := json.Marshal(available)
+	return capabilityGenerationSystemPrompt + "\n当前工作区可直接使用的工具如下：" + string(raw) +
+		"\n只有确实需要且出现在该列表中的工具才可生成 tool 步骤；列表为空时不得生成 tool 步骤。原样复制 mcp_server_id 和 tool_name，tool_id 必须等于 tool_name。"
 }
 
 func decodeGeneratedCapability(content string, target *generatedCapabilityProposal) error {
@@ -273,9 +308,30 @@ func buildGeneratedCapability(proposal generatedCapabilityProposal, model string
 	}
 	steps[len(steps)-1].OutputSchema = outputSchema
 	toolIDs := []string{}
+	toolRefs := []capability.ToolReference{}
 	for _, step := range steps {
 		if step.Kind == capability.StepTool && !containsStringValue(toolIDs, step.ToolID) {
 			toolIDs = append(toolIDs, step.ToolID)
+		}
+	}
+	for _, generated := range proposal.Steps {
+		if generated.Kind == "tool" {
+			serverID, toolID := strings.TrimSpace(generated.MCPServerID), strings.TrimSpace(generated.ToolID)
+			if serverID == "" || toolID == "" {
+				return capability.Definition{}, capability.ErrInvalidDefinition
+			}
+			duplicate := false
+			for _, ref := range toolRefs {
+				if ref.ToolName == toolID {
+					if ref.MCPServerID != serverID {
+						return capability.Definition{}, capability.ErrInvalidDefinition
+					}
+					duplicate = true
+				}
+			}
+			if !duplicate {
+				toolRefs = append(toolRefs, capability.ToolReference{MCPServerID: serverID, ToolName: toolID})
+			}
 		}
 	}
 	runtime := capability.RuntimeRequirement{Engine: "loom", Model: model}
@@ -286,7 +342,7 @@ func buildGeneratedCapability(proposal generatedCapabilityProposal, model string
 		SchemaVersion: capability.SchemaVersionV1, CapabilityID: uuid.NewString(),
 		Name: strings.TrimSpace(proposal.Name), Description: strings.TrimSpace(proposal.Description),
 		InputSchema: inputSchema, OutputSchema: outputSchema, Roles: roles, Steps: steps, Relations: relations,
-		Runtime: runtime, Resources: capability.ResourceRequirement{ToolIDs: toolIDs},
+		Runtime: runtime, Resources: capability.ResourceRequirement{ToolIDs: toolIDs, Tools: toolRefs},
 		Result: &capability.ValueRef{Source: "step_output", StepID: steps[len(steps)-1].ID},
 	}
 	published, err := capability.Publish(definition, 1)

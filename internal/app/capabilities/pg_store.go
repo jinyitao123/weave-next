@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/google/uuid"
@@ -12,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/kernel/capability"
+	"github.com/jinyitao123/weave/internal/kernel/mcpregistry"
 )
 
 // PGStore is the durable implementation of DraftStore and InvocationStore.
@@ -101,7 +103,56 @@ func (s *PGStore) SaveRevision(ctx context.Context, workspaceID string, revision
 	if err != nil {
 		return fmt.Errorf("marshal capability revision: %w", err)
 	}
-	_, err = s.pool.Exec(ctx, `
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin capability publication: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	var existingHash string
+	existingErr := tx.QueryRow(ctx, `SELECT definition_hash FROM weave_capability_revisions
+		WHERE workspace_id=$1 AND capability_id=$2 AND revision=$3`, workspaceID, revision.CapabilityID, revision.Revision).Scan(&existingHash)
+	if existingErr == nil {
+		if existingHash != revision.DefinitionHash {
+			return ErrRevisionConflict
+		}
+		var persisted bool
+		if err := tx.QueryRow(ctx, `SELECT true FROM weave_capability_revision_tool_bindings
+			WHERE workspace_id=$1 AND capability_id=$2 AND revision=$3`, workspaceID, revision.CapabilityID, revision.Revision).Scan(&persisted); err != nil || !persisted {
+			return ErrRevisionConflict
+		}
+		return tx.Commit(ctx)
+	}
+	if !errors.Is(existingErr, pgx.ErrNoRows) {
+		return existingErr
+	}
+	bindings := []frozen.FrozenMCPBinding{}
+	byServer := map[string][]string{}
+	for _, ref := range revision.Definition.Resources.Tools {
+		byServer[ref.MCPServerID] = append(byServer[ref.MCPServerID], ref.ToolName)
+	}
+	for serverID, tools := range byServer {
+		preview, resolveErr := mcpregistry.ResolveCurrentMCPToolsTx(ctx, tx, workspaceID, serverID, mcpregistry.MCPAgentPolicy{Filter: tools})
+		if resolveErr != nil {
+			return fmt.Errorf("freeze capability tool %s: %w", serverID, resolveErr)
+		}
+		writeTools := []string{}
+		for _, tool := range preview.Tools {
+			if !tool.ReadOnly {
+				writeTools = append(writeTools, tool.Name)
+			}
+		}
+		binding, resolveErr := mcpregistry.ResolveCurrentMCPToolsTx(ctx, tx, workspaceID, serverID, mcpregistry.MCPAgentPolicy{Filter: tools, WriteTools: writeTools})
+		if resolveErr != nil {
+			return fmt.Errorf("freeze capability tool %s: %w", serverID, resolveErr)
+		}
+		bindings = append(bindings, binding)
+	}
+	sort.Slice(bindings, func(i, j int) bool { return bindings[i].ServerID < bindings[j].ServerID })
+	bindingsRaw, err := json.Marshal(bindings)
+	if err != nil {
+		return err
+	}
+	_, err = tx.Exec(ctx, `
 		INSERT INTO weave_capability_revisions (workspace_id, capability_id, revision, definition_hash, definition)
 		VALUES ($1,$2,$3,$4,$5::jsonb)
 		ON CONFLICT (workspace_id, capability_id, revision) DO NOTHING
@@ -109,14 +160,23 @@ func (s *PGStore) SaveRevision(ctx context.Context, workspaceID string, revision
 	if err != nil {
 		return fmt.Errorf("save capability revision: %w", err)
 	}
-	stored, err := s.GetRevision(ctx, workspaceID, revision.CapabilityID, revision.Revision)
+	_, err = tx.Exec(ctx, `INSERT INTO weave_capability_revision_tool_bindings(workspace_id,capability_id,revision,bindings)
+		VALUES($1,$2,$3,$4::jsonb) ON CONFLICT DO NOTHING`, workspaceID, revision.CapabilityID, revision.Revision, string(bindingsRaw))
 	if err != nil {
+		return fmt.Errorf("save capability tool bindings: %w", err)
+	}
+	var storedHash string
+	var storedBindings []byte
+	if err := tx.QueryRow(ctx, `SELECT r.definition_hash,b.bindings FROM weave_capability_revisions r JOIN weave_capability_revision_tool_bindings b
+		USING(workspace_id,capability_id,revision) WHERE workspace_id=$1 AND capability_id=$2 AND revision=$3`, workspaceID, revision.CapabilityID, revision.Revision).Scan(&storedHash, &storedBindings); err != nil {
 		return err
 	}
-	if stored.DefinitionHash != revision.DefinitionHash {
+	canonicalStored, _ := frozen.CanonicalizeJSON(storedBindings)
+	canonicalBindings, _ := frozen.CanonicalizeJSON(bindingsRaw)
+	if storedHash != revision.DefinitionHash || string(canonicalStored) != string(canonicalBindings) {
 		return ErrRevisionConflict
 	}
-	return nil
+	return tx.Commit(ctx)
 }
 
 func (s *PGStore) GetRevision(ctx context.Context, workspaceID, capabilityID string, revision int64) (capability.PublishedRevision, error) {
@@ -458,6 +518,27 @@ func (s *PGStore) ClaimTask(ctx context.Context) (InvocationTask, bool, error) {
 		return InvocationTask{}, false, fmt.Errorf("compile capability task: %w", err)
 	}
 	task.Plan = plan
+	if len(plan.Resources.Tools) > 0 {
+		if task.RunKind != "published" {
+			return InvocationTask{}, false, errors.New("debug capability tool execution is unavailable until publication")
+		}
+		var bindingsRaw []byte
+		if err := tx.QueryRow(ctx, `SELECT bindings FROM weave_capability_revision_tool_bindings
+			WHERE workspace_id=$1 AND capability_id=$2 AND revision=$3`, task.WorkspaceID, task.CapabilityID, task.Revision).Scan(&bindingsRaw); err != nil {
+			return InvocationTask{}, false, fmt.Errorf("load frozen capability tools: %w", err)
+		}
+		if err := json.Unmarshal(bindingsRaw, &task.ToolBindings); err != nil {
+			return InvocationTask{}, false, fmt.Errorf("decode frozen capability tools: %w", err)
+		}
+		for i, binding := range task.ToolBindings {
+			raw, _ := json.Marshal(binding)
+			normalized, decodeErr := frozen.DecodeFrozenMCPBinding(raw)
+			if decodeErr != nil {
+				return InvocationTask{}, false, fmt.Errorf("validate frozen capability tools: %w", decodeErr)
+			}
+			task.ToolBindings[i] = normalized
+		}
+	}
 	if _, err := tx.Exec(ctx, `UPDATE weave_capability_invocations SET status='running',started_at=COALESCE(started_at,now()) WHERE workspace_id=$1 AND invocation_id=$2`, task.WorkspaceID, task.InvocationID); err != nil {
 		return InvocationTask{}, false, fmt.Errorf("mark invocation running: %w", err)
 	}

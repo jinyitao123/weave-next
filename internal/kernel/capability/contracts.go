@@ -109,9 +109,17 @@ type RuntimeRequirement struct {
 }
 
 type ResourceRequirement struct {
-	ToolIDs        []string `json:"tool_ids,omitempty"`
-	DataRefs       []string `json:"data_refs,omitempty"`
-	CredentialRefs []string `json:"credential_refs,omitempty"`
+	// ToolIDs is retained only as draft display metadata. It never grants
+	// execution authority; published tool steps require explicit Tools.
+	ToolIDs        []string        `json:"tool_ids,omitempty"`
+	Tools          []ToolReference `json:"tools,omitempty"`
+	DataRefs       []string        `json:"data_refs,omitempty"`
+	CredentialRefs []string        `json:"credential_refs,omitempty"`
+}
+
+type ToolReference struct {
+	MCPServerID string `json:"mcp_server_id"`
+	ToolName    string `json:"tool_name"`
 }
 
 // PublishedRevision is the immutable identity used by an invocation. The
@@ -155,6 +163,16 @@ func (d Definition) Validate() error {
 		roles[role.ID] = struct{}{}
 	}
 	steps := make(map[string]struct{}, len(d.Steps))
+	toolServers := make(map[string]string, len(d.Resources.Tools))
+	for i, ref := range d.Resources.Tools {
+		if ref.MCPServerID == "" || ref.ToolName == "" || strings.TrimSpace(ref.MCPServerID) != ref.MCPServerID || strings.TrimSpace(ref.ToolName) != ref.ToolName {
+			return invalid(fmt.Sprintf("resources.tools[%d]", i), "requires exact MCP server and tool names")
+		}
+		if _, exists := toolServers[ref.ToolName]; exists {
+			return invalid("resources.tools", "contains an ambiguous tool name "+ref.ToolName)
+		}
+		toolServers[ref.ToolName] = ref.MCPServerID
+	}
 	for i, step := range d.Steps {
 		if strings.TrimSpace(step.ID) == "" || strings.TrimSpace(step.Name) == "" {
 			return invalid(fmt.Sprintf("steps[%d]", i), "id and name are required")
@@ -178,6 +196,11 @@ func (d Definition) Validate() error {
 		}
 		if step.Kind == StepTool && strings.TrimSpace(step.ToolID) == "" {
 			return invalid("steps."+step.ID+".tool_id", "is required for tool steps")
+		}
+		if step.Kind == StepTool {
+			if _, exists := toolServers[step.ToolID]; !exists {
+				return invalid("steps."+step.ID+".tool_id", "requires an explicit MCP server and tool resource")
+			}
 		}
 		if step.Kind == StepWait && strings.TrimSpace(step.ApprovalTitle) == "" {
 			return invalid("steps."+step.ID+".approval_title", "is required for wait steps")
@@ -278,6 +301,7 @@ func Publish(d Definition, revision int64) (PublishedRevision, error) {
 	}
 	d = copied
 	d.Resources.ToolIDs = append([]string(nil), d.Resources.ToolIDs...)
+	d.Resources.Tools = append([]ToolReference(nil), d.Resources.Tools...)
 	d.Resources.DataRefs = append([]string(nil), d.Resources.DataRefs...)
 	d.Resources.CredentialRefs = append([]string(nil), d.Resources.CredentialRefs...)
 	SortResourceIDs(&d.Resources)
@@ -343,6 +367,12 @@ func SortResourceIDs(requirement *ResourceRequirement) {
 		return
 	}
 	sort.Strings(requirement.ToolIDs)
+	sort.Slice(requirement.Tools, func(i, j int) bool {
+		if requirement.Tools[i].MCPServerID == requirement.Tools[j].MCPServerID {
+			return requirement.Tools[i].ToolName < requirement.Tools[j].ToolName
+		}
+		return requirement.Tools[i].MCPServerID < requirement.Tools[j].MCPServerID
+	})
 	sort.Strings(requirement.DataRefs)
 	sort.Strings(requirement.CredentialRefs)
 }
