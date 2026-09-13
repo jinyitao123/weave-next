@@ -14,8 +14,8 @@ import (
 	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/base/snapshot"
-	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 	"github.com/jinyitao123/weave/internal/base/testutil"
+	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 )
 
 func TestExecutorProcessNextQueuedRunSucceeds(t *testing.T) {
@@ -60,7 +60,7 @@ func TestCancelServiceCancelsEveryTaskInRunSnapshot(t *testing.T) {
 	`); err != nil {
 		t.Fatalf("seed engine child identity: %v", err)
 	}
-	child := &taskqueue.Task{
+	child := &taskqueue.Task{Subject: execution.Subject{WorkspaceID: "workspace-1", UserID: "user-1"},
 		ID: "engine-child", WorkspaceID: run.WorkspaceID, Agent: "worker",
 		AgentID: "worker-1", AgentVersion: 1,
 		IdentityKind: taskqueue.IdentityAgent, IdentitySchemaVersion: 2,
@@ -237,7 +237,7 @@ func TestExecutorProcessNextReplaysFailedTerminalMarkerWithoutRuntime(t *testing
 }
 
 func TestExecutorProcessNextFanoutLegRecordsTerminal(t *testing.T) {
-	task := &taskqueue.Task{
+	task := &taskqueue.Task{Subject: execution.Subject{WorkspaceID: "workspace-1", UserID: "user-1"},
 		ID: "fanout-task", WorkspaceID: "workspace-1", ContextKey: "group-1",
 		Kind: "team_workflow", WorkerID: "worker-1",
 		Payload: json.RawMessage(`{
@@ -277,7 +277,7 @@ func TestExecutorProcessNextFanoutLegRecordsTerminal(t *testing.T) {
 }
 
 func TestExecutorProcessNextFanoutInfrastructureFailureWaitsForStageRetry(t *testing.T) {
-	task := &taskqueue.Task{
+	task := &taskqueue.Task{Subject: execution.Subject{WorkspaceID: "workspace-1", UserID: "user-1"},
 		ID: "fanout-task", WorkspaceID: "workspace-1", ContextKey: "group-1",
 		Kind: "team_workflow", WorkerID: "worker-1",
 		Payload: json.RawMessage(`{
@@ -305,7 +305,7 @@ func TestExecutorProcessNextFanoutInfrastructureFailureWaitsForStageRetry(t *tes
 }
 
 func TestExecutorProcessNextLeaseLostReturnsWithoutFailingTask(t *testing.T) {
-	task := &taskqueue.Task{
+	task := &taskqueue.Task{Subject: execution.Subject{WorkspaceID: "workspace-1", UserID: "user-1"},
 		ID: "fanout-task", WorkspaceID: "workspace-1", ContextKey: "group-1",
 		Kind: "team_workflow", WorkerID: "worker-1",
 		Payload: json.RawMessage(`{
@@ -392,7 +392,7 @@ func (h *processNextHarness) enqueueWorkflowTask(t *testing.T, runID string) str
 	ctx := context.Background()
 	h.seedWorkflowSnapshot(t, runID)
 	taskID := "task-" + runID
-	err := h.tasks.Enqueue(ctx, &taskqueue.Task{
+	err := h.tasks.Enqueue(ctx, &taskqueue.Task{Subject: execution.Subject{WorkspaceID: "workspace-1", UserID: "user-1"},
 		ID: taskID, WorkspaceID: "workspace-1",
 		IdentityKind: taskqueue.IdentityTeamWorkflow, IdentitySchemaVersion: 2,
 		WorkflowID: "workflow-1", WorkflowVersion: 1, RunSnapshotID: runID,

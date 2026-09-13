@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jinyitao123/weave/internal/base/execution"
 )
 
 // Handler executes one claimed task; the worker alone controls the queue lease
@@ -19,6 +20,9 @@ type Handler interface {
 }
 
 type TaskResult struct {
+	// Pause settles this physical invocation; business state determines later resumption.
+	Pause         bool
+	Usage         *execution.TerminalUsage
 	Result        json.RawMessage
 	RunID         string
 	Continue      bool
@@ -169,7 +173,22 @@ func (w *Worker) executeTask(workerCtx context.Context, task Task, handler Handl
 			w.onLegTerminal(context.Background(), task.WorkspaceID, task.TaskGroupID)
 		}
 	}()
-	execCtx, cancel := context.WithCancel(workerCtx)
+	boundCtx, err := BindTaskSubject(workerCtx, &task)
+	if err != nil {
+		_ = w.store.failClaimed(context.Background(), task.ID, task.WorkerID, err.Error())
+		return
+	}
+	execCtx, cancel := context.WithCancel(boundCtx)
+	if task.DeadlineAt != nil {
+		cancel()
+		execCtx, cancel = context.WithDeadline(boundCtx, *task.DeadlineAt)
+	}
+	if task.SubtaskDeadlineAt != nil {
+		limited, done := context.WithDeadline(execCtx, *task.SubtaskDeadlineAt)
+		previous := cancel
+		cancel = func() { done(); previous() }
+		execCtx = limited
+	}
 	w.mu.Lock()
 	w.cancellers[task.ID] = cancel
 	w.mu.Unlock()
@@ -177,6 +196,10 @@ func (w *Worker) executeTask(workerCtx context.Context, task Task, handler Handl
 	// Recheck admission after installing the cancellation hook and before any side effect.
 	if err := w.store.Heartbeat(workerCtx, task.ID, task.WorkerID); err != nil {
 		_ = w.store.AcknowledgeExecutionStopped(context.Background(), task.ID, task.WorkerID)
+		return
+	}
+	if execCtx.Err() != nil {
+		_ = w.store.failClaimed(context.Background(), task.ID, task.WorkerID, "execution deadline exceeded")
 		return
 	}
 	type outcome struct {
@@ -214,6 +237,9 @@ func (w *Worker) executeTask(workerCtx context.Context, task Task, handler Handl
 		case out := <-outcomes:
 			finishCtx, finishCancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer finishCancel()
+			if err := w.store.RecordClaimUsage(finishCtx, task.ID, task.WorkerID, task.ClaimEpoch, out.result.Usage); err != nil {
+				slog.Error("task usage receipt rejected", "task_id", task.ID, "error", err)
+			}
 			if stopped || workerCtx.Err() != nil {
 				if !leaseLost {
 					_ = w.store.failClaimed(finishCtx, task.ID, task.WorkerID, "execution interrupted")
@@ -234,7 +260,7 @@ func (w *Worker) executeTask(workerCtx context.Context, task Task, handler Handl
 				_ = w.store.AcknowledgeExecutionStopped(finishCtx, task.ID, task.WorkerID)
 				return
 			}
-			if out.result.Continue {
+			if out.result.Continue && !out.result.Pause {
 				if err := w.store.requeueClaimed(finishCtx, task.ID, task.WorkerID, out.result.ContinueAfter); err != nil {
 					slog.Error("task continuation failed", "task_id", task.ID, "error", err)
 				}

@@ -36,6 +36,11 @@ func (e *Executor) ProcessNext(ctx context.Context, workerID string) (bool, erro
 }
 
 func (e *Executor) processClaimedWorkflowTask(ctx context.Context, task *taskqueue.Task, workerID string) error {
+	bound, err := taskqueue.BindTaskSubject(ctx, task)
+	if err != nil {
+		return e.Tasks.FailClaimed(ctx, task.ID, workerID, err.Error())
+	}
+	ctx = bound
 	// Returning from the workflow handler means every local execution has been
 	// joined. Remote children retain their own independent exit acknowledgement.
 	if tasks, ok := e.Tasks.(interface {

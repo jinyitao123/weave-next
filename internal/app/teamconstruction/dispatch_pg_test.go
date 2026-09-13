@@ -31,7 +31,7 @@ func (f chatExecutorFunc) ExecuteChat(ctx context.Context, ws string, req taskqu
 
 func dispatchFixture(t *testing.T) (*Dispatcher, teambuild.TeamBuildRun) {
 	t.Helper()
-	ctx := context.Background()
+	ctx := execution.WithSubject(context.Background(), execution.Subject{WorkspaceID: "build-workspace", UserID: "user-1"})
 	pool := testutil.PostgresPool(t)
 	if err := db.Migrate(ctx, pool); err != nil {
 		t.Fatal(err)
@@ -66,7 +66,7 @@ func dispatchFixture(t *testing.T) (*Dispatcher, teambuild.TeamBuildRun) {
 
 func waitDispatchTask(t *testing.T, d *Dispatcher, id string, accept func(*taskqueue.Task) bool) *taskqueue.Task {
 	t.Helper()
-	ctx := context.Background()
+	ctx := execution.WithSubject(context.Background(), execution.Subject{WorkspaceID: "build-workspace", UserID: "user-1"})
 	deadline := time.Now().Add(8 * time.Second)
 	var last *taskqueue.Task
 	for time.Now().Before(deadline) {
@@ -86,7 +86,7 @@ func waitDispatchTask(t *testing.T, d *Dispatcher, id string, accept func(*taskq
 
 func TestBuildDispatchUsesSinglePlatformTaskRealPG(t *testing.T) {
 	d, run := dispatchFixture(t)
-	ctx := context.Background()
+	ctx := execution.WithSubject(context.Background(), execution.Subject{WorkspaceID: "build-workspace", UserID: "user-1"})
 	const requests = 8
 	var wg sync.WaitGroup
 	results := make(chan ExecutionSubmission, requests)
@@ -182,7 +182,7 @@ func TestBuildDispatchUsesSinglePlatformTaskRealPG(t *testing.T) {
 
 func TestBuildCancellationWaitsForPhysicalReturnRealPG(t *testing.T) {
 	d, run := dispatchFixture(t)
-	ctx := context.Background()
+	ctx := execution.WithSubject(context.Background(), execution.Subject{WorkspaceID: "build-workspace", UserID: "user-1"})
 	started := make(chan struct{})
 	cancelSeen := make(chan struct{})
 	release := make(chan struct{})
@@ -233,7 +233,7 @@ func TestBuildCancellationWaitsForPhysicalReturnRealPG(t *testing.T) {
 func TestBuildCancellationAvailableWithoutExecutorRealPG(t *testing.T) {
 	d, run := dispatchFixture(t)
 	d.Executor = nil
-	ctx := context.Background()
+	ctx := execution.WithSubject(context.Background(), execution.Subject{WorkspaceID: "build-workspace", UserID: "user-1"})
 	if _, err := d.Submit(ctx, run.WorkspaceID, run.BuildRunID); err == nil {
 		t.Fatal("missing execution service admitted a task")
 	}
@@ -249,7 +249,7 @@ func TestBuildCancellationAvailableWithoutExecutorRealPG(t *testing.T) {
 
 func TestBuildLeaseLossRequiresStopBeforeExplicitResumeRealPG(t *testing.T) {
 	d, run := dispatchFixture(t)
-	ctx := context.Background()
+	ctx := execution.WithSubject(context.Background(), execution.Subject{WorkspaceID: "build-workspace", UserID: "user-1"})
 	submission, err := d.Submit(ctx, run.WorkspaceID, run.BuildRunID)
 	if err != nil {
 		t.Fatal(err)
@@ -298,7 +298,7 @@ func TestBuildLeaseLossRequiresStopBeforeExplicitResumeRealPG(t *testing.T) {
 
 func TestBuildContinuationUsesPlatformAvailabilityRealPG(t *testing.T) {
 	d, run := dispatchFixture(t)
-	ctx := context.Background()
+	ctx := execution.WithSubject(context.Background(), execution.Subject{WorkspaceID: "build-workspace", UserID: "user-1"})
 	d.Executor = buildExecutorFunc(func(context.Context, string, string) (teamorch.Result, error) {
 		return teamorch.Result{Status: teambuild.StatusRoundRunning, StopReason: "waiting for existing operation"}, nil
 	})

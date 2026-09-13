@@ -8,6 +8,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/jinyitao123/weave/internal/app/apikeys"
 	"github.com/jinyitao123/weave/internal/app/users"
+	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/labstack/echo/v4"
 )
 
@@ -54,6 +55,9 @@ func AuthMiddleware(jwtSecret string, keyStoreGetter func() *apikeys.Store, user
 					return c.JSON(http.StatusUnauthorized, map[string]string{"error": "invalid api key"})
 				}
 				setAPIKeyContext(c, key)
+				if err := bindDelegatedUser(c, jwtSecret, userStoreGetter, key); err != nil {
+					return c.JSON(http.StatusUnauthorized, map[string]string{"error": "invalid delegated user authorization"})
+				}
 				go ks.TouchLastUsed(context.Background(), key.ID)
 				return next(c)
 			}
@@ -76,6 +80,7 @@ func AuthMiddleware(jwtSecret string, keyStoreGetter func() *apikeys.Store, user
 			c.Set("user_id", user.ID)
 			c.Set("roles", []string{user.Role})
 			c.Set(authSourceContextKey, authSourceJWT)
+			setExecutionSubject(c, execution.Subject{WorkspaceID: user.TenantID, UserID: user.ID})
 
 			return next(c)
 		}
@@ -119,6 +124,7 @@ func OptionalAuthMiddleware(jwtSecret string, keyStoreGetter func() *apikeys.Sto
 					c.Set("user_id", user.ID)
 					c.Set("roles", []string{user.Role})
 					c.Set(authSourceContextKey, authSourceJWT)
+					setExecutionSubject(c, execution.Subject{WorkspaceID: user.TenantID, UserID: user.ID})
 				}
 			}
 
@@ -129,16 +135,12 @@ func OptionalAuthMiddleware(jwtSecret string, keyStoreGetter func() *apikeys.Sto
 
 func setAPIKeyContext(c echo.Context, key *apikeys.APIKey) {
 	userID := key.OwnerUserID
-	actor := strings.TrimSpace(c.Request().Header.Get("X-Weave-Actor-ID"))
-	if key.Role == "admin" && validWorkbenchActor(actor) {
-		userID = "workbench:" + actor
-		c.Set(workbenchActorContextKey, actor)
-	}
+	subject := execution.Subject{WorkspaceID: key.TenantID, UserID: userID}
 	if userID == "" {
-		// Upgrade compatibility for an old key whose historical creator cannot
-		// be resolved. It remains authenticated but cannot impersonate a member.
-		userID = "apikey:" + key.ID
+		subject.ServiceID = "api-key:" + key.ID
+		userID = subject.ServiceID
 	}
+	setExecutionSubject(c, subject)
 	c.Set("tenant", key.TenantID)
 	c.Set("user_id", userID)
 	c.Set("roles", []string{key.Role})
@@ -147,16 +149,35 @@ func setAPIKeyContext(c echo.Context, key *apikeys.APIKey) {
 	c.Set(apiKeyIDContextKey, key.ID)
 }
 
-func validWorkbenchActor(value string) bool {
-	if len(value) != 64 {
-		return false
+func setExecutionSubject(c echo.Context, subject execution.Subject) {
+	c.SetRequest(c.Request().WithContext(execution.WithSubject(c.Request().Context(), subject)))
+}
+
+// A Host's own key authenticates transport. Only a separately verified user JWT
+// may establish the end-user identity; arbitrary actor headers never do so.
+func bindDelegatedUser(c echo.Context, jwtSecret string, userStoreGetter func() *users.Store, key *apikeys.APIKey) error {
+	proof := strings.TrimSpace(c.Request().Header.Get("X-Weave-User-Authorization"))
+	if proof == "" {
+		return nil
 	}
-	for _, char := range value {
-		if (char < '0' || char > '9') && (char < 'a' || char > 'f') {
-			return false
-		}
+	if key.Role != "admin" || !strings.HasPrefix(proof, "Bearer ") {
+		return execution.ErrSubjectMismatch
 	}
-	return true
+	claims := &Claims{}
+	token, err := jwt.ParseWithClaims(strings.TrimPrefix(proof, "Bearer "), claims, func(*jwt.Token) (any, error) { return []byte(jwtSecret), nil }, jwt.WithValidMethods([]string{"HS256"}))
+	if err != nil || !token.Valid || claims.TenantID != key.TenantID {
+		return execution.ErrSubjectMismatch
+	}
+	user, ok := resolveJWTUser(c.Request().Context(), userStoreGetter, claims)
+	if !ok {
+		return execution.ErrSubjectMismatch
+	}
+	subject := execution.Subject{WorkspaceID: user.TenantID, UserID: user.ID}
+	setExecutionSubject(c, subject)
+	c.Set("user_id", user.ID)
+	c.Set("roles", []string{user.Role})
+	c.Set(workbenchActorContextKey, subject.Digest())
+	return nil
 }
 
 func resolveJWTUser(ctx context.Context, userStoreGetter func() *users.Store, claims *Claims) (*users.User, bool) {

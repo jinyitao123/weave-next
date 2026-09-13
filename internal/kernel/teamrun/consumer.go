@@ -94,6 +94,9 @@ func (c *Consumer) ConsumeClaimed(
 			ctx, task, workerID, ErrorCodeSnapshotUnavailable, err,
 		)
 	}
+	if task.Subject != runSnapshot.Subject {
+		return TeamRun{}, c.failClaimed(ctx, task, workerID, ErrorCodeIdentityMismatch, errors.New("task subject differs from snapshot"))
+	}
 	if err := validateTaskSnapshotIdentity(task, runSnapshot); err != nil {
 		code := ErrorCodeIdentityMismatch
 		if errors.Is(err, errSnapshotDamaged) {
