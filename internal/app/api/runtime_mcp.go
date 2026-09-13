@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/jinyitao123/weave/internal/base/execution"
+	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/kernel/mcphost"
 	"github.com/jinyitao123/weave/internal/kernel/runtimes"
 	"github.com/jinyitao123/weave/internal/kernel/secret"
@@ -50,16 +52,20 @@ func (s *Server) handleRuntimeTaskMCP(c echo.Context) error {
 		if binding.AccessRef.WorkspaceID != task.WorkspaceID || binding.AccessRef.ResourceID != binding.ServerID {
 			return echo.NewHTTPError(http.StatusForbidden, "MCP reference mismatch")
 		}
-		tx, err := pool.Begin(c.Request().Context())
+		if task.Subject.UserID == "" || task.Subject.ServiceID != "" {
+			return echo.NewHTTPError(http.StatusForbidden, "MCP user delegation required")
+		}
+		authorized := runtimeMCPReferenceContext(c.Request().Context(), task.Subject, binding.AccessRef)
+		tx, err := pool.Begin(authorized)
 		if err != nil {
 			return echo.NewHTTPError(http.StatusServiceUnavailable, "MCP credentials unavailable")
 		}
-		defer func() { _ = tx.Rollback(c.Request().Context()) }()
-		material, err := s.MCPRegistry.ResolveMCPAccessTx(c.Request().Context(), tx, binding.AccessRef)
+		defer func() { _ = tx.Rollback(authorized) }()
+		material, err := s.MCPRegistry.ResolveMCPAccessTx(authorized, tx, binding.AccessRef)
 		if err != nil {
 			return echo.NewHTTPError(http.StatusForbidden, "MCP access unavailable")
 		}
-		if err := tx.Commit(c.Request().Context()); err != nil {
+		if err := tx.Commit(authorized); err != nil {
 			return echo.NewHTTPError(http.StatusServiceUnavailable, "MCP credentials unavailable")
 		}
 
@@ -68,6 +74,7 @@ func (s *Server) handleRuntimeTaskMCP(c echo.Context) error {
 			headers[name] = string(value)
 		}
 		dispatcher, err := s.mcpAccessFactory().BuildFrozenServer(task.WorkspaceID, payload.Record, binding, headers, func(ctx context.Context) error {
+			ctx = runtimeMCPReferenceContext(ctx, task.Subject, binding.AccessRef)
 			gate, err := pool.Begin(ctx)
 			if err != nil {
 				return err
@@ -100,4 +107,17 @@ func (s *Server) handleRuntimeTaskMCP(c echo.Context) error {
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "MCP server not found"})
 	}
 	return handleStableGatewayRPC(c, dispatcher)
+}
+
+// A task-scoped MCP token proves one current claim and one frozen binding. It
+// may delegate that exact workspace service reference for the task's user, but
+// never acts as a general credential grant.
+func runtimeMCPReferenceContext(ctx context.Context, subject execution.Subject, expected frozen.CredentialReference) context.Context {
+	return frozen.WithServiceReferenceAuthorization(ctx, func(_ context.Context, actual execution.Subject, ref frozen.CredentialReference) error {
+		if subject.Validate() != nil || subject.UserID == "" || subject.ServiceID != "" ||
+			actual != subject || ref != expected || ref.WorkspaceID != subject.WorkspaceID {
+			return frozen.ErrCredentialSubjectDenied
+		}
+		return nil
+	})
 }

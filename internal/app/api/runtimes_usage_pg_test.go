@@ -13,15 +13,15 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jinyitao123/weave/internal/base/db"
 	"github.com/jinyitao123/weave/internal/base/execution"
-	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 	"github.com/jinyitao123/weave/internal/base/testutil"
 	"github.com/jinyitao123/weave/internal/kernel/engine"
 	"github.com/jinyitao123/weave/internal/kernel/runtimes"
+	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 	"github.com/labstack/echo/v4"
 )
 
 func TestRuntimeCompletionPreservesWorkWhenUsageIsInvalidRealPG(t *testing.T) {
-	ctx := t.Context()
+	ctx := execution.WithSubject(t.Context(), execution.Subject{WorkspaceID: "ws", UserID: "user"})
 	pool := testutil.PostgresPool(t)
 	if err := db.Migrate(ctx, pool); err != nil {
 		t.Fatal(err)
@@ -61,10 +61,11 @@ INSERT INTO weave_agent_versions(agent_id,workspace_id,version,spec) VALUES('age
 	result := runtimes.EngineExecResult{Status: "completed", Output: answer,
 		Artifacts:    []engine.Artifact{{Path: "physics/review.md", ContentType: "text/markdown", Content: answer}},
 		UsageReceipt: &engine.UsageReceipt{Source: engine.UsageSourceCLIReported, Scope: engine.UsageScopeInvocation, EngineVersion: "fixture 1", HasTokens: true, InputTokens: 100, RawSummary: strings.Repeat("界", 5000)}}
-	wire, _ := json.Marshal(result)
+	wire, _ := json.Marshal(runtimeReceiptForTask(claimed, result))
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPost, "/v1/runtime/tasks/task/complete", bytes.NewReader(wire))
 	request.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	setRuntimeTaskProof(request, claimed)
 	c := echo.New().NewContext(request, recorder)
 	c.Set(runtimeContextKey, runtime)
 	c.SetPath("/v1/runtime/tasks/:id/complete")
@@ -84,10 +85,11 @@ INSERT INTO weave_agent_versions(agent_id,workspace_id,version,spec) VALUES('age
 		if changed {
 			replay.Output = "different answer"
 		}
-		data, _ := json.Marshal(replay)
+		data, _ := json.Marshal(runtimeReceiptForTask(claimed, replay))
 		rec := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodPost, "/v1/runtime/tasks/task/complete", bytes.NewReader(data))
 		req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+		setRuntimeTaskProof(req, claimed)
 		cc := echo.New().NewContext(req, rec)
 		cc.Set(runtimeContextKey, runtime)
 		cc.SetParamNames("id")

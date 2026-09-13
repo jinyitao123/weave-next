@@ -10,13 +10,13 @@ import (
 	"github.com/jinyitao123/weave/internal/base/deliverable"
 	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/base/snapshot"
-	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 	"github.com/jinyitao123/weave/internal/base/testutil"
+	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 	"github.com/jinyitao123/weave/internal/kernel/teamrun"
 )
 
 func TestRunActivityRetryWaitsForRemoteExitRealPG(t *testing.T) {
-	ctx := context.Background()
+	ctx := execution.WithSubject(context.Background(), execution.Subject{WorkspaceID: "ws", UserID: "user"})
 	pool := testutil.PostgresPool(t)
 	if err := db.Migrate(ctx, pool); err != nil {
 		t.Fatal(err)
@@ -29,7 +29,7 @@ func TestRunActivityRetryWaitsForRemoteExitRealPG(t *testing.T) {
 	}
 	for _, id := range []string{"current", "other"} {
 		_, err := snapshot.NewStore(pool).Create(ctx, snapshot.TeamRunSnapshot{
-			RunID: id, WorkspaceID: "ws", TeamID: "team", SnapshotSchemaVersion: 2, Mode: "free_collab", LeadAvatarID: "agent", LeadAvatarVersion: 1,
+			RunID: id, WorkspaceID: "ws", TeamID: "team", SourceRef: "fixture", SnapshotSchemaVersion: 2, Mode: "free_collab", LeadAvatarID: "agent", LeadAvatarVersion: 1,
 			WorkerVersions: json.RawMessage(`{}`), TeamWorkerSnapshot: json.RawMessage(`[]`), InlineDependencies: json.RawMessage(`{}`), RuntimeAssignment: json.RawMessage(`{}`),
 			AdmissionDecision: json.RawMessage(`{"schema_version":1,"team_active":true,"workflow_active":null,"workers_enabled":true,"version_blocked":null,"decided_at":"2026-09-05T00:00:00Z"}`),
 			RunAssociations:   json.RawMessage(`{"schema_version":1,"parent_run_id":null,"source_snapshot_id":null,"task_group_id":null}`),

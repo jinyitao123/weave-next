@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/labstack/echo/v4"
 )
 
@@ -26,7 +27,9 @@ func dispatchInputRegistrationFixture(session, task, previous string) dispatchIn
 
 func dispatchInputTestContext(body []byte, path, workspaceID, userID string) (echo.Context, *httptest.ResponseRecorder) {
 	recorder := httptest.NewRecorder()
-	c := echo.New().NewContext(httptest.NewRequest(http.MethodPost, path, bytes.NewReader(body)), recorder)
+	request := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(body))
+	request = request.WithContext(execution.WithSubject(request.Context(), execution.Subject{WorkspaceID: workspaceID, UserID: userID}))
+	c := echo.New().NewContext(request, recorder)
 	c.Set("tenant", workspaceID)
 	c.Set("user_id", userID)
 	if strings.HasSuffix(path, "/dispatch") {
@@ -195,6 +198,7 @@ func TestBoundDispatchInputProvenanceAndAtomicAdmissionRealPG(t *testing.T) {
 		OrgStore:             server.OrgStore,
 		Registry:             server.Registry,
 		Workflow:             server.Workflow,
+		WorkflowArtifacts:    server.WorkflowArtifacts,
 		Deliverables:         server.Deliverables,
 		ScheduleTransactions: server.ScheduleTransactions,
 		Snapshots:            server.Snapshots,

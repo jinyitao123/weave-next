@@ -16,7 +16,9 @@ import (
 	"github.com/jinyitao123/loom"
 	"github.com/jinyitao123/weave/internal/app/deliveryverify"
 	"github.com/jinyitao123/weave/internal/app/projects"
+	"github.com/jinyitao123/weave/internal/app/workflowcatalog"
 	"github.com/jinyitao123/weave/internal/base/db"
+	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/base/snapshot"
 	"github.com/jinyitao123/weave/internal/base/testutil"
@@ -87,7 +89,7 @@ func newTeamDispatchTestServerWithGraph(t *testing.T, graph json.RawMessage) (*S
 		t.Fatal(err)
 	}
 	server := &Server{Store: teamDispatchPoolStore{pool: pool}, OrgStore: orgstore.NewStore(pool), Registry: agentcatalog.New(pool),
-		Workflow: workflow.New(pool, nil), Deliverables: deliveryverify.NewStore(pool), ScheduleTransactions: pool, Snapshots: snapshot.NewStore(pool), Tasks: taskqueue.New(pool, nil, time.Minute)}
+		Workflow: workflowcatalog.New(pool, nil, workflow.NewArtifactStore(pool, nil)), WorkflowArtifacts: workflow.NewArtifactStore(pool, nil), Deliverables: deliveryverify.NewStore(pool), ScheduleTransactions: pool, Snapshots: snapshot.NewStore(pool), Tasks: taskqueue.New(pool, nil, time.Minute)}
 	return server, pool
 }
 
@@ -99,7 +101,9 @@ func TestTeamWorkflowDispatchKeepsInputIdentityAndAdmissionRealPG(t *testing.T) 
 		t.Helper()
 		body, _ := json.Marshal(request)
 		recorder := httptest.NewRecorder()
-		c := echo.New().NewContext(httptest.NewRequest(http.MethodPost, "/v1/teams/team/dispatch", bytes.NewReader(body)), recorder)
+		httpRequest := httptest.NewRequest(http.MethodPost, "/v1/teams/team/dispatch", bytes.NewReader(body))
+		httpRequest = httpRequest.WithContext(execution.WithSubject(httpRequest.Context(), execution.Subject{WorkspaceID: "ws", UserID: "user"}))
+		c := echo.New().NewContext(httpRequest, recorder)
 		c.SetPath("/v1/teams/:id/dispatch")
 		c.SetParamNames("id")
 		c.SetParamValues("team")

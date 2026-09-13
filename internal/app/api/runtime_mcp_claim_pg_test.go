@@ -18,14 +18,14 @@ import (
 	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/base/snapshot"
-	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 	"github.com/jinyitao123/weave/internal/base/testutil"
 	"github.com/jinyitao123/weave/internal/kernel/compiler"
-	"github.com/jinyitao123/weave/internal/kernel/execenv"
+	"github.com/jinyitao123/weave/internal/kernel/execspec"
 	"github.com/jinyitao123/weave/internal/kernel/mcpregistry"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 	"github.com/jinyitao123/weave/internal/kernel/runtimes"
 	"github.com/jinyitao123/weave/internal/kernel/secret"
+	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 	"github.com/labstack/echo/v4"
 )
 
@@ -34,7 +34,7 @@ type mcpClaimClock struct{ at time.Time }
 func (c mcpClaimClock) Now() time.Time { return c.at }
 
 func TestFrozenCLIMCPClaimAuthorityAndEffectsRealPG(t *testing.T) {
-	ctx := context.Background()
+	ctx := execution.WithSubject(context.Background(), execution.Subject{WorkspaceID: "ws", UserID: "user"})
 	pool := testutil.PostgresPool(t)
 	if err := db.Migrate(ctx, pool); err != nil {
 		t.Fatal(err)
@@ -49,7 +49,7 @@ func TestFrozenCLIMCPClaimAuthorityAndEffectsRealPG(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err := snapshot.NewStore(pool).Create(ctx, snapshot.TeamRunSnapshot{
-		RunID: "snapshot", WorkspaceID: "ws", TeamID: "team", SnapshotSchemaVersion: 2, Mode: "free_collab", LeadAvatarID: "agent", LeadAvatarVersion: 1,
+		RunID: "snapshot", WorkspaceID: "ws", TeamID: "team", SourceRef: "fixture", SnapshotSchemaVersion: 2, Mode: "free_collab", LeadAvatarID: "agent", LeadAvatarVersion: 1,
 		WorkerVersions: json.RawMessage(`{}`), TeamWorkerSnapshot: json.RawMessage(`[]`), InlineDependencies: json.RawMessage(`{}`), RuntimeAssignment: json.RawMessage(`{}`),
 		AdmissionDecision: json.RawMessage(`{"schema_version":1,"team_active":true,"workflow_active":null,"workers_enabled":true,"version_blocked":null,"decided_at":"2026-09-05T00:00:00Z"}`),
 		RunAssociations:   json.RawMessage(`{"schema_version":1,"parent_run_id":null,"source_snapshot_id":null,"task_group_id":null}`), TriggerSourceV2: json.RawMessage(`{"schema_version":1,"type":"api","source_ref":"fixture"}`),
@@ -144,7 +144,7 @@ func TestFrozenCLIMCPClaimAuthorityAndEffectsRealPG(t *testing.T) {
 	}
 	clock := mcpClaimClock{time.Now().UTC().Truncate(time.Microsecond)}
 	tasks := taskqueue.New(pool, clock, time.Minute)
-	payload := runtimes.EngineExecRequest{Engine: "codex", BoundMCP: true, Record: &registry.AgentRecord{WorkspaceID: "ws", ID: "agent", Name: "worker", Version: 1, Engine: "codex", MCPServers: []registry.MCPServerConfig{{ServerID: registered.ID}}}, FrozenMCP: &execenv.FrozenMCPInvocation{WorkspaceID: "ws", AgentID: "agent", AgentVersion: 1, RunSnapshotID: "snapshot", FactoryKey: compiler.StandardFrozenCLIToolsKey(), Bindings: []frozen.FrozenMCPBinding{binding}}}
+	payload := runtimes.EngineExecRequest{Subject: execution.Subject{WorkspaceID: "ws", UserID: "user"}, Engine: "codex", BoundMCP: true, Record: &registry.AgentRecord{WorkspaceID: "ws", ID: "agent", Name: "worker", Version: 1, Engine: "codex", MCPServers: []registry.MCPServerConfig{{ServerID: registered.ID}}}, FrozenMCP: &execspec.FrozenMCPInvocation{WorkspaceID: "ws", AgentID: "agent", AgentVersion: 1, RunSnapshotID: "snapshot", FactoryKey: compiler.StandardFrozenCLIToolsKey(), Bindings: []frozen.FrozenMCPBinding{binding}}}
 	encoded, err := json.Marshal(payload)
 	if err != nil {
 		t.Fatal(err)

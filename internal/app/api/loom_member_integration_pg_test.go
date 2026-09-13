@@ -14,7 +14,10 @@ import (
 	"github.com/jinyitao123/loom/contract"
 	"github.com/jinyitao123/loom/stdlib"
 	"github.com/jinyitao123/weave/internal/app/deliveryverify"
+	"github.com/jinyitao123/weave/internal/app/teamconstruction"
+	"github.com/jinyitao123/weave/internal/app/workflowcatalog"
 	"github.com/jinyitao123/weave/internal/base/db"
+	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/base/snapshot"
 	"github.com/jinyitao123/weave/internal/base/storeext"
@@ -110,7 +113,7 @@ func TestWorkflowPublishedMemberTotalBudgetRealPG(t *testing.T)    { runPublishe
 func TestWorkflowPublishedMemberAutomaticSliceRealPG(t *testing.T) { runPublishedMemberRecovery(t, 2) }
 
 func runPublishedMemberRecovery(t *testing.T, totalRounds uint64) {
-	ctx := t.Context()
+	ctx := execution.WithSubject(t.Context(), execution.Subject{WorkspaceID: "ws", UserID: "test"})
 	pool := testutil.PostgresPool(t)
 	if err := db.Migrate(ctx, pool); err != nil {
 		t.Fatal(err)
@@ -135,14 +138,15 @@ func runPublishedMemberRecovery(t *testing.T, totalRounds uint64) {
 	if _, err = mcp.RecordProbeSuccess(ctx, "ws", registered.ID, "2025-03-26", json.RawMessage(`{}`), []mcpregistry.Tool{{Name: "compute", InputSchema: json.RawMessage(`{"type":"object"}`)}}); err != nil {
 		t.Fatal(err)
 	}
-	bundle, _, saved := publishMemberIntegrationSample(t, pool, key, "ws", "http://127.0.0.1:1", registered.ID, registered.FunctionalRevision, "compute", "Finish the assigned calculation.", totalRounds)
+	bundle, _, saved := publishMemberIntegrationSample(t, pool, key, "ws", "test", "http://127.0.0.1:1", registered.ID, registered.FunctionalRevision, "compute", "Finish the assigned calculation.", totalRounds)
 	tasks := taskqueue.New(pool, nil, time.Minute)
 	snapshots := snapshot.NewStore(pool)
-	flows := workflow.New(pool, nil)
-	server := &Server{Store: teamDispatchPoolStore{pool: pool}, OrgStore: orgstore.NewStore(pool), Registry: agentcatalog.New(pool), Workflow: flows, Deliverables: deliveryverify.NewStore(pool), ScheduleTransactions: pool, Snapshots: snapshots, Tasks: tasks}
+	artifacts := workflow.NewArtifactStore(pool, nil)
+	flows := workflowcatalog.New(pool, nil, artifacts)
+	server := &Server{Store: teamDispatchPoolStore{pool: pool}, OrgStore: orgstore.NewStore(pool), Registry: agentcatalog.New(pool), Workflow: flows, WorkflowArtifacts: artifacts, Deliverables: deliveryverify.NewStore(pool), ScheduleTransactions: pool, Snapshots: snapshots, Tasks: tasks}
 	request, _ := json.Marshal(teamDispatchRequest{Task: "calculate", ClientRequestID: "00000000-0000-4000-8000-000000000055"})
 	recorder := httptest.NewRecorder()
-	c := echo.New().NewContext(httptest.NewRequest(http.MethodPost, "/v1/teams/team/dispatch", bytes.NewReader(request)), recorder)
+	c := echo.New().NewContext(httptest.NewRequest(http.MethodPost, "/v1/teams/team/dispatch", bytes.NewReader(request)).WithContext(ctx), recorder)
 	c.SetPath("/v1/teams/:id/dispatch")
 	c.SetParamNames("id")
 	c.SetParamValues("team")
@@ -163,7 +167,7 @@ func runPublishedMemberRecovery(t *testing.T, totalRounds uint64) {
 		t.Fatal(err)
 	}
 	lead, worker := &memberIntegrationModel{}, &memberIntegrationModel{fail: totalRounds == 0, export: true}
-	runtime := &teamrun.WorkflowSerialRuntime{OutputRecorder: deliveryverify.NewStore(pool), Members: members, Artifacts: flows, Loader: &workflow.RuntimeLoader{Registry: memberIntegrationDescriptors(t)}, HostFactory: memberIntegrationHosts{bundle.Agent.AgentID, lead, worker}, CredentialResolvers: func(string) (workflow.RuntimeCredentialResolver, error) { return memberIntegrationSecrets{}, nil }, Transactions: pool, Runs: runs, Checkpoints: checkpoints, Tasks: tasks, Snapshots: snapshots}
+	runtime := &teamrun.WorkflowSerialRuntime{OutputRecorder: deliveryverify.NewStore(pool), Members: members, Artifacts: artifacts, Loader: &workflow.RuntimeLoader{Registry: memberIntegrationDescriptors(t)}, HostFactory: memberIntegrationHosts{bundle.Agent.AgentID, lead, worker}, CredentialResolvers: func(string) (workflow.RuntimeCredentialResolver, error) { return memberIntegrationSecrets{}, nil }, Transactions: pool, Runs: runs, Checkpoints: checkpoints, Tasks: tasks, Snapshots: snapshots}
 	executor := &teamrun.Executor{MemberBudgets: loomruntime.MemberBudgetCoordinator{}, Tasks: tasks, Transactions: pool, Runs: runs, Checkpoints: checkpoints, Runtime: runtime, Consumer: &teamrun.Consumer{Transactions: pool, Snapshots: snapshots, Runs: runs, Tasks: tasks}}
 	if ok, err := executor.ProcessNext(ctx, "first"); err != nil || !ok {
 		t.Fatalf("first=%v %v", ok, err)
@@ -287,11 +291,11 @@ func runPublishedMemberRecovery(t *testing.T, totalRounds uint64) {
 	}
 	_ = saved
 }
-func publishMemberIntegrationSample(t *testing.T, pool *pgxpool.Pool, key []byte, workspace, serverURL, serverID string, revision int64, toolName, prompt string, budget ...uint64) (frozen.FrozenExecutionBundle, compiler.FrozenResolver, *workflow.PublishedArtifactContent) {
+func publishMemberIntegrationSample(t *testing.T, pool *pgxpool.Pool, key []byte, workspace, actor, serverURL, serverID string, revision int64, toolName, prompt string, budget ...uint64) (frozen.FrozenExecutionBundle, compiler.FrozenResolver, *workflow.PublishedArtifactContent) {
 	t.Helper()
-	ctx := t.Context()
+	ctx := execution.WithSubject(t.Context(), execution.Subject{WorkspaceID: workspace, UserID: actor})
 	providers := credentials.New(pool, key)
-	if err := providers.Upsert(ctx, workspace, llmrouter.ProviderConfig{ID: "fixture", Name: "Fixture", BaseURL: serverURL, APIKey: "test-provider-secret", Models: []string{"fixture-model"}}); err != nil {
+	if err := providers.Upsert(ctx, workspace, llmrouter.ProviderConfig{CredentialScope: frozen.CredentialScopeUser, CredentialUserID: actor, ID: "fixture", Name: "Fixture", BaseURL: serverURL, APIKey: "test-provider-secret", Models: []string{"fixture-model"}}); err != nil {
 		t.Fatal(err)
 	}
 	agents := agentcatalog.New(pool)
@@ -312,33 +316,35 @@ func publishMemberIntegrationSample(t *testing.T, pool *pgxpool.Pool, key []byte
 		t.Fatal(err)
 	}
 	graph := json.RawMessage(fmt.Sprintf(`{"schema_version":1,"entry_node_id":"brief","input_contract":{"type":"text"},"output_contract":{"type":"text"},"nodes":[{"id":"brief","type":"lead","config":{"instruction":"Brief"},"inputs":{"task":{"value":{"source":"run_input","path":""},"expected_type":"text"}},"output":{"type":"text"}},{"id":"compute","type":"worker","config":{"kind":"consult","agent_id":%q,"agent_version":%d,"result_requirement":"Execute the configured tool task"},"inputs":{"task":{"value":{"source":"run_input","path":""},"expected_type":"text"}},"output":{"type":"text"}},{"id":"deliver","type":"deliver","config":{"result":{"source":"node_output","node_id":"compute","path":""}}}],"edges":[{"id":"a","from_node_id":"brief","to_node_id":"compute","route":"success"},{"id":"b","from_node_id":"compute","to_node_id":"deliver","route":"success"}]}`, worker.ID, worker.Version))
-	store := workflow.New(pool, nil)
+	artifacts := workflow.NewArtifactStore(pool, nil)
+	store := workflowcatalog.New(pool, nil, artifacts)
 	draft, err := store.Create(ctx, &workflow.TeamWorkflow{ID: "flow", WorkspaceID: workspace, TeamID: "team", Name: "Tool flow"}, workflow.DraftInput{CreatedBy: "test", TriggerConfig: json.RawMessage(`{"schema_version":1,"type":"conversation_explicit","config":{}}`), GraphDefinition: graph})
 	if err != nil {
 		t.Fatal(err)
 	}
 	descriptors := memberIntegrationDescriptors(t)
-	builder := workflow.NewCandidateBuilder(store, agents, delivery.New(pool, key), skills.New(pool), providers, schedule.New(pool, nil), descriptors)
+	builder := workflowcatalog.NewCandidateBuilder(store, agents, delivery.New(pool, key), skills.New(pool), providers, schedule.New(pool, nil), descriptors)
+	authority, publications := openAPIProductPublication(t, ctx, pool, builder)
 	tx, err := pool.Begin(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer tx.Rollback(context.Background())
-	candidate, report, err := builder.BuildTx(ctx, tx, workflow.CandidateInput{WorkspaceID: workspace, WorkflowID: "flow", WorkflowVersion: draft.Version})
+	candidate, report, err := authority.BuildCandidateTx(ctx, tx, workflow.CandidateInput{WorkspaceID: workspace, WorkflowID: "flow", WorkflowVersion: draft.Version})
 	if err != nil || candidate == nil || report != nil && len(report.Issues) > 0 {
 		t.Fatalf("build publication: err=%+v report=%+v", err, report)
 	}
-	publication, err := workflow.PublicationFromCandidate(candidate)
+	command, err := teamconstruction.PublicationCommandForCandidate("loom-member-publication-"+workspace, candidate, teamconstruction.PublicationTarget{TeamID: "team"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.InsertPublicationTx(ctx, tx, publication); err != nil {
+	if err := tx.Rollback(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if err := tx.Commit(ctx); err != nil {
+	if _, err := publications.Publish(ctx, command); err != nil {
 		t.Fatal(err)
 	}
-	saved, err := store.GetArtifact(ctx, workspace, "flow", draft.Version)
+	saved, err := artifacts.GetArtifact(ctx, workspace, "flow", draft.Version)
 	if err != nil {
 		t.Fatal(err)
 	}
