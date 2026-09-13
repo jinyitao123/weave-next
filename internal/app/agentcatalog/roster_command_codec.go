@@ -1,4 +1,4 @@
-package registry
+package agentcatalog
 
 import (
 	"bytes"
@@ -13,46 +13,48 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jinyitao123/weave/internal/kernel/registry"
+
 	"github.com/jinyitao123/weave/internal/base/frozen"
 )
 
 const teamRosterResultSchemaVersion = 1
 
 type canonicalTeamRosterCommand struct {
-	SchemaVersion     int                     `json:"schema_version"`
-	WorkspaceID       string                  `json:"workspace_id"`
-	TeamID            string                  `json:"team_id"`
-	ExpectedUpdatedAt string                  `json:"expected_updated_at"`
-	DesiredTeamStatus string                  `json:"desired_team_status"`
-	LeadAgentID       string                  `json:"lead_agent_id"`
-	Workers           []TeamRosterWorkerInput `json:"workers"`
-	OperatorID        string                  `json:"operator_id"`
-	Reason            string                  `json:"reason"`
+	SchemaVersion     int                              `json:"schema_version"`
+	WorkspaceID       string                           `json:"workspace_id"`
+	TeamID            string                           `json:"team_id"`
+	ExpectedUpdatedAt string                           `json:"expected_updated_at"`
+	DesiredTeamStatus string                           `json:"desired_team_status"`
+	LeadAgentID       string                           `json:"lead_agent_id"`
+	Workers           []registry.TeamRosterWorkerInput `json:"workers"`
+	OperatorID        string                           `json:"operator_id"`
+	Reason            string                           `json:"reason"`
 }
 
-func normalizeTeamRosterCommand(command TeamRosterCommand) (TeamRosterCommand, error) {
+func normalizeTeamRosterCommand(command registry.TeamRosterCommand) (registry.TeamRosterCommand, error) {
 	normalized := command
 	normalized.WorkspaceID = strings.TrimSpace(normalized.WorkspaceID)
 	normalized.TeamID = strings.TrimSpace(normalized.TeamID)
 	normalized.OperatorID = strings.TrimSpace(normalized.OperatorID)
 	normalized.Reason = strings.TrimSpace(normalized.Reason)
 	if normalized.IdempotencyKey != strings.TrimSpace(normalized.IdempotencyKey) {
-		return TeamRosterCommand{}, fmt.Errorf("%w: idempotency_key must be trimmed", ErrTeamRosterInvalidRequest)
+		return registry.TeamRosterCommand{}, fmt.Errorf("%w: idempotency_key must be trimmed", registry.ErrTeamRosterInvalidRequest)
 	}
 	if normalized.WorkspaceID == "" || normalized.TeamID == "" || normalized.IdempotencyKey == "" ||
 		normalized.OperatorID == "" || normalized.Reason == "" || normalized.LeadAgentID == "" {
-		return TeamRosterCommand{}, fmt.Errorf("%w: command identity, operator, reason, and lead are required", ErrTeamRosterInvalidRequest)
+		return registry.TeamRosterCommand{}, fmt.Errorf("%w: command identity, operator, reason, and lead are required", registry.ErrTeamRosterInvalidRequest)
 	}
 	if normalized.DesiredTeamStatus != "active" && normalized.DesiredTeamStatus != "archived" &&
 		normalized.DesiredTeamStatus != "building" {
-		return TeamRosterCommand{}, fmt.Errorf("%w: desired_team_status must be active, building, or archived", ErrTeamRosterInvalidRequest)
+		return registry.TeamRosterCommand{}, fmt.Errorf("%w: desired_team_status must be active, building, or archived", registry.ErrTeamRosterInvalidRequest)
 	}
 	if normalized.ExpectedUpdatedAt.IsZero() {
-		return TeamRosterCommand{}, fmt.Errorf("%w: expected_updated_at is required", ErrTeamRosterInvalidRequest)
+		return registry.TeamRosterCommand{}, fmt.Errorf("%w: expected_updated_at is required", registry.ErrTeamRosterInvalidRequest)
 	}
 	normalized.ExpectedUpdatedAt = normalized.ExpectedUpdatedAt.UTC().Truncate(time.Microsecond)
 	if len(normalized.Workers) == 0 {
-		return TeamRosterCommand{}, fmt.Errorf("%w: workers must not be empty", ErrTeamRosterInvalidRequest)
+		return registry.TeamRosterCommand{}, fmt.Errorf("%w: workers must not be empty", registry.ErrTeamRosterInvalidRequest)
 	}
 	normalized.Workers = cloneTeamRosterWorkers(normalized.Workers)
 	for index := range normalized.Workers {
@@ -62,15 +64,15 @@ func normalizeTeamRosterCommand(command TeamRosterCommand) (TeamRosterCommand, e
 		return normalized.Workers[i].WorkerAgentID < normalized.Workers[j].WorkerAgentID
 	})
 	if err := validateTeamRosterWorkerInputs(normalized.Workers); err != nil {
-		return TeamRosterCommand{}, fmt.Errorf("%w: %v", ErrTeamRosterInvalidRequest, err)
+		return registry.TeamRosterCommand{}, fmt.Errorf("%w: %v", registry.ErrTeamRosterInvalidRequest, err)
 	}
 	return normalized, nil
 }
 
-func teamRosterCommandHash(command TeamRosterCommand) (TeamRosterCommand, string, error) {
+func teamRosterCommandHash(command registry.TeamRosterCommand) (registry.TeamRosterCommand, string, error) {
 	normalized, err := normalizeTeamRosterCommand(command)
 	if err != nil {
-		return TeamRosterCommand{}, "", err
+		return registry.TeamRosterCommand{}, "", err
 	}
 	semantic := canonicalTeamRosterCommand{
 		SchemaVersion:     teamRosterResultSchemaVersion,
@@ -85,27 +87,27 @@ func teamRosterCommandHash(command TeamRosterCommand) (TeamRosterCommand, string
 	}
 	raw, err := json.Marshal(semantic)
 	if err != nil {
-		return TeamRosterCommand{}, "", fmt.Errorf("encode team roster command: %w", err)
+		return registry.TeamRosterCommand{}, "", fmt.Errorf("encode team roster command: %w", err)
 	}
 	canonical, err := frozen.CanonicalizeJSON(raw)
 	if err != nil {
-		return TeamRosterCommand{}, "", fmt.Errorf("canonicalize team roster command: %w", err)
+		return registry.TeamRosterCommand{}, "", fmt.Errorf("canonicalize team roster command: %w", err)
 	}
 	sum := sha256.Sum256(canonical)
 	return normalized, hex.EncodeToString(sum[:]), nil
 }
 
-func encodeTeamRosterResult(result TeamRosterResult) ([]byte, error) {
+func encodeTeamRosterResult(result registry.TeamRosterResult) ([]byte, error) {
 	if err := validateTeamRosterResult(result); err != nil {
 		return nil, err
 	}
 	return json.Marshal(result)
 }
 
-func decodeTeamRosterResult(raw []byte) (*TeamRosterResult, error) {
+func decodeTeamRosterResult(raw []byte) (*registry.TeamRosterResult, error) {
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
-	var result TeamRosterResult
+	var result registry.TeamRosterResult
 	if err := decoder.Decode(&result); err != nil {
 		return nil, fmt.Errorf("decode frozen team roster response: %w", err)
 	}
@@ -121,7 +123,7 @@ func decodeTeamRosterResult(raw []byte) (*TeamRosterResult, error) {
 	return &result, nil
 }
 
-func validateTeamRosterResult(result TeamRosterResult) error {
+func validateTeamRosterResult(result registry.TeamRosterResult) error {
 	if result.SchemaVersion != teamRosterResultSchemaVersion || result.TeamID == "" ||
 		(result.TeamStatus != "active" && result.TeamStatus != "building" && result.TeamStatus != "archived") || result.LeadAgentID == "" {
 		return errors.New("invalid team roster response identity")
@@ -138,7 +140,7 @@ func validateTeamRosterResult(result TeamRosterResult) error {
 	if len(workers) == 0 || !reflect.DeepEqual(workers, result.Workers) || validateTeamRosterWorkerInputs(workers) != nil {
 		return errors.New("team roster response workers are not canonical")
 	}
-	affected := append([]TeamRosterAffectedWorker{}, result.AffectedWorkers...)
+	affected := append([]registry.TeamRosterAffectedWorker{}, result.AffectedWorkers...)
 	sort.Slice(affected, func(i, j int) bool { return affected[i].WorkerAgentID < affected[j].WorkerAgentID })
 	if !reflect.DeepEqual(affected, result.AffectedWorkers) {
 		return errors.New("team roster response affected workers are not canonical")
@@ -161,8 +163,8 @@ func validateTeamRosterResult(result TeamRosterResult) error {
 	return nil
 }
 
-func cloneTeamRosterWorkers(workers []TeamRosterWorkerInput) []TeamRosterWorkerInput {
-	cloned := make([]TeamRosterWorkerInput, len(workers))
+func cloneTeamRosterWorkers(workers []registry.TeamRosterWorkerInput) []registry.TeamRosterWorkerInput {
+	cloned := make([]registry.TeamRosterWorkerInput, len(workers))
 	copy(cloned, workers)
 	for index := range cloned {
 		cloned[index].AllowedKinds = append([]string(nil), cloned[index].AllowedKinds...)

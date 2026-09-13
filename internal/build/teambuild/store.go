@@ -14,7 +14,6 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	org "github.com/jinyitao123/weave/internal/kernel/orgspec"
-	"github.com/jinyitao123/weave/internal/kernel/registry"
 	"github.com/jinyitao123/weave/internal/kernel/workflow"
 )
 
@@ -121,7 +120,7 @@ type Store struct {
 	clock      Clock
 	baselineMu sync.RWMutex
 	orgStore   OrganizationBaselineReader
-	agents     *registry.AgentRegistry
+	agents     AgentBaselineReader
 	workflows  *workflow.Store
 }
 
@@ -392,7 +391,7 @@ func (s *Store) expandOptimizeAssetScope(
 		return brief, nil
 	}
 	orgStore, agents, workflows := s.baselineSources()
-	if !organizationBaselineReaderAvailable(orgStore) || agents == nil || workflows == nil {
+	if !baselineReaderAvailable(orgStore) || !baselineReaderAvailable(agents) || workflows == nil {
 		return brief, nil
 	}
 	team, err := orgStore.GetTeam(ctx, workspaceID, brief.TeamID)
@@ -410,7 +409,7 @@ func (s *Store) expandOptimizeAssetScope(
 	if strings.TrimSpace(team.LeadAvatarID) != "" {
 		scope.Refs = appendAssetRef(scope.Refs, AssetRef{Kind: "agent", ID: team.LeadAvatarID})
 	}
-	workers, err := registry.NewTeamWorkerRepository(s.pool).ListByTeam(ctx, workspaceID, brief.TeamID)
+	workers, err := agents.ListTeamWorkersByTeam(ctx, workspaceID, brief.TeamID)
 	if err != nil {
 		return BuildBrief{}, fmt.Errorf("expand optimize asset scope: read roster: %w", err)
 	}

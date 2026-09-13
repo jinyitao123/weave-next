@@ -1,0 +1,122 @@
+[
+  {
+    "path": "internal/base/deliverable/store.go",
+    "table": "weave_agents",
+    "count": 1
+  },
+  {
+    "path": "internal/base/deliverable/store.go",
+    "table": "weave_teams",
+    "count": 1
+  },
+  {
+    "path": "internal/kernel/credentials/revisions.go",
+    "table": "weave_workspaces",
+    "count": 1
+  },
+  {
+    "path": "internal/kernel/credentials/store.go",
+    "table": "weave_workspaces",
+    "count": 1
+  },
+  {
+    "path": "internal/kernel/credentials/system_mirror.go",
+    "table": "weave_workspaces",
+    "count": 1
+  },
+  {
+    "path": "internal/kernel/fanout/reconciler.go",
+    "table": "weave_agents",
+    "count": 2
+  },
+  {
+    "path": "internal/kernel/fanout/reconciler.go",
+    "table": "weave_teams",
+    "count": 1
+  },
+  {
+    "path": "internal/kernel/fanout/store.go",
+    "table": "weave_workspaces",
+    "count": 1
+  },
+  {
+    "path": "internal/kernel/mcpregistry/store.go",
+    "table": "weave_agents",
+    "count": 3
+  },
+  {
+    "path": "internal/kernel/mcpregistry/store.go",
+    "table": "weave_workspaces",
+    "count": 1
+  },
+  {
+    "path": "internal/kernel/skills/import.go",
+    "table": "weave_workspaces",
+    "count": 1
+  },
+  {
+    "path": "internal/kernel/taskqueue/store.go",
+    "table": "weave_workspaces",
+    "count": 1
+  },
+  {
+    "path": "internal/kernel/workflow/admission_gate.go",
+    "table": "weave_team_workers",
+    "count": 1
+  },
+  {
+    "path": "internal/kernel/workflow/admission_view.go",
+    "table": "weave_team_workers",
+    "count": 1
+  },
+  {
+    "path": "internal/kernel/workflow/candidate_admission.go",
+    "table": "weave_teams",
+    "count": 1
+  },
+  {
+    "path": "internal/kernel/workflow/candidate_admission.go",
+    "table": "weave_workspaces",
+    "count": 1
+  },
+  {
+    "path": "internal/kernel/workflow/manual_admission.go",
+    "table": "weave_teams",
+    "count": 1
+  },
+  {
+    "path": "internal/kernel/workflow/manual_admission.go",
+    "table": "weave_workspaces",
+    "count": 1
+  },
+  {
+    "path": "internal/kernel/workflow/publication_store.go",
+    "table": "weave_teams",
+    "count": 1
+  },
+  {
+    "path": "internal/kernel/workflow/revocation_impact.go",
+    "table": "weave_team_workers",
+    "count": 1
+  },
+  {
+    "path": "internal/kernel/workflow/schedule_admission.go",
+    "table": "weave_teams",
+    "count": 1
+  },
+  {
+    "path": "internal/kernel/workflow/schedule_admission.go",
+    "table": "weave_workspaces",
+    "count": 1
+  },
+  {
+    "path": "internal/kernel/workflow/store.go",
+    "table": "weave_draft_workflow_dependencies",
+    "count": 1
+  },
+  {
+    "path": "internal/kernel/workflow/store.go",
+    "table": "weave_workspaces",
+    "count": 1
+  }
+]

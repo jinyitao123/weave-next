@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jinyitao123/weave/internal/app/agentcatalog"
+
 	"github.com/jinyitao123/weave/internal/base/db"
 	"github.com/jinyitao123/weave/internal/base/storeext"
 	"github.com/jinyitao123/weave/internal/base/testutil"
@@ -14,7 +16,6 @@ import (
 	"github.com/jinyitao123/weave/internal/build/teamorch"
 	"github.com/jinyitao123/weave/internal/kernel/loomruntime"
 	org "github.com/jinyitao123/weave/internal/kernel/orgspec"
-	"github.com/jinyitao123/weave/internal/kernel/registry"
 	"github.com/jinyitao123/weave/internal/kernel/workflow"
 )
 
@@ -50,7 +51,7 @@ func TestCLIReceiptTerminalFlowsIntoEvaluationReportRealPG(t *testing.T) {
 		t.Fatal(err)
 	}
 	phases := &ProductionPhases{Deps: Dependencies{
-		Pool: pool, Agents: registry.New(pool), TeamWorkers: registry.NewTeamWorkerRepository(pool),
+		Pool: pool, Agents: agentcatalog.New(pool), TeamWorkers: agentcatalog.NewTeamWorkerRepository(pool),
 	}}
 	report := phases.assembleReport(
 		ctx,

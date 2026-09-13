@@ -1,4 +1,4 @@
-package registry
+package agentcatalog
 
 import (
 	"context"
@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jinyitao123/weave/internal/kernel/registry"
+
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 )
@@ -19,8 +21,8 @@ import (
 // the transaction used to commit the frozen receipt and optional audit.
 func (r *AgentRegistry) ApplyTeamRosterCommand(
 	ctx context.Context,
-	command TeamRosterCommand,
-) (*TeamRosterResult, error) {
+	command registry.TeamRosterCommand,
+) (*registry.TeamRosterResult, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("begin team roster command: %w", err)
@@ -45,11 +47,9 @@ func (r *AgentRegistry) ApplyTeamRosterCommand(
 func (r *AgentRegistry) ApplyTeamBuildRollbackRosterTx(
 	ctx context.Context,
 	tx pgx.Tx,
-	command TeamRosterCommand,
-) (*TeamRosterResult, error) {
-	command.allowRemove = true
-	command.allowArchived = true
-	return r.ApplyTeamRosterCommandTx(ctx, tx, command)
+	command registry.TeamRosterCommand,
+) (*registry.TeamRosterResult, error) {
+	return r.applyTeamRosterCommandTx(ctx, tx, command, true)
 }
 
 // ApplyTeamRosterCommandTx applies a command inside a caller-owned
@@ -57,10 +57,16 @@ func (r *AgentRegistry) ApplyTeamBuildRollbackRosterTx(
 func (r *AgentRegistry) ApplyTeamRosterCommandTx(
 	ctx context.Context,
 	tx pgx.Tx,
-	command TeamRosterCommand,
-) (*TeamRosterResult, error) {
+	command registry.TeamRosterCommand,
+) (*registry.TeamRosterResult, error) {
+	return r.applyTeamRosterCommandTx(ctx, tx, command, false)
+}
+
+// applyTeamRosterCommandTx keeps rollback authority inside the product adapter.
+// Callers cannot enable it through the serialized command contract.
+func (r *AgentRegistry) applyTeamRosterCommandTx(ctx context.Context, tx pgx.Tx, command registry.TeamRosterCommand, rollback bool) (*registry.TeamRosterResult, error) {
 	if tx == nil {
-		return nil, fmt.Errorf("%w: transaction is required", ErrTeamRosterInvalidRequest)
+		return nil, fmt.Errorf("%w: transaction is required", registry.ErrTeamRosterInvalidRequest)
 	}
 	normalized, requestHash, err := teamRosterCommandHash(command)
 	if err != nil {
@@ -71,8 +77,8 @@ func (r *AgentRegistry) ApplyTeamRosterCommandTx(
 	}
 
 	team, err := lockRosterTeamForMutation(ctx, tx, normalized.WorkspaceID, normalized.TeamID)
-	if errors.Is(err, ErrTeamWorkerNotFound) {
-		return nil, fmt.Errorf("%w: team %q", ErrTeamRosterNotFound, normalized.TeamID)
+	if errors.Is(err, registry.ErrTeamWorkerNotFound) {
+		return nil, fmt.Errorf("%w: team %q", registry.ErrTeamRosterNotFound, normalized.TeamID)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("lock team roster: %w", err)
@@ -87,7 +93,7 @@ func (r *AgentRegistry) ApplyTeamRosterCommandTx(
 	if found {
 		if storedHash != requestHash {
 			return nil, fmt.Errorf(
-				"%w: key %q", ErrTeamRosterIdempotencyConflict, normalized.IdempotencyKey,
+				"%w: key %q", registry.ErrTeamRosterIdempotencyConflict, normalized.IdempotencyKey,
 			)
 		}
 		result, err := decodeTeamRosterResult(storedResponse)
@@ -100,11 +106,11 @@ func (r *AgentRegistry) ApplyTeamRosterCommandTx(
 		return result, nil
 	}
 
-	if team.Status == "archived" && !normalized.allowArchived {
-		return nil, fmt.Errorf("%w: team %q", ErrTeamRosterArchived, normalized.TeamID)
+	if team.Status == "archived" && !rollback {
+		return nil, fmt.Errorf("%w: team %q", registry.ErrTeamRosterArchived, normalized.TeamID)
 	}
 	if !team.UpdatedAt.UTC().Truncate(time.Microsecond).Equal(normalized.ExpectedUpdatedAt) {
-		return nil, fmt.Errorf("%w: team %q", ErrTeamRosterWriteConflict, normalized.TeamID)
+		return nil, fmt.Errorf("%w: team %q", registry.ErrTeamRosterWriteConflict, normalized.TeamID)
 	}
 
 	managerID, err := findLegacyRosterManager(
@@ -131,7 +137,7 @@ func (r *AgentRegistry) ApplyTeamRosterCommandTx(
 		Workers:     normalized.Workers,
 		Current:     current,
 		ManagerID:   managerID,
-		AllowRemove: normalized.allowRemove,
+		AllowRemove: rollback,
 	})
 	if err != nil {
 		return nil, err
@@ -180,8 +186,8 @@ type teamRosterMutationRequest struct {
 	Team        lockedRosterTeam
 	LeadAgentID string
 	Status      string
-	Workers     []TeamRosterWorkerInput
-	Current     []TeamRosterWorkerInput
+	Workers     []registry.TeamRosterWorkerInput
+	Current     []registry.TeamRosterWorkerInput
 	ManagerID   string
 	AllowRemove bool
 }
@@ -191,21 +197,21 @@ type teamRosterMutationOutcome struct {
 	NewStatus         string
 	OldLeadAgentID    *string
 	NewLeadAgentID    string
-	OldWorkers        []TeamRosterWorkerInput
-	NewWorkers        []TeamRosterWorkerInput
+	OldWorkers        []registry.TeamRosterWorkerInput
+	NewWorkers        []registry.TeamRosterWorkerInput
 	AffectedWorkerIDs []string
 	Changed           bool
 	UpdatedAt         time.Time
 }
 
-func validateRosterCommandIdentities(command TeamRosterCommand) error {
+func validateRosterCommandIdentities(command registry.TeamRosterCommand) error {
 	if command.LeadAgentID != strings.TrimSpace(command.LeadAgentID) {
-		return fmt.Errorf("%w: lead_agent_id must be trimmed", ErrTeamRosterInvalidRequest)
+		return fmt.Errorf("%w: lead_agent_id must be trimmed", registry.ErrTeamRosterInvalidRequest)
 	}
 	for _, worker := range command.Workers {
 		if worker.WorkerAgentID != strings.TrimSpace(worker.WorkerAgentID) {
 			return fmt.Errorf(
-				"%w: worker_agent_id must be trimmed", ErrTeamRosterInvalidRequest,
+				"%w: worker_agent_id must be trimmed", registry.ErrTeamRosterInvalidRequest,
 			)
 		}
 	}
@@ -226,7 +232,7 @@ func lockRosterTeamForMutation(
 	`, workspaceID).Scan(&lockedWorkspaceID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return lockedRosterTeam{}, fmt.Errorf(
-			"%w: team %q in workspace %q", ErrTeamWorkerNotFound, teamID, workspaceID,
+			"%w: team %q in workspace %q", registry.ErrTeamWorkerNotFound, teamID, workspaceID,
 		)
 	}
 	if err != nil {
@@ -242,7 +248,7 @@ func lockRosterTeamForMutation(
 	`, workspaceID, teamID).Scan(&team.Status, &team.LeadAvatarID, &team.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return lockedRosterTeam{}, fmt.Errorf(
-			"%w: team %q in workspace %q", ErrTeamWorkerNotFound, teamID, workspaceID,
+			"%w: team %q in workspace %q", registry.ErrTeamWorkerNotFound, teamID, workspaceID,
 		)
 	}
 	return team, err
@@ -301,11 +307,11 @@ func lockAndValidateRosterAgents(
 	ctx context.Context,
 	tx pgx.Tx,
 	workspaceID, leadAgentID string,
-	workers []TeamRosterWorkerInput,
+	workers []registry.TeamRosterWorkerInput,
 	extraAgentID string,
 ) error {
 	if leadAgentID == "" {
-		return fmt.Errorf("%w: team lead is required", ErrActiveTeamRequiresEnabledWorker)
+		return fmt.Errorf("%w: team lead is required", registry.ErrActiveTeamRequiresEnabledWorker)
 	}
 	seen := make(map[string]struct{}, len(workers)+2)
 	seen[leadAgentID] = struct{}{}
@@ -373,11 +379,11 @@ func lockAndValidateRosterAgents(
 		if agent.role != "worker" {
 			return fmt.Errorf("team worker %q must have worker role", worker.WorkerAgentID)
 		}
-		var record AgentRecord
+		var record registry.AgentRecord
 		if err := json.Unmarshal(agent.spec, &record); err != nil {
 			return fmt.Errorf("decode roster agent %q: %w", worker.WorkerAgentID, err)
 		}
-		if err := ValidateTeamWorkerAgentRecord(&record); err != nil {
+		if err := registry.ValidateTeamWorkerAgentRecord(&record); err != nil {
 			return err
 		}
 	}
@@ -388,7 +394,7 @@ func readLockedRosterWorkers(
 	ctx context.Context,
 	tx pgx.Tx,
 	workspaceID, teamID string,
-) ([]TeamRosterWorkerInput, error) {
+) ([]registry.TeamRosterWorkerInput, error) {
 	return readRosterWorkers(ctx, tx, workspaceID, teamID, true)
 }
 
@@ -396,7 +402,7 @@ func readTeamRosterWorkers(
 	ctx context.Context,
 	tx pgx.Tx,
 	workspaceID, teamID string,
-) ([]TeamRosterWorkerInput, error) {
+) ([]registry.TeamRosterWorkerInput, error) {
 	return readRosterWorkers(ctx, tx, workspaceID, teamID, false)
 }
 
@@ -405,7 +411,7 @@ func readRosterWorkers(
 	tx pgx.Tx,
 	workspaceID, teamID string,
 	lock bool,
-) ([]TeamRosterWorkerInput, error) {
+) ([]registry.TeamRosterWorkerInput, error) {
 	lockClause := ""
 	if lock {
 		lockClause = " FOR UPDATE"
@@ -423,7 +429,7 @@ func readRosterWorkers(
 		return nil, fmt.Errorf("read team roster: %w", err)
 	}
 	defer rows.Close()
-	workers := make([]TeamRosterWorkerInput, 0)
+	workers := make([]registry.TeamRosterWorkerInput, 0)
 	for rows.Next() {
 		worker, err := scanTeamWorker(rows)
 		if err != nil {
@@ -437,8 +443,8 @@ func readRosterWorkers(
 	return workers, nil
 }
 
-func teamRosterWorkerInput(worker TeamWorker) TeamRosterWorkerInput {
-	return TeamRosterWorkerInput{
+func teamRosterWorkerInput(worker registry.TeamWorker) registry.TeamRosterWorkerInput {
+	return registry.TeamRosterWorkerInput{
 		WorkerAgentID:      worker.WorkerAgentID,
 		Duty:               worker.Duty,
 		WhenToUse:          worker.WhenToUse,
@@ -600,14 +606,14 @@ func ensureRosterTeamArchiveAllowed(ctx context.Context, tx pgx.Tx, workspaceID,
 		return fmt.Errorf("check team archive blockers: %w", err)
 	}
 	if len(blockers) > 0 {
-		return fmt.Errorf("%w: archive blockers=%s", ErrTeamRosterInvalidRequest, strings.Join(blockers, ","))
+		return fmt.Errorf("%w: archive blockers=%s", registry.ErrTeamRosterInvalidRequest, strings.Join(blockers, ","))
 	}
 	return nil
 }
 
 func validateRosterFinalState(request teamRosterMutationRequest) error {
 	if request.LeadAgentID == "" || len(request.Workers) == 0 {
-		return fmt.Errorf("%w: team %q", ErrActiveTeamRequiresEnabledWorker, request.TeamID)
+		return fmt.Errorf("%w: team %q", registry.ErrActiveTeamRequiresEnabledWorker, request.TeamID)
 	}
 	if !request.AllowRemove {
 		finalIDs := make(map[string]struct{}, len(request.Workers))
@@ -617,7 +623,7 @@ func validateRosterFinalState(request teamRosterMutationRequest) error {
 		for _, worker := range request.Current {
 			if _, retained := finalIDs[worker.WorkerAgentID]; !retained {
 				return fmt.Errorf(
-					"%w: worker %q", ErrTeamRosterRemovalUnsupported, worker.WorkerAgentID,
+					"%w: worker %q", registry.ErrTeamRosterRemovalUnsupported, worker.WorkerAgentID,
 				)
 			}
 		}
@@ -626,14 +632,14 @@ func validateRosterFinalState(request teamRosterMutationRequest) error {
 		if request.Team.LeadAvatarID == nil || *request.Team.LeadAvatarID == "" ||
 			*request.Team.LeadAvatarID != request.LeadAgentID {
 			return fmt.Errorf(
-				"%w: archive must preserve the existing lead", ErrTeamRosterInvalidRequest,
+				"%w: archive must preserve the existing lead", registry.ErrTeamRosterInvalidRequest,
 			)
 		}
 		return nil
 	}
 	if request.Status != "active" && request.Status != "building" {
 		return fmt.Errorf(
-			"%w: invalid final team status %q", ErrTeamRosterInvalidRequest, request.Status,
+			"%w: invalid final team status %q", registry.ErrTeamRosterInvalidRequest, request.Status,
 		)
 	}
 	for _, worker := range request.Workers {
@@ -641,14 +647,14 @@ func validateRosterFinalState(request teamRosterMutationRequest) error {
 			return nil
 		}
 	}
-	return fmt.Errorf("%w: team %q", ErrActiveTeamRequiresEnabledWorker, request.TeamID)
+	return fmt.Errorf("%w: team %q", registry.ErrActiveTeamRequiresEnabledWorker, request.TeamID)
 }
 
 func changedAuthorizationWorkerIDs(
-	oldWorkers, newWorkers []TeamRosterWorkerInput,
+	oldWorkers, newWorkers []registry.TeamRosterWorkerInput,
 ) []string {
-	oldByID := make(map[string]TeamRosterWorkerInput, len(oldWorkers))
-	newByID := make(map[string]TeamRosterWorkerInput, len(newWorkers))
+	oldByID := make(map[string]registry.TeamRosterWorkerInput, len(oldWorkers))
+	newByID := make(map[string]registry.TeamRosterWorkerInput, len(newWorkers))
 	ids := make(map[string]struct{}, len(oldWorkers)+len(newWorkers))
 	for _, worker := range oldWorkers {
 		oldByID[worker.WorkerAgentID] = worker
@@ -684,11 +690,11 @@ func equalKindSets(left, right []string) bool {
 }
 
 func teamRosterResultFromOutcome(
-	command TeamRosterCommand,
+	command registry.TeamRosterCommand,
 	outcome teamRosterMutationOutcome,
 	counts map[string]int,
-) TeamRosterResult {
-	result := TeamRosterResult{
+) registry.TeamRosterResult {
+	result := registry.TeamRosterResult{
 		SchemaVersion: teamRosterResultSchemaVersion,
 		TeamID:        command.TeamID,
 		TeamStatus:    outcome.NewStatus,
@@ -698,16 +704,16 @@ func teamRosterResultFromOutcome(
 		Changed:       outcome.Changed,
 	}
 	if !outcome.Changed {
-		result.AffectedWorkers = []TeamRosterAffectedWorker{}
+		result.AffectedWorkers = []registry.TeamRosterAffectedWorker{}
 		return result
 	}
 	auditID := uuid.NewString()
 	result.AuditID = &auditID
 	result.AffectedWorkers = make(
-		[]TeamRosterAffectedWorker, 0, len(outcome.AffectedWorkerIDs),
+		[]registry.TeamRosterAffectedWorker, 0, len(outcome.AffectedWorkerIDs),
 	)
 	for _, workerID := range outcome.AffectedWorkerIDs {
-		result.AffectedWorkers = append(result.AffectedWorkers, TeamRosterAffectedWorker{
+		result.AffectedWorkers = append(result.AffectedWorkers, registry.TeamRosterAffectedWorker{
 			WorkerAgentID:                 workerID,
 			AffectedPublishedVersionCount: counts[workerID],
 			RevocationImpactURL: fmt.Sprintf(
@@ -723,7 +729,7 @@ func teamRosterResultFromOutcome(
 func insertTeamRosterAudit(
 	ctx context.Context,
 	tx pgx.Tx,
-	command TeamRosterCommand,
+	command registry.TeamRosterCommand,
 	outcome teamRosterMutationOutcome,
 	auditID string,
 ) error {
@@ -751,13 +757,13 @@ func insertTeamRosterAudit(
 }
 
 func teamRosterAuthorizationFacts(
-	workers []TeamRosterWorkerInput,
-) []TeamRosterAuthorizationFact {
-	facts := make([]TeamRosterAuthorizationFact, 0, len(workers))
+	workers []registry.TeamRosterWorkerInput,
+) []registry.TeamRosterAuthorizationFact {
+	facts := make([]registry.TeamRosterAuthorizationFact, 0, len(workers))
 	for _, worker := range workers {
 		kinds := append([]string(nil), worker.AllowedKinds...)
 		sortKinds(kinds)
-		facts = append(facts, TeamRosterAuthorizationFact{
+		facts = append(facts, registry.TeamRosterAuthorizationFact{
 			WorkerAgentID: worker.WorkerAgentID,
 			AllowedKinds:  kinds,
 			DefaultKind:   worker.DefaultKind,

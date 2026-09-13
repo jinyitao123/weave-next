@@ -16,7 +16,7 @@ type OrganizationBaselineReader interface {
 	GetTeamDispatchRulesTx(context.Context, pgx.Tx, string, string) (orgspec.TeamDispatchRules, error)
 }
 
-func organizationBaselineReaderAvailable(read OrganizationBaselineReader) bool {
+func baselineReaderAvailable(read any) bool {
 	if read == nil {
 		return false
 	}

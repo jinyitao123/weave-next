@@ -14,6 +14,8 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/jinyitao123/weave/internal/app/agentcatalog"
+
 	"github.com/jinyitao123/loom/stdlib"
 	orgstore "github.com/jinyitao123/weave/internal/app/org"
 	"github.com/jinyitao123/weave/internal/base/frozen"
@@ -375,7 +377,7 @@ func metaStepTarget(name string) *string {
 // call on every startup.
 func EnsureMetaTeam(
 	ctx context.Context,
-	reg *registry.AgentRegistry,
+	reg *agentcatalog.AgentRegistry,
 	orgStore *orgstore.Store,
 	workspaceID string,
 ) error {
@@ -433,7 +435,7 @@ func EnsureMetaTeam(
 // strict no-op: it neither creates missing assets nor deletes retained ones.
 func EnsureMetaTeamIfEnabled(
 	ctx context.Context,
-	reg *registry.AgentRegistry,
+	reg *agentcatalog.AgentRegistry,
 	orgStore *orgstore.Store,
 	workspaceID string,
 	enabled bool,
@@ -460,7 +462,7 @@ func metaTeamRoster(agents map[string]*registry.AgentRecord) []org.InitialTeamWo
 
 func ensureMetaTeamRoster(
 	ctx context.Context,
-	reg *registry.AgentRegistry,
+	reg *agentcatalog.AgentRegistry,
 	workspaceID, teamID string,
 	agents map[string]*registry.AgentRecord,
 ) error {
@@ -488,7 +490,7 @@ func ensureMetaTeamRoster(
 
 func ensureMetaAgent(
 	ctx context.Context,
-	reg *registry.AgentRegistry,
+	reg *agentcatalog.AgentRegistry,
 	workspaceID string,
 	builtin builtinMetaAgent,
 ) (*registry.AgentRecord, error) {

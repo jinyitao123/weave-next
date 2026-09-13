@@ -7,19 +7,20 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/jinyitao123/weave/internal/app/agentcatalog"
+
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/build/teamforge"
 	"github.com/jinyitao123/weave/internal/kernel/credentials"
 	"github.com/jinyitao123/weave/internal/kernel/engine"
-	"github.com/jinyitao123/weave/internal/kernel/registry"
 )
 
 // AgentWriter owns provider resolution and the immutable agent write transaction.
 // Neither the builder nor a tool dispatcher can commit only half of the command.
 type AgentWriter struct {
 	Pool     *pgxpool.Pool
-	Registry *registry.AgentRegistry
+	Registry *agentcatalog.AgentRegistry
 }
 
 var _ teamforge.AgentWriter = (*AgentWriter)(nil)

@@ -7,6 +7,8 @@ import (
 	"errors"
 	"time"
 
+	"github.com/jinyitao123/weave/internal/app/agentcatalog"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jinyitao123/weave/internal/base/deliverable"
@@ -14,14 +16,13 @@ import (
 	"github.com/jinyitao123/weave/internal/kernel/fanout"
 
 	orgstore "github.com/jinyitao123/weave/internal/app/org"
-	"github.com/jinyitao123/weave/internal/kernel/registry"
 )
 
-func NewRegistry(pool *pgxpool.Pool) *registry.AgentRegistry {
-	return registry.New(pool, registry.WithWorkspaceMemberVerifier(WorkspaceMemberExists))
+func NewRegistry(pool *pgxpool.Pool) *agentcatalog.AgentRegistry {
+	return agentcatalog.New(pool, agentcatalog.WithWorkspaceMemberVerifier(WorkspaceMemberExists))
 }
 
-func WorkspaceMemberExists(ctx context.Context, q registry.OwnerQuery, workspaceID, userID string) (bool, error) {
+func WorkspaceMemberExists(ctx context.Context, q agentcatalog.OwnerQuery, workspaceID, userID string) (bool, error) {
 	var exists bool
 	err := q.QueryRow(ctx, `SELECT EXISTS (
  SELECT 1 FROM weave_members AS member JOIN weave_users AS owner_user

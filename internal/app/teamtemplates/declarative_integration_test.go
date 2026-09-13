@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jinyitao123/weave/internal/app/agentcatalog"
+
 	"github.com/google/uuid"
 	"github.com/jinyitao123/loom/stdlib"
 	"github.com/jinyitao123/weave/internal/app/metateam"
@@ -23,7 +25,7 @@ func TestDeclarativeTemplatePersistsFrozenSecondRevision(t *testing.T) {
 		t.Fatalf("migrate test database: %v", err)
 	}
 	workspaceID := "template-declarative-" + uuid.NewString()
-	reg := registry.New(pool)
+	reg := agentcatalog.New(pool)
 	if err := metateam.EnsureMetaTeam(ctx, reg, orgstore.NewStore(pool), workspaceID); err != nil {
 		t.Fatalf("seed clean workspace: %v", err)
 	}
@@ -70,7 +72,7 @@ func TestDeclarativeTemplateIgnoresRetainedLegacyConstructionAgents(t *testing.T
 		t.Fatalf("migrate test database: %v", err)
 	}
 	workspaceID := "template-upgraded-" + uuid.NewString()
-	reg := registry.New(pool)
+	reg := agentcatalog.New(pool)
 	if err := metateam.EnsureMetaTeam(ctx, reg, orgstore.NewStore(pool), workspaceID); err != nil {
 		t.Fatal(err)
 	}

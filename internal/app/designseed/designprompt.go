@@ -4,6 +4,8 @@ import (
 	"context"
 	"log/slog"
 
+	"github.com/jinyitao123/weave/internal/app/agentcatalog"
+
 	"github.com/jinyitao123/loom/stdlib"
 	orgstore "github.com/jinyitao123/weave/internal/app/org"
 	org "github.com/jinyitao123/weave/internal/kernel/orgspec"
@@ -178,7 +180,7 @@ const Prompt = `你是 Weave 平台的工作流设计助手。用户描述他想
 
 // EnsureDesigner creates the Graph Designer agent if it doesn't exist.
 // Concurrent first requests may both observe a miss and upsert the record to v2.
-func EnsureDesigner(reg *registry.AgentRegistry, tenant string) {
+func EnsureDesigner(reg *agentcatalog.AgentRegistry, tenant string) {
 	ctx := context.Background()
 	if _, err := reg.Get(ctx, tenant, AgentName); err == nil {
 		return
@@ -211,7 +213,7 @@ type builtinAgent struct {
 
 // EnsureDesignStudio creates the built-in design team without changing any
 // agent or team whose name already exists.
-func EnsureDesignStudio(reg *registry.AgentRegistry, orgStore *orgstore.Store, tenant string) {
+func EnsureDesignStudio(reg *agentcatalog.AgentRegistry, orgStore *orgstore.Store, tenant string) {
 	ctx := context.Background()
 	agents := make(map[string]*registry.AgentRecord, 3)
 	for _, builtin := range []builtinAgent{
@@ -275,7 +277,7 @@ func EnsureDesignStudio(reg *registry.AgentRegistry, orgStore *orgstore.Store, t
 
 func ensureDesignStudioAgent(
 	ctx context.Context,
-	reg *registry.AgentRegistry,
+	reg *agentcatalog.AgentRegistry,
 	tenant string,
 	builtin builtinAgent,
 ) (*registry.AgentRecord, error) {

@@ -108,7 +108,7 @@ func nilInterface(value any) bool {
 
 // Sources are the only stateful stores a Resolver may consult.
 type Sources struct {
-	Agents    *registry.AgentRegistry
+	Agents    registry.FrozenAgentReader
 	Skills    *skills.Store
 	Providers *credentials.Store
 	Delivery  *delivery.Store
@@ -255,7 +255,7 @@ func (r *Resolver) ResolveAgentVersion(
 		}
 		return cached, nil
 	}
-	if r.sources.Agents == nil || r.tx == nil {
+	if nilInterface(r.sources.Agents) || r.tx == nil {
 		return ResolvedDependency{}, newError(CodeDependencyUnenumerable, nil)
 	}
 
@@ -317,7 +317,7 @@ func (r *Resolver) ResolveTeamWorkersForShare(
 	if err := validateContext(ctx); err != nil {
 		return nil, err
 	}
-	if teamID == "" || teamID != strings.TrimSpace(teamID) || r.sources.Agents == nil || r.tx == nil {
+	if teamID == "" || teamID != strings.TrimSpace(teamID) || nilInterface(r.sources.Agents) || r.tx == nil {
 		return nil, newError(CodeDependencyUnenumerable, nil)
 	}
 	if cached, ok := r.rosters[teamID]; ok {

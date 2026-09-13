@@ -66,12 +66,12 @@ type TeamReader interface {
 	ListTeams(ctx context.Context, workspaceID string) ([]org.Team, error)
 }
 
-// RosterReader is satisfied by *registry.TeamWorkerRepository.
+// RosterReader is satisfied by *agentcatalog.TeamWorkerRepository.
 type RosterReader interface {
 	ListByTeam(ctx context.Context, workspaceID, teamID string) ([]registry.TeamWorker, error)
 }
 
-// AgentReader is satisfied by *registry.AgentRegistry.
+// AgentReader is satisfied by *agentcatalog.AgentRegistry.
 type AgentReader interface {
 	List(ctx context.Context, workspaceID string) ([]registry.AgentRecord, error)
 	GetVersion(ctx context.Context, workspaceID, agentID string, version int) (*registry.AgentRecord, error)

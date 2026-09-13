@@ -7,19 +7,21 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jinyitao123/weave/internal/app/agentcatalog"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jinyitao123/weave/internal/base/db"
 	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/base/snapshot"
-	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 	"github.com/jinyitao123/weave/internal/base/testutil"
 	"github.com/jinyitao123/weave/internal/kernel/compiler"
 	"github.com/jinyitao123/weave/internal/kernel/engine"
 	"github.com/jinyitao123/weave/internal/kernel/mcpregistry"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 	"github.com/jinyitao123/weave/internal/kernel/runtimes"
+	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 	"github.com/jinyitao123/weave/internal/kernel/workflow"
 )
 
@@ -59,7 +61,7 @@ func TestPublishedCLIToTaskKeepsMCPContractAfterLiveEditsRealPG(t *testing.T) {
 		t.Fatal(err)
 	}
 	workerID, _ := publishTeamDeliveryCLI(t, pool, key, runtime.ID, registry.MCPServerConfig{ServerID: server.ID, Filter: []string{"calculate"}})
-	agents := registry.New(pool)
+	agents := agentcatalog.New(pool)
 	lead, err := agents.Get(ctx, "ws", "lead")
 	if err != nil {
 		t.Fatal(err)

@@ -1,4 +1,4 @@
-package taskqueue_test
+package agentcatalog_test
 
 import (
 	"context"
@@ -6,6 +6,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/jinyitao123/weave/internal/app/agentcatalog"
 
 	"github.com/jinyitao123/weave/internal/base/db"
 	"github.com/jinyitao123/weave/internal/base/execution"
@@ -26,7 +28,7 @@ func TestParentStopFencesAdmissionClaimAndRecoveryRealPG(t *testing.T) {
 		t.Fatal(err)
 	}
 	agent := registry.AgentRecord{Name: "parent-fence-agent", Role: "worker"}
-	if err := registry.New(pool).Put(ctx, subject.WorkspaceID, &agent); err != nil {
+	if err := agentcatalog.New(pool).Put(ctx, subject.WorkspaceID, &agent); err != nil {
 		t.Fatal(err)
 	}
 	tasks := taskqueue.New(pool, nil, time.Minute)

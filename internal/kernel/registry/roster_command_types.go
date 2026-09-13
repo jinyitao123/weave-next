@@ -32,13 +32,6 @@ type TeamRosterCommand struct {
 	Workers           []TeamRosterWorkerInput `json:"workers"`
 	OperatorID        string                  `json:"operator_id"`
 	Reason            string                  `json:"reason"`
-
-	// allowRemove and allowArchived are internal baseline-only flags set by
-	// the team-build rollback variant. They are not part of the canonical
-	// command hash, so the frozen receipt identity stays the same for both
-	// the normal and the baseline-only command surfaces.
-	allowRemove   bool
-	allowArchived bool
 }
 
 // TeamRosterAffectedWorker is the bounded write-response projection for one
