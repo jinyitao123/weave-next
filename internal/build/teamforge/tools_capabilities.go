@@ -32,7 +32,6 @@ type mcpserverSummaryJSON struct {
 	ProtocolVersion    string     `json:"protocol_version,omitempty"`
 	LastError          string     `json:"last_error,omitempty"`
 	ToolCount          int        `json:"tool_count"`
-	AgentCount         int        `json:"agent_count"`
 	LastProbedAt       *time.Time `json:"last_probed_at,omitempty"`
 }
 
@@ -148,7 +147,6 @@ func (d *ReadToolsDispatcher) listCapabilities(ctx context.Context, call contrac
 				ProtocolVersion:    server.ProtocolVersion,
 				LastError:          server.LastError,
 				ToolCount:          server.ToolCount,
-				AgentCount:         server.AgentCount,
 				LastProbedAt:       server.LastProbedAt,
 			})
 		}

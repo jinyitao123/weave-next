@@ -20,11 +20,6 @@
     "count": 1
   },
   {
-    "path": "internal/kernel/mcpregistry/store.go",
-    "table": "weave_agents",
-    "count": 3
-  },
-  {
     "path": "internal/kernel/skills/import.go",
     "table": "weave_workspaces",
     "count": 1

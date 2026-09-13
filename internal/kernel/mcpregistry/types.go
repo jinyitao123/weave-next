@@ -99,10 +99,9 @@ type ResolvedServer struct {
 
 type ServerView struct {
 	Server
-	Headers    map[string]string `json:"headers"`
-	Env        map[string]string `json:"env"`
-	ToolCount  int               `json:"tool_count"`
-	AgentCount int               `json:"agent_count"`
+	Headers   map[string]string `json:"headers"`
+	Env       map[string]string `json:"env"`
+	ToolCount int               `json:"tool_count"`
 }
 
 // ServerMetadata is the non-secret registry projection used by discovery and
@@ -111,8 +110,7 @@ type ServerView struct {
 // but must not hide unrelated providers, runtimes, or MCP availability facts.
 type ServerMetadata struct {
 	Server
-	ToolCount  int `json:"tool_count"`
-	AgentCount int `json:"agent_count"`
+	ToolCount int `json:"tool_count"`
 }
 
 type UpsertServerRequest struct {
