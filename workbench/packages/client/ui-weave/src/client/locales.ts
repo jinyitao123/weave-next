@@ -1,3 +1,4 @@
+import { zh as accountZh, en as accountEn } from './account-locales.ts'
 import { zh as previewZh, en as previewEn } from './preview-locales.ts'
 import { zh as applicationZh, en as applicationEn } from './application-locales.ts'
 
@@ -6,6 +7,7 @@ export const NS = 'weave'
 
 /** Simplified Chinese dictionary and key-set source of truth. */
 export const zh = {
+  ...accountZh,
   ...applicationZh,
   'capabilityOps.title': '能力运行',
   'capabilityOps.description': '查看每次能力执行、人工确认和使用额度。能力内容由对话中的 AI 创建，无需填写配置文件。',
@@ -550,6 +552,7 @@ export type WeaveKey = keyof typeof zh
 
 /** English dictionary checked against the Chinese key set. */
 export const en = {
+  ...accountEn,
   ...applicationEn,
   'capabilityOps.title': 'Capability runs',
   'capabilityOps.description': 'Review capability runs, human decisions, and usage limits. AI creates capability content in conversation; no configuration files are required.',

@@ -42,6 +42,7 @@ describe('ui-layout client apply', () => {
     // The one register() call occupied 'root'…
     expect(slots.entries('root')).toHaveLength(1)
     // …and declared the three children in the ledger.
+    expect(slots.spec('shell.access')).toEqual({ kind: 'single', scope: 'root' })
     expect(slots.spec('sidebar')).toEqual({ kind: 'single', scope: 'root' })
     expect(slots.spec('conversation')).toEqual({ kind: 'single', scope: 'session-maybe' })
     expect(slots.spec('details')).toEqual({ kind: 'single', scope: 'session' })

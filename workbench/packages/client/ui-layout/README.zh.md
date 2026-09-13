@@ -12,6 +12,8 @@ Workbench 外壳标记自身的产品呈现，使详情和导航样式遵循该�
 
 ## 概述
 
+`shell.access` 入口通过 `onAccessChange` 报告账号身份。Workbench 在入口确认身份前不挂载业务视图，身份失效时卸载整个业务树；其他构建配置保留直接组装方式。回调只传递身份值，列布局和子插槽仍由布局组件负责。
+
 本包提供 Web GUI 的外壳布局：一个三栏 AppFrame，带可缩放的侧栏与详情面板；一条让步链，在空间不足时先收缩详情栏、随后自动关闭它；以及 `ctx.layout` 面板几何服务，供其他插件调用以打开或关闭详情栏。它还承载主题呈现器，把解析后的配色方案、别名 token、正文字号与 `theme-color` 元数据投影到 document。需要标准窗口外观时选择它；Workbench 保留现场宽度，重新加载会重置面板打开状态。
 
 ## 目录
@@ -42,7 +44,7 @@ Workbench 外壳标记自身的产品呈现，使详情和导航样式遵循该�
 <details>
 <summary>实现细节——点击展开</summary>
 
-一次 `register()` 调用把 `AppFrame` 贡献进运行时的内建 `'root'` 槽位，并在同一刻声明四个子槽位（`sidebar`、`conversation`、`details`、`shell.overlay`）、安放布局 store（面板几何）并接好 `ctx.layout` 面板动作服务。布局 store 以默认宽度启动侧栏、保持详情栏关闭。Workbench 只在 `weave.workbench.detailsWidth` 下保存用户拖动的现场宽度，存储失败不影响当前布局使用。AppFrame 始终挂载会话与详情两栏；已连接 Session 经 `SessionProvider` 渲染。它把所选 Session 标题投影到构建配置的产品标题或本地化 `common.brand.localBuild` 回退值之上，因此 locale revision 会随根 entry 一起更新文档元数据。主题呈现器是第二个 effect：从解析后的快照做纯 DOM 写入——初始状态经 getter 读取一次，此后仅事件驱动，不经过 React。它先应用调色板、字号与 token 变量，再把渲染出的背景测量为唯一的颜色依据。
+一次 `register()` 调用把 `AppFrame` 贡献进运行时的内建 `'root'` 槽位，并在同一刻声明四个子槽位（`shell.access`、`sidebar`、`conversation`、`details`、`shell.overlay`）、安放布局 store（面板几何）并接好 `ctx.layout` 面板动作服务。布局 store 以默认宽度启动侧栏、保持详情栏关闭。Workbench 只在 `weave.workbench.detailsWidth` 下保存用户拖动的现场宽度，存储失败不影响当前布局使用。AppFrame 始终挂载会话与详情两栏；已连接 Session 经 `SessionProvider` 渲染。它把所选 Session 标题投影到构建配置的产品标题或本地化 `common.brand.localBuild` 回退值之上，因此 locale revision 会随根 entry 一起更新文档元数据。主题呈现器是第二个 effect：从解析后的快照做纯 DOM 写入——初始状态经 getter 读取一次，此后仅事件驱动，不经过 React。它先应用调色板、字号与 token 变量，再把渲染出的背景测量为唯一的颜色依据。
 
 </details>
 
