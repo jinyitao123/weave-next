@@ -99,6 +99,7 @@ type Store struct {
 	pool                *pgxpool.Pool
 	clock               Clock
 	conversationProject ConversationProject
+	completionLead      CompletionLeadResolver
 }
 
 // New creates a fan-out store.

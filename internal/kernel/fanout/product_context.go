@@ -17,3 +17,20 @@ type StoreOption func(*Store)
 func WithConversationProject(resolve ConversationProject) StoreOption {
 	return func(s *Store) { s.conversationProject = resolve }
 }
+
+// CompletionLead is the directory fact needed only when a group has no frozen
+// source snapshot. Frozen execution identities always take precedence.
+type CompletionLead struct {
+	AgentID        string
+	AgentVersion   int
+	TeamFreeCollab bool
+}
+
+type CompletionLeadResolver func(context.Context, pgx.Tx, string, string) (CompletionLead, error)
+
+var ErrCompletionLeadUnavailable = errors.New("task group completion lead resolver is unavailable")
+var ErrCompletionLeadAmbiguous = errors.New("task group has conflicting frozen completion identities")
+
+func WithCompletionLeadResolver(resolve CompletionLeadResolver) StoreOption {
+	return func(s *Store) { s.completionLead = resolve }
+}

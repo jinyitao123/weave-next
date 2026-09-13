@@ -68,7 +68,10 @@ func DeliverableOptions() []deliverable.StoreOption {
 }
 
 func NewFanout(pool *pgxpool.Pool, clock fanout.Clock) *fanout.Store {
-	return fanout.New(pool, clock, fanout.WithConversationProject(ConversationProject))
+	return fanout.New(pool, clock,
+		fanout.WithConversationProject(ConversationProject),
+		fanout.WithCompletionLeadResolver(CompletionLead),
+	)
 }
 
 func ConversationProject(ctx context.Context, tx pgx.Tx, workspaceID, conversationID string) (string, error) {
@@ -106,4 +109,16 @@ func AgentLabel(ctx context.Context, tx pgx.Tx, workspaceID, agentID string) (st
 		return "", nil
 	}
 	return label, err
+}
+
+// CompletionLead supplies the product directory fallback for a group without
+// a frozen source. It cannot override an existing snapshot's version binding.
+func CompletionLead(ctx context.Context, tx pgx.Tx, workspaceID, avatarName string) (fanout.CompletionLead, error) {
+	var lead fanout.CompletionLead
+	err := tx.QueryRow(ctx, `SELECT agent.id,agent.version,EXISTS(
+ SELECT 1 FROM weave_teams WHERE workspace_id=agent.workspace_id
+ AND lead_avatar_id=agent.id AND status='active')
+ FROM weave_agents AS agent WHERE agent.workspace_id=$1 AND agent.name=$2 AND agent.deleted=false`,
+		workspaceID, avatarName).Scan(&lead.AgentID, &lead.AgentVersion, &lead.TeamFreeCollab)
+	return lead, err
 }
