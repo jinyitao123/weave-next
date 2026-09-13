@@ -13,7 +13,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/jinyitao123/weave/internal/kernel/org"
+	org "github.com/jinyitao123/weave/internal/kernel/orgspec"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 	"github.com/jinyitao123/weave/internal/kernel/workflow"
 )
@@ -120,7 +120,7 @@ type Store struct {
 	pool       *pgxpool.Pool
 	clock      Clock
 	baselineMu sync.RWMutex
-	orgStore   *org.Store
+	orgStore   OrganizationBaselineReader
 	agents     *registry.AgentRegistry
 	workflows  *workflow.Store
 }
@@ -392,7 +392,7 @@ func (s *Store) expandOptimizeAssetScope(
 		return brief, nil
 	}
 	orgStore, agents, workflows := s.baselineSources()
-	if orgStore == nil || agents == nil || workflows == nil {
+	if !organizationBaselineReaderAvailable(orgStore) || agents == nil || workflows == nil {
 		return brief, nil
 	}
 	team, err := orgStore.GetTeam(ctx, workspaceID, brief.TeamID)

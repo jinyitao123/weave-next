@@ -7,7 +7,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jinyitao123/weave/internal/base/db"
 	"github.com/jinyitao123/weave/internal/base/testutil"
-	"github.com/jinyitao123/weave/internal/kernel/org"
+
+	orgstore "github.com/jinyitao123/weave/internal/app/org"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 )
 
@@ -19,7 +20,7 @@ func TestMetaTeamSeedDisabledSkipsAndRetainsPlatformAssets(t *testing.T) {
 	}
 	workspaceID := "metateam-toggle-" + uuid.NewString()
 	reg := registry.New(pool)
-	orgStore := org.NewStore(pool)
+	orgStore := orgstore.NewStore(pool)
 
 	if err := EnsureMetaTeamIfEnabled(ctx, reg, orgStore, workspaceID, false); err != nil {
 		t.Fatal(err)

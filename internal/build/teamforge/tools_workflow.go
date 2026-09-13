@@ -10,7 +10,7 @@ import (
 
 	"github.com/jinyitao123/loom/contract"
 	"github.com/jinyitao123/weave/internal/build/teambuild"
-	"github.com/jinyitao123/weave/internal/kernel/org"
+	org "github.com/jinyitao123/weave/internal/kernel/orgspec"
 	"github.com/jinyitao123/weave/internal/kernel/workflow"
 )
 

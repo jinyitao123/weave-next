@@ -6,12 +6,12 @@ import (
 	"time"
 
 	"github.com/jinyitao123/weave/internal/base/deliverable"
-	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 	"github.com/jinyitao123/weave/internal/kernel/credentials"
 	"github.com/jinyitao123/weave/internal/kernel/mcpregistry"
-	"github.com/jinyitao123/weave/internal/kernel/org"
+	org "github.com/jinyitao123/weave/internal/kernel/orgspec"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 	"github.com/jinyitao123/weave/internal/kernel/runtimes"
+	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 	"github.com/jinyitao123/weave/internal/kernel/workflow"
 )
 
@@ -53,14 +53,14 @@ type AgentReader interface {
 	GetVersion(ctx context.Context, workspaceID, agentID string, version int) (*registry.AgentRecord, error)
 }
 
-// TeamReader is satisfied by *org.Store.
+// TeamReader is satisfied by *orgstore.Store.
 type TeamReader interface {
 	ListTeams(ctx context.Context, workspaceID string) ([]org.Team, error)
 }
 
 // BusinessTeamLister lists only non-platform teams: the "__" built-in prefix
 // is excluded at the query layer so callers physically cannot enumerate
-// platform teams. Satisfied by *org.Store.
+// platform teams. Satisfied by *orgstore.Store.
 type BusinessTeamLister interface {
 	ListBusinessTeams(ctx context.Context, workspaceID string) ([]org.Team, error)
 }
@@ -70,7 +70,7 @@ type RosterReader interface {
 	ListByTeam(ctx context.Context, workspaceID, teamID string) ([]registry.TeamWorker, error)
 }
 
-// DispatchRulesReader is satisfied by *org.Store.
+// DispatchRulesReader is satisfied by *orgstore.Store.
 type DispatchRulesReader interface {
 	GetTeamDispatchRules(ctx context.Context, workspaceID, teamID string) (org.TeamDispatchRules, error)
 }
@@ -174,7 +174,7 @@ type RuntimeGetter interface {
 	Get(ctx context.Context, workspaceID, id string) (*runtimes.Runtime, error)
 }
 
-// TeamCreator is satisfied by *org.Store.CreateActiveTeam.
+// TeamCreator is satisfied by *orgstore.Store.CreateActiveTeam.
 type TeamCreator interface {
 	CreateActiveTeam(
 		ctx context.Context,
@@ -183,7 +183,7 @@ type TeamCreator interface {
 	) (org.CreateActiveTeamResult, error)
 }
 
-// TeamDesignUpdater is satisfied by *org.Store.UpdateTeamDesign.
+// TeamDesignUpdater is satisfied by *orgstore.Store.UpdateTeamDesign.
 type TeamDesignUpdater interface {
 	UpdateTeamDesign(
 		ctx context.Context,
@@ -200,7 +200,7 @@ type RosterCommander interface {
 	) (*registry.TeamRosterResult, error)
 }
 
-// DispatchRuleWriter is satisfied by *org.Store.PutTeamDispatchRules.
+// DispatchRuleWriter is satisfied by *orgstore.Store.PutTeamDispatchRules.
 type DispatchRuleWriter interface {
 	PutTeamDispatchRules(
 		ctx context.Context,

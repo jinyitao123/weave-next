@@ -12,7 +12,8 @@ import (
 	"github.com/jinyitao123/weave/internal/kernel/credentials"
 	"github.com/jinyitao123/weave/internal/kernel/delivery"
 	"github.com/jinyitao123/weave/internal/kernel/mcpregistry"
-	"github.com/jinyitao123/weave/internal/kernel/org"
+
+	orgstore "github.com/jinyitao123/weave/internal/app/org"
 	"github.com/jinyitao123/weave/internal/kernel/workflow"
 	"github.com/labstack/echo/v4"
 )
@@ -35,7 +36,7 @@ func TestHandleReadyReportsReady(t *testing.T) {
 	server := &Server{
 		Pool:            testutil.PostgresPool(t),
 		KeyStore:        &apikeys.Store{},
-		OrgStore:        &org.Store{},
+		OrgStore:        &orgstore.Store{},
 		Workflow:        &workflow.Store{},
 		Credentials:     &credentials.Store{},
 		DeliveryTargets: &delivery.Store{},

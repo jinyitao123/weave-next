@@ -27,7 +27,6 @@ import (
 	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/base/snapshot"
 	"github.com/jinyitao123/weave/internal/base/storeext"
-	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 	"github.com/jinyitao123/weave/internal/base/testutil"
 	"github.com/jinyitao123/weave/internal/kernel/compiler"
 	"github.com/jinyitao123/weave/internal/kernel/credentials"
@@ -35,7 +34,9 @@ import (
 	"github.com/jinyitao123/weave/internal/kernel/engine"
 	"github.com/jinyitao123/weave/internal/kernel/loomruntime"
 	"github.com/jinyitao123/weave/internal/kernel/mcpregistry"
-	"github.com/jinyitao123/weave/internal/kernel/org"
+	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
+
+	orgstore "github.com/jinyitao123/weave/internal/app/org"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 	"github.com/jinyitao123/weave/internal/kernel/runtimes"
 	"github.com/jinyitao123/weave/internal/kernel/schedule"
@@ -130,7 +131,7 @@ func newTeamDeliveryFixture(t *testing.T, engineName string) *teamDeliveryFixtur
 	f.snapshots = snapshot.NewStore(pool)
 	f.runs = teamrun.NewPGStore()
 	f.runs.Transactions = pool
-	f.server = &Server{Store: teamDeliveryPoolStore{teamDispatchPoolStore{pool: pool}}, OrgStore: org.NewStore(pool), Registry: registry.New(pool), Workflow: f.flows, ScheduleTransactions: pool, Snapshots: f.snapshots, Tasks: f.tasks, Runtimes: f.runtimeStore, Deliverables: deliveryverify.NewStore(pool), teamRunCancel: &teamrun.CancelService{Transactions: pool, Runs: f.runs, Tasks: f.tasks}}
+	f.server = &Server{Store: teamDeliveryPoolStore{teamDispatchPoolStore{pool: pool}}, OrgStore: orgstore.NewStore(pool), Registry: registry.New(pool), Workflow: f.flows, ScheduleTransactions: pool, Snapshots: f.snapshots, Tasks: f.tasks, Runtimes: f.runtimeStore, Deliverables: deliveryverify.NewStore(pool), teamRunCancel: &teamrun.CancelService{Transactions: pool, Runs: f.runs, Tasks: f.tasks}}
 	return f
 }
 

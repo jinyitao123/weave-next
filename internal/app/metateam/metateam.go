@@ -15,8 +15,9 @@ import (
 	"log/slog"
 
 	"github.com/jinyitao123/loom/stdlib"
+	orgstore "github.com/jinyitao123/weave/internal/app/org"
 	"github.com/jinyitao123/weave/internal/base/frozen"
-	"github.com/jinyitao123/weave/internal/kernel/org"
+	org "github.com/jinyitao123/weave/internal/kernel/orgspec"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 )
 
@@ -375,7 +376,7 @@ func metaStepTarget(name string) *string {
 func EnsureMetaTeam(
 	ctx context.Context,
 	reg *registry.AgentRegistry,
-	orgStore *org.Store,
+	orgStore *orgstore.Store,
 	workspaceID string,
 ) error {
 	if reg == nil || orgStore == nil {
@@ -433,7 +434,7 @@ func EnsureMetaTeam(
 func EnsureMetaTeamIfEnabled(
 	ctx context.Context,
 	reg *registry.AgentRegistry,
-	orgStore *org.Store,
+	orgStore *orgstore.Store,
 	workspaceID string,
 	enabled bool,
 ) error {

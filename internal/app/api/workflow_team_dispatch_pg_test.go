@@ -17,9 +17,10 @@ import (
 	"github.com/jinyitao123/weave/internal/base/db"
 	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/base/snapshot"
-	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 	"github.com/jinyitao123/weave/internal/base/testutil"
-	"github.com/jinyitao123/weave/internal/kernel/org"
+	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
+
+	orgstore "github.com/jinyitao123/weave/internal/app/org"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 	"github.com/jinyitao123/weave/internal/kernel/workflow"
 	"github.com/jinyitao123/weave/internal/kernel/workflow/machine"
@@ -84,7 +85,7 @@ func newTeamDispatchTestServerWithGraph(t *testing.T, graph json.RawMessage) (*S
  `, string(trigger), string(graph), digest, string(payload)); err != nil {
 		t.Fatal(err)
 	}
-	server := &Server{Store: teamDispatchPoolStore{pool: pool}, OrgStore: org.NewStore(pool), Registry: registry.New(pool),
+	server := &Server{Store: teamDispatchPoolStore{pool: pool}, OrgStore: orgstore.NewStore(pool), Registry: registry.New(pool),
 		Workflow: workflow.New(pool, nil), Deliverables: deliveryverify.NewStore(pool), ScheduleTransactions: pool, Snapshots: snapshot.NewStore(pool), Tasks: taskqueue.New(pool, nil, time.Minute)}
 	return server, pool
 }

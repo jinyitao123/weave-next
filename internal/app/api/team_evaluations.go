@@ -8,7 +8,7 @@ import (
 	"net/http"
 
 	"github.com/jinyitao123/weave/internal/app/teamevaluations"
-	"github.com/jinyitao123/weave/internal/kernel/org"
+	org "github.com/jinyitao123/weave/internal/kernel/orgspec"
 	"github.com/labstack/echo/v4"
 )
 

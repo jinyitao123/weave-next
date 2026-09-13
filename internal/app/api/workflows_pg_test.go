@@ -8,9 +8,10 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	orgstore "github.com/jinyitao123/weave/internal/app/org"
 	"github.com/jinyitao123/weave/internal/base/db"
 	"github.com/jinyitao123/weave/internal/base/testutil"
-	"github.com/jinyitao123/weave/internal/kernel/org"
+	org "github.com/jinyitao123/weave/internal/kernel/orgspec"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 	"github.com/jinyitao123/weave/internal/kernel/workflow"
 	"github.com/labstack/echo/v4"
@@ -32,7 +33,7 @@ func TestPublishWorkflowPGDoesNotGateUnevaluatedTeam(t *testing.T) {
 			t.Fatalf("create agent: %v", err)
 		}
 	}
-	orgStore := org.NewStore(pool)
+	orgStore := orgstore.NewStore(pool)
 	created, err := orgStore.CreateActiveTeam(ctx, workspaceID, org.CreateActiveTeamInput{
 		Name: prefix + "-team", Objective: "完成业务交付", PrimaryScenario: "分析客户材料",
 		SuccessCriteria: "交付完整", LeadAvatarID: lead.ID, Evaluation: org.TeamEvaluationUnevaluated,

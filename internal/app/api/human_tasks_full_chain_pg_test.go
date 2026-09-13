@@ -18,14 +18,15 @@ import (
 	"github.com/jinyitao123/weave/internal/base/db"
 	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/base/snapshot"
-	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 	"github.com/jinyitao123/weave/internal/base/testutil"
 	"github.com/jinyitao123/weave/internal/build/teambuild"
 	"github.com/jinyitao123/weave/internal/build/teameval"
 	"github.com/jinyitao123/weave/internal/build/teamforge"
 	"github.com/jinyitao123/weave/internal/build/teamtemplate"
 	"github.com/jinyitao123/weave/internal/kernel/compiler"
-	"github.com/jinyitao123/weave/internal/kernel/org"
+	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
+
+	orgstore "github.com/jinyitao123/weave/internal/app/org"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 	"github.com/jinyitao123/weave/internal/kernel/teamrun"
 	"github.com/jinyitao123/weave/internal/kernel/workflow"
@@ -207,7 +208,7 @@ func TestHumanFinalReviewSampleRealPGFullChain(t *testing.T) {
 
 	reader := &teamrun.HumanTaskReader{Pool: pool}
 	resume := &teamrun.HumanResumeService{Transactions: pool, Runs: runs, Checkpoints: checkpoints, Tasks: tasks}
-	server := &Server{OrgStore: org.NewStore(pool), teamRunHumanTasks: reader, teamRunHumanResume: resume}
+	server := &Server{OrgStore: orgstore.NewStore(pool), teamRunHumanTasks: reader, teamRunHumanResume: resume}
 	listRecorder := httptest.NewRecorder()
 	listContext := humanTaskAPIContext(http.MethodGet, "/v1/human-tasks", "", listRecorder, workspaceID, userID)
 	if err := server.handleListHumanTasks(listContext); err != nil || listRecorder.Code != http.StatusOK {

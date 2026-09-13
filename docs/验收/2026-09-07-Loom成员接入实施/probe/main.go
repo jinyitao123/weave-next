@@ -23,15 +23,16 @@ import (
 	"github.com/jinyitao123/weave/internal/app/users"
 	"github.com/jinyitao123/weave/internal/base/db"
 	"github.com/jinyitao123/weave/internal/base/deliverable"
-	"github.com/jinyitao123/weave/internal/kernel/fanout"
-	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 	"github.com/jinyitao123/weave/internal/kernel/compiler"
 	"github.com/jinyitao123/weave/internal/kernel/config"
 	"github.com/jinyitao123/weave/internal/kernel/credentials"
 	"github.com/jinyitao123/weave/internal/kernel/delivery"
+	"github.com/jinyitao123/weave/internal/kernel/fanout"
 	"github.com/jinyitao123/weave/internal/kernel/llmrouter"
 	"github.com/jinyitao123/weave/internal/kernel/mcpregistry"
-	"github.com/jinyitao123/weave/internal/kernel/org"
+	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
+
+	orgstore "github.com/jinyitao123/weave/internal/app/org"
 	"github.com/jinyitao123/weave/internal/kernel/runtimes"
 	"github.com/jinyitao123/weave/internal/kernel/skills"
 )
@@ -114,7 +115,7 @@ func main() {
 		models := llmrouter.NewResolver(llmrouter.New("acceptance-model"))
 		s := api.NewServer(conf, store, models)
 		s.Descriptors = descriptors()
-		s.OrgStore = org.NewStore(store.Pool())
+		s.OrgStore = orgstore.NewStore(store.Pool())
 		s.UserStore = users.NewStore(store.Pool())
 		s.KeyStore = apikeys.NewStore(store.Pool())
 		s.Credentials = credentials.New(store.Pool(), key)

@@ -1,11 +1,12 @@
-package designprompt
+package designseed
 
 import (
 	"context"
 	"log/slog"
 
 	"github.com/jinyitao123/loom/stdlib"
-	"github.com/jinyitao123/weave/internal/kernel/org"
+	orgstore "github.com/jinyitao123/weave/internal/app/org"
+	org "github.com/jinyitao123/weave/internal/kernel/orgspec"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 )
 
@@ -210,7 +211,7 @@ type builtinAgent struct {
 
 // EnsureDesignStudio creates the built-in design team without changing any
 // agent or team whose name already exists.
-func EnsureDesignStudio(reg *registry.AgentRegistry, orgStore *org.Store, tenant string) {
+func EnsureDesignStudio(reg *registry.AgentRegistry, orgStore *orgstore.Store, tenant string) {
 	ctx := context.Background()
 	agents := make(map[string]*registry.AgentRecord, 3)
 	for _, builtin := range []builtinAgent{

@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jinyitao123/weave/internal/kernel/org"
+	org "github.com/jinyitao123/weave/internal/kernel/orgspec"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 	"github.com/jinyitao123/weave/internal/kernel/workflow"
 )
@@ -21,7 +21,7 @@ import (
 // is idempotent and guarded for concurrent access. Create-mode authorize never
 // consults the sources.
 func (s *Store) SetBaselineSources(
-	orgStore *org.Store,
+	orgStore OrganizationBaselineReader,
 	agents *registry.AgentRegistry,
 	workflows *workflow.Store,
 ) {
@@ -180,7 +180,7 @@ func (s *Store) captureBaselineTxAt(
 		return BaselineSnapshot{}, fmt.Errorf("capture baseline: %w: captured_at must be a valid UTC timestamp", ErrBaselineSnapshotInvalid)
 	}
 	orgStore, agents, workflows := s.baselineSources()
-	if orgStore == nil || agents == nil || workflows == nil {
+	if !organizationBaselineReaderAvailable(orgStore) || agents == nil || workflows == nil {
 		return BaselineSnapshot{}, fmt.Errorf("%w", ErrBaselineSourceUnavailable)
 	}
 	if tx == nil {
@@ -384,7 +384,7 @@ func (s *Store) captureBaselineTxAt(
 }
 
 func (s *Store) baselineSources() (
-	orgStore *org.Store,
+	orgStore OrganizationBaselineReader,
 	agents *registry.AgentRegistry,
 	workflows *workflow.Store,
 ) {

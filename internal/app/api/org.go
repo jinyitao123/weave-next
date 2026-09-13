@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jinyitao123/weave/internal/kernel/org"
+	org "github.com/jinyitao123/weave/internal/kernel/orgspec"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 	"github.com/labstack/echo/v4"
 )
