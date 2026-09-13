@@ -48,6 +48,10 @@ func (s *Service) AdmitPublished(ctx context.Context, request publication.Publis
 	if err != nil {
 		return publication.AdmissionReceipt{}, err
 	}
+	fences, err := s.captureResourceFences(ctx, envelope)
+	if err != nil {
+		return publication.AdmissionReceipt{}, err
+	}
 	authority, ok := s.authority.(PublishedAuthority)
 	if !ok {
 		return publication.AdmissionReceipt{}, errors.New("published authority unavailable")
@@ -92,6 +96,9 @@ func (s *Service) AdmitPublished(ctx context.Context, request publication.Publis
 		return publication.AdmissionReceipt{}, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+	if err = checkResourceFencesTx(ctx, tx, request.Revision.WorkspaceID, fences); err != nil {
+		return publication.AdmissionReceipt{}, err
+	}
 	var blocked bool
 	if err = tx.QueryRow(ctx, `SELECT blocked FROM weave_workflow_version_admission_statuses WHERE workspace_id=$1 AND workflow_id=$2 AND workflow_version=$3 FOR SHARE`, request.Revision.WorkspaceID, request.Revision.WorkflowID, request.Revision.WorkflowVersion).Scan(&blocked); err != nil {
 		return publication.AdmissionReceipt{}, err
