@@ -11,6 +11,7 @@ import (
 	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/kernel/engine"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
+	"github.com/jinyitao123/weave/internal/kernel/runtimeprotocol"
 	"github.com/jinyitao123/weave/internal/kernel/runtimes"
 	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 )
@@ -36,7 +37,7 @@ func TestExecuteTaskPreservesFailedEngineReceiptAndArtifacts(t *testing.T) {
 	}
 	d := &service{
 		workspacesRoot:     t.TempDir(),
-		engineCapabilities: []runtimes.EngineCapability{{Engine: engine.OpenCode, BinaryVersion: "opencode 1.2.10"}},
+		engineCapabilities: []runtimeprotocol.EngineCapability{{Engine: engine.OpenCode, BinaryVersion: "opencode 1.2.10"}},
 		runEngine: func(_ context.Context, _ string, spec engine.RunSpec) (engine.RunResult, error) {
 			if spec.EngineVersion != "opencode 1.2.10" {
 				t.Fatalf("engine version=%q", spec.EngineVersion)
@@ -58,7 +59,7 @@ func TestExecuteTaskPreservesFailedEngineReceiptAndArtifacts(t *testing.T) {
 			}, errors.New("opencode: provider timeout")
 		},
 	}
-	result, runErr := d.executeTask(context.Background(), task)
+	result, runErr := d.executeTask(context.Background(), testExecutionClaim(t, task))
 	if runErr == nil || result.Status != "failed" || result.UsageReceipt == nil || result.UsageReceipt.InputTokens != 8 {
 		t.Fatalf("result=%+v err=%v", result, runErr)
 	}
@@ -88,7 +89,7 @@ func TestExecuteTaskSeparatesCompletedEngineFromCollectionFailures(t *testing.T)
 				}
 				return engine.RunResult{Status: "completed", SessionID: "original-session", Output: "Saved `outputs/" + test.filename + "`.", Usage: &engine.UsageReceipt{InputTokens: 17, HasTokens: true}}, nil
 			}}
-			result, err := d.executeTask(t.Context(), task)
+			result, err := d.executeTask(t.Context(), testExecutionClaim(t, task))
 			if (err != nil) != test.technical || result.Status != "completed" || result.Error != "" || result.SessionID != "original-session" || result.UsageReceipt == nil || result.UsageReceipt.InputTokens != 17 {
 				t.Fatalf("engine receipt changed or collection error lost: %#v %v", result, err)
 			}

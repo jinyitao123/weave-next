@@ -449,7 +449,6 @@ func (s *Server) registerRoutes() {
 	runtimeAPI.POST("/claim", s.handleRuntimeClaim)
 	runtimeAPI.POST("/tasks/:id/renew", s.handleRuntimeTaskRenew)
 	runtimeAPI.POST("/tasks/:id/complete", s.handleRuntimeTaskComplete)
-	runtimeAPI.POST("/tasks/:id/fail", s.handleRuntimeTaskFail)
 	runtimeAPI.POST("/tasks/:id/stopped", s.handleRuntimeTaskStopped)
 	runtimeAPI.POST("/tasks/:id/events", s.handleRuntimeTaskEvents)
 	runtimeAPI.GET("/tasks/:id/attachments/:aid", s.handleRuntimeTaskAttachment)

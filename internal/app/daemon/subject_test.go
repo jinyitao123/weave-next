@@ -7,6 +7,7 @@ import (
 	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/kernel/engine"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
+	"github.com/jinyitao123/weave/internal/kernel/runtimeprotocol"
 	"github.com/jinyitao123/weave/internal/kernel/runtimes"
 	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 	"os"
@@ -20,9 +21,9 @@ func TestSharedRuntimePartitionsUsersAndRejectsForgedPayload(t *testing.T) {
 	bob := alice
 	bob.UserID = "bob"
 	record := &registry.AgentRecord{WorkspaceID: "shared", Name: "worker", ID: "worker-1", Version: 1, Engine: engine.OpenCode}
-	makeTask := func(subject execution.Subject) *taskqueue.Task {
+	makeTask := func(subject execution.Subject) *runtimeprotocol.ExecutionClaim {
 		payload, _ := json.Marshal(runtimes.EngineExecRequest{Subject: subject, Agent: record.Name, Engine: record.Engine, Record: record, OneAPIKey: "fixture", Env: map[string]string{"WEAVE_ACTOR_USER_ID": "forged"}})
-		return &taskqueue.Task{ID: subject.UserID + "-task", Subject: subject, ClaimEpoch: 2, WorkspaceID: subject.WorkspaceID, Agent: record.Name, AgentID: record.ID, AgentVersion: 1, IdentityKind: taskqueue.IdentityAgent, IdentitySchemaVersion: 2, ExecutionScope: execution.ScopeLegacyOrchestrator, Payload: payload}
+		return testExecutionClaim(t, &taskqueue.Task{ID: subject.UserID + "-task", Subject: subject, ClaimEpoch: 2, WorkspaceID: subject.WorkspaceID, Agent: record.Name, AgentID: record.ID, AgentVersion: 1, IdentityKind: taskqueue.IdentityAgent, IdentitySchemaVersion: 2, ExecutionScope: execution.ScopeLegacyOrchestrator, Payload: payload})
 	}
 	var mu sync.Mutex
 	dirs := map[string]string{}
@@ -70,7 +71,7 @@ func TestSharedRuntimePartitionsUsersAndRejectsForgedPayload(t *testing.T) {
 		t.Fatal("another user resumed runtime task")
 	}
 	forged := makeTask(alice)
-	forged.Payload = makeTask(bob).Payload
+	forged.Agent.ID = "forged-agent"
 	if _, err := service.executeTask(context.Background(), forged); err == nil {
 		t.Fatal("payload actor override accepted")
 	}

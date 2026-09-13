@@ -7,12 +7,13 @@ import (
 	"strings"
 
 	"github.com/jinyitao123/weave/internal/kernel/engine"
-	"github.com/jinyitao123/weave/internal/kernel/runtimes"
+	"github.com/jinyitao123/weave/internal/kernel/runtimehost"
+	"github.com/jinyitao123/weave/internal/kernel/runtimeprotocol"
 )
 
-func describeEngineConfiguration(capability *runtimes.EngineCapability) {
+func describeEngineConfiguration(capability *runtimeprotocol.EngineCapability) {
 	capability.ConfigurationSource = "runtime_environment"
-	if capability.Engine == engine.Claude && capability.AuthMode == runtimes.AuthModeOAuth {
+	if capability.Engine == engine.Claude && capability.AuthMode == runtimeprotocol.AuthModeOAuth {
 		capability.ConfigurationSource = "host_default"
 		home, err := os.UserHomeDir()
 		if err != nil {
@@ -29,7 +30,7 @@ func describeEngineConfiguration(capability *runtimes.EngineCapability) {
 		if json.Unmarshal(data, &settings) != nil {
 			return
 		}
-		capability.ConfiguredEndpoint = runtimes.SafeEndpointOrigin(settings.Env["ANTHROPIC_BASE_URL"])
+		capability.ConfiguredEndpoint = runtimehost.SafeEndpointOrigin(settings.Env["ANTHROPIC_BASE_URL"])
 		capability.ConfiguredModel = strings.TrimSpace(settings.Env["ANTHROPIC_MODEL"])
 		if capability.ConfiguredModel == "" {
 			capability.ConfiguredModel = strings.TrimSpace(settings.Model)
@@ -40,7 +41,7 @@ func describeEngineConfiguration(capability *runtimes.EngineCapability) {
 		if capability.ConfiguredEndpoint != "" {
 			capability.EndpointClass = "host_configured"
 		}
-	} else if capability.Engine == engine.Codex && capability.AuthMode == runtimes.AuthModeChatGPT {
+	} else if capability.Engine == engine.Codex && capability.AuthMode == runtimeprotocol.AuthModeChatGPT {
 		// The login mode alone cannot prove a model or a provider URL.
 		capability.ConfigurationSource = "host_default"
 	} else {
@@ -51,7 +52,7 @@ func describeEngineConfiguration(capability *runtimes.EngineCapability) {
 		if endpoint == "" {
 			endpoint = os.Getenv("ONEAPI_BASE_URL")
 		}
-		capability.ConfiguredEndpoint = runtimes.SafeEndpointOrigin(endpoint)
+		capability.ConfiguredEndpoint = runtimehost.SafeEndpointOrigin(endpoint)
 	}
 	if len(capability.ConfiguredModel) > 200 {
 		capability.ConfiguredModel = ""

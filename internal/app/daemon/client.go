@@ -11,8 +11,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/jinyitao123/weave/internal/kernel/runtimes"
-	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
+	"github.com/jinyitao123/weave/internal/kernel/runtimeprotocol"
 )
 
 var errLeaseLost = errors.New("daemon: task lease lost")
@@ -41,12 +40,10 @@ func newRuntimeClient(server, token string, httpClient *http.Client) (*runtimeCl
 func (c *runtimeClient) hello(
 	ctx context.Context,
 	engines []string,
-	capabilities []runtimes.EngineCapability,
+	capabilities []runtimeprotocol.EngineCapability,
 	totalSlots int,
 ) error {
-	response, err := c.do(ctx, http.MethodPost, "/v1/runtime/hello", map[string]any{
-		"engines": engines, "engine_capabilities": capabilities, "total_slots": totalSlots,
-	})
+	response, err := c.do(ctx, http.MethodPost, "/v1/runtime/hello", runtimeprotocol.HostHelloRequest{Versioned: runtimeprotocol.NewVersioned(), Engines: engines, EngineCapabilities: capabilities, TotalSlots: totalSlots})
 	if err != nil {
 		return err
 	}
@@ -54,22 +51,22 @@ func (c *runtimeClient) hello(
 	if err := expectStatus(response, http.StatusOK); err != nil {
 		return err
 	}
-	var hello struct {
-		RuntimeID string `json:"runtime_id"`
-		Name      string `json:"name"`
-	}
+	var hello runtimeprotocol.HostHelloResponse
 	if err := json.NewDecoder(response.Body).Decode(&hello); err != nil {
 		return fmt.Errorf("daemon: decode hello response: %w", err)
+	}
+	if err := hello.Versioned.Validate(); err != nil {
+		return err
 	}
 	return nil
 }
 
 func (c *runtimeClient) heartbeat(ctx context.Context, activeSlots int) error {
-	return c.postNoContent(ctx, "/v1/runtime/heartbeat", map[string]int{"active_slots": activeSlots})
+	return c.postNoContent(ctx, "/v1/runtime/heartbeat", runtimeprotocol.HostHeartbeatRequest{Versioned: runtimeprotocol.NewVersioned(), ActiveSlots: activeSlots})
 }
 
-func (c *runtimeClient) claim(ctx context.Context, waitSeconds int) (*taskqueue.Task, error) {
-	response, err := c.do(ctx, http.MethodPost, "/v1/runtime/claim", map[string]int{"wait_seconds": waitSeconds})
+func (c *runtimeClient) claim(ctx context.Context, waitSeconds int) (*runtimeprotocol.ExecutionClaim, error) {
+	response, err := c.do(ctx, http.MethodPost, "/v1/runtime/claim", runtimeprotocol.ClaimRequest{Versioned: runtimeprotocol.NewVersioned(), WaitSeconds: waitSeconds})
 	if err != nil {
 		return nil, err
 	}
@@ -80,32 +77,32 @@ func (c *runtimeClient) claim(ctx context.Context, waitSeconds int) (*taskqueue.
 	if err := expectStatus(response, http.StatusOK); err != nil {
 		return nil, err
 	}
-	var envelope struct {
-		Task *taskqueue.Task `json:"task"`
-	}
+	var envelope runtimeprotocol.ClaimResponse
 	if err := json.NewDecoder(response.Body).Decode(&envelope); err != nil {
 		return nil, fmt.Errorf("daemon: decode claim response: %w", err)
 	}
-	if envelope.Task == nil {
-		return nil, errors.New("daemon: claim response omitted task")
+	if err := envelope.Versioned.Validate(); err != nil {
+		return nil, err
 	}
-	return envelope.Task, nil
+	if envelope.Claim == nil {
+		return nil, errors.New("daemon: claim response omitted claim")
+	}
+	if err := envelope.Claim.Validate(); err != nil {
+		return nil, err
+	}
+	return envelope.Claim, nil
 }
 
-func (c *runtimeClient) renew(ctx context.Context, taskID string) error {
-	return c.postTaskNoContent(ctx, taskID, "renew", nil)
+func (c *runtimeClient) renew(ctx context.Context, claim *runtimeprotocol.ExecutionClaim) error {
+	return c.postTaskNoContent(ctx, claim.TaskID, "renew", runtimeprotocol.LeaseRequest{Versioned: runtimeprotocol.NewVersioned(), TaskID: claim.TaskID, ClaimEpoch: claim.ClaimEpoch, Subject: claim.Subject})
 }
 
-func (c *runtimeClient) stopped(ctx context.Context, taskID string) error {
-	return c.postTaskNoContent(ctx, taskID, "stopped", nil)
+func (c *runtimeClient) stopped(ctx context.Context, claim *runtimeprotocol.ExecutionClaim) error {
+	return c.postTaskNoContent(ctx, claim.TaskID, "stopped", runtimeprotocol.StoppedReceipt{Versioned: runtimeprotocol.NewVersioned(), SchemaVersion: runtimeprotocol.ReceiptSchemaV1, TaskID: claim.TaskID, ClaimEpoch: claim.ClaimEpoch, Subject: claim.Subject})
 }
 
-func (c *runtimeClient) complete(ctx context.Context, taskID string, result runtimes.EngineExecResult) error {
-	return c.postTaskNoContent(ctx, taskID, "complete", result)
-}
-
-func (c *runtimeClient) fail(ctx context.Context, taskID, message string) error {
-	return c.postTaskNoContent(ctx, taskID, "fail", map[string]string{"error": message})
+func (c *runtimeClient) complete(ctx context.Context, receipt runtimeprotocol.ExecutionReceipt) error {
+	return c.postTaskNoContent(ctx, receipt.TaskID, "complete", receipt)
 }
 
 func (c *runtimeClient) downloadAttachment(ctx context.Context, taskID, attachmentID string, dst io.Writer) error {
@@ -157,6 +154,7 @@ func (c *runtimeClient) do(ctx context.Context, method, path string, body any) (
 		return nil, fmt.Errorf("daemon: create request: %w", err)
 	}
 	request.Header.Set("Authorization", "Bearer "+c.token)
+	request.Header.Set(runtimeprotocol.HeaderVersion, runtimeprotocol.ProtocolVersion)
 	writeTaskProof(ctx, request.Header)
 	if body != nil {
 		request.Header.Set("Content-Type", "application/json")

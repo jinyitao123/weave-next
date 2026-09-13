@@ -4,9 +4,12 @@ package runtimeprotocol
 
 import (
 	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path"
+	"strings"
 	"time"
 
 	"github.com/jinyitao123/loom/contract"
@@ -17,12 +20,30 @@ import (
 
 const (
 	ProtocolVersion = "weave.runtime/v1"
+	HeaderVersion   = "X-Weave-Runtime-Protocol"
 	ClaimSchemaV1   = 1
 	RequestSchemaV1 = 1
 	ReceiptSchemaV1 = 1
+
+	AuthModeChatGPT  = "chatgpt"
+	AuthModeOAuth    = "oauth"
+	AuthModeProvider = "provider"
+	AuthModeUnknown  = "unknown"
+
+	EngineAvailabilityReady       = "ready"
+	EngineAvailabilityUnavailable = "unavailable"
+	EngineAvailabilityUnknown     = "unknown"
+	EngineLoom                    = "loom"
 )
 
 var ErrUnsupportedVersion = errors.New("runtime protocol version is unsupported")
+
+const (
+	MaxInputFiles         = 512
+	MaxInputFilesBytes    = 8 * 1024 * 1024
+	PublicEventLimit      = 512
+	PublicEventBatchLimit = 16
+)
 
 type Versioned struct {
 	ProtocolVersion string `json:"protocol_version"`
@@ -48,6 +69,11 @@ type HostHelloResponse struct {
 	Name      string `json:"name"`
 }
 
+type HostHeartbeatRequest struct {
+	Versioned
+	ActiveSlots int `json:"active_slots"`
+}
+
 type EngineCapability struct {
 	Engine              string `json:"engine"`
 	BinaryPath          string `json:"binary_path"`
@@ -71,6 +97,13 @@ type ClaimRequest struct {
 type ClaimResponse struct {
 	Versioned
 	Claim *ExecutionClaim `json:"claim,omitempty"`
+}
+
+type LeaseRequest struct {
+	Versioned
+	TaskID     string            `json:"task_id"`
+	ClaimEpoch int64             `json:"claim_epoch"`
+	Subject    execution.Subject `json:"subject"`
 }
 
 // ExecutionClaim contains only facts a Host needs to run one admitted
@@ -144,9 +177,69 @@ type InputFile struct {
 	Content     string `json:"content"`
 }
 
+func ValidateInputFiles(files []InputFile) error {
+	if len(files) > MaxInputFiles {
+		return errors.New("too many upstream files")
+	}
+	seen := map[string]bool{}
+	total := 0
+	for _, file := range files {
+		if file.TaskID == "" || file.NodeID == "" || path.Base(file.NodeID) != file.NodeID || file.NodeID == "." || file.NodeID == ".." || strings.Contains(file.NodeID, "\\") || !strings.HasPrefix(file.Path, file.NodeID+"/") {
+			return errors.New("upstream file source identity is invalid")
+		}
+		if err := engine.ValidateArtifacts([]engine.Artifact{{Path: file.Path, ContentType: file.ContentType, Content: file.Content}}); err != nil {
+			return err
+		}
+		digest := sha256.Sum256([]byte(file.Content))
+		if hex.EncodeToString(digest[:]) != file.SHA256 || seen[file.Path] {
+			return errors.New("upstream file hash or path conflicts")
+		}
+		seen[file.Path] = true
+		total += len(file.Content)
+		if total > MaxInputFilesBytes {
+			return errors.New("upstream files exceed size bound")
+		}
+	}
+	return nil
+}
+
 type TaskMCPTarget struct {
 	URL   string `json:"url"`
 	Token string `json:"token"`
+}
+
+type PublicEvent struct {
+	Seq        int64        `json:"seq"`
+	OccurredAt time.Time    `json:"occurred_at"`
+	Event      engine.Event `json:"event"`
+	Truncated  bool         `json:"truncated,omitempty"`
+}
+
+type PublicEventsRequest struct {
+	Versioned
+	Events []PublicEvent `json:"events"`
+}
+
+type PublicEventsResponse struct {
+	Versioned
+	AckSeq int64 `json:"ack_seq"`
+}
+
+func ValidatePublicEvent(event PublicEvent) error {
+	if event.Seq < 1 || event.Seq > PublicEventLimit || event.OccurredAt.IsZero() {
+		return errors.New("invalid public event identity")
+	}
+	switch event.Event.Kind {
+	case "text", "tool_call", "tool_result":
+		return engine.ValidateEvents([]engine.Event{event.Event})
+	case "stream_end":
+		if event.Event != (engine.Event{Kind: "stream_end"}) {
+			return errors.New("invalid stream end")
+		}
+		return nil
+	default:
+		return errors.New("only public text and tool events are accepted")
+	}
 }
 
 // ExecutionReceipt reports one physical attempt. The platform remains the
@@ -179,6 +272,29 @@ type StoppedReceipt struct {
 	TaskID        string            `json:"task_id"`
 	ClaimEpoch    int64             `json:"claim_epoch"`
 	Subject       execution.Subject `json:"subject"`
+}
+
+func (request LeaseRequest) ValidateFor(claim ExecutionClaim) error {
+	if err := request.Versioned.Validate(); err != nil {
+		return err
+	}
+	if request.TaskID != claim.TaskID || request.ClaimEpoch != claim.ClaimEpoch || request.Subject != claim.Subject {
+		return errors.New("runtime lease request does not match its claim")
+	}
+	return nil
+}
+
+func (receipt StoppedReceipt) ValidateFor(claim ExecutionClaim) error {
+	if err := receipt.Versioned.Validate(); err != nil {
+		return err
+	}
+	if receipt.SchemaVersion != ReceiptSchemaV1 {
+		return fmt.Errorf("%w: stopped receipt=%d", ErrUnsupportedVersion, receipt.SchemaVersion)
+	}
+	if receipt.TaskID != claim.TaskID || receipt.ClaimEpoch != claim.ClaimEpoch || receipt.Subject != claim.Subject {
+		return errors.New("runtime stopped receipt does not match its claim")
+	}
+	return nil
 }
 
 func (claim ExecutionClaim) Validate() error {

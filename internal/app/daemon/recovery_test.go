@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/kernel/engine"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
+	"github.com/jinyitao123/weave/internal/kernel/runtimeprotocol"
 	"github.com/jinyitao123/weave/internal/kernel/runtimes"
 	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 )
@@ -26,6 +28,7 @@ func TestRuntimeRecoveryWaitsForProcessExitBeforeAcknowledgement(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				switch {
 				case strings.HasSuffix(r.URL.Path, "/renew"):
+					_, _ = io.Copy(io.Discard, r.Body)
 					if cut {
 						<-r.Context().Done()
 						return
@@ -67,7 +70,7 @@ func TestRuntimeRecoveryWaitsForProcessExitBeforeAcknowledgement(t *testing.T) {
 				}}
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer cancel()
-			d.processTask(ctx, task)
+			d.processTask(ctx, testExecutionClaim(t, task))
 			if ctx.Err() != nil || !exited.Load() || !ack.Load() || acknowledgements.Load() != 2 {
 				t.Fatalf("exit=%v ack=%v attempts=%d err=%v", exited.Load(), ack.Load(), acknowledgements.Load(), ctx.Err())
 			}
@@ -76,18 +79,15 @@ func TestRuntimeRecoveryWaitsForProcessExitBeforeAcknowledgement(t *testing.T) {
 }
 
 func TestRuntimeShutdownReportsRecoverableProcessInterruption(t *testing.T) {
-	var completions, failures atomic.Int32
+	var completions atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case strings.HasSuffix(r.URL.Path, "/fail"):
-			failures.Add(1)
-			var body map[string]string
-			if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body["error"] != "runtime_process_interrupted: daemon shutdown" {
-				t.Errorf("unexpected shutdown failure: %#v err=%v", body, err)
-			}
-			w.WriteHeader(http.StatusNoContent)
 		case strings.HasSuffix(r.URL.Path, "/complete"):
 			completions.Add(1)
+			var receipt runtimeprotocol.ExecutionReceipt
+			if err := json.NewDecoder(r.Body).Decode(&receipt); err != nil || receipt.Status != "failed" || receipt.Error != "runtime_process_interrupted: daemon shutdown" {
+				t.Errorf("unexpected shutdown receipt: %#v err=%v", receipt, err)
+			}
 			w.WriteHeader(http.StatusNoContent)
 		default:
 			t.Errorf("unexpected endpoint %s", r.URL.Path)
@@ -110,9 +110,9 @@ func TestRuntimeShutdownReportsRecoverableProcessInterruption(t *testing.T) {
 			<-runCtx.Done()
 			return engine.RunResult{Status: "timeout", Err: runCtx.Err().Error()}, runCtx.Err()
 		}}
-	d.processTask(ctx, task)
-	if failures.Load() != 1 || completions.Load() != 0 {
-		t.Fatalf("failures=%d completions=%d", failures.Load(), completions.Load())
+	d.processTask(ctx, testExecutionClaim(t, task))
+	if completions.Load() != 1 {
+		t.Fatalf("completions=%d", completions.Load())
 	}
 }
 
@@ -146,23 +146,27 @@ func TestRuntimeRecoveryLostCompletionResponseDoesNotExecuteAgain(t *testing.T) 
 		}}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	d.processTask(ctx, task)
+	d.processTask(ctx, testExecutionClaim(t, task))
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) || executions.Load() != 1 || calls.Load() != 2 {
 		t.Fatalf("executions=%d reports=%d err=%v", executions.Load(), calls.Load(), ctx.Err())
 	}
 }
 
 func TestRuntimeRejectedResultFailsOnceInsteadOfRetryingForever(t *testing.T) {
-	var completions, failures, executions atomic.Int32
+	var completions, executions atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/complete"):
-			completions.Add(1)
-			w.WriteHeader(http.StatusBadRequest)
-		case strings.HasSuffix(r.URL.Path, "/fail"):
-			failures.Add(1)
-			var body map[string]string
-			if err := json.NewDecoder(r.Body).Decode(&body); err != nil || !strings.HasPrefix(body["error"], "runtime_result_rejected:") {
+			attempt := completions.Add(1)
+			var receipt runtimeprotocol.ExecutionReceipt
+			if err := json.NewDecoder(r.Body).Decode(&receipt); err != nil {
+				t.Errorf("decode receipt: %v", err)
+			}
+			if attempt == 1 {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			if receipt.Status != "failed" || !strings.HasPrefix(receipt.Error, "runtime_result_rejected:") {
 				t.Error("missing actionable terminal failure")
 			}
 			w.WriteHeader(http.StatusNoContent)
@@ -184,8 +188,8 @@ func TestRuntimeRejectedResultFailsOnceInsteadOfRetryingForever(t *testing.T) {
 		}}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	d.processTask(ctx, task)
-	if ctx.Err() != nil || executions.Load() != 1 || completions.Load() != 1 || failures.Load() != 1 {
-		t.Fatalf("executions=%d completions=%d failures=%d err=%v", executions.Load(), completions.Load(), failures.Load(), ctx.Err())
+	d.processTask(ctx, testExecutionClaim(t, task))
+	if ctx.Err() != nil || executions.Load() != 1 || completions.Load() != 2 {
+		t.Fatalf("executions=%d completions=%d err=%v", executions.Load(), completions.Load(), ctx.Err())
 	}
 }

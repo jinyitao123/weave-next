@@ -10,9 +10,10 @@ import (
 	"github.com/jinyitao123/loom/contract"
 	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/kernel/compiler"
+	"github.com/jinyitao123/weave/internal/kernel/loomadapter"
 	"github.com/jinyitao123/weave/internal/kernel/loomruntime"
-	"github.com/jinyitao123/weave/internal/kernel/runtimes"
-	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
+	"github.com/jinyitao123/weave/internal/kernel/runtimeagent"
+	"github.com/jinyitao123/weave/internal/kernel/runtimeprotocol"
 )
 
 // executeLoomTask runs one loom turn in the daemon process. This is the edge
@@ -27,21 +28,47 @@ import (
 // reported through the normal task-completion path. Skills must already be
 // inlined in the record (there is no durable store here to resolve empty bodies
 // from); the server bakes them in before enqueue.
-func (d *service) executeLoomTask(ctx context.Context, task *taskqueue.Task, request runtimes.EngineExecRequest) (string, error) {
-	ctx, err := taskqueue.BindTaskSubject(ctx, task)
+func (d *service) executeLoomTask(ctx context.Context, task *runtimeprotocol.ExecutionClaim, request runtimeprotocol.ExecutionRequest) (runtimeprotocol.ExecutionReceipt, error) {
+	ctx, err := execution.BindSubject(ctx, task.Subject)
 	if err != nil {
-		return "", err
+		return runtimeprotocol.ExecutionReceipt{}, err
 	}
 	ctx = withTaskProof(ctx, task.Subject, task.ClaimEpoch)
-	stamp, err := agentExecutionStampForTask(task, request)
+	result, err := loomadapter.Execute(ctx, daemonLoomAssembler{}, loomadapter.RunRequest{
+		Claim: *task,
+		Ports: loomadapter.Ports{
+			Model: newRuntimeLLMClient(d.client, task.TaskID),
+			Tools: newRuntimeToolDispatcher(d.client, task.TaskID, func() int {
+				if request.Loom == nil {
+					return 0
+				}
+				return request.Loom.MCPServerCount
+			}()),
+		},
+	})
 	if err != nil {
-		return "", err
+		return runtimeprotocol.ExecutionReceipt{}, err
+	}
+	return runtimeprotocol.ExecutionReceipt{Versioned: runtimeprotocol.NewVersioned(), SchemaVersion: runtimeprotocol.ReceiptSchemaV1, TaskID: task.TaskID, ClaimEpoch: task.ClaimEpoch, Subject: task.Subject, Status: "completed", Output: result.Output, RunID: result.RunID, StopReason: result.StopReason, Usage: result.Usage}, nil
+}
+
+type daemonLoomAssembler struct{}
+
+func (daemonLoomAssembler) Assemble(_ context.Context, claim runtimeprotocol.ExecutionClaim, ports loomadapter.Ports) (loomadapter.Graph, error) {
+	request := claim.Request
+	stamp, err := agentExecutionStampForTask(&claim, request)
+	if err != nil {
+		return nil, err
 	}
 	stamp.ExecutionScope = execution.ScopeLegacyOrchestrator
 	stamp.LegacyScope = false
+	record, err := runtimeagent.Decode(claim)
+	if err != nil {
+		return nil, err
+	}
 	loomInput := request.Loom
 	if loomInput == nil {
-		loomInput = &runtimes.LoomExecInput{}
+		loomInput = &runtimeprotocol.LoomInput{}
 	}
 	messages := loomInput.Messages
 	if len(messages) == 0 && loomInput.LastUserMessage != "" {
@@ -52,22 +79,22 @@ func (d *service) executeLoomTask(ctx context.Context, task *taskqueue.Task, req
 	terminalAttribution, err := loomruntime.NewTerminalAttribution(
 		loomruntime.TerminalAttributionInput{
 			Scope:       loomruntime.TerminalAttributionLegacyUnattributed,
-			WorkspaceID: task.WorkspaceID,
+			WorkspaceID: claim.WorkspaceID,
 		},
 		nil,
 	)
 	if err != nil {
-		return "", fmt.Errorf("runtime: construct loom task terminal attribution: %w", err)
+		return nil, fmt.Errorf("runtime: construct loom task terminal attribution: %w", err)
 	}
 	terminalSink, err := loomruntime.NewLineageTerminalSink(
 		daemonTerminalRecordStore{store: store},
 	)
 	if err != nil {
-		return "", fmt.Errorf("runtime: construct loom task terminal sink: %w", err)
+		return nil, fmt.Errorf("runtime: construct loom task terminal sink: %w", err)
 	}
 	deps := loomruntime.Dependencies{
-		LLM:          newRuntimeLLMClient(d.client, task.ID),
-		Tools:        newRuntimeToolDispatcher(d.client, task.ID, loomInput.MCPServerCount),
+		LLM:          ports.Model,
+		Tools:        ports.Tools,
 		Store:        store,
 		TerminalSink: terminalSink,
 		CompileOpts: compiler.CompileOpts{
@@ -78,27 +105,37 @@ func (d *service) executeLoomTask(ctx context.Context, task *taskqueue.Task, req
 	}
 
 	prepared, err := loomruntime.Prepare(loomruntime.RunRequest{
-		Tenant:              task.WorkspaceID,
-		Agent:               request.Record,
+		Tenant:              claim.WorkspaceID,
+		Agent:               record,
 		Stamp:               &stamp,
 		TerminalAttribution: &terminalAttribution,
 		Dependencies:        deps,
 	})
 	if err != nil {
-		return "", errors.New("runtime: loom task compilation failed: " + err.Error())
+		return nil, errors.New("runtime: loom task compilation failed: " + err.Error())
 	}
-	result, err := prepared.Run(ctx, loomruntime.BuildState(task.WorkspaceID, request.Record, loomruntime.Input{
+	state := loomruntime.BuildState(claim.WorkspaceID, record, loomruntime.Input{
 		Messages:        messages,
 		LastUserMessage: loomInput.LastUserMessage,
 		SessionID:       loomInput.SessionID,
-		UserID:          task.Subject.UserID,
+		UserID:          claim.Subject.UserID,
 		Profile:         loomInput.Profile,
 		Context:         loomInput.Context,
-	}))
+	})
+	return daemonLoomGraph{prepared: prepared, state: state}, nil
+}
+
+type daemonLoomGraph struct {
+	prepared loomruntime.PreparedRun
+	state    loom.State
+}
+
+func (graph daemonLoomGraph) Run(ctx context.Context) (loomadapter.RunResult, error) {
+	result, err := graph.prepared.Run(ctx, graph.state)
 	if err != nil {
-		return "", err
+		return loomadapter.RunResult{}, err
 	}
-	return result.Output, nil
+	return loomadapter.RunResult{Output: result.Output, RunID: result.RunID, StopReason: string(result.StopReason), Usage: &result.Usage}, nil
 }
 
 type daemonTerminalRecordStore struct {

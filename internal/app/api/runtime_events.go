@@ -7,9 +7,10 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 	"github.com/jinyitao123/weave/internal/kernel/engine"
+	"github.com/jinyitao123/weave/internal/kernel/runtimeprotocol"
 	"github.com/jinyitao123/weave/internal/kernel/runtimes"
+	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 	"github.com/jinyitao123/weave/internal/kernel/teamrun"
 	"github.com/labstack/echo/v4"
 )
@@ -26,19 +27,17 @@ func (s *Server) handleRuntimeTaskEvents(c echo.Context) error {
 	if json.Unmarshal(task.Payload, &payload) != nil || (payload.Engine != engine.Codex && payload.Engine != engine.Claude) || payload.NodeID == "" || task.RunSnapshotID == "" {
 		return echo.NewHTTPError(http.StatusConflict, "task does not support public progress")
 	}
-	var request struct {
-		Events []runtimes.PublicEvent `json:"events"`
-	}
+	var request runtimeprotocol.PublicEventsRequest
 	decoder := json.NewDecoder(http.MaxBytesReader(c.Response(), c.Request().Body, 256*1024))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&request); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid public event batch")
 	}
-	if decoder.Decode(new(any)) != io.EOF || len(request.Events) == 0 || len(request.Events) > runtimes.PublicEventBatchLimit {
+	if decoder.Decode(new(any)) != io.EOF || request.Versioned.Validate() != nil || len(request.Events) == 0 || len(request.Events) > runtimeprotocol.PublicEventBatchLimit {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid public event batch")
 	}
 	for index, event := range request.Events {
-		if runtimes.ValidatePublicEvent(event) != nil || event.OccurredAt.Before(task.CreatedAt.Add(-time.Minute)) || event.OccurredAt.After(time.Now().Add(time.Minute)) ||
+		if runtimeprotocol.ValidatePublicEvent(event) != nil || event.OccurredAt.Before(task.CreatedAt.Add(-time.Minute)) || event.OccurredAt.After(time.Now().Add(time.Minute)) ||
 			index > 0 && event.Seq != request.Events[index-1].Seq+1 {
 			return echo.NewHTTPError(http.StatusBadRequest, "invalid public event")
 		}
@@ -101,5 +100,5 @@ func (s *Server) handleRuntimeTaskEvents(c echo.Context) error {
 	if err := tx.Commit(ctx); err != nil {
 		return err
 	}
-	return c.JSON(http.StatusOK, map[string]any{"ack_seq": request.Events[len(request.Events)-1].Seq})
+	return c.JSON(http.StatusOK, runtimeprotocol.PublicEventsResponse{Versioned: runtimeprotocol.NewVersioned(), AckSeq: request.Events[len(request.Events)-1].Seq})
 }

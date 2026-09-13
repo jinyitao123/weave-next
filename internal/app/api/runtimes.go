@@ -11,6 +11,8 @@ import (
 
 	"github.com/jinyitao123/weave/internal/base/fileartifact"
 	"github.com/jinyitao123/weave/internal/kernel/engine"
+	"github.com/jinyitao123/weave/internal/kernel/runtimebridge"
+	"github.com/jinyitao123/weave/internal/kernel/runtimeprotocol"
 	"github.com/jinyitao123/weave/internal/kernel/runtimes"
 	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 	"github.com/labstack/echo/v4"
@@ -179,6 +181,9 @@ func (s *Server) runtimeAuthMiddleware() echo.MiddlewareFunc {
 					map[string]string{"error": "runtime authentication unavailable"},
 				)
 			}
+			if c.Request().Header.Get(runtimeprotocol.HeaderVersion) != runtimeprotocol.ProtocolVersion {
+				return c.JSON(http.StatusBadRequest, map[string]string{"error": "unsupported runtime protocol"})
+			}
 			c.Set(runtimeContextKey, runtime)
 			c.Set(runtimeWorkspaceContextKey, runtime.WorkspaceID)
 			return next(c)
@@ -196,20 +201,19 @@ func (s *Server) handleRuntimeHello(c echo.Context) error {
 	if runtime == nil {
 		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "runtime authentication required"})
 	}
-	var request struct {
-		Engines      []string                    `json:"engines"`
-		Capabilities []runtimes.EngineCapability `json:"engine_capabilities"`
-		TotalSlots   int                         `json:"total_slots"`
-	}
+	var request runtimeprotocol.HostHelloRequest
 	if err := c.Bind(&request); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+	if err := request.Versioned.Validate(); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 	}
 	if request.TotalSlots == 0 {
 		request.TotalSlots = 1
 	}
 	if err := s.Runtimes.HelloWithCapabilities(
 		c.Request().Context(), runtime.WorkspaceID, runtime.ID,
-		request.Engines, request.Capabilities, request.TotalSlots,
+		request.Engines, runtimebridge.PlatformCapabilities(request.EngineCapabilities), request.TotalSlots,
 	); err != nil {
 		if errors.Is(err, runtimes.ErrInvalidEngines) {
 			return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
@@ -219,7 +223,7 @@ func (s *Server) handleRuntimeHello(c echo.Context) error {
 		}
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
-	return c.JSON(http.StatusOK, map[string]string{"runtime_id": runtime.ID, "name": runtime.Name})
+	return c.JSON(http.StatusOK, runtimeprotocol.HostHelloResponse{Versioned: runtimeprotocol.NewVersioned(), RuntimeID: runtime.ID, Name: runtime.Name})
 }
 
 func (s *Server) handleRuntimeHeartbeat(c echo.Context) error {
@@ -227,19 +231,11 @@ func (s *Server) handleRuntimeHeartbeat(c echo.Context) error {
 	if runtime == nil {
 		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "runtime authentication required"})
 	}
-	var request struct {
-		ActiveSlots *int `json:"active_slots"`
+	var request runtimeprotocol.HostHeartbeatRequest
+	if err := c.Bind(&request); err != nil || request.Versioned.Validate() != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid runtime protocol request"})
 	}
-	activeSlots := -1
-	if c.Request().Body != nil && c.Request().ContentLength != 0 {
-		if err := c.Bind(&request); err != nil {
-			return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
-		}
-		if request.ActiveSlots != nil {
-			activeSlots = *request.ActiveSlots
-		}
-	}
-	if err := s.Runtimes.HeartbeatWithLoad(c.Request().Context(), runtime.WorkspaceID, runtime.ID, activeSlots); err != nil {
+	if err := s.Runtimes.HeartbeatWithLoad(c.Request().Context(), runtime.WorkspaceID, runtime.ID, request.ActiveSlots); err != nil {
 		if errors.Is(err, runtimes.ErrRuntimeUnavailable) {
 			return c.JSON(http.StatusUnauthorized, map[string]string{"error": "invalid runtime token"})
 		}
@@ -256,10 +252,8 @@ func (s *Server) handleRuntimeClaim(c echo.Context) error {
 	if s.Tasks == nil {
 		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "task queue not configured"})
 	}
-	var request struct {
-		WaitSeconds int `json:"wait_seconds"`
-	}
-	if err := c.Bind(&request); err != nil {
+	var request runtimeprotocol.ClaimRequest
+	if err := c.Bind(&request); err != nil || request.Versioned.Validate() != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
 	}
 	if request.WaitSeconds < 0 {
@@ -291,9 +285,11 @@ func (s *Server) handleRuntimeClaim(c echo.Context) error {
 			if redactErr != nil {
 				return c.JSON(http.StatusInternalServerError, map[string]string{"error": redactErr.Error()})
 			}
-			claimed := *task
-			claimed.Payload = redacted
-			return c.JSON(http.StatusOK, map[string]any{"task": &claimed})
+			claim, err := runtimebridge.Claim(task, redacted)
+			if err != nil {
+				return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			}
+			return c.JSON(http.StatusOK, runtimeprotocol.ClaimResponse{Versioned: runtimeprotocol.NewVersioned(), Claim: claim})
 		}
 
 		remaining := time.Until(deadline)
@@ -324,6 +320,10 @@ func (s *Server) handleRuntimeTaskRenew(c echo.Context) error {
 	if task.WorkerID != "" && task.WorkerID != workerID {
 		return c.JSON(http.StatusForbidden, map[string]string{"error": "task is not claimed by this runtime"})
 	}
+	var request runtimeprotocol.LeaseRequest
+	if err := c.Bind(&request); err != nil || runtimebridge.LeaseForTask(task, request) != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid runtime lease request"})
+	}
 	if err := s.Tasks.Heartbeat(c.Request().Context(), task.ID, workerID); err != nil {
 		return c.JSON(http.StatusConflict, map[string]string{"error": "task lease lost"})
 	}
@@ -335,11 +335,14 @@ func (s *Server) handleRuntimeTaskComplete(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	// Typed result: CLI daemons keep sending {"output"} (new fields stay
-	// omitted via omitempty); loom daemons add stop_reason/usage/run_id.
-	var request runtimes.EngineExecResult
-	if err := c.Bind(&request); err != nil {
+	// The versioned receipt is bound to this exact actor and physical claim.
+	var receipt runtimeprotocol.ExecutionReceipt
+	if err := c.Bind(&receipt); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+	request, err := runtimebridge.ResultForTask(task, receipt)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 	}
 	normalizeRuntimeUsage(task, &request)
 	if err := validateRuntimeEngineExecResult(task, request); err != nil {
@@ -383,20 +386,6 @@ func (s *Server) handleRuntimeTaskComplete(c echo.Context) error {
 	return c.NoContent(http.StatusNoContent)
 }
 
-// Older adapters cut a UTF-8 summary at byte 4096. JSON replaces up to three
-// trailing partial bytes with U+FFFD, expanding the wire value beyond the bound.
-// Remove only that recognizable tail; all other oversized receipts still fail
-// validation, and reported usage/provenance are never changed.
-func repairLegacyUsageSummary(receipt *engine.UsageReceipt) {
-	if receipt == nil || len(receipt.RawSummary) <= 4096 || len(receipt.RawSummary) > 4102 {
-		return
-	}
-	prefix := strings.TrimRight(receipt.RawSummary, "\uFFFD")
-	if len(prefix) >= 4093 && len(prefix) <= 4095 {
-		receipt.RawSummary = prefix
-	}
-}
-
 // Optional accounting must not discard a completed answer or its files. An
 // invalid receipt contributes no usage and leaves an explicit diagnostic.
 func normalizeRuntimeUsage(task *taskqueue.Task, result *runtimes.EngineExecResult) {
@@ -431,7 +420,6 @@ func normalizeRuntimeUsage(task *taskqueue.Task, result *runtimes.EngineExecResu
 	if json.Unmarshal(task.Payload, &payload) != nil || !engine.IsCLIEngine(payload.Engine) || result.UsageReceipt == nil {
 		return
 	}
-	repairLegacyUsageSummary(result.UsageReceipt)
 	if validateRuntimeUsageReceipt(payload, result.UsageReceipt) == nil {
 		return
 	}
@@ -466,7 +454,7 @@ func validateRuntimeEngineExecResult(task *taskqueue.Task, result runtimes.Engin
 		return errors.New("loom result fields are forbidden for a CLI task")
 	}
 	switch result.Status {
-	case "", "completed", "failed", "timeout":
+	case "completed", "failed", "timeout":
 	default:
 		return errors.New("engine result status is invalid")
 	}
@@ -506,28 +494,6 @@ func validateRuntimeUsageReceipt(payload runtimes.EngineExecRequest, receipt *en
 	return nil
 }
 
-func (s *Server) handleRuntimeTaskFail(c echo.Context) error {
-	runtime, task, err := s.claimedRuntimeTask(c)
-	if err != nil {
-		return err
-	}
-	var request struct {
-		Error string `json:"error"`
-	}
-	if err := c.Bind(&request); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
-	}
-	if err := s.Tasks.FailClaimed(
-		c.Request().Context(),
-		task.ID,
-		runtimes.RuntimeWorkerID(runtime.WorkspaceID, runtime.ID),
-		request.Error,
-	); err != nil {
-		return c.JSON(http.StatusConflict, map[string]string{"error": "task lease lost"})
-	}
-	return c.NoContent(http.StatusNoContent)
-}
-
 // The runtime sends this acknowledgement only after waiting for execution exit.
 // Authentication remains pinned to the exact runtime and original task owner.
 func (s *Server) handleRuntimeTaskStopped(c echo.Context) error {
@@ -536,6 +502,10 @@ func (s *Server) handleRuntimeTaskStopped(c echo.Context) error {
 		return err
 	}
 	workerID := runtimes.RuntimeWorkerID(runtime.WorkspaceID, runtime.ID)
+	var receipt runtimeprotocol.StoppedReceipt
+	if err := c.Bind(&receipt); err != nil || runtimebridge.StoppedForTask(task, receipt) != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid runtime stopped receipt"})
+	}
 	if task.WorkerID == "" && task.IsTerminal() {
 		return c.NoContent(http.StatusNoContent) // acknowledgement response was lost
 	}
