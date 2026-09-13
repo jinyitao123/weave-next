@@ -22,6 +22,9 @@ func (s *Server) handleGetChatRequest(c echo.Context) error {
 		)
 	}
 	if err == nil {
+		record, err = s.recoverPublishedChatAdmission(c.Request().Context(), record)
+	}
+	if err == nil {
 		record, err = s.ChatRequests.AttachWorkflowProgress(c.Request().Context(), record)
 	}
 	return respondChatRequestStatus(c, record, err)

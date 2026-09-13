@@ -21,6 +21,12 @@ func openAPIProductPublication(
 ) (*teamconstruction.PublicationAuthority, *teamconstruction.ProductPublication) {
 	t.Helper()
 	authority := teamconstruction.NewPublicationAuthority(pool, builder)
+	kernel := openAPIKernelPublication(t, ctx, pool, authority)
+	return authority, teamconstruction.NewProductPublication(pool, kernel, authority.AuthorizeProduct)
+}
+
+func openAPIKernelPublication(t *testing.T, ctx context.Context, pool *pgxpool.Pool, authority *teamconstruction.PublicationAuthority) *publicationservice.Service {
+	t.Helper()
 	connection, err := url.Parse(os.Getenv("TEST_DATABASE_URL"))
 	if err != nil {
 		t.Fatal(err)
@@ -33,7 +39,7 @@ func openAPIProductPublication(
 		t.Fatal(err)
 	}
 	t.Cleanup(kernel.Close)
-	return authority, teamconstruction.NewProductPublication(pool, kernel, authority.AuthorizeProduct)
+	return kernel
 }
 
 func allowAPITestCandidateAssociation(product *teamconstruction.ProductPublication) {

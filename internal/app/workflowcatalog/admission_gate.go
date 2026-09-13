@@ -28,36 +28,23 @@ func (s *Store) EvaluateFixedWorkflowAdmissionTx(
 		}
 	}
 
-	if err := evaluateFixedWorkflowRosterGateTx(
+	if err := EvaluatePublishedRosterTx(
 		ctx, tx, request.WorkspaceID, request.TeamID,
 		request.GraphDefinition, request.WorkflowVersion,
 	); err != nil {
 		return err
 	}
 
-	if s.artifacts == nil {
-		return errors.New("frozen publication reader unavailable")
-	}
-	admission, err := s.artifacts.ReadAdmission(ctx, request.WorkspaceID, request.WorkflowID, request.WorkflowVersion)
-	if err != nil {
-		return err
-	}
-	if admission.Blocked {
-		return &workflowdef.FixedWorkflowAdmissionDenial{
-			ReasonCode:      workflowdef.FixedWorkflowAdmissionVersionBlocked,
-			WorkflowVersion: request.WorkflowVersion,
-		}
-	}
 	return nil
 }
 
-// evaluateFixedWorkflowRosterGateTx locks every TeamWorker referenced by the
+// EvaluatePublishedRosterTx locks every TeamWorker referenced by the
 // frozen graph and rejects disabled or missing workers. It is the shared
 // roster half of the fixed-workflow gate: the published admission path also
 // checks the version-blocked admission status, while the candidate test-run
 // path (whose draft versions can never carry an admission status row) only
 // runs this roster gate.
-func evaluateFixedWorkflowRosterGateTx(
+func EvaluatePublishedRosterTx(
 	ctx context.Context,
 	tx pgx.Tx,
 	workspaceID, teamID string,

@@ -9,6 +9,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jinyitao123/weave/internal/app/workflowcatalog"
 	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/kernel/publication"
@@ -32,7 +33,7 @@ func NewProductPublication(pool *pgxpool.Pool, kernel publication.Service, autho
 		if p.authorize == nil {
 			return errors.New("product publication authorization unavailable")
 		}
-		if err := p.authorize(ctx, record.Command); err != nil {
+		if err := p.authorize(context.WithValue(ctx, publicationProductReadTxKey{}, tx), record.Command); err != nil {
 			return err
 		}
 		return activateWorkflowRevisionTx(ctx, tx, record)
@@ -139,7 +140,10 @@ func (p *ProductPublication) ReserveTx(ctx context.Context, tx pgx.Tx, command P
 	if err != nil {
 		return record, err
 	}
-	if err = p.authorize(ctx, command); err != nil {
+	if err = p.authorize(context.WithValue(ctx, publicationProductReadTxKey{}, tx), command); err != nil {
+		return record, err
+	}
+	if err := workflowcatalog.LockPublicationIntentTx(ctx, tx, record.Subject.WorkspaceID, command.Request.Candidate.WorkflowID); err != nil {
 		return record, err
 	}
 	subject, _ := json.Marshal(record.Subject)

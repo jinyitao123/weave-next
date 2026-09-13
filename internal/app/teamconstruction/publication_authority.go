@@ -25,7 +25,9 @@ type PublicationAuthority struct {
 
 func NewPublicationAuthority(pool *pgxpool.Pool, builder *workflowcatalog.CandidateBuilder) *PublicationAuthority {
 	authority := &PublicationAuthority{pool: pool}
-	authority.builder = builder.WithCredentialAuthority(authority)
+	if builder != nil {
+		authority.builder = builder.WithCredentialAuthority(authority)
+	}
 	return authority
 }
 
@@ -57,11 +59,15 @@ func (a *PublicationAuthority) AuthorizeProduct(ctx context.Context, command Pub
 	if a == nil || a.pool == nil {
 		return errors.New("publication authority unavailable")
 	}
-	tx, err := a.pool.Begin(ctx)
-	if err != nil {
-		return err
+	tx, borrowed := ctx.Value(publicationProductReadTxKey{}).(pgx.Tx)
+	if !borrowed {
+		var err error
+		tx, err = a.pool.Begin(ctx)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = tx.Rollback(ctx) }()
 	}
-	defer func() { _ = tx.Rollback(ctx) }()
 	return authorizePublicationActorTx(ctx, tx, command.Request.Candidate.WorkspaceID, command.Target.TeamID)
 }
 
@@ -75,6 +81,9 @@ func authorizePublicationActorTx(ctx context.Context, tx pgx.Tx, workspaceID, te
 		err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM weave_users WHERE id=$1 AND tenant_id=$2 AND NOT COALESCE(disabled,false))`, subject.UserID, workspaceID).Scan(&active)
 	} else if strings.HasPrefix(subject.ServiceID, "api-key:") {
 		err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM weave_api_keys WHERE id=$1 AND tenant_id=$2 AND (expires_at IS NULL OR expires_at>now()))`, strings.TrimPrefix(subject.ServiceID, "api-key:"), workspaceID).Scan(&active)
+	}
+	if strings.HasPrefix(subject.ServiceID, "workflow-schedule:") {
+		err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM weave_schedule s JOIN weave_team_workflows w ON w.workspace_id=s.workspace_id AND w.id=s.target_workflow_id WHERE s.workspace_id=$1 AND s.id=$2 AND s.enabled AND s.target_kind='team_workflow' AND w.team_id=$3)`, workspaceID, strings.TrimPrefix(subject.ServiceID, "workflow-schedule:"), teamID).Scan(&active)
 	}
 	if err != nil {
 		return err

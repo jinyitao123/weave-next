@@ -99,6 +99,11 @@ func respondChatRequestError(c echo.Context, err error) error {
 func (s *Server) respondChatRequestReplay(
 	c echo.Context, req ChatRequest, record chatrequest.Request,
 ) error {
+	var err error
+	record, err = s.recoverPublishedChatAdmission(c.Request().Context(), record)
+	if err != nil {
+		return c.JSON(http.StatusAccepted, map[string]string{"code": "workflow_admission_pending", "status": "running"})
+	}
 	payload := map[string]any{
 		"code": "client_request_replay", "status": record.Status,
 		"project_id": record.ProjectID, "session_id": record.SessionID,

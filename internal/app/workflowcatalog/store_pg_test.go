@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/jinyitao123/weave/internal/base/db"
 	"github.com/jinyitao123/weave/internal/base/testutil"
@@ -14,7 +16,16 @@ import (
 
 func TestCatalogDraftCASAndDependencyDeletionRealPG(t *testing.T) {
 	pool := testutil.PostgresPool(t)
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	cfg := pool.Config()
+	cfg.MaxConns = 1
+	single, err := pgxpool.NewWithConfig(ctx, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(single.Close)
+	pool = single
 	if err := db.Migrate(ctx, pool); err != nil {
 		t.Fatal(err)
 	}

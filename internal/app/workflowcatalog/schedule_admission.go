@@ -20,12 +20,12 @@ import (
 
 var workflowScheduleOccurrenceKeyPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
-// AdmitWorkflowScheduleTx makes a read-only admission decision from exact
+// PrepareWorkflowScheduleTx makes a read-only admission decision from exact
 // publication facts while leaving transaction ownership with the caller.
-func (s *Store) AdmitWorkflowScheduleTx(
+func (s *Store) PrepareWorkflowScheduleTx(
 	ctx context.Context,
 	tx pgx.Tx,
-	request workflowdef.WorkflowScheduleAdmissionRequest) (snapshot.TeamRunSnapshot, error) {
+	request workflowdef.WorkflowScheduleAdmissionRequest, envelope frozen.ArtifactEnvelopeV1) (snapshot.TeamRunSnapshot, error) {
 	if err := validateWorkflowScheduleAdmissionRequest(tx, request); err != nil {
 		return snapshot.TeamRunSnapshot{}, err
 	}
@@ -82,11 +82,8 @@ func (s *Store) AdmitWorkflowScheduleTx(
 		)
 	}
 
-	envelope, err := s.readWorkflowScheduleArtifact(
-		ctx, request.WorkspaceID, request.WorkflowID, *publishedVersion,
-	)
-	if err != nil {
-		return snapshot.TeamRunSnapshot{}, err
+	if envelope.WorkspaceID != request.WorkspaceID || envelope.WorkflowID != request.WorkflowID || envelope.WorkflowVersion != *publishedVersion {
+		return snapshot.TeamRunSnapshot{}, workflowdef.ErrVersionConflict
 	}
 	payload, err := frozen.DecodeArtifactEnvelopeV1(envelope)
 	if err != nil {

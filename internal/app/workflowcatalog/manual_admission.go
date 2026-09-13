@@ -16,12 +16,12 @@ import (
 	"github.com/jinyitao123/weave/internal/kernel/workflow/machine"
 )
 
-// AdmitWorkflowManualRunTx applies the same frozen publication and live
+// PrepareWorkflowManualRunTx applies the same frozen publication and live
 // admission gates as scheduled execution without creating schedule state.
-func (s *Store) AdmitWorkflowManualRunTx(
+func (s *Store) PrepareWorkflowManualRunTx(
 	ctx context.Context,
 	tx pgx.Tx,
-	request workflowdef.WorkflowManualRunAdmissionRequest) (snapshot.TeamRunSnapshot, error) {
+	request workflowdef.WorkflowManualRunAdmissionRequest, envelope frozen.ArtifactEnvelopeV1) (snapshot.TeamRunSnapshot, error) {
 	if err := validateWorkflowManualRunAdmissionRequest(tx, request); err != nil {
 		return snapshot.TeamRunSnapshot{}, err
 	}
@@ -84,11 +84,8 @@ func (s *Store) AdmitWorkflowManualRunTx(
 		return snapshot.TeamRunSnapshot{}, workflowdef.ErrNotPublished
 	}
 
-	envelope, err := s.readWorkflowScheduleArtifact(
-		ctx, request.WorkspaceID, request.WorkflowID, selectedVersion,
-	)
-	if err != nil {
-		return snapshot.TeamRunSnapshot{}, err
+	if envelope.WorkspaceID != request.WorkspaceID || envelope.WorkflowID != request.WorkflowID || envelope.WorkflowVersion != selectedVersion {
+		return snapshot.TeamRunSnapshot{}, workflowdef.ErrVersionConflict
 	}
 	payload, err := frozen.DecodeArtifactEnvelopeV1(envelope)
 	if err != nil {

@@ -16,6 +16,7 @@ import (
 	"github.com/jinyitao123/loom"
 	"github.com/jinyitao123/weave/internal/app/deliveryverify"
 	"github.com/jinyitao123/weave/internal/app/projects"
+	"github.com/jinyitao123/weave/internal/app/teamconstruction"
 	"github.com/jinyitao123/weave/internal/app/workflowcatalog"
 	"github.com/jinyitao123/weave/internal/base/db"
 	"github.com/jinyitao123/weave/internal/base/execution"
@@ -74,6 +75,7 @@ func newTeamDispatchTestServerWithGraph(t *testing.T, graph json.RawMessage) (*S
 	}
 	if _, err := pool.Exec(ctx, `
  INSERT INTO weave_workspaces(id,slug,name) VALUES('ws','ws','ws');
+ INSERT INTO weave_users(id,tenant_id,username,password,role) VALUES('user','ws','user','unused','admin'),('user-other','ws','user-other','unused','member'),('other-user','ws','other-user','unused','member'),('user-a','ws','user-a','unused','member'),('user-b','ws','user-b','unused','member');
  INSERT INTO weave_agents(id,workspace_id,name,role,spec) VALUES('lead','ws','lead','avatar','{}');
  INSERT INTO weave_teams(id,workspace_id,name,lead_avatar_id,status) VALUES('team','ws','team','lead','active');
  INSERT INTO weave_team_workflows(workspace_id,id,team_id,name) VALUES('ws','flow','team','flow');
@@ -90,6 +92,7 @@ func newTeamDispatchTestServerWithGraph(t *testing.T, graph json.RawMessage) (*S
 	}
 	server := &Server{Store: teamDispatchPoolStore{pool: pool}, OrgStore: orgstore.NewStore(pool), Registry: agentcatalog.New(pool),
 		Workflow: workflowcatalog.New(pool, nil, workflow.NewArtifactStore(pool, nil)), WorkflowArtifacts: workflow.NewArtifactStore(pool, nil), Deliverables: deliveryverify.NewStore(pool), ScheduleTransactions: pool, Snapshots: snapshot.NewStore(pool), Tasks: taskqueue.New(pool, nil, time.Minute)}
+	server.KernelPublication = openAPIKernelPublication(t, ctx, pool, teamconstruction.NewPublicationAuthority(pool, nil))
 	return server, pool
 }
 

@@ -195,6 +195,7 @@ func TestBoundDispatchInputProvenanceAndAtomicAdmissionRealPG(t *testing.T) {
 	}
 	server = &Server{
 		Store:                server.Store,
+		KernelPublication:    server.KernelPublication,
 		OrgStore:             server.OrgStore,
 		Registry:             server.Registry,
 		Workflow:             server.Workflow,
@@ -207,12 +208,14 @@ func TestBoundDispatchInputProvenanceAndAtomicAdmissionRealPG(t *testing.T) {
 	if _, err := pool.Exec(ctx, `UPDATE weave_teams SET status='building' WHERE workspace_id='ws'; UPDATE weave_workflow_version_admission_statuses SET blocked=true WHERE workspace_id='ws'`); err != nil {
 		t.Fatal(err)
 	}
-	if replay := dispatch(map[string]any{"input_revision_id": second.InputRevisionID, "client_request_id": second.ClientRequestID}, "user", http.StatusOK, ""); replay != secondRun {
-		t.Fatalf("old consumed input did not replay original run: %+v != %+v", replay, secondRun)
-	}
+	// A retained receipt cannot bypass the current product authorization gate.
+	dispatch(map[string]any{"input_revision_id": second.InputRevisionID, "client_request_id": second.ClientRequestID}, "user", http.StatusUnprocessableEntity, "workflow_not_runnable")
 	dispatch(map[string]any{"input_revision_id": second.InputRevisionID, "client_request_id": uuid.NewString()}, "user", http.StatusConflict, "dispatch_input_mismatch")
 	if _, err := pool.Exec(ctx, `UPDATE weave_teams SET status='active' WHERE workspace_id='ws'`); err != nil {
 		t.Fatal(err)
+	}
+	if replay := dispatch(map[string]any{"input_revision_id": second.InputRevisionID, "client_request_id": second.ClientRequestID}, "user", http.StatusOK, ""); replay != secondRun {
+		t.Fatalf("restored authorization changed receipt: %+v", replay)
 	}
 	dispatch(map[string]any{"input_revision_id": third.InputRevisionID}, "user", http.StatusConflict, "")
 	assertCounts(1, 1)
@@ -220,8 +223,8 @@ func TestBoundDispatchInputProvenanceAndAtomicAdmissionRealPG(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Fail after EnqueueTx but before commit. Neither the queue/snapshot nor
-	// consumption may survive, so the same revision remains safely retryable.
+	// Fail the product association after Kernel accepted. The execution remains
+	// durable while consumption rolls back; recovery must reuse its same receipt.
 	if _, err := pool.Exec(ctx, `CREATE FUNCTION fail_bound_input_consume() RETURNS trigger LANGUAGE plpgsql AS $$
 	 BEGIN IF NEW.consumed_run_id IS NOT NULL THEN RAISE EXCEPTION 'injected input consume failure'; END IF; RETURN NEW; END $$;
 	 CREATE TRIGGER fail_bound_input_consume BEFORE UPDATE ON weave_dispatch_input_revisions
@@ -229,7 +232,7 @@ func TestBoundDispatchInputProvenanceAndAtomicAdmissionRealPG(t *testing.T) {
 		t.Fatal(err)
 	}
 	dispatch(map[string]any{"input_revision_id": third.InputRevisionID}, "user", http.StatusInternalServerError, "")
-	assertCounts(1, 1)
+	assertCounts(2, 2)
 	thirdStored, err := server.loadDispatchInput(ctx, "ws", "user", third.InputRevisionID)
 	if err != nil || thirdStored.ConsumedRunID != "" || !thirdStored.IsCurrent {
 		t.Fatalf("failed transaction consumed the input: %+v err=%v", thirdStored, err)
@@ -276,8 +279,8 @@ func TestBoundDispatchInputProvenanceAndAtomicAdmissionRealPG(t *testing.T) {
 		}
 		runID = receipt.RunID
 	}
-	if created != 1 {
-		t.Fatalf("concurrent admission created %d runs", created)
+	if created != 0 {
+		t.Fatalf("recovery reported %d new admissions", created)
 	}
 	assertCounts(2, 2)
 }

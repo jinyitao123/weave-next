@@ -12,10 +12,12 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jinyitao123/weave/internal/app/workflowadmission"
 	"github.com/jinyitao123/weave/internal/app/workflowcatalog"
+	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/base/snapshot"
+	"github.com/jinyitao123/weave/internal/kernel/publication"
 	"github.com/jinyitao123/weave/internal/kernel/schedule"
-	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 	"github.com/jinyitao123/weave/internal/kernel/workflow"
 )
 
@@ -32,10 +34,10 @@ type ScheduleTransactionBeginner interface {
 // WorkflowScheduleAdmissionService locks and validates all live workflow gates
 // inside the caller-owned transaction before returning a complete snapshot.
 type WorkflowScheduleAdmissionService interface {
-	AdmitWorkflowScheduleTx(
+	PrepareWorkflowScheduleTx(
 		context.Context,
 		pgx.Tx,
-		WorkflowScheduleAdmissionRequest,
+		WorkflowScheduleAdmissionRequest, frozen.ArtifactEnvelopeV1,
 	) (snapshot.TeamRunSnapshot, error)
 	RecordFixedWorkflowAdmissionDenial(
 		context.Context,
@@ -70,12 +72,12 @@ type workflowScheduleAdmissionAdapter struct {
 	artifacts *workflow.ArtifactStore
 }
 
-func (a workflowScheduleAdmissionAdapter) AdmitWorkflowScheduleTx(
+func (a workflowScheduleAdmissionAdapter) PrepareWorkflowScheduleTx(
 	ctx context.Context,
 	tx pgx.Tx,
-	request WorkflowScheduleAdmissionRequest,
+	request WorkflowScheduleAdmissionRequest, envelope frozen.ArtifactEnvelopeV1,
 ) (snapshot.TeamRunSnapshot, error) {
-	return a.store.AdmitWorkflowScheduleTx(
+	return a.store.PrepareWorkflowScheduleTx(
 		ctx,
 		tx,
 		workflow.WorkflowScheduleAdmissionRequest{
@@ -84,7 +86,7 @@ func (a workflowScheduleAdmissionAdapter) AdmitWorkflowScheduleTx(
 			WorkflowID:    request.WorkflowID,
 			OccurrenceKey: request.OccurrenceKey,
 			ScheduledFor:  request.ScheduledFor,
-		},
+		}, envelope,
 	)
 }
 
@@ -171,6 +173,21 @@ func (s *Server) sweepWorkflowSchedule(
 		Status:           schedule.OccurrencePending,
 	}
 
+	admissions := s.workflowAdmissions()
+	if admissions == nil || s.Workflow == nil {
+		return ErrWorkflowScheduleAdmissionUnavailable
+	}
+	requestID := "schedule:" + candidate.OccurrenceKey
+	if _, err := admissions.Get(ctx, listed.WorkspaceID, requestID); err == nil {
+		_, err = admissions.Admit(ctx, listed.WorkspaceID, requestID, s.associateWorkflowAdmission)
+		return err
+	} else if !errors.Is(err, pgx.ErrNoRows) {
+		return err
+	}
+	envelope, err := s.Workflow.ResolvePublished(ctx, listed.WorkspaceID, listed.TargetWorkflowID, nil)
+	if err != nil {
+		return err
+	}
 	tx, err := s.ScheduleTransactions.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("begin workflow schedule transaction: %w", err)
@@ -230,8 +247,14 @@ func (s *Server) sweepWorkflowSchedule(
 		return fmt.Errorf("insert workflow schedule occurrence: %w", err)
 	}
 	if !inserted {
-		return validateCommittedOccurrence(occurrence)
+		if occurrence.Status == schedule.OccurrenceCommitted {
+			return validateCommittedOccurrence(occurrence)
+		}
+		_ = tx.Rollback(ctx)
+		_, err = admissions.Admit(ctx, listed.WorkspaceID, "schedule:"+occurrence.OccurrenceKey, s.associateWorkflowAdmission)
+		return err
 	}
+
 	if err := s.runWorkflowScheduleStepHook(
 		ctx,
 		WorkflowScheduleStageOccurrenceInserted,
@@ -239,7 +262,7 @@ func (s *Server) sweepWorkflowSchedule(
 		return err
 	}
 
-	admitted, err := s.WorkflowScheduleAdmission.AdmitWorkflowScheduleTx(
+	admitted, err := s.WorkflowScheduleAdmission.PrepareWorkflowScheduleTx(
 		ctx,
 		tx,
 		WorkflowScheduleAdmissionRequest{
@@ -248,7 +271,7 @@ func (s *Server) sweepWorkflowSchedule(
 			WorkflowID:    occurrence.TargetWorkflowID,
 			OccurrenceKey: occurrence.OccurrenceKey,
 			ScheduledFor:  occurrence.ScheduledFor,
-		},
+		}, envelope,
 	)
 	if err != nil {
 		var denial *workflow.FixedWorkflowAdmissionDenial
@@ -292,80 +315,41 @@ func (s *Server) sweepWorkflowSchedule(
 	); err != nil {
 		return err
 	}
-	createdSnapshot, err := s.Snapshots.CreateTx(ctx, tx, admitted)
-	if err != nil {
-		return fmt.Errorf("create workflow schedule snapshot: %w", err)
-	}
-	if err := s.runWorkflowScheduleStepHook(
-		ctx,
-		WorkflowScheduleStageSnapshotCreated,
-	); err != nil {
+	identity := listed.WorkspaceID + "\x00" + occurrence.OccurrenceKey
+	runID := "run-" + uuid.NewSHA1(uuid.NameSpaceOID, []byte("schedule-run:"+identity)).String()
+	taskID := "task-" + uuid.NewSHA1(uuid.NameSpaceOID, []byte("schedule-task:"+identity)).String()
+	captured, _ := json.Marshal(locked)
+	intent := publication.PublishedRunRequest{Version: publication.ContractVersion, RequestID: "schedule:" + occurrence.OccurrenceKey,
+		Revision: publication.CandidateRevision(envelope), RunID: runID, TaskID: taskID, Input: json.RawMessage(`{}`), InputVersion: "schedule:" + occurrence.OccurrenceKey,
+		Trigger: publication.PublishedTrigger{Type: "schedule", SourceRef: occurrence.ScheduleID, OccurrenceKey: occurrence.OccurrenceKey}}
+	if _, err = admissions.ReserveTx(ctx, tx, intent, workflowadmission.Target{TeamID: admitted.TeamID, ScheduleID: occurrence.ScheduleID, OccurrenceKey: occurrence.OccurrenceKey, ScheduledFor: occurrence.ScheduledFor, Schedule: captured}); err != nil {
 		return err
 	}
-	task := &taskqueue.Task{
-		ID:                    "task-" + uuid.NewString(),
-		WorkspaceID:           occurrence.WorkspaceID,
-		IdentityKind:          taskqueue.IdentityTeamWorkflow,
-		IdentitySchemaVersion: 2,
-		WorkflowID:            occurrence.TargetWorkflowID,
-		WorkflowVersion:       createdSnapshot.WorkflowVersion,
-		RunSnapshotID:         createdSnapshot.RunID,
-		Source:                "schedule",
-		Kind:                  "team_workflow",
-		Payload:               json.RawMessage(`{}`),
-	}
-	if err := s.Tasks.EnqueueTx(ctx, tx, task); err != nil {
-		return fmt.Errorf("enqueue workflow schedule task: %w", err)
-	}
-	if err := s.runWorkflowScheduleStepHook(
-		ctx,
-		WorkflowScheduleStageTaskEnqueued,
-	); err != nil {
+	if err = s.runWorkflowScheduleStepHook(ctx, WorkflowScheduleStageCommitBefore); err != nil {
 		return err
 	}
-	occurrence.Status = schedule.OccurrenceCommitted
-	occurrence.WorkflowVersion = createdSnapshot.WorkflowVersion
-	occurrence.RunSnapshotID = createdSnapshot.RunID
-	occurrence.TaskID = task.ID
-	if err := s.AgentSchedules.CommitOccurrenceTx(ctx, tx, *occurrence); err != nil {
+	if err = tx.Commit(ctx); err != nil {
 		return err
 	}
-	if err := s.runWorkflowScheduleStepHook(
-		ctx,
-		WorkflowScheduleStageOccurrenceCommitted,
-	); err != nil {
+	if err = s.runWorkflowScheduleStepHook(ctx, WorkflowScheduleStageCommitAfter); err != nil {
 		return err
 	}
-	if err := s.AgentSchedules.AdvanceCursorTx(
-		ctx,
-		tx,
-		*locked,
-		occurrence.ScheduledFor,
-	); err != nil {
-		return fmt.Errorf("advance workflow schedule cursor: %w", err)
+	_, err = admissions.Admit(ctx, listed.WorkspaceID, intent.RequestID, s.associateWorkflowAdmission)
+	return err
+}
+
+func (s *Server) associateScheduledAdmission(ctx context.Context, tx pgx.Tx, record workflowadmission.Record) error {
+	if s.AgentSchedules == nil || record.Receipt == nil {
+		return ErrWorkflowScheduleAdmissionUnavailable
 	}
-	if err := s.runWorkflowScheduleStepHook(
-		ctx,
-		WorkflowScheduleStageCursorAdvanced,
-	); err != nil {
+	var captured schedule.Schedule
+	if err := json.Unmarshal(record.Target.Schedule, &captured); err != nil {
 		return err
 	}
-	if err := s.runWorkflowScheduleStepHook(
-		ctx,
-		WorkflowScheduleStageCommitBefore,
-	); err != nil {
-		return err
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("commit workflow schedule transaction: %w", err)
-	}
-	if err := s.runWorkflowScheduleStepHook(
-		ctx,
-		WorkflowScheduleStageCommitAfter,
-	); err != nil {
-		return err
-	}
-	return nil
+	occurrence := schedule.Occurrence{WorkspaceID: record.Subject.WorkspaceID, OccurrenceKey: record.Target.OccurrenceKey, ScheduleID: record.Target.ScheduleID,
+		TargetWorkflowID: record.Receipt.Revision.WorkflowID, ScheduledFor: record.Target.ScheduledFor, Status: schedule.OccurrenceCommitted,
+		WorkflowVersion: record.Receipt.Revision.WorkflowVersion, RunSnapshotID: record.Receipt.RunSnapshotID, TaskID: record.Receipt.TaskID}
+	return s.AgentSchedules.CommitAcceptedOccurrenceTx(ctx, tx, occurrence, captured)
 }
 
 func (s *Server) runWorkflowScheduleStepHook(
