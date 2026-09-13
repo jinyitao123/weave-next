@@ -9,13 +9,14 @@ import (
 
 	"github.com/jinyitao123/weave/internal/base/db"
 	"github.com/jinyitao123/weave/internal/base/deliverable"
+	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/base/snapshot"
 	"github.com/jinyitao123/weave/internal/base/testutil"
 	"github.com/jinyitao123/weave/internal/kernel/deliverycheck"
 )
 
 func TestDeterministicDeliveryPersistsFailureAndRechecksFrozenRequirements(t *testing.T) {
-	ctx := context.Background()
+	ctx := execution.WithSubject(context.Background(), execution.Subject{WorkspaceID: "ws", UserID: "user"})
 	pool := testutil.PostgresPool(t)
 	if err := db.Migrate(ctx, pool); err != nil {
 		t.Fatal(err)
@@ -30,7 +31,7 @@ func TestDeterministicDeliveryPersistsFailureAndRechecksFrozenRequirements(t *te
  VALUES ('ws','workflow',1,'{"schema_version":1}','{"schema_version":1}','fixture');
  UPDATE weave_team_workflow_versions SET status='published',published_at=now() WHERE workspace_id='ws';
  INSERT INTO weave_published_artifact_contents(workspace_id,workflow_id,workflow_version,artifact_schema_version,canonicalization_algorithm,canonicalization_version,hash_algorithm,content_hash,payload)
- VALUES ('ws','workflow',1,1,'rfc8785+jcs-preorder',1,'sha256',$1,'{"schema_version":1}');`, strings.Repeat("a", 64))
+ VALUES ('ws','workflow',1,1,'rfc8785+jcs-preorder',1,'sha256',$1,'{"schema_version":1,"team":{"workspace_id":"ws","team_id":"team","lead_agent_id":"lead"}}');`, strings.Repeat("a", 64))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,10 +47,10 @@ func TestDeterministicDeliveryPersistsFailureAndRechecksFrozenRequirements(t *te
 	_, err = pool.Exec(ctx, `
  INSERT INTO weave_team_runs(workspace_id,run_id,status,team_run_generation,execution_lease_epoch,resume_generation,team_id,workflow_id,workflow_version,run_snapshot_id,source_kind,source_task_id,establish_idempotency_key,current_executor_id,created_at,updated_at)
  VALUES ('ws','run','running',1,1,0,'team','workflow',1,'snapshot','api','original','establish','executor',now(),now());
- INSERT INTO weave_task_queue(id,workspace_id,kind,status,identity_kind,identity_schema_version,workflow_id,workflow_version,run_snapshot_id,payload)
- VALUES ('original','ws','team_run','completed','team_workflow',2,'workflow',1,'snapshot','{"rows":[{"amount":0.1},{"amount":0.2}]}');
- INSERT INTO weave_task_queue(id,workspace_id,kind,status,identity_kind,identity_schema_version,workflow_id,workflow_version,run_snapshot_id,payload)
- VALUES ('resume','ws','team_run','queued','team_workflow',2,'workflow',1,'snapshot','{"rows":[{"amount":999}]}');
+ INSERT INTO weave_task_queue(id,workspace_id,kind,status,identity_kind,identity_schema_version,workflow_id,workflow_version,run_snapshot_id,payload,actor_subject)
+ VALUES ('original','ws','team_run','completed','team_workflow',2,'workflow',1,'snapshot','{"rows":[{"amount":0.1},{"amount":0.2}]}','{"workspace_id":"ws","user_id":"user"}');
+ INSERT INTO weave_task_queue(id,workspace_id,kind,status,identity_kind,identity_schema_version,workflow_id,workflow_version,run_snapshot_id,payload,actor_subject)
+ VALUES ('resume','ws','team_run','queued','team_workflow',2,'workflow',1,'snapshot','{"rows":[{"amount":999}]}','{"workspace_id":"ws","user_id":"user"}');
  `)
 	if err != nil {
 		t.Fatal(err)
@@ -79,8 +80,8 @@ func TestDeterministicDeliveryPersistsFailureAndRechecksFrozenRequirements(t *te
 	deliver := func(taskID, total string) deliverable.VerificationReport {
 		t.Helper()
 		raw := json.RawMessage(`{"answer":{"total":` + total + `,"review":"PASS"}}`)
-		_, err := pool.Exec(ctx, `INSERT INTO weave_task_queue(id,workspace_id,kind,status,identity_kind,identity_schema_version,workflow_id,workflow_version,run_snapshot_id,payload,result)
- VALUES ($1,'ws','engine_exec','completed','team_workflow',2,'workflow',1,'snapshot','{}',$2)`, taskID, raw)
+		_, err := pool.Exec(ctx, `INSERT INTO weave_task_queue(id,workspace_id,kind,status,identity_kind,identity_schema_version,workflow_id,workflow_version,run_snapshot_id,payload,result,actor_subject)
+ VALUES ($1,'ws','engine_exec','completed','team_workflow',2,'workflow',1,'snapshot','{}',$2::jsonb,'{"workspace_id":"ws","user_id":"user"}')`, taskID, string(raw))
 		if err != nil {
 			t.Fatal(err)
 		}

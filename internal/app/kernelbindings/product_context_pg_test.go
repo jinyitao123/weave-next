@@ -160,18 +160,28 @@ func TestFanoutAssociationRequiresExplicitProductPort(t *testing.T) {
 	}
 }
 
-func TestWorkflowDeliverableRequiresProductOwnerAndKeepsAttribution(t *testing.T) {
+func workflowDeliverableFixture(t *testing.T) *pgxpool.Pool {
+	t.Helper()
 	pool := productContextFixture(t)
-	ctx := context.Background()
-	_, err := pool.Exec(ctx, `
+	_, err := pool.Exec(context.Background(), `
  CREATE TABLE weave_teams(id text, workspace_id text, lead_avatar_id text);
- CREATE TABLE weave_team_run_snapshots(run_id text, workspace_id text, team_id text, project_id text, mode text, trigger_source_v2 jsonb);
+ CREATE TABLE weave_agents(id text, workspace_id text, name text, display_name text);
+ CREATE TABLE weave_team_run_snapshots(run_id text, workspace_id text, team_id text, project_id text, mode text, trigger_source_v2 jsonb, artifact_workflow_id text, artifact_workflow_version int);
+ CREATE TABLE weave_published_artifact_contents(workspace_id text, workflow_id text, workflow_version int, payload jsonb);
  CREATE TABLE weave_final_deliverables(id text PRIMARY KEY, workspace_id text, project_id text, conversation_id text, user_id text, lead_avatar_id text, session_id text, event_id text, run_id text, run_snapshot_id text, title text, content text, content_type text, metadata jsonb, created_at timestamptz);
  INSERT INTO weave_teams VALUES ('team','a','lead');
- INSERT INTO weave_team_run_snapshots VALUES ('snapshot','a','team','project-a','fixed_workflow','{"type":"conversation_explicit","source_ref":"conversation-a"}');`)
+ INSERT INTO weave_agents VALUES ('lead','a','lead','Report owner'),('foreign','b','other','Private name');
+ INSERT INTO weave_published_artifact_contents VALUES ('a','workflow',1,'{"team":{"workspace_id":"a","team_id":"team","lead_agent_id":"lead"}}'),('a','workflow',2,'{"team":{"workspace_id":"a","team_id":"team","lead_agent_id":"new-lead"}}');
+ INSERT INTO weave_team_run_snapshots VALUES ('snapshot','a','team','project-a','fixed_workflow','{"type":"conversation_explicit","source_ref":"conversation-a"}','workflow',1);`)
 	if err != nil {
 		t.Fatal(err)
 	}
+	return pool
+}
+
+func TestWorkflowDeliverableRequiresProductOwnerAndKeepsAttribution(t *testing.T) {
+	pool := workflowDeliverableFixture(t)
+	ctx := context.Background()
 	output := deliverable.WorkflowOutput{WorkspaceID: "a", RunID: "run", RunSnapshotID: "snapshot", NodeID: "deliver", NodeLabel: "Report", Output: "final report", Final: true}
 	if err := deliverable.New(pool).RecordWorkflowOutput(ctx, output); !errors.Is(err, deliverable.ErrConversationOwnerUnavailable) {
 		t.Fatalf("unbound owner accepted: %v", err)
@@ -180,9 +190,9 @@ func TestWorkflowDeliverableRequiresProductOwnerAndKeepsAttribution(t *testing.T
 	if err := store.RecordWorkflowOutput(ctx, output); err != nil {
 		t.Fatal(err)
 	}
-	var user, conversation string
-	if err := pool.QueryRow(ctx, `SELECT user_id,conversation_id FROM weave_final_deliverables`).Scan(&user, &conversation); err != nil || user != "alice" || conversation != "conversation-a" {
-		t.Fatalf("attribution: %s %s %v", user, conversation, err)
+	var user, conversation, lead string
+	if err := pool.QueryRow(ctx, `SELECT user_id,conversation_id,lead_avatar_id FROM weave_final_deliverables`).Scan(&user, &conversation, &lead); err != nil || user != "alice" || conversation != "conversation-a" || lead != "lead" {
+		t.Fatalf("attribution: %s %s %s %v", user, conversation, lead, err)
 	}
 	if _, err := pool.Exec(ctx, `UPDATE weave_team_run_snapshots SET trigger_source_v2='{"type":"conversation_explicit","source_ref":"conversation-b"}'`); err != nil {
 		t.Fatal(err)
@@ -194,5 +204,82 @@ func TestWorkflowDeliverableRequiresProductOwnerAndKeepsAttribution(t *testing.T
 	var count int
 	if err := pool.QueryRow(ctx, `SELECT count(*) FROM weave_final_deliverables`).Scan(&count); err != nil || count != 1 {
 		t.Fatalf("foreign conversation generated artifact: %d %v", count, err)
+	}
+}
+
+func TestWorkflowDeliverableKeepsFrozenLeadAfterDirectoryChange(t *testing.T) {
+	pool := workflowDeliverableFixture(t)
+	ctx := context.Background()
+	if _, err := pool.Exec(ctx, `UPDATE weave_teams SET lead_avatar_id='new-lead'; ALTER TABLE weave_teams RENAME TO product_team_directory`); err != nil {
+		t.Fatal(err)
+	}
+	output := deliverable.WorkflowOutput{WorkspaceID: "a", RunID: "run", RunSnapshotID: "snapshot", NodeID: "deliver", AgentID: "lead", Output: "report", Final: true}
+	store := deliverable.New(pool, DeliverableOptions()...)
+	if err := store.RecordWorkflowOutput(ctx, output); err != nil {
+		t.Fatal(err)
+	}
+	var lead, title string
+	if err := pool.QueryRow(ctx, `SELECT lead_avatar_id,title FROM weave_final_deliverables`).Scan(&lead, &title); err != nil || lead != "lead" || title != "最终产物 · Report owner" {
+		t.Fatalf("frozen lead or projected title: %q %q %v", lead, title, err)
+	}
+	// Without the optional presentation directory the ledger still accepts a
+	// frozen node label; neither mutable product table is required by Kernel.
+	if _, err := pool.Exec(ctx, `ALTER TABLE weave_agents RENAME TO product_agent_directory`); err != nil {
+		t.Fatal(err)
+	}
+	output.NodeID = "explicit-label"
+	output.NodeLabel = "Published node"
+	if err := store.RecordWorkflowOutput(ctx, output); err != nil {
+		t.Fatalf("published label queried mutable directory: %v", err)
+	}
+	output.NodeID = "fallback-label"
+	output.NodeLabel = ""
+	if err := deliverable.New(pool, deliverable.WithConversationOwner(ConversationOwner)).RecordWorkflowOutput(ctx, output); err != nil {
+		t.Fatalf("optional label required product directory: %v", err)
+	}
+}
+
+func TestWorkflowDeliverableRejectsMissingOrMismatchedFrozenIdentity(t *testing.T) {
+	for _, tc := range []struct{ name, change string }{
+		{"missing version", `DELETE FROM weave_published_artifact_contents WHERE workflow_version=1`},
+		{"wrong team", `UPDATE weave_published_artifact_contents SET payload=jsonb_set(payload,'{team,team_id}','"foreign"') WHERE workflow_version=1`},
+		{"wrong workspace", `UPDATE weave_published_artifact_contents SET payload=jsonb_set(payload,'{team,workspace_id}','"b"') WHERE workflow_version=1`},
+		{"missing lead", `UPDATE weave_published_artifact_contents SET payload=payload #- '{team,lead_agent_id}' WHERE workflow_version=1`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			pool := workflowDeliverableFixture(t)
+			ctx := context.Background()
+			if _, err := pool.Exec(ctx, tc.change); err != nil {
+				t.Fatal(err)
+			}
+			output := deliverable.WorkflowOutput{WorkspaceID: "a", RunID: "run", RunSnapshotID: "snapshot", NodeID: "deliver", NodeLabel: "Report", Output: "report", Final: true}
+			err := deliverable.New(pool, DeliverableOptions()...).RecordWorkflowOutput(ctx, output)
+			if !errors.Is(err, deliverable.ErrWorkflowArtifactUnavailable) {
+				t.Fatalf("missing frozen identity accepted: %v", err)
+			}
+			var count int
+			if err := pool.QueryRow(ctx, `SELECT count(*) FROM weave_final_deliverables`).Scan(&count); err != nil || count != 0 {
+				t.Fatalf("invalid artifact persisted: %d %v", count, err)
+			}
+		})
+	}
+}
+
+func TestAgentLabelUsesWorkspaceAndCallerTransaction(t *testing.T) {
+	pool := workflowDeliverableFixture(t)
+	ctx := context.Background()
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(ctx)
+	if _, err := tx.Exec(ctx, `UPDATE weave_agents SET display_name='Pending label' WHERE id='lead'`); err != nil {
+		t.Fatal(err)
+	}
+	if label, err := AgentLabel(ctx, tx, "a", "lead"); err != nil || label != "Pending label" {
+		t.Fatalf("transaction label: %q %v", label, err)
+	}
+	if label, err := AgentLabel(ctx, tx, "a", "foreign"); err != nil || label != "" {
+		t.Fatalf("foreign label: %q %v", label, err)
 	}
 }

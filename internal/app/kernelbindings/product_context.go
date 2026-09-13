@@ -61,7 +61,10 @@ func ConversationOwner(ctx context.Context, tx pgx.Tx, workspaceID, conversation
 }
 
 func DeliverableOptions() []deliverable.StoreOption {
-	return []deliverable.StoreOption{deliverable.WithConversationOwner(ConversationOwner)}
+	return []deliverable.StoreOption{
+		deliverable.WithConversationOwner(ConversationOwner),
+		deliverable.WithAgentLabel(AgentLabel),
+	}
 }
 
 func NewFanout(pool *pgxpool.Pool, clock fanout.Clock) *fanout.Store {
@@ -91,4 +94,16 @@ func (*TerminalRecords) ProjectTerminalActivityTx(ctx context.Context, tx pgx.Tx
  WHERE conversation.workspace_id=$1 AND conversation.id=$2
  AND project.workspace_id=conversation.workspace_id AND project.id=conversation.project_id`, workspaceID, conversationID, at)
 	return err
+}
+
+// AgentLabel is a product presentation projection, scoped to the execution's
+// workspace. A removed member's display name does not change frozen ownership.
+func AgentLabel(ctx context.Context, tx pgx.Tx, workspaceID, agentID string) (string, error) {
+	var label string
+	err := tx.QueryRow(ctx, `SELECT COALESCE(NULLIF(BTRIM(display_name), ''), name)
+ FROM weave_agents WHERE workspace_id=$1 AND id=$2`, workspaceID, agentID).Scan(&label)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
+	}
+	return label, err
 }

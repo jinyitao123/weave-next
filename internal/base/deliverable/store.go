@@ -17,6 +17,8 @@ import (
 
 var ErrNotFound = errors.New("final deliverable not found")
 
+var ErrWorkflowArtifactUnavailable = errors.New("workflow deliverable frozen team identity is unavailable")
+
 // FinalDeliverable is one immutable, user-visible final output.
 type FinalDeliverable struct {
 	ID             string          `json:"id"`
@@ -89,6 +91,7 @@ type Store struct {
 	pool              *pgxpool.Pool
 	verifiers         *VerifierRegistry
 	conversationOwner ConversationOwner
+	agentLabel        AgentLabel
 }
 
 // New creates a final deliverable store.
@@ -167,10 +170,15 @@ func (s *Store) recordWorkflowOutput(ctx context.Context, tx pgx.Tx, output Work
 	err = tx.QueryRow(ctx, `
 		SELECT COALESCE(snapshot.project_id, ''),
 		       snapshot.trigger_source_v2->>'type',
-		       snapshot.trigger_source_v2->>'source_ref', team.lead_avatar_id
+		       snapshot.trigger_source_v2->>'source_ref',
+		       COALESCE(artifact.payload->'team'->>'lead_agent_id', '')
 		FROM weave_team_run_snapshots AS snapshot
-		JOIN weave_teams AS team
-		  ON team.workspace_id=snapshot.workspace_id AND team.id=snapshot.team_id
+		LEFT JOIN weave_published_artifact_contents AS artifact
+		  ON artifact.workspace_id=snapshot.workspace_id
+		 AND artifact.workflow_id=snapshot.artifact_workflow_id
+		 AND artifact.workflow_version=snapshot.artifact_workflow_version
+		 AND artifact.payload->'team'->>'workspace_id'=snapshot.workspace_id
+		 AND artifact.payload->'team'->>'team_id'=snapshot.team_id
 		WHERE snapshot.workspace_id=$1 AND snapshot.run_id=$2
 		  AND snapshot.mode='fixed_workflow'
 	`, output.WorkspaceID, output.RunSnapshotID).Scan(
@@ -209,6 +217,10 @@ func (s *Store) recordWorkflowOutput(ctx context.Context, tx pgx.Tx, output Work
 		return nil
 	}
 
+	if strings.TrimSpace(leadAvatarID) == "" {
+		return ErrWorkflowArtifactUnavailable
+	}
+
 	kind := "stage"
 	titlePrefix := "阶段产物"
 	if output.Final {
@@ -216,15 +228,12 @@ func (s *Store) recordWorkflowOutput(ctx context.Context, tx pgx.Tx, output Work
 		titlePrefix = "最终产物"
 	}
 	label := strings.TrimSpace(output.NodeLabel)
-	if label == "" && strings.TrimSpace(output.AgentID) != "" {
-		err := tx.QueryRow(ctx, `
-			SELECT COALESCE(NULLIF(BTRIM(display_name), ''), name)
-			FROM weave_agents
-			WHERE workspace_id=$1 AND id=$2
-		`, output.WorkspaceID, strings.TrimSpace(output.AgentID)).Scan(&label)
-		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+	if label == "" && strings.TrimSpace(output.AgentID) != "" && s.agentLabel != nil {
+		label, err = s.agentLabel(ctx, tx, output.WorkspaceID, strings.TrimSpace(output.AgentID))
+		if err != nil {
 			return fmt.Errorf("resolve workflow deliverable agent label: %w", err)
 		}
+		label = strings.TrimSpace(label)
 	}
 	if label == "" {
 		label = workflowNodeFallbackLabel(output.NodeType)
