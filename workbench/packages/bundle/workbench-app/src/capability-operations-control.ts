@@ -1,5 +1,4 @@
 import { z } from 'zod'
-import { workbenchActor } from './workbench-actor.ts'
 
 const id = z.string().min(1).max(200)
 const action = z.discriminatedUnion('action', [
@@ -34,7 +33,7 @@ export async function handleCapabilityOperationsRequest(
   if (apiKey === '') return fail(503, 'weave_disconnected')
   const call = async (path: string, init: RequestInit = {}): Promise<Response> => fetcher(`${apiUrl.replace(/\/$/u, '')}${path}`, {
     ...init,
-    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json', 'X-Weave-Actor-ID': workbenchActor(request) },
+    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
     signal: AbortSignal.any([request.signal, AbortSignal.timeout(30_000)]),
     redirect: 'error',
   })

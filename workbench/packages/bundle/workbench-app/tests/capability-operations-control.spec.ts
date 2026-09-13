@@ -13,8 +13,7 @@ describe('capability operations proxy', () => {
     expect(text).not.toContain('HOST_PRIVATE')
     expect(fetcher).toHaveBeenCalledTimes(2)
     const headers = (fetcher.mock.calls[0]?.[1]?.headers ?? {}) as Record<string, string>
-    expect(headers['X-Weave-Actor-ID']).toMatch(/^[a-f0-9]{64}$/u)
-    expect(headers['X-Weave-Actor-ID']).not.toContain('first')
+    expect(headers['X-Weave-Actor-ID']).toBeUndefined()
   })
 
   it('proxies an exact human decision', async () => {

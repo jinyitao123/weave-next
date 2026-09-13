@@ -95,6 +95,8 @@ export interface ClientTransportHooks {
 /** Page global carrying {@link ClientTransportHooks}; absent in the served web app. */
 interface ClientTransportGlobal {
   __DSH_TRANSPORT__?: ClientTransportHooks
+  /** Product-owned same-origin access probe, injected before the wire root starts. */
+  __DSH_ACCESS_PROBE__?: string
 }
 
 /**
@@ -145,7 +147,29 @@ export function apply(ctx: Context): void {
   const fixture = pageLocation !== undefined && new URLSearchParams(pageLocation.search).has('fixture')
   const fixtureRpc = fixture ? createFixtureConnectionRpc() : undefined
   const transport = (globalThis as ClientTransportGlobal).__DSH_TRANSPORT__
-  const rpc = fixtureRpc ?? createWebConnectionRpc(transport?.fetch, transport?.openStream)
+  const accessProbe = (globalThis as ClientTransportGlobal).__DSH_ACCESS_PROBE__
+  const rawFetch: RpcFetch = transport?.fetch ?? ((input, init) => globalThis.fetch(input, init))
+  // Capture native fetch before later presentation plugins decorate it. The probe
+  // is transport bootstrap; it must never wait on a business-request decorator.
+  const probeFetch = transport?.fetch ?? globalThis.fetch.bind(globalThis)
+  let access: Promise<void> | undefined
+  const requireAccess = (): Promise<void> => {
+    if (fixture || accessProbe === undefined) return Promise.resolve()
+    access ??= (async () => {
+      const url = new URL(accessProbe, pageLocation?.origin)
+      if (url.origin !== pageLocation?.origin || !url.pathname.startsWith('/api/')) throw new Error('invalid access probe')
+      const response = await probeFetch(url, { credentials: 'same-origin', cache: 'no-store' })
+      if (!response.ok || (await response.json() as { authenticated?: unknown }).authenticated !== true) throw new Error('account_required')
+    })()
+    return access
+  }
+  const rpc = fixtureRpc ?? createWebConnectionRpc(async (input, init) => {
+    await requireAccess()
+    return rawFetch(input, init)
+  }, transport?.openStream === undefined ? undefined : (endpoint, payload, signal) => (async function* () {
+    await requireAccess()
+    yield* transport.openStream!(endpoint, payload, signal)
+  })())
   let generationSource: ConnectionGenerationSource | undefined
   let owner: ConnectionOwner | undefined
   let generationId = 0
@@ -196,7 +220,7 @@ export function apply(ctx: Context): void {
       if (source === undefined) throw new Error('connection: no generation source is registered')
       const token = {}
       const ownsGeneration = (): boolean => owner?.token === token
-      const controller = new ConnectionController(source, {
+      const controller = new ConnectionController(async (signal, ready) => { await requireAccess(); signal.throwIfAborted(); return source(signal, ready) }, {
         ...sinks,
         onConnected: (host) => {
           const nextGeneration = { id: ++generationId, host }

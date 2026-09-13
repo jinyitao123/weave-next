@@ -66,6 +66,7 @@ export const KNOWN_SESSION_EVENT_TYPES: ReadonlySet<string> = new Set([
   'turn/end',
   'turn/start',
   'user/message',
+  'session/actor',
   'weave/dispatch-input',
   'weave/work-task',
   'weave/work-task-action',

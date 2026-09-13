@@ -241,7 +241,7 @@ function prepareRerun(session: Session, facts: DispatchInputFacts, actionId: str
 /** Trusted Host connection used only by the registered Workbench dispatch tool. */
 export interface DispatchInputConnection {
   readonly apiUrl: string
-  readonly apiKey: string
+  readonly headers: (session: Session) => Headers
 }
 
 /** Transport result with an explicit distinction between rejection and unknown admission. */
@@ -269,10 +269,10 @@ function validateRunReceipt(result: Readonly<Record<string, JsonValue>>, revisio
 }
 
 async function post(
-  connection: DispatchInputConnection, path: string, body: unknown, signal: AbortSignal,
+  connection: DispatchInputConnection, session: Session, path: string, body: unknown, signal: AbortSignal,
 ): Promise<Record<string, JsonValue>> {
   const response = await fetch(`${connection.apiUrl}${path}`, { method: 'POST', signal,
-    headers: { Authorization: `Bearer ${connection.apiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+    headers: { ...Object.fromEntries(connection.headers(session)), 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
   let value: unknown
   try { value = await response.json() as unknown } catch {
     throw new DispatchResponseError(`dispatch_response_invalid_${response.status}`, false)
@@ -295,10 +295,10 @@ function teamRecord(value: unknown): Record<string, unknown> | undefined {
 }
 
 async function resolveTeamReference(
-  connection: DispatchInputConnection, reference: string, signal: AbortSignal,
+  connection: DispatchInputConnection, session: Session, reference: string, signal: AbortSignal,
 ): Promise<string> {
   const response = await fetch(`${connection.apiUrl}/v1/teams?status=active&include=summary`, {
-    signal, headers: { Authorization: `Bearer ${connection.apiKey}`, Accept: 'application/json' },
+    signal, headers: { ...Object.fromEntries(connection.headers(session)), Accept: 'application/json' },
   })
   let value: unknown
   try { value = await response.json() as unknown } catch {
@@ -369,7 +369,7 @@ export function installDispatchInputTool(
     }
     try {
       if (record.revision === null) {
-        const register = () => post(connection, '/v1/workbench/dispatch-inputs', {
+        const register = () => post(connection, session, '/v1/workbench/dispatch-inputs', {
           registration_id: record.registrationId, workbench_session_id: String(session.id), expected_revision_id: record.expectedRevisionId,
           source_messages: record.sourceMessages.map(({ message_id, event_seq, sha256 }) => ({ message_id, event_seq, sha256 })),
           task: record.task, mode: 'workflow', ...record.facts,
@@ -380,7 +380,7 @@ export function installDispatchInputTool(
         let registered: Record<string, JsonValue>
         try { registered = await register() } catch (error) {
           if (!(error instanceof DispatchResponseError) || error.code !== 'team_not_found') throw error
-          const teamID = await resolveTeamReference(connection, record.facts.team_id, signal)
+          const teamID = await resolveTeamReference(connection, session, record.facts.team_id, signal)
           if (teamID === record.facts.team_id) throw error
           record = { ...record, facts: { ...record.facts, team_id: teamID } }
           await save(session, record)
@@ -398,7 +398,7 @@ export function installDispatchInputTool(
       const reconcile = session.events.some(event => event.type === 'user/message'
         && event.data.source.kind === 'user' && event.seq > record.sourceThroughSeq)
       if (reconcile) {
-        const result = await post(connection, `/v1/workbench/dispatch-inputs/${revision.input_revision_id}/reconcile`, {}, signal)
+        const result = await post(connection, session, `/v1/workbench/dispatch-inputs/${revision.input_revision_id}/reconcile`, {}, signal)
         const receipt = revisionSchema.parse(result.receipt)
         if (!isDeepStrictEqual(receipt, revision)) {
           throw new DispatchResponseError('dispatch_reconcile_identity_mismatch', false)
@@ -409,7 +409,7 @@ export function installDispatchInputTool(
         await save(session, record)
         throw new DispatchResponseError('dispatch_input_superseded: the earlier request was closed without starting it; dispatch the current user inputs again', true)
       }
-      const result = await post(connection, `/v1/teams/${encodeURIComponent(record.facts.team_id)}/dispatch`, {
+      const result = await post(connection, session, `/v1/teams/${encodeURIComponent(record.facts.team_id)}/dispatch`, {
         input_revision_id: revision.input_revision_id, client_request_id: revision.client_request_id,
       }, signal)
       return await accept(result, revision)

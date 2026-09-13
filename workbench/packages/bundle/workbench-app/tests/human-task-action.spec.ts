@@ -1,4 +1,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+
+// Account-bound transport is covered by account.spec.ts. These tests isolate
+// durable task/action behavior with one already-authenticated user.
+vi.mock('../src/account.ts', () => ({ WorkbenchAccounts: class {
+  currentOwner() { return undefined }
+  visibility() { return async () => true }
+  sessionHeaders() { return new Headers({ Authorization: 'Bearer test-only', 'X-Weave-User-Authorization': 'Bearer fixture-user' }) }
+  requestFetch() { return fetch }
+  guard(request: Request, next: (request: Request) => Promise<Response>) { return next(request) }
+  handle() { return Promise.resolve(Response.json({ authenticated: true })) }
+} }))
 import { createHash } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import { Session, SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
@@ -33,6 +44,8 @@ function host(overrides: Partial<WorkTaskProjection> = {}) {
   const routes = new Map<string, (request: Request) => Promise<Response>>()
   const disposers: (() => unknown)[] = []
   const ctx = {
+    root: {},
+    inject: () => {},
     effect: (callback: () => unknown) => { const dispose = callback(); if (typeof dispose === 'function') disposers.push(dispose as () => unknown) },
     on: (name: string, listener: (targetSession: typeof session, event: SessionEvent) => void) => {
       if (name === 'session/event') eventListeners.push((event) => { listener(session, event) })
@@ -45,13 +58,14 @@ function host(overrides: Partial<WorkTaskProjection> = {}) {
     }) => {
       commands.set(command.name, command.handler); return () => commands.delete(command.name)
     } },
-    tools: { register: () => () => {} },
-    connection: { fetch: { register: (route: { path: string; fetch: (request: Request) => Promise<Response> }) => {
+    agents: { list: () => [] },
+    tools: { guard: () => () => {}, register: () => () => {} },
+    connection: { fetch: { filterStream: () => () => {}, use: () => () => {}, register: (route: { path: string; fetch: (request: Request) => Promise<Response> }) => {
       routes.set(route.path, route.fetch); return () => routes.delete(route.path)
     } } },
     sessions: { list: () => [session], get: (id: string) => id === session.id ? session : undefined, flush: async () => {} },
     sessionProjections: { register: () => {}, stateOf: () => state },
-    sessionController: { registerHistoryProjection: () => () => {} },
+    sessionController: { setSessionCreationPolicy: () => () => {}, setSessionVisibility: () => () => {}, registerHistoryProjection: () => () => {} },
   }
   apply(ctx as unknown as Context, { apiUrl: 'http://weave.test', apiKey: 'test-only', pollIntervalMs: 500 })
   return { state: () => state, events, session, command: (body: unknown) => commands.get('weave-assess')!({ agent: { session }, rawInput: JSON.stringify(body) }), publish: (data: WorkTaskProjection) => { session.append('weave/work-task', data) }, action: (body: unknown) => routes.get('/api/weave.task-action')!(new Request('http://host/api/weave.task-action', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })), dispose: () => { for (const dispose of disposers.reverse()) dispose() } }

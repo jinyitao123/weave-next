@@ -34,7 +34,7 @@ export function apply(ctx: Context): void {
     }
     return () => { globalThis.fetch = previousFetch }
   }, 'dispatch snapshot external HTTP')
-  installDispatchInputTool(ctx, { apiUrl: 'http://weave.fixture', apiKey: 'fixture-only' })
+  installDispatchInputTool(ctx, { apiUrl: 'http://weave.fixture', headers: () => new Headers({ Authorization: 'Bearer fixture-only' }) })
   ctx.on('agent/request', async ({ agent, signal }, next) => {
     if (!admitted.has(agent.id)) {
       admitted.add(agent.id)

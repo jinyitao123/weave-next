@@ -219,6 +219,8 @@ export type RequestHeaderReason = 'initial' | 'resume' | 'change' | 'series'
  * store the canonical log verbatim.
  */
 export interface SessionEventMap {
+  /** Host-authenticated actor, written before admitting user activity. */
+  'session/actor': { readonly userId: string; readonly workspaceId: string }
   /**
    * Opens turn `turn` before the loop claims queued input or runs pre-step.
    * Rejection, empty input, cancellation, or failure may close it with no

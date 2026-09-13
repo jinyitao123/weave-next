@@ -577,7 +577,7 @@ const TOOL_PACKAGES: ToolPackage[] = [
     async mount(ctx) {
       await ctx.plugin(SessionStore)
       await ctx.plugin(Object.assign((inner: Context) => {
-        installDispatchInputTool(inner, { apiUrl: 'http://weave.invalid', apiKey: 'tool-catalog-placeholder' })
+        installDispatchInputTool(inner, { apiUrl: 'http://weave.invalid', headers: () => { throw new Error('catalog generation cannot execute tools') } })
       }, { inject: ['sessions', 'tools'] }))
     },
     note:
