@@ -4,7 +4,6 @@ import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { apply, inject } from '../src/client/index.ts'
 import { DeliverableRow } from '../src/client/DeliverableRow.tsx'
 import { RuntimeSettingsSection } from '../src/client/RuntimeCenter.tsx'
-import { CapabilitySettingsSection } from '../src/client/CapabilityCenter.tsx'
 import { TeamListRow } from '../src/client/TeamListRow.tsx'
 import { WorkTaskConversationCard, WorkTaskHeader, WorkTaskPanel } from '../src/client/WorkTaskPanel.tsx'
 import type { InputTriggerSource } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
@@ -75,11 +74,9 @@ describe('ui-weave browser plugin', () => {
     expect(slots.entries('conversation.input.dock')[0]?.component).toBe(WorkTaskConversationCard)
     expect(slots.entries('sidebar.footer.action')).toHaveLength(0)
     const settings = slots.entries('settings.section')
-    expect(settings).toHaveLength(2)
+    expect(settings).toHaveLength(1)
     expect(settings[0]?.options).toMatchObject({ id: 'weave-runtimes', order: -20 })
     expect(settings[0]?.component).toBe(RuntimeSettingsSection)
-    expect(settings[1]?.options).toMatchObject({ id: 'weave-capabilities', order: -10 })
-    expect(settings[1]?.component).toBe(CapabilitySettingsSection)
     const commands = slots.entries('conversation.chat.commandview')
     expect(commands).toHaveLength(6)
     expect(commands.map(entry => entry.options.key)).toEqual([

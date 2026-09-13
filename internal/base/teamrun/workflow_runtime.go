@@ -8,17 +8,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/jinyitao123/weave/internal/base/fileartifact"
 	"log/slog"
 	"math"
 	"sort"
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 	"github.com/jinyitao123/weave/internal/base/deliverable"
-	"github.com/jinyitao123/weave/internal/base/fileartifact"
 	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/base/taskqueue"
 	"github.com/jinyitao123/weave/internal/kernel/loomruntime"
@@ -831,14 +830,6 @@ func (r *WorkflowSerialRuntime) prepare(
 		}
 		runInputPayload = sourceTask.Payload
 	}
-	if run.SourceKind == SourceAPI && loaded.candidateHash == "" {
-		unwrapped, err := capabilityInvocationInput(runInputPayload)
-		if err != nil {
-			runtimeArtifact.Close()
-			return nil, executionError(ErrorCodeRuntimeIncompatible, err)
-		}
-		runInputPayload = unwrapped
-	}
 	var runInput any
 	if len(bytes.TrimSpace(runInputPayload)) == 0 {
 		runInput = map[string]any{}
@@ -851,38 +842,6 @@ func (r *WorkflowSerialRuntime) prepare(
 		artifact:            runtimeArtifact,
 		runInput:            runInput,
 	}, nil
-}
-
-// capabilityInvocationInput removes the service-only queue envelope while
-// leaving legacy API/candidate payloads untouched. The candidateHash guard at
-// the call site prevents an old candidate payload from being reinterpreted.
-func capabilityInvocationInput(raw json.RawMessage) (json.RawMessage, error) {
-	var header struct {
-		SchemaVersion int    `json:"schema_version"`
-		Kind          string `json:"kind"`
-	}
-	if err := json.Unmarshal(raw, &header); err != nil ||
-		header.SchemaVersion != 1 || header.Kind != "capability_invocation" {
-		return raw, nil
-	}
-	var envelope struct {
-		SchemaVersion int             `json:"schema_version"`
-		Kind          string          `json:"kind"`
-		Input         json.RawMessage `json:"input"`
-	}
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&envelope); err != nil {
-		return nil, fmt.Errorf("decode capability invocation envelope: %w", err)
-	}
-	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
-		return nil, errors.New("decode capability invocation envelope: trailing JSON value")
-	}
-	if envelope.SchemaVersion != 1 || envelope.Kind != "capability_invocation" ||
-		len(bytes.TrimSpace(envelope.Input)) == 0 || !json.Valid(envelope.Input) {
-		return nil, errors.New("capability invocation envelope is invalid")
-	}
-	return append(json.RawMessage(nil), envelope.Input...), nil
 }
 
 func decodeCheckpointOutputs(raw map[string]json.RawMessage) (map[string]any, error) {

@@ -14,7 +14,6 @@ import { buildPilotReport } from './pilot-report.ts'
 import { inspectWeaveReadiness } from './readiness.ts'
 import { handleWeaveRuntimeRequest, resolveRuntimeServerUrl } from './runtime-control.ts'
 import { handleAgentExecutionRequest } from './agent-execution-control.ts'
-import { handleWeaveCapabilityRequest } from './capability-control.ts'
 import { DispatchResponseError, installDispatchInputTool, latestDispatchInput, type DispatchInputFacts } from './dispatch-input.ts'
 
 export { buildPilotReport } from './pilot-report.ts'
@@ -23,7 +22,6 @@ export { inspectWeaveReadiness } from './readiness.ts'
 export type { WeaveReadiness, WeaveReadinessCheck, WeaveReadinessTone } from './readiness.ts'
 export { handleWeaveRuntimeRequest, resolveRuntimeServerUrl } from './runtime-control.ts'
 export type { WeaveRuntimeEngineView, WeaveRuntimeList, WeaveRuntimeView } from './runtime-control.ts'
-export { handleWeaveCapabilityRequest } from './capability-control.ts'
 
 /** User-facing lifecycle of one Weave-dispatched task. */
 export type WorkTaskStatus = 'preparing' | 'queued' | 'running' | 'waiting' | 'stopping' | 'completed' | 'failed' | 'stopped'
@@ -1129,10 +1127,6 @@ export function apply(ctx: Context, config: Config = {}): void {
   connection.fetch.register({
     path: '/api/weave.runtimes', methods: ['GET', 'HEAD', 'POST', 'PUT', 'DELETE'],
     fetch: request => handleWeaveRuntimeRequest(apiUrl, apiKey, request, fetch, runtimeServerUrl),
-  })
-  connection.fetch.register({
-    path: '/api/weave.capabilities', methods: ['GET', 'HEAD', 'POST'],
-    fetch: request => handleWeaveCapabilityRequest(apiUrl, apiKey, request),
   })
   connection.fetch.register({
     path: '/api/weave.deliverable', methods: ['GET', 'HEAD'],

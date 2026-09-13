@@ -14,8 +14,6 @@ func TestCodexTaskMCPDisablesAmbientServersWithoutTokenArguments(t *testing.T) {
 	cli := filepath.Join(work, "fixture-codex")
 	script := `#!/bin/sh
 if [ "$1" != "mcp" ] || [ "$2" != "list" ]; then exit 3; fi
-if [ "$#" != 3 ] || [ "$3" != "--json" ]; then exit 5; fi
-if [ "$(pwd -P)" != "$(cd "$(dirname "$0")" && pwd -P)" ]; then exit 6; fi
 if [ -n "$WEAVE_RUNTIME_TOKEN" ] || [ -n "$WEAVE_SECRET_KEY" ] || [ -n "$WEAVE_MCP_BOUNDARY_TOKEN_99" ]; then exit 4; fi
 printf '%s' '[{"name":"host_tools","enabled":true},{"name":"previous_task","enabled":false}]'
 `
@@ -48,50 +46,5 @@ printf '%s' '[{"name":"host_tools","enabled":true},{"name":"previous_task","enab
 	}
 	if _, err := codexTaskMCPArgs(t.Context(), cli, spec); err == nil {
 		t.Fatal("failed config probe allowed task execution")
-	}
-}
-
-func TestCodexDenyAllRemovesAmbientToolsAndPassesOutputSchema(t *testing.T) {
-	work := t.TempDir()
-	cli := filepath.Join(work, "fixture-codex")
-	script := `#!/bin/sh
-if [ "$1" = "mcp" ]; then printf '%s' '[{"name":"ambient","enabled":true}]'; exit 0; fi
-printf '%s\n' "$@" > "$WEAVE_CAPTURE_ARGS"
-printf '%s\n' '{"type":"item.completed","item":{"type":"agent_message","text":"{}"}}' '{"type":"turn.completed","usage":{"input_tokens":1,"output_tokens":1}}'
-`
-	if err := os.WriteFile(cli, []byte(script), 0700); err != nil {
-		t.Fatal(err)
-	}
-	b := codexBackend{cliPath: cli}
-	argsPath := filepath.Join(work, "args")
-	_, err := b.Run(t.Context(), RunSpec{
-		WorkDir: work, Prompt: "choose", DisableTools: true,
-		OutputSchema: []byte(`{"type":"object"}`), Env: map[string]string{"WEAVE_CAPTURE_ARGS": argsPath},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	raw, err := os.ReadFile(argsPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, part := range []string{
-		"mcp_servers.ambient.enabled=false", "shell_tool", "unified_exec",
-		"multi_agent", "apps", "plugins", "skip_host_skill_discovery",
-		`web_search="disabled"`, "--output-schema",
-	} {
-		if !strings.Contains(string(raw), part) {
-			t.Fatalf("missing deny-all control %s", part)
-		}
-	}
-	files, _ := filepath.Glob(filepath.Join(work, ".weave-output-schema-*"))
-	if len(files) != 0 {
-		t.Fatal("temporary schema not cleaned")
-	}
-	if _, err := b.Run(t.Context(), RunSpec{
-		DisableTools: true,
-		MCPServers:   []MCPServerEndpoint{{URL: "https://example.invalid"}},
-	}); err == nil {
-		t.Fatal("deny-all accepted tool binding")
 	}
 }

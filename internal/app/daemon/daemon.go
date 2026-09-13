@@ -518,7 +518,6 @@ func (d *service) executeTask(ctx context.Context, task *taskqueue.Task) (runtim
 	}
 	publish, finishProgress := d.publicEventCapture(task.ID, (request.Engine == engine.Codex || request.Engine == engine.Claude) && request.NodeID != "" && task.RunSnapshotID != "")
 	result, err := d.runEngine(ctx, request.Engine, engine.RunSpec{
-		DisableTools:  deniesAllTools(request.Record.Permissions.Deny),
 		OnPublicEvent: publish,
 		MCPServers:    engineTaskMCPServers(taskTargets),
 		WorkDir:       workDir,
@@ -546,15 +545,6 @@ func (d *service) executeTask(ctx context.Context, task *taskqueue.Task) (runtim
 		return execResult, errors.New(message)
 	}
 	return execResult, nil
-}
-
-func deniesAllTools(denied []string) bool {
-	for _, value := range denied {
-		if value == "*" {
-			return true
-		}
-	}
-	return false
 }
 
 func (d *service) engineVersion(name string) string {

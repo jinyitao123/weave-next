@@ -472,9 +472,6 @@ func (e *Executor) buildExecPayloadWithSchema(
 	attachments []execenv.Attachment,
 	outputSchema json.RawMessage,
 ) EngineExecRequest {
-	if len(outputSchema) == 0 && rec.OutputSchema != nil {
-		outputSchema = *rec.OutputSchema
-	}
 	if CanonicalEngine(rec.Engine) == EngineLoom {
 		return EngineExecRequest{
 			Agent:          rec.Name,

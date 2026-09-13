@@ -181,9 +181,10 @@ func (s *Server) handleDispatchTeam(c echo.Context) error {
 	if replayed, err := s.replayWorkflowDispatch(c, team, request, runID, taskID, fingerprint); replayed || err != nil {
 		return err
 	}
-	return s.dispatchTeamWorkflow(c, team, request, workflowDispatchIdentity{
-		RunID: runID, TaskID: taskID, ContextKey: fingerprint,
-	})
+	c.Set("workflow_dispatch_run_id", runID)
+	c.Set("workflow_dispatch_task_id", taskID)
+	c.Set("workflow_dispatch_fingerprint", fingerprint)
+	return s.dispatchTeamWorkflow(c, team, request)
 }
 
 func workflowDispatchFingerprint(teamID string, request teamDispatchRequest) string {
@@ -292,12 +293,7 @@ func (s *Server) dispatchTeamFreeCollab(c echo.Context, team org.Team, request t
 	})
 }
 
-func (s *Server) dispatchTeamWorkflow(
-	c echo.Context,
-	team org.Team,
-	request teamDispatchRequest,
-	identity workflowDispatchIdentity,
-) error {
+func (s *Server) dispatchTeamWorkflow(c echo.Context, team org.Team, request teamDispatchRequest) error {
 	workflowID := request.WorkflowID
 	if workflowID == "" {
 		workflowID = strings.TrimSpace(team.DefaultWorkflowID)
@@ -320,5 +316,5 @@ func (s *Server) dispatchTeamWorkflow(
 		return workflowError(c, http.StatusConflict, "workflow_team_mismatch", "selected workflow does not belong to the team")
 	}
 
-	return s.admitTeamWorkflowDispatch(c, workflowID, request, identity)
+	return s.admitTeamWorkflowDispatch(c, workflowID, request)
 }

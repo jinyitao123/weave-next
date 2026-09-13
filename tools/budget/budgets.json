@@ -222,101 +222,6 @@
         "previous_external_dependencies": 7,
         "external_dependencies": 7
       }
-    },
-    {
-      "date": "2026-09-12",
-      "source_commit": "19859554",
-      "reason": "Authorized published-capability service evolution, first integration slice: preserve explicit Agent tool-loop controls and frozen output schemas, fix Codex MCP working-directory parity and Loom cancellation rollback binding, then extract the entrypoint-independent published-workflow admission, snapshot, delivery-contract and queue transaction service used by existing Workbench paths. Exact reviewed working-tree ceilings with no spare line allowance. One app package is added for the shared application boundary; dependency allowlists, original migration targets and upward-edge limits remain unchanged.",
-      "record": "docs/计划/2026-09-12-已发布能力服务调用层分批实施计划.md",
-      "kernel": {
-        "previous_lines": 67338,
-        "previous_production_lines": 62474,
-        "lines_added": 72,
-        "production_lines_added": 6,
-        "previous_packages": 33,
-        "packages": 33
-      },
-      "app": {
-        "previous_lines": 46415,
-        "previous_production_lines": 36695,
-        "lines_added": 215,
-        "production_lines_added": 148,
-        "previous_packages": 18,
-        "packages": 19
-      }
-    },
-    {
-      "date": "2026-09-12",
-      "reason": "Authorized published-capability service evolution, immutable contract slice: add stable service applications, separately rotatable credentials, exact workflow-artifact capability releases, explicit version grants, retained invocation and early-cancellation identities, bounded JSON contracts, and enforced Codex deny-all execution. Exact reviewed working-tree ceilings with no spare line allowance. One app package is added for the capability application boundary; dependency allowlists and upward-edge limits remain unchanged.",
-      "record": "docs/计划/2026-09-12-已发布能力服务调用层分批实施计划.md",
-      "base": {
-        "previous_lines": 27547,
-        "previous_production_lines": 22985,
-        "lines_added": 12,
-        "production_lines_added": 12,
-        "previous_packages": 12,
-        "packages": 12
-      },
-      "kernel": {
-        "previous_lines": 67410,
-        "previous_production_lines": 62480,
-        "lines_added": 63,
-        "production_lines_added": 18,
-        "previous_packages": 33,
-        "packages": 33
-      },
-      "app": {
-        "previous_lines": 46630,
-        "previous_production_lines": 36843,
-        "lines_added": 1102,
-        "production_lines_added": 812,
-        "previous_packages": 19,
-        "packages": 20
-      }
-    },
-    {
-      "date": "2026-09-12",
-      "source_commit": "420e360d",
-      "reason": "Authorized published-capability service evolution, atomic invocation slice: add separately authenticated submit, read and cancel routes; JCS request identity and exact immutable-release admission; atomic snapshot, delivery-contract, queue and invocation persistence; durable pre-submit and in-flight cancellation fences; restart-safe queue and execution deadlines; scoped result-contract projection; and real PostgreSQL regressions. Exact reviewed working-tree ceilings with no spare line allowance. Package and dependency limits, original migration targets and upward-edge limits remain unchanged.",
-      "record": "docs/计划/2026-09-12-已发布能力服务调用层分批实施计划.md",
-      "base": {
-        "previous_lines": 27559,
-        "previous_production_lines": 22997,
-        "lines_added": 95,
-        "production_lines_added": 70,
-        "previous_packages": 12,
-        "packages": 12
-      },
-      "kernel": {
-        "previous_lines": 67473,
-        "previous_production_lines": 62498,
-        "lines_added": 1,
-        "production_lines_added": 1,
-        "previous_packages": 33,
-        "packages": 33
-      },
-      "app": {
-        "previous_lines": 47732,
-        "previous_production_lines": 37655,
-        "lines_added": 1972,
-        "production_lines_added": 1449,
-        "previous_packages": 20,
-        "packages": 20
-      }
-    },
-    {
-      "date": "2026-09-12",
-      "source_commit": "248c118c",
-      "reason": "Authorized published-capability service evolution, Workbench management slice: add workspace-administrator lifecycle operations for calling applications, one-time credentials, capabilities, immutable releases, exact-version grants, invocation observation and durable administrator cancellation; add a Host-only closed management proxy and the bilingual Workbench Settings journey with real browser coverage. Exact reviewed Go working-tree ceilings with no spare line allowance. Package and dependency limits, original migration targets and upward-edge limits remain unchanged.",
-      "record": "docs/计划/2026-09-12-已发布能力服务调用层分批实施计划.md",
-      "app": {
-        "previous_lines": 49704,
-        "previous_production_lines": 39104,
-        "lines_added": 623,
-        "production_lines_added": 544,
-        "previous_packages": 20,
-        "packages": 20
-      }
     }
   ],
   "migration_targets": {
@@ -342,8 +247,8 @@
     }
   },
   "base": {
-    "lines": 27654,
-    "production_lines": 23067,
+    "lines": 27547,
+    "production_lines": 22985,
     "packages": 12,
     "external_dependencies": 4,
     "allowed_dependencies": [
@@ -354,8 +259,8 @@
     ]
   },
   "kernel": {
-    "lines": 67474,
-    "production_lines": 62499,
+    "lines": 67338,
+    "production_lines": 62474,
     "packages": 33,
     "external_dependencies": 5,
     "allowed_dependencies": [
@@ -379,9 +284,9 @@
     ]
   },
   "app": {
-    "lines": 50327,
-    "production_lines": 39648,
-    "packages": 20,
+    "lines": 46415,
+    "production_lines": 36695,
+    "packages": 18,
     "external_dependencies": 7,
     "allowed_dependencies": [
       "github.com/golang-jwt/jwt/v5",

@@ -49,8 +49,6 @@ Project output links select the exact retained artifact in its original conversa
 
 Settings includes member execution configuration. Changing engines clears the previous model override and fallback models. Saving applies the selected runtime and bounded retry policy to future tasks after workflow publication succeeds. Runtime details distinguish the configured endpoint and node default from models reported by execution receipts. Public attempt records describe observed execution history without implying model text or final delivery.
 
-Settings also contains Published Capabilities. Administrators create stable calling applications, rotate one-time service credentials, publish immutable capability versions from admitted workflows, grant exact application-version access, and inspect or stop recent invocations. Execution, result availability, and cancellation acknowledgement remain separate. The browser receives neither the Host credential nor stored credential hashes and does not display invocation input.
-
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 
