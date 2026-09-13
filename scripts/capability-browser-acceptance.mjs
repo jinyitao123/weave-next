@@ -70,11 +70,20 @@ try {
   definition.capability_id = 'browser-capability'
   definition.name = '浏览器角色核对'
   await editor.fill(JSON.stringify(definition, null, 2))
+  await page.getByRole('button', { name: /^(调试当前草稿|Debug current draft)$/ }).click()
+  await page.locator('pre').filter({ hasText: '"completed"' }).waitFor({ timeout: 30_000 })
+  const debugResult = JSON.parse(await page.locator('pre').filter({ hasText: '"invocation_id"' }).textContent())
+  if (debugResult.run_kind !== 'debug' || debugResult.revision !== undefined || debugResult.result?.merge?.left !== 7) throw new Error('Invalid draft debug result')
+  await page.locator('pre').filter({ hasText: '"invocation_id"' }).scrollIntoViewIfNeeded()
+  await page.screenshot({ path: join(output, 'debug.png'), fullPage: true })
+  definition.name = '浏览器角色核对 · 发布'
+  await editor.fill(JSON.stringify(definition, null, 2))
   await page.getByRole('button', { name: /^(保存并发布|Save and publish)$/ }).click()
   await page.getByText(/^(版本已发布|Version published)$/).waitFor()
   await page.getByRole('button', { name: /^(调用已发布版本|Invoke published version)$/ }).click()
-  await page.locator('pre').filter({ hasText: '"completed"' }).waitFor({ timeout: 30_000 })
+  await page.locator('pre').filter({ hasText: '"published"' }).filter({ hasText: '"completed"' }).waitFor({ timeout: 30_000 })
   const result = JSON.parse(await page.locator('pre').filter({ hasText: '"invocation_id"' }).textContent())
+  if (result.run_kind !== 'published' || result.invocation_id === debugResult.invocation_id || result.definition_hash === debugResult.definition_hash) throw new Error('Debug and publication identities were mixed')
   if (result.result?.merge?.left !== 7 || result.result?.merge?.right !== 7) throw new Error('Wrong browser result')
   await page.locator('pre').filter({ hasText: '"invocation_id"' }).scrollIntoViewIfNeeded()
   await page.screenshot({ path: join(output, 'desktop.png'), fullPage: true })
@@ -91,10 +100,10 @@ try {
     await writeFile(join(temporary, 'layers.json'), JSON.stringify(await page.evaluate(() => document.elementsFromPoint(350,400).map(e => ({tag:e.tagName, class:e.className,position:getComputedStyle(e).position,z:getComputedStyle(e).zIndex}))),null,2))
     throw new Error('Another surface overlaps the mobile settings dialog')
   }
-  await writeFile(join(output, 'evidence.json'), JSON.stringify({ provider: 'controlled HTTP fixture', runtime: 'existing Loom runner', result, mobileOverflow: overflow }, null, 2))
+  await writeFile(join(output, 'evidence.json'), JSON.stringify({ provider: 'controlled HTTP fixture', runtime: 'existing Loom runner', debugResult, result, mobileOverflow: overflow }, null, 2))
   await writeFile(join(temporary, 'done'), '')
   if (await completed !== 0) throw new Error('Go fixture failed verification')
-  console.log('Workbench browser acceptance passed: publish, invoke, read result, desktop and mobile.')
+  console.log('Workbench browser acceptance passed: debug unsaved draft, publish changed definition, invoke, read both results, desktop and mobile.')
 } catch (error) {
   if (page) {
     await page.screenshot({path:join(output,'failure.png'),fullPage:true}).catch(()=>{})

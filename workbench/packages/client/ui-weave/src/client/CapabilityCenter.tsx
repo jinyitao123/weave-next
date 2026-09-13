@@ -71,7 +71,7 @@ export function CapabilitySettingsSection({ t }: Props) {
     return () => { controller.abort(); clearTimeout(timer) }
   }, [id, t])
 
-  const run = async (action: 'save' | 'publish' | 'invoke' | 'retry' | 'cancel' | 'refresh') => {
+  const run = async (action: 'save' | 'publish' | 'invoke' | 'debug' | 'retry' | 'cancel' | 'refresh') => {
     if (busy) return
     setBusy(true); setError(''); setNotice('')
     const signal = lifetime.current?.signal
@@ -104,7 +104,9 @@ export function CapabilitySettingsSection({ t }: Props) {
         const next = await request(undefined, signal)
         if (!signal?.aborted) setDrafts(Array.isArray(next.drafts) ? next.drafts.filter(object) : [])
       } else {
-        const body = { action, id: doc.capability_id, revision, requestId: crypto.randomUUID(), input: value }
+        const body = action === 'debug'
+          ? { action, id: doc.capability_id, definition: doc, requestId: crypto.randomUUID(), input: value }
+          : { action, id: doc.capability_id, revision, requestId: crypto.randomUUID(), input: value }
         setRetry(body)
         const next = await request(body, signal)
         if (!signal?.aborted) { setInvocation(next); setRetry(null) }
@@ -142,11 +144,13 @@ export function CapabilitySettingsSection({ t }: Props) {
       <label>{t('cap.input')}<textarea aria-label={t('cap.input')} spellCheck={false} rows={4} value={input} onChange={event => { setInput(event.target.value) }} /></label>
       <div className={css.actions}>
         <button type="button" disabled={retry !== null || (invocation !== null && !['completed', 'failed', 'cancelled'].includes(String(invocation.status)))} onClick={() => { void run('invoke') }}>{t('cap.invoke')}</button>
+        <button type="button" disabled={retry !== null || (invocation !== null && !['completed', 'failed', 'cancelled'].includes(String(invocation.status)))} onClick={() => { void run('debug') }}>{t('cap.debug')}</button>
         {retry !== null && <button type="button" onClick={() => { void run('retry') }}>{t('cap.retry')}</button>}
         {id !== '' && <button type="button" disabled={['completed', 'failed', 'cancelled'].includes(String(invocation?.status))} onClick={() => { void run('cancel') }}>{t('cap.cancel')}</button>}
       </div>
     </fieldset>
     <h4>{t('cap.result')}</h4>
+    {invocation !== null && <p>{t(invocation.run_kind === 'debug' ? 'cap.debugRun' : 'cap.publishedRun')}</p>}
     {invocation === null ? <p>{t('cap.empty')}</p> : <pre>{JSON.stringify(invocation, null, 2)}</pre>}
   </section>
 }

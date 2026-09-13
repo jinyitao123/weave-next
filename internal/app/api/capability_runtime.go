@@ -44,6 +44,7 @@ func (e capabilityRuntime) Execute(ctx context.Context, task capabilities.Invoca
 		return nil, err
 	}
 	steps := capabilityruntime.LoomSteps{
+		RunKind:     task.RunKind,
 		WorkspaceID: task.WorkspaceID, InvocationID: task.InvocationID, Model: requirement.Model, LLM: llm, Store: s.Store, TerminalSink: sink,
 		RecordRun: func(ctx context.Context, step, run string) error {
 			tag, err := s.Pool.Exec(ctx, `INSERT INTO weave_capability_step_runs(workspace_id,invocation_id,step_id,run_id)

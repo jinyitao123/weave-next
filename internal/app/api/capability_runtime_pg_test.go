@@ -168,8 +168,12 @@ func TestCapabilityHTTPToLoomRuntimeRealPG(t *testing.T) {
 			}
 			time.Sleep(100 * time.Millisecond)
 		}
-		if calls.Load() != 4 {
-			t.Fatalf("browser model calls=%d expected=4", calls.Load())
+		if calls.Load() != 6 {
+			t.Fatalf("browser model calls=%d expected=6", calls.Load())
+		}
+		var debugCount int
+		if err := pool.QueryRow(t.Context(), `SELECT count(*) FROM weave_capability_debug_snapshots WHERE workspace_id='cap-ws'`).Scan(&debugCount); err != nil || debugCount != 1 {
+			t.Fatalf("debug snapshots=%d err=%v", debugCount, err)
 		}
 	}
 }

@@ -16,6 +16,7 @@ import (
 )
 
 type LoomSteps struct {
+	RunKind      string
 	WorkspaceID  string
 	InvocationID string
 	Model        string
@@ -39,7 +40,7 @@ func (e LoomSteps) ExecuteStep(ctx context.Context, step capability.PlanStep, in
 	if step.Kind != capability.StepWorker {
 		return nil, fmt.Errorf("unsupported Loom step kind")
 	}
-	identity := fmt.Sprintf("cap-%x", sha256.Sum256([]byte(e.InvocationID+"\x00"+step.ID)))
+	identity := fmt.Sprintf("cap-%s-%x", e.RunKind, sha256.Sum256([]byte(e.InvocationID+"\x00"+step.ID)))
 	schema := step.OutputSchema
 	if len(schema) == 0 {
 		schema = json.RawMessage(`{"type":"object"}`)

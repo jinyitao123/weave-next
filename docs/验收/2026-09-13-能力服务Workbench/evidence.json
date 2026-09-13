@@ -1,10 +1,33 @@
 {
   "provider": "controlled HTTP fixture",
   "runtime": "existing Loom runner",
+  "debugResult": {
+    "capability_id": "browser-capability",
+    "definition_hash": "7c2bdcfd2a513dfaf576363326d961d13215a244e38d8dc89707af2702af4563",
+    "error": "",
+    "invocation_id": "1ebcb8d6-0737-45a4-bba5-8a804073cc68",
+    "result": {
+      "a": {
+        "value": 7
+      },
+      "b": {
+        "value": 7
+      },
+      "merge": {
+        "left": 7,
+        "right": 7
+      }
+    },
+    "result_state": "available",
+    "run_kind": "debug",
+    "status": "completed",
+    "task_id": "cap-task-8ea4a7e3-07da-4222-90d0-82c576bb0bf5"
+  },
   "result": {
     "capability_id": "browser-capability",
+    "definition_hash": "74ef6505c1a68980436be5ff49d7c14352f901c46654de597ceb676fd582fd42",
     "error": "",
-    "invocation_id": "b60ac13e-2ac8-4b2c-94e6-dfb2fc2b7d79",
+    "invocation_id": "0e0cfa01-04af-4587-a211-ad5237f504c7",
     "result": {
       "a": {
         "value": 7
@@ -19,8 +42,9 @@
     },
     "result_state": "available",
     "revision": 1,
+    "run_kind": "published",
     "status": "completed",
-    "task_id": "cap-task-92a919b0-bd67-4269-84d8-894a80aac382"
+    "task_id": "cap-task-6240f7e7-adc2-40b8-bfe6-be0c6467ffbd"
   },
   "mobileOverflow": false
 }

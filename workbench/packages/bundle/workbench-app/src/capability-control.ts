@@ -3,6 +3,7 @@ import { z } from 'zod'
 const id = z.string().min(1).max(200)
 const revision = z.number().int().positive().max(Number.MAX_SAFE_INTEGER)
 const command = z.discriminatedUnion('action', [
+  z.object({ action: z.literal('debug'), id, requestId: id, definition: z.record(z.string(), z.unknown()), input: z.record(z.string(), z.unknown()) }).strict(),
   z.object({ action: z.literal('save'), definition: z.record(z.string(), z.unknown()) }).strict(),
   z.object({ action: z.literal('publish'), id, revision }).strict(),
   z.object({ action: z.literal('invoke'), id, revision, requestId: id, input: z.record(z.string(), z.unknown()) }).strict(),
@@ -32,6 +33,7 @@ export async function handleCapabilityRequest(apiUrl: string, apiKey: string, re
     if (!parsed.success) return reply(400, 'invalid_input')
     const op = parsed.data
     switch (op.action) {
+      case 'debug': method = 'POST'; path = `/v1/capabilities/${encodeURIComponent(op.id)}/debug`; body = { request_id: op.requestId, definition: op.definition, input: op.input }; break
       case 'save': method = 'POST'; body = { definition: op.definition }; break
       case 'publish': method = 'POST'; path = `/v1/capabilities/${encodeURIComponent(op.id)}/versions/${op.revision}/publish`; body = {}; break
       case 'invoke': method = 'POST'; path = `/v1/capabilities/${encodeURIComponent(op.id)}/versions/${op.revision}/invocations`; body = { request_id: op.requestId, input: op.input }; break

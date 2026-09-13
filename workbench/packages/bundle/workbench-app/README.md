@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-The Host exposes a fixed capability-operation proxy at `/api/weave.capabilities`. Its configured Weave credential needs the explicit `capabilities:manage`, `capabilities:invoke`, `capabilities:read` and `capabilities:cancel` scopes for the full developer settings journey. The browser cannot choose an upstream URL or read that credential.
+The Host exposes a fixed capability-operation proxy at `/api/weave.capabilities`. Its configured Weave credential needs the explicit `capabilities:manage`, `capabilities:invoke`, `capabilities:read` and `capabilities:cancel` scopes for the full developer settings journey. Draft debugging uses the manage scope and submits a frozen editor document, never a publication request. The browser cannot choose an upstream URL or read that credential.
 
 This bundle turns the general DSH Web runtime into Weave Workbench without changing the agent loop. It adds the Workbench browser identity, connects the local `weave mcp serve` process when a business API key is present, and gives the foreground agent one product rule: match an existing team before dispatching work, or state that no suitable team exists and help define one. A Host-side WorkTask projection records the dispatch and keeps its Weave status synchronized after the foreground turn ends. The same authenticated Host exposes a bounded runtime-node registry to the main Workbench surface. The dispatched Weave run is the durable task; the foreground agent does not create a shadow DSH goal, poll it to completion, or save a duplicate deliverable.
 

@@ -35,6 +35,7 @@ type DraftStore interface {
 }
 
 type InvocationStore interface {
+	ClaimDebugInvocation(context.Context, Invocation, capability.DefinitionSnapshot) (Invocation, bool, error)
 	ClaimInvocation(context.Context, Invocation) (Invocation, bool, error)
 	GetInvocation(context.Context, string, string, string) (Invocation, error)
 	CancelInvocation(context.Context, string, string, string) (Invocation, error)
@@ -127,21 +128,24 @@ func (s *Service) Publish(ctx context.Context, workspaceID, capabilityID string,
 }
 
 type Invocation struct {
-	WorkspaceID   string          `json:"workspace_id"`
-	ApplicationID string          `json:"application_id"`
-	InvocationID  string          `json:"invocation_id"`
-	TaskID        string          `json:"task_id,omitempty"`
-	RequestID     string          `json:"request_id"`
-	CapabilityID  string          `json:"capability_id"`
-	Revision      int64           `json:"revision"`
-	Input         json.RawMessage `json:"input"`
-	Status        string          `json:"status"`
-	ResultState   string          `json:"result_state"`
-	Result        json.RawMessage `json:"result,omitempty"`
-	Error         string          `json:"error,omitempty"`
+	RunKind        string          `json:"run_kind"`
+	DefinitionHash string          `json:"definition_hash"`
+	WorkspaceID    string          `json:"workspace_id"`
+	ApplicationID  string          `json:"application_id"`
+	InvocationID   string          `json:"invocation_id"`
+	TaskID         string          `json:"task_id,omitempty"`
+	RequestID      string          `json:"request_id"`
+	CapabilityID   string          `json:"capability_id"`
+	Revision       int64           `json:"revision"`
+	Input          json.RawMessage `json:"input"`
+	Status         string          `json:"status"`
+	ResultState    string          `json:"result_state"`
+	Result         json.RawMessage `json:"result,omitempty"`
+	Error          string          `json:"error,omitempty"`
 }
 
 type InvocationTask struct {
+	RunKind      string
 	ClaimToken   string
 	TaskID       string
 	WorkspaceID  string
@@ -262,6 +266,7 @@ func (s *Service) Invoke(ctx context.Context, request InvokeRequest) (Invocation
 		return Invocation{}, false, fmt.Errorf("%w: input schema: %v", capability.ErrInvalidDefinition, err)
 	}
 	invocation := Invocation{
+		RunKind: "published", DefinitionHash: published.DefinitionHash,
 		WorkspaceID: request.WorkspaceID, ApplicationID: request.ApplicationID,
 		InvocationID: request.InvocationID, RequestID: request.RequestID,
 		CapabilityID: request.CapabilityID, Revision: request.Revision,
@@ -281,6 +286,7 @@ func (s *Service) Invoke(ctx context.Context, request InvokeRequest) (Invocation
 // PostgreSQL implementation can satisfy the same interfaces without changing
 // the application service.
 type MemoryStore struct {
+	debug     map[string]capability.DefinitionSnapshot
 	mu        sync.Mutex
 	drafts    map[string]capability.Definition
 	revisions map[string]capability.PublishedRevision
@@ -288,7 +294,7 @@ type MemoryStore struct {
 }
 
 func NewMemoryStore() *MemoryStore {
-	return &MemoryStore{drafts: map[string]capability.Definition{}, revisions: map[string]capability.PublishedRevision{}, invokes: map[string]Invocation{}}
+	return &MemoryStore{debug: map[string]capability.DefinitionSnapshot{}, drafts: map[string]capability.Definition{}, revisions: map[string]capability.PublishedRevision{}, invokes: map[string]Invocation{}}
 }
 
 func (m *MemoryStore) SaveDraft(_ context.Context, workspaceID string, definition capability.Definition) error {
@@ -334,7 +340,7 @@ func (m *MemoryStore) ClaimInvocation(_ context.Context, invocation Invocation) 
 	defer m.mu.Unlock()
 	key := invocation.WorkspaceID + "\x00" + invocation.ApplicationID + "\x00" + invocation.RequestID
 	if existing, ok := m.invokes[key]; ok {
-		if string(existing.Input) != string(invocation.Input) || existing.CapabilityID != invocation.CapabilityID || existing.Revision != invocation.Revision {
+		if string(existing.Input) != string(invocation.Input) || existing.CapabilityID != invocation.CapabilityID || existing.Revision != invocation.Revision || existing.RunKind != invocation.RunKind || existing.DefinitionHash != invocation.DefinitionHash {
 			return Invocation{}, false, ErrIdempotencyConflict
 		}
 		return cloneValue(existing), true, nil
@@ -389,12 +395,15 @@ func (m *MemoryStore) ClaimTask(_ context.Context) (InvocationTask, bool, error)
 		}
 		revision := m.revisions[invocation.WorkspaceID+"\x00"+invocation.CapabilityID+"\x00"+fmt.Sprint(invocation.Revision)]
 		plan, err := capability.Compile(revision)
+		if invocation.RunKind == "debug" {
+			plan, err = capability.CompileDebug(m.debug[invocation.WorkspaceID+"\x00"+invocation.InvocationID])
+		}
 		if err != nil {
 			return InvocationTask{}, false, err
 		}
 		invocation.Status = "running"
 		m.invokes[key] = invocation
-		return InvocationTask{Plan: plan, TaskID: invocation.TaskID, WorkspaceID: invocation.WorkspaceID, InvocationID: invocation.InvocationID, CapabilityID: invocation.CapabilityID, Revision: invocation.Revision, Input: append(json.RawMessage(nil), invocation.Input...)}, true, nil
+		return InvocationTask{RunKind: invocation.RunKind, Plan: plan, TaskID: invocation.TaskID, WorkspaceID: invocation.WorkspaceID, InvocationID: invocation.InvocationID, CapabilityID: invocation.CapabilityID, Revision: invocation.Revision, Input: append(json.RawMessage(nil), invocation.Input...)}, true, nil
 	}
 	return InvocationTask{}, false, nil
 }
