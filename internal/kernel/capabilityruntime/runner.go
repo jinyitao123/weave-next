@@ -7,6 +7,7 @@ import (
 
 	"github.com/jinyitao123/loom"
 	"github.com/jinyitao123/loom/contract"
+	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/kernel/capability"
 	"github.com/jinyitao123/weave/internal/kernel/loomruntime"
 	"github.com/jinyitao123/weave/internal/kernel/mcphost"
@@ -51,6 +52,7 @@ func (r *Runner) Execute(ctx context.Context, request Request, recorder Recorder
 	if r == nil || recorder == nil {
 		return nil, errors.New("capability execution dependencies are not configured")
 	}
+	ctx = execution.WithInvocationID(ctx, request.InvocationID)
 	requirement := request.Plan.Runtime
 	if err := r.ValidateRuntime(ctx, request.WorkspaceID, requirement); err != nil {
 		return nil, err

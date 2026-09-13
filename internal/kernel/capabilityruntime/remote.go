@@ -35,17 +35,23 @@ func (e remoteSteps) ExecuteStep(ctx context.Context, step capability.PlanStep, 
 	rec.OutputSchema = &schema
 	prompt := fmt.Sprintf("你是能力团队中的%s。职责：%s\n任务：%s\n输入：%s\n完成实际工作后，只返回符合输出结构的 JSON。", step.RoleName, step.RoleDescription, step.Instruction, input)
 	result, err := structured.ExecRemoteStructured(ctx, e.task.WorkspaceID, &rec, execution.AgentExecutionStamp{AgentID: rec.ID, AgentVersion: rec.Version, ExecutionScope: execution.ScopeTeamWorkerLeaf, RunSnapshotID: e.task.InvocationID}, prompt, nil, schema)
+	recordedAttempt := false
+	for _, attempt := range result.Attempts {
+		if attempt.AttemptID == "" {
+			continue
+		}
+		recordedAttempt = true
+		if recordErr := e.recordRun(ctx, step.ID, attempt.AttemptID); recordErr != nil {
+			return nil, errors.Join(err, recordErr)
+		}
+	}
+	if !recordedAttempt && result.SessionID != "" {
+		if recordErr := e.recordRun(ctx, step.ID, result.SessionID); recordErr != nil {
+			return nil, errors.Join(err, recordErr)
+		}
+	}
 	if err != nil {
 		return nil, err
-	}
-	runID := result.SessionID
-	if len(result.Attempts) > 0 {
-		runID = result.Attempts[len(result.Attempts)-1].AttemptID
-	}
-	if runID != "" {
-		if err := e.recordRun(ctx, step.ID, runID); err != nil {
-			return nil, err
-		}
 	}
 	raw := json.RawMessage(result.Output)
 	if !json.Valid(raw) {

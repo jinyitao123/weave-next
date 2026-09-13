@@ -3,12 +3,15 @@ package capability
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/jinyitao123/weave/internal/base/execution"
 )
 
 type StepExecutor interface {
@@ -153,6 +156,7 @@ func ExecutePlanResumable(ctx context.Context, plan Plan, input json.RawMessage,
 					results[i].err = err
 					return
 				}
+				stepCtx := activationContext(ctx, step.ID, snapshot.Iterations)
 				var value json.RawMessage
 				switch step.Kind {
 				case StepTransform, StepDeliver:
@@ -168,10 +172,10 @@ func ExecutePlanResumable(ctx context.Context, plan Plan, input json.RawMessage,
 					if !ok {
 						err = errors.New("tool executor unavailable")
 					} else {
-						value, err = tools.ExecuteTool(ctx, step, bound)
+						value, err = tools.ExecuteTool(stepCtx, step, bound)
 					}
 				case StepWorker:
-					value, err = executor.ExecuteStep(ctx, step, bound)
+					value, err = executor.ExecuteStep(stepCtx, step, bound)
 				default:
 					err = fmt.Errorf("unsupported step kind %s", step.Kind)
 				}
@@ -185,17 +189,26 @@ func ExecutePlanResumable(ctx context.Context, plan Plan, input json.RawMessage,
 			}()
 		}
 		wg.Wait()
+		var batchErr error
 		for i, step := range executable {
 			if results[i].err != nil {
-				return nil, state, fmt.Errorf("step %s: %w", step.ID, results[i].err)
+				if batchErr == nil {
+					batchErr = fmt.Errorf("step %s: %w", step.ID, results[i].err)
+				}
+				continue
 			}
-		}
-		for i, step := range executable {
 			state.Outputs[step.ID] = append(json.RawMessage(nil), results[i].value...)
 			if err := observe(ctx, observer, state, ExecutionEvent{Type: "step_completed", StepID: step.ID, StepKind: step.Kind, Output: results[i].value}); err != nil {
 				return nil, state, err
 			}
 			progressed = true
+		}
+		// A failed parallel peer does not erase independently completed work.
+		// Persisted successes are skipped when the invocation is reconciled or
+		// explicitly resumed, preventing a confirmed external effect from being
+		// executed a second time.
+		if batchErr != nil {
+			return nil, state, batchErr
 		}
 		looped := false
 		for _, step := range executable {
@@ -232,6 +245,19 @@ func ExecutePlanResumable(ctx context.Context, plan Plan, input json.RawMessage,
 		return nil, state, err
 	}
 	return result, state, nil
+}
+
+// activationContext gives one logical entry into a step a stable identity.
+// The loop counters distinguish later activations of the same step while a
+// process restart of the same activation resolves to the existing engine task.
+func activationContext(ctx context.Context, stepID string, iterations map[string]int) context.Context {
+	root := execution.InvocationID(ctx)
+	if root == "" {
+		return ctx
+	}
+	raw, _ := json.Marshal(iterations)
+	digest := sha256.Sum256(append(append([]byte(stepID), 0), raw...))
+	return execution.WithInvocationID(ctx, fmt.Sprintf("%s/step/%x", root, digest[:12]))
 }
 func normalizeState(state ExecutionState) ExecutionState {
 	if state.Outputs == nil {

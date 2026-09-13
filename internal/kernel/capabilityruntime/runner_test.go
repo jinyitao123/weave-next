@@ -29,21 +29,26 @@ func (e testRemote) ExecRemoteStructured(ctx context.Context, ws string, rec *re
 }
 
 type testRecorder struct {
-	runtimeID string
-	runs      map[string]string
-	events    []capability.ExecutionEvent
-	bindErr   error
+	runtimeID  string
+	runs       map[string]string
+	activation map[string]string
+	events     []capability.ExecutionEvent
+	bindErr    error
 }
 
 func (r *testRecorder) BindRuntime(_ context.Context, id string) error {
 	r.runtimeID = id
 	return r.bindErr
 }
-func (r *testRecorder) RecordRun(_ context.Context, step, run string) error {
+func (r *testRecorder) RecordRun(ctx context.Context, step, run string) error {
 	if r.runs == nil {
 		r.runs = map[string]string{}
 	}
+	if r.activation == nil {
+		r.activation = map[string]string{}
+	}
 	r.runs[step] = run
+	r.activation[step] = execution.InvocationID(ctx)
 	return nil
 }
 func (r *testRecorder) Checkpoint(_ context.Context, _ capability.ExecutionState, event capability.ExecutionEvent) error {
@@ -100,7 +105,7 @@ func TestRunnerPreservesRemoteIdentityInputAndDeadline(t *testing.T) {
 			request.Plan.Runtime.Engine = engineName
 			recorder := &testRecorder{}
 			result, err := runner.Execute(ctx, request, recorder)
-			if err != nil || calls != 1 || string(result) != `{"review":{"ok":true}}` || recorder.runtimeID != "chosen" || recorder.runs["review"] != "session" {
+			if err != nil || calls != 1 || string(result) != `{"review":{"ok":true}}` || recorder.runtimeID != "chosen" || recorder.runs["review"] != "session" || !strings.HasPrefix(recorder.activation["review"], "inv/step/") {
 				t.Fatalf("result=%s calls=%d recorder=%+v err=%v", result, calls, recorder, err)
 			}
 			if len(recorder.events) != 2 || recorder.events[1].Type != "execution_completed" {
@@ -116,7 +121,7 @@ func TestRunnerDoesNotRedispatchOnFailureOrLostClaim(t *testing.T) {
 		calls := 0
 		runner := testRunner(t, testRemote{call: func(context.Context, string, *registry.AgentRecord, execution.AgentExecutionStamp, string, json.RawMessage) (engine.RunResult, error) {
 			calls++
-			return engine.RunResult{}, failure
+			return engine.RunResult{Attempts: []engine.UsageAttempt{{AttemptID: "failed-attempt", Status: "failed"}}}, failure
 		}})
 		recorder := &testRecorder{}
 		if lostClaim {
@@ -129,6 +134,9 @@ func TestRunnerDoesNotRedispatchOnFailureOrLostClaim(t *testing.T) {
 		}
 		if !errors.Is(err, failure) || calls != wantCalls || len(recorder.events) != 0 {
 			t.Fatalf("lostClaim=%v calls=%d err=%v events=%v", lostClaim, calls, err, recorder.events)
+		}
+		if !lostClaim && (recorder.runs["review"] != "failed-attempt" || !strings.HasPrefix(recorder.activation["review"], "inv/step/")) {
+			t.Fatalf("failed attempt was not retained: runs=%v activations=%v", recorder.runs, recorder.activation)
 		}
 	}
 }

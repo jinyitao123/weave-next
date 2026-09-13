@@ -10,6 +10,7 @@ import (
 	"github.com/jinyitao123/loom"
 	"github.com/jinyitao123/loom/contract"
 	"github.com/jinyitao123/loom/stdlib"
+	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/kernel/capability"
 	"github.com/jinyitao123/weave/internal/kernel/loomruntime"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
@@ -40,7 +41,11 @@ func (e LoomSteps) ExecuteStep(ctx context.Context, step capability.PlanStep, in
 	if step.Kind != capability.StepWorker {
 		return nil, fmt.Errorf("unsupported Loom step kind")
 	}
-	identity := fmt.Sprintf("cap-%s-%x", e.RunKind, sha256.Sum256([]byte(e.InvocationID+"\x00"+step.ID)))
+	activationID := execution.InvocationID(ctx)
+	if activationID == "" {
+		return nil, fmt.Errorf("capability step activation identity is missing")
+	}
+	identity := fmt.Sprintf("cap-%s-%x", e.RunKind, sha256.Sum256([]byte(activationID)))
 	schema := step.OutputSchema
 	if len(schema) == 0 {
 		schema = json.RawMessage(`{"type":"object"}`)
@@ -57,7 +62,7 @@ func (e LoomSteps) ExecuteStep(ctx context.Context, step capability.PlanStep, in
 		return nil, err
 	}
 	result, err := loomruntime.Run(ctx, e.WorkspaceID, rec, loomruntime.Input{
-		SessionID: e.InvocationID, LastUserMessage: string(input), Messages: []contract.Message{{Role: "user", Content: string(input)}},
+		SessionID: activationID, LastUserMessage: string(input), Messages: []contract.Message{{Role: "user", Content: string(input)}},
 	}, attribution, loomruntime.Dependencies{
 		LLM: e.LLM, Store: e.Store, Tools: noTools{}, TerminalSink: e.TerminalSink,
 		UsageAttributionHook: func(ctx context.Context, lease loomruntime.RunAttemptLease) error {
