@@ -25,6 +25,14 @@ import type { ToolDefinition, ToolExecution, ToolExecutionResult } from '@deepse
 import { assertSupportedJsonSchema } from '@deepseek-ai/dsh-tools'
 import type { JsonSchemaNode, JsonValue } from '@deepseek-ai/dsh-tools'
 
+/** Host-owned metadata is separate from the model's tool arguments. */
+export type McpCallMetadata = (server: string, execution: ToolExecution) => Promise<Record<string, unknown> | undefined>
+const callMetadata = new WeakMap<object, McpCallMetadata>()
+export function setMcpCallMetadata(ctx: Context, provider: McpCallMetadata): () => void {
+  callMetadata.set(ctx.root, provider)
+  return () => { if (callMetadata.get(ctx.root) === provider) callMetadata.delete(ctx.root) }
+}
+
 /** Resolved options relevant to tool bridging. */
 export interface ToolBridgeOptions {
   /** Whether a registry conflict is contained or rejects this synchronization. */
@@ -83,9 +91,10 @@ function callToolUncached(
   args: Record<string, unknown>,
   exec: ToolExecution,
   opts: ToolBridgeOptions,
+  metadata?: Record<string, unknown>,
 ) {
   return client.request(
-    { method: 'tools/call', params: { name: rawName, arguments: args } },
+    { method: 'tools/call', params: { name: rawName, arguments: args, ...(metadata === undefined ? {} : { _meta: metadata }) } },
     RawCallToolResultSchema,
     {
       signal: exec.signal,
@@ -317,7 +326,8 @@ function createExecutor(
     // string/number/null). Fallback to {} lets the MCP server produce a
     // specific "missing required param" error the model can learn from.
     const argsObj = (typeof args === 'object' && args !== null ? args : {}) as Record<string, unknown>
-    const result = await callToolUncached(client, rawName, argsObj, exec, opts)
+    const metadata = await callMetadata.get(ctx.root)?.(opts.serverName, exec)
+    const result = await callToolUncached(client, rawName, argsObj, exec, opts, metadata)
 
     // The SDK may return a legacy `toolResult` shape; normalize to content array.
     if (!Array.isArray(result.content)) {

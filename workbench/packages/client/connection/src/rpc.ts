@@ -147,7 +147,13 @@ export interface ConnectionFetchRoute {
 }
 
 /** Host registry for exact Fetch routes that cannot use JSON Remote invocation. */
+export type ConnectionRequestMiddleware = (request: Request, next: (request: Request) => Promise<Response>) => Promise<Response>
+
 export interface HostConnectionFetch {
+  /** Apply a product authentication/authorization boundary to every Host API channel. */
+  use(middleware: ConnectionRequestMiddleware): () => Promise<void>
+  /** Filter an authenticated stream before a frame leaves the Host. */
+  filterStream(filter: (request: Request, value: unknown) => Promise<boolean>): () => Promise<void>
   /**
    * Register one exact route on the shared API channel.
    * @param route - path, methods, and Fetch-shaped implementation.
@@ -196,6 +202,9 @@ export interface HostConnectionHandle {
    * @returns Fetch handler for trusted, authenticated requests.
    */
   createSharedFetchHandler(channel: '/api'): ConnectionFetchHandler
+
+  /** Apply the same product boundary to opening and advancing a live stream. */
+  stream(request: Request, open: () => Promise<AsyncIterable<unknown>>): AsyncIterable<unknown>
 
   /**
    * Apply Connection's Host/Origin checks and browser authentication to

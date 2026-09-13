@@ -11,7 +11,7 @@ import type { WorkTaskPendingAction } from '../src/index.ts'
 
 const facts: DispatchInputFacts = { team_id: 'orders', workflow_id: 'reconcile', workflow_version: 1 }
 const hash = (value: string): string => createHash('sha256').update(value, 'utf8').digest('hex')
-const connection = { apiUrl: 'http://weave.test', apiKey: 'dispatch-test-credential' }
+const connection = { apiUrl: 'http://weave.test', headers: () => new Headers({ Authorization: 'Bearer dispatch-test-credential' }) }
 
 function user(session: Session, text: string, source: MessageSource = { kind: 'user' }): void {
   session.append('user/message', createUserMessage({ content: [{ type: 'text', text }], source }), { surfaceOp: 'append' })
@@ -273,7 +273,7 @@ describe('Workbench-owned dispatch tool', () => {
     expect(remote.requests[1]!.body).toEqual({ input_revision_id: accepted.revision!.input_revision_id,
       client_request_id: accepted.revision!.client_request_id })
     expect(accepted.state).toBe('accepted')
-    expect(JSON.stringify(app.session.events)).not.toContain(connection.apiKey)
+    expect(JSON.stringify(app.session.events)).not.toContain('dispatch-test-credential')
     expect(await app.execute()).toEqual(result)
     expect(remote.requests).toHaveLength(2)
   })

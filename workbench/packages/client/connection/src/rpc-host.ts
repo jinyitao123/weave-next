@@ -13,6 +13,7 @@ import { isTrustedApiRequest } from './api-request-trust.ts'
 import { API_PATH } from './api-path.ts'
 import type { BrowserAuth } from './browser-auth.ts'
 import type {
+  ConnectionRequestMiddleware,
   ConnectionIndexRequest,
   ConnectionIndexResponse,
   ConnectionFetchRoute,
@@ -58,6 +59,8 @@ declare module '@deepseek-ai/cordis' {
 /** Host Connection service whose channel registrations belong to the caller fiber. */
 export class HostConnectionService extends Service implements HostConnectionHandle {
   private readonly interceptors = new Map<string, ConnectionRpcInterceptor>()
+  private readonly streamFilters = new Set<(request: Request, value: unknown) => Promise<boolean>>()
+  private readonly middleware = new Set<ConnectionRequestMiddleware>()
   private readonly fetchRoutes = new Map<string, RegisteredFetchRoute>()
 
   /**
@@ -89,6 +92,8 @@ export class HostConnectionService extends Service implements HostConnectionHand
     const owner = this.ctx
     return {
       register: route => this.registerFetchRoute(owner, route),
+      filterStream: filter => owner.effect(() => { this.streamFilters.add(filter); return () => { this.streamFilters.delete(filter) } }, 'connection stream boundary'),
+      use: middleware => owner.effect(() => { this.middleware.add(middleware); return () => { this.middleware.delete(middleware) } }, 'connection request boundary'),
     }
   }
 
@@ -116,7 +121,7 @@ export class HostConnectionService extends Service implements HostConnectionHand
   createSharedFetchHandler(
     channel: '/api',
   ): ConnectionFetchHandler {
-    return {
+    return this.protect({
       fetch: (request) => {
         const pathname = new URL(request.url).pathname
         const route = this.fetchRoutes.get(pathname)
@@ -128,7 +133,36 @@ export class HostConnectionService extends Service implements HostConnectionHand
         }
         return interceptor.fetchHandler.fetch(request)
       },
+    })
+  }
+
+  async *stream(request: Request, open: () => Promise<AsyncIterable<unknown>>): AsyncIterable<unknown> {
+    const invoke = async <T>(operation: () => Promise<T>): Promise<T> => {
+      let result: T | undefined
+      const response = await this.protect({ fetch: async () => { result = await operation(); return new Response(null, { status: 204 }) } }).fetch(request.clone())
+      if (!response.ok) throw new Error(response.status === 401 ? 'login_required' : 'stream_access_denied')
+      return result as T
     }
+    const iterator = await invoke(async () => (await open())[Symbol.asyncIterator]())
+    try {
+      while (true) {
+        const step = await invoke(() => iterator.next())
+        if (step.done === true) return
+        const allowed = await invoke(async () => {
+          for (const filter of this.streamFilters) if (!(await filter(request, step.value))) return false
+          return true
+        })
+        if (allowed) yield step.value
+      }
+    } finally { await iterator.return?.() }
+  }
+
+  private protect(handler: ConnectionFetchHandler): ConnectionFetchHandler {
+    return { fetch: request => {
+      let next = (input: Request): Promise<Response> => handler.fetch(input)
+      for (const middleware of [...this.middleware].reverse()) { const downstream = next; next = input => middleware(input, downstream) }
+      return next(request)
+    } }
   }
 
   private registerFetchRoute(
@@ -155,7 +189,7 @@ export class HostConnectionService extends Service implements HostConnectionHand
     handler: ConnectionRpcHandler,
   ): () => Promise<void> {
     assertChannel(channel)
-    const fetchHandler = rpcFetchHandler(channel, handler)
+    const fetchHandler = this.protect(rpcFetchHandler(channel, handler))
     const route: WebRoute = {
       kind: 'prefix',
       path: channel,

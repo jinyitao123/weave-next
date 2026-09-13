@@ -10,7 +10,7 @@ import type { GenerateOptions, LlmResolvedModelInfo, StreamChunk } from '@deepse
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime, { type JsonValue } from '@deepseek-ai/dsh-tools'
 import type { PostToolDecision } from '@deepseek-ai/dsh-tools'
-import { publicToolName, syncTools, type ToolBridgeOptions } from '@deepseek-ai/dsh-mcp-client/src/tools.ts'
+import { publicToolName, syncTools, setMcpCallMetadata, type ToolBridgeOptions } from '@deepseek-ai/dsh-mcp-client/src/tools.ts'
 import { createTransport } from '@deepseek-ai/dsh-mcp-client/src/transport.ts'
 import type { Config } from '@deepseek-ai/dsh-mcp-client'
 
@@ -411,6 +411,24 @@ describe('tool execution', () => {
       undefined,
       expect.objectContaining({ timeout: 60_000 }),
     )
+  })
+
+  it('keeps concurrent user delegation outside model arguments and rechecks each call', async () => {
+    const client = createMockClient([{ name: 'echo', inputSchema: { type: 'object' } }], { content: [{ type: 'text', text: 'ok' }] })
+    const dispose = setMcpCallMetadata(ctx, async (_server, execution) => {
+      if (String(execution.callId) === 'expired') throw new Error('login_required')
+      return { weave_user_authorization: `Bearer trusted-${String(execution.callId)}` }
+    })
+    try {
+      await syncTools(client as never, ctx, defaultOpts, new Map())
+      await Promise.all(['alice', 'bob'].map(id => ctx.tools.execute({ signal: testToolSignal, callId: ToolCallId(id), name: 'mcp__srv__echo', arguments: { weave_user_authorization: 'Bearer forged-body' } })))
+      expect(client.callTool.mock.calls.map(call => call[0])).toEqual(expect.arrayContaining([
+        { name: 'echo', arguments: { weave_user_authorization: 'Bearer forged-body' }, _meta: { weave_user_authorization: 'Bearer trusted-alice' } },
+        { name: 'echo', arguments: { weave_user_authorization: 'Bearer forged-body' }, _meta: { weave_user_authorization: 'Bearer trusted-bob' } },
+      ]))
+      const denied = await ctx.tools.execute({ signal: testToolSignal, callId: ToolCallId('expired'), name: 'mcp__srv__echo', arguments: {} })
+      expect(denied.isError).toBe(true); expect(client.callTool).toHaveBeenCalledTimes(2)
+    } finally { dispose() }
   })
 
   it('sends the raw name for normalized public names', async () => {

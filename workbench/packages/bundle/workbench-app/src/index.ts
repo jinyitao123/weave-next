@@ -1,7 +1,15 @@
 /** Host-side durable Weave work-task projection and status synchronizer. */
 
 import { handleWeaveDeliverableRequest } from './deliverable-content.ts'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
+import { mkdir } from 'node:fs/promises'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
+import { installForegroundTools } from './foreground-tools.ts'
+import { setMcpCallMetadata } from '@deepseek-ai/dsh-mcp-client'
+import type {} from '@deepseek-ai/dsh-host-webserver'
+import type {} from '@deepseek-ai/dsh-api-workspace-controller'
+import { WorkbenchAccounts, type SessionOwner } from './account.ts'
 import { isDeepStrictEqual } from 'node:util'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-commands'
@@ -1050,6 +1058,8 @@ export const workTaskProjectionDefinition = {
 
 /** Host-only WorkTask synchronization settings. */
 export interface Config {
+  /** Operator-owned root for personal Host working directories. */
+  userDataRoot?: string
   /** Weave HTTP API origin; defaults to `WEAVE_API_URL` and then the local development endpoint. */
   readonly apiUrl?: string
   /** Business API credential; defaults to host-only `WEAVE_API_KEY`. */
@@ -1060,7 +1070,7 @@ export interface Config {
   readonly pollIntervalMs?: number
 }
 export const name = 'workbench-work-task'
-export const inject = ['sessions', 'sessionProjections', 'sessionController', 'commands', 'systemPrompt', 'connection', 'tools']
+export const inject = ['agents', 'sessions', 'sessionProjections', 'sessionController', 'commands', 'systemPrompt', 'connection', 'tools']
 
 function rerunFacts(session: Session, task: WorkTaskProjection): DispatchInputFacts {
   const accepted = session.events.findLast(event => event.type === 'weave/dispatch-input'
@@ -1099,7 +1109,60 @@ export function apply(ctx: Context, config: Config = {}): void {
   ctx.sessionController.registerHistoryProjection({ key: 'workTask', eventTypes: ['weave/work-task'] })
   const apiUrl = (config.apiUrl ?? process.env.WEAVE_API_URL ?? 'http://127.0.0.1:18080').replace(/\/$/, '')
   const apiKey = (config.apiKey ?? process.env.WEAVE_API_KEY ?? '').trim()
-  const dispatchInputs = apiKey === '' ? undefined : installDispatchInputTool(ctx, { apiUrl, apiKey }, (session) => {
+  const ownerOf = async (id: string): Promise<SessionOwner | undefined> => {
+    try { return (await ctx.sessionController.inspect(SessionId(id))).events.find(event => event.type === 'session/actor')?.data as SessionOwner | undefined } catch { return undefined }
+  }
+  ctx.on('webserver/index-inject', table => { table.push({ kind: 'global', name: '__DSH_ACCESS_PROBE__', value: '/api/weave.account' }) })
+  const accounts = new WorkbenchAccounts(apiUrl, apiKey, {
+    owner: ownerOf,
+    exists: async id => { try { await ctx.sessionController.inspect(SessionId(id)); return true } catch { return false } },
+  })
+  installForegroundTools(ctx, id => { try { accounts.sessionHeaders(id); return true } catch { return false } })
+  ctx.effect(() => ctx.sessionController.setSessionVisibility(() => accounts.visibility()), 'workbench account session visibility')
+  ctx.effect(() => ctx.sessionController.setSessionCreationPolicy(async request => {
+    const user = accounts.currentUser()
+    if (user === undefined) throw new Error('login_required')
+    if (request.workspaceId !== undefined || request.cwd !== undefined) {
+      if (user.role !== 'admin') throw new Error('host_admin_required')
+      return request
+    }
+    const id = request.sessionId ?? SessionId(`session-${randomUUID()}`)
+    // An owned replay retains its existing location; it cannot adopt another owner.
+    const existing = await ownerOf(String(id))
+    if (existing !== undefined) {
+      if (existing.userId !== user.id || existing.workspaceId !== user.workspace_id) throw new Error('session_not_found')
+      const meta = (await ctx.sessionController.inspect(id)).meta
+      return { ...request, sessionId: id, ...(meta.cwd === undefined ? {} : { cwd: meta.cwd }) }
+    }
+    const digest = createHash('sha256').update(JSON.stringify([user.workspace_id, user.id])).digest('hex')
+    const task = createHash('sha256').update(String(id)).digest('hex')
+    const cwd = join(config.userDataRoot ?? process.env.DSH_HOME ?? join(homedir(), '.weave', 'workbench'), 'users', digest, 'sessions', task)
+    await mkdir(cwd, { recursive: true, mode: 0o700 })
+    return { ...request, sessionId: id, cwd }
+  }), 'workbench personal session directories')
+  ctx.inject(['workspaceController'], workspaceCtx => {
+    workspaceCtx.effect(() => workspaceCtx.workspaceController.setSessionVisibility(() => accounts.visibility()), 'workbench account workspace visibility')
+  })
+  ctx.effect(() => setMcpCallMetadata(ctx, async (server, execution) => {
+    if (server !== 'weave') return undefined
+    if (execution.agent === undefined) throw new Error('login_required')
+    return { weave_user_authorization: accounts.sessionHeaders(String(execution.agent.session.id)).get('X-Weave-User-Authorization')! }
+  }), 'workbench per-user MCP authority')
+  ctx.on('session/created', session => {
+    const owner = accounts.currentOwner()
+    if (owner !== undefined) {
+      if (!session.events.some(event => event.type === 'session/actor')) session.append('session/actor', owner)
+      accounts.bindNewSession(String(session.id))
+    } else if (session.header.parentSession !== undefined) {
+      const parent = ctx.sessions.get(session.header.parentSession)
+      const inherited = parent?.events.find(event => event.type === 'session/actor')
+      if (inherited?.type === 'session/actor') {
+        if (!session.events.some(event => event.type === 'session/actor')) session.append('session/actor', inherited.data)
+        accounts.inheritSession(String(session.id), String(parent!.id))
+      }
+    }
+  })
+  const dispatchInputs = apiKey === '' ? undefined : installDispatchInputTool(ctx, { apiUrl, headers: session => accounts.sessionHeaders(String(session.id)) }, (session) => {
     const task = ctx.sessionProjections.stateOf(session, 'workTask')?.task
     if (task === null || task === undefined || task.runId === '') return
     if (task.pendingAction !== null) throw new Error('dispatch_input_pending: finish the current task action first')
@@ -1110,8 +1173,11 @@ export function apply(ctx: Context, config: Config = {}): void {
   })
   const runtimeServerUrl = resolveRuntimeServerUrl(apiUrl, config.runtimeServerUrl ?? process.env.WEAVE_RUNTIME_SERVER_URL)
   const connection = Reflect.get(ctx, 'connection') as {
-    readonly fetch: { register(route: { readonly path: string; readonly methods: readonly ('GET' | 'HEAD' | 'POST' | 'PUT' | 'DELETE')[]; readonly fetch: (request: Request) => Promise<Response> }): () => Promise<void> }
+    readonly fetch: { filterStream(filter: (request: Request, value: unknown) => Promise<boolean>): () => Promise<void>; use(middleware: (request: Request, next: (request: Request) => Promise<Response>) => Promise<Response>): () => Promise<void>; register(route: { readonly path: string; readonly methods: readonly ('GET' | 'HEAD' | 'POST' | 'PUT' | 'DELETE')[]; readonly fetch: (request: Request) => Promise<Response> }): () => Promise<void> }
   }
+  connection.fetch.use((request, next) => accounts.guard(request, next))
+  connection.fetch.filterStream((request, value) => accounts.streamVisible(request, value))
+  connection.fetch.register({ path: '/api/weave.account', methods: ['GET', 'POST'], fetch: request => accounts.handle(request) })
   const head = async (request: Request, response: Response): Promise<Response> => {
     if (request.method === 'GET') return response
     await response.body?.cancel()
@@ -1126,7 +1192,10 @@ export function apply(ctx: Context, config: Config = {}): void {
   connection.fetch.register({
     path: '/api/weave.pilot-report', methods: ['GET', 'HEAD'],
     fetch: async (request) => {
-      const report = buildPilotReport(ctx.sessions, ctx.sessionProjections)
+      const visible = accounts.visibility()
+      const sessions = ctx.sessions.list()
+      const allowed = await Promise.all(sessions.map(session => visible(String(session.id))))
+      const report = buildPilotReport({ list: () => sessions.filter((_, index) => allowed[index] === true) }, ctx.sessionProjections)
       const date = report.generatedAt.slice(0, 10)
       return head(request, new Response(JSON.stringify(report, null, 2), {
         headers: {
@@ -1139,19 +1208,19 @@ export function apply(ctx: Context, config: Config = {}): void {
   })
   connection.fetch.register({
     path: '/api/weave.agent-execution', methods: ['GET', 'PUT'],
-    fetch: request => handleAgentExecutionRequest(apiUrl, apiKey, request),
+    fetch: request => handleAgentExecutionRequest(apiUrl, apiKey, request, accounts.requestFetch(request)),
   })
   connection.fetch.register({
     path: '/api/weave.runtimes', methods: ['GET', 'HEAD', 'POST', 'PUT', 'DELETE'],
-    fetch: request => handleWeaveRuntimeRequest(apiUrl, apiKey, request, fetch, runtimeServerUrl),
+    fetch: request => handleWeaveRuntimeRequest(apiUrl, apiKey, request, accounts.requestFetch(request), runtimeServerUrl),
   })
   connection.fetch.register({
     path: '/api/weave.capability-apps', methods: ['GET', 'POST'],
-    fetch: request => handleCapabilityAppsRequest(apiUrl, apiKey, request),
+    fetch: request => handleCapabilityAppsRequest(apiUrl, apiKey, request, accounts.requestFetch(request)),
   })
   connection.fetch.register({
     path: '/api/weave.capability-operations', methods: ['GET', 'POST'],
-    fetch: request => handleCapabilityOperationsRequest(apiUrl, apiKey, request),
+    fetch: request => handleCapabilityOperationsRequest(apiUrl, apiKey, request, accounts.requestFetch(request)),
   })
   connection.fetch.register({
     path: '/api/weave.deliverable', methods: ['GET', 'HEAD'],
@@ -1159,7 +1228,7 @@ export function apply(ctx: Context, config: Config = {}): void {
       const sessionId = new URL(request.url).searchParams.get('sessionId') ?? ''
       const session = ctx.sessions.get(SessionId(sessionId))
       const task = session === undefined ? null : ctx.sessionProjections.stateOf(session, 'workTask')?.task
-      return handleWeaveDeliverableRequest(apiUrl, apiKey, request, task)
+      return handleWeaveDeliverableRequest(apiUrl, apiKey, request, task, accounts.requestFetch(request))
     },
   })
   const pollIntervalMs = Math.max(500, config.pollIntervalMs ?? 2_000)
@@ -1182,7 +1251,7 @@ export function apply(ctx: Context, config: Config = {}): void {
     let detail: unknown
     try {
       const response = await fetch(`${apiUrl}/v1/runs/${encodeURIComponent(current.runId)}/delivery`, {
-        headers: { Authorization: `Bearer ${apiKey}` }, signal: AbortSignal.timeout(10_000),
+        headers: accounts.sessionHeaders(String(session.id)), signal: AbortSignal.timeout(10_000),
       })
       if (!response.ok) { await response.body?.cancel(); return '暂时无法核对交付版本，请稍后重试。' }
       detail = await response.json() as unknown
@@ -1264,7 +1333,7 @@ export function apply(ctx: Context, config: Config = {}): void {
         }
         try {
           const response = await fetch(`${apiUrl}/v1/runs/${encodeURIComponent(current.runId)}/delivery/recheck`, {
-            method: 'POST', headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+            method: 'POST', headers: { ...Object.fromEntries(accounts.sessionHeaders(String(session.id))), 'Content-Type': 'application/json' },
             body: JSON.stringify({ revision_id: input.deliveryRevisionId, contract_digest: input.contractDigest }),
             signal: AbortSignal.any([request.signal, AbortSignal.timeout(50_000)]),
           })
@@ -1354,7 +1423,7 @@ export function apply(ctx: Context, config: Config = {}): void {
     try {
       const request = (path: string, init: RequestInit = {}): Promise<Response> => {
         const headers = new Headers(init.headers)
-        headers.set('Authorization', `Bearer ${apiKey}`)
+        for (const [key, value] of accounts.sessionHeaders(String(session.id))) headers.set(key, value)
         if (!headers.has('Content-Type')) headers.set('Content-Type', 'application/json')
         return fetch(`${apiUrl}${path}`, { ...init, headers, signal: AbortSignal.any([operation.controller.signal, AbortSignal.timeout(15_000)]) })
       }

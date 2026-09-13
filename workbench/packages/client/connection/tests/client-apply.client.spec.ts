@@ -14,11 +14,14 @@ import {
 type Win = {
   location?: { hostname: string; search: string; origin?: string }
   __DSH_TRANSPORT__?: ClientTransportHooks
+  __DSH_ACCESS_PROBE__?: string
 }
 
 afterEach(() => {
   delete (globalThis as Win).location
   delete (globalThis as Win).__DSH_TRANSPORT__
+  delete (globalThis as Win).__DSH_ACCESS_PROBE__
+  vi.unstubAllGlobals()
 })
 
 class GenerationProbe {
@@ -59,6 +62,46 @@ async function mount(): Promise<ConnectionHandle> {
 }
 
 describe('connection client apply', () => {
+  it('holds initial RPC and generation traffic until the product access probe authenticates', async () => {
+    ;(globalThis as Win).location = { hostname: 'localhost', search: '', origin: 'http://localhost:3080' }
+    ;(globalThis as Win).__DSH_ACCESS_PROBE__ = '/api/account.fixture'
+    let release!: (value: Response) => void
+    const access = new Promise<Response>(resolve => { release = resolve })
+    const sent: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (input: URL, init: RequestInit) => {
+      sent.push(input.pathname)
+      if (input.pathname === '/api/account.fixture') return access
+      const message = JSON.parse(String(init.body)) as { rpcId: string }
+      return Response.json({ type: 'server-response', rpcId: message.rpcId, result: { ok: true, value: 'own data' } })
+    }))
+    const handle = await mount()
+    const source = vi.fn<ConnectionGenerationSource>(async (_signal, ready) => { ready({ home: '/private' }) })
+    handle.registerGenerationSource(source)
+    const loop = handle.start({})
+    const result = handle.rpc.call('/api', 'session/list', {})
+    await vi.waitFor(() => { expect(sent).toEqual(['/api/account.fixture']) })
+    expect(source).not.toHaveBeenCalled()
+    release(Response.json({ authenticated: true }))
+    await expect(result).resolves.toEqual({ ok: true, value: 'own data' })
+    await vi.waitFor(() => { expect(source).toHaveBeenCalled() })
+    expect(sent).toEqual(['/api/account.fixture', '/api/session/list'])
+    loop.stop()
+  })
+
+  it('does not start business transports when the product access probe is anonymous', async () => {
+    ;(globalThis as Win).location = { hostname: 'localhost', search: '', origin: 'http://localhost:3080' }
+    ;(globalThis as Win).__DSH_ACCESS_PROBE__ = '/api/account.fixture'
+    const send = vi.fn(async () => Response.json({ authenticated: false }))
+    vi.stubGlobal('fetch', send)
+    const handle = await mount()
+    const source = vi.fn<ConnectionGenerationSource>(async () => {})
+    handle.registerGenerationSource(source)
+    const loop = handle.start({})
+    await expect(handle.rpc.call('/api', 'session/list', {})).rejects.toThrow('account_required')
+    expect(send).toHaveBeenCalledOnce(); expect(source).not.toHaveBeenCalled()
+    loop.stop()
+  })
+
   it('treats a runtime without browser location as local', async () => {
     delete (globalThis as Win).location
     expect((await mount()).isLoopback).toBe(true)

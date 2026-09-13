@@ -106,6 +106,20 @@ export class SessionController extends TypertRemoteService {
   private readonly listState: ApiSessionList
   private readonly openPath: (path: string, signal: AbortSignal) => Promise<void>
   private readonly canOpenPath: () => boolean
+  private sessionCreationPolicy: ((request: SessionCreateRequest) => Promise<SessionCreateRequest>) | undefined
+  /** Let the product choose a trusted personal or explicitly shared working directory. */
+  setSessionCreationPolicy(policy: (request: SessionCreateRequest) => Promise<SessionCreateRequest>): () => void {
+    this.sessionCreationPolicy = policy
+    return () => { if (this.sessionCreationPolicy === policy) this.sessionCreationPolicy = undefined }
+  }
+
+  private sessionVisibility: (() => (id: SessionId) => Promise<boolean>) | undefined
+  /** Install the product's request-bound Session visibility policy. */
+  setSessionVisibility(policy: () => (id: SessionId) => Promise<boolean>): () => void {
+    this.sessionVisibility = policy
+    return () => { if (this.sessionVisibility === policy) this.sessionVisibility = undefined }
+  }
+
   private readonly promotions = new Set<Promise<void>>()
 
   /**
@@ -208,7 +222,11 @@ export class SessionController extends TypertRemoteService {
    */
   @Remote('list')
   async list(_request: SessionListRequest, signal: AbortSignal): Promise<SessionListValue> {
-    return { items: await this.listState.list(signal) }
+    const items = await this.listState.list(signal)
+    const visible = this.sessionVisibility?.()
+    if (visible === undefined) return { items }
+    const allowed = await Promise.all(items.map(item => visible(item.sessionId)))
+    return { items: items.filter((_, index) => allowed[index] === true) }
   }
 
   /**
@@ -218,8 +236,12 @@ export class SessionController extends TypertRemoteService {
    * @returns authorized bounded Session search results.
    */
   @Remote('search')
-  search(request: SessionSearchRequest, signal: AbortSignal): Promise<SessionSearchValue> {
-    return this.listState.search(request.query, signal)
+  async search(request: SessionSearchRequest, signal: AbortSignal): Promise<SessionSearchValue> {
+    const result = await this.listState.search(request.query, signal)
+    const visible = this.sessionVisibility?.()
+    if (visible === undefined) return result
+    const allowed = await Promise.all(result.items.map(item => visible(item.sessionId)))
+    return { ...result, items: result.items.filter((_, index) => allowed[index] === true) }
   }
 
   /**
@@ -228,8 +250,8 @@ export class SessionController extends TypertRemoteService {
    * @returns the Session identity and resolved preset when configured.
    */
   @Remote('create')
-  create(request: SessionCreateRequest): Promise<SessionCreateValue> {
-    return this.commands.create(request)
+  async create(request: SessionCreateRequest): Promise<SessionCreateValue> {
+    return this.commands.create(this.sessionCreationPolicy === undefined ? request : await this.sessionCreationPolicy(request))
   }
 
   /**
@@ -398,7 +420,18 @@ export class SessionController extends TypertRemoteService {
    */
   @Remote({ mode: 'stream' })
   control(signal: AbortSignal): AsyncIterable<SessionControlFrame> {
-    return this.controlState.control(signal)
+    const visible = this.sessionVisibility?.()
+    const source = this.controlState.control(signal)
+    if (visible === undefined) return source
+    return (async function* () {
+      for await (const frame of source) {
+        if (frame.type !== 'baseline') { if (await visible(frame.sessionId)) yield frame; continue }
+        const allowed = new Set<SessionId>()
+        for (const id of Object.keys(frame.value.projections) as SessionId[]) if (await visible(id)) allowed.add(id)
+        const filter = <T>(value: Readonly<Record<SessionId, T>>): Readonly<Record<SessionId, T>> => Object.fromEntries(Object.entries(value).filter(([id]) => allowed.has(id as SessionId))) as Readonly<Record<SessionId, T>>
+        yield { type: 'baseline', value: { queues: filter(frame.value.queues), jobs: filter(frame.value.jobs), projections: filter(frame.value.projections) } } as SessionControlFrame
+      }
+    })()
   }
 
 }
