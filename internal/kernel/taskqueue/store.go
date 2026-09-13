@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jinyitao123/weave/internal/base/execution"
 )
 
 // ErrRuntimeClaimUnavailable covers missing and closed runtime claim gates.
@@ -55,6 +56,11 @@ func (s *Store) RecordDispatch(
 	workspaceID, fromAgent, toAgent, message, result string,
 	ok bool,
 ) error {
+	subject, err := execution.RequireSubject(ctx, workspaceID)
+	if err != nil {
+		return err
+	}
+	actorSubject, _ := json.Marshal(subject)
 	payload, err := json.Marshal(map[string]string{
 		"from":    fromAgent,
 		"to":      toAgent,
@@ -85,12 +91,12 @@ func (s *Store) RecordDispatch(
 		INSERT INTO weave_task_queue (
 			id, workspace_id, agent, identity_kind, identity_schema_version,
 			source, status, payload, result,
-			created_at, started_at, completed_at, updated_at
+			created_at, started_at, completed_at, updated_at, actor_subject
 		) VALUES (
 			$1, $2, NULL, $3, 2,
-			'dispatch', $4, $5, $6, $7, $7, $7, $7
+			'dispatch', $4, $5, $6, $7, $7, $7, $7, $8::jsonb
 		)
-	`, "task-"+uuid.NewString(), workspaceID, IdentityAudit, status, payload, resultJSON, now); err != nil {
+	`, "task-"+uuid.NewString(), workspaceID, IdentityAudit, status, payload, resultJSON, now, string(actorSubject)); err != nil {
 		return fmt.Errorf("insert dispatch task: %w", err)
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -150,6 +156,12 @@ func (s *Store) enqueueTx(
 	task *Task,
 	now time.Time,
 ) error {
+	subject, err := s.admissionSubject(ctx, tx, task)
+	if err != nil {
+		return err
+	}
+	task.Subject = subject
+	encodedSubject, _ := json.Marshal(subject)
 	source := task.Source
 	if source == "" {
 		source = "chat"
@@ -178,7 +190,7 @@ func (s *Store) enqueueTx(
 			workflow_id, workflow_version, run_snapshot_id,
 				source, kind, runtime_id, runtime_assignment, status, priority,
 			context_key, trace_id, parent_task_id, task_group_id,
-			subtask_deadline_at, payload, created_at, updated_at, build_run_id, available_at
+			subtask_deadline_at, payload, created_at, updated_at, build_run_id, available_at, actor_subject, deadline_at, outcome_sensitive
 		) VALUES (
 				$1, $2, COALESCE(
 					NULLIF($3, ''),
@@ -195,14 +207,14 @@ func (s *Store) enqueueTx(
 				NULLIF($10, ''), NULLIF($11, 0), NULLIF($12, ''),
 				$13, $14, NULLIF($15, ''), $16::jsonb, $17, $18,
 				$19, $20, $21, NULLIF($22, ''),
-				$23, $24, $25, $25, NULLIF($26, ''), $25
+				$23, $24, $25, $25, NULLIF($26, ''), $25, $27::jsonb, $28, $29
 			)
 		`, task.ID, task.WorkspaceID, task.ProjectID, task.Agent, task.AgentID, task.AgentVersion,
 		task.IdentityKind, task.IdentitySchemaVersion, task.ExecutionScope,
 		task.WorkflowID, task.WorkflowVersion, task.RunSnapshotID,
 		source, kind, task.RuntimeID, task.RuntimeAssignment, StatusQueued, task.Priority,
 		nullIfEmpty(task.ContextKey), nullIfEmpty(task.TraceID), nullIfEmpty(task.ParentTaskID),
-		task.TaskGroupID, task.SubtaskDeadlineAt, task.Payload, now, task.BuildRunID); err != nil {
+		task.TaskGroupID, task.SubtaskDeadlineAt, task.Payload, now, task.BuildRunID, string(encodedSubject), task.DeadlineAt, task.OutcomeSensitive || kind == "engine_exec" || kind == "team_build"); err != nil {
 		return fmt.Errorf("enqueue task: %w", err)
 	}
 	return nil
@@ -243,7 +255,7 @@ func (s *Store) Claim(ctx context.Context, workerID string, filter ClaimFilter) 
 	now, leaseExpiresAt := s.leaseTimes()
 	row := s.pool.QueryRow(ctx, `
 		UPDATE weave_task_queue
-		SET status=$1, worker_id=$2, started_at=$3, lease_expires_at=$4, updated_at=$3, claim_epoch=claim_epoch+1
+		SET status=$1, worker_id=$2, started_at=$3, lease_expires_at=$4, updated_at=$3, claim_epoch=claim_epoch+1, unreported_attempts=unreported_attempts+1
 		WHERE id = (
 			SELECT id FROM weave_task_queue
 			WHERE status='queued' AND available_at <= $3
@@ -303,7 +315,7 @@ func (s *Store) claimEngineTask(
 	now, leaseExpiresAt := s.leaseTimes()
 	row := tx.QueryRow(ctx, `
 		UPDATE weave_task_queue
-		SET status=$1, worker_id=$2, started_at=$3, lease_expires_at=$4, updated_at=$3, claim_epoch=claim_epoch+1
+		SET status=$1, worker_id=$2, started_at=$3, lease_expires_at=$4, updated_at=$3, claim_epoch=claim_epoch+1, unreported_attempts=unreported_attempts+1
 		WHERE id = (
 			SELECT id FROM weave_task_queue
 			WHERE status='queued' AND available_at <= $3
@@ -383,7 +395,7 @@ func (s *Store) Complete(ctx context.Context, id string, result json.RawMessage,
 	now := s.clock.Now()
 	_, err := s.pool.Exec(ctx, `
 		UPDATE weave_task_queue
-		SET status=$1, result=$2, run_id=$3, worker_id=NULL, lease_expires_at=NULL,
+		SET status=$1, result=$2, run_id=$3, stopped_epoch=claim_epoch, stopped_worker_id=worker_id, worker_id=NULL, lease_expires_at=NULL,
 			completed_at=$4, updated_at=$4
 		WHERE id=$5 AND status=$6
 	`, StatusCompleted, result, runID, now, id, StatusRunning)
@@ -397,7 +409,7 @@ func (s *Store) completeClaimed(ctx context.Context, id, workerID string, result
 	now := s.clock.Now()
 	tag, err := s.pool.Exec(ctx, `
 		UPDATE weave_task_queue
-		SET status=$1, result=$2, run_id=$3, worker_id=NULL, lease_expires_at=NULL,
+		SET status=$1, result=$2, run_id=$3, stopped_epoch=claim_epoch, stopped_worker_id=worker_id, worker_id=NULL, lease_expires_at=NULL,
 			completed_at=$4, updated_at=$4
 		WHERE id=$5 AND worker_id=$6 AND status=$7 AND lease_expires_at >= $4
 	`, StatusCompleted, result, runID, now, id, workerID, StatusRunning)
@@ -420,7 +432,7 @@ func (s *Store) Fail(ctx context.Context, id, errMsg string) error {
 	now := s.clock.Now()
 	_, err := s.pool.Exec(ctx, `
 		UPDATE weave_task_queue
-		SET status=$1, error=$2, worker_id=NULL, lease_expires_at=NULL,
+		SET status=$1, error=$2, stopped_epoch=claim_epoch, stopped_worker_id=worker_id, worker_id=NULL, lease_expires_at=NULL,
 			completed_at=$3, updated_at=$3
 		WHERE id=$4 AND status=$5
 	`, StatusFailed, errMsg, now, id, StatusRunning)
@@ -434,7 +446,7 @@ func (s *Store) failClaimed(ctx context.Context, id, workerID, errMsg string) er
 	now := s.clock.Now()
 	tag, err := s.pool.Exec(ctx, `
 		UPDATE weave_task_queue
-		SET status=$1, error=$2, worker_id=NULL, lease_expires_at=NULL,
+		SET status=$1, error=$2, stopped_epoch=claim_epoch, stopped_worker_id=worker_id, worker_id=NULL, lease_expires_at=NULL,
 			completed_at=$3, updated_at=$3
 		WHERE id=$4 AND worker_id=$5 AND status=$6 AND lease_expires_at >= $3
 	`, StatusFailed, errMsg, now, id, workerID, StatusRunning)
@@ -456,7 +468,7 @@ func (s *Store) requeueClaimed(ctx context.Context, id, workerID string, delay t
 	now := s.clock.Now()
 	tag, err := s.pool.Exec(ctx, `
 		UPDATE weave_task_queue
-		SET status=$1, error=NULL, result=NULL, run_id=NULL, worker_id=NULL,
+		SET status=$1, error=NULL, result=NULL, run_id=NULL, stopped_epoch=claim_epoch, stopped_worker_id=worker_id, worker_id=NULL,
 			lease_expires_at=NULL, started_at=NULL, completed_at=NULL, updated_at=$2, available_at=$6
 		WHERE id=$3 AND worker_id=$4 AND status=$5 AND lease_expires_at >= $2
 	`, StatusQueued, now, id, workerID, StatusRunning, now.Add(delay))
@@ -480,6 +492,9 @@ func (s *Store) CancelTx(ctx context.Context, tx pgx.Tx, workspaceID, id string)
 }
 
 func (s *Store) cancelTask(ctx context.Context, query taskQuerier, workspaceID, id string) error {
+	if _, err := s.get(ctx, query, workspaceID, id); err != nil {
+		return err
+	}
 	var found string
 	err := query.QueryRow(ctx, `UPDATE weave_task_queue
  SET status=CASE WHEN worker_id IS NOT NULL THEN $7 ELSE $3 END,
@@ -514,10 +529,10 @@ func (s *Store) cancelRunTasks(ctx context.Context, query taskQuerier, workspace
 		SET status=CASE WHEN worker_id IS NOT NULL THEN $8 ELSE $3 END,
 			completed_at=CASE WHEN worker_id IS NULL THEN $4::timestamptz ELSE NULL END, updated_at=$4
 		WHERE workspace_id=$1 AND run_snapshot_id=$2
-		  AND status IN ($5,$6,$7) RETURNING id)
+		  AND status IN ($5,$6,$7) AND ($9::jsonb IS NULL OR actor_subject=$9::jsonb) RETURNING id)
 		SELECT count(*) FROM cancelled
 	`, workspaceID, runSnapshotID, StatusCancelled, s.clock.Now(),
-		StatusQueued, StatusDispatched, StatusRunning, StatusCancelRequested).Scan(&count)
+		StatusQueued, StatusDispatched, StatusRunning, StatusCancelRequested, subjectFilter(ctx)).Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("cancel run tasks: %w", err)
 	}
@@ -536,8 +551,8 @@ func (s *Store) AcknowledgeExecutionStopped(ctx context.Context, id, workerID st
 	_, err := s.pool.Exec(ctx, `UPDATE weave_task_queue
  SET status=CASE WHEN status=$3 THEN $4 ELSE $6 END,
      error=CASE WHEN status=$8 THEN CASE WHEN kind='engine_exec' THEN $7 ELSE $9 END ELSE error END,
-     worker_id=NULL, lease_expires_at=NULL, completed_at=$5, updated_at=$5
- WHERE id=$1 AND worker_id=$2 AND (status=$3 OR (kind IN ('engine_exec','team_build') AND
+     stopped_epoch=claim_epoch, stopped_worker_id=worker_id, worker_id=NULL, lease_expires_at=NULL, completed_at=$5, updated_at=$5
+ WHERE id=$1 AND worker_id=$2 AND (status=$3 OR (outcome_sensitive AND
      (status=$8 OR (status=$6 AND error IN ($7,$9)))))`,
 		id, workerID, StatusCancelRequested, StatusCancelled, s.clock.Now(), StatusFailed, RuntimeLeaseExpiredError, StatusRunning, ExecutionLeaseExpiredError)
 	return err
@@ -575,6 +590,9 @@ func runtimeFailuresStopped(ctx context.Context, query taskQuerier, workspaceID,
 // RequestCancelTask atomically records a durable cancellation request for a
 // running task without clearing its worker lease or marking it terminal.
 func (s *Store) RequestCancelTask(ctx context.Context, workspaceID, id string) (bool, error) {
+	if _, err := s.Get(ctx, workspaceID, id); err != nil {
+		return false, err
+	}
 	now := s.clock.Now()
 	tag, err := s.pool.Exec(ctx, `
 		UPDATE weave_task_queue
@@ -609,11 +627,11 @@ func (s *Store) RecoverStale(ctx context.Context) (int, error) {
 	now := s.clock.Now()
 	rows, err := s.pool.Query(ctx, `
 		UPDATE weave_task_queue
-		SET status=CASE WHEN kind IN ('engine_exec','team_build') THEN $5 ELSE $1 END,
-			worker_id=CASE WHEN kind IN ('engine_exec','team_build') THEN worker_id ELSE NULL END,
-			lease_expires_at=CASE WHEN kind IN ('engine_exec','team_build') THEN lease_expires_at ELSE NULL END,
-			error=CASE WHEN kind IN ('engine_exec','team_build') THEN CASE WHEN kind='engine_exec' THEN $6 ELSE $7 END ELSE error END,
-			completed_at=CASE WHEN kind IN ('engine_exec','team_build') THEN $2::timestamptz ELSE NULL END, updated_at=$2
+		SET status=CASE WHEN outcome_sensitive THEN $5 ELSE $1 END,
+			worker_id=CASE WHEN outcome_sensitive THEN worker_id ELSE NULL END,
+			lease_expires_at=CASE WHEN outcome_sensitive THEN lease_expires_at ELSE NULL END,
+			error=CASE WHEN outcome_sensitive THEN CASE WHEN kind='engine_exec' THEN $6 ELSE $7 END ELSE error END,
+			completed_at=CASE WHEN outcome_sensitive THEN $2::timestamptz ELSE NULL END, updated_at=$2
 		WHERE status IN ($3, $4) AND lease_expires_at < $2
 		RETURNING id
 	`, StatusQueued, now, StatusRunning, StatusDispatched, StatusFailed, RuntimeLeaseExpiredError, ExecutionLeaseExpiredError)
@@ -636,9 +654,9 @@ func (s *Store) ListByGroup(ctx context.Context, workspaceID, groupID string) ([
 	rows, err := s.pool.Query(ctx, `
 		SELECT `+taskColumns+`
 		FROM weave_task_queue
-		WHERE workspace_id=$1 AND task_group_id=$2
+		WHERE workspace_id=$1 AND task_group_id=$2 AND ($3::jsonb IS NULL OR actor_subject=$3::jsonb)
 		ORDER BY created_at, id
-	`, workspaceID, groupID)
+	`, workspaceID, groupID, subjectFilter(ctx))
 	if err != nil {
 		return nil, fmt.Errorf("list task group legs: %w", err)
 	}
@@ -675,9 +693,9 @@ func (s *Store) ListEngineExecObservations(
 		  AND agent_id=$3
 		  AND kind='engine_exec'
 		  AND status=$4
-		  AND result IS NOT NULL
+		  AND result IS NOT NULL AND ($5::jsonb IS NULL OR actor_subject=$5::jsonb)
 		ORDER BY COALESCE(completed_at, updated_at), created_at, id
-	`, workspaceID, runSnapshotID, agentID, StatusCompleted)
+	`, workspaceID, runSnapshotID, agentID, StatusCompleted, subjectFilter(ctx))
 	if err != nil {
 		return nil, fmt.Errorf("list engine exec observations: %w", err)
 	}
@@ -725,12 +743,12 @@ func (s *Store) RequeueFailedLeg(ctx context.Context, workspaceID, groupID, agen
 			lease_expires_at=NULL, started_at=NULL, completed_at=NULL, updated_at=$5
 		WHERE id = (
 			SELECT id FROM weave_task_queue
-			WHERE workspace_id=$1 AND task_group_id=$2 AND agent=$3 AND status=$6
+			WHERE workspace_id=$1 AND task_group_id=$2 AND agent=$3 AND status=$6 AND worker_id IS NULL AND ($7::jsonb IS NULL OR actor_subject=$7::jsonb)
 			ORDER BY created_at DESC, id DESC
 			LIMIT 1
 		)
 		RETURNING `+taskColumns,
-		workspaceID, groupID, agent, StatusQueued, now, StatusFailed)
+		workspaceID, groupID, agent, StatusQueued, now, StatusFailed, subjectFilter(ctx))
 	task, err := scanTask(row)
 	if err != nil {
 		if err == pgx.ErrNoRows {
@@ -761,13 +779,16 @@ type taskQuerier interface {
 }
 
 func (s *Store) requeueFailedTask(ctx context.Context, query taskQuerier, workspaceID, id, runSnapshotID, contextKey string) (*Task, error) {
+	if _, err := s.get(ctx, query, workspaceID, id); err != nil {
+		return nil, err
+	}
 	now := s.clock.Now()
 	row := query.QueryRow(ctx, `
 		UPDATE weave_task_queue
 		SET status=$6,result=NULL,error=NULL,run_id=NULL,worker_id=NULL,
             runtime_assignment=jsonb_set(COALESCE(runtime_assignment,'{}'::jsonb),'{retry_generation}',to_jsonb(COALESCE((runtime_assignment->>'retry_generation')::int,0)+1),true),
             lease_expires_at=NULL,started_at=NULL,completed_at=NULL,updated_at=$7
-		WHERE workspace_id=$1 AND id=$2 AND run_snapshot_id=$3 AND context_key=$4 AND status=$5
+		WHERE workspace_id=$1 AND id=$2 AND run_snapshot_id=$3 AND context_key=$4 AND status=$5 AND worker_id IS NULL
 		RETURNING `+taskColumns,
 		workspaceID, id, runSnapshotID, contextKey, StatusFailed, StatusQueued, now)
 	task, err := scanTask(row)
@@ -797,8 +818,8 @@ func (s *Store) get(ctx context.Context, query taskQuerier, workspaceID, id stri
 	row := query.QueryRow(ctx, `
 		SELECT `+taskColumns+`
 		FROM weave_task_queue
-		WHERE workspace_id=$1 AND id=$2
-	`, workspaceID, id)
+		WHERE workspace_id=$1 AND id=$2 AND ($3::jsonb IS NULL OR actor_subject=$3::jsonb)
+	`, workspaceID, id, subjectFilter(ctx))
 	task, err := scanTask(row)
 	if err != nil {
 		return nil, fmt.Errorf("task %q not found: %w", id, err)
@@ -810,17 +831,17 @@ func (s *Store) get(ctx context.Context, query taskQuerier, workspaceID, id stri
 func (s *Store) List(ctx context.Context, workspaceID string, limit, offset int) ([]Task, int, error) {
 	var total int
 	if err := s.pool.QueryRow(ctx, `
-		SELECT COUNT(*) FROM weave_task_queue WHERE workspace_id=$1
-	`, workspaceID).Scan(&total); err != nil {
+		SELECT COUNT(*) FROM weave_task_queue WHERE workspace_id=$1 AND ($2::jsonb IS NULL OR actor_subject=$2::jsonb)
+	`, workspaceID, subjectFilter(ctx)).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("count tasks: %w", err)
 	}
 	rows, err := s.pool.Query(ctx, `
 		SELECT `+taskColumns+`
 		FROM weave_task_queue
-		WHERE workspace_id=$1
+		WHERE workspace_id=$1 AND ($4::jsonb IS NULL OR actor_subject=$4::jsonb)
 		ORDER BY created_at DESC
 		LIMIT $2 OFFSET $3
-	`, workspaceID, limit, offset)
+	`, workspaceID, limit, offset, subjectFilter(ctx))
 	if err != nil {
 		return nil, 0, fmt.Errorf("list tasks: %w", err)
 	}
@@ -854,17 +875,17 @@ func (s *Store) ListFiltered(
 	if err := s.pool.QueryRow(ctx, `
 		SELECT COUNT(*)
 		FROM weave_task_queue
-		WHERE workspace_id=$1 AND status=ANY($2::text[])
-	`, workspaceID, statuses).Scan(&total); err != nil {
+		WHERE workspace_id=$1 AND status=ANY($2::text[]) AND ($3::jsonb IS NULL OR actor_subject=$3::jsonb)
+	`, workspaceID, statuses, subjectFilter(ctx)).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("count filtered tasks: %w", err)
 	}
 	rows, err := s.pool.Query(ctx, `
 		SELECT `+taskColumns+`
 		FROM weave_task_queue
-		WHERE workspace_id=$1 AND status=ANY($2::text[])
+		WHERE workspace_id=$1 AND status=ANY($2::text[]) AND ($5::jsonb IS NULL OR actor_subject=$5::jsonb)
 		ORDER BY created_at DESC
 		LIMIT $3 OFFSET $4
-	`, workspaceID, statuses, limit, offset)
+	`, workspaceID, statuses, limit, offset, subjectFilter(ctx))
 	if err != nil {
 		return nil, 0, fmt.Errorf("list filtered tasks: %w", err)
 	}
@@ -900,7 +921,8 @@ func (s *Store) ListFilteredByProject(
 		FROM weave_task_queue
 		WHERE workspace_id=$1 AND project_id=$2
 		  AND ($3::text[] IS NULL OR cardinality($3::text[])=0 OR status=ANY($3::text[]))
-	`, workspaceID, projectID, statuses).Scan(&total); err != nil {
+	AND ($4::jsonb IS NULL OR actor_subject=$4::jsonb)
+	`, workspaceID, projectID, statuses, subjectFilter(ctx)).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("count project tasks: %w", err)
 	}
 	rows, err := s.pool.Query(ctx, `
@@ -908,9 +930,10 @@ func (s *Store) ListFilteredByProject(
 		FROM weave_task_queue
 		WHERE workspace_id=$1 AND project_id=$2
 		  AND ($3::text[] IS NULL OR cardinality($3::text[])=0 OR status=ANY($3::text[]))
+AND ($6::jsonb IS NULL OR actor_subject=$6::jsonb)
 		ORDER BY created_at DESC
 		LIMIT $4 OFFSET $5
-	`, workspaceID, projectID, statuses, limit, offset)
+	`, workspaceID, projectID, statuses, limit, offset, subjectFilter(ctx))
 	if err != nil {
 		return nil, 0, fmt.Errorf("list project tasks: %w", err)
 	}
@@ -938,7 +961,7 @@ const taskColumns = `
 	COALESCE(context_key, ''), COALESCE(trace_id, ''), COALESCE(parent_task_id, ''),
 	COALESCE(task_group_id, ''), subtask_deadline_at,
 	payload, result, COALESCE(error, ''), COALESCE(run_id, ''), COALESCE(worker_id, ''),
-	lease_expires_at, created_at, started_at, completed_at, updated_at, claim_epoch, COALESCE(build_run_id, ''), available_at`
+	lease_expires_at, created_at, started_at, completed_at, updated_at, claim_epoch, COALESCE(build_run_id, ''), available_at, actor_subject, deadline_at, outcome_sensitive, physical_usage, unreported_attempts, stopped_epoch, COALESCE(stopped_worker_id,'')`
 
 type rowScanner interface {
 	Scan(dest ...any) error
@@ -946,6 +969,7 @@ type rowScanner interface {
 
 func scanTask(row rowScanner) (*Task, error) {
 	var task Task
+	var actorSubject, physicalUsage []byte
 	if err := row.Scan(
 		&task.ID, &task.WorkspaceID, &task.ProjectID, &task.Agent, &task.AgentID, &task.AgentVersion,
 		&task.IdentityKind, &task.IdentitySchemaVersion, &task.ExecutionScope,
@@ -954,9 +978,18 @@ func scanTask(row rowScanner) (*Task, error) {
 		&task.ContextKey, &task.TraceID, &task.ParentTaskID,
 		&task.TaskGroupID, &task.SubtaskDeadlineAt,
 		&task.Payload, &task.Result, &task.Error, &task.RunID, &task.WorkerID,
-		&task.LeaseExpiresAt, &task.CreatedAt, &task.StartedAt, &task.CompletedAt, &task.UpdatedAt, &task.ClaimEpoch, &task.BuildRunID, &task.AvailableAt,
+		&task.LeaseExpiresAt, &task.CreatedAt, &task.StartedAt, &task.CompletedAt, &task.UpdatedAt, &task.ClaimEpoch, &task.BuildRunID, &task.AvailableAt, &actorSubject, &task.DeadlineAt, &task.OutcomeSensitive, &physicalUsage, &task.UnreportedAttempts, &task.StoppedEpoch, &task.StoppedWorkerID,
 	); err != nil {
 		return nil, err
+	}
+	if err := json.Unmarshal(physicalUsage, &task.PhysicalUsage); err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(actorSubject, &task.Subject); err != nil {
+		return nil, err
+	}
+	if task.Subject.Validate() != nil || task.Subject.WorkspaceID != task.WorkspaceID {
+		return nil, execution.ErrSubjectMismatch
 	}
 	return &task, nil
 }

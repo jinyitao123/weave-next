@@ -77,6 +77,11 @@ type ChatExecResult struct {
 type ChatHandler struct{ Executor ChatExecutor }
 
 func (h ChatHandler) ExecuteTask(ctx context.Context, task Task) (TaskResult, error) {
+	bound, err := BindTaskSubject(ctx, &task)
+	if err != nil {
+		return TaskResult{}, err
+	}
+	ctx = bound
 	var req ChatExecRequest
 	if err := json.Unmarshal(task.Payload, &req); err != nil {
 		return TaskResult{}, fmt.Errorf("invalid payload: %w", err)
@@ -85,6 +90,7 @@ func (h ChatHandler) ExecuteTask(ctx context.Context, task Task) (TaskResult, er
 	if err != nil {
 		return TaskResult{}, fmt.Errorf("invalid task identity: %w", err)
 	}
+	req.UserID = task.Subject.UserID
 	req.Agent, req.AgentID, req.AgentVersion = task.Agent, task.AgentID, task.AgentVersion
 	req.ExecutionStamp, req.RunSnapshotID = stamp, task.RunSnapshotID
 	if req.ProjectID != task.ProjectID {

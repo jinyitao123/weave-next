@@ -249,6 +249,7 @@ func (r *Reconciler) commitLegacyCompletion(
 	}
 	if err := r.enqueuer.EnqueueTx(ctx, tx, &taskqueue.Task{
 		ID:                    completionID,
+		Subject:               execution.Subject{WorkspaceID: group.WorkspaceID, UserID: group.UserID},
 		WorkspaceID:           group.WorkspaceID,
 		Agent:                 group.AvatarAgent,
 		AgentID:               agentID,

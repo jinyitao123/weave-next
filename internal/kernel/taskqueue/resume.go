@@ -19,9 +19,9 @@ func (s *Store) ResumeTaskTx(ctx context.Context, tx pgx.Tx, workspaceID, id, ki
 		SET status=$5,result=NULL,error=NULL,run_id=NULL,
 			lease_expires_at=NULL,started_at=NULL,completed_at=NULL,updated_at=$6,available_at=$6
 		WHERE workspace_id=$1 AND id=$2 AND kind=$3 AND context_key=$4
-			AND status IN ($7,$8) AND worker_id IS NULL
+			AND status IN ($7,$8) AND worker_id IS NULL AND stopped_epoch=claim_epoch AND (deadline_at IS NULL OR deadline_at>$6) AND ($9::jsonb IS NULL OR actor_subject=$9::jsonb)
 		RETURNING `+taskColumns, workspaceID, id, kind, contextKey,
-		StatusQueued, s.clock.Now(), StatusCompleted, StatusFailed))
+		StatusQueued, s.clock.Now(), StatusCompleted, StatusFailed, subjectFilter(ctx)))
 	if err != nil {
 		return nil, fmt.Errorf("task has not settled or cannot be resumed: %w", err)
 	}

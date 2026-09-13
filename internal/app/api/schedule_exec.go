@@ -6,14 +6,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/jinyitao123/weave/internal/base/execution"
 	"io"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jinyitao123/weave/internal/base/snapshot"
-	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 	"github.com/jinyitao123/weave/internal/kernel/schedule"
+	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 	"github.com/jinyitao123/weave/internal/kernel/workflow"
 )
 
@@ -121,7 +122,8 @@ func (s *Server) SweepSchedules(ctx context.Context, now time.Time) error {
 	}
 	var itemErrors []error
 	for _, item := range due {
-		itemErr := s.sweepWorkflowSchedule(ctx, item, now)
+		itemCtx := execution.WithSubject(ctx, execution.Subject{WorkspaceID: item.WorkspaceID, ServiceID: "workflow-schedule:" + item.ID})
+		itemErr := s.sweepWorkflowSchedule(itemCtx, item, now)
 		if itemErr != nil {
 			itemErrors = append(itemErrors, fmt.Errorf(
 				"sweep schedule %q in workspace %q: %w",

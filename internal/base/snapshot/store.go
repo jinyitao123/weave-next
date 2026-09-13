@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jinyitao123/weave/internal/base/execution"
 )
 
 var (
@@ -26,28 +27,29 @@ var (
 
 // TeamRunSnapshot freezes team configuration and dependency selections for one run.
 type TeamRunSnapshot struct {
-	RunID                   string          `json:"run_id"`
-	WorkspaceID             string          `json:"workspace_id"`
-	ProjectID               string          `json:"project_id,omitempty"`
-	TeamID                  string          `json:"team_id"`
-	SnapshotSchemaVersion   int             `json:"snapshot_schema_version"`
-	Mode                    string          `json:"mode,omitempty"`
-	WorkflowID              string          `json:"workflow_id,omitempty"`
-	WorkflowVersion         int             `json:"workflow_version,omitempty"`
-	LeadAvatarID            string          `json:"lead_avatar_id,omitempty"`
-	LeadAvatarVersion       int             `json:"lead_avatar_version,omitempty"`
-	WorkerVersions          json.RawMessage `json:"worker_versions,omitempty"`
-	TeamWorkerSnapshot      json.RawMessage `json:"team_worker_snapshot,omitempty"`
-	ArtifactRef             string          `json:"artifact_ref,omitempty"`
-	ArtifactWorkflowID      string          `json:"artifact_workflow_id,omitempty"`
-	ArtifactWorkflowVersion int             `json:"artifact_workflow_version,omitempty"`
-	AdmissionDecision       json.RawMessage `json:"admission_decision"`
-	InlineDependencies      json.RawMessage `json:"inline_dependencies,omitempty"`
-	RunAssociations         json.RawMessage `json:"run_associations"`
-	TriggerSource           string          `json:"trigger_source,omitempty"`
-	TriggerSourceV2         json.RawMessage `json:"trigger_source_v2,omitempty"`
-	RuntimeAssignment       json.RawMessage `json:"runtime_assignment,omitempty"`
-	BuildRunID              string          `json:"build_run_id,omitempty"`
+	Subject                 execution.Subject `json:"subject"`
+	RunID                   string            `json:"run_id"`
+	WorkspaceID             string            `json:"workspace_id"`
+	ProjectID               string            `json:"project_id,omitempty"`
+	TeamID                  string            `json:"team_id"`
+	SnapshotSchemaVersion   int               `json:"snapshot_schema_version"`
+	Mode                    string            `json:"mode,omitempty"`
+	WorkflowID              string            `json:"workflow_id,omitempty"`
+	WorkflowVersion         int               `json:"workflow_version,omitempty"`
+	LeadAvatarID            string            `json:"lead_avatar_id,omitempty"`
+	LeadAvatarVersion       int               `json:"lead_avatar_version,omitempty"`
+	WorkerVersions          json.RawMessage   `json:"worker_versions,omitempty"`
+	TeamWorkerSnapshot      json.RawMessage   `json:"team_worker_snapshot,omitempty"`
+	ArtifactRef             string            `json:"artifact_ref,omitempty"`
+	ArtifactWorkflowID      string            `json:"artifact_workflow_id,omitempty"`
+	ArtifactWorkflowVersion int               `json:"artifact_workflow_version,omitempty"`
+	AdmissionDecision       json.RawMessage   `json:"admission_decision"`
+	InlineDependencies      json.RawMessage   `json:"inline_dependencies,omitempty"`
+	RunAssociations         json.RawMessage   `json:"run_associations"`
+	TriggerSource           string            `json:"trigger_source,omitempty"`
+	TriggerSourceV2         json.RawMessage   `json:"trigger_source_v2,omitempty"`
+	RuntimeAssignment       json.RawMessage   `json:"runtime_assignment,omitempty"`
+	BuildRunID              string            `json:"build_run_id,omitempty"`
 	// BuildRoundNo is the team build round that produced the candidate.
 	// Zero means no round binding (legacy snapshots and admin API candidate
 	// runs); when present it must be paired with the candidate identity.
@@ -90,6 +92,21 @@ func (s *Store) CreateTx(
 	tx pgx.Tx,
 	snapshot TeamRunSnapshot,
 ) (*TeamRunSnapshot, error) {
+	subject := snapshot.Subject
+	if authenticated, ok := execution.SubjectFromContext(ctx); ok {
+		if subject != (execution.Subject{}) && subject != authenticated {
+			return nil, execution.ErrSubjectMismatch
+		}
+		subject = authenticated
+	}
+	if err := subject.Validate(); err != nil {
+		return nil, err
+	}
+	if subject.WorkspaceID != snapshot.WorkspaceID {
+		return nil, execution.ErrSubjectMismatch
+	}
+	snapshot.Subject = subject
+	encodedSubject, _ := json.Marshal(subject)
 	triggerType, err := validateSnapshotV2(snapshot)
 	if err != nil {
 		return nil, fmt.Errorf("validate team run snapshot: %w", err)
@@ -104,7 +121,7 @@ func (s *Store) CreateTx(
 				artifact_workflow_id, artifact_workflow_version,
 				inline_dependencies, run_associations, trigger_source,
 					trigger_source_v2, runtime_assignment,
-					build_run_id, build_round_no, candidate_content_hash
+					build_run_id, build_round_no, candidate_content_hash, actor_subject
 				) VALUES (
 					$1, $2, NULLIF($3, ''), $4, $5, $6,
 					NULLIF($7, ''), NULLIF($8, 0),
@@ -112,7 +129,7 @@ func (s *Store) CreateTx(
 					$12::jsonb, NULL, $13::jsonb,
 					NULLIF($14, ''), NULLIF($15, 0),
 					$16::jsonb, $17::jsonb, $18, $19::jsonb, $20::jsonb,
-					NULLIF($21, ''), NULLIF($22, 0), NULLIF($23, '')
+					NULLIF($21, ''), NULLIF($22, 0), NULLIF($23, ''), $24::jsonb
 			)
 			RETURNING `+snapshotColumns,
 		snapshot.RunID,
@@ -137,7 +154,7 @@ func (s *Store) CreateTx(
 		jsonArgument(snapshot.RuntimeAssignment),
 		snapshot.BuildRunID,
 		snapshot.BuildRoundNo,
-		snapshot.CandidateContentHash,
+		snapshot.CandidateContentHash, string(encodedSubject),
 	))
 	if err != nil {
 		var pgErr *pgconn.PgError
@@ -154,8 +171,8 @@ func (s *Store) GetByRunID(ctx context.Context, workspaceID, runID string) (*Tea
 	snapshot, err := scanSnapshot(s.pool.QueryRow(ctx, `
 		SELECT `+snapshotColumns+`
 		FROM weave_team_run_snapshots
-		WHERE workspace_id=$1 AND run_id=$2
-	`, workspaceID, runID))
+		WHERE workspace_id=$1 AND run_id=$2 AND ($3::jsonb IS NULL OR actor_subject=$3::jsonb)
+	`, workspaceID, runID, snapshotSubjectFilter(ctx)))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, fmt.Errorf("%w: run %q", ErrNotFound, runID)
 	}
@@ -177,9 +194,9 @@ func (s *Store) ListByTeam(
 	rows, err := s.pool.Query(ctx, `
 		SELECT `+snapshotColumns+`
 		FROM weave_team_run_snapshots
-		WHERE workspace_id=$1 AND team_id=$2
+		WHERE workspace_id=$1 AND team_id=$2 AND ($3::jsonb IS NULL OR actor_subject=$3::jsonb)
 		ORDER BY run_id
-	`, workspaceID, teamID)
+	`, workspaceID, teamID, snapshotSubjectFilter(ctx))
 	if err != nil {
 		return nil, fmt.Errorf("list team run snapshots: %w", err)
 	}
@@ -201,9 +218,9 @@ func (s *Store) ListByWorkflow(
 		SELECT `+snapshotColumns+`
 		FROM weave_team_run_snapshots
 		WHERE workspace_id=$1 AND team_id=$2
-			AND workflow_id=$3 AND workflow_version=$4
+			AND workflow_id=$3 AND workflow_version=$4 AND ($5::jsonb IS NULL OR actor_subject=$5::jsonb)
 		ORDER BY run_id
-	`, workspaceID, teamID, workflowID, workflowVersion)
+	`, workspaceID, teamID, workflowID, workflowVersion, snapshotSubjectFilter(ctx))
 	if err != nil {
 		return nil, fmt.Errorf("list workflow run snapshots: %w", err)
 	}
@@ -219,7 +236,7 @@ const snapshotColumns = `
 		COALESCE(artifact_workflow_version, 0),
 		admission_decision, inline_dependencies, run_associations, trigger_source,
 		trigger_source_v2, runtime_assignment,
-			build_run_id, build_round_no, candidate_content_hash, created_at
+			build_run_id, build_round_no, candidate_content_hash, created_at, actor_subject
 	`
 
 type rowScanner interface {
@@ -244,6 +261,7 @@ func scanSnapshots(rows pgx.Rows, operation string) ([]TeamRunSnapshot, error) {
 
 func scanSnapshot(row rowScanner) (*TeamRunSnapshot, error) {
 	var snapshot TeamRunSnapshot
+	var actorSubject []byte
 	var workerVersions []byte
 	var teamWorkers []byte
 	var admission []byte
@@ -280,9 +298,15 @@ func scanSnapshot(row rowScanner) (*TeamRunSnapshot, error) {
 		&buildRunID,
 		&buildRoundNo,
 		&candidateContentHash,
-		&snapshot.CreatedAt,
+		&snapshot.CreatedAt, &actorSubject,
 	); err != nil {
 		return nil, err
+	}
+	if err := json.Unmarshal(actorSubject, &snapshot.Subject); err != nil {
+		return nil, err
+	}
+	if snapshot.Subject.Validate() != nil || snapshot.Subject.WorkspaceID != snapshot.WorkspaceID {
+		return nil, execution.ErrSubjectMismatch
 	}
 	if projectID != nil {
 		snapshot.ProjectID = *projectID
@@ -580,4 +604,13 @@ func exactJSONObject(
 		}
 	}
 	return fields, nil
+}
+
+func snapshotSubjectFilter(ctx context.Context) any {
+	subject, ok := execution.SubjectFromContext(ctx)
+	if !ok {
+		return nil
+	}
+	encoded, _ := json.Marshal(subject)
+	return string(encoded)
 }

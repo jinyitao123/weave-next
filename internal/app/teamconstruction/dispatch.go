@@ -68,7 +68,7 @@ func (d *Dispatcher) Submit(ctx context.Context, workspaceID, buildRunID string)
 	queued, err := d.Tasks.GetTx(ctx, tx, workspaceID, id)
 	if errors.Is(err, pgx.ErrNoRows) {
 		payload, _ := json.Marshal(map[string]string{"build_run_id": buildRunID})
-		queued = &taskqueue.Task{ID: id, WorkspaceID: workspaceID, BuildRunID: buildRunID,
+		queued = &taskqueue.Task{DeadlineAt: &run.ExpiresAt, OutcomeSensitive: true, ID: id, WorkspaceID: workspaceID, BuildRunID: buildRunID,
 			Kind: TaskKind, Source: TaskKind, IdentityKind: taskqueue.IdentityTeamBuild,
 			IdentitySchemaVersion: 2, ContextKey: buildRunID, Payload: payload, Status: taskqueue.StatusQueued}
 		err = d.Tasks.EnqueueTx(ctx, tx, queued)
