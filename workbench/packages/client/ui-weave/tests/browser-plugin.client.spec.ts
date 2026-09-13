@@ -74,7 +74,7 @@ describe('ui-weave browser plugin', () => {
     expect(slots.entries('conversation.input.dock')[0]?.component).toBe(WorkTaskConversationCard)
     expect(slots.entries('sidebar.footer.action')).toHaveLength(0)
     const settings = slots.entries('settings.section')
-    expect(settings).toHaveLength(1)
+    expect(settings).toHaveLength(2)
     expect(settings[0]?.options).toMatchObject({ id: 'weave-runtimes', order: -20 })
     expect(settings[0]?.component).toBe(RuntimeSettingsSection)
     const commands = slots.entries('conversation.chat.commandview')

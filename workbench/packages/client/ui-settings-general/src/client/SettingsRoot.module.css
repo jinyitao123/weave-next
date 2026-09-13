@@ -217,3 +217,20 @@
   clip: rect(0 0 0 0);
   white-space: nowrap;
 }
+
+@media (max-width: 600px) {
+  .panel {
+    flex-direction: column;
+    width: calc(100vw - 24px);
+    max-width: calc(100vw - 24px);
+    height: calc(100dvh - 24px);
+    border-radius: 12px;
+  }
+  .nav { width: 100%; padding: 16px 12px 0; gap: 8px; }
+  .navTitle { min-height: 28px; padding: 0; padding-right: 150px; }
+  .navList { flex-direction: row; overflow-x: auto; }
+  .navCell { flex: none; padding: 8px; }
+  .content { min-height: 0; }
+  .header { position: absolute; top: 12px; right: 12px; height: 28px; padding: 0; }
+  .options { padding: 16px 12px; }
+}
