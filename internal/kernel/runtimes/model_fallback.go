@@ -9,11 +9,11 @@ import (
 
 	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/kernel/engine"
-	"github.com/jinyitao123/weave/internal/kernel/execenv"
+	"github.com/jinyitao123/weave/internal/kernel/execspec"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 )
 
-func (e *Executor) execRemote(ctx context.Context, tenant string, rec *registry.AgentRecord, stamp execution.AgentExecutionStamp, prompt string, attachments []execenv.Attachment, schema json.RawMessage) (engine.RunResult, error) {
+func (e *Executor) execRemote(ctx context.Context, tenant string, rec *registry.AgentRecord, stamp execution.AgentExecutionStamp, prompt string, attachments []execspec.Attachment, schema json.RawMessage) (engine.RunResult, error) {
 	if rec == nil {
 		return engine.RunResult{}, fmt.Errorf("agent record is required")
 	}

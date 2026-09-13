@@ -17,7 +17,7 @@ import (
 	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/kernel/compiler"
 	"github.com/jinyitao123/weave/internal/kernel/engine"
-	"github.com/jinyitao123/weave/internal/kernel/execenv"
+	"github.com/jinyitao123/weave/internal/kernel/execspec"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 )
@@ -53,7 +53,7 @@ func (e *Executor) ExecRemote(
 	rec *registry.AgentRecord,
 	stamp execution.AgentExecutionStamp,
 	prompt string,
-	attachments []execenv.Attachment,
+	attachments []execspec.Attachment,
 ) (engine.RunResult, error) {
 	return e.execRemote(ctx, tenant, rec, stamp, prompt, attachments, nil)
 }
@@ -67,7 +67,7 @@ func (e *Executor) ExecRemoteStructured(
 	rec *registry.AgentRecord,
 	stamp execution.AgentExecutionStamp,
 	prompt string,
-	attachments []execenv.Attachment,
+	attachments []execspec.Attachment,
 	outputSchema json.RawMessage,
 ) (engine.RunResult, error) {
 	if len(outputSchema) == 0 || !json.Valid(outputSchema) {
@@ -82,7 +82,7 @@ func (e *Executor) execRemoteOnce(
 	rec *registry.AgentRecord,
 	stamp execution.AgentExecutionStamp,
 	prompt string,
-	attachments []execenv.Attachment,
+	attachments []execspec.Attachment,
 	outputSchema json.RawMessage,
 ) (engine.RunResult, error) {
 	if err := validateAgentExecutionStamp(tenant, rec, stamp); err != nil {
@@ -263,7 +263,7 @@ func (e *Executor) execRemoteAttempt(
 	rec *registry.AgentRecord,
 	stamp execution.AgentExecutionStamp,
 	prompt string,
-	attachments []execenv.Attachment,
+	attachments []execspec.Attachment,
 	outputSchema json.RawMessage,
 	traceID, parentTaskID string,
 ) (engine.RunResult, string, error) {
@@ -337,7 +337,7 @@ func (e *Executor) execRemoteAttempt(
 	}
 	payload := e.buildExecPayloadWithSchema(tenant, rec, prompt, attachments, outputSchema)
 	payload.Subject = subject
-	payload.FrozenMCP = execenv.FrozenMCPInvocationFromContext(ctx)
+	payload.FrozenMCP = execspec.FrozenMCPInvocationFromContext(ctx)
 	if stamp.ExecutionScope == execution.ScopeTeamWorkerLeaf && len(rec.MCPServers) > 0 && payload.FrozenMCP == nil {
 		return engine.RunResult{}, "", errors.New("published worker MCP authority is unavailable")
 	}
@@ -489,7 +489,7 @@ func (e *Executor) buildExecPayloadWithSchema(
 	tenant string,
 	rec *registry.AgentRecord,
 	prompt string,
-	attachments []execenv.Attachment,
+	attachments []execspec.Attachment,
 	outputSchema json.RawMessage,
 ) EngineExecRequest {
 	if CanonicalEngine(rec.Engine) == EngineLoom {
@@ -517,7 +517,7 @@ func (e *Executor) buildExecPayloadWithSchema(
 	}
 }
 
-func engineExecAttachments(attachments []execenv.Attachment) []EngineExecAttachment {
+func engineExecAttachments(attachments []execspec.Attachment) []EngineExecAttachment {
 	if len(attachments) == 0 {
 		return nil
 	}
@@ -531,7 +531,7 @@ func engineExecAttachments(attachments []execenv.Attachment) []EngineExecAttachm
 	return result
 }
 
-func promptWithAttachmentNotice(prompt string, attachments []execenv.Attachment) string {
+func promptWithAttachmentNotice(prompt string, attachments []execspec.Attachment) string {
 	if len(attachments) == 0 {
 		return prompt
 	}

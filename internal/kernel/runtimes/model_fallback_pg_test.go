@@ -14,10 +14,10 @@ import (
 
 	"github.com/jinyitao123/weave/internal/base/db"
 	"github.com/jinyitao123/weave/internal/base/execution"
-	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 	"github.com/jinyitao123/weave/internal/base/testutil"
 	"github.com/jinyitao123/weave/internal/kernel/engine"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
+	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 )
 
 func TestModelFallbackReconcilesAttemptsInsteadOfReplayingAfterRestartRealPG(t *testing.T) {
@@ -31,11 +31,13 @@ func TestModelFallbackReconcilesAttemptsInsteadOfReplayingAfterRestartRealPG(t *
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), timeout)
 	defer cancel()
+	ctx = execution.WithSubject(ctx, execution.Subject{WorkspaceID: "ws", UserID: "runtime-user"})
 	if err := db.Migrate(ctx, pool); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := pool.Exec(ctx, `
 INSERT INTO weave_workspaces(id,slug,name) VALUES('ws','ws','ws');
+INSERT INTO weave_users(id,tenant_id,username,password) VALUES('runtime-user','ws','runtime-user','unused');
 INSERT INTO weave_agents(id,workspace_id,name,role,spec) VALUES('agent','ws','worker','worker','{}');
 INSERT INTO weave_agent_versions(agent_id,workspace_id,version,spec) VALUES('agent','ws',1,'{}');
 `); err != nil {
@@ -108,7 +110,7 @@ INSERT INTO weave_agent_versions(agent_id,workspace_id,version,spec) VALUES('age
 						workerDone <- err
 						return
 					}
-					result, err = backend.Run(ctx, engine.RunSpec{WorkDir: t.TempDir(), Prompt: "Reply exactly fallback completed. Do not use tools or access files.", Model: request.Model, Env: map[string]string{"WEAVE_CLAUDE_AUTH_MODE": "oauth"}, Timeout: 2 * time.Minute})
+					result, err = backend.Run(ctx, engine.RunSpec{Subject: task.Subject, WorkDir: t.TempDir(), Prompt: "Reply exactly fallback completed. Do not use tools or access files.", Model: request.Model, Env: map[string]string{"WEAVE_CLAUDE_AUTH_MODE": "oauth"}, Timeout: 2 * time.Minute})
 					if err != nil {
 						workerDone <- err
 						return
@@ -116,7 +118,9 @@ INSERT INTO weave_agent_versions(agent_id,workspace_id,version,spec) VALUES('age
 					t.Logf("injected primary rejection; real Claude fallback status=%s reported_models=%v output=%q", result.Status, result.ReportedModels, result.Output)
 				}
 			}
-			raw, _ := json.Marshal(CLIEngineExecResult(result))
+			receipt := CLIEngineExecResult(result)
+			receipt.Subject, receipt.ClaimEpoch = task.Subject, task.ClaimEpoch
+			raw, _ := json.Marshal(receipt)
 			if err := queue.CompleteClaimed(ctx, task.ID, workerID, raw, ""); err != nil {
 				workerDone <- err
 				return

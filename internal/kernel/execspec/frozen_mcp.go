@@ -1,4 +1,4 @@
-package execenv
+package execspec
 
 import (
 	"context"

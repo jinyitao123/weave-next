@@ -12,21 +12,23 @@ import (
 
 	"github.com/jinyitao123/weave/internal/base/db"
 	"github.com/jinyitao123/weave/internal/base/execution"
-	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 	"github.com/jinyitao123/weave/internal/base/testutil"
 	"github.com/jinyitao123/weave/internal/kernel/engine"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
+	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 )
 
 func TestRuntimePoolDoesNotReplayWorkAfterDisconnectedInvocationRealPG(t *testing.T) {
 	pool := testutil.PostgresPool(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
+	ctx = execution.WithSubject(ctx, execution.Subject{WorkspaceID: "ws", UserID: "runtime-user"})
 	if err := db.Migrate(ctx, pool); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := pool.Exec(ctx, `
 INSERT INTO weave_workspaces(id,slug,name) VALUES('ws','ws','ws');
+INSERT INTO weave_users(id,tenant_id,username,password) VALUES('runtime-user','ws','runtime-user','unused');
 INSERT INTO weave_agents(id,workspace_id,name,role,spec) VALUES('agent','ws','worker','worker','{}');
 INSERT INTO weave_agent_versions(agent_id,workspace_id,version,spec) VALUES('agent','ws',1,'{}');
 `); err != nil {
@@ -72,7 +74,9 @@ INSERT INTO weave_agent_versions(agent_id,workspace_id,version,spec) VALUES('age
 				}
 				// This invocation already performed a tool action. A subsequent
 				// connection loss must preserve this exact failed attempt.
-				result, _ := json.Marshal(CLIEngineExecResult(engine.RunResult{Status: "failed", Err: "stream disconnected", Events: []engine.Event{{Kind: "tool_result", Tool: "write", CallID: "one", Status: "ok", Output: "saved"}}}))
+				receipt := CLIEngineExecResult(engine.RunResult{Status: "failed", Err: "stream disconnected", Events: []engine.Event{{Kind: "tool_result", Tool: "write", CallID: "one", Status: "ok", Output: "saved"}}})
+				receipt.Subject, receipt.ClaimEpoch = task.Subject, task.ClaimEpoch
+				result, _ := json.Marshal(receipt)
 				workerDone <- queue.CompleteClaimed(ctx, task.ID, workerID, result, "")
 				return
 			}
@@ -103,11 +107,13 @@ func TestSchedulerRestartReattachesCompletedPhysicalInvocationRealPG(t *testing.
 	pool := testutil.PostgresPool(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
+	ctx = execution.WithSubject(ctx, execution.Subject{WorkspaceID: "ws", UserID: "runtime-user"})
 	if err := db.Migrate(ctx, pool); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := pool.Exec(ctx, `
 INSERT INTO weave_workspaces(id,slug,name) VALUES('ws','ws','ws');
+INSERT INTO weave_users(id,tenant_id,username,password) VALUES('runtime-user','ws','runtime-user','unused');
 INSERT INTO weave_agents(id,workspace_id,name,role,spec) VALUES('agent','ws','worker','worker','{}');
 INSERT INTO weave_agent_versions(agent_id,workspace_id,version,spec) VALUES('agent','ws',1,'{}');
 `); err != nil {
@@ -169,7 +175,9 @@ INSERT INTO weave_agent_versions(agent_id,workspace_id,version,spec) VALUES('age
 	if err != nil || task.Status != taskqueue.StatusRunning {
 		t.Fatalf("shutdown cancelled physical work: %+v %v", task, err)
 	}
-	result, _ := json.Marshal(CLIEngineExecResult(engine.RunResult{Status: "completed", Output: "one durable result"}))
+	receipt := CLIEngineExecResult(engine.RunResult{Status: "completed", Output: "one durable result"})
+	receipt.Subject, receipt.ClaimEpoch = physical.Subject, physical.ClaimEpoch
+	result, _ := json.Marshal(receipt)
 	if err := queue.CompleteClaimed(ctx, physical.ID, RuntimeWorkerID("ws", ids[0]), result, ""); err != nil {
 		t.Fatal(err)
 	}

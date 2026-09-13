@@ -1,0 +1,186 @@
+{
+  "tool_loop_control": {
+    "slice_rounds": 3,
+    "initial_total_rounds": 9
+  },
+  "name": "worker",
+  "id": "agent",
+  "workspace_id": "workspace",
+  "team_id": "team",
+  "owner_user_id": "user",
+  "display_name": "Published worker",
+  "role": "worker",
+  "visibility": "internal_tool",
+  "engine": "loom",
+  "runtime_id": "runtime",
+  "version": 7,
+  "model": "openai/model",
+  "spec": {
+    "system_prompt": "frozen system",
+    "identity": {
+      "core": "frozen core",
+      "extended": "frozen detail",
+      "raw": "frozen raw"
+    },
+    "profiles": {
+      "review": {
+        "system_addition": "check sources",
+        "greeting": "ready"
+      }
+    },
+    "skills": [
+      {
+        "name": "calculate",
+        "description": "calculate values",
+        "body": "exact frozen skill body",
+        "always_active": true,
+        "scripts": [
+          "calculate.py"
+        ],
+        "references": [
+          "rules.md"
+        ]
+      }
+    ],
+    "health_check": {
+      "content": "check status"
+    },
+    "sub_agents": [
+      {
+        "name": "reviewer",
+        "description": "review result",
+        "route_key": "review"
+      }
+    ],
+    "graph_type": "standard"
+  },
+  "permissions": {
+    "deny": [
+      "delete"
+    ],
+    "allow": [
+      "read"
+    ],
+    "ask": [
+      "write"
+    ]
+  },
+  "mcp_servers": [
+    {
+      "server_id": "tools",
+      "url": "https://tools.invalid/mcp",
+      "filter": [
+        "read"
+      ],
+      "write_tools": [
+        "write"
+      ],
+      "headers": {
+        "X-Task": "frozen-test"
+      }
+    }
+  ],
+  "memory_config": {
+    "enabled": true,
+    "top_k": 4,
+    "auto_remember": true,
+    "scope": "user"
+  },
+  "memory_slots": [
+    {
+      "key": "language",
+      "label": "Language",
+      "description": "Preferred language"
+    }
+  ],
+  "output_schema": {
+    "type": "object",
+    "properties": {
+      "total": {
+        "type": "integer"
+      }
+    },
+    "required": [
+      "total"
+    ]
+  },
+  "max_cost_usd": 1.25,
+  "max_tokens": 1000,
+  "max_output_tokens": 600,
+  "step_budget": 50,
+  "max_tool_repeats": 3,
+  "fallback_models": [
+    "openai/other"
+  ],
+  "fallback_retries": 1,
+  "guard": {
+    "enabled": true,
+    "max_input_len": 4096,
+    "blocked_terms": [
+      "blocked"
+    ]
+  },
+  "compaction": {
+    "enabled": true,
+    "token_threshold": 6000
+  },
+  "sub_agents": [
+    {
+      "name": "reviewer",
+      "description": "review result",
+      "route_key": "review"
+    }
+  ],
+  "skill_refs": [
+    {
+      "source_type": "registry_version",
+      "skill_id": "skill",
+      "skill_version": 2,
+      "name": "calculate",
+      "description": "calculate values"
+    }
+  ],
+  "graph_type": "declarative",
+  "graph_definition": {
+    "entry": "check",
+    "steps": [
+      {
+        "name": "check",
+        "type": "llm_check",
+        "display": "Check",
+        "config": {
+          "instruction": "check the result"
+        },
+        "condition": {
+          "key": "passed",
+          "true": "finish",
+          "false": "repair"
+        }
+      },
+      {
+        "name": "finish",
+        "type": "transform",
+        "display": "Finish",
+        "config": {
+          "result": "ok"
+        }
+      },
+      {
+        "name": "repair",
+        "type": "llm_call",
+        "display": "Repair",
+        "config": {
+          "instruction": "repair"
+        },
+        "next": "check"
+      }
+    ]
+  },
+  "tags": [
+    "managed",
+    "published"
+  ],
+  "created_at": "2026-09-14T00:00:00Z",
+  "updated_at": "2026-09-14T01:00:00Z",
+  "deleted": true
+}

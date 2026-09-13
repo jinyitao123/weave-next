@@ -9,8 +9,8 @@ import (
 	"github.com/jinyitao123/loom/contract"
 	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/kernel/capability"
+	"github.com/jinyitao123/weave/internal/kernel/executionport"
 	"github.com/jinyitao123/weave/internal/kernel/loomruntime"
-	"github.com/jinyitao123/weave/internal/kernel/mcphost"
 	"github.com/jinyitao123/weave/internal/kernel/runtimes"
 )
 
@@ -42,7 +42,7 @@ type Runner struct {
 	CanResolveModel func(context.Context, string, string) (bool, error)
 	ResolveModel    func(context.Context, string) (contract.LLM, error)
 	ListRuntimes    func(context.Context, string) ([]runtimes.Runtime, error)
-	Remote          mcphost.RemoteEngineExecutor
+	Remote          executionport.RemoteEngineExecutor
 	Store           loom.Store
 	TerminalSink    func() (loomruntime.TerminalSink, error)
 }

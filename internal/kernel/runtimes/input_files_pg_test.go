@@ -14,21 +14,23 @@ import (
 
 	"github.com/jinyitao123/weave/internal/base/db"
 	"github.com/jinyitao123/weave/internal/base/execution"
-	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 	"github.com/jinyitao123/weave/internal/base/testutil"
 	"github.com/jinyitao123/weave/internal/kernel/engine"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
+	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 )
 
 func TestUpstreamFilesCrossRuntimeFromExactDurableReceiptRealPG(t *testing.T) {
 	pool := testutil.PostgresPool(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
+	ctx = execution.WithSubject(ctx, execution.Subject{WorkspaceID: "ws", UserID: "runtime-user"})
 	if err := db.Migrate(ctx, pool); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := pool.Exec(ctx, `
 INSERT INTO weave_workspaces(id,slug,name) VALUES('ws','ws','ws');
+INSERT INTO weave_users(id,tenant_id,username,password) VALUES('runtime-user','ws','runtime-user','unused');
 INSERT INTO weave_agents(id,workspace_id,name,role,spec) VALUES('agent','ws','worker','worker','{}');
 INSERT INTO weave_agent_versions(agent_id,workspace_id,version,spec) VALUES('agent','ws',1,'{}');
 `); err != nil {
@@ -64,7 +66,7 @@ INSERT INTO weave_agent_versions(agent_id,workspace_id,version,spec) VALUES('age
 		t.Fatal(err)
 	}
 	_, err = snapshot.NewStore(pool).Create(ctx, snapshot.TeamRunSnapshot{
-		RunID: "snapshot", WorkspaceID: "ws", TeamID: "team", SnapshotSchemaVersion: 2, Mode: "free_collab", LeadAvatarID: "agent", LeadAvatarVersion: 1,
+		RunID: "snapshot", SourceRef: "fixture", WorkspaceID: "ws", TeamID: "team", SnapshotSchemaVersion: 2, Mode: "free_collab", LeadAvatarID: "agent", LeadAvatarVersion: 1,
 		WorkerVersions: json.RawMessage(`{}`), TeamWorkerSnapshot: json.RawMessage(`[]`), InlineDependencies: json.RawMessage(`{}`), RuntimeAssignment: json.RawMessage(`{}`),
 		AdmissionDecision: json.RawMessage(`{"schema_version":1,"team_active":true,"workflow_active":null,"workers_enabled":true,"version_blocked":null,"decided_at":"2026-09-05T00:00:00Z"}`),
 		RunAssociations:   json.RawMessage(`{"schema_version":1,"parent_run_id":null,"source_snapshot_id":null,"task_group_id":null}`), TriggerSourceV2: json.RawMessage(`{"schema_version":1,"type":"api","source_ref":"fixture"}`),
@@ -107,7 +109,9 @@ INSERT INTO weave_agent_versions(agent_id,workspace_id,version,spec) VALUES('age
 						return
 					}
 				}
-				raw, _ := json.Marshal(CLIEngineExecResult(result))
+				receipt := CLIEngineExecResult(result)
+				receipt.Subject, receipt.ClaimEpoch = task.Subject, task.ClaimEpoch
+				raw, _ := json.Marshal(receipt)
 				if err := queue.CompleteClaimed(ctx, task.ID, workerID, raw, ""); err != nil {
 					workerDone <- err
 					return

@@ -18,7 +18,7 @@ import (
 	"github.com/jinyitao123/loom/stdlib"
 	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/kernel/engine"
-	"github.com/jinyitao123/weave/internal/kernel/execenv"
+	"github.com/jinyitao123/weave/internal/kernel/execspec"
 	"github.com/jinyitao123/weave/internal/kernel/mcphost"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 	"github.com/jinyitao123/weave/internal/kernel/runtimellm"
@@ -53,7 +53,7 @@ type localInference struct {
 	seq     int
 }
 
-func (e *localInference) ExecRemote(ctx context.Context, _ string, _ *registry.AgentRecord, _ execution.AgentExecutionStamp, prompt string, _ []execenv.Attachment) (engine.RunResult, error) {
+func (e *localInference) ExecRemote(ctx context.Context, _ string, _ *registry.AgentRecord, _ execution.AgentExecutionStamp, prompt string, _ []execspec.Attachment) (engine.RunResult, error) {
 	e.seq++
 	dir := filepath.Join(root, "inference-workspace")
 	must(os.MkdirAll(dir, 0700))

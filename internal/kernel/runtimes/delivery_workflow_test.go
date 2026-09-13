@@ -13,19 +13,19 @@ import (
 
 	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/base/frozen"
-	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 	"github.com/jinyitao123/weave/internal/kernel/compiler"
 	"github.com/jinyitao123/weave/internal/kernel/engine"
-	"github.com/jinyitao123/weave/internal/kernel/execenv"
+	"github.com/jinyitao123/weave/internal/kernel/execspec"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 	"github.com/jinyitao123/weave/internal/kernel/runtimes"
+	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 	"github.com/jinyitao123/weave/internal/kernel/teamrun"
 	"github.com/jinyitao123/weave/internal/kernel/workflow"
 )
 
 type collectedDeliveryExecutor struct{ result engine.RunResult }
 
-func (e collectedDeliveryExecutor) ExecRemote(context.Context, string, *registry.AgentRecord, execution.AgentExecutionStamp, string, []execenv.Attachment) (engine.RunResult, error) {
+func (e collectedDeliveryExecutor) ExecRemote(context.Context, string, *registry.AgentRecord, execution.AgentExecutionStamp, string, []execspec.Attachment) (engine.RunResult, error) {
 	return e.result, nil
 }
 

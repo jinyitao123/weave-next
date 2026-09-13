@@ -108,7 +108,7 @@ func nilInterface(value any) bool {
 
 // Sources are the only stateful stores a Resolver may consult.
 type Sources struct {
-	Agents    registry.FrozenAgentReader
+	Agents    FrozenAgentReader
 	Skills    *skills.Store
 	Providers *credentials.Store
 	Delivery  *delivery.Store

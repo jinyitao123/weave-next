@@ -16,14 +16,14 @@ import (
 	"github.com/jinyitao123/loom/stdlib"
 	"github.com/jinyitao123/weave/internal/app/conversation"
 	"github.com/jinyitao123/weave/internal/base/execution"
-	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 	"github.com/jinyitao123/weave/internal/kernel/compiler"
 	"github.com/jinyitao123/weave/internal/kernel/engine"
-	"github.com/jinyitao123/weave/internal/kernel/execenv"
+	"github.com/jinyitao123/weave/internal/kernel/execspec"
 	"github.com/jinyitao123/weave/internal/kernel/loomruntime"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 	"github.com/jinyitao123/weave/internal/kernel/runtimes"
 	"github.com/jinyitao123/weave/internal/kernel/sessionexec"
+	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 	"github.com/labstack/echo/v4"
 )
 
@@ -506,9 +506,9 @@ func (s *Server) runEngineChatRecord(
 		}
 		resolved = &copy
 	}
-	execAttachments := make([]execenv.Attachment, 0, len(attachments))
+	execAttachments := make([]execspec.Attachment, 0, len(attachments))
 	for _, attachment := range attachments {
-		execAttachments = append(execAttachments, execenv.Attachment{
+		execAttachments = append(execAttachments, execspec.Attachment{
 			Filename: attachment.Filename,
 			Path:     attachment.Path,
 		})

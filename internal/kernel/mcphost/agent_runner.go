@@ -14,7 +14,8 @@ import (
 	"github.com/jinyitao123/weave/internal/base/storeext"
 	"github.com/jinyitao123/weave/internal/kernel/compiler"
 	"github.com/jinyitao123/weave/internal/kernel/engine"
-	"github.com/jinyitao123/weave/internal/kernel/execenv"
+	"github.com/jinyitao123/weave/internal/kernel/execspec"
+	"github.com/jinyitao123/weave/internal/kernel/executionport"
 	"github.com/jinyitao123/weave/internal/kernel/loomruntime"
 	"github.com/jinyitao123/weave/internal/kernel/memory"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
@@ -41,11 +42,11 @@ type AgentRunner struct {
 	llm           contract.LLM
 	store         loom.Store
 	memoryService *memory.Service
-	attachments   []execenv.Attachment
+	attachments   []execspec.Attachment
 	compileAgent  compiler.GraphFactory
 	expectedRuns  loomruntime.ExpectedRunRegistry
-	LocalExec     RemoteEngineExecutor
-	RemoteExec    RemoteEngineExecutor
+	LocalExec     executionport.RemoteEngineExecutor
+	RemoteExec    executionport.RemoteEngineExecutor
 	Broker        *ToolBroker
 	// SkillVersionReader resolves exact registry_version SkillRefs during
 	// live compilation. Nil keeps legacy behavior (and fails closed for
@@ -73,7 +74,7 @@ func NewAgentRunner(
 	store loom.Store,
 	memSvc *memory.Service,
 	workspacesRoot, oneapiBase, boundaryBase, oneapiKey string,
-	attachments []execenv.Attachment,
+	attachments []execspec.Attachment,
 ) *AgentRunner {
 	runner := &AgentRunner{
 		registry: reg, tenant: tenant, llm: llm, store: store,

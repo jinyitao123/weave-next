@@ -14,7 +14,7 @@ import (
 	"github.com/jinyitao123/loom/contract"
 	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/kernel/capability"
-	"github.com/jinyitao123/weave/internal/kernel/mcphost"
+	"github.com/jinyitao123/weave/internal/kernel/executionport"
 	"github.com/labstack/echo/v4"
 )
 
@@ -133,7 +133,7 @@ func (s *Server) handleGenerateCapability(c echo.Context) error {
 		if err != nil {
 			return c.JSON(http.StatusUnprocessableEntity, map[string]string{"code": "capability_runtime_unavailable"})
 		}
-		structured, ok := s.engineExecutorFor(true).(mcphost.StructuredRemoteEngineExecutor)
+		structured, ok := s.engineExecutorFor(true).(executionport.StructuredRemoteEngineExecutor)
 		if !ok {
 			return c.JSON(http.StatusUnprocessableEntity, map[string]string{"code": "capability_runtime_unavailable"})
 		}

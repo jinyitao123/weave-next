@@ -11,7 +11,7 @@ import (
 	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/base/fileartifact"
 	"github.com/jinyitao123/weave/internal/kernel/engine"
-	"github.com/jinyitao123/weave/internal/kernel/execenv"
+	"github.com/jinyitao123/weave/internal/kernel/execspec"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 	"github.com/jinyitao123/weave/internal/kernel/runtimes"
 )
@@ -23,7 +23,7 @@ type runtimeCLIReceiptExecutor struct {
 
 func (e runtimeCLIReceiptExecutor) ExecRemote(
 	context.Context, string, *registry.AgentRecord, execution.AgentExecutionStamp,
-	string, []execenv.Attachment,
+	string, []execspec.Attachment,
 ) (engine.RunResult, error) {
 	return e.result, e.err
 }

@@ -11,7 +11,7 @@ import (
 	"github.com/jinyitao123/loom/contract"
 	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/kernel/engine"
-	"github.com/jinyitao123/weave/internal/kernel/execenv"
+	"github.com/jinyitao123/weave/internal/kernel/execspec"
 	"github.com/jinyitao123/weave/internal/kernel/loomruntime"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 )
@@ -23,14 +23,14 @@ type receiptExecutor struct {
 
 func (e receiptExecutor) ExecRemote(
 	context.Context, string, *registry.AgentRecord, execution.AgentExecutionStamp,
-	string, []execenv.Attachment,
+	string, []execspec.Attachment,
 ) (engine.RunResult, error) {
 	return e.result, e.err
 }
 
 func (e receiptExecutor) ExecRemoteStructured(
 	context.Context, string, *registry.AgentRecord, execution.AgentExecutionStamp,
-	string, []execenv.Attachment, json.RawMessage,
+	string, []execspec.Attachment, json.RawMessage,
 ) (engine.RunResult, error) {
 	return e.result, e.err
 }

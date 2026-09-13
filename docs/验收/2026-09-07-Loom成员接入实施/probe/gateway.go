@@ -21,7 +21,7 @@ import (
 	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/base/fileartifact"
 	"github.com/jinyitao123/weave/internal/kernel/engine"
-	"github.com/jinyitao123/weave/internal/kernel/execenv"
+	"github.com/jinyitao123/weave/internal/kernel/execspec"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 )
 
@@ -125,7 +125,7 @@ func parseDirectResponse(result engine.RunResult, tools []contract.ToolDef) (*co
 	return out, nil
 }
 
-func (e *inference) ExecRemote(ctx context.Context, _ string, _ *registry.AgentRecord, _ execution.AgentExecutionStamp, prompt string, _ []execenv.Attachment) (engine.RunResult, error) {
+func (e *inference) ExecRemote(ctx context.Context, _ string, _ *registry.AgentRecord, _ execution.AgentExecutionStamp, prompt string, _ []execspec.Attachment) (engine.RunResult, error) {
 	seq := e.seq.Add(1)
 	dir := filepath.Join(e.cfg.Root, "stage-d/inference")
 	if err := os.MkdirAll(dir, 0700); err != nil {

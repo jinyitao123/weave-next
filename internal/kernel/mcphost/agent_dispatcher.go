@@ -9,10 +9,9 @@ import (
 
 	"github.com/jinyitao123/loom"
 	"github.com/jinyitao123/loom/contract"
-	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/kernel/compiler"
-	"github.com/jinyitao123/weave/internal/kernel/engine"
-	"github.com/jinyitao123/weave/internal/kernel/execenv"
+	"github.com/jinyitao123/weave/internal/kernel/execspec"
+	"github.com/jinyitao123/weave/internal/kernel/executionport"
 	"github.com/jinyitao123/weave/internal/kernel/loomruntime"
 	"github.com/jinyitao123/weave/internal/kernel/memory"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
@@ -34,12 +33,12 @@ type AgentToolDispatcher struct {
 	store            loom.Store
 	memoryService    *memory.Service
 	recorder         DispatchRecorder
-	attachments      []execenv.Attachment
+	attachments      []execspec.Attachment
 	compileAgent     compiler.GraphFactory
 	runner           *AgentRunner
 	dispatched       atomic.Int64
-	LocalExec        RemoteEngineExecutor
-	RemoteExec       RemoteEngineExecutor
+	LocalExec        executionport.RemoteEngineExecutor
+	RemoteExec       executionport.RemoteEngineExecutor
 	Broker           *ToolBroker
 	RunLifecycleHook loomruntime.RunLifecycleHook
 	// InnerPlatformTools, when set, contributes extra platform dispatchers to
@@ -60,34 +59,6 @@ type agentRegistry interface {
 	GetVersion(ctx context.Context, tenant, agentID string, version int) (*registry.AgentRecord, error)
 }
 
-// RemoteEngineExecutor executes an already-resolved CLI agent record on its
-// bound runtime.
-type RemoteEngineExecutor interface {
-	ExecRemote(
-		ctx context.Context,
-		tenant string,
-		rec *registry.AgentRecord,
-		stamp execution.AgentExecutionStamp,
-		prompt string,
-		attachments []execenv.Attachment,
-	) (result engine.RunResult, err error)
-}
-
-// StructuredRemoteEngineExecutor is an optional extension for callers that
-// require the CLI's final message to satisfy a JSON Schema. Ordinary worker
-// dispatch keeps using RemoteEngineExecutor; protocol adapters opt in.
-type StructuredRemoteEngineExecutor interface {
-	ExecRemoteStructured(
-		ctx context.Context,
-		tenant string,
-		rec *registry.AgentRecord,
-		stamp execution.AgentExecutionStamp,
-		prompt string,
-		attachments []execenv.Attachment,
-		outputSchema json.RawMessage,
-	) (result engine.RunResult, err error)
-}
-
 // DispatchRecorder records completed single-agent dispatches for tracing.
 type DispatchRecorder interface {
 	RecordDispatch(ctx context.Context, workspaceID, fromAgent, toAgent, message, result string, ok bool) error
@@ -103,7 +74,7 @@ func NewAgentToolDispatcher(
 	memSvc *memory.Service,
 	recorder DispatchRecorder,
 	workspacesRoot, oneapiBase, boundaryBase, oneapiKey string,
-	attachments []execenv.Attachment,
+	attachments []execspec.Attachment,
 ) *AgentToolDispatcher {
 	runner := NewAgentRunner(reg, tenant, llm, store, memSvc, workspacesRoot, oneapiBase, boundaryBase, oneapiKey, attachments)
 	return &AgentToolDispatcher{
