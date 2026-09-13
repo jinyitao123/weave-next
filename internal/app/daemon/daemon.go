@@ -22,6 +22,7 @@ import (
 	"github.com/jinyitao123/weave/internal/kernel/config"
 	"github.com/jinyitao123/weave/internal/kernel/engine"
 	"github.com/jinyitao123/weave/internal/kernel/execenv"
+	"github.com/jinyitao123/weave/internal/kernel/execspec"
 	"github.com/jinyitao123/weave/internal/kernel/runtimeagent"
 	"github.com/jinyitao123/weave/internal/kernel/runtimehost"
 	"github.com/jinyitao123/weave/internal/kernel/runtimeprotocol"
@@ -460,7 +461,7 @@ func (d *service) executeTask(ctx context.Context, task *runtimeprotocol.Executi
 			return runtimeprotocol.ExecutionReceipt{}, fmt.Errorf("runtime: create attachment temp directory: %w", err)
 		}
 		defer os.RemoveAll(downloadDir)
-		attachments := make([]execenv.Attachment, 0, len(request.Attachments))
+		attachments := make([]execspec.Attachment, 0, len(request.Attachments))
 		for _, attachment := range request.Attachments {
 			local, err := os.CreateTemp(downloadDir, "attachment-")
 			if err != nil {
@@ -474,7 +475,7 @@ func (d *service) executeTask(ctx context.Context, task *runtimeprotocol.Executi
 			if closeErr != nil {
 				return runtimeprotocol.ExecutionReceipt{}, fmt.Errorf("runtime: close attachment temp file: %w", closeErr)
 			}
-			attachments = append(attachments, execenv.Attachment{Filename: attachment.Filename, Path: local.Name()})
+			attachments = append(attachments, execspec.Attachment{Filename: attachment.Filename, Path: local.Name()})
 		}
 		workDir, runEnv, err = execenv.Materialize(ctx, workspaceRoot, record, request.Prompt, attachments)
 		if err != nil {

@@ -18,8 +18,8 @@ import (
 	"github.com/jinyitao123/loom/contract"
 	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/kernel/engine"
+	"github.com/jinyitao123/weave/internal/kernel/executionport"
 	"github.com/jinyitao123/weave/internal/kernel/loomruntime"
-	"github.com/jinyitao123/weave/internal/kernel/mcphost"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 )
 
@@ -61,7 +61,7 @@ var protocolOutputSchema = json.RawMessage(`{
 // Agent must be a transient CLI record carrying the selected runtime policy;
 // its immutable identity still belongs to the Loom node being evaluated.
 type Adapter struct {
-	executor mcphost.RemoteEngineExecutor
+	executor executionport.RemoteEngineExecutor
 	tenant   string
 	agent    *registry.AgentRecord
 	stamp    execution.AgentExecutionStamp
@@ -70,7 +70,7 @@ type Adapter struct {
 
 // New validates and freezes the runtime inference binding for one Loom node.
 func New(
-	executor mcphost.RemoteEngineExecutor,
+	executor executionport.RemoteEngineExecutor,
 	tenant string,
 	agent *registry.AgentRecord,
 	stamp execution.AgentExecutionStamp,
@@ -105,7 +105,7 @@ func (a *Adapter) Chat(ctx context.Context, req contract.ChatRequest) (*contract
 		return nil, err
 	}
 	var result engine.RunResult
-	if structured, ok := a.executor.(mcphost.StructuredRemoteEngineExecutor); ok {
+	if structured, ok := a.executor.(executionport.StructuredRemoteEngineExecutor); ok {
 		result, err = structured.ExecRemoteStructured(
 			ctx, a.tenant, a.agent, a.stamp, prompt, nil, protocolOutputSchema,
 		)

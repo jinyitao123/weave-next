@@ -25,7 +25,7 @@ import (
 	"github.com/jinyitao123/weave/internal/build/teambuild"
 	"github.com/jinyitao123/weave/internal/kernel/compiler"
 	"github.com/jinyitao123/weave/internal/kernel/engine"
-	"github.com/jinyitao123/weave/internal/kernel/execenv"
+	"github.com/jinyitao123/weave/internal/kernel/execspec"
 	"github.com/jinyitao123/weave/internal/kernel/grounding"
 	"github.com/jinyitao123/weave/internal/kernel/loomruntime"
 	"github.com/jinyitao123/weave/internal/kernel/mcphost"
@@ -879,9 +879,9 @@ func (s *Server) handleChatRequest(c echo.Context, req ChatRequest) error {
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 	}
-	execAttachments := make([]execenv.Attachment, 0, len(attachments))
+	execAttachments := make([]execspec.Attachment, 0, len(attachments))
 	for _, attachment := range attachments {
-		execAttachments = append(execAttachments, execenv.Attachment{
+		execAttachments = append(execAttachments, execspec.Attachment{
 			Filename: attachment.Filename,
 			Path:     attachment.Path,
 		})
@@ -1718,7 +1718,7 @@ func (s *Server) compilerAgentRunner(
 	tenant, userID string,
 	llm contract.LLM,
 	memSvc *memory.Service,
-	attachments []execenv.Attachment,
+	attachments []execspec.Attachment,
 ) compiler.AgentRunner {
 	var workspacesRoot, oneapiBase, boundaryBase, oneapiKey string
 	if s.Config != nil {
@@ -1751,7 +1751,7 @@ func (s *Server) buildToolDispatcherWithAgentTool(
 	llm contract.LLM,
 	memSvc *memory.Service,
 	noDispatch bool,
-	attachments []execenv.Attachment,
+	attachments []execspec.Attachment,
 	contexts ...context.Context,
 ) (contract.ToolDispatcher, *mcphost.AgentToolDispatcher, *FanoutToolDispatcher) {
 	var agentTool *mcphost.AgentToolDispatcher

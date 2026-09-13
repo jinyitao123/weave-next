@@ -6,11 +6,12 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
-	"github.com/jinyitao123/weave/internal/base/execution"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/jinyitao123/weave/internal/base/execution"
+	"github.com/jinyitao123/weave/internal/kernel/execspec"
 	"github.com/jinyitao123/weave/internal/kernel/grounding"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 )
@@ -23,17 +24,11 @@ Complete only the current workflow node's assigned responsibilities. Do not spaw
 
 Return the complete assigned result in your final answer, not a completion receipt. For file deliverables, write supported UTF-8 files below outputs/ and explicitly reference their relative paths in the final answer. The platform collects only this invocation's new or rewritten files; local files elsewhere and unchanged files are not a delivery channel. Binary images and archives are not collected. When a delivered page needs a binary visual, provide a supported UTF-8 representation such as an SVG or HTML file embedding the actual image, and keep the editable source. Verify that the files being delivered include every required local link, resource, and script dependency; a file existing on this host does not establish its delivery. Never claim that a file was saved to Workbench yourself.`
 
-// Attachment identifies a file to copy into an external CLI agent's workdir.
-type Attachment struct {
-	Filename string
-	Path     string
-}
-
 // Materialize writes the runtime-neutral agent instructions and skills into a
 // stable per-workspace, per-agent directory. Prompt is accepted as part of the
 // materialization boundary but is passed to the CLI by the engine, not written
 // to disk or copied into the environment.
-func Materialize(ctx context.Context, root string, rec *registry.AgentRecord, prompt string, attachments []Attachment) (workDir string, env map[string]string, err error) {
+func Materialize(ctx context.Context, root string, rec *registry.AgentRecord, prompt string, attachments []execspec.Attachment) (workDir string, env map[string]string, err error) {
 	if rec == nil {
 		return "", nil, errors.New("execenv: nil agent record")
 	}

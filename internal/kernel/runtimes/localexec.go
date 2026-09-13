@@ -10,6 +10,7 @@ import (
 	"github.com/jinyitao123/weave/internal/kernel/config"
 	"github.com/jinyitao123/weave/internal/kernel/engine"
 	"github.com/jinyitao123/weave/internal/kernel/execenv"
+	"github.com/jinyitao123/weave/internal/kernel/execspec"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 	"github.com/jinyitao123/weave/internal/kernel/secret"
 )
@@ -44,7 +45,7 @@ func (e *LocalExecutor) ExecRemote(
 	rec *registry.AgentRecord,
 	stamp execution.AgentExecutionStamp,
 	prompt string,
-	attachments []execenv.Attachment,
+	attachments []execspec.Attachment,
 ) (engine.RunResult, error) {
 	if err := validateAgentExecutionStamp(tenant, rec, stamp); err != nil {
 		return engine.RunResult{}, fmt.Errorf("local engine executor: %w", err)

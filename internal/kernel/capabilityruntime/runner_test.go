@@ -11,7 +11,7 @@ import (
 	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/kernel/capability"
 	"github.com/jinyitao123/weave/internal/kernel/engine"
-	"github.com/jinyitao123/weave/internal/kernel/execenv"
+	"github.com/jinyitao123/weave/internal/kernel/execspec"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 	"github.com/jinyitao123/weave/internal/kernel/runtimes"
 )
@@ -20,11 +20,11 @@ type testRemote struct {
 	call func(context.Context, string, *registry.AgentRecord, execution.AgentExecutionStamp, string, json.RawMessage) (engine.RunResult, error)
 }
 
-func (e testRemote) ExecRemote(context.Context, string, *registry.AgentRecord, execution.AgentExecutionStamp, string, []execenv.Attachment) (engine.RunResult, error) {
+func (e testRemote) ExecRemote(context.Context, string, *registry.AgentRecord, execution.AgentExecutionStamp, string, []execspec.Attachment) (engine.RunResult, error) {
 	return engine.RunResult{}, errors.New("unexpected unstructured execution")
 }
 
-func (e testRemote) ExecRemoteStructured(ctx context.Context, ws string, rec *registry.AgentRecord, stamp execution.AgentExecutionStamp, prompt string, _ []execenv.Attachment, schema json.RawMessage) (engine.RunResult, error) {
+func (e testRemote) ExecRemoteStructured(ctx context.Context, ws string, rec *registry.AgentRecord, stamp execution.AgentExecutionStamp, prompt string, _ []execspec.Attachment, schema json.RawMessage) (engine.RunResult, error) {
 	return e.call(ctx, ws, rec, stamp, prompt, schema)
 }
 

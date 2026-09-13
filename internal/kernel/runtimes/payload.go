@@ -10,6 +10,7 @@ import (
 	"github.com/jinyitao123/weave/internal/base/fileartifact"
 	"github.com/jinyitao123/weave/internal/kernel/engine"
 	"github.com/jinyitao123/weave/internal/kernel/execenv"
+	"github.com/jinyitao123/weave/internal/kernel/execspec"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 )
 
@@ -31,26 +32,26 @@ func CanonicalEngine(engine string) string {
 // decodes it and runs the engine locally. The MCP-boundary HMAC secret never
 // leaves the server — only the derived per-server tokens travel in Env.
 type EngineExecRequest struct {
-	Subject             execution.Subject            `json:"subject"`
-	FrozenMCP           *execenv.FrozenMCPInvocation `json:"frozen_mcp,omitempty"`
-	TaskMCP             []execenv.TaskMCPTarget      `json:"task_mcp,omitempty"`
-	BoundMCP            bool                         `json:"bound_mcp,omitempty"`
-	LogicalInvocationID string                       `json:"logical_invocation_id,omitempty"`
-	NodeID              string                       `json:"node_id,omitempty"`
-	Agent               string                       `json:"agent"`
-	Engine              string                       `json:"engine"`
-	Model               string                       `json:"model"`
-	Prompt              string                       `json:"prompt"`
-	OutputSchema        json.RawMessage              `json:"output_schema,omitempty"`
-	Record              *registry.AgentRecord        `json:"record"`
-	Env                 map[string]string            `json:"env,omitempty"`
-	OneAPIBase          string                       `json:"oneapi_base,omitempty"`
-	OneAPIKey           string                       `json:"oneapi_key,omitempty"`
-	TimeoutSeconds      int                          `json:"timeout_seconds,omitempty"`
-	EngineVersion       string                       `json:"engine_version,omitempty"`
-	Attachments         []EngineExecAttachment       `json:"attachments,omitempty"`
-	InputFiles          []InputFile                  `json:"input_files,omitempty"`
-	Loom                *LoomExecInput               `json:"loom,omitempty"`
+	Subject             execution.Subject             `json:"subject"`
+	FrozenMCP           *execspec.FrozenMCPInvocation `json:"frozen_mcp,omitempty"`
+	TaskMCP             []execenv.TaskMCPTarget       `json:"task_mcp,omitempty"`
+	BoundMCP            bool                          `json:"bound_mcp,omitempty"`
+	LogicalInvocationID string                        `json:"logical_invocation_id,omitempty"`
+	NodeID              string                        `json:"node_id,omitempty"`
+	Agent               string                        `json:"agent"`
+	Engine              string                        `json:"engine"`
+	Model               string                        `json:"model"`
+	Prompt              string                        `json:"prompt"`
+	OutputSchema        json.RawMessage               `json:"output_schema,omitempty"`
+	Record              *registry.AgentRecord         `json:"record"`
+	Env                 map[string]string             `json:"env,omitempty"`
+	OneAPIBase          string                        `json:"oneapi_base,omitempty"`
+	OneAPIKey           string                        `json:"oneapi_key,omitempty"`
+	TimeoutSeconds      int                           `json:"timeout_seconds,omitempty"`
+	EngineVersion       string                        `json:"engine_version,omitempty"`
+	Attachments         []EngineExecAttachment        `json:"attachments,omitempty"`
+	InputFiles          []InputFile                   `json:"input_files,omitempty"`
+	Loom                *LoomExecInput                `json:"loom,omitempty"`
 }
 
 // LoomExecInput is the loom-specific slice of an engine_exec payload. The

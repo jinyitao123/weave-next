@@ -20,7 +20,7 @@ import (
 	"github.com/jinyitao123/weave/internal/kernel/capability"
 	"github.com/jinyitao123/weave/internal/kernel/capabilityruntime"
 	"github.com/jinyitao123/weave/internal/kernel/engine"
-	"github.com/jinyitao123/weave/internal/kernel/execenv"
+	"github.com/jinyitao123/weave/internal/kernel/execspec"
 	"github.com/jinyitao123/weave/internal/kernel/mcpregistry"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 	"github.com/jinyitao123/weave/internal/kernel/runtimes"
@@ -29,7 +29,7 @@ import (
 
 type capabilityToolUnusedRemote struct{ calls atomic.Int64 }
 
-func (r *capabilityToolUnusedRemote) ExecRemote(context.Context, string, *registry.AgentRecord, execution.AgentExecutionStamp, string, []execenv.Attachment) (engine.RunResult, error) {
+func (r *capabilityToolUnusedRemote) ExecRemote(context.Context, string, *registry.AgentRecord, execution.AgentExecutionStamp, string, []execspec.Attachment) (engine.RunResult, error) {
 	r.calls.Add(1)
 	return engine.RunResult{}, errors.New("tool step was delegated to the model runtime")
 }

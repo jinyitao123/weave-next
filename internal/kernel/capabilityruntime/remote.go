@@ -8,19 +8,19 @@ import (
 
 	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/kernel/capability"
-	"github.com/jinyitao123/weave/internal/kernel/mcphost"
+	"github.com/jinyitao123/weave/internal/kernel/executionport"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 )
 
 type remoteSteps struct {
 	task      Request
-	executor  mcphost.RemoteEngineExecutor
+	executor  executionport.RemoteEngineExecutor
 	record    *registry.AgentRecord
 	recordRun func(context.Context, string, string) error
 }
 
 func (e remoteSteps) ExecuteStep(ctx context.Context, step capability.PlanStep, input json.RawMessage) (json.RawMessage, error) {
-	structured, ok := e.executor.(mcphost.StructuredRemoteEngineExecutor)
+	structured, ok := e.executor.(executionport.StructuredRemoteEngineExecutor)
 	if !ok {
 		return nil, errors.New("remote runtime does not support structured results")
 	}

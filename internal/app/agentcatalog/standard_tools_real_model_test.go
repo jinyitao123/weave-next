@@ -16,8 +16,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jinyitao123/weave/internal/kernel/workflow"
-
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jinyitao123/loom"
@@ -27,10 +25,11 @@ import (
 	"github.com/jinyitao123/weave/internal/base/testutil"
 	"github.com/jinyitao123/weave/internal/kernel/compiler"
 	"github.com/jinyitao123/weave/internal/kernel/engine"
-	"github.com/jinyitao123/weave/internal/kernel/execenv"
+	"github.com/jinyitao123/weave/internal/kernel/execspec"
 	"github.com/jinyitao123/weave/internal/kernel/mcpregistry"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 	"github.com/jinyitao123/weave/internal/kernel/runtimellm"
+	"github.com/jinyitao123/weave/internal/kernel/workflow"
 )
 
 // This opt-in acceptance sample spends real inference and writes model-generated
@@ -220,7 +219,7 @@ type publicationRealInference struct {
 	seq     int
 }
 
-func (e *publicationRealInference) ExecRemote(ctx context.Context, _ string, _ *registry.AgentRecord, _ execution.AgentExecutionStamp, prompt string, _ []execenv.Attachment) (engine.RunResult, error) {
+func (e *publicationRealInference) ExecRemote(ctx context.Context, _ string, _ *registry.AgentRecord, _ execution.AgentExecutionStamp, prompt string, _ []execspec.Attachment) (engine.RunResult, error) {
 	e.seq++
 	dir := filepath.Join(e.root, "inference")
 	if err := os.MkdirAll(dir, 0700); err != nil {
