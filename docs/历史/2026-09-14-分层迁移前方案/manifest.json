@@ -1,0 +1,188 @@
+{
+  "archive_date": "2026-09-14",
+  "source_commit": "114746efe1f1b6f49ea8c58596ffb97218641051",
+  "preservation": "Archived Markdown files are byte-for-byte copies of their source Git blobs. Embedded links and implementation statements are historical and are not rewritten.",
+  "authority": {
+    "index": "docs/架构/README.md",
+    "layering": "docs/架构/2026-09-13-分层收敛与Loom职责基线.md",
+    "migration": "docs/计划/2026-09-13-分层迁移剩余工作目标与验收.md",
+    "delivery": "docs/架构/2026-09-13-交付可计算核验契约.md"
+  },
+  "files": [
+    {
+      "original_path": "docs/架构/2026-08-25-Weave-新仓搬迁方案.md",
+      "archive_path": "docs/历史/2026-09-14-分层迁移前方案/架构/2026-08-25-Weave-新仓搬迁方案.md",
+      "source_blob_sha1": "faee89dcaee6074f35734c66a2d11407d56d281d",
+      "original_sha256": "f15fde35a376bc6d621151fe6d167c7d4ea8bcb970327480da255daf4fe47cdf",
+      "archive_sha256": "f15fde35a376bc6d621151fe6d167c7d4ea8bcb970327480da255daf4fe47cdf",
+      "reason": "旧仓到四带新仓的已执行搬迁顺序；后续职责迁移和分仓改由现行计划管理。",
+      "replaced_by": [
+        "分层迁移计划：第三批、第六批"
+      ]
+    },
+    {
+      "original_path": "docs/架构/2026-08-27-遗留清单与下一阶段路线.md",
+      "archive_path": "docs/历史/2026-09-14-分层迁移前方案/架构/2026-08-27-遗留清单与下一阶段路线.md",
+      "source_blob_sha1": "14d80269ff72db1a2f2e47301d732b4a9c8c8477",
+      "original_sha256": "640e34881f04e80a4c12ff4e10252c20a4f04e4c4ebbb3351b402962e55c2b36",
+      "archive_sha256": "640e34881f04e80a4c12ff4e10252c20a4f04e4c4ebbb3351b402962e55c2b36",
+      "reason": "文件已声明不再作为当前待办；当前优先级由 G1–G8 管理。",
+      "replaced_by": [
+        "分层迁移计划：完成矩阵"
+      ]
+    },
+    {
+      "original_path": "docs/架构/2026-09-05-Workbench并仓迁移计划.md",
+      "archive_path": "docs/历史/2026-09-14-分层迁移前方案/架构/2026-09-05-Workbench并仓迁移计划.md",
+      "source_blob_sha1": "e132cc20ac6d0a09e3ea64f9086af41e18126c64",
+      "original_sha256": "5e651aa3ac2c69bac0ae005b02b37b0230025742b8ca2ce0b085870512285227",
+      "archive_sha256": "5e651aa3ac2c69bac0ae005b02b37b0230025742b8ca2ce0b085870512285227",
+      "reason": "永久单仓、统一源码版本及停止独立 Workbench 仓的约束已被明确分仓决定替代。",
+      "replaced_by": [
+        "分层基线：本轮决策",
+        "分层迁移计划：第六批"
+      ]
+    },
+    {
+      "original_path": "docs/架构/2026-09-05-Workbench第二阶段删除清单.md",
+      "archive_path": "docs/历史/2026-09-14-分层迁移前方案/架构/2026-09-05-Workbench第二阶段删除清单.md",
+      "source_blob_sha1": "4302f2ac1d773cbb58cb5953cb100042a63b8058",
+      "original_sha256": "c39c7afcf82721f66792a8806e942574aa7decd91ba2506b597ee767ebd51693",
+      "archive_sha256": "c39c7afcf82721f66792a8806e942574aa7decd91ba2506b597ee767ebd51693",
+      "reason": "基于旧并仓闭包的清理批次，不能作为独立 Workbench 仓的新删除清单。",
+      "replaced_by": [
+        "分层基线：文档与职责迁移原则",
+        "分层迁移计划：第六批"
+      ]
+    },
+    {
+      "original_path": "docs/架构/2026-09-08-Workbench桌面接入与账号体系产品技术方案.md",
+      "archive_path": "docs/历史/2026-09-14-分层迁移前方案/架构/2026-09-08-Workbench桌面接入与账号体系产品技术方案.md",
+      "source_blob_sha1": "ab92467ce2444084c9c451d64c57619b4c2a87f6",
+      "original_sha256": "a25de5ca92f85723f1c6616ee7f643c3e8cd16027ca896699f7c88becb1a0374",
+      "archive_sha256": "a25de5ca92f85723f1c6616ee7f643c3e8cd16027ca896699f7c88becb1a0374",
+      "reason": "v0.4 已注明单仓不再是长期约束，本文保留桌面预览与当时账号路线快照。",
+      "replaced_by": [
+        "分层基线：本轮决策",
+        "分层迁移计划：第四批、第六批"
+      ]
+    },
+    {
+      "original_path": "docs/架构/base-词表与参与方合同.md",
+      "archive_path": "docs/历史/2026-09-14-分层迁移前方案/架构/base-词表与参与方合同.md",
+      "source_blob_sha1": "32485eedf41bd9261489ecd666118510807b370e",
+      "original_sha256": "92ab81f7b41859d800f5eb8c88d2c04bd4f377b88e58b1cf90e4c6d138fbc6d1",
+      "archive_sha256": "92ab81f7b41859d800f5eb8c88d2c04bd4f377b88e58b1cf90e4c6d138fbc6d1",
+      "reason": "base 容纳 TeamRun、Task、Fanout 及九词守门的归属约束已失效；执行治理已归 kernel，词汇和旧参与方设计仍可追溯。",
+      "replaced_by": [
+        "分层基线：职责归属",
+        "分层迁移计划：G3、第三批"
+      ]
+    },
+    {
+      "original_path": "docs/计划/2026-09-07-Loom成员执行补齐方案.md",
+      "archive_path": "docs/历史/2026-09-14-分层迁移前方案/计划/2026-09-07-Loom成员执行补齐方案.md",
+      "source_blob_sha1": "f94e5832033ed31ae91883e9249c9e72004847c4",
+      "original_sha256": "aaad6a48c3db42d063dae616a1430e7faf0e3b5f8334b6d5004cfc4f6ed3476a",
+      "archive_sha256": "aaad6a48c3db42d063dae616a1430e7faf0e3b5f8334b6d5004cfc4f6ed3476a",
+      "reason": "旧候选实现包和采用前置顺序已由当前职责迁移接管；不将完整候选方案当作待实现承诺。",
+      "replaced_by": [
+        "分层基线：Loom 与多运行时",
+        "分层迁移计划：第三批、G6"
+      ]
+    },
+    {
+      "original_path": "docs/计划/2026-09-07-Loom既有路径补齐与验收顺序.md",
+      "archive_path": "docs/历史/2026-09-14-分层迁移前方案/计划/2026-09-07-Loom既有路径补齐与验收顺序.md",
+      "source_blob_sha1": "2dbe1b6be8d102ef16df441ec5372fc0097d7839",
+      "original_sha256": "638825d674cce44259b02b7ec74d592900318f07628d4c3414f3dc1905553b60",
+      "archive_sha256": "638825d674cce44259b02b7ec74d592900318f07628d4c3414f3dc1905553b60",
+      "reason": "先串行单成员、旧发布物兼容及后续路线限制不再是当前迁移顺序。",
+      "replaced_by": [
+        "分层基线：不处理旧数据兼容",
+        "分层迁移计划：执行节奏、第三批、G6"
+      ]
+    },
+    {
+      "original_path": "docs/计划/2026-09-07-Loom采用价值验证计划.md",
+      "archive_path": "docs/历史/2026-09-14-分层迁移前方案/计划/2026-09-07-Loom采用价值验证计划.md",
+      "source_blob_sha1": "db09e0b3cbee4aaaa8da8aed03f9d6f08e59d054",
+      "original_sha256": "5b5236e9119ebfede023be4c91781c132067d6f628e343fa4a7212ef214cb5fc",
+      "archive_sha256": "5b5236e9119ebfede023be4c91781c132067d6f628e343fa4a7212ef214cb5fc",
+      "reason": "保留原始实验设计及停止条件；当前验证集合已改为多运行时、恢复、机械任务和多人共享场景。",
+      "replaced_by": [
+        "分层基线：四类真实场景",
+        "分层迁移计划：G6"
+      ]
+    },
+    {
+      "original_path": "docs/计划/2026-09-07-Weave任务信任契约与双场景三阶段验证.md",
+      "archive_path": "docs/历史/2026-09-14-分层迁移前方案/计划/2026-09-07-Weave任务信任契约与双场景三阶段验证.md",
+      "source_blob_sha1": "adabe5a9f26b503ca18389bd55b74fc799578156",
+      "original_sha256": "8c8a2e93cbadaa1659edba1c0981ee8e1a5caee39b4ef2631d19855baa9736aa",
+      "archive_sha256": "8c8a2e93cbadaa1659edba1c0981ee8e1a5caee39b4ef2631d19855baa9736aa",
+      "reason": "双场景三阶段的执行顺序已被先迁移、分仓部署后集中验收接管；任务信任与证据义务在现行基线和验收协议继续有效。",
+      "replaced_by": [
+        "分层迁移计划：执行节奏、第五批、最终集中验收"
+      ]
+    },
+    {
+      "original_path": "docs/计划/2026-09-08-Weave交付核验状态与契约接入设计.md",
+      "archive_path": "docs/历史/2026-09-14-分层迁移前方案/计划/2026-09-08-Weave交付核验状态与契约接入设计.md",
+      "source_blob_sha1": "e942b385a782bd33c17d018d21aad4b0915caf65",
+      "original_sha256": "00b19054c862c553ffaaed482bffb1f3c62e2bef9fa4209a4a466edce019c3c3",
+      "archive_sha256": "00b19054c862c553ffaaed482bffb1f3c62e2bef9fa4209a4a466edce019c3c3",
+      "reason": "首批接入顺序及当时 base/teamrun 路径已过时；执行、核验和用户采用分离的依据保留，可计算检查版本由现行契约定义。",
+      "replaced_by": [
+        "分层迁移计划：G5、第五批",
+        "交付可计算核验契约"
+      ]
+    },
+    {
+      "original_path": "docs/计划/2026-09-08-Weave共用信任边界与Loom修复方案.md",
+      "archive_path": "docs/历史/2026-09-14-分层迁移前方案/计划/2026-09-08-Weave共用信任边界与Loom修复方案.md",
+      "source_blob_sha1": "7c30aa280f7eba2437c428a0e01c2c7ab16553d9",
+      "original_sha256": "6a26ae9e47a4ae4f18b7c61a696920196f442c6ff682b2007db0e721d5f569af",
+      "archive_sha256": "6a26ae9e47a4ae4f18b7c61a696920196f442c6ff682b2007db0e721d5f569af",
+      "reason": "保留历史失败归因与修复批次；共用治理、工具和交付的后续任务由 G1–G6 接管。",
+      "replaced_by": [
+        "分层基线：四项控制责任",
+        "分层迁移计划：第二批、第四批、第五批"
+      ]
+    },
+    {
+      "original_path": "docs/计划/2026-09-08-Workbench桌面接入与账号体系实施验收计划.md",
+      "archive_path": "docs/历史/2026-09-14-分层迁移前方案/计划/2026-09-08-Workbench桌面接入与账号体系实施验收计划.md",
+      "source_blob_sha1": "6b9e30a11a433e604190ccf2f0370f8b31c2cee3",
+      "original_sha256": "e3d7896667a03836e183b02fb4587f1280673a68a92de46d9eefd722173b36f5",
+      "archive_sha256": "e3d7896667a03836e183b02fb4587f1280673a68a92de46d9eefd722173b36f5",
+      "reason": "v0.4 已明示不是当前全产品待办；不独立分仓和旧 S0–S3 实施顺序已被替代。",
+      "replaced_by": [
+        "分层迁移计划：第四批、第六批、最终集中验收"
+      ]
+    },
+    {
+      "original_path": "docs/计划/2026-09-08-Workbench桌面接入并行任务计划.md",
+      "archive_path": "docs/历史/2026-09-14-分层迁移前方案/计划/2026-09-08-Workbench桌面接入并行任务计划.md",
+      "source_blob_sha1": "28bf386959018d31cce98514381e306f3f88d4a4",
+      "original_sha256": "ccbf62155dd2ca65f20499add67098597056a2f158ca1e4591e826e566edfc57",
+      "archive_sha256": "ccbf62155dd2ca65f20499add67098597056a2f158ca1e4591e826e566edfc57",
+      "reason": "专用于已合并桌面预览分支的并行工单；当前身份和分仓批次由现行计划管理。",
+      "replaced_by": [
+        "分层迁移计划：第四批、第六批"
+      ]
+    },
+    {
+      "original_path": "docs/计划/2026-09-12-内核边界契约差距与第一批实现.md",
+      "archive_path": "docs/历史/2026-09-14-分层迁移前方案/计划/2026-09-12-内核边界契约差距与第一批实现.md",
+      "source_blob_sha1": "a1d3941b727d96dedbddaef8a23de4847f672f15",
+      "original_sha256": "0cb395f893fcb6aa83783f63839df89aca9974886c4118f194c6cc1ed0d2491a",
+      "archive_sha256": "0cb395f893fcb6aa83783f63839df89aca9974886c4118f194c6cc1ed0d2491a",
+      "reason": "文件已明示为早期实施快照，不可继续用其差距表判断当前支持范围。",
+      "replaced_by": [
+        "分层基线：当前代码事实与迁移顺序",
+        "分层迁移计划：完成矩阵"
+      ]
+    }
+  ]
+}

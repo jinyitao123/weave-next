@@ -1,0 +1,52 @@
+[
+  {
+    "file": "docs/架构/2026-09-08-Workbench桌面接入方案可落地性与简洁性评审.md",
+    "old_target": "2026-09-08-Workbench桌面接入与账号体系产品技术方案.v0.1.md",
+    "new_target": "../历史/2026-09-08-Workbench桌面方案/架构/2026-09-08-Workbench桌面接入与账号体系产品技术方案.v0.1.md"
+  },
+  {
+    "file": "docs/架构/2026-09-08-Workbench桌面接入方案可落地性与简洁性评审.md",
+    "old_target": "../计划/2026-09-08-Workbench桌面接入与账号体系实施验收计划.v0.1.md",
+    "new_target": "../历史/2026-09-08-Workbench桌面方案/计划/2026-09-08-Workbench桌面接入与账号体系实施验收计划.v0.1.md"
+  },
+  {
+    "file": "docs/架构/2026-09-08-Workbench桌面接入方案可落地性与简洁性评审.md",
+    "old_target": "2026-09-08-Workbench桌面接入与账号体系产品技术方案.v0.2.md",
+    "new_target": "../历史/2026-09-08-Workbench桌面方案/架构/2026-09-08-Workbench桌面接入与账号体系产品技术方案.v0.2.md"
+  },
+  {
+    "file": "docs/架构/2026-09-08-Workbench桌面接入方案可落地性与简洁性评审.md",
+    "old_target": "../计划/2026-09-08-Workbench桌面接入与账号体系实施验收计划.v0.2.md",
+    "new_target": "../历史/2026-09-08-Workbench桌面方案/计划/2026-09-08-Workbench桌面接入与账号体系实施验收计划.v0.2.md"
+  },
+  {
+    "file": "docs/架构/2026-09-08-Workbench桌面接入方案可落地性与简洁性评审.md",
+    "old_target": "2026-09-08-Workbench桌面接入与账号体系产品技术方案.v0.3.md",
+    "new_target": "../历史/2026-09-08-Workbench桌面方案/架构/2026-09-08-Workbench桌面接入与账号体系产品技术方案.v0.3.md"
+  },
+  {
+    "file": "docs/架构/2026-09-08-Workbench桌面接入方案可落地性与简洁性评审.md",
+    "old_target": "../计划/2026-09-08-Workbench桌面接入与账号体系实施验收计划.v0.3.md",
+    "new_target": "../历史/2026-09-08-Workbench桌面方案/计划/2026-09-08-Workbench桌面接入与账号体系实施验收计划.v0.3.md"
+  },
+  {
+    "file": "docs/架构/2026-08-27-预算闸设计.md",
+    "old_target": "./2026-08-27-遗留清单与下一阶段路线.md",
+    "new_target": "../历史/2026-09-14-分层迁移前方案/架构/2026-08-27-遗留清单与下一阶段路线.md"
+  },
+  {
+    "file": "docs/架构/README.md",
+    "old_target": "base-词表与参与方合同.md",
+    "new_target": "../历史/2026-09-14-分层迁移前方案/架构/base-词表与参与方合同.md"
+  },
+  {
+    "file": "docs/架构/README.md",
+    "old_target": "2026-08-25-Weave-新仓搬迁方案.md",
+    "new_target": "../历史/2026-09-14-分层迁移前方案/架构/2026-08-25-Weave-新仓搬迁方案.md"
+  },
+  {
+    "file": "docs/架构/README.md",
+    "old_target": "2026-08-27-遗留清单与下一阶段路线.md",
+    "new_target": "../历史/2026-09-14-分层迁移前方案/架构/2026-08-27-遗留清单与下一阶段路线.md"
+  }
+]
