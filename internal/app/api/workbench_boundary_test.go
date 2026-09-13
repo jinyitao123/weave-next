@@ -117,6 +117,8 @@ func TestWorkbenchBoundaryRequiredRoutesRemainAuthenticated(t *testing.T) {
 		{http.MethodGet, "/providers"},
 		{http.MethodPost, "/providers"},
 		{http.MethodPost, "/auth/api-keys"},
+		{http.MethodGet, "/capability-management"},
+		{http.MethodPost, "/capability-management/actions"},
 		{http.MethodGet, "/runtimes"},
 		{http.MethodPost, "/runtimes"},
 		{http.MethodGet, "/usage"},

@@ -10,9 +10,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jinyitao123/weave/internal/app/projects"
-	"github.com/jinyitao123/weave/internal/base/frozen"
+	"github.com/jinyitao123/weave/internal/app/workflowdispatch"
 	"github.com/jinyitao123/weave/internal/base/snapshot"
-	"github.com/jinyitao123/weave/internal/base/taskqueue"
 	"github.com/jinyitao123/weave/internal/kernel/workflow"
 	"github.com/labstack/echo/v4"
 )
@@ -28,8 +27,26 @@ type workflowManualRunResponse struct {
 	ConversationID  string `json:"conversation_id,omitempty"`
 }
 
+type workflowDispatchIdentity struct {
+	RunID      string
+	TaskID     string
+	ContextKey string
+}
+
+func (s *Server) workflowDispatchService() *workflowdispatch.Service {
+	return &workflowdispatch.Service{
+		Workflow: s.Workflow, Snapshots: s.Snapshots, Tasks: s.Tasks,
+		Deliverables: s.Deliverables,
+	}
+}
+
 // admitTeamWorkflowDispatch freezes and enqueues the team dispatch already validated by the product boundary.
-func (s *Server) admitTeamWorkflowDispatch(c echo.Context, workflowID string, request teamDispatchRequest) error {
+func (s *Server) admitTeamWorkflowDispatch(
+	c echo.Context,
+	workflowID string,
+	request teamDispatchRequest,
+	identity workflowDispatchIdentity,
+) error {
 	if s.Workflow == nil || s.ScheduleTransactions == nil ||
 		s.Snapshots == nil || s.Tasks == nil {
 		return workflowError(
@@ -68,28 +85,19 @@ func (s *Server) admitTeamWorkflowDispatch(c echo.Context, workflowID string, re
 		expectedTrigger = triggerType
 		taskSource = "session"
 	}
-	admitted, err := s.Workflow.AdmitWorkflowManualRunTx(
-		ctx,
-		tx,
-		workflow.WorkflowManualRunAdmissionRequest{
-			WorkspaceID:     workspaceID,
-			WorkflowID:      workflowID,
-			WorkflowVersion: request.WorkflowVersion,
-			SourceRef:       sourceRef,
-			TriggerType:     triggerType,
-		},
-	)
+	service := s.workflowDispatchService()
+	prepared, err := service.PrepareTx(ctx, tx, workflowdispatch.AdmissionRequest{
+		WorkspaceID:     workspaceID,
+		WorkflowID:      workflowID,
+		WorkflowVersion: request.WorkflowVersion,
+		SourceRef:       sourceRef,
+		TriggerType:     triggerType,
+		RunID:           identity.RunID,
+	})
 	if err != nil {
 		return s.respondWorkflowManualRunAdmissionError(c, tx, workflowID, err, expectedTrigger)
 	}
-	if dispatchRunID, ok := c.Get("workflow_dispatch_run_id").(string); ok && dispatchRunID != "" {
-		admitted.RunID = dispatchRunID
-	}
-	if err := validateWorkflowManualRunSnapshot(
-		admitted, workspaceID, workflowID, sourceRef, expectedTrigger,
-	); err != nil {
-		return workflowStoreFailure(c, err)
-	}
+	admitted := prepared.Snapshot()
 	var project projects.Project
 	conversationAgentID := ""
 	if conversationID != "" {
@@ -124,7 +132,7 @@ func (s *Server) admitTeamWorkflowDispatch(c echo.Context, workflowID string, re
 		}
 	}
 	if projectID != "" {
-		leadAvatarID, _, err := s.workflowManualRunLead(ctx, admitted)
+		leadAvatarID, _, err := service.Lead(ctx, admitted)
 		if err != nil {
 			return workflowStoreFailure(c, err)
 		}
@@ -144,58 +152,37 @@ func (s *Server) admitTeamWorkflowDispatch(c echo.Context, workflowID string, re
 				"conversation avatar does not match admitted workflow lead avatar",
 			)
 		}
-		admitted.ProjectID = project.ID
 	}
-
-	createdSnapshot, err := s.Snapshots.CreateTx(ctx, tx, admitted)
+	deliveryContract := json.RawMessage(nil)
+	if request.inputBinding != nil {
+		deliveryContract = request.inputBinding.DeliveryContract
+	}
+	receipt, err := service.PersistTx(ctx, tx, prepared, workflowdispatch.PersistRequest{
+		ProjectID: projectID, TaskID: identity.TaskID, TaskSource: taskSource,
+		ContextKey: identity.ContextKey, Payload: payload,
+		InputRevisionID: request.InputRevisionID, DeliveryContract: deliveryContract,
+	})
 	if err != nil {
 		if errors.Is(err, snapshot.ErrAlreadyExists) {
-			if fingerprint, ok := c.Get("workflow_dispatch_fingerprint").(string); ok && fingerprint != "" {
+			if identity.ContextKey != "" {
 				_ = tx.Rollback(ctx)
-				taskID, _ := c.Get("workflow_dispatch_task_id").(string)
 				existing, _, existingPayload, contextKey, found, replayErr := s.loadWorkflowDispatchReplay(
-					ctx, workspaceID, admitted.RunID, taskID,
+					ctx, workspaceID, identity.RunID, identity.TaskID,
 				)
 				if replayErr != nil {
 					return workflowStoreFailure(c, replayErr)
 				}
-				if found && contextKey == fingerprint && existingPayload == string(payload) {
-					existing.RunID = admitted.RunID
+				if found && contextKey == identity.ContextKey && existingPayload == string(payload) {
+					existing.RunID = identity.RunID
 					existing.ConversationID = conversationID
 					return c.JSON(http.StatusOK, existing)
 				}
 				return workflowError(c, http.StatusConflict, "client_request_conflict", "client_request_id was already used for different dispatch facts")
 			}
 		}
-		return workflowStoreFailure(c, fmt.Errorf("create manual workflow snapshot: %w", err))
+		return workflowStoreFailure(c, err)
 	}
-	if err := s.freezeDispatchDeliveryContractTx(ctx, tx, createdSnapshot, request); err != nil {
-		return workflowStoreFailure(c, fmt.Errorf("freeze workflow delivery contract: %w", err))
-	}
-	taskID := "task-" + uuid.NewString()
-	if dispatchTaskID, ok := c.Get("workflow_dispatch_task_id").(string); ok && dispatchTaskID != "" {
-		taskID = dispatchTaskID
-	}
-	task := &taskqueue.Task{
-		ID:                    taskID,
-		WorkspaceID:           createdSnapshot.WorkspaceID,
-		ProjectID:             createdSnapshot.ProjectID,
-		IdentityKind:          taskqueue.IdentityTeamWorkflow,
-		IdentitySchemaVersion: 2,
-		WorkflowID:            createdSnapshot.WorkflowID,
-		WorkflowVersion:       createdSnapshot.WorkflowVersion,
-		RunSnapshotID:         createdSnapshot.RunID,
-		Source:                taskSource,
-		Kind:                  "team_workflow",
-		Payload:               payload,
-	}
-	if dispatchFingerprint, ok := c.Get("workflow_dispatch_fingerprint").(string); ok {
-		task.ContextKey = dispatchFingerprint
-	}
-	if err := s.Tasks.EnqueueTx(ctx, tx, task); err != nil {
-		return workflowStoreFailure(c, fmt.Errorf("enqueue manual workflow task: %w", err))
-	}
-	if err := consumeDispatchInputTx(ctx, tx, workspaceID, getUserID(c), request.InputRevisionID, createdSnapshot.RunID, task.ID); err != nil {
+	if err := consumeDispatchInputTx(ctx, tx, workspaceID, getUserID(c), request.InputRevisionID, receipt.RunID, receipt.TaskID); err != nil {
 		return workflowStoreFailure(c, err)
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -203,11 +190,11 @@ func (s *Server) admitTeamWorkflowDispatch(c echo.Context, workflowID string, re
 	}
 
 	response := workflowManualRunResponse{
-		RunID:           createdSnapshot.RunID,
-		WorkflowID:      createdSnapshot.WorkflowID,
-		WorkflowVersion: createdSnapshot.WorkflowVersion,
-		TaskID:          task.ID,
-		ProjectID:       createdSnapshot.ProjectID,
+		RunID:           receipt.RunID,
+		WorkflowID:      receipt.WorkflowID,
+		WorkflowVersion: receipt.WorkflowVersion,
+		TaskID:          receipt.TaskID,
+		ProjectID:       receipt.ProjectID,
 		ConversationID:  conversationID,
 		InputRevisionID: request.InputRevisionID,
 	}
@@ -285,46 +272,6 @@ func workflowManualRunProjectError(c echo.Context, err error) error {
 	}
 }
 
-func (s *Server) workflowManualRunLead(
-	ctx context.Context,
-	admitted snapshot.TeamRunSnapshot,
-) (string, int, error) {
-	artifact, err := s.Workflow.GetArtifact(
-		ctx, admitted.WorkspaceID, admitted.WorkflowID, admitted.WorkflowVersion,
-	)
-	if err != nil {
-		return "", 0, fmt.Errorf("read admitted manual workflow artifact: %w", err)
-	}
-	payload, err := frozen.DecodeArtifactEnvelopeV1(frozen.ArtifactEnvelopeV1{
-		WorkspaceID:               artifact.WorkspaceID,
-		WorkflowID:                artifact.WorkflowID,
-		WorkflowVersion:           artifact.WorkflowVersion,
-		ArtifactSchemaVersion:     artifact.ArtifactSchemaVersion,
-		CanonicalizationAlgorithm: artifact.CanonicalizationAlgorithm,
-		CanonicalizationVersion:   artifact.CanonicalizationVersion,
-		HashAlgorithm:             artifact.HashAlgorithm,
-		ContentHash:               artifact.ContentHash,
-		Payload:                   artifact.Payload,
-	})
-	if err != nil {
-		return "", 0, fmt.Errorf("decode admitted manual workflow artifact: %w", err)
-	}
-	if payload.Team.WorkspaceID != admitted.WorkspaceID ||
-		payload.Team.TeamID != admitted.TeamID ||
-		payload.Team.LeadAgentID == "" {
-		return "", 0, errors.New("admitted manual workflow artifact has mismatched lead identity")
-	}
-	if payload.Team.LeadAgentVersion > 0 {
-		return payload.Team.LeadAgentID, int(payload.Team.LeadAgentVersion), nil
-	}
-	for _, bundle := range payload.Bundles {
-		if bundle.Agent.AgentID == payload.Team.LeadAgentID && bundle.Agent.AgentVersion > 0 {
-			return payload.Team.LeadAgentID, int(bundle.Agent.AgentVersion), nil
-		}
-	}
-	return "", 0, errors.New("admitted manual workflow artifact has no frozen lead bundle")
-}
-
 func (s *Server) respondWorkflowManualRunAdmissionError(
 	c echo.Context,
 	tx pgx.Tx,
@@ -387,39 +334,4 @@ func (s *Server) respondWorkflowManualRunAdmissionError(
 	default:
 		return workflowStoreFailure(c, err)
 	}
-}
-
-func validateWorkflowManualRunSnapshot(
-	admitted snapshot.TeamRunSnapshot,
-	workspaceID, workflowID, sourceRef string,
-	triggerTypes ...string,
-) error {
-	if admitted.RunID == "" ||
-		admitted.WorkspaceID != workspaceID ||
-		admitted.TeamID == "" ||
-		admitted.SnapshotSchemaVersion != 2 ||
-		admitted.Mode != "fixed_workflow" ||
-		admitted.WorkflowID != workflowID ||
-		admitted.WorkflowVersion < 1 ||
-		admitted.ArtifactWorkflowID != workflowID ||
-		admitted.ArtifactWorkflowVersion != admitted.WorkflowVersion {
-		return errors.New("manual admission returned a mismatched fixed workflow identity")
-	}
-	var trigger struct {
-		SchemaVersion int    `json:"schema_version"`
-		Type          string `json:"type"`
-		SourceRef     string `json:"source_ref"`
-	}
-	if err := decodeExactJSON(admitted.TriggerSourceV2, &trigger); err != nil {
-		return fmt.Errorf("decode manual trigger source: %w", err)
-	}
-	expectedTrigger := "manual"
-	if len(triggerTypes) > 0 && triggerTypes[0] != "" {
-		expectedTrigger = triggerTypes[0]
-	}
-	if trigger.SchemaVersion != 1 || trigger.Type != expectedTrigger ||
-		trigger.SourceRef != sourceRef {
-		return errors.New("manual admission returned a mismatched trigger")
-	}
-	return nil
 }

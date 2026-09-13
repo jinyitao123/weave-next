@@ -112,6 +112,30 @@ func (c *Consumer) ConsumeClaimed(
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
+	// Re-read and lock the durable queue row before establishing the TeamRun.
+	// A cancellation may have changed the task after Claim returned; trusting
+	// only the caller's stale task value would let model execution start after
+	// the stop request committed.
+	var durableStatus, durableWorkerID string
+	var durableClaimEpoch int64
+	var durableLeaseExpiresAt *time.Time
+	err = tx.QueryRow(ctx, `
+		SELECT status,COALESCE(worker_id,''),claim_epoch,lease_expires_at
+		FROM weave_task_queue
+		WHERE workspace_id=$1 AND id=$2
+		FOR UPDATE
+	`, task.WorkspaceID, task.ID).Scan(
+		&durableStatus, &durableWorkerID, &durableClaimEpoch, &durableLeaseExpiresAt,
+	)
+	if err != nil {
+		return TeamRun{}, fmt.Errorf("lock claimed team workflow task: %w", err)
+	}
+	if durableStatus != taskqueue.StatusRunning || durableWorkerID != workerID ||
+		durableClaimEpoch != task.ClaimEpoch || durableLeaseExpiresAt == nil ||
+		durableLeaseExpiresAt.Before(now) {
+		return TeamRun{}, ErrClaimFenced
+	}
+
 	run, err := c.Runs.EstablishQueuedTx(ctx, tx, EstablishRequest{
 		WorkspaceID:             task.WorkspaceID,
 		ProjectID:               runSnapshot.ProjectID,
@@ -129,6 +153,9 @@ func (c *Consumer) ConsumeClaimed(
 	})
 	if err != nil {
 		if errors.Is(err, ErrTeamRunIdentityMismatch) {
+			// Release the queue-row fence before FailClaimed opens its own
+			// transaction and updates the same task.
+			_ = tx.Rollback(ctx)
 			return TeamRun{}, c.failClaimed(
 				ctx, task, workerID, ErrorCodeIdentityMismatch, err,
 			)
@@ -194,6 +221,11 @@ func workflowTaskSourceKind(source string) (SourceKind, error) {
 
 var errSnapshotDamaged = errors.New("team run snapshot is damaged")
 
+// ErrClaimFenced means durable queue state changed after the caller received
+// its claimed task. The worker must stop without establishing or executing a
+// TeamRun; cancellation and lease recovery both use this fence.
+var ErrClaimFenced = errors.New("team workflow task claim is no longer current")
+
 func validateTaskSnapshotIdentity(
 	task *taskqueue.Task,
 	runSnapshot *snapshot.TeamRunSnapshot,
@@ -230,6 +262,7 @@ func validateTaskSnapshotIdentity(
 		runSnapshot.ArtifactWorkflowVersion != task.WorkflowVersion {
 		return errors.New("task and snapshot workflow identity differ")
 	}
+	candidateIdentity := runSnapshot.BuildRunID != "" || runSnapshot.CandidateContentHash != ""
 	switch task.Source {
 	case "schedule":
 		var trigger struct {
@@ -284,22 +317,18 @@ func validateTaskSnapshotIdentity(
 			trigger.SchemaVersion != 1 ||
 			trigger.Type != "api" ||
 			trigger.SourceRef == "" ||
-			trigger.SourceRef != runSnapshot.BuildRunID {
+			candidateIdentity && trigger.SourceRef != runSnapshot.BuildRunID {
 			return fmt.Errorf("%w: api trigger is invalid", errSnapshotDamaged)
 		}
 	default:
 		return errors.New("task and snapshot trigger source are unsupported")
 	}
-	candidateIdentity := runSnapshot.BuildRunID != "" || runSnapshot.CandidateContentHash != ""
 	if candidateIdentity {
 		if task.Source != "api" ||
 			runSnapshot.BuildRunID == "" ||
 			runSnapshot.CandidateContentHash == "" {
 			return fmt.Errorf("%w: candidate snapshot identity is invalid", errSnapshotDamaged)
 		}
-	}
-	if task.Source == "api" && !candidateIdentity {
-		return fmt.Errorf("%w: api task requires a candidate snapshot identity", errSnapshotDamaged)
 	}
 	var associations struct {
 		SchemaVersion    int     `json:"schema_version"`

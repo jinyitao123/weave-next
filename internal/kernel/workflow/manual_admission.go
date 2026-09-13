@@ -199,7 +199,8 @@ func validateWorkflowManualRunAdmissionRequest(
 			return manualRunAdmissionDenied(name + " identity is invalid")
 		}
 	}
-	if request.TriggerType != "" && request.TriggerType != "conversation_explicit" {
+	if request.TriggerType != "" && request.TriggerType != "conversation_explicit" &&
+		request.TriggerType != "api" {
 		return manualRunAdmissionDenied("trigger type is invalid")
 	}
 	if request.WorkflowVersion != nil && *request.WorkflowVersion <= 0 {
