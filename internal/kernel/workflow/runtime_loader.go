@@ -294,6 +294,7 @@ func (l *RuntimeLoader) Load(
 	if err != nil {
 		return nil, err
 	}
+	ctx = withPublishedServiceCredentialAuthorization(ctx, payload)
 
 	if len(payload.DeliveryTargets) > 0 {
 		if runtimeNilLike(credentialResolver) {
@@ -468,6 +469,61 @@ func (l *RuntimeLoader) Load(
 		})
 	}
 	return artifact, nil
+}
+
+// withPublishedServiceCredentialAuthorization treats the immutable execution
+// snapshot as the user's exact grant to shared workspace services. References
+// outside that snapshot remain denied, even when they name the same workspace.
+func withPublishedServiceCredentialAuthorization(
+	ctx context.Context,
+	payload frozen.ArtifactPayloadV1,
+) context.Context {
+	allowed := make([]frozen.CredentialReference, 0)
+	for _, bundle := range payload.Bundles {
+		for _, ref := range bundle.Credentials {
+			if ref.Scope == frozen.CredentialScopeWorkspaceService {
+				allowed = append(allowed, ref)
+			}
+		}
+	}
+	for _, target := range payload.DeliveryTargets {
+		if target.AccessRef.Scope == frozen.CredentialScopeWorkspaceService {
+			allowed = append(allowed, target.AccessRef)
+		}
+		for _, binding := range target.CredentialBindings {
+			if binding.CredentialRef.Scope == frozen.CredentialScopeWorkspaceService {
+				allowed = append(allowed, binding.CredentialRef)
+			}
+		}
+	}
+	return frozen.WithServiceReferenceAuthorization(ctx, func(
+		_ context.Context,
+		subject execution.Subject,
+		requested frozen.CredentialReference,
+	) error {
+		if subject.UserID == "" || subject.WorkspaceID != requested.WorkspaceID {
+			return execution.ErrSubjectMismatch
+		}
+		for _, ref := range allowed {
+			if sameCredentialReference(ref, requested) {
+				return nil
+			}
+		}
+		return execution.ErrSubjectMismatch
+	})
+}
+
+func sameCredentialReference(left, right frozen.CredentialReference) bool {
+	if left.SchemaVersion != right.SchemaVersion || left.Scope != right.Scope ||
+		left.UserID != right.UserID || left.ServiceID != right.ServiceID ||
+		left.WorkspaceID != right.WorkspaceID || left.Kind != right.Kind ||
+		left.ResourceID != right.ResourceID || left.Slot != right.Slot {
+		return false
+	}
+	if left.CredentialVersion == nil || right.CredentialVersion == nil {
+		return left.CredentialVersion == nil && right.CredentialVersion == nil
+	}
+	return *left.CredentialVersion == *right.CredentialVersion
 }
 
 func providerlessLoomBundle(bundle frozen.FrozenExecutionBundle) bool {

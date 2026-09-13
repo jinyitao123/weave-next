@@ -26,6 +26,7 @@ import (
 	"github.com/jinyitao123/weave/internal/app/teamtemplates"
 	"github.com/jinyitao123/weave/internal/app/users"
 	"github.com/jinyitao123/weave/internal/base/db"
+	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/build/teambuild"
 	"github.com/jinyitao123/weave/internal/build/teameval"
 	"github.com/jinyitao123/weave/internal/build/teamorch"
@@ -211,6 +212,8 @@ func main() {
 			ThinkingDefaultMode:      thinkingMode,
 			ThinkingDisableWithTools: true,
 			AttemptTimeoutSeconds:    attemptTimeoutSeconds,
+			CredentialScope:          frozen.CredentialScopeWorkspaceService,
+			CredentialServiceID:      "system-provider:deepseek",
 		})
 	}
 	if key := os.Getenv("ANTHROPIC_API_KEY"); key != "" {
@@ -221,6 +224,8 @@ func main() {
 			APIKey:                key,
 			Models:                []string{"claude-sonnet-4-20250514"},
 			AttemptTimeoutSeconds: attemptTimeoutSeconds,
+			CredentialScope:       frozen.CredentialScopeWorkspaceService,
+			CredentialServiceID:   "system-provider:anthropic",
 		})
 	}
 	if key := os.Getenv("OPENAI_API_KEY"); key != "" {
@@ -239,6 +244,8 @@ func main() {
 				"gpt-5.3-codex", "gpt-5.2-codex", "codex-mini-latest",
 			}),
 			AttemptTimeoutSeconds: attemptTimeoutSeconds,
+			CredentialScope:       frozen.CredentialScopeWorkspaceService,
+			CredentialServiceID:   "system-provider:openai",
 		})
 	}
 
