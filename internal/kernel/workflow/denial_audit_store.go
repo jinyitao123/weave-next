@@ -10,7 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-func (s *Store) RecordFixedWorkflowAdmissionDenial(
+func (s *ArtifactStore) RecordFixedWorkflowAdmissionDenial(
 	ctx context.Context,
 	attempt FixedWorkflowAdmissionDenialAttempt,
 ) (*FixedWorkflowAdmissionDenialRecord, error) {

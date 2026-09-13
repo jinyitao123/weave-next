@@ -22,7 +22,7 @@ const admissionAuditColumns = `
 `
 
 // SetBlocked atomically records and applies one idempotent admission command.
-func (s *Store) SetBlocked(
+func (s *ArtifactStore) SetBlocked(
 	ctx context.Context,
 	change AdmissionChange,
 ) (*AdmissionResult, error) {
@@ -172,7 +172,7 @@ func (s *Store) SetBlocked(
 
 // ListAdmissionAudit returns one version's transitions in stable chronological
 // order.
-func (s *Store) ListAdmissionAudit(
+func (s *ArtifactStore) ListAdmissionAudit(
 	ctx context.Context,
 	workspaceID, workflowID string,
 	version int,

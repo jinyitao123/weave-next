@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -21,73 +20,13 @@ var (
 	ErrCandidateInvalid = errors.New("workflow candidate is invalid")
 )
 
-// InsertCandidateTx persists one frozen publication candidate immutably in
-// the caller-owned transaction. The caller alone decides when the candidate
-// row becomes visible (commit) and supplies the writing principal.
-func (s *Store) InsertCandidateTx(
-	ctx context.Context,
-	tx pgx.Tx,
-	candidate *PublicationCandidate,
-	createdBy string,
-) error {
-	if tx == nil {
-		return errors.New("insert workflow candidate: transaction is required")
-	}
-	if candidate == nil {
-		return fmt.Errorf("insert workflow candidate: %w", ErrCandidateInvalid)
-	}
-	createdBy = strings.TrimSpace(createdBy)
-	if createdBy == "" {
-		return errors.New("insert workflow candidate: created_by is required")
-	}
-	envelope, err := candidateEnvelope(candidate)
-	if err != nil {
-		return err
-	}
-	if _, err := frozen.DecodeArtifactEnvelopeV1(envelope); err != nil {
-		return fmt.Errorf("insert workflow candidate: %w", ErrCandidateInvalid)
-	}
-	envelopeJSON, err := json.Marshal(envelope)
-	if err != nil {
-		return fmt.Errorf("insert workflow candidate: encode envelope: %w", err)
-	}
-	dependenciesJSON, err := json.Marshal(candidate.Dependencies)
-	if err != nil {
-		return fmt.Errorf("insert workflow candidate: encode dependencies: %w", err)
-	}
-	if _, err := tx.Exec(ctx, `
-		INSERT INTO weave_team_workflow_candidates (
-			workspace_id, workflow_id, workflow_version, content_hash,
-			envelope_json, dependencies_json, expected_updated_at,
-			created_by, created_at
-		) VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7, $8, $9)
-	`,
-		candidate.WorkspaceID,
-		candidate.WorkflowID,
-		candidate.WorkflowVersion,
-		candidate.ContentHash,
-		string(envelopeJSON),
-		string(dependenciesJSON),
-		candidate.ExpectedUpdatedAt,
-		createdBy,
-		s.clock.Now().UTC(),
-	); err != nil {
-		return fmt.Errorf("insert workflow candidate: %w", err)
-	}
-	return nil
-}
-
-// GetCandidateTx returns one frozen candidate by workspace, workflow, and
+// GetCandidate returns one frozen candidate by workspace, workflow, and
 // content hash. The content hash binds the workflow version, so the request
 // never needs to carry a version.
-func (s *Store) GetCandidateTx(
+func (s *ArtifactStore) GetCandidate(
 	ctx context.Context,
-	tx pgx.Tx,
 	workspaceID, workflowID, contentHash string,
 ) (*PublicationCandidate, error) {
-	if tx == nil {
-		return nil, errors.New("get workflow candidate: transaction is required")
-	}
 	var (
 		candidate      PublicationCandidate
 		envelopeJSON   []byte
@@ -96,7 +35,7 @@ func (s *Store) GetCandidateTx(
 		createdBy      string
 		createdAt      time.Time
 	)
-	err := tx.QueryRow(ctx, `
+	err := s.pool.QueryRow(ctx, `
 		SELECT workspace_id, workflow_id, workflow_version, content_hash,
 			envelope_json, dependencies_json, expected_updated_at,
 			created_by, created_at
@@ -152,7 +91,7 @@ func (s *Store) GetCandidateTx(
 // and returns it in the same shape the published artifact reader returns.
 // It is the candidate-backed ArtifactReader implementation used by the
 // teamrun executor for candidate test runs.
-func (s *Store) GetCandidateArtifact(
+func (s *ArtifactStore) GetCandidateArtifact(
 	ctx context.Context,
 	workspaceID, workflowID string,
 	workflowVersion int,
@@ -188,6 +127,10 @@ func (s *Store) GetCandidateArtifact(
 	}
 	var envelope frozen.ArtifactEnvelopeV1
 	if err := json.Unmarshal(envelopeJSON, &envelope); err != nil {
+		return nil, fmt.Errorf("get workflow candidate artifact: %w", ErrCandidateInvalid)
+	}
+	if envelope.WorkspaceID != artifact.WorkspaceID || envelope.WorkflowID != artifact.WorkflowID ||
+		envelope.WorkflowVersion != artifact.WorkflowVersion || envelope.ContentHash != artifact.ContentHash {
 		return nil, fmt.Errorf("get workflow candidate artifact: %w", ErrCandidateInvalid)
 	}
 	if _, err := frozen.DecodeArtifactEnvelopeV1(envelope); err != nil {
