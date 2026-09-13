@@ -10,121 +10,86 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jinyitao123/weave/internal/base/execution"
 )
 
-// ChatExecutor executes the payload carried by an asynchronous chat task.
-type ChatExecutor interface {
-	ExecuteChat(ctx context.Context, tenant string, req ChatExecRequest) (*ChatExecResult, error)
+// Handler executes one claimed task; the worker alone controls the queue lease
+// and terminal state. A continuation yields the same frozen task for later work.
+type Handler interface {
+	ExecuteTask(context.Context, Task) (TaskResult, error)
 }
 
-type retryableTaskError interface {
-	RetryTask() bool
+type TaskResult struct {
+	Result        json.RawMessage
+	RunID         string
+	Continue      bool
+	ContinueAfter time.Duration
 }
 
-type Attachment struct {
-	ID       string `json:"id"`
-	Filename string `json:"filename"`
-	Path     string `json:"path"`
+type registration struct {
+	kind     string
+	identity IdentityKind
+	handler  Handler
 }
 
-type RuntimeCapabilityFact struct {
-	RuntimeID         string   `json:"runtime_id"`
-	Name              string   `json:"name"`
-	Engines           []string `json:"engines"`
-	RuntimeRevision   int64    `json:"runtime_revision"`
-	Enabled           bool     `json:"enabled"`
-	Online            bool     `json:"online"`
-	Eligible          bool     `json:"eligible"`
-	UnavailableReason string   `json:"unavailable_reason,omitempty"`
-}
-
-type RuntimeAssignment struct {
-	RuntimeID       string                  `json:"runtime_id,omitempty"`
-	RuntimeRevision int64                   `json:"runtime_revision,omitempty"`
-	Mode            string                  `json:"mode"`
-	ReasonCode      string                  `json:"reason_code"`
-	Engine          string                  `json:"engine"`
-	CapabilityFacts []RuntimeCapabilityFact `json:"capability_facts"`
-}
-
-type ChatExecRequest struct {
-	Agent             string                         `json:"agent"`
-	AgentID           string                         `json:"agent_id,omitempty"`
-	AgentVersion      int                            `json:"agent_version,omitempty"`
-	ExecutionStamp    *execution.AgentExecutionStamp `json:"-"`
-	RunSnapshotID     string                         `json:"-"`
-	ProjectID         string                         `json:"project_id,omitempty"`
-	RuntimeAssignment *RuntimeAssignment             `json:"runtime_assignment,omitempty"`
-	ClientRequestID   string                         `json:"client_request_id,omitempty"`
-	SessionID         string                         `json:"session_id"`
-	ConversationID    string                         `json:"conversation_id,omitempty"`
-	Message           string                         `json:"message"`
-	Profile           string                         `json:"profile"`
-	Effort            string                         `json:"effort"`
-	UserID            string                         `json:"user_id"`
-	Context           map[string]any                 `json:"context,omitempty"`
-	NoDispatch        bool                           `json:"no_dispatch,omitempty"`
-	Attachments       []Attachment                   `json:"attachments,omitempty"`
-}
-
-type ChatExecResult struct {
-	Output            string             `json:"output"`
-	StopReason        string             `json:"stop_reason"`
-	SessionID         string             `json:"session_id"`
-	RunID             string             `json:"run_id"`
-	ProjectID         string             `json:"project_id,omitempty"`
-	ConversationID    string             `json:"conversation_id,omitempty"`
-	RuntimeAssignment *RuntimeAssignment `json:"runtime_assignment,omitempty"`
-}
-
-// Worker claims and executes tasks while renewing their leases.
+// Worker routes typed tasks through one shared claim, lease and cancellation loop.
 type Worker struct {
 	store         *Store
-	executor      ChatExecutor
+	handlers      []registration
 	concurrency   int
 	pollInterval  time.Duration
-	onLegTerminal func(ctx context.Context, workspaceID, groupID string)
-
-	mu         sync.Mutex
-	cancel     context.CancelFunc
-	cancellers map[string]context.CancelFunc
-	pollWG     sync.WaitGroup
+	onLegTerminal func(context.Context, string, string)
+	mu            sync.Mutex
+	cancel        context.CancelFunc
+	cancellers    map[string]context.CancelFunc
+	pollWG        sync.WaitGroup
 }
 
-// SetOnLegTerminal installs the task-group completion hook.
-func (w *Worker) SetOnLegTerminal(hook func(ctx context.Context, workspaceID, groupID string)) {
-	w.onLegTerminal = hook
-}
-
-func NewWorker(store *Store, executor ChatExecutor, concurrency int) *Worker {
+func NewWorker(store *Store, concurrency int) *Worker {
 	if concurrency <= 0 {
 		concurrency = 4
 	}
-	return &Worker{
-		store:        store,
-		executor:     executor,
-		concurrency:  concurrency,
-		pollInterval: 2 * time.Second,
-		cancellers:   make(map[string]context.CancelFunc),
-	}
+	return &Worker{store: store, concurrency: concurrency, pollInterval: 2 * time.Second, cancellers: make(map[string]context.CancelFunc)}
 }
 
-// Start launches fixed-concurrency polling loops.
-func (w *Worker) Start() {
-	ctx, cancel := context.WithCancel(context.Background())
+// Register installs a handler before startup. Identity is part of the route,
+// so a handler cannot accidentally claim another product's execution contract.
+func (w *Worker) Register(kind string, identity IdentityKind, handler Handler) error {
 	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.cancel != nil {
+		return errors.New("task worker has already started")
+	}
+	if kind == "" || identity == "" || handler == nil || kind == "engine_exec" {
+		return errors.New("invalid local task handler")
+	}
+	for _, entry := range w.handlers {
+		if entry.kind == kind {
+			return fmt.Errorf("task handler %q already registered", kind)
+		}
+	}
+	w.handlers = append(w.handlers, registration{kind, identity, handler})
+	return nil
+}
+
+func (w *Worker) SetOnLegTerminal(hook func(context.Context, string, string)) { w.onLegTerminal = hook }
+
+func (w *Worker) Start() {
+	w.mu.Lock()
+	if w.cancel != nil {
+		w.mu.Unlock()
+		return
+	}
+	ctx, cancel := context.WithCancel(context.Background())
 	w.cancel = cancel
 	w.mu.Unlock()
-	workerPrefix := uuid.NewString()
 	for i := 0; i < w.concurrency; i++ {
 		w.pollWG.Add(1)
-		go w.pollLoop(ctx, fmt.Sprintf("%s-%d", workerPrefix, i))
+		go w.pollLoop(ctx, i)
 	}
-	slog.Info("task worker started", "concurrency", w.concurrency)
 }
 
-// Stop stops polling without waiting for in-flight task execution.
+// Stop interrupts handlers and stops polling. A handler which has not returned
+// keeps its durable owner; shutdown cannot fabricate a physical stop receipt.
 func (w *Worker) Stop() {
 	w.mu.Lock()
 	cancel := w.cancel
@@ -133,17 +98,14 @@ func (w *Worker) Stop() {
 		cancel()
 	}
 	w.pollWG.Wait()
-	slog.Info("task worker stopped")
 }
 
-// CancelTask changes durable state and cancels local execution if present.
 func (w *Worker) CancelTask(ctx context.Context, workspaceID, id string) error {
 	if err := w.store.Cancel(ctx, workspaceID, id); err != nil {
 		return err
 	}
 	w.mu.Lock()
 	cancel := w.cancellers[id]
-	delete(w.cancellers, id)
 	w.mu.Unlock()
 	if cancel != nil {
 		cancel()
@@ -151,21 +113,28 @@ func (w *Worker) CancelTask(ctx context.Context, workspaceID, id string) error {
 	return nil
 }
 
-func (w *Worker) pollLoop(ctx context.Context, workerID string) {
+func (w *Worker) pollLoop(ctx context.Context, slot int) {
 	defer w.pollWG.Done()
-	for {
-		task, err := w.store.Claim(ctx, workerID, ClaimFilter{
-			Kind: "chat", IdentityKind: IdentityAgent,
-		})
-		if err != nil {
-			if ctx.Err() != nil {
-				return
+	next := slot
+	for ctx.Err() == nil {
+		var task *Task
+		var selected Handler
+		for i := 0; i < len(w.handlers); i++ {
+			entry := w.handlers[(next+i)%len(w.handlers)]
+			// A unique worker ID per claim also fences any late result after a resume.
+			claimed, err := w.store.Claim(ctx, uuid.NewString(), ClaimFilter{Kind: entry.kind, IdentityKind: entry.identity})
+			if err != nil {
+				if ctx.Err() == nil {
+					slog.Error("task claim failed", "kind", entry.kind, "error", err)
+				}
+				break
 			}
-			slog.Error("task claim error", "worker", workerID, "error", err)
-			if !waitForPoll(ctx, w.pollInterval) {
-				return
+			if claimed != nil {
+				task = claimed
+				selected = entry.handler
+				next = (next + i + 1) % len(w.handlers)
+				break
 			}
-			continue
 		}
 		if task == nil {
 			if !waitForPoll(ctx, w.pollInterval) {
@@ -173,12 +142,8 @@ func (w *Worker) pollLoop(ctx context.Context, workerID string) {
 			}
 			continue
 		}
-
 		done := make(chan struct{})
-		go func() {
-			defer close(done)
-			w.executeTask(task)
-		}()
+		go func() { defer close(done); w.executeTask(ctx, *task, selected) }()
 		select {
 		case <-ctx.Done():
 			return
@@ -198,193 +163,86 @@ func waitForPoll(ctx context.Context, interval time.Duration) bool {
 	}
 }
 
-func (w *Worker) executeTask(task *Task) {
+func (w *Worker) executeTask(workerCtx context.Context, task Task, handler Handler) {
 	defer func() {
 		if task.TaskGroupID != "" && w.onLegTerminal != nil {
 			w.onLegTerminal(context.Background(), task.WorkspaceID, task.TaskGroupID)
 		}
 	}()
-
-	var req ChatExecRequest
-	if err := json.Unmarshal(task.Payload, &req); err != nil {
-		_ = w.store.failClaimed(context.Background(), task.ID, task.WorkerID, "invalid payload: "+err.Error())
-		return
-	}
-	stamp, err := taskAgentExecutionStamp(task)
-	if err != nil {
-		_ = w.store.failClaimed(context.Background(), task.ID, task.WorkerID, "invalid task identity: "+err.Error())
-		return
-	}
-	// Durable task columns are the only execution identity.
-	req.Agent = task.Agent
-	req.AgentID = task.AgentID
-	req.AgentVersion = task.AgentVersion
-	req.ExecutionStamp = stamp
-	req.RunSnapshotID = task.RunSnapshotID
-	if req.ProjectID != task.ProjectID {
-		_ = w.store.failClaimed(context.Background(), task.ID, task.WorkerID, "project differs from durable task")
-		return
-	}
-	req.ProjectID = task.ProjectID
-	if !runtimeAssignmentMatchesTask(task, req.RuntimeAssignment) {
-		_ = w.store.failClaimed(context.Background(), task.ID, task.WorkerID, "runtime assignment differs from durable task")
-		return
-	}
-
-	// An admitted business task is bounded by its durable lease and explicit
-	// cancellation, not by an arbitrary wall-clock deadline. Long-running team
-	// collaboration remains recoverable through heartbeats and can still be
-	// cancelled through CancelTask.
-	execCtx, cancel := context.WithCancel(context.Background())
+	execCtx, cancel := context.WithCancel(workerCtx)
 	w.mu.Lock()
 	w.cancellers[task.ID] = cancel
 	w.mu.Unlock()
-	defer func() {
-		cancel()
-		w.mu.Lock()
-		delete(w.cancellers, task.ID)
-		w.mu.Unlock()
-	}()
-
+	defer func() { cancel(); w.mu.Lock(); delete(w.cancellers, task.ID); w.mu.Unlock() }()
+	// Recheck admission after installing the cancellation hook and before any side effect.
+	if err := w.store.Heartbeat(workerCtx, task.ID, task.WorkerID); err != nil {
+		_ = w.store.AcknowledgeExecutionStopped(context.Background(), task.ID, task.WorkerID)
+		return
+	}
 	type outcome struct {
-		result *ChatExecResult
+		result TaskResult
 		err    error
 	}
 	outcomes := make(chan outcome, 1)
-	go func() {
-		result, err := w.executor.ExecuteChat(execCtx, task.WorkspaceID, req)
-		outcomes <- outcome{result: result, err: err}
-	}()
-
-	heartbeatInterval := w.store.leaseTTL / 3
-	if heartbeatInterval <= 0 {
-		heartbeatInterval = time.Second
+	go func(callCtx context.Context) {
+		result, err := handler.ExecuteTask(callCtx, task)
+		outcomes <- outcome{result, err}
+	}(execCtx)
+	interval := w.store.leaseTTL / 3
+	if interval <= 0 {
+		interval = time.Second
 	}
-	heartbeats := time.NewTicker(heartbeatInterval)
-	defer heartbeats.Stop()
-
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	var stopped bool
+	var leaseLost bool
 	for {
 		select {
-		case <-heartbeats.C:
+		case <-ticker.C:
+			if stopped {
+				continue
+			}
 			if err := w.store.Heartbeat(context.Background(), task.ID, task.WorkerID); err != nil {
+				leaseLost = true
+				stopped = true
 				cancel()
-				slog.Warn("task lease lost", "task_id", task.ID, "error", err)
-				return
 			}
 		case <-execCtx.Done():
-			_ = w.store.failClaimed(context.Background(), task.ID, task.WorkerID, "task cancelled or timed out")
-			return
-		case outcome := <-outcomes:
-			if outcome.err != nil {
+			// Keep waiting for the handler's physical return, without renewing its lease.
+			stopped = true
+			execCtx = context.WithoutCancel(execCtx)
+		case out := <-outcomes:
+			finishCtx, finishCancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer finishCancel()
+			if stopped || workerCtx.Err() != nil {
+				if !leaseLost {
+					_ = w.store.failClaimed(finishCtx, task.ID, task.WorkerID, "execution interrupted")
+				}
+				_ = w.store.AcknowledgeExecutionStopped(finishCtx, task.ID, task.WorkerID)
+				return
+			}
+			if out.err != nil {
 				var retryable retryableTaskError
-				if errors.As(outcome.err, &retryable) && retryable.RetryTask() {
-					if err := w.store.requeueClaimed(
-						context.Background(), task.ID, task.WorkerID,
-					); err != nil {
-						slog.Error(
-							"task retry requeue failed",
-							"task_id", task.ID,
-							"error", err,
-						)
+				if errors.As(out.err, &retryable) && retryable.RetryTask() {
+					if err := w.store.requeueClaimed(finishCtx, task.ID, task.WorkerID, 0); err != nil {
+						slog.Error("task continuation failed", "task_id", task.ID, "error", err)
 					}
-					return
+				} else {
+					_ = w.store.failClaimed(finishCtx, task.ID, task.WorkerID, out.err.Error())
 				}
-				errMsg := outcome.err.Error()
-				if execCtx.Err() != nil {
-					errMsg = "task cancelled or timed out"
+				// A concurrent cancellation wins over either result. Only now can it be acknowledged.
+				_ = w.store.AcknowledgeExecutionStopped(finishCtx, task.ID, task.WorkerID)
+				return
+			}
+			if out.result.Continue {
+				if err := w.store.requeueClaimed(finishCtx, task.ID, task.WorkerID, out.result.ContinueAfter); err != nil {
+					slog.Error("task continuation failed", "task_id", task.ID, "error", err)
 				}
-				_ = w.store.failClaimed(context.Background(), task.ID, task.WorkerID, errMsg)
-				return
+			} else if err := w.store.completeClaimed(finishCtx, task.ID, task.WorkerID, out.result.Result, out.result.RunID); err != nil {
+				slog.Warn("task completion rejected", "task_id", task.ID, "error", err)
 			}
-			if outcome.result == nil {
-				_ = w.store.failClaimed(context.Background(), task.ID, task.WorkerID, "executor returned no result")
-				return
-			}
-			resultJSON, err := json.Marshal(outcome.result)
-			if err != nil {
-				_ = w.store.failClaimed(context.Background(), task.ID, task.WorkerID, "failed to serialize result: "+err.Error())
-				return
-			}
-			if err := w.store.completeClaimed(context.Background(), task.ID, task.WorkerID, resultJSON, outcome.result.RunID); err != nil {
-				slog.Error("task complete write failed", "task_id", task.ID, "error", err)
-			}
+			_ = w.store.AcknowledgeExecutionStopped(finishCtx, task.ID, task.WorkerID)
 			return
 		}
-	}
-}
-
-func runtimeAssignmentMatchesTask(task *Task, assignment *RuntimeAssignment) bool {
-	if task == nil {
-		return false
-	}
-	if len(task.RuntimeAssignment) == 0 {
-		return assignment == nil && task.RuntimeID == ""
-	}
-	var durable RuntimeAssignment
-	if err := json.Unmarshal(task.RuntimeAssignment, &durable); err != nil {
-		return false
-	}
-	if assignment == nil || durable.RuntimeID != task.RuntimeID {
-		return false
-	}
-	payload, err := json.Marshal(assignment)
-	if err != nil {
-		return false
-	}
-	durablePayload, err := json.Marshal(durable)
-	return err == nil && string(payload) == string(durablePayload)
-}
-
-func taskAgentExecutionStamp(task *Task) (*execution.AgentExecutionStamp, error) {
-	if task == nil {
-		return nil, fmt.Errorf("task is required")
-	}
-	if task.IdentityKind != IdentityAgent {
-		return nil, fmt.Errorf("identity kind %q is not an agent", task.IdentityKind)
-	}
-	if task.Agent == "" {
-		return nil, fmt.Errorf("agent name is required")
-	}
-	if task.WorkflowID != "" || task.WorkflowVersion != 0 {
-		return nil, fmt.Errorf("agent task contains workflow identity")
-	}
-
-	switch task.IdentitySchemaVersion {
-	case 1:
-		if task.RunSnapshotID != "" {
-			return nil, fmt.Errorf("schema-one agent task contains run snapshot identity")
-		}
-		if task.ExecutionScope != "" {
-			return nil, fmt.Errorf("schema-one task contains execution scope")
-		}
-		if task.AgentID == "" && task.AgentVersion == 0 {
-			return nil, nil
-		}
-		if task.AgentID == "" || task.AgentVersion < 1 {
-			return nil, fmt.Errorf("schema-one agent ID and positive version must be paired")
-		}
-		return &execution.AgentExecutionStamp{
-			AgentID:        task.AgentID,
-			AgentVersion:   task.AgentVersion,
-			ExecutionScope: execution.ScopeLegacyOrchestrator,
-			LegacyScope:    true,
-		}, nil
-	case 2:
-		if task.AgentID == "" || task.AgentVersion < 1 || !task.ExecutionScope.Valid() {
-			return nil, fmt.Errorf("invalid schema-two agent stamp")
-		}
-		teamScope := task.ExecutionScope == execution.ScopeTeamFreeCollab ||
-			task.ExecutionScope == execution.ScopeTeamWorkerLeaf
-		if task.RunSnapshotID != "" && !teamScope {
-			return nil, fmt.Errorf("standalone agent task contains run snapshot identity")
-		}
-		return &execution.AgentExecutionStamp{
-			AgentID:        task.AgentID,
-			AgentVersion:   task.AgentVersion,
-			ExecutionScope: task.ExecutionScope,
-			RunSnapshotID:  task.RunSnapshotID,
-		}, nil
-	default:
-		return nil, fmt.Errorf("unsupported identity schema version %d", task.IdentitySchemaVersion)
 	}
 }

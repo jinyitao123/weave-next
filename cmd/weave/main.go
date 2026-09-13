@@ -26,8 +26,6 @@ import (
 	"github.com/jinyitao123/weave/internal/app/teamtemplates"
 	"github.com/jinyitao123/weave/internal/app/users"
 	"github.com/jinyitao123/weave/internal/base/db"
-	"github.com/jinyitao123/weave/internal/kernel/fanout"
-	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 	"github.com/jinyitao123/weave/internal/build/teambuild"
 	"github.com/jinyitao123/weave/internal/build/teameval"
 	"github.com/jinyitao123/weave/internal/build/teamorch"
@@ -38,6 +36,7 @@ import (
 	"github.com/jinyitao123/weave/internal/kernel/declarative"
 	"github.com/jinyitao123/weave/internal/kernel/declarative/designprompt"
 	"github.com/jinyitao123/weave/internal/kernel/delivery"
+	"github.com/jinyitao123/weave/internal/kernel/fanout"
 	"github.com/jinyitao123/weave/internal/kernel/llmrouter"
 	"github.com/jinyitao123/weave/internal/kernel/mcpregistry"
 	"github.com/jinyitao123/weave/internal/kernel/memory"
@@ -46,6 +45,7 @@ import (
 	"github.com/jinyitao123/weave/internal/kernel/schedule"
 	"github.com/jinyitao123/weave/internal/kernel/secret"
 	"github.com/jinyitao123/weave/internal/kernel/skills"
+	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 	"github.com/jinyitao123/weave/internal/kernel/workflow/machine"
 )
 
@@ -77,7 +77,7 @@ func csvEnvOrDefault(name string, fallback []string) []string {
 }
 
 type teamBuildExecutionAdapter struct {
-	service *teamorch.AsyncService
+	service *teamconstruction.Dispatcher
 }
 
 func (a teamBuildExecutionAdapter) Submit(
@@ -91,11 +91,13 @@ func (a teamBuildExecutionAdapter) Submit(
 		WorkspaceID: result.WorkspaceID,
 		BuildRunID:  result.BuildRunID,
 		Status:      result.Status,
+		TaskID:      result.TaskID,
 	}, nil
 }
 
-func (a teamBuildExecutionAdapter) Start() { a.service.Start() }
-func (a teamBuildExecutionAdapter) Stop()  { a.service.Stop() }
+func (a teamBuildExecutionAdapter) Cancel(ctx context.Context, workspaceID, buildRunID, actor, reason string) (teambuild.TeamBuildRun, error) {
+	return a.service.Cancel(ctx, workspaceID, buildRunID, actor, reason)
+}
 
 type teamTemplateExecutionAdapter struct {
 	service api.TeamBuildExecutionService
@@ -367,13 +369,15 @@ func main() {
 			}
 		}()
 
-		srv.TaskWorker = taskqueue.NewWorker(taskStore, srv, 4)
+		srv.TaskWorker = taskqueue.NewWorker(taskStore, 4)
+		if err := srv.TaskWorker.Register("chat", taskqueue.IdentityAgent, taskqueue.ChatHandler{Executor: srv}); err != nil {
+			slog.Error("register chat handler", "error", err)
+			os.Exit(1)
+		}
 		srv.TaskWorker.SetOnLegTerminal(func(ctx context.Context, workspaceID, groupID string) {
 			_ = srv.FanoutReconciler.RefreshCard(ctx, workspaceID, groupID)
 			_ = srv.FanoutReconciler.ReconcileGroup(ctx, workspaceID, groupID, false)
 		})
-		srv.TaskWorker.Start()
-		defer srv.TaskWorker.Stop()
 	}
 
 	// Initialize schedule store if PG pool is available.
@@ -382,6 +386,13 @@ func main() {
 	}
 
 	srv.ConfigureTeamRunWorkers()
+
+	// Cancellation remains available even when optional build execution services
+	// are unavailable. Only a configured executor admits new platform tasks.
+	buildDispatch := &teamconstruction.Dispatcher{Pool: store.Pool(), Runs: srv.TeamBuild, Tasks: srv.Tasks, Worker: srv.TaskWorker}
+	if srv.TeamBuild != nil && srv.Tasks != nil {
+		srv.TeamBuildOrchestrator = teamBuildExecutionAdapter{service: buildDispatch}
+	}
 
 	// The meta-team round controller is a platform service, not a test-only
 	// helper or a client-side conversation convention. It reuses the same
@@ -406,12 +417,12 @@ func main() {
 		synchronous := teamorch.NewService(
 			controller, phases,
 		)
-		queue := teamorch.NewExecutionQueue(store.Pool(), srv.TeamBuild, nil)
-		async := teamorch.NewAsyncService(queue, synchronous)
-
-		srv.TeamBuildOrchestrator = teamBuildExecutionAdapter{
-			service: async,
+		buildDispatch.Executor = synchronous
+		if err := srv.TaskWorker.Register(teamconstruction.TaskKind, taskqueue.IdentityTeamBuild, buildDispatch); err != nil {
+			slog.Error("register team build handler", "error", err)
+			os.Exit(1)
 		}
+
 		srv.TeamTemplates = teamtemplates.New(
 			teamtemplates.NewPGIdempotencyStore(srv.Pool),
 			srv.TeamBuild,
@@ -442,6 +453,11 @@ func main() {
 				},
 			},
 		)
+	}
+
+	if srv.TaskWorker != nil {
+		srv.TaskWorker.Start()
+		defer srv.TaskWorker.Stop()
 	}
 
 	// Every due team workflow schedule is first written to the durable task ledger. The

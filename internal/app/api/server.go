@@ -25,10 +25,8 @@ import (
 	"github.com/jinyitao123/weave/internal/app/users"
 	"github.com/jinyitao123/weave/internal/base/deliverable"
 	"github.com/jinyitao123/weave/internal/base/execution"
-	"github.com/jinyitao123/weave/internal/kernel/fanout"
 	"github.com/jinyitao123/weave/internal/base/snapshot"
 	"github.com/jinyitao123/weave/internal/base/storeext"
-	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 	"github.com/jinyitao123/weave/internal/build/teambuild"
 	"github.com/jinyitao123/weave/internal/build/teamforge"
 	"github.com/jinyitao123/weave/internal/kernel/audit"
@@ -36,6 +34,7 @@ import (
 	"github.com/jinyitao123/weave/internal/kernel/config"
 	"github.com/jinyitao123/weave/internal/kernel/credentials"
 	"github.com/jinyitao123/weave/internal/kernel/delivery"
+	"github.com/jinyitao123/weave/internal/kernel/fanout"
 	"github.com/jinyitao123/weave/internal/kernel/llmrouter"
 	"github.com/jinyitao123/weave/internal/kernel/loomruntime"
 	"github.com/jinyitao123/weave/internal/kernel/mcphost"
@@ -47,6 +46,7 @@ import (
 	"github.com/jinyitao123/weave/internal/kernel/runtimes"
 	"github.com/jinyitao123/weave/internal/kernel/schedule"
 	importskills "github.com/jinyitao123/weave/internal/kernel/skills"
+	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 	"github.com/jinyitao123/weave/internal/kernel/teamcompiler"
 	"github.com/jinyitao123/weave/internal/kernel/teamrun"
 	"github.com/jinyitao123/weave/internal/kernel/workflow"
@@ -574,13 +574,6 @@ func (s *Server) Start() error {
 		defer func() { cancel(); <-done }()
 	}
 	s.reconcileOrphanedChatRequests()
-	if worker, ok := s.TeamBuildOrchestrator.(interface {
-		Start()
-		Stop()
-	}); ok {
-		worker.Start()
-		defer worker.Stop()
-	}
 	if s.sessionExecutionWorkers != nil && !sessionExecutionWorkersDisabled() {
 		s.sessionExecutionWorkers.Start()
 		defer s.sessionExecutionWorkers.Stop()

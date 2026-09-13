@@ -127,6 +127,7 @@ func (s *Store) Enqueue(ctx context.Context, task *Task) error {
 		task.Kind = "chat"
 	}
 	task.Status = StatusQueued
+	task.AvailableAt = now
 	task.CreatedAt = now
 	task.UpdatedAt = now
 	return nil
@@ -177,7 +178,7 @@ func (s *Store) enqueueTx(
 			workflow_id, workflow_version, run_snapshot_id,
 				source, kind, runtime_id, runtime_assignment, status, priority,
 			context_key, trace_id, parent_task_id, task_group_id,
-			subtask_deadline_at, payload, created_at, updated_at
+			subtask_deadline_at, payload, created_at, updated_at, build_run_id, available_at
 		) VALUES (
 				$1, $2, COALESCE(
 					NULLIF($3, ''),
@@ -194,14 +195,14 @@ func (s *Store) enqueueTx(
 				NULLIF($10, ''), NULLIF($11, 0), NULLIF($12, ''),
 				$13, $14, NULLIF($15, ''), $16::jsonb, $17, $18,
 				$19, $20, $21, NULLIF($22, ''),
-				$23, $24, $25, $25
+				$23, $24, $25, $25, NULLIF($26, ''), $25
 			)
 		`, task.ID, task.WorkspaceID, task.ProjectID, task.Agent, task.AgentID, task.AgentVersion,
 		task.IdentityKind, task.IdentitySchemaVersion, task.ExecutionScope,
 		task.WorkflowID, task.WorkflowVersion, task.RunSnapshotID,
 		source, kind, task.RuntimeID, task.RuntimeAssignment, StatusQueued, task.Priority,
 		nullIfEmpty(task.ContextKey), nullIfEmpty(task.TraceID), nullIfEmpty(task.ParentTaskID),
-		task.TaskGroupID, task.SubtaskDeadlineAt, task.Payload, now); err != nil {
+		task.TaskGroupID, task.SubtaskDeadlineAt, task.Payload, now, task.BuildRunID); err != nil {
 		return fmt.Errorf("enqueue task: %w", err)
 	}
 	return nil
@@ -225,7 +226,7 @@ func (s *Store) Claim(ctx context.Context, workerID string, filter ClaimFilter) 
 		identityKind = IdentityAgent
 	}
 	switch identityKind {
-	case IdentityAgent, IdentityTeamWorkflow:
+	case IdentityAgent, IdentityTeamWorkflow, IdentityTeamBuild:
 	default:
 		return nil, fmt.Errorf("unsupported claim identity kind %q", identityKind)
 	}
@@ -245,7 +246,7 @@ func (s *Store) Claim(ctx context.Context, workerID string, filter ClaimFilter) 
 		SET status=$1, worker_id=$2, started_at=$3, lease_expires_at=$4, updated_at=$3, claim_epoch=claim_epoch+1
 		WHERE id = (
 			SELECT id FROM weave_task_queue
-			WHERE status='queued'
+			WHERE status='queued' AND available_at <= $3
 				AND kind <> 'engine_exec'
 				AND kind=$5
 				AND identity_kind=$6
@@ -305,7 +306,7 @@ func (s *Store) claimEngineTask(
 		SET status=$1, worker_id=$2, started_at=$3, lease_expires_at=$4, updated_at=$3, claim_epoch=claim_epoch+1
 		WHERE id = (
 			SELECT id FROM weave_task_queue
-			WHERE status='queued'
+			WHERE status='queued' AND available_at <= $3
 				AND kind='engine_exec'
 				AND workspace_id=$5
 				AND runtime_id=$6
@@ -451,14 +452,14 @@ func (s *Store) FailClaimed(ctx context.Context, id, workerID, errMsg string) er
 	return s.failClaimed(ctx, id, workerID, errMsg)
 }
 
-func (s *Store) requeueClaimed(ctx context.Context, id, workerID string) error {
+func (s *Store) requeueClaimed(ctx context.Context, id, workerID string, delay time.Duration) error {
 	now := s.clock.Now()
 	tag, err := s.pool.Exec(ctx, `
 		UPDATE weave_task_queue
 		SET status=$1, error=NULL, result=NULL, run_id=NULL, worker_id=NULL,
-			lease_expires_at=NULL, started_at=NULL, completed_at=NULL, updated_at=$2
+			lease_expires_at=NULL, started_at=NULL, completed_at=NULL, updated_at=$2, available_at=$6
 		WHERE id=$3 AND worker_id=$4 AND status=$5 AND lease_expires_at >= $2
-	`, StatusQueued, now, id, workerID, StatusRunning)
+	`, StatusQueued, now, id, workerID, StatusRunning, now.Add(delay))
 	if err != nil {
 		return fmt.Errorf("requeue claimed task: %w", err)
 	}
@@ -468,23 +469,26 @@ func (s *Store) requeueClaimed(ctx context.Context, id, workerID string) error {
 	return nil
 }
 
-// Cancel closes queued work; active remote work must acknowledge process exit.
+// Cancel records cancellation intent; active work remains owned until it stops.
 func (s *Store) Cancel(ctx context.Context, workspaceID, id string) error {
-	now := s.clock.Now()
-	tag, err := s.pool.Exec(ctx, `
-		UPDATE weave_task_queue
-		SET status=CASE WHEN kind='engine_exec' AND worker_id IS NOT NULL THEN $7 ELSE $3 END,
-			worker_id=CASE WHEN kind='engine_exec' THEN worker_id ELSE NULL END,
-			lease_expires_at=CASE WHEN kind='engine_exec' THEN lease_expires_at ELSE NULL END,
-			completed_at=CASE WHEN kind='engine_exec' AND worker_id IS NOT NULL THEN NULL ELSE $4::timestamptz END,
-			updated_at=$4
-		WHERE workspace_id=$1 AND id=$2 AND status IN ($5, $6)
-	`, workspaceID, id, StatusCancelled, now, StatusQueued, StatusRunning, StatusCancelRequested)
+	return s.cancelTask(ctx, s.pool, workspaceID, id)
+}
+
+// CancelTx lets a product command commit its business cancellation with dispatch fencing.
+func (s *Store) CancelTx(ctx context.Context, tx pgx.Tx, workspaceID, id string) error {
+	return s.cancelTask(ctx, tx, workspaceID, id)
+}
+
+func (s *Store) cancelTask(ctx context.Context, query taskQuerier, workspaceID, id string) error {
+	var found string
+	err := query.QueryRow(ctx, `UPDATE weave_task_queue
+ SET status=CASE WHEN worker_id IS NOT NULL THEN $7 ELSE $3 END,
+     completed_at=CASE WHEN worker_id IS NOT NULL THEN NULL ELSE $4::timestamptz END,
+     updated_at=$4
+ WHERE workspace_id=$1 AND id=$2 AND (status IN ($3,$5,$6,$7) OR (status='failed' AND worker_id IS NOT NULL))
+ RETURNING id`, workspaceID, id, StatusCancelled, s.clock.Now(), StatusQueued, StatusRunning, StatusCancelRequested).Scan(&found)
 	if err != nil {
 		return fmt.Errorf("cancel task: %w", err)
-	}
-	if tag.RowsAffected() == 0 {
-		return fmt.Errorf("task %q cannot be cancelled", id)
 	}
 	return nil
 }
@@ -524,16 +528,18 @@ func (s *Store) cancelRunTasks(ctx context.Context, query taskQuerier, workspace
 // original worker's exit acknowledgement; expiry alone does not prove exit.
 const RuntimeLeaseExpiredError = "runtime offline: execution lease expired"
 
+const ExecutionLeaseExpiredError = "execution lease expired; outcome reconciliation required"
+
 // AcknowledgeExecutionStopped is called only after the worker has joined its
 // execution. It preserves an expired execution's failure and clears ownership.
 func (s *Store) AcknowledgeExecutionStopped(ctx context.Context, id, workerID string) error {
 	_, err := s.pool.Exec(ctx, `UPDATE weave_task_queue
-		SET status=CASE WHEN status=$3 THEN $4 ELSE $6 END,
-			error=CASE WHEN status=$8 THEN $7 ELSE error END,
-			worker_id=NULL, lease_expires_at=NULL, completed_at=$5, updated_at=$5
-		WHERE id=$1 AND worker_id=$2 AND (status=$3 OR (kind='engine_exec' AND
-			(status=$8 OR (status=$6 AND error=$7))))`,
-		id, workerID, StatusCancelRequested, StatusCancelled, s.clock.Now(), StatusFailed, RuntimeLeaseExpiredError, StatusRunning)
+ SET status=CASE WHEN status=$3 THEN $4 ELSE $6 END,
+     error=CASE WHEN status=$8 THEN CASE WHEN kind='engine_exec' THEN $7 ELSE $9 END ELSE error END,
+     worker_id=NULL, lease_expires_at=NULL, completed_at=$5, updated_at=$5
+ WHERE id=$1 AND worker_id=$2 AND (status=$3 OR (kind IN ('engine_exec','team_build') AND
+     (status=$8 OR (status=$6 AND error IN ($7,$9)))))`,
+		id, workerID, StatusCancelRequested, StatusCancelled, s.clock.Now(), StatusFailed, RuntimeLeaseExpiredError, StatusRunning, ExecutionLeaseExpiredError)
 	return err
 }
 
@@ -597,20 +603,20 @@ func (s *Store) Supersede(ctx context.Context, workspaceID, contextKey, exceptID
 	return nil
 }
 
-// RecoverStale requeues orchestration tasks, but exposes expired remote executions
-// as infrastructure failures so they cannot silently execute a second time.
+// RecoverStale retains the owner of executions whose outcome is unknown.
+// Team construction and remote execution require a stop receipt before resubmission.
 func (s *Store) RecoverStale(ctx context.Context) (int, error) {
 	now := s.clock.Now()
 	rows, err := s.pool.Query(ctx, `
 		UPDATE weave_task_queue
-		SET status=CASE WHEN kind='engine_exec' THEN $5 ELSE $1 END,
-			worker_id=CASE WHEN kind='engine_exec' THEN worker_id ELSE NULL END,
-			lease_expires_at=CASE WHEN kind='engine_exec' THEN lease_expires_at ELSE NULL END,
-			error=CASE WHEN kind='engine_exec' THEN $6 ELSE error END,
-			completed_at=CASE WHEN kind='engine_exec' THEN $2::timestamptz ELSE NULL END, updated_at=$2
+		SET status=CASE WHEN kind IN ('engine_exec','team_build') THEN $5 ELSE $1 END,
+			worker_id=CASE WHEN kind IN ('engine_exec','team_build') THEN worker_id ELSE NULL END,
+			lease_expires_at=CASE WHEN kind IN ('engine_exec','team_build') THEN lease_expires_at ELSE NULL END,
+			error=CASE WHEN kind IN ('engine_exec','team_build') THEN CASE WHEN kind='engine_exec' THEN $6 ELSE $7 END ELSE error END,
+			completed_at=CASE WHEN kind IN ('engine_exec','team_build') THEN $2::timestamptz ELSE NULL END, updated_at=$2
 		WHERE status IN ($3, $4) AND lease_expires_at < $2
 		RETURNING id
-	`, StatusQueued, now, StatusRunning, StatusDispatched, StatusFailed, RuntimeLeaseExpiredError)
+	`, StatusQueued, now, StatusRunning, StatusDispatched, StatusFailed, RuntimeLeaseExpiredError, ExecutionLeaseExpiredError)
 	if err != nil {
 		return 0, fmt.Errorf("recover stale tasks: %w", err)
 	}
@@ -795,7 +801,7 @@ func (s *Store) get(ctx context.Context, query taskQuerier, workspaceID, id stri
 	`, workspaceID, id)
 	task, err := scanTask(row)
 	if err != nil {
-		return nil, fmt.Errorf("task %q not found", id)
+		return nil, fmt.Errorf("task %q not found: %w", id, err)
 	}
 	return task, nil
 }
@@ -932,7 +938,7 @@ const taskColumns = `
 	COALESCE(context_key, ''), COALESCE(trace_id, ''), COALESCE(parent_task_id, ''),
 	COALESCE(task_group_id, ''), subtask_deadline_at,
 	payload, result, COALESCE(error, ''), COALESCE(run_id, ''), COALESCE(worker_id, ''),
-	lease_expires_at, created_at, started_at, completed_at, updated_at, claim_epoch`
+	lease_expires_at, created_at, started_at, completed_at, updated_at, claim_epoch, COALESCE(build_run_id, ''), available_at`
 
 type rowScanner interface {
 	Scan(dest ...any) error
@@ -948,7 +954,7 @@ func scanTask(row rowScanner) (*Task, error) {
 		&task.ContextKey, &task.TraceID, &task.ParentTaskID,
 		&task.TaskGroupID, &task.SubtaskDeadlineAt,
 		&task.Payload, &task.Result, &task.Error, &task.RunID, &task.WorkerID,
-		&task.LeaseExpiresAt, &task.CreatedAt, &task.StartedAt, &task.CompletedAt, &task.UpdatedAt, &task.ClaimEpoch,
+		&task.LeaseExpiresAt, &task.CreatedAt, &task.StartedAt, &task.CompletedAt, &task.UpdatedAt, &task.ClaimEpoch, &task.BuildRunID, &task.AvailableAt,
 	); err != nil {
 		return nil, err
 	}

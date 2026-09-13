@@ -43,6 +43,26 @@ func (s *Store) TransitionStatus(
 	ctx context.Context,
 	workspaceID, buildRunID, from, to, actor, reason string,
 ) (TeamBuildRun, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return TeamBuildRun{}, fmt.Errorf("begin transition build run: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	run, err := s.TransitionStatusTx(ctx, tx, workspaceID, buildRunID, from, to, actor, reason)
+	if err != nil {
+		return TeamBuildRun{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return TeamBuildRun{}, fmt.Errorf("commit transition build run: %w", err)
+	}
+	return run, nil
+}
+
+// TransitionStatusTx binds product control changes to dispatch admission in one transaction.
+func (s *Store) TransitionStatusTx(ctx context.Context, tx pgx.Tx, workspaceID, buildRunID, from, to, actor, reason string) (TeamBuildRun, error) {
+	if tx == nil {
+		return TeamBuildRun{}, errors.New("transaction is required")
+	}
 	if err := validateStatusTransition(from, to); err != nil {
 		return TeamBuildRun{}, fmt.Errorf("transition build run: %w", err)
 	}
@@ -57,12 +77,6 @@ func (s *Store) TransitionStatus(
 		decidedAt = now
 	}
 	publishEligible := to == StatusPublishing || to == StatusPassed
-
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return TeamBuildRun{}, fmt.Errorf("begin transition build run: %w", err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
 
 	run, err := scanBuildRun(tx.QueryRow(ctx, `
 		UPDATE weave_team_build_runs
@@ -88,9 +102,6 @@ func (s *Store) TransitionStatus(
 		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
 	`, workspaceID, buildRunID, nextSeq, from, to, reason, actor, now); err != nil {
 		return TeamBuildRun{}, fmt.Errorf("transition build run ledger: %w", err)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return TeamBuildRun{}, fmt.Errorf("commit transition build run: %w", err)
 	}
 	return run, nil
 }
