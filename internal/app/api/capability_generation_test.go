@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/jinyitao123/loom/contract"
-	"github.com/jinyitao123/weave/internal/base/capability"
+	"github.com/jinyitao123/weave/internal/kernel/capability"
 	"github.com/jinyitao123/weave/internal/kernel/llmrouter"
 	"github.com/labstack/echo/v4"
 )

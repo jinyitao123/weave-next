@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/jinyitao123/weave/internal/base/capability"
 	"github.com/jinyitao123/weave/internal/base/db"
 	"github.com/jinyitao123/weave/internal/base/testutil"
+	"github.com/jinyitao123/weave/internal/kernel/capability"
 )
 
 func TestPGStorePersistsRevisionAndInvocationReplay(t *testing.T) {

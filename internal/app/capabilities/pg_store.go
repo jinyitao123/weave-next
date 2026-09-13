@@ -9,8 +9,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/jinyitao123/weave/internal/base/capability"
 	"github.com/jinyitao123/weave/internal/base/frozen"
+	"github.com/jinyitao123/weave/internal/kernel/capability"
 )
 
 // PGStore is the durable implementation of DraftStore and InvocationStore.

@@ -14,7 +14,15 @@ func (s *PGStore) TaskActive(ctx context.Context, task InvocationTask) (bool, er
 }
 
 func (s *PGStore) RenewTask(ctx context.Context, task InvocationTask) error {
-	tag, err := s.pool.Exec(ctx, `UPDATE weave_capability_invocation_tasks SET deadline_at=now()+interval '150 seconds' WHERE task_id=$1 AND workspace_id=$2 AND invocation_id=$3 AND claim_token=$4 AND status='running'`, task.TaskID, task.WorkspaceID, task.InvocationID, task.ClaimToken)
+	// Renewal extends a live claim; it cannot resurrect an expired lease or
+	// grant more time after cancellation or application authorization revocation.
+	tag, err := s.pool.Exec(ctx, `UPDATE weave_capability_invocation_tasks t SET deadline_at=now()+interval '150 seconds'
+ FROM weave_capability_invocations i
+ WHERE t.task_id=$1 AND t.workspace_id=$2 AND t.invocation_id=$3 AND t.claim_token=$4
+ AND i.workspace_id=t.workspace_id AND i.invocation_id=t.invocation_id AND i.task_id=t.task_id
+ AND t.status='running' AND i.status='running' AND t.deadline_at>now()
+ AND (i.caller_kind='developer' OR EXISTS(SELECT 1 FROM weave_capability_apps a JOIN weave_capability_grants g ON g.workspace_id=a.workspace_id AND g.app_id=a.id
+ WHERE a.workspace_id=i.workspace_id AND a.id=i.application_id AND a.enabled AND g.enabled AND g.capability_id=i.capability_id AND g.revision=i.revision))`, task.TaskID, task.WorkspaceID, task.InvocationID, task.ClaimToken)
 	if err != nil {
 		return err
 	}
@@ -46,7 +54,9 @@ func (s *PGStore) AbandonTask(ctx context.Context, task InvocationTask) error {
 	return tx.Commit(ctx)
 }
 
-// Expired executions resume from their last durable checkpoint. Cancellation still terminates.
+// A lost lease does not prove the previous attempt stopped before its external
+// effects. Expiration must not automatically dispatch that work a second time.
+// Confirmed human waits and cooperative shutdown keep their existing resume paths.
 func (s *PGStore) expireTasks(ctx context.Context) error {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -76,21 +86,16 @@ func (s *PGStore) expireTasks(ctx context.Context) error {
 		return err
 	}
 	for _, item := range items {
-		status := "queued"
-		errorText := ""
+		status := "failed"
+		errorText := "capability_execution_lease_expired"
 		if item.status == "cancel_requested" {
 			status, errorText = "cancelled", "cancelled"
 		}
-		if _, err := tx.Exec(ctx, `UPDATE weave_capability_invocations SET status=$3,result_state='unavailable',result=NULL,error=NULLIF($4,'') WHERE workspace_id=$1 AND invocation_id=$2`, item.workspace, item.id, status, errorText); err != nil {
+		if _, err := tx.Exec(ctx, `UPDATE weave_capability_invocations SET status=$3,result_state='unavailable',result=NULL,error=NULLIF($4,''),completed_at=now() WHERE workspace_id=$1 AND invocation_id=$2`, item.workspace, item.id, status, errorText); err != nil {
 			return err
 		}
 		if _, err := tx.Exec(ctx, `UPDATE weave_capability_invocation_tasks SET status=$2,claim_token=NULL,deadline_at=NULL WHERE task_id=$1`, item.task, status); err != nil {
 			return err
-		}
-		if status == "queued" {
-			if _, err := tx.Exec(ctx, `INSERT INTO weave_capability_invocation_events(workspace_id,invocation_id,event_type,detail) VALUES($1,$2,'execution_recovered','{}')`, item.workspace, item.id); err != nil {
-				return err
-			}
 		}
 	}
 	return tx.Commit(ctx)

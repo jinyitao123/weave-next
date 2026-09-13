@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/google/uuid"
-	"github.com/jinyitao123/weave/internal/base/capability"
 	"github.com/jinyitao123/weave/internal/base/frozen"
+	"github.com/jinyitao123/weave/internal/kernel/capability"
 	"strings"
 )
 

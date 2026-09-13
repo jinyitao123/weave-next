@@ -6,7 +6,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/jinyitao123/weave/internal/base/capability"
+	"github.com/jinyitao123/weave/internal/kernel/capability"
 )
 
 func TestServicePublishesAndReplaysInvocation(t *testing.T) {

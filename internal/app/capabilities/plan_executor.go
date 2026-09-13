@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/jinyitao123/weave/internal/base/capability"
+	"github.com/jinyitao123/weave/internal/kernel/capability"
 )
 
 // PlanTaskExecutor adapts the durable invocation worker to one runtime's
