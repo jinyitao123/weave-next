@@ -16,6 +16,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jinyitao123/weave/internal/app/agentcatalog"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jinyitao123/loom/contract"
@@ -131,7 +133,7 @@ func newTeamDeliveryFixture(t *testing.T, engineName string) *teamDeliveryFixtur
 	f.snapshots = snapshot.NewStore(pool)
 	f.runs = teamrun.NewPGStore()
 	f.runs.Transactions = pool
-	f.server = &Server{Store: teamDeliveryPoolStore{teamDispatchPoolStore{pool: pool}}, OrgStore: orgstore.NewStore(pool), Registry: registry.New(pool), Workflow: f.flows, ScheduleTransactions: pool, Snapshots: f.snapshots, Tasks: f.tasks, Runtimes: f.runtimeStore, Deliverables: deliveryverify.NewStore(pool), teamRunCancel: &teamrun.CancelService{Transactions: pool, Runs: f.runs, Tasks: f.tasks}}
+	f.server = &Server{Store: teamDeliveryPoolStore{teamDispatchPoolStore{pool: pool}}, OrgStore: orgstore.NewStore(pool), Registry: agentcatalog.New(pool), Workflow: f.flows, ScheduleTransactions: pool, Snapshots: f.snapshots, Tasks: f.tasks, Runtimes: f.runtimeStore, Deliverables: deliveryverify.NewStore(pool), teamRunCancel: &teamrun.CancelService{Transactions: pool, Runs: f.runs, Tasks: f.tasks}}
 	return f
 }
 
@@ -644,7 +646,7 @@ func (f *teamDeliveryFixture) assertRunActivity(t *testing.T, ctx context.Contex
 func publishTeamDeliveryCLI(t *testing.T, pool *pgxpool.Pool, key []byte, runtimeID string, mcpServers ...registry.MCPServerConfig) (string, string) {
 	t.Helper()
 	ctx := t.Context()
-	agents := registry.New(pool)
+	agents := agentcatalog.New(pool)
 	lead := &registry.AgentRecord{Name: "lead", Role: "avatar", Engine: engine.Claude, RuntimeID: runtimeID, RuntimePolicyMode: "strict_pin", Model: "fixture-native", GraphType: "standard", Spec: stdlib.AgentSpec{SystemPrompt: "Return the brief."}}
 	worker := &registry.AgentRecord{Name: "worker", Role: "worker", Engine: engine.Claude, RuntimeID: runtimeID, RuntimePolicyMode: "strict_pin", Model: "fixture-native", GraphType: "standard", Spec: stdlib.AgentSpec{SystemPrompt: "Compute the result and export the physical file."}}
 	worker.MCPServers = mcpServers
@@ -680,7 +682,7 @@ func publishTeamDeliveryCLI(t *testing.T, pool *pgxpool.Pool, key []byte, runtim
 	if _, err := pool.Exec(ctx, `INSERT INTO weave_teams(id,workspace_id,name,lead_avatar_id,status) VALUES('team','ws','CLI tools',$1,'active')`, lead.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := registry.NewTeamWorkerRepository(pool).Create(ctx, "ws", registry.TeamWorker{TeamID: "team", WorkerAgentID: worker.ID, Duty: "Compute", AllowedKinds: []string{"consult"}, DefaultKind: "consult", ResultRequirement: "Compute and export", Enabled: true}); err != nil {
+	if _, err := agentcatalog.NewTeamWorkerRepository(pool).Create(ctx, "ws", registry.TeamWorker{TeamID: "team", WorkerAgentID: worker.ID, Duty: "Compute", AllowedKinds: []string{"consult"}, DefaultKind: "consult", ResultRequirement: "Compute and export", Enabled: true}); err != nil {
 		t.Fatal(err)
 	}
 	graph := json.RawMessage(fmt.Sprintf(`{"schema_version":1,"entry_node_id":"brief","input_contract":{"type":"text"},"output_contract":{"type":"text"},"nodes":[{"id":"brief","type":"lead","config":{"instruction":"Brief"},"inputs":{"task":{"value":{"source":"run_input","path":""},"expected_type":"text"}},"output":{"type":"text"}},{"id":"compute","type":"worker","config":{"kind":"consult","agent_id":%q,"agent_version":%d,"result_requirement":"Compute and export"},"inputs":{"task":{"value":{"source":"run_input","path":""},"expected_type":"text"}},"output":{"type":"text"}},{"id":"deliver","type":"deliver","config":{"result":{"source":"node_output","node_id":"compute","path":""}}}],"edges":[{"id":"a","from_node_id":"brief","to_node_id":"compute","route":"success"},{"id":"b","from_node_id":"compute","to_node_id":"deliver","route":"success"}]}`, worker.ID, worker.Version))

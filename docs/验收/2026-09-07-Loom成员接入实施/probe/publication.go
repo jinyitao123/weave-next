@@ -4,8 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
+
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jinyitao123/loom/stdlib"
+	"github.com/jinyitao123/weave/internal/app/agentcatalog"
 	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/kernel/compiler"
 	"github.com/jinyitao123/weave/internal/kernel/credentials"
@@ -16,7 +19,6 @@ import (
 	"github.com/jinyitao123/weave/internal/kernel/schedule"
 	"github.com/jinyitao123/weave/internal/kernel/skills"
 	"github.com/jinyitao123/weave/internal/kernel/workflow"
-	"strings"
 )
 
 func publishMemberSample(ctx context.Context, pool *pgxpool.Pool, key []byte, workspace, serverURL, serverID string, revision int64, toolName, prompt string) (frozen.FrozenExecutionBundle, compiler.FrozenResolver, *workflow.PublishedArtifactContent) {
@@ -24,7 +26,7 @@ func publishMemberSample(ctx context.Context, pool *pgxpool.Pool, key []byte, wo
 	if err := providers.Upsert(ctx, workspace, llmrouter.ProviderConfig{ID: "fixture", Name: "Loom acceptance inference gateway", BaseURL: serverURL, APIKey: "isolated-gateway-credential", Models: []string{"acceptance-model"}}); err != nil {
 		must(err)
 	}
-	agents := registry.New(pool)
+	agents := agentcatalog.New(pool)
 	lead := &registry.AgentRecord{Name: "lead", Role: "avatar", Engine: "loom", Model: "acceptance-model", GraphType: "standard", Spec: stdlib.AgentSpec{SystemPrompt: "Return one short work brief. The engineering worker receives the original task and files. Do not perform its calculations or invent results."}}
 	worker := &registry.AgentRecord{Name: "worker", Role: "worker", Engine: "loom", Model: "acceptance-model", GraphType: "standard", Spec: stdlib.AgentSpec{SystemPrompt: prompt}, MCPServers: []registry.MCPServerConfig{{ServerID: serverID, Filter: []string{toolName}}}}
 	for _, record := range []*registry.AgentRecord{lead, worker} {
@@ -35,7 +37,7 @@ func publishMemberSample(ctx context.Context, pool *pgxpool.Pool, key []byte, wo
 	if _, err := pool.Exec(ctx, `INSERT INTO weave_teams(id,workspace_id,name,lead_avatar_id,status) VALUES('team',$1,'日冕工程成员恢复验收',$2,'active')`, workspace, lead.ID); err != nil {
 		must(err)
 	}
-	if _, err := registry.NewTeamWorkerRepository(pool).Create(ctx, workspace, registry.TeamWorker{TeamID: "team", WorkerAgentID: worker.ID, Duty: "Compute", AllowedKinds: []string{"consult"}, DefaultKind: "consult", ResultRequirement: prompt, Enabled: true}); err != nil {
+	if _, err := agentcatalog.NewTeamWorkerRepository(pool).Create(ctx, workspace, registry.TeamWorker{TeamID: "team", WorkerAgentID: worker.ID, Duty: "Compute", AllowedKinds: []string{"consult"}, DefaultKind: "consult", ResultRequirement: prompt, Enabled: true}); err != nil {
 		must(err)
 	}
 	graph := json.RawMessage(fmt.Sprintf(`{"schema_version":1,"entry_node_id":"brief","input_contract":{"type":"text"},"output_contract":{"type":"text"},"nodes":[{"id":"brief","type":"lead","config":{"instruction":"Brief"},"inputs":{"task":{"value":{"source":"run_input","path":""},"expected_type":"text"}},"output":{"type":"text"}},{"id":"compute","type":"worker","config":{"kind":"consult","agent_id":%q,"agent_version":%d,"result_requirement":"Execute the configured tool task"},"inputs":{"task":{"value":{"source":"run_input","path":""},"expected_type":"text"}},"output":{"type":"text"}},{"id":"deliver","type":"deliver","config":{"result":{"source":"node_output","node_id":"compute","path":""}}}],"edges":[{"id":"a","from_node_id":"brief","to_node_id":"compute","route":"success"},{"id":"b","from_node_id":"compute","to_node_id":"deliver","route":"success"}]}`, worker.ID, worker.Version))

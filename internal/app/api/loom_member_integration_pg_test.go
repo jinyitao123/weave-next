@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/jinyitao123/weave/internal/app/agentcatalog"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jinyitao123/loom/contract"
@@ -137,7 +139,7 @@ func runPublishedMemberRecovery(t *testing.T, totalRounds uint64) {
 	tasks := taskqueue.New(pool, nil, time.Minute)
 	snapshots := snapshot.NewStore(pool)
 	flows := workflow.New(pool, nil)
-	server := &Server{Store: teamDispatchPoolStore{pool: pool}, OrgStore: orgstore.NewStore(pool), Registry: registry.New(pool), Workflow: flows, Deliverables: deliveryverify.NewStore(pool), ScheduleTransactions: pool, Snapshots: snapshots, Tasks: tasks}
+	server := &Server{Store: teamDispatchPoolStore{pool: pool}, OrgStore: orgstore.NewStore(pool), Registry: agentcatalog.New(pool), Workflow: flows, Deliverables: deliveryverify.NewStore(pool), ScheduleTransactions: pool, Snapshots: snapshots, Tasks: tasks}
 	request, _ := json.Marshal(teamDispatchRequest{Task: "calculate", ClientRequestID: "00000000-0000-4000-8000-000000000055"})
 	recorder := httptest.NewRecorder()
 	c := echo.New().NewContext(httptest.NewRequest(http.MethodPost, "/v1/teams/team/dispatch", bytes.NewReader(request)), recorder)
@@ -292,7 +294,7 @@ func publishMemberIntegrationSample(t *testing.T, pool *pgxpool.Pool, key []byte
 	if err := providers.Upsert(ctx, workspace, llmrouter.ProviderConfig{ID: "fixture", Name: "Fixture", BaseURL: serverURL, APIKey: "test-provider-secret", Models: []string{"fixture-model"}}); err != nil {
 		t.Fatal(err)
 	}
-	agents := registry.New(pool)
+	agents := agentcatalog.New(pool)
 	lead := &registry.AgentRecord{Name: "lead", Role: "avatar", Engine: "loom", Model: "fixture-model", GraphType: "standard", Spec: stdlib.AgentSpec{SystemPrompt: "Return the brief."}}
 	worker := &registry.AgentRecord{Name: "worker", Role: "worker", Engine: "loom", Model: "fixture-model", GraphType: "standard", Spec: stdlib.AgentSpec{SystemPrompt: prompt}, MCPServers: []registry.MCPServerConfig{{ServerID: serverID, Filter: []string{toolName}}}}
 	if len(budget) > 0 && budget[0] > 0 {
@@ -306,7 +308,7 @@ func publishMemberIntegrationSample(t *testing.T, pool *pgxpool.Pool, key []byte
 	if _, err := pool.Exec(ctx, `INSERT INTO weave_teams(id,workspace_id,name,lead_avatar_id,status) VALUES('team',$1,'Tools',$2,'active')`, workspace, lead.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := registry.NewTeamWorkerRepository(pool).Create(ctx, workspace, registry.TeamWorker{TeamID: "team", WorkerAgentID: worker.ID, Duty: "Compute", AllowedKinds: []string{"consult"}, DefaultKind: "consult", ResultRequirement: prompt, Enabled: true}); err != nil {
+	if _, err := agentcatalog.NewTeamWorkerRepository(pool).Create(ctx, workspace, registry.TeamWorker{TeamID: "team", WorkerAgentID: worker.ID, Duty: "Compute", AllowedKinds: []string{"consult"}, DefaultKind: "consult", ResultRequirement: prompt, Enabled: true}); err != nil {
 		t.Fatal(err)
 	}
 	graph := json.RawMessage(fmt.Sprintf(`{"schema_version":1,"entry_node_id":"brief","input_contract":{"type":"text"},"output_contract":{"type":"text"},"nodes":[{"id":"brief","type":"lead","config":{"instruction":"Brief"},"inputs":{"task":{"value":{"source":"run_input","path":""},"expected_type":"text"}},"output":{"type":"text"}},{"id":"compute","type":"worker","config":{"kind":"consult","agent_id":%q,"agent_version":%d,"result_requirement":"Execute the configured tool task"},"inputs":{"task":{"value":{"source":"run_input","path":""},"expected_type":"text"}},"output":{"type":"text"}},{"id":"deliver","type":"deliver","config":{"result":{"source":"node_output","node_id":"compute","path":""}}}],"edges":[{"id":"a","from_node_id":"brief","to_node_id":"compute","route":"success"},{"id":"b","from_node_id":"compute","to_node_id":"deliver","route":"success"}]}`, worker.ID, worker.Version))

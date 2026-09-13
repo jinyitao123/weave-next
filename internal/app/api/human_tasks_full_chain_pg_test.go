@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jinyitao123/weave/internal/app/agentcatalog"
+
 	"github.com/google/uuid"
 	"github.com/jinyitao123/weave/internal/app/teamtemplates"
 	"github.com/jinyitao123/weave/internal/base/db"
@@ -53,7 +55,7 @@ func TestHumanFinalReviewSampleRealPGFullChain(t *testing.T) {
 		t.Fatalf("seed sample workspace and membership: %v", err)
 	}
 	lead := registry.AgentRecord{Name: "sample4-lead-" + prefix, DisplayName: "交付负责人", Role: "avatar"}
-	if err := registry.New(pool).Put(ctx, workspaceID, &lead); err != nil {
+	if err := agentcatalog.New(pool).Put(ctx, workspaceID, &lead); err != nil {
 		t.Fatalf("seed sample lead avatar: %v", err)
 	}
 	if _, err := pool.Exec(ctx, `

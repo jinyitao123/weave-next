@@ -1,4 +1,4 @@
-package workflow
+package agentcatalog_test
 
 import (
 	"context"
@@ -12,12 +12,17 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/jinyitao123/weave/internal/kernel/workflow"
+
+	"github.com/jinyitao123/weave/internal/app/agentcatalog"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jinyitao123/loom"
 	"github.com/jinyitao123/loom/contract"
 	"github.com/jinyitao123/loom/stdlib"
 	"github.com/jinyitao123/weave/internal/base/db"
+	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/base/storeext"
 	"github.com/jinyitao123/weave/internal/base/testutil"
@@ -57,6 +62,7 @@ func TestStandardToolsPublicationReachesActualMCPAndPreservesFrozenContractRealP
 	pool = productionPool
 	key := []byte(strings.Repeat("k", 32))
 	workspace := "tools-publication"
+	ctx = execution.WithSubject(ctx, execution.Subject{WorkspaceID: workspace, UserID: "test"})
 	schema := json.RawMessage(`{"type":"object","properties":{},"additionalProperties":false}`)
 	file := filepath.Join(t.TempDir(), "result.txt")
 	var effects atomic.Int32
@@ -127,11 +133,12 @@ func TestStandardToolsPublicationReachesActualMCPAndPreservesFrozenContractRealP
 		}
 		return &contract.ChatResponse{ToolCalls: []contract.ToolCall{{ID: "calculate-1", Name: "calculate", Args: `{}`}}}
 	}})
-	opts, closer, err := buildRuntimeHostsWithLLM(ctx, bundle, publicationTestSecrets{}, newRuntimeMCPTransport, model)
+	opts, closer, err := workflow.NewRuntimeHostFactory().Build(ctx, bundle, publicationTestSecrets{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer closer.Close()
+	opts.LLM = model
 	opts = loomruntime.InstallFrozenMemberJournal(loomruntime.InstallFrozenUsageTracking(opts))
 	compiled, err := compiler.CompileFrozenWithRegistry(ctx, descriptors, bundle, resolver, opts)
 	if err != nil {
@@ -174,7 +181,7 @@ func TestStandardToolsPublicationReachesActualMCPAndPreservesFrozenContractRealP
 	if _, err := mcp.RecordProbeSuccess(ctx, workspace, registered.ID, "2025-03-26", json.RawMessage(`{}`), []mcpregistry.Tool{{Name: "different", InputSchema: schema}}); err != nil {
 		t.Fatal(err)
 	}
-	fresh, err := New(pool, nil).GetArtifact(ctx, workspace, "flow", saved.WorkflowVersion)
+	fresh, err := workflow.New(pool, nil).GetArtifact(ctx, workspace, "flow", saved.WorkflowVersion)
 	if err != nil || fresh.ContentHash != saved.ContentHash || string(fresh.Payload) != string(saved.Payload) {
 		t.Fatal("published artifact changed with live catalog")
 	}
@@ -188,14 +195,14 @@ func TestStandardToolsPublicationReachesActualMCPAndPreservesFrozenContractRealP
 	}
 }
 
-func publishStandardToolSample(t *testing.T, pool *pgxpool.Pool, key []byte, workspace, serverURL, serverID string, revision int64, toolName, prompt string) (frozen.FrozenExecutionBundle, compiler.FrozenResolver, *PublishedArtifactContent) {
+func publishStandardToolSample(t *testing.T, pool *pgxpool.Pool, key []byte, workspace, serverURL, serverID string, revision int64, toolName, prompt string) (frozen.FrozenExecutionBundle, compiler.FrozenResolver, *workflow.PublishedArtifactContent) {
 	t.Helper()
-	ctx := t.Context()
+	ctx := execution.WithSubject(t.Context(), execution.Subject{WorkspaceID: workspace, UserID: "test"})
 	providers := credentials.New(pool, key)
-	if err := providers.Upsert(ctx, workspace, llmrouter.ProviderConfig{ID: "fixture", Name: "Fixture", BaseURL: serverURL, APIKey: "test-provider-secret", Models: []string{"fixture-model"}}); err != nil {
+	if err := providers.Upsert(ctx, workspace, llmrouter.ProviderConfig{ID: "fixture", Name: "Fixture", CredentialScope: frozen.CredentialScopeUser, CredentialUserID: "test", BaseURL: serverURL, APIKey: "test-provider-secret", Models: []string{"fixture-model"}}); err != nil {
 		t.Fatal(err)
 	}
-	agents := registry.New(pool)
+	agents := agentcatalog.New(pool)
 	lead := &registry.AgentRecord{Name: "lead", Role: "avatar", Engine: "loom", Model: "fixture-model", GraphType: "standard", Spec: stdlib.AgentSpec{SystemPrompt: "Return the brief."}}
 	worker := &registry.AgentRecord{Name: "worker", Role: "worker", Engine: "loom", Model: "fixture-model", GraphType: "standard", Spec: stdlib.AgentSpec{SystemPrompt: prompt}, MCPServers: []registry.MCPServerConfig{{ServerID: serverID, Filter: []string{toolName}}}}
 	for _, record := range []*registry.AgentRecord{lead, worker} {
@@ -206,27 +213,27 @@ func publishStandardToolSample(t *testing.T, pool *pgxpool.Pool, key []byte, wor
 	if _, err := pool.Exec(ctx, `INSERT INTO weave_teams(id,workspace_id,name,lead_avatar_id,status) VALUES('team',$1,'Tools',$2,'active')`, workspace, lead.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := registry.NewTeamWorkerRepository(pool).Create(ctx, workspace, registry.TeamWorker{TeamID: "team", WorkerAgentID: worker.ID, Duty: "Compute", AllowedKinds: []string{"consult"}, DefaultKind: "consult", ResultRequirement: prompt, Enabled: true}); err != nil {
+	if _, err := agentcatalog.NewTeamWorkerRepository(pool).Create(ctx, workspace, registry.TeamWorker{TeamID: "team", WorkerAgentID: worker.ID, Duty: "Compute", AllowedKinds: []string{"consult"}, DefaultKind: "consult", ResultRequirement: prompt, Enabled: true}); err != nil {
 		t.Fatal(err)
 	}
 	graph := json.RawMessage(fmt.Sprintf(`{"schema_version":1,"entry_node_id":"brief","input_contract":{"type":"text"},"output_contract":{"type":"text"},"nodes":[{"id":"brief","type":"lead","config":{"instruction":"Brief"},"inputs":{"task":{"value":{"source":"run_input","path":""},"expected_type":"text"}},"output":{"type":"text"}},{"id":"compute","type":"worker","config":{"kind":"consult","agent_id":%q,"agent_version":%d,"result_requirement":"Execute the configured tool task"},"inputs":{"task":{"value":{"source":"run_input","path":""},"expected_type":"text"}},"output":{"type":"text"}},{"id":"deliver","type":"deliver","config":{"result":{"source":"node_output","node_id":"compute","path":""}}}],"edges":[{"id":"a","from_node_id":"brief","to_node_id":"compute","route":"success"},{"id":"b","from_node_id":"compute","to_node_id":"deliver","route":"success"}]}`, worker.ID, worker.Version))
-	store := New(pool, nil)
-	draft, err := store.Create(ctx, &TeamWorkflow{ID: "flow", WorkspaceID: workspace, TeamID: "team", Name: "Tool flow"}, DraftInput{CreatedBy: "test", TriggerConfig: json.RawMessage(`{"schema_version":1,"type":"conversation_explicit","config":{}}`), GraphDefinition: graph})
+	store := workflow.New(pool, nil)
+	draft, err := store.Create(ctx, &workflow.TeamWorkflow{ID: "flow", WorkspaceID: workspace, TeamID: "team", Name: "Tool flow"}, workflow.DraftInput{CreatedBy: "test", TriggerConfig: json.RawMessage(`{"schema_version":1,"type":"conversation_explicit","config":{}}`), GraphDefinition: graph})
 	if err != nil {
 		t.Fatal(err)
 	}
 	descriptors := publicationDescriptors(t)
-	builder := NewCandidateBuilder(store, agents, delivery.New(pool, key), skills.New(pool), providers, schedule.New(pool, nil), descriptors)
+	builder := workflow.NewCandidateBuilder(store, agents, delivery.New(pool, key), skills.New(pool), providers, schedule.New(pool, nil), descriptors)
 	tx, err := pool.Begin(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer tx.Rollback(context.Background())
-	candidate, report, err := builder.BuildTx(ctx, tx, CandidateInput{WorkspaceID: workspace, WorkflowID: "flow", WorkflowVersion: draft.Version})
+	candidate, report, err := builder.BuildTx(ctx, tx, workflow.CandidateInput{WorkspaceID: workspace, WorkflowID: "flow", WorkflowVersion: draft.Version})
 	if err != nil || candidate == nil || report != nil && len(report.Issues) > 0 {
 		t.Fatalf("build publication: err=%+v report=%+v", err, report)
 	}
-	publication, err := PublicationFromCandidate(candidate)
+	publication, err := workflow.PublicationFromCandidate(candidate)
 	if err != nil {
 		t.Fatal(err)
 	}

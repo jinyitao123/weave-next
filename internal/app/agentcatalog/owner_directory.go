@@ -1,4 +1,4 @@
-package registry
+package agentcatalog
 
 import (
 	"context"
@@ -12,6 +12,7 @@ import (
 type OwnerQuery interface {
 	QueryRow(context.Context, string, ...any) pgx.Row
 }
+
 type WorkspaceMemberVerifier func(context.Context, OwnerQuery, string, string) (bool, error)
 
 var ErrOwnerDirectoryUnavailable = errors.New("agent owner directory is unavailable")

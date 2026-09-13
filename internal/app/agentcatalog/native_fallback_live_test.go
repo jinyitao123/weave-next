@@ -1,4 +1,4 @@
-package runtimes
+package agentcatalog_test
 
 import (
 	"context"
@@ -7,11 +7,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jinyitao123/weave/internal/kernel/runtimes"
+
+	"github.com/jinyitao123/weave/internal/app/agentcatalog"
+
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
-	"github.com/jinyitao123/weave/internal/kernel/registry"
 )
 
 // Explicit opt-in uses an already connected native worker and its authenticated
@@ -28,7 +31,7 @@ func TestNativeModelFallbackLive(t *testing.T) {
 	}
 	defer pool.Close()
 	workspace := os.Getenv("WEAVE_LIVE_WORKSPACE")
-	record, err := registry.New(pool).Get(ctx, workspace, os.Getenv("WEAVE_LIVE_AGENT"))
+	record, err := agentcatalog.New(pool).Get(ctx, workspace, os.Getenv("WEAVE_LIVE_AGENT"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -39,7 +42,7 @@ func TestNativeModelFallbackLive(t *testing.T) {
 	record.RuntimePolicyMode = "strict_pin"
 	stamp := execution.AgentExecutionStamp{AgentID: record.ID, AgentVersion: record.Version, ExecutionScope: execution.ScopeLegacyOrchestrator}
 	callCtx := execution.WithInvocationID(ctx, "native-fallback-proof/"+uuid.NewString())
-	executor := NewExecutor(taskqueue.New(pool, nil, time.Minute), NewStore(pool), "", "")
+	executor := runtimes.NewExecutor(taskqueue.New(pool, nil, time.Minute), runtimes.NewStore(pool), "", "")
 	result, err := executor.ExecRemote(callCtx, workspace, record, stamp, "Reply exactly WEAVE_NATIVE_FALLBACK_OK. Do not use any tools, access files, or perform any other action.", nil)
 	t.Logf("status=%s output=%q attempts=%d reported_models=%v error=%v", result.Status, result.Output, len(result.Attempts), result.ReportedModels, err)
 	for _, attempt := range result.Attempts {

@@ -1,4 +1,4 @@
-package workflow
+package agentcatalog_test
 
 import (
 	"context"
@@ -15,6 +15,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/jinyitao123/weave/internal/kernel/workflow"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -128,6 +130,7 @@ func TestStandardPublishedToolsRealModel(t *testing.T) {
 	}))
 	defer server.Close()
 	workspace := "real-publication"
+	ctx = execution.WithSubject(ctx, execution.Subject{WorkspaceID: workspace, UserID: "test"})
 	key := []byte(strings.Repeat("k", 32))
 	mcp := mcpregistry.New(pool, key)
 	registered, err := mcp.Create(ctx, workspace, "test", mcpregistry.UpsertServerRequest{Slug: "python", DisplayName: "Python sample", Transport: mcpregistry.TransportStreamableHTTP, URL: server.URL, Enabled: true})
@@ -151,11 +154,12 @@ func TestStandardPublishedToolsRealModel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	opts, closer, err := buildRuntimeHostsWithLLM(ctx, bundle, publicationTestSecrets{}, newRuntimeMCPTransport, model)
+	opts, closer, err := workflow.NewRuntimeHostFactory().Build(ctx, bundle, publicationTestSecrets{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer closer.Close()
+	opts.LLM = model
 	compiled, err := compiler.CompileFrozenWithRegistry(ctx, publicationDescriptors(t), bundle, resolver, opts)
 	if err != nil {
 		t.Fatal(err)

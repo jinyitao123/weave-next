@@ -6,13 +6,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jinyitao123/weave/internal/app/agentcatalog"
+
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jinyitao123/weave/internal/base/deliverable"
 	"github.com/jinyitao123/weave/internal/base/testutil"
 	"github.com/jinyitao123/weave/internal/kernel/fanout"
 
 	orgstore "github.com/jinyitao123/weave/internal/app/org"
-	"github.com/jinyitao123/weave/internal/kernel/registry"
 )
 
 func productContextFixture(t *testing.T) *pgxpool.Pool {
@@ -50,7 +51,7 @@ func TestProductDirectoryRejectsCrossWorkspaceAndUsesCallerTransaction(t *testin
 			t.Fatalf("%s: %v %v", tc.user, got, err)
 		}
 	}
-	if _, err := registry.New(pool).IsWorkspaceMember(ctx, "a", "alice"); !errors.Is(err, registry.ErrOwnerDirectoryUnavailable) {
+	if _, err := agentcatalog.New(pool).IsWorkspaceMember(ctx, "a", "alice"); !errors.Is(err, agentcatalog.ErrOwnerDirectoryUnavailable) {
 		t.Fatalf("unbound owner directory accepted: %v", err)
 	}
 	tx, err := pool.Begin(ctx)

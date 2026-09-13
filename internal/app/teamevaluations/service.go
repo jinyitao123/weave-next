@@ -14,12 +14,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jinyitao123/weave/internal/app/agentcatalog"
+
 	"github.com/google/uuid"
 	orgstore "github.com/jinyitao123/weave/internal/app/org"
 	"github.com/jinyitao123/weave/internal/build/teambuild"
 	"github.com/jinyitao123/weave/internal/build/teamforge"
 	org "github.com/jinyitao123/weave/internal/kernel/orgspec"
-	"github.com/jinyitao123/weave/internal/kernel/registry"
 	"github.com/jinyitao123/weave/internal/kernel/workflow"
 	"github.com/jinyitao123/weave/internal/kernel/workflow/machine"
 )
@@ -73,7 +74,7 @@ type Outcome struct {
 }
 
 type BuildStore interface {
-	SetBaselineSources(teambuild.OrganizationBaselineReader, *registry.AgentRegistry, *workflow.Store)
+	SetBaselineSources(teambuild.OrganizationBaselineReader, teambuild.AgentBaselineReader, *workflow.Store)
 	CreateBuildRun(context.Context, string, string, teambuild.CreateRunParams) (teambuild.TeamBuildRun, error)
 	GetBuildRun(context.Context, string, string) (teambuild.TeamBuildRun, error)
 	GetLatestBlueprintRevision(context.Context, string, string) (teambuild.BlueprintRevision, error)
@@ -97,7 +98,7 @@ type DeclarativeValidator func(
 
 type Options struct {
 	OrgStore             *orgstore.Store
-	Registry             *registry.AgentRegistry
+	Registry             *agentcatalog.AgentRegistry
 	Workflows            *workflow.Store
 	DeclarativeValidator DeclarativeValidator
 	RunTTL               time.Duration
@@ -109,7 +110,7 @@ type Service struct {
 	builds              BuildStore
 	submitter           Submitter
 	org                 *orgstore.Store
-	registry            *registry.AgentRegistry
+	registry            *agentcatalog.AgentRegistry
 	workflows           *workflow.Store
 	declarativeValidate DeclarativeValidator
 	runTTL              time.Duration

@@ -96,7 +96,7 @@ type DispatchRecorder interface {
 // NewAgentToolDispatcher creates a dispatcher that wraps managed agents as a
 // single delegate tool.
 func NewAgentToolDispatcher(
-	reg *registry.AgentRegistry,
+	reg agentRegistry,
 	tenant, selfName string,
 	llm contract.LLM,
 	store loom.Store,

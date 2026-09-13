@@ -11,7 +11,6 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	org "github.com/jinyitao123/weave/internal/kernel/orgspec"
-	"github.com/jinyitao123/weave/internal/kernel/registry"
 	"github.com/jinyitao123/weave/internal/kernel/workflow"
 )
 
@@ -22,7 +21,7 @@ import (
 // consults the sources.
 func (s *Store) SetBaselineSources(
 	orgStore OrganizationBaselineReader,
-	agents *registry.AgentRegistry,
+	agents AgentBaselineReader,
 	workflows *workflow.Store,
 ) {
 	s.baselineMu.Lock()
@@ -180,7 +179,7 @@ func (s *Store) captureBaselineTxAt(
 		return BaselineSnapshot{}, fmt.Errorf("capture baseline: %w: captured_at must be a valid UTC timestamp", ErrBaselineSnapshotInvalid)
 	}
 	orgStore, agents, workflows := s.baselineSources()
-	if !organizationBaselineReaderAvailable(orgStore) || agents == nil || workflows == nil {
+	if !baselineReaderAvailable(orgStore) || !baselineReaderAvailable(agents) || workflows == nil {
 		return BaselineSnapshot{}, fmt.Errorf("%w", ErrBaselineSourceUnavailable)
 	}
 	if tx == nil {
@@ -385,7 +384,7 @@ func (s *Store) captureBaselineTxAt(
 
 func (s *Store) baselineSources() (
 	orgStore OrganizationBaselineReader,
-	agents *registry.AgentRegistry,
+	agents AgentBaselineReader,
 	workflows *workflow.Store,
 ) {
 	s.baselineMu.RLock()

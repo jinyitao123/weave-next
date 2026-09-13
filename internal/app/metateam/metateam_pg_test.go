@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 
+	"github.com/jinyitao123/weave/internal/app/agentcatalog"
+
 	"github.com/google/uuid"
 	"github.com/jinyitao123/weave/internal/base/db"
 	"github.com/jinyitao123/weave/internal/base/testutil"
@@ -19,7 +21,7 @@ func TestMetaTeamSeedDisabledSkipsAndRetainsPlatformAssets(t *testing.T) {
 		t.Fatalf("migrate test database: %v", err)
 	}
 	workspaceID := "metateam-toggle-" + uuid.NewString()
-	reg := registry.New(pool)
+	reg := agentcatalog.New(pool)
 	orgStore := orgstore.NewStore(pool)
 
 	if err := EnsureMetaTeamIfEnabled(ctx, reg, orgStore, workspaceID, false); err != nil {

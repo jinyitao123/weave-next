@@ -4,7 +4,7 @@ package teamforge
 // one active team aggregate through the platform team-creation path
 // (orgstore.Store.CreateActiveTeam: team + lead relation + enabled initial
 // workers atomically); tf_set_roster submits a complete roster CAS command
-// through registry.AgentRegistry.ApplyTeamRosterCommand — the platform's
+// through agentcatalog.AgentRegistry.ApplyTeamRosterCommand — the platform's
 // only roster writer — never a raw row write. Both tools are receipt-gated
 // on AssetRef{Kind: "team"} and audited through the shared write skeleton;
 // free-collaboration dispatch rules ride along on both calls.

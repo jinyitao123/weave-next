@@ -1,18 +1,20 @@
-package taskqueue_test
+package agentcatalog_test
 
 import (
 	"context"
 	"encoding/json"
 	"errors"
+	"sync"
+	"testing"
+	"time"
+
 	"github.com/jackc/pgx/v5"
+	"github.com/jinyitao123/weave/internal/app/agentcatalog"
 	"github.com/jinyitao123/weave/internal/base/db"
 	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/base/testutil"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
-	"sync"
-	"testing"
-	"time"
 )
 
 func TestExecutionSubjectAndPhysicalFactsRealPG(t *testing.T) {
@@ -29,7 +31,7 @@ func TestExecutionSubjectAndPhysicalFactsRealPG(t *testing.T) {
 		t.Fatal(err)
 	}
 	agent := registry.AgentRecord{Name: "copy", Role: "worker"}
-	if err := registry.New(pool).Put(ctx, alice.WorkspaceID, &agent); err != nil {
+	if err := agentcatalog.New(pool).Put(ctx, alice.WorkspaceID, &agent); err != nil {
 		t.Fatal(err)
 	}
 	tasks := taskqueue.New(pool, nil, time.Minute)
@@ -47,7 +49,10 @@ func TestExecutionSubjectAndPhysicalFactsRealPG(t *testing.T) {
 		go func(entry struct {
 			ctx context.Context
 			id  string
-		}) { defer wg.Done(); failures <- tasks.Enqueue(entry.ctx, newTask(entry.id)) }(entry)
+		}) {
+			defer wg.Done()
+			failures <- tasks.Enqueue(entry.ctx, newTask(entry.id))
+		}(entry)
 	}
 	wg.Wait()
 	close(failures)

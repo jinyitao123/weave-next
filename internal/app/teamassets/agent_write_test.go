@@ -6,6 +6,8 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/jinyitao123/weave/internal/app/agentcatalog"
+
 	"github.com/jinyitao123/weave/internal/base/db"
 	"github.com/jinyitao123/weave/internal/base/testutil"
 	"github.com/jinyitao123/weave/internal/build/teamforge"
@@ -19,7 +21,7 @@ func TestAgentCommandCommitsVersionAndRejectsUnresolvableModelRealPG(t *testing.
 	if err := db.Migrate(ctx, pool); err != nil {
 		t.Fatal(err)
 	}
-	w := &AgentWriter{Pool: pool, Registry: registry.New(pool)}
+	w := &AgentWriter{Pool: pool, Registry: agentcatalog.New(pool)}
 	request := teamforge.AgentWriteRequest{WorkspaceID: "builder-command", Record: registry.AgentRecord{Name: "worker", Role: "worker"}}
 	created, err := w.CommitAgent(ctx, request)
 	if err != nil {
@@ -52,7 +54,7 @@ func TestAgentCommandRollbackLeavesNoWorkspaceOrVersionRealPG(t *testing.T) {
 	if err := db.Migrate(ctx, pool); err != nil {
 		t.Fatal(err)
 	}
-	w := &AgentWriter{Pool: pool, Registry: registry.New(pool)}
+	w := &AgentWriter{Pool: pool, Registry: agentcatalog.New(pool)}
 	invalidSchema := json.RawMessage(`{`)
 	request := teamforge.AgentWriteRequest{WorkspaceID: "rejected-command", Record: registry.AgentRecord{
 		Name: "worker", Role: "worker", OutputSchema: &invalidSchema,

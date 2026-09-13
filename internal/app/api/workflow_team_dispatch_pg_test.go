@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jinyitao123/weave/internal/app/agentcatalog"
+
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jinyitao123/loom"
 	"github.com/jinyitao123/weave/internal/app/deliveryverify"
@@ -21,7 +23,6 @@ import (
 	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 
 	orgstore "github.com/jinyitao123/weave/internal/app/org"
-	"github.com/jinyitao123/weave/internal/kernel/registry"
 	"github.com/jinyitao123/weave/internal/kernel/workflow"
 	"github.com/jinyitao123/weave/internal/kernel/workflow/machine"
 	"github.com/labstack/echo/v4"
@@ -85,7 +86,7 @@ func newTeamDispatchTestServerWithGraph(t *testing.T, graph json.RawMessage) (*S
  `, string(trigger), string(graph), digest, string(payload)); err != nil {
 		t.Fatal(err)
 	}
-	server := &Server{Store: teamDispatchPoolStore{pool: pool}, OrgStore: orgstore.NewStore(pool), Registry: registry.New(pool),
+	server := &Server{Store: teamDispatchPoolStore{pool: pool}, OrgStore: orgstore.NewStore(pool), Registry: agentcatalog.New(pool),
 		Workflow: workflow.New(pool, nil), Deliverables: deliveryverify.NewStore(pool), ScheduleTransactions: pool, Snapshots: snapshot.NewStore(pool), Tasks: taskqueue.New(pool, nil, time.Minute)}
 	return server, pool
 }

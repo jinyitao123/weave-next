@@ -67,7 +67,7 @@ type AgentRunner struct {
 // NewAgentRunner creates a runner with the same execution dependencies used by
 // NewAgentToolDispatcher.
 func NewAgentRunner(
-	reg *registry.AgentRegistry,
+	reg agentRegistry,
 	tenant string,
 	llm contract.LLM,
 	store loom.Store,

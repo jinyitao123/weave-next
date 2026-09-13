@@ -47,7 +47,7 @@ type Deps struct {
 	Deliverables DeliverableReader
 }
 
-// AgentReader is satisfied by *registry.AgentRegistry.
+// AgentReader is satisfied by *agentcatalog.AgentRegistry.
 type AgentReader interface {
 	List(ctx context.Context, workspaceID string) ([]registry.AgentRecord, error)
 	GetVersion(ctx context.Context, workspaceID, agentID string, version int) (*registry.AgentRecord, error)
@@ -65,7 +65,7 @@ type BusinessTeamLister interface {
 	ListBusinessTeams(ctx context.Context, workspaceID string) ([]org.Team, error)
 }
 
-// RosterReader is satisfied by *registry.TeamWorkerRepository.
+// RosterReader is satisfied by *agentcatalog.TeamWorkerRepository.
 type RosterReader interface {
 	ListByTeam(ctx context.Context, workspaceID, teamID string) ([]registry.TeamWorker, error)
 }
@@ -161,11 +161,11 @@ type AgentWriter interface {
 	CommitAgent(context.Context, AgentWriteRequest) (AgentWriteResult, error)
 }
 
-// AgentLoader is satisfied by *registry.AgentRegistry.Get.
+// AgentLoader is satisfied by *agentcatalog.AgentRegistry.Get.
 type AgentLoader interface {
 	Get(ctx context.Context, workspaceID, name string) (*registry.AgentRecord, error)
 	// List resolves a caller-supplied stable agent ID that Get (name-keyed)
-	// cannot resolve. *registry.AgentRegistry satisfies both methods.
+	// cannot resolve. *agentcatalog.AgentRegistry satisfies both methods.
 	List(ctx context.Context, workspaceID string) ([]registry.AgentRecord, error)
 }
 
@@ -192,7 +192,7 @@ type TeamDesignUpdater interface {
 	) (org.Team, error)
 }
 
-// RosterCommander is satisfied by *registry.AgentRegistry.ApplyTeamRosterCommand.
+// RosterCommander is satisfied by *agentcatalog.AgentRegistry.ApplyTeamRosterCommand.
 type RosterCommander interface {
 	ApplyTeamRosterCommand(
 		ctx context.Context,

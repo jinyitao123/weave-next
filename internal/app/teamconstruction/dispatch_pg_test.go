@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jinyitao123/weave/internal/app/agentcatalog"
+
 	"github.com/jinyitao123/weave/internal/base/db"
 	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/base/testutil"
@@ -145,7 +147,7 @@ func TestBuildDispatchUsesSinglePlatformTaskRealPG(t *testing.T) {
 	}
 	// Mechanical chat and TeamBuild share the same worker, with separate typed handlers.
 	agent := registry.AgentRecord{Name: "mechanical", Role: "worker"}
-	if err := registry.New(d.Pool).Put(ctx, run.WorkspaceID, &agent); err != nil {
+	if err := agentcatalog.New(d.Pool).Put(ctx, run.WorkspaceID, &agent); err != nil {
 		t.Fatal(err)
 	}
 	chatPayload, _ := json.Marshal(taskqueue.ChatExecRequest{Agent: "untrusted-payload-name", Message: "copy this"})
