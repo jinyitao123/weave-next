@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/jinyitao123/weave/internal/base/deliverable"
+	"github.com/jinyitao123/weave/internal/kernel/deliverycheck"
 	"github.com/jinyitao123/weave/internal/kernel/workflow/machine"
 )
 
@@ -69,7 +70,7 @@ func ValidateWorkflowBlueprint(blueprint WorkflowBlueprint) []WorkflowBlueprintP
 			Path: path, Code: code, Message: message, Hint: hint,
 		})
 	}
-	if err := deliverable.ValidateDeliveryContract(blueprint.DeliveryContract); err != nil {
+	if err := deliverycheck.ValidateContract(blueprint.DeliveryContract); err != nil {
 		add("/delivery_contract", "blueprint_delivery_contract_invalid", err.Error(), "修正交付物、检查项和外部副作用声明。")
 	}
 	if blueprint.DeliveryContract != nil && blueprint.DeliveryContract.Output.Type != "text" {

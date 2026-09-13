@@ -1,12 +1,34 @@
 package teamforge
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
 	"github.com/jinyitao123/weave/internal/base/deliverable"
 	"github.com/jinyitao123/weave/internal/kernel/workflow/machine"
 )
+
+func TestBlueprintPublicationRejectsUncomputableAssertionsAndExposesStructuredRequirements(t *testing.T) {
+	blueprint := WorkflowBlueprint{Template: WorkflowBlueprintResearchSummary, LeadInstruction: "Coordinate", ParallelWorkers: []WorkflowBlueprintWorker{{AgentID: "one", AgentVersion: 1, ResultRequirement: "Extract"}, {AgentID: "two", AgentVersion: 1, ResultRequirement: "Review"}}, Finalizer: &WorkflowBlueprintWorker{AgentID: "final", AgentVersion: 1, ResultRequirement: "Deliver"},
+		DeliveryContract: &deliverable.DeliveryContract{Version: 1, Coverage: deliverable.CoverageExplicit, Output: deliverable.OutputRequirement{Type: "text"}, RequiredChecks: []deliverable.CheckSpec{{ID: "unique", Title: "结果条目不得重复", VerifierID: "weave.deterministic", VerifierVersion: "v1", Parameters: json.RawMessage(`{"actual":{"source":"artifact","artifact":"result.json"},"operator":"unique"}`)}}}}
+	compiled, problems := CompileWorkflowBlueprint(blueprint)
+	if len(problems) != 0 {
+		t.Fatalf("valid rule: %+v", problems)
+	}
+	if compiled.Graph.DeliveryContract.RequiredChecks[0].Title != "结果条目不得重复" {
+		t.Fatal("published requirement lost")
+	}
+	blueprint.DeliveryContract.RequiredChecks[0].Parameters = json.RawMessage(`{"actual":{"source":"artifact","artifact":"result.json"},"operator":"run_code"}`)
+	if _, problems := CompileWorkflowBlueprint(blueprint); len(problems) == 0 {
+		t.Fatal("uncomputable verifier published")
+	}
+	properties := workflowBlueprintBuildInputSchemaDoc()["properties"].(map[string]any)
+	bp := properties["blueprint"].(map[string]any)["properties"].(map[string]any)
+	if bp["delivery_contract"] == nil {
+		t.Fatal("team builder cannot create structured requirements")
+	}
+}
 
 func TestCompileWorkflowBlueprintCarriesDeliveryContract(t *testing.T) {
 	blueprint := WorkflowBlueprint{

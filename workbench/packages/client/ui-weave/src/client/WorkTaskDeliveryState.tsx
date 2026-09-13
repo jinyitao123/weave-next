@@ -24,6 +24,13 @@ function verificationReason(reason: string, t: PropsLocale<'weave'>['t']): strin
     case 'required_file_collection_limited': return t('task.verification.collectionLimited')
     case 'file_conditions_satisfied': return t('task.verification.fileSatisfied')
     case 'file_content_type_mismatch': case 'file_digest_mismatch': case 'file_content_condition_missing': return t('task.verification.fileMismatch')
+    case 'deterministic_satisfied': return t('task.verification.deterministicSatisfied')
+    case 'deterministic_mismatch': return t('task.verification.deterministicMismatch')
+    case 'deterministic_output_invalid': case 'deterministic_number_required': case 'deterministic_array_required': return t('task.verification.deterministicOutputInvalid')
+    case 'deterministic_rule_invalid': return t('task.verification.checkInvalid')
+    case 'deterministic_input_unavailable': case 'deterministic_expected_unavailable': return t('task.verification.deterministicInputUnavailable')
+    case 'published_output_schema_failed': return t('task.verification.outputInvalid')
+    case 'published_output_schema_satisfied': return t('task.verification.outputValid')
     case 'output_type_valid': return t('task.verification.outputValid')
     case 'output_type_invalid': return t('task.verification.outputInvalid')
     case 'file_source_missing': case 'output_source_missing': return t('task.verification.sourceMissing')
@@ -77,9 +84,11 @@ export function WorkTaskDeliveryState({ model, executionLabel, compact = false, 
         {delivery?.evidenceCompleteness === 'complete' ? null : <p>{t('task.verification.evidenceUnavailable')}</p>}
         {!delivery?.checks.length ? <p>{t('task.verification.noChecks')}</p> : <ul className={css.verificationChecks}>
           {delivery.checks.map(check => <li key={check.checkId}>
-            <div><strong>{check.checkId}</strong>
+            <div><strong>{check.title || check.checkId}</strong>
               <span data-verification-status={check.status}>{t(VERIFICATION_KEYS[check.status])}</span></div>
-            <p title={check.reason}>{verificationReason(check.reason, t)}</p>
+            <p>{verificationReason(check.reason, t)}</p>
+            {!check.actual ? null : <p>{t('task.verification.actual', { value: check.actual })}</p>}
+            {!check.expected ? null : <p>{t('task.verification.expected', { value: check.expected })}</p>}
           </li>)}
         </ul>}
         {recheckDelivery === undefined ? null : <>

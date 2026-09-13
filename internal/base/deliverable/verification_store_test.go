@@ -420,8 +420,8 @@ func TestVerificationStoreExternalStateAndLegacyUnknown(t *testing.T) {
 func TestVerificationStoreDispatchInputFactsImmutable(t *testing.T) {
 	h := newVerificationHarness(t, nil)
 	ctx := context.Background()
-	_, err := h.pool.Exec(ctx, `INSERT INTO weave_dispatch_input_revisions(workspace_id,user_id,workbench_session_id,input_revision_id,registration_id,registration_sha256,source_messages,task,task_sha256,team_id,mode,workflow_id,workflow_version,client_request_id)
-		VALUES ('workspace-1','user','session','input','registration',$1,'[{"id":"message"}]'::jsonb,'task',$1,'team-1','workflow','workflow-1',1,'request')`, strings.Repeat("a", 64))
+	_, err := h.pool.Exec(ctx, `INSERT INTO weave_dispatch_input_revisions(workspace_id,user_id,workbench_session_id,input_revision_id,registration_id,registration_sha256,source_messages,task,task_sha256,team_id,mode,workflow_id,workflow_version,client_request_id,execution_task,revision_kind,root_input_revision_id)
+		VALUES ('workspace-1','user','session','input','registration',$1,'[{"id":"message"}]'::jsonb,'task',$1,'team-1','workflow','workflow-1',1,'request','task','initial','input')`, strings.Repeat("a", 64))
 	if err != nil {
 		t.Fatal(err)
 	}

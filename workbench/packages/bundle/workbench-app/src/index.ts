@@ -347,13 +347,13 @@ const completenessSchema = z.record(z.string(), z.enum(['complete', 'partial', '
 const verificationStatusSchema = z.enum(['pending', 'passed', 'failed', 'unknown'])
 const deliverySchema = z.object({
   revisionId: z.string(), contractDigest: z.string(), verificationId: z.string(), verificationStatus: verificationStatusSchema,
-  reason: z.string(), checks: z.array(z.object({ checkId: z.string(), status: verificationStatusSchema, reason: z.string() }).strict()),
+  reason: z.string(), checks: z.array(z.object({ checkId: z.string(), title: z.string().optional(), actual: z.string().optional(), expected: z.string().optional(), status: verificationStatusSchema, reason: z.string() }).strict()),
   checkCounts: z.record(z.string(), z.number().int().nonnegative()), available: z.boolean(), evidenceCompleteness: z.enum(['complete', 'unavailable']),
   inputRevisionKind: z.enum(['', 'initial', 'revision']).optional(), parentRunId: z.string().optional(), parentMaterialCount: z.number().int().nonnegative().optional(),
 }).strict()
 const wireDeliverySchema = z.object({
   revision_id: z.string().default(''), contract_digest: z.string().default(''), verification_id: z.string().default(''), verification_status: verificationStatusSchema,
-  reason: z.string().default(''), checks: z.array(z.object({ check_id: z.string(), status: verificationStatusSchema, reason: z.string() })),
+  reason: z.string().default(''), checks: z.array(z.object({ check_id: z.string(), title: z.string().default(''), actual: z.string().default(''), expected: z.string().default(''), status: verificationStatusSchema, reason: z.string() })),
   check_counts: z.record(z.string(), z.number().int().nonnegative()), available: z.boolean(), evidence_completeness: z.enum(['complete', 'unavailable']),
   input_revision_kind: z.enum(['initial', 'revision']).default('initial'), parent_run_id: z.string().default(''), parent_material_count: z.number().int().nonnegative().default(0),
 })
@@ -366,7 +366,7 @@ function readDelivery(value: unknown): WorkTaskDelivery {
   const item = parsed.data
   return { revisionId: item.revision_id, contractDigest: item.contract_digest, verificationId: item.verification_id,
     verificationStatus: item.verification_status, reason: item.reason,
-    checks: item.checks.map(check => ({ checkId: check.check_id, status: check.status, reason: check.reason })),
+    checks: item.checks.map(check => ({ checkId: check.check_id, title: check.title, actual: check.actual, expected: check.expected, status: check.status, reason: check.reason })),
     checkCounts: item.check_counts, available: item.available, evidenceCompleteness: item.evidence_completeness,
     inputRevisionKind: item.input_revision_kind, parentRunId: item.parent_run_id, parentMaterialCount: item.parent_material_count }
 }
