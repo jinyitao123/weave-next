@@ -9,7 +9,9 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-The Capability development settings section edits developer-owned JSON definitions, saves and reloads drafts, debugs an immutable snapshot of unsaved editor content, publishes revisions, invokes a selected revision, polls results and cancels work. Debugging does not save the editor or allocate a published version. It uses the Workbench Host credential, retains uncertain submission identities and their original input and definition for retry, and supports the server's local Loom execution subset.
+The Calling applications settings section creates stable application identities, grants specific published versions and issues scoped access keys. Keys can overlap during rotation; revoking the old key does not change the application's invocation identity. Newly issued application keys are shown once and can be hidden, while the Workbench Host credential remains private.
+
+Reusable capability authoring remains in the main conversation through Weave tools; this browser package does not expose a manual definition editor. Settings contains only application access administration: stable application identities, exact published-version grants, scoped one-time keys, rotation and revocation.
 
 `dsh-client-ui-weave` turns durable Weave MCP call results into a visible work task and places runtime-node management in the same Workbench surface. Users can follow the selected team, progress, member activity, runtime placement, human decisions, and exact-run deliverables without reading internal identifiers or tool vocabulary.
 

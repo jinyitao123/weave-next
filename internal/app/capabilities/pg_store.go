@@ -170,15 +170,26 @@ func (s *PGStore) claimInvocation(ctx context.Context, invocation Invocation, de
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	taskID := "cap-task-" + uuid.NewString()
+	if invocation.CredentialID != "" {
+		if invocation.RunKind != "published" || debug != nil {
+			return Invocation{}, false, ErrAccessDenied
+		}
+		if err := authorizeApplicationInvocation(ctx, tx, invocation); err != nil {
+			return Invocation{}, false, err
+		}
+	}
+	if invocation.CallerKind == "" {
+		invocation.CallerKind = "developer"
+	}
 	result, err := tx.Exec(ctx, `
 		INSERT INTO weave_capability_invocations (
 			workspace_id, application_id, request_id, invocation_id,
-   capability_id, revision, input, status, result_state, task_id,run_kind,definition_hash
-  ) VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10,$11,$12)
+   capability_id, revision, input, status, result_state, task_id,run_kind,definition_hash,credential_id,caller_kind
+  ) VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10,$11,$12,NULLIF($13,''),$14)
 		ON CONFLICT (workspace_id, application_id, request_id) DO NOTHING
 	`, invocation.WorkspaceID, invocation.ApplicationID, invocation.RequestID,
 		invocation.InvocationID, invocation.CapabilityID, invocation.Revision,
-		string(input), invocation.Status, invocation.ResultState, taskID, invocation.RunKind, invocation.DefinitionHash)
+		string(input), invocation.Status, invocation.ResultState, taskID, invocation.RunKind, invocation.DefinitionHash, invocation.CredentialID, invocation.CallerKind)
 	if err != nil {
 		return Invocation{}, false, fmt.Errorf("claim invocation: %w", err)
 	}
@@ -205,12 +216,12 @@ func (s *PGStore) claimInvocation(ctx context.Context, invocation Invocation, de
 	var raw []byte
 	err = tx.QueryRow(ctx, `
 		SELECT workspace_id, application_id, request_id, invocation_id,
-   capability_id, revision, input, status, result_state, COALESCE(task_id, ''),run_kind,definition_hash
+   capability_id, revision, input, status, result_state, COALESCE(task_id, ''),run_kind,definition_hash,caller_kind,COALESCE(credential_id,'')
 		FROM weave_capability_invocations
 		WHERE workspace_id=$1 AND application_id=$2 AND request_id=$3
 	`, invocation.WorkspaceID, invocation.ApplicationID, invocation.RequestID).Scan(
 		&stored.WorkspaceID, &stored.ApplicationID, &stored.RequestID, &stored.InvocationID,
-		&stored.CapabilityID, &stored.Revision, &raw, &stored.Status, &stored.ResultState, &stored.TaskID, &stored.RunKind, &stored.DefinitionHash)
+		&stored.CapabilityID, &stored.Revision, &raw, &stored.Status, &stored.ResultState, &stored.TaskID, &stored.RunKind, &stored.DefinitionHash, &stored.CallerKind, &stored.CredentialID)
 	if err != nil {
 		return Invocation{}, false, fmt.Errorf("read invocation claim: %w", err)
 	}
@@ -236,7 +247,7 @@ func (s *PGStore) GetInvocation(ctx context.Context, workspaceID, applicationID,
 	var raw []byte
 	query := `
   SELECT workspace_id, application_id, request_id, invocation_id, COALESCE(task_id,''),
-   capability_id, revision, input, status, result_state, result, COALESCE(error, ''),run_kind,definition_hash
+   capability_id, revision, input, status, result_state, result, COALESCE(error, ''),run_kind,definition_hash,caller_kind
 		FROM weave_capability_invocations
 		WHERE workspace_id=$1 AND invocation_id=$2`
 	args := []any{workspaceID, invocationID}
@@ -247,7 +258,7 @@ func (s *PGStore) GetInvocation(ctx context.Context, workspaceID, applicationID,
 	err := s.pool.QueryRow(ctx, query, args...).Scan(
 		&invocation.WorkspaceID, &invocation.ApplicationID, &invocation.RequestID, &invocation.InvocationID,
 		&invocation.TaskID, &invocation.CapabilityID, &invocation.Revision, &raw,
-		&invocation.Status, &invocation.ResultState, &invocation.Result, &invocation.Error, &invocation.RunKind, &invocation.DefinitionHash)
+		&invocation.Status, &invocation.ResultState, &invocation.Result, &invocation.Error, &invocation.RunKind, &invocation.DefinitionHash, &invocation.CallerKind)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Invocation{}, ErrInvocationNotFound
 	}
@@ -255,6 +266,22 @@ func (s *PGStore) GetInvocation(ctx context.Context, workspaceID, applicationID,
 		return Invocation{}, fmt.Errorf("get capability invocation: %w", err)
 	}
 	invocation.Input = raw
+	var definitionRaw []byte
+	if invocation.RunKind == "debug" {
+		err = s.pool.QueryRow(ctx, `SELECT definition FROM weave_capability_debug_snapshots WHERE workspace_id=$1 AND invocation_id=$2`, workspaceID, invocationID).Scan(&definitionRaw)
+	} else {
+		err = s.pool.QueryRow(ctx, `SELECT definition FROM weave_capability_revisions WHERE workspace_id=$1 AND capability_id=$2 AND revision=$3`, workspaceID, invocation.CapabilityID, invocation.Revision).Scan(&definitionRaw)
+	}
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return Invocation{}, err
+	}
+	if len(definitionRaw) > 0 {
+		var definition capability.Definition
+		if err := json.Unmarshal(definitionRaw, &definition); err != nil {
+			return Invocation{}, err
+		}
+		presentInvocation(&invocation, definition)
+	}
 	return invocation, nil
 }
 
@@ -316,13 +343,14 @@ func (s *PGStore) ClaimTask(ctx context.Context) (InvocationTask, bool, error) {
 	var raw, definitionRaw []byte
 	var definitionHash string
 	var expectedHash string
+	var callerKind, applicationID string
 	err = tx.QueryRow(ctx, `
-  SELECT task.task_id, task.workspace_id, task.invocation_id, task.capability_id, task.revision, task.payload,task.run_kind,i.definition_hash
+  SELECT task.task_id, task.workspace_id, task.invocation_id, task.capability_id, task.revision, task.payload,task.run_kind,i.definition_hash,i.caller_kind,i.application_id
   FROM weave_capability_invocations AS i
   JOIN weave_capability_invocation_tasks AS task ON task.workspace_id=i.workspace_id AND task.invocation_id=i.invocation_id AND task.task_id=i.task_id
   WHERE i.status='queued' AND task.status='queued'
   ORDER BY task.created_at, task.task_id LIMIT 1 FOR UPDATE OF i SKIP LOCKED
- `).Scan(&task.TaskID, &task.WorkspaceID, &task.InvocationID, &task.CapabilityID, &task.Revision, &raw, &task.RunKind, &expectedHash)
+ `).Scan(&task.TaskID, &task.WorkspaceID, &task.InvocationID, &task.CapabilityID, &task.Revision, &raw, &task.RunKind, &expectedHash, &callerKind, &applicationID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return InvocationTask{}, false, nil
 	}
@@ -330,6 +358,21 @@ func (s *PGStore) ClaimTask(ctx context.Context) (InvocationTask, bool, error) {
 		return InvocationTask{}, false, fmt.Errorf("claim capability task: %w", err)
 	}
 	task.Input = raw
+	if callerKind == "application" {
+		err := authorizeApplicationGrant(ctx, tx, Invocation{WorkspaceID: task.WorkspaceID, ApplicationID: applicationID, CapabilityID: task.CapabilityID, Revision: task.Revision})
+		if err != nil {
+			if !errors.Is(err, ErrAccessDenied) {
+				return InvocationTask{}, false, err
+			}
+			if _, err := tx.Exec(ctx, `UPDATE weave_capability_invocation_tasks SET status='failed' WHERE task_id=$1`, task.TaskID); err != nil {
+				return InvocationTask{}, false, err
+			}
+			if _, err := tx.Exec(ctx, `UPDATE weave_capability_invocations SET status='failed',error='application_authorization_revoked',result_state='unavailable' WHERE workspace_id=$1 AND invocation_id=$2`, task.WorkspaceID, task.InvocationID); err != nil {
+				return InvocationTask{}, false, err
+			}
+			return InvocationTask{}, false, tx.Commit(ctx)
+		}
+	}
 	task.ClaimToken = uuid.NewString()
 	if _, err := tx.Exec(ctx, `UPDATE weave_capability_invocation_tasks SET status='running',claim_token=$2,deadline_at=now()+interval '150 seconds' WHERE task_id=$1`, task.TaskID, task.ClaimToken); err != nil {
 		return InvocationTask{}, false, err
@@ -389,12 +432,22 @@ func (s *PGStore) CompleteTask(ctx context.Context, task InvocationTask, result 
 		return Invocation{}, fmt.Errorf("begin capability task completion: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	var current, appID string
-	if err := tx.QueryRow(ctx, `SELECT status,application_id FROM weave_capability_invocations WHERE workspace_id=$1 AND invocation_id=$2 AND task_id=$3 FOR UPDATE`, task.WorkspaceID, task.InvocationID, task.TaskID).Scan(&current, &appID); err != nil {
+	var current, appID, callerKind string
+	if err := tx.QueryRow(ctx, `SELECT status,application_id,caller_kind FROM weave_capability_invocations WHERE workspace_id=$1 AND invocation_id=$2 AND task_id=$3 FOR UPDATE`, task.WorkspaceID, task.InvocationID, task.TaskID).Scan(&current, &appID, &callerKind); err != nil {
 		return Invocation{}, ErrClaimLost
 	}
 	if current != "running" && current != "cancel_requested" {
 		return Invocation{}, ErrClaimLost
+	}
+	if callerKind == "application" && current == "running" {
+		if authErr := authorizeApplicationGrant(ctx, tx, Invocation{WorkspaceID: task.WorkspaceID, ApplicationID: appID, CapabilityID: task.CapabilityID, Revision: task.Revision}); authErr != nil {
+			if !errors.Is(authErr, ErrAccessDenied) {
+				return Invocation{}, authErr
+			}
+			executeErr = ErrAccessDenied
+			status, resultState = "failed", "unavailable"
+			result = nil
+		}
 	}
 	if current == "cancel_requested" {
 		status, resultState = "cancelled", "unavailable"

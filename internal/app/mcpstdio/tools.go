@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sort"
 	"strings"
 
 	"github.com/jinyitao123/loom/contract"
@@ -44,6 +45,18 @@ type researchTeamMember struct {
 	Responsibilities  []string `json:"responsibilities"`
 	Capabilities      []string `json:"capabilities"`
 	ResultRequirement string   `json:"result_requirement"`
+}
+
+type capabilityPlanArguments struct {
+	BusinessRequest string `json:"business_request"`
+	Model           string `json:"model"`
+	CapabilityID    string `json:"capability_id,omitempty"`
+	IdempotencyKey  string `json:"idempotency_key"`
+}
+
+type capabilityPublishArguments struct {
+	CapabilityID string `json:"capability_id"`
+	Revision     int64  `json:"revision"`
 }
 
 type ToolDispatcher struct {
@@ -88,6 +101,36 @@ func (d *ToolDispatcher) Dispatch(ctx context.Context, call contract.ToolCall) (
 			return toolError(call.ID, "invalid_arguments"), nil
 		}
 		result, err := d.client.TeamCreate(ctx, request)
+		return documentResult(call.ID, result, err), nil
+	case "capability_list":
+		var input struct{}
+		if err := decodeArguments(call.Args, &input); err != nil {
+			return toolError(call.ID, "invalid_arguments"), nil
+		}
+		result, err := d.client.CapabilityList(ctx)
+		if err == nil {
+			result, err = compactCapabilityCatalog(result)
+		}
+		return documentResult(call.ID, result, err), nil
+	case "capability_plan":
+		var input capabilityPlanArguments
+		if err := decodeArguments(call.Args, &input); err != nil || strings.TrimSpace(input.BusinessRequest) == "" || strings.TrimSpace(input.Model) == "" || strings.TrimSpace(input.IdempotencyKey) == "" {
+			return toolError(call.ID, "invalid_arguments"), nil
+		}
+		result, err := d.client.CapabilityPlan(ctx, weaveclient.CapabilityPlanRequest{Prompt: input.BusinessRequest, Model: input.Model, CapabilityID: input.CapabilityID, IdempotencyKey: input.IdempotencyKey})
+		if err == nil {
+			result, err = compactCapabilityPlan(result)
+		}
+		return documentResult(call.ID, result, err), nil
+	case "capability_publish":
+		var input capabilityPublishArguments
+		if err := decodeArguments(call.Args, &input); err != nil || strings.TrimSpace(input.CapabilityID) == "" || input.Revision < 1 {
+			return toolError(call.ID, "invalid_arguments"), nil
+		}
+		result, err := d.client.CapabilityPublish(ctx, input.CapabilityID, input.Revision)
+		if err == nil {
+			result, err = compactCapabilityPublication(result)
+		}
 		return documentResult(call.ID, result, err), nil
 	case "provider_list":
 		var input struct{}
@@ -442,6 +485,128 @@ func compactTeamList(document json.RawMessage) (json.RawMessage, error) {
 	return json.Marshal(result)
 }
 
+type capabilityDefinitionDocument struct {
+	CapabilityID string `json:"capability_id"`
+	Name         string `json:"name"`
+	Description  string `json:"description"`
+	InputSchema  struct {
+		Properties map[string]struct {
+			Title       string `json:"title"`
+			Description string `json:"description"`
+			Type        string `json:"type"`
+		} `json:"properties"`
+		Required []string `json:"required"`
+	} `json:"input_schema"`
+	OutputSchema struct {
+		Properties map[string]struct {
+			Title       string `json:"title"`
+			Description string `json:"description"`
+			Type        string `json:"type"`
+		} `json:"properties"`
+		Required []string `json:"required"`
+	} `json:"output_schema"`
+	Roles []struct {
+		ID          string `json:"id"`
+		Name        string `json:"name"`
+		Description string `json:"description"`
+	} `json:"roles"`
+	Steps []struct {
+		Name   string `json:"name"`
+		RoleID string `json:"role_id"`
+		Kind   string `json:"kind"`
+	} `json:"steps"`
+}
+
+func compactCapabilityPlan(document json.RawMessage) (json.RawMessage, error) {
+	var response struct {
+		Definition capabilityDefinitionDocument `json:"definition"`
+	}
+	if err := json.Unmarshal(document, &response); err != nil {
+		return nil, err
+	}
+	return json.Marshal(capabilityBusinessView(response.Definition, nil, "draft"))
+}
+
+func compactCapabilityCatalog(document json.RawMessage) (json.RawMessage, error) {
+	var response struct {
+		Drafts   []capabilityDefinitionDocument `json:"drafts"`
+		Versions []struct {
+			CapabilityID string `json:"capability_id"`
+			Revision     int64  `json:"revision"`
+		} `json:"versions"`
+	}
+	if err := json.Unmarshal(document, &response); err != nil {
+		return nil, err
+	}
+	versions := make(map[string][]int64)
+	for _, item := range response.Versions {
+		versions[item.CapabilityID] = append(versions[item.CapabilityID], item.Revision)
+	}
+	items := make([]map[string]any, 0, len(response.Drafts))
+	for _, definition := range response.Drafts {
+		items = append(items, capabilityBusinessView(definition, versions[definition.CapabilityID], "draft"))
+	}
+	return json.Marshal(map[string]any{"capabilities": items})
+}
+
+func compactCapabilityPublication(document json.RawMessage) (json.RawMessage, error) {
+	var response struct {
+		CapabilityID string                       `json:"capability_id"`
+		Revision     int64                        `json:"revision"`
+		Definition   capabilityDefinitionDocument `json:"definition"`
+	}
+	if err := json.Unmarshal(document, &response); err != nil {
+		return nil, err
+	}
+	view := capabilityBusinessView(response.Definition, []int64{response.Revision}, "published")
+	view["capability_id"] = response.CapabilityID
+	view["revision"] = response.Revision
+	return json.Marshal(view)
+}
+
+func capabilityBusinessView(definition capabilityDefinitionDocument, versions []int64, status string) map[string]any {
+	roleNames := make(map[string]string, len(definition.Roles))
+	roles := make([]map[string]string, 0, len(definition.Roles))
+	for _, role := range definition.Roles {
+		roleNames[role.ID] = role.Name
+		roles = append(roles, map[string]string{"name": role.Name, "responsibilities": role.Description})
+	}
+	flow := make([]map[string]string, 0, len(definition.Steps))
+	for _, step := range definition.Steps {
+		processing := "work"
+		if step.Kind != "worker" {
+			processing = "collect"
+		}
+		flow = append(flow, map[string]string{"name": step.Name, "responsible_role": roleNames[step.RoleID], "processing": processing})
+	}
+	fields := func(properties map[string]struct {
+		Title       string `json:"title"`
+		Description string `json:"description"`
+		Type        string `json:"type"`
+	}, required []string) []map[string]any {
+		needed := make(map[string]bool, len(required))
+		for _, name := range required {
+			needed[name] = true
+		}
+		result := make([]map[string]any, 0, len(properties))
+		for key, field := range properties {
+			label := field.Title
+			if label == "" {
+				label = key
+			}
+			result = append(result, map[string]any{"name": label, "description": field.Description, "type": field.Type, "required": needed[key]})
+		}
+		sort.Slice(result, func(i, j int) bool { return fmt.Sprint(result[i]["name"]) < fmt.Sprint(result[j]["name"]) })
+		return result
+	}
+	return map[string]any{
+		"capability_id": definition.CapabilityID, "name": definition.Name, "purpose": definition.Description,
+		"status": status, "published_versions": versions, "roles": roles, "flow": flow,
+		"inputs":  fields(definition.InputSchema.Properties, definition.InputSchema.Required),
+		"outputs": fields(definition.OutputSchema.Properties, definition.OutputSchema.Required),
+	}
+}
+
 func decodeArguments(raw string, target any) error {
 	if strings.TrimSpace(raw) == "" {
 		raw = "{}"
@@ -544,6 +709,9 @@ type toolAccessPolicy struct {
 var toolAccessPolicies = map[string]toolAccessPolicy{
 	"team_template_list":  {Role: "any", Scopes: []string{"org"}},
 	"team_create":         {Role: "admin", Scopes: []string{"org"}},
+	"capability_list":     {Role: "admin", Scopes: []string{"capabilities:manage"}},
+	"capability_plan":     {Role: "admin", Scopes: []string{"capabilities:manage"}},
+	"capability_publish":  {Role: "admin", Scopes: []string{"capabilities:manage"}},
 	"provider_list":       {Role: "any", Scopes: []string{"admin"}},
 	"provider_add":        {Role: "admin", Scopes: []string{"admin"}},
 	"apikey_create":       {Role: "admin", Scopes: []string{"admin"}},
@@ -575,6 +743,22 @@ var toolDefinitions = []contract.ToolDef{
 		Name:        "team_create",
 		Description: "Create a confirmed research team. Prefer definition: provide the user-facing team name and purpose, one lead, at least two parallel researchers, one independent finalizer, their responsibilities and required results, success criteria, and budget. Weave owns all internal names, references, YAML, workflow parameters, model settings, runtime identifiers, and execution strategy. YAML remains available for advanced built-in templates; YAML plus declarative_spec is only for a genuinely custom graph; sample uses a runnable named sample. Requires administrator and organization access plus a caller-supplied idempotency_key UUID. Returns team and build identifiers with current status. Errors: idempotency_key_required, template_idempotency_conflict, http_401, http_403, http_422.",
 		InputSchema: json.RawMessage(`{"type":"object","properties":{"definition":{"type":"object","properties":{"display_name":{"type":"string"},"purpose":{"type":"string"},"lead_instruction":{"type":"string"},"lead":{"$ref":"#/$defs/member"},"researchers":{"type":"array","minItems":2,"items":{"$ref":"#/$defs/member"}},"finalizer":{"$ref":"#/$defs/member"},"success_criteria":{"type":"array","minItems":1,"items":{"type":"string"}},"max_cost_usd":{"type":"number","exclusiveMinimum":0}},"required":["display_name","purpose","lead_instruction","lead","researchers","finalizer","success_criteria","max_cost_usd"],"additionalProperties":false},"yaml":{"type":"string"},"sample":{"type":"string"},"overrides":{"type":"object"},"declarative_spec":{"type":"object"},"idempotency_key":{"type":"string","format":"uuid"}},"required":["idempotency_key"],"oneOf":[{"required":["definition"],"not":{"anyOf":[{"required":["yaml"]},{"required":["sample"]},{"required":["declarative_spec"]}]}},{"required":["yaml"],"not":{"anyOf":[{"required":["definition"]},{"required":["sample"]}]}},{"required":["sample"],"not":{"anyOf":[{"required":["definition"]},{"required":["yaml"]}]}}],"$defs":{"member":{"type":"object","properties":{"display_name":{"type":"string"},"responsibilities":{"type":"array","minItems":1,"items":{"type":"string"}},"capabilities":{"type":"array","minItems":1,"items":{"type":"string"}},"result_requirement":{"type":"string"}},"required":["display_name","responsibilities","capabilities","result_requirement"],"additionalProperties":false}},"additionalProperties":false}`),
+	},
+	{
+		Name:        "capability_list",
+		ReadOnly:    true,
+		Description: "List reusable capabilities as business summaries with draft and published-version status. Use this before proposing a new capability so an existing one can be reused. Internal definitions are omitted. Requires capability management access.",
+		InputSchema: json.RawMessage(`{"type":"object","additionalProperties":false}`),
+	},
+	{
+		Name:        "capability_plan",
+		Description: "Ask Weave to draft or revise a reusable capability from a business request. This creates a reviewable draft only; it does not publish or make the capability callable. Return the proposal in business language and request confirmation before capability_publish. Reuse the same idempotency key when retrying the same unresolved plan. Requires capability management access.",
+		InputSchema: json.RawMessage(`{"type":"object","properties":{"business_request":{"type":"string","minLength":1,"maxLength":12000},"model":{"type":"string","minLength":1},"capability_id":{"type":"string","description":"Existing draft to revise; omit for a new capability."},"idempotency_key":{"type":"string","format":"uuid"}},"required":["business_request","model","idempotency_key"],"additionalProperties":false}`),
+	},
+	{
+		Name:        "capability_publish",
+		Description: "Publish one exact reviewed capability draft as an immutable revision. Use only after the user confirms the proposal, expected inputs, outputs and publication. Later changes require a new revision. Requires capability management access.",
+		InputSchema: json.RawMessage(`{"type":"object","properties":{"capability_id":{"type":"string","minLength":1},"revision":{"type":"integer","minimum":1}},"required":["capability_id","revision"],"additionalProperties":false}`),
 	},
 	{
 		Name: "provider_list", ReadOnly: true,

@@ -192,6 +192,27 @@ func (d Definition) Validate() error {
 	return nil
 }
 
+// Drafts can be incomplete while their author is editing roles and steps.
+// Execution and publication continue to require the full Validate contract.
+func (d Definition) ValidateDraft() error {
+	if d.SchemaVersion != SchemaVersionV1 {
+		return invalid("schema_version", "must be 1")
+	}
+	if strings.TrimSpace(d.CapabilityID) == "" || strings.TrimSpace(d.Name) == "" {
+		return invalid("capability", "id and name are required")
+	}
+	if err := validateObjectSchema("input_schema", d.InputSchema); err != nil {
+		return err
+	}
+	if err := validateObjectSchema("output_schema", d.OutputSchema); err != nil {
+		return err
+	}
+	if len(d.Steps) > 32 || len(d.Roles) > 64 {
+		return invalid("definition", "exceeds draft size limits")
+	}
+	return nil
+}
+
 func Publish(d Definition, revision int64) (PublishedRevision, error) {
 	// Detach every slice, map and RawMessage from the mutable draft.
 	encoded, err := json.Marshal(d)

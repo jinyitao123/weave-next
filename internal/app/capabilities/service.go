@@ -100,7 +100,7 @@ func (s *Service) SaveDraft(ctx context.Context, request DraftRequest) error {
 	if strings.TrimSpace(request.WorkspaceID) == "" {
 		return fmt.Errorf("%w: workspace id is required", capability.ErrInvalidDefinition)
 	}
-	if err := request.Definition.Validate(); err != nil {
+	if err := request.Definition.ValidateDraft(); err != nil {
 		return err
 	}
 	return s.drafts.SaveDraft(ctx, request.WorkspaceID, request.Definition)
@@ -128,20 +128,25 @@ func (s *Service) Publish(ctx context.Context, workspaceID, capabilityID string,
 }
 
 type Invocation struct {
-	RunKind        string          `json:"run_kind"`
-	DefinitionHash string          `json:"definition_hash"`
-	WorkspaceID    string          `json:"workspace_id"`
-	ApplicationID  string          `json:"application_id"`
-	InvocationID   string          `json:"invocation_id"`
-	TaskID         string          `json:"task_id,omitempty"`
-	RequestID      string          `json:"request_id"`
-	CapabilityID   string          `json:"capability_id"`
-	Revision       int64           `json:"revision"`
-	Input          json.RawMessage `json:"input"`
-	Status         string          `json:"status"`
-	ResultState    string          `json:"result_state"`
-	Result         json.RawMessage `json:"result,omitempty"`
-	Error          string          `json:"error,omitempty"`
+	CapabilityName string            `json:"-"`
+	StepNames      map[string]string `json:"-"`
+	ResultSteps    []string          `json:"-"`
+	CredentialID   string            `json:"-"`
+	CallerKind     string            `json:"caller_kind"`
+	RunKind        string            `json:"run_kind"`
+	DefinitionHash string            `json:"definition_hash"`
+	WorkspaceID    string            `json:"workspace_id"`
+	ApplicationID  string            `json:"application_id"`
+	InvocationID   string            `json:"invocation_id"`
+	TaskID         string            `json:"task_id,omitempty"`
+	RequestID      string            `json:"request_id"`
+	CapabilityID   string            `json:"capability_id"`
+	Revision       int64             `json:"revision"`
+	Input          json.RawMessage   `json:"input"`
+	Status         string            `json:"status"`
+	ResultState    string            `json:"result_state"`
+	Result         json.RawMessage   `json:"result,omitempty"`
+	Error          string            `json:"error,omitempty"`
 }
 
 type InvocationTask struct {
@@ -228,6 +233,7 @@ func executeSafely(ctx context.Context, executor TaskExecutor, task InvocationTa
 }
 
 type InvokeRequest struct {
+	CredentialID  string
 	WorkspaceID   string
 	ApplicationID string
 	InvocationID  string
@@ -266,11 +272,15 @@ func (s *Service) Invoke(ctx context.Context, request InvokeRequest) (Invocation
 		return Invocation{}, false, fmt.Errorf("%w: input schema: %v", capability.ErrInvalidDefinition, err)
 	}
 	invocation := Invocation{
+		CredentialID: request.CredentialID, CallerKind: "developer",
 		RunKind: "published", DefinitionHash: published.DefinitionHash,
 		WorkspaceID: request.WorkspaceID, ApplicationID: request.ApplicationID,
 		InvocationID: request.InvocationID, RequestID: request.RequestID,
 		CapabilityID: request.CapabilityID, Revision: request.Revision,
 		Input: canonicalInput, Status: "queued", ResultState: "unavailable",
+	}
+	if request.CredentialID != "" {
+		invocation.CallerKind = "application"
 	}
 	if invocation.InvocationID == "" {
 		invocation.InvocationID = uuid.NewString()
@@ -336,6 +346,9 @@ func (m *MemoryStore) GetRevision(_ context.Context, workspaceID, capabilityID s
 }
 
 func (m *MemoryStore) ClaimInvocation(_ context.Context, invocation Invocation) (Invocation, bool, error) {
+	if invocation.CredentialID != "" || invocation.CallerKind == "application" {
+		return Invocation{}, false, ErrAccessDenied
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	key := invocation.WorkspaceID + "\x00" + invocation.ApplicationID + "\x00" + invocation.RequestID
@@ -357,7 +370,13 @@ func (m *MemoryStore) GetInvocation(_ context.Context, workspaceID, applicationI
 	defer m.mu.Unlock()
 	for _, invocation := range m.invokes {
 		if applicationID != "" && invocation.WorkspaceID == workspaceID && invocation.ApplicationID == applicationID && invocation.InvocationID == invocationID {
-			return cloneValue(invocation), nil
+			invocation = cloneValue(invocation)
+			definition := m.revisions[workspaceID+"\x00"+invocation.CapabilityID+"\x00"+fmt.Sprint(invocation.Revision)].Definition
+			if invocation.RunKind == "debug" {
+				definition = m.debug[workspaceID+"\x00"+invocationID].Definition
+			}
+			presentInvocation(&invocation, definition)
+			return invocation, nil
 		}
 	}
 	return Invocation{}, ErrInvocationNotFound

@@ -97,3 +97,21 @@ func TestRunOneCompletesClaimedTask(t *testing.T) {
 		t.Fatalf("completed=%+v err=%v", completed, err)
 	}
 }
+
+func TestIncompleteDraftCanBeSavedButCannotBeExecuted(t *testing.T) {
+	store := NewMemoryStore()
+	service := NewService(store, store)
+	draft := capability.Definition{SchemaVersion: 1, CapabilityID: "unfinished", Name: "Unfinished", InputSchema: json.RawMessage(`{"type":"object"}`), OutputSchema: json.RawMessage(`{"type":"object"}`)}
+	if err := service.SaveDraft(t.Context(), DraftRequest{WorkspaceID: "ws", Definition: draft}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.GetDraft(t.Context(), "ws", "unfinished"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Publish(t.Context(), "ws", "unfinished", 1); !errors.Is(err, capability.ErrInvalidDefinition) {
+		t.Fatalf("incomplete draft published: %v", err)
+	}
+	if _, _, err := service.Debug(t.Context(), DebugRequest{WorkspaceID: "ws", ApplicationID: "author", RequestID: "unfinished", Definition: draft, Input: json.RawMessage(`{}`)}); !errors.Is(err, capability.ErrInvalidDefinition) {
+		t.Fatalf("incomplete draft executed: %v", err)
+	}
+}
