@@ -7,8 +7,8 @@ package teamforge
 // keep one implementation (no second copy).
 
 import (
-	"github.com/jinyitao123/weave/internal/kernel/registry"
 	"github.com/jinyitao123/weave/internal/build/teameval"
+	"github.com/jinyitao123/weave/internal/kernel/registry"
 )
 
 // Stable validator codes. The codes are the machine contract between the

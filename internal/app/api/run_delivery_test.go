@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/jinyitao123/weave/internal/base/deliverable"
-	"github.com/jinyitao123/weave/internal/base/teamrun"
+	"github.com/jinyitao123/weave/internal/kernel/teamrun"
 )
 
 func TestRunDeliveryNeverInfersVerificationFromExecution(t *testing.T) {

@@ -8,7 +8,7 @@ import (
 
 	"github.com/jinyitao123/weave/internal/base/fanout"
 	"github.com/jinyitao123/weave/internal/base/taskqueue"
-	"github.com/jinyitao123/weave/internal/base/teamrun"
+	"github.com/jinyitao123/weave/internal/kernel/teamrun"
 )
 
 // Project only the public node identity; wait details may contain resume tokens.

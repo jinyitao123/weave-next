@@ -9,20 +9,10 @@ from go_inventory import MODULE, go_inventory
 INTERNAL = MODULE + "/internal/"
 ORDER = {"base": 0, "kernel": 1, "build": 2, "app": 3}
 
-# Migration debt is pinned to exact source/import pairs. Removing one edge
-# does not create permission to add an upward import somewhere else.
-BASELINE = {
-    "executor_fanout.go": {"workflow", "workflow/machine"},
-    "executor_terminal.go": {"loomruntime"},
-    "executor_transition.go": {"loomruntime"},
-    "fanout_seams.go": {"loomruntime"},
-    "workflow_interpreter.go": {"loomruntime", "workflow", "workflow/machine"},
-    "workflow_runtime.go": {"loomruntime", "workflow", "workflow/machine"},
-}
-ALLOWED_EDGES = {
-    ("internal/base/teamrun/" + file, INTERNAL + "kernel/" + package)
-    for file, packages in BASELINE.items() for package in packages
-}
+# Upward imports have no migration exceptions. Execution packages that need
+# kernel behavior belong in the kernel rather than behind a base forwarding
+# package.
+ALLOWED_EDGES = set()
 
 
 def band_for_import(path: str) -> str | None:

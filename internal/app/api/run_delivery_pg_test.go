@@ -8,8 +8,8 @@ import (
 	"testing"
 
 	"github.com/jinyitao123/weave/internal/base/deliverable"
-	"github.com/jinyitao123/weave/internal/base/teamrun"
 	"github.com/jinyitao123/weave/internal/kernel/engine"
+	"github.com/jinyitao123/weave/internal/kernel/teamrun"
 	"github.com/labstack/echo/v4"
 )
 
