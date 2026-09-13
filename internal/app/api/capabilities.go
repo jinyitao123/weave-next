@@ -207,6 +207,7 @@ func (s *Server) handleGetCapabilityInvocation(c echo.Context) error {
 		"capability_id": invocation.CapabilityID,
 		"status":        invocation.Status, "result_state": invocation.ResultState,
 		"result": invocation.Result, "error": publicCapabilityError(invocation), "actor_user_id": invocation.ActorUserID, "runtime_id": invocation.RuntimeID, "used_steps": invocation.UsedSteps, "max_steps": invocation.MaxSteps,
+		"physical_usage": invocation.PhysicalUsage, "unreported_attempts": invocation.UnreportedAttempts,
 		"failure_reason": publicCapabilityFailure(invocation),
 	}
 	if invocation.RunKind == "published" {
@@ -223,6 +224,11 @@ func (s *Server) handleCancelCapabilityInvocation(c echo.Context) error {
 	invocation, err := s.Capabilities.CancelInvocation(c.Request().Context(), workspaceID, capabilityApplicationID(c), c.Param("invocationID"))
 	if err != nil {
 		return capabilityHTTPError(c, err)
+	}
+	if s.TaskWorker != nil && invocation.TaskID != "" {
+		if err := s.TaskWorker.CancelTask(c.Request().Context(), workspaceID, invocation.TaskID); err != nil {
+			return capabilityHTTPError(c, err)
+		}
 	}
 	return c.JSON(http.StatusOK, map[string]any{"invocation_id": invocation.InvocationID, "task_id": invocation.TaskID, "status": invocation.Status})
 }

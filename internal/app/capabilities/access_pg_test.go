@@ -3,6 +3,7 @@ package capabilities
 import (
 	"encoding/json"
 	"errors"
+	"github.com/jinyitao123/weave/internal/base/execution"
 	"strings"
 	"testing"
 )
@@ -37,14 +38,15 @@ func TestApplicationCredentialRotationPreservesIdentityRealPG(t *testing.T) {
 	}
 	request := InvokeRequest{WorkspaceID: "ws", ApplicationID: app.ID, CredentialID: p.CredentialID, CapabilityID: "cap", Revision: 1, RequestID: "stable", Input: json.RawMessage(`{}`)}
 	service := NewService(store, store)
-	if _, _, err := service.Invoke(t.Context(), request); !errors.Is(err, ErrAccessDenied) {
+	invokeCtx := execution.WithSubject(t.Context(), execution.Subject{WorkspaceID: "ws", ServiceID: "capability-app:" + app.ID})
+	if _, _, err := service.Invoke(invokeCtx, request); !errors.Is(err, ErrAccessDenied) {
 		t.Fatalf("ungranted invocation: %v", err)
 	}
 	grant := VersionGrant{AppID: app.ID, CapabilityID: "cap", Revision: 1, Enabled: true}
 	if err := access.SetGrant(t.Context(), "ws", "author", grant); err != nil {
 		t.Fatal(err)
 	}
-	first, _, err := service.Invoke(t.Context(), request)
+	first, _, err := service.Invoke(invokeCtx, request)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,7 +68,7 @@ func TestApplicationCredentialRotationPreservesIdentityRealPG(t *testing.T) {
 		t.Fatal("revoked credential still works")
 	}
 	request.CredentialID = second.CredentialID
-	replay, replayed, err := service.Invoke(t.Context(), request)
+	replay, replayed, err := service.Invoke(invokeCtx, request)
 	if err != nil || !replayed || replay.InvocationID != first.InvocationID {
 		t.Fatalf("rotation replay=%+v %v %v", replay, replayed, err)
 	}
@@ -103,7 +105,8 @@ func TestApplicationRevocationStopsQueuedAndRunningWorkRealPG(t *testing.T) {
 			if err := access.SetGrant(t.Context(), "ws", "author", grant); err != nil {
 				t.Fatal(err)
 			}
-			i, _, err := NewService(store, store).Invoke(t.Context(), InvokeRequest{WorkspaceID: "ws", ApplicationID: app.ID, CredentialID: p.CredentialID, CapabilityID: "cap", Revision: 1, RequestID: "one", Input: json.RawMessage(`{}`)})
+			invokeCtx := execution.WithSubject(t.Context(), execution.Subject{WorkspaceID: "ws", ServiceID: "capability-app:" + app.ID})
+			i, _, err := NewService(store, store).Invoke(invokeCtx, InvokeRequest{WorkspaceID: "ws", ApplicationID: app.ID, CredentialID: p.CredentialID, CapabilityID: "cap", Revision: 1, RequestID: "one", Input: json.RawMessage(`{}`)})
 			if err != nil {
 				t.Fatal(err)
 			}

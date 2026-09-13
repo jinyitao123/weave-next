@@ -9,9 +9,9 @@ import (
 	"fmt"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/google/uuid"
+	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/kernel/capability"
 )
@@ -129,133 +129,54 @@ func (s *Service) Publish(ctx context.Context, workspaceID, capabilityID string,
 }
 
 type Invocation struct {
-	CapabilityName string                    `json:"-"`
-	StepNames      map[string]string         `json:"-"`
-	ResultSteps    []string                  `json:"-"`
-	CredentialID   string                    `json:"-"`
-	CallerKind     string                    `json:"caller_kind"`
-	RunKind        string                    `json:"run_kind"`
-	DefinitionHash string                    `json:"definition_hash"`
-	WorkspaceID    string                    `json:"workspace_id"`
-	ApplicationID  string                    `json:"application_id"`
-	InvocationID   string                    `json:"invocation_id"`
-	TaskID         string                    `json:"task_id,omitempty"`
-	RequestID      string                    `json:"request_id"`
-	CapabilityID   string                    `json:"capability_id"`
-	Revision       int64                     `json:"revision"`
-	Input          json.RawMessage           `json:"input"`
-	Status         string                    `json:"status"`
-	ResultState    string                    `json:"result_state"`
-	Result         json.RawMessage           `json:"result,omitempty"`
-	Error          string                    `json:"error,omitempty"`
-	ActorUserID    string                    `json:"actor_user_id,omitempty"`
-	RuntimeID      string                    `json:"runtime_id,omitempty"`
-	UsedSteps      int                       `json:"used_steps"`
-	MaxSteps       int                       `json:"max_steps"`
-	Checkpoint     capability.ExecutionState `json:"-"`
+	CapabilityName     string                    `json:"-"`
+	StepNames          map[string]string         `json:"-"`
+	ResultSteps        []string                  `json:"-"`
+	CredentialID       string                    `json:"-"`
+	CallerKind         string                    `json:"caller_kind"`
+	RunKind            string                    `json:"run_kind"`
+	DefinitionHash     string                    `json:"definition_hash"`
+	WorkspaceID        string                    `json:"workspace_id"`
+	ApplicationID      string                    `json:"application_id"`
+	InvocationID       string                    `json:"invocation_id"`
+	TaskID             string                    `json:"task_id,omitempty"`
+	RequestID          string                    `json:"request_id"`
+	CapabilityID       string                    `json:"capability_id"`
+	Revision           int64                     `json:"revision"`
+	Input              json.RawMessage           `json:"input"`
+	Status             string                    `json:"status"`
+	ResultState        string                    `json:"result_state"`
+	Result             json.RawMessage           `json:"result,omitempty"`
+	Error              string                    `json:"error,omitempty"`
+	ActorUserID        string                    `json:"actor_user_id,omitempty"`
+	RuntimeID          string                    `json:"runtime_id,omitempty"`
+	UsedSteps          int                       `json:"used_steps"`
+	MaxSteps           int                       `json:"max_steps"`
+	PhysicalUsage      execution.TerminalUsage   `json:"physical_usage"`
+	UnreportedAttempts int                       `json:"unreported_attempts"`
+	Checkpoint         capability.ExecutionState `json:"-"`
 }
 
 type InvocationTask struct {
-	RunKind           string
-	ClaimToken        string
-	TaskID            string
-	WorkspaceID       string
-	InvocationID      string
-	CapabilityID      string
-	Revision          int64
-	Input             json.RawMessage
-	Plan              capability.Plan
-	State             capability.ExecutionState
-	ActorUserID       string
-	UsedSteps         int
-	MaxSteps          int
-	ExecutionDeadline time.Time
-	ToolBindings      []frozen.FrozenMCPBinding
-}
-
-type ExecutionStore interface {
-	ClaimTask(context.Context) (InvocationTask, bool, error)
-	CompleteTask(context.Context, InvocationTask, json.RawMessage, error) (Invocation, error)
+	RunKind      string
+	WorkerID     string
+	ClaimEpoch   int64
+	TaskID       string
+	WorkspaceID  string
+	InvocationID string
+	CapabilityID string
+	Revision     int64
+	Input        json.RawMessage
+	Plan         capability.Plan
+	State        capability.ExecutionState
+	ActorUserID  string
+	UsedSteps    int
+	MaxSteps     int
+	ToolBindings []frozen.FrozenMCPBinding
 }
 
 type TaskExecutor interface {
 	Execute(context.Context, InvocationTask) (json.RawMessage, error)
-}
-
-// RunOne claims at most one durable capability task and writes its terminal
-// invocation state. The executor owns engine-specific behavior; this package
-// owns state transitions and recovery facts.
-func RunOne(ctx context.Context, store ExecutionStore, executor TaskExecutor) (bool, error) {
-	if store == nil || executor == nil {
-		return false, errors.New("capability execution dependencies are not configured")
-	}
-	task, claimed, err := store.ClaimTask(ctx)
-	if err != nil || !claimed {
-		return claimed, err
-	}
-	deadline := task.ExecutionDeadline
-	if deadline.IsZero() {
-		deadline = time.Now().Add(45 * time.Minute)
-	}
-	runCtx, cancel := context.WithDeadline(ctx, deadline)
-	done := make(chan struct{})
-	monitored := make(chan struct{})
-	go func() {
-		defer close(monitored)
-		active, ok := store.(interface {
-			TaskActive(context.Context, InvocationTask) (bool, error)
-		})
-		if !ok {
-			return
-		}
-		ticker := time.NewTicker(250 * time.Millisecond)
-		defer ticker.Stop()
-		renewAt := time.Now().Add(30 * time.Second)
-		for {
-			select {
-			case <-done:
-				return
-			case <-runCtx.Done():
-				return
-			case <-ticker.C:
-				ok, err := active.TaskActive(runCtx, task)
-				if err != nil || !ok {
-					cancel()
-					return
-				}
-				if time.Now().Before(renewAt) {
-					continue
-				}
-				if renew, ok := store.(interface {
-					RenewTask(context.Context, InvocationTask) error
-				}); ok {
-					if err := renew.RenewTask(runCtx, task); err != nil {
-						cancel()
-						return
-					}
-				}
-				renewAt = time.Now().Add(30 * time.Second)
-			}
-		}
-	}()
-	result, executeErr := executeSafely(runCtx, executor, task)
-	if executeErr == nil {
-		executeErr = runCtx.Err()
-	}
-	close(done)
-	cancel()
-	<-monitored
-	finishCtx, finishCancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
-	defer finishCancel()
-	if ctx.Err() != nil {
-		if abandon, ok := store.(interface {
-			AbandonTask(context.Context, InvocationTask) error
-		}); ok {
-			return true, abandon.AbandonTask(finishCtx, task)
-		}
-	}
-	_, err = store.CompleteTask(finishCtx, task, result, executeErr)
-	return true, err
 }
 
 func executeSafely(ctx context.Context, executor TaskExecutor, task InvocationTask) (result json.RawMessage, err error) {
@@ -446,73 +367,9 @@ func (m *MemoryStore) CancelInvocation(_ context.Context, workspaceID, applicati
 	return Invocation{}, ErrInvocationNotFound
 }
 
-func (m *MemoryStore) ClaimTask(_ context.Context) (InvocationTask, bool, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	for key, invocation := range m.invokes {
-		if invocation.Status != "queued" {
-			continue
-		}
-		revision := m.revisions[invocation.WorkspaceID+"\x00"+invocation.CapabilityID+"\x00"+fmt.Sprint(invocation.Revision)]
-		plan, err := capability.Compile(revision)
-		if invocation.RunKind == "debug" {
-			plan, err = capability.CompileDebug(m.debug[invocation.WorkspaceID+"\x00"+invocation.InvocationID])
-		}
-		if err != nil {
-			return InvocationTask{}, false, err
-		}
-		invocation.Status = "running"
-		m.invokes[key] = invocation
-		return InvocationTask{RunKind: invocation.RunKind, Plan: plan, TaskID: invocation.TaskID, WorkspaceID: invocation.WorkspaceID, InvocationID: invocation.InvocationID, CapabilityID: invocation.CapabilityID, Revision: invocation.Revision, Input: append(json.RawMessage(nil), invocation.Input...), ExecutionDeadline: time.Now().Add(45 * time.Minute)}, true, nil
-	}
-	return InvocationTask{}, false, nil
-}
-
-func (m *MemoryStore) CompleteTask(_ context.Context, task InvocationTask, result json.RawMessage, executeErr error) (Invocation, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	for key, invocation := range m.invokes {
-		if invocation.TaskID != task.TaskID || invocation.WorkspaceID != task.WorkspaceID || invocation.InvocationID != task.InvocationID {
-			continue
-		}
-		if invocation.Status != "running" && invocation.Status != "cancel_requested" {
-			return Invocation{}, ErrClaimLost
-		}
-		if invocation.Status == "cancel_requested" {
-			invocation.Status = "cancelled"
-			invocation.Result = nil
-			invocation.ResultState = "unavailable"
-			m.invokes[key] = invocation
-			return cloneValue(invocation), nil
-		}
-		if executeErr == nil && !json.Valid(result) {
-			executeErr = errors.New("invalid execution output")
-		}
-		if executeErr != nil {
-			invocation.Status, invocation.ResultState, invocation.Error = "failed", "unavailable", executeErr.Error()
-		} else {
-			invocation.Status, invocation.ResultState, invocation.Result = "completed", "available", result
-		}
-		m.invokes[key] = cloneValue(invocation)
-		return cloneValue(invocation), nil
-	}
-	return Invocation{}, ErrInvocationNotFound
-}
-
 func cloneValue[T any](value T) T {
 	raw, _ := json.Marshal(value)
 	var copied T
 	_ = json.Unmarshal(raw, &copied)
 	return copied
-}
-
-func (m *MemoryStore) TaskActive(_ context.Context, task InvocationTask) (bool, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	for _, i := range m.invokes {
-		if i.WorkspaceID == task.WorkspaceID && i.InvocationID == task.InvocationID && i.TaskID == task.TaskID {
-			return i.Status == "running", nil
-		}
-	}
-	return false, nil
 }

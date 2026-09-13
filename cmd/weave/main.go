@@ -381,6 +381,15 @@ func main() {
 			slog.Error("register chat handler", "error", err)
 			os.Exit(1)
 		}
+		capabilityHandler, err := srv.ConfigureCapabilityTaskHandler()
+		if err != nil {
+			slog.Error("configure capability task handler", "error", err)
+			os.Exit(1)
+		}
+		if err := srv.TaskWorker.Register("capability_invocation", taskqueue.IdentityCapability, capabilityHandler); err != nil {
+			slog.Error("register capability task handler", "error", err)
+			os.Exit(1)
+		}
 		srv.TaskWorker.SetOnLegTerminal(func(ctx context.Context, workspaceID, groupID string) {
 			_ = srv.FanoutReconciler.RefreshCard(ctx, workspaceID, groupID)
 			_ = srv.FanoutReconciler.ReconcileGroup(ctx, workspaceID, groupID, false)

@@ -15,7 +15,7 @@ import (
 )
 
 func TestPublishedCapabilityClaimsFrozenExactMCPToolRealPG(t *testing.T) {
-	ctx := t.Context()
+	ctx := capabilityTestContext(t.Context(), "ws-tool")
 	seed := testutil.PostgresPool(t)
 	if err := db.Migrate(ctx, seed); err != nil {
 		t.Fatal(err)

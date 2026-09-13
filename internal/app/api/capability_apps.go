@@ -4,6 +4,7 @@ import (
 	"github.com/jinyitao123/weave/internal/app/apikeys"
 	"github.com/jinyitao123/weave/internal/app/capabilities"
 	"github.com/jinyitao123/weave/internal/app/users"
+	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/labstack/echo/v4"
 	"net/http"
 	"strings"
@@ -36,6 +37,7 @@ func (s *Server) capabilityAuthentication() echo.MiddlewareFunc {
 			c.Set("tenant", principal.WorkspaceID)
 			c.Set(authSourceContextKey, authSourceCapabilityApp)
 			c.Set(capabilityPrincipalKey, principal)
+			setExecutionSubject(c, execution.Subject{WorkspaceID: principal.WorkspaceID, ServiceID: "capability-app:" + principal.AppID})
 			return next(c)
 		}
 	}

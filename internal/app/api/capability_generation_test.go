@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/jinyitao123/loom/contract"
+	"github.com/jinyitao123/weave/internal/base/execution"
+	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/kernel/capability"
 	"github.com/jinyitao123/weave/internal/kernel/llmrouter"
 	"github.com/labstack/echo/v4"
@@ -34,12 +36,24 @@ func (m *capabilityGenerationModel) Stream(context.Context, contract.ChatRequest
 
 func TestHandleGenerateCapabilityBuildsValidatedDraft(t *testing.T) {
 	model := &capabilityGenerationModel{}
+	newProviderClient := llmrouter.NewProviderClient
+	llmrouter.NewProviderClient = func(cfg llmrouter.ProviderConfig) contract.LLM {
+		if cfg.CredentialScope != frozen.CredentialScopeUser || cfg.CredentialUserID != "designer" {
+			t.Fatalf("untrusted generation provider scope: %+v", cfg)
+		}
+		return model
+	}
+	t.Cleanup(func() { llmrouter.NewProviderClient = newProviderClient })
 	router := llmrouter.New("design-model")
-	router.Register("design-model", model)
+	router.RegisterProvider(llmrouter.ProviderConfig{
+		ID: "design", BaseURL: "https://provider.invalid", APIKey: "test", Models: []string{"design-model"},
+		CredentialScope: frozen.CredentialScopeUser, CredentialUserID: "designer",
+	})
 	server := &Server{Models: llmrouter.NewResolver(router)}
 	e := echo.New()
 	body := bytes.NewBufferString(`{"prompt":"核对供应商报价单并形成采购建议","model":"design-model"}`)
 	request := httptest.NewRequest("POST", "/v1/capabilities/generate", body)
+	request = request.WithContext(execution.WithSubject(request.Context(), execution.Subject{WorkspaceID: "workspace-1", UserID: "designer"}))
 	request.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
 	c := e.NewContext(request, response)

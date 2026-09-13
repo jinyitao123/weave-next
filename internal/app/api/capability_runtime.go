@@ -5,10 +5,12 @@ import (
 	"errors"
 
 	"github.com/jinyitao123/weave/internal/app/capabilities"
+	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/kernel/capability"
 	"github.com/jinyitao123/weave/internal/kernel/capabilityruntime"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
+	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 )
 
 // capabilityRunner is composition only; selection and execution belong to the
@@ -27,10 +29,17 @@ func (s *Server) capabilityRunner() *capabilityruntime.Runner {
 	return runner
 }
 
-func (s *Server) serveCapabilityTasks(ctx context.Context) {
-	store := capabilities.NewPGStore(s.Pool)
-	capabilities.ServeTasks(ctx, store, capabilities.RuntimeTaskExecutor{Runner: s.capabilityRunner(), Store: store,
-		DirectTools: s.capabilityDirectTools(store)})
+// ConfigureCapabilityTaskHandler binds the capability business projection to
+// the shared platform worker. It must run after Tasks has been configured.
+func (s *Server) ConfigureCapabilityTaskHandler() (taskqueue.Handler, error) {
+	if s.Pool == nil || s.Tasks == nil {
+		return nil, errors.New("capability platform queue is unavailable")
+	}
+	store := capabilities.NewPGStoreWithTaskQueue(s.Pool, s.Tasks)
+	s.Capabilities = capabilities.NewService(store, store)
+	return capabilities.PlatformTaskHandler{Store: store, Executor: capabilities.RuntimeTaskExecutor{
+		Runner: s.capabilityRunner(), Store: store, DirectTools: s.capabilityDirectTools(store),
+	}}, nil
 }
 
 func (s *Server) capabilityDirectTools(store *capabilities.PGStore) func(context.Context, capabilities.InvocationTask) (capability.ToolStepExecutor, error) {
@@ -42,7 +51,21 @@ func (s *Server) capabilityDirectTools(store *capabilities.PGStore) func(context
 		for _, ref := range task.Plan.Resources.Tools {
 			toolIDs = append(toolIDs, ref.ToolName)
 		}
+		authorizeContext := func(base context.Context) context.Context {
+			return frozen.WithServiceReferenceAuthorization(base, func(_ context.Context, subject execution.Subject, ref frozen.CredentialReference) error {
+				if subject.UserID == "" || subject.UserID != task.ActorUserID || subject.WorkspaceID != task.WorkspaceID {
+					return frozen.ErrCredentialSubjectDenied
+				}
+				for _, binding := range task.ToolBindings {
+					if binding.AccessRef == ref {
+						return nil
+					}
+				}
+				return frozen.ErrCredentialSubjectDenied
+			})
+		}
 		validate := func(checkCtx context.Context, ref frozen.CredentialReference) error {
+			checkCtx = authorizeContext(checkCtx)
 			tx, err := s.Pool.Begin(checkCtx)
 			if err != nil {
 				return err
@@ -54,6 +77,7 @@ func (s *Server) capabilityDirectTools(store *capabilities.PGStore) func(context
 			return tx.Commit(checkCtx)
 		}
 		resolve := func(resolveCtx context.Context, ref frozen.CredentialReference) (map[string]string, error) {
+			resolveCtx = authorizeContext(resolveCtx)
 			tx, err := s.Pool.Begin(resolveCtx)
 			if err != nil {
 				return nil, err

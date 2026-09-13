@@ -90,7 +90,11 @@ func newDirectToolFixture(t *testing.T) *directToolFixture {
 		SchemaVersion: 1, WorkspaceID: "ws", ServerID: "mcp", ServerRevision: 1,
 		Transport: "http", URL: server.URL, Filter: []string{"calculate"},
 		Tools:     []frozen.FrozenToolDefinition{{Name: "calculate", InputSchema: json.RawMessage(directToolSchema), ReadOnly: true}},
-		AccessRef: frozen.CredentialReference{SchemaVersion: 1, WorkspaceID: "ws", ResourceID: "mcp", Kind: frozen.CredentialMCPServerAccess, Slot: "access"},
+		AccessRef: frozen.CredentialReference{
+			SchemaVersion: 1, WorkspaceID: "ws", ResourceID: "mcp",
+			Kind: frozen.CredentialMCPServerAccess, Slot: "access",
+			Scope: frozen.CredentialScopeWorkspaceService, ServiceID: "mcp:mcp",
+		},
 	}
 	f.config = DirectToolConfig{WorkspaceID: "ws", Agent: &registry.AgentRecord{WorkspaceID: "ws", ID: "agent", Version: 1, Name: "worker"},
 		ToolIDs: []string{"calculate"}, Bindings: []frozen.FrozenMCPBinding{binding},

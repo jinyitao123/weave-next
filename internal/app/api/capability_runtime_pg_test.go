@@ -2,7 +2,6 @@ package api
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -20,11 +19,13 @@ import (
 	"github.com/jinyitao123/weave/internal/app/capabilities"
 	"github.com/jinyitao123/weave/internal/app/users"
 	"github.com/jinyitao123/weave/internal/base/db"
+	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/base/storeext"
 	"github.com/jinyitao123/weave/internal/base/testutil"
 	"github.com/jinyitao123/weave/internal/kernel/capability"
 	"github.com/jinyitao123/weave/internal/kernel/config"
 	"github.com/jinyitao123/weave/internal/kernel/llmrouter"
+	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 	"github.com/labstack/echo/v4"
 )
 
@@ -91,11 +92,23 @@ func TestCapabilityHTTPToLoomRuntimeRealPG(t *testing.T) {
 	}))
 	defer provider.Close()
 	router := llmrouter.New("test-model")
-	router.RegisterProvider(llmrouter.ProviderConfig{ID: "test", BaseURL: provider.URL, APIKey: "test", Models: []string{"test-model"}})
+	router.RegisterProvider(llmrouter.ProviderConfig{
+		ID: "test", BaseURL: provider.URL, APIKey: "test", Models: []string{"test-model"},
+		CredentialScope: frozen.CredentialScopeUser, CredentialUserID: "dev",
+	})
 	store := capabilities.NewPGStore(persisted.Pool())
 	s := &Server{Echo: echo.New(), Config: &config.Config{JWTSecret: "integration-secret"}, Pool: persisted.Pool(), Store: persisted, Models: llmrouter.NewResolver(router), Capabilities: capabilities.NewService(store, store), UserStore: users.NewStore(persisted.Pool())}
+	s.Tasks = taskqueue.New(persisted.Pool(), taskqueue.RealClock{}, time.Second)
+	s.TaskWorker = taskqueue.NewWorker(s.Tasks, 1)
 	s.StoreExt = storeext.New(persisted.Pool())
 	s.CapabilityAccess = capabilities.NewAccessStore(persisted.Pool())
+	capabilityHandler, err := s.ConfigureCapabilityTaskHandler()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.TaskWorker.Register("capability_invocation", taskqueue.IdentityCapability, capabilityHandler); err != nil {
+		t.Fatal(err)
+	}
 	s.registerRoutes()
 	token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, Claims{TenantID: "cap-ws", UserID: "dev", Roles: []string{"admin"}, RegisteredClaims: jwt.RegisteredClaims{ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour))}}).SignedString([]byte(s.Config.JWTSecret))
 	if err != nil {
@@ -135,14 +148,21 @@ func TestCapabilityHTTPToLoomRuntimeRealPG(t *testing.T) {
 	accepted := call("POST", "/v1/capabilities/arithmetic/versions/1/invocations", request, 202)
 	var id string
 	_ = json.Unmarshal(accepted["invocation_id"], &id)
-	ctx, cancel := context.WithCancel(t.Context())
-	done := make(chan struct{})
-	go func() { defer close(done); s.serveCapabilityTasks(ctx) }()
-	defer func() { cancel(); <-done }()
+	s.TaskWorker.Start()
+	defer s.TaskWorker.Stop()
 	deadline := time.Now().Add(10 * time.Second)
 	for {
 		record := call("GET", "/v1/invocations/"+id, nil, 200)
 		if string(record["status"]) == `"completed"` {
+			var usage struct {
+				PhysicalUsage struct {
+					InputTokens int `json:"input_tokens"`
+				} `json:"physical_usage"`
+				UnreportedAttempts int `json:"unreported_attempts"`
+			}
+			if err := json.Unmarshal(mustCapabilityJSON(record), &usage); err != nil || usage.PhysicalUsage.InputTokens == 0 || usage.UnreportedAttempts != 0 {
+				t.Fatalf("physical usage was not unified: %+v err=%v", usage, err)
+			}
 			var result struct {
 				Merge struct {
 					Left  int `json:"材料检查项数"`
