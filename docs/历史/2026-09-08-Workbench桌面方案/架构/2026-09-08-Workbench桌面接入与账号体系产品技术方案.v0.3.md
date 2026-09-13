@@ -1,15 +1,12 @@
 # Workbench 桌面接入与账号体系产品技术方案
 
 日期：2026-09-08
-版本：v0.4，明确本地共用前端与独立桌面预览
+版本：v0.3，补充产品分层与部署边界
+状态：完整方案尚未上线或完成桌面验收；独立客户端实现与夹具验证进度见并行任务计划。
 
-状态：macOS 本地桌面预览已实现；完整账号、真实业务链路与正式发行尚未完成。
+本版在 v0.2 的小范围交付路线之上，补充单仓、职责、接口与发布物约束。[v0.1 原文](2026-09-08-Workbench桌面接入与账号体系产品技术方案.v0.1.md)与 [v0.2 原文](2026-09-08-Workbench桌面接入与账号体系产品技术方案.v0.2.md)原样保留；[深度评审与逐项裁决](../../../架构/2026-09-08-Workbench桌面接入方案可落地性与简洁性评审.md)记录此前独立审查结论。实施顺序以配套[实施验收计划](../../../计划/2026-09-08-Workbench桌面接入与账号体系实施验收计划.md)为准。v0.3 是本轮边界修订，未再次执行独立互审。
 
-2026-09-13 阅读提示：本文件的实现状态是 9 月 8 日快照。后续已明确分仓方向，“单仓”不再是长期约束；当前职责与迁移要求见[分层基线](2026-09-13-分层收敛与Loom职责基线.md)。v0.1–v0.3 已转入历史归档，设计正文保留、相对链接已更新，旧路径仅作跳转入口。
-
-本版在 v0.2 的小范围交付路线之上，补充单仓、职责、接口与发布物约束。[v0.1 原文](2026-09-08-Workbench桌面接入与账号体系产品技术方案.v0.1.md)与 [v0.2 原文](2026-09-08-Workbench桌面接入与账号体系产品技术方案.v0.2.md)原样保留；[深度评审与逐项裁决](2026-09-08-Workbench桌面接入方案可落地性与简洁性评审.md)记录此前独立审查结论。实施顺序以配套[实施验收计划](../计划/2026-09-08-Workbench桌面接入与账号体系实施验收计划.md)为准。[v0.3 原文](2026-09-08-Workbench桌面接入与账号体系产品技术方案.v0.3.md)保留。v0.4 明确本地打包共用前端和独立预览范围，未再次执行独立互审。
-
-执行顺序补充：Loom 与 CLI 闭环修复期间，按[并行任务计划](../计划/2026-09-08-Workbench桌面接入并行任务计划.md)划分独立准备与后续接入；最终账号与业务验收条件不变；原生预览和共用 UI 调整可在独立分支先行，锁文件在汇合时顺序处理。
+执行顺序补充：Loom 与 CLI 闭环修复期间，按[并行任务计划](../../../计划/2026-09-08-Workbench桌面接入并行任务计划.md)划分独立准备与后续接入；v0.3 的目标与最终验收条件不变。
 
 ## 1. 本版结论
 
@@ -81,11 +78,11 @@ flowchart LR
 
 ### 3.2 桌面框架与首发平台
 
-Electron 44.2.0 已用于本地原生预览。桌面随应用打包现有 Workbench 前端，复用同一对话、侧栏、输入框和工作现场组件；主进程负责原生窗口、菜单、连接与下载。网页版共用相同的紧凑样式和工作现场图标入口，连接服务与页面资源分开。真实账号及业务链路仍须另行接入。只有它在实际目标平台、包体或交互约束上遇到关键问题时，再以 Tauri 做针对性对照，不把双框架全面竞赛列为必经步骤。
+Electron 暂作优先候选，先把同一个真实业务链路打成可安装小样。只有它在实际目标平台、包体或交互约束上遇到关键问题时，再以 Tauri 做针对性对照，不把双框架全面竞赛列为必经步骤。
 
 首发操作系统尚未确定。macOS Apple Silicon 只是上一版提出的试点假设，不是用户已批准的发布平台。正式安装、签名、更新的完成结论只适用于实测平台。
 
-业务视图不得直接获得 Node、任意文件、shell 或通用 IPC 能力。当前预览只允许加载本地打包资源，连接设置使用独立的可信窗口和窄 IPC；真实 Host 传输后续按同一账号与来源上下文合同接入。框架机制参考 [Electron 官方安全指南](https://www.electronjs.org/docs/latest/tutorial/security)和 [Tauri capability 说明](https://v2.tauri.app/security/capabilities/)；版本和发行配置在实施时固定。当前已具备可运行的 macOS arm64 预览；其中认证、会话和下载样本均为隔离夹具，不能作为多人账号或业务执行通过的证据。
+远程页面不得直接获得 Node、任意文件或 shell 能力。框架机制参考 [Electron 官方安全指南](https://www.electronjs.org/docs/latest/tutorial/security)和 [Tauri capability 说明](https://v2.tauri.app/security/capabilities/)；版本和发行配置在实施时固定。当前没有已通过的桌面小样。
 
 ### 3.3 单仓中的职责、接口与发布边界
 
@@ -104,7 +101,7 @@ Workbench 持久输入回执证明对话已接收；Weave 命令回执证明业�
 
 一次跨端合同变更在同一仓库中同时修改服务端、Workbench HTTP/MCP 调用方和相应验收。先定义输入、回执、事件、授权与幂等语义，再提取实现；不为每个函数提前造可替换接口，也不把新的调用桥扩展成第二套业务编排服务。
 
-当前依赖检查登记了 11 条 base/teamrun 指向 kernel 的历史反向依赖，具体以 [depguard 规则](../../tools/depguard/check_depguard.py)为准。相关文件因本次工作需要修改时，应评估将具体执行适配移至合适层或收窄现有接缝；不新增反向边，也不把清零全部历史边设为本次账号/桌面的上线前提。清理债务必须保持运行状态、幂等和恢复语义可验证，不能仅靠移动目录达到检查通过。
+当前依赖检查登记了 11 条 base/teamrun 指向 kernel 的历史反向依赖，具体以 [depguard 规则](../../../../tools/depguard/check_depguard.py)为准。相关文件因本次工作需要修改时，应评估将具体执行适配移至合适层或收窄现有接缝；不新增反向边，也不把清零全部历史边设为本次账号/桌面的上线前提。清理债务必须保持运行状态、幂等和恢复语义可验证，不能仅靠移动目录达到检查通过。
 
 代码仓库、运行进程和发布物分别管理。现有 Workbench、Weave、Runtime 可以继续独立运行，单仓不要求同进程。中心服务和 Runtime 的镜像瘦身列为条件性运维工作：先盘点中心端实际执行职责和构建依赖，证明某些引擎只被 Runtime 使用后，再拆构建目标。保留中心服务仍需的构建/评估/本地执行依赖；保持 Workbench 的 weave mcp serve 所需二进制可获取。轻量中心镜像不是本次桌面交付的前置条件。
 
@@ -284,9 +281,9 @@ ConnectionProfile 持久保存用户选择；安装包只提供首次默认值�
 
 核验基线 main：da0e5c7eb5ba0f85c6381bd395418dba77f8aaf9；本次未重新检查生产服务。
 
-- [用户认证](../../internal/app/api/auth.go)、[认证中间件](../../internal/app/api/middleware.go)、[用户更新](../../internal/app/users/store.go)、[成员存储](../../internal/kernel/org/store.go)、[API key 校验](../../internal/app/apikeys/store.go)
-- [Host 认证](../../workbench/packages/client/connection/src/browser-auth.ts)、[RPC 分发](../../workbench/packages/client/connection/src/rpc-host.ts)、[MCP 调用](../../workbench/packages/mcp/mcp-client/src/tools.ts)、[Go 客户端凭据约束](../../internal/app/weaveclient/config.go)
-- [prompt 接收](../../workbench/packages/api/session-controller/src/commands.ts)、[回执类型](../../workbench/packages/api/session-controller/src/types.ts)、[持久层](../../workbench/packages/session/session-persistence/src/coordinator.ts)、[JSONL 写入](../../workbench/packages/session/session-persistence-jsonl/src/index.ts)
-- [WorkTask 投影与命令同步](../../workbench/packages/bundle/workbench-app/src/index.ts)、[SessionStore](../../workbench/packages/core/session/src/index.ts)
-- [附件 API](../../internal/app/api/attachments.go)、[团队派发和指纹](../../internal/app/api/team_dispatch.go)、[派发客户端](../../internal/app/weaveclient/client.go)
-- [Workbench 镜像](../../Dockerfile.workbench)、[平台部署](../../docker-compose.platform.yml)、[原始产品与简洁性审查](Workbench桌面接入评审-2026-09-08/产品与简洁性原始审查.md)、[原始工程审查](Workbench桌面接入评审-2026-09-08/工程可落地性原始审查.md)、[原始契约审查](Workbench桌面接入评审-2026-09-08/契约与生命周期原始审查.md)
+- [用户认证](../../../../internal/app/api/auth.go)、[认证中间件](../../../../internal/app/api/middleware.go)、[用户更新](../../../../internal/app/users/store.go)、[成员存储](../../../../internal/kernel/org/store.go)、[API key 校验](../../../../internal/app/apikeys/store.go)
+- [Host 认证](../../../../workbench/packages/client/connection/src/browser-auth.ts)、[RPC 分发](../../../../workbench/packages/client/connection/src/rpc-host.ts)、[MCP 调用](../../../../workbench/packages/mcp/mcp-client/src/tools.ts)、[Go 客户端凭据约束](../../../../internal/app/weaveclient/config.go)
+- [prompt 接收](../../../../workbench/packages/api/session-controller/src/commands.ts)、[回执类型](../../../../workbench/packages/api/session-controller/src/types.ts)、[持久层](../../../../workbench/packages/session/session-persistence/src/coordinator.ts)、[JSONL 写入](../../../../workbench/packages/session/session-persistence-jsonl/src/index.ts)
+- [WorkTask 投影与命令同步](../../../../workbench/packages/bundle/workbench-app/src/index.ts)、[SessionStore](../../../../workbench/packages/core/session/src/index.ts)
+- [附件 API](../../../../internal/app/api/attachments.go)、[团队派发和指纹](../../../../internal/app/api/team_dispatch.go)、[派发客户端](../../../../internal/app/weaveclient/client.go)
+- [Workbench 镜像](../../../../Dockerfile.workbench)、[平台部署](../../../../docker-compose.platform.yml)、[原始产品与简洁性审查](../../../架构/Workbench桌面接入评审-2026-09-08/产品与简洁性原始审查.md)、[原始工程审查](../../../架构/Workbench桌面接入评审-2026-09-08/工程可落地性原始审查.md)、[原始契约审查](../../../架构/Workbench桌面接入评审-2026-09-08/契约与生命周期原始审查.md)
