@@ -33,6 +33,19 @@ type dispatchInputRegistration struct {
 	WorkflowID         string                       `json:"workflow_id,omitempty"`
 	WorkflowVersion    *int                         `json:"workflow_version,omitempty"`
 	ProjectID          string                       `json:"project_id,omitempty"`
+	RevisionContext    *dispatchRevisionContext     `json:"revision_context,omitempty"`
+}
+
+type dispatchRevisionContext struct {
+	ParentInputRevisionID string `json:"parent_input_revision_id"`
+	ParentRunID           string `json:"parent_run_id"`
+}
+
+type dispatchRevisionMaterial struct {
+	ID          string `json:"id"`
+	Title       string `json:"title"`
+	ContentType string `json:"content_type"`
+	SHA256      string `json:"sha256"`
 }
 
 type dispatchInputReceipt struct {
@@ -43,40 +56,92 @@ type dispatchInputReceipt struct {
 
 type dispatchInputRevision struct {
 	dispatchInputReceipt
-	WorkbenchSessionID string
-	RegistrationSHA256 string
-	Task               string
-	TeamID             string
-	Mode               string
-	WorkflowID         string
-	WorkflowVersion    int
-	ProjectID          string
-	IsCurrent          bool
-	IsClosed           bool
-	ConsumedRunID      string
-	ConsumedTaskID     string
-	DeliveryContract   json.RawMessage
+	WorkbenchSessionID    string
+	RegistrationSHA256    string
+	Task                  string
+	ExecutionTask         string
+	TeamID                string
+	Mode                  string
+	WorkflowID            string
+	WorkflowVersion       int
+	ProjectID             string
+	IsCurrent             bool
+	IsClosed              bool
+	ConsumedRunID         string
+	ConsumedTaskID        string
+	DeliveryContract      json.RawMessage
+	RevisionKind          string
+	RootInputRevisionID   string
+	ParentInputRevisionID string
+	ParentRunID           string
+	ParentDeliveryDigest  string
+	ParentMaterials       json.RawMessage
 }
 
 const dispatchInputColumns = `input_revision_id, client_request_id, task_sha256,
 	workbench_session_id, registration_sha256, task, team_id, mode, workflow_id,
-	workflow_version, project_id, is_current, closed_at IS NOT NULL, COALESCE(consumed_run_id,''), COALESCE(consumed_task_id,''), delivery_contract`
+	workflow_version, project_id, is_current, closed_at IS NOT NULL, COALESCE(consumed_run_id,''), COALESCE(consumed_task_id,''), delivery_contract,
+	execution_task, revision_kind, root_input_revision_id, COALESCE(parent_input_revision_id,''), COALESCE(parent_run_id,''),
+	COALESCE(parent_delivery_digest,''), parent_materials`
 
 func scanDispatchInput(row pgx.Row) (dispatchInputRevision, error) {
 	var input dispatchInputRevision
 	err := row.Scan(&input.InputRevisionID, &input.ClientRequestID, &input.TaskSHA256,
 		&input.WorkbenchSessionID, &input.RegistrationSHA256, &input.Task, &input.TeamID, &input.Mode,
 		&input.WorkflowID, &input.WorkflowVersion, &input.ProjectID, &input.IsCurrent, &input.IsClosed,
-		&input.ConsumedRunID, &input.ConsumedTaskID, &input.DeliveryContract)
+		&input.ConsumedRunID, &input.ConsumedTaskID, &input.DeliveryContract, &input.ExecutionTask,
+		&input.RevisionKind, &input.RootInputRevisionID, &input.ParentInputRevisionID, &input.ParentRunID,
+		&input.ParentDeliveryDigest, &input.ParentMaterials)
 	return input, err
 }
 
 func (input dispatchInputRevision) dispatchRequest() teamDispatchRequest {
 	return teamDispatchRequest{
-		InputRevisionID: input.InputRevisionID, Task: input.Task, Mode: input.Mode,
+		InputRevisionID: input.InputRevisionID, Task: input.ExecutionTask, Mode: input.Mode,
 		WorkflowID: input.WorkflowID, WorkflowVersion: &input.WorkflowVersion,
 		ClientRequestID: input.ClientRequestID, ProjectID: input.ProjectID, inputBinding: &input,
 	}
+}
+
+func loadRevisionMaterials(ctx context.Context, tx pgx.Tx, workspaceID, userID, runID string) ([]dispatchRevisionMaterial, []string, error) {
+	rows, err := tx.Query(ctx, `SELECT id,title,content_type,content FROM weave_final_deliverables
+		WHERE workspace_id=$1 AND user_id=$2 AND run_id=$3
+			AND COALESCE(metadata->>'artifact_kind','final')='final'
+		ORDER BY created_at,id`, workspaceID, userID, runID)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+	materials, contents := []dispatchRevisionMaterial{}, []string{}
+	for rows.Next() {
+		var item dispatchRevisionMaterial
+		var content string
+		if err := rows.Scan(&item.ID, &item.Title, &item.ContentType, &content); err != nil {
+			return nil, nil, err
+		}
+		item.SHA256 = dispatchInputDigest([]byte(content))
+		materials = append(materials, item)
+		contents = append(contents, content)
+	}
+	return materials, contents, rows.Err()
+}
+
+func assembleRevisionTask(original, change string, materials []dispatchRevisionMaterial, contents []string) (string, string, error) {
+	manifest, _ := json.Marshal(materials)
+	var body strings.Builder
+	body.WriteString("This is a revision of an existing task. Use all three server-authoritative sections below.\n\n[Original task]\n")
+	body.WriteString(original)
+	body.WriteString("\n\n[Previous final deliverables]\n")
+	for index, item := range materials {
+		fmt.Fprintf(&body, "\n--- %s (%s, %s) ---\n%s\n", item.Title, item.ID, item.ContentType, contents[index])
+	}
+	body.WriteString("\n[User revision request]\n")
+	body.WriteString(change)
+	body.WriteString("\n\nProduce a revised complete deliverable. Do not treat the revision request as a standalone task.")
+	if body.Len() > 1<<20 {
+		return "", "", errors.New("revision materials exceed the dispatch input limit")
+	}
+	return body.String(), dispatchInputDigest(manifest), nil
 }
 
 func dispatchInputDigest(value []byte) string {
@@ -137,6 +202,14 @@ func (s *Server) handleRegisterDispatchInput(c echo.Context) error {
 		}
 		request.ExpectedRevisionID = revisionID.String()
 	}
+	if request.RevisionContext != nil {
+		parentRevisionID, revisionErr := uuid.Parse(request.RevisionContext.ParentInputRevisionID)
+		if revisionErr != nil || strings.TrimSpace(request.RevisionContext.ParentRunID) == "" {
+			return workflowError(c, http.StatusBadRequest, "dispatch_revision_context_invalid", "revision source is invalid")
+		}
+		request.RevisionContext.ParentInputRevisionID = parentRevisionID.String()
+		request.RevisionContext.ParentRunID = strings.TrimSpace(request.RevisionContext.ParentRunID)
+	}
 	request.TeamID = strings.TrimSpace(request.TeamID)
 	request.WorkflowID = strings.TrimSpace(request.WorkflowID)
 	request.ProjectID = strings.TrimSpace(request.ProjectID)
@@ -183,6 +256,43 @@ func (s *Server) handleRegisterDispatchInput(c echo.Context) error {
 	if currentRevisionID != request.ExpectedRevisionID {
 		return workflowError(c, http.StatusConflict, "input_revision_conflict", "current dispatch input revision changed")
 	}
+	executionTask, revisionKind, rootRevisionID := request.Task, "initial", ""
+	parentRevisionID, parentRunID, parentDeliveryDigest := "", "", ""
+	parentMaterialsJSON := []byte(`[]`)
+	var inheritedContract json.RawMessage
+	if request.RevisionContext != nil {
+		if currentRevisionID == "" || request.RevisionContext.ParentInputRevisionID != currentRevisionID {
+			return workflowError(c, http.StatusConflict, "dispatch_revision_source_changed", "the task selected for revision is no longer current")
+		}
+		parent, parentErr := scanDispatchInput(tx.QueryRow(ctx, `SELECT `+dispatchInputColumns+` FROM weave_dispatch_input_revisions
+			WHERE workspace_id=$1 AND user_id=$2 AND input_revision_id=$3 FOR UPDATE`, workspaceID, userID, currentRevisionID))
+		if parentErr != nil {
+			return workflowStoreFailure(c, fmt.Errorf("read revision parent: %w", parentErr))
+		}
+		if parent.ConsumedRunID == "" || parent.ConsumedRunID != request.RevisionContext.ParentRunID || parent.TeamID != request.TeamID {
+			return workflowError(c, http.StatusConflict, "dispatch_revision_source_mismatch", "the selected prior run does not match this task")
+		}
+		materials, contents, materialErr := loadRevisionMaterials(ctx, tx, workspaceID, userID, parent.ConsumedRunID)
+		if materialErr != nil {
+			return workflowStoreFailure(c, fmt.Errorf("read revision materials: %w", materialErr))
+		}
+		if len(materials) == 0 {
+			return workflowError(c, http.StatusConflict, "dispatch_revision_materials_missing", "the prior run has no final deliverable to revise")
+		}
+		var root dispatchInputRevision
+		root, parentErr = scanDispatchInput(tx.QueryRow(ctx, `SELECT `+dispatchInputColumns+` FROM weave_dispatch_input_revisions
+			WHERE workspace_id=$1 AND user_id=$2 AND input_revision_id=$3`, workspaceID, userID, parent.RootInputRevisionID))
+		if parentErr != nil {
+			return workflowStoreFailure(c, fmt.Errorf("read revision root: %w", parentErr))
+		}
+		executionTask, parentDeliveryDigest, parentErr = assembleRevisionTask(root.Task, request.Task, materials, contents)
+		if parentErr != nil {
+			return workflowError(c, http.StatusRequestEntityTooLarge, "dispatch_revision_materials_too_large", parentErr.Error())
+		}
+		parentMaterialsJSON, _ = json.Marshal(materials)
+		revisionKind, rootRevisionID = "revision", parent.RootInputRevisionID
+		parentRevisionID, parentRunID, inheritedContract = parent.InputRevisionID, parent.ConsumedRunID, parent.DeliveryContract
+	}
 	workflowID, version, handled, err := resolveRegisteredDispatchWorkflow(c, tx, request)
 	if handled || err != nil {
 		return err
@@ -197,9 +307,14 @@ func (s *Server) handleRegisterDispatchInput(c echo.Context) error {
 		if err != nil {
 			return workflowError(c, http.StatusBadRequest, "dispatch_delivery_contract_invalid", "delivery contract is invalid")
 		}
+	} else if revisionKind == "revision" && len(inheritedContract) > 0 {
+		deliveryContractJSON = inheritedContract
 	}
 	receipt := dispatchInputReceipt{
 		InputRevisionID: uuid.NewString(), ClientRequestID: uuid.NewString(), TaskSHA256: dispatchInputDigest([]byte(request.Task)),
+	}
+	if rootRevisionID == "" {
+		rootRevisionID = receipt.InputRevisionID
 	}
 	if _, err := tx.Exec(ctx, `UPDATE weave_dispatch_input_revisions SET is_current=false
 		WHERE workspace_id=$1 AND user_id=$2 AND workbench_session_id=$3 AND is_current`,
@@ -209,12 +324,14 @@ func (s *Server) handleRegisterDispatchInput(c echo.Context) error {
 	sources, _ := json.Marshal(request.SourceMessages)
 	inserted, err := tx.Exec(ctx, `INSERT INTO weave_dispatch_input_revisions
 		(workspace_id,user_id,workbench_session_id,input_revision_id,registration_id,registration_sha256,
-		 source_messages,task,task_sha256,team_id,mode,workflow_id,workflow_version,project_id,client_request_id,delivery_contract)
-		VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10,$11,$12,$13,$14,$15,$16::jsonb)
+		 source_messages,task,task_sha256,team_id,mode,workflow_id,workflow_version,project_id,client_request_id,delivery_contract,
+		 execution_task,revision_kind,root_input_revision_id,parent_input_revision_id,parent_run_id,parent_delivery_digest,parent_materials)
+		VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10,$11,$12,$13,$14,$15,$16::jsonb,$17,$18,$19,NULLIF($20,''),NULLIF($21,''),NULLIF($22,''),$23::jsonb)
 		ON CONFLICT (workspace_id,user_id,registration_id) DO NOTHING`,
 		workspaceID, userID, request.WorkbenchSessionID, receipt.InputRevisionID, request.RegistrationID, registrationSHA256,
 		string(sources), request.Task, receipt.TaskSHA256, request.TeamID, request.Mode, workflowID, version, request.ProjectID,
-		receipt.ClientRequestID, string(deliveryContractJSON))
+		receipt.ClientRequestID, string(deliveryContractJSON), executionTask, revisionKind, rootRevisionID,
+		parentRevisionID, parentRunID, parentDeliveryDigest, string(parentMaterialsJSON))
 	if err != nil {
 		return workflowStoreFailure(c, fmt.Errorf("create dispatch input revision: %w", err))
 	}
@@ -367,7 +484,7 @@ func (s *Server) boundDispatchInputResult(ctx context.Context, workspaceID strin
 		return workflowManualRunResponse{}, fmt.Errorf("read consumed dispatch input: %w", err)
 	}
 	var task string
-	if !found || teamID != input.TeamID || json.Unmarshal([]byte(payload), &task) != nil || task != input.Task ||
+	if !found || teamID != input.TeamID || json.Unmarshal([]byte(payload), &task) != nil || task != input.ExecutionTask ||
 		fingerprint != workflowDispatchFingerprint(input.TeamID, request) {
 		return workflowManualRunResponse{}, errors.New("consumed dispatch input has no matching durable workflow receipt")
 	}

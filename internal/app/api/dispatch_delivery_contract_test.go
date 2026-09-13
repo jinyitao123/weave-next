@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -140,5 +141,77 @@ func TestPublishedDeliveryContractDefaultsNaturalWorkbenchDispatchRealPG(t *test
 	override := overrideState.Binding.Contract
 	if override == nil || len(override.RequiredArtifacts) != 1 || override.RequiredArtifacts[0].Path != "outputs/report.md" {
 		t.Fatalf("exact user contract did not override published default: %+v", override)
+	}
+}
+
+func TestRevisionDispatchRetainsOriginalMaterialsAndContractRealPG(t *testing.T) {
+	graph := json.RawMessage(`{"schema_version":1,"entry_node_id":"deliver","input_contract":{"type":"text"},"output_contract":{"type":"text"},"delivery_contract":{"version":1,"coverage":"explicit","output":{"type":"text"},"required_artifacts":[{"id":"report","path":"outputs/report.md"}],"external_effects":"none"},"nodes":[{"id":"deliver","type":"deliver","config":{"result":{"source":"run_input","path":""}}}],"edges":[]}`)
+	server, pool := newTeamDispatchTestServerWithGraph(t, graph)
+	original := dispatchInputRegistrationFixture("revision-session", "整理原始材料并计算应付总额。", "")
+	registered, err := registerInputForTest(server, original)
+	if err != nil || registered.Code != http.StatusCreated {
+		t.Fatalf("register original: %s %v", registered.Body.String(), err)
+	}
+	var first dispatchInputReceipt
+	if err := json.Unmarshal(registered.Body.Bytes(), &first); err != nil {
+		t.Fatal(err)
+	}
+	dispatched, err := boundDispatchForTest(server, map[string]any{"input_revision_id": first.InputRevisionID}, "user")
+	if err != nil || dispatched.Code != http.StatusCreated {
+		t.Fatalf("dispatch original: %s %v", dispatched.Body.String(), err)
+	}
+	var firstRun workflowManualRunResponse
+	if err := json.Unmarshal(dispatched.Body.Bytes(), &firstRun); err != nil {
+		t.Fatal(err)
+	}
+	priorContent := "# 上一版报告\n应付总额：300 元（待复核）"
+	if _, err := pool.Exec(t.Context(), `INSERT INTO weave_final_deliverables
+		(id,workspace_id,user_id,lead_avatar_id,session_id,event_id,run_id,run_snapshot_id,title,content,content_type,metadata)
+		VALUES('prior-report','ws','user','lead','revision-session','prior-event',$1,$1,'上一版报告',$2,'text/markdown','{"artifact_kind":"final"}')`,
+		firstRun.RunID, priorContent); err != nil {
+		t.Fatal(err)
+	}
+
+	change := "请按原始材料复核总额，修正上一版的计算错误。"
+	revision := dispatchInputRegistrationFixture("revision-session", change, first.InputRevisionID)
+	revision.RevisionContext = &dispatchRevisionContext{ParentInputRevisionID: first.InputRevisionID, ParentRunID: firstRun.RunID}
+	revisedResponse, err := registerInputForTest(server, revision)
+	if err != nil || revisedResponse.Code != http.StatusCreated {
+		t.Fatalf("register revision: %s %v", revisedResponse.Body.String(), err)
+	}
+	var revised dispatchInputReceipt
+	if err := json.Unmarshal(revisedResponse.Body.Bytes(), &revised); err != nil {
+		t.Fatal(err)
+	}
+	stored, err := server.loadDispatchInput(t.Context(), "ws", "user", revised.InputRevisionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.Task != change || stored.RevisionKind != "revision" || stored.RootInputRevisionID != first.InputRevisionID ||
+		stored.ParentInputRevisionID != first.InputRevisionID || stored.ParentRunID != firstRun.RunID ||
+		!strings.Contains(stored.ExecutionTask, original.Task) || !strings.Contains(stored.ExecutionTask, priorContent) ||
+		!strings.Contains(stored.ExecutionTask, change) || stored.ParentDeliveryDigest == "" {
+		t.Fatalf("revision lineage or materials missing: %+v", stored)
+	}
+	var inherited, firstContract map[string]any
+	if json.Unmarshal(stored.DeliveryContract, &inherited) != nil {
+		t.Fatal("revision contract unreadable")
+	}
+	firstStored, err := server.loadDispatchInput(t.Context(), "ws", "user", first.InputRevisionID)
+	if err != nil || json.Unmarshal(firstStored.DeliveryContract, &firstContract) != nil || !reflect.DeepEqual(inherited, firstContract) {
+		t.Fatalf("revision did not inherit business contract: revised=%s original=%s err=%v", stored.DeliveryContract, firstStored.DeliveryContract, err)
+	}
+	revisedDispatch, err := boundDispatchForTest(server, map[string]any{"input_revision_id": revised.InputRevisionID}, "user")
+	if err != nil || revisedDispatch.Code != http.StatusCreated {
+		t.Fatalf("dispatch revision: %s %v", revisedDispatch.Body.String(), err)
+	}
+	var revisedRun workflowManualRunResponse
+	if err := json.Unmarshal(revisedDispatch.Body.Bytes(), &revisedRun); err != nil {
+		t.Fatal(err)
+	}
+	queued, err := server.Tasks.Get(t.Context(), "ws", revisedRun.TaskID)
+	var queuedTask string
+	if err != nil || json.Unmarshal(queued.Payload, &queuedTask) != nil || queuedTask != stored.ExecutionTask {
+		t.Fatalf("revision queue lost server materialization: task=%q err=%v", queuedTask, err)
 	}
 }
