@@ -36,9 +36,16 @@ func (e *Executor) ProcessNext(ctx context.Context, workerID string) (bool, erro
 }
 
 func (e *Executor) processClaimedWorkflowTask(ctx context.Context, task *taskqueue.Task, workerID string) error {
-	bound, err := taskqueue.BindTaskSubject(ctx, task)
+	bound, err := taskqueue.BindTaskExecution(ctx, task, e.Tasks)
 	if err != nil {
-		return e.Tasks.FailClaimed(ctx, task.ID, workerID, err.Error())
+		if tasks, ok := e.Tasks.(interface {
+			AcknowledgeUnstartedClaim(context.Context, *taskqueue.Task) error
+		}); ok {
+			ackCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+			defer cancel()
+			_ = tasks.AcknowledgeUnstartedClaim(ackCtx, task)
+		}
+		return fmt.Errorf("bind current workflow claim: %w", err)
 	}
 	ctx = bound
 	// Returning from the workflow handler means every local execution has been

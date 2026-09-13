@@ -3,7 +3,6 @@ package taskqueue
 import (
 	"context"
 	"encoding/json"
-	"errors"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jinyitao123/weave/internal/base/execution"
@@ -30,21 +29,15 @@ func (s *Store) admissionSubject(ctx context.Context, tx pgx.Tx, task *Task) (ex
 	}
 	for _, parent := range []struct {
 		value, query string
-		required     bool
 	}{
-		{task.ParentTaskID, `SELECT actor_subject FROM weave_task_queue WHERE workspace_id=$1 AND id=$2 FOR SHARE`, false},
-		{task.RunSnapshotID, `SELECT actor_subject FROM weave_team_run_snapshots WHERE workspace_id=$1 AND run_id=$2 FOR SHARE`, true},
+		{task.ParentTaskID, `SELECT actor_subject FROM weave_task_queue WHERE workspace_id=$1 AND id=$2 FOR SHARE`},
+		{task.RunSnapshotID, `SELECT actor_subject FROM weave_team_run_snapshots WHERE workspace_id=$1 AND run_id=$2 FOR SHARE`},
 	} {
 		if parent.value == "" {
 			continue
 		}
 		var raw []byte
 		if err := tx.QueryRow(ctx, parent.query, task.WorkspaceID, parent.value).Scan(&raw); err != nil {
-			// ParentTaskID can be an external attempt lineage reference. Snapshot
-			// references, when present, always have to resolve to a durable owner.
-			if !parent.required && errors.Is(err, pgx.ErrNoRows) {
-				continue
-			}
 			return execution.Subject{}, err
 		}
 		var inherited execution.Subject
