@@ -182,6 +182,7 @@ func (q *ExecutionQueue) Renew(
 		SET lease_until=$5, updated_at=$4
 		WHERE workspace_id=$1 AND build_run_id=$2 AND status='running'
 		  AND worker_id=$3 AND lease_epoch=$6
+		  AND lease_until>$4
 		  AND EXISTS (
 			SELECT 1 FROM weave_team_build_runs AS run
 			WHERE run.workspace_id=$1 AND run.build_run_id=$2
