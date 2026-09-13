@@ -26,6 +26,7 @@ import (
 	"github.com/jinyitao123/loom/contract"
 	"github.com/jinyitao123/loom/pgstore"
 	"github.com/jinyitao123/loom/stdlib"
+	"github.com/jinyitao123/weave/internal/app/agentcatalog"
 	orgstore "github.com/jinyitao123/weave/internal/app/org"
 	"github.com/jinyitao123/weave/internal/app/teamassets"
 	"github.com/jinyitao123/weave/internal/base/deliverable"
@@ -47,6 +48,7 @@ import (
 	"github.com/jinyitao123/weave/internal/kernel/mcphost"
 	"github.com/jinyitao123/weave/internal/kernel/mcpregistry"
 	org "github.com/jinyitao123/weave/internal/kernel/orgspec"
+	"github.com/jinyitao123/weave/internal/kernel/publication"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 	"github.com/jinyitao123/weave/internal/kernel/runtimellm"
 	"github.com/jinyitao123/weave/internal/kernel/runtimes"
@@ -61,6 +63,7 @@ import (
 // Dependencies belongs to the product composition layer. Builder controllers
 // receive only phase and operation ports; database stores never cross those ports.
 type Dependencies struct {
+	KernelPublication publication.Service
 	// Pool begins the candidate-build and credential transactions.
 	Pool *pgxpool.Pool
 	// Store is the loom namespace store used by AgentRunner and the
@@ -68,8 +71,8 @@ type Dependencies struct {
 	Store *pgstore.PGStore
 
 	Build        *teambuild.Store
-	Agents       *registry.AgentRegistry
-	TeamWorkers  *registry.TeamWorkerRepository
+	Agents       *agentcatalog.AgentRegistry
+	TeamWorkers  *agentcatalog.TeamWorkerRepository
 	Teams        *orgstore.Store
 	Workflows    *workflow.Store
 	MCPs         *mcpregistry.Store
@@ -129,7 +132,7 @@ type ProductionPhases struct {
 // phases. It fails fast when a required store is missing so wiring mistakes
 // surface at startup instead of mid-round.
 func NewPhases(deps Dependencies) (*ProductionPhases, error) {
-	if deps.Pool == nil || deps.Store == nil || deps.Build == nil ||
+	if deps.KernelPublication == nil || deps.Pool == nil || deps.Store == nil || deps.Build == nil ||
 		deps.Agents == nil || deps.TeamWorkers == nil || deps.Teams == nil ||
 		deps.Workflows == nil || deps.MCPs == nil || deps.Providers == nil ||
 		deps.Runtimes == nil || deps.Tasks == nil ||
@@ -2000,191 +2003,211 @@ func budgetExhaustedEvaluation(
 func (p *ProductionPhases) PublishStep(ctx context.Context, workspaceID, buildRunID string) error {
 	run, err := p.Deps.Build.GetBuildRun(ctx, workspaceID, buildRunID)
 	if err != nil {
-		return fmt.Errorf("publish step: load build run: %w", err)
+		return err
 	}
-	compilerV1 := run.EffectiveExecutionStrategy() == teambuild.ExecutionStrategyCompilerV1
 	rounds, err := p.Deps.Build.ListRounds(ctx, workspaceID, buildRunID)
 	if err != nil {
-		return fmt.Errorf("publish step: list rounds: %w", err)
+		return err
 	}
 	if len(rounds) == 0 {
 		return errors.New("publish step: build run has no recorded rounds")
 	}
 	lastRound := rounds[len(rounds)-1]
 	if lastRound.Conclusion != teambuild.ConclusionPass {
-		return fmt.Errorf("publish step: last round conclusion is %q, want pass", lastRound.Conclusion)
+		return errors.New("publish step: final round has not passed")
 	}
 	roundReport, err := p.Deps.Build.GetRoundReport(ctx, workspaceID, buildRunID, lastRound.RoundNo)
 	if err != nil {
-		return fmt.Errorf("publish step: load final round report: %w", err)
+		return err
 	}
 	if lastRound.ReportRef == "" || roundReport.ReportHash != lastRound.ReportRef {
-		return errors.New("publish step: final round report binding is invalid")
+		return errors.New("publish step: final report binding invalid")
 	}
-	candidateRef := lastRound.CandidateRef
-
-	p.mu.Lock()
-	candidate := p.lastCandidate
-	p.mu.Unlock()
-	if candidate == nil {
-		return errors.New("publish step: no evaluated candidate retained for the passed round")
+	requestID := "build-publication-" + shortID(workspaceID, buildRunID, fmt.Sprint(lastRound.RoundNo))
+	requests := &pgPublicationRequests{pool: p.Deps.Pool}
+	requests.activate = func(ctx context.Context, tx pgx.Tx, record PublicationRequestRecord) error {
+		locked, baseline, err := p.checkBuildPublicationTx(ctx, tx, workspaceID, buildRunID, lastRound.RoundNo, roundReport.Report)
+		if err != nil {
+			return err
+		}
+		if err = authorizePublicationActorTx(ctx, tx, workspaceID, record.Command.Target.TeamID); err != nil {
+			return err
+		}
+		if err = activateWorkflowRevisionTx(ctx, tx, record); err != nil {
+			return err
+		}
+		payload, err := frozen.DecodeArtifactEnvelopeV1(record.Command.Request.Candidate)
+		if err != nil {
+			return err
+		}
+		if !locked.EvaluationOnly {
+			if err = activatePublishedTeamTx(ctx, tx, workspaceID, payload.Team.TeamID, payload.Team.LeadAgentID); err != nil {
+				return err
+			}
+		}
+		_, err = MarkBuildPublicationTx(ctx, tx, p.Deps.Build, workspaceID, buildRunID, teamorch.DefaultActor, teambuild.FinalRef{Ref: record.Receipt.Revision.ContentHash, TeamID: payload.Team.TeamID}, baseline)
+		return err
 	}
-	if candidateRef != "" && candidate.ContentHash != candidateRef {
-		return fmt.Errorf(
-			"publish step: candidate hash %s does not match round candidate_ref %s",
-			candidate.ContentHash, candidateRef,
-		)
+	stored, found, err := requests.findPublication(ctx, workspaceID, requestID)
+	if err != nil {
+		return err
 	}
-
-	alreadyPublished := false
-	if compilerV1 {
-		workflowRow, getErr := p.Deps.Workflows.Get(ctx, workspaceID, candidate.WorkflowID)
-		if getErr == nil && workflowRow.PublishedVersion != nil && *workflowRow.PublishedVersion == candidate.WorkflowVersion {
-			artifact, artifactErr := p.Deps.Workflows.GetArtifact(ctx, workspaceID, candidate.WorkflowID, candidate.WorkflowVersion)
-			alreadyPublished = artifactErr == nil && artifact.ContentHash == candidate.ContentHash
+	command := stored.Command
+	if !found {
+		p.mu.Lock()
+		candidate := p.lastCandidate
+		p.mu.Unlock()
+		if candidate == nil {
+			return errors.New("publish step: no evaluated candidate retained for passed round")
+		}
+		if lastRound.CandidateRef != "" && candidate.ContentHash != lastRound.CandidateRef {
+			return errors.New("publish step: evaluated candidate hash changed")
+		}
+		command, err = PublicationCommandForCandidate(requestID, candidate, PublicationTarget{BuildRunID: buildRunID, ReuseActiveRevision: run.EffectiveExecutionStrategy() == teambuild.ExecutionStrategyCompilerV1})
+		if err != nil {
+			return err
 		}
 	}
-	publication, err := workflow.PublicationFromCandidate(candidate)
-	if err != nil {
-		return fmt.Errorf("publish step: convert candidate: %w", err)
-	}
-	tx, err := p.Deps.Pool.Begin(ctx)
-	if err != nil {
-		return fmt.Errorf("publish step: begin atomic publication: %w", err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-	lockedRun, err := p.Deps.Build.LockBuildRunTx(ctx, tx, workspaceID, buildRunID)
-	if err != nil {
-		return fmt.Errorf("publish step: lock build run: %w", err)
-	}
-	if lockedRun.Status != teambuild.StatusPublishing {
-		return fmt.Errorf("publish step: locked run status is %q, want publishing", lockedRun.Status)
-	}
-	if err := p.settlePublishUsageTx(ctx, tx, lockedRun); err != nil {
-		return fmt.Errorf("publish step: settle usage: %w", err)
-	}
-	decision, err := p.Deps.Build.EvaluateBudgetTx(
-		ctx, tx, workspaceID, buildRunID, lastRound.RoundNo,
-		lockedRun.RoundBudget, lockedRun.TotalBudget,
-	)
-	if err != nil {
-		return fmt.Errorf("publish step: G5 budget gate: %w", err)
-	}
-	if len(decision.ExceededDims) > 0 {
-		if _, err := p.Deps.Build.BlockPublishingBudgetTx(
-			ctx, tx, workspaceID, buildRunID, teamorch.DefaultActor,
-		); err != nil {
-			return fmt.Errorf("publish step: G5 atomic block: %w", err)
+	if !found || stored.State == PublicationPending {
+		tx, beginErr := p.Deps.Pool.Begin(ctx)
+		if beginErr != nil {
+			return beginErr
 		}
-		if err := tx.Commit(ctx); err != nil {
-			return fmt.Errorf("publish step: commit G5 atomic block: %w", err)
+		_, _, err = p.checkBuildPublicationTx(ctx, tx, workspaceID, buildRunID, lastRound.RoundNo, roundReport.Report)
+		if errors.Is(err, teamorch.ErrCompilerPublishBudgetExhausted) {
+			_, err = p.Deps.Build.BlockPublishingBudgetTx(ctx, tx, workspaceID, buildRunID, teamorch.DefaultActor)
+			if err == nil {
+				err = tx.Commit(ctx)
+			}
+			_ = tx.Rollback(ctx)
+			if err != nil {
+				return err
+			}
+			return teamorch.ErrCompilerPublishBudgetExhausted
 		}
-		return teamorch.ErrCompilerPublishBudgetExhausted
-	}
-	if blocksIncompleteUsage(roundReport.Report, lockedRun.Brief) {
-		if _, err := p.Deps.Build.BlockPublishingBudgetTx(
-			ctx, tx, workspaceID, buildRunID, teamorch.DefaultActor,
-		); err != nil {
-			return fmt.Errorf("publish step: incomplete-usage atomic block: %w", err)
+		if err == nil {
+			err = tx.Commit(ctx)
 		}
-		if err := tx.Commit(ctx); err != nil {
-			return fmt.Errorf("publish step: commit incomplete-usage atomic block: %w", err)
-		}
-		return teamorch.ErrCompilerPublishBudgetExhausted
-	}
-	verifiedBaselineHash, err := p.Deps.Build.VerifyEvaluationBaselineTx(ctx, tx, workspaceID, buildRunID)
-	if err != nil {
 		_ = tx.Rollback(ctx)
-		return p.blockEvaluationPublicationCAS(ctx, run, err)
-	}
-	if !alreadyPublished {
-		if err := p.Deps.Workflows.InsertPublicationTx(ctx, tx, publication); err != nil {
-			return fmt.Errorf("publish step: insert publication: %w", err)
+		if err != nil {
+			return p.blockEvaluationPublicationCAS(ctx, run, err)
 		}
 	}
-	if !run.EvaluationOnly {
-		if err := activatePublishedTeamTx(ctx, tx, workspaceID, candidate.Payload.Team.TeamID, candidate.Payload.Team.LeadAgentID); err != nil {
-			return fmt.Errorf("publish step: activate team: %w", err)
+	_, err = (PublicationFlow{Requests: requests, Kernel: p.Deps.KernelPublication}).Publish(ctx, command)
+	if errors.Is(err, teamorch.ErrCompilerPublishBudgetExhausted) {
+		tx, beginErr := p.Deps.Pool.Begin(ctx)
+		if beginErr != nil {
+			return beginErr
+		}
+		defer func() { _ = tx.Rollback(ctx) }()
+		if _, blockErr := p.Deps.Build.BlockPublishingBudgetTx(ctx, tx, workspaceID, buildRunID, teamorch.DefaultActor); blockErr != nil {
+			return blockErr
+		}
+		if commitErr := tx.Commit(ctx); commitErr != nil {
+			return commitErr
 		}
 	}
-	if _, err := p.Deps.Build.MarkPublishedTx(ctx, tx, workspaceID, buildRunID, teamorch.DefaultActor, teambuild.FinalRef{
-		Ref:    candidate.ContentHash,
-		TeamID: candidate.Payload.Team.TeamID,
-	}, verifiedBaselineHash); err != nil {
-		_ = tx.Rollback(ctx)
+	if err != nil {
 		return p.blockEvaluationPublicationCAS(ctx, run, err)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("publish step: commit atomic publication: %w", err)
 	}
 	return nil
 }
 
-// FinalizeTemplatePublication turns a fully materialized template build into
-// its first usable immutable workflow without running candidate scenarios or
-// a semantic judge. Publication, default-workflow binding, Team activation,
-// project lead binding, and BuildRun completion share one transaction.
-func (p *ProductionPhases) FinalizeTemplatePublication(
-	ctx context.Context,
-	workspaceID, buildRunID, teamID, actor string,
-) (teambuild.TeamBuildRun, error) {
-	if p == nil || p.Deps.Pool == nil || p.Deps.Build == nil || p.Deps.Workflows == nil || p.builder == nil {
-		return teambuild.TeamBuildRun{}, errors.New("template publication dependencies are unavailable")
+func (p *ProductionPhases) checkBuildPublicationTx(ctx context.Context, tx pgx.Tx, workspaceID, buildRunID string, roundNo int, report teambuild.EvaluationReport) (teambuild.TeamBuildRun, string, error) {
+	locked, err := p.Deps.Build.LockBuildRunTx(ctx, tx, workspaceID, buildRunID)
+	if err != nil {
+		return locked, "", err
 	}
-	workflowID, workflowVersion, err := p.templatePublicationTarget(ctx, workspaceID, teamID)
+	if locked.Status != teambuild.StatusPublishing {
+		return locked, "", errors.New("build run is not publishing")
+	}
+	if err = p.settlePublishUsageTx(ctx, tx, locked); err != nil {
+		return locked, "", err
+	}
+	decision, err := p.Deps.Build.EvaluateBudgetTx(ctx, tx, workspaceID, buildRunID, roundNo, locked.RoundBudget, locked.TotalBudget)
+	if err != nil {
+		return locked, "", err
+	}
+	if len(decision.ExceededDims) > 0 || blocksIncompleteUsage(report, locked.Brief) {
+		return locked, "", teamorch.ErrCompilerPublishBudgetExhausted
+	}
+	baseline, err := p.Deps.Build.VerifyEvaluationBaselineTx(ctx, tx, workspaceID, buildRunID)
+	return locked, baseline, err
+}
+
+// FinalizeTemplatePublication freezes through the kernel and activates product
+// assets/build completion in the product receipt transaction. No trial or judge
+// is added to deterministic template instantiation.
+func (p *ProductionPhases) FinalizeTemplatePublication(ctx context.Context, workspaceID, buildRunID, teamID, actor string) (teambuild.TeamBuildRun, error) {
+	if p == nil || p.Deps.Pool == nil || p.Deps.Build == nil || p.builder == nil {
+		return teambuild.TeamBuildRun{}, errors.New("template publication unavailable")
+	}
+	requestID := "template-publication-" + shortID(workspaceID, buildRunID)
+	requests := &pgPublicationRequests{pool: p.Deps.Pool, activate: func(ctx context.Context, tx pgx.Tx, record PublicationRequestRecord) error {
+		locked, err := p.Deps.Build.LockBuildRunTx(ctx, tx, workspaceID, buildRunID)
+		if err != nil {
+			return err
+		}
+		if locked.Status != teambuild.StatusRoundRunning || locked.EffectiveExecutionStrategy() != teambuild.ExecutionStrategyTemplateInstantiate {
+			return errors.New("template build run is not finalizable")
+		}
+		if err = authorizePublicationActorTx(ctx, tx, workspaceID, teamID); err != nil {
+			return err
+		}
+		if err = activateWorkflowRevisionTx(ctx, tx, record); err != nil {
+			return err
+		}
+		payload, err := frozen.DecodeArtifactEnvelopeV1(record.Command.Request.Candidate)
+		if err != nil {
+			return err
+		}
+		if err = activateTemplateTeamTx(ctx, tx, workspaceID, teamID, record.Receipt.Revision.WorkflowID, payload.Team.LeadAgentID); err != nil {
+			return err
+		}
+		_, err = p.Deps.Build.MarkTemplatePublishedTx(ctx, tx, workspaceID, buildRunID, actor, teambuild.FinalRef{Ref: record.Receipt.Revision.ContentHash, TeamID: teamID})
+		return err
+	}}
+	stored, found, err := requests.findPublication(ctx, workspaceID, requestID)
 	if err != nil {
 		return teambuild.TeamBuildRun{}, err
 	}
-	tx, err := p.Deps.Pool.Begin(ctx)
-	if err != nil {
-		return teambuild.TeamBuildRun{}, fmt.Errorf("begin template publication: %w", err)
+	command := stored.Command
+	if !found {
+		workflowID, version, err := p.templatePublicationTarget(ctx, workspaceID, teamID)
+		if err != nil {
+			return teambuild.TeamBuildRun{}, err
+		}
+		tx, err := p.Deps.Pool.Begin(ctx)
+		if err != nil {
+			return teambuild.TeamBuildRun{}, err
+		}
+		defer func() { _ = tx.Rollback(ctx) }()
+		locked, err := p.Deps.Build.LockBuildRunTx(ctx, tx, workspaceID, buildRunID)
+		if err != nil {
+			return teambuild.TeamBuildRun{}, err
+		}
+		if locked.Status != teambuild.StatusRoundRunning || locked.EffectiveExecutionStrategy() != teambuild.ExecutionStrategyTemplateInstantiate {
+			return teambuild.TeamBuildRun{}, errors.New("template build run is not finalizable")
+		}
+		candidate, report, err := NewPublicationAuthority(p.Deps.Pool, p.builder).BuildCandidateTx(ctx, tx, workflow.CandidateInput{WorkspaceID: workspaceID, WorkflowID: workflowID, WorkflowVersion: version})
+		if err != nil {
+			return teambuild.TeamBuildRun{}, err
+		}
+		if candidate == nil || candidate.Payload.Team.TeamID != teamID || report != nil && len(report.Issues) > 0 {
+			return teambuild.TeamBuildRun{}, errors.New("template candidate validation failed")
+		}
+		command, err = PublicationCommandForCandidate(requestID, candidate, PublicationTarget{BuildRunID: buildRunID, TeamID: teamID})
+		if err != nil {
+			return teambuild.TeamBuildRun{}, err
+		}
+		if err = tx.Commit(ctx); err != nil {
+			return teambuild.TeamBuildRun{}, err
+		}
 	}
-	defer func() { _ = tx.Rollback(ctx) }()
-
-	lockedRun, err := p.Deps.Build.LockBuildRunTx(ctx, tx, workspaceID, buildRunID)
-	if err != nil {
-		return teambuild.TeamBuildRun{}, fmt.Errorf("lock template build run: %w", err)
-	}
-	if lockedRun.Status != teambuild.StatusRoundRunning ||
-		lockedRun.EffectiveExecutionStrategy() != teambuild.ExecutionStrategyTemplateInstantiate {
-		return teambuild.TeamBuildRun{}, fmt.Errorf("template build run is not finalizable: status=%s strategy=%s", lockedRun.Status, lockedRun.EffectiveExecutionStrategy())
-	}
-
-	candidate, report, err := p.builder.BuildTx(ctx, tx, workflow.CandidateInput{
-		WorkspaceID: workspaceID, WorkflowID: workflowID, WorkflowVersion: workflowVersion,
-	})
-	if err != nil {
-		return teambuild.TeamBuildRun{}, fmt.Errorf("build template publication candidate: %w", err)
-	}
-	if report != nil && len(report.Issues) != 0 {
-		return teambuild.TeamBuildRun{}, fmt.Errorf("template workflow static validation failed with %d issue(s)", len(report.Issues))
-	}
-	if candidate == nil || candidate.Payload.Team.TeamID != teamID {
-		return teambuild.TeamBuildRun{}, errors.New("template publication candidate team identity mismatch")
-	}
-	publication, err := workflow.PublicationFromCandidate(candidate)
-	if err != nil {
-		return teambuild.TeamBuildRun{}, fmt.Errorf("convert template publication candidate: %w", err)
-	}
-	if err := p.Deps.Workflows.InsertPublicationTx(ctx, tx, publication); err != nil {
-		return teambuild.TeamBuildRun{}, fmt.Errorf("insert template publication: %w", err)
-	}
-	if err := activateTemplateTeamTx(
-		ctx, tx, workspaceID, teamID, workflowID, candidate.Payload.Team.LeadAgentID,
-	); err != nil {
-		return teambuild.TeamBuildRun{}, fmt.Errorf("activate template team: %w", err)
-	}
-	finalized, err := p.Deps.Build.MarkTemplatePublishedTx(
-		ctx, tx, workspaceID, buildRunID, actor,
-		teambuild.FinalRef{Ref: candidate.ContentHash, TeamID: teamID},
-	)
-	if err != nil {
+	if _, err = (PublicationFlow{Requests: requests, Kernel: p.Deps.KernelPublication}).Publish(ctx, command); err != nil {
 		return teambuild.TeamBuildRun{}, err
 	}
-	if err := tx.Commit(ctx); err != nil {
-		return teambuild.TeamBuildRun{}, fmt.Errorf("commit template publication: %w", err)
-	}
-	return finalized, nil
+	return p.Deps.Build.GetBuildRun(ctx, workspaceID, buildRunID)
 }
 
 func (p *ProductionPhases) templatePublicationTarget(
@@ -2563,106 +2586,66 @@ func (p *ProductionPhases) buildAndRunCandidateFor(
 	scenario evaluationScenario,
 ) (*workflow.PublicationCandidate, string, string, error) {
 	workspaceID := round.WorkspaceID
-	tx, err := p.Deps.Pool.Begin(ctx)
+	requestID := "candidate-" + shortID(workspaceID, round.BuildRunID, fmt.Sprint(round.RoundNo), fmt.Sprint(round.CandidateAttempt), sourceRole, scenario.ID)
+	requests := &pgPublicationRequests{pool: p.Deps.Pool, associateUsage: func(ctx context.Context, tx pgx.Tx, record CandidateRequestRecord) error {
+		_, err := p.Deps.Build.RecordUsageSourceTx(ctx, tx, record.Subject.WorkspaceID, record.Target.BuildRunID, teambuild.BuildUsageSource{WorkspaceID: record.Subject.WorkspaceID, BuildRunID: record.Target.BuildRunID, RoundNo: record.Target.RoundNo, SourceKind: teambuild.UsageSourceKindCandidateRuntime, SourceRole: record.Target.SourceRole, SourceRunID: record.Receipt.RunID})
+		return err
+	}}
+	stored, found, err := requests.findCandidate(ctx, workspaceID, requestID)
 	if err != nil {
-		return nil, "", "", fmt.Errorf("begin candidate build: %w", err)
+		return nil, "", "", err
 	}
-	defer func() { _ = tx.Rollback(ctx) }()
-
-	candidate := frozenCandidate
-	if candidate == nil {
-		var buildReport *machine.Report
-		candidate, buildReport, err = p.builder.BuildTx(ctx, tx, workflow.CandidateInput{
-			WorkspaceID:     workspaceID,
-			WorkflowID:      workflowID,
-			WorkflowVersion: draftVersion,
-		})
+	var candidate *workflow.PublicationCandidate
+	request, target := stored.Request, stored.Target
+	if found {
+		candidate, err = workflow.CandidateFromEnvelope(stored.Request.Candidate)
 		if err != nil {
-			return nil, "", "", fmt.Errorf("build publication candidate: %w", err)
+			return nil, "", "", err
 		}
-		if buildReport != nil && len(buildReport.Issues) != 0 {
-			return nil, "", "", fmt.Errorf("candidate validation: %s", buildReport.Issues[0].Code)
+		candidate.ExpectedUpdatedAt, err = time.Parse(time.RFC3339Nano, target.ExpectedAssetVersion)
+		if err != nil {
+			return nil, "", "", err
 		}
+	} else {
+		candidate = frozenCandidate
+		if candidate == nil {
+			tx, err := p.Deps.Pool.Begin(ctx)
+			if err != nil {
+				return nil, "", "", err
+			}
+			defer func() { _ = tx.Rollback(ctx) }()
+			var report *machine.Report
+			candidate, report, err = NewPublicationAuthority(p.Deps.Pool, p.builder).BuildCandidateTx(ctx, tx, workflow.CandidateInput{WorkspaceID: workspaceID, WorkflowID: workflowID, WorkflowVersion: draftVersion})
+			if err != nil {
+				return nil, "", "", err
+			}
+			if candidate == nil || report != nil && len(report.Issues) > 0 {
+				return nil, "", "", errors.New("candidate static validation failed")
+			}
+			if err = tx.Commit(ctx); err != nil {
+				return nil, "", "", err
+			}
+		}
+		envelope, err := workflow.CandidateEnvelope(candidate)
+		if err != nil {
+			return nil, "", "", err
+		}
+		inputVersion := scenario.InputVersion
+		if inputVersion == "" {
+			inputVersion = "evaluation-input/v1:" + scenario.ID
+		}
+		target = CandidateTarget{BuildRunID: round.BuildRunID, RoundNo: round.RoundNo, SourceRole: sourceRole, ExpectedAssetVersion: candidate.ExpectedUpdatedAt.UTC().Format(time.RFC3339Nano)}
+		request = publication.CandidateRunRequest{Version: publication.ContractVersion, RequestID: requestID, Candidate: envelope, Input: candidateRunPayload(scenario), InputVersion: inputVersion, SourceRef: round.BuildRunID, Purpose: "team-evaluation", ParentTaskID: taskID(workspaceID, round.BuildRunID)}
 	}
-	// Candidates are content-addressed and immutable: re-freezing identical
-	// content (the optimize baseline of an unchanged published workflow, or a
-	// round that re-committed the same draft) reuses the existing row instead
-	// of colliding on the content-hash primary key.
-	if _, err := p.Deps.Workflows.GetCandidateTx(
-		ctx, tx, workspaceID, workflowID, candidate.ContentHash,
-	); err != nil {
-		if !errors.Is(err, workflow.ErrCandidateNotFound) {
-			return nil, "", "", fmt.Errorf("check existing candidate: %w", err)
-		}
-		if err := p.Deps.Workflows.InsertCandidateTx(ctx, tx, candidate, teamorch.DefaultActor); err != nil {
-			return nil, "", "", fmt.Errorf("insert candidate: %w", err)
-		}
+	if _, err := NewPublicationAuthority(p.Deps.Pool, p.builder).Authorize(ctx, "candidate_run", request.Candidate); err != nil {
+		return nil, "", "", err
 	}
-	admitted, err := p.Deps.Workflows.AdmitWorkflowCandidateRunTx(
-		ctx, tx, workflow.WorkflowCandidateRunAdmissionRequest{
-			WorkspaceID: workspaceID,
-			WorkflowID:  workflowID,
-			BuildRunID:  round.BuildRunID,
-			RoundNo:     round.RoundNo,
-			ContentHash: candidate.ContentHash,
-			SourceRef:   round.BuildRunID,
-			TriggerType: "api",
-		},
-	)
+	record, err := (CandidateAdmissionFlow{Requests: requests, Kernel: p.Deps.KernelPublication}).Admit(ctx, target, request)
 	if err != nil {
-		return nil, "", "", fmt.Errorf("admit candidate run: %w", err)
+		return nil, "", "", err
 	}
-	created, err := p.Deps.Snapshots.CreateTx(ctx, tx, admitted)
-	if err != nil {
-		return nil, "", "", fmt.Errorf("create candidate snapshot: %w", err)
-	}
-	// T14B-2A: associate the candidate runtime with the round's usage source
-	// table in the same transaction as admission, before any graph work, so
-	// a crash before the terminal marker/ledger can be reconciled instead of
-	// starting a duplicate candidate.
-	if _, err := p.Deps.Build.RecordUsageSourceTx(
-		ctx,
-		tx,
-		workspaceID,
-		round.BuildRunID,
-		teambuild.BuildUsageSource{
-			WorkspaceID: workspaceID,
-			BuildRunID:  round.BuildRunID,
-			RoundNo:     round.RoundNo,
-			SourceKind:  teambuild.UsageSourceKindCandidateRuntime,
-			SourceRole:  sourceRole,
-			SourceRunID: created.RunID,
-		},
-	); err != nil {
-		return nil, "", "", fmt.Errorf("record candidate usage source: %w", err)
-	}
-	rootTask := &taskqueue.Task{
-		// The task identity must be unique per admitted run: the optimize
-		// baseline and a round can freeze identical content, so a content-hash
-		// key alone would collide on the task queue primary key.
-		ID:                    "task-eval-" + shortID(workspaceID, round.BuildRunID, created.RunID),
-		WorkspaceID:           workspaceID,
-		IdentityKind:          taskqueue.IdentityTeamWorkflow,
-		IdentitySchemaVersion: 2,
-		WorkflowID:            workflowID,
-		WorkflowVersion:       draftVersion,
-		RunSnapshotID:         created.RunID,
-		Source:                "api",
-		Kind:                  "team_workflow",
-		Payload:               candidateRunPayload(scenario),
-	}
-	if err := p.Deps.Tasks.EnqueueTx(ctx, tx, rootTask); err != nil {
-		return nil, "", "", fmt.Errorf("enqueue candidate run task: %w", err)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return nil, "", "", fmt.Errorf("commit candidate build: %w", err)
-	}
-
-	status, err := p.driveCandidateRun(ctx, workspaceID, created.RunID)
-	if err != nil {
-		return candidate, created.RunID, "", err
-	}
-	return candidate, created.RunID, status, nil
+	status, err := p.driveCandidateRun(ctx, workspaceID, record.Receipt.RunID)
+	return candidate, record.Receipt.RunID, status, err
 }
 
 // driveCandidateRun executes the candidate test run to a terminal state with

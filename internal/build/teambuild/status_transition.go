@@ -130,8 +130,8 @@ func (s *Store) MarkPublished(
 }
 
 // MarkPublishedTx finalizes publication inside the caller-owned transaction.
-// Evaluation runs additionally flip the unevaluated team and provenance with
-// a CAS bound to the baseline proof returned by VerifyEvaluationBaselineTx.
+// The product adapter certifies the team and its provenance in the same
+// product transaction. This store changes only the build result and ledger.
 func (s *Store) MarkPublishedTx(
 	ctx context.Context,
 	tx pgx.Tx,
@@ -162,18 +162,7 @@ func (s *Store) MarkPublishedTx(
 			finalRef.TeamID != locked.EvaluationTeamID {
 			return TeamBuildRun{}, fmt.Errorf("mark build run published tx: %w: evaluation proof mismatch", ErrEvaluationPublishCAS)
 		}
-		tag, err := tx.Exec(ctx, `
-			UPDATE weave_teams
-			SET evaluation='evaluated', evaluation_build_run_id=$3,
-				evaluation_contract_hash=$4, evaluated_at=$5, updated_at=$5
-			WHERE workspace_id=$1 AND id=$2 AND evaluation='unevaluated'
-		`, workspaceID, locked.EvaluationTeamID, buildRunID, locked.ContractHash, now)
-		if err != nil {
-			return TeamBuildRun{}, fmt.Errorf("mark build run published tx: certify team: %w", err)
-		}
-		if tag.RowsAffected() != 1 {
-			return TeamBuildRun{}, fmt.Errorf("mark build run published tx: %w: team state changed", ErrEvaluationPublishCAS)
-		}
+
 	}
 	finalRefJSON, err := json.Marshal(finalRef)
 	if err != nil {

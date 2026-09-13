@@ -710,7 +710,7 @@ func (s *Store) DeletePureDraft(
 	}
 
 	if _, err := tx.Exec(ctx, `
-		DELETE FROM weave_team_workflow_dependencies
+		DELETE FROM weave_draft_workflow_dependencies
 		WHERE workspace_id=$1 AND workflow_id=$2
 	`, workspaceID, workflowID); err != nil {
 		return fmt.Errorf("delete workflow draft dependencies: %w", err)

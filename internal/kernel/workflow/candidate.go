@@ -39,16 +39,18 @@ type PublicationCandidate struct {
 	ContentHash               string
 	Payload                   frozen.ArtifactPayloadV1
 	Dependencies              []TeamWorkflowDependency
+	validation                machine.ValidationContext
 }
 
 type CandidateBuilder struct {
-	workflows   *Store
-	agents      *registry.AgentRegistry
-	delivery    *delivery.Store
-	skills      *skills.Store
-	credentials *credentials.Store
-	schedules   *schedule.Store
-	descriptors *compiler.DescriptorRegistry
+	credentialAuthority CandidateCredentialAuthority
+	workflows           *Store
+	agents              registry.PublicationAgentReader
+	delivery            *delivery.Store
+	skills              *skills.Store
+	credentials         *credentials.Store
+	schedules           *schedule.Store
+	descriptors         *compiler.DescriptorRegistry
 }
 
 type candidateBundlePlan struct {
@@ -61,7 +63,7 @@ type candidateBundlePlan struct {
 
 func NewCandidateBuilder(
 	workflows *Store,
-	agents *registry.AgentRegistry,
+	agents registry.PublicationAgentReader,
 	deliveryStore *delivery.Store,
 	skillStore *skills.Store,
 	credentialStore *credentials.Store,
@@ -89,7 +91,10 @@ func (b *CandidateBuilder) BuildTx(
 	if err != nil {
 		return nil, nil, err
 	}
+	return b.buildResolvedCandidateTx(ctx, tx, input, draft, nil)
+}
 
+func (b *CandidateBuilder) buildResolvedCandidateTx(ctx context.Context, tx pgx.Tx, input CandidateInput, draft *PublicationDraftRead, fixedLead *machine.AgentVersionKey) (*PublicationCandidate, *machine.Report, error) {
 	trigger, triggerReport := machine.DecodeTriggerConfigV1(draft.Draft.TriggerConfig)
 	graph, graphReport := machine.DecodeGraphDefinitionV1(draft.Draft.GraphDefinition)
 	var report machine.Report
@@ -109,10 +114,22 @@ func (b *CandidateBuilder) BuildTx(
 	if err != nil {
 		return nil, nil, err
 	}
-	lead := machine.AgentVersionKey{
-		AgentID: team.LeadAvatarID, AgentVersion: team.LeadAvatarVersion,
+	if fixedLead != nil {
+		if fixedLead.AgentID != team.LeadAvatarID {
+			return nil, nil, errors.New("frozen team lead authorization changed")
+		}
+		team.LeadAvatarVersion = fixedLead.AgentVersion
 	}
+	lead := machine.AgentVersionKey{AgentID: team.LeadAvatarID, AgentVersion: team.LeadAvatarVersion}
 	referenced := machine.ReferencedBundles(lead, graph)
+	scope := CandidateCredentialScope{WorkspaceID: input.WorkspaceID, TeamID: team.TeamID, Lead: lead}
+	for _, reference := range referenced {
+		scope.Agents = append(scope.Agents, reference.Key)
+	}
+	if trigger.Delivery != nil {
+		scope.DeliveryTargetID = trigger.Delivery.Ref
+	}
+	ctx = b.credentialContext(ctx, scope)
 
 	计划 := make([]candidateBundlePlan, len(referenced))
 	credentialEncoder, err := credentials.NewTxEncoder(
@@ -306,7 +323,7 @@ func (b *CandidateBuilder) BuildTx(
 		CanonicalizationAlgorithm: frozen.ArtifactCanonicalizationAlgorithm,
 		CanonicalizationVersion:   frozen.ArtifactCanonicalizationVersion,
 		HashAlgorithm:             frozen.ArtifactHashAlgorithm, ContentHash: contentHash,
-		Payload: payload, Dependencies: dependencies,
+		Payload: payload, Dependencies: dependencies, validation: validation,
 	}
 	return candidate, &report, nil
 }
