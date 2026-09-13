@@ -194,6 +194,8 @@ describe('Workbench work-task projection', () => {
     expect(workbenchTeamRoutingSection.text).toContain('Do not include internal identifiers')
     expect(workbenchTeamRoutingSection.text).not.toContain('return the team, run ID')
     expect(workbenchTeamRoutingSection.text).toContain('confirmed the selected team, task scope, and expected deliverables')
+    expect(workbenchTeamRoutingSection.text).toContain('make method discovery part of the team definition')
+    expect(workbenchTeamRoutingSection.text).toContain('choose a fallback or escalation path')
     expect(workbenchTeamRoutingSection.text).toContain('without asking again')
     expect(workbenchTeamRoutingSection.text).toContain('Internal construction and evaluation steps are not additional user approval gates')
     expect(workbenchTeamRoutingSection.text).toContain('do not claim delivery is complete')
