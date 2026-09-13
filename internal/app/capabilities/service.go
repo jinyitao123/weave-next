@@ -156,19 +156,20 @@ type Invocation struct {
 }
 
 type InvocationTask struct {
-	RunKind      string
-	ClaimToken   string
-	TaskID       string
-	WorkspaceID  string
-	InvocationID string
-	CapabilityID string
-	Revision     int64
-	Input        json.RawMessage
-	Plan         capability.Plan
-	State        capability.ExecutionState
-	ActorUserID  string
-	UsedSteps    int
-	MaxSteps     int
+	RunKind           string
+	ClaimToken        string
+	TaskID            string
+	WorkspaceID       string
+	InvocationID      string
+	CapabilityID      string
+	Revision          int64
+	Input             json.RawMessage
+	Plan              capability.Plan
+	State             capability.ExecutionState
+	ActorUserID       string
+	UsedSteps         int
+	MaxSteps          int
+	ExecutionDeadline time.Time
 }
 
 type ExecutionStore interface {
@@ -191,7 +192,11 @@ func RunOne(ctx context.Context, store ExecutionStore, executor TaskExecutor) (b
 	if err != nil || !claimed {
 		return claimed, err
 	}
-	runCtx, cancel := context.WithTimeout(ctx, 45*time.Minute)
+	deadline := task.ExecutionDeadline
+	if deadline.IsZero() {
+		deadline = time.Now().Add(45 * time.Minute)
+	}
+	runCtx, cancel := context.WithDeadline(ctx, deadline)
 	done := make(chan struct{})
 	monitored := make(chan struct{})
 	go func() {
@@ -457,7 +462,7 @@ func (m *MemoryStore) ClaimTask(_ context.Context) (InvocationTask, bool, error)
 		}
 		invocation.Status = "running"
 		m.invokes[key] = invocation
-		return InvocationTask{RunKind: invocation.RunKind, Plan: plan, TaskID: invocation.TaskID, WorkspaceID: invocation.WorkspaceID, InvocationID: invocation.InvocationID, CapabilityID: invocation.CapabilityID, Revision: invocation.Revision, Input: append(json.RawMessage(nil), invocation.Input...)}, true, nil
+		return InvocationTask{RunKind: invocation.RunKind, Plan: plan, TaskID: invocation.TaskID, WorkspaceID: invocation.WorkspaceID, InvocationID: invocation.InvocationID, CapabilityID: invocation.CapabilityID, Revision: invocation.Revision, Input: append(json.RawMessage(nil), invocation.Input...), ExecutionDeadline: time.Now().Add(45 * time.Minute)}, true, nil
 	}
 	return InvocationTask{}, false, nil
 }
