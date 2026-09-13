@@ -10,21 +10,6 @@
     "count": 1
   },
   {
-    "path": "internal/kernel/credentials/revisions.go",
-    "table": "weave_workspaces",
-    "count": 1
-  },
-  {
-    "path": "internal/kernel/credentials/store.go",
-    "table": "weave_workspaces",
-    "count": 1
-  },
-  {
-    "path": "internal/kernel/credentials/system_mirror.go",
-    "table": "weave_workspaces",
-    "count": 1
-  },
-  {
     "path": "internal/kernel/fanout/reconciler.go",
     "table": "weave_agents",
     "count": 2
@@ -35,27 +20,12 @@
     "count": 1
   },
   {
-    "path": "internal/kernel/fanout/store.go",
-    "table": "weave_workspaces",
-    "count": 1
-  },
-  {
     "path": "internal/kernel/mcpregistry/store.go",
     "table": "weave_agents",
     "count": 3
   },
   {
-    "path": "internal/kernel/mcpregistry/store.go",
-    "table": "weave_workspaces",
-    "count": 1
-  },
-  {
     "path": "internal/kernel/skills/import.go",
-    "table": "weave_workspaces",
-    "count": 1
-  },
-  {
-    "path": "internal/kernel/taskqueue/store.go",
     "table": "weave_workspaces",
     "count": 1
   },

@@ -56,13 +56,6 @@ func (s *Store) Create(ctx context.Context, workspaceID, createdBy string, req U
 	if err != nil {
 		return ServerView{}, err
 	}
-	if _, err := s.pool.Exec(ctx, `
-		INSERT INTO weave_workspaces (id, slug, name)
-		VALUES ($1, $1, $1)
-		ON CONFLICT DO NOTHING
-	`, workspaceID); err != nil {
-		return ServerView{}, err
-	}
 	id := uuid.NewString()
 	argsJSON, err := json.Marshal(normalizedArgs(req.Args))
 	if err != nil {

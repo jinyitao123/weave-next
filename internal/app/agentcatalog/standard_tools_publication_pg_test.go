@@ -109,6 +109,9 @@ func TestStandardToolsPublicationReachesActualMCPAndPreservesFrozenContractRealP
 		_ = json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": request.ID, "result": result})
 	}))
 	defer server.Close()
+	if _, err := pool.Exec(ctx, `INSERT INTO weave_workspaces(id,slug,name) VALUES($1,$1,$1)`, workspace); err != nil {
+		t.Fatal(err)
+	}
 	mcp := mcpregistry.New(pool, key)
 	registered, err := mcp.Create(ctx, workspace, "test", mcpregistry.UpsertServerRequest{Slug: "calculation", DisplayName: "Calculation", Transport: mcpregistry.TransportStreamableHTTP, URL: server.URL, Enabled: true})
 	if err != nil {

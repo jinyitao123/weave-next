@@ -131,13 +131,6 @@ func (s *Store) UpsertRevision(
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	if _, err := tx.Exec(ctx, `
-		INSERT INTO weave_workspaces (id, slug, name)
-		VALUES ($1, $1, $1)
-		ON CONFLICT DO NOTHING
-	`, workspaceID); err != nil {
-		return ProviderRevisionResult{}, fmt.Errorf("ensure provider workspace: %w", err)
-	}
-	if _, err := tx.Exec(ctx, `
 		INSERT INTO weave_provider_credentials (
 		  workspace_id, id, name, base_url, api_key_cipher, models,
 		  json_object_mode,credential_scope,credential_user_id,credential_service_id

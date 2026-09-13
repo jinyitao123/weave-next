@@ -132,6 +132,9 @@ func TestStandardPublishedToolsRealModel(t *testing.T) {
 	workspace := "real-publication"
 	ctx = execution.WithSubject(ctx, execution.Subject{WorkspaceID: workspace, UserID: "test"})
 	key := []byte(strings.Repeat("k", 32))
+	if _, err := pool.Exec(ctx, `INSERT INTO weave_workspaces(id,slug,name) VALUES($1,$1,$1)`, workspace); err != nil {
+		t.Fatal(err)
+	}
 	mcp := mcpregistry.New(pool, key)
 	registered, err := mcp.Create(ctx, workspace, "test", mcpregistry.UpsertServerRequest{Slug: "python", DisplayName: "Python sample", Transport: mcpregistry.TransportStreamableHTTP, URL: server.URL, Enabled: true})
 	if err != nil {
