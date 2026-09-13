@@ -8,7 +8,7 @@ import (
 	"sort"
 
 	"github.com/jinyitao123/weave/internal/base/snapshot"
-	"github.com/jinyitao123/weave/internal/kernel/org"
+	org "github.com/jinyitao123/weave/internal/kernel/orgspec"
 	"github.com/jinyitao123/weave/internal/kernel/workflow"
 	"github.com/jinyitao123/weave/internal/kernel/workflowhealth"
 	"github.com/labstack/echo/v4"

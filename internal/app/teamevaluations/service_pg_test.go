@@ -10,15 +10,17 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
+	orgstore "github.com/jinyitao123/weave/internal/app/org"
 	"github.com/jinyitao123/weave/internal/base/db"
+	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/base/snapshot"
-	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 	"github.com/jinyitao123/weave/internal/base/testutil"
 	"github.com/jinyitao123/weave/internal/build/teambuild"
 	"github.com/jinyitao123/weave/internal/build/teamforge"
-	"github.com/jinyitao123/weave/internal/kernel/org"
+	org "github.com/jinyitao123/weave/internal/kernel/orgspec"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
+	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 	"github.com/jinyitao123/weave/internal/kernel/workflow"
 	"github.com/jinyitao123/weave/internal/kernel/workflow/machine"
 )
@@ -74,6 +76,7 @@ func TestPostTemplateEvaluationPGMetaTeamDisabledPathConcurrentAndBaselineCAS(t 
 
 func TestPostTemplateEvaluationPGAtomicCertification(t *testing.T) {
 	fixture := newEvaluationPGFixture(t)
+	fixture.ctx = execution.WithSubject(fixture.ctx, execution.Subject{WorkspaceID: fixture.workspaceID, UserID: "admin-1"})
 	outcome := fixture.start(t, fixture.contract, uuid.NewString())
 	fixture.toPublishing(t, outcome.BuildRunID)
 
@@ -278,7 +281,7 @@ type evaluationPGFixture struct {
 	workflowID  string
 	contract    teambuild.EvaluationContract
 	builds      *teambuild.Store
-	org         *org.Store
+	org         *orgstore.Store
 	workflows   *workflow.Store
 	service     *Service
 }
@@ -301,7 +304,7 @@ func newEvaluationPGFixture(t *testing.T) *evaluationPGFixture {
 			t.Fatalf("create agent %s: %v", agent.Name, err)
 		}
 	}
-	orgStore := org.NewStore(pool)
+	orgStore := orgstore.NewStore(pool)
 	created, err := orgStore.CreateActiveTeam(ctx, workspaceID, org.CreateActiveTeamInput{
 		Name: prefix + "-team", Objective: "真实业务交付",
 		PrimaryScenario: "根据客户材料形成完整分析报告", SuccessCriteria: "事实正确、结构完整、可直接交付",

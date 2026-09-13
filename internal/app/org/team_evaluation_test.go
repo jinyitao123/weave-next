@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jinyitao123/weave/internal/kernel/orgspec"
 )
 
 func TestFinalCreateTeamEvaluationPreservesLegacyDefault(t *testing.T) {
@@ -13,10 +15,10 @@ func TestFinalCreateTeamEvaluationPreservesLegacyDefault(t *testing.T) {
 		input string
 		want  string
 	}{
-		{name: "legacy omitted", input: "", want: TeamEvaluationEvaluated},
-		{name: "legacy whitespace", input: "  ", want: TeamEvaluationEvaluated},
-		{name: "template", input: TeamEvaluationUnevaluated, want: TeamEvaluationUnevaluated},
-		{name: "evaluated explicit", input: TeamEvaluationEvaluated, want: TeamEvaluationEvaluated},
+		{name: "legacy omitted", input: "", want: orgspec.TeamEvaluationEvaluated},
+		{name: "legacy whitespace", input: "  ", want: orgspec.TeamEvaluationEvaluated},
+		{name: "template", input: orgspec.TeamEvaluationUnevaluated, want: orgspec.TeamEvaluationUnevaluated},
+		{name: "evaluated explicit", input: orgspec.TeamEvaluationEvaluated, want: orgspec.TeamEvaluationEvaluated},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -29,8 +31,8 @@ func TestFinalCreateTeamEvaluationPreservesLegacyDefault(t *testing.T) {
 
 func TestTeamJSONProjectsEvaluation(t *testing.T) {
 	now := time.Now().UTC()
-	encoded, err := json.Marshal(Team{
-		ID: "team-1", Evaluation: TeamEvaluationEvaluated,
+	encoded, err := json.Marshal(orgspec.Team{
+		ID: "team-1", Evaluation: orgspec.TeamEvaluationEvaluated,
 		EvaluationBuildRunID: "br-1", EvaluationContractHash: strings.Repeat("a", 64), EvaluatedAt: &now,
 	})
 	if err != nil {
@@ -43,9 +45,9 @@ func TestTeamJSONProjectsEvaluation(t *testing.T) {
 }
 
 func TestValidateCreateActiveTeamInputRejectsUnknownEvaluation(t *testing.T) {
-	input := CreateActiveTeamInput{
+	input := orgspec.CreateActiveTeamInput{
 		Name: "team", Objective: "objective", LeadAvatarID: "lead", Evaluation: "unknown",
-		Workers: []InitialTeamWorker{{WorkerAgentID: "worker", AllowedKinds: []string{"consult"}, DefaultKind: "consult"}},
+		Workers: []orgspec.InitialTeamWorker{{WorkerAgentID: "worker", AllowedKinds: []string{"consult"}, DefaultKind: "consult"}},
 	}
 	if err := validateCreateActiveTeamInput("workspace", input); err == nil {
 		t.Fatal("validateCreateActiveTeamInput() error = nil, want invalid evaluation rejection")

@@ -2,7 +2,7 @@ package teamforge
 
 // Team write tools (plan §10.2.3 "Team 与 Roster"). tf_create_team creates
 // one active team aggregate through the platform team-creation path
-// (org.Store.CreateActiveTeam: team + lead relation + enabled initial
+// (orgstore.Store.CreateActiveTeam: team + lead relation + enabled initial
 // workers atomically); tf_set_roster submits a complete roster CAS command
 // through registry.AgentRegistry.ApplyTeamRosterCommand — the platform's
 // only roster writer — never a raw row write. Both tools are receipt-gated
@@ -17,7 +17,7 @@ import (
 
 	"github.com/jinyitao123/loom/contract"
 	"github.com/jinyitao123/weave/internal/build/teambuild"
-	"github.com/jinyitao123/weave/internal/kernel/org"
+	org "github.com/jinyitao123/weave/internal/kernel/orgspec"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 )
 
@@ -106,7 +106,7 @@ func newTeamWriteToolsModeWithEvaluation(
 	if d.createTeamEnabled {
 		d.tools = append(d.tools, contract.ToolDef{
 			Name: ToolCreateTeam,
-			Description: "创建活动团队：原子地创建 Team + lead 关系 + 启用初始 roster（org.CreateActiveTeam），可选写入派工规则。" +
+			Description: "创建活动团队：原子地创建 Team + lead 关系 + 启用初始 roster（orgstore.CreateActiveTeam），可选写入派工规则。" +
 				"Create an active team aggregate (team + lead relation + enabled initial roster) and optionally set dispatch rules.",
 			InputSchema: createTeamSchema,
 			ReadOnly:    false,

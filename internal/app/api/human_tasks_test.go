@@ -15,7 +15,8 @@ import (
 	"github.com/jinyitao123/weave/internal/app/users"
 	"github.com/jinyitao123/weave/internal/base/db"
 	"github.com/jinyitao123/weave/internal/base/testutil"
-	"github.com/jinyitao123/weave/internal/kernel/org"
+
+	orgstore "github.com/jinyitao123/weave/internal/app/org"
 	"github.com/labstack/echo/v4"
 )
 
@@ -36,7 +37,7 @@ func TestAPIKeyOwnerPassesLiveHumanTaskMembershipRealPG(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := &Server{OrgStore: org.NewStore(pool)}
+	server := &Server{OrgStore: orgstore.NewStore(pool)}
 	e := echo.New()
 	e.GET("/v1/human-tasks", func(c echo.Context) error {
 		if getUserID(c) != owner.ID {
@@ -95,7 +96,7 @@ func TestHumanTaskMembershipIsRecheckedAgainstDatabase(t *testing.T) {
 	`); err != nil {
 		t.Fatalf("seed membership: %v", err)
 	}
-	server := &Server{OrgStore: org.NewStore(pool)}
+	server := &Server{OrgStore: orgstore.NewStore(pool)}
 	newContext := func() (echo.Context, *httptest.ResponseRecorder) {
 		recorder := httptest.NewRecorder()
 		ctx := echo.New().NewContext(httptest.NewRequest(http.MethodGet, "/v1/human-tasks", nil), recorder)
@@ -133,7 +134,7 @@ func TestHumanTaskHandlersStopAfterMembershipDenialRealPG(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := &Server{OrgStore: org.NewStore(pool)}
+	server := &Server{OrgStore: orgstore.NewStore(pool)}
 	if err := server.OrgStore.RemoveMember(t.Context(), workspaceID, owner.ID); err != nil {
 		t.Fatal(err)
 	}

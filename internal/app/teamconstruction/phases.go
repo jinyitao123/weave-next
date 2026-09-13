@@ -26,14 +26,13 @@ import (
 	"github.com/jinyitao123/loom/contract"
 	"github.com/jinyitao123/loom/pgstore"
 	"github.com/jinyitao123/loom/stdlib"
+	orgstore "github.com/jinyitao123/weave/internal/app/org"
 	"github.com/jinyitao123/weave/internal/app/teamassets"
 	"github.com/jinyitao123/weave/internal/base/deliverable"
 	"github.com/jinyitao123/weave/internal/base/execution"
-	"github.com/jinyitao123/weave/internal/kernel/fanout"
 	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/base/snapshot"
 	"github.com/jinyitao123/weave/internal/base/storeext"
-	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 	"github.com/jinyitao123/weave/internal/build/teambuild"
 	"github.com/jinyitao123/weave/internal/build/teameval"
 	"github.com/jinyitao123/weave/internal/build/teamforge"
@@ -43,15 +42,17 @@ import (
 	"github.com/jinyitao123/weave/internal/kernel/credentials"
 	"github.com/jinyitao123/weave/internal/kernel/delivery"
 	"github.com/jinyitao123/weave/internal/kernel/engine"
+	"github.com/jinyitao123/weave/internal/kernel/fanout"
 	"github.com/jinyitao123/weave/internal/kernel/loomruntime"
 	"github.com/jinyitao123/weave/internal/kernel/mcphost"
 	"github.com/jinyitao123/weave/internal/kernel/mcpregistry"
-	"github.com/jinyitao123/weave/internal/kernel/org"
+	org "github.com/jinyitao123/weave/internal/kernel/orgspec"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 	"github.com/jinyitao123/weave/internal/kernel/runtimellm"
 	"github.com/jinyitao123/weave/internal/kernel/runtimes"
 	"github.com/jinyitao123/weave/internal/kernel/schedule"
 	"github.com/jinyitao123/weave/internal/kernel/skills"
+	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 	"github.com/jinyitao123/weave/internal/kernel/teamrun"
 	"github.com/jinyitao123/weave/internal/kernel/workflow"
 	"github.com/jinyitao123/weave/internal/kernel/workflow/machine"
@@ -69,7 +70,7 @@ type Dependencies struct {
 	Build        *teambuild.Store
 	Agents       *registry.AgentRegistry
 	TeamWorkers  *registry.TeamWorkerRepository
-	Teams        *org.Store
+	Teams        *orgstore.Store
 	Workflows    *workflow.Store
 	MCPs         *mcpregistry.Store
 	Providers    *credentials.Store

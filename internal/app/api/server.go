@@ -4,13 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/jinyitao123/weave/internal/app/kernelbindings"
 	"log/slog"
 	"os"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/jinyitao123/weave/internal/app/kernelbindings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jinyitao123/loom"
@@ -41,7 +42,8 @@ import (
 	"github.com/jinyitao123/weave/internal/kernel/mcphost"
 	"github.com/jinyitao123/weave/internal/kernel/mcpregistry"
 	"github.com/jinyitao123/weave/internal/kernel/memory"
-	"github.com/jinyitao123/weave/internal/kernel/org"
+
+	orgstore "github.com/jinyitao123/weave/internal/app/org"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 	"github.com/jinyitao123/weave/internal/kernel/runtimellm"
 	"github.com/jinyitao123/weave/internal/kernel/runtimes"
@@ -85,7 +87,7 @@ type Server struct {
 	AgentRunReader            loomruntime.AgentRunLifecycleReader // nil if PG pool unavailable
 	UserStore                 *users.Store                        // nil if PG pool unavailable
 	KeyStore                  *apikeys.Store                      // nil if PG pool unavailable
-	OrgStore                  *org.Store                          // nil if PG pool unavailable
+	OrgStore                  *orgstore.Store                     // nil if PG pool unavailable
 	Projects                  *projects.Store                     // nil if PG pool unavailable
 	Attachments               *attachments.Store                  // nil if PG pool unavailable
 	ChatRequests              *chatrequest.Store                  // nil if PG pool unavailable

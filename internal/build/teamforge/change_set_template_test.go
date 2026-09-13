@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/jinyitao123/weave/internal/build/teambuild"
-	"github.com/jinyitao123/weave/internal/kernel/org"
+	org "github.com/jinyitao123/weave/internal/kernel/orgspec"
 )
 
 func TestTemplateInstantiateChangeSetContainsOnlyMaterialization(t *testing.T) {

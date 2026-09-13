@@ -33,7 +33,7 @@ import (
 	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/build/teambuild"
 	"github.com/jinyitao123/weave/internal/kernel/compiler"
-	"github.com/jinyitao123/weave/internal/kernel/org"
+	org "github.com/jinyitao123/weave/internal/kernel/orgspec"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 	"github.com/jinyitao123/weave/internal/kernel/workflow"
 	"github.com/jinyitao123/weave/internal/kernel/workflow/machine"
@@ -61,7 +61,7 @@ type WorkflowValidateDeps struct {
 	Workflows WorkflowReader
 }
 
-// TeamReader is satisfied by *org.Store.
+// TeamReader is satisfied by *orgstore.Store.
 type TeamReader interface {
 	ListTeams(ctx context.Context, workspaceID string) ([]org.Team, error)
 }

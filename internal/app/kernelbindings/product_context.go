@@ -12,7 +12,8 @@ import (
 	"github.com/jinyitao123/weave/internal/base/deliverable"
 	"github.com/jinyitao123/weave/internal/base/storeext"
 	"github.com/jinyitao123/weave/internal/kernel/fanout"
-	"github.com/jinyitao123/weave/internal/kernel/org"
+
+	orgstore "github.com/jinyitao123/weave/internal/app/org"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 )
 
@@ -29,17 +30,17 @@ func WorkspaceMemberExists(ctx context.Context, q registry.OwnerQuery, workspace
 	return exists, err
 }
 
-func NewOrganization(pool *pgxpool.Pool) *org.Store {
-	return org.NewStore(pool, org.WithMemberProfiles(func(ctx context.Context, workspaceID string, ids []string) (map[string]org.MemberProfile, error) {
+func NewOrganization(pool *pgxpool.Pool) *orgstore.Store {
+	return orgstore.NewStore(pool, orgstore.WithMemberProfiles(func(ctx context.Context, workspaceID string, ids []string) (map[string]orgstore.MemberProfile, error) {
 		rows, err := pool.Query(ctx, `SELECT id, username, COALESCE(display_name, '') FROM weave_users WHERE tenant_id=$1 AND id=ANY($2::text[])`, workspaceID, ids)
 		if err != nil {
 			return nil, err
 		}
 		defer rows.Close()
-		profiles := make(map[string]org.MemberProfile)
+		profiles := make(map[string]orgstore.MemberProfile)
 		for rows.Next() {
 			var id string
-			var profile org.MemberProfile
+			var profile orgstore.MemberProfile
 			if err := rows.Scan(&id, &profile.Username, &profile.DisplayName); err != nil {
 				return nil, err
 			}

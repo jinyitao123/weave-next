@@ -11,7 +11,8 @@ import (
 	"github.com/jinyitao123/weave/internal/base/db"
 	"github.com/jinyitao123/weave/internal/base/testutil"
 	"github.com/jinyitao123/weave/internal/build/teambuild"
-	"github.com/jinyitao123/weave/internal/kernel/org"
+
+	orgstore "github.com/jinyitao123/weave/internal/app/org"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 )
 
@@ -23,7 +24,7 @@ func TestDeclarativeTemplatePersistsFrozenSecondRevision(t *testing.T) {
 	}
 	workspaceID := "template-declarative-" + uuid.NewString()
 	reg := registry.New(pool)
-	if err := metateam.EnsureMetaTeam(ctx, reg, org.NewStore(pool), workspaceID); err != nil {
+	if err := metateam.EnsureMetaTeam(ctx, reg, orgstore.NewStore(pool), workspaceID); err != nil {
 		t.Fatalf("seed clean workspace: %v", err)
 	}
 	for _, name := range []string{metateam.ConfigEngineerName, metateam.GraphDesignerName} {
@@ -70,7 +71,7 @@ func TestDeclarativeTemplateIgnoresRetainedLegacyConstructionAgents(t *testing.T
 	}
 	workspaceID := "template-upgraded-" + uuid.NewString()
 	reg := registry.New(pool)
-	if err := metateam.EnsureMetaTeam(ctx, reg, org.NewStore(pool), workspaceID); err != nil {
+	if err := metateam.EnsureMetaTeam(ctx, reg, orgstore.NewStore(pool), workspaceID); err != nil {
 		t.Fatal(err)
 	}
 	for _, name := range []string{metateam.ConfigEngineerName, metateam.GraphDesignerName} {

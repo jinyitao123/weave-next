@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"github.com/jinyitao123/weave/internal/app/kernelbindings"
 	"io"
 	"log/slog"
 	"os"
@@ -12,6 +11,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jinyitao123/weave/internal/app/kernelbindings"
+
 	"github.com/jinyitao123/loom/pgstore"
 	"github.com/jinyitao123/weave/internal/app/api"
 	"github.com/jinyitao123/weave/internal/app/apikeys"
@@ -20,6 +21,7 @@ import (
 	"github.com/jinyitao123/weave/internal/app/conversation"
 	"github.com/jinyitao123/weave/internal/app/daemon"
 	"github.com/jinyitao123/weave/internal/app/deliveryverify"
+	"github.com/jinyitao123/weave/internal/app/designseed"
 	"github.com/jinyitao123/weave/internal/app/metateam"
 	"github.com/jinyitao123/weave/internal/app/projects"
 	"github.com/jinyitao123/weave/internal/app/teamconstruction"
@@ -36,7 +38,6 @@ import (
 	"github.com/jinyitao123/weave/internal/kernel/config"
 	"github.com/jinyitao123/weave/internal/kernel/credentials"
 	"github.com/jinyitao123/weave/internal/kernel/declarative"
-	"github.com/jinyitao123/weave/internal/kernel/declarative/designprompt"
 	"github.com/jinyitao123/weave/internal/kernel/delivery"
 	"github.com/jinyitao123/weave/internal/kernel/fanout"
 	"github.com/jinyitao123/weave/internal/kernel/llmrouter"
@@ -277,7 +278,7 @@ func main() {
 	srv.SystemProviders = router
 
 	// Seed system agents.
-	designprompt.EnsureDesigner(srv.Registry, "default")
+	designseed.EnsureDesigner(srv.Registry, "default")
 
 	// Initialize user and API key stores if PG pool is available.
 	if pool := srv.GetPool(); pool != nil {
@@ -285,7 +286,7 @@ func main() {
 		if srv.TeamBuild != nil && srv.Registry != nil && srv.Workflow != nil {
 			srv.TeamBuild.SetBaselineSources(srv.OrgStore, srv.Registry, srv.Workflow)
 		}
-		designprompt.EnsureDesignStudio(srv.Registry, srv.OrgStore, "default")
+		designseed.EnsureDesignStudio(srv.Registry, srv.OrgStore, "default")
 		if err := metateam.EnsureMetaTeamIfEnabled(
 			context.Background(), srv.Registry, srv.OrgStore, "default", cfg.MetaTeamEnabled,
 		); err != nil {

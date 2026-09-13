@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/jinyitao123/loom/contract"
-	"github.com/jinyitao123/weave/internal/kernel/org"
+	org "github.com/jinyitao123/weave/internal/kernel/orgspec"
 )
 
 type rosterEntryJSON struct {
@@ -31,7 +31,7 @@ type getTeamJSON struct {
 }
 
 // getTeam implements tf_get_team using the existing team list read path
-// (org.Store.ListTeams, filtered by ID exactly like the API), the complete
+// (orgstore.Store.ListTeams, filtered by ID exactly like the API), the complete
 // team-worker roster, and workflow summaries from workflow.Store.ListByTeam.
 func (d *ReadToolsDispatcher) getTeam(ctx context.Context, call contract.ToolCall) (*contract.ToolResult, error) {
 	if d.deps.Teams == nil || d.deps.Roster == nil || d.deps.Workflows == nil {
@@ -134,7 +134,7 @@ func (d *ReadToolsDispatcher) listTeams(ctx context.Context, call contract.ToolC
 }
 
 // getDispatchRules implements tf_get_dispatch_rules via the existing
-// org.Store.GetTeamDispatchRules read path (free-collaboration rules with
+// orgstore.Store.GetTeamDispatchRules read path (free-collaboration rules with
 // platform defaults when no rule row is stored).
 func (d *ReadToolsDispatcher) getDispatchRules(ctx context.Context, call contract.ToolCall) (*contract.ToolResult, error) {
 	if d.deps.DispatchRules == nil {

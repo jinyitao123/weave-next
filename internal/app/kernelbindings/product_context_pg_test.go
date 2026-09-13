@@ -10,7 +10,8 @@ import (
 	"github.com/jinyitao123/weave/internal/base/deliverable"
 	"github.com/jinyitao123/weave/internal/base/testutil"
 	"github.com/jinyitao123/weave/internal/kernel/fanout"
-	"github.com/jinyitao123/weave/internal/kernel/org"
+
+	orgstore "github.com/jinyitao123/weave/internal/app/org"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 )
 
@@ -82,7 +83,7 @@ func TestProductDirectoryRejectsCrossWorkspaceAndUsesCallerTransaction(t *testin
 			t.Fatalf("foreign/deleted profile leaked: %+v", m)
 		}
 	}
-	if _, err := org.NewStore(pool).ListMembers(ctx, "a"); !errors.Is(err, org.ErrMemberProfilesUnavailable) {
+	if _, err := orgstore.NewStore(pool).ListMembers(ctx, "a"); !errors.Is(err, orgstore.ErrMemberProfilesUnavailable) {
 		t.Fatalf("unbound profile directory accepted: %v", err)
 	}
 }

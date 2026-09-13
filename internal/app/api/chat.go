@@ -17,14 +17,13 @@ import (
 	"github.com/jinyitao123/loom/contract"
 	"github.com/jinyitao123/loom/stdlib"
 	"github.com/jinyitao123/weave/internal/app/conversation"
+	"github.com/jinyitao123/weave/internal/app/designseed"
 	"github.com/jinyitao123/weave/internal/app/metateam"
 	"github.com/jinyitao123/weave/internal/app/projects"
 	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/base/snapshot"
-	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 	"github.com/jinyitao123/weave/internal/build/teambuild"
 	"github.com/jinyitao123/weave/internal/kernel/compiler"
-	"github.com/jinyitao123/weave/internal/kernel/declarative/designprompt"
 	"github.com/jinyitao123/weave/internal/kernel/engine"
 	"github.com/jinyitao123/weave/internal/kernel/execenv"
 	"github.com/jinyitao123/weave/internal/kernel/grounding"
@@ -34,6 +33,7 @@ import (
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 	"github.com/jinyitao123/weave/internal/kernel/runtimes"
 	"github.com/jinyitao123/weave/internal/kernel/sessionexec"
+	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 	"github.com/labstack/echo/v4"
 )
 
@@ -803,8 +803,8 @@ func (s *Server) handleChatRequest(c echo.Context, req ChatRequest) error {
 	if req.Agent == metateam.BlueprintPatchPlannerName {
 		return c.JSON(http.StatusForbidden, map[string]string{"error": "platform-internal agent"})
 	}
-	if req.Agent == designprompt.AgentName {
-		designprompt.EnsureDesigner(s.Registry, tenant)
+	if req.Agent == designseed.AgentName {
+		designseed.EnsureDesigner(s.Registry, tenant)
 	}
 	rec, err := s.Registry.Get(ctx, tenant, req.Agent)
 	if err != nil {
