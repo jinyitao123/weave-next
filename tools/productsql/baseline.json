@@ -1,15 +1,5 @@
 [
   {
-    "path": "internal/kernel/fanout/reconciler.go",
-    "table": "weave_agents",
-    "count": 2
-  },
-  {
-    "path": "internal/kernel/fanout/reconciler.go",
-    "table": "weave_teams",
-    "count": 1
-  },
-  {
     "path": "internal/kernel/skills/import.go",
     "table": "weave_workspaces",
     "count": 1

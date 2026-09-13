@@ -202,49 +202,12 @@ func (r *Reconciler) commitLegacyCompletion(
 		return false, fmt.Errorf("task group %q is not resolving", group.ID)
 	}
 
-	var agentID string
-	var agentVersion int
-	var teamFreeCollab bool
-	if err := tx.QueryRow(ctx, `
-		SELECT completion_identity.agent_id,
-			completion_identity.agent_version,
-			completion_identity.team_free_collab
-		FROM (
-			SELECT source.lead_avatar_id AS agent_id,
-				source.lead_avatar_version AS agent_version,
-				true AS team_free_collab,
-				0 AS identity_order
-			FROM weave_run_terminal_markers AS marker
-			JOIN weave_team_run_snapshots AS source
-			  ON source.workspace_id=marker.workspace_id
-			 AND source.run_id=marker.run_snapshot_id
-			JOIN weave_agents AS frozen_lead
-			  ON frozen_lead.workspace_id=source.workspace_id
-			 AND frozen_lead.id=source.lead_avatar_id
-			 AND frozen_lead.name=$3
-			WHERE marker.workspace_id=$1 AND marker.task_group_id=$2
-				AND marker.phase='final'
-				AND source.lead_avatar_id IS NOT NULL
-				AND source.lead_avatar_version IS NOT NULL
-			UNION ALL
-			SELECT agent.id,agent.version,EXISTS(
-				SELECT 1 FROM weave_teams
-				WHERE workspace_id=agent.workspace_id
-					AND lead_avatar_id=agent.id
-					AND status='active'
-			),1
-			FROM weave_agents AS agent
-			WHERE agent.workspace_id=$1 AND agent.name=$3 AND agent.deleted=false
-		) AS completion_identity
-		ORDER BY completion_identity.identity_order
-		LIMIT 1
-	`, group.WorkspaceID, group.ID, group.AvatarAgent).Scan(
-		&agentID, &agentVersion, &teamFreeCollab,
-	); err != nil {
+	lead, err := r.store.resolveCompletionLead(ctx, tx, group)
+	if err != nil {
 		return false, fmt.Errorf("resolve task group completion lead identity: %w", err)
 	}
 	scope := execution.ScopeLegacyOrchestrator
-	if teamFreeCollab {
+	if lead.TeamFreeCollab {
 		scope = execution.ScopeTeamFreeCollab
 	}
 	if err := r.enqueuer.EnqueueTx(ctx, tx, &taskqueue.Task{
@@ -252,8 +215,8 @@ func (r *Reconciler) commitLegacyCompletion(
 		Subject:               execution.Subject{WorkspaceID: group.WorkspaceID, UserID: group.UserID},
 		WorkspaceID:           group.WorkspaceID,
 		Agent:                 group.AvatarAgent,
-		AgentID:               agentID,
-		AgentVersion:          agentVersion,
+		AgentID:               lead.AgentID,
+		AgentVersion:          lead.AgentVersion,
 		IdentityKind:          taskqueue.IdentityAgent,
 		IdentitySchemaVersion: 2,
 		ExecutionScope:        scope,
