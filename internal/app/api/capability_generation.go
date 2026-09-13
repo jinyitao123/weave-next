@@ -12,8 +12,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jinyitao123/loom/contract"
-	"github.com/jinyitao123/weave/internal/base/capability"
 	"github.com/jinyitao123/weave/internal/base/execution"
+	"github.com/jinyitao123/weave/internal/kernel/capability"
 	"github.com/jinyitao123/weave/internal/kernel/mcphost"
 	"github.com/labstack/echo/v4"
 )
@@ -119,7 +119,7 @@ func (s *Server) handleGenerateCapability(c echo.Context) error {
 		if s.Runtimes == nil || s.engineExecutorFor(true) == nil {
 			return c.JSON(http.StatusUnprocessableEntity, map[string]string{"code": "capability_runtime_unavailable"})
 		}
-		record, err := s.selectCapabilityRuntime(generationContext, workspaceID, capability.RuntimeRequirement{Engine: "codex"})
+		record, err := s.capabilityRunner().SelectRuntime(generationContext, workspaceID, capability.RuntimeRequirement{Engine: "codex"})
 		if err != nil {
 			return c.JSON(http.StatusUnprocessableEntity, map[string]string{"code": "capability_runtime_unavailable"})
 		}

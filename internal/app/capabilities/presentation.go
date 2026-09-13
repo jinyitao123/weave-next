@@ -1,6 +1,6 @@
 package capabilities
 
-import "github.com/jinyitao123/weave/internal/base/capability"
+import "github.com/jinyitao123/weave/internal/kernel/capability"
 
 // Return developer-owned labels and output selection, never internal prompts.
 func presentInvocation(i *Invocation, d capability.Definition) {

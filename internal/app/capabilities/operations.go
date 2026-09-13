@@ -7,7 +7,7 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jinyitao123/weave/internal/base/capability"
+	"github.com/jinyitao123/weave/internal/kernel/capability"
 )
 
 type InvocationEvent struct {
@@ -52,8 +52,8 @@ func (o PGExecutionObserver) Checkpoint(ctx context.Context, state capability.Ex
 	if event.Type == "step_completed" {
 		increment = 1
 	}
-	tag, err := tx.Exec(ctx, `UPDATE weave_capability_invocations i SET checkpoint=$6::jsonb,used_steps=used_steps+$7
- FROM weave_capability_invocation_tasks t WHERE i.workspace_id=$1 AND i.invocation_id=$2 AND i.task_id=$3 AND t.task_id=$3 AND t.claim_token=$4 AND i.status='running' AND t.status='running' AND t.deadline_at>now() AND i.used_steps+$7<=i.max_steps`, o.Task.WorkspaceID, o.Task.InvocationID, o.Task.TaskID, o.Task.ClaimToken, event.Type, string(raw), increment)
+	tag, err := tx.Exec(ctx, `UPDATE weave_capability_invocations i SET checkpoint=$5::jsonb,used_steps=used_steps+$6
+ FROM weave_capability_invocation_tasks t WHERE i.workspace_id=$1 AND i.invocation_id=$2 AND i.task_id=$3 AND t.task_id=$3 AND t.claim_token=$4 AND i.status='running' AND t.status='running' AND t.deadline_at>now() AND i.used_steps+$6<=i.max_steps`, o.Task.WorkspaceID, o.Task.InvocationID, o.Task.TaskID, o.Task.ClaimToken, string(raw), increment)
 	if err != nil {
 		return err
 	}

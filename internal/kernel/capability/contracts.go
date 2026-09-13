@@ -1,5 +1,6 @@
-// Package capability contains the engine-independent developer contract for
-// defining, publishing, and invoking a capability.
+// Package capability owns capability definitions, compilation, and resumable
+// execution semantics. It is independent of concrete member engines and of
+// product services; capabilityruntime binds its steps to execution engines.
 package capability
 
 import (

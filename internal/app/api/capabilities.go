@@ -11,8 +11,8 @@ import (
 	"strings"
 
 	appcapabilities "github.com/jinyitao123/weave/internal/app/capabilities"
-	"github.com/jinyitao123/weave/internal/base/capability"
 	"github.com/jinyitao123/weave/internal/base/frozen"
+	"github.com/jinyitao123/weave/internal/kernel/capability"
 	"github.com/jinyitao123/weave/internal/kernel/llmrouter"
 	"github.com/labstack/echo/v4"
 )
@@ -44,7 +44,7 @@ func (s *Server) handleDebugCapability(c echo.Context) error {
 		return c.JSON(400, map[string]string{"code": "capability_request_invalid"})
 	}
 	workspace, _ := c.Get("tenant").(string)
-	if err := s.validateCapabilityRuntime(c.Request().Context(), workspace, request.Definition.Runtime); err != nil {
+	if err := s.capabilityRunner().ValidateRuntime(c.Request().Context(), workspace, request.Definition.Runtime); err != nil {
 		return c.JSON(422, map[string]string{"code": "capability_runtime_unavailable"})
 	}
 	invocation, replayed, err := s.Capabilities.Debug(c.Request().Context(), appcapabilities.DebugRequest{
@@ -124,7 +124,7 @@ func (s *Server) handlePublishCapability(c echo.Context) error {
 	if err != nil {
 		return capabilityHTTPError(c, err)
 	}
-	if err := s.validateCapabilityRuntime(c.Request().Context(), workspaceID, draft.Runtime); err != nil {
+	if err := s.capabilityRunner().ValidateRuntime(c.Request().Context(), workspaceID, draft.Runtime); err != nil {
 		return c.JSON(http.StatusUnprocessableEntity, map[string]string{"code": "capability_runtime_unavailable", "error": "Select a configured model on the local Loom runtime; pools and additional runtime requirements are not connected."})
 	}
 	published, err := s.Capabilities.Publish(c.Request().Context(), workspaceID, c.Param("capabilityID"), revision)

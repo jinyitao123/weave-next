@@ -19,10 +19,10 @@ import (
 	"github.com/jinyitao123/loom/pgstore"
 	"github.com/jinyitao123/weave/internal/app/capabilities"
 	"github.com/jinyitao123/weave/internal/app/users"
-	"github.com/jinyitao123/weave/internal/base/capability"
 	"github.com/jinyitao123/weave/internal/base/db"
 	"github.com/jinyitao123/weave/internal/base/storeext"
 	"github.com/jinyitao123/weave/internal/base/testutil"
+	"github.com/jinyitao123/weave/internal/kernel/capability"
 	"github.com/jinyitao123/weave/internal/kernel/config"
 	"github.com/jinyitao123/weave/internal/kernel/llmrouter"
 	"github.com/labstack/echo/v4"
@@ -155,7 +155,9 @@ func TestCapabilityHTTPToLoomRuntimeRealPG(t *testing.T) {
 			break
 		}
 		if string(record["status"]) == `"failed"` || time.Now().After(deadline) {
-			t.Fatalf("run did not complete: %s", mustCapabilityJSON(record))
+			var executionError string
+			_ = pool.QueryRow(t.Context(), `SELECT COALESCE(error,'') FROM weave_capability_invocations WHERE invocation_id=$1`, id).Scan(&executionError)
+			t.Fatalf("run did not complete: %s; execution error: %s", mustCapabilityJSON(record), executionError)
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
