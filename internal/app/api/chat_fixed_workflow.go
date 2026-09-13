@@ -14,8 +14,12 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jinyitao123/loom/contract"
 	"github.com/jinyitao123/weave/internal/app/conversation"
+	"github.com/jinyitao123/weave/internal/app/workflowadmission"
+	"github.com/jinyitao123/weave/internal/base/execution"
+	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/base/snapshot"
-	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
+	"github.com/jinyitao123/weave/internal/kernel/publication"
+
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 	"github.com/jinyitao123/weave/internal/kernel/workflow"
 	"github.com/labstack/echo/v4"
@@ -149,86 +153,80 @@ func (s *Server) publishedConversationWorkflowForLead(
 
 func (s *Server) admitPublishedWorkflowChat(
 	ctx context.Context,
-	workspaceID, workflowID, projectID, conversationID, message string,
+	workspaceID, workflowID, projectID, conversationID, userMessageID, clientRequestID, message string,
 ) (snapshot.TeamRunSnapshot, string, error) {
-	if s.Workflow == nil || s.ScheduleTransactions == nil || s.Snapshots == nil || s.Tasks == nil {
+	admissions := s.workflowAdmissions()
+	if s.Workflow == nil || s.ScheduleTransactions == nil || s.Snapshots == nil || admissions == nil || userMessageID == "" {
 		return snapshot.TeamRunSnapshot{}, "", errors.New("workflow run service unavailable")
+	}
+	subject, err := execution.RequireSubject(ctx, workspaceID)
+	if err != nil {
+		return snapshot.TeamRunSnapshot{}, "", err
+	}
+	requestID := "chat:" + userMessageID
+	finish := func() (snapshot.TeamRunSnapshot, string, error) {
+		record, err := admissions.Admit(ctx, workspaceID, requestID, s.associateWorkflowAdmission)
+		if err != nil {
+			return snapshot.TeamRunSnapshot{}, "", err
+		}
+		fixed, err := s.Snapshots.GetByRunID(ctx, workspaceID, record.Receipt.RunID)
+		if err != nil {
+			return snapshot.TeamRunSnapshot{}, "", err
+		}
+		return *fixed, record.Receipt.TaskID, nil
+	}
+	if previous, err := admissions.Get(ctx, workspaceID, requestID); err == nil {
+		if previous.Request.ProjectID != projectID || previous.Target.ConversationID != conversationID || previous.Request.Revision.WorkflowID != workflowID {
+			return snapshot.TeamRunSnapshot{}, "", publication.ErrRequestConflict
+		}
+		return finish()
+	} else if !errors.Is(err, pgx.ErrNoRows) {
+		return snapshot.TeamRunSnapshot{}, "", err
+	}
+	envelope, err := s.Workflow.ResolvePublished(ctx, workspaceID, workflowID, nil)
+	if err != nil {
+		return snapshot.TeamRunSnapshot{}, "", err
+	}
+	payload, err := frozen.DecodeArtifactEnvelopeV1(envelope)
+	if err != nil {
+		return snapshot.TeamRunSnapshot{}, "", err
 	}
 	tx, err := s.ScheduleTransactions.Begin(ctx)
 	if err != nil {
-		return snapshot.TeamRunSnapshot{}, "", fmt.Errorf("begin conversation workflow run: %w", err)
+		return snapshot.TeamRunSnapshot{}, "", err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-
-	admitted, err := s.Workflow.AdmitWorkflowManualRunTx(ctx, tx, workflow.WorkflowManualRunAdmissionRequest{
-		WorkspaceID: workspaceID,
-		WorkflowID:  workflowID,
-		SourceRef:   conversationID,
-		TriggerType: "conversation_explicit",
-	})
+	admitted, err := s.Workflow.PrepareWorkflowManualRunTx(ctx, tx, workflow.WorkflowManualRunAdmissionRequest{
+		WorkspaceID: workspaceID, WorkflowID: workflowID, SourceRef: conversationID, TriggerType: "conversation_explicit",
+	}, envelope)
 	if err != nil {
-		return snapshot.TeamRunSnapshot{}, "", fmt.Errorf("admit conversation workflow run: %w", err)
-	}
-	if err := validateWorkflowManualRunSnapshot(
-		admitted, workspaceID, workflowID, conversationID, "conversation_explicit",
-	); err != nil {
 		return snapshot.TeamRunSnapshot{}, "", err
 	}
 	project, err := loadWorkflowManualRunProject(ctx, tx, workspaceID, projectID)
 	if err != nil {
 		return snapshot.TeamRunSnapshot{}, "", err
 	}
-	leadAvatarID, _, err := s.workflowManualRunLead(ctx, admitted)
-	if err != nil {
-		return snapshot.TeamRunSnapshot{}, "", err
-	}
-	if project.AvatarID != leadAvatarID {
+	if project.AvatarID != payload.Team.LeadAgentID {
 		return snapshot.TeamRunSnapshot{}, "", errors.New("project avatar does not match admitted workflow lead avatar")
 	}
 	var conversationProjectID, conversationAgentID string
-	if err := tx.QueryRow(ctx, `
-		SELECT project_id,agent_id FROM weave_conversations
-		WHERE workspace_id=$1 AND id=$2 AND parent_message_id IS NULL
-		FOR SHARE
-	`, workspaceID, conversationID).Scan(&conversationProjectID, &conversationAgentID); err != nil {
-		return snapshot.TeamRunSnapshot{}, "", fmt.Errorf("read conversation workflow conversation: %w", err)
+	if err = tx.QueryRow(ctx, `SELECT project_id,agent_id FROM weave_conversations WHERE workspace_id=$1 AND id=$2 AND user_id=$3 AND parent_message_id IS NULL FOR SHARE`, workspaceID, conversationID, subject.UserID).Scan(&conversationProjectID, &conversationAgentID); err != nil {
+		return snapshot.TeamRunSnapshot{}, "", err
 	}
-	if conversationProjectID != projectID || conversationAgentID != leadAvatarID {
+	if conversationProjectID != projectID || conversationAgentID != payload.Team.LeadAgentID {
 		return snapshot.TeamRunSnapshot{}, "", errors.New("conversation does not match admitted workflow project and lead")
 	}
-	admitted.ProjectID = project.ID
-	created, err := s.Snapshots.CreateTx(ctx, tx, admitted)
-	if err != nil {
-		return snapshot.TeamRunSnapshot{}, "", fmt.Errorf("create conversation workflow snapshot: %w", err)
+	input, _ := json.Marshal(message)
+	request := publication.PublishedRunRequest{Version: publication.ContractVersion, RequestID: requestID, Revision: publication.CandidateRevision(envelope),
+		RunID: uuid.NewSHA1(uuid.NameSpaceOID, []byte(workspaceID+"/"+requestID+"/run")).String(), TaskID: "task-" + uuid.NewSHA1(uuid.NameSpaceOID, []byte(workspaceID+"/"+requestID+"/task")).String(),
+		Input: input, InputVersion: userMessageID, ProjectID: project.ID, Trigger: publication.PublishedTrigger{Type: "conversation_explicit", SourceRef: conversationID}}
+	if _, err = admissions.ReserveTx(ctx, tx, request, workflowadmission.Target{TeamID: admitted.TeamID, ConversationID: conversationID, ChatRequestID: clientRequestID}); err != nil {
+		return snapshot.TeamRunSnapshot{}, "", err
 	}
-	payload, err := json.Marshal(message)
-	if err != nil {
-		return snapshot.TeamRunSnapshot{}, "", fmt.Errorf("encode conversation workflow input: %w", err)
+	if err = tx.Commit(ctx); err != nil {
+		return snapshot.TeamRunSnapshot{}, "", err
 	}
-	task := newPublishedWorkflowChatTask(created, payload)
-	if err := s.Tasks.EnqueueTx(ctx, tx, task); err != nil {
-		return snapshot.TeamRunSnapshot{}, "", fmt.Errorf("enqueue conversation workflow: %w", err)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return snapshot.TeamRunSnapshot{}, "", fmt.Errorf("commit conversation workflow run: %w", err)
-	}
-	return *created, task.ID, nil
-}
-
-func newPublishedWorkflowChatTask(created *snapshot.TeamRunSnapshot, payload json.RawMessage) *taskqueue.Task {
-	return &taskqueue.Task{
-		ID:                    "task-" + uuid.NewString(),
-		WorkspaceID:           created.WorkspaceID,
-		ProjectID:             created.ProjectID,
-		IdentityKind:          taskqueue.IdentityTeamWorkflow,
-		IdentitySchemaVersion: 2,
-		WorkflowID:            created.WorkflowID,
-		WorkflowVersion:       created.WorkflowVersion,
-		RunSnapshotID:         created.RunID,
-		Source:                "session",
-		Kind:                  "team_workflow",
-		Payload:               payload,
-	}
+	return finish()
 }
 
 func decodePublishedWorkflowChatOutput(raw json.RawMessage) (string, error) {
@@ -340,10 +338,17 @@ func (s *Server) respondPublishedWorkflowChat(
 		)
 	}
 	created, taskID, err := s.admitPublishedWorkflowChat(
-		runCtx, workspaceID, workflowID, req.ProjectID, conversationID,
+		runCtx, workspaceID, workflowID, req.ProjectID, conversationID, userMessageID, req.ClientRequestID,
 		publishedWorkflowConversationInput(history, req.Message),
 	)
 	if err != nil {
+		// A persisted delivery intent can have a committed kernel receipt even
+		// when this call has no response. Preserve it for same-request recovery.
+		if admissions := s.workflowAdmissions(); admissions != nil {
+			if _, readErr := admissions.Get(runCtx, workspaceID, "chat:"+userMessageID); readErr == nil {
+				return c.JSON(http.StatusAccepted, map[string]string{"code": "workflow_admission_pending", "status": "running", "user_message_id": userMessageID, "conversation_id": conversationID})
+			}
+		}
 		failRequest("", err)
 		return c.JSON(http.StatusConflict, map[string]string{"error": err.Error()})
 	}

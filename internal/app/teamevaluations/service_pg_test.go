@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/url"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -12,17 +14,20 @@ import (
 	"github.com/jinyitao123/weave/internal/app/teamconstruction"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	orgstore "github.com/jinyitao123/weave/internal/app/org"
+	"github.com/jinyitao123/weave/internal/app/workflowadmission"
 	"github.com/jinyitao123/weave/internal/app/workflowcatalog"
 	"github.com/jinyitao123/weave/internal/base/db"
 	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/base/frozen"
-	"github.com/jinyitao123/weave/internal/base/snapshot"
 	"github.com/jinyitao123/weave/internal/base/testutil"
 	"github.com/jinyitao123/weave/internal/build/teambuild"
 	"github.com/jinyitao123/weave/internal/build/teamforge"
 	org "github.com/jinyitao123/weave/internal/kernel/orgspec"
+	"github.com/jinyitao123/weave/internal/kernel/publication"
+	"github.com/jinyitao123/weave/internal/kernel/publicationservice"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 	"github.com/jinyitao123/weave/internal/kernel/workflow"
@@ -81,6 +86,9 @@ func TestPostTemplateEvaluationPGMetaTeamDisabledPathConcurrentAndBaselineCAS(t 
 func TestPostTemplateEvaluationPGAtomicCertification(t *testing.T) {
 	fixture := newEvaluationPGFixture(t)
 	fixture.ctx = execution.WithSubject(fixture.ctx, execution.Subject{WorkspaceID: fixture.workspaceID, UserID: "admin-1"})
+	if _, err := fixture.pool.Exec(fixture.ctx, `INSERT INTO weave_users(id,tenant_id,username,password,role)VALUES('admin-1',$1,'admin-1','unused','admin')`, fixture.workspaceID); err != nil {
+		t.Fatal(err)
+	}
 	outcome := fixture.start(t, fixture.contract, uuid.NewString())
 	fixture.toPublishing(t, outcome.BuildRunID)
 
@@ -160,38 +168,42 @@ func TestPostTemplateEvaluationPGAtomicCertification(t *testing.T) {
 		t.Fatalf("published workflow = %#v err = %v", wf, err)
 	}
 
+	envelope, err := fixture.workflows.ResolvePublished(fixture.ctx, fixture.workspaceID, fixture.workflowID, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	connection, err := url.Parse(os.Getenv("TEST_DATABASE_URL"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	params := connection.Query()
+	params.Set("search_path", fixture.pool.Config().ConnConfig.RuntimeParams["search_path"])
+	connection.RawQuery = params.Encode()
+	kernel, err := publicationservice.Open(fixture.ctx, connection.String(), teamconstruction.NewPublicationAuthority(fixture.pool, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer kernel.Close()
+	admissions := workflowadmission.New(fixture.pool, kernel)
+	request := publication.PublishedRunRequest{Version: publication.ContractVersion, RequestID: "evaluation-dispatch", Revision: publication.CandidateRevision(envelope), RunID: uuid.NewString(), TaskID: "task-" + uuid.NewString(), Input: json.RawMessage(`"真实评测后派活"`), InputVersion: "evaluation-dispatch", Trigger: publication.PublishedTrigger{Type: "conversation_explicit", SourceRef: "m2b-acceptance"}}
 	dispatchTx, err := fixture.pool.Begin(fixture.ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = dispatchTx.Rollback(fixture.ctx) }()
-	admitted, err := fixture.workflows.AdmitWorkflowManualRunTx(fixture.ctx, dispatchTx, workflow.WorkflowManualRunAdmissionRequest{
-		WorkspaceID: fixture.workspaceID, WorkflowID: fixture.workflowID,
-		SourceRef: "m2b-acceptance", TriggerType: "conversation_explicit",
-	})
-	if err != nil {
-		t.Fatalf("admit published workflow dispatch: %v", err)
+	if _, err = admissions.ReserveTx(fixture.ctx, dispatchTx, request, workflowadmission.Target{TeamID: fixture.team.ID}); err != nil {
+		_ = dispatchTx.Rollback(fixture.ctx)
+		t.Fatal(err)
 	}
-	createdSnapshot, err := snapshot.NewStore(fixture.pool).CreateTx(fixture.ctx, dispatchTx, admitted)
-	if err != nil {
-		t.Fatalf("persist published workflow dispatch snapshot: %v", err)
+	if err = dispatchTx.Commit(fixture.ctx); err != nil {
+		t.Fatal(err)
 	}
-	task := &taskqueue.Task{
-		ID: "task-" + uuid.NewString(), WorkspaceID: fixture.workspaceID,
-		IdentityKind: taskqueue.IdentityTeamWorkflow, IdentitySchemaVersion: 2,
-		WorkflowID: fixture.workflowID, WorkflowVersion: 1, RunSnapshotID: createdSnapshot.RunID,
-		Source: "session", Kind: "team_workflow", Payload: json.RawMessage(`"真实评测后派活"`),
-	}
-	if err := taskqueue.New(fixture.pool, taskqueue.RealClock{}, time.Minute).EnqueueTx(fixture.ctx, dispatchTx, task); err != nil {
-		t.Fatalf("enqueue published workflow dispatch: %v", err)
-	}
-	if err := dispatchTx.Commit(fixture.ctx); err != nil {
+	if _, err = admissions.Admit(fixture.ctx, fixture.workspaceID, request.RequestID, func(context.Context, pgx.Tx, workflowadmission.Record) error { return nil }); err != nil {
 		t.Fatal(err)
 	}
 	var queuedStatus string
 	if err := fixture.pool.QueryRow(fixture.ctx, `
 		SELECT status FROM weave_task_queue WHERE workspace_id=$1 AND id=$2
-	`, fixture.workspaceID, task.ID).Scan(&queuedStatus); err != nil || queuedStatus != taskqueue.StatusQueued {
+	`, fixture.workspaceID, request.TaskID).Scan(&queuedStatus); err != nil || queuedStatus != taskqueue.StatusQueued {
 		t.Fatalf("dispatched task status = %q err = %v", queuedStatus, err)
 	}
 }

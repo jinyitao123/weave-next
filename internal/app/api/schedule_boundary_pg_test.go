@@ -3,9 +3,13 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jinyitao123/weave/internal/kernel/publication"
 	"testing"
 	"time"
 
+	"github.com/jinyitao123/weave/internal/app/teamconstruction"
 	"github.com/jinyitao123/weave/internal/app/workflowcatalog"
 	"github.com/jinyitao123/weave/internal/base/db"
 	"github.com/jinyitao123/weave/internal/base/frozen"
@@ -16,7 +20,8 @@ import (
 	"github.com/jinyitao123/weave/internal/kernel/workflow"
 )
 
-func TestWorkflowScheduleSkipsRetiredAgentAndKeepsAdmissionRealPG(t *testing.T) {
+func scheduledAdmissionFixture(t *testing.T) (*Server, *pgxpool.Pool, time.Time, func() string) {
+	t.Helper()
 	ctx := context.Background()
 	pool := testutil.PostgresPool(t)
 	if err := db.Migrate(ctx, pool); err != nil {
@@ -73,7 +78,6 @@ func TestWorkflowScheduleSkipsRetiredAgentAndKeepsAdmissionRealPG(t *testing.T) 
 		}
 		return state
 	}
-	before := legacyState()
 	store := schedule.New(pool, nil)
 	due, err := store.DueSchedules(ctx, now)
 	if err != nil || len(due) != 1 || due[0].ID != "team-schedule" {
@@ -89,8 +93,15 @@ func TestWorkflowScheduleSkipsRetiredAgentAndKeepsAdmissionRealPG(t *testing.T) 
 		t.Fatal("retired agent schedule can still acquire an execution lock")
 	}
 	workflowStore := workflowcatalog.New(pool, nil, workflow.NewArtifactStore(pool, nil))
-	server := &Server{AgentSchedules: store, WorkflowScheduleAdmission: NewWorkflowScheduleAdmissionService(workflowStore, workflow.NewArtifactStore(pool, nil)),
+	server := &Server{Store: teamDispatchPoolStore{pool: pool}, Workflow: workflowStore, KernelPublication: openAPIKernelPublication(t, ctx, pool, teamconstruction.NewPublicationAuthority(pool, nil)), AgentSchedules: store, WorkflowScheduleAdmission: NewWorkflowScheduleAdmissionService(workflowStore, workflow.NewArtifactStore(pool, nil)),
 		ScheduleTransactions: pool, Snapshots: snapshot.NewStore(pool), Tasks: taskqueue.New(pool, nil, time.Minute)}
+	return server, pool, now, legacyState
+}
+
+func TestWorkflowScheduleSkipsRetiredAgentAndKeepsAdmissionRealPG(t *testing.T) {
+	ctx := context.Background()
+	server, pool, now, legacyState := scheduledAdmissionFixture(t)
+	before := legacyState()
 	for range 2 {
 		if err := server.SweepSchedules(ctx, now); err != nil {
 			t.Fatal(err)
@@ -113,5 +124,51 @@ func TestWorkflowScheduleSkipsRetiredAgentAndKeepsAdmissionRealPG(t *testing.T) 
 	}
 	if after := legacyState(); after != before {
 		t.Fatal("sweep changed the retired agent schedule's stored history")
+	}
+}
+
+func TestScheduleRecoversPreparedIntentAndUnknownKernelCommitRealPG(t *testing.T) {
+	for _, lostKernelResponse := range []bool{false, true} {
+		t.Run(map[bool]string{false: "product-prepared", true: "kernel-accepted"}[lostKernelResponse], func(t *testing.T) {
+			ctx := context.Background()
+			server, pool, now, _ := scheduledAdmissionFixture(t)
+			real := server.KernelPublication
+			if lostKernelResponse {
+				wrapper := &ambiguousPublishedKernel{Service: real, published: real.(publication.PublishedService), reconciler: real.(publication.PublishedReconciler)}
+				wrapper.lose.Store(true)
+				server.KernelPublication = wrapper
+			} else {
+				server.WorkflowScheduleStepHook = func(_ context.Context, stage WorkflowScheduleStage) error {
+					if stage == WorkflowScheduleStageCommitAfter {
+						return errors.New("process stopped after preparing occurrence")
+					}
+					return nil
+				}
+			}
+			if err := server.SweepSchedules(ctx, now); err == nil {
+				t.Fatal("interruption did not reach caller")
+			}
+			var tasks, pending int
+			if err := pool.QueryRow(ctx, `SELECT (SELECT count(*) FROM weave_task_queue),(SELECT count(*) FROM weave_schedule_occurrences WHERE status='pending')`).Scan(&tasks, &pending); err != nil {
+				t.Fatal(err)
+			}
+			want := 0
+			if lostKernelResponse {
+				want = 1
+			}
+			if tasks != want || pending != 1 {
+				t.Fatalf("interrupted state %d/%d", tasks, pending)
+			}
+			// Recreate the product adapter with only durable request/occurrence state.
+			server.WorkflowScheduleStepHook = nil
+			server.KernelPublication = real
+			if err := server.SweepSchedules(ctx, now); err != nil {
+				t.Fatal(err)
+			}
+			var committed int
+			if err := pool.QueryRow(ctx, `SELECT (SELECT count(*) FROM weave_task_queue),(SELECT count(*) FROM weave_schedule_occurrences WHERE status='committed')`).Scan(&tasks, &committed); err != nil || tasks != 1 || committed != 1 {
+				t.Fatalf("schedule replay %d/%d %v", tasks, committed, err)
+			}
+		})
 	}
 }

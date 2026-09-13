@@ -342,6 +342,9 @@ func (s *Store) FailOrphaned(ctx context.Context, staleAfter time.Duration) (int
 			response=jsonb_build_object('error','execution_interrupted'),
 			updated_at=$2
 		WHERE req.status='running'
+    AND NOT EXISTS (SELECT 1 FROM weave_workflow_admission_requests intent
+      WHERE intent.workspace_id=req.workspace_id AND intent.request_id='chat:'||req.user_message_id
+        AND intent.actor_subject->>'user_id'=req.user_id)
 		  AND req.session_id IS NOT NULL
 		  AND req.updated_at < $1
 		  AND EXISTS (

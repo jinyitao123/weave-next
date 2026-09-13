@@ -456,7 +456,7 @@ func consumeDispatchInputTx(ctx context.Context, tx pgx.Tx, workspaceID, userID,
 	}
 	result, err := tx.Exec(ctx, `UPDATE weave_dispatch_input_revisions
 		SET consumed_run_id=$4, consumed_task_id=$5, consumed_at=statement_timestamp()
-		WHERE workspace_id=$1 AND user_id=$2 AND input_revision_id=$3 AND is_current AND consumed_run_id IS NULL AND closed_at IS NULL`,
+		WHERE workspace_id=$1 AND user_id=$2 AND input_revision_id=$3 AND consumed_run_id IS NULL AND closed_at IS NULL`,
 		workspaceID, userID, revisionID, runID, taskID)
 	if err != nil {
 		return fmt.Errorf("consume dispatch input revision: %w", err)
@@ -471,11 +471,10 @@ func (s *Server) replayBoundDispatchInput(c echo.Context, input dispatchInputRev
 	if input.ConsumedRunID == "" {
 		return false, nil
 	}
-	existing, err := s.boundDispatchInputResult(c.Request().Context(), getTenant(c), input, request)
-	if err != nil {
+	if _, err := s.boundDispatchInputResult(c.Request().Context(), getTenant(c), input, request); err != nil {
 		return true, workflowStoreFailure(c, err)
 	}
-	return true, c.JSON(http.StatusOK, existing)
+	return true, s.finishWorkflowAdmission(c, input.ConsumedRunID, request.ClientRequestID, http.StatusOK)
 }
 
 func (s *Server) boundDispatchInputResult(ctx context.Context, workspaceID string, input dispatchInputRevision, request teamDispatchRequest) (workflowManualRunResponse, error) {
@@ -544,6 +543,34 @@ func (s *Server) handleReconcileDispatchInput(c echo.Context) error {
 			return workflowStoreFailure(c, err)
 		}
 		return c.JSON(http.StatusOK, dispatchInputReconciliation{State: "accepted", Receipt: input.dispatchInputReceipt, Result: &result})
+	}
+	runID, _ := deterministicWorkflowDispatchIDs(workspaceID, userID, input.ClientRequestID)
+	var prepared bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM weave_workflow_admission_requests WHERE workspace_id=$1 AND request_id=$2)`, workspaceID, runID).Scan(&prepared); err != nil {
+		return workflowStoreFailure(c, err)
+	}
+	if prepared {
+		_ = tx.Rollback(ctx)
+		store := s.workflowAdmissions()
+		if store == nil {
+			return workflowStoreFailure(c, errors.New("admission reconciliation unavailable"))
+		}
+		record, closed, err := store.Reconcile(ctx, workspaceID, runID, s.associateWorkflowAdmission)
+		if err != nil {
+			return workflowStoreFailure(c, err)
+		}
+		if !closed {
+			result := workflowAdmissionResponse(record, input.ClientRequestID)
+			return c.JSON(http.StatusOK, dispatchInputReconciliation{State: "accepted", Receipt: input.dispatchInputReceipt, Result: &result})
+		}
+		tx, err = s.ScheduleTransactions.Begin(ctx)
+		if err != nil {
+			return workflowStoreFailure(c, err)
+		}
+		defer func() { _ = tx.Rollback(ctx) }()
+		if err = lockDispatchInputSession(ctx, tx, workspaceID, userID, input.WorkbenchSessionID); err != nil {
+			return workflowStoreFailure(c, err)
+		}
 	}
 	if _, err := tx.Exec(ctx, `UPDATE weave_dispatch_input_revisions SET closed_at=COALESCE(closed_at,statement_timestamp())
 		WHERE workspace_id=$1 AND user_id=$2 AND input_revision_id=$3`, workspaceID, userID, input.InputRevisionID); err != nil {

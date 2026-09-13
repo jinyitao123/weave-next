@@ -625,6 +625,13 @@ func (s *Store) DeletePureDraft(
 	ctx context.Context,
 	workspaceID, workflowID string,
 ) error {
+	if s.artifacts == nil {
+		return errors.New("frozen publication reader unavailable")
+	}
+	frozenHistory, err := s.artifacts.HasHistory(ctx, workspaceID, workflowID)
+	if err != nil {
+		return err
+	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("begin delete pure workflow draft: %w", err)
@@ -643,6 +650,9 @@ func (s *Store) DeletePureDraft(
 	}
 	if err != nil {
 		return fmt.Errorf("lock workflow for pure draft deletion: %w", err)
+	}
+	if err := LockPublicationIntentTx(ctx, tx, workspaceID, workflowID); err != nil {
+		return err
 	}
 	if publishedVersion != nil {
 		return fmt.Errorf("%w: workflow %q", workflowdef.ErrNotPureDraft, workflowID)
@@ -690,13 +700,6 @@ func (s *Store) DeletePureDraft(
 			)
 	`, workspaceID, workflowID).Scan(&versionCount, &hasHistory); err != nil {
 		return fmt.Errorf("check workflow publication history: %w", err)
-	}
-	if s.artifacts == nil {
-		return errors.New("frozen publication reader unavailable")
-	}
-	frozenHistory, err := s.artifacts.HasHistory(ctx, workspaceID, workflowID)
-	if err != nil {
-		return err
 	}
 	hasHistory = hasHistory || frozenHistory
 	if versionCount == 0 || hasHistory {

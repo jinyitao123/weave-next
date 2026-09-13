@@ -214,61 +214,43 @@ func (s *Server) replayWorkflowDispatch(
 	request teamDispatchRequest,
 	runID, taskID, fingerprint string,
 ) (bool, error) {
-	existing, existingTeamID, payload, contextKey, found, err := s.loadWorkflowDispatchReplay(
-		c.Request().Context(), getTenant(c), runID, taskID,
-	)
+	store := s.workflowAdmissions()
+	if store == nil {
+		return false, nil
+	}
+	record, err := store.Get(c.Request().Context(), getTenant(c), runID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
 	if err != nil {
 		return true, workflowStoreFailure(c, err)
 	}
-	if !found {
-		return false, nil
-	}
 	var originalTask string
-	if contextKey != fingerprint || json.Unmarshal([]byte(payload), &originalTask) != nil || existingTeamID != team.ID ||
-		originalTask != request.Task || (request.ProjectID != "" && existing.ProjectID != request.ProjectID) ||
-		(request.WorkflowID != "" && request.WorkflowID != existing.WorkflowID) ||
-		(request.WorkflowVersion != nil && *request.WorkflowVersion != existing.WorkflowVersion) {
+	if record.Request.RunID != runID || record.Request.TaskID != taskID || record.Request.ContextKey != fingerprint || record.Target.TeamID != team.ID || json.Unmarshal(record.Request.Input, &originalTask) != nil || originalTask != request.Task {
 		return true, workflowError(c, http.StatusConflict, "client_request_conflict", "client_request_id was already used for different dispatch facts")
 	}
-	existing.RunID = runID
-	existing.ConversationID = request.ConversationID
-	existing.InputRevisionID = request.InputRevisionID
-	if request.InputRevisionID != "" {
-		existing.ClientRequestID = request.ClientRequestID
-	}
-	return true, c.JSON(http.StatusOK, existing)
+	return true, s.finishWorkflowAdmission(c, runID, request.ClientRequestID, http.StatusOK)
 }
 
-func (s *Server) loadWorkflowDispatchReplay(
-	ctx context.Context,
-	workspaceID, runID, taskID string,
-) (workflowManualRunResponse, string, string, string, bool, error) {
-	if s.GetPool() == nil {
+func (s *Server) loadWorkflowDispatchReplay(ctx context.Context, workspaceID, runID, taskID string) (workflowManualRunResponse, string, string, string, bool, error) {
+	store := s.workflowAdmissions()
+	if store == nil {
 		return workflowManualRunResponse{}, "", "", "", false, nil
 	}
-	var existing workflowManualRunResponse
-	var teamID, payload, contextKey string
-	err := s.GetPool().QueryRow(ctx, `
-		SELECT snapshot.team_id, snapshot.workflow_id, snapshot.workflow_version,
-			task.id, COALESCE(snapshot.project_id,''), task.payload::text, COALESCE(task.context_key,'')
-		FROM weave_team_run_snapshots AS snapshot
-		JOIN weave_task_queue AS task
-		  ON task.workspace_id=snapshot.workspace_id
-		 AND task.run_snapshot_id=snapshot.run_id
-		 AND task.id=$3
-		WHERE snapshot.workspace_id=$1 AND snapshot.run_id=$2
-		  AND snapshot.mode='fixed_workflow'
-	`, workspaceID, runID, taskID).Scan(
-		&teamID, &existing.WorkflowID, &existing.WorkflowVersion,
-		&existing.TaskID, &existing.ProjectID, &payload, &contextKey,
-	)
+	record, err := store.Get(ctx, workspaceID, runID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return workflowManualRunResponse{}, "", "", "", false, nil
 	}
 	if err != nil {
 		return workflowManualRunResponse{}, "", "", "", false, err
 	}
-	return existing, teamID, payload, contextKey, true, nil
+	if record.Request.RunID != runID || record.Request.TaskID != taskID {
+		return workflowManualRunResponse{}, "", "", "", false, errors.New("workflow request execution identity mismatch")
+	}
+	if record.Receipt == nil {
+		return workflowManualRunResponse{}, "", "", "", false, nil
+	}
+	return workflowAdmissionResponse(record, ""), record.Target.TeamID, string(record.Request.Input), record.Request.ContextKey, true, nil
 }
 
 func (s *Server) dispatchTeamFreeCollab(c echo.Context, team org.Team, request teamDispatchRequest) error {

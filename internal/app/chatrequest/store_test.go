@@ -225,7 +225,8 @@ func newTestStore(t *testing.T) *Store {
 	pool := testutil.PostgresPool(t)
 	ctx := context.Background()
 	_, err := pool.Exec(ctx, `
-		CREATE TABLE weave_chat_requests (
+		CREATE TABLE weave_workflow_admission_requests(workspace_id TEXT,request_id TEXT,actor_subject JSONB);
+ CREATE TABLE weave_chat_requests (
 			workspace_id TEXT NOT NULL,
 			user_id TEXT NOT NULL,
 			client_request_id UUID NOT NULL,

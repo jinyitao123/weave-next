@@ -38,6 +38,7 @@ var productTables = map[string]bool{
 	"weave_team_evaluation_requests": true, "weave_team_template_requests": true,
 	"weave_team_publication_requests": true, "weave_team_candidate_requests": true,
 	"weave_team_workflows": true, "weave_team_workflow_versions": true,
+	"weave_workflow_admission_requests": true,
 }
 
 func isProductTable(table string) bool {

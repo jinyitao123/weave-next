@@ -7,6 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jinyitao123/weave/internal/app/workflowcatalog"
 	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/kernel/publication"
 )
@@ -32,6 +33,9 @@ func (s *pgPublicationRequests) ReservePublication(ctx context.Context, record P
 		return PublicationRequestRecord{}, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+	if err := workflowcatalog.LockPublicationIntentTx(ctx, tx, record.Subject.WorkspaceID, record.Command.Request.Candidate.WorkflowID); err != nil {
+		return PublicationRequestRecord{}, err
+	}
 	subject, _ := json.Marshal(record.Subject)
 	command, _ := json.Marshal(record.Command)
 	_, err = tx.Exec(ctx, `INSERT INTO weave_team_publication_requests(workspace_id,request_id,actor_subject,request_digest,command,state) VALUES($1,$2,$3,$4,$5,'pending') ON CONFLICT(workspace_id,request_id) DO NOTHING`, record.Subject.WorkspaceID, record.Command.Request.RequestID, string(subject), record.Digest, string(command))
@@ -152,6 +156,9 @@ func (s *pgPublicationRequests) ReserveCandidate(ctx context.Context, record Can
 		return CandidateRequestRecord{}, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+	if err := workflowcatalog.LockPublicationIntentTx(ctx, tx, record.Subject.WorkspaceID, record.Request.Candidate.WorkflowID); err != nil {
+		return CandidateRequestRecord{}, err
+	}
 	subject, _ := json.Marshal(record.Subject)
 	target, _ := json.Marshal(record.Target)
 	request, _ := json.Marshal(record.Request)

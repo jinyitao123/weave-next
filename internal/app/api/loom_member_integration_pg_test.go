@@ -144,6 +144,7 @@ func runPublishedMemberRecovery(t *testing.T, totalRounds uint64) {
 	artifacts := workflow.NewArtifactStore(pool, nil)
 	flows := workflowcatalog.New(pool, nil, artifacts)
 	server := &Server{Store: teamDispatchPoolStore{pool: pool}, OrgStore: orgstore.NewStore(pool), Registry: agentcatalog.New(pool), Workflow: flows, WorkflowArtifacts: artifacts, Deliverables: deliveryverify.NewStore(pool), ScheduleTransactions: pool, Snapshots: snapshots, Tasks: tasks}
+	server.KernelPublication = openAPIKernelPublication(t, ctx, pool, teamconstruction.NewPublicationAuthority(pool, nil))
 	request, _ := json.Marshal(teamDispatchRequest{Task: "calculate", ClientRequestID: "00000000-0000-4000-8000-000000000055"})
 	recorder := httptest.NewRecorder()
 	c := echo.New().NewContext(httptest.NewRequest(http.MethodPost, "/v1/teams/team/dispatch", bytes.NewReader(request)).WithContext(ctx), recorder)

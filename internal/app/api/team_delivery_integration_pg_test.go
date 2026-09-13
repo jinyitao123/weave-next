@@ -140,6 +140,7 @@ func newTeamDeliveryFixture(t *testing.T, engineName string) *teamDeliveryFixtur
 	f.runs = teamrun.NewPGStore()
 	f.runs.Transactions = pool
 	f.server = &Server{Store: teamDeliveryPoolStore{teamDispatchPoolStore{pool: pool}}, OrgStore: orgstore.NewStore(pool), Registry: agentcatalog.New(pool), Workflow: f.flows, WorkflowArtifacts: f.artifacts, ScheduleTransactions: pool, Snapshots: f.snapshots, Tasks: f.tasks, Runtimes: f.runtimeStore, Deliverables: deliveryverify.NewStore(pool), teamRunCancel: &teamrun.CancelService{Transactions: pool, Runs: f.runs, Tasks: f.tasks}}
+	f.server.KernelPublication = openAPIKernelPublication(t, ctx, pool, teamconstruction.NewPublicationAuthority(pool, nil))
 	return f
 }
 
