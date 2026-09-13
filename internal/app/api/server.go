@@ -345,6 +345,7 @@ func (s *Server) registerRoutes() {
 	// runtime scheduling is intentionally a separate follow-up integration.
 	auth.POST("/capabilities/drafts", s.handleSaveCapabilityDraft, requireCapabilityAccess("manage"))
 	auth.GET("/capabilities/drafts", s.handleListCapabilityDrafts, requireCapabilityAccess("manage"))
+	auth.POST("/capabilities/:capabilityID/debug", s.handleDebugCapability, requireCapabilityAccess("manage"))
 	auth.POST("/capabilities/:capabilityID/versions/:revision/publish", s.handlePublishCapability, requireCapabilityAccess("manage"))
 	auth.POST("/capabilities/:capabilityID/versions/:revision/invocations", s.handleInvokeCapability, requireCapabilityAccess("invoke"))
 	auth.GET("/invocations/:invocationID", s.handleGetCapabilityInvocation, requireCapabilityAccess("read"))

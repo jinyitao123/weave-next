@@ -143,6 +143,20 @@ func (s *PGStore) GetRevision(ctx context.Context, workspaceID, capabilityID str
 }
 
 func (s *PGStore) ClaimInvocation(ctx context.Context, invocation Invocation) (Invocation, bool, error) {
+	return s.claimInvocation(ctx, invocation, nil)
+}
+
+func (s *PGStore) ClaimDebugInvocation(ctx context.Context, invocation Invocation, snapshot capability.DefinitionSnapshot) (Invocation, bool, error) {
+	if _, err := capability.CompileDebug(snapshot); err != nil {
+		return Invocation{}, false, err
+	}
+	if invocation.RunKind != "debug" || invocation.Revision != 0 || invocation.CapabilityID != snapshot.Definition.CapabilityID || invocation.DefinitionHash != snapshot.DefinitionHash {
+		return Invocation{}, false, capability.ErrInvalidDefinition
+	}
+	return s.claimInvocation(ctx, invocation, &snapshot)
+}
+
+func (s *PGStore) claimInvocation(ctx context.Context, invocation Invocation, debug *capability.DefinitionSnapshot) (Invocation, bool, error) {
 	if err := s.ready(); err != nil {
 		return Invocation{}, false, err
 	}
@@ -159,22 +173,31 @@ func (s *PGStore) ClaimInvocation(ctx context.Context, invocation Invocation) (I
 	result, err := tx.Exec(ctx, `
 		INSERT INTO weave_capability_invocations (
 			workspace_id, application_id, request_id, invocation_id,
-			capability_id, revision, input, status, result_state, task_id
-		) VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10)
+   capability_id, revision, input, status, result_state, task_id,run_kind,definition_hash
+  ) VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10,$11,$12)
 		ON CONFLICT (workspace_id, application_id, request_id) DO NOTHING
 	`, invocation.WorkspaceID, invocation.ApplicationID, invocation.RequestID,
 		invocation.InvocationID, invocation.CapabilityID, invocation.Revision,
-		string(input), invocation.Status, invocation.ResultState, taskID)
+		string(input), invocation.Status, invocation.ResultState, taskID, invocation.RunKind, invocation.DefinitionHash)
 	if err != nil {
 		return Invocation{}, false, fmt.Errorf("claim invocation: %w", err)
 	}
 	created := result.RowsAffected() == 1
 	if created {
+		if debug != nil {
+			raw, err := json.Marshal(debug.Definition)
+			if err != nil {
+				return Invocation{}, false, err
+			}
+			if _, err := tx.Exec(ctx, `INSERT INTO weave_capability_debug_snapshots(workspace_id,invocation_id,definition_hash,definition) VALUES($1,$2,$3,$4::jsonb)`, invocation.WorkspaceID, invocation.InvocationID, debug.DefinitionHash, string(raw)); err != nil {
+				return Invocation{}, false, err
+			}
+		}
 		if _, err := tx.Exec(ctx, `
 			INSERT INTO weave_capability_invocation_tasks (
-				task_id, workspace_id, invocation_id, capability_id, revision, payload
-			) VALUES ($1,$2,$3,$4,$5,$6::jsonb)
-			`, taskID, invocation.WorkspaceID, invocation.InvocationID, invocation.CapabilityID, invocation.Revision, string(input)); err != nil {
+    task_id, workspace_id, invocation_id, capability_id, revision, payload,run_kind
+   ) VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7)
+   `, taskID, invocation.WorkspaceID, invocation.InvocationID, invocation.CapabilityID, invocation.Revision, string(input), invocation.RunKind); err != nil {
 			return Invocation{}, false, fmt.Errorf("enqueue capability invocation: %w", err)
 		}
 	}
@@ -182,12 +205,12 @@ func (s *PGStore) ClaimInvocation(ctx context.Context, invocation Invocation) (I
 	var raw []byte
 	err = tx.QueryRow(ctx, `
 		SELECT workspace_id, application_id, request_id, invocation_id,
-			capability_id, revision, input, status, result_state, COALESCE(task_id, '')
+   capability_id, revision, input, status, result_state, COALESCE(task_id, ''),run_kind,definition_hash
 		FROM weave_capability_invocations
 		WHERE workspace_id=$1 AND application_id=$2 AND request_id=$3
 	`, invocation.WorkspaceID, invocation.ApplicationID, invocation.RequestID).Scan(
 		&stored.WorkspaceID, &stored.ApplicationID, &stored.RequestID, &stored.InvocationID,
-		&stored.CapabilityID, &stored.Revision, &raw, &stored.Status, &stored.ResultState, &stored.TaskID)
+		&stored.CapabilityID, &stored.Revision, &raw, &stored.Status, &stored.ResultState, &stored.TaskID, &stored.RunKind, &stored.DefinitionHash)
 	if err != nil {
 		return Invocation{}, false, fmt.Errorf("read invocation claim: %w", err)
 	}
@@ -196,7 +219,7 @@ func (s *PGStore) ClaimInvocation(ctx context.Context, invocation Invocation) (I
 		return Invocation{}, false, fmt.Errorf("commit invocation claim: %w", err)
 	}
 	storedInput, canonicalErr := frozen.CanonicalizeJSON(stored.Input)
-	if canonicalErr != nil || stored.CapabilityID != invocation.CapabilityID || stored.Revision != invocation.Revision || string(storedInput) != string(invocation.Input) {
+	if canonicalErr != nil || stored.CapabilityID != invocation.CapabilityID || stored.Revision != invocation.Revision || string(storedInput) != string(invocation.Input) || stored.RunKind != invocation.RunKind || stored.DefinitionHash != invocation.DefinitionHash {
 		return Invocation{}, false, ErrIdempotencyConflict
 	}
 	return stored, !created, nil
@@ -213,7 +236,7 @@ func (s *PGStore) GetInvocation(ctx context.Context, workspaceID, applicationID,
 	var raw []byte
 	query := `
   SELECT workspace_id, application_id, request_id, invocation_id, COALESCE(task_id,''),
-			capability_id, revision, input, status, result_state, result, COALESCE(error, '')
+   capability_id, revision, input, status, result_state, result, COALESCE(error, ''),run_kind,definition_hash
 		FROM weave_capability_invocations
 		WHERE workspace_id=$1 AND invocation_id=$2`
 	args := []any{workspaceID, invocationID}
@@ -224,7 +247,7 @@ func (s *PGStore) GetInvocation(ctx context.Context, workspaceID, applicationID,
 	err := s.pool.QueryRow(ctx, query, args...).Scan(
 		&invocation.WorkspaceID, &invocation.ApplicationID, &invocation.RequestID, &invocation.InvocationID,
 		&invocation.TaskID, &invocation.CapabilityID, &invocation.Revision, &raw,
-		&invocation.Status, &invocation.ResultState, &invocation.Result, &invocation.Error)
+		&invocation.Status, &invocation.ResultState, &invocation.Result, &invocation.Error, &invocation.RunKind, &invocation.DefinitionHash)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Invocation{}, ErrInvocationNotFound
 	}
@@ -292,13 +315,14 @@ func (s *PGStore) ClaimTask(ctx context.Context) (InvocationTask, bool, error) {
 	var task InvocationTask
 	var raw, definitionRaw []byte
 	var definitionHash string
+	var expectedHash string
 	err = tx.QueryRow(ctx, `
-  SELECT task.task_id, task.workspace_id, task.invocation_id, task.capability_id, task.revision, task.payload
+  SELECT task.task_id, task.workspace_id, task.invocation_id, task.capability_id, task.revision, task.payload,task.run_kind,i.definition_hash
   FROM weave_capability_invocations AS i
   JOIN weave_capability_invocation_tasks AS task ON task.workspace_id=i.workspace_id AND task.invocation_id=i.invocation_id AND task.task_id=i.task_id
   WHERE i.status='queued' AND task.status='queued'
   ORDER BY task.created_at, task.task_id LIMIT 1 FOR UPDATE OF i SKIP LOCKED
-	`).Scan(&task.TaskID, &task.WorkspaceID, &task.InvocationID, &task.CapabilityID, &task.Revision, &raw)
+ `).Scan(&task.TaskID, &task.WorkspaceID, &task.InvocationID, &task.CapabilityID, &task.Revision, &raw, &task.RunKind, &expectedHash)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return InvocationTask{}, false, nil
 	}
@@ -310,7 +334,13 @@ func (s *PGStore) ClaimTask(ctx context.Context) (InvocationTask, bool, error) {
 	if _, err := tx.Exec(ctx, `UPDATE weave_capability_invocation_tasks SET status='running',claim_token=$2,deadline_at=now()+interval '150 seconds' WHERE task_id=$1`, task.TaskID, task.ClaimToken); err != nil {
 		return InvocationTask{}, false, err
 	}
-	if err := tx.QueryRow(ctx, `SELECT definition_hash, definition FROM weave_capability_revisions WHERE workspace_id=$1 AND capability_id=$2 AND revision=$3`, task.WorkspaceID, task.CapabilityID, task.Revision).Scan(&definitionHash, &definitionRaw); err != nil {
+	var source pgx.Row
+	if task.RunKind == "debug" {
+		source = tx.QueryRow(ctx, `SELECT definition_hash,definition FROM weave_capability_debug_snapshots WHERE workspace_id=$1 AND invocation_id=$2`, task.WorkspaceID, task.InvocationID)
+	} else {
+		source = tx.QueryRow(ctx, `SELECT definition_hash, definition FROM weave_capability_revisions WHERE workspace_id=$1 AND capability_id=$2 AND revision=$3`, task.WorkspaceID, task.CapabilityID, task.Revision)
+	}
+	if err := source.Scan(&definitionHash, &definitionRaw); err != nil {
 		return InvocationTask{}, false, fmt.Errorf("load capability revision for task: %w", err)
 	}
 	var definition capability.Definition
@@ -318,6 +348,12 @@ func (s *PGStore) ClaimTask(ctx context.Context) (InvocationTask, bool, error) {
 		return InvocationTask{}, false, fmt.Errorf("decode capability revision for task: %w", err)
 	}
 	plan, err := capability.Compile(capability.PublishedRevision{SchemaVersion: capability.SchemaVersionV1, CapabilityID: task.CapabilityID, Revision: task.Revision, Definition: definition, DefinitionHash: definitionHash})
+	if task.RunKind == "debug" {
+		plan, err = capability.CompileDebug(capability.DefinitionSnapshot{Definition: definition, DefinitionHash: definitionHash})
+	}
+	if definitionHash != expectedHash || definition.CapabilityID != task.CapabilityID {
+		err = capability.ErrInvalidRevision
+	}
 	if err != nil {
 		if _, writeErr := tx.Exec(ctx, `UPDATE weave_capability_invocation_tasks SET status='failed' WHERE task_id=$1`, task.TaskID); writeErr != nil {
 			return InvocationTask{}, false, writeErr

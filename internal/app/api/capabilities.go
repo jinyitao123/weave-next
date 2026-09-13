@@ -23,6 +23,37 @@ type invokeCapabilityRequest struct {
 	Input     json.RawMessage `json:"input"`
 }
 
+type debugCapabilityRequest struct {
+	RequestID  string                `json:"request_id"`
+	Definition capability.Definition `json:"definition"`
+	Input      json.RawMessage       `json:"input"`
+}
+
+func (s *Server) handleDebugCapability(c echo.Context) error {
+	if s.Capabilities == nil {
+		return c.JSON(503, map[string]string{"error": "capability service unavailable"})
+	}
+	var request debugCapabilityRequest
+	if err := decodeCapabilityBody(c, &request); err != nil {
+		return c.JSON(400, map[string]string{"code": "capability_request_invalid"})
+	}
+	if request.Definition.CapabilityID != c.Param("capabilityID") {
+		return c.JSON(400, map[string]string{"code": "capability_request_invalid"})
+	}
+	workspace, _ := c.Get("tenant").(string)
+	if err := s.validateCapabilityRuntime(c.Request().Context(), workspace, request.Definition.Runtime); err != nil {
+		return c.JSON(422, map[string]string{"code": "capability_runtime_unavailable"})
+	}
+	invocation, replayed, err := s.Capabilities.Debug(c.Request().Context(), appcapabilities.DebugRequest{
+		WorkspaceID: workspace, ApplicationID: capabilityApplicationID(c), RequestID: request.RequestID, Definition: request.Definition, Input: request.Input,
+	})
+	if err != nil {
+		return capabilityHTTPError(c, err)
+	}
+	return c.JSON(202, map[string]any{"invocation_id": invocation.InvocationID, "task_id": invocation.TaskID, "capability_id": invocation.CapabilityID,
+		"run_kind": invocation.RunKind, "definition_hash": invocation.DefinitionHash, "status": invocation.Status, "result_state": invocation.ResultState, "replayed": replayed})
+}
+
 func (s *Server) handleListCapabilityDrafts(c echo.Context) error {
 	if s.Capabilities == nil {
 		return c.JSON(503, map[string]string{"error": "capability service unavailable"})
@@ -98,6 +129,7 @@ func (s *Server) handleInvokeCapability(c echo.Context) error {
 		return capabilityHTTPError(c, err)
 	}
 	return c.JSON(http.StatusAccepted, map[string]any{
+		"run_kind": invocation.RunKind, "definition_hash": invocation.DefinitionHash,
 		"invocation_id": invocation.InvocationID, "capability_id": invocation.CapabilityID,
 		"revision": invocation.Revision, "task_id": invocation.TaskID, "status": invocation.Status,
 		"result_state": invocation.ResultState, "replayed": replayed,
@@ -121,12 +153,17 @@ func (s *Server) handleGetCapabilityInvocation(c echo.Context) error {
 	if err != nil {
 		return capabilityHTTPError(c, err)
 	}
-	return c.JSON(http.StatusOK, map[string]any{
+	response := map[string]any{
+		"run_kind": invocation.RunKind, "definition_hash": invocation.DefinitionHash,
 		"invocation_id": invocation.InvocationID, "task_id": invocation.TaskID,
-		"capability_id": invocation.CapabilityID, "revision": invocation.Revision,
-		"status": invocation.Status, "result_state": invocation.ResultState,
+		"capability_id": invocation.CapabilityID,
+		"status":        invocation.Status, "result_state": invocation.ResultState,
 		"result": invocation.Result, "error": publicCapabilityError(invocation),
-	})
+	}
+	if invocation.RunKind == "published" {
+		response["revision"] = invocation.Revision
+	}
+	return c.JSON(http.StatusOK, response)
 }
 
 func (s *Server) handleCancelCapabilityInvocation(c echo.Context) error {
