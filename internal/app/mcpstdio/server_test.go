@@ -59,18 +59,20 @@ func TestServeUsesSharedProtocolForInitializeListAndCall(t *testing.T) {
 		!strings.Contains(instructions, "ask the user only for a human task") ||
 		!strings.Contains(instructions, "Workbench shows progress, recovery and deliverables") ||
 		!strings.Contains(instructions, "Workbench owns the work conversation") ||
+		!strings.Contains(instructions, "capability_plan creates a draft") ||
+		!strings.Contains(instructions, "capability_publish requires user confirmation") ||
 		!strings.Contains(instructions, "Dispatch the original business task and materials") ||
 		!strings.Contains(instructions, "Follow the same run after dispatch") ||
 		strings.Contains(instructions, "Codex") || strings.Contains(instructions, "Claude") ||
-		len(instructions) > 900 {
+		len(instructions) > 1050 {
 		t.Fatalf("initialize instructions = %q", instructions)
 	}
 	tools := responses[1]["result"].(map[string]any)["tools"].([]any)
-	if len(tools) != 21 {
+	if len(tools) != 24 {
 		t.Fatalf("tool count = %d", len(tools))
 	}
 	wantNames := []string{
-		"team_template_list", "team_create", "provider_list", "provider_add", "apikey_create",
+		"team_template_list", "team_create", "capability_list", "capability_plan", "capability_publish", "provider_list", "provider_add", "apikey_create",
 		"runtime_create", "team_list", "team_status", "usage_summary",
 		"team_dispatch", "build_status", "dispatch_status",
 		"team_run_status", "team_run_activity", "team_run_stop", "human_task_list", "human_task_get", "human_task_complete",
@@ -84,6 +86,13 @@ func TestServeUsesSharedProtocolForInitializeListAndCall(t *testing.T) {
 		for _, forbidden := range []string{"internal/", "/v1/", "state machine", "HTTP response body"} {
 			if strings.Contains(description, forbidden) {
 				t.Errorf("description for %s contains %q: %s", tool["name"], forbidden, description)
+			}
+		}
+		if tool["name"] == "capability_plan" {
+			schema, _ := json.Marshal(tool["inputSchema"])
+			if !bytes.Contains(schema, []byte(`"required":["business_request","model","idempotency_key"]`)) ||
+				!strings.Contains(description, "Reuse the same idempotency key") {
+				t.Fatalf("capability_plan contract is not retry-safe: %s / %s", schema, description)
 			}
 		}
 		if tool["name"] == "team_create" {
@@ -114,6 +123,9 @@ func TestToolRoleScopeTableIsFrozen(t *testing.T) {
 	want := map[string]toolAccessPolicy{
 		"team_template_list":  {Role: "any", Scopes: []string{"org"}},
 		"team_create":         {Role: "admin", Scopes: []string{"org"}},
+		"capability_list":     {Role: "admin", Scopes: []string{"capabilities:manage"}},
+		"capability_plan":     {Role: "admin", Scopes: []string{"capabilities:manage"}},
+		"capability_publish":  {Role: "admin", Scopes: []string{"capabilities:manage"}},
 		"provider_list":       {Role: "any", Scopes: []string{"admin"}},
 		"provider_add":        {Role: "admin", Scopes: []string{"admin"}},
 		"apikey_create":       {Role: "admin", Scopes: []string{"admin"}},
@@ -281,6 +293,49 @@ func TestTeamCreateRendersStructuredBusinessDefinition(t *testing.T) {
 	))
 	if err != nil || result.IsError || !strings.Contains(result.Content, "build-structured") {
 		t.Fatalf("result = %#v err = %v", result, err)
+	}
+}
+
+func TestCapabilityToolsKeepAuthoringInConversation(t *testing.T) {
+	var saved bool
+	api := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		switch {
+		case request.Method == http.MethodGet && request.URL.Path == "/v1/capabilities/drafts":
+			_, _ = response.Write([]byte(`{"drafts":[{"capability_id":"cap-1","name":"资料核对","description":"核对材料并形成结论","input_schema":{"properties":{"material":{"type":"string","title":"待核对材料"}},"required":["material"]},"output_schema":{"properties":{"summary":{"type":"string","title":"核对结论"}},"required":["summary"]},"roles":[{"id":"role-1","name":"核对员","description":"核对材料"}],"steps":[{"id":"step-1","name":"核对材料","role_id":"role-1","kind":"worker"}]}],"models":["model"],"versions":[{"capability_id":"cap-1","revision":1}]}`))
+		case request.Method == http.MethodPost && request.URL.Path == "/v1/capabilities/generate":
+			_, _ = response.Write([]byte(`{"definition":{"schema_version":1,"capability_id":"generated","name":"报价复核","description":"复核报价并交付建议","input_schema":{"properties":{"quotation":{"type":"string","title":"报价单"}},"required":["quotation"]},"output_schema":{"properties":{"advice":{"type":"string","title":"采购建议"}},"required":["advice"]},"roles":[{"id":"role-a","name":"采购专员","description":"核对数量"},{"id":"role-b","name":"财务复核员","description":"复核价格"}],"steps":[{"id":"step-a","name":"核对数量","role_id":"role-a","kind":"worker"},{"id":"step-b","name":"复核价格","role_id":"role-b","kind":"worker"}]}}`))
+		case request.Method == http.MethodPost && request.URL.Path == "/v1/capabilities/drafts":
+			var body struct {
+				Definition map[string]any `json:"definition"`
+			}
+			if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
+				t.Fatal(err)
+			}
+			if body.Definition["capability_id"] != "cap-revised" {
+				t.Fatalf("saved capability id = %#v", body.Definition["capability_id"])
+			}
+			saved = true
+			response.WriteHeader(http.StatusAccepted)
+			_, _ = response.Write([]byte(`{"status":"draft_saved"}`))
+		case request.Method == http.MethodPost && request.URL.Path == "/v1/capabilities/cap-revised/versions/2/publish":
+			_, _ = response.Write([]byte(`{"capability_id":"cap-revised","revision":2,"definition":{"capability_id":"cap-revised","name":"报价复核","description":"复核报价并交付建议","input_schema":{"properties":{}},"output_schema":{"properties":{}},"roles":[],"steps":[]}}`))
+		default:
+			t.Fatalf("unexpected request = %s %s", request.Method, request.URL.Path)
+		}
+	}))
+	defer api.Close()
+	dispatcher := NewToolDispatcher(mcpClient(t, api.URL))
+	listed, err := dispatcher.Dispatch(context.Background(), structToolCall("capability_list", `{}`))
+	if err != nil || listed.IsError || !strings.Contains(listed.Content, `"name":"资料核对"`) || !strings.Contains(listed.Content, `"published_versions":[1]`) || strings.Contains(listed.Content, "input_schema") {
+		t.Fatalf("list result = %#v err = %v", listed, err)
+	}
+	planned, err := dispatcher.Dispatch(context.Background(), structToolCall("capability_plan", `{"business_request":"复核报价并形成建议","model":"model","capability_id":"cap-revised","idempotency_key":"018f5f5a-c73c-7e31-8f4a-9b36797553a2"}`))
+	if err != nil || planned.IsError || !saved || !strings.Contains(planned.Content, `"name":"报价复核"`) || !strings.Contains(planned.Content, `"responsible_role":"采购专员"`) || strings.Contains(planned.Content, "role_id") {
+		t.Fatalf("plan result = %#v err = %v", planned, err)
+	}
+	published, err := dispatcher.Dispatch(context.Background(), structToolCall("capability_publish", `{"capability_id":"cap-revised","revision":2}`))
+	if err != nil || published.IsError || !strings.Contains(published.Content, `"status":"published"`) || strings.Contains(published.Content, "definition") {
+		t.Fatalf("publish result = %#v err = %v", published, err)
 	}
 }
 

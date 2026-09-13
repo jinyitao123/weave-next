@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { snapshotJsonValue } from '@deepseek-ai/dsh-session'
-import { applyWorkTaskProjection, workbenchTeamRoutingSection, workTaskProjectionDefinition } from '../src/index.ts'
+import { applyWorkTaskProjection, workbenchCapabilityAuthoringSection, workbenchTeamRoutingSection, workTaskProjectionDefinition } from '../src/index.ts'
 
 const event = (type: string, data: unknown, seq = 0, time = 100): SessionEvent => ({
   type, data, seq, time,
@@ -200,6 +200,16 @@ describe('Workbench work-task projection', () => {
     expect(workbenchTeamRoutingSection.text).toContain('do not repeat team matching or dispatch a new task')
     expect(workbenchTeamRoutingSection.text).toContain('never describe an accepted request as an applied change')
     expect(workbenchTeamRoutingSection.text).toMatchSnapshot()
+  })
+
+  it('keeps capability authoring in the conversation and freezes confirmed revisions', () => {
+    expect(workbenchCapabilityAuthoringSection.name).toBe('workbench:capability-authoring')
+    expect(workbenchCapabilityAuthoringSection.text).toContain('Call capability_list first')
+    expect(workbenchCapabilityAuthoringSection.text).toContain('capability_plan to create a reviewable draft')
+    expect(workbenchCapabilityAuthoringSection.text).toContain('capability_publish only after the user explicitly confirms')
+    expect(workbenchCapabilityAuthoringSection.text).toContain('Published revisions are immutable')
+    expect(workbenchCapabilityAuthoringSection.text).toContain('Do not send the user to a manual capability editor')
+    expect(workbenchCapabilityAuthoringSection.text).toContain('exact-version grants remain separate administration actions')
   })
 
   it.each(['timer', 'fanout', 'human', 'correction', 'runtime'])('retains the exact %s wait and clears it when work resumes', (waitKind) => {

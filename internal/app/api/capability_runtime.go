@@ -50,7 +50,9 @@ func (e capabilityRuntime) Execute(ctx context.Context, task capabilities.Invoca
 			tag, err := s.Pool.Exec(ctx, `INSERT INTO weave_capability_step_runs(workspace_id,invocation_id,step_id,run_id)
     SELECT i.workspace_id,i.invocation_id,$3,$4
     FROM weave_capability_invocations i JOIN weave_capability_invocation_tasks t ON t.task_id=i.task_id
-    WHERE i.workspace_id=$1 AND i.invocation_id=$2 AND i.status='running' AND t.status='running' AND t.claim_token=$5 AND t.deadline_at>now()`,
+    WHERE i.workspace_id=$1 AND i.invocation_id=$2 AND i.status='running' AND t.status='running' AND t.claim_token=$5 AND t.deadline_at>now()
+    AND (i.caller_kind='developer' OR EXISTS(SELECT 1 FROM weave_capability_apps a JOIN weave_capability_grants g ON g.workspace_id=a.workspace_id AND g.app_id=a.id
+    WHERE a.workspace_id=i.workspace_id AND a.id=i.application_id AND a.enabled AND g.enabled AND g.capability_id=i.capability_id AND g.revision=i.revision))`,
 				task.WorkspaceID, task.InvocationID, step, run, task.ClaimToken)
 			if err != nil {
 				return err
