@@ -19,7 +19,6 @@ import (
 	"github.com/jinyitao123/weave/internal/kernel/loomruntime"
 	"github.com/jinyitao123/weave/internal/kernel/memory"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
-	"github.com/jinyitao123/weave/internal/kernel/runtimes"
 )
 
 // AgentRunResult contains the complete result of an agent run. State is kept
@@ -45,7 +44,6 @@ type AgentRunner struct {
 	attachments   []execspec.Attachment
 	compileAgent  compiler.GraphFactory
 	expectedRuns  loomruntime.ExpectedRunRegistry
-	LocalExec     executionport.RemoteEngineExecutor
 	RemoteExec    executionport.RemoteEngineExecutor
 	Broker        *ToolBroker
 	// SkillVersionReader resolves exact registry_version SkillRefs during
@@ -73,14 +71,12 @@ func NewAgentRunner(
 	llm contract.LLM,
 	store loom.Store,
 	memSvc *memory.Service,
-	workspacesRoot, oneapiBase, boundaryBase, oneapiKey string,
 	attachments []execspec.Attachment,
 ) *AgentRunner {
 	runner := &AgentRunner{
 		registry: reg, tenant: tenant, llm: llm, store: store,
 		memoryService: memSvc, attachments: attachments,
 		compileAgent: compiler.CompileAgent,
-		LocalExec:    runtimes.NewLocalExecutor(workspacesRoot, oneapiBase, boundaryBase, oneapiKey),
 	}
 	if pgStore, ok := store.(*pgstore.PGStore); ok {
 		runner.expectedRuns, _ = loomruntime.NewExpectedRunRegistry(
@@ -157,9 +153,9 @@ func (r *AgentRunner) runRecord(
 		if resolveCurrentSkills {
 			resolved = r.resolveSkills(rec)
 		}
-		executor := r.LocalExec
-		if rec.RuntimeID != "" && r.RemoteExec != nil {
-			executor = r.RemoteExec
+		executor := r.RemoteExec
+		if executor == nil {
+			return AgentRunResult{}, fmt.Errorf("runtime executor is unavailable")
 		}
 		result, execErr := executor.ExecRemote(ctx, r.tenant, resolved, stamp, message, r.attachments)
 		if execErr != nil {

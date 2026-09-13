@@ -37,7 +37,6 @@ type AgentToolDispatcher struct {
 	compileAgent     compiler.GraphFactory
 	runner           *AgentRunner
 	dispatched       atomic.Int64
-	LocalExec        executionport.RemoteEngineExecutor
 	RemoteExec       executionport.RemoteEngineExecutor
 	Broker           *ToolBroker
 	RunLifecycleHook loomruntime.RunLifecycleHook
@@ -73,10 +72,9 @@ func NewAgentToolDispatcher(
 	store loom.Store,
 	memSvc *memory.Service,
 	recorder DispatchRecorder,
-	workspacesRoot, oneapiBase, boundaryBase, oneapiKey string,
 	attachments []execspec.Attachment,
 ) *AgentToolDispatcher {
-	runner := NewAgentRunner(reg, tenant, llm, store, memSvc, workspacesRoot, oneapiBase, boundaryBase, oneapiKey, attachments)
+	runner := NewAgentRunner(reg, tenant, llm, store, memSvc, attachments)
 	return &AgentToolDispatcher{
 		registry:      reg,
 		tenant:        tenant,
@@ -88,7 +86,6 @@ func NewAgentToolDispatcher(
 		attachments:   attachments,
 		compileAgent:  compiler.CompileAgent,
 		runner:        runner,
-		LocalExec:     runner.LocalExec,
 	}
 }
 
@@ -240,7 +237,6 @@ func (d *AgentToolDispatcher) Dispatch(ctx context.Context, call contract.ToolCa
 			memoryService: d.memoryService, attachments: d.attachments,
 		}
 	}
-	d.runner.LocalExec = d.LocalExec
 	d.runner.RemoteExec = d.RemoteExec
 	d.runner.Broker = d.Broker
 	d.runner.InnerPlatformTools = d.InnerPlatformTools

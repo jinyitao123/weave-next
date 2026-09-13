@@ -1490,9 +1490,9 @@ func (p *ProductionPhases) agentRunner(
 		llm,
 		p.Deps.Store,
 		nil,
-		"", "", "", "",
 		nil,
 	)
+	runner.RemoteExec = p.Deps.CLIExecutor
 	// Durable control-plane work has no per-employee wall-clock limit. The
 	// controller's budgets, iterations, leases, and explicit cancellation own
 	// termination instead.
