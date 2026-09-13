@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jinyitao123/weave/internal/base/teamrun"
+	"github.com/jinyitao123/weave/internal/kernel/teamrun"
 )
 
 // FailureClass is the closed platform-owned outcome vocabulary. Model text

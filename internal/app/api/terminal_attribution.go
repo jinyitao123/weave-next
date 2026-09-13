@@ -9,8 +9,8 @@ import (
 	"math/big"
 
 	"github.com/jinyitao123/loom"
-	"github.com/jinyitao123/weave/internal/kernel/loomruntime"
 	"github.com/jinyitao123/weave/internal/base/snapshot"
+	"github.com/jinyitao123/weave/internal/kernel/loomruntime"
 )
 
 func legacyRootTerminalAttribution(

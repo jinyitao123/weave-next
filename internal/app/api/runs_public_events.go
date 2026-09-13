@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jinyitao123/weave/internal/base/teamrun"
 	"github.com/jinyitao123/weave/internal/kernel/engine"
+	"github.com/jinyitao123/weave/internal/kernel/teamrun"
 )
 
 type runActivityPublicUpdate struct {

@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 	"github.com/jinyitao123/weave/internal/kernel/runtimes"
-	"github.com/jackc/pgx/v5"
 )
 
 // resolveTx opens every evaluator transaction at repeatable read. The
@@ -18,7 +18,7 @@ import (
 // avoided because PostgreSQL forbids SELECT ... FOR SHARE inside read-only
 // transactions (SQLSTATE 25006).
 var resolveTx = pgx.TxOptions{
-	IsoLevel:   pgx.RepeatableRead,
+	IsoLevel: pgx.RepeatableRead,
 }
 
 // gateDepsFreezable resolves every named dependency of the evaluated agents

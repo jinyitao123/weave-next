@@ -115,7 +115,7 @@ func (s *Server) blueprintAuthorizationMetadata(
 	metadata := map[string]any{
 		"blueprint_build_run_id":           buildRunID,
 		"blueprint_revision_token":         token,
-			"blueprint_authorization_semantic": teambuild.AuthorizationContinueBuild,
+		"blueprint_authorization_semantic": teambuild.AuthorizationContinueBuild,
 	}
 	if summary, ok := s.blueprintSummaryForAuthorization(ctx, workspaceID, buildRunID); ok {
 		metadata["team_blueprint_summary"] = summary
