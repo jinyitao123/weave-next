@@ -1720,20 +1720,12 @@ func (s *Server) compilerAgentRunner(
 	memSvc *memory.Service,
 	attachments []execspec.Attachment,
 ) compiler.AgentRunner {
-	var workspacesRoot, oneapiBase, boundaryBase, oneapiKey string
-	if s.Config != nil {
-		workspacesRoot = s.Config.WorkspacesRoot
-		oneapiBase = s.Config.OneAPIBase
-		boundaryBase = s.Config.MCPBoundaryBase
-		oneapiKey = s.Config.OneAPIKey
-	}
 	broker := mcphost.NewToolBroker(s.mcpAccessFactory())
 	runner := mcphost.NewAgentRunner(
 		s.Registry, tenant, llm, s.Store, memSvc,
-		workspacesRoot, oneapiBase, boundaryBase, oneapiKey, attachments,
+		attachments,
 	)
 	runner.Broker = broker
-	runner.LocalExec = s.engineExecutorFor(false)
 	runner.RemoteExec = s.engineExecutorFor(true)
 	runner.RunLifecycleHook = s.RunLifecycleHook
 	runner.SkillVersionReader = s.Skills
@@ -1801,22 +1793,13 @@ func (s *Server) buildToolDispatcherWithAgentTool(
 				return nil
 			}
 			// Agent-as-tool: expose managed agents as callable tools.
-			var workspacesRoot, oneapiBase, boundaryBase, oneapiKey string
-			if s.Config != nil {
-				workspacesRoot = s.Config.WorkspacesRoot
-				oneapiBase = s.Config.OneAPIBase
-				boundaryBase = s.Config.MCPBoundaryBase
-				oneapiKey = s.Config.OneAPIKey
-			}
 			agentTool = mcphost.NewAgentToolDispatcher(
 				s.Registry, tenant, rec.Name, runtimeLLM, s.Store, runtimeMemory,
 				s.dispatchRecorder(),
-				workspacesRoot, oneapiBase, boundaryBase, oneapiKey,
 				attachments,
 			)
 			agentTool.Broker = broker
 			agentTool.RunLifecycleHook = s.RunLifecycleHook
-			agentTool.LocalExec = s.engineExecutorFor(false)
 			agentTool.RemoteExec = s.engineExecutorFor(true)
 			if s.Fanout != nil && s.Tasks != nil {
 				agentTool.InnerPlatformTools = func(innerRec *registry.AgentRecord) []contract.ToolDispatcher {
