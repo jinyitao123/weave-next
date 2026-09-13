@@ -1481,6 +1481,7 @@ func (s *Store) RenewOperationStepLease(
 		WHERE workspace_id=$1 AND build_run_id=$2 AND revision_no=$3
 		  AND operation_id=$4 AND status='running'
 		  AND lease_owner=$5 AND lease_epoch=$8
+		  AND lease_until>$6
 		RETURNING `+operationStepColumns,
 		workspaceID, buildRunID, revisionNo, operationID, workerID, now,
 		now.Add(leaseDuration), leaseEpoch))
