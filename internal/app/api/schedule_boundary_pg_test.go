@@ -6,12 +6,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jinyitao123/weave/internal/app/workflowcatalog"
 	"github.com/jinyitao123/weave/internal/base/db"
 	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/base/snapshot"
-	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 	"github.com/jinyitao123/weave/internal/base/testutil"
 	"github.com/jinyitao123/weave/internal/kernel/schedule"
+	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 	"github.com/jinyitao123/weave/internal/kernel/workflow"
 )
 
@@ -87,8 +88,8 @@ func TestWorkflowScheduleSkipsRetiredAgentAndKeepsAdmissionRealPG(t *testing.T) 
 	if lockErr == nil {
 		t.Fatal("retired agent schedule can still acquire an execution lock")
 	}
-	workflowStore := workflow.New(pool, nil)
-	server := &Server{AgentSchedules: store, WorkflowScheduleAdmission: NewWorkflowScheduleAdmissionService(workflowStore),
+	workflowStore := workflowcatalog.New(pool, nil, workflow.NewArtifactStore(pool, nil))
+	server := &Server{AgentSchedules: store, WorkflowScheduleAdmission: NewWorkflowScheduleAdmissionService(workflowStore, workflow.NewArtifactStore(pool, nil)),
 		ScheduleTransactions: pool, Snapshots: snapshot.NewStore(pool), Tasks: taskqueue.New(pool, nil, time.Minute)}
 	for range 2 {
 		if err := server.SweepSchedules(ctx, now); err != nil {

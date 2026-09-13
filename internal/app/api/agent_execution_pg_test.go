@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jinyitao123/weave/internal/app/agentcatalog"
 	"github.com/jinyitao123/weave/internal/app/teamconstruction"
+	"github.com/jinyitao123/weave/internal/app/workflowcatalog"
 	"github.com/jinyitao123/weave/internal/base/db"
 	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/base/testutil"
@@ -68,7 +69,7 @@ func TestMemberExecutionPublishesNativeModelsAndRollsBackDraftConflictRealPG(t *
 	if _, err := pool.Exec(ctx, `INSERT INTO weave_teams(id,workspace_id,name,lead_avatar_id,status) VALUES('team','ws','Team',$1,'active')`, record.ID); err != nil {
 		t.Fatal(err)
 	}
-	store := workflow.New(pool, nil)
+	store := workflowcatalog.New(pool, nil, workflow.NewArtifactStore(pool, nil))
 	draft, err := store.Create(ctx, &workflow.TeamWorkflow{WorkspaceID: "ws", ID: "flow", TeamID: "team", Name: "Flow"}, workflow.DraftInput{CreatedBy: "fixture", TriggerConfig: json.RawMessage(`{"schema_version":1,"type":"conversation_explicit","config":{}}`), GraphDefinition: json.RawMessage(`{"schema_version":1,"entry_node_id":"lead","input_contract":{"type":"text"},"output_contract":{"type":"text"},"nodes":[{"id":"lead","type":"lead","config":{"instruction":"Answer"},"inputs":{"task":{"value":{"source":"run_input","path":""},"expected_type":"text"}},"output":{"type":"text"}},{"id":"deliver","type":"deliver","config":{"result":{"source":"node_output","node_id":"lead","path":""}}}],"edges":[{"id":"done","from_node_id":"lead","to_node_id":"deliver","route":"success"}]}`)})
 	if err != nil {
 		t.Fatal(err)
@@ -79,7 +80,7 @@ func TestMemberExecutionPublishesNativeModelsAndRollsBackDraftConflictRealPG(t *
 	}
 	key := []byte(strings.Repeat("k", 32))
 	server := &Server{Pool: pool, Registry: agents, Runtimes: runtimeStore, Workflow: store, ScheduleTransactions: pool, Descriptors: descriptors, DeliveryTargets: delivery.New(pool, key), Skills: skills.New(pool), Credentials: credentials.New(pool, key), AgentSchedules: schedule.New(pool, nil)}
-	builder := workflow.NewCandidateBuilder(store, agents, server.DeliveryTargets, server.Skills, server.Credentials, server.AgentSchedules, descriptors)
+	builder := workflowcatalog.NewCandidateBuilder(store, agents, server.DeliveryTargets, server.Skills, server.Credentials, server.AgentSchedules, descriptors)
 	authority := teamconstruction.NewPublicationAuthority(pool, builder)
 	server.PublicationAuthority = authority
 	connection, err := url.Parse(os.Getenv("TEST_DATABASE_URL"))

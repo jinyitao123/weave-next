@@ -29,6 +29,7 @@ import (
 	"github.com/jinyitao123/weave/internal/app/agentcatalog"
 	orgstore "github.com/jinyitao123/weave/internal/app/org"
 	"github.com/jinyitao123/weave/internal/app/teamassets"
+	"github.com/jinyitao123/weave/internal/app/workflowcatalog"
 	"github.com/jinyitao123/weave/internal/base/deliverable"
 	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/base/frozen"
@@ -43,6 +44,7 @@ import (
 	"github.com/jinyitao123/weave/internal/kernel/credentials"
 	"github.com/jinyitao123/weave/internal/kernel/delivery"
 	"github.com/jinyitao123/weave/internal/kernel/engine"
+	"github.com/jinyitao123/weave/internal/kernel/executionport"
 	"github.com/jinyitao123/weave/internal/kernel/fanout"
 	"github.com/jinyitao123/weave/internal/kernel/loomruntime"
 	"github.com/jinyitao123/weave/internal/kernel/mcphost"
@@ -74,7 +76,8 @@ type Dependencies struct {
 	Agents       *agentcatalog.AgentRegistry
 	TeamWorkers  *agentcatalog.TeamWorkerRepository
 	Teams        *orgstore.Store
-	Workflows    *workflow.Store
+	Artifacts    workflow.PublicationReader
+	Workflows    *workflowcatalog.Store
 	MCPs         *mcpregistry.Store
 	Providers    *credentials.Store
 	Runtimes     *runtimes.Store
@@ -100,7 +103,7 @@ type Dependencies struct {
 	BlueprintPatchPlanner teambuild.BlueprintPatchPlannerExecutor
 	// CLIExecutor is the same remote runtime path used by ordinary published
 	// TeamWorkflow runs. Candidate evaluation must not silently drop it.
-	CLIExecutor mcphost.RemoteEngineExecutor
+	CLIExecutor executionport.RemoteEngineExecutor
 
 	// LLM drives the meta-team agent runs. Production callers inject the
 	// routed LLM; tests inject testutil.ScriptedLLM. LLMResolver takes
@@ -122,7 +125,7 @@ type Dependencies struct {
 type ProductionPhases struct {
 	Deps Dependencies
 
-	builder *workflow.CandidateBuilder
+	builder *workflowcatalog.CandidateBuilder
 
 	mu            sync.Mutex
 	lastCandidate *workflow.PublicationCandidate
@@ -134,7 +137,7 @@ type ProductionPhases struct {
 func NewPhases(deps Dependencies) (*ProductionPhases, error) {
 	if deps.KernelPublication == nil || deps.Pool == nil || deps.Store == nil || deps.Build == nil ||
 		deps.Agents == nil || deps.TeamWorkers == nil || deps.Teams == nil ||
-		deps.Workflows == nil || deps.MCPs == nil || deps.Providers == nil ||
+		deps.Workflows == nil || deps.Artifacts == nil || deps.MCPs == nil || deps.Providers == nil ||
 		deps.Runtimes == nil || deps.Tasks == nil ||
 		deps.Deliverables == nil || deps.Snapshots == nil || deps.Audit == nil ||
 		deps.Delivery == nil || deps.Skills == nil || deps.Schedules == nil ||
@@ -142,7 +145,7 @@ func NewPhases(deps Dependencies) (*ProductionPhases, error) {
 		(deps.LLM == nil && deps.LLMResolver == nil) {
 		return nil, errors.New("team forge phases: dependencies are not fully configured")
 	}
-	builder := workflow.NewCandidateBuilder(
+	builder := workflowcatalog.NewCandidateBuilder(
 		deps.Workflows,
 		deps.Agents,
 		deps.Delivery,
@@ -1398,26 +1401,16 @@ func (p *ProductionPhases) reuseCandidateRun(
 	if err != nil {
 		return nil, "", "", fmt.Errorf("read candidate snapshot %q: %w", source.SourceRunID, err)
 	}
-	if runSnapshot.BuildRunID != round.BuildRunID ||
-		runSnapshot.BuildRoundNo != round.RoundNo ||
-		runSnapshot.CandidateContentHash == "" ||
-		runSnapshot.WorkflowID == "" {
-		return nil, "", "", fmt.Errorf(
-			"candidate snapshot %q does not match round %d identity",
-			source.SourceRunID,
-			round.RoundNo,
-		)
-	}
-	candidate, err := p.Deps.Workflows.GetCandidateTx(
-		ctx,
-		tx,
-		round.WorkspaceID,
-		runSnapshot.WorkflowID,
-		runSnapshot.CandidateContentHash,
-	)
+	record, err := (&pgPublicationRequests{pool: p.Deps.Pool}).findCandidateForBuild(ctx, round.WorkspaceID, round.BuildRunID, round.RoundNo, source.SourceRole, source.SourceRunID, runSnapshot.CandidateContentHash)
 	if err != nil {
-		return nil, "", "", fmt.Errorf("read candidate %q for run %q: %w",
-			runSnapshot.CandidateContentHash, source.SourceRunID, err)
+		return nil, "", "", err
+	}
+	if record.Receipt.RunSnapshotID != runSnapshot.RunID || record.Request.Candidate.WorkflowID != runSnapshot.WorkflowID || record.Request.Candidate.WorkflowVersion != runSnapshot.WorkflowVersion || record.Request.Candidate.ContentHash != runSnapshot.CandidateContentHash {
+		return nil, "", "", errors.New("retained candidate snapshot identity changed")
+	}
+	candidate, err := restoreProductCandidate(record)
+	if err != nil {
+		return nil, "", "", err
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, "", "", fmt.Errorf("commit candidate reuse: %w", err)
@@ -2665,7 +2658,7 @@ func (p *ProductionPhases) driveCandidateRun(
 		Tasks:        p.Deps.Tasks,
 	}
 	runtime := &teamrun.WorkflowSerialRuntime{
-		Artifacts:              p.Deps.Workflows,
+		Artifacts:              p.Deps.Artifacts,
 		Loader:                 p.candidateRuntimeLoader(),
 		HostFactory:            workflow.NewRuntimeHostFactory(),
 		HostFactoryForSnapshot: p.Deps.HostFactoryForSnapshot,
@@ -3276,21 +3269,21 @@ func (p *ProductionPhases) evaluateGates(
 	workspaceID, buildRunID, teamID string,
 ) ([]teameval.GateResult, error) {
 	evaluator := teameval.NewGateEvaluator(teameval.Deps{
-		Pool:            p.Deps.Pool,
-		BuildRuns:       p.Deps.Build,
-		Models:          teameval.ModelResolverFunc(credentials.ResolveModelRevisionTx),
-		Teams:           p.Deps.Teams,
-		Roster:          p.Deps.TeamWorkers,
-		Agents:          p.Deps.Agents,
-		Workflows:       p.Deps.Workflows,
-		MCPs:            p.Deps.MCPs,
-		Runtimes:        p.Deps.Runtimes,
-		SkillsNamespace: p.Deps.Store,
-		Snapshots:       p.Deps.Snapshots,
-		Tasks:           p.Deps.Tasks,
-		Deliverables:    p.Deps.Deliverables,
-		Audit:           p.Deps.Audit,
-		Runs:            p.Deps.Store,
+		Pool:              p.Deps.Pool,
+		BuildRuns:         p.Deps.Build,
+		Models:            teameval.ModelResolverFunc(credentials.ResolveModelRevisionTx),
+		Teams:             p.Deps.Teams,
+		Roster:            p.Deps.TeamWorkers,
+		Agents:            p.Deps.Agents,
+		Workflows:         p.Deps.Workflows,
+		MCPs:              p.Deps.MCPs,
+		Runtimes:          p.Deps.Runtimes,
+		SkillsNamespace:   p.Deps.Store,
+		CandidateEvidence: candidateEvidenceReader{requests: &pgPublicationRequests{pool: p.Deps.Pool}, snapshots: p.Deps.Snapshots},
+		Tasks:             p.Deps.Tasks,
+		Deliverables:      p.Deps.Deliverables,
+		Audit:             p.Deps.Audit,
+		Runs:              p.Deps.Store,
 	})
 	return evaluator.Evaluate(ctx, workspaceID, buildRunID, teamID)
 }

@@ -717,12 +717,14 @@ func (p *ProductionPhases) restoreCompilerCandidate(ctx context.Context, operati
 	if err != nil {
 		return err
 	}
-	tx, err := p.Deps.Pool.Begin(ctx)
+	record, err := (&pgPublicationRequests{pool: p.Deps.Pool}).findCandidateForBuild(ctx, operation.WorkspaceID, operation.BuildRunID, operation.Revision.RevisionNo, teambuild.SourceRoleFixedWorkflowRoot, "", candidateHash)
 	if err != nil {
 		return err
 	}
-	defer func() { _ = tx.Rollback(ctx) }()
-	candidate, err := p.Deps.Workflows.GetCandidateTx(ctx, tx, operation.WorkspaceID, workflowID, candidateHash)
+	if record.Request.Candidate.WorkflowID != workflowID {
+		return errors.New("retained candidate workflow identity changed")
+	}
+	candidate, err := restoreProductCandidate(record)
 	if err != nil {
 		return err
 	}

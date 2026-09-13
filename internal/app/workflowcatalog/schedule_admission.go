@@ -1,4 +1,4 @@
-package workflow
+package workflowcatalog
 
 import (
 	"context"
@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/base/snapshot"
+	workflowdef "github.com/jinyitao123/weave/internal/kernel/workflow"
 	"github.com/jinyitao123/weave/internal/kernel/workflow/machine"
 )
 
@@ -24,8 +25,7 @@ var workflowScheduleOccurrenceKeyPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 func (s *Store) AdmitWorkflowScheduleTx(
 	ctx context.Context,
 	tx pgx.Tx,
-	request WorkflowScheduleAdmissionRequest,
-) (snapshot.TeamRunSnapshot, error) {
+	request workflowdef.WorkflowScheduleAdmissionRequest) (snapshot.TeamRunSnapshot, error) {
 	if err := validateWorkflowScheduleAdmissionRequest(tx, request); err != nil {
 		return snapshot.TeamRunSnapshot{}, err
 	}
@@ -59,7 +59,7 @@ func (s *Store) AdmitWorkflowScheduleTx(
 			err, "workflow is unavailable",
 		)
 	}
-	if workflowStatus != WorkflowStatusActive || publishedVersion == nil {
+	if workflowStatus != workflowdef.WorkflowStatusActive || publishedVersion == nil {
 		return snapshot.TeamRunSnapshot{}, workflowScheduleAdmissionDenied(
 			"workflow is not an active publication",
 		)
@@ -76,14 +76,14 @@ func (s *Store) AdmitWorkflowScheduleTx(
 			err, "published workflow version is unavailable",
 		)
 	}
-	if versionStatus != VersionStatusPublished {
+	if versionStatus != workflowdef.VersionStatusPublished {
 		return snapshot.TeamRunSnapshot{}, workflowScheduleAdmissionDenied(
 			"exact workflow version is not published",
 		)
 	}
 
-	envelope, err := readWorkflowScheduleArtifact(
-		ctx, tx, request.WorkspaceID, request.WorkflowID, *publishedVersion,
+	envelope, err := s.readWorkflowScheduleArtifact(
+		ctx, request.WorkspaceID, request.WorkflowID, *publishedVersion,
 	)
 	if err != nil {
 		return snapshot.TeamRunSnapshot{}, err
@@ -134,7 +134,7 @@ func (s *Store) AdmitWorkflowScheduleTx(
 			"workflow team is not active",
 		)
 	}
-	if err := EvaluateFixedWorkflowAdmissionTx(ctx, tx, FixedWorkflowAdmissionRequest{
+	if err := s.EvaluateFixedWorkflowAdmissionTx(ctx, tx, workflowdef.FixedWorkflowAdmissionRequest{
 		WorkspaceID:     request.WorkspaceID,
 		TeamID:          lockedTeamID,
 		WorkflowID:      request.WorkflowID,
@@ -186,8 +186,7 @@ func (s *Store) AdmitWorkflowScheduleTx(
 
 func validateWorkflowScheduleAdmissionRequest(
 	tx pgx.Tx,
-	request WorkflowScheduleAdmissionRequest,
-) error {
+	request workflowdef.WorkflowScheduleAdmissionRequest) error {
 	if interfaceNil(tx) {
 		return workflowScheduleAdmissionDenied("transaction is required")
 	}
@@ -227,31 +226,15 @@ func interfaceNil(value any) bool {
 	}
 }
 
-func readWorkflowScheduleArtifact(
-	ctx context.Context,
-	tx pgx.Tx,
-	workspaceID, workflowID string,
-	version int,
-) (frozen.ArtifactEnvelopeV1, error) {
-	var envelope frozen.ArtifactEnvelopeV1
-	err := tx.QueryRow(ctx, `
-		SELECT workspace_id, workflow_id, workflow_version,
-			artifact_schema_version, canonicalization_algorithm,
-			canonicalization_version, hash_algorithm, content_hash, payload
-		FROM weave_published_artifact_contents
-		WHERE workspace_id=$1 AND workflow_id=$2 AND workflow_version=$3
-	`, workspaceID, workflowID, version).Scan(
-		&envelope.WorkspaceID, &envelope.WorkflowID, &envelope.WorkflowVersion,
-		&envelope.ArtifactSchemaVersion, &envelope.CanonicalizationAlgorithm,
-		&envelope.CanonicalizationVersion, &envelope.HashAlgorithm,
-		&envelope.ContentHash, &envelope.Payload,
-	)
-	if err != nil {
-		return frozen.ArtifactEnvelopeV1{}, workflowScheduleAdmissionReadError(
-			err, "published Artifact is unavailable",
-		)
+func (s *Store) readWorkflowScheduleArtifact(ctx context.Context, workspaceID, workflowID string, version int) (frozen.ArtifactEnvelopeV1, error) {
+	if s.artifacts == nil {
+		return frozen.ArtifactEnvelopeV1{}, errors.New("frozen publication reader unavailable")
 	}
-	return envelope, nil
+	artifact, err := s.artifacts.GetArtifact(ctx, workspaceID, workflowID, version)
+	if err != nil {
+		return frozen.ArtifactEnvelopeV1{}, err
+	}
+	return frozen.ArtifactEnvelopeV1{WorkspaceID: artifact.WorkspaceID, WorkflowID: artifact.WorkflowID, WorkflowVersion: artifact.WorkflowVersion, ArtifactSchemaVersion: artifact.ArtifactSchemaVersion, CanonicalizationAlgorithm: artifact.CanonicalizationAlgorithm, CanonicalizationVersion: artifact.CanonicalizationVersion, HashAlgorithm: artifact.HashAlgorithm, ContentHash: artifact.ContentHash, Payload: artifact.Payload}, nil
 }
 
 func workflowScheduleAdmissionReadError(err error, context string) error {
@@ -262,5 +245,5 @@ func workflowScheduleAdmissionReadError(err error, context string) error {
 }
 
 func workflowScheduleAdmissionDenied(context string) error {
-	return fmt.Errorf("%w: %s", ErrWorkflowScheduleAdmissionDenied, context)
+	return fmt.Errorf("%w: %s", workflowdef.ErrWorkflowScheduleAdmissionDenied, context)
 }

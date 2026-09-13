@@ -121,7 +121,8 @@ type Store struct {
 	baselineMu sync.RWMutex
 	orgStore   OrganizationBaselineReader
 	agents     AgentBaselineReader
-	workflows  *workflow.Store
+	workflows  WorkflowBaselineReader
+	artifacts  workflow.PublicationReader
 }
 
 // BuildRunFilter constrains the BuildRun list projection. Limit defaults to
@@ -390,7 +391,7 @@ func (s *Store) expandOptimizeAssetScope(
 	if brief.Mode != ModeOptimize || strings.TrimSpace(brief.TeamID) == "" {
 		return brief, nil
 	}
-	orgStore, agents, workflows := s.baselineSources()
+	orgStore, agents, workflows, _ := s.baselineSources()
 	if !baselineReaderAvailable(orgStore) || !baselineReaderAvailable(agents) || workflows == nil {
 		return brief, nil
 	}

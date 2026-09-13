@@ -287,16 +287,16 @@ func validateTaskSnapshotIdentity(
 			trigger.SchemaVersion != 1 ||
 			trigger.Type != "api" ||
 			trigger.SourceRef == "" ||
-			trigger.SourceRef != runSnapshot.BuildRunID {
+			trigger.SourceRef != runSnapshot.SourceRef || task.SourceRef != runSnapshot.SourceRef {
 			return fmt.Errorf("%w: api trigger is invalid", errSnapshotDamaged)
 		}
 	default:
 		return errors.New("task and snapshot trigger source are unsupported")
 	}
-	candidateIdentity := runSnapshot.BuildRunID != "" || runSnapshot.CandidateContentHash != ""
+	candidateIdentity := runSnapshot.CandidateContentHash != ""
 	if candidateIdentity {
 		if task.Source != "api" ||
-			runSnapshot.BuildRunID == "" ||
+			runSnapshot.SourceRef == "" ||
 			runSnapshot.CandidateContentHash == "" {
 			return fmt.Errorf("%w: candidate snapshot identity is invalid", errSnapshotDamaged)
 		}

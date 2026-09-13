@@ -11,6 +11,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jinyitao123/weave/internal/app/teamconstruction"
+	"github.com/jinyitao123/weave/internal/app/workflowcatalog"
 	"github.com/jinyitao123/weave/internal/build/teambuild"
 	"github.com/jinyitao123/weave/internal/build/teamrestore"
 	"github.com/jinyitao123/weave/internal/kernel/workflow"
@@ -21,7 +22,7 @@ import (
 // the app publication boundary.
 type workflowPublicationRestorer struct {
 	pool         *pgxpool.Pool
-	workflows    *workflow.Store
+	workflows    *workflowcatalog.Store
 	authority    *teamconstruction.PublicationAuthority
 	publications *teamconstruction.ProductPublication
 }

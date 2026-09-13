@@ -1154,7 +1154,7 @@ func (s *Server) handleGetRunActivity(c echo.Context) error {
 		completeness["stages"] = "partial"
 	}
 	if s.Workflow != nil && run.WorkflowID != "" && run.WorkflowVersion > 0 {
-		if artifact, artifactErr := s.Workflow.GetArtifact(
+		if artifact, artifactErr := s.WorkflowArtifacts.GetArtifact(
 			c.Request().Context(), getTenant(c), run.WorkflowID, run.WorkflowVersion,
 		); artifactErr == nil {
 			payload, payloadErr := frozen.DecodeArtifactEnvelopeV1(frozen.ArtifactEnvelopeV1{

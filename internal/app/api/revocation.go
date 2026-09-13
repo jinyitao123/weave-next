@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/jinyitao123/weave/internal/app/workflowcatalog"
 	"github.com/jinyitao123/weave/internal/kernel/workflow"
 	"github.com/labstack/echo/v4"
 )
@@ -54,7 +55,7 @@ func (s *Server) handleGetTeamWorkerRevocationImpact(c echo.Context) error {
 	}
 	page, err := s.Workflow.ReadRevocationImpact(
 		c.Request().Context(),
-		workflow.RevocationImpactQuery{
+		workflowcatalog.RevocationImpactQuery{
 			WorkspaceID:   getTenant(c),
 			TeamID:        c.Param("id"),
 			WorkerAgentID: c.Param("worker"),
@@ -64,11 +65,11 @@ func (s *Server) handleGetTeamWorkerRevocationImpact(c echo.Context) error {
 	)
 	if err != nil {
 		switch {
-		case errors.Is(err, workflow.ErrRevocationImpactInvalid):
+		case errors.Is(err, workflowcatalog.ErrRevocationImpactInvalid):
 			return writeRevocationError(
 				c, http.StatusBadRequest, "invalid_revocation_request", "invalid revocation impact query", nil,
 			)
-		case errors.Is(err, workflow.ErrRevocationImpactNotFound):
+		case errors.Is(err, workflowcatalog.ErrRevocationImpactNotFound):
 			return writeRevocationError(
 				c, http.StatusNotFound, "team_worker_not_found", "team worker relationship was not found", nil,
 			)
@@ -149,7 +150,7 @@ func (s *Server) handlePutWorkflowAdmission(c echo.Context) error {
 		)
 	}
 
-	result, err := s.Workflow.SetBlocked(c.Request().Context(), workflow.AdmissionChange{
+	result, err := s.WorkflowArtifacts.SetBlocked(c.Request().Context(), workflow.AdmissionChange{
 		WorkspaceID:     getTenant(c),
 		WorkflowID:      c.Param("id"),
 		WorkflowVersion: version,
@@ -221,7 +222,7 @@ func (s *Server) handleListWorkflowAdmissionAudit(c echo.Context) error {
 		)
 	}
 
-	audits, err := s.Workflow.ListAdmissionAudit(
+	audits, err := s.WorkflowArtifacts.ListAdmissionAudit(
 		c.Request().Context(), getTenant(c), workflowID, version,
 	)
 	if err != nil {

@@ -445,7 +445,7 @@ func (s *Server) handleAuthorizeBuildRun(c echo.Context) error {
 			"budget_reauthorization_invalid",
 			"budget overrides are accepted only for a budget-blocked run")
 	}
-	s.TeamBuild.SetBaselineSources(s.OrgStore, s.Registry, s.Workflow)
+	s.TeamBuild.SetBaselineSources(s.OrgStore, s.Registry, s.Workflow, s.WorkflowArtifacts)
 	run, _, err := s.TeamBuild.AuthorizeBuildRun(
 		c.Request().Context(),
 		getTenant(c),

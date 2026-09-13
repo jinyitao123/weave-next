@@ -15,7 +15,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/jinyitao123/weave/internal/app/teamconstruction"
 	"github.com/jinyitao123/weave/internal/base/frozen"
-	"github.com/jinyitao123/weave/internal/base/snapshot"
 	"github.com/jinyitao123/weave/internal/build/teambuild"
 	"github.com/jinyitao123/weave/internal/kernel/publication"
 	"github.com/jinyitao123/weave/internal/kernel/workflow"
@@ -104,7 +103,7 @@ func (s *Server) handleCandidateTestRun(c echo.Context) error {
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	candidate, err := s.Workflow.GetCandidateTx(ctx, tx, workspaceID, request.WorkflowID, request.ContentHash)
+	candidate, err := s.WorkflowArtifacts.GetCandidate(ctx, workspaceID, request.WorkflowID, request.ContentHash)
 	if err != nil {
 		return mapCandidatePublishError(c, err)
 	}
@@ -192,8 +191,8 @@ func (s *Server) handleCandidatePublish(c echo.Context) error {
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	candidate, err := s.Workflow.GetCandidateTx(
-		ctx, tx, workspaceID, request.WorkflowID, request.ContentHash,
+	candidate, err := s.WorkflowArtifacts.GetCandidate(
+		ctx, workspaceID, request.WorkflowID, request.ContentHash,
 	)
 	if err != nil {
 		return mapCandidatePublishError(c, err)
@@ -320,38 +319,6 @@ func validateCandidatePublishRequest(request candidatePublishRequest) error {
 	return nil
 }
 
-func validateCandidateRunSnapshot(
-	admitted snapshot.TeamRunSnapshot,
-	workspaceID, workflowID, buildRunID, contentHash string,
-) error {
-	if admitted.RunID == "" ||
-		admitted.WorkspaceID != workspaceID ||
-		admitted.TeamID == "" ||
-		admitted.SnapshotSchemaVersion != 2 ||
-		admitted.Mode != "fixed_workflow" ||
-		admitted.WorkflowID != workflowID ||
-		admitted.WorkflowVersion < 1 ||
-		admitted.ArtifactWorkflowID != workflowID ||
-		admitted.ArtifactWorkflowVersion != admitted.WorkflowVersion ||
-		admitted.BuildRunID != buildRunID ||
-		admitted.CandidateContentHash != contentHash {
-		return errors.New("candidate admission returned a mismatched fixed workflow identity")
-	}
-	var trigger struct {
-		SchemaVersion int    `json:"schema_version"`
-		Type          string `json:"type"`
-		SourceRef     string `json:"source_ref"`
-	}
-	if err := decodeExactJSON(admitted.TriggerSourceV2, &trigger); err != nil {
-		return fmt.Errorf("decode candidate trigger source: %w", err)
-	}
-	if trigger.SchemaVersion != 1 || trigger.Type != "api" ||
-		trigger.SourceRef != buildRunID {
-		return errors.New("candidate admission returned a mismatched trigger")
-	}
-	return nil
-}
-
 func (s *Server) respondCandidateRunAdmissionError(
 	c echo.Context,
 	tx interface {
@@ -366,7 +333,7 @@ func (s *Server) respondCandidateRunAdmissionError(
 		if rollbackErr := tx.Rollback(ctx); rollbackErr != nil {
 			return workflowStoreFailure(c, errors.Join(err, rollbackErr))
 		}
-		record, auditErr := s.Workflow.RecordFixedWorkflowAdmissionDenial(
+		record, auditErr := s.WorkflowArtifacts.RecordFixedWorkflowAdmissionDenial(
 			context.WithoutCancel(ctx),
 			workflow.FixedWorkflowAdmissionDenialAttempt{
 				WorkspaceID:         getTenant(c),

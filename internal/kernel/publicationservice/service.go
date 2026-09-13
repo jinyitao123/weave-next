@@ -131,7 +131,7 @@ func (s *Service) AdmitCandidate(ctx context.Context, request publication.Candid
 	runID := "run-" + uuid.NewString()
 	decision, _ := json.Marshal(map[string]any{"schema_version": 1, "team_active": true, "workflow_active": true, "workers_enabled": true, "version_blocked": false, "decided_at": time.Now().UTC().Format(time.RFC3339Nano)})
 	trigger, _ := json.Marshal(map[string]any{"schema_version": 1, "type": "api", "source_ref": request.SourceRef})
-	fixed := snapshot.TeamRunSnapshot{Subject: subject, RunID: runID, WorkspaceID: subject.WorkspaceID, TeamID: payload.Team.TeamID,
+	fixed := snapshot.TeamRunSnapshot{Subject: subject, SourceRef: request.SourceRef, RunID: runID, WorkspaceID: subject.WorkspaceID, TeamID: payload.Team.TeamID,
 		SnapshotSchemaVersion: 2, Mode: "fixed_workflow", WorkflowID: request.Candidate.WorkflowID, WorkflowVersion: request.Candidate.WorkflowVersion,
 		ArtifactWorkflowID: request.Candidate.WorkflowID, ArtifactWorkflowVersion: request.Candidate.WorkflowVersion,
 		CandidateContentHash: request.Candidate.ContentHash, AdmissionDecision: decision, TriggerSourceV2: trigger,
@@ -139,7 +139,7 @@ func (s *Service) AdmitCandidate(ctx context.Context, request publication.Candid
 	if _, err = snapshot.NewStore(s.pool).CreateTx(ctx, tx, fixed); err != nil {
 		return receipt, err
 	}
-	task := &taskqueue.Task{ID: "task-" + uuid.NewString(), Subject: subject, WorkspaceID: subject.WorkspaceID,
+	task := &taskqueue.Task{SourceRef: request.SourceRef, ID: "task-" + uuid.NewString(), Subject: subject, WorkspaceID: subject.WorkspaceID,
 		IdentityKind: taskqueue.IdentityTeamWorkflow, IdentitySchemaVersion: 2, Kind: "team_workflow", Source: "api",
 		WorkflowID: request.Candidate.WorkflowID, WorkflowVersion: request.Candidate.WorkflowVersion, RunSnapshotID: runID,
 		ParentTaskID: request.ParentTaskID, ContextKey: request.RequestID, DeadlineAt: deadline, OutcomeSensitive: true, Payload: append([]byte(nil), request.Input...)}

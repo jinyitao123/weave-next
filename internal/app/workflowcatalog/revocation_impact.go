@@ -1,4 +1,4 @@
-package workflow
+package workflowcatalog
 
 import (
 	"bytes"
@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/kernel/revocation"
+	workflowdef "github.com/jinyitao123/weave/internal/kernel/workflow"
 )
 
 var (
@@ -114,26 +115,11 @@ func (s *Store) ReadRevocationImpact(
 			version.workflow_id,
 			version.version,
 			version.status,
-			CASE WHEN version.status='draft' THEN version.graph_definition END,
-			artifact.artifact_schema_version,
-			artifact.canonicalization_algorithm,
-			artifact.canonicalization_version,
-			artifact.hash_algorithm,
-			artifact.content_hash,
-			artifact.payload,
-			admission.blocked
+			CASE WHEN version.status='draft' THEN version.graph_definition END
 		FROM weave_team_workflows AS workflow
 		JOIN weave_team_workflow_versions AS version
 		  ON version.workspace_id=workflow.workspace_id
 		 AND version.workflow_id=workflow.id
-		LEFT JOIN weave_published_artifact_contents AS artifact
-		  ON artifact.workspace_id=version.workspace_id
-		 AND artifact.workflow_id=version.workflow_id
-		 AND artifact.workflow_version=version.version
-		LEFT JOIN weave_workflow_version_admission_statuses AS admission
-		  ON admission.workspace_id=version.workspace_id
-		 AND admission.workflow_id=version.workflow_id
-		 AND admission.workflow_version=version.version
 		WHERE workflow.workspace_id=$1
 		  AND workflow.team_id=$2
 		  AND (
@@ -146,12 +132,34 @@ func (s *Store) ReadRevocationImpact(
 		return nil, fmt.Errorf("query revocation impact versions: %w", err)
 	}
 
+	type versionFact struct {
+		workflowID      string
+		workflowVersion int
+		versionStatus   string
+		draftGraph      []byte
+	}
+	var facts []versionFact
 	for rows.Next() {
+		var fact versionFact
+		if err := rows.Scan(&fact.workflowID, &fact.workflowVersion, &fact.versionStatus, &fact.draftGraph); err != nil {
+			rows.Close()
+			return nil, fmt.Errorf("scan revocation impact version: %w", err)
+		}
+		facts = append(facts, fact)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, fmt.Errorf("iterate revocation impact versions: %w", err)
+	}
+	rows.Close()
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("commit revocation impact read: %w", err)
+	}
+
+	// Release the product snapshot before consulting the independent kernel reader.
+	for _, fact := range facts {
+		workflowID, workflowVersion, versionStatus, draftGraph := fact.workflowID, fact.workflowVersion, fact.versionStatus, fact.draftGraph
 		var (
-			workflowID                string
-			workflowVersion           int
-			versionStatus             string
-			draftGraph                []byte
 			artifactSchemaVersion     *int
 			canonicalizationAlgorithm *string
 			canonicalizationVersion   *int
@@ -160,22 +168,6 @@ func (s *Store) ReadRevocationImpact(
 			artifactPayload           []byte
 			blocked                   *bool
 		)
-		if err := rows.Scan(
-			&workflowID,
-			&workflowVersion,
-			&versionStatus,
-			&draftGraph,
-			&artifactSchemaVersion,
-			&canonicalizationAlgorithm,
-			&canonicalizationVersion,
-			&hashAlgorithm,
-			&contentHash,
-			&artifactPayload,
-			&blocked,
-		); err != nil {
-			rows.Close()
-			return nil, fmt.Errorf("scan revocation impact version: %w", err)
-		}
 
 		item := RevocationImpactItem{
 			WorkflowID:           workflowID,
@@ -185,22 +177,32 @@ func (s *Store) ReadRevocationImpact(
 			PublishedFrozenKinds: make([]string, 0),
 		}
 		switch versionStatus {
-		case VersionStatusDraft:
+		case workflowdef.VersionStatusDraft:
 			if len(draftGraph) == 0 || artifactSchemaVersion != nil || blocked != nil {
-				rows.Close()
 				return nil, errors.New("draft revocation impact facts are inconsistent")
 			}
 			references, err := revocation.ExtractGraphReferences(draftGraph)
 			if err != nil {
-				rows.Close()
 				return nil, fmt.Errorf("decode draft revocation references: %w", err)
 			}
 			item.DraftReferencedKinds = revocationKindsForWorker(references, query.WorkerAgentID)
-		case VersionStatusPublished:
+		case workflowdef.VersionStatusPublished:
+			if s.artifacts == nil {
+				return nil, errors.New("frozen publication reader unavailable")
+			}
+			artifact, err := s.artifacts.GetArtifact(ctx, query.WorkspaceID, workflowID, workflowVersion)
+			if err != nil {
+				return nil, err
+			}
+			admission, err := s.artifacts.ReadAdmission(ctx, query.WorkspaceID, workflowID, workflowVersion)
+			if err != nil {
+				return nil, err
+			}
+			artifactSchemaVersion, canonicalizationAlgorithm, canonicalizationVersion = &artifact.ArtifactSchemaVersion, &artifact.CanonicalizationAlgorithm, &artifact.CanonicalizationVersion
+			hashAlgorithm, contentHash, artifactPayload, blocked = &artifact.HashAlgorithm, &artifact.ContentHash, artifact.Payload, &admission.Blocked
 			if artifactSchemaVersion == nil || canonicalizationAlgorithm == nil ||
 				canonicalizationVersion == nil || hashAlgorithm == nil || contentHash == nil ||
 				len(artifactPayload) == 0 || blocked == nil {
-				rows.Close()
 				return nil, errors.New("published revocation impact facts are incomplete")
 			}
 			payload, err := frozen.DecodeArtifactEnvelopeV1(frozen.ArtifactEnvelopeV1{
@@ -215,16 +217,13 @@ func (s *Store) ReadRevocationImpact(
 				Payload:                   artifactPayload,
 			})
 			if err != nil {
-				rows.Close()
 				return nil, fmt.Errorf("decode published revocation artifact: %w", err)
 			}
 			if payload.Team.WorkspaceID != query.WorkspaceID || payload.Team.TeamID != query.TeamID {
-				rows.Close()
 				return nil, errors.New("published revocation artifact team does not match workflow")
 			}
 			references, err := revocation.ExtractGraphReferences(payload.GraphDefinition)
 			if err != nil {
-				rows.Close()
 				return nil, fmt.Errorf("decode published revocation references: %w", err)
 			}
 			item.PublishedFrozenKinds = revocationKindsForWorker(references, query.WorkerAgentID)
@@ -234,7 +233,6 @@ func (s *Store) ReadRevocationImpact(
 			)
 			item.Blocked = blocked
 		default:
-			rows.Close()
 			return nil, fmt.Errorf("unsupported workflow version status %q", versionStatus)
 		}
 
@@ -246,12 +244,6 @@ func (s *Store) ReadRevocationImpact(
 			break
 		}
 	}
-	if err := rows.Err(); err != nil {
-		rows.Close()
-		return nil, fmt.Errorf("iterate revocation impact versions: %w", err)
-	}
-	rows.Close()
-
 	if len(page.Items) > query.Limit {
 		page.Items = page.Items[:query.Limit]
 		last := page.Items[len(page.Items)-1]
@@ -264,9 +256,6 @@ func (s *Store) ReadRevocationImpact(
 			return nil, err
 		}
 		page.NextCursor = &nextCursor
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return nil, fmt.Errorf("commit revocation impact read: %w", err)
 	}
 	return page, nil
 }

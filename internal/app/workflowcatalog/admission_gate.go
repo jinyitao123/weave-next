@@ -1,4 +1,4 @@
-package workflow
+package workflowcatalog
 
 import (
 	"context"
@@ -9,15 +9,15 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jinyitao123/weave/internal/kernel/revocation"
+	workflowdef "github.com/jinyitao123/weave/internal/kernel/workflow"
 )
 
 // EvaluateFixedWorkflowAdmissionTx applies the live relation and version
 // gates after the caller has locked workspace, workflow, version, and Team.
-func EvaluateFixedWorkflowAdmissionTx(
+func (s *Store) EvaluateFixedWorkflowAdmissionTx(
 	ctx context.Context,
 	tx pgx.Tx,
-	request FixedWorkflowAdmissionRequest,
-) error {
+	request workflowdef.FixedWorkflowAdmissionRequest) error {
 	if interfaceNil(tx) || request.WorkspaceID == "" || request.TeamID == "" ||
 		request.WorkflowID == "" || request.WorkflowVersion < 1 || len(request.GraphDefinition) == 0 {
 		return errors.New("fixed workflow admission gate request is invalid")
@@ -35,18 +35,16 @@ func EvaluateFixedWorkflowAdmissionTx(
 		return err
 	}
 
-	var blocked bool
-	if err := tx.QueryRow(ctx, `
-		SELECT blocked
-		FROM weave_workflow_version_admission_statuses
-		WHERE workspace_id=$1 AND workflow_id=$2 AND workflow_version=$3
-		FOR SHARE
-	`, request.WorkspaceID, request.WorkflowID, request.WorkflowVersion).Scan(&blocked); err != nil {
-		return workflowScheduleAdmissionReadError(err, "workflow admission status is unavailable")
+	if s.artifacts == nil {
+		return errors.New("frozen publication reader unavailable")
 	}
-	if blocked {
-		return &FixedWorkflowAdmissionDenial{
-			ReasonCode:      FixedWorkflowAdmissionVersionBlocked,
+	admission, err := s.artifacts.ReadAdmission(ctx, request.WorkspaceID, request.WorkflowID, request.WorkflowVersion)
+	if err != nil {
+		return err
+	}
+	if admission.Blocked {
+		return &workflowdef.FixedWorkflowAdmissionDenial{
+			ReasonCode:      workflowdef.FixedWorkflowAdmissionVersionBlocked,
 			WorkflowVersion: request.WorkflowVersion,
 		}
 	}
@@ -115,8 +113,8 @@ func lockFixedWorkflowReferencedWorkers(
 			return fmt.Errorf("read referenced TeamWorker: %w", err)
 		}
 		if locked >= len(workerIDs) || workerID != workerIDs[locked] || !enabled {
-			return &FixedWorkflowAdmissionDenial{
-				ReasonCode:      FixedWorkflowAdmissionTeamWorkerDisabled,
+			return &workflowdef.FixedWorkflowAdmissionDenial{
+				ReasonCode:      workflowdef.FixedWorkflowAdmissionTeamWorkerDisabled,
 				WorkflowVersion: workflowVersion,
 			}
 		}
@@ -126,8 +124,8 @@ func lockFixedWorkflowReferencedWorkers(
 		return fmt.Errorf("read referenced TeamWorkers: %w", err)
 	}
 	if locked != len(workerIDs) {
-		return &FixedWorkflowAdmissionDenial{
-			ReasonCode:      FixedWorkflowAdmissionTeamWorkerDisabled,
+		return &workflowdef.FixedWorkflowAdmissionDenial{
+			ReasonCode:      workflowdef.FixedWorkflowAdmissionTeamWorkerDisabled,
 			WorkflowVersion: workflowVersion,
 		}
 	}

@@ -186,7 +186,7 @@ func (s *Server) planDeclarativeWorkflow(
 		return blueprintPlanResult{}, fmt.Errorf("decode latest TeamBlueprint: %w", err)
 	}
 
-	s.TeamBuild.SetBaselineSources(s.OrgStore, s.Registry, s.Workflow)
+	s.TeamBuild.SetBaselineSources(s.OrgStore, s.Registry, s.Workflow, s.WorkflowArtifacts)
 	preview, err := s.TeamBuild.PreviewCompilerBaseline(ctx, workspaceID, buildRunID)
 	if err != nil {
 		return blueprintPlanResult{}, err

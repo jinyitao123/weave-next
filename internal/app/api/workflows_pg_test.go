@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jinyitao123/weave/internal/app/agentcatalog"
 	orgstore "github.com/jinyitao123/weave/internal/app/org"
+	"github.com/jinyitao123/weave/internal/app/workflowcatalog"
 	"github.com/jinyitao123/weave/internal/base/db"
 	"github.com/jinyitao123/weave/internal/base/testutil"
 	org "github.com/jinyitao123/weave/internal/kernel/orgspec"
@@ -46,7 +47,7 @@ func TestPublishWorkflowPGDoesNotGateUnevaluatedTeam(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create unevaluated team: %v", err)
 	}
-	workflowStore := workflow.New(pool, workflow.RealClock{})
+	workflowStore := workflowcatalog.New(pool, workflow.RealClock{}, workflow.NewArtifactStore(pool, workflow.RealClock{}))
 	record := &workflow.TeamWorkflow{
 		WorkspaceID: workspaceID, ID: uuid.NewString(), TeamID: created.Team.ID,
 		Name: prefix + "-workflow", Description: "待认证工作流",

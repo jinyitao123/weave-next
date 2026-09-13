@@ -62,7 +62,7 @@ func (s *Server) handleRequestRunCorrection(c echo.Context) error {
 		if err != nil {
 			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "run_read_failed"})
 		}
-		artifact, err := s.Workflow.GetArtifact(c.Request().Context(), getTenant(c), run.WorkflowID, run.WorkflowVersion)
+		artifact, err := s.WorkflowArtifacts.GetArtifact(c.Request().Context(), getTenant(c), run.WorkflowID, run.WorkflowVersion)
 		if err != nil || artifact == nil {
 			return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "correction_target_unavailable"})
 		}

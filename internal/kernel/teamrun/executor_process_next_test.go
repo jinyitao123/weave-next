@@ -396,7 +396,7 @@ func (h *processNextHarness) enqueueWorkflowTask(t *testing.T, runID string) str
 		ID: taskID, WorkspaceID: "workspace-1",
 		IdentityKind: taskqueue.IdentityTeamWorkflow, IdentitySchemaVersion: 2,
 		WorkflowID: "workflow-1", WorkflowVersion: 1, RunSnapshotID: runID,
-		Source: "api", Kind: "team_workflow", Payload: json.RawMessage(`{"input":true}`),
+		Source: "api", SourceRef: "build-" + runID, Kind: "team_workflow", Payload: json.RawMessage(`{"input":true}`),
 	})
 	if err != nil {
 		t.Fatalf("enqueue workflow task: %v", err)
@@ -510,7 +510,8 @@ func (h *processNextHarness) seedWorkflowSnapshot(t *testing.T, runID string) {
 		t.Fatalf("marshal API trigger source: %v", err)
 	}
 	_, err = snapshot.NewStore(h.pool).Create(ctx, snapshot.TeamRunSnapshot{
-		RunID: runID, WorkspaceID: "workspace-1", TeamID: "team-1",
+		Subject: execution.Subject{WorkspaceID: "workspace-1", UserID: "user-1"},
+		RunID:   runID, WorkspaceID: "workspace-1", TeamID: "team-1",
 		SnapshotSchemaVersion: 2, Mode: "fixed_workflow",
 		WorkflowID: "workflow-1", WorkflowVersion: 1,
 		ArtifactWorkflowID: "workflow-1", ArtifactWorkflowVersion: 1,
@@ -530,7 +531,7 @@ func (h *processNextHarness) seedWorkflowSnapshot(t *testing.T, runID string) {
 		}`),
 		TriggerSourceV2:      triggerSource,
 		RuntimeAssignment:    json.RawMessage(`{}`),
-		BuildRunID:           buildRunID,
+		SourceRef:            buildRunID,
 		CandidateContentHash: contentHash,
 	})
 	if err != nil {
@@ -573,6 +574,16 @@ func (h *processNextHarness) seedPublishedWorkflowArtifact(t *testing.T) string 
 	if err != nil {
 		t.Fatalf("canonicalize published workflow fixture: %v", err)
 	}
+	envelopeJSON, err := json.Marshal(frozen.ArtifactEnvelopeV1{
+		WorkspaceID: "workspace-1", WorkflowID: "workflow-1", WorkflowVersion: 1,
+		ArtifactSchemaVersion:     frozen.ArtifactSchemaVersion,
+		CanonicalizationAlgorithm: frozen.ArtifactCanonicalizationAlgorithm,
+		CanonicalizationVersion:   frozen.ArtifactCanonicalizationVersion,
+		HashAlgorithm:             frozen.ArtifactHashAlgorithm, ContentHash: contentHash, Payload: payloadJSON,
+	})
+	if err != nil {
+		t.Fatalf("encode candidate fixture: %v", err)
+	}
 	if _, err := h.pool.Exec(ctx, `
 		INSERT INTO weave_team_workflows (workspace_id,id,team_id,name)
 		VALUES ('workspace-1','workflow-1','team-1','Workflow 1');
@@ -586,11 +597,14 @@ func (h *processNextHarness) seedPublishedWorkflowArtifact(t *testing.T) string 
 			workspace_id,workflow_id,workflow_version,artifact_schema_version,
 			canonicalization_algorithm,canonicalization_version,hash_algorithm,content_hash,payload
 		) VALUES ('workspace-1','workflow-1',1,1,'rfc8785+jcs-preorder',1,'sha256',$4,$5::jsonb);
+		INSERT INTO weave_team_workflow_candidates (
+			workspace_id,workflow_id,workflow_version,content_hash,envelope_json,dependencies_json,expected_updated_at,created_by,created_at
+		) VALUES ('workspace-1','workflow-1',1,$4,$6::jsonb,'[]'::jsonb,$3,'fixture',$3);
 		INSERT INTO weave_workflow_version_admission_statuses (workspace_id,workflow_id,workflow_version,blocked)
 		VALUES ('workspace-1','workflow-1',1,false);
 		UPDATE weave_team_workflows SET published_version=1,updated_at=$3
 		WHERE workspace_id='workspace-1' AND id='workflow-1'
-	`, string(trigger), string(graph), h.now, contentHash, string(payloadJSON)); err != nil {
+	`, string(trigger), string(graph), h.now, contentHash, string(payloadJSON), string(envelopeJSON)); err != nil {
 		t.Fatalf("seed published workflow artifact: %v", err)
 	}
 	h.publishedSeeded = true

@@ -1,11 +1,10 @@
-package workflow
+package workflowcatalog
 
 import (
 	"context"
 	"errors"
 	"fmt"
 	"sort"
-	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jinyitao123/weave/internal/base/frozen"
@@ -16,36 +15,14 @@ import (
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 	"github.com/jinyitao123/weave/internal/kernel/schedule"
 	"github.com/jinyitao123/weave/internal/kernel/skills"
+	workflowdef "github.com/jinyitao123/weave/internal/kernel/workflow"
 	"github.com/jinyitao123/weave/internal/kernel/workflow/machine"
 )
 
-type CandidateInput struct {
-	WorkspaceID     string
-	WorkflowID      string
-	WorkflowVersion int
-}
-
-type PublicationCandidate struct {
-	WorkspaceID     string
-	WorkflowID      string
-	WorkflowVersion int
-
-	ExpectedUpdatedAt time.Time
-
-	ArtifactSchemaVersion     int
-	CanonicalizationAlgorithm string
-	CanonicalizationVersion   int
-	HashAlgorithm             string
-	ContentHash               string
-	Payload                   frozen.ArtifactPayloadV1
-	Dependencies              []TeamWorkflowDependency
-	validation                machine.ValidationContext
-}
-
 type CandidateBuilder struct {
-	credentialAuthority CandidateCredentialAuthority
+	credentialAuthority workflowdef.CandidateCredentialAuthority
 	workflows           *Store
-	agents              registry.PublicationAgentReader
+	agents              freezer.PublicationAgentReader
 	delivery            *delivery.Store
 	skills              *skills.Store
 	credentials         *credentials.Store
@@ -63,7 +40,7 @@ type candidateBundlePlan struct {
 
 func NewCandidateBuilder(
 	workflows *Store,
-	agents registry.PublicationAgentReader,
+	agents freezer.PublicationAgentReader,
 	deliveryStore *delivery.Store,
 	skillStore *skills.Store,
 	credentialStore *credentials.Store,
@@ -80,8 +57,7 @@ func NewCandidateBuilder(
 func (b *CandidateBuilder) BuildTx(
 	ctx context.Context,
 	tx pgx.Tx,
-	input CandidateInput,
-) (*PublicationCandidate, *machine.Report, error) {
+	input workflowdef.CandidateInput) (*workflowdef.PublicationCandidate, *machine.Report, error) {
 	if b == nil || b.workflows == nil {
 		return nil, nil, errors.New("build publication candidate: workflow store is required")
 	}
@@ -91,38 +67,39 @@ func (b *CandidateBuilder) BuildTx(
 	if err != nil {
 		return nil, nil, err
 	}
-	return b.buildResolvedCandidateTx(ctx, tx, input, draft, nil)
+	candidate, report, _, err := b.buildResolvedCandidateTx(ctx, tx, input, draft, nil)
+	return candidate, report, err
 }
 
-func (b *CandidateBuilder) buildResolvedCandidateTx(ctx context.Context, tx pgx.Tx, input CandidateInput, draft *PublicationDraftRead, fixedLead *machine.AgentVersionKey) (*PublicationCandidate, *machine.Report, error) {
+func (b *CandidateBuilder) buildResolvedCandidateTx(ctx context.Context, tx pgx.Tx, input workflowdef.CandidateInput, draft *workflowdef.PublicationDraftRead, fixedLead *machine.AgentVersionKey) (*workflowdef.PublicationCandidate, *machine.Report, machine.ValidationContext, error) {
 	trigger, triggerReport := machine.DecodeTriggerConfigV1(draft.Draft.TriggerConfig)
 	graph, graphReport := machine.DecodeGraphDefinitionV1(draft.Draft.GraphDefinition)
 	var report machine.Report
 	mergeCandidateReport(&report, triggerReport)
 	mergeCandidateReport(&report, graphReport)
 	if len(report.Issues) != 0 {
-		return nil, &report, nil
+		return nil, &report, machine.ValidationContext{}, nil
 	}
 	if b.agents == nil || b.delivery == nil || b.skills == nil ||
 		b.credentials == nil || b.schedules == nil || b.descriptors == nil {
-		return nil, nil, errors.New("build publication candidate: dependencies are required")
+		return nil, nil, machine.ValidationContext{}, errors.New("build publication candidate: dependencies are required")
 	}
 
 	team, err := b.agents.ResolvePublicationTeamTx(
 		ctx, tx, input.WorkspaceID, draft.Workflow.TeamID,
 	)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, machine.ValidationContext{}, err
 	}
 	if fixedLead != nil {
 		if fixedLead.AgentID != team.LeadAvatarID {
-			return nil, nil, errors.New("frozen team lead authorization changed")
+			return nil, nil, machine.ValidationContext{}, errors.New("frozen team lead authorization changed")
 		}
 		team.LeadAvatarVersion = fixedLead.AgentVersion
 	}
 	lead := machine.AgentVersionKey{AgentID: team.LeadAvatarID, AgentVersion: team.LeadAvatarVersion}
 	referenced := machine.ReferencedBundles(lead, graph)
-	scope := CandidateCredentialScope{WorkspaceID: input.WorkspaceID, TeamID: team.TeamID, Lead: lead}
+	scope := workflowdef.CandidateCredentialScope{WorkspaceID: input.WorkspaceID, TeamID: team.TeamID, Lead: lead}
 	for _, reference := range referenced {
 		scope.Agents = append(scope.Agents, reference.Key)
 	}
@@ -139,7 +116,7 @@ func (b *CandidateBuilder) buildResolvedCandidateTx(ctx context.Context, tx pgx.
 		},
 	)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, machine.ValidationContext{}, err
 	}
 	for index, reference := range referenced {
 		version := reference.Key.AgentVersion
@@ -147,24 +124,24 @@ func (b *CandidateBuilder) buildResolvedCandidateTx(ctx context.Context, tx pgx.
 			ctx, tx, input.WorkspaceID, reference.Key.AgentID, &version,
 		)
 		if resolveErr != nil {
-			return nil, nil, resolveErr
+			return nil, nil, machine.ValidationContext{}, resolveErr
 		}
 		key, selectErr := b.descriptors.SelectAgentFactoryKey(*record)
 		if selectErr != nil {
-			return nil, nil, selectErr
+			return nil, nil, machine.ValidationContext{}, selectErr
 		}
 		if graphType := normalizedCandidateGraphType(record.GraphType); graphType != key.FactoryID {
-			return nil, nil, compiler.ErrFactoryUnknown
+			return nil, nil, machine.ValidationContext{}, compiler.ErrFactoryUnknown
 		}
 		descriptor, lookupErr := b.descriptors.Lookup(key)
 		if lookupErr != nil {
-			return nil, nil, lookupErr
+			return nil, nil, machine.ValidationContext{}, lookupErr
 		}
 		factoryInput, encodeErr := descriptor.EnumerateDependencies.EncodeFactoryInput(
 			ctx, *record, credentialEncoder,
 		)
 		if encodeErr != nil {
-			return nil, nil, encodeErr
+			return nil, nil, machine.ValidationContext{}, encodeErr
 		}
 		ownerVersion := reference.Key.AgentVersion
 		计划[index] = candidateBundlePlan{
@@ -181,11 +158,11 @@ func (b *CandidateBuilder) buildResolvedCandidateTx(ctx context.Context, tx pgx.
 		Agents: b.agents, Skills: b.skills, Providers: b.credentials, Delivery: b.delivery,
 	})
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, machine.ValidationContext{}, err
 	}
 	workers, err := freezeResolver.ResolveTeamWorkersForShare(ctx, team.TeamID)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, machine.ValidationContext{}, err
 	}
 	for index := range 计划 {
 		usage := freezer.AgentUsageWorker
@@ -195,7 +172,7 @@ func (b *CandidateBuilder) buildResolvedCandidateTx(ctx context.Context, tx pgx.
 		if _, err := freezeResolver.ResolveAgentVersion(
 			ctx, 计划[index].self, usage, 计划[index].key, 计划[index].factoryInput,
 		); err != nil {
-			return nil, nil, err
+			return nil, nil, machine.ValidationContext{}, err
 		}
 	}
 
@@ -206,11 +183,11 @@ func (b *CandidateBuilder) buildResolvedCandidateTx(ctx context.Context, tx pgx.
 	for _, plan := range 计划 {
 		resolved, ok := freezeResolver.Lookup(plan.self)
 		if !ok || resolved.Agent == nil {
-			return nil, nil, errors.New("build publication candidate: frozen agent is unavailable")
+			return nil, nil, machine.ValidationContext{}, errors.New("build publication candidate: frozen agent is unavailable")
 		}
 		selfMetadata, err := freezeResolver.ResolveMetadata(ctx, plan.self)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, machine.ValidationContext{}, err
 		}
 		allEnumerated = append(allEnumerated, plan.self)
 		if plan.reference.Key == lead {
@@ -221,23 +198,23 @@ func (b *CandidateBuilder) buildResolvedCandidateTx(ctx context.Context, tx pgx.
 		}
 		descriptor, err := b.descriptors.Lookup(plan.key)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, machine.ValidationContext{}, err
 		}
 		enumerated, err := descriptor.EnumerateDependencies.EnumerateDependencies(
 			ctx, *resolved.Agent, freezeResolver,
 		)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, machine.ValidationContext{}, err
 		}
 		perAgentManifest, offlineResolver, err := freezer.ResolveManifest(
 			ctx, enumerated, freezeResolver,
 		)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, machine.ValidationContext{}, err
 		}
 		bundle, err := buildCandidateBundle(*resolved.Agent, plan.key, perAgentManifest, freezeResolver)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, machine.ValidationContext{}, err
 		}
 		bundleDependencies := append(
 			[]frozen.FrozenDependencyRef(nil), perAgentManifest.Dependencies...,
@@ -248,36 +225,36 @@ func (b *CandidateBuilder) buildResolvedCandidateTx(ctx context.Context, tx pgx.
 		})
 		_, bundle.Dependencies, err = frozen.BuildFrozenDependencyManifest(bundleDependencies)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, machine.ValidationContext{}, err
 		}
 		_, capability, err := b.descriptors.ProduceCandidateCapability(
 			ctx, plan.key, bundle, offlineResolver,
 		)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, machine.ValidationContext{}, err
 		}
 		bundle.Capability = capability
 		if _, err := b.descriptors.CompileCandidate(ctx, plan.key, bundle, offlineResolver); err != nil {
-			return nil, nil, err
+			return nil, nil, machine.ValidationContext{}, err
 		}
 		bundles = append(bundles, bundle)
 		bundlesByKey[plan.reference.Key] = bundle
 		allEnumerated = append(allEnumerated, enumerated.Dependencies...)
 	}
 	if leadMetadata.ContentHash == "" {
-		return nil, nil, errors.New("build publication candidate: frozen lead identity is unavailable")
+		return nil, nil, machine.ValidationContext{}, errors.New("build publication candidate: frozen lead identity is unavailable")
 	}
 	globalManifest, _, err := freezer.ResolveManifest(ctx, frozen.EnumeratedDependencyManifest{
 		SchemaVersion: frozen.FrozenSchemaVersion, Dependencies: allEnumerated,
 	}, freezeResolver)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, machine.ValidationContext{}, err
 	}
 
 	deliveryTargets, references := b.resolveCandidateReferences(ctx, tx, input.WorkspaceID, trigger)
 	for _, resolution := range references {
 		if resolution.err != nil && resolution.infrastructure {
-			return nil, nil, resolution.err
+			return nil, nil, machine.ValidationContext{}, resolution.err
 		}
 	}
 
@@ -307,25 +284,25 @@ func (b *CandidateBuilder) buildResolvedCandidateTx(ctx context.Context, tx pgx.
 	}
 	contentHash, err := frozen.ComputeArtifactContentHash(hashInput)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, machine.ValidationContext{}, err
 	}
-	dependencies, err := BuildCandidateDependencies(
+	dependencies, err := workflowdef.BuildCandidateDependencies(
 		input.WorkspaceID, input.WorkflowID, input.WorkflowVersion,
 		globalManifest, bundles, deliveryTargets,
 	)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, machine.ValidationContext{}, err
 	}
-	candidate := &PublicationCandidate{
+	candidate := &workflowdef.PublicationCandidate{
 		WorkspaceID: input.WorkspaceID, WorkflowID: input.WorkflowID,
 		WorkflowVersion: input.WorkflowVersion, ExpectedUpdatedAt: draft.Draft.UpdatedAt,
 		ArtifactSchemaVersion:     frozen.ArtifactSchemaVersion,
 		CanonicalizationAlgorithm: frozen.ArtifactCanonicalizationAlgorithm,
 		CanonicalizationVersion:   frozen.ArtifactCanonicalizationVersion,
 		HashAlgorithm:             frozen.ArtifactHashAlgorithm, ContentHash: contentHash,
-		Payload: payload, Dependencies: dependencies, validation: validation,
+		Payload: payload, Dependencies: dependencies,
 	}
-	return candidate, &report, nil
+	return candidate, &report, validation, nil
 }
 
 type candidateReferenceResolution struct {

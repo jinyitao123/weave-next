@@ -119,8 +119,8 @@ func (e *GateEvaluator) loadEvaluation(
 	// gates. Legacy evaluations without build-bound snapshots retain the
 	// historical team-wide behavior.
 	evaluatedVersions := make(map[string]int)
-	if e.deps.Snapshots != nil {
-		snapshots, listErr := e.deps.Snapshots.ListByTeam(ctx, workspaceID, teamID)
+	if e.deps.CandidateEvidence != nil {
+		snapshots, listErr := e.deps.CandidateEvidence.ListByTeam(ctx, workspaceID, teamID)
 		if listErr != nil {
 			return EvaluatedTeam{}, fmt.Errorf("list team run snapshots: %w", listErr)
 		}
