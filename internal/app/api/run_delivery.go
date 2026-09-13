@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 
@@ -28,9 +29,12 @@ type runDeliverySummary struct {
 }
 
 type runDeliveryCheck struct {
-	CheckID string                         `json:"check_id"`
-	Status  deliverable.VerificationStatus `json:"status"`
-	Reason  string                         `json:"reason"`
+	Title    string                         `json:"title,omitempty"`
+	Actual   string                         `json:"actual,omitempty"`
+	Expected string                         `json:"expected,omitempty"`
+	CheckID  string                         `json:"check_id"`
+	Status   deliverable.VerificationStatus `json:"status"`
+	Reason   string                         `json:"reason"`
 }
 
 func (s *Server) runDelivery(ctx context.Context, run teamrun.TeamRun) runDeliverySummary {
@@ -81,7 +85,17 @@ func projectRunDelivery(status teamrun.Status, state deliverable.DeliveryState) 
 	}
 	result.VerificationStatus, result.Reason, result.Available = report.Status, "", state.RevisionID != ""
 	for _, check := range report.Checks {
-		result.Checks = append(result.Checks, runDeliveryCheck{CheckID: check.CheckID, Status: check.Status, Reason: check.Reason})
+		item := runDeliveryCheck{CheckID: check.CheckID, Title: check.Title, Status: check.Status, Reason: check.Reason}
+		if check.VerifierID == "weave.deterministic" && check.VerifierVersion == "v1" {
+			var evidence struct {
+				Actual   string `json:"actual"`
+				Expected string `json:"expected"`
+			}
+			if json.Unmarshal(check.Evidence, &evidence) == nil {
+				item.Actual, item.Expected = evidence.Actual, evidence.Expected
+			}
+		}
+		result.Checks = append(result.Checks, item)
 		result.CheckCounts[string(check.Status)]++
 	}
 	return result

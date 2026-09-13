@@ -170,6 +170,7 @@ func workflowBlueprintBuildInputSchemaDoc() map[string]any {
 		},
 	}, []string{"agent_id", "agent_version", "result_requirement"})
 	blueprint := schemaObject(map[string]any{
+		"delivery_contract": deliveryContractSchema(),
 		"template": map[string]any{
 			"type": "string",
 			"enum": []string{

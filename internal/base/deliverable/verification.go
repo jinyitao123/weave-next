@@ -102,6 +102,7 @@ type ArtifactRequirement struct {
 }
 
 type CheckSpec struct {
+	Title           string          `json:"title,omitempty"`
 	ID              string          `json:"id"`
 	VerifierID      string          `json:"verifier_id"`
 	VerifierVersion string          `json:"verifier_version"`
@@ -166,6 +167,7 @@ type SourceObservation struct {
 }
 
 type CheckResult struct {
+	Title           string             `json:"title,omitempty"`
 	CheckID         string             `json:"check_id"`
 	VerifierID      string             `json:"verifier_id"`
 	VerifierVersion string             `json:"verifier_version"`
@@ -356,7 +358,7 @@ func ValidateDeliveryContract(contract *DeliveryContract) error {
 	}
 	effectsFound := contract.ExternalEffectsCheckID == ""
 	for _, check := range contract.RequiredChecks {
-		if check.ID == "" || strings.HasPrefix(check.ID, "_") || strings.HasPrefix(check.ID, "artifact:") || ids[check.ID] || check.VerifierID == "" || check.VerifierVersion == "" {
+		if len(check.Title) > 300 || check.ID == "" || strings.HasPrefix(check.ID, "_") || strings.HasPrefix(check.ID, "artifact:") || ids[check.ID] || check.VerifierID == "" || check.VerifierVersion == "" {
 			return errors.New("invalid or duplicate required check")
 		}
 		if len(check.Parameters) > 256*1024 || (len(check.Parameters) > 0 && !json.Valid(check.Parameters)) {
@@ -624,7 +626,7 @@ func Verify(ctx context.Context, contract *DeliveryContract, candidate Candidate
 }
 
 func runVerifier(ctx context.Context, registry *VerifierRegistry, input VerificationInput) CheckResult {
-	result := CheckResult{CheckID: input.Check.ID, VerifierID: input.Check.VerifierID, VerifierVersion: input.Check.VerifierVersion, Status: VerificationUnknown, Reason: "verifier_unavailable"}
+	result := CheckResult{Title: input.Check.Title, CheckID: input.Check.ID, VerifierID: input.Check.VerifierID, VerifierVersion: input.Check.VerifierVersion, Status: VerificationUnknown, Reason: "verifier_unavailable"}
 	fn := registry.lookup(input.Check.VerifierID, input.Check.VerifierVersion).verify
 	if fn == nil {
 		return result

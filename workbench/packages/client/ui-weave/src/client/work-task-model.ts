@@ -202,7 +202,7 @@ export interface WorkTaskDelivery {
   readonly verificationId: string
   readonly verificationStatus: 'pending' | 'passed' | 'failed' | 'unknown'
   readonly reason: string
-  readonly checks: readonly { readonly checkId: string; readonly status: 'pending' | 'passed' | 'failed' | 'unknown'; readonly reason: string }[]
+  readonly checks: readonly { readonly title?: string; readonly actual?: string; readonly expected?: string; readonly checkId: string; readonly status: 'pending' | 'passed' | 'failed' | 'unknown'; readonly reason: string }[]
   readonly checkCounts: Readonly<Record<string, number>>
   readonly available: boolean
   readonly evidenceCompleteness: 'complete' | 'unavailable'

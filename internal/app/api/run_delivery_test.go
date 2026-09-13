@@ -1,11 +1,23 @@
 package api
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/jinyitao123/weave/internal/base/deliverable"
 	"github.com/jinyitao123/weave/internal/kernel/teamrun"
 )
+
+func TestRunDeliveryProjectsReadableMechanicalMismatch(t *testing.T) {
+	state := deliverable.DeliveryState{RevisionID: "revision", ContractDigest: "contract", VerificationID: "report", Report: &deliverable.VerificationReport{
+		ID: "report", RevisionID: "revision", ContractDigest: "contract", Status: deliverable.VerificationFailed,
+		Checks: []deliverable.CheckResult{{CheckID: "total", Title: "总额应等于原始明细合计", VerifierID: "weave.deterministic", VerifierVersion: "v1", Status: deliverable.VerificationFailed, Reason: "deterministic_mismatch", Evidence: json.RawMessage(`{"actual":"294","expected":"295","input_digest":"private-evidence"}`)}},
+	}}
+	view := projectRunDelivery(teamrun.StatusSucceeded, state)
+	if len(view.Checks) != 1 || view.Checks[0].Title != "总额应等于原始明细合计" || view.Checks[0].Actual != "294" || view.Checks[0].Expected != "295" || view.VerificationStatus != deliverable.VerificationFailed {
+		t.Fatalf("failure details lost: %+v", view)
+	}
+}
 
 func TestRunDeliveryNeverInfersVerificationFromExecution(t *testing.T) {
 	state := deliverable.DeliveryState{ContractDigest: "contract"}

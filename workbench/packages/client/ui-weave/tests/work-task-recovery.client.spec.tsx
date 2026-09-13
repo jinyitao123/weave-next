@@ -74,6 +74,20 @@ describe('Workbench recovery and delivery facts', () => {
     expect(states.getByText('已记录的评价意见：我已核对用途')).toBeTruthy()
   })
 
+  it('explains a mechanical mismatch using the published requirement and actual values', () => {
+    const projection = task({ status: 'completed', waitKind: '', members: [], delivery: { ...delivery, verificationStatus: 'failed',
+      checks: [{ checkId: 'internal-total-rule', title: '总额应等于原始明细合计', status: 'failed', reason: 'deterministic_mismatch', actual: '294', expected: '295' }] } })
+    const view = render(<WorkTaskPanel {...props(projection)} />)
+    const states = within(view.getByRole('region', { name: '执行、交付核验与用户评价' }))
+    fireEvent.click(states.getByText('查看核验记录 · 1 项检查'))
+    expect(states.getByText('总额应等于原始明细合计')).toBeTruthy()
+    expect(states.getByText('最终成果与已约定的要求不一致。')).toBeTruthy()
+    expect(states.getByText('实际结果：294')).toBeTruthy()
+    expect(states.getByText('要求结果：295')).toBeTruthy()
+    expect(states.queryByText('internal-total-rule')).toBeNull()
+    expect(states.queryByText('deterministic_mismatch')).toBeNull()
+  })
+
   it('keeps PASS prose readable while legacy assessment remains unavailable', async () => {
     viewStore.actions.selectTab('run-1', 'outputs')
     const assessOutcome = vi.fn()
