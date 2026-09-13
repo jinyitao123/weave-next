@@ -16,6 +16,8 @@ import { DeliverableRow } from './DeliverableRow.tsx'
 import { ProjectActivity } from './ProjectActivity.tsx'
 import { NS as projectNS, zh as projectZh, en as projectEn, type ProjectActivityKey } from './project-activity-locales.ts'
 import { RuntimeSettingsSection } from './RuntimeCenter.tsx'
+import { AccountAccess, AccountButton } from './AccountAccess.tsx'
+import { AccountController, type AccountInjected } from './account-controller.ts'
 import { ApplicationSettingsSection } from './ApplicationCenter.tsx'
 import { CapabilityOperationsSettingsSection } from './CapabilityOperationsCenter.tsx'
 import { TeamListRow } from './TeamListRow.tsx'
@@ -32,8 +34,24 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 
 export const inject = ['slots', 'locale', 'layout', 'sessions', 'inputTriggers']
 
-export function apply(ctx: ClientContext): void {
+/** Browser account refresh policy. */
+export interface Config { accountCheckIntervalMs?: number }
+
+export function apply(ctx: ClientContext, config: Config = {}): void {
   const t = ctx.locale.bind(NS)
+  if (process.env.DSH_CLIENT_BUILD_PROFILE === 'workbench') {
+    const account = new AccountController(window.fetch.bind(window), () => { window.location.reload() })
+    ctx.effect(() => account.install(window, config.accountCheckIntervalMs ?? 30_000), 'ui-weave: account access')
+    const accountProps = (): AccountInjected => ({
+      hooks: { account }, login: account.login, logout: account.logout, retry: account.retry,
+    })
+    ctx.slots.inject('shell.access', () => ctx.slots.register({
+      name: 'shell.access', locale: NS, inject: accountProps,
+    }, AccountAccess))
+    ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({
+      name: 'sidebar.footer.action', id: 'weave-account', order: -10, locale: NS, inject: accountProps,
+    }, AccountButton))
+  }
   const taskView = createWorkTaskViewStore()
   let activeScene: { sessionId: SessionId; activate: () => void } | undefined
   let pendingTaskView: { sessionId: SessionId; runId: string; deliverableId: string } | undefined

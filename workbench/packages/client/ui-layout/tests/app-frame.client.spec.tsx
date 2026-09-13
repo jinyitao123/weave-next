@@ -12,7 +12,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
-import { useSyncExternalStore } from 'react'
+import { useLayoutEffect, useSyncExternalStore } from 'react'
 import { AppFrame } from '@deepseek-ai/dsh-client-ui-layout/src/client/AppFrame.tsx'
 import type { AppFrameProps } from '@deepseek-ai/dsh-client-ui-layout/src/client/AppFrame.tsx'
 import { SIDEBAR_COLLAPSED } from '@deepseek-ai/dsh-client-ui-layout/src/client/columns.ts'
@@ -54,12 +54,18 @@ function hookOf<T>(inst: { subscribe: (fn: () => void) => () => void; getSnapsho
   return function useSelector<S>(sel: (s: T) => S): S { return sel(useSyncExternalStore(inst.subscribe, inst.getSnapshot)) }
 }
 
-function mountFrame() {
+function AccessStub({ onAccessChange, allowed }: { onAccessChange: (identity: string | null) => void; allowed: boolean }) {
+  useLayoutEffect(() => { onAccessChange(allowed ? 'test-user' : null) }, [onAccessChange, allowed])
+  return null
+}
+
+function mountFrame(allowAccess = true) {
   window.innerWidth = frameWidth // first-render viewport source before the observer fires
   const instance = createLayoutStore().create()
   const slotCalls: { key: string; props: unknown }[] = []
   const renderSlot = ((key: string, owner: object) => {
     slotCalls.push({ key, props: owner })
+    if (key === 'shell.access') return <AccessStub {...owner as { onAccessChange: (identity: string | null) => void }} allowed={allowAccess} />
     if (key === 'sidebar') return <div data-testid="sidebar-content" />
     if (key === 'conversation') return <div data-testid="center-content" />
     if (key === 'details') return <div data-testid="details-content" />
@@ -524,5 +530,17 @@ describe('AppFrame — unmount with an in-flight resize frame', () => {
     frameWidth = 1250
     act(() => { fireResize?.(); fireResize?.(); vi.advanceTimersByTime(20) })
     expect(tracks(frame)).toEqual([280, 330])
+  })
+})
+
+
+describe('Workbench account access', () => {
+  it('does not mount or render business slots before access is granted', () => {
+    vi.stubEnv('DSH_CLIENT_BUILD_PROFILE', 'workbench')
+    const ui = mountFrame(false)
+    expect(ui.queryByTestId('sidebar-content')).toBeNull()
+    expect(ui.queryByTestId('center-content')).toBeNull()
+    expect(ui.queryByTestId('details-content')).toBeNull()
+    expect(ui.slotCalls.map(call => call.key)).toEqual(['shell.access'])
   })
 })

@@ -9,6 +9,8 @@ English | [中文](README.zh.md)
 
 ## Summary
 
+Workbench starts with account sign-in before mounting business views. The sidebar shows the current account and sign-out. Account names and an optional workspace are the only identity inputs alongside the password; passwords are cleared on submission and are never written to browser storage. The Host retains authentication credentials behind an HttpOnly cookie. Sign-in and sign-out rebuild the browser runtime, while a business request reporting expired access immediately hides the old work view and discards delayed responses. Account changes are also checked on focus, periodically, and across supported browser tabs.
+
 The Calling applications settings section creates stable application identities, grants specific published versions and issues scoped access keys. Keys can overlap during rotation; revoking the old key does not change the application's invocation identity. Newly issued application keys are shown once and can be hidden, while the Workbench Host credential remains private.
 
 Reusable capability authoring remains in the main conversation through Weave tools; this browser package does not expose a manual definition editor. Settings contains only application access administration: stable application identities, exact published-version grants, scoped one-time keys, rotation and revocation.
