@@ -11,7 +11,10 @@ This repository is migrated in four bands:
 Rules:
 
 - Keep `module github.com/jinyitao123/weave`.
-- Do not import upward across bands. Run `make depguard`.
+- Do not import upward across bands. Run `make depguard base-depguard`. Capability definition, compilation, and execution semantics belong to `internal/kernel/capability`; engine binding belongs to `internal/kernel/capabilityruntime`. Do not restore execution behavior or forwarding aliases under `internal/base`.
+- Before changing execution, orchestration, revision context, or delivery verification, follow [`docs/架构/2026-09-13-分层收敛与Loom职责基线.md`](docs/架构/2026-09-13-分层收敛与Loom职责基线.md). Identify the responsibility layer, existing state owner, reused entry point, public contract changes, and validation before editing. Keep task-specific rules in definitions or acceptance cases; do not add a parallel queue, execution loop, or terminal-state authority to solve one scenario. Do not expand dependency exceptions; remove each exact exception when its coupling is eliminated. Existing debt is not permission for new coupling.
+- For this migration, converge directly on the new contracts. Do not add legacy-data readers, snapshot conversion, dual execution paths, or old Host compatibility. Keep publication immutability, identity isolation, idempotency, and cancellation as new-system invariants. Historical evidence remains traceable; do not erase unrelated local data.
+- Start architecture work from `docs/架构/README.md`. Documents under `docs/历史/` and historical redirect pages are evidence, not current implementation instructions. Preserve source and replacement links when consolidating designs; do not treat archived single-repository decisions as overriding the current future repository split.
 - Use `make test`, which is fixed to `go test ./internal/... ./cmd/...`.
 - Do not use `vendor/`; Go modules are the source of dependency resolution.
 - Use `docker-compose.platform.yml` for platform validation.

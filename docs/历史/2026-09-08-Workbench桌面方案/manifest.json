@@ -1,0 +1,384 @@
+[
+  {
+    "original_path": "docs/架构/2026-09-08-Workbench桌面接入与账号体系产品技术方案.v0.1.md",
+    "archive_path": "docs/历史/2026-09-08-Workbench桌面方案/架构/2026-09-08-Workbench桌面接入与账号体系产品技术方案.v0.1.md",
+    "original_sha256": "2789f8184de08f0307dc0b465c5a7a1dada3c8c22f8080a2edaa2023f8c741cc",
+    "archive_sha256": "d0bb96eae886c6d3b6ca4535679e044f0bc6760516a48e007d8740cbcc0ddbfb",
+    "changes": "Only relative Markdown link destinations rebased; design text unchanged. Original path now a historical redirect.",
+    "rebased_links": [
+      {
+        "from": "../计划/2026-09-08-Workbench桌面接入与账号体系实施验收计划.md",
+        "to": "../../../计划/2026-09-08-Workbench桌面接入与账号体系实施验收计划.md"
+      },
+      {
+        "from": "../../internal/app/api/auth.go",
+        "to": "../../../../internal/app/api/auth.go"
+      },
+      {
+        "from": "../../internal/app/api/middleware.go",
+        "to": "../../../../internal/app/api/middleware.go"
+      },
+      {
+        "from": "../../internal/app/users/store.go",
+        "to": "../../../../internal/app/users/store.go"
+      },
+      {
+        "from": "../../internal/app/api/server.go",
+        "to": "../../../../internal/app/api/server.go"
+      },
+      {
+        "from": "../../internal/app/api/org.go",
+        "to": "../../../../internal/app/api/org.go"
+      },
+      {
+        "from": "../../internal/app/api/runtimes.go",
+        "to": "../../../../internal/app/api/runtimes.go"
+      },
+      {
+        "from": "../../internal/app/weaveclient/client.go",
+        "to": "../../../../internal/app/weaveclient/client.go"
+      },
+      {
+        "from": "../../internal/app/mcpstdio/server.go",
+        "to": "../../../../internal/app/mcpstdio/server.go"
+      },
+      {
+        "from": "../../workbench/packages/bundle/workbench-app/cordis.patch.yml",
+        "to": "../../../../workbench/packages/bundle/workbench-app/cordis.patch.yml"
+      },
+      {
+        "from": "../../workbench/packages/bundle/workbench-app/src/index.ts",
+        "to": "../../../../workbench/packages/bundle/workbench-app/src/index.ts"
+      },
+      {
+        "from": "../../workbench/packages/bundle/workbench-app/src/readiness.ts",
+        "to": "../../../../workbench/packages/bundle/workbench-app/src/readiness.ts"
+      },
+      {
+        "from": "../../workbench/packages/client/connection/src/browser-auth.ts",
+        "to": "../../../../workbench/packages/client/connection/src/browser-auth.ts"
+      },
+      {
+        "from": "../../workbench/packages/client/connection/src/index.ts",
+        "to": "../../../../workbench/packages/client/connection/src/index.ts"
+      },
+      {
+        "from": "../../workbench/packages/api/gateway/src/index.ts",
+        "to": "../../../../workbench/packages/api/gateway/src/index.ts"
+      },
+      {
+        "from": "../../workbench/packages/core/session/src/types.ts",
+        "to": "../../../../workbench/packages/core/session/src/types.ts"
+      },
+      {
+        "from": "../../workbench/packages/api/workspace-controller/src/index.ts",
+        "to": "../../../../workbench/packages/api/workspace-controller/src/index.ts"
+      },
+      {
+        "from": "../../workbench/docs/architecture.md",
+        "to": "../../../../workbench/docs/architecture.md"
+      },
+      {
+        "from": "../../docker-compose.platform.yml",
+        "to": "../../../../docker-compose.platform.yml"
+      },
+      {
+        "from": "2026-09-05-Workbench-工作对话方案.md",
+        "to": "../../../架构/2026-09-05-Workbench-工作对话方案.md"
+      }
+    ]
+  },
+  {
+    "original_path": "docs/架构/2026-09-08-Workbench桌面接入与账号体系产品技术方案.v0.2.md",
+    "archive_path": "docs/历史/2026-09-08-Workbench桌面方案/架构/2026-09-08-Workbench桌面接入与账号体系产品技术方案.v0.2.md",
+    "original_sha256": "68bc7771a0488a206327c26bd912a1cf498c3a2933cbf62619bec2c2df92e446",
+    "archive_sha256": "83d1c8c2db4b34606dac11b7f840f42db06de912ed39980a2d6f2909928a9a03",
+    "changes": "Only relative Markdown link destinations rebased; design text unchanged. Original path now a historical redirect.",
+    "rebased_links": [
+      {
+        "from": "2026-09-08-Workbench桌面接入与账号体系产品技术方案.v0.1.md",
+        "to": "2026-09-08-Workbench桌面接入与账号体系产品技术方案.v0.1.md"
+      },
+      {
+        "from": "2026-09-08-Workbench桌面接入方案可落地性与简洁性评审.md",
+        "to": "../../../架构/2026-09-08-Workbench桌面接入方案可落地性与简洁性评审.md"
+      },
+      {
+        "from": "../计划/2026-09-08-Workbench桌面接入与账号体系实施验收计划.md",
+        "to": "../../../计划/2026-09-08-Workbench桌面接入与账号体系实施验收计划.md"
+      },
+      {
+        "from": "../../internal/app/api/auth.go",
+        "to": "../../../../internal/app/api/auth.go"
+      },
+      {
+        "from": "../../internal/app/api/middleware.go",
+        "to": "../../../../internal/app/api/middleware.go"
+      },
+      {
+        "from": "../../internal/app/users/store.go",
+        "to": "../../../../internal/app/users/store.go"
+      },
+      {
+        "from": "../../internal/kernel/org/store.go",
+        "to": "../../../../internal/kernel/org/store.go"
+      },
+      {
+        "from": "../../internal/app/apikeys/store.go",
+        "to": "../../../../internal/app/apikeys/store.go"
+      },
+      {
+        "from": "../../workbench/packages/client/connection/src/browser-auth.ts",
+        "to": "../../../../workbench/packages/client/connection/src/browser-auth.ts"
+      },
+      {
+        "from": "../../workbench/packages/client/connection/src/rpc-host.ts",
+        "to": "../../../../workbench/packages/client/connection/src/rpc-host.ts"
+      },
+      {
+        "from": "../../workbench/packages/mcp/mcp-client/src/tools.ts",
+        "to": "../../../../workbench/packages/mcp/mcp-client/src/tools.ts"
+      },
+      {
+        "from": "../../internal/app/weaveclient/config.go",
+        "to": "../../../../internal/app/weaveclient/config.go"
+      },
+      {
+        "from": "../../workbench/packages/api/session-controller/src/commands.ts",
+        "to": "../../../../workbench/packages/api/session-controller/src/commands.ts"
+      },
+      {
+        "from": "../../workbench/packages/api/session-controller/src/types.ts",
+        "to": "../../../../workbench/packages/api/session-controller/src/types.ts"
+      },
+      {
+        "from": "../../workbench/packages/session/session-persistence/src/coordinator.ts",
+        "to": "../../../../workbench/packages/session/session-persistence/src/coordinator.ts"
+      },
+      {
+        "from": "../../workbench/packages/session/session-persistence-jsonl/src/index.ts",
+        "to": "../../../../workbench/packages/session/session-persistence-jsonl/src/index.ts"
+      },
+      {
+        "from": "../../workbench/packages/bundle/workbench-app/src/index.ts",
+        "to": "../../../../workbench/packages/bundle/workbench-app/src/index.ts"
+      },
+      {
+        "from": "../../workbench/packages/core/session/src/index.ts",
+        "to": "../../../../workbench/packages/core/session/src/index.ts"
+      },
+      {
+        "from": "../../internal/app/api/attachments.go",
+        "to": "../../../../internal/app/api/attachments.go"
+      },
+      {
+        "from": "../../internal/app/api/team_dispatch.go",
+        "to": "../../../../internal/app/api/team_dispatch.go"
+      },
+      {
+        "from": "../../internal/app/weaveclient/client.go",
+        "to": "../../../../internal/app/weaveclient/client.go"
+      },
+      {
+        "from": "../../Dockerfile.workbench",
+        "to": "../../../../Dockerfile.workbench"
+      },
+      {
+        "from": "../../docker-compose.platform.yml",
+        "to": "../../../../docker-compose.platform.yml"
+      },
+      {
+        "from": "Workbench桌面接入评审-2026-09-08/产品与简洁性原始审查.md",
+        "to": "../../../架构/Workbench桌面接入评审-2026-09-08/产品与简洁性原始审查.md"
+      },
+      {
+        "from": "Workbench桌面接入评审-2026-09-08/工程可落地性原始审查.md",
+        "to": "../../../架构/Workbench桌面接入评审-2026-09-08/工程可落地性原始审查.md"
+      },
+      {
+        "from": "Workbench桌面接入评审-2026-09-08/契约与生命周期原始审查.md",
+        "to": "../../../架构/Workbench桌面接入评审-2026-09-08/契约与生命周期原始审查.md"
+      }
+    ]
+  },
+  {
+    "original_path": "docs/架构/2026-09-08-Workbench桌面接入与账号体系产品技术方案.v0.3.md",
+    "archive_path": "docs/历史/2026-09-08-Workbench桌面方案/架构/2026-09-08-Workbench桌面接入与账号体系产品技术方案.v0.3.md",
+    "original_sha256": "d6c2a5415589f63ed4ce7a5342c7a1d7fd7e276e2536cfc30b3071afca4afa7f",
+    "archive_sha256": "56536557d797c1fc02d8ac6402404df44c32d10064d4438a645f9bb5cabb4066",
+    "changes": "Only relative Markdown link destinations rebased; design text unchanged. Original path now a historical redirect.",
+    "rebased_links": [
+      {
+        "from": "2026-09-08-Workbench桌面接入与账号体系产品技术方案.v0.1.md",
+        "to": "2026-09-08-Workbench桌面接入与账号体系产品技术方案.v0.1.md"
+      },
+      {
+        "from": "2026-09-08-Workbench桌面接入与账号体系产品技术方案.v0.2.md",
+        "to": "2026-09-08-Workbench桌面接入与账号体系产品技术方案.v0.2.md"
+      },
+      {
+        "from": "2026-09-08-Workbench桌面接入方案可落地性与简洁性评审.md",
+        "to": "../../../架构/2026-09-08-Workbench桌面接入方案可落地性与简洁性评审.md"
+      },
+      {
+        "from": "../计划/2026-09-08-Workbench桌面接入与账号体系实施验收计划.md",
+        "to": "../../../计划/2026-09-08-Workbench桌面接入与账号体系实施验收计划.md"
+      },
+      {
+        "from": "../计划/2026-09-08-Workbench桌面接入并行任务计划.md",
+        "to": "../../../计划/2026-09-08-Workbench桌面接入并行任务计划.md"
+      },
+      {
+        "from": "../../tools/depguard/check_depguard.py",
+        "to": "../../../../tools/depguard/check_depguard.py"
+      },
+      {
+        "from": "../../internal/app/api/auth.go",
+        "to": "../../../../internal/app/api/auth.go"
+      },
+      {
+        "from": "../../internal/app/api/middleware.go",
+        "to": "../../../../internal/app/api/middleware.go"
+      },
+      {
+        "from": "../../internal/app/users/store.go",
+        "to": "../../../../internal/app/users/store.go"
+      },
+      {
+        "from": "../../internal/kernel/org/store.go",
+        "to": "../../../../internal/kernel/org/store.go"
+      },
+      {
+        "from": "../../internal/app/apikeys/store.go",
+        "to": "../../../../internal/app/apikeys/store.go"
+      },
+      {
+        "from": "../../workbench/packages/client/connection/src/browser-auth.ts",
+        "to": "../../../../workbench/packages/client/connection/src/browser-auth.ts"
+      },
+      {
+        "from": "../../workbench/packages/client/connection/src/rpc-host.ts",
+        "to": "../../../../workbench/packages/client/connection/src/rpc-host.ts"
+      },
+      {
+        "from": "../../workbench/packages/mcp/mcp-client/src/tools.ts",
+        "to": "../../../../workbench/packages/mcp/mcp-client/src/tools.ts"
+      },
+      {
+        "from": "../../internal/app/weaveclient/config.go",
+        "to": "../../../../internal/app/weaveclient/config.go"
+      },
+      {
+        "from": "../../workbench/packages/api/session-controller/src/commands.ts",
+        "to": "../../../../workbench/packages/api/session-controller/src/commands.ts"
+      },
+      {
+        "from": "../../workbench/packages/api/session-controller/src/types.ts",
+        "to": "../../../../workbench/packages/api/session-controller/src/types.ts"
+      },
+      {
+        "from": "../../workbench/packages/session/session-persistence/src/coordinator.ts",
+        "to": "../../../../workbench/packages/session/session-persistence/src/coordinator.ts"
+      },
+      {
+        "from": "../../workbench/packages/session/session-persistence-jsonl/src/index.ts",
+        "to": "../../../../workbench/packages/session/session-persistence-jsonl/src/index.ts"
+      },
+      {
+        "from": "../../workbench/packages/bundle/workbench-app/src/index.ts",
+        "to": "../../../../workbench/packages/bundle/workbench-app/src/index.ts"
+      },
+      {
+        "from": "../../workbench/packages/core/session/src/index.ts",
+        "to": "../../../../workbench/packages/core/session/src/index.ts"
+      },
+      {
+        "from": "../../internal/app/api/attachments.go",
+        "to": "../../../../internal/app/api/attachments.go"
+      },
+      {
+        "from": "../../internal/app/api/team_dispatch.go",
+        "to": "../../../../internal/app/api/team_dispatch.go"
+      },
+      {
+        "from": "../../internal/app/weaveclient/client.go",
+        "to": "../../../../internal/app/weaveclient/client.go"
+      },
+      {
+        "from": "../../Dockerfile.workbench",
+        "to": "../../../../Dockerfile.workbench"
+      },
+      {
+        "from": "../../docker-compose.platform.yml",
+        "to": "../../../../docker-compose.platform.yml"
+      },
+      {
+        "from": "Workbench桌面接入评审-2026-09-08/产品与简洁性原始审查.md",
+        "to": "../../../架构/Workbench桌面接入评审-2026-09-08/产品与简洁性原始审查.md"
+      },
+      {
+        "from": "Workbench桌面接入评审-2026-09-08/工程可落地性原始审查.md",
+        "to": "../../../架构/Workbench桌面接入评审-2026-09-08/工程可落地性原始审查.md"
+      },
+      {
+        "from": "Workbench桌面接入评审-2026-09-08/契约与生命周期原始审查.md",
+        "to": "../../../架构/Workbench桌面接入评审-2026-09-08/契约与生命周期原始审查.md"
+      }
+    ]
+  },
+  {
+    "original_path": "docs/计划/2026-09-08-Workbench桌面接入与账号体系实施验收计划.v0.1.md",
+    "archive_path": "docs/历史/2026-09-08-Workbench桌面方案/计划/2026-09-08-Workbench桌面接入与账号体系实施验收计划.v0.1.md",
+    "original_sha256": "72eef1d96433679500634bf3d479eb0c4e6f717c06716d2267d0f1c23d16b9dd",
+    "archive_sha256": "7fadf7910e7b23c2d480224d00f8143178df31f73ebaf742cb278cf6177df08e",
+    "changes": "Only relative Markdown link destinations rebased; design text unchanged. Original path now a historical redirect.",
+    "rebased_links": [
+      {
+        "from": "../架构/2026-09-08-Workbench桌面接入与账号体系产品技术方案.md",
+        "to": "../../../架构/2026-09-08-Workbench桌面接入与账号体系产品技术方案.md"
+      }
+    ]
+  },
+  {
+    "original_path": "docs/计划/2026-09-08-Workbench桌面接入与账号体系实施验收计划.v0.2.md",
+    "archive_path": "docs/历史/2026-09-08-Workbench桌面方案/计划/2026-09-08-Workbench桌面接入与账号体系实施验收计划.v0.2.md",
+    "original_sha256": "46299b64eeeea7d2b950df8fdec6bd24b4f1eff219ab54da8d2ea76c3b584883",
+    "archive_sha256": "ed03e92edb870907f36708074c09460e97dd7756b15983a9e554aa784cd9cf2b",
+    "changes": "Only relative Markdown link destinations rebased; design text unchanged. Original path now a historical redirect.",
+    "rebased_links": [
+      {
+        "from": "../架构/2026-09-08-Workbench桌面接入与账号体系产品技术方案.md",
+        "to": "../../../架构/2026-09-08-Workbench桌面接入与账号体系产品技术方案.md"
+      },
+      {
+        "from": "2026-09-08-Workbench桌面接入与账号体系实施验收计划.v0.1.md",
+        "to": "2026-09-08-Workbench桌面接入与账号体系实施验收计划.v0.1.md"
+      }
+    ]
+  },
+  {
+    "original_path": "docs/计划/2026-09-08-Workbench桌面接入与账号体系实施验收计划.v0.3.md",
+    "archive_path": "docs/历史/2026-09-08-Workbench桌面方案/计划/2026-09-08-Workbench桌面接入与账号体系实施验收计划.v0.3.md",
+    "original_sha256": "ad3ea1a68815d5e7ebc60ffaf1b3738facdb5ea53a401a96765e17b4630ca019",
+    "archive_sha256": "4a1d64c1054048a281f4a3db36e7888aa303ccb707b841e2162e70c340ed9c77",
+    "changes": "Only relative Markdown link destinations rebased; design text unchanged. Original path now a historical redirect.",
+    "rebased_links": [
+      {
+        "from": "../架构/2026-09-08-Workbench桌面接入与账号体系产品技术方案.md",
+        "to": "../../../架构/2026-09-08-Workbench桌面接入与账号体系产品技术方案.md"
+      },
+      {
+        "from": "2026-09-08-Workbench桌面接入与账号体系实施验收计划.v0.1.md",
+        "to": "2026-09-08-Workbench桌面接入与账号体系实施验收计划.v0.1.md"
+      },
+      {
+        "from": "2026-09-08-Workbench桌面接入与账号体系实施验收计划.v0.2.md",
+        "to": "2026-09-08-Workbench桌面接入与账号体系实施验收计划.v0.2.md"
+      },
+      {
+        "from": "2026-09-08-Workbench桌面接入并行任务计划.md",
+        "to": "../../../计划/2026-09-08-Workbench桌面接入并行任务计划.md"
+      }
+    ]
+  }
+]
