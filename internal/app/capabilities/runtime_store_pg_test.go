@@ -1,9 +1,12 @@
 package capabilities
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
+
+	"github.com/jinyitao123/weave/internal/base/execution"
 )
 
 func TestCapabilityRuntimeBindingsRejectStaleClaimsRealPG(t *testing.T) {
@@ -17,7 +20,8 @@ func TestCapabilityRuntimeBindingsRejectStaleClaimsRealPG(t *testing.T) {
 			if err := store.BindRuntime(t.Context(), task, "original-runtime"); err != nil {
 				t.Fatal(err)
 			}
-			if err := store.RecordStepRun(t.Context(), task, "confirmed", "original-run"); err != nil {
+			originalCtx := execution.WithInvocationID(t.Context(), "activation-original")
+			if err := store.RecordStepRun(originalCtx, task, "confirmed", "original-run"); err != nil {
 				t.Fatal(err)
 			}
 			bad := task
@@ -38,7 +42,9 @@ func TestCapabilityRuntimeBindingsRejectStaleClaimsRealPG(t *testing.T) {
 			}
 			for _, write := range []func() error{
 				func() error { return store.BindRuntime(t.Context(), bad, "stale-runtime") },
-				func() error { return store.RecordStepRun(t.Context(), bad, "stale-step", "stale-run") },
+				func() error {
+					return store.RecordStepRun(execution.WithInvocationID(t.Context(), "activation-stale"), bad, "stale-step", "stale-run")
+				},
 				func() error { return store.RenewTask(t.Context(), bad) },
 			} {
 				if err := write(); !errors.Is(err, ErrClaimLost) {
@@ -54,6 +60,31 @@ func TestCapabilityRuntimeBindingsRejectStaleClaimsRealPG(t *testing.T) {
 				t.Fatalf("stale run persisted: %d %v", count, err)
 			}
 		})
+	}
+}
+
+func TestCapabilityStepRunReceiptsAreActivationAwareAndIdempotentRealPG(t *testing.T) {
+	pool, store, invocation := executionFixture(t)
+	task, claimed, err := store.ClaimTask(t.Context())
+	if err != nil || !claimed {
+		t.Fatalf("claim: %v %v", claimed, err)
+	}
+	first := execution.WithInvocationID(t.Context(), "activation-1")
+	second := execution.WithInvocationID(t.Context(), "activation-2")
+	for _, item := range []struct {
+		ctx   context.Context
+		runID string
+	}{{first, "run-1"}, {first, "run-1"}, {first, "run-2"}, {second, "run-3"}} {
+		if err := store.RecordStepRun(item.ctx, task, "loop-step", item.runID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := store.RecordStepRun(second, task, "loop-step", "run-1"); !errors.Is(err, ErrClaimLost) {
+		t.Fatalf("physical run rebound to another activation: %v", err)
+	}
+	var count int
+	if err := pool.QueryRow(t.Context(), `SELECT count(*) FROM weave_capability_step_runs WHERE invocation_id=$1`, invocation.InvocationID).Scan(&count); err != nil || count != 3 {
+		t.Fatalf("receipts=%d err=%v", count, err)
 	}
 }
 
