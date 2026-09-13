@@ -40,6 +40,7 @@ func (s *Service) Debug(ctx context.Context, request DebugRequest) (Invocation, 
 		return Invocation{}, false, fmt.Errorf("%w: debug input schema: %v", capability.ErrInvalidDefinition, err)
 	}
 	return s.invocations.ClaimDebugInvocation(ctx, Invocation{
+		CallerKind:  "developer",
 		WorkspaceID: request.WorkspaceID, ApplicationID: request.ApplicationID, InvocationID: uuid.NewString(),
 		RequestID: request.RequestID, CapabilityID: snapshot.Definition.CapabilityID, RunKind: "debug",
 		DefinitionHash: snapshot.DefinitionHash, Input: input, Status: "queued", ResultState: "unavailable",

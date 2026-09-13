@@ -78,6 +78,13 @@ type TeamCreateRequest struct {
 	IdempotencyKey  string          `json:"idempotency_key"`
 }
 
+type CapabilityPlanRequest struct {
+	Prompt         string
+	Model          string
+	CapabilityID   string
+	IdempotencyKey string
+}
+
 type DispatchRequest struct {
 	TeamID string
 	Task   string
@@ -199,6 +206,45 @@ func (c *Client) TeamCreate(ctx context.Context, request TeamCreateRequest) (jso
 		return nil, &Error{Code: "idempotency_key_required"}
 	}
 	return c.sendJSON(ctx, http.MethodPost, "/v1/teams:from-template", request)
+}
+
+func (c *Client) CapabilityList(ctx context.Context) (json.RawMessage, error) {
+	return c.getJSON(ctx, "/v1/capabilities/drafts")
+}
+
+func (c *Client) CapabilityPlan(ctx context.Context, request CapabilityPlanRequest) (json.RawMessage, error) {
+	prompt, model := strings.TrimSpace(request.Prompt), strings.TrimSpace(request.Model)
+	idempotencyKey, err := uuid.Parse(strings.TrimSpace(request.IdempotencyKey))
+	if prompt == "" || model == "" || err != nil {
+		return nil, &Error{Code: "invalid_arguments"}
+	}
+	generated, err := c.sendJSON(ctx, http.MethodPost, "/v1/capabilities/generate", map[string]string{"prompt": prompt, "model": model})
+	if err != nil {
+		return nil, err
+	}
+	var response struct {
+		Definition map[string]any `json:"definition"`
+	}
+	if err := json.Unmarshal(generated, &response); err != nil || response.Definition == nil {
+		return nil, &Error{Code: "capability_generation_invalid"}
+	}
+	capabilityID := strings.TrimSpace(request.CapabilityID)
+	if capabilityID == "" {
+		capabilityID = uuid.NewSHA1(uuid.NameSpaceOID, []byte("weave-capability-plan:"+idempotencyKey.String())).String()
+	}
+	response.Definition["capability_id"] = capabilityID
+	if _, err := c.sendJSON(ctx, http.MethodPost, "/v1/capabilities/drafts", map[string]any{"definition": response.Definition}); err != nil {
+		return nil, err
+	}
+	return json.Marshal(response)
+}
+
+func (c *Client) CapabilityPublish(ctx context.Context, capabilityID string, revision int64) (json.RawMessage, error) {
+	capabilityID = strings.TrimSpace(capabilityID)
+	if capabilityID == "" || revision < 1 {
+		return nil, &Error{Code: "invalid_arguments"}
+	}
+	return c.sendJSON(ctx, http.MethodPost, "/v1/capabilities/"+url.PathEscape(capabilityID)+"/versions/"+strconv.FormatInt(revision, 10)+"/publish", map[string]any{})
 }
 
 func (c *Client) TeamDispatch(ctx context.Context, request DispatchRequest) (string, json.RawMessage, error) {

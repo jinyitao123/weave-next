@@ -6,11 +6,14 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"sort"
 	"strconv"
+	"strings"
 
 	appcapabilities "github.com/jinyitao123/weave/internal/app/capabilities"
 	"github.com/jinyitao123/weave/internal/base/capability"
 	"github.com/jinyitao123/weave/internal/base/frozen"
+	"github.com/jinyitao123/weave/internal/kernel/llmrouter"
 	"github.com/labstack/echo/v4"
 )
 
@@ -63,7 +66,34 @@ func (s *Server) handleListCapabilityDrafts(c echo.Context) error {
 	if err != nil {
 		return capabilityHTTPError(c, err)
 	}
-	return c.JSON(200, map[string]any{"drafts": drafts})
+	models := []string{}
+	if s.Models != nil {
+		resolved, err := s.Models.ForWorkspace(c.Request().Context(), workspaceID)
+		if err != nil {
+			return capabilityHTTPError(c, err)
+		}
+		if router, ok := resolved.(*llmrouter.Router); ok {
+			seen := map[string]bool{}
+			for _, provider := range router.ListProviders() {
+				for _, model := range provider.Models {
+					if !seen[model] {
+						seen[model] = true
+						models = append(models, model)
+					}
+				}
+			}
+			sort.Strings(models)
+		}
+	}
+	versions := []appcapabilities.VersionSummary{}
+	if s.CapabilityAccess != nil {
+		snapshot, err := s.CapabilityAccess.Snapshot(c.Request().Context(), workspaceID, getUserID(c))
+		if err != nil {
+			return capabilityHTTPError(c, err)
+		}
+		versions = snapshot.Versions
+	}
+	return c.JSON(200, map[string]any{"drafts": drafts, "models": models, "versions": versions})
 }
 
 func (s *Server) handleSaveCapabilityDraft(c echo.Context) error {
@@ -117,19 +147,24 @@ func (s *Server) handleInvokeCapability(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 	}
 	workspaceID, _ := c.Get("tenant").(string)
-	applicationID, _ := c.Get(apiKeyIDContextKey).(string)
-	if applicationID == "" {
-		applicationID, _ = c.Get("user_id").(string)
+	applicationID := capabilityApplicationID(c)
+	credentialID := ""
+	if p, ok := c.Get(capabilityPrincipalKey).(appcapabilities.ApplicationPrincipal); ok {
+		credentialID = p.CredentialID
+		if err := s.CapabilityAccess.AuthorizeInvocation(c.Request().Context(), p, c.Param("capabilityID"), revision); err != nil {
+			return capabilityHTTPError(c, err)
+		}
 	}
 	invocation, replayed, err := s.Capabilities.Invoke(c.Request().Context(), appcapabilities.InvokeRequest{
-		WorkspaceID: workspaceID, ApplicationID: applicationID,
+		WorkspaceID: workspaceID, ApplicationID: applicationID, CredentialID: credentialID,
 		RequestID: request.RequestID, CapabilityID: c.Param("capabilityID"), Revision: revision, Input: request.Input,
 	})
 	if err != nil {
 		return capabilityHTTPError(c, err)
 	}
 	return c.JSON(http.StatusAccepted, map[string]any{
-		"run_kind": invocation.RunKind, "definition_hash": invocation.DefinitionHash,
+		"application_id": invocation.ApplicationID,
+		"run_kind":       invocation.RunKind, "definition_hash": invocation.DefinitionHash,
 		"invocation_id": invocation.InvocationID, "capability_id": invocation.CapabilityID,
 		"revision": invocation.Revision, "task_id": invocation.TaskID, "status": invocation.Status,
 		"result_state": invocation.ResultState, "replayed": replayed,
@@ -137,6 +172,9 @@ func (s *Server) handleInvokeCapability(c echo.Context) error {
 }
 
 func capabilityApplicationID(c echo.Context) string {
+	if p, ok := c.Get(capabilityPrincipalKey).(appcapabilities.ApplicationPrincipal); ok {
+		return p.AppID
+	}
 	applicationID, _ := c.Get(apiKeyIDContextKey).(string)
 	if applicationID == "" {
 		applicationID, _ = c.Get("user_id").(string)
@@ -154,11 +192,14 @@ func (s *Server) handleGetCapabilityInvocation(c echo.Context) error {
 		return capabilityHTTPError(c, err)
 	}
 	response := map[string]any{
-		"run_kind": invocation.RunKind, "definition_hash": invocation.DefinitionHash,
+		"capability_name": invocation.CapabilityName, "step_names": invocation.StepNames, "result_steps": invocation.ResultSteps,
+		"application_id": invocation.ApplicationID,
+		"run_kind":       invocation.RunKind, "definition_hash": invocation.DefinitionHash,
 		"invocation_id": invocation.InvocationID, "task_id": invocation.TaskID,
 		"capability_id": invocation.CapabilityID,
 		"status":        invocation.Status, "result_state": invocation.ResultState,
 		"result": invocation.Result, "error": publicCapabilityError(invocation),
+		"failure_reason": publicCapabilityFailure(invocation),
 	}
 	if invocation.RunKind == "published" {
 		response["revision"] = invocation.Revision
@@ -182,6 +223,8 @@ func capabilityHTTPError(c echo.Context, err error) error {
 	status := http.StatusInternalServerError
 	code := "capability_service_error"
 	switch {
+	case errors.Is(err, appcapabilities.ErrAccessDenied):
+		status, code = http.StatusForbidden, "capability_access_denied"
 	case errors.Is(err, capability.ErrInvalidDefinition), errors.Is(err, capability.ErrInvalidRevision):
 		status, code = http.StatusBadRequest, "capability_request_invalid"
 	case errors.Is(err, appcapabilities.ErrRevisionConflict):
@@ -209,6 +252,24 @@ func publicCapabilityError(i appcapabilities.Invocation) string {
 	return ""
 }
 
+func publicCapabilityFailure(i appcapabilities.Invocation) string {
+	if i.Status != "failed" {
+		return ""
+	}
+	switch {
+	case i.Error == "capability_model_unavailable":
+		return "model_unavailable"
+	case i.Error == "application_authorization_revoked" || i.Error == appcapabilities.ErrAccessDenied.Error():
+		return "access_revoked"
+	case i.Error == "execution_deadline_expired" || strings.Contains(i.Error, "context deadline exceeded"):
+		return "deadline"
+	case strings.Contains(i.Error, "output schema") || strings.Contains(i.Error, "invalid JSON output"):
+		return "output_invalid"
+	default:
+		return "failed"
+	}
+}
+
 func decodeCapabilityBody(c echo.Context, target any) error {
 	raw, err := io.ReadAll(http.MaxBytesReader(c.Response(), c.Request().Body, 1<<20))
 	if err != nil {
@@ -228,6 +289,13 @@ func decodeCapabilityBody(c echo.Context, target any) error {
 func requireCapabilityAccess(action string) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
+			if c.Get(authSourceContextKey) == authSourceCapabilityApp {
+				p, ok := c.Get(capabilityPrincipalKey).(appcapabilities.ApplicationPrincipal)
+				if ok && p.Allows(action) && action != "manage" {
+					return next(c)
+				}
+				return c.JSON(http.StatusForbidden, map[string]string{"error": "insufficient application scope"})
+			}
 			if c.Get(authSourceContextKey) == authSourceAPIKey {
 				scopes, _ := c.Get(scopesContextKey).([]string)
 				for _, scope := range scopes {

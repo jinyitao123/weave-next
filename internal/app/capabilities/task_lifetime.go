@@ -6,7 +6,9 @@ func (s *PGStore) TaskActive(ctx context.Context, task InvocationTask) (bool, er
 	var active bool
 	err := s.pool.QueryRow(ctx, `SELECT EXISTS(
  SELECT 1 FROM weave_capability_invocation_tasks t JOIN weave_capability_invocations i ON i.workspace_id=t.workspace_id AND i.invocation_id=t.invocation_id
- WHERE t.task_id=$1 AND t.workspace_id=$2 AND t.invocation_id=$3 AND t.claim_token=$4 AND t.status='running' AND i.status='running' AND t.deadline_at>now())`,
+ WHERE t.task_id=$1 AND t.workspace_id=$2 AND t.invocation_id=$3 AND t.claim_token=$4 AND t.status='running' AND i.status='running' AND t.deadline_at>now()
+ AND (i.caller_kind='developer' OR EXISTS(SELECT 1 FROM weave_capability_apps a JOIN weave_capability_grants g ON g.workspace_id=a.workspace_id AND g.app_id=a.id
+ WHERE a.workspace_id=i.workspace_id AND a.id=i.application_id AND a.enabled AND g.enabled AND g.capability_id=i.capability_id AND g.revision=i.revision)))`,
 		task.TaskID, task.WorkspaceID, task.InvocationID, task.ClaimToken).Scan(&active)
 	return active, err
 }

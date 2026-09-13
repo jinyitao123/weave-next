@@ -104,6 +104,7 @@ type Server struct {
 	Audit                     *audit.Store                        // nil if PG pool unavailable
 	Credentials               *credentials.Store                  // nil if WEAVE_SECRET_KEY is not configured
 	Capabilities              *appcapabilities.Service            // nil if PG persistence is unavailable
+	CapabilityAccess          *appcapabilities.AccessStore
 	SystemProviders           credentials.SystemProviderSource
 	MCPRegistry               *mcpregistry.Store     // nil if WEAVE_SECRET_KEY is not configured
 	MCPResolver               mcphost.AccessResolver // optional override; defaults to MCPRegistry-backed resolver
@@ -252,6 +253,7 @@ func NewServer(cfg *config.Config, store loom.Store, models *llmrouter.Resolver)
 		s.Pool = ps.Pool()
 		capabilityStore := appcapabilities.NewPGStore(ps.Pool())
 		s.Capabilities = appcapabilities.NewService(capabilityStore, capabilityStore)
+		s.CapabilityAccess = appcapabilities.NewAccessStore(ps.Pool())
 		s.TeamWorkers = registry.NewTeamWorkerRepository(ps.Pool())
 		s.TeamForgeDrafts = teamforge.NewDraftRegistry()
 		s.ChatRequests = chatrequest.New(ps.Pool(), chatrequest.RealClock{})
@@ -343,13 +345,17 @@ func (s *Server) registerRoutes() {
 
 	// Developer capability contract endpoints. Execution is admitted here;
 	// runtime scheduling is intentionally a separate follow-up integration.
-	auth.POST("/capabilities/drafts", s.handleSaveCapabilityDraft, requireCapabilityAccess("manage"))
-	auth.GET("/capabilities/drafts", s.handleListCapabilityDrafts, requireCapabilityAccess("manage"))
-	auth.POST("/capabilities/:capabilityID/debug", s.handleDebugCapability, requireCapabilityAccess("manage"))
-	auth.POST("/capabilities/:capabilityID/versions/:revision/publish", s.handlePublishCapability, requireCapabilityAccess("manage"))
-	auth.POST("/capabilities/:capabilityID/versions/:revision/invocations", s.handleInvokeCapability, requireCapabilityAccess("invoke"))
-	auth.GET("/invocations/:invocationID", s.handleGetCapabilityInvocation, requireCapabilityAccess("read"))
-	auth.POST("/invocations/:invocationID/cancel", s.handleCancelCapabilityInvocation, requireCapabilityAccess("cancel"))
+	capabilityAPI := s.Echo.Group("/v1", s.capabilityAuthentication())
+	capabilityAPI.POST("/capabilities/drafts", s.handleSaveCapabilityDraft, requireCapabilityAccess("manage"))
+	capabilityAPI.GET("/capabilities/drafts", s.handleListCapabilityDrafts, requireCapabilityAccess("manage"))
+	capabilityAPI.POST("/capabilities/generate", s.handleGenerateCapability, requireCapabilityAccess("manage"))
+	capabilityAPI.POST("/capabilities/:capabilityID/debug", s.handleDebugCapability, requireCapabilityAccess("manage"))
+	capabilityAPI.POST("/capabilities/:capabilityID/versions/:revision/publish", s.handlePublishCapability, requireCapabilityAccess("manage"))
+	capabilityAPI.POST("/capabilities/:capabilityID/versions/:revision/invocations", s.handleInvokeCapability, requireCapabilityAccess("invoke"))
+	capabilityAPI.GET("/invocations/:invocationID", s.handleGetCapabilityInvocation, requireCapabilityAccess("read"))
+	capabilityAPI.POST("/invocations/:invocationID/cancel", s.handleCancelCapabilityInvocation, requireCapabilityAccess("cancel"))
+	capabilityAPI.GET("/capability-apps", s.handleCapabilityApps, requireCapabilityAccess("manage"))
+	capabilityAPI.POST("/capability-apps/actions", s.handleCapabilityAppAction, requireCapabilityAccess("manage"))
 
 	// User management (admin or owner).
 	auth.GET("/users", s.handleListUsers, RequireAnyRole("admin", "owner"), adminScope)
