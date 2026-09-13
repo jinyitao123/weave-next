@@ -66,6 +66,10 @@ func (s *Service) Publish(ctx context.Context, request publication.PublishReques
 	if err != nil {
 		return publication.PublishReceipt{}, err
 	}
+	fences, err := s.captureResourceFences(ctx, request.Candidate)
+	if err != nil {
+		return publication.PublishReceipt{}, err
+	}
 	facts, err := s.validate(ctx, "publish", request.Candidate)
 	if err != nil {
 		return publication.PublishReceipt{}, err
@@ -76,6 +80,9 @@ func (s *Service) Publish(ctx context.Context, request publication.PublishReques
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	var receipt publication.PublishReceipt
+	if err = checkResourceFencesTx(ctx, tx, request.Candidate.WorkspaceID, fences); err != nil {
+		return receipt, err
+	}
 	if found, err := loadReceipt(ctx, tx, request.Candidate.WorkspaceID, request.RequestID, "publish", digest, &receipt); err != nil {
 		return receipt, err
 	} else if found {
@@ -101,6 +108,10 @@ func (s *Service) AdmitCandidate(ctx context.Context, request publication.Candid
 	if err != nil {
 		return publication.AdmissionReceipt{}, err
 	}
+	fences, err := s.captureResourceFences(ctx, request.Candidate)
+	if err != nil {
+		return publication.AdmissionReceipt{}, err
+	}
 	facts, err := s.validate(ctx, "candidate_run", request.Candidate)
 	if err != nil {
 		return publication.AdmissionReceipt{}, err
@@ -111,6 +122,9 @@ func (s *Service) AdmitCandidate(ctx context.Context, request publication.Candid
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	var receipt publication.AdmissionReceipt
+	if err = checkResourceFencesTx(ctx, tx, request.Candidate.WorkspaceID, fences); err != nil {
+		return receipt, err
+	}
 	if found, err := loadReceipt(ctx, tx, request.Candidate.WorkspaceID, request.RequestID, "candidate_run", digest, &receipt); err != nil {
 		return receipt, err
 	} else if found {
