@@ -4,9 +4,9 @@
 
 **The complete Weave Workbench product repository.**
 
-Users choose a team, confirm the task, follow progress, resolve problems, and collect results in Workbench. Weave saves the inputs and workflow version, coordinates execution, records waiting and recovery, and stores the resulting work.
+Users choose a team, confirm the task, follow progress, resolve problems, and collect results in Workbench. Administrators can also publish an exact workflow version as a bounded capability for an application backend. Weave saves the inputs and workflow version, coordinates execution, records waiting and recovery, and stores the resulting work.
 
-Workbench is the only supported browser interface. Runtime onboarding and task-relevant status live in Workbench; service diagnostics and machine process operations use the `weave` command, the host service manager, or Compose. Standalone business CLI commands and Codex/Claude client setup are retired. Codex, Claude, and other supported execution engines remain runtime implementation choices.
+Workbench is the only supported browser interface and the management surface for published capabilities. Authorized application backends may call exact capability versions through the service API. Runtime onboarding and task-relevant status live in Workbench; service diagnostics and machine process operations use the `weave` command, the host service manager, or Compose. Standalone business CLI commands and Codex/Claude client setup are retired. Codex, Claude, and other supported execution engines remain runtime implementation choices.
 
 The current scope is an invited, privately deployed pilot with maintainer support. See the [current product contract](docs/架构/2026-09-05-Weave-当前产品合同.md), [Workbench interaction plan](docs/架构/2026-09-05-Workbench-工作对话方案.md), and [acceptance checklist](docs/验收/2026-09-05-Workbench统一验收清单.md). Historical releases and tests do not certify the current working tree.
 
@@ -119,8 +119,8 @@ The maintainer login uses `WEAVE_ADMIN_USER` (default `admin`) and the configure
 | `internal/base` | Runtime-independent collaboration state, task queue, execution records, and persistence |
 | `internal/kernel` | Agents, workflows, execution engines, runtimes, and MCP mechanisms |
 | `internal/build` | Team construction, compilation, evaluation, and restore mechanisms |
-| `internal/app` | Workbench-facing API, MCP bridge, daemon, and product assembly |
-| `workbench` | The only business interface and its TypeScript runtime foundation |
+| `internal/app` | Workbench and published-capability APIs, MCP bridge, daemon, and product assembly |
+| `workbench` | The only business UI, including capability management, and its TypeScript runtime foundation |
 | `cmd/weave` | Service and maintenance entry point |
 
 Dependencies must not import upward across the four bands. The Go module remains `github.com/jinyitao123/weave`; Go modules, rather than `vendor/`, resolve dependencies. [Loom](https://github.com/jinyitao123/loom) provides graph execution; freezing a graph does not guarantee identical model responses or external effects.
