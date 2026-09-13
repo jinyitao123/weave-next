@@ -173,9 +173,12 @@ func (w *Worker) executeTask(workerCtx context.Context, task Task, handler Handl
 			w.onLegTerminal(context.Background(), task.WorkspaceID, task.TaskGroupID)
 		}
 	}()
-	boundCtx, err := BindTaskSubject(workerCtx, &task)
+	boundCtx, err := BindTaskExecution(workerCtx, &task, w.store)
 	if err != nil {
-		_ = w.store.failClaimed(context.Background(), task.ID, task.WorkerID, err.Error())
+		// The handler has not started; acknowledge only the exact stopped claim.
+		ackCtx, cancel := context.WithTimeout(context.WithoutCancel(workerCtx), 5*time.Second)
+		defer cancel()
+		_ = w.store.AcknowledgeUnstartedClaim(ackCtx, &task)
 		return
 	}
 	execCtx, cancel := context.WithCancel(boundCtx)

@@ -151,6 +151,9 @@ func (s *Store) enqueueTx(
 	task *Task,
 	now time.Time,
 ) error {
+	if err := s.validateControlParent(ctx, tx, task); err != nil {
+		return err
+	}
 	subject, err := s.admissionSubject(ctx, tx, task)
 	if err != nil {
 		return err

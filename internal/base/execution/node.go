@@ -54,6 +54,8 @@ func InputTaskIDs(ctx context.Context) []string {
 type attemptLineageKey struct{}
 type attemptLineage struct{ Root, Parent string }
 
+// WithAttemptLineage carries observation-only correlation. It must never be
+// used for queue parent ownership, cancellation, or deadline inheritance.
 func WithAttemptLineage(ctx context.Context, root, parent string) context.Context {
 	return context.WithValue(ctx, attemptLineageKey{}, attemptLineage{root, parent})
 }

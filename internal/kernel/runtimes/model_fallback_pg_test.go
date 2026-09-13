@@ -71,7 +71,8 @@ INSERT INTO weave_agent_versions(agent_id,workspace_id,version,spec) VALUES('age
 
 	record := &registry.AgentRecord{ID: "agent", Name: "worker", WorkspaceID: "ws", Version: 1, Engine: engine.Claude, RuntimeID: ids[0], RuntimePolicyMode: "strict_pin", Model: "missing-model", FallbackModels: []string{fallbackModel}, FallbackRetries: 2}
 	stamp := execution.AgentExecutionStamp{AgentID: "agent", AgentVersion: 1, ExecutionScope: execution.ScopeLegacyOrchestrator}
-	callCtx := execution.WithInvocationID(ctx, "run/worker/generation-0")
+	controlCtx, control := claimRuntimeControlParent(t, ctx, queue, "fallback-control")
+	callCtx := execution.WithInvocationID(controlCtx, "run/worker/generation-0")
 	workerDone := make(chan error, 1)
 	go func() {
 		previous := ""
@@ -91,6 +92,10 @@ INSERT INTO weave_agent_versions(agent_id,workspace_id,version,spec) VALUES('age
 				workerDone <- err
 				return
 			}
+			if task.ParentTaskID != control.ID || task.DeadlineAt == nil || !task.DeadlineAt.Equal(*control.DeadlineAt) {
+				workerDone <- fmt.Errorf("lost control parent or deadline: %+v", task)
+				return
+			}
 			result := engine.RunResult{Status: "failed", Err: "The model missing-model is not supported", RetrySafeBeforeExecution: true}
 			if count == 0 {
 				if request.Model != "missing-model" {
@@ -99,7 +104,14 @@ INSERT INTO weave_agent_versions(agent_id,workspace_id,version,spec) VALUES('age
 				}
 				previous = task.ID
 			} else {
-				if request.Model != fallbackModel || task.ParentTaskID != previous || request.LogicalInvocationID != execution.EngineTaskID("ws", "run/worker/generation-0") {
+				var lineage struct {
+					ParentAttemptID string `json:"parent_attempt_id"`
+				}
+				if err := json.Unmarshal(task.RuntimeAssignment, &lineage); err != nil {
+					workerDone <- err
+					return
+				}
+				if request.Model != fallbackModel || lineage.ParentAttemptID != previous || request.LogicalInvocationID != execution.EngineTaskID("ws", "run/worker/generation-0") {
 					workerDone <- fmt.Errorf("lost fallback lineage model=%s parent=%s", request.Model, task.ParentTaskID)
 					return
 				}

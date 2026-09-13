@@ -35,7 +35,7 @@ func (e *Executor) execRemote(ctx context.Context, tenant string, rec *registry.
 	var attempts []engine.UsageAttempt
 	var result engine.RunResult
 	var lastErr error
-	parent := ""
+	parentAttemptID := ""
 	ordinal := 0
 	for _, model := range models {
 		for repeat := 0; repeat <= retries; repeat++ {
@@ -43,7 +43,7 @@ func (e *Executor) execRemote(ctx context.Context, tenant string, rec *registry.
 			if ordinal > 0 && originalID != "" {
 				attemptCtx = execution.WithInvocationID(ctx, fmt.Sprintf("%s/attempt-%d", originalID, ordinal))
 			}
-			attemptCtx = execution.WithAttemptLineage(attemptCtx, root, parent)
+			attemptCtx = execution.WithAttemptLineage(attemptCtx, root, parentAttemptID)
 			record := *rec
 			record.Model = model
 			result, lastErr = e.execRemoteOnce(attemptCtx, tenant, &record, stamp, prompt, attachments, schema)
@@ -60,7 +60,7 @@ func (e *Executor) execRemote(ctx context.Context, tenant string, rec *registry.
 				return result, lastErr
 			}
 			if len(attempts) > 0 {
-				parent = attempts[len(attempts)-1].AttemptID
+				parentAttemptID = attempts[len(attempts)-1].AttemptID
 			}
 			ordinal++
 			if modelUnavailable(lastErr) {

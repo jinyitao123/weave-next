@@ -116,8 +116,8 @@ func (e *Executor) execRemoteOnce(
 	if rec.RuntimePolicyMode == "" {
 		selected, getErr := e.runtimes.Get(ctx, tenant, rec.RuntimeID)
 		if getErr != nil || selected.PoolID == "" {
-			traceID, parentID := execution.AttemptLineage(ctx)
-			result, taskID, err := e.execRemoteAttempt(ctx, tenant, rec, stamp, prompt, attachments, outputSchema, traceID, parentID)
+			traceID, parentAttemptID := execution.AttemptLineage(ctx)
+			result, taskID, err := e.execRemoteAttempt(ctx, tenant, rec, stamp, prompt, attachments, outputSchema, traceID, parentAttemptID)
 			result.Attempts = appendUsageAttempt(result.Attempts, taskID, rec.RuntimeID, rec.Engine, result)
 			return result, err
 		}
@@ -131,7 +131,7 @@ func (e *Executor) execRemoteOnce(
 	if err != nil {
 		return engine.RunResult{}, err
 	}
-	traceID, parentTaskID := execution.AttemptLineage(ctx)
+	traceID, parentAttemptID := execution.AttemptLineage(ctx)
 	if traceID == "" {
 		traceID = "runtime-attempts-" + uuid.NewString()
 	}
@@ -143,7 +143,7 @@ func (e *Executor) execRemoteOnce(
 			attemptRecord := *rec
 			attemptRecord.RuntimeID = runtimeID
 			result, taskID, attemptErr := e.execRemoteAttempt(
-				ctx, tenant, &attemptRecord, stamp, prompt, attachments, outputSchema, traceID, parentTaskID,
+				ctx, tenant, &attemptRecord, stamp, prompt, attachments, outputSchema, traceID, parentAttemptID,
 			)
 			attempts = appendUsageAttempt(attempts, taskID, runtimeID, rec.Engine, result)
 			result.Attempts = append([]engine.UsageAttempt(nil), attempts...)
@@ -154,7 +154,7 @@ func (e *Executor) execRemoteOnce(
 			lastResult = result
 			lastErr = attemptErr
 			if taskID != "" {
-				parentTaskID = taskID
+				parentAttemptID = taskID
 			}
 			if ctx.Err() != nil || !canRetryRuntimeAttempt(taskID, attemptErr) {
 				return result, attemptErr
@@ -265,7 +265,7 @@ func (e *Executor) execRemoteAttempt(
 	prompt string,
 	attachments []execspec.Attachment,
 	outputSchema json.RawMessage,
-	traceID, parentTaskID string,
+	traceID, parentAttemptID string,
 ) (engine.RunResult, string, error) {
 	inputFiles, err := e.inputFiles(ctx, tenant, stamp.RunSnapshotID)
 	if err != nil {
@@ -376,12 +376,12 @@ func (e *Executor) execRemoteAttempt(
 		Kind:                  "engine_exec",
 		RuntimeID:             rec.RuntimeID,
 		TraceID:               traceID,
-		ParentTaskID:          parentTaskID,
+		ParentTaskID:          controlParentTaskID(ctx),
 		Payload:               encoded,
 	}
 	if traceID != "" {
 		task.RuntimeAssignment, _ = json.Marshal(map[string]any{
-			"attempt_id": task.ID, "parent_attempt_id": parentTaskID,
+			"attempt_id": task.ID, "parent_attempt_id": parentAttemptID,
 			"runtime_id": rec.RuntimeID, "engine": rec.Engine,
 			"mode": rec.RuntimePolicyMode, "pool_id": rec.RuntimePoolID,
 		})
@@ -396,6 +396,15 @@ func (e *Executor) execRemoteAttempt(
 	}
 	result, _, err := e.resumeEngineTask(ctx, tenant, task.ID)
 	return result, task.ID, err
+}
+
+// controlParentTaskID never derives authority from the observational attempt chain.
+func controlParentTaskID(ctx context.Context) string {
+	current, ok := execution.CurrentTaskFromContext(ctx)
+	if !ok {
+		return ""
+	}
+	return current.ID
 }
 
 func logicalEngineTaskID(ctx context.Context, tenant string) string {

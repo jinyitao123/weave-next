@@ -34,6 +34,9 @@ func TestExecutorProcessNextQueuedRunSucceeds(t *testing.T) {
 	if !processed {
 		t.Fatalf("processed = false, want true")
 	}
+	if h.runtime.currentTask.ID != taskID || h.runtime.currentTask.WorkerID != "worker-1" || h.runtime.currentTask.ClaimEpoch != 1 {
+		t.Fatalf("workflow lost its current claim: %+v", h.runtime.currentTask)
+	}
 	h.assertTask(t, taskID, taskqueue.StatusCompleted, "run-success", "")
 	h.assertRun(t, "run-success", StatusSucceeded, nil)
 	h.assertTerminalMarker(t, "run-success", "success", "completed")
@@ -239,7 +242,7 @@ func TestExecutorProcessNextReplaysFailedTerminalMarkerWithoutRuntime(t *testing
 func TestExecutorProcessNextFanoutLegRecordsTerminal(t *testing.T) {
 	task := &taskqueue.Task{Subject: execution.Subject{WorkspaceID: "workspace-1", UserID: "user-1"},
 		ID: "fanout-task", WorkspaceID: "workspace-1", ContextKey: "group-1",
-		Kind: "team_workflow", WorkerID: "worker-1",
+		Kind: "team_workflow", WorkerID: "worker-1", Status: taskqueue.StatusRunning, ClaimEpoch: 1,
 		Payload: json.RawMessage(`{
 			"schema_version":1,
 			"kind":"fanout_leg",
@@ -268,6 +271,9 @@ func TestExecutorProcessNextFanoutLegRecordsTerminal(t *testing.T) {
 	if !processed {
 		t.Fatalf("processed = false, want true")
 	}
+	if runtime.currentTask.ID != task.ID || runtime.currentTask.Subject != task.Subject || runtime.currentTask.ClaimEpoch != task.ClaimEpoch {
+		t.Fatalf("fanout lost current claim: %+v", runtime.currentTask)
+	}
 	if tasks.completedRunID != "parent-run" || string(tasks.completedResult) != `{"leg":"ok"}` {
 		t.Fatalf("unexpected completed task: run=%q result=%s", tasks.completedRunID, tasks.completedResult)
 	}
@@ -279,7 +285,7 @@ func TestExecutorProcessNextFanoutLegRecordsTerminal(t *testing.T) {
 func TestExecutorProcessNextFanoutInfrastructureFailureWaitsForStageRetry(t *testing.T) {
 	task := &taskqueue.Task{Subject: execution.Subject{WorkspaceID: "workspace-1", UserID: "user-1"},
 		ID: "fanout-task", WorkspaceID: "workspace-1", ContextKey: "group-1",
-		Kind: "team_workflow", WorkerID: "worker-1",
+		Kind: "team_workflow", WorkerID: "worker-1", Status: taskqueue.StatusRunning, ClaimEpoch: 1,
 		Payload: json.RawMessage(`{
 			"schema_version":1,"kind":"fanout_leg","workspace_id":"workspace-1",
 			"parent_run_id":"parent-run","intent_id":"intent-1","group_id":"group-1",
@@ -307,7 +313,7 @@ func TestExecutorProcessNextFanoutInfrastructureFailureWaitsForStageRetry(t *tes
 func TestExecutorProcessNextLeaseLostReturnsWithoutFailingTask(t *testing.T) {
 	task := &taskqueue.Task{Subject: execution.Subject{WorkspaceID: "workspace-1", UserID: "user-1"},
 		ID: "fanout-task", WorkspaceID: "workspace-1", ContextKey: "group-1",
-		Kind: "team_workflow", WorkerID: "worker-1",
+		Kind: "team_workflow", WorkerID: "worker-1", Status: taskqueue.StatusRunning, ClaimEpoch: 1,
 		Payload: json.RawMessage(`{
 			"schema_version":1,
 			"kind":"fanout_leg",
@@ -713,6 +719,7 @@ type fixedTaskClock struct {
 func (c fixedTaskClock) Now() time.Time { return c.now }
 
 type scriptedRuntime struct {
+	currentTask   execution.CurrentTask
 	executeResult RuntimeResult
 	executeErr    error
 	resumeResult  RuntimeResult
@@ -724,12 +731,14 @@ type scriptedRuntime struct {
 	resumeCalls   int
 }
 
-func (r *scriptedRuntime) Execute(context.Context, TeamRun, *taskqueue.Task) (RuntimeResult, error) {
+func (r *scriptedRuntime) Execute(ctx context.Context, _ TeamRun, _ *taskqueue.Task) (RuntimeResult, error) {
+	r.currentTask, _ = execution.CurrentTaskFromContext(ctx)
 	r.executeCalls++
 	return r.executeResult, r.executeErr
 }
 
-func (r *scriptedRuntime) ResumeCheckpoint(context.Context, TeamRun, *taskqueue.Task, WorkflowCheckpointV1) (RuntimeResult, error) {
+func (r *scriptedRuntime) ResumeCheckpoint(ctx context.Context, _ TeamRun, _ *taskqueue.Task, _ WorkflowCheckpointV1) (RuntimeResult, error) {
+	r.currentTask, _ = execution.CurrentTaskFromContext(ctx)
 	r.resumeCalls++
 	return r.resumeResult, r.resumeErr
 }
@@ -739,6 +748,7 @@ func (r *scriptedRuntime) TimerResumeTarget(context.Context, TeamRun, *taskqueue
 }
 
 func (r *scriptedRuntime) ExecuteFanoutLeg(ctx context.Context, _ *taskqueue.Task, _ FanoutLegTaskPayloadV1) (json.RawMessage, error) {
+	r.currentTask, _ = execution.CurrentTaskFromContext(ctx)
 	if r.fanoutBlock > 0 {
 		select {
 		case <-time.After(r.fanoutBlock):
