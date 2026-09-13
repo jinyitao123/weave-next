@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"github.com/jinyitao123/weave/internal/base/db"
 	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/base/testutil"
+	"github.com/jinyitao123/weave/internal/kernel/runtimeprotocol"
 	"github.com/jinyitao123/weave/internal/kernel/runtimes"
 	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 	"github.com/labstack/echo/v4"
@@ -52,9 +54,13 @@ func TestRuntimeStopAcknowledgementAuthenticatesOwnerAndReplays(t *testing.T) {
 		t.Helper()
 		rec := httptest.NewRecorder()
 		e := echo.New()
-		c := e.NewContext(httptest.NewRequest(http.MethodPost, "/v1/runtime/tasks/remote/stopped", nil), rec)
-		c.Request().Header.Set("X-Weave-Task-Epoch", "1")
-		c.Request().Header.Set("X-Weave-Task-Subject", subject.Digest())
+		receipt, _ := json.Marshal(runtimeprotocol.StoppedReceipt{Versioned: runtimeprotocol.NewVersioned(), SchemaVersion: runtimeprotocol.ReceiptSchemaV1, TaskID: task.ID, ClaimEpoch: 1, Subject: subject})
+		request := httptest.NewRequest(http.MethodPost, "/v1/runtime/tasks/remote/stopped", bytes.NewReader(receipt))
+		request.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+		request.Header.Set(runtimeprotocol.HeaderVersion, runtimeprotocol.ProtocolVersion)
+		request.Header.Set("X-Weave-Task-Epoch", "1")
+		request.Header.Set("X-Weave-Task-Subject", subject.Digest())
+		c := e.NewContext(request, rec)
 		c.SetParamNames("id")
 		c.SetParamValues(task.ID)
 		c.Set(runtimeContextKey, runtime)

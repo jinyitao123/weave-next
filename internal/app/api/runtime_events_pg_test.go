@@ -23,7 +23,8 @@ import (
 )
 
 func TestRuntimePublicEventsDurableIdentityReplayAndLateAttemptRealPG(t *testing.T) {
-	ctx := context.Background()
+	subject := execution.Subject{WorkspaceID: "ws", UserID: "user"}
+	ctx := execution.WithSubject(context.Background(), subject)
 	pool := testutil.PostgresPool(t)
 	if err := db.Migrate(ctx, pool); err != nil {
 		t.Fatal(err)
@@ -35,7 +36,7 @@ func TestRuntimePublicEventsDurableIdentityReplayAndLateAttemptRealPG(t *testing
 		t.Fatal(err)
 	}
 	_, err := snapshot.NewStore(pool).Create(ctx, snapshot.TeamRunSnapshot{
-		RunID: "snapshot", WorkspaceID: "ws", TeamID: "team", SnapshotSchemaVersion: 2, Mode: "free_collab", LeadAvatarID: "agent", LeadAvatarVersion: 1,
+		RunID: "snapshot", WorkspaceID: "ws", TeamID: "team", SourceRef: "fixture", SnapshotSchemaVersion: 2, Mode: "free_collab", LeadAvatarID: "agent", LeadAvatarVersion: 1,
 		WorkerVersions: json.RawMessage(`{}`), TeamWorkerSnapshot: json.RawMessage(`[]`), InlineDependencies: json.RawMessage(`{}`), RuntimeAssignment: json.RawMessage(`{}`),
 		AdmissionDecision: json.RawMessage(`{"schema_version":1,"team_active":true,"workflow_active":null,"workers_enabled":true,"version_blocked":null,"decided_at":"2026-09-05T00:00:00Z"}`),
 		RunAssociations:   json.RawMessage(`{"schema_version":1,"parent_run_id":null,"source_snapshot_id":null,"task_group_id":null}`),
@@ -64,7 +65,7 @@ func TestRuntimePublicEventsDurableIdentityReplayAndLateAttemptRealPG(t *testing
 		if err := tasks.Enqueue(ctx, task); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := pool.Exec(ctx, `UPDATE weave_task_queue SET status='running',worker_id=$2,started_at=NOW(),lease_expires_at=NOW()+INTERVAL '1 minute' WHERE id=$1`, id, runtimes.RuntimeWorkerID("ws", owner.ID)); err != nil {
+		if _, err := pool.Exec(ctx, `UPDATE weave_task_queue SET status='running',worker_id=$2,claim_epoch=1,started_at=NOW(),lease_expires_at=NOW()+INTERVAL '1 minute' WHERE id=$1`, id, runtimes.RuntimeWorkerID("ws", owner.ID)); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -74,7 +75,11 @@ func TestRuntimePublicEventsDurableIdentityReplayAndLateAttemptRealPG(t *testing
 		data, _ := json.Marshal(body)
 		rec := httptest.NewRecorder()
 		e := echo.New()
-		c := e.NewContext(httptest.NewRequest(http.MethodPost, "/v1/runtime/tasks/"+taskID+"/events", bytes.NewReader(data)), rec)
+		request := httptest.NewRequest(http.MethodPost, "/v1/runtime/tasks/"+taskID+"/events", bytes.NewReader(data))
+		request.Header.Set(runtimeprotocol.HeaderVersion, runtimeprotocol.ProtocolVersion)
+		request.Header.Set("X-Weave-Task-Epoch", "1")
+		request.Header.Set("X-Weave-Task-Subject", subject.Digest())
+		c := e.NewContext(request, rec)
 		c.SetParamNames("id")
 		c.SetParamValues(taskID)
 		c.Set(runtimeContextKey, runtime)

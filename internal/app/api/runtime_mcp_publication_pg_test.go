@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jinyitao123/weave/internal/app/agentcatalog"
+	"github.com/jinyitao123/weave/internal/app/kernelbindings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -26,7 +26,8 @@ import (
 )
 
 func TestPublishedCLIToTaskKeepsMCPContractAfterLiveEditsRealPG(t *testing.T) {
-	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
+	base := execution.WithSubject(t.Context(), execution.Subject{WorkspaceID: "ws", UserID: "user"})
+	ctx, cancel := context.WithTimeout(base, 15*time.Second)
 	defer cancel()
 	seed := testutil.PostgresPool(t)
 	if err := db.Migrate(ctx, seed); err != nil {
@@ -61,18 +62,18 @@ func TestPublishedCLIToTaskKeepsMCPContractAfterLiveEditsRealPG(t *testing.T) {
 		t.Fatal(err)
 	}
 	workerID, _ := publishTeamDeliveryCLI(t, pool, key, runtime.ID, registry.MCPServerConfig{ServerID: server.ID, Filter: []string{"calculate"}})
-	agents := agentcatalog.New(pool)
+	agents := kernelbindings.NewRegistry(pool)
 	lead, err := agents.Get(ctx, "ws", "lead")
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = snapshot.NewStore(pool).Create(ctx, snapshot.TeamRunSnapshot{RunID: "snapshot", WorkspaceID: "ws", TeamID: "team", SnapshotSchemaVersion: 2, Mode: "free_collab", LeadAvatarID: lead.ID, LeadAvatarVersion: lead.Version,
+	_, err = snapshot.NewStore(pool).Create(ctx, snapshot.TeamRunSnapshot{RunID: "snapshot", WorkspaceID: "ws", TeamID: "team", SourceRef: "fixture", SnapshotSchemaVersion: 2, Mode: "free_collab", LeadAvatarID: lead.ID, LeadAvatarVersion: lead.Version,
 		WorkerVersions: json.RawMessage(`{}`), TeamWorkerSnapshot: json.RawMessage(`[]`), InlineDependencies: json.RawMessage(`{}`), RuntimeAssignment: json.RawMessage(`{}`),
 		AdmissionDecision: json.RawMessage(`{"schema_version":1,"team_active":true,"workflow_active":null,"workers_enabled":true,"version_blocked":null,"decided_at":"2026-09-05T00:00:00Z"}`), RunAssociations: json.RawMessage(`{"schema_version":1,"parent_run_id":null,"source_snapshot_id":null,"task_group_id":null}`), TriggerSourceV2: json.RawMessage(`{"schema_version":1,"type":"api","source_ref":"fixture"}`)})
 	if err != nil {
 		t.Fatal(err)
 	}
-	saved, err := workflow.New(pool, nil).GetArtifact(ctx, "ws", "flow", 1)
+	saved, err := workflow.NewArtifactStore(pool, nil).GetArtifact(ctx, "ws", "flow", 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -146,7 +147,8 @@ func TestPublishedCLIToTaskKeepsMCPContractAfterLiveEditsRealPG(t *testing.T) {
 	if !validFrozenMCPTask(claimed, payload) || payload.FrozenMCP.AgentVersion != 1 || payload.FrozenMCP.Bindings[0].URL != "http://127.0.0.1:1/original" || !strings.Contains(string(payload.FrozenMCP.Bindings[0].Tools[0].InputSchema), "required") || len(payload.Env) != 0 {
 		t.Fatal("admission rebuilt or dropped published authority")
 	}
-	if err := tasks.CompleteClaimed(ctx, claimed.ID, claimed.WorkerID, json.RawMessage(`{"output":"completed fixture","status":"completed"}`), ""); err != nil {
+	terminal, _ := json.Marshal(runtimes.EngineExecResult{Subject: claimed.Subject, ClaimEpoch: claimed.ClaimEpoch, Output: "completed fixture", Status: "completed"})
+	if err := tasks.CompleteClaimed(ctx, claimed.ID, claimed.WorkerID, terminal, ""); err != nil {
 		t.Fatal(err)
 	}
 	select {

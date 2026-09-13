@@ -8,6 +8,7 @@ import (
 	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/base/testutil"
 	"github.com/jinyitao123/weave/internal/kernel/engine"
+	"github.com/jinyitao123/weave/internal/kernel/runtimeprotocol"
 	"github.com/jinyitao123/weave/internal/kernel/runtimes"
 	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 	"github.com/labstack/echo/v4"
@@ -50,11 +51,12 @@ func TestRuntimeSubjectAndLateReceiptRealPG(t *testing.T) {
 		}
 	}
 	complete := func(id string, proof execution.Subject, epoch int64, result runtimes.EngineExecResult) int {
-		body, _ := json.Marshal(result)
+		body, _ := json.Marshal(runtimeReceiptForTask(&taskqueue.Task{ID: id, ClaimEpoch: result.ClaimEpoch, Subject: result.Subject}, result))
 		e := echo.New()
 		rec := httptest.NewRecorder()
 		request := httptest.NewRequest("POST", "/v1/runtime/tasks/"+id+"/complete", bytes.NewReader(body))
 		request.Header.Set("Content-Type", "application/json")
+		request.Header.Set(runtimeprotocol.HeaderVersion, runtimeprotocol.ProtocolVersion)
 		request.Header.Set("X-Weave-Task-Subject", proof.Digest())
 		request.Header.Set("X-Weave-Task-Epoch", strconv.FormatInt(epoch, 10))
 		c := e.NewContext(request, rec)

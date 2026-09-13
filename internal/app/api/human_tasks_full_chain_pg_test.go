@@ -16,8 +16,12 @@ import (
 	"github.com/jinyitao123/weave/internal/app/agentcatalog"
 
 	"github.com/google/uuid"
+	"github.com/jinyitao123/weave/internal/app/kernelbindings"
+	"github.com/jinyitao123/weave/internal/app/teamconstruction"
 	"github.com/jinyitao123/weave/internal/app/teamtemplates"
+	"github.com/jinyitao123/weave/internal/app/workflowcatalog"
 	"github.com/jinyitao123/weave/internal/base/db"
+	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/base/snapshot"
 	"github.com/jinyitao123/weave/internal/base/testutil"
@@ -26,9 +30,13 @@ import (
 	"github.com/jinyitao123/weave/internal/build/teamforge"
 	"github.com/jinyitao123/weave/internal/build/teamtemplate"
 	"github.com/jinyitao123/weave/internal/kernel/compiler"
+	"github.com/jinyitao123/weave/internal/kernel/credentials"
+	"github.com/jinyitao123/weave/internal/kernel/delivery"
+	"github.com/jinyitao123/weave/internal/kernel/publication"
+	"github.com/jinyitao123/weave/internal/kernel/schedule"
+	"github.com/jinyitao123/weave/internal/kernel/skills"
 	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 
-	orgstore "github.com/jinyitao123/weave/internal/app/org"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 	"github.com/jinyitao123/weave/internal/kernel/teamrun"
 	"github.com/jinyitao123/weave/internal/kernel/workflow"
@@ -45,6 +53,7 @@ func TestHumanFinalReviewSampleRealPGFullChain(t *testing.T) {
 
 	prefix := strings.ReplaceAll(uuid.NewString(), "-", "")[:12]
 	workspaceID, userID := "workspace-"+prefix, "user-"+prefix
+	ctx = execution.WithSubject(ctx, execution.Subject{WorkspaceID: workspaceID, UserID: userID})
 	teamID, workflowID := "team-"+prefix, "workflow-"+prefix
 	buildRunID := "build-" + prefix
 	if _, err := pool.Exec(ctx, `
@@ -106,7 +115,8 @@ func TestHumanFinalReviewSampleRealPGFullChain(t *testing.T) {
 	artifact := humanReviewArtifact(
 		t, workspaceID, teamID, workflowID, lead.ID, frozenSpec.TriggerConfig, frozenSpec.GraphDefinition,
 	)
-	workflowStore := workflow.New(pool, workflow.RealClock{})
+	artifacts := workflow.NewArtifactStore(pool, workflow.RealClock{})
+	workflowStore := workflowcatalog.New(pool, workflow.RealClock{}, artifacts)
 	createdWorkflow, err := workflowStore.Create(ctx, &workflow.TeamWorkflow{
 		WorkspaceID: workspaceID, ID: workflowID, TeamID: teamID,
 		Name: "sample-4-human-final-review", Description: sample.Description,
@@ -116,23 +126,31 @@ func TestHumanFinalReviewSampleRealPGFullChain(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create sample 4 workflow draft: %v", err)
 	}
-	version, err := workflowStore.GetVersion(ctx, workspaceID, workflowID, 1)
-	if err != nil {
-		t.Fatalf("read sample 4 workflow version: %v", err)
+	descriptors := compiler.NewDescriptorRegistry()
+	if err := descriptors.Register(compiler.NewStandardFrozenDescriptor()); err != nil {
+		t.Fatal(err)
 	}
+	builder := workflowcatalog.NewCandidateBuilder(workflowStore, agentcatalog.New(pool), delivery.New(pool, []byte(strings.Repeat("h", 32))), skills.New(pool), credentials.New(pool, []byte(strings.Repeat("h", 32))), schedule.New(pool, nil), descriptors)
+	authority, publications := openAPIProductPublication(t, ctx, pool, builder)
+	allowAPITestCandidateAssociation(publications)
 	publicationTx, err := pool.Begin(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := workflowStore.InsertPublicationTx(ctx, publicationTx, workflow.Publication{
-		WorkspaceID: workspaceID, WorkflowID: workflowID, WorkflowVersion: 1,
-		ExpectedUpdatedAt: version.UpdatedAt, Artifact: *artifact,
-	}); err != nil {
+	candidate, report, err := authority.BuildCandidateTx(ctx, publicationTx, workflow.CandidateInput{WorkspaceID: workspaceID, WorkflowID: workflowID, WorkflowVersion: 1})
+	if err != nil || candidate == nil || report != nil && len(report.Issues) != 0 {
 		_ = publicationTx.Rollback(ctx)
-		t.Fatalf("publish sample 4 workflow artifact: %v", err)
+		t.Fatalf("build sample 4 publication: candidate=%v report=%+v err=%v", candidate != nil, report, err)
 	}
-	if err := publicationTx.Commit(ctx); err != nil {
-		t.Fatalf("commit sample 4 publication: %v", err)
+	if err := publicationTx.Rollback(ctx); err != nil {
+		t.Fatal(err)
+	}
+	command, err := teamconstruction.PublicationCommandForCandidate("sample-4-publication-"+prefix, candidate, teamconstruction.PublicationTarget{TeamID: teamID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := publications.Publish(ctx, command); err != nil {
+		t.Fatalf("publish sample 4 workflow artifact: %v", err)
 	}
 	if createdWorkflow.WorkflowID != workflowID || createdWorkflow.Version != 1 {
 		t.Fatalf("created workflow version = %#v", createdWorkflow)
@@ -145,52 +163,24 @@ func TestHumanFinalReviewSampleRealPGFullChain(t *testing.T) {
 	if _, graphReport := machine.DecodeGraphDefinitionV1(candidatePayload.GraphDefinition); graphReport != nil && len(graphReport.Issues) != 0 {
 		t.Fatalf("decode sample 4 frozen graph: issues=%#v graph=%s", graphReport.Issues, candidatePayload.GraphDefinition)
 	}
-	admissionTx, err := pool.Begin(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = admissionTx.Rollback(ctx) }()
-	if err := workflowStore.InsertCandidateTx(ctx, admissionTx, &workflow.PublicationCandidate{
-		WorkspaceID: workspaceID, WorkflowID: workflowID, WorkflowVersion: 1,
-		ExpectedUpdatedAt:         version.UpdatedAt,
-		ArtifactSchemaVersion:     artifact.ArtifactSchemaVersion,
-		CanonicalizationAlgorithm: artifact.CanonicalizationAlgorithm,
-		CanonicalizationVersion:   artifact.CanonicalizationVersion,
-		HashAlgorithm:             artifact.HashAlgorithm, ContentHash: artifact.ContentHash,
-		Payload: candidatePayload, Dependencies: []workflow.TeamWorkflowDependency{},
-	}, "sample-4"); err != nil {
-		t.Fatalf("persist sample 4 candidate: %v", err)
-	}
-	runSnapshot, err := workflowStore.AdmitWorkflowCandidateRunTx(ctx, admissionTx, workflow.WorkflowCandidateRunAdmissionRequest{
-		WorkspaceID: workspaceID, WorkflowID: workflowID, BuildRunID: buildRunID,
-		ContentHash: artifact.ContentHash, SourceRef: buildRunID, TriggerType: "api",
+	record, err := publications.AdmitCandidate(ctx, teamconstruction.CandidateTarget{BuildRunID: buildRunID, RoundNo: 1, SourceRole: "human-review"}, publication.CandidateRunRequest{
+		Version: publication.ContractVersion, RequestID: "sample-4-admission-" + prefix,
+		Candidate: command.Request.Candidate, Input: json.RawMessage(`"deliverable_ref:artifact-m3-final"`), InputVersion: "v1", SourceRef: buildRunID, Purpose: "human-final-review",
 	})
 	if err != nil {
 		t.Fatalf("admit sample 4 candidate run: %v", err)
 	}
+	if record.Receipt == nil {
+		t.Fatal("sample 4 admission receipt missing")
+	}
 	snapshots := snapshot.NewStore(pool)
-	if _, err := snapshots.CreateTx(ctx, admissionTx, runSnapshot); err != nil {
-		t.Fatalf("persist sample 4 dispatch snapshot: %v", err)
-	}
-	if err := admissionTx.Commit(ctx); err != nil {
-		t.Fatalf("commit sample 4 candidate admission: %v", err)
-	}
-	runID := runSnapshot.RunID
+	runID := record.Receipt.RunID
 
 	tasks := taskqueue.New(pool, taskqueue.RealClock{}, time.Minute)
-	sourceTask := &taskqueue.Task{
-		ID: "task-" + prefix, WorkspaceID: workspaceID,
-		IdentityKind: taskqueue.IdentityTeamWorkflow, IdentitySchemaVersion: 2,
-		WorkflowID: workflowID, WorkflowVersion: 1, RunSnapshotID: runID,
-		Source: "api", Kind: "team_workflow", Payload: json.RawMessage(`"deliverable_ref:artifact-m3-final"`),
-	}
-	if err := tasks.Enqueue(ctx, sourceTask); err != nil {
-		t.Fatalf("dispatch sample 4 task: %v", err)
-	}
 
 	runs, checkpoints := teamrun.NewPGStore(), teamrun.NewPGCheckpointStore()
 	runtime := &teamrun.WorkflowSerialRuntime{
-		Artifacts: workflowStore, Loader: &workflow.RuntimeLoader{},
+		Artifacts: artifacts, Loader: &workflow.RuntimeLoader{},
 		HostFactory:         rejectingRuntimeHostFactory{},
 		CredentialResolvers: func(string) (workflow.RuntimeCredentialResolver, error) { return nil, nil },
 		Transactions:        pool, Runs: runs, Checkpoints: checkpoints, Tasks: tasks, Snapshots: snapshots,
@@ -210,7 +200,7 @@ func TestHumanFinalReviewSampleRealPGFullChain(t *testing.T) {
 
 	reader := &teamrun.HumanTaskReader{Pool: pool}
 	resume := &teamrun.HumanResumeService{Transactions: pool, Runs: runs, Checkpoints: checkpoints, Tasks: tasks}
-	server := &Server{OrgStore: orgstore.NewStore(pool), teamRunHumanTasks: reader, teamRunHumanResume: resume}
+	server := &Server{OrgStore: kernelbindings.NewOrganization(pool), teamRunHumanTasks: reader, teamRunHumanResume: resume}
 	listRecorder := httptest.NewRecorder()
 	listContext := humanTaskAPIContext(http.MethodGet, "/v1/human-tasks", "", listRecorder, workspaceID, userID)
 	if err := server.handleListHumanTasks(listContext); err != nil || listRecorder.Code != http.StatusOK {

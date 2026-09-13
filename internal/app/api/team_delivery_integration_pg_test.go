@@ -23,8 +23,12 @@ import (
 	"github.com/jinyitao123/loom/contract"
 	"github.com/jinyitao123/loom/stdlib"
 	"github.com/jinyitao123/weave/internal/app/deliveryverify"
+	"github.com/jinyitao123/weave/internal/app/kernelbindings"
+	"github.com/jinyitao123/weave/internal/app/teamconstruction"
+	"github.com/jinyitao123/weave/internal/app/workflowcatalog"
 	"github.com/jinyitao123/weave/internal/base/db"
 	"github.com/jinyitao123/weave/internal/base/deliverable"
+	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/base/fileartifact"
 	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/base/snapshot"
@@ -79,7 +83,8 @@ type teamDeliveryFixture struct {
 	server                                *Server
 	runs                                  *teamrun.PGStore
 	tasks                                 *taskqueue.Store
-	flows                                 *workflow.Store
+	flows                                 *workflowcatalog.Store
+	artifacts                             *workflow.ArtifactStore
 	snapshots                             *snapshot.Store
 	runtimeStore                          *runtimes.Store
 	runtime                               *runtimes.Runtime
@@ -114,7 +119,7 @@ func newTeamDeliveryFixture(t *testing.T, engineName string) *teamDeliveryFixtur
 		if _, err := mcp.RecordProbeSuccess(ctx, "ws", registered.ID, "2025-03-26", json.RawMessage(`{}`), []mcpregistry.Tool{{Name: "compute", InputSchema: json.RawMessage(`{"type":"object"}`)}}); err != nil {
 			t.Fatal(err)
 		}
-		bundle, _, published := publishMemberIntegrationSample(t, pool, f.keys, "ws", "http://127.0.0.1:1", registered.ID, registered.FunctionalRevision, "compute", "Compute and export the exact result.")
+		bundle, _, published := publishMemberIntegrationSample(t, pool, f.keys, "ws", "user", "http://127.0.0.1:1", registered.ID, registered.FunctionalRevision, "compute", "Compute and export the exact result.")
 		f.workerID, f.publishedDigest = bundle.Agent.AgentID, published.ContentHash
 	} else {
 		f.runtimeStore = runtimes.NewStore(pool)
@@ -129,11 +134,12 @@ func newTeamDeliveryFixture(t *testing.T, engineName string) *teamDeliveryFixtur
 		f.workerID, f.publishedDigest = publishTeamDeliveryCLI(t, pool, f.keys, runtime.ID)
 	}
 	f.tasks = taskqueue.New(pool, nil, time.Minute)
-	f.flows = workflow.New(pool, nil)
+	f.artifacts = workflow.NewArtifactStore(pool, nil)
+	f.flows = workflowcatalog.New(pool, nil, f.artifacts)
 	f.snapshots = snapshot.NewStore(pool)
 	f.runs = teamrun.NewPGStore()
 	f.runs.Transactions = pool
-	f.server = &Server{Store: teamDeliveryPoolStore{teamDispatchPoolStore{pool: pool}}, OrgStore: orgstore.NewStore(pool), Registry: agentcatalog.New(pool), Workflow: f.flows, ScheduleTransactions: pool, Snapshots: f.snapshots, Tasks: f.tasks, Runtimes: f.runtimeStore, Deliverables: deliveryverify.NewStore(pool), teamRunCancel: &teamrun.CancelService{Transactions: pool, Runs: f.runs, Tasks: f.tasks}}
+	f.server = &Server{Store: teamDeliveryPoolStore{teamDispatchPoolStore{pool: pool}}, OrgStore: orgstore.NewStore(pool), Registry: agentcatalog.New(pool), Workflow: f.flows, WorkflowArtifacts: f.artifacts, ScheduleTransactions: pool, Snapshots: f.snapshots, Tasks: f.tasks, Runtimes: f.runtimeStore, Deliverables: deliveryverify.NewStore(pool), teamRunCancel: &teamrun.CancelService{Transactions: pool, Runs: f.runs, Tasks: f.tasks}}
 	return f
 }
 
@@ -183,7 +189,7 @@ func (f *teamDeliveryFixture) run(t *testing.T, scenario teamDeliveryScenario) t
 	}
 	loader := &workflow.RuntimeLoader{Registry: memberIntegrationDescriptors(t)}
 	hosts := &teamDeliveryHosts{workerID: f.workerID, pool: f.pool, runID: dispatched.RunID, scenario: scenario}
-	runtime := &teamrun.WorkflowSerialRuntime{OutputRecorder: capture, Members: members, Artifacts: f.flows, Loader: loader, HostFactory: hosts, CredentialResolvers: func(string) (workflow.RuntimeCredentialResolver, error) { return memberIntegrationSecrets{}, nil }, Transactions: f.pool, Runs: f.runs, Checkpoints: checkpoints, Tasks: f.tasks, Snapshots: f.snapshots}
+	runtime := &teamrun.WorkflowSerialRuntime{OutputRecorder: capture, Members: members, Artifacts: f.artifacts, Loader: loader, HostFactory: hosts, CredentialResolvers: func(string) (workflow.RuntimeCredentialResolver, error) { return memberIntegrationSecrets{}, nil }, Transactions: f.pool, Runs: f.runs, Checkpoints: checkpoints, Tasks: f.tasks, Snapshots: f.snapshots}
 	var workerDone <-chan error
 	if f.engineName != "loom" {
 		loader.CLIExecutor = runtimes.NewExecutor(f.tasks, f.runtimeStore, "", "")
@@ -478,7 +484,7 @@ func (f *teamDeliveryFixture) startCLIWorker(ctx context.Context, scenario teamD
 				done <- collectionErr
 				return
 			}
-			wire, err := json.Marshal(runtimes.CLIEngineExecResult(result))
+			wire, err := json.Marshal(runtimeReceiptForTask(task, runtimes.CLIEngineExecResult(result)))
 			if err != nil {
 				done <- err
 				return
@@ -486,6 +492,7 @@ func (f *teamDeliveryFixture) startCLIWorker(ctx context.Context, scenario teamD
 			recorder := httptest.NewRecorder()
 			req := httptest.NewRequest(http.MethodPost, "/v1/runtime/tasks/"+task.ID+"/complete", bytes.NewReader(wire)).WithContext(ctx)
 			req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+			setRuntimeTaskProof(req, task)
 			c := echo.New().NewContext(req, recorder)
 			c.Set(runtimeContextKey, f.runtime)
 			c.SetPath("/v1/runtime/tasks/:id/complete")
@@ -645,8 +652,8 @@ func (f *teamDeliveryFixture) assertRunActivity(t *testing.T, ctx context.Contex
 
 func publishTeamDeliveryCLI(t *testing.T, pool *pgxpool.Pool, key []byte, runtimeID string, mcpServers ...registry.MCPServerConfig) (string, string) {
 	t.Helper()
-	ctx := t.Context()
-	agents := agentcatalog.New(pool)
+	ctx := execution.WithSubject(t.Context(), execution.Subject{WorkspaceID: "ws", UserID: "user"})
+	agents := kernelbindings.NewRegistry(pool)
 	lead := &registry.AgentRecord{Name: "lead", Role: "avatar", Engine: engine.Claude, RuntimeID: runtimeID, RuntimePolicyMode: "strict_pin", Model: "fixture-native", GraphType: "standard", Spec: stdlib.AgentSpec{SystemPrompt: "Return the brief."}}
 	worker := &registry.AgentRecord{Name: "worker", Role: "worker", Engine: engine.Claude, RuntimeID: runtimeID, RuntimePolicyMode: "strict_pin", Model: "fixture-native", GraphType: "standard", Spec: stdlib.AgentSpec{SystemPrompt: "Compute the result and export the physical file."}}
 	worker.MCPServers = mcpServers
@@ -658,7 +665,7 @@ func publishTeamDeliveryCLI(t *testing.T, pool *pgxpool.Pool, key []byte, runtim
 			if err != nil {
 				t.Fatal(err)
 			}
-			request := httptest.NewRequest(http.MethodPut, "/v1/agents/"+record.Name, bytes.NewReader(body))
+			request := httptest.NewRequest(http.MethodPut, "/v1/agents/"+record.Name, bytes.NewReader(body)).WithContext(ctx)
 			request.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
 			response := httptest.NewRecorder()
 			c := echo.New().NewContext(request, response)
@@ -686,32 +693,34 @@ func publishTeamDeliveryCLI(t *testing.T, pool *pgxpool.Pool, key []byte, runtim
 		t.Fatal(err)
 	}
 	graph := json.RawMessage(fmt.Sprintf(`{"schema_version":1,"entry_node_id":"brief","input_contract":{"type":"text"},"output_contract":{"type":"text"},"nodes":[{"id":"brief","type":"lead","config":{"instruction":"Brief"},"inputs":{"task":{"value":{"source":"run_input","path":""},"expected_type":"text"}},"output":{"type":"text"}},{"id":"compute","type":"worker","config":{"kind":"consult","agent_id":%q,"agent_version":%d,"result_requirement":"Compute and export"},"inputs":{"task":{"value":{"source":"run_input","path":""},"expected_type":"text"}},"output":{"type":"text"}},{"id":"deliver","type":"deliver","config":{"result":{"source":"node_output","node_id":"compute","path":""}}}],"edges":[{"id":"a","from_node_id":"brief","to_node_id":"compute","route":"success"},{"id":"b","from_node_id":"compute","to_node_id":"deliver","route":"success"}]}`, worker.ID, worker.Version))
-	flows := workflow.New(pool, nil)
+	artifacts := workflow.NewArtifactStore(pool, nil)
+	flows := workflowcatalog.New(pool, nil, artifacts)
 	draft, err := flows.Create(ctx, &workflow.TeamWorkflow{ID: "flow", WorkspaceID: "ws", TeamID: "team", Name: "CLI delivery"}, workflow.DraftInput{CreatedBy: "user", TriggerConfig: json.RawMessage(`{"schema_version":1,"type":"conversation_explicit","config":{}}`), GraphDefinition: graph})
 	if err != nil {
 		t.Fatal(err)
 	}
-	builder := workflow.NewCandidateBuilder(flows, agents, delivery.New(pool, key), skills.New(pool), credentials.New(pool, key), schedule.New(pool, nil), memberIntegrationDescriptors(t))
+	builder := workflowcatalog.NewCandidateBuilder(flows, agents, delivery.New(pool, key), skills.New(pool), credentials.New(pool, key), schedule.New(pool, nil), memberIntegrationDescriptors(t))
+	authority, publications := openAPIProductPublication(t, ctx, pool, builder)
 	tx, err := pool.Begin(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer tx.Rollback(ctx)
-	candidate, report, err := builder.BuildTx(ctx, tx, workflow.CandidateInput{WorkspaceID: "ws", WorkflowID: "flow", WorkflowVersion: draft.Version})
+	candidate, report, err := authority.BuildCandidateTx(ctx, tx, workflow.CandidateInput{WorkspaceID: "ws", WorkflowID: "flow", WorkflowVersion: draft.Version})
 	if err != nil || candidate == nil || report != nil && len(report.Issues) > 0 {
 		t.Fatalf("publish CLI: error=%v report=%+v", err, report)
 	}
-	publication, err := workflow.PublicationFromCandidate(candidate)
+	command, err := teamconstruction.PublicationCommandForCandidate("team-delivery-cli-publication", candidate, teamconstruction.PublicationTarget{TeamID: "team"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := flows.InsertPublicationTx(ctx, tx, publication); err != nil {
+	if err := tx.Rollback(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if err := tx.Commit(ctx); err != nil {
+	if _, err := publications.Publish(ctx, command); err != nil {
 		t.Fatal(err)
 	}
-	published, err := flows.GetArtifact(ctx, "ws", "flow", draft.Version)
+	published, err := artifacts.GetArtifact(ctx, "ws", "flow", draft.Version)
 	if err != nil {
 		t.Fatal(err)
 	}
