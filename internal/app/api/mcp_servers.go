@@ -92,7 +92,7 @@ func (s *Server) handleDeleteMCPServer(c echo.Context) error {
 	resource := admissionfence.Credential(ref, server.FunctionalRevision)
 	return s.applyExternalAccessChange(c, "mcp.delete", serverID,
 		map[string]any{"server_id": serverID, "functional_revision": server.FunctionalRevision},
-		[]admissionfence.Resource{resource}, nil, nil,
+		[]admissionfence.Resource{resource}, nil, []admissionfence.Resource{admissionfence.CredentialResource(ref)},
 		func(ctx context.Context) (json.RawMessage, error) {
 			if err := s.MCPRegistry.Delete(ctx, workspaceID, serverID); err != nil {
 				return nil, err

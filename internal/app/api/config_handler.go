@@ -111,7 +111,7 @@ func (s *Server) handleDeleteProvider(c echo.Context) error {
 	resource := admissionfence.Credential(ref, head.LatestRevision)
 	return s.applyExternalAccessChange(c, "credential.delete", id,
 		map[string]any{"provider_id": id, "credential_revision": head.LatestRevision},
-		[]admissionfence.Resource{resource}, nil, nil,
+		[]admissionfence.Resource{resource}, nil, []admissionfence.Resource{admissionfence.CredentialResource(ref)},
 		func(ctx context.Context) (json.RawMessage, error) {
 			if err := s.Credentials.Delete(ctx, tenant, id); err != nil {
 				return nil, err

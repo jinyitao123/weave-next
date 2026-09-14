@@ -296,7 +296,7 @@ func (s *Server) applyDeliveryAccessChange(c echo.Context, targetID, kind string
 	resource := admissionfence.Credential(ref, target.LatestRevision)
 	return s.applyExternalAccessChange(c, kind, targetID,
 		map[string]any{"target_id": targetID, "functional_revision": target.LatestRevision},
-		[]admissionfence.Resource{resource}, nil, nil, apply, http.StatusNoContent)
+		[]admissionfence.Resource{resource}, nil, []admissionfence.Resource{admissionfence.CredentialResource(ref)}, apply, http.StatusNoContent)
 }
 
 func decodeDeliveryTargetJSON(c echo.Context, destination any) error {
