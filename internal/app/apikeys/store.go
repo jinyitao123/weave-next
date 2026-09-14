@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -124,7 +125,18 @@ func (s *Store) List(ctx context.Context, tenantID string) ([]APIKey, error) {
 
 // Delete removes an API key by tenant and ID.
 func (s *Store) Delete(ctx context.Context, tenantID, id string) error {
-	tag, err := s.pool.Exec(ctx,
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if err = s.DeleteTx(ctx, tx, tenantID, id); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+func (s *Store) DeleteTx(ctx context.Context, tx pgx.Tx, tenantID, id string) error {
+	tag, err := tx.Exec(ctx,
 		`DELETE FROM weave_api_keys WHERE id=$1 AND tenant_id=$2`, id, tenantID)
 	if err != nil {
 		return err

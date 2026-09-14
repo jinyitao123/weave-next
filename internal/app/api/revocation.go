@@ -1,14 +1,18 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"github.com/jackc/pgx/v5"
+	"github.com/jinyitao123/weave/internal/kernel/admissionfence"
 	"io"
 	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
 
+	"github.com/jinyitao123/weave/internal/app/accesschange"
 	"github.com/jinyitao123/weave/internal/app/workflowcatalog"
 	"github.com/jinyitao123/weave/internal/kernel/workflow"
 	"github.com/labstack/echo/v4"
@@ -134,6 +138,14 @@ func (s *Server) handlePutWorkflowAdmission(c echo.Context) error {
 			c, http.StatusBadRequest, "invalid_revocation_request", "invalid admission request", nil,
 		)
 	}
+	key, keyErr := accessChangeKey(c)
+	if keyErr != nil {
+		return keyErr
+	}
+	if request.IdempotencyKey != "" && request.IdempotencyKey != key {
+		return echo.NewHTTPError(http.StatusBadRequest, "这项变更的信息不一致，请重新操作。")
+	}
+	request.IdempotencyKey = key
 	if request.IdempotencyKey == "" || request.IdempotencyKey != strings.TrimSpace(request.IdempotencyKey) ||
 		request.DesiredBlocked == nil || strings.TrimSpace(request.Reason) == "" {
 		return writeRevocationError(
@@ -150,44 +162,48 @@ func (s *Server) handlePutWorkflowAdmission(c echo.Context) error {
 		)
 	}
 
-	result, err := s.WorkflowArtifacts.SetBlocked(c.Request().Context(), workflow.AdmissionChange{
-		WorkspaceID:     getTenant(c),
-		WorkflowID:      c.Param("id"),
-		WorkflowVersion: version,
-		IdempotencyKey:  request.IdempotencyKey,
-		DesiredBlocked:  *request.DesiredBlocked,
-		OperatorID:      getUserID(c),
-		Reason:          strings.TrimSpace(request.Reason),
-	})
-	if err != nil {
-		switch {
-		case errors.Is(err, workflow.ErrNotFound):
-			return writeRevocationError(
-				c,
-				http.StatusNotFound,
-				"workflow_version_admission_not_found",
-				"workflow version admission state was not found",
-				nil,
-			)
-		case errors.Is(err, workflow.ErrAdmissionIdempotencyConflict):
-			return writeRevocationError(
-				c,
-				http.StatusConflict,
-				"admission_idempotency_conflict",
-				"idempotency key is already bound to another admission command",
-				nil,
-			)
-		default:
-			return writeRevocationError(
-				c,
-				http.StatusServiceUnavailable,
-				"revocation_store_unavailable",
-				"revocation store is unavailable",
-				nil,
-			)
-		}
+	resource := admissionfence.Workflow(c.Param("id"), version)
+	var block, grant []admissionfence.Resource
+	if *request.DesiredBlocked {
+		block = []admissionfence.Resource{resource}
+	} else {
+		grant = []admissionfence.Resource{resource}
 	}
-	return c.JSON(http.StatusOK, result)
+	intent, err := newAccessChangeIntent(c, "workflow.admission", c.Param("id"), request, block, grant, nil)
+	if err != nil {
+		return err
+	}
+	flow, err := s.accessChangeFlow()
+	if err != nil {
+		return writeAccessChangeOutcome(c, accesschange.Result{}, err, http.StatusOK)
+	}
+	flow.Validate = func(ctx context.Context, tx pgx.Tx) error {
+		var present bool
+		err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM weave_team_workflow_versions WHERE workspace_id=$1 AND workflow_id=$2 AND version=$3 AND status='published')`, getTenant(c), c.Param("id"), version).Scan(&present)
+		if err != nil {
+			return err
+		}
+		if !present {
+			return workflow.ErrNotFound
+		}
+		return nil
+	}
+	result, err := flow.ApplyReceiptMutation(c.Request().Context(), intent, func(context.Context) (json.RawMessage, error) {
+		response, err := s.WorkflowArtifacts.SetBlocked(c.Request().Context(), workflow.AdmissionChange{
+			WorkspaceID:     getTenant(c),
+			WorkflowID:      c.Param("id"),
+			WorkflowVersion: version,
+			IdempotencyKey:  request.IdempotencyKey,
+			DesiredBlocked:  *request.DesiredBlocked,
+			OperatorID:      getUserID(c),
+			Reason:          strings.TrimSpace(request.Reason),
+		})
+		if err != nil {
+			return nil, err
+		}
+		return json.Marshal(response)
+	})
+	return writeAccessChangeOutcome(c, result, err, http.StatusOK)
 }
 
 func (s *Server) handleListWorkflowAdmissionAudit(c echo.Context) error {
