@@ -15,45 +15,6 @@ IFS= read -r public_key
   exit 2
 }
 key_material="$(awk '{print $2}' <<<"$public_key")"
-IFS= read -r server_env_b64
-test -n "$server_env_b64"
-temporary_env="$(mktemp)"
-trap 'rm -f "$temporary_env"' EXIT
-printf '%s' "$server_env_b64" | base64 -d > "$temporary_env"
-python3 - "$temporary_env" <<'PY_VALIDATE'
-import re
-import sys
-from pathlib import Path
-
-path = Path(sys.argv[1])
-text = path.read_text()
-required = {
-    "POSTGRES_PASSWORD", "JWT_SECRET", "WEAVE_SECRET_KEY", "WEAVE_ADMIN_PASS",
-    "WORKBENCH_PUBLIC_AUTHORITY", "WORKBENCH_DATA_PATH", "WORKBENCH_WORKSPACE_PATH",
-    "WORKBENCH_BIND_ADDRESS", "OPENAI_BASE_URL", "OPENAI_API_KEY", "OPENAI_MODELS",
-    "DEFAULT_MODEL",
-}
-seen = set()
-values = {}
-for line in text.splitlines():
-    if not line or line.startswith("#"):
-        continue
-    match = re.fullmatch(r"([A-Z][A-Z0-9_]*)=(.*)", line)
-    if not match or match.group(1) in seen:
-        raise SystemExit("Invalid or duplicate server.env entry")
-    seen.add(match.group(1))
-    values[match.group(1)] = match.group(2)
-    if match.group(1) in required and not match.group(2):
-        raise SystemExit("Required server.env value is empty")
-missing = sorted(required - seen)
-if missing:
-    raise SystemExit("Missing required server.env entries: " + ", ".join(missing))
-for key in ("WORKBENCH_DATA_PATH", "WORKBENCH_WORKSPACE_PATH"):
-    target = Path(values[key])
-    if not target.is_absolute():
-        raise SystemExit(key + " must be an absolute path")
-    target.mkdir(parents=True, exist_ok=True, mode=0o700)
-PY_VALIDATE
 
 mkdir -p "$state_dir/releases" "$state_dir/backups" "$state_dir/logs" "$config_dir" "$HOME/.ssh"
 chmod 700 "$state_dir" "$config_dir" "$HOME/.ssh"
@@ -70,10 +31,8 @@ else
   [[ "$existing_origin" == "$repository_url" ]] || { echo "Existing Server source remote does not match." >&2; exit 1; }
 fi
 
-if [[ -e "$env_file" ]]; then
-  cmp -s "$temporary_env" "$env_file" || { echo "Existing Server environment differs from bootstrap input." >&2; exit 1; }
-else
-  install -m 600 "$temporary_env" "$env_file"
+if [[ ! -e "$env_file" ]]; then
+  : > "$env_file"
 fi
 chmod 600 "$env_file"
 cat > "$config_dir/required-settings.txt" <<'SETTINGS'
@@ -84,11 +43,6 @@ WEAVE_ADMIN_PASS
 WORKBENCH_PUBLIC_AUTHORITY
 WORKBENCH_DATA_PATH
 WORKBENCH_WORKSPACE_PATH
-WORKBENCH_BIND_ADDRESS
-OPENAI_BASE_URL
-OPENAI_API_KEY
-OPENAI_MODELS
-DEFAULT_MODEL
 SETTINGS
 chmod 600 "$config_dir/required-settings.txt"
 
@@ -113,4 +67,4 @@ else
   mv "$temporary" "$authorized_keys"
 fi
 
-echo "Weave Server deployment directories, environment and restricted command are installed."
+echo "Weave Server deployment directories and restricted command are installed. Configure server.env before the first Server deployment."
