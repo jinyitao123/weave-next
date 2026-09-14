@@ -20,7 +20,10 @@ func BinaryVersion(ctx context.Context, binaryPath string) string {
 	checkCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(checkCtx, binaryPath, "--version")
-	cmd.Env = envWithCLIPath(os.Environ(), binaryPath)
+	// A version probe is capability discovery, not an engine invocation. Keep
+	// provider keys, runtime tokens, user config paths and task credentials out
+	// of the probe so a legacy Host cannot observe the operator's identity.
+	cmd.Env = envWithCLIPath(versionProbeEnv(), binaryPath)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return "unavailable"
@@ -36,6 +39,22 @@ func BinaryVersion(ctx context.Context, binaryPath string) string {
 		return "unavailable"
 	}
 	return version
+}
+
+func versionProbeEnv() []string {
+	allowed := map[string]bool{
+		"PATH": true, "LANG": true, "LC_ALL": true, "LC_CTYPE": true,
+		"TZ": true, "TERM": true, "SHELL": true, "SSL_CERT_FILE": true,
+		"SSL_CERT_DIR": true, "NODE_EXTRA_CA_CERTS": true,
+	}
+	result := make([]string, 0, len(allowed))
+	for _, entry := range os.Environ() {
+		key, _, _ := strings.Cut(entry, "=")
+		if allowed[key] {
+			result = append(result, entry)
+		}
+	}
+	return result
 }
 
 // ValidateUsageReceipt checks the untrusted daemon boundary. It validates

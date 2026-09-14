@@ -31,13 +31,19 @@ func WriteCodexHomeWithAuthMode(workDir string, rec *registry.AgentRecord, oneap
 	if codexUsesHostChatGPTAuth(authMode) {
 		return nil
 	}
+	var roots []string
+	if authMode == "subject_provider" {
+		roots = []string{filepath.Join(workDir, ".codex-home", "skills", ".system")}
+	} else {
+		roots = codexExternalSkillRoots(workDir)
+	}
 	return writeCodexHomeWithExternalSkillRoots(
 		workDir,
 		rec,
 		oneapiBase,
 		boundaryBase,
 		apiKeyEnvName,
-		codexExternalSkillRoots(workDir), targets...,
+		roots, targets...,
 	)
 }
 

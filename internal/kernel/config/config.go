@@ -29,9 +29,11 @@ type Config struct {
 	MCPBoundaryBase string // WEAVE_MCP_BOUNDARY_BASE, default http://127.0.0.1:<Port>
 
 	// External engine execution settings.
-	WorkspacesRoot string // WEAVE_WORKSPACES_ROOT, default ~/.weave/workspaces
-	OneAPIBase     string // OPENAI_BASE_URL
-	OneAPIKey      string // OPENAI_API_KEY
+	LocalRuntimeEnabled  bool     // WEAVE_LOCAL_RUNTIME_ENABLED, default true
+	LocalRuntimeServices []string // WEAVE_LOCAL_RUNTIME_SHARED_PROVIDERS, explicit service IDs
+	WorkspacesRoot       string   // WEAVE_WORKSPACES_ROOT, default ~/.weave/workspaces
+	OneAPIBase           string   // OPENAI_BASE_URL
+	OneAPIKey            string   // OPENAI_API_KEY
 
 	// Embedder settings (optional — enables memory features).
 	EmbedderURL       string // EMBEDDER_URL, e.g. "https://api.openai.com"
@@ -96,6 +98,10 @@ func Load() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	localRuntimeEnabled, err := boolEnv("WEAVE_LOCAL_RUNTIME_ENABLED", true)
+	if err != nil {
+		return nil, err
+	}
 	metaTeamEnabled, err := boolEnv("WEAVE_METATEAM_ENABLED", true)
 	if err != nil {
 		return nil, err
@@ -143,6 +149,8 @@ func Load() (*Config, error) {
 		CORSOrigins:              corsOrigins,
 		MCPBoundaryBase:          envOr("WEAVE_MCP_BOUNDARY_BASE", "http://127.0.0.1:"+port),
 		WorkspacesRoot:           workspacesRoot,
+		LocalRuntimeEnabled:      localRuntimeEnabled,
+		LocalRuntimeServices:     strings.FieldsFunc(os.Getenv("WEAVE_LOCAL_RUNTIME_SHARED_PROVIDERS"), func(r rune) bool { return r == ',' || r == ' ' }),
 		OneAPIBase:               os.Getenv("OPENAI_BASE_URL"),
 		OneAPIKey:                os.Getenv("OPENAI_API_KEY"),
 		EmbedderURL:              os.Getenv("EMBEDDER_URL"),

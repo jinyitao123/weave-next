@@ -136,6 +136,17 @@ func (s *resultSpool) replay(ctx context.Context, client *runtimeClient) error {
 			}
 			continue
 		}
+		if errors.Is(err, errLeaseLost) {
+			claim := runtimeprotocol.ExecutionClaim{TaskID: journal.TaskID, Subject: journal.Subject, ClaimEpoch: journal.ClaimEpoch}
+			stopErr := client.stopped(reportCtx, &claim, &journal.Result)
+			if stopErr == nil {
+				s.retain(journal.TaskID, "stopped")
+				continue
+			}
+			if !errors.Is(stopErr, errLeaseLost) && !isRejectedRuntimeResult(stopErr) {
+				return stopErr // retain pending evidence while the acknowledgement endpoint is unavailable
+			}
+		}
 		if errors.Is(err, errLeaseLost) || isRejectedRuntimeResult(err) {
 			s.retain(journal.TaskID, "unaccepted")
 			slog.Error("saved runtime result could not be reattached; retained for recovery", "task_id", journal.TaskID, "error", err)

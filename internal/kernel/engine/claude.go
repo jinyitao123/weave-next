@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -47,7 +46,10 @@ func (b *claudeBackend) Run(ctx context.Context, spec RunSpec) (RunResult, error
 	}
 	defer cancel()
 
-	cmd := exec.Command(cliPath, args...)
+	cmd, commandErr := isolatedCommand(context.Background(), cliPath, args, spec.Isolation)
+	if commandErr != nil {
+		return failedClaudeResult(commandErr)
+	}
 	cmd.Dir = spec.WorkDir
 	cmd.Env = envWithCLIPath(mergedClaudeEnv(spec.Env), cliPath)
 	cmd.Stdin = strings.NewReader(spec.Prompt)
@@ -104,7 +106,7 @@ func (b *claudeBackend) Run(ctx context.Context, spec RunSpec) (RunResult, error
 
 func mergedClaudeEnv(overrides map[string]string) []string {
 	env := make(map[string]string)
-	for _, entry := range cliAmbientEnv() {
+	for _, entry := range cliAmbientEnvForRun(overrides) {
 		if key, value, ok := strings.Cut(entry, "="); ok {
 			env[key] = value
 		}

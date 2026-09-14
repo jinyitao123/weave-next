@@ -265,3 +265,24 @@ func hasDiagnostic(diagnostics []Diagnostic, code string) bool {
 	}
 	return false
 }
+
+func TestBinaryVersionProbeDoesNotInheritCredentials(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX CLI fixture")
+	}
+	dir := t.TempDir()
+	marker := filepath.Join(dir, "probe-env")
+	binary := filepath.Join(dir, "engine")
+	script := "#!/bin/sh\nif [ -n \"$OPENAI_API_KEY$ONEAPI_API_KEY$WEAVE_RUNTIME_TOKEN$HOME$WEAVE_ACTOR_USER_ID\" ]; then exit 17; fi\nprintf '%s' \"$PATH\" > '" + marker + "'\necho 'fixture-cli 1.2.3'\n"
+	if err := os.WriteFile(binary, []byte(script), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("OPENAI_API_KEY", "operator-secret")
+	t.Setenv("ONEAPI_API_KEY", "operator-secret")
+	t.Setenv("WEAVE_RUNTIME_TOKEN", "runtime-secret")
+	t.Setenv("HOME", filepath.Join(dir, "operator-home"))
+	t.Setenv("WEAVE_ACTOR_USER_ID", "alice")
+	if got := BinaryVersion(t.Context(), binary); got != "fixture-cli 1.2.3" {
+		t.Fatalf("version probe inherited credentials or failed: %q", got)
+	}
+}

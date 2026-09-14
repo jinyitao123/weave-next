@@ -56,6 +56,8 @@ type daemonConfig struct {
 }
 
 type service struct {
+	subjectGuard       *subjectGuard
+	credentials        ClaimCredentialResolver
 	client             *runtimeClient
 	server             string
 	workspacesRoot     string
@@ -85,7 +87,7 @@ func Main(args []string) error {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	return d.run(ctx)
+	return d.Run(ctx)
 }
 
 func parseFlags(args []string) (daemonConfig, error) {
@@ -179,7 +181,7 @@ func newDaemon(cfg daemonConfig) (*service, error) {
 	}, nil
 }
 
-func (d *service) run(ctx context.Context) error {
+func (d *service) Run(ctx context.Context) error {
 	if !d.helloUntilConnected(ctx) {
 		return nil
 	}
@@ -291,7 +293,12 @@ func (d *service) processTask(ctx context.Context, task *runtimeprotocol.Executi
 	// the process-interruption identity and terminalize the parent as work
 	// failure instead.
 	if ctx.Err() != nil && runErr != nil && result.Status != "completed" {
-		result = failedExecutionReceipt(task, "runtime_process_interrupted: daemon shutdown")
+		if result.TaskID == "" {
+			result = failedExecutionReceipt(task, "runtime_process_interrupted: daemon shutdown")
+		} else {
+			result.Status = "failed"
+			result.Error = "runtime_process_interrupted: daemon shutdown"
+		}
 	} else if runErr != nil && result.Status == "" {
 		result = failedExecutionReceipt(task, runErr.Error())
 	}
@@ -345,9 +352,12 @@ func (d *service) processTask(ctx context.Context, task *runtimeprotocol.Executi
 			ackCtx, cancel = context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 			defer cancel()
 		}
-		_ = d.reportUntilAccepted(ackCtx, func(reportCtx context.Context) error {
-			return d.client.stopped(reportCtx, task)
+		stopErr := d.reportUntilAccepted(ackCtx, func(reportCtx context.Context) error {
+			return d.client.stopped(reportCtx, task, &result)
 		})
+		if stopErr == nil && saved {
+			d.resultSpool.retain(task.TaskID, "stopped")
+		}
 	}
 }
 
@@ -445,7 +455,27 @@ func (d *service) executeTask(ctx context.Context, task *runtimeprotocol.Executi
 		return runtimeprotocol.ExecutionReceipt{}, err
 	}
 	workspaceRoot := d.workspacesRoot
-	if request.NodeID != "" && task.RunSnapshotID != "" {
+	var isolation *engine.ProcessIsolation
+	var managedEnv map[string]string
+	if d.subjectGuard != nil {
+		subjectRoot, policy, guardErr := d.subjectGuard.bind(task.Subject)
+		if guardErr != nil {
+			return runtimeprotocol.ExecutionReceipt{}, guardErr
+		}
+		resolved, resolveErr := d.credentials(ctx, task)
+		if resolveErr != nil {
+			return runtimeprotocol.ExecutionReceipt{}, resolveErr
+		}
+		managedEnv, err = managedEnvironment(subjectRoot, resolved)
+		if err != nil {
+			return runtimeprotocol.ExecutionReceipt{}, err
+		}
+		if filepath.Base(task.TaskID) != task.TaskID || task.TaskID == "." || task.TaskID == ".." {
+			return runtimeprotocol.ExecutionReceipt{}, errors.New("invalid invocation identity")
+		}
+		workspaceRoot, isolation = filepath.Join(subjectRoot, ".invocations", task.TaskID), policy
+	}
+	if d.subjectGuard == nil && request.NodeID != "" && task.RunSnapshotID != "" {
 		if filepath.Base(task.TaskID) != task.TaskID || task.TaskID == "." || task.TaskID == ".." {
 			return runtimeprotocol.ExecutionReceipt{}, fmt.Errorf("invalid invocation identity")
 		}
@@ -482,8 +512,12 @@ func (d *service) executeTask(ctx context.Context, task *runtimeprotocol.Executi
 			return runtimeprotocol.ExecutionReceipt{}, err
 		}
 	}
-	cliAuthMode := d.detectCLIAuthMode(ctx, request.Engine)
-	oneAPIBase, oneAPIKey := runtimeProviderConfig(request)
+	cliAuthMode := "subject_provider"
+	oneAPIBase, oneAPIKey := managedEnv["OPENAI_BASE_URL"], managedEnv["OPENAI_API_KEY"]
+	if d.subjectGuard == nil {
+		cliAuthMode = d.detectCLIAuthMode(ctx, request.Engine)
+		oneAPIBase, oneAPIKey = runtimeProviderConfig(request)
+	}
 	if err := validateRuntimeProviderConfig(request.Engine, cliAuthMode, oneAPIKey); err != nil {
 		return runtimeprotocol.ExecutionReceipt{}, err
 	}
@@ -494,6 +528,9 @@ func (d *service) executeTask(ctx context.Context, task *runtimeprotocol.Executi
 		runEnv = make(map[string]string)
 	}
 	mergeRuntimeProviderEnv(runEnv, oneAPIBase, oneAPIKey)
+	for key, value := range managedEnv {
+		runEnv[key] = value
+	}
 	for idx, target := range taskTargets {
 		runEnv[fmt.Sprintf("WEAVE_MCP_BOUNDARY_TOKEN_%d", idx)] = target.Token
 	}
@@ -526,7 +563,7 @@ func (d *service) executeTask(ctx context.Context, task *runtimeprotocol.Executi
 		ctx, stop = context.WithDeadline(ctx, *task.DeadlineAt)
 		defer stop()
 	}
-	result, err := d.runEngine(ctx, request.Engine, engine.RunSpec{Subject: task.Subject, OnPublicEvent: publish,
+	result, err := d.runEngine(ctx, request.Engine, engine.RunSpec{Subject: task.Subject, Isolation: isolation, OnPublicEvent: publish,
 		MCPServers: engineTaskMCPServers(taskTargets), WorkDir: workDir, Prompt: request.Prompt, Model: request.Model,
 		Env: runEnv, Timeout: time.Duration(timeoutSeconds) * time.Second, EngineVersion: d.engineVersion(request.Engine), OutputSchema: request.OutputSchema})
 	finishProgress(&result)
@@ -772,7 +809,7 @@ func detectEngineCapabilities(ctx context.Context, detected []string) []runtimep
 			}
 		}
 		capability := runtimeprotocol.EngineCapability{
-			Engine: name, BinaryPath: binaryPath,
+			Engine: name, BinaryPath: binaryPath, SubjectIsolation: runtimeprotocol.SubjectIsolationSingleUser,
 			BinaryVersion: engine.BinaryVersion(ctx, binaryPath),
 			AuthMode:      authMode, ProtocolVersion: engineProtocolVersion(name),
 			EndpointClass: endpointClass,

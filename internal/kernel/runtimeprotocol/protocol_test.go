@@ -67,3 +67,29 @@ func TestReceiptCannotChangePhysicalOwner(t *testing.T) {
 		t.Fatal("receipt from another physical attempt was accepted")
 	}
 }
+
+func TestStoppedReceiptPinsVersionIdentityAndObservedEvidence(t *testing.T) {
+	subject := execution.Subject{WorkspaceID: "workspace", UserID: "alice"}
+	claim := ExecutionClaim{TaskID: "physical-one", ClaimEpoch: 2, Subject: subject}
+	result := ExecutionReceipt{Versioned: NewVersioned(), SchemaVersion: ReceiptSchemaV1, TaskID: claim.TaskID, ClaimEpoch: claim.ClaimEpoch, Subject: subject, Status: "timeout", Error: "cancelled", Output: "partial"}
+	stop := StoppedReceipt{Versioned: NewVersioned(), SchemaVersion: ReceiptSchemaV1, TaskID: claim.TaskID, ClaimEpoch: claim.ClaimEpoch, Subject: subject, ReceiptID: result.Identity(), ResultDigest: result.Digest(), Result: &result}
+	if err := stop.ValidateFor(claim); err != nil {
+		t.Fatal(err)
+	}
+	encoded, _ := json.Marshal(stop)
+	for _, alter := range []func(*StoppedReceipt){
+		func(s *StoppedReceipt) { s.ProtocolVersion = "weave.runtime/v2" },
+		func(s *StoppedReceipt) { s.Result.Subject.UserID = "bob" },
+		func(s *StoppedReceipt) { s.Result.ClaimEpoch++ },
+		func(s *StoppedReceipt) { s.Result.Output = "changed" },
+		func(s *StoppedReceipt) { s.ReceiptID = "another" },
+		func(s *StoppedReceipt) { s.Result = nil },
+	} {
+		var invalid StoppedReceipt
+		_ = json.Unmarshal(encoded, &invalid)
+		alter(&invalid)
+		if err := invalid.ValidateFor(claim); err == nil {
+			t.Fatal("unbound stop evidence accepted")
+		}
+	}
+}

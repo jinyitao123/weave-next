@@ -41,6 +41,7 @@ type MCPServerEndpoint struct {
 }
 
 type RunSpec struct {
+	Isolation  *ProcessIsolation
 	Subject    execution.Subject
 	MCPServers []MCPServerEndpoint
 	WorkDir    string
@@ -210,6 +211,22 @@ func cliAmbientEnv() []string {
 			continue
 		}
 		result = append(result, entry)
+	}
+	return result
+}
+
+// Subject-managed invocations inherit only non-secret process essentials.
+func cliAmbientEnvForRun(overrides map[string]string) []string {
+	if overrides["WEAVE_SUBJECT_SANDBOX"] != "1" {
+		return cliAmbientEnv()
+	}
+	result := []string{}
+	for _, entry := range os.Environ() {
+		key, _, _ := strings.Cut(entry, "=")
+		switch key {
+		case "PATH", "LANG", "LC_ALL", "LC_CTYPE", "TZ", "TERM", "SHELL", "SSL_CERT_FILE", "SSL_CERT_DIR", "NODE_EXTRA_CA_CERTS":
+			result = append(result, entry)
+		}
 	}
 	return result
 }

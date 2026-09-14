@@ -37,12 +37,15 @@ const (
 	EngineAvailabilityReady       = "ready"
 	EngineAvailabilityUnavailable = "unavailable"
 	EngineAvailabilityUnknown     = "unknown"
+	SubjectIsolationStrong        = "strong"
+	SubjectIsolationSingleUser    = "single_user"
 )
 
 // EngineCapability is the secretless, daemon-observed identity of one CLI
 // engine. It lets operators distinguish a host subscription from a configured
 // API provider without uploading credentials or local configuration contents.
 type EngineCapability struct {
+	SubjectIsolation    string `json:"subject_isolation,omitempty"`
 	Engine              string `json:"engine"`
 	BinaryPath          string `json:"binary_path"`
 	BinaryVersion       string `json:"binary_version"`
@@ -216,6 +219,17 @@ func canonicalEngineCapabilities(
 ) (map[string]EngineCapability, error) {
 	result := make(map[string]EngineCapability, len(capabilities))
 	for _, capability := range capabilities {
+		// Hosts predating subject isolation did not send this field. Treat
+		// that observation conservatively so the platform never advertises a
+		// shared Host as multi-user capable.
+		if capability.SubjectIsolation == "" {
+			capability.SubjectIsolation = SubjectIsolationSingleUser
+		}
+		switch capability.SubjectIsolation {
+		case SubjectIsolationStrong, SubjectIsolationSingleUser:
+		default:
+			return nil, fmt.Errorf("runtime subject isolation capability is invalid")
+		}
 		capability.Engine = strings.TrimSpace(capability.Engine)
 		capability.BinaryPath = strings.TrimSpace(capability.BinaryPath)
 		capability.BinaryVersion = strings.TrimSpace(capability.BinaryVersion)
