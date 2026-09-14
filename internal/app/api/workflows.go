@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jinyitao123/weave/internal/app/teamconstruction"
 	"github.com/jinyitao123/weave/internal/base/execution"
+	"github.com/jinyitao123/weave/internal/kernel/admissionfence"
 	"github.com/jinyitao123/weave/internal/kernel/publication"
 	"github.com/jinyitao123/weave/internal/kernel/workflow"
 	"github.com/jinyitao123/weave/internal/kernel/workflow/machine"
@@ -491,6 +492,13 @@ func workflowSchemaError(c echo.Context) error {
 }
 
 func workflowStoreFailure(c echo.Context, err error) error {
+	if errors.Is(err, admissionfence.ErrBlocked) {
+		return workflowError(c, http.StatusConflict, "workflow_access_revoked", "这项任务需要的权限已撤销，暂时无法启动。")
+	}
+	if errors.Is(err, admissionfence.ErrChanged) {
+		return workflowError(c, http.StatusConflict, "workflow_access_changed", "任务权限已变化，请重新确认后启动。")
+	}
+
 	slog.Error(
 		"workflow store request failed",
 		"method", c.Request().Method,
