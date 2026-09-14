@@ -1,9 +1,13 @@
 package api
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 
+	"github.com/jinyitao123/weave/internal/base/frozen"
+	"github.com/jinyitao123/weave/internal/kernel/admissionfence"
 	"github.com/jinyitao123/weave/internal/kernel/mcpprobe"
 	"github.com/jinyitao123/weave/internal/kernel/mcpregistry"
 	"github.com/labstack/echo/v4"
@@ -75,11 +79,26 @@ func (s *Server) handleDeleteMCPServer(c echo.Context) error {
 	if s.MCPRegistry == nil {
 		return mcpRegistryUnavailable(c)
 	}
-	err := s.MCPRegistry.Delete(c.Request().Context(), getTenant(c), c.Param("id"))
+	workspaceID, serverID := getTenant(c), c.Param("id")
+	server, err := s.MCPRegistry.Get(c.Request().Context(), workspaceID, serverID)
 	if err != nil {
 		return handleMCPRegistryError(c, err)
 	}
-	return c.NoContent(http.StatusNoContent)
+	ref := frozen.CredentialReference{
+		SchemaVersion: frozen.FrozenSchemaVersion, WorkspaceID: workspaceID,
+		Kind: frozen.CredentialMCPServerAccess, ResourceID: serverID, Slot: "access",
+		Scope: frozen.CredentialScopeWorkspaceService, ServiceID: "mcp:" + serverID,
+	}
+	resource := admissionfence.Credential(ref, server.FunctionalRevision)
+	return s.applyExternalAccessChange(c, "mcp.delete", serverID,
+		map[string]any{"server_id": serverID, "functional_revision": server.FunctionalRevision},
+		[]admissionfence.Resource{resource}, nil, nil,
+		func(ctx context.Context) (json.RawMessage, error) {
+			if err := s.MCPRegistry.Delete(ctx, workspaceID, serverID); err != nil {
+				return nil, err
+			}
+			return json.RawMessage(`{}`), nil
+		}, http.StatusNoContent)
 }
 
 func (s *Server) handleProbeMCPServer(c echo.Context) error {

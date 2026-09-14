@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jinyitao123/weave/internal/base/frozen"
+	"github.com/jinyitao123/weave/internal/kernel/admissionfence"
 	"github.com/jinyitao123/weave/internal/kernel/delivery"
 	"github.com/labstack/echo/v4"
 )
@@ -235,12 +236,12 @@ func (s *Server) handleDisableDeliveryTarget(c echo.Context) error {
 	if err := decodeEmptyDeliveryTargetJSON(c); err != nil {
 		return mapDeliveryTargetDecodeError(c, err)
 	}
-	if err := s.DeliveryTargets.Disable(
-		c.Request().Context(), getTenant(c), targetID,
-	); err != nil {
-		return mapDeliveryTargetError(c, err)
-	}
-	return c.NoContent(http.StatusNoContent)
+	return s.applyDeliveryAccessChange(c, targetID, "delivery.disable", func(ctx context.Context) (json.RawMessage, error) {
+		if err := s.DeliveryTargets.Disable(ctx, getTenant(c), targetID); err != nil {
+			return nil, err
+		}
+		return json.RawMessage(`{}`), nil
+	})
 }
 
 func (s *Server) handleRevokeDeliveryTarget(c echo.Context) error {
@@ -254,12 +255,12 @@ func (s *Server) handleRevokeDeliveryTarget(c echo.Context) error {
 	if err := decodeEmptyDeliveryTargetJSON(c); err != nil {
 		return mapDeliveryTargetDecodeError(c, err)
 	}
-	if err := s.DeliveryTargets.Revoke(
-		c.Request().Context(), getTenant(c), targetID,
-	); err != nil {
-		return mapDeliveryTargetError(c, err)
-	}
-	return c.NoContent(http.StatusNoContent)
+	return s.applyDeliveryAccessChange(c, targetID, "delivery.revoke", func(ctx context.Context) (json.RawMessage, error) {
+		if err := s.DeliveryTargets.Revoke(ctx, getTenant(c), targetID); err != nil {
+			return nil, err
+		}
+		return json.RawMessage(`{}`), nil
+	})
 }
 
 func (s *Server) handleDeleteDeliveryTarget(c echo.Context) error {
@@ -273,12 +274,29 @@ func (s *Server) handleDeleteDeliveryTarget(c echo.Context) error {
 	if err := decodeEmptyDeliveryTargetJSON(c); err != nil {
 		return mapDeliveryTargetDecodeError(c, err)
 	}
-	if err := s.DeliveryTargets.Delete(
-		c.Request().Context(), getTenant(c), targetID,
-	); err != nil {
+	return s.applyDeliveryAccessChange(c, targetID, "delivery.delete", func(ctx context.Context) (json.RawMessage, error) {
+		if err := s.DeliveryTargets.Delete(ctx, getTenant(c), targetID); err != nil {
+			return nil, err
+		}
+		return json.RawMessage(`{}`), nil
+	})
+}
+
+func (s *Server) applyDeliveryAccessChange(c echo.Context, targetID, kind string, apply func(context.Context) (json.RawMessage, error)) error {
+	workspaceID := getTenant(c)
+	target, err := s.DeliveryTargets.Get(c.Request().Context(), workspaceID, targetID)
+	if err != nil {
 		return mapDeliveryTargetError(c, err)
 	}
-	return c.NoContent(http.StatusNoContent)
+	ref := frozen.CredentialReference{
+		SchemaVersion: frozen.FrozenSchemaVersion, WorkspaceID: workspaceID,
+		Kind: frozen.CredentialDeliveryTargetAccess, ResourceID: targetID, Slot: "access",
+		Scope: frozen.CredentialScopeWorkspaceService, ServiceID: "delivery:" + targetID,
+	}
+	resource := admissionfence.Credential(ref, target.LatestRevision)
+	return s.applyExternalAccessChange(c, kind, targetID,
+		map[string]any{"target_id": targetID, "functional_revision": target.LatestRevision},
+		[]admissionfence.Resource{resource}, nil, nil, apply, http.StatusNoContent)
 }
 
 func decodeDeliveryTargetJSON(c echo.Context, destination any) error {

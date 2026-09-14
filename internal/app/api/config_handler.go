@@ -9,6 +9,7 @@ import (
 
 	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/base/frozen"
+	"github.com/jinyitao123/weave/internal/kernel/admissionfence"
 	"github.com/jinyitao123/weave/internal/kernel/credentials"
 	"github.com/jinyitao123/weave/internal/kernel/llmrouter"
 	"github.com/labstack/echo/v4"
@@ -98,14 +99,28 @@ func (s *Server) handleDeleteProvider(c echo.Context) error {
 	}
 	id := c.Param("id")
 	tenant := getTenant(c)
-
-	if err := s.Credentials.Delete(c.Request().Context(), tenant, id); err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to delete provider: " + err.Error()})
+	head, err := s.Credentials.GetHead(c.Request().Context(), tenant, id)
+	if err != nil {
+		return providerStoreError(c, credentials.ErrCredentialUnavailable)
 	}
-	if s.Models != nil {
-		s.Models.Invalidate(tenant)
+	ref := frozen.CredentialReference{
+		SchemaVersion: frozen.FrozenSchemaVersion, WorkspaceID: tenant,
+		Kind: frozen.CredentialProviderAPIKey, ResourceID: id, Slot: "api_key",
+		Scope: head.CredentialScope, UserID: head.CredentialUserID, ServiceID: head.CredentialServiceID,
 	}
-	return c.NoContent(http.StatusNoContent)
+	resource := admissionfence.Credential(ref, head.LatestRevision)
+	return s.applyExternalAccessChange(c, "credential.delete", id,
+		map[string]any{"provider_id": id, "credential_revision": head.LatestRevision},
+		[]admissionfence.Resource{resource}, nil, nil,
+		func(ctx context.Context) (json.RawMessage, error) {
+			if err := s.Credentials.Delete(ctx, tenant, id); err != nil {
+				return nil, err
+			}
+			if s.Models != nil {
+				s.Models.Invalidate(tenant)
+			}
+			return json.RawMessage(`{}`), nil
+		}, http.StatusNoContent)
 }
 
 type mirrorSystemProviderRequest struct {
