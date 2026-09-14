@@ -13,11 +13,25 @@
 | 发布前可改什么、发布后冻结什么 | [内核边界与开发者契约](2026-09-12-Weave内核边界与开发者契约.md) | 不可变发布修订、可信身份、幂等和调用边界；目标能力仍需实现与验收证据 |
 | 系统凭什么判定成果符合要求 | [交付可计算核验契约](2026-09-13-交付可计算核验契约.md) | `weave.deterministic/v1` 只验证已冻结的可计算断言；执行完成、检查通过、用户采纳分别记录 |
 | 如何做真实产品验收 | [Workbench 真人式验收协议](../验收/Workbench真人式验收协议.md) | 正常浏览器、真实材料与模型、实际成果、独立核验；工程通过不代替交付验收 |
-| 最终怎么分仓、哪些接口跨仓 | [理想架构详图第 8 至 12 节](2026-09-13-Weave理想架构详图.md#8-面向独立分仓的功能拆分) | 目标结构与迁移设计；实际完成度和版本组合回到迁移计划核对 |
+| 最终怎么分仓、哪些接口跨仓 | [理想架构详图第 8 至 12 节](2026-09-13-Weave理想架构详图.md#8-面向独立分仓的功能拆分) | 目标结构与迁移设计；独立仓、标签、CI、版本组合和剩余阻断只回到迁移计划核对 |
 
-`internal/base` 保存与执行器无关的基础合同。TeamRun、Task、Fanout 及其领取、恢复、状态迁移属于 `internal/kernel`；历史“base 九词”不再限制基础层或授予它执行权。旧方案中的永久单仓、旧数据兼容和私有执行队列安排也不再是本轮要求。
+`internal/base` 保存与执行器无关的基础合同。TeamRun、Task、Fanout 及其领取、恢复、状态迁移属于 Kernel；历史“base 九词”不再限制基础层或授予它执行权。旧方案中的永久单仓、旧数据兼容和私有执行队列安排也不再是本轮要求。
 
-Host 执行报文当前由 [`runtimeprotocol`](../../internal/kernel/runtimeprotocol/protocol.go) 定义，版本为 `weave.runtime/v1`；[契约及版本拒绝测试](../../internal/kernel/runtimeprotocol/protocol_test.go)和[依赖边界测试](../../internal/kernel/runtimeprotocol/dependencies_test.go)说明其工程约束。[Loom 执行端口](../../internal/kernel/loomadapter/adapter.go)与[平台报文装配](../../internal/kernel/runtimebridge/bridge.go)分别保留适配和治理职责。这里索引现有契约，不另写第二份报文定义，也不据此宣称远程执行或恢复已完成产品验收。
+## 当前物理仓入口
+
+独立仓已经形成，但发布与验收状态仍由迁移计划统一维护，避免在架构文档重复写易过时的版本号。
+
+| 仓库 | 当前职责 | 状态入口 |
+|---|---|---|
+| [`weave-kernel`](https://github.com/jinyitao123/weave-kernel) | 平台执行、能力、工作流、MCP、Host 公共契约与 Loom 平台适配 | [物理分仓证据](../计划/2026-09-13-分层迁移剩余工作目标与验收.md#2026-09-14-物理分仓证据) |
+| [`weave-builder`](https://github.com/jinyitao123/weave-builder) | 团队构建、评估、编排和恢复策略；具体产品存储由 Server 适配 | 同上 |
+| [`weave-runtime`](https://github.com/jinyitao123/weave-runtime) | 独立执行 Host 与 Runtime 镜像 | 同上 |
+| [`weave-server`](https://github.com/jinyitao123/weave-server) | 产品 API、产品数据、模块装配、固定版本矩阵和部署 | 同上 |
+| [`weave-workbench`](https://github.com/jinyitao123/weave-workbench) | 唯一业务界面与其前端运行时工作区 | 同上 |
+
+主仓中的 [`runtimeprotocol`](../../internal/kernel/runtimeprotocol/protocol.go)、[Loom 执行端口](../../internal/kernel/loomadapter/adapter.go)和[平台报文装配](../../internal/kernel/runtimebridge/bridge.go)是迁移来源与工程回归入口。正式消费者应使用独立 Kernel 的发布契约；主仓文件存在不能证明独立版本、远程执行、恢复或产品验收已经完成。
+
+文档责任按以下方式去重：分层基线只决定职责，迁移计划只维护当前状态与版本证据，独立仓 README 和版本矩阵只说明本仓构建及装配，`docs/验收/` 只保存实际观察与验收结论。历史方案可以解释来源，不能新增当前待办或覆盖这些入口。
 
 ## 产品和机制参考
 
