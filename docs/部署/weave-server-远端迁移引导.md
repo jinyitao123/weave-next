@@ -7,7 +7,8 @@ Windows 或旧 Host 增加兼容路径。
 ## 准备
 
 新的 ed25519 私钥只保存在 `weave-server` 仓库的 `WEAVE_DEPLOY_SSH_KEY`
-Secret 中。一次性引导只读取本机
+Secret 中。首次环境配置通过旧仓一次性 Secret `WEAVE_SERVER_BOOTSTRAP_ENV` 注入，
+引导成功后立即删除。一次性引导只读取本机
 `/Users/jinyitao/.config/weave-server-deploy/id_ed25519.pub`，把对应公钥作为 workflow
 input 注入。旧的 `WEAVE_DEPLOY_SSH_KEY` 仍只用于本次连接，新公钥会被安装为单独的
 forced-command 条目。同一个公钥不能同时绑定旧、新两个 forced-command。
@@ -39,8 +40,8 @@ forced-command 条目。同一个公钥不能同时绑定旧、新两个 forced-
 
 ## 远端结果
 
-引导创建一个空的 `server.env` 和 `required-settings.txt`，不会读取或迁移旧配置。
-首次 Server 发布前必须由运维人员在主机上填写新配置。首次 forced-command 调用会用
+引导从一次性 Secret 原子写入新的 `server.env`，同时生成 `required-settings.txt`，
+不会读取或迁移旧配置。已有配置只有与输入逐字一致时才允许重复执行；不同内容会拒绝覆盖。首次 forced-command 调用会用
 Server 仓短期令牌取得对应 main 提交，然后切换到 Server 仓自带的正式部署脚本。
 
 新入口使用 OpenSSH `restrict` 和固定命令，拒绝交互 shell、PTY、端口转发以及非
