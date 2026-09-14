@@ -71,5 +71,6 @@ jobs:
         run: make compose-check
       - name: Validate deployment scripts
         run: |
-          bash -n scripts/deploy-main.sh
-          python3 -m unittest discover -s scripts -p 'test_deployment_state.py'
+          bash -n scripts/deploy-main.sh scripts/bootstrap-server-deploy.sh \
+            scripts/run-bootstrap-server-deploy.sh scripts/server-deploy-bootstrap/*.sh
+          python3 -m unittest scripts/test_deployment_state.py scripts/test_bootstrap_server_deploy.py

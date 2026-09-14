@@ -1,0 +1,103 @@
+name: Bootstrap weave-server deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type bootstrap-weave-server to run the one-time remote bootstrap
+        required: true
+        type: string
+      server_public_key:
+        description: Public ed25519 key already paired with the weave-server repository deploy secret
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: bootstrap-weave-server-deployment
+  cancel-in-progress: false
+
+jobs:
+  bootstrap:
+    if: inputs.confirmation == 'bootstrap-weave-server'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Select the tested main commit
+        id: target
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const repo = context.repo;
+            const { data: branch } = await github.rest.repos.getBranch({ ...repo, branch: 'main' });
+            const sha = branch.commit.sha;
+            const { data } = await github.rest.actions.listWorkflowRuns({
+              ...repo,
+              workflow_id: 'go-ci.yml',
+              branch: 'main',
+              event: 'push',
+              head_sha: sha,
+              per_page: 100,
+            });
+            if (!data.workflow_runs.some(run => run.status === 'completed' && run.conclusion === 'success')) {
+              throw new Error('The current main commit has no successful Go CI run.');
+            }
+            if (!/^[0-9a-f]{40}$/.test(sha)) throw new Error('Invalid commit SHA.');
+            core.setOutput('sha', sha);
+      - name: Prepare verified SSH materials
+        env:
+          DEPLOY_HOST: ${{ vars.WEAVE_DEPLOY_HOST }}
+          OLD_DEPLOY_KEY: ${{ secrets.WEAVE_DEPLOY_SSH_KEY }}
+          SERVER_DEPLOY_PUBLIC_KEY: ${{ inputs.server_public_key }}
+          TRUSTED_KNOWN_HOSTS: ${{ secrets.WEAVE_DEPLOY_KNOWN_HOSTS }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$DEPLOY_HOST" && test -n "$OLD_DEPLOY_KEY" && test -n "$SERVER_DEPLOY_PUBLIC_KEY" && test -n "$TRUSTED_KNOWN_HOSTS"
+          umask 077
+          mkdir -p bootstrap-materials
+          printf '%s\n' "$OLD_DEPLOY_KEY" > bootstrap-materials/old_deploy_key
+          printf '%s\n' "$SERVER_DEPLOY_PUBLIC_KEY" > bootstrap-materials/server_deploy_key.pub
+          printf '%s\n' "$TRUSTED_KNOWN_HOSTS" > bootstrap-materials/trusted_known_hosts
+          test "$(wc -l < bootstrap-materials/server_deploy_key.pub | tr -d ' ')" = 1
+          grep -Eq '^ssh-ed25519 [A-Za-z0-9+/]+={0,3}( [A-Za-z0-9._@+-]+)?$' bootstrap-materials/server_deploy_key.pub
+          ssh-keyscan -T 15 -H "$DEPLOY_HOST" > bootstrap-materials/scanned_known_hosts 2>/dev/null
+          awk 'NF >= 3 && $1 !~ /^#/ { print $2 " " $3 }' bootstrap-materials/trusted_known_hosts | sort -u > bootstrap-materials/trusted_keys
+          awk 'NR==FNR { trusted[$1 " " $2]=1; next } (($2 " " $3) in trusted)' \
+            bootstrap-materials/trusted_keys bootstrap-materials/scanned_known_hosts \
+            > bootstrap-materials/weave-server-known-hosts
+          test -s bootstrap-materials/weave-server-known-hosts
+      - name: Install the restricted Server deployment entry
+        env:
+          DEPLOY_SHA: ${{ steps.target.outputs.sha }}
+          DEPLOY_HOST: ${{ vars.WEAVE_DEPLOY_HOST }}
+          DEPLOY_USER: ${{ vars.WEAVE_DEPLOY_USER }}
+          DEPLOY_GITHUB_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$DEPLOY_HOST" && test -n "$DEPLOY_USER"
+          public_key="$(cat bootstrap-materials/server_deploy_key.pub)"
+          printf '%s\n%s\n%s\n' "$DEPLOY_GITHUB_TOKEN" bootstrap-weave-server-v1 "$public_key" | \
+            ssh -T -i bootstrap-materials/old_deploy_key \
+              -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+              -o UserKnownHostsFile=bootstrap-materials/trusted_known_hosts \
+              -o ConnectTimeout=20 -o ServerAliveInterval=30 -o ServerAliveCountMax=6 \
+              "$DEPLOY_USER@$DEPLOY_HOST" "deploy $DEPLOY_SHA" \
+              > bootstrap-materials/remote-output
+          grep -Fq 'Weave Server deployment directories and restricted command are installed.' \
+            bootstrap-materials/remote-output
+      - name: Retain the verified known_hosts handoff
+        uses: actions/upload-artifact@v4
+        with:
+          name: weave-server-known-hosts
+          path: bootstrap-materials/weave-server-known-hosts
+          if-no-files-found: error
+          retention-days: 1
+      - name: Remove transient SSH materials
+        if: always()
+        shell: bash
+        run: rm -rf bootstrap-materials
