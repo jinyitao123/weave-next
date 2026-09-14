@@ -123,7 +123,7 @@ func (s *ArtifactStore) SetBlocked(
 		change.WorkflowVersion,
 		change.IdempotencyKey,
 		requestHash,
-		response,
+		string(response),
 		createdAt,
 	); err != nil {
 		return nil, fmt.Errorf("insert admission receipt: %w", err)
