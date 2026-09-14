@@ -1,8 +1,12 @@
 package api
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/jackc/pgx/v5"
+	"github.com/jinyitao123/weave/internal/kernel/admissionfence"
 	"net/http"
 	"sort"
 	"strings"
@@ -108,17 +112,25 @@ func (s *Server) handleAddMember(c echo.Context) error {
 	if err := c.Bind(&req); err != nil || req.UserID == "" || (req.Role != "owner" && req.Role != "member") {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
 	}
-	if err := s.OrgStore.AddMember(c.Request().Context(), getTenant(c), req.UserID, req.Role); err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	intent, err := newAccessChangeIntent(c, "member.add", req.UserID, req, nil, []admissionfence.Resource{admissionfence.Member(req.UserID)}, nil)
+	if err != nil {
+		return err
 	}
-	return c.NoContent(http.StatusNoContent)
+	result, err := s.applyAccessChange(c.Request().Context(), intent, func(ctx context.Context, tx pgx.Tx) (json.RawMessage, error) {
+		return json.RawMessage(`{}`), s.OrgStore.AddMemberTx(ctx, tx, getTenant(c), req.UserID, req.Role)
+	})
+	return writeAccessChangeOutcome(c, result, err, http.StatusNoContent)
 }
 
 func (s *Server) handleRemoveMember(c echo.Context) error {
-	if err := s.OrgStore.RemoveMember(c.Request().Context(), getTenant(c), c.Param("userID")); err != nil {
-		return c.JSON(http.StatusNotFound, map[string]string{"error": err.Error()})
+	intent, err := newAccessChangeIntent(c, "member.remove", c.Param("userID"), map[string]string{"user_id": c.Param("userID")}, []admissionfence.Resource{admissionfence.Member(c.Param("userID"))}, nil, nil)
+	if err != nil {
+		return err
 	}
-	return c.NoContent(http.StatusNoContent)
+	result, err := s.applyAccessChange(c.Request().Context(), intent, func(ctx context.Context, tx pgx.Tx) (json.RawMessage, error) {
+		return json.RawMessage(`{}`), s.OrgStore.RemoveMemberTx(ctx, tx, getTenant(c), c.Param("userID"))
+	})
+	return writeAccessChangeOutcome(c, result, err, http.StatusNoContent)
 }
 
 func (s *Server) handleListTeams(c echo.Context) error {
@@ -430,6 +442,14 @@ func (s *Server) handleUpdateTeamRoster(c echo.Context) error {
 			c, http.StatusBadRequest, "invalid_revocation_request", "invalid roster request body", nil,
 		)
 	}
+	key, keyErr := accessChangeKey(c)
+	if keyErr != nil {
+		return keyErr
+	}
+	if req.IdempotencyKey != "" && req.IdempotencyKey != key {
+		return echo.NewHTTPError(http.StatusBadRequest, "这项变更的信息不一致，请重新操作。")
+	}
+	req.IdempotencyKey = key
 	if err := validateTeamRosterRequest(req); err != nil {
 		return writeRevocationError(
 			c, http.StatusBadRequest, "invalid_revocation_request", err.Error(), nil,
@@ -445,60 +465,29 @@ func (s *Server) handleUpdateTeamRoster(c echo.Context) error {
 		)
 	}
 
-	result, err := s.Registry.ApplyTeamRosterCommand(ctx, registry.TeamRosterCommand{
-		WorkspaceID:       workspaceID,
-		TeamID:            teamID,
-		IdempotencyKey:    req.IdempotencyKey,
-		ExpectedUpdatedAt: req.ExpectedUpdatedAt,
-		DesiredTeamStatus: req.DesiredTeamStatus,
-		LeadAgentID:       req.LeadAgentID,
-		Workers:           req.Workers,
-		OperatorID:        getUserID(c),
-		Reason:            req.Reason,
-	})
+	block, grant := rosterAccessResources(teamID, req)
+	intent, err := newAccessChangeIntent(c, "team.roster", teamID, req, block, grant, []admissionfence.Resource{admissionfence.Team(teamID)})
 	if err != nil {
-		switch {
-		case errors.Is(err, registry.ErrTeamRosterInvalidRequest),
-			errors.Is(err, registry.ErrTeamRosterRemovalUnsupported),
-			errors.Is(err, registry.ErrTeamWorkerIncompatible):
-			return writeRevocationError(
-				c, http.StatusBadRequest, "invalid_revocation_request", err.Error(), nil,
-			)
-		case errors.Is(err, registry.ErrTeamRosterNotFound), errors.Is(err, registry.ErrTeamWorkerNotFound):
-			return writeRevocationError(
-				c, http.StatusNotFound, "team_worker_not_found", "team roster was not found", nil,
-			)
-		case errors.Is(err, registry.ErrActiveTeamRequiresEnabledWorker):
-			return writeRevocationError(
-				c, http.StatusConflict, "last_enabled_team_worker", "active team requires an enabled worker", nil,
-			)
-		case errors.Is(err, registry.ErrTeamRosterWriteConflict):
-			return writeRevocationError(
-				c, http.StatusConflict, "team_worker_write_conflict", "team roster changed after the expected version", nil,
-			)
-		case errors.Is(err, registry.ErrTeamRosterIdempotencyConflict):
-			return writeRevocationError(
-				c, http.StatusConflict, "admission_idempotency_conflict", "idempotency key is already bound to another roster command", nil,
-			)
-		case errors.Is(err, registry.ErrTeamRosterArchived):
-			return writeRevocationError(
-				c, http.StatusConflict, "team_roster_archived", "archived team does not accept new roster commands", nil,
-			)
-		default:
-			agents, listErr := s.Registry.List(ctx, workspaceID)
-			if listErr == nil {
-				if identityErr := validateTeamRosterAgentIdentities(req, agents); identityErr != nil {
-					return writeRevocationError(
-						c, http.StatusBadRequest, "invalid_revocation_request", identityErr.Error(), nil,
-					)
-				}
-			}
-			return writeRevocationError(
-				c, http.StatusServiceUnavailable, "revocation_store_unavailable", "revocation store is unavailable", nil,
-			)
-		}
+		return err
 	}
-	return c.JSON(http.StatusOK, result)
+	result, err := s.applyAccessChange(ctx, intent, func(ctx context.Context, tx pgx.Tx) (json.RawMessage, error) {
+		response, err := s.Registry.ApplyTeamRosterCommandTx(ctx, tx, registry.TeamRosterCommand{
+			WorkspaceID:       workspaceID,
+			TeamID:            teamID,
+			IdempotencyKey:    req.IdempotencyKey,
+			ExpectedUpdatedAt: req.ExpectedUpdatedAt,
+			DesiredTeamStatus: req.DesiredTeamStatus,
+			LeadAgentID:       req.LeadAgentID,
+			Workers:           req.Workers,
+			OperatorID:        getUserID(c),
+			Reason:            req.Reason,
+		})
+		if err != nil {
+			return nil, err
+		}
+		return json.Marshal(response)
+	})
+	return writeAccessChangeOutcome(c, result, err, http.StatusOK)
 }
 
 func validateTeamRosterRequest(req teamRosterRequest) error {
@@ -582,4 +571,34 @@ func (s *Server) handleDeleteTeam(c echo.Context) error {
 		"team archive must be expressed through the complete roster command",
 		map[string]any{"required_route": "/v1/teams/" + c.Param("id") + "/roster"},
 	)
+}
+
+func rosterAccessResources(teamID string, req teamRosterRequest) (block, grant []admissionfence.Resource) {
+	if req.DesiredTeamStatus == "archived" {
+		block = append(block, admissionfence.Team(teamID))
+	} else {
+		grant = append(grant, admissionfence.Team(teamID))
+	}
+	for _, worker := range req.Workers {
+		base := admissionfence.Worker(teamID, worker.WorkerAgentID)
+		if worker.Enabled {
+			grant = append(grant, base)
+		} else {
+			block = append(block, base)
+		}
+		allowed := map[string]bool{}
+		for _, kind := range worker.AllowedKinds {
+			allowed[kind] = true
+		}
+		for _, kind := range []string{"consult", "dispatch", "handoff"} {
+			key := base
+			key.Version = kind
+			if worker.Enabled && allowed[kind] {
+				grant = append(grant, key)
+			} else {
+				block = append(block, key)
+			}
+		}
+	}
+	return block, grant
 }

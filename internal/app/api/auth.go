@@ -1,6 +1,11 @@
 package api
 
 import (
+	"context"
+	"encoding/json"
+	"github.com/jackc/pgx/v5"
+	"github.com/jinyitao123/weave/internal/base/execution"
+	"github.com/jinyitao123/weave/internal/kernel/admissionfence"
 	"net/http"
 	"strings"
 	"time"
@@ -317,17 +322,33 @@ func (s *Server) handleUpdateUser(c echo.Context) error {
 	if err := c.Bind(&req); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
 	}
-	if err := s.UserStore.Update(c.Request().Context(), getTenant(c), c.Param("id"), req.DisplayName, req.Role, req.Disabled); err != nil {
-		return c.JSON(http.StatusNotFound, map[string]string{"error": err.Error()})
+	resource := admissionfence.Actor(execution.Subject{UserID: c.Param("id")})
+	var block, grant []admissionfence.Resource
+	if req.Disabled {
+		block = []admissionfence.Resource{resource}
+	} else {
+		grant = []admissionfence.Resource{resource}
 	}
-	return c.NoContent(http.StatusNoContent)
+	intent, err := newAccessChangeIntent(c, "user.update", c.Param("id"), req, block, grant, nil)
+	if err != nil {
+		return err
+	}
+	result, err := s.applyAccessChange(c.Request().Context(), intent, func(ctx context.Context, tx pgx.Tx) (json.RawMessage, error) {
+		err := s.UserStore.UpdateTx(ctx, tx, getTenant(c), c.Param("id"), req.DisplayName, req.Role, req.Disabled)
+		return json.RawMessage(`{}`), err
+	})
+	return writeAccessChangeOutcome(c, result, err, http.StatusNoContent)
 }
 
 func (s *Server) handleDeleteUser(c echo.Context) error {
-	if err := s.UserStore.Delete(c.Request().Context(), getTenant(c), c.Param("id")); err != nil {
-		return c.JSON(http.StatusNotFound, map[string]string{"error": err.Error()})
+	intent, err := newAccessChangeIntent(c, "user.delete", c.Param("id"), map[string]string{"user_id": c.Param("id")}, []admissionfence.Resource{admissionfence.Actor(execution.Subject{UserID: c.Param("id")}), admissionfence.Member(c.Param("id"))}, nil, nil)
+	if err != nil {
+		return err
 	}
-	return c.NoContent(http.StatusNoContent)
+	result, err := s.applyAccessChange(c.Request().Context(), intent, func(ctx context.Context, tx pgx.Tx) (json.RawMessage, error) {
+		return json.RawMessage(`{}`), s.UserStore.DeleteTx(ctx, tx, getTenant(c), c.Param("id"))
+	})
+	return writeAccessChangeOutcome(c, result, err, http.StatusNoContent)
 }
 
 // ── API Key management (admin only) ─────────────────────────
@@ -374,10 +395,14 @@ func (s *Server) handleListAPIKeys(c echo.Context) error {
 }
 
 func (s *Server) handleDeleteAPIKey(c echo.Context) error {
-	if err := s.KeyStore.Delete(c.Request().Context(), getTenant(c), c.Param("id")); err != nil {
-		return c.JSON(http.StatusNotFound, map[string]string{"error": err.Error()})
+	intent, err := newAccessChangeIntent(c, "api_key.delete", c.Param("id"), map[string]string{"key_id": c.Param("id")}, []admissionfence.Resource{admissionfence.Actor(execution.Subject{ServiceID: "api-key:" + c.Param("id")})}, nil, nil)
+	if err != nil {
+		return err
 	}
-	return c.NoContent(http.StatusNoContent)
+	result, err := s.applyAccessChange(c.Request().Context(), intent, func(ctx context.Context, tx pgx.Tx) (json.RawMessage, error) {
+		return json.RawMessage(`{}`), s.KeyStore.DeleteTx(ctx, tx, getTenant(c), c.Param("id"))
+	})
+	return writeAccessChangeOutcome(c, result, err, http.StatusNoContent)
 }
 
 // ── Helpers ──────────────────────────────────────────────────

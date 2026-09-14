@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -148,7 +149,19 @@ func (s *Store) List(ctx context.Context, tenantID string) ([]User, error) {
 
 // Update modifies a user's role, display_name, or disabled status.
 func (s *Store) Update(ctx context.Context, tenantID, id, displayName, role string, disabled bool) error {
-	tag, err := s.pool.Exec(ctx,
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if err = s.UpdateTx(ctx, tx, tenantID, id, displayName, role, disabled); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+func (s *Store) UpdateTx(ctx context.Context, tx pgx.Tx, tenantID, id, displayName, role string, disabled bool) error {
+	tag, err := tx.Exec(ctx,
 		`UPDATE weave_users SET display_name=$1, role=$2, disabled=$3, updated_at=NOW()
 		 WHERE id=$4 AND tenant_id=$5`,
 		displayName, role, disabled, id, tenantID)
@@ -230,7 +243,12 @@ func (s *Store) Delete(ctx context.Context, tenantID, id string) error {
 		return err
 	}
 	defer tx.Rollback(ctx)
-
+	if err = s.DeleteTx(ctx, tx, tenantID, id); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+func (s *Store) DeleteTx(ctx context.Context, tx pgx.Tx, tenantID, id string) error {
 	var deletedID string
 	if err := tx.QueryRow(ctx,
 		`DELETE FROM weave_users WHERE id=$1 AND tenant_id=$2 RETURNING id`, id, tenantID,
@@ -242,7 +260,7 @@ func (s *Store) Delete(ctx context.Context, tenantID, id string) error {
 	); err != nil {
 		return err
 	}
-	return tx.Commit(ctx)
+	return nil
 }
 
 // Count returns the total number of users for a tenant.

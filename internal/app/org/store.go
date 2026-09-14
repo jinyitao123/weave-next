@@ -97,7 +97,29 @@ func (s *Store) ListMembers(ctx context.Context, workspaceID string) ([]orgspec.
 
 // AddMember adds or updates a member in a workspace.
 func (s *Store) AddMember(ctx context.Context, workspaceID, userID, role string) error {
-	_, err := s.pool.Exec(ctx, `
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if err = s.AddMemberTx(ctx, tx, workspaceID, userID, role); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+func (s *Store) RemoveMember(ctx context.Context, workspaceID, userID string) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if err = s.RemoveMemberTx(ctx, tx, workspaceID, userID); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+func (s *Store) AddMemberTx(ctx context.Context, tx pgx.Tx, workspaceID, userID, role string) error {
+	_, err := tx.Exec(ctx, `
 		INSERT INTO weave_members (workspace_id, user_id, role)
 		VALUES ($1, $2, $3)
 		ON CONFLICT (workspace_id, user_id) DO UPDATE SET role=EXCLUDED.role
@@ -106,8 +128,8 @@ func (s *Store) AddMember(ctx context.Context, workspaceID, userID, role string)
 }
 
 // RemoveMember removes a member from a workspace.
-func (s *Store) RemoveMember(ctx context.Context, workspaceID, userID string) error {
-	tag, err := s.pool.Exec(ctx,
+func (s *Store) RemoveMemberTx(ctx context.Context, tx pgx.Tx, workspaceID, userID string) error {
+	tag, err := tx.Exec(ctx,
 		`DELETE FROM weave_members WHERE workspace_id=$1 AND user_id=$2`, workspaceID, userID)
 	if err != nil {
 		return err
