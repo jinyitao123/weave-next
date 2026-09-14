@@ -3,21 +3,23 @@ package teamforge
 // Team-workflow draft carrier (plan §10.2.3). The platform has no node-level
 // incremental API for workflows — drafts are only replaced wholesale through
 // workflow.Store.UpdateDraft with a version+timestamp CAS — so this package
-// owns one draft per build_run_id + workflow_id in dispatcher memory. Node,
+// owns one draft per workspace + build_run_id + workflow_id. Node,
 // edge, binding, contract, and trigger operations accumulate on the typed
 // machine model; tf_wf_commit encodes the whole draft back into
 // trigger_config + graph_definition RawMessages and lands one UpdateDraft.
 
 import (
+	"context"
 	"encoding/json"
-	"sync"
+	"errors"
+	"fmt"
 	"time"
 
 	"github.com/jinyitao123/weave/internal/base/deliverable"
 	"github.com/jinyitao123/weave/internal/kernel/workflow/machine"
 )
 
-// workflowDraft is one in-memory working copy of a team workflow draft
+// workflowDraft is one working copy of a team workflow draft
 // together with its version and CAS token. It is a plain value type; the
 // owning store replaces the whole value on every successful mutation.
 type workflowDraft struct {
@@ -28,41 +30,91 @@ type workflowDraft struct {
 	Graph      machine.GraphDefinition
 	UpdatedAt  time.Time
 	CreatedBy  string
+	Revision   int64
 }
 
-// workflowDraftStore is the dispatcher-owned in-memory draft table. Drafts
-// are deliberately not persisted: an uncommitted draft has no platform
-// representation, and the model re-runs tf_wf_begin to restore context.
+// workflowDraftStore is bound to one workspace and build run. Persistence is
+// provided by the build storage adapter.
 type workflowDraftStore struct {
-	mu     sync.Mutex
-	drafts map[string]*workflowDraft
+	persistence DraftPersistence
+	workspaceID string
+	buildRunID  string
 }
 
-func newWorkflowDraftStore() *workflowDraftStore {
-	return &workflowDraftStore{drafts: make(map[string]*workflowDraft)}
+type persistedWorkflowDraft struct {
+	BuildRunID string          `json:"build_run_id"`
+	WorkflowID string          `json:"workflow_id"`
+	Version    int             `json:"version"`
+	Trigger    json.RawMessage `json:"trigger"`
+	Graph      json.RawMessage `json:"graph"`
+	UpdatedAt  time.Time       `json:"updated_at"`
+	CreatedBy  string          `json:"created_by"`
 }
 
-// workflowDraftKey binds one draft to its build run and target workflow.
-func workflowDraftKey(buildRunID, workflowID string) string {
-	return buildRunID + ":" + workflowID
+func (s *workflowDraftStore) get(ctx context.Context, buildRunID, workflowID string) (*workflowDraft, error) {
+	if s == nil || s.persistence == nil {
+		return nil, errors.New("workflow draft persistence is unavailable")
+	}
+	if err := validateDraftBinding(s.workspaceID, s.buildRunID, buildRunID, workflowID); err != nil {
+		return nil, err
+	}
+	payload, revision, found, err := s.persistence.LoadDraft(ctx, s.workspaceID, s.buildRunID, draftKindTeamWorkflow, workflowID)
+	if err != nil || !found {
+		return nil, err
+	}
+	var stored persistedWorkflowDraft
+	if err := json.Unmarshal(payload, &stored); err != nil {
+		return nil, fmt.Errorf("decode workflow draft: %w", err)
+	}
+	if err := validateDraftBinding(s.workspaceID, s.buildRunID, stored.BuildRunID, stored.WorkflowID); err != nil || stored.WorkflowID != workflowID {
+		return nil, errors.New("persisted workflow draft identity mismatch")
+	}
+	trigger, triggerReport := machine.DecodeTriggerConfigV1(stored.Trigger)
+	graph, graphReport := machine.DecodeGraphDefinitionV1(stored.Graph)
+	if (triggerReport != nil && len(triggerReport.Issues) != 0) ||
+		(graphReport != nil && len(graphReport.Issues) != 0) {
+		return nil, errors.New("persisted workflow draft failed strict decoding")
+	}
+	return &workflowDraft{
+		BuildRunID: stored.BuildRunID, WorkflowID: stored.WorkflowID,
+		Version: stored.Version, Trigger: trigger, Graph: graph,
+		UpdatedAt: stored.UpdatedAt, CreatedBy: stored.CreatedBy, Revision: revision,
+	}, nil
 }
 
-func (s *workflowDraftStore) get(buildRunID, workflowID string) *workflowDraft {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.drafts[workflowDraftKey(buildRunID, workflowID)]
+func (s *workflowDraftStore) put(ctx context.Context, d *workflowDraft) error {
+	if s == nil || s.persistence == nil || d == nil {
+		return errors.New("workflow draft persistence is unavailable")
+	}
+	if err := validateDraftBinding(s.workspaceID, s.buildRunID, d.BuildRunID, d.WorkflowID); err != nil {
+		return err
+	}
+	trigger, graph, err := encodeWorkflowDraftJSON(d.Trigger, d.Graph)
+	if err != nil {
+		return fmt.Errorf("encode workflow draft: %w", err)
+	}
+	payload, err := json.Marshal(persistedWorkflowDraft{
+		BuildRunID: d.BuildRunID, WorkflowID: d.WorkflowID, Version: d.Version,
+		Trigger: trigger, Graph: graph, UpdatedAt: d.UpdatedAt, CreatedBy: d.CreatedBy,
+	})
+	if err != nil {
+		return fmt.Errorf("encode workflow draft carrier: %w", err)
+	}
+	revision, err := s.persistence.SaveDraft(ctx, s.workspaceID, s.buildRunID, draftKindTeamWorkflow, d.WorkflowID, d.Revision, payload)
+	if err == nil {
+		d.Revision = revision
+	}
+	return err
 }
 
-func (s *workflowDraftStore) put(d *workflowDraft) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.drafts[workflowDraftKey(d.BuildRunID, d.WorkflowID)] = d
-}
-
-func (s *workflowDraftStore) delete(buildRunID, workflowID string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	delete(s.drafts, workflowDraftKey(buildRunID, workflowID))
+func (s *workflowDraftStore) delete(ctx context.Context, d *workflowDraft) error {
+	if s == nil || s.persistence == nil || d == nil {
+		return errors.New("workflow draft persistence is unavailable")
+	}
+	if err := validateDraftBinding(s.workspaceID, s.buildRunID, d.BuildRunID, d.WorkflowID); err != nil {
+		return err
+	}
+	return s.persistence.DeleteDraft(ctx, s.workspaceID, s.buildRunID, draftKindTeamWorkflow, d.WorkflowID, d.Revision)
 }
 
 // cloneWorkflowDraft deep-copies a draft so batch mutations and summaries

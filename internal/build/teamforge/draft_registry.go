@@ -1,59 +1,64 @@
 package teamforge
 
-// DraftRegistry is the server-level shared in-memory draft table. Before T08,
-// graph/workflow write dispatchers owned a private draft store per request,
-// so a draft opened in one chat turn was lost on the next. The registry
-// lifts the storage to one process-wide instance keyed by build_run_id: every
-// dispatcher constructed for the same build run is injected with the same
-// per-run draft stores, so an uncommitted draft survives across requests,
-// sessions, and team-session worker dispatches. Drafts remain deliberately
-// unpersisted: an uncommitted draft has no platform representation, and the
-// model can always re-run tf_graph_begin / tf_wf_begin to restore context.
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"strings"
+)
 
-import "sync"
+const (
+	draftKindAgentGraph   = "agent_graph"
+	draftKindTeamWorkflow = "team_workflow"
+)
 
-// DraftRegistry owns the per-build-run draft stores. The Server holds exactly
-// one instance and passes it to every teamforge write dispatcher it builds.
+// DraftPersistence is the durable payload boundary used by Builder drafts.
+// The storage adapter owns tables and database behavior; Builder owns only
+// the typed draft payloads and their workspace/build-run coordinates.
+type DraftPersistence interface {
+	LoadDraft(context.Context, string, string, string, string) (json.RawMessage, int64, bool, error)
+	SaveDraft(context.Context, string, string, string, string, int64, json.RawMessage) (int64, error)
+	DeleteDraft(context.Context, string, string, string, string, int64) error
+}
+
+// DraftRegistry binds typed draft stores to durable persistence. It keeps no
+// process-local draft state.
 type DraftRegistry struct {
-	mu     sync.Mutex
-	builds map[string]*buildRunDraftTables
+	persistence DraftPersistence
 }
 
-// buildRunDraftTables bundles the two per-run draft stores.
-type buildRunDraftTables struct {
-	graph    *graphDraftStore
-	workflow *workflowDraftStore
-}
-
-// NewDraftRegistry creates an empty shared draft registry.
-func NewDraftRegistry() *DraftRegistry {
-	return &DraftRegistry{builds: make(map[string]*buildRunDraftTables)}
-}
-
-// GraphDrafts returns the employee internal-graph draft store for one build
-// run, creating it on first use. The returned store is safe for concurrent
-// use and is shared by every graph write dispatcher of the same run.
-func (r *DraftRegistry) GraphDrafts(buildRunID string) *graphDraftStore {
-	return r.tables(buildRunID).graph
-}
-
-// WorkflowDrafts returns the team-workflow draft store for one build run,
-// creating it on first use. The returned store is safe for concurrent use and
-// is shared by every workflow write dispatcher of the same run.
-func (r *DraftRegistry) WorkflowDrafts(buildRunID string) *workflowDraftStore {
-	return r.tables(buildRunID).workflow
-}
-
-func (r *DraftRegistry) tables(buildRunID string) *buildRunDraftTables {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	entry := r.builds[buildRunID]
-	if entry == nil {
-		entry = &buildRunDraftTables{
-			graph:    newGraphDraftStore(),
-			workflow: newWorkflowDraftStore(),
-		}
-		r.builds[buildRunID] = entry
+// NewDraftRegistry creates a durable draft registry.
+func NewDraftRegistry(persistence DraftPersistence) *DraftRegistry {
+	if persistence == nil {
+		panic("teamforge: draft persistence is required")
 	}
-	return entry
+	return &DraftRegistry{persistence: persistence}
+}
+
+// GraphDrafts binds graph drafts to one workspace and build run.
+func (r *DraftRegistry) GraphDrafts(workspaceID, buildRunID string) *graphDraftStore {
+	return &graphDraftStore{
+		persistence: r.persistence,
+		workspaceID: strings.TrimSpace(workspaceID),
+		buildRunID:  strings.TrimSpace(buildRunID),
+	}
+}
+
+// WorkflowDrafts binds workflow drafts to one workspace and build run.
+func (r *DraftRegistry) WorkflowDrafts(workspaceID, buildRunID string) *workflowDraftStore {
+	return &workflowDraftStore{
+		persistence: r.persistence,
+		workspaceID: strings.TrimSpace(workspaceID),
+		buildRunID:  strings.TrimSpace(buildRunID),
+	}
+}
+
+func validateDraftBinding(workspaceID, buildRunID, actualRunID, key string) error {
+	if workspaceID == "" || buildRunID == "" || key == "" {
+		return errors.New("draft workspace, build run, and key are required")
+	}
+	if actualRunID != buildRunID {
+		return errors.New("draft build run does not match bound build run")
+	}
+	return nil
 }

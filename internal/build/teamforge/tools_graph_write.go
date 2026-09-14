@@ -7,7 +7,8 @@ package teamforge
 // the atomic product AgentWriter command. Every call is receipt-gated on
 // AssetRef{Kind: "agent"} and audited through the shared write skeleton
 // (writegate.go); wiring (next / condition true|false) is maintained by the
-// tools, never written as raw fields by the model.
+// tools, never written as raw fields by the model. Drafts are durable and
+// scoped to the workspace and build run.
 
 import (
 	"context"
@@ -57,7 +58,7 @@ const (
 // GraphWriteToolsDispatcher exposes the five employee internal-graph write
 // tools. The workspace, calling agent, and BuildAuthorizationReceipt are
 // fixed at construction time; the draft table is injected from the shared
-// server-level DraftRegistry (keyed by build_run_id + agent name) so drafts
+// DraftRegistry (keyed by workspace + build_run_id + agent name) so drafts
 // survive across requests and dispatcher instances.
 type GraphWriteToolsDispatcher struct {
 	gate   *WriteGate
@@ -69,9 +70,8 @@ type GraphWriteToolsDispatcher struct {
 // one workspace, one calling agent, and one build authorization receipt.
 // validator is the production *teambuild.Store (or a fake); audit is the
 // production *audit.Store (or a fake); deps aggregates the narrow write
-// interfaces defined in deps.go; drafts is the build-run graph draft store
-// from the shared registry (nil falls back to a private per-dispatcher store
-// for tests that never cross dispatcher instances).
+// interfaces defined in deps.go; drafts is the workspace/build-run graph
+// draft store from the durable registry.
 func NewGraphWriteTools(
 	workspaceID, agentName string,
 	receipt teambuild.BuildAuthorizationReceipt,
@@ -85,7 +85,7 @@ func NewGraphWriteTools(
 		drafts: drafts,
 	}
 	if d.drafts == nil {
-		d.drafts = newGraphDraftStore()
+		panic("teamforge: graph draft store is required")
 	}
 	d.tools = []contract.ToolDef{
 		{
@@ -124,7 +124,7 @@ func NewGraphWriteTools(
 		},
 		{
 			Name:        ToolGraphDiscard,
-			Description: "丢弃当前草稿，不落库。Discard the current in-memory draft; nothing is written.",
+			Description: "丢弃当前草稿。Discard the current draft.",
 			InputSchema: graphBeginSchema,
 			ReadOnly:    false,
 		},
@@ -325,6 +325,11 @@ func (d *GraphWriteToolsDispatcher) graphBegin(ctx context.Context, call contrac
 	if err != nil {
 		return graphTargetError(call, input.Agent, err), nil
 	}
+	if existing, loadErr := d.drafts.get(ctx, input.BuildRunID, record.Name); loadErr != nil {
+		return toolError(call.ID, "load graph draft: "+loadErr.Error()), nil
+	} else if existing != nil {
+		return toolJSON(call.ID, d.draftSummary(existing))
+	}
 
 	draft := &graphDraft{BuildRunID: input.BuildRunID, AgentName: record.Name}
 	if record.GraphDefinition != nil {
@@ -333,7 +338,9 @@ func (d *GraphWriteToolsDispatcher) graphBegin(ctx context.Context, call contrac
 	if record.OutputSchema != nil {
 		draft.OutputContract = append(json.RawMessage(nil), *record.OutputSchema...)
 	}
-	d.drafts.put(draft)
+	if err := d.drafts.put(ctx, draft); err != nil {
+		return toolError(call.ID, "save graph draft: "+err.Error()), nil
+	}
 	return toolJSON(call.ID, d.draftSummary(draft))
 }
 
@@ -360,7 +367,10 @@ func (d *GraphWriteToolsDispatcher) graphApply(ctx context.Context, call contrac
 	if len(input.Ops) == 0 {
 		return toolError(call.ID, "ops is required and must be non-empty"), nil
 	}
-	draft := d.drafts.get(input.BuildRunID, record.Name)
+	draft, err := d.drafts.get(ctx, input.BuildRunID, record.Name)
+	if err != nil {
+		return toolError(call.ID, "load graph draft: "+err.Error()), nil
+	}
 	if draft == nil {
 		return toolError(call.ID, fmt.Sprintf("no draft for agent %q; call tf_graph_begin first", record.Name)), nil
 	}
@@ -372,6 +382,7 @@ func (d *GraphWriteToolsDispatcher) graphApply(ctx context.Context, call contrac
 		AgentName:      draft.AgentName,
 		Graph:          cloneGraphDefinition(draft.Graph),
 		OutputContract: append(json.RawMessage(nil), draft.OutputContract...),
+		Revision:       draft.Revision,
 	}
 	for i := range input.Ops {
 		op := &input.Ops[i]
@@ -379,7 +390,9 @@ func (d *GraphWriteToolsDispatcher) graphApply(ctx context.Context, call contrac
 			return toolError(call.ID, fmt.Sprintf("op #%d (seq %d) failed: %v", i+1, op.Seq, err)), nil
 		}
 	}
-	d.drafts.put(&working)
+	if err := d.drafts.put(ctx, &working); err != nil {
+		return toolError(call.ID, "save graph draft: "+err.Error()), nil
+	}
 	return toolJSON(call.ID, d.draftSummary(&working))
 }
 
@@ -566,7 +579,10 @@ func (d *GraphWriteToolsDispatcher) graphValidate(ctx context.Context, call cont
 	if err != nil {
 		return graphTargetError(call, input.Agent, err), nil
 	}
-	draft := d.drafts.get(input.BuildRunID, record.Name)
+	draft, err := d.drafts.get(ctx, input.BuildRunID, record.Name)
+	if err != nil {
+		return toolError(call.ID, "load graph draft: "+err.Error()), nil
+	}
 	if draft == nil {
 		return toolError(call.ID, fmt.Sprintf("no draft for agent %q; call tf_graph_begin first", record.Name)), nil
 	}
@@ -601,7 +617,10 @@ func (d *GraphWriteToolsDispatcher) graphCommit(ctx context.Context, call contra
 	if err != nil {
 		return graphTargetError(call, input.Agent, err), nil
 	}
-	draft := d.drafts.get(input.BuildRunID, record.Name)
+	draft, err := d.drafts.get(ctx, input.BuildRunID, record.Name)
+	if err != nil {
+		return toolError(call.ID, "load graph draft: "+err.Error()), nil
+	}
 	if draft == nil {
 		return toolError(call.ID, fmt.Sprintf("no draft for agent %q; call tf_graph_begin first", record.Name)), nil
 	}
@@ -654,7 +673,9 @@ func (d *GraphWriteToolsDispatcher) commitGraphDraft(
 	}
 	committedVersion := committed.Record.Version
 
-	d.drafts.delete(input.BuildRunID, record.Name)
+	if err := d.drafts.delete(ctx, draft); err != nil {
+		return toolError(call.ID, "delete committed graph draft: "+err.Error())
+	}
 	result, _ := toolJSON(call.ID, graphCommitJSON{
 		BuildRunID:     input.BuildRunID,
 		Agent:          record.Name,
@@ -693,10 +714,16 @@ func (d *GraphWriteToolsDispatcher) graphDiscard(ctx context.Context, call contr
 	if err != nil {
 		return graphTargetError(call, input.Agent, err), nil
 	}
-	if d.drafts.get(input.BuildRunID, record.Name) == nil {
+	draft, err := d.drafts.get(ctx, input.BuildRunID, record.Name)
+	if err != nil {
+		return toolError(call.ID, "load graph draft: "+err.Error()), nil
+	}
+	if draft == nil {
 		return toolError(call.ID, fmt.Sprintf("no draft for agent %q; call tf_graph_begin first", record.Name)), nil
 	}
-	d.drafts.delete(input.BuildRunID, record.Name)
+	if err := d.drafts.delete(ctx, draft); err != nil {
+		return toolError(call.ID, "delete graph draft: "+err.Error()), nil
+	}
 	return toolJSON(call.ID, map[string]any{
 		"build_run_id": input.BuildRunID,
 		"agent":        record.Name,

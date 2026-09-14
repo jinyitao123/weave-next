@@ -189,7 +189,7 @@ func (p *ProductionPhases) handleCompilerWorkflow(ctx context.Context, operation
 	}
 	dispatcher := newWorkflowTools(
 		operation.WorkspaceID, "platform-compiler", receipt, p.Deps.Build, p.Deps.Audit,
-		p.teamForgeDeps(), p.teamForgeWriteDeps(), p.Deps.Drafts.WorkflowDrafts(operation.BuildRunID),
+		p.teamForgeDeps(), p.teamForgeWriteDeps(), p.Deps.Drafts.WorkflowDrafts(operation.WorkspaceID, operation.BuildRunID),
 	)
 	toolResult, err := dispatcher.Dispatch(ctx, contract.ToolCall{
 		ID: operation.Operation.OperationID, Name: teamforge.ToolWorkflowBlueprintBuild, Args: string(args),

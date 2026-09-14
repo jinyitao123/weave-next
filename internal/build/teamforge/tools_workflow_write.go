@@ -1,11 +1,12 @@
 package teamforge
 
 // Team-workflow write tools (plan §10.2.3). The five tools build one draft
-// per build_run_id + workflow_id in dispatcher memory: node/edge/binding/
+// per workspace + build_run_id + workflow_id: node/edge/binding/
 // contract/trigger operations accumulate on the typed machine model,
 // tf_wf_validate runs the full machine validator with proofs read from the
 // real stores, and tf_wf_commit encodes the draft into trigger_config +
-// graph_definition and lands one CAS UpdateDraft. Every call is
+// graph_definition and lands one CAS UpdateDraft. Drafts are durable across
+// process restarts. Every call is
 // receipt-gated on AssetRef{Kind: "workflow"} and audited through the shared
 // write skeleton (writegate.go). The model never composes raw graph JSON:
 // tool output is the only encoding that reaches the workflow store, and
@@ -39,7 +40,7 @@ const (
 	// ToolWorkflowCommit validates, strictly re-encodes, and CAS-updates the
 	// mutable draft.
 	ToolWorkflowCommit = "tf_wf_commit"
-	// ToolWorkflowDiscard drops the in-memory draft.
+	// ToolWorkflowDiscard drops the durable draft.
 	ToolWorkflowDiscard = "tf_wf_discard"
 	// ToolWorkflowBuild (tf_wf_build) is declared in
 	// tools_workflow_build.go: the one-call complete team-workflow build
@@ -62,8 +63,8 @@ const (
 
 // WorkflowWriteToolsDispatcher exposes the five team-workflow write tools.
 // The workspace, calling agent, and BuildAuthorizationReceipt are fixed at
-// construction time; the draft table is injected from the shared server-level
-// DraftRegistry (keyed by build_run_id + workflow_id) so drafts survive
+// construction time; the draft table is injected from DraftRegistry (keyed
+// by workspace + build_run_id + workflow_id) so drafts survive
 // across requests and dispatcher instances.
 type WorkflowWriteToolsDispatcher struct {
 	gate                      *WriteGate
@@ -80,9 +81,7 @@ type WorkflowWriteToolsDispatcher struct {
 // production *audit.Store (or a fake); deps aggregates the narrow read
 // surfaces used to assemble the validation context; writeDeps carries the
 // narrow write surfaces (workflow store, team creator, roster command);
-// drafts is the build-run workflow draft store from the shared registry (nil
-// falls back to a private per-dispatcher store for tests that never cross
-// dispatcher instances).
+// drafts is the workspace/build-run workflow draft store from the registry.
 func NewWorkflowWriteTools(
 	workspaceID, agentName string,
 	receipt teambuild.BuildAuthorizationReceipt,
@@ -99,7 +98,7 @@ func NewWorkflowWriteTools(
 		drafts:    drafts,
 	}
 	if d.drafts == nil {
-		d.drafts = newWorkflowDraftStore()
+		panic("teamforge: workflow draft store is required")
 	}
 	d.tools = []contract.ToolDef{
 		{
@@ -137,7 +136,7 @@ func NewWorkflowWriteTools(
 		},
 		{
 			Name:        ToolWorkflowDiscard,
-			Description: "丢弃当前内存草稿，不落库。Discard the current in-memory draft; nothing is written.",
+			Description: "丢弃当前草稿。Discard the current draft.",
 			InputSchema: workflowIDOnlySchema,
 			ReadOnly:    false,
 		},
@@ -370,19 +369,25 @@ func (d *WorkflowWriteToolsDispatcher) workflowBegin(ctx context.Context, call c
 		return toolError(call.ID, err.Error()), nil
 	}
 
-	if existing := d.drafts.get(input.BuildRunID, input.WorkflowID); existing != nil {
+	existing, err := d.drafts.get(ctx, input.BuildRunID, input.WorkflowID)
+	if err != nil {
+		return toolError(call.ID, "load workflow draft: "+err.Error()), nil
+	}
+	if existing != nil {
 		return toolJSON(call.ID, d.draftSummary(existing, true))
 	}
 	draft, err := d.openWorkflowDraft(ctx, input.BuildRunID, input.WorkflowID, input.Create)
 	if err != nil {
 		return toolError(call.ID, err.Error()), nil
 	}
-	d.drafts.put(draft)
+	if err := d.drafts.put(ctx, draft); err != nil {
+		return toolError(call.ID, "save workflow draft: "+err.Error()), nil
+	}
 	return toolJSON(call.ID, d.draftSummary(draft, false))
 }
 
-// openWorkflowDraft resolves the workflow CAS carrier without touching the
-// in-memory draft table: create mode atomically builds the workflow row with
+// openWorkflowDraft resolves the workflow CAS carrier before saving it to the
+// durable draft table: create mode atomically builds the workflow row with
 // its v1 draft, otherwise the existing draft is loaded, or a published
 // version is cloned into a new draft. Shared by tf_wf_begin and
 // tf_wf_build so the macro tool reuses the begin semantics without copying
@@ -592,7 +597,10 @@ func (d *WorkflowWriteToolsDispatcher) workflowApply(ctx context.Context, call c
 	if len(input.Ops) == 0 {
 		return toolError(call.ID, "ops is required and must be non-empty"), nil
 	}
-	draft := d.drafts.get(input.BuildRunID, input.WorkflowID)
+	draft, err := d.drafts.get(ctx, input.BuildRunID, input.WorkflowID)
+	if err != nil {
+		return toolError(call.ID, "load workflow draft: "+err.Error()), nil
+	}
 	if draft == nil {
 		return toolError(call.ID, fmt.Sprintf("no draft for workflow %q; call tf_wf_begin first", input.WorkflowID)), nil
 	}
@@ -606,7 +614,9 @@ func (d *WorkflowWriteToolsDispatcher) workflowApply(ctx context.Context, call c
 			return toolError(call.ID, fmt.Sprintf("op #%d (seq %d) failed: %v", i+1, op.Seq, err)), nil
 		}
 	}
-	d.drafts.put(working)
+	if err := d.drafts.put(ctx, working); err != nil {
+		return toolError(call.ID, "save workflow draft: "+err.Error()), nil
+	}
 	return toolJSON(call.ID, d.draftSummary(working, false))
 }
 
@@ -951,7 +961,10 @@ func (d *WorkflowWriteToolsDispatcher) workflowValidate(ctx context.Context, cal
 	if err := d.gateCheck(ctx, call, input.WorkflowID); err != nil {
 		return toolError(call.ID, err.Error()), nil
 	}
-	draft := d.drafts.get(input.BuildRunID, input.WorkflowID)
+	draft, err := d.drafts.get(ctx, input.BuildRunID, input.WorkflowID)
+	if err != nil {
+		return toolError(call.ID, "load workflow draft: "+err.Error()), nil
+	}
 	if draft == nil {
 		return toolError(call.ID, fmt.Sprintf("no draft for workflow %q; call tf_wf_begin first", input.WorkflowID)), nil
 	}
@@ -988,7 +1001,10 @@ func (d *WorkflowWriteToolsDispatcher) workflowCommit(ctx context.Context, call 
 	if err := d.gateCheck(ctx, call, input.WorkflowID); err != nil {
 		return toolError(call.ID, err.Error()), nil
 	}
-	draft := d.drafts.get(input.BuildRunID, input.WorkflowID)
+	draft, err := d.drafts.get(ctx, input.BuildRunID, input.WorkflowID)
+	if err != nil {
+		return toolError(call.ID, "load workflow draft: "+err.Error()), nil
+	}
 	if draft == nil {
 		return toolError(call.ID, fmt.Sprintf("no draft for workflow %q; call tf_wf_begin first", input.WorkflowID)), nil
 	}
@@ -1060,7 +1076,9 @@ func (d *WorkflowWriteToolsDispatcher) commitWorkflowDraft(
 		}
 		return toolError(call.ID, fmt.Sprintf("update workflow draft: %v", err))
 	}
-	d.drafts.delete(input.BuildRunID, input.WorkflowID)
+	if err := d.drafts.delete(ctx, draft); err != nil {
+		return toolError(call.ID, "delete committed workflow draft: "+err.Error())
+	}
 	result, _ := toolJSON(call.ID, workflowCommitJSON{
 		BuildRunID: input.BuildRunID,
 		WorkflowID: input.WorkflowID,
@@ -1081,10 +1099,16 @@ func (d *WorkflowWriteToolsDispatcher) workflowDiscard(ctx context.Context, call
 	if err := d.gateCheck(ctx, call, input.WorkflowID); err != nil {
 		return toolError(call.ID, err.Error()), nil
 	}
-	if d.drafts.get(input.BuildRunID, input.WorkflowID) == nil {
+	draft, err := d.drafts.get(ctx, input.BuildRunID, input.WorkflowID)
+	if err != nil {
+		return toolError(call.ID, "load workflow draft: "+err.Error()), nil
+	}
+	if draft == nil {
 		return toolError(call.ID, fmt.Sprintf("no draft for workflow %q; call tf_wf_begin first", input.WorkflowID)), nil
 	}
-	d.drafts.delete(input.BuildRunID, input.WorkflowID)
+	if err := d.drafts.delete(ctx, draft); err != nil {
+		return toolError(call.ID, "delete workflow draft: "+err.Error()), nil
+	}
 	return toolJSON(call.ID, map[string]any{
 		"build_run_id": input.BuildRunID,
 		"workflow_id":  input.WorkflowID,
