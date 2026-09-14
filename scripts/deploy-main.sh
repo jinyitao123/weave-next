@@ -13,14 +13,6 @@ flock -w 1800 9
 test -f "$env_file"
 IFS= read -r github_token
 test -n "$github_token"
-bootstrap_mode=""
-server_deploy_public_key=""
-IFS= read -r bootstrap_mode || true
-if [[ -n "$bootstrap_mode" ]]; then
-  [[ "$bootstrap_mode" == "bootstrap-weave-server-v1" ]] || { echo "Unknown deployment bootstrap request." >&2; exit 2; }
-  IFS= read -r server_deploy_public_key
-  test -n "$server_deploy_public_key"
-fi
 fetch_main() (
   # The job token is repository-scoped, short-lived, and never stored in Git or passed to builds.
   export GIT_CONFIG_COUNT=1 GIT_TERMINAL_PROMPT=0
@@ -82,9 +74,4 @@ ln -sfn "$release_dir" "$state_dir/current"
 cp "$release_dir/scripts/deploy-main.sh" "$state_dir/deploy-main.sh.next"
 chmod 700 "$state_dir/deploy-main.sh.next"
 mv "$state_dir/deploy-main.sh.next" "$state_dir/deploy-main.sh"
-if [[ "$bootstrap_mode" == "bootstrap-weave-server-v1" ]]; then
-  phase=server-deploy-bootstrap
-  printf '%s\n' "$server_deploy_public_key" | "$release_dir/scripts/bootstrap-server-deploy.sh"
-fi
-unset server_deploy_public_key
 echo "Deployed main $expected_sha."
