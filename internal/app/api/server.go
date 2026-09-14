@@ -106,7 +106,7 @@ type Server struct {
 	TeamBuildOrchestrator     TeamBuildExecutionService          // nil until the production meta-team controller is configured
 	TeamTemplates             TeamTemplateService                // nil until the template fast path is configured
 	TeamEvaluations           TeamEvaluationService              // nil until post-template evaluation is configured
-	TeamForgeDrafts           *teamforge.DraftRegistry           // shared in-memory draft registry; nil disables teamforge wiring
+	TeamForgeDrafts           *teamforge.DraftRegistry           // durable build draft registry; nil disables teamforge wiring
 	Pool                      *pgxpool.Pool                      // nil if PG pool unavailable
 	TeamWorkers               *agentcatalog.TeamWorkerRepository // nil if PG pool unavailable
 	DeliveryTargets           *delivery.Store                    // nil if WEAVE_SECRET_KEY is not configured
@@ -267,7 +267,6 @@ func NewServer(cfg *config.Config, store loom.Store, models *llmrouter.Resolver)
 		s.Capabilities = appcapabilities.NewService(capabilityStore, capabilityStore)
 		s.CapabilityAccess = appcapabilities.NewAccessStore(ps.Pool())
 		s.TeamWorkers = agentcatalog.NewTeamWorkerRepository(ps.Pool())
-		s.TeamForgeDrafts = teamforge.NewDraftRegistry()
 		s.ChatRequests = chatrequest.New(ps.Pool(), chatrequest.RealClock{})
 		s.Attachments = attachments.New(ps.Pool())
 		s.OwnerMem = ownermem.New(ps.Pool(), ownermem.RealClock{})
@@ -285,6 +284,7 @@ func NewServer(cfg *config.Config, store loom.Store, models *llmrouter.Resolver)
 			s.workflowHealthWorkers = &workflowHealthWorkers{store: healthStore}
 		}
 		s.TeamBuild = teambuild.New(ps.Pool(), teambuild.RealClock{})
+		s.TeamForgeDrafts = teamforge.NewDraftRegistry(s.TeamBuild)
 		s.WorkflowScheduleAdmission = NewWorkflowScheduleAdmissionService(s.Workflow, s.WorkflowArtifacts)
 		s.ScheduleTransactions = ps.Pool()
 		s.Snapshots = snapshot.NewStore(ps.Pool())

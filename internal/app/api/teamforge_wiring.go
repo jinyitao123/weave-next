@@ -209,18 +209,18 @@ func (s *Server) teamForgePlatformTools(
 		dispatchers = append(dispatchers,
 			teamforge.NewGraphBuildTools(
 				workspaceID, agentName, receipt, s.TeamBuild, s.Audit,
-				writeDeps, s.TeamForgeDrafts.GraphDrafts(run.BuildRunID),
+				writeDeps, s.TeamForgeDrafts.GraphDrafts(workspaceID, run.BuildRunID),
 			))
 	}
 	if decision.WorkflowWrite {
 		workflowTools := teamforge.NewWorkflowBuildTools(
 			workspaceID, agentName, receipt, s.TeamBuild, s.Audit,
-			deps, writeDeps, s.TeamForgeDrafts.WorkflowDrafts(run.BuildRunID),
+			deps, writeDeps, s.TeamForgeDrafts.WorkflowDrafts(workspaceID, run.BuildRunID),
 		)
 		if run.Brief.EffectiveWorkflowBuildMode() == teambuild.WorkflowBuildModeCustom {
 			workflowTools = teamforge.NewCustomWorkflowBuildTools(
 				workspaceID, agentName, receipt, s.TeamBuild, s.Audit,
-				deps, writeDeps, s.TeamForgeDrafts.WorkflowDrafts(run.BuildRunID),
+				deps, writeDeps, s.TeamForgeDrafts.WorkflowDrafts(workspaceID, run.BuildRunID),
 			)
 		}
 		dispatchers = append(dispatchers, workflowTools)

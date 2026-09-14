@@ -1618,18 +1618,18 @@ func (p *ProductionPhases) platformToolsForAgent(
 		dispatchers = append(dispatchers,
 			teamforge.NewGraphBuildTools(
 				round.WorkspaceID, rec.Name, receipt, p.Deps.Build, p.Deps.Audit,
-				writeDeps, p.Deps.Drafts.GraphDrafts(round.BuildRunID),
+				writeDeps, p.Deps.Drafts.GraphDrafts(round.WorkspaceID, round.BuildRunID),
 			))
 	}
 	if decision.WorkflowWrite {
 		workflowTools := teamforge.NewWorkflowBuildTools(
 			round.WorkspaceID, rec.Name, receipt, p.Deps.Build, p.Deps.Audit,
-			deps, writeDeps, p.Deps.Drafts.WorkflowDrafts(round.BuildRunID),
+			deps, writeDeps, p.Deps.Drafts.WorkflowDrafts(round.WorkspaceID, round.BuildRunID),
 		)
 		if round.Run.Brief.EffectiveWorkflowBuildMode() == teambuild.WorkflowBuildModeCustom {
 			workflowTools = teamforge.NewCustomWorkflowBuildTools(
 				round.WorkspaceID, rec.Name, receipt, p.Deps.Build, p.Deps.Audit,
-				deps, writeDeps, p.Deps.Drafts.WorkflowDrafts(round.BuildRunID),
+				deps, writeDeps, p.Deps.Drafts.WorkflowDrafts(round.WorkspaceID, round.BuildRunID),
 			)
 		}
 		dispatchers = append(dispatchers, workflowTools)

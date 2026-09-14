@@ -1,20 +1,22 @@
 package teamforge
 
 // Employee internal-graph draft carrier (plan §10.2.2). The AgentRecord has
-// no draft state machine, so this package owns one in dispatcher memory:
+// no draft state machine, so this package owns a typed draft carrier:
 // drafts are keyed by build_run_id + agent name, step operations accumulate
 // on the draft, and only tf_graph_commit validates the whole graph and
-// PutTx's a new immutable agent version. Uncommitted drafts never touch the
-// database.
+// PutTx's a new immutable agent version. The carrier is persisted through the
+// build storage port so it survives process restarts.
 
 import (
+	"context"
 	"encoding/json"
-	"sync"
+	"errors"
+	"fmt"
 
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 )
 
-// graphDraft is one in-memory working copy of an employee internal graph
+// graphDraft is one working copy of an employee internal graph
 // together with its output contract. It is a plain value type; the owning
 // store replaces the whole value on every successful mutation.
 type graphDraft struct {
@@ -22,41 +24,65 @@ type graphDraft struct {
 	AgentName      string
 	Graph          registry.GraphDefinition
 	OutputContract json.RawMessage
+	Revision       int64 `json:"-"`
 }
 
-// graphDraftStore is the dispatcher-owned in-memory draft table. Drafts are
-// deliberately not persisted: an uncommitted draft has no platform
-// representation, and the model re-runs tf_graph_begin to restore context.
+// graphDraftStore is bound to one workspace and build run. Payload persistence
+// stays behind DraftPersistence so domain tools do not depend on PG.
 type graphDraftStore struct {
-	mu     sync.Mutex
-	drafts map[string]*graphDraft
+	persistence DraftPersistence
+	workspaceID string
+	buildRunID  string
 }
 
-func newGraphDraftStore() *graphDraftStore {
-	return &graphDraftStore{drafts: make(map[string]*graphDraft)}
+func (s *graphDraftStore) get(ctx context.Context, buildRunID, agentName string) (*graphDraft, error) {
+	if s == nil || s.persistence == nil {
+		return nil, errors.New("graph draft persistence is unavailable")
+	}
+	if err := validateDraftBinding(s.workspaceID, s.buildRunID, buildRunID, agentName); err != nil {
+		return nil, err
+	}
+	payload, revision, found, err := s.persistence.LoadDraft(ctx, s.workspaceID, s.buildRunID, draftKindAgentGraph, agentName)
+	if err != nil || !found {
+		return nil, err
+	}
+	var draft graphDraft
+	if err := json.Unmarshal(payload, &draft); err != nil {
+		return nil, fmt.Errorf("decode graph draft: %w", err)
+	}
+	if err := validateDraftBinding(s.workspaceID, s.buildRunID, draft.BuildRunID, draft.AgentName); err != nil || draft.AgentName != agentName {
+		return nil, errors.New("persisted graph draft identity mismatch")
+	}
+	draft.Revision = revision
+	return &draft, nil
 }
 
-// graphDraftKey binds one draft to its build run and target agent.
-func graphDraftKey(buildRunID, agentName string) string {
-	return buildRunID + ":" + agentName
+func (s *graphDraftStore) put(ctx context.Context, d *graphDraft) error {
+	if s == nil || s.persistence == nil || d == nil {
+		return errors.New("graph draft persistence is unavailable")
+	}
+	if err := validateDraftBinding(s.workspaceID, s.buildRunID, d.BuildRunID, d.AgentName); err != nil {
+		return err
+	}
+	payload, err := json.Marshal(d)
+	if err != nil {
+		return fmt.Errorf("encode graph draft: %w", err)
+	}
+	revision, err := s.persistence.SaveDraft(ctx, s.workspaceID, s.buildRunID, draftKindAgentGraph, d.AgentName, d.Revision, payload)
+	if err == nil {
+		d.Revision = revision
+	}
+	return err
 }
 
-func (s *graphDraftStore) get(buildRunID, agentName string) *graphDraft {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.drafts[graphDraftKey(buildRunID, agentName)]
-}
-
-func (s *graphDraftStore) put(d *graphDraft) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.drafts[graphDraftKey(d.BuildRunID, d.AgentName)] = d
-}
-
-func (s *graphDraftStore) delete(buildRunID, agentName string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	delete(s.drafts, graphDraftKey(buildRunID, agentName))
+func (s *graphDraftStore) delete(ctx context.Context, d *graphDraft) error {
+	if s == nil || s.persistence == nil || d == nil {
+		return errors.New("graph draft persistence is unavailable")
+	}
+	if err := validateDraftBinding(s.workspaceID, s.buildRunID, d.BuildRunID, d.AgentName); err != nil {
+		return err
+	}
+	return s.persistence.DeleteDraft(ctx, s.workspaceID, s.buildRunID, draftKindAgentGraph, d.AgentName, d.Revision)
 }
 
 // cloneGraphDefinition deep-copies a graph so draft mutations never alias the
