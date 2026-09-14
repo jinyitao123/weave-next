@@ -347,6 +347,14 @@ func main() {
 	if pool := srv.GetPool(); pool != nil {
 		taskStore := taskqueue.New(pool, taskqueue.RealClock{}, 60*time.Second)
 		srv.Tasks = taskStore
+		localHost, err := srv.ConfigureRuntimeExecution(context.Background())
+		if err != nil {
+			slog.Error("configure runtime execution", "error", err)
+			os.Exit(1)
+		}
+		if localHost != nil {
+			defer localHost.Close()
+		}
 		srv.Fanout = kernelbindings.NewFanout(pool, fanout.RealClock{})
 		srv.FanoutReconciler = fanout.NewReconciler(
 			srv.Fanout, taskStore, srv.Conversations,

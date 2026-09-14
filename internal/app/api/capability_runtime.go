@@ -17,7 +17,7 @@ import (
 // kernel, and invocation persistence belongs to the capabilities service.
 func (s *Server) capabilityRunner() *capabilityruntime.Runner {
 	runner := &capabilityruntime.Runner{
-		Remote: s.engineExecutorFor(true), Store: s.Store, TerminalSink: s.rootTerminalSink,
+		Remote: s.engineExecutor(), Store: s.Store, TerminalSink: s.rootTerminalSink,
 	}
 	if s.Models != nil {
 		runner.CanResolveModel = s.Models.CanResolve

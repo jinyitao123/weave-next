@@ -502,9 +502,33 @@ func (s *Server) handleRuntimeTaskStopped(c echo.Context) error {
 		return err
 	}
 	workerID := runtimes.RuntimeWorkerID(runtime.WorkspaceID, runtime.ID)
+	c.Request().Body = http.MaxBytesReader(c.Response(), c.Request().Body, 4<<20)
 	var receipt runtimeprotocol.StoppedReceipt
 	if err := c.Bind(&receipt); err != nil || runtimebridge.StoppedForTask(task, receipt) != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid runtime stopped receipt"})
+	}
+	if receipt.Result != nil {
+		observed, err := runtimebridge.ResultForTask(task, *receipt.Result)
+		if err != nil {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid stopped execution evidence"})
+		}
+		normalizeRuntimeUsage(task, &observed)
+		if err := validateRuntimeEngineExecResult(task, observed); err != nil {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid stopped execution evidence"})
+		}
+		normalized := *receipt.Result
+		normalized.UsageReceipt, normalized.Diagnostics = observed.UsageReceipt, observed.Diagnostics
+		body, err := json.Marshal(normalized)
+		if err != nil {
+			return err
+		}
+		var usage *execution.TerminalUsage
+		if observed.UsageReceipt != nil && observed.UsageReceipt.HasTokens {
+			usage = &execution.TerminalUsage{InputTokens: observed.UsageReceipt.InputTokens, OutputTokens: observed.UsageReceipt.OutputTokens, CostUSD: observed.UsageReceipt.CostUSD}
+		}
+		if err := s.Tasks.RecordStopReceipt(c.Request().Context(), task.WorkspaceID, task.ID, workerID, task.ClaimEpoch, receipt.ReceiptID, normalized.Digest(), body, usage); err != nil {
+			return c.JSON(http.StatusConflict, map[string]string{"error": "stopped execution evidence rejected"})
+		}
 	}
 	if task.WorkerID == "" && task.IsTerminal() {
 		return c.NoContent(http.StatusNoContent) // acknowledgement response was lost

@@ -1726,7 +1726,7 @@ func (s *Server) compilerAgentRunner(
 		attachments,
 	)
 	runner.Broker = broker
-	runner.RemoteExec = s.engineExecutorFor(true)
+	runner.RemoteExec = s.engineExecutor()
 	runner.RunLifecycleHook = s.RunLifecycleHook
 	runner.SkillVersionReader = s.Skills
 	if s.Fanout != nil && s.Tasks != nil {
@@ -1800,7 +1800,7 @@ func (s *Server) buildToolDispatcherWithAgentTool(
 			)
 			agentTool.Broker = broker
 			agentTool.RunLifecycleHook = s.RunLifecycleHook
-			agentTool.RemoteExec = s.engineExecutorFor(true)
+			agentTool.RemoteExec = s.engineExecutor()
 			if s.Fanout != nil && s.Tasks != nil {
 				agentTool.InnerPlatformTools = func(innerRec *registry.AgentRecord) []contract.ToolDispatcher {
 					return []contract.ToolDispatcher{s.subAgentTaskStatusDispatcher(tenant, innerRec.Name, userID)}

@@ -91,7 +91,7 @@ func StoppedForTask(task *taskqueue.Task, receipt runtimeprotocol.StoppedReceipt
 func PlatformCapabilities(values []runtimeprotocol.EngineCapability) []runtimes.EngineCapability {
 	result := make([]runtimes.EngineCapability, len(values))
 	for i, value := range values {
-		result[i] = runtimes.EngineCapability{Engine: value.Engine, BinaryPath: value.BinaryPath, BinaryVersion: value.BinaryVersion,
+		result[i] = runtimes.EngineCapability{Engine: value.Engine, SubjectIsolation: value.SubjectIsolation, BinaryPath: value.BinaryPath, BinaryVersion: value.BinaryVersion,
 			AuthMode: value.AuthMode, ProtocolVersion: value.ProtocolVersion, PublicEvents: value.PublicEvents,
 			EndpointClass: value.EndpointClass, ConfiguredEndpoint: value.ConfiguredEndpoint, ConfiguredModel: value.ConfiguredModel,
 			ConfigurationSource: value.ConfigurationSource, Availability: value.Availability, UnavailableReason: value.UnavailableReason}

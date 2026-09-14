@@ -8,7 +8,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/jinyitao123/weave/internal/app/kernelbindings"
@@ -78,9 +77,7 @@ type Server struct {
 	FanoutReconciler          *fanout.Reconciler       // nil if fan-out completion is unavailable
 	Tasks                     *taskqueue.Store         // nil if PG pool unavailable
 	Runtimes                  *runtimes.Store          // nil if PG pool unavailable
-	LocalExec                 executionport.RemoteEngineExecutor
 	RemoteExec                executionport.RemoteEngineExecutor
-	engineExecMu              sync.Mutex
 	TaskWorker                *taskqueue.Worker // nil if Tasks is nil
 	AgentSchedules            *schedule.Store   // nil if PG pool unavailable
 	ScheduleTransactions      ScheduleTransactionBeginner
@@ -135,34 +132,13 @@ type Server struct {
 	workflowHealthWorkers     *workflowHealthWorkers
 }
 
-func (s *Server) engineExecutorFor(remote bool) executionport.RemoteEngineExecutor {
-	s.engineExecMu.Lock()
-	defer s.engineExecMu.Unlock()
-
-	var workspacesRoot, oneapiBase, boundaryBase, oneapiKey string
-	if s.Config != nil {
-		workspacesRoot = s.Config.WorkspacesRoot
-		oneapiBase = s.Config.OneAPIBase
-		boundaryBase = s.Config.MCPBoundaryBase
-		oneapiKey = s.Config.OneAPIKey
-	}
-	if remote {
-		if s.RemoteExec == nil && s.Tasks != nil && s.Runtimes != nil {
-			s.RemoteExec = runtimes.NewExecutor(s.Tasks, s.Runtimes, oneapiBase, oneapiKey)
-		}
-		return s.RemoteExec
-	}
-	if s.LocalExec == nil {
-		s.LocalExec = runtimes.NewLocalExecutor(workspacesRoot, oneapiBase, boundaryBase, oneapiKey)
-	}
-	return s.LocalExec
-}
+func (s *Server) engineExecutor() executionport.RemoteEngineExecutor { return s.RemoteExec }
 
 // teamRunCLIExecutor keeps published TeamWorkflow execution on the runtime
 // path frozen into each CLI AgentRecord. The local executor would silently
 // ignore runtime_id and run every worker inside the server container.
 func (s *Server) teamRunCLIExecutor() executionport.RemoteEngineExecutor {
-	return s.engineExecutorFor(true)
+	return s.engineExecutor()
 }
 
 // llmFor returns the workspace-scoped LLM snapshot for one request. The
@@ -194,7 +170,7 @@ func (s *Server) runtimeLLMForNode(
 	bound.RuntimePoolID = runtimeBinding.RuntimePoolID
 	bound.RuntimePolicyMode = runtimeBinding.RuntimePolicyMode
 	return runtimellm.New(
-		s.engineExecutorFor(true), tenant, &bound,
+		s.engineExecutor(), tenant, &bound,
 		execution.AgentExecutionStamp{
 			AgentID: bound.ID, AgentVersion: bound.Version, ExecutionScope: scope,
 			RunSnapshotID: runSnapshotID,
