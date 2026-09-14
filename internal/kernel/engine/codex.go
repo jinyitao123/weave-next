@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -79,7 +78,11 @@ func (b *codexBackend) Run(ctx context.Context, spec RunSpec) (RunResult, error)
 	}
 	defer cancel()
 
-	cmd := exec.Command(cliPath, args...)
+	cmd, commandErr := isolatedCommand(context.Background(), cliPath, args, spec.Isolation)
+	if commandErr != nil {
+		return failedCodexResult(commandErr)
+	}
+	cmd.Dir = spec.WorkDir
 	cmd.Env = envWithCLIPath(codexEnv(spec.Env, spec.WorkDir), cliPath)
 	cmd.Stdin = strings.NewReader(spec.Prompt)
 	applyProcAttr(cmd)
@@ -127,7 +130,7 @@ func (b *codexBackend) Run(ctx context.Context, spec RunSpec) (RunResult, error)
 
 func codexEnv(overrides map[string]string, workDir string) []string {
 	env := make(map[string]string)
-	for _, entry := range cliAmbientEnv() {
+	for _, entry := range cliAmbientEnvForRun(overrides) {
 		if key, value, ok := strings.Cut(entry, "="); ok {
 			env[key] = value
 		}

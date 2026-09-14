@@ -34,6 +34,8 @@ const (
 	EngineAvailabilityUnavailable = "unavailable"
 	EngineAvailabilityUnknown     = "unknown"
 	EngineLoom                    = "loom"
+	SubjectIsolationStrong        = "strong"
+	SubjectIsolationSingleUser    = "single_user"
 )
 
 var ErrUnsupportedVersion = errors.New("runtime protocol version is unsupported")
@@ -75,6 +77,7 @@ type HostHeartbeatRequest struct {
 }
 
 type EngineCapability struct {
+	SubjectIsolation    string `json:"subject_isolation,omitempty"`
 	Engine              string `json:"engine"`
 	BinaryPath          string `json:"binary_path"`
 	BinaryVersion       string `json:"binary_version"`
@@ -267,6 +270,9 @@ type ExecutionReceipt struct {
 }
 
 type StoppedReceipt struct {
+	ReceiptID    string            `json:"receipt_id,omitempty"`
+	ResultDigest string            `json:"result_digest,omitempty"`
+	Result       *ExecutionReceipt `json:"result,omitempty"`
 	Versioned
 	SchemaVersion int               `json:"schema_version"`
 	TaskID        string            `json:"task_id"`
@@ -293,6 +299,16 @@ func (receipt StoppedReceipt) ValidateFor(claim ExecutionClaim) error {
 	}
 	if receipt.TaskID != claim.TaskID || receipt.ClaimEpoch != claim.ClaimEpoch || receipt.Subject != claim.Subject {
 		return errors.New("runtime stopped receipt does not match its claim")
+	}
+	if receipt.Result != nil {
+		if err := receipt.Result.ValidateFor(claim); err != nil {
+			return err
+		}
+		if receipt.ReceiptID != receipt.Result.Identity() || receipt.ResultDigest != receipt.Result.Digest() {
+			return errors.New("runtime stopped receipt digest mismatch")
+		}
+	} else if receipt.ReceiptID != "" || receipt.ResultDigest != "" {
+		return errors.New("runtime stopped receipt omitted evidence")
 	}
 	return nil
 }
@@ -346,3 +362,15 @@ func (receipt ExecutionReceipt) ValidateFor(claim ExecutionClaim) error {
 }
 
 func NewVersioned() Versioned { return Versioned{ProtocolVersion: ProtocolVersion} }
+
+// Identity and Digest remain stable across shutdown and spool replay.
+func (receipt ExecutionReceipt) Identity() string {
+	return fmt.Sprintf("execution:%s:%d", receipt.TaskID, receipt.ClaimEpoch)
+}
+func (receipt ExecutionReceipt) Digest() string {
+	body, err := json.Marshal(receipt)
+	if err != nil {
+		return ""
+	}
+	return fmt.Sprintf("%x", sha256.Sum256(body))
+}

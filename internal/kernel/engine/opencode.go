@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os/exec"
 	"sort"
 	"strings"
 	"time"
@@ -47,7 +46,11 @@ func (b *opencodeBackend) Run(ctx context.Context, spec RunSpec) (RunResult, err
 	}
 	defer cancel()
 
-	cmd := exec.Command(cliPath, args...)
+	cmd, commandErr := isolatedCommand(context.Background(), cliPath, args, spec.Isolation)
+	if commandErr != nil {
+		return failedOpenCodeResult(commandErr)
+	}
+	cmd.Dir = spec.WorkDir
 	cmd.Env = envWithCLIPath(mergedEnv(spec.Env), cliPath)
 	cmd.Stdin = strings.NewReader(spec.Prompt)
 	applyProcAttr(cmd)
@@ -95,7 +98,7 @@ func (b *opencodeBackend) Run(ctx context.Context, spec RunSpec) (RunResult, err
 
 func mergedEnv(overrides map[string]string) []string {
 	env := make(map[string]string)
-	for _, entry := range cliAmbientEnv() {
+	for _, entry := range cliAmbientEnvForRun(overrides) {
 		if key, value, ok := strings.Cut(entry, "="); ok {
 			env[key] = value
 		}

@@ -1,44 +1,48 @@
-package runtimes
+package daemon
 
 import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
+	"context"
+	"encoding/json"
 	"github.com/jinyitao123/weave/internal/base/execution"
+	"github.com/jinyitao123/weave/internal/base/fileartifact"
 	"github.com/jinyitao123/weave/internal/kernel/engine"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
+	"github.com/jinyitao123/weave/internal/kernel/runtimebridge"
+	"github.com/jinyitao123/weave/internal/kernel/runtimeprotocol"
+	"github.com/jinyitao123/weave/internal/kernel/runtimes"
+	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 )
 
-func TestLocalExecutorPreservesEngineReceipt(t *testing.T) {
+func TestManagedHostPreservesEngineReceipt(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("test helper is a POSIX shell script")
 	}
-	fixture, err := filepath.Abs(filepath.Join("..", "engine", "testdata", "codex-0.144.5.jsonl"))
+	fixture, err := filepath.Abs(filepath.Join("..", "..", "kernel", "engine", "testdata", "codex-0.144.5.jsonl"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	dir := t.TempDir()
 	script := filepath.Join(dir, "codex-fixture")
-	contents := "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo 'codex-cli 0.144.5'; exit 0; fi\ncommand cat \"$WEAVE_TEST_FIXTURE\"\n"
+	fixtureData, err := os.ReadFile(fixture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	contents := "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo 'codex-cli 0.144.5'; exit 0; fi\ncat <<'FIXTURE'\n" + strings.TrimSpace(string(fixtureData)) + "\nFIXTURE\n"
 	if err := os.WriteFile(script, []byte(contents), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("WEAVE_ENGINE_CODEX_PATH", script)
-	t.Setenv("WEAVE_TEST_FIXTURE", fixture)
 	record := &registry.AgentRecord{
 		Name: "worker", ID: "agent-1", WorkspaceID: "workspace-1", Version: 1,
 		Engine: engine.Codex,
 	}
-	result, err := NewLocalExecutor(t.TempDir(), "", "", "").ExecRemote(
-		execution.WithSubject(t.Context(), execution.Subject{WorkspaceID: record.WorkspaceID, UserID: "user-1"}), record.WorkspaceID, record,
-		execution.AgentExecutionStamp{
-			AgentID: record.ID, AgentVersion: record.Version,
-			ExecutionScope: execution.ScopeLegacyOrchestrator,
-		},
-		"fixture", nil,
-	)
+	result, err := runManagedFixture(t, record, "fixture")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,7 +52,7 @@ func TestLocalExecutorPreservesEngineReceipt(t *testing.T) {
 	}
 }
 
-func TestLocalExecutorCollectsTheActualReferencedReport(t *testing.T) {
+func TestManagedHostCollectsTheActualReferencedReport(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("test helper is a POSIX shell script")
 	}
@@ -68,9 +72,7 @@ printf '%s\n' '{"type":"turn.completed","usage":{"input_tokens":10,"cached_input
 	}
 	t.Setenv("WEAVE_ENGINE_CODEX_PATH", script)
 	record := &registry.AgentRecord{Name: "writer", ID: "writer-1", WorkspaceID: "workspace-1", Version: 1, Engine: engine.Codex}
-	result, err := NewLocalExecutor(t.TempDir(), "", "", "").ExecRemote(execution.WithSubject(t.Context(), execution.Subject{WorkspaceID: record.WorkspaceID, UserID: "user-1"}), record.WorkspaceID, record,
-		execution.AgentExecutionStamp{AgentID: record.ID, AgentVersion: record.Version, ExecutionScope: execution.ScopeLegacyOrchestrator},
-		"Write the report", nil)
+	result, err := runManagedFixture(t, record, "Write the report")
 	if err != nil || result.Status != "completed" || len(result.Artifacts) != 1 {
 		t.Fatalf("report invocation = %#v, error = %v", result, err)
 	}
@@ -82,7 +84,7 @@ printf '%s\n' '{"type":"turn.completed","usage":{"input_tokens":10,"cached_input
 	}
 }
 
-func TestLocalExecutorPreservesCompletedReceiptAndCollectionGap(t *testing.T) {
+func TestManagedHostPreservesCompletedReceiptAndCollectionGap(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("test helper is a POSIX shell script")
 	}
@@ -104,13 +106,39 @@ printf '%s\n' '{"type":"turn.completed","usage":{"input_tokens":10,"cached_input
 	}
 	t.Setenv("WEAVE_ENGINE_CODEX_PATH", script)
 	record := &registry.AgentRecord{Name: "writer", ID: "writer-1", WorkspaceID: "workspace-1", Version: 1, Engine: engine.Codex}
-	result, err := NewLocalExecutor(t.TempDir(), "", "", "").ExecRemote(execution.WithSubject(t.Context(), execution.Subject{WorkspaceID: record.WorkspaceID, UserID: "user-1"}), record.WorkspaceID, record,
-		execution.AgentExecutionStamp{AgentID: record.ID, AgentVersion: record.Version, ExecutionScope: execution.ScopeLegacyOrchestrator},
-		"Write the report", nil)
-	if err != nil || result.Status != "completed" || result.Err != "" || !collectionHasIssue(result.ArtifactCollection, "unsupported_file_type", true) {
+	result, err := runManagedFixture(t, record, "Write the report")
+	if err != nil || result.Status != "completed" || result.Err != "" || !managedCollectionHasIssue(result.ArtifactCollection, "unsupported_file_type") {
 		t.Fatalf("receipt-only invocation accepted: status=%q error=%v", result.Status, err)
 	}
 	if len(result.Artifacts) != 1 || result.Artifacts[0].Path != "partial.txt" || result.Artifacts[0].Content != "Already completed work" || result.Usage == nil {
 		t.Fatalf("partial content or observed usage lost: %#v", result)
 	}
+}
+
+func runManagedFixture(t *testing.T, record *registry.AgentRecord, prompt string) (engine.RunResult, error) {
+	t.Helper()
+	subject := execution.Subject{WorkspaceID: record.WorkspaceID, UserID: "user-1"}
+	payload, _ := json.Marshal(runtimes.EngineExecRequest{Subject: subject, Record: record, Agent: record.Name, Engine: record.Engine, Prompt: prompt})
+	task := testExecutionClaim(t, &taskqueue.Task{ID: "task-fixture", WorkspaceID: record.WorkspaceID, Subject: subject, ClaimEpoch: 1, AgentID: record.ID, AgentVersion: record.Version, Agent: record.Name, IdentityKind: taskqueue.IdentityAgent, IdentitySchemaVersion: 2, ExecutionScope: execution.ScopeLegacyOrchestrator, Payload: payload})
+	root := t.TempDir()
+	guard, err := newSubjectGuard(t.Context(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := &service{workspacesRoot: root, subjectGuard: guard, credentials: func(context.Context, *runtimeprotocol.ExecutionClaim) (ProviderCredentials, error) {
+		return ProviderCredentials{BaseURL: "https://provider.invalid/v1", APIKey: "subject-fixture"}, nil
+	}, runEngine: runEngine, engineCapabilities: []runtimeprotocol.EngineCapability{{Engine: engine.Codex, BinaryVersion: engine.BinaryVersion(t.Context(), os.Getenv("WEAVE_ENGINE_CODEX_PATH"))}}}
+	receipt, err := d.executeTask(t.Context(), task)
+	return runtimebridge.Result(receipt).EngineRunResult(), err
+}
+func managedCollectionHasIssue(evidence *fileartifact.CollectionEvidence, reason string) bool {
+	if evidence == nil {
+		return false
+	}
+	for _, issue := range evidence.Issues {
+		if issue.Reason == reason && issue.Claimed {
+			return true
+		}
+	}
+	return false
 }

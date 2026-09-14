@@ -97,8 +97,12 @@ func (c *runtimeClient) renew(ctx context.Context, claim *runtimeprotocol.Execut
 	return c.postTaskNoContent(ctx, claim.TaskID, "renew", runtimeprotocol.LeaseRequest{Versioned: runtimeprotocol.NewVersioned(), TaskID: claim.TaskID, ClaimEpoch: claim.ClaimEpoch, Subject: claim.Subject})
 }
 
-func (c *runtimeClient) stopped(ctx context.Context, claim *runtimeprotocol.ExecutionClaim) error {
-	return c.postTaskNoContent(ctx, claim.TaskID, "stopped", runtimeprotocol.StoppedReceipt{Versioned: runtimeprotocol.NewVersioned(), SchemaVersion: runtimeprotocol.ReceiptSchemaV1, TaskID: claim.TaskID, ClaimEpoch: claim.ClaimEpoch, Subject: claim.Subject})
+func (c *runtimeClient) stopped(ctx context.Context, claim *runtimeprotocol.ExecutionClaim, result *runtimeprotocol.ExecutionReceipt) error {
+	receiptID, digest := "", ""
+	if result != nil {
+		receiptID, digest = result.Identity(), result.Digest()
+	}
+	return c.postTaskNoContent(ctx, claim.TaskID, "stopped", runtimeprotocol.StoppedReceipt{ReceiptID: receiptID, ResultDigest: digest, Result: result, Versioned: runtimeprotocol.NewVersioned(), SchemaVersion: runtimeprotocol.ReceiptSchemaV1, TaskID: claim.TaskID, ClaimEpoch: claim.ClaimEpoch, Subject: claim.Subject})
 }
 
 func (c *runtimeClient) complete(ctx context.Context, receipt runtimeprotocol.ExecutionReceipt) error {

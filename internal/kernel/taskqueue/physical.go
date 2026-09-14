@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jinyitao123/weave/internal/base/execution"
 	"math"
 )
@@ -14,19 +15,28 @@ import (
 // whose owner is retained. Replay is idempotent and a later owner is fenced.
 // A missing receipt stays explicitly unreported; it is never counted as zero.
 func (s *Store) RecordClaimUsage(ctx context.Context, id, workerID string, epoch int64, usage *execution.TerminalUsage) error {
+	return s.recordClaimUsage(ctx, s.pool, id, workerID, epoch, usage)
+}
+
+type claimUsageQuerier interface {
+	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
+	QueryRow(context.Context, string, ...any) pgx.Row
+}
+
+func (s *Store) recordClaimUsage(ctx context.Context, q claimUsageQuerier, id, workerID string, epoch int64, usage *execution.TerminalUsage) error {
 	if usage == nil {
 		return nil
 	}
 	if usage.InputTokens < 0 || usage.OutputTokens < 0 || usage.ToolCalls < 0 || usage.CostUSD < 0 || math.IsNaN(usage.CostUSD) || math.IsInf(usage.CostUSD, 0) {
 		return errors.New("invalid physical usage")
 	}
-	tag, err := s.pool.Exec(ctx, `UPDATE weave_task_queue SET
+	tag, err := q.Exec(ctx, `UPDATE weave_task_queue SET
  physical_usage=jsonb_build_object('input_tokens',COALESCE((physical_usage->>'input_tokens')::bigint,0)+$4::bigint,
  'output_tokens',COALESCE((physical_usage->>'output_tokens')::bigint,0)+$5::bigint,
  'cost_usd',COALESCE((physical_usage->>'cost_usd')::numeric,0)+$6::numeric,
  'tool_calls',COALESCE((physical_usage->>'tool_calls')::bigint,0)+$7::bigint),
  usage_epoch=$3,unreported_attempts=unreported_attempts-1
- WHERE id=$1 AND worker_id=$2 AND claim_epoch=$3 AND usage_epoch<$3 AND unreported_attempts>0`, id, workerID, epoch, usage.InputTokens, usage.OutputTokens, usage.CostUSD, usage.ToolCalls)
+ WHERE id=$1 AND (worker_id=$2 OR (worker_id IS NULL AND stopped_worker_id=$2 AND stopped_epoch=$3)) AND claim_epoch=$3 AND usage_epoch<$3 AND unreported_attempts>0`, id, workerID, epoch, usage.InputTokens, usage.OutputTokens, usage.CostUSD, usage.ToolCalls)
 	if err != nil {
 		return err
 	}
@@ -34,7 +44,7 @@ func (s *Store) RecordClaimUsage(ctx context.Context, id, workerID string, epoch
 		return nil
 	}
 	var replay bool
-	err = s.pool.QueryRow(ctx, `SELECT claim_epoch=$3 AND usage_epoch=$3 AND (worker_id=$2 OR stopped_worker_id=$2) FROM weave_task_queue WHERE id=$1`, id, workerID, epoch).Scan(&replay)
+	err = q.QueryRow(ctx, `SELECT claim_epoch=$3 AND usage_epoch=$3 AND (worker_id=$2 OR stopped_worker_id=$2) FROM weave_task_queue WHERE id=$1`, id, workerID, epoch).Scan(&replay)
 	if err != nil {
 		return err
 	}

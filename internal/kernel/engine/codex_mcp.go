@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
-	"os/exec"
 	"regexp"
 	"time"
 )
@@ -19,7 +18,10 @@ var codexMCPConfigName = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 func codexTaskMCPArgs(ctx context.Context, cliPath string, spec RunSpec) ([]string, error) {
 	probeCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(probeCtx, cliPath, "mcp", "list", "--json")
+	cmd, commandErr := isolatedCommand(probeCtx, cliPath, []string{"mcp", "list", "--json"}, spec.Isolation)
+	if commandErr != nil {
+		return nil, commandErr
+	}
 	cmd.Dir = spec.WorkDir
 	cmd.Env = envWithCLIPath(codexEnv(spec.Env, spec.WorkDir), cliPath)
 	raw, err := cmd.Output()
