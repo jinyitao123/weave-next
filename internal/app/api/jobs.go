@@ -513,7 +513,7 @@ func (s *Server) runEngineChatRecord(
 			Path:     attachment.Path,
 		})
 	}
-	executor := s.engineExecutorFor(rec.RuntimeID != "")
+	executor := s.engineExecutor()
 	if executor == nil {
 		return "", fmt.Errorf("engine executor is unavailable")
 	}

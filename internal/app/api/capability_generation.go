@@ -126,14 +126,14 @@ func (s *Server) handleGenerateCapability(c echo.Context) error {
 		}
 	}
 	if content == "" {
-		if s.Runtimes == nil || s.engineExecutorFor(true) == nil {
+		if s.Runtimes == nil || s.engineExecutor() == nil {
 			return c.JSON(http.StatusUnprocessableEntity, map[string]string{"code": "capability_runtime_unavailable"})
 		}
 		record, err := s.capabilityRunner().SelectRuntime(generationContext, workspaceID, capability.RuntimeRequirement{Engine: "codex"})
 		if err != nil {
 			return c.JSON(http.StatusUnprocessableEntity, map[string]string{"code": "capability_runtime_unavailable"})
 		}
-		structured, ok := s.engineExecutorFor(true).(executionport.StructuredRemoteEngineExecutor)
+		structured, ok := s.engineExecutor().(executionport.StructuredRemoteEngineExecutor)
 		if !ok {
 			return c.JSON(http.StatusUnprocessableEntity, map[string]string{"code": "capability_runtime_unavailable"})
 		}
