@@ -7,7 +7,13 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-const productAccessPolicyVersion = "builtin-v1"
+var productCapabilityIDs = []string{
+	"team.read",
+	"run.read",
+	"debug.simulate",
+	"debug.sandbox_write",
+	"release.publish",
+}
 
 type productCapabilityDecision struct {
 	ID       string `json:"id"`
@@ -16,43 +22,90 @@ type productCapabilityDecision struct {
 }
 
 func (s *Server) handleProductCapabilities(c echo.Context) error {
+	principal := productPrincipalFromContext(c)
+	decisions, err := s.ProductAuthorizer.Check(c.Request().Context(), ProductAuthorizationRequest{
+		Principal: principal,
+		Actions:   productCapabilityIDs,
+		Resource: ProductAuthorizationResource{
+			Kind: "weave:product",
+			ID:   principal.OrganizationID,
+			Attributes: map[string]any{
+				"environment": "sandbox",
+			},
+		},
+	})
+	if err != nil {
+		return c.JSON(http.StatusOK, map[string]any{
+			"version": "1", "status": "unavailable",
+			"subject": map[string]string{"id": principal.ID, "organizationId": principal.OrganizationID},
+			"source":  map[string]string{"kind": "cerbos"}, "evaluatedAt": time.Now().UTC().Format(time.RFC3339Nano),
+			"capabilities": unavailableProductCapabilities("权限服务暂时不可用"), "message": "权限服务暂时不可用",
+		})
+	}
 	return c.JSON(http.StatusOK, map[string]any{
-		"version":      "1",
-		"status":       "ready",
-		"subject":      map[string]string{"id": getUserID(c), "organizationId": getTenant(c)},
-		"source":       map[string]string{"kind": "weave", "policyVersion": productAccessPolicyVersion},
+		"version": "1", "status": "ready",
+		"subject":      map[string]string{"id": principal.ID, "organizationId": principal.OrganizationID},
+		"source":       map[string]string{"kind": "cerbos", "policyVersion": decisions.PolicyVersion},
 		"evaluatedAt":  time.Now().UTC().Format(time.RFC3339Nano),
-		"capabilities": productCapabilities(c),
+		"capabilities": productCapabilityProjection(decisions),
 	})
 }
 
-func productCapabilities(c echo.Context) []productCapabilityDecision {
-	roles, _ := c.Get("roles").([]string)
-	scopes, _ := c.Get(scopesContextKey).([]string)
-	isAPIKey := c.Get(authSourceContextKey) == authSourceAPIKey
-
-	teamRead := !isAPIKey || hasString(scopes, "org") || hasString(scopes, "admin")
-	runRead := !isAPIKey || hasString(scopes, "runs") || hasString(scopes, "admin")
-	developerRole := hasAnyString(roles, "admin", "owner", "developer")
-	manageCapabilities := developerRole
-	if isAPIKey {
-		manageCapabilities = hasString(scopes, "capabilities:manage") || (hasString(roles, "admin") && hasString(scopes, "admin"))
-	}
-
-	return []productCapabilityDecision{
-		productDecision("team.read", teamRead, "已授权查看当前组织的团队", "当前凭据没有组织查看范围"),
-		productDecision("run.read", runRead, "已授权查看当前组织的运行记录", "当前凭据没有运行查看范围"),
-		productDecision("debug.simulate", manageCapabilities, "已授权使用开发者只读模拟", "只读模拟需要开发者权限"),
-		{ID: "debug.sandbox_write", Decision: "deny", Reason: "当前组织尚未接入可写沙箱"},
-		productDecision("release.publish", manageCapabilities, "已授权发布团队或能力版本", "发布需要开发者权限"),
+func (s *Server) requireProductCapability(action string, attributes map[string]any) echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			principal := productPrincipalFromContext(c)
+			decision, err := s.ProductAuthorizer.Check(c.Request().Context(), ProductAuthorizationRequest{
+				Principal: principal,
+				Actions:   []string{action},
+				Resource:  ProductAuthorizationResource{Kind: "weave:product", ID: principal.OrganizationID, Attributes: attributes},
+			})
+			if err != nil {
+				return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "product authorization unavailable"})
+			}
+			if !decision.Allowed[action] {
+				return c.JSON(http.StatusForbidden, map[string]string{"error": "product capability denied", "action": action})
+			}
+			return next(c)
+		}
 	}
 }
 
-func productDecision(id string, allowed bool, allowedReason, deniedReason string) productCapabilityDecision {
-	if allowed {
-		return productCapabilityDecision{ID: id, Decision: "allow", Reason: allowedReason}
+func productPrincipalFromContext(c echo.Context) ProductAuthorizationPrincipal {
+	roles, _ := c.Get("roles").([]string)
+	scopes, _ := c.Get(scopesContextKey).([]string)
+	productRoles := []string{}
+	if c.Get(authSourceContextKey) != authSourceAPIKey || hasAnyString(scopes, "org", "runs", "admin") {
+		productRoles = append(productRoles, "employee")
 	}
-	return productCapabilityDecision{ID: id, Decision: "deny", Reason: deniedReason}
+	developer := hasAnyString(roles, "admin", "owner", "developer")
+	if c.Get(authSourceContextKey) == authSourceAPIKey {
+		developer = hasString(scopes, "capabilities:manage") || (hasString(roles, "admin") && hasString(scopes, "admin"))
+	}
+	if developer {
+		productRoles = append(productRoles, "developer")
+	}
+	return ProductAuthorizationPrincipal{ID: getUserID(c), OrganizationID: getTenant(c), Roles: productRoles}
+}
+
+func productCapabilityProjection(result ProductAuthorizationResult) []productCapabilityDecision {
+	items := make([]productCapabilityDecision, 0, len(productCapabilityIDs))
+	for _, id := range productCapabilityIDs {
+		if result.Allowed[id] {
+			items = append(items, productCapabilityDecision{ID: id, Decision: "allow", Reason: "Cerbos 策略允许此项能力"})
+		} else {
+			items = append(items, productCapabilityDecision{ID: id, Decision: "deny", Reason: "Cerbos 策略未授予此项能力"})
+		}
+	}
+	return items
+}
+
+func unavailableProductCapabilities(reason string) []productCapabilityDecision {
+	items := make([]productCapabilityDecision, 0, len(productCapabilityIDs))
+	for _, id := range productCapabilityIDs {
+		items = append(items, productCapabilityDecision{ID: id, Decision: "unavailable", Reason: reason})
+	}
+	return items
 }
 
 func hasString(values []string, expected string) bool {

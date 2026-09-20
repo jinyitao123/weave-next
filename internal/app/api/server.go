@@ -71,6 +71,8 @@ type Server struct {
 	TeamAssembler             teamcompiler.TeamInteractionAssembler // optional test seam; nil uses the production assembler
 	Models                    *llmrouter.Resolver
 	Config                    *config.Config
+	ProductAuthorizer         ProductAuthorizer
+	ExternalIdentity          ExternalIdentityVerifier
 	Embedders                 *memory.EmbedderResolver // nil if PG pool unavailable — resolves workspace-scoped memory services
 	StoreExt                  *storeext.PGExt          // nil if Store is not PGStore
 	Fanout                    *fanout.Store            // nil if PG pool unavailable
@@ -228,11 +230,13 @@ func NewServer(cfg *config.Config, store loom.Store, models *llmrouter.Resolver)
 	}))
 
 	s := &Server{
-		Echo:     e,
-		Store:    store,
-		Registry: agentRegistry,
-		Models:   models,
-		Config:   cfg,
+		Echo:              e,
+		Store:             store,
+		Registry:          agentRegistry,
+		Models:            models,
+		Config:            cfg,
+		ProductAuthorizer: NewCerbosProductAuthorizer(cfg.CerbosURL, nil),
+		ExternalIdentity:  NewForgeUserInfoVerifier(cfg.IdentityUserInfoURL, cfg.IdentityDefaultWorkspace, cfg.IdentityDeveloperSubjects, nil),
 	}
 
 	// Initialize platform store extensions if PGStore is available.
@@ -306,6 +310,7 @@ func (s *Server) registerRoutes() {
 	s.Echo.GET("/v1/downloads/runtime/:os/:arch", s.handleDownloadRuntime)
 	s.Echo.POST("/v1/auth/token", s.handleIssueToken)
 	s.Echo.POST("/v1/auth/login", s.handleLogin)
+	s.Echo.POST("/v1/auth/external/exchange", s.handleExternalIdentityExchange)
 	s.Echo.Any("/v1/mcp-boundary/:tenant/:agent/:idx", s.handleMCPBoundary)
 	s.Echo.Any("/v1/mcp-gateway/:workspace/:agent/:serverID", s.handleMCPGateway)
 
@@ -339,8 +344,8 @@ func (s *Server) registerRoutes() {
 	capabilityAPI.POST("/capabilities/drafts", s.handleSaveCapabilityDraft, requireCapabilityAccess("manage"))
 	capabilityAPI.GET("/capabilities/drafts", s.handleListCapabilityDrafts, requireCapabilityAccess("manage"))
 	capabilityAPI.POST("/capabilities/generate", s.handleGenerateCapability, requireCapabilityAccess("manage"))
-	capabilityAPI.POST("/capabilities/:capabilityID/debug", s.handleDebugCapability, requireCapabilityAccess("manage"))
-	capabilityAPI.POST("/capabilities/:capabilityID/versions/:revision/publish", s.handlePublishCapability, requireCapabilityAccess("manage"))
+	capabilityAPI.POST("/capabilities/:capabilityID/debug", s.handleDebugCapability, requireCapabilityAccess("manage"), s.requireProductCapability("debug.simulate", nil))
+	capabilityAPI.POST("/capabilities/:capabilityID/versions/:revision/publish", s.handlePublishCapability, requireCapabilityAccess("manage"), s.requireProductCapability("release.publish", nil))
 	capabilityAPI.POST("/capabilities/:capabilityID/versions/:revision/invocations", s.handleInvokeCapability, requireCapabilityAccess("invoke"))
 	capabilityAPI.GET("/capability-invocations", s.handleListCapabilityInvocations, requireCapabilityAccess("read"))
 	capabilityAPI.GET("/invocations/:invocationID", s.handleGetCapabilityInvocation, requireCapabilityAccess("read"))
@@ -371,7 +376,7 @@ func (s *Server) registerRoutes() {
 	auth.GET("/deliverables", s.handleListFinalDeliverables, chatScope)
 	auth.GET("/deliverables/:id", s.handleGetFinalDeliverable, chatScope)
 	auth.GET("/deliverables/:id/content", s.handleDownloadFinalDeliverable, chatScope)
-	auth.GET("/teams", s.handleListTeams, orgScope)
+	auth.GET("/teams", s.handleListTeams, orgScope, s.requireProductCapability("team.read", nil))
 	auth.POST("/teams", s.handleCreateTeam, RequireRole("admin"), orgScope)
 	auth.POST("/teams:from-template", s.handleCreateTeamFromTemplate, RequireRole("admin"), orgScope)
 	auth.POST("/teams/:id/evaluations", s.handleEvaluateTeam, RequireRole("admin"), orgScope)
@@ -392,7 +397,7 @@ func (s *Server) registerRoutes() {
 	auth.GET("/workflows/:id/versions/:version", s.handleGetWorkflowVersion, orgScope)
 	auth.POST("/workflows/:id/drafts", s.handleCreateWorkflowDraft, RequireAnyRole("admin", "owner"), orgScope)
 	auth.PUT("/workflows/:id/versions/:version", s.handleUpdateWorkflowDraft, RequireAnyRole("admin", "owner"), orgScope)
-	auth.POST("/workflows/:id/versions/:version/publish", s.handlePublishWorkflowVersion, RequireAnyRole("admin", "owner"), orgScope)
+	auth.POST("/workflows/:id/versions/:version/publish", s.handlePublishWorkflowVersion, RequireAnyRole("admin", "owner"), orgScope, s.requireProductCapability("release.publish", nil))
 	auth.POST("/internal/team-build-runs", s.handleCreateTeamBuildRun, RequireRole("admin"), orgScope)
 	auth.GET("/internal/team-build-runs", s.handleListBuildRuns, orgScope)
 	auth.PUT("/team-build-runs/:id/blueprint", s.handlePlanTeamBlueprint, RequireRole("admin"), orgScope)
@@ -407,8 +412,8 @@ func (s *Server) registerRoutes() {
 	auth.GET("/internal/team-build-runs/:id/rounds/:n/report", s.handleGetBuildRunRoundReport, orgScope)
 	auth.GET("/internal/team-build-runs/:id/usage", s.handleGetBuildRunUsage, orgScope)
 	auth.GET("/internal/team-build-runs/:id", s.handleGetBuildRun, orgScope)
-	auth.POST("/internal/team-build-runs/candidate-runs", s.handleCandidateTestRun, RequireRole("admin"), orgScope)
-	auth.POST("/internal/team-build-runs/publish", s.handleCandidatePublish, RequireRole("admin"), orgScope)
+	auth.POST("/internal/team-build-runs/candidate-runs", s.handleCandidateTestRun, RequireRole("admin"), orgScope, s.requireProductCapability("debug.simulate", nil))
+	auth.POST("/internal/team-build-runs/publish", s.handleCandidatePublish, RequireRole("admin"), orgScope, s.requireProductCapability("release.publish", nil))
 	auth.POST("/workflows/:id/versions/:version/validate", s.handleValidateWorkflowVersion, orgScope)
 	auth.PUT("/workflows/:id/versions/:version/admission", s.handlePutWorkflowAdmission, RequireAnyRole("admin", "owner"), orgScope)
 	auth.GET("/workflows/:id/versions/:version/admission/audit", s.handleListWorkflowAdmissionAudit, RequireAnyRole("admin", "owner"), orgScope)
@@ -506,10 +511,10 @@ func (s *Server) registerRoutes() {
 	auth.POST("/human-tasks/:run_id/complete", s.handleCompleteHumanTask, runsScope)
 
 	// Runs.
-	auth.GET("/runs", s.handleListRuns, runsScope)
-	auth.GET("/runs/:id", s.handleGetRun, runsScope)
-	auth.GET("/runs/:id/activity", s.handleGetRunActivity, runsScope)
-	auth.GET("/runs/:id/delivery", s.handleGetRunDelivery, runsScope)
+	auth.GET("/runs", s.handleListRuns, runsScope, s.requireProductCapability("run.read", nil))
+	auth.GET("/runs/:id", s.handleGetRun, runsScope, s.requireProductCapability("run.read", nil))
+	auth.GET("/runs/:id/activity", s.handleGetRunActivity, runsScope, s.requireProductCapability("run.read", nil))
+	auth.GET("/runs/:id/delivery", s.handleGetRunDelivery, runsScope, s.requireProductCapability("run.read", nil))
 	auth.POST("/runs/:id/delivery/recheck", s.handleRecheckRunDelivery, runsScope)
 	auth.GET("/runs/:id/delivery/verifications/:verification_id", s.handleGetRunVerification, runsScope)
 	auth.POST("/runs/:id/stop", s.handleStopRun, runsScope)
