@@ -17,6 +17,14 @@ func (f productAuthorizerFunc) Check(ctx context.Context, request ProductAuthori
 	return f(ctx, request)
 }
 
+func allowAllProductAuthorizer(_ context.Context, request ProductAuthorizationRequest) (ProductAuthorizationResult, error) {
+	allowed := make(map[string]bool, len(request.Actions))
+	for _, action := range request.Actions {
+		allowed[action] = true
+	}
+	return ProductAuthorizationResult{Allowed: allowed, PolicyVersion: "test"}, nil
+}
+
 func rolePolicyAuthorizer(_ context.Context, request ProductAuthorizationRequest) (ProductAuthorizationResult, error) {
 	allowed := make(map[string]bool, len(request.Actions))
 	employee := hasString(request.Principal.Roles, "employee")

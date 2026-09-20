@@ -23,6 +23,14 @@ type productCapabilityDecision struct {
 
 func (s *Server) handleProductCapabilities(c echo.Context) error {
 	principal := productPrincipalFromContext(c)
+	if s.ProductAuthorizer == nil {
+		return c.JSON(http.StatusOK, map[string]any{
+			"version": "1", "status": "unavailable",
+			"subject": map[string]string{"id": principal.ID, "organizationId": principal.OrganizationID},
+			"source":  map[string]string{"kind": "cerbos"}, "evaluatedAt": time.Now().UTC().Format(time.RFC3339Nano),
+			"capabilities": unavailableProductCapabilities("权限服务暂时不可用"), "message": "权限服务暂时不可用",
+		})
+	}
 	decisions, err := s.ProductAuthorizer.Check(c.Request().Context(), ProductAuthorizationRequest{
 		Principal: principal,
 		Actions:   productCapabilityIDs,
@@ -54,6 +62,9 @@ func (s *Server) handleProductCapabilities(c echo.Context) error {
 func (s *Server) requireProductCapability(action string, attributes map[string]any) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
+			if s.ProductAuthorizer == nil {
+				return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "product authorization unavailable"})
+			}
 			principal := productPrincipalFromContext(c)
 			decision, err := s.ProductAuthorizer.Check(c.Request().Context(), ProductAuthorizationRequest{
 				Principal: principal,
