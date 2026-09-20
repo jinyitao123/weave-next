@@ -331,6 +331,7 @@ func (s *Server) registerRoutes() {
 	auth.GET("/auth/me", s.handleMe)
 	auth.PUT("/auth/me", s.handleUpdateMe)
 	auth.PUT("/auth/me/password", s.handleChangeMyPassword)
+	auth.GET("/authorization/capabilities", s.handleProductCapabilities)
 
 	// Developer capability contract endpoints. Execution is admitted here;
 	// runtime scheduling is intentionally a separate follow-up integration.
