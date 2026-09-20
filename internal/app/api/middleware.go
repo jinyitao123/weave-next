@@ -23,9 +23,10 @@ const (
 
 // Claims holds the JWT claims for Weave authentication.
 type Claims struct {
-	TenantID string   `json:"tenant_id"`
-	UserID   string   `json:"user_id"`
-	Roles    []string `json:"roles"`
+	TenantID       string   `json:"tenant_id"`
+	UserID         string   `json:"user_id"`
+	Roles          []string `json:"roles"`
+	IdentitySource string   `json:"identity_source,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -183,6 +184,16 @@ func bindDelegatedUser(c echo.Context, jwtSecret string, userStoreGetter func() 
 func resolveJWTUser(ctx context.Context, userStoreGetter func() *users.Store, claims *Claims) (*users.User, bool) {
 	if claims.TenantID == "" || claims.UserID == "" {
 		return nil, false
+	}
+	// External identities have already been verified by the configured issuer and
+	// exchanged for a short-lived Weave-signed token. They are intentionally not
+	// copied into Weave's local user table.
+	if claims.IdentitySource != "" {
+		role := firstClaimRole(claims.Roles)
+		if role != "member" && role != "developer" {
+			return nil, false
+		}
+		return &users.User{ID: claims.UserID, TenantID: claims.TenantID, Role: role}, true
 	}
 	if userStoreGetter == nil {
 		return &users.User{ID: claims.UserID, TenantID: claims.TenantID, Role: firstClaimRole(claims.Roles)}, true

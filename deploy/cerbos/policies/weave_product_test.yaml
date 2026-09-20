@@ -1,0 +1,84 @@
+name: WeaveProductAccess
+description: MVP1 employee and developer product access
+
+principals:
+  employee:
+    id: employee-1
+    roles:
+      - employee
+  developer:
+    id: developer-1
+    roles:
+      - employee
+      - developer
+
+resources:
+  sandbox:
+    kind: weave:product
+    id: org-1
+    attr:
+      environment: sandbox
+  production:
+    kind: weave:product
+    id: org-1
+    attr:
+      environment: production
+
+tests:
+  - name: Employee can inspect work but cannot change developer assets
+    input:
+      principals:
+        - employee
+      resources:
+        - sandbox
+      actions:
+        - team.read
+        - run.read
+        - debug.simulate
+        - debug.sandbox_write
+        - release.publish
+    expected:
+      - principal: employee
+        resource: sandbox
+        actions:
+          team.read: EFFECT_ALLOW
+          run.read: EFFECT_ALLOW
+          debug.simulate: EFFECT_DENY
+          debug.sandbox_write: EFFECT_DENY
+          release.publish: EFFECT_DENY
+
+  - name: Developer can simulate write to sandbox and publish
+    input:
+      principals:
+        - developer
+      resources:
+        - sandbox
+      actions:
+        - team.read
+        - run.read
+        - debug.simulate
+        - debug.sandbox_write
+        - release.publish
+    expected:
+      - principal: developer
+        resource: sandbox
+        actions:
+          team.read: EFFECT_ALLOW
+          run.read: EFFECT_ALLOW
+          debug.simulate: EFFECT_ALLOW
+          debug.sandbox_write: EFFECT_ALLOW
+          release.publish: EFFECT_ALLOW
+
+  - name: Developer cannot use sandbox write against production
+    input:
+      principals:
+        - developer
+      resources:
+        - production
+      actions:
+        - debug.sandbox_write
+    expected:
+      - principal: developer
+        resource: production
+        actions:
+          debug.sandbox_write: EFFECT_DENY

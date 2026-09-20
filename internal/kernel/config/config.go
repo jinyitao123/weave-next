@@ -18,9 +18,13 @@ type Config struct {
 	LogLevel    string // "debug", "info", "warn", "error"
 
 	// Auth settings.
-	DevMode   bool   // WEAVE_DEV_MODE — enables /v1/auth/token (no-credential token endpoint)
-	AdminUser string // WEAVE_ADMIN_USER — seed admin username on startup
-	AdminPass string // WEAVE_ADMIN_PASS — seed admin password on startup
+	DevMode                   bool     // WEAVE_DEV_MODE — enables /v1/auth/token (no-credential token endpoint)
+	AdminUser                 string   // WEAVE_ADMIN_USER — seed admin username on startup
+	AdminPass                 string   // WEAVE_ADMIN_PASS — seed admin password on startup
+	CerbosURL                 string   // CERBOS_URL — product authorization PDP endpoint
+	IdentityUserInfoURL       string   // WEAVE_IDENTITY_USERINFO_URL — trusted external OIDC UserInfo endpoint
+	IdentityDefaultWorkspace  string   // WEAVE_IDENTITY_DEFAULT_WORKSPACE — fallback workspace when UserInfo has no organization claim
+	IdentityDeveloperSubjects []string // WEAVE_IDENTITY_DEVELOPER_SUBJECTS — stable external subject IDs granted developer access
 
 	// CORS settings.
 	CORSOrigins string // CORS_ORIGINS — comma-separated allowed origins; "*" for dev (default when DevMode)
@@ -139,34 +143,38 @@ func Load() (*Config, error) {
 	}
 
 	cfg := &Config{
-		Port:                     port,
-		DatabaseURL:              os.Getenv("DATABASE_URL"),
-		JWTSecret:                os.Getenv("JWT_SECRET"),
-		LogLevel:                 envOr("LOG_LEVEL", "info"),
-		DevMode:                  devMode,
-		AdminUser:                os.Getenv("WEAVE_ADMIN_USER"),
-		AdminPass:                os.Getenv("WEAVE_ADMIN_PASS"),
-		CORSOrigins:              corsOrigins,
-		MCPBoundaryBase:          envOr("WEAVE_MCP_BOUNDARY_BASE", "http://127.0.0.1:"+port),
-		WorkspacesRoot:           workspacesRoot,
-		LocalRuntimeEnabled:      localRuntimeEnabled,
-		LocalRuntimeServices:     strings.FieldsFunc(os.Getenv("WEAVE_LOCAL_RUNTIME_SHARED_PROVIDERS"), func(r rune) bool { return r == ',' || r == ' ' }),
-		OneAPIBase:               os.Getenv("OPENAI_BASE_URL"),
-		OneAPIKey:                os.Getenv("OPENAI_API_KEY"),
-		EmbedderURL:              os.Getenv("EMBEDDER_URL"),
-		EmbedderKey:              os.Getenv("EMBEDDER_API_KEY"),
-		EmbedderModel:            envOr("EMBEDDER_MODEL", "text-embedding-3-small"),
-		EmbedderDimension:        dim,
-		TemplateAutoMaxCostUSD:   templateAutoMaxCost,
-		TemplateDailyBudgetUSD:   templateDailyBudget,
-		TemplateMonthlyBudgetUSD: templateMonthlyBudget,
-		TemplateMaxConcurrent:    templateMaxConcurrent,
-		HealthWindowSize:         healthWindowSize,
-		HealthMinSamples:         healthMinSamples,
-		HealthWarningFailureRate: healthWarningFailureRate,
-		HealthWarningSlowRate:    healthWarningSlowRate,
-		HealthSlowRunSeconds:     healthSlowRunSeconds,
-		MetaTeamEnabled:          metaTeamEnabled,
+		Port:                      port,
+		DatabaseURL:               os.Getenv("DATABASE_URL"),
+		JWTSecret:                 os.Getenv("JWT_SECRET"),
+		LogLevel:                  envOr("LOG_LEVEL", "info"),
+		DevMode:                   devMode,
+		AdminUser:                 os.Getenv("WEAVE_ADMIN_USER"),
+		AdminPass:                 os.Getenv("WEAVE_ADMIN_PASS"),
+		CerbosURL:                 envOr("CERBOS_URL", "http://127.0.0.1:3592"),
+		IdentityUserInfoURL:       strings.TrimSpace(os.Getenv("WEAVE_IDENTITY_USERINFO_URL")),
+		IdentityDefaultWorkspace:  strings.TrimSpace(os.Getenv("WEAVE_IDENTITY_DEFAULT_WORKSPACE")),
+		IdentityDeveloperSubjects: strings.FieldsFunc(os.Getenv("WEAVE_IDENTITY_DEVELOPER_SUBJECTS"), func(r rune) bool { return r == ',' || r == ' ' }),
+		CORSOrigins:               corsOrigins,
+		MCPBoundaryBase:           envOr("WEAVE_MCP_BOUNDARY_BASE", "http://127.0.0.1:"+port),
+		WorkspacesRoot:            workspacesRoot,
+		LocalRuntimeEnabled:       localRuntimeEnabled,
+		LocalRuntimeServices:      strings.FieldsFunc(os.Getenv("WEAVE_LOCAL_RUNTIME_SHARED_PROVIDERS"), func(r rune) bool { return r == ',' || r == ' ' }),
+		OneAPIBase:                os.Getenv("OPENAI_BASE_URL"),
+		OneAPIKey:                 os.Getenv("OPENAI_API_KEY"),
+		EmbedderURL:               os.Getenv("EMBEDDER_URL"),
+		EmbedderKey:               os.Getenv("EMBEDDER_API_KEY"),
+		EmbedderModel:             envOr("EMBEDDER_MODEL", "text-embedding-3-small"),
+		EmbedderDimension:         dim,
+		TemplateAutoMaxCostUSD:    templateAutoMaxCost,
+		TemplateDailyBudgetUSD:    templateDailyBudget,
+		TemplateMonthlyBudgetUSD:  templateMonthlyBudget,
+		TemplateMaxConcurrent:     templateMaxConcurrent,
+		HealthWindowSize:          healthWindowSize,
+		HealthMinSamples:          healthMinSamples,
+		HealthWarningFailureRate:  healthWarningFailureRate,
+		HealthWarningSlowRate:     healthWarningSlowRate,
+		HealthSlowRunSeconds:      healthSlowRunSeconds,
+		MetaTeamEnabled:           metaTeamEnabled,
 	}
 
 	if cfg.DatabaseURL == "" {

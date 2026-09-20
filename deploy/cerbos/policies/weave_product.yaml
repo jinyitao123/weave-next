@@ -1,0 +1,31 @@
+apiVersion: api.cerbos.dev/v1
+resourcePolicy:
+  resource: weave:product
+  version: default
+  rules:
+    - name: employee_read_access
+      actions:
+        - team.read
+        - run.read
+      effect: EFFECT_ALLOW
+      roles:
+        - employee
+        - developer
+
+    - name: developer_simulate_and_publish
+      actions:
+        - debug.simulate
+        - release.publish
+      effect: EFFECT_ALLOW
+      roles:
+        - developer
+
+    - name: developer_sandbox_write
+      actions:
+        - debug.sandbox_write
+      effect: EFFECT_ALLOW
+      roles:
+        - developer
+      condition:
+        match:
+          expr: request.resource.attr.environment == "sandbox"
