@@ -130,7 +130,7 @@ func (s *Store) ObserveBatch(ctx context.Context, limit int) (int, error) {
 		LEFT JOIN weave_workflow_health_observations AS observed
 		  ON observed.workspace_id=current.workspace_id AND observed.observation_id=current.observation_id
 		WHERE run.status IN ('succeeded','failed','cancelled','abandoned')
-		  AND snapshot.mode='fixed_workflow' AND snapshot.build_run_id IS NULL
+		  AND snapshot.mode='fixed_workflow' AND snapshot.candidate_content_hash IS NULL
 		GROUP BY run.workspace_id,run.workflow_id,run.workflow_version,artifact.content_hash,
 		         current.observed_at,observed.config_hash
 		HAVING current.observed_at IS NULL OR observed.config_hash<>$2 OR
@@ -189,7 +189,7 @@ func (s *Store) observeVersion(ctx context.Context, key versionKey) (bool, error
 		  ON audit.namespace='audit:'||run.workspace_id AND audit.key=run.run_id
 		WHERE run.workspace_id=$1 AND run.workflow_id=$2 AND run.workflow_version=$3
 		  AND run.status IN ('succeeded','failed','cancelled','abandoned')
-		  AND snapshot.mode='fixed_workflow' AND snapshot.build_run_id IS NULL
+		  AND snapshot.mode='fixed_workflow' AND snapshot.candidate_content_hash IS NULL
 		ORDER BY run.terminal_at DESC, run.run_id DESC
 		LIMIT $4
 	`, key.WorkspaceID, key.WorkflowID, key.Version, s.policy.WindowSize)
