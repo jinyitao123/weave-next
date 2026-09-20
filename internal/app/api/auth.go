@@ -322,6 +322,9 @@ func (s *Server) handleUpdateUser(c echo.Context) error {
 	if err := c.Bind(&req); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
 	}
+	if req.Role != "member" && req.Role != "developer" && req.Role != "admin" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "role must be member, developer, or admin"})
+	}
 	resource := admissionfence.Actor(execution.Subject{UserID: c.Param("id")})
 	var block, grant []admissionfence.Resource
 	if req.Disabled {
