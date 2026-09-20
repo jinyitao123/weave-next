@@ -16,7 +16,7 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-const externalSessionTTL = 10 * time.Minute
+const externalSessionTTL = 8 * time.Hour
 
 type ExternalIdentity struct {
 	Subject      string
