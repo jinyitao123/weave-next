@@ -3,6 +3,7 @@ package users
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -140,12 +141,14 @@ func (s *Store) BindExternal(ctx context.Context, issuer, subject, tenantID, ema
 	if issuer == "" || subject == "" || tenantID == "" {
 		return nil, fmt.Errorf("external identity is incomplete")
 	}
+	digest := sha256.Sum256([]byte(issuer + "\x00" + subject + "\x00" + tenantID))
+	lockKey := int64(binary.BigEndian.Uint64(digest[:8]))
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("bind external identity: %w", err)
 	}
 	defer tx.Rollback(ctx)
-	if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, issuer+"\x00"+subject+"\x00"+tenantID); err != nil {
+	if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, lockKey); err != nil {
 		return nil, fmt.Errorf("bind external identity: %w", err)
 	}
 	var user User
@@ -171,7 +174,6 @@ func (s *Store) BindExternal(ctx context.Context, issuer, subject, tenantID, ema
 	if _, err = tx.Exec(ctx, `INSERT INTO weave_workspaces(id,slug,name) VALUES($1,$1,$1) ON CONFLICT(id) DO NOTHING`, tenantID); err != nil {
 		return nil, fmt.Errorf("bind external identity: %w", err)
 	}
-	digest := sha256.Sum256([]byte(issuer + "\x00" + subject + "\x00" + tenantID))
 	userID := "ext_" + hex.EncodeToString(digest[:16])
 	username := "forge:" + hex.EncodeToString(digest[:12])
 	if strings.TrimSpace(displayName) == "" {
