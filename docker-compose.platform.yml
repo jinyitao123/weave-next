@@ -7,21 +7,6 @@
 # WEAVE_RUNTIME_TOKEN, and start the runtime:
 #   WEAVE_RUNTIME_TOKEN=rtk_xxx docker compose -f docker-compose.platform.yml --profile runtime up -d
 services:
-  cerbos:
-    image: ghcr.io/cerbos/cerbos:0.55.0
-    command: ["server", "--config=/config/conf.yaml"]
-    environment:
-      CERBOS_CONFIG: /config/conf.yaml
-    volumes:
-      - ./deploy/cerbos/conf.yaml:/config/conf.yaml:ro
-      - ./deploy/cerbos/policies:/policies:ro
-    healthcheck:
-      test: ["CMD", "cerbos", "healthcheck", "--config=/config/conf.yaml"]
-      interval: 3s
-      timeout: 5s
-      retries: 15
-    restart: unless-stopped
-
   db:
     image: postgres:16-alpine
     environment:
@@ -65,10 +50,8 @@ services:
       WEAVE_SECRET_KEY: ${WEAVE_SECRET_KEY:?set WEAVE_SECRET_KEY (openssl rand -hex 32)}
       WEAVE_ADMIN_USER: ${WEAVE_ADMIN_USER:-admin}
       WEAVE_ADMIN_PASS: ${WEAVE_ADMIN_PASS:?set WEAVE_ADMIN_PASS}
-      CERBOS_URL: http://cerbos:3592
-      WEAVE_IDENTITY_USERINFO_URL: ${WEAVE_IDENTITY_USERINFO_URL:-}
-      WEAVE_IDENTITY_DEFAULT_WORKSPACE: ${WEAVE_IDENTITY_DEFAULT_WORKSPACE:-}
-      WEAVE_IDENTITY_DEVELOPER_SUBJECTS: ${WEAVE_IDENTITY_DEVELOPER_SUBJECTS:-}
+      WEAVE_FORGE_SESSION_URL: ${WEAVE_FORGE_SESSION_URL:-}
+      WEAVE_FORGE_DEFAULT_WORKSPACE: ${WEAVE_FORGE_DEFAULT_WORKSPACE:-}
       # Engine credentials are injected at runtime — never baked into the image.
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       WEAVE_LOOM_MODEL: ${WEAVE_LOOM_MODEL:-}
@@ -78,15 +61,13 @@ services:
       HTTP_PROXY: ${CONTAINER_HTTP_PROXY:-}
       HTTPS_PROXY: ${CONTAINER_HTTPS_PROXY:-}
       ALL_PROXY: ${CONTAINER_ALL_PROXY:-}
-      NO_PROXY: ${CONTAINER_NO_PROXY:-localhost,127.0.0.1,db,weave,workbench,cerbos}
+      NO_PROXY: ${CONTAINER_NO_PROXY:-localhost,127.0.0.1,db,weave,workbench}
       http_proxy: ${CONTAINER_HTTP_PROXY:-}
       https_proxy: ${CONTAINER_HTTPS_PROXY:-}
       all_proxy: ${CONTAINER_ALL_PROXY:-}
       no_proxy: ${CONTAINER_NO_PROXY:-localhost,127.0.0.1,db,weave,workbench}
     depends_on:
       db:
-        condition: service_healthy
-      cerbos:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/v1/ready').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]

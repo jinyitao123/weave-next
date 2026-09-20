@@ -185,16 +185,6 @@ func resolveJWTUser(ctx context.Context, userStoreGetter func() *users.Store, cl
 	if claims.TenantID == "" || claims.UserID == "" {
 		return nil, false
 	}
-	// External identities have already been verified by the configured issuer and
-	// exchanged for a short-lived Weave-signed token. They are intentionally not
-	// copied into Weave's local user table.
-	if claims.IdentitySource != "" {
-		role := firstClaimRole(claims.Roles)
-		if role != "member" && role != "developer" {
-			return nil, false
-		}
-		return &users.User{ID: claims.UserID, TenantID: claims.TenantID, Role: role}, true
-	}
 	if userStoreGetter == nil {
 		return &users.User{ID: claims.UserID, TenantID: claims.TenantID, Role: firstClaimRole(claims.Roles)}, true
 	}

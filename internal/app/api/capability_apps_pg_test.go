@@ -35,7 +35,7 @@ func TestCapabilityApplicationHTTPIdentityRotationAndScopesRealPG(t *testing.T) 
 	if _, err := service.Publish(t.Context(), "apps-ws", "published", 1); err != nil {
 		t.Fatal(err)
 	}
-	server := &Server{Echo: echo.New(), Config: &config.Config{JWTSecret: "test-apps"}, Pool: pool, Capabilities: service, CapabilityAccess: capabilities.NewAccessStore(pool), UserStore: users.NewStore(pool), ProductAuthorizer: productAuthorizerFunc(allowAllProductAuthorizer)}
+	server := &Server{Echo: echo.New(), Config: &config.Config{JWTSecret: "test-apps"}, Pool: pool, Capabilities: service, CapabilityAccess: capabilities.NewAccessStore(pool), UserStore: users.NewStore(pool)}
 	server.registerRoutes()
 	token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, Claims{TenantID: "apps-ws", UserID: "author", Roles: []string{"developer"}, RegisteredClaims: jwt.RegisteredClaims{ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour))}}).SignedString([]byte("test-apps"))
 	if err != nil {
