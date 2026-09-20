@@ -97,7 +97,7 @@ func TestCapabilityHTTPToLoomRuntimeRealPG(t *testing.T) {
 		CredentialScope: frozen.CredentialScopeUser, CredentialUserID: "dev",
 	})
 	store := capabilities.NewPGStore(persisted.Pool())
-	s := &Server{Echo: echo.New(), Config: &config.Config{JWTSecret: "integration-secret"}, Pool: persisted.Pool(), Store: persisted, Models: llmrouter.NewResolver(router), Capabilities: capabilities.NewService(store, store), UserStore: users.NewStore(persisted.Pool()), ProductAuthorizer: productAuthorizerFunc(allowAllProductAuthorizer)}
+	s := &Server{Echo: echo.New(), Config: &config.Config{JWTSecret: "integration-secret"}, Pool: persisted.Pool(), Store: persisted, Models: llmrouter.NewResolver(router), Capabilities: capabilities.NewService(store, store), UserStore: users.NewStore(persisted.Pool())}
 	s.Tasks = taskqueue.New(persisted.Pool(), taskqueue.RealClock{}, time.Second)
 	s.TaskWorker = taskqueue.NewWorker(s.Tasks, 1)
 	s.StoreExt = storeext.New(persisted.Pool())

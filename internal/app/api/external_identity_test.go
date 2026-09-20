@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/jinyitao123/weave/internal/app/users"
 	"github.com/jinyitao123/weave/internal/kernel/config"
 	"github.com/labstack/echo/v4"
 )
@@ -18,28 +19,34 @@ func (f externalIdentityVerifierFunc) Verify(ctx context.Context, token string) 
 	return f(ctx, token)
 }
 
-func TestForgeUserInfoVerifierMapsStableSubjectAndConfiguredRole(t *testing.T) {
+type externalIdentityBinderFunc func(context.Context, string, string, string, string, string) (*users.User, error)
+
+func (f externalIdentityBinderFunc) BindExternal(ctx context.Context, issuer, subject, workspace, email, name string) (*users.User, error) {
+	return f(ctx, issuer, subject, workspace, email, name)
+}
+
+func TestForgeSessionVerifierReadsForgeAccount(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Authorization"); got != "Bearer forge-token" {
 			t.Fatalf("authorization = %q", got)
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"sub": "forge-user-1", "email": "developer@example.test", "name": "Developer",
+			"user": map[string]string{"id": "forge-user-1", "email": "developer@example.test", "name": "Developer"},
 		})
 	}))
 	defer upstream.Close()
 
-	verifier := NewForgeUserInfoVerifier(upstream.URL, "workspace-1", []string{"forge-user-1"}, upstream.Client())
+	verifier := NewForgeSessionVerifier(upstream.URL, "workspace-1", upstream.Client())
 	identity, err := verifier.Verify(context.Background(), "forge-token")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if identity.UserID == "" || identity.Subject != "forge-user-1" || identity.Organization != "workspace-1" || identity.Role != "developer" {
+	if identity.Issuer != upstream.URL || identity.Subject != "forge-user-1" || identity.Organization != "workspace-1" || identity.Email != "developer@example.test" {
 		t.Fatalf("unexpected identity: %#v", identity)
 	}
 }
 
-func TestExternalIdentityExchangeIssuesShortLivedWeaveSession(t *testing.T) {
+func TestExternalIdentityExchangeBindsAccountAndIssuesWeaveSession(t *testing.T) {
 	e := echo.New()
 	s := &Server{
 		Echo:   e,
@@ -48,7 +55,13 @@ func TestExternalIdentityExchangeIssuesShortLivedWeaveSession(t *testing.T) {
 			if token != "forge-token" {
 				t.Fatalf("token = %q", token)
 			}
-			return ExternalIdentity{Subject: "forge-user-1", UserID: "ext-user-1", Organization: "workspace-1", Role: "developer"}, nil
+			return ExternalIdentity{Issuer: "https://forge.example.test", Subject: "forge-user-1", Email: "developer@example.test", Name: "Developer", Organization: "workspace-1"}, nil
+		}),
+		ExternalIdentityBinder: externalIdentityBinderFunc(func(_ context.Context, issuer, subject, workspace, email, name string) (*users.User, error) {
+			if issuer != "https://forge.example.test" || subject != "forge-user-1" || workspace != "workspace-1" || email != "developer@example.test" || name != "Developer" {
+				t.Fatalf("unexpected binding: %q %q %q %q %q", issuer, subject, workspace, email, name)
+			}
+			return &users.User{ID: "ext-user-1", TenantID: "workspace-1", DisplayName: "Developer", Role: "developer"}, nil
 		}),
 	}
 	request := httptest.NewRequest(http.MethodPost, "/v1/auth/external/exchange", nil)
@@ -72,7 +85,7 @@ func TestExternalIdentityExchangeIssuesShortLivedWeaveSession(t *testing.T) {
 	if err != nil || !parsed.Valid {
 		t.Fatalf("invalid issued token: %v", err)
 	}
-	if claims.IdentitySource != "external" || claims.TenantID != "workspace-1" || claims.UserID != "ext-user-1" || firstClaimRole(claims.Roles) != "developer" {
+	if claims.IdentitySource != "forge" || claims.TenantID != "workspace-1" || claims.UserID != "ext-user-1" || firstClaimRole(claims.Roles) != "developer" {
 		t.Fatalf("unexpected claims: %#v", claims)
 	}
 	if response.ExpiresIn != 28800 {

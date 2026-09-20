@@ -2,8 +2,6 @@ package api
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,32 +11,31 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jinyitao123/weave/internal/app/users"
 	"github.com/labstack/echo/v4"
 )
 
 const externalSessionTTL = 8 * time.Hour
 
 type ExternalIdentity struct {
+	Issuer       string
 	Subject      string
-	UserID       string
 	Email        string
 	Name         string
 	Organization string
-	Role         string
 }
 
 type ExternalIdentityVerifier interface {
 	Verify(context.Context, string) (ExternalIdentity, error)
 }
 
-type ForgeUserInfoVerifier struct {
+type ForgeSessionVerifier struct {
 	endpoint         *url.URL
 	defaultWorkspace string
-	developers       map[string]struct{}
 	client           *http.Client
 }
 
-func NewForgeUserInfoVerifier(rawURL, defaultWorkspace string, developerSubjects []string, client *http.Client) *ForgeUserInfoVerifier {
+func NewForgeSessionVerifier(rawURL, defaultWorkspace string, client *http.Client) *ForgeSessionVerifier {
 	endpoint, err := url.Parse(strings.TrimSpace(rawURL))
 	if err != nil || endpoint.Scheme == "" || endpoint.Host == "" || (endpoint.Scheme != "http" && endpoint.Scheme != "https") || endpoint.User != nil {
 		endpoint = nil
@@ -46,16 +43,10 @@ func NewForgeUserInfoVerifier(rawURL, defaultWorkspace string, developerSubjects
 	if client == nil {
 		client = &http.Client{Timeout: 5 * time.Second}
 	}
-	developers := make(map[string]struct{}, len(developerSubjects))
-	for _, subject := range developerSubjects {
-		if subject = strings.TrimSpace(subject); subject != "" {
-			developers[subject] = struct{}{}
-		}
-	}
-	return &ForgeUserInfoVerifier{endpoint: endpoint, defaultWorkspace: strings.TrimSpace(defaultWorkspace), developers: developers, client: client}
+	return &ForgeSessionVerifier{endpoint: endpoint, defaultWorkspace: strings.TrimSpace(defaultWorkspace), client: client}
 }
 
-func (v *ForgeUserInfoVerifier) Verify(ctx context.Context, bearer string) (ExternalIdentity, error) {
+func (v *ForgeSessionVerifier) Verify(ctx context.Context, bearer string) (ExternalIdentity, error) {
 	if v == nil || v.endpoint == nil || strings.TrimSpace(bearer) == "" {
 		return ExternalIdentity{}, errors.New("external identity is not configured")
 	}
@@ -82,6 +73,11 @@ func (v *ForgeUserInfoVerifier) Verify(ctx context.Context, bearer string) (Exte
 		Organization struct {
 			ID string `json:"id"`
 		} `json:"organization"`
+		User struct {
+			ID    string `json:"id"`
+			Email string `json:"email"`
+			Name  string `json:"name"`
+		} `json:"user"`
 	}
 	if err := json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&body); err != nil {
 		return ExternalIdentity{}, errors.New("invalid external identity response")
@@ -90,6 +86,17 @@ func (v *ForgeUserInfoVerifier) Verify(ctx context.Context, bearer string) (Exte
 	if subject == "" {
 		subject = strings.TrimSpace(body.ID)
 	}
+	if subject == "" {
+		subject = strings.TrimSpace(body.User.ID)
+	}
+	email := strings.TrimSpace(body.Email)
+	if email == "" {
+		email = strings.TrimSpace(body.User.Email)
+	}
+	name := strings.TrimSpace(body.Name)
+	if name == "" {
+		name = strings.TrimSpace(body.User.Name)
+	}
 	workspace := strings.TrimSpace(body.Organization.ID)
 	if workspace == "" {
 		workspace = v.defaultWorkspace
@@ -97,16 +104,15 @@ func (v *ForgeUserInfoVerifier) Verify(ctx context.Context, bearer string) (Exte
 	if subject == "" || workspace == "" {
 		return ExternalIdentity{}, errors.New("external identity is missing subject or workspace")
 	}
-	digest := sha256.Sum256([]byte(v.endpoint.Host + "\x00" + subject))
-	role := "member"
-	if _, ok := v.developers[subject]; ok {
-		role = "developer"
-	}
 	return ExternalIdentity{
-		Subject: subject, UserID: "ext_" + hex.EncodeToString(digest[:16]),
-		Email: strings.TrimSpace(body.Email), Name: strings.TrimSpace(body.Name),
-		Organization: workspace, Role: role,
+		Issuer: v.endpoint.Scheme + "://" + v.endpoint.Host, Subject: subject,
+		Email: email, Name: name,
+		Organization: workspace,
 	}, nil
+}
+
+type externalIdentityBinder interface {
+	BindExternal(context.Context, string, string, string, string, string) (*users.User, error)
 }
 
 func (s *Server) handleExternalIdentityExchange(c echo.Context) error {
@@ -122,13 +128,24 @@ func (s *Server) handleExternalIdentityExchange(c echo.Context) error {
 	if err != nil {
 		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "external identity verification failed"})
 	}
-	token, err := s.signJWTFor(identity.Organization, identity.UserID, []string{identity.Role}, "external", externalSessionTTL)
+	binder := s.ExternalIdentityBinder
+	if binder == nil && s.UserStore != nil {
+		binder = s.UserStore
+	}
+	if binder == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "account binding is not configured"})
+	}
+	user, err := binder.BindExternal(c.Request().Context(), identity.Issuer, identity.Subject, identity.Organization, identity.Email, identity.Name)
+	if err != nil {
+		return c.JSON(http.StatusForbidden, map[string]string{"error": "account binding failed"})
+	}
+	token, err := s.signJWTFor(user.TenantID, user.ID, []string{user.Role}, "forge", externalSessionTTL)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "could not issue product session"})
 	}
 	return c.JSON(http.StatusOK, map[string]any{
 		"token": token, "tokenType": "Bearer", "expiresIn": int(externalSessionTTL.Seconds()),
-		"subject":      map[string]string{"id": identity.UserID, "externalId": identity.Subject, "email": identity.Email, "name": identity.Name},
-		"organization": map[string]string{"id": identity.Organization},
+		"subject":      map[string]string{"id": user.ID, "externalId": identity.Subject, "email": identity.Email, "name": user.DisplayName, "role": user.Role},
+		"organization": map[string]string{"id": user.TenantID},
 	})
 }
