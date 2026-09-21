@@ -291,6 +291,7 @@ func TestTeamCreateRendersStructuredBusinessDefinition(t *testing.T) {
 	api := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		var body struct {
 			YAML            string          `json:"yaml"`
+			Sample          string          `json:"sample"`
 			DeclarativeSpec json.RawMessage `json:"declarative_spec"`
 		}
 		if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
@@ -312,6 +313,9 @@ func TestTeamCreateRendersStructuredBusinessDefinition(t *testing.T) {
 			compiled.Template.TemplateParameters.FinalizerRef != "finalizer" {
 			t.Fatalf("compiled template = %#v", compiled.Template)
 		}
+		if body.Sample != "" {
+			t.Fatalf("redundant sample was forwarded with structured definition: %q", body.Sample)
+		}
 		if len(body.DeclarativeSpec) != 0 {
 			t.Fatalf("unexpected declarative spec = %s", body.DeclarativeSpec)
 		}
@@ -320,7 +324,7 @@ func TestTeamCreateRendersStructuredBusinessDefinition(t *testing.T) {
 	}))
 	defer api.Close()
 	result, err := NewToolDispatcher(mcpClient(t, api.URL)).Dispatch(context.Background(), structToolCall(
-		"team_create", `{"idempotency_key":"018f5f5a-c73c-7e31-8f4a-9b36797553a2","definition":{"display_name":"日冕研究团队","purpose":"形成决策研究","lead_instruction":"组织研究","lead":{"display_name":"负责人","responsibilities":["组织"],"capabilities":["delegation"],"result_requirement":"统筹交付"},"researchers":[{"display_name":"研究员","responsibilities":["研究"],"capabilities":["research"],"result_requirement":"提供资料"},{"display_name":"分析员","responsibilities":["分析"],"capabilities":["analysis"],"result_requirement":"交叉验证"}],"finalizer":{"display_name":"总装员","responsibilities":["交付"],"capabilities":["writing"],"result_requirement":"综合交付"},"success_criteria":["可追溯"],"max_cost_usd":3}}`,
+		"team_create", `{"idempotency_key":"018f5f5a-c73c-7e31-8f4a-9b36797553a2","sample":"descriptive-label","definition":{"display_name":"日冕研究团队","purpose":"形成决策研究","lead_instruction":"组织研究","lead":{"display_name":"负责人","responsibilities":["组织"],"capabilities":["delegation"],"result_requirement":"统筹交付"},"researchers":[{"display_name":"研究员","responsibilities":["研究"],"capabilities":["research"],"result_requirement":"提供资料"},{"display_name":"分析员","responsibilities":["分析"],"capabilities":["analysis"],"result_requirement":"交叉验证"}],"finalizer":{"display_name":"总装员","responsibilities":["交付"],"capabilities":["writing"],"result_requirement":"综合交付"},"success_criteria":["可追溯"],"max_cost_usd":3}}`,
 	))
 	if err != nil || result.IsError || !strings.Contains(result.Content, "build-structured") {
 		t.Fatalf("result = %#v err = %v", result, err)
