@@ -46,7 +46,7 @@ func TestTeamMemberConfigDraftCanBeSavedRepeatedlyWithRevisionCheck(t *testing.T
 		t.Helper()
 		raw, _ := json.Marshal(saveTeamMemberConfigDraftRequest{
 			Revision:      revision,
-			Configuration: teamMemberAgentConfiguration{DisplayName: "执行成员", Role: "worker", Engine: "loom"},
+			Configuration: teamMemberAgentConfiguration{DisplayName: "执行成员", Role: "worker", Engine: "loom", Skills: []teamMemberInlineSkill{{Name: "合同复核", Description: "检查合同条款", Body: "逐条检查合同并列出风险。"}}},
 			Relationship:  teamMemberRelationshipDraft{Duty: duty, AllowedKinds: []string{"dispatch"}, DefaultKind: "dispatch", Enabled: true},
 		})
 		request := httptest.NewRequest(http.MethodPut, "/", bytes.NewReader(raw)).WithContext(ctx)
@@ -100,6 +100,9 @@ func TestTeamMemberConfigDraftCanBeSavedRepeatedlyWithRevisionCheck(t *testing.T
 	}
 	if updated.Version != 2 {
 		t.Fatalf("agent version=%d want 2", updated.Version)
+	}
+	if len(updated.Spec.Skills) != 1 || updated.Spec.Skills[0].Name != "合同复核" {
+		t.Fatalf("applied skills=%+v", updated.Spec.Skills)
 	}
 	relation, err := agentcatalog.NewTeamWorkerRepository(pool).Get(ctx, workspaceID, created.Team.ID, worker.ID)
 	if err != nil {
