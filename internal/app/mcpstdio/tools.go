@@ -669,6 +669,11 @@ func teamCreateRequest(input teamCreateArguments) (weaveclient.TeamCreateRequest
 	if input.Definition == nil {
 		return request, nil
 	}
+	// The structured business definition is the authoritative source. Some
+	// OpenAI-compatible providers still emit a descriptive sample label even
+	// when the schema's oneOf selects definition. Do not forward that redundant
+	// label as a second template source.
+	request.Sample = ""
 	definition := input.Definition
 	digest := sha256.Sum256([]byte(strings.TrimSpace(definition.DisplayName) + "\n" + strings.TrimSpace(definition.Purpose)))
 	member := func(ref, role string, source researchTeamMember) teamtemplate.Member {
