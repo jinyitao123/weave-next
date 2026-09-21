@@ -31,3 +31,10 @@ func TestMigrationFilesSortByNumericVersion(t *testing.T) {
 		t.Fatalf("migration order = %v", paths)
 	}
 }
+
+// Validate the real embedded migration set even when PostgreSQL tests are skipped.
+func TestEmbeddedMigrationVersionsAreUnique(t *testing.T) {
+	if _, err := migrationFiles(migrations); err != nil {
+		t.Fatal(err)
+	}
+}
