@@ -18,7 +18,13 @@ var codexMCPConfigName = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 func codexTaskMCPArgs(ctx context.Context, cliPath string, spec RunSpec) ([]string, error) {
 	probeCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	cmd, commandErr := isolatedCommand(probeCtx, cliPath, []string{"mcp", "list", "--json"}, spec.Isolation)
+	probeArgs := []string{"mcp", "list", "--json"}
+	if spec.DisableTools {
+		// Match the execution profile: disabled plugins remove their injected
+		// MCP entries. Enumerating them first would create transport-less overrides.
+		probeArgs = append([]string{"--disable", "plugins"}, probeArgs...)
+	}
+	cmd, commandErr := isolatedCommand(probeCtx, cliPath, probeArgs, spec.Isolation)
 	if commandErr != nil {
 		return nil, commandErr
 	}

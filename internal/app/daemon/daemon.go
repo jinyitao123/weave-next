@@ -563,9 +563,20 @@ func (d *service) executeTask(ctx context.Context, task *runtimeprotocol.Executi
 		ctx, stop = context.WithDeadline(ctx, *task.DeadlineAt)
 		defer stop()
 	}
-	result, err := d.runEngine(ctx, request.Engine, engine.RunSpec{Subject: task.Subject, Isolation: isolation, OnPublicEvent: publish,
-		MCPServers: engineTaskMCPServers(taskTargets), WorkDir: workDir, Prompt: request.Prompt, Model: request.Model,
-		Env: runEnv, Timeout: time.Duration(timeoutSeconds) * time.Second, EngineVersion: d.engineVersion(request.Engine), OutputSchema: request.OutputSchema})
+	result, err := d.runEngine(ctx, request.Engine, engine.RunSpec{
+		DisableTools:  deniesAllTools(record.Permissions.Deny),
+		Subject:       task.Subject,
+		Isolation:     isolation,
+		OnPublicEvent: publish,
+		MCPServers:    engineTaskMCPServers(taskTargets),
+		WorkDir:       workDir,
+		Prompt:        request.Prompt,
+		Model:         request.Model,
+		Env:           runEnv,
+		Timeout:       time.Duration(timeoutSeconds) * time.Second,
+		EngineVersion: d.engineVersion(request.Engine),
+		OutputSchema:  request.OutputSchema,
+	})
 	finishProgress(&result)
 	err = errors.Join(err, runtimehost.CollectRunOutputArtifacts(workDir, outputsBefore, &result))
 	receipt := runtimeprotocol.ExecutionReceipt{Versioned: runtimeprotocol.NewVersioned(), SchemaVersion: runtimeprotocol.ReceiptSchemaV1,
@@ -584,6 +595,15 @@ func (d *service) executeTask(ctx context.Context, task *runtimeprotocol.Executi
 		return receipt, errors.New(message)
 	}
 	return receipt, nil
+}
+
+func deniesAllTools(denied []string) bool {
+	for _, value := range denied {
+		if value == "*" {
+			return true
+		}
+	}
+	return false
 }
 
 func (d *service) engineVersion(name string) string {

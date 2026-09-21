@@ -24,3 +24,9 @@ Rules:
 - Run `make productguard`; runtime administration belongs in Workbench or the operator CLI.
 - Do not add new product features during migration.
 - For Workbench product acceptance, follow [`docs/验收/Workbench真人式验收协议.md`](docs/验收/Workbench真人式验收协议.md). Use the real browser and the product's normal user path before inspecting APIs or fixtures. Test the same task as a user, a task owner, a deliverable consumer, and an independent auditor. Keep deterministic tasks direct; add method discovery only for a concrete unknown that blocks route selection. Report observed behavior, evidence, defects, and unverified gaps separately; a model claim, completed stage, tool call, or health response is not delivery acceptance.
+
+Approved 2026-09-10 scoped exception: the Guandan demonstration may admit
+server-to-server candidate-selection decisions through a dedicated service key
+bound to one published Team/Workflow version. Reuse the existing workflow engine,
+run ledger and delivery projection. This does not open arbitrary team dispatch
+or Workbench user-event impersonation to service clients.

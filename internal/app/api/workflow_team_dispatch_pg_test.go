@@ -42,7 +42,7 @@ func newTeamDispatchTestServer(t *testing.T) (*Server, *pgxpool.Pool) {
 	return newTeamDispatchTestServerWithGraph(t, json.RawMessage(`{"schema_version":1,"entry_node_id":"deliver","input_contract":{"type":"text"},"output_contract":{"type":"text"},"nodes":[{"id":"deliver","type":"deliver","config":{"result":{"source":"run_input","path":""}}}],"edges":[]}`))
 }
 
-func newTeamDispatchTestServerWithGraph(t *testing.T, graph json.RawMessage) (*Server, *pgxpool.Pool) {
+func newTeamDispatchTestServerWithGraph(t *testing.T, graph json.RawMessage, bundles ...frozen.FrozenExecutionBundle) (*Server, *pgxpool.Pool) {
 	t.Helper()
 	ctx := context.Background()
 	pool := testutil.PostgresPool(t)
@@ -59,7 +59,7 @@ func newTeamDispatchTestServerWithGraph(t *testing.T, graph json.RawMessage) (*S
 	artifact := frozen.ArtifactPayloadV1{
 		SchemaVersion: 1, TriggerConfig: trigger, GraphDefinition: graph,
 		Team:    frozen.ArtifactTeamV1{WorkspaceID: "ws", TeamID: "team", LeadAgentID: "lead", LeadAgentVersion: 1, LeadAgentContentHash: strings.Repeat("a", 64)},
-		Bundles: []frozen.FrozenExecutionBundle{}, DeliveryTargets: []frozen.FrozenDeliveryTarget{},
+		Bundles: bundles, DeliveryTargets: []frozen.FrozenDeliveryTarget{},
 	}
 	digest, err := frozen.ComputeArtifactContentHash(frozen.ArtifactEnvelopeHashInputV1{
 		WorkspaceID: "ws", WorkflowID: "flow", WorkflowVersion: 1, ArtifactSchemaVersion: 1,
