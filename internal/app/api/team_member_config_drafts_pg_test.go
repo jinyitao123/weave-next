@@ -78,4 +78,41 @@ func TestTeamMemberConfigDraftCanBeSavedRepeatedlyWithRevisionCheck(t *testing.T
 	if status, _ := save(1, "过期覆盖"); status != http.StatusConflict {
 		t.Fatalf("stale save status=%d want %d", status, http.StatusConflict)
 	}
+
+	applyBody, _ := json.Marshal(applyTeamMemberConfigDraftRequest{Revision: 2})
+	applyRequest := httptest.NewRequest(http.MethodPost, "/", bytes.NewReader(applyBody)).WithContext(ctx)
+	applyRequest.Header.Set("Content-Type", "application/json")
+	applyRecorder := httptest.NewRecorder()
+	applyContext := echo.New().NewContext(applyRequest, applyRecorder)
+	applyContext.SetParamNames("id", "agent")
+	applyContext.SetParamValues(created.Team.ID, worker.ID)
+	applyContext.Set("tenant", workspaceID)
+	applyContext.Set("user_id", "developer")
+	if err := server.handleApplyTeamMemberConfigDraft(applyContext); err != nil {
+		t.Fatal(err)
+	}
+	if applyRecorder.Code != http.StatusOK {
+		t.Fatalf("apply status=%d body=%s", applyRecorder.Code, applyRecorder.Body.String())
+	}
+	updated, err := agents.Get(ctx, workspaceID, worker.Name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Version != 2 {
+		t.Fatalf("agent version=%d want 2", updated.Version)
+	}
+	relation, err := agentcatalog.NewTeamWorkerRepository(pool).Get(ctx, workspaceID, created.Team.ID, worker.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if relation.Duty != "第二次保存" {
+		t.Fatalf("applied duty=%q", relation.Duty)
+	}
+	var remaining int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM weave_team_member_config_drafts WHERE workspace_id=$1 AND team_id=$2 AND agent_id=$3`, workspaceID, created.Team.ID, worker.ID).Scan(&remaining); err != nil {
+		t.Fatal(err)
+	}
+	if remaining != 0 {
+		t.Fatalf("draft rows=%d want 0", remaining)
+	}
 }
