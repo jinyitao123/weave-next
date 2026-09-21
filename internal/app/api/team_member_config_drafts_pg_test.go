@@ -1,0 +1,81 @@
+package api
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+
+	"github.com/google/uuid"
+	"github.com/jinyitao123/weave/internal/app/agentcatalog"
+	orgstore "github.com/jinyitao123/weave/internal/app/org"
+	"github.com/jinyitao123/weave/internal/base/db"
+	"github.com/jinyitao123/weave/internal/base/testutil"
+	org "github.com/jinyitao123/weave/internal/kernel/orgspec"
+	"github.com/jinyitao123/weave/internal/kernel/registry"
+	"github.com/labstack/echo/v4"
+)
+
+func TestTeamMemberConfigDraftCanBeSavedRepeatedlyWithRevisionCheck(t *testing.T) {
+	ctx := context.Background()
+	pool := testutil.PostgresPool(t)
+	if err := db.Migrate(ctx, pool); err != nil {
+		t.Fatal(err)
+	}
+	prefix := "member-draft-" + uuid.NewString()[:8]
+	workspaceID := "workspace-" + prefix
+	agents := agentcatalog.New(pool)
+	lead := registry.AgentRecord{Name: prefix + "-lead", DisplayName: "负责人", Role: "avatar"}
+	worker := registry.AgentRecord{Name: prefix + "-worker", DisplayName: "执行成员", Role: "worker"}
+	for _, agent := range []*registry.AgentRecord{&lead, &worker} {
+		if err := agents.Put(ctx, workspaceID, agent); err != nil {
+			t.Fatalf("create agent: %v", err)
+		}
+	}
+	created, err := orgstore.NewStore(pool).CreateActiveTeam(ctx, workspaceID, org.CreateActiveTeamInput{
+		Name: prefix + "-team", Objective: "完成合同交接", LeadAvatarID: lead.ID,
+		Workers: []org.InitialTeamWorker{{WorkerAgentID: worker.ID, Duty: "整理材料", AllowedKinds: []string{"dispatch"}, DefaultKind: "dispatch"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := &Server{Pool: pool, Registry: agents}
+	save := func(revision int, duty string) (int, teamMemberConfigDraftResponse) {
+		t.Helper()
+		raw, _ := json.Marshal(saveTeamMemberConfigDraftRequest{
+			Revision:      revision,
+			Configuration: teamMemberAgentConfiguration{DisplayName: "执行成员", Role: "worker", Engine: "loom"},
+			Relationship:  teamMemberRelationshipDraft{Duty: duty, AllowedKinds: []string{"dispatch"}, DefaultKind: "dispatch", Enabled: true},
+		})
+		request := httptest.NewRequest(http.MethodPut, "/", bytes.NewReader(raw)).WithContext(ctx)
+		request.Header.Set("Content-Type", "application/json")
+		recorder := httptest.NewRecorder()
+		echoContext := echo.New().NewContext(request, recorder)
+		echoContext.SetParamNames("id", "agent")
+		echoContext.SetParamValues(created.Team.ID, worker.ID)
+		echoContext.Set("tenant", workspaceID)
+		echoContext.Set("user_id", "developer")
+		if err := server.handlePutTeamMemberConfigDraft(echoContext); err != nil {
+			t.Fatal(err)
+		}
+		var response teamMemberConfigDraftResponse
+		if recorder.Code == http.StatusOK {
+			if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return recorder.Code, response
+	}
+
+	if status, result := save(0, "第一次保存"); status != http.StatusOK || result.Revision != 1 {
+		t.Fatalf("first save status=%d revision=%d", status, result.Revision)
+	}
+	if status, result := save(1, "第二次保存"); status != http.StatusOK || result.Revision != 2 || result.Relationship.Duty != "第二次保存" {
+		t.Fatalf("second save status=%d revision=%d duty=%q", status, result.Revision, result.Relationship.Duty)
+	}
+	if status, _ := save(1, "过期覆盖"); status != http.StatusConflict {
+		t.Fatalf("stale save status=%d want %d", status, http.StatusConflict)
+	}
+}

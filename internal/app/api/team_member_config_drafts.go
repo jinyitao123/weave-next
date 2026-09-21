@@ -178,14 +178,23 @@ func (s *Server) handlePutTeamMemberConfigDraft(c echo.Context) error {
 	}
 	result := *seed
 	err = s.Pool.QueryRow(c.Request().Context(), `
-		INSERT INTO weave_team_member_config_drafts(workspace_id,team_id,agent_id,base_agent_version,revision,configuration,relationship,updated_by)
-		SELECT $1,$2,$3,$4,1,$5,$6,$7 WHERE $8=0
-		ON CONFLICT (workspace_id,team_id,agent_id) DO UPDATE
-		SET base_agent_version=EXCLUDED.base_agent_version, revision=weave_team_member_config_drafts.revision+1,
-		    configuration=EXCLUDED.configuration, relationship=EXCLUDED.relationship, updated_by=EXCLUDED.updated_by, updated_at=now()
-		WHERE weave_team_member_config_drafts.revision=$8
-		RETURNING revision, updated_at
-	`, getTenant(c), seed.TeamID, seed.AgentID, seed.BaseAgentVersion, configuration, relationship, getUserID(c), request.Revision).Scan(&result.Revision, &result.UpdatedAt)
+		WITH updated AS (
+			UPDATE weave_team_member_config_drafts
+			SET base_agent_version=$4, revision=revision+1, configuration=$5::jsonb,
+			    relationship=$6::jsonb, updated_by=$7, updated_at=now()
+			WHERE workspace_id=$1 AND team_id=$2 AND agent_id=$3 AND revision=$8 AND $8>0
+			RETURNING revision, updated_at
+		), inserted AS (
+			INSERT INTO weave_team_member_config_drafts(workspace_id,team_id,agent_id,base_agent_version,revision,configuration,relationship,updated_by)
+			SELECT $1,$2,$3,$4,1,$5::jsonb,$6::jsonb,$7 WHERE $8=0
+			ON CONFLICT (workspace_id,team_id,agent_id) DO NOTHING
+			RETURNING revision, updated_at
+		)
+		SELECT revision, updated_at FROM updated
+		UNION ALL
+		SELECT revision, updated_at FROM inserted
+		LIMIT 1
+	`, getTenant(c), seed.TeamID, seed.AgentID, seed.BaseAgentVersion, string(configuration), string(relationship), getUserID(c), request.Revision).Scan(&result.Revision, &result.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return c.JSON(http.StatusConflict, map[string]string{"code": "draft_revision_conflict", "error": "配置草稿已被更新，请刷新后继续"})
 	}
