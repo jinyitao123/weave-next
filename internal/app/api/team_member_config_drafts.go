@@ -43,16 +43,18 @@ type teamMemberRelationshipDraft struct {
 }
 
 type teamMemberConfigDraftResponse struct {
-	Version          string                       `json:"version"`
-	TeamID           string                       `json:"team_id"`
-	AgentID          string                       `json:"agent_id"`
-	AgentName        string                       `json:"agent_name"`
-	BaseAgentVersion int                          `json:"base_agent_version"`
-	Revision         int                          `json:"revision"`
-	Configuration    teamMemberAgentConfiguration `json:"configuration"`
-	Relationship     teamMemberRelationshipDraft  `json:"relationship"`
-	UpdatedAt        time.Time                    `json:"updated_at"`
-	UpdatedBy        string                       `json:"updated_by,omitempty"`
+	Version                string                       `json:"version"`
+	TeamID                 string                       `json:"team_id"`
+	AgentID                string                       `json:"agent_id"`
+	AgentName              string                       `json:"agent_name"`
+	BaseAgentVersion       int                          `json:"base_agent_version"`
+	Revision               int                          `json:"revision"`
+	PublishedConfiguration teamMemberAgentConfiguration `json:"published_configuration"`
+	PublishedRelationship  teamMemberRelationshipDraft  `json:"published_relationship"`
+	Configuration          teamMemberAgentConfiguration `json:"configuration"`
+	Relationship           teamMemberRelationshipDraft  `json:"relationship"`
+	UpdatedAt              time.Time                    `json:"updated_at"`
+	UpdatedBy              string                       `json:"updated_by,omitempty"`
 }
 
 type saveTeamMemberConfigDraftRequest struct {
@@ -116,17 +118,19 @@ func (s *Server) seedTeamMemberConfigDraft(c echo.Context) (*teamMemberConfigDra
 	if record.OutputSchema != nil {
 		outputSchema = append(json.RawMessage(nil), (*record.OutputSchema)...)
 	}
+	configuration := teamMemberAgentConfiguration{
+		DisplayName: record.DisplayName, Role: record.Role, Engine: record.Engine, RuntimeID: record.RuntimeID, Model: record.Model,
+		SystemPrompt: record.Spec.SystemPrompt, SkillNames: skillNames, MCPServerIDs: serverIDs,
+		PermissionAllow: record.Permissions.Allow, PermissionAsk: record.Permissions.Ask, PermissionDeny: record.Permissions.Deny,
+		MemoryEnabled: memoryEnabled, MemoryScope: memoryScope, MaxTokens: record.MaxTokens, MaxOutputTokens: record.MaxOutputTokens,
+		StepBudget: record.StepBudget, MaxCostUSD: record.MaxCostUSD, OutputSchema: outputSchema,
+	}
+	relationship := teamMemberRelationshipDraft{Duty: duty, WhenToUse: whenToUse, ContextInstruction: contextInstruction, AllowedKinds: allowedKinds, DefaultKind: defaultKind, ResultRequirement: resultRequirement, Enabled: enabled}
 	return &teamMemberConfigDraftResponse{
 		Version: "1", TeamID: teamID, AgentID: record.ID, AgentName: record.Name,
 		BaseAgentVersion: record.Version, Revision: 0, UpdatedAt: record.UpdatedAt,
-		Configuration: teamMemberAgentConfiguration{
-			DisplayName: record.DisplayName, Role: record.Role, Engine: record.Engine, RuntimeID: record.RuntimeID, Model: record.Model,
-			SystemPrompt: record.Spec.SystemPrompt, SkillNames: skillNames, MCPServerIDs: serverIDs,
-			PermissionAllow: record.Permissions.Allow, PermissionAsk: record.Permissions.Ask, PermissionDeny: record.Permissions.Deny,
-			MemoryEnabled: memoryEnabled, MemoryScope: memoryScope, MaxTokens: record.MaxTokens, MaxOutputTokens: record.MaxOutputTokens,
-			StepBudget: record.StepBudget, MaxCostUSD: record.MaxCostUSD, OutputSchema: outputSchema,
-		},
-		Relationship: teamMemberRelationshipDraft{Duty: duty, WhenToUse: whenToUse, ContextInstruction: contextInstruction, AllowedKinds: allowedKinds, DefaultKind: defaultKind, ResultRequirement: resultRequirement, Enabled: enabled},
+		PublishedConfiguration: configuration, PublishedRelationship: relationship,
+		Configuration: configuration, Relationship: relationship,
 	}, nil
 }
 
