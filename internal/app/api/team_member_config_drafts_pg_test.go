@@ -46,7 +46,7 @@ func TestTeamMemberConfigDraftCanBeSavedRepeatedlyWithRevisionCheck(t *testing.T
 		t.Helper()
 		raw, _ := json.Marshal(saveTeamMemberConfigDraftRequest{
 			Revision:      revision,
-			Configuration: teamMemberAgentConfiguration{DisplayName: "执行成员", Role: "worker", Engine: "loom", Skills: []teamMemberInlineSkill{{Name: "合同复核", Description: "检查合同条款", Body: "逐条检查合同并列出风险。"}}},
+			Configuration: teamMemberAgentConfiguration{DisplayName: "执行成员", Role: "worker", Engine: "loom", Skills: []teamMemberInlineSkill{{Name: "合同复核", Description: "检查合同条款", Body: "逐条检查合同并列出风险。"}}, BusinessCapabilityIDs: []string{"forge:action:sales_contract.ContractSubmit"}},
 			Relationship:  teamMemberRelationshipDraft{Duty: duty, AllowedKinds: []string{"dispatch"}, DefaultKind: "dispatch", Enabled: true},
 		})
 		request := httptest.NewRequest(http.MethodPut, "/", bytes.NewReader(raw)).WithContext(ctx)
@@ -103,6 +103,9 @@ func TestTeamMemberConfigDraftCanBeSavedRepeatedlyWithRevisionCheck(t *testing.T
 	}
 	if len(updated.Spec.Skills) != 1 || updated.Spec.Skills[0].Name != "合同复核" {
 		t.Fatalf("applied skills=%+v", updated.Spec.Skills)
+	}
+	if len(updated.BusinessCapabilityIDs) != 1 || updated.BusinessCapabilityIDs[0] != "forge:action:sales_contract.ContractSubmit" {
+		t.Fatalf("applied business capabilities=%+v", updated.BusinessCapabilityIDs)
 	}
 	relation, err := agentcatalog.NewTeamWorkerRepository(pool).Get(ctx, workspaceID, created.Team.ID, worker.ID)
 	if err != nil {

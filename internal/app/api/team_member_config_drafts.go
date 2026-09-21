@@ -17,25 +17,26 @@ import (
 )
 
 type teamMemberAgentConfiguration struct {
-	DisplayName     string                  `json:"display_name"`
-	Role            string                  `json:"role"`
-	Engine          string                  `json:"engine"`
-	RuntimeID       string                  `json:"runtime_id"`
-	Model           string                  `json:"model"`
-	SystemPrompt    string                  `json:"system_prompt"`
-	SkillNames      []string                `json:"skill_names"`
-	Skills          []teamMemberInlineSkill `json:"skills"`
-	MCPServerIDs    []string                `json:"mcp_server_ids"`
-	PermissionAllow []string                `json:"permission_allow"`
-	PermissionAsk   []string                `json:"permission_ask"`
-	PermissionDeny  []string                `json:"permission_deny"`
-	MemoryEnabled   bool                    `json:"memory_enabled"`
-	MemoryScope     string                  `json:"memory_scope"`
-	MaxTokens       int64                   `json:"max_tokens"`
-	MaxOutputTokens int                     `json:"max_output_tokens"`
-	StepBudget      int64                   `json:"step_budget"`
-	MaxCostUSD      float64                 `json:"max_cost_usd"`
-	OutputSchema    json.RawMessage         `json:"output_schema,omitempty"`
+	DisplayName           string                  `json:"display_name"`
+	Role                  string                  `json:"role"`
+	Engine                string                  `json:"engine"`
+	RuntimeID             string                  `json:"runtime_id"`
+	Model                 string                  `json:"model"`
+	SystemPrompt          string                  `json:"system_prompt"`
+	SkillNames            []string                `json:"skill_names"`
+	Skills                []teamMemberInlineSkill `json:"skills"`
+	MCPServerIDs          []string                `json:"mcp_server_ids"`
+	BusinessCapabilityIDs []string                `json:"business_capability_ids"`
+	PermissionAllow       []string                `json:"permission_allow"`
+	PermissionAsk         []string                `json:"permission_ask"`
+	PermissionDeny        []string                `json:"permission_deny"`
+	MemoryEnabled         bool                    `json:"memory_enabled"`
+	MemoryScope           string                  `json:"memory_scope"`
+	MaxTokens             int64                   `json:"max_tokens"`
+	MaxOutputTokens       int                     `json:"max_output_tokens"`
+	StepBudget            int64                   `json:"step_budget"`
+	MaxCostUSD            float64                 `json:"max_cost_usd"`
+	OutputSchema          json.RawMessage         `json:"output_schema,omitempty"`
 }
 
 type teamMemberInlineSkill struct {
@@ -142,7 +143,8 @@ func (s *Server) seedTeamMemberConfigDraft(c echo.Context) (*teamMemberConfigDra
 	configuration := teamMemberAgentConfiguration{
 		DisplayName: record.DisplayName, Role: record.Role, Engine: record.Engine, RuntimeID: record.RuntimeID, Model: record.Model,
 		SystemPrompt: record.Spec.SystemPrompt, SkillNames: skillNames, Skills: inlineSkills, MCPServerIDs: serverIDs,
-		PermissionAllow: record.Permissions.Allow, PermissionAsk: record.Permissions.Ask, PermissionDeny: record.Permissions.Deny,
+		BusinessCapabilityIDs: append([]string(nil), record.BusinessCapabilityIDs...),
+		PermissionAllow:       record.Permissions.Allow, PermissionAsk: record.Permissions.Ask, PermissionDeny: record.Permissions.Deny,
 		MemoryEnabled: memoryEnabled, MemoryScope: memoryScope, MaxTokens: record.MaxTokens, MaxOutputTokens: record.MaxOutputTokens,
 		StepBudget: record.StepBudget, MaxCostUSD: record.MaxCostUSD, OutputSchema: outputSchema,
 	}
@@ -197,6 +199,24 @@ func sameNames(left, right []string) bool {
 	slices.Sort(a)
 	slices.Sort(b)
 	return slices.Equal(a, b)
+}
+
+func normalizedCapabilityIDs(values []string) ([]string, error) {
+	result := make([]string, 0, len(values))
+	seen := map[string]bool{}
+	for _, raw := range values {
+		value := strings.TrimSpace(raw)
+		if value == "" {
+			return nil, errors.New("business capability id must not be empty")
+		}
+		if seen[value] {
+			return nil, fmt.Errorf("duplicate business capability id %q", value)
+		}
+		seen[value] = true
+		result = append(result, value)
+	}
+	slices.Sort(result)
+	return result, nil
 }
 
 func validateAppliedRelationship(value teamMemberRelationshipDraft) error {
@@ -296,6 +316,11 @@ func (s *Server) applyTeamMemberConfigDraft(ctx context.Context, workspaceID, te
 	record.DisplayName, record.Engine, record.RuntimeID, record.Model = strings.TrimSpace(configuration.DisplayName), configuration.Engine, strings.TrimSpace(configuration.RuntimeID), strings.TrimSpace(configuration.Model)
 	record.Spec.SystemPrompt = configuration.SystemPrompt
 	record.Spec.Skills = configuredSkills
+	businessCapabilityIDs, err := normalizedCapabilityIDs(configuration.BusinessCapabilityIDs)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
+	record.BusinessCapabilityIDs = businessCapabilityIDs
 	if lead {
 		record.Spec.Identity.Core = strings.TrimSpace(relationship.Duty)
 		record.Spec.Identity.Raw = configuration.SystemPrompt
