@@ -12,8 +12,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jinyitao123/weave/internal/base/storeext"
-	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 	"github.com/jinyitao123/weave/internal/kernel/loomruntime"
+	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 )
 
 const frozenAttemptLeaseTTL = 120 * time.Second
@@ -220,6 +220,13 @@ func frozenTerminalCandidate(
 		ToolCalls:    usage.ToolCalls,
 	}
 	var usageCompletePtr *bool
+	// A started request can fail before its provider returns a usage receipt.
+	// Preserve that partial measurement as an incomplete terminal instead of
+	// letting terminal validation replace the original execution error.
+	if usageCoverage != nil && (!usageCoverage.HasTokens || !usageCoverage.HasCost) && usageIncompleteReason == "" {
+		usageComplete = false
+		usageIncompleteReason = UsageIncompleteReasonAttemptLost
+	}
 	// The reason is the discriminator: callers that never set the annotation
 	// carry zero false/empty and must produce a usage-complete entry.
 	if !usageComplete && usageIncompleteReason != "" {

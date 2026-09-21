@@ -51,6 +51,7 @@ const (
 	UsageIncompleteReasonParallelLegs  = "unmeasured parallel legs"
 	UsageIncompleteReasonCLINode       = "CLI node without usage receipt"
 	UsageIncompleteReasonCLIDimensions = "CLI receipt missing usage dimensions"
+	UsageIncompleteReasonAttemptLost   = "usage attempt did not produce a complete receipt"
 )
 
 func ValidateErrorCode(code ErrorCode) bool {
