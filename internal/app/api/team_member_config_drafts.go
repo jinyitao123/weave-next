@@ -305,10 +305,9 @@ func (s *Server) applyTeamMemberConfigDraft(ctx context.Context, workspaceID, te
 			return echo.NewHTTPError(http.StatusConflict, "运行中的团队至少需要一位可参与成员")
 		}
 	}
-	if _, err := tx.Exec(ctx, `DELETE FROM weave_team_member_config_drafts WHERE workspace_id=$1 AND team_id=$2 AND agent_id=$3 AND revision=$4`, workspaceID, teamID, agentID, storedRevision); err != nil {
+	if _, err := tx.Exec(ctx, `UPDATE weave_team_member_config_drafts SET base_agent_version=$5, revision=0, updated_by=$6, updated_at=now() WHERE workspace_id=$1 AND team_id=$2 AND agent_id=$3 AND revision=$4`, workspaceID, teamID, agentID, storedRevision, record.Version, userID); err != nil {
 		return err
 	}
-	_ = userID
 	return tx.Commit(ctx)
 }
 
@@ -374,7 +373,7 @@ func (s *Server) handlePutTeamMemberConfigDraft(c echo.Context) error {
 			UPDATE weave_team_member_config_drafts
 			SET base_agent_version=$4, revision=revision+1, configuration=$5::jsonb,
 			    relationship=$6::jsonb, updated_by=$7, updated_at=now()
-			WHERE workspace_id=$1 AND team_id=$2 AND agent_id=$3 AND revision=$8 AND $8>0
+			WHERE workspace_id=$1 AND team_id=$2 AND agent_id=$3 AND revision=$8
 			RETURNING revision, updated_at
 		), inserted AS (
 			INSERT INTO weave_team_member_config_drafts(workspace_id,team_id,agent_id,base_agent_version,revision,configuration,relationship,updated_by)

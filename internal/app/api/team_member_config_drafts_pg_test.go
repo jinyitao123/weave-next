@@ -108,11 +108,14 @@ func TestTeamMemberConfigDraftCanBeSavedRepeatedlyWithRevisionCheck(t *testing.T
 	if relation.Duty != "第二次保存" {
 		t.Fatalf("applied duty=%q", relation.Duty)
 	}
-	var remaining int
-	if err := pool.QueryRow(ctx, `SELECT count(*) FROM weave_team_member_config_drafts WHERE workspace_id=$1 AND team_id=$2 AND agent_id=$3`, workspaceID, created.Team.ID, worker.ID).Scan(&remaining); err != nil {
+	var remaining, appliedRevision, appliedBaseVersion int
+	if err := pool.QueryRow(ctx, `SELECT count(*), max(revision), max(base_agent_version) FROM weave_team_member_config_drafts WHERE workspace_id=$1 AND team_id=$2 AND agent_id=$3`, workspaceID, created.Team.ID, worker.ID).Scan(&remaining, &appliedRevision, &appliedBaseVersion); err != nil {
 		t.Fatal(err)
 	}
-	if remaining != 0 {
-		t.Fatalf("draft rows=%d want 0", remaining)
+	if remaining != 1 || appliedRevision != 0 || appliedBaseVersion != 2 {
+		t.Fatalf("applied baseline rows=%d revision=%d base=%d", remaining, appliedRevision, appliedBaseVersion)
+	}
+	if status, result := save(0, "应用后再次编辑"); status != http.StatusOK || result.Revision != 1 {
+		t.Fatalf("edit applied baseline status=%d revision=%d", status, result.Revision)
 	}
 }
