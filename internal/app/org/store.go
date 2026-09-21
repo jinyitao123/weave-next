@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/jinyitao123/weave/internal/kernel/orgspec"
 
@@ -262,6 +263,47 @@ func (s *Store) RenameTeam(ctx context.Context, workspaceID, id, name string) er
 		return err
 	}
 	return tx.Commit(ctx)
+}
+
+// UpdateTeamProfile changes the developer-visible team name and objective with
+// optimistic concurrency. The internal stable name remains unchanged.
+func (s *Store) UpdateTeamProfile(ctx context.Context, workspaceID, teamID string, input orgspec.UpdateTeamProfileInput) (orgspec.Team, error) {
+	input.DisplayName = strings.TrimSpace(input.DisplayName)
+	input.Objective = strings.TrimSpace(input.Objective)
+	if workspaceID == "" || teamID == "" || input.DisplayName == "" || input.Objective == "" || input.ExpectedUpdatedAt.IsZero() {
+		return orgspec.Team{}, errors.New("update team profile: display_name, objective, and expected_updated_at are required")
+	}
+	var team orgspec.Team
+	err := s.pool.QueryRow(ctx, `
+		UPDATE weave_teams
+		SET display_name=$3, objective=$4, primary_scenario=$4, updated_at=now()
+		WHERE workspace_id=$1 AND id=$2 AND updated_at=$5 AND status<>'archived'
+		RETURNING id, workspace_id, name, COALESCE(NULLIF(display_name, ''), name), objective, primary_scenario,
+		          success_criteria, COALESCE(lead_avatar_id, ''), status, COALESCE(default_workflow_id, ''),
+		          evaluation, COALESCE(evaluation_build_run_id, ''), COALESCE(evaluation_contract_hash, ''),
+		          evaluated_at, created_at, updated_at
+	`, workspaceID, teamID, input.DisplayName, input.Objective, input.ExpectedUpdatedAt).Scan(
+		&team.ID, &team.WorkspaceID, &team.Name, &team.DisplayName, &team.Objective,
+		&team.PrimaryScenario, &team.SuccessCriteria, &team.LeadAvatarID, &team.Status,
+		&team.DefaultWorkflowID, &team.Evaluation, &team.EvaluationBuildRunID,
+		&team.EvaluationContractHash, &team.EvaluatedAt, &team.CreatedAt, &team.UpdatedAt,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		var status string
+		var updatedAt time.Time
+		lookupErr := s.pool.QueryRow(ctx, `SELECT status, updated_at FROM weave_teams WHERE workspace_id=$1 AND id=$2`, workspaceID, teamID).Scan(&status, &updatedAt)
+		if errors.Is(lookupErr, pgx.ErrNoRows) {
+			return orgspec.Team{}, fmt.Errorf("team %q not found: %w", teamID, orgspec.ErrTeamNotFound)
+		}
+		if lookupErr != nil {
+			return orgspec.Team{}, lookupErr
+		}
+		if status == "archived" {
+			return orgspec.Team{}, fmt.Errorf("%w: team %q", orgspec.ErrArchivedTeamImmutable, teamID)
+		}
+		return orgspec.Team{}, orgspec.ErrTeamWriteConflict
+	}
+	return team, err
 }
 
 // Deprecated: ArchiveTeam has no production caller after archive moved into

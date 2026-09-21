@@ -49,6 +49,22 @@ type teamRequest struct {
 	Name string `json:"name"`
 }
 
+type teamProfileRequest struct {
+	DisplayName       string    `json:"display_name"`
+	Objective         string    `json:"objective"`
+	ExpectedUpdatedAt time.Time `json:"expected_updated_at"`
+}
+
+type teamWorkerWriteRequest struct {
+	WorkerAgentID      string   `json:"worker_agent_id"`
+	Duty               string   `json:"duty"`
+	WhenToUse          string   `json:"when_to_use"`
+	ContextInstruction string   `json:"context_instruction"`
+	AllowedKinds       []string `json:"allowed_kinds"`
+	DefaultKind        string   `json:"default_kind"`
+	ResultRequirement  string   `json:"result_requirement"`
+}
+
 type createTeamResponse struct {
 	org.Team
 	Workers []org.TeamWorker `json:"workers"`
@@ -378,6 +394,58 @@ func (s *Server) handleRenameTeam(c echo.Context) error {
 			return c.JSON(http.StatusConflict, map[string]string{"error": err.Error()})
 		}
 		return c.JSON(http.StatusNotFound, map[string]string{"error": err.Error()})
+	}
+	return c.NoContent(http.StatusNoContent)
+}
+
+func (s *Server) handleUpdateTeamProfile(c echo.Context) error {
+	var req teamProfileRequest
+	if err := c.Bind(&req); err != nil || strings.TrimSpace(req.DisplayName) == "" || strings.TrimSpace(req.Objective) == "" || req.ExpectedUpdatedAt.IsZero() {
+		return c.JSON(http.StatusBadRequest, map[string]string{"code": "invalid_team_profile", "error": "invalid team profile"})
+	}
+	team, err := s.OrgStore.UpdateTeamProfile(c.Request().Context(), getTenant(c), c.Param("id"), org.UpdateTeamProfileInput{
+		DisplayName: req.DisplayName, Objective: req.Objective, ExpectedUpdatedAt: req.ExpectedUpdatedAt,
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, org.ErrTeamNotFound):
+			return c.JSON(http.StatusNotFound, map[string]string{"code": "team_not_found", "error": "team not found"})
+		case errors.Is(err, org.ErrTeamWriteConflict):
+			return c.JSON(http.StatusConflict, map[string]string{"code": "team_write_conflict", "error": "团队资料已被更新，请刷新后继续"})
+		case errors.Is(err, org.ErrArchivedTeamImmutable):
+			return c.JSON(http.StatusConflict, map[string]string{"code": "team_archived", "error": "已归档团队不能修改"})
+		default:
+			return c.JSON(http.StatusInternalServerError, map[string]string{"code": "team_profile_update_failed", "error": "team profile update failed"})
+		}
+	}
+	return c.JSON(http.StatusOK, team)
+}
+
+func (s *Server) handleCreateTeamWorker(c echo.Context) error {
+	if s.TeamWorkers == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"code": "team_worker_store_unavailable", "error": "team worker store unavailable"})
+	}
+	var req teamWorkerWriteRequest
+	if err := c.Bind(&req); err != nil || strings.TrimSpace(req.WorkerAgentID) == "" || strings.TrimSpace(req.Duty) == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"code": "invalid_team_worker", "error": "invalid team worker"})
+	}
+	worker, err := s.TeamWorkers.Create(c.Request().Context(), getTenant(c), registry.TeamWorker{
+		TeamID: c.Param("id"), WorkerAgentID: req.WorkerAgentID, Duty: req.Duty, WhenToUse: req.WhenToUse,
+		ContextInstruction: req.ContextInstruction, AllowedKinds: req.AllowedKinds, DefaultKind: req.DefaultKind,
+		ResultRequirement: req.ResultRequirement, Enabled: true,
+	})
+	if err != nil {
+		return c.JSON(http.StatusConflict, map[string]string{"code": "team_worker_create_failed", "error": err.Error()})
+	}
+	return c.JSON(http.StatusCreated, worker)
+}
+
+func (s *Server) handleDeleteTeamWorker(c echo.Context) error {
+	if s.TeamWorkers == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"code": "team_worker_store_unavailable", "error": "team worker store unavailable"})
+	}
+	if err := s.TeamWorkers.Delete(c.Request().Context(), getTenant(c), c.Param("id"), c.Param("worker")); err != nil {
+		return c.JSON(http.StatusConflict, map[string]string{"code": "team_worker_remove_failed", "error": err.Error()})
 	}
 	return c.NoContent(http.StatusNoContent)
 }

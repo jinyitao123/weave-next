@@ -125,6 +125,16 @@ var (
 	ErrTeamNameConflict = errors.New("team name already exists in workspace")
 )
 
+// ErrTeamWriteConflict prevents a stale team profile from overwriting a newer edit.
+var ErrTeamWriteConflict = errors.New("team write conflict")
+
+// UpdateTeamProfileInput contains the developer-visible team fields.
+type UpdateTeamProfileInput struct {
+	DisplayName       string    `json:"display_name"`
+	Objective         string    `json:"objective"`
+	ExpectedUpdatedAt time.Time `json:"expected_updated_at"`
+}
+
 // InitialTeamWorker describes one enabled worker created with a Team.
 type InitialTeamWorker struct {
 	WorkerAgentID      string   `json:"worker_agent_id"`
