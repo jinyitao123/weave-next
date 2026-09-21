@@ -17,12 +17,16 @@ import (
 
 const externalSessionTTL = 8 * time.Hour
 
+const forgeTeamDeveloperPermissionSet = "weave_team_developer"
+
 type ExternalIdentity struct {
-	Issuer       string
-	Subject      string
-	Email        string
-	Name         string
-	Organization string
+	Issuer         string
+	Subject        string
+	Email          string
+	Name           string
+	Organization   string
+	AccessRole     string
+	PermissionSets []string
 }
 
 type ExternalIdentityVerifier interface {
@@ -104,11 +108,60 @@ func (v *ForgeSessionVerifier) Verify(ctx context.Context, bearer string) (Exter
 	if subject == "" || workspace == "" {
 		return ExternalIdentity{}, errors.New("external identity is missing subject or workspace")
 	}
+	permissionEndpoint := *v.endpoint
+	permissionEndpoint.Path = "/api/v1/auth/me/permissions"
+	permissionEndpoint.RawPath = ""
+	permissionEndpoint.RawQuery = ""
+	permissionEndpoint.Fragment = ""
+	permissionRequest, err := http.NewRequestWithContext(ctx, http.MethodGet, permissionEndpoint.String(), nil)
+	if err != nil {
+		return ExternalIdentity{}, err
+	}
+	permissionRequest.Header.Set("Accept", "application/json")
+	permissionRequest.Header.Set("Authorization", "Bearer "+bearer)
+	permissionResponse, err := v.client.Do(permissionRequest)
+	if err != nil {
+		return ExternalIdentity{}, fmt.Errorf("verify Forge permissions: %w", err)
+	}
+	defer permissionResponse.Body.Close()
+	if permissionResponse.StatusCode != http.StatusOK {
+		_, _ = io.Copy(io.Discard, io.LimitReader(permissionResponse.Body, 64<<10))
+		return ExternalIdentity{}, fmt.Errorf("verify Forge permissions: status %d", permissionResponse.StatusCode)
+	}
+	var permissionBody struct {
+		Authenticated  bool     `json:"authenticated"`
+		PermissionSets []string `json:"permissionSets"`
+	}
+	if err := json.NewDecoder(io.LimitReader(permissionResponse.Body, 1<<20)).Decode(&permissionBody); err != nil || !permissionBody.Authenticated {
+		return ExternalIdentity{}, errors.New("invalid Forge permission response")
+	}
+	accessRole := "member"
+	for _, permissionSet := range permissionBody.PermissionSets {
+		switch strings.TrimSpace(permissionSet) {
+		case "admin_full_access":
+			accessRole = "admin"
+		case forgeTeamDeveloperPermissionSet:
+			if accessRole != "admin" {
+				accessRole = "developer"
+			}
+		}
+	}
 	return ExternalIdentity{
 		Issuer: v.endpoint.Scheme + "://" + v.endpoint.Host, Subject: subject,
 		Email: email, Name: name,
-		Organization: workspace,
+		Organization: workspace, AccessRole: accessRole, PermissionSets: permissionBody.PermissionSets,
 	}, nil
+}
+
+func productPermissions(role string) []string {
+	permissions := []string{"teams:use"}
+	if role == "developer" || role == "admin" {
+		permissions = append(permissions, "teams:develop")
+	}
+	if role == "admin" {
+		permissions = append(permissions, "teams:admin")
+	}
+	return permissions
 }
 
 type externalIdentityBinder interface {
@@ -139,13 +192,18 @@ func (s *Server) handleExternalIdentityExchange(c echo.Context) error {
 	if err != nil {
 		return c.JSON(http.StatusForbidden, map[string]string{"error": "account binding failed"})
 	}
-	token, err := s.signJWTFor(user.TenantID, user.ID, []string{user.Role}, "forge", externalSessionTTL)
+	accessRole := identity.AccessRole
+	if accessRole != "developer" && accessRole != "admin" {
+		accessRole = "member"
+	}
+	token, err := s.signJWTFor(user.TenantID, user.ID, []string{accessRole}, "forge", externalSessionTTL)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "could not issue product session"})
 	}
 	return c.JSON(http.StatusOK, map[string]any{
 		"token": token, "tokenType": "Bearer", "expiresIn": int(externalSessionTTL.Seconds()),
-		"subject":      map[string]string{"id": user.ID, "externalId": identity.Subject, "email": identity.Email, "name": user.DisplayName, "role": user.Role},
+		"subject":      map[string]string{"id": user.ID, "externalId": identity.Subject, "email": identity.Email, "name": user.DisplayName},
 		"organization": map[string]string{"id": user.TenantID},
+		"permissions":  productPermissions(accessRole),
 	})
 }
