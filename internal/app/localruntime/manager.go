@@ -149,29 +149,7 @@ func (m *Manager) ensure(ctx context.Context, workspace string) (registration, e
 			return identity, generateErr
 		}
 		identity = registration{Version: 1, WorkspaceID: workspace, RuntimeID: id, Token: token}
-		data, _ = json.Marshal(identity)
-		file, writeErr := os.CreateTemp(root, ".host-*.tmp")
-		if writeErr != nil {
-			return identity, writeErr
-		}
-		defer os.Remove(file.Name())
-		_, writeErr = file.Write(data)
-		if writeErr == nil {
-			writeErr = file.Sync()
-		}
-		writeErr = errors.Join(writeErr, file.Close())
-		if writeErr != nil {
-			return identity, writeErr
-		}
-		if err := os.Rename(file.Name(), path); err != nil {
-			return identity, err
-		}
-		dir, err := os.Open(root)
-		if err != nil {
-			return identity, err
-		}
-		err = errors.Join(dir.Sync(), dir.Close())
-		if err != nil {
+		if err := writeRegistration(root, path, identity); err != nil {
 			return identity, err
 		}
 	} else if err != nil {
@@ -179,8 +157,15 @@ func (m *Manager) ensure(ctx context.Context, workspace string) (registration, e
 	} else if json.Unmarshal(data, &identity) != nil || identity.Version != 1 || identity.WorkspaceID != workspace {
 		return identity, errors.New("local runtime identity is invalid")
 	}
-	if _, err := m.config.Runtimes.EnsureManagedRegistration(ctx, workspace, identity.RuntimeID, "本机运行环境", identity.Token); err != nil {
+	registered, err := m.config.Runtimes.EnsureManagedRegistration(ctx, workspace, identity.RuntimeID, "本机运行环境", identity.Token)
+	if err != nil {
 		return identity, err
+	}
+	if registered.ID != identity.RuntimeID {
+		identity.RuntimeID = registered.ID
+		if err := writeRegistration(root, path, identity); err != nil {
+			return identity, err
+		}
 	}
 	host, err := daemon.NewManagedHost(ctx, daemon.HostConfig{Server: m.url, Token: identity.Token, WorkspacesRoot: root, SubjectBindingRoot: m.config.Root, Concurrency: m.config.Concurrency, Credentials: func(ctx context.Context, claim *runtimeprotocol.ExecutionClaim) (daemon.ProviderCredentials, error) {
 		if claim.WorkspaceID != identity.WorkspaceID {
@@ -214,6 +199,34 @@ func (m *Manager) ensure(ctx context.Context, workspace string) (registration, e
 		case <-time.After(20 * time.Millisecond):
 		}
 	}
+}
+
+func writeRegistration(root, path string, identity registration) error {
+	data, err := json.Marshal(identity)
+	if err != nil {
+		return err
+	}
+	file, err := os.CreateTemp(root, ".host-*.tmp")
+	if err != nil {
+		return err
+	}
+	temporary := file.Name()
+	defer os.Remove(temporary)
+	if _, err = file.Write(data); err == nil {
+		err = file.Sync()
+	}
+	err = errors.Join(err, file.Close())
+	if err != nil {
+		return err
+	}
+	if err := os.Rename(temporary, path); err != nil {
+		return err
+	}
+	dir, err := os.Open(root)
+	if err != nil {
+		return err
+	}
+	return errors.Join(dir.Sync(), dir.Close())
 }
 
 // ExecRemote selects the explicitly assembled machine only for mutable

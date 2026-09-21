@@ -9,6 +9,26 @@ import (
 	"strings"
 )
 
+type subjectlessContext struct{ context.Context }
+
+func (c subjectlessContext) Value(key any) any {
+	if _, ok := key.(subjectKey); ok {
+		return nil
+	}
+	return c.Context.Value(key)
+}
+
+// WithoutAuthenticatedSubject preserves cancellation and all unrelated values
+// while forcing a durable parent (task or run snapshot) to supply the execution
+// subject. Use this only for continuations where the current user is an audited
+// reviewer and must not replace the original run identity.
+func WithoutAuthenticatedSubject(ctx context.Context) context.Context {
+	if ctx == nil {
+		return context.Background()
+	}
+	return subjectlessContext{Context: ctx}
+}
+
 // Subject is the platform-authenticated end user or an explicitly delegated
 // workspace service. Runtime-host authentication does not replace this identity.
 type Subject struct {
