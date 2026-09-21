@@ -50,6 +50,8 @@ services:
       WEAVE_SECRET_KEY: ${WEAVE_SECRET_KEY:?set WEAVE_SECRET_KEY (openssl rand -hex 32)}
       WEAVE_ADMIN_USER: ${WEAVE_ADMIN_USER:-admin}
       WEAVE_ADMIN_PASS: ${WEAVE_ADMIN_PASS:?set WEAVE_ADMIN_PASS}
+      WEAVE_FORGE_SESSION_URL: ${WEAVE_FORGE_SESSION_URL:-}
+      WEAVE_FORGE_DEFAULT_WORKSPACE: ${WEAVE_FORGE_DEFAULT_WORKSPACE:-}
       # Engine credentials are injected at runtime — never baked into the image.
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       WEAVE_LOOM_MODEL: ${WEAVE_LOOM_MODEL:-}

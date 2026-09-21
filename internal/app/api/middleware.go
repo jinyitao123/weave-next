@@ -23,9 +23,10 @@ const (
 
 // Claims holds the JWT claims for Weave authentication.
 type Claims struct {
-	TenantID string   `json:"tenant_id"`
-	UserID   string   `json:"user_id"`
-	Roles    []string `json:"roles"`
+	TenantID       string   `json:"tenant_id"`
+	UserID         string   `json:"user_id"`
+	Roles          []string `json:"roles"`
+	IdentitySource string   `json:"identity_source,omitempty"`
 	jwt.RegisteredClaims
 }
 

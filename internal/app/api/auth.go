@@ -322,6 +322,9 @@ func (s *Server) handleUpdateUser(c echo.Context) error {
 	if err := c.Bind(&req); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
 	}
+	if req.Role != "member" && req.Role != "developer" && req.Role != "admin" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "role must be member, developer, or admin"})
+	}
 	resource := admissionfence.Actor(execution.Subject{UserID: c.Param("id")})
 	var block, grant []admissionfence.Resource
 	if req.Disabled {
@@ -408,12 +411,17 @@ func (s *Server) handleDeleteAPIKey(c echo.Context) error {
 // ── Helpers ──────────────────────────────────────────────────
 
 func (s *Server) signJWT(tenant, userID string, roles []string) (string, error) {
+	return s.signJWTFor(tenant, userID, roles, "", 24*time.Hour)
+}
+
+func (s *Server) signJWTFor(tenant, userID string, roles []string, identitySource string, ttl time.Duration) (string, error) {
 	claims := &Claims{
-		TenantID: tenant,
-		UserID:   userID,
-		Roles:    roles,
+		TenantID:       tenant,
+		UserID:         userID,
+		Roles:          roles,
+		IdentitySource: identitySource,
 		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(ttl)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 		},
 	}

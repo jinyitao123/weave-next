@@ -71,6 +71,8 @@ type Server struct {
 	TeamAssembler             teamcompiler.TeamInteractionAssembler // optional test seam; nil uses the production assembler
 	Models                    *llmrouter.Resolver
 	Config                    *config.Config
+	ExternalIdentity          ExternalIdentityVerifier
+	ExternalIdentityBinder    externalIdentityBinder
 	Embedders                 *memory.EmbedderResolver // nil if PG pool unavailable — resolves workspace-scoped memory services
 	StoreExt                  *storeext.PGExt          // nil if Store is not PGStore
 	Fanout                    *fanout.Store            // nil if PG pool unavailable
@@ -228,11 +230,12 @@ func NewServer(cfg *config.Config, store loom.Store, models *llmrouter.Resolver)
 	}))
 
 	s := &Server{
-		Echo:     e,
-		Store:    store,
-		Registry: agentRegistry,
-		Models:   models,
-		Config:   cfg,
+		Echo:             e,
+		Store:            store,
+		Registry:         agentRegistry,
+		Models:           models,
+		Config:           cfg,
+		ExternalIdentity: NewForgeSessionVerifier(cfg.ForgeSessionURL, cfg.ForgeDefaultWorkspace, nil),
 	}
 
 	// Initialize platform store extensions if PGStore is available.
@@ -306,6 +309,7 @@ func (s *Server) registerRoutes() {
 	s.Echo.GET("/v1/downloads/runtime/:os/:arch", s.handleDownloadRuntime)
 	s.Echo.POST("/v1/auth/token", s.handleIssueToken)
 	s.Echo.POST("/v1/auth/login", s.handleLogin)
+	s.Echo.POST("/v1/auth/external/exchange", s.handleExternalIdentityExchange)
 	s.Echo.Any("/v1/mcp-boundary/:tenant/:agent/:idx", s.handleMCPBoundary)
 	s.Echo.Any("/v1/mcp-gateway/:workspace/:agent/:serverID", s.handleMCPGateway)
 
@@ -376,6 +380,8 @@ func (s *Server) registerRoutes() {
 	auth.POST("/teams/:id/evaluations", s.handleEvaluateTeam, RequireRole("admin"), orgScope)
 	auth.GET("/team-templates/samples", s.handleListTeamTemplateSamples, orgScope)
 	auth.GET("/teams/:id", s.handleGetTeam, orgScope)
+	auth.GET("/teams/:id/members/:agent/config-draft", s.handleGetTeamMemberConfigDraft, RequireAnyRole("developer", "admin", "owner"), orgScope)
+	auth.PUT("/teams/:id/members/:agent/config-draft", s.handlePutTeamMemberConfigDraft, RequireAnyRole("developer", "admin", "owner"), orgScope)
 	auth.GET("/teams/:id/dispatch-rules", s.handleGetTeamDispatchRules, orgScope)
 	auth.PUT("/teams/:id/dispatch-rules", s.handlePutTeamDispatchRules, RequireAnyRole("admin", "owner"), orgScope)
 	auth.POST("/teams/:id/dispatch", s.handleDispatchTeam, orgScope, chatScope)
