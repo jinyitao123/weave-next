@@ -298,7 +298,7 @@ func (s *Server) applyTeamMemberConfigDraft(ctx context.Context, workspaceID, te
 	record.Spec.Skills = configuredSkills
 	if lead {
 		record.Spec.Identity.Core = strings.TrimSpace(relationship.Duty)
-		record.Spec.Identity.Raw = record.Spec.Identity.Core
+		record.Spec.Identity.Raw = configuration.SystemPrompt
 	}
 	record.Permissions = registry.PermissionConfig{Allow: configuration.PermissionAllow, Ask: configuration.PermissionAsk, Deny: configuration.PermissionDeny}
 	if record.MemoryConfig == nil {

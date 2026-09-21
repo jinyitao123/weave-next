@@ -121,4 +121,22 @@ func TestTeamMemberConfigDraftCanBeSavedRepeatedlyWithRevisionCheck(t *testing.T
 	if status, result := save(0, "应用后再次编辑"); status != http.StatusOK || result.Revision != 1 {
 		t.Fatalf("edit applied baseline status=%d revision=%d", status, result.Revision)
 	}
+
+	leadConfiguration := teamMemberAgentConfiguration{DisplayName: "负责人", Role: "avatar", Engine: "codex", RuntimeID: "local-runtime", SystemPrompt: "先理解目标，再协调成员并核对结果。"}
+	leadRelationship := teamMemberRelationshipDraft{Duty: "负责合同交接的组织与最终验收。", Enabled: true}
+	configurationJSON, _ := json.Marshal(leadConfiguration)
+	relationshipJSON, _ := json.Marshal(leadRelationship)
+	if _, err := pool.Exec(ctx, `INSERT INTO weave_team_member_config_drafts(workspace_id,team_id,agent_id,base_agent_version,revision,configuration,relationship,updated_by) VALUES($1,$2,$3,$4,1,$5::jsonb,$6::jsonb,'developer') ON CONFLICT(workspace_id,team_id,agent_id) DO UPDATE SET revision=1,configuration=EXCLUDED.configuration,relationship=EXCLUDED.relationship`, workspaceID, created.Team.ID, lead.ID, lead.Version, string(configurationJSON), string(relationshipJSON)); err != nil {
+		t.Fatal(err)
+	}
+	if err := server.applyTeamMemberConfigDraft(ctx, workspaceID, created.Team.ID, lead.ID, "developer", 1); err != nil {
+		t.Fatal(err)
+	}
+	updatedLead, err := agents.Get(ctx, workspaceID, lead.Name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updatedLead.Spec.Identity.Core != leadRelationship.Duty || updatedLead.Spec.Identity.Raw != leadConfiguration.SystemPrompt || updatedLead.Spec.SystemPrompt != leadConfiguration.SystemPrompt {
+		t.Fatalf("lead identity=%+v prompt=%q", updatedLead.Spec.Identity, updatedLead.Spec.SystemPrompt)
+	}
 }
