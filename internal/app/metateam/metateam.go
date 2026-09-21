@@ -368,7 +368,7 @@ func metaStepTarget(name string) *string {
 }
 
 // EnsureMetaTeam instantiates the built-in meta team for one workspace
-// following the EnsureDesignStudio seed pattern: ensure the workspace row
+// using the shared startup-seed pattern: ensure the workspace row
 // (the registry's PutTx inserts it when the first agent is created), reuse
 // each existing employee AgentRecord instead of overwriting it, then create
 // the Team + roster unless a team with the built-in name already exists. A

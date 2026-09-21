@@ -289,7 +289,6 @@ func main() {
 		if srv.TeamBuild != nil && srv.Registry != nil && srv.Workflow != nil {
 			srv.TeamBuild.SetBaselineSources(srv.OrgStore, srv.Registry, srv.Workflow, srv.WorkflowArtifacts)
 		}
-		designseed.EnsureDesignStudio(srv.Registry, srv.OrgStore, "default")
 		if err := metateam.EnsureMetaTeamIfEnabled(
 			context.Background(), srv.Registry, srv.OrgStore, "default", cfg.MetaTeamEnabled,
 		); err != nil {
