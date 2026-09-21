@@ -66,6 +66,8 @@ services:
       https_proxy: ${CONTAINER_HTTPS_PROXY:-}
       all_proxy: ${CONTAINER_ALL_PROXY:-}
       no_proxy: ${CONTAINER_NO_PROXY:-localhost,127.0.0.1,db,weave,workbench}
+    volumes:
+      - weave_workspaces:/root/.weave/workspaces
     depends_on:
       db:
         condition: service_healthy
@@ -185,3 +187,4 @@ services:
 volumes:
   pgdata:
   runtime_data:
+  weave_workspaces:

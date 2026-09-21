@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 )
 
@@ -224,7 +225,10 @@ func (s *HumanResumeService) Complete(
 	if err != nil {
 		return CompleteHumanWaitResult{}, err
 	}
-	if err := s.Tasks.EnqueueTx(ctx, tx, &taskqueue.Task{
+	// The reviewer is the transition actor, while the continuation must retain
+	// the immutable execution subject frozen in RunSnapshotID. Mask the request
+	// subject only for task admission so taskqueue inherits from that snapshot.
+	if err := s.Tasks.EnqueueTx(execution.WithoutAuthenticatedSubject(ctx), tx, &taskqueue.Task{
 		ID: taskID, WorkspaceID: resumed.WorkspaceID, ProjectID: resumed.ProjectID,
 		IdentityKind: taskqueue.IdentityTeamWorkflow, IdentitySchemaVersion: 2,
 		WorkflowID: resumed.WorkflowID, WorkflowVersion: resumed.WorkflowVersion,
