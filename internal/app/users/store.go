@@ -2,7 +2,12 @@ package users
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/binary"
+	"encoding/hex"
+	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -124,6 +129,74 @@ func (s *Store) GetByUsername(ctx context.Context, tenantID, username string) (*
 		return nil, fmt.Errorf("user %q not found", username)
 	}
 	return &u, nil
+}
+
+// BindExternal returns the existing Weave user for one trusted external
+// identity or creates a disabled-password member on first login. Repeated
+// logins never overwrite a role or reactivate a disabled user.
+func (s *Store) BindExternal(ctx context.Context, issuer, subject, tenantID, email, displayName string) (*User, error) {
+	issuer = strings.TrimSpace(issuer)
+	subject = strings.TrimSpace(subject)
+	tenantID = strings.TrimSpace(tenantID)
+	if issuer == "" || subject == "" || tenantID == "" {
+		return nil, fmt.Errorf("external identity is incomplete")
+	}
+	digest := sha256.Sum256([]byte(issuer + "\x00" + subject + "\x00" + tenantID))
+	lockKey := int64(binary.BigEndian.Uint64(digest[:8]))
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("bind external identity: %w", err)
+	}
+	defer tx.Rollback(ctx)
+	if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, lockKey); err != nil {
+		return nil, fmt.Errorf("bind external identity: %w", err)
+	}
+	var user User
+	err = tx.QueryRow(ctx, `SELECT u.id,u.tenant_id,u.username,u.display_name,u.role,u.disabled,u.created_at,u.updated_at
+		FROM weave_external_identities e JOIN weave_users u ON u.id=e.user_id AND u.tenant_id=e.workspace_id
+		WHERE e.issuer=$1 AND e.subject=$2 AND e.workspace_id=$3`, issuer, subject, tenantID).
+		Scan(&user.ID, &user.TenantID, &user.Username, &user.DisplayName, &user.Role, &user.Disabled, &user.CreatedAt, &user.UpdatedAt)
+	if err == nil {
+		if user.Disabled {
+			return nil, fmt.Errorf("external user is disabled")
+		}
+		if _, err = tx.Exec(ctx, `UPDATE weave_external_identities SET last_login_at=NOW() WHERE issuer=$1 AND subject=$2 AND workspace_id=$3`, issuer, subject, tenantID); err != nil {
+			return nil, fmt.Errorf("bind external identity: %w", err)
+		}
+		if err = tx.Commit(ctx); err != nil {
+			return nil, fmt.Errorf("bind external identity: %w", err)
+		}
+		return &user, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return nil, fmt.Errorf("bind external identity: %w", err)
+	}
+	if _, err = tx.Exec(ctx, `INSERT INTO weave_workspaces(id,slug,name) VALUES($1,$1,$1) ON CONFLICT(id) DO NOTHING`, tenantID); err != nil {
+		return nil, fmt.Errorf("bind external identity: %w", err)
+	}
+	userID := "ext_" + hex.EncodeToString(digest[:16])
+	username := "forge:" + hex.EncodeToString(digest[:12])
+	if strings.TrimSpace(displayName) == "" {
+		displayName = strings.TrimSpace(email)
+	}
+	if strings.TrimSpace(displayName) == "" {
+		displayName = username
+	}
+	now := time.Now()
+	if _, err = tx.Exec(ctx, `INSERT INTO weave_users(id,tenant_id,username,password,display_name,role,created_at,updated_at)
+		VALUES($1,$2,$3,'!', $4,'member',$5,$5)`, userID, tenantID, username, displayName, now); err != nil {
+		return nil, fmt.Errorf("bind external identity: %w", err)
+	}
+	if _, err = tx.Exec(ctx, `INSERT INTO weave_members(workspace_id,user_id,role) VALUES($1,$2,'member')`, tenantID, userID); err != nil {
+		return nil, fmt.Errorf("bind external identity: %w", err)
+	}
+	if _, err = tx.Exec(ctx, `INSERT INTO weave_external_identities(issuer,subject,workspace_id,user_id) VALUES($1,$2,$3,$4)`, issuer, subject, tenantID, userID); err != nil {
+		return nil, fmt.Errorf("bind external identity: %w", err)
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("bind external identity: %w", err)
+	}
+	return s.GetByID(ctx, tenantID, userID)
 }
 
 // List returns all users for a tenant.

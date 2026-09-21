@@ -18,9 +18,11 @@ type Config struct {
 	LogLevel    string // "debug", "info", "warn", "error"
 
 	// Auth settings.
-	DevMode   bool   // WEAVE_DEV_MODE — enables /v1/auth/token (no-credential token endpoint)
-	AdminUser string // WEAVE_ADMIN_USER — seed admin username on startup
-	AdminPass string // WEAVE_ADMIN_PASS — seed admin password on startup
+	DevMode               bool   // WEAVE_DEV_MODE — enables /v1/auth/token (no-credential token endpoint)
+	AdminUser             string // WEAVE_ADMIN_USER — seed admin username on startup
+	AdminPass             string // WEAVE_ADMIN_PASS — seed admin password on startup
+	ForgeSessionURL       string // WEAVE_FORGE_SESSION_URL — Forge endpoint that resolves the signed-in account
+	ForgeDefaultWorkspace string // WEAVE_FORGE_DEFAULT_WORKSPACE — fallback workspace when Forge has no organization claim
 
 	// CORS settings.
 	CORSOrigins string // CORS_ORIGINS — comma-separated allowed origins; "*" for dev (default when DevMode)
@@ -146,6 +148,8 @@ func Load() (*Config, error) {
 		DevMode:                  devMode,
 		AdminUser:                os.Getenv("WEAVE_ADMIN_USER"),
 		AdminPass:                os.Getenv("WEAVE_ADMIN_PASS"),
+		ForgeSessionURL:          strings.TrimSpace(os.Getenv("WEAVE_FORGE_SESSION_URL")),
+		ForgeDefaultWorkspace:    strings.TrimSpace(os.Getenv("WEAVE_FORGE_DEFAULT_WORKSPACE")),
 		CORSOrigins:              corsOrigins,
 		MCPBoundaryBase:          envOr("WEAVE_MCP_BOUNDARY_BASE", "http://127.0.0.1:"+port),
 		WorkspacesRoot:           workspacesRoot,
