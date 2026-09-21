@@ -196,6 +196,17 @@ func resolveJWTUser(ctx context.Context, userStoreGetter func() *users.Store, cl
 	if err != nil || user.Disabled {
 		return nil, false
 	}
+	// Forge is the authority for externally bound product access. The local
+	// user row keeps the stable account binding, but must not override the
+	// access level verified when this Weave session was issued.
+	if claims.IdentitySource == "forge" {
+		switch role := firstClaimRole(claims.Roles); role {
+		case "member", "developer", "admin":
+			user.Role = role
+		default:
+			return nil, false
+		}
+	}
 	return user, true
 }
 

@@ -132,8 +132,9 @@ func (s *Store) GetByUsername(ctx context.Context, tenantID, username string) (*
 }
 
 // BindExternal returns the existing Weave user for one trusted external
-// identity or creates a disabled-password member on first login. Repeated
-// logins never overwrite a role or reactivate a disabled user.
+// identity or creates a disabled-password compatibility row on first login.
+// Product access for Forge-bound sessions comes from the verified Forge
+// permission claim; this row supplies only stable binding and disabled state.
 func (s *Store) BindExternal(ctx context.Context, issuer, subject, tenantID, email, displayName string) (*User, error) {
 	issuer = strings.TrimSpace(issuer)
 	subject = strings.TrimSpace(subject)

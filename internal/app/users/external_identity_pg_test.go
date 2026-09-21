@@ -9,7 +9,7 @@ import (
 	"github.com/jinyitao123/weave/internal/base/testutil"
 )
 
-func TestBindExternalCreatesStableAccountAndPreservesWeaveAccessRealPG(t *testing.T) {
+func TestBindExternalCreatesStableAccountAndHonorsDisabledBindingRealPG(t *testing.T) {
 	ctx := context.Background()
 	pool := testutil.PostgresPool(t)
 	if err := db.Migrate(ctx, pool); err != nil {
@@ -32,18 +32,7 @@ func TestBindExternalCreatesStableAccountAndPreservesWeaveAccessRealPG(t *testin
 		t.Fatalf("repeat binding created another user: first=%q second=%q", first.ID, second.ID)
 	}
 
-	if err := store.Update(ctx, "workspace-1", first.ID, first.DisplayName, "developer", false); err != nil {
-		t.Fatalf("assign developer role: %v", err)
-	}
-	third, err := store.BindExternal(ctx, "http://forge.example.test", "forge-user-1", "workspace-1", "person@example.test", "Person")
-	if err != nil {
-		t.Fatalf("binding after role assignment: %v", err)
-	}
-	if third.Role != "developer" {
-		t.Fatalf("binding overwrote Weave role: %q", third.Role)
-	}
-
-	if err := store.Update(ctx, "workspace-1", first.ID, first.DisplayName, "developer", true); err != nil {
+	if err := store.Update(ctx, "workspace-1", first.ID, first.DisplayName, "member", true); err != nil {
 		t.Fatalf("disable user: %v", err)
 	}
 	if _, err := store.BindExternal(ctx, "http://forge.example.test", "forge-user-1", "workspace-1", "person@example.test", "Person"); err == nil || !strings.Contains(err.Error(), "disabled") {
