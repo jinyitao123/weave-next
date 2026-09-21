@@ -57,6 +57,9 @@ func (e *Error) Error() string {
 	if e == nil {
 		return ""
 	}
+	if e.cause != nil && e.cause.Error() != "" {
+		return e.code + ": " + e.cause.Error()
+	}
 	return e.code
 }
 
@@ -240,7 +243,7 @@ func (r *Resolver) ResolveAgentVersion(
 		pin, pinned := r.agentPins[cacheKey(ref)]
 		if !pinned || pin.factoryKey != key ||
 			pin.factoryInput != string(canonicalInput) {
-			return ResolvedDependency{}, newError(CodeFrozenManifestMismatch, nil)
+			return ResolvedDependency{}, newError(CodeFrozenManifestMismatch, errors.New("agent freeze request conflicts with its cached factory input"))
 		}
 		if usage == AgentUsageWorker {
 			owner, exists := r.owners[agentVersionKey{
@@ -266,7 +269,7 @@ func (r *Resolver) ResolveAgentVersion(
 		return ResolvedDependency{}, classifySourceError(err, CodeDependencyVersionRequired, "resolve AgentVersion")
 	}
 	if record == nil {
-		return ResolvedDependency{}, newError(CodeFrozenManifestMismatch, nil)
+		return ResolvedDependency{}, newError(CodeFrozenManifestMismatch, errors.New("agent version resolver returned no record"))
 	}
 	if usage == AgentUsageWorker &&
 		(len(record.SubAgents) != 0 || len(record.Spec.SubAgents) != 0) {
