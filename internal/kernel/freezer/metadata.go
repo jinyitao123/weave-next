@@ -437,6 +437,30 @@ func (r *Resolver) SkillRefs(
 	return cloneSkillRefs(owner.SkillRefs), nil
 }
 
+func (r *Resolver) InlineSkillNames(
+	ctx context.Context,
+	workspaceID, agentID string,
+	agentVersion int64,
+) ([]string, error) {
+	if r == nil {
+		return nil, newError(CodeDependencyUnenumerable, nil)
+	}
+	if err := validateContext(ctx); err != nil {
+		return nil, err
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	owner, ok := r.owners[agentVersionKey{agentID: agentID, version: agentVersion}]
+	if !ok || owner.WorkspaceID != workspaceID {
+		return nil, newError(CodeDependencyUnenumerable, nil)
+	}
+	names := make([]string, 0, len(owner.Spec.Skills))
+	for _, skill := range owner.Spec.Skills {
+		names = append(names, skill.Name)
+	}
+	return names, nil
+}
+
 func (r *Resolver) resolveSkillLocked(ctx context.Context, ref frozen.EnumeratedDependencyRef) (ResolvedDependency, error) {
 	prefix, name, ok := strings.Cut(ref.DependencyKey, ":")
 	if !ok || name == "" || name != strings.TrimSpace(name) {

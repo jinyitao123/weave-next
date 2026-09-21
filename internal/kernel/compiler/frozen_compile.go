@@ -296,6 +296,29 @@ func (r *manifestMetadataResolver) SkillRefs(
 	return refs, nil
 }
 
+func (r *manifestMetadataResolver) InlineSkillNames(
+	_ context.Context,
+	workspaceID, agentID string,
+	agentVersion int64,
+) ([]string, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	names := make([]string, 0)
+	for index := range r.dependencies {
+		ref := r.dependencies[index].EnumeratedDependencyRef
+		if ref.DependencyType != "skill" || ref.WorkspaceID != workspaceID ||
+			ref.OwnerType != "agent" || ref.OwnerID != agentID ||
+			ref.OwnerAgentVersion == nil || *ref.OwnerAgentVersion != agentVersion {
+			continue
+		}
+		prefix, name, ok := strings.Cut(ref.DependencyKey, ":")
+		if ok && prefix == "inline" && name != "" && ref.DependencyVersion == nil {
+			names = append(names, name)
+		}
+	}
+	return names, nil
+}
+
 func discoveryRefMatches(query, stored frozen.EnumeratedDependencyRef) bool {
 	return query.DependencyVersion == nil &&
 		query.DependencyType == stored.DependencyType &&

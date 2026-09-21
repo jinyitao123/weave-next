@@ -20,6 +20,12 @@ type SkillRefSource interface {
 	SkillRefs(ctx context.Context, workspaceID, agentID string, agentVersion int64) ([]registry.SkillRef, error)
 }
 
+// InlineSkillSource exposes skills authored directly on the immutable agent
+// version. Their bodies are frozen from that owner record.
+type InlineSkillSource interface {
+	InlineSkillNames(ctx context.Context, workspaceID, agentID string, agentVersion int64) ([]string, error)
+}
+
 // EnumerateFrozenSkillRefs appends exact registry_version skill dependencies
 // for the agent in record order. Each registry_version binding produces one
 // DependencyType=skill ref with DependencyKey "registry:<skill_id>" and the
@@ -63,6 +69,23 @@ func EnumerateFrozenSkillRefs(
 		}
 		dependencies = append(dependencies, resolved.Ref)
 	}
+	if source, ok := metadata.(InlineSkillSource); ok {
+		names, err := source.InlineSkillNames(ctx, agent.WorkspaceID, agent.AgentID, agent.AgentVersion)
+		if err != nil {
+			return nil, err
+		}
+		for _, name := range names {
+			resolved, err := metadata.ResolveMetadata(ctx, frozen.EnumeratedDependencyRef{
+				WorkspaceID: agent.WorkspaceID, OwnerType: "agent", OwnerID: agent.AgentID,
+				OwnerAgentVersion: &ownerVersion, DependencyType: "skill",
+				DependencyKey: "inline:" + name,
+			})
+			if err != nil {
+				return nil, err
+			}
+			dependencies = append(dependencies, resolved.Ref)
+		}
+	}
 	return dependencies, nil
 }
 
@@ -71,8 +94,8 @@ func EnumerateFrozenSkillRefs(
 // records that bypass the create/update contract, e.g. direct store writes);
 // name-only legacy/builtin refs cannot be frozen and are rejected with the
 // stable workflow_skill_version_required sentinel instead of being silently
-// ignored or guessed as latest. Legacy Spec.Skills entries are unchanged:
-// they remain live-only and keep the pre-D3b publish behavior.
+// ignored or guessed as latest. Spec.Skills are immutable content on the
+// agent version and are frozen separately as inline dependencies.
 func ValidateFrozenSkillRefs(record registry.AgentRecord) error {
 	for index := range record.SkillRefs {
 		ref := &record.SkillRefs[index]

@@ -95,4 +95,16 @@ func TestCandidateBuildsForCLIRuntimeAfterMemberConfigurationChangesRealPG(t *te
 	if candidate == nil || report == nil {
 		t.Fatalf("candidate=%v report=%+v", candidate != nil, report)
 	}
+	var leadSkills []string
+	for _, bundle := range candidate.Payload.Bundles {
+		if bundle.Agent.AgentID != lead.ID {
+			continue
+		}
+		for _, skill := range bundle.Skills {
+			leadSkills = append(leadSkills, skill.Name+":"+skill.Body)
+		}
+	}
+	if len(leadSkills) != 1 || leadSkills[0] != "Review:Review the result." {
+		t.Fatalf("frozen lead skills=%v", leadSkills)
+	}
 }
