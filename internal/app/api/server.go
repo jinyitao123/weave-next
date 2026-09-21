@@ -380,6 +380,8 @@ func (s *Server) registerRoutes() {
 	auth.POST("/teams/:id/evaluations", s.handleEvaluateTeam, RequireRole("admin"), orgScope)
 	auth.GET("/team-templates/samples", s.handleListTeamTemplateSamples, orgScope)
 	auth.GET("/teams/:id", s.handleGetTeam, orgScope)
+	auth.GET("/teams/:id/members/:agent/config-draft", s.handleGetTeamMemberConfigDraft, RequireAnyRole("developer", "admin", "owner"), orgScope)
+	auth.PUT("/teams/:id/members/:agent/config-draft", s.handlePutTeamMemberConfigDraft, RequireAnyRole("developer", "admin", "owner"), orgScope)
 	auth.GET("/teams/:id/dispatch-rules", s.handleGetTeamDispatchRules, orgScope)
 	auth.PUT("/teams/:id/dispatch-rules", s.handlePutTeamDispatchRules, RequireAnyRole("admin", "owner"), orgScope)
 	auth.POST("/teams/:id/dispatch", s.handleDispatchTeam, orgScope, chatScope)
