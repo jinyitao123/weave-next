@@ -203,7 +203,7 @@ func (s *Store) HelloWithCapabilities(
 			    last_heartbeat_at=$6, updated_at=$6
 			WHERE workspace_id=$1 AND id=$2
 			  AND enabled=true AND revoked_at IS NULL AND deleted_at IS NULL
-	`, workspaceID, id, encoded, encodedCapabilities, totalSlots, now)
+	`, workspaceID, id, string(encoded), string(encodedCapabilities), totalSlots, now)
 	if err != nil {
 		return fmt.Errorf("hello runtime: %w", err)
 	}

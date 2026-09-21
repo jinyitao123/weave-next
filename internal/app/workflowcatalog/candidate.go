@@ -162,7 +162,7 @@ func (b *CandidateBuilder) buildResolvedCandidateTx(ctx context.Context, tx pgx.
 	}
 	workers, err := freezeResolver.ResolveTeamWorkersForShare(ctx, team.TeamID)
 	if err != nil {
-		return nil, nil, machine.ValidationContext{}, err
+		return nil, nil, machine.ValidationContext{}, fmt.Errorf("freeze team roster: %w", err)
 	}
 	for index := range 计划 {
 		usage := freezer.AgentUsageWorker
@@ -172,7 +172,7 @@ func (b *CandidateBuilder) buildResolvedCandidateTx(ctx context.Context, tx pgx.
 		if _, err := freezeResolver.ResolveAgentVersion(
 			ctx, 计划[index].self, usage, 计划[index].key, 计划[index].factoryInput,
 		); err != nil {
-			return nil, nil, machine.ValidationContext{}, err
+			return nil, nil, machine.ValidationContext{}, fmt.Errorf("freeze agent %q: %w", 计划[index].record.Name, err)
 		}
 	}
 
@@ -204,13 +204,13 @@ func (b *CandidateBuilder) buildResolvedCandidateTx(ctx context.Context, tx pgx.
 			ctx, *resolved.Agent, freezeResolver,
 		)
 		if err != nil {
-			return nil, nil, machine.ValidationContext{}, err
+			return nil, nil, machine.ValidationContext{}, fmt.Errorf("enumerate dependencies for agent %q: %w", plan.record.Name, err)
 		}
 		perAgentManifest, offlineResolver, err := freezer.ResolveManifest(
 			ctx, enumerated, freezeResolver,
 		)
 		if err != nil {
-			return nil, nil, machine.ValidationContext{}, err
+			return nil, nil, machine.ValidationContext{}, fmt.Errorf("resolve dependencies for agent %q: %w", plan.record.Name, err)
 		}
 		bundle, err := buildCandidateBundle(*resolved.Agent, plan.key, perAgentManifest, freezeResolver)
 		if err != nil {
@@ -248,7 +248,7 @@ func (b *CandidateBuilder) buildResolvedCandidateTx(ctx context.Context, tx pgx.
 		SchemaVersion: frozen.FrozenSchemaVersion, Dependencies: allEnumerated,
 	}, freezeResolver)
 	if err != nil {
-		return nil, nil, machine.ValidationContext{}, err
+		return nil, nil, machine.ValidationContext{}, fmt.Errorf("resolve workflow dependency manifest: %w", err)
 	}
 
 	deliveryTargets, references := b.resolveCandidateReferences(ctx, tx, input.WorkspaceID, trigger)
