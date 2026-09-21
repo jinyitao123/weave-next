@@ -11,29 +11,38 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jinyitao123/loom/stdlib"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 	"github.com/labstack/echo/v4"
 )
 
 type teamMemberAgentConfiguration struct {
-	DisplayName     string          `json:"display_name"`
-	Role            string          `json:"role"`
-	Engine          string          `json:"engine"`
-	RuntimeID       string          `json:"runtime_id"`
-	Model           string          `json:"model"`
-	SystemPrompt    string          `json:"system_prompt"`
-	SkillNames      []string        `json:"skill_names"`
-	MCPServerIDs    []string        `json:"mcp_server_ids"`
-	PermissionAllow []string        `json:"permission_allow"`
-	PermissionAsk   []string        `json:"permission_ask"`
-	PermissionDeny  []string        `json:"permission_deny"`
-	MemoryEnabled   bool            `json:"memory_enabled"`
-	MemoryScope     string          `json:"memory_scope"`
-	MaxTokens       int64           `json:"max_tokens"`
-	MaxOutputTokens int             `json:"max_output_tokens"`
-	StepBudget      int64           `json:"step_budget"`
-	MaxCostUSD      float64         `json:"max_cost_usd"`
-	OutputSchema    json.RawMessage `json:"output_schema,omitempty"`
+	DisplayName     string                  `json:"display_name"`
+	Role            string                  `json:"role"`
+	Engine          string                  `json:"engine"`
+	RuntimeID       string                  `json:"runtime_id"`
+	Model           string                  `json:"model"`
+	SystemPrompt    string                  `json:"system_prompt"`
+	SkillNames      []string                `json:"skill_names"`
+	Skills          []teamMemberInlineSkill `json:"skills"`
+	MCPServerIDs    []string                `json:"mcp_server_ids"`
+	PermissionAllow []string                `json:"permission_allow"`
+	PermissionAsk   []string                `json:"permission_ask"`
+	PermissionDeny  []string                `json:"permission_deny"`
+	MemoryEnabled   bool                    `json:"memory_enabled"`
+	MemoryScope     string                  `json:"memory_scope"`
+	MaxTokens       int64                   `json:"max_tokens"`
+	MaxOutputTokens int                     `json:"max_output_tokens"`
+	StepBudget      int64                   `json:"step_budget"`
+	MaxCostUSD      float64                 `json:"max_cost_usd"`
+	OutputSchema    json.RawMessage         `json:"output_schema,omitempty"`
+}
+
+type teamMemberInlineSkill struct {
+	Name         string `json:"name"`
+	Description  string `json:"description"`
+	Body         string `json:"body"`
+	AlwaysActive bool   `json:"always_active"`
 }
 
 type teamMemberRelationshipDraft struct {
@@ -103,16 +112,15 @@ func (s *Server) seedTeamMemberConfigDraft(c echo.Context) (*teamMemberConfigDra
 	if err != nil {
 		return nil, err
 	}
-	skillNames := make([]string, 0, len(record.SkillRefs)+len(record.Spec.Skills))
+	skillNames := make([]string, 0, len(record.SkillRefs))
 	for _, skill := range record.SkillRefs {
 		if strings.TrimSpace(skill.Name) != "" {
 			skillNames = append(skillNames, skill.Name)
 		}
 	}
+	inlineSkills := make([]teamMemberInlineSkill, 0, len(record.Spec.Skills))
 	for _, skill := range record.Spec.Skills {
-		if strings.TrimSpace(skill.Name) != "" {
-			skillNames = append(skillNames, skill.Name)
-		}
+		inlineSkills = append(inlineSkills, teamMemberInlineSkill{Name: skill.Name, Description: skill.Description, Body: skill.Body, AlwaysActive: skill.AlwaysActive})
 	}
 	serverIDs := make([]string, 0, len(record.MCPServers))
 	for _, server := range record.MCPServers {
@@ -133,7 +141,7 @@ func (s *Server) seedTeamMemberConfigDraft(c echo.Context) (*teamMemberConfigDra
 	}
 	configuration := teamMemberAgentConfiguration{
 		DisplayName: record.DisplayName, Role: record.Role, Engine: record.Engine, RuntimeID: record.RuntimeID, Model: record.Model,
-		SystemPrompt: record.Spec.SystemPrompt, SkillNames: skillNames, MCPServerIDs: serverIDs,
+		SystemPrompt: record.Spec.SystemPrompt, SkillNames: skillNames, Skills: inlineSkills, MCPServerIDs: serverIDs,
 		PermissionAllow: record.Permissions.Allow, PermissionAsk: record.Permissions.Ask, PermissionDeny: record.Permissions.Deny,
 		MemoryEnabled: memoryEnabled, MemoryScope: memoryScope, MaxTokens: record.MaxTokens, MaxOutputTokens: record.MaxOutputTokens,
 		StepBudget: record.StepBudget, MaxCostUSD: record.MaxCostUSD, OutputSchema: outputSchema,
@@ -148,11 +156,8 @@ func (s *Server) seedTeamMemberConfigDraft(c echo.Context) (*teamMemberConfigDra
 }
 
 func teamMemberResourceNames(record *registry.AgentRecord) ([]string, []string) {
-	skills := make([]string, 0, len(record.SkillRefs)+len(record.Spec.Skills))
+	skills := make([]string, 0, len(record.SkillRefs))
 	for _, skill := range record.SkillRefs {
-		skills = append(skills, strings.TrimSpace(skill.Name))
-	}
-	for _, skill := range record.Spec.Skills {
 		skills = append(skills, strings.TrimSpace(skill.Name))
 	}
 	servers := make([]string, 0, len(record.MCPServers))
@@ -162,6 +167,23 @@ func teamMemberResourceNames(record *registry.AgentRecord) ([]string, []string) 
 	slices.Sort(skills)
 	slices.Sort(servers)
 	return skills, servers
+}
+
+func inlineSkills(values []teamMemberInlineSkill) ([]stdlib.SkillDef, error) {
+	result := make([]stdlib.SkillDef, 0, len(values))
+	seen := map[string]bool{}
+	for _, value := range values {
+		name, body := strings.TrimSpace(value.Name), strings.TrimSpace(value.Body)
+		if name == "" || body == "" {
+			return nil, errors.New("技能名称和内容不能为空")
+		}
+		if seen[name] {
+			return nil, fmt.Errorf("技能名称重复：%s", name)
+		}
+		seen[name] = true
+		result = append(result, stdlib.SkillDef{Name: name, Description: strings.TrimSpace(value.Description), Body: body, AlwaysActive: value.AlwaysActive})
+	}
+	return result, nil
 }
 
 func sameNames(left, right []string) bool {
@@ -261,6 +283,10 @@ func (s *Server) applyTeamMemberConfigDraft(ctx context.Context, workspaceID, te
 	if !sameNames(skills, configuration.SkillNames) || !sameNames(servers, configuration.MCPServerIDs) {
 		return echo.NewHTTPError(http.StatusBadRequest, "技能和工具绑定需要在能力页单独调整")
 	}
+	configuredSkills, err := inlineSkills(configuration.Skills)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
 	if !lead {
 		if err := validateAppliedRelationship(relationship); err != nil {
 			return echo.NewHTTPError(http.StatusBadRequest, err.Error())
@@ -269,6 +295,7 @@ func (s *Server) applyTeamMemberConfigDraft(ctx context.Context, workspaceID, te
 
 	record.DisplayName, record.Engine, record.RuntimeID, record.Model = strings.TrimSpace(configuration.DisplayName), configuration.Engine, strings.TrimSpace(configuration.RuntimeID), strings.TrimSpace(configuration.Model)
 	record.Spec.SystemPrompt = configuration.SystemPrompt
+	record.Spec.Skills = configuredSkills
 	if lead {
 		record.Spec.Identity.Core = strings.TrimSpace(relationship.Duty)
 		record.Spec.Identity.Raw = record.Spec.Identity.Core
