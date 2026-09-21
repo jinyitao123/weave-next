@@ -375,7 +375,7 @@ func (s *Server) registerRoutes() {
 	auth.GET("/deliverables/:id", s.handleGetFinalDeliverable, chatScope)
 	auth.GET("/deliverables/:id/content", s.handleDownloadFinalDeliverable, chatScope)
 	auth.GET("/teams", s.handleListTeams, orgScope)
-	auth.POST("/teams", s.handleCreateTeam, RequireRole("admin"), orgScope)
+	auth.POST("/teams", s.handleCreateTeam, RequireAnyRole("developer", "admin"), orgScope)
 	auth.POST("/teams:from-template", s.handleCreateTeamFromTemplate, RequireRole("admin"), orgScope)
 	auth.POST("/teams/:id/evaluations", s.handleEvaluateTeam, RequireRole("admin"), orgScope)
 	auth.GET("/team-templates/samples", s.handleListTeamTemplateSamples, orgScope)
