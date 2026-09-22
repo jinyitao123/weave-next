@@ -7,7 +7,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
+	"net/url"
 	"sort"
 	"strings"
 	"time"
@@ -27,6 +29,7 @@ type preparedBusinessDelegation struct {
 	ciphertext string
 	digest     string
 	actions    []string
+	resources  []dispatchInputResource
 	expiresAt  time.Time
 }
 
@@ -75,8 +78,8 @@ func loadPublishedBusinessActionsTx(ctx context.Context, tx pgx.Tx, workspaceID,
 	return publishedBusinessActions(payload), nil
 }
 
-func (s *Server) prepareBusinessDelegation(c echo.Context, actions []string) (*preparedBusinessDelegation, error) {
-	if len(actions) == 0 {
+func (s *Server) prepareBusinessDelegation(c echo.Context, actions []string, resources []dispatchInputResource) (*preparedBusinessDelegation, error) {
+	if len(actions) == 0 && len(resources) == 0 {
 		return nil, nil
 	}
 	authorization := strings.TrimSpace(c.Request().Header.Get(forgeDelegationHeader))
@@ -91,6 +94,9 @@ func (s *Server) prepareBusinessDelegation(c echo.Context, actions []string) (*p
 	identity, err := s.ExternalIdentity.Verify(c.Request().Context(), bearer)
 	if err != nil {
 		return nil, workflowError(c, http.StatusUnauthorized, "business_delegation_invalid", "Forge task delegation could not be verified")
+	}
+	if err := verifyForgeFiles(c.Request().Context(), identity.Issuer, bearer, resources); err != nil {
+		return nil, workflowError(c, http.StatusUnprocessableEntity, "business_resource_invalid", err.Error())
 	}
 	workspaceID, userID := getTenant(c), getUserID(c)
 	if identity.Organization != workspaceID {
@@ -119,14 +125,44 @@ func (s *Server) prepareBusinessDelegation(c echo.Context, actions []string) (*p
 	digest := sha256.Sum256([]byte(bearer))
 	return &preparedBusinessDelegation{
 		identity: identity, ciphertext: ciphertext, digest: hex.EncodeToString(digest[:]),
-		actions: append([]string(nil), actions...), expiresAt: time.Now().UTC().Add(forgeDelegationTTL),
+		actions: append([]string(nil), actions...), resources: append([]dispatchInputResource(nil), resources...), expiresAt: time.Now().UTC().Add(forgeDelegationTTL),
 	}, nil
 }
 
-func ensurePreparedActions(prepared *preparedBusinessDelegation, actions []string) bool {
-	if len(actions) == 0 {
-		return prepared == nil
+func verifyForgeFiles(ctx context.Context, issuer, bearer string, resources []dispatchInputResource) error {
+	base, err := url.Parse(issuer)
+	if err != nil || base.Scheme == "" || base.Host == "" || base.User != nil || (base.Scheme != "http" && base.Scheme != "https") {
+		return errors.New("Forge material issuer is invalid")
 	}
+	client := &http.Client{Timeout: 20 * time.Second}
+	for _, resource := range resources {
+		fileURL := *base
+		fileURL.Path = "/api/v1/storage/files/" + url.PathEscape(resource.ID)
+		fileURL.RawPath, fileURL.RawQuery, fileURL.Fragment = "", "", ""
+		req, reqErr := http.NewRequestWithContext(ctx, http.MethodGet, fileURL.String(), nil)
+		if reqErr != nil {
+			return errors.New("Forge material request is invalid")
+		}
+		req.Header.Set("Authorization", "Bearer "+bearer)
+		response, requestErr := client.Do(req)
+		if requestErr != nil {
+			return fmt.Errorf("Forge material %q is unavailable", resource.Name)
+		}
+		limited := http.MaxBytesReader(nil, response.Body, 700_001)
+		content, readErr := io.ReadAll(limited)
+		_ = response.Body.Close()
+		if response.StatusCode != http.StatusOK || readErr != nil || int64(len(content)) != resource.Bytes {
+			return fmt.Errorf("Forge material %q cannot be read at the frozen version", resource.Name)
+		}
+		digest := sha256.Sum256(content)
+		if hex.EncodeToString(digest[:]) != resource.SHA256 {
+			return fmt.Errorf("Forge material %q does not match the frozen SHA-256", resource.Name)
+		}
+	}
+	return nil
+}
+
+func ensurePreparedActions(prepared *preparedBusinessDelegation, actions []string) bool {
 	if prepared == nil || len(prepared.actions) != len(actions) {
 		return false
 	}
@@ -145,7 +181,12 @@ func persistBusinessDelegationTx(ctx context.Context, tx pgx.Tx, prepared *prepa
 	delegationID := uuid.NewSHA1(uuid.NameSpaceOID, []byte("weave-forge-task-delegation\x1f"+workspaceID+"\x1f"+userID+"\x1f"+inputRevisionID))
 	credentialRef := "forge-task:" + delegationID.String()
 	actionsJSON, _ := json.Marshal(prepared.actions)
-	resourcesJSON, _ := json.Marshal([]map[string]string{{"type": "dispatch-input", "id": inputRevisionID, "sha256": taskSHA}})
+	resources := make([]any, 0, len(prepared.resources)+1)
+	resources = append(resources, map[string]any{"type": "dispatch-input", "id": inputRevisionID, "sha256": taskSHA})
+	for _, item := range prepared.resources {
+		resources = append(resources, item)
+	}
+	resourcesJSON, _ := json.Marshal(resources)
 	issuedAt := time.Now().UTC()
 	tag, err := tx.Exec(ctx, `INSERT INTO weave_task_business_delegations
 		(workspace_id,user_id,input_revision_id,delegation_id,credential_ref,issuer,external_subject,external_organization,
