@@ -2,6 +2,7 @@ package workflowcatalog
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -91,6 +92,19 @@ func (b *CandidateBuilder) buildResolvedCandidateTx(ctx context.Context, tx pgx.
 	if err != nil {
 		return nil, nil, machine.ValidationContext{}, err
 	}
+	// Developer candidates carry a server-validated roster and staged member
+	// versions. Published versions always use the live authorization roster.
+	if draft.Draft.Status == workflowdef.VersionStatusDraft {
+		var raw []byte
+		err := tx.QueryRow(ctx, `SELECT team_read FROM weave_team_development_candidates WHERE workspace_id=$1 AND workflow_id=$2 AND workflow_version=$3 AND team_id=$4`, input.WorkspaceID, input.WorkflowID, input.WorkflowVersion, team.TeamID).Scan(&raw)
+		if err == nil {
+			if err = json.Unmarshal(raw, team); err != nil {
+				return nil, nil, machine.ValidationContext{}, err
+			}
+		} else if !errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil, machine.ValidationContext{}, err
+		}
+	}
 	if fixedLead != nil {
 		if fixedLead.AgentID != team.LeadAvatarID {
 			return nil, nil, machine.ValidationContext{}, errors.New("frozen team lead authorization changed")
@@ -155,7 +169,7 @@ func (b *CandidateBuilder) buildResolvedCandidateTx(ctx context.Context, tx pgx.
 	}
 
 	freezeResolver, err := freezer.BeginFreeze(ctx, tx, input.WorkspaceID, freezer.Sources{
-		Agents: b.agents, Skills: b.skills, Providers: b.credentials, Delivery: b.delivery,
+		Agents: developmentRosterReader{PublicationAgentReader: b.agents, team: team}, Skills: b.skills, Providers: b.credentials, Delivery: b.delivery,
 	})
 	if err != nil {
 		return nil, nil, machine.ValidationContext{}, err

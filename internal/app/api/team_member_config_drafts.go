@@ -12,11 +12,14 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jinyitao123/loom/stdlib"
+	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 	"github.com/labstack/echo/v4"
 )
 
 type teamMemberAgentConfiguration struct {
+	ToolLoopControl       *frozen.ToolLoopControl `json:"tool_loop_control"`
+	MaxToolRepeats        int                     `json:"max_tool_repeats"`
 	DisplayName           string                  `json:"display_name"`
 	Role                  string                  `json:"role"`
 	Engine                string                  `json:"engine"`
@@ -141,6 +144,7 @@ func (s *Server) seedTeamMemberConfigDraft(c echo.Context) (*teamMemberConfigDra
 		duty = record.Spec.Identity.Core
 	}
 	configuration := teamMemberAgentConfiguration{
+		ToolLoopControl: record.ToolLoopControl, MaxToolRepeats: record.MaxToolRepeats,
 		DisplayName: record.DisplayName, Role: record.Role, Engine: record.Engine, RuntimeID: record.RuntimeID, Model: record.Model,
 		SystemPrompt: record.Spec.SystemPrompt, SkillNames: skillNames, Skills: inlineSkills, MCPServerIDs: serverIDs,
 		BusinessCapabilityIDs: append([]string(nil), record.BusinessCapabilityIDs...),
@@ -313,29 +317,8 @@ func (s *Server) applyTeamMemberConfigDraft(ctx context.Context, workspaceID, te
 		}
 	}
 
-	record.DisplayName, record.Engine, record.RuntimeID, record.Model = strings.TrimSpace(configuration.DisplayName), configuration.Engine, strings.TrimSpace(configuration.RuntimeID), strings.TrimSpace(configuration.Model)
-	record.Spec.SystemPrompt = configuration.SystemPrompt
-	record.Spec.Skills = configuredSkills
-	businessCapabilityIDs, err := normalizedCapabilityIDs(configuration.BusinessCapabilityIDs)
-	if err != nil {
+	if err := configureDevelopmentMember(&record, configuration, relationship, lead, configuredSkills); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
-	}
-	record.BusinessCapabilityIDs = businessCapabilityIDs
-	if lead {
-		record.Spec.Identity.Core = strings.TrimSpace(relationship.Duty)
-		record.Spec.Identity.Raw = configuration.SystemPrompt
-	}
-	record.Permissions = registry.PermissionConfig{Allow: configuration.PermissionAllow, Ask: configuration.PermissionAsk, Deny: configuration.PermissionDeny}
-	if record.MemoryConfig == nil {
-		record.MemoryConfig = &registry.MemoryConfig{}
-	}
-	record.MemoryConfig.Enabled, record.MemoryConfig.Scope = configuration.MemoryEnabled, configuration.MemoryScope
-	record.MaxTokens, record.MaxOutputTokens, record.StepBudget, record.MaxCostUSD = configuration.MaxTokens, configuration.MaxOutputTokens, configuration.StepBudget, configuration.MaxCostUSD
-	if len(configuration.OutputSchema) == 0 || string(configuration.OutputSchema) == "null" {
-		record.OutputSchema = nil
-	} else {
-		raw := append(json.RawMessage(nil), configuration.OutputSchema...)
-		record.OutputSchema = &raw
 	}
 	if err := s.Registry.PutTx(ctx, tx, workspaceID, &record); err != nil {
 		return err
@@ -446,4 +429,36 @@ func (s *Server) handlePutTeamMemberConfigDraft(c echo.Context) error {
 	}
 	result.Configuration, result.Relationship, result.UpdatedBy = request.Configuration, request.Relationship, getUserID(c)
 	return c.JSON(http.StatusOK, result)
+}
+
+func configureDevelopmentMember(record *registry.AgentRecord, configuration teamMemberAgentConfiguration, relationship teamMemberRelationshipDraft, lead bool, configuredSkills []stdlib.SkillDef) error {
+	record.DisplayName, record.Engine, record.RuntimeID, record.Model = strings.TrimSpace(configuration.DisplayName), configuration.Engine, strings.TrimSpace(configuration.RuntimeID), strings.TrimSpace(configuration.Model)
+	if err := frozen.ValidateToolLoopControl(configuration.ToolLoopControl); err != nil {
+		return echo.NewHTTPError(422, "执行轮次设置无效")
+	}
+	record.ToolLoopControl, record.MaxToolRepeats = configuration.ToolLoopControl, configuration.MaxToolRepeats
+	record.Spec.SystemPrompt = configuration.SystemPrompt
+	record.Spec.Skills = configuredSkills
+	businessCapabilityIDs, err := normalizedCapabilityIDs(configuration.BusinessCapabilityIDs)
+	if err != nil {
+		return err
+	}
+	record.BusinessCapabilityIDs = businessCapabilityIDs
+	if lead {
+		record.Spec.Identity.Core = strings.TrimSpace(relationship.Duty)
+		record.Spec.Identity.Raw = configuration.SystemPrompt
+	}
+	record.Permissions = registry.PermissionConfig{Allow: configuration.PermissionAllow, Ask: configuration.PermissionAsk, Deny: configuration.PermissionDeny}
+	if record.MemoryConfig == nil {
+		record.MemoryConfig = &registry.MemoryConfig{}
+	}
+	record.MemoryConfig.Enabled, record.MemoryConfig.Scope = configuration.MemoryEnabled, configuration.MemoryScope
+	record.MaxTokens, record.MaxOutputTokens, record.StepBudget, record.MaxCostUSD = configuration.MaxTokens, configuration.MaxOutputTokens, configuration.StepBudget, configuration.MaxCostUSD
+	if len(configuration.OutputSchema) == 0 || string(configuration.OutputSchema) == "null" {
+		record.OutputSchema = nil
+	} else {
+		raw := append(json.RawMessage(nil), configuration.OutputSchema...)
+		record.OutputSchema = &raw
+	}
+	return nil
 }
