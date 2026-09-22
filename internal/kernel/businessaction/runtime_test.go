@@ -77,6 +77,35 @@ func TestDispatcherFixesPublishedForgeAction(t *testing.T) {
 	}
 }
 
+func TestDispatcherProjectsVerifiedTaskResourcesOnlyToBusinessTool(t *testing.T) {
+	host := &captureHost{}
+	resources := []delegatedResource{{
+		Type: "forge-file", ID: "file-contract", Name: "合同.md", Bytes: 128, SHA256: strings.Repeat("a", 64),
+	}, {
+		Type: "forge-file", ID: "file-quote", Name: "报价单.md", Bytes: 64, SHA256: strings.Repeat("b", 64),
+	}}
+	value, err := newDispatcherWithResources(host, []string{"forge:action:sales_contract.ContractSubmit"}, contractSubmitCatalog(), resources)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tools, err := value.ListTools(t.Context())
+	if err != nil || len(tools) != 1 {
+		t.Fatalf("tools=%+v err=%v", tools, err)
+	}
+	for _, expected := range []string{"file-contract", "合同.md", strings.Repeat("a", 64), "file-quote", "报价单.md", strings.Repeat("b", 64)} {
+		if !strings.Contains(tools[0].Description, expected) {
+			t.Fatalf("business tool description did not project %q: %s", expected, tools[0].Description)
+		}
+	}
+}
+
+func TestDecodeDelegatedResourcesRejectsAnotherInput(t *testing.T) {
+	raw := []byte(`[{"type":"dispatch-input","id":"another-input","sha256":"digest"},{"type":"forge-file","id":"file-1","name":"合同.md","bytes":12,"sha256":"digest"}]`)
+	if _, err := decodeDelegatedResources(raw, "current-input"); err == nil || !strings.Contains(err.Error(), "does not match") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
 func TestDispatcherRejectsActionOverride(t *testing.T) {
 	host := &captureHost{}
 	value, err := newDispatcher(host, []string{"forge:action:sales_contract.ContractSubmit"}, contractSubmitCatalog())
