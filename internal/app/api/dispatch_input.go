@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 
 	"github.com/google/uuid"
@@ -23,18 +24,19 @@ type dispatchInputSourceMessage struct {
 }
 
 type dispatchInputRegistration struct {
-	RegistrationID     string                       `json:"registration_id"`
-	WorkbenchSessionID string                       `json:"workbench_session_id"`
-	ExpectedRevisionID string                       `json:"expected_revision_id"`
-	SourceMessages     []dispatchInputSourceMessage `json:"source_messages"`
-	Task               string                       `json:"task"`
-	TeamID             string                       `json:"team_id"`
-	Mode               string                       `json:"mode,omitempty"`
-	WorkflowID         string                       `json:"workflow_id,omitempty"`
-	WorkflowVersion    *int                         `json:"workflow_version,omitempty"`
-	ProjectID          string                       `json:"project_id,omitempty"`
-	RevisionContext    *dispatchRevisionContext     `json:"revision_context,omitempty"`
-	Resources          []dispatchInputResource      `json:"resources,omitempty"`
+	RegistrationID                  string                       `json:"registration_id"`
+	WorkbenchSessionID              string                       `json:"workbench_session_id"`
+	ExpectedRevisionID              string                       `json:"expected_revision_id"`
+	SourceMessages                  []dispatchInputSourceMessage `json:"source_messages"`
+	Task                            string                       `json:"task"`
+	TeamID                          string                       `json:"team_id"`
+	Mode                            string                       `json:"mode,omitempty"`
+	WorkflowID                      string                       `json:"workflow_id,omitempty"`
+	WorkflowVersion                 *int                         `json:"workflow_version,omitempty"`
+	ProjectID                       string                       `json:"project_id,omitempty"`
+	RevisionContext                 *dispatchRevisionContext     `json:"revision_context,omitempty"`
+	Resources                       []dispatchInputResource      `json:"resources,omitempty"`
+	AuthorizedBusinessCapabilityIDs *[]string                    `json:"authorized_business_capability_ids,omitempty"`
 }
 
 type dispatchInputResource struct {
@@ -202,6 +204,40 @@ func validDispatchInputResources(resources []dispatchInputResource) bool {
 	return true
 }
 
+func authorizedBusinessActions(published []string, requested *[]string) ([]string, error) {
+	if requested == nil {
+		if len(published) == 0 {
+			return []string{}, nil
+		}
+		return nil, errors.New("business action scope is required")
+	}
+	if len(*requested) > 32 {
+		return nil, errors.New("business action scope is invalid")
+	}
+	available := make(map[string]struct{}, len(published))
+	for _, value := range published {
+		available[value] = struct{}{}
+	}
+	seen := make(map[string]struct{}, len(*requested))
+	actions := make([]string, 0, len(*requested))
+	for _, raw := range *requested {
+		value := strings.TrimSpace(raw)
+		if value == "" || len(value) > 160 || !strings.HasPrefix(value, "forge:action:") {
+			return nil, errors.New("business action scope is invalid")
+		}
+		if _, ok := available[value]; !ok {
+			return nil, errors.New("business action is outside the published workflow")
+		}
+		if _, duplicate := seen[value]; duplicate {
+			return nil, errors.New("business action scope contains duplicates")
+		}
+		seen[value] = struct{}{}
+		actions = append(actions, value)
+	}
+	sort.Strings(actions)
+	return actions, nil
+}
+
 // Only the trusted Workbench Host calls this route. The Host reads persisted
 // user events and reuses its existing confirmation flow; this endpoint neither
 // infers authorization from language nor proves the supplied source hashes.
@@ -254,9 +290,13 @@ func (s *Server) handleRegisterDispatchInput(c echo.Context) error {
 	}
 	var preparedDelegation *preparedBusinessDelegation
 	if request.WorkflowID != "" && request.WorkflowVersion != nil {
-		actions, actionsErr := s.publishedBusinessActions(c.Request().Context(), workspaceID, request.WorkflowID, *request.WorkflowVersion)
+		publishedActions, actionsErr := s.publishedBusinessActions(c.Request().Context(), workspaceID, request.WorkflowID, *request.WorkflowVersion)
 		if actionsErr != nil {
 			return workflowStoreFailure(c, fmt.Errorf("read published business actions: %w", actionsErr))
+		}
+		actions, actionsErr := authorizedBusinessActions(publishedActions, request.AuthorizedBusinessCapabilityIDs)
+		if actionsErr != nil {
+			return workflowError(c, http.StatusUnprocessableEntity, "business_action_scope_invalid", actionsErr.Error())
 		}
 		preparedDelegation, err = s.prepareBusinessDelegation(c, actions, request.Resources)
 		if err != nil {
@@ -282,9 +322,13 @@ func (s *Server) handleRegisterDispatchInput(c echo.Context) error {
 		if existing.RegistrationSHA256 != registrationSHA256 {
 			return workflowError(c, http.StatusConflict, "input_registration_conflict", "registration_id was already used for different input facts")
 		}
-		actions, actionsErr := loadPublishedBusinessActionsTx(ctx, tx, workspaceID, existing.WorkflowID, existing.WorkflowVersion)
+		publishedActions, actionsErr := loadPublishedBusinessActionsTx(ctx, tx, workspaceID, existing.WorkflowID, existing.WorkflowVersion)
 		if actionsErr != nil {
 			return workflowStoreFailure(c, fmt.Errorf("read published business actions: %w", actionsErr))
+		}
+		actions, actionsErr := authorizedBusinessActions(publishedActions, request.AuthorizedBusinessCapabilityIDs)
+		if actionsErr != nil {
+			return workflowError(c, http.StatusUnprocessableEntity, "business_action_scope_invalid", actionsErr.Error())
 		}
 		if !ensurePreparedActions(preparedDelegation, actions) {
 			return workflowError(c, http.StatusUnauthorized, "business_delegation_required", "an exact Forge task delegation is required")
@@ -353,9 +397,13 @@ func (s *Server) handleRegisterDispatchInput(c echo.Context) error {
 	if handled || err != nil {
 		return err
 	}
-	actions, err := loadPublishedBusinessActionsTx(ctx, tx, workspaceID, workflowID, version)
+	publishedActions, err := loadPublishedBusinessActionsTx(ctx, tx, workspaceID, workflowID, version)
 	if err != nil {
 		return workflowStoreFailure(c, fmt.Errorf("read published business actions: %w", err))
+	}
+	actions, err := authorizedBusinessActions(publishedActions, request.AuthorizedBusinessCapabilityIDs)
+	if err != nil {
+		return workflowError(c, http.StatusUnprocessableEntity, "business_action_scope_invalid", err.Error())
 	}
 	if !ensurePreparedActions(preparedDelegation, actions) {
 		return workflowError(c, http.StatusUnauthorized, "business_delegation_required", "an exact Forge task delegation is required")

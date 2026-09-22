@@ -32,6 +32,49 @@ func TestDispatchInputSourceMessagesRejectAmbiguousProvenance(t *testing.T) {
 	}
 }
 
+func TestAuthorizedBusinessActionsRequireAnExplicitPublishedSubset(t *testing.T) {
+	published := []string{
+		"forge:action:sales_contract.ContractSubmit",
+		"forge:action:sales_contract.RequestRevision",
+	}
+	if _, err := authorizedBusinessActions(published, nil); err == nil {
+		t.Fatal("missing task scope was accepted for a workflow with business actions")
+	}
+	empty := []string{}
+	if got, err := authorizedBusinessActions(published, &empty); err != nil || len(got) != 0 {
+		t.Fatalf("material-only scope=%v err=%v", got, err)
+	}
+	requested := []string{published[1], published[0]}
+	got, err := authorizedBusinessActions(published, &requested)
+	if err != nil || len(got) != 2 || got[0] != published[0] || got[1] != published[1] {
+		t.Fatalf("authorized scope=%v err=%v", got, err)
+	}
+	outside := []string{"forge:action:sales_contract.Delete"}
+	if _, err := authorizedBusinessActions(published, &outside); err == nil {
+		t.Fatal("action outside the published workflow was accepted")
+	}
+	duplicate := []string{published[0], published[0]}
+	if _, err := authorizedBusinessActions(published, &duplicate); err == nil {
+		t.Fatal("duplicate action scope was accepted")
+	}
+}
+
+func TestAuthorizedBusinessActionsAllowOmissionWhenWorkflowHasNone(t *testing.T) {
+	got, err := authorizedBusinessActions(nil, nil)
+	if err != nil || len(got) != 0 {
+		t.Fatalf("scope=%v err=%v", got, err)
+	}
+}
+
+func TestEmptyBusinessActionScopeDoesNotRequireDelegationWithoutResources(t *testing.T) {
+	if !ensurePreparedActions(nil, nil) {
+		t.Fatal("empty business action scope unexpectedly required a delegation")
+	}
+	if ensurePreparedActions(nil, []string{"forge:action:sales_contract.ContractSubmit"}) {
+		t.Fatal("non-empty business action scope was accepted without a delegation")
+	}
+}
+
 func TestBoundDispatchWirePreservesOmissionAndExactText(t *testing.T) {
 	input := dispatchInputRevision{Task: " \n甲：“引号”\n", TeamID: "team", Mode: "workflow", WorkflowID: "flow", WorkflowVersion: 1}
 	input.ClientRequestID = "fixed-key"

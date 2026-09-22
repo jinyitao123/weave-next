@@ -20,10 +20,11 @@ import (
 
 func dispatchInputRegistrationFixture(session, task, previous string) dispatchInputRegistration {
 	seq := int64(0)
+	actions := []string{}
 	return dispatchInputRegistration{
 		RegistrationID: uuid.NewString(), WorkbenchSessionID: session, ExpectedRevisionID: previous,
 		SourceMessages: []dispatchInputSourceMessage{{MessageID: "user-" + uuid.NewString(), EventSeq: &seq, SHA256: dispatchInputDigest([]byte(task))}},
-		Task:           task, TeamID: "team",
+		Task:           task, TeamID: "team", AuthorizedBusinessCapabilityIDs: &actions,
 	}
 }
 
@@ -86,6 +87,8 @@ func TestDispatchInputFreezesAndRefreshesEmployeeForgeDelegationRealPG(t *testin
 	version := 1
 	registration := dispatchInputRegistrationFixture("forge-session", "提交这份固定合同", "")
 	registration.WorkflowID, registration.WorkflowVersion = "flow", &version
+	authorized := []string{"forge:action:sales_contract.ContractSubmit"}
+	registration.AuthorizedBusinessCapabilityIDs = &authorized
 	register := func(token string) (*httptest.ResponseRecorder, dispatchInputReceipt) {
 		t.Helper()
 		body, _ := json.Marshal(registration)
@@ -128,6 +131,7 @@ func TestDispatchInputFreezesAndRefreshesEmployeeForgeDelegationRealPG(t *testin
 	}
 	missing := dispatchInputRegistrationFixture("forge-session-missing", "提交另一份合同", "")
 	missing.WorkflowID, missing.WorkflowVersion = "flow", &version
+	missing.AuthorizedBusinessCapabilityIDs = &authorized
 	body, _ := json.Marshal(missing)
 	c, recorder := dispatchInputTestContext(body, "/v1/workbench/dispatch-inputs", "ws", "user")
 	if err := server.handleRegisterDispatchInput(c); err != nil || recorder.Code != http.StatusUnauthorized || !strings.Contains(recorder.Body.String(), "business_delegation_required") {

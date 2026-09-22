@@ -31,17 +31,18 @@ type workflowLatestRun struct {
 }
 
 type workflowSummary struct {
-	ID                string                    `json:"id"`
-	Name              string                    `json:"name"`
-	Description       string                    `json:"description"`
-	Status            string                    `json:"status"`
-	PublishedVersion  *int                      `json:"published_version"`
-	DraftVersion      *int                      `json:"draft_version"`
-	TriggerSummary    *workflowTriggerSummary   `json:"trigger_summary"`
-	ReferencedWorkers []workflowWorkerReference `json:"referenced_workers"`
-	LatestRun         *workflowLatestRun        `json:"latest_run"`
-	CreatedAt         time.Time                 `json:"created_at"`
-	UpdatedAt         time.Time                 `json:"updated_at"`
+	ID                    string                    `json:"id"`
+	Name                  string                    `json:"name"`
+	Description           string                    `json:"description"`
+	Status                string                    `json:"status"`
+	PublishedVersion      *int                      `json:"published_version"`
+	DraftVersion          *int                      `json:"draft_version"`
+	TriggerSummary        *workflowTriggerSummary   `json:"trigger_summary"`
+	ReferencedWorkers     []workflowWorkerReference `json:"referenced_workers"`
+	LatestRun             *workflowLatestRun        `json:"latest_run"`
+	BusinessCapabilityIDs []string                  `json:"business_capability_ids"`
+	CreatedAt             time.Time                 `json:"created_at"`
+	UpdatedAt             time.Time                 `json:"updated_at"`
 }
 
 type workflowVersionSlot struct {
@@ -136,6 +137,13 @@ func (s *Server) handleListTeamWorkflows(c echo.Context) error {
 	items := make([]workflowSummary, 0, len(records))
 	for _, record := range records {
 		summary := buildWorkflowSummary(record, groupWorkflowVersions(record, versions), agentsByID)
+		summary.BusinessCapabilityIDs = []string{}
+		if record.PublishedVersion != nil {
+			summary.BusinessCapabilityIDs, err = s.publishedBusinessActions(ctx, workspaceID, record.ID, *record.PublishedVersion)
+			if err != nil {
+				return workflowStoreFailure(c, fmt.Errorf("read published business actions: %w", err))
+			}
+		}
 		latestRun, err := s.resolveWorkflowLatestRun(ctx, workspaceID, record, versions)
 		if err != nil {
 			return writeWorkflowLatestRunError(c, err)

@@ -163,7 +163,10 @@ func verifyForgeFiles(ctx context.Context, issuer, bearer string, resources []di
 }
 
 func ensurePreparedActions(prepared *preparedBusinessDelegation, actions []string) bool {
-	if prepared == nil || len(prepared.actions) != len(actions) {
+	if prepared == nil {
+		return len(actions) == 0
+	}
+	if len(prepared.actions) != len(actions) {
 		return false
 	}
 	for index := range actions {

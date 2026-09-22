@@ -3,6 +3,7 @@ package businessaction
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/jinyitao123/loom/contract"
@@ -52,5 +53,29 @@ func TestDispatcherRejectsActionOverride(t *testing.T) {
 	result, err := value.Dispatch(t.Context(), contract.ToolCall{ID: "call-2", Name: tools[0].Name, Args: `{"actionName":"DeleteEverything","recordId":"contract-1"}`})
 	if err != nil || result == nil || !result.IsError || host.call.Name != "" {
 		t.Fatalf("result=%+v captured=%+v err=%v", result, host.call, err)
+	}
+}
+
+func TestTaskScopeCanExposeOnlyOnePublishedForgeAction(t *testing.T) {
+	host := &captureHost{}
+	value, err := newDispatcher(host, []string{"forge:action:sales_contract.ContractSubmit"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tools, err := value.ListTools(t.Context())
+	if err != nil || len(tools) != 1 || strings.Contains(tools[0].Name, "RequestRevision") {
+		t.Fatalf("tools=%+v err=%v", tools, err)
+	}
+}
+
+func TestTaskScopeIsIntersectedPerMember(t *testing.T) {
+	member := []string{"forge:action:sales_contract.ContractSubmit"}
+	task := []string{"forge:action:sales_contract.RequestRevision", "forge:action:sales_contract.ContractSubmit"}
+	got := intersectActions(member, task)
+	if len(got) != 1 || got[0] != member[0] {
+		t.Fatalf("intersection=%v", got)
+	}
+	if got := intersectActions(member, nil); len(got) != 0 {
+		t.Fatalf("empty task scope exposed actions: %v", got)
 	}
 }
