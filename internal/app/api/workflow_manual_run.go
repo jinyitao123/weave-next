@@ -55,6 +55,27 @@ func (s *Server) admitTeamWorkflowDispatch(c echo.Context, workflowID string, re
 	if err != nil {
 		return workflowStoreFailure(c, err)
 	}
+	// A trusted Workbench input may carry an older, client-derived project key
+	// that was never created in Weave. Resolve that compatibility value to the
+	// team's real unclassified Project before admission. New callers can omit
+	// project_id and receive the same server-owned Project.
+	if s.Projects != nil && (projectID == "" || request.inputBinding != nil) {
+		needsDefaultProject := projectID == ""
+		if projectID != "" {
+			_, projectErr := s.Projects.GetActive(ctx, workspaceID, projectID)
+			if projectErr != nil && !errors.Is(projectErr, projects.ErrNotFound) {
+				return workflowManualRunProjectError(c, projectErr)
+			}
+			needsDefaultProject = errors.Is(projectErr, projects.ErrNotFound)
+		}
+		if needsDefaultProject {
+			resolved, projectErr := s.Projects.EnsureUnclassified(ctx, workspaceID, frozenPayload.Team.LeadAgentID)
+			if projectErr != nil {
+				return workflowManualRunProjectError(c, projectErr)
+			}
+			projectID = resolved.ID
+		}
+	}
 	tx, err := s.ScheduleTransactions.Begin(ctx)
 	if err != nil {
 		return workflowStoreFailure(c, fmt.Errorf("begin manual workflow run: %w", err))
