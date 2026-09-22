@@ -323,6 +323,16 @@ func (r *AgentRegistry) Put(ctx context.Context, tenant string, rec *registry.Ag
 // It shares Put's insert, conflict, version, and ownership behavior, but leaves
 // commit and rollback to the caller.
 func (r *AgentRegistry) PutTx(ctx context.Context, tx pgx.Tx, tenant string, rec *registry.AgentRecord) error {
+	return r.putVersionTx(ctx, tx, tenant, rec, true)
+}
+
+// StageTx stores an immutable candidate version without moving an existing
+// agent's active head. Activation belongs to the team publication transaction.
+func (r *AgentRegistry) StageTx(ctx context.Context, tx pgx.Tx, tenant string, rec *registry.AgentRecord) error {
+	return r.putVersionTx(ctx, tx, tenant, rec, false)
+}
+
+func (r *AgentRegistry) putVersionTx(ctx context.Context, tx pgx.Tx, tenant string, rec *registry.AgentRecord, activate bool) error {
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO weave_workspaces (id, slug, name)
 		VALUES ($1, $1, $1)
@@ -359,7 +369,9 @@ func (r *AgentRegistry) PutTx(ctx context.Context, tx pgx.Tx, tenant string, rec
 	case err != nil:
 		return err
 	default:
-		version++
+		if err := tx.QueryRow(ctx, `SELECT COALESCE(MAX(version),0)+1 FROM weave_agent_versions WHERE workspace_id=$1 AND agent_id=$2`, tenant, id).Scan(&version); err != nil {
+			return err
+		}
 	}
 	if ownerUserIDRequiresValidation(agentExists, existingOwnerUserID, rec.OwnerUserID) {
 		isMember, err := r.workspaceMemberExists(ctx, tx, tenant, *rec.OwnerUserID)
@@ -434,7 +446,7 @@ func (r *AgentRegistry) PutTx(ctx context.Context, tx pgx.Tx, tenant string, rec
 	if err != nil {
 		return err
 	}
-	if agentExists {
+	if agentExists && activate {
 		tag, err := tx.Exec(ctx, `
 			UPDATE weave_agents
 			SET owner_user_id=$3,
@@ -453,7 +465,7 @@ func (r *AgentRegistry) PutTx(ctx context.Context, tx pgx.Tx, tenant string, rec
 		if tag.RowsAffected() != 1 {
 			return fmt.Errorf("update agent %q: locked identity changed", rec.Name)
 		}
-	} else {
+	} else if !agentExists {
 		if _, err := tx.Exec(ctx, `
 			INSERT INTO weave_agents (
 				id, workspace_id, team_id, owner_user_id, name, display_name, role,
