@@ -868,6 +868,10 @@ func freezeAgent(record registry.AgentRecord, key frozen.FactoryKey, input json.
 		},
 		GraphType:    record.GraphType,
 		FactoryInput: append(json.RawMessage(nil), input...),
+		BusinessCapabilityIDs: append(
+			[]string(nil),
+			record.BusinessCapabilityIDs...,
+		),
 	}
 	if value.GraphType == "" {
 		value.GraphType = record.Spec.GraphType
