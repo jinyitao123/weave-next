@@ -2,6 +2,7 @@ package teamconstruction
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"slices"
 	"time"
@@ -53,7 +54,11 @@ func (a *PublicationAuthority) AuthorizeCredential(ctx context.Context, envelope
 	if report != nil && len(report.Issues) > 0 {
 		return errors.New("credential trigger invalid")
 	}
-	scope := workflow.CandidateCredentialScope{WorkspaceID: envelope.WorkspaceID, TeamID: payload.Team.TeamID, Lead: machine.AgentVersionKey{AgentID: payload.Team.LeadAgentID, AgentVersion: payload.Team.LeadAgentVersion}}
+	scope := workflow.CandidateCredentialScope{
+		WorkspaceID: envelope.WorkspaceID, TeamID: payload.Team.TeamID,
+		WorkflowID: envelope.WorkflowID, WorkflowVersion: envelope.WorkflowVersion,
+		Lead: machine.AgentVersionKey{AgentID: payload.Team.LeadAgentID, AgentVersion: payload.Team.LeadAgentVersion},
+	}
 	for _, reference := range machine.ReferencedBundles(scope.Lead, graph) {
 		scope.Agents = append(scope.Agents, reference.Key)
 	}
@@ -115,13 +120,17 @@ func (a *PublicationAuthority) verifyCredentialProof(ctx context.Context, proof 
 	}
 	var records []registry.AgentRecord
 	catalog := agentcatalog.New(a.pool)
+	stagedRoster, err := readStagedDevelopmentRosterTx(ctx, tx, proof.scope)
+	if err != nil {
+		return err
+	}
 	for _, key := range proof.scope.Agents {
 		if key.AgentID != leadID {
 			var member bool
 			if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM weave_team_workers WHERE workspace_id=$1 AND team_id=$2 AND worker_agent_id=$3 AND enabled)`, subject.WorkspaceID, proof.scope.TeamID, key.AgentID).Scan(&member); err != nil {
 				return err
 			}
-			if !member {
+			if !member && !stagedRosterAllowsAgent(stagedRoster, key.AgentID) {
 				return execution.ErrSubjectMismatch
 			}
 		}
@@ -140,6 +149,37 @@ func (a *PublicationAuthority) verifyCredentialProof(ctx context.Context, proof 
 		return execution.ErrSubjectMismatch
 	}
 	return nil
+}
+
+func readStagedDevelopmentRosterTx(ctx context.Context, tx pgx.Tx, scope workflow.CandidateCredentialScope) (*registry.PublicationTeamRead, error) {
+	if scope.WorkflowID == "" || scope.WorkflowVersion < 1 {
+		return nil, nil
+	}
+	var raw []byte
+	err := tx.QueryRow(ctx, `SELECT team_read FROM weave_team_development_candidates WHERE workspace_id=$1 AND workflow_id=$2 AND workflow_version=$3 AND team_id=$4`, scope.WorkspaceID, scope.WorkflowID, scope.WorkflowVersion, scope.TeamID).Scan(&raw)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var team registry.PublicationTeamRead
+	if err = json.Unmarshal(raw, &team); err != nil {
+		return nil, err
+	}
+	if team.WorkspaceID != scope.WorkspaceID || team.TeamID != scope.TeamID || team.LeadAvatarID != scope.Lead.AgentID || team.LeadAvatarVersion != scope.Lead.AgentVersion {
+		return nil, execution.ErrSubjectMismatch
+	}
+	return &team, nil
+}
+
+func stagedRosterAllowsAgent(team *registry.PublicationTeamRead, agentID string) bool {
+	if team == nil {
+		return false
+	}
+	return slices.ContainsFunc(team.Workers, func(worker registry.TeamWorker) bool {
+		return worker.Enabled && worker.WorkerAgentID == agentID
+	})
 }
 
 func credentialSelectedByTeamTx(ctx context.Context, tx pgx.Tx, scope workflow.CandidateCredentialScope, records []registry.AgentRecord, ref frozen.CredentialReference) (bool, error) {

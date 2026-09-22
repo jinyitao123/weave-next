@@ -11,6 +11,8 @@ import (
 type CandidateCredentialScope struct {
 	WorkspaceID      string
 	TeamID           string
+	WorkflowID       string
+	WorkflowVersion  int
 	Lead             machine.AgentVersionKey
 	Agents           []machine.AgentVersionKey
 	DeliveryTargetID string
