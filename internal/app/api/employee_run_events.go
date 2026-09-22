@@ -145,7 +145,7 @@ func (worker *employeeRunEventWorker) materialize(ctx context.Context) error {
 		SELECT run.workspace_id,run.run_id,run.status,run.terminal_at,run.cause_summary,
 			input.input_revision_id,input.workbench_session_id,input.project_id,
 			identity.subject AS assignee_account_id,identity.workspace_id AS external_organization,
-			COALESCE(NULLIF(team.name,''),'团队工作') AS team_name,
+			COALESCE(NULLIF(workflow.name,''),NULLIF(team.name,''),'团队工作') AS team_name,
 			COALESCE(NULLIF(deliverable.content,''),'') AS deliverable_content
 		FROM weave_team_runs AS run
 		JOIN weave_dispatch_input_revisions AS input
@@ -154,6 +154,8 @@ func (worker *employeeRunEventWorker) materialize(ctx context.Context) error {
 		  ON identity.workspace_id=input.workspace_id AND identity.user_id=input.user_id
 		LEFT JOIN weave_teams AS team
 		  ON team.workspace_id=run.workspace_id AND team.id=run.team_id
+		LEFT JOIN weave_team_workflows AS workflow
+		  ON workflow.workspace_id=run.workspace_id AND workflow.team_id=run.team_id AND workflow.id=run.workflow_id
 		LEFT JOIN LATERAL (
 		  SELECT content FROM weave_final_deliverables
 		  WHERE workspace_id=run.workspace_id AND run_id=run.run_id
