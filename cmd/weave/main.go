@@ -180,7 +180,7 @@ func main() {
 	// Create LLM router (providers configured via API at runtime).
 	defaultModel := os.Getenv("DEFAULT_MODEL")
 	if defaultModel == "" {
-		defaultModel = "deepseek-v4-flash"
+		defaultModel = "deepseek-flash"
 	}
 	router := llmrouter.New(defaultModel)
 
@@ -211,7 +211,7 @@ func main() {
 			Name:                     "DeepSeek",
 			BaseURL:                  "https://api.deepseek.com",
 			APIKey:                   key,
-			Models:                   []string{"deepseek-v4-flash", "deepseek-v4-pro"},
+			Models:                   []string{"deepseek-flash", "deepseek-v4-pro"},
 			JSONObjectMode:           true, // DeepSeek doesn't support json_schema, use json_object
 			ThinkingDefaultMode:      thinkingMode,
 			ThinkingDisableWithTools: true,

@@ -76,7 +76,7 @@ func (s *Server) handleUploadAgent(c echo.Context) error {
 
 	model := c.FormValue("model")
 	if model == "" {
-		model = "deepseek-v4-flash"
+		model = "deepseek-flash"
 	}
 
 	rec := &registry.AgentRecord{

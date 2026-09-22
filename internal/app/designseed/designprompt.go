@@ -95,7 +95,7 @@ const Prompt = `你是 Weave 平台的工作流设计助手。用户描述他想
       "type": "chat",
       "display": "收集信息",
       "config": {
-        "model": "deepseek-v4-flash",
+        "model": "deepseek-flash",
         "system_prompt": "收集生成报告所需的信息；如果信息不足，继续向用户提问。",
         "max_iterations": 10
       },
@@ -106,7 +106,7 @@ const Prompt = `你是 Weave 平台的工作流设计助手。用户描述他想
       "type": "llm_check",
       "display": "检查信息",
       "config": {
-        "model": "deepseek-v4-flash",
+        "model": "deepseek-flash",
         "prompt_template": "判断以下信息是否足以生成报告：{{messages}}。只输出形如 {\"result\": true} 的 JSON，不要输出任何其他文字。",
         "input_keys": ["messages"],
         "output_key": "information_complete",
@@ -134,7 +134,7 @@ const Prompt = `你是 Weave 平台的工作流设计助手。用户描述他想
       "type": "llm_call",
       "display": "生成报告",
       "config": {
-        "model": "deepseek-v4-flash",
+        "model": "deepseek-flash",
         "prompt_template": "根据已确认的信息生成完整报告：{{messages}}",
         "input_keys": ["messages"],
         "output_key": "final_report",

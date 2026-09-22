@@ -58,7 +58,7 @@ func ConfigEngineerDefinition() *registry.GraphDefinition {
 			},
 			{
 				Name: "chat", Type: "chat", Display: "核对配置合同",
-				Config: map[string]any{"model": "deepseek-v4-flash"}, Next: &end,
+				Config: map[string]any{"model": "deepseek-flash"}, Next: &end,
 			},
 		},
 	}

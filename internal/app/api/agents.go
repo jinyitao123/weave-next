@@ -80,7 +80,7 @@ func applyAgentContextDefaults(rec *registry.AgentRecord) {
 // public AgentRecord API.
 func applyAgentModelDefault(rec *registry.AgentRecord) {
 	if rec.Model == "" && !engine.IsCLIEngine(rec.Engine) {
-		rec.Model = "deepseek-v4-flash"
+		rec.Model = "deepseek-flash"
 	}
 }
 

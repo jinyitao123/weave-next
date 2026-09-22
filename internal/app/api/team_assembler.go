@@ -145,7 +145,7 @@ func (s *Server) teamCompileFactory(
 				}
 				model := rec.Model
 				if model == "" {
-					model = "deepseek-v4-flash"
+					model = "deepseek-flash"
 				}
 				if opts.MemoryWriteNamespace != "" {
 					afterStepHooks = append(afterStepHooks, memory.AutoRememberHookForNamespace(
