@@ -80,6 +80,9 @@ func (f Factory) attach(ctx context.Context, bundle frozen.FrozenExecutionBundle
 		}
 		return compiler.FrozenBuildOpts{}, nil, err
 	}
+	if dispatcher == nil {
+		return opts, closer, nil
+	}
 	opts.Tools = mcphost.NewCompositeDispatcher(opts.Tools, dispatcher)
 	return opts, closer, nil
 }
@@ -95,6 +98,10 @@ func (s *Store) dispatcher(ctx context.Context, requested []string) (contract.To
 	bound, err := s.resolve(ctx, requested)
 	if err != nil {
 		return nil, err
+	}
+	if len(bound.actions) == 0 {
+		clear(bound.token)
+		return nil, nil
 	}
 	endpoint, err := url.Parse(bound.issuer)
 	if err != nil || endpoint.Scheme == "" || endpoint.Host == "" || endpoint.User != nil ||
@@ -117,10 +124,10 @@ func (s *Store) dispatcher(ctx context.Context, requested []string) (contract.To
 	}
 	host := mcphost.NewHTTPHost(endpoint.String(), mcphost.WithHeaders(headers), mcphost.WithFilter([]string{"run_action"}), mcphost.WithToolContract(toolContract),
 		mcphost.WithDispatchGuard(func(callCtx context.Context) error {
-			return s.validate(callCtx, bound.inputRevisionID, requested)
+			return s.validate(callCtx, bound.inputRevisionID, bound.actions)
 		}))
 	clearHeader(headers)
-	return newDispatcher(host, requested)
+	return newDispatcher(host, bound.actions)
 }
 
 func (s *Store) resolve(ctx context.Context, requested []string) (delegation, error) {
@@ -157,10 +164,11 @@ func (s *Store) resolve(ctx context.Context, requested []string) (delegation, er
 	if !expiresAt.After(s.now().UTC()) {
 		return delegation{}, fmt.Errorf("%w: Forge task delegation expired", mcphost.ErrFailClosed)
 	}
-	var allowed []string
-	if err := json.Unmarshal(actionsRaw, &allowed); err != nil || !containsAll(allowed, requested) {
-		return delegation{}, fmt.Errorf("%w: published Forge action is outside task delegation", mcphost.ErrFailClosed)
+	var taskAllowed []string
+	if err := json.Unmarshal(actionsRaw, &taskAllowed); err != nil {
+		return delegation{}, fmt.Errorf("%w: task business action scope is invalid", mcphost.ErrFailClosed)
 	}
+	allowed := intersectActions(requested, taskAllowed)
 	token, err := secret.Open(s.key, ciphertext)
 	if err != nil {
 		return delegation{}, fmt.Errorf("%w: Forge task credential unavailable", mcphost.ErrFailClosed)
@@ -304,6 +312,20 @@ func containsAll(allowed, requested []string) bool {
 		}
 	}
 	return true
+}
+
+func intersectActions(memberPublished, taskAllowed []string) []string {
+	published := make(map[string]struct{}, len(memberPublished))
+	for _, value := range memberPublished {
+		published[value] = struct{}{}
+	}
+	result := make([]string, 0, len(taskAllowed))
+	for _, value := range taskAllowed {
+		if _, ok := published[value]; ok {
+			result = append(result, value)
+		}
+	}
+	return result
 }
 
 func clear(value []byte) {
