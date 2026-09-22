@@ -9,15 +9,17 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jinyitao123/weave/internal/kernel/businessaction"
 	"github.com/jinyitao123/weave/internal/kernel/publication"
 	"github.com/labstack/echo/v4"
 )
 
 type developmentTrialRequest struct {
-	Revision   int64  `json:"revision"`
-	WorkflowID string `json:"workflow_id"`
-	RequestID  string `json:"request_id"`
-	Input      string `json:"input"`
+	Revision        int64                              `json:"revision"`
+	WorkflowID      string                             `json:"workflow_id"`
+	RequestID       string                             `json:"request_id"`
+	Input           string                             `json:"input"`
+	BusinessActions []businessaction.DevelopmentAction `json:"business_actions,omitempty"`
 }
 
 func (s *Server) handleTrialTeamDevelopment(c echo.Context) error {
@@ -45,14 +47,35 @@ func (s *Server) handleTrialTeamDevelopment(c echo.Context) error {
 	if selected == nil {
 		return echo.NewHTTPError(422, "请先选择要试跑的流程")
 	}
+	requestedActions := make([]string, 0)
+	seenActions := map[string]struct{}{}
+	for _, member := range selected.Members {
+		for _, capabilityID := range member.BusinessCapabilityIDs {
+			if _, exists := seenActions[capabilityID]; exists {
+				continue
+			}
+			seenActions[capabilityID] = struct{}{}
+			requestedActions = append(requestedActions, capabilityID)
+		}
+	}
+	normalizedActions, err := businessaction.ValidateDevelopmentActions(requestedActions, req.BusinessActions)
+	if err != nil {
+		return echo.NewHTTPError(422, err.Error())
+	}
 	input, _ := json.Marshal(req.Input)
 	hash := sha256.Sum256(input)
 	request := publication.CandidateRunRequest{Version: publication.ContractVersion, RequestID: "development:" + req.RequestID, Candidate: selected.Envelope, Input: input, InputVersion: hex.EncodeToString(hash[:]), SourceRef: "team-development:" + id, Purpose: "developer-trial"}
-	digest, err := request.Fingerprint(ctx)
+	requestDigest, err := request.Fingerprint(ctx)
 	if err != nil {
 		return err
 	}
-	_, err = s.Pool.Exec(ctx, `INSERT INTO weave_team_development_trials(workspace_id,team_id,request_id,revision,workflow_id,actor_id,request_digest,request) VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT DO NOTHING`, ws, id, req.RequestID, req.Revision, req.WorkflowID, actor, digest, encodeDevelopment(request))
+	digestSource, _ := json.Marshal(struct {
+		RequestDigest string                             `json:"request_digest"`
+		Actions       []businessaction.DevelopmentAction `json:"actions"`
+	}{requestDigest, normalizedActions})
+	digestHash := sha256.Sum256(digestSource)
+	digest := hex.EncodeToString(digestHash[:])
+	_, err = s.Pool.Exec(ctx, `INSERT INTO weave_team_development_trials(workspace_id,team_id,request_id,revision,workflow_id,actor_id,request_digest,request,business_actions) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT DO NOTHING`, ws, id, req.RequestID, req.Revision, req.WorkflowID, actor, digest, encodeDevelopment(request), encodeDevelopment(normalizedActions))
 	if err != nil {
 		return err
 	}

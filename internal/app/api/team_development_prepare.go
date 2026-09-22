@@ -49,9 +49,11 @@ func (s *Server) prepareDevelopment(ctx context.Context, ws, id, actor string, r
 		if strings.TrimSpace(cfg.SystemPrompt) == "" || strings.TrimSpace(m.Relationship.Duty) == "" || strings.TrimSpace(cfg.Model) == "" {
 			return d, echo.NewHTTPError(422, "请为每位成员填写职责、工作方法并选择模型")
 		}
-		// The initial developer trial path has no sandbox credential binding. Never
-		// borrow production tools or silently remove configured capabilities.
-		if cfg.Engine != "loom" || len(cfg.MCPServerIDs) > 0 || len(cfg.BusinessCapabilityIDs) > 0 || len(cfg.SkillNames) > 0 || len(cfg.PermissionAllow) > 0 || len(cfg.PermissionAsk) > 0 {
+		// Forge business actions are supplied to candidate trials through the
+		// isolated development dispatcher. Other external resources still require
+		// their own sandbox binding; never borrow production credentials or silently
+		// remove those capabilities.
+		if cfg.Engine != "loom" || len(cfg.MCPServerIDs) > 0 || len(cfg.SkillNames) > 0 || len(cfg.PermissionAllow) > 0 || len(cfg.PermissionAsk) > 0 {
 			return d, echo.NewHTTPError(422, "当前试跑支持无外部工具的 Weave 内置成员；此团队需要先配置隔离的测试工具环境")
 		}
 		var rec registry.AgentRecord
