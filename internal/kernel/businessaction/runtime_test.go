@@ -9,17 +9,36 @@ import (
 	"github.com/jinyitao123/loom/contract"
 )
 
-type captureHost struct{ call contract.ToolCall }
+type captureHost struct {
+	call   contract.ToolCall
+	result *contract.ToolResult
+}
 
 func (h *captureHost) ListTools(context.Context) ([]contract.ToolDef, error) { return nil, nil }
 func (h *captureHost) Dispatch(_ context.Context, call contract.ToolCall) (*contract.ToolResult, error) {
 	h.call = call
+	if h.result != nil {
+		return h.result, nil
+	}
 	return &contract.ToolResult{CallID: call.ID, Content: `{"ok":true}`}, nil
+}
+
+func contractSubmitCatalog() map[string]actionMetadata {
+	return map[string]actionMetadata{
+		"sales_contract.ContractSubmit": {
+			Name: "ContractSubmit", ObjectName: "sales_contract", Label: "提交指定合同版本",
+			Description: "把员工授权的合同版本提交审批。", RequiresRecord: true,
+			Params: []actionParam{
+				{Name: "material_file_id", Type: "string", Required: true, Description: "合同文件"},
+				{Name: "material_sha256", Type: "string", Required: true, Description: "文件摘要"},
+			},
+		},
+	}
 }
 
 func TestDispatcherFixesPublishedForgeAction(t *testing.T) {
 	host := &captureHost{}
-	value, err := newDispatcher(host, []string{"forge:action:sales_contract.ContractSubmit"})
+	value, err := newDispatcher(host, []string{"forge:action:sales_contract.ContractSubmit"}, contractSubmitCatalog())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -27,7 +46,22 @@ func TestDispatcherFixesPublishedForgeAction(t *testing.T) {
 	if err != nil || len(tools) != 1 {
 		t.Fatalf("tools=%+v err=%v", tools, err)
 	}
-	result, err := value.Dispatch(t.Context(), contract.ToolCall{ID: "call-1", Name: tools[0].Name, Args: `{"recordId":"contract-1","params":{"note":"ready"}}`})
+	var schema struct {
+		Required   []string `json:"required"`
+		Properties struct {
+			Params struct {
+				Required []string `json:"required"`
+			} `json:"params"`
+		} `json:"properties"`
+	}
+	if err := json.Unmarshal(tools[0].InputSchema, &schema); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(strings.Join(schema.Required, ","), "recordId") ||
+		!strings.Contains(strings.Join(schema.Properties.Params.Required, ","), "material_file_id") {
+		t.Fatalf("schema=%s", tools[0].InputSchema)
+	}
+	result, err := value.Dispatch(t.Context(), contract.ToolCall{ID: "call-1", Name: tools[0].Name, Args: `{"recordId":"contract-1","params":{"material_file_id":"file-1","material_sha256":"digest-1"}}`})
 	if err != nil || result == nil || result.IsError {
 		t.Fatalf("result=%+v err=%v", result, err)
 	}
@@ -45,7 +79,7 @@ func TestDispatcherFixesPublishedForgeAction(t *testing.T) {
 
 func TestDispatcherRejectsActionOverride(t *testing.T) {
 	host := &captureHost{}
-	value, err := newDispatcher(host, []string{"forge:action:sales_contract.ContractSubmit"})
+	value, err := newDispatcher(host, []string{"forge:action:sales_contract.ContractSubmit"}, contractSubmitCatalog())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,15 +90,47 @@ func TestDispatcherRejectsActionOverride(t *testing.T) {
 	}
 }
 
+func TestDispatcherRejectsMissingRequiredForgeParamsBeforeDispatch(t *testing.T) {
+	host := &captureHost{}
+	value, err := newDispatcher(host, []string{"forge:action:sales_contract.ContractSubmit"}, contractSubmitCatalog())
+	if err != nil {
+		t.Fatal(err)
+	}
+	tools, _ := value.ListTools(t.Context())
+	result, err := value.Dispatch(t.Context(), contract.ToolCall{ID: "call-required", Name: tools[0].Name, Args: `{"recordId":"contract-1","params":{"material_file_id":"file-1"}}`})
+	if err != nil || result == nil || !result.IsError || host.call.Name != "" {
+		t.Fatalf("result=%+v captured=%+v err=%v", result, host.call, err)
+	}
+}
+
 func TestTaskScopeCanExposeOnlyOnePublishedForgeAction(t *testing.T) {
 	host := &captureHost{}
-	value, err := newDispatcher(host, []string{"forge:action:sales_contract.ContractSubmit"})
+	value, err := newDispatcher(host, []string{"forge:action:sales_contract.ContractSubmit"}, contractSubmitCatalog())
 	if err != nil {
 		t.Fatal(err)
 	}
 	tools, err := value.ListTools(t.Context())
 	if err != nil || len(tools) != 1 || strings.Contains(tools[0].Name, "RequestRevision") {
 		t.Fatalf("tools=%+v err=%v", tools, err)
+	}
+}
+
+func TestDispatcherFailsClosedWhenPublishedActionIsNotVisibleToEmployee(t *testing.T) {
+	_, err := newDispatcher(&captureHost{}, []string{"forge:action:sales_contract.ContractSubmit"}, map[string]actionMetadata{})
+	if err == nil || !strings.Contains(err.Error(), "unavailable to the current employee") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestReadActionCatalogUsesEmployeeVisibleForgeMetadata(t *testing.T) {
+	host := &captureHost{result: &contract.ToolResult{Content: `{"actions":[{"name":"ContractSubmit","objectName":"sales_contract","description":"提交指定版本","requiresRecord":true,"params":[{"name":"material_file_id","type":"string","required":true}]}]}`}}
+	catalog, err := readActionCatalog(t.Context(), host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	item, ok := catalog["sales_contract.ContractSubmit"]
+	if !ok || !item.RequiresRecord || len(item.Params) != 1 || host.call.Name != "list_actions" || host.call.Args != `{}` {
+		t.Fatalf("catalog=%+v call=%+v", catalog, host.call)
 	}
 }
 

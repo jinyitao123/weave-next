@@ -117,17 +117,26 @@ func (s *Store) dispatcher(ctx context.Context, requested []string) (contract.To
 		Name: "run_action", Description: "Invoke the server-selected Forge business action.",
 		InputSchema: json.RawMessage(`{"type":"object","properties":{"actionName":{"type":"string"},"objectName":{"type":"string"},"recordId":{"type":"string"},"params":{"type":"object"}},"required":["actionName","objectName"],"additionalProperties":false}`),
 	}
-	toolContract, err := mcphost.NewToolContract([]contract.ToolDef{runAction})
+	listActions := contract.ToolDef{
+		Name: "list_actions", Description: "Read the employee-visible Forge business action catalog.",
+		InputSchema: json.RawMessage(`{"type":"object","properties":{},"additionalProperties":false}`),
+		ReadOnly:    true,
+	}
+	toolContract, err := mcphost.NewToolContract([]contract.ToolDef{listActions, runAction})
 	if err != nil {
 		clearHeader(headers)
 		return nil, err
 	}
-	host := mcphost.NewHTTPHost(endpoint.String(), mcphost.WithHeaders(headers), mcphost.WithFilter([]string{"run_action"}), mcphost.WithToolContract(toolContract),
+	host := mcphost.NewHTTPHost(endpoint.String(), mcphost.WithHeaders(headers), mcphost.WithFilter([]string{"list_actions", "run_action"}), mcphost.WithToolContract(toolContract),
 		mcphost.WithDispatchGuard(func(callCtx context.Context) error {
 			return s.validate(callCtx, bound.inputRevisionID, bound.actions)
 		}))
 	clearHeader(headers)
-	return newDispatcher(host, bound.actions)
+	catalog, err := readActionCatalog(ctx, host)
+	if err != nil {
+		return nil, err
+	}
+	return newDispatcher(host, bound.actions, catalog)
 }
 
 func (s *Store) resolve(ctx context.Context, requested []string) (delegation, error) {
@@ -222,11 +231,63 @@ type dispatcher struct {
 	host   contract.ToolDispatcher
 	tools  []contract.ToolDef
 	byTool map[string]action
+	bound  *mcphost.ToolContract
 }
 
 type action struct{ capabilityID, objectName, actionName string }
 
-func newDispatcher(host contract.ToolDispatcher, ids []string) (*dispatcher, error) {
+type actionParam struct {
+	Name        string   `json:"name"`
+	Type        string   `json:"type,omitempty"`
+	Required    bool     `json:"required,omitempty"`
+	Description string   `json:"description,omitempty"`
+	Enum        []string `json:"enum,omitempty"`
+}
+
+type actionMetadata struct {
+	Name                 string        `json:"name"`
+	ObjectName           string        `json:"objectName"`
+	Label                string        `json:"label,omitempty"`
+	Description          string        `json:"description,omitempty"`
+	RequiresRecord       bool          `json:"requiresRecord,omitempty"`
+	RequiresConfirmation bool          `json:"requiresConfirmation,omitempty"`
+	Params               []actionParam `json:"params,omitempty"`
+}
+
+func readActionCatalog(ctx context.Context, host contract.ToolDispatcher) (map[string]actionMetadata, error) {
+	result, err := host.Dispatch(ctx, contract.ToolCall{ID: "forge-action-catalog", Name: "list_actions", Args: `{}`})
+	if err != nil {
+		return nil, fmt.Errorf("%w: Forge action catalog unavailable: %v", mcphost.ErrFailClosed, err)
+	}
+	if result == nil || result.IsError {
+		message := "empty response"
+		if result != nil && strings.TrimSpace(result.Content) != "" {
+			message = strings.TrimSpace(result.Content)
+		}
+		return nil, fmt.Errorf("%w: Forge action catalog unavailable: %s", mcphost.ErrFailClosed, message)
+	}
+	var payload struct {
+		Actions []actionMetadata `json:"actions"`
+	}
+	if err := json.Unmarshal([]byte(result.Content), &payload); err != nil {
+		return nil, fmt.Errorf("%w: Forge action catalog is invalid", mcphost.ErrFailClosed)
+	}
+	catalog := make(map[string]actionMetadata, len(payload.Actions))
+	for _, item := range payload.Actions {
+		if strings.TrimSpace(item.Name) == "" || strings.TrimSpace(item.ObjectName) == "" ||
+			item.Name != strings.TrimSpace(item.Name) || item.ObjectName != strings.TrimSpace(item.ObjectName) {
+			continue
+		}
+		key := item.ObjectName + "." + item.Name
+		if _, exists := catalog[key]; exists {
+			return nil, fmt.Errorf("%w: Forge action catalog contains a duplicate action", mcphost.ErrFailClosed)
+		}
+		catalog[key] = item
+	}
+	return catalog, nil
+}
+
+func newDispatcher(host contract.ToolDispatcher, ids []string, catalog map[string]actionMetadata) (*dispatcher, error) {
 	d := &dispatcher{host: host, byTool: map[string]action{}}
 	ordered := append([]string(nil), ids...)
 	sort.Strings(ordered)
@@ -239,14 +300,90 @@ func newDispatcher(host contract.ToolDispatcher, ids []string) (*dispatcher, err
 		if _, exists := d.byTool[name]; exists {
 			return nil, fmt.Errorf("%w: Forge capability tool collision", mcphost.ErrFailClosed)
 		}
+		metadata, ok := catalog[parsed.objectName+"."+parsed.actionName]
+		if !ok {
+			return nil, fmt.Errorf("%w: published Forge action %q is unavailable to the current employee", mcphost.ErrFailClosed, id)
+		}
+		schema, err := actionInputSchema(metadata)
+		if err != nil {
+			return nil, fmt.Errorf("%w: Forge action %q has invalid input metadata: %v", mcphost.ErrFailClosed, id, err)
+		}
+		description := strings.TrimSpace(metadata.Description)
+		if description == "" {
+			description = strings.TrimSpace(metadata.Label)
+		}
+		if description == "" {
+			description = fmt.Sprintf("执行 Forge 业务动作 %s。", parsed.actionName)
+		}
 		d.byTool[name] = parsed
 		d.tools = append(d.tools, contract.ToolDef{
 			Name:        name,
-			Description: fmt.Sprintf("执行已发布的 Forge 业务动作 %s（对象 %s）。仅在当前员工明确授权且业务材料已核对时调用。", parsed.actionName, parsed.objectName),
-			InputSchema: json.RawMessage(`{"type":"object","properties":{"recordId":{"type":"string","description":"目标业务记录"},"params":{"type":"object","description":"动作声明的业务参数"}},"additionalProperties":false}`),
+			Description: description + " 仅在当前员工明确授权且本次固定材料已核对时调用。",
+			InputSchema: schema,
 		})
 	}
+	bound, err := mcphost.NewToolContract(d.tools)
+	if err != nil {
+		return nil, err
+	}
+	d.bound = bound
 	return d, nil
+}
+
+func actionInputSchema(metadata actionMetadata) (json.RawMessage, error) {
+	properties := map[string]any{}
+	required := make([]string, 0, 2)
+	if metadata.RequiresRecord {
+		properties["recordId"] = map[string]any{"type": "string", "minLength": 1, "description": "目标业务记录"}
+		required = append(required, "recordId")
+	} else {
+		properties["recordId"] = map[string]any{"type": "string", "minLength": 1, "description": "目标业务记录（动作需要时填写）"}
+	}
+	paramProperties := make(map[string]any, len(metadata.Params))
+	paramRequired := make([]string, 0, len(metadata.Params))
+	for _, param := range metadata.Params {
+		name := strings.TrimSpace(param.Name)
+		if name == "" || name != param.Name {
+			return nil, errors.New("parameter name is empty or padded")
+		}
+		if _, exists := paramProperties[name]; exists {
+			return nil, fmt.Errorf("duplicate parameter %q", name)
+		}
+		jsonType := param.Type
+		switch jsonType {
+		case "", "string":
+			jsonType = "string"
+		case "number", "boolean", "array":
+		default:
+			return nil, fmt.Errorf("unsupported parameter type %q", param.Type)
+		}
+		property := map[string]any{"type": jsonType}
+		if strings.TrimSpace(param.Description) != "" {
+			property["description"] = strings.TrimSpace(param.Description)
+		}
+		if len(param.Enum) > 0 {
+			property["enum"] = param.Enum
+		}
+		if jsonType == "array" {
+			property["items"] = map[string]any{}
+		}
+		paramProperties[name] = property
+		if param.Required {
+			paramRequired = append(paramRequired, name)
+		}
+	}
+	paramsSchema := map[string]any{"type": "object", "properties": paramProperties, "additionalProperties": false}
+	if len(paramRequired) > 0 {
+		paramsSchema["required"] = paramRequired
+		required = append(required, "params")
+	}
+	properties["params"] = paramsSchema
+	schema := map[string]any{"type": "object", "properties": properties, "additionalProperties": false}
+	if len(required) > 0 {
+		schema["required"] = required
+	}
+	raw, err := json.Marshal(schema)
+	return json.RawMessage(raw), err
 }
 
 func (d *dispatcher) ListTools(context.Context) ([]contract.ToolDef, error) {
@@ -257,6 +394,10 @@ func (d *dispatcher) Dispatch(ctx context.Context, call contract.ToolCall) (*con
 	selected, ok := d.byTool[call.Name]
 	if !ok {
 		return &contract.ToolResult{CallID: call.ID, ToolName: call.Name, Content: "业务动作不在已发布团队能力中", IsError: true}, nil
+	}
+	if rejected := d.bound.Validate(call); rejected != nil {
+		rejected.ToolName = call.Name
+		return rejected, nil
 	}
 	var input struct {
 		RecordID string         `json:"recordId,omitempty"`
