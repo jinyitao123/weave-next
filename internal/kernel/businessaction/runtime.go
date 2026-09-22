@@ -161,13 +161,23 @@ func (s *Store) resolveDevelopmentTrial(ctx context.Context, requested []string)
 		return nil, false, fmt.Errorf("%w: current employee task changed", mcphost.ErrFailClosed)
 	}
 	var raw []byte
+	// Fanout legs and resume tasks replace the source task's context key with
+	// their coordination group. Resolve the development trial through the
+	// immutable TeamRun source task so every task in the same frozen run sees
+	// the same isolated action catalog.
 	err = tx.QueryRow(ctx, `SELECT t.business_actions
 		FROM weave_task_queue q
+		JOIN weave_team_runs r
+		  ON r.workspace_id=q.workspace_id
+		 AND r.run_snapshot_id=q.run_snapshot_id
+		JOIN weave_task_queue root
+		  ON root.workspace_id=r.workspace_id
+		 AND root.id=r.source_task_id
 		JOIN weave_team_development_trials t
-		  ON t.workspace_id=q.workspace_id
-		 AND q.context_key='development:' || t.request_id::text
+		  ON t.workspace_id=root.workspace_id
+		 AND root.context_key='development:' || t.request_id::text
 		WHERE q.workspace_id=$1 AND q.id=$2 AND t.actor_id=$3
-		  AND q.source_ref='team-development:' || t.team_id`,
+		  AND root.source_ref='team-development:' || t.team_id`,
 		current.WorkspaceID, current.ID, current.Subject.UserID).Scan(&raw)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, false, nil
