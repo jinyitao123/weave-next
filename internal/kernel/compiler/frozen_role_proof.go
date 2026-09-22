@@ -179,6 +179,7 @@ func freezeDescriptorAgent(
 			Retries: int64(record.FallbackRetries),
 		},
 		GraphType: key.FactoryID, FactoryInput: append(json.RawMessage(nil), input...),
+		BusinessCapabilityIDs: append([]string(nil), record.BusinessCapabilityIDs...),
 	}
 	if record.OutputSchema != nil {
 		value.OutputSchema = append(json.RawMessage(nil), (*record.OutputSchema)...)

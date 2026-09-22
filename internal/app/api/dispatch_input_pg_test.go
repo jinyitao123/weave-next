@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jinyitao123/weave/internal/base/execution"
+	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/labstack/echo/v4"
 )
 
@@ -47,6 +49,90 @@ func registerInputForTest(server *Server, request dispatchInputRegistration) (*h
 	}
 	c, recorder := dispatchInputTestContext(body, "/v1/workbench/dispatch-inputs", "ws", "user")
 	return recorder, server.handleRegisterDispatchInput(c)
+}
+
+func TestDispatchInputFreezesAndRefreshesEmployeeForgeDelegationRealPG(t *testing.T) {
+	t.Setenv("WEAVE_SECRET_KEY_FILE", "")
+	t.Setenv("WEAVE_SECRET_KEY", strings.Repeat("11", 32))
+	dependencies := []frozen.FrozenDependencyRef{}
+	manifestHash, err := frozen.ComputeManifestHash(dependencies)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bundle := frozen.FrozenExecutionBundle{
+		SchemaVersion: 1,
+		FactoryKey:    frozen.FactoryKey{FactoryID: "standard", FactoryVersion: "1", CompilerABI: "weave-graph-abi-v1"},
+		Agent: frozen.FrozenAgentRecord{
+			SchemaVersion: 1, WorkspaceID: "ws", AgentID: "worker", AgentVersion: 1, Name: "worker", Role: "worker", Engine: "loom", Model: "model",
+			GraphType: "standard", FactoryInput: json.RawMessage(`{}`), Permissions: frozen.FrozenPermissions{Deny: []string{"*"}}, OutputSchema: json.RawMessage(`{"type":"object"}`),
+			BusinessCapabilityIDs: []string{"forge:action:sales_contract.ContractSubmit"},
+		},
+		PrimaryModel:   frozen.FrozenModelBinding{SchemaVersion: 1, WorkspaceID: "ws", ProviderID: "provider", ProviderRevision: 1, ModelID: "model", BaseURL: "https://provider.example", CredentialRef: frozen.CredentialReference{SchemaVersion: 1, WorkspaceID: "ws", Kind: frozen.CredentialProviderAPIKey, ResourceID: "provider", Slot: "api_key"}},
+		FallbackModels: []frozen.FrozenModelBinding{}, Credentials: []frozen.CredentialReference{}, MCPBindings: []frozen.FrozenMCPBinding{}, Skills: []frozen.FrozenSkill{},
+		Dependencies: frozen.FrozenDependencyManifest{SchemaVersion: 1, Dependencies: dependencies, ManifestHash: manifestHash},
+		Capability:   frozen.CapabilityManifest{SchemaVersion: 2, Role: "worker", AgentContentHash: strings.Repeat("b", 64)},
+	}
+	server, pool := newTeamDispatchTestServerWithGraph(t, json.RawMessage(`{"schema_version":1,"entry_node_id":"deliver","input_contract":{"type":"text"},"output_contract":{"type":"text"},"nodes":[{"id":"deliver","type":"deliver","config":{"result":{"source":"run_input","path":""}}}],"edges":[]}`), bundle)
+	if _, err := pool.Exec(t.Context(), `INSERT INTO weave_external_identities(issuer,subject,workspace_id,user_id)
+		VALUES('https://forge.example.test','forge-user','ws','user')`); err != nil {
+		t.Fatal(err)
+	}
+	server.ExternalIdentity = externalIdentityVerifierFunc(func(_ context.Context, token string) (ExternalIdentity, error) {
+		if token != "first-token" && token != "refreshed-token" {
+			return ExternalIdentity{}, errors.New("unexpected token")
+		}
+		return ExternalIdentity{Issuer: "https://forge.example.test", Subject: "forge-user", Organization: "ws"}, nil
+	})
+	version := 1
+	registration := dispatchInputRegistrationFixture("forge-session", "提交这份固定合同", "")
+	registration.WorkflowID, registration.WorkflowVersion = "flow", &version
+	register := func(token string) (*httptest.ResponseRecorder, dispatchInputReceipt) {
+		t.Helper()
+		body, _ := json.Marshal(registration)
+		c, recorder := dispatchInputTestContext(body, "/v1/workbench/dispatch-inputs", "ws", "user")
+		if token != "" {
+			c.Request().Header.Set(forgeDelegationHeader, "Bearer "+token)
+		}
+		if err := server.handleRegisterDispatchInput(c); err != nil {
+			t.Fatal(err)
+		}
+		var receipt dispatchInputReceipt
+		if recorder.Code < 300 {
+			if err := json.Unmarshal(recorder.Body.Bytes(), &receipt); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return recorder, receipt
+	}
+	created, receipt := register("first-token")
+	if created.Code != http.StatusCreated {
+		t.Fatalf("create status=%d body=%s", created.Code, created.Body.String())
+	}
+	var ciphertext string
+	var actions []byte
+	var generation int
+	if err := pool.QueryRow(t.Context(), `SELECT credential_ciphertext,allowed_actions,refresh_generation
+		FROM weave_task_business_delegations WHERE workspace_id='ws' AND input_revision_id=$1`, receipt.InputRevisionID).Scan(&ciphertext, &actions, &generation); err != nil {
+		t.Fatal(err)
+	}
+	if ciphertext == "first-token" || strings.Contains(ciphertext, "first-token") || generation != 1 || !strings.Contains(string(actions), "ContractSubmit") {
+		t.Fatalf("delegation was not frozen safely: ciphertext=%q actions=%s generation=%d", ciphertext, actions, generation)
+	}
+	replayed, replayReceipt := register("refreshed-token")
+	if replayed.Code != http.StatusOK || replayReceipt != receipt {
+		t.Fatalf("replay status=%d receipt=%+v want=%+v", replayed.Code, replayReceipt, receipt)
+	}
+	if err := pool.QueryRow(t.Context(), `SELECT refresh_generation FROM weave_task_business_delegations
+		WHERE workspace_id='ws' AND input_revision_id=$1`, receipt.InputRevisionID).Scan(&generation); err != nil || generation != 2 {
+		t.Fatalf("refresh generation=%d err=%v", generation, err)
+	}
+	missing := dispatchInputRegistrationFixture("forge-session-missing", "提交另一份合同", "")
+	missing.WorkflowID, missing.WorkflowVersion = "flow", &version
+	body, _ := json.Marshal(missing)
+	c, recorder := dispatchInputTestContext(body, "/v1/workbench/dispatch-inputs", "ws", "user")
+	if err := server.handleRegisterDispatchInput(c); err != nil || recorder.Code != http.StatusUnauthorized || !strings.Contains(recorder.Body.String(), "business_delegation_required") {
+		t.Fatalf("missing delegation status=%d body=%s err=%v", recorder.Code, recorder.Body.String(), err)
+	}
 }
 
 func boundDispatchForTest(server *Server, body map[string]any, userID string) (*httptest.ResponseRecorder, error) {
