@@ -92,6 +92,15 @@ type delegation struct {
 	issuer          string
 	token           []byte
 	actions         []string
+	resources       []delegatedResource
+}
+
+type delegatedResource struct {
+	Type   string `json:"type"`
+	ID     string `json:"id"`
+	Name   string `json:"name,omitempty"`
+	Bytes  int64  `json:"bytes,omitempty"`
+	SHA256 string `json:"sha256"`
 }
 
 func (s *Store) dispatcher(ctx context.Context, requested []string) (contract.ToolDispatcher, error) {
@@ -141,7 +150,7 @@ func (s *Store) dispatcher(ctx context.Context, requested []string) (contract.To
 	if err != nil {
 		return nil, err
 	}
-	return newDispatcher(host, bound.actions, catalog)
+	return newDispatcherWithResources(host, bound.actions, catalog, bound.resources)
 }
 
 func (s *Store) resolveDevelopmentTrial(ctx context.Context, requested []string) ([]DevelopmentAction, bool, error) {
@@ -216,14 +225,14 @@ func (s *Store) resolve(ctx context.Context, requested []string) (delegation, er
 		return delegation{}, fmt.Errorf("%w: current employee task changed", mcphost.ErrFailClosed)
 	}
 	var inputRevisionID, issuer, ciphertext, digest string
-	var actionsRaw []byte
+	var actionsRaw, resourcesRaw []byte
 	var expiresAt time.Time
-	err = tx.QueryRow(ctx, `SELECT d.input_revision_id,d.issuer,d.credential_ciphertext,d.credential_sha256,d.allowed_actions,d.expires_at
+	err = tx.QueryRow(ctx, `SELECT d.input_revision_id,d.issuer,d.credential_ciphertext,d.credential_sha256,d.allowed_actions,d.resources,d.expires_at
 		FROM weave_task_queue q
 		JOIN weave_run_delivery_state r ON r.workspace_id=q.workspace_id AND r.run_snapshot_id=q.run_snapshot_id
 		JOIN weave_task_business_delegations d ON d.workspace_id=r.workspace_id AND d.input_revision_id=r.input_revision_id
 		WHERE q.workspace_id=$1 AND q.id=$2 AND d.user_id=$3 AND d.revoked_at IS NULL`,
-		current.WorkspaceID, current.ID, current.Subject.UserID).Scan(&inputRevisionID, &issuer, &ciphertext, &digest, &actionsRaw, &expiresAt)
+		current.WorkspaceID, current.ID, current.Subject.UserID).Scan(&inputRevisionID, &issuer, &ciphertext, &digest, &actionsRaw, &resourcesRaw, &expiresAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return delegation{}, fmt.Errorf("%w: task has no active Forge delegation", mcphost.ErrFailClosed)
 	}
@@ -238,6 +247,10 @@ func (s *Store) resolve(ctx context.Context, requested []string) (delegation, er
 		return delegation{}, fmt.Errorf("%w: task business action scope is invalid", mcphost.ErrFailClosed)
 	}
 	allowed := intersectActions(requested, taskAllowed)
+	resources, err := decodeDelegatedResources(resourcesRaw, inputRevisionID)
+	if err != nil {
+		return delegation{}, fmt.Errorf("%w: %v", mcphost.ErrFailClosed, err)
+	}
 	token, err := secret.Open(s.key, ciphertext)
 	if err != nil {
 		return delegation{}, fmt.Errorf("%w: Forge task credential unavailable", mcphost.ErrFailClosed)
@@ -251,7 +264,46 @@ func (s *Store) resolve(ctx context.Context, requested []string) (delegation, er
 		clear(token)
 		return delegation{}, err
 	}
-	return delegation{inputRevisionID: inputRevisionID, issuer: issuer, token: token, actions: allowed}, nil
+	return delegation{inputRevisionID: inputRevisionID, issuer: issuer, token: token, actions: allowed, resources: resources}, nil
+}
+
+func decodeDelegatedResources(raw []byte, inputRevisionID string) ([]delegatedResource, error) {
+	var stored []delegatedResource
+	if err := json.Unmarshal(raw, &stored); err != nil || len(stored) == 0 {
+		return nil, errors.New("task business resources are invalid")
+	}
+	verifiedInput := false
+	resources := make([]delegatedResource, 0, len(stored)-1)
+	seen := make(map[string]struct{}, len(stored))
+	for _, item := range stored {
+		item.Type, item.ID, item.Name, item.SHA256 = strings.TrimSpace(item.Type), strings.TrimSpace(item.ID), strings.TrimSpace(item.Name), strings.TrimSpace(item.SHA256)
+		if item.ID == "" || item.SHA256 == "" {
+			return nil, errors.New("task business resources are invalid")
+		}
+		key := item.Type + "\x1f" + item.ID
+		if _, duplicate := seen[key]; duplicate {
+			return nil, errors.New("task business resources contain duplicates")
+		}
+		seen[key] = struct{}{}
+		switch item.Type {
+		case "dispatch-input":
+			if verifiedInput || item.ID != inputRevisionID {
+				return nil, errors.New("task input resource does not match the active delegation")
+			}
+			verifiedInput = true
+		case "forge-file":
+			if item.Name == "" || item.Bytes < 1 {
+				return nil, errors.New("task Forge resource is invalid")
+			}
+			resources = append(resources, item)
+		default:
+			return nil, errors.New("task business resource type is unsupported")
+		}
+	}
+	if !verifiedInput {
+		return nil, errors.New("task input resource is missing")
+	}
+	return resources, nil
 }
 
 func (s *Store) validate(ctx context.Context, inputRevisionID string, requested []string) error {
@@ -415,6 +467,18 @@ func readActionCatalog(ctx context.Context, host contract.ToolDispatcher) (map[s
 
 func newDispatcher(host contract.ToolDispatcher, ids []string, catalog map[string]actionMetadata) (*dispatcher, error) {
 	return newDispatcherWithNotice(host, ids, catalog, "仅在当前员工明确授权且本次固定材料已核对时调用。")
+}
+
+func newDispatcherWithResources(host contract.ToolDispatcher, ids []string, catalog map[string]actionMetadata, resources []delegatedResource) (*dispatcher, error) {
+	notice := "仅在当前员工明确授权且本次固定材料已核对时调用。"
+	if len(resources) > 0 {
+		encoded, err := json.Marshal(resources)
+		if err != nil {
+			return nil, fmt.Errorf("%w: task business resources cannot be projected", mcphost.ErrFailClosed)
+		}
+		notice += " 本任务已验证并冻结以下资源。需要材料参数时，必须从这里逐项使用对应的 id、name、sha256 和 bytes，不得猜测或替换：" + string(encoded)
+	}
+	return newDispatcherWithNotice(host, ids, catalog, notice)
 }
 
 func newDispatcherWithNotice(host contract.ToolDispatcher, ids []string, catalog map[string]actionMetadata, notice string) (*dispatcher, error) {
