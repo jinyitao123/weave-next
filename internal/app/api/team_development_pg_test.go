@@ -55,7 +55,8 @@ func TestTeamDevelopmentStagingAndAtomicPublicationRealPG(t *testing.T) {
 	}
 	key := []byte(strings.Repeat("k", 32))
 	providers := credentials.New(pool, key)
-	if err = providers.Upsert(ctx, "dev-workspace", llmrouter.ProviderConfig{CredentialScope: frozen.CredentialScopeUser, CredentialUserID: "developer", ID: "fixture", Name: "Fixture", BaseURL: "http://127.0.0.1:1", APIKey: "test-only", Models: []string{"fixture-model"}}); err != nil {
+	providerService := execution.WithSubject(context.Background(), execution.Subject{WorkspaceID: "dev-workspace", ServiceID: "provider:fixture"})
+	if err = providers.Upsert(providerService, "dev-workspace", llmrouter.ProviderConfig{CredentialScope: frozen.CredentialScopeWorkspaceService, CredentialServiceID: "provider:fixture", ID: "fixture", Name: "Fixture", BaseURL: "http://127.0.0.1:1", APIKey: "test-only", Models: []string{"fixture-model"}}); err != nil {
 		t.Fatal(err)
 	}
 	store := workflowcatalog.New(pool, nil, workflow.NewArtifactStore(pool, nil))
@@ -90,8 +91,14 @@ func TestTeamDevelopmentStagingAndAtomicPublicationRealPG(t *testing.T) {
 			d.Document.Members[i].Configuration.BusinessCapabilityIDs = []string{"forge:action:sales_contract.ContractSubmit"}
 		}
 	}
+	newWorker := d.Document.Members[1]
+	newWorker.ID = uuid.NewString()
+	newWorker.Configuration.DisplayName = "提交员"
+	newWorker.Configuration.SystemPrompt = "只提交经过复核的固定材料"
+	newWorker.Relationship.Duty = "提交固定材料"
+	d.Document.Members = append(d.Document.Members, newWorker)
 	flowID := uuid.NewString()
-	graph := json.RawMessage(fmt.Sprintf(`{"schema_version":1,"entry_node_id":"lead","input_contract":{"type":"text"},"output_contract":{"type":"text"},"nodes":[{"id":"lead","type":"lead","config":{"instruction":"Understand"},"inputs":{"task":{"value":{"source":"run_input","path":""},"expected_type":"text"}},"output":{"type":"text"}},{"id":"review","type":"worker","config":{"kind":"consult","agent_id":%q,"agent_version":1,"result_requirement":"逐条审核"},"inputs":{"original":{"value":{"source":"run_input","path":""},"expected_type":"text"},"brief":{"value":{"source":"node_output","node_id":"lead","path":""},"expected_type":"text"}},"output":{"type":"text"}},{"id":"deliver","type":"deliver","config":{"result":{"source":"node_output","node_id":"review","path":""}}}],"edges":[{"id":"a","from_node_id":"lead","to_node_id":"review","route":"success"},{"id":"b","from_node_id":"review","to_node_id":"deliver","route":"success"}]}`, worker.ID))
+	graph := json.RawMessage(fmt.Sprintf(`{"schema_version":1,"entry_node_id":"lead","input_contract":{"type":"text"},"output_contract":{"type":"text"},"nodes":[{"id":"lead","type":"lead","config":{"instruction":"Understand"},"inputs":{"task":{"value":{"source":"run_input","path":""},"expected_type":"text"}},"output":{"type":"text"}},{"id":"review","type":"worker","config":{"kind":"consult","agent_id":%q,"agent_version":1,"result_requirement":"逐条审核"},"inputs":{"original":{"value":{"source":"run_input","path":""},"expected_type":"text"},"brief":{"value":{"source":"node_output","node_id":"lead","path":""},"expected_type":"text"}},"output":{"type":"text"}},{"id":"deliver","type":"deliver","config":{"result":{"source":"node_output","node_id":"review","path":""}}}],"edges":[{"id":"a","from_node_id":"lead","to_node_id":"review","route":"success"},{"id":"b","from_node_id":"review","to_node_id":"deliver","route":"success"}]}`, newWorker.ID))
 	d.Document.Workflows = []developmentWorkflow{{ID: flowID, Name: "审核", Graph: graph, Trigger: json.RawMessage(`{"schema_version":1,"type":"conversation_explicit","config":{}}`)}}
 	save := map[string]any{"expected_revision": d.Revision, "document": d.Document}
 	if _, err = call("PUT", save, server.handleSaveTeamDevelopment); err != nil {

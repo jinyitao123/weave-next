@@ -113,7 +113,11 @@ func (b *CandidateBuilder) buildResolvedCandidateTx(ctx context.Context, tx pgx.
 	}
 	lead := machine.AgentVersionKey{AgentID: team.LeadAvatarID, AgentVersion: team.LeadAvatarVersion}
 	referenced := machine.ReferencedBundles(lead, graph)
-	scope := workflowdef.CandidateCredentialScope{WorkspaceID: input.WorkspaceID, TeamID: team.TeamID, Lead: lead}
+	scope := workflowdef.CandidateCredentialScope{
+		WorkspaceID: input.WorkspaceID, TeamID: team.TeamID,
+		WorkflowID: input.WorkflowID, WorkflowVersion: input.WorkflowVersion,
+		Lead: lead,
+	}
 	for _, reference := range referenced {
 		scope.Agents = append(scope.Agents, reference.Key)
 	}
