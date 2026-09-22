@@ -26,7 +26,7 @@ func TestConstructionControlledResourcesMatchFrozenLegacyExecution(t *testing.T)
 	}
 	assertFrozenResourceHash(t, "config prompt", teambuild.ConfigEngineerPrompt, "3bd1336856ba4cae1c8480c8e29920b1951244b05c4d640bfd18ae9abd84fea9")
 	assertFrozenJSONHash(t, "config schema", teambuild.ConfigEngineerOutputSchema(), "e401319abe813d98d7a85b1dfad16b7a558eb57ca8be444333cb0b8c0dab4b7d")
-	assertFrozenDefinitionHash(t, "config graph", configRecord.GraphDefinition, "ad2878087ea66e4894edddf255cd188bd768b71473bcab972c819003b03c6dd4")
+	assertFrozenDefinitionHash(t, "config graph", configRecord.GraphDefinition, "5c46d8db1e1ad498d613a7972dab984e8fd1d0ffa6d671097a0838c06443074a")
 	legacyConfig := &registry.AgentRecord{
 		Name: "__config_engineer", Model: "", Version: 1,
 		Spec:         stdlib.AgentSpec{Identity: stdlib.IdentitySpec{Core: teambuild.ConfigEngineerPrompt}},
@@ -107,7 +107,7 @@ func TestSemanticJudgeControlledResourceMatchesFrozenLegacyExecution(t *testing.
 	if oldOutput != newOutput || oldOutput != judgment || !reflect.DeepEqual(oldRequests, newRequests) {
 		t.Fatal("controlled semantic judge transport or output differs from legacy execution")
 	}
-	if len(newRequests) != 1 || newRequests[0].Model != "deepseek-v4-flash" ||
+	if len(newRequests) != 1 || newRequests[0].Model != "deepseek-flash" ||
 		len(newRequests[0].Messages) != 1 || newRequests[0].Messages[0].Role != "user" {
 		t.Fatalf("llm_call transport = %#v", newRequests)
 	}
@@ -134,7 +134,7 @@ func TestBlueprintPatchPlannerControlledResourceMatchesFrozenLegacyExecution(t *
 	if oldOutput != newOutput || oldOutput != patch || !reflect.DeepEqual(oldRequests, newRequests) {
 		t.Fatal("controlled blueprint patch planner transport or output differs from legacy execution")
 	}
-	if len(newRequests) != 1 || newRequests[0].Model != "deepseek-v4-flash" ||
+	if len(newRequests) != 1 || newRequests[0].Model != "deepseek-flash" ||
 		len(newRequests[0].Messages) != 1 || newRequests[0].Messages[0].Role != "user" {
 		t.Fatalf("llm_call transport = %#v", newRequests)
 	}

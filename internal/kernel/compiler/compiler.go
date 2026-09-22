@@ -146,7 +146,7 @@ func CompileAgent(tenant string, rec *registry.AgentRecord, llm contract.LLM, to
 
 	model := rec.Model
 	if model == "" {
-		model = "deepseek-v4-flash"
+		model = "deepseek-flash"
 	}
 
 	// Wrap LLM with fallback chain if configured.

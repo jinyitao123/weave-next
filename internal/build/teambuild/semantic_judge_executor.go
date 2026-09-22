@@ -40,7 +40,7 @@ type SemanticJudgeSevereDefect struct {
 
 // SemanticJudgeDefinition returns a fresh copy of the build-controlled
 // declarative graph. Omitting model intentionally preserves llm_call's
-// deepseek-v4-flash default; stream=false and the single input key preserve
+// deepseek-flash default; stream=false and the single input key preserve
 // the former transport shape exactly.
 func SemanticJudgeDefinition() *registry.GraphDefinition {
 	done := "done"

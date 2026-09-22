@@ -152,7 +152,7 @@ func buildChatStep(config map[string]any, llm contract.LLM, tools contract.ToolD
 // ── LLM Call step ──
 
 func buildLLMCallStep(config map[string]any, llm contract.LLM) loom.Step {
-	model := getStr(config, "model", "deepseek-v4-flash")
+	model := getStr(config, "model", "deepseek-flash")
 	tmpl := getStr(config, "prompt_template", "")
 	inputKeys := getStrSlice(config, "input_keys")
 	outputKey := getStr(config, "output_key", "output")
@@ -199,7 +199,7 @@ func buildLLMCallStep(config map[string]any, llm contract.LLM) loom.Step {
 // ── LLM Check step ──
 
 func buildLLMCheckStep(config map[string]any, llm contract.LLM) loom.Step {
-	model := getStr(config, "model", "deepseek-v4-flash")
+	model := getStr(config, "model", "deepseek-flash")
 	tmpl := getStr(config, "prompt_template", "")
 	inputKeys := getStrSlice(config, "input_keys")
 	outputKey := getStr(config, "output_key", "check_result")

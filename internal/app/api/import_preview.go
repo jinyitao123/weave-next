@@ -84,7 +84,7 @@ func (s *Server) handleImportPreview(c echo.Context) error {
 	}
 	model, modelSource := c.FormValue("model"), "form"
 	if model == "" {
-		model, modelSource = "deepseek-v4-flash", "default"
+		model, modelSource = "deepseek-flash", "default"
 	}
 	response := importPreviewResponse{
 		Name: name, NameSource: nameSource, Model: model, ModelSource: modelSource,
