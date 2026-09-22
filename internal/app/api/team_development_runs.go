@@ -143,8 +143,9 @@ func (s *Server) handlePublishTeamDevelopment(c echo.Context) error {
 	return s.handleGetTeamDevelopment(c)
 }
 func (s *Server) handleDevelopmentTrialInput(c echo.Context) error {
-	var raw []byte
-	err := s.Pool.QueryRow(c.Request().Context(), `SELECT request FROM weave_team_development_trials WHERE workspace_id=$1 AND team_id=$2 AND request_id=$3 AND actor_id=$4`, getTenant(c), c.Param("id"), c.Param("request"), getUserID(c)).Scan(&raw)
+	ctx, workspaceID := c.Request().Context(), getTenant(c)
+	var raw, receiptRaw []byte
+	err := s.Pool.QueryRow(ctx, `SELECT request,COALESCE(receipt,'{}'::jsonb) FROM weave_team_development_trials WHERE workspace_id=$1 AND team_id=$2 AND request_id=$3 AND actor_id=$4`, workspaceID, c.Param("id"), c.Param("request"), getUserID(c)).Scan(&raw, &receiptRaw)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return echo.NewHTTPError(404, "试跑材料不存在或不属于当前账号")
 	}
@@ -155,5 +156,13 @@ func (s *Server) handleDevelopmentTrialInput(c echo.Context) error {
 	if err = json.Unmarshal(raw, &req); err != nil {
 		return err
 	}
-	return c.JSON(200, map[string]any{"input": req.Input, "input_version": req.InputVersion, "workflow_version": req.Candidate.WorkflowVersion})
+	var receipt publication.AdmissionReceipt
+	_ = json.Unmarshal(receiptRaw, &receipt)
+	status, output := "submitting", ""
+	if receipt.RunID != "" {
+		if err = s.Pool.QueryRow(ctx, `SELECT r.status,COALESCE((SELECT q.result->>'output' FROM weave_task_queue q WHERE q.workspace_id=r.workspace_id AND q.run_id=r.run_id AND q.status='completed' AND q.result ? 'output' ORDER BY q.completed_at DESC NULLS LAST,q.id DESC LIMIT 1),'') FROM weave_team_runs r WHERE r.workspace_id=$1 AND r.run_id=$2`, workspaceID, receipt.RunID).Scan(&status, &output); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return err
+		}
+	}
+	return c.JSON(200, map[string]any{"input": req.Input, "input_version": req.InputVersion, "workflow_version": req.Candidate.WorkflowVersion, "status": status, "output": output})
 }

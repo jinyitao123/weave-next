@@ -1106,10 +1106,12 @@ func (s *Server) handleGetRunActivity(c echo.Context) error {
 	}
 	members := []runActivityMember{}
 	runtimes := []runActivityRuntime{}
+	candidateContentHash := ""
 	if s.Snapshots != nil {
 		if frozen, snapshotErr := s.Snapshots.GetByRunID(c.Request().Context(), getTenant(c), run.RunSnapshotID); snapshotErr == nil {
 			members, completeness["members"] = runActivityMembers(frozen.TeamWorkerSnapshot, run.Status)
 			runtimes, completeness["runtimes"] = runActivityRuntimes(frozen.RuntimeAssignment, run.CurrentExecutorID, run.Status)
+			candidateContentHash = frozen.CandidateContentHash
 		}
 	}
 	if len(runtimes) == 0 && run.CurrentExecutorID != nil {
@@ -1154,9 +1156,15 @@ func (s *Server) handleGetRunActivity(c echo.Context) error {
 		completeness["stages"] = "partial"
 	}
 	if s.Workflow != nil && run.WorkflowID != "" && run.WorkflowVersion > 0 {
-		if artifact, artifactErr := s.WorkflowArtifacts.GetArtifact(
+		artifact, artifactErr := s.WorkflowArtifacts.GetArtifact(
 			c.Request().Context(), getTenant(c), run.WorkflowID, run.WorkflowVersion,
-		); artifactErr == nil {
+		)
+		if artifactErr != nil && candidateContentHash != "" {
+			artifact, artifactErr = s.WorkflowArtifacts.GetCandidateArtifact(
+				c.Request().Context(), getTenant(c), run.WorkflowID, run.WorkflowVersion, candidateContentHash,
+			)
+		}
+		if artifactErr == nil {
 			payload, payloadErr := frozen.DecodeArtifactEnvelopeV1(frozen.ArtifactEnvelopeV1{
 				WorkspaceID: artifact.WorkspaceID, WorkflowID: artifact.WorkflowID,
 				WorkflowVersion:           artifact.WorkflowVersion,
