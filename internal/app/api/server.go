@@ -33,6 +33,7 @@ import (
 	"github.com/jinyitao123/weave/internal/build/teambuild"
 	"github.com/jinyitao123/weave/internal/build/teamforge"
 	"github.com/jinyitao123/weave/internal/kernel/audit"
+	"github.com/jinyitao123/weave/internal/kernel/businessaction"
 	"github.com/jinyitao123/weave/internal/kernel/compiler"
 	"github.com/jinyitao123/weave/internal/kernel/config"
 	"github.com/jinyitao123/weave/internal/kernel/credentials"
@@ -52,6 +53,7 @@ import (
 	"github.com/jinyitao123/weave/internal/kernel/runtimellm"
 	"github.com/jinyitao123/weave/internal/kernel/runtimes"
 	"github.com/jinyitao123/weave/internal/kernel/schedule"
+	"github.com/jinyitao123/weave/internal/kernel/secret"
 	importskills "github.com/jinyitao123/weave/internal/kernel/skills"
 	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 	"github.com/jinyitao123/weave/internal/kernel/teamcompiler"
@@ -119,6 +121,7 @@ type Server struct {
 	SystemProviders           credentials.SystemProviderSource
 	MCPRegistry               *mcpregistry.Store     // nil if WEAVE_SECRET_KEY is not configured
 	MCPResolver               mcphost.AccessResolver // optional override; defaults to MCPRegistry-backed resolver
+	BusinessDelegations       *businessaction.Store  // task-scoped Forge identity and action boundary
 	Conversations             *conversation.Store    // nil if PG pool unavailable
 	OwnerMem                  OwnerMemoryStore       // nil if PG pool unavailable
 	sessionExecutionWorkers   *sessionExecutionWorkers
@@ -226,7 +229,7 @@ func NewServer(cfg *config.Config, store loom.Store, models *llmrouter.Resolver)
 	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
 		AllowOrigins: corsOrigins,
 		AllowMethods: []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowHeaders: []string{"Authorization", "Content-Type"},
+		AllowHeaders: []string{"Authorization", "Content-Type", forgeDelegationHeader},
 	}))
 
 	s := &Server{
@@ -657,12 +660,20 @@ func (s *Server) ConfigureTeamRunWorkers() {
 		Runs:         runStore,
 		Tasks:        s.Tasks,
 	}
+	var businessDelegations *businessaction.Store
+	if key, keyErr := secret.KeyFromEnv(); keyErr == nil {
+		businessDelegations = businessaction.NewStore(pool, s.Tasks, key)
+		for index := range key {
+			key[index] = 0
+		}
+	}
+	s.BusinessDelegations = businessDelegations
 	runtime := &teamrun.WorkflowSerialRuntime{
 		Artifacts: s.WorkflowArtifacts,
 		Loader: &workflow.RuntimeLoader{
 			Registry: s.Descriptors, CLIExecutor: s.teamRunCLIExecutor(),
 		},
-		HostFactory: workflow.NewRuntimeHostFactory(),
+		HostFactory: businessaction.Factory{Inner: workflow.NewRuntimeHostFactory(), Store: businessDelegations},
 		CredentialResolvers: func(
 			workspaceID string,
 		) (workflow.RuntimeCredentialResolver, error) {

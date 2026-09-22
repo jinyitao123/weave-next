@@ -220,6 +220,16 @@ func (s *Server) handleRegisterDispatchInput(c echo.Context) error {
 	if request.Mode != teamDispatchModeWorkflow {
 		return workflowError(c, http.StatusBadRequest, "dispatch_input_mode_unsupported", "bound dispatch currently requires a fixed workflow")
 	}
+	var preparedDelegation *preparedBusinessDelegation
+	if request.WorkflowID != "" && request.WorkflowVersion != nil {
+		actions, actionsErr := s.publishedBusinessActions(c.Request().Context(), workspaceID, request.WorkflowID, *request.WorkflowVersion)
+		if actionsErr == nil && len(actions) != 0 {
+			preparedDelegation, err = s.prepareBusinessDelegation(c, actions)
+			if err != nil {
+				return err
+			}
+		}
+	}
 	encoded, _ := json.Marshal(request)
 	registrationSHA256 := dispatchInputDigest(encoded)
 	ctx := c.Request().Context()
@@ -238,6 +248,19 @@ func (s *Server) handleRegisterDispatchInput(c echo.Context) error {
 	if err == nil {
 		if existing.RegistrationSHA256 != registrationSHA256 {
 			return workflowError(c, http.StatusConflict, "input_registration_conflict", "registration_id was already used for different input facts")
+		}
+		actions, actionsErr := loadPublishedBusinessActionsTx(ctx, tx, workspaceID, existing.WorkflowID, existing.WorkflowVersion)
+		if actionsErr != nil {
+			return workflowStoreFailure(c, fmt.Errorf("read published business actions: %w", actionsErr))
+		}
+		if !ensurePreparedActions(preparedDelegation, actions) {
+			return workflowError(c, http.StatusUnauthorized, "business_delegation_required", "an exact Forge task delegation is required")
+		}
+		if err := persistBusinessDelegationTx(ctx, tx, preparedDelegation, workspaceID, userID, existing.InputRevisionID, existing.TaskSHA256, existing.WorkflowID, existing.WorkflowVersion); err != nil {
+			return workflowStoreFailure(c, fmt.Errorf("refresh Forge task delegation: %w", err))
+		}
+		if err := tx.Commit(ctx); err != nil {
+			return workflowStoreFailure(c, fmt.Errorf("commit Forge task delegation refresh: %w", err))
 		}
 		// A replay returns its original receipt without reactivating an old head,
 		// and remains available if the selected team has changed since dispatch.
@@ -297,6 +320,13 @@ func (s *Server) handleRegisterDispatchInput(c echo.Context) error {
 	if handled || err != nil {
 		return err
 	}
+	actions, err := loadPublishedBusinessActionsTx(ctx, tx, workspaceID, workflowID, version)
+	if err != nil {
+		return workflowStoreFailure(c, fmt.Errorf("read published business actions: %w", err))
+	}
+	if !ensurePreparedActions(preparedDelegation, actions) {
+		return workflowError(c, http.StatusUnauthorized, "business_delegation_required", "an exact Forge task delegation is required")
+	}
 	deliveryContract, err := parseDispatchDeliveryContract(request.Task)
 	if err != nil {
 		return workflowError(c, http.StatusBadRequest, "dispatch_delivery_contract_invalid", err.Error())
@@ -339,6 +369,9 @@ func (s *Server) handleRegisterDispatchInput(c echo.Context) error {
 		// The same registration ID raced from a different session. Its facts
 		// necessarily differ; rolling back also restores our previous head.
 		return workflowError(c, http.StatusConflict, "input_registration_conflict", "registration_id was already used for different input facts")
+	}
+	if err := persistBusinessDelegationTx(ctx, tx, preparedDelegation, workspaceID, userID, receipt.InputRevisionID, receipt.TaskSHA256, workflowID, version); err != nil {
+		return workflowStoreFailure(c, fmt.Errorf("create Forge task delegation: %w", err))
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return workflowStoreFailure(c, fmt.Errorf("commit dispatch input revision: %w", err))

@@ -100,6 +100,9 @@ type FrozenAgentRecord struct {
 	Compaction   *FrozenCompaction             `json:"compaction"`
 	GraphType    string                        `json:"graph_type"`
 	FactoryInput json.RawMessage               `json:"factory_input"`
+	// BusinessCapabilityIDs are the exact Forge actions selected by the
+	// developer and frozen into this published agent version.
+	BusinessCapabilityIDs []string `json:"business_capability_ids,omitempty"`
 }
 
 type FrozenSkillResource struct {

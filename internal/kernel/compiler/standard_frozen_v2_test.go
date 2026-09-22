@@ -119,6 +119,26 @@ func TestStandardV2EnumeratesAndValidatesExactMCPContract(t *testing.T) {
 	}
 }
 
+func TestPublishedAgentFreezesBusinessCapabilities(t *testing.T) {
+	record := toolsTestRecord()
+	record.BusinessCapabilityIDs = []string{"forge:action:sales_contract.ContractSubmit", "forge:action:sales_contract.ContractRead"}
+	raw, err := (standardToolsEnumerator{}).EncodeFactoryInput(t.Context(), record, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	agent, err := freezeDescriptorAgent(record, StandardFrozenToolsKey(), raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(agent.BusinessCapabilityIDs) != 2 || agent.BusinessCapabilityIDs[0] != "forge:action:sales_contract.ContractRead" || agent.BusinessCapabilityIDs[1] != "forge:action:sales_contract.ContractSubmit" {
+		t.Fatalf("business capabilities=%v", agent.BusinessCapabilityIDs)
+	}
+	record.BusinessCapabilityIDs[0] = "forge:action:sales_contract.ContractDelete"
+	if agent.BusinessCapabilityIDs[1] != "forge:action:sales_contract.ContractSubmit" {
+		t.Fatal("frozen business capabilities retained mutable registry storage")
+	}
+}
+
 func TestStandardV3FreezesCLIWithoutLoomJournalContract(t *testing.T) {
 	record := toolsTestRecord()
 	record.Engine = "codex"

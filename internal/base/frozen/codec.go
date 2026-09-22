@@ -626,6 +626,14 @@ func NormalizeFrozenAgentRecord(value FrozenAgentRecord) (FrozenAgentRecord, err
 	if cloned.Permissions.Ask, err = canonicalStringSet(cloned.Permissions.Ask); err != nil {
 		return FrozenAgentRecord{}, err
 	}
+	if cloned.BusinessCapabilityIDs, err = canonicalStringSet(cloned.BusinessCapabilityIDs); err != nil {
+		return FrozenAgentRecord{}, err
+	}
+	for _, capabilityID := range cloned.BusinessCapabilityIDs {
+		if strings.TrimSpace(capabilityID) == "" || capabilityID != strings.TrimSpace(capabilityID) {
+			return FrozenAgentRecord{}, errors.New("frozen business capability ID is invalid")
+		}
+	}
 	if cloned.MemorySlots, err = canonicalMemorySlots(cloned.MemorySlots); err != nil {
 		return FrozenAgentRecord{}, err
 	}

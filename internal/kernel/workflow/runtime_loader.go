@@ -425,13 +425,17 @@ func (l *RuntimeLoader) Load(
 				cleanup()
 				return nil, runtimeErr
 			}
-			opts, closer, buildErr = buildRuntimeHostsWithLLM(
-				ctx,
-				bundle,
-				credentialResolver,
-				newRuntimeMCPTransport,
-				runtimeLLM,
-			)
+			if withLLM, ok := factory.(RuntimeHostFactoryWithLLM); ok {
+				opts, closer, buildErr = withLLM.BuildWithLLM(ctx, bundle, credentialResolver, runtimeLLM)
+			} else {
+				opts, closer, buildErr = buildRuntimeHostsWithLLM(
+					ctx,
+					bundle,
+					credentialResolver,
+					newRuntimeMCPTransport,
+					runtimeLLM,
+				)
+			}
 		} else {
 			opts, closer, buildErr = factory.Build(ctx, bundle, credentialResolver)
 		}

@@ -38,8 +38,24 @@ func (f RuntimeHostFactoryFunc) Build(
 	return f(ctx, bundle, resolver)
 }
 
+// RuntimeHostFactoryWithLLM preserves host decorators when a providerless Loom
+// bundle receives its inference implementation from the runtime assignment.
+type RuntimeHostFactoryWithLLM interface {
+	BuildWithLLM(context.Context, frozen.FrozenExecutionBundle, RuntimeCredentialResolver, contract.LLM) (compiler.FrozenBuildOpts, io.Closer, error)
+}
+
+type runtimeHostFactory struct{}
+
+func (runtimeHostFactory) Build(ctx context.Context, bundle frozen.FrozenExecutionBundle, resolver RuntimeCredentialResolver) (compiler.FrozenBuildOpts, io.Closer, error) {
+	return buildRuntimeHosts(ctx, bundle, resolver)
+}
+
+func (runtimeHostFactory) BuildWithLLM(ctx context.Context, bundle frozen.FrozenExecutionBundle, resolver RuntimeCredentialResolver, llm contract.LLM) (compiler.FrozenBuildOpts, io.Closer, error) {
+	return buildRuntimeHostsWithLLM(ctx, bundle, resolver, newRuntimeMCPTransport, llm)
+}
+
 func NewRuntimeHostFactory() RuntimeHostFactory {
-	return RuntimeHostFactoryFunc(buildRuntimeHosts)
+	return runtimeHostFactory{}
 }
 
 // RuntimeToolEvent is the secret-free observable envelope for one frozen
