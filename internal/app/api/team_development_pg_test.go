@@ -19,6 +19,7 @@ import (
 	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/base/testutil"
+	"github.com/jinyitao123/weave/internal/kernel/businessaction"
 	"github.com/jinyitao123/weave/internal/kernel/credentials"
 	"github.com/jinyitao123/weave/internal/kernel/delivery"
 	"github.com/jinyitao123/weave/internal/kernel/llmrouter"
@@ -85,6 +86,9 @@ func TestTeamDevelopmentStagingAndAtomicPublicationRealPG(t *testing.T) {
 	for i := range d.Document.Members {
 		d.Document.Members[i].Relationship.Duty = "审核与核对"
 		d.Document.Members[i].Configuration.SystemPrompt = "必须阅读收到的原文，保留逐条依据"
+		if d.Document.Members[i].Configuration.Role == "worker" {
+			d.Document.Members[i].Configuration.BusinessCapabilityIDs = []string{"forge:action:sales_contract.ContractSubmit"}
+		}
 	}
 	flowID := uuid.NewString()
 	graph := json.RawMessage(fmt.Sprintf(`{"schema_version":1,"entry_node_id":"lead","input_contract":{"type":"text"},"output_contract":{"type":"text"},"nodes":[{"id":"lead","type":"lead","config":{"instruction":"Understand"},"inputs":{"task":{"value":{"source":"run_input","path":""},"expected_type":"text"}},"output":{"type":"text"}},{"id":"review","type":"worker","config":{"kind":"consult","agent_id":%q,"agent_version":1,"result_requirement":"逐条审核"},"inputs":{"original":{"value":{"source":"run_input","path":""},"expected_type":"text"},"brief":{"value":{"source":"node_output","node_id":"lead","path":""},"expected_type":"text"}},"output":{"type":"text"}},{"id":"deliver","type":"deliver","config":{"result":{"source":"node_output","node_id":"review","path":""}}}],"edges":[{"id":"a","from_node_id":"lead","to_node_id":"review","route":"success"},{"id":"b","from_node_id":"review","to_node_id":"deliver","route":"success"}]}`, worker.ID))
@@ -109,7 +113,7 @@ func TestTeamDevelopmentStagingAndAtomicPublicationRealPG(t *testing.T) {
 		t.Fatalf("retry changed candidate: %v", err)
 	}
 	// Real Kernel admission; no model endpoint is contacted by admission itself.
-	trial := developmentTrialRequest{Revision: 2, WorkflowID: flowID, RequestID: uuid.NewString(), Input: "合同原文：金额 ¥186,420.50\n签字页"}
+	trial := developmentTrialRequest{Revision: 2, WorkflowID: flowID, RequestID: uuid.NewString(), Input: "合同原文：金额 ¥186,420.50\n签字页", BusinessActions: []businessaction.DevelopmentAction{{CapabilityID: "forge:action:sales_contract.ContractSubmit", Name: "ContractSubmit", ObjectName: "sales_contract", Label: "提交指定合同版本", RequiresRecord: true}}}
 	rr, err = call("POST", trial, server.handleTrialTeamDevelopment)
 	if err != nil || rr.Code != 201 {
 		t.Fatalf("trial %v %s", err, rr.Body.String())

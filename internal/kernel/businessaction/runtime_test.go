@@ -145,3 +145,35 @@ func TestTaskScopeIsIntersectedPerMember(t *testing.T) {
 		t.Fatalf("empty task scope exposed actions: %v", got)
 	}
 }
+
+func TestDevelopmentDispatcherUsesExactSchemaWithoutCallingForge(t *testing.T) {
+	actions, err := ValidateDevelopmentActions([]string{"forge:action:sales_contract.ContractSubmit"}, []DevelopmentAction{{
+		CapabilityID: "forge:action:sales_contract.ContractSubmit", Name: "ContractSubmit", ObjectName: "sales_contract",
+		Label: "提交指定合同版本", Description: "提交冻结版本", RequiresRecord: true,
+		Params: []actionParam{{Name: "material_file_id", Type: "string", Required: true}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dispatcher, err := newDevelopmentDispatcher([]string{"forge:action:sales_contract.ContractSubmit"}, actions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tools, err := dispatcher.ListTools(t.Context())
+	if err != nil || len(tools) != 1 || !strings.Contains(tools[0].Description, "不会访问 Forge") {
+		t.Fatalf("tools=%+v err=%v", tools, err)
+	}
+	result, err := dispatcher.Dispatch(t.Context(), contract.ToolCall{ID: "trial-call", Name: tools[0].Name, Args: `{"recordId":"contract-1","params":{"material_file_id":"file-1"}}`})
+	if err != nil || result == nil || result.IsError || !strings.Contains(result.Content, `"simulated":true`) || !strings.Contains(result.Content, "未写入业务数据") {
+		t.Fatalf("result=%+v err=%v", result, err)
+	}
+}
+
+func TestDevelopmentActionCatalogCannotWidenCandidateCapabilities(t *testing.T) {
+	_, err := ValidateDevelopmentActions([]string{"forge:action:sales_contract.ContractSubmit"}, []DevelopmentAction{{
+		CapabilityID: "forge:action:sales_contract.Delete", Name: "Delete", ObjectName: "sales_contract",
+	}})
+	if err == nil || !strings.Contains(err.Error(), "不属于当前团队配置") {
+		t.Fatalf("err=%v", err)
+	}
+}
