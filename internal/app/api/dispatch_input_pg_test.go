@@ -68,7 +68,7 @@ func TestDispatchInputFreezesAndRefreshesEmployeeForgeDelegationRealPG(t *testin
 			GraphType: "standard", FactoryInput: json.RawMessage(`{}`), Permissions: frozen.FrozenPermissions{Deny: []string{"*"}}, OutputSchema: json.RawMessage(`{"type":"object"}`),
 			BusinessCapabilityIDs: []string{"forge:action:sales_contract.ContractSubmit"},
 		},
-		PrimaryModel:   frozen.FrozenModelBinding{SchemaVersion: 1, WorkspaceID: "ws", ProviderID: "provider", ProviderRevision: 1, ModelID: "model", BaseURL: "https://provider.example", CredentialRef: frozen.CredentialReference{SchemaVersion: 1, WorkspaceID: "ws", Kind: frozen.CredentialProviderAPIKey, ResourceID: "provider", Slot: "api_key"}},
+		PrimaryModel:   frozen.FrozenModelBinding{SchemaVersion: 1, WorkspaceID: "ws", ProviderID: "provider", ProviderRevision: 1, ModelID: "model", BaseURL: "https://provider.example", CredentialRef: frozen.CredentialReference{SchemaVersion: 1, Scope: frozen.CredentialScopeUser, UserID: "user", WorkspaceID: "ws", Kind: frozen.CredentialProviderAPIKey, ResourceID: "provider", Slot: "api_key"}},
 		FallbackModels: []frozen.FrozenModelBinding{}, Credentials: []frozen.CredentialReference{}, MCPBindings: []frozen.FrozenMCPBinding{}, Skills: []frozen.FrozenSkill{},
 		Dependencies: frozen.FrozenDependencyManifest{SchemaVersion: 1, Dependencies: dependencies, ManifestHash: manifestHash},
 		Capability:   frozen.CapabilityManifest{SchemaVersion: 2, Role: "worker", AgentContentHash: strings.Repeat("b", 64)},
@@ -136,6 +136,74 @@ func TestDispatchInputFreezesAndRefreshesEmployeeForgeDelegationRealPG(t *testin
 	c, recorder := dispatchInputTestContext(body, "/v1/workbench/dispatch-inputs", "ws", "user")
 	if err := server.handleRegisterDispatchInput(c); err != nil || recorder.Code != http.StatusUnauthorized || !strings.Contains(recorder.Body.String(), "business_delegation_required") {
 		t.Fatalf("missing delegation status=%d body=%s err=%v", recorder.Code, recorder.Body.String(), err)
+	}
+}
+
+func TestDispatchInputFreezesForgeMaterialWithoutGrantingBusinessActionRealPG(t *testing.T) {
+	t.Setenv("WEAVE_SECRET_KEY_FILE", "")
+	t.Setenv("WEAVE_SECRET_KEY", strings.Repeat("22", 32))
+	content := []byte("frozen review material")
+	forge := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if request.Header.Get("Authorization") != "Bearer review-token" {
+			response.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		_, _ = response.Write(content)
+	}))
+	defer forge.Close()
+
+	dependencies := []frozen.FrozenDependencyRef{}
+	manifestHash, err := frozen.ComputeManifestHash(dependencies)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bundle := frozen.FrozenExecutionBundle{
+		SchemaVersion: 1,
+		FactoryKey:    frozen.FactoryKey{FactoryID: "standard", FactoryVersion: "1", CompilerABI: "weave-graph-abi-v1"},
+		Agent: frozen.FrozenAgentRecord{
+			SchemaVersion: 1, WorkspaceID: "ws", AgentID: "worker", AgentVersion: 1, Name: "worker", Role: "worker", Engine: "loom", Model: "model",
+			GraphType: "standard", FactoryInput: json.RawMessage(`{}`), Permissions: frozen.FrozenPermissions{Deny: []string{"*"}}, OutputSchema: json.RawMessage(`{"type":"object"}`),
+			BusinessCapabilityIDs: []string{"forge:action:sales_contract.ContractSubmit"},
+		},
+		PrimaryModel:   frozen.FrozenModelBinding{SchemaVersion: 1, WorkspaceID: "ws", ProviderID: "provider", ProviderRevision: 1, ModelID: "model", BaseURL: "https://provider.example", CredentialRef: frozen.CredentialReference{SchemaVersion: 1, Scope: frozen.CredentialScopeUser, UserID: "user", WorkspaceID: "ws", Kind: frozen.CredentialProviderAPIKey, ResourceID: "provider", Slot: "api_key"}},
+		FallbackModels: []frozen.FrozenModelBinding{}, Credentials: []frozen.CredentialReference{}, MCPBindings: []frozen.FrozenMCPBinding{}, Skills: []frozen.FrozenSkill{},
+		Dependencies: frozen.FrozenDependencyManifest{SchemaVersion: 1, Dependencies: dependencies, ManifestHash: manifestHash},
+		Capability:   frozen.CapabilityManifest{SchemaVersion: 2, Role: "worker", AgentContentHash: strings.Repeat("c", 64)},
+	}
+	server, pool := newTeamDispatchTestServerWithGraph(t, json.RawMessage(`{"schema_version":1,"entry_node_id":"deliver","input_contract":{"type":"text"},"output_contract":{"type":"text"},"nodes":[{"id":"deliver","type":"deliver","config":{"result":{"source":"run_input","path":""}}}],"edges":[]}`), bundle)
+	if _, err := pool.Exec(t.Context(), `INSERT INTO weave_external_identities(issuer,subject,workspace_id,user_id)
+		VALUES($1,'forge-user','ws','user')`, forge.URL); err != nil {
+		t.Fatal(err)
+	}
+	server.ExternalIdentity = externalIdentityVerifierFunc(func(_ context.Context, token string) (ExternalIdentity, error) {
+		if token != "review-token" {
+			return ExternalIdentity{}, errors.New("unexpected token")
+		}
+		return ExternalIdentity{Issuer: forge.URL, Subject: "forge-user", Organization: "ws"}, nil
+	})
+	version := 1
+	registration := dispatchInputRegistrationFixture("review-session", "只复核这份固定材料", "")
+	registration.WorkflowID, registration.WorkflowVersion = "flow", &version
+	registration.Resources = []dispatchInputResource{{
+		Type: "forge-file", ID: uuid.NewString(), Name: "review.md", Bytes: int64(len(content)), SHA256: dispatchInputDigest(content),
+	}}
+	body, _ := json.Marshal(registration)
+	c, recorder := dispatchInputTestContext(body, "/v1/workbench/dispatch-inputs", "ws", "user")
+	c.Request().Header.Set(forgeDelegationHeader, "Bearer review-token")
+	if err := server.handleRegisterDispatchInput(c); err != nil || recorder.Code != http.StatusCreated {
+		t.Fatalf("register status=%d body=%s err=%v", recorder.Code, recorder.Body.String(), err)
+	}
+	var receipt dispatchInputReceipt
+	if err := json.Unmarshal(recorder.Body.Bytes(), &receipt); err != nil {
+		t.Fatal(err)
+	}
+	var actions []byte
+	if err := pool.QueryRow(t.Context(), `SELECT allowed_actions FROM weave_task_business_delegations
+		WHERE workspace_id='ws' AND input_revision_id=$1`, receipt.InputRevisionID).Scan(&actions); err != nil {
+		t.Fatal(err)
+	}
+	if string(actions) != "[]" {
+		t.Fatalf("review-only delegation granted non-empty actions: %s", actions)
 	}
 }
 

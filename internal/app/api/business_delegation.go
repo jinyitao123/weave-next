@@ -125,7 +125,7 @@ func (s *Server) prepareBusinessDelegation(c echo.Context, actions []string, res
 	digest := sha256.Sum256([]byte(bearer))
 	return &preparedBusinessDelegation{
 		identity: identity, ciphertext: ciphertext, digest: hex.EncodeToString(digest[:]),
-		actions: append([]string(nil), actions...), resources: append([]dispatchInputResource(nil), resources...), expiresAt: time.Now().UTC().Add(forgeDelegationTTL),
+		actions: append([]string{}, actions...), resources: append([]dispatchInputResource(nil), resources...), expiresAt: time.Now().UTC().Add(forgeDelegationTTL),
 	}, nil
 }
 
