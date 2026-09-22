@@ -34,6 +34,15 @@ type dispatchInputRegistration struct {
 	WorkflowVersion    *int                         `json:"workflow_version,omitempty"`
 	ProjectID          string                       `json:"project_id,omitempty"`
 	RevisionContext    *dispatchRevisionContext     `json:"revision_context,omitempty"`
+	Resources          []dispatchInputResource      `json:"resources,omitempty"`
+}
+
+type dispatchInputResource struct {
+	Type   string `json:"type"`
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	Bytes  int64  `json:"bytes"`
+	SHA256 string `json:"sha256"`
 }
 
 type dispatchRevisionContext struct {
@@ -170,6 +179,29 @@ func validDispatchInputSourceMessages(messages []dispatchInputSourceMessage) boo
 	return true
 }
 
+func validDispatchInputResources(resources []dispatchInputResource) bool {
+	if len(resources) == 0 {
+		return true
+	}
+	if len(resources) > 8 {
+		return false
+	}
+	seen := make(map[string]bool, len(resources))
+	for index := range resources {
+		item := &resources[index]
+		item.Type, item.ID, item.Name = strings.TrimSpace(item.Type), strings.TrimSpace(item.ID), strings.TrimSpace(item.Name)
+		if item.Type != "forge-file" || item.ID == "" || len(item.ID) > 128 || item.Name == "" || len(item.Name) > 255 ||
+			item.Bytes < 1 || item.Bytes > 700_000 || len(item.SHA256) != 64 || seen[item.ID] {
+			return false
+		}
+		if _, err := hex.DecodeString(item.SHA256); err != nil {
+			return false
+		}
+		seen[item.ID] = true
+	}
+	return true
+}
+
 // Only the trusted Workbench Host calls this route. The Host reads persisted
 // user events and reuses its existing confirmation flow; this endpoint neither
 // infers authorization from language nor proves the supplied source hashes.
@@ -191,7 +223,7 @@ func (s *Server) handleRegisterDispatchInput(c echo.Context) error {
 	if err != nil || strings.TrimSpace(request.WorkbenchSessionID) == "" || len(request.WorkbenchSessionID) > 256 ||
 		strings.ContainsRune(request.WorkbenchSessionID, '\x00') || strings.TrimSpace(request.TeamID) == "" ||
 		strings.TrimSpace(request.Task) == "" || len(request.Task) > 1<<20 || strings.ContainsRune(request.Task, '\x00') ||
-		!validDispatchInputSourceMessages(request.SourceMessages) || (request.WorkflowVersion != nil && *request.WorkflowVersion <= 0) {
+		!validDispatchInputSourceMessages(request.SourceMessages) || !validDispatchInputResources(request.Resources) || (request.WorkflowVersion != nil && *request.WorkflowVersion <= 0) {
 		return workflowError(c, http.StatusBadRequest, "dispatch_input_request_invalid", "dispatch input request invalid")
 	}
 	request.RegistrationID = registrationID.String()
@@ -223,11 +255,12 @@ func (s *Server) handleRegisterDispatchInput(c echo.Context) error {
 	var preparedDelegation *preparedBusinessDelegation
 	if request.WorkflowID != "" && request.WorkflowVersion != nil {
 		actions, actionsErr := s.publishedBusinessActions(c.Request().Context(), workspaceID, request.WorkflowID, *request.WorkflowVersion)
-		if actionsErr == nil && len(actions) != 0 {
-			preparedDelegation, err = s.prepareBusinessDelegation(c, actions)
-			if err != nil {
-				return err
-			}
+		if actionsErr != nil {
+			return workflowStoreFailure(c, fmt.Errorf("read published business actions: %w", actionsErr))
+		}
+		preparedDelegation, err = s.prepareBusinessDelegation(c, actions, request.Resources)
+		if err != nil {
+			return err
 		}
 	}
 	encoded, _ := json.Marshal(request)
