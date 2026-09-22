@@ -135,6 +135,7 @@ type Server struct {
 	teamRunActivities         *teamrun.PGActivityStore
 	workflowFanoutReconciler  *fanout.WorkflowReconcilerWorker
 	workflowHealthWorkers     *workflowHealthWorkers
+	employeeRunEventWorker    *employeeRunEventWorker
 }
 
 func (s *Server) engineExecutor() executionport.RemoteEngineExecutor { return s.RemoteExec }
@@ -596,6 +597,10 @@ func (s *Server) Start() error {
 		s.workflowHealthWorkers.Start()
 		defer s.workflowHealthWorkers.Stop()
 	}
+	if s.employeeRunEventWorker != nil {
+		s.employeeRunEventWorker.Start()
+		defer s.employeeRunEventWorker.Stop()
+	}
 	return s.Echo.Start(":" + s.Config.Port)
 }
 
@@ -649,6 +654,7 @@ func (s *Server) ConfigureTeamRunWorkers() {
 	if pool == nil || s.Tasks == nil || s.Snapshots == nil || s.Workflow == nil {
 		return
 	}
+	s.employeeRunEventWorker = newEmployeeRunEventWorker(pool)
 	runStore := teamrun.NewPGStore()
 	runStore.Transactions = pool
 	checkpointStore := teamrun.NewPGCheckpointStore()
