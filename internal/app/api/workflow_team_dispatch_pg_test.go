@@ -91,7 +91,7 @@ func newTeamDispatchTestServerWithGraph(t *testing.T, graph json.RawMessage, bun
 		t.Fatal(err)
 	}
 	server := &Server{Store: teamDispatchPoolStore{pool: pool}, OrgStore: orgstore.NewStore(pool), Registry: agentcatalog.New(pool),
-		Workflow: workflowcatalog.New(pool, nil, workflow.NewArtifactStore(pool, nil)), WorkflowArtifacts: workflow.NewArtifactStore(pool, nil), Deliverables: deliveryverify.NewStore(pool), ScheduleTransactions: pool, Snapshots: snapshot.NewStore(pool), Tasks: taskqueue.New(pool, nil, time.Minute)}
+		Workflow: workflowcatalog.New(pool, nil, workflow.NewArtifactStore(pool, nil)), WorkflowArtifacts: workflow.NewArtifactStore(pool, nil), Deliverables: deliveryverify.NewStore(pool), ScheduleTransactions: pool, Snapshots: snapshot.NewStore(pool), Tasks: taskqueue.New(pool, nil, time.Minute), Projects: projects.New(pool, nil)}
 	server.KernelPublication = openAPIKernelPublication(t, ctx, pool, teamconstruction.NewPublicationAuthority(pool, nil))
 	return server, pool
 }
@@ -143,7 +143,6 @@ func TestTeamWorkflowDispatchKeepsInputIdentityAndAdmissionRealPG(t *testing.T) 
  `); err != nil {
 		t.Fatal(err)
 	}
-	server.Projects = projects.New(pool, nil)
 	conversationInput := input
 	conversationInput.ConversationID = "conversation"
 	conversationInput.ClientRequestID = "00000000-0000-0000-0000-000000000003"

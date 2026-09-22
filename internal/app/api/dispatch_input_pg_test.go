@@ -291,6 +291,7 @@ func TestBoundDispatchInputProvenanceAndAtomicAdmissionRealPG(t *testing.T) {
 	}
 	secondText := " \n我是 Nora 的助理，为 INV-440 准备状态。\n保留“引号”与最后换行。\n"
 	secondRequest := dispatchInputRegistrationFixture("session", secondText, first.InputRevisionID)
+	secondRequest.ProjectID = "workbench-user"
 	second := register(secondRequest, http.StatusCreated, "")
 	if second.TaskSHA256 != dispatchInputDigest([]byte(secondText)) || second.ClientRequestID == first.ClientRequestID {
 		t.Fatal("new input did not freeze exact text with an independent request key")
@@ -328,6 +329,9 @@ func TestBoundDispatchInputProvenanceAndAtomicAdmissionRealPG(t *testing.T) {
 	secondRun := dispatch(map[string]any{"input_revision_id": second.InputRevisionID}, "user", http.StatusCreated, "")
 	if secondRun.ClientRequestID != second.ClientRequestID || secondRun.InputRevisionID != second.InputRevisionID {
 		t.Fatalf("dispatch receipt lost input identity: %+v", secondRun)
+	}
+	if secondRun.ProjectID == "" || secondRun.ProjectID == secondRequest.ProjectID {
+		t.Fatalf("legacy Workbench project was not resolved to a server-owned project: %+v", secondRun)
 	}
 	task, err := server.Tasks.Get(ctx, "ws", secondRun.TaskID)
 	var storedTask string
