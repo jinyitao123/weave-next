@@ -46,7 +46,7 @@ type humanTaskDetailResponse struct {
 }
 
 type completeHumanTaskRequest struct {
-	InteractionID  string          `json:"interaction_id,omitempty"`
+	InteractionID  string          `json:"interaction_id"`
 	Payload        json.RawMessage `json:"payload"`
 	IdempotencyKey string          `json:"idempotency_key"`
 }
@@ -340,9 +340,9 @@ func (s *Server) handleCompleteHumanTask(c echo.Context) error {
 	}
 	request.IdempotencyKey = strings.TrimSpace(request.IdempotencyKey)
 	request.InteractionID = strings.TrimSpace(request.InteractionID)
-	if request.IdempotencyKey == "" || len(request.IdempotencyKey) > 256 || len(request.InteractionID) > 256 ||
+	if request.InteractionID == "" || request.IdempotencyKey == "" || len(request.IdempotencyKey) > 256 || len(request.InteractionID) > 256 ||
 		len(request.Payload) == 0 || len(request.Payload) > teamrun.HumanResumePayloadMaxBytes {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "payload or idempotency_key is invalid"})
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "interaction_id, payload, or idempotency_key is invalid"})
 	}
 	workspaceID := getTenant(c)
 	runID := c.Param("run_id")

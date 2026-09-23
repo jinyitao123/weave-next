@@ -109,6 +109,18 @@ func TestServeUsesSharedProtocolForInitializeListAndCall(t *testing.T) {
 				t.Fatalf("team_create contract does not expose the structured business path: %s / %s", schema, description)
 			}
 		}
+		if strings.HasPrefix(tool["name"].(string), "human_task_") &&
+			(!strings.Contains(description, "workspace_member role") || strings.Contains(description, "run access")) {
+			t.Errorf("human task description claims the wrong authorization boundary: %s", description)
+		}
+		if tool["name"] == "human_task_complete" {
+			schema, _ := json.Marshal(tool["inputSchema"])
+			if !bytes.Contains(schema, []byte(`"interaction_id"`)) ||
+				!bytes.Contains(schema, []byte(`"required":["run_id","interaction_id","payload","idempotency_key"]`)) ||
+				!strings.Contains(description, "exact interaction_id returned for the current question") {
+				t.Fatalf("human_task_complete does not bind completion to a required interaction: %s / %s", schema, description)
+			}
+		}
 	}
 	if !reflect.DeepEqual(gotNames, wantNames) {
 		t.Fatalf("tool names = %#v", gotNames)
@@ -120,6 +132,49 @@ func TestServeUsesSharedProtocolForInitializeListAndCall(t *testing.T) {
 	parseError := responses[3]["error"].(map[string]any)
 	if parseError["code"] != float64(-32700) {
 		t.Fatalf("parse error = %#v", parseError)
+	}
+}
+
+func TestHumanTaskCompleteRequiresAndForwardsInteractionID(t *testing.T) {
+	calls := 0
+	api := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		calls++
+		if request.Method != http.MethodPost || request.URL.Path != "/v1/human-tasks/run-1/complete" {
+			t.Fatalf("request = %s %s", request.Method, request.URL.Path)
+		}
+		var body struct {
+			InteractionID  string            `json:"interaction_id"`
+			Payload        map[string]string `json:"payload"`
+			IdempotencyKey string            `json:"idempotency_key"`
+		}
+		if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		if body.InteractionID != "human-current" || body.Payload["decision"] != "approve" || body.IdempotencyKey != "complete-1" {
+			t.Fatalf("completion request body = %#v", body)
+		}
+		response.Header().Set("Content-Type", "application/json")
+		response.WriteHeader(http.StatusAccepted)
+		_, _ = response.Write([]byte(`{"run_id":"run-1","status":"queued","idempotent":false}`))
+	}))
+	defer api.Close()
+
+	input := `{"jsonrpc":"2.0","id":"complete","method":"tools/call","params":{"name":"human_task_complete","arguments":{"run_id":"run-1","interaction_id":"human-current","payload":{"decision":"approve"},"idempotency_key":"complete-1"},"_meta":{"weave_user_authorization":"Bearer user-jwt"}}}` + "\n"
+	var output bytes.Buffer
+	if err := Serve(context.Background(), strings.NewReader(input), &output, mcpClient(t, api.URL)); err != nil {
+		t.Fatal(err)
+	}
+	responses := decodeResponses(t, output.String())
+	completionText := responses[0]["result"].(map[string]any)["content"].([]any)[0].(map[string]any)["text"].(string)
+	if calls != 1 || !strings.Contains(completionText, `"status":"queued"`) {
+		t.Fatalf("completion was not forwarded: calls=%d output=%s", calls, output.String())
+	}
+
+	missing, err := NewToolDispatcher(mcpClient(t, api.URL)).Dispatch(context.Background(), structToolCall(
+		"human_task_complete", `{"run_id":"run-1","payload":{"decision":"approve"},"idempotency_key":"missing-interaction"}`,
+	))
+	if err != nil || missing == nil || !missing.IsError || missing.Content != `{"error":"invalid_arguments"}` || calls != 1 {
+		t.Fatalf("completion without interaction_id was not rejected before HTTP: result=%#v calls=%d err=%v", missing, calls, err)
 	}
 }
 

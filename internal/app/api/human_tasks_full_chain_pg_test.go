@@ -261,8 +261,14 @@ func TestHumanFinalReviewSampleRealPGFullChain(t *testing.T) {
 		t.Fatalf("chapter page status=%d headers=%v body_bytes=%d", page.Code, page.Header(), page.Body.Len())
 	}
 
-	invalid := completeHumanTaskThroughAPI(t, server, workspaceID, userID, runID,
-		`{"payload":{"decision":"maybe","comments":"invalid"},"idempotency_key":"m3-invalid"}`)
+	invalidBody, err := json.Marshal(completeHumanTaskRequest{
+		InteractionID: question.InteractionID, Payload: json.RawMessage(`{"decision":"maybe","comments":"invalid"}`),
+		IdempotencyKey: "m3-invalid",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	invalid := completeHumanTaskThroughAPI(t, server, workspaceID, userID, runID, string(invalidBody))
 	if invalid.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("invalid resume payload status=%d body=%s", invalid.Code, invalid.Body.String())
 	}
@@ -272,6 +278,20 @@ func TestHumanFinalReviewSampleRealPGFullChain(t *testing.T) {
 		t.Fatal(err)
 	}
 	validBody := string(validJSON)
+	var tasksBeforeMissing int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM weave_task_queue WHERE workspace_id=$1`, workspaceID).Scan(&tasksBeforeMissing); err != nil {
+		t.Fatal(err)
+	}
+	missingInteraction := completeHumanTaskThroughAPI(t, server, workspaceID, userID, runID,
+		`{"payload":{"decision":"approve","comments":"missing identity"},"idempotency_key":"m3-missing-interaction"}`)
+	if missingInteraction.Code != http.StatusBadRequest {
+		t.Fatalf("missing interaction identity status=%d body=%s", missingInteraction.Code, missingInteraction.Body.String())
+	}
+	assertHumanRunStatus(t, ctx, pool, runs, workspaceID, runID, teamrun.StatusParked)
+	var tasksAfterMissing int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM weave_task_queue WHERE workspace_id=$1`, workspaceID).Scan(&tasksAfterMissing); err != nil || tasksAfterMissing != tasksBeforeMissing {
+		t.Fatalf("missing interaction identity changed queue: before=%d after=%d error=%v", tasksBeforeMissing, tasksAfterMissing, err)
+	}
 	stale := completeHumanTaskThroughAPI(t, server, workspaceID, userID, runID,
 		`{"payload":{"decision":"approve","comments":"old question"},"idempotency_key":"m3-stale","interaction_id":"human_old_question"}`)
 	if stale.Code != http.StatusConflict {

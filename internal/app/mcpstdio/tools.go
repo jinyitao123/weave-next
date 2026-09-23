@@ -351,12 +351,20 @@ func (d *ToolDispatcher) Dispatch(ctx context.Context, call contract.ToolCall) (
 		result, err := d.client.HumanTaskGet(ctx, input.RunID, input.Path, input.Offset, input.Limit)
 		return documentResult(call.ID, result, err), nil
 	case "human_task_complete":
-		var input weaveclient.HumanTaskCompleteRequest
+		var input struct {
+			RunID          string          `json:"run_id"`
+			InteractionID  string          `json:"interaction_id"`
+			Payload        json.RawMessage `json:"payload"`
+			IdempotencyKey string          `json:"idempotency_key"`
+		}
 		if err := decodeArguments(call.Args, &input); err != nil || strings.TrimSpace(input.RunID) == "" ||
-			strings.TrimSpace(input.IdempotencyKey) == "" || len(input.Payload) == 0 {
+			strings.TrimSpace(input.InteractionID) == "" || strings.TrimSpace(input.IdempotencyKey) == "" || len(input.Payload) == 0 {
 			return toolError(call.ID, "invalid_arguments"), nil
 		}
-		result, err := d.client.HumanTaskComplete(ctx, input)
+		result, err := d.client.HumanTaskComplete(ctx, weaveclient.HumanTaskCompleteRequest{
+			RunID: input.RunID, InteractionID: input.InteractionID,
+			Payload: input.Payload, IdempotencyKey: input.IdempotencyKey,
+		})
 		return documentResult(call.ID, result, err), nil
 	case "resume":
 		var input weaveclient.ResumeRequest
@@ -879,18 +887,18 @@ var toolDefinitions = []contract.ToolDef{
 	},
 	{
 		Name: "human_task_list", ReadOnly: true,
-		Description: "List current workspace human tasks as paginated summaries without predecessor content. Requires run access and current workspace membership. Returns task summaries, total, and next_cursor. Errors: http_400, http_401, http_403.",
+		Description: "List current workspace human tasks as paginated summaries without predecessor content. Requires the workspace_member role, runs scope, and current workspace membership. Returns task summaries, total, and next_cursor. Errors: http_400, http_401, http_403.",
 		InputSchema: json.RawMessage(`{"type":"object","properties":{"limit":{"type":"integer","minimum":1,"maximum":100},"cursor":{"type":"string"}},"additionalProperties":false}`),
 	},
 	{
 		Name: "human_task_get", ReadOnly: true,
-		Description: "Read one human task and its predecessor outputs. Requires run access and current workspace membership. path is an RFC 6901 JSON Pointer and returns the selected JSON value itself; use offset and limit to page selected strings, arrays, or objects. Errors: invalid_json_pointer, human_task_value_not_found, human_task_value_too_large, http_401, http_403, http_404.",
+		Description: "Read one human task and its predecessor outputs. Requires the workspace_member role, runs scope, and current workspace membership. path is an RFC 6901 JSON Pointer and returns the selected JSON value itself; use offset and limit to page selected strings, arrays, or objects. Errors: invalid_json_pointer, human_task_value_not_found, human_task_value_too_large, http_401, http_403, http_404.",
 		InputSchema: json.RawMessage(`{"type":"object","properties":{"run_id":{"type":"string"},"path":{"type":"string"},"offset":{"type":"integer","minimum":0},"limit":{"type":"integer","minimum":1,"maximum":10000}},"required":["run_id"],"additionalProperties":false}`),
 	},
 	{
 		Name:        "human_task_complete",
-		Description: "Complete one human task with a payload matching its resume_schema and a caller-supplied idempotency_key. Requires run access and current workspace membership. Returns queued status and whether the completion was idempotent. Errors: http_400, http_401, http_403, http_404, http_409, http_422.",
-		InputSchema: json.RawMessage(`{"type":"object","properties":{"run_id":{"type":"string"},"payload":{},"idempotency_key":{"type":"string","minLength":1,"maxLength":256}},"required":["run_id","payload","idempotency_key"],"additionalProperties":false}`),
+		Description: "Complete one human task with the exact interaction_id returned for the current question, a payload matching its resume_schema, and a caller-supplied idempotency_key. Requires the workspace_member role, runs scope, and current workspace membership. Returns queued status and whether the completion was idempotent. Errors: http_400, http_401, http_403, http_404, http_409, http_422.",
+		InputSchema: json.RawMessage(`{"type":"object","properties":{"run_id":{"type":"string"},"interaction_id":{"type":"string","minLength":1,"maxLength":256},"payload":{},"idempotency_key":{"type":"string","minLength":1,"maxLength":256}},"required":["run_id","interaction_id","payload","idempotency_key"],"additionalProperties":false}`),
 	},
 	{
 		Name:        "resume",

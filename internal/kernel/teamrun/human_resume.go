@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -82,8 +83,8 @@ func HumanInteractionID(run TeamRun) string {
 }
 
 type CompleteHumanWaitRequest struct {
-	// InteractionID is optional for legacy tool callers. Product forms bind
-	// their answer to the exact question returned by the inbox/detail API.
+	// InteractionID binds the answer to the exact question returned by the
+	// inbox/detail API.
 	InteractionID string
 	// ValidatePayload runs against the locked current question after replay
 	// and identity checks. The app supplies schema policy without an upward import.
@@ -120,7 +121,7 @@ func (s *HumanResumeService) Complete(
 	}
 	if req.WorkspaceID == "" || req.RunID == "" || req.IdempotencyKey == "" || req.Actor == "" ||
 		len(req.Payload) == 0 || len(req.Payload) > HumanResumePayloadMaxBytes || !json.Valid(req.Payload) ||
-		len(req.PayloadDigest) != sha256.Size || len(req.InteractionID) > 256 {
+		len(req.PayloadDigest) != sha256.Size || strings.TrimSpace(req.InteractionID) == "" || len(req.InteractionID) > 256 {
 		return CompleteHumanWaitResult{}, errors.New("human resume request is invalid")
 	}
 	digest := sha256.Sum256(req.Payload)
@@ -167,7 +168,7 @@ func (s *HumanResumeService) Complete(
 	if locked.Status != StatusParked {
 		return CompleteHumanWaitResult{}, ErrTeamRunStateConflict
 	}
-	if req.InteractionID != "" && req.InteractionID != HumanInteractionID(locked) {
+	if req.InteractionID != HumanInteractionID(locked) {
 		return CompleteHumanWaitResult{}, ErrTeamRunResumeStale
 	}
 	if locked.WaitKind == nil || *locked.WaitKind != WaitHuman || locked.CheckpointRef == nil ||

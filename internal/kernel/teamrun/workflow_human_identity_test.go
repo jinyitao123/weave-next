@@ -7,7 +7,25 @@ import (
 	"errors"
 	"testing"
 	"time"
+
+	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 )
+
+func TestHumanResumeRequiresInteractionBeforeTransaction(t *testing.T) {
+	payload := json.RawMessage(`{"decision":"approve"}`)
+	digest := sha256.Sum256(payload)
+	service := &HumanResumeService{
+		Transactions: &fakeTransactionBeginner{}, Runs: NewPGStore(),
+		Checkpoints: NewPGCheckpointStore(), Tasks: &taskqueue.Store{},
+	}
+	_, err := service.Complete(context.Background(), CompleteHumanWaitRequest{
+		WorkspaceID: "workspace-1", RunID: "run-1", Payload: payload, PayloadDigest: digest[:],
+		IdempotencyKey: "complete-without-interaction", Actor: "user-1",
+	})
+	if err == nil || err.Error() != "human resume request is invalid" {
+		t.Fatalf("missing interaction ID did not fail request validation before transaction: %v", err)
+	}
+}
 
 func TestHumanResumeBindsQuestionAndReplaysAfterNextWaitRealPG(t *testing.T) {
 	h := newProcessNextHarness(t)
@@ -47,6 +65,13 @@ func TestHumanResumeBindsQuestionAndReplaysAfterNextWaitRealPG(t *testing.T) {
 		t.Fatal("question identity depends on mutable display timestamp")
 	}
 	service := &HumanResumeService{Transactions: h.pool, Runs: NewPGStore(), Checkpoints: NewPGCheckpointStore(), Tasks: h.tasks}
+	countTasks := func() int {
+		var count int
+		if err := h.pool.QueryRow(ctx, `SELECT count(*) FROM weave_task_queue WHERE workspace_id='workspace-1' AND context_key=$1`, runID).Scan(&count); err != nil {
+			t.Fatal(err)
+		}
+		return count
+	}
 	payload := json.RawMessage(`{"decision":"answer A"}`)
 	digest := sha256.Sum256(payload)
 	validationCalls := 0
@@ -61,6 +86,17 @@ func TestHumanResumeBindsQuestionAndReplaysAfterNextWaitRealPG(t *testing.T) {
 			return nil
 		},
 	}
+	queuedBeforeMissing := countTasks()
+	missing := request
+	missing.InteractionID = ""
+	missing.IdempotencyKey = "answer-a-missing-interaction"
+	if _, err := service.Complete(ctx, missing); err == nil {
+		t.Fatal("completion without an interaction ID was accepted")
+	}
+	if countTasks() != queuedBeforeMissing || validationCalls != 0 {
+		t.Fatal("completion without an interaction ID changed the queue or validated a payload")
+	}
+	h.assertRun(t, runID, StatusParked, nil)
 	accepted, err := service.Complete(ctx, request)
 	if err != nil || accepted.Idempotent {
 		t.Fatalf("answer A: result=%#v error=%v", accepted, err)
@@ -80,13 +116,6 @@ func TestHumanResumeBindsQuestionAndReplaysAfterNextWaitRealPG(t *testing.T) {
 	secondID := HumanInteractionID(second.Run)
 	if secondID == "" || secondID == firstID || second.Detail.NodeID != first.Detail.NodeID {
 		t.Fatalf("same-node new wait not distinguished: A=%q B=%q", firstID, secondID)
-	}
-	countTasks := func() int {
-		var count int
-		if err := h.pool.QueryRow(ctx, `SELECT count(*) FROM weave_task_queue WHERE workspace_id='workspace-1' AND context_key=$1`, runID).Scan(&count); err != nil {
-			t.Fatal(err)
-		}
-		return count
 	}
 	beforeCount := countTasks()
 	stale := request
