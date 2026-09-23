@@ -20,9 +20,9 @@ import (
 	"github.com/jinyitao123/loom/contract"
 	"github.com/jinyitao123/weave/internal/base/deliverable"
 	"github.com/jinyitao123/weave/internal/base/execution"
-	"github.com/jinyitao123/weave/internal/kernel/fanout"
 	"github.com/jinyitao123/weave/internal/base/fileartifact"
 	"github.com/jinyitao123/weave/internal/base/frozen"
+	"github.com/jinyitao123/weave/internal/kernel/fanout"
 	"github.com/jinyitao123/weave/internal/kernel/loomruntime"
 	"github.com/jinyitao123/weave/internal/kernel/workflow"
 	"github.com/jinyitao123/weave/internal/kernel/workflow/machine"
@@ -124,6 +124,8 @@ type nodeUsageReport struct {
 	MemberRunID           string
 	MemberReceipts        []loomruntime.ConfirmedUsageReceipt
 	MemberUsageIncomplete bool
+	CLIExecution          bool   // Distinguishes an unmeasured CLI attempt from an in-process node with no receipt.
+	UsageIncompleteReason string // Preserves why this node's physical usage cannot be fully confirmed.
 	Totals                loomruntime.UsageTotals
 	Coverage              loomruntime.UsageCoverage
 	CLIAttempts           []workflow.RuntimeCLIUsageAttempt
@@ -345,6 +347,28 @@ func runSerialMachine(
 				if nodeUsage.MemberUsageIncomplete {
 					usageComplete, usageIncompleteReason = false, "member_model_response_lost"
 				}
+			} else if nodeUsage.CLIExecution {
+				for index, physical := range nodeUsage.CLIAttempts {
+					attemptID := nodePhysicalUsageAttemptID(callID, physical.AttemptID, index)
+					if startErr := usage.StartAttempt(callID, attemptID); startErr != nil {
+						return fail(executionError(ErrorCodeExecutionUnrecoverable, startErr))
+					}
+					if confirmErr := usage.ConfirmAttemptWithMetadata(callID, attemptID, contract.Usage{
+						InputTokens: physical.InputTokens, OutputTokens: physical.OutputTokens, CostUSD: physical.CostUSD,
+					}, physical.ToolCalls, loomruntime.UsageAttemptMetadata{
+						HasTokens: physical.HasTokens, HasCost: physical.HasCost, Source: physical.Source,
+					}); confirmErr != nil {
+						return fail(executionError(ErrorCodeExecutionUnrecoverable, confirmErr))
+					}
+				}
+			} else if nodeUsage.UsageIncompleteReason != "" {
+				attemptID := nodeUsageAttemptID(callID)
+				if startErr := usage.StartAttempt(callID, attemptID); startErr != nil {
+					return fail(executionError(ErrorCodeExecutionUnrecoverable, startErr))
+				}
+				if confirmErr := usage.ConfirmAttemptWithMetadata(callID, attemptID, contract.Usage{}, 0, loomruntime.UsageAttemptMetadata{}); confirmErr != nil {
+					return fail(executionError(ErrorCodeExecutionUnrecoverable, confirmErr))
+				}
 			} else if len(nodeUsage.CLIAttempts) == 0 {
 				attemptID := nodeUsageAttemptID(callID)
 				if startErr := usage.StartAttempt(callID, attemptID); startErr != nil {
@@ -376,7 +400,11 @@ func runSerialMachine(
 			// A CLI runtime agent has no usage receipt: the candidate run
 			// executes it normally, records zero measured usage, and marks
 			// the result usage-incomplete instead of failing closed.
-			if len(nodeUsage.CLIAttempts) > 0 && (!nodeUsage.Coverage.HasTokens || !nodeUsage.Coverage.HasCost) && usageIncompleteReason == "" {
+			if nodeUsage.UsageIncompleteReason != "" && usageIncompleteReason == "" {
+				usageComplete = false
+				usageIncompleteReason = nodeUsage.UsageIncompleteReason
+			}
+			if nodeUsage.CLIExecution && (!nodeUsage.Coverage.HasTokens || !nodeUsage.Coverage.HasCost) && usageIncompleteReason == "" {
 				usageComplete = false
 				usageIncompleteReason = UsageIncompleteReasonCLINode
 				if nodeUsage.Coverage.HasTokens || nodeUsage.Coverage.HasCost {
@@ -1558,7 +1586,11 @@ func runAgentNode(
 		}
 		usage, usageErr := runtimeCLIUsageReport(outcome.result)
 		if usageErr != nil {
-			return nil, nodeUsageReport{}, executionError(ErrorCodeExecutionUnrecoverable, usageErr)
+			if outcome.err != nil {
+				return nil, usage, executionError(ErrorCodeExecutionUnrecoverable,
+					fmt.Errorf("%w (usage accounting also failed: %v)", outcome.err, usageErr))
+			}
+			return nil, usage, executionError(ErrorCodeExecutionUnrecoverable, usageErr)
 		}
 		if timeout := timeoutErr(); timeout != nil {
 			return nil, usage, timeout
@@ -1652,10 +1684,13 @@ func runAgentNode(
 	result, err := graphResult.result, graphResult.err
 	usage, usageErr := frozenNodeUsage(result)
 	if usageErr != nil {
-		return nil, nodeUsageReport{}, executionError(
-			ErrorCodeExecutionUnrecoverable,
-			fmt.Errorf("read frozen graph usage for node %q: %w", node.ID, usageErr),
-		)
+		usage.UsageIncompleteReason = UsageIncompleteReasonAttemptLost
+		usageErr = fmt.Errorf("read frozen graph usage for node %q: %w", node.ID, usageErr)
+		if err != nil {
+			return nil, usage, executionError(ErrorCodeExecutionUnrecoverable,
+				fmt.Errorf("%w (usage accounting also failed: %v)", err, usageErr))
+		}
+		return nil, usage, executionError(ErrorCodeExecutionUnrecoverable, usageErr)
 	}
 	if err != nil {
 		return nil, usage, executionError(ErrorCodeExecutionUnrecoverable, err)
@@ -1704,30 +1739,64 @@ func runAgentNode(
 
 func runtimeCLIUsageReport(result workflow.RuntimeCLIResult) (nodeUsageReport, error) {
 	accumulator := loomruntime.NewUsageAccumulator()
+	report := nodeUsageReport{
+		CLIExecution:  true,
+		Events:        result.ObservedEvents(200),
+		Artifacts:     append([]workflow.RuntimeCLIArtifact(nil), result.Artifacts...),
+		DeliveryError: result.DeliveryError,
+	}
+	if len(result.Attempts) == 0 {
+		report.CLIAttempts = []workflow.RuntimeCLIUsageAttempt{{}}
+		report.Coverage = loomruntime.UsageCoverage{}
+		report.UsageIncompleteReason = UsageIncompleteReasonCLINode
+		return report, nil
+	}
 	callID, err := accumulator.NextCall("cli-node-usage", "engine")
 	if err != nil {
-		return nodeUsageReport{}, err
+		report.CLIAttempts = unknownCLIUsageAttempts(result.Attempts)
+		report.Coverage = loomruntime.UsageCoverage{}
+		report.UsageIncompleteReason = UsageIncompleteReasonAttemptLost
+		return report, err
 	}
 	for index, attempt := range result.Attempts {
 		attemptID := fmt.Sprintf("cli-attempt-%d", index)
 		if err := accumulator.StartAttempt(callID, attemptID); err != nil {
-			return nodeUsageReport{}, err
+			report.CLIAttempts = append(report.CLIAttempts, unknownCLIUsageAttempts(result.Attempts[index:])...)
+			report.Totals, report.Coverage = accumulator.Totals(), accumulator.Coverage()
+			report.UsageIncompleteReason = UsageIncompleteReasonAttemptLost
+			return report, err
 		}
 		if err := accumulator.ConfirmAttemptWithMetadata(callID, attemptID, contract.Usage{
 			InputTokens: attempt.InputTokens, OutputTokens: attempt.OutputTokens, CostUSD: attempt.CostUSD,
 		}, attempt.ToolCalls, loomruntime.UsageAttemptMetadata{
 			HasTokens: attempt.HasTokens, HasCost: attempt.HasCost, Source: attempt.Source,
 		}); err != nil {
-			return nodeUsageReport{}, err
+			report.CLIAttempts = append(report.CLIAttempts, unknownCLIUsageAttempts(result.Attempts[index:])...)
+			report.Totals, report.Coverage = accumulator.Totals(), accumulator.Coverage()
+			report.UsageIncompleteReason = UsageIncompleteReasonAttemptLost
+			return report, err
 		}
+		report.CLIAttempts = append(report.CLIAttempts, attempt)
 	}
-	return nodeUsageReport{
-		Totals: accumulator.Totals(), Coverage: accumulator.Coverage(),
-		CLIAttempts:   append([]workflow.RuntimeCLIUsageAttempt(nil), result.Attempts...),
-		Events:        result.ObservedEvents(200),
-		Artifacts:     append([]workflow.RuntimeCLIArtifact(nil), result.Artifacts...),
-		DeliveryError: result.DeliveryError,
-	}, nil
+	report.Totals, report.Coverage = accumulator.Totals(), accumulator.Coverage()
+	return report, nil
+}
+
+func unknownCLIUsageAttempts(attempts []workflow.RuntimeCLIUsageAttempt) []workflow.RuntimeCLIUsageAttempt {
+	unknown := make([]workflow.RuntimeCLIUsageAttempt, 0, len(attempts))
+	for _, attempt := range attempts {
+		// Keep physical identity and events while omitting amounts that failed validation.
+		item := workflow.RuntimeCLIUsageAttempt{
+			AttemptID: attempt.AttemptID,
+			Events:    append([]workflow.RuntimeCLIEvent(nil), attempt.Events...),
+			Source:    attempt.Source,
+		}
+		if attempt.ToolCalls >= 0 {
+			item.ToolCalls = attempt.ToolCalls
+		}
+		unknown = append(unknown, item)
+	}
+	return unknown
 }
 
 // frozenNodeUsage extracts the confirmed logical usage a frozen graph run
