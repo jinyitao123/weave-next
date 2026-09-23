@@ -362,6 +362,7 @@ type actionParam struct {
 	Field       string   `json:"field,omitempty"`
 	Label       string   `json:"label,omitempty"`
 	Type        string   `json:"type,omitempty"`
+	Multiple    bool     `json:"multiple,omitempty"`
 	Required    bool     `json:"required,omitempty"`
 	Description string   `json:"description,omitempty"`
 	Enum        []string `json:"enum,omitempty"`
@@ -417,7 +418,7 @@ func ValidateDevelopmentActions(requested []string, supplied []DevelopmentAction
 		if item.Name != parsed.actionName || item.ObjectName != parsed.objectName {
 			return nil, fmt.Errorf("调试动作定义与能力标识不一致")
 		}
-		if _, err := actionInputSchema(actionMetadata{Name: item.Name, ObjectName: item.ObjectName, Label: item.Label,
+		if err := validateActionMetadata(actionMetadata{Name: item.Name, ObjectName: item.ObjectName, Label: item.Label,
 			Description: item.Description, RequiresRecord: item.RequiresRecord, RequiresConfirmation: item.RequiresConfirmation, Params: item.Params}); err != nil {
 			return nil, fmt.Errorf("调试动作 %q 的输入定义无效: %v", item.CapabilityID, err)
 		}
@@ -618,7 +619,38 @@ func actionInputSchema(metadata actionMetadata) (json.RawMessage, error) {
 	return actionInputSchemaWithBindings(metadata, nil)
 }
 
+func validateActionMetadata(metadata actionMetadata) error {
+	seen := make(map[string]struct{}, len(metadata.Params))
+	for _, param := range metadata.Params {
+		rawName := param.Name
+		if rawName == "" {
+			rawName = param.Field
+		}
+		name := strings.TrimSpace(rawName)
+		if name == "" || name != rawName {
+			return errors.New("parameter name is empty or padded")
+		}
+		if _, exists := seen[name]; exists {
+			return fmt.Errorf("duplicate parameter %q", name)
+		}
+		seen[name] = struct{}{}
+		jsonType := normalizeActionParamType(param.Type)
+		if strings.EqualFold(strings.TrimSpace(param.Type), "file") {
+			continue
+		}
+		switch jsonType {
+		case "string", "number", "boolean", "array":
+		default:
+			return fmt.Errorf("unsupported parameter type %q", param.Type)
+		}
+	}
+	return nil
+}
+
 func actionInputSchemaWithBindings(metadata actionMetadata, bindings []frozen.BusinessCapabilityParameterBinding) (json.RawMessage, error) {
+	if err := validateActionMetadata(metadata); err != nil {
+		return nil, err
+	}
 	protected := make(map[string]struct{}, len(bindings))
 	for _, binding := range bindings {
 		protected[binding.Name] = struct{}{}
@@ -647,6 +679,9 @@ func actionInputSchemaWithBindings(metadata actionMetadata, bindings []frozen.Bu
 		}
 		if _, isProtected := protected[name]; isProtected {
 			continue
+		}
+		if strings.EqualFold(strings.TrimSpace(param.Type), "file") {
+			return nil, fmt.Errorf("file parameter %q requires an explicit task-material binding", name)
 		}
 		jsonType := normalizeActionParamType(param.Type)
 		switch jsonType {
@@ -731,7 +766,11 @@ func bindActionParameters(metadata actionMetadata, bindings []frozen.BusinessCap
 		if !ok {
 			return nil, fmt.Errorf("Forge action parameter %q is not defined", binding.Name)
 		}
-		if normalizeActionParamType(param.Type) != "string" {
+		parameterType := strings.ToLower(strings.TrimSpace(param.Type))
+		if parameterType == "file" && (binding.Source != frozen.BusinessSourceMaterialID || param.Multiple) {
+			return nil, fmt.Errorf("file parameter %q supports only one explicitly bound file", binding.Name)
+		}
+		if parameterType != "" && parameterType != "string" && parameterType != "text" && parameterType != "file" {
 			return nil, fmt.Errorf("Forge action parameter %q cannot receive a material value", binding.Name)
 		}
 		var value string
