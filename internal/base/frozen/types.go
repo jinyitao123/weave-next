@@ -102,8 +102,29 @@ type FrozenAgentRecord struct {
 	FactoryInput json.RawMessage               `json:"factory_input"`
 	// BusinessCapabilityIDs are the exact Forge actions selected by the
 	// developer and frozen into this published agent version.
-	BusinessCapabilityIDs []string `json:"business_capability_ids,omitempty"`
+	BusinessCapabilityIDs      []string                    `json:"business_capability_ids,omitempty"`
+	BusinessCapabilityBindings []BusinessCapabilityBinding `json:"business_capability_bindings,omitempty"`
 }
+
+// BusinessCapabilityBinding removes task-material values from model control.
+// A published member may explicitly map Forge action parameters to resources
+// frozen with one employee task.
+type BusinessCapabilityBinding struct {
+	CapabilityID string                               `json:"capability_id"`
+	Parameters   []BusinessCapabilityParameterBinding `json:"parameters"`
+}
+
+type BusinessCapabilityParameterBinding struct {
+	Name   string `json:"name"`
+	Source string `json:"source"`
+}
+
+const (
+	BusinessSourceMaterialID        = "materials.single.id"
+	BusinessSourceMaterialName      = "materials.single.name"
+	BusinessSourceMaterialSHA256    = "materials.single.sha256"
+	BusinessSourceMaterialsManifest = "materials.manifest_json"
+)
 
 type FrozenSkillResource struct {
 	Kind         string `json:"kind"`

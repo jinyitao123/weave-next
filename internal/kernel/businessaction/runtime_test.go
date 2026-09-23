@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/jinyitao123/loom/contract"
+	"github.com/jinyitao123/weave/internal/base/frozen"
 )
 
 type captureHost struct {
@@ -97,6 +98,134 @@ func TestDispatcherProjectsVerifiedTaskResourcesOnlyToBusinessTool(t *testing.T)
 		if !strings.Contains(tools[0].Description, expected) {
 			t.Fatalf("business tool description did not project %q: %s", expected, tools[0].Description)
 		}
+	}
+}
+
+func TestDispatcherInjectsFrozenMaterialFieldsAndHidesThemFromModel(t *testing.T) {
+	host := &captureHost{}
+	ids := []string{"forge:action:sales_contract.ContractSubmit"}
+	catalog := contractSubmitCatalog()
+	catalog["sales_contract.ContractSubmit"] = actionMetadata{
+		Name: "ContractSubmit", ObjectName: "sales_contract", RequiresRecord: true,
+		Params: []actionParam{
+			{Name: "material_file_id", Label: "合同文件", Type: "text", Required: true},
+			{Name: "material_name", Type: "string", Required: true},
+			{Name: "material_sha256", Type: "string", Required: true},
+		},
+	}
+	resources := []delegatedResource{{Type: "forge-file", ID: "frozen-file-a", Name: "合同.md", Bytes: 64, SHA256: strings.Repeat("a", 64)}, recordResourceForTest("sales_contract", "contract-1")}
+	bindings := []frozen.BusinessCapabilityBinding{{CapabilityID: ids[0], Parameters: []frozen.BusinessCapabilityParameterBinding{
+		{Name: "material_file_id", Source: frozen.BusinessSourceMaterialID},
+		{Name: "material_name", Source: frozen.BusinessSourceMaterialName},
+		{Name: "material_sha256", Source: frozen.BusinessSourceMaterialSHA256},
+	}}}
+	dispatcher, err := newDispatcherWithResourcesAndBindings(host, ids, catalog, resources, bindings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tools, err := dispatcher.ListTools(t.Context())
+	if err != nil || len(tools) != 1 {
+		t.Fatalf("tools=%+v err=%v", tools, err)
+	}
+	var schema struct {
+		Required   []string `json:"required"`
+		Properties struct {
+			Params struct {
+				Required   []string       `json:"required"`
+				Properties map[string]any `json:"properties"`
+			} `json:"params"`
+		} `json:"properties"`
+	}
+	if err := json.Unmarshal(tools[0].InputSchema, &schema); err != nil {
+		t.Fatal(err)
+	}
+	if _, visible := schema.Properties.Params.Properties["material_file_id"]; visible || len(schema.Properties.Params.Required) != 0 {
+		t.Fatalf("mapped parameter remained model controlled: %s", tools[0].InputSchema)
+	}
+	result, err := dispatcher.Dispatch(t.Context(), contract.ToolCall{ID: "bound-file", Name: tools[0].Name, Args: `{"recordId":"contract-1"}`})
+	if err != nil || result == nil || result.IsError || host.call.Name != "run_action" {
+		t.Fatalf("result=%+v call=%+v err=%v", result, host.call, err)
+	}
+	var upstream struct {
+		Params map[string]any `json:"params"`
+	}
+	if err := json.Unmarshal([]byte(host.call.Args), &upstream); err != nil {
+		t.Fatal(err)
+	}
+	if upstream.Params["material_file_id"] != "frozen-file-a" || upstream.Params["material_name"] != "合同.md" || upstream.Params["material_sha256"] != strings.Repeat("a", 64) {
+		t.Fatalf("Forge params were not sourced from the frozen resource: %+v", upstream.Params)
+	}
+}
+
+func TestDispatcherRejectsModelOverrideOfFrozenMaterialParameter(t *testing.T) {
+	host := &captureHost{}
+	ids := []string{"forge:action:sales_contract.ContractSubmit"}
+	catalog := contractSubmitCatalog()
+	bindings := []frozen.BusinessCapabilityBinding{{CapabilityID: ids[0], Parameters: []frozen.BusinessCapabilityParameterBinding{{Name: "material_file_id", Source: frozen.BusinessSourceMaterialID}}}}
+	resources := []delegatedResource{{Type: "forge-file", ID: "frozen-file-a", Name: "合同.md", Bytes: 64, SHA256: strings.Repeat("a", 64)}, recordResourceForTest("sales_contract", "contract-1")}
+	dispatcher, err := newDispatcherWithResourcesAndBindings(host, ids, catalog, resources, bindings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tools, _ := dispatcher.ListTools(t.Context())
+	result, err := dispatcher.Dispatch(t.Context(), contract.ToolCall{ID: "override", Name: tools[0].Name, Args: `{"recordId":"contract-1","params":{"material_file_id":"another-file","material_sha256":"digest"}}`})
+	if err != nil || result == nil || !result.IsError || host.call.Name != "" {
+		t.Fatalf("override reached Forge: result=%+v call=%+v err=%v", result, host.call, err)
+	}
+}
+
+func TestDispatcherRejectsAmbiguousAndUnknownMaterialMappings(t *testing.T) {
+	ids := []string{"forge:action:sales_contract.ContractSubmit"}
+	catalog := contractSubmitCatalog()
+	bindings := []frozen.BusinessCapabilityBinding{{CapabilityID: ids[0], Parameters: []frozen.BusinessCapabilityParameterBinding{{Name: "material_file_id", Source: frozen.BusinessSourceMaterialID}}}}
+	resources := []delegatedResource{
+		{Type: "forge-file", ID: "file-a", Name: "A.md", Bytes: 1, SHA256: strings.Repeat("a", 64)},
+		{Type: "forge-file", ID: "file-b", Name: "B.md", Bytes: 1, SHA256: strings.Repeat("b", 64)},
+		recordResourceForTest("sales_contract", "contract-1"),
+	}
+	if _, err := newDispatcherWithResourcesAndBindings(&captureHost{}, ids, catalog, resources, bindings); err == nil || !strings.Contains(err.Error(), "exactly one") {
+		t.Fatalf("ambiguous single-file mapping err=%v", err)
+	}
+	bindings[0].Parameters[0].Name = "missing_field"
+	if _, err := newDispatcherWithResourcesAndBindings(&captureHost{}, ids, catalog, []delegatedResource{resources[0], resources[2]}, bindings); err == nil || !strings.Contains(err.Error(), "not defined") {
+		t.Fatalf("unknown parameter mapping err=%v", err)
+	}
+}
+
+func TestDispatcherInjectsOrderedMaterialManifest(t *testing.T) {
+	host := &captureHost{}
+	id := "forge:action:sales_contract.ContractSubmit"
+	catalog := map[string]actionMetadata{"sales_contract.ContractSubmit": {
+		Name: "ContractSubmit", ObjectName: "sales_contract", RequiresRecord: true,
+		Params: []actionParam{{Name: "attachment_manifest", Type: "text", Required: true}},
+	}}
+	resources := []delegatedResource{
+		{Type: "forge-file", ID: "file-first", Name: "first.txt", Bytes: 1, SHA256: strings.Repeat("a", 64)},
+		{Type: "forge-file", ID: "file-second", Name: "second.txt", Bytes: 1, SHA256: strings.Repeat("b", 64)},
+		recordResourceForTest("sales_contract", "contract-1"),
+	}
+	bindings := []frozen.BusinessCapabilityBinding{{CapabilityID: id, Parameters: []frozen.BusinessCapabilityParameterBinding{{Name: "attachment_manifest", Source: frozen.BusinessSourceMaterialsManifest}}}}
+	dispatcher, err := newDispatcherWithResourcesAndBindings(host, []string{id}, catalog, resources, bindings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tools, _ := dispatcher.ListTools(t.Context())
+	result, err := dispatcher.Dispatch(t.Context(), contract.ToolCall{ID: "manifest", Name: tools[0].Name, Args: `{"recordId":"contract-1"}`})
+	if err != nil || result == nil || result.IsError {
+		t.Fatalf("result=%+v err=%v", result, err)
+	}
+	var upstream struct {
+		Params map[string]string `json:"params"`
+	}
+	if err := json.Unmarshal([]byte(host.call.Args), &upstream); err != nil {
+		t.Fatal(err)
+	}
+	var manifest []map[string]string
+	if err := json.Unmarshal([]byte(upstream.Params["attachment_manifest"]), &manifest); err != nil {
+		t.Fatal(err)
+	}
+	if len(manifest) != 2 || manifest[0]["file_id"] != "file-first" || manifest[1]["file_id"] != "file-second" {
+		t.Fatalf("manifest order or identity changed: %+v", manifest)
 	}
 }
 

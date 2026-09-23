@@ -32,6 +32,7 @@ import (
 const capabilityPrefix = "forge:action:"
 
 var toolPart = regexp.MustCompile(`[^a-z0-9_]+`)
+var frozenSHA256 = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
 type Store struct {
 	pool  *pgxpool.Pool
@@ -73,7 +74,7 @@ func (f Factory) attach(ctx context.Context, bundle frozen.FrozenExecutionBundle
 		}
 		return compiler.FrozenBuildOpts{}, nil, fmt.Errorf("%w: business delegation store unavailable", mcphost.ErrFailClosed)
 	}
-	dispatcher, err := f.Store.dispatcher(ctx, bundle.Agent.BusinessCapabilityIDs)
+	dispatcher, err := f.Store.dispatcher(ctx, bundle.Agent.BusinessCapabilityIDs, bundle.Agent.BusinessCapabilityBindings)
 	if err != nil {
 		if closer != nil {
 			_ = closer.Close()
@@ -104,11 +105,11 @@ type delegatedResource struct {
 	ObjectName string `json:"object_name,omitempty"`
 }
 
-func (s *Store) dispatcher(ctx context.Context, requested []string) (contract.ToolDispatcher, error) {
+func (s *Store) dispatcher(ctx context.Context, requested []string, bindings []frozen.BusinessCapabilityBinding) (contract.ToolDispatcher, error) {
 	if actions, ok, err := s.resolveDevelopmentTrial(ctx, requested); err != nil {
 		return nil, err
 	} else if ok {
-		return newDevelopmentDispatcher(requested, actions)
+		return newDevelopmentDispatcherWithBindings(requested, actions, bindings)
 	}
 	bound, err := s.resolve(ctx, requested)
 	if err != nil {
@@ -151,7 +152,7 @@ func (s *Store) dispatcher(ctx context.Context, requested []string) (contract.To
 	if err != nil {
 		return nil, err
 	}
-	return newDispatcherWithResources(host, bound.actions, catalog, bound.resources)
+	return newDispatcherWithResourcesAndBindings(host, bound.actions, catalog, bound.resources, bindings)
 }
 
 func (s *Store) resolveDevelopmentTrial(ctx context.Context, requested []string) ([]DevelopmentAction, bool, error) {
@@ -351,12 +352,15 @@ type dispatcher struct {
 	byTool  map[string]action
 	bound   *mcphost.ToolContract
 	records map[string]string
+	params  map[string]map[string]any
 }
 
 type action struct{ capabilityID, objectName, actionName string }
 
 type actionParam struct {
 	Name        string   `json:"name"`
+	Field       string   `json:"field,omitempty"`
+	Label       string   `json:"label,omitempty"`
 	Type        string   `json:"type,omitempty"`
 	Required    bool     `json:"required,omitempty"`
 	Description string   `json:"description,omitempty"`
@@ -491,6 +495,10 @@ func newDispatcher(host contract.ToolDispatcher, ids []string, catalog map[strin
 }
 
 func newDispatcherWithResources(host contract.ToolDispatcher, ids []string, catalog map[string]actionMetadata, resources []delegatedResource) (*dispatcher, error) {
+	return newDispatcherWithResourcesAndBindings(host, ids, catalog, resources, nil)
+}
+
+func newDispatcherWithResourcesAndBindings(host contract.ToolDispatcher, ids []string, catalog map[string]actionMetadata, resources []delegatedResource, bindings []frozen.BusinessCapabilityBinding) (*dispatcher, error) {
 	notice := "仅在当前员工明确授权且本次固定材料已核对时调用。"
 	if len(resources) > 0 {
 		encoded, err := json.Marshal(resources)
@@ -499,7 +507,7 @@ func newDispatcherWithResources(host contract.ToolDispatcher, ids []string, cata
 		}
 		notice += " 本任务已验证并冻结以下资源。需要材料参数时，必须从这里逐项使用对应的 id、name、sha256 和 bytes，不得猜测或替换：" + string(encoded)
 	}
-	d, err := newDispatcherWithNotice(host, ids, catalog, notice)
+	d, err := newDispatcherWithBindings(host, ids, catalog, bindings, resources, notice)
 	if err != nil {
 		return nil, err
 	}
@@ -510,7 +518,29 @@ func newDispatcherWithResources(host contract.ToolDispatcher, ids []string, cata
 }
 
 func newDispatcherWithNotice(host contract.ToolDispatcher, ids []string, catalog map[string]actionMetadata, notice string) (*dispatcher, error) {
-	d := &dispatcher{host: host, byTool: map[string]action{}}
+	return newDispatcherWithBindings(host, ids, catalog, nil, nil, notice)
+}
+
+func newDispatcherWithBindings(host contract.ToolDispatcher, ids []string, catalog map[string]actionMetadata, bindings []frozen.BusinessCapabilityBinding, resources []delegatedResource, notice string) (*dispatcher, error) {
+	selected := make(map[string]struct{}, len(ids))
+	for _, id := range ids {
+		selected[id] = struct{}{}
+	}
+	relevantBindings := make([]frozen.BusinessCapabilityBinding, 0, len(bindings))
+	for _, binding := range bindings {
+		if _, ok := selected[binding.CapabilityID]; ok {
+			relevantBindings = append(relevantBindings, binding)
+		}
+	}
+	normalized, err := frozen.NormalizeBusinessCapabilityBindings(relevantBindings, ids)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid published business parameter bindings: %v", mcphost.ErrFailClosed, err)
+	}
+	bindingByCapability := make(map[string][]frozen.BusinessCapabilityParameterBinding, len(normalized))
+	for _, binding := range normalized {
+		bindingByCapability[binding.CapabilityID] = binding.Parameters
+	}
+	d := &dispatcher{host: host, byTool: map[string]action{}, params: map[string]map[string]any{}}
 	ordered := append([]string(nil), ids...)
 	sort.Strings(ordered)
 	for _, id := range ordered {
@@ -526,7 +556,11 @@ func newDispatcherWithNotice(host contract.ToolDispatcher, ids []string, catalog
 		if !ok {
 			return nil, fmt.Errorf("%w: published Forge action %q is unavailable to the current employee", mcphost.ErrFailClosed, id)
 		}
-		schema, err := actionInputSchema(metadata)
+		injected, err := bindActionParameters(metadata, bindingByCapability[id], resources)
+		if err != nil {
+			return nil, fmt.Errorf("%w: Forge action %q has invalid published parameter bindings: %v", mcphost.ErrFailClosed, id, err)
+		}
+		schema, err := actionInputSchemaWithBindings(metadata, bindingByCapability[id])
 		if err != nil {
 			return nil, fmt.Errorf("%w: Forge action %q has invalid input metadata: %v", mcphost.ErrFailClosed, id, err)
 		}
@@ -538,6 +572,7 @@ func newDispatcherWithNotice(host contract.ToolDispatcher, ids []string, catalog
 			description = fmt.Sprintf("执行 Forge 业务动作 %s。", parsed.actionName)
 		}
 		d.byTool[name] = parsed
+		d.params[name] = injected
 		d.tools = append(d.tools, contract.ToolDef{
 			Name:        name,
 			Description: description + " " + notice,
@@ -573,7 +608,21 @@ func newDevelopmentDispatcher(ids []string, actions []DevelopmentAction) (*dispa
 	return newDispatcherWithNotice(developmentHost{}, ids, developmentCatalog(actions), "开发调试会记录本次调用，但不会访问 Forge 或写入业务数据。")
 }
 
+func newDevelopmentDispatcherWithBindings(ids []string, actions []DevelopmentAction, bindings []frozen.BusinessCapabilityBinding) (*dispatcher, error) {
+	checksum := sha256.Sum256([]byte("development-trial-material"))
+	resources := []delegatedResource{{Type: "forge-file", ID: "development-trial-material", Name: "试跑样例材料.txt", Bytes: 1, SHA256: hex.EncodeToString(checksum[:])}}
+	return newDispatcherWithBindings(developmentHost{}, ids, developmentCatalog(actions), bindings, resources, "隔离调试使用合成材料值验证参数映射；不会访问 Forge 或写入业务数据。")
+}
+
 func actionInputSchema(metadata actionMetadata) (json.RawMessage, error) {
+	return actionInputSchemaWithBindings(metadata, nil)
+}
+
+func actionInputSchemaWithBindings(metadata actionMetadata, bindings []frozen.BusinessCapabilityParameterBinding) (json.RawMessage, error) {
+	protected := make(map[string]struct{}, len(bindings))
+	for _, binding := range bindings {
+		protected[binding.Name] = struct{}{}
+	}
 	properties := map[string]any{}
 	required := make([]string, 0, 2)
 	if metadata.RequiresRecord {
@@ -585,14 +634,21 @@ func actionInputSchema(metadata actionMetadata) (json.RawMessage, error) {
 	paramProperties := make(map[string]any, len(metadata.Params))
 	paramRequired := make([]string, 0, len(metadata.Params))
 	for _, param := range metadata.Params {
-		name := strings.TrimSpace(param.Name)
-		if name == "" || name != param.Name {
+		rawName := param.Name
+		if rawName == "" {
+			rawName = param.Field
+		}
+		name := strings.TrimSpace(rawName)
+		if name == "" || name != rawName {
 			return nil, errors.New("parameter name is empty or padded")
 		}
 		if _, exists := paramProperties[name]; exists {
 			return nil, fmt.Errorf("duplicate parameter %q", name)
 		}
-		jsonType := param.Type
+		if _, isProtected := protected[name]; isProtected {
+			continue
+		}
+		jsonType := normalizeActionParamType(param.Type)
 		switch jsonType {
 		case "", "string":
 			jsonType = "string"
@@ -629,6 +685,91 @@ func actionInputSchema(metadata actionMetadata) (json.RawMessage, error) {
 	return json.RawMessage(raw), err
 }
 
+func normalizeActionParamType(value string) string {
+	switch strings.TrimSpace(strings.ToLower(value)) {
+	case "", "string", "text", "file":
+		return "string"
+	case "integer", "currency":
+		return "number"
+	case "number", "boolean", "array":
+		return strings.TrimSpace(strings.ToLower(value))
+	default:
+		return strings.TrimSpace(strings.ToLower(value))
+	}
+}
+
+func bindActionParameters(metadata actionMetadata, bindings []frozen.BusinessCapabilityParameterBinding, resources []delegatedResource) (map[string]any, error) {
+	if len(bindings) == 0 {
+		return nil, nil
+	}
+	params := make(map[string]actionParam, len(metadata.Params))
+	for _, param := range metadata.Params {
+		name := param.Name
+		if name == "" {
+			name = param.Field
+		}
+		if name == "" {
+			return nil, errors.New("Forge action parameter name is empty")
+		}
+		if _, duplicate := params[name]; duplicate {
+			return nil, fmt.Errorf("Forge action parameter %q is duplicated", name)
+		}
+		params[name] = param
+	}
+	files := make([]delegatedResource, 0, len(resources))
+	for _, resource := range resources {
+		if resource.Type == "forge-file" {
+			if strings.TrimSpace(resource.ID) == "" || strings.TrimSpace(resource.Name) == "" || resource.Bytes < 1 || !frozenSHA256.MatchString(resource.SHA256) {
+				return nil, errors.New("frozen Forge file resource is invalid")
+			}
+			files = append(files, resource)
+		}
+	}
+	result := make(map[string]any, len(bindings))
+	for _, binding := range bindings {
+		param, ok := params[binding.Name]
+		if !ok {
+			return nil, fmt.Errorf("Forge action parameter %q is not defined", binding.Name)
+		}
+		if normalizeActionParamType(param.Type) != "string" {
+			return nil, fmt.Errorf("Forge action parameter %q cannot receive a material value", binding.Name)
+		}
+		var value string
+		switch binding.Source {
+		case frozen.BusinessSourceMaterialID, frozen.BusinessSourceMaterialName, frozen.BusinessSourceMaterialSHA256:
+			if len(files) != 1 {
+				return nil, errors.New("a unique-file parameter source requires exactly one frozen Forge file")
+			}
+			file := files[0]
+			switch binding.Source {
+			case frozen.BusinessSourceMaterialID:
+				value = file.ID
+			case frozen.BusinessSourceMaterialName:
+				value = file.Name
+			case frozen.BusinessSourceMaterialSHA256:
+				value = file.SHA256
+			}
+		case frozen.BusinessSourceMaterialsManifest:
+			if len(files) == 0 {
+				return nil, errors.New("a material manifest parameter source requires at least one frozen Forge file")
+			}
+			manifest := make([]map[string]string, 0, len(files))
+			for _, file := range files {
+				manifest = append(manifest, map[string]string{"file_id": file.ID, "name": file.Name, "sha256": file.SHA256})
+			}
+			encoded, err := json.Marshal(manifest)
+			if err != nil {
+				return nil, err
+			}
+			value = string(encoded)
+		default:
+			return nil, errors.New("material parameter source is unsupported")
+		}
+		result[binding.Name] = value
+	}
+	return result, nil
+}
+
 func (d *dispatcher) ListTools(context.Context) ([]contract.ToolDef, error) {
 	return append([]contract.ToolDef(nil), d.tools...), nil
 }
@@ -654,6 +795,15 @@ func (d *dispatcher) Dispatch(ctx context.Context, call contract.ToolCall) (*con
 	if d.records != nil {
 		// Protected identity comes from the frozen delegation, not model output.
 		input.RecordID = d.records[call.Name]
+	}
+	for name, value := range d.params[call.Name] {
+		if _, supplied := input.Params[name]; supplied {
+			return &contract.ToolResult{CallID: call.ID, ToolName: call.Name, Content: "员工固定材料字段不能由成员替换", IsError: true}, nil
+		}
+		if input.Params == nil {
+			input.Params = map[string]any{}
+		}
+		input.Params[name] = value
 	}
 	upstream, _ := json.Marshal(map[string]any{
 		"actionName": selected.actionName, "objectName": selected.objectName,
