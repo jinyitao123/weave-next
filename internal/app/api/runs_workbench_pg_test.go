@@ -5,10 +5,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strconv"
 	"testing"
 	"time"
 
+	"github.com/jinyitao123/loom/pgstore"
 	"github.com/jinyitao123/weave/internal/kernel/teamrun"
 	"github.com/labstack/echo/v4"
 )
@@ -29,6 +31,19 @@ func TestWorkbenchActivitySummaryPreservesAcceptedQueuedRun(t *testing.T) {
 
 func TestWorkbenchRunsUseAuthenticatedInputOwnerAndMatchDetailsRealPG(t *testing.T) {
 	server, pool := newTeamDispatchTestServer(t)
+	connection, err := url.Parse(os.Getenv("TEST_DATABASE_URL"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	query := connection.Query()
+	query.Set("search_path", pool.Config().ConnConfig.RuntimeParams["search_path"])
+	connection.RawQuery = query.Encode()
+	store, err := pgstore.New(connection.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(store.Close)
+	server.Store = teamDispatchPoolStore{Store: store, pool: pool}
 	dispatch := func(userID string) workflowManualRunResponse {
 		t.Helper()
 		registration := dispatchInputRegistrationFixture("workbench-session-"+userID, "检查一份固定材料", "")
