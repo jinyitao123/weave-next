@@ -30,6 +30,7 @@ type preparedBusinessDelegation struct {
 	digest     string
 	actions    []string
 	resources  []dispatchInputResource
+	record     *dispatchBusinessRecord
 	expiresAt  time.Time
 }
 
@@ -78,8 +79,8 @@ func loadPublishedBusinessActionsTx(ctx context.Context, tx pgx.Tx, workspaceID,
 	return publishedBusinessActions(payload), nil
 }
 
-func (s *Server) prepareBusinessDelegation(c echo.Context, actions []string, resources []dispatchInputResource) (*preparedBusinessDelegation, error) {
-	if len(actions) == 0 && len(resources) == 0 {
+func (s *Server) prepareBusinessDelegation(c echo.Context, actions []string, resources []dispatchInputResource, record *dispatchBusinessRecord) (*preparedBusinessDelegation, error) {
+	if len(actions) == 0 && len(resources) == 0 && record == nil {
 		return nil, nil
 	}
 	authorization := strings.TrimSpace(c.Request().Header.Get(forgeDelegationHeader))
@@ -125,7 +126,7 @@ func (s *Server) prepareBusinessDelegation(c echo.Context, actions []string, res
 	digest := sha256.Sum256([]byte(bearer))
 	return &preparedBusinessDelegation{
 		identity: identity, ciphertext: ciphertext, digest: hex.EncodeToString(digest[:]),
-		actions: append([]string{}, actions...), resources: append([]dispatchInputResource(nil), resources...), expiresAt: time.Now().UTC().Add(forgeDelegationTTL),
+		actions: append([]string{}, actions...), resources: append([]dispatchInputResource(nil), resources...), record: record, expiresAt: time.Now().UTC().Add(forgeDelegationTTL),
 	}, nil
 }
 
@@ -188,6 +189,9 @@ func persistBusinessDelegationTx(ctx context.Context, tx pgx.Tx, prepared *prepa
 	resources = append(resources, map[string]any{"type": "dispatch-input", "id": inputRevisionID, "sha256": taskSHA})
 	for _, item := range prepared.resources {
 		resources = append(resources, item)
+	}
+	if prepared.record != nil {
+		resources = append(resources, prepared.record.resource())
 	}
 	resourcesJSON, _ := json.Marshal(resources)
 	issuedAt := time.Now().UTC()

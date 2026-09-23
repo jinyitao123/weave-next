@@ -96,11 +96,12 @@ type delegation struct {
 }
 
 type delegatedResource struct {
-	Type   string `json:"type"`
-	ID     string `json:"id"`
-	Name   string `json:"name,omitempty"`
-	Bytes  int64  `json:"bytes,omitempty"`
-	SHA256 string `json:"sha256"`
+	Type       string `json:"type"`
+	ID         string `json:"id"`
+	Name       string `json:"name,omitempty"`
+	Bytes      int64  `json:"bytes,omitempty"`
+	SHA256     string `json:"sha256"`
+	ObjectName string `json:"object_name,omitempty"`
 }
 
 func (s *Store) dispatcher(ctx context.Context, requested []string) (contract.ToolDispatcher, error) {
@@ -296,6 +297,11 @@ func decodeDelegatedResources(raw []byte, inputRevisionID string) ([]delegatedRe
 				return nil, errors.New("task Forge resource is invalid")
 			}
 			resources = append(resources, item)
+		case "forge-record":
+			if err := validateRecordResource(item); err != nil {
+				return nil, err
+			}
+			resources = append(resources, item)
 		default:
 			return nil, errors.New("task business resource type is unsupported")
 		}
@@ -340,10 +346,11 @@ func (s *Store) validate(ctx context.Context, inputRevisionID string, requested 
 }
 
 type dispatcher struct {
-	host   contract.ToolDispatcher
-	tools  []contract.ToolDef
-	byTool map[string]action
-	bound  *mcphost.ToolContract
+	host    contract.ToolDispatcher
+	tools   []contract.ToolDef
+	byTool  map[string]action
+	bound   *mcphost.ToolContract
+	records map[string]string
 }
 
 type action struct{ capabilityID, objectName, actionName string }
@@ -445,13 +452,27 @@ func readActionCatalog(ctx context.Context, host contract.ToolDispatcher) (map[s
 		return nil, fmt.Errorf("%w: Forge action catalog unavailable: %s", mcphost.ErrFailClosed, message)
 	}
 	var payload struct {
-		Actions []actionMetadata `json:"actions"`
+		Actions []json.RawMessage `json:"actions"`
 	}
 	if err := json.Unmarshal([]byte(result.Content), &payload); err != nil {
 		return nil, fmt.Errorf("%w: Forge action catalog is invalid", mcphost.ErrFailClosed)
 	}
 	catalog := make(map[string]actionMetadata, len(payload.Actions))
-	for _, item := range payload.Actions {
+	for _, raw := range payload.Actions {
+		var item actionMetadata
+		if err := json.Unmarshal(raw, &item); err != nil {
+			return nil, fmt.Errorf("%w: Forge action catalog contains an invalid action", mcphost.ErrFailClosed)
+		}
+		var fields map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &fields); err != nil {
+			return nil, fmt.Errorf("%w: Forge action catalog contains an invalid action", mcphost.ErrFailClosed)
+		}
+		if required, exists := fields["requiresRecord"]; !exists {
+			// Unknown metadata must never broaden a business action's record scope.
+			item.RequiresRecord = true
+		} else if string(required) != "true" && string(required) != "false" {
+			return nil, fmt.Errorf("%w: Forge action record requirement is invalid", mcphost.ErrFailClosed)
+		}
 		if strings.TrimSpace(item.Name) == "" || strings.TrimSpace(item.ObjectName) == "" ||
 			item.Name != strings.TrimSpace(item.Name) || item.ObjectName != strings.TrimSpace(item.ObjectName) {
 			continue
@@ -478,7 +499,14 @@ func newDispatcherWithResources(host contract.ToolDispatcher, ids []string, cata
 		}
 		notice += " 本任务已验证并冻结以下资源。需要材料参数时，必须从这里逐项使用对应的 id、name、sha256 和 bytes，不得猜测或替换：" + string(encoded)
 	}
-	return newDispatcherWithNotice(host, ids, catalog, notice)
+	d, err := newDispatcherWithNotice(host, ids, catalog, notice)
+	if err != nil {
+		return nil, err
+	}
+	if err := d.bindRecords(catalog, resources); err != nil {
+		return nil, fmt.Errorf("%w: %v", mcphost.ErrFailClosed, err)
+	}
+	return d, nil
 }
 
 func newDispatcherWithNotice(host contract.ToolDispatcher, ids []string, catalog map[string]actionMetadata, notice string) (*dispatcher, error) {
@@ -622,6 +650,10 @@ func (d *dispatcher) Dispatch(ctx context.Context, call contract.ToolCall) (*con
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&input); err != nil {
 		return &contract.ToolResult{CallID: call.ID, ToolName: call.Name, Content: "业务动作参数无效", IsError: true}, nil
+	}
+	if d.records != nil {
+		// Protected identity comes from the frozen delegation, not model output.
+		input.RecordID = d.records[call.Name]
 	}
 	upstream, _ := json.Marshal(map[string]any{
 		"actionName": selected.actionName, "objectName": selected.objectName,

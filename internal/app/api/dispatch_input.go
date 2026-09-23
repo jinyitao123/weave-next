@@ -36,6 +36,7 @@ type dispatchInputRegistration struct {
 	ProjectID                       string                       `json:"project_id,omitempty"`
 	RevisionContext                 *dispatchRevisionContext     `json:"revision_context,omitempty"`
 	Resources                       []dispatchInputResource      `json:"resources,omitempty"`
+	BusinessRecord                  *dispatchBusinessRecord      `json:"business_record,omitempty"`
 	AuthorizedBusinessCapabilityIDs *[]string                    `json:"authorized_business_capability_ids,omitempty"`
 }
 
@@ -259,7 +260,7 @@ func (s *Server) handleRegisterDispatchInput(c echo.Context) error {
 	if err != nil || strings.TrimSpace(request.WorkbenchSessionID) == "" || len(request.WorkbenchSessionID) > 256 ||
 		strings.ContainsRune(request.WorkbenchSessionID, '\x00') || strings.TrimSpace(request.TeamID) == "" ||
 		strings.TrimSpace(request.Task) == "" || len(request.Task) > 1<<20 || strings.ContainsRune(request.Task, '\x00') ||
-		!validDispatchInputSourceMessages(request.SourceMessages) || !validDispatchInputResources(request.Resources) || (request.WorkflowVersion != nil && *request.WorkflowVersion <= 0) {
+		!validDispatchInputSourceMessages(request.SourceMessages) || !validDispatchInputResources(request.Resources) || !validDispatchBusinessRecord(request.BusinessRecord) || (request.WorkflowVersion != nil && *request.WorkflowVersion <= 0) {
 		return workflowError(c, http.StatusBadRequest, "dispatch_input_request_invalid", "dispatch input request invalid")
 	}
 	request.RegistrationID = registrationID.String()
@@ -280,6 +281,9 @@ func (s *Server) handleRegisterDispatchInput(c echo.Context) error {
 	}
 	request.TeamID = strings.TrimSpace(request.TeamID)
 	request.WorkflowID = strings.TrimSpace(request.WorkflowID)
+	if request.BusinessRecord != nil && (request.WorkflowID == "" || request.WorkflowVersion == nil) {
+		return workflowError(c, http.StatusBadRequest, "dispatch_input_request_invalid", "business record binding requires a fixed workflow version")
+	}
 	request.ProjectID = strings.TrimSpace(request.ProjectID)
 	request.Mode = strings.TrimSpace(request.Mode)
 	if request.Mode == "" {
@@ -298,7 +302,7 @@ func (s *Server) handleRegisterDispatchInput(c echo.Context) error {
 		if actionsErr != nil {
 			return workflowError(c, http.StatusUnprocessableEntity, "business_action_scope_invalid", actionsErr.Error())
 		}
-		preparedDelegation, err = s.prepareBusinessDelegation(c, actions, request.Resources)
+		preparedDelegation, err = s.prepareBusinessDelegation(c, actions, request.Resources, request.BusinessRecord)
 		if err != nil {
 			return err
 		}

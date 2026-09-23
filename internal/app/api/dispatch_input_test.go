@@ -109,3 +109,18 @@ func TestBoundDispatchWirePreservesOmissionAndExactText(t *testing.T) {
 		}
 	}
 }
+
+func TestBusinessRecordBindingRejectsAmbiguousIdentity(t *testing.T) {
+	if !validDispatchBusinessRecord(nil) || !validDispatchBusinessRecord(&dispatchBusinessRecord{ObjectName: "sales_quote", RecordID: "quote-a"}) {
+		t.Fatal("valid binding rejected")
+	}
+	for _, record := range []dispatchBusinessRecord{
+		{ObjectName: "sales_quote"}, {ObjectName: "sys_user", RecordID: "a"},
+		{ObjectName: " sales_quote", RecordID: "a"}, {ObjectName: "sales_quote", RecordID: " a "},
+		{ObjectName: "sales_quote", RecordID: "a\x00b"},
+	} {
+		if validDispatchBusinessRecord(&record) {
+			t.Fatalf("invalid binding accepted: %+v", record)
+		}
+	}
+}

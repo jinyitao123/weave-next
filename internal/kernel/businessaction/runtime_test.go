@@ -84,6 +84,7 @@ func TestDispatcherProjectsVerifiedTaskResourcesOnlyToBusinessTool(t *testing.T)
 	}, {
 		Type: "forge-file", ID: "file-quote", Name: "报价单.md", Bytes: 64, SHA256: strings.Repeat("b", 64),
 	}}
+	resources = append(resources, recordResourceForTest("sales_contract", "contract-1"))
 	value, err := newDispatcherWithResources(host, []string{"forge:action:sales_contract.ContractSubmit"}, contractSubmitCatalog(), resources)
 	if err != nil {
 		t.Fatal(err)
