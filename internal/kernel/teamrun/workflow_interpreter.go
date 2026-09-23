@@ -347,6 +347,27 @@ func runSerialMachine(
 				if nodeUsage.MemberUsageIncomplete {
 					usageComplete, usageIncompleteReason = false, "member_model_response_lost"
 				}
+			} else if len(nodeUsage.MemberReceipts) > 0 {
+				// Preserve each confirmed Loom attempt instead of collapsing partial
+				// usage into one synthetic receipt. A later unreported attempt can
+				// make coverage incomplete while earlier attempts still have real
+				// token counts; combining those values with HasTokens=false would
+				// reject the entire business run.
+				for _, receipt := range nodeUsage.MemberReceipts {
+					attemptID := nodePhysicalUsageAttemptID(callID, receipt.AttemptID, 0)
+					if usageErr := usage.StartAttempt(callID, attemptID); usageErr != nil {
+						return fail(executionError(ErrorCodeExecutionUnrecoverable, usageErr))
+					}
+					if usageErr := usage.ConfirmAttemptWithMetadata(callID, attemptID, receipt.Usage, receipt.ToolCalls, receipt.Metadata); usageErr != nil {
+						return fail(executionError(ErrorCodeExecutionUnrecoverable, usageErr))
+					}
+				}
+				if !nodeUsage.Coverage.HasTokens || !nodeUsage.Coverage.HasCost {
+					usageComplete = false
+					if usageIncompleteReason == "" {
+						usageIncompleteReason = UsageIncompleteReasonAttemptLost
+					}
+				}
 			} else if nodeUsage.CLIExecution {
 				for index, physical := range nodeUsage.CLIAttempts {
 					attemptID := nodePhysicalUsageAttemptID(callID, physical.AttemptID, index)
