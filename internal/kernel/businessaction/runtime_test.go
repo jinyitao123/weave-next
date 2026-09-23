@@ -229,6 +229,32 @@ func TestDispatcherInjectsOrderedMaterialManifest(t *testing.T) {
 	}
 }
 
+func TestDispatcherRequiresExplicitBindingForFileParameters(t *testing.T) {
+	id := "forge:action:sales_contract.ContractSubmit"
+	catalog := map[string]actionMetadata{"sales_contract.ContractSubmit": {
+		Name: "ContractSubmit", ObjectName: "sales_contract", RequiresRecord: true,
+		Params: []actionParam{{Name: "material_file", Type: "file", Required: true}},
+	}}
+	resources := []delegatedResource{
+		{Type: "forge-file", ID: "file-a", Name: "A.md", Bytes: 1, SHA256: strings.Repeat("a", 64)},
+		recordResourceForTest("sales_contract", "contract-1"),
+	}
+	if _, err := newDispatcherWithResources(&captureHost{}, []string{id}, catalog, resources); err == nil || !strings.Contains(err.Error(), "explicit task-material binding") {
+		t.Fatalf("unbound file parameter was exposed: err=%v", err)
+	}
+	bindings := []frozen.BusinessCapabilityBinding{{CapabilityID: id, Parameters: []frozen.BusinessCapabilityParameterBinding{{Name: "material_file", Source: frozen.BusinessSourceMaterialID}}}}
+	if _, err := newDispatcherWithResourcesAndBindings(&captureHost{}, []string{id}, catalog, resources, bindings); err != nil {
+		t.Fatalf("single file mapping rejected: %v", err)
+	}
+	fileListCatalog := map[string]actionMetadata{"sales_contract.ContractSubmit": {
+		Name: "ContractSubmit", ObjectName: "sales_contract", RequiresRecord: true,
+		Params: []actionParam{{Name: "material_file", Type: "file", Multiple: true, Required: true}},
+	}}
+	if _, err := newDispatcherWithResourcesAndBindings(&captureHost{}, []string{id}, fileListCatalog, resources, bindings); err == nil || !strings.Contains(err.Error(), "only one") {
+		t.Fatalf("unsupported file-list mapping err=%v", err)
+	}
+}
+
 func TestDecodeDelegatedResourcesRejectsAnotherInput(t *testing.T) {
 	raw := []byte(`[{"type":"dispatch-input","id":"another-input","sha256":"digest"},{"type":"forge-file","id":"file-1","name":"合同.md","bytes":12,"sha256":"digest"}]`)
 	if _, err := decodeDelegatedResources(raw, "current-input"); err == nil || !strings.Contains(err.Error(), "does not match") {
