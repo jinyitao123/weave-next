@@ -109,10 +109,6 @@ func TestServeUsesSharedProtocolForInitializeListAndCall(t *testing.T) {
 				t.Fatalf("team_create contract does not expose the structured business path: %s / %s", schema, description)
 			}
 		}
-		if strings.HasPrefix(tool["name"].(string), "human_task_") &&
-			(!strings.Contains(description, "workspace_member role") || strings.Contains(description, "run access")) {
-			t.Errorf("human task description claims the wrong authorization boundary: %s", description)
-		}
 		if tool["name"] == "human_task_complete" {
 			schema, _ := json.Marshal(tool["inputSchema"])
 			if !bytes.Contains(schema, []byte(`"interaction_id"`)) ||
@@ -132,6 +128,20 @@ func TestServeUsesSharedProtocolForInitializeListAndCall(t *testing.T) {
 	parseError := responses[3]["error"].(map[string]any)
 	if parseError["code"] != float64(-32700) {
 		t.Fatalf("parse error = %#v", parseError)
+	}
+}
+
+func TestHumanTaskToolDescriptionsUseWorkspaceMembershipBoundary(t *testing.T) {
+	for _, tool := range toolDefinitions {
+		if !strings.HasPrefix(tool.Name, "human_task_") {
+			continue
+		}
+		if !strings.Contains(tool.Description, "current workspace membership") ||
+			strings.Contains(tool.Description, "workspace_member role") ||
+			strings.Contains(tool.Description, "runs scope") ||
+			strings.Contains(tool.Description, "run access") {
+			t.Errorf("%s description does not match the enforced workspace membership check: %s", tool.Name, tool.Description)
+		}
 	}
 }
 
