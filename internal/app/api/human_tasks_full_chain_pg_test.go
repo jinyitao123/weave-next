@@ -336,8 +336,15 @@ func TestHumanFinalReviewSampleRealPGFullChain(t *testing.T) {
 	if completed.Code != http.StatusAccepted {
 		t.Fatalf("complete human task status=%d body=%s", completed.Code, completed.Body.String())
 	}
-	conflict := completeHumanTaskThroughAPI(t, server, workspaceID, userID, runID,
-		`{"payload":{"decision":"reject","comments":"changed"},"idempotency_key":"m3-complete"}`)
+	conflictJSON, err := json.Marshal(completeHumanTaskRequest{
+		InteractionID:  question.InteractionID,
+		Payload:        json.RawMessage(`{"decision":"reject","comments":"changed"}`),
+		IdempotencyKey: "m3-complete",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	conflict := completeHumanTaskThroughAPI(t, server, workspaceID, userID, runID, string(conflictJSON))
 	if conflict.Code != http.StatusConflict {
 		t.Fatalf("same key different payload status=%d body=%s", conflict.Code, conflict.Body.String())
 	}
