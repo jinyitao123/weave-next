@@ -121,6 +121,20 @@ func (s *Server) handleListRuns(c echo.Context) error {
 		}
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid_team_selector"})
 	}
+	if strings.HasPrefix(projectID, "workbench-") {
+		if teamAware || conversationID != "" || owningTeamID != "" {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": "workbench_project_cannot_be_combined_with_run_selectors"})
+		}
+		userID := getUserID(c)
+		if userID == "" || projectID != workbenchProjectID(userID) {
+			return c.JSON(http.StatusForbidden, map[string]string{"error": "workbench_project_identity_mismatch"})
+		}
+		runs, total, err := s.listWorkbenchRuns(c.Request().Context(), tenant, userID, projectID, limit, offset)
+		if err != nil {
+			return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "run_filter_unavailable"})
+		}
+		return c.JSON(http.StatusOK, RunListResponse{Runs: runs, Total: total, Limit: limit, Offset: offset})
+	}
 	if teamAware {
 		if conversationID != "" {
 			return c.JSON(http.StatusBadRequest, map[string]string{"error": "conversation_id cannot be combined with team selector parameters"})
@@ -323,8 +337,20 @@ func (s *Server) handleGetRun(c echo.Context) error {
 	if selectorErr != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid_team_selector"})
 	}
+	workbenchRun, owned, workbenchBound, accessErr := s.workbenchRunAccess(c.Request().Context(), tenant, getUserID(c), runID)
+	if accessErr != nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "run_read_unavailable"})
+	}
+	if workbenchBound && !owned {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "run not found"})
+	}
 	if teamAware {
 		return s.handleTeamAwareLeg(c, selector)
+	}
+	if workbenchBound {
+		summary := s.workbenchRunSummary(c.Request().Context(), tenant, workbenchRun)
+		run := workbenchRunDetail(s, c.Request().Context(), tenant, summary)
+		return c.JSON(http.StatusOK, run)
 	}
 	ns := "audit:" + tenant
 
@@ -1088,11 +1114,23 @@ func latestRunActivityStage(members []runActivityMember, fallback []runActivityS
 // handleGetRunActivity is the small exact-run read contract used by
 // Workbench. It intentionally returns persisted execution facts only.
 func (s *Server) handleGetRunActivity(c echo.Context) error {
+	workbenchRun, owned, workbenchBound, accessErr := s.workbenchRunAccess(
+		c.Request().Context(), getTenant(c), getUserID(c), c.Param("id"),
+	)
+	if accessErr != nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "run_read_unavailable"})
+	}
+	if workbenchBound && !owned {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "run_not_found"})
+	}
 	if s.teamRunCancel == nil || s.teamRunCancel.Runs == nil {
 		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "team_run_unavailable"})
 	}
 	run, err := s.teamRunCancel.Runs.Get(c.Request().Context(), getTenant(c), c.Param("id"))
 	if errors.Is(err, teamrun.ErrTeamRunIdentityMismatch) {
+		if workbenchBound && owned {
+			return c.JSON(http.StatusOK, workbenchRunActivitySummary(workbenchRun))
+		}
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "run_not_found"})
 	}
 	if err != nil {
