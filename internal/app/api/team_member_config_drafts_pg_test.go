@@ -12,6 +12,7 @@ import (
 	"github.com/jinyitao123/weave/internal/app/agentcatalog"
 	orgstore "github.com/jinyitao123/weave/internal/app/org"
 	"github.com/jinyitao123/weave/internal/base/db"
+	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/base/testutil"
 	org "github.com/jinyitao123/weave/internal/kernel/orgspec"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
@@ -46,7 +47,7 @@ func TestTeamMemberConfigDraftCanBeSavedRepeatedlyWithRevisionCheck(t *testing.T
 		t.Helper()
 		raw, _ := json.Marshal(saveTeamMemberConfigDraftRequest{
 			Revision:      revision,
-			Configuration: teamMemberAgentConfiguration{DisplayName: "执行成员", Role: "worker", Engine: "loom", Skills: []teamMemberInlineSkill{{Name: "合同复核", Description: "检查合同条款", Body: "逐条检查合同并列出风险。"}}, BusinessCapabilityIDs: []string{"forge:action:sales_contract.ContractSubmit"}},
+			Configuration: teamMemberAgentConfiguration{DisplayName: "执行成员", Role: "worker", Engine: "loom", Skills: []teamMemberInlineSkill{{Name: "合同复核", Description: "检查合同条款", Body: "逐条检查合同并列出风险。"}}, BusinessCapabilityIDs: []string{"forge:action:sales_contract.ContractSubmit"}, BusinessCapabilityBindings: []frozen.BusinessCapabilityBinding{{CapabilityID: "forge:action:sales_contract.ContractSubmit", Parameters: []frozen.BusinessCapabilityParameterBinding{{Name: "material_file_id", Source: frozen.BusinessSourceMaterialID}}}}},
 			Relationship:  teamMemberRelationshipDraft{Duty: duty, AllowedKinds: []string{"dispatch"}, DefaultKind: "dispatch", Enabled: true},
 		})
 		request := httptest.NewRequest(http.MethodPut, "/", bytes.NewReader(raw)).WithContext(ctx)
@@ -106,6 +107,9 @@ func TestTeamMemberConfigDraftCanBeSavedRepeatedlyWithRevisionCheck(t *testing.T
 	}
 	if len(updated.BusinessCapabilityIDs) != 1 || updated.BusinessCapabilityIDs[0] != "forge:action:sales_contract.ContractSubmit" {
 		t.Fatalf("applied business capabilities=%+v", updated.BusinessCapabilityIDs)
+	}
+	if len(updated.BusinessCapabilityBindings) != 1 || updated.BusinessCapabilityBindings[0].Parameters[0].Source != frozen.BusinessSourceMaterialID {
+		t.Fatalf("applied business capability bindings=%+v", updated.BusinessCapabilityBindings)
 	}
 	relation, err := agentcatalog.NewTeamWorkerRepository(pool).Get(ctx, workspaceID, created.Team.ID, worker.ID)
 	if err != nil {

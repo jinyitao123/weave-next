@@ -68,6 +68,17 @@
   "business_capability_ids": [
     "submit-sales-contract"
   ],
+  "business_capability_bindings": [
+    {
+      "capability_id": "submit-sales-contract",
+      "parameters": [
+        {
+          "name": "material_file_id",
+          "source": "materials.single.id"
+        }
+      ]
+    }
+  ],
   "mcp_servers": [
     {
       "server_id": "tools",

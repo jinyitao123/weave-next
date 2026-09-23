@@ -308,34 +308,35 @@ type AgentRecord struct {
 	// RuntimePolicyMode and RuntimePoolID are request-frozen execution facts.
 	// They are carried only by the resolved in-memory copy and never persisted
 	// into the AgentRecord or uploaded to a runtime daemon.
-	RuntimePolicyMode     string            `json:"-"`
-	RuntimePoolID         string            `json:"-"`
-	Version               int               `json:"version"`
-	Model                 string            `json:"model"`
-	Spec                  stdlib.AgentSpec  `json:"spec"`
-	Permissions           PermissionConfig  `json:"permissions,omitempty"`
-	MCPServers            []MCPServerConfig `json:"mcp_servers,omitempty"`
-	BusinessCapabilityIDs []string          `json:"business_capability_ids,omitempty"`
-	MemoryConfig          *MemoryConfig     `json:"memory_config,omitempty"`
-	MemorySlots           []MemorySlot      `json:"memory_slots,omitempty"`
-	OutputSchema          *json.RawMessage  `json:"output_schema,omitempty"`
-	MaxCostUSD            float64           `json:"max_cost_usd,omitempty"`
-	MaxTokens             int64             `json:"max_tokens,omitempty"`
-	MaxOutputTokens       int               `json:"max_output_tokens,omitempty"` // per-request output token limit
-	StepBudget            int64             `json:"step_budget,omitempty"`
-	MaxToolRepeats        int               `json:"max_tool_repeats,omitempty"` // consecutive identical tool-call batches before breaking loop (0 = disabled, default 5 when >0)
-	FallbackModels        []string          `json:"fallback_models,omitempty"`  // ordered list of models to try if primary fails
-	FallbackRetries       int               `json:"fallback_retries,omitempty"` // retries per model on transient errors (default 2)
-	Guard                 *GuardConfig      `json:"guard,omitempty"`
-	Compaction            *CompactionConfig `json:"compaction,omitempty"`
-	SubAgents             []SubAgentRef     `json:"sub_agents,omitempty"`
-	SkillRefs             []SkillRef        `json:"skill_refs,omitempty"`       // explicit skill bindings (registry_version/legacy/builtin)
-	GraphType             string            `json:"graph_type,omitempty"`       // empty/"standard" = standard compilation, other = lookup registered factory
-	GraphDefinition       *GraphDefinition  `json:"graph_definition,omitempty"` // declarative graph (used when graph_type = "declarative")
-	Tags                  []string          `json:"tags,omitempty"`             // grouping labels, e.g. ["customer-service", "production"]
-	CreatedAt             time.Time         `json:"created_at"`
-	UpdatedAt             time.Time         `json:"updated_at"`
-	Deleted               bool              `json:"deleted,omitempty"`
+	RuntimePolicyMode          string                             `json:"-"`
+	RuntimePoolID              string                             `json:"-"`
+	Version                    int                                `json:"version"`
+	Model                      string                             `json:"model"`
+	Spec                       stdlib.AgentSpec                   `json:"spec"`
+	Permissions                PermissionConfig                   `json:"permissions,omitempty"`
+	MCPServers                 []MCPServerConfig                  `json:"mcp_servers,omitempty"`
+	BusinessCapabilityIDs      []string                           `json:"business_capability_ids,omitempty"`
+	BusinessCapabilityBindings []frozen.BusinessCapabilityBinding `json:"business_capability_bindings,omitempty"`
+	MemoryConfig               *MemoryConfig                      `json:"memory_config,omitempty"`
+	MemorySlots                []MemorySlot                       `json:"memory_slots,omitempty"`
+	OutputSchema               *json.RawMessage                   `json:"output_schema,omitempty"`
+	MaxCostUSD                 float64                            `json:"max_cost_usd,omitempty"`
+	MaxTokens                  int64                              `json:"max_tokens,omitempty"`
+	MaxOutputTokens            int                                `json:"max_output_tokens,omitempty"` // per-request output token limit
+	StepBudget                 int64                              `json:"step_budget,omitempty"`
+	MaxToolRepeats             int                                `json:"max_tool_repeats,omitempty"` // consecutive identical tool-call batches before breaking loop (0 = disabled, default 5 when >0)
+	FallbackModels             []string                           `json:"fallback_models,omitempty"`  // ordered list of models to try if primary fails
+	FallbackRetries            int                                `json:"fallback_retries,omitempty"` // retries per model on transient errors (default 2)
+	Guard                      *GuardConfig                       `json:"guard,omitempty"`
+	Compaction                 *CompactionConfig                  `json:"compaction,omitempty"`
+	SubAgents                  []SubAgentRef                      `json:"sub_agents,omitempty"`
+	SkillRefs                  []SkillRef                         `json:"skill_refs,omitempty"`       // explicit skill bindings (registry_version/legacy/builtin)
+	GraphType                  string                             `json:"graph_type,omitempty"`       // empty/"standard" = standard compilation, other = lookup registered factory
+	GraphDefinition            *GraphDefinition                   `json:"graph_definition,omitempty"` // declarative graph (used when graph_type = "declarative")
+	Tags                       []string                           `json:"tags,omitempty"`             // grouping labels, e.g. ["customer-service", "production"]
+	CreatedAt                  time.Time                          `json:"created_at"`
+	UpdatedAt                  time.Time                          `json:"updated_at"`
+	Deleted                    bool                               `json:"deleted,omitempty"`
 }
 
 // ValidateSkillRefs enforces the SkillRef binding contract on create/update.

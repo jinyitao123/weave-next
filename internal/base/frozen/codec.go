@@ -634,6 +634,9 @@ func NormalizeFrozenAgentRecord(value FrozenAgentRecord) (FrozenAgentRecord, err
 			return FrozenAgentRecord{}, errors.New("frozen business capability ID is invalid")
 		}
 	}
+	if cloned.BusinessCapabilityBindings, err = NormalizeBusinessCapabilityBindings(cloned.BusinessCapabilityBindings, cloned.BusinessCapabilityIDs); err != nil {
+		return FrozenAgentRecord{}, err
+	}
 	if cloned.MemorySlots, err = canonicalMemorySlots(cloned.MemorySlots); err != nil {
 		return FrozenAgentRecord{}, err
 	}
@@ -669,6 +672,67 @@ func NormalizeFrozenAgentRecord(value FrozenAgentRecord) (FrozenAgentRecord, err
 		}
 	}
 	return cloned, nil
+}
+
+func NormalizeBusinessCapabilityBindings(values []BusinessCapabilityBinding, capabilityIDs []string) ([]BusinessCapabilityBinding, error) {
+	if len(values) == 0 {
+		return nil, nil
+	}
+	allowed := make(map[string]struct{}, len(capabilityIDs))
+	for _, id := range capabilityIDs {
+		allowed[id] = struct{}{}
+	}
+	result := make([]BusinessCapabilityBinding, len(values))
+	seenCapabilities := make(map[string]struct{}, len(values))
+	for index, binding := range values {
+		id := strings.TrimSpace(binding.CapabilityID)
+		if id == "" || id != binding.CapabilityID {
+			return nil, errors.New("business capability binding ID is invalid")
+		}
+		if _, ok := allowed[id]; !ok {
+			return nil, errors.New("business capability binding is not selected for this member")
+		}
+		if _, duplicate := seenCapabilities[id]; duplicate {
+			return nil, errors.New("business capability binding is duplicated")
+		}
+		seenCapabilities[id] = struct{}{}
+		if len(binding.Parameters) == 0 {
+			return nil, errors.New("business capability binding has no parameters")
+		}
+		parameters := append([]BusinessCapabilityParameterBinding(nil), binding.Parameters...)
+		seenParameters := make(map[string]struct{}, len(parameters))
+		for _, parameter := range parameters {
+			if !validBusinessParameterName(parameter.Name) || parameter.Name != strings.TrimSpace(parameter.Name) {
+				return nil, errors.New("business capability parameter binding name is invalid")
+			}
+			if _, duplicate := seenParameters[parameter.Name]; duplicate {
+				return nil, errors.New("business capability parameter binding is duplicated")
+			}
+			seenParameters[parameter.Name] = struct{}{}
+			switch parameter.Source {
+			case BusinessSourceMaterialID, BusinessSourceMaterialName, BusinessSourceMaterialSHA256, BusinessSourceMaterialsManifest:
+			default:
+				return nil, errors.New("business capability parameter binding source is invalid")
+			}
+		}
+		sort.Slice(parameters, func(i, j int) bool { return parameters[i].Name < parameters[j].Name })
+		result[index] = BusinessCapabilityBinding{CapabilityID: id, Parameters: parameters}
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].CapabilityID < result[j].CapabilityID })
+	return result, nil
+}
+
+func validBusinessParameterName(value string) bool {
+	if value == "" || len(value) > 128 {
+		return false
+	}
+	for index, char := range value {
+		valid := char == '_' || char >= 'a' && char <= 'z' || char >= 'A' && char <= 'Z' || index > 0 && char >= '0' && char <= '9'
+		if !valid {
+			return false
+		}
+	}
+	return true
 }
 
 func normalizeFrozenSkill(value FrozenSkill) (FrozenSkill, error) {

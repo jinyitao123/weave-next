@@ -18,28 +18,29 @@ import (
 )
 
 type teamMemberAgentConfiguration struct {
-	ToolLoopControl       *frozen.ToolLoopControl `json:"tool_loop_control"`
-	MaxToolRepeats        int                     `json:"max_tool_repeats"`
-	DisplayName           string                  `json:"display_name"`
-	Role                  string                  `json:"role"`
-	Engine                string                  `json:"engine"`
-	RuntimeID             string                  `json:"runtime_id"`
-	Model                 string                  `json:"model"`
-	SystemPrompt          string                  `json:"system_prompt"`
-	SkillNames            []string                `json:"skill_names"`
-	Skills                []teamMemberInlineSkill `json:"skills"`
-	MCPServerIDs          []string                `json:"mcp_server_ids"`
-	BusinessCapabilityIDs []string                `json:"business_capability_ids"`
-	PermissionAllow       []string                `json:"permission_allow"`
-	PermissionAsk         []string                `json:"permission_ask"`
-	PermissionDeny        []string                `json:"permission_deny"`
-	MemoryEnabled         bool                    `json:"memory_enabled"`
-	MemoryScope           string                  `json:"memory_scope"`
-	MaxTokens             int64                   `json:"max_tokens"`
-	MaxOutputTokens       int                     `json:"max_output_tokens"`
-	StepBudget            int64                   `json:"step_budget"`
-	MaxCostUSD            float64                 `json:"max_cost_usd"`
-	OutputSchema          json.RawMessage         `json:"output_schema,omitempty"`
+	ToolLoopControl            *frozen.ToolLoopControl            `json:"tool_loop_control"`
+	MaxToolRepeats             int                                `json:"max_tool_repeats"`
+	DisplayName                string                             `json:"display_name"`
+	Role                       string                             `json:"role"`
+	Engine                     string                             `json:"engine"`
+	RuntimeID                  string                             `json:"runtime_id"`
+	Model                      string                             `json:"model"`
+	SystemPrompt               string                             `json:"system_prompt"`
+	SkillNames                 []string                           `json:"skill_names"`
+	Skills                     []teamMemberInlineSkill            `json:"skills"`
+	MCPServerIDs               []string                           `json:"mcp_server_ids"`
+	BusinessCapabilityIDs      []string                           `json:"business_capability_ids"`
+	BusinessCapabilityBindings []frozen.BusinessCapabilityBinding `json:"business_capability_bindings"`
+	PermissionAllow            []string                           `json:"permission_allow"`
+	PermissionAsk              []string                           `json:"permission_ask"`
+	PermissionDeny             []string                           `json:"permission_deny"`
+	MemoryEnabled              bool                               `json:"memory_enabled"`
+	MemoryScope                string                             `json:"memory_scope"`
+	MaxTokens                  int64                              `json:"max_tokens"`
+	MaxOutputTokens            int                                `json:"max_output_tokens"`
+	StepBudget                 int64                              `json:"step_budget"`
+	MaxCostUSD                 float64                            `json:"max_cost_usd"`
+	OutputSchema               json.RawMessage                    `json:"output_schema,omitempty"`
 }
 
 type teamMemberInlineSkill struct {
@@ -147,8 +148,9 @@ func (s *Server) seedTeamMemberConfigDraft(c echo.Context) (*teamMemberConfigDra
 		ToolLoopControl: record.ToolLoopControl, MaxToolRepeats: record.MaxToolRepeats,
 		DisplayName: record.DisplayName, Role: record.Role, Engine: record.Engine, RuntimeID: record.RuntimeID, Model: record.Model,
 		SystemPrompt: record.Spec.SystemPrompt, SkillNames: skillNames, Skills: inlineSkills, MCPServerIDs: serverIDs,
-		BusinessCapabilityIDs: append([]string(nil), record.BusinessCapabilityIDs...),
-		PermissionAllow:       record.Permissions.Allow, PermissionAsk: record.Permissions.Ask, PermissionDeny: record.Permissions.Deny,
+		BusinessCapabilityIDs:      append([]string(nil), record.BusinessCapabilityIDs...),
+		BusinessCapabilityBindings: append([]frozen.BusinessCapabilityBinding(nil), record.BusinessCapabilityBindings...),
+		PermissionAllow:            record.Permissions.Allow, PermissionAsk: record.Permissions.Ask, PermissionDeny: record.Permissions.Deny,
 		MemoryEnabled: memoryEnabled, MemoryScope: memoryScope, MaxTokens: record.MaxTokens, MaxOutputTokens: record.MaxOutputTokens,
 		StepBudget: record.StepBudget, MaxCostUSD: record.MaxCostUSD, OutputSchema: outputSchema,
 	}
@@ -394,6 +396,16 @@ func (s *Server) handlePutTeamMemberConfigDraft(c echo.Context) error {
 	if err := c.Bind(&request); err != nil || request.Revision < 0 || strings.TrimSpace(request.Configuration.DisplayName) == "" {
 		return c.JSON(http.StatusBadRequest, map[string]string{"code": "invalid_team_member_config_draft", "error": "invalid team member configuration draft"})
 	}
+	capabilityIDs, err := normalizedCapabilityIDs(request.Configuration.BusinessCapabilityIDs)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
+	request.Configuration.BusinessCapabilityIDs = capabilityIDs
+	bindings, err := frozen.NormalizeBusinessCapabilityBindings(request.Configuration.BusinessCapabilityBindings, capabilityIDs)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
+	request.Configuration.BusinessCapabilityBindings = bindings
 	configuration, err := json.Marshal(request.Configuration)
 	if err != nil {
 		return err
@@ -444,6 +456,11 @@ func configureDevelopmentMember(record *registry.AgentRecord, configuration team
 		return err
 	}
 	record.BusinessCapabilityIDs = businessCapabilityIDs
+	businessCapabilityBindings, err := frozen.NormalizeBusinessCapabilityBindings(configuration.BusinessCapabilityBindings, businessCapabilityIDs)
+	if err != nil {
+		return err
+	}
+	record.BusinessCapabilityBindings = businessCapabilityBindings
 	if lead {
 		record.Spec.Identity.Core = strings.TrimSpace(relationship.Duty)
 		record.Spec.Identity.Raw = configuration.SystemPrompt

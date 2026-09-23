@@ -872,6 +872,7 @@ func freezeAgent(record registry.AgentRecord, key frozen.FactoryKey, input json.
 			[]string(nil),
 			record.BusinessCapabilityIDs...,
 		),
+		BusinessCapabilityBindings: append([]frozen.BusinessCapabilityBinding(nil), record.BusinessCapabilityBindings...),
 	}
 	if value.GraphType == "" {
 		value.GraphType = record.Spec.GraphType
