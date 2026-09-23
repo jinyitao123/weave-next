@@ -125,6 +125,7 @@ type ResumeRequest struct {
 
 type HumanTaskCompleteRequest struct {
 	RunID          string          `json:"-"`
+	InteractionID  string          `json:"interaction_id"`
 	Payload        json.RawMessage `json:"payload"`
 	IdempotencyKey string          `json:"idempotency_key"`
 }
@@ -475,9 +476,10 @@ func (c *Client) HumanTaskGet(ctx context.Context, runID, pointer string, offset
 
 func (c *Client) HumanTaskComplete(ctx context.Context, request HumanTaskCompleteRequest) (json.RawMessage, error) {
 	input := struct {
+		InteractionID  string          `json:"interaction_id"`
 		Payload        json.RawMessage `json:"payload"`
 		IdempotencyKey string          `json:"idempotency_key"`
-	}{Payload: request.Payload, IdempotencyKey: request.IdempotencyKey}
+	}{InteractionID: request.InteractionID, Payload: request.Payload, IdempotencyKey: request.IdempotencyKey}
 	return c.sendJSON(ctx, http.MethodPost,
 		"/v1/human-tasks/"+url.PathEscape(strings.TrimSpace(request.RunID))+"/complete", input)
 }
