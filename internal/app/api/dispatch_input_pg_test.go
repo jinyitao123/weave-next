@@ -89,6 +89,7 @@ func TestDispatchInputFreezesAndRefreshesEmployeeForgeDelegationRealPG(t *testin
 	registration.WorkflowID, registration.WorkflowVersion = "flow", &version
 	authorized := []string{"forge:action:sales_contract.ContractSubmit"}
 	registration.AuthorizedBusinessCapabilityIDs = &authorized
+	registration.BusinessRecord = &dispatchBusinessRecord{ObjectName: "sales_contract", RecordID: "record-a"}
 	register := func(token string) (*httptest.ResponseRecorder, dispatchInputReceipt) {
 		t.Helper()
 		body, _ := json.Marshal(registration)
@@ -128,6 +129,22 @@ func TestDispatchInputFreezesAndRefreshesEmployeeForgeDelegationRealPG(t *testin
 	if err := pool.QueryRow(t.Context(), `SELECT refresh_generation FROM weave_task_business_delegations
 		WHERE workspace_id='ws' AND input_revision_id=$1`, receipt.InputRevisionID).Scan(&generation); err != nil || generation != 2 {
 		t.Fatalf("refresh generation=%d err=%v", generation, err)
+	}
+	var resources []byte
+	if err := pool.QueryRow(t.Context(), `SELECT resources FROM weave_task_business_delegations WHERE workspace_id='ws' AND input_revision_id=$1`, receipt.InputRevisionID).Scan(&resources); err != nil {
+		t.Fatal(err)
+	}
+	var stored []map[string]any
+	if err := json.Unmarshal(resources, &stored); err != nil || len(stored) != 2 || stored[1]["type"] != "forge-record" || stored[1]["id"] != "record-a" || stored[1]["object_name"] != "sales_contract" {
+		t.Fatalf("resources=%s err=%v", resources, err)
+	}
+	registration.BusinessRecord.RecordID = "record-b"
+	conflict, _ := register("refreshed-token")
+	if conflict.Code != http.StatusConflict || !strings.Contains(conflict.Body.String(), "input_registration_conflict") {
+		t.Fatalf("changed record: status=%d body=%s", conflict.Code, conflict.Body.String())
+	}
+	if err := pool.QueryRow(t.Context(), `SELECT refresh_generation FROM weave_task_business_delegations WHERE workspace_id='ws' AND input_revision_id=$1`, receipt.InputRevisionID).Scan(&generation); err != nil || generation != 2 {
+		t.Fatalf("conflicting input altered delegation: generation=%d err=%v", generation, err)
 	}
 	missing := dispatchInputRegistrationFixture("forge-session-missing", "提交另一份合同", "")
 	missing.WorkflowID, missing.WorkflowVersion = "flow", &version
