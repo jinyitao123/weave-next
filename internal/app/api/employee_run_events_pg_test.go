@@ -96,15 +96,13 @@ func TestEmployeeRunEventBackfillDeliversOnceToForgeInboxRealPG(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer tx.Rollback(t.Context())
-		if _, err := tx.Exec(t.Context(), `INSERT INTO weave_team_run_snapshots (
-			run_id,workspace_id,team_id,workflow_id,workflow_version,lead_avatar_id,lead_avatar_version,
-			worker_versions,team_worker_snapshot,artifact_ref,admission_decision,inline_dependencies,
-			run_associations,trigger_source,created_at
-		)
-		SELECT $2,snapshot.workspace_id,snapshot.team_id,snapshot.workflow_id,snapshot.workflow_version,
-			snapshot.lead_avatar_id,snapshot.lead_avatar_version,snapshot.worker_versions,snapshot.team_worker_snapshot,
-			snapshot.artifact_ref,snapshot.admission_decision,snapshot.inline_dependencies,snapshot.run_associations,
-			snapshot.trigger_source,snapshot.created_at
+		// Clone the entire frozen row so versioned fields such as snapshot_schema_version
+		// and actor_subject remain valid under the current schema.
+		if _, err := tx.Exec(t.Context(), `INSERT INTO weave_team_run_snapshots
+		SELECT (jsonb_populate_record(
+			NULL::weave_team_run_snapshots,
+			to_jsonb(snapshot) || jsonb_build_object('run_id',$2)
+		)).*
 		FROM weave_team_runs AS run
 		JOIN weave_team_run_snapshots AS snapshot
 		  ON snapshot.workspace_id=run.workspace_id AND snapshot.run_id=run.run_snapshot_id
@@ -125,14 +123,17 @@ func TestEmployeeRunEventBackfillDeliversOnceToForgeInboxRealPG(t *testing.T) {
 			dispatch.RunID, runID, status, taskID, now); err != nil {
 			t.Fatalf("seed %s terminal run: %v", status, err)
 		}
-		if _, err := tx.Exec(t.Context(), `INSERT INTO weave_dispatch_input_revisions (
-			workspace_id,user_id,workbench_session_id,input_revision_id,registration_id,registration_sha256,
-			source_messages,task,task_sha256,team_id,mode,workflow_id,workflow_version,project_id,
-			client_request_id,is_current,consumed_run_id,consumed_task_id,created_at,consumed_at
-		)
-		SELECT input.workspace_id,input.user_id,$2,$3,$4,input.registration_sha256,input.source_messages,
-			input.task,input.task_sha256,input.team_id,input.mode,input.workflow_id,input.workflow_version,
-			input.project_id,$5,true,$6,$7,$8,$8
+		// Preserve the current frozen input shape while assigning a distinct
+		// session, revision, admission, and consumed-run identity.
+		if _, err := tx.Exec(t.Context(), `INSERT INTO weave_dispatch_input_revisions
+		SELECT (jsonb_populate_record(
+			NULL::weave_dispatch_input_revisions,
+			to_jsonb(input) || jsonb_build_object(
+				'workbench_session_id',$2,'input_revision_id',$3,'registration_id',$4,
+				'client_request_id',$5,'is_current',true,'consumed_run_id',$6,
+				'consumed_task_id',$7,'created_at',$8,'consumed_at',$8,'closed_at',null
+			)
+		)).*
 		FROM weave_dispatch_input_revisions AS input
 		WHERE input.workspace_id='ws' AND input.input_revision_id=$1`,
 			receipt.InputRevisionID, sessionID, inputRevisionID, registrationID,
