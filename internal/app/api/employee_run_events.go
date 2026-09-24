@@ -163,11 +163,40 @@ func (worker *employeeRunEventWorker) materialize(ctx context.Context) error {
 		  ORDER BY created_at DESC,id DESC LIMIT 1
 		) AS deliverable ON true
 		WHERE run.status IN ('succeeded','failed','cancelled','abandoned')
+	), business_action_receipts AS (
+		SELECT DISTINCT ON (started.workspace_id,started.run_id,started.node_id,started.member_id,
+			started.detail->>'invocation_id',started.detail->>'tool_call_id')
+			started.workspace_id,started.run_id,started.seq,
+			COALESCE(NULLIF(started.detail->>'action_label',''),NULLIF(started.detail->>'action_name',''),'业务动作') AS action_label,
+			COALESCE(outcome.status,'unknown') AS status
+		FROM weave_team_run_activity_events AS started
+		LEFT JOIN LATERAL (
+			SELECT result.detail->>'status' AS status
+			FROM weave_team_run_activity_events AS result
+			WHERE result.workspace_id=started.workspace_id AND result.run_id=started.run_id
+			  AND result.kind='business_action_result'
+			  AND result.node_id IS NOT DISTINCT FROM started.node_id
+			  AND result.member_id IS NOT DISTINCT FROM started.member_id
+			  AND result.detail->>'invocation_id'=started.detail->>'invocation_id'
+			  AND result.detail->>'tool_call_id'=started.detail->>'tool_call_id'
+			ORDER BY result.seq DESC LIMIT 1
+		) AS outcome ON true
+		WHERE started.kind='business_action_started' AND started.detail->>'source'='forge_mcp.run_action'
+		ORDER BY started.workspace_id,started.run_id,started.node_id,started.member_id,
+			started.detail->>'invocation_id',started.detail->>'tool_call_id',started.seq DESC
+	), business_action_summary AS (
+		SELECT workspace_id,run_id,
+			string_agg('平台记录：业务动作“'||action_label||'”'||CASE status
+				WHEN 'succeeded' THEN '已确认完成。'
+				WHEN 'failed' THEN '返回失败。'
+				ELSE '结果未知，请先核对业务记录。' END,'；' ORDER BY seq) AS summary
+		FROM business_action_receipts
+		GROUP BY workspace_id,run_id
 	)
 	INSERT INTO weave_employee_run_event_outbox(event_id,workspace_id,run_id,input_revision_id,payload)
 	SELECT (
 		substr(hash,1,8)||'-'||substr(hash,9,4)||'-5'||substr(hash,14,3)||'-8'||substr(hash,18,3)||'-'||substr(hash,21,12)
-	  )::uuid,workspace_id,run_id,input_revision_id,
+	  )::uuid,fixed.workspace_id,fixed.run_id,fixed.input_revision_id,
 	  jsonb_build_object(
 		'version','1','eventId',(
 		  substr(hash,1,8)||'-'||substr(hash,9,4)||'-5'||substr(hash,14,3)||'-8'||substr(hash,18,3)||'-'||substr(hash,21,12)
@@ -175,6 +204,7 @@ func (worker *employeeRunEventWorker) materialize(ctx context.Context) error {
 		'organizationId',external_organization,'assigneeAccountId',assignee_account_id,
 		'title',team_name||CASE status WHEN 'succeeded' THEN '已完成' WHEN 'cancelled' THEN '已取消' ELSE '处理失败' END,
 		'summary',left(CASE
+		  WHEN business_action_summary.summary IS NOT NULL THEN business_action_summary.summary
 		  WHEN status='succeeded' AND deliverable_content<>'' THEN deliverable_content
 		  WHEN status='succeeded' THEN '团队工作已完成，可在桌面查看结果。'
 		  WHEN status='cancelled' THEN '本次团队工作已取消。'
@@ -188,6 +218,7 @@ func (worker *employeeRunEventWorker) materialize(ctx context.Context) error {
 		)
 	  )
 	FROM (SELECT candidates.*,md5('weave-team-run-event'||chr(31)||workspace_id||chr(31)||run_id) AS hash FROM candidates) AS fixed
+	LEFT JOIN business_action_summary ON business_action_summary.workspace_id=fixed.workspace_id AND business_action_summary.run_id=fixed.run_id
 	ON CONFLICT (workspace_id,run_id) DO NOTHING`)
 	if err != nil {
 		return fmt.Errorf("materialize employee run events: %w", err)

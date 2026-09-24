@@ -1,0 +1,210 @@
+package businessaction
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"strings"
+	"testing"
+
+	"github.com/jinyitao123/loom/contract"
+	"github.com/jinyitao123/weave/internal/base/execution"
+	"github.com/jinyitao123/weave/internal/kernel/mcphost"
+)
+
+type outcomeTestHost struct {
+	calls      int
+	result     *contract.ToolResult
+	err        error
+	onDispatch func()
+}
+
+func (*outcomeTestHost) ListTools(context.Context) ([]contract.ToolDef, error) { return nil, nil }
+func (host *outcomeTestHost) Dispatch(_ context.Context, call contract.ToolCall) (*contract.ToolResult, error) {
+	host.calls++
+	if host.onDispatch != nil {
+		host.onDispatch()
+	}
+	if host.result != nil {
+		copy := *host.result
+		copy.CallID, copy.ToolName = call.ID, call.Name
+		return &copy, host.err
+	}
+	return &contract.ToolResult{CallID: call.ID, ToolName: call.Name, Content: `{"ok":true}`}, host.err
+}
+
+func newTrackedOutcomeDispatcher(t *testing.T, host contract.ToolDispatcher) (*dispatcher, contract.ToolCall) {
+	t.Helper()
+	id := "forge:action:sales_contract.ContractSubmit"
+	value, err := newDispatcherWithResources(host, []string{id}, map[string]actionMetadata{
+		"sales_contract.ContractSubmit": {
+			Name: "ContractSubmit", ObjectName: "sales_contract", Label: "提交指定合同版本", RequiresRecord: true,
+		},
+	}, []delegatedResource{recordResourceForTest("sales_contract", "record-a")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	value.trackOutcomes = true
+	value.inputRevisionID = "revision-1"
+	tools, err := value.ListTools(t.Context())
+	if err != nil || len(tools) != 1 {
+		t.Fatalf("tools=%+v err=%v", tools, err)
+	}
+	return value, contract.ToolCall{ID: "forge-call-1", Name: tools[0].Name, Args: `{}`}
+}
+
+func outcomeTestContext(
+	events *[]ActionOutcomeEvent,
+	guard ActionOutcomeGuard,
+	recordError func(ActionOutcomeEvent) error,
+) context.Context {
+	ctx := execution.WithInvocationID(context.Background(), "snapshot/0/lead")
+	ctx = WithActionOutcomeGuard(ctx, guard)
+	return WithActionOutcomeRecorder(ctx, func(_ context.Context, event ActionOutcomeEvent) error {
+		if recordError != nil {
+			if err := recordError(event); err != nil {
+				return err
+			}
+		}
+		*events = append(*events, event)
+		return nil
+	})
+}
+
+func TestForgeActionPersistsScopedReceiptBeforeCallAndParsesNativeEnvelope(t *testing.T) {
+	var events []ActionOutcomeEvent
+	host := &outcomeTestHost{result: &contract.ToolResult{Content: `{"ok":true,"data":{"id":"external-result"}}`}}
+	guard := func(context.Context, ActionOutcomeEvent) (ActionOutcomeReplay, error) {
+		return ActionOutcomeReplay{}, nil
+	}
+	dispatcher, call := newTrackedOutcomeDispatcher(t, host)
+	host.onDispatch = func() {
+		if len(events) != 1 || events[0].Phase != "started" {
+			t.Errorf("Forge dispatch began before its durable start receipt: %+v", events)
+		}
+	}
+	ctx := outcomeTestContext(&events, guard, nil)
+	result, err := dispatcher.Dispatch(ctx, call)
+	if err != nil || result == nil || result.IsError || host.calls != 1 || len(events) != 2 {
+		t.Fatalf("result=%+v calls=%d events=%+v err=%v", result, host.calls, events, err)
+	}
+	if events[0].Phase != "started" || events[1].Phase != "result" || events[1].Status != ActionOutcomeStatusSucceeded ||
+		events[1].ActionLabel != "提交指定合同版本" || events[1].InputRevisionID != "revision-1" ||
+		events[1].RecordID != "record-a" || events[1].FrozenRecordSHA256 == "" {
+		t.Fatalf("receipt lost frozen action provenance: %+v", events)
+	}
+	encoded, _ := json.Marshal(events)
+	if strings.Contains(string(encoded), "external-result") || strings.Contains(string(encoded), "data") {
+		t.Fatalf("native result body was retained: %s", encoded)
+	}
+}
+
+func TestForgeActionResultRequiresNativeSuccessMarker(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		result *contract.ToolResult
+		want   string
+	}{
+		{name: "explicit success", result: &contract.ToolResult{Content: `{"ok":true}`}, want: ActionOutcomeStatusSucceeded},
+		{name: "explicit rejection", result: &contract.ToolResult{Content: `{"ok":false,"error":"rejected"}`}, want: ActionOutcomeStatusFailed},
+		{name: "explicit error", result: &contract.ToolResult{Content: `{"error":"rejected"}`}, want: ActionOutcomeStatusFailed},
+		{name: "missing marker", result: &contract.ToolResult{Content: `{"message":"done"}`}, want: ActionOutcomeStatusUnknown},
+		{name: "contradictory envelope", result: &contract.ToolResult{Content: `{"ok":true,"error":"uncertain"}`}, want: ActionOutcomeStatusUnknown},
+		{name: "mcp error", result: &contract.ToolResult{Content: "rejected", IsError: true}, want: ActionOutcomeStatusFailed},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var events []ActionOutcomeEvent
+			dispatcher, call := newTrackedOutcomeDispatcher(t, &outcomeTestHost{result: test.result})
+			ctx := outcomeTestContext(&events, func(context.Context, ActionOutcomeEvent) (ActionOutcomeReplay, error) {
+				return ActionOutcomeReplay{}, nil
+			}, nil)
+			_, err := dispatcher.Dispatch(ctx, call)
+			if err != nil || len(events) != 2 || events[1].Status != test.want {
+				t.Fatalf("events=%+v err=%v", events, err)
+			}
+		})
+	}
+}
+
+func TestForgeActionTreatsTypedMCPFailureAsFailed(t *testing.T) {
+	var events []ActionOutcomeEvent
+	host := &outcomeTestHost{err: fmt.Errorf("%w: action rejected", mcphost.ErrDispatchExplicitFailure)}
+	dispatcher, call := newTrackedOutcomeDispatcher(t, host)
+	ctx := outcomeTestContext(&events,
+		func(context.Context, ActionOutcomeEvent) (ActionOutcomeReplay, error) {
+			return ActionOutcomeReplay{}, nil
+		}, nil)
+	result, err := dispatcher.Dispatch(ctx, call)
+	if err != nil || result == nil || !result.IsError || host.calls != 1 || len(events) != 2 || events[1].Status != ActionOutcomeStatusFailed {
+		t.Fatalf("explicit MCP failure was misclassified: result=%+v calls=%d events=%+v err=%v", result, host.calls, events, err)
+	}
+}
+
+func TestUnknownForgeActionCannotBeRetriedWithANewCallID(t *testing.T) {
+	var events []ActionOutcomeEvent
+	host := &outcomeTestHost{err: fmt.Errorf("%w: connection closed", mcphost.ErrDispatchOutcomeUnknown)}
+	dispatcher, call := newTrackedOutcomeDispatcher(t, host)
+	guard := func(_ context.Context, event ActionOutcomeEvent) (ActionOutcomeReplay, error) {
+		for index := range events {
+			previous := events[index]
+			if previous.Phase == "started" && previous.CapabilityID == event.CapabilityID && previous.RecordID == event.RecordID {
+				status := ActionOutcomeStatusUnknown
+				if index+1 < len(events) && events[index+1].CallID == previous.CallID && events[index+1].Phase == "result" {
+					status = events[index+1].Status
+				}
+				if status == ActionOutcomeStatusUnknown {
+					return ActionOutcomeReplay{Blocked: true, Status: status}, nil
+				}
+			}
+		}
+		return ActionOutcomeReplay{}, nil
+	}
+	ctx := outcomeTestContext(&events, guard, nil)
+	first, err := dispatcher.Dispatch(ctx, call)
+	if err != nil || first == nil || !first.IsError || len(events) != 2 || events[1].Status != ActionOutcomeStatusUnknown {
+		t.Fatalf("first result=%+v events=%+v err=%v", first, events, err)
+	}
+	call.ID = "forge-call-retry"
+	second, err := dispatcher.Dispatch(ctx, call)
+	if err != nil || second == nil || !second.IsError || !strings.Contains(second.Content, "核对") || host.calls != 1 || len(events) != 2 {
+		t.Fatalf("unknown write was retried: second=%+v calls=%d events=%+v err=%v", second, host.calls, events, err)
+	}
+}
+
+func TestForgeActionPersistenceFailureStopsBeforeOrAfterCall(t *testing.T) {
+	startErr := errors.New("activity store unavailable")
+	var events []ActionOutcomeEvent
+	host := &outcomeTestHost{}
+	dispatcher, call := newTrackedOutcomeDispatcher(t, host)
+	ctx := outcomeTestContext(&events,
+		func(context.Context, ActionOutcomeEvent) (ActionOutcomeReplay, error) {
+			return ActionOutcomeReplay{}, nil
+		},
+		func(event ActionOutcomeEvent) error {
+			if event.Phase == "started" {
+				return startErr
+			}
+			return nil
+		})
+	if _, err := dispatcher.Dispatch(ctx, call); !errors.Is(err, startErr) || host.calls != 0 {
+		t.Fatalf("start persistence failure reached Forge: calls=%d err=%v", host.calls, err)
+	}
+
+	var started []ActionOutcomeEvent
+	host = &outcomeTestHost{}
+	dispatcher, call = newTrackedOutcomeDispatcher(t, host)
+	ctx = outcomeTestContext(&started,
+		func(context.Context, ActionOutcomeEvent) (ActionOutcomeReplay, error) {
+			return ActionOutcomeReplay{}, nil
+		},
+		func(event ActionOutcomeEvent) error {
+			if event.Phase == "result" {
+				return startErr
+			}
+			return nil
+		})
+	if _, err := dispatcher.Dispatch(ctx, call); !errors.Is(err, startErr) || host.calls != 1 || len(started) != 1 || started[0].Phase != "started" {
+		t.Fatalf("result persistence failure was hidden: calls=%d receipts=%+v err=%v", host.calls, started, err)
+	}
+}

@@ -16,6 +16,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -143,7 +144,7 @@ func (s *Store) dispatcher(ctx context.Context, requested []string, bindings []f
 		clearHeader(headers)
 		return nil, err
 	}
-	host := mcphost.NewHTTPHost(endpoint.String(), mcphost.WithHeaders(headers), mcphost.WithFilter([]string{"list_actions", "run_action"}), mcphost.WithToolContract(toolContract),
+	host := mcphost.NewHTTPHost(endpoint.String(), mcphost.WithHeaders(headers), mcphost.WithFilter([]string{"list_actions", "run_action"}), mcphost.WithToolContract(toolContract), mcphost.WithUnknownDispatchOutcome(),
 		mcphost.WithDispatchGuard(func(callCtx context.Context) error {
 			return s.validate(callCtx, bound.inputRevisionID, bound.actions)
 		}))
@@ -152,7 +153,13 @@ func (s *Store) dispatcher(ctx context.Context, requested []string, bindings []f
 	if err != nil {
 		return nil, err
 	}
-	return newDispatcherWithResourcesAndBindings(host, bound.actions, catalog, bound.resources, bindings)
+	dispatcher, err := newDispatcherWithResourcesAndBindings(host, bound.actions, catalog, bound.resources, bindings)
+	if err != nil {
+		return nil, err
+	}
+	dispatcher.trackOutcomes = true
+	dispatcher.inputRevisionID = bound.inputRevisionID
+	return dispatcher, nil
 }
 
 func (s *Store) resolveDevelopmentTrial(ctx context.Context, requested []string) ([]DevelopmentAction, bool, error) {
@@ -347,15 +354,18 @@ func (s *Store) validate(ctx context.Context, inputRevisionID string, requested 
 }
 
 type dispatcher struct {
-	host    contract.ToolDispatcher
-	tools   []contract.ToolDef
-	byTool  map[string]action
-	bound   *mcphost.ToolContract
-	records map[string]string
-	params  map[string]map[string]any
+	host            contract.ToolDispatcher
+	tools           []contract.ToolDef
+	byTool          map[string]action
+	bound           *mcphost.ToolContract
+	records         map[string]string
+	recordHashes    map[string]string
+	params          map[string]map[string]any
+	trackOutcomes   bool
+	inputRevisionID string
 }
 
-type action struct{ capabilityID, objectName, actionName string }
+type action struct{ capabilityID, objectName, actionName, label string }
 
 type actionParam struct {
 	Name        string   `json:"name"`
@@ -572,6 +582,7 @@ func newDispatcherWithBindings(host contract.ToolDispatcher, ids []string, catal
 		if description == "" {
 			description = fmt.Sprintf("执行 Forge 业务动作 %s。", parsed.actionName)
 		}
+		parsed.label = strings.TrimSpace(metadata.Label)
 		d.byTool[name] = parsed
 		d.params[name] = injected
 		d.tools = append(d.tools, contract.ToolDef{
@@ -847,7 +858,78 @@ func (d *dispatcher) Dispatch(ctx context.Context, call contract.ToolCall) (*con
 		"actionName": selected.actionName, "objectName": selected.objectName,
 		"recordId": input.RecordID, "params": input.Params,
 	})
+	var outcome ActionOutcomeEvent
+	if d.trackOutcomes {
+		invocationID := execution.InvocationID(ctx)
+		if call.ID == "" || utf8.RuneCountInString(call.ID) > 256 || invocationID == "" || d.inputRevisionID == "" ||
+			utf8.RuneCountInString(selected.objectName) > 128 || utf8.RuneCountInString(input.RecordID) > 128 {
+			return nil, errors.New("Forge action call is missing durable provenance")
+		}
+		outcome = ActionOutcomeEvent{
+			Source: ActionOutcomeSourceForgeMCP, InvocationID: invocationID, CallID: call.ID,
+			CapabilityID: selected.capabilityID, ActionKey: selected.objectName + "." + selected.actionName,
+			ActionLabel: selected.label, ActionName: selected.actionName, ObjectName: selected.objectName,
+			InputRevisionID: d.inputRevisionID, RecordID: input.RecordID,
+		}
+		outcome.FrozenRecordSHA256 = d.recordHashes[call.Name]
+		replay, guardErr := checkActionOutcomeReplay(ctx, outcome)
+		if guardErr != nil {
+			return nil, fmt.Errorf("check prior Forge action outcome before dispatch: %w", guardErr)
+		}
+		if replay.Blocked {
+			message := "该业务动作已有平台记录，本次没有再次调用 Forge。"
+			isError := false
+			switch replay.Status {
+			case ActionOutcomeStatusSucceeded:
+				message = "平台已确认该业务动作执行成功；本次没有再次调用 Forge。"
+			case ActionOutcomeStatusFailed:
+				message, isError = "平台已记录该业务动作返回失败；本次没有再次调用 Forge。", true
+			default:
+				message, isError = "该业务动作上一次结果仍未知，请先核对业务记录；本次没有再次调用 Forge。", true
+			}
+			return &contract.ToolResult{CallID: call.ID, ToolName: call.Name, Content: message, IsError: isError}, nil
+		}
+		outcome.Phase = "started"
+		if err := recordActionOutcome(ctx, outcome); err != nil {
+			return nil, fmt.Errorf("persist Forge action start before dispatch: %w", err)
+		}
+	}
 	result, err := d.host.Dispatch(ctx, contract.ToolCall{ID: call.ID, Name: "run_action", Args: string(upstream)})
+	if d.trackOutcomes {
+		status := ActionOutcomeStatusUnknown
+		switch {
+		case errors.Is(err, mcphost.ErrFailClosed):
+			status = ActionOutcomeStatusFailed
+		case errors.Is(err, mcphost.ErrDispatchExplicitFailure):
+			status = ActionOutcomeStatusFailed
+		case err != nil:
+			status = ActionOutcomeStatusUnknown
+		case result != nil:
+			status = classifyNativeActionResult(result)
+		}
+		outcome.Phase, outcome.Status = "result", status
+		if persistErr := recordActionOutcome(ctx, outcome); persistErr != nil {
+			return nil, fmt.Errorf("persist Forge action result: %w", persistErr)
+		}
+		if err != nil {
+			message := "Forge 业务动作返回失败。"
+			if status == ActionOutcomeStatusUnknown {
+				message = "Forge 业务动作的结果未知，请先核对业务记录后再继续。"
+			}
+			return &contract.ToolResult{CallID: call.ID, ToolName: call.Name, Content: message, IsError: true}, nil
+		}
+		if result == nil {
+			return &contract.ToolResult{CallID: call.ID, ToolName: call.Name,
+				Content: "Forge 未返回可确认的业务动作结果，请先核对业务记录后再继续。", IsError: true}, nil
+		}
+		if status == ActionOutcomeStatusFailed {
+			result.IsError = true
+		}
+		if status == ActionOutcomeStatusUnknown {
+			return &contract.ToolResult{CallID: call.ID, ToolName: call.Name,
+				Content: "Forge 未返回可确认的业务动作结果，请先核对业务记录后再继续。", IsError: true}, nil
+		}
+	}
 	if result != nil {
 		result.ToolName = call.Name
 	}

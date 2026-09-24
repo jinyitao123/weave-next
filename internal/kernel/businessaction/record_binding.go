@@ -45,6 +45,7 @@ func (d *dispatcher) bindRecords(catalog map[string]actionMetadata, resources []
 		record = &copy
 	}
 	d.records = make(map[string]string, len(d.tools))
+	d.recordHashes = make(map[string]string, len(d.tools))
 	for i := range d.tools {
 		tool := &d.tools[i]
 		action := d.byTool[tool.Name]
@@ -52,6 +53,7 @@ func (d *dispatcher) bindRecords(catalog map[string]actionMetadata, resources []
 		recordID := ""
 		if metadata.RequiresRecord && record != nil && record.ObjectName == action.objectName {
 			recordID = record.ID
+			d.recordHashes[tool.Name] = record.SHA256
 		}
 		if metadata.RequiresRecord && recordID == "" {
 			return fmt.Errorf("业务动作 %s 缺少本次员工指定的业务记录", action.actionName)

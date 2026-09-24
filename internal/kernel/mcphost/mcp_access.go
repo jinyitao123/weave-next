@@ -20,6 +20,14 @@ import (
 // it — otherwise governance silently degrades open on the wrapped path.
 var ErrFailClosed = errors.New("mcp access fail-closed")
 
+// ErrDispatchOutcomeUnknown means the server may have received a call, but
+// the client did not obtain a protocol response that confirms its outcome.
+var ErrDispatchOutcomeUnknown = errors.New("mcp dispatch outcome unknown")
+
+// ErrDispatchExplicitFailure marks an explicit MCP error response. Callers
+// may distinguish it from transport loss without inspecting error text.
+var ErrDispatchExplicitFailure = errors.New("mcp dispatch explicitly failed")
+
 // AccessResolver resolves and validates an AgentRecord before any upstream
 // connection is materialized.
 type AccessResolver interface {

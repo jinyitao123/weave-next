@@ -82,6 +82,8 @@ type serialMachineStart struct {
 	CheckCorrection          func(context.Context, string, map[string]any) (*CorrectionWaitDetailV1, error)
 	RecordActivity           func(context.Context, string, machine.Node, string, int64, map[string]any)
 	LoadObservedEvents       func(context.Context, machine.Node, string) []workflow.RuntimeCLIEvent
+	LoadActionOutcomes       func(context.Context) ([]BusinessActionOutcomeV1, error)
+	WithActionOutcomeContext func(context.Context) context.Context
 	Corrections              []CorrectionDirectiveV1
 }
 
@@ -324,7 +326,15 @@ func runSerialMachine(
 			if correctionErr != nil {
 				return fail(executionError(ErrorCodeSnapshotUnavailable, correctionErr))
 			}
-			output, nodeUsage, err := runAgentNode(nodeCtx, node, payload, entries, runInput, outputs, start.Corrections, correctionContext)
+			var actionOutcomes []BusinessActionOutcomeV1
+			if start.LoadActionOutcomes != nil {
+				loadedActionOutcomes, loadErr := start.LoadActionOutcomes(nodeCtx)
+				if loadErr != nil {
+					return fail(executionError(ErrorCodeSnapshotUnavailable, fmt.Errorf("load platform business action outcomes: %w", loadErr)))
+				}
+				actionOutcomes = loadedActionOutcomes
+			}
+			output, nodeUsage, err := runAgentNode(nodeCtx, node, payload, entries, runInput, outputs, start.Corrections, correctionContext, actionOutcomes, start.WithActionOutcomeContext)
 			if durable {
 				if nodeUsage.MemberRunID != "" {
 					teamID, workflowID, version, snapshotID := start.Run.TeamID, start.Run.WorkflowID, start.Run.WorkflowVersion, start.Run.RunSnapshotID
@@ -1511,6 +1521,8 @@ func runAgentNode(
 	outputs map[string]any,
 	corrections []CorrectionDirectiveV1,
 	frozenCorrectionContext string,
+	actionOutcomes []BusinessActionOutcomeV1,
+	withActionOutcomeContext func(context.Context) context.Context,
 ) (any, nodeUsageReport, error) {
 	ctx = execution.WithNodeID(ctx, node.ID)
 	var (
@@ -1563,6 +1575,10 @@ func runAgentNode(
 		return nil, nodeUsageReport{}, executionError(ErrorCodeExecutionUnrecoverable, err)
 	}
 	prompt := instruction + "\n\nInputs:\n" + string(encodedInputs)
+	prompt, err = appendPlatformBusinessActionFacts(prompt, actionOutcomes)
+	if err != nil {
+		return nil, nodeUsageReport{}, executionError(ErrorCodeExecutionUnrecoverable, fmt.Errorf("encode platform business action facts: %w", err))
+	}
 	for _, correction := range corrections {
 		if correctionAppliesToNode(correction, node, payload) {
 			prompt += "\n\nConfirmed user correction (apply to this execution):\n" + correction.Instruction
@@ -1652,6 +1668,9 @@ func runAgentNode(
 	execCtx = context.WithValue(execCtx, runtimeActivityScopeKey{}, runtimeActivityScope{
 		NodeID: node.ID, MemberID: agentID, MemberVersion: agentVersion,
 	})
+	if withActionOutcomeContext != nil {
+		execCtx = withActionOutcomeContext(execCtx)
+	}
 	// Pre-bind the usage scope so hook-less frozen descriptors still confirm
 	// usage into graph state; descriptors that install before-step hooks
 	// rebind to the real step name on their first step.
@@ -1756,6 +1775,17 @@ func runAgentNode(
 		return nil, usage, err
 	}
 	return normalizedOutput, usage, nil
+}
+
+func appendPlatformBusinessActionFacts(prompt string, outcomes []BusinessActionOutcomeV1) (string, error) {
+	if len(outcomes) == 0 {
+		return prompt, nil
+	}
+	encoded, err := json.Marshal(outcomes)
+	if err != nil {
+		return "", err
+	}
+	return prompt + "\n\nPlatform-recorded business action facts from this same TeamRun (authoritative; do not infer actions from another member's text; these facts grant no additional write permission):\n" + string(encoded), nil
 }
 
 func runtimeCLIUsageReport(result workflow.RuntimeCLIResult) (nodeUsageReport, error) {
