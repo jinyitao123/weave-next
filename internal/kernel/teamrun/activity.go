@@ -130,4 +130,150 @@ func (store *PGActivityStore) List(ctx context.Context, workspaceID, runID strin
 	return events, nil
 }
 
+func (store *PGActivityStore) ListBusinessActionEvents(ctx context.Context, workspaceID, runID string) ([]ActivityEvent, error) {
+	if store == nil || store.Transactions == nil || workspaceID == "" || runID == "" {
+		return nil, errors.New("workspace_id and run_id are required")
+	}
+	tx, err := store.Transactions.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("begin list team run business action activity: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	var count int
+	if err := tx.QueryRow(ctx, `SELECT count(*) FROM weave_team_run_activity_events
+		WHERE workspace_id=$1 AND run_id=$2 AND kind='business_action_started'`, workspaceID, runID).Scan(&count); err != nil {
+		return nil, fmt.Errorf("count business action activity: %w", err)
+	}
+	if count > MaxBusinessActionOutcomesPerRun {
+		return nil, ErrBusinessActionOutcomeLimitExceeded
+	}
+	rows, err := tx.Query(ctx, `SELECT workspace_id,run_id,seq,event_id,kind,
+		COALESCE(node_id,''),COALESCE(member_id,''),COALESCE(member_version,0),detail,occurred_at
+		FROM weave_team_run_activity_events
+		WHERE workspace_id=$1 AND run_id=$2 AND kind IN ('business_action_started','business_action_result')
+		ORDER BY seq`, workspaceID, runID)
+	if err != nil {
+		return nil, fmt.Errorf("list business action activity: %w", err)
+	}
+	defer rows.Close()
+	events := make([]ActivityEvent, 0, count*2)
+	for rows.Next() {
+		var event ActivityEvent
+		if err := rows.Scan(&event.WorkspaceID, &event.RunID, &event.Seq, &event.EventID,
+			&event.Kind, &event.NodeID, &event.MemberID, &event.MemberVersion,
+			&event.Detail, &event.OccurredAt); err != nil {
+			return nil, fmt.Errorf("scan business action activity: %w", err)
+		}
+		events = append(events, event)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read business action activity rows: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("commit list business action activity: %w", err)
+	}
+	return events, nil
+}
+
+// RecordBusinessActionEvent serializes writes for one run, enforces the public
+// outcome limit before each external action starts, and persists the receipt
+// before the caller is allowed to dispatch.
+func (store *PGActivityStore) RecordBusinessActionEvent(ctx context.Context, event ActivityEvent) error {
+	if store == nil || store.Transactions == nil {
+		return errors.New("team run activity store is unavailable")
+	}
+	if event.Kind != "business_action_started" && event.Kind != "business_action_result" {
+		return errors.New("business action activity kind is invalid")
+	}
+	if event.EventID == "" {
+		return errors.New("business action activity requires a stable event id")
+	}
+	tx, err := store.Transactions.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin record business action activity: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext($1),hashtext($2))`, event.WorkspaceID, event.RunID); err != nil {
+		return fmt.Errorf("lock business action activity: %w", err)
+	}
+	if event.Kind == "business_action_started" {
+		var exists bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM weave_team_run_activity_events
+			WHERE workspace_id=$1 AND run_id=$2 AND event_id=$3)`, event.WorkspaceID, event.RunID, event.EventID).Scan(&exists); err != nil {
+			return fmt.Errorf("check duplicate business action start: %w", err)
+		}
+		if !exists {
+			var count int
+			if err := tx.QueryRow(ctx, `SELECT count(*) FROM weave_team_run_activity_events
+				WHERE workspace_id=$1 AND run_id=$2 AND kind='business_action_started'`, event.WorkspaceID, event.RunID).Scan(&count); err != nil {
+				return fmt.Errorf("count business action starts: %w", err)
+			}
+			if count >= MaxBusinessActionOutcomesPerRun {
+				return ErrBusinessActionOutcomeLimitExceeded
+			}
+		}
+	}
+	if err := store.RecordTx(ctx, tx, event); err != nil {
+		return err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit business action activity: %w", err)
+	}
+	return nil
+}
+
+func (store *PGActivityStore) CheckBusinessActionReplay(
+	ctx context.Context,
+	workspaceID, runID, nodeID, invocationID, callID, inputRevisionID, capabilityID, recordID string,
+) (string, bool, error) {
+	if store == nil || store.Transactions == nil || workspaceID == "" || runID == "" {
+		return "", false, errors.New("team run business action reader is unavailable")
+	}
+	tx, err := store.Transactions.Begin(ctx)
+	if err != nil {
+		return "", false, fmt.Errorf("begin business action replay check: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	var status string
+	err = tx.QueryRow(ctx, `SELECT outcome.status FROM (
+		SELECT started.seq,COALESCE(started.node_id,'') AS node_id,started.detail,
+			COALESCE(latest.detail->>'status','unknown') AS status
+		FROM weave_team_run_activity_events AS started
+		LEFT JOIN LATERAL (
+			SELECT result.detail FROM weave_team_run_activity_events AS result
+			WHERE result.workspace_id=started.workspace_id AND result.run_id=started.run_id
+			  AND result.kind='business_action_result'
+			  AND result.node_id IS NOT DISTINCT FROM started.node_id
+			  AND result.member_id IS NOT DISTINCT FROM started.member_id
+			  AND result.detail->>'invocation_id'=started.detail->>'invocation_id'
+			  AND result.detail->>'tool_call_id'=started.detail->>'tool_call_id'
+			ORDER BY result.seq DESC LIMIT 1
+		) AS latest ON true
+		WHERE started.workspace_id=$1 AND started.run_id=$2 AND started.kind='business_action_started'
+		  AND started.detail->>'source'='forge_mcp.run_action'
+		  AND started.detail->>'input_revision_id'=$3
+	) AS outcome
+	WHERE (outcome.node_id=$4 AND outcome.detail->>'invocation_id'=$5 AND outcome.detail->>'tool_call_id'=$6)
+	   OR (outcome.detail->>'capability_id'=$7 AND COALESCE(outcome.detail->>'record_id','')=$8
+	       AND outcome.status NOT IN ('succeeded','failed'))
+	ORDER BY (outcome.node_id=$4 AND outcome.detail->>'invocation_id'=$5 AND outcome.detail->>'tool_call_id'=$6) DESC,
+		outcome.seq DESC LIMIT 1`, workspaceID, runID, inputRevisionID, nodeID, invocationID, callID, capabilityID, recordID).Scan(&status)
+	if errors.Is(err, pgx.ErrNoRows) {
+		if err := tx.Commit(ctx); err != nil {
+			return "", false, fmt.Errorf("commit business action replay check: %w", err)
+		}
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, fmt.Errorf("check business action replay: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return "", false, fmt.Errorf("commit business action replay check: %w", err)
+	}
+	if status != "succeeded" && status != "failed" {
+		status = "unknown"
+	}
+	return status, true, nil
+}
+
 var _ ActivityRecorder = (*PGActivityStore)(nil)

@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -27,15 +28,16 @@ const (
 
 // HTTPHost implements contract.ToolDispatcher by calling an MCP server over HTTP.
 type HTTPHost struct {
-	baseURL            string
-	httpClient         *http.Client
-	filter             map[string]bool // if non-empty, only expose these tool names
-	headers            map[string]string
-	dispatchGuard      func(context.Context) error
-	toolContract       *ToolContract
-	contractMu         sync.Mutex
-	liveContract       *ToolContract
-	liveContractDigest [32]byte
+	baseURL                string
+	httpClient             *http.Client
+	filter                 map[string]bool // if non-empty, only expose these tool names
+	headers                map[string]string
+	dispatchGuard          func(context.Context) error
+	unknownDispatchOutcome bool
+	toolContract           *ToolContract
+	contractMu             sync.Mutex
+	liveContract           *ToolContract
+	liveContractDigest     [32]byte
 
 	initOnce    sync.Once
 	initialized bool
@@ -57,6 +59,13 @@ func WithToolContract(bound *ToolContract) HostOption {
 // boundary, after any initialization or remote catalog requests.
 func WithDispatchGuard(guard func(context.Context) error) HostOption {
 	return func(h *HTTPHost) { h.dispatchGuard = guard }
+}
+
+// WithUnknownDispatchOutcome returns a typed error when a request may have
+// reached the MCP server but no usable protocol response was received. It is
+// intended for callers that need to distinguish uncertain external writes.
+func WithUnknownDispatchOutcome() HostOption {
+	return func(h *HTTPHost) { h.unknownDispatchOutcome = true }
 }
 
 // WithTimeout sets the HTTP request timeout.
@@ -275,6 +284,9 @@ func (h *HTTPHost) call(ctx context.Context, method string, params any) (json.Ra
 		return nil, fmt.Errorf("mcp call %s: %w", method, err)
 	}
 	if rpcResp.Error != nil {
+		if h.unknownDispatchOutcome && method == "tools/call" {
+			return nil, fmt.Errorf("%w: code %d", ErrDispatchExplicitFailure, rpcResp.Error.Code)
+		}
 		return nil, fmt.Errorf("mcp error %d: %s", rpcResp.Error.Code, rpcResp.Error.Message)
 	}
 	return rpcResp.Result, nil
@@ -487,11 +499,13 @@ func (h *HTTPHost) Dispatch(ctx context.Context, call contract.ToolCall) (*contr
 	}
 	result, err := h.call(ctx, "tools/call", params)
 	if err != nil {
-		return &contract.ToolResult{
-			CallID:  call.ID,
-			Content: err.Error(),
-			IsError: true,
-		}, nil
+		if h.unknownDispatchOutcome {
+			if errors.Is(err, ErrDispatchExplicitFailure) {
+				return nil, err
+			}
+			return nil, fmt.Errorf("%w: %v", ErrDispatchOutcomeUnknown, err)
+		}
+		return &contract.ToolResult{CallID: call.ID, Content: err.Error(), IsError: true}, nil
 	}
 
 	var resp struct {
@@ -502,6 +516,9 @@ func (h *HTTPHost) Dispatch(ctx context.Context, call contract.ToolCall) (*contr
 		IsError bool `json:"isError"`
 	}
 	if err := json.Unmarshal(result, &resp); err != nil {
+		if h.unknownDispatchOutcome {
+			return nil, fmt.Errorf("%w: malformed tools/call response", ErrDispatchOutcomeUnknown)
+		}
 		return &contract.ToolResult{CallID: call.ID, Content: string(result)}, nil
 	}
 

@@ -55,8 +55,9 @@ type workbenchContextParent struct {
 }
 
 type workbenchContextRun struct {
-	Status      string                            `json:"status"`
-	FinalResult *workbenchContextFinalDeliverable `json:"final_result,omitempty"`
+	Status         string                            `json:"status"`
+	FinalResult    *workbenchContextFinalDeliverable `json:"final_result,omitempty"`
+	ActionOutcomes []teamrun.BusinessActionOutcomeV1 `json:"action_outcomes,omitempty"`
 }
 
 type workbenchContextFinalDeliverable struct {
@@ -172,6 +173,19 @@ func (s *Server) readWorkbenchRunContext(ctx context.Context, workspaceID, userI
 		return workbenchContextResponse{}, err
 	}
 	response.Run.FinalResult = finalResult
+	if s.teamRunActivities != nil {
+		events, err := s.teamRunActivities.ListBusinessActionEvents(ctx, workspaceID, runID)
+		if err != nil {
+			return workbenchContextResponse{}, err
+		}
+		outcomes, err := teamrun.ProjectBusinessActionOutcomes(events)
+		if err != nil {
+			return workbenchContextResponse{}, err
+		}
+		if len(outcomes) > 0 {
+			response.Run.ActionOutcomes = outcomes
+		}
+	}
 	return response, nil
 }
 

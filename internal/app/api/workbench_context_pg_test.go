@@ -8,10 +8,12 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
+	"github.com/jinyitao123/weave/internal/kernel/teamrun"
 	"github.com/labstack/echo/v4"
 )
 
@@ -106,6 +108,44 @@ func TestWorkbenchContextReadsExactInputAndRejectsOtherEmployeesRealPG(t *testin
 	if err := server.Tasks.CompleteClaimed(t.Context(), claimed.ID, "context-worker", json.RawMessage(`{"ok":true}`), run.RunID); err != nil {
 		t.Fatal(err)
 	}
+	actionStore := &teamrun.PGActivityStore{Transactions: pool}
+	writeActionEvent := func(nodeID, memberID, phase, callID, actionName, actionLabel, objectName, recordID, status string) {
+		t.Helper()
+		kind := "business_action_started"
+		if phase == "result" {
+			kind = "business_action_result"
+		}
+		detail, err := json.Marshal(map[string]any{
+			"source": "forge_mcp.run_action", "phase": phase, "invocation_id": "snapshot/0/" + nodeID,
+			"tool_call_id": callID, "capability_id": "forge:action:" + objectName + "." + actionName,
+			"action_key": objectName + "." + actionName, "action_name": actionName, "action_label": actionLabel,
+			"object_name": objectName, "input_revision_id": input.InputRevisionID,
+			"record_id": recordID, "status": status,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := actionStore.RecordBusinessActionEvent(t.Context(), teamrun.ActivityEvent{
+			WorkspaceID: "ws", RunID: run.RunID, EventID: uuid.NewString(), Kind: kind,
+			NodeID: nodeID, MemberID: memberID, MemberVersion: 1,
+			Detail: detail, OccurredAt: time.Now().UTC(),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeActionEvent("lead", "lead-agent", "started", "forge-call-1", "ContractSubmit", "提交指定合同版本", "sales_contract", "record-a", "")
+	writeActionEvent("lead", "lead-agent", "result", "forge-call-1", "ContractSubmit", "提交指定合同版本", "sales_contract", "record-a", "succeeded")
+	writeActionEvent("review", "review-agent", "started", "forge-call-2", "RequestRevision", "要求修订", "sales_contract", "record-a", "")
+	if _, err := pool.Exec(t.Context(), `INSERT INTO weave_team_run_activity_events
+		(workspace_id,run_id,event_id,kind,node_id,member_id,member_version,detail,occurred_at)
+		VALUES('ws',$1,$2,'member_completed','lead','lead-agent',1,$3::jsonb,statement_timestamp())`,
+		run.RunID, uuid.NewString(), `{"summary":"另一个成员声称已经执行了审批动作"}`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(t.Context(), `UPDATE weave_team_runs SET status='failed',cause_summary='later member failed',terminal_at=statement_timestamp()
+		WHERE workspace_id='ws' AND run_id=$1`, run.RunID); err != nil {
+		t.Fatal(err)
+	}
 	finalContent := "最终合同核对结果"
 	if _, err := pool.Exec(t.Context(), `INSERT INTO weave_final_deliverables
 		(id,workspace_id,user_id,lead_avatar_id,session_id,event_id,run_id,run_snapshot_id,title,content,content_type,metadata)
@@ -114,6 +154,8 @@ func TestWorkbenchContextReadsExactInputAndRejectsOtherEmployeesRealPG(t *testin
 		t.Fatal(err)
 	}
 
+	// Recreate the read store to prove that receipts survive a server restart.
+	server.teamRunActivities = &teamrun.PGActivityStore{Transactions: pool}
 	status, response := callWorkbenchRunContext(t, server, "user-a", run.RunID)
 	if status != http.StatusOK || response.Version != "1" || response.Source.InputRevisionID != input.InputRevisionID ||
 		response.Source.RunID != run.RunID || response.Source.WorkbenchSessionID != registration.WorkbenchSessionID {
@@ -130,10 +172,23 @@ func TestWorkbenchContextReadsExactInputAndRejectsOtherEmployeesRealPG(t *testin
 		response.Input.BusinessRecord.ObjectName != "sales_contract" || response.Input.BusinessRecord.RecordID != "record-a" {
 		t.Fatalf("delegated resources were not projected exactly: %+v", response.Input)
 	}
-	if response.Input.Parent == nil || response.Input.Parent.RootInputRevisionID != input.InputRevisionID || response.Run.Status != "succeeded" ||
+	if response.Input.Parent == nil || response.Input.Parent.RootInputRevisionID != input.InputRevisionID || response.Run.Status != "failed" ||
 		response.Run.FinalResult == nil || response.Run.FinalResult.Content != finalContent ||
 		response.Run.FinalResult.SHA256 != dispatchInputDigest([]byte(finalContent)) {
 		t.Fatalf("unexpected lineage or run result: input=%+v run=%+v", response.Input, response.Run)
+	}
+	if len(response.Run.ActionOutcomes) != 2 {
+		t.Fatalf("expected only the two platform-recorded business actions: %+v", response.Run.ActionOutcomes)
+	}
+	submitted, unknown := response.Run.ActionOutcomes[0], response.Run.ActionOutcomes[1]
+	if submitted.NodeID != "lead" || submitted.CallID != "forge-call-1" || submitted.ActionName != "提交指定合同版本" ||
+		submitted.ObjectName != "sales_contract" || submitted.RecordID != "record-a" || submitted.Status != "succeeded" ||
+		!strings.Contains(submitted.Summary, "提交指定合同版本") || strings.Contains(submitted.Summary, "record-a") {
+		t.Fatalf("unexpected confirmed action outcome: %+v", submitted)
+	}
+	if unknown.NodeID != "review" || unknown.CallID != "forge-call-2" || unknown.Status != "unknown" ||
+		!strings.Contains(unknown.Summary, "结果未知") || strings.Contains(unknown.Summary, "sales_contract") || strings.Contains(unknown.Summary, "record-a") {
+		t.Fatalf("unexpected unknown action outcome: %+v", unknown)
 	}
 	if status, _ := callWorkbenchRunContext(t, server, "user-b", run.RunID); status != http.StatusNotFound {
 		t.Fatalf("another employee read this run context: status=%d", status)

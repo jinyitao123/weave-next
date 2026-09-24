@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 	"github.com/jinyitao123/weave/internal/kernel/teamrun"
@@ -82,6 +83,34 @@ func TestEmployeeRunEventBackfillDeliversOnceToForgeInboxRealPG(t *testing.T) {
 		WHERE run.workspace_id='ws' AND run.run_id=$1 AND run.status='succeeded'`, dispatch.RunID).Scan(&candidateCount); err != nil || candidateCount != 1 {
 		t.Fatalf("terminal event candidate count=%d err=%v", candidateCount, err)
 	}
+	actions := &teamrun.PGActivityStore{Transactions: pool}
+	writeActionEvent := func(phase, callID, actionName, actionLabel, recordID, status string) {
+		t.Helper()
+		kind := "business_action_started"
+		if phase == "result" {
+			kind = "business_action_result"
+		}
+		detail, err := json.Marshal(map[string]any{
+			"source": "forge_mcp.run_action", "phase": phase, "invocation_id": "snapshot/0/lead", "tool_call_id": callID,
+			"capability_id": "forge:action:sales_contract." + actionName,
+			"action_key":    "sales_contract." + actionName, "action_name": actionName,
+			"action_label": actionLabel, "object_name": "sales_contract",
+			"input_revision_id": receipt.InputRevisionID, "record_id": recordID, "status": status,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := actions.RecordBusinessActionEvent(t.Context(), teamrun.ActivityEvent{
+			WorkspaceID: "ws", RunID: dispatch.RunID, EventID: uuid.NewString(), Kind: kind,
+			NodeID: "lead", MemberID: "lead-agent", MemberVersion: 1,
+			Detail: detail, OccurredAt: time.Now().UTC(),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeActionEvent("started", "call-action-1", "ContractSubmit", "提交指定合同版本", "private-record-reference", "")
+	writeActionEvent("result", "call-action-1", "ContractSubmit", "提交指定合同版本", "private-record-reference", "succeeded")
+	writeActionEvent("started", "call-action-2", "RequestRevision", "要求修订", "private-record-reference", "")
 	var calls atomic.Int32
 	forge := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		calls.Add(1)
@@ -94,6 +123,17 @@ func TestEmployeeRunEventBackfillDeliversOnceToForgeInboxRealPG(t *testing.T) {
 		}
 		if event["kind"] != "result" || event["assigneeAccountId"] != "forge-user" || !strings.Contains(event["title"].(string), "已完成") {
 			t.Errorf("unexpected event: %#v", event)
+		}
+		if len(event) != 9 {
+			t.Errorf("native inbox event shape changed: %#v", event)
+		}
+		summary, _ := event["summary"].(string)
+		if !strings.Contains(summary, "提交指定合同版本") || !strings.Contains(summary, "已确认完成") ||
+			!strings.Contains(summary, "结果未知") || strings.Contains(summary, "sales_contract") || strings.Contains(summary, "private-record-reference") {
+			t.Errorf("summary did not use safe platform action facts: %q", summary)
+		}
+		if _, exists := event["action_outcomes"]; exists {
+			t.Errorf("native inbox event gained action_outcomes: %#v", event)
 		}
 		writer.Header().Set("Content-Type", "application/json")
 		writer.WriteHeader(http.StatusAccepted)
