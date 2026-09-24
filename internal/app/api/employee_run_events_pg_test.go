@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -84,6 +85,77 @@ func TestEmployeeRunEventBackfillDeliversOnceToForgeInboxRealPG(t *testing.T) {
 		WHERE run.workspace_id='ws' AND run.run_id=$1 AND run.status='succeeded'`, dispatch.RunID).Scan(&candidateCount); err != nil || candidateCount != 1 {
 		t.Fatalf("terminal event candidate count=%d err=%v", candidateCount, err)
 	}
+	seedTerminalRun := func(status string) (string, string) {
+		t.Helper()
+		runID, inputRevisionID := uuid.NewString(), uuid.NewString()
+		taskID, registrationID, clientRequestID := uuid.NewString(), uuid.NewString(), uuid.NewString()
+		sessionID := "workbench-session-" + status
+		now := time.Now().UTC()
+		tx, err := pool.Begin(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer tx.Rollback(t.Context())
+		if _, err := tx.Exec(t.Context(), `INSERT INTO weave_team_run_snapshots (
+			run_id,workspace_id,team_id,workflow_id,workflow_version,lead_avatar_id,lead_avatar_version,
+			worker_versions,team_worker_snapshot,artifact_ref,admission_decision,inline_dependencies,
+			run_associations,trigger_source,created_at
+		)
+		SELECT $2,snapshot.workspace_id,snapshot.team_id,snapshot.workflow_id,snapshot.workflow_version,
+			snapshot.lead_avatar_id,snapshot.lead_avatar_version,snapshot.worker_versions,snapshot.team_worker_snapshot,
+			snapshot.artifact_ref,snapshot.admission_decision,snapshot.inline_dependencies,snapshot.run_associations,
+			snapshot.trigger_source,snapshot.created_at
+		FROM weave_team_runs AS run
+		JOIN weave_team_run_snapshots AS snapshot
+		  ON snapshot.workspace_id=run.workspace_id AND snapshot.run_id=run.run_snapshot_id
+		WHERE run.workspace_id='ws' AND run.run_id=$1`, dispatch.RunID, runID); err != nil {
+			t.Fatalf("copy frozen run snapshot for %s event: %v", status, err)
+		}
+		if _, err := tx.Exec(t.Context(), `INSERT INTO weave_team_runs (
+			workspace_id,run_id,status,team_run_generation,execution_lease_epoch,resume_generation,
+			team_id,workflow_id,workflow_version,run_snapshot_id,source_kind,source_task_id,
+			establish_idempotency_key,created_at,updated_at,terminal_at,error_code,cause_summary
+		)
+		SELECT run.workspace_id,$2,$3,run.team_run_generation,run.execution_lease_epoch,run.resume_generation,
+			run.team_id,run.workflow_id,run.workflow_version,$2,run.source_kind,$4,
+			'employee-run-event-test:'||$2,$5,$5,$5,
+			CASE $3 WHEN 'failed' THEN 'team_run_execution_failed' WHEN 'cancelled' THEN 'team_run_cancelled' END,
+			CASE $3 WHEN 'failed' THEN 'synthetic failure' END
+		FROM weave_team_runs AS run WHERE run.workspace_id='ws' AND run.run_id=$1`,
+			dispatch.RunID, runID, status, taskID, now); err != nil {
+			t.Fatalf("seed %s terminal run: %v", status, err)
+		}
+		if _, err := tx.Exec(t.Context(), `INSERT INTO weave_dispatch_input_revisions (
+			workspace_id,user_id,workbench_session_id,input_revision_id,registration_id,registration_sha256,
+			source_messages,task,task_sha256,team_id,mode,workflow_id,workflow_version,project_id,
+			client_request_id,is_current,consumed_run_id,consumed_task_id,created_at,consumed_at
+		)
+		SELECT input.workspace_id,input.user_id,$2,$3,$4,input.registration_sha256,input.source_messages,
+			input.task,input.task_sha256,input.team_id,input.mode,input.workflow_id,input.workflow_version,
+			input.project_id,$5,true,$6,$7,$8,$8
+		FROM weave_dispatch_input_revisions AS input
+		WHERE input.workspace_id='ws' AND input.input_revision_id=$1`,
+			receipt.InputRevisionID, sessionID, inputRevisionID, registrationID,
+			clientRequestID, runID, taskID, now); err != nil {
+			t.Fatalf("bind %s terminal event to originating employee: %v", status, err)
+		}
+		if err := tx.Commit(t.Context()); err != nil {
+			t.Fatalf("commit %s terminal fixture: %v", status, err)
+		}
+		return runID, inputRevisionID
+	}
+	failedRunID, failedInputRevisionID := seedTerminalRun("failed")
+	cancelledRunID, cancelledInputRevisionID := seedTerminalRun("cancelled")
+	terminalKinds := map[string]string{
+		dispatch.RunID: "result",
+		failedRunID:    "failure",
+		cancelledRunID: "cancelled",
+	}
+	inputReferences := map[string]string{
+		dispatch.RunID: receipt.InputRevisionID,
+		failedRunID:    failedInputRevisionID,
+		cancelledRunID: cancelledInputRevisionID,
+	}
 	actions := &teamrun.PGActivityStore{Transactions: pool}
 	writeActionEvent := func(phase, callID, actionName, actionLabel, recordID, status string) {
 		t.Helper()
@@ -123,8 +195,12 @@ func TestEmployeeRunEventBackfillDeliversOnceToForgeInboxRealPG(t *testing.T) {
 	writeActionEvent("result", "call-action-13", "FinalReject", "最后失败动作", "private-record-reference", "failed")
 	writeActionEvent("started", "call-action-14", "FinalUnknown", "最后未知动作", "private-record-reference", "")
 	var calls atomic.Int32
+	var receiverMu sync.Mutex
+	seenRunEvents := make(map[string]int)
+	eventIDByIdempotencyKey := make(map[string]string)
+	notificationByIdempotencyKey := make(map[string]string)
 	forge := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		calls.Add(1)
+		callNumber := calls.Add(1)
 		if request.Header.Get("Authorization") != "Bearer event-secret" {
 			t.Errorf("missing service credential")
 		}
@@ -132,45 +208,118 @@ func TestEmployeeRunEventBackfillDeliversOnceToForgeInboxRealPG(t *testing.T) {
 		if err := json.NewDecoder(request.Body).Decode(&event); err != nil {
 			t.Errorf("decode event: %v", err)
 		}
-		if event["kind"] != "result" || event["assigneeAccountId"] != "forge-user" || !strings.Contains(event["title"].(string), "已完成") {
+		source, ok := event["source"].(map[string]any)
+		if !ok {
+			t.Errorf("missing source references: %#v", event)
+			return
+		}
+		runReference, _ := source["runReference"].(string)
+		idempotencyKey, _ := source["idempotencyKey"].(string)
+		wantKind, knownRun := terminalKinds[runReference]
+		if !knownRun || event["kind"] != wantKind || event["assigneeAccountId"] != "forge-user" {
 			t.Errorf("unexpected event: %#v", event)
+		}
+		if source["workReference"] != inputReferences[runReference] || idempotencyKey != "weave-team-run-terminal:"+runReference {
+			t.Errorf("event was not bound to its originating work and run: %#v", event)
+		}
+		if event["eventId"] == "" || event["title"] == "" {
+			t.Errorf("event identity or title is missing: %#v", event)
 		}
 		if len(event) != 9 {
 			t.Errorf("native inbox event shape changed: %#v", event)
 		}
-		summary, _ := event["summary"].(string)
-		if !strings.Contains(summary, "成功 11 项") || !strings.Contains(summary, "失败 1 项") ||
-			!strings.Contains(summary, "结果未知 2 项") || !strings.Contains(summary, "完整逐项结果请打开原工作续办") ||
-			strings.Contains(summary, "sales_contract") || strings.Contains(summary, "private-record-reference") {
-			t.Errorf("summary did not use safe platform action facts: %q", summary)
+		if runReference == dispatch.RunID {
+			if !strings.Contains(event["title"].(string), "已完成") {
+				t.Errorf("success event title did not identify completion: %#v", event)
+			}
+			summary, _ := event["summary"].(string)
+			if !strings.Contains(summary, "成功 11 项") || !strings.Contains(summary, "失败 1 项") ||
+				!strings.Contains(summary, "结果未知 2 项") || !strings.Contains(summary, "完整逐项结果请打开原工作续办") ||
+				strings.Contains(summary, "sales_contract") || strings.Contains(summary, "private-record-reference") {
+				t.Errorf("summary did not use safe platform action facts: %q", summary)
+			}
+		} else if runReference == failedRunID && !strings.Contains(event["title"].(string), "处理失败") {
+			t.Errorf("failure event title did not identify failure: %#v", event)
+		} else if runReference == cancelledRunID && !strings.Contains(event["title"].(string), "已取消") {
+			t.Errorf("cancel event title did not identify cancellation: %#v", event)
 		}
 		if _, exists := event["action_outcomes"]; exists {
 			t.Errorf("native inbox event gained action_outcomes: %#v", event)
 		}
+		eventID, _ := event["eventId"].(string)
+		receiverMu.Lock()
+		seenRunEvents[runReference]++
+		if prior, exists := eventIDByIdempotencyKey[idempotencyKey]; exists && prior != eventID {
+			t.Errorf("retry changed event id for idempotency key %q: %q != %q", idempotencyKey, eventID, prior)
+		}
+		eventIDByIdempotencyKey[idempotencyKey] = eventID
+		notificationID, exists := notificationByIdempotencyKey[idempotencyKey]
+		if !exists {
+			notificationID = fmt.Sprintf("notification-%d", len(notificationByIdempotencyKey)+1)
+			notificationByIdempotencyKey[idempotencyKey] = notificationID
+		}
+		receiverMu.Unlock()
+		if callNumber == 1 {
+			// Model the receiver committing its inbox row before an intermediary
+			// loses the acknowledgement. The retry must carry the same key.
+			writer.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
 		writer.Header().Set("Content-Type", "application/json")
 		writer.WriteHeader(http.StatusAccepted)
-		_, _ = writer.Write([]byte(`{"notificationId":"notification-1","accepted":true}`))
+		_, _ = writer.Write([]byte(fmt.Sprintf(`{"notificationId":%q,"accepted":true}`, notificationID)))
 	}))
 	defer forge.Close()
 	worker := &employeeRunEventWorker{
 		Pool: pool, Endpoint: forge.URL, Secret: "event-secret",
 		Client: forge.Client(), PollInterval: time.Millisecond,
 	}
-	processed, err := worker.Sweep(t.Context())
-	if err != nil || processed != 1 {
-		t.Fatalf("first sweep processed=%d err=%v", processed, err)
+	for attempt := 0; attempt < 4; attempt++ {
+		processed, err := worker.Sweep(t.Context())
+		if err != nil || processed != 1 {
+			t.Fatalf("sweep %d processed=%d err=%v", attempt+1, processed, err)
+		}
+		if _, err := pool.Exec(t.Context(), `UPDATE weave_employee_run_event_outbox SET next_attempt_at=statement_timestamp()
+			WHERE delivery_state='pending'`); err != nil {
+			t.Fatalf("make retry immediately claimable: %v", err)
+		}
 	}
-	processed, err = worker.Sweep(t.Context())
-	if err != nil || processed != 0 || calls.Load() != 1 {
+	processed, err := worker.Sweep(t.Context())
+	if err != nil || processed != 0 || calls.Load() != 4 {
 		t.Fatalf("repeat sweep processed=%d calls=%d err=%v", processed, calls.Load(), err)
 	}
-	var state, notificationID string
-	var attempts int
-	if err := pool.QueryRow(t.Context(), `SELECT delivery_state,delivery_attempts,forge_notification_id
-		FROM weave_employee_run_event_outbox WHERE workspace_id='ws' AND run_id=$1`, dispatch.RunID).Scan(&state, &attempts, &notificationID); err != nil {
+	var outboxCount, deliveredCount, totalAttempts int
+	if err := pool.QueryRow(t.Context(), `SELECT count(*),count(*) FILTER (WHERE delivery_state='delivered'),sum(delivery_attempts)
+		FROM weave_employee_run_event_outbox WHERE workspace_id='ws' AND run_id=ANY($1::text[])`,
+		[]string{dispatch.RunID, failedRunID, cancelledRunID}).Scan(&outboxCount, &deliveredCount, &totalAttempts); err != nil {
 		t.Fatal(err)
 	}
-	if state != "delivered" || attempts != 1 || notificationID != "notification-1" {
-		t.Fatalf("unexpected outbox state=%s attempts=%d notification=%s", state, attempts, notificationID)
+	if outboxCount != 3 || deliveredCount != 3 || totalAttempts != 4 {
+		t.Fatalf("outbox rows=%d delivered=%d total attempts=%d, want 3, 3, 4", outboxCount, deliveredCount, totalAttempts)
+	}
+	receiverMu.Lock()
+	if len(notificationByIdempotencyKey) != 3 {
+		t.Errorf("receiver created %d inbox rows, want one per terminal run", len(notificationByIdempotencyKey))
+	}
+	for runID := range terminalKinds {
+		if seenRunEvents[runID] == 0 {
+			t.Errorf("no terminal event delivered for run %q", runID)
+		}
+	}
+	receiverMu.Unlock()
+	for _, runID := range []string{dispatch.RunID, failedRunID, cancelledRunID} {
+		var state, notificationID string
+		var attempts int
+		if err := pool.QueryRow(t.Context(), `SELECT delivery_state,delivery_attempts,forge_notification_id
+			FROM weave_employee_run_event_outbox WHERE workspace_id='ws' AND run_id=$1`, runID).Scan(&state, &attempts, &notificationID); err != nil {
+			t.Fatal(err)
+		}
+		wantAttempts := 1
+		if seenRunEvents[runID] == 2 {
+			wantAttempts = 2
+		}
+		if state != "delivered" || attempts != wantAttempts || notificationID == "" {
+			t.Errorf("unexpected outbox state for run %s: state=%s attempts=%d notification=%q", runID, state, attempts, notificationID)
+		}
 	}
 }
