@@ -5,10 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jinyitao123/weave/internal/kernel/businessaction"
 )
 
 func recordActionActivity(t *testing.T, store *PGActivityStore, event ActivityEvent) {
@@ -72,6 +75,11 @@ func TestPGActionOutcomePersistsUnknownReplayGuardAndLimitRealPG(t *testing.T) {
 	if err != nil || blocked {
 		t.Fatalf("a confirmed result was treated as an unknown replay: blocked=%v err=%v", blocked, err)
 	}
+	sequential := actionActivityEvent("business_action_started", "review", "review-agent", "started", "snapshot/0/review", "call-after-confirmed-result", "ContractSubmit", "提交指定合同版本", "")
+	sequential.WorkspaceID, sequential.RunID, sequential.EventID, sequential.OccurredAt = "workspace-1", runID, uuid.NewString(), time.Now().UTC()
+	if err := store.RecordBusinessActionEvent(ctx, sequential); err != nil {
+		t.Fatalf("confirmed prior result blocked a later explicit action: %v", err)
+	}
 
 	limitedRunID := "action-outcome-limit-run"
 	_, _ = h.seedRunningWorkflowTaskBeforeAdmission(t, limitedRunID)
@@ -103,5 +111,83 @@ func TestPGActionOutcomeEventRejectsNonObjectDetailRealPG(t *testing.T) {
 	}
 	if err := store.RecordBusinessActionEvent(ctx, event); err == nil {
 		t.Fatal("accepted non-object activity detail")
+	}
+}
+
+func TestPGConcurrentActionStartsReserveOneUnresolvedWriteRealPG(t *testing.T) {
+	h := newProcessNextHarness(t)
+	runID := "action-outcome-race"
+	_, _ = h.seedRunningWorkflowTaskBeforeAdmission(t, runID)
+	ctx := context.Background()
+	store := &PGActivityStore{Transactions: h.pool}
+	type precheck struct {
+		callID  string
+		blocked bool
+		err     error
+	}
+	type writeResult struct {
+		callID string
+		err    error
+	}
+	prechecked := make(chan precheck, 2)
+	writeResults := make(chan writeResult, 2)
+	allowWrite := make(chan struct{})
+	var dispatched atomic.Int32
+	callIDs := []string{"concurrent-call-a", "concurrent-call-b"}
+	var workers sync.WaitGroup
+	for _, callID := range callIDs {
+		callID := callID
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			_, blocked, err := store.CheckBusinessActionReplay(ctx, "workspace-1", runID,
+				"lead", "snapshot/0/lead", callID, "revision-1",
+				"forge:action:sales_contract.ContractSubmit", "private-record-id")
+			prechecked <- precheck{callID: callID, blocked: blocked, err: err}
+			<-allowWrite
+			event := actionActivityEvent("business_action_started", "lead", "lead-agent", "started",
+				"snapshot/0/lead", callID, "ContractSubmit", "提交指定合同版本", "")
+			event.WorkspaceID, event.RunID, event.EventID = "workspace-1", runID, uuid.NewString()
+			err = store.RecordBusinessActionEvent(ctx, event)
+			if err == nil {
+				dispatched.Add(1)
+			}
+			writeResults <- writeResult{callID: callID, err: err}
+		}()
+	}
+	prechecksValid := true
+	for range callIDs {
+		result := <-prechecked
+		if result.err != nil || result.blocked {
+			prechecksValid = false
+		}
+	}
+	close(allowWrite)
+	if !prechecksValid {
+		t.Fatal("precheck unexpectedly blocked before either reservation")
+	}
+	created, unresolved := 0, 0
+	for range callIDs {
+		result := <-writeResults
+		switch {
+		case result.err == nil:
+			created++
+		case errors.Is(result.err, businessaction.ErrActionOutcomeUnresolved):
+			unresolved++
+		default:
+			t.Fatalf("unexpected start reservation failure for %s: %v", result.callID, result.err)
+		}
+	}
+	workers.Wait()
+	if created != 1 || unresolved != 1 || dispatched.Load() != 1 {
+		t.Fatalf("concurrent writes were not serialized: created=%d unresolved=%d dispatched=%d", created, unresolved, dispatched.Load())
+	}
+	events, err := store.ListBusinessActionEvents(ctx, "workspace-1", runID)
+	if err != nil || len(events) != 1 {
+		t.Fatalf("expected one durable started receipt: events=%+v err=%v", events, err)
+	}
+	outcomes, err := ProjectBusinessActionOutcomes(events)
+	if err != nil || len(outcomes) != 1 || outcomes[0].Status != "unknown" {
+		t.Fatalf("reserved write was not exposed as unknown: outcomes=%+v err=%v", outcomes, err)
 	}
 }

@@ -208,3 +208,23 @@ func TestForgeActionPersistenceFailureStopsBeforeOrAfterCall(t *testing.T) {
 		t.Fatalf("result persistence failure was hidden: calls=%d receipts=%+v err=%v", host.calls, started, err)
 	}
 }
+
+func TestUnresolvedStartReservationStopsConcurrentForgeDispatch(t *testing.T) {
+	var events []ActionOutcomeEvent
+	host := &outcomeTestHost{}
+	dispatcher, call := newTrackedOutcomeDispatcher(t, host)
+	ctx := outcomeTestContext(&events,
+		func(context.Context, ActionOutcomeEvent) (ActionOutcomeReplay, error) {
+			return ActionOutcomeReplay{}, nil
+		},
+		func(event ActionOutcomeEvent) error {
+			if event.Phase == "started" {
+				return ErrActionOutcomeUnresolved
+			}
+			return nil
+		})
+	result, err := dispatcher.Dispatch(ctx, call)
+	if err != nil || result == nil || !result.IsError || !strings.Contains(result.Content, "未确认") || host.calls != 0 || len(events) != 0 {
+		t.Fatalf("unresolved reservation reached Forge: result=%+v calls=%d events=%+v err=%v", result, host.calls, events, err)
+	}
+}
