@@ -639,7 +639,9 @@ func validateActionMetadata(metadata actionMetadata) error {
 			continue
 		}
 		switch jsonType {
-		case "string", "number", "boolean", "array":
+		case "string", "number", "boolean":
+		case "array":
+			return fmt.Errorf("array parameter %q has no item schema and cannot be exposed safely", name)
 		default:
 			return fmt.Errorf("unsupported parameter type %q", param.Type)
 		}
@@ -687,7 +689,7 @@ func actionInputSchemaWithBindings(metadata actionMetadata, bindings []frozen.Bu
 		switch jsonType {
 		case "", "string":
 			jsonType = "string"
-		case "number", "boolean", "array":
+		case "number", "boolean":
 		default:
 			return nil, fmt.Errorf("unsupported parameter type %q", param.Type)
 		}
@@ -697,9 +699,6 @@ func actionInputSchemaWithBindings(metadata actionMetadata, bindings []frozen.Bu
 		}
 		if len(param.Enum) > 0 {
 			property["enum"] = param.Enum
-		}
-		if jsonType == "array" {
-			property["items"] = map[string]any{}
 		}
 		paramProperties[name] = property
 		if param.Required {

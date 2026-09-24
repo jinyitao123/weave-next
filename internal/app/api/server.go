@@ -531,6 +531,7 @@ func (s *Server) registerRoutes() {
 
 	// Runs.
 	auth.GET("/runs", s.handleListRuns, runsScope)
+	auth.GET("/runs/:id/workbench-context", s.handleGetWorkbenchRunContext, runsScope)
 	auth.GET("/runs/:id", s.handleGetRun, runsScope)
 	auth.GET("/runs/:id/activity", s.handleGetRunActivity, runsScope)
 	auth.GET("/runs/:id/delivery", s.handleGetRunDelivery, runsScope)
