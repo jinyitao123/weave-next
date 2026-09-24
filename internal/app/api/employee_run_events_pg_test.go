@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -111,6 +112,16 @@ func TestEmployeeRunEventBackfillDeliversOnceToForgeInboxRealPG(t *testing.T) {
 	writeActionEvent("started", "call-action-1", "ContractSubmit", "提交指定合同版本", "private-record-reference", "")
 	writeActionEvent("result", "call-action-1", "ContractSubmit", "提交指定合同版本", "private-record-reference", "succeeded")
 	writeActionEvent("started", "call-action-2", "RequestRevision", "要求修订", "private-record-reference", "")
+	for index := 3; index <= 12; index++ {
+		callID := fmt.Sprintf("call-action-%d", index)
+		actionName := fmt.Sprintf("Step%d", index)
+		label := fmt.Sprintf("处理步骤%d", index)
+		writeActionEvent("started", callID, actionName, label, "private-record-reference", "")
+		writeActionEvent("result", callID, actionName, label, "private-record-reference", "succeeded")
+	}
+	writeActionEvent("started", "call-action-13", "FinalReject", "最后失败动作", "private-record-reference", "")
+	writeActionEvent("result", "call-action-13", "FinalReject", "最后失败动作", "private-record-reference", "failed")
+	writeActionEvent("started", "call-action-14", "FinalUnknown", "最后未知动作", "private-record-reference", "")
 	var calls atomic.Int32
 	forge := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		calls.Add(1)
@@ -128,8 +139,9 @@ func TestEmployeeRunEventBackfillDeliversOnceToForgeInboxRealPG(t *testing.T) {
 			t.Errorf("native inbox event shape changed: %#v", event)
 		}
 		summary, _ := event["summary"].(string)
-		if !strings.Contains(summary, "提交指定合同版本") || !strings.Contains(summary, "已确认完成") ||
-			!strings.Contains(summary, "结果未知") || strings.Contains(summary, "sales_contract") || strings.Contains(summary, "private-record-reference") {
+		if !strings.Contains(summary, "成功 11 项") || !strings.Contains(summary, "失败 1 项") ||
+			!strings.Contains(summary, "结果未知 2 项") || !strings.Contains(summary, "完整逐项结果请打开原工作续办") ||
+			strings.Contains(summary, "sales_contract") || strings.Contains(summary, "private-record-reference") {
 			t.Errorf("summary did not use safe platform action facts: %q", summary)
 		}
 		if _, exists := event["action_outcomes"]; exists {

@@ -868,7 +868,7 @@ func (d *dispatcher) Dispatch(ctx context.Context, call contract.ToolCall) (*con
 		outcome = ActionOutcomeEvent{
 			Source: ActionOutcomeSourceForgeMCP, InvocationID: invocationID, CallID: call.ID,
 			CapabilityID: selected.capabilityID, ActionKey: selected.objectName + "." + selected.actionName,
-			ActionLabel: selected.label, ActionName: selected.actionName, ObjectName: selected.objectName,
+			ActionLabel: boundedActionOutcomeLabel(selected.label), ActionName: selected.actionName, ObjectName: selected.objectName,
 			InputRevisionID: d.inputRevisionID, RecordID: input.RecordID,
 		}
 		outcome.FrozenRecordSHA256 = d.recordHashes[call.Name]
@@ -891,6 +891,10 @@ func (d *dispatcher) Dispatch(ctx context.Context, call contract.ToolCall) (*con
 		}
 		outcome.Phase = "started"
 		if err := recordActionOutcome(ctx, outcome); err != nil {
+			if errors.Is(err, ErrActionOutcomeUnresolved) {
+				return &contract.ToolResult{CallID: call.ID, ToolName: call.Name,
+					Content: "同一父运行中的业务动作仍有未确认结果；当前调用没有再次发送，请先核对业务记录。", IsError: true}, nil
+			}
 			return nil, fmt.Errorf("persist Forge action start before dispatch: %w", err)
 		}
 	}

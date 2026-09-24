@@ -16,6 +16,8 @@ const (
 	ActionOutcomeSourceForgeMCP  = "forge_mcp.run_action"
 )
 
+var ErrActionOutcomeUnresolved = errors.New("Forge action outcome remains unresolved")
+
 // ActionOutcomeEvent contains only the scoped provenance needed to establish
 // which frozen business action ran. It deliberately excludes action params,
 // credentials, response bodies, and model text.
@@ -43,6 +45,15 @@ type ActionOutcomeReplay struct {
 }
 
 type ActionOutcomeGuard func(context.Context, ActionOutcomeEvent) (ActionOutcomeReplay, error)
+
+func boundedActionOutcomeLabel(value string) string {
+	value = strings.Join(strings.Fields(value), " ")
+	runes := []rune(value)
+	if len(runes) > 128 {
+		return string(runes[:127]) + "…"
+	}
+	return value
+}
 
 type actionOutcomeRecorderContextKey struct{}
 type actionOutcomeGuardContextKey struct{}

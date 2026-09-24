@@ -167,7 +167,7 @@ func (worker *employeeRunEventWorker) materialize(ctx context.Context) error {
 		SELECT DISTINCT ON (started.workspace_id,started.run_id,started.node_id,started.member_id,
 			started.detail->>'invocation_id',started.detail->>'tool_call_id')
 			started.workspace_id,started.run_id,started.seq,
-			COALESCE(NULLIF(started.detail->>'action_label',''),NULLIF(started.detail->>'action_name',''),'业务动作') AS action_label,
+			left(COALESCE(NULLIF(started.detail->>'action_label',''),NULLIF(started.detail->>'action_name',''),'业务动作'),128) AS action_label,
 			COALESCE(outcome.status,'unknown') AS status
 		FROM weave_team_run_activity_events AS started
 		LEFT JOIN LATERAL (
@@ -185,7 +185,10 @@ func (worker *employeeRunEventWorker) materialize(ctx context.Context) error {
 		ORDER BY started.workspace_id,started.run_id,started.node_id,started.member_id,
 			started.detail->>'invocation_id',started.detail->>'tool_call_id',started.seq DESC
 	), business_action_summary AS (
-		SELECT workspace_id,run_id,
+		SELECT workspace_id,run_id,count(*) AS action_count,
+			count(*) FILTER (WHERE status='succeeded') AS succeeded_count,
+			count(*) FILTER (WHERE status='failed') AS failed_count,
+			count(*) FILTER (WHERE status NOT IN ('succeeded','failed')) AS unknown_count,
 			string_agg('平台记录：业务动作“'||action_label||'”'||CASE status
 				WHEN 'succeeded' THEN '已确认完成。'
 				WHEN 'failed' THEN '返回失败。'
@@ -204,6 +207,9 @@ func (worker *employeeRunEventWorker) materialize(ctx context.Context) error {
 		'organizationId',external_organization,'assigneeAccountId',assignee_account_id,
 		'title',team_name||CASE status WHEN 'succeeded' THEN '已完成' WHEN 'cancelled' THEN '已取消' ELSE '处理失败' END,
 		'summary',left(CASE
+		  WHEN business_action_summary.action_count>12 THEN
+			'平台记录的业务动作：成功 '||business_action_summary.succeeded_count||' 项，失败 '||business_action_summary.failed_count||
+			' 项，结果未知 '||business_action_summary.unknown_count||' 项。完整逐项结果请打开原工作续办。'
 		  WHEN business_action_summary.summary IS NOT NULL THEN business_action_summary.summary
 		  WHEN status='succeeded' AND deliverable_content<>'' THEN deliverable_content
 		  WHEN status='succeeded' THEN '团队工作已完成，可在桌面查看结果。'

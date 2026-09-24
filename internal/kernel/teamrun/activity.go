@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jinyitao123/weave/internal/kernel/businessaction"
 )
 
 const ActivityDetailMaxBytes = 32 * 1024
@@ -203,6 +204,33 @@ func (store *PGActivityStore) RecordBusinessActionEvent(ctx context.Context, eve
 			return fmt.Errorf("check duplicate business action start: %w", err)
 		}
 		if !exists {
+			var unresolved bool
+			if err := tx.QueryRow(ctx, `SELECT EXISTS(
+				SELECT 1 FROM weave_team_run_activity_events AS started
+				LEFT JOIN LATERAL (
+					SELECT result.detail->>'status' AS status
+					FROM weave_team_run_activity_events AS result
+					WHERE result.workspace_id=started.workspace_id AND result.run_id=started.run_id
+					  AND result.kind='business_action_result'
+					  AND result.node_id IS NOT DISTINCT FROM started.node_id
+					  AND result.member_id IS NOT DISTINCT FROM started.member_id
+					  AND result.detail->>'invocation_id'=started.detail->>'invocation_id'
+					  AND result.detail->>'tool_call_id'=started.detail->>'tool_call_id'
+					ORDER BY result.seq DESC LIMIT 1
+				) AS latest ON true
+				WHERE started.workspace_id=$1 AND started.run_id=$2 AND started.kind='business_action_started'
+				  AND started.event_id<>$3
+				  AND started.detail->>'source'=$4::jsonb->>'source'
+				  AND started.detail->>'input_revision_id'=$4::jsonb->>'input_revision_id'
+				  AND started.detail->>'capability_id'=$4::jsonb->>'capability_id'
+				  AND COALESCE(started.detail->>'record_id','')=COALESCE($4::jsonb->>'record_id','')
+				  AND COALESCE(latest.status,'unknown') NOT IN ('succeeded','failed')
+			)`, event.WorkspaceID, event.RunID, event.EventID, string(event.Detail)).Scan(&unresolved); err != nil {
+				return fmt.Errorf("check unresolved business action start: %w", err)
+			}
+			if unresolved {
+				return businessaction.ErrActionOutcomeUnresolved
+			}
 			var count int
 			if err := tx.QueryRow(ctx, `SELECT count(*) FROM weave_team_run_activity_events
 				WHERE workspace_id=$1 AND run_id=$2 AND kind='business_action_started'`, event.WorkspaceID, event.RunID).Scan(&count); err != nil {
