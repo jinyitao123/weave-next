@@ -218,9 +218,9 @@ func (worker *employeeRunEventWorker) materialize(ctx context.Context) error {
 		  ELSE '团队处理失败，请在桌面查看并重试。' END,4000),
 		'occurredAt',terminal_at,
 		'source',jsonb_build_object(
-		  'workReference',input_revision_id,'runReference',run_id,
+		  'workReference',input_revision_id,'runReference',fixed.run_id,
 		  'sessionReference',workbench_session_id,
-		  'idempotencyKey','weave-team-run-terminal:'||run_id
+		  'idempotencyKey','weave-team-run-terminal:'||fixed.run_id
 		)
 	  )
 	FROM (SELECT candidates.*,md5('weave-team-run-event'||chr(31)||workspace_id||chr(31)||run_id) AS hash FROM candidates) AS fixed
