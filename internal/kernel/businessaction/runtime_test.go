@@ -288,6 +288,88 @@ func TestDispatcherRejectsMissingRequiredForgeParamsBeforeDispatch(t *testing.T)
 	}
 }
 
+func TestDispatcherPreservesScalarForgeParameterConstraintsBeforeDispatch(t *testing.T) {
+	id := "forge:action:sales_quote.ChangeLinePrice"
+	catalog := map[string]actionMetadata{"sales_quote.ChangeLinePrice": {
+		Name: "ChangeLinePrice", ObjectName: "sales_quote",
+		Params: []actionParam{
+			{Name: "status", Type: "string", Required: true, Description: "Current state", Enum: []string{"draft", "approved"}},
+			{Name: "unit_price", Type: "number", Required: true},
+			{Name: "enabled", Type: "boolean"},
+		},
+	}}
+
+	host := &captureHost{}
+	value, err := newDispatcher(host, []string{id}, catalog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tools, err := value.ListTools(t.Context())
+	if err != nil || len(tools) != 1 {
+		t.Fatalf("tools=%+v err=%v", tools, err)
+	}
+	var schema struct {
+		Properties map[string]struct {
+			Type       string   `json:"type"`
+			Enum       []string `json:"enum"`
+			Properties map[string]struct {
+				Type        string   `json:"type"`
+				Enum        []string `json:"enum"`
+				Description string   `json:"description"`
+			} `json:"properties"`
+			Required []string `json:"required"`
+		} `json:"properties"`
+	}
+	if err := json.Unmarshal(tools[0].InputSchema, &schema); err != nil {
+		t.Fatal(err)
+	}
+	params, ok := schema.Properties["params"]
+	if !ok || params.Type != "object" || strings.Join(params.Required, ",") != "status,unit_price" ||
+		params.Properties["status"].Type != "string" || strings.Join(params.Properties["status"].Enum, ",") != "draft,approved" ||
+		params.Properties["unit_price"].Type != "number" || params.Properties["enabled"].Type != "boolean" {
+		t.Fatalf("Forge scalar constraints were not preserved: %s", tools[0].InputSchema)
+	}
+
+	for _, args := range []string{
+		`{"params":{"unit_price":2.5,"enabled":true}}`,
+		`{"params":{"status":"cancelled","unit_price":2.5,"enabled":true}}`,
+		`{"params":{"status":"draft","unit_price":"2.5","enabled":true}}`,
+		`{"params":{"status":"draft","unit_price":2.5,"enabled":"true"}}`,
+		`{"params":{"status":"draft","unit_price":2.5,"enabled":true,"extra":"value"}}`,
+	} {
+		result, dispatchErr := value.Dispatch(t.Context(), contract.ToolCall{ID: "invalid-args", Name: tools[0].Name, Args: args})
+		if dispatchErr != nil || result == nil || !result.IsError || host.call.Name != "" {
+			t.Fatalf("invalid arguments reached Forge: args=%s result=%+v call=%+v err=%v", args, result, host.call, dispatchErr)
+		}
+	}
+
+	result, err := value.Dispatch(t.Context(), contract.ToolCall{ID: "valid-args", Name: tools[0].Name, Args: `{"params":{"status":"draft","unit_price":2.5,"enabled":true}}`})
+	if err != nil || result == nil || result.IsError || host.call.Name != "run_action" {
+		t.Fatalf("valid scalar arguments were rejected: result=%+v call=%+v err=%v", result, host.call, err)
+	}
+	var upstream struct {
+		Params map[string]any `json:"params"`
+	}
+	if err := json.Unmarshal([]byte(host.call.Args), &upstream); err != nil || upstream.Params["status"] != "draft" || upstream.Params["unit_price"] != 2.5 || upstream.Params["enabled"] != true {
+		t.Fatalf("validated values changed before the Forge call: params=%+v err=%v", upstream.Params, err)
+	}
+}
+
+func TestDispatcherRejectsArrayWithoutForgeItemSchema(t *testing.T) {
+	id := "forge:action:sales_quote.ReplaceLines"
+	metadata := actionMetadata{Name: "ReplaceLines", ObjectName: "sales_quote", Params: []actionParam{{Name: "lines", Type: "array", Required: true}}}
+	_, err := newDispatcher(&captureHost{}, []string{id}, map[string]actionMetadata{"sales_quote.ReplaceLines": metadata})
+	if err == nil || !strings.Contains(err.Error(), `array parameter "lines" has no item schema`) {
+		t.Fatalf("array without item schema was exposed: err=%v", err)
+	}
+	_, err = ValidateDevelopmentActions([]string{id}, []DevelopmentAction{{
+		CapabilityID: id, Name: "ReplaceLines", ObjectName: "sales_quote", Params: metadata.Params,
+	}})
+	if err == nil || !strings.Contains(err.Error(), `array parameter "lines" has no item schema`) {
+		t.Fatalf("array without item schema was allowed in a development trial: err=%v", err)
+	}
+}
+
 func TestTaskScopeCanExposeOnlyOnePublishedForgeAction(t *testing.T) {
 	host := &captureHost{}
 	value, err := newDispatcher(host, []string{"forge:action:sales_contract.ContractSubmit"}, contractSubmitCatalog())
