@@ -68,16 +68,14 @@ import "github.com/jinyitao123/weave/internal/app/api"
         violations, _ = check([{"path": "internal/app/api/main.go", "imports": [MODULE + "/internal/legacy"]}])
         self.assertIn("unknown internal package band", violations[0])
 
-    def test_baseline_cannot_move_to_a_different_file_or_band(self):
-        path, imported = sorted(ALLOWED_EDGES)[0]
-        violations, baseline = check([{"path": path, "imports": [imported]}])
-        self.assertFalse(violations)
-        self.assertEqual(baseline, {(path, imported)})
-        for moved, target in [(path.replace(".go", "_new.go"), imported),
-                              (path, imported.replace("/kernel/", "/app/"))]:
-            with self.subTest(path=moved, target=target):
-                violations, _ = check([{"path": moved, "imports": [target]}])
-                self.assertEqual(len(violations), 1)
+    def test_no_upward_import_exceptions_remain(self):
+        self.assertEqual(ALLOWED_EDGES, set())
+        violations, baselines = check([
+            {"path": "internal/base/example/main.go", "imports": [MODULE + "/internal/kernel/workflow"]},
+            {"path": "internal/kernel/example/main.go", "imports": [MODULE + "/internal/app/api"]},
+        ])
+        self.assertEqual(len(violations), 2, violations)
+        self.assertFalse(baselines)
 
     def test_downward_and_cmd_imports_are_allowed(self):
         violations, _ = check([
