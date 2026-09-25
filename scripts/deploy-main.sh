@@ -13,6 +13,23 @@ flock -w 1800 9
 test -f "$env_file"
 IFS= read -r github_token
 test -n "$github_token"
+
+phase=source-initialization
+if ! git -C "$source_dir" rev-parse --git-dir >/dev/null 2>&1; then
+  if [[ -e "$source_dir" ]] && [[ -n "$(find "$source_dir" -mindepth 1 -maxdepth 1 -print -quit)" ]]; then
+    echo 'Deployment source path exists but is not a Git repository; refusing to reuse or overwrite it.' >&2
+    exit 2
+  fi
+  mkdir -p "$source_dir"
+  git -C "$source_dir" init --quiet
+  git -C "$source_dir" remote add origin https://github.com/jinyitao123/weave-next.git
+fi
+origin_url="$(git -C "$source_dir" remote get-url origin 2>/dev/null || true)"
+case "$origin_url" in
+  https://github.com/jinyitao123/weave-next.git) ;;
+  *) echo 'Deployment source origin does not match jinyitao123/weave-next; refusing to fetch.' >&2; exit 2 ;;
+esac
+
 fetch_main() (
   # The job token is repository-scoped, short-lived, and never stored in Git or passed to builds.
   export GIT_CONFIG_COUNT=1 GIT_TERMINAL_PROMPT=0
@@ -62,6 +79,8 @@ cp -p "$env_file" "$backup_dir/server.env"
 if [[ -n "$("${compose[@]}" ps --status running -q db)" ]]; then
   "${compose[@]}" exec -T db pg_dump -U weave -d weave -Fc > "$backup_dir/database.dump"
 fi
+phase=prepare-workbench-storage
+python3 "$release_dir/scripts/deployment-state.py" prepare-workbench-storage "$env_file" "$state_dir"
 phase=api-startup
 "${compose[@]}" up -d --no-build --wait --wait-timeout 120 db weave
 phase=bootstrap

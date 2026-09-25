@@ -42,6 +42,34 @@ class DeploymentStateTests(unittest.TestCase):
                 self.invoke('bootstrap', '--', 'docker', 'compose')
         self.assertEqual(self.env.read_bytes(), original)
 
+    def test_workbench_storage_creation_preserves_existing_files_and_is_idempotent(self):
+        workbench = self.root / 'workbench-data'
+        workspaces = self.root / 'workspaces'
+        workbench.mkdir()
+        sentinel = workbench / 'existing-session.json'
+        sentinel.write_text('{"kept":true}')
+        self.env.write_text(self.env.read_text() +
+                            f'WORKBENCH_DATA_PATH={workbench}\nWORKBENCH_WORKSPACE_PATH={workspaces}\n')
+
+        prepared = deployment.prepare_workbench_storage(deployment.read_env(self.env))
+        self.assertEqual([item['state'] for item in prepared], ['preserved', 'created_empty'])
+        self.assertEqual(sentinel.read_text(), '{"kept":true}')
+        self.assertTrue(workspaces.is_dir())
+        self.assertEqual(workspaces.stat().st_mode & 0o777, 0o750)
+
+        prepared_again = deployment.prepare_workbench_storage(deployment.read_env(self.env))
+        self.assertEqual([item['state'] for item in prepared_again], ['preserved', 'preserved'])
+        self.assertEqual(sentinel.read_text(), '{"kept":true}')
+
+    def test_workbench_storage_rejects_overlapping_paths_before_creation(self):
+        shared = self.root / 'shared'
+        child = shared / 'workspaces'
+        self.env.write_text(self.env.read_text() +
+                            f'WORKBENCH_DATA_PATH={shared}\nWORKBENCH_WORKSPACE_PATH={child}\n')
+        with self.assertRaisesRegex(RuntimeError, 'separate directories'):
+            deployment.prepare_workbench_storage(deployment.read_env(self.env))
+        self.assertFalse(shared.exists())
+
     def test_wrong_running_commit_cannot_be_recorded_as_success(self):
         with patch.object(deployment, 'get_json', return_value={'build_commit': 'a' * 40}):
             with self.assertRaises(RuntimeError):
