@@ -35,7 +35,9 @@ fetch_main() (
   export GIT_CONFIG_COUNT=1 GIT_TERMINAL_PROMPT=0
   export GIT_CONFIG_KEY_0=http.https://github.com/.extraheader
   export GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf '%s' "x-access-token:$github_token" | base64 | tr -d '\n')"
-  timeout 600 git -c http.version=HTTP/1.1 -C "$source_dir" fetch --no-tags --depth 1 origin main
+  # Initial host recovery fetches a shallow source tree without a warm object cache.
+  # Keep the 45-minute GitHub deploy-job bound; this does not relax SHA or CI checks.
+  timeout 1800 git -c http.version=HTTP/1.1 -C "$source_dir" fetch --no-tags --depth 1 origin main
 )
 
 phase=fetch
