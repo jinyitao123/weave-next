@@ -74,4 +74,5 @@ jobs:
           bash -n scripts/deploy-main.sh
           bash -n scripts/deploy-dispatch.sh
           bash -n scripts/bootstrap-deploy-main.sh
+          bash -n scripts/update-deploy-runner.sh
           python3 -m unittest discover -s scripts -p 'test_deploy*.py'
