@@ -105,8 +105,14 @@ func TestWorkbenchContextReadsExactInputAndRejectsOtherEmployeesRealPG(t *testin
 	if err != nil || claimed == nil || claimed.ID != run.TaskID {
 		t.Fatalf("claim run task: task=%+v err=%v", claimed, err)
 	}
-	if err := server.Tasks.CompleteClaimed(t.Context(), claimed.ID, "context-worker", json.RawMessage(`{"ok":true}`), run.RunID); err != nil {
-		t.Fatal(err)
+	consumer := &teamrun.Consumer{
+		Transactions: pool,
+		Snapshots:    server.Snapshots,
+		Runs:         teamrun.NewPGStore(),
+		Tasks:        server.Tasks,
+	}
+	if established, err := consumer.ConsumeClaimed(t.Context(), claimed, "context-worker"); err != nil || established.RunID != run.RunID {
+		t.Fatalf("establish team run before recording activity: run=%+v err=%v", established, err)
 	}
 	actionStore := &teamrun.PGActivityStore{Transactions: pool}
 	writeActionEvent := func(nodeID, memberID, phase, callID, actionName, actionLabel, objectName, recordID, status string) {
@@ -142,7 +148,7 @@ func TestWorkbenchContextReadsExactInputAndRejectsOtherEmployeesRealPG(t *testin
 		run.RunID, uuid.NewString(), `{"summary":"另一个成员声称已经执行了审批动作"}`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := pool.Exec(t.Context(), `UPDATE weave_team_runs SET status='failed',cause_summary='later member failed',terminal_at=statement_timestamp()
+	if _, err := pool.Exec(t.Context(), `UPDATE weave_team_runs SET status='failed',error_code='team_run_execution_failed',cause_summary='later member failed',terminal_at=statement_timestamp()
 		WHERE workspace_id='ws' AND run_id=$1`, run.RunID); err != nil {
 		t.Fatal(err)
 	}

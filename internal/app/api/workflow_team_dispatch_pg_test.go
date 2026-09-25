@@ -135,8 +135,8 @@ func TestTeamWorkflowDispatchKeepsInputIdentityAndAdmissionRealPG(t *testing.T) 
 	if err != nil || json.Unmarshal(task.Payload, &taskText) != nil || taskText != input.Task || task.RunSnapshotID != first.RunID {
 		t.Fatalf("task lost original input or run identity: %+v %v", task, err)
 	}
-	// A Workbench request may name a conversation while omitting its project.
-	// Admission derives the project, and an identical replay must keep that identity.
+	// A Workbench conversation is bound to its owning project, and an identical
+	// replay must keep that identity.
 	if _, err := pool.Exec(ctx, `
  INSERT INTO weave_projects(id,workspace_id,avatar_id,name,team_id) VALUES('project','ws','lead','Project','team');
  INSERT INTO weave_conversations(id,workspace_id,agent_id,user_id,project_id) VALUES('conversation','ws','lead','user','project');
@@ -145,6 +145,7 @@ func TestTeamWorkflowDispatchKeepsInputIdentityAndAdmissionRealPG(t *testing.T) 
 	}
 	conversationInput := input
 	conversationInput.ConversationID = "conversation"
+	conversationInput.ProjectID = "project"
 	conversationInput.ClientRequestID = "00000000-0000-0000-0000-000000000003"
 	attributed := dispatch(conversationInput, http.StatusCreated)
 	if attributed.ProjectID != "project" {

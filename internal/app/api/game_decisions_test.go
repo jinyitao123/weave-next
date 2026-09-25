@@ -10,6 +10,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/kernel/teamrun"
 	"github.com/labstack/echo/v4"
@@ -74,7 +75,7 @@ func TestGameInputAndChoiceRejectInjectionAndInvalidOutput(t *testing.T) {
 func TestGameServiceAdmissionIdempotencyRoomIsolationAndCancellationRealPG(t *testing.T) {
 	dependencies := []frozen.FrozenDependencyRef{}
 	digest, _ := frozen.ComputeManifestHash(dependencies)
-	bundle := frozen.FrozenExecutionBundle{SchemaVersion: 1, FactoryKey: frozen.FactoryKey{FactoryID: "standard", FactoryVersion: "1", CompilerABI: "weave-graph-abi-v1"}, Agent: frozen.FrozenAgentRecord{SchemaVersion: 1, WorkspaceID: "ws", AgentID: "worker", AgentVersion: 1, Name: "worker", Role: "worker", Engine: "loom", Model: "model", GraphType: "standard", FactoryInput: json.RawMessage(`{}`), Permissions: frozen.FrozenPermissions{Deny: []string{"*"}}, OutputSchema: json.RawMessage(`{"type":"object"}`)}, PrimaryModel: frozen.FrozenModelBinding{SchemaVersion: 1, WorkspaceID: "ws", ProviderID: "provider", ProviderRevision: 1, ModelID: "model", BaseURL: "https://provider.example", CredentialRef: frozen.CredentialReference{SchemaVersion: 1, WorkspaceID: "ws", Kind: frozen.CredentialProviderAPIKey, ResourceID: "provider", Slot: "api_key"}}, Dependencies: frozen.FrozenDependencyManifest{SchemaVersion: 1, Dependencies: dependencies, ManifestHash: digest}, Capability: frozen.CapabilityManifest{SchemaVersion: 2, Role: "worker", AgentContentHash: strings.Repeat("b", 64)}}
+	bundle := frozen.FrozenExecutionBundle{SchemaVersion: 1, FactoryKey: frozen.FactoryKey{FactoryID: "standard", FactoryVersion: "1", CompilerABI: "weave-graph-abi-v1"}, Agent: frozen.FrozenAgentRecord{SchemaVersion: 1, WorkspaceID: "ws", AgentID: "worker", AgentVersion: 1, Name: "worker", Role: "worker", Engine: "loom", Model: "model", GraphType: "standard", FactoryInput: json.RawMessage(`{}`), Permissions: frozen.FrozenPermissions{Deny: []string{"*"}}, OutputSchema: json.RawMessage(`{"type":"object"}`)}, PrimaryModel: frozen.FrozenModelBinding{SchemaVersion: 1, WorkspaceID: "ws", ProviderID: "provider", ProviderRevision: 1, ModelID: "model", BaseURL: "https://provider.example", CredentialRef: frozen.CredentialReference{SchemaVersion: 1, Scope: frozen.CredentialScopeUser, UserID: "user", WorkspaceID: "ws", Kind: frozen.CredentialProviderAPIKey, ResourceID: "provider", Slot: "api_key"}}, Dependencies: frozen.FrozenDependencyManifest{SchemaVersion: 1, Dependencies: dependencies, ManifestHash: digest}, Capability: frozen.CapabilityManifest{SchemaVersion: 2, Role: "worker", AgentContentHash: strings.Repeat("b", 64)}}
 	graph := json.RawMessage(`{"schema_version":1,"entry_node_id":"worker","input_contract":{"type":"text"},"output_contract":{"type":"text"},"nodes":[{"id":"worker","type":"worker","inputs":{"task":{"expected_type":"text","value":{"source":"run_input","path":""}}},"output":{"type":"text"},"config":{"agent_id":"worker","agent_version":1,"kind":"consult","result_requirement":"choose a candidate"}},{"id":"deliver","type":"deliver","config":{"result":{"source":"node_output","node_id":"worker","path":""}}}],"edges":[{"id":"delivery","from_node_id":"worker","to_node_id":"deliver","route":"success"}]}`)
 	s, pool := newTeamDispatchTestServerWithGraph(t, graph, bundle)
 	if _, err := pool.Exec(t.Context(), `INSERT INTO weave_agents(id,workspace_id,name,role,spec) VALUES('worker','ws','worker','worker','{}'); INSERT INTO weave_team_workers(workspace_id,team_id,worker_agent_id,allowed_kinds,default_kind) VALUES('ws','team','worker',ARRAY['consult'],'consult')`); err != nil {
@@ -89,7 +90,11 @@ func TestGameServiceAdmissionIdempotencyRoomIsolationAndCancellationRealPG(t *te
 		t.Helper()
 		raw, _ := json.Marshal(body)
 		rec := httptest.NewRecorder()
-		c := echo.New().NewContext(httptest.NewRequest(http.MethodPost, path, bytes.NewReader(raw)), rec)
+		request := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(raw))
+		request = request.WithContext(execution.WithSubject(request.Context(), execution.Subject{
+			WorkspaceID: "ws", ServiceID: "api-key:" + key,
+		}))
+		c := echo.New().NewContext(request, rec)
 		c.Set("tenant", "ws")
 		c.Set("user_id", "user")
 		c.Set(authSourceContextKey, authSourceAPIKey)

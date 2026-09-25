@@ -158,7 +158,7 @@ func (r *AgentRegistry) applyTeamRosterCommandTx(ctx context.Context, tx pgx.Tx,
 		INSERT INTO weave_team_roster_receipts (
 			workspace_id, team_id, idempotency_key, request_hash, response
 		) VALUES ($1, $2, $3, $4, $5)
-	`, normalized.WorkspaceID, normalized.TeamID, normalized.IdempotencyKey, requestHash, response); err != nil {
+	`, normalized.WorkspaceID, normalized.TeamID, normalized.IdempotencyKey, requestHash, string(response)); err != nil {
 		return nil, fmt.Errorf("insert team roster receipt: %w", err)
 	}
 	if outcome.Changed {
@@ -749,7 +749,7 @@ func insertTeamRosterAudit(
 		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 	`, command.WorkspaceID, command.TeamID, auditID, command.IdempotencyKey,
 		outcome.OldStatus, outcome.NewStatus, outcome.OldLeadAgentID,
-		outcome.NewLeadAgentID, oldWorkers, newWorkers, command.OperatorID, command.Reason,
+		outcome.NewLeadAgentID, string(oldWorkers), string(newWorkers), command.OperatorID, command.Reason,
 	); err != nil {
 		return fmt.Errorf("insert team roster audit: %w", err)
 	}
