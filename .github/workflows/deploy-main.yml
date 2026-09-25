@@ -48,10 +48,33 @@ jobs:
             if (!/^[0-9a-f]{40}$/.test(sha)) throw new Error('Invalid commit SHA');
             core.setOutput('sha', sha);
             core.setOutput('deploy', 'true');
+      - name: Check out the CI-verified commit
+        if: steps.target.outputs.deploy == 'true'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.target.outputs.sha }}
+          fetch-depth: 1
+      - name: Create a source archive and digest
+        id: source
+        if: steps.target.outputs.deploy == 'true'
+        env:
+          DEPLOY_SHA: ${{ steps.target.outputs.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$DEPLOY_SHA"
+          archive="$RUNNER_TEMP/weave-source-$DEPLOY_SHA.tar.gz"
+          git archive --format=tar "$DEPLOY_SHA" | gzip -n > "$archive"
+          digest="$(sha256sum "$archive" | awk '{print $1}')"
+          [[ "$digest" =~ ^[0-9a-f]{64}$ ]]
+          echo "path=$archive" >> "$GITHUB_OUTPUT"
+          echo "sha256=$digest" >> "$GITHUB_OUTPUT"
       - name: Deploy the exact commit
         if: steps.target.outputs.deploy == 'true'
         env:
           DEPLOY_SHA: ${{ steps.target.outputs.sha }}
+          SOURCE_ARCHIVE: ${{ steps.source.outputs.path }}
+          SOURCE_ARCHIVE_SHA: ${{ steps.source.outputs.sha256 }}
           DEPLOY_HOST: ${{ vars.WEAVE_DEPLOY_HOST }}
           DEPLOY_USER: ${{ vars.WEAVE_DEPLOY_USER }}
           DEPLOY_KEY: ${{ secrets.WEAVE_DEPLOY_SSH_KEY }}
@@ -62,12 +85,16 @@ jobs:
           set -euo pipefail
           test -n "$DEPLOY_HOST" && test -n "$DEPLOY_USER"
           test -n "$DEPLOY_KEY" && test -n "$DEPLOY_KNOWN_HOSTS"
+          test -n "$SOURCE_ARCHIVE" && test -n "$SOURCE_ARCHIVE_SHA"
           umask 077
           ssh_dir="$(mktemp -d)"
           trap 'rm -rf "$ssh_dir"' EXIT
           printf '%s\n' "$DEPLOY_KEY" > "$ssh_dir/id_ed25519"
           printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$ssh_dir/known_hosts"
-          printf '%s\n' "$DEPLOY_GITHUB_TOKEN" | ssh -T -i "$ssh_dir/id_ed25519" \
+          {
+            printf '%s\n%s\n' "$DEPLOY_GITHUB_TOKEN" "$SOURCE_ARCHIVE_SHA"
+            cat "$SOURCE_ARCHIVE"
+          } | ssh -T -i "$ssh_dir/id_ed25519" \
             -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
             -o UserKnownHostsFile="$ssh_dir/known_hosts" \
             -o ConnectTimeout=20 -o ServerAliveInterval=30 -o ServerAliveCountMax=6 \
