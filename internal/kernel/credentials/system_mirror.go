@@ -159,13 +159,13 @@ func (s *Store) MirrorSystemProvider(
 		)
 	}
 	storedKey, err := secret.Open(s.key, storedCiphertext)
-	if err != nil {
-		return SystemProviderMirrorResult{}, coded(
-			CodeCredentialUnavailable,
-			"mirrored provider credential cannot be opened",
-		)
-	}
-	keyChanged := !bytes.Equal(storedKey, []byte(normalized.APIKey))
+	// This operation is an explicit admin mirror of the process-configured
+	// system provider. If an earlier master-key change or ciphertext corruption
+	// stranded the workspace mirror, the configured source credential is the
+	// only recoverable authority; reseal it below while preserving the frozen
+	// provider identity and functional revision. Closed mirrors are rejected
+	// above and are never revived here.
+	keyChanged := err != nil || !bytes.Equal(storedKey, []byte(normalized.APIKey))
 
 	var revision ProviderRevision
 	functionalChanged := head.LatestRevision == 0
