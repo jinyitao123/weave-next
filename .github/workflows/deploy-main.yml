@@ -64,7 +64,8 @@ jobs:
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$DEPLOY_SHA"
           archive="$RUNNER_TEMP/weave-source-$DEPLOY_SHA.tar.gz"
-          git archive --format=tar "$DEPLOY_SHA" | gzip -n > "$archive"
+          # Evidence docs are validated by CI but are not consumed by either Docker build.
+          git archive --format=tar "$DEPLOY_SHA" -- . ':(exclude)docs/**' | gzip -n > "$archive"
           digest="$(sha256sum "$archive" | awk '{print $1}')"
           [[ "$digest" =~ ^[0-9a-f]{64}$ ]]
           echo "path=$archive" >> "$GITHUB_OUTPUT"
