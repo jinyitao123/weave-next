@@ -35,9 +35,37 @@ fetch_main() (
   export GIT_CONFIG_COUNT=1 GIT_TERMINAL_PROMPT=0
   export GIT_CONFIG_KEY_0=http.https://github.com/.extraheader
   export GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf '%s' "x-access-token:$github_token" | base64 | tr -d '\n')"
-  # Initial host recovery fetches a shallow source tree without a warm object cache.
-  # Keep the 45-minute GitHub deploy-job bound; this does not relax SHA or CI checks.
-  timeout 1800 git -c http.version=HTTP/1.1 -C "$source_dir" fetch --no-tags --depth 1 origin main
+  remote_sha=''
+  for attempt in 1 2 3; do
+    if remote_sha="$(timeout 180 git -c http.version=HTTP/1.1 -C "$source_dir" ls-remote --exit-code origin refs/heads/main | awk 'NR == 1 { print $1 }')" && [[ "$remote_sha" =~ ^[0-9a-f]{40}$ ]]; then
+      break
+    fi
+    remote_sha=''
+    if [[ "$attempt" -lt 3 ]]; then
+      echo "GitHub main ref check failed; retrying ($attempt/3)." >&2
+      sleep "$((attempt * 5))"
+    fi
+  done
+  [[ "$remote_sha" =~ ^[0-9a-f]{40}$ ]] || return 1
+
+  # Reuse already-fetched objects and transfer only a ref check when the target is cached.
+  # A clean or stale source checkout still fetches the exact current main branch.
+  if git -C "$source_dir" cat-file -e "$remote_sha^{commit}" 2>/dev/null; then
+    git -C "$source_dir" update-ref refs/remotes/origin/main "$remote_sha"
+    return 0
+  fi
+
+  # Keep bounded retries for transient TLS disconnects while preserving the 45-minute job gate.
+  for attempt in 1 2 3; do
+    if timeout 1800 git -c http.version=HTTP/1.1 -C "$source_dir" fetch --no-tags --depth 1 origin main; then
+      return 0
+    fi
+    if [[ "$attempt" -lt 3 ]]; then
+      echo "GitHub main fetch failed; retrying ($attempt/3)." >&2
+      sleep "$((attempt * 10))"
+    fi
+  done
+  return 1
 )
 
 phase=fetch
