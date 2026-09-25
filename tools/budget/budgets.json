@@ -222,6 +222,52 @@
         "previous_external_dependencies": 7,
         "external_dependencies": 7
       }
+    },
+    {
+      "date": "2026-09-25",
+      "source_commit": "7269740e8b4a548f7be7eec41d7012442b766ea2",
+      "reason": "Reconcile the hard ceilings to exact measurements after the post-2026-09-10 mainline layer migration and accepted Workbench capability, identity, team-configuration, frozen-input, and result-delivery work. A clean archive of 1010ff already exceeded the old kernel/app ceilings; the current 34-line net test-fixture change adds no production lines, packages, or dependencies. No spare allowance is added; original migration targets and dependency allowlists remain unchanged, and the outstanding migration debt is not retired.",
+      "record": "docs/治理/2026-09-25-四带预算登记复核.md",
+      "base": {
+        "previous_lines": 27547,
+        "previous_production_lines": 22985,
+        "lines_removed": 19411,
+        "production_lines_removed": 16311,
+        "previous_packages": 12,
+        "packages": 9,
+        "previous_external_dependencies": 4,
+        "external_dependencies": 4
+      },
+      "kernel": {
+        "previous_lines": 67338,
+        "previous_production_lines": 62474,
+        "lines_added": 24095,
+        "production_lines_added": 16245,
+        "previous_packages": 33,
+        "packages": 49,
+        "previous_external_dependencies": 5,
+        "external_dependencies": 5
+      },
+      "build": {
+        "previous_lines": 37251,
+        "previous_production_lines": 34796,
+        "lines_removed": 5804,
+        "production_lines_removed": 5745,
+        "previous_packages": 7,
+        "packages": 6,
+        "previous_external_dependencies": 4,
+        "external_dependencies": 4
+      },
+      "app": {
+        "previous_lines": 46415,
+        "previous_production_lines": 36695,
+        "lines_added": 34199,
+        "production_lines_added": 24307,
+        "previous_packages": 18,
+        "packages": 30,
+        "previous_external_dependencies": 7,
+        "external_dependencies": 7
+      }
     }
   ],
   "migration_targets": {
@@ -247,9 +293,9 @@
     }
   },
   "base": {
-    "lines": 27547,
-    "production_lines": 22985,
-    "packages": 12,
+    "lines": 8136,
+    "production_lines": 6674,
+    "packages": 9,
     "external_dependencies": 4,
     "allowed_dependencies": [
       "github.com/google/uuid",
@@ -259,9 +305,9 @@
     ]
   },
   "kernel": {
-    "lines": 67338,
-    "production_lines": 62474,
-    "packages": 33,
+    "lines": 91433,
+    "production_lines": 78719,
+    "packages": 49,
     "external_dependencies": 5,
     "allowed_dependencies": [
       "github.com/google/uuid",
@@ -272,9 +318,9 @@
     ]
   },
   "build": {
-    "lines": 37251,
-    "production_lines": 34796,
-    "packages": 7,
+    "lines": 31447,
+    "production_lines": 29051,
+    "packages": 6,
     "external_dependencies": 4,
     "allowed_dependencies": [
       "github.com/google/uuid",
@@ -284,9 +330,9 @@
     ]
   },
   "app": {
-    "lines": 46415,
-    "production_lines": 36695,
-    "packages": 18,
+    "lines": 80614,
+    "production_lines": 61002,
+    "packages": 30,
     "external_dependencies": 7,
     "allowed_dependencies": [
       "github.com/golang-jwt/jwt/v5",
