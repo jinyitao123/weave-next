@@ -88,15 +88,22 @@ func TestPGActionOutcomePersistsUnknownReplayGuardAndLimitRealPG(t *testing.T) {
 		event := actionActivityEvent("business_action_started", "lead", "lead-agent", "started", "snapshot/0/lead", callID, "ContractSubmit", "提交指定合同版本", "")
 		event.WorkspaceID, event.RunID, event.EventID = "workspace-1", limitedRunID, uuid.NewString()
 		recordActionActivity(t, store, event)
+		result := actionActivityEvent("business_action_result", "lead", "lead-agent", "result", "snapshot/0/lead", callID, "ContractSubmit", "提交指定合同版本", "succeeded")
+		result.WorkspaceID, result.RunID, result.EventID = "workspace-1", limitedRunID, uuid.NewString()
+		recordActionActivity(t, store, result)
 	}
 	overLimit := actionActivityEvent("business_action_started", "lead", "lead-agent", "started", "snapshot/0/lead", "limit-call-over", "ContractSubmit", "提交指定合同版本", "")
-	overLimit.WorkspaceID, overLimit.RunID, overLimit.EventID = "workspace-1", limitedRunID, uuid.NewString()
+	overLimit.WorkspaceID, overLimit.RunID, overLimit.EventID, overLimit.OccurredAt = "workspace-1", limitedRunID, uuid.NewString(), time.Now().UTC()
 	if err := store.RecordBusinessActionEvent(ctx, overLimit); !errors.Is(err, ErrBusinessActionOutcomeLimitExceeded) {
 		t.Fatalf("101st business action was not rejected before dispatch: %v", err)
 	}
 	events, err = fresh.ListBusinessActionEvents(ctx, "workspace-1", limitedRunID)
-	if err != nil || len(events) != MaxBusinessActionOutcomesPerRun {
-		t.Fatalf("action outcome limit was not enforced: events=%d err=%v", len(events), err)
+	if err != nil || len(events) != 2*MaxBusinessActionOutcomesPerRun {
+		t.Fatalf("action outcome receipts were not retained: events=%d err=%v", len(events), err)
+	}
+	outcomes, err = ProjectBusinessActionOutcomes(events)
+	if err != nil || len(outcomes) != MaxBusinessActionOutcomesPerRun {
+		t.Fatalf("action outcome limit was not enforced: outcomes=%d err=%v", len(outcomes), err)
 	}
 }
 
@@ -147,7 +154,7 @@ func TestPGConcurrentActionStartsReserveOneUnresolvedWriteRealPG(t *testing.T) {
 			<-allowWrite
 			event := actionActivityEvent("business_action_started", "lead", "lead-agent", "started",
 				"snapshot/0/lead", callID, "ContractSubmit", "提交指定合同版本", "")
-			event.WorkspaceID, event.RunID, event.EventID = "workspace-1", runID, uuid.NewString()
+			event.WorkspaceID, event.RunID, event.EventID, event.OccurredAt = "workspace-1", runID, uuid.NewString(), time.Now().UTC()
 			err = store.RecordBusinessActionEvent(ctx, event)
 			if err == nil {
 				dispatched.Add(1)
