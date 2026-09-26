@@ -19,6 +19,8 @@ github.com/jinyitao123/loom v0.8.2-0.20260908071214-d704baf1ae7f h1:UFIM7I+1Tm0V
 github.com/jinyitao123/loom v0.8.2-0.20260908071214-d704baf1ae7f/go.mod h1:AsO9UvDHHJCUC3Uu9zn9m4A2YS2gigTkDpVjc6Lp7po=
 github.com/jinyitao123/loom v0.8.2-0.20260912125929-2d1aeb8e3a12 h1:UijgKzalaI/r/yUQhc0mMkQ2Jbk78oX6/56qZcbKazs=
 github.com/jinyitao123/loom v0.8.2-0.20260912125929-2d1aeb8e3a12/go.mod h1:AsO9UvDHHJCUC3Uu9zn9m4A2YS2gigTkDpVjc6Lp7po=
+github.com/jinyitao123/loom v0.8.2-0.20260926043312-6990bed57943 h1:41qqJoruA+68pd0+MzX4AzPlyGE4szAxACpjf/Ly7YY=
+github.com/jinyitao123/loom v0.8.2-0.20260926043312-6990bed57943/go.mod h1:AsO9UvDHHJCUC3Uu9zn9m4A2YS2gigTkDpVjc6Lp7po=
 github.com/labstack/echo/v4 v4.15.4 h1:DL45vVYa+BWE+XuW+zZNd9H0YEdZ80UAWJGcTVW4EVs=
 github.com/labstack/echo/v4 v4.15.4/go.mod h1:CuMetKIRwsuO/qlAgMq+KTAalwGoB/h4tC+yPdrTj1g=
 github.com/labstack/gommon v0.5.0 h1:6VSQ2NOzsnEJ5W6+84E0RbcaDDmgB6NIAzWCczTEe6c=

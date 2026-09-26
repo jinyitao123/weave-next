@@ -10,6 +10,7 @@ RUN apk add --no-cache git ca-certificates
 WORKDIR /build
 
 COPY go.mod go.sum ./
+COPY third_party/loom ./third_party/loom
 ARG GOPROXY=https://proxy.golang.org,direct
 RUN --mount=type=cache,id=weave-gomod,target=/go/pkg/mod,sharing=locked \
     --mount=type=cache,id=weave-gobuild,target=/root/.cache/go-build,sharing=locked \
