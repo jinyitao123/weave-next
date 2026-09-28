@@ -221,7 +221,7 @@ func (worker *employeeRunEventWorker) materialize(ctx context.Context) error {
 		'summary',left(CASE
 		  WHEN status='succeeded' AND workbench_result->>'disposition'='needs_input' THEN
 			'团队检查结论：'||COALESCE(NULLIF(workbench_result->>'summary',''),'本轮检查发现需要补充的信息。')||CASE
-			  WHEN COALESCE(jsonb_array_length(workbench_result->'missing_items'),0)>0 THEN ' 需要补充：'||(
+			  WHEN CASE WHEN jsonb_typeof(workbench_result->'missing_items')='array' THEN jsonb_array_length(workbench_result->'missing_items') ELSE 0 END>0 THEN ' 需要补充：'||(
 				SELECT string_agg(item.value,'；') FROM jsonb_array_elements_text(workbench_result->'missing_items') AS item(value)
 			  ) ELSE '' END
 			||CASE

@@ -225,7 +225,7 @@ func TestVerifiedWorkflowOutputPersistsWorkbenchResultMetadata(t *testing.T) {
 	source := h.source(t, fence, "loom", "result-source", files, nil)
 	outputs := bundleFor(fence, source, files)
 	result := map[string]any{
-		"disposition": "needs_input", "summary": "缺少原始签署日期", "missing_items": []string{"提供完整签署日期"},
+		"disposition": "complete", "summary": "本轮检查已完成", "missing_items": []string{},
 	}
 	metadata, err := json.Marshal(map[string]any{
 		"protocol": "workbench_result_v1", "disposition": result["disposition"],
@@ -254,8 +254,8 @@ func TestVerifiedWorkflowOutputPersistsWorkbenchResultMetadata(t *testing.T) {
 	if err := json.Unmarshal(persisted, &got); err != nil {
 		t.Fatal(err)
 	}
-	if got.Protocol != "workbench_result_v1" || got.Disposition != "needs_input" || got.Summary != "缺少原始签署日期" ||
-		len(got.MissingItems) != 1 || got.MissingItems[0] != "提供完整签署日期" {
+	if got.Protocol != "workbench_result_v1" || got.Disposition != "complete" || got.Summary != "本轮检查已完成" ||
+		got.MissingItems == nil || len(got.MissingItems) != 0 {
 		t.Fatalf("verified result metadata was not persisted with its output: %+v", got)
 	}
 }

@@ -10,9 +10,43 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jinyitao123/loom"
+	"github.com/jinyitao123/weave/internal/base/deliverable"
 	"github.com/jinyitao123/weave/internal/base/fileartifact"
 	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
+	"github.com/jinyitao123/weave/internal/kernel/workflow/machine"
 )
+
+type captureVerifiedWorkflowOutputs struct {
+	outputs []deliverable.WorkflowOutput
+}
+
+func (captureVerifiedWorkflowOutputs) RecordWorkflowOutput(context.Context, deliverable.WorkflowOutput) error {
+	return errors.New("unexpected non-verified output path")
+}
+
+func (capture *captureVerifiedWorkflowOutputs) RecordVerifiedWorkflowOutputs(_ context.Context, outputs []deliverable.WorkflowOutput, _ deliverable.VerificationFence) (deliverable.VerificationReport, error) {
+	capture.outputs = append([]deliverable.WorkflowOutput(nil), outputs...)
+	return deliverable.VerificationReport{}, nil
+}
+
+func TestWorkflowDeliveryRecorderKeepsCompleteMetadataArray(t *testing.T) {
+	output := captureVerifiedWorkflowOutputs{}
+	run := TeamRun{WorkspaceID: "workspace-1", RunID: "run-1", RunSnapshotID: "snapshot-1"}
+	runtime := &WorkflowSerialRuntime{OutputRecorder: &output}
+	result := machine.WorkbenchResultV1{Disposition: "complete", Summary: "本轮检查已完成", MissingItems: []string{}}
+	resultMetadata := machine.EncodeWorkbenchResultMetadataV1(result)
+	if err := runtime.workflowDeliveryRecorder(run)(t.Context(), "deliver", "检查意见", "deliver", result,
+		[]deliverable.WorkflowArtifact{{Path: "outputs/report.md", ContentType: "text/markdown", Content: "Report"}}, nil, nil, resultMetadata); err != nil {
+		t.Fatal(err)
+	}
+	if len(output.outputs) != 2 || len(output.outputs[0].ResultMetadata) != 0 || len(output.outputs[1].ResultMetadata) == 0 {
+		t.Fatalf("structured result metadata attached to unexpected outputs: %+v", output.outputs)
+	}
+	var metadata machine.WorkbenchResultMetadataV1
+	if err := json.Unmarshal(output.outputs[1].ResultMetadata, &metadata); err != nil || metadata.Disposition != "complete" || metadata.MissingItems == nil || len(metadata.MissingItems) != 0 {
+		t.Fatalf("workflow recorder lost complete result metadata: %+v err=%v", metadata, err)
+	}
+}
 
 type artifactTaskReader struct {
 	ExecutorTaskStore
