@@ -114,7 +114,7 @@ func NormalizeWorkbenchResultV1(raw []byte) (WorkbenchResultV1, json.RawMessage,
 func EncodeWorkbenchResultMetadataV1(result WorkbenchResultV1) json.RawMessage {
 	metadata, _ := json.Marshal(WorkbenchResultMetadataV1{
 		Protocol: ResultProtocolWorkbenchV1, Disposition: result.Disposition,
-		Summary: result.Summary, MissingItems: append([]string(nil), result.MissingItems...),
+		Summary: result.Summary, MissingItems: append([]string{}, result.MissingItems...),
 	})
 	return metadata
 }

@@ -134,3 +134,15 @@ func TestNormalizeWorkbenchResultV1BoundsAndDisposition(t *testing.T) {
 		})
 	}
 }
+
+func TestEncodeWorkbenchResultMetadataV1PreservesEmptyItemsArray(t *testing.T) {
+	result := WorkbenchResultV1{Disposition: "complete", Summary: "本轮检查已完成", MissingItems: []string{}}
+	metadata := EncodeWorkbenchResultMetadataV1(result)
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(metadata, &fields); err != nil {
+		t.Fatal(err)
+	}
+	if string(fields["missing_items"]) != "[]" {
+		t.Fatalf("complete result missing_items must serialize as an empty array: %s", metadata)
+	}
+}

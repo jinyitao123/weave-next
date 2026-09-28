@@ -200,6 +200,20 @@ func TestWorkbenchContextReadsExactInputAndRejectsOtherEmployeesRealPG(t *testin
 		!strings.Contains(unknown.Summary, "结果未知") || strings.Contains(unknown.Summary, "sales_contract") || strings.Contains(unknown.Summary, "record-a") {
 		t.Fatalf("unexpected unknown action outcome: %+v", unknown)
 	}
+	completeContent := `{"disposition":"complete","summary":"本轮检查已完成","missing_items":[]}`
+	if _, err := pool.Exec(t.Context(), `INSERT INTO weave_final_deliverables
+		(id,workspace_id,user_id,lead_avatar_id,session_id,event_id,run_id,run_snapshot_id,title,content,content_type,metadata)
+		VALUES($1,'ws','user-a','lead',$2,$3,$4,$4,'完整检查意见',$5,'application/json',
+		'{"artifact_kind":"final","workbench_result":{"protocol":"workbench_result_v1","disposition":"complete","summary":"本轮检查已完成","missing_items":[]}}'::jsonb)`,
+		"deliverable-context-complete", registration.WorkbenchSessionID, uuid.NewString(), run.RunID, completeContent); err != nil {
+		t.Fatal(err)
+	}
+	status, completeResponse := callWorkbenchRunContext(t, server, "user-a", run.RunID)
+	if status != http.StatusOK || completeResponse.Run.FinalResult == nil || completeResponse.Run.FinalResult.Disposition != "complete" ||
+		completeResponse.Run.FinalResult.Summary != "本轮检查已完成" || completeResponse.Run.FinalResult.MissingItems == nil ||
+		len(*completeResponse.Run.FinalResult.MissingItems) != 0 {
+		t.Fatalf("complete result lost its empty missing_items array: status=%d result=%+v", status, completeResponse.Run.FinalResult)
+	}
 	if _, err := pool.Exec(t.Context(), `INSERT INTO weave_final_deliverables
 		(id,workspace_id,user_id,lead_avatar_id,session_id,event_id,run_id,run_snapshot_id,title,content,content_type,metadata)
 		VALUES($1,'ws','user-a','lead',$2,$3,$4,$4,'错配检查意见',$5,'application/json',
