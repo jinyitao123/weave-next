@@ -47,8 +47,9 @@ func NewStore(pool *pgxpool.Pool, tasks *taskqueue.Store, key []byte) *Store {
 }
 
 type Factory struct {
-	Inner workflow.RuntimeHostFactory
-	Store *Store
+	Inner         workflow.RuntimeHostFactory
+	Store         *Store
+	MaterialStore *Store
 }
 
 func (f Factory) Build(ctx context.Context, bundle frozen.FrozenExecutionBundle, resolver workflow.RuntimeCredentialResolver) (compiler.FrozenBuildOpts, io.Closer, error) {
@@ -66,26 +67,58 @@ func (f Factory) BuildWithLLM(ctx context.Context, bundle frozen.FrozenExecution
 }
 
 func (f Factory) attach(ctx context.Context, bundle frozen.FrozenExecutionBundle, opts compiler.FrozenBuildOpts, closer io.Closer, err error) (compiler.FrozenBuildOpts, io.Closer, error) {
-	if err != nil || len(bundle.Agent.BusinessCapabilityIDs) == 0 {
+	if err != nil {
 		return opts, closer, err
 	}
-	if f.Store == nil {
-		if closer != nil {
-			_ = closer.Close()
-		}
-		return compiler.FrozenBuildOpts{}, nil, fmt.Errorf("%w: business delegation store unavailable", mcphost.ErrFailClosed)
-	}
-	dispatcher, err := f.Store.dispatcher(ctx, bundle.Agent.BusinessCapabilityIDs, bundle.Agent.BusinessCapabilityBindings)
-	if err != nil {
-		if closer != nil {
-			_ = closer.Close()
-		}
-		return compiler.FrozenBuildOpts{}, nil, err
-	}
-	if dispatcher == nil {
+	useMaterialRead := bundle.Agent.Engine == "loom"
+	useBusinessActions := len(bundle.Agent.BusinessCapabilityIDs) > 0
+	if !useMaterialRead && !useBusinessActions {
 		return opts, closer, nil
 	}
-	opts.Tools = mcphost.NewCompositeDispatcher(opts.Tools, dispatcher)
+	dispatchers := []contract.ToolDispatcher{opts.Tools}
+	if useMaterialRead {
+		materialStore := f.MaterialStore
+		if materialStore == nil {
+			materialStore = f.Store
+		}
+		var materialDispatcher contract.ToolDispatcher
+		var readErr error
+		if materialStore != nil {
+			materialDispatcher, readErr = materialStore.MaterialReadDispatcher(ctx)
+		} else {
+			materialDispatcher, readErr = newMaterialReadDispatcher(nil, frozenMaterialReadScope{}, map[string]frozenMaterialReadFile{})
+		}
+		if readErr != nil {
+			if closer != nil {
+				_ = closer.Close()
+			}
+			return compiler.FrozenBuildOpts{}, nil, readErr
+		}
+		if materialDispatcher != nil {
+			dispatchers = append(dispatchers, materialDispatcher)
+		}
+	}
+	if useBusinessActions {
+		if f.Store == nil {
+			if closer != nil {
+				_ = closer.Close()
+			}
+			return compiler.FrozenBuildOpts{}, nil, fmt.Errorf("%w: business delegation store unavailable", mcphost.ErrFailClosed)
+		}
+		dispatcher, dispatchErr := f.Store.dispatcher(ctx, bundle.Agent.BusinessCapabilityIDs, bundle.Agent.BusinessCapabilityBindings)
+		if dispatchErr != nil {
+			if closer != nil {
+				_ = closer.Close()
+			}
+			return compiler.FrozenBuildOpts{}, nil, dispatchErr
+		}
+		if dispatcher != nil {
+			dispatchers = append(dispatchers, dispatcher)
+		}
+	}
+	if len(dispatchers) > 1 {
+		opts.Tools = mcphost.NewCompositeDispatcher(dispatchers...)
+	}
 	return opts, closer, nil
 }
 
@@ -99,8 +132,10 @@ type delegation struct {
 
 type delegatedResource struct {
 	Type       string `json:"type"`
+	MaterialID string `json:"materialId,omitempty"`
 	ID         string `json:"id"`
 	Name       string `json:"name,omitempty"`
+	MediaType  string `json:"mediaType,omitempty"`
 	Bytes      int64  `json:"bytes,omitempty"`
 	SHA256     string `json:"sha256"`
 	ObjectName string `json:"object_name,omitempty"`
@@ -278,15 +313,18 @@ func (s *Store) resolve(ctx context.Context, requested []string) (delegation, er
 
 func decodeDelegatedResources(raw []byte, inputRevisionID string) ([]delegatedResource, error) {
 	var stored []delegatedResource
-	if err := json.Unmarshal(raw, &stored); err != nil || len(stored) == 0 {
+	if err := json.Unmarshal(raw, &stored); err != nil || len(stored) == 0 || len(stored) > 10 {
 		return nil, errors.New("task business resources are invalid")
 	}
 	verifiedInput := false
 	resources := make([]delegatedResource, 0, len(stored)-1)
 	seen := make(map[string]struct{}, len(stored))
+	seenMaterialIDs := make(map[string]struct{}, len(stored))
+	var totalFileBytes int64
 	for _, item := range stored {
-		item.Type, item.ID, item.Name, item.SHA256 = strings.TrimSpace(item.Type), strings.TrimSpace(item.ID), strings.TrimSpace(item.Name), strings.TrimSpace(item.SHA256)
-		if item.ID == "" || item.SHA256 == "" {
+		item.Type, item.MaterialID, item.ID = strings.TrimSpace(item.Type), strings.TrimSpace(item.MaterialID), strings.TrimSpace(item.ID)
+		item.Name, item.MediaType, item.SHA256 = strings.TrimSpace(item.Name), strings.TrimSpace(item.MediaType), strings.TrimSpace(item.SHA256)
+		if item.ID == "" || item.ID != strings.TrimSpace(item.ID) || !frozenSHA256.MatchString(item.SHA256) {
 			return nil, errors.New("task business resources are invalid")
 		}
 		key := item.Type + "\x1f" + item.ID
@@ -296,16 +334,32 @@ func decodeDelegatedResources(raw []byte, inputRevisionID string) ([]delegatedRe
 		seen[key] = struct{}{}
 		switch item.Type {
 		case "dispatch-input":
-			if verifiedInput || item.ID != inputRevisionID {
+			if verifiedInput || item.ID != inputRevisionID || item.Name != "" || item.Bytes != 0 ||
+				item.MaterialID != "" || item.MediaType != "" || item.ObjectName != "" {
 				return nil, errors.New("task input resource does not match the active delegation")
 			}
 			verifiedInput = true
 		case "forge-file":
-			if item.Name == "" || item.Bytes < 1 {
+			if item.Name == "" || len(item.Name) > 255 || item.Bytes < 1 || item.Bytes > 2<<20 || item.ObjectName != "" ||
+				item.MaterialID != "" && !frozenMaterialIDPattern.MatchString(item.MaterialID) ||
+				item.MediaType != "" && !supportedMaterialMediaType(item.MediaType) {
 				return nil, errors.New("task Forge resource is invalid")
+			}
+			if item.MaterialID != "" {
+				if _, duplicate := seenMaterialIDs[item.MaterialID]; duplicate {
+					return nil, errors.New("task Forge material IDs are duplicated")
+				}
+				seenMaterialIDs[item.MaterialID] = struct{}{}
+			}
+			totalFileBytes += item.Bytes
+			if totalFileBytes > 8<<20 {
+				return nil, errors.New("task Forge materials exceed the frozen byte limit")
 			}
 			resources = append(resources, item)
 		case "forge-record":
+			if item.Name != "" || item.Bytes != 0 || item.MaterialID != "" || item.MediaType != "" {
+				return nil, errors.New("task Forge resource is invalid")
+			}
 			if err := validateRecordResource(item); err != nil {
 				return nil, err
 			}

@@ -149,7 +149,7 @@ func verifyForgeFiles(ctx context.Context, issuer, bearer string, resources []di
 		if requestErr != nil {
 			return fmt.Errorf("Forge material %q is unavailable", resource.Name)
 		}
-		limited := http.MaxBytesReader(nil, response.Body, 700_001)
+		limited := http.MaxBytesReader(nil, response.Body, dispatchInputResourceMaxBytes+1)
 		content, readErr := io.ReadAll(limited)
 		_ = response.Body.Close()
 		if response.StatusCode != http.StatusOK || readErr != nil || int64(len(content)) != resource.Bytes {

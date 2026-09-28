@@ -8,14 +8,24 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"regexp"
 	"sort"
 	"strings"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jinyitao123/weave/internal/kernel/businessaction"
 	"github.com/jinyitao123/weave/internal/kernel/workflow"
 	"github.com/labstack/echo/v4"
 )
+
+const (
+	dispatchInputTaskMaxBytes      = 950_000
+	dispatchInputResourceMaxBytes  = 2 << 20
+	dispatchInputResourcesMaxBytes = 8 << 20
+)
+
+var dispatchInputMaterialIDPattern = regexp.MustCompile(`^[0-9a-f]{24}$`)
 
 type dispatchInputSourceMessage struct {
 	MessageID string `json:"message_id"`
@@ -41,11 +51,13 @@ type dispatchInputRegistration struct {
 }
 
 type dispatchInputResource struct {
-	Type   string `json:"type"`
-	ID     string `json:"id"`
-	Name   string `json:"name"`
-	Bytes  int64  `json:"bytes"`
-	SHA256 string `json:"sha256"`
+	Type       string `json:"type"`
+	MaterialID string `json:"materialId,omitempty"`
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	MediaType  string `json:"mediaType,omitempty"`
+	Bytes      int64  `json:"bytes"`
+	SHA256     string `json:"sha256"`
 }
 
 type dispatchRevisionContext struct {
@@ -190,19 +202,44 @@ func validDispatchInputResources(resources []dispatchInputResource) bool {
 		return false
 	}
 	seen := make(map[string]bool, len(resources))
+	seenMaterialIDs := make(map[string]bool, len(resources))
+	var totalBytes int64
 	for index := range resources {
 		item := &resources[index]
-		item.Type, item.ID, item.Name = strings.TrimSpace(item.Type), strings.TrimSpace(item.ID), strings.TrimSpace(item.Name)
+		item.Type, item.ID, item.Name, item.MaterialID, item.MediaType = strings.TrimSpace(item.Type), strings.TrimSpace(item.ID), strings.TrimSpace(item.Name), strings.TrimSpace(item.MaterialID), strings.TrimSpace(item.MediaType)
 		if item.Type != "forge-file" || item.ID == "" || len(item.ID) > 128 || item.Name == "" || len(item.Name) > 255 ||
-			item.Bytes < 1 || item.Bytes > 700_000 || len(item.SHA256) != 64 || seen[item.ID] {
+			item.Bytes < 1 || item.Bytes > dispatchInputResourceMaxBytes || len(item.SHA256) != 64 || seen[item.ID] {
 			return false
 		}
-		if _, err := hex.DecodeString(item.SHA256); err != nil {
+		if _, err := hex.DecodeString(item.SHA256); err != nil || strings.ToLower(item.SHA256) != item.SHA256 {
+			return false
+		}
+		if item.MaterialID != "" {
+			if !dispatchInputMaterialIDPattern.MatchString(item.MaterialID) || seenMaterialIDs[item.MaterialID] {
+				return false
+			}
+			seenMaterialIDs[item.MaterialID] = true
+		}
+		if item.MediaType != "" && !supportedDispatchInputMediaType(item.MediaType) {
 			return false
 		}
 		seen[item.ID] = true
+		totalBytes += item.Bytes
+		if totalBytes > dispatchInputResourcesMaxBytes {
+			return false
+		}
 	}
 	return true
+}
+
+func supportedDispatchInputMediaType(value string) bool {
+	switch value {
+	case "text/plain", "text/markdown", "text/csv", "application/json", "application/pdf",
+		"application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+		return true
+	default:
+		return false
+	}
 }
 
 func authorizedBusinessActions(published []string, requested *[]string) ([]string, error) {
@@ -259,7 +296,7 @@ func (s *Server) handleRegisterDispatchInput(c echo.Context) error {
 	registrationID, err := uuid.Parse(request.RegistrationID)
 	if err != nil || strings.TrimSpace(request.WorkbenchSessionID) == "" || len(request.WorkbenchSessionID) > 256 ||
 		strings.ContainsRune(request.WorkbenchSessionID, '\x00') || strings.TrimSpace(request.TeamID) == "" ||
-		strings.TrimSpace(request.Task) == "" || len(request.Task) > 1<<20 || strings.ContainsRune(request.Task, '\x00') ||
+		strings.TrimSpace(request.Task) == "" || len(request.Task) > dispatchInputTaskMaxBytes || strings.ContainsRune(request.Task, '\x00') ||
 		!validDispatchInputSourceMessages(request.SourceMessages) || !validDispatchInputResources(request.Resources) || !validDispatchBusinessRecord(request.BusinessRecord) || (request.WorkflowVersion != nil && *request.WorkflowVersion <= 0) {
 		return workflowError(c, http.StatusBadRequest, "dispatch_input_request_invalid", "dispatch input request invalid")
 	}
@@ -360,7 +397,24 @@ func (s *Server) handleRegisterDispatchInput(c echo.Context) error {
 	if currentRevisionID != request.ExpectedRevisionID {
 		return workflowError(c, http.StatusConflict, "input_revision_conflict", "current dispatch input revision changed")
 	}
-	executionTask, revisionKind, rootRevisionID := request.Task, "initial", ""
+	requestExecutionTask := request.Task
+	if len(request.Resources) > 0 {
+		materialResources := make([]businessaction.FrozenMaterialResource, 0, len(request.Resources))
+		for _, resource := range request.Resources {
+			materialResources = append(materialResources, businessaction.FrozenMaterialResource{
+				Type: resource.Type, MaterialID: resource.MaterialID, FileID: resource.ID,
+				Name: resource.Name, MediaType: resource.MediaType, Bytes: resource.Bytes, SHA256: resource.SHA256,
+			})
+		}
+		projected, recognized, projectionErr := businessaction.PrepareExecutionTask(request.Task, materialResources)
+		if projectionErr != nil {
+			return workflowError(c, http.StatusUnprocessableEntity, "frozen_material_manifest_invalid", "frozen material manifest does not match its Forge file references")
+		}
+		if recognized {
+			requestExecutionTask = projected
+		}
+	}
+	executionTask, revisionKind, rootRevisionID := requestExecutionTask, "initial", ""
 	parentRevisionID, parentRunID, parentDeliveryDigest := "", "", ""
 	parentMaterialsJSON := []byte(`[]`)
 	var inheritedContract json.RawMessage
@@ -389,7 +443,7 @@ func (s *Server) handleRegisterDispatchInput(c echo.Context) error {
 		if parentErr != nil {
 			return workflowStoreFailure(c, fmt.Errorf("read revision root: %w", parentErr))
 		}
-		executionTask, parentDeliveryDigest, parentErr = assembleRevisionTask(root.Task, request.Task, materials, contents)
+		executionTask, parentDeliveryDigest, parentErr = assembleRevisionTask(root.Task, requestExecutionTask, materials, contents)
 		if parentErr != nil {
 			return workflowError(c, http.StatusRequestEntityTooLarge, "dispatch_revision_materials_too_large", parentErr.Error())
 		}

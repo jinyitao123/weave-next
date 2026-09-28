@@ -87,8 +87,10 @@ type workbenchContextInputRow struct {
 
 type workbenchContextDelegatedResource struct {
 	Type       string `json:"type"`
+	MaterialID string `json:"materialId,omitempty"`
 	ID         string `json:"id"`
 	Name       string `json:"name,omitempty"`
+	MediaType  string `json:"mediaType,omitempty"`
 	Bytes      int64  `json:"bytes,omitempty"`
 	SHA256     string `json:"sha256"`
 	ObjectName string `json:"object_name,omitempty"`
@@ -266,7 +268,7 @@ func projectWorkbenchContextResources(raw []byte, inputRevisionID, taskSHA256 st
 		switch resource.Type {
 		case "dispatch-input":
 			if inputSeen || resource.ID != inputRevisionID || resource.SHA256 != taskSHA256 ||
-				resource.Name != "" || resource.Bytes != 0 || resource.ObjectName != "" {
+				resource.Name != "" || resource.Bytes != 0 || resource.MaterialID != "" || resource.MediaType != "" || resource.ObjectName != "" {
 				return nil, nil, errors.New("Workbench dispatch input resource does not match the run")
 			}
 			inputSeen = true
@@ -276,11 +278,12 @@ func projectWorkbenchContextResources(raw []byte, inputRevisionID, taskSHA256 st
 			}
 			materials = append(materials, dispatchInputResource{
 				Type: resource.Type, ID: resource.ID, Name: resource.Name,
+				MaterialID: resource.MaterialID, MediaType: resource.MediaType,
 				Bytes: resource.Bytes, SHA256: resource.SHA256,
 			})
 		case "forge-record":
 			if record != nil || resource.ID != strings.TrimSpace(resource.ID) ||
-				resource.Name != "" || resource.Bytes != 0 ||
+				resource.Name != "" || resource.Bytes != 0 || resource.MaterialID != "" || resource.MediaType != "" ||
 				!validDispatchBusinessRecord(&dispatchBusinessRecord{ObjectName: resource.ObjectName, RecordID: resource.ID}) {
 				return nil, nil, errors.New("Workbench Forge record resource is invalid")
 			}

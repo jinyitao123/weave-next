@@ -268,6 +268,23 @@
         "previous_external_dependencies": 7,
         "external_dependencies": 7
       }
+    },
+    {
+      "date": "2026-09-28",
+      "source_commit": "518162a023437ff7ca894c2a41513e32d7a2596c",
+      "reason": "Add a Loom-only read tool for bounded UTF-8 chunks from the current frozen Workbench extraction, bind reads to the exact input revision, run, delegated materialId and source SHA-256, and keep extraction bodies out of the initial execution prompt while preserving original input facts. Exact measured ceilings with no spare allowance; package/dependency limits and original migration targets remain unchanged. Forge binary reads remain unavailable until their protected endpoint is integrated.",
+      "kernel": {
+        "previous_lines": 91433,
+        "previous_production_lines": 78719,
+        "lines_added": 1008,
+        "production_lines_added": 715
+      },
+      "app": {
+        "previous_lines": 80642,
+        "previous_production_lines": 61013,
+        "lines_added": 335,
+        "production_lines_added": 61
+      }
     }
   ],
   "migration_targets": {
@@ -305,8 +322,8 @@
     ]
   },
   "kernel": {
-    "lines": 91433,
-    "production_lines": 78719,
+    "lines": 92441,
+    "production_lines": 79434,
     "packages": 49,
     "external_dependencies": 5,
     "allowed_dependencies": [
@@ -330,8 +347,8 @@
     ]
   },
   "app": {
-    "lines": 80642,
-    "production_lines": 61013,
+    "lines": 80977,
+    "production_lines": 61074,
     "packages": 30,
     "external_dependencies": 7,
     "allowed_dependencies": [
