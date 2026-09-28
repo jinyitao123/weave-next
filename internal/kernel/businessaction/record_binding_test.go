@@ -94,3 +94,30 @@ func TestStoredRecordBindingIsRecoveredWithTheInput(t *testing.T) {
 		t.Fatal("accepted altered stored record")
 	}
 }
+
+func TestDecodeDelegatedOriginalMaterialRequiresAnExactSourceRoute(t *testing.T) {
+	input := delegatedResource{Type: "dispatch-input", ID: "input-a", SHA256: strings.Repeat("a", 64)}
+	owner := delegatedResource{
+		Type: "forge-file", SourceKind: "owner", MaterialID: strings.Repeat("b", 24),
+		ID: "file-a", Name: "owner.pdf", MediaType: "application/pdf", Bytes: 16, SHA256: strings.Repeat("c", 64),
+	}
+	approval := owner
+	approval.SourceKind, approval.RequestID = "approval", "request-a"
+	for _, resource := range []delegatedResource{owner, approval} {
+		raw, _ := json.Marshal([]delegatedResource{input, resource})
+		decoded, err := decodeDelegatedResources(raw, "input-a")
+		if err != nil || len(decoded) != 1 || decoded[0].SourceKind != resource.SourceKind || decoded[0].RequestID != resource.RequestID {
+			t.Fatalf("source route was not frozen: resource=%+v decoded=%+v err=%v", resource, decoded, err)
+		}
+	}
+	for _, resource := range []delegatedResource{
+		{Type: "forge-file", MaterialID: strings.Repeat("b", 24), ID: "file-a", Name: "owner.pdf", MediaType: "application/pdf", Bytes: 16, SHA256: strings.Repeat("c", 64)},
+		{Type: "forge-file", SourceKind: "approval", MaterialID: strings.Repeat("b", 24), ID: "file-a", Name: "approval.pdf", MediaType: "application/pdf", Bytes: 16, SHA256: strings.Repeat("c", 64)},
+		{Type: "forge-file", SourceKind: "owner", RequestID: "request-a", MaterialID: strings.Repeat("b", 24), ID: "file-a", Name: "owner.pdf", MediaType: "application/pdf", Bytes: 16, SHA256: strings.Repeat("c", 64)},
+	} {
+		raw, _ := json.Marshal([]delegatedResource{input, resource})
+		if _, err := decodeDelegatedResources(raw, "input-a"); err == nil {
+			t.Fatalf("accepted ambiguous or incomplete binary source: %+v", resource)
+		}
+	}
+}

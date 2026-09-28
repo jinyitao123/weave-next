@@ -284,6 +284,10 @@ func TestBoundDispatchInputProvenanceAndAtomicAdmissionRealPG(t *testing.T) {
 
 	firstRequest := dispatchInputRegistrationFixture("session", "VBR-52 original task", "")
 	first := register(firstRequest, http.StatusCreated, "")
+	persistedFirst, err := server.loadDispatchInput(ctx, "ws", "user", first.InputRevisionID)
+	if err != nil || persistedFirst.ExecutionTask != firstRequest.Task {
+		t.Fatalf("plain-text input projection changed a non-material task: executionTask=%q err=%v", persistedFirst.ExecutionTask, err)
+	}
 	if replay := register(firstRequest, http.StatusOK, ""); replay != first {
 		t.Fatalf("registration replay changed identity: %+v != %+v", replay, first)
 	}
@@ -299,6 +303,8 @@ func TestBoundDispatchInputProvenanceAndAtomicAdmissionRealPG(t *testing.T) {
 	invalid = dispatchInputRegistrationFixture("invalid", "task", "")
 	invalid.Mode = "free_collab"
 	register(invalid, http.StatusBadRequest, "dispatch_input_mode_unsupported")
+	invalid = dispatchInputRegistrationFixture("invalid-empty", "", "")
+	register(invalid, http.StatusBadRequest, "dispatch_input_request_invalid")
 
 	// Freeze this resolved request before another registration wins. Calling the
 	// admission function later simulates a head replacement after route resolution.

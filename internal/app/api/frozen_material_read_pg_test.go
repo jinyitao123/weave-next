@@ -23,22 +23,49 @@ func TestLoomMaterialReadStaysWithinFrozenRunInputRealPG(t *testing.T) {
 	t.Setenv("WEAVE_SECRET_KEY", strings.Repeat("22", 32))
 	server, pool := newTeamDispatchTestServer(t)
 	fileBytes := map[string][]byte{
-		"forge-file-A": []byte("UTF-8 original source A"),
-		"forge-file-B": []byte("UTF-8 original source B"),
+		"forge-file-A": []byte("%PDF-1.7\nRAW-ORIGINAL-A"),
+		"forge-file-B": []byte("%PDF-1.7\nRAW-ORIGINAL-B"),
+	}
+	requestPaths := map[string]string{
+		"forge-file-A": "/api/v1/workbench/materials/forge-file-A/original",
+		"forge-file-B": "/api/v1/approvals/requests/approval-request-B/workbench-context/files/forge-file-B/original",
 	}
 	var forgeReads atomic.Int32
+	var forgeRequests atomic.Int32
+	var failOriginal atomic.Bool
 	forge := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		if request.Method != http.MethodGet || request.Header.Get("Authorization") != "Bearer fixture-token" {
+		if request.Method != http.MethodGet || request.Header.Get("Authorization") != "Bearer fixture-token" ||
+			request.Header.Get("Accept-Encoding") != "identity" {
 			writer.WriteHeader(http.StatusNotFound)
 			return
 		}
-		fileID := strings.TrimPrefix(request.URL.Path, "/api/v1/storage/files/")
+		var fileID string
+		for id, path := range requestPaths {
+			if request.URL.Path == path {
+				fileID = id
+				break
+			}
+		}
 		content, ok := fileBytes[fileID]
 		if !ok {
 			writer.WriteHeader(http.StatusNotFound)
 			return
 		}
+		forgeRequests.Add(1)
+		fileSHA := dispatchInputDigest(content)
+		if request.Header.Get("If-Match") != fileSHA {
+			writer.WriteHeader(http.StatusPreconditionFailed)
+			return
+		}
+		if failOriginal.Load() {
+			writer.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
 		forgeReads.Add(1)
+		writer.Header().Set("Content-Type", "application/pdf")
+		writer.Header().Set("Content-Length", fmt.Sprintf("%d", len(content)))
+		writer.Header().Set("ETag", `"`+fileSHA+`"`)
+		writer.Header().Set("X-Content-SHA256", fileSHA)
 		_, _ = writer.Write(content)
 	}))
 	defer forge.Close()
@@ -53,21 +80,28 @@ func TestLoomMaterialReadStaysWithinFrozenRunInputRealPG(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	makeTask := func(materialID, name string, content []byte, extracted string) (string, string) {
+	makeTask := func(materialID, name string, content []byte, extracted, status string, limitations []string) (string, string) {
 		t.Helper()
+		if limitations == nil {
+			limitations = []string{}
+		}
 		fileSHA := dispatchInputDigest(content)
 		extractionBytes := []byte(extracted)
 		extractionSHA := dispatchInputDigest(extractionBytes)
+		coverage := map[string]any{"pdfPageCount": 1, "pdfTextPageCount": 1, "pdfPagesWithoutText": []int{}}
+		if status == "partial" {
+			coverage = map[string]any{"pdfPageCount": 2, "pdfTextPageCount": 1, "pdfPagesWithoutText": []int{2}}
+		}
 		task, err := json.Marshal(map[string]any{
 			"goal":             "按本次冻结材料核对正文",
 			"materialHandling": "只依据当前冻结材料及其提取状态；partial须说明未读内容。",
 			"materials": []any{map[string]any{
-				"materialId": materialID, "name": name, "mediaType": "text/plain",
+				"materialId": materialID, "name": name, "mediaType": "application/pdf",
 				"bytes": len(content), "sha256": fileSHA,
 				"extraction": map[string]any{
-					"status": "complete", "mediaType": "text/plain; charset=utf-8", "bytes": len(extractionBytes),
+					"status": status, "mediaType": "text/plain; charset=utf-8", "bytes": len(extractionBytes),
 					"sha256": extractionSHA, "sourceSha256": fileSHA, "content": extracted,
-					"extractor": "utf8", "coverage": map[string]any{}, "limitations": []string{},
+					"extractor": "pdfjs-dist", "coverage": coverage, "limitations": limitations,
 				},
 			}},
 		})
@@ -76,18 +110,28 @@ func TestLoomMaterialReadStaysWithinFrozenRunInputRealPG(t *testing.T) {
 		}
 		return string(task), fileSHA
 	}
-	registerAndDispatch := func(session, materialID, name, fileID, extracted string) (workflowManualRunResponse, string, string) {
+	registerAndDispatch := func(session, materialID, name, fileID, extracted, status string, limitations []string) (workflowManualRunResponse, string, string) {
 		t.Helper()
 		original := fileBytes[fileID]
-		task, fileSHA := makeTask(materialID, name, original, extracted)
+		task, fileSHA := makeTask(materialID, name, original, extracted, status, limitations)
 		registration := dispatchInputRegistrationFixture(session, task, "")
 		version := 1
 		registration.WorkflowID, registration.WorkflowVersion = "flow", &version
 		registration.Resources = []dispatchInputResource{{
-			Type: "forge-file", MaterialID: materialID, ID: fileID, Name: name,
-			MediaType: "text/plain", Bytes: int64(len(original)), SHA256: fileSHA,
+			Type: "forge-file", SourceKind: "owner", MaterialID: materialID, ID: fileID, Name: name,
+			MediaType: "application/pdf", Bytes: int64(len(original)), SHA256: fileSHA,
 		}}
-		recorder, err := registerInputForTest(server, registration)
+		if fileID == "forge-file-B" {
+			registration.Resources[0].SourceKind = "approval"
+			registration.Resources[0].RequestID = "approval-request-B"
+		}
+		body, err := json.Marshal(registration)
+		if err != nil {
+			t.Fatal(err)
+		}
+		c, recorder := dispatchInputTestContext(body, "/v1/workbench/dispatch-inputs", "ws", "user")
+		c.Request().Header.Set(forgeDelegationHeader, "Bearer fixture-token")
+		err = server.handleRegisterDispatchInput(c)
 		if err != nil || recorder.Code != http.StatusCreated {
 			t.Fatalf("register input status=%d body=%s err=%v", recorder.Code, recorder.Body.String(), err)
 		}
@@ -113,8 +157,9 @@ func TestLoomMaterialReadStaysWithinFrozenRunInputRealPG(t *testing.T) {
 		}
 		if storedTask != task || storedTaskSHA != input.TaskSHA256 || storedTaskSHA != dispatchInputDigest([]byte(storedTask)) ||
 			!strings.Contains(storedTask, extracted) || strings.Contains(executionTask, extracted) ||
+			strings.Contains(executionTask, "approval-request-B") || strings.Contains(executionTask, `"sourceKind"`) ||
 			!strings.Contains(executionTask, materialID) || !strings.Contains(executionTask, fileSHA) ||
-			!strings.Contains(executionTask, `"status":"complete"`) ||
+			!strings.Contains(executionTask, `"status":"`+status+`"`) ||
 			!strings.Contains(executionTask, `"sourceSha256":"`+fileSHA+`"`) {
 			t.Fatalf("input identity or Loom projection changed: rawHash=%s receiptHash=%s executionTask=%s",
 				storedTaskSHA, input.TaskSHA256, executionTask)
@@ -166,10 +211,10 @@ func TestLoomMaterialReadStaysWithinFrozenRunInputRealPG(t *testing.T) {
 	}
 
 	materialAID, materialBID := "aaaaaaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbbbbbbbbbb"
-	runA, hashA, executionTaskA := registerAndDispatch("material-session-A", materialAID, "材料A.txt", "forge-file-A", "A-ONLY UTF8正文。"+strings.Repeat("补充A。", 6))
-	runB, hashB, executionTaskB := registerAndDispatch("material-session-B", materialBID, "材料B.txt", "forge-file-B", "B-SECRET正文不得外泄")
+	runA, hashA, executionTaskA := registerAndDispatch("material-session-A", materialAID, "材料A.pdf", "forge-file-A", "A-ONLY UTF8提取正文。"+strings.Repeat("补充A。", 6), "partial", []string{"page-without-text"})
+	runB, hashB, executionTaskB := registerAndDispatch("material-session-B", materialBID, "材料B.pdf", "forge-file-B", "B-SECRET提取正文不得外泄", "complete", nil)
 	runCtxA := startRun(runA, "material-worker-A", executionTaskA)
-	startRun(runB, "material-worker-B", executionTaskB)
+	runCtxB := startRun(runB, "material-worker-B", executionTaskB)
 	if forgeReads.Load() != 2 {
 		t.Fatalf("expected one registration-time digest check per original file, got %d", forgeReads.Load())
 	}
@@ -184,24 +229,31 @@ func TestLoomMaterialReadStaysWithinFrozenRunInputRealPG(t *testing.T) {
 		t.Fatalf("unexpected Loom material tools=%+v err=%v", tools, err)
 	}
 	var readA struct {
-		Status           string   `json:"status"`
-		Source           string   `json:"source"`
-		BinaryReadStatus string   `json:"binaryReadStatus"`
-		MaterialID       string   `json:"materialId"`
-		SHA256           string   `json:"sha256"`
-		Extractor        string   `json:"extractor"`
-		Content          string   `json:"content"`
-		Limitations      []string `json:"limitations"`
-		Offset           int      `json:"offset"`
-		NextOffset       *int     `json:"nextOffset"`
-		HasMore          bool     `json:"hasMore"`
+		Status                     string   `json:"status"`
+		Source                     string   `json:"source"`
+		OriginalVerificationStatus string   `json:"originalVerificationStatus"`
+		MaterialID                 string   `json:"materialId"`
+		SHA256                     string   `json:"sha256"`
+		Extractor                  string   `json:"extractor"`
+		Content                    string   `json:"content"`
+		Limitations                []string `json:"limitations"`
+		Offset                     int      `json:"offset"`
+		NextOffset                 *int     `json:"nextOffset"`
+		HasMore                    bool     `json:"hasMore"`
 	}
-	call := func(materialID, digest string, maxBytes int) (*contract.ToolResult, error) {
-		args, err := json.Marshal(map[string]any{"materialId": materialID, "sha256": digest, "maxBytes": maxBytes})
+	callAt := func(target context.Context, materialID, digest string, maxBytes int, offset *int) (*contract.ToolResult, error) {
+		values := map[string]any{"materialId": materialID, "sha256": digest, "maxBytes": maxBytes}
+		if offset != nil {
+			values["offset"] = *offset
+		}
+		args, err := json.Marshal(values)
 		if err != nil {
 			return nil, err
 		}
-		return dispatcher.Dispatch(runCtxA, contract.ToolCall{ID: "read-material", Name: "read_frozen_material", Args: string(args)})
+		return dispatcher.Dispatch(target, contract.ToolCall{ID: "read-material", Name: "read_frozen_material", Args: string(args)})
+	}
+	call := func(materialID, digest string, maxBytes int) (*contract.ToolResult, error) {
+		return callAt(runCtxA, materialID, digest, maxBytes, nil)
 	}
 	resultA, err := call(materialAID, hashA, 64)
 	if err != nil || resultA.IsError {
@@ -210,12 +262,28 @@ func TestLoomMaterialReadStaysWithinFrozenRunInputRealPG(t *testing.T) {
 	if err := json.Unmarshal([]byte(resultA.Content), &readA); err != nil {
 		t.Fatal(err)
 	}
-	if readA.Status != "complete" || readA.Source != "workbench-extraction" || readA.BinaryReadStatus != "unavailable" ||
-		readA.MaterialID != materialAID || readA.SHA256 != hashA || readA.Extractor != "utf8" ||
-		!strings.Contains(readA.Content, "A-ONLY UTF8正文") || strings.Contains(readA.Content, "B-SECRET") ||
-		len(readA.Limitations) != 0 || !readA.HasMore || readA.NextOffset == nil || *readA.NextOffset <= readA.Offset {
+	if readA.Status != "partial" || readA.Source != "workbench-extraction" || readA.OriginalVerificationStatus != "verified" ||
+		readA.MaterialID != materialAID || readA.SHA256 != hashA || readA.Extractor != "pdfjs-dist" ||
+		!strings.Contains(readA.Content, "A-ONLY UTF8提取正文") || strings.Contains(readA.Content, "B-SECRET") ||
+		strings.Contains(readA.Content, "RAW-ORIGINAL-A") || len(readA.Limitations) != 1 || !readA.HasMore ||
+		readA.NextOffset == nil || *readA.NextOffset <= readA.Offset {
 		t.Fatalf("current UTF-8 material excerpt lost scope/status: %+v", readA)
 	}
+	failOriginal.Store(true)
+	unavailableOriginal, err := callAt(runCtxA, materialAID, hashA, 64, readA.NextOffset)
+	if err != nil || unavailableOriginal.IsError {
+		t.Fatalf("unavailable original endpoint should preserve extracted text: result=%+v err=%v", unavailableOriginal, err)
+	}
+	var fallback struct {
+		Status                     string `json:"status"`
+		OriginalVerificationStatus string `json:"originalVerificationStatus"`
+		Content                    string `json:"content"`
+	}
+	if err := json.Unmarshal([]byte(unavailableOriginal.Content), &fallback); err != nil || fallback.Status != "partial" ||
+		fallback.OriginalVerificationStatus != "unavailable" || fallback.Content == "" || strings.Contains(fallback.Content, "RAW-ORIGINAL-A") {
+		t.Fatalf("Forge outage hid or mislabeled the text extraction: %+v err=%v", fallback, err)
+	}
+	failOriginal.Store(false)
 	resultB, err := call(materialBID, hashB, 64)
 	if err != nil || resultB.IsError {
 		t.Fatalf("cross-input read should return unavailable: result=%+v err=%v", resultB, err)
@@ -231,7 +299,66 @@ func TestLoomMaterialReadStaysWithinFrozenRunInputRealPG(t *testing.T) {
 	if readB.Status != "unavailable" || readB.Reason != "material_not_in_current_run" || strings.Contains(readB.Content, "B-SECRET") {
 		t.Fatalf("input A exposed input B: %+v", readB)
 	}
-	if forgeReads.Load() != 2 {
-		t.Fatalf("Loom material reads must not fetch Forge binary files; Forge GET count=%d", forgeReads.Load())
+	wrongEmployeeCtx := execution.WithSubject(runCtxA, execution.Subject{WorkspaceID: "ws", UserID: "other-user"})
+	wrongEmployeeResult, err := dispatcher.Dispatch(wrongEmployeeCtx, contract.ToolCall{ID: "wrong-employee", Name: "read_frozen_material", Args: string(mustMaterialReadArgs(t, materialAID, hashA, 64))})
+	if err != nil || wrongEmployeeResult.IsError {
+		t.Fatalf("non-owner read should return unavailable: result=%+v err=%v", wrongEmployeeResult, err)
 	}
+	var wrongEmployeeRead struct {
+		Status  string `json:"status"`
+		Content string `json:"content"`
+	}
+	if err := json.Unmarshal([]byte(wrongEmployeeResult.Content), &wrongEmployeeRead); err != nil ||
+		wrongEmployeeRead.Status != "unavailable" || wrongEmployeeRead.Content != "" {
+		t.Fatalf("non-owner read received material text: %+v err=%v", wrongEmployeeRead, err)
+	}
+	if _, err := pool.Exec(t.Context(), `UPDATE weave_task_business_delegations
+		SET expires_at=statement_timestamp()-interval '1 minute'
+		WHERE workspace_id='ws' AND input_revision_id=$1`, runA.InputRevisionID); err != nil {
+		t.Fatal(err)
+	}
+	expiredResult, err := dispatcher.Dispatch(runCtxA, contract.ToolCall{ID: "expired", Name: "read_frozen_material", Args: string(mustMaterialReadArgs(t, materialAID, hashA, 64))})
+	if err != nil || expiredResult.IsError {
+		t.Fatalf("expired delegation should return unavailable: result=%+v err=%v", expiredResult, err)
+	}
+	var expiredRead struct {
+		Status                     string `json:"status"`
+		OriginalVerificationStatus string `json:"originalVerificationStatus"`
+		Content                    string `json:"content"`
+	}
+	if err := json.Unmarshal([]byte(expiredResult.Content), &expiredRead); err != nil || expiredRead.Status != "unavailable" ||
+		expiredRead.OriginalVerificationStatus != "unavailable" || expiredRead.Content != "" {
+		t.Fatalf("expired delegation exposed material: %+v err=%v", expiredRead, err)
+	}
+	if forgeReads.Load() != 3 {
+		t.Fatalf("cross-run, wrong-user, or expired scope triggered Forge reads: GET count=%d", forgeReads.Load())
+	}
+	dispatcherB, err := readStore.MaterialReadDispatcher(runCtxB)
+	if err != nil || dispatcherB == nil {
+		t.Fatalf("approval material read dispatcher=%T err=%v", dispatcherB, err)
+	}
+	argsB, _ := json.Marshal(map[string]any{"materialId": materialBID, "sha256": hashB, "maxBytes": 64})
+	resultB, err = dispatcherB.Dispatch(runCtxB, contract.ToolCall{ID: "read-approval-material", Name: "read_frozen_material", Args: string(argsB)})
+	if err != nil || resultB.IsError {
+		t.Fatalf("read frozen approval material result=%+v err=%v", resultB, err)
+	}
+	if err := json.Unmarshal([]byte(resultB.Content), &readA); err != nil {
+		t.Fatal(err)
+	}
+	if readA.Status != "complete" || readA.OriginalVerificationStatus != "verified" ||
+		!strings.Contains(readA.Content, "B-SECRET提取正文") || strings.Contains(readA.Content, "RAW-ORIGINAL-B") {
+		t.Fatalf("approval route did not preserve extraction-only model content and original verification: %+v", readA)
+	}
+	if forgeReads.Load() != 4 || forgeRequests.Load() != 5 {
+		t.Fatalf("expected two registrations, two successful source reads, one transient failure, and no rejected-scope requests: successful=%d requests=%d", forgeReads.Load(), forgeRequests.Load())
+	}
+}
+
+func mustMaterialReadArgs(t *testing.T, materialID, digest string, maxBytes int) []byte {
+	t.Helper()
+	args, err := json.Marshal(map[string]any{"materialId": materialID, "sha256": digest, "maxBytes": maxBytes})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return args
 }
