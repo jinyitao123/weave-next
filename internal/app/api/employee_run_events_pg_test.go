@@ -158,7 +158,7 @@ func TestEmployeeRunEventBackfillDeliversOnceToForgeInboxRealPG(t *testing.T) {
 		cancelledRunID: cancelledInputRevisionID,
 	}
 	actions := &teamrun.PGActivityStore{Transactions: pool}
-	writeActionEvent := func(phase, callID, actionName, actionLabel, recordID, status string) {
+	writeRunActionEvent := func(runID, phase, callID, actionName, actionLabel, recordID, status string) {
 		t.Helper()
 		kind := "business_action_started"
 		if phase == "result" {
@@ -175,12 +175,15 @@ func TestEmployeeRunEventBackfillDeliversOnceToForgeInboxRealPG(t *testing.T) {
 			t.Fatal(err)
 		}
 		if err := actions.RecordBusinessActionEvent(t.Context(), teamrun.ActivityEvent{
-			WorkspaceID: "ws", RunID: dispatch.RunID, EventID: uuid.NewString(), Kind: kind,
+			WorkspaceID: "ws", RunID: runID, EventID: uuid.NewString(), Kind: kind,
 			NodeID: "lead", MemberID: "lead-agent", MemberVersion: 1,
 			Detail: detail, OccurredAt: time.Now().UTC(),
 		}); err != nil {
 			t.Fatal(err)
 		}
+	}
+	writeActionEvent := func(phase, callID, actionName, actionLabel, recordID, status string) {
+		writeRunActionEvent(dispatch.RunID, phase, callID, actionName, actionLabel, recordID, status)
 	}
 	writeActionEvent("started", "call-action-1", "ContractSubmit", "提交指定合同版本", "private-record-reference", "")
 	writeActionEvent("result", "call-action-1", "ContractSubmit", "提交指定合同版本", "private-record-reference", "succeeded")
@@ -195,6 +198,9 @@ func TestEmployeeRunEventBackfillDeliversOnceToForgeInboxRealPG(t *testing.T) {
 	writeActionEvent("started", "call-action-13", "FinalReject", "最后失败动作", "private-record-reference", "")
 	writeActionEvent("result", "call-action-13", "FinalReject", "最后失败动作", "private-record-reference", "failed")
 	writeActionEvent("started", "call-action-14", "FinalUnknown", "最后未知动作", "private-record-reference", "")
+	writeRunActionEvent(failedRunID, "started", "failed-call-1", "RequestRevision", "提交修订", "private-record-reference", "")
+	writeRunActionEvent(failedRunID, "result", "failed-call-1", "RequestRevision", "提交修订", "private-record-reference", "failed")
+	writeRunActionEvent(failedRunID, "started", "failed-call-2", "ContractSubmit", "提交合同", "private-record-reference", "")
 	var calls atomic.Int32
 	var receiverMu sync.Mutex
 	seenRunEvents := make(map[string]int)
@@ -230,18 +236,29 @@ func TestEmployeeRunEventBackfillDeliversOnceToForgeInboxRealPG(t *testing.T) {
 			t.Errorf("native inbox event shape changed: %#v", event)
 		}
 		if runReference == dispatch.RunID {
-			if !strings.Contains(event["title"].(string), "已完成") {
-				t.Errorf("success event title did not identify completion: %#v", event)
+			if event["title"] != "团队运行已完成（业务动作需核对）：flow" {
+				t.Errorf("success event title did not separate run completion from action issues: %#v", event)
 			}
 			summary, _ := event["summary"].(string)
-			if !strings.Contains(summary, "成功 11 项") || !strings.Contains(summary, "失败 1 项") ||
-				!strings.Contains(summary, "结果未知 2 项") || !strings.Contains(summary, "完整逐项结果请打开原工作续办") ||
-				strings.Contains(summary, "sales_contract") || strings.Contains(summary, "private-record-reference") {
+			if !strings.Contains(summary, "团队运行状态：已完成") ||
+				!strings.Contains(summary, "业务动作调用结果：成功 11 项，失败 1 项，结果未知 2 项") ||
+				!strings.Contains(summary, "失败或未知结果请先核对 Forge 业务记录后再决定下一步") ||
+				!strings.Contains(summary, "本消息不代表正式审批状态") || strings.Contains(summary, "续办") ||
+				strings.Contains(summary, "重试") || strings.Contains(summary, "sales_contract") || strings.Contains(summary, "private-record-reference") {
 				t.Errorf("summary did not use safe platform action facts: %q", summary)
 			}
-		} else if runReference == failedRunID && !strings.Contains(event["title"].(string), "处理失败") {
-			t.Errorf("failure event title did not identify failure: %#v", event)
-		} else if runReference == cancelledRunID && !strings.Contains(event["title"].(string), "已取消") {
+		} else if runReference == failedRunID {
+			if event["title"] != "团队运行失败（业务动作需核对）：flow" {
+				t.Errorf("failure event title did not separate run and action status: %#v", event)
+			}
+			summary, _ := event["summary"].(string)
+			if !strings.Contains(summary, "团队运行状态：失败") ||
+				!strings.Contains(summary, "业务动作“提交修订”调用返回失败，请先核对业务记录后再处理") ||
+				!strings.Contains(summary, "业务动作“提交合同”结果未知，请先核对业务记录后再处理") ||
+				!strings.Contains(summary, "正式审批状态请以 Forge 业务记录为准") {
+				t.Errorf("summary did not separate run failure from action outcomes: %q", summary)
+			}
+		} else if runReference == cancelledRunID && event["title"] != "团队运行已取消：flow" {
 			t.Errorf("cancel event title did not identify cancellation: %#v", event)
 		}
 		if _, exists := event["action_outcomes"]; exists {
