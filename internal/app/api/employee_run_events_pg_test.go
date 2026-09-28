@@ -118,7 +118,7 @@ func TestEmployeeRunEventBackfillDeliversOnceToForgeInboxRealPG(t *testing.T) {
 			run.team_id,run.workflow_id,run.workflow_version,$2,run.source_kind,$4,
 			'employee-run-event-test:'||$2,$5,$5,$5,
 			CASE $3 WHEN 'failed' THEN 'team_run_execution_failed' WHEN 'cancelled' THEN 'team_run_cancelled' END,
-			CASE $3 WHEN 'failed' THEN 'synthetic failure' END
+			CASE $3 WHEN 'failed' THEN 'Forge attachment lookup failed: material unavailable (usage accounting also failed: usage input_tokens must be non-negative)' END
 		FROM weave_team_runs AS run WHERE run.workspace_id='ws' AND run.run_id=$1`,
 			dispatch.RunID, runID, status, taskID, now); err != nil {
 			t.Fatalf("seed %s terminal run: %v", status, err)
@@ -212,6 +212,7 @@ func TestEmployeeRunEventBackfillDeliversOnceToForgeInboxRealPG(t *testing.T) {
 	writeRunActionEvent(failedRunID, "started", "failed-call-1", "RequestRevision", "提交修订", "private-record-reference", "")
 	writeRunActionEvent(failedRunID, "result", "failed-call-1", "RequestRevision", "提交修订", "private-record-reference", "failed")
 	writeRunActionEvent(failedRunID, "started", "failed-call-2", "ContractSubmit", "提交合同", "private-record-reference", "")
+	writeRunActionEvent(failedRunID, "result", "failed-call-2", "ContractSubmit", "提交合同", "private-record-reference", "succeeded")
 	var calls atomic.Int32
 	var receiverMu sync.Mutex
 	seenRunEvents := make(map[string]int)
@@ -265,8 +266,10 @@ func TestEmployeeRunEventBackfillDeliversOnceToForgeInboxRealPG(t *testing.T) {
 			summary, _ := event["summary"].(string)
 			if !strings.Contains(summary, "团队运行状态：失败") ||
 				!strings.Contains(summary, "业务动作“提交修订”调用返回失败，请先核对业务记录后再处理") ||
-				!strings.Contains(summary, "业务动作“提交合同”结果未知，请先核对业务记录后再处理") ||
-				!strings.Contains(summary, "正式审批状态请以 Forge 业务记录为准") {
+				!strings.Contains(summary, "业务动作“提交合同”调用返回成功") ||
+				!strings.Contains(summary, "正式审批状态请以 Forge 业务记录为准") ||
+				!strings.Contains(summary, "团队处理失败：Forge attachment lookup failed: material unavailable") ||
+				!strings.Contains(summary, "usage accounting also failed: usage input_tokens must be non-negative") {
 				t.Errorf("summary did not separate run failure from action outcomes: %q", summary)
 			}
 		} else if runReference == revisionRequiredRunID {
