@@ -674,13 +674,17 @@ func (s *Server) ConfigureTeamRunWorkers() {
 			key[index] = 0
 		}
 	}
+	materialReads := businessDelegations
+	if materialReads == nil {
+		materialReads = businessaction.NewStore(pool, s.Tasks, nil)
+	}
 	s.BusinessDelegations = businessDelegations
 	runtime := &teamrun.WorkflowSerialRuntime{
 		Artifacts: s.WorkflowArtifacts,
 		Loader: &workflow.RuntimeLoader{
 			Registry: s.Descriptors, CLIExecutor: s.teamRunCLIExecutor(),
 		},
-		HostFactory: businessaction.Factory{Inner: workflow.NewRuntimeHostFactory(), Store: businessDelegations},
+		HostFactory: businessaction.Factory{Inner: workflow.NewRuntimeHostFactory(), Store: businessDelegations, MaterialStore: materialReads},
 		CredentialResolvers: func(
 			workspaceID string,
 		) (workflow.RuntimeCredentialResolver, error) {

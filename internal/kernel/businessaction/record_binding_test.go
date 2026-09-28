@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/jinyitao123/loom/contract"
@@ -80,7 +81,7 @@ func TestRecordlessActionDoesNotAcceptUnboundRecord(t *testing.T) {
 }
 
 func TestStoredRecordBindingIsRecoveredWithTheInput(t *testing.T) {
-	input := delegatedResource{Type: "dispatch-input", ID: "input-a", SHA256: "input-hash"}
+	input := delegatedResource{Type: "dispatch-input", ID: "input-a", SHA256: strings.Repeat("a", 64)}
 	record := recordResourceForTest("sales_quote", "quote-a")
 	raw, _ := json.Marshal([]delegatedResource{input, record})
 	got, err := decodeDelegatedResources(raw, "input-a")

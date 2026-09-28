@@ -256,7 +256,10 @@ func TestDispatcherRequiresExplicitBindingForFileParameters(t *testing.T) {
 }
 
 func TestDecodeDelegatedResourcesRejectsAnotherInput(t *testing.T) {
-	raw := []byte(`[{"type":"dispatch-input","id":"another-input","sha256":"digest"},{"type":"forge-file","id":"file-1","name":"合同.md","bytes":12,"sha256":"digest"}]`)
+	raw, _ := json.Marshal([]delegatedResource{
+		{Type: "dispatch-input", ID: "another-input", SHA256: strings.Repeat("a", 64)},
+		{Type: "forge-file", ID: "file-1", Name: "合同.md", Bytes: 12, SHA256: strings.Repeat("b", 64)},
+	})
 	if _, err := decodeDelegatedResources(raw, "current-input"); err == nil || !strings.Contains(err.Error(), "does not match") {
 		t.Fatalf("err=%v", err)
 	}

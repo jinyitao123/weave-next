@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -29,6 +30,42 @@ func TestDispatchInputSourceMessagesRejectAmbiguousProvenance(t *testing.T) {
 				t.Fatal("ambiguous source references accepted")
 			}
 		})
+	}
+}
+
+func TestDispatchInputFrozenResourceBudgetMatchesMaterialContract(t *testing.T) {
+	resource := dispatchInputResource{
+		Type: "forge-file", ID: "file-a", Name: "材料.pdf", MaterialID: strings.Repeat("a", 24),
+		MediaType: "application/pdf", Bytes: dispatchInputResourceMaxBytes, SHA256: strings.Repeat("a", 64),
+	}
+	if !validDispatchInputResources([]dispatchInputResource{resource}) {
+		t.Fatal("accepted contract-sized original was rejected")
+	}
+	tooLarge := resource
+	tooLarge.Bytes++
+	if validDispatchInputResources([]dispatchInputResource{tooLarge}) {
+		t.Fatal("accepted an original larger than 2 MiB")
+	}
+	missingMaterialID := resource
+	missingMaterialID.MaterialID = ""
+	if !validDispatchInputResources([]dispatchInputResource{missingMaterialID}) {
+		t.Fatal("rejected an optional resource material ID")
+	}
+	resources := make([]dispatchInputResource, 4)
+	for index := range resources {
+		resources[index] = dispatchInputResource{
+			Type: "forge-file", ID: fmt.Sprintf("file-%d", index), Name: "材料.txt",
+			Bytes: dispatchInputResourceMaxBytes, SHA256: strings.Repeat("b", 64),
+		}
+	}
+	if !validDispatchInputResources(resources) {
+		t.Fatal("rejected the 8 MiB aggregate original limit")
+	}
+	resources = append(resources, dispatchInputResource{
+		Type: "forge-file", ID: "file-extra", Name: "额外材料.txt", Bytes: 1, SHA256: strings.Repeat("c", 64),
+	})
+	if validDispatchInputResources(resources) {
+		t.Fatal("accepted originals above the 8 MiB aggregate limit")
 	}
 }
 
