@@ -302,6 +302,36 @@
         "lines_added": 314,
         "production_lines_added": 58
       }
+    },
+    {
+      "date": "2026-09-28",
+      "source_commit": "f9350a99fc2d4cf85b06c7f13c5ed7f6a37ae9f3",
+      "reason": "Add the optional frozen Workbench team-result contract, verified delivery classification, one native employee result or revision-required event, and owner continuation readback with exact-output consistency checks. Exact measured ceilings with no spare allowance; package/dependency limits and original migration targets remain unchanged.",
+      "record": "https://github.com/jinyitao123/weave-workbench/blob/94b39a10/contracts/v1/README.md",
+      "base": {
+        "previous_lines": 8136,
+        "previous_production_lines": 6674,
+        "lines_added": 55,
+        "production_lines_added": 9
+      },
+      "kernel": {
+        "previous_lines": 92785,
+        "previous_production_lines": 79611,
+        "lines_added": 450,
+        "production_lines_added": 232
+      },
+      "build": {
+        "previous_lines": 31447,
+        "previous_production_lines": 29051,
+        "lines_added": 35,
+        "production_lines_added": 6
+      },
+      "app": {
+        "previous_lines": 81291,
+        "previous_production_lines": 61132,
+        "lines_added": 134,
+        "production_lines_added": 69
+      }
     }
   ],
   "migration_targets": {
@@ -327,8 +357,8 @@
     }
   },
   "base": {
-    "lines": 8136,
-    "production_lines": 6674,
+    "lines": 8191,
+    "production_lines": 6683,
     "packages": 9,
     "external_dependencies": 4,
     "allowed_dependencies": [
@@ -339,8 +369,8 @@
     ]
   },
   "kernel": {
-    "lines": 92785,
-    "production_lines": 79611,
+    "lines": 93235,
+    "production_lines": 79843,
     "packages": 49,
     "external_dependencies": 5,
     "allowed_dependencies": [
@@ -352,8 +382,8 @@
     ]
   },
   "build": {
-    "lines": 31447,
-    "production_lines": 29051,
+    "lines": 31482,
+    "production_lines": 29057,
     "packages": 6,
     "external_dependencies": 4,
     "allowed_dependencies": [
@@ -364,8 +394,8 @@
     ]
   },
   "app": {
-    "lines": 81291,
-    "production_lines": 61132,
+    "lines": 81425,
+    "production_lines": 61201,
     "packages": 30,
     "external_dependencies": 7,
     "allowed_dependencies": [
