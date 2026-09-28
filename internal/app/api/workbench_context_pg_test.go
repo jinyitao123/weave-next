@@ -152,10 +152,11 @@ func TestWorkbenchContextReadsExactInputAndRejectsOtherEmployeesRealPG(t *testin
 		WHERE workspace_id='ws' AND run_id=$1`, run.RunID); err != nil {
 		t.Fatal(err)
 	}
-	finalContent := "最终合同核对结果"
+	finalContent := `{"disposition":"needs_input","summary":"缺少原始签署日期","missing_items":["提供完整签署日期"]}`
 	if _, err := pool.Exec(t.Context(), `INSERT INTO weave_final_deliverables
 		(id,workspace_id,user_id,lead_avatar_id,session_id,event_id,run_id,run_snapshot_id,title,content,content_type,metadata)
-		VALUES($1,'ws','user-a','lead',$2,$3,$4,$4,'核对结果',$5,'text/plain','{"artifact_kind":"final"}'::jsonb)`,
+		VALUES($1,'ws','user-a','lead',$2,$3,$4,$4,'核对结果',$5,'application/json',
+		'{"artifact_kind":"final","workbench_result":{"protocol":"workbench_result_v1","disposition":"needs_input","summary":"缺少原始签署日期","missing_items":["提供完整签署日期"]}}'::jsonb)`,
 		"deliverable-context-a", registration.WorkbenchSessionID, uuid.NewString(), run.RunID, finalContent); err != nil {
 		t.Fatal(err)
 	}
@@ -180,7 +181,10 @@ func TestWorkbenchContextReadsExactInputAndRejectsOtherEmployeesRealPG(t *testin
 	}
 	if response.Input.Parent == nil || response.Input.Parent.RootInputRevisionID != input.InputRevisionID || response.Run.Status != "failed" ||
 		response.Run.FinalResult == nil || response.Run.FinalResult.Content != finalContent ||
-		response.Run.FinalResult.SHA256 != dispatchInputDigest([]byte(finalContent)) {
+		response.Run.FinalResult.SHA256 != dispatchInputDigest([]byte(finalContent)) ||
+		response.Run.FinalResult.Disposition != "needs_input" || response.Run.FinalResult.Summary != "缺少原始签署日期" ||
+		response.Run.FinalResult.MissingItems == nil || len(*response.Run.FinalResult.MissingItems) != 1 ||
+		(*response.Run.FinalResult.MissingItems)[0] != "提供完整签署日期" {
 		t.Fatalf("unexpected lineage or run result: input=%+v run=%+v", response.Input, response.Run)
 	}
 	if len(response.Run.ActionOutcomes) != 2 {
@@ -195,6 +199,16 @@ func TestWorkbenchContextReadsExactInputAndRejectsOtherEmployeesRealPG(t *testin
 	if unknown.NodeID != "review" || unknown.CallID != "forge-call-2" || unknown.Status != "unknown" ||
 		!strings.Contains(unknown.Summary, "结果未知") || strings.Contains(unknown.Summary, "sales_contract") || strings.Contains(unknown.Summary, "record-a") {
 		t.Fatalf("unexpected unknown action outcome: %+v", unknown)
+	}
+	if _, err := pool.Exec(t.Context(), `INSERT INTO weave_final_deliverables
+		(id,workspace_id,user_id,lead_avatar_id,session_id,event_id,run_id,run_snapshot_id,title,content,content_type,metadata)
+		VALUES($1,'ws','user-a','lead',$2,$3,$4,$4,'错配检查意见',$5,'application/json',
+		'{"artifact_kind":"final","workbench_result":{"protocol":"workbench_result_v1","disposition":"needs_input","summary":"不匹配的检查摘要","missing_items":["提供完整签署日期"]}}'::jsonb)`,
+		"deliverable-context-mismatch", registration.WorkbenchSessionID, uuid.NewString(), run.RunID, finalContent); err != nil {
+		t.Fatal(err)
+	}
+	if status, _ := callWorkbenchRunContext(t, server, "user-a", run.RunID); status != http.StatusServiceUnavailable {
+		t.Fatalf("mismatched result metadata was projected: status=%d", status)
 	}
 	if status, _ := callWorkbenchRunContext(t, server, "user-b", run.RunID); status != http.StatusNotFound {
 		t.Fatalf("another employee read this run context: status=%d", status)

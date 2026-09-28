@@ -26,6 +26,24 @@ func validWorkbenchContextInputRow() workbenchContextInputRow {
 
 func int64Pointer(value int64) *int64 { return &value }
 
+func TestWorkbenchContextResultEmitsEmptyMissingItemsForComplete(t *testing.T) {
+	missing := []string{}
+	encoded, err := json.Marshal(workbenchContextFinalDeliverable{
+		ID: "deliverable", Title: "检查意见", ContentType: "application/json", Content: "{}",
+		Disposition: "complete", Summary: "本轮检查已完成", MissingItems: &missing,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(encoded, &fields); err != nil {
+		t.Fatal(err)
+	}
+	if string(fields["missing_items"]) != "[]" || len(fields["disposition"]) == 0 || len(fields["summary"]) == 0 {
+		t.Fatalf("complete result omits protocol fields: %s", encoded)
+	}
+}
+
 func TestProjectWorkbenchRunContextUsesPersistedInputAndReferences(t *testing.T) {
 	input := validWorkbenchContextInputRow()
 	response, err := projectWorkbenchRunContext(input, workbenchRunRecord{RunID: "run-a", Status: "parked"})

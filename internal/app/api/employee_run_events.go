@@ -146,7 +146,8 @@ func (worker *employeeRunEventWorker) materialize(ctx context.Context) error {
 			input.input_revision_id,input.workbench_session_id,input.project_id,
 			identity.subject AS assignee_account_id,identity.workspace_id AS external_organization,
 			COALESCE(NULLIF(workflow.name,''),NULLIF(team.name,''),'团队工作') AS team_name,
-			COALESCE(NULLIF(deliverable.content,''),'') AS deliverable_content
+		COALESCE(NULLIF(deliverable.content,''),'') AS deliverable_content,
+		deliverable.workbench_result AS workbench_result
 		FROM weave_team_runs AS run
 		JOIN weave_dispatch_input_revisions AS input
 		  ON input.workspace_id=run.workspace_id AND input.consumed_run_id=run.run_id
@@ -157,10 +158,10 @@ func (worker *employeeRunEventWorker) materialize(ctx context.Context) error {
 		LEFT JOIN weave_team_workflows AS workflow
 		  ON workflow.workspace_id=run.workspace_id AND workflow.team_id=run.team_id AND workflow.id=run.workflow_id
 		LEFT JOIN LATERAL (
-		  SELECT content FROM weave_final_deliverables
+		  SELECT content,metadata->'workbench_result' AS workbench_result FROM weave_final_deliverables
 		  WHERE workspace_id=run.workspace_id AND run_id=run.run_id
 		    AND COALESCE(metadata->>'artifact_kind','final')='final'
-		  ORDER BY created_at DESC,id DESC LIMIT 1
+		  ORDER BY (metadata->'workbench_result' IS NOT NULL) DESC,created_at DESC,id DESC LIMIT 1
 		) AS deliverable ON true
 		WHERE run.status IN ('succeeded','failed','cancelled','abandoned')
 	), business_action_receipts AS (
@@ -203,16 +204,33 @@ func (worker *employeeRunEventWorker) materialize(ctx context.Context) error {
 	  jsonb_build_object(
 		'version','1','eventId',(
 		  substr(hash,1,8)||'-'||substr(hash,9,4)||'-5'||substr(hash,14,3)||'-8'||substr(hash,18,3)||'-'||substr(hash,21,12)
-		),'kind',CASE status WHEN 'succeeded' THEN 'result' WHEN 'cancelled' THEN 'cancelled' ELSE 'failure' END,
+		),'kind',CASE
+		  WHEN status='succeeded' AND workbench_result->>'disposition'='needs_input' THEN 'revision_required'
+		  WHEN status='succeeded' THEN 'result'
+		  WHEN status='cancelled' THEN 'cancelled'
+		  ELSE 'failure' END,
 		'organizationId',external_organization,'assigneeAccountId',assignee_account_id,
-		'title',left('团队运行'||CASE status
-		  WHEN 'succeeded' THEN '已完成'
-		  WHEN 'cancelled' THEN '已取消'
-		  WHEN 'abandoned' THEN '已放弃'
+		'title',left('团队运行'||CASE
+		  WHEN status='succeeded' AND workbench_result->>'disposition'='needs_input' THEN '需要补充材料'
+		  WHEN status='succeeded' THEN '已完成'
+		  WHEN status='cancelled' THEN '已取消'
+		  WHEN status='abandoned' THEN '已放弃'
 		  ELSE '失败' END||CASE
 		  WHEN COALESCE(business_action_summary.failed_count,0)>0 OR COALESCE(business_action_summary.unknown_count,0)>0
 		    THEN '（业务动作需核对）' ELSE '' END||'：'||team_name,300),
 		'summary',left(CASE
+		  WHEN status='succeeded' AND workbench_result->>'disposition'='needs_input' THEN
+			'团队检查结论：'||COALESCE(NULLIF(workbench_result->>'summary',''),'本轮检查发现需要补充的信息。')||CASE
+			  WHEN COALESCE(jsonb_array_length(workbench_result->'missing_items'),0)>0 THEN ' 需要补充：'||(
+				SELECT string_agg(item.value,'；') FROM jsonb_array_elements_text(workbench_result->'missing_items') AS item(value)
+			  ) ELSE '' END
+			||CASE
+			  WHEN business_action_summary.action_count>12 THEN
+				'。业务动作调用结果：成功 '||business_action_summary.succeeded_count||' 项，失败 '||business_action_summary.failed_count||
+				' 项，结果未知 '||business_action_summary.unknown_count||' 项。失败或未知结果请先核对 Forge 业务记录后再决定下一步。'
+			  WHEN business_action_summary.summary IS NOT NULL THEN
+				'。业务动作调用结果：'||business_action_summary.summary||'本消息中的动作结果只反映调用回执；正式审批状态请以 Forge 业务记录为准。'
+			  ELSE '' END
 		  WHEN business_action_summary.action_count>12 THEN
 			'团队运行状态：'||CASE status WHEN 'succeeded' THEN '已完成' WHEN 'cancelled' THEN '已取消' WHEN 'abandoned' THEN '已放弃' ELSE '失败' END||
 			'。业务动作调用结果：成功 '||business_action_summary.succeeded_count||' 项，失败 '||business_action_summary.failed_count||
@@ -221,6 +239,8 @@ func (worker *employeeRunEventWorker) materialize(ctx context.Context) error {
 			'团队运行状态：'||CASE status WHEN 'succeeded' THEN '已完成' WHEN 'cancelled' THEN '已取消' WHEN 'abandoned' THEN '已放弃' ELSE '失败' END||
 			'。业务动作调用结果：'||business_action_summary.summary||
 			'本消息中的动作结果只反映调用回执；正式审批状态请以 Forge 业务记录为准。'
+		  WHEN status='succeeded' AND workbench_result->>'disposition'='complete' THEN
+			'团队检查结论：'||COALESCE(NULLIF(workbench_result->>'summary',''),'本轮检查已完成。')
 		  WHEN status='succeeded' AND deliverable_content<>'' THEN '团队运行状态：已完成。团队成果：'||deliverable_content
 		  WHEN status='succeeded' THEN '团队运行状态：已完成。团队工作已结束，可在桌面查看结果。'
 		  WHEN status='cancelled' THEN '团队运行状态：已取消。'

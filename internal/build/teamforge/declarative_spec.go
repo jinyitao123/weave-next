@@ -26,6 +26,7 @@ var declarativeStableRefPattern = regexp.MustCompile(`^[a-z][a-z0-9_-]*$`)
 type DeclarativeWorkflowSpecV1 struct {
 	SchemaVersion  int                         `json:"schema_version"`
 	EntryNodeID    string                      `json:"entry_node_id"`
+	ResultProtocol string                      `json:"result_protocol,omitempty"`
 	InputContract  machine.OutputContract      `json:"input_contract"`
 	OutputContract machine.OutputContract      `json:"output_contract"`
 	Nodes          []DeclarativeWorkflowNodeV1 `json:"nodes"`
@@ -190,6 +191,7 @@ func CompileDeclarativeWorkflowSpecV1(
 		Graph: machine.GraphDefinition{
 			SchemaVersion:  spec.SchemaVersion,
 			EntryNodeID:    strings.TrimSpace(spec.EntryNodeID),
+			ResultProtocol: spec.ResultProtocol,
 			InputContract:  spec.InputContract,
 			OutputContract: spec.OutputContract,
 			Nodes:          make([]machine.Node, 0, len(spec.Nodes)),

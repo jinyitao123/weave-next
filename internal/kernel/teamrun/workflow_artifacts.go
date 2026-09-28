@@ -122,7 +122,7 @@ func workflowResultDigest(raw json.RawMessage) (string, error) {
 	return deliverable.CanonicalJSONDigest(raw)
 }
 
-func (r *WorkflowSerialRuntime) workflowDeliveryRecorder(run TeamRun) func(context.Context, string, string, string, any, []deliverable.WorkflowArtifact, []deliverable.SourceObservation, *deliverable.OutputSelection) error {
+func (r *WorkflowSerialRuntime) workflowDeliveryRecorder(run TeamRun) func(context.Context, string, string, string, any, []deliverable.WorkflowArtifact, []deliverable.SourceObservation, *deliverable.OutputSelection, json.RawMessage) error {
 	if r == nil || r.OutputRecorder == nil {
 		return nil
 	}
@@ -132,7 +132,7 @@ func (r *WorkflowSerialRuntime) workflowDeliveryRecorder(run TeamRun) func(conte
 	if !ok {
 		return nil
 	}
-	return func(ctx context.Context, nodeID, nodeLabel, nodeType string, output any, artifacts []deliverable.WorkflowArtifact, observations []deliverable.SourceObservation, selection *deliverable.OutputSelection) error {
+	return func(ctx context.Context, nodeID, nodeLabel, nodeType string, output any, artifacts []deliverable.WorkflowArtifact, observations []deliverable.SourceObservation, selection *deliverable.OutputSelection, resultMetadata json.RawMessage) error {
 		base := deliverable.WorkflowOutput{WorkspaceID: run.WorkspaceID, RunID: run.RunID, RunSnapshotID: run.RunSnapshotID, NodeID: nodeID, NodeLabel: nodeLabel, NodeType: nodeType, Final: true, CreatedAt: r.now()}
 		bundle := make([]deliverable.WorkflowOutput, 0, len(artifacts)+1)
 		for _, artifact := range artifacts {
@@ -142,6 +142,7 @@ func (r *WorkflowSerialRuntime) workflowDeliveryRecorder(run TeamRun) func(conte
 			bundle = append(bundle, item)
 		}
 		base.Output = output
+		base.ResultMetadata = append(json.RawMessage(nil), resultMetadata...)
 		base.SourceObservations = observations
 		for _, observation := range observations {
 			base.Sources = append(base.Sources, observation.Source)

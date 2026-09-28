@@ -1,6 +1,7 @@
 package teamforge
 
 import (
+	"bytes"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -70,6 +71,34 @@ func TestCompileDeclarativeHumanWait(t *testing.T) {
 	wait := compiled.Graph.Nodes[0].Config.(machine.WaitConfig)
 	if wait.Kind != machine.WaitKindHuman || wait.Task == nil || wait.Task.Title != "终审" {
 		t.Fatalf("unexpected compiled wait: %+v", wait)
+	}
+}
+
+func TestDeclarativeResultProtocolSurvivesCompilationAndEncoding(t *testing.T) {
+	contract := machine.OutputContract{Type: machine.ValueJSON, Schema: machine.WorkbenchResultSchemaV1()}
+	spec := DeclarativeWorkflowSpecV1{
+		SchemaVersion: 1, EntryNodeID: "inspect", ResultProtocol: machine.ResultProtocolWorkbenchV1,
+		InputContract: contract, OutputContract: contract,
+		Nodes: []DeclarativeWorkflowNodeV1{
+			{ID: "inspect", Type: machine.NodeLead, Output: &contract, Config: json.RawMessage(`{"instruction":"Inspect the supplied material."}`)},
+			{ID: "deliver", Type: machine.NodeDeliver, Config: json.RawMessage(`{"result":{"source":"node_output","node_id":"inspect","path":""}}`)},
+		},
+		Edges: []DeclarativeWorkflowEdgeV1{{From: "inspect", To: "deliver", Route: machine.RouteSuccess}},
+	}
+	compiled, err := CompileDeclarativeWorkflowSpecV1(spec, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := encodeWorkflowGraph(compiled.Graph)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, report := machine.DecodeGraphDefinitionV1(encoded)
+	if report != nil && len(report.Issues) != 0 {
+		t.Fatalf("decode encoded result protocol: %+v", report.Issues)
+	}
+	if decoded.ResultProtocol != machine.ResultProtocolWorkbenchV1 || !bytes.Equal(decoded.OutputContract.Schema, contract.Schema) {
+		t.Fatalf("result protocol did not survive encoding: %+v", decoded)
 	}
 }
 

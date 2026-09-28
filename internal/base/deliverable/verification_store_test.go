@@ -214,6 +214,52 @@ func TestVerificationStorePhysicalSourcesAndVersions(t *testing.T) {
 	}
 }
 
+func TestVerifiedWorkflowOutputPersistsWorkbenchResultMetadata(t *testing.T) {
+	h := newVerificationHarness(t, fixtureEffectsRegistry(t, VerificationPassed))
+	h.seedSnapshot(t, "result-snapshot")
+	contract := fixtureContract()
+	contract.Output.Type = "json"
+	h.freeze(t, "result-snapshot", contract)
+	fence := h.seedRun(t, "result-snapshot", "result-run")
+	files := []fileartifact.File{{Path: "report.md", ContentType: "text/markdown", Content: "verified content"}}
+	source := h.source(t, fence, "loom", "result-source", files, nil)
+	outputs := bundleFor(fence, source, files)
+	result := map[string]any{
+		"disposition": "needs_input", "summary": "缺少原始签署日期", "missing_items": []string{"提供完整签署日期"},
+	}
+	metadata, err := json.Marshal(map[string]any{
+		"protocol": "workbench_result_v1", "disposition": result["disposition"],
+		"summary": result["summary"], "missing_items": result["missing_items"],
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	outputs[len(outputs)-1].Output = result
+	outputs[len(outputs)-1].ResultMetadata = metadata
+	report, err := h.store.RecordVerifiedWorkflowOutputs(context.Background(), outputs, fence)
+	if err != nil || report.Status != VerificationPassed {
+		t.Fatalf("record verified result: report=%+v err=%v", report, err)
+	}
+	var persisted []byte
+	if err := h.pool.QueryRow(context.Background(), `SELECT metadata->'workbench_result' FROM weave_final_deliverables
+		WHERE workspace_id='workspace-1' AND run_id='result-run' AND metadata->>'filename'='' AND metadata->>'artifact_kind'='final'`).Scan(&persisted); err != nil {
+		t.Fatal(err)
+	}
+	var got struct {
+		Protocol     string   `json:"protocol"`
+		Disposition  string   `json:"disposition"`
+		Summary      string   `json:"summary"`
+		MissingItems []string `json:"missing_items"`
+	}
+	if err := json.Unmarshal(persisted, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Protocol != "workbench_result_v1" || got.Disposition != "needs_input" || got.Summary != "缺少原始签署日期" ||
+		len(got.MissingItems) != 1 || got.MissingItems[0] != "提供完整签署日期" {
+		t.Fatalf("verified result metadata was not persisted with its output: %+v", got)
+	}
+}
+
 func TestVerificationStoreRollsBackFilesAndReport(t *testing.T) {
 	h := newVerificationHarness(t, fixtureEffectsRegistry(t, VerificationPassed))
 	h.seedSnapshot(t, "snapshot")

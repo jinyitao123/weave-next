@@ -73,6 +73,7 @@ type Delivery struct {
 type GraphDefinition struct {
 	SchemaVersion    int                           `json:"schema_version"`
 	EntryNodeID      string                        `json:"entry_node_id"`
+	ResultProtocol   string                        `json:"result_protocol,omitempty"`
 	InputContract    OutputContract                `json:"input_contract"`
 	OutputContract   OutputContract                `json:"output_contract"`
 	DeliveryContract *deliverable.DeliveryContract `json:"delivery_contract,omitempty"`

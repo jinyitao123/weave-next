@@ -57,6 +57,7 @@ type WorkflowOutput struct {
 	Sources            []ArtifactSource
 	Selection          *OutputSelection
 	SourceObservations []SourceObservation
+	ResultMetadata     json.RawMessage
 }
 
 // WorkflowArtifact is one runtime-produced file whose path is relative to the
@@ -242,14 +243,22 @@ func (s *Store) recordWorkflowOutput(ctx context.Context, tx pgx.Tx, output Work
 	if artifactPath != "" {
 		title = artifactPath
 	}
-	metadata, err := json.Marshal(map[string]any{
+	metadataFields := map[string]any{
 		"source":        "published_workflow",
 		"artifact_kind": kind,
 		"node_id":       output.NodeID,
 		"node_label":    label,
 		"node_type":     strings.TrimSpace(output.NodeType),
 		"filename":      artifactPath,
-	})
+	}
+	if len(output.ResultMetadata) != 0 {
+		var resultMetadata map[string]json.RawMessage
+		if err := json.Unmarshal(output.ResultMetadata, &resultMetadata); err != nil || resultMetadata == nil {
+			return errors.New("workflow result metadata must be a JSON object")
+		}
+		metadataFields["workbench_result"] = resultMetadata
+	}
+	metadata, err := json.Marshal(metadataFields)
 	if err != nil {
 		return fmt.Errorf("encode workflow deliverable metadata: %w", err)
 	}

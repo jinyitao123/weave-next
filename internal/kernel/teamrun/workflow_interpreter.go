@@ -76,7 +76,7 @@ type serialMachineStart struct {
 	LoadArtifacts            func(context.Context, []string) ([]deliverable.WorkflowArtifact, error)
 	LoadArtifactObservations func(context.Context, []string) ([]deliverable.SourceObservation, error)
 	RecordCheckpoint         func(context.Context, WorkflowCheckpointV1) error
-	RecordDelivery           func(context.Context, string, string, string, any, []deliverable.WorkflowArtifact, []deliverable.SourceObservation, *deliverable.OutputSelection) error
+	RecordDelivery           func(context.Context, string, string, string, any, []deliverable.WorkflowArtifact, []deliverable.SourceObservation, *deliverable.OutputSelection, json.RawMessage) error
 	RecordOutput             func(context.Context, machine.Node, any, bool) error
 	RecordArtifact           func(context.Context, machine.Node, deliverable.WorkflowArtifact, bool) error
 	CheckCorrection          func(context.Context, string, map[string]any) (*CorrectionWaitDetailV1, error)
@@ -334,7 +334,7 @@ func runSerialMachine(
 				}
 				actionOutcomes = loadedActionOutcomes
 			}
-			output, nodeUsage, err := runAgentNode(nodeCtx, node, payload, entries, runInput, outputs, start.Corrections, correctionContext, actionOutcomes, start.WithActionOutcomeContext)
+			output, nodeUsage, err := runAgentNode(nodeCtx, node, payload, entries, runInput, outputs, start.Corrections, correctionContext, actionOutcomes, start.WithActionOutcomeContext, workbenchResultPromptRequired(graph, node.ID))
 			if durable {
 				if nodeUsage.MemberRunID != "" {
 					teamID, workflowID, version, snapshotID := start.Run.TeamID, start.Run.WorkflowID, start.Run.WorkflowVersion, start.Run.RunSnapshotID
@@ -754,6 +754,19 @@ func runSerialMachine(
 					fmt.Errorf("deliver output violates contract: %s", problems[0].Code),
 				))
 			}
+			var resultMetadata json.RawMessage
+			switch graph.ResultProtocol {
+			case "":
+			case machine.ResultProtocolWorkbenchV1:
+				result, normalized, normalizeErr := machine.NormalizeWorkbenchResultV1(encoded)
+				if normalizeErr != nil {
+					return fail(executionError(ErrorCodeOutputInvalid, normalizeErr))
+				}
+				output, encoded = result, normalized
+				resultMetadata = machine.EncodeWorkbenchResultMetadataV1(result)
+			default:
+				return fail(executionError(ErrorCodeRuntimeIncompatible, fmt.Errorf("unsupported result protocol %q", graph.ResultProtocol)))
+			}
 			var artifacts []deliverable.WorkflowArtifact
 			var observations []deliverable.SourceObservation
 			var selection *deliverable.OutputSelection
@@ -776,7 +789,7 @@ func runSerialMachine(
 				selection = &deliverable.OutputSelection{Kind: string(config.Result.Source), ValueDigest: digest}
 			}
 			if start.RecordDelivery != nil {
-				if err := start.RecordDelivery(ctx, node.ID, node.Label, string(node.Type), output, artifacts, observations, selection); err != nil {
+				if err := start.RecordDelivery(ctx, node.ID, node.Label, string(node.Type), output, artifacts, observations, selection, resultMetadata); err != nil {
 					return fail(executionError(ErrorCodeDeliveryUnavailable, err))
 				}
 			} else {
@@ -1523,6 +1536,7 @@ func runAgentNode(
 	frozenCorrectionContext string,
 	actionOutcomes []BusinessActionOutcomeV1,
 	withActionOutcomeContext func(context.Context) context.Context,
+	workbenchResultOutput bool,
 ) (any, nodeUsageReport, error) {
 	ctx = execution.WithNodeID(ctx, node.ID)
 	var (
@@ -1575,6 +1589,7 @@ func runAgentNode(
 		return nil, nodeUsageReport{}, executionError(ErrorCodeExecutionUnrecoverable, err)
 	}
 	prompt := instruction + "\n\nInputs:\n" + string(encodedInputs)
+	prompt = withWorkbenchResultInstruction(prompt, workbenchResultOutput)
 	prompt, err = appendPlatformBusinessActionFacts(prompt, actionOutcomes)
 	if err != nil {
 		return nil, nodeUsageReport{}, executionError(ErrorCodeExecutionUnrecoverable, fmt.Errorf("encode platform business action facts: %w", err))
@@ -1775,6 +1790,35 @@ func runAgentNode(
 		return nil, usage, err
 	}
 	return normalizedOutput, usage, nil
+}
+
+func workbenchResultPromptRequired(graph machine.GraphDefinition, nodeID string) bool {
+	if graph.ResultProtocol != machine.ResultProtocolWorkbenchV1 || nodeID == "" {
+		return false
+	}
+	for _, node := range graph.Nodes {
+		if node.Type != machine.NodeDeliver {
+			continue
+		}
+		config, ok := node.Config.(machine.DeliverConfig)
+		if ok && config.Result.Source == machine.ValueNodeOutput && config.Result.NodeID == nodeID && config.Result.Path == "" {
+			return true
+		}
+	}
+	return false
+}
+
+func appendWorkbenchResultInstruction(prompt string) string {
+	return prompt + `
+
+Platform result format: return exactly one JSON object and no Markdown with these fields: {"disposition":"complete"|"needs_input","summary":"short inspection conclusion","missing_items":["specific missing item"]}. Use "complete" only when no input is missing and set missing_items to []. If required information or materials are missing, use "needs_input" and list at least one concrete missing item, with at most 8 items. Keep summary to 1000 characters and each missing item to 200 characters.`
+}
+
+func withWorkbenchResultInstruction(prompt string, required bool) string {
+	if !required {
+		return prompt
+	}
+	return appendWorkbenchResultInstruction(prompt)
 }
 
 func appendPlatformBusinessActionFacts(prompt string, outcomes []BusinessActionOutcomeV1) (string, error) {

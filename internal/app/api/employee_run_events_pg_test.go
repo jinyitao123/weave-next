@@ -147,15 +147,26 @@ func TestEmployeeRunEventBackfillDeliversOnceToForgeInboxRealPG(t *testing.T) {
 	}
 	failedRunID, failedInputRevisionID := seedTerminalRun("failed")
 	cancelledRunID, cancelledInputRevisionID := seedTerminalRun("cancelled")
+	revisionRequiredRunID, revisionRequiredInputRevisionID := seedTerminalRun("succeeded")
+	if _, err := pool.Exec(t.Context(), `INSERT INTO weave_final_deliverables
+		(id,workspace_id,user_id,lead_avatar_id,session_id,event_id,run_id,run_snapshot_id,title,content,content_type,metadata)
+		VALUES($1,'ws','user','lead','workbench-session-succeeded',$2,$3,$3,'本轮检查意见',$4,'application/json',
+		'{"artifact_kind":"final","workbench_result":{"protocol":"workbench_result_v1","disposition":"needs_input","summary":"缺少原始签署日期","missing_items":["提供完整签署日期"]}}'::jsonb)`,
+		"deliverable-revision-required", uuid.NewString(), revisionRequiredRunID,
+		`{"disposition":"needs_input","summary":"缺少原始签署日期","missing_items":["提供完整签署日期"]}`); err != nil {
+		t.Fatal(err)
+	}
 	terminalKinds := map[string]string{
-		dispatch.RunID: "result",
-		failedRunID:    "failure",
-		cancelledRunID: "cancelled",
+		dispatch.RunID:        "result",
+		failedRunID:           "failure",
+		cancelledRunID:        "cancelled",
+		revisionRequiredRunID: "revision_required",
 	}
 	inputReferences := map[string]string{
-		dispatch.RunID: receipt.InputRevisionID,
-		failedRunID:    failedInputRevisionID,
-		cancelledRunID: cancelledInputRevisionID,
+		dispatch.RunID:        receipt.InputRevisionID,
+		failedRunID:           failedInputRevisionID,
+		cancelledRunID:        cancelledInputRevisionID,
+		revisionRequiredRunID: revisionRequiredInputRevisionID,
 	}
 	actions := &teamrun.PGActivityStore{Transactions: pool}
 	writeRunActionEvent := func(runID, phase, callID, actionName, actionLabel, recordID, status string) {
@@ -257,6 +268,14 @@ func TestEmployeeRunEventBackfillDeliversOnceToForgeInboxRealPG(t *testing.T) {
 				!strings.Contains(summary, "业务动作“提交合同”结果未知，请先核对业务记录后再处理") ||
 				!strings.Contains(summary, "正式审批状态请以 Forge 业务记录为准") {
 				t.Errorf("summary did not separate run failure from action outcomes: %q", summary)
+			}
+		} else if runReference == revisionRequiredRunID {
+			if event["title"] != "团队运行需要补充材料：flow" {
+				t.Errorf("revision-required event title did not identify required input: %#v", event)
+			}
+			summary, _ := event["summary"].(string)
+			if !strings.Contains(summary, "团队检查结论：缺少原始签署日期") || !strings.Contains(summary, "需要补充：提供完整签署日期") {
+				t.Errorf("revision-required event did not include structured inspection facts: %q", summary)
 			}
 		} else if runReference == cancelledRunID && event["title"] != "团队运行已取消：flow" {
 			t.Errorf("cancel event title did not identify cancellation: %#v", event)

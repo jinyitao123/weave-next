@@ -43,6 +43,42 @@ func runSerialWorkerFailure(t *testing.T, entry workflow.RuntimeGraphEntry) seri
 	return result
 }
 
+func TestWorkbenchResultPromptIsScopedToOptedInDeliverySource(t *testing.T) {
+	contract := machine.OutputContract{Type: machine.ValueJSON, Schema: machine.WorkbenchResultSchemaV1()}
+	graph := machine.GraphDefinition{
+		ResultProtocol: machine.ResultProtocolWorkbenchV1,
+		Nodes: []machine.Node{
+			{ID: "lead", Type: machine.NodeLead},
+			{ID: "inspect", Type: machine.NodeWorker, Output: &contract},
+			{ID: "deliver", Type: machine.NodeDeliver, Config: machine.DeliverConfig{Result: machine.ValueRef{Source: machine.ValueNodeOutput, NodeID: "inspect"}}},
+		},
+	}
+	instruction := "Inspect the submitted materials and report the result."
+	if !workbenchResultPromptRequired(graph, "inspect") {
+		t.Fatal("selected source node did not receive its protocol prompt")
+	}
+	prompt := withWorkbenchResultInstruction(instruction, workbenchResultPromptRequired(graph, "inspect"))
+	for _, required := range []string{"disposition", "complete", "needs_input", "summary", "missing_items", "no Markdown", "at least one concrete missing item"} {
+		if !strings.Contains(prompt, required) {
+			t.Fatalf("platform result prompt lacks %q: %s", required, prompt)
+		}
+	}
+	if !strings.HasPrefix(prompt, instruction) || instruction != "Inspect the submitted materials and report the result." {
+		t.Fatalf("platform prompt rewrote the frozen instruction: %s", prompt)
+	}
+	if workbenchResultPromptRequired(graph, "lead") {
+		t.Fatal("non-source node received protocol prompt")
+	}
+	graph.ResultProtocol = ""
+	if workbenchResultPromptRequired(graph, "inspect") {
+		t.Fatal("legacy graph received protocol prompt")
+	}
+	legacyPrompt := instruction + "\n\nInputs:\n{}"
+	if got := withWorkbenchResultInstruction(legacyPrompt, workbenchResultPromptRequired(graph, "inspect")); got != legacyPrompt {
+		t.Fatalf("legacy prompt changed: %q", got)
+	}
+}
+
 func assertToolFailureAndUsageIncomplete(t *testing.T, result serialMachineResult, primary error, usageReason string) {
 	t.Helper()
 	if result.Status != serialFailed {
