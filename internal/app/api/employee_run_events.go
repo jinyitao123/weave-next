@@ -189,10 +189,10 @@ func (worker *employeeRunEventWorker) materialize(ctx context.Context) error {
 			count(*) FILTER (WHERE status='succeeded') AS succeeded_count,
 			count(*) FILTER (WHERE status='failed') AS failed_count,
 			count(*) FILTER (WHERE status NOT IN ('succeeded','failed')) AS unknown_count,
-			string_agg('平台记录：业务动作“'||action_label||'”'||CASE status
-				WHEN 'succeeded' THEN '已确认完成。'
-				WHEN 'failed' THEN '返回失败。'
-				ELSE '结果未知，请先核对业务记录。' END,'；' ORDER BY seq) AS summary
+			string_agg('业务动作“'||action_label||'”'||CASE status
+				WHEN 'succeeded' THEN '调用返回成功。'
+				WHEN 'failed' THEN '调用返回失败，请先核对业务记录后再处理。'
+				ELSE '结果未知，请先核对业务记录后再处理。' END,'；' ORDER BY seq) AS summary
 		FROM business_action_receipts
 		GROUP BY workspace_id,run_id
 	)
@@ -205,17 +205,28 @@ func (worker *employeeRunEventWorker) materialize(ctx context.Context) error {
 		  substr(hash,1,8)||'-'||substr(hash,9,4)||'-5'||substr(hash,14,3)||'-8'||substr(hash,18,3)||'-'||substr(hash,21,12)
 		),'kind',CASE status WHEN 'succeeded' THEN 'result' WHEN 'cancelled' THEN 'cancelled' ELSE 'failure' END,
 		'organizationId',external_organization,'assigneeAccountId',assignee_account_id,
-		'title',team_name||CASE status WHEN 'succeeded' THEN '已完成' WHEN 'cancelled' THEN '已取消' ELSE '处理失败' END,
+		'title',left('团队运行'||CASE status
+		  WHEN 'succeeded' THEN '已完成'
+		  WHEN 'cancelled' THEN '已取消'
+		  WHEN 'abandoned' THEN '已放弃'
+		  ELSE '失败' END||CASE
+		  WHEN COALESCE(business_action_summary.failed_count,0)>0 OR COALESCE(business_action_summary.unknown_count,0)>0
+		    THEN '（业务动作需核对）' ELSE '' END||'：'||team_name,300),
 		'summary',left(CASE
 		  WHEN business_action_summary.action_count>12 THEN
-			'平台记录的业务动作：成功 '||business_action_summary.succeeded_count||' 项，失败 '||business_action_summary.failed_count||
-			' 项，结果未知 '||business_action_summary.unknown_count||' 项。完整逐项结果请打开原工作续办。'
-		  WHEN business_action_summary.summary IS NOT NULL THEN business_action_summary.summary
-		  WHEN status='succeeded' AND deliverable_content<>'' THEN deliverable_content
-		  WHEN status='succeeded' THEN '团队工作已完成，可在桌面查看结果。'
-		  WHEN status='cancelled' THEN '本次团队工作已取消。'
-		  WHEN cause_summary IS NOT NULL THEN '团队处理失败：'||cause_summary
-		  ELSE '团队处理失败，请在桌面查看并重试。' END,4000),
+			'团队运行状态：'||CASE status WHEN 'succeeded' THEN '已完成' WHEN 'cancelled' THEN '已取消' WHEN 'abandoned' THEN '已放弃' ELSE '失败' END||
+			'。业务动作调用结果：成功 '||business_action_summary.succeeded_count||' 项，失败 '||business_action_summary.failed_count||
+			' 项，结果未知 '||business_action_summary.unknown_count||' 项。失败或未知结果请先核对 Forge 业务记录后再决定下一步；本消息不代表正式审批状态。'
+		  WHEN business_action_summary.summary IS NOT NULL THEN
+			'团队运行状态：'||CASE status WHEN 'succeeded' THEN '已完成' WHEN 'cancelled' THEN '已取消' WHEN 'abandoned' THEN '已放弃' ELSE '失败' END||
+			'。业务动作调用结果：'||business_action_summary.summary||
+			'本消息中的动作结果只反映调用回执；正式审批状态请以 Forge 业务记录为准。'
+		  WHEN status='succeeded' AND deliverable_content<>'' THEN '团队运行状态：已完成。团队成果：'||deliverable_content
+		  WHEN status='succeeded' THEN '团队运行状态：已完成。团队工作已结束，可在桌面查看结果。'
+		  WHEN status='cancelled' THEN '团队运行状态：已取消。'
+		  WHEN status='abandoned' THEN '团队运行状态：已放弃。'
+		  WHEN cause_summary IS NOT NULL THEN '团队运行状态：失败。团队处理失败：'||cause_summary
+		  ELSE '团队运行状态：失败。团队处理失败，请在桌面查看运行记录。' END,4000),
 		'occurredAt',terminal_at,
 		'source',jsonb_build_object(
 		  'workReference',input_revision_id,'runReference',fixed.run_id,
