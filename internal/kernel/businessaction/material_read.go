@@ -319,7 +319,7 @@ func (s *Store) loadFrozenMaterialReadScope(ctx context.Context) (frozenMaterial
 	var inputWorkflowVersion, delegationWorkflowVersion, deliveryWorkflowVersion, runWorkflowVersion int
 	err = tx.QueryRow(ctx, `SELECT input.input_revision_id,input.task,input.task_sha256,input.workflow_id,input.workflow_version,
 		input.team_id,input.consumed_run_id,delegation.resources,delegation.expires_at,delegation.workflow_id,
-		delegation.workflow_version,delivery.input_revision_id,delivery.run_id,delivery.run_snapshot_id,
+		delegation.workflow_version,delivery.input_revision_id,COALESCE(delivery.run_id,''),delivery.run_snapshot_id,
 		delivery.workflow_id,delivery.workflow_version,run.run_id,run.run_snapshot_id,run.workflow_id,
 		run.workflow_version,run.team_id,run.status,q.run_snapshot_id
 		FROM weave_task_queue AS q
@@ -327,7 +327,6 @@ func (s *Store) loadFrozenMaterialReadScope(ctx context.Context) (frozenMaterial
 		  ON run.workspace_id=q.workspace_id AND run.run_snapshot_id=q.run_snapshot_id
 		JOIN weave_run_delivery_state AS delivery
 		  ON delivery.workspace_id=run.workspace_id AND delivery.run_snapshot_id=run.run_snapshot_id
-		 AND delivery.run_id=run.run_id
 		JOIN weave_dispatch_input_revisions AS input
 		  ON input.workspace_id=delivery.workspace_id AND input.input_revision_id=delivery.input_revision_id
 		 AND input.consumed_run_id=run.run_id
@@ -348,7 +347,7 @@ func (s *Store) loadFrozenMaterialReadScope(ctx context.Context) (frozenMaterial
 		return frozenMaterialReadScope{}, nil, "", false, err
 	}
 	if inputRevisionID == "" || inputRevisionID != deliveryInputRevisionID ||
-		inputConsumedRunID != runID || deliveryRunID != runID || deliverySnapshotID != runSnapshotID ||
+		inputConsumedRunID != runID || (deliveryRunID != "" && deliveryRunID != runID) || deliverySnapshotID != runSnapshotID ||
 		queueRunSnapshotID != runSnapshotID || inputTeamID != runTeamID ||
 		inputWorkflowID != runWorkflowID || delegationWorkflowID != runWorkflowID || deliveryWorkflowID != runWorkflowID ||
 		inputWorkflowVersion != runWorkflowVersion || deliveryWorkflowVersion != runWorkflowVersion ||

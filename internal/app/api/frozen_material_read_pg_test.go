@@ -219,7 +219,7 @@ func TestLoomMaterialReadStaysWithinFrozenRunInputRealPG(t *testing.T) {
 		t.Fatalf("expected one registration-time digest check per original file, got %d", forgeReads.Load())
 	}
 
-	readStore := businessaction.NewStore(pool, server.Tasks, []byte(strings.Repeat("22", 32)))
+	readStore := businessaction.NewStore(pool, server.Tasks, []byte(strings.Repeat("\x22", 32)))
 	dispatcher, err := readStore.MaterialReadDispatcher(runCtxA)
 	if err != nil || dispatcher == nil {
 		t.Fatalf("material read dispatcher=%T err=%v", dispatcher, err)
@@ -232,6 +232,7 @@ func TestLoomMaterialReadStaysWithinFrozenRunInputRealPG(t *testing.T) {
 		Status                     string   `json:"status"`
 		Source                     string   `json:"source"`
 		OriginalVerificationStatus string   `json:"originalVerificationStatus"`
+		OriginalVerificationCode   string   `json:"originalVerificationCode"`
 		MaterialID                 string   `json:"materialId"`
 		SHA256                     string   `json:"sha256"`
 		Extractor                  string   `json:"extractor"`
@@ -267,7 +268,7 @@ func TestLoomMaterialReadStaysWithinFrozenRunInputRealPG(t *testing.T) {
 		!strings.Contains(readA.Content, "A-ONLY UTF8提取正文") || strings.Contains(readA.Content, "B-SECRET") ||
 		strings.Contains(readA.Content, "RAW-ORIGINAL-A") || len(readA.Limitations) != 1 || !readA.HasMore ||
 		readA.NextOffset == nil || *readA.NextOffset <= readA.Offset {
-		t.Fatalf("current UTF-8 material excerpt lost scope/status: %+v", readA)
+		t.Fatalf("current UTF-8 material excerpt lost scope/status: %+v ForgeReads=%d ForgeRequests=%d", readA, forgeReads.Load(), forgeRequests.Load())
 	}
 	failOriginal.Store(true)
 	unavailableOriginal, err := callAt(runCtxA, materialAID, hashA, 64, readA.NextOffset)
@@ -313,7 +314,7 @@ func TestLoomMaterialReadStaysWithinFrozenRunInputRealPG(t *testing.T) {
 		t.Fatalf("non-owner read received material text: %+v err=%v", wrongEmployeeRead, err)
 	}
 	if _, err := pool.Exec(t.Context(), `UPDATE weave_task_business_delegations
-		SET expires_at=statement_timestamp()-interval '1 minute'
+		SET expires_at=issued_at+interval '1 millisecond'
 		WHERE workspace_id='ws' AND input_revision_id=$1`, runA.InputRevisionID); err != nil {
 		t.Fatal(err)
 	}
