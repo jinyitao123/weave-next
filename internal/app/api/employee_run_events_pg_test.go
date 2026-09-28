@@ -311,7 +311,7 @@ func TestEmployeeRunEventBackfillDeliversOnceToForgeInboxRealPG(t *testing.T) {
 		Pool: pool, Endpoint: forge.URL, Secret: "event-secret",
 		Client: forge.Client(), PollInterval: time.Millisecond,
 	}
-	for attempt := 0; attempt < 4; attempt++ {
+	for attempt := 0; attempt < 5; attempt++ {
 		processed, err := worker.Sweep(t.Context())
 		if err != nil || processed != 1 {
 			t.Fatalf("sweep %d processed=%d err=%v", attempt+1, processed, err)
@@ -322,20 +322,20 @@ func TestEmployeeRunEventBackfillDeliversOnceToForgeInboxRealPG(t *testing.T) {
 		}
 	}
 	processed, err := worker.Sweep(t.Context())
-	if err != nil || processed != 0 || calls.Load() != 4 {
+	if err != nil || processed != 0 || calls.Load() != 5 {
 		t.Fatalf("repeat sweep processed=%d calls=%d err=%v", processed, calls.Load(), err)
 	}
 	var outboxCount, deliveredCount, totalAttempts int
 	if err := pool.QueryRow(t.Context(), `SELECT count(*),count(*) FILTER (WHERE delivery_state='delivered'),sum(delivery_attempts)
 		FROM weave_employee_run_event_outbox WHERE workspace_id='ws' AND run_id=ANY($1::text[])`,
-		[]string{dispatch.RunID, failedRunID, cancelledRunID}).Scan(&outboxCount, &deliveredCount, &totalAttempts); err != nil {
+		[]string{dispatch.RunID, failedRunID, revisionRequiredRunID, cancelledRunID}).Scan(&outboxCount, &deliveredCount, &totalAttempts); err != nil {
 		t.Fatal(err)
 	}
-	if outboxCount != 3 || deliveredCount != 3 || totalAttempts != 4 {
-		t.Fatalf("outbox rows=%d delivered=%d total attempts=%d, want 3, 3, 4", outboxCount, deliveredCount, totalAttempts)
+	if outboxCount != 4 || deliveredCount != 4 || totalAttempts != 5 {
+		t.Fatalf("outbox rows=%d delivered=%d total attempts=%d, want 4, 4, 5", outboxCount, deliveredCount, totalAttempts)
 	}
 	receiverMu.Lock()
-	if len(notificationByIdempotencyKey) != 3 {
+	if len(notificationByIdempotencyKey) != 4 {
 		t.Errorf("receiver created %d inbox rows, want one per terminal run", len(notificationByIdempotencyKey))
 	}
 	for runID := range terminalKinds {
@@ -344,7 +344,7 @@ func TestEmployeeRunEventBackfillDeliversOnceToForgeInboxRealPG(t *testing.T) {
 		}
 	}
 	receiverMu.Unlock()
-	for _, runID := range []string{dispatch.RunID, failedRunID, cancelledRunID} {
+	for _, runID := range []string{dispatch.RunID, failedRunID, revisionRequiredRunID, cancelledRunID} {
 		var state, notificationID string
 		var attempts int
 		if err := pool.QueryRow(t.Context(), `SELECT delivery_state,delivery_attempts,forge_notification_id
