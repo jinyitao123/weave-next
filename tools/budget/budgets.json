@@ -293,13 +293,13 @@
       "kernel": {
         "previous_lines": 92441,
         "previous_production_lines": 79434,
-        "lines_added": 345,
-        "production_lines_added": 178
+        "lines_added": 344,
+        "production_lines_added": 177
       },
       "app": {
         "previous_lines": 80977,
         "previous_production_lines": 61074,
-        "lines_added": 313,
+        "lines_added": 314,
         "production_lines_added": 58
       }
     }
@@ -339,8 +339,8 @@
     ]
   },
   "kernel": {
-    "lines": 92786,
-    "production_lines": 79612,
+    "lines": 92785,
+    "production_lines": 79611,
     "packages": 49,
     "external_dependencies": 5,
     "allowed_dependencies": [
@@ -364,7 +364,7 @@
     ]
   },
   "app": {
-    "lines": 81290,
+    "lines": 81291,
     "production_lines": 61132,
     "packages": 30,
     "external_dependencies": 7,
