@@ -52,6 +52,8 @@ type dispatchInputRegistration struct {
 
 type dispatchInputResource struct {
 	Type       string `json:"type"`
+	SourceKind string `json:"sourceKind,omitempty"`
+	RequestID  string `json:"requestId,omitempty"`
 	MaterialID string `json:"materialId,omitempty"`
 	ID         string `json:"id"`
 	Name       string `json:"name"`
@@ -206,7 +208,8 @@ func validDispatchInputResources(resources []dispatchInputResource) bool {
 	var totalBytes int64
 	for index := range resources {
 		item := &resources[index]
-		item.Type, item.ID, item.Name, item.MaterialID, item.MediaType = strings.TrimSpace(item.Type), strings.TrimSpace(item.ID), strings.TrimSpace(item.Name), strings.TrimSpace(item.MaterialID), strings.TrimSpace(item.MediaType)
+		item.Type, item.SourceKind, item.RequestID = strings.TrimSpace(item.Type), strings.TrimSpace(item.SourceKind), strings.TrimSpace(item.RequestID)
+		item.ID, item.Name, item.MaterialID, item.MediaType = strings.TrimSpace(item.ID), strings.TrimSpace(item.Name), strings.TrimSpace(item.MaterialID), strings.TrimSpace(item.MediaType)
 		if item.Type != "forge-file" || item.ID == "" || len(item.ID) > 128 || item.Name == "" || len(item.Name) > 255 ||
 			item.Bytes < 1 || item.Bytes > dispatchInputResourceMaxBytes || len(item.SHA256) != 64 || seen[item.ID] {
 			return false
@@ -222,6 +225,30 @@ func validDispatchInputResources(resources []dispatchInputResource) bool {
 		}
 		if item.MediaType != "" && !supportedDispatchInputMediaType(item.MediaType) {
 			return false
+		}
+		if item.SourceKind == "" {
+			if item.RequestID != "" || item.MediaType == "application/pdf" ||
+				item.MediaType == "application/vnd.openxmlformats-officedocument.wordprocessingml.document" {
+				return false
+			}
+		} else {
+			if item.MediaType != "application/pdf" &&
+				item.MediaType != "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+				item.MaterialID == "" {
+				return false
+			}
+			switch item.SourceKind {
+			case "owner":
+				if item.RequestID != "" {
+					return false
+				}
+			case "approval":
+				if item.RequestID == "" || len(item.RequestID) > 128 || strings.ContainsRune(item.RequestID, '\x00') {
+					return false
+				}
+			default:
+				return false
+			}
 		}
 		seen[item.ID] = true
 		totalBytes += item.Bytes
@@ -329,6 +356,22 @@ func (s *Server) handleRegisterDispatchInput(c echo.Context) error {
 	if request.Mode != teamDispatchModeWorkflow {
 		return workflowError(c, http.StatusBadRequest, "dispatch_input_mode_unsupported", "bound dispatch currently requires a fixed workflow")
 	}
+	requestExecutionTask := request.Task
+	materialResources := make([]businessaction.FrozenMaterialResource, 0, len(request.Resources))
+	for _, resource := range request.Resources {
+		materialResources = append(materialResources, businessaction.FrozenMaterialResource{
+			Type: resource.Type, MaterialID: resource.MaterialID, FileID: resource.ID,
+			SourceKind: resource.SourceKind, RequestID: resource.RequestID,
+			Name: resource.Name, MediaType: resource.MediaType, Bytes: resource.Bytes, SHA256: resource.SHA256,
+		})
+	}
+	projected, recognized, projectionErr := businessaction.PrepareExecutionTask(request.Task, materialResources)
+	if projectionErr != nil {
+		return workflowError(c, http.StatusUnprocessableEntity, "frozen_material_manifest_invalid", "frozen material manifest does not match its Forge file references")
+	}
+	if recognized {
+		requestExecutionTask = projected
+	}
 	var preparedDelegation *preparedBusinessDelegation
 	if request.WorkflowID != "" && request.WorkflowVersion != nil {
 		publishedActions, actionsErr := s.publishedBusinessActions(c.Request().Context(), workspaceID, request.WorkflowID, *request.WorkflowVersion)
@@ -396,23 +439,6 @@ func (s *Server) handleRegisterDispatchInput(c echo.Context) error {
 	}
 	if currentRevisionID != request.ExpectedRevisionID {
 		return workflowError(c, http.StatusConflict, "input_revision_conflict", "current dispatch input revision changed")
-	}
-	requestExecutionTask := request.Task
-	if len(request.Resources) > 0 {
-		materialResources := make([]businessaction.FrozenMaterialResource, 0, len(request.Resources))
-		for _, resource := range request.Resources {
-			materialResources = append(materialResources, businessaction.FrozenMaterialResource{
-				Type: resource.Type, MaterialID: resource.MaterialID, FileID: resource.ID,
-				Name: resource.Name, MediaType: resource.MediaType, Bytes: resource.Bytes, SHA256: resource.SHA256,
-			})
-		}
-		projected, recognized, projectionErr := businessaction.PrepareExecutionTask(request.Task, materialResources)
-		if projectionErr != nil {
-			return workflowError(c, http.StatusUnprocessableEntity, "frozen_material_manifest_invalid", "frozen material manifest does not match its Forge file references")
-		}
-		if recognized {
-			requestExecutionTask = projected
-		}
 	}
 	executionTask, revisionKind, rootRevisionID := requestExecutionTask, "initial", ""
 	parentRevisionID, parentRunID, parentDeliveryDigest := "", "", ""

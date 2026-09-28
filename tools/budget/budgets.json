@@ -285,6 +285,23 @@
         "lines_added": 335,
         "production_lines_added": 61
       }
+    },
+    {
+      "date": "2026-09-28",
+      "source_commit": "ceb70d3e4b216af83bf553b8469d7fa0a48787f5",
+      "reason": "Add exact-source PDF/DOCX original-byte verification on owner or approval Forge routes, bound to the current run's encrypted employee delegation, sourceKind, approval requestId, If-Match SHA-256, MIME and length. Original bytes are discarded after verification; model-readable content remains the frozen desktop extraction, with partial/unavailable status preserved. Exact measured ceilings with no spare allowance; package/dependency limits and original migration targets remain unchanged.",
+      "kernel": {
+        "previous_lines": 92441,
+        "previous_production_lines": 79434,
+        "lines_added": 345,
+        "production_lines_added": 178
+      },
+      "app": {
+        "previous_lines": 80977,
+        "previous_production_lines": 61074,
+        "lines_added": 313,
+        "production_lines_added": 58
+      }
     }
   ],
   "migration_targets": {
@@ -322,8 +339,8 @@
     ]
   },
   "kernel": {
-    "lines": 92441,
-    "production_lines": 79434,
+    "lines": 92786,
+    "production_lines": 79612,
     "packages": 49,
     "external_dependencies": 5,
     "allowed_dependencies": [
@@ -347,8 +364,8 @@
     ]
   },
   "app": {
-    "lines": 80977,
-    "production_lines": 61074,
+    "lines": 81290,
+    "production_lines": 61132,
     "packages": 30,
     "external_dependencies": 7,
     "allowed_dependencies": [

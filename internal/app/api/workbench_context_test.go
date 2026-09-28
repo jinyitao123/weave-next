@@ -103,3 +103,27 @@ func TestProjectWorkbenchContextResourcesFailsClosedOnBrokenBinding(t *testing.T
 		t.Fatal("malformed Forge material digest was accepted")
 	}
 }
+
+func TestProjectWorkbenchContextPreservesFrozenOriginalSourceKind(t *testing.T) {
+	input := validWorkbenchContextInputRow()
+	var resources []workbenchContextDelegatedResource
+	if err := json.Unmarshal(input.DelegatedResources, &resources); err != nil {
+		t.Fatal(err)
+	}
+	resources[1] = workbenchContextDelegatedResource{
+		Type: "forge-file", SourceKind: "approval", RequestID: "approval-request-a",
+		MaterialID: "aaaaaaaaaaaaaaaaaaaaaaaa", ID: "file-a", Name: "审批材料.pdf",
+		MediaType: "application/pdf", Bytes: 20, SHA256: strings.Repeat("b", 64),
+	}
+	raw, _ := json.Marshal(resources)
+	materials, _, err := projectWorkbenchContextResources(raw, input.InputRevisionID, input.TaskSHA256)
+	if err != nil || len(materials) != 1 || materials[0].SourceKind != "approval" ||
+		materials[0].RequestID != "approval-request-a" || materials[0].MaterialID != "aaaaaaaaaaaaaaaaaaaaaaaa" {
+		t.Fatalf("frozen source route was lost: materials=%+v err=%v", materials, err)
+	}
+	resources[1].RequestID = ""
+	raw, _ = json.Marshal(resources)
+	if _, _, err := projectWorkbenchContextResources(raw, input.InputRevisionID, input.TaskSHA256); err == nil {
+		t.Fatal("accepted an approval source without its request ID")
+	}
+}

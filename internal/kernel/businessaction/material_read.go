@@ -7,7 +7,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"mime"
+	"net/http"
+	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -23,6 +28,7 @@ const (
 	frozenMaterialReadDefault  = 16 << 10
 	frozenMaterialReadMax      = 32 << 10
 	frozenExtractionMaxBytes   = 700_000
+	frozenOriginalMaxBytes     = 2 << 20
 )
 
 var frozenMaterialIDPattern = regexp.MustCompile(`^[0-9a-f]{24}$`)
@@ -44,6 +50,8 @@ type frozenMaterialReadScope struct {
 type frozenMaterialReadFile struct {
 	MaterialID string
 	FileID     string
+	SourceKind string
+	RequestID  string
 	Name       string
 	MediaType  string
 	Bytes      int64
@@ -57,9 +65,21 @@ type frozenMaterialReadFile struct {
 // project a Workbench material task into a small Loom input.
 type FrozenMaterialResource struct {
 	Type       string
+	SourceKind string
+	RequestID  string
 	MaterialID string
 	FileID     string
 	Name       string
+	MediaType  string
+	Bytes      int64
+	SHA256     string
+}
+
+// ForgeOriginalReference binds one raw original read to a frozen delegated file.
+type ForgeOriginalReference struct {
+	SourceKind string
+	RequestID  string
+	FileID     string
 	MediaType  string
 	Bytes      int64
 	SHA256     string
@@ -137,23 +157,23 @@ type materialReadArguments struct {
 }
 
 type materialReadResult struct {
-	Status           string          `json:"status"`
-	Source           string          `json:"source,omitempty"`
-	Reason           string          `json:"reason,omitempty"`
-	BinaryReadStatus string          `json:"binaryReadStatus"`
-	BinaryReadCode   string          `json:"binaryReadCode"`
-	MaterialID       string          `json:"materialId,omitempty"`
-	SHA256           string          `json:"sha256,omitempty"`
-	MediaType        string          `json:"mediaType,omitempty"`
-	ExtractionStatus string          `json:"extractionStatus,omitempty"`
-	ExtractionSHA256 string          `json:"extractionSha256,omitempty"`
-	Extractor        string          `json:"extractor,omitempty"`
-	Coverage         json.RawMessage `json:"coverage,omitempty"`
-	Limitations      []string        `json:"limitations,omitempty"`
-	Offset           int             `json:"offset,omitempty"`
-	NextOffset       *int            `json:"nextOffset,omitempty"`
-	HasMore          bool            `json:"hasMore,omitempty"`
-	Content          string          `json:"content,omitempty"`
+	Status                     string          `json:"status"`
+	Source                     string          `json:"source,omitempty"`
+	Reason                     string          `json:"reason,omitempty"`
+	OriginalVerificationStatus string          `json:"originalVerificationStatus"`
+	OriginalVerificationCode   string          `json:"originalVerificationCode"`
+	MaterialID                 string          `json:"materialId,omitempty"`
+	SHA256                     string          `json:"sha256,omitempty"`
+	MediaType                  string          `json:"mediaType,omitempty"`
+	ExtractionStatus           string          `json:"extractionStatus,omitempty"`
+	ExtractionSHA256           string          `json:"extractionSha256,omitempty"`
+	Extractor                  string          `json:"extractor,omitempty"`
+	Coverage                   json.RawMessage `json:"coverage,omitempty"`
+	Limitations                []string        `json:"limitations,omitempty"`
+	Offset                     int             `json:"offset,omitempty"`
+	NextOffset                 *int            `json:"nextOffset,omitempty"`
+	HasMore                    bool            `json:"hasMore,omitempty"`
+	Content                    string          `json:"content,omitempty"`
 }
 
 type materialReadDispatcher struct {
@@ -164,7 +184,7 @@ type materialReadDispatcher struct {
 	tools []contract.ToolDef
 }
 
-const frozenMaterialReadInstructions = "材料正文不放在初始运行输入中。按 materials 中的 materialId 和 sha256 调用 read_frozen_material 分段读取；仅当文本材料没有 materialId 时，使用同条材料中的 fileId。status=partial、unsupported 或 unavailable 时如实说明缺口。工具仅返回与原件 sha256 绑定的桌面提取文本；binaryReadStatus=unavailable 表示 Weave 未读取 Forge 原始文件字节。工具片段按 UTF-8 字节偏移定位，不得编造页码或视觉内容。"
+const frozenMaterialReadInstructions = "材料正文不放在初始运行输入中。按 materials 中的 materialId 和 sha256 调用 read_frozen_material 分段读取；仅当文本材料没有 materialId 时，使用同条材料中的 fileId。status=partial、unsupported 或 unavailable 时如实说明缺口。originalVerificationStatus=verified 只表示 Weave 按冻结来源读取的 Forge 原件字节与 SHA-256 一致；originalVerificationStatus=unavailable 表示原件未能核验；not_applicable 表示纯文本材料无需二进制原件核验。原件字节不会交给模型，正文仅来自桌面提取结果，不得声称已理解原件中的视觉内容。工具片段按 UTF-8 字节偏移定位，不得编造页码或视觉内容。"
 
 // PrepareExecutionTask keeps the frozen input unchanged for hashing/replay but
 // removes extraction bodies from the Loom prompt. The scoped tool reads them
@@ -193,7 +213,8 @@ func PrepareExecutionTask(task string, resources []FrozenMaterialResource) (stri
 			return "", true, errors.New("frozen material resource type is unsupported")
 		}
 		delegated = append(delegated, delegatedResource{
-			Type: resource.Type, MaterialID: resource.MaterialID, ID: resource.FileID,
+			Type: resource.Type, SourceKind: resource.SourceKind, RequestID: resource.RequestID,
+			MaterialID: resource.MaterialID, ID: resource.FileID,
 			Name: resource.Name, MediaType: resource.MediaType, Bytes: resource.Bytes, SHA256: resource.SHA256,
 		})
 	}
@@ -208,6 +229,10 @@ func PrepareExecutionTask(task string, resources []FrozenMaterialResource) (stri
 		file, ok := files[resource.FileID]
 		if !ok || !file.Available {
 			return "", true, errors.New("frozen material extraction does not match its Forge file digest")
+		}
+		if isBinaryMaterialType(file.MediaType) && (file.SourceKind != "owner" && file.SourceKind != "approval" ||
+			file.SourceKind == "approval" && file.RequestID == "" || file.SourceKind == "owner" && file.RequestID != "") {
+			return "", true, errors.New("frozen original source identity is unavailable")
 		}
 		projection.Materials = append(projection.Materials, executionTaskMaterial{
 			MaterialID: file.MaterialID, FileID: fallbackMaterialFileID(file.MaterialID, resource.FileID),
@@ -375,7 +400,7 @@ func sameFrozenMaterialReadScope(left, right frozenMaterialReadScope) bool {
 func newMaterialReadDispatcher(store *Store, scope frozenMaterialReadScope, files map[string]frozenMaterialReadFile) (*materialReadDispatcher, error) {
 	tool := contract.ToolDef{
 		Name:        frozenMaterialReadToolName,
-		Description: "按当前冻结运行中的 materialId 与原件 SHA-256 读取已授权提取文本；只有文本材料没有 materialId 时才使用 fileId。该工具不读取 Forge 二进制原件；返回的 PDF/DOCX 内容来自桌面 Host 的提取结果。offset/maxBytes 是 UTF-8 字节范围，不是页码；未提供页级文本时不得编造页码引文。",
+		Description: "按当前冻结运行中的 materialId 与原件 SHA-256 分段读取桌面提取文本；PDF/DOCX 同时按冻结来源核验 Forge 原件字节，但原件字节不会传给模型。文本材料没有 materialId 时才使用 fileId。offset/maxBytes 是 UTF-8 字节范围，不是页码；未提供页级文本时不得编造页码引文。",
 		ReadOnly:    true,
 		InputSchema: json.RawMessage(`{"type":"object","properties":{"materialId":{"type":"string","pattern":"^[0-9a-f]{24}$"},"fileId":{"type":"string","minLength":1,"maxLength":128},"sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"},"offset":{"type":"integer","minimum":0},"maxBytes":{"type":"integer","minimum":1,"maximum":32768}},"required":["sha256"],"oneOf":[{"required":["materialId"]},{"required":["fileId"]}],"additionalProperties":false}`),
 	}
@@ -407,7 +432,7 @@ func (d *materialReadDispatcher) Dispatch(ctx context.Context, call contract.Too
 		args.FileID != "" && (len(args.FileID) > 128 || args.FileID != strings.TrimSpace(args.FileID)) {
 		return &contract.ToolResult{CallID: call.ID, ToolName: call.Name, Content: "材料读取参数无效", IsError: true}, nil
 	}
-	result := materialReadResult{Status: "unavailable", BinaryReadStatus: "unavailable", BinaryReadCode: "forge_binary_read_not_registered"}
+	result := materialReadResult{Status: "unavailable", OriginalVerificationStatus: "unavailable", OriginalVerificationCode: "execution_scope_unavailable"}
 	if d.store == nil || !d.store.frozenMaterialReadScopeActive(ctx, d.scope) {
 		result.Reason = "execution_scope_unavailable"
 		return encodeMaterialReadResult(call.ID, result)
@@ -416,32 +441,160 @@ func (d *materialReadDispatcher) Dispatch(ctx context.Context, call contract.Too
 	if rangeErr != nil {
 		return &contract.ToolResult{CallID: call.ID, ToolName: call.Name, Content: "材料片段范围无效", IsError: true}, nil
 	}
+	file, found := findFrozenMaterial(d.files, args)
+	if found && file.Available && isBinaryMaterialType(file.MediaType) && result.Status != "unavailable" {
+		result.OriginalVerificationStatus, result.OriginalVerificationCode = d.verifyFrozenOriginal(ctx, file)
+		if !d.store.frozenMaterialReadScopeActive(ctx, d.scope) {
+			result.Status, result.Source, result.Reason, result.Content = "unavailable", "", "execution_scope_unavailable", ""
+			result.OriginalVerificationStatus, result.OriginalVerificationCode = "unavailable", "execution_scope_unavailable"
+			result.NextOffset, result.HasMore = nil, false
+		}
+	}
 	return encodeMaterialReadResult(call.ID, result)
 }
 
-func readFrozenMaterial(files map[string]frozenMaterialReadFile, args materialReadArguments) (materialReadResult, error) {
-	result := materialReadResult{Status: "unavailable", BinaryReadStatus: "unavailable", BinaryReadCode: "forge_binary_read_not_registered"}
-	var file frozenMaterialReadFile
+func (d *materialReadDispatcher) verifyFrozenOriginal(ctx context.Context, file frozenMaterialReadFile) (string, string) {
+	if file.SourceKind != "owner" && file.SourceKind != "approval" ||
+		file.SourceKind == "owner" && file.RequestID != "" ||
+		file.SourceKind == "approval" && file.RequestID == "" {
+		return "unavailable", "frozen_source_unavailable"
+	}
+	if d.store == nil || d.store.pool == nil || d.store.tasks == nil || len(d.store.key) != 32 {
+		return "unavailable", "forge_delegation_unavailable"
+	}
+	delegation, err := d.store.resolve(ctx, []string{})
+	if err != nil {
+		return "unavailable", "forge_delegation_unavailable"
+	}
+	defer clear(delegation.token)
+	if delegation.inputRevisionID != d.scope.InputRevisionID {
+		return "unavailable", "execution_scope_unavailable"
+	}
+	matched := false
+	for _, resource := range delegation.resources {
+		if resource.Type == "forge-file" && resource.ID == file.FileID && resource.MaterialID == file.MaterialID &&
+			resource.SourceKind == file.SourceKind && resource.RequestID == file.RequestID && resource.Name == file.Name &&
+			resource.MediaType == file.MediaType && resource.Bytes == file.Bytes && resource.SHA256 == file.SHA256 {
+			matched = true
+			break
+		}
+	}
+	if !matched || !d.store.frozenMaterialReadScopeActive(ctx, d.scope) {
+		return "unavailable", "execution_scope_unavailable"
+	}
+	if err := ReadVerifiedForgeOriginal(ctx, delegation.issuer, delegation.token, ForgeOriginalReference{
+		SourceKind: file.SourceKind, RequestID: file.RequestID, FileID: file.FileID,
+		MediaType: file.MediaType, Bytes: file.Bytes, SHA256: file.SHA256,
+	}); err != nil {
+		return "unavailable", "forge_original_unavailable"
+	}
+	if !d.store.frozenMaterialReadScopeActive(ctx, d.scope) {
+		return "unavailable", "execution_scope_unavailable"
+	}
+	return "verified", "forge_original_sha256_verified"
+}
+
+// ReadVerifiedForgeOriginal fetches bounded raw bytes from the exact frozen
+// Forge source route, verifies the original digest, then discards the bytes.
+// Callers may expose only the verification result; this never builds a model payload.
+func ReadVerifiedForgeOriginal(ctx context.Context, issuer string, bearer []byte, file ForgeOriginalReference) error {
+	if len(bearer) == 0 || strings.TrimSpace(file.FileID) == "" || !frozenSHA256.MatchString(file.SHA256) ||
+		file.Bytes < 1 || file.Bytes > frozenOriginalMaxBytes || !isBinaryMaterialType(file.MediaType) {
+		return errors.New("Forge original reference is invalid")
+	}
+	base, err := url.Parse(issuer)
+	if err != nil || base.Scheme == "" || base.Host == "" || base.User != nil ||
+		(base.Scheme != "http" && base.Scheme != "https") {
+		return errors.New("Forge original issuer is invalid")
+	}
+	var segments []string
+	if file.SourceKind == "owner" {
+		segments = []string{"api", "v1", "workbench", "materials", file.FileID, "original"}
+	} else if file.SourceKind == "approval" && file.RequestID != "" {
+		segments = []string{"api", "v1", "approvals", "requests", file.RequestID, "workbench-context", "files", file.FileID, "original"}
+	} else {
+		return errors.New("Forge original source is invalid")
+	}
+	path, rawPath := "", ""
+	for _, segment := range segments {
+		path += "/" + segment
+		rawPath += "/" + url.PathEscape(segment)
+	}
+	endpoint := *base
+	endpoint.Path, endpoint.RawPath = path, rawPath
+	endpoint.RawQuery, endpoint.Fragment = "", ""
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
+	if err != nil {
+		return errors.New("Forge original request is invalid")
+	}
+	req.Header.Set("Authorization", "Bearer "+string(bearer))
+	req.Header.Set("If-Match", file.SHA256)
+	req.Header.Set("Accept-Encoding", "identity")
+	client := &http.Client{Timeout: 20 * time.Second}
+	response, err := client.Do(req)
+	if err != nil {
+		return errors.New("Forge original request failed")
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return errors.New("Forge original is unavailable")
+	}
+	contentLength, err := strconv.ParseInt(response.Header.Get("Content-Length"), 10, 64)
+	if err != nil || contentLength != file.Bytes || contentLength < 1 || contentLength > frozenOriginalMaxBytes {
+		return errors.New("Forge original length does not match the frozen material")
+	}
+	mediaType, _, err := mime.ParseMediaType(response.Header.Get("Content-Type"))
+	if err != nil || mediaType != file.MediaType {
+		return errors.New("Forge original media type does not match the frozen material")
+	}
+	shaHeader, etag := strings.TrimSpace(response.Header.Get("X-Content-SHA256")), strings.TrimSpace(response.Header.Get("ETag"))
+	if shaHeader != "" && shaHeader != file.SHA256 || etag != "" && strings.Trim(etag, "\" ") != file.SHA256 ||
+		shaHeader == "" && etag == "" {
+		return errors.New("Forge original digest headers do not match the frozen material")
+	}
+	limited := io.LimitReader(response.Body, frozenOriginalMaxBytes+1)
+	content, err := io.ReadAll(limited)
+	defer clear(content)
+	if err != nil || int64(len(content)) != file.Bytes || int64(len(content)) > frozenOriginalMaxBytes {
+		return errors.New("Forge original body length does not match the frozen material")
+	}
+	digest := sha256.Sum256(content)
+	if hex.EncodeToString(digest[:]) != file.SHA256 {
+		return errors.New("Forge original body SHA-256 does not match the frozen material")
+	}
+	return nil
+}
+
+func findFrozenMaterial(files map[string]frozenMaterialReadFile, args materialReadArguments) (frozenMaterialReadFile, bool) {
 	if args.MaterialID != "" {
+		var found frozenMaterialReadFile
 		matches := 0
 		for _, candidate := range files {
-			if candidate.MaterialID == args.MaterialID {
-				file, matches = candidate, matches+1
+			if candidate.MaterialID == args.MaterialID && candidate.SHA256 == args.SHA256 {
+				found, matches = candidate, matches+1
 			}
 		}
-		if matches != 1 {
-			file = frozenMaterialReadFile{}
-		}
-	} else {
-		file = files[args.FileID]
+		return found, matches == 1
 	}
-	if file.FileID == "" || file.SHA256 != args.SHA256 {
+	file, ok := files[args.FileID]
+	return file, ok && file.SHA256 == args.SHA256
+}
+
+func readFrozenMaterial(files map[string]frozenMaterialReadFile, args materialReadArguments) (materialReadResult, error) {
+	result := materialReadResult{Status: "unavailable", OriginalVerificationStatus: "unavailable", OriginalVerificationCode: "material_not_in_current_run"}
+	file, found := findFrozenMaterial(files, args)
+	if !found || file.FileID == "" {
 		result.Reason = "material_not_in_current_run"
 		return result, nil
 	}
 	result.MaterialID, result.SHA256, result.MediaType = file.MaterialID, file.SHA256, file.MediaType
 	result.ExtractionStatus, result.ExtractionSHA256 = file.Extraction.Status, file.Extraction.SHA256
 	result.Extractor, result.Coverage, result.Limitations = file.Extraction.Extractor, file.Extraction.Coverage, file.Extraction.Limitations
+	if isBinaryMaterialType(file.MediaType) {
+		result.OriginalVerificationCode = "original_not_verified"
+	} else {
+		result.OriginalVerificationStatus, result.OriginalVerificationCode = "not_applicable", "not_applicable"
+	}
 	if !file.Available {
 		result.Reason = file.Reason
 		return result, nil
@@ -501,7 +654,8 @@ func bindTaskMaterialExtractions(task string, resources []delegatedResource, exp
 	for _, resource := range resources {
 		if resource.Type == "forge-file" {
 			files[resource.ID] = frozenMaterialReadFile{
-				MaterialID: resource.MaterialID, FileID: resource.ID, Name: resource.Name,
+				MaterialID: resource.MaterialID, FileID: resource.ID,
+				SourceKind: resource.SourceKind, RequestID: resource.RequestID, Name: resource.Name,
 				MediaType: resource.MediaType, Bytes: resource.Bytes, SHA256: resource.SHA256,
 				Reason: "frozen_extraction_unavailable",
 			}

@@ -132,6 +132,8 @@ type delegation struct {
 
 type delegatedResource struct {
 	Type       string `json:"type"`
+	SourceKind string `json:"sourceKind,omitempty"`
+	RequestID  string `json:"requestId,omitempty"`
 	MaterialID string `json:"materialId,omitempty"`
 	ID         string `json:"id"`
 	Name       string `json:"name,omitempty"`
@@ -322,7 +324,8 @@ func decodeDelegatedResources(raw []byte, inputRevisionID string) ([]delegatedRe
 	seenMaterialIDs := make(map[string]struct{}, len(stored))
 	var totalFileBytes int64
 	for _, item := range stored {
-		item.Type, item.MaterialID, item.ID = strings.TrimSpace(item.Type), strings.TrimSpace(item.MaterialID), strings.TrimSpace(item.ID)
+		item.Type, item.SourceKind, item.RequestID = strings.TrimSpace(item.Type), strings.TrimSpace(item.SourceKind), strings.TrimSpace(item.RequestID)
+		item.MaterialID, item.ID = strings.TrimSpace(item.MaterialID), strings.TrimSpace(item.ID)
 		item.Name, item.MediaType, item.SHA256 = strings.TrimSpace(item.Name), strings.TrimSpace(item.MediaType), strings.TrimSpace(item.SHA256)
 		if item.ID == "" || item.ID != strings.TrimSpace(item.ID) || !frozenSHA256.MatchString(item.SHA256) {
 			return nil, errors.New("task business resources are invalid")
@@ -335,7 +338,7 @@ func decodeDelegatedResources(raw []byte, inputRevisionID string) ([]delegatedRe
 		switch item.Type {
 		case "dispatch-input":
 			if verifiedInput || item.ID != inputRevisionID || item.Name != "" || item.Bytes != 0 ||
-				item.MaterialID != "" || item.MediaType != "" || item.ObjectName != "" {
+				item.SourceKind != "" || item.RequestID != "" || item.MaterialID != "" || item.MediaType != "" || item.ObjectName != "" {
 				return nil, errors.New("task input resource does not match the active delegation")
 			}
 			verifiedInput = true
@@ -344,6 +347,27 @@ func decodeDelegatedResources(raw []byte, inputRevisionID string) ([]delegatedRe
 				item.MaterialID != "" && !frozenMaterialIDPattern.MatchString(item.MaterialID) ||
 				item.MediaType != "" && !supportedMaterialMediaType(item.MediaType) {
 				return nil, errors.New("task Forge resource is invalid")
+			}
+			if item.SourceKind == "" {
+				if item.RequestID != "" || isBinaryMaterialType(item.MediaType) {
+					return nil, errors.New("task Forge original source is missing")
+				}
+			} else {
+				if !isBinaryMaterialType(item.MediaType) || item.MaterialID == "" {
+					return nil, errors.New("task Forge original source is invalid")
+				}
+				switch item.SourceKind {
+				case "owner":
+					if item.RequestID != "" {
+						return nil, errors.New("owner material cannot carry an approval request")
+					}
+				case "approval":
+					if item.RequestID == "" || len(item.RequestID) > 128 || strings.ContainsRune(item.RequestID, '\x00') {
+						return nil, errors.New("approval material request identity is invalid")
+					}
+				default:
+					return nil, errors.New("task Forge original source is unsupported")
+				}
 			}
 			if item.MaterialID != "" {
 				if _, duplicate := seenMaterialIDs[item.MaterialID]; duplicate {
@@ -357,7 +381,7 @@ func decodeDelegatedResources(raw []byte, inputRevisionID string) ([]delegatedRe
 			}
 			resources = append(resources, item)
 		case "forge-record":
-			if item.Name != "" || item.Bytes != 0 || item.MaterialID != "" || item.MediaType != "" {
+			if item.Name != "" || item.Bytes != 0 || item.SourceKind != "" || item.RequestID != "" || item.MaterialID != "" || item.MediaType != "" {
 				return nil, errors.New("task Forge resource is invalid")
 			}
 			if err := validateRecordResource(item); err != nil {

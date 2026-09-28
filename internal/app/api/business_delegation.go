@@ -17,6 +17,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jinyitao123/weave/internal/base/frozen"
+	"github.com/jinyitao123/weave/internal/kernel/businessaction"
 	"github.com/jinyitao123/weave/internal/kernel/secret"
 	"github.com/labstack/echo/v4"
 )
@@ -137,6 +138,24 @@ func verifyForgeFiles(ctx context.Context, issuer, bearer string, resources []di
 	}
 	client := &http.Client{Timeout: 20 * time.Second}
 	for _, resource := range resources {
+		originalRoute := isDispatchBinaryMaterialType(resource.MediaType)
+		if originalRoute {
+			if resource.SourceKind != "owner" && resource.SourceKind != "approval" ||
+				resource.SourceKind == "approval" && resource.RequestID == "" ||
+				resource.SourceKind == "owner" && resource.RequestID != "" {
+				return fmt.Errorf("Forge material %q has no valid frozen source route", resource.Name)
+			}
+			bearerBytes := []byte(bearer)
+			verifyErr := businessaction.ReadVerifiedForgeOriginal(ctx, issuer, bearerBytes, businessaction.ForgeOriginalReference{
+				SourceKind: resource.SourceKind, RequestID: resource.RequestID, FileID: resource.ID,
+				MediaType: resource.MediaType, Bytes: resource.Bytes, SHA256: resource.SHA256,
+			})
+			clear(bearerBytes)
+			if verifyErr != nil {
+				return fmt.Errorf("Forge original material %q cannot be verified", resource.Name)
+			}
+			continue
+		}
 		fileURL := *base
 		fileURL.Path = "/api/v1/storage/files/" + url.PathEscape(resource.ID)
 		fileURL.RawPath, fileURL.RawQuery, fileURL.Fragment = "", "", ""
@@ -153,14 +172,22 @@ func verifyForgeFiles(ctx context.Context, issuer, bearer string, resources []di
 		content, readErr := io.ReadAll(limited)
 		_ = response.Body.Close()
 		if response.StatusCode != http.StatusOK || readErr != nil || int64(len(content)) != resource.Bytes {
+			clear(content)
 			return fmt.Errorf("Forge material %q cannot be read at the frozen version", resource.Name)
 		}
 		digest := sha256.Sum256(content)
-		if hex.EncodeToString(digest[:]) != resource.SHA256 {
+		actualSHA256 := hex.EncodeToString(digest[:])
+		if actualSHA256 != resource.SHA256 {
+			clear(content)
 			return fmt.Errorf("Forge material %q does not match the frozen SHA-256", resource.Name)
 		}
+		clear(content)
 	}
 	return nil
+}
+
+func isDispatchBinaryMaterialType(mediaType string) bool {
+	return mediaType == "application/pdf" || mediaType == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 }
 
 func ensurePreparedActions(prepared *preparedBusinessDelegation, actions []string) bool {
