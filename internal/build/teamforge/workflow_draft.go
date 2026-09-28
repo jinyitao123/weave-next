@@ -168,6 +168,7 @@ func cloneMachineGraph(graph machine.GraphDefinition) machine.GraphDefinition {
 	return machine.GraphDefinition{
 		SchemaVersion:    graph.SchemaVersion,
 		EntryNodeID:      graph.EntryNodeID,
+		ResultProtocol:   graph.ResultProtocol,
 		InputContract:    cloneOutputContract(graph.InputContract),
 		OutputContract:   cloneOutputContract(graph.OutputContract),
 		DeliveryContract: deliverable.CloneDeliveryContract(graph.DeliveryContract),

@@ -31,6 +31,7 @@ var teamDeclarativeWorkflowPlanInputSchema = json.RawMessage(`{
       "properties":{
         "schema_version":{"const":1},
         "entry_node_id":{"type":"string"},
+        "result_protocol":{"type":"string","enum":["workbench_result_v1"]},
         "input_contract":{"$ref":"#/$defs/contract"},
         "output_contract":{"$ref":"#/$defs/contract"},
         "nodes":{"type":"array","minItems":1,"maxItems":128,"items":{"$ref":"#/$defs/node"}},

@@ -126,6 +126,7 @@ func validateTypedBasics(ctx ValidationContext) Report {
 	validateGraphComplexity(&report, graph)
 	validateContractBasic(&report, "/input_contract", graph.InputContract)
 	validateContractBasic(&report, "/output_contract", graph.OutputContract)
+	validateResultProtocol(&report, graph)
 	if err := deliverycheck.ValidateContract(graph.DeliveryContract); err != nil {
 		report.Add(PhaseDTO, "/delivery_contract", CodeContractInvalid, err.Error())
 	} else if graph.DeliveryContract != nil && !deliveryOutputMatches(graph.DeliveryContract.Output, graph.OutputContract) {

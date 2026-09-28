@@ -114,7 +114,7 @@ func DecodeGraphDefinitionV1(raw json.RawMessage) (GraphDefinition, *Report) {
 	if issue != nil {
 		return result, reportFor(issue)
 	}
-	if issue = rejectUnknown(object, "", "schema_version", "entry_node_id", "input_contract", "output_contract", "delivery_contract", "nodes", "edges"); issue != nil {
+	if issue = rejectUnknown(object, "", "schema_version", "entry_node_id", "result_protocol", "input_contract", "output_contract", "delivery_contract", "nodes", "edges"); issue != nil {
 		return result, reportFor(issue)
 	}
 
@@ -138,6 +138,15 @@ func DecodeGraphDefinitionV1(raw json.RawMessage) (GraphDefinition, *Report) {
 	}
 	if result.EntryNodeID, issue = stringField(object["entry_node_id"], "/entry_node_id"); issue != nil {
 		return GraphDefinition{}, reportFor(issue)
+	}
+	if raw, ok := object["result_protocol"]; ok {
+		result.ResultProtocol, issue = stringField(raw, "/result_protocol")
+		if issue != nil {
+			return GraphDefinition{}, reportFor(issue)
+		}
+		if result.ResultProtocol != ResultProtocolWorkbenchV1 {
+			return GraphDefinition{}, reportFor(newDTOError("/result_protocol", CodeEnumInvalid, "unsupported result_protocol"))
+		}
 	}
 	if result.InputContract, issue = decodeOutputContract(object["input_contract"], "/input_contract"); issue != nil {
 		return GraphDefinition{}, reportFor(issue)

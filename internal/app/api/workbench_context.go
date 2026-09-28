@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"unicode/utf8"
@@ -11,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jinyitao123/weave/internal/kernel/teamrun"
+	"github.com/jinyitao123/weave/internal/kernel/workflow/machine"
 	"github.com/labstack/echo/v4"
 )
 
@@ -61,11 +63,14 @@ type workbenchContextRun struct {
 }
 
 type workbenchContextFinalDeliverable struct {
-	ID          string `json:"id"`
-	Title       string `json:"title"`
-	ContentType string `json:"content_type"`
-	Content     string `json:"content"`
-	SHA256      string `json:"sha256"`
+	ID           string    `json:"id"`
+	Title        string    `json:"title"`
+	ContentType  string    `json:"content_type"`
+	Content      string    `json:"content"`
+	SHA256       string    `json:"sha256"`
+	Disposition  string    `json:"disposition,omitempty"`
+	Summary      string    `json:"summary,omitempty"`
+	MissingItems *[]string `json:"missing_items,omitempty"`
 }
 
 type workbenchContextInputRow struct {
@@ -310,16 +315,18 @@ func projectWorkbenchContextResources(raw []byte, inputRevisionID, taskSHA256 st
 func (s *Server) readWorkbenchFinalResult(ctx context.Context, workspaceID, userID, runID string) (*workbenchContextFinalDeliverable, error) {
 	var item workbenchContextFinalDeliverable
 	var idRunes, titleRunes, contentTypeRunes, contentRunes int
+	var metadataRaw []byte
 	err := s.GetPool().QueryRow(ctx, `SELECT left(id,129),char_length(id),left(title,301),char_length(title),
 		left(content_type,161),char_length(content_type),
-		CASE WHEN char_length(content)<=$4 THEN content ELSE '' END,char_length(content)
+		CASE WHEN char_length(content)<=$4 THEN content ELSE '' END,char_length(content),metadata
 		FROM weave_final_deliverables
 		WHERE workspace_id=$1 AND user_id=$2 AND run_id=$3
 		  AND COALESCE(metadata->>'artifact_kind','final')='final'
 		  AND (btrim(content)<>'' OR COALESCE(metadata->>'filename','')<>'')
-		ORDER BY created_at DESC,id DESC LIMIT 1`,
+		ORDER BY (metadata->'workbench_result' IS NOT NULL) DESC,created_at DESC,id DESC LIMIT 1`,
 		workspaceID, userID, runID, workbenchContextFinalContentMax).Scan(
 		&item.ID, &idRunes, &item.Title, &titleRunes, &item.ContentType, &contentTypeRunes, &item.Content, &contentRunes,
+		&metadataRaw,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
@@ -332,6 +339,47 @@ func (s *Server) readWorkbenchFinalResult(ctx context.Context, workspaceID, user
 		utf8.RuneCountInString(item.Content) != contentRunes {
 		return nil, errors.New("Workbench final result is outside the continuation contract")
 	}
+	var metadata struct {
+		WorkbenchResult *machine.WorkbenchResultMetadataV1 `json:"workbench_result"`
+	}
+	if err := json.Unmarshal(metadataRaw, &metadata); err != nil {
+		return nil, errors.New("Workbench final result metadata is invalid")
+	}
+	if metadata.WorkbenchResult != nil {
+		result := metadata.WorkbenchResult
+		if result.Protocol != machine.ResultProtocolWorkbenchV1 {
+			return nil, errors.New("Workbench final result protocol is invalid")
+		}
+		output, err := json.Marshal(machine.WorkbenchResultV1{
+			Disposition: result.Disposition, Summary: result.Summary, MissingItems: result.MissingItems,
+		})
+		if err != nil {
+			return nil, err
+		}
+		normalized, _, err := machine.NormalizeWorkbenchResultV1(output)
+		if err != nil {
+			return nil, fmt.Errorf("Workbench final result protocol is invalid: %w", err)
+		}
+		contentResult, _, err := machine.NormalizeWorkbenchResultV1([]byte(item.Content))
+		if err != nil || contentResult.Disposition != normalized.Disposition || contentResult.Summary != normalized.Summary || !sameStrings(contentResult.MissingItems, normalized.MissingItems) {
+			return nil, errors.New("Workbench final result metadata does not match its verified output")
+		}
+		item.Disposition, item.Summary = normalized.Disposition, normalized.Summary
+		missingItems := append([]string{}, normalized.MissingItems...)
+		item.MissingItems = &missingItems
+	}
 	item.SHA256 = dispatchInputDigest([]byte(item.Content))
 	return &item, nil
+}
+
+func sameStrings(left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
 }

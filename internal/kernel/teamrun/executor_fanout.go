@@ -323,6 +323,7 @@ func (r *WorkflowSerialRuntime) ExecuteFanoutLeg(
 		execution.WithInvocationID(inputCtx, invocationID), branch, loaded.payload, entries, runInput, outputs,
 		checkpoint.Corrections, "", actionOutcomes,
 		func(ctx context.Context) context.Context { return r.withBusinessActionOutcomeContext(ctx, parent) },
+		workbenchResultPromptRequired(loaded.graph, branch.ID),
 	)
 	if err != nil {
 		if recordErr := r.recordWorkflowArtifacts(ctx, parent, workflowArtifactOwner{
