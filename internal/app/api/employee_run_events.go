@@ -246,7 +246,9 @@ func (worker *employeeRunEventWorker) materialize(ctx context.Context) error {
 		  WHEN status='cancelled' THEN '团队运行状态：已取消。'
 		  WHEN status='abandoned' THEN '团队运行状态：已放弃。'
 		  WHEN cause_summary IS NOT NULL THEN '团队运行状态：失败。团队处理失败：'||cause_summary
-		  ELSE '团队运行状态：失败。团队处理失败，请在桌面查看运行记录。' END,4000),
+		  ELSE '团队运行状态：失败。团队处理失败，请在桌面查看运行记录。' END||CASE
+			WHEN status='failed' AND business_action_summary.action_count IS NOT NULL AND cause_summary IS NOT NULL
+			  THEN '团队处理失败：'||cause_summary ELSE '' END,4000),
 		'occurredAt',terminal_at,
 		'source',jsonb_build_object(
 		  'workReference',input_revision_id,'runReference',fixed.run_id,
