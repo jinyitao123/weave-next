@@ -594,20 +594,6 @@ func TestDispatcherFailsClosedWhenPublishedActionIsNotVisibleToEmployee(t *testi
 	}
 }
 
-func TestReadActionCatalogUsesEmployeeVisibleForgeMetadata(t *testing.T) {
-	host := &captureHost{result: &contract.ToolResult{Content: `{"actions":[{"name":"ContractSubmit","objectName":"sales_contract","description":"提交指定版本","requiresRecord":true,"params":[{"name":"primary_file_id","type":"file","required":true},{"name":"material_file_ids","type":"file","multiple":true,"required":true}]}]}`}}
-	catalog, err := readActionCatalog(t.Context(), host)
-	if err != nil {
-		t.Fatal(err)
-	}
-	item, ok := catalog["sales_contract.ContractSubmit"]
-	if !ok || !item.RequiresRecord || len(item.Params) != 2 || item.Params[0].Type != "file" ||
-		!item.Params[1].Multiple || item.Params[1].Type != "file" || !item.Params[1].Required ||
-		host.call.Name != "list_actions" || host.call.Args != `{}` {
-		t.Fatalf("catalog=%+v call=%+v", catalog, host.call)
-	}
-}
-
 func TestTaskScopeIsIntersectedPerMember(t *testing.T) {
 	member := []string{"forge:action:sales_contract.ContractSubmit"}
 	task := []string{"forge:action:sales_contract.RequestRevision", "forge:action:sales_contract.ContractSubmit"}

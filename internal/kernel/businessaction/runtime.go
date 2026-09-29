@@ -157,15 +157,19 @@ func (s *Store) dispatcher(ctx context.Context, requested []string, bindings []f
 		clear(bound.token)
 		return nil, nil
 	}
-	endpoint, err := url.Parse(bound.issuer)
-	if err != nil || endpoint.Scheme == "" || endpoint.Host == "" || endpoint.User != nil ||
-		(endpoint.Scheme != "http" && endpoint.Scheme != "https") {
+	metadataBaseURL, err := url.Parse(bound.issuer)
+	if err != nil || metadataBaseURL.Scheme == "" || metadataBaseURL.Host == "" || metadataBaseURL.User != nil ||
+		(metadataBaseURL.Scheme != "http" && metadataBaseURL.Scheme != "https") {
 		clear(bound.token)
 		return nil, fmt.Errorf("%w: Forge delegation issuer is invalid", mcphost.ErrFailClosed)
 	}
-	endpoint.Path = "/api/v1/mcp"
-	endpoint.RawPath, endpoint.RawQuery, endpoint.Fragment = "", "", ""
-	headers := map[string]string{"Authorization": "Bearer " + string(bound.token)}
+	metadataBaseURL.Path, metadataBaseURL.RawPath, metadataBaseURL.RawQuery, metadataBaseURL.Fragment = "", "", "", ""
+	mcpEndpoint := *metadataBaseURL
+	mcpEndpoint.Path = "/api/v1/mcp"
+	mcpEndpoint.RawPath, mcpEndpoint.RawQuery, mcpEndpoint.Fragment = "", "", ""
+	authorization := append([]byte("Bearer "), bound.token...)
+	defer clear(authorization)
+	headers := map[string]string{"Authorization": string(authorization)}
 	clear(bound.token)
 	runAction := contract.ToolDef{
 		Name: "run_action", Description: "Invoke the server-selected Forge business action.",
@@ -181,12 +185,12 @@ func (s *Store) dispatcher(ctx context.Context, requested []string, bindings []f
 		clearHeader(headers)
 		return nil, err
 	}
-	host := mcphost.NewHTTPHost(endpoint.String(), mcphost.WithHeaders(headers), mcphost.WithFilter([]string{"list_actions", "run_action"}), mcphost.WithToolContract(toolContract), mcphost.WithUnknownDispatchOutcome(),
+	host := mcphost.NewHTTPHost(mcpEndpoint.String(), mcphost.WithHeaders(headers), mcphost.WithFilter([]string{"list_actions", "run_action"}), mcphost.WithToolContract(toolContract), mcphost.WithUnknownDispatchOutcome(),
 		mcphost.WithDispatchGuard(func(callCtx context.Context) error {
 			return s.validate(callCtx, bound.inputRevisionID, bound.actions)
 		}))
 	clearHeader(headers)
-	catalog, err := readActionCatalog(ctx, host)
+	catalog, err := readActionCatalog(ctx, host, bound.actions, forgeObjectMetadataReader{baseURL: *metadataBaseURL, authorization: authorization})
 	if err != nil {
 		return nil, err
 	}
@@ -540,53 +544,6 @@ func developmentCatalog(actions []DevelopmentAction) map[string]actionMetadata {
 			Description: item.Description, RequiresRecord: item.RequiresRecord, RequiresConfirmation: item.RequiresConfirmation, Params: item.Params}
 	}
 	return catalog
-}
-
-func readActionCatalog(ctx context.Context, host contract.ToolDispatcher) (map[string]actionMetadata, error) {
-	result, err := host.Dispatch(ctx, contract.ToolCall{ID: "forge-action-catalog", Name: "list_actions", Args: `{}`})
-	if err != nil {
-		return nil, fmt.Errorf("%w: Forge action catalog unavailable: %v", mcphost.ErrFailClosed, err)
-	}
-	if result == nil || result.IsError {
-		message := "empty response"
-		if result != nil && strings.TrimSpace(result.Content) != "" {
-			message = strings.TrimSpace(result.Content)
-		}
-		return nil, fmt.Errorf("%w: Forge action catalog unavailable: %s", mcphost.ErrFailClosed, message)
-	}
-	var payload struct {
-		Actions []json.RawMessage `json:"actions"`
-	}
-	if err := json.Unmarshal([]byte(result.Content), &payload); err != nil {
-		return nil, fmt.Errorf("%w: Forge action catalog is invalid", mcphost.ErrFailClosed)
-	}
-	catalog := make(map[string]actionMetadata, len(payload.Actions))
-	for _, raw := range payload.Actions {
-		var item actionMetadata
-		if err := json.Unmarshal(raw, &item); err != nil {
-			return nil, fmt.Errorf("%w: Forge action catalog contains an invalid action", mcphost.ErrFailClosed)
-		}
-		var fields map[string]json.RawMessage
-		if err := json.Unmarshal(raw, &fields); err != nil {
-			return nil, fmt.Errorf("%w: Forge action catalog contains an invalid action", mcphost.ErrFailClosed)
-		}
-		if required, exists := fields["requiresRecord"]; !exists {
-			// Unknown metadata must never broaden a business action's record scope.
-			item.RequiresRecord = true
-		} else if string(required) != "true" && string(required) != "false" {
-			return nil, fmt.Errorf("%w: Forge action record requirement is invalid", mcphost.ErrFailClosed)
-		}
-		if strings.TrimSpace(item.Name) == "" || strings.TrimSpace(item.ObjectName) == "" ||
-			item.Name != strings.TrimSpace(item.Name) || item.ObjectName != strings.TrimSpace(item.ObjectName) {
-			continue
-		}
-		key := item.ObjectName + "." + item.Name
-		if _, exists := catalog[key]; exists {
-			return nil, fmt.Errorf("%w: Forge action catalog contains a duplicate action", mcphost.ErrFailClosed)
-		}
-		catalog[key] = item
-	}
-	return catalog, nil
 }
 
 func newDispatcher(host contract.ToolDispatcher, ids []string, catalog map[string]actionMetadata) (*dispatcher, error) {
