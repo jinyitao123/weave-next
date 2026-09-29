@@ -230,8 +230,20 @@ func TestDispatchInputFreezesForgeMaterialWithoutGrantingBusinessActionRealPG(t 
 	if err := pool.QueryRow(t.Context(), `SELECT resources FROM weave_task_business_delegations WHERE workspace_id='ws' AND input_revision_id=$1`, receipt.InputRevisionID).Scan(&frozenResourceJSON); err != nil {
 		t.Fatal(err)
 	}
-	if err := json.Unmarshal(frozenResourceJSON, &frozenResources); err != nil || len(frozenResources) != 9 {
-		t.Fatalf("nine-file admission stored %d frozen resources: err=%v", len(frozenResources), err)
+	if err := json.Unmarshal(frozenResourceJSON, &frozenResources); err != nil {
+		t.Fatalf("decode frozen resources: %v", err)
+	}
+	fileCount, dispatchInputCount := 0, 0
+	for _, resource := range frozenResources {
+		switch resource["type"] {
+		case "forge-file":
+			fileCount++
+		case "dispatch-input":
+			dispatchInputCount++
+		}
+	}
+	if fileCount != 9 || dispatchInputCount != 1 {
+		t.Fatalf("nine-file admission stored %d forge files and %d dispatch-input records; resources=%#v", fileCount, dispatchInputCount, frozenResources)
 	}
 }
 
