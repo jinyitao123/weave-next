@@ -459,26 +459,27 @@ type runActivityMemberBudgetPause struct {
 }
 
 type runActivityMemberStage struct {
-	BudgetPause            *runActivityMemberBudgetPause `json:"budget_pause,omitempty"`
-	MemberRunID            string                        `json:"member_run_id,omitempty"`
-	CheckpointSavedAt      *time.Time                    `json:"checkpoint_saved_at,omitempty"`
-	CurrentTaskID          string                        `json:"current_task_id,omitempty"`
-	PublicUpdates          []runActivityPublicUpdate     `json:"public_updates,omitempty"`
-	PublicUpdatesTruncated bool                          `json:"public_updates_truncated,omitempty"`
-	PublicUpdatesState     string                        `json:"public_updates_state,omitempty"`
-	NodeID                 string                        `json:"node_id"`
-	Name                   string                        `json:"name"`
-	Status                 string                        `json:"status"`
-	Inputs                 []runActivityMemberInputRef   `json:"inputs"`
-	OutputRefs             []string                      `json:"output_refs"`
-	StartedAt              *time.Time                    `json:"started_at,omitempty"`
-	CompletedAt            *time.Time                    `json:"completed_at,omitempty"`
-	DurationMs             int64                         `json:"duration_ms,omitempty"`
-	ToolCalls              int                           `json:"tool_calls,omitempty"`
-	Tools                  []runActivityTool             `json:"tools"`
-	FailureClass           string                        `json:"failure_class,omitempty"`
-	FailureReason          string                        `json:"failure_reason,omitempty"`
-	Retryable              bool                          `json:"retryable,omitempty"`
+	BudgetPause            *runActivityMemberBudgetPause     `json:"budget_pause,omitempty"`
+	MemberRunID            string                            `json:"member_run_id,omitempty"`
+	CheckpointSavedAt      *time.Time                        `json:"checkpoint_saved_at,omitempty"`
+	CurrentTaskID          string                            `json:"current_task_id,omitempty"`
+	PublicUpdates          []runActivityPublicUpdate         `json:"public_updates,omitempty"`
+	PublicUpdatesTruncated bool                              `json:"public_updates_truncated,omitempty"`
+	PublicUpdatesState     string                            `json:"public_updates_state,omitempty"`
+	NodeID                 string                            `json:"node_id"`
+	Name                   string                            `json:"name"`
+	Status                 string                            `json:"status"`
+	Inputs                 []runActivityMemberInputRef       `json:"inputs"`
+	OutputRefs             []string                          `json:"output_refs"`
+	Outputs                []developmentTrialStageOutputView `json:"outputs,omitempty"`
+	StartedAt              *time.Time                        `json:"started_at,omitempty"`
+	CompletedAt            *time.Time                        `json:"completed_at,omitempty"`
+	DurationMs             int64                             `json:"duration_ms,omitempty"`
+	ToolCalls              int                               `json:"tool_calls,omitempty"`
+	Tools                  []runActivityTool                 `json:"tools"`
+	FailureClass           string                            `json:"failure_class,omitempty"`
+	FailureReason          string                            `json:"failure_reason,omitempty"`
+	Retryable              bool                              `json:"retryable,omitempty"`
 }
 
 type runActivityTool struct {
@@ -503,9 +504,10 @@ type runActivityRuntime struct {
 }
 
 type runActivityStage struct {
-	NodeID string `json:"node_id"`
-	Name   string `json:"name"`
-	Status string `json:"status"`
+	NodeID  string                            `json:"node_id"`
+	Name    string                            `json:"name"`
+	Status  string                            `json:"status"`
+	Outputs []developmentTrialStageOutputView `json:"outputs,omitempty"`
 }
 
 type runActivityDeliverableRef struct {
@@ -991,6 +993,7 @@ func runActivityCurrentStages(members []runActivityMember, recorded []runActivit
 		for _, stage := range member.Stages {
 			current := runActivityStage{NodeID: stage.NodeID, Name: stage.Name, Status: stage.Status}
 			if index, exists := byNode[stage.NodeID]; exists {
+				current.Outputs = stages[index].Outputs
 				stages[index] = current
 			} else {
 				byNode[stage.NodeID] = len(stages)
@@ -1047,7 +1050,7 @@ func refineRunActivityCompleteness(
 				inputsComplete = false
 				toolsComplete = false
 			}
-			if stage.Status == "completed" && len(stage.OutputRefs) == 0 {
+			if stage.Status == "completed" && !runActivityStageHasOutput(stage) {
 				outputsComplete = false
 			}
 			completedTools := 0
@@ -1083,6 +1086,21 @@ func refineRunActivityCompleteness(
 		completeness["member_tool_activity"] == "complete" {
 		completeness["stages"] = "complete"
 	}
+}
+
+func runActivityStageHasOutput(stage runActivityMemberStage) bool {
+	if len(stage.OutputRefs) > 0 {
+		return true
+	}
+	if len(stage.Outputs) == 0 {
+		return false
+	}
+	for _, output := range stage.Outputs {
+		if output.Truncated || output.ContentBytes == 0 {
+			return false
+		}
+	}
+	return true
 }
 
 func latestRunActivityStage(members []runActivityMember, fallback []runActivityStage) string {
@@ -1135,6 +1153,19 @@ func (s *Server) handleGetRunActivity(c echo.Context) error {
 	}
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "run_read_failed"})
+	}
+	var developmentTrial *developmentTrialRun
+	if run.SourceKind == teamrun.SourceAPI {
+		trial, found, trialErr := developmentTrialForRun(c.Request().Context(), s.GetPool(), getTenant(c), run.RunID)
+		if trialErr != nil {
+			return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "run_read_unavailable"})
+		}
+		if found {
+			if trial.ActorID != getUserID(c) {
+				return c.JSON(http.StatusNotFound, map[string]string{"error": "run_not_found"})
+			}
+			developmentTrial = &trial
+		}
 	}
 	completeness := map[string]string{
 		"run": "complete", "stages": "unavailable", "members": "unavailable",
@@ -1229,6 +1260,19 @@ func (s *Server) handleGetRunActivity(c echo.Context) error {
 			}
 		}
 	}
+	trialOutputsPartial := false
+	if developmentTrial != nil {
+		trialOutputs, partial, outputErr := listDevelopmentTrialStageOutputs(
+			c.Request().Context(), s.GetPool(), *developmentTrial, run.RunID,
+		)
+		if outputErr != nil {
+			return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "run_read_unavailable"})
+		}
+		stages, trialOutputsPartial = projectDevelopmentTrialStageOutputs(members, stages, trialOutputs, partial)
+		if len(trialOutputs) > 0 {
+			completeness["stages"] = "partial"
+		}
+	}
 	activityEvents := []teamrun.ActivityEvent{}
 	if s.teamRunActivities != nil {
 		if items, activityErr := s.teamRunActivities.List(c.Request().Context(), getTenant(c), run.RunID, 501); activityErr == nil {
@@ -1250,6 +1294,10 @@ func (s *Server) handleGetRunActivity(c echo.Context) error {
 	summarizeRunActivityMembers(members)
 	if completeness["activity_events"] != "unavailable" {
 		refineRunActivityCompleteness(completeness, members, run.Status)
+	}
+	if trialOutputsPartial {
+		completeness["member_outputs"] = "partial"
+		completeness["stages"] = "partial"
 	}
 	corrections := []teamrun.Correction{}
 	if s.teamRunCorrections != nil {

@@ -712,7 +712,7 @@ func (s *Server) ConfigureTeamRunWorkers() {
 		Checkpoints:    checkpointStore,
 		Tasks:          s.Tasks,
 		Snapshots:      s.Snapshots,
-		OutputRecorder: s.Deliverables,
+		OutputRecorder: &developmentTrialWorkflowOutputRecorder{pool: pool, fallback: s.Deliverables},
 		Corrections:    correctionStore,
 		Activities:     activityStore,
 	}
