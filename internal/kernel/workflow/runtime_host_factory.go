@@ -175,11 +175,19 @@ func buildRuntimeHostsWithLLM(
 			if err != nil {
 				return compiler.FrozenBuildOpts{}, nil, err
 			}
-			router.RegisterProvider(llmrouter.ProviderConfig{
+			provider := llmrouter.ProviderConfig{
 				ID:      fmt.Sprintf("%d#%s#%s", index, binding.ProviderID, binding.ModelID),
 				BaseURL: binding.BaseURL, APIKey: string(material.Value()),
 				Models: []string{binding.ModelID}, JSONObjectMode: binding.JSONObjectMode,
-			})
+			}
+			// This frozen system provider is DeepSeek's OpenAI-compatible endpoint.
+			// Tool histories cannot replay reasoning_content yet, so all member
+			// requests must use its non-thinking mode, including the first turn.
+			if binding.ProviderID == "system/deepseek" && binding.CredentialRef.ServiceID == "system-provider:deepseek" {
+				provider.ThinkingDefaultMode = "disabled"
+				provider.ThinkingDisableWithTools = true
+			}
+			router.RegisterProvider(provider)
 			if index != 0 {
 				fallbackModelIDs = append(fallbackModelIDs, binding.ModelID)
 			}

@@ -343,6 +343,17 @@
         "lines_added": 73,
         "production_lines_added": 30
       }
+    },
+    {
+      "date": "2026-09-29",
+      "source_commit": "15497e6c3a608093045a81e0e0cdd11528b6a595",
+      "reason": "Bind the already-frozen system DeepSeek model identity to the current non-thinking tool-loop wire profile at actual member runtime construction. Regression covers a real frozen host sending tools with high effort and preserves unrelated provider wire behavior. Exact measured ceilings; no package, dependency, or spare allowance growth.",
+      "kernel": {
+        "previous_lines": 93286,
+        "previous_production_lines": 79843,
+        "lines_added": 71,
+        "production_lines_added": 8
+      }
     }
   ],
   "migration_targets": {
@@ -380,8 +391,8 @@
     ]
   },
   "kernel": {
-    "lines": 93286,
-    "production_lines": 79843,
+    "lines": 93357,
+    "production_lines": 79851,
     "packages": 49,
     "external_dependencies": 5,
     "allowed_dependencies": [
