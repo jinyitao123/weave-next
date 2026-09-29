@@ -668,7 +668,7 @@ func bindTaskMaterialExtractions(task string, resources []delegatedResource, exp
 		return files
 	}
 	var envelope taskMaterialEnvelope
-	if err := json.Unmarshal([]byte(task), &envelope); err != nil || len(envelope.Materials) == 0 || len(envelope.Materials) > 8 {
+	if err := json.Unmarshal([]byte(task), &envelope); err != nil || len(envelope.Materials) == 0 {
 		for key, file := range files {
 			file.Reason = "frozen_extraction_manifest_unavailable"
 			files[key] = file

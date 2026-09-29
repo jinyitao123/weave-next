@@ -3,6 +3,7 @@ package businessaction
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -107,6 +108,56 @@ func TestPrepareExecutionTaskRemovesExtractionBodyAndKeepsFrozenManifest(t *test
 	read, err := readFrozenMaterial(files, materialReadArguments{FileID: textResource.FileID, SHA256: textResource.SHA256})
 	if err != nil || read.Status != "complete" || !strings.Contains(read.Content, content) {
 		t.Fatalf("optional materialId fallback could not read its frozen text: result=%+v err=%v", read, err)
+	}
+}
+
+func TestFrozenMaterialReadSupportsMoreThanEightSmallFiles(t *testing.T) {
+	materials := make([]taskMaterialSnapshot, 9)
+	resources := make([]FrozenMaterialResource, 0, len(materials))
+	delegated := make([]delegatedResource, 0, len(materials))
+	expected := make(map[string]string, len(materials))
+	shaByID := make(map[string]string, len(materials))
+	for index := range materials {
+		materialID := fmt.Sprintf("%024x", index+1)
+		name := fmt.Sprintf("附加材料-%d.txt", index+1)
+		original := []byte(fmt.Sprintf("original-%d", index+1))
+		content := fmt.Sprintf("提取正文-%d", index+1)
+		materials[index] = materialSnapshotForTest(materialID, name, "text/plain", original, content, "complete", "utf8", nil)
+		resources = append(resources, FrozenMaterialResource{
+			Type: "forge-file", MaterialID: materialID, FileID: fmt.Sprintf("file-%d", index+1),
+			Name: name, MediaType: "text/plain", Bytes: int64(len(original)), SHA256: materials[index].SHA256,
+		})
+		delegated = append(delegated, delegatedResource{
+			Type: "forge-file", MaterialID: materialID, ID: fmt.Sprintf("file-%d", index+1),
+			Name: name, MediaType: "text/plain", Bytes: int64(len(original)), SHA256: materials[index].SHA256,
+		})
+		expected[materialID] = content
+		shaByID[materialID] = materials[index].SHA256
+	}
+	task, err := json.Marshal(taskMaterialEnvelope{
+		Goal: "读取本轮指定材料", MaterialHandling: "逐份核对", Materials: materials,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	projected, recognized, err := PrepareExecutionTask(string(task), resources)
+	if err != nil || !recognized || strings.Contains(projected, "提取正文-") {
+		t.Fatalf("nine-file material admission failed or leaked extraction text: recognized=%v err=%v", recognized, err)
+	}
+
+	files := bindTaskMaterialExtractions(string(task), delegated, dispatchInputDigestBytes(task))
+	if len(files) != len(materials) {
+		t.Fatalf("frozen resource count = %d, want %d", len(files), len(materials))
+	}
+	for materialID, content := range expected {
+		file, ok := findFrozenMaterial(files, materialReadArguments{MaterialID: materialID, SHA256: shaByID[materialID]})
+		if !ok || !file.Available {
+			t.Fatalf("frozen material %s was not bound: %+v", materialID, file)
+		}
+		read, readErr := readFrozenMaterial(files, materialReadArguments{MaterialID: materialID, SHA256: file.SHA256})
+		if readErr != nil || read.Status != "complete" || read.Content != content {
+			t.Fatalf("frozen material %s could not be read: status=%s err=%v", materialID, read.Status, readErr)
+		}
 	}
 }
 
