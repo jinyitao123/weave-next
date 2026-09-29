@@ -710,7 +710,7 @@ func NormalizeBusinessCapabilityBindings(values []BusinessCapabilityBinding, cap
 			}
 			seenParameters[parameter.Name] = struct{}{}
 			switch parameter.Source {
-			case BusinessSourceMaterialID, BusinessSourceMaterialName, BusinessSourceMaterialSHA256, BusinessSourceMaterialsManifest:
+			case BusinessSourceMaterialID, BusinessSourceMaterialName, BusinessSourceMaterialSHA256, BusinessSourceMaterialIDs, BusinessSourceMaterialsManifest:
 			default:
 				return nil, errors.New("business capability parameter binding source is invalid")
 			}
