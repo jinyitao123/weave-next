@@ -48,7 +48,7 @@ func TestVerifyForgeFilesUsesExactFrozenOriginalSourceAndSHA(t *testing.T) {
 		var digest string
 		if request.URL.Path == "/api/v1/workbench/materials/file-owner/original" {
 			body, digest = ownerBytes, hex.EncodeToString(ownerSHA[:])
-		} else if request.URL.Path == "/api/v1/approvals/requests/approval-1/workbench-context/files/file-approval/original" {
+		} else if request.URL.Path == "/api/v1/approvals/requests/approval-1/workbench-history/files/file-approval/original" {
 			body, digest = approvalBytes, hex.EncodeToString(approvalSHA[:])
 		} else {
 			http.NotFound(writer, request)
@@ -78,7 +78,7 @@ func TestVerifyForgeFilesUsesExactFrozenOriginalSourceAndSHA(t *testing.T) {
 	if successfulReads != 2 {
 		t.Fatalf("expected exactly two validated original reads, got %d", successfulReads)
 	}
-	if strings.Join(paths, ",") != "/api/v1/workbench/materials/file-owner/original,/api/v1/approvals/requests/approval-1/workbench-context/files/file-approval/original" {
+	if strings.Join(paths, ",") != "/api/v1/workbench/materials/file-owner/original,/api/v1/approvals/requests/approval-1/workbench-history/files/file-approval/original" {
 		t.Fatalf("binary reads did not use their frozen source routes: %s", strings.Join(paths, ","))
 	}
 
