@@ -276,6 +276,9 @@ func NewToolLoopStep(llm contract.LLM, tools contract.ToolDispatcher, opts ToolL
 					}
 				}
 			}
+			if err := validateToolTranscript(msgs, nil); err != nil {
+				return nil, err
+			}
 
 			// 本轮询问 LLM：携带完整历史、工具清单与输出约束。
 			resp, err := llm.Chat(ctx, contract.ChatRequest{
@@ -389,6 +392,9 @@ func NewToolLoopStep(llm contract.LLM, tools contract.ToolDispatcher, opts ToolL
 		if opts.CompletionVerifier != nil {
 			err := fmt.Errorf("%w: tool budget exhausted", ErrCompletionUnverified)
 			return loom.State{"__error": err.Error()}, err
+		}
+		if err := validateToolTranscript(msgs, nil); err != nil {
+			return nil, err
 		}
 
 		// Tool budget exhausted. Don't fail the whole turn (which surfaces to the
