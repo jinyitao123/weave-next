@@ -354,6 +354,23 @@
         "lines_added": 71,
         "production_lines_added": 8
       }
+    },
+    {
+      "date": "2026-09-29",
+      "source_commit": "6415d24ec819768e0eeea2e6d2c225ce705cb1ef",
+      "reason": "Preserve ObjectStack native Action file type and cardinality from same-employee object metadata, intersect metadata by the existing list_actions allowlist, and reject unresolved or masked declarations. Freeze typed single-file selection and explicitly bound multi-file ID injection while preserving existing non-file action mappings. Add production-consumer route, allowlist, objectOverride, missing-metadata, permission-denial, and regression coverage. Exact measured limits; no package, dependency, or spare allowance growth.",
+      "base": {
+        "previous_lines": 8191,
+        "previous_production_lines": 6683,
+        "lines_added": 1,
+        "production_lines_added": 1
+      },
+      "kernel": {
+        "previous_lines": 93357,
+        "previous_production_lines": 79851,
+        "lines_added": 916,
+        "production_lines_added": 546
+      }
     }
   ],
   "migration_targets": {
@@ -379,8 +396,8 @@
     }
   },
   "base": {
-    "lines": 8191,
-    "production_lines": 6683,
+    "lines": 8192,
+    "production_lines": 6684,
     "packages": 9,
     "external_dependencies": 4,
     "allowed_dependencies": [
@@ -391,8 +408,8 @@
     ]
   },
   "kernel": {
-    "lines": 93357,
-    "production_lines": 79851,
+    "lines": 94273,
+    "production_lines": 80397,
     "packages": 49,
     "external_dependencies": 5,
     "allowed_dependencies": [
