@@ -190,7 +190,7 @@ func (f *teamDeliveryFixture) run(t *testing.T, scenario teamDeliveryScenario) t
 	}
 	loader := &workflow.RuntimeLoader{Registry: memberIntegrationDescriptors(t)}
 	hosts := &teamDeliveryHosts{workerID: f.workerID, pool: f.pool, runID: dispatched.RunID, scenario: scenario}
-	runtime := &teamrun.WorkflowSerialRuntime{OutputRecorder: capture, Members: members, Artifacts: f.artifacts, Loader: loader, HostFactory: hosts, CredentialResolvers: func(string) (workflow.RuntimeCredentialResolver, error) { return memberIntegrationSecrets{}, nil }, Transactions: f.pool, Runs: f.runs, Checkpoints: checkpoints, Tasks: f.tasks, Snapshots: f.snapshots}
+	runtime := &teamrun.WorkflowSerialRuntime{OutputRecorder: &developmentTrialWorkflowOutputRecorder{pool: f.pool, fallback: capture}, Members: members, Artifacts: f.artifacts, Loader: loader, HostFactory: hosts, CredentialResolvers: func(string) (workflow.RuntimeCredentialResolver, error) { return memberIntegrationSecrets{}, nil }, Transactions: f.pool, Runs: f.runs, Checkpoints: checkpoints, Tasks: f.tasks, Snapshots: f.snapshots}
 	var workerDone <-chan error
 	if f.engineName != "loom" {
 		loader.CLIExecutor = runtimes.NewExecutor(f.tasks, f.runtimeStore, "", "")

@@ -72,6 +72,36 @@ type developmentTrialWorkflowOutputRecorder struct {
 	fallback teamrun.WorkflowOutputRecorder
 }
 
+// Preserve the runtime's verified-delivery capability when decorating stage
+// recording. Losing this method silently selects its legacy single-output path.
+func (recorder *developmentTrialWorkflowOutputRecorder) RecordVerifiedWorkflowOutputs(ctx context.Context, outputs []deliverable.WorkflowOutput, fence deliverable.VerificationFence) (deliverable.VerificationReport, error) {
+	if recorder == nil {
+		return deliverable.VerificationReport{}, errors.New("verified workflow output recorder unavailable")
+	}
+	verified, ok := recorder.fallback.(interface {
+		RecordVerifiedWorkflowOutputs(context.Context, []deliverable.WorkflowOutput, deliverable.VerificationFence) (deliverable.VerificationReport, error)
+	})
+	if !ok {
+		return deliverable.VerificationReport{}, errors.New("verified workflow output recorder unavailable")
+	}
+	report, err := verified.RecordVerifiedWorkflowOutputs(ctx, outputs, fence)
+	if err != nil {
+		return deliverable.VerificationReport{}, err
+	}
+	trial, found, err := developmentTrialForRun(ctx, recorder.pool, fence.WorkspaceID, fence.RunID)
+	if err != nil {
+		return deliverable.VerificationReport{}, fmt.Errorf("resolve development trial delivery owner: %w", err)
+	}
+	if found {
+		for _, output := range outputs {
+			if err := persistDevelopmentTrialStageOutput(ctx, recorder.pool, trial, output); err != nil {
+				return deliverable.VerificationReport{}, err
+			}
+		}
+	}
+	return report, nil
+}
+
 func (recorder *developmentTrialWorkflowOutputRecorder) RecordWorkflowOutput(ctx context.Context, output deliverable.WorkflowOutput) error {
 	if recorder == nil || recorder.pool == nil {
 		if recorder != nil && recorder.fallback != nil {
