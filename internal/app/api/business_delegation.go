@@ -19,7 +19,6 @@ import (
 	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/kernel/businessaction"
 	"github.com/jinyitao123/weave/internal/kernel/secret"
-	"github.com/labstack/echo/v4"
 )
 
 const forgeDelegationHeader = "X-Weave-Forge-Authorization"
@@ -33,6 +32,30 @@ type preparedBusinessDelegation struct {
 	resources  []dispatchInputResource
 	record     *dispatchBusinessRecord
 	expiresAt  time.Time
+}
+
+type businessDelegationPreparationError struct {
+	status  int
+	code    string
+	message string
+	cause   error
+}
+
+func (e *businessDelegationPreparationError) Error() string {
+	if e.cause != nil {
+		return e.cause.Error()
+	}
+	return e.message
+}
+
+func businessDelegationRejected(status int, code, message string) *businessDelegationPreparationError {
+	return &businessDelegationPreparationError{status: status, code: code, message: message}
+}
+
+func businessDelegationStoreFailure(err error) *businessDelegationPreparationError {
+	return &businessDelegationPreparationError{
+		status: http.StatusInternalServerError, code: "workflow_store_failed", message: "workflow store failed", cause: err,
+	}
 }
 
 func publishedBusinessActions(payload frozen.ArtifactPayloadV1) []string {
@@ -80,49 +103,48 @@ func loadPublishedBusinessActionsTx(ctx context.Context, tx pgx.Tx, workspaceID,
 	return publishedBusinessActions(payload), nil
 }
 
-func (s *Server) prepareBusinessDelegation(c echo.Context, actions []string, resources []dispatchInputResource, record *dispatchBusinessRecord) (*preparedBusinessDelegation, error) {
+func (s *Server) prepareBusinessDelegation(ctx context.Context, workspaceID, userID, authorization string, actions []string, resources []dispatchInputResource, record *dispatchBusinessRecord) (*preparedBusinessDelegation, *businessDelegationPreparationError) {
 	if len(actions) == 0 && len(resources) == 0 && record == nil {
 		return nil, nil
 	}
-	authorization := strings.TrimSpace(c.Request().Header.Get(forgeDelegationHeader))
+	authorization = strings.TrimSpace(authorization)
 	const prefix = "Bearer "
 	if !strings.HasPrefix(authorization, prefix) || len(authorization) <= len(prefix) || len(authorization) > 64<<10 {
-		return nil, workflowError(c, http.StatusUnauthorized, "business_delegation_required", "Forge task delegation is required")
+		return nil, businessDelegationRejected(http.StatusUnauthorized, "business_delegation_required", "Forge task delegation is required")
 	}
 	if s.ExternalIdentity == nil || s.GetPool() == nil {
-		return nil, workflowError(c, http.StatusServiceUnavailable, "business_delegation_unavailable", "Forge task delegation is unavailable")
+		return nil, businessDelegationRejected(http.StatusServiceUnavailable, "business_delegation_unavailable", "Forge task delegation is unavailable")
 	}
 	bearer := strings.TrimSpace(strings.TrimPrefix(authorization, prefix))
-	identity, err := s.ExternalIdentity.Verify(c.Request().Context(), bearer)
+	identity, err := s.ExternalIdentity.Verify(ctx, bearer)
 	if err != nil {
-		return nil, workflowError(c, http.StatusUnauthorized, "business_delegation_invalid", "Forge task delegation could not be verified")
+		return nil, businessDelegationRejected(http.StatusUnauthorized, "business_delegation_invalid", "Forge task delegation could not be verified")
 	}
-	if err := verifyForgeFiles(c.Request().Context(), identity.Issuer, bearer, resources); err != nil {
-		return nil, workflowError(c, http.StatusUnprocessableEntity, "business_resource_invalid", err.Error())
+	if err := verifyForgeFiles(ctx, identity.Issuer, bearer, resources); err != nil {
+		return nil, businessDelegationRejected(http.StatusUnprocessableEntity, "business_resource_invalid", err.Error())
 	}
-	workspaceID, userID := getTenant(c), getUserID(c)
 	if identity.Organization != workspaceID {
-		return nil, workflowError(c, http.StatusForbidden, "business_delegation_identity_mismatch", "Forge task delegation belongs to another organization")
+		return nil, businessDelegationRejected(http.StatusForbidden, "business_delegation_identity_mismatch", "Forge task delegation belongs to another organization")
 	}
 	var boundUserID string
-	err = s.GetPool().QueryRow(c.Request().Context(), `SELECT user_id FROM weave_external_identities
+	err = s.GetPool().QueryRow(ctx, `SELECT user_id FROM weave_external_identities
 		WHERE issuer=$1 AND subject=$2 AND workspace_id=$3`, identity.Issuer, identity.Subject, workspaceID).Scan(&boundUserID)
 	if errors.Is(err, pgx.ErrNoRows) || err == nil && boundUserID != userID {
-		return nil, workflowError(c, http.StatusForbidden, "business_delegation_identity_mismatch", "Forge task delegation belongs to another employee")
+		return nil, businessDelegationRejected(http.StatusForbidden, "business_delegation_identity_mismatch", "Forge task delegation belongs to another employee")
 	}
 	if err != nil {
-		return nil, workflowStoreFailure(c, fmt.Errorf("read Forge identity binding: %w", err))
+		return nil, businessDelegationStoreFailure(fmt.Errorf("read Forge identity binding: %w", err))
 	}
 	key, err := secret.KeyFromEnv()
 	if err != nil {
-		return nil, workflowError(c, http.StatusServiceUnavailable, "business_delegation_unavailable", "Forge task delegation encryption is unavailable")
+		return nil, businessDelegationRejected(http.StatusServiceUnavailable, "business_delegation_unavailable", "Forge task delegation encryption is unavailable")
 	}
 	ciphertext, err := secret.Seal(key, []byte(bearer))
 	for index := range key {
 		key[index] = 0
 	}
 	if err != nil {
-		return nil, workflowStoreFailure(c, fmt.Errorf("encrypt Forge task delegation: %w", err))
+		return nil, businessDelegationStoreFailure(fmt.Errorf("encrypt Forge task delegation: %w", err))
 	}
 	digest := sha256.Sum256([]byte(bearer))
 	return &preparedBusinessDelegation{

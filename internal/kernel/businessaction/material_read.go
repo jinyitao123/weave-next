@@ -527,7 +527,7 @@ func ReadVerifiedForgeOriginal(ctx context.Context, issuer string, bearer []byte
 		return errors.New("Forge original request is invalid")
 	}
 	req.Header.Set("Authorization", "Bearer "+string(bearer))
-	req.Header.Set("If-Match", file.SHA256)
+	req.Header.Set("If-Match", `"`+file.SHA256+`"`)
 	req.Header.Set("Accept-Encoding", "identity")
 	client := &http.Client{Timeout: 20 * time.Second}
 	response, err := client.Do(req)

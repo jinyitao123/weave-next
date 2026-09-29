@@ -322,7 +322,7 @@ func TestReadForgeOriginalUsesFrozenOwnerOrApprovalRouteAndChecksResponse(t *tes
 		requestedPaths = append(requestedPaths, request.URL.Path)
 		fixture, ok := fixtures[request.URL.Path]
 		if !ok || request.Header.Get("Authorization") != "Bearer frozen-employee-session" ||
-			request.Header.Get("If-Match") != fixture.file.SHA256 || request.Header.Get("Accept-Encoding") != "identity" {
+			request.Header.Get("If-Match") != `"`+fixture.file.SHA256+`"` || request.Header.Get("Accept-Encoding") != "identity" {
 			http.Error(writer, "not found", http.StatusNotFound)
 			return
 		}

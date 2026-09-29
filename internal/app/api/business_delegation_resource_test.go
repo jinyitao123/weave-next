@@ -55,7 +55,7 @@ func TestVerifyForgeFilesUsesExactFrozenOriginalSourceAndSHA(t *testing.T) {
 			return
 		}
 		paths = append(paths, request.URL.Path)
-		if request.Header.Get("If-Match") != digest || request.Header.Get("Accept-Encoding") != "identity" {
+		if request.Header.Get("If-Match") != `"`+digest+`"` || request.Header.Get("Accept-Encoding") != "identity" {
 			http.Error(writer, "stale source", http.StatusPreconditionFailed)
 			return
 		}
