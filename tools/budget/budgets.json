@@ -332,6 +332,17 @@
         "lines_added": 134,
         "production_lines_added": 69
       }
+    },
+    {
+      "date": "2026-09-29",
+      "source_commit": "ad0329a416ad16cce6c8bc1aac4855407bd184df",
+      "reason": "Repair the development-stage recorder decorator dropping the existing verified-delivery interface in production assembly. Preserve final result metadata and verification fences, keep trial outputs developer-scoped, and exercise the same decorator in the real PostgreSQL CLI/Loom delivery matrix. Exact 30 production and 43 regression lines; no package, dependency, or spare allowance growth.",
+      "app": {
+        "previous_lines": 82646,
+        "previous_production_lines": 61625,
+        "lines_added": 73,
+        "production_lines_added": 30
+      }
     }
   ],
   "migration_targets": {
@@ -394,8 +405,8 @@
     ]
   },
   "app": {
-    "lines": 82646,
-    "production_lines": 61625,
+    "lines": 82719,
+    "production_lines": 61655,
     "packages": 30,
     "external_dependencies": 7,
     "allowed_dependencies": [
