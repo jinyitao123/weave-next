@@ -211,20 +211,36 @@ func newDevelopmentTrialOutputFixture(t *testing.T, workerCount int) *developmen
 	if _, err := snapshot.NewStore(pool).Create(ctx, snap); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := pool.Exec(ctx, `INSERT INTO weave_task_queue(id,workspace_id,agent,source,status,kind,context_key,payload,run_id,source_ref,started_at,completed_at)
-		VALUES($1,$2,'trial-lead','api','completed','team_workflow',$3,'{}'::jsonb,$4,$5,$6,$6)`,
-		taskID, workspaceID, "development:"+requestID, runID, triggerSource, now); err != nil {
+	const workflowID = "trial-workflow"
+	if _, err := pool.Exec(ctx, `INSERT INTO weave_team_workflows(workspace_id,id,team_id,name)
+		VALUES($1,$2,$3,'Trial output workflow')`, workspaceID, workflowID, created.Team.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO weave_team_workflow_versions(workspace_id,workflow_id,version,status,trigger_config,graph_definition,created_by)
+		VALUES($1,$2,1,'draft',$3::jsonb,$4::jsonb,$5)`,
+		workspaceID, workflowID, `{"schema_version":1}`, `{"schema_version":1}`, actorID); err != nil {
+		t.Fatal(err)
+	}
+	actorSubject, err := json.Marshal(execution.Subject{WorkspaceID: workspaceID, UserID: actorID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO weave_task_queue(
+		id,workspace_id,agent,source,status,kind,identity_kind,identity_schema_version,
+		workflow_id,workflow_version,run_snapshot_id,actor_subject,context_key,payload,run_id,source_ref,started_at,completed_at
+	) VALUES($1,$2,NULL,'api','completed','team_workflow','team_workflow',2,$3,1,$4,$7::jsonb,$5,'{}'::jsonb,$4,$6,$8,$8)`,
+		taskID, workspaceID, workflowID, runID, "development:"+requestID, triggerSource, string(actorSubject), now); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := pool.Exec(ctx, `INSERT INTO weave_team_runs(workspace_id,run_id,status,team_run_generation,execution_lease_epoch,resume_generation,
 		team_id,workflow_id,workflow_version,run_snapshot_id,source_kind,source_task_id,establish_idempotency_key,created_at,updated_at,terminal_at)
-		VALUES($1,$2,'succeeded',0,0,0,$3,'trial-workflow',1,$2,'api',$4,$5,$6,$6,$6)`,
-		workspaceID, runID, created.Team.ID, taskID, "trial-output:"+requestID, now); err != nil {
+		VALUES($1,$2,'succeeded',0,0,0,$3,$7,1,$2,'api',$4,$5,$6,$6,$6)`,
+		workspaceID, runID, created.Team.ID, taskID, "trial-output:"+requestID, now, workflowID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := pool.Exec(ctx, `INSERT INTO weave_team_development_trials(workspace_id,team_id,request_id,revision,workflow_id,actor_id,request_digest,request,receipt)
-		VALUES($1,$2,$3::uuid,7,'trial-workflow',$4,$5,'{}'::jsonb,jsonb_build_object('run_id',$6))`,
-		workspaceID, created.Team.ID, requestID, actorID, strings.Repeat("c", 64), runID); err != nil {
+		VALUES($1,$2,$3::uuid,7,$4,$5,$6,'{}'::jsonb,jsonb_build_object('run_id',$7))`,
+		workspaceID, created.Team.ID, requestID, workflowID, actorID, strings.Repeat("c", 64), runID); err != nil {
 		t.Fatal(err)
 	}
 
