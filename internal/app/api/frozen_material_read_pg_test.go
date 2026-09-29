@@ -53,7 +53,7 @@ func TestLoomMaterialReadStaysWithinFrozenRunInputRealPG(t *testing.T) {
 		}
 		forgeRequests.Add(1)
 		fileSHA := dispatchInputDigest(content)
-		if request.Header.Get("If-Match") != fileSHA {
+		if request.Header.Get("If-Match") != `"`+fileSHA+`"` {
 			writer.WriteHeader(http.StatusPreconditionFailed)
 			return
 		}

@@ -382,9 +382,16 @@ func (s *Server) handleRegisterDispatchInput(c echo.Context) error {
 		if actionsErr != nil {
 			return workflowError(c, http.StatusUnprocessableEntity, "business_action_scope_invalid", actionsErr.Error())
 		}
-		preparedDelegation, err = s.prepareBusinessDelegation(c, actions, request.Resources, request.BusinessRecord)
-		if err != nil {
-			return err
+		var preparationErr *businessDelegationPreparationError
+		preparedDelegation, preparationErr = s.prepareBusinessDelegation(
+			c.Request().Context(), workspaceID, userID, c.Request().Header.Get(forgeDelegationHeader),
+			actions, request.Resources, request.BusinessRecord,
+		)
+		if preparationErr != nil {
+			if preparationErr.cause != nil {
+				return workflowStoreFailure(c, preparationErr.cause)
+			}
+			return workflowError(c, preparationErr.status, preparationErr.code, preparationErr.message)
 		}
 	}
 	encoded, _ := json.Marshal(request)
