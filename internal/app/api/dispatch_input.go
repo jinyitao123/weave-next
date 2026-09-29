@@ -200,9 +200,6 @@ func validDispatchInputResources(resources []dispatchInputResource) bool {
 	if len(resources) == 0 {
 		return true
 	}
-	if len(resources) > 8 {
-		return false
-	}
 	seen := make(map[string]bool, len(resources))
 	seenMaterialIDs := make(map[string]bool, len(resources))
 	var totalBytes int64

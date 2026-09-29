@@ -93,6 +93,16 @@ func TestDispatchInputFrozenResourceBudgetMatchesMaterialContract(t *testing.T) 
 	if validDispatchInputResources(resources) {
 		t.Fatal("accepted originals above the 8 MiB aggregate limit")
 	}
+	smallReferences := make([]dispatchInputResource, 9)
+	for index := range smallReferences {
+		smallReferences[index] = dispatchInputResource{
+			Type: "forge-file", ID: fmt.Sprintf("small-file-%d", index), Name: fmt.Sprintf("材料-%d.txt", index),
+			Bytes: 1, SHA256: fmt.Sprintf("%064x", index+1),
+		}
+	}
+	if !validDispatchInputResources(smallReferences) {
+		t.Fatal("rejected nine small file references below the unchanged aggregate byte limit")
+	}
 }
 
 func TestAuthorizedBusinessActionsRequireAnExplicitPublishedSubset(t *testing.T) {

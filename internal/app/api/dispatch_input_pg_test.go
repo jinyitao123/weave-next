@@ -201,9 +201,12 @@ func TestDispatchInputFreezesForgeMaterialWithoutGrantingBusinessActionRealPG(t 
 	version := 1
 	registration := dispatchInputRegistrationFixture("review-session", "只复核这份固定材料", "")
 	registration.WorkflowID, registration.WorkflowVersion = "flow", &version
-	registration.Resources = []dispatchInputResource{{
-		Type: "forge-file", ID: uuid.NewString(), Name: "review.md", Bytes: int64(len(content)), SHA256: dispatchInputDigest(content),
-	}}
+	for index := 0; index < 9; index++ {
+		registration.Resources = append(registration.Resources, dispatchInputResource{
+			Type: "forge-file", ID: uuid.NewString(), Name: fmt.Sprintf("review-%d.md", index+1), MediaType: "text/markdown",
+			Bytes: int64(len(content)), SHA256: dispatchInputDigest(content),
+		})
+	}
 	body, _ := json.Marshal(registration)
 	c, recorder := dispatchInputTestContext(body, "/v1/workbench/dispatch-inputs", "ws", "user")
 	c.Request().Header.Set(forgeDelegationHeader, "Bearer review-token")
@@ -221,6 +224,14 @@ func TestDispatchInputFreezesForgeMaterialWithoutGrantingBusinessActionRealPG(t 
 	}
 	if string(actions) != "[]" {
 		t.Fatalf("review-only delegation granted non-empty actions: %s", actions)
+	}
+	var frozenResources []map[string]any
+	var frozenResourceJSON []byte
+	if err := pool.QueryRow(t.Context(), `SELECT resources FROM weave_task_business_delegations WHERE workspace_id='ws' AND input_revision_id=$1`, receipt.InputRevisionID).Scan(&frozenResourceJSON); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(frozenResourceJSON, &frozenResources); err != nil || len(frozenResources) != 9 {
+		t.Fatalf("nine-file admission stored %d frozen resources: err=%v", len(frozenResources), err)
 	}
 }
 
