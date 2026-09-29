@@ -359,7 +359,7 @@ func TestReadForgeOriginalUsesFrozenOwnerOrApprovalRouteAndChecksResponse(t *tes
 	approvalBytes := []byte("%PDF-1.7\napproval bytes")
 	ownerSHA, approvalSHA := dispatchInputDigestBytes(ownerBytes), dispatchInputDigestBytes(approvalBytes)
 	ownerPath := "/api/v1/workbench/materials/file-owner/original"
-	approvalPath := "/api/v1/approvals/requests/request-owner-1/workbench-context/files/file-approval/original"
+	approvalPath := "/api/v1/approvals/requests/request-owner-1/workbench-history/files/file-approval/original"
 	fixtures := map[string]struct {
 		file ForgeOriginalReference
 		body []byte
