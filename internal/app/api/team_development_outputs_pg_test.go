@@ -202,7 +202,7 @@ func newDevelopmentTrialOutputFixture(t *testing.T, workerCount int) *developmen
 		Subject: execution.Subject{WorkspaceID: workspaceID, UserID: actorID}, RunID: runID, WorkspaceID: workspaceID,
 		TeamID: created.Team.ID, SnapshotSchemaVersion: 2, Mode: "free_collab",
 		LeadAvatarID: lead.ID, LeadAvatarVersion: lead.Version,
-		WorkerVersions: workerVersions, TeamWorkerSnapshot: workerSnapshot,
+		WorkerVersions: workerVersions, TeamWorkerSnapshot: workerSnapshot, InlineDependencies: json.RawMessage(`{}`),
 		AdmissionDecision: json.RawMessage(`{"schema_version":1,"team_active":true,"workflow_active":null,"workers_enabled":true,"version_blocked":null,"decided_at":"2026-09-29T00:00:00Z"}`),
 		RunAssociations:   json.RawMessage(`{"schema_version":1,"parent_run_id":null,"source_snapshot_id":null,"task_group_id":null}`),
 		TriggerSourceV2:   json.RawMessage(fmt.Sprintf(`{"schema_version":1,"type":"api","source_ref":%q}`, triggerSource)), SourceRef: triggerSource,
