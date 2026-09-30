@@ -387,6 +387,16 @@
         "lines_added": 63,
         "production_lines_added": 3
       }
+    },
+    {
+      "date": "2026-09-30",
+      "reason": "Use the successful Forge action receipt to keep a needs_input terminal notification as a result and describe the model's missing-item list as an opinion; preserve revision_required when there is no successful action. Add real PostgreSQL receipt-combination and single-delivery regression coverage. Exact measured limits with no spare allowance; package and dependency limits unchanged.",
+      "app": {
+        "previous_lines": 82782,
+        "previous_production_lines": 61658,
+        "lines_added": 61,
+        "production_lines_added": 9
+      }
     }
   ],
   "migration_targets": {
@@ -449,8 +459,8 @@
     ]
   },
   "app": {
-    "lines": 82782,
-    "production_lines": 61658,
+    "lines": 82843,
+    "production_lines": 61667,
     "packages": 30,
     "external_dependencies": 7,
     "allowed_dependencies": [
