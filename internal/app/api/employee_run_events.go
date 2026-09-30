@@ -219,8 +219,12 @@ func (worker *employeeRunEventWorker) materialize(ctx context.Context) error {
 		  WHEN COALESCE(business_action_summary.failed_count,0)>0 OR COALESCE(business_action_summary.unknown_count,0)>0
 		    THEN '（业务动作需核对）' ELSE '' END||'：'||team_name,300),
 		'summary',left(CASE
+			WHEN business_action_summary.action_count IS NULL
+				THEN '平台回执：本轮 Forge 业务动作调用记录为 0 条。模型摘要或团队成果不证明业务写入或正式业务状态。'
+			ELSE '' END||CASE
 		  WHEN status='succeeded' AND workbench_result->>'disposition'='needs_input' THEN
-			'团队检查结论：'||COALESCE(NULLIF(workbench_result->>'summary',''),'本轮检查发现需要补充的信息。')||CASE
+			CASE WHEN business_action_summary.action_count IS NULL THEN '团队检查摘要（模型输出）：' ELSE '团队检查结论：' END||
+			COALESCE(NULLIF(workbench_result->>'summary',''),'本轮检查发现需要补充的信息。')||CASE
 			  WHEN CASE WHEN jsonb_typeof(workbench_result->'missing_items')='array' THEN jsonb_array_length(workbench_result->'missing_items') ELSE 0 END>0 THEN ' 需要补充：'||(
 				SELECT string_agg(item.value,'；') FROM jsonb_array_elements_text(workbench_result->'missing_items') AS item(value)
 			  ) ELSE '' END
@@ -240,13 +244,13 @@ func (worker *employeeRunEventWorker) materialize(ctx context.Context) error {
 			'。业务动作调用结果：'||business_action_summary.summary||
 			'本消息中的动作结果只反映调用回执；正式审批状态请以 Forge 业务记录为准。'
 		  WHEN status='succeeded' AND workbench_result->>'disposition'='complete' THEN
-			'团队检查结论：'||COALESCE(NULLIF(workbench_result->>'summary',''),'本轮检查已完成。')
-		  WHEN status='succeeded' AND deliverable_content<>'' THEN '团队运行状态：已完成。团队成果：'||deliverable_content
+			'团队检查摘要（模型输出）：'||COALESCE(NULLIF(workbench_result->>'summary',''),'本轮检查已完成。')
+		  WHEN status='succeeded' AND deliverable_content<>'' THEN '团队运行状态：已完成。团队成果（模型输出）：'||deliverable_content
 		  WHEN status='succeeded' THEN '团队运行状态：已完成。团队工作已结束，可在桌面查看结果。'
 		  WHEN status='cancelled' THEN '团队运行状态：已取消。'
 		  WHEN status='abandoned' THEN '团队运行状态：已放弃。'
 		  WHEN cause_summary IS NOT NULL THEN '团队运行状态：失败。团队处理失败：'||cause_summary
-		  ELSE '团队运行状态：失败。团队处理失败，请在桌面查看运行记录。' END||CASE
+			ELSE '团队运行状态：失败。团队处理失败，请在桌面查看运行记录。' END||CASE
 			WHEN status='failed' AND business_action_summary.action_count IS NOT NULL AND cause_summary IS NOT NULL
 			  THEN '团队处理失败：'||cause_summary ELSE '' END,4000),
 		'occurredAt',terminal_at,
