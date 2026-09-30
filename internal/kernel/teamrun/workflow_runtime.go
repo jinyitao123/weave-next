@@ -330,14 +330,15 @@ func (r *WorkflowSerialRuntime) withBusinessActionOutcomeContext(ctx context.Con
 		})
 	})
 	ctx = businessaction.WithActionOutcomeGuard(ctx, func(eventCtx context.Context, outcome businessaction.ActionOutcomeEvent) (businessaction.ActionOutcomeReplay, error) {
-		status, blocked, err := store.CheckBusinessActionReplay(
-			eventCtx, run.WorkspaceID, run.RunID, execution.NodeID(eventCtx), outcome.InvocationID,
-			outcome.CallID, outcome.InputRevisionID, outcome.CapabilityID, outcome.RecordID,
-		)
+		decision, err := store.CheckBusinessActionReplay(eventCtx, BusinessActionReplayCheck{
+			WorkspaceID: run.WorkspaceID, RunID: run.RunID, NodeID: execution.NodeID(eventCtx),
+			InvocationID: outcome.InvocationID, CallID: outcome.CallID, InputRevisionID: outcome.InputRevisionID,
+			CapabilityID: outcome.CapabilityID, RecordID: outcome.RecordID, ParamsSHA256: outcome.ParamsSHA256,
+		})
 		if err != nil {
 			return businessaction.ActionOutcomeReplay{}, err
 		}
-		return businessaction.ActionOutcomeReplay{Blocked: blocked, Status: status}, nil
+		return businessaction.ActionOutcomeReplay{Blocked: decision.Blocked, Status: decision.Status, SameParams: decision.SameParams}, nil
 	})
 	return ctx
 }

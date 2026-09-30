@@ -20,7 +20,10 @@ var ErrActionOutcomeUnresolved = errors.New("Forge action outcome remains unreso
 
 // ActionOutcomeEvent contains only the scoped provenance needed to establish
 // which frozen business action ran. It deliberately excludes action params,
-// credentials, response bodies, and model text.
+// credentials, response bodies, and model text. ParamsSHA256 is the digest of
+// the effective upstream request (action, object, record and every parameter
+// including platform-injected ones); it identifies the same write across a
+// member restart, where the model's call ID changes, without storing the params.
 type ActionOutcomeEvent struct {
 	Source             string `json:"source"`
 	Phase              string `json:"phase"`
@@ -34,14 +37,21 @@ type ActionOutcomeEvent struct {
 	InputRevisionID    string `json:"input_revision_id"`
 	RecordID           string `json:"record_id,omitempty"`
 	FrozenRecordSHA256 string `json:"frozen_record_sha256,omitempty"`
+	ParamsSHA256       string `json:"params_sha256,omitempty"`
 	Status             string `json:"status,omitempty"`
 }
 
 type ActionOutcomeRecorder func(context.Context, ActionOutcomeEvent) error
 
+// ActionOutcomeReplay is the guard's decision for one about-to-run action.
+// SameParams is true when the block is because the same run already completed
+// the identical write (same capability, record and params) under another call
+// ID; the original call did succeed, so the member gets that fact instead of a
+// second Forge request.
 type ActionOutcomeReplay struct {
-	Blocked bool
-	Status  string
+	Blocked    bool
+	Status     string
+	SameParams bool
 }
 
 type ActionOutcomeGuard func(context.Context, ActionOutcomeEvent) (ActionOutcomeReplay, error)

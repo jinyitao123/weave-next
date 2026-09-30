@@ -404,6 +404,17 @@
         "lines_added": 135,
         "production_lines_added": 23
       }
+    },
+    {
+      "date": "2026-09-30",
+      "reason": "W4 content-based replay protection: a request digest (params_sha256) on the action receipt, a third replay-guard rule for an earlier success of the identical request, the guard call reshaped into a check/decision pair, and real-PostgreSQL, dispatcher and receipt round-trip tests. Exact measured limits with no spare allowance; package and dependency limits unchanged.",
+      "record": "docs/治理/2026-09-30-平台范围收窄整改登记.md",
+      "kernel": {
+        "previous_lines": 94361,
+        "previous_production_lines": 80419,
+        "lines_added": 396,
+        "production_lines_added": 48
+      }
     }
   ],
   "migration_targets": {
@@ -441,8 +452,8 @@
     ]
   },
   "kernel": {
-    "lines": 94361,
-    "production_lines": 80419,
+    "lines": 94757,
+    "production_lines": 80467,
     "packages": 49,
     "external_dependencies": 5,
     "allowed_dependencies": [

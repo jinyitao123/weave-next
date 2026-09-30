@@ -1061,6 +1061,11 @@ func (d *dispatcher) Dispatch(ctx context.Context, call contract.ToolCall) (*con
 			InputRevisionID: d.inputRevisionID, RecordID: input.RecordID,
 		}
 		outcome.FrozenRecordSHA256 = d.recordHashes[call.Name]
+		paramsDigest, digestErr := frozen.HashCanonicalJSON(upstream)
+		if digestErr != nil {
+			return nil, fmt.Errorf("digest Forge action request: %w", digestErr)
+		}
+		outcome.ParamsSHA256 = paramsDigest
 		replay, guardErr := checkActionOutcomeReplay(ctx, outcome)
 		if guardErr != nil {
 			return nil, fmt.Errorf("check prior Forge action outcome before dispatch: %w", guardErr)
@@ -1071,6 +1076,9 @@ func (d *dispatcher) Dispatch(ctx context.Context, call contract.ToolCall) (*con
 			switch replay.Status {
 			case ActionOutcomeStatusSucceeded:
 				message = "平台已确认该业务动作执行成功；本次没有再次调用 Forge。"
+				if replay.SameParams {
+					message = "同一运行已用完全相同的记录和参数成功执行过该业务动作；本次没有再次调用 Forge。如确需再次办理，请先核对业务记录并调整参数。"
+				}
 			case ActionOutcomeStatusFailed:
 				message, isError = "平台已记录该业务动作返回失败；本次没有再次调用 Forge。", true
 			default:

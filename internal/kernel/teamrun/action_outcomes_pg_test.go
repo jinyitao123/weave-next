@@ -27,6 +27,16 @@ func recordActionActivity(t *testing.T, store *PGActivityStore, event ActivityEv
 	}
 }
 
+// checkReplay keeps the identity-and-record call shape of the original guard
+// tests; it does not supply a params digest, so the same-params rule is off.
+func checkReplay(ctx context.Context, store *PGActivityStore, workspaceID, runID, nodeID, invocationID, callID, inputRevisionID, capabilityID, recordID string) (string, bool, error) {
+	decision, err := store.CheckBusinessActionReplay(ctx, BusinessActionReplayCheck{
+		WorkspaceID: workspaceID, RunID: runID, NodeID: nodeID, InvocationID: invocationID, CallID: callID,
+		InputRevisionID: inputRevisionID, CapabilityID: capabilityID, RecordID: recordID,
+	})
+	return decision.Status, decision.Blocked, err
+}
+
 func TestPGActionOutcomePersistsUnknownReplayGuardAndLimitRealPG(t *testing.T) {
 	h := newProcessNextHarness(t)
 	runID := "action-outcome-run"
@@ -48,12 +58,12 @@ func TestPGActionOutcomePersistsUnknownReplayGuardAndLimitRealPG(t *testing.T) {
 	if err != nil || len(outcomes) != 1 || outcomes[0].Status != "unknown" {
 		t.Fatalf("started-only action did not survive restart as unknown: outcomes=%+v err=%v", outcomes, err)
 	}
-	status, blocked, err := fresh.CheckBusinessActionReplay(ctx, "workspace-1", runID, "review", "snapshot/0/review", "new-call-id",
+	status, blocked, err := checkReplay(ctx, fresh, "workspace-1", runID, "review", "snapshot/0/review", "new-call-id",
 		"revision-1", "forge:action:sales_contract.ContractSubmit", "private-record-id")
 	if err != nil || !blocked || status != "unknown" {
 		t.Fatalf("unknown action was not guarded from blind retry: status=%s blocked=%v err=%v", status, blocked, err)
 	}
-	_, blocked, err = fresh.CheckBusinessActionReplay(ctx, "workspace-1", runID, "review", "snapshot/0/review", "new-call-id",
+	_, blocked, err = checkReplay(ctx, fresh, "workspace-1", runID, "review", "snapshot/0/review", "new-call-id",
 		"revision-1", "forge:action:sales_contract.ContractSubmit", "another-record")
 	if err != nil || blocked {
 		t.Fatalf("unknown action guard crossed the frozen record boundary: blocked=%v err=%v", blocked, err)
@@ -70,7 +80,7 @@ func TestPGActionOutcomePersistsUnknownReplayGuardAndLimitRealPG(t *testing.T) {
 	if err != nil || len(outcomes) != 1 || outcomes[0].Status != "succeeded" {
 		t.Fatalf("completed action was not durable: outcomes=%+v err=%v", outcomes, err)
 	}
-	_, blocked, err = fresh.CheckBusinessActionReplay(ctx, "workspace-1", runID, "review", "snapshot/0/review", "new-call-id",
+	_, blocked, err = checkReplay(ctx, fresh, "workspace-1", runID, "review", "snapshot/0/review", "new-call-id",
 		"revision-1", "forge:action:sales_contract.ContractSubmit", "private-record-id")
 	if err != nil || blocked {
 		t.Fatalf("a confirmed result was treated as an unknown replay: blocked=%v err=%v", blocked, err)
@@ -147,7 +157,7 @@ func TestPGConcurrentActionStartsReserveOneUnresolvedWriteRealPG(t *testing.T) {
 		workers.Add(1)
 		go func() {
 			defer workers.Done()
-			_, blocked, err := store.CheckBusinessActionReplay(ctx, "workspace-1", runID,
+			_, blocked, err := checkReplay(ctx, store, "workspace-1", runID,
 				"lead", "snapshot/0/lead", callID, "revision-1",
 				"forge:action:sales_contract.ContractSubmit", "private-record-id")
 			prechecked <- precheck{callID: callID, blocked: blocked, err: err}
