@@ -3,7 +3,12 @@ package teamrun
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 	"testing"
+
+	"github.com/jinyitao123/weave/internal/kernel/businessaction"
+	"github.com/jinyitao123/weave/internal/kernel/mcphost"
 )
 
 func TestClassifyFailureSeparatesRecoveryAuthority(t *testing.T) {
@@ -32,5 +37,22 @@ func TestClassifyFailureSeparatesRecoveryAuthority(t *testing.T) {
 				t.Fatalf("ClassifyFailure() = %#v, want class=%q retryable=%v", got, test.class, test.retryable)
 			}
 		})
+	}
+}
+
+func TestClassifyFailureNamesAnExpiredDelegationAndDoesNotOfferRetry(t *testing.T) {
+	for name, err := range map[string]error{
+		"member build":  fmt.Errorf("%w: %w", mcphost.ErrFailClosed, businessaction.ErrDelegationExpired),
+		"per call":      fmt.Errorf("business delegation no longer authorizes this action: %w", businessaction.ErrDelegationExpired),
+		"wrapped again": fmt.Errorf("member stage failed: %w", fmt.Errorf("tool: %w", businessaction.ErrDelegationExpired)),
+	} {
+		summary := ClassifyFailure(err)
+		if summary.Class != FailureClassInfrastructure || summary.Retryable || !strings.Contains(summary.Reason, "authorization") ||
+			!strings.Contains(summary.Reason, "resubmit") {
+			t.Errorf("%s: summary=%+v, want a non-retryable infrastructure failure telling the employee to resubmit", name, summary)
+		}
+	}
+	if summary := ClassifyFailure(errors.New("business delegation no longer authorizes this action")); strings.Contains(summary.Reason, "expired") {
+		t.Errorf("a scope error was reported as an expiry: %+v", summary)
 	}
 }

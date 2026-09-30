@@ -391,21 +391,6 @@ func (s *Store) Heartbeat(ctx context.Context, id, workerID string) error {
 	return nil
 }
 
-// Complete records a successful running task.
-func (s *Store) Complete(ctx context.Context, id string, result json.RawMessage, runID string) error {
-	now := s.clock.Now()
-	_, err := s.pool.Exec(ctx, `
-		UPDATE weave_task_queue
-		SET status=$1, result=$2, run_id=$3, stopped_epoch=claim_epoch, stopped_worker_id=worker_id, worker_id=NULL, lease_expires_at=NULL,
-			completed_at=$4, updated_at=$4
-		WHERE id=$5 AND status=$6
-	`, StatusCompleted, result, runID, now, id, StatusRunning)
-	if err != nil {
-		return fmt.Errorf("complete task: %w", err)
-	}
-	return nil
-}
-
 func (s *Store) completeClaimed(ctx context.Context, id, workerID string, result json.RawMessage, runID string) error {
 	now := s.clock.Now()
 	tag, err := s.pool.Exec(ctx, `
@@ -426,21 +411,6 @@ func (s *Store) completeClaimed(ctx context.Context, id, workerID string, result
 // CompleteClaimed records a successful task only while workerID still holds its lease.
 func (s *Store) CompleteClaimed(ctx context.Context, id, workerID string, result json.RawMessage, runID string) error {
 	return s.completeClaimed(ctx, id, workerID, result, runID)
-}
-
-// Fail records an unsuccessful running task.
-func (s *Store) Fail(ctx context.Context, id, errMsg string) error {
-	now := s.clock.Now()
-	_, err := s.pool.Exec(ctx, `
-		UPDATE weave_task_queue
-		SET status=$1, error=$2, stopped_epoch=claim_epoch, stopped_worker_id=worker_id, worker_id=NULL, lease_expires_at=NULL,
-			completed_at=$3, updated_at=$3
-		WHERE id=$4 AND status=$5
-	`, StatusFailed, errMsg, now, id, StatusRunning)
-	if err != nil {
-		return fmt.Errorf("fail task: %w", err)
-	}
-	return nil
 }
 
 func (s *Store) failClaimed(ctx context.Context, id, workerID, errMsg string) error {

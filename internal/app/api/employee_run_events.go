@@ -332,6 +332,10 @@ func (worker *employeeRunEventWorker) finish(ctx context.Context, event employee
 	permanent := status == http.StatusBadRequest || status == http.StatusUnauthorized ||
 		status == http.StatusForbidden || status == http.StatusConflict || status == http.StatusUnprocessableEntity
 	if permanent {
+		// Nothing retries this event and the employee never sees the result, so
+		// it must be loud; `weave ops events list-failed` and `redeliver` recover it.
+		slog.Error("employee run event permanently rejected by Forge; not retried",
+			"event_id", event.EventID, "status", status, "error", message)
 		_, err := worker.Pool.Exec(ctx, `UPDATE weave_employee_run_event_outbox SET
 			delivery_state='permanent_failure',claimed_at=NULL,last_error=$2,updated_at=statement_timestamp()
 			WHERE event_id=$1 AND delivery_state='delivering'`, event.EventID, message)

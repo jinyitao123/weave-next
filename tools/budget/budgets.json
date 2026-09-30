@@ -415,6 +415,29 @@
         "lines_added": 396,
         "production_lines_added": 48
       }
+    },
+    {
+      "date": "2026-09-30",
+      "reason": "W5 correctness fixes: delete the unfenced task Complete/Fail, add the operator-only permanent-failure list and redeliver for employee run events, a shared registration and runtime file limit, and an expiry sentinel with its failure classification, with real-PostgreSQL and unit tests. Exact measured limits with no spare allowance; package and dependency limits unchanged.",
+      "record": "docs/治理/2026-09-30-平台范围收窄整改登记.md",
+      "base": {
+        "previous_lines": 8192,
+        "previous_production_lines": 6684,
+        "lines_added": 10,
+        "production_lines_added": 10
+      },
+      "kernel": {
+        "previous_lines": 94757,
+        "previous_production_lines": 80467,
+        "lines_added": 91,
+        "production_lines_added": -7
+      },
+      "app": {
+        "previous_lines": 82917,
+        "previous_production_lines": 61681,
+        "lines_added": 301,
+        "production_lines_added": 91
+      }
     }
   ],
   "migration_targets": {
@@ -440,8 +463,8 @@
     }
   },
   "base": {
-    "lines": 8192,
-    "production_lines": 6684,
+    "lines": 8202,
+    "production_lines": 6694,
     "packages": 9,
     "external_dependencies": 4,
     "allowed_dependencies": [
@@ -452,8 +475,8 @@
     ]
   },
   "kernel": {
-    "lines": 94757,
-    "production_lines": 80467,
+    "lines": 94848,
+    "production_lines": 80460,
     "packages": 49,
     "external_dependencies": 5,
     "allowed_dependencies": [
@@ -477,8 +500,8 @@
     ]
   },
   "app": {
-    "lines": 82917,
-    "production_lines": 61681,
+    "lines": 83218,
+    "production_lines": 61772,
     "packages": 30,
     "external_dependencies": 7,
     "allowed_dependencies": [
