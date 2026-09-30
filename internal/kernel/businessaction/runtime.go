@@ -157,15 +157,19 @@ func (s *Store) dispatcher(ctx context.Context, requested []string, bindings []f
 		clear(bound.token)
 		return nil, nil
 	}
-	endpoint, err := url.Parse(bound.issuer)
-	if err != nil || endpoint.Scheme == "" || endpoint.Host == "" || endpoint.User != nil ||
-		(endpoint.Scheme != "http" && endpoint.Scheme != "https") {
+	metadataBaseURL, err := url.Parse(bound.issuer)
+	if err != nil || metadataBaseURL.Scheme == "" || metadataBaseURL.Host == "" || metadataBaseURL.User != nil ||
+		(metadataBaseURL.Scheme != "http" && metadataBaseURL.Scheme != "https") {
 		clear(bound.token)
 		return nil, fmt.Errorf("%w: Forge delegation issuer is invalid", mcphost.ErrFailClosed)
 	}
-	endpoint.Path = "/api/v1/mcp"
-	endpoint.RawPath, endpoint.RawQuery, endpoint.Fragment = "", "", ""
-	headers := map[string]string{"Authorization": "Bearer " + string(bound.token)}
+	metadataBaseURL.Path, metadataBaseURL.RawPath, metadataBaseURL.RawQuery, metadataBaseURL.Fragment = "", "", "", ""
+	mcpEndpoint := *metadataBaseURL
+	mcpEndpoint.Path = "/api/v1/mcp"
+	mcpEndpoint.RawPath, mcpEndpoint.RawQuery, mcpEndpoint.Fragment = "", "", ""
+	authorization := append([]byte("Bearer "), bound.token...)
+	defer clear(authorization)
+	headers := map[string]string{"Authorization": string(authorization)}
 	clear(bound.token)
 	runAction := contract.ToolDef{
 		Name: "run_action", Description: "Invoke the server-selected Forge business action.",
@@ -181,12 +185,12 @@ func (s *Store) dispatcher(ctx context.Context, requested []string, bindings []f
 		clearHeader(headers)
 		return nil, err
 	}
-	host := mcphost.NewHTTPHost(endpoint.String(), mcphost.WithHeaders(headers), mcphost.WithFilter([]string{"list_actions", "run_action"}), mcphost.WithToolContract(toolContract), mcphost.WithUnknownDispatchOutcome(),
+	host := mcphost.NewHTTPHost(mcpEndpoint.String(), mcphost.WithHeaders(headers), mcphost.WithFilter([]string{"list_actions", "run_action"}), mcphost.WithToolContract(toolContract), mcphost.WithUnknownDispatchOutcome(),
 		mcphost.WithDispatchGuard(func(callCtx context.Context) error {
 			return s.validate(callCtx, bound.inputRevisionID, bound.actions)
 		}))
 	clearHeader(headers)
-	catalog, err := readActionCatalog(ctx, host)
+	catalog, err := readActionCatalog(ctx, host, bound.actions, forgeObjectMetadataReader{baseURL: *metadataBaseURL, authorization: authorization})
 	if err != nil {
 		return nil, err
 	}
@@ -439,6 +443,7 @@ type dispatcher struct {
 	records         map[string]string
 	recordHashes    map[string]string
 	params          map[string]map[string]any
+	fileSelections  map[string]map[string]fileParameterSelection
 	trackOutcomes   bool
 	inputRevisionID string
 }
@@ -464,6 +469,15 @@ type actionMetadata struct {
 	RequiresRecord       bool          `json:"requiresRecord,omitempty"`
 	RequiresConfirmation bool          `json:"requiresConfirmation,omitempty"`
 	Params               []actionParam `json:"params,omitempty"`
+}
+
+// fileParameterSelection is the exact set a model may choose from for a
+// single-valued Forge file parameter. Multi-valued file parameters are
+// server-injected from an explicit materials.ids binding instead.
+type fileParameterSelection struct {
+	Required bool
+	IDs      []string
+	Names    map[string]string
 }
 
 // DevelopmentAction is a credential-free Forge action definition frozen with
@@ -532,53 +546,6 @@ func developmentCatalog(actions []DevelopmentAction) map[string]actionMetadata {
 	return catalog
 }
 
-func readActionCatalog(ctx context.Context, host contract.ToolDispatcher) (map[string]actionMetadata, error) {
-	result, err := host.Dispatch(ctx, contract.ToolCall{ID: "forge-action-catalog", Name: "list_actions", Args: `{}`})
-	if err != nil {
-		return nil, fmt.Errorf("%w: Forge action catalog unavailable: %v", mcphost.ErrFailClosed, err)
-	}
-	if result == nil || result.IsError {
-		message := "empty response"
-		if result != nil && strings.TrimSpace(result.Content) != "" {
-			message = strings.TrimSpace(result.Content)
-		}
-		return nil, fmt.Errorf("%w: Forge action catalog unavailable: %s", mcphost.ErrFailClosed, message)
-	}
-	var payload struct {
-		Actions []json.RawMessage `json:"actions"`
-	}
-	if err := json.Unmarshal([]byte(result.Content), &payload); err != nil {
-		return nil, fmt.Errorf("%w: Forge action catalog is invalid", mcphost.ErrFailClosed)
-	}
-	catalog := make(map[string]actionMetadata, len(payload.Actions))
-	for _, raw := range payload.Actions {
-		var item actionMetadata
-		if err := json.Unmarshal(raw, &item); err != nil {
-			return nil, fmt.Errorf("%w: Forge action catalog contains an invalid action", mcphost.ErrFailClosed)
-		}
-		var fields map[string]json.RawMessage
-		if err := json.Unmarshal(raw, &fields); err != nil {
-			return nil, fmt.Errorf("%w: Forge action catalog contains an invalid action", mcphost.ErrFailClosed)
-		}
-		if required, exists := fields["requiresRecord"]; !exists {
-			// Unknown metadata must never broaden a business action's record scope.
-			item.RequiresRecord = true
-		} else if string(required) != "true" && string(required) != "false" {
-			return nil, fmt.Errorf("%w: Forge action record requirement is invalid", mcphost.ErrFailClosed)
-		}
-		if strings.TrimSpace(item.Name) == "" || strings.TrimSpace(item.ObjectName) == "" ||
-			item.Name != strings.TrimSpace(item.Name) || item.ObjectName != strings.TrimSpace(item.ObjectName) {
-			continue
-		}
-		key := item.ObjectName + "." + item.Name
-		if _, exists := catalog[key]; exists {
-			return nil, fmt.Errorf("%w: Forge action catalog contains a duplicate action", mcphost.ErrFailClosed)
-		}
-		catalog[key] = item
-	}
-	return catalog, nil
-}
-
 func newDispatcher(host contract.ToolDispatcher, ids []string, catalog map[string]actionMetadata) (*dispatcher, error) {
 	return newDispatcherWithNotice(host, ids, catalog, "仅在当前员工明确授权且本次固定材料已核对时调用。")
 }
@@ -629,7 +596,10 @@ func newDispatcherWithBindings(host contract.ToolDispatcher, ids []string, catal
 	for _, binding := range normalized {
 		bindingByCapability[binding.CapabilityID] = binding.Parameters
 	}
-	d := &dispatcher{host: host, byTool: map[string]action{}, params: map[string]map[string]any{}}
+	d := &dispatcher{
+		host: host, byTool: map[string]action{}, params: map[string]map[string]any{},
+		fileSelections: map[string]map[string]fileParameterSelection{},
+	}
 	ordered := append([]string(nil), ids...)
 	sort.Strings(ordered)
 	for _, id := range ordered {
@@ -645,11 +615,11 @@ func newDispatcherWithBindings(host contract.ToolDispatcher, ids []string, catal
 		if !ok {
 			return nil, fmt.Errorf("%w: published Forge action %q is unavailable to the current employee", mcphost.ErrFailClosed, id)
 		}
-		injected, err := bindActionParameters(metadata, bindingByCapability[id], resources)
+		injected, fileSelections, err := bindActionParameters(metadata, bindingByCapability[id], resources)
 		if err != nil {
 			return nil, fmt.Errorf("%w: Forge action %q has invalid published parameter bindings: %v", mcphost.ErrFailClosed, id, err)
 		}
-		schema, err := actionInputSchemaWithBindings(metadata, bindingByCapability[id])
+		schema, err := actionInputSchemaWithBindings(metadata, bindingByCapability[id], fileSelections)
 		if err != nil {
 			return nil, fmt.Errorf("%w: Forge action %q has invalid input metadata: %v", mcphost.ErrFailClosed, id, err)
 		}
@@ -663,6 +633,7 @@ func newDispatcherWithBindings(host contract.ToolDispatcher, ids []string, catal
 		parsed.label = strings.TrimSpace(metadata.Label)
 		d.byTool[name] = parsed
 		d.params[name] = injected
+		d.fileSelections[name] = fileSelections
 		d.tools = append(d.tools, contract.ToolDef{
 			Name:        name,
 			Description: description + " " + notice,
@@ -677,10 +648,12 @@ func newDispatcherWithBindings(host contract.ToolDispatcher, ids []string, catal
 	return d, nil
 }
 
-type developmentHost struct{}
+type developmentHost struct {
+	syntheticMaterialCount int
+}
 
 func (developmentHost) ListTools(context.Context) ([]contract.ToolDef, error) { return nil, nil }
-func (developmentHost) Dispatch(_ context.Context, call contract.ToolCall) (*contract.ToolResult, error) {
+func (h developmentHost) Dispatch(_ context.Context, call contract.ToolCall) (*contract.ToolResult, error) {
 	if call.Name != "run_action" {
 		return &contract.ToolResult{CallID: call.ID, ToolName: call.Name, Content: "开发调试只允许模拟已绑定的业务动作", IsError: true}, nil
 	}
@@ -689,7 +662,7 @@ func (developmentHost) Dispatch(_ context.Context, call contract.ToolCall) (*con
 		return &contract.ToolResult{CallID: call.ID, ToolName: call.Name, Content: "调试动作输入无效", IsError: true}, nil
 	}
 	payload["simulated"] = true
-	payload["message"] = "隔离调试已验证动作名称、输入字段和成员调用路径；未访问 Forge，未写入业务数据。"
+	payload["message"] = fmt.Sprintf("隔离调试使用 %d 份合成材料验证动作名称、输入字段和成员调用路径；未访问 Forge，未写入业务数据。", h.syntheticMaterialCount)
 	content, _ := json.Marshal(payload)
 	return &contract.ToolResult{CallID: call.ID, ToolName: call.Name, Content: string(content)}, nil
 }
@@ -701,11 +674,11 @@ func newDevelopmentDispatcher(ids []string, actions []DevelopmentAction) (*dispa
 func newDevelopmentDispatcherWithBindings(ids []string, actions []DevelopmentAction, bindings []frozen.BusinessCapabilityBinding) (*dispatcher, error) {
 	checksum := sha256.Sum256([]byte("development-trial-material"))
 	resources := []delegatedResource{{Type: "forge-file", ID: "development-trial-material", Name: "试跑样例材料.txt", Bytes: 1, SHA256: hex.EncodeToString(checksum[:])}}
-	return newDispatcherWithBindings(developmentHost{}, ids, developmentCatalog(actions), bindings, resources, "隔离调试使用合成材料值验证参数映射；不会访问 Forge 或写入业务数据。")
+	return newDispatcherWithBindings(developmentHost{syntheticMaterialCount: len(resources)}, ids, developmentCatalog(actions), bindings, resources, "隔离调试使用合成材料值验证参数映射；不会访问 Forge 或写入业务数据。")
 }
 
 func actionInputSchema(metadata actionMetadata) (json.RawMessage, error) {
-	return actionInputSchemaWithBindings(metadata, nil)
+	return actionInputSchemaWithBindings(metadata, nil, nil)
 }
 
 func validateActionMetadata(metadata actionMetadata) error {
@@ -738,7 +711,11 @@ func validateActionMetadata(metadata actionMetadata) error {
 	return nil
 }
 
-func actionInputSchemaWithBindings(metadata actionMetadata, bindings []frozen.BusinessCapabilityParameterBinding) (json.RawMessage, error) {
+func actionInputSchemaWithBindings(
+	metadata actionMetadata,
+	bindings []frozen.BusinessCapabilityParameterBinding,
+	fileSelections map[string]fileParameterSelection,
+) (json.RawMessage, error) {
 	if err := validateActionMetadata(metadata); err != nil {
 		return nil, err
 	}
@@ -768,11 +745,42 @@ func actionInputSchemaWithBindings(metadata actionMetadata, bindings []frozen.Bu
 		if _, exists := paramProperties[name]; exists {
 			return nil, fmt.Errorf("duplicate parameter %q", name)
 		}
-		if _, isProtected := protected[name]; isProtected {
+		if strings.EqualFold(strings.TrimSpace(param.Type), "file") {
+			if _, bound := protected[name]; bound {
+				continue
+			}
+			if param.Multiple {
+				return nil, fmt.Errorf("multiple file parameter %q requires an explicit materials.ids binding", name)
+			}
+			selection, hasSelection := fileSelections[name]
+			if !hasSelection || len(selection.IDs) == 0 {
+				if param.Required {
+					return nil, fmt.Errorf("required file parameter %q has no current frozen materials", name)
+				}
+				continue
+			}
+			property := map[string]any{"type": "string", "enum": append([]string(nil), selection.IDs...)}
+			description := strings.TrimSpace(param.Description)
+			if description == "" {
+				description = strings.TrimSpace(param.Label)
+			}
+			available := make([]string, 0, len(selection.IDs))
+			for _, fileID := range selection.IDs {
+				available = append(available, fmt.Sprintf("%s（%s）", fileID, selection.Names[fileID]))
+			}
+			availability := "只能选择本轮冻结材料：" + strings.Join(available, "、")
+			if description != "" {
+				availability = description + "；" + availability
+			}
+			property["description"] = availability
+			paramProperties[name] = property
+			if param.Required {
+				paramRequired = append(paramRequired, name)
+			}
 			continue
 		}
-		if strings.EqualFold(strings.TrimSpace(param.Type), "file") {
-			return nil, fmt.Errorf("file parameter %q requires an explicit task-material binding", name)
+		if _, isProtected := protected[name]; isProtected {
+			continue
 		}
 		jsonType := normalizeActionParamType(param.Type)
 		switch jsonType {
@@ -821,10 +829,11 @@ func normalizeActionParamType(value string) string {
 	}
 }
 
-func bindActionParameters(metadata actionMetadata, bindings []frozen.BusinessCapabilityParameterBinding, resources []delegatedResource) (map[string]any, error) {
-	if len(bindings) == 0 {
-		return nil, nil
-	}
+func bindActionParameters(
+	metadata actionMetadata,
+	bindings []frozen.BusinessCapabilityParameterBinding,
+	resources []delegatedResource,
+) (map[string]any, map[string]fileParameterSelection, error) {
 	params := make(map[string]actionParam, len(metadata.Params))
 	for _, param := range metadata.Params {
 		name := param.Name
@@ -832,40 +841,83 @@ func bindActionParameters(metadata actionMetadata, bindings []frozen.BusinessCap
 			name = param.Field
 		}
 		if name == "" {
-			return nil, errors.New("Forge action parameter name is empty")
+			return nil, nil, errors.New("Forge action parameter name is empty")
 		}
 		if _, duplicate := params[name]; duplicate {
-			return nil, fmt.Errorf("Forge action parameter %q is duplicated", name)
+			return nil, nil, fmt.Errorf("Forge action parameter %q is duplicated", name)
 		}
 		params[name] = param
 	}
 	files := make([]delegatedResource, 0, len(resources))
+	seenFileIDs := make(map[string]struct{}, len(resources))
 	for _, resource := range resources {
 		if resource.Type == "forge-file" {
 			if strings.TrimSpace(resource.ID) == "" || strings.TrimSpace(resource.Name) == "" || resource.Bytes < 1 || !frozenSHA256.MatchString(resource.SHA256) {
-				return nil, errors.New("frozen Forge file resource is invalid")
+				return nil, nil, errors.New("frozen Forge file resource is invalid")
 			}
+			if _, duplicate := seenFileIDs[resource.ID]; duplicate {
+				return nil, nil, errors.New("frozen Forge file resources contain duplicate IDs")
+			}
+			seenFileIDs[resource.ID] = struct{}{}
 			files = append(files, resource)
 		}
 	}
+	bindingsByName := make(map[string]frozen.BusinessCapabilityParameterBinding, len(bindings))
+	for _, binding := range bindings {
+		if _, ok := params[binding.Name]; !ok {
+			return nil, nil, fmt.Errorf("Forge action parameter %q is not defined", binding.Name)
+		}
+		if _, duplicate := bindingsByName[binding.Name]; duplicate {
+			return nil, nil, fmt.Errorf("Forge action parameter %q has duplicate bindings", binding.Name)
+		}
+		bindingsByName[binding.Name] = binding
+	}
 	result := make(map[string]any, len(bindings))
+	fileSelections := make(map[string]fileParameterSelection)
 	for _, binding := range bindings {
 		param, ok := params[binding.Name]
 		if !ok {
-			return nil, fmt.Errorf("Forge action parameter %q is not defined", binding.Name)
+			return nil, nil, fmt.Errorf("Forge action parameter %q is not defined", binding.Name)
 		}
 		parameterType := strings.ToLower(strings.TrimSpace(param.Type))
-		if parameterType == "file" && (binding.Source != frozen.BusinessSourceMaterialID || param.Multiple) {
-			return nil, fmt.Errorf("file parameter %q supports only one explicitly bound file", binding.Name)
+		if parameterType == "file" {
+			if param.Multiple {
+				if binding.Source != frozen.BusinessSourceMaterialIDs {
+					return nil, nil, fmt.Errorf("multiple file parameter %q only accepts materials.ids", binding.Name)
+				}
+				if len(files) == 0 {
+					if param.Required {
+						return nil, nil, fmt.Errorf("required multiple file parameter %q has no current frozen materials", binding.Name)
+					}
+					continue
+				}
+				ids := make([]string, 0, len(files))
+				for _, file := range files {
+					ids = append(ids, file.ID)
+				}
+				result[binding.Name] = ids
+				continue
+			}
+			if binding.Source != frozen.BusinessSourceMaterialID {
+				return nil, nil, fmt.Errorf("single file parameter %q only accepts materials.single.id", binding.Name)
+			}
+			if len(files) != 1 {
+				return nil, nil, fmt.Errorf("a bound single-file parameter %q requires exactly one frozen Forge file", binding.Name)
+			}
+			result[binding.Name] = files[0].ID
+			continue
+		}
+		if binding.Source == frozen.BusinessSourceMaterialIDs {
+			return nil, nil, fmt.Errorf("materials.ids requires a multiple Forge file parameter, got %q", binding.Name)
 		}
 		if parameterType != "" && parameterType != "string" && parameterType != "text" && parameterType != "file" {
-			return nil, fmt.Errorf("Forge action parameter %q cannot receive a material value", binding.Name)
+			return nil, nil, fmt.Errorf("Forge action parameter %q cannot receive a material value", binding.Name)
 		}
 		var value string
 		switch binding.Source {
 		case frozen.BusinessSourceMaterialID, frozen.BusinessSourceMaterialName, frozen.BusinessSourceMaterialSHA256:
 			if len(files) != 1 {
-				return nil, errors.New("a unique-file parameter source requires exactly one frozen Forge file")
+				return nil, nil, errors.New("a unique-file parameter source requires exactly one frozen Forge file")
 			}
 			file := files[0]
 			switch binding.Source {
@@ -878,7 +930,7 @@ func bindActionParameters(metadata actionMetadata, bindings []frozen.BusinessCap
 			}
 		case frozen.BusinessSourceMaterialsManifest:
 			if len(files) == 0 {
-				return nil, errors.New("a material manifest parameter source requires at least one frozen Forge file")
+				return nil, nil, errors.New("a material manifest parameter source requires at least one frozen Forge file")
 			}
 			manifest := make([]map[string]string, 0, len(files))
 			for _, file := range files {
@@ -886,15 +938,71 @@ func bindActionParameters(metadata actionMetadata, bindings []frozen.BusinessCap
 			}
 			encoded, err := json.Marshal(manifest)
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			value = string(encoded)
 		default:
-			return nil, errors.New("material parameter source is unsupported")
+			return nil, nil, errors.New("material parameter source is unsupported")
 		}
 		result[binding.Name] = value
 	}
-	return result, nil
+	for name, param := range params {
+		if !strings.EqualFold(strings.TrimSpace(param.Type), "file") || param.Multiple {
+			continue
+		}
+		if _, bound := bindingsByName[name]; bound {
+			continue
+		}
+		if len(files) == 0 {
+			if param.Required {
+				return nil, nil, fmt.Errorf("required file parameter %q has no current frozen materials", name)
+			}
+			continue
+		}
+		selection := fileParameterSelection{Required: param.Required, Names: make(map[string]string, len(files))}
+		for _, file := range files {
+			selection.IDs = append(selection.IDs, file.ID)
+			selection.Names[file.ID] = file.Name
+		}
+		fileSelections[name] = selection
+	}
+	for name, param := range params {
+		if !strings.EqualFold(strings.TrimSpace(param.Type), "file") || !param.Multiple {
+			continue
+		}
+		binding, bound := bindingsByName[name]
+		if !bound || binding.Source != frozen.BusinessSourceMaterialIDs {
+			return nil, nil, fmt.Errorf("multiple file parameter %q requires an explicit materials.ids binding", name)
+		}
+	}
+	return result, fileSelections, nil
+}
+
+func validateFileParameterSelections(values map[string]any, selections map[string]fileParameterSelection) error {
+	for name, selection := range selections {
+		value, supplied := values[name]
+		if !supplied {
+			if selection.Required {
+				return errors.New("required current frozen file selection is missing")
+			}
+			continue
+		}
+		fileID, ok := value.(string)
+		if !ok {
+			return errors.New("current frozen file selection is invalid")
+		}
+		allowed := false
+		for _, candidate := range selection.IDs {
+			if fileID == candidate {
+				allowed = true
+				break
+			}
+		}
+		if !allowed {
+			return errors.New("selected file is outside the current frozen material set")
+		}
+	}
+	return nil
 }
 
 func (d *dispatcher) ListTools(context.Context) ([]contract.ToolDef, error) {
@@ -918,6 +1026,9 @@ func (d *dispatcher) Dispatch(ctx context.Context, call contract.ToolCall) (*con
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&input); err != nil {
 		return &contract.ToolResult{CallID: call.ID, ToolName: call.Name, Content: "业务动作参数无效", IsError: true}, nil
+	}
+	if err := validateFileParameterSelections(input.Params, d.fileSelections[call.Name]); err != nil {
+		return &contract.ToolResult{CallID: call.ID, ToolName: call.Name, Content: "本轮冻结文件选择无效：" + err.Error(), IsError: true}, nil
 	}
 	if d.records != nil {
 		// Protected identity comes from the frozen delegation, not model output.

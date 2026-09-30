@@ -123,6 +123,7 @@ const (
 	BusinessSourceMaterialID        = "materials.single.id"
 	BusinessSourceMaterialName      = "materials.single.name"
 	BusinessSourceMaterialSHA256    = "materials.single.sha256"
+	BusinessSourceMaterialIDs       = "materials.ids"
 	BusinessSourceMaterialsManifest = "materials.manifest_json"
 )
 

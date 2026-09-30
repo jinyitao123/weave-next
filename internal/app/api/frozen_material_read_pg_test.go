@@ -28,7 +28,7 @@ func TestLoomMaterialReadStaysWithinFrozenRunInputRealPG(t *testing.T) {
 	}
 	requestPaths := map[string]string{
 		"forge-file-A": "/api/v1/workbench/materials/forge-file-A/original",
-		"forge-file-B": "/api/v1/approvals/requests/approval-request-B/workbench-context/files/forge-file-B/original",
+		"forge-file-B": "/api/v1/approvals/requests/approval-request-B/workbench-history/files/forge-file-B/original",
 	}
 	var forgeReads atomic.Int32
 	var forgeRequests atomic.Int32

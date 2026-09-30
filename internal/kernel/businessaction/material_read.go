@@ -510,7 +510,7 @@ func ReadVerifiedForgeOriginal(ctx context.Context, issuer string, bearer []byte
 	if file.SourceKind == "owner" {
 		segments = []string{"api", "v1", "workbench", "materials", file.FileID, "original"}
 	} else if file.SourceKind == "approval" && file.RequestID != "" {
-		segments = []string{"api", "v1", "approvals", "requests", file.RequestID, "workbench-context", "files", file.FileID, "original"}
+		segments = []string{"api", "v1", "approvals", "requests", file.RequestID, "workbench-history", "files", file.FileID, "original"}
 	} else {
 		return errors.New("Forge original source is invalid")
 	}
