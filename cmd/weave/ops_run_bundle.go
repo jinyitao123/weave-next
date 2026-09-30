@@ -12,6 +12,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jinyitao123/weave/internal/app/api"
+	"github.com/jinyitao123/weave/internal/kernel/loomruntime"
 )
 
 // runOpsExportRun writes one run's stored state to a file. The file is created
@@ -134,4 +135,69 @@ func isLoopbackHost(host string) bool {
 	}
 	ip := net.ParseIP(host)
 	return ip != nil && ip.IsLoopback()
+}
+
+// runOpsReplayRun re-runs each member of a run from its recorded journal
+// without any model, tool or Forge call and without writing to the database,
+// so it may point at an imported copy or at the live database.
+func runOpsReplayRun(args []string, stdout, stderr io.Writer) int {
+	flags := flag.NewFlagSet("weave ops replay-run", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	workspace := flags.String("workspace", "", "workspace ID of the run")
+	run := flags.String("run", "", "team run ID")
+	member := flags.String("member", "", "replay only this member run ID")
+	if err := flags.Parse(args); err != nil || flags.NArg() != 0 || *workspace == "" || *run == "" {
+		fmt.Fprintln(stderr, "replay-run requires --workspace and --run")
+		return 2
+	}
+	ctx := context.Background()
+	pool, code := opsPool(ctx, stderr)
+	if pool == nil {
+		return code
+	}
+	defer pool.Close()
+	rows, err := pool.Query(ctx, `SELECT member_run_id,initial_state FROM weave_workflow_member_runs
+		WHERE workspace_id=$1 AND parent_run_id=$2 AND ($3='' OR member_run_id=$3) ORDER BY created_at,member_run_id`, *workspace, *run, *member)
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 1
+	}
+	type memberRow struct {
+		id      string
+		initial []byte
+	}
+	var members []memberRow
+	for rows.Next() {
+		var row memberRow
+		if err := rows.Scan(&row.id, &row.initial); err != nil {
+			rows.Close()
+			fmt.Fprintln(stderr, err)
+			return 1
+		}
+		members = append(members, row)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		fmt.Fprintln(stderr, err)
+		return 1
+	}
+	if len(members) == 0 {
+		fmt.Fprintf(stderr, "run %q has no member runs in workspace %q\n", *run, *workspace)
+		return 1
+	}
+	reports := make([]*loomruntime.MemberReplayReport, 0, len(members))
+	for _, row := range members {
+		entries, err := loomruntime.ReadMemberJournal(ctx, pool, *workspace, row.id)
+		if err != nil {
+			fmt.Fprintln(stderr, err)
+			return 1
+		}
+		reports = append(reports, loomruntime.ReplayMemberSegment(ctx, row.id, entries, row.initial))
+	}
+	encoder := json.NewEncoder(stdout)
+	encoder.SetIndent("", "  ")
+	if err := encoder.Encode(map[string]any{"run_id": *run, "members": reports}); err != nil {
+		return 1
+	}
+	return 0
 }

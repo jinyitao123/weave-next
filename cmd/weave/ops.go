@@ -20,6 +20,8 @@ commands:
   events redeliver [--event ID]  requeue permanently failed events (all when no --event)
   export-run --workspace W --run R --out FILE [--include-content]
                                  write one run's stored state to a file; credentials are never written
+  replay-run --workspace W --run R [--member M]
+                                 re-run each member from its recorded journal with no live calls and no writes
   import-run --file FILE [--disposable-target]
                                  load an exported run into a disposable database with the current schema
 
@@ -38,6 +40,8 @@ func runOpsCommand(args []string, stdout, stderr io.Writer) int {
 		return runOpsEvents(args[1:], stdout, stderr)
 	case "export-run":
 		return runOpsExportRun(args[1:], stdout, stderr)
+	case "replay-run":
+		return runOpsReplayRun(args[1:], stdout, stderr)
 	case "import-run":
 		return runOpsImportRun(args[1:], stdout, stderr)
 	default:
