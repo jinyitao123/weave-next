@@ -1,0 +1,167 @@
+[
+  {
+    "package": "cmd/weave",
+    "import": "loom/pgstore",
+    "files": 2
+  },
+  {
+    "package": "internal/app/api",
+    "import": "loom",
+    "files": 12
+  },
+  {
+    "package": "internal/app/api",
+    "import": "loom/pgstore",
+    "files": 1
+  },
+  {
+    "package": "internal/app/api",
+    "import": "loom/stdlib",
+    "files": 9
+  },
+  {
+    "package": "internal/app/daemon",
+    "import": "loom",
+    "files": 1
+  },
+  {
+    "package": "internal/app/designseed",
+    "import": "loom/stdlib",
+    "files": 1
+  },
+  {
+    "package": "internal/app/metateam",
+    "import": "loom/stdlib",
+    "files": 1
+  },
+  {
+    "package": "internal/app/teamconstruction",
+    "import": "loom/pgstore",
+    "files": 1
+  },
+  {
+    "package": "internal/app/teamconstruction",
+    "import": "loom/stdlib",
+    "files": 1
+  },
+  {
+    "package": "internal/base/testutil",
+    "import": "loom/pgstore",
+    "files": 1
+  },
+  {
+    "package": "internal/build/teameval",
+    "import": "loom",
+    "files": 1
+  },
+  {
+    "package": "internal/build/teamforge",
+    "import": "loom/stdlib",
+    "files": 1
+  },
+  {
+    "package": "internal/kernel/capabilityruntime",
+    "import": "loom",
+    "files": 2
+  },
+  {
+    "package": "internal/kernel/capabilityruntime",
+    "import": "loom/stdlib",
+    "files": 1
+  },
+  {
+    "package": "internal/kernel/compiler",
+    "import": "loom",
+    "files": 6
+  },
+  {
+    "package": "internal/kernel/compiler",
+    "import": "loom/stdlib",
+    "files": 3
+  },
+  {
+    "package": "internal/kernel/declarative",
+    "import": "loom",
+    "files": 2
+  },
+  {
+    "package": "internal/kernel/declarative",
+    "import": "loom/stdlib",
+    "files": 2
+  },
+  {
+    "package": "internal/kernel/llmrouter",
+    "import": "loom/provider",
+    "files": 2
+  },
+  {
+    "package": "internal/kernel/loomruntime",
+    "import": "loom",
+    "files": 13
+  },
+  {
+    "package": "internal/kernel/loomruntime",
+    "import": "loom/stdlib",
+    "files": 4
+  },
+  {
+    "package": "internal/kernel/mcphost",
+    "import": "loom",
+    "files": 2
+  },
+  {
+    "package": "internal/kernel/mcphost",
+    "import": "loom/pgstore",
+    "files": 1
+  },
+  {
+    "package": "internal/kernel/mcphost",
+    "import": "loom/stdlib",
+    "files": 1
+  },
+  {
+    "package": "internal/kernel/memory",
+    "import": "loom",
+    "files": 2
+  },
+  {
+    "package": "internal/kernel/otel",
+    "import": "loom",
+    "files": 1
+  },
+  {
+    "package": "internal/kernel/otel",
+    "import": "loom/stdlib",
+    "files": 1
+  },
+  {
+    "package": "internal/kernel/registry",
+    "import": "loom/stdlib",
+    "files": 1
+  },
+  {
+    "package": "internal/kernel/teamcompiler",
+    "import": "loom",
+    "files": 2
+  },
+  {
+    "package": "internal/kernel/teamcompiler",
+    "import": "loom/stdlib",
+    "files": 1
+  },
+  {
+    "package": "internal/kernel/teamrun",
+    "import": "loom",
+    "files": 2
+  },
+  {
+    "package": "internal/kernel/workflow",
+    "import": "loom",
+    "files": 2
+  },
+  {
+    "package": "internal/kernel/workflow",
+    "import": "loom/stdlib",
+    "files": 1
+  }
+]

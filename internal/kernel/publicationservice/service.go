@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jinyitao123/weave/internal/base/deliverable"
 	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/base/snapshot"
@@ -142,6 +143,14 @@ func (s *Service) AdmitCandidate(ctx context.Context, request publication.Candid
 		return receipt, errors.New("candidate execution deadline exceeded")
 	}
 	payload, _ := frozen.DecodeArtifactEnvelopeV1(request.Candidate)
+	graph, graphReport := machine.DecodeGraphDefinitionV1(payload.GraphDefinition)
+	if graphReport != nil && len(graphReport.Issues) > 0 {
+		return receipt, errors.New("candidate graph is invalid")
+	}
+	contract, err := runDeliveryContract(graph, nil)
+	if err != nil {
+		return receipt, err
+	}
 	runID := "run-" + uuid.NewString()
 	decision, _ := json.Marshal(map[string]any{"schema_version": 1, "team_active": true, "workflow_active": true, "workers_enabled": true, "version_blocked": false, "decided_at": time.Now().UTC().Format(time.RFC3339Nano)})
 	trigger, _ := json.Marshal(map[string]any{"schema_version": 1, "type": "api", "source_ref": request.SourceRef})
@@ -151,6 +160,10 @@ func (s *Service) AdmitCandidate(ctx context.Context, request publication.Candid
 		CandidateContentHash: request.Candidate.ContentHash, AdmissionDecision: decision, TriggerSourceV2: trigger,
 		RunAssociations: json.RawMessage(`{"schema_version":1,"parent_run_id":null,"source_snapshot_id":null,"task_group_id":null}`)}
 	if _, err = snapshot.NewStore(s.pool).CreateTx(ctx, tx, fixed); err != nil {
+		return receipt, err
+	}
+	if _, err = deliverable.New(s.pool).FreezeContractTx(ctx, tx, deliverable.ContractBinding{WorkspaceID: subject.WorkspaceID, RunSnapshotID: runID, InputRevisionID: request.InputVersion,
+		WorkflowID: request.Candidate.WorkflowID, WorkflowVersion: request.Candidate.WorkflowVersion, PublishedDigest: request.Candidate.ContentHash, Contract: contract}); err != nil {
 		return receipt, err
 	}
 	task := &taskqueue.Task{SourceRef: request.SourceRef, ID: "task-" + uuid.NewString(), Subject: subject, WorkspaceID: subject.WorkspaceID,
