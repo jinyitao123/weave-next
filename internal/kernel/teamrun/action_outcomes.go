@@ -35,6 +35,7 @@ type businessActionActivityDetailV1 struct {
 	InputRevisionID    string `json:"input_revision_id"`
 	RecordID           string `json:"record_id,omitempty"`
 	FrozenRecordSHA256 string `json:"frozen_record_sha256,omitempty"`
+	ParamsSHA256       string `json:"params_sha256,omitempty"`
 	Status             string `json:"status,omitempty"`
 }
 
@@ -141,7 +142,8 @@ func sameBusinessActionDetail(left, right businessActionActivityDetailV1) bool {
 		left.CapabilityID == right.CapabilityID && left.ActionKey == right.ActionKey &&
 		left.ActionName == right.ActionName && left.ActionLabel == right.ActionLabel &&
 		left.ObjectName == right.ObjectName && left.InputRevisionID == right.InputRevisionID &&
-		left.RecordID == right.RecordID && left.FrozenRecordSHA256 == right.FrozenRecordSHA256
+		left.RecordID == right.RecordID && left.FrozenRecordSHA256 == right.FrozenRecordSHA256 &&
+		left.ParamsSHA256 == right.ParamsSHA256
 }
 
 func businessActionOutcomeSummary(label, status string) string {
@@ -158,5 +160,22 @@ func businessActionOutcomeSummary(label, status string) string {
 type BusinessActionActivityStore interface {
 	ListBusinessActionEvents(ctx context.Context, workspaceID, runID string) ([]ActivityEvent, error)
 	RecordBusinessActionEvent(ctx context.Context, event ActivityEvent) error
-	CheckBusinessActionReplay(ctx context.Context, workspaceID, runID, nodeID, invocationID, callID, inputRevisionID, capabilityID, recordID string) (status string, blocked bool, err error)
+	CheckBusinessActionReplay(ctx context.Context, check BusinessActionReplayCheck) (BusinessActionReplayDecision, error)
+}
+
+// BusinessActionReplayCheck identifies one business action about to be sent.
+// ParamsSHA256 is the digest of the effective upstream request; empty disables
+// the same-params rule (older receipts and callers that cannot compute it).
+type BusinessActionReplayCheck struct {
+	WorkspaceID, RunID, NodeID, InvocationID, CallID      string
+	InputRevisionID, CapabilityID, RecordID, ParamsSHA256 string
+}
+
+// BusinessActionReplayDecision says whether the action must not be sent again
+// and why: an identity match on the same call, an unresolved earlier start on
+// the same capability and record, or an earlier success with identical params.
+type BusinessActionReplayDecision struct {
+	Status     string
+	Blocked    bool
+	SameParams bool
 }

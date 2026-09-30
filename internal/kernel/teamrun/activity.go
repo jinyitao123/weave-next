@@ -250,58 +250,68 @@ func (store *PGActivityStore) RecordBusinessActionEvent(ctx context.Context, eve
 	return nil
 }
 
-func (store *PGActivityStore) CheckBusinessActionReplay(
-	ctx context.Context,
-	workspaceID, runID, nodeID, invocationID, callID, inputRevisionID, capabilityID, recordID string,
-) (string, bool, error) {
-	if store == nil || store.Transactions == nil || workspaceID == "" || runID == "" {
-		return "", false, errors.New("team run business action reader is unavailable")
+func (store *PGActivityStore) CheckBusinessActionReplay(ctx context.Context, check BusinessActionReplayCheck) (BusinessActionReplayDecision, error) {
+	if store == nil || store.Transactions == nil || check.WorkspaceID == "" || check.RunID == "" {
+		return BusinessActionReplayDecision{}, errors.New("team run business action reader is unavailable")
 	}
 	tx, err := store.Transactions.Begin(ctx)
 	if err != nil {
-		return "", false, fmt.Errorf("begin business action replay check: %w", err)
+		return BusinessActionReplayDecision{}, fmt.Errorf("begin business action replay check: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+	// Rank the matching earlier starts: 0 the same call (identity), 1 an earlier
+	// start on the same capability and record whose outcome is unresolved, 2 an
+	// earlier success of the identical request under another call ID. Lower
+	// ranks win so an unresolved write is always reported before a success.
 	var status string
-	err = tx.QueryRow(ctx, `SELECT outcome.status FROM (
-		SELECT started.seq,COALESCE(started.node_id,'') AS node_id,started.detail,
-			COALESCE(latest.detail->>'status','unknown') AS status
-		FROM weave_team_run_activity_events AS started
-		LEFT JOIN LATERAL (
-			SELECT result.detail FROM weave_team_run_activity_events AS result
-			WHERE result.workspace_id=started.workspace_id AND result.run_id=started.run_id
-			  AND result.kind='business_action_result'
-			  AND result.node_id IS NOT DISTINCT FROM started.node_id
-			  AND result.member_id IS NOT DISTINCT FROM started.member_id
-			  AND result.detail->>'invocation_id'=started.detail->>'invocation_id'
-			  AND result.detail->>'tool_call_id'=started.detail->>'tool_call_id'
-			ORDER BY result.seq DESC LIMIT 1
-		) AS latest ON true
-		WHERE started.workspace_id=$1 AND started.run_id=$2 AND started.kind='business_action_started'
-		  AND started.detail->>'source'='forge_mcp.run_action'
-		  AND started.detail->>'input_revision_id'=$3
-	) AS outcome
-	WHERE (outcome.node_id=$4 AND outcome.detail->>'invocation_id'=$5 AND outcome.detail->>'tool_call_id'=$6)
-	   OR (outcome.detail->>'capability_id'=$7 AND COALESCE(outcome.detail->>'record_id','')=$8
-	       AND outcome.status NOT IN ('succeeded','failed'))
-	ORDER BY (outcome.node_id=$4 AND outcome.detail->>'invocation_id'=$5 AND outcome.detail->>'tool_call_id'=$6) DESC,
-		outcome.seq DESC LIMIT 1`, workspaceID, runID, inputRevisionID, nodeID, invocationID, callID, capabilityID, recordID).Scan(&status)
+	var priority int
+	err = tx.QueryRow(ctx, `SELECT ranked.status,ranked.priority FROM (
+		SELECT outcome.status,outcome.seq,CASE
+			WHEN outcome.node_id=$4 AND outcome.detail->>'invocation_id'=$5 AND outcome.detail->>'tool_call_id'=$6 THEN 0
+			WHEN outcome.detail->>'capability_id'=$7 AND COALESCE(outcome.detail->>'record_id','')=$8
+			 AND outcome.status NOT IN ('succeeded','failed') THEN 1
+			WHEN $9<>'' AND outcome.detail->>'params_sha256'=$9 AND outcome.detail->>'capability_id'=$7
+			 AND COALESCE(outcome.detail->>'record_id','')=$8 AND outcome.status='succeeded' THEN 2
+		END AS priority
+		FROM (
+			SELECT started.seq,COALESCE(started.node_id,'') AS node_id,started.detail,
+				COALESCE(latest.detail->>'status','unknown') AS status
+			FROM weave_team_run_activity_events AS started
+			LEFT JOIN LATERAL (
+				SELECT result.detail FROM weave_team_run_activity_events AS result
+				WHERE result.workspace_id=started.workspace_id AND result.run_id=started.run_id
+				  AND result.kind='business_action_result'
+				  AND result.node_id IS NOT DISTINCT FROM started.node_id
+				  AND result.member_id IS NOT DISTINCT FROM started.member_id
+				  AND result.detail->>'invocation_id'=started.detail->>'invocation_id'
+				  AND result.detail->>'tool_call_id'=started.detail->>'tool_call_id'
+				ORDER BY result.seq DESC LIMIT 1
+			) AS latest ON true
+			WHERE started.workspace_id=$1 AND started.run_id=$2 AND started.kind='business_action_started'
+			  AND started.detail->>'source'='forge_mcp.run_action'
+			  AND started.detail->>'input_revision_id'=$3
+		) AS outcome
+	) AS ranked
+	WHERE ranked.priority IS NOT NULL
+	ORDER BY ranked.priority,ranked.seq DESC LIMIT 1`,
+		check.WorkspaceID, check.RunID, check.InputRevisionID, check.NodeID, check.InvocationID, check.CallID,
+		check.CapabilityID, check.RecordID, check.ParamsSHA256).Scan(&status, &priority)
 	if errors.Is(err, pgx.ErrNoRows) {
 		if err := tx.Commit(ctx); err != nil {
-			return "", false, fmt.Errorf("commit business action replay check: %w", err)
+			return BusinessActionReplayDecision{}, fmt.Errorf("commit business action replay check: %w", err)
 		}
-		return "", false, nil
+		return BusinessActionReplayDecision{}, nil
 	}
 	if err != nil {
-		return "", false, fmt.Errorf("check business action replay: %w", err)
+		return BusinessActionReplayDecision{}, fmt.Errorf("check business action replay: %w", err)
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return "", false, fmt.Errorf("commit business action replay check: %w", err)
+		return BusinessActionReplayDecision{}, fmt.Errorf("commit business action replay check: %w", err)
 	}
 	if status != "succeeded" && status != "failed" {
 		status = "unknown"
 	}
-	return status, true, nil
+	return BusinessActionReplayDecision{Status: status, Blocked: true, SameParams: priority == 2}, nil
 }
 
 var _ ActivityRecorder = (*PGActivityStore)(nil)
