@@ -58,7 +58,14 @@ type Config struct {
 
 	// Optional built-in meta-team conversation guide. Disabling it preserves
 	// stored assets and history while freezing all new runs.
-	MetaTeamEnabled bool // WEAVE_METATEAM_ENABLED, default true
+	MetaTeamEnabled bool // WEAVE_METATEAM_ENABLED, default false (retired)
+
+	// Retired capabilities. The supported client is the GooeyPi desktop with Forge,
+	// which never calls team templates, team evaluation, team-build runs or Weave
+	// local accounts. Load() defaults both flags to true; the zero value keeps every
+	// route registered so tests and embedders opt in explicitly.
+	RetireLegacyPlatformAPIs bool // WEAVE_RETIRE_LEGACY_PLATFORM_APIS, default true
+	DisableLocalLogin        bool // WEAVE_DISABLE_LOCAL_LOGIN, default true
 }
 
 // Load reads configuration from environment variables.
@@ -104,7 +111,15 @@ func Load() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	metaTeamEnabled, err := boolEnv("WEAVE_METATEAM_ENABLED", true)
+	metaTeamEnabled, err := boolEnv("WEAVE_METATEAM_ENABLED", false)
+	if err != nil {
+		return nil, err
+	}
+	retireLegacyPlatformAPIs, err := boolEnv("WEAVE_RETIRE_LEGACY_PLATFORM_APIS", true)
+	if err != nil {
+		return nil, err
+	}
+	disableLocalLogin, err := boolEnv("WEAVE_DISABLE_LOCAL_LOGIN", true)
 	if err != nil {
 		return nil, err
 	}
@@ -171,6 +186,8 @@ func Load() (*Config, error) {
 		HealthWarningSlowRate:    healthWarningSlowRate,
 		HealthSlowRunSeconds:     healthSlowRunSeconds,
 		MetaTeamEnabled:          metaTeamEnabled,
+		RetireLegacyPlatformAPIs: retireLegacyPlatformAPIs,
+		DisableLocalLogin:        disableLocalLogin,
 	}
 
 	if cfg.DatabaseURL == "" {

@@ -387,6 +387,23 @@
         "lines_added": 63,
         "production_lines_added": 3
       }
+    },
+    {
+      "date": "2026-09-30",
+      "reason": "W1 retire-first switches: two config flags parsed in Load(), the team template / evaluation / team-build route registrations moved into one function behind RetireLegacyPlatformAPIs, local login and registration behind DisableLocalLogin, and route regression tests. Exact measured limits with no spare allowance; package and dependency limits unchanged.",
+      "record": "docs/治理/2026-09-30-平台范围收窄整改登记.md",
+      "kernel": {
+        "previous_lines": 94303,
+        "previous_production_lines": 80402,
+        "lines_added": 58,
+        "production_lines_added": 17
+      },
+      "app": {
+        "previous_lines": 82782,
+        "previous_production_lines": 61658,
+        "lines_added": 135,
+        "production_lines_added": 23
+      }
     }
   ],
   "migration_targets": {
@@ -424,8 +441,8 @@
     ]
   },
   "kernel": {
-    "lines": 94303,
-    "production_lines": 80402,
+    "lines": 94361,
+    "production_lines": 80419,
     "packages": 49,
     "external_dependencies": 5,
     "allowed_dependencies": [
@@ -449,8 +466,8 @@
     ]
   },
   "app": {
-    "lines": 82782,
-    "production_lines": 61658,
+    "lines": 82917,
+    "production_lines": 61681,
     "packages": 30,
     "external_dependencies": 7,
     "allowed_dependencies": [
