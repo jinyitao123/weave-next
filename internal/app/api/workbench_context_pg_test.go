@@ -115,6 +115,33 @@ func TestWorkbenchContextReadsExactInputAndRejectsOtherEmployeesRealPG(t *testin
 		t.Fatalf("establish team run before recording activity: run=%+v err=%v", established, err)
 	}
 	actionStore := &teamrun.PGActivityStore{Transactions: pool}
+	server.teamRunActivities = actionStore
+	zeroActionClaim := `{"tools":[],"summary":"已调用业务提交动作"}`
+	if _, err := pool.Exec(t.Context(), `INSERT INTO weave_team_run_activity_events
+		(workspace_id,run_id,event_id,kind,node_id,member_id,member_version,detail,occurred_at)
+		VALUES('ws',$1,$2,'member_completed','lead','lead-agent',1,$3::jsonb,statement_timestamp())`,
+		run.RunID, uuid.NewString(), zeroActionClaim); err != nil {
+		t.Fatal(err)
+	}
+	claimedButUnrecordedContent := `{"disposition":"complete","summary":"已调用业务提交动作","missing_items":[]}`
+	if _, err := pool.Exec(t.Context(), `INSERT INTO weave_final_deliverables
+		(id,workspace_id,user_id,lead_avatar_id,session_id,event_id,run_id,run_snapshot_id,title,content,content_type,metadata)
+		VALUES($1,'ws','user-a','lead',$2,$3,$4,$4,'模型自述',$5,'application/json',
+		'{"artifact_kind":"final","workbench_result":{"protocol":"workbench_result_v1","disposition":"complete","summary":"已调用业务提交动作","missing_items":[]}}'::jsonb)`,
+		"deliverable-zero-actions", registration.WorkbenchSessionID, uuid.NewString(), run.RunID, claimedButUnrecordedContent); err != nil {
+		t.Fatal(err)
+	}
+	status, noActionResponse := callWorkbenchRunContext(t, server, "user-a", run.RunID)
+	if status != http.StatusOK || noActionResponse.Run.FinalResult == nil ||
+		noActionResponse.Run.FinalResult.Summary != "已调用业务提交动作" || noActionResponse.Run.ActionOutcomes == nil ||
+		len(noActionResponse.Run.ActionOutcomes) != 0 {
+		t.Fatalf("zero platform receipts were not explicit beside the model claim: status=%d run=%+v", status, noActionResponse.Run)
+	}
+	server.teamRunActivities = nil
+	if status, _ := callWorkbenchRunContext(t, server, "user-a", run.RunID); status != http.StatusServiceUnavailable {
+		t.Fatalf("missing platform receipt reader was treated as an empty receipt list: status=%d", status)
+	}
+	server.teamRunActivities = actionStore
 	writeActionEvent := func(nodeID, memberID, phase, callID, actionName, actionLabel, objectName, recordID, status string) {
 		t.Helper()
 		kind := "business_action_started"
@@ -144,8 +171,8 @@ func TestWorkbenchContextReadsExactInputAndRejectsOtherEmployeesRealPG(t *testin
 	writeActionEvent("review", "review-agent", "started", "forge-call-2", "RequestRevision", "要求修订", "sales_contract", "record-a", "")
 	if _, err := pool.Exec(t.Context(), `INSERT INTO weave_team_run_activity_events
 		(workspace_id,run_id,event_id,kind,node_id,member_id,member_version,detail,occurred_at)
-		VALUES('ws',$1,$2,'member_completed','lead','lead-agent',1,$3::jsonb,statement_timestamp())`,
-		run.RunID, uuid.NewString(), `{"summary":"另一个成员声称已经执行了审批动作"}`); err != nil {
+			VALUES('ws',$1,$2,'member_completed','lead','lead-agent',1,$3::jsonb,statement_timestamp())`,
+		run.RunID, uuid.NewString(), `{"tools":[],"summary":"已调用业务提交动作"}`); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := pool.Exec(t.Context(), `UPDATE weave_team_runs SET status='failed',error_code='team_run_execution_failed',cause_summary='later member failed',terminal_at=statement_timestamp()
