@@ -109,11 +109,19 @@ printf '%s\n' \
   "WEAVE_VERSION=$version" \
   "WEAVE_PLATFORM_IMAGE=weave-main-platform:$expected_sha" \
   "WEAVE_WORKBENCH_IMAGE=weave-main-workbench:$expected_sha" > "$release_env"
+# The web Workbench is retired: it is built, started and verified only when
+# server.env sets WEAVE_WEB_WORKBENCH=true, and then under its Compose profile.
+web_workbench="$(python3 "$release_dir/scripts/deployment-state.py" workbench-enabled "$env_file" "$state_dir")"
 compose=(sudo docker compose --project-name weave-main --project-directory "$release_dir"
   --env-file "$env_file" --env-file "$release_env" -f "$release_dir/docker-compose.platform.yml")
+build_services=(weave)
+if [[ "$web_workbench" == true ]]; then
+  compose+=(--profile legacy-workbench)
+  build_services+=(workbench)
+fi
 "${compose[@]}" config --quiet
 phase=build
-"${compose[@]}" build weave workbench
+"${compose[@]}" build "${build_services[@]}"
 
 # Recheck through GitHub's lightweight API before cutover; source bytes were already
 # transferred from the CI-verified checkout and verified against its SHA-256.
@@ -138,8 +146,10 @@ phase=api-startup
 "${compose[@]}" up -d --no-build --wait --wait-timeout 120 db weave
 phase=bootstrap
 python3 "$release_dir/scripts/deployment-state.py" bootstrap "$env_file" "$state_dir" -- "${compose[@]}"
-phase=workbench-startup
-"${compose[@]}" up -d --no-build --wait --wait-timeout 180 workbench workbench-gateway
+if [[ "$web_workbench" == true ]]; then
+  phase=workbench-startup
+  "${compose[@]}" up -d --no-build --wait --wait-timeout 180 workbench workbench-gateway
+fi
 phase=verification
 python3 "$release_dir/scripts/deployment-state.py" verify "$env_file" "$state_dir" "$expected_sha"
 ln -sfn "$release_dir" "$state_dir/current"

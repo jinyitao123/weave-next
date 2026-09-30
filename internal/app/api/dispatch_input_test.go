@@ -248,8 +248,8 @@ func TestDispatchInputRegistrationRejectsTooManyFilesWithASpecificCodeRealPG(t *
 	if err := server.handleRegisterDispatchInput(c); err != nil {
 		t.Fatal(err)
 	}
-	if recorder.Code != http.StatusBadRequest || !strings.Contains(recorder.Body.String(), "dispatch_input_too_many_resources") {
-		t.Fatalf("status=%d body=%s, want 400 dispatch_input_too_many_resources", recorder.Code, recorder.Body.String())
+	if recorder.Code != http.StatusConflict || !strings.Contains(recorder.Body.String(), "dispatch_input_too_many_resources") {
+		t.Fatalf("status=%d body=%s, want 409 dispatch_input_too_many_resources", recorder.Code, recorder.Body.String())
 	}
 	var stored int
 	if err := pool.QueryRow(t.Context(), `SELECT count(*) FROM weave_dispatch_input_revisions`).Scan(&stored); err != nil || stored != 0 {
