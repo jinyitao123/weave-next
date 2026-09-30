@@ -57,7 +57,11 @@ type workbenchContextParent struct {
 }
 
 type workbenchContextRun struct {
-	Status         string                            `json:"status"`
+	Status string `json:"status"`
+	// BusinessResult is the server's single answer to how the run ended for the
+	// business; clients show it and do not derive their own. Absent when the run
+	// has no business-facing result.
+	BusinessResult string                            `json:"business_result,omitempty"`
 	FinalResult    *workbenchContextFinalDeliverable `json:"final_result,omitempty"`
 	ActionOutcomes []teamrun.BusinessActionOutcomeV1 `json:"action_outcomes"`
 }
@@ -194,6 +198,11 @@ func (s *Server) readWorkbenchRunContext(ctx context.Context, workspaceID, userI
 		return workbenchContextResponse{}, err
 	}
 	response.Run.ActionOutcomes = outcomes
+	disposition := ""
+	if finalResult != nil {
+		disposition = finalResult.Disposition
+	}
+	response.Run.BusinessResult = string(teamrun.ClassifyRunBusinessResult(run.Status, disposition, teamrun.CountBusinessActions(events)))
 	return response, nil
 }
 

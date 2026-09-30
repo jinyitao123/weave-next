@@ -217,6 +217,9 @@ func TestWorkbenchContextReadsExactInputAndRejectsOtherEmployeesRealPG(t *testin
 	if len(response.Run.ActionOutcomes) != 2 {
 		t.Fatalf("expected only the two platform-recorded business actions: %+v", response.Run.ActionOutcomes)
 	}
+	if response.Run.BusinessResult != string(teamrun.RunBusinessResultActionUnknown) {
+		t.Fatalf("a run with one unknown action call was reported as %q", response.Run.BusinessResult)
+	}
 	submitted, unknown := response.Run.ActionOutcomes[0], response.Run.ActionOutcomes[1]
 	if submitted.NodeID != "lead" || submitted.CallID != "forge-call-1" || submitted.ActionName != "提交指定合同版本" ||
 		submitted.ObjectName != "sales_contract" || submitted.RecordID != "record-a" || submitted.Status != "succeeded" ||

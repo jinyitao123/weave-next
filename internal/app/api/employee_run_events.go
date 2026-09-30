@@ -18,6 +18,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jinyitao123/weave/internal/kernel/teamrun"
 )
 
 const (
@@ -140,8 +141,108 @@ func (worker *employeeRunEventWorker) Sweep(ctx context.Context) (int, error) {
 	return 1, nil
 }
 
+// employeeRunEventBatch bounds how many terminal runs one sweep turns into
+// events; the rest are picked up by the next sweep.
+const employeeRunEventBatch = 200
+
+// pendingEmployeeRunEvents lists terminal runs that have an assignee but no
+// outbox event yet, oldest first.
+func (worker *employeeRunEventWorker) pendingEmployeeRunEvents(ctx context.Context) (workspaces, runs []string, err error) {
+	rows, err := worker.Pool.Query(ctx, `SELECT run.workspace_id,run.run_id
+		FROM weave_team_runs AS run
+		JOIN weave_dispatch_input_revisions AS input
+		  ON input.workspace_id=run.workspace_id AND input.consumed_run_id=run.run_id
+		JOIN weave_external_identities AS identity
+		  ON identity.workspace_id=input.workspace_id AND identity.user_id=input.user_id
+		WHERE run.status IN ('succeeded','failed','cancelled','abandoned')
+		  AND NOT EXISTS (SELECT 1 FROM weave_employee_run_event_outbox AS event
+			WHERE event.workspace_id=run.workspace_id AND event.run_id=run.run_id)
+		ORDER BY run.terminal_at NULLS LAST,run.run_id LIMIT $1`, employeeRunEventBatch)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var workspaceID, runID string
+		if err := rows.Scan(&workspaceID, &runID); err != nil {
+			return nil, nil, err
+		}
+		workspaces, runs = append(workspaces, workspaceID), append(runs, runID)
+	}
+	return workspaces, runs, rows.Err()
+}
+
+// employeeRunActionSummary carries one run's Forge action counts to the SQL that
+// words the event. The counting and the decision that the employee must verify
+// are teamrun's, the same ones the continuation context uses.
+type employeeRunActionSummary struct {
+	WorkspaceID       string `json:"workspace_id"`
+	RunID             string `json:"run_id"`
+	ActionCount       int    `json:"action_count"`
+	SucceededCount    int    `json:"succeeded_count"`
+	FailedCount       int    `json:"failed_count"`
+	UnknownCount      int    `json:"unknown_count"`
+	Summary           string `json:"summary"`
+	NeedsVerification bool   `json:"needs_verification"`
+}
+
+func (worker *employeeRunEventWorker) actionSummaries(ctx context.Context, workspaces, runs []string) ([]employeeRunActionSummary, error) {
+	rows, err := worker.Pool.Query(ctx, `SELECT workspace_id,run_id,seq,kind,COALESCE(node_id,''),COALESCE(member_id,''),detail
+		FROM weave_team_run_activity_events
+		WHERE kind IN ('business_action_started','business_action_result')
+		  AND (workspace_id,run_id) IN (SELECT * FROM unnest($1::text[],$2::text[]))
+		ORDER BY workspace_id,run_id,seq`, workspaces, runs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	type runKey struct{ workspaceID, runID string }
+	events := map[runKey][]teamrun.ActivityEvent{}
+	order := []runKey{}
+	for rows.Next() {
+		var event teamrun.ActivityEvent
+		if err := rows.Scan(&event.WorkspaceID, &event.RunID, &event.Seq, &event.Kind, &event.NodeID, &event.MemberID, &event.Detail); err != nil {
+			return nil, err
+		}
+		id := runKey{event.WorkspaceID, event.RunID}
+		if _, seen := events[id]; !seen {
+			order = append(order, id)
+		}
+		events[id] = append(events[id], event)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	summaries := make([]employeeRunActionSummary, 0, len(order))
+	for _, id := range order {
+		counts := teamrun.CountBusinessActions(events[id])
+		if counts.Total == 0 {
+			continue
+		}
+		summaries = append(summaries, employeeRunActionSummary{WorkspaceID: id.workspaceID, RunID: id.runID,
+			ActionCount: counts.Total, SucceededCount: counts.Succeeded, FailedCount: counts.Failed, UnknownCount: counts.Unknown,
+			Summary: counts.Summary, NeedsVerification: counts.NeedsVerification()})
+	}
+	return summaries, nil
+}
+
 func (worker *employeeRunEventWorker) materialize(ctx context.Context) error {
-	_, err := worker.Pool.Exec(ctx, `WITH candidates AS (
+	workspaces, runs, err := worker.pendingEmployeeRunEvents(ctx)
+	if err != nil {
+		return fmt.Errorf("list terminal runs without an employee event: %w", err)
+	}
+	if len(runs) == 0 {
+		return nil
+	}
+	summaries, err := worker.actionSummaries(ctx, workspaces, runs)
+	if err != nil {
+		return fmt.Errorf("count business actions for employee run events: %w", err)
+	}
+	encoded, err := json.Marshal(summaries)
+	if err != nil {
+		return err
+	}
+	_, err = worker.Pool.Exec(ctx, `WITH candidates AS (
 		SELECT run.workspace_id,run.run_id,run.status,run.terminal_at,run.cause_summary,
 			input.input_revision_id,input.workbench_session_id,input.project_id,
 			identity.subject AS assignee_account_id,identity.workspace_id AS external_organization,
@@ -164,38 +265,11 @@ func (worker *employeeRunEventWorker) materialize(ctx context.Context) error {
 		  ORDER BY (metadata->'workbench_result' IS NOT NULL) DESC,created_at DESC,id DESC LIMIT 1
 		) AS deliverable ON true
 		WHERE run.status IN ('succeeded','failed','cancelled','abandoned')
-	), business_action_receipts AS (
-		SELECT DISTINCT ON (started.workspace_id,started.run_id,started.node_id,started.member_id,
-			started.detail->>'invocation_id',started.detail->>'tool_call_id')
-			started.workspace_id,started.run_id,started.seq,
-			left(COALESCE(NULLIF(started.detail->>'action_label',''),NULLIF(started.detail->>'action_name',''),'业务动作'),128) AS action_label,
-			COALESCE(outcome.status,'unknown') AS status
-		FROM weave_team_run_activity_events AS started
-		LEFT JOIN LATERAL (
-			SELECT result.detail->>'status' AS status
-			FROM weave_team_run_activity_events AS result
-			WHERE result.workspace_id=started.workspace_id AND result.run_id=started.run_id
-			  AND result.kind='business_action_result'
-			  AND result.node_id IS NOT DISTINCT FROM started.node_id
-			  AND result.member_id IS NOT DISTINCT FROM started.member_id
-			  AND result.detail->>'invocation_id'=started.detail->>'invocation_id'
-			  AND result.detail->>'tool_call_id'=started.detail->>'tool_call_id'
-			ORDER BY result.seq DESC LIMIT 1
-		) AS outcome ON true
-		WHERE started.kind='business_action_started' AND started.detail->>'source'='forge_mcp.run_action'
-		ORDER BY started.workspace_id,started.run_id,started.node_id,started.member_id,
-			started.detail->>'invocation_id',started.detail->>'tool_call_id',started.seq DESC
+		  AND (run.workspace_id,run.run_id) IN (SELECT * FROM unnest($2::text[],$3::text[]))
 	), business_action_summary AS (
-		SELECT workspace_id,run_id,count(*) AS action_count,
-			count(*) FILTER (WHERE status='succeeded') AS succeeded_count,
-			count(*) FILTER (WHERE status='failed') AS failed_count,
-			count(*) FILTER (WHERE status NOT IN ('succeeded','failed')) AS unknown_count,
-			string_agg('业务动作“'||action_label||'”'||CASE status
-				WHEN 'succeeded' THEN '调用返回成功。'
-				WHEN 'failed' THEN '调用返回失败，请先核对业务记录后再处理。'
-				ELSE '结果未知，请先核对业务记录后再处理。' END,'；' ORDER BY seq) AS summary
-		FROM business_action_receipts
-		GROUP BY workspace_id,run_id
+		SELECT workspace_id,run_id,action_count,succeeded_count,failed_count,unknown_count,summary,needs_verification
+		FROM jsonb_to_recordset($1::jsonb) AS counted(workspace_id text,run_id text,action_count int,
+			succeeded_count int,failed_count int,unknown_count int,summary text,needs_verification boolean)
 	)
 	INSERT INTO weave_employee_run_event_outbox(event_id,workspace_id,run_id,input_revision_id,payload)
 	SELECT (
@@ -216,7 +290,7 @@ func (worker *employeeRunEventWorker) materialize(ctx context.Context) error {
 		  WHEN status='cancelled' THEN '已取消'
 		  WHEN status='abandoned' THEN '已放弃'
 		  ELSE '失败' END||CASE
-		  WHEN COALESCE(business_action_summary.failed_count,0)>0 OR COALESCE(business_action_summary.unknown_count,0)>0
+		  WHEN COALESCE(business_action_summary.needs_verification,false)
 		    THEN '（业务动作需核对）' ELSE '' END||'：'||team_name,300),
 		'summary',left(CASE
 			WHEN business_action_summary.action_count IS NULL
@@ -262,7 +336,7 @@ func (worker *employeeRunEventWorker) materialize(ctx context.Context) error {
 	  )
 	FROM (SELECT candidates.*,md5('weave-team-run-event'||chr(31)||workspace_id||chr(31)||run_id) AS hash FROM candidates) AS fixed
 	LEFT JOIN business_action_summary ON business_action_summary.workspace_id=fixed.workspace_id AND business_action_summary.run_id=fixed.run_id
-	ON CONFLICT (workspace_id,run_id) DO NOTHING`)
+	ON CONFLICT (workspace_id,run_id) DO NOTHING`, string(encoded), workspaces, runs)
 	if err != nil {
 		return fmt.Errorf("materialize employee run events: %w", err)
 	}
