@@ -122,6 +122,20 @@ func (f Factory) attach(ctx context.Context, bundle frozen.FrozenExecutionBundle
 	return opts, closer, nil
 }
 
+// ErrDelegationExpired marks work whose employee authorization lapsed. Retrying
+// the stage cannot help: the employee must resubmit from the original work so a
+// fresh delegation is issued for the same frozen input.
+var ErrDelegationExpired = errors.New("Forge task delegation expired")
+
+// delegationLive returns nil while the delegation is valid. It fails closed and
+// names the expiry so it can be told apart from a scope or configuration error.
+func delegationLive(expiresAt, now time.Time) error {
+	if !expiresAt.After(now.UTC()) {
+		return fmt.Errorf("%w: %w", mcphost.ErrFailClosed, ErrDelegationExpired)
+	}
+	return nil
+}
+
 type delegation struct {
 	inputRevisionID string
 	issuer          string
@@ -289,8 +303,8 @@ func (s *Store) resolve(ctx context.Context, requested []string) (delegation, er
 	if err != nil {
 		return delegation{}, err
 	}
-	if !expiresAt.After(s.now().UTC()) {
-		return delegation{}, fmt.Errorf("%w: Forge task delegation expired", mcphost.ErrFailClosed)
+	if err := delegationLive(expiresAt, s.now()); err != nil {
+		return delegation{}, err
 	}
 	var taskAllowed []string
 	if err := json.Unmarshal(actionsRaw, &taskAllowed); err != nil {
@@ -319,7 +333,7 @@ func (s *Store) resolve(ctx context.Context, requested []string) (delegation, er
 
 func decodeDelegatedResources(raw []byte, inputRevisionID string) ([]delegatedResource, error) {
 	var stored []delegatedResource
-	if err := json.Unmarshal(raw, &stored); err != nil || len(stored) == 0 || len(stored) > 10 {
+	if err := json.Unmarshal(raw, &stored); err != nil || len(stored) == 0 || len(stored) > frozen.MaxDelegatedResources {
 		return nil, errors.New("task business resources are invalid")
 	}
 	verifiedInput := false
@@ -429,8 +443,11 @@ func (s *Store) validate(ctx context.Context, inputRevisionID string, requested 
 		return err
 	}
 	var allowed []string
-	if json.Unmarshal(actionsRaw, &allowed) != nil || !containsAll(allowed, requested) || !expiresAt.After(s.now().UTC()) {
+	if json.Unmarshal(actionsRaw, &allowed) != nil || !containsAll(allowed, requested) {
 		return errors.New("business delegation no longer authorizes this action")
+	}
+	if !expiresAt.After(s.now().UTC()) {
+		return fmt.Errorf("business delegation no longer authorizes this action: %w", ErrDelegationExpired)
 	}
 	return tx.Commit(ctx)
 }
