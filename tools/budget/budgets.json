@@ -466,6 +466,17 @@
         "lines_added": 624,
         "production_lines_added": 387
       }
+    },
+    {
+      "date": "2026-09-30",
+      "reason": "W2 replay: read-only member journal replay (weave ops replay-run) with recorded responses; adds no execution path, route or write.",
+      "record": "docs/治理/2026-09-30-平台范围收窄整改登记.md",
+      "kernel": {
+        "previous_lines": 94969,
+        "previous_production_lines": 80467,
+        "lines_added": 523,
+        "production_lines_added": 364
+      }
     }
   ],
   "migration_targets": {
@@ -503,8 +514,8 @@
     ]
   },
   "kernel": {
-    "lines": 94969,
-    "production_lines": 80467,
+    "lines": 95492,
+    "production_lines": 80831,
     "packages": 49,
     "external_dependencies": 5,
     "allowed_dependencies": [
