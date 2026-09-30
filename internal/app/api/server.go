@@ -312,7 +312,9 @@ func (s *Server) registerRoutes() {
 	s.Echo.GET("/install.ps1", s.handleInstallScript)
 	s.Echo.GET("/v1/downloads/runtime/:os/:arch", s.handleDownloadRuntime)
 	s.Echo.POST("/v1/auth/token", s.handleIssueToken)
-	s.Echo.POST("/v1/auth/login", s.handleLogin)
+	if !s.Config.DisableLocalLogin {
+		s.Echo.POST("/v1/auth/login", s.handleLogin)
+	}
 	s.Echo.POST("/v1/auth/external/exchange", s.handleExternalIdentityExchange)
 	s.Echo.Any("/v1/mcp-boundary/:tenant/:agent/:idx", s.handleMCPBoundary)
 	s.Echo.Any("/v1/mcp-gateway/:workspace/:agent/:serverID", s.handleMCPGateway)
@@ -322,8 +324,12 @@ func (s *Server) registerRoutes() {
 	userStoreGetter := func() *users.Store { return s.UserStore }
 
 	// Register endpoint — uses optional auth (first user bootstrap needs no auth, subsequent need admin).
-	s.Echo.POST("/v1/auth/register", s.handleRegister,
-		OptionalAuthMiddleware(s.Config.JWTSecret, keyStoreGetter, userStoreGetter), RequireScope("admin"))
+	// It is not registered when local login is disabled, so an empty user table
+	// can never be claimed through HTTP; `weave bootstrap` creates the operator.
+	if !s.Config.DisableLocalLogin {
+		s.Echo.POST("/v1/auth/register", s.handleRegister,
+			OptionalAuthMiddleware(s.Config.JWTSecret, keyStoreGetter, userStoreGetter), RequireScope("admin"))
+	}
 
 	// Authenticated endpoints.
 	auth := s.Echo.Group("/v1", AuthMiddleware(s.Config.JWTSecret, keyStoreGetter, userStoreGetter))
@@ -380,9 +386,9 @@ func (s *Server) registerRoutes() {
 	auth.GET("/deliverables/:id/content", s.handleDownloadFinalDeliverable, chatScope)
 	auth.GET("/teams", s.handleListTeams, orgScope)
 	auth.POST("/teams", s.handleCreateTeam, RequireAnyRole("developer", "admin"), orgScope)
-	auth.POST("/teams:from-template", s.handleCreateTeamFromTemplate, RequireRole("admin"), orgScope)
-	auth.POST("/teams/:id/evaluations", s.handleEvaluateTeam, RequireRole("admin"), orgScope)
-	auth.GET("/team-templates/samples", s.handleListTeamTemplateSamples, orgScope)
+	if !s.Config.RetireLegacyPlatformAPIs {
+		s.registerRetiredTeamConstructionRoutes(auth, orgScope)
+	}
 	auth.GET("/teams/:id", s.handleGetTeam, orgScope)
 	auth.GET("/teams/:id/members/:agent/config-draft", s.handleGetTeamMemberConfigDraft, RequireAnyRole("developer", "admin", "owner"), orgScope)
 	auth.PUT("/teams/:id/members/:agent/config-draft", s.handlePutTeamMemberConfigDraft, RequireAnyRole("developer", "admin", "owner"), orgScope)
@@ -417,22 +423,6 @@ func (s *Server) registerRoutes() {
 	auth.POST("/workflows/:id/drafts", s.handleCreateWorkflowDraft, RequireAnyRole("developer", "admin", "owner"), orgScope)
 	auth.PUT("/workflows/:id/versions/:version", s.handleUpdateWorkflowDraft, RequireAnyRole("developer", "admin", "owner"), orgScope)
 	auth.POST("/workflows/:id/versions/:version/publish", s.handlePublishWorkflowVersion, RequireAnyRole("developer", "admin", "owner"), orgScope)
-	auth.POST("/internal/team-build-runs", s.handleCreateTeamBuildRun, RequireRole("admin"), orgScope)
-	auth.GET("/internal/team-build-runs", s.handleListBuildRuns, orgScope)
-	auth.PUT("/team-build-runs/:id/blueprint", s.handlePlanTeamBlueprint, RequireRole("admin"), orgScope)
-	auth.PUT("/internal/team-build-runs/:id/drafts", s.handleUpdateTeamBuildRunDrafts, RequireRole("admin"), orgScope)
-	auth.POST("/internal/team-build-runs/:id/authorize", s.handleAuthorizeBuildRun, RequireRole("admin"), orgScope)
-	auth.POST("/internal/team-build-runs/:id/submit", s.handleSubmitBuildRun, RequireRole("admin"), orgScope)
-	auth.POST("/internal/team-build-runs/:id/execute", s.handleExecuteTeamBuildRun, RequireRole("admin"), orgScope)
-	auth.POST("/internal/team-build-runs/:id/cancel", s.handleCancelBuildRun, RequireRole("admin"), orgScope)
-	auth.POST("/internal/team-build-runs/:id/rollback", s.handleRollbackBuildRun, RequireRole("admin"), orgScope)
-	auth.GET("/internal/team-build-runs/:id/progress", s.handleGetBuildRunProgress, orgScope)
-	auth.GET("/internal/team-build-runs/:id/rounds", s.handleListBuildRunRounds, orgScope)
-	auth.GET("/internal/team-build-runs/:id/rounds/:n/report", s.handleGetBuildRunRoundReport, orgScope)
-	auth.GET("/internal/team-build-runs/:id/usage", s.handleGetBuildRunUsage, orgScope)
-	auth.GET("/internal/team-build-runs/:id", s.handleGetBuildRun, orgScope)
-	auth.POST("/internal/team-build-runs/candidate-runs", s.handleCandidateTestRun, RequireRole("admin"), orgScope)
-	auth.POST("/internal/team-build-runs/publish", s.handleCandidatePublish, RequireRole("admin"), orgScope)
 	auth.POST("/workflows/:id/versions/:version/validate", s.handleValidateWorkflowVersion, orgScope)
 	auth.PUT("/workflows/:id/versions/:version/admission", s.handlePutWorkflowAdmission, RequireAnyRole("admin", "owner"), orgScope)
 	auth.GET("/workflows/:id/versions/:version/admission/audit", s.handleListWorkflowAdmissionAudit, RequireAnyRole("admin", "owner"), orgScope)
