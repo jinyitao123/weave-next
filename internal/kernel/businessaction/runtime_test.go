@@ -229,29 +229,231 @@ func TestDispatcherInjectsOrderedMaterialManifest(t *testing.T) {
 	}
 }
 
-func TestDispatcherRequiresExplicitBindingForFileParameters(t *testing.T) {
+func TestDispatcherConstrainsSingleAndMultipleFileParametersToFrozenResources(t *testing.T) {
 	id := "forge:action:sales_contract.ContractSubmit"
 	catalog := map[string]actionMetadata{"sales_contract.ContractSubmit": {
 		Name: "ContractSubmit", ObjectName: "sales_contract", RequiresRecord: true,
-		Params: []actionParam{{Name: "material_file", Type: "file", Required: true}},
+		Params: []actionParam{
+			{Name: "primary_file_id", Label: "合同正文", Type: "file", Required: true},
+			{Name: "material_file_ids", Label: "完整材料集合", Type: "file", Multiple: true, Required: true},
+		},
 	}}
+	rawResources, err := json.Marshal([]delegatedResource{
+		{Type: "dispatch-input", ID: "input-revision-1", SHA256: strings.Repeat("c", 64)},
+		{Type: "forge-file", SourceKind: "owner", MaterialID: strings.Repeat("1", 24), ID: "file-main", Name: "合同正文.docx", MediaType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", Bytes: 12, SHA256: strings.Repeat("a", 64)},
+		{Type: "forge-file", SourceKind: "owner", MaterialID: strings.Repeat("2", 24), ID: "file-protocol", Name: "技术协议.pdf", MediaType: "application/pdf", Bytes: 12, SHA256: strings.Repeat("b", 64)},
+		{Type: "forge-file", SourceKind: "owner", MaterialID: strings.Repeat("3", 24), ID: "file-metrics", Name: "指标附件.pdf", MediaType: "application/pdf", Bytes: 12, SHA256: strings.Repeat("d", 64)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resources, err := decodeDelegatedResources(rawResources, "input-revision-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resources = append(resources, recordResourceForTest("sales_contract", "contract-1"))
+	if _, err := newDispatcherWithResources(&captureHost{}, []string{id}, catalog, resources); err == nil || !strings.Contains(err.Error(), "explicit materials.ids binding") {
+		t.Fatalf("unbound multiple file parameter was exposed: err=%v", err)
+	}
+	bindings := []frozen.BusinessCapabilityBinding{{CapabilityID: id, Parameters: []frozen.BusinessCapabilityParameterBinding{{Name: "material_file_ids", Source: frozen.BusinessSourceMaterialIDs}}}}
+	host := &captureHost{}
+	dispatcher, err := newDispatcherWithResourcesAndBindings(host, []string{id}, catalog, resources, bindings)
+	if err != nil {
+		t.Fatalf("native file parameter contract was rejected: %v", err)
+	}
+	tools, err := dispatcher.ListTools(t.Context())
+	if err != nil || len(tools) != 1 {
+		t.Fatalf("tools=%+v err=%v", tools, err)
+	}
+	var schema struct {
+		Properties struct {
+			Params struct {
+				Required   []string `json:"required"`
+				Properties map[string]struct {
+					Type        string   `json:"type"`
+					Enum        []string `json:"enum"`
+					Description string   `json:"description"`
+				} `json:"properties"`
+			} `json:"params"`
+		} `json:"properties"`
+	}
+	if err := json.Unmarshal(tools[0].InputSchema, &schema); err != nil {
+		t.Fatal(err)
+	}
+	primary := schema.Properties.Params.Properties["primary_file_id"]
+	if primary.Type != "string" || strings.Join(primary.Enum, ",") != "file-main,file-protocol,file-metrics" ||
+		!strings.Contains(primary.Description, "合同正文.docx") || strings.Join(schema.Properties.Params.Required, ",") != "primary_file_id" {
+		t.Fatalf("single file selector was not limited to this frozen bundle: %s", tools[0].InputSchema)
+	}
+	if _, visible := schema.Properties.Params.Properties["material_file_ids"]; visible {
+		t.Fatalf("multiple file parameter remained model controlled: %s", tools[0].InputSchema)
+	}
+
+	result, err := dispatcher.Dispatch(t.Context(), contract.ToolCall{ID: "frozen-files", Name: tools[0].Name, Args: `{"recordId":"contract-1","params":{"primary_file_id":"file-main"}}`})
+	if err != nil || result == nil || result.IsError || host.call.Name != "run_action" {
+		t.Fatalf("result=%+v call=%+v err=%v", result, host.call, err)
+	}
+	var upstream struct {
+		Params map[string]json.RawMessage `json:"params"`
+	}
+	if err := json.Unmarshal([]byte(host.call.Args), &upstream); err != nil {
+		t.Fatal(err)
+	}
+	var primaryID string
+	var completeIDs []string
+	if err := json.Unmarshal(upstream.Params["primary_file_id"], &primaryID); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(upstream.Params["material_file_ids"], &completeIDs); err != nil {
+		t.Fatal(err)
+	}
+	if primaryID != "file-main" || strings.Join(completeIDs, ",") != "file-main,file-protocol,file-metrics" {
+		t.Fatalf("Forge did not receive selected primary and complete frozen set: primary=%q ids=%v", primaryID, completeIDs)
+	}
+
+	for _, args := range []string{
+		`{"recordId":"contract-1","params":{"primary_file_id":"old-file-from-another-task"}}`,
+		`{"recordId":"contract-1","params":{"primary_file_id":"file-main","material_file_ids":["old-file-from-another-task"]}}`,
+	} {
+		host.call = contract.ToolCall{}
+		result, err = dispatcher.Dispatch(t.Context(), contract.ToolCall{ID: "invalid-file-scope", Name: tools[0].Name, Args: args})
+		if err != nil || result == nil || !result.IsError || host.call.Name != "" {
+			t.Fatalf("out-of-bundle file or model override reached Forge: args=%s result=%+v call=%+v err=%v", args, result, host.call, err)
+		}
+	}
+	selection := map[string]fileParameterSelection{"primary_file_id": {Required: true, IDs: []string{"file-main", "file-protocol"}}}
+	if err := validateFileParameterSelections(map[string]any{"primary_file_id": "old-file-from-another-task"}, selection); err == nil || !strings.Contains(err.Error(), "outside the current frozen material set") {
+		t.Fatalf("runtime membership check accepted an old file ID: err=%v", err)
+	}
+}
+
+func TestDispatcherFailsClosedForRequiredFileWithoutFrozenMaterialsAndOmitsOptionalFile(t *testing.T) {
+	id := "forge:action:sales_contract.ContractRead"
+	record := recordResourceForTest("sales_contract", "contract-1")
+	resources := []delegatedResource{record}
+	requiredCatalog := map[string]actionMetadata{"sales_contract.ContractRead": {
+		Name: "ContractRead", ObjectName: "sales_contract", Params: []actionParam{{Name: "file_id", Type: "file", Required: true}},
+	}}
+	if _, err := newDispatcherWithResources(&captureHost{}, []string{id}, requiredCatalog, resources); err == nil || !strings.Contains(err.Error(), "has no current frozen materials") {
+		t.Fatalf("required file action was exposed without materials: err=%v", err)
+	}
+	requiredMultiple := map[string]actionMetadata{"sales_contract.ContractRead": {
+		Name: "ContractRead", ObjectName: "sales_contract", Params: []actionParam{{Name: "file_ids", Type: "file", Multiple: true, Required: true}},
+	}}
+	requiredMultipleBinding := []frozen.BusinessCapabilityBinding{{CapabilityID: id, Parameters: []frozen.BusinessCapabilityParameterBinding{{Name: "file_ids", Source: frozen.BusinessSourceMaterialIDs}}}}
+	if _, err := newDispatcherWithResourcesAndBindings(&captureHost{}, []string{id}, requiredMultiple, resources, requiredMultipleBinding); err == nil || !strings.Contains(err.Error(), "has no current frozen materials") {
+		t.Fatalf("required multiple file action was exposed without materials: err=%v", err)
+	}
+	optionalCatalog := map[string]actionMetadata{"sales_contract.ContractRead": {
+		Name: "ContractRead", ObjectName: "sales_contract", Params: []actionParam{{Name: "file_id", Type: "file"}},
+	}}
+	dispatcher, err := newDispatcherWithResources(&captureHost{}, []string{id}, optionalCatalog, resources)
+	if err != nil {
+		t.Fatalf("optional file action was rejected without materials: %v", err)
+	}
+	tools, err := dispatcher.ListTools(t.Context())
+	if err != nil || len(tools) != 1 || strings.Contains(string(tools[0].InputSchema), "file_id") {
+		t.Fatalf("optional file without resources was exposed: tools=%+v err=%v", tools, err)
+	}
+	bindings := []frozen.BusinessCapabilityBinding{{CapabilityID: id, Parameters: []frozen.BusinessCapabilityParameterBinding{{Name: "file_ids", Source: frozen.BusinessSourceMaterialIDs}}}}
+	optionalMultiple := map[string]actionMetadata{"sales_contract.ContractRead": {
+		Name: "ContractRead", ObjectName: "sales_contract", Params: []actionParam{{Name: "file_ids", Type: "file", Multiple: true}},
+	}}
+	dispatcher, err = newDispatcherWithResourcesAndBindings(&captureHost{}, []string{id}, optionalMultiple, resources, bindings)
+	if err != nil {
+		t.Fatalf("optional multiple file binding without materials was rejected: %v", err)
+	}
+	tools, err = dispatcher.ListTools(t.Context())
+	if err != nil || len(tools) != 1 || strings.Contains(string(tools[0].InputSchema), "file_ids") {
+		t.Fatalf("optional multiple file parameter was exposed: tools=%+v err=%v", tools, err)
+	}
+}
+
+func TestDispatcherPreservesExplicitSingleFileBindingForUniqueFrozenMaterial(t *testing.T) {
+	id := "forge:action:sales_contract.ContractSubmit"
+	catalog := map[string]actionMetadata{"sales_contract.ContractSubmit": {
+		Name: "ContractSubmit", ObjectName: "sales_contract", RequiresRecord: true,
+		Params: []actionParam{{Name: "file_id", Type: "file", Required: true}},
+	}}
+	bindings := []frozen.BusinessCapabilityBinding{{CapabilityID: id, Parameters: []frozen.BusinessCapabilityParameterBinding{{Name: "file_id", Source: frozen.BusinessSourceMaterialID}}}}
 	resources := []delegatedResource{
-		{Type: "forge-file", ID: "file-a", Name: "A.md", Bytes: 1, SHA256: strings.Repeat("a", 64)},
+		{Type: "forge-file", ID: "frozen-file", Name: "合同正文.md", Bytes: 8, SHA256: strings.Repeat("a", 64)},
 		recordResourceForTest("sales_contract", "contract-1"),
 	}
-	if _, err := newDispatcherWithResources(&captureHost{}, []string{id}, catalog, resources); err == nil || !strings.Contains(err.Error(), "explicit task-material binding") {
-		t.Fatalf("unbound file parameter was exposed: err=%v", err)
+	host := &captureHost{}
+	dispatcher, err := newDispatcherWithResourcesAndBindings(host, []string{id}, catalog, resources, bindings)
+	if err != nil {
+		t.Fatalf("previously supported single-file binding was rejected: %v", err)
 	}
-	bindings := []frozen.BusinessCapabilityBinding{{CapabilityID: id, Parameters: []frozen.BusinessCapabilityParameterBinding{{Name: "material_file", Source: frozen.BusinessSourceMaterialID}}}}
-	if _, err := newDispatcherWithResourcesAndBindings(&captureHost{}, []string{id}, catalog, resources, bindings); err != nil {
-		t.Fatalf("single file mapping rejected: %v", err)
+	tools, _ := dispatcher.ListTools(t.Context())
+	if len(tools) != 1 || strings.Contains(string(tools[0].InputSchema), "file_id") {
+		t.Fatalf("explicitly bound single file remained model controlled: tools=%+v", tools)
 	}
-	fileListCatalog := map[string]actionMetadata{"sales_contract.ContractSubmit": {
-		Name: "ContractSubmit", ObjectName: "sales_contract", RequiresRecord: true,
-		Params: []actionParam{{Name: "material_file", Type: "file", Multiple: true, Required: true}},
+	result, err := dispatcher.Dispatch(t.Context(), contract.ToolCall{ID: "legacy-single-binding", Name: tools[0].Name, Args: `{"recordId":"contract-1"}`})
+	if err != nil || result == nil || result.IsError {
+		t.Fatalf("explicitly bound single file did not dispatch: result=%+v err=%v", result, err)
+	}
+	var upstream struct {
+		Params map[string]string `json:"params"`
+	}
+	if err := json.Unmarshal([]byte(host.call.Args), &upstream); err != nil || upstream.Params["file_id"] != "frozen-file" {
+		t.Fatalf("single-file binding did not inject its unique frozen resource: params=%+v err=%v", upstream.Params, err)
+	}
+
+	resources = []delegatedResource{
+		resources[0],
+		{Type: "forge-file", ID: "second-file", Name: "补充材料.md", Bytes: 9, SHA256: strings.Repeat("b", 64)},
+		resources[1],
+	}
+	if _, err := newDispatcherWithResourcesAndBindings(&captureHost{}, []string{id}, catalog, resources, bindings); err == nil || !strings.Contains(err.Error(), "requires exactly one") {
+		t.Fatalf("ambiguous explicit single-file binding was allowed: err=%v", err)
+	}
+}
+
+func TestDevelopmentDispatcherUsesTheSameFrozenFileMappingWithoutForge(t *testing.T) {
+	id := "forge:action:sales_contract.ContractSubmit"
+	catalog := map[string]actionMetadata{"sales_contract.ContractSubmit": {
+		Name: "ContractSubmit", ObjectName: "sales_contract", Params: []actionParam{
+			{Name: "primary", Type: "file", Required: true},
+			{Name: "files", Type: "file", Multiple: true, Required: true},
+		},
 	}}
-	if _, err := newDispatcherWithResourcesAndBindings(&captureHost{}, []string{id}, fileListCatalog, resources, bindings); err == nil || !strings.Contains(err.Error(), "only one") {
-		t.Fatalf("unsupported file-list mapping err=%v", err)
+	validatedActions, err := ValidateDevelopmentActions([]string{id}, []DevelopmentAction{{
+		CapabilityID: id, Name: "ContractSubmit", ObjectName: "sales_contract", Params: catalog["sales_contract.ContractSubmit"].Params,
+	}})
+	if err != nil || len(validatedActions) != 1 || !validatedActions[0].Params[1].Multiple {
+		t.Fatalf("development action validation dropped the native multiple flag: actions=%+v err=%v", validatedActions, err)
+	}
+	resources := []delegatedResource{
+		{Type: "forge-file", ID: "synthetic-main", Name: "合成主件.txt", Bytes: 8, SHA256: strings.Repeat("a", 64)},
+		{Type: "forge-file", ID: "synthetic-support", Name: "合成附件.txt", Bytes: 9, SHA256: strings.Repeat("b", 64)},
+	}
+	bindings := []frozen.BusinessCapabilityBinding{{CapabilityID: id, Parameters: []frozen.BusinessCapabilityParameterBinding{{Name: "files", Source: frozen.BusinessSourceMaterialIDs}}}}
+	dispatcher, err := newDispatcherWithBindings(developmentHost{syntheticMaterialCount: len(resources)}, []string{id}, developmentCatalog(validatedActions), bindings, resources, "隔离调试使用合成材料，不会访问 Forge 或写入业务数据。")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tools, err := dispatcher.ListTools(t.Context())
+	if err != nil || len(tools) != 1 || !strings.Contains(tools[0].Description, "不会访问 Forge") {
+		t.Fatalf("tools=%+v err=%v", tools, err)
+	}
+	result, err := dispatcher.Dispatch(t.Context(), contract.ToolCall{ID: "trial-files", Name: tools[0].Name, Args: `{"params":{"primary":"synthetic-main"}}`})
+	if err != nil || result == nil || result.IsError || !strings.Contains(result.Content, `"simulated":true`) ||
+		!strings.Contains(result.Content, "使用 2 份合成材料") || !strings.Contains(result.Content, "未访问 Forge") {
+		t.Fatalf("development file mapping was not clearly simulated: result=%+v err=%v", result, err)
+	}
+	var simulated struct {
+		Params map[string]json.RawMessage `json:"params"`
+	}
+	if err := json.Unmarshal([]byte(result.Content), &simulated); err != nil {
+		t.Fatal(err)
+	}
+	var fileIDs []string
+	if err := json.Unmarshal(simulated.Params["files"], &fileIDs); err != nil {
+		t.Fatal(err)
+	}
+	if len(fileIDs) != 2 || strings.Join(fileIDs, ",") != "synthetic-main,synthetic-support" {
+		t.Fatalf("simulation did not carry both frozen file IDs: %v", fileIDs)
 	}
 }
 
@@ -389,18 +591,6 @@ func TestDispatcherFailsClosedWhenPublishedActionIsNotVisibleToEmployee(t *testi
 	_, err := newDispatcher(&captureHost{}, []string{"forge:action:sales_contract.ContractSubmit"}, map[string]actionMetadata{})
 	if err == nil || !strings.Contains(err.Error(), "unavailable to the current employee") {
 		t.Fatalf("err=%v", err)
-	}
-}
-
-func TestReadActionCatalogUsesEmployeeVisibleForgeMetadata(t *testing.T) {
-	host := &captureHost{result: &contract.ToolResult{Content: `{"actions":[{"name":"ContractSubmit","objectName":"sales_contract","description":"提交指定版本","requiresRecord":true,"params":[{"name":"material_file_id","type":"string","required":true}]}]}`}}
-	catalog, err := readActionCatalog(t.Context(), host)
-	if err != nil {
-		t.Fatal(err)
-	}
-	item, ok := catalog["sales_contract.ContractSubmit"]
-	if !ok || !item.RequiresRecord || len(item.Params) != 1 || host.call.Name != "list_actions" || host.call.Args != `{}` {
-		t.Fatalf("catalog=%+v call=%+v", catalog, host.call)
 	}
 }
 
