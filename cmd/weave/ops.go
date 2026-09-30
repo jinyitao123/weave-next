@@ -18,6 +18,10 @@ const opsUsage = `usage: weave ops <command>
 commands:
   events list-failed             list employee run events Forge permanently rejected
   events redeliver [--event ID]  requeue permanently failed events (all when no --event)
+  export-run --workspace W --run R --out FILE [--include-content]
+                                 write one run's stored state to a file; credentials are never written
+  import-run --file FILE [--disposable-target]
+                                 load an exported run into a disposable database with the current schema
 
 DATABASE_URL must point at the Weave database.`
 
@@ -32,6 +36,10 @@ func runOpsCommand(args []string, stdout, stderr io.Writer) int {
 	switch args[0] {
 	case "events":
 		return runOpsEvents(args[1:], stdout, stderr)
+	case "export-run":
+		return runOpsExportRun(args[1:], stdout, stderr)
+	case "import-run":
+		return runOpsImportRun(args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown ops command %q\n\n%s\n", args[0], opsUsage)
 		return 2
