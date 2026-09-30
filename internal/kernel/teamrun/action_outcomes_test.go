@@ -38,6 +38,11 @@ func TestBusinessActionOutcomesProjectOnlyPlatformReceiptsAcrossMembers(t *testi
 	if outcomes[0].NodeID != "lead" || outcomes[0].ActionName != "提交指定合同版本" || outcomes[0].Status != "succeeded" {
 		t.Fatalf("lead action fact was not retained: %+v", outcomes[0])
 	}
+	if !strings.Contains(outcomes[0].Summary, "业务动作“提交指定合同版本”") ||
+		!strings.Contains(outcomes[0].Summary, "工具调用返回成功") ||
+		strings.Contains(outcomes[0].Summary, "已确认完成") {
+		t.Fatalf("successful receipt was described as a business-state confirmation: %+v", outcomes[0])
+	}
 	if outcomes[1].NodeID != "review" || outcomes[1].Status != "unknown" || !strings.Contains(outcomes[1].Summary, "结果未知") {
 		t.Fatalf("started-only action was not treated as unknown: %+v", outcomes[1])
 	}
@@ -77,16 +82,36 @@ func TestWorkerPromptReceivesLeadReceiptWithoutPromotingFakeLeadClaim(t *testing
 		t.Fatal(err)
 	}
 	leadText := "Inputs: lead brief says: 我已完成假动作 RequestRevision"
-	workerPrompt, err := appendPlatformBusinessActionFacts(leadText, facts)
+	workerPrompt, err := appendPlatformBusinessActionFacts(leadText, facts, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	marker := "Platform-recorded business action facts from this same TeamRun"
+	marker := "Platform-recorded Forge run_action receipts from this same TeamRun"
 	sectionAt := strings.Index(workerPrompt, marker)
 	if sectionAt < 0 || !strings.Contains(workerPrompt[:sectionAt], "假动作 RequestRevision") ||
 		!strings.Contains(workerPrompt[sectionAt:], "提交指定合同版本") ||
 		strings.Contains(workerPrompt[sectionAt:], "RequestRevision") {
 		t.Fatalf("worker action facts did not separate the lead's text from the platform receipt: %s", workerPrompt)
+	}
+}
+
+func TestWorkbenchResultPromptExplicitlyReportsZeroActionReceipts(t *testing.T) {
+	modelSummary := "已调用业务提交动作"
+	prompt := appendWorkbenchResultInstruction("Model result summary: " + modelSummary)
+	prompt, err := appendPlatformBusinessActionFacts(prompt, nil, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(prompt, "Platform-recorded Forge run_action receipts") ||
+		!strings.Contains(prompt, "[]") ||
+		!strings.Contains(prompt, "zero Forge run_action calls were recorded") ||
+		!strings.Contains(prompt, "any claim that a business action was called or completed is unverified") ||
+		!strings.Contains(prompt, modelSummary) {
+		t.Fatalf("final result prompt did not separate model claims from the empty platform receipt list: %s", prompt)
+	}
+	unchanged, err := appendPlatformBusinessActionFacts("ordinary worker prompt", nil, false)
+	if err != nil || unchanged != "ordinary worker prompt" {
+		t.Fatalf("empty action facts changed a prompt without a final result contract: prompt=%q err=%v", unchanged, err)
 	}
 }
 

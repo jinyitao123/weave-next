@@ -147,11 +147,11 @@ func sameBusinessActionDetail(left, right businessActionActivityDetailV1) bool {
 func businessActionOutcomeSummary(label, status string) string {
 	switch status {
 	case "succeeded":
-		return "平台记录：业务动作“" + label + "”已确认完成。"
+		return "平台记录：业务动作“" + label + "”的工具调用返回成功；该回执不代表业务记录已达到最终状态。"
 	case "failed":
-		return "平台记录：业务动作“" + label + "”返回失败。"
+		return "平台记录：业务动作“" + label + "”的工具调用返回失败。"
 	default:
-		return "平台记录：业务动作“" + label + "”结果未知，请先核对业务记录。"
+		return "平台记录：业务动作“" + label + "”的工具调用结果未知，请先核对业务记录。"
 	}
 }
 

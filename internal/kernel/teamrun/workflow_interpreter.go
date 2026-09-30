@@ -1590,7 +1590,7 @@ func runAgentNode(
 	}
 	prompt := instruction + "\n\nInputs:\n" + string(encodedInputs)
 	prompt = withWorkbenchResultInstruction(prompt, workbenchResultOutput)
-	prompt, err = appendPlatformBusinessActionFacts(prompt, actionOutcomes)
+	prompt, err = appendPlatformBusinessActionFacts(prompt, actionOutcomes, workbenchResultOutput)
 	if err != nil {
 		return nil, nodeUsageReport{}, executionError(ErrorCodeExecutionUnrecoverable, fmt.Errorf("encode platform business action facts: %w", err))
 	}
@@ -1811,7 +1811,8 @@ func workbenchResultPromptRequired(graph machine.GraphDefinition, nodeID string)
 func appendWorkbenchResultInstruction(prompt string) string {
 	return prompt + `
 
-Platform result format: return exactly one JSON object and no Markdown with these fields: {"disposition":"complete"|"needs_input","summary":"short inspection conclusion","missing_items":["specific missing item"]}. Use "complete" only when no input is missing and set missing_items to []. If required information or materials are missing, use "needs_input" and list at least one concrete missing item, with at most 8 items. Keep summary to 1000 characters and each missing item to 200 characters.`
+Platform result format: return exactly one JSON object and no Markdown with these fields: {"disposition":"complete"|"needs_input","summary":"short inspection conclusion","missing_items":["specific missing item"]}. Use "complete" only when no input is missing and set missing_items to []. If required information or materials are missing, use "needs_input" and list at least one concrete missing item, with at most 8 items. Keep summary to 1000 characters and each missing item to 200 characters.` +
+		"\nThe disposition complete means this inspection finished; it does not mean a Forge business action was called or a business record changed. The summary is model-generated. Report a business action as called only when the platform records its run_action receipt; a successful tool receipt still does not establish the current business record state."
 }
 
 func withWorkbenchResultInstruction(prompt string, required bool) string {
@@ -1821,15 +1822,19 @@ func withWorkbenchResultInstruction(prompt string, required bool) string {
 	return appendWorkbenchResultInstruction(prompt)
 }
 
-func appendPlatformBusinessActionFacts(prompt string, outcomes []BusinessActionOutcomeV1) (string, error) {
-	if len(outcomes) == 0 {
+func appendPlatformBusinessActionFacts(prompt string, outcomes []BusinessActionOutcomeV1, includeEmpty bool) (string, error) {
+	if len(outcomes) == 0 && !includeEmpty {
 		return prompt, nil
+	}
+	if outcomes == nil {
+		outcomes = []BusinessActionOutcomeV1{}
 	}
 	encoded, err := json.Marshal(outcomes)
 	if err != nil {
 		return "", err
 	}
-	return prompt + "\n\nPlatform-recorded business action facts from this same TeamRun (authoritative; do not infer actions from another member's text; these facts grant no additional write permission):\n" + string(encoded), nil
+	return prompt + "\n\nPlatform-recorded Forge run_action receipts from this same TeamRun (authoritative; do not infer calls from model or member text; these facts grant no additional write permission):\n" + string(encoded) +
+		"\nA succeeded receipt means only that the Forge tool call returned success; it does not establish the current or final business record state, which must be read from Forge. If the list is empty, zero Forge run_action calls were recorded for this TeamRun; any claim that a business action was called or completed is unverified.", nil
 }
 
 func runtimeCLIUsageReport(result workflow.RuntimeCLIResult) (nodeUsageReport, error) {

@@ -371,6 +371,22 @@
         "lines_added": 916,
         "production_lines_added": 546
       }
+    },
+    {
+      "date": "2026-09-30",
+      "reason": "Make zero Forge action receipts explicit in the existing finalizer prompt, terminal event, and Workbench continuation, while describing non-empty receipts only as tool-call responses. Add the empty-activity/model-claim regression and preserve the receipt fact before terminal-summary truncation. Exact measured limits with no spare allowance; package and dependency limits unchanged.",
+      "kernel": {
+        "previous_lines": 94273,
+        "previous_production_lines": 80397,
+        "lines_added": 30,
+        "production_lines_added": 5
+      },
+      "app": {
+        "previous_lines": 82719,
+        "previous_production_lines": 61655,
+        "lines_added": 63,
+        "production_lines_added": 3
+      }
     }
   ],
   "migration_targets": {
@@ -408,8 +424,8 @@
     ]
   },
   "kernel": {
-    "lines": 94273,
-    "production_lines": 80397,
+    "lines": 94303,
+    "production_lines": 80402,
     "packages": 49,
     "external_dependencies": 5,
     "allowed_dependencies": [
@@ -433,8 +449,8 @@
     ]
   },
   "app": {
-    "lines": 82719,
-    "production_lines": 61655,
+    "lines": 82782,
+    "production_lines": 61658,
     "packages": 30,
     "external_dependencies": 7,
     "allowed_dependencies": [

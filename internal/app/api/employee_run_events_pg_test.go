@@ -85,11 +85,11 @@ func TestEmployeeRunEventBackfillDeliversOnceToForgeInboxRealPG(t *testing.T) {
 		WHERE run.workspace_id='ws' AND run.run_id=$1 AND run.status='succeeded'`, dispatch.RunID).Scan(&candidateCount); err != nil || candidateCount != 1 {
 		t.Fatalf("terminal event candidate count=%d err=%v", candidateCount, err)
 	}
-	seedTerminalRun := func(status string) (string, string) {
+	seedTerminalRun := func(status string) (string, string, string) {
 		t.Helper()
 		runID, inputRevisionID := uuid.NewString(), uuid.NewString()
 		taskID, registrationID, clientRequestID := uuid.NewString(), uuid.NewString(), uuid.NewString()
-		sessionID := "workbench-session-" + status
+		sessionID := "workbench-session-" + status + "-" + runID[:8]
 		now := time.Now().UTC()
 		tx, err := pool.Begin(t.Context())
 		if err != nil {
@@ -143,17 +143,39 @@ func TestEmployeeRunEventBackfillDeliversOnceToForgeInboxRealPG(t *testing.T) {
 		if err := tx.Commit(t.Context()); err != nil {
 			t.Fatalf("commit %s terminal fixture: %v", status, err)
 		}
-		return runID, inputRevisionID
+		return runID, inputRevisionID, sessionID
 	}
-	failedRunID, failedInputRevisionID := seedTerminalRun("failed")
-	cancelledRunID, cancelledInputRevisionID := seedTerminalRun("cancelled")
-	revisionRequiredRunID, revisionRequiredInputRevisionID := seedTerminalRun("succeeded")
+	failedRunID, failedInputRevisionID, _ := seedTerminalRun("failed")
+	cancelledRunID, cancelledInputRevisionID, _ := seedTerminalRun("cancelled")
+	revisionRequiredRunID, revisionRequiredInputRevisionID, revisionRequiredSessionID := seedTerminalRun("succeeded")
+	noActionRunID, noActionInputRevisionID, noActionSessionID := seedTerminalRun("succeeded")
 	if _, err := pool.Exec(t.Context(), `INSERT INTO weave_final_deliverables
 		(id,workspace_id,user_id,lead_avatar_id,session_id,event_id,run_id,run_snapshot_id,title,content,content_type,metadata)
-		VALUES($1,'ws','user','lead','workbench-session-succeeded',$2,$3,$3,'本轮检查意见',$4,'application/json',
+		VALUES($1,'ws','user','lead',$2,$3,$4,$4,'本轮检查意见',$5,'application/json',
 		'{"artifact_kind":"final","workbench_result":{"protocol":"workbench_result_v1","disposition":"needs_input","summary":"缺少原始签署日期","missing_items":["提供完整签署日期"]}}'::jsonb)`,
-		"deliverable-revision-required", uuid.NewString(), revisionRequiredRunID,
+		"deliverable-revision-required", revisionRequiredSessionID, uuid.NewString(), revisionRequiredRunID,
 		`{"disposition":"needs_input","summary":"缺少原始签署日期","missing_items":["提供完整签署日期"]}`); err != nil {
+		t.Fatal(err)
+	}
+	noActionMemberClaim, err := json.Marshal(map[string]any{"tools": []string{}, "summary": "已调用业务提交动作"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(t.Context(), `INSERT INTO weave_team_run_activity_events
+		(workspace_id,run_id,event_id,kind,node_id,member_id,member_version,detail,occurred_at)
+		VALUES('ws',$1,$2,'member_completed','lead','lead-agent',1,$3::jsonb,statement_timestamp())`,
+		noActionRunID, uuid.NewString(), string(noActionMemberClaim)); err != nil {
+		t.Fatal(err)
+	}
+	noActionContent := "已调用业务提交动作。" + strings.Repeat("检查材料。", 1000)
+	if len([]rune(noActionContent)) <= 4000 {
+		t.Fatal("zero-action model claim fixture must exceed the notification summary limit")
+	}
+	if _, err := pool.Exec(t.Context(), `INSERT INTO weave_final_deliverables
+		(id,workspace_id,user_id,lead_avatar_id,session_id,event_id,run_id,run_snapshot_id,title,content,content_type,metadata)
+		VALUES($1,'ws','user','lead',$2,$3,$4,$4,'模型执行摘要',$5,'text/markdown',
+		'{"artifact_kind":"final"}'::jsonb)`,
+		"deliverable-zero-actions", noActionSessionID, uuid.NewString(), noActionRunID, noActionContent); err != nil {
 		t.Fatal(err)
 	}
 	terminalKinds := map[string]string{
@@ -161,12 +183,14 @@ func TestEmployeeRunEventBackfillDeliversOnceToForgeInboxRealPG(t *testing.T) {
 		failedRunID:           "failure",
 		cancelledRunID:        "cancelled",
 		revisionRequiredRunID: "revision_required",
+		noActionRunID:         "result",
 	}
 	inputReferences := map[string]string{
 		dispatch.RunID:        receipt.InputRevisionID,
 		failedRunID:           failedInputRevisionID,
 		cancelledRunID:        cancelledInputRevisionID,
 		revisionRequiredRunID: revisionRequiredInputRevisionID,
+		noActionRunID:         noActionInputRevisionID,
 	}
 	actions := &teamrun.PGActivityStore{Transactions: pool}
 	writeRunActionEvent := func(runID, phase, callID, actionName, actionLabel, recordID, status string) {
@@ -277,8 +301,16 @@ func TestEmployeeRunEventBackfillDeliversOnceToForgeInboxRealPG(t *testing.T) {
 				t.Errorf("revision-required event title did not identify required input: %#v", event)
 			}
 			summary, _ := event["summary"].(string)
-			if !strings.Contains(summary, "团队检查结论：缺少原始签署日期") || !strings.Contains(summary, "需要补充：提供完整签署日期") {
+			if !strings.Contains(summary, "团队检查摘要（模型输出）：缺少原始签署日期") || !strings.Contains(summary, "需要补充：提供完整签署日期") {
 				t.Errorf("revision-required event did not include structured inspection facts: %q", summary)
+			}
+		} else if runReference == noActionRunID {
+			summary, _ := event["summary"].(string)
+			if event["title"] != "团队运行已完成：flow" ||
+				!strings.Contains(summary, "团队成果（模型输出）：已调用业务提交动作") ||
+				!strings.Contains(summary, "Forge 业务动作调用记录为 0 条") ||
+				!strings.Contains(summary, "不证明业务写入或正式业务状态") || len([]rune(summary)) != 4000 {
+				t.Errorf("empty action receipts did not override the model's write claim: title=%#v summary=%q", event["title"], summary)
 			}
 		} else if runReference == cancelledRunID && event["title"] != "团队运行已取消：flow" {
 			t.Errorf("cancel event title did not identify cancellation: %#v", event)
@@ -314,7 +346,7 @@ func TestEmployeeRunEventBackfillDeliversOnceToForgeInboxRealPG(t *testing.T) {
 		Pool: pool, Endpoint: forge.URL, Secret: "event-secret",
 		Client: forge.Client(), PollInterval: time.Millisecond,
 	}
-	for attempt := 0; attempt < 5; attempt++ {
+	for attempt := 0; attempt < 6; attempt++ {
 		processed, err := worker.Sweep(t.Context())
 		if err != nil || processed != 1 {
 			t.Fatalf("sweep %d processed=%d err=%v", attempt+1, processed, err)
@@ -325,20 +357,20 @@ func TestEmployeeRunEventBackfillDeliversOnceToForgeInboxRealPG(t *testing.T) {
 		}
 	}
 	processed, err := worker.Sweep(t.Context())
-	if err != nil || processed != 0 || calls.Load() != 5 {
+	if err != nil || processed != 0 || calls.Load() != 6 {
 		t.Fatalf("repeat sweep processed=%d calls=%d err=%v", processed, calls.Load(), err)
 	}
 	var outboxCount, deliveredCount, totalAttempts int
 	if err := pool.QueryRow(t.Context(), `SELECT count(*),count(*) FILTER (WHERE delivery_state='delivered'),sum(delivery_attempts)
 		FROM weave_employee_run_event_outbox WHERE workspace_id='ws' AND run_id=ANY($1::text[])`,
-		[]string{dispatch.RunID, failedRunID, revisionRequiredRunID, cancelledRunID}).Scan(&outboxCount, &deliveredCount, &totalAttempts); err != nil {
+		[]string{dispatch.RunID, failedRunID, revisionRequiredRunID, cancelledRunID, noActionRunID}).Scan(&outboxCount, &deliveredCount, &totalAttempts); err != nil {
 		t.Fatal(err)
 	}
-	if outboxCount != 4 || deliveredCount != 4 || totalAttempts != 5 {
-		t.Fatalf("outbox rows=%d delivered=%d total attempts=%d, want 4, 4, 5", outboxCount, deliveredCount, totalAttempts)
+	if outboxCount != 5 || deliveredCount != 5 || totalAttempts != 6 {
+		t.Fatalf("outbox rows=%d delivered=%d total attempts=%d, want 5, 5, 6", outboxCount, deliveredCount, totalAttempts)
 	}
 	receiverMu.Lock()
-	if len(notificationByIdempotencyKey) != 4 {
+	if len(notificationByIdempotencyKey) != 5 {
 		t.Errorf("receiver created %d inbox rows, want one per terminal run", len(notificationByIdempotencyKey))
 	}
 	for runID := range terminalKinds {
@@ -347,7 +379,7 @@ func TestEmployeeRunEventBackfillDeliversOnceToForgeInboxRealPG(t *testing.T) {
 		}
 	}
 	receiverMu.Unlock()
-	for _, runID := range []string{dispatch.RunID, failedRunID, revisionRequiredRunID, cancelledRunID} {
+	for _, runID := range []string{dispatch.RunID, failedRunID, revisionRequiredRunID, cancelledRunID, noActionRunID} {
 		var state, notificationID string
 		var attempts int
 		if err := pool.QueryRow(t.Context(), `SELECT delivery_state,delivery_attempts,forge_notification_id
