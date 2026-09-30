@@ -148,6 +148,8 @@ func TestEmployeeRunEventBackfillDeliversOnceToForgeInboxRealPG(t *testing.T) {
 	failedRunID, failedInputRevisionID, _ := seedTerminalRun("failed")
 	cancelledRunID, cancelledInputRevisionID, _ := seedTerminalRun("cancelled")
 	revisionRequiredRunID, revisionRequiredInputRevisionID, revisionRequiredSessionID := seedTerminalRun("succeeded")
+	successfulActionNeedsInputRunID, successfulActionNeedsInputRevisionID, successfulActionNeedsInputSessionID := seedTerminalRun("succeeded")
+	unresolvedActionNeedsInputRunID, unresolvedActionNeedsInputRevisionID, unresolvedActionNeedsInputSessionID := seedTerminalRun("succeeded")
 	noActionRunID, noActionInputRevisionID, noActionSessionID := seedTerminalRun("succeeded")
 	if _, err := pool.Exec(t.Context(), `INSERT INTO weave_final_deliverables
 		(id,workspace_id,user_id,lead_avatar_id,session_id,event_id,run_id,run_snapshot_id,title,content,content_type,metadata)
@@ -157,6 +159,19 @@ func TestEmployeeRunEventBackfillDeliversOnceToForgeInboxRealPG(t *testing.T) {
 		`{"disposition":"needs_input","summary":"缺少原始签署日期","missing_items":["提供完整签署日期"]}`); err != nil {
 		t.Fatal(err)
 	}
+	insertNeedsInputDeliverable := func(id, runID, sessionID string) {
+		t.Helper()
+		if _, err := pool.Exec(t.Context(), `INSERT INTO weave_final_deliverables
+			(id,workspace_id,user_id,lead_avatar_id,session_id,event_id,run_id,run_snapshot_id,title,content,content_type,metadata)
+			VALUES($1,'ws','user','lead',$2,$3,$4,$4,'本轮检查意见',
+			'{"disposition":"needs_input","summary":"缺少原始签署日期","missing_items":["提供完整签署日期"]}',
+			'application/json','{"artifact_kind":"final","workbench_result":{"protocol":"workbench_result_v1","disposition":"needs_input","summary":"缺少原始签署日期","missing_items":["提供完整签署日期"]}}'::jsonb)`,
+			id, sessionID, uuid.NewString(), runID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	insertNeedsInputDeliverable("deliverable-success-action-needs-input", successfulActionNeedsInputRunID, successfulActionNeedsInputSessionID)
+	insertNeedsInputDeliverable("deliverable-unresolved-action-needs-input", unresolvedActionNeedsInputRunID, unresolvedActionNeedsInputSessionID)
 	noActionMemberClaim, err := json.Marshal(map[string]any{"tools": []string{}, "summary": "已调用业务提交动作"})
 	if err != nil {
 		t.Fatal(err)
@@ -179,18 +194,22 @@ func TestEmployeeRunEventBackfillDeliversOnceToForgeInboxRealPG(t *testing.T) {
 		t.Fatal(err)
 	}
 	terminalKinds := map[string]string{
-		dispatch.RunID:        "result",
-		failedRunID:           "failure",
-		cancelledRunID:        "cancelled",
-		revisionRequiredRunID: "revision_required",
-		noActionRunID:         "result",
+		dispatch.RunID:                  "result",
+		failedRunID:                     "failure",
+		cancelledRunID:                  "cancelled",
+		revisionRequiredRunID:           "revision_required",
+		successfulActionNeedsInputRunID: "result",
+		unresolvedActionNeedsInputRunID: "revision_required",
+		noActionRunID:                   "result",
 	}
 	inputReferences := map[string]string{
-		dispatch.RunID:        receipt.InputRevisionID,
-		failedRunID:           failedInputRevisionID,
-		cancelledRunID:        cancelledInputRevisionID,
-		revisionRequiredRunID: revisionRequiredInputRevisionID,
-		noActionRunID:         noActionInputRevisionID,
+		dispatch.RunID:                  receipt.InputRevisionID,
+		failedRunID:                     failedInputRevisionID,
+		cancelledRunID:                  cancelledInputRevisionID,
+		revisionRequiredRunID:           revisionRequiredInputRevisionID,
+		successfulActionNeedsInputRunID: successfulActionNeedsInputRevisionID,
+		unresolvedActionNeedsInputRunID: unresolvedActionNeedsInputRevisionID,
+		noActionRunID:                   noActionInputRevisionID,
 	}
 	actions := &teamrun.PGActivityStore{Transactions: pool}
 	writeRunActionEvent := func(runID, phase, callID, actionName, actionLabel, recordID, status string) {
@@ -233,6 +252,14 @@ func TestEmployeeRunEventBackfillDeliversOnceToForgeInboxRealPG(t *testing.T) {
 	writeActionEvent("started", "call-action-13", "FinalReject", "最后失败动作", "private-record-reference", "")
 	writeActionEvent("result", "call-action-13", "FinalReject", "最后失败动作", "private-record-reference", "failed")
 	writeActionEvent("started", "call-action-14", "FinalUnknown", "最后未知动作", "private-record-reference", "")
+	writeRunActionEvent(successfulActionNeedsInputRunID, "started", "needs-input-success", "ContractSubmit", "提交合同", "private-record-reference", "")
+	writeRunActionEvent(successfulActionNeedsInputRunID, "result", "needs-input-success", "ContractSubmit", "提交合同", "private-record-reference", "succeeded")
+	writeRunActionEvent(successfulActionNeedsInputRunID, "started", "needs-input-failed", "RequestRevision", "提交修订", "private-record-reference", "")
+	writeRunActionEvent(successfulActionNeedsInputRunID, "result", "needs-input-failed", "RequestRevision", "提交修订", "private-record-reference", "failed")
+	writeRunActionEvent(successfulActionNeedsInputRunID, "started", "needs-input-unknown", "FinalUnknown", "未知动作", "private-record-reference", "")
+	writeRunActionEvent(unresolvedActionNeedsInputRunID, "started", "unresolved-failed", "RequestRevision", "提交修订", "private-record-reference", "")
+	writeRunActionEvent(unresolvedActionNeedsInputRunID, "result", "unresolved-failed", "RequestRevision", "提交修订", "private-record-reference", "failed")
+	writeRunActionEvent(unresolvedActionNeedsInputRunID, "started", "unresolved-unknown", "FinalUnknown", "未知动作", "private-record-reference", "")
 	writeRunActionEvent(failedRunID, "started", "failed-call-1", "RequestRevision", "提交修订", "private-record-reference", "")
 	writeRunActionEvent(failedRunID, "result", "failed-call-1", "RequestRevision", "提交修订", "private-record-reference", "failed")
 	writeRunActionEvent(failedRunID, "started", "failed-call-2", "ContractSubmit", "提交合同", "private-record-reference", "")
@@ -304,6 +331,30 @@ func TestEmployeeRunEventBackfillDeliversOnceToForgeInboxRealPG(t *testing.T) {
 			if !strings.Contains(summary, "团队检查摘要（模型输出）：缺少原始签署日期") || !strings.Contains(summary, "需要补充：提供完整签署日期") {
 				t.Errorf("revision-required event did not include structured inspection facts: %q", summary)
 			}
+		} else if runReference == successfulActionNeedsInputRunID {
+			if event["title"] != "团队运行已完成（业务动作需核对）：flow" {
+				t.Errorf("successful business action did not keep needs_input as a result notification: %#v", event)
+			}
+			summary, _ := event["summary"].(string)
+			if !strings.Contains(summary, "团队检查意见（模型输出）：缺少原始签署日期") ||
+				!strings.Contains(summary, "模型意见提及：提供完整签署日期") ||
+				!strings.Contains(summary, "业务动作调用结果：业务动作“提交合同”调用返回成功") ||
+				!strings.Contains(summary, "业务动作“提交修订”调用返回失败") ||
+				!strings.Contains(summary, "业务动作“未知动作”结果未知") ||
+				!strings.Contains(summary, "后续正式业务事项由 Forge 原生业务状态决定") ||
+				strings.Contains(summary, "需要补充：提供完整签署日期") {
+				t.Errorf("successful action needs_input did not remain an opinion with separate action receipts: %q", summary)
+			}
+		} else if runReference == unresolvedActionNeedsInputRunID {
+			if event["title"] != "团队运行需要补充材料（业务动作需核对）：flow" {
+				t.Errorf("failed or unknown actions were treated as successful: %#v", event)
+			}
+			summary, _ := event["summary"].(string)
+			if !strings.Contains(summary, "团队检查摘要（模型输出）：缺少原始签署日期") ||
+				!strings.Contains(summary, "业务动作“提交修订”调用返回失败") ||
+				!strings.Contains(summary, "业务动作“未知动作”结果未知") {
+				t.Errorf("unresolved action outcomes were not preserved beside needs_input: %q", summary)
+			}
 		} else if runReference == noActionRunID {
 			summary, _ := event["summary"].(string)
 			if event["title"] != "团队运行已完成：flow" ||
@@ -346,7 +397,7 @@ func TestEmployeeRunEventBackfillDeliversOnceToForgeInboxRealPG(t *testing.T) {
 		Pool: pool, Endpoint: forge.URL, Secret: "event-secret",
 		Client: forge.Client(), PollInterval: time.Millisecond,
 	}
-	for attempt := 0; attempt < 6; attempt++ {
+	for attempt := 0; attempt < 8; attempt++ {
 		processed, err := worker.Sweep(t.Context())
 		if err != nil || processed != 1 {
 			t.Fatalf("sweep %d processed=%d err=%v", attempt+1, processed, err)
@@ -357,20 +408,21 @@ func TestEmployeeRunEventBackfillDeliversOnceToForgeInboxRealPG(t *testing.T) {
 		}
 	}
 	processed, err := worker.Sweep(t.Context())
-	if err != nil || processed != 0 || calls.Load() != 6 {
+	if err != nil || processed != 0 || calls.Load() != 8 {
 		t.Fatalf("repeat sweep processed=%d calls=%d err=%v", processed, calls.Load(), err)
 	}
 	var outboxCount, deliveredCount, totalAttempts int
 	if err := pool.QueryRow(t.Context(), `SELECT count(*),count(*) FILTER (WHERE delivery_state='delivered'),sum(delivery_attempts)
 		FROM weave_employee_run_event_outbox WHERE workspace_id='ws' AND run_id=ANY($1::text[])`,
-		[]string{dispatch.RunID, failedRunID, revisionRequiredRunID, cancelledRunID, noActionRunID}).Scan(&outboxCount, &deliveredCount, &totalAttempts); err != nil {
+		[]string{dispatch.RunID, failedRunID, revisionRequiredRunID, successfulActionNeedsInputRunID,
+			unresolvedActionNeedsInputRunID, cancelledRunID, noActionRunID}).Scan(&outboxCount, &deliveredCount, &totalAttempts); err != nil {
 		t.Fatal(err)
 	}
-	if outboxCount != 5 || deliveredCount != 5 || totalAttempts != 6 {
-		t.Fatalf("outbox rows=%d delivered=%d total attempts=%d, want 5, 5, 6", outboxCount, deliveredCount, totalAttempts)
+	if outboxCount != 7 || deliveredCount != 7 || totalAttempts != 8 {
+		t.Fatalf("outbox rows=%d delivered=%d total attempts=%d, want 7, 7, 8", outboxCount, deliveredCount, totalAttempts)
 	}
 	receiverMu.Lock()
-	if len(notificationByIdempotencyKey) != 5 {
+	if len(notificationByIdempotencyKey) != 7 {
 		t.Errorf("receiver created %d inbox rows, want one per terminal run", len(notificationByIdempotencyKey))
 	}
 	for runID := range terminalKinds {
@@ -379,7 +431,8 @@ func TestEmployeeRunEventBackfillDeliversOnceToForgeInboxRealPG(t *testing.T) {
 		}
 	}
 	receiverMu.Unlock()
-	for _, runID := range []string{dispatch.RunID, failedRunID, revisionRequiredRunID, cancelledRunID, noActionRunID} {
+	for _, runID := range []string{dispatch.RunID, failedRunID, revisionRequiredRunID, successfulActionNeedsInputRunID,
+		unresolvedActionNeedsInputRunID, cancelledRunID, noActionRunID} {
 		var state, notificationID string
 		var attempts int
 		if err := pool.QueryRow(t.Context(), `SELECT delivery_state,delivery_attempts,forge_notification_id
