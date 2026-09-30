@@ -455,6 +455,17 @@
         "lines_added": 3,
         "production_lines_added": 3
       }
+    },
+    {
+      "date": "2026-09-30",
+      "reason": "W2 run reproduction kit: operator-only export-run/import-run for one run's stored state (redaction, canary-tested); adds no runtime path, HTTP route or scheduler.",
+      "record": "docs/治理/2026-09-30-平台范围收窄整改登记.md",
+      "app": {
+        "previous_lines": 83221,
+        "previous_production_lines": 61775,
+        "lines_added": 624,
+        "production_lines_added": 387
+      }
     }
   ],
   "migration_targets": {
@@ -517,8 +528,8 @@
     ]
   },
   "app": {
-    "lines": 83221,
-    "production_lines": 61775,
+    "lines": 83845,
+    "production_lines": 62162,
     "packages": 30,
     "external_dependencies": 7,
     "allowed_dependencies": [
