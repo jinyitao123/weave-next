@@ -477,6 +477,23 @@
         "lines_added": 523,
         "production_lines_added": 364
       }
+    },
+    {
+      "date": "2026-09-30",
+      "reason": "W5 run-level business result (shared count and classification, trial contract freeze) and W2 replay follow-ups; no new route, scheduler or execution path.",
+      "record": "docs/治理/2026-09-30-平台范围收窄整改登记.md",
+      "kernel": {
+        "previous_lines": 95492,
+        "previous_production_lines": 80831,
+        "lines_added": 338,
+        "production_lines_added": 171
+      },
+      "app": {
+        "previous_lines": 83845,
+        "previous_production_lines": 62162,
+        "lines_added": 86,
+        "production_lines_added": 83
+      }
     }
   ],
   "migration_targets": {
@@ -514,8 +531,8 @@
     ]
   },
   "kernel": {
-    "lines": 95492,
-    "production_lines": 80831,
+    "lines": 95830,
+    "production_lines": 81002,
     "packages": 49,
     "external_dependencies": 5,
     "allowed_dependencies": [
@@ -539,8 +556,8 @@
     ]
   },
   "app": {
-    "lines": 83845,
-    "production_lines": 62162,
+    "lines": 83931,
+    "production_lines": 62245,
     "packages": 30,
     "external_dependencies": 7,
     "allowed_dependencies": [
