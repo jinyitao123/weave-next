@@ -1134,6 +1134,11 @@ func (d *dispatcher) Dispatch(ctx context.Context, call contract.ToolCall) (*con
 			if status == ActionOutcomeStatusUnknown {
 				message = "Forge 业务动作的结果未知，请先核对业务记录后再继续。"
 			}
+			if errors.Is(err, ErrDelegationExpired) {
+				// The action was refused before reaching Forge. Say why, so the member
+				// does not retry or report a business failure.
+				message = "员工对本次工作的授权已过期，业务动作没有执行；需要员工从原工作重新提交后才能继续。"
+			}
 			return &contract.ToolResult{CallID: call.ID, ToolName: call.Name, Content: message, IsError: true}, nil
 		}
 		if result == nil {

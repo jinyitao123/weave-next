@@ -324,7 +324,10 @@ func (s *Server) handleRegisterDispatchInput(c echo.Context) error {
 	if len(request.Resources) > frozen.MaxDelegatedFiles {
 		// Rejecting here, before Weave accepts the work, keeps the employee from
 		// being told "accepted" for a handoff the runtime would refuse to start.
-		return workflowError(c, http.StatusBadRequest, "dispatch_input_too_many_resources",
+		// 409, not 400: the desktop client treats 409 as a definite rejection of
+		// this registration and stops retrying; any other status reads as an unknown
+		// outcome and sends Pi into a recovery loop. The code names the real cause.
+		return workflowError(c, http.StatusConflict, "dispatch_input_too_many_resources",
 			fmt.Sprintf("a handoff can carry at most %d files", frozen.MaxDelegatedFiles))
 	}
 	registrationID, err := uuid.Parse(request.RegistrationID)

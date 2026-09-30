@@ -438,6 +438,23 @@
         "lines_added": 301,
         "production_lines_added": 91
       }
+    },
+    {
+      "date": "2026-09-30",
+      "reason": "Review fixes for W1/W4/W5: keep the MCP guard's cause and tell the member when authorization expired mid-call, and add tests for both. Exact measured limits with no spare allowance; package and dependency limits unchanged.",
+      "record": "docs/治理/2026-09-30-平台范围收窄整改登记.md",
+      "kernel": {
+        "previous_lines": 94848,
+        "previous_production_lines": 80460,
+        "lines_added": 121,
+        "production_lines_added": 7
+      },
+      "app": {
+        "previous_lines": 83218,
+        "previous_production_lines": 61772,
+        "lines_added": 3,
+        "production_lines_added": 3
+      }
     }
   ],
   "migration_targets": {
@@ -475,8 +492,8 @@
     ]
   },
   "kernel": {
-    "lines": 94848,
-    "production_lines": 80460,
+    "lines": 94969,
+    "production_lines": 80467,
     "packages": 49,
     "external_dependencies": 5,
     "allowed_dependencies": [
@@ -500,8 +517,8 @@
     ]
   },
   "app": {
-    "lines": 83218,
-    "production_lines": 61772,
+    "lines": 83221,
+    "production_lines": 61775,
     "packages": 30,
     "external_dependencies": 7,
     "allowed_dependencies": [
