@@ -489,7 +489,9 @@ func (h *HTTPHost) Dispatch(ctx context.Context, call contract.ToolCall) (*contr
 	h.ensureInitialized(ctx)
 	if h.dispatchGuard != nil {
 		if err := h.dispatchGuard(ctx); err != nil {
-			return nil, fmt.Errorf("%w: MCP dispatch authority expired", ErrFailClosed)
+			// Keep the guard's cause: callers tell an expired authorization from a
+			// scope error with errors.Is, and the tool has not been called.
+			return nil, fmt.Errorf("%w: MCP dispatch authority expired: %w", ErrFailClosed, err)
 		}
 	}
 

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jinyitao123/loom/contract"
 	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/base/fileartifact"
 	"github.com/jinyitao123/weave/internal/kernel/businessaction"
@@ -292,6 +293,40 @@ func (r *WorkflowSerialRuntime) toolObserver(run TeamRun) workflow.RuntimeToolOb
 }
 
 func (r *WorkflowSerialRuntime) withBusinessActionOutcomeContext(ctx context.Context, run TeamRun) context.Context {
+	if reconciler, ok := r.Activities.(BusinessActionOperationReconciler); ok {
+		ctx = execution.WithOperationReconciler(ctx, func(eventCtx context.Context, slot string, inputRaw json.RawMessage) (json.RawMessage, bool, error) {
+			scope, exists := eventCtx.Value(runtimeActivityScopeKey{}).(runtimeActivityScope)
+			if !exists || scope.NodeID == "" || scope.MemberID == "" || execution.InvocationID(eventCtx) == "" {
+				return nil, false, errors.New("business action reconciliation has no active workflow scope")
+			}
+			decision, err := reconciler.ReconcileBusinessActionOperation(eventCtx, BusinessActionOperationReconcileCheck{
+				WorkspaceID: run.WorkspaceID, RunID: run.RunID, NodeID: scope.NodeID, MemberID: scope.MemberID,
+				InvocationID: execution.InvocationID(eventCtx), OperationSlot: slot,
+			})
+			if err != nil {
+				return nil, false, err
+			}
+			if !decision.Blocked || !decision.SameOperation || (decision.Status != "succeeded" && decision.Status != "failed") {
+				return nil, false, nil
+			}
+			cached := businessaction.SanitizeActionOutcomeResult(decision.Result)
+			if cached == nil || businessaction.ValidateActionOutcomeResultStatus(cached, decision.Status) != nil {
+				return nil, false, nil
+			}
+			// The journal already checked this input's persisted hash. Its call
+			// supplies only response correlation, never business lookup scope.
+			var call contract.ToolCall
+			if json.Unmarshal(inputRaw, &call) != nil || call.ID == "" || call.Name == "" || len([]rune(call.ID)) > 256 || len([]rune(call.Name)) > 256 {
+				return nil, false, errors.New("business action reconciliation tool input is invalid")
+			}
+			cached.CallID, cached.ToolName = call.ID, call.Name
+			if decision.Status == "failed" {
+				cached.IsError = true
+			}
+			raw, err := json.Marshal(cached)
+			return raw, err == nil, err
+		})
+	}
 	store, ok := r.Activities.(BusinessActionActivityStore)
 	if !ok {
 		return ctx
@@ -302,7 +337,7 @@ func (r *WorkflowSerialRuntime) withBusinessActionOutcomeContext(ctx context.Con
 			outcome.InvocationID == "" || outcome.InvocationID != execution.InvocationID(eventCtx) || outcome.CallID == "" {
 			return errors.New("Forge action outcome does not match the active workflow invocation")
 		}
-		if len([]rune(scope.NodeID)) > 128 || len([]rune(outcome.CallID)) > 256 || len([]rune(outcome.ObjectName)) > 128 || len([]rune(outcome.RecordID)) > 128 {
+		if len(outcome.OperationSlot) > MaxBusinessActionOperationSlotBytes || len([]rune(scope.NodeID)) > 128 || len([]rune(outcome.CallID)) > 256 || len([]rune(outcome.ObjectName)) > 128 || len([]rune(outcome.RecordID)) > 128 {
 			return errors.New("Forge action outcome exceeds the continuation contract limits")
 		}
 		if outcome.Phase != "started" && outcome.Phase != "result" {
@@ -321,7 +356,7 @@ func (r *WorkflowSerialRuntime) withBusinessActionOutcomeContext(ctx context.Con
 			kind = "business_action_result"
 		}
 		eventID := uuid.NewSHA1(uuid.NameSpaceOID, []byte(strings.Join([]string{
-			run.RunID, scope.NodeID, scope.MemberID, outcome.InvocationID, outcome.CallID, outcome.Phase,
+			run.RunID, scope.NodeID, scope.MemberID, outcome.InputRevisionID, outcome.InvocationID, outcome.OperationID, outcome.CallID, outcome.Phase,
 		}, "\x1f"))).String()
 		return store.RecordBusinessActionEvent(eventCtx, ActivityEvent{
 			WorkspaceID: run.WorkspaceID, RunID: run.RunID, EventID: eventID, Kind: kind,
@@ -330,14 +365,16 @@ func (r *WorkflowSerialRuntime) withBusinessActionOutcomeContext(ctx context.Con
 		})
 	})
 	ctx = businessaction.WithActionOutcomeGuard(ctx, func(eventCtx context.Context, outcome businessaction.ActionOutcomeEvent) (businessaction.ActionOutcomeReplay, error) {
-		status, blocked, err := store.CheckBusinessActionReplay(
-			eventCtx, run.WorkspaceID, run.RunID, execution.NodeID(eventCtx), outcome.InvocationID,
-			outcome.CallID, outcome.InputRevisionID, outcome.CapabilityID, outcome.RecordID,
-		)
+		decision, err := store.CheckBusinessActionReplay(eventCtx, BusinessActionReplayCheck{
+			WorkspaceID: run.WorkspaceID, RunID: run.RunID, NodeID: execution.NodeID(eventCtx),
+			InvocationID: outcome.InvocationID, CallID: outcome.CallID, OperationID: outcome.OperationID, InputRevisionID: outcome.InputRevisionID,
+			CapabilityID: outcome.CapabilityID, RecordID: outcome.RecordID, ParamsSHA256: outcome.ParamsSHA256,
+		})
 		if err != nil {
 			return businessaction.ActionOutcomeReplay{}, err
 		}
-		return businessaction.ActionOutcomeReplay{Blocked: blocked, Status: status}, nil
+		return businessaction.ActionOutcomeReplay{Blocked: decision.Blocked, Status: decision.Status,
+			SameOperation: decision.SameOperation, Result: decision.Result}, nil
 	})
 	return ctx
 }

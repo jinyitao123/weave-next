@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/jinyitao123/weave/internal/kernel/businessaction"
 )
 
 func actionActivityEvent(kind, nodeID, memberID, phase, invocationID, callID, actionName, label, status string) ActivityEvent {
@@ -133,5 +135,49 @@ func TestBusinessActionOutcomeProjectionRejectsOrphanResult(t *testing.T) {
 	event := actionActivityEvent("business_action_result", "lead", "lead-agent", "result", "invocation", "call", "Submit", "提交", "succeeded")
 	if _, err := ProjectBusinessActionOutcomes([]ActivityEvent{event}); err == nil {
 		t.Fatal("accepted a result without its durable started receipt")
+	}
+}
+
+// The dispatcher writes businessaction.ActionOutcomeEvent as the receipt
+// detail; the replay guard reads params_sha256 in SQL and the projection reads
+// it through businessActionActivityDetailV1. Pin the three to one field name.
+func TestBusinessActionRequestDigestSurvivesTheReceiptRoundTrip(t *testing.T) {
+	const digest = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	encoded, err := json.Marshal(businessaction.ActionOutcomeEvent{
+		Source: "forge_mcp.run_action", Phase: "started", InvocationID: "snapshot/0/lead", CallID: "call-1",
+		CapabilityID: "forge:action:sales_quote.AdjustPrice", ActionKey: "sales_quote.AdjustPrice",
+		ActionName: "AdjustPrice", ObjectName: "sales_quote", InputRevisionID: "revision-1", ParamsSHA256: digest,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(encoded, &raw); err != nil || raw["params_sha256"] != digest {
+		t.Fatalf("receipt detail does not carry params_sha256 for the SQL guard: %s", encoded)
+	}
+	var detail businessActionActivityDetailV1
+	if err := json.Unmarshal(encoded, &detail); err != nil || detail.ParamsSHA256 != digest {
+		t.Fatalf("projection does not read params_sha256: %+v err=%v", detail, err)
+	}
+}
+
+func TestBusinessActionProjectionRejectsAResultWithADifferentRequestDigest(t *testing.T) {
+	withDigest := func(event ActivityEvent, digest string) ActivityEvent {
+		var detail map[string]any
+		if err := json.Unmarshal(event.Detail, &detail); err != nil {
+			t.Fatal(err)
+		}
+		detail["params_sha256"] = digest
+		event.Detail, _ = json.Marshal(detail)
+		return event
+	}
+	started := withDigest(actionActivityEvent("business_action_started", "lead", "lead-agent", "started", "snapshot/0/lead", "call-1", "ContractSubmit", "提交指定合同版本", ""), "aa")
+	sameResult := withDigest(actionActivityEvent("business_action_result", "lead", "lead-agent", "result", "snapshot/0/lead", "call-1", "ContractSubmit", "提交指定合同版本", "succeeded"), "aa")
+	if outcomes, err := ProjectBusinessActionOutcomes([]ActivityEvent{started, sameResult}); err != nil || len(outcomes) != 1 || outcomes[0].Status != "succeeded" {
+		t.Fatalf("matching digests were rejected: outcomes=%+v err=%v", outcomes, err)
+	}
+	otherResult := withDigest(sameResult, "bb")
+	if _, err := ProjectBusinessActionOutcomes([]ActivityEvent{started, otherResult}); err == nil {
+		t.Fatal("a result for a different request than its start was accepted")
 	}
 }

@@ -19,6 +19,26 @@ import (
 
 var _ publication.PublishedService = (*Service)(nil)
 
+// runDeliveryContract is the delivery contract a run freezes at admission. A
+// published run and a developer trial derive it the same way, so a trial meets
+// the same delivery checks the published team will: the caller's contract when
+// given, else the graph's own, else the explicit "incomplete" default, always
+// carrying the graph's output requirement.
+func runDeliveryContract(graph machine.GraphDefinition, requested *deliverable.DeliveryContract) (*deliverable.DeliveryContract, error) {
+	contract := &deliverable.DeliveryContract{Version: 1, Coverage: "incomplete", Limitations: []string{"explicit_user_delivery_scope_missing"}}
+	if graph.DeliveryContract != nil {
+		contract = deliverable.CloneDeliveryContract(graph.DeliveryContract)
+	}
+	if requested != nil {
+		contract = deliverable.CloneDeliveryContract(requested)
+	}
+	contract.Output = deliverable.OutputRequirement{Type: string(graph.OutputContract.Type), Schema: graph.OutputContract.Schema}
+	if err := deliverable.ValidateDeliveryContract(contract); err != nil {
+		return nil, err
+	}
+	return contract, nil
+}
+
 type PublishedAuthority interface {
 	AuthorizePublished(context.Context, publication.PublishedRunRequest, frozen.ArtifactEnvelopeV1) error
 }
@@ -80,15 +100,8 @@ func (s *Service) AdmitPublished(ctx context.Context, request publication.Publis
 	if report != nil && len(report.Issues) > 0 {
 		return publication.AdmissionReceipt{}, errors.New("frozen published graph is invalid")
 	}
-	contract := &deliverable.DeliveryContract{Version: 1, Coverage: "incomplete", Limitations: []string{"explicit_user_delivery_scope_missing"}}
-	if graph.DeliveryContract != nil {
-		contract = deliverable.CloneDeliveryContract(graph.DeliveryContract)
-	}
-	if request.DeliveryContract != nil {
-		contract = deliverable.CloneDeliveryContract(request.DeliveryContract)
-	}
-	contract.Output = deliverable.OutputRequirement{Type: string(graph.OutputContract.Type), Schema: graph.OutputContract.Schema}
-	if err = deliverable.ValidateDeliveryContract(contract); err != nil {
+	contract, err := runDeliveryContract(graph, request.DeliveryContract)
+	if err != nil {
 		return publication.AdmissionReceipt{}, err
 	}
 	tx, err := s.begin(ctx, request.Revision.WorkspaceID, request.RequestID)

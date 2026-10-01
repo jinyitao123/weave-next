@@ -70,6 +70,41 @@ class DeploymentStateTests(unittest.TestCase):
             deployment.prepare_workbench_storage(deployment.read_env(self.env))
         self.assertFalse(shared.exists())
 
+    def test_web_workbench_is_off_unless_server_env_opts_in(self):
+        for value, expected in (('', False), ('false', False), ('0', False), ('true', True), ('1', True), ('YES', True)):
+            self.assertEqual(deployment.web_workbench_enabled({'WEAVE_WEB_WORKBENCH': value}), expected, value)
+        self.assertFalse(deployment.web_workbench_enabled({}))
+
+    def test_bootstrap_without_workbench_settings_omits_its_url(self):
+        self.env.write_text('WEAVE_ADMIN_PASS=fixture-admin\nWEAVE_RUNTIME_SERVER_URL=http://example.invalid:8080\nWEAVE_API_KEY=\n')
+        with patch.object(deployment.subprocess, 'check_output', return_value='{"api_key":"fixture-key"}'):
+            with patch.object(deployment, 'get_json', return_value={'role': 'admin'}):
+                self.invoke('bootstrap', '--', 'docker', 'compose')
+        connection = json.loads((self.root / 'connection.json').read_text())
+        self.assertNotIn('workbench_url', connection)
+
+    def test_storage_preparation_is_skipped_when_workbench_is_off(self):
+        with patch.object(deployment, 'prepare_workbench_storage', side_effect=AssertionError('must not run')):
+            self.invoke('prepare-workbench-storage')
+
+    def test_verify_without_workbench_never_contacts_it_and_records_that(self):
+        healthy = [{'build_commit': 'a' * 40}, {'status': 'ready'}, {'runtimes': []}]
+        with patch.object(deployment, 'get_json', side_effect=healthy):
+            with patch.object(deployment.urllib.request, 'urlopen', side_effect=AssertionError('Workbench was contacted')):
+                self.invoke('verify', 'a' * 40)
+        receipt = json.loads((self.root / 'last-success.json').read_text())
+        self.assertIsNone(receipt['workbench_http_status'])
+        self.assertFalse(receipt['web_workbench'])
+
+    def test_verify_with_workbench_opted_in_requires_its_gateway(self):
+        self.env.write_text(self.env.read_text() + 'WEAVE_WEB_WORKBENCH=true\n')
+        healthy = [{'build_commit': 'a' * 40}, {'status': 'ready'}, {'runtimes': []}]
+        with patch.object(deployment, 'get_json', side_effect=healthy):
+            with patch.object(deployment.urllib.request, 'urlopen', side_effect=deployment.urllib.error.URLError('down')):
+                with self.assertRaises(deployment.urllib.error.URLError):
+                    self.invoke('verify', 'a' * 40)
+        self.assertFalse((self.root / 'last-success.json').exists())
+
     def test_wrong_running_commit_cannot_be_recorded_as_success(self):
         with patch.object(deployment, 'get_json', return_value={'build_commit': 'a' * 40}):
             with self.assertRaises(RuntimeError):

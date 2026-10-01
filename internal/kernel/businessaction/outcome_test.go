@@ -15,6 +15,7 @@ import (
 
 type outcomeTestHost struct {
 	calls      int
+	sent       []contract.ToolCall
 	result     *contract.ToolResult
 	err        error
 	onDispatch func()
@@ -23,6 +24,7 @@ type outcomeTestHost struct {
 func (*outcomeTestHost) ListTools(context.Context) ([]contract.ToolDef, error) { return nil, nil }
 func (host *outcomeTestHost) Dispatch(_ context.Context, call contract.ToolCall) (*contract.ToolResult, error) {
 	host.calls++
+	host.sent = append(host.sent, call)
 	if host.onDispatch != nil {
 		host.onDispatch()
 	}
@@ -60,6 +62,7 @@ func outcomeTestContext(
 	recordError func(ActionOutcomeEvent) error,
 ) context.Context {
 	ctx := execution.WithInvocationID(context.Background(), "snapshot/0/lead")
+	ctx = execution.WithOperationID(ctx, "member-run/segment/000000000001")
 	ctx = WithActionOutcomeGuard(ctx, guard)
 	return WithActionOutcomeRecorder(ctx, func(_ context.Context, event ActionOutcomeEvent) error {
 		if recordError != nil {
@@ -91,12 +94,12 @@ func TestForgeActionPersistsScopedReceiptBeforeCallAndParsesNativeEnvelope(t *te
 	}
 	if events[0].Phase != "started" || events[1].Phase != "result" || events[1].Status != ActionOutcomeStatusSucceeded ||
 		events[1].ActionLabel != "提交指定合同版本" || events[1].InputRevisionID != "revision-1" ||
-		events[1].RecordID != "record-a" || events[1].FrozenRecordSHA256 == "" {
+		events[1].RecordID != "record-a" || events[1].FrozenRecordSHA256 == "" || events[1].OperationSlot != execution.OperationID(ctx) {
 		t.Fatalf("receipt lost frozen action provenance: %+v", events)
 	}
 	encoded, _ := json.Marshal(events)
-	if strings.Contains(string(encoded), "external-result") || strings.Contains(string(encoded), "data") {
-		t.Fatalf("native result body was retained: %s", encoded)
+	if !strings.Contains(string(encoded), "external-result") || events[1].Result == nil || events[0].Result != nil {
+		t.Fatalf("native business receipt was not retained exclusively on result: %s", encoded)
 	}
 }
 
@@ -109,8 +112,12 @@ func TestForgeActionResultRequiresNativeSuccessMarker(t *testing.T) {
 		{name: "explicit success", result: &contract.ToolResult{Content: `{"ok":true}`}, want: ActionOutcomeStatusSucceeded},
 		{name: "explicit rejection", result: &contract.ToolResult{Content: `{"ok":false,"error":"rejected"}`}, want: ActionOutcomeStatusFailed},
 		{name: "explicit error", result: &contract.ToolResult{Content: `{"error":"rejected"}`}, want: ActionOutcomeStatusFailed},
+		{name: "null marker with mcp error", result: &contract.ToolResult{Content: `{"ok":null}`, IsError: true}, want: ActionOutcomeStatusUnknown},
+		{name: "wrong type marker", result: &contract.ToolResult{Content: `{"ok":"false"}`}, want: ActionOutcomeStatusUnknown},
+		{name: "null marker", result: &contract.ToolResult{Content: `{"ok":null}`}, want: ActionOutcomeStatusUnknown},
 		{name: "missing marker", result: &contract.ToolResult{Content: `{"message":"done"}`}, want: ActionOutcomeStatusUnknown},
 		{name: "contradictory envelope", result: &contract.ToolResult{Content: `{"ok":true,"error":"uncertain"}`}, want: ActionOutcomeStatusUnknown},
+		{name: "contradictory mcp error", result: &contract.ToolResult{Content: `{"ok":true}`, IsError: true}, want: ActionOutcomeStatusUnknown},
 		{name: "mcp error", result: &contract.ToolResult{Content: "rejected", IsError: true}, want: ActionOutcomeStatusFailed},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -148,13 +155,13 @@ func TestUnknownForgeActionCannotBeRetriedWithANewCallID(t *testing.T) {
 	guard := func(_ context.Context, event ActionOutcomeEvent) (ActionOutcomeReplay, error) {
 		for index := range events {
 			previous := events[index]
-			if previous.Phase == "started" && previous.CapabilityID == event.CapabilityID && previous.RecordID == event.RecordID {
+			if previous.Phase == "started" && previous.OperationID == event.OperationID {
 				status := ActionOutcomeStatusUnknown
 				if index+1 < len(events) && events[index+1].CallID == previous.CallID && events[index+1].Phase == "result" {
 					status = events[index+1].Status
 				}
 				if status == ActionOutcomeStatusUnknown {
-					return ActionOutcomeReplay{Blocked: true, Status: status}, nil
+					return ActionOutcomeReplay{Blocked: true, SameOperation: true, Status: status}, nil
 				}
 			}
 		}
@@ -167,7 +174,7 @@ func TestUnknownForgeActionCannotBeRetriedWithANewCallID(t *testing.T) {
 	}
 	call.ID = "forge-call-retry"
 	second, err := dispatcher.Dispatch(ctx, call)
-	if err != nil || second == nil || !second.IsError || !strings.Contains(second.Content, "核对") || host.calls != 1 || len(events) != 2 {
+	if err != nil || second == nil || !second.IsError || !strings.Contains(second.Content, "核对") || !second.StopLoop || host.calls != 1 || len(events) != 2 {
 		t.Fatalf("unknown write was retried: second=%+v calls=%d events=%+v err=%v", second, host.calls, events, err)
 	}
 }

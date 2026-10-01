@@ -6,9 +6,14 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/jinyitao123/loom/contract"
 )
 
 const MaxBusinessActionOutcomesPerRun = 100
+
+// Operation slots are server-owned metadata, never employee-facing identifiers.
+const MaxBusinessActionOperationSlotBytes = 1024
 
 var ErrBusinessActionOutcomeLimitExceeded = errors.New("team run business action outcome limit exceeded")
 
@@ -23,25 +28,29 @@ type BusinessActionOutcomeV1 struct {
 }
 
 type businessActionActivityDetailV1 struct {
-	Source             string `json:"source"`
-	Phase              string `json:"phase"`
-	InvocationID       string `json:"invocation_id"`
-	CallID             string `json:"tool_call_id"`
-	CapabilityID       string `json:"capability_id"`
-	ActionKey          string `json:"action_key"`
-	ActionLabel        string `json:"action_label,omitempty"`
-	ActionName         string `json:"action_name"`
-	ObjectName         string `json:"object_name"`
-	InputRevisionID    string `json:"input_revision_id"`
-	RecordID           string `json:"record_id,omitempty"`
-	FrozenRecordSHA256 string `json:"frozen_record_sha256,omitempty"`
-	Status             string `json:"status,omitempty"`
+	Source             string               `json:"source"`
+	Phase              string               `json:"phase"`
+	InvocationID       string               `json:"invocation_id"`
+	CallID             string               `json:"tool_call_id"`
+	OperationID        string               `json:"operation_id,omitempty"`
+	OperationSlot      string               `json:"operation_slot,omitempty"`
+	CapabilityID       string               `json:"capability_id"`
+	ActionKey          string               `json:"action_key"`
+	ActionLabel        string               `json:"action_label,omitempty"`
+	ActionName         string               `json:"action_name"`
+	ObjectName         string               `json:"object_name"`
+	InputRevisionID    string               `json:"input_revision_id"`
+	RecordID           string               `json:"record_id,omitempty"`
+	FrozenRecordSHA256 string               `json:"frozen_record_sha256,omitempty"`
+	ParamsSHA256       string               `json:"params_sha256,omitempty"`
+	Status             string               `json:"status,omitempty"`
+	Result             *contract.ToolResult `json:"result,omitempty"`
 }
 
 // ProjectBusinessActionOutcomes converts only platform activity receipts into
 // the Workbench action facts. Member output and generic tool events are ignored.
 func ProjectBusinessActionOutcomes(events []ActivityEvent) ([]BusinessActionOutcomeV1, error) {
-	type key struct{ workspaceID, runID, nodeID, memberID, invocationID, callID string }
+	type key struct{ workspaceID, runID, nodeID, memberID, invocationID, callID, inputRevisionID, operationID string }
 	type receipt struct {
 		started ActivityEvent
 		detail  businessActionActivityDetailV1
@@ -64,7 +73,7 @@ func ProjectBusinessActionOutcomes(events []ActivityEvent) ([]BusinessActionOutc
 			strings.TrimSpace(detail.InvocationID) == "" || strings.TrimSpace(detail.CallID) == "" ||
 			strings.TrimSpace(detail.CapabilityID) == "" || strings.TrimSpace(detail.ActionKey) == "" ||
 			strings.TrimSpace(detail.ActionName) == "" || strings.TrimSpace(detail.ObjectName) == "" ||
-			strings.TrimSpace(detail.InputRevisionID) == "" ||
+			strings.TrimSpace(detail.InputRevisionID) == "" || len(detail.OperationSlot) > MaxBusinessActionOperationSlotBytes ||
 			(detail.Phase != "started" && detail.Phase != "result") {
 			return nil, errors.New("business action activity provenance is incomplete")
 		}
@@ -77,14 +86,15 @@ func ProjectBusinessActionOutcomes(events []ActivityEvent) ([]BusinessActionOutc
 			(event.Kind == "business_action_result" && detail.Phase != "result") {
 			return nil, errors.New("business action activity phase does not match its event")
 		}
-		if detail.Phase == "started" && detail.Status != "" {
+		if detail.Phase == "started" && (detail.Status != "" || detail.Result != nil) {
 			return nil, errors.New("business action start must not include a result status")
 		}
 		if detail.Phase == "result" && detail.Status != "succeeded" && detail.Status != "failed" && detail.Status != "unknown" {
 			return nil, errors.New("business action result status is invalid")
 		}
 		id := key{workspaceID: event.WorkspaceID, runID: event.RunID, nodeID: event.NodeID,
-			memberID: event.MemberID, invocationID: detail.InvocationID, callID: detail.CallID}
+			memberID: event.MemberID, invocationID: detail.InvocationID, callID: detail.CallID,
+			inputRevisionID: detail.InputRevisionID, operationID: detail.OperationID}
 		current, exists := receipts[id]
 		if detail.Phase == "started" {
 			if exists {
@@ -137,11 +147,12 @@ func boundedBusinessActionLabel(value string) string {
 }
 
 func sameBusinessActionDetail(left, right businessActionActivityDetailV1) bool {
-	return left.Source == right.Source && left.InvocationID == right.InvocationID && left.CallID == right.CallID &&
+	return left.OperationSlot == right.OperationSlot && left.OperationID == right.OperationID && left.Source == right.Source && left.InvocationID == right.InvocationID && left.CallID == right.CallID &&
 		left.CapabilityID == right.CapabilityID && left.ActionKey == right.ActionKey &&
 		left.ActionName == right.ActionName && left.ActionLabel == right.ActionLabel &&
 		left.ObjectName == right.ObjectName && left.InputRevisionID == right.InputRevisionID &&
-		left.RecordID == right.RecordID && left.FrozenRecordSHA256 == right.FrozenRecordSHA256
+		left.RecordID == right.RecordID && left.FrozenRecordSHA256 == right.FrozenRecordSHA256 &&
+		left.ParamsSHA256 == right.ParamsSHA256
 }
 
 func businessActionOutcomeSummary(label, status string) string {
@@ -158,5 +169,36 @@ func businessActionOutcomeSummary(label, status string) string {
 type BusinessActionActivityStore interface {
 	ListBusinessActionEvents(ctx context.Context, workspaceID, runID string) ([]ActivityEvent, error)
 	RecordBusinessActionEvent(ctx context.Context, event ActivityEvent) error
-	CheckBusinessActionReplay(ctx context.Context, workspaceID, runID, nodeID, invocationID, callID, inputRevisionID, capabilityID, recordID string) (status string, blocked bool, err error)
+	CheckBusinessActionReplay(ctx context.Context, check BusinessActionReplayCheck) (BusinessActionReplayDecision, error)
+}
+
+// BusinessActionOperationReconciler is an optional, read-only recovery seam.
+// The Host supplies its durable journal slot and trusted execution scope; no
+// caller-controlled business parameters participate in finding a receipt.
+type BusinessActionOperationReconciler interface {
+	ReconcileBusinessActionOperation(context.Context, BusinessActionOperationReconcileCheck) (BusinessActionReplayDecision, error)
+}
+
+type BusinessActionOperationReconcileCheck struct {
+	WorkspaceID, RunID, NodeID, MemberID, InvocationID, OperationSlot string
+}
+
+// BusinessActionReplayCheck identifies one business action about to be sent.
+// OperationID comes from the persistent Host tool slot, never model call IDs
+// or request content. The digest only detects changes to that same operation.
+type BusinessActionReplayCheck struct {
+	WorkspaceID, RunID, NodeID, InvocationID, CallID, OperationID string
+	InputRevisionID, CapabilityID, RecordID, ParamsSHA256         string
+}
+
+// BusinessActionReplayDecision carries the original trusted tool receipt for
+// one operation, or stops dispatch while an earlier write remains unresolved.
+// Result and OperationID remain internal and never enter employee projections.
+type BusinessActionReplayDecision struct {
+	Status        string
+	Blocked       bool
+	SameOperation bool
+	Result        *contract.ToolResult
+	// SameParams remains for old callers; content alone never blocks a write.
+	SameParams bool
 }
