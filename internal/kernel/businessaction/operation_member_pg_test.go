@@ -58,11 +58,23 @@ func TestTrackedForgeActionMemberResumeRealPG(t *testing.T) {
 	t.Cleanup(production.Close)
 
 	var effects atomic.Int64
+	var currentReads atomic.Int64
 	var keysMu sync.Mutex
 	var forgeKeys []string
+	grant := memberTaskGrant("")
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/v1/meta/objects/sales_quote" {
-			if r.Header.Get("Authorization") != "Bearer fixture-delegation" {
+		if r.URL.Path == businessaction.TaskDelegationPath+"/current" {
+			currentReads.Add(1)
+			if r.Header.Get("Authorization") != "Bearer fixture-task-token" {
+				w.WriteHeader(401)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(grant)
+			return
+		}
+		if r.URL.Path == businessaction.TaskDelegationPath+"/objects/sales_quote" {
+			if r.Header.Get("Authorization") != "Bearer fixture-task-token" {
 				w.WriteHeader(401)
 				return
 			}
@@ -70,13 +82,13 @@ func TestTrackedForgeActionMemberResumeRealPG(t *testing.T) {
 			_, _ = w.Write([]byte(`{"type":"object","name":"sales_quote","item":{"name":"sales_quote","actions":[{"name":"AdjustPrice","params":[{"name":"line_id","type":"string","required":true},{"name":"idempotency_key","type":"string","required":true}]}]}}`))
 			return
 		}
-		if r.URL.Path != "/api/v1/mcp" {
+		if r.URL.Path != businessaction.TaskDelegationPath+"/mcp" {
 			t.Errorf("unexpected Forge endpoint %s", r.URL.Path)
 			w.WriteHeader(404)
 			return
 		}
-		if r.Header.Get("Authorization") != "Bearer fixture-delegation" {
-			t.Error("Forge delegation not carried by HTTP host")
+		if r.Header.Get("Authorization") != "Bearer fixture-task-token" {
+			t.Error("task-scoped Forge authorization not carried by HTTP host")
 			w.WriteHeader(401)
 			return
 		}
@@ -143,8 +155,9 @@ func TestTrackedForgeActionMemberResumeRealPG(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": result})
 	}))
 	t.Cleanup(server.Close)
+	grant = memberTaskGrant(server.URL)
 	key := []byte(strings.Repeat("k", 32))
-	seedMemberActionRuntime(t, pool, server.URL, key)
+	seedMemberActionRuntime(t, pool, server.URL, key, grant)
 
 	subject := execution.Subject{WorkspaceID: "workspace", UserID: "employee"}
 	ctx := execution.WithSubject(t.Context(), subject)
@@ -296,6 +309,9 @@ func TestTrackedForgeActionMemberResumeRealPG(t *testing.T) {
 	if effects.Load() != 2 || actionDispatches.Load() != 2 {
 		t.Fatalf("same operation must read ledger without dispatch; next identical intent must send: effects=%d dispatches=%d", effects.Load(), actionDispatches.Load())
 	}
+	if currentReads.Load() < 2 {
+		t.Fatalf("task-current authority was not checked online at build and dispatch: calls=%d", currentReads.Load())
+	}
 
 	if len(observedSlots) != 2 || len(recoveredSlots) != 1 || observedSlots[0] == "" || observedSlots[0] != recoveredSlots[0] || observedSlots[0] == observedSlots[1] {
 		t.Fatalf("member tool slots changed incorrectly: dispatched=%v recovered=%v", observedSlots, recoveredSlots)
@@ -336,6 +352,201 @@ func TestTrackedForgeActionMemberResumeRealPG(t *testing.T) {
 	}
 }
 
+func TestTrackedForgeOrganizationDenialIsNoEffectNotUnknownRealPG(t *testing.T) {
+	pool := testutil.PostgresPool(t)
+	if err := db.Migrate(t.Context(), pool); err != nil {
+		t.Fatal(err)
+	}
+	config := pool.Config()
+	config.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeCacheStatement
+	production, err := pgxpool.NewWithConfig(t.Context(), config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(production.Close)
+
+	var effects atomic.Int64
+	var currentReads atomic.Int64
+	var denied atomic.Bool
+	grant := memberTaskGrant("")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == businessaction.TaskDelegationPath+"/current" {
+			currentReads.Add(1)
+			if r.Header.Get("Authorization") != "Bearer fixture-task-token" {
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			if denied.Load() {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusForbidden)
+				_, _ = w.Write([]byte(`{"error":{"code":"FORGE_TASK_ORGANIZATION_FORBIDDEN","no_effect":true,"phase":"authorization"}}`))
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(grant)
+			return
+		}
+		if r.URL.Path == businessaction.TaskDelegationPath+"/objects/sales_quote" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"type":"object","name":"sales_quote","item":{"name":"sales_quote","actions":[{"name":"AdjustPrice","params":[{"name":"line_id","type":"string","required":true},{"name":"idempotency_key","type":"string","required":true}]}]}}`))
+			return
+		}
+		if r.URL.Path != businessaction.TaskDelegationPath+"/mcp" {
+			t.Errorf("unexpected Forge endpoint %s", r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		var req struct {
+			ID     json.RawMessage `json:"id"`
+			Method string          `json:"method"`
+			Params struct {
+				Name string `json:"name"`
+			} `json:"params"`
+		}
+		if json.NewDecoder(r.Body).Decode(&req) != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		var result any
+		switch req.Method {
+		case "initialize":
+			result = map[string]any{"protocolVersion": "2025-03-26", "capabilities": map[string]any{}, "serverInfo": map[string]string{"name": "fixture-forge", "version": "1"}}
+		case "notifications/initialized":
+			w.WriteHeader(http.StatusAccepted)
+			return
+		case "tools/list":
+			result = map[string]any{"tools": []map[string]any{{"name": "list_actions", "inputSchema": json.RawMessage(`{"type":"object"}`)}, {"name": "run_action", "inputSchema": json.RawMessage(`{"type":"object"}`)}}}
+		case "tools/call":
+			if req.Params.Name == "run_action" {
+				effects.Add(1)
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			if req.Params.Name != "list_actions" {
+				t.Errorf("unexpected MCP tool %s", req.Params.Name)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			result = map[string]any{"content": []map[string]string{{"type": "text", "text": `{"actions":[{"name":"AdjustPrice","objectName":"sales_quote","label":"调整报价单价","requiresRecord":true,"params":[{"name":"line_id","type":"string","required":true},{"name":"idempotency_key","type":"string","required":true}]}]}`}}}
+		default:
+			t.Errorf("unexpected MCP method %s", req.Method)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": result})
+	}))
+	t.Cleanup(server.Close)
+	grant = memberTaskGrant(server.URL)
+	key := []byte(strings.Repeat("k", 32))
+	seedMemberActionRuntime(t, pool, server.URL, key, grant)
+
+	subject := execution.Subject{WorkspaceID: "workspace", UserID: "employee"}
+	ctx := execution.WithSubject(t.Context(), subject)
+	ctx, err = execution.WithCurrentTask(ctx, execution.CurrentTask{ID: "task", WorkspaceID: "workspace", Subject: subject, WorkerID: "worker", ClaimEpoch: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx = execution.WithInvocationID(execution.WithNodeID(ctx, "member"), "snapshot/0/member")
+	activities := &teamrun.PGActivityStore{Transactions: production}
+	ctx = businessaction.WithActionOutcomeGuard(ctx, func(callCtx context.Context, event businessaction.ActionOutcomeEvent) (businessaction.ActionOutcomeReplay, error) {
+		decision, err := activities.CheckBusinessActionReplay(callCtx, teamrun.BusinessActionReplayCheck{WorkspaceID: "workspace", RunID: "parent", NodeID: "member", InvocationID: event.InvocationID, CallID: event.CallID, OperationID: event.OperationID, InputRevisionID: event.InputRevisionID, CapabilityID: event.CapabilityID, RecordID: event.RecordID, ParamsSHA256: event.ParamsSHA256})
+		return businessaction.ActionOutcomeReplay{Blocked: decision.Blocked, Status: decision.Status, SameOperation: decision.SameOperation, Result: decision.Result}, err
+	})
+	model := &organizationDenialMemberModel{onFirstCall: func() { denied.Store(true) }}
+	bundle := frozen.FrozenExecutionBundle{FactoryKey: compiler.StandardFrozenToolsKey(), Agent: frozen.FrozenAgentRecord{WorkspaceID: "workspace", AgentID: "agent", AgentVersion: 1, Name: "member", BusinessCapabilityIDs: []string{memberActionCapability}}}
+	factory := businessaction.Factory{Inner: workflow.RuntimeHostFactoryFunc(func(context.Context, frozen.FrozenExecutionBundle, workflow.RuntimeCredentialResolver) (compiler.FrozenBuildOpts, io.Closer, error) {
+		return compiler.FrozenBuildOpts{LLM: model, Tools: memberEmptyTools{}}, nil, nil
+	}), Store: businessaction.NewStore(production, taskqueue.New(production, nil, time.Minute), key)}
+	opts, closer, err := factory.Build(ctx, bundle, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if closer != nil {
+		t.Cleanup(func() { _ = closer.Close() })
+	}
+	tools, err := opts.Tools.ListTools(ctx)
+	if err != nil || len(tools) != 1 {
+		t.Fatalf("build task-scoped action schema: tools=%+v err=%v", tools, err)
+	}
+	model.tool = tools[0].Name
+	opts = loomruntime.InstallFrozenMemberJournal(loomruntime.InstallFrozenUsageTracking(opts))
+	g := loom.NewGraph("workspace:business-action-denial", "chat", loom.WithCheckpointPolicy(loom.CheckpointRequired), loom.WithCheckpointHistory(-1))
+	g.SetHooks(loom.HookPoints{Before: opts.Hooks.BeforeStepHooks, After: opts.Hooks.AfterStepHooks})
+	g.AddStep("chat", stdlib.NewToolLoopStep(opts.ExecutionLLMWrapper(opts.LLM), opts.Tools, stdlib.ToolLoopOpts{Model: "fixture", MaxIterations: 3}), loom.End())
+	team, flow, snap, parent := "team", "workflow", "snapshot", "parent"
+	version, seq := 1, int64(1)
+	attribution, err := loomruntime.NewTerminalAttribution(loomruntime.TerminalAttributionInput{Scope: loomruntime.TerminalAttributionFixedWorkflow, WorkspaceID: "workspace", TeamID: &team, WorkflowID: &flow, WorkflowVersion: &version, RunSnapshotID: &snap, ParentRunID: &parent, ParentSeq: &seq, AggregationParentRunID: &parent}, &loomruntime.TerminalSnapshotEvidence{WorkspaceID: "workspace", RunID: snap, TeamID: team, Mode: "fixed_workflow", WorkflowID: &flow, WorkflowVersion: &version})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := loomruntime.MemberRequest{WorkspaceID: "workspace", ParentRunID: parent, RunSnapshotID: snap, NodeID: "member", CallID: "member-invocation", ParentGeneration: 1, ArtifactHash: strings.Repeat("a", 64), Bundle: bundle,
+		Input: loom.State{"messages": []contract.Message{{Role: "user", Content: "Perform the published adjustment."}}}, Attribution: attribution, Graph: g,
+		RetryableFailure: func(err error) bool {
+			failure := teamrun.ClassifyFailure(err)
+			return failure.Retryable || failure.AuthorizationRequired != nil
+		},
+		ParentGuard: func(guardCtx context.Context, tx pgx.Tx) error {
+			var generation int64
+			if err := tx.QueryRow(guardCtx, `SELECT team_run_generation FROM weave_team_runs WHERE workspace_id='workspace' AND run_id='parent' FOR UPDATE`).Scan(&generation); err != nil {
+				return err
+			}
+			if generation != 1 {
+				return errors.New("parent epoch changed")
+			}
+			return nil
+		}}
+	runner, err := loomruntime.NewMemberRunner(storeext.New(production))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = runner.Run(ctx, request)
+	proof, trusted := execution.AuthorizationRefusalFromError(err)
+	if !trusted || proof.Code != execution.AuthorizationDeniedBeforeDispatch || proof.Renewable() ||
+		errors.Is(err, loomruntime.ErrMemberOutcomeUnknown) || effects.Load() != 0 || model.calls.Load() != 1 {
+		t.Fatalf("Forge's trusted organization denial was not a terminal no-effect failure: proof=%+v trusted=%v err=%v effects=%d model_calls=%d", proof, trusted, err, effects.Load(), model.calls.Load())
+	}
+	if currentReads.Load() < 3 {
+		t.Fatalf("Factory, current authority and tool dispatch did not use the online task check: current reads=%d", currentReads.Load())
+	}
+	var operations int
+	if err := production.QueryRow(ctx, `SELECT count(*) FROM loom_store WHERE namespace='member-operation:workspace' AND convert_from(value,'UTF8')::jsonb->>'kind'='tool'`).Scan(&operations); err != nil || operations != 1 {
+		t.Fatalf("tool intent was not durably journaled exactly once: count=%d err=%v", operations, err)
+	}
+	var saved struct {
+		AuthorizationRefusal *execution.AuthorizationRefusal `json:"authorization_refusal"`
+		Response             json.RawMessage                 `json:"response"`
+	}
+	var raw []byte
+	if err := production.QueryRow(ctx, `SELECT value FROM loom_store WHERE namespace='member-operation:workspace' AND convert_from(value,'UTF8')::jsonb->>'kind'='tool'`).Scan(&raw); err != nil {
+		t.Fatal(err)
+	}
+	if json.Unmarshal(raw, &saved) != nil || saved.AuthorizationRefusal == nil || !saved.AuthorizationRefusal.Valid() ||
+		saved.AuthorizationRefusal.Renewable() || saved.AuthorizationRefusal.ReasonCode != "FORGE_TASK_ORGANIZATION_FORBIDDEN" || len(saved.Response) != 0 {
+		t.Fatalf("trusted denial was not preserved at the original member intent: %s", raw)
+	}
+}
+
+type organizationDenialMemberModel struct {
+	tool        string
+	calls       atomic.Int64
+	onFirstCall func()
+}
+
+func (m *organizationDenialMemberModel) Chat(context.Context, contract.ChatRequest) (*contract.ChatResponse, error) {
+	if m.calls.Add(1) == 1 {
+		if m.onFirstCall != nil {
+			m.onFirstCall()
+		}
+		return &contract.ChatResponse{ToolCalls: []contract.ToolCall{{ID: "model-call-denied", Name: m.tool, Args: `{"params":{"line_id":"same-line"}}`}}}, nil
+	}
+	return &contract.ChatResponse{Content: "unexpected retry"}, nil
+}
+
+func (*organizationDenialMemberModel) Stream(context.Context, contract.ChatRequest) (<-chan contract.StreamChunk, error) {
+	return nil, errors.New("stream unused")
+}
+
 type memberActionObserver struct {
 	inner      contract.ToolDispatcher
 	onDispatch func(context.Context)
@@ -371,7 +582,28 @@ func (*memberActionModel) Stream(context.Context, contract.ChatRequest) (<-chan 
 	return nil, errors.New("stream unused")
 }
 
-func seedMemberActionRuntime(t *testing.T, pool *pgxpool.Pool, issuer string, key []byte) {
+func memberTaskGrant(issuer string) businessaction.TaskDelegationGrant {
+	scope := businessaction.TaskDelegationScope{
+		InputRevisionID: "revision", RegistrationID: "registration", TaskSHA256: strings.Repeat("a", 64),
+		WorkflowID: "workflow", WorkflowVersion: 1, AllowedActions: []string{memberActionCapability},
+		Resources:      []businessaction.TaskDelegationResource{},
+		BusinessRecord: &businessaction.TaskBusinessRecord{ObjectName: "sales_quote", RecordID: "record-a"},
+	}
+	raw, _ := json.Marshal(scope)
+	scopeHash, _ := frozen.HashCanonicalJSON(raw)
+	issuedAt := time.Now().UTC().Add(-time.Minute)
+	grant := businessaction.TaskDelegationGrant{
+		Version: "1", Active: true, TokenType: "forge_task", Issuer: issuer,
+		IdentityIssuer: "forge:workbench-124-dev",
+		GrantID:        "task-grant-1", Generation: 1, IssuedAt: issuedAt,
+		ExpiresAt: issuedAt.Add(20 * time.Minute), ScopeSHA256: scopeHash, Scope: scope,
+	}
+	grant.Subject.ID = "employee"
+	grant.Subject.OrganizationID = "native-org"
+	return grant
+}
+
+func seedMemberActionRuntime(t *testing.T, pool *pgxpool.Pool, issuer string, key []byte, grant businessaction.TaskDelegationGrant) {
 	t.Helper()
 	ctx := t.Context()
 	if _, err := pool.Exec(ctx, `INSERT INTO weave_workspaces(id,slug,name) VALUES('workspace','workspace','Workspace'); INSERT INTO weave_teams(id,workspace_id,name) VALUES('team','workspace','Team')`); err != nil {
@@ -407,7 +639,7 @@ func seedMemberActionRuntime(t *testing.T, pool *pgxpool.Pool, issuer string, ke
  INSERT INTO weave_run_delivery_state(workspace_id,run_snapshot_id,run_id,input_revision_id,workflow_id,workflow_version,published_digest,contract,contract_digest) VALUES('workspace','snapshot','parent','revision','workflow',1,$1,'null',repeat('a',64));`, hash); err != nil {
 		t.Fatal(err)
 	}
-	credential := []byte("fixture-delegation")
+	credential := []byte("fixture-task-token")
 	ciphertext, err := secret.Seal(key, credential)
 	if err != nil {
 		t.Fatal(err)
@@ -416,7 +648,7 @@ func seedMemberActionRuntime(t *testing.T, pool *pgxpool.Pool, issuer string, ke
 	recordRaw, _ := json.Marshal(map[string]string{"object_name": "sales_quote", "id": "record-a"})
 	recordDigest := sha256.Sum256(recordRaw)
 	resources, _ := json.Marshal([]map[string]string{{"type": "dispatch-input", "id": "revision", "sha256": strings.Repeat("a", 64)}, {"type": "forge-record", "id": "record-a", "object_name": "sales_quote", "sha256": hex.EncodeToString(recordDigest[:])}})
-	if _, err := pool.Exec(ctx, `INSERT INTO weave_task_business_delegations(workspace_id,user_id,input_revision_id,delegation_id,credential_ref,issuer,external_subject,external_organization,credential_ciphertext,credential_sha256,allowed_actions,resources,workflow_id,workflow_version,issued_at,expires_at,forge_base_url,forge_delegation_id) VALUES('workspace','employee','revision',gen_random_uuid(),'fixture-ref','forge:test-deployment','employee','organization',$2,$3,$4::jsonb,$5::jsonb,'workflow',1,now(),now()+interval '1 hour',$1,'forge-delegation-test')`, issuer, ciphertext, hex.EncodeToString(digest[:]), `["forge:action:sales_quote.AdjustPrice"]`, string(resources)); err != nil {
+	if _, err := pool.Exec(ctx, `INSERT INTO weave_task_business_delegations(workspace_id,user_id,input_revision_id,delegation_id,credential_ref,issuer,external_subject,external_organization,credential_ciphertext,credential_sha256,allowed_actions,resources,workflow_id,workflow_version,issued_at,expires_at,grant_id,scope_sha256,refresh_generation,forge_base_url,forge_delegation_id) VALUES('workspace','employee','revision',gen_random_uuid(),'fixture-ref',$1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,'workflow',1,$8,$9,$10,$11,1,$12,$10)`, grant.IdentityIssuer, grant.Subject.ID, grant.Subject.OrganizationID, ciphertext, hex.EncodeToString(digest[:]), `["forge:action:sales_quote.AdjustPrice"]`, string(resources), grant.IssuedAt, grant.ExpiresAt, grant.GrantID, grant.ScopeSHA256, issuer); err != nil {
 		t.Fatal(err)
 	}
 }

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 )
 
@@ -139,6 +140,35 @@ func TestStageRetryRejectsStopEvenBeforeQueuedTasksAreCancelled(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestStageRetryRejectsNonRenewableAuthorizationDenial(t *testing.T) {
+	h, parked, service, request := seedRuntimeRetry(t)
+	denial := execution.NewAuthorizationDenialBeforeDispatch("input-revision", 3, "FORGE_TASK_ORGANIZATION_FORBIDDEN", errors.New("Forge denied the organization authorization"))
+	proof, found := execution.AuthorizationRefusalFromError(denial)
+	if !found || proof.Renewable() {
+		t.Fatalf("fixture is not a non-renewable denial: %+v found=%v", proof, found)
+	}
+	detail, err := json.Marshal(RuntimeWaitDetailV1{AuthorizationRequired: &proof, SchemaVersion: 1, WaitType: "runtime", NodeID: request.NodeID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.pool.Exec(context.Background(), `UPDATE weave_team_runs SET wait_detail=$1::jsonb WHERE workspace_id=$2 AND run_id=$3`, string(detail), parked.WorkspaceID, parked.RunID); err != nil {
+		t.Fatal(err)
+	}
+	request.Actor = "employee"
+	before := h.readRun(t, parked.RunID)
+	if _, err := service.Retry(context.Background(), request); !errors.Is(err, ErrTeamRunResumeInvalid) {
+		t.Fatalf("stage retry accepted a non-renewable denial: %v", err)
+	}
+	after := h.readRun(t, parked.RunID)
+	if after.Status != StatusParked || after.Generation != before.Generation || after.ResumeGeneration != before.ResumeGeneration {
+		t.Fatalf("rejected authorization denial changed run state: before=%+v after=%+v", before, after)
+	}
+	var continuations int
+	if err := h.pool.QueryRow(context.Background(), `SELECT count(*) FROM weave_task_queue WHERE workspace_id=$1 AND source='runtime_retry'`, parked.WorkspaceID).Scan(&continuations); err != nil || continuations != 0 {
+		t.Fatalf("rejected authorization denial queued continuation: count=%d err=%v", continuations, err)
 	}
 }
 

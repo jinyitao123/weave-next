@@ -35,8 +35,8 @@ func plantForgeTaskDelegation(t *testing.T, pool *pgxpool.Pool, runID, baseURL, 
 	if _, err := pool.Exec(t.Context(), `INSERT INTO weave_task_business_delegations
 		(workspace_id,user_id,input_revision_id,delegation_id,credential_ref,issuer,external_subject,external_organization,
 		 credential_ciphertext,credential_sha256,allowed_actions,resources,workflow_id,workflow_version,issued_at,expires_at,
-		 forge_base_url,forge_delegation_id)
-		VALUES('ws','user',$1,gen_random_uuid(),'ref-revoke','forge:test-deployment','forge-user','ws',$2,$3,'[]'::jsonb,'[]'::jsonb,'flow',1,$4,$5,$6,'forge-delegation-1')`,
+		 grant_id,scope_sha256,forge_base_url,forge_delegation_id)
+		VALUES('ws','user',$1,gen_random_uuid(),'ref-revoke','forge:test-deployment','forge-user','ws',$2,$3,'[]'::jsonb,'[]'::jsonb,'flow',1,$4,$5,'forge-delegation-1',repeat('a',64),$6,'forge-delegation-1')`,
 		revision, ciphertext, hex.EncodeToString(digest[:]), issuedAt, expiresAt, baseURL); err != nil {
 		t.Fatalf("plant delegation: %v", err)
 	}
@@ -74,7 +74,7 @@ func TestTaskDelegationRevokerRevokesAfterTerminalRunRealPG(t *testing.T) {
 	forge := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
 		body, _ := io.ReadAll(r.Body)
-		if r.Method != http.MethodDelete || r.URL.Path != "/api/v1/workbench/task-delegations/forge-delegation-1" ||
+		if r.Method != http.MethodDelete || r.URL.Path != "/api/v1/apps/forge/task-delegations/forge-delegation-1" ||
 			r.Header.Get("Authorization") != "Bearer task-credential" || string(body) != `{"reason":"run_terminal"}` {
 			t.Errorf("unexpected revoke request %s %s auth=%q body=%s", r.Method, r.URL.Path, r.Header.Get("Authorization"), body)
 		}
@@ -82,7 +82,7 @@ func TestTaskDelegationRevokerRevokesAfterTerminalRunRealPG(t *testing.T) {
 			w.WriteHeader(http.StatusServiceUnavailable)
 			return
 		}
-		_, _ = w.Write([]byte(`{"version":"1","delegationId":"forge-delegation-1","revoked":true}`))
+		_, _ = w.Write([]byte(`{"version":"1","grant_id":"forge-delegation-1","revoked":true,"reason":"run_terminal"}`))
 	}))
 	defer forge.Close()
 	now := time.Now().UTC()

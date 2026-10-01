@@ -152,10 +152,16 @@ func (runner *MemberRunner) admit(ctx context.Context, request MemberRequest) (*
 			if result.Result.RunID != runID || (result.Result.StopReason != loom.StopCompleted && result.Error == "") {
 				return nil, nil, ErrMemberIdentityConflict
 			}
+			if result.AuthorizationRefusal != nil && (!result.AuthorizationRefusal.Valid() || result.Error == "") {
+				return nil, nil, ErrMemberIdentityConflict
+			}
 			if err := tx.Commit(ctx); err != nil {
 				return nil, nil, err
 			}
 			if result.Error != "" {
+				if result.AuthorizationRefusal != nil {
+					return nil, &result.Result, execution.AuthorizationRefusalError(*result.AuthorizationRefusal, errors.New(result.Error))
+				}
 				return nil, &result.Result, errors.New(result.Error)
 			}
 			return nil, &result.Result, nil
@@ -335,6 +341,9 @@ func (runner *MemberRunner) Run(ctx context.Context, request MemberRequest) (out
 	saved := memberStoredResult{Result: *result}
 	if runErr != nil {
 		saved.Error = runErr.Error()
+		if proof, trusted := execution.AuthorizationRefusalFromError(runErr); trusted {
+			saved.AuthorizationRefusal = &proof
+		}
 	}
 	encoded, err := json.Marshal(saved)
 	if err != nil {
@@ -376,4 +385,7 @@ func (runner *MemberRunner) Run(ctx context.Context, request MemberRequest) (out
 type memberStoredResult struct {
 	Result loom.RunResult `json:"result"`
 	Error  string         `json:"error,omitempty"`
+	// Terminal member replay bypasses the operation journal. Preserve the
+	// trusted proof here too, rather than reconstructing one from error text.
+	AuthorizationRefusal *execution.AuthorizationRefusal `json:"authorization_refusal,omitempty"`
 }

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/kernel/businessaction"
 	"github.com/jinyitao123/weave/internal/kernel/mcphost"
 )
@@ -54,5 +55,17 @@ func TestClassifyFailureNamesAnExpiredDelegationAndDoesNotOfferRetry(t *testing.
 	}
 	if summary := ClassifyFailure(errors.New("business delegation no longer authorizes this action")); strings.Contains(summary.Reason, "expired") {
 		t.Errorf("a scope error was reported as an expiry: %+v", summary)
+	}
+}
+
+func TestClassifyFailureKeepsOrganizationDenialNonRenewable(t *testing.T) {
+	err := execution.NewAuthorizationDenialBeforeDispatch("input", 2, "FORGE_TASK_ORGANIZATION_FORBIDDEN", errors.New("Forge refused current task"))
+	proof, found := execution.AuthorizationRefusalFromError(err)
+	if !found || proof.Renewable() {
+		t.Fatalf("fixture did not create a non-renewable no-effect refusal: %+v found=%v", proof, found)
+	}
+	summary := ClassifyFailure(err)
+	if summary.Class != FailureClassInfrastructure || summary.Retryable || summary.AuthorizationRequired != nil || !summary.AuthorizationDenied || !strings.Contains(summary.Reason, "Forge authorization") {
+		t.Fatalf("organization denial was offered renewal or retry: %+v", summary)
 	}
 }

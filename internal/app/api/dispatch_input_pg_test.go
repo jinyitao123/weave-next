@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -14,7 +13,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jinyitao123/weave/internal/base/execution"
-	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/labstack/echo/v4"
 )
 
@@ -55,41 +53,11 @@ func registerInputForTest(server *Server, request dispatchInputRegistration) (*h
 func TestDispatchInputFreezesAndRefreshesEmployeeForgeDelegationRealPG(t *testing.T) {
 	t.Setenv("WEAVE_SECRET_KEY_FILE", "")
 	t.Setenv("WEAVE_SECRET_KEY", strings.Repeat("11", 32))
-	dependencies := []frozen.FrozenDependencyRef{}
-	manifestHash, err := frozen.ComputeManifestHash(dependencies)
-	if err != nil {
-		t.Fatal(err)
-	}
-	bundle := frozen.FrozenExecutionBundle{
-		SchemaVersion: 1,
-		FactoryKey:    frozen.FactoryKey{FactoryID: "standard", FactoryVersion: "1", CompilerABI: "weave-graph-abi-v1"},
-		Agent: frozen.FrozenAgentRecord{
-			SchemaVersion: 1, WorkspaceID: "ws", AgentID: "worker", AgentVersion: 1, Name: "worker", Role: "worker", Engine: "loom", Model: "model",
-			GraphType: "standard", FactoryInput: json.RawMessage(`{}`), Permissions: frozen.FrozenPermissions{Deny: []string{"*"}}, OutputSchema: json.RawMessage(`{"type":"object"}`),
-			BusinessCapabilityIDs: []string{"forge:action:sales_contract.ContractSubmit"},
-		},
-		PrimaryModel:   frozen.FrozenModelBinding{SchemaVersion: 1, WorkspaceID: "ws", ProviderID: "provider", ProviderRevision: 1, ModelID: "model", BaseURL: "https://provider.example", CredentialRef: frozen.CredentialReference{SchemaVersion: 1, Scope: frozen.CredentialScopeUser, UserID: "user", WorkspaceID: "ws", Kind: frozen.CredentialProviderAPIKey, ResourceID: "provider", Slot: "api_key"}},
-		FallbackModels: []frozen.FrozenModelBinding{}, Credentials: []frozen.CredentialReference{}, MCPBindings: []frozen.FrozenMCPBinding{}, Skills: []frozen.FrozenSkill{},
-		Dependencies: frozen.FrozenDependencyManifest{SchemaVersion: 1, Dependencies: dependencies, ManifestHash: manifestHash},
-		Capability:   frozen.CapabilityManifest{SchemaVersion: 2, Role: "worker", AgentContentHash: strings.Repeat("b", 64)},
-	}
-	server, pool := newTeamDispatchTestServerWithGraph(t, json.RawMessage(`{"schema_version":1,"entry_node_id":"deliver","input_contract":{"type":"text"},"output_contract":{"type":"text"},"nodes":[{"id":"deliver","type":"deliver","config":{"result":{"source":"run_input","path":""}}}],"edges":[]}`), bundle)
-	if _, err := pool.Exec(t.Context(), `INSERT INTO weave_external_identities(issuer,subject,workspace_id,user_id)
-		VALUES('https://forge.example.test','forge-user','ws','user')`); err != nil {
-		t.Fatal(err)
-	}
-	server.ExternalIdentity = externalIdentityVerifierFunc(func(_ context.Context, token string) (ExternalIdentity, error) {
-		if token != "first-token" && token != "refreshed-token" {
-			return ExternalIdentity{}, errors.New("unexpected token")
-		}
-		return ExternalIdentity{Issuer: "https://forge.example.test", BaseURL: "https://forge.example.test", Subject: "forge-user", Organization: "ws"}, nil
-	})
+	server, pool, registration, authority := nativeTaskRegistrationFixture(t)
 	version := 1
-	registration := dispatchInputRegistrationFixture("forge-session", "提交这份固定合同", "")
-	registration.WorkflowID, registration.WorkflowVersion = "flow", &version
 	authorized := []string{"forge:action:sales_contract.ContractSubmit"}
-	registration.AuthorizedBusinessCapabilityIDs = &authorized
-	registration.BusinessRecord = &dispatchBusinessRecord{ObjectName: "sales_contract", RecordID: "record-a"}
+	authority.add(t, "first-token", "native-user", "native-org", 1, scopeForRegistration(registration))
+	authority.add(t, "refreshed-token", "native-user", "native-org", 2, scopeForRegistration(registration))
 	register := func(token string) (*httptest.ResponseRecorder, dispatchInputReceipt) {
 		t.Helper()
 		body, _ := json.Marshal(registration)
@@ -160,53 +128,20 @@ func TestDispatchInputFreezesForgeMaterialWithoutGrantingBusinessActionRealPG(t 
 	t.Setenv("WEAVE_SECRET_KEY_FILE", "")
 	t.Setenv("WEAVE_SECRET_KEY", strings.Repeat("22", 32))
 	content := []byte("frozen review material")
-	forge := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
-		if request.Header.Get("Authorization") != "Bearer review-token" {
-			response.WriteHeader(http.StatusUnauthorized)
-			return
-		}
-		_, _ = response.Write(content)
-	}))
-	defer forge.Close()
-
-	dependencies := []frozen.FrozenDependencyRef{}
-	manifestHash, err := frozen.ComputeManifestHash(dependencies)
-	if err != nil {
-		t.Fatal(err)
-	}
-	bundle := frozen.FrozenExecutionBundle{
-		SchemaVersion: 1,
-		FactoryKey:    frozen.FactoryKey{FactoryID: "standard", FactoryVersion: "1", CompilerABI: "weave-graph-abi-v1"},
-		Agent: frozen.FrozenAgentRecord{
-			SchemaVersion: 1, WorkspaceID: "ws", AgentID: "worker", AgentVersion: 1, Name: "worker", Role: "worker", Engine: "loom", Model: "model",
-			GraphType: "standard", FactoryInput: json.RawMessage(`{}`), Permissions: frozen.FrozenPermissions{Deny: []string{"*"}}, OutputSchema: json.RawMessage(`{"type":"object"}`),
-			BusinessCapabilityIDs: []string{"forge:action:sales_contract.ContractSubmit"},
-		},
-		PrimaryModel:   frozen.FrozenModelBinding{SchemaVersion: 1, WorkspaceID: "ws", ProviderID: "provider", ProviderRevision: 1, ModelID: "model", BaseURL: "https://provider.example", CredentialRef: frozen.CredentialReference{SchemaVersion: 1, Scope: frozen.CredentialScopeUser, UserID: "user", WorkspaceID: "ws", Kind: frozen.CredentialProviderAPIKey, ResourceID: "provider", Slot: "api_key"}},
-		FallbackModels: []frozen.FrozenModelBinding{}, Credentials: []frozen.CredentialReference{}, MCPBindings: []frozen.FrozenMCPBinding{}, Skills: []frozen.FrozenSkill{},
-		Dependencies: frozen.FrozenDependencyManifest{SchemaVersion: 1, Dependencies: dependencies, ManifestHash: manifestHash},
-		Capability:   frozen.CapabilityManifest{SchemaVersion: 2, Role: "worker", AgentContentHash: strings.Repeat("c", 64)},
-	}
-	server, pool := newTeamDispatchTestServerWithGraph(t, json.RawMessage(`{"schema_version":1,"entry_node_id":"deliver","input_contract":{"type":"text"},"output_contract":{"type":"text"},"nodes":[{"id":"deliver","type":"deliver","config":{"result":{"source":"run_input","path":""}}}],"edges":[]}`), bundle)
-	if _, err := pool.Exec(t.Context(), `INSERT INTO weave_external_identities(issuer,subject,workspace_id,user_id)
-		VALUES($1,'forge-user','ws','user')`, forge.URL); err != nil {
-		t.Fatal(err)
-	}
-	server.ExternalIdentity = externalIdentityVerifierFunc(func(_ context.Context, token string) (ExternalIdentity, error) {
-		if token != "review-token" {
-			return ExternalIdentity{}, errors.New("unexpected token")
-		}
-		return ExternalIdentity{Issuer: forge.URL, BaseURL: forge.URL, Subject: "forge-user", Organization: "ws"}, nil
-	})
-	version := 1
-	registration := dispatchInputRegistrationFixture("review-session", "只复核这份固定材料", "")
-	registration.WorkflowID, registration.WorkflowVersion = "flow", &version
+	server, pool, registration, authority := nativeTaskRegistrationFixture(t)
+	emptyActions := []string{}
+	registration.AuthorizedBusinessCapabilityIDs = &emptyActions
+	registration.BusinessRecord = nil
 	for index := 0; index < 9; index++ {
 		registration.Resources = append(registration.Resources, dispatchInputResource{
 			Type: "forge-file", ID: uuid.NewString(), Name: fmt.Sprintf("review-%d.md", index+1), MediaType: "text/markdown",
 			Bytes: int64(len(content)), SHA256: dispatchInputDigest(content),
 		})
 	}
+	for _, resource := range registration.Resources {
+		authority.files[resource.ID] = content
+	}
+	authority.add(t, "review-token", "native-user", "native-org", 1, scopeForRegistration(registration))
 	body, _ := json.Marshal(registration)
 	c, recorder := dispatchInputTestContext(body, "/v1/workbench/dispatch-inputs", "ws", "user")
 	setTestForgeTaskDelegation(c.Request().Header, "review-token")
