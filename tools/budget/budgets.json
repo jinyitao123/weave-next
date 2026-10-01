@@ -625,8 +625,8 @@
     ]
   },
   "kernel": {
-    "lines": 97681,
-    "production_lines": 81527,
+    "lines": 97682,
+    "production_lines": 81528,
     "packages": 49,
     "external_dependencies": 5,
     "allowed_dependencies": [
@@ -650,8 +650,8 @@
     ]
   },
   "app": {
-    "lines": 84329,
-    "production_lines": 62283,
+    "lines": 85474,
+    "production_lines": 63020,
     "packages": 30,
     "external_dependencies": 7,
     "allowed_dependencies": [
