@@ -20,9 +20,9 @@ commands:
   events redeliver [--event ID]  requeue permanently failed events (all when no --event)
   export-run --workspace W --run R --out FILE [--include-content]
                                  write one run's stored state to a file; credentials are never written
-  replay-run --workspace W --run R [--member M]
+  replay-run --workspace W --run R [--member M] [--out PRIVATE_REPORT]
                                  re-run each member from its recorded journal with no live calls and no writes
-  import-run --file FILE [--disposable-target]
+  import-run --file FILE [--disposable-target] [--init-schema]
                                  load an exported run into a disposable database with the current schema
 
 DATABASE_URL must point at the Weave database.`
