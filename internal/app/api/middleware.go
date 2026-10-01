@@ -196,6 +196,10 @@ func bindDelegatedUser(c echo.Context, jwtSecret string, userStoreGetter func() 
 	setExecutionSubject(c, subject)
 	c.Set("user_id", user.ID)
 	c.Set("roles", []string{user.Role})
+	c.Set(identitySourceContextKey, claims.IdentitySource)
+	if claims.IdentitySource == "forge" {
+		c.Set(forgePermissionSetsContextKey, append([]string(nil), claims.PermissionSets...))
+	}
 	c.Set(workbenchActorContextKey, subject.Digest())
 	return nil
 }
