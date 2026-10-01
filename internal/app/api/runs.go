@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jinyitao123/loom"
 	"github.com/jinyitao123/weave/internal/base/deliverable"
+	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/base/snapshot"
 	"github.com/jinyitao123/weave/internal/kernel/engine"
@@ -479,6 +480,7 @@ type runActivityMemberStage struct {
 	Tools                  []runActivityTool                 `json:"tools"`
 	FailureClass           string                            `json:"failure_class,omitempty"`
 	FailureReason          string                            `json:"failure_reason,omitempty"`
+	AuthorizationRequired  *execution.AuthorizationRefusal   `json:"authorization_required,omitempty"`
 	Retryable              bool                              `json:"retryable,omitempty"`
 }
 
@@ -823,17 +825,18 @@ func applyRunActivityEvents(members []runActivityMember, events []teamrun.Activi
 		}
 		stage := &members[index].Stages[stageIndex]
 		var detail struct {
-			DurationMs    int64             `json:"duration_ms"`
-			ToolCalls     int               `json:"tool_calls"`
-			ToolName      string            `json:"tool_name"`
-			ToolCallID    string            `json:"tool_call_id"`
-			Status        string            `json:"status"`
-			Input         string            `json:"input"`
-			Output        string            `json:"output"`
-			InputSummary  map[string]string `json:"input_summary"`
-			FailureClass  string            `json:"failure_class"`
-			FailureReason string            `json:"failure_reason"`
-			Retryable     bool              `json:"retryable"`
+			DurationMs            int64                           `json:"duration_ms"`
+			ToolCalls             int                             `json:"tool_calls"`
+			ToolName              string                          `json:"tool_name"`
+			ToolCallID            string                          `json:"tool_call_id"`
+			Status                string                          `json:"status"`
+			Input                 string                          `json:"input"`
+			Output                string                          `json:"output"`
+			InputSummary          map[string]string               `json:"input_summary"`
+			FailureClass          string                          `json:"failure_class"`
+			FailureReason         string                          `json:"failure_reason"`
+			Retryable             bool                            `json:"retryable"`
+			AuthorizationRequired *execution.AuthorizationRefusal `json:"authorization_required"`
 		}
 		_ = json.Unmarshal(event.Detail, &detail)
 		// A long tool trace can outlive the window containing member_started.
@@ -846,6 +849,7 @@ func applyRunActivityEvents(members []runActivityMember, events []teamrun.Activi
 			stage.CompletedAt = nil
 			stage.FailureClass, stage.FailureReason = "", ""
 			stage.Retryable = false
+			stage.AuthorizationRequired = nil
 			stage.Status, members[index].Status = "running", "running"
 		}
 		switch event.Kind {
@@ -859,6 +863,7 @@ func applyRunActivityEvents(members []runActivityMember, events []teamrun.Activi
 			stage.FailureClass = ""
 			stage.FailureReason = ""
 			stage.Retryable = false
+			stage.AuthorizationRequired = nil
 			stage.Status = "running"
 			members[index].Status = "running"
 			for inputIndex := range stage.Inputs {
@@ -872,6 +877,7 @@ func applyRunActivityEvents(members []runActivityMember, events []teamrun.Activi
 			stage.Status = "completed"
 			stage.FailureClass, stage.FailureReason = "", ""
 			stage.Retryable = false
+			stage.AuthorizationRequired = nil
 		case "member_failed":
 			occurred := event.OccurredAt
 			stage.CompletedAt = &occurred
@@ -880,6 +886,7 @@ func applyRunActivityEvents(members []runActivityMember, events []teamrun.Activi
 			stage.FailureClass = detail.FailureClass
 			stage.FailureReason = detail.FailureReason
 			stage.Retryable = detail.Retryable
+			stage.AuthorizationRequired = detail.AuthorizationRequired
 			members[index].Status = "failed"
 		case "tool_started":
 			occurred := event.OccurredAt

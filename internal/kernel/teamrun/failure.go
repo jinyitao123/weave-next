@@ -20,9 +20,11 @@ const (
 )
 
 type FailureSummary struct {
-	Class     FailureClass
-	Retryable bool
-	Reason    string
+	AuthorizationRequired *execution.AuthorizationRefusal
+	AuthorizationDenied   bool
+	Class                 FailureClass
+	Retryable             bool
+	Reason                string
 }
 
 // ClassifyFailure returns a stable user-facing class without exposing the
@@ -33,6 +35,12 @@ func ClassifyFailure(err error) FailureSummary {
 	}
 	if errors.Is(err, execution.ErrMemberOutcomeUnknown) {
 		return FailureSummary{Class: FailureClassInfrastructure, Reason: "tool outcome requires reconciliation before continuing"}
+	}
+	if proof, trusted := execution.AuthorizationRefusalFromError(err); trusted {
+		if proof.Renewable() {
+			return FailureSummary{Class: FailureClassInfrastructure, AuthorizationRequired: &proof, Reason: "authorization expired before dispatch; the original employee must renew the same input before continuing"}
+		}
+		return FailureSummary{Class: FailureClassInfrastructure, AuthorizationDenied: true, Reason: "Forge denied this task because the employee's Forge authorization is no longer active"}
 	}
 	if errors.Is(err, businessaction.ErrDelegationExpired) {
 		// Not retryable: the same expired authorization would fail again.

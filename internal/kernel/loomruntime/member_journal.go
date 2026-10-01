@@ -18,14 +18,15 @@ import (
 var ErrMemberOutcomeUnknown = execution.ErrMemberOutcomeUnknown
 
 type memberOperation struct {
-	Kind              string          `json:"kind"`
-	Input             json.RawMessage `json:"input"`
-	InputHash         string          `json:"input_hash"`
-	Response          json.RawMessage `json:"response,omitempty"`
-	Usage             json.RawMessage `json:"usage,omitempty"`
-	AttemptGeneration int64           `json:"attempt_generation"`
-	Attempts          int64           `json:"attempts"`
-	UsageIncomplete   bool            `json:"usage_incomplete,omitempty"`
+	AuthorizationRefusal *execution.AuthorizationRefusal `json:"authorization_refusal,omitempty"`
+	Kind                 string                          `json:"kind"`
+	Input                json.RawMessage                 `json:"input"`
+	InputHash            string                          `json:"input_hash"`
+	Response             json.RawMessage                 `json:"response,omitempty"`
+	Usage                json.RawMessage                 `json:"usage,omitempty"`
+	AttemptGeneration    int64                           `json:"attempt_generation"`
+	Attempts             int64                           `json:"attempts"`
+	UsageIncomplete      bool                            `json:"usage_incomplete,omitempty"`
 }
 
 // InstallFrozenMemberJournal is applied after InstallFrozenUsageTracking, so
@@ -183,7 +184,8 @@ func memberAfterStep(ctx context.Context, _ string, state loom.State) error {
 func (member *memberExecution) operation(ctx context.Context, kind string, input any, perform func() (any, error)) (responseData json.RawMessage, operationErr error) {
 	effectStarted, receiptCommitted := false, false
 	defer func() {
-		if kind == "tool" && effectStarted && !receiptCommitted && operationErr != nil {
+		_, noEffect := execution.AuthorizationRefusalFromError(operationErr)
+		if kind == "tool" && effectStarted && !receiptCommitted && operationErr != nil && !noEffect {
 			operationErr = errors.Join(ErrMemberOutcomeUnknown, operationErr)
 		}
 	}()
@@ -235,7 +237,23 @@ func (member *memberExecution) operation(ctx context.Context, kind string, input
 			}
 			return op.Response, nil
 		}
-		if kind != "model" {
+		if kind == "tool" && op.AuthorizationRefusal != nil && op.AuthorizationRefusal.Valid() {
+			if op.AttemptGeneration >= member.lease.AttemptGeneration {
+				return nil, ErrMemberBusy
+			}
+			if !op.AuthorizationRefusal.Renewable() {
+				return nil, execution.AuthorizationRefusalError(*op.AuthorizationRefusal, errors.New("Forge denied this operation; restore the employee's authorization before starting new work"))
+			}
+			allowed, authErr := execution.CanRetryAuthorization(ctx, *op.AuthorizationRefusal)
+			if authErr != nil {
+				return nil, authErr
+			}
+			if !allowed {
+				return nil, execution.AuthorizationRefusalError(*op.AuthorizationRefusal, errors.New("same-input authorization renewal is required"))
+			}
+			op.AuthorizationRefusal = nil
+			op.AttemptGeneration = member.lease.AttemptGeneration
+		} else if kind != "model" {
 			// A business receipt may have committed just before the process died
 			// without saving this journal response. Reconcile only that trusted
 			// receipt; ordinary tools and unknown effects remain stopped.
@@ -263,16 +281,18 @@ func (member *memberExecution) operation(ctx context.Context, kind string, input
 			}
 			return op.Response, nil
 		}
-		if op.AttemptGeneration >= member.lease.AttemptGeneration {
-			return nil, ErrMemberBusy
+		if kind == "model" {
+			if op.AttemptGeneration >= member.lease.AttemptGeneration {
+				return nil, ErrMemberBusy
+			}
+			// A lost model response is safe to request again, but its unreported
+			// spend cannot be silently called zero. Preserve that gap on the run.
+			op.Attempts++
+			if op.Attempts > 8 {
+				return nil, errors.New("member model recovery attempt budget exhausted")
+			}
+			op.AttemptGeneration, op.UsageIncomplete = member.lease.AttemptGeneration, true
 		}
-		// A lost model response is safe to request again, but its unreported
-		// spend cannot be silently called zero. Preserve that gap on the run.
-		op.Attempts++
-		if op.Attempts > 8 {
-			return nil, errors.New("member model recovery attempt budget exhausted")
-		}
-		op.AttemptGeneration, op.UsageIncomplete = member.lease.AttemptGeneration, true
 	}
 	if present {
 		if err := member.restoreOperationUsage(ctx, op); err != nil {
@@ -311,7 +331,11 @@ func (member *memberExecution) operation(ctx context.Context, kind string, input
 	effectStarted = true
 	response, performErr := perform()
 	if performErr != nil && kind == "tool" {
-		performErr = errors.Join(ErrMemberOutcomeUnknown, performErr)
+		if proof, trusted := execution.AuthorizationRefusalFromError(performErr); trusted {
+			op.AuthorizationRefusal = &proof
+		} else {
+			performErr = errors.Join(ErrMemberOutcomeUnknown, performErr)
+		}
 	}
 	if performErr == nil {
 		op.Response, err = json.Marshal(response)
