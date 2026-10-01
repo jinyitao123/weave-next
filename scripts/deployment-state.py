@@ -34,6 +34,11 @@ def get_json(url, api_key=None):
         return json.load(response)
 
 
+def web_workbench_enabled(values):
+    """The web Workbench is retired; it is deployed only when server.env opts in."""
+    return values.get('WEAVE_WEB_WORKBENCH', '').strip().lower() in ('1', 'true', 'yes', 'on')
+
+
 def prepare_workbench_storage(values):
     paths = []
     for key in ('WORKBENCH_DATA_PATH', 'WORKBENCH_WORKSPACE_PATH'):
@@ -70,8 +75,11 @@ def main():
     env_path, state = Path(env_name), Path(state_name)
     values = read_env(env_path)
     local_api = 'http://127.0.0.1:' + values.get('WEAVE_API_PORT', '8080')
-    if action == 'prepare-workbench-storage':
-        print(json.dumps(prepare_workbench_storage(values), indent=2))
+    if action == 'workbench-enabled':
+        print('true' if web_workbench_enabled(values) else 'false')
+    elif action == 'prepare-workbench-storage':
+        prepared = prepare_workbench_storage(values) if web_workbench_enabled(values) else []
+        print(json.dumps(prepared, indent=2))
     elif action == 'bootstrap':
         if not values.get('WEAVE_API_KEY'):
             assert arguments[0] == '--'
@@ -90,13 +98,15 @@ def main():
             temporary.replace(env_path)
             values['WEAVE_API_KEY'] = api_key
         get_json(local_api + '/v1/auth/me', values['WEAVE_API_KEY'])
-        write_json(state / 'connection.json', {
+        connection = {
             'api_url': values['WEAVE_RUNTIME_SERVER_URL'],
             'api_key': values['WEAVE_API_KEY'],
             'admin_username': values.get('WEAVE_ADMIN_USER', 'admin'),
             'admin_password': values['WEAVE_ADMIN_PASS'],
-            'workbench_url': 'http://' + values['WORKBENCH_PUBLIC_AUTHORITY'],
-        })
+        }
+        if web_workbench_enabled(values):
+            connection['workbench_url'] = 'http://' + values['WORKBENCH_PUBLIC_AUTHORITY']
+        write_json(state / 'connection.json', connection)
         print('Bootstrap and authenticated API verified; connection.json saved privately.')
     elif action == 'verify':
         expected_sha = arguments[0]
@@ -106,17 +116,20 @@ def main():
         if get_json(local_api + '/v1/ready').get('status') != 'ready':
             raise RuntimeError('API dependencies are not ready.')
         get_json(local_api + '/v1/runtimes', values['WEAVE_API_KEY'])
-        url = 'http://127.0.0.1:' + values.get('WORKBENCH_PORT', '3080') + '/'
-        request = urllib.request.Request(url, headers={'Host': values['WORKBENCH_PUBLIC_AUTHORITY']})
-        try:
-            with urllib.request.urlopen(request, timeout=15) as response:
-                status = response.status
-        except urllib.error.HTTPError as error:
-            status = error.code
-        if status not in (200, 401):
-            raise RuntimeError('Workbench gateway is not ready: HTTP ' + str(status))
+        status = None
+        if web_workbench_enabled(values):
+            url = 'http://127.0.0.1:' + values.get('WORKBENCH_PORT', '3080') + '/'
+            request = urllib.request.Request(url, headers={'Host': values['WORKBENCH_PUBLIC_AUTHORITY']})
+            try:
+                with urllib.request.urlopen(request, timeout=15) as response:
+                    status = response.status
+            except urllib.error.HTTPError as error:
+                status = error.code
+            if status not in (200, 401):
+                raise RuntimeError('Workbench gateway is not ready: HTTP ' + str(status))
         receipt = {'commit': expected_sha, 'branch': 'main', 'health': health,
                    'ready': True, 'authenticated_api': True, 'workbench_http_status': status,
+                   'web_workbench': web_workbench_enabled(values),
                    'verified_at': datetime.datetime.now(datetime.timezone.utc).isoformat()}
         write_json(state / 'last-success.json', receipt)
         print(json.dumps(receipt, indent=2))

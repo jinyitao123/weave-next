@@ -54,6 +54,13 @@ services:
       WEAVE_FORGE_EVENT_URL: ${WEAVE_FORGE_EVENT_URL:-}
       WEAVE_FORGE_EVENT_SECRET: ${WEAVE_FORGE_EVENT_SECRET:-}
       WEAVE_FORGE_DEFAULT_WORKSPACE: ${WEAVE_FORGE_DEFAULT_WORKSPACE:-}
+      # Retired capabilities are switched off by default (AGENTS.md, decision 001):
+      # the meta-team, team templates/evaluation/build-run APIs, and Weave local
+      # login/registration. Identity comes only from Forge. Set a value to false
+      # to bring one back while it is still in the tree.
+      WEAVE_METATEAM_ENABLED: ${WEAVE_METATEAM_ENABLED:-false}
+      WEAVE_RETIRE_LEGACY_PLATFORM_APIS: ${WEAVE_RETIRE_LEGACY_PLATFORM_APIS:-true}
+      WEAVE_DISABLE_LOCAL_LOGIN: ${WEAVE_DISABLE_LOCAL_LOGIN:-true}
       # Engine credentials are injected at runtime — never baked into the image.
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       WEAVE_LOOM_MODEL: ${WEAVE_LOOM_MODEL:-}
@@ -118,6 +125,9 @@ services:
     restart: unless-stopped
 
   workbench:
+    # Retired web Workbench: not started by default. Enable with
+    # `--profile legacy-workbench` only while it is still in the tree.
+    profiles: ["legacy-workbench"]
     build:
       context: .
       dockerfile: Dockerfile.workbench
@@ -177,6 +187,7 @@ services:
       - ${WORKBENCH_BIND_ADDRESS:-127.0.0.1}:${WORKBENCH_PORT:-3080}:3081
 
   workbench-gateway:
+    profiles: ["legacy-workbench"]
     image: nginx:alpine
     restart: unless-stopped
     depends_on:

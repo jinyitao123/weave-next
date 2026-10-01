@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"github.com/jinyitao123/weave/internal/base/execution"
+	"github.com/jinyitao123/weave/internal/kernel/businessaction"
 	"strings"
 )
 
@@ -32,6 +33,11 @@ func ClassifyFailure(err error) FailureSummary {
 	}
 	if errors.Is(err, execution.ErrMemberOutcomeUnknown) {
 		return FailureSummary{Class: FailureClassInfrastructure, Reason: "tool outcome requires reconciliation before continuing"}
+	}
+	if errors.Is(err, businessaction.ErrDelegationExpired) {
+		// Not retryable: the same expired authorization would fail again.
+		return FailureSummary{Class: FailureClassInfrastructure,
+			Reason: "the employee's authorization for this work expired before the stage could act; resubmit it from the original work to continue"}
 	}
 	if errors.Is(err, context.Canceled) || executionErrorCode(err) == ErrorCodeCancelled {
 		return FailureSummary{Class: FailureClassCancelled, Reason: "execution was stopped"}

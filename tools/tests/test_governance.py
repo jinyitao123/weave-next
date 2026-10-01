@@ -124,7 +124,17 @@ class PlatformComposeTests(unittest.TestCase):
         env.pop("WEAVE_RUNTIME_TOKEN", None)
         command = ["docker", "compose", "--env-file", os.devnull, "-f",
                    str(TOOLS.parent / "docker-compose.platform.yml")]
-        for profile in [[], ["--profile", "runtime"]]:
+        # The web Workbench is retired: it starts only under `--profile legacy-workbench`.
+        default = subprocess.run(command + ["config", "--format", "json"],
+                                 env=env, capture_output=True, text=True, check=True)
+        default_services = json.loads(default.stdout)["services"]
+        self.assertNotIn("workbench", default_services)
+        self.assertNotIn("workbench-gateway", default_services)
+        weave_env = default_services["weave"]["environment"]
+        self.assertEqual(weave_env["WEAVE_METATEAM_ENABLED"], "false")
+        self.assertEqual(weave_env["WEAVE_RETIRE_LEGACY_PLATFORM_APIS"], "true")
+        self.assertEqual(weave_env["WEAVE_DISABLE_LOCAL_LOGIN"], "true")
+        for profile in [["--profile", "legacy-workbench"], ["--profile", "legacy-workbench", "--profile", "runtime"]]:
             result = subprocess.run(command + profile + ["config", "--format", "json"],
                                     env=env, capture_output=True, text=True, check=True)
             services = json.loads(result.stdout)["services"]
@@ -140,7 +150,7 @@ class PlatformComposeTests(unittest.TestCase):
             self.assertEqual(services["workbench"]["build"]["args"]["HTTPS_PROXY"], "")
             self.assertEqual(services["workbench"]["ports"][0]["target"], 3081)
             self.assertEqual(services["workbench-gateway"]["network_mode"], "service:workbench")
-            if profile:
+            if "runtime" in profile:
                 self.assertEqual(services["runtime"]["environment"]["WEAVE_RUNTIME_TOKEN"], "")
                 self.assertEqual(services["runtime"]["environment"]["HTTP_PROXY"], "")
                 self.assertIn("weave", services["runtime"]["environment"]["NO_PROXY"])

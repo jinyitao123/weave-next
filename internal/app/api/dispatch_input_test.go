@@ -1,10 +1,17 @@
 package api
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/google/uuid"
+	"github.com/jinyitao123/weave/internal/base/frozen"
+	"github.com/labstack/echo/v4"
 )
 
 func TestDispatchInputSourceMessagesRejectAmbiguousProvenance(t *testing.T) {
@@ -195,5 +202,57 @@ func TestBusinessRecordBindingRejectsAmbiguousIdentity(t *testing.T) {
 		if validDispatchBusinessRecord(&record) {
 			t.Fatalf("invalid binding accepted: %+v", record)
 		}
+	}
+}
+
+func dispatchInputFilesForTest(count int) []dispatchInputResource {
+	files := make([]dispatchInputResource, count)
+	for index := range files {
+		files[index] = dispatchInputResource{
+			Type: "forge-file", ID: fmt.Sprintf("file-%02d", index), Name: fmt.Sprintf("材料%02d.md", index),
+			MediaType: "text/markdown", Bytes: 100, SHA256: strings.Repeat("c", 64),
+		}
+	}
+	return files
+}
+
+// Registration and the runtime share frozen.MaxDelegatedFiles: the largest set
+// registration accepts is exactly what the runtime can start.
+func TestDispatchInputResourceCountMatchesTheRuntimeLimit(t *testing.T) {
+	if !validDispatchInputResources(dispatchInputFilesForTest(frozen.MaxDelegatedFiles)) {
+		t.Fatalf("%d files, the documented maximum, were rejected", frozen.MaxDelegatedFiles)
+	}
+	if validDispatchInputResources(dispatchInputFilesForTest(frozen.MaxDelegatedFiles + 1)) {
+		t.Fatalf("%d files were accepted although the runtime cannot start them", frozen.MaxDelegatedFiles+1)
+	}
+}
+
+// An oversized handoff is refused with a specific code before any state is
+// written, instead of being accepted and then failing when the run starts.
+func TestDispatchInputRegistrationRejectsTooManyFilesWithASpecificCodeRealPG(t *testing.T) {
+	server, pool := newTeamDispatchTestServer(t)
+	files := dispatchInputFilesForTest(frozen.MaxDelegatedFiles + 1)
+	body, err := json.Marshal(map[string]any{
+		"registration_id": uuid.NewString(), "workbench_session_id": "session", "team_id": "team",
+		"task": "检查", "resources": files,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/v1/workbench/dispatch-inputs", bytes.NewReader(body))
+	request.Header.Set("Content-Type", "application/json")
+	c := echo.New().NewContext(request, recorder)
+	c.Set("tenant", "ws")
+	c.Set("user_id", "user")
+	if err := server.handleRegisterDispatchInput(c); err != nil {
+		t.Fatal(err)
+	}
+	if recorder.Code != http.StatusConflict || !strings.Contains(recorder.Body.String(), "dispatch_input_too_many_resources") {
+		t.Fatalf("status=%d body=%s, want 409 dispatch_input_too_many_resources", recorder.Code, recorder.Body.String())
+	}
+	var stored int
+	if err := pool.QueryRow(t.Context(), `SELECT count(*) FROM weave_dispatch_input_revisions`).Scan(&stored); err != nil || stored != 0 {
+		t.Fatalf("a rejected handoff left %d input revisions err=%v", stored, err)
 	}
 }

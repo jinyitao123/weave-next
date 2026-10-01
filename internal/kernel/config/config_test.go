@@ -53,16 +53,16 @@ func TestLoadMetaTeamEnabled(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !cfg.MetaTeamEnabled {
-		t.Fatal("MetaTeamEnabled default = false, want true")
+	if cfg.MetaTeamEnabled {
+		t.Fatal("MetaTeamEnabled default = true, want false (retired)")
 	}
-	t.Setenv("WEAVE_METATEAM_ENABLED", "false")
+	t.Setenv("WEAVE_METATEAM_ENABLED", "true")
 	cfg, err = Load()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.MetaTeamEnabled {
-		t.Fatal("MetaTeamEnabled = true, want false")
+	if !cfg.MetaTeamEnabled {
+		t.Fatal("MetaTeamEnabled = false, want true when explicitly enabled")
 	}
 	t.Setenv("WEAVE_METATEAM_ENABLED", "sometimes")
 	if _, err := Load(); err == nil {
@@ -96,5 +96,46 @@ func TestLoadWorkflowHealthDefaultsAndBounds(t *testing.T) {
 	t.Setenv("WEAVE_HEALTH_WARNING_FAILURE_RATE", "1.1")
 	if _, err := Load(); err == nil {
 		t.Fatal("failure warning rate greater than one accepted")
+	}
+}
+
+func TestLoadRetiredCapabilityFlags(t *testing.T) {
+	base := func(t *testing.T) {
+		t.Setenv("DATABASE_URL", "postgres://example")
+		t.Setenv("JWT_SECRET", "secret")
+		t.Setenv("WEAVE_WORKSPACES_ROOT", t.TempDir())
+	}
+	t.Run("defaults retire legacy APIs and local login", func(t *testing.T) {
+		base(t)
+		t.Setenv("WEAVE_RETIRE_LEGACY_PLATFORM_APIS", "")
+		t.Setenv("WEAVE_DISABLE_LOCAL_LOGIN", "")
+		cfg, err := Load()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !cfg.RetireLegacyPlatformAPIs || !cfg.DisableLocalLogin {
+			t.Fatalf("defaults = retire %v, disable login %v; want both true", cfg.RetireLegacyPlatformAPIs, cfg.DisableLocalLogin)
+		}
+	})
+	t.Run("explicit false re-enables", func(t *testing.T) {
+		base(t)
+		t.Setenv("WEAVE_RETIRE_LEGACY_PLATFORM_APIS", "false")
+		t.Setenv("WEAVE_DISABLE_LOCAL_LOGIN", "false")
+		cfg, err := Load()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cfg.RetireLegacyPlatformAPIs || cfg.DisableLocalLogin {
+			t.Fatalf("explicit false = retire %v, disable login %v; want both false", cfg.RetireLegacyPlatformAPIs, cfg.DisableLocalLogin)
+		}
+	})
+	for _, key := range []string{"WEAVE_RETIRE_LEGACY_PLATFORM_APIS", "WEAVE_DISABLE_LOCAL_LOGIN"} {
+		t.Run("rejects invalid "+key, func(t *testing.T) {
+			base(t)
+			t.Setenv(key, "sometimes")
+			if _, err := Load(); err == nil {
+				t.Fatalf("Load() with invalid %s error = nil", key)
+			}
+		})
 	}
 }

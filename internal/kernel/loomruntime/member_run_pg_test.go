@@ -17,6 +17,7 @@ import (
 	"github.com/jinyitao123/loom/contract"
 	"github.com/jinyitao123/loom/stdlib"
 	"github.com/jinyitao123/weave/internal/base/db"
+	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/base/fileartifact"
 	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/base/storeext"
@@ -151,16 +152,20 @@ func (*memberTestModel) Stream(context.Context, contract.ChatRequest) (<-chan co
 }
 
 type memberTestTools struct {
-	file            string
-	calls           atomic.Int64
-	failAfterEffect bool
-	artifactContent string
+	file             string
+	calls            atomic.Int64
+	failAfterEffect  bool
+	artifactContent  string
+	observeOperation func(context.Context, contract.ToolCall)
 }
 
 func (*memberTestTools) ListTools(context.Context) ([]contract.ToolDef, error) {
 	return []contract.ToolDef{{Name: "append", Description: "Append a value", InputSchema: json.RawMessage(`{"type":"object","properties":{"value":{"type":"string"}}}`), ReadOnly: true}}, nil
 }
-func (tools *memberTestTools) Dispatch(_ context.Context, call contract.ToolCall) (*contract.ToolResult, error) {
+func (tools *memberTestTools) Dispatch(ctx context.Context, call contract.ToolCall) (*contract.ToolResult, error) {
+	if tools.observeOperation != nil {
+		tools.observeOperation(ctx, call)
+	}
 	tools.calls.Add(1)
 	file, err := os.OpenFile(tools.file, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
 	if err != nil {
@@ -429,5 +434,48 @@ func TestMemberArtifactExportSurvivesReceiptRecoveryRealPG(t *testing.T) {
 	files, err = fileartifact.MemberFiles(cached.State)
 	if err != nil || len(files) != 1 || h.tools.calls.Load() != 2 {
 		t.Fatal("completed receipt did not retain files")
+	}
+}
+
+func TestMemberDurableToolSlotsSurviveRecoveryRealPG(t *testing.T) {
+	h := newMemberPGHarness(t)
+	var slots []string
+	h.tools.observeOperation = func(ctx context.Context, _ contract.ToolCall) {
+		slot := execution.OperationID(ctx)
+		if slot == "" {
+			t.Fatal("external effect had no durable operation identity")
+		}
+		slots = append(slots, slot)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	h.records.afterToolReceipt = cancel
+	runner, err := NewMemberRunner(h.records)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = runner.Run(ctx, h.request); err == nil {
+		t.Fatal("expected interruption after durable receipt")
+	}
+	if len(slots) != 1 {
+		t.Fatalf("effects before recovery: %v", slots)
+	}
+	firstSlot := slots[0]
+	next := h.nextEpoch(t)
+	restarted, _ := NewMemberRunner(storeext.New(h.pool))
+	result, err := restarted.Run(t.Context(), next)
+	if err != nil || result.StopReason != loom.StopCompleted {
+		t.Fatalf("recovery result=%+v err=%v", result, err)
+	}
+	if len(slots) != 2 || slots[0] != firstSlot || slots[0] == slots[1] {
+		t.Fatalf("each intentional tool position needs its own identity, cached first effect must not repeat: %v", slots)
+	}
+	rows, err := h.pool.Query(t.Context(), `SELECT key FROM loom_store WHERE namespace=$1 AND key=$2`, "member-operation:workspace", firstSlot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		t.Fatal("effect identity does not match its persisted journal slot")
 	}
 }

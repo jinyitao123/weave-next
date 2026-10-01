@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/kernel/businessaction"
 	"github.com/jinyitao123/weave/internal/kernel/workflow"
 	"github.com/labstack/echo/v4"
@@ -200,6 +201,9 @@ func validDispatchInputResources(resources []dispatchInputResource) bool {
 	if len(resources) == 0 {
 		return true
 	}
+	if len(resources) > frozen.MaxDelegatedFiles {
+		return false
+	}
 	seen := make(map[string]bool, len(resources))
 	seenMaterialIDs := make(map[string]bool, len(resources))
 	var totalBytes int64
@@ -316,6 +320,15 @@ func (s *Server) handleRegisterDispatchInput(c echo.Context) error {
 	var request dispatchInputRegistration
 	if err := decodeWorkflowBody(c, &request); err != nil {
 		return workflowError(c, http.StatusBadRequest, "dispatch_input_request_invalid", "dispatch input request invalid")
+	}
+	if len(request.Resources) > frozen.MaxDelegatedFiles {
+		// Rejecting here, before Weave accepts the work, keeps the employee from
+		// being told "accepted" for a handoff the runtime would refuse to start.
+		// 409, not 400: the desktop client treats 409 as a definite rejection of
+		// this registration and stops retrying; any other status reads as an unknown
+		// outcome and sends Pi into a recovery loop. The code names the real cause.
+		return workflowError(c, http.StatusConflict, "dispatch_input_too_many_resources",
+			fmt.Sprintf("a handoff can carry at most %d files", frozen.MaxDelegatedFiles))
 	}
 	registrationID, err := uuid.Parse(request.RegistrationID)
 	if err != nil || strings.TrimSpace(request.WorkbenchSessionID) == "" || len(request.WorkbenchSessionID) > 256 ||
