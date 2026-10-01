@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
@@ -14,7 +15,7 @@ import (
 	"github.com/jinyitao123/weave/internal/base/frozen"
 )
 
-// Member replay re-runs one member's tool loop from its first step against the
+// Member replay re-runs every recorded member loop segment against the
 // operations the run already recorded, so an operator can see what the loop
 // would do with that history without any model, tool or Forge call and without
 // writing to the database. It answers three questions: does the loop still
@@ -45,15 +46,22 @@ const (
 
 // MemberReplayReport is the operator's view of one replay.
 type MemberReplayReport struct {
-	MemberRunID     string   `json:"member_run_id"`
-	Segment         string   `json:"segment"`
-	Segments        []string `json:"segments"`
-	Operations      int      `json:"operations"`
-	Replayed        int      `json:"replayed"`
-	Outcome         string   `json:"outcome"`
-	Detail          string   `json:"detail,omitempty"`
-	Output          string   `json:"output,omitempty"`
-	HistoryProblems []string `json:"history_problems,omitempty"`
+	MemberRunID          string   `json:"member_run_id"`
+	Segment              string   `json:"segment"`
+	Segments             []string `json:"segments"`
+	Operations           int      `json:"operations"`
+	Replayed             int      `json:"replayed"`
+	Outcome              string   `json:"outcome"`
+	Detail               string   `json:"detail,omitempty"`
+	Output               string   `json:"output,omitempty"`
+	HistoryProblems      []string `json:"history_problems,omitempty"`
+	ConfigurationSHA256  string   `json:"configuration_sha256,omitempty"`
+	ConfigVerified       bool     `json:"configuration_verified"`
+	VerifiedSegments     int      `json:"verified_segments"`
+	ReplayScope          string   `json:"replay_scope"`
+	NoLiveCalls          bool     `json:"no_live_calls"`
+	NetworkAttempts      int      `json:"network_attempts"`
+	ProviderWireVerified bool     `json:"provider_wire_verified"`
 }
 
 type memberJournalQuerier interface {
@@ -84,8 +92,8 @@ func ReadMemberJournal(ctx context.Context, db memberJournalQuerier, workspaceID
 		if cut < 0 {
 			return nil, fmt.Errorf("journal key %q has no cursor", key)
 		}
-		var cursor int64
-		if _, err := fmt.Sscanf(rest[cut+1:], "%d", &cursor); err != nil {
+		cursor, parseErr := strconv.ParseInt(rest[cut+1:], 10, 64)
+		if parseErr != nil || cursor < 1 {
 			return nil, fmt.Errorf("journal key %q has an invalid cursor", key)
 		}
 		entries = append(entries, MemberJournalEntry{Segment: rest[:cut], Cursor: cursor, Kind: op.Kind, Input: op.Input,
@@ -95,97 +103,17 @@ func ReadMemberJournal(ctx context.Context, db memberJournalQuerier, workspaceID
 }
 
 var (
-	errReplayJournalEnded = errors.New("replay reached the end of the recorded journal")
-	errReplayModelLost    = errors.New("recorded model operation has no response")
-	errReplayDiverged     = errors.New("replay diverged from the recorded journal")
-	errReplayLive         = errors.New("replay attempted a live call")
+	errReplayJournalEnded   = errors.New("replay reached the end of the recorded journal")
+	errReplayModelLost      = errors.New("recorded model operation has no response")
+	errReplayDiverged       = errors.New("replay diverged from the recorded journal")
+	errReplayLive           = errors.New("replay attempted a live call")
+	errReplayInvalidHistory = errors.New("recorded tool result identity is invalid")
 )
 
-// ReplayMemberSegment replays one journal segment of a member run. The first
-// segment starts from the member's recorded initial state; later segments start
-// from a checkpointed loop state that a journal alone does not carry, so they
-// are listed but not replayed.
-func ReplayMemberSegment(ctx context.Context, memberRunID string, entries []MemberJournalEntry, initialState json.RawMessage) *MemberReplayReport {
-	report := &MemberReplayReport{MemberRunID: memberRunID, Outcome: ReplayLoopError}
-	seen := map[string]bool{}
-	for _, entry := range entries {
-		if !seen[entry.Segment] {
-			seen[entry.Segment] = true
-			report.Segments = append(report.Segments, entry.Segment)
-		}
-	}
-	if len(entries) == 0 {
-		report.Outcome, report.Detail = ReplayJournalEnded, "the member recorded no operations"
-		return report
-	}
-	report.Segment = entries[0].Segment
-	segment := []MemberJournalEntry{}
-	for _, entry := range entries {
-		if entry.Segment == report.Segment {
-			segment = append(segment, entry)
-		}
-	}
-	report.Operations = len(segment)
-
-	var firstModel *contract.ChatRequest
-	for _, entry := range segment {
-		if entry.Kind == string(stdlib.OperationModel) {
-			var request contract.ChatRequest
-			if err := json.Unmarshal(entry.Input, &request); err != nil {
-				report.Detail = "the first recorded model request is unreadable: " + err.Error()
-				return report
-			}
-			firstModel = &request
-			break
-		}
-	}
-	if firstModel == nil {
-		report.Outcome, report.Detail = ReplayJournalEnded, "the segment recorded no model request"
-		return report
-	}
-	state, err := decodeReplayState(initialState)
-	if err != nil {
-		report.Detail = err.Error()
-		return report
-	}
-	opts := stdlib.ToolLoopOpts{Model: firstModel.Model, MaxTokens: firstModel.MaxTokens, OutputSchema: firstModel.Schema,
-		Effort: firstModel.Effort, MaxIterations: len(segment) + 20}
-	if len(firstModel.Messages) > 0 && firstModel.Messages[0].Role == "system" {
-		if initial, _ := state["messages"].([]contract.Message); len(initial) == 0 || initial[0].Role != "system" {
-			opts.SystemPrompt = firstModel.Messages[0].Content
-		}
-	}
-	journal := &replayJournal{entries: segment, report: report}
-	replayCtx := context.WithValue(ctx, replayActiveKey{}, true)
-	step := stdlib.NewToolLoopStep(
-		stdlib.NewJournaledLLM(replayLiveLLM{}, journal),
-		stdlib.NewJournaledToolDispatcher(replayTools{defs: firstModel.Tools}, journal, stdlib.JournaledToolOpts{SerializeWhenActive: true}),
-		opts)
-	delta, err := step(replayCtx, state)
-	report.Replayed = journal.cursor
-	switch {
-	case err == nil:
-		report.Outcome = ReplayCompleted
-		if output, ok := delta["output"].(string); ok {
-			report.Output = output
-		} else if delta["__yield"] == true {
-			report.Outcome, report.Detail = ReplayJournalEnded, "the loop paused at a slice or budget boundary, as the recorded run did"
-		}
-	case errors.Is(err, errReplayDiverged):
-		report.Outcome, report.Detail = ReplayDiverged, err.Error()
-	case errors.Is(err, errReplayJournalEnded):
-		report.Outcome, report.Detail = ReplayJournalEnded, "the loop asked for an operation the run never recorded; the recorded run stopped here"
-	case errors.Is(err, errReplayModelLost):
-		report.Outcome, report.Detail = ReplayModelLost, err.Error()
-	case errors.Is(err, stdlib.ErrJournalOutcomeUnknown), errors.Is(err, ErrMemberOutcomeUnknown):
-		report.Outcome, report.Detail = ReplayOutcomeUnknown, err.Error()
-	default:
-		report.Detail = err.Error()
-	}
-	if len(report.HistoryProblems) > 0 && report.Outcome != ReplayDiverged {
-		report.Outcome = ReplayInvalidHistory
-	}
-	return report
+// ReplayMemberSegment cannot infer the runtime configuration from a request.
+// Use ReplayMemberJournal with the immutable configuration and checkpoints.
+func ReplayMemberSegment(_ context.Context, memberRunID string, _ []MemberJournalEntry, _ json.RawMessage) *MemberReplayReport {
+	return &MemberReplayReport{MemberRunID: memberRunID, Outcome: ReplayConfigurationUnavailable, Detail: "frozen configuration and segment entry checkpoints are required", ReplayScope: "model_tool_journal", NoLiveCalls: true}
 }
 
 func decodeReplayState(raw json.RawMessage) (loom.State, error) {
@@ -236,9 +164,10 @@ func (replayTools) Dispatch(context.Context, contract.ToolCall) (*contract.ToolR
 // replayJournal serves recorded responses by position and reports the first
 // place the replayed loop disagrees with the record.
 type replayJournal struct {
-	entries []MemberJournalEntry
-	cursor  int
-	report  *MemberReplayReport
+	entries      []MemberJournalEntry
+	cursor       int
+	report       *MemberReplayReport
+	liveAttempts int
 }
 
 func (*replayJournal) Active(ctx context.Context) bool {
@@ -286,6 +215,14 @@ func (journal *replayJournal) Execute(_ context.Context, operation stdlib.Journa
 			return nil, fmt.Errorf("operation %d: %w", index+1, stdlib.ErrJournalOutcomeUnknown)
 		}
 		return nil, fmt.Errorf("operation %d: %w", index+1, errReplayModelLost)
+	}
+	if operation.Kind == stdlib.OperationTool {
+		var call contract.ToolCall
+		var result contract.ToolResult
+		if json.Unmarshal(raw, &call) != nil || json.Unmarshal(entry.Response, &result) != nil || result.CallID != call.ID || (result.ToolName != "" && result.ToolName != call.Name) {
+			journal.report.HistoryProblems = append(journal.report.HistoryProblems, "recorded tool result does not match its call")
+			return nil, errReplayInvalidHistory
+		}
 	}
 	return entry.Response, nil
 }

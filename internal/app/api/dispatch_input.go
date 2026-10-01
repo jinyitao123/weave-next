@@ -35,6 +35,7 @@ type dispatchInputSourceMessage struct {
 }
 
 type dispatchInputRegistration struct {
+	InputRevisionID                 string                       `json:"input_revision_id,omitempty"`
 	RegistrationID                  string                       `json:"registration_id"`
 	WorkbenchSessionID              string                       `json:"workbench_session_id"`
 	ExpectedRevisionID              string                       `json:"expected_revision_id"`
@@ -304,6 +305,124 @@ func authorizedBusinessActions(published []string, requested *[]string) ([]strin
 	return actions, nil
 }
 
+func normalizeDispatchInputRequest(c echo.Context, request *dispatchInputRegistration) (string, bool, error) {
+	if len(request.Resources) > frozen.MaxDelegatedFiles {
+		// Rejecting here, before Weave accepts the work, keeps the employee from
+		// being told "accepted" for a handoff the runtime would refuse to start.
+		// 409, not 400: the desktop client treats 409 as a definite rejection of
+		// this registration and stops retrying; any other status reads as an unknown
+		// outcome and sends Pi into a recovery loop. The code names the real cause.
+		return "", true, workflowError(c, http.StatusConflict, "dispatch_input_too_many_resources",
+			fmt.Sprintf("a handoff can carry at most %d files", frozen.MaxDelegatedFiles))
+	}
+	registrationID, err := uuid.Parse(request.RegistrationID)
+	if err != nil || strings.TrimSpace(request.WorkbenchSessionID) == "" || len(request.WorkbenchSessionID) > 256 ||
+		strings.ContainsRune(request.WorkbenchSessionID, '\x00') || strings.TrimSpace(request.TeamID) == "" ||
+		strings.TrimSpace(request.Task) == "" || len(request.Task) > dispatchInputTaskMaxBytes || strings.ContainsRune(request.Task, '\x00') ||
+		!validDispatchInputSourceMessages(request.SourceMessages) || !validDispatchInputResources(request.Resources) || !validDispatchBusinessRecord(request.BusinessRecord) || (request.WorkflowVersion != nil && *request.WorkflowVersion <= 0) {
+		return "", true, workflowError(c, http.StatusBadRequest, "dispatch_input_request_invalid", "dispatch input request invalid")
+	}
+	request.RegistrationID = registrationID.String()
+	if request.ExpectedRevisionID != "" {
+		revisionID, err := uuid.Parse(request.ExpectedRevisionID)
+		if err != nil {
+			return "", true, workflowError(c, http.StatusBadRequest, "dispatch_input_request_invalid", "expected revision must be a UUID")
+		}
+		request.ExpectedRevisionID = revisionID.String()
+	}
+	if request.RevisionContext != nil {
+		parentRevisionID, revisionErr := uuid.Parse(request.RevisionContext.ParentInputRevisionID)
+		if revisionErr != nil || strings.TrimSpace(request.RevisionContext.ParentRunID) == "" {
+			return "", true, workflowError(c, http.StatusBadRequest, "dispatch_revision_context_invalid", "revision source is invalid")
+		}
+		request.RevisionContext.ParentInputRevisionID = parentRevisionID.String()
+		request.RevisionContext.ParentRunID = strings.TrimSpace(request.RevisionContext.ParentRunID)
+	}
+	request.TeamID = strings.TrimSpace(request.TeamID)
+	request.WorkflowID = strings.TrimSpace(request.WorkflowID)
+	if request.BusinessRecord != nil && (request.WorkflowID == "" || request.WorkflowVersion == nil) {
+		return "", true, workflowError(c, http.StatusBadRequest, "dispatch_input_request_invalid", "business record binding requires a fixed workflow version")
+	}
+	request.ProjectID = strings.TrimSpace(request.ProjectID)
+	request.Mode = strings.TrimSpace(request.Mode)
+	if request.Mode == "" {
+		request.Mode = teamDispatchModeWorkflow
+	}
+	if request.Mode != teamDispatchModeWorkflow {
+		return "", true, workflowError(c, http.StatusBadRequest, "dispatch_input_mode_unsupported", "bound dispatch currently requires a fixed workflow")
+	}
+	requestExecutionTask := request.Task
+	materialResources := make([]businessaction.FrozenMaterialResource, 0, len(request.Resources))
+	for _, resource := range request.Resources {
+		materialResources = append(materialResources, businessaction.FrozenMaterialResource{
+			Type: resource.Type, MaterialID: resource.MaterialID, FileID: resource.ID,
+			SourceKind: resource.SourceKind, RequestID: resource.RequestID,
+			Name: resource.Name, MediaType: resource.MediaType, Bytes: resource.Bytes, SHA256: resource.SHA256,
+		})
+	}
+	projected, recognized, projectionErr := businessaction.PrepareExecutionTask(request.Task, materialResources)
+	if projectionErr != nil {
+		return "", true, workflowError(c, http.StatusUnprocessableEntity, "frozen_material_manifest_invalid", "frozen material manifest does not match its Forge file references")
+	}
+	if recognized {
+		requestExecutionTask = projected
+	}
+	return requestExecutionTask, false, nil
+}
+
+func stableDispatchInputID(workspaceID, userID, registrationID string) string {
+	return uuid.NewSHA1(uuid.NameSpaceOID, []byte("weave-dispatch-input/1\x1f"+workspaceID+"\x1f"+userID+"\x1f"+registrationID)).String()
+}
+func registrationDigest(request dispatchInputRegistration) string {
+	request.InputRevisionID = ""
+	encoded, _ := json.Marshal(request)
+	return dispatchInputDigest(encoded)
+}
+func (s *Server) preparedDispatchInputID(ctx context.Context, workspaceID, userID string, request dispatchInputRegistration) (string, error) {
+	var id, digest string
+	err := s.GetPool().QueryRow(ctx, `SELECT input_revision_id,registration_sha256 FROM weave_dispatch_input_revisions WHERE workspace_id=$1 AND user_id=$2 AND registration_id=$3`, workspaceID, userID, request.RegistrationID).Scan(&id, &digest)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return stableDispatchInputID(workspaceID, userID, request.RegistrationID), nil
+	}
+	if err != nil {
+		return "", err
+	}
+	if digest != registrationDigest(request) {
+		return "", errInputRegistrationConflict
+	}
+	return id, nil
+}
+
+var errInputRegistrationConflict = errors.New("fixed input registration differs")
+
+func (s *Server) handlePrepareDispatchInput(c echo.Context) error {
+	if s.GetPool() == nil {
+		return workflowError(c, 503, "dispatch_input_unavailable", "dispatch input storage unavailable")
+	}
+	workspaceID, userID := getTenant(c), getUserID(c)
+	if workspaceID == "" || userID == "" {
+		return workflowError(c, 401, "dispatch_input_identity_required", "dispatch input requires an authenticated user")
+	}
+	var request dispatchInputRegistration
+	if decodeWorkflowBody(c, &request) != nil {
+		return workflowError(c, 400, "dispatch_input_request_invalid", "dispatch input request invalid")
+	}
+	if _, handled, err := normalizeDispatchInputRequest(c, &request); handled || err != nil {
+		return err
+	}
+	if ok, err := s.ensureTeamAvailable(c, workspaceID, request.TeamID); !ok {
+		return err
+	}
+	id, err := s.preparedDispatchInputID(c.Request().Context(), workspaceID, userID, request)
+	if errors.Is(err, errInputRegistrationConflict) {
+		return workflowError(c, 409, "input_registration_conflict", "registration_id was already used for different input facts")
+	}
+	if err != nil {
+		return workflowStoreFailure(c, err)
+	}
+	return c.JSON(200, map[string]string{"input_revision_id": id})
+}
+
 // Only the trusted Workbench Host calls this route. The Host reads persisted
 // user events and reuses its existing confirmation flow; this endpoint neither
 // infers authorization from language nor proves the supplied source hashes.
@@ -321,70 +440,24 @@ func (s *Server) handleRegisterDispatchInput(c echo.Context) error {
 	if err := decodeWorkflowBody(c, &request); err != nil {
 		return workflowError(c, http.StatusBadRequest, "dispatch_input_request_invalid", "dispatch input request invalid")
 	}
-	if len(request.Resources) > frozen.MaxDelegatedFiles {
-		// Rejecting here, before Weave accepts the work, keeps the employee from
-		// being told "accepted" for a handoff the runtime would refuse to start.
-		// 409, not 400: the desktop client treats 409 as a definite rejection of
-		// this registration and stops retrying; any other status reads as an unknown
-		// outcome and sends Pi into a recovery loop. The code names the real cause.
-		return workflowError(c, http.StatusConflict, "dispatch_input_too_many_resources",
-			fmt.Sprintf("a handoff can carry at most %d files", frozen.MaxDelegatedFiles))
-	}
-	registrationID, err := uuid.Parse(request.RegistrationID)
-	if err != nil || strings.TrimSpace(request.WorkbenchSessionID) == "" || len(request.WorkbenchSessionID) > 256 ||
-		strings.ContainsRune(request.WorkbenchSessionID, '\x00') || strings.TrimSpace(request.TeamID) == "" ||
-		strings.TrimSpace(request.Task) == "" || len(request.Task) > dispatchInputTaskMaxBytes || strings.ContainsRune(request.Task, '\x00') ||
-		!validDispatchInputSourceMessages(request.SourceMessages) || !validDispatchInputResources(request.Resources) || !validDispatchBusinessRecord(request.BusinessRecord) || (request.WorkflowVersion != nil && *request.WorkflowVersion <= 0) {
-		return workflowError(c, http.StatusBadRequest, "dispatch_input_request_invalid", "dispatch input request invalid")
-	}
-	request.RegistrationID = registrationID.String()
-	if request.ExpectedRevisionID != "" {
-		revisionID, err := uuid.Parse(request.ExpectedRevisionID)
-		if err != nil {
-			return workflowError(c, http.StatusBadRequest, "dispatch_input_request_invalid", "expected revision must be a UUID")
-		}
-		request.ExpectedRevisionID = revisionID.String()
-	}
-	if request.RevisionContext != nil {
-		parentRevisionID, revisionErr := uuid.Parse(request.RevisionContext.ParentInputRevisionID)
-		if revisionErr != nil || strings.TrimSpace(request.RevisionContext.ParentRunID) == "" {
-			return workflowError(c, http.StatusBadRequest, "dispatch_revision_context_invalid", "revision source is invalid")
-		}
-		request.RevisionContext.ParentInputRevisionID = parentRevisionID.String()
-		request.RevisionContext.ParentRunID = strings.TrimSpace(request.RevisionContext.ParentRunID)
-	}
-	request.TeamID = strings.TrimSpace(request.TeamID)
-	if ok, err := s.ensureTeamAvailable(c, getTenant(c), request.TeamID); !ok {
+	requestExecutionTask, handled, err := normalizeDispatchInputRequest(c, &request)
+	if handled || err != nil {
 		return err
 	}
-	request.WorkflowID = strings.TrimSpace(request.WorkflowID)
-	if request.BusinessRecord != nil && (request.WorkflowID == "" || request.WorkflowVersion == nil) {
-		return workflowError(c, http.StatusBadRequest, "dispatch_input_request_invalid", "business record binding requires a fixed workflow version")
+	if ok, err := s.ensureTeamAvailable(c, workspaceID, request.TeamID); !ok {
+		return err
 	}
-	request.ProjectID = strings.TrimSpace(request.ProjectID)
-	request.Mode = strings.TrimSpace(request.Mode)
-	if request.Mode == "" {
-		request.Mode = teamDispatchModeWorkflow
+	inputRevisionID, err := s.preparedDispatchInputID(c.Request().Context(), workspaceID, userID, request)
+	if errors.Is(err, errInputRegistrationConflict) {
+		return workflowError(c, 409, "input_registration_conflict", "registration_id was already used for different input facts")
 	}
-	if request.Mode != teamDispatchModeWorkflow {
-		return workflowError(c, http.StatusBadRequest, "dispatch_input_mode_unsupported", "bound dispatch currently requires a fixed workflow")
+	if err != nil {
+		return workflowStoreFailure(c, err)
 	}
-	requestExecutionTask := request.Task
-	materialResources := make([]businessaction.FrozenMaterialResource, 0, len(request.Resources))
-	for _, resource := range request.Resources {
-		materialResources = append(materialResources, businessaction.FrozenMaterialResource{
-			Type: resource.Type, MaterialID: resource.MaterialID, FileID: resource.ID,
-			SourceKind: resource.SourceKind, RequestID: resource.RequestID,
-			Name: resource.Name, MediaType: resource.MediaType, Bytes: resource.Bytes, SHA256: resource.SHA256,
-		})
+	if request.InputRevisionID != "" && request.InputRevisionID != inputRevisionID {
+		return workflowError(c, 409, "input_revision_scope_mismatch", "input revision differs from the prepared frozen input")
 	}
-	projected, recognized, projectionErr := businessaction.PrepareExecutionTask(request.Task, materialResources)
-	if projectionErr != nil {
-		return workflowError(c, http.StatusUnprocessableEntity, "frozen_material_manifest_invalid", "frozen material manifest does not match its Forge file references")
-	}
-	if recognized {
-		requestExecutionTask = projected
-	}
+	request.InputRevisionID = inputRevisionID
 	var preparedDelegation *preparedBusinessDelegation
 	if request.WorkflowID != "" && request.WorkflowVersion != nil {
 		publishedActions, actionsErr := s.publishedBusinessActions(c.Request().Context(), workspaceID, request.WorkflowID, *request.WorkflowVersion)
@@ -397,8 +470,8 @@ func (s *Server) handleRegisterDispatchInput(c echo.Context) error {
 		}
 		var preparationErr *businessDelegationPreparationError
 		preparedDelegation, preparationErr = s.prepareBusinessDelegation(
-			c.Request().Context(), workspaceID, userID, forgeDelegationHeadersFrom(c.Request().Header),
-			actions, request.Resources, request.BusinessRecord,
+			c.Request().Context(), workspaceID, userID, c.Request().Header.Get(forgeDelegationHeader),
+			inputRevisionID, request.RegistrationID, dispatchInputDigest([]byte(request.Task)), request.WorkflowID, *request.WorkflowVersion, actions, request.Resources, request.BusinessRecord,
 		)
 		if preparationErr != nil {
 			if preparationErr.cause != nil {
@@ -407,8 +480,7 @@ func (s *Server) handleRegisterDispatchInput(c echo.Context) error {
 			return workflowError(c, preparationErr.status, preparationErr.code, preparationErr.message)
 		}
 	}
-	encoded, _ := json.Marshal(request)
-	registrationSHA256 := dispatchInputDigest(encoded)
+	registrationSHA256 := registrationDigest(request)
 	ctx := c.Request().Context()
 	tx, err := s.ScheduleTransactions.Begin(ctx)
 	if err != nil {
@@ -436,6 +508,15 @@ func (s *Server) handleRegisterDispatchInput(c echo.Context) error {
 		}
 		if !ensurePreparedActions(preparedDelegation, actions) {
 			return workflowError(c, http.StatusUnauthorized, "business_delegation_required", "an exact Forge task delegation is required")
+		}
+		if existing.ConsumedRunID != "" && preparedDelegation != nil {
+			var priorGeneration int64
+			if err := tx.QueryRow(ctx, `SELECT refresh_generation FROM weave_task_business_delegations WHERE workspace_id=$1 AND user_id=$2 AND input_revision_id=$3`, workspaceID, userID, existing.InputRevisionID).Scan(&priorGeneration); err != nil {
+				return workflowStoreFailure(c, err)
+			}
+			if priorGeneration != preparedDelegation.generation {
+				return workflowError(c, 409, "business_delegation_generation_conflict", "Accepted original work requires the authorization renewal endpoint")
+			}
 		}
 		if err := persistBusinessDelegationTx(ctx, tx, preparedDelegation, workspaceID, userID, existing.InputRevisionID, existing.TaskSHA256, existing.WorkflowID, existing.WorkflowVersion); err != nil {
 			return workflowStoreFailure(c, fmt.Errorf("refresh Forge task delegation: %w", err))
@@ -526,7 +607,24 @@ func (s *Server) handleRegisterDispatchInput(c echo.Context) error {
 		deliveryContractJSON = inheritedContract
 	}
 	receipt := dispatchInputReceipt{
-		InputRevisionID: uuid.NewString(), ClientRequestID: uuid.NewString(), TaskSHA256: dispatchInputDigest([]byte(request.Task)),
+		InputRevisionID: inputRevisionID, ClientRequestID: uuid.NewString(), TaskSHA256: dispatchInputDigest([]byte(request.Task)),
+	}
+	nativeOrganization := ""
+	if preparedDelegation != nil {
+		nativeOrganization = preparedDelegation.identity.NativeOrganization
+	} else {
+		var bindings int
+		if err := tx.QueryRow(ctx, `SELECT count(*),COALESCE(min(native_organization),'')
+			FROM weave_external_identities WHERE workspace_id=$1 AND user_id=$2 AND native_organization<>''`,
+			workspaceID, userID).Scan(&bindings, &nativeOrganization); err != nil {
+			return workflowStoreFailure(c, fmt.Errorf("freeze native input organization: %w", err))
+		}
+		if bindings != 1 {
+			nativeOrganization = ""
+			if _, employee := forgeEmployeeSession(c); employee {
+				return workflowError(c, 403, "dispatch_input_native_identity_invalid", "Original employee organization could not be uniquely verified")
+			}
+		}
 	}
 	if rootRevisionID == "" {
 		rootRevisionID = receipt.InputRevisionID
@@ -540,13 +638,13 @@ func (s *Server) handleRegisterDispatchInput(c echo.Context) error {
 	inserted, err := tx.Exec(ctx, `INSERT INTO weave_dispatch_input_revisions
 		(workspace_id,user_id,workbench_session_id,input_revision_id,registration_id,registration_sha256,
 		 source_messages,task,task_sha256,team_id,mode,workflow_id,workflow_version,project_id,client_request_id,delivery_contract,
-		 execution_task,revision_kind,root_input_revision_id,parent_input_revision_id,parent_run_id,parent_delivery_digest,parent_materials)
-		VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10,$11,$12,$13,$14,$15,$16::jsonb,$17,$18,$19,NULLIF($20,''),NULLIF($21,''),NULLIF($22,''),$23::jsonb)
+		 execution_task,revision_kind,root_input_revision_id,parent_input_revision_id,parent_run_id,parent_delivery_digest,parent_materials,native_organization)
+		VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10,$11,$12,$13,$14,$15,$16::jsonb,$17,$18,$19,NULLIF($20,''),NULLIF($21,''),NULLIF($22,''),$23::jsonb,$24)
 		ON CONFLICT (workspace_id,user_id,registration_id) DO NOTHING`,
 		workspaceID, userID, request.WorkbenchSessionID, receipt.InputRevisionID, request.RegistrationID, registrationSHA256,
 		string(sources), request.Task, receipt.TaskSHA256, request.TeamID, request.Mode, workflowID, version, request.ProjectID,
 		receipt.ClientRequestID, string(deliveryContractJSON), executionTask, revisionKind, rootRevisionID,
-		parentRevisionID, parentRunID, parentDeliveryDigest, string(parentMaterialsJSON))
+		parentRevisionID, parentRunID, parentDeliveryDigest, string(parentMaterialsJSON), nativeOrganization)
 	if err != nil {
 		return workflowStoreFailure(c, fmt.Errorf("create dispatch input revision: %w", err))
 	}

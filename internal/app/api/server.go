@@ -231,7 +231,7 @@ func NewServer(cfg *config.Config, store loom.Store, models *llmrouter.Resolver)
 	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
 		AllowOrigins: corsOrigins,
 		AllowMethods: []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowHeaders: []string{"Authorization", "Content-Type", forgeDelegationHeader, forgeDelegationIDHeader, forgeDelegationExpiresHeader},
+		AllowHeaders: []string{"Authorization", "Content-Type", forgeDelegationHeader},
 	}))
 
 	s := &Server{
@@ -408,6 +408,8 @@ func (s *Server) registerRoutes() {
 	auth.POST("/game-decisions", s.handleAdmitGameDecision, RequireScope("game_decisions"))
 	auth.GET("/game-decisions/:decision_id", s.handleReadGameDecision, RequireScope("game_decisions"))
 	auth.POST("/game-decisions:cancel", s.handleCancelGameDecision, RequireScope("game_decisions"))
+	auth.POST("/workbench/dispatch-inputs/prepare", s.handlePrepareDispatchInput, orgScope, chatScope)
+	auth.POST("/workbench/dispatch-inputs/:input_revision_id/authorization", s.handleRenewDispatchAuthorization, orgScope, chatScope)
 	auth.POST("/workbench/dispatch-inputs", s.handleRegisterDispatchInput, orgScope, chatScope)
 	auth.POST("/workbench/dispatch-inputs/:input_revision_id/reconcile", s.handleReconcileDispatchInput, orgScope, chatScope)
 	auth.PUT("/teams/:id/roster", s.handleUpdateTeamRoster, RequireAnyRole("admin", "owner"), orgScope)
@@ -594,10 +596,6 @@ func (s *Server) Start() error {
 		s.employeeRunEventWorker.Start()
 		defer s.employeeRunEventWorker.Stop()
 	}
-	if s.taskDelegationRevoker != nil {
-		s.taskDelegationRevoker.Start()
-		defer s.taskDelegationRevoker.Stop()
-	}
 	return s.Echo.Start(":" + s.Config.Port)
 }
 
@@ -677,6 +675,12 @@ func (s *Server) ConfigureTeamRunWorkers() {
 	}
 	s.BusinessDelegations = businessDelegations
 	runtime := &teamrun.WorkflowSerialRuntime{
+		AuthorizationRetry: func(ctx context.Context, proof execution.AuthorizationRefusal) (bool, error) {
+			if businessDelegations == nil {
+				return false, nil
+			}
+			return businessDelegations.CanRetryAuthorization(ctx, proof)
+		},
 		Artifacts: s.WorkflowArtifacts,
 		Loader: &workflow.RuntimeLoader{
 			Registry: s.Descriptors, CLIExecutor: s.teamRunCLIExecutor(),

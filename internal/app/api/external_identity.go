@@ -10,7 +10,6 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/jinyitao123/weave/internal/app/users"
@@ -22,17 +21,32 @@ const externalSessionTTL = 8 * time.Hour
 const forgeTeamDeveloperPermissionSet = "weave_team_developer"
 
 type ExternalIdentity struct {
-	// Issuer is Forge's stable identity source; it never changes with the
-	// address Weave uses to reach Forge (decision 002).
+	// Issuer is Forge's stable deployment identity source. It is not a URL.
 	Issuer string
-	// BaseURL is the Forge network address for follow-up calls.
-	BaseURL        string
-	Subject        string
-	Email          string
-	Name           string
-	Organization   string
-	AccessRole     string
-	PermissionSets []string
+	// BaseURL is the current network address used only for Forge requests.
+	BaseURL            string
+	Subject            string
+	Email              string
+	Name               string
+	Organization       string
+	NativeOrganization string
+	AccessRole         string
+	PermissionSets     []string
+}
+
+var forgeIdentityIssuerPattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9+.-]*:\S{1,240}$`)
+
+func validForgeIdentityIssuer(value string) bool {
+	value = strings.TrimSpace(value)
+	if value == "" || len(value) > 256 || !forgeIdentityIssuerPattern.MatchString(value) {
+		return false
+	}
+	parsed, err := url.Parse(value)
+	if err != nil || parsed.Scheme == "" {
+		return false
+	}
+	// A deployment identity is a stable URI, never the mutable service address.
+	return (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == ""
 }
 
 type ExternalIdentityVerifier interface {
@@ -43,52 +57,6 @@ type ForgeSessionVerifier struct {
 	endpoint         *url.URL
 	defaultWorkspace string
 	client           *http.Client
-
-	issuerMu sync.Mutex
-	issuer   string
-}
-
-var forgeIssuerPattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9+.-]*:\S{1,240}$`)
-
-func (v *ForgeSessionVerifier) baseURL() string {
-	return v.endpoint.Scheme + "://" + v.endpoint.Host
-}
-
-// stableIssuer reads Forge's configured identity source once. A failed read is
-// not cached, and nothing falls back to the network address: binding by
-// address is exactly what the stable issuer replaces.
-func (v *ForgeSessionVerifier) stableIssuer(ctx context.Context) (string, error) {
-	v.issuerMu.Lock()
-	defer v.issuerMu.Unlock()
-	if v.issuer != "" {
-		return v.issuer, nil
-	}
-	sourceURL := *v.endpoint
-	sourceURL.Path, sourceURL.RawPath, sourceURL.RawQuery, sourceURL.Fragment = "/api/v1/workbench/identity-source", "", "", ""
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, sourceURL.String(), nil)
-	if err != nil {
-		return "", err
-	}
-	request.Header.Set("Accept", "application/json")
-	response, err := v.client.Do(request)
-	if err != nil {
-		return "", fmt.Errorf("read Forge identity source: %w", err)
-	}
-	defer response.Body.Close()
-	var body struct {
-		Version string `json:"version"`
-		Issuer  string `json:"issuer"`
-	}
-	if response.StatusCode != http.StatusOK {
-		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 64<<10))
-		return "", fmt.Errorf("read Forge identity source: status %d", response.StatusCode)
-	}
-	if err := json.NewDecoder(io.LimitReader(response.Body, 64<<10)).Decode(&body); err != nil ||
-		body.Version != "1" || !forgeIssuerPattern.MatchString(strings.TrimSpace(body.Issuer)) {
-		return "", errors.New("invalid Forge identity source")
-	}
-	v.issuer = strings.TrimSpace(body.Issuer)
-	return v.issuer, nil
 }
 
 func NewForgeSessionVerifier(rawURL, defaultWorkspace string, client *http.Client) *ForgeSessionVerifier {
@@ -99,7 +67,9 @@ func NewForgeSessionVerifier(rawURL, defaultWorkspace string, client *http.Clien
 	if client == nil {
 		client = &http.Client{Timeout: 5 * time.Second}
 	}
-	return &ForgeSessionVerifier{endpoint: endpoint, defaultWorkspace: strings.TrimSpace(defaultWorkspace), client: client}
+	configuredClient := *client
+	configuredClient.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	return &ForgeSessionVerifier{endpoint: endpoint, defaultWorkspace: strings.TrimSpace(defaultWorkspace), client: &configuredClient}
 }
 
 func (v *ForgeSessionVerifier) Verify(ctx context.Context, bearer string) (ExternalIdentity, error) {
@@ -160,6 +130,33 @@ func (v *ForgeSessionVerifier) Verify(ctx context.Context, bearer string) (Exter
 	if subject == "" || workspace == "" {
 		return ExternalIdentity{}, errors.New("external identity is missing subject or workspace")
 	}
+	sessionEndpoint := *v.endpoint
+	sessionEndpoint.Path, sessionEndpoint.RawPath, sessionEndpoint.RawQuery, sessionEndpoint.Fragment = "/api/v1/auth/get-session", "", "", ""
+	sessionRequest, err := http.NewRequestWithContext(ctx, http.MethodGet, sessionEndpoint.String(), nil)
+	if err != nil {
+		return ExternalIdentity{}, err
+	}
+	sessionRequest.Header.Set("Authorization", "Bearer "+bearer)
+	sessionResponse, err := v.client.Do(sessionRequest)
+	if err != nil {
+		return ExternalIdentity{}, errors.New("native session could not be verified")
+	}
+	defer sessionResponse.Body.Close()
+	if sessionResponse.StatusCode != http.StatusOK {
+		return ExternalIdentity{}, errors.New("native session is unavailable")
+	}
+	var nativeSession struct {
+		User struct {
+			ID string `json:"id"`
+		} `json:"user"`
+		Session struct {
+			UserID               string `json:"userId"`
+			ActiveOrganizationID string `json:"activeOrganizationId"`
+		} `json:"session"`
+	}
+	if json.NewDecoder(io.LimitReader(sessionResponse.Body, 1<<20)).Decode(&nativeSession) != nil || nativeSession.User.ID != subject || (nativeSession.Session.UserID != "" && nativeSession.Session.UserID != subject) || nativeSession.Session.ActiveOrganizationID == "" {
+		return ExternalIdentity{}, errors.New("native session identity or organization differs")
+	}
 	permissionEndpoint := *v.endpoint
 	permissionEndpoint.Path = "/api/v1/auth/me/permissions"
 	permissionEndpoint.RawPath = ""
@@ -187,6 +184,30 @@ func (v *ForgeSessionVerifier) Verify(ctx context.Context, bearer string) (Exter
 	if err := json.NewDecoder(io.LimitReader(permissionResponse.Body, 1<<20)).Decode(&permissionBody); err != nil || !permissionBody.Authenticated {
 		return ExternalIdentity{}, errors.New("invalid Forge permission response")
 	}
+	identitySourceURL := *v.endpoint
+	identitySourceURL.Path, identitySourceURL.RawPath, identitySourceURL.RawQuery, identitySourceURL.Fragment = "/api/v1/workbench/identity-source", "", "", ""
+	identitySourceRequest, err := http.NewRequestWithContext(ctx, http.MethodGet, identitySourceURL.String(), nil)
+	if err != nil {
+		return ExternalIdentity{}, err
+	}
+	identitySourceRequest.Header.Set("Accept", "application/json")
+	identitySourceResponse, err := v.client.Do(identitySourceRequest)
+	if err != nil {
+		return ExternalIdentity{}, errors.New("Forge identity source is unavailable")
+	}
+	defer identitySourceResponse.Body.Close()
+	if identitySourceResponse.StatusCode != http.StatusOK {
+		_, _ = io.Copy(io.Discard, io.LimitReader(identitySourceResponse.Body, 64<<10))
+		return ExternalIdentity{}, errors.New("Forge identity source is unavailable")
+	}
+	var identitySource struct {
+		Version string `json:"version"`
+		Issuer  string `json:"issuer"`
+	}
+	if json.NewDecoder(io.LimitReader(identitySourceResponse.Body, 64<<10)).Decode(&identitySource) != nil ||
+		identitySource.Version != "1" || !validForgeIdentityIssuer(identitySource.Issuer) {
+		return ExternalIdentity{}, errors.New("invalid Forge identity source")
+	}
 	accessRole := "member"
 	for _, permissionSet := range permissionBody.PermissionSets {
 		switch strings.TrimSpace(permissionSet) {
@@ -198,14 +219,10 @@ func (v *ForgeSessionVerifier) Verify(ctx context.Context, bearer string) (Exter
 			}
 		}
 	}
-	issuer, err := v.stableIssuer(ctx)
-	if err != nil {
-		return ExternalIdentity{}, err
-	}
 	return ExternalIdentity{
-		Issuer: issuer, BaseURL: v.baseURL(), Subject: subject,
+		Issuer: strings.TrimSpace(identitySource.Issuer), BaseURL: v.endpoint.Scheme + "://" + v.endpoint.Host, Subject: subject,
 		Email: email, Name: name,
-		Organization: workspace, AccessRole: accessRole, PermissionSets: permissionBody.PermissionSets,
+		Organization: workspace, NativeOrganization: nativeSession.Session.ActiveOrganizationID, AccessRole: accessRole, PermissionSets: permissionBody.PermissionSets,
 	}, nil
 }
 
@@ -222,6 +239,14 @@ func productPermissions(role string) []string {
 
 type externalIdentityBinder interface {
 	BindExternal(context.Context, string, string, string, string, string) (*users.User, error)
+}
+
+type nativeExternalIdentityBinder interface {
+	BindExternalInOrganization(context.Context, string, string, string, string, string, string) (*users.User, error)
+}
+
+type stableNativeExternalIdentityBinder interface {
+	BindExternalInOrganizationFromOrigin(context.Context, string, string, string, string, string, string, string) (*users.User, error)
 }
 
 func (s *Server) handleExternalIdentityExchange(c echo.Context) error {
@@ -244,7 +269,17 @@ func (s *Server) handleExternalIdentityExchange(c echo.Context) error {
 	if binder == nil {
 		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "account binding is not configured"})
 	}
-	user, err := binder.BindExternal(c.Request().Context(), identity.Issuer, identity.Subject, identity.Organization, identity.Email, identity.Name)
+	if identity.NativeOrganization == "" || identity.Issuer == "" || identity.BaseURL == "" {
+		return c.JSON(http.StatusForbidden, map[string]string{"error": "native organization binding is unavailable"})
+	}
+	var user *users.User
+	if stableBinder, supported := binder.(stableNativeExternalIdentityBinder); supported {
+		user, err = stableBinder.BindExternalInOrganizationFromOrigin(c.Request().Context(), identity.Issuer, identity.BaseURL, identity.Subject, identity.Organization, identity.Email, identity.Name, identity.NativeOrganization)
+	} else if nativeBinder, supported := binder.(nativeExternalIdentityBinder); supported {
+		user, err = nativeBinder.BindExternalInOrganization(c.Request().Context(), identity.Issuer, identity.Subject, identity.Organization, identity.Email, identity.Name, identity.NativeOrganization)
+	} else {
+		return c.JSON(http.StatusForbidden, map[string]string{"error": "native organization binding is unavailable"})
+	}
 	if err != nil {
 		return c.JSON(http.StatusForbidden, map[string]string{"error": "account binding failed"})
 	}

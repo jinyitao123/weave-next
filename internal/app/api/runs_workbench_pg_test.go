@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -90,6 +91,7 @@ func TestWorkbenchRunsUseAuthenticatedInputOwnerAndMatchDetailsRealPG(t *testing
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
+	server.teamRunCancel.Now = func() time.Time { return now.Add(2 * time.Second) }
 	if _, err := runs.EstablishQueuedTx(t.Context(), tx, teamrun.EstablishRequest{
 		WorkspaceID: "ws", ProjectID: runA.ProjectID, RunID: runA.RunID, TeamID: "team", WorkflowID: "flow", WorkflowVersion: 1,
 		RunSnapshotID: runA.RunID, SourceKind: teamrun.SourceManual, SourceTaskID: runA.TaskID,
@@ -202,5 +204,31 @@ func TestWorkbenchRunsUseAuthenticatedInputOwnerAndMatchDetailsRealPG(t *testing
 	}
 	if code, _ := activity("user-b", runA.RunID); code != http.StatusNotFound {
 		t.Fatalf("account B read account A activity: status=%d", code)
+	}
+	stop := func(userID string) int {
+		recorder := httptest.NewRecorder()
+		request := httptest.NewRequest(http.MethodPost, "/v1/runs/"+runA.RunID+"/stop",
+			strings.NewReader(`{"reason":"employee_cancel","idempotency_key":"stop-owned"}`))
+		c := echo.New().NewContext(request, recorder)
+		c.Set("tenant", "ws")
+		c.Set("user_id", userID)
+		c.Set("roles", []string{"developer"})
+		c.SetParamNames("id")
+		c.SetParamValues(runA.RunID)
+		if err := server.handleStopRun(c); err != nil {
+			t.Fatal(err)
+		}
+		return recorder.Code
+	}
+	if status := stop("user-b"); status != http.StatusNotFound {
+		t.Fatalf("same-workspace developer stopped another employee's run: %d", status)
+	}
+	if code, current := detail("user-a", runA.RunID); code != http.StatusOK || current["status"] != "running" {
+		t.Fatalf("denied stop changed run: %d %+v", code, current)
+	}
+	for range 2 {
+		if status := stop("user-a"); status != http.StatusAccepted {
+			t.Fatalf("owner stop/replay failed: %d", status)
+		}
 	}
 }

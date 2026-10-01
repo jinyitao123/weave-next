@@ -23,13 +23,16 @@ const employeeHumanReviewBatch = 100
 func (worker *employeeRunEventWorker) materializeHumanReviewEvents(ctx context.Context) error {
 	rows, err := worker.Pool.Query(ctx, `SELECT run.workspace_id,run.run_id,run.wait_detail,run.team_run_generation,
 			run.resume_generation,run.updated_at,input.input_revision_id,input.workbench_session_id,
-			identity.subject,identity.workspace_id,
+			COALESCE(identity.subject,''),COALESCE(NULLIF(input.native_organization,''),identity.native_organization,''),
+			identity.bindings,
 			COALESCE(NULLIF(workflow.name,''),NULLIF(team.name,''),'团队工作')
 		FROM weave_team_runs AS run
 		JOIN weave_dispatch_input_revisions AS input
 		  ON input.workspace_id=run.workspace_id AND input.consumed_run_id=run.run_id
-		JOIN weave_external_identities AS identity
-		  ON identity.workspace_id=input.workspace_id AND identity.user_id=input.user_id
+		JOIN LATERAL (SELECT min(subject) AS subject,min(native_organization) AS native_organization,count(*) AS bindings
+		  FROM weave_external_identities WHERE workspace_id=input.workspace_id AND user_id=input.user_id
+		    AND native_organization<>''
+		    AND (input.native_organization='' OR native_organization=input.native_organization)) AS identity ON true
 		LEFT JOIN weave_teams AS team
 		  ON team.workspace_id=run.workspace_id AND team.id=run.team_id
 		LEFT JOIN weave_team_workflows AS workflow
@@ -47,6 +50,7 @@ func (worker *employeeRunEventWorker) materializeHumanReviewEvents(ctx context.C
 		assignee        string
 		organization    string
 		teamName        string
+		bindings        int
 	}
 	var waits []wait
 	for rows.Next() {
@@ -56,7 +60,7 @@ func (worker *employeeRunEventWorker) materializeHumanReviewEvents(ctx context.C
 		item.run.WaitKind = &human
 		if err := rows.Scan(&item.run.WorkspaceID, &item.run.RunID, &item.run.WaitDetail, &item.run.Generation,
 			&item.run.ResumeGeneration, &item.updatedAt, &item.inputRevisionID, &item.sessionID,
-			&item.assignee, &item.organization, &item.teamName); err != nil {
+			&item.assignee, &item.organization, &item.bindings, &item.teamName); err != nil {
 			rows.Close()
 			return err
 		}
@@ -67,6 +71,9 @@ func (worker *employeeRunEventWorker) materializeHumanReviewEvents(ctx context.C
 		return err
 	}
 	for _, item := range waits {
+		if item.bindings != 1 || item.assignee == "" || item.organization == "" {
+			return fmt.Errorf("human review run %s has no unique verified native employee organization", item.run.RunID)
+		}
 		interaction := teamrun.HumanInteractionID(item.run)
 		detail, err := teamrun.DecodeHumanWaitDetailV1(item.run.WaitDetail)
 		if interaction == "" || err != nil {

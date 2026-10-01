@@ -50,3 +50,110 @@ func TestBindExternalCreatesStableAccountAndHonorsDisabledBindingRealPG(t *testi
 		t.Fatalf("binding rows users=%d identities=%d", usersCount, identitiesCount)
 	}
 }
+
+func TestNativeOrganizationBindingPreservesExistingIdentityAndRejectsWorkspaceMixRealPG(t *testing.T) {
+	pool := testutil.PostgresPool(t)
+	if err := db.Migrate(t.Context(), pool); err != nil {
+		t.Fatal(err)
+	}
+	store := NewStore(pool)
+	legacy, err := store.BindExternal(t.Context(), "http://native.test", "native-user", "default-workspace", "person@test", "Person")
+	if err != nil {
+		t.Fatal(err)
+	}
+	upgraded, err := store.BindExternalInOrganization(t.Context(), "http://native.test", "native-user", "default-workspace", "person@test", "Person", "real-native-org")
+	if err != nil || upgraded.ID != legacy.ID || upgraded.TenantID != legacy.TenantID {
+		t.Fatalf("trusted login changed existing workspace/user: %v", err)
+	}
+	if _, err := store.BindExternalInOrganization(t.Context(), "http://native.test", "native-user", "default-workspace", "person@test", "Person", "wrong-org"); err == nil {
+		t.Fatal("existing identity switched native organization")
+	}
+	if _, err := store.BindExternalInOrganization(t.Context(), "http://native.test", "another-user", "default-workspace", "other@test", "Other", "wrong-org"); err == nil {
+		t.Fatal("another native organization mixed into same issuer/workspace")
+	}
+	var actual string
+	if err := pool.QueryRow(t.Context(), `SELECT native_organization FROM weave_external_identities WHERE user_id=$1`, legacy.ID).Scan(&actual); err != nil || actual != "real-native-org" {
+		t.Fatal("native organization did not remain bound")
+	}
+}
+
+func TestStableIssuerUpgradePreservesUniqueNativeIdentityAfterForgeAddressChangeRealPG(t *testing.T) {
+	pool := testutil.PostgresPool(t)
+	if err := db.Migrate(t.Context(), pool); err != nil {
+		t.Fatal(err)
+	}
+	store := NewStore(pool)
+	legacy, err := store.BindExternal(t.Context(), "https://forge-old.example", "native-user", "workspace", "person@test", "Person")
+	if err != nil {
+		t.Fatal(err)
+	}
+	upgraded, err := store.BindExternalInOrganizationFromOrigin(t.Context(), "forge:workbench-124", "https://forge-new.example",
+		"native-user", "workspace", "person@test", "Person", "native-org-1")
+	if err != nil || upgraded.ID != legacy.ID {
+		t.Fatalf("stable source upgrade created or selected another employee: user=%+v err=%v", upgraded, err)
+	}
+	var usersCount, identitiesCount int
+	var issuer, nativeOrganization string
+	if err := pool.QueryRow(t.Context(), `SELECT issuer,native_organization FROM weave_external_identities WHERE workspace_id='workspace' AND subject='native-user'`).Scan(&issuer, &nativeOrganization); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(t.Context(), `SELECT count(*) FROM weave_users WHERE tenant_id='workspace'`).Scan(&usersCount); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(t.Context(), `SELECT count(*) FROM weave_external_identities WHERE workspace_id='workspace'`).Scan(&identitiesCount); err != nil {
+		t.Fatal(err)
+	}
+	if issuer != "forge:workbench-124" || nativeOrganization != "native-org-1" || usersCount != 1 || identitiesCount != 1 {
+		t.Fatalf("identity source upgrade changed assignment or duplicated user: issuer=%q org=%q users=%d identities=%d", issuer, nativeOrganization, usersCount, identitiesCount)
+	}
+}
+
+func TestStableIssuerUpgradeStopsOnAmbiguousOrDifferentDeploymentBindingRealPG(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		seed func(*testing.T, *Store)
+	}{
+		{"different stable deployment", func(t *testing.T, store *Store) {
+			if _, err := store.BindExternalInOrganization(t.Context(), "forge:previous-deployment", "subject", "workspace", "person@test", "Person", "native-org"); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"ambiguous address mappings", func(t *testing.T, store *Store) {
+			for _, origin := range []string{"https://forge-a.example", "https://forge-b.example"} {
+				if _, err := store.BindExternal(t.Context(), origin, "subject", "workspace", "person@test", "Person"); err != nil {
+					t.Fatal(err)
+				}
+			}
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			pool := testutil.PostgresPool(t)
+			if err := db.Migrate(t.Context(), pool); err != nil {
+				t.Fatal(err)
+			}
+			store := NewStore(pool)
+			test.seed(t, store)
+			var usersBefore, identitiesBefore int
+			if err := pool.QueryRow(t.Context(), `SELECT count(*) FROM weave_users WHERE tenant_id='workspace'`).Scan(&usersBefore); err != nil {
+				t.Fatal(err)
+			}
+			if err := pool.QueryRow(t.Context(), `SELECT count(*) FROM weave_external_identities WHERE workspace_id='workspace'`).Scan(&identitiesBefore); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := store.BindExternalInOrganizationFromOrigin(t.Context(), "forge:new-deployment", "https://forge-new.example",
+				"subject", "workspace", "person@test", "Person", "native-org"); err == nil {
+				t.Fatal("ambiguous or different stable source was linked to an existing employee")
+			}
+			var usersAfter, identitiesAfter int
+			if err := pool.QueryRow(t.Context(), `SELECT count(*) FROM weave_users WHERE tenant_id='workspace'`).Scan(&usersAfter); err != nil {
+				t.Fatal(err)
+			}
+			if err := pool.QueryRow(t.Context(), `SELECT count(*) FROM weave_external_identities WHERE workspace_id='workspace'`).Scan(&identitiesAfter); err != nil {
+				t.Fatal(err)
+			}
+			if usersAfter != usersBefore || identitiesAfter != identitiesBefore {
+				t.Fatalf("conflict created another account: users %d->%d identities %d->%d", usersBefore, usersAfter, identitiesBefore, identitiesAfter)
+			}
+		})
+	}
+}

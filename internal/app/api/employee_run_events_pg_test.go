@@ -21,8 +21,8 @@ import (
 
 func TestEmployeeRunEventBackfillDeliversOnceToForgeInboxRealPG(t *testing.T) {
 	server, pool := newTeamDispatchTestServer(t)
-	if _, err := pool.Exec(t.Context(), `INSERT INTO weave_external_identities(issuer,subject,workspace_id,user_id)
-		VALUES('https://forge.example.test','forge-user','ws','user')`); err != nil {
+	if _, err := pool.Exec(t.Context(), `INSERT INTO weave_external_identities(issuer,subject,workspace_id,user_id,native_organization)
+		VALUES('forge:event-test','forge-user','ws','user','native-event-org')`); err != nil {
 		t.Fatal(err)
 	}
 	registration := dispatchInputRegistrationFixture("workbench-session", "检查固定材料", "")

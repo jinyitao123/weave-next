@@ -9,6 +9,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jinyitao123/weave/internal/base/db"
+	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/base/testutil"
 )
 
@@ -234,4 +235,163 @@ func tableCounts(bundle *RunBundle) map[string]int {
 		counts[table.Name] = len(table.Rows)
 	}
 	return counts
+}
+
+func TestRunBundlePreservesCredentialReferencesButRedactsCredentialValues(t *testing.T) {
+	value := json.RawMessage(`{"credentials":[{"schema_version":1,"scope":"workspace_service","service_id":"service","workspace_id":"ws","kind":"provider_api_key","resource_id":"provider","slot":"api_key"}],"access_token":"CANARY-private"}`)
+	cleaned, count := sweepSecretKeys(value)
+	if count != 1 || bytes.Contains(cleaned, []byte("CANARY-private")) {
+		t.Fatal("credential value survived")
+	}
+	var parsed map[string]json.RawMessage
+	if json.Unmarshal(cleaned, &parsed) != nil || len(parsed["credentials"]) == 0 || parsed["credentials"][0] != '[' {
+		t.Fatal("immutable credential references were lost")
+	}
+	if cleaned, count := sweepSecretKeys(json.RawMessage(`{"credentials":{"password":"CANARY-private"}}`)); count != 1 || bytes.Contains(cleaned, []byte("CANARY-private")) {
+		t.Fatal("arbitrary credential objects were treated as references")
+	}
+}
+
+func TestRunBundleImportEnforcesAllParentsAndRetainsTriggerModesRealPG(t *testing.T) {
+	source, runID := succeededRunForOutboxTest(t)
+	full, err := ExportRunBundle(t.Context(), source, "ws", runID, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := testutil.PostgresPool(t)
+	if err := db.Migrate(t.Context(), target); err != nil {
+		t.Fatal(err)
+	}
+	var originalDeferred int
+	if err := target.QueryRow(t.Context(), `SELECT count(*) FROM pg_constraint WHERE connamespace=current_schema()::regnamespace AND contype='f' AND condeferrable`).Scan(&originalDeferred); err != nil {
+		t.Fatal(err)
+	}
+	// Keep a broken reference in the real snapshot and remove its parent.
+	raw, _ := json.Marshal(full)
+	var missing RunBundle
+	_ = json.Unmarshal(raw, &missing)
+	for index := range missing.Tables {
+		if missing.Tables[index].Name == "weave_agents" {
+			missing.Tables[index].Rows = nil
+		}
+	}
+	if _, err := ImportRunBundle(t.Context(), target, &missing); err == nil {
+		t.Fatal("missing frozen parent was accepted")
+	}
+	var rows int
+	_ = target.QueryRow(t.Context(), `SELECT count(*) FROM weave_workspaces`).Scan(&rows)
+	if rows != 0 {
+		t.Fatal("failed import left partial rows")
+	}
+	if _, err := ImportRunBundle(t.Context(), target, full); err != nil {
+		t.Fatal(err)
+	}
+	var role string
+	_ = target.QueryRow(t.Context(), `SELECT current_setting('session_replication_role')`).Scan(&role)
+	if role != "origin" {
+		t.Fatal("import disabled triggers")
+	}
+	var finalDeferred int
+	_ = target.QueryRow(t.Context(), `SELECT count(*) FROM pg_constraint WHERE connamespace=current_schema()::regnamespace AND contype='f' AND condeferrable`).Scan(&finalDeferred)
+	if finalDeferred != originalDeferred {
+		t.Fatal("import changed permanent FK deferrability")
+	}
+	// The frozen artifact must still hash/decode, including credential references.
+	for _, table := range full.Tables {
+		if table.Name == "weave_published_artifact_contents" {
+			for _, row := range table.Rows {
+				encoded, _ := json.Marshal(row)
+				var env frozen.ArtifactEnvelopeV1
+				_ = json.Unmarshal(encoded, &env)
+				if _, err := frozen.DecodeArtifactEnvelopeV1(env); err != nil {
+					t.Fatal("sanitization damaged frozen configuration")
+				}
+			}
+		}
+	}
+}
+
+func TestRunBundleRejectsDuplicateTablesUnknownColumnsAndDiagnosticOnlyRealPG(t *testing.T) {
+	source, runID := succeededRunForOutboxTest(t)
+	full, err := ExportRunBundle(t.Context(), source, "ws", runID, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := testutil.PostgresPool(t)
+	if err := db.Migrate(t.Context(), target); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := json.Marshal(full)
+	var duplicate RunBundle
+	_ = json.Unmarshal(raw, &duplicate)
+	duplicate.Tables = append(duplicate.Tables, duplicate.Tables[0])
+	if _, err := ImportRunBundle(t.Context(), target, &duplicate); err == nil {
+		t.Fatal("duplicate table accepted")
+	}
+	var unknown RunBundle
+	_ = json.Unmarshal(raw, &unknown)
+	for i := range unknown.Tables {
+		if unknown.Tables[i].Name == "weave_workspaces" && len(unknown.Tables[i].Rows) > 0 {
+			unknown.Tables[i].Rows[0]["unrecognized_column"] = json.RawMessage(`"hidden"`)
+		}
+	}
+	if _, err := ImportRunBundle(t.Context(), target, &unknown); err == nil {
+		t.Fatal("unknown column discarded silently")
+	}
+	diagnostic, err := ExportRunBundle(t.Context(), source, "ws", runID, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ImportRunBundle(t.Context(), target, diagnostic); err == nil {
+		t.Fatal("material-free diagnostic bundle became runnable")
+	}
+}
+
+func TestRunBundleIncludesReferencedCapabilityInvocationAndRevisionRealPG(t *testing.T) {
+	pool, runID := succeededRunForOutboxTest(t)
+	if _, err := pool.Exec(t.Context(), `INSERT INTO weave_capability_revisions(workspace_id,capability_id,revision,definition_hash,definition) VALUES('ws','cap-replay',1,repeat('c',64),'{}'::jsonb);
+ INSERT INTO weave_capability_invocations(workspace_id,application_id,request_id,invocation_id,capability_id,revision,input,status,result_state,definition_hash)
+ VALUES('ws','developer','request-replay','invocation-replay','cap-replay',1,'{}'::jsonb,'succeeded','{}',repeat('c',64));`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(t.Context(), `INSERT INTO weave_capability_step_runs(workspace_id,invocation_id,step_id,activation_id,run_id) VALUES('ws','invocation-replay','step','activation',$1)`, runID); err != nil {
+		t.Fatal(err)
+	}
+	bundle, err := ExportRunBundle(t.Context(), pool, "ws", runID, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, table := range []string{"weave_capability_step_runs", "weave_capability_invocations", "weave_capability_revisions"} {
+		if rowsOf(bundle, table) != 1 {
+			t.Fatalf("missing referenced capability table %s", table)
+		}
+	}
+	target := testutil.PostgresPool(t)
+	if err := db.Migrate(t.Context(), target); err != nil {
+		t.Fatal(err)
+	}
+	encoded, _ := json.Marshal(bundle)
+	for _, mutate := range []string{"missing", "hash_mismatch"} {
+		var broken RunBundle
+		_ = json.Unmarshal(encoded, &broken)
+		for index := range broken.Tables {
+			if broken.Tables[index].Name == "weave_capability_revisions" {
+				if mutate == "missing" {
+					broken.Tables[index].Rows = nil
+				} else {
+					broken.Tables[index].Rows[0]["definition_hash"] = json.RawMessage(`"different"`)
+				}
+			}
+		}
+		if _, err := ImportRunBundle(t.Context(), target, &broken); err == nil {
+			t.Fatalf("capability definition %s was accepted", mutate)
+		}
+	}
+	if _, err := ImportRunBundle(t.Context(), target, bundle); err != nil {
+		t.Fatal(err)
+	}
+	var actual int
+	if err := target.QueryRow(t.Context(), `SELECT count(*) FROM weave_capability_invocations WHERE workspace_id='ws' AND invocation_id='invocation-replay'`).Scan(&actual); err != nil || actual != 1 {
+		t.Fatal("capability result did not survive copy")
+	}
 }

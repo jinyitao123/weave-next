@@ -10,13 +10,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jinyitao123/weave/internal/kernel/config"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 )
@@ -67,7 +67,7 @@ func (f *dispatchInputHTTPFixture) post(t *testing.T, request dispatchInputRegis
 	httpRequest.Header.Set("Authorization", "Bearer "+f.token)
 	httpRequest.Header.Set("Content-Type", "application/json")
 	if forgeToken != "" {
-		setTestForgeTaskDelegation(httpRequest.Header, forgeToken)
+		httpRequest.Header.Set(forgeDelegationHeader, "Bearer "+forgeToken)
 	}
 	response, err := http.DefaultClient.Do(httpRequest)
 	if err != nil {
@@ -180,53 +180,27 @@ func TestDispatchInputDelegationPreparationRejectionsWriteOnceOverHTTPRealPG(t *
 		ID: "contract-original", Name: "contract.pdf", MediaType: "application/pdf",
 		Bytes: int64(len(materialBytes)), SHA256: materialSHA,
 	}
-	rejectOriginal := atomic.Bool{}
-	rejectOriginal.Store(true)
-	var lastIfMatch atomic.Value
-	forge := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		lastIfMatch.Store(request.Header.Get("If-Match"))
-		ifMatch, _ := lastIfMatch.Load().(string)
-		if request.URL.Path != "/api/v1/workbench/materials/contract-original/original" {
-			http.NotFound(writer, request)
-			return
-		}
-		if ifMatch != `"`+materialSHA+`"` {
-			writer.WriteHeader(http.StatusPreconditionRequired)
-			_, _ = writer.Write([]byte(`{"code":"MATERIAL_HASH_REQUIRED"}`))
-			return
-		}
-		if rejectOriginal.Load() {
-			writer.WriteHeader(http.StatusPreconditionRequired)
-			_, _ = writer.Write([]byte(`{"code":"MATERIAL_CHANGED"}`))
-			return
-		}
-		writer.Header().Set("Content-Type", material.MediaType)
-		writer.Header().Set("Content-Length", fmt.Sprint(len(materialBytes)))
-		writer.Header().Set("ETag", `"`+materialSHA+`"`)
-		writer.Header().Set("X-Content-SHA256", materialSHA)
-		_, _ = writer.Write(materialBytes)
-	}))
-	defer forge.Close()
-	if _, err := pool.Exec(ctx, `INSERT INTO weave_external_identities(issuer,subject,workspace_id,user_id)
-		VALUES($1,'forge-user','ws','user'),($1,'forge-other-user','ws','user-other')`, forge.URL); err != nil {
+	authority := newTaskGrantHTTPFixture(t)
+	authority.files[material.ID] = materialBytes
+	authority.rejectFiles.Store(true)
+	server.Config = &config.Config{ForgeSessionURL: authority.server.URL + "/api/v1/auth/me"}
+	if _, err := pool.Exec(ctx, `INSERT INTO weave_external_identities(issuer,subject,workspace_id,user_id,native_organization)
+		VALUES($1,'forge-user','ws','user','native-org'),($1,'forge-other-user','ws','user-other','native-org')`, "forge:task-delegation-test"); err != nil {
 		t.Fatal(err)
 	}
-	server.ExternalIdentity = externalIdentityVerifierFunc(func(_ context.Context, token string) (ExternalIdentity, error) {
-		switch token {
-		case "valid":
-			return ExternalIdentity{Issuer: forge.URL, BaseURL: forge.URL, Subject: "forge-user", Organization: "ws"}, nil
-		case "organization-mismatch":
-			return ExternalIdentity{Issuer: forge.URL, BaseURL: forge.URL, Subject: "forge-user", Organization: "another-workspace"}, nil
-		case "employee-mismatch":
-			return ExternalIdentity{Issuer: forge.URL, BaseURL: forge.URL, Subject: "forge-other-user", Organization: "ws"}, nil
-		case "missing-identity":
-			return ExternalIdentity{Issuer: forge.URL, BaseURL: forge.URL, Subject: "forge-missing-user", Organization: "ws"}, nil
-		default:
-			return ExternalIdentity{}, errors.New("invalid test delegation")
-		}
+	server.ExternalIdentity = externalIdentityVerifierFunc(func(context.Context, string) (ExternalIdentity, error) {
+		t.Fatal("task delegation attempted to revalidate a general employee session")
+		return ExternalIdentity{}, errors.New("unreachable")
 	})
 	route := newDispatchInputHTTPFixture(t, server)
 	request := dispatchInputDelegationRequest("http-rejections", material)
+	withoutFile := request
+	withoutFile.Resources = nil
+	authority.add(t, "valid", "forge-user", "native-org", 1, scopeForRegistration(request))
+	authority.add(t, "valid-no-file", "forge-user", "native-org", 1, scopeForRegistration(withoutFile))
+	authority.add(t, "organization-mismatch", "forge-user", "other-native-org", 1, scopeForRegistration(withoutFile))
+	authority.add(t, "employee-mismatch", "forge-other-user", "native-org", 1, scopeForRegistration(withoutFile))
+	authority.add(t, "missing-identity", "forge-missing-user", "native-org", 1, scopeForRegistration(withoutFile))
 	baseline := dispatchInputCounts(t, ctx, pool)
 	assertRejected := func(request dispatchInputRegistration, forgeToken string, wantStatus int, wantCode string) {
 		t.Helper()
@@ -237,29 +211,22 @@ func TestDispatchInputDelegationPreparationRejectionsWriteOnceOverHTTPRealPG(t *
 
 	assertRejected(request, "", http.StatusUnauthorized, "business_delegation_required")
 	assertRejected(request, "invalid", http.StatusUnauthorized, "business_delegation_invalid")
-	verifier := server.ExternalIdentity
-	server.ExternalIdentity = nil
-	assertRejected(request, "valid", http.StatusServiceUnavailable, "business_delegation_unavailable")
-	server.ExternalIdentity = verifier
-
-	withoutFile := request
-	withoutFile.Resources = nil
 	assertRejected(withoutFile, "organization-mismatch", http.StatusForbidden, "business_delegation_identity_mismatch")
 	assertRejected(withoutFile, "missing-identity", http.StatusForbidden, "business_delegation_identity_mismatch")
 	assertRejected(withoutFile, "employee-mismatch", http.StatusForbidden, "business_delegation_identity_mismatch")
 
 	t.Setenv("WEAVE_SECRET_KEY", "")
-	assertRejected(withoutFile, "valid", http.StatusServiceUnavailable, "business_delegation_unavailable")
+	assertRejected(withoutFile, "valid-no-file", http.StatusServiceUnavailable, "business_delegation_unavailable")
 	t.Setenv("WEAVE_SECRET_KEY", strings.Repeat("11", 32))
 
 	assertRejected(request, "valid", http.StatusUnprocessableEntity, "business_resource_invalid")
-	if lastIfMatch.Load() != `"`+materialSHA+`"` {
-		t.Fatalf("Forge received If-Match %q; expected quoted SHA-256 ETag", lastIfMatch.Load())
+	if lastIfMatch, _ := authority.lastIfMatch.Load().(string); lastIfMatch != `"`+materialSHA+`"` {
+		t.Fatalf("Forge received If-Match %q; expected quoted SHA-256 ETag", lastIfMatch)
 	}
 	if _, err := pool.Exec(ctx, `ALTER TABLE weave_external_identities RENAME TO weave_external_identities_unavailable`); err != nil {
 		t.Fatal(err)
 	}
-	assertRejected(withoutFile, "valid", http.StatusInternalServerError, "workflow_store_failed")
+	assertRejected(withoutFile, "valid-no-file", http.StatusInternalServerError, "workflow_store_failed")
 }
 
 func TestDispatchInputLegalForgeOriginalRegistersAndRecoversLegacyInputOverHTTPRealPG(t *testing.T) {
@@ -274,43 +241,21 @@ func TestDispatchInputLegalForgeOriginalRegistersAndRecoversLegacyInputOverHTTPR
 		ID: "contract-original", Name: "contract.pdf", MediaType: "application/pdf",
 		Bytes: int64(len(materialBytes)), SHA256: materialSHA,
 	}
-	var lastIfMatch atomic.Value
-	rejectOriginal := atomic.Bool{}
-	rejectOriginal.Store(true)
-	forge := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		lastIfMatch.Store(request.Header.Get("If-Match"))
-		ifMatch, _ := lastIfMatch.Load().(string)
-		if request.URL.Path != "/api/v1/workbench/materials/contract-original/original" ||
-			ifMatch != `"`+materialSHA+`"` || request.Header.Get("Authorization") != "Bearer valid" ||
-			request.Header.Get("Accept-Encoding") != "identity" {
-			writer.WriteHeader(http.StatusPreconditionRequired)
-			_, _ = writer.Write([]byte(`{"code":"MATERIAL_HASH_REQUIRED"}`))
-			return
-		}
-		if rejectOriginal.Load() {
-			writer.WriteHeader(http.StatusPreconditionRequired)
-			_, _ = writer.Write([]byte(`{"code":"MATERIAL_CHANGED"}`))
-			return
-		}
-		writer.Header().Set("Content-Type", material.MediaType)
-		writer.Header().Set("Content-Length", fmt.Sprint(len(materialBytes)))
-		writer.Header().Set("ETag", `"`+materialSHA+`"`)
-		writer.Header().Set("X-Content-SHA256", materialSHA)
-		_, _ = writer.Write(materialBytes)
-	}))
-	defer forge.Close()
-	if _, err := pool.Exec(ctx, `INSERT INTO weave_external_identities(issuer,subject,workspace_id,user_id)
-		VALUES($1,'forge-user','ws','user')`, forge.URL); err != nil {
+	authority := newTaskGrantHTTPFixture(t)
+	authority.files[material.ID] = materialBytes
+	authority.rejectFiles.Store(true)
+	server.Config = &config.Config{ForgeSessionURL: authority.server.URL + "/api/v1/auth/me"}
+	if _, err := pool.Exec(ctx, `INSERT INTO weave_external_identities(issuer,subject,workspace_id,user_id,native_organization)
+		VALUES($1,'forge-user','ws','user','native-org')`, "forge:task-delegation-test"); err != nil {
 		t.Fatal(err)
 	}
-	server.ExternalIdentity = externalIdentityVerifierFunc(func(_ context.Context, token string) (ExternalIdentity, error) {
-		if token != "valid" {
-			return ExternalIdentity{}, errors.New("invalid test delegation")
-		}
-		return ExternalIdentity{Issuer: forge.URL, BaseURL: forge.URL, Subject: "forge-user", Organization: "ws"}, nil
+	server.ExternalIdentity = externalIdentityVerifierFunc(func(context.Context, string) (ExternalIdentity, error) {
+		t.Fatal("task delegation attempted to revalidate a general employee session")
+		return ExternalIdentity{}, errors.New("unreachable")
 	})
 	route := newDispatchInputHTTPFixture(t, server)
 	request := dispatchInputDelegationRequest("legacy-http-session", material)
+	authority.add(t, "valid", "forge-user", "native-org", 1, scopeForRegistration(request))
 	baseline := dispatchInputCounts(t, ctx, pool)
 
 	status, body := route.post(t, request, "valid")
@@ -322,12 +267,14 @@ func TestDispatchInputLegalForgeOriginalRegistersAndRecoversLegacyInputOverHTTPR
 	// was never saved. The retry below must restore the delegation on that same
 	// registration and return the same receipt.
 	legacyReceipt := seedLegacyDispatchInputWithoutDelegation(t, ctx, pool, request)
+	request.InputRevisionID = legacyReceipt.InputRevisionID
+	authority.add(t, "valid", "forge-user", "native-org", 1, scopeForRegistration(request))
 	legacyCounts := dispatchInputCounts(t, ctx, pool)
 	if legacyCounts.inputs != baseline.inputs+1 || legacyCounts.delegations != baseline.delegations {
 		t.Fatalf("legacy fixture does not match failed historical registration: %+v", legacyCounts)
 	}
 	// The same issuer now accepts the quoted frozen ETag, matching the live API.
-	rejectOriginal.Store(false)
+	authority.rejectFiles.Store(false)
 	status, body = route.post(t, request, "valid")
 	if status != http.StatusOK {
 		t.Fatalf("legacy recovery status=%d body=%s", status, body)
@@ -336,8 +283,8 @@ func TestDispatchInputLegalForgeOriginalRegistersAndRecoversLegacyInputOverHTTPR
 	if err := json.Unmarshal(body, &recovered); err != nil || recovered != legacyReceipt {
 		t.Fatalf("legacy retry receipt=%+v want=%+v err=%v", recovered, legacyReceipt, err)
 	}
-	if lastIfMatch.Load() != `"`+materialSHA+`"` {
-		t.Fatalf("Forge received If-Match %q; expected quoted SHA-256 ETag", lastIfMatch.Load())
+	if lastIfMatch, _ := authority.lastIfMatch.Load().(string); lastIfMatch != `"`+materialSHA+`"` {
+		t.Fatalf("Forge received If-Match %q; expected quoted SHA-256 ETag", lastIfMatch)
 	}
 	counts := dispatchInputCounts(t, ctx, pool)
 	if counts.inputs != legacyCounts.inputs || counts.delegations != legacyCounts.delegations+1 || counts.admissionRequests != baseline.admissionRequests || counts.admissionReceipts != baseline.admissionReceipts {
@@ -347,7 +294,8 @@ func TestDispatchInputLegalForgeOriginalRegistersAndRecoversLegacyInputOverHTTPR
 	newRequest := dispatchInputDelegationRequest("legal-http-session", material)
 	newRequest.Task = "再核对另一份固定合同原件"
 	newRequest.SourceMessages[0].SHA256 = dispatchInputDigest([]byte(newRequest.Task))
-	status, body = route.post(t, newRequest, "valid")
+	authority.add(t, "valid-new", "forge-user", "native-org", 2, scopeForRegistration(newRequest))
+	status, body = route.post(t, newRequest, "valid-new")
 	if status != http.StatusCreated {
 		t.Fatalf("valid Forge resource registration status=%d body=%s", status, body)
 	}
@@ -355,8 +303,8 @@ func TestDispatchInputLegalForgeOriginalRegistersAndRecoversLegacyInputOverHTTPR
 	if err := json.Unmarshal(body, &created); err != nil || created.InputRevisionID == "" {
 		t.Fatalf("valid registration receipt=%+v err=%v body=%s", created, err, body)
 	}
-	if lastIfMatch.Load() != `"`+materialSHA+`"` {
-		t.Fatalf("Forge received If-Match %q; expected quoted SHA-256 ETag", lastIfMatch.Load())
+	if lastIfMatch, _ := authority.lastIfMatch.Load().(string); lastIfMatch != `"`+materialSHA+`"` {
+		t.Fatalf("Forge received If-Match %q; expected quoted SHA-256 ETag", lastIfMatch)
 	}
 	counts = dispatchInputCounts(t, ctx, pool)
 	if counts.inputs != legacyCounts.inputs+1 || counts.delegations != legacyCounts.delegations+2 || counts.admissionRequests != baseline.admissionRequests || counts.admissionReceipts != baseline.admissionReceipts || counts.tasks != baseline.tasks || counts.runSnapshots != baseline.runSnapshots {

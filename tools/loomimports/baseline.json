@@ -2,7 +2,7 @@
   {
     "package": "cmd/weave",
     "import": "loom/pgstore",
-    "files": 2
+    "files": 3
   },
   {
     "package": "internal/app/api",
@@ -97,12 +97,12 @@
   {
     "package": "internal/kernel/loomruntime",
     "import": "loom",
-    "files": 13
+    "files": 14
   },
   {
     "package": "internal/kernel/loomruntime",
     "import": "loom/stdlib",
-    "files": 4
+    "files": 5
   },
   {
     "package": "internal/kernel/mcphost",

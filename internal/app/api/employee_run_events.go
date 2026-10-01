@@ -148,12 +148,13 @@ const employeeRunEventBatch = 200
 // pendingEmployeeRunEvents lists terminal runs that have an assignee but no
 // outbox event yet, oldest first.
 func (worker *employeeRunEventWorker) pendingEmployeeRunEvents(ctx context.Context) (workspaces, runs []string, err error) {
-	rows, err := worker.Pool.Query(ctx, `SELECT run.workspace_id,run.run_id
+	rows, err := worker.Pool.Query(ctx, `SELECT run.workspace_id,run.run_id,identity.bindings=1
 		FROM weave_team_runs AS run
 		JOIN weave_dispatch_input_revisions AS input
 		  ON input.workspace_id=run.workspace_id AND input.consumed_run_id=run.run_id
-		JOIN weave_external_identities AS identity
-		  ON identity.workspace_id=input.workspace_id AND identity.user_id=input.user_id
+		JOIN LATERAL (SELECT count(*) AS bindings FROM weave_external_identities
+		  WHERE workspace_id=input.workspace_id AND user_id=input.user_id AND native_organization<>''
+		    AND (input.native_organization='' OR native_organization=input.native_organization)) AS identity ON true
 		WHERE run.status IN ('succeeded','failed','cancelled','abandoned')
 		  AND NOT EXISTS (SELECT 1 FROM weave_employee_run_event_outbox AS event
 			WHERE event.workspace_id=run.workspace_id AND event.run_id=run.run_id AND event.event_scope='terminal')
@@ -164,8 +165,12 @@ func (worker *employeeRunEventWorker) pendingEmployeeRunEvents(ctx context.Conte
 	defer rows.Close()
 	for rows.Next() {
 		var workspaceID, runID string
-		if err := rows.Scan(&workspaceID, &runID); err != nil {
+		var nativeIdentityValid bool
+		if err := rows.Scan(&workspaceID, &runID, &nativeIdentityValid); err != nil {
 			return nil, nil, err
+		}
+		if !nativeIdentityValid {
+			return nil, nil, fmt.Errorf("terminal run %s has no unique verified native employee organization", runID)
 		}
 		workspaces, runs = append(workspaces, workspaceID), append(runs, runID)
 	}
@@ -268,7 +273,8 @@ func (worker *employeeRunEventWorker) materialize(ctx context.Context) error {
 	_, err = worker.Pool.Exec(ctx, `WITH candidates AS (
 		SELECT run.workspace_id,run.run_id,run.status,run.terminal_at,run.cause_summary,
 			input.input_revision_id,input.workbench_session_id,input.project_id,
-			identity.subject AS assignee_account_id,identity.workspace_id AS external_organization,
+			identity.subject AS assignee_account_id,
+			COALESCE(NULLIF(input.native_organization,''),identity.native_organization) AS external_organization,
 			COALESCE(NULLIF(workflow.name,''),NULLIF(team.name,''),'团队工作') AS team_name,
 		COALESCE(NULLIF(deliverable.content,''),'') AS deliverable_content,
 		deliverable.workbench_result AS workbench_result
@@ -277,6 +283,8 @@ func (worker *employeeRunEventWorker) materialize(ctx context.Context) error {
 		  ON input.workspace_id=run.workspace_id AND input.consumed_run_id=run.run_id
 		JOIN weave_external_identities AS identity
 		  ON identity.workspace_id=input.workspace_id AND identity.user_id=input.user_id
+		 AND identity.native_organization<>''
+		 AND (input.native_organization='' OR identity.native_organization=input.native_organization)
 		LEFT JOIN weave_teams AS team
 		  ON team.workspace_id=run.workspace_id AND team.id=run.team_id
 		LEFT JOIN weave_team_workflows AS workflow

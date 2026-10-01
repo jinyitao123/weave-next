@@ -59,6 +59,9 @@ func (s *Server) handleLookupWorkbenchRuns(c echo.Context) error {
 		len(request.RunIDs) == 0 || len(request.RunIDs) > workbenchRunLookupLimit {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "workbench_run_lookup_invalid"})
 	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "workbench_run_lookup_invalid"})
+	}
 	seen := make(map[string]struct{}, len(request.RunIDs))
 	for _, runID := range request.RunIDs {
 		if runID == "" || len(runID) > 512 || strings.TrimSpace(runID) != runID {

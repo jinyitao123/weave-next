@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/google/uuid"
@@ -28,21 +29,25 @@ type workbenchContextResponse struct {
 }
 
 type workbenchContextSource struct {
-	InputRevisionID    string `json:"input_revision_id"`
-	RunID              string `json:"run_id"`
-	WorkbenchSessionID string `json:"workbench_session_id"`
+	InputRevisionID             string `json:"input_revision_id"`
+	RunID                       string `json:"run_id"`
+	WorkbenchSessionID          string `json:"workbench_session_id"`
+	InputStatus                 string `json:"input_status"`
+	SupersededByInputRevisionID string `json:"superseded_by_input_revision_id,omitempty"`
 }
 
 type workbenchContextInput struct {
-	Task            string                       `json:"task"`
-	TaskSHA256      string                       `json:"task_sha256"`
-	TeamID          string                       `json:"team_id"`
-	WorkflowID      string                       `json:"workflow_id"`
-	WorkflowVersion int                          `json:"workflow_version"`
-	Materials       []dispatchInputResource      `json:"materials"`
-	SourceMessages  []dispatchInputSourceMessage `json:"source_messages"`
-	BusinessRecord  *workbenchContextRecord      `json:"business_record,omitempty"`
-	Parent          *workbenchContextParent      `json:"parent,omitempty"`
+	RegistrationID                  string                       `json:"registration_id"`
+	AuthorizedBusinessCapabilityIDs []string                     `json:"authorized_business_capability_ids"`
+	Task                            string                       `json:"task"`
+	TaskSHA256                      string                       `json:"task_sha256"`
+	TeamID                          string                       `json:"team_id"`
+	WorkflowID                      string                       `json:"workflow_id"`
+	WorkflowVersion                 int                          `json:"workflow_version"`
+	Materials                       []dispatchInputResource      `json:"materials"`
+	SourceMessages                  []dispatchInputSourceMessage `json:"source_messages"`
+	BusinessRecord                  *workbenchContextRecord      `json:"business_record,omitempty"`
+	Parent                          *workbenchContextParent      `json:"parent,omitempty"`
 }
 
 type workbenchContextRecord struct {
@@ -57,7 +62,8 @@ type workbenchContextParent struct {
 }
 
 type workbenchContextRun struct {
-	Status string `json:"status"`
+	Status        string                  `json:"status"`
+	Authorization *workbenchAuthorization `json:"authorization,omitempty"`
 	// BusinessResult is the server's single answer to how the run ended for the
 	// business; clients show it and do not derive their own. Absent when the run
 	// has no business-facing result.
@@ -78,6 +84,8 @@ type workbenchContextFinalDeliverable struct {
 }
 
 type workbenchContextInputRow struct {
+	ClosedAt              *time.Time
+	RegistrationID        string
 	InputRevisionID       string
 	RunID                 string
 	WorkbenchSessionID    string
@@ -141,7 +149,7 @@ func (s *Server) readWorkbenchRunContext(ctx context.Context, workspaceID, userI
 	if s.GetPool() == nil || workspaceID == "" || userID == "" || runID == "" || run.RunID != runID {
 		return workbenchContextResponse{}, errWorkbenchContextNotFound
 	}
-	rows, err := s.GetPool().Query(ctx, `SELECT input.input_revision_id,input.consumed_run_id,input.workbench_session_id,
+	rows, err := s.GetPool().Query(ctx, `SELECT input.closed_at,input.registration_id,input.input_revision_id,input.consumed_run_id,input.workbench_session_id,
 		input.source_messages,input.task,input.task_sha256,input.team_id,input.workflow_id,input.workflow_version,
 		input.root_input_revision_id,COALESCE(input.parent_input_revision_id,''),COALESCE(input.parent_run_id,''),input.revision_kind,
 		delegation.resources
@@ -164,7 +172,7 @@ func (s *Server) readWorkbenchRunContext(ctx context.Context, workspaceID, userI
 		return workbenchContextResponse{}, errWorkbenchContextNotFound
 	}
 	var input workbenchContextInputRow
-	if err := rows.Scan(&input.InputRevisionID, &input.RunID, &input.WorkbenchSessionID, &input.SourceMessages,
+	if err := rows.Scan(&input.ClosedAt, &input.RegistrationID, &input.InputRevisionID, &input.RunID, &input.WorkbenchSessionID, &input.SourceMessages,
 		&input.Task, &input.TaskSHA256, &input.TeamID, &input.WorkflowID, &input.WorkflowVersion,
 		&input.RootInputRevisionID, &input.ParentInputRevisionID, &input.ParentRunID, &input.RevisionKind,
 		&input.DelegatedResources); err != nil {
@@ -186,6 +194,30 @@ func (s *Server) readWorkbenchRunContext(ctx context.Context, workspaceID, userI
 		return workbenchContextResponse{}, err
 	}
 	response.Run.FinalResult = finalResult
+	response.Input.RegistrationID = input.RegistrationID
+	response.Input.AuthorizedBusinessCapabilityIDs = []string{}
+	authorization, authErr := s.readWorkbenchAuthorization(ctx, workspaceID, userID, input.InputRevisionID)
+	if authErr != nil {
+		return workbenchContextResponse{}, authErr
+	}
+	response.Run.Authorization = &authorization
+	if authorization.Scope != nil {
+		response.Input.RegistrationID = authorization.Scope.RegistrationID
+		response.Input.AuthorizedBusinessCapabilityIDs = authorization.Scope.AllowedActions
+	}
+	response.Source.InputStatus = "current"
+	if input.ClosedAt != nil {
+		response.Source.InputStatus = "closed"
+	}
+	replacement, statusErr := s.readInputReplacement(ctx, workspaceID, userID, input.InputRevisionID, input.RootInputRevisionID)
+	if statusErr != nil {
+		return workbenchContextResponse{}, statusErr
+	}
+	if replacement != "" {
+		response.Source.InputStatus = "superseded"
+		response.Source.SupersededByInputRevisionID = replacement
+	}
+
 	if s.teamRunActivities == nil {
 		return workbenchContextResponse{}, errors.New("Workbench business action receipt store is unavailable")
 	}
@@ -254,7 +286,7 @@ func projectWorkbenchRunContext(input workbenchContextInputRow, run workbenchRun
 
 	return workbenchContextResponse{
 		Version: "1",
-		Source: workbenchContextSource{
+		Source: workbenchContextSource{InputStatus: "current",
 			InputRevisionID: input.InputRevisionID, RunID: input.RunID,
 			WorkbenchSessionID: input.WorkbenchSessionID,
 		},

@@ -15,13 +15,14 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jinyitao123/weave/internal/base/frozen"
 )
 
 // RunBundleFormat identifies the operator-only run reproduction file. It is a
 // diagnostic artifact, not a client contract, and is never served over HTTP.
 const (
 	RunBundleFormat  = "weave-run-bundle"
-	RunBundleVersion = 1
+	RunBundleVersion = 2
 )
 
 // RunBundleTable is one table's rows, each row keyed by column name with the
@@ -59,12 +60,8 @@ type runBundleTableSpec struct {
 	content []string
 }
 
-// The order is also the import order.
-//
-// The parent rows come first because a replay needs the frozen snapshot and the
-// project the run belonged to. Agents, teams, capability credentials and other
-// configuration those rows point at are deliberately not exported; the import
-// therefore runs with foreign-key triggers off (see ImportRunBundle).
+// These are scoped execution roots. Foreign-key parents and explicit frozen
+// dependencies are added by reference, never by copying a whole workspace.
 var runBundleTables = []runBundleTableSpec{
 	{name: "weave_workspaces", query: `id=$1`},
 	{name: "weave_projects", query: `workspace_id=$1 AND id IN (
@@ -74,13 +71,13 @@ var runBundleTables = []runBundleTableSpec{
 	{name: "weave_task_group", query: `workspace_id=$1 AND id IN (
 		SELECT task_group_id FROM weave_task_queue WHERE workspace_id=$1 AND (run_snapshot_id=$4 OR run_id=ANY($3)))`,
 		content: []string{"original_request"}},
-	{name: "weave_published_artifact_contents", query: `workspace_id=$1 AND workflow_id=$5 AND workflow_version=$6`},
+	{name: "weave_published_artifact_contents", query: `workspace_id=$1 AND workflow_id=$5 AND workflow_version=$6`, content: []string{"payload"}},
 	{name: "weave_dispatch_input_revisions", query: `workspace_id=$1 AND (input_revision_id=ANY($7) OR consumed_run_id=$2)`,
 		content: []string{"source_messages", "task", "execution_task", "parent_materials"}},
 	{name: "weave_task_business_delegations", query: `workspace_id=$1 AND input_revision_id=ANY($7)`,
 		secret: map[string]string{"credential_ciphertext": "[redacted]", "credential_sha256": strings.Repeat("0", 64)}},
 	{name: "weave_team_runs", query: `workspace_id=$1 AND run_id=$2`},
-	{name: "weave_task_queue", query: `workspace_id=$1 AND (run_snapshot_id=$4 OR run_id=ANY($3))`,
+	{name: "weave_task_queue", query: `workspace_id=$1 AND (run_snapshot_id=$4 OR run_id=ANY($3) OR capability_invocation_id IN (SELECT invocation_id FROM weave_capability_step_runs WHERE workspace_id=$1 AND run_id=ANY($3)))`,
 		content: []string{"payload", "result"}},
 	{name: "weave_workflow_member_runs", query: `workspace_id=$1 AND parent_run_id=$2`,
 		content: []string{"initial_state", "result"}},
@@ -88,9 +85,34 @@ var runBundleTables = []runBundleTableSpec{
 	{name: "weave_run_terminal_markers", query: `workspace_id=$1 AND run_id=ANY($3)`},
 	{name: "weave_run_delivery_state", query: `workspace_id=$1 AND run_id=$2`},
 	{name: "weave_run_delivery_verifications", query: `workspace_id=$1 AND run_id=$2`, content: []string{"report"}},
-	{name: "weave_team_run_activity_events", query: `workspace_id=$1 AND run_id=$2`},
+	{name: "weave_team_run_activity_events", query: `workspace_id=$1 AND run_id=$2`, content: []string{"detail"}},
+	{name: "weave_final_deliverables", query: `workspace_id=$1 AND run_id=ANY($3)`, content: []string{"content", "metadata"}},
 	{name: "weave_employee_run_event_outbox", query: `workspace_id=$1 AND run_id=$2`, content: []string{"payload"}},
-	{name: "loom_store", query: `key=ANY($3) OR split_part(key,'/',1)=ANY($3)`, content: []string{"value"}},
+	{name: "loom_store", query: `(key=ANY($3) OR split_part(key,'/',1)=ANY($3)) AND (
+		namespace IN ('member-operation:'||$1,'audit:'||$1,'runreg:'||$1,'teamrun-checkpoint:'||$1,'member-budget-grant:'||$1,'member-budget-grant:'||$1||':consumed')
+		OR namespace IN (SELECT 'checkpoint:'||graph_name FROM weave_run_attempt_leases WHERE workspace_id=$1 AND run_id=ANY($3)))`, content: []string{"value"}},
+	{name: "weave_expected_run_domain_index", query: `workspace_id=$1 AND run_id=ANY($3)`},
+	{name: "weave_capability_step_runs", query: `workspace_id=$1 AND run_id=ANY($3)`},
+	{name: "weave_capability_invocations", query: `workspace_id=$1 AND invocation_id IN (SELECT invocation_id FROM weave_capability_step_runs WHERE workspace_id=$1 AND run_id=ANY($3))`, content: []string{"input", "result_state", "checkpoint"}},
+	{name: "weave_capability_invocation_events", query: `workspace_id=$1 AND invocation_id IN (SELECT invocation_id FROM weave_capability_step_runs WHERE workspace_id=$1 AND run_id=ANY($3))`, content: []string{"detail"}},
+	{name: "weave_capability_human_tasks", query: `workspace_id=$1 AND invocation_id IN (SELECT invocation_id FROM weave_capability_step_runs WHERE workspace_id=$1 AND run_id=ANY($3))`, content: []string{"response"}},
+	{name: "weave_capability_revision_tool_bindings", query: `workspace_id=$1 AND (capability_id,revision) IN (SELECT capability_id,revision FROM weave_capability_invocations WHERE workspace_id=$1 AND invocation_id IN (SELECT invocation_id FROM weave_capability_step_runs WHERE workspace_id=$1 AND run_id=ANY($3)))`},
+	{name: "weave_capability_debug_snapshots", query: `workspace_id=$1 AND invocation_id IN (SELECT invocation_id FROM weave_capability_step_runs WHERE workspace_id=$1 AND run_id=ANY($3))`},
+	{name: "weave_team_run_corrections", query: `workspace_id=$1 AND run_id=$2`, content: []string{"detail"}},
+	{name: "weave_team_run_correction_events", query: `workspace_id=$1 AND run_id=$2`},
+	// Parent-only entries have no unscoped query. The closure includes only rows
+	// referenced by the selected run or its immutable frozen dependencies.
+	{name: "weave_teams"}, {name: "weave_agents", content: []string{"spec"}},
+	{name: "weave_agent_versions", content: []string{"spec"}}, {name: "weave_team_workflows"},
+	{name: "weave_team_workflow_versions", content: []string{"graph_definition"}},
+	{name: "weave_skills", content: []string{"body"}}, {name: "weave_skill_versions", content: []string{"body"}},
+	{name: "weave_provider_credentials", secret: map[string]string{"api_key_cipher": "[redacted]"}},
+	{name: "weave_provider_revisions"}, {name: "weave_mcp_servers", secret: map[string]string{"token": "[redacted]", "headers": "[redacted]"}},
+	{name: "weave_mcp_server_revisions"}, {name: "weave_runtimes", secret: map[string]string{"token_hash": "[redacted]"}},
+	{name: "weave_delivery_targets", secret: map[string]string{"secret_ciphertext": "[redacted]"}},
+	{name: "weave_delivery_target_revisions"}, {name: "weave_capability_revisions"}, {name: "weave_capability_definitions"},
+	{name: "weave_capability_credentials", secret: map[string]string{"key_hash": "[redacted]"}},
+	{name: "weave_capability_apps"}, {name: "weave_users", secret: map[string]string{"password": "[redacted]"}},
 }
 
 // secretJSONKey matches JSON keys that carry credentials. It is deliberately
@@ -169,34 +191,46 @@ func ExportRunBundle(ctx context.Context, pool *pgxpool.Pool, workspaceID, runID
 		WorkspaceID: workspaceID, RunID: runID, IncludesContent: includeContent,
 		RunIDs: runIDs, Redactions: map[string]int{}, Tables: make([]RunBundleTable, 0, len(runBundleTables)),
 	}
-	var literalSecrets []string
+	rawTables := make(map[string][]map[string]json.RawMessage)
 	for _, spec := range runBundleTables {
-		query, args := bindRunBundleParams(spec.query, workspaceID, runID, runIDs, snapshot, workflowID, workflowVersion, revisionIDs)
-		rows, err := tx.Query(ctx, `SELECT to_jsonb(t) FROM `+spec.name+` AS t WHERE `+query+` ORDER BY to_jsonb(t)::text`, args...)
-		if err != nil {
-			return nil, fmt.Errorf("export %s: %w", spec.name, err)
+		if spec.query == "" {
+			continue
 		}
+		query, args := bindRunBundleParams(spec.query, workspaceID, runID, runIDs, snapshot, workflowID, workflowVersion, revisionIDs)
+		rows, err := readRunBundleRows(ctx, tx, spec.name, query, args...)
+		if err != nil {
+			return nil, err
+		}
+		rawTables[spec.name] = rows
+	}
+	if err := addFrozenRunBundleDependencies(ctx, tx, rawTables); err != nil {
+		return nil, err
+	}
+	if err := closeRunBundleForeignKeys(ctx, tx, rawTables); err != nil {
+		return nil, err
+	}
+	type secretMarker struct{ field, value string }
+	var literalSecrets []secretMarker
+	for _, spec := range runBundleTables {
 		table := RunBundleTable{Name: spec.name, Rows: []map[string]json.RawMessage{}}
-		for rows.Next() {
-			var raw []byte
-			if err := rows.Scan(&raw); err != nil {
-				rows.Close()
-				return nil, err
-			}
-			row := map[string]json.RawMessage{}
-			if err := json.Unmarshal(raw, &row); err != nil {
-				rows.Close()
-				return nil, fmt.Errorf("export %s: %w", spec.name, err)
-			}
+		for _, row := range rawTables[spec.name] {
 			for column, placeholder := range spec.secret {
-				if value, ok := row[column]; ok && string(value) != "null" {
-					var literal string
-					if json.Unmarshal(value, &literal) == nil && literal != "" {
-						literalSecrets = append(literalSecrets, literal)
-					}
-					row[column], _ = json.Marshal(placeholder)
-					bundle.Redactions[spec.name+"."+column]++
+				value, ok := row[column]
+				if !ok || string(value) == "null" {
+					continue
 				}
+				var literal string
+				if json.Unmarshal(value, &literal) == nil && literal != "" {
+					if literal != "[redacted]" && !(spec.name == "weave_users" && column == "password" && literal == "!") {
+						literalSecrets = append(literalSecrets, secretMarker{spec.name + "." + column, literal})
+					}
+				}
+				if column == "key_hash" {
+					sum := sha256.Sum256(append(append([]byte(spec.name), row["workspace_id"]...), row["id"]...))
+					placeholder = hex.EncodeToString(sum[:])
+				}
+				row[column], _ = json.Marshal(placeholder)
+				bundle.Redactions[spec.name+"."+column]++
 			}
 			for column, value := range row {
 				if cleaned, count := sweepSecretKeys(value); count > 0 {
@@ -219,10 +253,6 @@ func ExportRunBundle(ctx context.Context, pool *pgxpool.Pool, workspaceID, runID
 			}
 			table.Rows = append(table.Rows, row)
 		}
-		rows.Close()
-		if err := rows.Err(); err != nil {
-			return nil, err
-		}
 		bundle.Tables = append(bundle.Tables, table)
 	}
 	encoded, err := json.Marshal(bundle)
@@ -232,8 +262,14 @@ func ExportRunBundle(ctx context.Context, pool *pgxpool.Pool, workspaceID, runID
 	for _, secret := range literalSecrets {
 		// bytea columns are exported as hex, so the plain text search alone
 		// cannot see a credential stored inside a checkpoint or journal value.
-		if bytes.Contains(encoded, []byte(secret)) || bytes.Contains(encoded, []byte(hex.EncodeToString([]byte(secret)))) {
-			return nil, errors.New("export refused: a credential value from the database is still present in the bundle")
+		if bytes.Contains(encoded, []byte(secret.value)) || bytes.Contains(encoded, []byte(hex.EncodeToString([]byte(secret.value)))) {
+			for _, table := range bundle.Tables {
+				tableRaw, _ := json.Marshal(table)
+				if bytes.Contains(tableRaw, []byte(secret.value)) || bytes.Contains(tableRaw, []byte(hex.EncodeToString([]byte(secret.value)))) {
+					return nil, fmt.Errorf("export refused: credential material from %s remains in table %s", secret.field, table.Name)
+				}
+			}
+			return nil, errors.New("export refused: credential material remains in bundle")
 		}
 	}
 	return bundle, nil
@@ -298,7 +334,7 @@ func sweepValue(node any) int {
 	switch typed := node.(type) {
 	case map[string]any:
 		for key, child := range typed {
-			if secretJSONKey.MatchString(key) {
+			if secretJSONKey.MatchString(key) && !isCredentialReferenceList(key, child) {
 				if child != nil {
 					typed[key] = "[redacted]"
 					count++
@@ -335,6 +371,39 @@ func sweepStoredValue(value json.RawMessage) (json.RawMessage, int) {
 	return out, count
 }
 
+// Credential references are immutable configuration, not credential values.
+// Preserve only validated reference arrays; arbitrary "credentials" objects
+// remain redacted and never become usable imported credentials.
+func isCredentialReferenceList(key string, value any) bool {
+	if key != "credentials" {
+		return false
+	}
+	list, ok := value.([]any)
+	if !ok {
+		return false
+	}
+	for _, item := range list {
+		raw, err := json.Marshal(item)
+		if err != nil {
+			return false
+		}
+		var ref frozen.CredentialReference
+		if json.Unmarshal(raw, &ref) != nil || frozen.ValidateCredentialReference(ref) != nil {
+			return false
+		}
+		var fields map[string]any
+		_ = json.Unmarshal(raw, &fields)
+		for field := range fields {
+			switch field {
+			case "schema_version", "scope", "user_id", "service_id", "workspace_id", "kind", "resource_id", "slot", "credential_version":
+			default:
+				return false
+			}
+		}
+	}
+	return true
+}
+
 // ImportRunBundle inserts a bundle into a database that already has the
 // current schema. It never overwrites: a row that exists makes the whole import
 // fail, so a bundle cannot silently change an environment's state. Only the
@@ -346,6 +415,9 @@ func ImportRunBundle(ctx context.Context, pool *pgxpool.Pool, bundle *RunBundle)
 	if bundle.Format != RunBundleFormat || bundle.Version != RunBundleVersion {
 		return nil, fmt.Errorf("unsupported bundle %q version %d", bundle.Format, bundle.Version)
 	}
+	if err := validateRunBundleTables(bundle); err != nil {
+		return nil, err
+	}
 	known := map[string]bool{}
 	for _, spec := range runBundleTables {
 		known[spec.name] = true
@@ -355,30 +427,120 @@ func ImportRunBundle(ctx context.Context, pool *pgxpool.Pool, bundle *RunBundle)
 		return nil, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	// The bundle carries the run's own rows and the parents a replay reads, not
-	// every configuration row those point at, so referential checks would refuse
-	// it. This needs a role allowed to set the parameter, which is why an import
-	// is only meant for a disposable database.
-	if _, err := tx.Exec(ctx, `SET LOCAL session_replication_role = replica`); err != nil {
-		return nil, fmt.Errorf("the import role cannot disable foreign-key triggers; use a disposable database owned by a superuser: %w", err)
+	if !bundle.IncludesContent {
+		return nil, errors.New("a redacted diagnostic bundle cannot reconstruct a run")
+	}
+	var occupied bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM weave_workspaces)`).Scan(&occupied); err != nil {
+		return nil, err
+	}
+	if occupied {
+		return nil, errors.New("run import requires an empty isolated database")
+	}
+	constraints, err := runBundleForeignKeys(ctx, tx)
+	if err != nil {
+		return nil, err
+	}
+	for _, fk := range constraints {
+		if !known[fk.child] || !known[fk.parent] {
+			continue
+		}
+		if _, err := tx.Exec(ctx, `ALTER TABLE `+pgx.Identifier{fk.child}.Sanitize()+` ALTER CONSTRAINT `+pgx.Identifier{fk.name}.Sanitize()+` DEFERRABLE INITIALLY DEFERRED`); err != nil {
+			return nil, fmt.Errorf("defer cyclic import constraint: %w", err)
+		}
+	}
+	if _, err := tx.Exec(ctx, `SET CONSTRAINTS ALL DEFERRED`); err != nil {
+		return nil, err
 	}
 	counts := map[string]int{}
-	for _, table := range bundle.Tables {
+	tables := append([]RunBundleTable(nil), bundle.Tables...)
+	// FK checks are deferred, but business validation triggers remain active.
+	// Their ordinary publication lifecycle must still be followed.
+	ranks := map[string]int{"weave_workspaces": 0, "weave_users": 1, "weave_agents": 2, "weave_agent_versions": 3, "weave_teams": 4, "weave_team_workflow_versions": 5, "weave_team_workflows": 6, "weave_projects": 7, "weave_published_artifact_contents": 8}
+	sort.SliceStable(tables, func(i, j int) bool {
+		a, ok := ranks[tables[i].Name]
+		if !ok {
+			a = 20
+		}
+		b, ok := ranks[tables[j].Name]
+		if !ok {
+			b = 20
+		}
+		return a < b
+	})
+	for _, table := range tables {
 		if !known[table.Name] {
 			return nil, fmt.Errorf("bundle contains unknown table %q", table.Name)
 		}
 		if len(table.Rows) == 0 {
 			continue
 		}
-		rows, err := json.Marshal(table.Rows)
+		if table.Name == "weave_team_workflow_versions" {
+			for _, row := range table.Rows {
+				copy := make(map[string]json.RawMessage, len(row))
+				for key, value := range row {
+					copy[key] = value
+				}
+				var status string
+				_ = json.Unmarshal(copy["status"], &status)
+				if status == "published" {
+					copy["status"] = json.RawMessage(`"draft"`)
+					copy["published_at"] = json.RawMessage(`null`)
+				}
+				raw, err := json.Marshal([]map[string]json.RawMessage{copy})
+				if err != nil {
+					return nil, err
+				}
+				if _, err := tx.Exec(ctx, `INSERT INTO weave_team_workflow_versions SELECT * FROM jsonb_populate_recordset(null::weave_team_workflow_versions,$1::jsonb)`, string(raw)); err != nil {
+					return nil, fmt.Errorf("import frozen workflow version: %w", err)
+				}
+				if status == "published" {
+					var ws, id string
+					var version int64
+					_ = json.Unmarshal(row["workspace_id"], &ws)
+					_ = json.Unmarshal(row["workflow_id"], &id)
+					_ = json.Unmarshal(row["version"], &version)
+					var published *string
+					_ = json.Unmarshal(row["published_at"], &published)
+					if _, err := tx.Exec(ctx, `UPDATE weave_team_workflow_versions SET status='published',published_at=$4::timestamptz WHERE workspace_id=$1 AND workflow_id=$2 AND version=$3`, ws, id, version, published); err != nil {
+						return nil, err
+					}
+				}
+				counts[table.Name]++
+			}
+			continue
+		}
+		count, err := insertRunBundleRows(ctx, tx, table.Name, table.Rows)
 		if err != nil {
 			return nil, err
 		}
-		tag, err := tx.Exec(ctx, `INSERT INTO `+table.Name+` SELECT * FROM jsonb_populate_recordset(null::`+table.Name+`, $1::jsonb)`, string(rows))
-		if err != nil {
-			return nil, fmt.Errorf("import %s: %w", table.Name, err)
+		counts[table.Name] = count
+	}
+	frozenTables := map[string][]map[string]json.RawMessage{}
+	for _, table := range bundle.Tables {
+		frozenTables[table.Name] = table.Rows
+	}
+	if err := addFrozenRunBundleDependencies(ctx, tx, frozenTables); err != nil {
+		return nil, err
+	}
+	// Force every deferred referential check before publishing imported rows.
+	if _, err := tx.Exec(ctx, `SET CONSTRAINTS ALL IMMEDIATE`); err != nil {
+		return nil, fmt.Errorf("bundle is missing a referenced parent: %w", err)
+	}
+	for _, fk := range constraints {
+		if !known[fk.child] || !known[fk.parent] {
+			continue
 		}
-		counts[table.Name] = int(tag.RowsAffected())
+		mode := "NOT DEFERRABLE"
+		if fk.deferrable {
+			mode = "DEFERRABLE INITIALLY IMMEDIATE"
+			if fk.deferred {
+				mode = "DEFERRABLE INITIALLY DEFERRED"
+			}
+		}
+		if _, err := tx.Exec(ctx, `ALTER TABLE `+pgx.Identifier{fk.child}.Sanitize()+` ALTER CONSTRAINT `+pgx.Identifier{fk.name}.Sanitize()+` `+mode); err != nil {
+			return nil, err
+		}
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, err

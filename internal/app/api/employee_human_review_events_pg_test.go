@@ -46,7 +46,7 @@ func TestHumanWaitBecomesOneHumanReviewEventForTheInitiatorRealPG(t *testing.T) 
 	event := events[0]
 	source, _ := event["source"].(map[string]any)
 	interaction, _ := source["interactionReference"].(string)
-	if event["kind"] != "human_review" || event["assigneeAccountId"] != "forge-user" || interaction == "" || scopes[0] != interaction ||
+	if event["kind"] != "human_review" || event["organizationId"] != "native-event-org" || event["assigneeAccountId"] != "forge-user" || interaction == "" || scopes[0] != interaction ||
 		source["runReference"] != runID || source["idempotencyKey"] != "weave-team-run-human:"+interaction {
 		t.Fatalf("unexpected human review event: scope=%s %v", scopes[0], event)
 	}
