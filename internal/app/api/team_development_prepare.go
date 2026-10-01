@@ -271,7 +271,12 @@ func (s *Server) activateDevelopment(ctx context.Context, ws, id, actor string, 
 	if _, err = tx.Exec(ctx, `UPDATE weave_team_workflows SET status='archived',updated_at=$4 WHERE workspace_id=$1 AND team_id=$2 AND NOT(id=ANY($3::text[])) AND status='active'`, ws, id, flowIDs, now); err != nil {
 		return err
 	}
-	if _, err = tx.Exec(ctx, `UPDATE weave_teams SET display_name=$3,objective=$4,lead_avatar_id=$5,default_workflow_id=$6,updated_at=$7 WHERE workspace_id=$1 AND id=$2`, ws, id, d.Document.Name, d.Document.Objective, leadID, flowIDs[0], now); err != nil {
+	audience, err := normalizeTeamAudience(d.Document.Audience)
+	if err != nil {
+		return err
+	}
+	audienceJSON, _ := json.Marshal(audience)
+	if _, err = tx.Exec(ctx, `UPDATE weave_teams SET display_name=$3,objective=$4,lead_avatar_id=$5,default_workflow_id=$6,updated_at=$7,audience=$8::jsonb WHERE workspace_id=$1 AND id=$2`, ws, id, d.Document.Name, d.Document.Objective, leadID, flowIDs[0], now, string(audienceJSON)); err != nil {
 		return err
 	}
 	var teamUpdatedAt time.Time

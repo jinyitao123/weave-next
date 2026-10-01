@@ -252,7 +252,7 @@ func (s *Server) handleExternalIdentityExchange(c echo.Context) error {
 	if accessRole != "developer" && accessRole != "admin" {
 		accessRole = "member"
 	}
-	token, err := s.signJWTFor(user.TenantID, user.ID, []string{accessRole}, "forge", externalSessionTTL)
+	token, err := s.signJWTWithPermissionSets(user.TenantID, user.ID, []string{accessRole}, "forge", identity.PermissionSets, externalSessionTTL)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "could not issue product session"})
 	}
