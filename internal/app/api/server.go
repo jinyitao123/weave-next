@@ -332,7 +332,7 @@ func (s *Server) registerRoutes() {
 	}
 
 	// Authenticated endpoints.
-	auth := s.Echo.Group("/v1", AuthMiddleware(s.Config.JWTSecret, keyStoreGetter, userStoreGetter))
+	auth := authenticatedRouteGroup(s.Echo, "/v1", AuthMiddleware(s.Config.JWTSecret, keyStoreGetter, userStoreGetter))
 	adminScope := RequireScope("admin")
 	agentsScope := RequireScope("agents")
 	chatScope := RequireScope("chat")
@@ -348,7 +348,7 @@ func (s *Server) registerRoutes() {
 
 	// Developer capability contract endpoints. Execution is admitted here;
 	// runtime scheduling is intentionally a separate follow-up integration.
-	capabilityAPI := s.Echo.Group("/v1", s.capabilityAuthentication())
+	capabilityAPI := authenticatedRouteGroup(s.Echo, "/v1", s.capabilityAuthentication())
 	capabilityAPI.POST("/capabilities/drafts", s.handleSaveCapabilityDraft, requireCapabilityAccess("manage"))
 	capabilityAPI.GET("/capabilities/drafts", s.handleListCapabilityDrafts, requireCapabilityAccess("manage"))
 	capabilityAPI.POST("/capabilities/generate", s.handleGenerateCapability, requireCapabilityAccess("manage"))
@@ -447,7 +447,7 @@ func (s *Server) registerRoutes() {
 	auth.POST("/runtimes", s.handleCreateRuntime, RequireAnyRole("admin", "owner"), orgScope)
 	auth.PUT("/runtimes/:id", s.handleRenameRuntime, RequireAnyRole("admin", "owner"), orgScope)
 	auth.DELETE("/runtimes/:id", s.handleDeleteRuntime, RequireAnyRole("admin", "owner"), orgScope)
-	runtimeAPI := s.Echo.Group("/v1/runtime", s.runtimeAuthMiddleware())
+	runtimeAPI := authenticatedRouteGroup(s.Echo, "/v1/runtime", s.runtimeAuthMiddleware())
 	runtimeAPI.POST("/hello", s.handleRuntimeHello)
 	runtimeAPI.POST("/heartbeat", s.handleRuntimeHeartbeat)
 	runtimeAPI.POST("/claim", s.handleRuntimeClaim)

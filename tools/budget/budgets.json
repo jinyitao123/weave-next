@@ -566,6 +566,17 @@
         "lines_added": 113,
         "production_lines_added": 18
       }
+    },
+    {
+      "date": "2026-10-01",
+      "reason": "Real HTTP retired-entry acceptance: replace only synthetic Echo group NotFound registrations, preserving real protected and wildcard handlers; include disabled/default, private, method, wildcard and real PostgreSQL login/register regression coverage. Exact measured app limits without added packages or dependencies.",
+      "record": "docs/治理/2026-09-30-平台范围收窄整改登记.md",
+      "app": {
+        "previous_lines": 84106,
+        "previous_production_lines": 62272,
+        "lines_added": 223,
+        "production_lines_added": 11
+      }
     }
   ],
   "migration_targets": {
@@ -628,8 +639,8 @@
     ]
   },
   "app": {
-    "lines": 84106,
-    "production_lines": 62272,
+    "lines": 84329,
+    "production_lines": 62283,
     "packages": 30,
     "external_dependencies": 7,
     "allowed_dependencies": [
