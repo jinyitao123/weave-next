@@ -465,7 +465,10 @@ type dispatcher struct {
 	inputRevisionID string
 }
 
-type action struct{ capabilityID, objectName, actionName, label string }
+type action struct {
+	capabilityID, objectName, actionName, label string
+	idempotencyParams                           []string
+}
 
 type actionParam struct {
 	Name        string   `json:"name"`
@@ -648,6 +651,15 @@ func newDispatcherWithBindings(host contract.ToolDispatcher, ids []string, catal
 			description = fmt.Sprintf("执行 Forge 业务动作 %s。", parsed.actionName)
 		}
 		parsed.label = strings.TrimSpace(metadata.Label)
+		for _, param := range metadata.Params {
+			name := actionParameterName(param)
+			if isSystemIdempotencyParameter(name) {
+				parsed.idempotencyParams = append(parsed.idempotencyParams, name)
+				if _, simulated := host.(developmentHost); simulated {
+					injected[name] = "weave-development-operation"
+				}
+			}
+		}
 		d.byTool[name] = parsed
 		d.params[name] = injected
 		d.fileSelections[name] = fileSelections
@@ -714,6 +726,10 @@ func validateActionMetadata(metadata actionMetadata) error {
 		}
 		seen[name] = struct{}{}
 		jsonType := normalizeActionParamType(param.Type)
+		parameterType := strings.ToLower(strings.TrimSpace(param.Type))
+		if isSystemIdempotencyParameter(name) && ((parameterType != "" && parameterType != "string" && parameterType != "text") || param.Multiple || len(param.Enum) != 0) {
+			return fmt.Errorf("system idempotency parameter %q must be unconstrained text", name)
+		}
 		if strings.EqualFold(strings.TrimSpace(param.Type), "file") {
 			continue
 		}
@@ -758,6 +774,9 @@ func actionInputSchemaWithBindings(
 		name := strings.TrimSpace(rawName)
 		if name == "" || name != rawName {
 			return nil, errors.New("parameter name is empty or padded")
+		}
+		if isSystemIdempotencyParameter(name) {
+			continue
 		}
 		if _, exists := paramProperties[name]; exists {
 			return nil, fmt.Errorf("duplicate parameter %q", name)
@@ -881,6 +900,9 @@ func bindActionParameters(
 	}
 	bindingsByName := make(map[string]frozen.BusinessCapabilityParameterBinding, len(bindings))
 	for _, binding := range bindings {
+		if isSystemIdempotencyParameter(binding.Name) {
+			return nil, nil, errors.New("system idempotency parameters cannot have published material bindings")
+		}
 		if _, ok := params[binding.Name]; !ok {
 			return nil, nil, fmt.Errorf("Forge action parameter %q is not defined", binding.Name)
 		}
@@ -1060,24 +1082,40 @@ func (d *dispatcher) Dispatch(ctx context.Context, call contract.ToolCall) (*con
 		}
 		input.Params[name] = value
 	}
-	upstream, _ := json.Marshal(map[string]any{
-		"actionName": selected.actionName, "objectName": selected.objectName,
-		"recordId": input.RecordID, "params": input.Params,
-	})
 	var outcome ActionOutcomeEvent
 	if d.trackOutcomes {
 		invocationID := execution.InvocationID(ctx)
-		if call.ID == "" || utf8.RuneCountInString(call.ID) > 256 || invocationID == "" || d.inputRevisionID == "" ||
+		slot := execution.OperationID(ctx)
+		if call.ID == "" || utf8.RuneCountInString(call.ID) > 256 || invocationID == "" || d.inputRevisionID == "" || slot == "" ||
 			utf8.RuneCountInString(selected.objectName) > 128 || utf8.RuneCountInString(input.RecordID) > 128 {
-			return nil, errors.New("Forge action call is missing durable provenance")
+			return nil, errors.New("Forge action call is missing durable operation provenance")
+		}
+		operationID := execution.EngineOperationID(d.inputRevisionID, invocationID, slot, selected.capabilityID)
+		for _, name := range selected.idempotencyParams {
+			if _, supplied := input.Params[name]; supplied {
+				return &contract.ToolResult{CallID: call.ID, ToolName: call.Name, Content: "业务操作幂等键由系统固定，不能由成员替换", IsError: true}, nil
+			}
+			if input.Params == nil {
+				input.Params = map[string]any{}
+			}
+			input.Params[name] = operationID
 		}
 		outcome = ActionOutcomeEvent{
-			Source: ActionOutcomeSourceForgeMCP, InvocationID: invocationID, CallID: call.ID,
+			Source: ActionOutcomeSourceForgeMCP, OperationID: operationID, OperationSlot: slot, InvocationID: invocationID, CallID: call.ID,
 			CapabilityID: selected.capabilityID, ActionKey: selected.objectName + "." + selected.actionName,
 			ActionLabel: boundedActionOutcomeLabel(selected.label), ActionName: selected.actionName, ObjectName: selected.objectName,
 			InputRevisionID: d.inputRevisionID, RecordID: input.RecordID,
 		}
 		outcome.FrozenRecordSHA256 = d.recordHashes[call.Name]
+	}
+	upstream, marshalErr := json.Marshal(map[string]any{
+		"actionName": selected.actionName, "objectName": selected.objectName,
+		"recordId": input.RecordID, "params": input.Params,
+	})
+	if marshalErr != nil {
+		return nil, fmt.Errorf("encode Forge action request: %w", marshalErr)
+	}
+	if d.trackOutcomes {
 		paramsDigest, digestErr := frozen.HashCanonicalJSON(upstream)
 		if digestErr != nil {
 			return nil, fmt.Errorf("digest Forge action request: %w", digestErr)
@@ -1088,26 +1126,22 @@ func (d *dispatcher) Dispatch(ctx context.Context, call contract.ToolCall) (*con
 			return nil, fmt.Errorf("check prior Forge action outcome before dispatch: %w", guardErr)
 		}
 		if replay.Blocked {
-			message := "该业务动作已有平台记录，本次没有再次调用 Forge。"
-			isError := false
-			switch replay.Status {
-			case ActionOutcomeStatusSucceeded:
-				message = "平台已确认该业务动作执行成功；本次没有再次调用 Forge。"
-				if replay.SameParams {
-					message = "同一运行已用完全相同的记录和参数成功执行过该业务动作；本次没有再次调用 Forge。如确需再次办理，请先核对业务记录并调整参数。"
-				}
-			case ActionOutcomeStatusFailed:
-				message, isError = "平台已记录该业务动作返回失败；本次没有再次调用 Forge。", true
-			default:
-				message, isError = "该业务动作上一次结果仍未知，请先核对业务记录；本次没有再次调用 Forge。", true
-			}
-			return &contract.ToolResult{CallID: call.ID, ToolName: call.Name, Content: message, IsError: isError}, nil
+			return actionReplayResult(call, replay), nil
 		}
 		outcome.Phase = "started"
 		if err := recordActionOutcome(ctx, outcome); err != nil {
+			if errors.Is(err, ErrActionAlreadyRecorded) {
+				// The initial guard raced with another reservation. Read the
+				// committed original receipt, never issue a second Forge call.
+				replay, guardErr := checkActionOutcomeReplay(ctx, outcome)
+				if guardErr != nil {
+					return nil, fmt.Errorf("read concurrent Forge action receipt: %w", guardErr)
+				}
+				return actionReplayResult(call, replay), nil
+			}
 			if errors.Is(err, ErrActionOutcomeUnresolved) {
 				return &contract.ToolResult{CallID: call.ID, ToolName: call.Name,
-					Content: "同一父运行中的业务动作仍有未确认结果；当前调用没有再次发送，请先核对业务记录。", IsError: true}, nil
+					Content: "同一父运行中的业务动作仍有未确认结果；当前调用没有再次发送，请先核对业务记录。", IsError: true, StopLoop: true}, nil
 			}
 			return nil, fmt.Errorf("persist Forge action start before dispatch: %w", err)
 		}
@@ -1125,32 +1159,35 @@ func (d *dispatcher) Dispatch(ctx context.Context, call contract.ToolCall) (*con
 		case result != nil:
 			status = classifyNativeActionResult(result)
 		}
-		outcome.Phase, outcome.Status = "result", status
-		if persistErr := recordActionOutcome(ctx, outcome); persistErr != nil {
-			return nil, fmt.Errorf("persist Forge action result: %w", persistErr)
-		}
 		if err != nil {
 			message := "Forge 业务动作返回失败。"
 			if status == ActionOutcomeStatusUnknown {
 				message = "Forge 业务动作的结果未知，请先核对业务记录后再继续。"
 			}
 			if errors.Is(err, ErrDelegationExpired) {
-				// The action was refused before reaching Forge. Say why, so the member
-				// does not retry or report a business failure.
 				message = "员工对本次工作的授权已过期，业务动作没有执行；需要员工从原工作重新提交后才能继续。"
 			}
-			return &contract.ToolResult{CallID: call.ID, ToolName: call.Name, Content: message, IsError: true}, nil
-		}
-		if result == nil {
-			return &contract.ToolResult{CallID: call.ID, ToolName: call.Name,
-				Content: "Forge 未返回可确认的业务动作结果，请先核对业务记录后再继续。", IsError: true}, nil
+			// Keep transport error internals out of both the model and ledger.
+			body, _ := json.Marshal(map[string]any{"ok": false, "error": message})
+			result = &contract.ToolResult{CallID: call.ID, ToolName: call.Name, Content: string(body), IsError: true}
+			err = nil
+		} else if result == nil || status == ActionOutcomeStatusUnknown {
+			result = &contract.ToolResult{CallID: call.ID, ToolName: call.Name,
+				Content: "Forge 未返回可确认的业务动作结果，请先核对业务记录后再继续。", IsError: true}
 		}
 		if status == ActionOutcomeStatusFailed {
 			result.IsError = true
 		}
+		result.CallID, result.ToolName = call.ID, call.Name
 		if status == ActionOutcomeStatusUnknown {
-			return &contract.ToolResult{CallID: call.ID, ToolName: call.Name,
-				Content: "Forge 未返回可确认的业务动作结果，请先核对业务记录后再继续。", IsError: true}, nil
+			result.StopLoop = true
+		}
+		outcome.Phase, outcome.Status = "result", status
+		if status != ActionOutcomeStatusUnknown {
+			outcome.Result = SanitizeActionOutcomeResult(result)
+		}
+		if persistErr := recordActionOutcome(ctx, outcome); persistErr != nil {
+			return nil, fmt.Errorf("persist Forge action result: %w", persistErr)
 		}
 	}
 	if result != nil {

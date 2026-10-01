@@ -40,7 +40,7 @@ func InstallFrozenMemberJournal(opts compiler.FrozenBuildOpts) compiler.FrozenBu
 		}
 		return stdlib.NewJournaledLLM(inner, journal)
 	}
-	opts.Tools = stdlib.NewJournaledToolDispatcher(opts.Tools, journal, stdlib.JournaledToolOpts{SerializeWhenActive: true})
+	opts.Tools = stdlib.NewJournaledToolDispatcher(memberOperationTools{inner: opts.Tools}, journal, stdlib.JournaledToolOpts{SerializeWhenActive: true})
 	opts.Hooks.BeforeStepHooks = append([]loom.StepHook{memberBeforeStep}, opts.Hooks.BeforeStepHooks...)
 	opts.Hooks.AfterStepHooks = append(opts.Hooks.AfterStepHooks, memberAfterStep)
 	return opts
@@ -236,7 +236,32 @@ func (member *memberExecution) operation(ctx context.Context, kind string, input
 			return op.Response, nil
 		}
 		if kind != "model" {
-			return nil, fmt.Errorf("%w: %s", ErrMemberOutcomeUnknown, key)
+			// A business receipt may have committed just before the process died
+			// without saving this journal response. Reconcile only that trusted
+			// receipt; ordinary tools and unknown effects remain stopped.
+			recovered, confirmed, reconcileErr := execution.ReconcileOperation(ctx, key, raw)
+			if reconcileErr != nil {
+				return nil, errors.Join(ErrMemberOutcomeUnknown, reconcileErr)
+			}
+			if !confirmed || len(recovered) == 0 || !json.Valid(recovered) {
+				return nil, fmt.Errorf("%w: %s", ErrMemberOutcomeUnknown, key)
+			}
+			op.Response = recovered
+			op.UsageIncomplete = true
+			encoded, err := json.Marshal(op)
+			if err != nil {
+				return nil, err
+			}
+			if err := member.runner.store.PutValueTx(ctx, tx, ns, key, encoded); err != nil {
+				return nil, err
+			}
+			if err := tx.Commit(ctx); err != nil {
+				return nil, err
+			}
+			if err := member.restoreOperationUsage(ctx, op); err != nil {
+				return nil, err
+			}
+			return op.Response, nil
 		}
 		if op.AttemptGeneration >= member.lease.AttemptGeneration {
 			return nil, ErrMemberBusy
@@ -357,4 +382,23 @@ func (member *memberExecution) restoreOperationUsage(ctx context.Context, op mem
 		member.state["__member_usage_incomplete"] = true
 	}
 	return nil
+}
+
+// memberOperationTools is invoked only after the journal has durably reserved
+// the operation. Its cursor is serialized by the journaled tool loop.
+type memberOperationTools struct{ inner contract.ToolDispatcher }
+
+func (tools memberOperationTools) ListTools(ctx context.Context) ([]contract.ToolDef, error) {
+	return tools.inner.ListTools(ctx)
+}
+
+func (tools memberOperationTools) Dispatch(ctx context.Context, call contract.ToolCall) (*contract.ToolResult, error) {
+	if member, active := ctx.Value(memberExecutionKey{}).(*memberExecution); active {
+		if member.segment == "" || member.cursor < 1 {
+			return nil, errors.New("member tool operation has no durable journal slot")
+		}
+		slot := fmt.Sprintf("%s/%s/%012d", member.runID, member.segment, member.cursor)
+		ctx = execution.WithOperationID(ctx, slot)
+	}
+	return tools.inner.Dispatch(ctx, call)
 }

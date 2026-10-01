@@ -16,42 +16,47 @@ const (
 	ActionOutcomeSourceForgeMCP  = "forge_mcp.run_action"
 )
 
-var ErrActionOutcomeUnresolved = errors.New("Forge action outcome remains unresolved")
+var (
+	ErrActionOutcomeUnresolved = errors.New("Forge action outcome remains unresolved")
+	ErrActionOperationConflict = errors.New("Forge action operation content conflicts with its durable identity")
+	ErrActionAlreadyRecorded   = errors.New("Forge action operation already recorded")
+)
 
-// ActionOutcomeEvent contains only the scoped provenance needed to establish
-// which frozen business action ran. It deliberately excludes action params,
-// credentials, response bodies, and model text. ParamsSHA256 is the digest of
-// the effective upstream request (action, object, record and every parameter
-// including platform-injected ones); it identifies the same write across a
-// member restart, where the model's call ID changes, without storing the params.
+// ActionOutcomeEvent associates one controlled durable tool slot with its
+// frozen business scope. OperationID identifies the operation across retries;
+// ParamsSHA256 detects changed content within that operation and is never an
+// identity for two distinct operations. Result is a bounded, sanitized receipt,
+// not a copy of request parameters, credentials or model-private state.
 type ActionOutcomeEvent struct {
-	Source             string `json:"source"`
-	Phase              string `json:"phase"`
-	InvocationID       string `json:"invocation_id"`
-	CallID             string `json:"tool_call_id"`
-	CapabilityID       string `json:"capability_id"`
-	ActionKey          string `json:"action_key"`
-	ActionLabel        string `json:"action_label,omitempty"`
-	ActionName         string `json:"action_name"`
-	ObjectName         string `json:"object_name"`
-	InputRevisionID    string `json:"input_revision_id"`
-	RecordID           string `json:"record_id,omitempty"`
-	FrozenRecordSHA256 string `json:"frozen_record_sha256,omitempty"`
-	ParamsSHA256       string `json:"params_sha256,omitempty"`
-	Status             string `json:"status,omitempty"`
+	Source             string               `json:"source"`
+	OperationID        string               `json:"operation_id,omitempty"`
+	OperationSlot      string               `json:"operation_slot,omitempty"`
+	Phase              string               `json:"phase"`
+	InvocationID       string               `json:"invocation_id"`
+	CallID             string               `json:"tool_call_id"`
+	CapabilityID       string               `json:"capability_id"`
+	ActionKey          string               `json:"action_key"`
+	ActionLabel        string               `json:"action_label,omitempty"`
+	ActionName         string               `json:"action_name"`
+	ObjectName         string               `json:"object_name"`
+	InputRevisionID    string               `json:"input_revision_id"`
+	RecordID           string               `json:"record_id,omitempty"`
+	FrozenRecordSHA256 string               `json:"frozen_record_sha256,omitempty"`
+	ParamsSHA256       string               `json:"params_sha256,omitempty"`
+	Status             string               `json:"status,omitempty"`
+	Result             *contract.ToolResult `json:"result,omitempty"`
 }
 
 type ActionOutcomeRecorder func(context.Context, ActionOutcomeEvent) error
 
-// ActionOutcomeReplay is the guard's decision for one about-to-run action.
-// SameParams is true when the block is because the same run already completed
-// the identical write (same capability, record and params) under another call
-// ID; the original call did succeed, so the member gets that fact instead of a
-// second Forge request.
+// ActionOutcomeReplay returns the original receipt for the same durable
+// operation. SameParams remains a compatibility field, not a replay identity.
 type ActionOutcomeReplay struct {
-	Blocked    bool
-	Status     string
-	SameParams bool
+	Blocked       bool
+	Status        string
+	SameOperation bool
+	SameParams    bool
+	Result        *contract.ToolResult
 }
 
 type ActionOutcomeGuard func(context.Context, ActionOutcomeEvent) (ActionOutcomeReplay, error)
@@ -97,6 +102,15 @@ func classifyNativeActionResult(result *contract.ToolResult) string {
 		return ActionOutcomeStatusUnknown
 	}
 	if result.IsError {
+		var envelope map[string]json.RawMessage
+		if json.Unmarshal([]byte(result.Content), &envelope) == nil {
+			if raw, exists := envelope["ok"]; exists {
+				var marker *bool
+				if json.Unmarshal(raw, &marker) != nil || marker == nil || *marker {
+					return ActionOutcomeStatusUnknown
+				}
+			}
+		}
 		return ActionOutcomeStatusFailed
 	}
 	content := strings.TrimSpace(result.Content)
@@ -107,12 +121,12 @@ func classifyNativeActionResult(result *contract.ToolResult) string {
 	if err := json.Unmarshal([]byte(content), &envelope); err != nil || envelope == nil {
 		return ActionOutcomeStatusUnknown
 	}
-	var ok bool
+	var ok *bool
 	if raw, exists := envelope["ok"]; exists {
-		if err := json.Unmarshal(raw, &ok); err != nil {
+		if err := json.Unmarshal(raw, &ok); err != nil || ok == nil {
 			return ActionOutcomeStatusUnknown
 		}
-		if ok {
+		if *ok {
 			if rawError, exists := envelope["error"]; exists && !isEmptyNativeError(rawError) {
 				return ActionOutcomeStatusUnknown
 			}
@@ -124,6 +138,16 @@ func classifyNativeActionResult(result *contract.ToolResult) string {
 		return ActionOutcomeStatusFailed
 	}
 	return ActionOutcomeStatusUnknown
+}
+
+// ValidateActionOutcomeResultStatus rejects inconsistent cached receipts. The
+// authoritative Forge marker and MCP error flag must support the saved status.
+func ValidateActionOutcomeResultStatus(result *contract.ToolResult, status string) error {
+	if result == nil || (status != ActionOutcomeStatusSucceeded && status != ActionOutcomeStatusFailed) ||
+		classifyNativeActionResult(result) != status {
+		return errors.New("Forge cached business receipt does not match its recorded outcome")
+	}
+	return nil
 }
 
 func isEmptyNativeError(raw json.RawMessage) bool {
