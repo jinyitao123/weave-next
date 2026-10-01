@@ -27,6 +27,9 @@ func (f externalIdentityBinderFunc) BindExternal(ctx context.Context, issuer, su
 
 func TestForgeSessionVerifierReadsForgeAccount(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if serveTestForgeIdentitySource(w, r) {
+			return
+		}
 		if got := r.Header.Get("Authorization"); got != "Bearer forge-token" {
 			t.Fatalf("authorization = %q", got)
 		}
@@ -47,8 +50,37 @@ func TestForgeSessionVerifierReadsForgeAccount(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if identity.Issuer != upstream.URL || identity.Subject != "forge-user-1" || identity.Organization != "workspace-1" || identity.Email != "developer@example.test" || identity.AccessRole != "developer" {
+	if identity.Issuer != testForgeIssuer || identity.BaseURL != upstream.URL || identity.Subject != "forge-user-1" || identity.Organization != "workspace-1" || identity.Email != "developer@example.test" || identity.AccessRole != "developer" {
 		t.Fatalf("unexpected identity: %#v", identity)
+	}
+}
+
+const testForgeIssuer = "forge:test-deployment"
+
+func serveTestForgeIdentitySource(w http.ResponseWriter, r *http.Request) bool {
+	if r.URL.Path != "/api/v1/workbench/identity-source" {
+		return false
+	}
+	_ = json.NewEncoder(w).Encode(map[string]string{"version": "1", "issuer": testForgeIssuer})
+	return true
+}
+
+// Decision 002: the binding issuer is Forge's configured identity source and
+// never falls back to the address Weave happens to use.
+func TestForgeSessionVerifierRefusesWithoutStableIssuer(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/workbench/identity-source":
+			w.WriteHeader(http.StatusServiceUnavailable)
+		case "/api/v1/auth/me/permissions":
+			_ = json.NewEncoder(w).Encode(map[string]any{"authenticated": true, "permissionSets": []string{}})
+		default:
+			_ = json.NewEncoder(w).Encode(map[string]any{"user": map[string]string{"id": "forge-user-1"}})
+		}
+	}))
+	defer upstream.Close()
+	if _, err := NewForgeSessionVerifier(upstream.URL, "workspace-1", upstream.Client()).Verify(context.Background(), "forge-token"); err == nil {
+		t.Fatal("verification without a stable Forge issuer must fail")
 	}
 }
 
@@ -63,6 +95,9 @@ func TestForgeSessionVerifierMapsForgeAdminAndMemberAccess(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if serveTestForgeIdentitySource(w, r) {
+					return
+				}
 				if r.URL.Path == "/api/v1/auth/me/permissions" {
 					_ = json.NewEncoder(w).Encode(map[string]any{"authenticated": true, "permissionSets": test.permissionSets})
 					return

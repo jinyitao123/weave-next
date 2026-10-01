@@ -136,6 +136,7 @@ type Server struct {
 	workflowFanoutReconciler  *fanout.WorkflowReconcilerWorker
 	workflowHealthWorkers     *workflowHealthWorkers
 	employeeRunEventWorker    *employeeRunEventWorker
+	taskDelegationRevoker     *taskDelegationRevoker
 }
 
 func (s *Server) engineExecutor() executionport.RemoteEngineExecutor { return s.RemoteExec }
@@ -230,7 +231,7 @@ func NewServer(cfg *config.Config, store loom.Store, models *llmrouter.Resolver)
 	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
 		AllowOrigins: corsOrigins,
 		AllowMethods: []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowHeaders: []string{"Authorization", "Content-Type", forgeDelegationHeader},
+		AllowHeaders: []string{"Authorization", "Content-Type", forgeDelegationHeader, forgeDelegationIDHeader, forgeDelegationExpiresHeader},
 	}))
 
 	s := &Server{
@@ -592,6 +593,10 @@ func (s *Server) Start() error {
 		s.employeeRunEventWorker.Start()
 		defer s.employeeRunEventWorker.Stop()
 	}
+	if s.taskDelegationRevoker != nil {
+		s.taskDelegationRevoker.Start()
+		defer s.taskDelegationRevoker.Stop()
+	}
 	return s.Echo.Start(":" + s.Config.Port)
 }
 
@@ -646,6 +651,7 @@ func (s *Server) ConfigureTeamRunWorkers() {
 		return
 	}
 	s.employeeRunEventWorker = newEmployeeRunEventWorker(pool)
+	s.taskDelegationRevoker = newTaskDelegationRevoker(pool)
 	runStore := teamrun.NewPGStore()
 	runStore.Transactions = pool
 	checkpointStore := teamrun.NewPGCheckpointStore()

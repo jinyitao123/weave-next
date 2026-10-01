@@ -56,7 +56,7 @@ func TestWorkbenchContextReadsExactInputAndRejectsOtherEmployeesRealPG(t *testin
 		if token != "fixture-token" {
 			return ExternalIdentity{}, errors.New("unexpected fixture token")
 		}
-		return ExternalIdentity{Issuer: forge.URL, Subject: "forge-user", Organization: "ws"}, nil
+		return ExternalIdentity{Issuer: forge.URL, BaseURL: forge.URL, Subject: "forge-user", Organization: "ws"}, nil
 	})
 	if _, err := pool.Exec(t.Context(), `INSERT INTO weave_external_identities(issuer,subject,workspace_id,user_id)
 		VALUES($1,'forge-user','ws','user-a')`, forge.URL); err != nil {
@@ -82,7 +82,7 @@ func TestWorkbenchContextReadsExactInputAndRejectsOtherEmployeesRealPG(t *testin
 	c := echo.New().NewContext(request, recorder)
 	c.Set("tenant", "ws")
 	c.Set("user_id", "user-a")
-	c.Request().Header.Set(forgeDelegationHeader, "Bearer fixture-token")
+	setTestForgeTaskDelegation(c.Request().Header, "fixture-token")
 	if err := server.handleRegisterDispatchInput(c); err != nil || recorder.Code != http.StatusCreated {
 		t.Fatalf("register input: status=%d body=%s err=%v", recorder.Code, recorder.Body.String(), err)
 	}

@@ -394,7 +394,7 @@ func (s *Server) handleRegisterDispatchInput(c echo.Context) error {
 		}
 		var preparationErr *businessDelegationPreparationError
 		preparedDelegation, preparationErr = s.prepareBusinessDelegation(
-			c.Request().Context(), workspaceID, userID, c.Request().Header.Get(forgeDelegationHeader),
+			c.Request().Context(), workspaceID, userID, forgeDelegationHeadersFrom(c.Request().Header),
 			actions, request.Resources, request.BusinessRecord,
 		)
 		if preparationErr != nil {
