@@ -67,15 +67,18 @@ jobs:
           # Evidence docs are validated by CI but are not consumed by either Docker build.
           git archive --format=tar "$DEPLOY_SHA" -- . ':(exclude)docs/**' | gzip -n > "$archive"
           digest="$(sha256sum "$archive" | awk '{print $1}')"
-          [[ "$digest" =~ ^[0-9a-f]{64}$ ]]
+          runner_digest="$(git show "$DEPLOY_SHA:scripts/deploy-main.sh" | sha256sum | awk '{print $1}')"
+          [[ "$digest" =~ ^[0-9a-f]{64}$ && "$runner_digest" =~ ^[0-9a-f]{64}$ ]]
           echo "path=$archive" >> "$GITHUB_OUTPUT"
           echo "sha256=$digest" >> "$GITHUB_OUTPUT"
+          echo "runner_sha256=$runner_digest" >> "$GITHUB_OUTPUT"
       - name: Deploy the exact commit
         if: steps.target.outputs.deploy == 'true'
         env:
           DEPLOY_SHA: ${{ steps.target.outputs.sha }}
           SOURCE_ARCHIVE: ${{ steps.source.outputs.path }}
           SOURCE_ARCHIVE_SHA: ${{ steps.source.outputs.sha256 }}
+          SOURCE_RUNNER_SHA: ${{ steps.source.outputs.runner_sha256 }}
           DEPLOY_HOST: ${{ vars.WEAVE_DEPLOY_HOST }}
           DEPLOY_USER: ${{ vars.WEAVE_DEPLOY_USER }}
           DEPLOY_KEY: ${{ secrets.WEAVE_DEPLOY_SSH_KEY }}
@@ -87,6 +90,7 @@ jobs:
           test -n "$DEPLOY_HOST" && test -n "$DEPLOY_USER"
           test -n "$DEPLOY_KEY" && test -n "$DEPLOY_KNOWN_HOSTS"
           test -n "$SOURCE_ARCHIVE" && test -n "$SOURCE_ARCHIVE_SHA"
+          [[ "$SOURCE_RUNNER_SHA" =~ ^[0-9a-f]{64}$ ]]
           umask 077
           ssh_dir="$(mktemp -d)"
           trap 'rm -rf "$ssh_dir"' EXIT
@@ -99,4 +103,4 @@ jobs:
             -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
             -o UserKnownHostsFile="$ssh_dir/known_hosts" \
             -o ConnectTimeout=20 -o ServerAliveInterval=30 -o ServerAliveCountMax=6 \
-            "$DEPLOY_USER@$DEPLOY_HOST" "deploy $DEPLOY_SHA"
+            "$DEPLOY_USER@$DEPLOY_HOST" "deploy $DEPLOY_SHA $SOURCE_RUNNER_SHA"

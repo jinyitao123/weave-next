@@ -30,6 +30,17 @@ type Claims struct {
 	jwt.RegisteredClaims
 }
 
+// authenticatedRouteGroup authenticates registered routes, including real
+// wildcard handlers. Echo Group.Use also wraps two synthetic RouteNotFound
+// handlers in its middleware; replace only those special 404 registrations so
+// missing routes do not demand credentials. HTTP method handlers stay intact.
+func authenticatedRouteGroup(e *echo.Echo, prefix string, middleware ...echo.MiddlewareFunc) *echo.Group {
+	group := e.Group(prefix, middleware...)
+	e.RouteNotFound(prefix, echo.NotFoundHandler)
+	e.RouteNotFound(prefix+"/*", echo.NotFoundHandler)
+	return group
+}
+
 // AuthMiddleware validates JWT tokens or API keys and extracts tenant/user info.
 // Store getters are called at request time (lazy) so stores can be set after route registration.
 func AuthMiddleware(jwtSecret string, keyStoreGetter func() *apikeys.Store, userStoreGetter func() *users.Store) echo.MiddlewareFunc {
