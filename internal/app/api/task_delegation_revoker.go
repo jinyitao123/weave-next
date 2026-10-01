@@ -52,12 +52,20 @@ func newTaskDelegationRevoker(pool *pgxpool.Pool) *taskDelegationRevoker {
 	}}
 }
 
-// Sweep closes expired delegations and revokes at most one delegation whose
-// consuming run is terminal. It returns how many rows it changed.
+// Sweep closes expired delegations only after their input is closed or their
+// run is terminal. Expiry already rejects tool execution; a live input must
+// retain its ledger row so a trusted no-effect wait can renew that same scope.
+// At most one unexpired terminal delegation is revoked at Forge per sweep.
 func (revoker *taskDelegationRevoker) Sweep(ctx context.Context) (int, error) {
-	expired, err := revoker.Pool.Exec(ctx, `UPDATE weave_task_business_delegations
+	expired, err := revoker.Pool.Exec(ctx, `UPDATE weave_task_business_delegations AS delegation
 		SET revoked_at=statement_timestamp(),revocation_reason='expired',revoke_next_attempt_at=NULL
-		WHERE revoked_at IS NULL AND expires_at<=statement_timestamp()`)
+		WHERE revoked_at IS NULL AND expires_at<=statement_timestamp()
+		  AND EXISTS (SELECT 1 FROM weave_dispatch_input_revisions AS input
+		    LEFT JOIN weave_team_runs AS run
+		      ON run.workspace_id=input.workspace_id AND run.run_id=input.consumed_run_id
+		    WHERE input.workspace_id=delegation.workspace_id AND input.user_id=delegation.user_id
+		      AND input.input_revision_id=delegation.input_revision_id
+		      AND (input.closed_at IS NOT NULL OR run.status IN ('succeeded','failed','cancelled','abandoned')))`)
 	if err != nil {
 		return 0, fmt.Errorf("close expired task delegations: %w", err)
 	}
@@ -83,7 +91,8 @@ func (revoker *taskDelegationRevoker) claim(ctx context.Context) (claimedTaskDel
 			SELECT candidate.workspace_id,candidate.input_revision_id
 			FROM weave_task_business_delegations AS candidate
 			JOIN weave_dispatch_input_revisions AS input
-			  ON input.workspace_id=candidate.workspace_id AND input.input_revision_id=candidate.input_revision_id
+			  ON input.workspace_id=candidate.workspace_id AND input.user_id=candidate.user_id
+			 AND input.input_revision_id=candidate.input_revision_id
 			JOIN weave_team_runs AS run
 			  ON run.workspace_id=input.workspace_id AND run.run_id=input.consumed_run_id
 			WHERE candidate.revoked_at IS NULL
