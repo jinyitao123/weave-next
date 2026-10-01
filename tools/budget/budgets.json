@@ -494,6 +494,33 @@
         "lines_added": 86,
         "production_lines_added": 83
       }
+    },
+    {
+      "date": "2026-09-30",
+      "reason": "Use the successful Forge action receipt to keep a needs_input terminal notification as a result and describe the model's missing-item list as an opinion; preserve revision_required when there is no successful action. Add real PostgreSQL receipt-combination and single-delivery regression coverage. Exact measured limits with no spare allowance; package and dependency limits unchanged.",
+      "app": {
+        "previous_lines": 82782,
+        "previous_production_lines": 61658,
+        "lines_added": 61,
+        "production_lines_added": 9
+      }
+    },
+    {
+      "date": "2026-10-01",
+      "reason": "Integrate current main success-receipt precedence with W5 classification and its regression. Combined measured app limits include the main receipt tests and wording; no dependency or package growth allowance.",
+      "record": "docs/治理/2026-09-30-平台范围收窄整改登记.md",
+      "kernel": {
+        "previous_lines": 95830,
+        "previous_production_lines": 81002,
+        "lines_added": 1,
+        "production_lines_added": 0
+      },
+      "app": {
+        "previous_lines": 83931,
+        "previous_production_lines": 62245,
+        "lines_added": 62,
+        "production_lines_added": 9
+      }
     }
   ],
   "migration_targets": {
@@ -531,7 +558,7 @@
     ]
   },
   "kernel": {
-    "lines": 95830,
+    "lines": 95831,
     "production_lines": 81002,
     "packages": 49,
     "external_dependencies": 5,
@@ -556,8 +583,8 @@
     ]
   },
   "app": {
-    "lines": 83931,
-    "production_lines": 62245,
+    "lines": 83993,
+    "production_lines": 62254,
     "packages": 30,
     "external_dependencies": 7,
     "allowed_dependencies": [

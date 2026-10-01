@@ -55,7 +55,7 @@ func ClassifyRunBusinessResult(runStatus, disposition string, counts BusinessAct
 		return RunBusinessResultActionFailed
 	case counts.Unknown > 0:
 		return RunBusinessResultActionUnknown
-	case runStatus == string(StatusSucceeded) && disposition == "needs_input":
+	case runStatus == string(StatusSucceeded) && disposition == "needs_input" && counts.Succeeded == 0:
 		return RunBusinessResultNeedsInput
 	case runStatus == string(StatusSucceeded):
 		return RunBusinessResultCompleted
