@@ -134,6 +134,96 @@ func TestForgeActionResultRequiresNativeSuccessMarker(t *testing.T) {
 	}
 }
 
+func TestForgeActionNativeErrorRequiresExplicitFailureMeaning(t *testing.T) {
+	for _, test := range []struct {
+		name, content, want string
+		isError             bool
+	}{
+		{"boolean false", `{"error":false}`, ActionOutcomeStatusUnknown, false},
+		{"boolean true", `{"error":true}`, ActionOutcomeStatusUnknown, false},
+		{"numeric zero", `{"error":0}`, ActionOutcomeStatusUnknown, false},
+		{"numeric nonzero", `{"error":500}`, ActionOutcomeStatusUnknown, false},
+		{"empty array", `{"error":[]}`, ActionOutcomeStatusUnknown, false},
+		{"array of messages", `{"error":["rejected"]}`, ActionOutcomeStatusUnknown, false},
+		{"empty object", `{"error":{}}`, ActionOutcomeStatusUnknown, false},
+		{"opaque object", `{"error":{"detail":"opaque value"}}`, ActionOutcomeStatusUnknown, false},
+		{"empty semantics", `{"error":{"message":" ","code":""}}`, ActionOutcomeStatusUnknown, false},
+		{"wrong semantic types", `{"error":{"message":false,"code":0}}`, ActionOutcomeStatusUnknown, false},
+		{"null error", `{"error":null}`, ActionOutcomeStatusUnknown, false},
+		{"empty string", `{"error":" "}`, ActionOutcomeStatusUnknown, false},
+		{"text rejection", `{"error":"rejected"}`, ActionOutcomeStatusFailed, false},
+		{"structured message", `{"error":{"message":"record rejected"}}`, ActionOutcomeStatusFailed, false},
+		{"structured code", `{"error":{"code":"STALE_RECORD"}}`, ActionOutcomeStatusFailed, false},
+		{"success with false error", `{"ok":true,"error":false}`, ActionOutcomeStatusUnknown, false},
+		{"success with numeric error", `{"ok":true,"error":0}`, ActionOutcomeStatusUnknown, false},
+		{"success with array error", `{"ok":true,"error":[]}`, ActionOutcomeStatusUnknown, false},
+		{"success with opaque error", `{"ok":true,"error":{}}`, ActionOutcomeStatusUnknown, false},
+		{"success with null error", `{"ok":true,"error":null}`, ActionOutcomeStatusSucceeded, false},
+		{"success with empty error text", `{"ok":true,"error":" "}`, ActionOutcomeStatusSucceeded, false},
+		{"explicit rejection marker", `{"ok":false,"error":0}`, ActionOutcomeStatusFailed, false},
+		{"invalid ok with valid error", `{"ok":null,"error":"rejected"}`, ActionOutcomeStatusUnknown, false},
+		{"trusted MCP flag with false error", `{"error":false}`, ActionOutcomeStatusFailed, true},
+		{"trusted MCP flag with opaque object", `{"error":{}}`, ActionOutcomeStatusFailed, true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var events []ActionOutcomeEvent
+			host := &outcomeTestHost{result: &contract.ToolResult{Content: test.content, IsError: test.isError}}
+			dispatcher, call := newTrackedOutcomeDispatcher(t, host)
+			result, err := dispatcher.Dispatch(outcomeTestContext(&events, allowAll, nil), call)
+			if err != nil || result == nil || len(events) != 2 || events[1].Status != test.want {
+				t.Fatalf("native marker incorrectly classified: result=%+v events=%+v err=%v", result, events, err)
+			}
+			if test.want == ActionOutcomeStatusUnknown && (!result.StopLoop || !result.IsError || events[1].Result != nil) {
+				t.Fatalf("unknown receipt became resumable or cached: result=%+v event=%+v", result, events[1])
+			}
+		})
+	}
+}
+
+// The runtime must retain unknown target protection even when the next caller
+// represents a distinct durable operation. The guard fixture implements the
+// existing activity-store contract over emitted facts; the PostgreSQL guard
+// implementation has independent integration coverage and is not replaced.
+func TestAmbiguousNativeErrorsKeepTargetBlockedAcrossContinuousOperations(t *testing.T) {
+	for _, content := range []string{
+		`{"error":false}`, `{"error":0}`, `{"error":[]}`, `{"error":{}}`,
+		`{"error":{"message":false,"code":0}}`, `{"ok":true,"error":false}`,
+		`{"error":"explicit rejection"}`,
+	} {
+		t.Run(content, func(t *testing.T) {
+			var events []ActionOutcomeEvent
+			host := &outcomeTestHost{result: &contract.ToolResult{Content: content}}
+			dispatcher, call := newTrackedOutcomeDispatcher(t, host)
+			guard := func(_ context.Context, incoming ActionOutcomeEvent) (ActionOutcomeReplay, error) {
+				for _, previous := range events {
+					if previous.Phase == "result" && previous.Status == ActionOutcomeStatusUnknown &&
+						previous.InputRevisionID == incoming.InputRevisionID && previous.CapabilityID == incoming.CapabilityID && previous.RecordID == incoming.RecordID {
+						return ActionOutcomeReplay{Blocked: true, Status: previous.Status, SameOperation: previous.OperationID == incoming.OperationID}, nil
+					}
+				}
+				return ActionOutcomeReplay{}, nil
+			}
+			ctx := outcomeTestContext(&events, guard, nil)
+			first, err := dispatcher.Dispatch(ctx, call)
+			if err != nil || first == nil || host.calls != 1 || len(events) != 2 {
+				t.Fatalf("first result=%+v calls=%d events=%+v err=%v", first, host.calls, events, err)
+			}
+			call.ID = "next-model-call"
+			ctx = execution.WithOperationID(ctx, "member-run/segment/000000000002")
+			next, err := dispatcher.Dispatch(ctx, call)
+			if content == `{"error":"explicit rejection"}` {
+				if err != nil || next == nil || host.calls != 2 || len(events) != 4 || events[1].Status != ActionOutcomeStatusFailed {
+					t.Fatalf("confirmed failure wrongly blocked a new explicit operation: calls=%d events=%+v err=%v", host.calls, events, err)
+				}
+				return
+			}
+			if err != nil || next == nil || !next.IsError || !next.StopLoop || host.calls != 1 || len(events) != 2 || events[1].Status != ActionOutcomeStatusUnknown {
+				t.Fatalf("ambiguous error released target protection: next=%+v calls=%d events=%+v err=%v", next, host.calls, events, err)
+			}
+		})
+	}
+}
+
 func TestForgeActionTreatsTypedMCPFailureAsFailed(t *testing.T) {
 	var events []ActionOutcomeEvent
 	host := &outcomeTestHost{err: fmt.Errorf("%w: action rejected", mcphost.ErrDispatchExplicitFailure)}
@@ -233,5 +323,29 @@ func TestUnresolvedStartReservationStopsConcurrentForgeDispatch(t *testing.T) {
 	result, err := dispatcher.Dispatch(ctx, call)
 	if err != nil || result == nil || !result.IsError || !strings.Contains(result.Content, "未确认") || host.calls != 0 || len(events) != 0 {
 		t.Fatalf("unresolved reservation reached Forge: result=%+v calls=%d events=%+v err=%v", result, host.calls, events, err)
+	}
+}
+
+func TestExplicitNativeErrorsReplayOriginalFailureReceipts(t *testing.T) {
+	for _, content := range []string{
+		`{"error":"record rejected"}`,
+		`{"error":{"code":"STALE_RECORD"}}`,
+		`{"error":{"message":"refresh the business record"}}`,
+	} {
+		t.Run(content, func(t *testing.T) {
+			var events []ActionOutcomeEvent
+			host := &outcomeTestHost{result: &contract.ToolResult{Content: content}}
+			dispatcher, call := newTrackedOutcomeDispatcher(t, host)
+			ctx := outcomeTestContext(&events, operationLedgerGuard(&events), nil)
+			first, err := dispatcher.Dispatch(ctx, call)
+			if err != nil || first == nil || !first.IsError || len(events) != 2 || events[1].Status != ActionOutcomeStatusFailed || events[1].Result == nil {
+				t.Fatalf("explicit native error lost its trusted receipt: result=%+v events=%+v err=%v", first, events, err)
+			}
+			call.ID = "changed-call-on-recovery"
+			replayed, err := dispatcher.Dispatch(ctx, call)
+			if err != nil || replayed == nil || !replayed.IsError || replayed.Content != events[1].Result.Content || replayed.CallID != call.ID || host.calls != 1 || len(events) != 2 {
+				t.Fatalf("explicit native error was redispatched instead of replayed: result=%+v calls=%d events=%+v err=%v", replayed, host.calls, events, err)
+			}
+		})
 	}
 }

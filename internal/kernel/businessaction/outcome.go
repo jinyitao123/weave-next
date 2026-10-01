@@ -134,7 +134,7 @@ func classifyNativeActionResult(result *contract.ToolResult) string {
 		}
 		return ActionOutcomeStatusFailed
 	}
-	if rawError, exists := envelope["error"]; exists && !isEmptyNativeError(rawError) {
+	if rawError, exists := envelope["error"]; exists && isExplicitNativeError(rawError) {
 		return ActionOutcomeStatusFailed
 	}
 	return ActionOutcomeStatusUnknown
@@ -148,6 +148,27 @@ func ValidateActionOutcomeResultStatus(result *contract.ToolResult, status strin
 		return errors.New("Forge cached business receipt does not match its recorded outcome")
 	}
 	return nil
+}
+
+// Without an authoritative boolean ok marker, only a nonempty error message
+// or a structured error with a textual message/code establishes rejection.
+// Booleans, numbers, arrays and opaque objects do not establish an outcome.
+func isExplicitNativeError(raw json.RawMessage) bool {
+	var value any
+	if json.Unmarshal(raw, &value) != nil {
+		return false
+	}
+	switch value := value.(type) {
+	case string:
+		return strings.TrimSpace(value) != ""
+	case map[string]any:
+		for _, field := range []string{"message", "code"} {
+			if text, ok := value[field].(string); ok && strings.TrimSpace(text) != "" {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func isEmptyNativeError(raw json.RawMessage) bool {
