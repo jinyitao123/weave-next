@@ -33,6 +33,9 @@ type ActivityRecorder interface {
 
 type PGActivityStore struct {
 	Transactions TransactionBeginner
+	// ContentReplayEnabled is opt-in until a stable logical operation identity
+	// distinguishes retries from intentional identical writes.
+	ContentReplayEnabled bool
 }
 
 func (store *PGActivityStore) Record(ctx context.Context, event ActivityEvent) error {
@@ -251,6 +254,9 @@ func (store *PGActivityStore) RecordBusinessActionEvent(ctx context.Context, eve
 }
 
 func (store *PGActivityStore) CheckBusinessActionReplay(ctx context.Context, check BusinessActionReplayCheck) (BusinessActionReplayDecision, error) {
+	if store != nil && !store.ContentReplayEnabled {
+		check.ParamsSHA256 = ""
+	}
 	if store == nil || store.Transactions == nil || check.WorkspaceID == "" || check.RunID == "" {
 		return BusinessActionReplayDecision{}, errors.New("team run business action reader is unavailable")
 	}

@@ -62,7 +62,7 @@ func TestPGSameParamsSuccessBlocksReplayUnderNewCallID(t *testing.T) {
 	h := newProcessNextHarness(t)
 	runID := "replay-same-params"
 	_, _ = h.seedRunningWorkflowTaskBeforeAdmission(t, runID)
-	store := &PGActivityStore{Transactions: h.pool}
+	store := &PGActivityStore{Transactions: h.pool, ContentReplayEnabled: true}
 	recordDigestedAction(t, store, runID, "call-original", digestA, "succeeded")
 
 	decision := replayDecision(t, store, runID, "call-after-restart", replayRecord, digestA)
@@ -77,7 +77,7 @@ func TestPGDifferentParamsAreNotBlockedByAnEarlierSuccess(t *testing.T) {
 	h := newProcessNextHarness(t)
 	runID := "replay-different-params"
 	_, _ = h.seedRunningWorkflowTaskBeforeAdmission(t, runID)
-	store := &PGActivityStore{Transactions: h.pool}
+	store := &PGActivityStore{Transactions: h.pool, ContentReplayEnabled: true}
 	recordDigestedAction(t, store, runID, "call-first-line", digestA, "succeeded")
 
 	if decision := replayDecision(t, store, runID, "call-second-line", replayRecord, digestB); decision.Blocked {
@@ -90,7 +90,7 @@ func TestPGSameParamsAfterFailureMayBeRetried(t *testing.T) {
 	h := newProcessNextHarness(t)
 	runID := "replay-retry-after-failure"
 	_, _ = h.seedRunningWorkflowTaskBeforeAdmission(t, runID)
-	store := &PGActivityStore{Transactions: h.pool}
+	store := &PGActivityStore{Transactions: h.pool, ContentReplayEnabled: true}
 	recordDigestedAction(t, store, runID, "call-failed", digestA, "failed")
 
 	if decision := replayDecision(t, store, runID, "call-retry", replayRecord, digestA); decision.Blocked {
@@ -104,7 +104,7 @@ func TestPGUnresolvedStartOutranksSameParamsSuccess(t *testing.T) {
 	h := newProcessNextHarness(t)
 	runID := "replay-unresolved-first"
 	_, _ = h.seedRunningWorkflowTaskBeforeAdmission(t, runID)
-	store := &PGActivityStore{Transactions: h.pool}
+	store := &PGActivityStore{Transactions: h.pool, ContentReplayEnabled: true}
 	recordDigestedAction(t, store, runID, "call-succeeded", digestA, "succeeded")
 	recordDigestedAction(t, store, runID, "call-unknown", digestB, "")
 
@@ -120,7 +120,7 @@ func TestPGSameParamsRuleNeedsADigestOnBothSides(t *testing.T) {
 	h := newProcessNextHarness(t)
 	runID := "replay-digest-compat"
 	_, _ = h.seedRunningWorkflowTaskBeforeAdmission(t, runID)
-	store := &PGActivityStore{Transactions: h.pool}
+	store := &PGActivityStore{Transactions: h.pool, ContentReplayEnabled: true}
 	recordDigestedAction(t, store, runID, "call-with-digest", digestA, "succeeded")
 	recordDigestedAction(t, store, runID, "call-legacy", "", "succeeded")
 
@@ -138,7 +138,7 @@ func TestPGSameParamsMatchDoesNotCrossRecordOrRun(t *testing.T) {
 	runID, otherRunID := "replay-scope-a", "replay-scope-b"
 	_, _ = h.seedRunningWorkflowTaskBeforeAdmission(t, runID)
 	_, _ = h.seedRunningWorkflowTaskBeforeAdmission(t, otherRunID)
-	store := &PGActivityStore{Transactions: h.pool}
+	store := &PGActivityStore{Transactions: h.pool, ContentReplayEnabled: true}
 	recordDigestedAction(t, store, runID, "call-original", digestA, "succeeded")
 
 	if decision := replayDecision(t, store, runID, "call-other-record", "another-record", digestA); decision.Blocked {
@@ -146,5 +146,17 @@ func TestPGSameParamsMatchDoesNotCrossRecordOrRun(t *testing.T) {
 	}
 	if decision := replayDecision(t, store, otherRunID, "call-other-run", replayRecord, digestA); decision.Blocked {
 		t.Fatalf("the same-params rule crossed the run boundary: %+v", decision)
+	}
+}
+
+func TestPGContentReplayRequiresExplicitEnablement(t *testing.T) {
+	h := newProcessNextHarness(t)
+	runID := "replay-not-enabled"
+	_, _ = h.seedRunningWorkflowTaskBeforeAdmission(t, runID)
+	store := &PGActivityStore{Transactions: h.pool}
+	recordDigestedAction(t, store, runID, "call-original", digestA, "succeeded")
+	decision := replayDecision(t, store, runID, "call-intentional-repeat", replayRecord, digestA)
+	if decision.Blocked {
+		t.Fatalf("content-only protection must not mistake an intentional repeat for recovery: %+v", decision)
 	}
 }
