@@ -83,16 +83,20 @@ func newTaskGrantHTTPFixture(t *testing.T) *taskGrantHTTPFixture {
 	return fixture
 }
 func (f *taskGrantHTTPFixture) add(t *testing.T, token, subject, org string, generation int64, scope businessaction.TaskDelegationScope) {
+	f.grants[token] = testTaskGrant(t, f.server.URL, subject, org, generation, scope)
+}
+
+func testTaskGrant(t *testing.T, issuer, subject, org string, generation int64, scope businessaction.TaskDelegationScope) businessaction.TaskDelegationGrant {
 	t.Helper()
 	raw, _ := json.Marshal(scope)
 	digest, err := frozen.HashCanonicalJSON(raw)
 	if err != nil {
 		t.Fatal(err)
 	}
-	grant := businessaction.TaskDelegationGrant{Version: "1", Active: true, TokenType: "forge_task", Issuer: f.server.URL, GrantID: "task-grant-stable", Generation: generation, IssuedAt: time.Now().UTC(), ExpiresAt: time.Now().UTC().Add(20 * time.Minute), ScopeSHA256: digest, Scope: scope}
+	grant := businessaction.TaskDelegationGrant{Version: "1", Active: true, TokenType: "forge_task", Issuer: issuer, IdentityIssuer: "forge:task-delegation-test", GrantID: "task-grant-stable", Generation: generation, IssuedAt: time.Now().UTC(), ExpiresAt: time.Now().UTC().Add(20 * time.Minute), ScopeSHA256: digest, Scope: scope}
 	grant.Subject.ID = subject
 	grant.Subject.OrganizationID = org
-	f.grants[token] = grant
+	return grant
 }
 func nativeTaskRegistrationFixture(t *testing.T) (*Server, *pgxpool.Pool, dispatchInputRegistration, *taskGrantHTTPFixture) {
 	t.Helper()
@@ -115,7 +119,7 @@ func nativeTaskRegistrationFixture(t *testing.T) (*Server, *pgxpool.Pool, dispat
 		server.Config = &config.Config{}
 	}
 	server.Config.ForgeSessionURL = authority.server.URL + "/api/v1/auth/me"
-	if _, err := pool.Exec(t.Context(), `INSERT INTO weave_external_identities(issuer,subject,workspace_id,user_id,native_organization)VALUES($1,'native-user','ws','user','native-org')`, authority.server.URL); err != nil {
+	if _, err := pool.Exec(t.Context(), `INSERT INTO weave_external_identities(issuer,subject,workspace_id,user_id,native_organization)VALUES($1,'native-user','ws','user','native-org')`, "forge:task-delegation-test"); err != nil {
 		t.Fatal(err)
 	}
 	server.ExternalIdentity = externalIdentityVerifierFunc(func(context.Context, string) (ExternalIdentity, error) {

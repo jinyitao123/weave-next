@@ -410,6 +410,9 @@ func (s *Server) handlePrepareDispatchInput(c echo.Context) error {
 	if _, handled, err := normalizeDispatchInputRequest(c, &request); handled || err != nil {
 		return err
 	}
+	if ok, err := s.ensureTeamAvailable(c, workspaceID, request.TeamID); !ok {
+		return err
+	}
 	id, err := s.preparedDispatchInputID(c.Request().Context(), workspaceID, userID, request)
 	if errors.Is(err, errInputRegistrationConflict) {
 		return workflowError(c, 409, "input_registration_conflict", "registration_id was already used for different input facts")
@@ -439,6 +442,9 @@ func (s *Server) handleRegisterDispatchInput(c echo.Context) error {
 	}
 	requestExecutionTask, handled, err := normalizeDispatchInputRequest(c, &request)
 	if handled || err != nil {
+		return err
+	}
+	if ok, err := s.ensureTeamAvailable(c, workspaceID, request.TeamID); !ok {
 		return err
 	}
 	inputRevisionID, err := s.preparedDispatchInputID(c.Request().Context(), workspaceID, userID, request)
@@ -603,6 +609,23 @@ func (s *Server) handleRegisterDispatchInput(c echo.Context) error {
 	receipt := dispatchInputReceipt{
 		InputRevisionID: inputRevisionID, ClientRequestID: uuid.NewString(), TaskSHA256: dispatchInputDigest([]byte(request.Task)),
 	}
+	nativeOrganization := ""
+	if preparedDelegation != nil {
+		nativeOrganization = preparedDelegation.identity.NativeOrganization
+	} else {
+		var bindings int
+		if err := tx.QueryRow(ctx, `SELECT count(*),COALESCE(min(native_organization),'')
+			FROM weave_external_identities WHERE workspace_id=$1 AND user_id=$2 AND native_organization<>''`,
+			workspaceID, userID).Scan(&bindings, &nativeOrganization); err != nil {
+			return workflowStoreFailure(c, fmt.Errorf("freeze native input organization: %w", err))
+		}
+		if bindings != 1 {
+			nativeOrganization = ""
+			if _, employee := forgeEmployeeSession(c); employee {
+				return workflowError(c, 403, "dispatch_input_native_identity_invalid", "Original employee organization could not be uniquely verified")
+			}
+		}
+	}
 	if rootRevisionID == "" {
 		rootRevisionID = receipt.InputRevisionID
 	}
@@ -615,13 +638,13 @@ func (s *Server) handleRegisterDispatchInput(c echo.Context) error {
 	inserted, err := tx.Exec(ctx, `INSERT INTO weave_dispatch_input_revisions
 		(workspace_id,user_id,workbench_session_id,input_revision_id,registration_id,registration_sha256,
 		 source_messages,task,task_sha256,team_id,mode,workflow_id,workflow_version,project_id,client_request_id,delivery_contract,
-		 execution_task,revision_kind,root_input_revision_id,parent_input_revision_id,parent_run_id,parent_delivery_digest,parent_materials)
-		VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10,$11,$12,$13,$14,$15,$16::jsonb,$17,$18,$19,NULLIF($20,''),NULLIF($21,''),NULLIF($22,''),$23::jsonb)
+		 execution_task,revision_kind,root_input_revision_id,parent_input_revision_id,parent_run_id,parent_delivery_digest,parent_materials,native_organization)
+		VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10,$11,$12,$13,$14,$15,$16::jsonb,$17,$18,$19,NULLIF($20,''),NULLIF($21,''),NULLIF($22,''),$23::jsonb,$24)
 		ON CONFLICT (workspace_id,user_id,registration_id) DO NOTHING`,
 		workspaceID, userID, request.WorkbenchSessionID, receipt.InputRevisionID, request.RegistrationID, registrationSHA256,
 		string(sources), request.Task, receipt.TaskSHA256, request.TeamID, request.Mode, workflowID, version, request.ProjectID,
 		receipt.ClientRequestID, string(deliveryContractJSON), executionTask, revisionKind, rootRevisionID,
-		parentRevisionID, parentRunID, parentDeliveryDigest, string(parentMaterialsJSON))
+		parentRevisionID, parentRunID, parentDeliveryDigest, string(parentMaterialsJSON), nativeOrganization)
 	if err != nil {
 		return workflowStoreFailure(c, fmt.Errorf("create dispatch input revision: %w", err))
 	}

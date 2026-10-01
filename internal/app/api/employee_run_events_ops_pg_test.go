@@ -22,12 +22,22 @@ import (
 // production. It returns the pool and the run ID.
 func succeededRunForOutboxTest(t *testing.T) (*pgxpool.Pool, string) {
 	t.Helper()
+	_, pool, runID := succeededWorkbenchRunForTest(t, "")
+	return pool, runID
+}
+
+// succeededWorkbenchRunForTest dispatches one input under projectID and marks
+// its run succeeded, returning the server that owns it.
+func succeededWorkbenchRunForTest(t *testing.T, projectID string) (*Server, *pgxpool.Pool, string) {
+	t.Helper()
 	server, pool := newTeamDispatchTestServer(t)
-	if _, err := pool.Exec(t.Context(), `INSERT INTO weave_external_identities(issuer,subject,workspace_id,user_id)
-		VALUES('https://forge.example.test','forge-user','ws','user')`); err != nil {
+	if _, err := pool.Exec(t.Context(), `INSERT INTO weave_external_identities(issuer,subject,workspace_id,user_id,native_organization)
+		VALUES('forge:event-test','forge-user','ws','user','native-event-org')`); err != nil {
 		t.Fatal(err)
 	}
-	created, err := registerInputForTest(server, dispatchInputRegistrationFixture("workbench-session", "检查固定材料", ""))
+	registration := dispatchInputRegistrationFixture("workbench-session", "检查固定材料", "")
+	registration.ProjectID = projectID
+	created, err := registerInputForTest(server, registration)
 	if err != nil || created.Code != http.StatusCreated {
 		t.Fatalf("register input status=%d body=%s err=%v", created.Code, created.Body.String(), err)
 	}
@@ -66,7 +76,7 @@ func succeededRunForOutboxTest(t *testing.T) (*pgxpool.Pool, string) {
 		WHERE workspace_id='ws' AND run_id=$1`, dispatch.RunID); err != nil {
 		t.Fatal(err)
 	}
-	return pool, dispatch.RunID
+	return server, pool, dispatch.RunID
 }
 
 func outboxState(t *testing.T, pool *pgxpool.Pool, runID string) string {

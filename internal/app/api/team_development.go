@@ -27,8 +27,11 @@ type developmentWorkflow struct {
 	Trigger     json.RawMessage `json:"trigger_config"`
 }
 type developmentDocument struct {
-	Name      string                `json:"name"`
-	Objective string                `json:"objective"`
+	Name      string `json:"name"`
+	Objective string `json:"objective"`
+	// Audience lists the Forge permission sets that may use the team; empty
+	// means the whole organization. Publishing freezes it (decision 002).
+	Audience  []string              `json:"audience"`
 	Members   []developmentMember   `json:"members"`
 	Workflows []developmentWorkflow `json:"workflows"`
 }
@@ -69,11 +72,15 @@ func encodeDevelopment(value any) string    { raw, _ := json.Marshal(value); ret
 
 func (s *Server) seedDevelopment(c echo.Context) (developmentDocument, developmentBaseline, error) {
 	ctx, ws, teamID := c.Request().Context(), getTenant(c), c.Param("id")
-	doc := developmentDocument{Members: []developmentMember{}, Workflows: []developmentWorkflow{}}
+	doc := developmentDocument{Audience: []string{}, Members: []developmentMember{}, Workflows: []developmentWorkflow{}}
 	base := developmentBaseline{Members: map[string]int{}, Workflows: map[string]time.Time{}}
 	var leadID string
-	err := s.Pool.QueryRow(ctx, `SELECT COALESCE(NULLIF(display_name,''),name),objective,updated_at,lead_avatar_id FROM weave_teams WHERE workspace_id=$1 AND id=$2 AND status IN ('active','building')`, ws, teamID).Scan(&doc.Name, &doc.Objective, &base.TeamUpdatedAt, &leadID)
+	var audienceJSON []byte
+	err := s.Pool.QueryRow(ctx, `SELECT COALESCE(NULLIF(display_name,''),name),objective,updated_at,lead_avatar_id,audience FROM weave_teams WHERE workspace_id=$1 AND id=$2 AND status IN ('active','building')`, ws, teamID).Scan(&doc.Name, &doc.Objective, &base.TeamUpdatedAt, &leadID, &audienceJSON)
 	if err != nil {
+		return doc, base, err
+	}
+	if err := json.Unmarshal(audienceJSON, &doc.Audience); err != nil {
 		return doc, base, err
 	}
 	rows, err := s.Pool.Query(ctx, `SELECT id FROM weave_agents WHERE workspace_id=$1 AND (id=$2 OR id IN (SELECT worker_agent_id FROM weave_team_workers WHERE workspace_id=$1 AND team_id=$3)) ORDER BY CASE WHEN id=$2 THEN 0 ELSE 1 END,id`, ws, leadID, teamID)
@@ -185,6 +192,9 @@ func (s *Server) handleGetTeamDevelopment(c echo.Context) error {
 func validateDevelopmentDocument(doc developmentDocument) error {
 	if strings.TrimSpace(doc.Name) == "" || len(doc.Name) > 240 || len(doc.Objective) > 30000 || len(doc.Members) < 2 || len(doc.Members) > 32 || len(doc.Workflows) > 20 {
 		return echo.NewHTTPError(422, "请填写团队名称，并保留负责人和至少一位成员")
+	}
+	if _, err := normalizeTeamAudience(doc.Audience); err != nil {
+		return echo.NewHTTPError(422, "可用人群须为不重复的 Forge 权限集名称，最多 32 项")
 	}
 	seen := map[string]bool{}
 	leads := 0

@@ -200,7 +200,7 @@ func TestHumanFinalReviewSampleRealPGFullChain(t *testing.T) {
 
 	reader := &teamrun.HumanTaskReader{Pool: pool}
 	resume := &teamrun.HumanResumeService{Transactions: pool, Runs: runs, Checkpoints: checkpoints, Tasks: tasks}
-	server := &Server{OrgStore: kernelbindings.NewOrganization(pool), teamRunHumanTasks: reader, teamRunHumanResume: resume}
+	server := &Server{Store: teamDispatchPoolStore{pool: pool}, OrgStore: kernelbindings.NewOrganization(pool), teamRunHumanTasks: reader, teamRunHumanResume: resume}
 	listRecorder := httptest.NewRecorder()
 	listContext := humanTaskAPIContext(http.MethodGet, "/v1/human-tasks", "", listRecorder, workspaceID, userID)
 	if err := server.handleListHumanTasks(listContext); err != nil || listRecorder.Code != http.StatusOK {
@@ -424,6 +424,7 @@ func humanTaskAPIContext(method, path, body string, recorder *httptest.ResponseR
 	ctx := echo.New().NewContext(request, recorder)
 	ctx.Set("tenant", workspaceID)
 	ctx.Set("user_id", userID)
+	ctx.Set("roles", []string{"developer"})
 	return ctx
 }
 

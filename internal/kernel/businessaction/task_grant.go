@@ -11,13 +11,31 @@ import (
 	"net/http"
 	"net/url"
 	"reflect"
+	"regexp"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/jinyitao123/weave/internal/base/frozen"
 )
 
 const TaskDelegationPath = "/api/v1/apps/forge/task-delegations"
+
+const TaskDelegationMaxLifetime = 24 * time.Hour
+
+var stableTaskIdentityIssuerPattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9+.-]*:\S{1,240}$`)
+
+func validStableTaskIdentityIssuer(value string) bool {
+	value = strings.TrimSpace(value)
+	if value == "" || len(value) > 256 || !stableTaskIdentityIssuerPattern.MatchString(value) {
+		return false
+	}
+	parsed, err := url.Parse(value)
+	if err != nil || parsed.Scheme == "" {
+		return false
+	}
+	return (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == ""
+}
 
 type TaskBusinessRecord struct {
 	ObjectName string `json:"object_name"`
@@ -48,11 +66,12 @@ type TaskDelegationResource struct {
 }
 
 type TaskDelegationGrant struct {
-	Version   string `json:"version"`
-	Active    bool   `json:"active"`
-	TokenType string `json:"token_type"`
-	Issuer    string `json:"issuer"`
-	Subject   struct {
+	Version        string `json:"version"`
+	Active         bool   `json:"active"`
+	TokenType      string `json:"token_type"`
+	Issuer         string `json:"issuer"`
+	IdentityIssuer string `json:"identity_issuer"`
+	Subject        struct {
 		ID             string `json:"id"`
 		OrganizationID string `json:"organization_id"`
 	} `json:"subject"`
@@ -122,7 +141,7 @@ func ReadTaskDelegationGrant(ctx context.Context, issuer string, token []byte) (
 		return grant, errors.New("Forge task scope is invalid")
 	}
 	digest, err := frozen.HashCanonicalJSON(raw.Scope)
-	if err != nil || digest != grant.ScopeSHA256 || grant.Version != "1" || !grant.Active || grant.TokenType != "forge_task" || grant.GrantID == "" || grant.Generation < 1 || grant.Subject.ID == "" || grant.Subject.OrganizationID == "" || grant.Issuer != issuer || !grant.ExpiresAt.After(grant.IssuedAt) || grant.ExpiresAt.Sub(grant.IssuedAt) > 30*time.Minute || grant.IssuedAt.After(time.Now().UTC().Add(30*time.Second)) {
+	if err != nil || digest != grant.ScopeSHA256 || grant.Version != "1" || !grant.Active || grant.TokenType != "forge_task" || grant.GrantID == "" || grant.Generation < 1 || grant.Subject.ID == "" || grant.Subject.OrganizationID == "" || grant.Issuer != issuer || !validStableTaskIdentityIssuer(grant.IdentityIssuer) || !grant.ExpiresAt.After(grant.IssuedAt) || grant.ExpiresAt.Sub(grant.IssuedAt) > TaskDelegationMaxLifetime || grant.IssuedAt.After(time.Now().UTC().Add(30*time.Second)) {
 		return TaskDelegationGrant{}, errors.New("Forge task authority identity or scope is invalid")
 	}
 	if !grant.ExpiresAt.After(time.Now().UTC()) {
@@ -188,7 +207,7 @@ func taskAuthorizationRefusal(status int, body []byte) error {
 			return &taskAuthorizationRefusalError{code: envelope.Error.Code}
 		}
 	case http.StatusForbidden:
-		if envelope.Error.Code == "FORGE_TASK_ORGANIZATION_FORBIDDEN" {
+		if envelope.Error.Code == "FORGE_TASK_ORGANIZATION_FORBIDDEN" || envelope.Error.Code == "FORGE_TASK_CANCELLED" {
 			return &taskAuthorizationRefusalError{code: envelope.Error.Code}
 		}
 	}
@@ -208,7 +227,7 @@ func (err *taskAuthorizationRefusalError) nonRenewableReason() string {
 		return ""
 	}
 	switch err.code {
-	case "FORGE_TASK_ORGANIZATION_FORBIDDEN", "FORGE_TASK_SUBJECT_INACTIVE":
+	case "FORGE_TASK_ORGANIZATION_FORBIDDEN", "FORGE_TASK_SUBJECT_INACTIVE", "FORGE_TASK_CANCELLED":
 		return err.code
 	default:
 		return ""

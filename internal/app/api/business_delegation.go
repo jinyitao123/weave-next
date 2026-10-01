@@ -22,20 +22,20 @@ import (
 )
 
 const forgeDelegationHeader = "X-Weave-Forge-Authorization"
-const forgeDelegationTTL = 30 * time.Minute
 
 type preparedBusinessDelegation struct {
-	identity   ExternalIdentity
-	ciphertext string
-	digest     string
-	actions    []string
-	resources  []dispatchInputResource
-	record     *dispatchBusinessRecord
-	expiresAt  time.Time
-	issuedAt   time.Time
-	grantID    string
-	generation int64
-	scopeSHA   string
+	identity     ExternalIdentity
+	forgeBaseURL string
+	ciphertext   string
+	digest       string
+	actions      []string
+	resources    []dispatchInputResource
+	record       *dispatchBusinessRecord
+	expiresAt    time.Time
+	issuedAt     time.Time
+	grantID      string
+	generation   int64
+	scopeSHA     string
 }
 
 type businessDelegationPreparationError struct {
@@ -114,13 +114,13 @@ func (s *Server) prepareBusinessDelegation(ctx context.Context, workspaceID, use
 	if !strings.HasPrefix(authorization, "Bearer ") || len(authorization) <= 7 || len(authorization) > 64<<10 {
 		return nil, businessDelegationRejected(401, "business_delegation_required", "Forge task token is required")
 	}
-	issuer, err := s.forgeTaskIssuer()
+	origin, err := s.forgeTaskIssuer()
 	if err != nil || s.GetPool() == nil {
 		return nil, businessDelegationRejected(503, "business_delegation_unavailable", "Forge task authority is unavailable")
 	}
 	token := []byte(strings.TrimSpace(strings.TrimPrefix(authorization, "Bearer ")))
 	defer clear(token)
-	grant, err := businessaction.ReadTaskDelegationGrant(ctx, issuer, token)
+	grant, err := businessaction.ReadTaskDelegationGrant(ctx, origin, token)
 	if errors.Is(err, businessaction.ErrDelegationExpired) {
 		return nil, businessDelegationRejected(401, "business_delegation_expired", "This work authorization expired; renew the original input")
 	}
@@ -128,7 +128,7 @@ func (s *Server) prepareBusinessDelegation(ctx context.Context, workspaceID, use
 		return nil, businessDelegationRejected(401, "business_delegation_invalid", "Forge task token could not be verified")
 	}
 	var boundUser, nativeOrg string
-	err = s.GetPool().QueryRow(ctx, `SELECT user_id,native_organization FROM weave_external_identities WHERE issuer=$1 AND subject=$2 AND workspace_id=$3`, issuer, grant.Subject.ID, workspaceID).Scan(&boundUser, &nativeOrg)
+	err = s.GetPool().QueryRow(ctx, `SELECT user_id,native_organization FROM weave_external_identities WHERE issuer=$1 AND subject=$2 AND workspace_id=$3`, grant.IdentityIssuer, grant.Subject.ID, workspaceID).Scan(&boundUser, &nativeOrg)
 	if errors.Is(err, pgx.ErrNoRows) || err == nil && (boundUser != userID || nativeOrg == "" || nativeOrg != grant.Subject.OrganizationID) {
 		return nil, businessDelegationRejected(403, "business_delegation_identity_mismatch", "Task authorization does not match the original employee and native organization")
 	}
@@ -142,7 +142,7 @@ func (s *Server) prepareBusinessDelegation(ctx context.Context, workspaceID, use
 	if !businessaction.TaskScopeMatches(grant.Scope, expected) {
 		return nil, businessDelegationRejected(403, "business_delegation_scope_mismatch", "Task authorization differs from the frozen work scope")
 	}
-	if err := verifyTaskGrantFiles(ctx, issuer, token, resources); err != nil {
+	if err := verifyTaskGrantFiles(ctx, grant.Issuer, token, resources); err != nil {
 		return nil, businessDelegationRejected(422, "business_resource_invalid", "Frozen task materials could not be verified")
 	}
 	key, err := secret.KeyFromEnv()
@@ -155,7 +155,7 @@ func (s *Server) prepareBusinessDelegation(ctx context.Context, workspaceID, use
 		return nil, businessDelegationStoreFailure(err)
 	}
 	digest := sha256.Sum256(token)
-	return &preparedBusinessDelegation{identity: ExternalIdentity{Issuer: issuer, Subject: grant.Subject.ID, Organization: workspaceID, NativeOrganization: nativeOrg}, ciphertext: ciphertext, digest: hex.EncodeToString(digest[:]), actions: actions, resources: resources, record: record, expiresAt: grant.ExpiresAt, issuedAt: grant.IssuedAt, grantID: grant.GrantID, generation: grant.Generation, scopeSHA: grant.ScopeSHA256}, nil
+	return &preparedBusinessDelegation{identity: ExternalIdentity{Issuer: grant.IdentityIssuer, BaseURL: grant.Issuer, Subject: grant.Subject.ID, Organization: workspaceID, NativeOrganization: nativeOrg}, forgeBaseURL: grant.Issuer, ciphertext: ciphertext, digest: hex.EncodeToString(digest[:]), actions: actions, resources: resources, record: record, expiresAt: grant.ExpiresAt, issuedAt: grant.IssuedAt, grantID: grant.GrantID, generation: grant.Generation, scopeSHA: grant.ScopeSHA256}, nil
 }
 
 func (s *Server) forgeTaskIssuer() (string, error) {
@@ -278,24 +278,36 @@ func persistBusinessDelegationTx(ctx context.Context, tx pgx.Tx, prepared *prepa
 	issuedAt := prepared.issuedAt
 	tag, err := tx.Exec(ctx, `INSERT INTO weave_task_business_delegations
 		(workspace_id,user_id,input_revision_id,delegation_id,credential_ref,issuer,external_subject,external_organization,
-		 credential_ciphertext,credential_sha256,allowed_actions,resources,workflow_id,workflow_version,issued_at,expires_at,grant_id,scope_sha256,refresh_generation)
-		VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12::jsonb,$13,$14,$15,$16,$17,$18,$19)
+		 credential_ciphertext,credential_sha256,allowed_actions,resources,workflow_id,workflow_version,issued_at,expires_at,grant_id,scope_sha256,refresh_generation,forge_base_url,forge_delegation_id)
+		VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12::jsonb,$13,$14,$15,$16,$17,$18,$19,$20,$21)
 		ON CONFLICT (workspace_id,input_revision_id) DO UPDATE SET
-		 credential_ciphertext=EXCLUDED.credential_ciphertext,credential_sha256=EXCLUDED.credential_sha256,
-		 issued_at=EXCLUDED.issued_at,expires_at=EXCLUDED.expires_at,grant_id=EXCLUDED.grant_id,scope_sha256=EXCLUDED.scope_sha256,refresh_generation=EXCLUDED.refresh_generation
+			 credential_ciphertext=CASE WHEN EXCLUDED.refresh_generation>weave_task_business_delegations.refresh_generation
+			   THEN EXCLUDED.credential_ciphertext ELSE weave_task_business_delegations.credential_ciphertext END,
+			 credential_sha256=EXCLUDED.credential_sha256,
+			 issued_at=EXCLUDED.issued_at,expires_at=EXCLUDED.expires_at,grant_id=EXCLUDED.grant_id,scope_sha256=EXCLUDED.scope_sha256,
+			 refresh_generation=EXCLUDED.refresh_generation,forge_base_url=EXCLUDED.forge_base_url
 		WHERE weave_task_business_delegations.user_id=EXCLUDED.user_id
 		 AND weave_task_business_delegations.issuer=EXCLUDED.issuer
 		 AND weave_task_business_delegations.external_subject=EXCLUDED.external_subject
-		 AND (weave_task_business_delegations.external_organization=EXCLUDED.external_organization OR weave_task_business_delegations.grant_id='')
+		 AND weave_task_business_delegations.external_organization=EXCLUDED.external_organization
+		 AND weave_task_business_delegations.forge_delegation_id=EXCLUDED.forge_delegation_id
+		 AND weave_task_business_delegations.grant_id=EXCLUDED.grant_id
+		 AND weave_task_business_delegations.scope_sha256=EXCLUDED.scope_sha256
 		 AND weave_task_business_delegations.allowed_actions=EXCLUDED.allowed_actions
 		 AND weave_task_business_delegations.resources=EXCLUDED.resources
 		 AND weave_task_business_delegations.workflow_id=EXCLUDED.workflow_id
 		 AND weave_task_business_delegations.workflow_version=EXCLUDED.workflow_version
 		 AND weave_task_business_delegations.revoked_at IS NULL
-	 AND (weave_task_business_delegations.grant_id='' OR EXCLUDED.refresh_generation>weave_task_business_delegations.refresh_generation OR (EXCLUDED.refresh_generation=weave_task_business_delegations.refresh_generation AND EXCLUDED.credential_sha256=weave_task_business_delegations.credential_sha256))`,
+		 AND (EXCLUDED.refresh_generation>weave_task_business_delegations.refresh_generation
+		   OR (EXCLUDED.refresh_generation=weave_task_business_delegations.refresh_generation
+		     AND EXCLUDED.credential_sha256=weave_task_business_delegations.credential_sha256
+		     AND EXCLUDED.forge_base_url=weave_task_business_delegations.forge_base_url
+		     AND EXCLUDED.issued_at=weave_task_business_delegations.issued_at
+		     AND EXCLUDED.expires_at=weave_task_business_delegations.expires_at))`,
 		workspaceID, userID, inputRevisionID, delegationID, credentialRef,
 		prepared.identity.Issuer, prepared.identity.Subject, prepared.identity.NativeOrganization,
-		prepared.ciphertext, prepared.digest, string(actionsJSON), string(resourcesJSON), workflowID, version, issuedAt, prepared.expiresAt, prepared.grantID, prepared.scopeSHA, prepared.generation)
+		prepared.ciphertext, prepared.digest, string(actionsJSON), string(resourcesJSON), workflowID, version, issuedAt, prepared.expiresAt,
+		prepared.grantID, prepared.scopeSHA, prepared.generation, prepared.forgeBaseURL, prepared.grantID)
 	if err != nil {
 		return err
 	}

@@ -136,6 +136,7 @@ type Server struct {
 	workflowFanoutReconciler  *fanout.WorkflowReconcilerWorker
 	workflowHealthWorkers     *workflowHealthWorkers
 	employeeRunEventWorker    *employeeRunEventWorker
+	taskDelegationRevoker     *taskDelegationRevoker
 }
 
 func (s *Server) engineExecutor() executionport.RemoteEngineExecutor { return s.RemoteExec }
@@ -524,6 +525,7 @@ func (s *Server) registerRoutes() {
 	// Runs.
 	auth.GET("/runs", s.handleListRuns, runsScope)
 	auth.GET("/runs/:id/workbench-context", s.handleGetWorkbenchRunContext, runsScope)
+	auth.POST("/workbench/runs/lookup", s.handleLookupWorkbenchRuns, runsScope)
 	auth.GET("/runs/:id", s.handleGetRun, runsScope)
 	auth.GET("/runs/:id/activity", s.handleGetRunActivity, runsScope)
 	auth.GET("/runs/:id/delivery", s.handleGetRunDelivery, runsScope)
@@ -648,6 +650,7 @@ func (s *Server) ConfigureTeamRunWorkers() {
 		return
 	}
 	s.employeeRunEventWorker = newEmployeeRunEventWorker(pool)
+	s.taskDelegationRevoker = newTaskDelegationRevoker(pool)
 	runStore := teamrun.NewPGStore()
 	runStore.Transactions = pool
 	checkpointStore := teamrun.NewPGCheckpointStore()

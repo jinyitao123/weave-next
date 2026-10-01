@@ -154,7 +154,7 @@ func TestStageRetryRejectsNonRenewableAuthorizationDenial(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := h.pool.Exec(context.Background(), `UPDATE weave_team_runs SET wait_detail=$1 WHERE workspace_id=$2 AND run_id=$3`, detail, parked.WorkspaceID, parked.RunID); err != nil {
+	if _, err := h.pool.Exec(context.Background(), `UPDATE weave_team_runs SET wait_detail=$1::jsonb WHERE workspace_id=$2 AND run_id=$3`, string(detail), parked.WorkspaceID, parked.RunID); err != nil {
 		t.Fatal(err)
 	}
 	request.Actor = "employee"

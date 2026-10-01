@@ -448,6 +448,11 @@ func TestTrackedForgeOrganizationDenialIsNoEffectNotUnknownRealPG(t *testing.T) 
 		t.Fatal(err)
 	}
 	ctx = execution.WithInvocationID(execution.WithNodeID(ctx, "member"), "snapshot/0/member")
+	activities := &teamrun.PGActivityStore{Transactions: production}
+	ctx = businessaction.WithActionOutcomeGuard(ctx, func(callCtx context.Context, event businessaction.ActionOutcomeEvent) (businessaction.ActionOutcomeReplay, error) {
+		decision, err := activities.CheckBusinessActionReplay(callCtx, teamrun.BusinessActionReplayCheck{WorkspaceID: "workspace", RunID: "parent", NodeID: "member", InvocationID: event.InvocationID, CallID: event.CallID, OperationID: event.OperationID, InputRevisionID: event.InputRevisionID, CapabilityID: event.CapabilityID, RecordID: event.RecordID, ParamsSHA256: event.ParamsSHA256})
+		return businessaction.ActionOutcomeReplay{Blocked: decision.Blocked, Status: decision.Status, SameOperation: decision.SameOperation, Result: decision.Result}, err
+	})
 	model := &organizationDenialMemberModel{onFirstCall: func() { denied.Store(true) }}
 	bundle := frozen.FrozenExecutionBundle{FactoryKey: compiler.StandardFrozenToolsKey(), Agent: frozen.FrozenAgentRecord{WorkspaceID: "workspace", AgentID: "agent", AgentVersion: 1, Name: "member", BusinessCapabilityIDs: []string{memberActionCapability}}}
 	factory := businessaction.Factory{Inner: workflow.RuntimeHostFactoryFunc(func(context.Context, frozen.FrozenExecutionBundle, workflow.RuntimeCredentialResolver) (compiler.FrozenBuildOpts, io.Closer, error) {
@@ -589,7 +594,8 @@ func memberTaskGrant(issuer string) businessaction.TaskDelegationGrant {
 	issuedAt := time.Now().UTC().Add(-time.Minute)
 	grant := businessaction.TaskDelegationGrant{
 		Version: "1", Active: true, TokenType: "forge_task", Issuer: issuer,
-		GrantID: "task-grant-1", Generation: 1, IssuedAt: issuedAt,
+		IdentityIssuer: "forge:workbench-124-dev",
+		GrantID:        "task-grant-1", Generation: 1, IssuedAt: issuedAt,
 		ExpiresAt: issuedAt.Add(20 * time.Minute), ScopeSHA256: scopeHash, Scope: scope,
 	}
 	grant.Subject.ID = "employee"
@@ -642,7 +648,7 @@ func seedMemberActionRuntime(t *testing.T, pool *pgxpool.Pool, issuer string, ke
 	recordRaw, _ := json.Marshal(map[string]string{"object_name": "sales_quote", "id": "record-a"})
 	recordDigest := sha256.Sum256(recordRaw)
 	resources, _ := json.Marshal([]map[string]string{{"type": "dispatch-input", "id": "revision", "sha256": strings.Repeat("a", 64)}, {"type": "forge-record", "id": "record-a", "object_name": "sales_quote", "sha256": hex.EncodeToString(recordDigest[:])}})
-	if _, err := pool.Exec(ctx, `INSERT INTO weave_task_business_delegations(workspace_id,user_id,input_revision_id,delegation_id,credential_ref,issuer,external_subject,external_organization,credential_ciphertext,credential_sha256,allowed_actions,resources,workflow_id,workflow_version,issued_at,expires_at,grant_id,scope_sha256,refresh_generation) VALUES('workspace','employee','revision',gen_random_uuid(),'fixture-ref',$1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,'workflow',1,$8,$9,$10,$11,1)`, issuer, grant.Subject.ID, grant.Subject.OrganizationID, ciphertext, hex.EncodeToString(digest[:]), `["forge:action:sales_quote.AdjustPrice"]`, string(resources), grant.IssuedAt, grant.ExpiresAt, grant.GrantID, grant.ScopeSHA256); err != nil {
+	if _, err := pool.Exec(ctx, `INSERT INTO weave_task_business_delegations(workspace_id,user_id,input_revision_id,delegation_id,credential_ref,issuer,external_subject,external_organization,credential_ciphertext,credential_sha256,allowed_actions,resources,workflow_id,workflow_version,issued_at,expires_at,grant_id,scope_sha256,refresh_generation,forge_base_url,forge_delegation_id) VALUES('workspace','employee','revision',gen_random_uuid(),'fixture-ref',$1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,'workflow',1,$8,$9,$10,$11,1,$12,$10)`, grant.IdentityIssuer, grant.Subject.ID, grant.Subject.OrganizationID, ciphertext, hex.EncodeToString(digest[:]), `["forge:action:sales_quote.AdjustPrice"]`, string(resources), grant.IssuedAt, grant.ExpiresAt, grant.GrantID, grant.ScopeSHA256, issuer); err != nil {
 		t.Fatal(err)
 	}
 }
