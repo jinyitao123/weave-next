@@ -138,10 +138,11 @@ func delegationLive(expiresAt, now time.Time) error {
 
 type delegation struct {
 	inputRevisionID string
-	issuer          string
-	token           []byte
-	actions         []string
-	resources       []delegatedResource
+	// baseURL is the Forge network address; the stable issuer is never a URL.
+	baseURL   string
+	token     []byte
+	actions   []string
+	resources []delegatedResource
 }
 
 type delegatedResource struct {
@@ -171,11 +172,11 @@ func (s *Store) dispatcher(ctx context.Context, requested []string, bindings []f
 		clear(bound.token)
 		return nil, nil
 	}
-	metadataBaseURL, err := url.Parse(bound.issuer)
+	metadataBaseURL, err := url.Parse(bound.baseURL)
 	if err != nil || metadataBaseURL.Scheme == "" || metadataBaseURL.Host == "" || metadataBaseURL.User != nil ||
 		(metadataBaseURL.Scheme != "http" && metadataBaseURL.Scheme != "https") {
 		clear(bound.token)
-		return nil, fmt.Errorf("%w: Forge delegation issuer is invalid", mcphost.ErrFailClosed)
+		return nil, fmt.Errorf("%w: Forge delegation address is invalid", mcphost.ErrFailClosed)
 	}
 	metadataBaseURL.Path, metadataBaseURL.RawPath, metadataBaseURL.RawQuery, metadataBaseURL.Fragment = "", "", "", ""
 	mcpEndpoint := *metadataBaseURL
@@ -288,15 +289,15 @@ func (s *Store) resolve(ctx context.Context, requested []string) (delegation, er
 	if err := s.tasks.ValidateCurrentTaskTx(ctx, tx); err != nil {
 		return delegation{}, fmt.Errorf("%w: current employee task changed", mcphost.ErrFailClosed)
 	}
-	var inputRevisionID, issuer, ciphertext, digest string
+	var inputRevisionID, baseURL, ciphertext, digest string
 	var actionsRaw, resourcesRaw []byte
 	var expiresAt time.Time
-	err = tx.QueryRow(ctx, `SELECT d.input_revision_id,d.issuer,d.credential_ciphertext,d.credential_sha256,d.allowed_actions,d.resources,d.expires_at
+	err = tx.QueryRow(ctx, `SELECT d.input_revision_id,d.forge_base_url,d.credential_ciphertext,d.credential_sha256,d.allowed_actions,d.resources,d.expires_at
 		FROM weave_task_queue q
 		JOIN weave_run_delivery_state r ON r.workspace_id=q.workspace_id AND r.run_snapshot_id=q.run_snapshot_id
 		JOIN weave_task_business_delegations d ON d.workspace_id=r.workspace_id AND d.input_revision_id=r.input_revision_id
 		WHERE q.workspace_id=$1 AND q.id=$2 AND d.user_id=$3 AND d.revoked_at IS NULL`,
-		current.WorkspaceID, current.ID, current.Subject.UserID).Scan(&inputRevisionID, &issuer, &ciphertext, &digest, &actionsRaw, &resourcesRaw, &expiresAt)
+		current.WorkspaceID, current.ID, current.Subject.UserID).Scan(&inputRevisionID, &baseURL, &ciphertext, &digest, &actionsRaw, &resourcesRaw, &expiresAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return delegation{}, fmt.Errorf("%w: task has no active Forge delegation", mcphost.ErrFailClosed)
 	}
@@ -328,7 +329,7 @@ func (s *Store) resolve(ctx context.Context, requested []string) (delegation, er
 		clear(token)
 		return delegation{}, err
 	}
-	return delegation{inputRevisionID: inputRevisionID, issuer: issuer, token: token, actions: allowed, resources: resources}, nil
+	return delegation{inputRevisionID: inputRevisionID, baseURL: baseURL, token: token, actions: allowed, resources: resources}, nil
 }
 
 func decodeDelegatedResources(raw []byte, inputRevisionID string) ([]delegatedResource, error) {

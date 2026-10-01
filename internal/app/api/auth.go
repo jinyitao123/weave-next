@@ -415,11 +415,16 @@ func (s *Server) signJWT(tenant, userID string, roles []string) (string, error) 
 }
 
 func (s *Server) signJWTFor(tenant, userID string, roles []string, identitySource string, ttl time.Duration) (string, error) {
+	return s.signJWTWithPermissionSets(tenant, userID, roles, identitySource, nil, ttl)
+}
+
+func (s *Server) signJWTWithPermissionSets(tenant, userID string, roles []string, identitySource string, permissionSets []string, ttl time.Duration) (string, error) {
 	claims := &Claims{
 		TenantID:       tenant,
 		UserID:         userID,
 		Roles:          roles,
 		IdentitySource: identitySource,
+		PermissionSets: permissionSets,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(ttl)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),

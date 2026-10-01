@@ -14,6 +14,7 @@ import (
 
 const (
 	authSourceContextKey     = "auth_source"
+	identitySourceContextKey = "identity_source"
 	scopesContextKey         = "scopes"
 	apiKeyIDContextKey       = "api_key_id"
 	workbenchActorContextKey = "workbench_actor_id"
@@ -27,6 +28,9 @@ type Claims struct {
 	UserID         string   `json:"user_id"`
 	Roles          []string `json:"roles"`
 	IdentitySource string   `json:"identity_source,omitempty"`
+	// PermissionSets are the Forge permission sets verified at exchange; they
+	// decide which teams the employee may use (decision 002).
+	PermissionSets []string `json:"permission_sets,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -92,6 +96,10 @@ func AuthMiddleware(jwtSecret string, keyStoreGetter func() *apikeys.Store, user
 			c.Set("user_id", user.ID)
 			c.Set("roles", []string{user.Role})
 			c.Set(authSourceContextKey, authSourceJWT)
+			c.Set(identitySourceContextKey, claims.IdentitySource)
+			if claims.IdentitySource == "forge" {
+				c.Set(forgePermissionSetsContextKey, append([]string(nil), claims.PermissionSets...))
+			}
 			setExecutionSubject(c, execution.Subject{WorkspaceID: user.TenantID, UserID: user.ID})
 
 			return next(c)

@@ -354,6 +354,9 @@ func (s *Server) handleRegisterDispatchInput(c echo.Context) error {
 		request.RevisionContext.ParentRunID = strings.TrimSpace(request.RevisionContext.ParentRunID)
 	}
 	request.TeamID = strings.TrimSpace(request.TeamID)
+	if ok, err := s.ensureTeamAvailable(c, getTenant(c), request.TeamID); !ok {
+		return err
+	}
 	request.WorkflowID = strings.TrimSpace(request.WorkflowID)
 	if request.BusinessRecord != nil && (request.WorkflowID == "" || request.WorkflowVersion == nil) {
 		return workflowError(c, http.StatusBadRequest, "dispatch_input_request_invalid", "business record binding requires a fixed workflow version")
@@ -394,7 +397,7 @@ func (s *Server) handleRegisterDispatchInput(c echo.Context) error {
 		}
 		var preparationErr *businessDelegationPreparationError
 		preparedDelegation, preparationErr = s.prepareBusinessDelegation(
-			c.Request().Context(), workspaceID, userID, c.Request().Header.Get(forgeDelegationHeader),
+			c.Request().Context(), workspaceID, userID, forgeDelegationHeadersFrom(c.Request().Header),
 			actions, request.Resources, request.BusinessRecord,
 		)
 		if preparationErr != nil {

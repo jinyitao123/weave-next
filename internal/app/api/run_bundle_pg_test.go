@@ -29,8 +29,8 @@ func plantCanaries(t *testing.T, pool *pgxpool.Pool, runID string) {
 		t.Fatalf("read the run's input revision: %v", err)
 	}
 	if _, err := pool.Exec(t.Context(), `INSERT INTO weave_task_business_delegations
-		(workspace_id,user_id,input_revision_id,delegation_id,credential_ref,issuer,external_subject,external_organization,credential_ciphertext,credential_sha256,allowed_actions,resources,workflow_id,workflow_version,issued_at,expires_at)
-		VALUES('ws','user',$1,gen_random_uuid(),'ref-1','https://forge.example.test','forge-user','org',$2,$3,'[]'::jsonb,'[]'::jsonb,'flow',1,now(),now()+interval '1 hour')`,
+		(workspace_id,user_id,input_revision_id,delegation_id,credential_ref,issuer,external_subject,external_organization,credential_ciphertext,credential_sha256,allowed_actions,resources,workflow_id,workflow_version,issued_at,expires_at,forge_base_url,forge_delegation_id)
+		VALUES('ws','user',$1,gen_random_uuid(),'ref-1','forge:test-deployment','forge-user','org',$2,$3,'[]'::jsonb,'[]'::jsonb,'flow',1,now(),now()+interval '1 hour','https://forge.example.test','forge-delegation-test')`,
 		revision, canaryCiphertext, canaryDigest); err != nil {
 		t.Fatalf("plant delegation: %v", err)
 	}

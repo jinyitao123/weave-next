@@ -73,7 +73,7 @@ func TestLoomMaterialReadStaysWithinFrozenRunInputRealPG(t *testing.T) {
 		if token != "fixture-token" {
 			return ExternalIdentity{}, fmt.Errorf("unexpected token")
 		}
-		return ExternalIdentity{Issuer: forge.URL, Subject: "forge-user", Organization: "ws"}, nil
+		return ExternalIdentity{Issuer: forge.URL, BaseURL: forge.URL, Subject: "forge-user", Organization: "ws"}, nil
 	})
 	if _, err := pool.Exec(t.Context(), `INSERT INTO weave_external_identities(issuer,subject,workspace_id,user_id)
 		VALUES($1,'forge-user','ws','user')`, forge.URL); err != nil {
@@ -130,7 +130,7 @@ func TestLoomMaterialReadStaysWithinFrozenRunInputRealPG(t *testing.T) {
 			t.Fatal(err)
 		}
 		c, recorder := dispatchInputTestContext(body, "/v1/workbench/dispatch-inputs", "ws", "user")
-		c.Request().Header.Set(forgeDelegationHeader, "Bearer fixture-token")
+		setTestForgeTaskDelegation(c.Request().Header, "fixture-token")
 		err = server.handleRegisterDispatchInput(c)
 		if err != nil || recorder.Code != http.StatusCreated {
 			t.Fatalf("register input status=%d body=%s err=%v", recorder.Code, recorder.Body.String(), err)
