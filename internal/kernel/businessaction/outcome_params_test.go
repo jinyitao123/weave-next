@@ -2,7 +2,6 @@ package businessaction
 
 import (
 	"context"
-	"strings"
 	"testing"
 
 	"github.com/jinyitao123/loom/contract"
@@ -35,9 +34,8 @@ func allowAll(context.Context, ActionOutcomeEvent) (ActionOutcomeReplay, error) 
 	return ActionOutcomeReplay{}, nil
 }
 
-// The digest identifies the effective request, not the model's call ID: a
-// member that restarts and repeats the same write produces the same digest,
-// and a different parameter produces a different one.
+// The digest detects changed effective request content within a durable operation.
+// It is independent of the model call ID and is never the production identity.
 func TestForgeActionRecordsRequestDigestIndependentOfCallID(t *testing.T) {
 	var events []ActionOutcomeEvent
 	dispatcher, tool := newParamDispatcher(t, &outcomeTestHost{})
@@ -96,47 +94,5 @@ func TestForgeActionDigestIgnoresJSONKeyOrder(t *testing.T) {
 	}
 	if events[0].ParamsSHA256 == "" || events[0].ParamsSHA256 != events[2].ParamsSHA256 {
 		t.Fatalf("key order changed the request digest: %q vs %q", events[0].ParamsSHA256, events[2].ParamsSHA256)
-	}
-}
-
-// When the guard reports an identical earlier success, Forge is not called and
-// the member is told exactly that, not the generic "already recorded".
-func TestForgeActionSameParamsSuccessIsReportedWithoutCallingForge(t *testing.T) {
-	var events []ActionOutcomeEvent
-	host := &outcomeTestHost{}
-	dispatcher, tool := newParamDispatcher(t, host)
-	var seen ActionOutcomeEvent
-	guard := func(_ context.Context, event ActionOutcomeEvent) (ActionOutcomeReplay, error) {
-		seen = event
-		return ActionOutcomeReplay{Blocked: true, Status: ActionOutcomeStatusSucceeded, SameParams: true}, nil
-	}
-	ctx := outcomeTestContext(&events, guard, nil)
-	result, err := dispatcher.Dispatch(ctx, contract.ToolCall{ID: "call-after-restart", Name: tool, Args: `{"params":{"line_id":"line-1"}}`})
-	if err != nil || result == nil || result.IsError {
-		t.Fatalf("a same-params success must be reported as success: result=%+v err=%v", result, err)
-	}
-	if host.calls != 0 || len(events) != 0 {
-		t.Fatalf("Forge was called or a receipt was written for a blocked replay: calls=%d events=%+v", host.calls, events)
-	}
-	if !strings.Contains(result.Content, "完全相同的记录和参数成功执行过") {
-		t.Fatalf("message does not say an identical write already succeeded: %q", result.Content)
-	}
-	if len(seen.ParamsSHA256) != 64 {
-		t.Fatalf("the guard was not given the request digest: %+v", seen)
-	}
-}
-
-// A blocked replay for another reason keeps the original generic wording.
-func TestForgeActionIdentityReplayKeepsGenericWording(t *testing.T) {
-	var events []ActionOutcomeEvent
-	dispatcher, tool := newParamDispatcher(t, &outcomeTestHost{})
-	guard := func(context.Context, ActionOutcomeEvent) (ActionOutcomeReplay, error) {
-		return ActionOutcomeReplay{Blocked: true, Status: ActionOutcomeStatusSucceeded}, nil
-	}
-	result, err := dispatcher.Dispatch(outcomeTestContext(&events, guard, nil),
-		contract.ToolCall{ID: "call-1", Name: tool, Args: `{"params":{"line_id":"line-1"}}`})
-	if err != nil || result == nil || result.IsError || !strings.Contains(result.Content, "平台已确认该业务动作执行成功") ||
-		strings.Contains(result.Content, "完全相同") {
-		t.Fatalf("identity replay wording changed: result=%+v err=%v", result, err)
 	}
 }

@@ -3,6 +3,7 @@ package execution
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 )
 
@@ -62,4 +63,45 @@ func WithAttemptLineage(ctx context.Context, root, parent string) context.Contex
 func AttemptLineage(ctx context.Context) (string, string) {
 	value, _ := ctx.Value(attemptLineageKey{}).(attemptLineage)
 	return value.Root, value.Parent
+}
+
+// WithOperationID binds one server-owned durable tool journal slot. A model
+// tool-call identifier is never used as this identity.
+type operationContextKey struct{}
+
+func WithOperationID(ctx context.Context, slot string) context.Context {
+	return context.WithValue(ctx, operationContextKey{}, slot)
+}
+
+func OperationID(ctx context.Context) string {
+	id, _ := ctx.Value(operationContextKey{}).(string)
+	return id
+}
+
+// EngineOperationID scopes a journal slot to its frozen input and capability.
+// Retrying that slot keeps the key; a new slot is a distinct operation even
+// when all business parameters are identical.
+func EngineOperationID(inputRevisionID, invocationID, slot, capabilityID string) string {
+	if inputRevisionID == "" || invocationID == "" || slot == "" || capabilityID == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(inputRevisionID + "\x00" + invocationID + "\x00" + slot + "\x00" + capabilityID))
+	return fmt.Sprintf("weave-op-%x", sum[:])
+}
+
+// OperationReconciler reads a previously committed host receipt. It must never
+// perform an external operation or infer success from model text.
+type OperationReconciler func(context.Context, string, json.RawMessage) (json.RawMessage, bool, error)
+type operationReconcilerContextKey struct{}
+
+func WithOperationReconciler(ctx context.Context, reconcile OperationReconciler) context.Context {
+	return context.WithValue(ctx, operationReconcilerContextKey{}, reconcile)
+}
+
+func ReconcileOperation(ctx context.Context, slot string, input json.RawMessage) (json.RawMessage, bool, error) {
+	reconcile, _ := ctx.Value(operationReconcilerContextKey{}).(OperationReconciler)
+	if reconcile == nil {
+		return nil, false, nil
+	}
+	return reconcile(ctx, slot, input)
 }

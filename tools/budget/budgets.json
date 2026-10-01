@@ -532,6 +532,23 @@
         "lines_added": 18,
         "production_lines_added": 6
       }
+    },
+    {
+      "date": "2026-10-01",
+      "reason": "Complete W4 with server-owned durable operation slots, injected Forge idempotency, atomic activity reservation and original receipt recovery, including the native-receipt/member-journal crash window and null-status protection. Real PostgreSQL, HTTP MCP and member recovery regressions account for test growth; no new packages or dependencies.",
+      "record": "docs/治理/2026-09-30-平台范围收窄整改登记.md",
+      "base": {
+        "previous_lines": 8202,
+        "previous_production_lines": 6694,
+        "lines_added": 64,
+        "production_lines_added": 42
+      },
+      "kernel": {
+        "previous_lines": 95849,
+        "previous_production_lines": 81008,
+        "lines_added": 1615,
+        "production_lines_added": 490
+      }
     }
   ],
   "migration_targets": {
@@ -557,8 +574,8 @@
     }
   },
   "base": {
-    "lines": 8202,
-    "production_lines": 6694,
+    "lines": 8266,
+    "production_lines": 6736,
     "packages": 9,
     "external_dependencies": 4,
     "allowed_dependencies": [
@@ -569,8 +586,8 @@
     ]
   },
   "kernel": {
-    "lines": 95849,
-    "production_lines": 81008,
+    "lines": 97464,
+    "production_lines": 81498,
     "packages": 49,
     "external_dependencies": 5,
     "allowed_dependencies": [
