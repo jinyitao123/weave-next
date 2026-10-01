@@ -25,19 +25,21 @@ type humanTaskCursorV1 struct {
 }
 
 type humanTaskResponse struct {
-	InteractionID   string          `json:"interaction_id"`
-	NodeID          string          `json:"node_id"`
-	RunID           string          `json:"run_id"`
-	ProjectID       string          `json:"project_id,omitempty"`
-	TeamID          string          `json:"team_id"`
-	WorkflowID      string          `json:"workflow_id"`
-	WorkflowVersion int             `json:"workflow_version"`
-	Title           string          `json:"title"`
-	Instructions    string          `json:"instructions"`
-	AudienceRef     string          `json:"audience_ref,omitempty"`
-	ResumeSchema    json.RawMessage `json:"resume_schema"`
-	DeadlineAt      *time.Time      `json:"deadline_at,omitempty"`
-	UpdatedAt       time.Time       `json:"updated_at"`
+	InteractionID      string          `json:"interaction_id"`
+	InputRevisionID    string          `json:"input_revision_id,omitempty"`
+	WorkbenchSessionID string          `json:"workbench_session_id,omitempty"`
+	NodeID             string          `json:"node_id"`
+	RunID              string          `json:"run_id"`
+	ProjectID          string          `json:"project_id,omitempty"`
+	TeamID             string          `json:"team_id"`
+	WorkflowID         string          `json:"workflow_id"`
+	WorkflowVersion    int             `json:"workflow_version"`
+	Title              string          `json:"title"`
+	Instructions       string          `json:"instructions"`
+	AudienceRef        string          `json:"audience_ref,omitempty"`
+	ResumeSchema       json.RawMessage `json:"resume_schema"`
+	DeadlineAt         *time.Time      `json:"deadline_at,omitempty"`
+	UpdatedAt          time.Time       `json:"updated_at"`
 }
 
 type humanTaskDetailResponse struct {
@@ -46,9 +48,11 @@ type humanTaskDetailResponse struct {
 }
 
 type completeHumanTaskRequest struct {
-	InteractionID  string          `json:"interaction_id"`
-	Payload        json.RawMessage `json:"payload"`
-	IdempotencyKey string          `json:"idempotency_key"`
+	InteractionID      string          `json:"interaction_id"`
+	InputRevisionID    string          `json:"input_revision_id,omitempty"`
+	WorkbenchSessionID string          `json:"workbench_session_id,omitempty"`
+	Payload            json.RawMessage `json:"payload"`
+	IdempotencyKey     string          `json:"idempotency_key"`
 }
 
 func (s *Server) handleListHumanTasks(c echo.Context) error {
@@ -58,6 +62,11 @@ func (s *Server) handleListHumanTasks(c echo.Context) error {
 	if s.teamRunHumanTasks == nil {
 		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "human task inbox unavailable"})
 	}
+	if !humanTaskDeveloperAccess(c) {
+		return c.JSON(http.StatusForbidden, map[string]string{"error": "human task list requires developer access"})
+	}
+	reader := *s.teamRunHumanTasks
+	reader.InputUnboundOnly = true
 	limit := 20
 	if raw := strings.TrimSpace(c.QueryParam("limit")); raw != "" {
 		parsed, err := strconv.Atoi(raw)
@@ -70,11 +79,11 @@ func (s *Server) handleListHumanTasks(c echo.Context) error {
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid cursor"})
 	}
-	items, hasMore, err := s.teamRunHumanTasks.List(c.Request().Context(), getTenant(c), before, beforeRunID, limit)
+	items, hasMore, err := reader.List(c.Request().Context(), getTenant(c), before, beforeRunID, limit)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
-	total, err := s.teamRunHumanTasks.Count(c.Request().Context(), getTenant(c))
+	total, err := reader.Count(c.Request().Context(), getTenant(c))
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
@@ -116,6 +125,15 @@ func (s *Server) handleGetHumanTask(c echo.Context) error {
 	if s.teamRunHumanTasks == nil {
 		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "human task detail unavailable"})
 	}
+	source := humanTaskSource{
+		InputRevisionID:    c.QueryParam("input_revision_id"),
+		WorkbenchSessionID: c.QueryParam("workbench_session_id"),
+		InteractionID:      c.QueryParam("interaction_id"),
+	}
+	bound, err := s.requireHumanTaskSource(c, c.Param("run_id"), source)
+	if err != nil {
+		return err
+	}
 	item, err := s.teamRunHumanTasks.Get(c.Request().Context(), getTenant(c), c.Param("run_id"))
 	if errors.Is(err, teamrun.ErrTeamRunIdentityMismatch) {
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "human task not found"})
@@ -123,9 +141,13 @@ func (s *Server) handleGetHumanTask(c echo.Context) error {
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
+	if bound && source.InteractionID != teamrun.HumanInteractionID(item.Run) {
+		return humanTaskNotFound()
+	}
 	detail := humanTaskDetailResponse{
 		humanTaskResponse: humanTaskResponse{
 			InteractionID: teamrun.HumanInteractionID(item.Run), NodeID: item.Detail.NodeID,
+			InputRevisionID: source.InputRevisionID, WorkbenchSessionID: source.WorkbenchSessionID,
 			RunID: item.Run.RunID, ProjectID: item.Run.ProjectID, TeamID: item.Run.TeamID,
 			WorkflowID: item.Run.WorkflowID, WorkflowVersion: item.Run.WorkflowVersion,
 			Title: item.Detail.Task.Title, Instructions: item.Detail.Task.Instructions,
@@ -346,6 +368,13 @@ func (s *Server) handleCompleteHumanTask(c echo.Context) error {
 	}
 	workspaceID := getTenant(c)
 	runID := c.Param("run_id")
+	bound, err := s.requireHumanTaskSource(c, runID, humanTaskSource{
+		InputRevisionID: request.InputRevisionID, WorkbenchSessionID: request.WorkbenchSessionID,
+		InteractionID: request.InteractionID,
+	})
+	if err != nil {
+		return err
+	}
 	// Canonical bytes bind idempotent replay independently of the current
 	// question. Schema validation happens only after the service locks that wait.
 	canonical, err := frozen.CanonicalizeJSON(request.Payload)
@@ -372,6 +401,9 @@ func (s *Server) handleCompleteHumanTask(c echo.Context) error {
 		}
 		switch {
 		case errors.Is(err, teamrun.ErrTeamRunStateConflict), errors.Is(err, teamrun.ErrTeamRunResumeStale), errors.Is(err, teamrun.ErrTeamRunResumeInvalid):
+			if bound && errors.Is(err, teamrun.ErrTeamRunResumeStale) {
+				return humanTaskNotFound()
+			}
 			return c.JSON(http.StatusConflict, map[string]string{"error": "human task already resolved or payload conflicts"})
 		case errors.Is(err, teamrun.ErrTeamRunIdentityMismatch):
 			return c.JSON(http.StatusNotFound, map[string]string{"error": "human task not found"})
@@ -383,6 +415,61 @@ func (s *Server) handleCompleteHumanTask(c echo.Context) error {
 		"run_id": result.Run.RunID, "status": "queued", "task_id": result.TaskID,
 		"idempotent": result.Idempotent,
 	})
+}
+
+type humanTaskSource struct {
+	InputRevisionID    string
+	WorkbenchSessionID string
+	InteractionID      string
+}
+
+func humanTaskNotFound() error {
+	return echo.NewHTTPError(http.StatusNotFound, map[string]string{"error": "human task not found"})
+}
+
+func humanTaskDeveloperAccess(c echo.Context) bool {
+	roles, _ := c.Get("roles").([]string)
+	for _, role := range roles {
+		if role == "developer" || role == "admin" || role == "owner" {
+			return true
+		}
+	}
+	return false
+}
+
+// requireHumanTaskSource protects both reads and completions. A native inbox
+// reference is only a locator; Weave checks its immutable input, employee,
+// session and run binding before revealing the question or resuming a run.
+func (s *Server) requireHumanTaskSource(c echo.Context, runID string, source humanTaskSource) (bool, error) {
+	if s.GetPool() == nil {
+		return false, echo.NewHTTPError(http.StatusServiceUnavailable, map[string]string{"error": "human task authorization unavailable"})
+	}
+	_, owned, bound, err := s.workbenchRunAccess(c.Request().Context(), getTenant(c), getUserID(c), runID)
+	if err != nil {
+		return false, echo.NewHTTPError(http.StatusServiceUnavailable, map[string]string{"error": "human task authorization unavailable"})
+	}
+	if !bound {
+		if source.InputRevisionID != "" || source.WorkbenchSessionID != "" || !humanTaskDeveloperAccess(c) {
+			return false, humanTaskNotFound()
+		}
+		return false, nil
+	}
+	if !owned || source.InputRevisionID == "" || source.WorkbenchSessionID == "" || source.InteractionID == "" {
+		return true, humanTaskNotFound()
+	}
+	var matches int
+	err = s.GetPool().QueryRow(c.Request().Context(), `SELECT count(*) FROM weave_dispatch_input_revisions
+		WHERE workspace_id=$1 AND user_id=$2 AND consumed_run_id=$3
+		  AND input_revision_id=$4 AND workbench_session_id=$5 AND project_id=$6
+		  AND is_current AND closed_at IS NULL`, getTenant(c), getUserID(c), runID,
+		source.InputRevisionID, source.WorkbenchSessionID, workbenchProjectID(getUserID(c))).Scan(&matches)
+	if err != nil {
+		return true, echo.NewHTTPError(http.StatusServiceUnavailable, map[string]string{"error": "human task authorization unavailable"})
+	}
+	if matches != 1 {
+		return true, humanTaskNotFound()
+	}
+	return true, nil
 }
 
 type humanPayloadValidationError struct {

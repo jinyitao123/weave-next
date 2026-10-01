@@ -19,6 +19,9 @@ type HumanTaskItem struct {
 
 type HumanTaskReader struct {
 	Pool *pgxpool.Pool
+	// InputUnboundOnly limits the developer inbox to standalone test runs.
+	// Input-bound work reaches its owner through the client's native inbox.
+	InputUnboundOnly bool
 }
 
 func (r *HumanTaskReader) Count(ctx context.Context, workspaceID string) (int, error) {
@@ -27,7 +30,10 @@ func (r *HumanTaskReader) Count(ctx context.Context, workspaceID string) (int, e
 	}
 	var count int
 	if err := r.Pool.QueryRow(ctx, `SELECT count(*) FROM weave_team_runs
-		WHERE workspace_id=$1 AND status='parked' AND wait_kind='human'`, workspaceID).Scan(&count); err != nil {
+		WHERE workspace_id=$1 AND status='parked' AND wait_kind='human'
+		  AND (NOT $2::boolean OR NOT EXISTS (SELECT 1 FROM weave_dispatch_input_revisions i
+		    WHERE i.workspace_id=weave_team_runs.workspace_id AND i.consumed_run_id=weave_team_runs.run_id))`,
+		workspaceID, r.InputUnboundOnly).Scan(&count); err != nil {
 		return 0, fmt.Errorf("count human tasks: %w", err)
 	}
 	return count, nil
@@ -53,8 +59,10 @@ func (r *HumanTaskReader) List(
 		FROM weave_team_runs r
 		WHERE r.workspace_id=$1 AND r.status='parked' AND r.wait_kind='human'
 		  AND ($2::timestamptz IS NULL OR (r.updated_at,r.run_id)<($2,$3))
+		  AND (NOT $5::boolean OR NOT EXISTS (SELECT 1 FROM weave_dispatch_input_revisions i
+		    WHERE i.workspace_id=r.workspace_id AND i.consumed_run_id=r.run_id))
 		ORDER BY r.updated_at DESC,r.run_id DESC
-		LIMIT $4`, workspaceID, beforeUpdatedAt, beforeRunID, limit+1)
+		LIMIT $4`, workspaceID, beforeUpdatedAt, beforeRunID, limit+1, r.InputUnboundOnly)
 	if err != nil {
 		return nil, false, fmt.Errorf("list human tasks: %w", err)
 	}

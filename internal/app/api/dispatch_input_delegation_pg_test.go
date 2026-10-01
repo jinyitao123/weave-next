@@ -185,7 +185,7 @@ func TestDispatchInputDelegationPreparationRejectionsWriteOnceOverHTTPRealPG(t *
 	authority.rejectFiles.Store(true)
 	server.Config = &config.Config{ForgeSessionURL: authority.server.URL + "/api/v1/auth/me"}
 	if _, err := pool.Exec(ctx, `INSERT INTO weave_external_identities(issuer,subject,workspace_id,user_id,native_organization)
-		VALUES($1,'forge-user','ws','user','native-org'),($1,'forge-other-user','ws','user-other','native-org')`, authority.server.URL); err != nil {
+		VALUES($1,'forge-user','ws','user','native-org'),($1,'forge-other-user','ws','user-other','native-org')`, "forge:task-delegation-test"); err != nil {
 		t.Fatal(err)
 	}
 	server.ExternalIdentity = externalIdentityVerifierFunc(func(context.Context, string) (ExternalIdentity, error) {
@@ -246,7 +246,7 @@ func TestDispatchInputLegalForgeOriginalRegistersAndRecoversLegacyInputOverHTTPR
 	authority.rejectFiles.Store(true)
 	server.Config = &config.Config{ForgeSessionURL: authority.server.URL + "/api/v1/auth/me"}
 	if _, err := pool.Exec(ctx, `INSERT INTO weave_external_identities(issuer,subject,workspace_id,user_id,native_organization)
-		VALUES($1,'forge-user','ws','user','native-org')`, authority.server.URL); err != nil {
+		VALUES($1,'forge-user','ws','user','native-org')`, "forge:task-delegation-test"); err != nil {
 		t.Fatal(err)
 	}
 	server.ExternalIdentity = externalIdentityVerifierFunc(func(context.Context, string) (ExternalIdentity, error) {

@@ -1372,6 +1372,13 @@ func (s *Server) handleStopRun(c echo.Context) error {
 	if s.teamRunCancel == nil {
 		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "team_run_cancel_unavailable"})
 	}
+	_, owned, bound, accessErr := s.workbenchRunAccess(c.Request().Context(), getTenant(c), getUserID(c), c.Param("id"))
+	if accessErr != nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "run_stop_authorization_unavailable"})
+	}
+	if (bound && !owned) || (!bound && !humanTaskDeveloperAccess(c)) {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "run_not_found"})
+	}
 	var request stopRunRequest
 	if c.Request().Body != nil {
 		if err := json.NewDecoder(c.Request().Body).Decode(&request); err != nil {

@@ -17,6 +17,7 @@ import (
 type workbenchAuthorization struct {
 	Status      string                              `json:"status"`
 	Reason      string                              `json:"reason,omitempty"`
+	GrantID     string                              `json:"grant_id,omitempty"`
 	Generation  int64                               `json:"generation,omitempty"`
 	ExpiresAt   *time.Time                          `json:"expires_at,omitempty"`
 	Scope       *businessaction.TaskDelegationScope `json:"scope,omitempty"`
@@ -63,6 +64,9 @@ func (s *Server) readWorkbenchAuthorization(ctx context.Context, workspaceID, us
 	}
 	if generation == nil {
 		return result, nil
+	}
+	if grantID != nil {
+		result.GrantID = *grantID
 	}
 	var actions []string
 	if json.Unmarshal(actionsRaw, &actions) != nil {

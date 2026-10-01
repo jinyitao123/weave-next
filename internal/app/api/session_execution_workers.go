@@ -103,7 +103,16 @@ func (workers *sessionExecutionWorkers) expiryLoop(ctx context.Context) {
 }
 
 func (workers *sessionExecutionWorkers) finalizerLoop(ctx context.Context) {
-	workers.poll(ctx, "terminal finalizer", workers.finalizeBatch)
+	workers.poll(ctx, "terminal finalizer", workers.finalizerTick)
+}
+
+func (workers *sessionExecutionWorkers) finalizerTick(ctx context.Context) error {
+	finalizerErr := workers.finalizeBatch(ctx)
+	var revokeErr error
+	if workers.server.taskDelegationRevoker != nil {
+		_, revokeErr = workers.server.taskDelegationRevoker.Sweep(ctx)
+	}
+	return errors.Join(finalizerErr, revokeErr)
 }
 
 func (workers *sessionExecutionWorkers) poll(

@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -14,6 +15,8 @@ import (
 	"github.com/jinyitao123/loom/contract"
 	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/kernel/businessaction"
+	"github.com/jinyitao123/weave/internal/kernel/config"
+	"github.com/jinyitao123/weave/internal/kernel/mcphost"
 	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 	"github.com/jinyitao123/weave/internal/kernel/teamrun"
 )
@@ -27,14 +30,25 @@ func TestLoomMaterialReadStaysWithinFrozenRunInputRealPG(t *testing.T) {
 		"forge-file-B": []byte("%PDF-1.7\nRAW-ORIGINAL-B"),
 	}
 	requestPaths := map[string]string{
-		"forge-file-A": "/api/v1/workbench/materials/forge-file-A/original",
-		"forge-file-B": "/api/v1/approvals/requests/approval-request-B/workbench-history/files/forge-file-B/original",
+		"forge-file-A": businessaction.TaskDelegationPath + "/files/forge-file-A/original",
+		"forge-file-B": businessaction.TaskDelegationPath + "/files/forge-file-B/original",
 	}
 	var forgeReads atomic.Int32
 	var forgeRequests atomic.Int32
 	var failOriginal atomic.Bool
+	grants := map[string]businessaction.TaskDelegationGrant{}
 	forge := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		if request.Method != http.MethodGet || request.Header.Get("Authorization") != "Bearer fixture-token" ||
+		token := strings.TrimPrefix(request.Header.Get("Authorization"), "Bearer ")
+		grant, granted := grants[token]
+		if request.URL.Path == businessaction.TaskDelegationPath+"/current" {
+			if !granted {
+				writer.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			_ = json.NewEncoder(writer).Encode(grant)
+			return
+		}
+		if request.Method != http.MethodGet || !granted ||
 			request.Header.Get("Accept-Encoding") != "identity" {
 			writer.WriteHeader(http.StatusNotFound)
 			return
@@ -69,14 +83,9 @@ func TestLoomMaterialReadStaysWithinFrozenRunInputRealPG(t *testing.T) {
 		_, _ = writer.Write(content)
 	}))
 	defer forge.Close()
-	server.ExternalIdentity = externalIdentityVerifierFunc(func(_ context.Context, token string) (ExternalIdentity, error) {
-		if token != "fixture-token" {
-			return ExternalIdentity{}, fmt.Errorf("unexpected token")
-		}
-		return ExternalIdentity{Issuer: forge.URL, Subject: "forge-user", Organization: "ws"}, nil
-	})
-	if _, err := pool.Exec(t.Context(), `INSERT INTO weave_external_identities(issuer,subject,workspace_id,user_id)
-		VALUES($1,'forge-user','ws','user')`, forge.URL); err != nil {
+	server.Config = &config.Config{ForgeSessionURL: forge.URL + "/api/v1/auth/me"}
+	if _, err := pool.Exec(t.Context(), `INSERT INTO weave_external_identities(issuer,subject,workspace_id,user_id,native_organization)
+		VALUES('forge:task-delegation-test','forge-user','ws','user','native-org')`); err != nil {
 		t.Fatal(err)
 	}
 
@@ -130,7 +139,9 @@ func TestLoomMaterialReadStaysWithinFrozenRunInputRealPG(t *testing.T) {
 			t.Fatal(err)
 		}
 		c, recorder := dispatchInputTestContext(body, "/v1/workbench/dispatch-inputs", "ws", "user")
-		c.Request().Header.Set(forgeDelegationHeader, "Bearer fixture-token")
+		token := "fixture-token-" + fileID
+		grants[token] = testTaskGrant(t, forge.URL, "forge-user", "native-org", 1, scopeForRegistration(registration))
+		setTestForgeTaskDelegation(c.Request().Header, token)
 		err = server.handleRegisterDispatchInput(c)
 		if err != nil || recorder.Code != http.StatusCreated {
 			t.Fatalf("register input status=%d body=%s err=%v", recorder.Code, recorder.Body.String(), err)
@@ -302,34 +313,18 @@ func TestLoomMaterialReadStaysWithinFrozenRunInputRealPG(t *testing.T) {
 	}
 	wrongEmployeeCtx := execution.WithSubject(runCtxA, execution.Subject{WorkspaceID: "ws", UserID: "other-user"})
 	wrongEmployeeResult, err := dispatcher.Dispatch(wrongEmployeeCtx, contract.ToolCall{ID: "wrong-employee", Name: "read_frozen_material", Args: string(mustMaterialReadArgs(t, materialAID, hashA, 64))})
-	if err != nil || wrongEmployeeResult.IsError {
-		t.Fatalf("non-owner read should return unavailable: result=%+v err=%v", wrongEmployeeResult, err)
-	}
-	var wrongEmployeeRead struct {
-		Status  string `json:"status"`
-		Content string `json:"content"`
-	}
-	if err := json.Unmarshal([]byte(wrongEmployeeResult.Content), &wrongEmployeeRead); err != nil ||
-		wrongEmployeeRead.Status != "unavailable" || wrongEmployeeRead.Content != "" {
-		t.Fatalf("non-owner read received material text: %+v err=%v", wrongEmployeeRead, err)
+	if !errors.Is(err, mcphost.ErrFailClosed) || wrongEmployeeResult != nil {
+		t.Fatalf("non-owner material access was not denied before reading: result=%+v err=%v", wrongEmployeeResult, err)
 	}
 	if _, err := pool.Exec(t.Context(), `UPDATE weave_task_business_delegations
-		SET expires_at=issued_at+interval '1 millisecond'
+		SET expires_at=issued_at+interval '1 millisecond',refresh_generation=refresh_generation+1
 		WHERE workspace_id='ws' AND input_revision_id=$1`, runA.InputRevisionID); err != nil {
 		t.Fatal(err)
 	}
 	expiredResult, err := dispatcher.Dispatch(runCtxA, contract.ToolCall{ID: "expired", Name: "read_frozen_material", Args: string(mustMaterialReadArgs(t, materialAID, hashA, 64))})
-	if err != nil || expiredResult.IsError {
-		t.Fatalf("expired delegation should return unavailable: result=%+v err=%v", expiredResult, err)
-	}
-	var expiredRead struct {
-		Status                     string `json:"status"`
-		OriginalVerificationStatus string `json:"originalVerificationStatus"`
-		Content                    string `json:"content"`
-	}
-	if err := json.Unmarshal([]byte(expiredResult.Content), &expiredRead); err != nil || expiredRead.Status != "unavailable" ||
-		expiredRead.OriginalVerificationStatus != "unavailable" || expiredRead.Content != "" {
-		t.Fatalf("expired delegation exposed material: %+v err=%v", expiredRead, err)
+	proof, trusted := execution.AuthorizationRefusalFromError(err)
+	if !trusted || !proof.Renewable() || expiredResult != nil {
+		t.Fatalf("expired delegation did not deny material before reading with a renewable proof: result=%+v err=%v", expiredResult, err)
 	}
 	if forgeReads.Load() != 3 {
 		t.Fatalf("cross-run, wrong-user, or expired scope triggered Forge reads: GET count=%d", forgeReads.Load())

@@ -1,9 +1,7 @@
 package api
 
 import (
-	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -12,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jinyitao123/weave/internal/base/execution"
+	"github.com/jinyitao123/weave/internal/kernel/config"
 	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 	"github.com/jinyitao123/weave/internal/kernel/teamrun"
 	"github.com/labstack/echo/v4"
@@ -44,22 +43,11 @@ func TestWorkbenchContextReadsExactInputAndRejectsOtherEmployeesRealPG(t *testin
 	server, pool := newTeamDispatchTestServer(t)
 	fileContent := []byte("fixed Forge material")
 	fileSHA := dispatchInputDigest(fileContent)
-	forge := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		if request.Method != http.MethodGet || request.URL.Path != "/api/v1/storage/files/file-a" || request.Header.Get("Authorization") != "Bearer fixture-token" {
-			writer.WriteHeader(http.StatusNotFound)
-			return
-		}
-		_, _ = writer.Write(fileContent)
-	}))
-	defer forge.Close()
-	server.ExternalIdentity = externalIdentityVerifierFunc(func(_ context.Context, token string) (ExternalIdentity, error) {
-		if token != "fixture-token" {
-			return ExternalIdentity{}, errors.New("unexpected fixture token")
-		}
-		return ExternalIdentity{Issuer: forge.URL, Subject: "forge-user", Organization: "ws"}, nil
-	})
-	if _, err := pool.Exec(t.Context(), `INSERT INTO weave_external_identities(issuer,subject,workspace_id,user_id)
-		VALUES($1,'forge-user','ws','user-a')`, forge.URL); err != nil {
+	authority := newTaskGrantHTTPFixture(t)
+	authority.files["file-a"] = fileContent
+	server.Config = &config.Config{ForgeSessionURL: authority.server.URL + "/api/v1/auth/me"}
+	if _, err := pool.Exec(t.Context(), `INSERT INTO weave_external_identities(issuer,subject,workspace_id,user_id,native_organization)
+		VALUES('forge:task-delegation-test','forge-user','ws','user-a','native-org')`); err != nil {
 		t.Fatal(err)
 	}
 
@@ -72,6 +60,8 @@ func TestWorkbenchContextReadsExactInputAndRejectsOtherEmployeesRealPG(t *testin
 	registration.AuthorizedBusinessCapabilityIDs = &emptyActions
 	registration.Resources = []dispatchInputResource{{Type: "forge-file", ID: "file-a", Name: "材料.txt", Bytes: int64(len(fileContent)), SHA256: fileSHA}}
 	registration.BusinessRecord = &dispatchBusinessRecord{ObjectName: "sales_contract", RecordID: "record-a"}
+	registration.InputRevisionID = stableDispatchInputID("ws", "user-a", registration.RegistrationID)
+	authority.add(t, "fixture-token", "forge-user", "native-org", 1, scopeForRegistration(registration))
 	body, err := json.Marshal(registration)
 	if err != nil {
 		t.Fatal(err)
@@ -82,7 +72,7 @@ func TestWorkbenchContextReadsExactInputAndRejectsOtherEmployeesRealPG(t *testin
 	c := echo.New().NewContext(request, recorder)
 	c.Set("tenant", "ws")
 	c.Set("user_id", "user-a")
-	c.Request().Header.Set(forgeDelegationHeader, "Bearer fixture-token")
+	setTestForgeTaskDelegation(c.Request().Header, "fixture-token")
 	if err := server.handleRegisterDispatchInput(c); err != nil || recorder.Code != http.StatusCreated {
 		t.Fatalf("register input: status=%d body=%s err=%v", recorder.Code, recorder.Body.String(), err)
 	}

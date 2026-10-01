@@ -265,18 +265,18 @@ func (s *Store) resolve(ctx context.Context, requested []string) (delegation, er
 	if err := s.tasks.ValidateCurrentTaskTx(ctx, tx); err != nil {
 		return delegation{}, fmt.Errorf("%w: current employee task changed", mcphost.ErrFailClosed)
 	}
-	var inputRevisionID, issuer, ciphertext, digest, subject, organization, grantID, scopeSHA, registrationID, taskSHA, workflowID string
+	var inputRevisionID, identityIssuer, forgeBaseURL, ciphertext, digest, subject, organization, grantID, scopeSHA, registrationID, taskSHA, workflowID string
 	var generation int64
 	var workflowVersion int
 	var actionsRaw, resourcesRaw []byte
 	var expiresAt time.Time
-	err = tx.QueryRow(ctx, `SELECT d.input_revision_id,d.issuer,d.credential_ciphertext,d.credential_sha256,d.allowed_actions,d.resources,d.expires_at,d.external_subject,d.external_organization,d.grant_id,d.scope_sha256,d.refresh_generation,d.workflow_id,d.workflow_version,i.registration_id,i.task_sha256
+	err = tx.QueryRow(ctx, `SELECT d.input_revision_id,d.issuer,d.forge_base_url,d.credential_ciphertext,d.credential_sha256,d.allowed_actions,d.resources,d.expires_at,d.external_subject,d.external_organization,d.grant_id,d.scope_sha256,d.refresh_generation,d.workflow_id,d.workflow_version,i.registration_id,i.task_sha256
 		FROM weave_task_queue q
 		JOIN weave_run_delivery_state r ON r.workspace_id=q.workspace_id AND r.run_snapshot_id=q.run_snapshot_id
 		JOIN weave_task_business_delegations d ON d.workspace_id=r.workspace_id AND d.input_revision_id=r.input_revision_id
 		JOIN weave_dispatch_input_revisions i ON i.workspace_id=d.workspace_id AND i.user_id=d.user_id AND i.input_revision_id=d.input_revision_id
 		WHERE q.workspace_id=$1 AND q.id=$2 AND d.user_id=$3 AND d.revoked_at IS NULL`,
-		current.WorkspaceID, current.ID, current.Subject.UserID).Scan(&inputRevisionID, &issuer, &ciphertext, &digest, &actionsRaw, &resourcesRaw, &expiresAt, &subject, &organization, &grantID, &scopeSHA, &generation, &workflowID, &workflowVersion, &registrationID, &taskSHA)
+		current.WorkspaceID, current.ID, current.Subject.UserID).Scan(&inputRevisionID, &identityIssuer, &forgeBaseURL, &ciphertext, &digest, &actionsRaw, &resourcesRaw, &expiresAt, &subject, &organization, &grantID, &scopeSHA, &generation, &workflowID, &workflowVersion, &registrationID, &taskSHA)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return delegation{}, fmt.Errorf("%w: task has no active Forge delegation", mcphost.ErrFailClosed)
 	}
@@ -311,7 +311,7 @@ func (s *Store) resolve(ctx context.Context, requested []string) (delegation, er
 		clear(token)
 		return delegation{}, err
 	}
-	grant, verifyErr := ReadTaskDelegationGrant(ctx, issuer, token)
+	grant, verifyErr := ReadTaskDelegationGrant(ctx, forgeBaseURL, token)
 	var authorizationRefusal *taskAuthorizationRefusalError
 	if errors.As(verifyErr, &authorizationRefusal) && authorizationRefusal.nonRenewableReason() != "" {
 		clear(token)
@@ -333,11 +333,13 @@ func (s *Store) resolve(ctx context.Context, requested []string) (delegation, er
 			expected.BusinessRecord = &TaskBusinessRecord{ObjectName: resource.ObjectName, RecordID: resource.ID}
 		}
 	}
-	if grant.Subject.ID != subject || grant.Subject.OrganizationID != organization || grant.GrantID != grantID || grant.Generation != generation || grant.ScopeSHA256 != scopeSHA || !TaskScopeMatches(grant.Scope, expected) {
+	if grant.Subject.ID != subject || grant.Subject.OrganizationID != organization || grant.IdentityIssuer != identityIssuer ||
+		grant.Issuer != forgeBaseURL || grant.GrantID != grantID || grant.Generation != generation ||
+		grant.ScopeSHA256 != scopeSHA || !TaskScopeMatches(grant.Scope, expected) {
 		clear(token)
 		return delegation{}, fmt.Errorf("%w: task authority scope differs", mcphost.ErrFailClosed)
 	}
-	return delegation{generation: generation, inputRevisionID: inputRevisionID, issuer: issuer, token: token, actions: allowed, resources: resources}, nil
+	return delegation{generation: generation, inputRevisionID: inputRevisionID, issuer: forgeBaseURL, token: token, actions: allowed, resources: resources}, nil
 }
 
 func decodeDelegatedResources(raw []byte, inputRevisionID string) ([]delegatedResource, error) {
