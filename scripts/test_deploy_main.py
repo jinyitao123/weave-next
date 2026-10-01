@@ -17,7 +17,7 @@ SCRIPTS = Path(__file__).resolve().parent
 COMMIT = '9c63ea7c7c75055b5973d3f44c861668b9b597ba'
 
 
-class DeployMainTests(unittest.TestCase):
+class DeploymentHarness(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
@@ -73,9 +73,14 @@ class DeployMainTests(unittest.TestCase):
         self._write_command('python3', '''
             import importlib.util, json, os, pathlib, sys
             if sys.argv[1] == '-':
-                # The runner still executes both source-SHA rechecks, without
-                # contacting GitHub or exposing its fixture credential.
-                print(os.environ['MOCK_MAIN_COMMIT'])
+                code = sys.stdin.read()
+                if 'api.github.com/repos/jinyitao123/weave-next/branches/main' in code:
+                    with open(os.environ['MOCK_CALLS'], 'a') as capture:
+                        capture.write(json.dumps({'main_check': os.environ['MOCK_MAIN_COMMIT']}) + '\\n')
+                    print(os.environ['MOCK_MAIN_COMMIT'])
+                    raise SystemExit(0)
+                sys.argv = sys.argv[1:]
+                exec(compile(code, '<deployment-input>', 'exec'))
                 raise SystemExit(0)
             path = pathlib.Path(sys.argv[1])
             assert path.name == 'deployment-state.py', path
@@ -149,6 +154,9 @@ class DeployMainTests(unittest.TestCase):
         self.assertEqual(builds, [['weave']])
         self.assertEqual(sum(call.get('command') == 'up' for call in calls), 1)
         self.assertFalse(any(token in call.get('compose', []) for call in calls for token in ('down', 'rm', '--volumes')))
+
+
+class DeployMainTests(DeploymentHarness):
 
     def test_disabled_deploy_stops_existing_web_services_and_stays_disabled_on_redeploy(self):
         running = {service: True for service in ('db', 'weave', 'workbench', 'workbench-gateway')}
