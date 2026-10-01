@@ -407,6 +407,8 @@ func (s *Server) registerRoutes() {
 	auth.POST("/game-decisions", s.handleAdmitGameDecision, RequireScope("game_decisions"))
 	auth.GET("/game-decisions/:decision_id", s.handleReadGameDecision, RequireScope("game_decisions"))
 	auth.POST("/game-decisions:cancel", s.handleCancelGameDecision, RequireScope("game_decisions"))
+	auth.POST("/workbench/dispatch-inputs/prepare", s.handlePrepareDispatchInput, orgScope, chatScope)
+	auth.POST("/workbench/dispatch-inputs/:input_revision_id/authorization", s.handleRenewDispatchAuthorization, orgScope, chatScope)
 	auth.POST("/workbench/dispatch-inputs", s.handleRegisterDispatchInput, orgScope, chatScope)
 	auth.POST("/workbench/dispatch-inputs/:input_revision_id/reconcile", s.handleReconcileDispatchInput, orgScope, chatScope)
 	auth.PUT("/teams/:id/roster", s.handleUpdateTeamRoster, RequireAnyRole("admin", "owner"), orgScope)
@@ -670,6 +672,12 @@ func (s *Server) ConfigureTeamRunWorkers() {
 	}
 	s.BusinessDelegations = businessDelegations
 	runtime := &teamrun.WorkflowSerialRuntime{
+		AuthorizationRetry: func(ctx context.Context, proof execution.AuthorizationRefusal) (bool, error) {
+			if businessDelegations == nil {
+				return false, nil
+			}
+			return businessDelegations.CanRetryAuthorization(ctx, proof)
+		},
 		Artifacts: s.WorkflowArtifacts,
 		Loader: &workflow.RuntimeLoader{
 			Registry: s.Descriptors, CLIExecutor: s.teamRunCLIExecutor(),

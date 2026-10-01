@@ -29,6 +29,7 @@ type forgeObjectMetadataReader struct {
 	baseURL       url.URL
 	authorization []byte
 	client        *http.Client
+	pathPrefix    string
 }
 
 type objectMetadataEnvelope struct {
@@ -80,8 +81,12 @@ func (r forgeObjectMetadataReader) ReadObjectMetadata(ctx context.Context, objec
 		return objectSchemaMetadata{}, errors.New("Forge object metadata authorization is missing")
 	}
 	endpoint := r.baseURL
-	endpoint.Path = "/api/v1/meta/objects/" + objectName
-	endpoint.RawPath = "/api/v1/meta/objects/" + url.PathEscape(objectName)
+	prefix := r.pathPrefix
+	if prefix == "" {
+		prefix = "/api/v1/meta/objects/"
+	}
+	endpoint.Path = prefix + objectName
+	endpoint.RawPath = prefix + url.PathEscape(objectName)
 	endpoint.RawQuery = ""
 	endpoint.Fragment = ""
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)

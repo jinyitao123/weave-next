@@ -490,11 +490,15 @@ func runSerialMachine(
 					routed = false
 				}
 				failure := ClassifyFailure(err)
+				if failure.AuthorizationRequired != nil || failure.AuthorizationDenied {
+					routed = false
+				}
 				retryable := !routed && failure.Class == FailureClassInfrastructure && failure.Retryable
+				renewalRequired := !routed && !recoveryBlocked && failure.AuthorizationRequired != nil
 				if start.RecordActivity != nil {
 					start.RecordActivity(ctx, "member_failed", node, memberID, memberVersion, map[string]any{
 						"duration_ms": time.Since(startedAt).Milliseconds(), "error_code": string(executionErrorCode(err)),
-						"failure_class": failure.Class, "failure_reason": failure.Reason, "retryable": retryable,
+						"failure_class": failure.Class, "failure_reason": failure.Reason, "retryable": retryable, "authorization_required": failure.AuthorizationRequired,
 					})
 				}
 				if routed {
@@ -502,10 +506,10 @@ func runSerialMachine(
 					current = next
 					continue
 				}
-				if retryable || recoveryBlocked {
+				if retryable || recoveryBlocked || renewalRequired {
 					detail, encodeErr := json.Marshal(RuntimeWaitDetailV1{
 						SchemaVersion: 1, WaitType: "runtime", NodeID: node.ID,
-						RecoveryBlocked: recoveryBlocked,
+						RecoveryBlocked: recoveryBlocked, AuthorizationRequired: failure.AuthorizationRequired,
 					})
 					if encodeErr != nil {
 						return fail(executionError(ErrorCodeExecutionUnrecoverable, encodeErr))
@@ -1718,7 +1722,7 @@ func runAgentNode(
 						ParentGeneration: int64(member.Run.Generation), Bundle: *entry.Bundle, ResumeGrantID: member.Active.ResumeGrantID,
 						ArtifactHash: member.ArtifactHash, Graph: entry.Graph, Input: graphState,
 						Attribution: attribution, ParentGuard: member.Guard,
-						RetryableFailure: func(err error) bool { return ClassifyFailure(err).Retryable },
+						RetryableFailure: func(err error) bool { f := ClassifyFailure(err); return f.Retryable || f.AuthorizationRequired != nil },
 					})
 				}
 			}

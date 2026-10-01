@@ -50,3 +50,29 @@ func TestBindExternalCreatesStableAccountAndHonorsDisabledBindingRealPG(t *testi
 		t.Fatalf("binding rows users=%d identities=%d", usersCount, identitiesCount)
 	}
 }
+
+func TestNativeOrganizationBindingPreservesExistingIdentityAndRejectsWorkspaceMixRealPG(t *testing.T) {
+	pool := testutil.PostgresPool(t)
+	if err := db.Migrate(t.Context(), pool); err != nil {
+		t.Fatal(err)
+	}
+	store := NewStore(pool)
+	legacy, err := store.BindExternal(t.Context(), "http://native.test", "native-user", "default-workspace", "person@test", "Person")
+	if err != nil {
+		t.Fatal(err)
+	}
+	upgraded, err := store.BindExternalInOrganization(t.Context(), "http://native.test", "native-user", "default-workspace", "person@test", "Person", "real-native-org")
+	if err != nil || upgraded.ID != legacy.ID || upgraded.TenantID != legacy.TenantID {
+		t.Fatalf("trusted login changed existing workspace/user: %v", err)
+	}
+	if _, err := store.BindExternalInOrganization(t.Context(), "http://native.test", "native-user", "default-workspace", "person@test", "Person", "wrong-org"); err == nil {
+		t.Fatal("existing identity switched native organization")
+	}
+	if _, err := store.BindExternalInOrganization(t.Context(), "http://native.test", "another-user", "default-workspace", "other@test", "Other", "wrong-org"); err == nil {
+		t.Fatal("another native organization mixed into same issuer/workspace")
+	}
+	var actual string
+	if err := pool.QueryRow(t.Context(), `SELECT native_organization FROM weave_external_identities WHERE user_id=$1`, legacy.ID).Scan(&actual); err != nil || actual != "real-native-org" {
+		t.Fatal("native organization did not remain bound")
+	}
+}

@@ -317,11 +317,13 @@ func (s *Store) loadFrozenMaterialReadScope(ctx context.Context) (frozenMaterial
 	var delegationWorkflowID, deliveryInputRevisionID, deliveryRunID, deliverySnapshotID, deliveryWorkflowID string
 	var runID, runSnapshotID, runWorkflowID, runTeamID, runStatus, queueRunSnapshotID string
 	var inputWorkflowVersion, delegationWorkflowVersion, deliveryWorkflowVersion, runWorkflowVersion int
+	var grantID string
+	var generation int64
 	err = tx.QueryRow(ctx, `SELECT input.input_revision_id,input.task,input.task_sha256,input.workflow_id,input.workflow_version,
 		input.team_id,input.consumed_run_id,delegation.resources,delegation.expires_at,delegation.workflow_id,
 		delegation.workflow_version,delivery.input_revision_id,COALESCE(delivery.run_id,''),delivery.run_snapshot_id,
 		delivery.workflow_id,delivery.workflow_version,run.run_id,run.run_snapshot_id,run.workflow_id,
-		run.workflow_version,run.team_id,run.status,q.run_snapshot_id
+		run.workflow_version,run.team_id,run.status,q.run_snapshot_id,delegation.grant_id,delegation.refresh_generation
 		FROM weave_task_queue AS q
 		JOIN weave_team_runs AS run
 		  ON run.workspace_id=q.workspace_id AND run.run_snapshot_id=q.run_snapshot_id
@@ -338,7 +340,7 @@ func (s *Store) loadFrozenMaterialReadScope(ctx context.Context) (frozenMaterial
 		&inputTeamID, &inputConsumedRunID, &resourcesJSON, &scope.ExpiresAt, &delegationWorkflowID,
 		&delegationWorkflowVersion, &deliveryInputRevisionID, &deliveryRunID, &deliverySnapshotID,
 		&deliveryWorkflowID, &deliveryWorkflowVersion, &runID, &runSnapshotID, &runWorkflowID,
-		&runWorkflowVersion, &runTeamID, &runStatus, &queueRunSnapshotID,
+		&runWorkflowVersion, &runTeamID, &runStatus, &queueRunSnapshotID, &grantID, &generation,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return frozenMaterialReadScope{}, nil, "", false, nil
@@ -351,9 +353,15 @@ func (s *Store) loadFrozenMaterialReadScope(ctx context.Context) (frozenMaterial
 		queueRunSnapshotID != runSnapshotID || inputTeamID != runTeamID ||
 		inputWorkflowID != runWorkflowID || delegationWorkflowID != runWorkflowID || deliveryWorkflowID != runWorkflowID ||
 		inputWorkflowVersion != runWorkflowVersion || deliveryWorkflowVersion != runWorkflowVersion ||
-		delegationWorkflowVersion != runWorkflowVersion || runStatus != "running" || !scope.ExpiresAt.After(s.now().UTC()) ||
+		delegationWorkflowVersion != runWorkflowVersion || runStatus != "running" ||
 		runID == "" || runSnapshotID == "" {
 		return frozenMaterialReadScope{}, nil, "", false, nil
+	}
+	if grantID == "" {
+		return frozenMaterialReadScope{}, nil, "", false, execution.NewLegacyAuthorizationRefusal(inputRevisionID, ErrDelegationExpired)
+	}
+	if !scope.ExpiresAt.After(s.now().UTC()) {
+		return frozenMaterialReadScope{}, nil, "", false, execution.NewAuthorizationRefusal(inputRevisionID, generation, ErrDelegationExpired)
 	}
 	scope.InputRevisionID, scope.RunID, scope.RunSnapshotID = inputRevisionID, runID, runSnapshotID
 	scope.WorkflowID, scope.WorkflowVersion = runWorkflowID, runWorkflowVersion
@@ -393,7 +401,7 @@ func sameFrozenMaterialReadScope(left, right frozenMaterialReadScope) bool {
 		left.InputRevisionID == right.InputRevisionID && left.InputTaskSHA256 == right.InputTaskSHA256 &&
 		left.RunID == right.RunID && left.RunSnapshotID == right.RunSnapshotID &&
 		left.WorkflowID == right.WorkflowID && left.WorkflowVersion == right.WorkflowVersion &&
-		left.ResourceDigest == right.ResourceDigest && left.ExpiresAt.Equal(right.ExpiresAt)
+		left.ResourceDigest == right.ResourceDigest
 }
 
 func newMaterialReadDispatcher(store *Store, scope frozenMaterialReadScope, files map[string]frozenMaterialReadFile) (*materialReadDispatcher, error) {
@@ -430,6 +438,16 @@ func (d *materialReadDispatcher) Dispatch(ctx context.Context, call contract.Too
 		args.MaterialID != "" && !frozenMaterialIDPattern.MatchString(args.MaterialID) ||
 		args.FileID != "" && (len(args.FileID) > 128 || args.FileID != strings.TrimSpace(args.FileID)) {
 		return &contract.ToolResult{CallID: call.ID, ToolName: call.Name, Content: "材料读取参数无效", IsError: true}, nil
+	}
+	if d.store != nil {
+		live, authErr := d.store.resolve(ctx, nil)
+		if authErr != nil {
+			return nil, authErr
+		}
+		clear(live.token)
+		if live.inputRevisionID != d.scope.InputRevisionID {
+			return nil, errors.New("material authorization changed frozen input")
+		}
 	}
 	result := materialReadResult{Status: "unavailable", OriginalVerificationStatus: "unavailable", OriginalVerificationCode: "execution_scope_unavailable"}
 	if d.store == nil || !d.store.frozenMaterialReadScopeActive(ctx, d.scope) {
@@ -481,10 +499,7 @@ func (d *materialReadDispatcher) verifyFrozenOriginal(ctx context.Context, file 
 	if !matched || !d.store.frozenMaterialReadScopeActive(ctx, d.scope) {
 		return "unavailable", "execution_scope_unavailable"
 	}
-	if err := ReadVerifiedForgeOriginal(ctx, delegation.issuer, delegation.token, ForgeOriginalReference{
-		SourceKind: file.SourceKind, RequestID: file.RequestID, FileID: file.FileID,
-		MediaType: file.MediaType, Bytes: file.Bytes, SHA256: file.SHA256,
-	}); err != nil {
+	if err := ReadVerifiedTaskFile(ctx, delegation.issuer, delegation.token, TaskDelegationResource{ID: file.FileID, Bytes: file.Bytes, SHA256: file.SHA256}); err != nil {
 		return "unavailable", "forge_original_unavailable"
 	}
 	if !d.store.frozenMaterialReadScopeActive(ctx, d.scope) {

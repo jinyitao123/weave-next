@@ -20,13 +20,14 @@ const externalSessionTTL = 8 * time.Hour
 const forgeTeamDeveloperPermissionSet = "weave_team_developer"
 
 type ExternalIdentity struct {
-	Issuer         string
-	Subject        string
-	Email          string
-	Name           string
-	Organization   string
-	AccessRole     string
-	PermissionSets []string
+	Issuer             string
+	Subject            string
+	Email              string
+	Name               string
+	Organization       string
+	NativeOrganization string
+	AccessRole         string
+	PermissionSets     []string
 }
 
 type ExternalIdentityVerifier interface {
@@ -108,6 +109,33 @@ func (v *ForgeSessionVerifier) Verify(ctx context.Context, bearer string) (Exter
 	if subject == "" || workspace == "" {
 		return ExternalIdentity{}, errors.New("external identity is missing subject or workspace")
 	}
+	sessionEndpoint := *v.endpoint
+	sessionEndpoint.Path, sessionEndpoint.RawPath, sessionEndpoint.RawQuery, sessionEndpoint.Fragment = "/api/v1/auth/get-session", "", "", ""
+	sessionRequest, err := http.NewRequestWithContext(ctx, http.MethodGet, sessionEndpoint.String(), nil)
+	if err != nil {
+		return ExternalIdentity{}, err
+	}
+	sessionRequest.Header.Set("Authorization", "Bearer "+bearer)
+	sessionResponse, err := v.client.Do(sessionRequest)
+	if err != nil {
+		return ExternalIdentity{}, errors.New("native session could not be verified")
+	}
+	defer sessionResponse.Body.Close()
+	if sessionResponse.StatusCode != http.StatusOK {
+		return ExternalIdentity{}, errors.New("native session is unavailable")
+	}
+	var nativeSession struct {
+		User struct {
+			ID string `json:"id"`
+		} `json:"user"`
+		Session struct {
+			UserID               string `json:"userId"`
+			ActiveOrganizationID string `json:"activeOrganizationId"`
+		} `json:"session"`
+	}
+	if json.NewDecoder(io.LimitReader(sessionResponse.Body, 1<<20)).Decode(&nativeSession) != nil || nativeSession.User.ID != subject || (nativeSession.Session.UserID != "" && nativeSession.Session.UserID != subject) || nativeSession.Session.ActiveOrganizationID == "" {
+		return ExternalIdentity{}, errors.New("native session identity or organization differs")
+	}
 	permissionEndpoint := *v.endpoint
 	permissionEndpoint.Path = "/api/v1/auth/me/permissions"
 	permissionEndpoint.RawPath = ""
@@ -149,7 +177,7 @@ func (v *ForgeSessionVerifier) Verify(ctx context.Context, bearer string) (Exter
 	return ExternalIdentity{
 		Issuer: v.endpoint.Scheme + "://" + v.endpoint.Host, Subject: subject,
 		Email: email, Name: name,
-		Organization: workspace, AccessRole: accessRole, PermissionSets: permissionBody.PermissionSets,
+		Organization: workspace, NativeOrganization: nativeSession.Session.ActiveOrganizationID, AccessRole: accessRole, PermissionSets: permissionBody.PermissionSets,
 	}, nil
 }
 
@@ -166,6 +194,10 @@ func productPermissions(role string) []string {
 
 type externalIdentityBinder interface {
 	BindExternal(context.Context, string, string, string, string, string) (*users.User, error)
+}
+
+type nativeExternalIdentityBinder interface {
+	BindExternalInOrganization(context.Context, string, string, string, string, string, string) (*users.User, error)
 }
 
 func (s *Server) handleExternalIdentityExchange(c echo.Context) error {
@@ -188,7 +220,11 @@ func (s *Server) handleExternalIdentityExchange(c echo.Context) error {
 	if binder == nil {
 		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "account binding is not configured"})
 	}
-	user, err := binder.BindExternal(c.Request().Context(), identity.Issuer, identity.Subject, identity.Organization, identity.Email, identity.Name)
+	nativeBinder, supported := binder.(nativeExternalIdentityBinder)
+	if !supported || identity.NativeOrganization == "" {
+		return c.JSON(http.StatusForbidden, map[string]string{"error": "native organization binding is unavailable"})
+	}
+	user, err := nativeBinder.BindExternalInOrganization(c.Request().Context(), identity.Issuer, identity.Subject, identity.Organization, identity.Email, identity.Name, identity.NativeOrganization)
 	if err != nil {
 		return c.JSON(http.StatusForbidden, map[string]string{"error": "account binding failed"})
 	}

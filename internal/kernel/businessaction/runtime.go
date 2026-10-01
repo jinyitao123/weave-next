@@ -138,24 +138,14 @@ func delegationLive(expiresAt, now time.Time) error {
 
 type delegation struct {
 	inputRevisionID string
+	generation      int64
 	issuer          string
 	token           []byte
 	actions         []string
 	resources       []delegatedResource
 }
 
-type delegatedResource struct {
-	Type       string `json:"type"`
-	SourceKind string `json:"sourceKind,omitempty"`
-	RequestID  string `json:"requestId,omitempty"`
-	MaterialID string `json:"materialId,omitempty"`
-	ID         string `json:"id"`
-	Name       string `json:"name,omitempty"`
-	MediaType  string `json:"mediaType,omitempty"`
-	Bytes      int64  `json:"bytes,omitempty"`
-	SHA256     string `json:"sha256"`
-	ObjectName string `json:"object_name,omitempty"`
-}
+type delegatedResource = TaskDelegationResource
 
 func (s *Store) dispatcher(ctx context.Context, requested []string, bindings []frozen.BusinessCapabilityBinding) (contract.ToolDispatcher, error) {
 	if actions, ok, err := s.resolveDevelopmentTrial(ctx, requested); err != nil {
@@ -183,28 +173,15 @@ func (s *Store) dispatcher(ctx context.Context, requested []string, bindings []f
 	mcpEndpoint.RawPath, mcpEndpoint.RawQuery, mcpEndpoint.Fragment = "", "", ""
 	authorization := append([]byte("Bearer "), bound.token...)
 	defer clear(authorization)
-	headers := map[string]string{"Authorization": string(authorization)}
-	clear(bound.token)
-	runAction := contract.ToolDef{
-		Name: "run_action", Description: "Invoke the server-selected Forge business action.",
-		InputSchema: json.RawMessage(`{"type":"object","properties":{"actionName":{"type":"string"},"objectName":{"type":"string"},"recordId":{"type":"string"},"params":{"type":"object"}},"required":["actionName","objectName"],"additionalProperties":false}`),
-	}
-	listActions := contract.ToolDef{
-		Name: "list_actions", Description: "Read the employee-visible Forge business action catalog.",
-		InputSchema: json.RawMessage(`{"type":"object","properties":{},"additionalProperties":false}`),
-		ReadOnly:    true,
-	}
+	defer clear(bound.token)
+	runAction := contract.ToolDef{Name: "run_action", InputSchema: json.RawMessage(`{"type":"object","properties":{"actionName":{"type":"string"},"objectName":{"type":"string"},"recordId":{"type":"string"},"params":{"type":"object"}},"required":["actionName","objectName"],"additionalProperties":false}`)}
+	listActions := contract.ToolDef{Name: "list_actions", InputSchema: json.RawMessage(`{"type":"object","properties":{},"additionalProperties":false}`), ReadOnly: true}
 	toolContract, err := mcphost.NewToolContract([]contract.ToolDef{listActions, runAction})
 	if err != nil {
-		clearHeader(headers)
 		return nil, err
 	}
-	host := mcphost.NewHTTPHost(mcpEndpoint.String(), mcphost.WithHeaders(headers), mcphost.WithFilter([]string{"list_actions", "run_action"}), mcphost.WithToolContract(toolContract), mcphost.WithUnknownDispatchOutcome(),
-		mcphost.WithDispatchGuard(func(callCtx context.Context) error {
-			return s.validate(callCtx, bound.inputRevisionID, bound.actions)
-		}))
-	clearHeader(headers)
-	catalog, err := readActionCatalog(ctx, host, bound.actions, forgeObjectMetadataReader{baseURL: *metadataBaseURL, authorization: authorization})
+	host := &taskScopedActionHost{store: s, inputRevisionID: bound.inputRevisionID, requested: append([]string{}, bound.actions...), contract: toolContract}
+	catalog, err := readActionCatalog(ctx, host, bound.actions, forgeObjectMetadataReader{baseURL: *metadataBaseURL, authorization: authorization, pathPrefix: TaskDelegationPath + "/objects/"})
 	if err != nil {
 		return nil, err
 	}
@@ -288,23 +265,29 @@ func (s *Store) resolve(ctx context.Context, requested []string) (delegation, er
 	if err := s.tasks.ValidateCurrentTaskTx(ctx, tx); err != nil {
 		return delegation{}, fmt.Errorf("%w: current employee task changed", mcphost.ErrFailClosed)
 	}
-	var inputRevisionID, issuer, ciphertext, digest string
+	var inputRevisionID, issuer, ciphertext, digest, subject, organization, grantID, scopeSHA, registrationID, taskSHA, workflowID string
+	var generation int64
+	var workflowVersion int
 	var actionsRaw, resourcesRaw []byte
 	var expiresAt time.Time
-	err = tx.QueryRow(ctx, `SELECT d.input_revision_id,d.issuer,d.credential_ciphertext,d.credential_sha256,d.allowed_actions,d.resources,d.expires_at
+	err = tx.QueryRow(ctx, `SELECT d.input_revision_id,d.issuer,d.credential_ciphertext,d.credential_sha256,d.allowed_actions,d.resources,d.expires_at,d.external_subject,d.external_organization,d.grant_id,d.scope_sha256,d.refresh_generation,d.workflow_id,d.workflow_version,i.registration_id,i.task_sha256
 		FROM weave_task_queue q
 		JOIN weave_run_delivery_state r ON r.workspace_id=q.workspace_id AND r.run_snapshot_id=q.run_snapshot_id
 		JOIN weave_task_business_delegations d ON d.workspace_id=r.workspace_id AND d.input_revision_id=r.input_revision_id
+		JOIN weave_dispatch_input_revisions i ON i.workspace_id=d.workspace_id AND i.user_id=d.user_id AND i.input_revision_id=d.input_revision_id
 		WHERE q.workspace_id=$1 AND q.id=$2 AND d.user_id=$3 AND d.revoked_at IS NULL`,
-		current.WorkspaceID, current.ID, current.Subject.UserID).Scan(&inputRevisionID, &issuer, &ciphertext, &digest, &actionsRaw, &resourcesRaw, &expiresAt)
+		current.WorkspaceID, current.ID, current.Subject.UserID).Scan(&inputRevisionID, &issuer, &ciphertext, &digest, &actionsRaw, &resourcesRaw, &expiresAt, &subject, &organization, &grantID, &scopeSHA, &generation, &workflowID, &workflowVersion, &registrationID, &taskSHA)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return delegation{}, fmt.Errorf("%w: task has no active Forge delegation", mcphost.ErrFailClosed)
 	}
 	if err != nil {
 		return delegation{}, err
 	}
+	if grantID == "" {
+		return delegation{}, execution.NewLegacyAuthorizationRefusal(inputRevisionID, ErrDelegationExpired)
+	}
 	if err := delegationLive(expiresAt, s.now()); err != nil {
-		return delegation{}, err
+		return delegation{}, execution.NewAuthorizationRefusal(inputRevisionID, generation, err)
 	}
 	var taskAllowed []string
 	if err := json.Unmarshal(actionsRaw, &taskAllowed); err != nil {
@@ -328,7 +311,33 @@ func (s *Store) resolve(ctx context.Context, requested []string) (delegation, er
 		clear(token)
 		return delegation{}, err
 	}
-	return delegation{inputRevisionID: inputRevisionID, issuer: issuer, token: token, actions: allowed, resources: resources}, nil
+	grant, verifyErr := ReadTaskDelegationGrant(ctx, issuer, token)
+	var authorizationRefusal *taskAuthorizationRefusalError
+	if errors.As(verifyErr, &authorizationRefusal) && authorizationRefusal.nonRenewableReason() != "" {
+		clear(token)
+		return delegation{}, execution.NewAuthorizationDenialBeforeDispatch(inputRevisionID, generation, authorizationRefusal.nonRenewableReason(), verifyErr)
+	}
+	if errors.Is(verifyErr, ErrDelegationExpired) {
+		clear(token)
+		return delegation{}, execution.NewAuthorizationRefusal(inputRevisionID, generation, verifyErr)
+	}
+	if verifyErr != nil {
+		clear(token)
+		return delegation{}, fmt.Errorf("%w: task authority is invalid", mcphost.ErrFailClosed)
+	}
+	expected := TaskDelegationScope{InputRevisionID: inputRevisionID, RegistrationID: registrationID, TaskSHA256: taskSHA, WorkflowID: workflowID, WorkflowVersion: workflowVersion, AllowedActions: taskAllowed, Resources: []TaskDelegationResource{}}
+	for _, resource := range resources {
+		if resource.Type == "forge-file" {
+			expected.Resources = append(expected.Resources, resource)
+		} else if resource.Type == "forge-record" {
+			expected.BusinessRecord = &TaskBusinessRecord{ObjectName: resource.ObjectName, RecordID: resource.ID}
+		}
+	}
+	if grant.Subject.ID != subject || grant.Subject.OrganizationID != organization || grant.GrantID != grantID || grant.Generation != generation || grant.ScopeSHA256 != scopeSHA || !TaskScopeMatches(grant.Scope, expected) {
+		clear(token)
+		return delegation{}, fmt.Errorf("%w: task authority scope differs", mcphost.ErrFailClosed)
+	}
+	return delegation{generation: generation, inputRevisionID: inputRevisionID, issuer: issuer, token: token, actions: allowed, resources: resources}, nil
 }
 
 func decodeDelegatedResources(raw []byte, inputRevisionID string) ([]delegatedResource, error) {
@@ -414,42 +423,6 @@ func decodeDelegatedResources(raw []byte, inputRevisionID string) ([]delegatedRe
 		return nil, errors.New("task input resource is missing")
 	}
 	return resources, nil
-}
-
-func (s *Store) validate(ctx context.Context, inputRevisionID string, requested []string) error {
-	if s == nil || s.pool == nil || s.tasks == nil {
-		return errors.New("business delegation store unavailable")
-	}
-	current, ok := execution.CurrentTaskFromContext(ctx)
-	if !ok || current.Subject.UserID == "" {
-		return execution.ErrCurrentTaskMismatch
-	}
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-	if err := s.tasks.ValidateCurrentTaskTx(ctx, tx); err != nil {
-		return err
-	}
-	var actionsRaw []byte
-	var expiresAt time.Time
-	err = tx.QueryRow(ctx, `SELECT d.allowed_actions,d.expires_at FROM weave_task_queue q
-		JOIN weave_run_delivery_state r ON r.workspace_id=q.workspace_id AND r.run_snapshot_id=q.run_snapshot_id
-		JOIN weave_task_business_delegations d ON d.workspace_id=r.workspace_id AND d.input_revision_id=r.input_revision_id
-		WHERE q.workspace_id=$1 AND q.id=$2 AND d.user_id=$3 AND d.input_revision_id=$4 AND d.revoked_at IS NULL`,
-		current.WorkspaceID, current.ID, current.Subject.UserID, inputRevisionID).Scan(&actionsRaw, &expiresAt)
-	if err != nil {
-		return err
-	}
-	var allowed []string
-	if json.Unmarshal(actionsRaw, &allowed) != nil || !containsAll(allowed, requested) {
-		return errors.New("business delegation no longer authorizes this action")
-	}
-	if !expiresAt.After(s.now().UTC()) {
-		return fmt.Errorf("business delegation no longer authorizes this action: %w", ErrDelegationExpired)
-	}
-	return tx.Commit(ctx)
 }
 
 type dispatcher struct {
@@ -1083,6 +1056,18 @@ func (d *dispatcher) Dispatch(ctx context.Context, call contract.ToolCall) (*con
 		input.Params[name] = value
 	}
 	var outcome ActionOutcomeEvent
+	controlledHost, controlled := d.host.(interface {
+		DispatchWithStart(context.Context, contract.ToolCall, func(context.Context) error) (*contract.ToolResult, error)
+	})
+	started := false
+	reserve := func(reserveCtx context.Context) error {
+		outcome.Phase = "started"
+		err := recordActionOutcome(reserveCtx, outcome)
+		if err == nil {
+			started = true
+		}
+		return err
+	}
 	if d.trackOutcomes {
 		invocationID := execution.InvocationID(ctx)
 		slot := execution.OperationID(ctx)
@@ -1128,25 +1113,49 @@ func (d *dispatcher) Dispatch(ctx context.Context, call contract.ToolCall) (*con
 		if replay.Blocked {
 			return actionReplayResult(call, replay), nil
 		}
-		outcome.Phase = "started"
-		if err := recordActionOutcome(ctx, outcome); err != nil {
+		if !controlled {
+			if err := reserve(ctx); err != nil {
+				if errors.Is(err, ErrActionAlreadyRecorded) {
+					// The initial guard raced with another reservation. Read the
+					// committed original receipt, never issue a second Forge call.
+					replay, guardErr := checkActionOutcomeReplay(ctx, outcome)
+					if guardErr != nil {
+						return nil, fmt.Errorf("read concurrent Forge action receipt: %w", guardErr)
+					}
+					return actionReplayResult(call, replay), nil
+				}
+				if errors.Is(err, ErrActionOutcomeUnresolved) {
+					return &contract.ToolResult{CallID: call.ID, ToolName: call.Name,
+						Content: "同一父运行中的业务动作仍有未确认结果；当前调用没有再次发送，请先核对业务记录。", IsError: true, StopLoop: true}, nil
+				}
+				return nil, fmt.Errorf("persist Forge action start before dispatch: %w", err)
+			}
+		}
+	}
+	var result *contract.ToolResult
+	var err error
+	upstreamCall := contract.ToolCall{ID: call.ID, Name: "run_action", Args: string(upstream)}
+	if controlled && d.trackOutcomes {
+		result, err = controlledHost.DispatchWithStart(ctx, upstreamCall, reserve)
+		if !started {
 			if errors.Is(err, ErrActionAlreadyRecorded) {
-				// The initial guard raced with another reservation. Read the
-				// committed original receipt, never issue a second Forge call.
 				replay, guardErr := checkActionOutcomeReplay(ctx, outcome)
 				if guardErr != nil {
-					return nil, fmt.Errorf("read concurrent Forge action receipt: %w", guardErr)
+					return nil, guardErr
 				}
 				return actionReplayResult(call, replay), nil
 			}
 			if errors.Is(err, ErrActionOutcomeUnresolved) {
-				return &contract.ToolResult{CallID: call.ID, ToolName: call.Name,
-					Content: "同一父运行中的业务动作仍有未确认结果；当前调用没有再次发送，请先核对业务记录。", IsError: true, StopLoop: true}, nil
+				return actionReplayResult(call, ActionOutcomeReplay{Blocked: true, Status: ActionOutcomeStatusUnknown}), nil
 			}
-			return nil, fmt.Errorf("persist Forge action start before dispatch: %w", err)
+			if err != nil {
+				return nil, err
+			}
+			return nil, errors.New("Forge action did not establish a durable dispatch reservation")
 		}
+	} else {
+		result, err = d.host.Dispatch(ctx, upstreamCall)
 	}
-	result, err := d.host.Dispatch(ctx, contract.ToolCall{ID: call.ID, Name: "run_action", Args: string(upstream)})
 	if d.trackOutcomes {
 		status := ActionOutcomeStatusUnknown
 		switch {

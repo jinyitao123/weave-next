@@ -236,10 +236,11 @@ type WorkflowOutputRecorder interface {
 }
 
 type WorkflowSerialRuntime struct {
-	Members     *loomruntime.MemberRunner
-	Artifacts   ArtifactReader
-	Loader      *workflow.RuntimeLoader
-	HostFactory workflow.RuntimeHostFactory
+	AuthorizationRetry execution.AuthorizationRetryAuthorizer
+	Members            *loomruntime.MemberRunner
+	Artifacts          ArtifactReader
+	Loader             *workflow.RuntimeLoader
+	HostFactory        workflow.RuntimeHostFactory
 	// HostFactoryForSnapshot optionally replaces HostFactory when the run
 	// consumes a frozen candidate snapshot. It receives the snapshot's build
 	// run ID and candidate content hash so a test harness can bind a scripted
@@ -293,6 +294,9 @@ func (r *WorkflowSerialRuntime) toolObserver(run TeamRun) workflow.RuntimeToolOb
 }
 
 func (r *WorkflowSerialRuntime) withBusinessActionOutcomeContext(ctx context.Context, run TeamRun) context.Context {
+	if r.AuthorizationRetry != nil {
+		ctx = execution.WithAuthorizationRetryAuthorizer(ctx, r.AuthorizationRetry)
+	}
 	if reconciler, ok := r.Activities.(BusinessActionOperationReconciler); ok {
 		ctx = execution.WithOperationReconciler(ctx, func(eventCtx context.Context, slot string, inputRaw json.RawMessage) (json.RawMessage, bool, error) {
 			scope, exists := eventCtx.Value(runtimeActivityScopeKey{}).(runtimeActivityScope)

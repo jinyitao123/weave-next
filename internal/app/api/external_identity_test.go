@@ -25,10 +25,18 @@ func (f externalIdentityBinderFunc) BindExternal(ctx context.Context, issuer, su
 	return f(ctx, issuer, subject, workspace, email, name)
 }
 
+func (f externalIdentityBinderFunc) BindExternalInOrganization(ctx context.Context, issuer, subject, workspace, email, name, nativeOrg string) (*users.User, error) {
+	return f(ctx, issuer, subject, workspace, email, name)
+}
+
 func TestForgeSessionVerifierReadsForgeAccount(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Authorization"); got != "Bearer forge-token" {
 			t.Fatalf("authorization = %q", got)
+		}
+		if r.URL.Path == "/api/v1/auth/get-session" {
+			_ = json.NewEncoder(w).Encode(map[string]any{"user": map[string]string{"id": "forge-user-1"}, "session": map[string]string{"userId": "forge-user-1", "activeOrganizationId": "native-org-1"}})
+			return
 		}
 		if r.URL.Path == "/api/v1/auth/me/permissions" {
 			_ = json.NewEncoder(w).Encode(map[string]any{
@@ -47,7 +55,7 @@ func TestForgeSessionVerifierReadsForgeAccount(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if identity.Issuer != upstream.URL || identity.Subject != "forge-user-1" || identity.Organization != "workspace-1" || identity.Email != "developer@example.test" || identity.AccessRole != "developer" {
+	if identity.Issuer != upstream.URL || identity.Subject != "forge-user-1" || identity.Organization != "workspace-1" || identity.NativeOrganization != "native-org-1" || identity.Email != "developer@example.test" || identity.AccessRole != "developer" {
 		t.Fatalf("unexpected identity: %#v", identity)
 	}
 }
@@ -63,6 +71,10 @@ func TestForgeSessionVerifierMapsForgeAdminAndMemberAccess(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/api/v1/auth/get-session" {
+					_ = json.NewEncoder(w).Encode(map[string]any{"user": map[string]string{"id": "forge-user-1"}, "session": map[string]string{"userId": "forge-user-1", "activeOrganizationId": "native-org-1"}})
+					return
+				}
 				if r.URL.Path == "/api/v1/auth/me/permissions" {
 					_ = json.NewEncoder(w).Encode(map[string]any{"authenticated": true, "permissionSets": test.permissionSets})
 					return
@@ -91,7 +103,7 @@ func TestExternalIdentityExchangeBindsAccountAndIssuesWeaveSession(t *testing.T)
 			if token != "forge-token" {
 				t.Fatalf("token = %q", token)
 			}
-			return ExternalIdentity{Issuer: "https://forge.example.test", Subject: "forge-user-1", Email: "developer@example.test", Name: "Developer", Organization: "workspace-1", AccessRole: "developer"}, nil
+			return ExternalIdentity{Issuer: "https://forge.example.test", Subject: "forge-user-1", Email: "developer@example.test", Name: "Developer", Organization: "workspace-1", NativeOrganization: "native-org-1", AccessRole: "developer"}, nil
 		}),
 		ExternalIdentityBinder: externalIdentityBinderFunc(func(_ context.Context, issuer, subject, workspace, email, name string) (*users.User, error) {
 			if issuer != "https://forge.example.test" || subject != "forge-user-1" || workspace != "workspace-1" || email != "developer@example.test" || name != "Developer" {

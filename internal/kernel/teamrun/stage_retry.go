@@ -54,11 +54,12 @@ type StageRetryService struct {
 }
 
 type RuntimeWaitDetailV1 struct {
-	MemberBudgetPause *execution.MemberBudgetPause `json:"member_budget_pause,omitempty"`
-	SchemaVersion     int                          `json:"schema_version"`
-	WaitType          string                       `json:"wait_type"`
-	NodeID            string                       `json:"node_id"`
-	RecoveryBlocked   bool                         `json:"recovery_blocked,omitempty"`
+	AuthorizationRequired *execution.AuthorizationRefusal `json:"authorization_required,omitempty"`
+	MemberBudgetPause     *execution.MemberBudgetPause    `json:"member_budget_pause,omitempty"`
+	SchemaVersion         int                             `json:"schema_version"`
+	WaitType              string                          `json:"wait_type"`
+	NodeID                string                          `json:"node_id"`
+	RecoveryBlocked       bool                            `json:"recovery_blocked,omitempty"`
 }
 
 type RuntimeRetryTaskPayloadV1 struct {
@@ -224,6 +225,25 @@ func (s *StageRetryService) retryRuntimeStageTx(ctx context.Context, tx pgx.Tx, 
 	}
 	if detail.RecoveryBlocked {
 		return StageRetryResult{}, fmt.Errorf("%w: tool outcome requires reconciliation before continuing", ErrTeamRunResumeInvalid)
+	}
+	if detail.AuthorizationRequired != nil {
+		proof := detail.AuthorizationRequired
+		if !proof.Valid() {
+			return StageRetryResult{}, fmt.Errorf("%w: authorization refusal is invalid", ErrTeamRunResumeInvalid)
+		}
+		if !proof.Renewable() {
+			return StageRetryResult{}, fmt.Errorf("%w: authorization denial cannot be renewed", ErrTeamRunResumeInvalid)
+		}
+		if request.Automatic || request.Actor == "" {
+			return StageRetryResult{}, fmt.Errorf("%w: original employee authorization renewal required", ErrTeamRunResumeInvalid)
+		}
+		var owner, inputID, grantID string
+		var generation int64
+		var expires time.Time
+		err := tx.QueryRow(ctx, `SELECT d.user_id,d.input_revision_id,d.grant_id,d.refresh_generation,d.expires_at FROM weave_run_delivery_state r JOIN weave_task_business_delegations d ON d.workspace_id=r.workspace_id AND d.input_revision_id=r.input_revision_id WHERE r.workspace_id=$1 AND r.run_snapshot_id=$2 AND d.revoked_at IS NULL FOR SHARE`, run.WorkspaceID, run.RunSnapshotID).Scan(&owner, &inputID, &grantID, &generation, &expires)
+		if err != nil || owner != request.Actor || inputID != proof.InputRevisionID || grantID == "" || generation <= proof.Generation || !expires.After(now) {
+			return StageRetryResult{}, fmt.Errorf("%w: original employee authorization renewal required", ErrTeamRunResumeInvalid)
+		}
 	}
 	checkpoint, err := s.Checkpoints.GetTx(ctx, tx, run.WorkspaceID, run.RunID)
 	if err != nil {
