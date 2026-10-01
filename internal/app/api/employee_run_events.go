@@ -156,7 +156,7 @@ func (worker *employeeRunEventWorker) pendingEmployeeRunEvents(ctx context.Conte
 		  ON identity.workspace_id=input.workspace_id AND identity.user_id=input.user_id
 		WHERE run.status IN ('succeeded','failed','cancelled','abandoned')
 		  AND NOT EXISTS (SELECT 1 FROM weave_employee_run_event_outbox AS event
-			WHERE event.workspace_id=run.workspace_id AND event.run_id=run.run_id)
+			WHERE event.workspace_id=run.workspace_id AND event.run_id=run.run_id AND event.event_scope='terminal')
 		ORDER BY run.terminal_at NULLS LAST,run.run_id LIMIT $1`, employeeRunEventBatch)
 	if err != nil {
 		return nil, nil, err
@@ -247,6 +247,9 @@ func (worker *employeeRunEventWorker) actionSummaries(ctx context.Context, works
 }
 
 func (worker *employeeRunEventWorker) materialize(ctx context.Context) error {
+	if err := worker.materializeHumanReviewEvents(ctx); err != nil {
+		return err
+	}
 	workspaces, runs, err := worker.pendingEmployeeRunEvents(ctx)
 	if err != nil {
 		return fmt.Errorf("list terminal runs without an employee event: %w", err)
@@ -363,7 +366,7 @@ func (worker *employeeRunEventWorker) materialize(ctx context.Context) error {
 	  )
 	FROM (SELECT candidates.*,md5('weave-team-run-event'||chr(31)||workspace_id||chr(31)||run_id) AS hash FROM candidates) AS fixed
 	LEFT JOIN business_action_summary ON business_action_summary.workspace_id=fixed.workspace_id AND business_action_summary.run_id=fixed.run_id
-	ON CONFLICT (workspace_id,run_id) DO NOTHING`, string(encoded), workspaces, runs)
+	ON CONFLICT (workspace_id,run_id,event_scope) DO NOTHING`, string(encoded), workspaces, runs)
 	if err != nil {
 		return fmt.Errorf("materialize employee run events: %w", err)
 	}
