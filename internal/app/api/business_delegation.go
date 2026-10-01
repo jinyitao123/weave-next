@@ -21,17 +21,52 @@ import (
 	"github.com/jinyitao123/weave/internal/kernel/secret"
 )
 
+// The Workbench Host sends the Forge-issued task delegation (decision 002):
+// its credential, Forge's delegation identifier, and Forge's expiry. The
+// employee's own desktop session is never accepted here.
 const forgeDelegationHeader = "X-Weave-Forge-Authorization"
-const forgeDelegationTTL = 30 * time.Minute
+const forgeDelegationIDHeader = "X-Weave-Forge-Delegation-Id"
+const forgeDelegationExpiresHeader = "X-Weave-Forge-Delegation-Expires"
+
+// forgeDelegationMaxLifetime mirrors Forge's deployment cap plus clock skew;
+// Forge remains the authority on expiry.
+const forgeDelegationMaxLifetime = 24*time.Hour + 5*time.Minute
+
+type forgeDelegationHeaders struct {
+	authorization string
+	delegationID  string
+	expires       string
+}
+
+func forgeDelegationHeadersFrom(header http.Header) forgeDelegationHeaders {
+	return forgeDelegationHeaders{
+		authorization: header.Get(forgeDelegationHeader),
+		delegationID:  header.Get(forgeDelegationIDHeader),
+		expires:       header.Get(forgeDelegationExpiresHeader),
+	}
+}
+
+func validForgeDelegationID(value string) bool {
+	if value == "" || len(value) > 128 {
+		return false
+	}
+	for _, char := range value {
+		if !(char >= 'a' && char <= 'z' || char >= 'A' && char <= 'Z' || char >= '0' && char <= '9' || char == '-') {
+			return false
+		}
+	}
+	return true
+}
 
 type preparedBusinessDelegation struct {
-	identity   ExternalIdentity
-	ciphertext string
-	digest     string
-	actions    []string
-	resources  []dispatchInputResource
-	record     *dispatchBusinessRecord
-	expiresAt  time.Time
+	identity          ExternalIdentity
+	forgeDelegationID string
+	ciphertext        string
+	digest            string
+	actions           []string
+	resources         []dispatchInputResource
+	record            *dispatchBusinessRecord
+	expiresAt         time.Time
 }
 
 type businessDelegationPreparationError struct {
@@ -103,11 +138,11 @@ func loadPublishedBusinessActionsTx(ctx context.Context, tx pgx.Tx, workspaceID,
 	return publishedBusinessActions(payload), nil
 }
 
-func (s *Server) prepareBusinessDelegation(ctx context.Context, workspaceID, userID, authorization string, actions []string, resources []dispatchInputResource, record *dispatchBusinessRecord) (*preparedBusinessDelegation, *businessDelegationPreparationError) {
+func (s *Server) prepareBusinessDelegation(ctx context.Context, workspaceID, userID string, headers forgeDelegationHeaders, actions []string, resources []dispatchInputResource, record *dispatchBusinessRecord) (*preparedBusinessDelegation, *businessDelegationPreparationError) {
 	if len(actions) == 0 && len(resources) == 0 && record == nil {
 		return nil, nil
 	}
-	authorization = strings.TrimSpace(authorization)
+	authorization := strings.TrimSpace(headers.authorization)
 	const prefix = "Bearer "
 	if !strings.HasPrefix(authorization, prefix) || len(authorization) <= len(prefix) || len(authorization) > 64<<10 {
 		return nil, businessDelegationRejected(http.StatusUnauthorized, "business_delegation_required", "Forge task delegation is required")
@@ -116,11 +151,17 @@ func (s *Server) prepareBusinessDelegation(ctx context.Context, workspaceID, use
 		return nil, businessDelegationRejected(http.StatusServiceUnavailable, "business_delegation_unavailable", "Forge task delegation is unavailable")
 	}
 	bearer := strings.TrimSpace(strings.TrimPrefix(authorization, prefix))
+	forgeDelegationID := strings.TrimSpace(headers.delegationID)
+	expiresAt, expiresErr := time.Parse(time.RFC3339Nano, strings.TrimSpace(headers.expires))
+	now := time.Now().UTC()
+	if !validForgeDelegationID(forgeDelegationID) || expiresErr != nil || !expiresAt.After(now) || expiresAt.After(now.Add(forgeDelegationMaxLifetime)) {
+		return nil, businessDelegationRejected(http.StatusUnauthorized, "business_delegation_required", "a Forge-issued task delegation is required")
+	}
 	identity, err := s.ExternalIdentity.Verify(ctx, bearer)
 	if err != nil {
 		return nil, businessDelegationRejected(http.StatusUnauthorized, "business_delegation_invalid", "Forge task delegation could not be verified")
 	}
-	if err := verifyForgeFiles(ctx, identity.Issuer, bearer, resources); err != nil {
+	if err := verifyForgeFiles(ctx, identity.BaseURL, bearer, resources); err != nil {
 		return nil, businessDelegationRejected(http.StatusUnprocessableEntity, "business_resource_invalid", err.Error())
 	}
 	if identity.Organization != workspaceID {
@@ -148,13 +189,13 @@ func (s *Server) prepareBusinessDelegation(ctx context.Context, workspaceID, use
 	}
 	digest := sha256.Sum256([]byte(bearer))
 	return &preparedBusinessDelegation{
-		identity: identity, ciphertext: ciphertext, digest: hex.EncodeToString(digest[:]),
-		actions: append([]string{}, actions...), resources: append([]dispatchInputResource(nil), resources...), record: record, expiresAt: time.Now().UTC().Add(forgeDelegationTTL),
+		identity: identity, forgeDelegationID: forgeDelegationID, ciphertext: ciphertext, digest: hex.EncodeToString(digest[:]),
+		actions: append([]string{}, actions...), resources: append([]dispatchInputResource(nil), resources...), record: record, expiresAt: expiresAt.UTC(),
 	}, nil
 }
 
-func verifyForgeFiles(ctx context.Context, issuer, bearer string, resources []dispatchInputResource) error {
-	base, err := url.Parse(issuer)
+func verifyForgeFiles(ctx context.Context, baseURL, bearer string, resources []dispatchInputResource) error {
+	base, err := url.Parse(baseURL)
 	if err != nil || base.Scheme == "" || base.Host == "" || base.User != nil || (base.Scheme != "http" && base.Scheme != "https") {
 		return errors.New("Forge material issuer is invalid")
 	}
@@ -168,7 +209,7 @@ func verifyForgeFiles(ctx context.Context, issuer, bearer string, resources []di
 				return fmt.Errorf("Forge material %q has no valid frozen source route", resource.Name)
 			}
 			bearerBytes := []byte(bearer)
-			verifyErr := businessaction.ReadVerifiedForgeOriginal(ctx, issuer, bearerBytes, businessaction.ForgeOriginalReference{
+			verifyErr := businessaction.ReadVerifiedForgeOriginal(ctx, baseURL, bearerBytes, businessaction.ForgeOriginalReference{
 				SourceKind: resource.SourceKind, RequestID: resource.RequestID, FileID: resource.ID,
 				MediaType: resource.MediaType, Bytes: resource.Bytes, SHA256: resource.SHA256,
 			})
@@ -246,8 +287,9 @@ func persistBusinessDelegationTx(ctx context.Context, tx pgx.Tx, prepared *prepa
 	issuedAt := time.Now().UTC()
 	tag, err := tx.Exec(ctx, `INSERT INTO weave_task_business_delegations
 		(workspace_id,user_id,input_revision_id,delegation_id,credential_ref,issuer,external_subject,external_organization,
-		 credential_ciphertext,credential_sha256,allowed_actions,resources,workflow_id,workflow_version,issued_at,expires_at)
-		VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12::jsonb,$13,$14,$15,$16)
+		 credential_ciphertext,credential_sha256,allowed_actions,resources,workflow_id,workflow_version,issued_at,expires_at,
+		 forge_base_url,forge_delegation_id)
+		VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12::jsonb,$13,$14,$15,$16,$17,$18)
 		ON CONFLICT (workspace_id,input_revision_id) DO UPDATE SET
 		 credential_ciphertext=EXCLUDED.credential_ciphertext,credential_sha256=EXCLUDED.credential_sha256,
 		 expires_at=EXCLUDED.expires_at,refresh_generation=weave_task_business_delegations.refresh_generation+1
@@ -259,10 +301,13 @@ func persistBusinessDelegationTx(ctx context.Context, tx pgx.Tx, prepared *prepa
 		 AND weave_task_business_delegations.resources=EXCLUDED.resources
 		 AND weave_task_business_delegations.workflow_id=EXCLUDED.workflow_id
 		 AND weave_task_business_delegations.workflow_version=EXCLUDED.workflow_version
+		 AND weave_task_business_delegations.forge_base_url=EXCLUDED.forge_base_url
+		 AND weave_task_business_delegations.forge_delegation_id=EXCLUDED.forge_delegation_id
 		 AND weave_task_business_delegations.revoked_at IS NULL`,
 		workspaceID, userID, inputRevisionID, delegationID, credentialRef,
 		prepared.identity.Issuer, prepared.identity.Subject, prepared.identity.Organization,
-		prepared.ciphertext, prepared.digest, string(actionsJSON), string(resourcesJSON), workflowID, version, issuedAt, prepared.expiresAt)
+		prepared.ciphertext, prepared.digest, string(actionsJSON), string(resourcesJSON), workflowID, version, issuedAt, prepared.expiresAt,
+		prepared.identity.BaseURL, prepared.forgeDelegationID)
 	if err != nil {
 		return err
 	}

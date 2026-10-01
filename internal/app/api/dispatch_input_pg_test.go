@@ -82,7 +82,7 @@ func TestDispatchInputFreezesAndRefreshesEmployeeForgeDelegationRealPG(t *testin
 		if token != "first-token" && token != "refreshed-token" {
 			return ExternalIdentity{}, errors.New("unexpected token")
 		}
-		return ExternalIdentity{Issuer: "https://forge.example.test", Subject: "forge-user", Organization: "ws"}, nil
+		return ExternalIdentity{Issuer: "https://forge.example.test", BaseURL: "https://forge.example.test", Subject: "forge-user", Organization: "ws"}, nil
 	})
 	version := 1
 	registration := dispatchInputRegistrationFixture("forge-session", "提交这份固定合同", "")
@@ -95,7 +95,7 @@ func TestDispatchInputFreezesAndRefreshesEmployeeForgeDelegationRealPG(t *testin
 		body, _ := json.Marshal(registration)
 		c, recorder := dispatchInputTestContext(body, "/v1/workbench/dispatch-inputs", "ws", "user")
 		if token != "" {
-			c.Request().Header.Set(forgeDelegationHeader, "Bearer "+token)
+			setTestForgeTaskDelegation(c.Request().Header, token)
 		}
 		if err := server.handleRegisterDispatchInput(c); err != nil {
 			t.Fatal(err)
@@ -196,7 +196,7 @@ func TestDispatchInputFreezesForgeMaterialWithoutGrantingBusinessActionRealPG(t 
 		if token != "review-token" {
 			return ExternalIdentity{}, errors.New("unexpected token")
 		}
-		return ExternalIdentity{Issuer: forge.URL, Subject: "forge-user", Organization: "ws"}, nil
+		return ExternalIdentity{Issuer: forge.URL, BaseURL: forge.URL, Subject: "forge-user", Organization: "ws"}, nil
 	})
 	version := 1
 	registration := dispatchInputRegistrationFixture("review-session", "只复核这份固定材料", "")
@@ -209,7 +209,7 @@ func TestDispatchInputFreezesForgeMaterialWithoutGrantingBusinessActionRealPG(t 
 	}
 	body, _ := json.Marshal(registration)
 	c, recorder := dispatchInputTestContext(body, "/v1/workbench/dispatch-inputs", "ws", "user")
-	c.Request().Header.Set(forgeDelegationHeader, "Bearer review-token")
+	setTestForgeTaskDelegation(c.Request().Header, "review-token")
 	if err := server.handleRegisterDispatchInput(c); err != nil || recorder.Code != http.StatusCreated {
 		t.Fatalf("register status=%d body=%s err=%v", recorder.Code, recorder.Body.String(), err)
 	}
