@@ -481,7 +481,7 @@ func (d *materialReadDispatcher) verifyFrozenOriginal(ctx context.Context, file 
 	if !matched || !d.store.frozenMaterialReadScopeActive(ctx, d.scope) {
 		return "unavailable", "execution_scope_unavailable"
 	}
-	if err := ReadVerifiedForgeOriginal(ctx, delegation.issuer, delegation.token, ForgeOriginalReference{
+	if err := ReadVerifiedForgeOriginal(ctx, delegation.baseURL, delegation.token, ForgeOriginalReference{
 		SourceKind: file.SourceKind, RequestID: file.RequestID, FileID: file.FileID,
 		MediaType: file.MediaType, Bytes: file.Bytes, SHA256: file.SHA256,
 	}); err != nil {
@@ -496,15 +496,15 @@ func (d *materialReadDispatcher) verifyFrozenOriginal(ctx context.Context, file 
 // ReadVerifiedForgeOriginal fetches bounded raw bytes from the exact frozen
 // Forge source route, verifies the original digest, then discards the bytes.
 // Callers may expose only the verification result; this never builds a model payload.
-func ReadVerifiedForgeOriginal(ctx context.Context, issuer string, bearer []byte, file ForgeOriginalReference) error {
+func ReadVerifiedForgeOriginal(ctx context.Context, baseURL string, bearer []byte, file ForgeOriginalReference) error {
 	if len(bearer) == 0 || strings.TrimSpace(file.FileID) == "" || !frozenSHA256.MatchString(file.SHA256) ||
 		file.Bytes < 1 || file.Bytes > frozenOriginalMaxBytes || !isBinaryMaterialType(file.MediaType) {
 		return errors.New("Forge original reference is invalid")
 	}
-	base, err := url.Parse(issuer)
+	base, err := url.Parse(baseURL)
 	if err != nil || base.Scheme == "" || base.Host == "" || base.User != nil ||
 		(base.Scheme != "http" && base.Scheme != "https") {
-		return errors.New("Forge original issuer is invalid")
+		return errors.New("Forge original address is invalid")
 	}
 	var segments []string
 	if file.SourceKind == "owner" {

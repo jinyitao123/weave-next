@@ -67,7 +67,7 @@ func (f *dispatchInputHTTPFixture) post(t *testing.T, request dispatchInputRegis
 	httpRequest.Header.Set("Authorization", "Bearer "+f.token)
 	httpRequest.Header.Set("Content-Type", "application/json")
 	if forgeToken != "" {
-		httpRequest.Header.Set(forgeDelegationHeader, "Bearer "+forgeToken)
+		setTestForgeTaskDelegation(httpRequest.Header, forgeToken)
 	}
 	response, err := http.DefaultClient.Do(httpRequest)
 	if err != nil {
@@ -214,13 +214,13 @@ func TestDispatchInputDelegationPreparationRejectionsWriteOnceOverHTTPRealPG(t *
 	server.ExternalIdentity = externalIdentityVerifierFunc(func(_ context.Context, token string) (ExternalIdentity, error) {
 		switch token {
 		case "valid":
-			return ExternalIdentity{Issuer: forge.URL, Subject: "forge-user", Organization: "ws"}, nil
+			return ExternalIdentity{Issuer: forge.URL, BaseURL: forge.URL, Subject: "forge-user", Organization: "ws"}, nil
 		case "organization-mismatch":
-			return ExternalIdentity{Issuer: forge.URL, Subject: "forge-user", Organization: "another-workspace"}, nil
+			return ExternalIdentity{Issuer: forge.URL, BaseURL: forge.URL, Subject: "forge-user", Organization: "another-workspace"}, nil
 		case "employee-mismatch":
-			return ExternalIdentity{Issuer: forge.URL, Subject: "forge-other-user", Organization: "ws"}, nil
+			return ExternalIdentity{Issuer: forge.URL, BaseURL: forge.URL, Subject: "forge-other-user", Organization: "ws"}, nil
 		case "missing-identity":
-			return ExternalIdentity{Issuer: forge.URL, Subject: "forge-missing-user", Organization: "ws"}, nil
+			return ExternalIdentity{Issuer: forge.URL, BaseURL: forge.URL, Subject: "forge-missing-user", Organization: "ws"}, nil
 		default:
 			return ExternalIdentity{}, errors.New("invalid test delegation")
 		}
@@ -307,7 +307,7 @@ func TestDispatchInputLegalForgeOriginalRegistersAndRecoversLegacyInputOverHTTPR
 		if token != "valid" {
 			return ExternalIdentity{}, errors.New("invalid test delegation")
 		}
-		return ExternalIdentity{Issuer: forge.URL, Subject: "forge-user", Organization: "ws"}, nil
+		return ExternalIdentity{Issuer: forge.URL, BaseURL: forge.URL, Subject: "forge-user", Organization: "ws"}, nil
 	})
 	route := newDispatchInputHTTPFixture(t, server)
 	request := dispatchInputDelegationRequest("legacy-http-session", material)

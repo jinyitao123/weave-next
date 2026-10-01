@@ -8,7 +8,9 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jinyitao123/weave/internal/app/users"
@@ -20,7 +22,11 @@ const externalSessionTTL = 8 * time.Hour
 const forgeTeamDeveloperPermissionSet = "weave_team_developer"
 
 type ExternalIdentity struct {
-	Issuer         string
+	// Issuer is Forge's stable identity source; it never changes with the
+	// address Weave uses to reach Forge (decision 002).
+	Issuer string
+	// BaseURL is the Forge network address for follow-up calls.
+	BaseURL        string
 	Subject        string
 	Email          string
 	Name           string
@@ -37,6 +43,52 @@ type ForgeSessionVerifier struct {
 	endpoint         *url.URL
 	defaultWorkspace string
 	client           *http.Client
+
+	issuerMu sync.Mutex
+	issuer   string
+}
+
+var forgeIssuerPattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9+.-]*:\S{1,240}$`)
+
+func (v *ForgeSessionVerifier) baseURL() string {
+	return v.endpoint.Scheme + "://" + v.endpoint.Host
+}
+
+// stableIssuer reads Forge's configured identity source once. A failed read is
+// not cached, and nothing falls back to the network address: binding by
+// address is exactly what the stable issuer replaces.
+func (v *ForgeSessionVerifier) stableIssuer(ctx context.Context) (string, error) {
+	v.issuerMu.Lock()
+	defer v.issuerMu.Unlock()
+	if v.issuer != "" {
+		return v.issuer, nil
+	}
+	sourceURL := *v.endpoint
+	sourceURL.Path, sourceURL.RawPath, sourceURL.RawQuery, sourceURL.Fragment = "/api/v1/workbench/identity-source", "", "", ""
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, sourceURL.String(), nil)
+	if err != nil {
+		return "", err
+	}
+	request.Header.Set("Accept", "application/json")
+	response, err := v.client.Do(request)
+	if err != nil {
+		return "", fmt.Errorf("read Forge identity source: %w", err)
+	}
+	defer response.Body.Close()
+	var body struct {
+		Version string `json:"version"`
+		Issuer  string `json:"issuer"`
+	}
+	if response.StatusCode != http.StatusOK {
+		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 64<<10))
+		return "", fmt.Errorf("read Forge identity source: status %d", response.StatusCode)
+	}
+	if err := json.NewDecoder(io.LimitReader(response.Body, 64<<10)).Decode(&body); err != nil ||
+		body.Version != "1" || !forgeIssuerPattern.MatchString(strings.TrimSpace(body.Issuer)) {
+		return "", errors.New("invalid Forge identity source")
+	}
+	v.issuer = strings.TrimSpace(body.Issuer)
+	return v.issuer, nil
 }
 
 func NewForgeSessionVerifier(rawURL, defaultWorkspace string, client *http.Client) *ForgeSessionVerifier {
@@ -146,8 +198,12 @@ func (v *ForgeSessionVerifier) Verify(ctx context.Context, bearer string) (Exter
 			}
 		}
 	}
+	issuer, err := v.stableIssuer(ctx)
+	if err != nil {
+		return ExternalIdentity{}, err
+	}
 	return ExternalIdentity{
-		Issuer: v.endpoint.Scheme + "://" + v.endpoint.Host, Subject: subject,
+		Issuer: issuer, BaseURL: v.baseURL(), Subject: subject,
 		Email: email, Name: name,
 		Organization: workspace, AccessRole: accessRole, PermissionSets: permissionBody.PermissionSets,
 	}, nil
@@ -196,7 +252,7 @@ func (s *Server) handleExternalIdentityExchange(c echo.Context) error {
 	if accessRole != "developer" && accessRole != "admin" {
 		accessRole = "member"
 	}
-	token, err := s.signJWTFor(user.TenantID, user.ID, []string{accessRole}, "forge", externalSessionTTL)
+	token, err := s.signJWTWithPermissionSets(user.TenantID, user.ID, []string{accessRole}, "forge", identity.PermissionSets, externalSessionTTL)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "could not issue product session"})
 	}
@@ -205,5 +261,6 @@ func (s *Server) handleExternalIdentityExchange(c echo.Context) error {
 		"subject":      map[string]string{"id": user.ID, "externalId": identity.Subject, "email": identity.Email, "name": user.DisplayName},
 		"organization": map[string]string{"id": user.TenantID},
 		"permissions":  productPermissions(accessRole),
+		"issuer":       identity.Issuer,
 	})
 }

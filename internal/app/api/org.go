@@ -172,6 +172,24 @@ func (s *Server) handleListTeams(c echo.Context) error {
 	default:
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid status filter"})
 	}
+	// Decision 002: an employee sees only the teams their Forge permission
+	// sets may use. Developers ask for the development view explicitly.
+	if permissionSets, employee := forgeEmployeeSession(c); employee && s.GetPool() != nil {
+		role := firstRole(c)
+		if c.QueryParam("purpose") != "development" || (role != "developer" && role != "admin") {
+			audiences, err := s.teamAudiences(ctx, workspaceID)
+			if err != nil {
+				return c.JSON(http.StatusInternalServerError, map[string]string{"error": "team audience unavailable"})
+			}
+			available := teams[:0]
+			for _, team := range teams {
+				if teamAvailableTo(audiences[team.ID], permissionSets) {
+					available = append(available, team)
+				}
+			}
+			teams = available
+		}
+	}
 	if !include["roster"] && !include["summary"] {
 		return c.JSON(http.StatusOK, teams)
 	}

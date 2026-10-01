@@ -113,6 +113,9 @@ func (s *Server) handleDispatchTeam(c echo.Context) error {
 		return workflowError(c, http.StatusBadRequest, "team_dispatch_request_invalid", "team dispatch request invalid")
 	}
 	request := wire.request()
+	if ok, err := s.ensureTeamAvailable(c, getTenant(c), c.Param("id")); !ok {
+		return err
+	}
 	if request.InputRevisionID != "" {
 		if s.GetPool() == nil {
 			return workflowError(c, http.StatusServiceUnavailable, "dispatch_input_unavailable", "dispatch input storage unavailable")
