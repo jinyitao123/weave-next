@@ -521,6 +521,17 @@
         "lines_added": 62,
         "production_lines_added": 9
       }
+    },
+    {
+      "date": "2026-10-01",
+      "reason": "Keep content-only successful-write replay protection explicitly opt-in until logical operation identity is defined, with real-PG default-path regression. Exact measured limits without spare allowance.",
+      "record": "docs/治理/2026-09-30-平台范围收窄整改登记.md",
+      "kernel": {
+        "previous_lines": 95831,
+        "previous_production_lines": 81002,
+        "lines_added": 18,
+        "production_lines_added": 6
+      }
     }
   ],
   "migration_targets": {
@@ -558,8 +569,8 @@
     ]
   },
   "kernel": {
-    "lines": 95831,
-    "production_lines": 81002,
+    "lines": 95849,
+    "production_lines": 81008,
     "packages": 49,
     "external_dependencies": 5,
     "allowed_dependencies": [
