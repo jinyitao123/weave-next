@@ -142,6 +142,12 @@ if [[ -n "$("${compose[@]}" ps --status running -q db)" ]]; then
 fi
 phase=prepare-workbench-storage
 python3 "$release_dir/scripts/deployment-state.py" prepare-workbench-storage "$env_file" "$state_dir"
+if [[ "$web_workbench" != true ]]; then
+  phase=workbench-shutdown
+  # Selecting only db/weave for up does not retire already running services.
+  # stop is harmless on a fresh install and preserves containers and storage.
+  "${compose[@]}" --profile legacy-workbench stop workbench-gateway workbench
+fi
 phase=api-startup
 "${compose[@]}" up -d --no-build --wait --wait-timeout 120 db weave
 phase=bootstrap
