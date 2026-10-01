@@ -94,7 +94,7 @@ func (s *Server) readWorkbenchAuthorization(ctx context.Context, workspaceID, us
 		result.Reason = "本次工作的授权已过期或失效。"
 	}
 	var detail teamrun.RuntimeWaitDetailV1
-	if runStatus != nil && *runStatus == "parked" && waitKind != nil && *waitKind == "runtime" && json.Unmarshal(waitRaw, &detail) == nil && detail.AuthorizationRequired != nil && detail.AuthorizationRequired.Renewable() && !detail.RecoveryBlocked {
+	if grantID != nil && *grantID != "" && revoked == nil && runStatus != nil && *runStatus == "parked" && waitKind != nil && *waitKind == "runtime" && json.Unmarshal(waitRaw, &detail) == nil && detail.AuthorizationRequired != nil && detail.AuthorizationRequired.Renewable() && !detail.RecoveryBlocked {
 		result.RetryNodeID = detail.NodeID
 		result.CanRenew = true
 		if result.Generation <= detail.AuthorizationRequired.Generation {

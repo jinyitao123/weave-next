@@ -591,7 +591,7 @@
     },
     {
       "date": "2026-10-01",
-      "reason": "Integrate strict Forge purpose-bound task JWTs with the accepted independent 24-hour lifecycle, stable identity/native organization freezing, same-input no-effect renewal and nonrenewable denial recovery, native inbox ownership/human and stop fencing, and complete frozen-dependency replay. Real PostgreSQL/HTTP MCP and upgrade regressions account for growth. Exact measured ceilings after the first guard failures; no spare allowance, packages or dependencies added. Existing migration targets remain debt. A verified API-key delegated employee retains identity and permission-set claims so the operator transport cannot bypass team audience.",
+      "reason": "Integrate strict Forge purpose-bound task JWTs with the accepted independent 24-hour lifecycle, stable identity/native organization freezing, same-input no-effect renewal and nonrenewable denial recovery, native inbox ownership/human and stop fencing, and complete frozen-dependency replay. Real PostgreSQL/HTTP MCP and upgrade regressions account for growth. Exact measured ceilings after the first guard failures; no spare allowance, packages or dependencies added. Existing migration targets remain debt. A verified API-key delegated employee retains identity and permission-set claims so the operator transport cannot bypass team audience. Expiry sweeping does not permanently revoke a current live input waiting for proven same-input renewal; terminal, cancellation and disabled-account revocations remain final.",
       "record": "docs/治理/2026-09-30-平台范围收窄整改登记.md",
       "base": {
         "previous_lines": 8266,
@@ -608,8 +608,8 @@
       "app": {
         "previous_lines": 85474,
         "previous_production_lines": 63020,
-        "lines_added": 1646,
-        "production_lines_added": 1009
+        "lines_added": 1735,
+        "production_lines_added": 1018
       }
     }
   ],
@@ -673,8 +673,8 @@
     ]
   },
   "app": {
-    "lines": 87120,
-    "production_lines": 64029,
+    "lines": 87209,
+    "production_lines": 64038,
     "packages": 30,
     "external_dependencies": 7,
     "allowed_dependencies": [

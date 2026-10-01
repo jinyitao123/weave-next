@@ -19,6 +19,8 @@ import (
 	"github.com/jinyitao123/weave/internal/kernel/compiler"
 	"github.com/jinyitao123/weave/internal/kernel/config"
 	"github.com/jinyitao123/weave/internal/kernel/secret"
+	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
+	"github.com/jinyitao123/weave/internal/kernel/teamrun"
 )
 
 type taskGrantHTTPFixture struct {
@@ -251,4 +253,82 @@ func TestTaskRegistrationRejectsEmployeeTokenScopeAndOrganizationRealPG(t *testi
 		t.Fatal("rejected task grant created frozen input")
 	}
 	_ = execution.AuthorizationExpiredBeforeDispatch
+}
+
+func TestExpiredParkedTaskAuthorizationRenewsAfterMaintenanceRealPG(t *testing.T) {
+	server, pool, request, authority := nativeTaskRegistrationFixture(t)
+	request.ProjectID = workbenchProjectID("user")
+	scope := scopeForRegistration(request)
+	authority.add(t, "initial-task-token", "native-user", "native-org", 1, scope)
+	created, input := registerTaskInput(t, server, request, "initial-task-token")
+	if created.Code != http.StatusCreated {
+		t.Fatalf("register: %d %s", created.Code, created.Body.String())
+	}
+	dispatched, err := boundDispatchForTest(server, map[string]any{"input_revision_id": input.InputRevisionID}, "user")
+	if err != nil || dispatched.Code != http.StatusCreated {
+		t.Fatalf("dispatch: %v %d %s", err, dispatched.Code, dispatched.Body.String())
+	}
+	var receipt workflowManualRunResponse
+	if err := json.Unmarshal(dispatched.Body.Bytes(), &receipt); err != nil {
+		t.Fatal(err)
+	}
+	claimed, err := server.Tasks.Claim(t.Context(), "expiry-worker", taskqueue.ClaimFilter{
+		Kind: "team_workflow", WorkspaceID: "ws", IdentityKind: taskqueue.IdentityTeamWorkflow,
+	})
+	if err != nil || claimed == nil {
+		t.Fatalf("claim: %+v %v", claimed, err)
+	}
+	consumer := &teamrun.Consumer{Transactions: pool, Snapshots: server.Snapshots, Runs: teamrun.NewPGStore(), Tasks: server.Tasks}
+	if _, err := consumer.ConsumeClaimed(t.Context(), claimed, "expiry-worker"); err != nil {
+		t.Fatal(err)
+	}
+	proof, _ := execution.AuthorizationRefusalFromError(execution.NewAuthorizationRefusal(input.InputRevisionID, 2, errors.New("expired before dispatch")))
+	wait, _ := json.Marshal(teamrun.RuntimeWaitDetailV1{SchemaVersion: 1, WaitType: "runtime", NodeID: "member", AuthorizationRequired: &proof})
+	if _, err := pool.Exec(t.Context(), `
+		UPDATE weave_task_business_delegations SET expires_at=issued_at+interval '1 millisecond',refresh_generation=2
+		  WHERE workspace_id='ws' AND input_revision_id=$1;
+		UPDATE weave_team_runs SET status='parked',wait_kind='runtime',wait_detail=$3::jsonb,
+		  resume_token_hash='\x01'::bytea,checkpoint_ref=$4
+		  WHERE workspace_id='ws' AND run_id=$2`, input.InputRevisionID, receipt.RunID, string(wait), teamrun.CheckpointRef("ws", receipt.RunID)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := newTaskDelegationRevoker(pool).Sweep(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	row := readRevokedDelegation(t, pool, input.InputRevisionID)
+	if row.revoked {
+		t.Fatal("expiry maintenance permanently revoked a live input waiting on a renewable no-effect proof")
+	}
+	state, err := server.readWorkbenchAuthorization(t.Context(), "ws", "user", input.InputRevisionID)
+	if err != nil || !state.CanRenew || state.Status != "renewal_required" || state.Generation != 2 {
+		t.Fatalf("expired input lost same-input renewal: %+v %v", state, err)
+	}
+	authority.add(t, "renewed-task-token", "native-user", "native-org", 3, scope)
+	c, response := dispatchInputTestContext([]byte(`{"expected_generation":2}`), "/v1/workbench/dispatch-inputs/"+input.InputRevisionID+"/authorization", "ws", "user")
+	c.SetParamNames("input_revision_id")
+	c.SetParamValues(input.InputRevisionID)
+	c.Request().Header.Set(forgeDelegationHeader, "Bearer renewed-task-token")
+	if err := server.handleRenewDispatchAuthorization(c); err != nil || response.Code != http.StatusOK {
+		t.Fatalf("same-input renewal failed after maintenance: %v %d %s", err, response.Code, response.Body.String())
+	}
+	var generation int64
+	var tokenCiphertext string
+	if err := pool.QueryRow(t.Context(), `SELECT refresh_generation,credential_ciphertext FROM weave_task_business_delegations
+		WHERE workspace_id='ws' AND input_revision_id=$1 AND revoked_at IS NULL`, input.InputRevisionID).Scan(&generation, &tokenCiphertext); err != nil || generation != 3 {
+		t.Fatalf("new generation not persisted for original input: %d %v", generation, err)
+	}
+	key, _ := secret.KeyFromEnv()
+	plain, err := secret.Open(key, tokenCiphertext)
+	clear(key)
+	defer clear(plain)
+	if err != nil || string(plain) != "renewed-task-token" {
+		t.Fatal("renewal did not preserve the new task credential")
+	}
+	if _, err := pool.Exec(t.Context(), `UPDATE weave_task_business_delegations SET revoked_at=now(),revocation_reason='employee_cancel'
+		WHERE workspace_id='ws' AND input_revision_id=$1`, input.InputRevisionID); err != nil {
+		t.Fatal(err)
+	}
+	if state, err := server.readWorkbenchAuthorization(t.Context(), "ws", "user", input.InputRevisionID); err != nil || state.CanRenew {
+		t.Fatalf("explicitly cancelled input was offered renewal: %+v %v", state, err)
+	}
 }
