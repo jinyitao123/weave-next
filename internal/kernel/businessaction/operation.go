@@ -118,6 +118,12 @@ func privateReceiptField(key string) bool {
 	switch normalized {
 	case "params", "parameters", "args", "arguments", "request", "input", "prompt", "systemprompt", "messages", "reasoning", "thinking", "chainofthought", "modeltext", "modelresponse", "privatecontent", "headers", "cookie", "cookies", "credentials", "credential", "authorization", "password", "passwd", "passphrase", "apikey", "secret", "clientsecret":
 		return true
+	// Provider-specific thought payloads are private even when returned
+	// alongside a business receipt. Ordinary business analysis remains valid.
+	case "reasoningcontent", "reasoningdetails", "reasoningtext", "reasoningsummary", "thinkingcontent", "thinkingdetails", "thinkingtext", "thinkingblocks", "thinkingsignature", "redactedthinking":
+		return true
+	case "authorizationheader", "authorizationheaders", "proxyauthorization", "proxyauthorizationheader", "authheader", "authheaders", "authenticationheader", "cookieheader", "cookieheaders", "setcookie", "setcookies", "setcookieheader", "requestheaders", "responseheaders":
+		return true
 	}
 	return strings.HasSuffix(normalized, "token") || strings.HasSuffix(normalized, "password") || strings.HasSuffix(normalized, "apikey") || strings.HasSuffix(normalized, "secret")
 }

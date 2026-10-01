@@ -176,39 +176,60 @@ func (worker *employeeRunEventWorker) pendingEmployeeRunEvents(ctx context.Conte
 // words the event. The counting and the decision that the employee must verify
 // are teamrun's, the same ones the continuation context uses.
 type employeeRunActionSummary struct {
-	WorkspaceID       string `json:"workspace_id"`
-	RunID             string `json:"run_id"`
-	ActionCount       int    `json:"action_count"`
-	SucceededCount    int    `json:"succeeded_count"`
-	FailedCount       int    `json:"failed_count"`
-	UnknownCount      int    `json:"unknown_count"`
-	Summary           string `json:"summary"`
-	NeedsVerification bool   `json:"needs_verification"`
+	WorkspaceID       string                    `json:"workspace_id"`
+	RunID             string                    `json:"run_id"`
+	ActionCount       int                       `json:"action_count"`
+	SucceededCount    int                       `json:"succeeded_count"`
+	FailedCount       int                       `json:"failed_count"`
+	UnknownCount      int                       `json:"unknown_count"`
+	Summary           string                    `json:"summary"`
+	NeedsVerification bool                      `json:"needs_verification"`
+	BusinessResult    teamrun.RunBusinessResult `json:"business_result"`
 }
 
 func (worker *employeeRunEventWorker) actionSummaries(ctx context.Context, workspaces, runs []string) ([]employeeRunActionSummary, error) {
-	rows, err := worker.Pool.Query(ctx, `SELECT workspace_id,run_id,seq,kind,COALESCE(node_id,''),COALESCE(member_id,''),detail
-		FROM weave_team_run_activity_events
-		WHERE kind IN ('business_action_started','business_action_result')
-		  AND (workspace_id,run_id) IN (SELECT * FROM unnest($1::text[],$2::text[]))
-		ORDER BY workspace_id,run_id,seq`, workspaces, runs)
+	rows, err := worker.Pool.Query(ctx, `SELECT run.workspace_id,run.run_id,run.status,
+		COALESCE(deliverable.workbench_result->>'disposition',''),
+		activity.seq,activity.kind,COALESCE(activity.node_id,''),COALESCE(activity.member_id,''),activity.detail
+		FROM weave_team_runs AS run
+		LEFT JOIN LATERAL (
+			SELECT metadata->'workbench_result' AS workbench_result FROM weave_final_deliverables
+			WHERE workspace_id=run.workspace_id AND run_id=run.run_id
+			  AND COALESCE(metadata->>'artifact_kind','final')='final'
+			ORDER BY (metadata->'workbench_result' IS NOT NULL) DESC,created_at DESC,id DESC LIMIT 1
+		) AS deliverable ON true
+		LEFT JOIN weave_team_run_activity_events AS activity
+		  ON activity.workspace_id=run.workspace_id AND activity.run_id=run.run_id
+		  AND activity.kind IN ('business_action_started','business_action_result')
+		WHERE (run.workspace_id,run.run_id) IN (SELECT * FROM unnest($1::text[],$2::text[]))
+		ORDER BY run.workspace_id,run.run_id,activity.seq`, workspaces, runs)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	type runKey struct{ workspaceID, runID string }
+	type terminalFacts struct{ status, disposition string }
 	events := map[runKey][]teamrun.ActivityEvent{}
+	facts := map[runKey]terminalFacts{}
 	order := []runKey{}
 	for rows.Next() {
 		var event teamrun.ActivityEvent
-		if err := rows.Scan(&event.WorkspaceID, &event.RunID, &event.Seq, &event.Kind, &event.NodeID, &event.MemberID, &event.Detail); err != nil {
+		var fact terminalFacts
+		var seq *int64
+		var kind *string
+		if err := rows.Scan(&event.WorkspaceID, &event.RunID, &fact.status, &fact.disposition,
+			&seq, &kind, &event.NodeID, &event.MemberID, &event.Detail); err != nil {
 			return nil, err
 		}
 		id := runKey{event.WorkspaceID, event.RunID}
-		if _, seen := events[id]; !seen {
+		if _, seen := facts[id]; !seen {
 			order = append(order, id)
+			facts[id] = fact
 		}
-		events[id] = append(events[id], event)
+		if seq != nil && kind != nil {
+			event.Seq, event.Kind = *seq, *kind
+			events[id] = append(events[id], event)
+		}
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -216,12 +237,11 @@ func (worker *employeeRunEventWorker) actionSummaries(ctx context.Context, works
 	summaries := make([]employeeRunActionSummary, 0, len(order))
 	for _, id := range order {
 		counts := teamrun.CountBusinessActions(events[id])
-		if counts.Total == 0 {
-			continue
-		}
+		fact := facts[id]
 		summaries = append(summaries, employeeRunActionSummary{WorkspaceID: id.workspaceID, RunID: id.runID,
 			ActionCount: counts.Total, SucceededCount: counts.Succeeded, FailedCount: counts.Failed, UnknownCount: counts.Unknown,
-			Summary: counts.Summary, NeedsVerification: counts.NeedsVerification()})
+			Summary: counts.Summary, NeedsVerification: counts.NeedsVerification(),
+			BusinessResult: teamrun.ClassifyRunBusinessResult(fact.status, fact.disposition, counts)})
 	}
 	return summaries, nil
 }
@@ -267,9 +287,9 @@ func (worker *employeeRunEventWorker) materialize(ctx context.Context) error {
 		WHERE run.status IN ('succeeded','failed','cancelled','abandoned')
 		  AND (run.workspace_id,run.run_id) IN (SELECT * FROM unnest($2::text[],$3::text[]))
 	), business_action_summary AS (
-		SELECT workspace_id,run_id,action_count,succeeded_count,failed_count,unknown_count,summary,needs_verification
+		SELECT workspace_id,run_id,action_count,succeeded_count,failed_count,unknown_count,summary,needs_verification,business_result
 		FROM jsonb_to_recordset($1::jsonb) AS counted(workspace_id text,run_id text,action_count int,
-			succeeded_count int,failed_count int,unknown_count int,summary text,needs_verification boolean)
+			succeeded_count int,failed_count int,unknown_count int,summary text,needs_verification boolean,business_result text)
 	)
 	INSERT INTO weave_employee_run_event_outbox(event_id,workspace_id,run_id,input_revision_id,payload)
 	SELECT (
@@ -279,15 +299,13 @@ func (worker *employeeRunEventWorker) materialize(ctx context.Context) error {
 		'version','1','eventId',(
 		  substr(hash,1,8)||'-'||substr(hash,9,4)||'-5'||substr(hash,14,3)||'-8'||substr(hash,18,3)||'-'||substr(hash,21,12)
 		),'kind',CASE
-		  WHEN status='succeeded' AND workbench_result->>'disposition'='needs_input'
-		    AND COALESCE(business_action_summary.succeeded_count,0)=0 THEN 'revision_required'
+		  WHEN business_action_summary.business_result='needs_input' THEN 'revision_required'
 		  WHEN status='succeeded' THEN 'result'
 		  WHEN status='cancelled' THEN 'cancelled'
 		  ELSE 'failure' END,
 		'organizationId',external_organization,'assigneeAccountId',assignee_account_id,
 		'title',left('团队运行'||CASE
-		  WHEN status='succeeded' AND workbench_result->>'disposition'='needs_input'
-		    AND COALESCE(business_action_summary.succeeded_count,0)=0 THEN '需要补充材料'
+		  WHEN business_action_summary.business_result='needs_input' THEN '需要补充材料'
 		  WHEN status='succeeded' THEN '已完成'
 		  WHEN status='cancelled' THEN '已取消'
 		  WHEN status='abandoned' THEN '已放弃'
@@ -295,15 +313,15 @@ func (worker *employeeRunEventWorker) materialize(ctx context.Context) error {
 		  WHEN COALESCE(business_action_summary.needs_verification,false)
 		    THEN '（业务动作需核对）' ELSE '' END||'：'||team_name,300),
 		'summary',left(CASE
-			WHEN business_action_summary.action_count IS NULL
+			WHEN COALESCE(business_action_summary.action_count,0)=0
 				THEN '平台回执：本轮 Forge 业务动作调用记录为 0 条。模型摘要或团队成果不证明业务写入或正式业务状态。'
 			ELSE '' END||CASE
 		  WHEN status='succeeded' AND workbench_result->>'disposition'='needs_input' THEN
-			CASE WHEN COALESCE(business_action_summary.succeeded_count,0)>0
-			  THEN '团队检查意见（模型输出）：' ELSE '团队检查摘要（模型输出）：' END||
+			CASE WHEN business_action_summary.business_result='needs_input'
+			  THEN '团队检查摘要（模型输出）：' ELSE '团队检查意见（模型输出）：' END||
 			COALESCE(NULLIF(workbench_result->>'summary',''),'本轮检查发现需要补充的信息。')||CASE
 			  WHEN CASE WHEN jsonb_typeof(workbench_result->'missing_items')='array' THEN jsonb_array_length(workbench_result->'missing_items') ELSE 0 END>0 THEN
-			    CASE WHEN COALESCE(business_action_summary.succeeded_count,0)>0 THEN ' 模型意见提及：' ELSE ' 需要补充：' END||(
+			    CASE WHEN business_action_summary.business_result='needs_input' THEN ' 需要补充：' ELSE ' 模型意见提及：' END||(
 				SELECT string_agg(item.value,'；') FROM jsonb_array_elements_text(workbench_result->'missing_items') AS item(value)
 			  ) ELSE '' END
 			||CASE
@@ -312,7 +330,7 @@ func (worker *employeeRunEventWorker) materialize(ctx context.Context) error {
 				' 项，结果未知 '||business_action_summary.unknown_count||' 项。失败或未知结果请先核对 Forge 业务记录后再决定下一步。'||
 				CASE WHEN COALESCE(business_action_summary.succeeded_count,0)>0
 				  THEN '后续正式业务事项由 Forge 原生业务状态决定。' ELSE '' END
-			  WHEN business_action_summary.summary IS NOT NULL THEN
+			  WHEN business_action_summary.action_count>0 THEN
 				'。业务动作调用结果：'||business_action_summary.summary||CASE
 				  WHEN COALESCE(business_action_summary.succeeded_count,0)>0
 				    THEN '本消息中的动作结果只反映调用回执；后续正式业务事项由 Forge 原生业务状态决定。'
@@ -322,7 +340,7 @@ func (worker *employeeRunEventWorker) materialize(ctx context.Context) error {
 			'团队运行状态：'||CASE status WHEN 'succeeded' THEN '已完成' WHEN 'cancelled' THEN '已取消' WHEN 'abandoned' THEN '已放弃' ELSE '失败' END||
 			'。业务动作调用结果：成功 '||business_action_summary.succeeded_count||' 项，失败 '||business_action_summary.failed_count||
 			' 项，结果未知 '||business_action_summary.unknown_count||' 项。失败或未知结果请先核对 Forge 业务记录后再决定下一步；本消息不代表正式审批状态。'
-		  WHEN business_action_summary.summary IS NOT NULL THEN
+		  WHEN business_action_summary.action_count>0 THEN
 			'团队运行状态：'||CASE status WHEN 'succeeded' THEN '已完成' WHEN 'cancelled' THEN '已取消' WHEN 'abandoned' THEN '已放弃' ELSE '失败' END||
 			'。业务动作调用结果：'||business_action_summary.summary||
 			'本消息中的动作结果只反映调用回执；正式审批状态请以 Forge 业务记录为准。'
@@ -334,7 +352,7 @@ func (worker *employeeRunEventWorker) materialize(ctx context.Context) error {
 		  WHEN status='abandoned' THEN '团队运行状态：已放弃。'
 		  WHEN cause_summary IS NOT NULL THEN '团队运行状态：失败。团队处理失败：'||cause_summary
 			ELSE '团队运行状态：失败。团队处理失败，请在桌面查看运行记录。' END||CASE
-			WHEN status='failed' AND business_action_summary.action_count IS NOT NULL AND cause_summary IS NOT NULL
+			WHEN status='failed' AND business_action_summary.action_count>0 AND cause_summary IS NOT NULL
 			  THEN '团队处理失败：'||cause_summary ELSE '' END,4000),
 		'occurredAt',terminal_at,
 		'source',jsonb_build_object(

@@ -549,6 +549,23 @@
         "lines_added": 1615,
         "production_lines_added": 490
       }
+    },
+    {
+      "date": "2026-10-01",
+      "reason": "Align employee events with the shared business-result classifier, count distinct durable operations even with reused model call IDs, and cover provider private-reasoning and credential-header receipt aliases. Actual post-integration limits; no packages or dependencies added.",
+      "record": "docs/治理/2026-09-30-平台范围收窄整改登记.md",
+      "kernel": {
+        "previous_lines": 97464,
+        "previous_production_lines": 81498,
+        "lines_added": 82,
+        "production_lines_added": 8
+      },
+      "app": {
+        "previous_lines": 83993,
+        "previous_production_lines": 62254,
+        "lines_added": 113,
+        "production_lines_added": 18
+      }
     }
   ],
   "migration_targets": {
@@ -586,8 +603,8 @@
     ]
   },
   "kernel": {
-    "lines": 97464,
-    "production_lines": 81498,
+    "lines": 97546,
+    "production_lines": 81506,
     "packages": 49,
     "external_dependencies": 5,
     "allowed_dependencies": [
@@ -611,8 +628,8 @@
     ]
   },
   "app": {
-    "lines": 83993,
-    "production_lines": 62254,
+    "lines": 84106,
+    "production_lines": 62272,
     "packages": 30,
     "external_dependencies": 7,
     "allowed_dependencies": [

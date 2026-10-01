@@ -269,3 +269,53 @@ func TestDevelopmentIdempotencyKeyUsesOnlySyntheticSystemValue(t *testing.T) {
 		t.Fatalf("trial did not inject isolated synthetic key: result=%+v err=%v", result, err)
 	}
 }
+
+func TestActionOutcomeCacheRemovesProviderThoughtAndCredentialHeaderAliases(t *testing.T) {
+	for _, field := range []string{
+		"reasoning_content", "reasoningContent", "reasoning_details", "reasoningDetails", "reasoning_text", "reasoning_summary",
+		"thinking_content", "thinkingContent", "thinking_details", "thinking_text", "thinking_blocks", "thinking_signature", "redacted_thinking",
+		"authorizationHeader", "authorization_headers", "proxyAuthorization", "proxy_authorization_header", "authHeader", "authHeaders", "authenticationHeader",
+		"cookieHeader", "cookie_headers", "setCookie", "Set-Cookie", "setCookies", "setCookieHeader", "requestHeaders", "response_headers",
+	} {
+		t.Run(field, func(t *testing.T) {
+			secret := map[string]any{"text": "private-payload-canary"}
+			content, err := json.Marshal(map[string]any{
+				"ok":  true,
+				field: secret,
+				"data": map[string]any{
+					"business_receipt": "receipt-1",
+					"analysis":         "报价差异已经核对",
+					"analysis_details": map[string]any{"variance": 12},
+					"usage":            map[string]any{"reasoning_tokens": 7},
+					"nested":           []any{map[string]any{field: secret, "analysis": "合同金额一致"}},
+				},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			original := &contract.ToolResult{CallID: "call-1", ToolName: "run_action", Content: string(content)}
+			cached := SanitizeActionOutcomeResult(original)
+			if cached == nil || strings.Contains(cached.Content, "private-payload-canary") || strings.Contains(cached.Content, `"`+field+`"`) {
+				t.Fatalf("provider private field or credential header survived: field=%q cached=%+v", field, cached)
+			}
+			var receipt struct {
+				Data struct {
+					BusinessReceipt string           `json:"business_receipt"`
+					Analysis        string           `json:"analysis"`
+					AnalysisDetails map[string]int   `json:"analysis_details"`
+					Usage           map[string]int   `json:"usage"`
+					Nested          []map[string]any `json:"nested"`
+				} `json:"data"`
+			}
+			if err := json.Unmarshal([]byte(cached.Content), &receipt); err != nil {
+				t.Fatal(err)
+			}
+			if receipt.Data.BusinessReceipt != "receipt-1" || receipt.Data.Analysis != "报价差异已经核对" || receipt.Data.AnalysisDetails["variance"] != 12 || receipt.Data.Usage["reasoning_tokens"] != 7 || len(receipt.Data.Nested) != 1 || receipt.Data.Nested[0]["analysis"] != "合同金额一致" {
+				t.Fatalf("business analysis or non-private reasoning usage was removed: %s", cached.Content)
+			}
+			if original.Content != string(content) {
+				t.Fatal("cache sanitization mutated the original business receipt")
+			}
+		})
+	}
+}

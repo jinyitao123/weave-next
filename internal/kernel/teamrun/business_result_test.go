@@ -86,3 +86,27 @@ func TestCountBusinessActionsBoundsLongLabels(t *testing.T) {
 		t.Fatalf("summary = %q", got.Summary)
 	}
 }
+
+func TestCountBusinessActionsSeparatesDurableOperationsWithReusedCallID(t *testing.T) {
+	var events []ActivityEvent
+	for i, status := range []string{"succeeded", "failed", "unknown"} {
+		for j, kind := range []string{"business_action_started", "business_action_result"} {
+			event := actionEvent(int64(i*2+j+1), kind, "n", "m", "inv", "reused-call", "处理", status)
+			var detail map[string]any
+			if err := json.Unmarshal(event.Detail, &detail); err != nil {
+				t.Fatal(err)
+			}
+			detail["operation_id"] = []string{"op-one", "op-two", "op-three"}[i]
+			detail["input_revision_id"] = "input-one"
+			if kind == "business_action_started" {
+				delete(detail, "status")
+			}
+			event.Detail, _ = json.Marshal(detail)
+			events = append(events, event)
+		}
+	}
+	counts := CountBusinessActions(events)
+	if counts.Total != 3 || counts.Succeeded != 1 || counts.Failed != 1 || counts.Unknown != 1 {
+		t.Fatalf("durable operations were collapsed: %+v", counts)
+	}
+}
