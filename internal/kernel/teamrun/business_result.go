@@ -68,7 +68,7 @@ func ClassifyRunBusinessResult(runStatus, disposition string, counts BusinessAct
 // identified by node, member, invocation and tool call; its latest start
 // represents it and its latest result gives the status.
 func CountBusinessActions(events []ActivityEvent) BusinessActionCounts {
-	type key struct{ node, member, invocation, call string }
+	type key struct{ node, member, invocation, call, input, operation string }
 	type call struct {
 		seq   int64
 		label string
@@ -78,12 +78,14 @@ func CountBusinessActions(events []ActivityEvent) BusinessActionCounts {
 		status string
 	}
 	type detailFields struct {
-		Source       string `json:"source"`
-		InvocationID string `json:"invocation_id"`
-		CallID       string `json:"tool_call_id"`
-		ActionLabel  string `json:"action_label"`
-		ActionName   string `json:"action_name"`
-		Status       string `json:"status"`
+		Source          string `json:"source"`
+		InputRevisionID string `json:"input_revision_id"`
+		OperationID     string `json:"operation_id"`
+		InvocationID    string `json:"invocation_id"`
+		CallID          string `json:"tool_call_id"`
+		ActionLabel     string `json:"action_label"`
+		ActionName      string `json:"action_name"`
+		Status          string `json:"status"`
 	}
 	started := map[key]call{}
 	results := map[key]result{}
@@ -95,7 +97,7 @@ func CountBusinessActions(events []ActivityEvent) BusinessActionCounts {
 		if json.Unmarshal(event.Detail, &detail) != nil {
 			continue
 		}
-		id := key{event.NodeID, event.MemberID, detail.InvocationID, detail.CallID}
+		id := key{event.NodeID, event.MemberID, detail.InvocationID, detail.CallID, detail.InputRevisionID, detail.OperationID}
 		if event.Kind == "business_action_started" {
 			if detail.Source != "forge_mcp.run_action" {
 				continue
