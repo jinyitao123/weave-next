@@ -294,6 +294,11 @@ func runPublishedMemberRecovery(t *testing.T, totalRounds uint64) {
 }
 func publishMemberIntegrationSample(t *testing.T, pool *pgxpool.Pool, key []byte, workspace, actor, serverURL, serverID string, revision int64, toolName, prompt string, budget ...uint64) (frozen.FrozenExecutionBundle, compiler.FrozenResolver, *workflow.PublishedArtifactContent) {
 	t.Helper()
+	return publishConfiguredMemberIntegrationSample(t, pool, key, workspace, actor, serverURL, serverID, revision, toolName, prompt, nil, budget...)
+}
+
+func publishConfiguredMemberIntegrationSample(t *testing.T, pool *pgxpool.Pool, key []byte, workspace, actor, serverURL, serverID string, revision int64, toolName, prompt string, configure func(*registry.AgentRecord), budget ...uint64) (frozen.FrozenExecutionBundle, compiler.FrozenResolver, *workflow.PublishedArtifactContent) {
+	t.Helper()
 	ctx := execution.WithSubject(t.Context(), execution.Subject{WorkspaceID: workspace, UserID: actor})
 	providers := credentials.New(pool, key)
 	if err := providers.Upsert(ctx, workspace, llmrouter.ProviderConfig{CredentialScope: frozen.CredentialScopeUser, CredentialUserID: actor, ID: "fixture", Name: "Fixture", BaseURL: serverURL, APIKey: "test-provider-secret", Models: []string{"fixture-model"}}); err != nil {
@@ -302,6 +307,9 @@ func publishMemberIntegrationSample(t *testing.T, pool *pgxpool.Pool, key []byte
 	agents := agentcatalog.New(pool)
 	lead := &registry.AgentRecord{Name: "lead", Role: "avatar", Engine: "loom", Model: "fixture-model", GraphType: "standard", Spec: stdlib.AgentSpec{SystemPrompt: "Return the brief."}}
 	worker := &registry.AgentRecord{Name: "worker", Role: "worker", Engine: "loom", Model: "fixture-model", GraphType: "standard", Spec: stdlib.AgentSpec{SystemPrompt: prompt}, MCPServers: []registry.MCPServerConfig{{ServerID: serverID, Filter: []string{toolName}}}}
+	if configure != nil {
+		configure(worker)
+	}
 	if len(budget) > 0 && budget[0] > 0 {
 		worker.ToolLoopControl = &frozen.ToolLoopControl{SliceRounds: 1, InitialTotalRounds: budget[0]}
 	}
@@ -368,18 +376,17 @@ func publishMemberIntegrationSample(t *testing.T, pool *pgxpool.Pool, key []byte
 			t.Fatal("unchanged lead unexpectedly upgraded")
 		}
 	}
-	if bundle.FactoryKey != compiler.StandardFrozenToolsKey() || len(bundle.MCPBindings) != 1 || len(bundle.MCPBindings[0].Tools) != 1 {
+	if bundle.FactoryKey != compiler.StandardFrozenToolsKey() || len(bundle.MCPBindings) != len(worker.MCPServers) {
 		t.Fatalf("tools missing after publication: %#v", bundle.FactoryKey)
 	}
-	if bundle.MCPBindings[0].ServerRevision != revision {
-		t.Fatal("MCP revision not pinned")
+	if len(worker.MCPServers) != 0 && (len(bundle.MCPBindings[0].Tools) != 1 || bundle.MCPBindings[0].ServerRevision != revision) {
+		t.Fatal("MCP tool contract or revision not pinned")
 	}
 	resolver, err := freezer.RebuildArtifactResolver(bundle)
 	if err != nil {
 		agentHash, _ := frozen.HashDTO(bundle.Agent, frozen.PreorderFrozenAgentRecord)
-		mcpHash, _ := frozen.HashDTO(bundle.MCPBindings[0], frozen.PreorderFrozenMCPBinding)
 		modelHash, _ := frozen.HashDTO(bundle.PrimaryModel, frozen.PreorderFrozenModelBinding)
-		t.Logf("agent hash=%s; mcp hash=%s stored=%s; model hash=%s stored=%s; dependencies=%+v", agentHash, mcpHash, bundle.MCPBindings[0].ContentHash, modelHash, bundle.PrimaryModel.ContentHash, bundle.Dependencies)
+		t.Logf("agent hash=%s; model hash=%s stored=%s; dependencies=%+v", agentHash, modelHash, bundle.PrimaryModel.ContentHash, bundle.Dependencies)
 		t.Fatal(err)
 	}
 	return bundle, resolver, saved
