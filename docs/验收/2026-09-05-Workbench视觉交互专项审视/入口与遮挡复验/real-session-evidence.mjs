@@ -8,7 +8,7 @@ import assert from 'node:assert/strict'
 const evidence = dirname(fileURLToPath(import.meta.url))
 const repo = resolve(evidence, '../../../../')
 const { chromium } = createRequire(join(repo, 'workbench/apps/web/package.json'))('playwright')
-const log = await readFile('/private/tmp/weave-ux-workbench-server.log', 'utf8')
+const log = await readFile('<LOCAL_TEMP_PATH>, 'utf8')
 const authUrl = log.match(/http:\/\/127\.0\.0\.1:13081\/\?token=[^\s]+/)?.[0]
 assert.ok(authUrl, 'local authenticated entry exists')
 const result = { date: new Date().toISOString(), provenance: '真实历史会话与本地正式构建；仅浏览、展开既有记录、滚动，未发送消息或执行业务操作', session: '异步派发停止流程验收简报', cases: [], errors: [] }

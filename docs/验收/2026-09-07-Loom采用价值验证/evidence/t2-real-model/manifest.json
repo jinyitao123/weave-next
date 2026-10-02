@@ -1,6 +1,6 @@
 {
   "source_task": "task-3b0014b553bdaa5746c6a708d5c75ecd",
-  "source_path": "/private/tmp/weave-corona-validation-20260906/workspaces-b/.invocations/task-3b0014b553bdaa5746c6a708d5c75ecd/default/corona-prephase-a-lab-v3-luna-digital-engineering-builder/workdir/outputs/model",
+  "source_path": "<LOCAL_TEMP_PATH>",
   "construction": "retained final model with only verified gamma repair reversed; not exact historical snapshot",
   "files": [
     {

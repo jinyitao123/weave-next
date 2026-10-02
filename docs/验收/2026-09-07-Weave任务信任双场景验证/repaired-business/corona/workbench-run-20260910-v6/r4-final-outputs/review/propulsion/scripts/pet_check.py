@@ -23,7 +23,7 @@
 import json, math, sys, os, re
 
 # ---------- 从冻结基线文件读取常量（只读输入，不复制到别的主机） ----------
-BASE = "/Users/jinyitao/.weave/recovery-materials/2026-09-10-corona-v5-source/v4-outputs/model/baseline.yaml"
+BASE = "<MAINTAINER_LOCAL_PATH>"
 if not os.path.exists(BASE):
     # 若冻结输入不可见，尝试回退到 v4 运行时相对布局（不寄望于其存在）
     _alt = os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "..", "..", "inputs", "lead", "baseline", "baseline.yaml")

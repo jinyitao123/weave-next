@@ -2,7 +2,7 @@ cd workbench && CI=true pnpm install --frozen-lockfile
 native/landlock-run/packages/linux-arm64 | [WARN] Unsupported platform: wanted: {"cpu":["arm64"],"os":["linux"],"libc":["any"]} (current: {"os":"darwin","cpu":"arm64","libc":"unknown"})
 native/landlock-run/packages/linux-x64   | [WARN] Unsupported platform: wanted: {"cpu":["x64"],"os":["linux"],"libc":["any"]} (current: {"os":"darwin","cpu":"arm64","libc":"unknown"})
 Scope: all 246 workspace projects
-[WARN] There are cyclic workspace dependencies: /Users/jinyitao/Developer/weave-next/workbench/packages/client/locale, /Users/jinyitao/Developer/weave-next/workbench/packages/test-support/client-runtime, /Users/jinyitao/Developer/weave-next/workbench/packages/client/ui-chat, /Users/jinyitao/Developer/weave-next/workbench/packages/client/ui-layout, /Users/jinyitao/Developer/weave-next/workbench/packages/client/ui-theme; /Users/jinyitao/Developer/weave-next/workbench/packages/client/ui-conversation, /Users/jinyitao/Developer/weave-next/workbench/packages/client/ui-workspace; /Users/jinyitao/Developer/weave-next/workbench/packages/examples/agent-spine-demo, /Users/jinyitao/Developer/weave-next/workbench/packages/goal/goal; /Users/jinyitao/Developer/weave-next/workbench/packages/sandbox/sandbox-local, /Users/jinyitao/Developer/weave-next/workbench/packages/sandbox/sandbox-windows-acl; /Users/jinyitao/Developer/weave-next/workbench/packages/subagent/subagent-spawn-in-process, /Users/jinyitao/Developer/weave-next/workbench/packages/subagent/tool-subagent; /Users/jinyitao/Developer/weave-next/workbench/vendor/cordis, /Users/jinyitao/Developer/weave-next/workbench/vendor/include
+[WARN] There are cyclic workspace dependencies: <MAINTAINER_LOCAL_PATH>, <MAINTAINER_LOCAL_PATH>, <MAINTAINER_LOCAL_PATH>, <MAINTAINER_LOCAL_PATH>, <MAINTAINER_LOCAL_PATH>; <MAINTAINER_LOCAL_PATH>, <MAINTAINER_LOCAL_PATH>; <MAINTAINER_LOCAL_PATH>, <MAINTAINER_LOCAL_PATH>; <MAINTAINER_LOCAL_PATH>, <MAINTAINER_LOCAL_PATH>; <MAINTAINER_LOCAL_PATH>, <MAINTAINER_LOCAL_PATH>; <MAINTAINER_LOCAL_PATH>, <MAINTAINER_LOCAL_PATH>
 ✓ Lockfile passes supply-chain policies (verified 1d ago)
 Lockfile is up to date, resolution step is skipped
 Already up to date
@@ -14,7 +14,7 @@ cd workbench && DSH_CLIENT_COMMIT_HASH=$(git rev-parse --short=7 HEAD) DSH_CLIEN
 native/landlock-run/packages/linux-arm64 | [WARN] Unsupported platform: wanted: {"cpu":["arm64"],"os":["linux"],"libc":["any"]} (current: {"os":"darwin","cpu":"arm64","libc":"unknown"})
 native/landlock-run/packages/linux-x64   | [WARN] Unsupported platform: wanted: {"cpu":["x64"],"os":["linux"],"libc":["any"]} (current: {"os":"darwin","cpu":"arm64","libc":"unknown"})
 Scope: all 246 workspace projects
-[WARN] There are cyclic workspace dependencies: /Users/jinyitao/Developer/weave-next/workbench/packages/client/locale, /Users/jinyitao/Developer/weave-next/workbench/packages/test-support/client-runtime, /Users/jinyitao/Developer/weave-next/workbench/packages/client/ui-chat, /Users/jinyitao/Developer/weave-next/workbench/packages/client/ui-layout, /Users/jinyitao/Developer/weave-next/workbench/packages/client/ui-theme; /Users/jinyitao/Developer/weave-next/workbench/packages/client/ui-conversation, /Users/jinyitao/Developer/weave-next/workbench/packages/client/ui-workspace; /Users/jinyitao/Developer/weave-next/workbench/packages/examples/agent-spine-demo, /Users/jinyitao/Developer/weave-next/workbench/packages/goal/goal; /Users/jinyitao/Developer/weave-next/workbench/packages/sandbox/sandbox-local, /Users/jinyitao/Developer/weave-next/workbench/packages/sandbox/sandbox-windows-acl; /Users/jinyitao/Developer/weave-next/workbench/packages/subagent/subagent-spawn-in-process, /Users/jinyitao/Developer/weave-next/workbench/packages/subagent/tool-subagent; /Users/jinyitao/Developer/weave-next/workbench/vendor/cordis, /Users/jinyitao/Developer/weave-next/workbench/vendor/include
+[WARN] There are cyclic workspace dependencies: <MAINTAINER_LOCAL_PATH>, <MAINTAINER_LOCAL_PATH>, <MAINTAINER_LOCAL_PATH>, <MAINTAINER_LOCAL_PATH>, <MAINTAINER_LOCAL_PATH>; <MAINTAINER_LOCAL_PATH>, <MAINTAINER_LOCAL_PATH>; <MAINTAINER_LOCAL_PATH>, <MAINTAINER_LOCAL_PATH>; <MAINTAINER_LOCAL_PATH>, <MAINTAINER_LOCAL_PATH>; <MAINTAINER_LOCAL_PATH>, <MAINTAINER_LOCAL_PATH>; <MAINTAINER_LOCAL_PATH>, <MAINTAINER_LOCAL_PATH>
 ✓ Lockfile passes supply-chain policies (verified 1d ago)
 Lockfile is up to date, resolution step is skipped
 Already up to date
@@ -165,14 +165,14 @@ packages/bundle/workbench-app/tests/deliverable-content.spec.ts(53,100): error T
                   Type 'string | undefined' is not assignable to type 'string'.
                     Type 'undefined' is not assignable to type 'string'.
 [ELIFECYCLE] Command failed with exit code 1.
-/Users/jinyitao/Developer/weave-next/workbench/scripts/build.ts:27
+<MAINTAINER_LOCAL_PATH>
     throw new Error(`build: ${script} exited with ${String(result.status ?? result.signal)}`)
           ^
 
 Error: build: build:lib exited with 1
-    at runScript (/Users/jinyitao/Developer/weave-next/workbench/scripts/build.ts:27:11)
-    at main (/Users/jinyitao/Developer/weave-next/workbench/scripts/build.ts:44:3)
-    at <anonymous> (/Users/jinyitao/Developer/weave-next/workbench/scripts/build.ts:52:23)
+    at runScript (<MAINTAINER_LOCAL_PATH>)
+    at main (<MAINTAINER_LOCAL_PATH>)
+    at <anonymous> (<MAINTAINER_LOCAL_PATH>)
     at ModuleJob.run (node:internal/modules/esm/module_job:430:25)
     at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:655:26)
     at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)

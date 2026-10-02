@@ -17,7 +17,7 @@
       "wait_type": "fanout_group",
       "generation": "fg1_0e5efb9af6c1591ffdcc6402bba0db53740df117f2fe24f38462e72f6e63e809",
       "join_node_id": "join",
-      "resume_token": "[REMOVED-RESUME-CAPABILITY]",
+      "resume_token": "<REDACTED_RESUME_TOKEN>",
       "parent_run_id": "run-b265eff8-af4a-507c-ae7d-d1229e14f7ea"
     },
     "created_at": "2026-09-10T03:47:26.185844+08:00",
@@ -223,27 +223,27 @@
   "processes": [
     {
       "role": "interrupted_repair_runtime",
-      "snapshot": "49534     1 Thu Sep 10 03:43:27 2026     Ss   08:23 /Users/jinyitao/.local/bin/weave runtime --server http://127.0.0.1:18080 --concurrency 4"
+      "snapshot": "49534     1 Thu Sep 10 03:43:27 2026     Ss   08:23 <MAINTAINER_LOCAL_PATH> runtime --server http://127.0.0.1:18080 --concurrency 4"
     },
     {
       "role": "preserved_secondary_runtime",
-      "snapshot": "44079     1 Thu Sep 10 02:35:20 2026     S    01:16:30 /Users/jinyitao/.local/bin/weave runtime --server http://127.0.0.1:18080 --concurrency 2 --workspaces-root /Users/jinyitao/.weave/runtime-workspaces-b"
+      "snapshot": "44079     1 Thu Sep 10 02:35:20 2026     S    01:16:30 <MAINTAINER_LOCAL_PATH> runtime --server http://127.0.0.1:18080 --concurrency 2 --workspaces-root <MAINTAINER_LOCAL_PATH>"
     },
     {
       "role": "parallel-01-engine",
-      "snapshot": "50011 49534 Thu Sep 10 03:49:44 2026     S    02:06 /Users/jinyitao/.local/bin/claude -p --output-format stream-json --verbose --dangerously-skip-permissions --mcp-config=/Users/jinyitao/.weave/runtime-workspaces/.invocations/task-f5757307bccb4b2d9d5c9305aaab0a4f/default/corona-prephase-a-recovery-v6-archive-reliability-designer/workdir/.weave-mcp.json --"
+      "snapshot": "50011 49534 Thu Sep 10 03:49:44 2026     S    02:06 <MAINTAINER_LOCAL_PATH> -p --output-format stream-json --verbose --dangerously-skip-permissions --mcp-config=<MAINTAINER_LOCAL_PATH> --"
     },
     {
       "role": "parallel-03-engine",
-      "snapshot": "50049 49534 Thu Sep 10 03:49:45 2026     S    02:05 /Users/jinyitao/.local/bin/claude -p --output-format stream-json --verbose --dangerously-skip-permissions --mcp-config=/Users/jinyitao/.weave/runtime-workspaces/.invocations/task-b0009563378918130f573b9e44ec8e09/default/corona-prephase-a-recovery-v6-digital-engineering-builder/workdir/.weave-mcp.json --"
+      "snapshot": "50049 49534 Thu Sep 10 03:49:45 2026     S    02:05 <MAINTAINER_LOCAL_PATH> -p --output-format stream-json --verbose --dangerously-skip-permissions --mcp-config=<MAINTAINER_LOCAL_PATH> --"
     },
     {
       "role": "parallel-04-engine",
-      "snapshot": "50081 49534 Thu Sep 10 03:49:46 2026     S    02:04 /Users/jinyitao/.local/bin/claude -p --output-format stream-json --verbose --dangerously-skip-permissions --mcp-config=/Users/jinyitao/.weave/runtime-workspaces/.invocations/task-999ba08b8361ad82a9cfe86015ba6171/default/corona-prephase-a-recovery-v6-mission-physics-analyst/workdir/.weave-mcp.json --"
+      "snapshot": "50081 49534 Thu Sep 10 03:49:46 2026     S    02:04 <MAINTAINER_LOCAL_PATH> -p --output-format stream-json --verbose --dangerously-skip-permissions --mcp-config=<MAINTAINER_LOCAL_PATH> --"
     },
     {
       "role": "parallel-02-engine",
-      "snapshot": "50015 44079 Thu Sep 10 03:49:44 2026     S    02:06 /Users/jinyitao/.local/bin/claude -p --output-format stream-json --verbose --dangerously-skip-permissions --mcp-config=/Users/jinyitao/.weave/runtime-workspaces-b/.invocations/task-3e6c67206897e9558d0291a44afa0232/default/corona-prephase-a-recovery-v6-cost-risk-analyst/workdir/.weave-mcp.json --"
+      "snapshot": "50015 44079 Thu Sep 10 03:49:44 2026     S    02:06 <MAINTAINER_LOCAL_PATH> -p --output-format stream-json --verbose --dangerously-skip-permissions --mcp-config=<MAINTAINER_LOCAL_PATH> --"
     }
   ],
   "interruption_target": {

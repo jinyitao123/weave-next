@@ -86,7 +86,7 @@
     "pid": 34406,
     "ppid": 15585,
     "pgid": 34406,
-    "command": "/Users/jinyitao/.local/bin/claude -p --output-format stream-json --verbose --dangerously-skip-permissions --mcp-config=/private/tmp/weave-runtime-value-20260907-sqtugx3m/runtime-workspaces/.invocations/task-6a50568ad2baec98cfd34b88ea32b01c/default/corona-prephase-a-lab-v3-luna-digital-engineering-builder/workdir/.weave-mcp.json --"
+    "command": "<MAINTAINER_LOCAL_PATH> -p --output-format stream-json --verbose --dangerously-skip-permissions --mcp-config=<LOCAL_TEMP_PATH> --"
   },
   "api_pid": 25232,
   "driver_pid": 34381,
@@ -95,25 +95,25 @@
       "pid": 15585,
       "ppid": 1,
       "pgid": 15585,
-      "command": "/private/tmp/weave-runtime-value-20260907-sqtugx3m/weave runtime --server http://127.0.0.1:56586 --workspaces-root /private/tmp/weave-runtime-value-20260907-sqtugx3m/runtime-workspaces --concurrency 1"
+      "command": "<LOCAL_TEMP_PATH> runtime --server http://127.0.0.1:56586 --workspaces-root <LOCAL_TEMP_PATH> --concurrency 1"
     },
     {
       "pid": 25232,
       "ppid": 1,
       "pgid": 25232,
-      "command": "/private/tmp/weave-runtime-value-20260907-sqtugx3m/driver serve /private/tmp/weave-runtime-value-20260907-sqtugx3m/settings.json"
+      "command": "<LOCAL_TEMP_PATH> serve <LOCAL_TEMP_PATH>"
     },
     {
       "pid": 34381,
       "ppid": 34380,
       "pgid": 34381,
-      "command": "/private/tmp/weave-runtime-value-20260907-sqtugx3m/driver-extra run /private/tmp/weave-runtime-value-20260907-sqtugx3m/settings.json M2"
+      "command": "<LOCAL_TEMP_PATH> run <LOCAL_TEMP_PATH> M2"
     },
     {
       "pid": 34406,
       "ppid": 15585,
       "pgid": 34406,
-      "command": "/Users/jinyitao/.local/bin/claude -p --output-format stream-json --verbose --dangerously-skip-permissions --mcp-config=/private/tmp/weave-runtime-value-20260907-sqtugx3m/runtime-workspaces/.invocations/task-6a50568ad2baec98cfd34b88ea32b01c/default/corona-prephase-a-lab-v3-luna-digital-engineering-builder/workdir/.weave-mcp.json --"
+      "command": "<MAINTAINER_LOCAL_PATH> -p --output-format stream-json --verbose --dangerously-skip-permissions --mcp-config=<LOCAL_TEMP_PATH> --"
     }
   ]
 }

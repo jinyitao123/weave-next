@@ -5,7 +5,7 @@
     {
       "check": "exact_frozen_baseline",
       "passed": true,
-      "detail": "/private/tmp/weave-runtime-value-20260907-sqtugx3m/runtime-workspaces/.invocations/task-12c3b74a36b2e690afffbc5ef247820b/default/corona-prephase-a-lab-v3-luna-digital-engineering-builder/workdir/outputs/model/baseline_frozen.yaml"
+      "detail": "<LOCAL_TEMP_PATH>"
     },
     {
       "check": "machine_manifest_present",
@@ -76,7 +76,7 @@
           "test_model.py"
         ],
         "exit_code": 0,
-        "cwd": "/private/tmp/weave-runtime-value-20260907-sqtugx3m/runtime-workspaces/.invocations/task-12c3b74a36b2e690afffbc5ef247820b/default/corona-prephase-a-lab-v3-luna-digital-engineering-builder/workdir/outputs/model"
+        "cwd": "<LOCAL_TEMP_PATH>"
       }
     },
     {
@@ -129,7 +129,7 @@
     {
       "check": "app_entry_present",
       "passed": true,
-      "detail": "/private/tmp/weave-runtime-value-20260907-sqtugx3m/runtime-workspaces/.invocations/task-12c3b74a36b2e690afffbc5ef247820b/default/corona-prephase-a-lab-v3-luna-digital-engineering-builder/workdir/outputs/app/index.html"
+      "detail": "<LOCAL_TEMP_PATH>"
     }
   ],
   "browser_acceptance": "NOT_RUN",

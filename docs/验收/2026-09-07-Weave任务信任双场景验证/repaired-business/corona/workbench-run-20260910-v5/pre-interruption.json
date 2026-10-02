@@ -156,21 +156,21 @@
   "processes": [
     {
       "role": "interrupted_primary_runtime",
-      "snapshot": "43828     1 Thu Sep 10 02:30:32 2026     S    01:05:49 /Users/jinyitao/.local/bin/weave runtime --server http://127.0.0.1:18080 --concurrency 4"
+      "snapshot": "43828     1 Thu Sep 10 02:30:32 2026     S    01:05:49 <MAINTAINER_LOCAL_PATH> runtime --server http://127.0.0.1:18080 --concurrency 4"
     },
     {
       "role": "active_member_engine",
-      "snapshot": "47872 43828 Thu Sep 10 03:20:29 2026     S    15:52 /Users/jinyitao/.local/bin/claude -p --output-format stream-json --verbose --dangerously-skip-permissions --mcp-config=/Users/jinyitao/.weave/runtime-workspaces/.invocations/task-c8e20803ad288155b9f07bd635a17249/default/corona-prephase-a-recovery-v5-mission-lead/workdir/.weave-mcp.json --"
+      "snapshot": "47872 43828 Thu Sep 10 03:20:29 2026     S    15:52 <MAINTAINER_LOCAL_PATH> -p --output-format stream-json --verbose --dangerously-skip-permissions --mcp-config=<MAINTAINER_LOCAL_PATH> --"
     },
     {
       "role": "secondary_runtime",
-      "snapshot": "44079     1 Thu Sep 10 02:35:20 2026     S    01:01:01 /Users/jinyitao/.local/bin/weave runtime --server http://127.0.0.1:18080 --concurrency 2 --workspaces-root /Users/jinyitao/.weave/runtime-workspaces-b"
+      "snapshot": "44079     1 Thu Sep 10 02:35:20 2026     S    01:01:01 <MAINTAINER_LOCAL_PATH> runtime --server http://127.0.0.1:18080 --concurrency 2 --workspaces-root <MAINTAINER_LOCAL_PATH>"
     }
   ],
   "input_evidence": {
     "source_manifest_sha256": "584cc020b0bac241977362a057ebc8c7096a570760f0b32c39c1aa47fcc6cf8a",
     "source_manifest_expected_sha256": "584cc020b0bac241977362a057ebc8c7096a570760f0b32c39c1aa47fcc6cf8a",
-    "authority_acceptance_path": "/Users/jinyitao/Documents/日冕/complex-validation/acceptance.json",
+    "authority_acceptance_path": "<MAINTAINER_LOCAL_PATH>",
     "authority_acceptance_sha256": "f4777aaf587b4a81a4fef1932717bf95a0aa063fa21a8e390dfd2ecd8cc60ec4"
   },
   "external_effect_scope": "none",

@@ -120,7 +120,7 @@ def gate_G2():
 
 def gate_G3():
     """reference_calculations_within_tolerance —— 首性复算 5 项参考锚点, 均在容差内。"""
-    acc = json.load(open("/Users/jinyitao/Documents/日冕/complex-validation/acceptance.json"))
+    acc = json.load(open("<MAINTAINER_LOCAL_PATH>"))
     refs = acc["reference_checks"]
     sys.path.insert(0, MODEL)
     import corona_model as cm
@@ -392,7 +392,7 @@ def review_index_paths_ok():
 # ---------------------------------------------------------------------------
 def main():
     t0 = time.time()
-    acc_path = "/Users/jinyitao/Documents/日冕/complex-validation/acceptance.json"
+    acc_path = "<MAINTAINER_LOCAL_PATH>"
     acc = json.load(open(acc_path))
     authoritative_sha = _sha(acc_path)
 

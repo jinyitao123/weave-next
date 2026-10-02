@@ -2,6 +2,6 @@ panic: DATABASE_URL is required
 
 goroutine 1 [running]:
 main.must(...)
-	/Users/jinyitao/Developer/weave-next/docs/验收/2026-09-07-Loom成员接入实施/probe/main.go:53
+	<MAINTAINER_LOCAL_PATH>
 main.main()
-	/Users/jinyitao/Developer/weave-next/docs/验收/2026-09-07-Loom成员接入实施/probe/main.go:107 +0x15fc
+	<MAINTAINER_LOCAL_PATH> +0x15fc

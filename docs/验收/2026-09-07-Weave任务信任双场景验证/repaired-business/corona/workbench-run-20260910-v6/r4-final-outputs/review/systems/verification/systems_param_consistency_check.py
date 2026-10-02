@@ -30,7 +30,7 @@ SCENARIOS = [0.01, 0.03, 0.05]
 SCENARIO_IDS = ["S-0.01c", "S-0.03c", "S-0.05c"]
 
 # ---- 权威验收文件（只读）----
-ACCEPT_JSON = "/Users/jinyitao/Documents/日冕/complex-validation/acceptance.json"
+ACCEPT_JSON = "<MAINTAINER_LOCAL_PATH>"
 
 
 def time_years(cs):

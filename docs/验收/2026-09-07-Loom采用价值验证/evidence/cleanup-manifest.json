@@ -2,566 +2,566 @@
   "archive_sha256": "61b6b8bb37208a356a095e0bf1ff94a894da12da8667cc9476dcd7f89aa27927",
   "files": [
     {
-      "path": "/private/tmp/loom-value-b-s1-smoke-current",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "628786b81591d76373e7dda25e63ffb767ae32d9cb6137299bffb38e93db4c36",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-b-s1-smoke.qx45YN/b-state.json",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "9b64c577cd05ed4a92d1ef8eb6c2b78ef5a7d92cb780f885614a552ebf51c152",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-b-s1-smoke.qx45YN/crash-s1.done",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "861a031f3544d8e42da8c3083af19e69ee92f84a1224f74913814356bc8cf8fe",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-b-s1-smoke.qx45YN/events.jsonl",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "3ab6caa8760eb54558e75ed3c306371bfb115558d6a6f3c57beb85a3ca6ea1ac",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-b-s1-smoke.qx45YN/inference-10011-01.json",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "f9c0063ff8aa33d9ebb76260c5b9412cc0d9b813ecd1fa09f9c2c9b34dd21fc0",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-b-s1-smoke.qx45YN/inference-10011-02.json",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "fd766e8fe37806c28708c7b880d1e13b36bdf4ce1aeac4012a77824417971140",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-b-s1-smoke.qx45YN/inference-10059-01.json",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "b434fa005391d3c064f3294fb14bb0240fbde789dd80f703092a0e033673c398",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-b-s1-smoke.qx45YN/inference-10059-02.json",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "5100b3a26d3f40e4974c26eabd5082b7016511992ffddf2b070e0dea7bac8745",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-b-s1-smoke.qx45YN/inference-workspace/CLAUDE.md",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "b92655b63a1fb1bcd3c9b1d630c64e406688a1a99bfc1556bd7e53f68d73696e",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-b-s1-smoke.qx45YN/result.json",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "491297e0fd1114e8eec30afc7f0c657d07b52c5669d94efe44c6676d8e4f7d34",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-b-s1-smoke.qx45YN/tool-ledger.json",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "7b033236b2d843e06a47083780b8833b4f94c1be944d47e80fc2590a1a8bbf09",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-b-s1-smoke.qx45YN/workspace/inputs/baseline.json",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "1319294327c96df29603c03b2c281d9008dd678b35d0332ed8997cf4369091e2",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-b-s1-smoke.qx45YN/workspace/outputs/calculation.json",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "323ede87a719bfbc48c7fb6b165c43de79e857d8ffb2012a83b06a047bfacf79",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-b-s1-smoke2-current",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "24161524a14c74204db668010b4cd634189c406c11df2194947ed5ead197f399",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-b-s1-smoke2.PlBSPF/b-state.json",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "5e94172228e7e3cfe8e5cf9dd6e947821c1ad02147dcdab54ac35ec968ce6de4",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-b-s1-smoke2.PlBSPF/crash-s1.done",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "8a28567a20e518b0b3c9c41505b11d6943a2f1e18c81505d14f0afa9fbc351b0",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-b-s1-smoke2.PlBSPF/events.jsonl",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "f92b379a3b38f5d35bb2e2ee58869a5427dd7b175391a839f4261a6a252ce6e6",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-b-s1-smoke2.PlBSPF/inference-10211-01.json",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "8d1a05ed668195df4d4c6207ce62042169ec7440920418ddb244c32f9a0b82fe",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-b-s1-smoke2.PlBSPF/inference-10211-02.json",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "ab652ee76c69eb7e19aecf4d34cc4c9f2465d69e728dc2e0e54ba6c8275bc2e4",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-b-s1-smoke2.PlBSPF/inference-10282-01.json",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "8c52e73e25f5215e04003a9372961150ca9cc3f12e5722c3278f8ac08c8cda13",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-b-s1-smoke2.PlBSPF/inference-10282-02.json",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "262be7f35cab4c428683fe78962c12542239827522003a14f4c92c1c362948c8",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-b-s1-smoke2.PlBSPF/inference-workspace/CLAUDE.md",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "b92655b63a1fb1bcd3c9b1d630c64e406688a1a99bfc1556bd7e53f68d73696e",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-b-s1-smoke2.PlBSPF/result.json",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "b38fb6ab3fc57941c26e028a9101f3c1e9de3848777b4e54e14d591a44748050",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-b-s1-smoke2.PlBSPF/tool-ledger.json",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "0118f2293cfb7b840cfe01b4ce39d1904c9fc52b37dcd5f532e84f951df70ff7",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-b-s1-smoke2.PlBSPF/workspace/inputs/baseline.json",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "1319294327c96df29603c03b2c281d9008dd678b35d0332ed8997cf4369091e2",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-b-s1-smoke2.PlBSPF/workspace/outputs/calculation.json",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "323ede87a719bfbc48c7fb6b165c43de79e857d8ffb2012a83b06a047bfacf79",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-b-s1-smoke2.PlBSPF/workspace/outputs/verification.json",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "29131ecdb6ad71b0bdf864350cb7026ad644c6feced3d270175c9e7415aad61f",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-c-smoke-current",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "8920c0513021692a4eb27528e6dff96f3b783d9b910d7c456f0fe03c5d29e575",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-c-smoke.NvTVTE/c-run.json",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "f4feef69d561285fde070620c943540df0728fb11ccff232ecfbc5ecd9f1f4be",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-c-smoke.NvTVTE/events.jsonl",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "2a33d680c1a091f48cbd2c8c98b61b8ba5a4c6c8845bfba7fddb94fbed48ab5b",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-c-smoke.NvTVTE/inference-9836-01.json",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "8cbe395b09cc237163387fe98b313510320462f22a4e5df58c0d5e72672cf494",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-c-smoke.NvTVTE/inference-9836-02.json",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "cda0cef85e6b00b67f02f1980b8dbb3b3d605ebb3e3a9aa747bf2351edab9062",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-c-smoke.NvTVTE/inference-9836-03.json",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "61a29ffd31560c32f646dac794355aca10cbd8d8b70576fb40494788e6b86696",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-c-smoke.NvTVTE/inference-9836-04.json",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "97b5d614bea22fa244efb3e8dfc082382541fee896b36b5652a728994b91c904",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-c-smoke.NvTVTE/inference-workspace/CLAUDE.md",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "b92655b63a1fb1bcd3c9b1d630c64e406688a1a99bfc1556bd7e53f68d73696e",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-c-smoke.NvTVTE/result.json",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "8b9f6a0e67757087a4b301852c9f4010fa62d155f0c74d62dd177315bceae778",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-c-smoke.NvTVTE/tool-ledger.json",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "d7a11f6ad09d4b077fa7ea3ba92c65e2d7f21ba25ef873be1483ee14a4f326be",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-c-smoke.NvTVTE/workspace/inputs/baseline.json",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "1319294327c96df29603c03b2c281d9008dd678b35d0332ed8997cf4369091e2",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-c-smoke.NvTVTE/workspace/outputs/calculation.json",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "323ede87a719bfbc48c7fb6b165c43de79e857d8ffb2012a83b06a047bfacf79",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-c-smoke.NvTVTE/workspace/outputs/verification.json",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "29131ecdb6ad71b0bdf864350cb7026ad644c6feced3d270175c9e7415aad61f",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-fixture-check.cnv53I/acceptance.sh",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "13faddd755792d63f075a71858e7cc2c658b4a8ac52a99b080c795ebbcd331f3",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-fixture-check.cnv53I/expected-repairs.json",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "f2929c9f15bf584268cdd37487e5bae743b450c8375f700e4276d5d1448b8230",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-fixture-check.cnv53I/model/__pycache__/physics.cpython-314.pyc",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "c6467983d42ffc2ea54429df158f65c0b0786bd513b0f45a8b2389cb295465b3",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-fixture-check.cnv53I/model/physics.py",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "47eb6e8ad17e9e290d4b6ddf63d9da9d02bafdcd6e7381063794f891ba76401c",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-fixture-check.cnv53I/model/tests/__pycache__/test_physics.cpython-314.pyc",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "bbdba71383fcbb321f13e4e18c2a1d486912438f681fda2d859628ff50db0273",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-fixture-check.cnv53I/model/tests/test_physics.py",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "4f572cef124351a88bcc0ce8c2574a24589fddf4e6507db5ca65b8c38a1253d6",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-fixture-check.cnv53I/task.md",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "0a7d8f1ce237d979713088337f6f58e4e8a59432629250113ac66a6ba25fb1f8",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-fixture-check.cnv53I/verification/run_checks.sh",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "8fd7794cb6f5976ffc3a88ea27da6af2e9b61334e77dbf3a5599409c2b084dcf",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-fixture.out",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "bbfc5799a66fb2e6260d98481cfdc4bb9edfa3ae7164433e6336ae5232f38af0",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-probe",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "8f159f4edaab9d405b279512259a17ed8d9bb7b0b1ec97a0b817d96f49606e57",
       "retention": "binary hash only; batch source retained separately"
     },
     {
-      "path": "/private/tmp/loom-value-probe-batch01",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "8f159f4edaab9d405b279512259a17ed8d9bb7b0b1ec97a0b817d96f49606e57",
       "retention": "binary hash only; batch source retained separately"
     },
     {
-      "path": "/private/tmp/loom-value-probe-batch02",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "e7d3626912d0675f89005e9274210baef45dccd7b0f3395bf517fdbab129000f",
       "retention": "binary hash only; batch source retained separately"
     },
     {
-      "path": "/private/tmp/loom-value-probe-fixed",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "17a0abfad8cb3cfab2be529ced223941bb36c98e37f8fb541cac323a406cc8a4",
       "retention": "binary hash only; batch source retained separately"
     },
     {
-      "path": "/private/tmp/loom-value-probe-fixed2",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "e7d3626912d0675f89005e9274210baef45dccd7b0f3395bf517fdbab129000f",
       "retention": "binary hash only; batch source retained separately"
     },
     {
-      "path": "/private/tmp/loom-value-smoke-current",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "d6771c77931be074e2f28f6dbbade2265047cf97ff007848ad79355a4815de5c",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-smoke.052hJH/events.jsonl",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "0849a4d8437fd537d0332ed9ef3d76b86870424cbd7c5905b6d4b8bed1f8cab7",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-smoke.052hJH/inference-9621-01.json",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "d8886da2683c64873c69a408e0844349afbda54492855677785a0185fce2e748",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-smoke.052hJH/inference-9621-02.json",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "29049dd3b2d2da52bb27ce76c16e8213e38fb65baf3c289c253994c8a2642a8a",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-smoke.052hJH/inference-9621-03.json",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "c10a1fbe0533680d780f8fec22283da4422d20d9c1f1968b8b5aaa4d6474b0ca",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-smoke.052hJH/inference-9621-04.json",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "1960ba106710ce4a68a50c130e9f3d647623fb77160431a0e571feb27b62b438",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-smoke.052hJH/inference-workspace/CLAUDE.md",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "b92655b63a1fb1bcd3c9b1d630c64e406688a1a99bfc1556bd7e53f68d73696e",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-smoke.052hJH/result.json",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "c30fe6fc3480cba050b7b6313b4732ee773a2d7219be5a1cec45a3f5c4ce0e82",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-smoke.052hJH/tool-ledger.json",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "9111801601fdf1a0e973b099c688edaba55c83e6ca3d81db4eb5a1c3e4029409",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-smoke.052hJH/workspace/inputs/baseline.json",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "1319294327c96df29603c03b2c281d9008dd678b35d0332ed8997cf4369091e2",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-smoke.052hJH/workspace/outputs/calculation.json",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "323ede87a719bfbc48c7fb6b165c43de79e857d8ffb2012a83b06a047bfacf79",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-smoke.052hJH/workspace/outputs/verification.json",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "29131ecdb6ad71b0bdf864350cb7026ad644c6feced3d270175c9e7415aad61f",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-t2-fixed-smoke-current",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "6f45edad2c35c576d8b92e2a7c39d9c57e03cd03733084d09c498a8586bd88f9",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-t2-fixed-smoke.VwwpEq/b-state.json",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "117b18787089790efde9280adb91cfa5db0c663464dac1b82b43f5bc4669eab5",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-t2-fixed-smoke.VwwpEq/events.jsonl",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "847a70d812fadc8a9d0dfc77279cb11da70930cc9dea9378315d6be1be63bf3f",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-t2-fixed-smoke.VwwpEq/inference-11236-01.json",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "757c991e85bbe0a5c5a58bc25b8c2799c692e0ca428c769233cefd51615e8280",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-t2-fixed-smoke.VwwpEq/inference-11236-02.json",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "3b5dd5cc1ee6e5e30147c591f4c1b755a7df45d98375db1f8dfd67cc3293df11",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-t2-fixed-smoke.VwwpEq/inference-11236-03.json",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "bced9cee023275a9292bc7cab496d70b0286a9b57dc39c27ba80b146494a2cdc",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-t2-fixed-smoke.VwwpEq/inference-11236-04.json",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "5a8ca99cd6f750c86a6c7ea426efc959247e6461ae10d76cbea0ce907ffa0dae",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-t2-fixed-smoke.VwwpEq/inference-11236-05.json",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "247764f347142c6ef97a6882a16008ec796576b11d33d5e5cf8db9be6629f416",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-t2-fixed-smoke.VwwpEq/inference-11236-06.json",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "14d678116e338a704cfba467ece7bd1b8246a3bb60782914521d3280bfa4157c",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-t2-fixed-smoke.VwwpEq/inference-11236-07.json",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "e6687330204230f6afa480daff957b6d39e5b23f2e0b86585e18396ea202ed76",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-t2-fixed-smoke.VwwpEq/inference-workspace/CLAUDE.md",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "b92655b63a1fb1bcd3c9b1d630c64e406688a1a99bfc1556bd7e53f68d73696e",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-t2-fixed-smoke.VwwpEq/result.json",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "4a1d3fd5e1d9479f0233ffea45b97a871e1500a57c27dd03688fe2589bd4f744",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-t2-fixed-smoke.VwwpEq/tool-ledger.json",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "d1934a19e9652ca328b68acb9eb593fe1916791c23c00bd2344680bb9e9289a9",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-t2-fixed-smoke.VwwpEq/workspace/acceptance.sh",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "13faddd755792d63f075a71858e7cc2c658b4a8ac52a99b080c795ebbcd331f3",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-t2-fixed-smoke.VwwpEq/workspace/expected-repairs.json",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "f2929c9f15bf584268cdd37487e5bae743b450c8375f700e4276d5d1448b8230",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-t2-fixed-smoke.VwwpEq/workspace/model/__pycache__/physics.cpython-314.pyc",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "1c47a98e0286a07e4776180c5ec878f001b871422fa770e6863e2a8c41dedf34",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-t2-fixed-smoke.VwwpEq/workspace/model/physics.py",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "47eb6e8ad17e9e290d4b6ddf63d9da9d02bafdcd6e7381063794f891ba76401c",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-t2-fixed-smoke.VwwpEq/workspace/model/tests/__pycache__/test_physics.cpython-314.pyc",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "f9f54c14327043732ba67a31af63d76903e05d7df3a3a8715cefdab066fb05d1",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-t2-fixed-smoke.VwwpEq/workspace/model/tests/test_physics.py",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "4f572cef124351a88bcc0ce8c2574a24589fddf4e6507db5ca65b8c38a1253d6",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-t2-fixed-smoke.VwwpEq/workspace/outputs/verification.json",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "8b1edb61b62c98aa74c6483f86d5b90318d5b1d874a28e8f8178c6c5e453f1ae",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-t2-fixed-smoke.VwwpEq/workspace/task.md",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "0a7d8f1ce237d979713088337f6f58e4e8a59432629250113ac66a6ba25fb1f8",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-t2-fixed-smoke.VwwpEq/workspace/verification/run_checks.sh",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "d5115d3d90f871a3b32f181f1f15b38b62421cd34f772b5dc390684e1dc16549",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-t2-fixed2-smoke-current",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "1e12a760f99c573d13245520777648afddbbe3be45a7d3785907f4b785ad2c66",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-t2-fixed2-smoke.Z9YxER/b-state.json",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "0bea3a41f50084fe479054900168ca32453fdc78eca1adf8dfbeb2216e143ad8",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-t2-fixed2-smoke.Z9YxER/events.jsonl",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "08105f69e4c1372fdcdedd8ea78cc292eb0789a2fb0f2fac5165f835afe2e035",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-t2-fixed2-smoke.Z9YxER/inference-11533-01.json",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "88dd7eea57cce83f20d1cb221c2d3f0e176fe249349f5b61025b314351353fcd",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-t2-fixed2-smoke.Z9YxER/inference-11533-02.json",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "c1b95a62fff30c1536e83391cb6595487dda5f5deb3fb839dac61e1ede189988",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-t2-fixed2-smoke.Z9YxER/inference-11533-03.json",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "bda231beddb499c9ff62a4ebbb43fd158cce9774e72b50ad57d3fa820b168344",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-t2-fixed2-smoke.Z9YxER/inference-11533-04.json",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "3bbe0988de93995f3ab9345b63dd3bd0bd7b70d0bb8eb5a22c27486575eb21d5",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-t2-fixed2-smoke.Z9YxER/inference-11533-05.json",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "fa5479fdb7da4db275b26d276b45bc8d8949d083ee98a43fa82d908bb849a724",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-t2-fixed2-smoke.Z9YxER/inference-workspace/CLAUDE.md",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "b92655b63a1fb1bcd3c9b1d630c64e406688a1a99bfc1556bd7e53f68d73696e",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-t2-fixed2-smoke.Z9YxER/result.json",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "2edc20d1152dd120c5595214995ace08e50223ae7d78ffeb49600ea8de25a3d2",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-t2-fixed2-smoke.Z9YxER/tool-ledger.json",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "09edc63a8832a22a03eed348605ef0f008dfc88b86d04904834f2352d6a32785",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-t2-fixed2-smoke.Z9YxER/workspace/acceptance.sh",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "13faddd755792d63f075a71858e7cc2c658b4a8ac52a99b080c795ebbcd331f3",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-t2-fixed2-smoke.Z9YxER/workspace/expected-repairs.json",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "f2929c9f15bf584268cdd37487e5bae743b450c8375f700e4276d5d1448b8230",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-t2-fixed2-smoke.Z9YxER/workspace/model/__pycache__/physics.cpython-314.pyc",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "36edb29d6e04acca076db872c4cd403c4394f7833812f42ed50e4f333d8a92db",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-t2-fixed2-smoke.Z9YxER/workspace/model/physics.py",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "47eb6e8ad17e9e290d4b6ddf63d9da9d02bafdcd6e7381063794f891ba76401c",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-t2-fixed2-smoke.Z9YxER/workspace/model/tests/__pycache__/test_physics.cpython-314.pyc",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "ceafdcbb30bffca8891cdc9869ad2fbbf75a88ebb7dfd3a22606888f0da9831f",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-t2-fixed2-smoke.Z9YxER/workspace/model/tests/test_physics.py",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "4f572cef124351a88bcc0ce8c2574a24589fddf4e6507db5ca65b8c38a1253d6",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-t2-fixed2-smoke.Z9YxER/workspace/outputs/verification.json",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "01d4472ad6c876d7712ed77e5b0aaf4b99835563cf6b6fa14f79a3dd8ac5f6da",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-t2-fixed2-smoke.Z9YxER/workspace/task.md",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "0a7d8f1ce237d979713088337f6f58e4e8a59432629250113ac66a6ba25fb1f8",
       "retention": "preflight-artifacts.tar.gz"
     },
     {
-      "path": "/private/tmp/loom-value-t2-fixed2-smoke.Z9YxER/workspace/verification/run_checks.sh",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "8fd7794cb6f5976ffc3a88ea27da6af2e9b61334e77dbf3a5599409c2b084dcf",
       "retention": "preflight-artifacts.tar.gz"
     }
   ],
   "removed_paths": [
-    "/private/tmp/loom-value-b-s1-smoke-current",
-    "/private/tmp/loom-value-b-s1-smoke.qx45YN",
-    "/private/tmp/loom-value-b-s1-smoke2-current",
-    "/private/tmp/loom-value-b-s1-smoke2.PlBSPF",
-    "/private/tmp/loom-value-c-smoke-current",
-    "/private/tmp/loom-value-c-smoke.NvTVTE",
-    "/private/tmp/loom-value-fixture-check.cnv53I",
-    "/private/tmp/loom-value-fixture.out",
-    "/private/tmp/loom-value-probe",
-    "/private/tmp/loom-value-probe-batch01",
-    "/private/tmp/loom-value-probe-batch02",
-    "/private/tmp/loom-value-probe-fixed",
-    "/private/tmp/loom-value-probe-fixed2",
-    "/private/tmp/loom-value-smoke-current",
-    "/private/tmp/loom-value-smoke.052hJH",
-    "/private/tmp/loom-value-t2-fixed-smoke-current",
-    "/private/tmp/loom-value-t2-fixed-smoke.VwwpEq",
-    "/private/tmp/loom-value-t2-fixed2-smoke-current",
-    "/private/tmp/loom-value-t2-fixed2-smoke.Z9YxER"
+    "<LOCAL_TEMP_PATH>",
+    "<LOCAL_TEMP_PATH>",
+    "<LOCAL_TEMP_PATH>",
+    "<LOCAL_TEMP_PATH>",
+    "<LOCAL_TEMP_PATH>",
+    "<LOCAL_TEMP_PATH>",
+    "<LOCAL_TEMP_PATH>",
+    "<LOCAL_TEMP_PATH>",
+    "<LOCAL_TEMP_PATH>",
+    "<LOCAL_TEMP_PATH>",
+    "<LOCAL_TEMP_PATH>",
+    "<LOCAL_TEMP_PATH>",
+    "<LOCAL_TEMP_PATH>",
+    "<LOCAL_TEMP_PATH>",
+    "<LOCAL_TEMP_PATH>",
+    "<LOCAL_TEMP_PATH>",
+    "<LOCAL_TEMP_PATH>",
+    "<LOCAL_TEMP_PATH>",
+    "<LOCAL_TEMP_PATH>"
   ],
   "database": "three owned run IDs exported; database rows retained"
 }

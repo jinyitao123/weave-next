@@ -15,7 +15,7 @@
       "wait_type": "fanout_group",
       "generation": "fg1_0e5efb9af6c1591ffdcc6402bba0db53740df117f2fe24f38462e72f6e63e809",
       "join_node_id": "join",
-      "resume_token": "[REMOVED-RESUME-CAPABILITY]",
+      "resume_token": "<REDACTED_RESUME_TOKEN>",
       "parent_run_id": "run-b265eff8-af4a-507c-ae7d-d1229e14f7ea"
     },
     "run_snapshot_id": "run-b265eff8-af4a-507c-ae7d-d1229e14f7ea",

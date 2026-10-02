@@ -11,7 +11,7 @@
       "engine_capabilities": {
         "claude": {
           "engine": "claude",
-          "binary_path": "/Users/jinyitao/.local/bin/claude",
+          "binary_path": "<MAINTAINER_LOCAL_PATH>",
           "binary_version": "2.1.245 (Claude Code)",
           "auth_mode": "oauth",
           "protocol_version": "claude-stream-json-v1",
@@ -34,7 +34,7 @@
         },
         "opencode": {
           "engine": "opencode",
-          "binary_path": "/Users/jinyitao/.local/bin/opencode",
+          "binary_path": "<MAINTAINER_LOCAL_PATH>",
           "binary_version": "1.2.10",
           "auth_mode": "provider",
           "protocol_version": "opencode-json-v1",
@@ -66,7 +66,7 @@
       "engine_capabilities": {
         "claude": {
           "engine": "claude",
-          "binary_path": "/Users/jinyitao/.local/bin/claude",
+          "binary_path": "<MAINTAINER_LOCAL_PATH>",
           "binary_version": "2.1.245 (Claude Code)",
           "auth_mode": "oauth",
           "protocol_version": "claude-stream-json-v1",
@@ -89,7 +89,7 @@
         },
         "opencode": {
           "engine": "opencode",
-          "binary_path": "/Users/jinyitao/.local/bin/opencode",
+          "binary_path": "<MAINTAINER_LOCAL_PATH>",
           "binary_version": "1.2.10",
           "auth_mode": "provider",
           "protocol_version": "opencode-json-v1",

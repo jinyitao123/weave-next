@@ -4,7 +4,7 @@
 **日期**：2026-09-10
 **本轮职责**：复核冻结 v6 物理成果中的 **公式 / 数量级 / 三速度情景（0.01c/0.03c/0.05c）/ 未知项**；**优先原样复用**，仅在有证据要求的可复现缺陷时修改。
 **输入基线**：只读冻结源 `recovery-materials/2026-09-10-corona-v6-corrected-source/outputs/review/physics/`（manifest SHA-256 `59c911db…03f`）
-**权威回判定源**：`/Users/jinyitao/Documents/日冕/complex-validation/acceptance.json`（SHA-256 `f4777aaf…60ec4`）的 `reference_checks` 五项
+**权威回判定源**：`<MAINTAINER_LOCAL_PATH>`（SHA-256 `f4777aaf…60ec4`）的 `reference_checks` 五项
 
 > 本文件是 physics 域的**索引/入口**，供 verification-integrator 汇总进根级 `outputs/review/REVIEW_INDEX.md`。以下路径均为**真实相对本节点 `outputs/`** 的路径，且已实测存在。
 

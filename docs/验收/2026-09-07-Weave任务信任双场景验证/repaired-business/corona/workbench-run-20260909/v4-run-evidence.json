@@ -153,7 +153,7 @@
     "evidence_completeness": "complete"
   },
   "artifact": {
-    "local_root": "/Users/jinyitao/.weave/runtime-workspaces-b/.invocations/task-dabc5c0a1dfdc1ee2dea7963c4c6d215/default/corona-prephase-a-lab-v4-verification-integrator/workdir/outputs",
+    "local_root": "<MAINTAINER_LOCAL_PATH>",
     "logical_file_count": 69,
     "final_entry_sha256": "02e7b66cbc2c70ae04c1cae0447a623974bd1aa636dd430630ed00096d828cbc",
     "final_acceptance_sha256": "67c07e9d7bdf9376cc03c756ea6cef9e438818512b15031136c5da3ba8d55fd8",

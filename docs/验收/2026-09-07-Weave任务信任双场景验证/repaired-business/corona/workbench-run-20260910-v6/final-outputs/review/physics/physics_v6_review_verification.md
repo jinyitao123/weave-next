@@ -3,7 +3,7 @@
 **节点**：`corona-prephase-a-recovery-v6-mission-physics-analyst`（任务物理与轨迹 · 公式复核 / 单位检查 / 轨迹数量级 / 速度情景）
 **日期**：2026-09-10
 **复用基**：`v4-outputs/review/physics/`（`06_corona_v4_physics_analysis_v1.0.md` + `physics_model.py` + `physics_recompute.py` + `physics_recompute_evidence.txt` + `physics_three_speed_scenarios.csv`）
-**权威回判定源**：只读 `/Users/jinyitao/Documents/日冕/complex-validation/acceptance.json`（SHA-256 `f4777aaf…60ec4`）的 `reference_checks` 五项；冻结协定系数见 `v4-outputs/model/baseline.yaml`。
+**权威回判定源**：只读 `<MAINTAINER_LOCAL_PATH>`（SHA-256 `f4777aaf…60ec4`）的 `reference_checks` 五项；冻结协定系数见 `v4-outputs/model/baseline.yaml`。
 
 > **本节点边界**：只做任务物理/轨迹的公式复核、单位检查、数量级与三速度情景，确认速度轴 `0.01c/0.03c/0.05c`；**不**改数字应用（CR-002）、**不**独立复跑十一项硬门槛（CR-003）、**不**定义新常量/新情景。所有参数、速度、情景 ID、口径引用冻结基线；派生量一律标注真值标签。
 

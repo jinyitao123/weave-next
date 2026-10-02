@@ -8,7 +8,7 @@
     "milestone_observed": false,
     "fault_injected": false,
     "task_id": "task-eb655f8682c14216d8fedd168fc2e77c",
-    "workdir": "/private/tmp/weave-runtime-value-20260907-sqtugx3m/runtime-workspaces/.invocations/task-eb655f8682c14216d8fedd168fc2e77c/default/corona-prephase-a-lab-v3-luna-digital-engineering-builder/workdir",
+    "workdir": "<LOCAL_TEMP_PATH>",
     "elapsed_seconds": 1287.347225,
     "status": "task_failed_without_engine_receipt",
     "independent_acceptance": "NOT_RUN: model-test milestone not reached",

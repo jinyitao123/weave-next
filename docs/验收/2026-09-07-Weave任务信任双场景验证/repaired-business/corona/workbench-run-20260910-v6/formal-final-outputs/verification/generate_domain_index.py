@@ -4,7 +4,7 @@
 import os, hashlib
 
 OUT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
-frozen = "/Users/jinyitao/.weave/recovery-materials/2026-09-10-corona-v6-corrected-source/outputs"
+frozen = "<MAINTAINER_LOCAL_PATH>"
 
 DOMAINS = ["app", "drawings"]
 

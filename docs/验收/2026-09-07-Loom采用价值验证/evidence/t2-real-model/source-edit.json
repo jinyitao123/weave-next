@@ -3,7 +3,7 @@
   "event": {
     "kind": "tool_call",
     "tool": "Edit",
-    "input": "{\"replace_all\":false,\"file_path\":\"/private/tmp/weave-corona-validation-20260906/workspaces-b/.invocations/task-3b0014b553bdaa5746c6a708d5c75ecd/default/corona-prephase-a-lab-v3-luna-digital-engineering-builder/workdir/outputs/model/tests/test_physics.py\",\"old_string\":\"        self.assertAlmostEqual(physics.lorentz_gamma(0.03), 1.0004503039763835, places=12)\",\"new_string\":\"        expected = 1.0 / math.sqrt(1.0 - 0.03 * 0.03)\\n        self.assertAlmostEqual(physics.lorentz_gamma(0.03), expected, places=14)\"}",
+    "input": "{\"replace_all\":false,\"file_path\":\"<LOCAL_TEMP_PATH>\",\"old_string\":\"        self.assertAlmostEqual(physics.lorentz_gamma(0.03), 1.0004503039763835, places=12)\",\"new_string\":\"        expected = 1.0 / math.sqrt(1.0 - 0.03 * 0.03)\\n        self.assertAlmostEqual(physics.lorentz_gamma(0.03), expected, places=14)\"}",
     "status": "running",
     "call_id": "tool_xVVnlqBoWAlmpQK0676nJ3di"
   }

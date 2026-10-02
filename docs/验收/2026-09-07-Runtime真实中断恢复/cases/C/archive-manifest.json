@@ -1,7 +1,7 @@
 {
   "case": "C",
   "archived_at": "2026-09-07T04:50:06.858887+00:00",
-  "source_workdir": "/private/tmp/weave-runtime-value-20260907-sqtugx3m/runtime-workspaces/.invocations/task-da13aae23759a549a25c021dabf21f7c/default/corona-prephase-a-lab-v3-luna-digital-engineering-builder/workdir",
+  "source_workdir": "<LOCAL_TEMP_PATH>",
   "files": [
     {
       "path": "evidence/driver-result.json.start.json",

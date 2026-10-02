@@ -8,7 +8,7 @@
 
 | 项目 | 内容 |
 |---|---|
-| 基准来源 | /Users/jinyitao/Documents/日冕/complex-validation/baseline.yaml |
+| 基准来源 | <MAINTAINER_LOCAL_PATH> |
 | 源 SHA256 | 95ef8f8a35d79596ee25f01ecb391c5a5ca2ab16885609f84454a0921b0d13b1 |
 | 参数 | 光速 299792458 m/s;距离 4.25 光年;质量 1×10⁹ kg |
 | 验证状态 | ✅ 通过(40 位 Decimal 独立重算;能量相对误差 ≤1.54×10⁻¹⁶,时间相对误差 ≤1.65×10⁻¹⁶,3/3 项全部通过) |

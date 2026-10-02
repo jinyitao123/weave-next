@@ -1,5 +1,5 @@
 {
-  "app_dir": "/private/tmp/corona-r4-independent-e_rcy66x/outputs/app",
+  "app_dir": "<LOCAL_TEMP_PATH>",
   "chrome": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
   "checks": [
     {
