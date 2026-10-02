@@ -2,6 +2,8 @@ package compiler
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -95,6 +97,41 @@ func TestNodeOutputVerifierPreservesControlledRecoveryAndSchemaIdentity(t *testi
 	}
 	if len(llm.requests) != 2 || !strings.Contains(llm.requests[1].Messages[len(llm.requests[1].Messages)-1].Content, "/extra") {
 		t.Fatal("resume lost correction observation")
+	}
+	// Build a real previous-policy pause with the same schema, system text and
+	// round limits. Only the old verifier identity differs from this compiler.
+	digest := sha256.Sum256(outputTestSchema)
+	oldLLM := &schemaTestLLM{responses: []contract.ChatResponse{{Content: `{"answer":"draft","extra":true}`}}}
+	oldStep := stdlib.NewToolLoopStep(oldLLM, &CompileGuardDispatcher{}, stdlib.ToolLoopOpts{
+		Model: "test", MaxIterations: 1, Control: &stdlib.ToolLoopControl{ID: "chat", InitialTotalRounds: 2},
+		SystemPrompt: llm.requests[0].Messages[0].Content, OutputSchema: &outputTestSchema,
+		CompletionVerifierID: stdlib.BareToolProtocolCompletionPolicyID + ":weave.node-output.v1:" + hex.EncodeToString(digest[:]),
+		CompletionVerifier: stdlib.CompletionVerifierFunc(func(context.Context, stdlib.CompletionCandidate) (stdlib.CompletionDecision, error) {
+			return stdlib.CompletionDecision{Feedback: "correct the final JSON"}, nil
+		}),
+	})
+	oldGraph := loom.NewGraph(t.Name(), "chat", loom.WithMergeConfig(loom.DefaultMergeConfig()), loom.WithCheckpointPolicy(loom.CheckpointRequired))
+	oldGraph.AddStep("chat", oldStep, loom.End())
+	oldStore := loom.NewMemStore()
+	oldPause, err := oldGraph.Run(t.Context(), schemaInput(), oldStore)
+	if err != nil || !oldPause.Yielded {
+		t.Fatalf("old policy fixture did not pause: %v", err)
+	}
+	oldOutcome, _, err := stdlib.ReadToolLoopOutcome(oldPause.State)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldSequence, _ := json.Marshal(oldPause.State["__checkpoint_seq"])
+	_ = json.Unmarshal(oldSequence, &seq)
+	oldDelta, err := stdlib.PrepareToolLoopResume(oldPause.State, stdlib.ToolLoopResumeGrant{ID: "old-resume", ExpectedRunID: oldPause.RunID, ExpectedCheckpointSeq: seq, ExpectedYieldToken: oldPause.State["__yield_token"].(string), ExpectedSlice: oldOutcome.Slice, AuthorizedTotalRounds: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := graph.Resume(ctx, oldPause.RunID, oldDelta, oldStore); err == nil || !strings.Contains(err.Error(), "policy changed") {
+		t.Fatalf("old policy was silently upgraded: %v", err)
+	}
+	if len(llm.requests) != 2 || len(oldLLM.requests) != 1 {
+		t.Fatal("old policy mismatch reached the model")
 	}
 }
 

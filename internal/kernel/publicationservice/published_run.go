@@ -11,6 +11,7 @@ import (
 	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/base/snapshot"
+	"github.com/jinyitao123/weave/internal/kernel/deliverycheck"
 	"github.com/jinyitao123/weave/internal/kernel/publication"
 	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 	"github.com/jinyitao123/weave/internal/kernel/workflow"
@@ -100,8 +101,14 @@ func (s *Service) AdmitPublished(ctx context.Context, request publication.Publis
 	if report != nil && len(report.Issues) > 0 {
 		return publication.AdmissionReceipt{}, errors.New("frozen published graph is invalid")
 	}
+	if err := machine.ValidateBusinessReceiptGraph(graph, payload); err != nil {
+		return publication.AdmissionReceipt{}, err
+	}
 	contract, err := runDeliveryContract(graph, request.DeliveryContract)
 	if err != nil {
+		return publication.AdmissionReceipt{}, err
+	}
+	if err := validateBusinessCompletionOverride(graph.DeliveryContract, contract); err != nil {
 		return publication.AdmissionReceipt{}, err
 	}
 	tx, err := s.begin(ctx, request.Revision.WorkspaceID, request.RequestID)
@@ -231,4 +238,28 @@ func loadPublishedReceipt(ctx context.Context, tx pgx.Tx, request publication.Pu
 		return nil, false, err
 	}
 	return &receipt, false, nil
+}
+
+// The author-declared check cannot be added or removed by a per-run free-text
+// contract; desktop authors configure it on the published graph.
+func validateBusinessCompletionOverride(published, requested *deliverable.DeliveryContract) error {
+	a, err := deliverycheck.BusinessReceiptCheck(published)
+	if err != nil {
+		return err
+	}
+	b, err := deliverycheck.BusinessReceiptCheck(requested)
+	if err != nil {
+		return err
+	}
+	if (a == nil) != (b == nil) {
+		return errors.New("business completion check requires the published author declaration")
+	}
+	if a != nil {
+		x, _ := json.Marshal(a)
+		y, _ := json.Marshal(b)
+		if string(x) != string(y) {
+			return errors.New("published business completion check cannot be overridden")
+		}
+	}
+	return nil
 }
