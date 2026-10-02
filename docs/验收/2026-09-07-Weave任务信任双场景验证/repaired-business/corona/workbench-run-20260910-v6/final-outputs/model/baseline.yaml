@@ -1,5 +1,5 @@
 # 日冕计划 Pre-Phase A · 冻结共同参数基线（self-contained copy）
-# 来源：/Users/jinyitao/Documents/日冕/complex-validation/baseline.yaml
+# 来源：<MAINTAINER_LOCAL_PATH>
 #       与 fresh-20260909/outputs/model/baseline.yaml 逐字一致（同一配置基线）
 schema_version: 1
 baseline_id: corona-prephase-a-v1

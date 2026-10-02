@@ -4,7 +4,7 @@
 
 | 项目 | 值 |
 |---|---|
-| 基线文件 | /Users/jinyitao/Documents/日冕/complex-validation/baseline.yaml |
+| 基线文件 | <MAINTAINER_LOCAL_PATH> |
 | SHA-256 | 95ef8f8a35d79596ee25f01ecb391c5a5ca2ab16885609f84454a0921b0d13b1 |
 | 光速 c | 299792458 m/s |
 | 距离 | 4.25 光年 |

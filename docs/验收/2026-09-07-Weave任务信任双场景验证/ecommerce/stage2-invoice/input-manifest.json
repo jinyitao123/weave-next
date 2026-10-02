@@ -2,7 +2,7 @@
   "schema_version": 1,
   "sample_id": "trust-stage2-invoice-hold-20260908-remote002",
   "task_id": "api-gmail-invoice-hold-mcp",
-  "source": "/Users/jinyitao/Developer/RealReplicaBench/datasets_domain_v1/api/gmail/invoice-hold-mcp/task.md",
+  "source": "<MAINTAINER_LOCAL_PATH>",
   "benchmark_revision": "084489800bfd3f9f239503eda9e754bc267e98f5",
   "bytes": 1546,
   "sha256": "0f469edd5b57d300c31d268abb47188a05669bc8ca68b61d55b61708de9b8910",

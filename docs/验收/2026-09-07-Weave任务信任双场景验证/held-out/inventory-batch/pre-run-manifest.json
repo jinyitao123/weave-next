@@ -5,7 +5,7 @@
   "api_implementation_commit": "7db2359bcf90a4fadf9645a6b1514144d21a432b",
   "workbench_implementation_commit": "564bdc6383fa1240408f4dcbc76932b93ef258f7",
   "deployed_binary_sha256": "e5c877a69bbb1e4b535324515a8c2c93820744955a926d8488866ca6c0ea8cc2",
-  "workbench_mcp_command": "/Users/jinyitao/.local/bin/weave",
+  "workbench_mcp_command": "<MAINTAINER_LOCAL_PATH>",
   "idempotency_key": "0614fbd6-0c6e-45ce-a77f-f4c467cd5226",
   "files": [
     {

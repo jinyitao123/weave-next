@@ -85,7 +85,7 @@
       }
     ]
   },
-  "requirement": "读取 /Users/jinyitao/Documents/日冕/complex-validation/baseline.yaml。复算质量 1000000000 kg、速度 0.01c/0.03c/0.05c 的经典动能 0.5*m*(beta*c)^2，以及 4.25 光年匀速巡航时间 4.25/beta 年。若有 load_baseline、calculate_scenarios、verify_results 工具，严格依次各调用一次并使用返回数据；否则使用本机 Python 真实读取并计算和断言。不要自行制造工具结果。最终只返回简洁 Markdown 表格、基线 SHA-256、各次实际工具证据，以及仅为经典自身动能下限且不含加减速的边界。无需生成文件，无需扩展工程论证。",
+  "requirement": "读取 <MAINTAINER_LOCAL_PATH> 1000000000 kg、速度 0.01c/0.03c/0.05c 的经典动能 0.5*m*(beta*c)^2，以及 4.25 光年匀速巡航时间 4.25/beta 年。若有 load_baseline、calculate_scenarios、verify_results 工具，严格依次各调用一次并使用返回数据；否则使用本机 Python 真实读取并计算和断言。不要自行制造工具结果。最终只返回简洁 Markdown 表格、基线 SHA-256、各次实际工具证据，以及仅为经典自身动能下限且不含加减速的边界。无需生成文件，无需扩展工程论证。",
   "flow": {
     "workflow": {
       "workspace_id": "default",
@@ -149,7 +149,7 @@
               "kind": "consult",
               "agent_id": "6ab22221-c064-48ed-bd79-8c3d466b6c18",
               "agent_version": 1,
-              "result_requirement": "读取 /Users/jinyitao/Documents/日冕/complex-validation/baseline.yaml。复算质量 1000000000 kg、速度 0.01c/0.03c/0.05c 的经典动能 0.5*m*(beta*c)^2，以及 4.25 光年匀速巡航时间 4.25/beta 年。若有 load_baseline、calculate_scenarios、verify_results 工具，严格依次各调用一次并使用返回数据；否则使用本机 Python 真实读取并计算和断言。不要自行制造工具结果。最终只返回简洁 Markdown 表格、基线 SHA-256、各次实际工具证据，以及仅为经典自身动能下限且不含加减速的边界。无需生成文件，无需扩展工程论证。"
+              "result_requirement": "读取 <MAINTAINER_LOCAL_PATH> 1000000000 kg、速度 0.01c/0.03c/0.05c 的经典动能 0.5*m*(beta*c)^2，以及 4.25 光年匀速巡航时间 4.25/beta 年。若有 load_baseline、calculate_scenarios、verify_results 工具，严格依次各调用一次并使用返回数据；否则使用本机 Python 真实读取并计算和断言。不要自行制造工具结果。最终只返回简洁 Markdown 表格、基线 SHA-256、各次实际工具证据，以及仅为经典自身动能下限且不含加减速的边界。无需生成文件，无需扩展工程论证。"
             },
             "inputs": {
               "task": {
@@ -250,7 +250,7 @@
             "kind": "consult",
             "agent_id": "6ab22221-c064-48ed-bd79-8c3d466b6c18",
             "agent_version": 1,
-            "result_requirement": "读取 /Users/jinyitao/Documents/日冕/complex-validation/baseline.yaml。复算质量 1000000000 kg、速度 0.01c/0.03c/0.05c 的经典动能 0.5*m*(beta*c)^2，以及 4.25 光年匀速巡航时间 4.25/beta 年。若有 load_baseline、calculate_scenarios、verify_results 工具，严格依次各调用一次并使用返回数据；否则使用本机 Python 真实读取并计算和断言。不要自行制造工具结果。最终只返回简洁 Markdown 表格、基线 SHA-256、各次实际工具证据，以及仅为经典自身动能下限且不含加减速的边界。无需生成文件，无需扩展工程论证。"
+            "result_requirement": "读取 <MAINTAINER_LOCAL_PATH> 1000000000 kg、速度 0.01c/0.03c/0.05c 的经典动能 0.5*m*(beta*c)^2，以及 4.25 光年匀速巡航时间 4.25/beta 年。若有 load_baseline、calculate_scenarios、verify_results 工具，严格依次各调用一次并使用返回数据；否则使用本机 Python 真实读取并计算和断言。不要自行制造工具结果。最终只返回简洁 Markdown 表格、基线 SHA-256、各次实际工具证据，以及仅为经典自身动能下限且不含加减速的边界。无需生成文件，无需扩展工程论证。"
           },
           "inputs": {
             "task": {
@@ -495,7 +495,7 @@
             "kind": "consult",
             "agent_id": "6ab22221-c064-48ed-bd79-8c3d466b6c18",
             "agent_version": 2,
-            "result_requirement": "读取 /Users/jinyitao/Documents/日冕/complex-validation/baseline.yaml。复算质量 1000000000 kg、速度 0.01c/0.03c/0.05c 的经典动能 0.5*m*(beta*c)^2，以及 4.25 光年匀速巡航时间 4.25/beta 年。若有 load_baseline、calculate_scenarios、verify_results 工具，严格依次各调用一次并使用返回数据；否则使用本机 Python 真实读取并计算和断言。不要自行制造工具结果。最终只返回简洁 Markdown 表格、基线 SHA-256、各次实际工具证据，以及仅为经典自身动能下限且不含加减速的边界。无需生成文件，无需扩展工程论证。"
+            "result_requirement": "读取 <MAINTAINER_LOCAL_PATH> 1000000000 kg、速度 0.01c/0.03c/0.05c 的经典动能 0.5*m*(beta*c)^2，以及 4.25 光年匀速巡航时间 4.25/beta 年。若有 load_baseline、calculate_scenarios、verify_results 工具，严格依次各调用一次并使用返回数据；否则使用本机 Python 真实读取并计算和断言。不要自行制造工具结果。最终只返回简洁 Markdown 表格、基线 SHA-256、各次实际工具证据，以及仅为经典自身动能下限且不含加减速的边界。无需生成文件，无需扩展工程论证。"
           },
           "inputs": {
             "task": {
@@ -595,7 +595,7 @@
             "kind": "consult",
             "agent_id": "6ab22221-c064-48ed-bd79-8c3d466b6c18",
             "agent_version": 2,
-            "result_requirement": "读取 /Users/jinyitao/Documents/日冕/complex-validation/baseline.yaml。复算质量 1000000000 kg、速度 0.01c/0.03c/0.05c 的经典动能 0.5*m*(beta*c)^2，以及 4.25 光年匀速巡航时间 4.25/beta 年。若有 load_baseline、calculate_scenarios、verify_results 工具，严格依次各调用一次并使用返回数据；否则使用本机 Python 真实读取并计算和断言。不要自行制造工具结果。最终只返回简洁 Markdown 表格、基线 SHA-256、各次实际工具证据，以及仅为经典自身动能下限且不含加减速的边界。无需生成文件，无需扩展工程论证。"
+            "result_requirement": "读取 <MAINTAINER_LOCAL_PATH> 1000000000 kg、速度 0.01c/0.03c/0.05c 的经典动能 0.5*m*(beta*c)^2，以及 4.25 光年匀速巡航时间 4.25/beta 年。若有 load_baseline、calculate_scenarios、verify_results 工具，严格依次各调用一次并使用返回数据；否则使用本机 Python 真实读取并计算和断言。不要自行制造工具结果。最终只返回简洁 Markdown 表格、基线 SHA-256、各次实际工具证据，以及仅为经典自身动能下限且不含加减速的边界。无需生成文件，无需扩展工程论证。"
           },
           "inputs": {
             "task": {

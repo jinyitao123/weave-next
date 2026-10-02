@@ -8,7 +8,7 @@ import assert from 'node:assert/strict'
 const output = dirname(fileURLToPath(import.meta.url))
 const repo = resolve(output, '../../..')
 const { chromium } = createRequire(join(repo, 'workbench/apps/web/package.json'))('playwright')
-const authUrl = (await readFile('/private/tmp/weave-ux-workbench-server.log', 'utf8'))
+const authUrl = (await readFile('<LOCAL_TEMP_PATH>, 'utf8'))
   .match(/http:\/\/127\.0\.0\.1:13081\/\?token=[^\s]+/)?.[0]
 assert.ok(authUrl, 'running local Workbench authentication URL')
 const browser = await chromium.launch()

@@ -6,7 +6,7 @@ are truncated, and only the verified gamma Edit is reversed.
 import hashlib, json, os, shutil, subprocess, tempfile
 from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE = Path('/private/tmp/weave-corona-validation-20260906/workspaces-b/.invocations/task-3b0014b553bdaa5746c6a708d5c75ecd/default/corona-prephase-a-lab-v3-luna-digital-engineering-builder/workdir/outputs/model')
+SOURCE = Path('<LOCAL_TEMP_PATH>)
 DEST = ROOT / 'probe/fixtures/t2-real-model'
 EVIDENCE = ROOT / 'evidence/t2-real-model'
 def digest(p): return hashlib.sha256(p.read_bytes()).hexdigest()

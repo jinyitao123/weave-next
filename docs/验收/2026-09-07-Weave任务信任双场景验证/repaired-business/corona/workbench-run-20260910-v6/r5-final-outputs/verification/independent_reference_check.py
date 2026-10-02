@@ -15,8 +15,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 OUTPUTS = os.path.dirname(HERE)
 WORKDIR = os.path.dirname(OUTPUTS)
 
-# 权威 acceptance.json（验收任务书指定的 /Users/jinyitao/Documents/日冕/complex-validation/）
-ACCEPTANCE = "/Users/jinyitao/Documents/日冕/complex-validation/acceptance.json"
+# 权威 acceptance.json（验收任务书指定的 <MAINTAINER_LOCAL_PATH>
+ACCEPTANCE = "<MAINTAINER_LOCAL_PATH>"
 with open(ACCEPTANCE, "r", encoding="utf-8") as fh:
     acc = json.load(fh)
 ref = acc["reference_checks"]

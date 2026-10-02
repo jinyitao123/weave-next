@@ -5,7 +5,7 @@
       "event": {
         "kind": "tool_call",
         "tool": "Bash",
-        "input": "{\"command\":\"cd /private/tmp/weave-runtime-value-20260907-sqtugx3m/runtime-workspaces/.invocations/task-12c3b74a36b2e690afffbc5ef247820b/default/corona-prephase-a-lab-v3-luna-digital-engineering-builder/workdir/outputs/model\\npython3 corona_model.py >/dev/null && echo \\\"run exit=$?\\\"\\npython3 test_model.py 2>&1 | tail -6; echo \\\"tests exit=${PIPESTATUS[0]:-$?}\\\"\",\"description\":\"Re-run model and tests after fixes\"}",
+        "input": "{\"command\":\"cd <LOCAL_TEMP_PATH>\\npython3 corona_model.py >/dev/null && echo \\\"run exit=$?\\\"\\npython3 test_model.py 2>&1 | tail -6; echo \\\"tests exit=${PIPESTATUS[0]:-$?}\\\"\",\"description\":\"Re-run model and tests after fixes\"}",
         "status": "running",
         "call_id": "tool_4DlyrtVcjIROVxOnX7xhHCmB"
       },

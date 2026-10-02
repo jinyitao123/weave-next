@@ -16,7 +16,7 @@
         "event": {
           "kind": "tool_call",
           "tool": "Bash",
-          "input": "{\"command\":\"cd \\\"/private/tmp/weave-corona-validation-20260906/workspaces-b/.invocations/task-d83fea8e5aa82eca0097753a0869ae03/default/corona-prephase-a-lab-v3-luna-digital-engineering-builder/workdir/outputs/drawings\\\" && python3 -c \\\"\\nimport xml.etree.ElementTree as ET, glob\\nfor f in sorted(glob.glob('*.svg')):\\n    ET.parse(f); print('XML OK', f)\\n\\\" && python3 tools/make_dxf.py && openscad --version 2>&1 | head -2\",\"description\":\"Validate SVG XML, generate DXF, check OpenSCAD version\"}",
+          "input": "{\"command\":\"cd \\\"<LOCAL_TEMP_PATH>\\\" && python3 -c \\\"\\nimport xml.etree.ElementTree as ET, glob\\nfor f in sorted(glob.glob('*.svg')):\\n    ET.parse(f); print('XML OK', f)\\n\\\" && python3 tools/make_dxf.py && openscad --version 2>&1 | head -2\",\"description\":\"Validate SVG XML, generate DXF, check OpenSCAD version\"}",
           "status": "running",
           "call_id": "tool_FZ2moRmSfVX8zVXOpexFAc28"
         },
@@ -39,7 +39,7 @@
         "event": {
           "kind": "tool_result",
           "tool": "Bash",
-          "output": "XML OK COR-DWG-001_mission_architecture.svg\nXML OK COR-DWG-002_archive_payload_zones.svg\nXML OK COR-DWG-003_system_interfaces.svg\nOK /private/tmp/weave-corona-validation-20260906/workspaces-b/.invocations/task-d83fea8e5aa82eca0097753a0869ae03/default/corona-prephase-a-lab-v3-luna-digital-engineering-builder/workdir/outputs/drawings/COR-DWG-004_habitat_section.dxf\nOpenSCAD version 2026.09.03",
+          "output": "XML OK COR-DWG-001_mission_architecture.svg\nXML OK COR-DWG-002_archive_payload_zones.svg\nXML OK COR-DWG-003_system_interfaces.svg\nOK <LOCAL_TEMP_PATH>\nOpenSCAD version 2026.09.03",
           "status": "ok",
           "call_id": "tool_FZ2moRmSfVX8zVXOpexFAc28"
         },
@@ -62,7 +62,7 @@
         "event": {
           "kind": "tool_call",
           "tool": "Bash",
-          "input": "{\"command\":\"cd \\\"/private/tmp/weave-corona-validation-20260906/workspaces-b/.invocations/task-d83fea8e5aa82eca0097753a0869ae03/default/corona-prephase-a-lab-v3-luna-digital-engineering-builder/workdir/outputs/drawings\\\" && openscad -o render/COR-DWG-004_preview.png --imgsize=960,720 COR-DWG-004_habitat_concept.scad 2>&1 | tail -5; ls -la render/\",\"description\":\"Render OpenSCAD concept model to PNG (real render check)\",\"timeout\":180000}",
+          "input": "{\"command\":\"cd \\\"<LOCAL_TEMP_PATH>\\\" && openscad -o render/COR-DWG-004_preview.png --imgsize=960,720 COR-DWG-004_habitat_concept.scad 2>&1 | tail -5; ls -la render/\",\"description\":\"Render OpenSCAD concept model to PNG (real render check)\",\"timeout\":180000}",
           "status": "running",
           "call_id": "tool_pPfxV7CtEwKlFBCkKZnbwCKx"
         },

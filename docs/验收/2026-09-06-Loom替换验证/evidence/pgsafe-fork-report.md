@@ -1,6 +1,6 @@
 ## 已核验数据汇总
 
-**数据源**: /Users/jinyitao/Documents/日冕/complex-validation/baseline.yaml
+**数据源**: <MAINTAINER_LOCAL_PATH>
 **SHA256**: `95ef8f8a35d79596ee25f01ecb391c5a5ca2ab16885609f84454a0921b0d13b1`
 **基础参数**: 质量 1×10⁹ kg；距离 4.25 光年；光速 299792458 m/s
 

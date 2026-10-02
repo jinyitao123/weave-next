@@ -1,6 +1,6 @@
 请使用已经准备好的“日冕先期论证恢复验证团队 v5”执行一次新的隔离恢复验证，不要修改团队、运行时绑定或交付路径，也不要让我补充团队 UUID。
 
-输入基线位于只读目录 /Users/jinyitao/.weave/recovery-materials/2026-09-10-corona-v5-source。manifest.json 的 SHA-256 是 584cc020b0bac241977362a057ebc8c7096a570760f0b32c39c1aa47fcc6cf8a。original-materials/ 是 2026-09-05 冻结日冕材料，v4-outputs/ 是上一轮真实独立总装成果。只能读取该目录，所有新文件必须写入本次成员自己的 workdir。
+输入基线位于只读目录 <MAINTAINER_LOCAL_PATH> 的 SHA-256 是 584cc020b0bac241977362a057ebc8c7096a570760f0b32c39c1aa47fcc6cf8a。original-materials/ 是 2026-09-05 冻结日冕材料，v4-outputs/ 是上一轮真实独立总装成果。只能读取该目录，所有新文件必须写入本次成员自己的 workdir。
 
 这次工作不是从零重做。各专业先复核并复用 v4 对应成果，只在发现可复现缺陷时修改。数字工程成员需修复检查计数漂移和最终报告自引用，保证本地应用真实切换 0.01c、0.03c、0.05c，导出 JSON 可解析且与页面一致。独立验证与总装员必须在自己的 outputs/ 形成唯一最终目录，实际复跑原 acceptance.json 的十一项硬门槛，并生成 outputs/verification/acceptance.json、outputs/verification/browser-evidence.json 与 outputs/FINAL_ACCEPTANCE.md。
 

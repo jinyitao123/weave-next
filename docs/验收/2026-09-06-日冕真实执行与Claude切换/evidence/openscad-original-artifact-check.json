@@ -8,8 +8,8 @@
       "command": [
         "/opt/homebrew/bin/openscad",
         "-o",
-        "/private/tmp/weave-corona-validation-20260906/openscad-independent/COR-SCAD-001_archive_payload_concept.stl",
-        "/private/tmp/weave-corona-validation-20260906/openscad-independent/COR-SCAD-001_archive_payload_concept.scad"
+        "<LOCAL_TEMP_PATH>",
+        "<LOCAL_TEMP_PATH>"
       ],
       "exit_code": 0,
       "stdout": "",
@@ -19,11 +19,11 @@
       "command": [
         "/opt/homebrew/bin/openscad",
         "-o",
-        "/private/tmp/weave-corona-validation-20260906/openscad-independent/COR-SCAD-001_archive_payload_concept.png",
+        "<LOCAL_TEMP_PATH>",
         "--imgsize=1200,900",
         "--viewall",
         "--autocenter",
-        "/private/tmp/weave-corona-validation-20260906/openscad-independent/COR-SCAD-001_archive_payload_concept.scad"
+        "<LOCAL_TEMP_PATH>"
       ],
       "exit_code": 0,
       "stdout": "",

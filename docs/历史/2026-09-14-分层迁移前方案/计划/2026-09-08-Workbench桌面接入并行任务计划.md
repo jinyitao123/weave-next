@@ -4,7 +4,7 @@
 状态：T00–T04 已完成当前独立预览范围；T03 已生成 macOS 原生应用，真实身份与业务接入仍属 T05–T09。
 基线：`da0e5c7eb5ba0f85c6381bd395418dba77f8aaf9`。
 分支：`codex/workbench-desktop-parallel-plan`。
-工作目录：`/Users/jinyitao/Developer/weave-next-workbench-desktop`。
+工作目录：`<MAINTAINER_LOCAL_PATH>`。
 
 本计划补充[产品技术方案 v0.4](../架构/2026-09-08-Workbench桌面接入与账号体系产品技术方案.md)和[实施验收计划](2026-09-08-Workbench桌面接入与账号体系实施验收计划.md)。总目标与 G01–G20 不变，调整修复期间的实施顺序。可并行的工作不等于已具备真实登录、执行或桌面发布能力。
 

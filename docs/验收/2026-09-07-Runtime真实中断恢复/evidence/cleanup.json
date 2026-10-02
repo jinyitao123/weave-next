@@ -6,13 +6,13 @@
     {
       "role": "runtime",
       "pid": 15585,
-      "command": "/private/tmp/weave-runtime-value-20260907-sqtugx3m/weave runtime --server http://127.0.0.1:56586 --workspaces-root /private/tmp/weave-runtime-value-20260907-sqtugx3m/runtime-workspaces --concurrency 1",
+      "command": "<LOCAL_TEMP_PATH> runtime --server http://127.0.0.1:56586 --workspaces-root <LOCAL_TEMP_PATH> --concurrency 1",
       "signal": "SIGTERM"
     },
     {
       "role": "api",
       "pid": 25232,
-      "command": "/private/tmp/weave-runtime-value-20260907-sqtugx3m/driver serve /private/tmp/weave-runtime-value-20260907-sqtugx3m/settings.json",
+      "command": "<LOCAL_TEMP_PATH> serve <LOCAL_TEMP_PATH>",
       "signal": "SIGTERM"
     }
   ],
@@ -144,22 +144,22 @@
       "secret_replacements": 0
     }
   ],
-  "isolated_root": "/private/tmp/weave-runtime-value-20260907-sqtugx3m",
+  "isolated_root": "<LOCAL_TEMP_PATH>",
   "isolated_database": "weave_runtime_value_95ff06d7",
   "business_services_targeted": false,
   "database_dropped": "weave_runtime_value_95ff06d7",
   "database_absence_verified": true,
   "removed_downloads_and_native_temporary_files": [
-    "/Users/jinyitao/Downloads/corona_scenario_0.03c_baseline-1.0.0.json",
-    "/Users/jinyitao/Downloads/corona_scenario_0.03c.json",
-    "/private/tmp/_osc_test.scad",
-    "/private/tmp/_osc_test.csg",
-    "/private/tmp/_osc2.scad"
+    "<MAINTAINER_LOCAL_PATH>",
+    "<MAINTAINER_LOCAL_PATH>",
+    "<LOCAL_TEMP_PATH>",
+    "<LOCAL_TEMP_PATH>",
+    "<LOCAL_TEMP_PATH>"
   ],
   "finished_at": "2026-09-07T04:51:41.798609+00:00",
   "isolated_root_removed": true,
   "private_credentials_removed_with_root": true,
   "temporary_pointer_removed": true,
-  "archive_preserved": "/Users/jinyitao/Developer/weave-next/docs/验收/2026-09-07-Runtime真实中断恢复",
+  "archive_preserved": "<MAINTAINER_LOCAL_PATH>",
   "no_business_database_or_service_modified": true
 }

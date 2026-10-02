@@ -17,7 +17,7 @@
 | 9 个冻结件 SHA-256 与冻结源 manifest | `shasum`-等价 hash 比对（`outputs/review/cost_risk/*` + `verification/*`） | 9/9 与 manifest 一致 ✅ |
 | 5 个参考锚点独立复算 | python3 重算 `travel_years_at_0_03c / ke_1mt / ke_5mt / gravity_1km_2rpm / dust_1mg` | **5/5 在容差内**；worst rel_err = **1.926e-07**（gravity 1km 2rpm）✅ |
 | 三速度派生量独立复算 | python3 重算三档（航时/动能/尘埃/人工重力/转向上限/相对论校正/成本敏感度比值） | 与冻结基线逐项一致；0.05c/0.01c 动能 = **25.0000**、0.03c/0.01c = **9.0000** ✅ |
-| 权威 `acceptance.json` | 读取 `/Users/jinyitao/Documents/日冕/complex-validation/acceptance.json` | 存在；SHA-256 = `f4777aaf587b4a81a4fef1932717bf95a0aa063fa21a8e390dfd2ecd8cc60ec4`（与任务书/上游一致）✅ |
+| 权威 `acceptance.json` | 读取 `<MAINTAINER_LOCAL_PATH>` | 存在；SHA-256 = `f4777aaf587b4a81a4fef1932717bf95a0aa063fa21a8e390dfd2ecd8cc60ec4`（与任务书/上游一致）✅ |
 | 域内是否引入开放 S1 | 逐条核 `risk_register.md` §0/§1/§5 | RFC 02/03/04/05/06 及本域自查项**已避免**；跨域 S1（RK-15/16/17、RK-CR1/2/3、RK-V6-1…5）已登记但**不**本节点裁量关闭 ✅ |
 
 > 专业内容（六份 `.md` 交付件 + 两份 `verification/*.txt` 证据）**逐字未改**；仅本文件为本轮**追加**的复用自述。

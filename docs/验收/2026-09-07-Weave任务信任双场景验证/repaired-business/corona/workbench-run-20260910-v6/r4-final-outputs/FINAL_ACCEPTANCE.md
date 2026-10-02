@@ -3,7 +3,7 @@
 **运行**：`task-d591e695a9480bf22b28a40624e33ba2`（verification-integrator 独立复跑节点，同一新运行，未制造运行时中断，未补充团队 UUID）
 **日期**：2026-09-10
 **基线**：`corona-prephase-a-v1`（`frozen_for_validation`，速度轴 `0.01c / 0.03c / 0.05c`）
-**权威验收源**：`/Users/jinyitao/Documents/日冕/complex-validation/acceptance.json`
+**权威验收源**：`<MAINTAINER_LOCAL_PATH>`
 **　SHA-256** = `f4777aaf587b4a81a4fef1932717bf95a0aa063fa21a8e390dfd2ecd8cc60ec4`（本轮实测，与任务书一致）
 **被测根目录**：本工作流唯一最终目录 `outputs/`（禁用任何其他目录充当交付通道）。
 

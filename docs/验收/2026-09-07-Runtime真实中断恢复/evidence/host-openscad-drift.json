@@ -47,7 +47,7 @@
         "event": {
           "kind": "tool_call",
           "tool": "Bash",
-          "input": "{\"command\":\"cd /private/tmp/weave-runtime-value-20260907-sqtugx3m/runtime-workspaces/.invocations/task-da13aae23759a549a25c021dabf21f7c/default/corona-prephase-a-lab-v3-luna-digital-engineering-builder/workdir && /opt/homebrew/bin/openscad -o outputs/verification/COR-SCAD-001_parse_check.csg outputs/drawings/COR-SCAD-001_concept_model.scad 2>&1; echo \\\"OPENSCAD_EXIT=$?\\\"; wc -l outputs/verification/COR-SCAD-001_parse_check.csg\",\"description\":\"OpenSCAD parse and CSG export with full path\"}",
+          "input": "{\"command\":\"cd <LOCAL_TEMP_PATH> && /opt/homebrew/bin/openscad -o outputs/verification/COR-SCAD-001_parse_check.csg outputs/drawings/COR-SCAD-001_concept_model.scad 2>&1; echo \\\"OPENSCAD_EXIT=$?\\\"; wc -l outputs/verification/COR-SCAD-001_parse_check.csg\",\"description\":\"OpenSCAD parse and CSG export with full path\"}",
           "status": "running",
           "call_id": "tool_sC0KieC6ey6yoKSFCKz3j2ni"
         },

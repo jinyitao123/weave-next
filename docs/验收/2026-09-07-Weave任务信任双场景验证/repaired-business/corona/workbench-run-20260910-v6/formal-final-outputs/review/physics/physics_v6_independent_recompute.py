@@ -6,7 +6,7 @@ v6 · mission-physics-analyst 独立复核脚本
 手工重写全部闭合式，用于交叉核验 v4 冻结物理成果（06_corona_v4_physics_analysis_v1.0.md
 及其 physics_model.py / physics_recompute.py / physics_three_speed_scenarios.csv）是否正确。
 
-回判定源：只读权威 /Users/jinyitao/Documents/日冕/complex-validation/acceptance.json 的
+回判定源：只读权威 <MAINTAINER_LOCAL_PATH> 的
 reference_checks 五项，以及 v4-outputs/model/baseline.yaml 冻结协定系数。
 真值标签：verified_fact / derived_result / assumption / unknown
 """

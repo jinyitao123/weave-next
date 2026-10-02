@@ -8,7 +8,7 @@
     "milestone_observed": true,
     "fault_injected": true,
     "task_id": "task-6a50568ad2baec98cfd34b88ea32b01c",
-    "workdir": "/private/tmp/weave-runtime-value-20260907-sqtugx3m/runtime-workspaces/.invocations/task-6a50568ad2baec98cfd34b88ea32b01c/default/corona-prephase-a-lab-v3-luna-digital-engineering-builder/workdir",
+    "workdir": "<LOCAL_TEMP_PATH>",
     "elapsed_seconds": 430.042,
     "status": "engine_failed",
     "independent_acceptance": "pending",

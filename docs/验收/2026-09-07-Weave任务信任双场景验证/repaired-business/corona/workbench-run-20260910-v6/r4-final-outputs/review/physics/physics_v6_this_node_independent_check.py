@@ -6,13 +6,13 @@ corona-prephase-a-recovery-v6 · mission-physics-analyst 本轮独立交叉复�
   公式 / 数量级 / 三速度情景 / 未知项，并对照权威 acceptance.json 的
   reference_checks 逐项判定。作为本节点提供的独立证据，供 G3/G10 支撑。
 
-权威参照：/Users/jinyitao/Documents/日冕/complex-validation/acceptance.json
+权威参照：<MAINTAINER_LOCAL_PATH>
   （reference_checks 由本脚本动态读入，非硬编码）
 真值标签：verified_fact / derived_result / assumption / unknown
 """
 import math, json, os
 
-ACCEPT = "/Users/jinyitao/Documents/日冕/complex-validation/acceptance.json"
+ACCEPT = "<MAINTAINER_LOCAL_PATH>"
 
 # ---- 冻结常量（与 baseline.yaml/params.json/acceptance.json 逐值一致）----
 C_LIGHT = 299792458.0          # m/s  verified_fact

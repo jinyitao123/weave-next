@@ -244,19 +244,19 @@
     "errors": [],
     "failed": [
       {
-        "url": "file:///Users/jinyitao/Documents/%E6%97%A5%E5%86%95/complex-validation/claude-switch-20260906/independent-builder-check/collected-by-workbench/app/style.css",
+        "url": "file://<MAINTAINER_LOCAL_PATH>",
         "error": "net::ERR_FILE_NOT_FOUND"
       },
       {
-        "url": "file:///Users/jinyitao/Documents/%E6%97%A5%E5%86%95/complex-validation/claude-switch-20260906/independent-builder-check/collected-by-workbench/app/baseline.js",
+        "url": "file://<MAINTAINER_LOCAL_PATH>",
         "error": "net::ERR_FILE_NOT_FOUND"
       },
       {
-        "url": "file:///Users/jinyitao/Documents/%E6%97%A5%E5%86%95/complex-validation/claude-switch-20260906/independent-builder-check/collected-by-workbench/app/calc.js",
+        "url": "file://<MAINTAINER_LOCAL_PATH>",
         "error": "net::ERR_FILE_NOT_FOUND"
       },
       {
-        "url": "file:///Users/jinyitao/Documents/%E6%97%A5%E5%86%95/complex-validation/claude-switch-20260906/independent-builder-check/collected-by-workbench/app/app.js",
+        "url": "file://<MAINTAINER_LOCAL_PATH>",
         "error": "net::ERR_FILE_NOT_FOUND"
       }
     ]

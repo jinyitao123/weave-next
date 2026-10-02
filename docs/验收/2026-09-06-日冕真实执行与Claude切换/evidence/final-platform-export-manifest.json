@@ -542,31 +542,31 @@
   ],
   "source_inputs": [
     {
-      "source": "/Users/jinyitao/Documents/日冕/日冕计划_任务背景与全程纪要_修订稿.md",
+      "source": "<MAINTAINER_LOCAL_PATH>",
       "export_path": "source_inputs/日冕计划_任务背景与全程纪要_修订稿.md",
       "sha256": "892de3d4bdfecc8d4e463a5d385ddf2aee3457164838981931895ab55036f667",
       "bytes": 8534
     },
     {
-      "source": "/Users/jinyitao/Documents/日冕/complex-validation/baseline.yaml",
+      "source": "<MAINTAINER_LOCAL_PATH>",
       "export_path": "source_inputs/complex-validation/baseline.yaml",
       "sha256": "95ef8f8a35d79596ee25f01ecb391c5a5ca2ab16885609f84454a0921b0d13b1",
       "bytes": 941
     },
     {
-      "source": "/Users/jinyitao/Documents/日冕/complex-validation/日冕复杂团队验收任务书.md",
+      "source": "<MAINTAINER_LOCAL_PATH>",
       "export_path": "source_inputs/complex-validation/日冕复杂团队验收任务书.md",
       "sha256": "ba8aee89053fe12a2eaf796b88405e5d1269f0c0c7a24e6d63b46a003760df1c",
       "bytes": 5155
     },
     {
-      "source": "/Users/jinyitao/Documents/日冕/complex-validation/acceptance.json",
+      "source": "<MAINTAINER_LOCAL_PATH>",
       "export_path": "source_inputs/complex-validation/acceptance.json",
       "sha256": "f4777aaf587b4a81a4fef1932717bf95a0aa063fa21a8e390dfd2ecd8cc60ec4",
       "bytes": 1116
     }
   ],
-  "external_verification_input": "/Users/jinyitao/Documents/日冕/complex-validation/acceptance.json",
+  "external_verification_input": "<MAINTAINER_LOCAL_PATH>",
   "browser_verification": "pending: Mac locked",
   "independent_machine_recheck": {
     "performed_by": "Codex",

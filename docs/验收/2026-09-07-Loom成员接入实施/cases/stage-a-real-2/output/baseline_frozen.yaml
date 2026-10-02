@@ -25,17 +25,17 @@ authority: 本轮运行初始批准范围 (run_input)
 # 上游来源（只读引用，本基线不修改源文件）
 # --------------------------------------------------------------------------
 sources:
-  primary_background: /Users/jinyitao/Documents/日冕/日冕计划_任务背景与全程纪要_修订稿.md
+  primary_background: <MAINTAINER_LOCAL_PATH>
   parent_baseline:
-    file: /Users/jinyitao/Documents/日冕/complex-validation/baseline.yaml
+    file: <MAINTAINER_LOCAL_PATH>
     baseline_id: corona-prephase-a-v1
     status: frozen_for_validation
     relation: >-
       继承常数、参考工况、路线清单、事实标签与禁用声明；
       速度情景按本轮批准范围裁剪为单一 0.03c，
       0.01c/0.05c 移入受控变更 CCR-001（待平台确认）。
-  task_book: /Users/jinyitao/Documents/日冕/complex-validation/日冕复杂团队验收任务书.md
-  acceptance: /Users/jinyitao/Documents/日冕/complex-validation/acceptance.json
+  task_book: <MAINTAINER_LOCAL_PATH>
+  acceptance: <MAINTAINER_LOCAL_PATH>
 
 # --------------------------------------------------------------------------
 # 情景锁定：本轮唯一批准情景

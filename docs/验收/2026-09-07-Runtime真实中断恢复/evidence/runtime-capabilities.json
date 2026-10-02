@@ -19,7 +19,7 @@
     "claude": {
       "engine": "claude",
       "auth_mode": "oauth",
-      "binary_path": "/Users/jinyitao/.local/bin/claude",
+      "binary_path": "<MAINTAINER_LOCAL_PATH>",
       "public_events": true,
       "binary_version": "2.1.245 (Claude Code)",
       "endpoint_class": "host_configured",
@@ -31,7 +31,7 @@
     "opencode": {
       "engine": "opencode",
       "auth_mode": "provider",
-      "binary_path": "/Users/jinyitao/.local/bin/opencode",
+      "binary_path": "<MAINTAINER_LOCAL_PATH>",
       "binary_version": "1.2.10",
       "endpoint_class": "configured_provider",
       "protocol_version": "opencode-json-v1",

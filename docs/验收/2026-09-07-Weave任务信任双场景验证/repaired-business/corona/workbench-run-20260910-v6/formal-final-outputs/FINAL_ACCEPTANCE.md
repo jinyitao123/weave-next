@@ -3,7 +3,7 @@
 **验证节点**：`corona-prephase-a-recovery-v6-verification-integrator`（独立验证与总装员）
 **验证日期**：2026-09-10
 **基线**：`corona-prephase-a-v1`（v1.0.0，`frozen_for_validation`，速度轴 `0.01c / 0.03c / 0.05c`）
-**权威验收文件**：`/Users/jinyitao/Documents/日冕/complex-validation/acceptance.json`（SHA-256 `f4777aaf587b4a81a4fef1932717bf95a0aa063fa21a8e390dfd2ecd8cc60ec4`，与本轮实测一致）
+**权威验收文件**：`<MAINTAINER_LOCAL_PATH>`（SHA-256 `f4777aaf587b4a81a4fef1932717bf95a0aa063fa21a8e390dfd2ecd8cc60ec4`，与本轮实测一致）
 **判定方式**：本总装员在本人 `outputs/` **唯一最终目录**上**真实复跑**原 `acceptance.json` 十一项硬门槛；每一门的判定均指向**独立证据工件路径**（`model/`、`app/`、`drawings/`、`review/`、`verification/` 下的真实交付件与运行证据），不以本报告自身章节充当证据，亦不采信任何成员自述的最终验收。
 
 **检查计数**：11（`check_count_from_execution = 11`，由本次实际执行记录动态生成）。

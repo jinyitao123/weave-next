@@ -1,6 +1,6 @@
 ## 巡航方案汇总（数据源自真实工具回执）
 
-**基准参数**：源文件 `/Users/jinyitao/Documents/日冕/complex-validation/baseline.yaml`；质量 10⁹ kg；距离 4.25 光年；c = 299792458 m/s
+**基准参数**：源文件 `<MAINTAINER_LOCAL_PATH>`；质量 10⁹ kg；距离 4.25 光年；c = 299792458 m/s
 
 | 速度 (c) | 经典动能 (J) | 巡航时间 (年) |
 |---|---|---|

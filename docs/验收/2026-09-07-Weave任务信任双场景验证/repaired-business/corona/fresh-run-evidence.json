@@ -34,7 +34,7 @@
     "applied_at": null
   },
   "model_check": {
-    "command": "cd /Users/jinyitao/Documents/日冕/complex-validation/fresh-20260909/outputs/model && python3 -m unittest discover -s tests -v",
+    "command": "cd <MAINTAINER_LOCAL_PATH> && python3 -m unittest discover -s tests -v",
     "result": "passed",
     "tests_run": 34,
     "failures": 0,

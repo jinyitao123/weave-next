@@ -4,9 +4,9 @@
     "role": "api",
     "pid": 25232,
     "command": [
-      "/private/tmp/weave-runtime-value-20260907-sqtugx3m/driver",
+      "<LOCAL_TEMP_PATH>",
       "serve",
-      "/private/tmp/weave-runtime-value-20260907-sqtugx3m/settings.json"
+      "<LOCAL_TEMP_PATH>"
     ],
     "sequence": 2
   },
@@ -15,12 +15,12 @@
     "role": "runtime",
     "pid": 15585,
     "command": [
-      "/private/tmp/weave-runtime-value-20260907-sqtugx3m/weave",
+      "<LOCAL_TEMP_PATH>",
       "runtime",
       "--server",
       "http://127.0.0.1:56586",
       "--workspaces-root",
-      "/private/tmp/weave-runtime-value-20260907-sqtugx3m/runtime-workspaces",
+      "<LOCAL_TEMP_PATH>",
       "--concurrency",
       "1"
     ],
@@ -31,9 +31,9 @@
     "role": "driver-N",
     "pid": 15679,
     "command": [
-      "/private/tmp/weave-runtime-value-20260907-sqtugx3m/driver",
+      "<LOCAL_TEMP_PATH>",
       "run",
-      "/private/tmp/weave-runtime-value-20260907-sqtugx3m/settings.json",
+      "<LOCAL_TEMP_PATH>",
       "N"
     ],
     "sequence": 1
@@ -43,9 +43,9 @@
     "role": "driver-C",
     "pid": 22366,
     "command": [
-      "/private/tmp/weave-runtime-value-20260907-sqtugx3m/driver",
+      "<LOCAL_TEMP_PATH>",
       "run",
-      "/private/tmp/weave-runtime-value-20260907-sqtugx3m/settings.json",
+      "<LOCAL_TEMP_PATH>",
       "C"
     ],
     "sequence": 1
@@ -55,9 +55,9 @@
     "role": "driver-C-resume",
     "pid": 25234,
     "command": [
-      "/private/tmp/weave-runtime-value-20260907-sqtugx3m/driver",
+      "<LOCAL_TEMP_PATH>",
       "run",
-      "/private/tmp/weave-runtime-value-20260907-sqtugx3m/settings.json",
+      "<LOCAL_TEMP_PATH>",
       "C",
       "driver-resumed-result.json"
     ],
@@ -68,9 +68,9 @@
     "role": "driver-M",
     "pid": 31269,
     "command": [
-      "/private/tmp/weave-runtime-value-20260907-sqtugx3m/driver",
+      "<LOCAL_TEMP_PATH>",
       "run",
-      "/private/tmp/weave-runtime-value-20260907-sqtugx3m/settings.json",
+      "<LOCAL_TEMP_PATH>",
       "M"
     ],
     "sequence": 1
@@ -80,9 +80,9 @@
     "role": "driver-M2",
     "pid": 34381,
     "command": [
-      "/private/tmp/weave-runtime-value-20260907-sqtugx3m/driver-extra",
+      "<LOCAL_TEMP_PATH>",
       "run",
-      "/private/tmp/weave-runtime-value-20260907-sqtugx3m/settings.json",
+      "<LOCAL_TEMP_PATH>",
       "M2"
     ],
     "sequence": 1
@@ -92,9 +92,9 @@
     "role": "driver-M2-reconnect",
     "pid": 36625,
     "command": [
-      "/private/tmp/weave-runtime-value-20260907-sqtugx3m/driver-extra",
+      "<LOCAL_TEMP_PATH>",
       "run",
-      "/private/tmp/weave-runtime-value-20260907-sqtugx3m/settings.json",
+      "<LOCAL_TEMP_PATH>",
       "M2",
       "driver-reconnect-result.json"
     ],
