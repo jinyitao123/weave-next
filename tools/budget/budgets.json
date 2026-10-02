@@ -623,6 +623,23 @@
         "lines_added": 571,
         "production_lines_added": 156
       }
+    },
+    {
+      "date": "2026-10-02",
+      "reason": "Route business-only standard Loom publications through the existing durable v2 member contract; reject unsupported legacy/custom/CLI factories and parallel business members before effects. Add a real PostgreSQL publication-to-loader-to-MemberRunner-to-Forge action regression and retain immutable legacy ABI rejection. Exact measured increases only; no new packages, dependencies, journal, execution loop, or spare budget.",
+      "record": "docs/治理/2026-09-30-平台范围收窄整改登记.md",
+      "kernel": {
+        "previous_lines": 99573,
+        "previous_production_lines": 82327,
+        "lines_added": 95,
+        "production_lines_added": 42
+      },
+      "app": {
+        "previous_lines": 87209,
+        "previous_production_lines": 64038,
+        "lines_added": 316,
+        "production_lines_added": 3
+      }
     }
   ],
   "migration_targets": {
@@ -660,8 +677,8 @@
     ]
   },
   "kernel": {
-    "lines": 99573,
-    "production_lines": 82327,
+    "lines": 99668,
+    "production_lines": 82369,
     "packages": 49,
     "external_dependencies": 5,
     "allowed_dependencies": [
@@ -685,8 +702,8 @@
     ]
   },
   "app": {
-    "lines": 87209,
-    "production_lines": 64038,
+    "lines": 87525,
+    "production_lines": 64041,
     "packages": 30,
     "external_dependencies": 7,
     "allowed_dependencies": [

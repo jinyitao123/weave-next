@@ -144,6 +144,9 @@ func (b *CandidateBuilder) buildResolvedCandidateTx(ctx context.Context, tx pgx.
 		if resolveErr != nil {
 			return nil, nil, machine.ValidationContext{}, resolveErr
 		}
+		if reference.ParallelBranch && (len(record.BusinessCapabilityIDs) > 0 || len(record.BusinessCapabilityBindings) > 0) {
+			return nil, nil, machine.ValidationContext{}, fmt.Errorf("%w: business actions require serial durable member execution", compiler.ErrFactoryCompileFailed)
+		}
 		key, selectErr := b.descriptors.SelectAgentFactoryKey(*record)
 		if selectErr != nil {
 			return nil, nil, machine.ValidationContext{}, selectErr

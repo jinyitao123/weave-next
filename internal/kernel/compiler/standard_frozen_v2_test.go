@@ -50,6 +50,59 @@ func TestStandardFactorySelectionPreservesExplicitLegacyLoading(t *testing.T) {
 	}
 }
 
+func TestBusinessOnlyLoomPublicationSelectsDurableFactory(t *testing.T) {
+	r := toolsTestRegistry(t)
+	plain := toolsTestRecord()
+	plain.MCPServers = nil
+	if key, err := r.SelectAgentFactoryKey(plain); err != nil || key != NewStandardFrozenDescriptor().Key() {
+		t.Fatalf("plain member changed its legacy contract: %v %v", key, err)
+	}
+	for _, bindingsOnly := range []bool{false, true} {
+		record := toolsTestRecord()
+		record.MCPServers = nil
+		if bindingsOnly {
+			record.BusinessCapabilityBindings = []frozen.BusinessCapabilityBinding{{CapabilityID: "forge:action:record.Submit"}}
+		} else {
+			record.BusinessCapabilityIDs = []string{"forge:action:record.Submit"}
+		}
+		key, err := r.SelectAgentFactoryKey(record)
+		if err != nil || key != StandardFrozenToolsKey() {
+			t.Fatalf("business-only member lacks durable factory: key=%+v err=%v", key, err)
+		}
+		if record.ToolLoopControl != nil {
+			t.Fatal("durability must not require an unrelated budget configuration")
+		}
+		for _, engine := range []string{"codex", "claude"} {
+			record.Engine = engine
+			if _, err := r.SelectAgentFactoryKey(record); err == nil {
+				t.Fatalf("business execution without durable operation support admitted: %s", engine)
+			}
+		}
+		record.Engine, record.GraphType = "loom", "declarative"
+		if _, err := r.SelectAgentFactoryKey(record); err == nil {
+			t.Fatal("unproven custom business execution admitted")
+		}
+	}
+}
+
+func TestBusinessOnlyExistingRoleProofStillRequiresItsExactRecord(t *testing.T) {
+	r := toolsTestRegistry(t)
+	record := toolsTestRecord()
+	record.MCPServers = nil
+	record.BusinessCapabilityIDs = []string{"forge:action:record.Submit"}
+	legacy, err := r.describeWorkerRoleProofAtKey(t.Context(), record, nil, NewStandardFrozenDescriptor().Key())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r.VerifyWorkerRoleProof(t.Context(), record, legacy); err != nil {
+		t.Fatal(err)
+	}
+	record.BusinessCapabilityIDs = []string{"forge:action:record.Delete"}
+	if err := r.VerifyWorkerRoleProof(t.Context(), record, legacy); err == nil {
+		t.Fatal("changed business authority reused the old role proof")
+	}
+}
+
 func TestStandardV2RoleProofKeepsExistingSnapshotValid(t *testing.T) {
 	r := toolsTestRegistry(t)
 	record := toolsTestRecord()

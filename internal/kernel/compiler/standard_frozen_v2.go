@@ -138,10 +138,14 @@ func (r *DescriptorRegistry) SelectAgentFactoryKey(record registry.AgentRecord) 
 	if graphType == "" {
 		graphType = record.Spec.GraphType
 	}
+	hasBusinessActions := len(record.BusinessCapabilityIDs) > 0 || len(record.BusinessCapabilityBindings) > 0
+	if hasBusinessActions && ((record.Engine != "" && record.Engine != "loom") || (graphType != "" && graphType != "standard")) {
+		return frozen.FactoryKey{}, normalizeCompilerError(CodeDependencyUnenumerable, fmt.Errorf("business actions require the durable standard Loom factory"))
+	}
 	if graphType != "" && graphType != "standard" {
 		return r.SelectFactoryKey(graphType)
 	}
-	if len(record.MCPServers) > 0 || record.ToolLoopControl != nil {
+	if len(record.MCPServers) > 0 || record.ToolLoopControl != nil || hasBusinessActions {
 		key := StandardFrozenToolsKey()
 		if engine.IsCLIEngine(record.Engine) {
 			key = StandardFrozenCLIToolsKey()
@@ -156,6 +160,19 @@ func (r *DescriptorRegistry) SelectAgentFactoryKey(record registry.AgentRecord) 
 		return frozen.FactoryKey{}, err
 	}
 	return key, nil
+}
+
+// ValidateFrozenBusinessActionFactory fails closed without upgrading immutable
+// artifacts. Only the standard Loom v2 member contract supplies durable tool
+// operation slots to the existing business-action replay guard.
+func ValidateFrozenBusinessActionFactory(bundle frozen.FrozenExecutionBundle) error {
+	if len(bundle.Agent.BusinessCapabilityIDs) == 0 && len(bundle.Agent.BusinessCapabilityBindings) == 0 {
+		return nil
+	}
+	if bundle.Agent.Engine != "loom" || bundle.Agent.GraphType != "standard" || bundle.FactoryKey != StandardFrozenToolsKey() {
+		return standardFrozenCompileError("business actions require a newly published durable standard Loom factory")
+	}
+	return nil
 }
 
 // ValidateStandardMCPBindings checks the frozen declaration, actual resolved

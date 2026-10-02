@@ -173,6 +173,9 @@ func validateStandardFrozenBundle(bundle frozen.FrozenExecutionBundle) error {
 }
 
 func validateStandardFrozenBundleVersion(bundle frozen.FrozenExecutionBundle, version string) error {
+	if err := ValidateFrozenBusinessActionFactory(bundle); err != nil {
+		return err
+	}
 	wantKey := (frozen.FactoryKey{
 		FactoryID:      standardFrozenFactoryID,
 		FactoryVersion: version,
