@@ -76,7 +76,7 @@
   },
   "workbench_discovery_process": {
     "configured_command": "../bin/weave",
-    "resolved_command": "/Users/jinyitao/Developer/weave-next/bin/weave",
+    "resolved_command": "<MAINTAINER_LOCAL_PATH>",
     "resolved_command_existed": false,
     "weave_mcp_process_running": false,
     "team_list_implemented_in_deployed_binary": true,

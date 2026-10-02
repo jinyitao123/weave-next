@@ -4,7 +4,7 @@
 **运行**：2026-09-10 · v6 **隔离恢复验证**（复用 v4，仅改可复现缺陷；非从零重做）
 **基线**：`corona-prephase-a-v1`（frozen，v1.0.0，速度轴 `0.01c / 0.03c / 0.05c`；`default_scenario_c = 0.03`）
 **上游（v6 实际可读源）**：
-- 权威验收：`/Users/jinyitao/Documents/日冕/complex-validation/acceptance.json`（11 项硬门槛 + 5 项参考锚点 + 6 条 required_final_paths，只读）
+- 权威验收：`<MAINTAINER_LOCAL_PATH>`（11 项硬门槛 + 5 项参考锚点 + 6 条 required_final_paths，只读）
 - 冻结参数基线：`v4-outputs/model/baseline.yaml`（= 冻结配置基线 `corona-prephase-a-v1` 的自包含副本；与 `complex-validation/baseline.yaml` 逐字一致）
 - 程序性来源：`original-materials/materials/systems_engineering_coronal_program.md`、`original-materials/materials/coronal_program_final_decision_report.md`
 - 任务负责人简报：`inputs/lead/frozen-input-inventory.md`、`coordination-brief.md`、`aggregated-decisions.md`

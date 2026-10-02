@@ -1,5 +1,5 @@
 {
-  "app_dir": "/private/tmp/corona-r5-independent-ig3ebdh3/outputs/app",
+  "app_dir": "<LOCAL_TEMP_PATH>",
   "chrome": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
   "checks": [
     {

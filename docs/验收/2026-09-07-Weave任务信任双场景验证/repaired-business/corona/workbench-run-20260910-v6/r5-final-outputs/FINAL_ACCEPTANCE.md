@@ -4,7 +4,7 @@
 **本件由**：`corona-prephase-a-recovery-v6-verification-integrator`（独立验证与总装员）本轮独立复跑后生成
 **日期**：2026-09-10
 **基线**：`corona-prephase-a-v1`（速度轴 `0.01c / 0.03c / 0.05c`）
-**权威验收源**：`/Users/jinyitao/Documents/日冕/complex-validation/acceptance.json`
+**权威验收源**：`<MAINTAINER_LOCAL_PATH>`
 **　SHA-256** = `f4777aaf587b4a81a4fef1932717bf95a0aa063fa21a8e390dfd2ecd8cc60ec4`（本轮实测一致）
 **被测根目录**：本工作流唯一最终目录 `outputs/`（禁用任何其他目录充当交付通道）。
 

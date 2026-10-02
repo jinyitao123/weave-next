@@ -12,7 +12,7 @@ def main():
  for f in payload['input_files']:
   path=dest/'upstream'/f['path'];path.parent.mkdir(parents=True,exist_ok=True);path.write_text(f['content'])
   assert sha(path)==f['sha256']
- originals=[('/Users/jinyitao/Documents/日冕/日冕计划_任务背景与全程纪要_修订稿.md','background.md'),('/Users/jinyitao/Documents/日冕/complex-validation/baseline.yaml','baseline.yaml'),('/Users/jinyitao/Documents/日冕/complex-validation/日冕复杂团队验收任务书.md','task-spec.md'),('/Users/jinyitao/Documents/日冕/complex-validation/acceptance.json','acceptance.json')]
+ originals=[('<MAINTAINER_LOCAL_PATH>,'background.md'),('<MAINTAINER_LOCAL_PATH>,'baseline.yaml'),('<MAINTAINER_LOCAL_PATH>,'task-spec.md'),('<MAINTAINER_LOCAL_PATH>,'acceptance.json')]
  # The Executor adds the immutable upstream notice itself.
  prompt=payload['prompt'].split('\n\nUpstream files provided by Weave in inputs/')[0]
  references=[]

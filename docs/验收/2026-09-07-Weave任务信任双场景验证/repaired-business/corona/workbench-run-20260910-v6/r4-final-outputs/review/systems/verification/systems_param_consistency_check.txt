@@ -3,7 +3,7 @@
 - 节点：`corona-prephase-a-recovery-v6-systems-architect`
 - 运行：2026-09-10 · v6 隔离恢复验证（本轮真实工具调用）
 - 性质：转发一致性核对（`derived_result` 的再表述）；**不是**独立物理推导，**不是**十一项硬门槛独立复跑。
-- 权威文件：`/Users/jinyitao/Documents/日冕/complex-validation/acceptance.json`
+- 权威文件：`<MAINTAINER_LOCAL_PATH>`
 
 ## 1. 派生量表（0.01c / 0.03c / 0.05c）
 

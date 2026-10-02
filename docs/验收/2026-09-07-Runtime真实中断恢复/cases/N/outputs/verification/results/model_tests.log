@@ -1,5 +1,5 @@
 CMD: cd outputs/model && python3 corona_model.py
-wrote /private/tmp/weave-runtime-value-20260907-sqtugx3m/runtime-workspaces/.invocations/task-12c3b74a36b2e690afffbc5ef247820b/default/corona-prephase-a-lab-v3-luna-digital-engineering-builder/workdir/outputs/model/results.json
+wrote <LOCAL_TEMP_PATH>
 travel_time_yr = 141.6666667
 ke_1mt_j = 4.0443983e+22
 ke_5mt_j = 2.0221992e+23

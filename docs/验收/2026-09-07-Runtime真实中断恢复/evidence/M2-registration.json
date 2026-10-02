@@ -7,7 +7,7 @@
   "invocation_id": "runtime-value-M2/engineering/0",
   "fault": "SIGKILL actual native CLI process group after full model-test success and >=2 model source files, before full delivery; Runtime/API stay alive",
   "original_M_preserved": true,
-  "runtime_binary": "/private/tmp/weave-runtime-value-20260907-sqtugx3m/weave",
+  "runtime_binary": "<LOCAL_TEMP_PATH>",
   "runtime_binary_sha256": "977207178a4695e3589333c024fdfbbd1da6fd9c85142fee961b952b775a9236",
   "runtime_pid": 15585,
   "ruby_patch_not_loaded_in_runtime": true,

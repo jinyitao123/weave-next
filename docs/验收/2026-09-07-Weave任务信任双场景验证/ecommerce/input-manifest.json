@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "source_root": "/Users/jinyitao/Developer/RealReplicaBench",
+  "source_root": "<MAINTAINER_LOCAL_PATH>",
   "repository": "https://github.com/Accio-org/RealReplicaBench.git",
   "revision": "084489800bfd3f9f239503eda9e754bc267e98f5",
   "files": [

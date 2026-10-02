@@ -28,7 +28,7 @@
     "enabled": true,
     "script": "<generated-runtime-mocks>",
     "returncode": 0,
-    "log": "/home/ubuntu/commerceagentbench/runs/trust-repaired-invoice-20260908-remote004/container/mock_services.log",
+    "log": "<SERVICE_DATA_PATH>",
     "started": true,
     "runtime_mocks": [
       {
@@ -44,7 +44,7 @@
       }
     ]
   },
-  "task_md": "/home/ubuntu/commerceagentbench/runs/trust-repaired-invoice-20260908-remote004/task/public/task.md",
-  "public_workspace": "/home/ubuntu/commerceagentbench/runs/trust-repaired-invoice-20260908-remote004/task/public/workspace",
+  "task_md": "<SERVICE_DATA_PATH>",
+  "public_workspace": "<SERVICE_DATA_PATH>",
   "secrets_file": ".runtime-secrets.json"
 }

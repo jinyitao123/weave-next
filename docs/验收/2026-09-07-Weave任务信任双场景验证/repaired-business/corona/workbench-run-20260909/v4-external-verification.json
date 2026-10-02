@@ -2,7 +2,7 @@
   "schema_version": 1,
   "checked_at": "2026-09-09T23:34:00+08:00",
   "run_id": "run-54e09b98-9f24-547e-afc7-e0937ada51e3",
-  "candidate_root": "/Users/jinyitao/.weave/runtime-workspaces-b/.invocations/task-dabc5c0a1dfdc1ee2dea7963c4c6d215/default/corona-prephase-a-lab-v4-verification-integrator/workdir/outputs",
+  "candidate_root": "<MAINTAINER_LOCAL_PATH>",
   "checks": [
     {
       "id": "model_tests",

@@ -19,7 +19,7 @@
     "api_implementation_commit": "88697f19643bdf71f1b9007ed6d14356adfdc4e5",
     "workbench_implementation_commit": "564bdc6383fa1240408f4dcbc76932b93ef258f7",
     "deployed_binary_sha256": "e5f7ba59d6578d25270e6edadd461d60b577574e38aefa01c496790f674304f9",
-    "workbench_mcp_command": "/Users/jinyitao/.local/bin/weave",
+    "workbench_mcp_command": "<MAINTAINER_LOCAL_PATH>",
     "mcp_process_present": true
   },
   "workbench_first_attempt": {

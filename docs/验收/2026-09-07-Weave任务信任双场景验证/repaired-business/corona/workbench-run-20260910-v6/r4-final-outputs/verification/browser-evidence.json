@@ -1,5 +1,5 @@
 {
-  "app_dir": "/Users/jinyitao/.weave/runtime-workspaces-b/.invocations/task-d591e695a9480bf22b28a40624e33ba2/default/corona-prephase-a-recovery-v6-verification-integrator/workdir/outputs/app",
+  "app_dir": "<MAINTAINER_LOCAL_PATH>",
   "chrome": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
   "checks": [
     {

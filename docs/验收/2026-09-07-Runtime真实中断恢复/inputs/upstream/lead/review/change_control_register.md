@@ -22,10 +22,10 @@
 
 ### 1.1 冻结依据的四个真实输入文件（本轮已实际读取）
 
-1. `/Users/jinyitao/Documents/日冕/日冕计划_任务背景与全程纪要_修订稿.md` [verified_fact]
-2. `/Users/jinyitao/Documents/日冕/complex-validation/baseline.yaml`（父基线 `corona-prephase-a-v1`，状态 `frozen_for_validation`）[verified_fact]
-3. `/Users/jinyitao/Documents/日冕/complex-validation/日冕复杂团队验收任务书.md` [verified_fact]
-4. `/Users/jinyitao/Documents/日冕/complex-validation/acceptance.json` [verified_fact]
+1. `<MAINTAINER_LOCAL_PATH>` [verified_fact]
+2. `<MAINTAINER_LOCAL_PATH>`（父基线 `corona-prephase-a-v1`，状态 `frozen_for_validation`）[verified_fact]
+3. `<MAINTAINER_LOCAL_PATH>` [verified_fact]
+4. `<MAINTAINER_LOCAL_PATH>` [verified_fact]
 
 读取方式：本轮 Read 工具真实调用返回，未扫描同机其他成员工作目录，未使用任何旧运行文件。
 

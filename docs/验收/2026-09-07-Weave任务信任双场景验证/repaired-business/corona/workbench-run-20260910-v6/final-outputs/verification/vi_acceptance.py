@@ -38,7 +38,7 @@ DRAWINGS_DIR = os.path.join(OUTPUTS, "drawings")
 REVIEW_DIR = os.path.join(OUTPUTS, "review")
 VERIF_DIR = HERE
 
-AUTH_ACCEPTANCE = "/Users/jinyitao/Documents/日冕/complex-validation/acceptance.json"
+AUTH_ACCEPTANCE = "<MAINTAINER_LOCAL_PATH>"
 AUTH_SHA256 = "f4777aaf587b4a81a4fef1932717bf95a0aa063fa21a8e390dfd2ecd8cc60ec4"
 CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 
@@ -436,7 +436,7 @@ def build_final_acceptance(gate_results, overall, check_count, inventory, auth_s
     lines.append("")
     lines.append("**验证节点**：`corona-prephase-a-recovery-v6-verification-integrator`（独立验证与总装员）")
     lines.append("**验证日期**：%s" % time.strftime("%Y-%m-%d", time.localtime()))
-    lines.append("**权威验收文件**：`/Users/jinyitao/Documents/日冕/complex-validation/acceptance.json`（SHA-256 `%s`，与任务书一致）" % auth_sha)
+    lines.append("**权威验收文件**：`<MAINTAINER_LOCAL_PATH>`（SHA-256 `%s`，与任务书一致）" % auth_sha)
     lines.append("**判定方式**：本总装员在本次真实执行中**独立复跑**原 `acceptance.json` 十一项硬门槛；每门判定指向**独立证据工件路径**（该工件路径指向 `verification/`、`model/`、`app/`、`drawings/`、`review/` 等交付件，非本报告自身章节，非成员自述）。")
     lines.append("")
     lines.append("**检查计数**：%d（由本次实际执行记录动态生成）。" % check_count)

@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "authoritative_sha256": "f4777aaf587b4a81a4fef1932717bf95a0aa063fa21a8e390dfd2ecd8cc60ec4",
-  "authoritative_path": "/Users/jinyitao/Documents/日冕/complex-validation/acceptance.json",
+  "authoritative_path": "<MAINTAINER_LOCAL_PATH>",
   "verifier_node": "corona-prephase-a-recovery-v6-verification-integrator",
   "verification_date": "2026-09-10",
   "required_final_paths_checked": {

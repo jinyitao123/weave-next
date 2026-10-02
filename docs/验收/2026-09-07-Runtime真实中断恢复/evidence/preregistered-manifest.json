@@ -115,11 +115,11 @@
   ],
   "binaries": [
     {
-      "path": "/private/tmp/weave-runtime-value-20260907-sqtugx3m/driver",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "3f6da789f47220ce196700a433a248ddb28f3469395eda145132b5d536cc10b1"
     },
     {
-      "path": "/private/tmp/weave-runtime-value-20260907-sqtugx3m/weave",
+      "path": "<LOCAL_TEMP_PATH>",
       "sha256": "977207178a4695e3589333c024fdfbbd1da6fd9c85142fee961b952b775a9236"
     }
   ],

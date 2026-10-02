@@ -5,7 +5,7 @@
 **范围**：复核并复用冻结 v4 的**文明档案载荷架构**、**长期可靠性**、**概念图纸要求**。
 **日期**：2026-09-10（v6 正式交付修订轮）
 **输入基线**：只读冻结源 `recovery-materials/2026-09-10-corona-v6-corrected-source/`（manifest SHA-256 `59c911db…47aa03f` 已实测一致）；
-权威验收 `/Users/jinyitao/Documents/日冕/complex-validation/acceptance.json`（SHA-256 `f4777aaf…60ec4` 已实测一致）。
+权威验收 `<MAINTAINER_LOCAL_PATH>`（SHA-256 `f4777aaf…60ec4` 已实测一致）。
 **本轮动作**：① 复核冻结 `outputs/review/archive/`；② **原样复用**为本次交付（本节点 `outputs/review/archive/`）；③ 修复一处**可复现**的索引路径缺陷；④ 提供准确入口路径供 verification-integrator 汇总 `REVIEW_INDEX.md`。
 
 ---

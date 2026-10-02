@@ -7,7 +7,7 @@
   "workflow_id": "corona-prephase-a-recovery-v5-workflow",
   "workflow_version": 1,
   "source_package": {
-    "path": "/Users/jinyitao/.weave/recovery-materials/2026-09-10-corona-v5-source",
+    "path": "<MAINTAINER_LOCAL_PATH>",
     "manifest": {
       "size_bytes": 15352,
       "sha256": "584cc020b0bac241977362a057ebc8c7096a570760f0b32c39c1aa47fcc6cf8a"

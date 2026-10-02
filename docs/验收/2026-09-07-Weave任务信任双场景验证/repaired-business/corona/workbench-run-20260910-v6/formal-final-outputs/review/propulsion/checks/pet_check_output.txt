@@ -36,4 +36,4 @@ S-0.05c      P_REL=   6.250 GW  较0.2c/100GW下降   16.0 倍  单帆(1g)动能
     S-0.03c         6852      5762      3853      3240      1822
     S-0.05c         8846      7439      4974      4183      2352
 
-[written] /Users/jinyitao/.weave/runtime-workspaces-b/.invocations/task-ebe1afb0d1f0b44160575a8f111b1f75/default/corona-prephase-a-recovery-v6-propulsion-energy-analyst/workdir/outputs/review/propulsion/checks/pet_results.json
+[written] <MAINTAINER_LOCAL_PATH>

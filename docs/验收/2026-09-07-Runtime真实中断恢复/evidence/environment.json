@@ -1,5 +1,5 @@
 {
-  "root": "/private/tmp/weave-runtime-value-20260907-sqtugx3m",
+  "root": "<LOCAL_TEMP_PATH>",
   "database_name": "weave_runtime_value_95ff06d7",
   "port": 56586,
   "git_head": "5cbc3eb35c3f12a1818d4f813c372e17287ed118"

@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "candidate_root": "/Users/jinyitao/.weave/runtime-workspaces/.invocations/task-9bbb12a43b04e2bcd42bff6f88677b31/default/corona-prephase-a-lab-v3-verification-integrator/workdir/inputs/parallel-06",
+  "candidate_root": "<MAINTAINER_LOCAL_PATH>",
   "run_id": "run-092cff35-4213-5002-8821-d7af190c955d",
   "checked_at": "2026-09-09T22:15:00+08:00",
   "checks": [

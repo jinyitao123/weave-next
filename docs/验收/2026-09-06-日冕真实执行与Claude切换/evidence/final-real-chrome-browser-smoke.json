@@ -44,7 +44,7 @@
     {
       "name": "export_current_scenario_json",
       "observed": {
-        "downloaded_file": "/Users/jinyitao/Downloads/corona_scenario_S-0.03c_baseline-1.1.0.json",
+        "downloaded_file": "<MAINTAINER_LOCAL_PATH>",
         "baseline_version": "1.1.0",
         "selected_scenario_id": "S-0.03c",
         "inputs_mass_kg": 5000000000,

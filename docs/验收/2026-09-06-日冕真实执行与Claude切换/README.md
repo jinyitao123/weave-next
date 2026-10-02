@@ -10,7 +10,7 @@
 
 真实运行 `run-6090ab9d-300c-5fc3-a37c-28b7110ec0b5` 使用工作流第 5 版，于 18:53:12 成功完成 9/9 阶段。平台实际发布 89 个最终文件（459177 字节），下载后逐文件 SHA-256 一致；独立复跑退出 0，10 个本地 HTML 链接全部有目标。
 
-[完整交付包](/Users/jinyitao/Documents/日冕/Weave交付-20260906-6090ab9d.zip) · [打开与复跑说明](/Users/jinyitao/Documents/日冕/Weave交付-20260906-6090ab9d/打开与复跑说明.md) · [团队原始验收报告](/Users/jinyitao/Documents/日冕/Weave交付-20260906-6090ab9d/outputs/FINAL_ACCEPTANCE.md)。
+[完整交付包](<MAINTAINER_LOCAL_PATH>) · [打开与复跑说明](<MAINTAINER_LOCAL_PATH>) · [团队原始验收报告](<MAINTAINER_LOCAL_PATH>)。
 
 八名成员均使用 Claude CLI，本机配置指向 Kimi。页面分别显示配置服务地址、节点默认模型及 CLI 回执报告的模型。这里的 Claude CLI 是执行引擎名称，不能据此推断使用 Anthropic 模型。
 

@@ -4,7 +4,7 @@
 
 已部署 API 与两个 Runtime 的源码提交 `564b378170f44a8c717a0bf0709b288dbc5fda84`，包含 `406c8c7` 预算修复和 CLI 受管工具配置入口的旧限制移除。后者已通过实际配置接口→发布→执行领取的 PostgreSQL 回归，`make test`、`make depguard productguard` 均通过。Workbench 使用原先已验证的 `406c8c7` 构建，此次 Go 改动不涉及前端。部署与测试证据分别见 `deployment.json`、`preparation-status.json`。
 
-电商新建 `trust-repaired-vendor-20260908-remote003` 和 `trust-repaired-invoice-20260908-remote004`，原始任务文件逐字节与固定基准源码一致。两份原始评分器空白基线均为 `passed=false`、2/7；没有模型业务执行。当前本地 3071 HTTP 转发指向 vendor remote003，经公网 124.223.189.112:18071 访问样本，不使用 SSH 隧道。只有该样本所有执行停止并完成状态取证后，才能为 invoice 切换转发。
+电商新建 `trust-repaired-vendor-20260908-remote003` 和 `trust-repaired-invoice-20260908-remote004`，原始任务文件逐字节与固定基准源码一致。两份原始评分器空白基线均为 `passed=false`、2/7；没有模型业务执行。当前本地 3071 HTTP 转发指向 vendor remote003，经公网 <MOCK_MCP_HOST>:18071 访问样本，不使用 SSH 隧道。只有该样本所有执行停止并完成状态取证后，才能为 invoice 切换转发。
 
 原电商团队发布工作流 v2，执行员 v2、复核员 v3；后续两个任务复用该版本。成员模型固定为当前节点实际配置的 `deepseek-v4-flash-vision-exp`，CLI 为 Claude Code。与历史 k3 样本不构成模型一致的性能对照。执行员受管清单不含发送邮件接口，复核员清单只含查询。
 

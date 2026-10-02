@@ -4,7 +4,7 @@
   "candidates": {
     "systems_architect_candidate": {
       "source_node": "parallel-06",
-      "source_root": "/Users/jinyitao/.weave/runtime-workspaces/.invocations/task-9bbb12a43b04e2bcd42bff6f88677b31/default/corona-prephase-a-lab-v3-verification-integrator/workdir/inputs/parallel-06",
+      "source_root": "<MAINTAINER_LOCAL_PATH>",
       "file_count": 62,
       "total_bytes": 371803,
       "files": [
@@ -322,7 +322,7 @@
     },
     "digital_engineer_candidate": {
       "source_node": "parallel-03",
-      "source_root": "/Users/jinyitao/.weave/runtime-workspaces/.invocations/task-9bbb12a43b04e2bcd42bff6f88677b31/default/corona-prephase-a-lab-v3-verification-integrator/workdir/inputs/parallel-03",
+      "source_root": "<MAINTAINER_LOCAL_PATH>",
       "file_count": 27,
       "total_bytes": 212380,
       "files": [
