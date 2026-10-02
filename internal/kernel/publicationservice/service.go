@@ -217,6 +217,9 @@ func (s *Service) validate(ctx context.Context, operation string, envelope froze
 	if (triggerReport != nil && len(triggerReport.Issues) > 0) || (graphReport != nil && len(graphReport.Issues) > 0) {
 		return workflow.Publication{}, errors.New("candidate graph or trigger is invalid")
 	}
+	if err := machine.ValidateBusinessReceiptGraph(graph, payload); err != nil {
+		return workflow.Publication{}, err
+	}
 	proofs.WorkspaceID, proofs.TeamID = envelope.WorkspaceID, payload.Team.TeamID
 	proofs.Lead = machine.AgentVersionKey{AgentID: payload.Team.LeadAgentID, AgentVersion: payload.Team.LeadAgentVersion}
 	proofs.Trigger, proofs.Graph = trigger, graph

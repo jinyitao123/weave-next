@@ -85,6 +85,7 @@ type serialMachineStart struct {
 	LoadObservedEvents       func(context.Context, machine.Node, string) []workflow.RuntimeCLIEvent
 	LoadActionOutcomes       func(context.Context) ([]BusinessActionOutcomeV1, error)
 	WithActionOutcomeContext func(context.Context) context.Context
+	FinalCompletionContext   func(context.Context) (context.Context, error)
 	Corrections              []CorrectionDirectiveV1
 }
 
@@ -334,6 +335,13 @@ func runSerialMachine(
 					return fail(executionError(ErrorCodeSnapshotUnavailable, fmt.Errorf("load platform business action outcomes: %w", loadErr)))
 				}
 				actionOutcomes = loadedActionOutcomes
+			}
+			if workbenchResultPromptRequired(graph, node.ID) && start.FinalCompletionContext != nil {
+				var checkErr error
+				nodeCtx, checkErr = start.FinalCompletionContext(nodeCtx)
+				if checkErr != nil {
+					return fail(checkErr)
+				}
 			}
 			output, nodeUsage, err := runAgentNode(nodeCtx, node, payload, entries, runInput, outputs, start.Corrections, correctionContext, actionOutcomes, start.WithActionOutcomeContext, workbenchResultPromptRequired(graph, node.ID))
 			if durable {
@@ -1760,6 +1768,9 @@ func runAgentNode(
 	}
 	if err != nil {
 		var violation *compiler.NodeOutputViolation
+		if isCompletionCheckError(err) {
+			return nil, usage, executionError(ErrorCodeNodeOutputInvalid, err)
+		}
 		if errors.As(err, &violation) {
 			return nil, usage, executionError(ErrorCodeNodeOutputInvalid, violation)
 		}

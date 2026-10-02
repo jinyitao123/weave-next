@@ -268,7 +268,9 @@ func (l *runtimeStreamingLLM) Chat(
 	if l == nil || l.inner == nil {
 		return nil, errors.New("workflow streaming LLM is unavailable")
 	}
-	stream, err := l.inner.Stream(ctx, request)
+	streamCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	stream, err := l.inner.Stream(streamCtx, request)
 	if err != nil {
 		return nil, err
 	}
@@ -278,10 +280,30 @@ func (l *runtimeStreamingLLM) Chat(
 	var content strings.Builder
 	var toolCalls []contract.ToolCall
 	var usage contract.Usage
+	var stopReason string
 	done := false
-	for chunk := range stream {
+	received := false
+readStream:
+	for {
+		var chunk contract.StreamChunk
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case next, open := <-stream:
+			if !open {
+				break readStream
+			}
+			chunk = next
+		}
+		received = true
+		if chunk.Err != nil {
+			return nil, fmt.Errorf("workflow model stream failed: %w", chunk.Err)
+		}
 		content.WriteString(chunk.Content)
 		toolCalls = append(toolCalls, chunk.ToolCalls...)
+		if chunk.FinishReason != "" {
+			stopReason = chunk.FinishReason
+		}
 		if chunk.Usage != nil {
 			usage = *chunk.Usage
 		}
@@ -289,10 +311,16 @@ func (l *runtimeStreamingLLM) Chat(
 			done = true
 		}
 	}
-	if !done && content.Len() == 0 && len(toolCalls) == 0 && usage == (contract.Usage{}) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if !done && !received {
 		response, chatErr := l.inner.Chat(ctx, request)
 		if chatErr != nil {
 			return nil, fmt.Errorf("workflow model stream ended before done and chat fallback failed: %w", chatErr)
+		}
+		if err := ctx.Err(); err != nil {
+			return nil, err
 		}
 		if response == nil ||
 			(response.Content == "" && len(response.ToolCalls) == 0 && response.Usage == (contract.Usage{})) {
@@ -300,10 +328,14 @@ func (l *runtimeStreamingLLM) Chat(
 		}
 		return response, nil
 	}
+	if !done {
+		return nil, errors.New("workflow model stream ended before done")
+	}
 	return &contract.ChatResponse{
-		Content:   content.String(),
-		ToolCalls: toolCalls,
-		Usage:     usage,
+		Content:    content.String(),
+		ToolCalls:  toolCalls,
+		Usage:      usage,
+		StopReason: stopReason,
 	}, nil
 }
 

@@ -84,7 +84,11 @@ var NewProviderClient = func(cfg ProviderConfig) contract.LLM {
 		attemptTimeoutSeconds = DefaultAttemptTimeoutSeconds
 	}
 	opts = append(opts, openai.WithAttemptTimeout(time.Duration(attemptTimeoutSeconds)*time.Second))
-	return openai.New(cfg.APIKey, opts...)
+	client := openai.New(cfg.APIKey, opts...)
+	if cfg.JSONObjectMode {
+		return &locallyVerifiedJSONObjectLLM{inner: client}
+	}
+	return client
 }
 
 // RegisterProvider adds or updates a provider and its models.

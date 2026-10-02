@@ -22,6 +22,7 @@ import (
 
 	"github.com/jinyitao123/weave/internal/base/deliverable"
 	"github.com/jinyitao123/weave/internal/base/frozen"
+	"github.com/jinyitao123/weave/internal/kernel/deliverycheck"
 	"github.com/jinyitao123/weave/internal/kernel/loomruntime"
 	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 	"github.com/jinyitao123/weave/internal/kernel/workflow"
@@ -236,11 +237,12 @@ type WorkflowOutputRecorder interface {
 }
 
 type WorkflowSerialRuntime struct {
-	AuthorizationRetry execution.AuthorizationRetryAuthorizer
-	Members            *loomruntime.MemberRunner
-	Artifacts          ArtifactReader
-	Loader             *workflow.RuntimeLoader
-	HostFactory        workflow.RuntimeHostFactory
+	BusinessReceiptReader deliverycheck.BusinessReceiptReader
+	AuthorizationRetry    execution.AuthorizationRetryAuthorizer
+	Members               *loomruntime.MemberRunner
+	Artifacts             ArtifactReader
+	Loader                *workflow.RuntimeLoader
+	HostFactory           workflow.RuntimeHostFactory
 	// HostFactoryForSnapshot optionally replaces HostFactory when the run
 	// consumes a frozen candidate snapshot. It receives the snapshot's build
 	// run ID and candidate content hash so a test harness can bind a scripted
@@ -576,6 +578,7 @@ func (r *WorkflowSerialRuntime) Execute(
 			RecordActivity:           r.activityRecorder(run),
 			LoadObservedEvents:       r.observedEventLoader(run),
 			LoadActionOutcomes:       r.actionOutcomesLoader(run),
+			FinalCompletionContext:   r.completionContext(run, prepared.graph),
 			WithActionOutcomeContext: func(ctx context.Context) context.Context { return r.withBusinessActionOutcomeContext(ctx, run) },
 		},
 	)
@@ -639,6 +642,7 @@ func (r *WorkflowSerialRuntime) ResumeCheckpoint(
 			RecordActivity:           r.activityRecorder(run),
 			LoadObservedEvents:       r.observedEventLoader(run),
 			LoadActionOutcomes:       r.actionOutcomesLoader(run),
+			FinalCompletionContext:   r.completionContext(run, prepared.graph),
 			WithActionOutcomeContext: func(ctx context.Context) context.Context { return r.withBusinessActionOutcomeContext(ctx, run) },
 			Corrections:              append([]CorrectionDirectiveV1(nil), checkpoint.Corrections...),
 		},
@@ -874,7 +878,12 @@ func (r *WorkflowSerialRuntime) loadFrozenGraph(
 			fmt.Errorf("decode frozen graph: %s", report.Issues[0].Code),
 		)
 	}
+	if err := machine.ValidateBusinessReceiptGraph(graph, payload); err != nil {
+		return loadedWorkflowGraph{}, executionError(ErrorCodeRuntimeIncompatible, err)
+	}
 	return loadedWorkflowGraph{
+		// The bound artifact's output protocol and declared action subset have
+		// already been checked before any runtime hosts or tools are installed.
 		payload: payload, graph: graph, envelope: envelope,
 		sourceRef: sourceRef, candidateHash: candidateHash,
 	}, nil
