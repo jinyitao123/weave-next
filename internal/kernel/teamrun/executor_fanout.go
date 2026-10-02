@@ -336,6 +336,7 @@ func (r *WorkflowSerialRuntime) ExecuteFanoutLeg(
 			recordActivity(ctx, "member_failed", branch, memberID, memberVersion, map[string]any{
 				"duration_ms": time.Since(startedAt).Milliseconds(), "error_code": string(executionErrorCode(err)),
 				"failure_class": failure.Class, "failure_reason": failure.Reason, "retryable": failure.Retryable,
+				"output_validation": nodeOutputViolation(err),
 			})
 		}
 		return nil, err

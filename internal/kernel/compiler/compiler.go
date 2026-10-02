@@ -2,7 +2,10 @@ package compiler
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sort"
@@ -309,7 +312,7 @@ func CompileAgent(tenant string, rec *registry.AgentRecord, llm contract.LLM, to
 	if hasSubAgents {
 		chatRouter = buildSubAgentRouter(subAgentRoutes)
 	}
-	g.AddStep("chat", stdlib.NewToolLoopStep(activeLLM, tools, toolLoopOpts), chatRouter)
+	g.AddStep("chat", nodeToolLoopStep(activeLLM, tools, toolLoopOpts), chatRouter)
 
 	// --- Steps: Sub-agent delegation (optional) ---
 	if hasSubAgents {
@@ -952,4 +955,62 @@ func (d *NoOpDispatcher) Dispatch(_ context.Context, call contract.ToolCall) (*c
 		Content: "no tools configured",
 		IsError: true,
 	}, nil
+}
+
+// Each invocation gets its own options and verifier state. The existing Loom
+// loop owns correction, tools, budgets and checkpoint recovery; no workflow
+// retry or second model loop is introduced here.
+func nodeToolLoopStep(llm contract.LLM, tools contract.ToolDispatcher, base stdlib.ToolLoopOpts) loom.Step {
+	unscoped := stdlib.NewToolLoopStep(llm, tools, base)
+	return func(ctx context.Context, state loom.State) (loom.State, error) {
+		schema, scoped := ctx.Value(nodeOutputSchemaKey{}).(json.RawMessage)
+		if !scoped {
+			return unscoped(ctx, state)
+		}
+		opts := base
+		boundState := state
+		var last *NodeOutputViolation
+		var schemaVerifier stdlib.CompletionVerifier
+		opts.CompletionVerifierID = stdlib.BareToolProtocolCompletionPolicyID
+		if len(schema) != 0 {
+			bound := append(json.RawMessage(nil), schema...)
+			opts.OutputSchema = &bound
+			// json_object providers do not transmit the schema on the wire. Supply
+			// it as a trusted instruction as well, then enforce it locally below.
+			// Clone the state so repeated/resumed invocations do not append it twice.
+			boundState = make(loom.State, len(state)+1)
+			for key, value := range state {
+				boundState[key] = value
+			}
+			system := base.SystemPrompt
+			if current, ok := state["__system_prompt"].(string); ok && current != "" {
+				system = current
+			}
+			boundState["__system_prompt"] = system + "\n\nThe final response must be JSON satisfying this exact output schema without Markdown. Tools remain available when needed; only the final response is constrained:\n" + string(bound)
+			digest := sha256.Sum256(bound)
+			opts.CompletionVerifierID += ":weave.node-output.v1:" + hex.EncodeToString(digest[:])
+			schemaVerifier = stdlib.CompletionVerifierFunc(func(_ context.Context, candidate stdlib.CompletionCandidate) (stdlib.CompletionDecision, error) {
+				last = ValidateNodeOutput(bound, json.RawMessage(candidate.Content))
+				if last == nil {
+					return stdlib.CompletionDecision{Accepted: true}, nil
+				}
+				return stdlib.CompletionDecision{Feedback: last.Error() + ". Return only a JSON value satisfying the supplied schema. Correct the final response within this execution; do not repeat completed tools or business actions."}, nil
+			})
+		}
+		verifier := stdlib.RejectBareToolProtocolCompletion(schemaVerifier)
+		opts.CompletionVerifier = stdlib.CompletionVerifierFunc(func(ctx context.Context, candidate stdlib.CompletionCandidate) (stdlib.CompletionDecision, error) {
+			last = nil
+			decision, err := verifier.VerifyCompletion(ctx, candidate)
+			if err == nil && !decision.Accepted && last == nil {
+				last = outputViolation("unexecuted_tool_protocol", "/", []byte(candidate.Content))
+			}
+			return decision, err
+		})
+		result, err := stdlib.NewToolLoopStep(llm, tools, opts)(ctx, boundState)
+		if err != nil && last != nil && errors.Is(err, stdlib.ErrCompletionUnverified) {
+			last.cause = err
+			return result, last
+		}
+		return result, err
+	}
 }
