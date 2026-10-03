@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"unicode"
@@ -13,6 +14,9 @@ import (
 )
 
 type nodeOutputSchemaKey struct{}
+type workbenchResultOutputKey struct{}
+
+const workbenchResultCorrectionStateKey = "__weave_workbench_result_correction_v1"
 
 // WithNodeOutputSchema binds a frozen workflow node's schema to this invocation,
 // never to a shared agent or model-controlled graph state. A nil schema clears
@@ -22,17 +26,29 @@ func WithNodeOutputSchema(ctx context.Context, schema json.RawMessage) context.C
 	return context.WithValue(ctx, nodeOutputSchemaKey{}, append(json.RawMessage(nil), schema...))
 }
 
+// WithWorkbenchResultOutput opts this invocation into workbench_result_v1's
+// semantic normalization in addition to the frozen node schema.
+func WithWorkbenchResultOutput(ctx context.Context) context.Context {
+	return context.WithValue(ctx, workbenchResultOutputKey{}, true)
+}
+
 // NodeOutputViolation contains diagnostic metadata only. Neither logs nor run
 // activity need to retain arbitrary model text (which can include materials).
 type NodeOutputViolation struct {
-	Code         string `json:"code"`
-	Path         string `json:"path"`
-	OutputSHA256 string `json:"output_sha256"`
-	OutputBytes  int    `json:"output_bytes"`
-	cause        error
+	Code           string `json:"code"`
+	Path           string `json:"path"`
+	LimitKind      string `json:"limit_kind,omitempty"`
+	Limit          int    `json:"limit,omitempty"`
+	ObservedLength int    `json:"observed_length,omitempty"`
+	OutputSHA256   string `json:"output_sha256"`
+	OutputBytes    int    `json:"output_bytes"`
+	cause          error
 }
 
 func (e *NodeOutputViolation) Error() string {
+	if e.LimitKind != "" {
+		return fmt.Sprintf("node output violates contract: %s at %s (%s=%d observed=%d)", e.Code, e.Path, e.LimitKind, e.Limit, e.ObservedLength)
+	}
 	return fmt.Sprintf("node output violates contract: %s at %s", e.Code, e.Path)
 }
 func (e *NodeOutputViolation) Unwrap() error { return e.cause }
@@ -46,6 +62,25 @@ func ValidateNodeOutput(schema, output json.RawMessage) *NodeOutputViolation {
 		return nil
 	}
 	return outputViolation(problems[0].Code, problems[0].Path, output)
+}
+
+// ValidateWorkbenchResultNodeOutput applies the same local normalization used
+// by the final delivery gate and maps any rejection to bounded diagnostics.
+func ValidateWorkbenchResultNodeOutput(output json.RawMessage) *NodeOutputViolation {
+	_, _, err := machine.NormalizeWorkbenchResultV1(output)
+	if err == nil {
+		return nil
+	}
+	var detail *machine.WorkbenchResultViolationV1
+	if !errors.As(err, &detail) {
+		return outputViolation("workbench_result_invalid", "/", output)
+	}
+	violation := outputViolation(detail.Code, detail.Path, output)
+	violation.LimitKind = detail.LimitKind
+	violation.Limit = detail.Limit
+	violation.ObservedLength = detail.ObservedLength
+	violation.cause = err
+	return violation
 }
 
 func outputViolation(code, path string, output []byte) *NodeOutputViolation {

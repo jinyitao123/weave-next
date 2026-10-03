@@ -1558,6 +1558,9 @@ func runAgentNode(
 		nodeSchema = node.Output.Schema
 	}
 	ctx = compiler.WithNodeOutputSchema(ctx, nodeSchema)
+	if workbenchResultOutput {
+		ctx = compiler.WithWorkbenchResultOutput(ctx)
+	}
 	var (
 		agentID      string
 		agentVersion int64
@@ -1837,7 +1840,7 @@ func workbenchResultPromptRequired(graph machine.GraphDefinition, nodeID string)
 func appendWorkbenchResultInstruction(prompt string) string {
 	return prompt + `
 
-Platform result format: return exactly one JSON object and no Markdown with these fields: {"disposition":"complete"|"needs_input","summary":"short inspection conclusion","missing_items":["specific missing item"]}. Use "complete" only when no input is missing and set missing_items to []. If required information or materials are missing, use "needs_input" and list at least one concrete missing item, with at most 8 items. Keep summary to 1000 characters and each missing item to 200 characters.` +
+Platform result format: return exactly one JSON object and no Markdown with these fields: {"disposition":"complete"|"needs_input","summary":"short inspection conclusion","missing_items":["specific missing item"]}. Use "complete" only when no input is missing and set missing_items to []. If required information or materials are missing, use "needs_input" and list at least one concrete missing item, with at most 8 items. After trimming surrounding Unicode whitespace with Go strings.TrimSpace semantics, summary must contain 1 to 1000 Unicode code points and each missing item 1 to 200 Unicode code points.` +
 		"\nThe disposition complete means this inspection finished; it does not mean a Forge business action was called or a business record changed. The summary is model-generated. Report a business action as called only when the platform records its run_action receipt; a successful tool receipt still does not establish the current business record state."
 }
 
