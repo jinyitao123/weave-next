@@ -28,8 +28,8 @@ Rules:
 - Durable recovery is a core platform capability. The model/tool replay contract belongs to Loom (`stdlib.ExecutionJournal`); Weave supplies storage, leases and fencing. Add provider-specific recovery regressions to Loom instead of patching around them in Weave.
 - Product acceptance follows `weave-workbench`'s acceptance rules: start from the GooeyPi desktop's normal path and read back business results independently in Forge pages. The web Workbench protocol in [`docs/验收/Workbench真人式验收协议.md`](docs/验收/Workbench真人式验收协议.md) is historical; its principles still apply. Use the product's normal user path before inspecting APIs or fixtures. Test the same task as a user, a task owner, a deliverable consumer, and an independent auditor. Keep deterministic tasks direct; add method discovery only for a concrete unknown that blocks route selection. Report observed behavior, evidence, defects, and unverified gaps separately; a model claim, completed stage, tool call, or health response is not delivery acceptance.
 
-Scoped exception (approved 2026-09-10, generalized 2026-10-02 pending owner
-review): a server-to-server service key may request bounded decisions, choosing
+Scoped exception (initially approved 2026-09-10, generalized and approved by the
+repository owner 2026-10-03, PR #18): a server-to-server service key may request bounded decisions, choosing
 exactly one caller-supplied option through one published Team/Workflow version
 plus a caller contract registered as data (input/output JSON Schema, option and
 choice locations, optional instruction). Reuse the existing workflow engine, run
