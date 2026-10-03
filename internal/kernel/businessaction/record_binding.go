@@ -14,6 +14,34 @@ import (
 
 var boundObjectName = regexp.MustCompile(`^[a-z][a-z0-9_]{1,127}$`)
 
+// CompletionRecordBinding reuses the execution boundary's frozen-resource
+// validation. Completion readers must not invent a second record wire format.
+func CompletionRecordBinding(raw []byte, inputRevisionID, taskSHA256 string) (*TaskBusinessRecord, error) {
+	resources, err := decodeDelegatedResources(raw, inputRevisionID)
+	if err != nil {
+		return nil, err
+	}
+	var stored []TaskDelegationResource
+	if json.Unmarshal(raw, &stored) != nil {
+		return nil, errors.New("task resources are invalid")
+	}
+	for _, item := range stored {
+		if item.Type == "dispatch-input" && item.SHA256 != taskSHA256 {
+			return nil, errors.New("task input digest differs")
+		}
+	}
+	var record *TaskBusinessRecord
+	for _, item := range resources {
+		if item.Type == "forge-record" {
+			if record != nil {
+				return nil, errors.New("task has multiple record bindings")
+			}
+			record = &TaskBusinessRecord{ObjectName: item.ObjectName, RecordID: item.ID}
+		}
+	}
+	return record, nil
+}
+
 func validateRecordResource(item delegatedResource) error {
 	if !boundObjectName.MatchString(item.ObjectName) || strings.HasPrefix(item.ObjectName, "sys_") ||
 		item.ID == "" || len(item.ID) > 128 || item.ID != strings.TrimSpace(item.ID) || strings.ContainsAny(item.ID, "\x00\r\n") {

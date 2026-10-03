@@ -15,19 +15,26 @@ import (
 // NewStore registers application checks while keeping workflow schema machinery
 // out of the runtime-independent deliverable package.
 func NewStore(pool *pgxpool.Pool) *deliverable.Store {
-	return deliverable.NewWithVerifiers(pool, newRegistry(frozenInputReader(pool)), kernelbindings.DeliverableOptions()...)
+	return deliverable.NewWithVerifiers(pool, newRegistry(frozenInputReader(pool), BusinessReceiptReader(pool)), kernelbindings.DeliverableOptions()...)
 }
 
 // NewRegistry includes the application's built-in checks. Explicitly configured
 // read-only integrations can register their own versioned checks before use.
 func NewRegistry() *deliverable.VerifierRegistry { return newRegistry(nil) }
 
-func newRegistry(read deliverycheck.InputReader) *deliverable.VerifierRegistry {
+func newRegistry(read deliverycheck.InputReader, receipts ...deliverycheck.BusinessReceiptReader) *deliverable.VerifierRegistry {
 	registry := deliverable.NewVerifierRegistry()
 	if err := registry.Register("weave.output-schema", "v1", verifyOutputSchema); err != nil {
 		panic(err) // Static registration has no deployment-dependent inputs.
 	}
 	if err := registry.Register(deliverycheck.ID, deliverycheck.Version, deliverycheck.Verifier(read)); err != nil {
+		panic(err)
+	}
+	var receiptReader deliverycheck.BusinessReceiptReader
+	if len(receipts) > 0 {
+		receiptReader = receipts[0]
+	}
+	if err := registry.RegisterExternalEffects(deliverycheck.BusinessReceiptsID, deliverycheck.BusinessReceiptsVersion, businessReceiptVerifier(receiptReader)); err != nil {
 		panic(err)
 	}
 	return registry

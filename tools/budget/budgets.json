@@ -640,6 +640,23 @@
         "lines_added": 316,
         "production_lines_added": 3
       }
+    },
+    {
+      "date": "2026-10-03",
+      "reason": "Opt-in declared business receipt completion checks reuse the existing delivery contract, tool loop, durable facts and publication path; add provider-leaf JSON compatibility only under exact local schema verification and propagate stream failure facts. Include real PostgreSQL admission-to-effects and trial-receipt crash-window regressions. Exact measured increases only; no new packages, dependencies, queues, execution loops, relaxed checks or spare budget.",
+      "record": "docs/治理/2026-09-30-平台范围收窄整改登记.md",
+      "kernel": {
+        "previous_lines": 99668,
+        "previous_production_lines": 82369,
+        "lines_added": 1546,
+        "production_lines_added": 684
+      },
+      "app": {
+        "previous_lines": 87525,
+        "previous_production_lines": 64041,
+        "lines_added": 683,
+        "production_lines_added": 147
+      }
     }
   ],
   "migration_targets": {
@@ -677,8 +694,8 @@
     ]
   },
   "kernel": {
-    "lines": 99668,
-    "production_lines": 82369,
+    "lines": 101214,
+    "production_lines": 83053,
     "packages": 49,
     "external_dependencies": 5,
     "allowed_dependencies": [
@@ -702,8 +719,8 @@
     ]
   },
   "app": {
-    "lines": 87525,
-    "production_lines": 64041,
+    "lines": 88208,
+    "production_lines": 64188,
     "packages": 30,
     "external_dependencies": 7,
     "allowed_dependencies": [

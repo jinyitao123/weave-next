@@ -22,6 +22,7 @@ import (
 	appcapabilities "github.com/jinyitao123/weave/internal/app/capabilities"
 	"github.com/jinyitao123/weave/internal/app/chatrequest"
 	"github.com/jinyitao123/weave/internal/app/conversation"
+	"github.com/jinyitao123/weave/internal/app/deliveryverify"
 	"github.com/jinyitao123/weave/internal/app/ownermem"
 	"github.com/jinyitao123/weave/internal/app/projects"
 	"github.com/jinyitao123/weave/internal/app/teamconstruction"
@@ -675,6 +676,7 @@ func (s *Server) ConfigureTeamRunWorkers() {
 	}
 	s.BusinessDelegations = businessDelegations
 	runtime := &teamrun.WorkflowSerialRuntime{
+		BusinessReceiptReader: deliveryverify.BusinessReceiptReader(pool),
 		AuthorizationRetry: func(ctx context.Context, proof execution.AuthorizationRefusal) (bool, error) {
 			if businessDelegations == nil {
 				return false, nil

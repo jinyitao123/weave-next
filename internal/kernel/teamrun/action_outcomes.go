@@ -50,6 +50,10 @@ type businessActionActivityDetailV1 struct {
 // ProjectBusinessActionOutcomes converts only platform activity receipts into
 // the Workbench action facts. Member output and generic tool events are ignored.
 func ProjectBusinessActionOutcomes(events []ActivityEvent) ([]BusinessActionOutcomeV1, error) {
+	return projectBusinessActionOutcomes(events, nil)
+}
+
+func projectBusinessActionOutcomes(events []ActivityEvent, capture func(ActivityEvent, businessActionActivityDetailV1, string)) ([]BusinessActionOutcomeV1, error) {
 	type key struct{ workspaceID, runID, nodeID, memberID, invocationID, callID, inputRevisionID, operationID string }
 	type receipt struct {
 		started ActivityEvent
@@ -122,6 +126,9 @@ func ProjectBusinessActionOutcomes(events []ActivityEvent) ([]BusinessActionOutc
 		status := item.status
 		if status == "" {
 			status = "unknown"
+		}
+		if capture != nil {
+			capture(item.started, item.detail, status)
 		}
 		label := boundedBusinessActionLabel(item.detail.ActionLabel)
 		if label == "" {

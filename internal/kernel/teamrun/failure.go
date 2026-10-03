@@ -30,6 +30,9 @@ type FailureSummary struct {
 // ClassifyFailure returns a stable user-facing class without exposing the
 // engine's raw diagnostic text.
 func ClassifyFailure(err error) FailureSummary {
+	if isCompletionCheckError(err) {
+		return FailureSummary{Class: FailureClassVerification, Reason: "the declared business completion check did not pass"}
+	}
 	if err == nil {
 		return FailureSummary{}
 	}
