@@ -43,7 +43,7 @@ func TestDecisionContractNormalizationRejectsUnboundedOrBrokenContracts(t *testi
 		"schema-not-obj":   func(c *decisionContract) { c.OutputSchema = json.RawMessage(`true`) },
 		"external-ref":     func(c *decisionContract) { c.InputSchema = json.RawMessage(`{"$ref":"https://example.com/s.json"}`) },
 		"options-pointer":  func(c *decisionContract) { c.OptionsPointer = "legal_moves" },
-		"choice-pointer":   func(c *decisionContract) { c.ChoicePointer = "" },
+		"choice-pointer":   func(c *decisionContract) { c.ChoicePointer = "/move~2id" },
 		"field":            func(c *decisionContract) { c.OptionIDField = "move id" },
 		"instruction-size": func(c *decisionContract) { c.Instruction = strings.Repeat("x", maxDecisionInstruction+1) },
 		"max-options":      func(c *decisionContract) { c.MaxOptions = maxDecisionOptions + 1 },
@@ -116,7 +116,7 @@ func TestDecisionChoiceMustMatchSchemaAndFrozenOptions(t *testing.T) {
 }
 
 func decisionBundle(id, role string) frozen.FrozenExecutionBundle {
-	b := frozen.FrozenExecutionBundle{PrimaryModel: frozen.FrozenModelBinding{ProviderID: "provider", ModelID: "frozen-model"}, Agent: frozen.FrozenAgentRecord{AgentID: id, Role: role, Engine: "loom", Model: "frozen-model", Permissions: frozen.FrozenPermissions{Deny: []string{"*"}}}}
+	b := frozen.FrozenExecutionBundle{PrimaryModel: frozen.FrozenModelBinding{ProviderID: "provider", ModelID: "frozen-model"}, Agent: frozen.FrozenAgentRecord{AgentID: id, Role: role, Engine: "loom", Model: "frozen-model", Permissions: frozen.FrozenPermissions{Deny: []string{"*"}}, MemoryConfig: &frozen.FrozenMemoryConfig{Enabled: false, AutoRemember: false}}}
 	if role == "worker" {
 		b.Agent.OutputSchema = json.RawMessage(`{"type":"object"}`)
 	}
@@ -135,14 +135,18 @@ func TestDecisionWorkflowAdmitsTeamsButNoExtraAuthority(t *testing.T) {
 		t.Fatal("delivered node's member is not reported as the decider")
 	}
 	for name, mutate := range map[string]func(*frozen.ArtifactPayloadV1){
-		"tools": func(p *frozen.ArtifactPayloadV1) { p.Bundles[1].Agent.Permissions.Deny = nil },
-		"memory": func(p *frozen.ArtifactPayloadV1) {
-			p.Bundles[0].Agent.MemoryConfig = &frozen.FrozenMemoryConfig{Enabled: true}
-		},
+		"tools":      func(p *frozen.ArtifactPayloadV1) { p.Bundles[1].Agent.Permissions.Deny = nil },
+		"memory":     func(p *frozen.ArtifactPayloadV1) { p.Bundles[0].Agent.MemoryConfig = nil },
 		"cli-engine": func(p *frozen.ArtifactPayloadV1) { p.Bundles[2].Agent.Engine = "codex" },
 		"fallback":   func(p *frozen.ArtifactPayloadV1) { p.Bundles[0].Agent.Fallback.Models = []string{"other"} },
 		"no-schema":  func(p *frozen.ArtifactPayloadV1) { p.Bundles[0].Agent.OutputSchema = nil },
 		"external":   func(p *frozen.ArtifactPayloadV1) { p.DeliveryTargets = []frozen.FrozenDeliveryTarget{{}} },
+		"non-model-delivery": func(p *frozen.ArtifactPayloadV1) {
+			p.GraphDefinition = json.RawMessage(strings.Replace(councilGraph, `"result":{"source":"node_output","node_id":"captain","path":""}`, `"result":{"source":"run_input","path":""}`, 1))
+		},
+		"delivery-fallback": func(p *frozen.ArtifactPayloadV1) {
+			p.GraphDefinition = json.RawMessage(strings.Replace(councilGraph, `"result":{"source":"node_output","node_id":"captain","path":""}`, `"result":{"source":"node_output","node_id":"captain","path":"","default":{"source":"literal","value":"option"}}`, 1))
+		},
 		"human-wait": func(p *frozen.ArtifactPayloadV1) {
 			p.GraphDefinition = json.RawMessage(strings.Replace(councilGraph, `"type":"join","config":{"policy":"all_success"}`, `"type":"wait","config":{"kind":"human","resume_schema":{"type":"object"}}`, 1))
 		},

@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"regexp"
-	"strconv"
 	"strings"
 
 	"github.com/jinyitao123/weave/internal/base/frozen"
@@ -63,11 +62,14 @@ func schemaCompiles(schema json.RawMessage) bool {
 }
 
 func validJSONPointer(pointer string) bool {
+	if pointer == "" {
+		return true
+	}
 	if !strings.HasPrefix(pointer, "/") || len(pointer) > 256 {
 		return false
 	}
 	for _, token := range strings.Split(pointer[1:], "/") {
-		if token == "" || strings.Contains(strings.ReplaceAll(strings.ReplaceAll(token, "~0", ""), "~1", ""), "~") {
+		if _, err := decodeJSONPointerToken(token); err != nil {
 			return false
 		}
 	}
@@ -78,7 +80,7 @@ func (c *decisionContract) normalize() error {
 	if !schemaCompiles(c.InputSchema) || !schemaCompiles(c.OutputSchema) {
 		return errors.New("input_schema and output_schema must be compilable JSON Schema objects without external references")
 	}
-	if !validJSONPointer(c.OptionsPointer) || !validJSONPointer(c.ChoicePointer) || !decisionFieldName.MatchString(c.OptionIDField) {
+	if c.OptionsPointer == "" || !validJSONPointer(c.OptionsPointer) || !validJSONPointer(c.ChoicePointer) || !decisionFieldName.MatchString(c.OptionIDField) {
 		return errors.New("options_pointer and choice_pointer must be JSON pointers and option_id_field a field name")
 	}
 	if len(c.Instruction) > maxDecisionInstruction {
@@ -113,26 +115,8 @@ func (c decisionContract) task(canonical []byte) string {
 
 // resolvePointer follows an RFC 6901 pointer through decoded JSON.
 func resolvePointer(value any, pointer string) (any, bool) {
-	for _, token := range strings.Split(pointer[1:], "/") {
-		token = strings.ReplaceAll(strings.ReplaceAll(token, "~1", "/"), "~0", "~")
-		switch node := value.(type) {
-		case map[string]any:
-			next, ok := node[token]
-			if !ok {
-				return nil, false
-			}
-			value = next
-		case []any:
-			index, err := strconv.Atoi(token)
-			if err != nil || index < 0 || index >= len(node) || strconv.Itoa(index) != token {
-				return nil, false
-			}
-			value = node[index]
-		default:
-			return nil, false
-		}
-	}
-	return value, true
+	value, err := resolveJSONPointer(value, pointer)
+	return value, err == nil
 }
 
 func decodeOne(raw []byte) (any, error) {
@@ -254,40 +238,51 @@ func validateDecisionWorkflow(payload frozen.ArtifactPayloadV1) (machine.GraphDe
 	if delivers != 1 || workers < 1 || len(payload.Bundles) == 0 {
 		return graph, errors.New("decision workflow needs at least one worker and exactly one local delivery")
 	}
+	if decider, _ := decisionDecider(payload, graph); decider == nil {
+		return graph, errors.New("decision delivery must use one frozen lead or worker output without a fallback")
+	}
 	for _, bundle := range payload.Bundles {
 		a := bundle.Agent
 		denyAll := false
 		for _, denied := range a.Permissions.Deny {
 			denyAll = denyAll || denied == "*"
 		}
-		if a.Engine != "loom" || a.Model == "" || a.RuntimeID != "" || bundle.Runtime != nil || bundle.PrimaryModel.ModelID != a.Model || bundle.PrimaryModel.ProviderID == "" || !denyAll || len(bundle.MCPBindings) != 0 || len(bundle.Skills) != 0 || len(bundle.FallbackModels) != 0 || len(a.Fallback.Models) != 0 || (a.MemoryConfig != nil && (a.MemoryConfig.Enabled || a.MemoryConfig.AutoRemember)) || (a.Role == "worker" && len(a.OutputSchema) == 0) {
+		if a.Engine != "loom" || a.Model == "" || a.RuntimeID != "" || bundle.Runtime != nil || bundle.PrimaryModel.ModelID != a.Model || bundle.PrimaryModel.ProviderID == "" || !denyAll || len(bundle.MCPBindings) != 0 || len(bundle.Skills) != 0 || len(bundle.FallbackModels) != 0 || len(a.Fallback.Models) != 0 || a.MemoryConfig == nil || a.MemoryConfig.Enabled || a.MemoryConfig.AutoRemember || (a.Role == "worker" && len(a.OutputSchema) == 0) {
 			return graph, fmt.Errorf("decision member %s must be a frozen Loom model member with deny-all tools and no memory, skills, MCP, runtime or fallback models", a.AgentID)
 		}
 	}
 	return graph, nil
 }
 
-// decisionDecider identifies the agent whose node output is delivered.
+// decisionDecider finds the model node that directly supplies the delivered result.
 func decisionDecider(payload frozen.ArtifactPayloadV1, graph machine.GraphDefinition) (*frozen.FrozenExecutionBundle, string) {
-	source := ""
-	for _, node := range graph.Nodes {
-		if config, ok := node.Config.(machine.DeliverConfig); ok && config.Result.Source == machine.ValueNodeOutput {
-			source = config.Result.NodeID
-		}
-	}
-	for _, node := range graph.Nodes {
-		if node.ID != source {
+	for _, delivery := range graph.Nodes {
+		config, ok := delivery.Config.(machine.DeliverConfig)
+		if !ok {
 			continue
 		}
-		agentID := payload.Team.LeadAgentID
-		if config, ok := node.Config.(machine.WorkerConfig); ok {
-			agentID = config.AgentID
+		if config.Result.Source != machine.ValueNodeOutput || config.Result.Default != nil {
+			return nil, ""
 		}
-		for index := range payload.Bundles {
-			if payload.Bundles[index].Agent.AgentID == agentID {
-				return &payload.Bundles[index], node.ID
+		source := config.Result.NodeID
+		for _, node := range graph.Nodes {
+			if node.ID != source {
+				continue
 			}
+			agentID := payload.Team.LeadAgentID
+			if worker, ok := node.Config.(machine.WorkerConfig); ok {
+				agentID = worker.AgentID
+			} else if node.Type != machine.NodeLead {
+				return nil, source
+			}
+			for index := range payload.Bundles {
+				if payload.Bundles[index].Agent.AgentID == agentID {
+					return &payload.Bundles[index], source
+				}
+			}
+			return nil, source
 		}
+		return nil, source
 	}
-	return nil, source
+	return nil, ""
 }

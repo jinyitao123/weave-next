@@ -26,8 +26,8 @@ CREATE TABLE IF NOT EXISTS weave_decision_bindings (
     REFERENCES weave_team_workflows(workspace_id, id) ON DELETE CASCADE
 );
 
--- The admission freezes the binding it ran under, so a later re-binding never
--- changes how an earlier decision is validated or read back.
+-- Admissions freeze the binding and survive API-key revocation for run audit.
+-- api_key_id is historical identity here, not a reference to the live binding.
 CREATE TABLE IF NOT EXISTS weave_decision_admissions (
   workspace_id       TEXT        NOT NULL,
   api_key_id         TEXT        NOT NULL,
@@ -44,9 +44,7 @@ CREATE TABLE IF NOT EXISTS weave_decision_admissions (
   workflow_version   INTEGER     NOT NULL CHECK (workflow_version > 0),
   created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   PRIMARY KEY (workspace_id, decision_id),
-  UNIQUE (workspace_id, api_key_id, client_request_id),
-  FOREIGN KEY (workspace_id, api_key_id)
-    REFERENCES weave_decision_bindings(workspace_id, api_key_id) ON DELETE RESTRICT
+  UNIQUE (workspace_id, api_key_id, client_request_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_weave_decision_admissions_lane
@@ -54,17 +52,15 @@ CREATE INDEX IF NOT EXISTS idx_weave_decision_admissions_lane
 CREATE INDEX IF NOT EXISTS idx_weave_decision_admissions_run
   ON weave_decision_admissions(workspace_id, run_id);
 
--- A cancellation may arrive before the admission response. The tombstone
--- ensures a delayed retry of that exact request never creates a model run.
+-- A cancellation may arrive before the admission response. Keep its tombstone
+-- after key revocation so a delayed request can never be admitted on retry.
 CREATE TABLE IF NOT EXISTS weave_decision_cancellations (
   workspace_id      TEXT        NOT NULL,
   api_key_id        TEXT        NOT NULL,
   client_request_id UUID        NOT NULL,
   lane              TEXT        NOT NULL,
   created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  PRIMARY KEY (workspace_id, api_key_id, client_request_id),
-  FOREIGN KEY (workspace_id, api_key_id)
-    REFERENCES weave_decision_bindings(workspace_id, api_key_id) ON DELETE RESTRICT
+  PRIMARY KEY (workspace_id, api_key_id, client_request_id)
 );
 
 -- The decisions scope replaces the scenario-named scope on bound service keys.
