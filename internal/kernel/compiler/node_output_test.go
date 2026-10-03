@@ -332,7 +332,9 @@ func TestWorkbenchResultCorrectionDoesNotReplayToolsAcrossControlledResume(t *te
 	}
 }
 
-func TestWorkbenchResultCorrectionPersistsThroughPGCheckpointRestart(t *testing.T) {
+// This covers PostgreSQL JSON serialization and fresh store/graph instances in
+// one test process. A separate test covers actual process boundaries.
+func TestWorkbenchResultCorrectionPersistsThroughPGStoreReconstruction(t *testing.T) {
 	databaseURL := os.Getenv("TEST_DATABASE_URL")
 	if databaseURL == "" {
 		t.Skip("TEST_DATABASE_URL is not set")
