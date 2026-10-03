@@ -6,14 +6,20 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"net/url"
+	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"unicode/utf8"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jinyitao123/loom"
 	"github.com/jinyitao123/loom/contract"
+	"github.com/jinyitao123/loom/pgstore"
 	"github.com/jinyitao123/loom/stdlib"
+	"github.com/jinyitao123/weave/internal/kernel/workflow/machine"
 )
 
 type schemaTestLLM struct {
@@ -230,4 +236,249 @@ func TestNodeOutputProtocolGuardIsScopedAndCannotSynthesizeCalls(t *testing.T) {
 	if !errors.Is(err, stdlib.ErrCompletionUnverified) || len(llm.requests) != 2 {
 		t.Fatal("protocol guard exceeded existing budget")
 	}
+}
+
+type workbenchActionDispatcher struct{ calls *atomic.Int32 }
+
+func (*workbenchActionDispatcher) ListTools(context.Context) ([]contract.ToolDef, error) {
+	return []contract.ToolDef{{Name: "submit_material", InputSchema: json.RawMessage(`{"type":"object"}`)}}, nil
+}
+
+func (d *workbenchActionDispatcher) Dispatch(_ context.Context, call contract.ToolCall) (*contract.ToolResult, error) {
+	d.calls.Add(1)
+	return &contract.ToolResult{CallID: call.ID, Content: `{"status":"succeeded"}`}, nil
+}
+
+func TestWorkbenchResultCorrectionDoesNotReplayToolsAcrossControlledResume(t *testing.T) {
+	frozenSchema := machine.WorkbenchResultSchemaV1()
+	invalid := workbenchOutput(t, strings.Repeat("界", 1033))
+	validSummary := strings.Repeat("中", 998) + "😀🙂"
+	if got := utf8.RuneCountInString(validSummary); got != 1000 {
+		t.Fatalf("valid fixture code points=%d", got)
+	}
+	valid := workbenchOutput(t, validSummary)
+	llm := &schemaTestLLM{responses: []contract.ChatResponse{
+		{StopReason: "tool_calls", ToolCalls: []contract.ToolCall{{ID: "write-1", Name: "submit_material", Args: `{}`}}},
+		{StopReason: "stop", Content: invalid},
+		{StopReason: "tool_calls", ToolCalls: []contract.ToolCall{{ID: "write-2", Name: "submit_material", Args: `{}`}}},
+		{StopReason: "stop", Content: valid},
+	}}
+	callCount := &atomic.Int32{}
+	tools := &workbenchActionDispatcher{calls: callCount}
+	step := nodeToolLoopStep(llm, tools, stdlib.ToolLoopOpts{
+		Model: "test", MaxIterations: 1,
+		Control: &stdlib.ToolLoopControl{ID: "chat", InitialTotalRounds: 4},
+	})
+	graph := loom.NewGraph(t.Name(), "chat", loom.WithMergeConfig(loom.DefaultMergeConfig()), loom.WithCheckpointPolicy(loom.CheckpointRequired))
+	graph.AddStep("chat", step, loom.End())
+	store := loom.NewMemStore()
+	checks := 0
+	check := func(context.Context, string) (bool, string, error) {
+		checks++
+		return true, "", nil
+	}
+	ctx := WithNodeCompletionCheck(
+		WithWorkbenchResultOutput(WithNodeOutputSchema(t.Context(), frozenSchema)),
+		"receipt-policy-v1", check,
+	)
+	paused, err := graph.Run(ctx, schemaInput(), store)
+	if err != nil || !paused.Yielded || tools.calls.Load() != 1 {
+		t.Fatalf("initial action/pause: yielded=%v calls=%d err=%v", paused != nil && paused.Yielded, tools.calls.Load(), err)
+	}
+	providerSchema := machine.WorkbenchResultProviderSchemaV1()
+	if len(llm.requests) != 1 || llm.requests[0].Schema == nil || string(*llm.requests[0].Schema) != string(providerSchema) {
+		t.Fatal("provider did not receive runtime Workbench bounds")
+	}
+	if string(frozenSchema) != string(machine.WorkbenchResultSchemaV1()) {
+		t.Fatal("runtime provider injection changed the frozen schema")
+	}
+
+	paused = resumeWorkbenchOutput(t, graph, store, ctx, paused, "resume-1")
+	if !paused.Yielded || tools.calls.Load() != 1 || len(llm.requests) != 2 {
+		t.Fatalf("overlong correction pause: yielded=%v calls=%d requests=%d", paused.Yielded, tools.calls.Load(), len(llm.requests))
+	}
+	marker, _ := paused.State[workbenchResultCorrectionStateKey].(string)
+	if !strings.HasPrefix(marker, "workbench_result_v1:") {
+		t.Fatalf("correction state did not survive pause: %q", marker)
+	}
+	transcript, ok := paused.State["__toolloop_msgs"].([]contract.Message)
+	if !ok || !messagesContain(transcript, "observed=1033") {
+		t.Fatal("bounded codepoint diagnostic was not returned through Loom correction feedback")
+	}
+
+	paused = resumeWorkbenchOutput(t, graph, store, ctx, paused, "resume-2")
+	if !paused.Yielded || tools.calls.Load() != 1 || len(llm.requests) != 3 {
+		t.Fatalf("tool replay was not blocked within correction budget: yielded=%v calls=%d requests=%d", paused.Yielded, tools.calls.Load(), len(llm.requests))
+	}
+	paused = resumeWorkbenchOutput(t, graph, store, ctx, paused, "resume-3")
+	if paused.Yielded || paused.State["output"] != valid || tools.calls.Load() != 1 || checks != 1 {
+		t.Fatalf("final state=%#v action calls=%d checks=%d", paused.State, tools.calls.Load(), checks)
+	}
+	if len(llm.requests) != 4 {
+		t.Fatalf("model rounds=%d want=4", len(llm.requests))
+	}
+	foundBlocked := false
+	for _, message := range llm.requests[3].Messages {
+		if message.Role == "tool" && strings.Contains(message.Content, "Tools are unavailable while correcting") {
+			foundBlocked = true
+		}
+	}
+	if !foundBlocked {
+		t.Fatal("controlled resume lost the blocked replay tool result")
+	}
+	if paused.State[workbenchResultCorrectionStateKey] != "" {
+		t.Fatal("correction-only state was not cleared after valid output")
+	}
+}
+
+func newWorkbenchControlledGraph(name string, llm contract.LLM, tools contract.ToolDispatcher) *loom.Graph {
+	step := nodeToolLoopStep(llm, tools, stdlib.ToolLoopOpts{
+		Model: "test", MaxIterations: 1,
+		Control: &stdlib.ToolLoopControl{ID: "chat", InitialTotalRounds: 4},
+	})
+	graph := loom.NewGraph(name, "chat", loom.WithMergeConfig(loom.DefaultMergeConfig()), loom.WithCheckpointPolicy(loom.CheckpointRequired))
+	graph.AddStep("chat", step, loom.End())
+	return graph
+}
+
+func openWorkbenchPGStore(t *testing.T, searchPath string) *pgstore.PGStore {
+	t.Helper()
+	connection, err := url.Parse(os.Getenv("TEST_DATABASE_URL"))
+	if err != nil {
+		t.Fatal("could not parse local PostgreSQL test URL")
+	}
+	query := connection.Query()
+	query.Set("search_path", searchPath)
+	connection.RawQuery = query.Encode()
+	store, err := pgstore.New(connection.String())
+	if err != nil {
+		t.Fatal("could not open isolated Loom PostgreSQL checkpoint store")
+	}
+	return store
+}
+
+func assertWorkbenchPGCheckpoint(t *testing.T, pool *pgxpool.Pool, graphName, runID string, wantCorrection bool) {
+	t.Helper()
+	var raw []byte
+	if err := pool.QueryRow(t.Context(), `SELECT value FROM loom_store WHERE namespace=$1 AND key=$2`, "checkpoint:"+graphName, runID).Scan(&raw); err != nil {
+		t.Fatal("checkpoint was not persisted in PostgreSQL")
+	}
+	var checkpoint struct {
+		State map[string]json.RawMessage `json:"state"`
+	}
+	if err := json.Unmarshal(raw, &checkpoint); err != nil {
+		t.Fatal("persisted PostgreSQL checkpoint is invalid")
+	}
+	var marker string
+	if err := json.Unmarshal(checkpoint.State[workbenchResultCorrectionStateKey], &marker); err != nil {
+		t.Fatal("persisted correction state is missing")
+	}
+	if hasCorrection := strings.HasPrefix(marker, "workbench_result_v1:"); hasCorrection != wantCorrection {
+		t.Fatalf("persisted correction gate=%v want=%v", hasCorrection, wantCorrection)
+	}
+}
+
+func TestWorkbenchResultViolationExposesBoundsWithoutOutputText(t *testing.T) {
+	private := strings.Repeat("密", 1033)
+	bad := workbenchOutput(t, private)
+	llm := &schemaTestLLM{responses: []contract.ChatResponse{{StopReason: "stop", Content: bad}, {StopReason: "stop", Content: bad}}}
+	step := nodeToolLoopStep(llm, &CompileGuardDispatcher{}, stdlib.ToolLoopOpts{Model: "test", MaxIterations: 2})
+	ctx := WithWorkbenchResultOutput(WithNodeOutputSchema(t.Context(), machine.WorkbenchResultSchemaV1()))
+	_, err := step(ctx, schemaInput())
+	var violation *NodeOutputViolation
+	if !errors.As(err, &violation) || !errors.Is(err, stdlib.ErrCompletionUnverified) {
+		t.Fatalf("lost Workbench output failure: %v", err)
+	}
+	if violation.Path != "/summary" || violation.LimitKind != "max" || violation.Limit != 1000 || violation.ObservedLength != 1033 || violation.OutputBytes != len(bad) || len(violation.OutputSHA256) != 64 {
+		t.Fatalf("diagnostic=%+v", violation)
+	}
+	encoded, marshalErr := json.Marshal(violation)
+	if marshalErr != nil || strings.Contains(string(encoded), private) || strings.Contains(err.Error(), private) {
+		t.Fatalf("diagnostic leaked output text: %s err=%v", encoded, marshalErr)
+	}
+}
+
+func TestWorkbenchTextCorrectionReopensMissingActionFlow(t *testing.T) {
+	llm := &schemaTestLLM{responses: []contract.ChatResponse{
+		{StopReason: "stop", Content: workbenchOutput(t, strings.Repeat("界", 1001))},
+		{StopReason: "tool_calls", ToolCalls: []contract.ToolCall{{ID: "premature", Name: "submit_material", Args: `{}`}}},
+		{StopReason: "stop", Content: workbenchOutput(t, "已完成材料检查")},
+		{StopReason: "tool_calls", ToolCalls: []contract.ToolCall{{ID: "required", Name: "submit_material", Args: `{}`}}},
+		{StopReason: "stop", Content: workbenchOutput(t, "已完成材料检查")},
+	}}
+	callCount := &atomic.Int32{}
+	tools := &workbenchActionDispatcher{calls: callCount}
+	step := nodeToolLoopStep(llm, tools, stdlib.ToolLoopOpts{Model: "test", MaxIterations: 5})
+	check := func(context.Context, string) (bool, string, error) {
+		if tools.calls.Load() == 0 {
+			return false, "required receipt missing", nil
+		}
+		return true, "", nil
+	}
+	ctx := WithNodeCompletionCheck(
+		WithWorkbenchResultOutput(WithNodeOutputSchema(t.Context(), machine.WorkbenchResultSchemaV1())),
+		"receipt-policy-v1", check,
+	)
+	result, err := step(ctx, schemaInput())
+	if err != nil || result["output"] != workbenchOutput(t, "已完成材料检查") || tools.calls.Load() != 1 {
+		t.Fatalf("result=%#v action calls=%d err=%v", result, tools.calls.Load(), err)
+	}
+	if len(llm.requests) != 5 {
+		t.Fatalf("model rounds=%d want=5", len(llm.requests))
+	}
+	if !strings.Contains(llm.requests[2].Messages[len(llm.requests[2].Messages)-1].Content, "Tools are unavailable while correcting") {
+		t.Fatal("initial text correction did not block tool replay")
+	}
+	if !strings.Contains(llm.requests[3].Messages[len(llm.requests[3].Messages)-1].Content, "required receipt missing") {
+		t.Fatal("valid text correction did not resume the existing missing-receipt feedback")
+	}
+}
+
+func resumeWorkbenchOutput(t *testing.T, graph *loom.Graph, store loom.Store, ctx context.Context, previous *loom.RunResult, grantID string) *loom.RunResult {
+	t.Helper()
+	outcome, present, err := stdlib.ReadToolLoopOutcome(previous.State)
+	if err != nil || !present {
+		t.Fatalf("missing controlled outcome: %+v %v", outcome, err)
+	}
+	seqRaw, err := json.Marshal(previous.State["__checkpoint_seq"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var seq int64
+	if err := json.Unmarshal(seqRaw, &seq); err != nil {
+		t.Fatal(err)
+	}
+	delta, err := stdlib.PrepareToolLoopResume(previous.State, stdlib.ToolLoopResumeGrant{
+		ID: grantID, ExpectedRunID: previous.RunID, ExpectedCheckpointSeq: seq,
+		ExpectedYieldToken: previous.State["__yield_token"].(string), ExpectedSlice: outcome.Slice,
+		AuthorizedTotalRounds: 4,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resumed, err := graph.Resume(ctx, previous.RunID, delta, store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return resumed
+}
+
+func workbenchOutput(t *testing.T, summary string) string {
+	t.Helper()
+	encoded, err := json.Marshal(machine.WorkbenchResultV1{
+		Disposition: "complete", Summary: summary, MissingItems: []string{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(encoded)
+}
+
+func messagesContain(messages []contract.Message, text string) bool {
+	for _, message := range messages {
+		if strings.Contains(message.Content, text) {
+			return true
+		}
+	}
+	return false
 }

@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/jinyitao123/loom"
 	"github.com/jinyitao123/loom/contract"
@@ -22,6 +23,7 @@ import (
 	"github.com/jinyitao123/weave/internal/kernel/otel"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 	"github.com/jinyitao123/weave/internal/kernel/skills"
+	"github.com/jinyitao123/weave/internal/kernel/workflow/machine"
 )
 
 // GraphFactory creates a custom Graph for agents with non-standard topologies.
@@ -968,14 +970,24 @@ func nodeToolLoopStep(llm contract.LLM, tools contract.ToolDispatcher, base stdl
 		if !scoped {
 			return unscoped(ctx, state)
 		}
+		workbenchResult, _ := ctx.Value(workbenchResultOutputKey{}).(bool)
+		if workbenchResult && !machine.IsWorkbenchResultSchemaV1(schema) {
+			return nil, errors.New("workbench_result_v1 requires its frozen member output schema")
+		}
 		opts := base
 		boundState := state
 		var last *NodeOutputViolation
 		var schemaVerifier stdlib.CompletionVerifier
+		providerSchema := append(json.RawMessage(nil), schema...)
+		correctionMarker := ""
+		var correctionOnly atomic.Bool
 		opts.CompletionVerifierID = stdlib.BareToolProtocolCompletionPolicyID
 		if len(schema) != 0 {
 			bound := append(json.RawMessage(nil), schema...)
-			opts.OutputSchema = &bound
+			if workbenchResult {
+				providerSchema = machine.WorkbenchResultProviderSchemaV1()
+			}
+			opts.OutputSchema = &providerSchema
 			// json_object providers do not transmit the schema on the wire. Supply
 			// it as a trusted instruction as well, then enforce it locally below.
 			// Clone the state so repeated/resumed invocations do not append it twice.
@@ -987,11 +999,25 @@ func nodeToolLoopStep(llm contract.LLM, tools contract.ToolDispatcher, base stdl
 			if current, ok := state["__system_prompt"].(string); ok && current != "" {
 				system = current
 			}
-			boundState["__system_prompt"] = system + "\n\nThe final response must be JSON satisfying this exact output schema without Markdown. Tools remain available when needed; only the final response is constrained:\n" + string(bound)
-			digest := sha256.Sum256(bound)
+			system = system + "\n\nThe final response must be JSON satisfying this exact output schema without Markdown. Tools remain available when needed; only the final response is constrained:\n" + string(providerSchema)
+			if workbenchResult {
+				system += "\n\nFor workbench_result_v1, trim surrounding Unicode whitespace using Go strings.TrimSpace semantics before validation. Count the normalized summary and each normalized missing item in Unicode code points: summary 1-1000, each item 1-200. complete requires an empty missing_items array; needs_input requires at least one item. If a final JSON response is rejected, tools are disabled until a valid final JSON response is returned; do not repeat completed business actions."
+			}
+			boundState["__system_prompt"] = system
+			digest := sha256.Sum256(providerSchema)
 			opts.CompletionVerifierID += ":weave.node-output.v2:" + hex.EncodeToString(digest[:])
+			if workbenchResult {
+				opts.CompletionVerifierID += ":workbench-result-v1-normalize"
+				correctionMarker = "workbench_result_v1:" + hex.EncodeToString(digest[:])
+				if state[workbenchResultCorrectionStateKey] == correctionMarker {
+					correctionOnly.Store(true)
+				}
+			}
 			schemaVerifier = stdlib.CompletionVerifierFunc(func(_ context.Context, candidate stdlib.CompletionCandidate) (stdlib.CompletionDecision, error) {
 				last = ValidateNodeOutput(bound, json.RawMessage(candidate.Content))
+				if last == nil && workbenchResult {
+					last = ValidateWorkbenchResultNodeOutput(json.RawMessage(candidate.Content))
+				}
 				if last == nil {
 					return stdlib.CompletionDecision{Accepted: true}, nil
 				}
@@ -1003,14 +1029,21 @@ func nodeToolLoopStep(llm contract.LLM, tools contract.ToolDispatcher, base stdl
 		var dispatchStop error
 		var dispatchStopMu sync.Mutex
 		invocationTools := tools
-		if beforeTool != nil {
-			invocationTools = &completionToolDispatcher{inner: tools, before: beforeTool, stop: func(err error) {
-				dispatchStopMu.Lock()
-				defer dispatchStopMu.Unlock()
-				if dispatchStop == nil {
-					dispatchStop = err
-				}
-			}}
+		if beforeTool != nil || workbenchResult {
+			invocationTools = &completionToolDispatcher{
+				inner: tools, before: beforeTool,
+				stop: func(err error) {
+					if beforeTool == nil {
+						return
+					}
+					dispatchStopMu.Lock()
+					defer dispatchStopMu.Unlock()
+					if dispatchStop == nil {
+						dispatchStop = err
+					}
+				},
+				correctionOnly: func() bool { return correctionOnly.Load() },
+			}
 		}
 		verifiedCompletion := false
 		verifiedContent := ""
@@ -1023,6 +1056,9 @@ func nodeToolLoopStep(llm contract.LLM, tools contract.ToolDispatcher, base stdl
 			decision, err := verifier.VerifyCompletion(ctx, candidate)
 			if err == nil && !decision.Accepted && last == nil {
 				last = outputViolation("unexecuted_tool_protocol", "/", []byte(candidate.Content))
+			}
+			if workbenchResult && err == nil {
+				correctionOnly.Store(!decision.Accepted)
 			}
 			if err == nil && decision.Accepted && completionCheck != nil {
 				accepted, feedback, checkErr := completionCheck(ctx, candidate.Content)
@@ -1038,9 +1074,15 @@ func nodeToolLoopStep(llm contract.LLM, tools contract.ToolDispatcher, base stdl
 			return decision, err
 		})
 		if len(schema) != 0 {
-			ctx = llmrouter.WithLocallyVerifiedOutput(ctx, schema)
+			ctx = llmrouter.WithLocallyVerifiedOutput(ctx, providerSchema)
 		}
 		result, err := stdlib.NewToolLoopStep(llm, invocationTools, opts)(ctx, boundState)
+		if result != nil && workbenchResult {
+			result[workbenchResultCorrectionStateKey] = ""
+			if result["__yield"] == true && correctionOnly.Load() {
+				result[workbenchResultCorrectionStateKey] = correctionMarker
+			}
+		}
 		dispatchStopMu.Lock()
 		stopped := dispatchStop
 		dispatchStopMu.Unlock()
@@ -1071,18 +1113,24 @@ func nodeToolLoopStep(llm contract.LLM, tools contract.ToolDispatcher, base stdl
 // writes in one model batch. Batch pre-hooks cannot see an earlier write result.
 // A blocked call is a control stop, never an invented Forge action receipt.
 type completionToolDispatcher struct {
-	inner  contract.ToolDispatcher
-	before func(context.Context) error
-	stop   func(error)
+	inner          contract.ToolDispatcher
+	before         func(context.Context) error
+	stop           func(error)
+	correctionOnly func() bool
 }
 
 func (d *completionToolDispatcher) ListTools(ctx context.Context) ([]contract.ToolDef, error) {
 	return d.inner.ListTools(ctx)
 }
 func (d *completionToolDispatcher) Dispatch(ctx context.Context, call contract.ToolCall) (*contract.ToolResult, error) {
-	if err := d.before(ctx); err != nil {
-		d.stop(err)
-		return &contract.ToolResult{CallID: call.ID, ToolName: call.Name, Content: "A prior business action failed or is unconfirmed, or its authoritative facts are unavailable. Further tools have been stopped; inspect the original receipt without replaying the action.", IsError: true, StopLoop: true}, nil
+	if d.correctionOnly != nil && d.correctionOnly() {
+		return &contract.ToolResult{CallID: call.ID, ToolName: call.Name, Content: "Tools are unavailable while correcting the final JSON response. Return a valid final result without repeating any prior action.", IsError: true}, nil
+	}
+	if d.before != nil {
+		if err := d.before(ctx); err != nil {
+			d.stop(err)
+			return &contract.ToolResult{CallID: call.ID, ToolName: call.Name, Content: "A prior business action failed or is unconfirmed, or its authoritative facts are unavailable. Further tools have been stopped; inspect the original receipt without replaying the action.", IsError: true, StopLoop: true}, nil
+		}
 	}
 	return d.inner.Dispatch(ctx, call)
 }
