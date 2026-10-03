@@ -657,6 +657,17 @@
         "lines_added": 683,
         "production_lines_added": 147
       }
+    },
+    {
+      "date": "2026-10-03",
+      "reason": "Register the repository owner's exact 30-line app regression-test allowance for PR #18 generic bounded decisions. Production lines remain capped at 64,188; packages, dependencies and original migration targets are unchanged.",
+      "record": "https://github.com/jinyitao123/weave-next/pull/18",
+      "app": {
+        "previous_lines": 88208,
+        "previous_production_lines": 64188,
+        "lines_added": 30,
+        "production_lines_added": 0
+      }
     }
   ],
   "migration_targets": {
@@ -719,7 +730,7 @@
     ]
   },
   "app": {
-    "lines": 88208,
+    "lines": 88238,
     "production_lines": 64188,
     "packages": 30,
     "external_dependencies": 7,

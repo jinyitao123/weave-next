@@ -150,8 +150,8 @@ func (s *Server) handleDispatchTeam(c echo.Context) error {
 	return s.dispatchAdmittedTeam(c, request)
 }
 
-// dispatchAdmittedTeam is shared by Workbench and the explicitly bound game
-// service admission; callers establish their own input authority first.
+// dispatchAdmittedTeam is shared by Workbench and bounded decision service
+// admission; callers establish their own input authority first.
 func (s *Server) dispatchAdmittedTeam(c echo.Context, request teamDispatchRequest) error {
 	if strings.TrimSpace(request.Task) == "" || (request.WorkflowVersion != nil && *request.WorkflowVersion <= 0) {
 		return workflowError(c, http.StatusBadRequest, "team_dispatch_request_invalid", "team dispatch request invalid")

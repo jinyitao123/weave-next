@@ -42,12 +42,12 @@ func TestMergedMigrationsFreshAndExistingDatabase(t *testing.T) {
 			if err := Migrate(ctx, pool); err != nil {
 				t.Fatal(err)
 			}
-			// Both branches' tables must exist; retaining a duplicate version would
-			// otherwise make one branch disappear from the version-only ledger.
-			for _, table := range []string{"weave_capability_definitions", "weave_capability_invocations", "weave_game_decision_bindings", "weave_game_decision_admissions", "weave_game_decision_cancellations"} {
+			// Both branches' tables must exist (0177 replaces the game decision tables);
+			// a duplicate version would otherwise drop one branch from the ledger.
+			for table, want := range map[string]bool{"weave_capability_definitions": true, "weave_capability_invocations": true, "weave_decision_bindings": true, "weave_decision_admissions": true, "weave_decision_cancellations": true, "weave_game_decision_bindings": false, "weave_game_decision_admissions": false, "weave_game_decision_cancellations": false} {
 				var exists bool
-				if err := pool.QueryRow(ctx, `SELECT to_regclass($1) IS NOT NULL`, table).Scan(&exists); err != nil || !exists {
-					t.Fatalf("missing %s: %v", table, err)
+				if err := pool.QueryRow(ctx, `SELECT to_regclass($1) IS NOT NULL`, table).Scan(&exists); err != nil || exists != want {
+					t.Fatalf("table %s exists=%v want %v: %v", table, exists, want, err)
 				}
 			}
 			var appliedBefore, appliedAfter int
