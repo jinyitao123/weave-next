@@ -668,6 +668,18 @@
         "lines_added": 30,
         "production_lines_added": 0
       }
+    },
+    {
+      "date": "2026-10-03",
+      "source_commit": "e3da73e124a6121bbfb22c3e8f435a138199dec1",
+      "reason": "Reviewed Workbench result semantic limits and bounded final-text correction after a real 1033-codepoint result exceeded the existing 1000-codepoint protocol. Preserve the frozen local schema, enrich the provider-facing contract, reuse the existing Loom completion loop and block tool replay during correction including PostgreSQL checkpoints across four distinct processes. Replace the superseded same-process store test with the stronger subprocess test. Exact measured kernel growth only: 133 production and 726 test lines, no new packages, dependencies, loops, queues, spare allowance or changed original migration targets.",
+      "record": "docs/治理/2026-09-30-平台范围收窄整改登记.md",
+      "kernel": {
+        "previous_lines": 101214,
+        "previous_production_lines": 83053,
+        "lines_added": 859,
+        "production_lines_added": 133
+      }
     }
   ],
   "migration_targets": {
@@ -705,8 +717,8 @@
     ]
   },
   "kernel": {
-    "lines": 101214,
-    "production_lines": 83053,
+    "lines": 102073,
+    "production_lines": 83186,
     "packages": 49,
     "external_dependencies": 5,
     "allowed_dependencies": [
