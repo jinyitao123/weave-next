@@ -6,15 +6,20 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"unicode/utf8"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jinyitao123/loom"
 	"github.com/jinyitao123/loom/contract"
+	"github.com/jinyitao123/loom/pgstore"
 	"github.com/jinyitao123/loom/stdlib"
+	"github.com/jinyitao123/weave/internal/base/testutil"
 	"github.com/jinyitao123/weave/internal/kernel/workflow/machine"
 )
 
@@ -234,7 +239,7 @@ func TestNodeOutputProtocolGuardIsScopedAndCannotSynthesizeCalls(t *testing.T) {
 	}
 }
 
-type workbenchActionDispatcher struct{ calls atomic.Int32 }
+type workbenchActionDispatcher struct{ calls *atomic.Int32 }
 
 func (*workbenchActionDispatcher) ListTools(context.Context) ([]contract.ToolDef, error) {
 	return []contract.ToolDef{{Name: "submit_material", InputSchema: json.RawMessage(`{"type":"object"}`)}}, nil
@@ -259,7 +264,8 @@ func TestWorkbenchResultCorrectionDoesNotReplayToolsAcrossControlledResume(t *te
 		{StopReason: "tool_calls", ToolCalls: []contract.ToolCall{{ID: "write-2", Name: "submit_material", Args: `{}`}}},
 		{StopReason: "stop", Content: valid},
 	}}
-	tools := &workbenchActionDispatcher{}
+	callCount := &atomic.Int32{}
+	tools := &workbenchActionDispatcher{calls: callCount}
 	step := nodeToolLoopStep(llm, tools, stdlib.ToolLoopOpts{
 		Model: "test", MaxIterations: 1,
 		Control: &stdlib.ToolLoopControl{ID: "chat", InitialTotalRounds: 4},
@@ -326,6 +332,149 @@ func TestWorkbenchResultCorrectionDoesNotReplayToolsAcrossControlledResume(t *te
 	}
 }
 
+func TestWorkbenchResultCorrectionPersistsThroughPGCheckpointRestart(t *testing.T) {
+	databaseURL := os.Getenv("TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("TEST_DATABASE_URL is not set")
+	}
+	connection, err := url.Parse(databaseURL)
+	if err != nil || connection.User == nil {
+		t.Skip("Workbench checkpoint regression requires the dedicated local PostgreSQL test cluster")
+	}
+	_, hasPassword := connection.User.Password()
+	host := connection.Hostname()
+	if (host != "127.0.0.1" && host != "localhost" && host != "::1") || connection.Port() != "55439" ||
+		connection.Path != "/postgres" || connection.User.Username() != "postgres" || hasPassword {
+		t.Skip("Workbench checkpoint regression is restricted to the dedicated local PostgreSQL test cluster")
+	}
+
+	pool := testutil.PostgresPool(t)
+	searchPath := pool.Config().ConnConfig.RuntimeParams["search_path"]
+	if searchPath == "" {
+		t.Fatal("isolated PostgreSQL schema is unavailable")
+	}
+	callCount := &atomic.Int32{}
+	tools := &workbenchActionDispatcher{calls: callCount}
+	checks := 0
+	check := func(context.Context, string) (bool, string, error) {
+		checks++
+		return true, "", nil
+	}
+	ctx := WithNodeCompletionCheck(
+		WithWorkbenchResultOutput(WithNodeOutputSchema(t.Context(), machine.WorkbenchResultSchemaV1())),
+		"receipt-policy-v1", check,
+	)
+	graphName := t.Name()
+	newGraph := func(llm *schemaTestLLM) *loom.Graph {
+		return newWorkbenchControlledGraph(graphName, llm, tools)
+	}
+
+	firstLLM := &schemaTestLLM{responses: []contract.ChatResponse{{
+		StopReason: "tool_calls", ToolCalls: []contract.ToolCall{{ID: "write-1", Name: "submit_material", Args: `{}`}},
+	}}}
+	first := runWorkbenchGraphOnPG(t, searchPath, newGraph(firstLLM), ctx)
+	if !first.Yielded || callCount.Load() != 1 {
+		t.Fatalf("initial action/pause: yielded=%v calls=%d", first.Yielded, callCount.Load())
+	}
+	assertWorkbenchPGCheckpoint(t, pool, graphName, first.RunID, false)
+
+	secondLLM := &schemaTestLLM{responses: []contract.ChatResponse{{StopReason: "stop", Content: workbenchOutput(t, strings.Repeat("界", 1033))}}}
+	second := resumeWorkbenchGraphOnPG(t, searchPath, newGraph(secondLLM), ctx, first, "resume-1")
+	if !second.Yielded || callCount.Load() != 1 || len(secondLLM.requests) != 1 {
+		t.Fatalf("correction checkpoint: yielded=%v calls=%d requests=%d", second.Yielded, callCount.Load(), len(secondLLM.requests))
+	}
+	assertWorkbenchPGCheckpoint(t, pool, graphName, second.RunID, true)
+
+	thirdLLM := &schemaTestLLM{responses: []contract.ChatResponse{{
+		StopReason: "tool_calls", ToolCalls: []contract.ToolCall{{ID: "write-2", Name: "submit_material", Args: `{}`}},
+	}}}
+	third := resumeWorkbenchGraphOnPG(t, searchPath, newGraph(thirdLLM), ctx, second, "resume-2")
+	if !third.Yielded || callCount.Load() != 1 || len(thirdLLM.requests) != 1 {
+		t.Fatalf("restart replay was not blocked: yielded=%v calls=%d requests=%d", third.Yielded, callCount.Load(), len(thirdLLM.requests))
+	}
+	assertWorkbenchPGCheckpoint(t, pool, graphName, third.RunID, true)
+
+	validSummary := strings.Repeat("中", 998) + "😀🙂"
+	if utf8.RuneCountInString(validSummary) != 1000 {
+		t.Fatal("final fixture is not exactly 1000 Unicode code points")
+	}
+	valid := workbenchOutput(t, validSummary)
+	fourthLLM := &schemaTestLLM{responses: []contract.ChatResponse{{StopReason: "stop", Content: valid}}}
+	fourth := resumeWorkbenchGraphOnPG(t, searchPath, newGraph(fourthLLM), ctx, third, "resume-3")
+	if fourth.Yielded || fourth.State["output"] != valid || callCount.Load() != 1 || checks != 1 {
+		t.Fatalf("final state=%#v calls=%d checks=%d", fourth.State, callCount.Load(), checks)
+	}
+	assertWorkbenchPGCheckpoint(t, pool, graphName, fourth.RunID, false)
+	if len(fourthLLM.requests) != 1 || !messagesContain(fourthLLM.requests[0].Messages, "Tools are unavailable while correcting") {
+		t.Fatal("PostgreSQL restore did not retain the correction tool denial")
+	}
+}
+
+func newWorkbenchControlledGraph(name string, llm contract.LLM, tools contract.ToolDispatcher) *loom.Graph {
+	step := nodeToolLoopStep(llm, tools, stdlib.ToolLoopOpts{
+		Model: "test", MaxIterations: 1,
+		Control: &stdlib.ToolLoopControl{ID: "chat", InitialTotalRounds: 4},
+	})
+	graph := loom.NewGraph(name, "chat", loom.WithMergeConfig(loom.DefaultMergeConfig()), loom.WithCheckpointPolicy(loom.CheckpointRequired))
+	graph.AddStep("chat", step, loom.End())
+	return graph
+}
+
+func runWorkbenchGraphOnPG(t *testing.T, searchPath string, graph *loom.Graph, ctx context.Context) *loom.RunResult {
+	t.Helper()
+	store := openWorkbenchPGStore(t, searchPath)
+	defer store.Close()
+	result, err := graph.Run(ctx, schemaInput(), store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return result
+}
+
+func resumeWorkbenchGraphOnPG(t *testing.T, searchPath string, graph *loom.Graph, ctx context.Context, previous *loom.RunResult, grantID string) *loom.RunResult {
+	t.Helper()
+	store := openWorkbenchPGStore(t, searchPath)
+	defer store.Close()
+	return resumeWorkbenchOutput(t, graph, store, ctx, previous, grantID)
+}
+
+func openWorkbenchPGStore(t *testing.T, searchPath string) *pgstore.PGStore {
+	t.Helper()
+	connection, err := url.Parse(os.Getenv("TEST_DATABASE_URL"))
+	if err != nil {
+		t.Fatal("could not parse local PostgreSQL test URL")
+	}
+	query := connection.Query()
+	query.Set("search_path", searchPath)
+	connection.RawQuery = query.Encode()
+	store, err := pgstore.New(connection.String())
+	if err != nil {
+		t.Fatal("could not open isolated Loom PostgreSQL checkpoint store")
+	}
+	return store
+}
+
+func assertWorkbenchPGCheckpoint(t *testing.T, pool *pgxpool.Pool, graphName, runID string, wantCorrection bool) {
+	t.Helper()
+	var raw []byte
+	if err := pool.QueryRow(t.Context(), `SELECT value FROM loom_store WHERE namespace=$1 AND key=$2`, "checkpoint:"+graphName, runID).Scan(&raw); err != nil {
+		t.Fatal("checkpoint was not persisted in PostgreSQL")
+	}
+	var checkpoint struct {
+		State map[string]json.RawMessage `json:"state"`
+	}
+	if err := json.Unmarshal(raw, &checkpoint); err != nil {
+		t.Fatal("persisted PostgreSQL checkpoint is invalid")
+	}
+	var marker string
+	if err := json.Unmarshal(checkpoint.State[workbenchResultCorrectionStateKey], &marker); err != nil {
+		t.Fatal("persisted correction state is missing")
+	}
+	if hasCorrection := strings.HasPrefix(marker, "workbench_result_v1:"); hasCorrection != wantCorrection {
+		t.Fatalf("persisted correction gate=%v want=%v", hasCorrection, wantCorrection)
+	}
+}
+
 func TestWorkbenchResultViolationExposesBoundsWithoutOutputText(t *testing.T) {
 	private := strings.Repeat("密", 1033)
 	bad := workbenchOutput(t, private)
@@ -354,7 +503,8 @@ func TestWorkbenchTextCorrectionReopensMissingActionFlow(t *testing.T) {
 		{StopReason: "tool_calls", ToolCalls: []contract.ToolCall{{ID: "required", Name: "submit_material", Args: `{}`}}},
 		{StopReason: "stop", Content: workbenchOutput(t, "已完成材料检查")},
 	}}
-	tools := &workbenchActionDispatcher{}
+	callCount := &atomic.Int32{}
+	tools := &workbenchActionDispatcher{calls: callCount}
 	step := nodeToolLoopStep(llm, tools, stdlib.ToolLoopOpts{Model: "test", MaxIterations: 5})
 	check := func(context.Context, string) (bool, string, error) {
 		if tools.calls.Load() == 0 {
