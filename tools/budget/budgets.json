@@ -680,6 +680,17 @@
         "lines_added": 859,
         "production_lines_added": 133
       }
+    },
+    {
+      "date": "2026-10-04",
+      "reason": "Reviewed exact growth for current parked-fanout material reads and preservation of the conditional runtime-host BuildWithLLM capability. Reuse the current claimed task, parent wait, fanout intent/group/leg, yielded marker and original frozen input delegation; no new scope, queue, retry loop or terminal authority. PostgreSQL regressions activate and claim both actual fanout legs, reject isolated invalid scope and lease states, and preserve ordinary running reads. Exact kernel growth: 232 production and 595 test lines, no spare allowance, new packages or external dependencies; original migration targets unchanged.",
+      "record": "docs/治理/2026-09-30-平台范围收窄整改登记.md",
+      "kernel": {
+        "previous_lines": 102073,
+        "previous_production_lines": 83186,
+        "lines_added": 827,
+        "production_lines_added": 232
+      }
     }
   ],
   "migration_targets": {
@@ -717,8 +728,8 @@
     ]
   },
   "kernel": {
-    "lines": 102073,
-    "production_lines": 83186,
+    "lines": 102900,
+    "production_lines": 83418,
     "packages": 49,
     "external_dependencies": 5,
     "allowed_dependencies": [
