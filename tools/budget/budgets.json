@@ -691,6 +691,23 @@
         "lines_added": 827,
         "production_lines_added": 232
       }
+    },
+    {
+      "date": "2026-10-05",
+      "reason": "Register only the measured source and regression growth for the Forge business-action dispatch repair: normalize empty params objects and return definite local pre-dispatch rejection without weakening started/unknown fail-closed handling. Regressions cover mixed v2 business/v1 read-only publication, required-amount correction with exactly one Forge effect, caller identity, unreserved success, and unknown outcomes. Exact measured ceilings; no new packages or dependencies, execution loop, or queue, no spare allowance; original migration targets unchanged.",
+      "record": "docs/架构/2026-08-27-预算闸设计.md",
+      "kernel": {
+        "previous_lines": 102900,
+        "previous_production_lines": 83418,
+        "lines_added": 120,
+        "production_lines_added": 17
+      },
+      "app": {
+        "previous_lines": 88238,
+        "previous_production_lines": 64188,
+        "lines_added": 132,
+        "production_lines_added": 0
+      }
     }
   ],
   "migration_targets": {
@@ -728,8 +745,8 @@
     ]
   },
   "kernel": {
-    "lines": 102900,
-    "production_lines": 83418,
+    "lines": 103020,
+    "production_lines": 83435,
     "packages": 49,
     "external_dependencies": 5,
     "allowed_dependencies": [
@@ -753,7 +770,7 @@
     ]
   },
   "app": {
-    "lines": 88238,
+    "lines": 88370,
     "production_lines": 64188,
     "packages": 30,
     "external_dependencies": 7,

@@ -298,6 +298,16 @@ func publishMemberIntegrationSample(t *testing.T, pool *pgxpool.Pool, key []byte
 }
 
 func publishConfiguredMemberIntegrationSample(t *testing.T, pool *pgxpool.Pool, key []byte, workspace, actor, serverURL, serverID string, revision int64, toolName, prompt string, configure func(*registry.AgentRecord), budget ...uint64) (frozen.FrozenExecutionBundle, compiler.FrozenResolver, *workflow.PublishedArtifactContent) {
+	_, workerBundle, resolver, saved := publishConfiguredMemberIntegrationSampleForGraph(
+		t, pool, key, workspace, actor, serverURL, serverID, revision, toolName, prompt,
+		nil, configure, nil, budget...,
+	)
+	return workerBundle, resolver, saved
+}
+
+type memberIntegrationGraphBuilder func(lead, worker *registry.AgentRecord) json.RawMessage
+
+func publishConfiguredMemberIntegrationSampleForGraph(t *testing.T, pool *pgxpool.Pool, key []byte, workspace, actor, serverURL, serverID string, revision int64, toolName, prompt string, configureLead, configureWorker func(*registry.AgentRecord), buildGraph memberIntegrationGraphBuilder, budget ...uint64) (frozen.FrozenExecutionBundle, frozen.FrozenExecutionBundle, compiler.FrozenResolver, *workflow.PublishedArtifactContent) {
 	t.Helper()
 	ctx := execution.WithSubject(t.Context(), execution.Subject{WorkspaceID: workspace, UserID: actor})
 	providers := credentials.New(pool, key)
@@ -307,8 +317,11 @@ func publishConfiguredMemberIntegrationSample(t *testing.T, pool *pgxpool.Pool, 
 	agents := agentcatalog.New(pool)
 	lead := &registry.AgentRecord{Name: "lead", Role: "avatar", Engine: "loom", Model: "fixture-model", GraphType: "standard", Spec: stdlib.AgentSpec{SystemPrompt: "Return the brief."}}
 	worker := &registry.AgentRecord{Name: "worker", Role: "worker", Engine: "loom", Model: "fixture-model", GraphType: "standard", Spec: stdlib.AgentSpec{SystemPrompt: prompt}, MCPServers: []registry.MCPServerConfig{{ServerID: serverID, Filter: []string{toolName}}}}
-	if configure != nil {
-		configure(worker)
+	if configureLead != nil {
+		configureLead(lead)
+	}
+	if configureWorker != nil {
+		configureWorker(worker)
 	}
 	if len(budget) > 0 && budget[0] > 0 {
 		worker.ToolLoopControl = &frozen.ToolLoopControl{SliceRounds: 1, InitialTotalRounds: budget[0]}
@@ -325,6 +338,9 @@ func publishConfiguredMemberIntegrationSample(t *testing.T, pool *pgxpool.Pool, 
 		t.Fatal(err)
 	}
 	graph := json.RawMessage(fmt.Sprintf(`{"schema_version":1,"entry_node_id":"brief","input_contract":{"type":"text"},"output_contract":{"type":"text"},"nodes":[{"id":"brief","type":"lead","config":{"instruction":"Brief"},"inputs":{"task":{"value":{"source":"run_input","path":""},"expected_type":"text"}},"output":{"type":"text"}},{"id":"compute","type":"worker","config":{"kind":"consult","agent_id":%q,"agent_version":%d,"result_requirement":"Execute the configured tool task"},"inputs":{"task":{"value":{"source":"run_input","path":""},"expected_type":"text"}},"output":{"type":"text"}},{"id":"deliver","type":"deliver","config":{"result":{"source":"node_output","node_id":"compute","path":""}}}],"edges":[{"id":"a","from_node_id":"brief","to_node_id":"compute","route":"success"},{"id":"b","from_node_id":"compute","to_node_id":"deliver","route":"success"}]}`, worker.ID, worker.Version))
+	if buildGraph != nil {
+		graph = buildGraph(lead, worker)
+	}
 	artifacts := workflow.NewArtifactStore(pool, nil)
 	store := workflowcatalog.New(pool, nil, artifacts)
 	draft, err := store.Create(ctx, &workflow.TeamWorkflow{ID: "flow", WorkspaceID: workspace, TeamID: "team", Name: "Tool flow"}, workflow.DraftInput{CreatedBy: "test", TriggerConfig: json.RawMessage(`{"schema_version":1,"type":"conversation_explicit","config":{}}`), GraphDefinition: graph})
@@ -368,28 +384,33 @@ func publishConfiguredMemberIntegrationSample(t *testing.T, pool *pgxpool.Pool, 
 	if err != nil {
 		t.Fatal(err)
 	}
-	var bundle frozen.FrozenExecutionBundle
+	var leadBundle, workerBundle frozen.FrozenExecutionBundle
 	for _, entry := range payload.Bundles {
-		if entry.Agent.AgentID == worker.ID {
-			bundle = entry
-		} else if entry.FactoryKey.FactoryVersion != "1" {
-			t.Fatal("unchanged lead unexpectedly upgraded")
+		switch entry.Agent.AgentID {
+		case lead.ID:
+			leadBundle = entry
+		case worker.ID:
+			workerBundle = entry
+		default:
+			if entry.FactoryKey.FactoryVersion != "1" {
+				t.Fatal("unchanged member unexpectedly upgraded")
+			}
 		}
 	}
-	if bundle.FactoryKey != compiler.StandardFrozenToolsKey() || len(bundle.MCPBindings) != len(worker.MCPServers) {
-		t.Fatalf("tools missing after publication: %#v", bundle.FactoryKey)
+	if workerBundle.Agent.AgentID != worker.ID || len(workerBundle.MCPBindings) != len(worker.MCPServers) {
+		t.Fatalf("worker bundle missing after publication: %#v", workerBundle.FactoryKey)
 	}
-	if len(worker.MCPServers) != 0 && (len(bundle.MCPBindings[0].Tools) != 1 || bundle.MCPBindings[0].ServerRevision != revision) {
+	if len(worker.MCPServers) != 0 && (len(workerBundle.MCPBindings[0].Tools) != 1 || workerBundle.MCPBindings[0].ServerRevision != revision) {
 		t.Fatal("MCP tool contract or revision not pinned")
 	}
-	resolver, err := freezer.RebuildArtifactResolver(bundle)
+	resolver, err := freezer.RebuildArtifactResolver(workerBundle)
 	if err != nil {
-		agentHash, _ := frozen.HashDTO(bundle.Agent, frozen.PreorderFrozenAgentRecord)
-		modelHash, _ := frozen.HashDTO(bundle.PrimaryModel, frozen.PreorderFrozenModelBinding)
-		t.Logf("agent hash=%s; model hash=%s stored=%s; dependencies=%+v", agentHash, modelHash, bundle.PrimaryModel.ContentHash, bundle.Dependencies)
+		agentHash, _ := frozen.HashDTO(workerBundle.Agent, frozen.PreorderFrozenAgentRecord)
+		modelHash, _ := frozen.HashDTO(workerBundle.PrimaryModel, frozen.PreorderFrozenModelBinding)
+		t.Logf("agent hash=%s; model hash=%s stored=%s; dependencies=%+v", agentHash, modelHash, workerBundle.PrimaryModel.ContentHash, workerBundle.Dependencies)
 		t.Fatal(err)
 	}
-	return bundle, resolver, saved
+	return leadBundle, workerBundle, resolver, saved
 }
 
 func memberIntegrationDescriptors(t *testing.T) *compiler.DescriptorRegistry {

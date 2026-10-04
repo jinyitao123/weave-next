@@ -42,6 +42,7 @@ import (
 )
 
 const publishedBusinessCapability = "forge:action:sales_quote.AdjustPrice"
+const publishedLeadConversionCapability = "forge:action:forge_sales_lead.sales_lead_convert_to_opportunity"
 
 type publishedBusinessModel struct{ calls int }
 
@@ -66,10 +67,89 @@ func (*publishedBusinessModel) Stream(context.Context, contract.ChatRequest) (<-
 	return nil, errors.New("unused")
 }
 
+type leadBusinessActionOnceModel struct {
+	calls                 int
+	called                bool
+	retried               bool
+	firstArgs             string
+	retryArgs             string
+	amountRequiredVisible bool
+}
+
+func (m *leadBusinessActionOnceModel) Chat(_ context.Context, request contract.ChatRequest) (*contract.ChatResponse, error) {
+	m.calls++
+	sawToolResult := false
+	for _, message := range request.Messages {
+		if message.Role == "tool" {
+			sawToolResult = true
+			if strings.Contains(message.Content, "business_receipt") {
+				return &contract.ChatResponse{Content: "The authorized business receipt was verified."}, nil
+			}
+		}
+	}
+	if sawToolResult && m.retryArgs != "" && !m.retried {
+		for _, tool := range request.Tools {
+			if strings.HasPrefix(tool.Name, "forge_forge_sales_lead_sales_lead_convert_to_opportunity_") {
+				m.retried = true
+				return &contract.ChatResponse{ToolCalls: []contract.ToolCall{{ID: "abcdef0123456789abcdef0123456789", Name: tool.Name, Args: m.retryArgs}}}, nil
+			}
+		}
+		return nil, errors.New("published lead business capability was not offered for correction")
+	}
+	if !m.called {
+		for _, tool := range request.Tools {
+			if strings.HasPrefix(tool.Name, "forge_forge_sales_lead_sales_lead_convert_to_opportunity_") {
+				var schema map[string]any
+				if json.Unmarshal(tool.InputSchema, &schema) == nil {
+					properties, _ := schema["properties"].(map[string]any)
+					params, _ := properties["params"].(map[string]any)
+					required, _ := params["required"].([]any)
+					for _, name := range required {
+						if name == "amount" {
+							m.amountRequiredVisible = true
+						}
+					}
+				}
+				m.called = true
+				return &contract.ChatResponse{ToolCalls: []contract.ToolCall{{ID: "0123456789abcdef0123456789abcdef", Name: tool.Name, Args: m.firstArgs}}}, nil
+			}
+		}
+		return nil, errors.New("published lead business capability was not offered")
+	}
+	return &contract.ChatResponse{Content: "The final lead summary is ready."}, nil
+}
+
+func (*leadBusinessActionOnceModel) Stream(context.Context, contract.ChatRequest) (<-chan contract.StreamChunk, error) {
+	return nil, errors.New("unused")
+}
+
+type leadDispatchScenario struct {
+	name                   string
+	firstArgs              string
+	retryArgs              string
+	amountRequired         bool
+	wantLeadCalls          int
+	wantForgeCalls         int32
+	wantEffects            int32
+	wantJournalToolRecords int
+	wantOutcomeStatus      string
+	reservedCallID         string
+}
+
 // The publication selector, frozen loader and workflow MemberRunner are real.
-// Only inference and the external Forge endpoint are fixtures; no test injects
-// an operation ID or installs a journal by hand.
-func TestBusinessOnlyPublicationDispatchUsesDurableProvenanceRealPG(t *testing.T) {
+// The first lead calls Forge before a v1 read-only worker runs, matching the
+// production bundle order. Only inference and Forge HTTP are fixtures; no test
+// injects an operation ID or installs a journal by hand.
+func TestBusinessLeadDispatchUsesDurableProvenanceBesideLegacyWorkerRealPG(t *testing.T) {
+	for _, scenario := range []leadDispatchScenario{
+		{name: "empty args become an object before Forge MCP validation", firstArgs: `{}`, wantLeadCalls: 3, wantForgeCalls: 1, wantOutcomeStatus: "failed", wantJournalToolRecords: 1, reservedCallID: "0123456789abcdef0123456789abcdef"},
+		{name: "missing required amount is journaled then corrected before one Forge dispatch", firstArgs: `{}`, retryArgs: `{"params":{"amount":"2300"}}`, amountRequired: true, wantLeadCalls: 4, wantForgeCalls: 1, wantEffects: 1, wantOutcomeStatus: "succeeded", wantJournalToolRecords: 2, reservedCallID: "abcdef0123456789abcdef0123456789"},
+	} {
+		t.Run(scenario.name, func(t *testing.T) { runBusinessLeadDispatchScenario(t, scenario) })
+	}
+}
+
+func runBusinessLeadDispatchScenario(t *testing.T, scenario leadDispatchScenario) {
 	t.Setenv("WEAVE_SECRET_KEY_FILE", "")
 	t.Setenv("WEAVE_SECRET_KEY", strings.Repeat("31", 32))
 	ctx := execution.WithSubject(t.Context(), execution.Subject{WorkspaceID: "ws", UserID: "user"})
@@ -88,7 +168,10 @@ func TestBusinessOnlyPublicationDispatchUsesDurableProvenanceRealPG(t *testing.T
 		t.Fatal(err)
 	}
 	var effects atomic.Int32
+	var forgeRunActionCalls atomic.Int32
 	var grant businessaction.TaskDelegationGrant
+	var runID string
+	amountRequired := scenario.amountRequired
 	forge := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Bearer fixture-task-token" {
 			t.Error("Forge did not receive the scoped task token")
@@ -99,8 +182,8 @@ func TestBusinessOnlyPublicationDispatchUsesDurableProvenanceRealPG(t *testing.T
 			_ = json.NewEncoder(w).Encode(grant)
 			return
 		}
-		if r.URL.Path == businessaction.TaskDelegationPath+"/objects/sales_quote" {
-			_, _ = io.WriteString(w, `{"type":"object","name":"sales_quote","item":{"name":"sales_quote","actions":[{"name":"AdjustPrice","params":[{"name":"line_id","type":"string","required":true},{"name":"idempotency_key","type":"string","required":true}]}]}}`)
+		if r.URL.Path == businessaction.TaskDelegationPath+"/objects/forge_sales_lead" {
+			_, _ = io.WriteString(w, fmt.Sprintf(`{"type":"object","name":"forge_sales_lead","item":{"name":"forge_sales_lead","actions":[{"name":"sales_lead_convert_to_opportunity","params":[{"name":"amount","type":"string","required":%t},{"name":"expected_close_on","type":"string","required":false}]}]}}`, amountRequired))
 			return
 		}
 		if r.URL.Path != businessaction.TaskDelegationPath+"/mcp" {
@@ -130,8 +213,9 @@ func TestBusinessOnlyPublicationDispatchUsesDurableProvenanceRealPG(t *testing.T
 		case "tools/list":
 			result = map[string]any{"tools": []map[string]any{{"name": "list_actions", "inputSchema": json.RawMessage(`{"type":"object"}`)}, {"name": "run_action", "inputSchema": json.RawMessage(`{"type":"object"}`)}}}
 		case "tools/call":
-			content := `{"actions":[{"name":"AdjustPrice","objectName":"sales_quote","label":"Adjust price","requiresRecord":true,"params":[{"name":"line_id","type":"string","required":true},{"name":"idempotency_key","type":"string","required":true}]}]}`
+			content := fmt.Sprintf(`{"actions":[{"name":"sales_lead_convert_to_opportunity","objectName":"forge_sales_lead","label":"Convert lead to opportunity","requiresRecord":true,"params":[{"name":"amount","type":"string","required":%t},{"name":"expected_close_on","type":"string","required":false}]}]}`, amountRequired)
 			if request.Params.Name == "run_action" {
+				forgeRunActionCalls.Add(1)
 				var action struct {
 					Action, Object, Record string
 					Params                 map[string]string
@@ -145,17 +229,25 @@ func TestBusinessOnlyPublicationDispatchUsesDurableProvenanceRealPG(t *testing.T
 				_ = json.Unmarshal(raw["objectName"], &action.Object)
 				_ = json.Unmarshal(raw["recordId"], &action.Record)
 				_ = json.Unmarshal(raw["params"], &action.Params)
-				if action.Action != "AdjustPrice" || action.Object != "sales_quote" || action.Record != "record-a" || action.Params["line_id"] != "line-a" || !strings.HasPrefix(action.Params["idempotency_key"], "weave-op-") {
-					t.Error("unfrozen action or missing operation key")
+				wantAmount := ""
+				if scenario.wantEffects == 1 {
+					wantAmount = "2300"
+				}
+				if action.Action != "sales_lead_convert_to_opportunity" || action.Object != "forge_sales_lead" || action.Record != "lead-1" || action.Params["amount"] != wantAmount {
+					t.Error("lead conversion request differed from the frozen tool-call fixture")
 					return
 				}
-				var journalCount, reservedCount int
-				if err := pool.QueryRow(r.Context(), `SELECT (SELECT count(*) FROM loom_store WHERE namespace='member-operation:ws' AND convert_from(value,'UTF8')::jsonb->>'kind'='tool'), (SELECT count(*) FROM weave_team_run_activity_events WHERE kind='business_action_started' AND detail->>'operation_id'=$1)`, action.Params["idempotency_key"]).Scan(&journalCount, &reservedCount); err != nil || journalCount != 1 || reservedCount != 1 {
-					t.Errorf("side effect preceded durable intent and action reservation: journal=%d reserved=%d err=%v", journalCount, reservedCount, err)
+				var journalCount, completedTools, reservedCount int
+				if err := pool.QueryRow(r.Context(), `SELECT count(*),count(*) FILTER (WHERE convert_from(value,'UTF8')::jsonb ? 'response'),(SELECT count(*) FROM weave_team_run_activity_events WHERE workspace_id='ws' AND run_id=$1 AND kind='business_action_started' AND detail->>'tool_call_id'=$2 AND COALESCE(detail->>'operation_id','')<>'') FROM loom_store WHERE namespace='member-operation:ws' AND convert_from(value,'UTF8')::jsonb->>'kind'='tool'`, runID, scenario.reservedCallID).Scan(&journalCount, &completedTools, &reservedCount); err != nil || journalCount != scenario.wantJournalToolRecords || completedTools != scenario.wantJournalToolRecords-1 || reservedCount != 1 {
+					t.Errorf("Forge dispatch lacked journal intent and action reservation: journal=%d completed=%d reserved=%d err=%v", journalCount, completedTools, reservedCount, err)
 					return
 				}
-				effects.Add(1)
-				content = `{"ok":true,"data":{"business_receipt":"receipt-one"}}`
+				if wantAmount == "" {
+					content = `{"ok":false,"error":"amount is required"}`
+				} else {
+					effects.Add(1)
+					content = `{"ok":true,"data":{"business_receipt":"receipt-one"}}`
+				}
 			} else if request.Params.Name != "list_actions" {
 				t.Errorf("unexpected tool %s", request.Params.Name)
 				return
@@ -169,23 +261,28 @@ func TestBusinessOnlyPublicationDispatchUsesDurableProvenanceRealPG(t *testing.T
 	}))
 	t.Cleanup(forge.Close)
 	key := []byte(strings.Repeat("1", 32))
-	bundle, _, saved := publishConfiguredMemberIntegrationSample(t, pool, key, "ws", "user", forge.URL, "", 0, "", "Execute the authorized adjustment.", func(record *registry.AgentRecord) {
-		record.MCPServers = nil
-		record.BusinessCapabilityIDs = []string{publishedBusinessCapability}
-	})
-	if bundle.FactoryKey != compiler.StandardFrozenToolsKey() || len(bundle.MCPBindings) != 0 || bundle.Agent.Limits.ToolLoopControl != nil {
-		t.Fatal("business-only publication did not select the existing durable contract")
+	leadBundle, workerBundle, _, saved := publishConfiguredMemberIntegrationSampleForGraph(t, pool, key, "ws", "user", forge.URL, "", 0, "", "Read the request and report the result.",
+		func(record *registry.AgentRecord) {
+			record.BusinessCapabilityIDs = []string{publishedLeadConversionCapability}
+		},
+		func(record *registry.AgentRecord) { record.MCPServers = nil },
+		func(lead, worker *registry.AgentRecord) json.RawMessage {
+			return json.RawMessage(fmt.Sprintf(`{"schema_version":1,"entry_node_id":"understand","input_contract":{"type":"text"},"output_contract":{"type":"text"},"nodes":[{"id":"understand","type":"lead","config":{"instruction":"Understand and handle the authorized action."},"inputs":{"task":{"value":{"source":"run_input","path":""},"expected_type":"text"}},"output":{"type":"text"}},{"id":"work","type":"worker","config":{"kind":"consult","agent_id":%q,"agent_version":%d,"result_requirement":"Perform read-only middle-step analysis"},"inputs":{"task":{"value":{"source":"node_output","node_id":"understand","path":""},"expected_type":"text"}},"output":{"type":"text"}},{"id":"summarize","type":"lead","config":{"instruction":"Summarize the completed work."},"inputs":{"task":{"value":{"source":"node_output","node_id":"work","path":""},"expected_type":"text"}},"output":{"type":"text"}},{"id":"deliver","type":"deliver","config":{"result":{"source":"node_output","node_id":"summarize","path":""}}}],"edges":[{"id":"a","from_node_id":"understand","to_node_id":"work","route":"success"},{"id":"b","from_node_id":"work","to_node_id":"summarize","route":"success"},{"id":"c","from_node_id":"summarize","to_node_id":"deliver","route":"success"}]}`, worker.ID, worker.Version))
+		},
+	)
+	if leadBundle.FactoryKey != compiler.StandardFrozenToolsKey() || len(leadBundle.Agent.BusinessCapabilityIDs) != 1 || workerBundle.FactoryKey != compiler.NewStandardFrozenDescriptor().Key() || len(workerBundle.Agent.BusinessCapabilityIDs) != 0 {
+		t.Fatalf("mixed business/read-only publication contract changed: lead=%+v worker=%+v", leadBundle.FactoryKey, workerBundle.FactoryKey)
 	}
 	artifacts := workflow.NewArtifactStore(pool, nil)
 	tasks := taskqueue.New(pool, nil, time.Minute)
 	snapshots := snapshot.NewStore(pool)
 	server := &Server{Store: teamDispatchPoolStore{pool: pool}, OrgStore: orgstore.NewStore(pool), Registry: agentcatalog.New(pool), Workflow: workflowcatalog.New(pool, nil, artifacts), WorkflowArtifacts: artifacts, Deliverables: deliveryverify.NewStore(pool), ScheduleTransactions: pool, Snapshots: snapshots, Tasks: tasks, Config: &config.Config{ForgeSessionURL: forge.URL + "/api/v1/auth/me"}}
 	server.KernelPublication = openAPIKernelPublication(t, ctx, pool, teamconstruction.NewPublicationAuthority(pool, nil))
-	request := dispatchInputRegistrationFixture("business-session", "Adjust the authorized record", "")
+	request := dispatchInputRegistrationFixture("business-session", "Convert the authorized lead", "")
 	version := 1
 	request.WorkflowID, request.WorkflowVersion = "flow", &version
-	request.AuthorizedBusinessCapabilityIDs = &[]string{publishedBusinessCapability}
-	request.BusinessRecord = &dispatchBusinessRecord{ObjectName: "sales_quote", RecordID: "record-a"}
+	request.AuthorizedBusinessCapabilityIDs = &[]string{publishedLeadConversionCapability}
+	request.BusinessRecord = &dispatchBusinessRecord{ObjectName: "forge_sales_lead", RecordID: "lead-1"}
 	grant = testTaskGrant(t, forge.URL, "native-user", "native-org", 1, scopeForRegistration(request))
 	registered, receipt := registerTaskInput(t, server, request, "fixture-task-token")
 	if registered.Code != http.StatusCreated {
@@ -200,6 +297,7 @@ func TestBusinessOnlyPublicationDispatchUsesDurableProvenanceRealPG(t *testing.T
 	if err := json.Unmarshal(response.Body.Bytes(), &dispatched); err != nil {
 		t.Fatal(err)
 	}
+	runID = dispatched.RunID
 	members, err := loomruntime.NewMemberRunner(storeext.New(pool))
 	if err != nil {
 		t.Fatal(err)
@@ -208,13 +306,12 @@ func TestBusinessOnlyPublicationDispatchUsesDurableProvenanceRealPG(t *testing.T
 	runs.Transactions = pool
 	checkpoints := teamrun.NewPGCheckpointStore()
 	activities := &teamrun.PGActivityStore{Transactions: pool}
-	model := &publishedBusinessModel{}
+	leadModel, workerModel := &leadBusinessActionOnceModel{firstArgs: scenario.firstArgs, retryArgs: scenario.retryArgs}, &memberIntegrationModel{}
 	host := workflow.RuntimeHostFactoryFunc(func(_ context.Context, candidate frozen.FrozenExecutionBundle, _ workflow.RuntimeCredentialResolver) (compiler.FrozenBuildOpts, io.Closer, error) {
-		var llm contract.LLM = &memberIntegrationModel{}
-		if candidate.Agent.AgentID == bundle.Agent.AgentID {
-			llm = model
+		if candidate.Agent.AgentID == leadBundle.Agent.AgentID {
+			return compiler.FrozenBuildOpts{LLM: leadModel, Tools: &memberIntegrationExport{}}, io.NopCloser(strings.NewReader("")), nil
 		}
-		return compiler.FrozenBuildOpts{LLM: llm, Tools: &memberIntegrationExport{}}, io.NopCloser(strings.NewReader("")), nil
+		return compiler.FrozenBuildOpts{LLM: workerModel, Tools: &memberIntegrationExport{}}, io.NopCloser(strings.NewReader("")), nil
 	})
 	runtime := &teamrun.WorkflowSerialRuntime{OutputRecorder: deliveryverify.NewStore(pool), Members: members, Artifacts: artifacts, Loader: &workflow.RuntimeLoader{Registry: memberIntegrationDescriptors(t)}, HostFactory: businessaction.Factory{Inner: host, Store: businessaction.NewStore(pool, tasks, key)}, CredentialResolvers: func(string) (workflow.RuntimeCredentialResolver, error) { return memberIntegrationSecrets{}, nil }, Transactions: pool, Runs: runs, Checkpoints: checkpoints, Tasks: tasks, Snapshots: snapshots, Activities: activities}
 	executor := &teamrun.Executor{Tasks: tasks, Transactions: pool, Runs: runs, Checkpoints: checkpoints, Runtime: runtime, Consumer: &teamrun.Consumer{Transactions: pool, Snapshots: snapshots, Runs: runs, Tasks: tasks}}
@@ -222,20 +319,34 @@ func TestBusinessOnlyPublicationDispatchUsesDurableProvenanceRealPG(t *testing.T
 		t.Fatalf("execute=%v err=%v", ok, err)
 	}
 	finished, err := runs.Get(ctx, "ws", dispatched.RunID)
-	if err != nil || finished.Status != teamrun.StatusSucceeded || effects.Load() != 1 || model.calls != 2 {
-		t.Fatalf("run=%+v effects=%d model=%d err=%v", finished, effects.Load(), model.calls, err)
+	if err != nil || finished.Status != teamrun.StatusSucceeded || effects.Load() != scenario.wantEffects || forgeRunActionCalls.Load() != scenario.wantForgeCalls || leadModel.calls != scenario.wantLeadCalls || leadModel.amountRequiredVisible != scenario.amountRequired || workerModel.calls != 1 {
+		t.Fatalf("run status=%s effects=%d Forge calls=%d lead model=%d worker model=%d amount-required-visible=%v err=%v", finished.Status, effects.Load(), forgeRunActionCalls.Load(), leadModel.calls, workerModel.calls, leadModel.amountRequiredVisible, err)
 	}
 	events, err := activities.ListBusinessActionEvents(ctx, "ws", dispatched.RunID)
 	if err != nil {
 		t.Fatal(err)
 	}
+	if len(events) != 2 || events[0].Kind != "business_action_started" || events[1].Kind != "business_action_result" {
+		t.Fatalf("lead action did not persist a start/result pair: events=%+v", events)
+	}
+	var started, result businessaction.ActionOutcomeEvent
+	if json.Unmarshal(events[0].Detail, &started) != nil || json.Unmarshal(events[1].Detail, &result) != nil ||
+		started.Phase != "started" || result.Phase != "result" ||
+		started.InvocationID == "" || started.OperationSlot == "" || started.OperationID == "" ||
+		started.InvocationID != result.InvocationID || started.OperationSlot != result.OperationSlot || started.OperationID != result.OperationID {
+		t.Fatalf("lead action lost invocation or durable-slot provenance: started=%+v result=%+v", started, result)
+	}
 	outcomes, err := teamrun.ProjectBusinessActionOutcomes(events)
-	if err != nil || len(outcomes) != 1 || outcomes[0].Status != "succeeded" {
+	if err != nil || len(outcomes) != 1 || outcomes[0].Status != scenario.wantOutcomeStatus {
 		t.Fatalf("outcomes=%+v err=%v", outcomes, err)
 	}
 	var memberCount int
-	if err := pool.QueryRow(ctx, `SELECT count(*) FROM weave_workflow_member_runs WHERE workspace_id='ws' AND parent_run_id=$1`, dispatched.RunID).Scan(&memberCount); err != nil || memberCount != 1 {
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM weave_workflow_member_runs WHERE workspace_id='ws' AND parent_run_id=$1`, dispatched.RunID).Scan(&memberCount); err != nil || memberCount != 2 {
 		t.Fatalf("member count=%d err=%v", memberCount, err)
+	}
+	var toolOperations, completedToolOperations int
+	if err := pool.QueryRow(ctx, `SELECT count(*),count(*) FILTER (WHERE convert_from(value,'UTF8')::jsonb ? 'response') FROM loom_store WHERE namespace='member-operation:ws' AND convert_from(value,'UTF8')::jsonb->>'kind'='tool'`).Scan(&toolOperations, &completedToolOperations); err != nil || toolOperations != scenario.wantJournalToolRecords || completedToolOperations != scenario.wantJournalToolRecords {
+		t.Fatalf("member journal did not preserve every tool response: tool operations=%d completed=%d err=%v", toolOperations, completedToolOperations, err)
 	}
 	assertUnsupportedBusinessArtifactsRejectedBeforeHosts(t, saved)
 	flows := workflowcatalog.New(pool, nil, artifacts)
@@ -243,7 +354,7 @@ func TestBusinessOnlyPublicationDispatchUsesDurableProvenanceRealPG(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = flows.UpdateDraft(ctx, "ws", "flow", draft.Version, draft.UpdatedAt, workflow.DraftInput{CreatedBy: "user", TriggerConfig: draft.TriggerConfig, GraphDefinition: businessParallelGraph(bundle.Agent.AgentID, bundle.Agent.AgentVersion)})
+	_, err = flows.UpdateDraft(ctx, "ws", "flow", draft.Version, draft.UpdatedAt, workflow.DraftInput{CreatedBy: "user", TriggerConfig: draft.TriggerConfig, GraphDefinition: businessParallelGraph(leadBundle.Agent.AgentID, leadBundle.Agent.AgentVersion)})
 	if err != nil {
 		t.Fatal(err)
 	}
