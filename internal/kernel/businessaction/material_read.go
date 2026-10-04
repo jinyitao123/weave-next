@@ -20,6 +20,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jinyitao123/loom/contract"
 	"github.com/jinyitao123/weave/internal/base/execution"
+	"github.com/jinyitao123/weave/internal/kernel/fanout"
 	"github.com/jinyitao123/weave/internal/kernel/mcphost"
 )
 
@@ -154,6 +155,33 @@ type materialReadArguments struct {
 	SHA256     string `json:"sha256"`
 	Offset     *int   `json:"offset,omitempty"`
 	MaxBytes   *int   `json:"maxBytes,omitempty"`
+}
+
+type fanoutMaterialReadWait struct {
+	WaitType    string `json:"wait_type"`
+	Parked      bool   `json:"parked"`
+	IntentID    string `json:"intent_id"`
+	GroupID     string `json:"group_id"`
+	Generation  string `json:"generation"`
+	ResumeToken string `json:"resume_token"`
+	ParentRunID string `json:"parent_run_id"`
+	JoinNodeID  string `json:"join_node_id"`
+}
+
+type fanoutMaterialReadTask struct {
+	SchemaVersion int             `json:"schema_version"`
+	Kind          string          `json:"kind"`
+	WorkspaceID   string          `json:"workspace_id"`
+	ParentRunID   string          `json:"parent_run_id"`
+	IntentID      string          `json:"intent_id"`
+	GroupID       string          `json:"group_id"`
+	LegID         string          `json:"leg_id"`
+	BranchID      string          `json:"branch_id"`
+	BranchOrdinal int             `json:"branch_ordinal"`
+	Generation    string          `json:"generation"`
+	FrozenBundle  json.RawMessage `json:"frozen_bundle_ref"`
+	Input         json.RawMessage `json:"input_ref"`
+	MayYieldProof json.RawMessage `json:"may_yield_proof"`
 }
 
 type materialReadResult struct {
@@ -316,6 +344,7 @@ func (s *Store) loadFrozenMaterialReadScope(ctx context.Context) (frozenMaterial
 	var inputRevisionID, inputWorkflowID, inputTeamID, inputConsumedRunID string
 	var delegationWorkflowID, deliveryInputRevisionID, deliveryRunID, deliverySnapshotID, deliveryWorkflowID string
 	var runID, runSnapshotID, runWorkflowID, runTeamID, runStatus, queueRunSnapshotID string
+	var queueSource string
 	var inputWorkflowVersion, delegationWorkflowVersion, deliveryWorkflowVersion, runWorkflowVersion int
 	var grantID string
 	var generation int64
@@ -323,7 +352,7 @@ func (s *Store) loadFrozenMaterialReadScope(ctx context.Context) (frozenMaterial
 		input.team_id,input.consumed_run_id,delegation.resources,delegation.expires_at,delegation.workflow_id,
 		delegation.workflow_version,delivery.input_revision_id,COALESCE(delivery.run_id,''),delivery.run_snapshot_id,
 		delivery.workflow_id,delivery.workflow_version,run.run_id,run.run_snapshot_id,run.workflow_id,
-		run.workflow_version,run.team_id,run.status,q.run_snapshot_id,delegation.grant_id,delegation.refresh_generation
+		run.workflow_version,run.team_id,run.status,q.run_snapshot_id,q.source,delegation.grant_id,delegation.refresh_generation
 		FROM weave_task_queue AS q
 		JOIN weave_team_runs AS run
 		  ON run.workspace_id=q.workspace_id AND run.run_snapshot_id=q.run_snapshot_id
@@ -340,7 +369,7 @@ func (s *Store) loadFrozenMaterialReadScope(ctx context.Context) (frozenMaterial
 		&inputTeamID, &inputConsumedRunID, &resourcesJSON, &scope.ExpiresAt, &delegationWorkflowID,
 		&delegationWorkflowVersion, &deliveryInputRevisionID, &deliveryRunID, &deliverySnapshotID,
 		&deliveryWorkflowID, &deliveryWorkflowVersion, &runID, &runSnapshotID, &runWorkflowID,
-		&runWorkflowVersion, &runTeamID, &runStatus, &queueRunSnapshotID, &grantID, &generation,
+		&runWorkflowVersion, &runTeamID, &runStatus, &queueRunSnapshotID, &queueSource, &grantID, &generation,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return frozenMaterialReadScope{}, nil, "", false, nil
@@ -353,8 +382,15 @@ func (s *Store) loadFrozenMaterialReadScope(ctx context.Context) (frozenMaterial
 		queueRunSnapshotID != runSnapshotID || inputTeamID != runTeamID ||
 		inputWorkflowID != runWorkflowID || delegationWorkflowID != runWorkflowID || deliveryWorkflowID != runWorkflowID ||
 		inputWorkflowVersion != runWorkflowVersion || deliveryWorkflowVersion != runWorkflowVersion ||
-		delegationWorkflowVersion != runWorkflowVersion || runStatus != "running" ||
+		delegationWorkflowVersion != runWorkflowVersion ||
 		runID == "" || runSnapshotID == "" {
+		return frozenMaterialReadScope{}, nil, "", false, nil
+	}
+	if queueSource == "fanout" {
+		if !s.fanoutMaterialReadScopeMatches(ctx, tx, current, runID, runSnapshotID, runWorkflowID, runWorkflowVersion) {
+			return frozenMaterialReadScope{}, nil, "", false, nil
+		}
+	} else if runStatus != "running" {
 		return frozenMaterialReadScope{}, nil, "", false, nil
 	}
 	if grantID == "" {
@@ -389,6 +425,158 @@ func (s *Store) loadFrozenMaterialReadScope(ctx context.Context) (frozenMaterial
 		}
 	}
 	return scope, files, string(task), len(files) > 0, nil
+}
+
+// fanoutMaterialReadScopeMatches admits a material read from a currently
+// claimed workflow leg only while its exact parent fanout is still parked.
+// The parent attempt may already have released its lease after yielding; its
+// immutable attempt identity and yielded checkpoint marker remain the fence.
+func (s *Store) fanoutMaterialReadScopeMatches(
+	ctx context.Context,
+	tx pgx.Tx,
+	current execution.CurrentTask,
+	parentRunID, runSnapshotID, workflowID string,
+	workflowVersion int,
+) bool {
+	var source, kind, identityKind, contextKey, queueSnapshotID string
+	var identitySchemaVersion, queueWorkflowVersion int
+	var queueWorkflowID, parentStatus, waitKind string
+	var payloadRaw, actorSubjectRaw, waitRaw, resumeTokenHash []byte
+	var resumeGeneration, executionLeaseEpoch int64
+	var cancelRequestedAt, terminalAt *time.Time
+	err := tx.QueryRow(ctx, `SELECT q.source,q.kind,q.identity_kind,q.identity_schema_version,
+		COALESCE(q.context_key,''),COALESCE(q.workflow_id,''),COALESCE(q.workflow_version,0),
+		COALESCE(q.run_snapshot_id,''),q.payload,q.actor_subject,parent.status,
+		COALESCE(parent.wait_kind,''),parent.wait_detail,parent.resume_token_hash,
+		parent.resume_generation,parent.execution_lease_epoch,parent.cancel_requested_at,parent.terminal_at
+		FROM weave_task_queue AS q
+		JOIN weave_team_runs AS parent ON parent.workspace_id=q.workspace_id AND parent.run_id=$3
+		WHERE q.workspace_id=$1 AND q.id=$2`, current.WorkspaceID, current.ID, parentRunID).Scan(
+		&source, &kind, &identityKind, &identitySchemaVersion, &contextKey, &queueWorkflowID,
+		&queueWorkflowVersion, &queueSnapshotID, &payloadRaw, &actorSubjectRaw, &parentStatus,
+		&waitKind, &waitRaw, &resumeTokenHash, &resumeGeneration, &executionLeaseEpoch,
+		&cancelRequestedAt, &terminalAt,
+	)
+	if err != nil || source != "fanout" || kind != "team_workflow" || identityKind != "team_workflow" ||
+		identitySchemaVersion != 2 || parentStatus != "parked" || waitKind != "fanout" ||
+		cancelRequestedAt != nil || terminalAt != nil || len(waitRaw) == 0 || len(resumeTokenHash) == 0 ||
+		queueWorkflowID != workflowID || queueWorkflowVersion != workflowVersion || queueSnapshotID != runSnapshotID {
+		return false
+	}
+	var actorSubject execution.Subject
+	if json.Unmarshal(actorSubjectRaw, &actorSubject) != nil || actorSubject != current.Subject {
+		return false
+	}
+	var wait fanoutMaterialReadWait
+	if decodeMaterialReadJSON(waitRaw, &wait) != nil || wait.WaitType != "fanout_group" || !wait.Parked ||
+		wait.ParentRunID != parentRunID || wait.JoinNodeID == "" || wait.IntentID == "" ||
+		wait.GroupID == "" || wait.Generation == "" || wait.ResumeToken == "" || contextKey != wait.GroupID {
+		return false
+	}
+	resumeDigest := sha256.Sum256([]byte(wait.ResumeToken))
+	if !equalBytes(resumeDigest[:], resumeTokenHash) {
+		return false
+	}
+	var leg fanoutMaterialReadTask
+	if decodeMaterialReadJSON(payloadRaw, &leg) != nil || leg.SchemaVersion != 1 || leg.Kind != "fanout_leg" ||
+		leg.WorkspaceID != current.WorkspaceID || leg.ParentRunID != parentRunID || leg.IntentID != wait.IntentID ||
+		leg.GroupID != wait.GroupID || leg.LegID == "" || leg.BranchID == "" || leg.BranchOrdinal < 0 ||
+		leg.Generation != wait.Generation || len(leg.FrozenBundle) == 0 || len(leg.Input) == 0 || len(leg.MayYieldProof) == 0 {
+		return false
+	}
+	taskID, err := fanout.DeriveLegTaskID(leg.GroupID, leg.BranchID, leg.Generation)
+	if err != nil || taskID != current.ID {
+		return false
+	}
+	var actorJSON []byte
+	actorJSON, err = json.Marshal(current.Subject)
+	if err != nil {
+		return false
+	}
+	var valid bool
+	err = tx.QueryRow(ctx, `SELECT EXISTS (
+		SELECT 1
+		FROM weave_task_queue AS q
+		JOIN weave_team_runs AS parent
+		  ON parent.workspace_id=q.workspace_id AND parent.run_id=$3
+		JOIN weave_team_run_snapshots AS snapshot
+		  ON snapshot.workspace_id=parent.workspace_id AND snapshot.run_id=parent.run_snapshot_id
+		JOIN weave_fanout_intent AS intent
+		  ON intent.workspace_id=q.workspace_id AND intent.intent_id=$4
+		JOIN weave_fanout_group AS grp
+		  ON grp.workspace_id=intent.workspace_id AND grp.group_id=$5 AND grp.intent_id=intent.intent_id
+		JOIN weave_fanout_leg AS leg
+		  ON leg.workspace_id=grp.workspace_id AND leg.group_id=grp.group_id AND leg.leg_id=$6
+		JOIN weave_run_attempt_leases AS attempt
+		  ON attempt.workspace_id=parent.workspace_id AND attempt.run_id=parent.run_id
+		JOIN weave_run_terminal_markers AS marker
+		  ON marker.workspace_id=parent.workspace_id AND marker.run_id=parent.run_id
+		WHERE q.workspace_id=$1 AND q.id=$2 AND q.source='fanout' AND q.kind='team_workflow'
+		  AND q.identity_kind='team_workflow' AND q.identity_schema_version=2
+		  AND q.workflow_id=$7 AND q.workflow_version=$8 AND q.run_snapshot_id=$9
+		  AND q.context_key=$5 AND q.payload=$10::jsonb AND q.actor_subject=$11::jsonb
+		  AND snapshot.actor_subject=q.actor_subject AND snapshot.actor_subject->>'user_id'=$12
+		  AND parent.status='parked' AND parent.wait_kind='fanout' AND parent.wait_detail=$13::jsonb
+		  AND parent.wait_detail->>'wait_type'='fanout_group' AND parent.wait_detail->>'parked'='true'
+		  AND parent.wait_detail->>'intent_id'=$4 AND parent.wait_detail->>'group_id'=$5
+		  AND parent.wait_detail->>'generation'=$14 AND parent.wait_detail->>'parent_run_id'=$3
+		  AND parent.wait_detail->>'resume_token'=$15 AND parent.wait_detail->>'join_node_id'=$16
+		  AND parent.cancel_requested_at IS NULL AND parent.terminal_at IS NULL
+		  AND parent.workflow_id=$7 AND parent.workflow_version=$8 AND parent.run_snapshot_id=$9
+		  AND parent.resume_generation=$17 AND parent.execution_lease_epoch=$18
+		  AND parent.resume_token_hash=$19
+		  AND intent.parent_run_id=parent.run_id AND intent.workflow_id=parent.workflow_id
+		  AND intent.workflow_version=parent.workflow_version AND intent.run_snapshot_id=parent.run_snapshot_id
+		  AND intent.generation=$14 AND intent.status='active' AND intent.checkpoint_sequence=parent.resume_generation
+		  AND intent.creator_epoch=parent.execution_lease_epoch
+		  AND intent.creator_attempt_generation=attempt.attempt_generation
+		  AND intent.creator_attempt_id=attempt.attempt_id AND attempt.attempt_generation=marker.attempt_generation
+		  AND attempt.attempt_id=marker.attempt_id
+		  AND marker.phase='yielded' AND marker.status='yielded' AND marker.source='normal'
+		  AND marker.evidence_kind='checkpoint' AND marker.checkpoint_seq=parent.resume_generation
+		  AND marker.attribution_scope='fixed_workflow' AND marker.workflow_id=parent.workflow_id
+		  AND marker.workflow_version=parent.workflow_version AND marker.run_snapshot_id=parent.run_snapshot_id
+		  AND grp.mode='workflow_resume' AND grp.status='active' AND grp.generation=$14
+		  AND leg.generation=$14 AND leg.branch_id=$20 AND leg.branch_ordinal=$21
+		  AND leg.status IN ('queued','running')
+		  AND leg.frozen_bundle_ref=q.payload->'frozen_bundle_ref'
+		  AND leg.input_ref=q.payload->'input_ref' AND leg.may_yield_proof=q.payload->'may_yield_proof'
+		  AND q.payload->>'schema_version'='1' AND q.payload->>'kind'='fanout_leg'
+		  AND q.payload->>'workspace_id'=$1 AND q.payload->>'parent_run_id'=$3
+		  AND q.payload->>'intent_id'=$4 AND q.payload->>'group_id'=$5 AND q.payload->>'leg_id'=$6
+		AND q.payload->>'branch_id'=$20 AND q.payload->>'branch_ordinal'=$21::text
+		AND q.payload->>'generation'=$14
+	)`, current.WorkspaceID, current.ID, parentRunID, wait.IntentID, wait.GroupID, leg.LegID,
+		workflowID, workflowVersion, runSnapshotID, string(payloadRaw), string(actorJSON), current.Subject.UserID,
+		string(waitRaw), wait.Generation, wait.ResumeToken, wait.JoinNodeID, resumeGeneration, executionLeaseEpoch, resumeTokenHash,
+		leg.BranchID, leg.BranchOrdinal).Scan(&valid)
+	return err == nil && valid
+}
+
+func decodeMaterialReadJSON(raw []byte, target any) error {
+	decoder := json.NewDecoder(strings.NewReader(string(raw)))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(target); err != nil {
+		return err
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return errors.New("multiple JSON values")
+		}
+		return err
+	}
+	return nil
+}
+
+func equalBytes(left, right []byte) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	var diff byte
+	for index := range left {
+		diff |= left[index] ^ right[index]
+	}
+	return diff == 0
 }
 
 func (s *Store) frozenMaterialReadScopeActive(ctx context.Context, expected frozenMaterialReadScope) bool {

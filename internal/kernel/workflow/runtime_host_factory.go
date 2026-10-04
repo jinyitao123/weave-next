@@ -77,24 +77,68 @@ func ObserveRuntimeTools(inner RuntimeHostFactory, observer RuntimeToolObserver)
 	if inner == nil || observer == nil {
 		return inner
 	}
-	return RuntimeHostFactoryFunc(func(ctx context.Context, bundle frozen.FrozenExecutionBundle, resolver RuntimeCredentialResolver) (compiler.FrozenBuildOpts, io.Closer, error) {
-		opts, closer, err := inner.Build(ctx, bundle, resolver)
-		if err != nil {
-			return opts, closer, err
+	observed := observedRuntimeHostFactory{inner: inner, observer: observer}
+	if withLLM, ok := inner.(RuntimeHostFactoryWithLLM); ok {
+		return observedRuntimeHostFactoryWithLLM{
+			observedRuntimeHostFactory: observed,
+			innerWithLLM:               withLLM,
 		}
-		opts.Hooks.ToolHooks = append(opts.Hooks.ToolHooks, contract.ToolHook{
-			Pre: func(ctx context.Context, call contract.ToolCall) (contract.ToolCall, error) {
-				observer(ctx, RuntimeToolEvent{Kind: "tool_started", Tool: call.Name, CallID: call.ID})
-				return call, nil
-			},
-			Post: func(ctx context.Context, call contract.ToolCall, result *contract.ToolResult) error {
-				observer(ctx, RuntimeToolEvent{Kind: "tool_completed", Tool: call.Name, CallID: call.ID,
-					ResultError: result != nil && result.IsError})
-				return nil
-			},
-		})
-		return opts, closer, nil
+	}
+	return observed
+}
+
+type observedRuntimeHostFactory struct {
+	inner    RuntimeHostFactory
+	observer RuntimeToolObserver
+}
+
+func (f observedRuntimeHostFactory) Build(
+	ctx context.Context,
+	bundle frozen.FrozenExecutionBundle,
+	resolver RuntimeCredentialResolver,
+) (compiler.FrozenBuildOpts, io.Closer, error) {
+	opts, closer, err := f.inner.Build(ctx, bundle, resolver)
+	return f.observe(opts, closer, err)
+}
+
+func (f observedRuntimeHostFactory) observe(
+	opts compiler.FrozenBuildOpts,
+	closer io.Closer,
+	err error,
+) (compiler.FrozenBuildOpts, io.Closer, error) {
+	if err != nil {
+		return opts, closer, err
+	}
+	opts.Hooks.ToolHooks = append(opts.Hooks.ToolHooks, contract.ToolHook{
+		Pre: func(ctx context.Context, call contract.ToolCall) (contract.ToolCall, error) {
+			f.observer(ctx, RuntimeToolEvent{Kind: "tool_started", Tool: call.Name, CallID: call.ID})
+			return call, nil
+		},
+		Post: func(ctx context.Context, call contract.ToolCall, result *contract.ToolResult) error {
+			f.observer(ctx, RuntimeToolEvent{Kind: "tool_completed", Tool: call.Name, CallID: call.ID,
+				ResultError: result != nil && result.IsError})
+			return nil
+		},
 	})
+	return opts, closer, nil
+}
+
+// Keep BuildWithLLM conditional on the wrapped factory's original capability.
+// RuntimeLoader uses this interface to preserve host decorators when it supplies
+// inference for providerless Loom members.
+type observedRuntimeHostFactoryWithLLM struct {
+	observedRuntimeHostFactory
+	innerWithLLM RuntimeHostFactoryWithLLM
+}
+
+func (f observedRuntimeHostFactoryWithLLM) BuildWithLLM(
+	ctx context.Context,
+	bundle frozen.FrozenExecutionBundle,
+	resolver RuntimeCredentialResolver,
+	llm contract.LLM,
+) (compiler.FrozenBuildOpts, io.Closer, error) {
+	opts, closer, err := f.innerWithLLM.BuildWithLLM(ctx, bundle, resolver, llm)
+	return f.observe(opts, closer, err)
 }
 
 func buildRuntimeHosts(
