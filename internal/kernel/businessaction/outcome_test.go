@@ -224,6 +224,109 @@ func TestAmbiguousNativeErrorsKeepTargetBlockedAcrossContinuousOperations(t *tes
 	}
 }
 
+type controlledOutcomeTestHost struct {
+	toolContract       *mcphost.ToolContract
+	requiredParam      string
+	startBeforeRequest bool
+	forgeCalls         int
+	paramsObject       bool
+	result             *contract.ToolResult
+	err                error
+}
+
+func newControlledOutcomeTestHost(t *testing.T, requiredParam string) *controlledOutcomeTestHost {
+	t.Helper()
+	toolContract, err := mcphost.NewToolContract([]contract.ToolDef{{
+		Name:        "run_action",
+		InputSchema: json.RawMessage(`{"type":"object","properties":{"actionName":{"type":"string"},"objectName":{"type":"string"},"recordId":{"type":"string"},"params":{"type":"object"}},"required":["actionName","objectName"],"additionalProperties":false}`),
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &controlledOutcomeTestHost{toolContract: toolContract, requiredParam: requiredParam}
+}
+
+func (host *controlledOutcomeTestHost) ListTools(context.Context) ([]contract.ToolDef, error) {
+	return nil, nil
+}
+func (host *controlledOutcomeTestHost) Dispatch(ctx context.Context, call contract.ToolCall) (*contract.ToolResult, error) {
+	return host.DispatchWithStart(ctx, call, nil)
+}
+func (host *controlledOutcomeTestHost) DispatchWithStart(ctx context.Context, call contract.ToolCall, start func(context.Context) error) (*contract.ToolResult, error) {
+	if rejected := host.toolContract.Validate(call); rejected != nil {
+		return rejected, nil
+	}
+	var input struct {
+		Params map[string]any `json:"params"`
+	}
+	if err := json.Unmarshal([]byte(call.Args), &input); err != nil {
+		return nil, err
+	}
+	host.paramsObject = input.Params != nil
+	if host.requiredParam != "" {
+		if _, present := input.Params[host.requiredParam]; !present {
+			return &contract.ToolResult{CallID: call.ID, ToolName: call.Name, Content: `{"error":"required action parameter missing"}`, IsError: true}, nil
+		}
+	}
+	if host.startBeforeRequest && start != nil {
+		if err := start(ctx); err != nil {
+			return nil, err
+		}
+		host.forgeCalls++
+	}
+	if host.result != nil {
+		result := *host.result
+		result.CallID, result.ToolName = call.ID, call.Name
+		return &result, host.err
+	}
+	return &contract.ToolResult{CallID: call.ID, ToolName: call.Name, Content: `{"ok":true}`}, host.err
+}
+
+func TestControlledForgeRequiredPreDispatchRejectionIsReturnedWithCallerIdentity(t *testing.T) {
+	var events []ActionOutcomeEvent
+	host := newControlledOutcomeTestHost(t, "amount")
+	dispatcher, call := newTrackedOutcomeDispatcher(t, host)
+	ctx := outcomeTestContext(&events, func(context.Context, ActionOutcomeEvent) (ActionOutcomeReplay, error) {
+		return ActionOutcomeReplay{}, nil
+	}, nil)
+
+	result, err := dispatcher.Dispatch(ctx, call)
+	if err != nil || result == nil || !result.IsError || result.CallID != call.ID || result.ToolName != call.Name ||
+		!host.paramsObject || host.forgeCalls != 0 || len(events) != 0 {
+		t.Fatalf("pre-dispatch rejection lost caller identity or reached Forge: result=%+v calls=%d paramsObject=%v events=%+v err=%v", result, host.forgeCalls, host.paramsObject, events, err)
+	}
+}
+
+func TestControlledForgeNoStartSuccessStaysFailClosedAndStartedUnknownStaysUnknown(t *testing.T) {
+	t.Run("success without reservation", func(t *testing.T) {
+		var events []ActionOutcomeEvent
+		host := newControlledOutcomeTestHost(t, "")
+		host.result = &contract.ToolResult{Content: `{"ok":true}`}
+		dispatcher, call := newTrackedOutcomeDispatcher(t, host)
+		ctx := outcomeTestContext(&events, func(context.Context, ActionOutcomeEvent) (ActionOutcomeReplay, error) {
+			return ActionOutcomeReplay{}, nil
+		}, nil)
+		if _, err := dispatcher.Dispatch(ctx, call); err == nil || !strings.Contains(err.Error(), "durable dispatch reservation") || host.forgeCalls != 0 || len(events) != 0 {
+			t.Fatalf("unreserved success was accepted: calls=%d events=%+v err=%v", host.forgeCalls, events, err)
+		}
+	})
+
+	t.Run("started unknown", func(t *testing.T) {
+		var events []ActionOutcomeEvent
+		host := newControlledOutcomeTestHost(t, "")
+		host.startBeforeRequest = true
+		host.err = fmt.Errorf("%w: connection closed", mcphost.ErrDispatchOutcomeUnknown)
+		dispatcher, call := newTrackedOutcomeDispatcher(t, host)
+		ctx := outcomeTestContext(&events, func(context.Context, ActionOutcomeEvent) (ActionOutcomeReplay, error) {
+			return ActionOutcomeReplay{}, nil
+		}, nil)
+		result, err := dispatcher.Dispatch(ctx, call)
+		if err != nil || result == nil || !result.IsError || !result.StopLoop || host.forgeCalls != 1 || len(events) != 2 || events[1].Status != ActionOutcomeStatusUnknown {
+			t.Fatalf("started unknown was not preserved: result=%+v calls=%d events=%+v err=%v", result, host.forgeCalls, events, err)
+		}
+	})
+}
+
 func TestForgeActionTreatsTypedMCPFailureAsFailed(t *testing.T) {
 	var events []ActionOutcomeEvent
 	host := &outcomeTestHost{err: fmt.Errorf("%w: action rejected", mcphost.ErrDispatchExplicitFailure)}

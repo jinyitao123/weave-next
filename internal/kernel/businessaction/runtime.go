@@ -440,6 +440,15 @@ type dispatcher struct {
 	inputRevisionID string
 }
 
+// controlledActionHost must invoke the supplied start callback immediately
+// before its first Forge business-action request. Authorization reads and MCP
+// initialization/tool discovery may precede it. An error ToolResult returned
+// without invoking start is a local pre-dispatch rejection and proves no
+// business action request ran.
+type controlledActionHost interface {
+	DispatchWithStart(context.Context, contract.ToolCall, func(context.Context) error) (*contract.ToolResult, error)
+}
+
 type action struct {
 	capabilityID, objectName, actionName, label string
 	idempotencyParams                           []string
@@ -1041,6 +1050,9 @@ func (d *dispatcher) Dispatch(ctx context.Context, call contract.ToolCall) (*con
 	if err := decoder.Decode(&input); err != nil {
 		return &contract.ToolResult{CallID: call.ID, ToolName: call.Name, Content: "业务动作参数无效", IsError: true}, nil
 	}
+	if input.Params == nil {
+		input.Params = map[string]any{}
+	}
 	if err := validateFileParameterSelections(input.Params, d.fileSelections[call.Name]); err != nil {
 		return &contract.ToolResult{CallID: call.ID, ToolName: call.Name, Content: "本轮冻结文件选择无效：" + err.Error(), IsError: true}, nil
 	}
@@ -1058,9 +1070,7 @@ func (d *dispatcher) Dispatch(ctx context.Context, call contract.ToolCall) (*con
 		input.Params[name] = value
 	}
 	var outcome ActionOutcomeEvent
-	controlledHost, controlled := d.host.(interface {
-		DispatchWithStart(context.Context, contract.ToolCall, func(context.Context) error) (*contract.ToolResult, error)
-	})
+	controlledHost, controlled := d.host.(controlledActionHost)
 	started := false
 	reserve := func(reserveCtx context.Context) error {
 		outcome.Phase = "started"
@@ -1152,6 +1162,13 @@ func (d *dispatcher) Dispatch(ctx context.Context, call contract.ToolCall) (*con
 			}
 			if err != nil {
 				return nil, err
+			}
+			if result != nil && result.IsError {
+				// Controlled hosts must call reserve before any Forge request. A
+				// bounded error result without that reservation is a local
+				// pre-dispatch rejection, not an unknown business outcome.
+				result.CallID, result.ToolName = call.ID, call.Name
+				return result, nil
 			}
 			return nil, errors.New("Forge action did not establish a durable dispatch reservation")
 		}
