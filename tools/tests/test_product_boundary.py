@@ -41,10 +41,14 @@ class ProductBoundaryTests(unittest.TestCase):
             "internal/build/teambuild/store.go",
             "internal/app/teamtemplates/catalog.go",
             "internal/app/metateam/members.go",
+            "internal/app/designseed/seed.go",
+            "internal/app/api/team_templates.go",
+            "internal/app/teamconstruction/dispatch.go",
+            "scripts/capability-browser-acceptance.mjs",
         ):
             self.source(name, "retired")
         errors = check(self.root)
-        self.assertEqual(len(errors), 7, errors)
+        self.assertEqual(len(errors), 11, errors)
 
     def test_all_six_retired_documents_are_rejected(self):
         for name in (

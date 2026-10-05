@@ -18,6 +18,7 @@ RETIRED_PATHS = (
     "workbench",
     "Dockerfile.workbench",
     "scripts/install-weave.sh",
+    "scripts/capability-browser-acceptance.mjs",
     "templates",
     "internal/build",
     "internal/app/teamtemplates",
@@ -25,6 +26,14 @@ RETIRED_PATHS = (
     "internal/app/teamrestore",
     "internal/app/teamassets",
     "internal/app/metateam",
+    "internal/app/designseed",
+    *(
+        f"internal/app/teamconstruction/{name}.go"
+        for name in (
+            "candidate_evidence", "compiler_operations", "dispatch", "phases",
+            "publication_build_effect",
+        )
+    ),
     "weave-app",
     "internal/app/webui",
     "scripts/sync-webui.py",
@@ -34,6 +43,11 @@ RETIRED_PATHS = (
             "conversations", "threads", "flags", "mcp_proxy", "projects",
             "project_resources", "project_memories", "sessions", "channels",
             "events", "fork", "sources", "task_groups",
+            "retired_routes", "team_assembler", "team_blueprint_planning",
+            "team_build_authorization_token", "team_build_run_control",
+            "team_build_runs", "team_declarative_workflow_planning",
+            "team_evaluations", "team_templates", "teamforge_wiring",
+            "terminal_outcome",
         )
     ),
     "internal/base/realtime",

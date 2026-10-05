@@ -42,7 +42,7 @@ func TestCLIConstructionRemainsBehindRuntimeHost(t *testing.T) {
 			ast.Inspect(f, func(node ast.Node) bool {
 				switch n := node.(type) {
 				case *ast.SelectorExpr:
-					if ident, ok := n.X.(*ast.Ident); ok && aliases[ident.Name] && n.Sel.Name == "New" && rel != "internal/app/daemon/daemon.go" {
+					if ident, ok := n.X.(*ast.Ident); ok && aliases[ident.Name] && n.Sel.Name == "New" && filepath.ToSlash(rel) != "internal/app/daemon/daemon.go" {
 						t.Errorf("%s constructs CLI outside the Runtime Host", rel)
 					}
 				case *ast.Ident:
