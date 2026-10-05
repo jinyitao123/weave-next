@@ -1,15 +1,21 @@
 package loomruntime
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -23,6 +29,7 @@ import (
 	"github.com/jinyitao123/weave/internal/base/storeext"
 	"github.com/jinyitao123/weave/internal/base/testutil"
 	"github.com/jinyitao123/weave/internal/kernel/compiler"
+	"github.com/jinyitao123/weave/internal/kernel/llmrouter"
 )
 
 type memberPGHarness struct {
@@ -477,5 +484,296 @@ func TestMemberDurableToolSlotsSurviveRecoveryRealPG(t *testing.T) {
 	defer rows.Close()
 	if !rows.Next() {
 		t.Fatal("effect identity does not match its persisted journal slot")
+	}
+}
+
+func protocolProbeGraph(model contract.LLM, tools contract.ToolDispatcher) *loom.Graph {
+	opts := InstallFrozenMemberJournal(InstallFrozenUsageTracking(compiler.FrozenBuildOpts{LLM: model, Tools: tools}))
+	graph := loom.NewGraph("workspace:member", "chat", loom.WithCheckpointPolicy(loom.CheckpointRequired), loom.WithCheckpointHistory(-1))
+	graph.SetHooks(loom.HookPoints{Before: opts.Hooks.BeforeStepHooks, After: opts.Hooks.AfterStepHooks})
+	graph.AddStep("chat", stdlib.NewToolLoopStep(opts.ExecutionLLMWrapper(opts.LLM), opts.Tools, stdlib.ToolLoopOpts{Model: "fixture", MaxIterations: 3}), loom.End())
+	return graph
+}
+
+func protocolProbeFixture(t *testing.T, max int) (*memberPGHarness, *MemberRunner, *ModelProtocolProbePolicy) {
+	t.Helper()
+	h := newMemberPGHarness(t)
+	runner, err := NewMemberRunner(h.records)
+	if err != nil {
+		t.Fatal(err)
+	}
+	policy := &ModelProtocolProbePolicy{WorkspaceID: "workspace", WorkflowID: "workflow", ExpiresAt: time.Now().Add(time.Hour), MaxModelCalls: max}
+	runner.ProtocolProbe = policy
+	return h, runner, policy
+}
+
+func TestProtocolProbeProviderJournalNodeIdentityAndReplayRealPG(t *testing.T) {
+	h, runner, _ := protocolProbeFixture(t, 4)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var request struct {
+			Messages []contract.Message `json:"messages"`
+		}
+		if json.NewDecoder(r.Body).Decode(&request) != nil {
+			t.Error("invalid fixture request")
+			return
+		}
+		value := "A"
+		hasTool := false
+		for _, message := range request.Messages {
+			if strings.Contains(message.Content, "sample-B") {
+				value = "B"
+			}
+			hasTool = hasTool || message.Role == "tool"
+		}
+		message := map[string]any{"content": "private-response-marker", "reasoning_content": "private-reasoning-marker"}
+		finish := "stop"
+		if !hasTool {
+			finish = "tool_calls"
+			message["tool_calls"] = []any{map[string]any{"id": "same-call", "type": "function", "function": map[string]any{"name": "append", "arguments": `{ "value" : "` + value + `" }`}}}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"finish_reason": finish, "message": message}}, "usage": map[string]int{"prompt_tokens": 3, "completion_tokens": 4}})
+	}))
+	defer server.Close()
+	client := llmrouter.NewProviderClient(llmrouter.ProviderConfig{BaseURL: server.URL, APIKey: "fixture-private-key-marker", Models: []string{"fixture"}})
+	var requests []MemberRequest
+	var samples int
+	for _, node := range []string{"A", "B"} {
+		request := h.request
+		request.NodeID, request.CallID = "node-"+node, "node-call-"+node
+		request.Input = loom.State{"messages": []contract.Message{{Role: "user", Content: "sample-" + node + " private-request-marker"}}}
+		request.Graph = protocolProbeGraph(client, h.tools)
+		if result, err := runner.Run(t.Context(), request); err != nil || result.StopReason != loom.StopCompleted {
+			t.Fatal("probed member did not retain its ordinary completion")
+		}
+		requests = append(requests, request)
+		memberID := MemberRunID(request.WorkspaceID, request.ParentRunID, request.RunSnapshotID, request.NodeID, request.CallID)
+		entries, err := ReadMemberJournal(t.Context(), h.pool, "workspace", memberID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var emitted *ModelProtocolProbeSample
+		for _, entry := range entries {
+			if hash, err := frozen.HashCanonicalJSON(entry.Input); err != nil || hash != entry.InputHash {
+				t.Fatal("probe changed original operation input hash")
+			}
+			if entry.Kind == "model" {
+				if len(entry.ProtocolProbe) != 1 {
+					t.Fatal("model attempt did not retain exactly one sample")
+				}
+				sample := entry.ProtocolProbe[0]
+				samples++
+				if sample.State != "observed" || len(sample.Observed) != 1 || !sample.Observed[0].RequestSent || !sample.Observed[0].Complete || sample.NormalizedToolCount == nil {
+					t.Fatal("complete physical/model boundary was not retained")
+				}
+				raw, _ := json.Marshal(sample)
+				for _, marker := range []string{"private-request-marker", "private-response-marker", "private-reasoning-marker", "fixture-private-key-marker"} {
+					if bytes.Contains(raw, []byte(marker)) {
+						t.Fatal("private data entered journal probe metadata")
+					}
+				}
+				if *sample.NormalizedToolCount == 1 {
+					emitted = &sample
+				}
+			}
+			if entry.Kind == "tool" {
+				var call contract.ToolCall
+				if json.Unmarshal(entry.Input, &call) != nil || call.ID != "same-call" || call.Args != `{"value":"`+node+`"}` || emitted == nil {
+					t.Fatal("same tool call ID was attributed to the wrong node")
+				}
+				if emitted.NormalizedTools[0].CallIDSHA256 != protocolDigest([]byte(call.ID)) || emitted.NormalizedTools[0].CanonicalArgumentsSHA256 != protocolDigest([]byte(call.Args)) {
+					t.Fatal("standard/tool journal identity linkage changed")
+				}
+			}
+		}
+	}
+	if samples != 4 {
+		t.Fatal("unexpected sampled model attempt count")
+	}
+	before, err := ReadMemberJournal(t.Context(), h.pool, "workspace", MemberRunID("workspace", "parent", "snapshot", "node-A", "node-call-A"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	restarted, _ := NewMemberRunner(storeext.New(h.pool))
+	restarted.ProtocolProbe = runner.ProtocolProbe
+	if _, err := restarted.Run(t.Context(), requests[0]); err != nil {
+		t.Fatal(err)
+	}
+	after, _ := ReadMemberJournal(t.Context(), h.pool, "workspace", MemberRunID("workspace", "parent", "snapshot", "node-A", "node-call-A"))
+	beforeBytes, _ := json.Marshal(before)
+	afterBytes, _ := json.Marshal(after)
+	if !bytes.Equal(beforeBytes, afterBytes) || h.tools.calls.Load() != 2 {
+		t.Fatal("replay generated probe samples or another tool effect")
+	}
+	// A fresh node remains executable after the cross-node/restart quota is full.
+	next := requests[0]
+	next.NodeID, next.CallID = "node-C", "node-call-C"
+	if _, err := restarted.Run(t.Context(), next); err != nil {
+		t.Fatal(err)
+	}
+	entries, _ := ReadMemberJournal(t.Context(), h.pool, "workspace", MemberRunID("workspace", "parent", "snapshot", "node-C", "node-call-C"))
+	for _, entry := range entries {
+		if len(entry.ProtocolProbe) != 0 {
+			t.Fatal("restart reset probe quota")
+		}
+	}
+}
+
+func TestProtocolProbeDisabledExpiredWrongScopeAndUnavailableRealPG(t *testing.T) {
+	for _, mode := range []string{"disabled", "expired", "wrong-run", "wrong-workflow", "diagnostic-read-failure", "unavailable"} {
+		t.Run(mode, func(t *testing.T) {
+			h, runner, policy := protocolProbeFixture(t, 1)
+			switch mode {
+			case "disabled":
+				runner.ProtocolProbe = nil
+			case "expired":
+				policy.ExpiresAt = time.Now().Add(-time.Second)
+			case "wrong-run":
+				policy.RunID = "different-run"
+			case "wrong-workflow":
+				policy.WorkflowID = "different-workflow"
+			case "diagnostic-read-failure":
+				if _, err := h.pool.Exec(t.Context(), `INSERT INTO loom_store(namespace,key,value) VALUES('member-operation:workspace','invalid-probe-record',convert_to('{"kind":"model","protocol_probe":{}}','UTF8'))`); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if _, err := runner.Run(t.Context(), h.request); err != nil {
+				t.Fatal(err)
+			}
+			entries, err := ReadMemberJournal(t.Context(), h.pool, "workspace", MemberRunID("workspace", "parent", "snapshot", "worker", "call-0"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			count := 0
+			for _, entry := range entries {
+				for _, sample := range entry.ProtocolProbe {
+					count++
+					if mode != "unavailable" || sample.State != "unavailable" || len(sample.Observed) != 0 || sample.NormalizedToolCount == nil || *sample.NormalizedToolCount != 2 {
+						t.Fatal("unobserved provider boundary was called complete or zero")
+					}
+				}
+			}
+			expected := 0
+			if mode == "unavailable" {
+				expected = 1
+			}
+			if count != expected || h.model.calls.Load() != 2 || h.tools.calls.Load() != 2 {
+				t.Fatal("probe policy changed ordinary model/tool execution")
+			}
+		})
+	}
+}
+
+func TestProtocolProbePhysicalFailureAndCancelledJournalPreservesErrorRealPG(t *testing.T) {
+	for _, mode := range []string{"http-error", "cancel"} {
+		t.Run(mode, func(t *testing.T) {
+			h, runner, _ := protocolProbeFixture(t, 1)
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if mode == "cancel" {
+					cancel()
+					w.WriteHeader(http.StatusNoContent)
+					return
+				}
+				w.WriteHeader(http.StatusBadGateway)
+				io.WriteString(w, "fixture-provider-failure-marker")
+			}))
+			defer server.Close()
+			client := llmrouter.NewProviderClient(llmrouter.ProviderConfig{BaseURL: server.URL, APIKey: "fixture-private-key-marker", Models: []string{"fixture"}})
+			h.request.Graph = protocolProbeGraph(client, h.tools)
+			_, err := runner.Run(ctx, h.request)
+			if err == nil || mode == "cancel" && !errors.Is(err, context.Canceled) || mode == "http-error" && !strings.Contains(err.Error(), "fixture-provider-failure-marker") {
+				t.Fatal("probe swallowed or rewrote provider error")
+			}
+			entries, readErr := ReadMemberJournal(t.Context(), h.pool, "workspace", MemberRunID("workspace", "parent", "snapshot", "worker", "call-0"))
+			if readErr != nil || len(entries) != 1 || len(entries[0].Response) != 0 || len(entries[0].ProtocolProbe) != 1 {
+				t.Fatal("failure probe changed original response/slot or disappeared")
+			}
+			sample := entries[0].ProtocolProbe[0]
+			if sample.State != "incomplete" || !sample.NormalizedError || sample.NormalizedToolCount != nil || len(sample.Observed) != 1 || !sample.Observed[0].RequestSent {
+				t.Fatal("failed physical attempt was not retained as incomplete")
+			}
+		})
+	}
+}
+
+func TestProtocolProbeLateGenerationObservationSurvivesCurrentReceiptRealPG(t *testing.T) {
+	h, runner, policy := protocolProbeFixture(t, 2)
+	firstStarted, secondStarted := make(chan struct{}), make(chan struct{})
+	releaseFirst, releaseSecond := make(chan struct{}), make(chan struct{})
+	var firstRelease, secondRelease sync.Once
+	var calls atomic.Int64
+	firstCtx, cancelFirst := context.WithCancel(t.Context())
+	secondCtx, cancelSecond := context.WithCancel(t.Context())
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.Copy(io.Discard, r.Body)
+		if calls.Add(1) == 1 {
+			close(firstStarted)
+			<-releaseFirst
+		} else {
+			close(secondStarted)
+			<-releaseSecond
+		}
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"choices":[{"finish_reason":"stop","message":{"content":"done"}}],"usage":{"prompt_tokens":3,"completion_tokens":4}}`)
+	}))
+	t.Cleanup(func() {
+		cancelFirst()
+		cancelSecond()
+		firstRelease.Do(func() { close(releaseFirst) })
+		secondRelease.Do(func() { close(releaseSecond) })
+		server.Close()
+	})
+	client := llmrouter.NewProviderClient(llmrouter.ProviderConfig{BaseURL: server.URL, APIKey: "fixture", Models: []string{"fixture"}})
+	h.request.Graph = protocolProbeGraph(client, h.tools)
+	firstDone, secondDone := make(chan error, 1), make(chan error, 1)
+	go func() { _, err := runner.Run(firstCtx, h.request); firstDone <- err }()
+	wait := func(signal <-chan struct{}) {
+		t.Helper()
+		select {
+		case <-signal:
+		case <-time.After(5 * time.Second):
+			t.Fatal("controlled generation did not reach its model boundary")
+		}
+	}
+	wait(firstStarted)
+	next := h.nextEpoch(t)
+	next.Graph = protocolProbeGraph(client, h.tools)
+	current, _ := NewMemberRunner(storeext.New(h.pool))
+	current.ProtocolProbe = policy
+	go func() { _, err := current.Run(secondCtx, next); secondDone <- err }()
+	wait(secondStarted)
+	// Generation two has now loaded gen one's pending sample and reserved its own.
+	cancelFirst()
+	firstRelease.Do(func() { close(releaseFirst) })
+	select {
+	case err := <-firstDone:
+		if err == nil {
+			t.Fatal("stale generation committed execution")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("stale generation did not stop")
+	}
+	memberID := MemberRunID("workspace", "parent", "snapshot", "worker", "call-0")
+	before, err := ReadMemberJournal(t.Context(), h.pool, "workspace", memberID)
+	if err != nil || len(before) != 1 || len(before[0].ProtocolProbe) != 2 || len(before[0].ProtocolProbe[0].Observed) != 1 {
+		t.Fatal("late old observation was not saved before current response")
+	}
+	secondRelease.Do(func() { close(releaseSecond) })
+	select {
+	case err := <-secondDone:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("current generation did not finish")
+	}
+	after, err := ReadMemberJournal(t.Context(), h.pool, "workspace", memberID)
+	if err != nil || len(after) != 1 || len(after[0].Response) == 0 || len(after[0].ProtocolProbe) != 2 || len(after[0].ProtocolProbe[0].Observed) != 1 || after[0].ProtocolProbe[1].State != "observed" {
+		t.Fatal("current journal receipt erased older attempt's observed failure facts")
+	}
+	if h.tools.calls.Load() != 0 {
+		t.Fatal("diagnostic recovery caused a tool effect")
 	}
 }

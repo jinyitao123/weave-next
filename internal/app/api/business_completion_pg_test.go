@@ -36,6 +36,7 @@ import (
 	"github.com/jinyitao123/weave/internal/kernel/credentials"
 	"github.com/jinyitao123/weave/internal/kernel/delivery"
 	"github.com/jinyitao123/weave/internal/kernel/deliverycheck"
+	"github.com/jinyitao123/weave/internal/kernel/llmrouter"
 	"github.com/jinyitao123/weave/internal/kernel/loomruntime"
 	"github.com/jinyitao123/weave/internal/kernel/publication"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
@@ -108,7 +109,7 @@ func TestBusinessReceiptCompletionPublishedRuntimeRealPG(t *testing.T) {
 // The publication selector, frozen loader and workflow MemberRunner are real.
 // Only inference and the external Forge endpoint are fixtures; no test injects
 // an operation ID or installs a journal by hand.
-func runBusinessReceiptCompletion(t *testing.T, outcome string) {
+func runBusinessReceiptCompletion(t *testing.T, outcome string, protocolProbe ...bool) {
 	t.Setenv("WEAVE_SECRET_KEY_FILE", "")
 	t.Setenv("WEAVE_SECRET_KEY", strings.Repeat("31", 32))
 	ctx := execution.WithSubject(t.Context(), execution.Subject{WorkspaceID: "ws", UserID: "user"})
@@ -292,6 +293,9 @@ func runBusinessReceiptCompletion(t *testing.T, outcome string) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if len(protocolProbe) > 0 && protocolProbe[0] {
+		members.ProtocolProbe = &loomruntime.ModelProtocolProbePolicy{WorkspaceID: "ws", WorkflowID: "flow", RunID: dispatched.RunID, ExpiresAt: time.Now().Add(time.Hour), MaxModelCalls: 8}
+	}
 	runs := teamrun.NewPGStore()
 	runs.Transactions = pool
 	checkpoints := teamrun.NewPGCheckpointStore()
@@ -416,6 +420,80 @@ func runBusinessReceiptCompletion(t *testing.T, outcome string) {
 	if forgeCalls.Load() != wantCalls {
 		t.Fatal("failure or unknown result was replayed")
 	}
+	if len(protocolProbe) > 0 && protocolProbe[0] {
+		rows, err := pool.Query(ctx, `SELECT m.node_id,m.member_run_id,j.value FROM weave_workflow_member_runs m
+		 JOIN loom_store j ON j.namespace='member-operation:ws' AND starts_with(j.key,m.member_run_id||'/')
+		 WHERE m.workspace_id='ws' AND m.parent_run_id=$1 ORDER BY j.key`, dispatched.RunID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer rows.Close()
+		normalized := map[string]llmrouter.NormalizedToolProtocol{}
+		tools := map[string]contract.ToolCall{}
+		toolNodes := map[string]string{}
+		for rows.Next() {
+			var node, member string
+			var raw []byte
+			if err := rows.Scan(&node, &member, &raw); err != nil {
+				t.Fatal(err)
+			}
+			var op struct {
+				Kind      string                                 `json:"kind"`
+				Input     json.RawMessage                        `json:"input"`
+				InputHash string                                 `json:"input_hash"`
+				Probe     []loomruntime.ModelProtocolProbeSample `json:"protocol_probe"`
+			}
+			if json.Unmarshal(raw, &op) != nil {
+				t.Fatal("invalid original journal")
+			}
+			if hash, err := frozen.HashCanonicalJSON(op.Input); err != nil || hash != op.InputHash {
+				t.Fatal("probe changed original input identity")
+			}
+			for _, sample := range op.Probe {
+				if sample.State != "unavailable" || len(sample.Observed) != 0 {
+					t.Fatal("scripted inference invented provider observations")
+				}
+				for _, call := range sample.NormalizedTools {
+					normalized[member+":"+call.CallIDSHA256] = call
+				}
+			}
+			if op.Kind == "tool" {
+				var call contract.ToolCall
+				if json.Unmarshal(op.Input, &call) != nil {
+					t.Fatal("invalid tool journal")
+				}
+				hash := sha256.Sum256([]byte(call.ID))
+				key := member + ":" + hex.EncodeToString(hash[:])
+				tools[key], toolNodes[call.ID] = call, node
+			}
+		}
+		if rows.Err() != nil || len(tools) != 1 {
+			t.Fatal("probe changed tool execution count")
+		}
+		for key, call := range tools {
+			canonical, err := frozen.CanonicalizeJSON([]byte(call.Args))
+			if err != nil {
+				t.Fatal(err)
+			}
+			hash := sha256.Sum256(canonical)
+			if normalized[key].CanonicalArgumentsSHA256 != hex.EncodeToString(hash[:]) {
+				t.Fatal("normalized call did not match original tool journal")
+			}
+		}
+		for _, event := range events {
+			var detail struct {
+				CallID      string `json:"tool_call_id"`
+				OperationID string `json:"operation_id"`
+			}
+			if json.Unmarshal(event.Detail, &detail) != nil || detail.CallID != "model-call" || detail.OperationID != receipts[0].OperationID || event.NodeID != toolNodes[detail.CallID] {
+				t.Fatal("probe changed or cross-linked the authoritative Forge receipt identity")
+			}
+		}
+	}
+}
+
+func TestBusinessReceiptCompletionProtocolProbeIdentityRealPG(t *testing.T) {
+	runBusinessReceiptCompletion(t, "succeeded", true)
 }
 
 func publishBusinessCompletionSample(t *testing.T, pool *pgxpool.Pool, key []byte, origin string) (frozen.FrozenExecutionBundle, *workflow.PublishedArtifactContent, frozen.ArtifactEnvelopeV1, *teamconstruction.PublicationAuthority) {

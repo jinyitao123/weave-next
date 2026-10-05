@@ -54,7 +54,8 @@ type Config struct {
 	// registration unregistered. Employees and developers sign in through Forge
 	// identity exchange only; `weave bootstrap` creates the operator. Load()
 	// defaults it to true; the zero value keeps the local routes for tests.
-	DisableLocalLogin bool // WEAVE_DISABLE_LOCAL_LOGIN, default true
+	DisableLocalLogin bool               // WEAVE_DISABLE_LOCAL_LOGIN, default true
+	ToolProtocolProbe *ToolProtocolProbe // operator-only, default nil
 }
 
 // Load reads configuration from environment variables.
@@ -88,6 +89,10 @@ func Load() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	toolProtocolProbe, err := loadToolProtocolProbe()
+	if err != nil {
+		return nil, err
+	}
 	if healthMinSamples > healthWindowSize {
 		return nil, fmt.Errorf("WEAVE_HEALTH_MIN_SAMPLES must not exceed WEAVE_HEALTH_WINDOW_SIZE")
 	}
@@ -115,6 +120,7 @@ func Load() (*Config, error) {
 	}
 
 	cfg := &Config{
+		ToolProtocolProbe:        toolProtocolProbe,
 		Port:                     port,
 		DatabaseURL:              os.Getenv("DATABASE_URL"),
 		JWTSecret:                os.Getenv("JWT_SECRET"),
