@@ -1,7 +1,0 @@
-panic: DATABASE_URL is required
-
-goroutine 1 [running]:
-main.must(...)
-	<MAINTAINER_LOCAL_PATH>
-main.main()
-	<MAINTAINER_LOCAL_PATH> +0x15fc

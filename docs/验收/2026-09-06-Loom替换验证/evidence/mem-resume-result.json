@@ -1,6 +1,0 @@
-{
-  "at": "2026-09-06T15:34:04.634066Z",
-  "error": "loom: checkpoint not found for run ef5616fc-372e-4ae2-8b73-80dbe37bb905: loom/memstore: key \"ef5616fc-372e-4ae2-8b73-80dbe37bb905\" not found in namespace \"checkpoint:loom-probe:mem\"",
-  "pid": 86102,
-  "result": null
-}

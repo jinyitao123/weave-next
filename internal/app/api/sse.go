@@ -14,7 +14,6 @@ import (
 	"github.com/jinyitao123/loom/stdlib"
 	"github.com/jinyitao123/weave/internal/app/conversation"
 	"github.com/jinyitao123/weave/internal/base/streamctx"
-	"github.com/jinyitao123/weave/internal/build/teambuild"
 	"github.com/jinyitao123/weave/internal/kernel/compiler"
 	"github.com/jinyitao123/weave/internal/kernel/loomruntime"
 	"github.com/jinyitao123/weave/internal/kernel/mcphost"
@@ -542,8 +541,6 @@ func (s *Server) handleChatStream(c echo.Context, tenant string, rec *registry.A
 		CompileOpts:        compileOpts,
 	}, teamExecution)
 	executionRecorder.finish(result, runErr)
-	var terminalOutcome *TerminalOutcome
-	templateDraftReady := false
 	if runErr != nil && !result.Ran() && teamExecution == nil {
 		return sendTerminalError(result.RunID, runErr)
 	}
@@ -553,125 +550,8 @@ func (s *Server) handleChatStream(c echo.Context, tenant string, rec *registry.A
 			userContent = msgs[n-1].Content
 		}
 		var assistantFields map[string]any
-		// For create_team discovery sessions, validate and render the output
-		// before it is committed to the session store and sent in the done
-		// event. Raw model text that is not a valid discovery protocol
-		// output is never persisted as user-visible content.
-		if result.Ran() && runErr == nil && s.Conversations != nil && conversationID != "" {
-			if intent, intentErr := getConversationIntent(runCtx, s.Conversations, tenant, conversationID); intentErr == nil && intent == "create_team" {
-				if _, ready := executionRecorder.lastSuccessfulToolResult("tf_render_template_draft"); ready {
-					templateDraftReady = true
-					result.Output = "团队模板草稿已生成。请在下方卡片中审阅 team.yaml，确认后即可创建待评测团队。"
-				} else {
-					var boundBuildRunID string
-					var boundBuildRun *teambuild.TeamBuildRun
-					var revisionToken *teambuild.BlueprintRevisionToken
-					var transitionReason string
-					if s.TeamBuild != nil {
-						if run, runErr := s.TeamBuild.GetLatestBuildRunByConversation(runCtx, tenant, conversationID); runErr == nil {
-							boundBuildRunID = run.BuildRunID
-							boundBuildRun = &run
-							transitionReason, _ = s.TeamBuild.GetLatestBuildRunTransitionReason(
-								runCtx, tenant, run.BuildRunID,
-							)
-							if token, ok, tokenErr := s.currentBlueprintRevisionToken(runCtx, tenant, run.BuildRunID); tokenErr == nil && ok {
-								revisionToken = token
-							}
-							if run.Status == teambuild.StatusPlanning && executionRecorder.lastToolCallFailed(
-								teamBlueprintPlanToolName, teamDeclarativeWorkflowPlanToolName,
-							) {
-								transitionCtx, cancelTransition := context.WithTimeout(runCtx, 5*time.Second)
-								if blocked, transitionErr := s.TeamBuild.TransitionStatus(
-									transitionCtx, tenant, run.BuildRunID,
-									teambuild.StatusPlanning, teambuild.StatusBlocked,
-									req.Agent, reasonBlueprintValidationFailed,
-								); transitionErr == nil {
-									boundBuildRun = &blocked
-									transitionReason = reasonBlueprintValidationFailed
-									revisionToken = nil
-								}
-								cancelTransition()
-							}
-						}
-					}
-					discoveryOutput := extractDiscoveryJSON(result.Output)
-					_, discoveryJSON, validDiscovery := validateAndRenderDiscoveryOutput(result.Output, boundBuildRunID)
-					if !validDiscovery {
-						discoveryOutput = nil
-					}
-					blockMissingRevision := boundBuildRun != nil &&
-						boundBuildRun.Status == teambuild.StatusPlanning &&
-						revisionToken == nil && s.TeamBuild != nil &&
-						(!validDiscovery || discoveryOutput.Status == "planning_created")
-					if blockMissingRevision {
-						transitionCtx, cancelTransition := context.WithTimeout(runCtx, 5*time.Second)
-						if blocked, transitionErr := s.TeamBuild.TransitionStatus(
-							transitionCtx, tenant, boundBuildRun.BuildRunID,
-							teambuild.StatusPlanning, teambuild.StatusBlocked,
-							req.Agent, reasonBlueprintPlanningNoRevision,
-						); transitionErr == nil {
-							boundBuildRun = &blocked
-							transitionReason = reasonBlueprintPlanningNoRevision
-						} else {
-							transitionReason = reasonBlueprintPlanningTransitionFail
-						}
-						cancelTransition()
-						if assistantFields == nil {
-							assistantFields = map[string]any{}
-						}
-						assistantFields["discovery_output"] = json.RawMessage(`{"status":"blocked","summary":"团队方案生成失败：本轮规划没有产出可批准的蓝图","blocking_reasons":["blueprint_planning_no_revision"]}`)
-					} else if validDiscovery && discoveryJSON != nil {
-						if assistantFields == nil {
-							assistantFields = map[string]any{}
-						}
-						assistantFields["discovery_output"] = json.RawMessage(discoveryJSON)
-					} else if boundBuildRun == nil {
-						if assistantFields == nil {
-							assistantFields = map[string]any{}
-						}
-						assistantFields["discovery_output"] = json.RawMessage(`{"status":"needs_clarification","summary":"需求发现未输出合法协议，需要用户补充约束或指示按当前信息收敛"}`)
-					}
-
-					outcome := terminalOutcomeForCreateTeam(
-						boundBuildRun, transitionReason, discoveryOutput, revisionToken != nil,
-					)
-					if boundBuildRun != nil && boundBuildRun.Mode == teambuild.ModeOptimize {
-						teamName := ""
-						if s.OrgStore != nil {
-							if team, teamErr := s.OrgStore.GetTeam(runCtx, tenant, boundBuildRun.Brief.TeamID); teamErr == nil {
-								teamName = team.Name
-							}
-						}
-						outcome.ModeNote = terminalOutcomeModeNote(boundBuildRun, teamName)
-					}
-					var reportSummary *blueprintSummaryMetadata
-					if revisionToken != nil {
-						if summary, ok := s.blueprintSummaryForAuthorization(runCtx, tenant, boundBuildRunID); ok {
-							reportSummary = &summary
-						}
-					}
-					outcome.Report = teamArchitectReportForTerminal(result.Output, outcome, reportSummary)
-					terminalOutcome = &outcome
-					result.Output = projectTerminalOutcome(outcome)
-					if assistantFields == nil {
-						assistantFields = map[string]any{}
-					}
-					for key, value := range terminalOutcomeAssistantFields(outcome) {
-						assistantFields[key] = value
-					}
-					if revisionToken != nil {
-						for key, value := range s.blueprintAuthorizationMetadata(runCtx, tenant, boundBuildRunID, *revisionToken) {
-							assistantFields[key] = value
-						}
-					}
-				}
-			}
-		}
 		metadataCtx := contextWithAssistantAgent(ctx, req.Agent)
 		executionMetadata := executionRecorder.snapshot()
-		if terminalOutcome != nil || templateDraftReady {
-			executionMetadata.Output = result.Output
-		}
 		metadata := mergeAssistantExecutionMetadata(
 			s.buildAssistantMetadata(metadataCtx, tenant, result.Output), executionMetadata,
 		)
@@ -782,12 +662,6 @@ func (s *Server) handleChatStream(c echo.Context, tenant string, rec *registry.A
 		"user_message_id":    userMessageID,
 		"runtime_assignment": req.RuntimeAssignment,
 	}
-	if result.Ran() && teamExecution != nil && s.TeamBuild != nil && conversationID != "" {
-		addBusinessPhaseFields(doneData, resolveBusinessPhase(runCtx, s.TeamBuild, tenant, teamExecution, result, conversationID, runErr))
-	}
-	if terminalOutcome != nil {
-		doneData["terminal_outcome"] = *terminalOutcome
-	}
 	if result.Ran() {
 		doneData["output"] = result.Output
 		doneData["stop_reason"] = string(result.StopReason)
@@ -826,110 +700,6 @@ func (s *Server) handleChatStream(c echo.Context, tenant string, rec *registry.A
 
 	return nil
 }
-
-// ---------------------------------------------------------------------------
-// business_phase — done-event business-phase derivation
-// ---------------------------------------------------------------------------
-
-// businessPhase is the user-facing lifecycle phase derived from persisted
-// run facts, not from LLM exit status. It travels as a done-event field so
-// the frontend can render the correct status banner without guessing.
-type businessPhase string
-
-const (
-	businessPhaseNeedsClarification businessPhase = "needs_clarification"
-	businessPhasePlanningCreated    businessPhase = "planning_created"
-	businessPhaseBuilding           businessPhase = "building"
-	businessPhasePublishing         businessPhase = "publishing"
-	businessPhasePublished          businessPhase = "published"
-	businessPhaseBlocked            businessPhase = "blocked"
-	businessPhaseCancelled          businessPhase = "cancelled"
-	businessPhaseGenerationFailed   businessPhase = "generation_failed"
-)
-
-var businessPhaseLabels = map[businessPhase]string{
-	businessPhaseNeedsClarification: "等待补充信息",
-	businessPhasePlanningCreated:    "规划已建立，等待继续",
-	businessPhaseBuilding:           "构建中",
-	businessPhasePublishing:         "发布中",
-	businessPhasePublished:          "已发布",
-	businessPhaseBlocked:            "已阻塞",
-	businessPhaseCancelled:          "已取消",
-	businessPhaseGenerationFailed:   "生成失败",
-}
-
-func addBusinessPhaseFields(fields map[string]any, phase businessPhase) {
-	if fields == nil || phase == "" {
-		return
-	}
-	fields["business_phase"] = phase
-	fields["phase_code"] = phase
-	if label := businessPhaseLabels[phase]; label != "" {
-		fields["phase_label"] = label
-	}
-}
-
-// resolveBusinessPhase derives the done-event business_phase for a
-// create_team-intent team session. The controlling fact is the persisted
-// BuildRun status, not the model's exit condition.
-func resolveBusinessPhase(
-	ctx context.Context,
-	runs teamBuildRunReader,
-	workspaceID string,
-	execution *teamSessionExecution,
-	result loomruntime.Result,
-	conversationID string,
-	runErr error,
-) businessPhase {
-	run, err := runs.GetLatestBuildRunByConversation(ctx, workspaceID, conversationID)
-	switch {
-	case err == nil:
-		return buildRunStatusPhase(run.Status)
-	case runErr != nil:
-		return businessPhaseGenerationFailed
-	}
-	if hasClarificationQuestions(result.Output) {
-		return businessPhaseNeedsClarification
-	}
-	return ""
-}
-
-func buildRunStatusPhase(status string) businessPhase {
-	switch status {
-	case teambuild.StatusPlanning:
-		return businessPhasePlanningCreated
-	case teambuild.StatusAuthorized, teambuild.StatusRoundRunning:
-		return businessPhaseBuilding
-	case teambuild.StatusPublishing:
-		return businessPhasePublishing
-	case teambuild.StatusPassed:
-		return businessPhasePublished
-	case teambuild.StatusBlocked:
-		return businessPhaseBlocked
-	case teambuild.StatusCancelled:
-		return businessPhaseCancelled
-	default:
-		return ""
-	}
-}
-
-// hasClarificationQuestions is a cheap heuristic scan: the output contains
-// at least one line that suggests the architect is asking the user for input.
-func hasClarificationQuestions(output string) bool {
-	trimmed := strings.TrimSpace(output)
-	if trimmed == "" || len(trimmed) < 20 {
-		return false
-	}
-	return strings.Contains(trimmed, "?") || strings.Contains(trimmed, "？")
-}
-
-// teamBuildRunReader is the narrow storage surface needed for business-phase
-// derivation. *teambuild.Store satisfies it.
-type teamBuildRunReader interface {
-	GetLatestBuildRunByConversation(ctx context.Context, workspaceID, conversationID string) (teambuild.TeamBuildRun, error)
-}
-
-var _ teamBuildRunReader = (*teambuild.Store)(nil)
 
 // getConversationIntent returns the persistent intent of a conversation, or
 // "" when the conversation or its intent is absent. When the store is

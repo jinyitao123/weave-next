@@ -14,4 +14,4 @@ The registered HTTP surface and authentication are covered by
 
 This is an explicit regression boundary, not semantic classification of every
 future file or API. New product surfaces still require review against the
-Workbench product contract.
+product contract in `weave-workbench/contracts/v1`.

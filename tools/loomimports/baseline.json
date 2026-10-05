@@ -7,7 +7,7 @@
   {
     "package": "internal/app/api",
     "import": "loom",
-    "files": 12
+    "files": 11
   },
   {
     "package": "internal/app/api",
@@ -17,7 +17,7 @@
   {
     "package": "internal/app/api",
     "import": "loom/stdlib",
-    "files": 9
+    "files": 8
   },
   {
     "package": "internal/app/daemon",
@@ -25,38 +25,8 @@
     "files": 1
   },
   {
-    "package": "internal/app/designseed",
-    "import": "loom/stdlib",
-    "files": 1
-  },
-  {
-    "package": "internal/app/metateam",
-    "import": "loom/stdlib",
-    "files": 1
-  },
-  {
-    "package": "internal/app/teamconstruction",
-    "import": "loom/pgstore",
-    "files": 1
-  },
-  {
-    "package": "internal/app/teamconstruction",
-    "import": "loom/stdlib",
-    "files": 1
-  },
-  {
     "package": "internal/base/testutil",
     "import": "loom/pgstore",
-    "files": 1
-  },
-  {
-    "package": "internal/build/teameval",
-    "import": "loom",
-    "files": 1
-  },
-  {
-    "package": "internal/build/teamforge",
-    "import": "loom/stdlib",
     "files": 1
   },
   {

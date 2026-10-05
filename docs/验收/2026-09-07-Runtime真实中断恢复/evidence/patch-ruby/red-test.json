@@ -1,9 +1,0 @@
-{
-  "at": "2026-09-07T03:37:44.515385+00:00",
-  "command": "go test ./internal/kernel/runtimes -run '^TestSourceDeliveryKeepsApplicationAndVerificationDependenciesAcrossRuntimeWire$' -count=1",
-  "exit_code": 1,
-  "observed_failure": "incomplete executable delivery: status=completed files=98",
-  "expected_files": 99,
-  "source": "captured tool process exit and test assertion, before production fix",
-  "test_sha256": "bb9979ca1e3f02c42ae812008a82239f5dae98ca851a6afc390aab44cb147b1f"
-}

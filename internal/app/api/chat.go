@@ -17,12 +17,9 @@ import (
 	"github.com/jinyitao123/loom/contract"
 	"github.com/jinyitao123/loom/stdlib"
 	"github.com/jinyitao123/weave/internal/app/conversation"
-	"github.com/jinyitao123/weave/internal/app/designseed"
-	"github.com/jinyitao123/weave/internal/app/metateam"
 	"github.com/jinyitao123/weave/internal/app/projects"
 	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/base/snapshot"
-	"github.com/jinyitao123/weave/internal/build/teambuild"
 	"github.com/jinyitao123/weave/internal/kernel/compiler"
 	"github.com/jinyitao123/weave/internal/kernel/engine"
 	"github.com/jinyitao123/weave/internal/kernel/execspec"
@@ -465,19 +462,6 @@ func (s *Server) acquireTeamSession(
 		}
 		workers := json.RawMessage(`[]`)
 		workerVersions := json.RawMessage(`{}`)
-		if !teamAssemblerDisabled() {
-			team, err := s.Registry.ResolvePublicationTeamTx(ctx, tx, workspaceID, teamID)
-			if err != nil {
-				return nil, fmt.Errorf("freeze team session roster: %w", err)
-			}
-			if team.LeadAvatarID != rec.ID || int(team.LeadAvatarVersion) != rec.Version {
-				return nil, fmt.Errorf("team session lead changed during admission")
-			}
-			workers, workerVersions, err = s.freezeTeamSessionRoster(ctx, tx, workspaceID, team)
-			if err != nil {
-				return nil, err
-			}
-		}
 		snap := freeCollaborationSessionSnapshot(
 			runID, workspaceID, projectID, runtimeAssignment, teamID, rec, eventID, dbNow, workers, workerVersions,
 		)
@@ -751,11 +735,6 @@ func (s *Server) runChatSession(
 			ctx, tenant, rec, input, terminalAttribution, dependencies,
 		)
 	}
-	if !teamAssemblerDisabled() && dependencies.CompileAgent == nil {
-		dependencies.CompileAgent = s.teamCompileFactory(
-			ctx, teamExecution, false, input.UserID, dependencies.CompileOpts.MemoryService,
-		)
-	}
 	runID := teamExecution.Lease.ActiveRunID
 	if runID == "" || teamExecution.Snapshot.RunID != runID {
 		return loomruntime.Result{}, fmt.Errorf(
@@ -794,28 +773,17 @@ func (s *Server) handleChatRequest(c echo.Context, req ChatRequest) error {
 	req.Intent = strings.TrimSpace(req.Intent)
 	req.Channel = normalizeChatChannel(req.Channel)
 	ctx := withChatChannel(c.Request().Context(), req.Channel)
-	roles, _ := c.Get("roles").([]string)
-	ctx = contextWithTeamForgeOperator(ctx, userID, roles)
 	c.SetRequest(c.Request().WithContext(ctx))
-	if s.metaTeamRunDisabled(req.Agent, req.Intent) {
-		return metaTeamDisabledResponse(c)
+	if isPlatformInternalAgent(req.Agent) {
+		return platformInternalAgentResponse(c)
 	}
-	if req.Agent == metateam.BlueprintPatchPlannerName {
-		return c.JSON(http.StatusForbidden, map[string]string{"error": "platform-internal agent"})
-	}
-	if req.Agent == designseed.AgentName {
-		designseed.EnsureDesigner(s.Registry, tenant)
+	if req.Intent != "" {
+		// Conversation intents only ever drove the retired meta-team.
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid_conversation_intent"})
 	}
 	rec, err := s.Registry.Get(ctx, tenant, req.Agent)
 	if err != nil {
 		return c.JSON(http.StatusNotFound, map[string]string{"error": err.Error()})
-	}
-	if req.Intent != "" && (req.Intent != conversation.IntentCreateTeam ||
-		rec.Name != metateam.TeamArchitectName || req.ConversationID != "") {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid_conversation_intent"})
-	}
-	if req.Intent == conversation.IntentCreateTeam && req.Async {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "create_team_requires_stream"})
 	}
 	runtimeInferenceSelected := rec.Role == "avatar" && engine.IsCLIEngine(rec.Engine)
 	if rec.Role == "avatar" && !runtimeInferenceSelected {
@@ -841,34 +809,6 @@ func (s *Server) handleChatRequest(c echo.Context, req ChatRequest) error {
 	}
 	if runtimeInferenceSelected && req.Async {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "loom_runtime_inference_requires_stream"})
-	}
-	if req.Intent == conversation.IntentCreateTeam {
-		// The discovery conversation compiles Blueprints against the workspace
-		// capability catalog, which reads workspace credentials. Without any
-		// usable provider the run is guaranteed to fail later at Blueprint
-		// validation, so the entry refuses early with an actionable error
-		// instead of burning a build conversation. Mirroring stays an explicit
-		// admin action; nothing is auto-mirrored here.
-		if !runtimeInferenceSelected && s.Credentials == nil {
-			return c.JSON(http.StatusConflict, map[string]string{
-				"code":  "provider_required",
-				"error": "provider_required",
-				"guide": "当前工作区没有可用的模型供应商。请先在控制中心 → 模型供应商中镜像系统供应商，再创建新团队。",
-			})
-		}
-		if !runtimeInferenceSelected {
-			providers, provErr := s.Credentials.ListMetadata(ctx, tenant)
-			if provErr != nil {
-				return c.JSON(http.StatusInternalServerError, map[string]string{"error": provErr.Error()})
-			}
-			if len(providers) == 0 {
-				return c.JSON(http.StatusConflict, map[string]string{
-					"code":  "provider_required",
-					"error": "provider_required",
-					"guide": "当前工作区没有可用的模型供应商，也没有在线 Codex Runtime。请先连接 Codex Runtime，或配置模型供应商。",
-				})
-			}
-		}
 	}
 	project, err := s.resolveChatProject(ctx, tenant, rec.ID, req.ProjectID)
 	if err != nil {
@@ -920,12 +860,6 @@ func (s *Server) handleChatRequest(c echo.Context, req ChatRequest) error {
 		req.SessionID = sessionID // ensure SSE done event returns the generated ID
 	}
 	sessionKey := tenant + ":" + userID + ":" + req.Agent + ":" + sessionID
-	if handled, err := s.handleCreateTeamAuthorizationGuidance(
-		c, ctx, tenant, userID, req, rec, sessionKey, attachments,
-	); handled || err != nil {
-		requestFinalized = handled && err == nil
-		return err
-	}
 	rec, req.RuntimeAssignment, err = s.resolveChatRuntime(ctx, tenant, req.RuntimeID, rec)
 	if err != nil {
 		return respondChatRuntimeError(c, err)
@@ -1219,16 +1153,6 @@ func (s *Server) handleChatRequest(c echo.Context, req ChatRequest) error {
 		metadataCtx := contextWithAssistantAgent(ctx, req.Agent)
 		metadata := s.buildAssistantMetadata(metadataCtx, tenant, output)
 		metadata = mergeRuntimeAssignmentMetadata(metadata, req.RuntimeAssignment)
-		if s.TeamBuild != nil {
-			if run, runErr := s.TeamBuild.GetActiveBuildRunByConversation(ctx, tenant, conversationID); runErr == nil {
-				if token, ok, tokenErr := s.currentBlueprintRevisionToken(ctx, tenant, run.BuildRunID); tokenErr == nil && ok {
-					fields := s.blueprintAuthorizationMetadata(ctx, tenant, run.BuildRunID, *token)
-					if merged, mergeErr := mergeDiscoveryMetadata(metadata, fields); mergeErr == nil {
-						metadata = merged
-					}
-				}
-			}
-		}
 		if _, err := s.Conversations.AppendMessage(ctx, conversation.Message{
 			ConversationID: conversationID,
 			WorkspaceID:    tenant,
@@ -1302,212 +1226,19 @@ func (s *Server) dispatchGroundingWarning(
 		return ""
 	}
 	var names []string
-	if teamExecution != nil && !teamAssemblerDisabled() {
-		workers, err := snapshot.DecodeTeamWorkerSnapshot(teamExecution.Snapshot.TeamWorkerSnapshot)
-		if err != nil {
-			return ""
-		}
-		names = make([]string, 0, len(workers)*2)
-		for _, worker := range workers {
-			names = append(names, worker.WorkerAgentID, worker.Name)
-		}
-	} else {
-		managed, err := s.Registry.ListManaged(ctx, tenant, rec.Name)
-		if err != nil {
-			return ""
-		}
-		names = make([]string, 0, len(managed)*2)
-		for _, worker := range managed {
-			names = append(names, worker.Name, worker.DisplayName)
-		}
+	managed, err := s.Registry.ListManaged(ctx, tenant, rec.Name)
+	if err != nil {
+		return ""
+	}
+	names = make([]string, 0, len(managed)*2)
+	for _, worker := range managed {
+		names = append(names, worker.Name, worker.DisplayName)
 	}
 	if !grounding.ClaimsDispatch(output, names) {
 		return ""
 	}
 	slog.Warn("dispatch claim unbacked", "agent", rec.Name)
 	return "dispatch_claim_unbacked"
-}
-
-func (s *Server) handleCreateTeamAuthorizationGuidance(
-	c echo.Context,
-	ctx context.Context,
-	workspaceID, userID string,
-	req ChatRequest,
-	rec *registry.AgentRecord,
-	sessionKey string,
-	attachments []taskqueue.Attachment,
-) (bool, error) {
-	if rec == nil || rec.Name != metateam.TeamArchitectName || strings.TrimSpace(req.ConversationID) == "" {
-		return false, nil
-	}
-	if s.Conversations == nil || s.TeamBuild == nil {
-		return false, nil
-	}
-	intent, err := getConversationIntent(ctx, s.Conversations, workspaceID, req.ConversationID)
-	if err != nil || intent != conversation.IntentCreateTeam {
-		return false, nil
-	}
-	run, err := s.TeamBuild.GetActiveBuildRunByConversation(ctx, workspaceID, req.ConversationID)
-	if err != nil {
-		return false, nil
-	}
-	if run.Status != teambuild.StatusPlanning {
-		return false, nil
-	}
-	if req.BlueprintChangeRequested || isCreateTeamBlueprintChangeIntent(req.Message) {
-		if _, ok, tokenErr := s.currentBlueprintRevisionToken(ctx, workspaceID, run.BuildRunID); tokenErr != nil {
-			return true, c.JSON(http.StatusInternalServerError, map[string]string{"error": "blueprint_revision_read_failed"})
-		} else if !ok {
-			return false, nil
-		}
-		if _, transitionErr := s.TeamBuild.TransitionStatus(
-			ctx, workspaceID, run.BuildRunID,
-			teambuild.StatusPlanning, teambuild.StatusBlocked,
-			userID, reasonBlueprintChangeRequested,
-		); transitionErr != nil {
-			return true, c.JSON(http.StatusConflict, map[string]string{"error": "blueprint_change_request_failed"})
-		}
-		return false, nil
-	}
-	if !isCreateTeamContinuationIntent(req.Message) {
-		return false, nil
-	}
-	return s.respondCreateTeamAuthorizationClarification(
-		c, ctx, workspaceID, userID, req, rec, sessionKey, attachments, run,
-	)
-}
-
-func (s *Server) respondCreateTeamAuthorizationClarification(
-	c echo.Context,
-	ctx context.Context,
-	workspaceID, userID string,
-	req ChatRequest,
-	rec *registry.AgentRecord,
-	sessionKey string,
-	attachments []taskqueue.Attachment,
-	run teambuild.TeamBuildRun,
-) (bool, error) {
-	conversationID, userMessageID, err := s.recordIncomingProductMessage(
-		ctx, workspaceID, req.ProjectID, rec.ID, userID, sessionKey, req.Message,
-		incomingProductMessageOptions{
-			ConversationID: req.ConversationID,
-			Attachments:    attachments,
-		},
-	)
-	if err != nil {
-		return true, respondChatConversationError(c, err)
-	}
-	if req.ClientRequestID != "" && s.ChatRequests != nil {
-		if _, err := s.ChatRequests.MarkAdmitted(ctx, workspaceID, userID, req.ClientRequestID, req.SessionID, conversationID, userMessageID); err != nil {
-			return true, c.JSON(http.StatusInternalServerError, map[string]string{"error": "chat_request_admission_failed"})
-		}
-		if _, err := s.ChatRequests.MarkRunning(ctx, workspaceID, userID, req.ClientRequestID); err != nil {
-			return true, c.JSON(http.StatusInternalServerError, map[string]string{"error": "chat_request_start_failed"})
-		}
-	}
-	userMessage := contract.Message{Role: "user", Content: injectAttachmentNotice(req.Message, attachments)}
-	_ = s.appendSessionMessages(ctx, sessionKey, userMessage)
-
-	output := "团队方案已生成。请点击方案卡片上的「继续构建」开始；如需调整，直接说明修改意见。"
-	_ = s.appendSessionMessages(ctx, sessionKey, contract.Message{Role: "assistant", Content: output})
-	metadataCtx := contextWithAssistantAgent(ctx, req.Agent)
-	metadata := s.buildAssistantMetadata(metadataCtx, workspaceID, output)
-	metadata = mergeRuntimeAssignmentMetadata(metadata, req.RuntimeAssignment)
-	if _, err := s.Conversations.AppendMessage(ctx, conversation.Message{
-		ConversationID: conversationID,
-		WorkspaceID:    workspaceID,
-		Role:           "assistant",
-		Content:        output,
-		Metadata:       metadata,
-	}); err != nil {
-		return true, c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
-	}
-	s.startOwnerMemoryFill(workspaceID, rec, userID, conversationID, req.Message, output, false)
-
-	resp := ChatResponse{
-		Output:         output,
-		StopReason:     "completed",
-		SessionID:      req.SessionID,
-		ProjectID:      req.ProjectID,
-		ConversationID: conversationID,
-		UserMessageID:  userMessageID,
-	}
-	s.finishChatRequest(ctx, workspaceID, userID, req.ClientRequestID, "completed", "", resp)
-	if req.Stream {
-		sse, err := NewSSEWriter(c)
-		if err != nil {
-			return true, err
-		}
-		_ = sse.SendEvent("chunk", map[string]any{"agent": rec.Name, "content": output})
-		donePayload := map[string]any{
-			"output":          output,
-			"stop_reason":     "completed",
-			"session_id":      req.SessionID,
-			"project_id":      req.ProjectID,
-			"conversation_id": conversationID,
-			"user_message_id": userMessageID,
-			"build_run_id":    run.BuildRunID,
-		}
-		addBusinessPhaseFields(donePayload, businessPhasePlanningCreated)
-		_ = sse.SendEvent("done", donePayload)
-		return true, nil
-	}
-	return true, c.JSON(http.StatusOK, resp)
-}
-
-func isCreateTeamContinuationIntent(message string) bool {
-	normalized := strings.ToLower(strings.TrimSpace(message))
-	normalized = strings.Trim(normalized, " \t\r\n。.!！?？")
-	if normalized == "" {
-		return false
-	}
-	blockers := []string{
-		"不批准", "拒绝", "先别", "别执行", "不要执行", "暂停", "等一下", "等等",
-		"修改", "调整", "改成", "改为", "再改", "但是", "不过", "但 ",
-		"do not approve", "don't approve", "reject", "wait",
-	}
-	for _, blocker := range blockers {
-		if strings.Contains(normalized, blocker) {
-			return false
-		}
-	}
-	exactSignals := map[string]bool{
-		"授权方案": true, "授权并执行": true, "同意方案": true, "确认授权": true,
-		"开始构建": true, "执行构建": true, "按方案执行": true, "按这个方案执行": true,
-		"授权": true, "可以": true, "可以吗": true, "好": true, "好的": true,
-		"没问题": true, "继续": true, "继续吗": true, "开始": true, "执行": true,
-		"authorize": true, "authorized": true, "authorize blueprint": true,
-		"ok": true, "okay": true, "go ahead": true,
-	}
-	if exactSignals[normalized] {
-		return true
-	}
-	continuationSignals := []string{
-		"我已阅读并批准", "批准这个", "批准该", "按这个方案执行", "按方案执行",
-		"开始构建", "继续执行", "可以继续", "同意这个方案", "同意该方案",
-	}
-	for _, signal := range continuationSignals {
-		if strings.Contains(normalized, signal) {
-			return true
-		}
-	}
-	return false
-}
-
-func isCreateTeamBlueprintChangeIntent(message string) bool {
-	normalized := strings.ToLower(strings.TrimSpace(message))
-	if normalized == "" {
-		return false
-	}
-	for _, signal := range []string{
-		"请修改方案", "修改方案", "调整方案", "重新规划", "改一下方案", "改下方案",
-		"revise the plan", "change the plan", "modify the plan", "replan",
-	} {
-		if strings.Contains(normalized, signal) {
-			return true
-		}
-	}
-	return false
 }
 
 var (
@@ -1770,25 +1501,6 @@ func (s *Server) buildToolDispatcherWithAgentTool(
 		LLM:            llm,
 		Memory:         memSvc,
 		PlatformTools: func(runtimeLLM contract.LLM, runtimeMemory *memory.Service) []contract.ToolDispatcher {
-			if teamExecution != nil && !teamAssemblerDisabled() {
-				workers, err := snapshotTeamWorkers(teamExecution.Snapshot)
-				if err != nil {
-					return []contract.ToolDispatcher{mcphost.NewRejectedMCPDispatcher(err)}
-				}
-				dispatchers := []contract.ToolDispatcher{&teamCatalogDownstream{runner: &apiLockedWorkerRunner{
-					server: s, snapshot: teamExecution.Snapshot, workers: workers,
-					llm: runtimeLLM, memory: runtimeMemory, userID: userID,
-					conversationID: conversationID,
-				}}, declareTool()}
-				// The meta-team lead (团队架构师) keeps its teamforge read
-				// tools on the legacy team-session topology as well, so the
-				// discovery phase still works when the assembler is enabled.
-				dispatchers = append(
-					dispatchers,
-					s.teamForgePlatformTools(buildCtx, tenant, conversationID, rec.Name)...,
-				)
-				return dispatchers
-			}
 			if noDispatch {
 				return nil
 			}
@@ -1812,13 +1524,6 @@ func (s *Server) buildToolDispatcherWithAgentTool(
 			if teamExecution != nil {
 				platform = append(platform, declareTool())
 			}
-			// Meta-team employees receive their role- and run-state-scoped
-			// teamforge tools (T08). Non-meta-team agents get nothing here, so
-			// existing PlatformTools behavior is unchanged.
-			platform = append(
-				platform,
-				s.teamForgePlatformTools(buildCtx, tenant, conversationID, rec.Name)...,
-			)
 			// All chat/SSE/resume/jobs entry points share this builder. Keep the
 			// transfer tool on the same final topology predicate as compilation.
 			if compiler.HasSubAgents(rec, true) {

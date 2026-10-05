@@ -1,8 +1,0 @@
-{
-  "source": "activity.json members[].stages[].public_updates[].text",
-  "run_id": "run-e659f172-6876-521c-a6d8-50642aca9c18",
-  "observed_at": "2026-09-08T00:43:21.533852Z",
-  "public_updates_truncated": true,
-  "public_updates_state": "partial",
-  "not_full_deliverable_download": true
-}

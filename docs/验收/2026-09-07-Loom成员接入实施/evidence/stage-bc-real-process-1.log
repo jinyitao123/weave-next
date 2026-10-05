@@ -1,6 +1,0 @@
-=== RUN   TestMemberSeparateProcessesFenceOldWriterAndReuseCompletionRealPG
---- PASS: TestMemberSeparateProcessesFenceOldWriterAndReuseCompletionRealPG (0.39s)
-=== RUN   TestMemberKilledProcessResumesConfirmedToolReceiptsRealPG
---- PASS: TestMemberKilledProcessResumesConfirmedToolReceiptsRealPG (0.31s)
-PASS
-ok  	github.com/jinyitao123/weave/internal/kernel/loomruntime	1.473s

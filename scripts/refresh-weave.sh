@@ -44,11 +44,8 @@ health_output=""
 for _ in {1..60}; do
 	if health_output="$(curl --silent --show-error --connect-timeout 1 --max-time 2 http://localhost:8080/v1/health 2>/dev/null)" &&
 		[[ "$(jq -r '.build_commit // empty' <<<"${health_output}")" == "${BUILD_COMMIT}" ]]; then
-		workbench_code="$(curl --silent --output /dev/null --write-out '%{http_code}' --connect-timeout 1 --max-time 2 http://localhost:${WORKBENCH_PORT:-3080}/ 2>/dev/null || true)"
-		if [[ "${workbench_code}" == "200" || "${workbench_code}" == "401" ]]; then
-			echo "Weave refresh complete: ${health_output}"
-			exit 0
-		fi
+		echo "Weave refresh complete: ${health_output}"
+		exit 0
 	fi
 	sleep 2
 done

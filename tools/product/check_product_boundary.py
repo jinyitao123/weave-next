@@ -1,4 +1,4 @@
-"""Keep retired product surfaces out of the Workbench execution backend."""
+"""Keep retired product surfaces out of the Weave execution backend."""
 
 import argparse
 import pathlib
@@ -15,31 +15,25 @@ RETIRED_PATHS = (
     "internal/app/api/agentsched.go",
     "console",
     "console-v2",
-    "workbench/.github",
-    "workbench/website",
-    "workbench/scripts/release",
-    "workbench/scripts/publish-npm-baseline.ts",
-    "workbench/scripts/build-python-release.py",
-    "workbench/scripts/install-lefthook.mjs",
-    "workbench/scripts/install-lefthook.spec.ts",
-    "workbench/lefthook.yml",
-    "workbench/python",
-    "workbench/packages/code-runtime/code-runtime-python",
-    "workbench/packages/e2b",
-    "workbench/packages/experimental/agent-team-web-profile",
-    "workbench/packages/experimental/client-ui-agent-team",
-    "workbench/packages/experimental/inspector",
-    "workbench/packages/lsp",
-    "workbench/packages/sdk/client",
-    "workbench/packages/session-query/tool-session-query",
-    "workbench/packages/session/session-title-all-prompts-llm",
-    "workbench/packages/storage/storage-sqlite",
-    "workbench/packages/subagent/subagent-acp",
-    "workbench/packages/subagent/subagent-claude-code",
-    "workbench/packages/subagent/subagent-codex",
-    "workbench/packages/subagent/subagent-dsh-sdk",
-    "workbench/packages/terminal/tool-terminal",
-    "workbench/packages/web/web-search-perplexity",
+    "workbench",
+    "Dockerfile.workbench",
+    "scripts/install-weave.sh",
+    "scripts/capability-browser-acceptance.mjs",
+    "templates",
+    "internal/build",
+    "internal/app/teamtemplates",
+    "internal/app/teamevaluations",
+    "internal/app/teamrestore",
+    "internal/app/teamassets",
+    "internal/app/metateam",
+    "internal/app/designseed",
+    *(
+        f"internal/app/teamconstruction/{name}.go"
+        for name in (
+            "candidate_evidence", "compiler_operations", "dispatch", "phases",
+            "publication_build_effect",
+        )
+    ),
     "weave-app",
     "internal/app/webui",
     "scripts/sync-webui.py",
@@ -49,6 +43,11 @@ RETIRED_PATHS = (
             "conversations", "threads", "flags", "mcp_proxy", "projects",
             "project_resources", "project_memories", "sessions", "channels",
             "events", "fork", "sources", "task_groups",
+            "retired_routes", "team_assembler", "team_blueprint_planning",
+            "team_build_authorization_token", "team_build_run_control",
+            "team_build_runs", "team_declarative_workflow_planning",
+            "team_evaluations", "team_templates", "teamforge_wiring",
+            "terminal_outcome",
         )
     ),
     "internal/base/realtime",

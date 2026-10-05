@@ -45,6 +45,8 @@ def count_lines(files: list[pathlib.Path]) -> int:
 
 
 def package_count(root: pathlib.Path, band: str) -> int:
+    if not (root / "internal" / band).is_dir():
+        return 0  # a retired band has no packages; its budget is zero, so it cannot come back unnoticed
     result = subprocess.run(
         ["go", "list", f"./internal/{band}/..."],
         cwd=root,

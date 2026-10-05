@@ -1,8 +1,0 @@
-{
-  "at": "2026-09-07T03:37:15.586015+00:00",
-  "original_artifacts": 22,
-  "recollected_artifacts": 22,
-  "matches_actual_C_receipt": true,
-  "binary_sha256": "c436f4cc71db4b935dbb33867a04b9883a9e53cbe80fae1536290f794e93fcb9",
-  "source_workdir": "<LOCAL_TEMP_PATH>"
-}

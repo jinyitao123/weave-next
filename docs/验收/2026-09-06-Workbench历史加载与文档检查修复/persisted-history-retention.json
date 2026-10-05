@@ -1,8 +1,0 @@
-{
-  "file": "session.jsonl.zstd",
-  "beforeBytes": 123043399,
-  "currentBytes": 125102831,
-  "beforeSha256": "9d90db76e3a4bd5ff2e38053f15e5dcdd60e5b44784330dea312bd441a28caed",
-  "retainedPrefixSha256": "9d90db76e3a4bd5ff2e38053f15e5dcdd60e5b44784330dea312bd441a28caed",
-  "originalPrefixUnchanged": true
-}

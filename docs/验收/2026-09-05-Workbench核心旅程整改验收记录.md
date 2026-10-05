@@ -1,5 +1,7 @@
 # Workbench 核心旅程整改验收记录
 
+W7 链接修订（2026-10-05）：本页指向已删除源码或原始取证文件的链接改为删除前提交 `d9d7f797d059b43ffc71c990cd089f0956f5accc` 中的准确路径；原记录的结论、日期和未验证项保持原义。
+
 2026-09-05 · 当前分支未提交改动 · 裸启动、Codex 内置浏览器
 
 本轮实施范围与未实现的设计项见[详细方案实施记录](../架构/2026-09-05-Workbench核心旅程体验整改详细方案.md#13-本轮代码实施记录)。页面验收在并行开发合并后统一进行。历史重开、组件模拟与实时后端事实分别记载。
@@ -21,15 +23,15 @@
 
 | 证据 | 前置与操作 | 实际观察 |
 |---|---|---|
-| [01 首页](2026-09-05-Workbench核心旅程整改证据/01-workbench-home.jpg) | 重新加载正确构建 | 页面标题和左上角均为 Weave Workbench |
-| [02 创建失败现场](2026-09-05-Workbench核心旅程整改证据/02-build-failed-scene.jpg) | 重开“Workbench验收团队与流程设计”，打开进展 | 显示明确创建失败，保存需求及技术详情，不退回候选团队 |
-| [03 窄窗口](2026-09-05-Workbench核心旅程整改证据/03-build-failed-narrow.jpg)、[04 小屏](2026-09-05-Workbench核心旅程整改证据/04-build-failed-small.jpg) | 分别使用737×776、390×844视口 | 现场切为单区域，文字换行，“回到对话继续处理”可用 |
-| [05 最终成果](2026-09-05-Workbench核心旅程整改证据/05-final-output.jpg) | 重开人工终审已完成任务并点击最终成果 | 打开当前运行交付，保留实际数据格式及下载入口 |
-| [07 中断状态](2026-09-05-Workbench核心旅程整改证据/07-interrupted-consistent.jpg) | 重开“上线前本地知识库体验评审” | 侧栏、顶部和对话回执均说明等待原节点确认停止，不展示已经恢复 |
-| [08 阅读返回](2026-09-05-Workbench核心旅程整改证据/08-public-reading-restored.jpg) | 打开负责人长公开记录，切到成果再返回 | 记录保持展开，保留“回到最新记录”入口 |
-| [09 精修前宽屏](2026-09-05-Workbench核心旅程整改证据/09-scene-wide.jpg)、[10 当前成员阅读](2026-09-05-Workbench核心旅程整改证据/10-member-reading-refined.jpg) | 前者1440×900，后者使用当前应用默认窗口 | 已收紧成员头和操作区、降低调整按钮权重、区分记录内外标题；两图视口不同，不用来声称精确节省了多少像素 |
+| [01 首页](https://github.com/jinyitao123/weave-next/blob/d9d7f797d059b43ffc71c990cd089f0956f5accc/docs/%E9%AA%8C%E6%94%B6/2026-09-05-Workbench%E6%A0%B8%E5%BF%83%E6%97%85%E7%A8%8B%E6%95%B4%E6%94%B9%E8%AF%81%E6%8D%AE/01-workbench-home.jpg) | 重新加载正确构建 | 页面标题和左上角均为 Weave Workbench |
+| [02 创建失败现场](https://github.com/jinyitao123/weave-next/blob/d9d7f797d059b43ffc71c990cd089f0956f5accc/docs/%E9%AA%8C%E6%94%B6/2026-09-05-Workbench%E6%A0%B8%E5%BF%83%E6%97%85%E7%A8%8B%E6%95%B4%E6%94%B9%E8%AF%81%E6%8D%AE/02-build-failed-scene.jpg) | 重开“Workbench验收团队与流程设计”，打开进展 | 显示明确创建失败，保存需求及技术详情，不退回候选团队 |
+| [03 窄窗口](https://github.com/jinyitao123/weave-next/blob/d9d7f797d059b43ffc71c990cd089f0956f5accc/docs/%E9%AA%8C%E6%94%B6/2026-09-05-Workbench%E6%A0%B8%E5%BF%83%E6%97%85%E7%A8%8B%E6%95%B4%E6%94%B9%E8%AF%81%E6%8D%AE/03-build-failed-narrow.jpg)、[04 小屏](https://github.com/jinyitao123/weave-next/blob/d9d7f797d059b43ffc71c990cd089f0956f5accc/docs/%E9%AA%8C%E6%94%B6/2026-09-05-Workbench%E6%A0%B8%E5%BF%83%E6%97%85%E7%A8%8B%E6%95%B4%E6%94%B9%E8%AF%81%E6%8D%AE/04-build-failed-small.jpg) | 分别使用737×776、390×844视口 | 现场切为单区域，文字换行，“回到对话继续处理”可用 |
+| [05 最终成果](https://github.com/jinyitao123/weave-next/blob/d9d7f797d059b43ffc71c990cd089f0956f5accc/docs/%E9%AA%8C%E6%94%B6/2026-09-05-Workbench%E6%A0%B8%E5%BF%83%E6%97%85%E7%A8%8B%E6%95%B4%E6%94%B9%E8%AF%81%E6%8D%AE/05-final-output.jpg) | 重开人工终审已完成任务并点击最终成果 | 打开当前运行交付，保留实际数据格式及下载入口 |
+| [07 中断状态](https://github.com/jinyitao123/weave-next/blob/d9d7f797d059b43ffc71c990cd089f0956f5accc/docs/%E9%AA%8C%E6%94%B6/2026-09-05-Workbench%E6%A0%B8%E5%BF%83%E6%97%85%E7%A8%8B%E6%95%B4%E6%94%B9%E8%AF%81%E6%8D%AE/07-interrupted-consistent.jpg) | 重开“上线前本地知识库体验评审” | 侧栏、顶部和对话回执均说明等待原节点确认停止，不展示已经恢复 |
+| [08 阅读返回](https://github.com/jinyitao123/weave-next/blob/d9d7f797d059b43ffc71c990cd089f0956f5accc/docs/%E9%AA%8C%E6%94%B6/2026-09-05-Workbench%E6%A0%B8%E5%BF%83%E6%97%85%E7%A8%8B%E6%95%B4%E6%94%B9%E8%AF%81%E6%8D%AE/08-public-reading-restored.jpg) | 打开负责人长公开记录，切到成果再返回 | 记录保持展开，保留“回到最新记录”入口 |
+| [09 精修前宽屏](https://github.com/jinyitao123/weave-next/blob/d9d7f797d059b43ffc71c990cd089f0956f5accc/docs/%E9%AA%8C%E6%94%B6/2026-09-05-Workbench%E6%A0%B8%E5%BF%83%E6%97%85%E7%A8%8B%E6%95%B4%E6%94%B9%E8%AF%81%E6%8D%AE/09-scene-wide.jpg)、[10 当前成员阅读](https://github.com/jinyitao123/weave-next/blob/d9d7f797d059b43ffc71c990cd089f0956f5accc/docs/%E9%AA%8C%E6%94%B6/2026-09-05-Workbench%E6%A0%B8%E5%BF%83%E6%97%85%E7%A8%8B%E6%95%B4%E6%94%B9%E8%AF%81%E6%8D%AE/10-member-reading-refined.jpg) | 前者1440×900，后者使用当前应用默认窗口 | 已收紧成员头和操作区、降低调整按钮权重、区分记录内外标题；两图视口不同，不用来声称精确节省了多少像素 |
 
-截图为实际浏览器采集的JPEG。原图采集时间与文件尺寸见[证据索引](2026-09-05-Workbench核心旅程整改证据/index.md)。06号图保存了精修前历史成员显示UUID的问题，已由后续统一成员显示名改动覆盖，不能作为最终效果图。减少动态效果仅由样式规则和组件检查覆盖，尚未独立录屏验证。
+截图为实际浏览器采集的JPEG。原图采集时间与文件尺寸见[证据索引](https://github.com/jinyitao123/weave-next/blob/d9d7f797d059b43ffc71c990cd089f0956f5accc/docs/%E9%AA%8C%E6%94%B6/2026-09-05-Workbench%E6%A0%B8%E5%BF%83%E6%97%85%E7%A8%8B%E6%95%B4%E6%94%B9%E8%AF%81%E6%8D%AE/index.md)。06号图保存了精修前历史成员显示UUID的问题，已由后续统一成员显示名改动覆盖，不能作为最终效果图。减少动态效果仅由样式规则和组件检查覆盖，尚未独立录屏验证。
 
 用户指出通用DSH页面曾出现在本地入口。核实原因是通用浏览器回归构建覆盖了共享静态资源；已停止该运行，恢复Workbench构建并重启本地服务。恢复前的截图不纳入本轮产品验收证据。
 

@@ -32,6 +32,24 @@ class ProductBoundaryTests(unittest.TestCase):
         self.assertTrue(any("weave-app" in error for error in errors))
         self.assertTrue(any("internal/app/webui" in error for error in errors))
 
+    def test_w7_deleted_surfaces_cannot_return(self):
+        for name in (
+            "workbench/packages/client/index.ts",
+            "Dockerfile.workbench",
+            "scripts/install-weave.sh",
+            "templates/code-review.yaml",
+            "internal/build/teambuild/store.go",
+            "internal/app/teamtemplates/catalog.go",
+            "internal/app/metateam/members.go",
+            "internal/app/designseed/seed.go",
+            "internal/app/api/team_templates.go",
+            "internal/app/teamconstruction/dispatch.go",
+            "scripts/capability-browser-acceptance.mjs",
+        ):
+            self.source(name, "retired")
+        errors = check(self.root)
+        self.assertEqual(len(errors), 11, errors)
+
     def test_all_six_retired_documents_are_rejected(self):
         for name in (
             "架构/2026-08-25-Weave-产品方案-十分钟拉起一支业务团队.md",

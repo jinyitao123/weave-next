@@ -27,11 +27,14 @@ func TestHandleReadyReportsMissingDependencies(t *testing.T) {
 	if recorder.Code != http.StatusServiceUnavailable ||
 		!strings.Contains(recorder.Body.String(), `"status":"not_ready"`) ||
 		!strings.Contains(recorder.Body.String(), `"credential_store"`) ||
-		!strings.Contains(recorder.Body.String(), `"team_template_service"`) {
+		strings.Contains(recorder.Body.String(), "team_template") {
 		t.Fatalf("status = %d body = %s", recorder.Code, recorder.Body.String())
 	}
 }
 
+// Readiness must not depend on retired services: Compose gates the container's
+// health on this endpoint, so a required team template service that no longer
+// exists would keep a healthy Weave permanently not_ready.
 func TestHandleReadyReportsReady(t *testing.T) {
 	server := &Server{
 		Pool:            testutil.PostgresPool(t),
@@ -41,7 +44,6 @@ func TestHandleReadyReportsReady(t *testing.T) {
 		Credentials:     &credentials.Store{},
 		DeliveryTargets: &delivery.Store{},
 		MCPRegistry:     &mcpregistry.Store{},
-		TeamTemplates:   &fakeTeamTemplateService{},
 	}
 	recorder := httptest.NewRecorder()
 	ctx := echo.New().NewContext(httptest.NewRequest(http.MethodGet, "/v1/ready", nil), recorder)

@@ -66,8 +66,8 @@ class SourceRunnerTransitionTests(DeploymentHarness):
         self.dispatch.chmod(0o700)
         self.marker = self.state / 'legacy-runner-executed'
         self.old_runner = self.state / 'deploy-main.sh'
-        # The installed pre-cutover runner would unconditionally bring the old
-        # web services back. The new entry must never execute this local file.
+        # The installed pre-cutover runner is stale local code. The new entry
+        # must never execute this local file.
         self.old_runner.write_text('#!/bin/bash\nset -eu\ntouch "' + str(self.marker) + '"\n'
                                    'sudo docker compose up -d workbench workbench-gateway\n')
         self.old_runner.chmod(0o700)
@@ -84,10 +84,10 @@ class SourceRunnerTransitionTests(DeploymentHarness):
         ''')
 
     def deploy_source(self, payload=None, runner_sha=RUNNER_SHA, main_commit=COMMIT):
-        self.containers.write_text('{"db":true,"weave":true,"workbench":true,"workbench-gateway":true}')
+        self.containers.write_text('{"db":true,"weave":true}')
         self.env_file.write_text('WEAVE_ADMIN_PASS=fixture-admin\nWEAVE_API_KEY=fixture-key\n'
-                                 'WEAVE_RUNTIME_SERVER_URL=http://example.invalid:8080\nWEAVE_WEB_WORKBENCH=false\n')
-        env = dict(self.env, MOCK_WEB_WORKBENCH='false', MOCK_MAIN_COMMIT=main_commit,
+                                 'WEAVE_RUNTIME_SERVER_URL=http://example.invalid:8080\n')
+        env = dict(self.env, MOCK_MAIN_COMMIT=main_commit,
                    SSH_ORIGINAL_COMMAND=f'deploy {COMMIT} {runner_sha}')
         return subprocess.run(['/bin/bash', str(self.dispatch)], input=self.input if payload is None else payload,
                               capture_output=True, env=env, timeout=20)
@@ -97,7 +97,7 @@ class SourceRunnerTransitionTests(DeploymentHarness):
         self.assertEqual(first.returncode, 0, first.stderr.decode())
         self.assertFalse(self.marker.exists())
         calls = self.captured()
-        self.assert_disabled_cutover(calls)
+        self.assert_api_cutover(calls)
         executed = [call for call in calls if 'executed_script' in call]
         self.assertEqual(len(executed), 1)
         self.assertIn('.source-runner.', executed[0]['executed_script'])
@@ -105,15 +105,13 @@ class SourceRunnerTransitionTests(DeploymentHarness):
         self.assertIn(f'Executing verified source runner {COMMIT} ({RUNNER_SHA})', first.stdout.decode())
         self.assertEqual(sum('main_check' in call for call in calls), 3)
         self.assertEqual(self.old_runner.read_bytes(), (SCRIPTS / 'deploy-main.sh').read_bytes())
-        self.assert_storage_preserved()
         self.assertFalse(list(self.state.glob('.source-runner.*')))
         self.calls.unlink()
         second = self.deploy_source()
         self.assertEqual(second.returncode, 0, second.stderr.decode())
-        self.assert_disabled_cutover(self.captured())
+        self.assert_api_cutover(self.captured())
         self.assertFalse(self.marker.exists())
         self.assertFalse(list(self.state.glob('.source-runner.*')))
-        self.assert_storage_preserved()
 
     def assert_no_deployment_executed(self):
         calls = self.captured() if self.calls.exists() else []

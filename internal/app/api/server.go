@@ -31,8 +31,6 @@ import (
 	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/base/snapshot"
 	"github.com/jinyitao123/weave/internal/base/storeext"
-	"github.com/jinyitao123/weave/internal/build/teambuild"
-	"github.com/jinyitao123/weave/internal/build/teamforge"
 	"github.com/jinyitao123/weave/internal/kernel/audit"
 	"github.com/jinyitao123/weave/internal/kernel/businessaction"
 	"github.com/jinyitao123/weave/internal/kernel/compiler"
@@ -104,11 +102,6 @@ type Server struct {
 	ProductPublication        *teamconstruction.ProductPublication // nil until product activation is bound to kernel receipts
 	PublicationAuthority      *teamconstruction.PublicationAuthority
 	WorkflowHealth            *workflowhealth.Store              // nil if PG pool unavailable
-	TeamBuild                 *teambuild.Store                   // nil if PG pool unavailable
-	TeamBuildOrchestrator     TeamBuildExecutionService          // nil until the production meta-team controller is configured
-	TeamTemplates             TeamTemplateService                // nil until the template fast path is configured
-	TeamEvaluations           TeamEvaluationService              // nil until post-template evaluation is configured
-	TeamForgeDrafts           *teamforge.DraftRegistry           // durable build draft registry; nil disables teamforge wiring
 	Pool                      *pgxpool.Pool                      // nil if PG pool unavailable
 	TeamWorkers               *agentcatalog.TeamWorkerRepository // nil if PG pool unavailable
 	DeliveryTargets           *delivery.Store                    // nil if WEAVE_SECRET_KEY is not configured
@@ -268,8 +261,6 @@ func NewServer(cfg *config.Config, store loom.Store, models *llmrouter.Resolver)
 			s.WorkflowHealth = healthStore
 			s.workflowHealthWorkers = &workflowHealthWorkers{store: healthStore}
 		}
-		s.TeamBuild = teambuild.New(ps.Pool(), teambuild.RealClock{})
-		s.TeamForgeDrafts = teamforge.NewDraftRegistry(s.TeamBuild)
 		s.WorkflowScheduleAdmission = NewWorkflowScheduleAdmissionService(s.Workflow, s.WorkflowArtifacts)
 		s.ScheduleTransactions = ps.Pool()
 		s.Snapshots = snapshot.NewStore(ps.Pool())
@@ -388,9 +379,6 @@ func (s *Server) registerRoutes() {
 	auth.GET("/deliverables/:id/content", s.handleDownloadFinalDeliverable, chatScope)
 	auth.GET("/teams", s.handleListTeams, orgScope)
 	auth.POST("/teams", s.handleCreateTeam, RequireAnyRole("developer", "admin"), orgScope)
-	if !s.Config.RetireLegacyPlatformAPIs {
-		s.registerRetiredTeamConstructionRoutes(auth, orgScope)
-	}
 	auth.GET("/teams/:id", s.handleGetTeam, orgScope)
 	auth.GET("/teams/:id/members/:agent/config-draft", s.handleGetTeamMemberConfigDraft, RequireAnyRole("developer", "admin", "owner"), orgScope)
 	auth.PUT("/teams/:id/members/:agent/config-draft", s.handlePutTeamMemberConfigDraft, RequireAnyRole("developer", "admin", "owner"), orgScope)

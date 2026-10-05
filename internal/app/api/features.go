@@ -3,27 +3,25 @@ package api
 import (
 	"errors"
 	"net/http"
+	"strings"
 
-	"github.com/jinyitao123/weave/internal/app/conversation"
-	"github.com/jinyitao123/weave/internal/app/metateam"
 	"github.com/labstack/echo/v4"
 )
 
-var errMetaTeamDisabled = errors.New("metateam_disabled")
+// platformInternalAgentPrefix marks agents that belong to the platform rather
+// than to a workspace. The retired meta-team and graph designer live under it.
+// Their records stay in existing databases, but no client may run, read,
+// change or delete them: they only work with tools that no longer exist.
+const platformInternalAgentPrefix = "__"
 
-func (s *Server) metaTeamEnabled() bool {
-	// Nil configuration is used by focused handler tests and predates feature
-	// flags; preserve the historical enabled behavior there.
-	return s == nil || s.Config == nil || s.Config.MetaTeamEnabled
+var errPlatformInternalAgent = errors.New("platform_internal_agent")
+
+func isPlatformInternalAgent(name string) bool {
+	return strings.HasPrefix(name, platformInternalAgentPrefix)
 }
 
-func (s *Server) metaTeamRunDisabled(agentName, intent string) bool {
-	return !s.metaTeamEnabled() && (metateam.IsAgentName(agentName) ||
-		intent == conversation.IntentCreateTeam || intent == "optimize_team")
-}
-
-func metaTeamDisabledResponse(c echo.Context) error {
+func platformInternalAgentResponse(c echo.Context) error {
 	return c.JSON(http.StatusForbidden, map[string]string{
-		"code": "metateam_disabled", "error": "metateam_disabled",
+		"code": "platform_internal_agent", "error": "platform_internal_agent",
 	})
 }

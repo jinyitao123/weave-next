@@ -1,6 +1,0 @@
-=== RUN   TestStandardToolsPublicationReachesActualMCPAndPreservesFrozenContractRealPG
-2026/09/07 13:42:12 INFO step.end tenant=tools-publication step=prompt_assemble run_id=af6bab10-92fc-4df8-85b0-ba2574216924 duration_ms=0
-2026/09/07 13:42:12 INFO step.end tenant=tools-publication step=chat run_id=af6bab10-92fc-4df8-85b0-ba2574216924 duration_ms=1
---- PASS: TestStandardToolsPublicationReachesActualMCPAndPreservesFrozenContractRealPG (0.33s)
-PASS
-ok  	github.com/jinyitao123/weave/internal/kernel/workflow	0.978s

@@ -1,4 +1,0 @@
-id,status,agent,created_at,started_at,completed_at,elapsed_seconds,error
-task-4fb846c7-5f2a-4ab3-a778-16df88e2a5a6,cancelled,corona-prephase-a-lab-v3-luna-mission-physics-analyst,2026-09-06 14:15:59.13723+08,2026-09-06 14:35:13.793965+08,2026-09-06 15:00:54.143419+08,1540.3,""
-task-a976375b-bc75-4b64-aeb2-b7a7708ece2c,failed,team-d451107eb79f-researcher-2,2026-09-05 19:27:47.571223+08,2026-09-05 19:27:47.795268+08,2026-09-05 19:29:50.680058+08,122.9,runtime offline: execution lease expired
-task-2569fafa-ca5d-44e3-ba7f-53004b03e5b6,failed,team-d451107eb79f-researcher-1,2026-09-05 19:27:45.601003+08,2026-09-05 19:27:45.633719+08,2026-09-05 19:29:50.680058+08,125.0,runtime offline: execution lease expired

@@ -1,8 +1,0 @@
-=== RUN   TestMemberArtifactExportSurvivesReceiptRecoveryRealPG
---- PASS: TestMemberArtifactExportSurvivesReceiptRecoveryRealPG (0.32s)
-PASS
-ok  	github.com/jinyitao123/weave/internal/kernel/loomruntime	1.096s
-=== RUN   TestMemberExportRejectsUnsafeOrAmbiguousFiles
---- PASS: TestMemberExportRejectsUnsafeOrAmbiguousFiles (0.00s)
-PASS
-ok  	github.com/jinyitao123/weave/internal/base/fileartifact	1.264s

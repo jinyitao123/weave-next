@@ -88,14 +88,6 @@ func New(config Config, httpClient *http.Client) (*Client, error) {
 	}, nil
 }
 
-type TeamCreateRequest struct {
-	YAML            string          `json:"yaml,omitempty"`
-	Sample          string          `json:"sample,omitempty"`
-	Overrides       map[string]any  `json:"overrides,omitempty"`
-	DeclarativeSpec json.RawMessage `json:"declarative_spec,omitempty"`
-	IdempotencyKey  string          `json:"idempotency_key"`
-}
-
 type CapabilityPlanRequest struct {
 	Prompt         string
 	Model          string
@@ -149,10 +141,6 @@ type APIKeyCreateRequest struct {
 	ExpiresAt *time.Time `json:"expires_at,omitempty"`
 }
 
-func (c *Client) TeamTemplateList(ctx context.Context) (json.RawMessage, error) {
-	return c.getJSON(ctx, "/v1/team-templates/samples")
-}
-
 func (c *Client) ProviderList(ctx context.Context) (json.RawMessage, error) {
 	return c.getJSON(ctx, "/v1/providers")
 }
@@ -203,28 +191,12 @@ func (c *Client) TeamStatus(ctx context.Context, teamID string) (json.RawMessage
 	return c.getJSON(ctx, "/v1/teams/"+url.PathEscape(strings.TrimSpace(teamID))+"?include=summary")
 }
 
-func (c *Client) UsageSummary(ctx context.Context, buildRunID string) (json.RawMessage, error) {
+func (c *Client) UsageSummary(ctx context.Context) (json.RawMessage, error) {
 	workspaceUsage, err := c.getJSON(ctx, "/v1/usage")
 	if err != nil {
 		return nil, err
 	}
-	result := map[string]json.RawMessage{"workspace_usage": workspaceUsage}
-	if strings.TrimSpace(buildRunID) != "" {
-		buildUsage, err := c.getJSON(ctx, "/v1/internal/team-build-runs/"+
-			url.PathEscape(strings.TrimSpace(buildRunID))+"/usage")
-		if err != nil {
-			return nil, err
-		}
-		result["build_usage"] = buildUsage
-	}
-	return json.Marshal(result)
-}
-
-func (c *Client) TeamCreate(ctx context.Context, request TeamCreateRequest) (json.RawMessage, error) {
-	if strings.TrimSpace(request.IdempotencyKey) == "" {
-		return nil, &Error{Code: "idempotency_key_required"}
-	}
-	return c.sendJSON(ctx, http.MethodPost, "/v1/teams:from-template", request)
+	return json.Marshal(map[string]json.RawMessage{"workspace_usage": workspaceUsage})
 }
 
 func (c *Client) CapabilityList(ctx context.Context) (json.RawMessage, error) {
@@ -404,10 +376,6 @@ func (c *Client) WaitDispatch(ctx context.Context, clientRequestID string) (json
 		case <-timer.C:
 		}
 	}
-}
-
-func (c *Client) BuildStatus(ctx context.Context, buildRunID string) (json.RawMessage, error) {
-	return c.getJSON(ctx, "/v1/internal/team-build-runs/"+url.PathEscape(strings.TrimSpace(buildRunID))+"/progress")
 }
 
 func (c *Client) DispatchStatus(ctx context.Context, clientRequestID string) (json.RawMessage, error) {

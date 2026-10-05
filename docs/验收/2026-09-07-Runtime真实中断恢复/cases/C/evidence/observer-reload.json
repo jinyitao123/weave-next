@@ -1,6 +1,0 @@
-{
-  "at": "2026-09-07T03:19:49.139733+00:00",
-  "observer_pid": 22365,
-  "reason": "Support native model run_tests.py with counted custom test summary under unchanged successful-model-test criterion",
-  "driver_and_runtime_not_interrupted": true
-}

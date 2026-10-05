@@ -1,4 +1,0 @@
-ok  	github.com/jinyitao123/weave/internal/kernel/runtimes	2.567s
-ok  	github.com/jinyitao123/weave/internal/app/daemon	1.438s
-ok  	github.com/jinyitao123/weave/internal/base/teamrun	(cached)
-?   	github.com/jinyitao123/weave/internal/base/deliverable	[no test files]

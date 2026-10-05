@@ -1,1 +1,0 @@
-This is a bounded inference-only benchmark. Return the requested protocol response. Do not execute native tools, shell commands, subagents, or read workspace files. Tools in the serialized request are executed by the benchmark host.

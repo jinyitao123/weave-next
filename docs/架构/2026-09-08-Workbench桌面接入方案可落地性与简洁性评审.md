@@ -1,5 +1,7 @@
 # Workbench 桌面接入方案可落地性与简洁性评审
 
+W7 链接修订（2026-10-05）：本页指向已删除源码或原始取证文件的链接改为删除前提交 `d9d7f797d059b43ffc71c990cd089f0956f5accc` 中的准确路径；原记录的结论、日期和未验证项保持原义。
+
 日期：2026-09-08
 审查对象：产品技术方案及实施计划 v0.1
 结论版本：v0.2
@@ -36,7 +38,7 @@ v0.1 是一份范围较完整的云端多用户 Workbench 蓝图，但还不是�
 
 原需求是安装、登录、默认服务与显式改址。v0.1 第 1、4 节加入完整对话跨设备可见并作为首期标准，没有将其标为新增产品选择。
 
-Workbench dispose 当前清理计时器和观察请求，没有在此路径发送取消业务运行。证据：[workbench-app/src/index.ts:1469](../../workbench/packages/bundle/workbench-app/src/index.ts#L1469)。这支持“关闭 Host 本身不等于取消远程 run”的判断，但实际运行续行仍需实测。
+Workbench dispose 当前清理计时器和观察请求，没有在此路径发送取消业务运行。证据：[workbench-app/src/index.ts:1469](https://github.com/jinyitao123/weave-next/blob/d9d7f797d059b43ffc71c990cd089f0956f5accc/workbench/packages/bundle/workbench-app/src/index.ts#L1469)。这支持“关闭 Host 本身不等于取消远程 run”的判断，但实际运行续行仍需实测。
 
 **裁决：采纳，收窄远程路线的论证。** 业务运行独立于客户端是两种 Host 部署路线共同需要的合同。真正决定 Host 地点的是完整对话的位置、前台监督可用性、本机材料与发行成本。当前保留远程静态试点建议，依据是既有部署接近它，而非假定用户已经要求完整跨设备体验。
 
@@ -54,7 +56,7 @@ JWT 解析当前用户并以 user.Role 设置角色；用户更新只更新 weav
 
 当前 RPC handler 只接收 endpoint、payload、signal；MCP tools/call 只发送 name 与 arguments。增加一个动态 user token provider，仍不能确定同账号两个设备中哪一个授权了当前队列操作。
 
-主审回查：[rpc-host.ts:240](../../workbench/packages/client/connection/src/rpc-host.ts#L240)、[mcp-client/tools.ts:80](../../workbench/packages/mcp/mcp-client/src/tools.ts#L80)。Go 配置还限制 wv_sk_ 前缀：[weaveclient/config.go:43](../../internal/app/weaveclient/config.go#L43)。因此不能只将 JWT 写入原环境变量。
+主审回查：[rpc-host.ts:240](https://github.com/jinyitao123/weave-next/blob/d9d7f797d059b43ffc71c990cd089f0956f5accc/workbench/packages/client/connection/src/rpc-host.ts#L240)、[mcp-client/tools.ts:80](https://github.com/jinyitao123/weave-next/blob/d9d7f797d059b43ffc71c990cd089f0956f5accc/workbench/packages/mcp/mcp-client/src/tools.ts#L80)。Go 配置还限制 wv_sk_ 前缀：[weaveclient/config.go:43](../../internal/app/weaveclient/config.go#L43)。因此不能只将 JWT 写入原环境变量。
 
 **裁决：采纳核心，收窄建议机制。** 保留一个可信 OperationContext，绑定来源会话、用户、组织、会话/操作 ID。先不建设泛化 TurnGrant。每次新业务写入核验原会话；模型参数不能提供身份；设备 B 不能替设备 A 续权。
 
@@ -64,7 +66,7 @@ JWT 解析当前用户并以 user.Role 设置角色；用户更新只更新 weav
 
 当前 prompt 将 requestId 写入消息来源，调用 followup/steer 后返回 accepted。类型注释将其定义为 inbox 回执。持久层后台批写存在单独生命周期，当前入口未等待该消息完成持久接收。
 
-主审回查：[commands.ts:303](../../workbench/packages/api/session-controller/src/commands.ts#L303)、[types.ts:344](../../workbench/packages/api/session-controller/src/types.ts#L344)、[coordinator.ts:31](../../workbench/packages/session/session-persistence/src/coordinator.ts#L31)。requestId 被记录不等于该入口实现持久去重。
+主审回查：[commands.ts:303](https://github.com/jinyitao123/weave-next/blob/d9d7f797d059b43ffc71c990cd089f0956f5accc/workbench/packages/api/session-controller/src/commands.ts#L303)、[types.ts:344](https://github.com/jinyitao123/weave-next/blob/d9d7f797d059b43ffc71c990cd089f0956f5accc/workbench/packages/api/session-controller/src/types.ts#L344)、[coordinator.ts:31](https://github.com/jinyitao123/weave-next/blob/d9d7f797d059b43ffc71c990cd089f0956f5accc/workbench/packages/session/session-persistence/src/coordinator.ts#L31)。requestId 被记录不等于该入口实现持久去重。
 
 **裁决：采纳，提升至第一条链路。** 新输入接收事件应在进入执行前持久保存，并能按稳定 ID 返回同一回执。优先复用 Session 事件/持久层，避免新建一个双写任务库。模型计算可能重试，业务副作用则必须使用原操作身份对账。
 
@@ -74,7 +76,7 @@ JWT 解析当前用户并以 user.Role 设置角色；用户更新只更新 weav
 
 当前 poll 会提交 stop、rerun、retry、人审与纠偏，然后再读取状态。run 产生前还会读取 build_id 和 client_request_id。浏览器收到 204 时只是 Host 的操作日志已经保存。
 
-主审回查：[workbench-app:1113](../../workbench/packages/bundle/workbench-app/src/index.ts#L1113)、[1143](../../workbench/packages/bundle/workbench-app/src/index.ts#L1143)、[1159](../../workbench/packages/bundle/workbench-app/src/index.ts#L1159)、[1242](../../workbench/packages/bundle/workbench-app/src/index.ts#L1242)。
+主审回查：[workbench-app:1113](https://github.com/jinyitao123/weave-next/blob/d9d7f797d059b43ffc71c990cd089f0956f5accc/workbench/packages/bundle/workbench-app/src/index.ts#L1113)、[1143](https://github.com/jinyitao123/weave-next/blob/d9d7f797d059b43ffc71c990cd089f0956f5accc/workbench/packages/bundle/workbench-app/src/index.ts#L1143)、[1159](https://github.com/jinyitao123/weave-next/blob/d9d7f797d059b43ffc71c990cd089f0956f5accc/workbench/packages/bundle/workbench-app/src/index.ts#L1159)、[1242](https://github.com/jinyitao123/weave-next/blob/d9d7f797d059b43ffc71c990cd089f0956f5accc/workbench/packages/bundle/workbench-app/src/index.ts#L1242)。
 
 **裁决：采纳职责拆分，暂缓长期观察授权。** 分成提交命令、请求对账、状态读取三个内部职责，保留同一个 WorkTask。首期没有有效个人观察授权就暂停读取，重新进入后对账；已接受的运行继续。只有明确要求无人登录持续监督时，再设计 build/request/run 范围的只读授权。
 
@@ -94,7 +96,7 @@ JWT 解析当前用户并以 user.Role 设置角色；用户更新只更新 weav
 
 当前 JSONL 追加由文件系统执行，发生失败时按之前长度回滚；写入没有 Host epoch 校验。若仅因控制面租约超时启动另一写者，旧 Host 恢复后仍可能追加或截断文件。
 
-源码依据：[JSONL appendLines:670](../../workbench/packages/session/session-persistence-jsonl/src/index.ts#L670)。此处发现的是 v0.1 拟议自动接管与现有写入机制不匹配，没有声称当前静态部署已经发生损坏。
+源码依据：[JSONL appendLines:670](https://github.com/jinyitao123/weave-next/blob/d9d7f797d059b43ffc71c990cd089f0956f5accc/workbench/packages/session/session-persistence-jsonl/src/index.ts#L670)。此处发现的是 v0.1 拟议自动接管与现有写入机制不匹配，没有声称当前静态部署已经发生损坏。
 
 **裁决：采纳，首期删除通用 Host 调度和自动 lease 接管。** 固定清单、独立卷、单写者、串行替换即可。只有存储独占或实际写入 fencing 通过暂停旧进程/恢复旧进程的故障测试，才进入自动接管。
 
@@ -102,7 +104,7 @@ JWT 解析当前用户并以 user.Role 设置角色；用户更新只更新 weav
 
 workbench-app 启动遍历 ctx.sessions.list()，该 list 只返回已加载的 live Session；持久历史列表不会自动激活全部任务轮询。
 
-证据：[workbench-app:1310](../../workbench/packages/bundle/workbench-app/src/index.ts#L1310)、[SessionStore:1048](../../workbench/packages/core/session/src/index.ts#L1048)。
+证据：[workbench-app:1310](https://github.com/jinyitao123/weave-next/blob/d9d7f797d059b43ffc71c990cd089f0956f5accc/workbench/packages/bundle/workbench-app/src/index.ts#L1310)、[SessionStore:1048](https://github.com/jinyitao123/weave-next/blob/d9d7f797d059b43ffc71c990cd089f0956f5accc/workbench/packages/core/session/src/index.ts#L1048)。
 
 **裁决：采纳事实；首期收窄承诺。** 默认要求重新打开对话后对账。无人打开时恢复监督需要持久发现索引或日志扫描，并仅恢复必要 Session，不自动继续 LLM。它只有在产品选择该体验后成为硬门槛。
 
@@ -110,7 +112,7 @@ workbench-app 启动遍历 ctx.sessions.list()，该 list 只返回已加载的 
 
 SessionHeader 已有 ID、时间和父会话；目录归属由 WorkspaceRegistry 管理，创建流程也明确处理 Session 建立但目录关联失败的情况。v0.1 新表中的 revision、project_id、conversation_id 与这些对象没有单一权威关系。
 
-证据：[SessionHeader](../../workbench/packages/core/session/src/types.ts#L61)、[会话创建](../../workbench/packages/api/session-controller/src/commands.ts#L72)、[历史目录归属](../../workbench/packages/workspace/workspace/src/index.ts#L421)。
+证据：[SessionHeader](https://github.com/jinyitao123/weave-next/blob/d9d7f797d059b43ffc71c990cd089f0956f5accc/workbench/packages/core/session/src/types.ts#L61)、[会话创建](https://github.com/jinyitao123/weave-next/blob/d9d7f797d059b43ffc71c990cd089f0956f5accc/workbench/packages/api/session-controller/src/commands.ts#L72)、[历史目录归属](https://github.com/jinyitao123/weave-next/blob/d9d7f797d059b43ffc71c990cd089f0956f5accc/workbench/packages/workspace/workspace/src/index.ts#L421)。
 
 **裁决：采纳，首期取消第二份权威对话表。** 固定 Host/卷证明用户归属，conversation_id = SessionId。项目仍使用明确的 Weave project_id；目录分组保持 Host 职责。未来统一发现索引只能由权威日志重建，不保存另一套标题/运行状态/revision。
 

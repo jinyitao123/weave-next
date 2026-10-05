@@ -17,7 +17,6 @@ import (
 	"github.com/jinyitao123/weave/internal/base/db"
 	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/base/frozen"
-	"github.com/jinyitao123/weave/internal/base/snapshot"
 	"github.com/jinyitao123/weave/internal/base/testutil"
 	"github.com/jinyitao123/weave/internal/kernel/compiler"
 	"github.com/jinyitao123/weave/internal/kernel/credentials"
@@ -194,15 +193,6 @@ func TestPublicationAuthorityRefreshesCurrentUserAndExactDependencyProofsRealPG(
 			trial, err := product.AdmitCandidate(ctx, candidateTarget, candidateRequest)
 			if err != nil {
 				t.Fatal(err)
-			}
-			evidenceReader := candidateEvidenceReader{requests: product.requests, snapshots: snapshot.NewStore(pool)}
-			evidence, err := evidenceReader.ListByTeam(ctx, "authority", "team")
-			if err != nil || len(evidence) != 1 || evidence[0].BuildRunID != candidateTarget.BuildRunID || evidence[0].BuildRoundNo != candidateTarget.RoundNo || evidence[0].RunID != trial.Receipt.RunID {
-				t.Fatal("product candidate evidence lost its verified build association", err)
-			}
-			foreignEvidence, err := evidenceReader.ListByTeam(other, "authority", "team")
-			if err != nil || len(foreignEvidence) != 0 {
-				t.Fatal("candidate evidence crossed actor boundary", err)
 			}
 			// A kernel receipt cannot carry access across product interruption or
 			// candidate recovery. Current authorization must be checked again.

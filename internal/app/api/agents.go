@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"regexp"
 
-	"github.com/jinyitao123/weave/internal/app/metateam"
 	"github.com/jinyitao123/weave/internal/kernel/engine"
 	"github.com/jinyitao123/weave/internal/kernel/mcphost"
 	"github.com/jinyitao123/weave/internal/kernel/mcpregistry"
@@ -251,7 +250,7 @@ func (s *Server) handleListAgents(c echo.Context) error {
 	visible := records[:0]
 	includePlatform := c.QueryParam("include") == "platform"
 	for _, record := range records {
-		if record.Name == metateam.BlueprintPatchPlannerName {
+		if isPlatformInternalAgent(record.Name) {
 			continue
 		}
 		if !includePlatform && record.Visibility == registry.VisibilityPlatform {
@@ -265,7 +264,7 @@ func (s *Server) handleListAgents(c echo.Context) error {
 func (s *Server) handleGetAgent(c echo.Context) error {
 	tenant := getTenant(c)
 	name := c.Param("name")
-	if name == metateam.BlueprintPatchPlannerName {
+	if isPlatformInternalAgent(name) {
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "agent not found"})
 	}
 	rec, err := s.Registry.Get(c.Request().Context(), tenant, name)
@@ -322,7 +321,7 @@ func (s *Server) handleCreateAgent(c echo.Context) error {
 func (s *Server) handleUpdateAgent(c echo.Context) error {
 	tenant := getTenant(c)
 	name := c.Param("name")
-	if name == metateam.BlueprintPatchPlannerName {
+	if isPlatformInternalAgent(name) {
 		return c.JSON(http.StatusForbidden, map[string]string{"error": "platform-internal agent"})
 	}
 	var req agentWriteRequest
@@ -541,7 +540,7 @@ func mergeAgentRecordWithPresence(
 func (s *Server) handleDeleteAgent(c echo.Context) error {
 	tenant := getTenant(c)
 	name := c.Param("name")
-	if name == metateam.BlueprintPatchPlannerName {
+	if isPlatformInternalAgent(name) {
 		return c.JSON(http.StatusForbidden, map[string]string{"error": "platform-internal agent"})
 	}
 	if err := s.Registry.Delete(c.Request().Context(), tenant, name); err != nil {

@@ -1,3 +1,0 @@
-Browser tab: 1, Title: "上线前本地知识库体验评审 — Weave Workbench", URL: "http://127.0.0.1:13081/".
-There has been no change in the accessibility tree.
-The focused UI element is 68 button Description: 打开工作现场, Help: design-studio 体验验收 · 1/4 个阶段

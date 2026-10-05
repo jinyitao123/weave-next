@@ -1,5 +1,7 @@
 # Loom 承载 Workbench 前台循环评估
 
+W7 链接修订（2026-10-05）：本页指向已删除源码或原始取证文件的链接改为删除前提交 `d9d7f797d059b43ffc71c990cd089f0956f5accc` 中的准确路径；原记录的结论、日期和未验证项保持原义。
+
 日期：2026-09-14
 
 状态：评估建议，未实施替换，未批准为迁移待办。本文不改变现行分层基线及 G1–G8 的实施范围。
@@ -146,12 +148,12 @@ Loom 的通用扩展应使用中性的消息、轮次输入、执行事件和调
 
 ## 9. 主要源码证据
 
-- [Workbench profile 组合](../../workbench/packages/boot/app-boot/src/profile.ts#L146)、[产品覆盖配置](../../workbench/packages/bundle/workbench-app/cordis.patch.yml#L54)。
-- [AgentFactory 替换接口](../../workbench/packages/core/agent/src/index.ts#L167)、[当前工厂注册](../../workbench/packages/core/agent-loop/src/index.ts#L351)。
-- [Agent 输入与取消契约](../../workbench/packages/core/agent/src/runtime-types.ts#L82)、[当前执行循环](../../workbench/packages/core/agent-loop/src/agent.ts#L232)。
-- [会话日志与请求重建](../../workbench/packages/core/session/README.md)、[流式内容块](../../workbench/packages/llm/llm/src/types.ts#L356)。
-- [前台工具强制限制](../../workbench/packages/bundle/workbench-app/src/foreground-tools.ts)、[工具屏障调度](../../workbench/packages/core/agent-loop/src/tool-calls.ts)、[单工具执行入口](../../workbench/packages/core/tools/src/index.ts#L1341)。
-- [原始输入与派发幂等](../../workbench/packages/bundle/workbench-app/src/dispatch-input.ts)、[提问 UI 工具入口](../../workbench/packages/interaction/tool-ask-user/src/index.ts#L80)。
+- [Workbench profile 组合](https://github.com/jinyitao123/weave-next/blob/d9d7f797d059b43ffc71c990cd089f0956f5accc/workbench/packages/boot/app-boot/src/profile.ts#L146)、[产品覆盖配置](https://github.com/jinyitao123/weave-next/blob/d9d7f797d059b43ffc71c990cd089f0956f5accc/workbench/packages/bundle/workbench-app/cordis.patch.yml#L54)。
+- [AgentFactory 替换接口](https://github.com/jinyitao123/weave-next/blob/d9d7f797d059b43ffc71c990cd089f0956f5accc/workbench/packages/core/agent/src/index.ts#L167)、[当前工厂注册](https://github.com/jinyitao123/weave-next/blob/d9d7f797d059b43ffc71c990cd089f0956f5accc/workbench/packages/core/agent-loop/src/index.ts#L351)。
+- [Agent 输入与取消契约](https://github.com/jinyitao123/weave-next/blob/d9d7f797d059b43ffc71c990cd089f0956f5accc/workbench/packages/core/agent/src/runtime-types.ts#L82)、[当前执行循环](https://github.com/jinyitao123/weave-next/blob/d9d7f797d059b43ffc71c990cd089f0956f5accc/workbench/packages/core/agent-loop/src/agent.ts#L232)。
+- [会话日志与请求重建](https://github.com/jinyitao123/weave-next/blob/d9d7f797d059b43ffc71c990cd089f0956f5accc/workbench/packages/core/session/README.md)、[流式内容块](https://github.com/jinyitao123/weave-next/blob/d9d7f797d059b43ffc71c990cd089f0956f5accc/workbench/packages/llm/llm/src/types.ts#L356)。
+- [前台工具强制限制](https://github.com/jinyitao123/weave-next/blob/d9d7f797d059b43ffc71c990cd089f0956f5accc/workbench/packages/bundle/workbench-app/src/foreground-tools.ts)、[工具屏障调度](https://github.com/jinyitao123/weave-next/blob/d9d7f797d059b43ffc71c990cd089f0956f5accc/workbench/packages/core/agent-loop/src/tool-calls.ts)、[单工具执行入口](https://github.com/jinyitao123/weave-next/blob/d9d7f797d059b43ffc71c990cd089f0956f5accc/workbench/packages/core/tools/src/index.ts#L1341)。
+- [原始输入与派发幂等](https://github.com/jinyitao123/weave-next/blob/d9d7f797d059b43ffc71c990cd089f0956f5accc/workbench/packages/bundle/workbench-app/src/dispatch-input.ts)、[提问 UI 工具入口](https://github.com/jinyitao123/weave-next/blob/d9d7f797d059b43ffc71c990cd089f0956f5accc/workbench/packages/interaction/tool-ask-user/src/index.ts#L80)。
 - [分层基线](2026-09-13-分层收敛与Loom职责基线.md)、[前台交互职责](2026-09-13-Weave理想架构详图.md#8-面向独立分仓的功能拆分)、[真人式验收协议](../验收/Workbench真人式验收协议.md)。
 
 Loom 证据均按上述锁定提交核对：`contract/types.go:11` 的消息类型，`stdlib/streaming.go:41` 的流适配，`stdlib/toolloop.go:239` 的工具快照、`:825` 的批量派发，`stdlib/toolloop_control_step.go:146` 的受控循环，以及 `stdlib/toolloop_control.go:17` 的暂停恢复契约。

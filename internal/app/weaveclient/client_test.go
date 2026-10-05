@@ -64,14 +64,6 @@ func TestCapabilityPlanUsesStableDraftIdentity(t *testing.T) {
 	}
 }
 
-func TestTeamCreateRequiresCallerIdempotencyKey(t *testing.T) {
-	client := newTestClient(t, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
-		t.Fatal("unexpected HTTP request")
-	}))
-	_, err := client.TeamCreate(context.Background(), TeamCreateRequest{Sample: "code-review"})
-	assertClientError(t, err, "idempotency_key_required", 0)
-}
-
 func TestTeamDispatchUsesUnifiedFreeCollabAndPollsToYielded(t *testing.T) {
 	var polls atomic.Int32
 	handler := http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
@@ -295,16 +287,13 @@ func TestReadEndpointsAndResumeAreThinHTTPMappings(t *testing.T) {
 	})
 	client := newTestClient(t, handler)
 	ctx := context.Background()
-	_, _ = client.TeamTemplateList(ctx)
-	_, _ = client.TeamCreate(ctx, TeamCreateRequest{Sample: "code-review", IdempotencyKey: "id"})
 	_, _ = client.ProviderList(ctx)
 	_, _ = client.ProviderAdd(ctx, ProviderAddRequest{Name: "openai", BaseURL: "https://example.test", APIKey: "secret", Models: []string{"model"}})
 	_, _ = client.APIKeyCreate(ctx, APIKeyCreateRequest{Name: "codex", Scopes: []string{"runs"}})
 	_, _ = client.RuntimeCreate(ctx, "mac")
 	_, _ = client.TeamList(ctx, "all", true)
 	_, _ = client.TeamStatus(ctx, "team-1")
-	_, _ = client.UsageSummary(ctx, "build-1")
-	_, _ = client.BuildStatus(ctx, "build-1")
+	_, _ = client.UsageSummary(ctx)
 	_, _ = client.DispatchStatus(ctx, "dispatch-1")
 	_, _ = client.TeamRunStatus(ctx, "snapshot-1")
 	_, _ = client.HumanTaskList(ctx, 20, "next")
@@ -317,11 +306,9 @@ func TestReadEndpointsAndResumeAreThinHTTPMappings(t *testing.T) {
 	_, _ = client.DeliverableGetPath(ctx, "delivery-1", "/chapters/one", 0, 25)
 	_, _ = client.Resume(ctx, ResumeRequest{RunID: "run-1", Agent: "lead", Input: map[string]any{"answer": "yes"}})
 	want := []string{
-		"GET /v1/team-templates/samples", "POST /v1/teams:from-template",
 		"GET /v1/providers", "POST /v1/providers", "POST /v1/auth/api-keys", "POST /v1/runtimes",
 		"GET /v1/teams?include=summary&status=all", "GET /v1/teams/team-1?include=summary",
-		"GET /v1/usage", "GET /v1/internal/team-build-runs/build-1/usage",
-		"GET /v1/internal/team-build-runs/build-1/progress", "GET /v1/chat-requests/dispatch-1",
+		"GET /v1/usage", "GET /v1/chat-requests/dispatch-1",
 		"GET /v1/runs?aggregation_mode=all-exclusive&run_snapshot_id=snapshot-1&view=run",
 		"GET /v1/human-tasks?cursor=next&limit=20",
 		"GET /v1/human-tasks/human-1?limit=50&offset=10&path=%2Fpredecessor_outputs%2Fchapter",
@@ -341,7 +328,7 @@ func TestAPIErrorDoesNotExposeRawBody(t *testing.T) {
 	client := newTestClient(t, http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		writeJSON(response, http.StatusInternalServerError, `{"error":"database password is secret"}`)
 	}))
-	_, err := client.TeamTemplateList(context.Background())
+	_, err := client.ProviderList(context.Background())
 	assertClientError(t, err, "http_500", http.StatusInternalServerError)
 	if strings.Contains(err.Error(), "password") {
 		t.Fatalf("error exposed response body: %v", err)
@@ -358,10 +345,10 @@ func TestDelegatedUserAuthorizationIsPerRequest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := client.TeamTemplateList(delegated); err != nil {
+	if _, err := client.ProviderList(delegated); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := client.TeamTemplateList(context.Background()); err != nil {
+	if _, err := client.ProviderList(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	first, second := <-requests, <-requests

@@ -1,6 +1,0 @@
-=== RUN   TestRuntimePublicEventsDurableIdentityReplayAndLateAttemptRealPG
---- PASS: TestRuntimePublicEventsDurableIdentityReplayAndLateAttemptRealPG (0.38s)
-=== RUN   TestTeamWorkflowDispatchKeepsInputIdentityAndAdmissionRealPG
---- PASS: TestTeamWorkflowDispatchKeepsInputIdentityAndAdmissionRealPG (0.30s)
-PASS
-ok  	github.com/jinyitao123/weave/internal/app/api	1.144s

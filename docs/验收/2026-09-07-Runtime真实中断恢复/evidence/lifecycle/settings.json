@@ -1,7 +1,0 @@
-{
-  "root": "<LOCAL_TEMP_PATH>",
-  "inputs": "<MAINTAINER_LOCAL_PATH>",
-  "database_url": "postgres://jinyitao@127.0.0.1:5432/weave_runtime_value_95ff06d7?sslmode=disable",
-  "port": "56586",
-  "runtime_id": "488f724c-3a47-4816-823d-63dbbf4eecb7"
-}

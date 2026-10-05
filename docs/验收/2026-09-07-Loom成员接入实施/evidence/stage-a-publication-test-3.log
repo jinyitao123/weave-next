@@ -1,6 +1,0 @@
-=== RUN   TestStandardToolsPublicationReachesActualMCPAndPreservesFrozenContractRealPG
-    standard_tools_publication_pg_test.go:190: workflow_frozen_manifest_mismatch
---- FAIL: TestStandardToolsPublicationReachesActualMCPAndPreservesFrozenContractRealPG (0.31s)
-FAIL
-FAIL	github.com/jinyitao123/weave/internal/kernel/workflow	1.008s
-FAIL
