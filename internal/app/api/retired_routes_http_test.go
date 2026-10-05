@@ -42,9 +42,8 @@ func concreteRoutePath(path string) string {
 }
 
 func TestRetiredRoutesReturn404ThroughRealHTTPWithDisabledDefaults(t *testing.T) {
-	// Use loaded defaults, rather than a zero-valued Config whose legacy flags
-	// intentionally mean enabled for backwards-compatible explicit callers.
-	t.Setenv("WEAVE_RETIRE_LEGACY_PLATFORM_APIS", "")
+	// Use loaded defaults, rather than a zero-valued Config whose local login
+	// flag intentionally means enabled for backwards-compatible explicit callers.
 	t.Setenv("WEAVE_DISABLE_LOCAL_LOGIN", "")
 	t.Setenv("DATABASE_URL", "postgres://fixture.invalid/unused")
 	t.Setenv("JWT_SECRET", "retired-http-fixture")
@@ -52,8 +51,8 @@ func TestRetiredRoutesReturn404ThroughRealHTTPWithDisabledDefaults(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !cfg.RetireLegacyPlatformAPIs || !cfg.DisableLocalLogin {
-		t.Fatal("deployment defaults did not disable retired APIs")
+	if !cfg.DisableLocalLogin {
+		t.Fatal("deployment defaults did not disable local login")
 	}
 	cfg.JWTSecret = "retired-http-fixture"
 	server := routeHTTPServer(cfg)
@@ -74,7 +73,7 @@ func TestRetiredRoutesReturn404ThroughRealHTTPWithDisabledDefaults(t *testing.T)
 }
 
 func TestSupportedPrivateRoutesStillRequireAuthenticationThroughRealHTTP(t *testing.T) {
-	server := routeHTTPServer(&config.Config{JWTSecret: "private-http-fixture", RetireLegacyPlatformAPIs: true, DisableLocalLogin: true})
+	server := routeHTTPServer(&config.Config{JWTSecret: "private-http-fixture", DisableLocalLogin: true})
 	for _, route := range supportedClientRoutes {
 		method, path, _ := strings.Cut(route, " ")
 		if path == "/v1/health" || path == "/v1/auth/external/exchange" {
@@ -98,17 +97,17 @@ func TestSupportedPrivateRoutesStillRequireAuthenticationThroughRealHTTP(t *test
 	}
 }
 
-func TestEnabledRetiredPrivateRoutesStillRequireAuthenticationThroughRealHTTP(t *testing.T) {
+func TestDeletedRoutesStayMissingWhenLocalLoginIsEnabled(t *testing.T) {
 	server := routeHTTPServer(&config.Config{JWTSecret: "legacy-http-fixture"})
 	for _, route := range retiredRoutes {
 		method, path, _ := strings.Cut(route, " ")
-		if path == "/v1/auth/login" || path == "/v1/auth/register" {
+		if localAuthRoutes[route] {
 			continue
 		}
 		t.Run(route, func(t *testing.T) {
 			response := requestRegisteredRoute(server, method, concreteRoutePath(path), "", `{}`)
-			if response.Code != http.StatusUnauthorized {
-				t.Fatalf("enabled legacy route %s lost authentication: %d %s", route, response.Code, response.Body.String())
+			if response.Code != http.StatusNotFound {
+				t.Fatalf("deleted route %s returned %d: %s", route, response.Code, response.Body.String())
 			}
 		})
 	}
@@ -121,7 +120,7 @@ func TestEnabledRetiredPrivateRoutesStillRequireAuthenticationThroughRealHTTP(t 
 }
 
 func TestUnknownAndWrongMethodRequestsKeepRouterSemanticsThroughRealHTTP(t *testing.T) {
-	server := routeHTTPServer(&config.Config{JWTSecret: "routing-http-fixture", RetireLegacyPlatformAPIs: true, DisableLocalLogin: true})
+	server := routeHTTPServer(&config.Config{JWTSecret: "routing-http-fixture", DisableLocalLogin: true})
 	for _, path := range []string{"/unknown", "/v1", "/v1/unknown", "/v1/runtime", "/v1/runtime/unknown", "/v1/teams/fixture/unknown"} {
 		for _, method := range []string{http.MethodGet, http.MethodPost} {
 			response := requestRegisteredRoute(server, method, path, "", `{}`)
@@ -152,7 +151,7 @@ func TestUnknownAndWrongMethodRequestsKeepRouterSemanticsThroughRealHTTP(t *test
 }
 
 func TestAuthenticatedRouteGroupDoesNotBypassActualWildcardHandler(t *testing.T) {
-	server := routeHTTPServer(&config.Config{JWTSecret: "wildcard-http-fixture", RetireLegacyPlatformAPIs: true, DisableLocalLogin: true})
+	server := routeHTTPServer(&config.Config{JWTSecret: "wildcard-http-fixture", DisableLocalLogin: true})
 	// There is no actual wildcard HTTP method handler in the product registry
 	// today. Register one at the exact same path as the generated 404 fallback
 	// to verify that its method-specific middleware can never be bypassed.

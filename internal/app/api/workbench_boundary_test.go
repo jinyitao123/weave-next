@@ -107,10 +107,8 @@ func TestWorkbenchBoundaryRequiredRoutesRemainAuthenticated(t *testing.T) {
 	// These cover the Workbench MCP client, activity and recovery HTTP calls,
 	// saved content, and the runtime transport they depend on.
 	requests := []struct{ method, path string }{
-		{http.MethodGet, "/team-templates/samples"},
 		{http.MethodGet, "/teams"},
 		{http.MethodGet, "/teams/:id"},
-		{http.MethodPost, "/teams:from-template"},
 		{http.MethodPost, "/teams/:id/dispatch"},
 		{http.MethodPost, "/workbench/dispatch-inputs"},
 		{http.MethodPost, "/workbench/dispatch-inputs/:input_revision_id/reconcile"},
@@ -120,8 +118,6 @@ func TestWorkbenchBoundaryRequiredRoutesRemainAuthenticated(t *testing.T) {
 		{http.MethodGet, "/runtimes"},
 		{http.MethodPost, "/runtimes"},
 		{http.MethodGet, "/usage"},
-		{http.MethodGet, "/internal/team-build-runs/:id/progress"},
-		{http.MethodGet, "/internal/team-build-runs/:id/usage"},
 		{http.MethodGet, "/chat-requests/:id"},
 		{http.MethodGet, "/runs"},
 		{http.MethodGet, "/runs/:id"},

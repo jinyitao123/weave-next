@@ -14,13 +14,12 @@ import (
 
 	"github.com/jinyitao123/loom/contract"
 	"github.com/jinyitao123/weave/internal/app/weaveclient"
-	"github.com/jinyitao123/weave/internal/build/teamtemplate"
 )
 
 func TestServeUsesSharedProtocolForInitializeListAndCall(t *testing.T) {
 	t.Setenv("WEAVE_WORKBENCH_BOUND_DISPATCH", "")
 	api := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
-		if request.Method != http.MethodGet || request.URL.Path != "/v1/team-templates/samples" {
+		if request.Method != http.MethodGet || request.URL.Path != "/v1/teams" {
 			t.Fatalf("request = %s %s", request.Method, request.URL.Path)
 		}
 		if request.Header.Get("Authorization") != "Bearer wv_sk_mcp_test" {
@@ -29,7 +28,7 @@ func TestServeUsesSharedProtocolForInitializeListAndCall(t *testing.T) {
 		if request.Header.Get("X-Weave-User-Authorization") != "Bearer user-jwt" {
 			t.Fatalf("delegated authorization was not propagated")
 		}
-		_, _ = response.Write([]byte(`{"samples":[{"name":"code-review"}]}`))
+		_, _ = response.Write([]byte(`[{"team":{"id":"team-1","name":"code-review","status":"active"}}]`))
 	}))
 	defer api.Close()
 	client := mcpClient(t, api.URL)
@@ -37,7 +36,7 @@ func TestServeUsesSharedProtocolForInitializeListAndCall(t *testing.T) {
 		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`,
 		`{"jsonrpc":"2.0","method":"notifications/initialized"}`,
 		`{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}`,
-		`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"team_template_list","arguments":{},"_meta":{"weave_user_authorization":"Bearer user-jwt"}}}`,
+		`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"team_list","arguments":{},"_meta":{"weave_user_authorization":"Bearer user-jwt"}}}`,
 		`not-json`,
 	}, "\n") + "\n"
 	var output bytes.Buffer
@@ -72,13 +71,13 @@ func TestServeUsesSharedProtocolForInitializeListAndCall(t *testing.T) {
 		t.Fatalf("initialize instructions = %q", instructions)
 	}
 	tools := responses[1]["result"].(map[string]any)["tools"].([]any)
-	if len(tools) != 28 {
+	if len(tools) != 25 {
 		t.Fatalf("tool count = %d", len(tools))
 	}
 	wantNames := []string{
-		"team_template_list", "team_create", "capability_list", "capability_plan", "capability_publish", "capability_invoke", "capability_status", "capability_history", "capability_resume", "provider_list", "provider_add", "apikey_create",
+		"capability_list", "capability_plan", "capability_publish", "capability_invoke", "capability_status", "capability_history", "capability_resume", "provider_list", "provider_add", "apikey_create",
 		"runtime_create", "team_list", "team_status", "usage_summary",
-		"team_dispatch", "build_status", "dispatch_status",
+		"team_dispatch", "dispatch_status",
 		"team_run_status", "team_run_activity", "team_run_stop", "human_task_list", "human_task_get", "human_task_complete",
 		"resume", "deliverable_list", "deliverable_get",
 	}
@@ -97,16 +96,6 @@ func TestServeUsesSharedProtocolForInitializeListAndCall(t *testing.T) {
 			if !bytes.Contains(schema, []byte(`"required":["business_request","model","idempotency_key"]`)) ||
 				!strings.Contains(description, "Reuse the same idempotency key") {
 				t.Fatalf("capability_plan contract is not retry-safe: %s / %s", schema, description)
-			}
-		}
-		if tool["name"] == "team_create" {
-			schema, _ := json.Marshal(tool["inputSchema"])
-			if !bytes.Contains(schema, []byte(`"required":["definition"]`)) ||
-				!bytes.Contains(schema, []byte(`"required":["yaml"]`)) ||
-				bytes.Contains(schema, []byte(`"required":["yaml","declarative_spec"]`)) ||
-				bytes.Contains(schema, []byte(`"runtime_ref"`)) || bytes.Contains(schema, []byte(`"model_ref"`)) ||
-				!strings.Contains(description, "Prefer definition") {
-				t.Fatalf("team_create contract does not expose the structured business path: %s / %s", schema, description)
 			}
 		}
 		if tool["name"] == "human_task_complete" {
@@ -190,8 +179,6 @@ func TestHumanTaskCompleteRequiresAndForwardsInteractionID(t *testing.T) {
 
 func TestToolRoleScopeTableIsFrozen(t *testing.T) {
 	want := map[string]toolAccessPolicy{
-		"team_template_list":  {Role: "any", Scopes: []string{"org"}},
-		"team_create":         {Role: "admin", Scopes: []string{"org"}},
 		"capability_list":     {Role: "admin", Scopes: []string{"admin"}},
 		"capability_plan":     {Role: "admin", Scopes: []string{"admin"}},
 		"capability_publish":  {Role: "admin", Scopes: []string{"admin"}},
@@ -207,7 +194,6 @@ func TestToolRoleScopeTableIsFrozen(t *testing.T) {
 		"team_status":         {Role: "any", Scopes: []string{"org"}},
 		"usage_summary":       {Role: "any", Scopes: []string{"runs", "org"}},
 		"team_dispatch":       {Role: "any", Scopes: []string{"org", "chat"}},
-		"build_status":        {Role: "any", Scopes: []string{"org"}},
 		"dispatch_status":     {Role: "any", Scopes: []string{"chat"}},
 		"team_run_status":     {Role: "any", Scopes: []string{"runs"}},
 		"team_run_activity":   {Role: "any", Scopes: []string{"runs"}},
@@ -235,7 +221,7 @@ func TestServeReturnsStableToolErrorWithoutRawHTTPBody(t *testing.T) {
 		_, _ = response.Write([]byte(`{"error":"private database password"}`))
 	}))
 	defer api.Close()
-	input := `{"jsonrpc":"2.0","id":"call","method":"tools/call","params":{"name":"team_template_list","arguments":{},"_meta":{"weave_user_authorization":"Bearer user-jwt"}}}` + "\n"
+	input := `{"jsonrpc":"2.0","id":"call","method":"tools/call","params":{"name":"team_list","arguments":{},"_meta":{"weave_user_authorization":"Bearer user-jwt"}}}` + "\n"
 	var output bytes.Buffer
 	if err := Serve(context.Background(), strings.NewReader(input), &output, mcpClient(t, api.URL)); err != nil {
 		t.Fatal(err)
@@ -251,9 +237,9 @@ func TestServeRejectsToolCallsWithoutTrustedUserMetadata(t *testing.T) {
 	api := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { called = true }))
 	defer api.Close()
 	for _, params := range []string{
-		`{"name":"team_template_list","arguments":{}}`,
-		`{"name":"team_template_list","arguments":{"_meta":{"weave_user_authorization":"Bearer argument-token"}}}`,
-		`{"name":"team_template_list","arguments":{},"_meta":{"weave_user_authorization":"bad token"}}`,
+		`{"name":"team_list","arguments":{}}`,
+		`{"name":"team_list","arguments":{"_meta":{"weave_user_authorization":"Bearer argument-token"}}}`,
+		`{"name":"team_list","arguments":{},"_meta":{"weave_user_authorization":"bad token"}}`,
 	} {
 		var output bytes.Buffer
 		input := `{"jsonrpc":"2.0","id":"call","method":"tools/call","params":` + params + `}` + "\n"
@@ -275,7 +261,7 @@ func TestServeReturnsFieldProblemsForCorrectableValidationErrors(t *testing.T) {
 		_, _ = response.Write([]byte(`{"problems":[{"path":"/lead","code":"template_lead_unknown","message":"lead must reference a member"}]}`))
 	}))
 	defer api.Close()
-	input := `{"jsonrpc":"2.0","id":"call","method":"tools/call","params":{"name":"team_create","arguments":{"sample":"market-research","idempotency_key":"018f5f5a-c73c-7e31-8f4a-9b36797553a1"},"_meta":{"weave_user_authorization":"Bearer user-jwt"}}}` + "\n"
+	input := `{"jsonrpc":"2.0","id":"call","method":"tools/call","params":{"name":"team_list","arguments":{},"_meta":{"weave_user_authorization":"Bearer user-jwt"}}}` + "\n"
 	var output bytes.Buffer
 	if err := Serve(context.Background(), strings.NewReader(input), &output, mcpClient(t, api.URL)); err != nil {
 		t.Fatal(err)
@@ -297,102 +283,6 @@ func TestToolArgumentsRejectUnknownFields(t *testing.T) {
 	}
 	if !result.IsError || result.Content != `{"error":"invalid_arguments"}` {
 		t.Fatalf("result = %#v", result)
-	}
-}
-
-func TestTeamCreatePassesDeclarativeSpec(t *testing.T) {
-	api := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
-		if request.Method != http.MethodPost || request.URL.Path != "/v1/teams:from-template" {
-			t.Fatalf("request = %s %s", request.Method, request.URL.Path)
-		}
-		var body map[string]any
-		if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
-			t.Fatal(err)
-		}
-		spec, _ := body["declarative_spec"].(map[string]any)
-		if spec["schema_version"] != float64(1) {
-			t.Fatalf("body = %#v", body)
-		}
-		response.WriteHeader(http.StatusAccepted)
-		_, _ = response.Write([]byte(`{"build_run_id":"build-1","status":"building"}`))
-	}))
-	defer api.Close()
-	result, err := NewToolDispatcher(mcpClient(t, api.URL)).Dispatch(context.Background(), structToolCall(
-		"team_create", `{"yaml":"schema: team-template/v1","declarative_spec":{"schema_version":1},"idempotency_key":"018f5f5a-c73c-7e31-8f4a-9b36797553a1"}`,
-	))
-	if err != nil || result.IsError || !strings.Contains(result.Content, "build-1") {
-		t.Fatalf("result = %#v err = %v", result, err)
-	}
-}
-
-func TestTeamCreatePassesBuiltInTemplateYAMLWithoutDeclarativeSpec(t *testing.T) {
-	api := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
-		if request.Method != http.MethodPost || request.URL.Path != "/v1/teams:from-template" {
-			t.Fatalf("request = %s %s", request.Method, request.URL.Path)
-		}
-		var body map[string]any
-		if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
-			t.Fatal(err)
-		}
-		if body["yaml"] != "schema: team-template/v1" {
-			t.Fatalf("body = %#v", body)
-		}
-		if _, ok := body["declarative_spec"]; ok {
-			t.Fatalf("unexpected declarative_spec in body = %#v", body)
-		}
-		response.WriteHeader(http.StatusAccepted)
-		_, _ = response.Write([]byte(`{"build_run_id":"build-1","status":"building"}`))
-	}))
-	defer api.Close()
-	result, err := NewToolDispatcher(mcpClient(t, api.URL)).Dispatch(context.Background(), structToolCall(
-		"team_create", `{"yaml":"schema: team-template/v1","idempotency_key":"018f5f5a-c73c-7e31-8f4a-9b36797553a1"}`,
-	))
-	if err != nil || result.IsError || !strings.Contains(result.Content, "build-1") {
-		t.Fatalf("result = %#v err = %v", result, err)
-	}
-}
-
-func TestTeamCreateRendersStructuredBusinessDefinition(t *testing.T) {
-	api := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
-		var body struct {
-			YAML            string          `json:"yaml"`
-			Sample          string          `json:"sample"`
-			DeclarativeSpec json.RawMessage `json:"declarative_spec"`
-		}
-		if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
-			t.Fatal(err)
-		}
-		for _, want := range []string{
-			"schema: team-template/v1", "display_name: 日冕研究团队", "template: research_synthesis",
-			"parallel_worker_refs:", "- researcher", "max_cost_usd: 3",
-		} {
-			if !strings.Contains(body.YAML, want) {
-				t.Fatalf("rendered YAML missing %q:\n%s", want, body.YAML)
-			}
-		}
-		compiled, err := teamtemplate.CompileYAML([]byte(body.YAML))
-		if err != nil {
-			t.Fatalf("rendered structured definition does not compile: %v\n%s", err, body.YAML)
-		}
-		if compiled.Template.Name == "corona-research" || len(compiled.Template.Members) != 4 ||
-			compiled.Template.TemplateParameters.FinalizerRef != "finalizer" {
-			t.Fatalf("compiled template = %#v", compiled.Template)
-		}
-		if body.Sample != "" {
-			t.Fatalf("redundant sample was forwarded with structured definition: %q", body.Sample)
-		}
-		if len(body.DeclarativeSpec) != 0 {
-			t.Fatalf("unexpected declarative spec = %s", body.DeclarativeSpec)
-		}
-		response.WriteHeader(http.StatusAccepted)
-		_, _ = response.Write([]byte(`{"build_run_id":"build-structured","status":"building"}`))
-	}))
-	defer api.Close()
-	result, err := NewToolDispatcher(mcpClient(t, api.URL)).Dispatch(context.Background(), structToolCall(
-		"team_create", `{"idempotency_key":"018f5f5a-c73c-7e31-8f4a-9b36797553a2","sample":"descriptive-label","definition":{"display_name":"日冕研究团队","purpose":"形成决策研究","lead_instruction":"组织研究","lead":{"display_name":"负责人","responsibilities":["组织"],"capabilities":["delegation"],"result_requirement":"统筹交付"},"researchers":[{"display_name":"研究员","responsibilities":["研究"],"capabilities":["research"],"result_requirement":"提供资料"},{"display_name":"分析员","responsibilities":["分析"],"capabilities":["analysis"],"result_requirement":"交叉验证"}],"finalizer":{"display_name":"总装员","responsibilities":["交付"],"capabilities":["writing"],"result_requirement":"综合交付"},"success_criteria":["可追溯"],"max_cost_usd":3}}`,
-	))
-	if err != nil || result.IsError || !strings.Contains(result.Content, "build-structured") {
-		t.Fatalf("result = %#v err = %v", result, err)
 	}
 }
 

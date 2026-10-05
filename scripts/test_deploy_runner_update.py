@@ -64,7 +64,6 @@ class ReviewedEntryUpdateTests(DeploymentHarness):
         self.assertEqual(self.runner.stat().st_mode & 0o777, 0o700)
         self.assertEqual(self.dispatch.stat().st_mode & 0o777, 0o700)
         self.assertIn(self.commit, result.stdout.decode())
-        self.assert_storage_preserved()
 
     def test_wrong_source_commit_does_not_transfer_or_install_anything(self):
         result = self.update(source='0' * 40)

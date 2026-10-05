@@ -39,17 +39,3 @@ jobs:
           tags: |
             ghcr.io/${{ github.repository_owner }}/weave-platform:${{ steps.version.outputs.value }}
             ghcr.io/${{ github.repository_owner }}/weave-platform:latest
-      - name: Build and publish Workbench
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: Dockerfile.workbench
-          platforms: linux/amd64,linux/arm64
-          push: true
-          build-args: |
-            WEAVE_IMAGE=ghcr.io/${{ github.repository_owner }}/weave-platform:${{ steps.version.outputs.value }}
-            DSH_CLIENT_COMMIT_HASH=${{ github.sha }}
-            DSH_CLIENT_VERSION=${{ steps.version.outputs.value }}
-          tags: |
-            ghcr.io/${{ github.repository_owner }}/weave-workbench:${{ steps.version.outputs.value }}
-            ghcr.io/${{ github.repository_owner }}/weave-workbench:latest

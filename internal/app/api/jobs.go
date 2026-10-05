@@ -297,15 +297,6 @@ func (s *Server) enqueueTask(
 	sessionKey := tenant + ":" + userID + ":" + req.Agent + ":" + req.SessionID
 	var teamExecution *teamSessionExecution
 	teamExecutionTransferred := false
-	if !teamAssemblerDisabled() {
-		teamExecution, err = s.acquireTeamSession(
-			c.Request().Context(), rec, tenant, req.ProjectID, runtimeAssignmentJSON, userID, req.SessionID,
-			sessionKey, "job:"+taskID,
-		)
-		if err != nil {
-			return c.JSON(http.StatusConflict, map[string]string{"error": err.Error()})
-		}
-	}
 	defer func() {
 		if teamExecution == nil || teamExecutionTransferred {
 			return
@@ -565,8 +556,8 @@ func (s *Server) ExecuteChat(ctx context.Context, tenant string, req taskqueue.C
 			return nil, err
 		}
 	}
-	if s.metaTeamRunDisabled(rec.Name, "") {
-		return nil, errMetaTeamDisabled
+	if isPlatformInternalAgent(rec.Name) {
+		return nil, errPlatformInternalAgent
 	}
 	rec, err = s.applyTaskRuntimeAssignment(ctx, tenant, rec, req.RuntimeAssignment)
 	if err != nil {

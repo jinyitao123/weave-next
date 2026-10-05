@@ -726,6 +726,23 @@
         "lines_added": 503,
         "production_lines_added": 105
       }
+    },
+    {
+      "date": "2026-10-05",
+      "reason": "W7 deletes the retired team templates, team build/evaluation, meta-team and their APIs after MVP1 acceptance, removes the web Workbench tree, and lowers the kernel and app ceilings to the exact post-deletion sizes. The app band drops gopkg.in/yaml.v3 and six packages; the build band stays retired at zero. No growth allowance.",
+      "record": "docs/治理/2026-09-30-平台范围收窄整改登记.md",
+      "kernel": {
+        "previous_lines": 103210,
+        "previous_production_lines": 83564,
+        "lines_added": -119,
+        "production_lines_added": -47
+      },
+      "app": {
+        "previous_lines": 88873,
+        "previous_production_lines": 64293,
+        "lines_added": -16685,
+        "production_lines_added": -13653
+      }
     }
   ],
   "migration_targets": {
@@ -763,8 +780,8 @@
     ]
   },
   "kernel": {
-    "lines": 103210,
-    "production_lines": 83564,
+    "lines": 103091,
+    "production_lines": 83517,
     "packages": 49,
     "external_dependencies": 5,
     "allowed_dependencies": [
@@ -776,30 +793,24 @@
     ]
   },
   "build": {
-    "lines": 31482,
-    "production_lines": 29057,
-    "packages": 6,
-    "external_dependencies": 4,
-    "allowed_dependencies": [
-      "github.com/google/uuid",
-      "github.com/jackc/pgx/v5",
-      "github.com/jinyitao123/loom",
-      "gopkg.in/yaml.v3"
-    ]
+    "lines": 0,
+    "production_lines": 0,
+    "packages": 0,
+    "external_dependencies": 0,
+    "allowed_dependencies": []
   },
   "app": {
-    "lines": 88873,
-    "production_lines": 64293,
-    "packages": 30,
-    "external_dependencies": 7,
+    "lines": 72188,
+    "production_lines": 50640,
+    "packages": 24,
+    "external_dependencies": 6,
     "allowed_dependencies": [
       "github.com/golang-jwt/jwt/v5",
       "github.com/google/uuid",
       "github.com/jackc/pgx/v5",
       "github.com/jinyitao123/loom",
       "github.com/labstack/echo/v4",
-      "golang.org/x/crypto",
-      "gopkg.in/yaml.v3"
+      "golang.org/x/crypto"
     ]
   }
 }

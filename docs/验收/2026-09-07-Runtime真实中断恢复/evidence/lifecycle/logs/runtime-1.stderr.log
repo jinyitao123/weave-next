@@ -1,5 +1,0 @@
-2026/09/07 10:46:19 INFO runtime daemon connected server=http://127.0.0.1:56586 engines="[opencode codex claude]"
-2026/09/07 11:20:19 WARN runtime heartbeat failed; retrying error="daemon: POST /v1/runtime/heartbeat: Post \"http://127.0.0.1:56586/v1/runtime/heartbeat\": dial tcp 127.0.0.1:56586: connect: connection refused"
-2026/09/07 11:20:20 WARN runtime heartbeat failed; retrying error="daemon: POST /v1/runtime/heartbeat: Post \"http://127.0.0.1:56586/v1/runtime/heartbeat\": dial tcp 127.0.0.1:56586: connect: connection refused"
-2026/09/07 11:20:22 WARN runtime heartbeat failed; retrying error="daemon: POST /v1/runtime/heartbeat: Post \"http://127.0.0.1:56586/v1/runtime/heartbeat\": dial tcp 127.0.0.1:56586: connect: connection refused"
-2026/09/07 11:56:00 ERROR saved runtime result could not be reattached; retained for recovery task_id=task-eb655f8682c14216d8fedd168fc2e77c error="daemon: task lease lost"

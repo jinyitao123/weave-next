@@ -1,7 +1,0 @@
-{
-  "at": "2026-09-07T04:11:41.212512+00:00",
-  "error": "AttributeError: 'NoneType' object has no attribute 'get'",
-  "driver_pid": 31269,
-  "driver_exit": 1,
-  "injected": false
-}

@@ -107,26 +107,6 @@ func (s *Server) resolveResumeAgentForEntry(
 	agent string,
 	runID string,
 ) (*registry.AgentRecord, *execution.AgentExecutionStamp, error) {
-	if !teamAssemblerDisabled() && s.Snapshots != nil {
-		snap, err := s.Snapshots.GetByRunID(ctx, tenant, runID)
-		if err == nil && snap.Mode == "free_collab" &&
-			snap.LeadAvatarID != "" && snap.LeadAvatarVersion > 0 {
-			rec, err := s.Registry.GetVersion(ctx, tenant, snap.LeadAvatarID, snap.LeadAvatarVersion)
-			if err != nil {
-				return nil, nil, err
-			}
-			if rec.Name != agent || rec.ID != snap.LeadAvatarID || rec.Version != snap.LeadAvatarVersion {
-				return nil, nil, fmt.Errorf("team resume agent does not match frozen snapshot lead")
-			}
-			return rec, &execution.AgentExecutionStamp{
-				AgentID: rec.ID, AgentVersion: rec.Version,
-				ExecutionScope: execution.ScopeTeamFreeCollab,
-			}, nil
-		}
-		if err != nil && !errors.Is(err, snapshot.ErrNotFound) {
-			return nil, nil, err
-		}
-	}
 	return resolveResumeAgent(ctx, s.Registry, s.Store, tenant, agent, runID)
 }
 
@@ -152,11 +132,7 @@ func (s *Server) activateTeamSessionResume(
 		return nil, nil
 	}
 	var checkpoint apiRunCheckpoint
-	if teamAssemblerDisabled() {
-		checkpoint, err = loadAPIResumeCheckpoint(ctx, s.Store, tenant, rec.Name, runID)
-	} else {
-		checkpoint, err = loadTeamAPIResumeCheckpoint(ctx, s.Store, *snap, runID)
-	}
+	checkpoint, err = loadAPIResumeCheckpoint(ctx, s.Store, tenant, rec.Name, runID)
 	if err != nil {
 		return nil, err
 	}
@@ -480,9 +456,6 @@ func (s *Server) handleResumeStream(
 		LifecycleHook:      s.RunLifecycleHook,
 		SkillVersionReader: s.Skills,
 		CompileOpts:        compileOpts,
-	}
-	if teamExecution != nil && !teamAssemblerDisabled() {
-		dependencies.CompileAgent = s.teamCompileFactory(ctx, teamExecution, true, userID, memSvc)
 	}
 	result, runErr := loomruntime.Resume(ctx, tenant, rec, req.RunID, input, dependencies)
 	if teamExecution != nil {

@@ -1,6 +1,0 @@
-{
-  "passed": false,
-  "result": "partial model usable; full delivery intentionally interrupted",
-  "partial_model_verification": "receipt-only-verification.json",
-  "full_delivery_not_run": true
-}

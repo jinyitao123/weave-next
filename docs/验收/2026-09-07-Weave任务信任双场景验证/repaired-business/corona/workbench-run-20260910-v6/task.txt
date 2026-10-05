@@ -1,7 +1,0 @@
-请使用已经准备好的“日冕先期论证恢复验证团队 v6”执行一次新的隔离恢复验证，不要修改团队、运行时绑定或交付路径，也不要让我补充团队 UUID。
-
-输入基线位于只读目录 <MAINTAINER_LOCAL_PATH> 的 SHA-256 是 584cc020b0bac241977362a057ebc8c7096a570760f0b32c39c1aa47fcc6cf8a。original-materials/ 是 2026-09-05 冻结日冕材料，v4-outputs/ 是上一轮真实独立总装成果。 十一项硬门槛的权威文件位于 <MAINTAINER_LOCAL_PATH> 是 f4777aaf587b4a81a4fef1932717bf95a0aa063fa21a8e390dfd2ecd8cc60ec4；直接读取该路径，不要对主机目录做广泛搜索。上述输入目录和权威文件均只读，所有新文件必须写入本次成员自己的 workdir。
-
-这次工作不是从零重做。各专业先复核并复用 v4 对应成果，只在发现可复现缺陷时修改。数字工程成员需修复检查计数漂移和最终报告自引用，保证本地应用真实切换 0.01c、0.03c、0.05c，导出 JSON 可解析且与页面一致。独立验证与总装员必须在自己的 outputs/ 形成唯一最终目录，实际复跑原 acceptance.json 的十一项硬门槛，并生成 outputs/verification/acceptance.json、outputs/verification/browser-evidence.json 与 outputs/FINAL_ACCEPTANCE.md。
-
-运行过程中平台操作方会在一个已确认成员检查点后中断承载进程，再从 Workbench 继续。团队不得把“计划纠偏”“等待恢复”或旧运行结果写成恢复成功；只有看到本次实际继续后的文件和检查证据才能报告对应过程事实。外部副作用范围为 none。最终报告按 G1: PASS 到 G11: PASS 逐项记录，未运行或失败项必须写 FAIL，整体只能在十一项全部通过时写 overall: PASS。

@@ -43,12 +43,6 @@ type Config struct {
 	EmbedderModel     string // EMBEDDER_MODEL, default "text-embedding-3-small"
 	EmbedderDimension int    // EMBEDDER_DIMENSION, default 1536
 
-	// Team template automatic authorization limits.
-	TemplateAutoMaxCostUSD   float64 // WEAVE_TEMPLATE_AUTO_MAX_COST_USD, default 5
-	TemplateDailyBudgetUSD   float64 // WEAVE_TEMPLATE_DAILY_BUDGET_USD, default 25
-	TemplateMonthlyBudgetUSD float64 // WEAVE_TEMPLATE_MONTHLY_BUDGET_USD, default 250
-	TemplateMaxConcurrent    int     // WEAVE_TEMPLATE_MAX_CONCURRENT, default 2
-
 	// Read-only operational health observation policy.
 	HealthWindowSize         int     // WEAVE_HEALTH_WINDOW_SIZE, default 20
 	HealthMinSamples         int     // WEAVE_HEALTH_MIN_SAMPLES, default 3
@@ -56,37 +50,16 @@ type Config struct {
 	HealthWarningSlowRate    float64 // WEAVE_HEALTH_WARNING_SLOW_RATE, default 0.5
 	HealthSlowRunSeconds     int     // WEAVE_HEALTH_SLOW_RUN_SECONDS, default 600
 
-	// Optional built-in meta-team conversation guide. Disabling it preserves
-	// stored assets and history while freezing all new runs.
-	MetaTeamEnabled bool // WEAVE_METATEAM_ENABLED, default false (retired)
-
-	// Retired capabilities. The supported client is the GooeyPi desktop with Forge,
-	// which never calls team templates, team evaluation, team-build runs or Weave
-	// local accounts. Load() defaults both flags to true; the zero value keeps every
-	// route registered so tests and embedders opt in explicitly.
-	RetireLegacyPlatformAPIs bool // WEAVE_RETIRE_LEGACY_PLATFORM_APIS, default true
-	DisableLocalLogin        bool // WEAVE_DISABLE_LOCAL_LOGIN, default true
+	// DisableLocalLogin leaves Weave local password login and first-user
+	// registration unregistered. Employees and developers sign in through Forge
+	// identity exchange only; `weave bootstrap` creates the operator. Load()
+	// defaults it to true; the zero value keeps the local routes for tests.
+	DisableLocalLogin bool // WEAVE_DISABLE_LOCAL_LOGIN, default true
 }
 
 // Load reads configuration from environment variables.
 func Load() (*Config, error) {
 	dim, _ := strconv.Atoi(envOr("EMBEDDER_DIMENSION", "1536"))
-	templateAutoMaxCost, err := positiveFloatEnv("WEAVE_TEMPLATE_AUTO_MAX_COST_USD", 5)
-	if err != nil {
-		return nil, err
-	}
-	templateDailyBudget, err := positiveFloatEnv("WEAVE_TEMPLATE_DAILY_BUDGET_USD", 25)
-	if err != nil {
-		return nil, err
-	}
-	templateMonthlyBudget, err := positiveFloatEnv("WEAVE_TEMPLATE_MONTHLY_BUDGET_USD", 250)
-	if err != nil {
-		return nil, err
-	}
-	templateMaxConcurrent, err := positiveIntEnv("WEAVE_TEMPLATE_MAX_CONCURRENT", 2)
-	if err != nil {
-		return nil, err
-	}
 	healthWindowSize, err := positiveIntEnv("WEAVE_HEALTH_WINDOW_SIZE", 20)
 	if err != nil {
 		return nil, err
@@ -111,23 +84,9 @@ func Load() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	metaTeamEnabled, err := boolEnv("WEAVE_METATEAM_ENABLED", false)
-	if err != nil {
-		return nil, err
-	}
-	retireLegacyPlatformAPIs, err := boolEnv("WEAVE_RETIRE_LEGACY_PLATFORM_APIS", true)
-	if err != nil {
-		return nil, err
-	}
 	disableLocalLogin, err := boolEnv("WEAVE_DISABLE_LOCAL_LOGIN", true)
 	if err != nil {
 		return nil, err
-	}
-	if templateDailyBudget < templateAutoMaxCost {
-		return nil, fmt.Errorf("WEAVE_TEMPLATE_DAILY_BUDGET_USD must be at least WEAVE_TEMPLATE_AUTO_MAX_COST_USD")
-	}
-	if templateMonthlyBudget < templateDailyBudget {
-		return nil, fmt.Errorf("WEAVE_TEMPLATE_MONTHLY_BUDGET_USD must be at least WEAVE_TEMPLATE_DAILY_BUDGET_USD")
 	}
 	if healthMinSamples > healthWindowSize {
 		return nil, fmt.Errorf("WEAVE_HEALTH_MIN_SAMPLES must not exceed WEAVE_HEALTH_WINDOW_SIZE")
@@ -176,17 +135,11 @@ func Load() (*Config, error) {
 		EmbedderKey:              os.Getenv("EMBEDDER_API_KEY"),
 		EmbedderModel:            envOr("EMBEDDER_MODEL", "text-embedding-3-small"),
 		EmbedderDimension:        dim,
-		TemplateAutoMaxCostUSD:   templateAutoMaxCost,
-		TemplateDailyBudgetUSD:   templateDailyBudget,
-		TemplateMonthlyBudgetUSD: templateMonthlyBudget,
-		TemplateMaxConcurrent:    templateMaxConcurrent,
 		HealthWindowSize:         healthWindowSize,
 		HealthMinSamples:         healthMinSamples,
 		HealthWarningFailureRate: healthWarningFailureRate,
 		HealthWarningSlowRate:    healthWarningSlowRate,
 		HealthSlowRunSeconds:     healthSlowRunSeconds,
-		MetaTeamEnabled:          metaTeamEnabled,
-		RetireLegacyPlatformAPIs: retireLegacyPlatformAPIs,
 		DisableLocalLogin:        disableLocalLogin,
 	}
 

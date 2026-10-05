@@ -1,9 +1,0 @@
-.git
-.github
-**/.env*
-.pnpm-store
-**/node_modules
-**/lib
-**/dist
-coverage
-tmp

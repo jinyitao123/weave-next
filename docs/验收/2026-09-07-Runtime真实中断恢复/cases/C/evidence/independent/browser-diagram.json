@@ -1,9 +1,0 @@
-{
-  "at": "2026-09-07T03:32:26.051300+00:00",
-  "method": "Clicked actual C app diagram link in Google Chrome using native CUA and inspected screenshot",
-  "path": "outputs/drawings/COR-DRW-001_architecture.svg",
-  "sha256": "3b77656289b47dded64012a9ab3c35a399e3f2ee97358fc69ceb3c7f6e2a3d45",
-  "opens_from_app": true,
-  "rendered": true,
-  "observations": "Three route sections, reference numbers and concept disclaimer readable. Footer continues below viewport; no complete visual-layout certification claimed."
-}

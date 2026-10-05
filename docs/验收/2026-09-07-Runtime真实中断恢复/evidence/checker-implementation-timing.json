@@ -1,6 +1,0 @@
-{
-  "at": "2026-09-07T02:49:40.736927+00:00",
-  "checker_sha256": "7ed17ee64582c36b8526cd185161294493be75aeb462a7abc343572500d62443",
-  "timing": "checker implemented during normal run before any generated output inspection; criteria from plan and original acceptance tolerances",
-  "independent_browser_check": "pending"
-}

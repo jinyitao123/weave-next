@@ -1,4 +1,0 @@
-=== RUN   TestMemberExecutionPublishesNativeModelsAndRollsBackDraftConflictRealPG
---- PASS: TestMemberExecutionPublishesNativeModelsAndRollsBackDraftConflictRealPG (0.75s)
-PASS
-ok  	github.com/jinyitao123/weave/internal/app/api	1.354s

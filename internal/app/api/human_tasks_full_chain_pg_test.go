@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -18,17 +20,12 @@ import (
 	"github.com/google/uuid"
 	"github.com/jinyitao123/weave/internal/app/kernelbindings"
 	"github.com/jinyitao123/weave/internal/app/teamconstruction"
-	"github.com/jinyitao123/weave/internal/app/teamtemplates"
 	"github.com/jinyitao123/weave/internal/app/workflowcatalog"
 	"github.com/jinyitao123/weave/internal/base/db"
 	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/base/snapshot"
 	"github.com/jinyitao123/weave/internal/base/testutil"
-	"github.com/jinyitao123/weave/internal/build/teambuild"
-	"github.com/jinyitao123/weave/internal/build/teameval"
-	"github.com/jinyitao123/weave/internal/build/teamforge"
-	"github.com/jinyitao123/weave/internal/build/teamtemplate"
 	"github.com/jinyitao123/weave/internal/kernel/compiler"
 	"github.com/jinyitao123/weave/internal/kernel/credentials"
 	"github.com/jinyitao123/weave/internal/kernel/delivery"
@@ -74,54 +71,17 @@ func TestHumanFinalReviewSampleRealPGFullChain(t *testing.T) {
 		t.Fatalf("seed sample building team: %v", err)
 	}
 
-	sample := humanFinalReviewSample(t)
-	templateCompilation, err := teamtemplate.CompileYAML([]byte(sample.YAML))
-	if err != nil {
-		t.Fatalf("compile sample 4 team template: %v", err)
-	}
-	bindings, err := teamforge.ResolveCreateDeclarativeWorkerBindingsV1(*sample.DeclarativeSpec, templateCompilation.Blueprint)
-	if err != nil {
-		t.Fatalf("resolve sample 4 declarative worker bindings: %v", err)
-	}
-	planned := make([]teameval.PlannedWorkerBinding, 0, len(bindings))
-	for _, binding := range bindings {
-		planned = append(planned, teameval.PlannedWorkerBinding{
-			StableRef: binding.StableRef, AgentID: binding.AgentID, AgentVersion: binding.AgentVersion,
-		})
-	}
-	briefHash, _, contractHash, err := teambuild.ValidateBuildRunDrafts(
-		templateCompilation.Brief, templateCompilation.Contract,
-	)
-	if err != nil {
-		t.Fatalf("validate sample 4 build drafts: %v", err)
-	}
-	frozenSpec, err := teamforge.FreezeDeclarativeWorkflowSpecV1(
-		*sample.DeclarativeSpec,
-		bindings,
-		teamforge.DeclarativeBuildBindingV1{
-			BuildRunID: buildRunID, BriefHash: briefHash, ContractHash: contractHash,
-			AssetScope:   templateCompilation.Brief.AllowedAssets,
-			BaselineHash: teamforge.EmptyCreateBaselineHashV1,
-		},
-		func(trigger machine.TriggerConfig, graph machine.GraphDefinition) (machine.Report, error) {
-			return teameval.ValidateWorkflowForBlueprint(
-				workspaceID, templateCompilation.Blueprint, planned, trigger, graph,
-			)
-		},
-	)
-	if err != nil {
-		t.Fatalf("freeze sample 4 declarative workflow: %v", err)
-	}
+	fixture := humanFinalReviewFixture(t)
 	artifact := humanReviewArtifact(
-		t, workspaceID, teamID, workflowID, lead.ID, frozenSpec.TriggerConfig, frozenSpec.GraphDefinition,
+		t, workspaceID, teamID, workflowID, lead.ID, fixture.TriggerConfig, fixture.GraphDefinition,
 	)
 	artifacts := workflow.NewArtifactStore(pool, workflow.RealClock{})
 	workflowStore := workflowcatalog.New(pool, workflow.RealClock{}, artifacts)
 	createdWorkflow, err := workflowStore.Create(ctx, &workflow.TeamWorkflow{
 		WorkspaceID: workspaceID, ID: workflowID, TeamID: teamID,
-		Name: "sample-4-human-final-review", Description: sample.Description,
+		Name: "sample-4-human-final-review", Description: fixture.Description,
 	}, workflow.DraftInput{
-		TriggerConfig: frozenSpec.TriggerConfig, GraphDefinition: frozenSpec.GraphDefinition, CreatedBy: "sample-4",
+		TriggerConfig: fixture.TriggerConfig, GraphDefinition: fixture.GraphDefinition, CreatedBy: "sample-4",
 	})
 	if err != nil {
 		t.Fatalf("create sample 4 workflow draft: %v", err)
@@ -364,20 +324,6 @@ func TestHumanFinalReviewSampleRealPGFullChain(t *testing.T) {
 	}
 }
 
-func humanFinalReviewSample(t *testing.T) teamtemplates.Sample {
-	t.Helper()
-	for _, sample := range teamtemplates.NewStaticCatalog().List() {
-		if sample.Name == "human-final-review" {
-			if sample.DeclarativeSpec == nil {
-				t.Fatal("sample 4 has no declarative workflow")
-			}
-			return sample
-		}
-	}
-	t.Fatal("sample 4 is absent from catalog")
-	return teamtemplates.Sample{}
-}
-
 func humanReviewArtifact(
 	t *testing.T,
 	workspaceID, teamID, workflowID, leadAgentID string,
@@ -471,5 +417,32 @@ func assertHumanRunStatus(t *testing.T, ctx context.Context, transactions teamru
 			causeSummary = *run.CauseSummary
 		}
 		t.Fatalf("run status=%q want=%q err=%v error_code=%q cause=%q run=%#v", run.Status, want, err, errorCode, causeSummary, run)
+	}
+}
+
+// humanFinalReviewWorkflow is a frozen three-node workflow: a transform, a
+// human wait that takes a decision and comments, and a deliver node. It was
+// exported once from the retired "human-final-review" team template so the
+// human-task chain keeps running against real PostgreSQL without the template
+// catalog or any build-run machinery. It references no agents.
+type humanFinalReviewWorkflow struct {
+	Description     string
+	TriggerConfig   json.RawMessage
+	GraphDefinition json.RawMessage
+}
+
+func humanFinalReviewFixture(t *testing.T) humanFinalReviewWorkflow {
+	t.Helper()
+	read := func(name string) []byte {
+		raw, err := os.ReadFile(filepath.Join("testdata", "human_final_review", name))
+		if err != nil {
+			t.Fatalf("read human final review fixture %s: %v", name, err)
+		}
+		return raw
+	}
+	return humanFinalReviewWorkflow{
+		Description:     strings.TrimSpace(string(read("description.txt"))),
+		TriggerConfig:   read("trigger_config.json"),
+		GraphDefinition: read("graph_definition.json"),
 	}
 }

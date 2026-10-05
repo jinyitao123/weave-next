@@ -107,7 +107,7 @@ func TestMCPTransportKeepsAPICallsAndRedactsFailures(t *testing.T) {
 	for _, status := range []int{http.StatusOK, http.StatusInternalServerError} {
 		t.Run(http.StatusText(status), func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
-				if request.Method != http.MethodGet || request.URL.Path != "/v1/team-templates/samples" ||
+				if request.Method != http.MethodGet || request.URL.Path != "/v1/teams" ||
 					request.Header.Get("Authorization") != "Bearer wv_sk_cli_test" ||
 					request.Header.Get("X-Weave-User-Authorization") != "Bearer user-jwt" {
 					t.Errorf("unexpected MCP API request")
@@ -116,7 +116,7 @@ func TestMCPTransportKeepsAPICallsAndRedactsFailures(t *testing.T) {
 				}
 				response.WriteHeader(status)
 				if status == http.StatusOK {
-					_, _ = response.Write([]byte(`{"samples":[{"name":"code-review"}]}`))
+					_, _ = response.Write([]byte(`[{"team":{"id":"team-1","name":"code-review","status":"active"}}]`))
 				} else {
 					_, _ = response.Write([]byte(`{"error":"private database failure"}`))
 				}
@@ -124,7 +124,7 @@ func TestMCPTransportKeepsAPICallsAndRedactsFailures(t *testing.T) {
 			defer server.Close()
 			t.Setenv(weaveclient.BaseURLEnv, server.URL)
 			t.Setenv(weaveclient.APIKeyEnv, "wv_sk_cli_test")
-			input := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"team_template_list","arguments":{},"_meta":{"weave_user_authorization":"Bearer user-jwt"}}}` + "\n"
+			input := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"team_list","arguments":{},"_meta":{"weave_user_authorization":"Bearer user-jwt"}}}` + "\n"
 			var output bytes.Buffer
 			if err := runMCP(context.Background(), []string{"mcp", "serve"}, strings.NewReader(input), &output); err != nil {
 				t.Fatal(err)

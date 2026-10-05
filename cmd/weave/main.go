@@ -13,7 +13,6 @@ import (
 
 	"github.com/jinyitao123/weave/internal/app/kernelbindings"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jinyitao123/loom/pgstore"
 	"github.com/jinyitao123/weave/internal/app/api"
 	"github.com/jinyitao123/weave/internal/app/apikeys"
@@ -22,19 +21,12 @@ import (
 	"github.com/jinyitao123/weave/internal/app/conversation"
 	"github.com/jinyitao123/weave/internal/app/daemon"
 	"github.com/jinyitao123/weave/internal/app/deliveryverify"
-	"github.com/jinyitao123/weave/internal/app/designseed"
-	"github.com/jinyitao123/weave/internal/app/metateam"
 	"github.com/jinyitao123/weave/internal/app/projects"
 	"github.com/jinyitao123/weave/internal/app/teamconstruction"
-	"github.com/jinyitao123/weave/internal/app/teamevaluations"
-	"github.com/jinyitao123/weave/internal/app/teamtemplates"
 	"github.com/jinyitao123/weave/internal/app/users"
 	"github.com/jinyitao123/weave/internal/app/workflowcatalog"
 	"github.com/jinyitao123/weave/internal/base/db"
 	"github.com/jinyitao123/weave/internal/base/frozen"
-	"github.com/jinyitao123/weave/internal/build/teambuild"
-	"github.com/jinyitao123/weave/internal/build/teameval"
-	"github.com/jinyitao123/weave/internal/build/teamorch"
 	"github.com/jinyitao123/weave/internal/kernel/audit"
 	"github.com/jinyitao123/weave/internal/kernel/compiler"
 	"github.com/jinyitao123/weave/internal/kernel/config"
@@ -51,7 +43,6 @@ import (
 	"github.com/jinyitao123/weave/internal/kernel/secret"
 	"github.com/jinyitao123/weave/internal/kernel/skills"
 	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
-	"github.com/jinyitao123/weave/internal/kernel/workflow/machine"
 )
 
 var buildCommit = "unknown"
@@ -79,38 +70,6 @@ func csvEnvOrDefault(name string, fallback []string) []string {
 		return append([]string(nil), fallback...)
 	}
 	return models
-}
-
-type teamBuildExecutionAdapter struct {
-	service *teamconstruction.Dispatcher
-}
-
-func (a teamBuildExecutionAdapter) Submit(
-	ctx context.Context, workspaceID, buildRunID string,
-) (api.TeamBuildExecutionSubmission, error) {
-	result, err := a.service.Submit(ctx, workspaceID, buildRunID)
-	if err != nil {
-		return api.TeamBuildExecutionSubmission{}, err
-	}
-	return api.TeamBuildExecutionSubmission{
-		WorkspaceID: result.WorkspaceID,
-		BuildRunID:  result.BuildRunID,
-		Status:      result.Status,
-		TaskID:      result.TaskID,
-	}, nil
-}
-
-func (a teamBuildExecutionAdapter) Cancel(ctx context.Context, workspaceID, buildRunID, actor, reason string) (teambuild.TeamBuildRun, error) {
-	return a.service.Cancel(ctx, workspaceID, buildRunID, actor, reason)
-}
-
-type teamTemplateExecutionAdapter struct {
-	service api.TeamBuildExecutionService
-}
-
-func (a teamTemplateExecutionAdapter) Submit(ctx context.Context, workspaceID, buildRunID string) error {
-	_, err := a.service.Submit(ctx, workspaceID, buildRunID)
-	return err
 }
 
 func registerFrozenDescriptors() error {
@@ -280,20 +239,9 @@ func main() {
 	srv.Descriptors = descriptors
 	srv.SystemProviders = router
 
-	// Seed system agents.
-	designseed.EnsureDesigner(srv.Registry, "default")
-
 	// Initialize user and API key stores if PG pool is available.
 	if pool := srv.GetPool(); pool != nil {
 		srv.OrgStore = kernelbindings.NewOrganization(pool)
-		if srv.TeamBuild != nil && srv.Registry != nil && srv.Workflow != nil {
-			srv.TeamBuild.SetBaselineSources(srv.OrgStore, srv.Registry, srv.Workflow, srv.WorkflowArtifacts)
-		}
-		if err := metateam.EnsureMetaTeamIfEnabled(
-			context.Background(), srv.Registry, srv.OrgStore, "default", cfg.MetaTeamEnabled,
-		); err != nil {
-			slog.Warn("failed to seed meta team", "error", err)
-		}
 
 		userStore := users.NewStore(pool)
 		srv.UserStore = userStore
@@ -429,110 +377,10 @@ func main() {
 		defer kernelPublication.Close()
 		srv.KernelPublication = kernelPublication
 		productPublication := teamconstruction.NewProductPublication(pool, kernelPublication, authority.AuthorizeProduct)
-		productPublication.SetActivationEffect(func(ctx context.Context, tx pgx.Tx, record teamconstruction.PublicationRequestRecord) error {
-			if record.Command.Target.BuildRunID == "" {
-				return nil
-			}
-			baselineHash, err := srv.TeamBuild.VerifyEvaluationBaselineTx(ctx, tx, record.Subject.WorkspaceID, record.Command.Target.BuildRunID)
-			if err != nil {
-				return err
-			}
-			actor := record.Subject.UserID
-			if actor == "" {
-				actor = record.Subject.ServiceID
-			}
-			_, err = teamconstruction.MarkBuildPublicationTx(ctx, tx, srv.TeamBuild, record.Subject.WorkspaceID, record.Command.Target.BuildRunID, actor, teambuild.FinalRef{
-				Ref: record.Receipt.Revision.ContentHash, TeamID: record.Command.Target.TeamID,
-			}, baselineHash)
-			return err
-		})
-		productPublication.SetCandidateAssociation(func(ctx context.Context, tx pgx.Tx, record teamconstruction.CandidateRequestRecord) error {
-			if record.Target.BuildRunID == "" || record.Receipt == nil {
-				return nil
-			}
-			_, err := srv.TeamBuild.RecordUsageSourceTx(ctx, tx, record.Subject.WorkspaceID, record.Target.BuildRunID, teambuild.BuildUsageSource{
-				WorkspaceID: record.Subject.WorkspaceID,
-				BuildRunID:  record.Target.BuildRunID,
-				RoundNo:     record.Target.RoundNo,
-				SourceKind:  teambuild.UsageSourceKindCandidateRuntime,
-				SourceRole:  record.Target.SourceRole,
-				SourceRunID: record.Receipt.RunID,
-			})
-			return err
-		})
 		srv.ProductPublication = productPublication
 	}
 
 	srv.ConfigureTeamRunWorkers()
-
-	// Cancellation remains available even when optional build execution services
-	// are unavailable. Only a configured executor admits new platform tasks.
-	buildDispatch := &teamconstruction.Dispatcher{Pool: store.Pool(), Runs: srv.TeamBuild, Tasks: srv.Tasks, Worker: srv.TaskWorker}
-	if srv.TeamBuild != nil && srv.Tasks != nil {
-		srv.TeamBuildOrchestrator = teamBuildExecutionAdapter{service: buildDispatch}
-	}
-
-	// The meta-team round controller is a platform service, not a test-only
-	// helper or a client-side conversation convention. It reuses the same
-	// stores, routed LLM, candidate runtime, and role-scoped teamforge tools as
-	// the rest of the server. Missing optional secure stores keep the service
-	// unavailable without weakening its dependency checks.
-	if phases, err := teamconstruction.NewPhases(teamconstruction.Dependencies{
-		Pool: store.Pool(), Store: store, Build: srv.TeamBuild,
-		KernelPublication: srv.KernelPublication,
-		Agents:            srv.Registry, TeamWorkers: srv.TeamWorkers, Teams: srv.OrgStore,
-		Workflows: srv.Workflow, Artifacts: srv.WorkflowArtifacts, MCPs: srv.MCPRegistry, Providers: srv.Credentials,
-		Runtimes: srv.Runtimes, Tasks: srv.Tasks,
-		Deliverables: srv.Deliverables, Snapshots: srv.Snapshots, Audit: srv.Audit,
-		Delivery: srv.DeliveryTargets, Skills: srv.Skills, Schedules: srv.AgentSchedules,
-		Descriptors: srv.Descriptors, Fanout: srv.Fanout, Drafts: srv.TeamForgeDrafts,
-		CLIExecutor: srv.RemoteExec,
-		LLMResolver: models,
-	}); err != nil {
-		slog.Warn("team build orchestrator unavailable", "error", err)
-	} else {
-		controller := teamorch.NewController(srv.TeamBuild, phases, nil)
-		controller.RevisionPlanner = phases
-		synchronous := teamorch.NewService(
-			controller, phases,
-		)
-		buildDispatch.Executor = synchronous
-		if err := srv.TaskWorker.Register(teamconstruction.TaskKind, taskqueue.IdentityTeamBuild, buildDispatch); err != nil {
-			slog.Error("register team build handler", "error", err)
-			os.Exit(1)
-		}
-
-		srv.TeamTemplates = teamtemplates.New(
-			teamtemplates.NewPGIdempotencyStore(srv.Pool),
-			srv.TeamBuild,
-			teamTemplateExecutionAdapter{service: srv.TeamBuildOrchestrator},
-			teamtemplates.Options{Catalog: teamtemplates.NewStaticCatalog(), DefaultModel: defaultModel, RuntimeSelector: srv.Runtimes, Policy: teambuild.TemplateAuthorizationPolicy{
-				AutoBudgetThresholdUSD: cfg.TemplateAutoMaxCostUSD,
-				DailyBudgetUSD:         cfg.TemplateDailyBudgetUSD,
-				MonthlyBudgetUSD:       cfg.TemplateMonthlyBudgetUSD,
-				MaxConcurrent:          cfg.TemplateMaxConcurrent,
-			}},
-		)
-		srv.TeamEvaluations = teamevaluations.New(
-			teamevaluations.NewPGIdempotencyStore(srv.Pool),
-			srv.TeamBuild,
-			teamTemplateExecutionAdapter{service: srv.TeamBuildOrchestrator},
-			teamevaluations.Options{
-				OrgStore: srv.OrgStore, Registry: srv.Registry, Workflows: srv.Workflow, Artifacts: srv.WorkflowArtifacts,
-				DeclarativeValidator: func(
-					ctx context.Context,
-					workspaceID, teamID string,
-					trigger machine.TriggerConfig,
-					graph machine.GraphDefinition,
-				) (machine.Report, error) {
-					return teameval.ValidateWorkflowForTeam(ctx, teameval.WorkflowValidateDeps{
-						Teams: srv.OrgStore, Roster: srv.TeamWorkers,
-						Agents: srv.Registry, Workflows: srv.Workflow,
-					}, workspaceID, teamID, trigger, graph)
-				},
-			},
-		)
-	}
 
 	if srv.TaskWorker != nil {
 		srv.TaskWorker.Start()

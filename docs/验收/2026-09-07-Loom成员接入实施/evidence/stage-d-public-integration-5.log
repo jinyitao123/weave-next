@@ -1,7 +1,0 @@
-=== RUN   TestWorkflowPublishedMemberParkKeepsOriginalRunAndAccountingRealPG
-    loom_member_integration_pg_test.go:141: team_run_runtime_incompatible: workflow_factory_compile_failed
-    loom_member_integration_pg_test.go:143: parked={WorkspaceID:ws ProjectID: RunID:run-f8e3ed0a-7881-51c3-afd6-505a5c564ec0 Status:failed Generation:2 ExecutionLeaseEpoch:1 ResumeGeneration:0 TeamID:team WorkflowID:flow WorkflowVersion:1 RunSnapshotID:run-f8e3ed0a-7881-51c3-afd6-505a5c564ec0 SourceKind:manual SourceTaskID:task-d56726cc-9ff7-568a-b3a0-9f37a4cd5273 EstablishIdempotencyKey:teamrun-establish:task-d56726cc-9ff7-568a-b3a0-9f37a4cd5273 CurrentExecutorID:<nil> WaitKind:<nil> WaitDetail:[] ResumeTokenHash:[] CheckpointRef:<nil> CancelActor:<nil> CancelReason:<nil> CancelIdempotencyKey:<nil> CancelRequestedAt:<nil> CancelGraceDeadlineAt:<nil> ErrorCode:0x23a70d217ce0 CauseSummary:0x23a70d217cd0 CreatedAt:2026-09-07 16:11:18.41679 +0800 CST UpdatedAt:2026-09-07 16:11:18.427941 +0800 CST TerminalAt:2026-09-07 16:11:18.427941 +0800 CST} err=<nil>
---- FAIL: TestWorkflowPublishedMemberParkKeepsOriginalRunAndAccountingRealPG (0.34s)
-FAIL
-FAIL	github.com/jinyitao123/weave/internal/app/api	1.175s
-FAIL

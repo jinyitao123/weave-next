@@ -6,7 +6,7 @@
 
 The supported employee and developer product path is the [GooeyPi desktop plus Forge](https://github.com/jinyitao123/weave-workbench). Weave owns teams, published workflow versions, scheduling, execution state, leases, budgets, cancellation, recovery, and usage. Forge owns employee identity, business records and actions, permissions, approvals, and final business state.
 
-The web Workbench in `workbench/` is retired and is not a supported browser interface or standalone business client. Its code remains only as migration material until removal. Direct HTTP and MCP interfaces support the product integration and service operations; they do not create a second employee-facing business application.
+The retired web Workbench has been removed. Direct HTTP and MCP interfaces support the product integration and service operations; they do not create a second employee-facing business application.
 
 ## Responsibilities
 
@@ -35,10 +35,10 @@ make compose-check
 
 Build the operator binary with `go build -o ./bin/weave ./cmd/weave`. The `weave bootstrap` command provisions service operator credentials; keep its output in a private secret store. Weave does not provide local user-password login or first-user registration. Employees and developers authenticate through Forge as part of the supported product flow.
 
-For product setup, deployment boundaries, and current acceptance status, use the [product repository](https://github.com/jinyitao123/weave-workbench). The platform Compose file remains a development and validation aid; it does not make the retired web Workbench a supported client.
+For product setup, deployment boundaries, and current acceptance status, use the [product repository](https://github.com/jinyitao123/weave-workbench). The platform Compose file remains a development and validation aid.
 
 The [architecture index](docs/架构/README.md) is the current navigation for Weave's layering, contracts, and migration evidence. Dated acceptance records preserve the conclusions and limitations observed at the time; they do not certify the current working tree or deployment.
 
 ## License
 
-This repository is licensed under [MIT](LICENSE). `workbench/` retains its original MIT license and third-party notices for the original and derived code in that directory.
+This repository is licensed under [MIT](LICENSE).

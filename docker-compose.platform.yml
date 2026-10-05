@@ -3,7 +3,7 @@
 # same image serves both roles: default entrypoint = server, `runtime ...` = remote runtime.
 #
 # First boot: `docker compose -f docker-compose.platform.yml up -d`
-# Then register a runtime through Workbench, put its
+# Then register a runtime through runtime maintenance, put its
 # WEAVE_RUNTIME_TOKEN, and start the runtime:
 #   WEAVE_RUNTIME_TOKEN=rtk_xxx docker compose -f docker-compose.platform.yml --profile runtime up -d
 services:
@@ -54,12 +54,8 @@ services:
       WEAVE_FORGE_EVENT_URL: ${WEAVE_FORGE_EVENT_URL:-}
       WEAVE_FORGE_EVENT_SECRET: ${WEAVE_FORGE_EVENT_SECRET:-}
       WEAVE_FORGE_DEFAULT_WORKSPACE: ${WEAVE_FORGE_DEFAULT_WORKSPACE:-}
-      # Retired capabilities are switched off by default (AGENTS.md, decision 001):
-      # the meta-team, team templates/evaluation/build-run APIs, and Weave local
-      # login/registration. Identity comes only from Forge. Set a value to false
-      # to bring one back while it is still in the tree.
-      WEAVE_METATEAM_ENABLED: ${WEAVE_METATEAM_ENABLED:-false}
-      WEAVE_RETIRE_LEGACY_PLATFORM_APIS: ${WEAVE_RETIRE_LEGACY_PLATFORM_APIS:-true}
+      # Weave local login/registration is off by default (AGENTS.md, decision 001);
+      # identity comes only from Forge.
       WEAVE_DISABLE_LOCAL_LOGIN: ${WEAVE_DISABLE_LOCAL_LOGIN:-true}
       # Engine credentials are injected at runtime — never baked into the image.
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
@@ -70,11 +66,11 @@ services:
       HTTP_PROXY: ${CONTAINER_HTTP_PROXY:-}
       HTTPS_PROXY: ${CONTAINER_HTTPS_PROXY:-}
       ALL_PROXY: ${CONTAINER_ALL_PROXY:-}
-      NO_PROXY: ${CONTAINER_NO_PROXY:-localhost,127.0.0.1,db,weave,workbench}
+      NO_PROXY: ${CONTAINER_NO_PROXY:-localhost,127.0.0.1,db,weave}
       http_proxy: ${CONTAINER_HTTP_PROXY:-}
       https_proxy: ${CONTAINER_HTTPS_PROXY:-}
       all_proxy: ${CONTAINER_ALL_PROXY:-}
-      no_proxy: ${CONTAINER_NO_PROXY:-localhost,127.0.0.1,db,weave,workbench}
+      no_proxy: ${CONTAINER_NO_PROXY:-localhost,127.0.0.1,db,weave}
     volumes:
       - weave_workspaces:/root/.weave/workspaces
     depends_on:
@@ -87,7 +83,7 @@ services:
       retries: 20
     restart: unless-stopped
 
-  # Remote runtime — opt-in (needs a runtime token from Workbench
+  # Remote runtime — opt-in (needs a runtime token from runtime maintenance
   # first). Talks to the server over HTTP only; no DB access. In production this
   # typically runs on a DIFFERENT machine via `weave runtime --server https://…`;
   # this service is the single-host / staging shape of the same thing.
@@ -105,11 +101,11 @@ services:
       HTTP_PROXY: ${CONTAINER_HTTP_PROXY:-}
       HTTPS_PROXY: ${CONTAINER_HTTPS_PROXY:-}
       ALL_PROXY: ${CONTAINER_ALL_PROXY:-}
-      NO_PROXY: ${CONTAINER_NO_PROXY:-localhost,127.0.0.1,db,weave,workbench}
+      NO_PROXY: ${CONTAINER_NO_PROXY:-localhost,127.0.0.1,db,weave}
       http_proxy: ${CONTAINER_HTTP_PROXY:-}
       https_proxy: ${CONTAINER_HTTPS_PROXY:-}
       all_proxy: ${CONTAINER_ALL_PROXY:-}
-      no_proxy: ${CONTAINER_NO_PROXY:-localhost,127.0.0.1,db,weave,workbench}
+      no_proxy: ${CONTAINER_NO_PROXY:-localhost,127.0.0.1,db,weave}
     command:
       [
         "runtime",
@@ -123,79 +119,6 @@ services:
       weave:
         condition: service_healthy
     restart: unless-stopped
-
-  workbench:
-    # Retired web Workbench: not started by default. Enable with
-    # `--profile legacy-workbench` only while it is still in the tree.
-    profiles: ["legacy-workbench"]
-    build:
-      context: .
-      dockerfile: Dockerfile.workbench
-      additional_contexts:
-        weave-runtime: service:weave
-      args:
-        WEAVE_IMAGE: weave-runtime
-        DSH_CLIENT_COMMIT_HASH: ${WORKBENCH_BUILD_COMMIT:-0000000}
-        DSH_CLIENT_VERSION: ${WEAVE_VERSION:-0.1.0-dev}
-        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmjs.org}
-        DEBIAN_MIRROR: ${DEBIAN_MIRROR:-http://deb.debian.org}
-        HTTP_PROXY: ${DOCKER_BUILD_HTTP_PROXY:-}
-        HTTPS_PROXY: ${DOCKER_BUILD_HTTPS_PROXY:-}
-        ALL_PROXY: ${DOCKER_BUILD_ALL_PROXY:-}
-        NO_PROXY: ${DOCKER_BUILD_NO_PROXY:-localhost,127.0.0.1}
-        http_proxy: ${DOCKER_BUILD_HTTP_PROXY:-}
-        https_proxy: ${DOCKER_BUILD_HTTPS_PROXY:-}
-        all_proxy: ${DOCKER_BUILD_ALL_PROXY:-}
-        no_proxy: ${DOCKER_BUILD_NO_PROXY:-localhost,127.0.0.1}
-    image: ${WEAVE_WORKBENCH_IMAGE:-weave-workbench}
-    environment:
-      DSH_HOME: /data/dsh
-      WEAVE_API_URL: http://weave:8080
-      WEAVE_API_KEY: ${WEAVE_API_KEY:-}
-      WEAVE_RUNTIME_SERVER_URL: ${WEAVE_RUNTIME_SERVER_URL:-}
-      HTTP_PROXY: ${CONTAINER_HTTP_PROXY:-}
-      HTTPS_PROXY: ${CONTAINER_HTTPS_PROXY:-}
-      ALL_PROXY: ${CONTAINER_ALL_PROXY:-}
-      NO_PROXY: ${CONTAINER_NO_PROXY:-localhost,127.0.0.1,db,weave,workbench}
-      http_proxy: ${CONTAINER_HTTP_PROXY:-}
-      https_proxy: ${CONTAINER_HTTPS_PROXY:-}
-      all_proxy: ${CONTAINER_ALL_PROXY:-}
-      no_proxy: ${CONTAINER_NO_PROXY:-localhost,127.0.0.1,db,weave,workbench}
-    command:
-      - --host
-      - 127.0.0.1
-      - --port
-      - "3080"
-      - --trusted-host
-      - ${WORKBENCH_PUBLIC_AUTHORITY:-127.0.0.1:3080}
-      - --no-open
-    volumes:
-      - ${WORKBENCH_DATA_PATH:-./data/workbench}:/data/dsh
-      - ${WORKBENCH_WORKSPACE_PATH:-./data/workspaces}:/workspace
-    working_dir: /workspace
-    depends_on:
-      weave:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3080/').then(r=>process.exit(r.status===401||r.ok?0:1)).catch(()=>process.exit(1))"]
-      interval: 10s
-      timeout: 5s
-      retries: 12
-      start_period: 30s
-    restart: unless-stopped
-    ports:
-      - ${WORKBENCH_BIND_ADDRESS:-127.0.0.1}:${WORKBENCH_PORT:-3080}:3081
-
-  workbench-gateway:
-    profiles: ["legacy-workbench"]
-    image: nginx:alpine
-    restart: unless-stopped
-    depends_on:
-      workbench:
-        condition: service_healthy
-    network_mode: service:workbench
-    volumes:
-      - ./workbench/deploy/workbench.nginx.conf:/etc/nginx/nginx.conf:ro
 
 volumes:
   pgdata:

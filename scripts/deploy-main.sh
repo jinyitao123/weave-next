@@ -105,23 +105,13 @@ version="$(tr -d '[:space:]' < "$release_dir/VERSION")"
 release_env="$state_dir/releases/$expected_sha.env"
 printf '%s\n' \
   "BUILD_COMMIT=$expected_sha" \
-  "WORKBENCH_BUILD_COMMIT=${expected_sha:0:7}" \
   "WEAVE_VERSION=$version" \
-  "WEAVE_PLATFORM_IMAGE=weave-main-platform:$expected_sha" \
-  "WEAVE_WORKBENCH_IMAGE=weave-main-workbench:$expected_sha" > "$release_env"
-# The web Workbench is retired: it is built, started and verified only when
-# server.env sets WEAVE_WEB_WORKBENCH=true, and then under its Compose profile.
-web_workbench="$(python3 "$release_dir/scripts/deployment-state.py" workbench-enabled "$env_file" "$state_dir")"
+  "WEAVE_PLATFORM_IMAGE=weave-main-platform:$expected_sha" > "$release_env"
 compose=(sudo docker compose --project-name weave-main --project-directory "$release_dir"
   --env-file "$env_file" --env-file "$release_env" -f "$release_dir/docker-compose.platform.yml")
-build_services=(weave)
-if [[ "$web_workbench" == true ]]; then
-  compose+=(--profile legacy-workbench)
-  build_services+=(workbench)
-fi
 "${compose[@]}" config --quiet
 phase=build
-"${compose[@]}" build "${build_services[@]}"
+"${compose[@]}" build weave
 
 # Recheck through GitHub's lightweight API before cutover; source bytes were already
 # transferred from the CI-verified checkout and verified against its SHA-256.
@@ -140,22 +130,10 @@ cp -p "$env_file" "$backup_dir/server.env"
 if [[ -n "$("${compose[@]}" ps --status running -q db)" ]]; then
   "${compose[@]}" exec -T db pg_dump -U weave -d weave -Fc > "$backup_dir/database.dump"
 fi
-phase=prepare-workbench-storage
-python3 "$release_dir/scripts/deployment-state.py" prepare-workbench-storage "$env_file" "$state_dir"
-if [[ "$web_workbench" != true ]]; then
-  phase=workbench-shutdown
-  # Selecting only db/weave for up does not retire already running services.
-  # stop is harmless on a fresh install and preserves containers and storage.
-  "${compose[@]}" --profile legacy-workbench stop workbench-gateway workbench
-fi
 phase=api-startup
 "${compose[@]}" up -d --no-build --wait --wait-timeout 120 db weave
 phase=bootstrap
 python3 "$release_dir/scripts/deployment-state.py" bootstrap "$env_file" "$state_dir" -- "${compose[@]}"
-if [[ "$web_workbench" == true ]]; then
-  phase=workbench-startup
-  "${compose[@]}" up -d --no-build --wait --wait-timeout 180 workbench workbench-gateway
-fi
 phase=verification
 python3 "$release_dir/scripts/deployment-state.py" verify "$env_file" "$state_dir" "$expected_sha"
 ln -sfn "$release_dir" "$state_dir/current"

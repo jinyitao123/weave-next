@@ -1,8 +1,0 @@
-=== RUN   TestNativeModelFallbackLive
-    native_fallback_live_test.go:44: status=completed output="WEAVE_NATIVE_FALLBACK_OK" attempts=1 reported_models=[weave-intentionally-unavailable-model kimi-for-coding-highspeed] error=<nil>
-    native_fallback_live_test.go:46: physical_attempt=task-f7bf27c85de49051ddb2cc1c805e625e
-    native_fallback_live_test.go:49: native fallback did not complete the two-attempt proof
---- FAIL: TestNativeModelFallbackLive (10.02s)
-FAIL
-FAIL	github.com/jinyitao123/weave/internal/kernel/runtimes	10.744s
-FAIL

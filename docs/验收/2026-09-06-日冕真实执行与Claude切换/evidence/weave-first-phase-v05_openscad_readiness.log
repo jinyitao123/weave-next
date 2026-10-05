@@ -1,3 +1,0 @@
-COMMAND: which openscad; ls /Applications | grep -i scad
-/opt/homebrew/bin/openscad
-OpenSCAD.app

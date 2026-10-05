@@ -1,8 +1,0 @@
-{
-  "task": "  INV-440\r\n客户说“保留  这段”\n\tSKU=中文-α  \n已确认订单核对团队、reconcile v1 工作流和核对报告交付。请据此派发。",
-  "sourceMessageCount": 1,
-  "dispatchFields": [
-    "client_request_id",
-    "input_revision_id"
-  ]
-}

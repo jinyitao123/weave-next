@@ -60,7 +60,6 @@ func (s *Server) handleReady(c echo.Context) error {
 		{name: "credential_store", available: s.Credentials != nil},
 		{name: "delivery_target_store", available: s.DeliveryTargets != nil},
 		{name: "mcp_registry", available: s.MCPRegistry != nil},
-		{name: "team_template_service", available: s.TeamTemplates != nil},
 	}
 	for _, check := range checks {
 		if !check.available {

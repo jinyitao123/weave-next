@@ -1,6 +1,0 @@
-CMD: shasum -a 256 outputs/model/baseline_frozen.yaml (vs frozen record cfb12b78…8b10c2)
-cfb12b781363c547da87e6dec9fd937079cba25501b85ff6cbfabfbc508b10c2  ../model/baseline_frozen.yaml
-CMD: shasum -a 256 outputs/review/*.md (copied from inputs/lead, must match manifest)
-2494de35bf51dc1620a42d37c5a62a006e74e98d9e85fd973f4af8f87287915c  ../review/change_control_register.md
-bded6d00f05be613b16e1ff6e6a61a372da7f0d45236b79af2e6c8842a2b5f76  ../review/interface_control.md
-53c628a1cc4b88fb4d71e54ea0754186861e8c1ddbaae5a5614989e5c6ed4481  ../review/requirements_baseline.md

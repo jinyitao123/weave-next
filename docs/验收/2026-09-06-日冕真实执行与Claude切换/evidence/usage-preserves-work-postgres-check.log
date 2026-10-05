@@ -1,4 +1,0 @@
-=== RUN   TestRuntimeCompletionPreservesWorkWhenUsageIsInvalidRealPG
---- PASS: TestRuntimeCompletionPreservesWorkWhenUsageIsInvalidRealPG (0.35s)
-PASS
-ok  	github.com/jinyitao123/weave/internal/app/api	0.781s

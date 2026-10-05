@@ -1,6 +1,0 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
-#   pnpm run verify-translation-pairing --write .agents/notes/proposed/feature/2026-08-30-weave-exact-run-stop-and-rerun.md
-2026-08-30-weave-exact-run-stop-and-rerun.md: 72e6636e045e18a57c9659ac82e91438fe94de23
-2026-08-30-weave-exact-run-stop-and-rerun.zh.md: e05ca3e72bd16af6aa9c307783cf7940b4768b2d

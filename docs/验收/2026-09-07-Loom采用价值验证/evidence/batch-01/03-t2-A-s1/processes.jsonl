@@ -1,1 +1,0 @@
-{"sequence": 1, "phase": "start", "command": ["<LOCAL_TEMP_PATH>", "docs/验收/2026-09-07-Loom采用价值验证/evidence/batch-01/03-t2-A-s1", "A", "t2", "s1", "start"], "pid_observed_in_events": true, "started_at": "2026-09-07T01:18:41.568848+00:00", "ended_at": "2026-09-07T01:19:20.701111+00:00", "elapsed_seconds": 39.132263, "exit_code": 86}

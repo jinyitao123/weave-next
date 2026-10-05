@@ -36,33 +36,6 @@ jobs:
       - name: Build, test, and governance
         run: make ci
 
-  workbench:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 11.7.0
-      - name: Install Workbench dependencies
-        working-directory: workbench
-        run: pnpm install --frozen-lockfile
-      - name: Verify Workbench runtime closure
-        working-directory: workbench
-        run: pnpm run verify-runtime-closure
-      - name: Install native build dependencies
-        run: sudo apt-get update && sudo apt-get install -y musl-tools
-      - name: Build native isolation launcher
-        working-directory: workbench/native/landlock-run
-        run: |
-          pnpm build:ts
-          pnpm build:native
-          node ./test/entry.test.js
-      - name: Build and test Workbench
-        run: make workbench-check
-
   compose-validate:
     runs-on: ubuntu-latest
     steps:

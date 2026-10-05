@@ -52,7 +52,7 @@ func TestStandardPublishedToolsRealModel(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(output, "model.py")); err == nil {
 		t.Fatal("real sample requires a fresh output directory")
 	}
-	baseline, err := os.ReadFile("../../../docs/验收/2026-09-07-Runtime真实中断恢复/inputs/upstream/lead/model/baseline_frozen.yaml")
+	baseline, err := os.ReadFile("testdata/baseline_frozen.yaml")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,9 +1,0 @@
-{
-  "recorded_at": "2026-09-08T01:38:32.350355+00:00",
-  "scope_authorization": "User authorized the three-stage investigation and in-app Workbench operation.",
-  "user_result_acceptance": "NOT_REQUESTED",
-  "direct_human_intervention_count": "NOT_MEASURED",
-  "operator_actions": "Historical dispatch, correction, and continue actions were performed by Codex under existing authorization; not separate human decisions.",
-  "recovery_action_evidence": "Historical third-attempt/after-ui-continue.json, independently checked in recovery-verification.json.",
-  "unresolved_decision": "Original three-speed gate versus approved single-speed baseline remains disclosed."
-}

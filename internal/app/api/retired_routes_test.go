@@ -59,22 +59,31 @@ var retiredRoutes = []string{
 	"POST /v1/internal/team-build-runs/candidate-runs", "POST /v1/internal/team-build-runs/publish",
 }
 
-func TestRetiredRoutesAreNotRegisteredWhenRetired(t *testing.T) {
-	routes := registeredRoutes(t, &config.Config{JWTSecret: "test", RetireLegacyPlatformAPIs: true, DisableLocalLogin: true})
-	var stillRegistered []string
-	for _, route := range retiredRoutes {
-		if routes[route] {
-			stillRegistered = append(stillRegistered, route)
+// Local login and registration are the only retired routes still gated by
+// configuration; every other retired route has been deleted from the code.
+var localAuthRoutes = map[string]bool{"POST /v1/auth/login": true, "POST /v1/auth/register": true}
+
+func TestRetiredRoutesAreNeverRegistered(t *testing.T) {
+	for name, cfg := range map[string]*config.Config{
+		"default":            {JWTSecret: "test"},
+		"local login closed": {JWTSecret: "test", DisableLocalLogin: true},
+	} {
+		routes := registeredRoutes(t, cfg)
+		var stillRegistered []string
+		for _, route := range retiredRoutes {
+			if routes[route] && !(localAuthRoutes[route] && !cfg.DisableLocalLogin) {
+				stillRegistered = append(stillRegistered, route)
+			}
 		}
-	}
-	sort.Strings(stillRegistered)
-	if len(stillRegistered) != 0 {
-		t.Fatalf("retired routes still registered: %v", stillRegistered)
+		sort.Strings(stillRegistered)
+		if len(stillRegistered) != 0 {
+			t.Fatalf("%s: retired routes still registered: %v", name, stillRegistered)
+		}
 	}
 }
 
 func TestSupportedClientRoutesSurviveRetirement(t *testing.T) {
-	routes := registeredRoutes(t, &config.Config{JWTSecret: "test", RetireLegacyPlatformAPIs: true, DisableLocalLogin: true})
+	routes := registeredRoutes(t, &config.Config{JWTSecret: "test", DisableLocalLogin: true})
 	var missing []string
 	for _, route := range supportedClientRoutes {
 		if !routes[route] {
@@ -86,28 +95,15 @@ func TestSupportedClientRoutesSurviveRetirement(t *testing.T) {
 	}
 }
 
-func TestDefaultConfigKeepsEveryRouteRegistered(t *testing.T) {
-	routes := registeredRoutes(t, &config.Config{JWTSecret: "test"})
-	for _, route := range append(append([]string{}, retiredRoutes...), supportedClientRoutes...) {
-		if !routes[route] {
-			t.Errorf("route %s missing with zero-value flags; retirement must be opt-in at the Config level", route)
+func TestLocalLoginRoutesFollowTheDisableFlag(t *testing.T) {
+	open := registeredRoutes(t, &config.Config{JWTSecret: "test"})
+	closed := registeredRoutes(t, &config.Config{JWTSecret: "test", DisableLocalLogin: true})
+	for route := range localAuthRoutes {
+		if !open[route] {
+			t.Errorf("%s missing while local login is enabled", route)
 		}
-	}
-}
-
-func TestRetirementFlagsAreIndependent(t *testing.T) {
-	loginOnly := registeredRoutes(t, &config.Config{JWTSecret: "test", DisableLocalLogin: true})
-	if loginOnly["POST /v1/auth/login"] || loginOnly["POST /v1/auth/register"] {
-		t.Fatal("DisableLocalLogin must remove login and register")
-	}
-	if !loginOnly["POST /v1/internal/team-build-runs"] {
-		t.Fatal("DisableLocalLogin must not retire team-build routes")
-	}
-	constructionOnly := registeredRoutes(t, &config.Config{JWTSecret: "test", RetireLegacyPlatformAPIs: true})
-	if !constructionOnly["POST /v1/auth/login"] {
-		t.Fatal("RetireLegacyPlatformAPIs must not remove local login")
-	}
-	if constructionOnly["POST /v1/internal/team-build-runs"] {
-		t.Fatal("RetireLegacyPlatformAPIs must remove team-build routes")
+		if closed[route] {
+			t.Errorf("%s registered while local login is disabled", route)
+		}
 	}
 }
