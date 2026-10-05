@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jinyitao123/weave/internal/base/deliverable"
 )
@@ -12,6 +13,53 @@ const receiptAction = "forge:action:record.submit"
 
 func receiptScope() BusinessReceiptScope {
 	return BusinessReceiptScope{WorkspaceID: "ws", RunID: "run", RunSnapshotID: "snapshot", InputRevisionID: "input", SubjectID: "employee", AllowedCapabilityIDs: []string{receiptAction}, ObjectName: "record", RecordID: "record-1"}
+}
+
+func TestBusinessReceiptSimulationSourceAndScopeAreIsolated(t *testing.T) {
+	params := BusinessReceiptParameters{RequiredCapabilityIDs: []string{receiptAction}, WhenAuthorized: true, AllowNeedsInput: false}
+	now := time.Now().UTC()
+	scope := BusinessReceiptScope{
+		WorkspaceID: "ws", RunID: "run", RunSnapshotID: "snapshot", InputRevisionID: "input", SubjectID: "developer",
+		AllowedCapabilityIDs: []string{receiptAction}, DevelopmentTrial: true, TerminalAt: &now,
+	}
+	simulated := BusinessReceipt{
+		WorkspaceID: "ws", RunID: "run", RunSnapshotID: "snapshot", SubjectID: "developer", InputRevisionID: "input",
+		CapabilityID: receiptAction, ObjectName: "record", OperationID: "operation-1", Status: "succeeded", Simulated: true,
+		OccurredAt: now.Add(-time.Second),
+	}
+	if got := EvaluateBusinessReceipts(params, scope, []BusinessReceipt{simulated}, BusinessReceiptResult{Disposition: "complete"}); !got.Accept || got.Result.Reason != "required_business_actions_recorded" {
+		t.Fatalf("simulated trial receipt = %+v", got)
+	}
+
+	formal := scope
+	formal.DevelopmentTrial = false
+	formal.ObjectName, formal.RecordID = "record", "record-1"
+	if got := EvaluateBusinessReceipts(params, formal, []BusinessReceipt{simulated}, BusinessReceiptResult{Disposition: "complete"}); !got.HardStop || got.Accept {
+		t.Fatalf("formal path accepted a simulated receipt: %+v", got)
+	}
+	real := simulated
+	real.Simulated = false
+	real.RunSnapshotID, real.SubjectID = "", ""
+	real.RecordID = "record-1"
+	if got := EvaluateBusinessReceipts(params, scope, []BusinessReceipt{real}, BusinessReceiptResult{Disposition: "complete"}); !got.HardStop || got.Accept {
+		t.Fatalf("trial path accepted a real Forge receipt: %+v", got)
+	}
+
+	wrongSnapshot := simulated
+	wrongSnapshot.RunSnapshotID = "another-snapshot"
+	if got := EvaluateBusinessReceipts(params, scope, []BusinessReceipt{wrongSnapshot}, BusinessReceiptResult{Disposition: "complete"}); !got.HardStop {
+		t.Fatalf("trial borrowed another run snapshot: %+v", got)
+	}
+	wrongActor := simulated
+	wrongActor.SubjectID = "another-developer"
+	if got := EvaluateBusinessReceipts(params, scope, []BusinessReceipt{wrongActor}, BusinessReceiptResult{Disposition: "complete"}); !got.HardStop {
+		t.Fatalf("trial borrowed another developer: %+v", got)
+	}
+	late := simulated
+	late.OccurredAt = now.Add(time.Second)
+	if got := EvaluateBusinessReceipts(params, scope, []BusinessReceipt{late}, BusinessReceiptResult{Disposition: "complete"}); !got.HardStop {
+		t.Fatalf("terminal run accepted a late simulation receipt: %+v", got)
+	}
 }
 func receipt(status string) BusinessReceipt {
 	return BusinessReceipt{WorkspaceID: "ws", RunID: "run", InputRevisionID: "input", CapabilityID: receiptAction, ObjectName: "record", RecordID: "record-1", OperationID: "operation-1", Status: status}

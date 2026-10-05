@@ -134,6 +134,13 @@ func TestTeamDevelopmentStagingAndAtomicPublicationRealPG(t *testing.T) {
 	if _, err = call("POST", trial, server.handleTrialTeamDevelopment); err == nil {
 		t.Fatal("same request accepted different material")
 	}
+	scopeChanged := trial
+	scopeChanged.Input = "合同原文：金额 ¥186,420.50\n签字页"
+	scopeChanged.BusinessActions = append([]businessaction.DevelopmentAction(nil), trial.BusinessActions...)
+	scopeChanged.BusinessActions[0].SimulationAuthorized = true
+	if _, err = call("POST", scopeChanged, server.handleTrialTeamDevelopment); err == nil {
+		t.Fatal("same request accepted a changed simulation scope")
+	}
 	if _, err = call("POST", map[string]int{"revision": 2}, server.handlePublishTeamDevelopment); err == nil {
 		t.Fatal("published without successful trial")
 	}

@@ -233,6 +233,23 @@ func (store *PGActivityStore) RecordBusinessActionEvent(ctx context.Context, eve
 		return fmt.Errorf("begin record business action activity: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+	if detail.Source == businessaction.ActionOutcomeSourceDevelopmentSimulation {
+		var status, runSnapshotID, inputRevisionID, actorID string
+		err := tx.QueryRow(ctx, `SELECT r.status,r.run_snapshot_id,b.input_revision_id,t.actor_id
+			FROM weave_team_runs r
+			JOIN weave_run_delivery_state b ON b.workspace_id=r.workspace_id AND b.run_snapshot_id=r.run_snapshot_id AND (b.run_id IS NULL OR b.run_id=r.run_id)
+			JOIN weave_task_queue root ON root.workspace_id=r.workspace_id AND root.id=r.source_task_id
+			JOIN weave_team_development_trials t ON t.workspace_id=root.workspace_id
+			 AND root.context_key='development:'||t.request_id::text AND t.team_id=r.team_id AND t.workflow_id=r.workflow_id
+			WHERE r.workspace_id=$1 AND r.run_id=$2
+			FOR UPDATE OF r`, event.WorkspaceID, event.RunID).Scan(&status, &runSnapshotID, &inputRevisionID, &actorID)
+		if err != nil {
+			return fmt.Errorf("validate development simulation run: %w", err)
+		}
+		if status != string(StatusRunning) || runSnapshotID != detail.RunSnapshotID || inputRevisionID != detail.InputRevisionID || actorID != detail.ActorID {
+			return errors.New("development simulation run scope is closed or changed")
+		}
+	}
 	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext($1),hashtext($2))`, event.WorkspaceID, event.RunID); err != nil {
 		return fmt.Errorf("lock business action activity: %w", err)
 	}
@@ -366,7 +383,7 @@ func checkBusinessActionReplayTx(ctx context.Context, tx pgx.Tx, check BusinessA
 			ORDER BY result.seq DESC LIMIT 1
 		) AS latest ON true
 		WHERE started.workspace_id=$1 AND started.run_id=$2 AND started.kind='business_action_started'
-		  AND started.detail->>'source'='forge_mcp.run_action'
+		  AND started.detail->>'source' IN ('forge_mcp.run_action','development_simulation')
 		  AND started.detail->>'input_revision_id'=$3
 		ORDER BY started.seq DESC`, check.WorkspaceID, check.RunID, check.InputRevisionID)
 	if err != nil {

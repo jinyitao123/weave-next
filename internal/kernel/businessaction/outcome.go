@@ -10,16 +10,17 @@ import (
 )
 
 const (
-	ActionOutcomeStatusSucceeded = "succeeded"
-	ActionOutcomeStatusFailed    = "failed"
-	ActionOutcomeStatusUnknown   = "unknown"
-	ActionOutcomeSourceForgeMCP  = "forge_mcp.run_action"
+	ActionOutcomeStatusSucceeded             = "succeeded"
+	ActionOutcomeStatusFailed                = "failed"
+	ActionOutcomeStatusUnknown               = "unknown"
+	ActionOutcomeSourceForgeMCP              = "forge_mcp.run_action"
+	ActionOutcomeSourceDevelopmentSimulation = "development_simulation"
 )
 
 var (
-	ErrActionOutcomeUnresolved = errors.New("Forge action outcome remains unresolved")
-	ErrActionOperationConflict = errors.New("Forge action operation content conflicts with its durable identity")
-	ErrActionAlreadyRecorded   = errors.New("Forge action operation already recorded")
+	ErrActionOutcomeUnresolved = errors.New("business action outcome remains unresolved")
+	ErrActionOperationConflict = errors.New("business action content conflicts with its durable operation identity")
+	ErrActionAlreadyRecorded   = errors.New("business action operation already recorded")
 )
 
 // ActionOutcomeEvent associates one controlled durable tool slot with its
@@ -29,6 +30,8 @@ var (
 // not a copy of request parameters, credentials or model-private state.
 type ActionOutcomeEvent struct {
 	Source             string               `json:"source"`
+	RunSnapshotID      string               `json:"run_snapshot_id,omitempty"`
+	ActorID            string               `json:"actor_id,omitempty"`
 	OperationID        string               `json:"operation_id,omitempty"`
 	OperationSlot      string               `json:"operation_slot,omitempty"`
 	Phase              string               `json:"phase"`
@@ -84,7 +87,7 @@ func WithActionOutcomeGuard(ctx context.Context, guard ActionOutcomeGuard) conte
 func recordActionOutcome(ctx context.Context, event ActionOutcomeEvent) error {
 	recorder, _ := ctx.Value(actionOutcomeRecorderContextKey{}).(ActionOutcomeRecorder)
 	if recorder == nil {
-		return errors.New("Forge action outcome recorder is unavailable")
+		return errors.New("business action outcome recorder is unavailable")
 	}
 	return recorder(ctx, event)
 }
@@ -92,7 +95,7 @@ func recordActionOutcome(ctx context.Context, event ActionOutcomeEvent) error {
 func checkActionOutcomeReplay(ctx context.Context, event ActionOutcomeEvent) (ActionOutcomeReplay, error) {
 	guard, _ := ctx.Value(actionOutcomeGuardContextKey{}).(ActionOutcomeGuard)
 	if guard == nil {
-		return ActionOutcomeReplay{}, errors.New("Forge action replay guard is unavailable")
+		return ActionOutcomeReplay{}, errors.New("business action replay guard is unavailable")
 	}
 	return guard(ctx, event)
 }

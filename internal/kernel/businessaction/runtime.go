@@ -148,10 +148,10 @@ type delegation struct {
 type delegatedResource = TaskDelegationResource
 
 func (s *Store) dispatcher(ctx context.Context, requested []string, bindings []frozen.BusinessCapabilityBinding) (contract.ToolDispatcher, error) {
-	if actions, ok, err := s.resolveDevelopmentTrial(ctx, requested); err != nil {
+	if dispatcher, ok, err := s.developmentDispatcher(ctx, requested, bindings); err != nil {
 		return nil, err
 	} else if ok {
-		return newDevelopmentDispatcherWithBindings(requested, actions, bindings)
+		return dispatcher, nil
 	}
 	bound, err := s.resolve(ctx, requested)
 	if err != nil {
@@ -192,61 +192,6 @@ func (s *Store) dispatcher(ctx context.Context, requested []string, bindings []f
 	dispatcher.trackOutcomes = true
 	dispatcher.inputRevisionID = bound.inputRevisionID
 	return dispatcher, nil
-}
-
-func (s *Store) resolveDevelopmentTrial(ctx context.Context, requested []string) ([]DevelopmentAction, bool, error) {
-	if s == nil || s.pool == nil || s.tasks == nil {
-		return nil, false, fmt.Errorf("%w: business delegation store unavailable", mcphost.ErrFailClosed)
-	}
-	current, ok := execution.CurrentTaskFromContext(ctx)
-	if !ok || current.Subject.UserID == "" {
-		return nil, false, nil
-	}
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return nil, false, err
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-	if err = s.tasks.ValidateCurrentTaskTx(ctx, tx); err != nil {
-		return nil, false, fmt.Errorf("%w: current employee task changed", mcphost.ErrFailClosed)
-	}
-	var raw []byte
-	// Fanout legs and resume tasks replace the source task's context key with
-	// their coordination group. Resolve the development trial through the
-	// immutable TeamRun source task so every task in the same frozen run sees
-	// the same isolated action catalog.
-	err = tx.QueryRow(ctx, `SELECT t.business_actions
-		FROM weave_task_queue q
-		JOIN weave_team_runs r
-		  ON r.workspace_id=q.workspace_id
-		 AND r.run_snapshot_id=q.run_snapshot_id
-		JOIN weave_task_queue root
-		  ON root.workspace_id=r.workspace_id
-		 AND root.id=r.source_task_id
-		JOIN weave_team_development_trials t
-		  ON t.workspace_id=root.workspace_id
-		 AND root.context_key='development:' || t.request_id::text
-		WHERE q.workspace_id=$1 AND q.id=$2 AND t.actor_id=$3
-		  AND root.source_ref='team-development:' || t.team_id`,
-		current.WorkspaceID, current.ID, current.Subject.UserID).Scan(&raw)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, false, nil
-	}
-	if err != nil {
-		return nil, false, err
-	}
-	var actions []DevelopmentAction
-	if err = json.Unmarshal(raw, &actions); err != nil {
-		return nil, false, fmt.Errorf("%w: development action catalog is invalid", mcphost.ErrFailClosed)
-	}
-	actions, err = ValidateDevelopmentActions(requested, actions)
-	if err != nil {
-		return nil, false, fmt.Errorf("%w: %v", mcphost.ErrFailClosed, err)
-	}
-	if err = tx.Commit(ctx); err != nil {
-		return nil, false, err
-	}
-	return actions, true, nil
 }
 
 func (s *Store) resolve(ctx context.Context, requested []string) (delegation, error) {
@@ -484,72 +429,6 @@ type fileParameterSelection struct {
 	Names    map[string]string
 }
 
-// DevelopmentAction is a credential-free Forge action definition frozen with
-// one developer trial. It is used only to construct an isolated tool contract;
-// the development dispatcher never contacts Forge or writes business data.
-type DevelopmentAction struct {
-	CapabilityID         string        `json:"capability_id"`
-	Name                 string        `json:"name"`
-	ObjectName           string        `json:"object_name"`
-	Label                string        `json:"label,omitempty"`
-	Description          string        `json:"description,omitempty"`
-	RequiresRecord       bool          `json:"requires_record,omitempty"`
-	RequiresConfirmation bool          `json:"requires_confirmation,omitempty"`
-	Params               []actionParam `json:"params,omitempty"`
-}
-
-// ValidateDevelopmentActions verifies that a trial freezes exactly the Forge
-// actions referenced by its candidate members. Extra definitions are rejected
-// so a trial request cannot widen the published member capability set.
-func ValidateDevelopmentActions(requested []string, supplied []DevelopmentAction) ([]DevelopmentAction, error) {
-	want := make(map[string]struct{}, len(requested))
-	for _, id := range requested {
-		if _, err := parseAction(id); err != nil {
-			return nil, err
-		}
-		want[id] = struct{}{}
-	}
-	byID := make(map[string]DevelopmentAction, len(supplied))
-	for _, item := range supplied {
-		parsed, err := parseAction(item.CapabilityID)
-		if err != nil {
-			return nil, err
-		}
-		if _, ok := want[item.CapabilityID]; !ok {
-			return nil, fmt.Errorf("调试动作不属于当前团队配置")
-		}
-		if _, exists := byID[item.CapabilityID]; exists {
-			return nil, fmt.Errorf("调试动作目录包含重复能力")
-		}
-		if item.Name != parsed.actionName || item.ObjectName != parsed.objectName {
-			return nil, fmt.Errorf("调试动作定义与能力标识不一致")
-		}
-		if err := validateActionMetadata(actionMetadata{Name: item.Name, ObjectName: item.ObjectName, Label: item.Label,
-			Description: item.Description, RequiresRecord: item.RequiresRecord, RequiresConfirmation: item.RequiresConfirmation, Params: item.Params}); err != nil {
-			return nil, fmt.Errorf("调试动作 %q 的输入定义无效: %v", item.CapabilityID, err)
-		}
-		byID[item.CapabilityID] = item
-	}
-	if len(byID) != len(want) {
-		return nil, fmt.Errorf("当前团队使用了尚未提供调试定义的 Forge 业务能力")
-	}
-	result := make([]DevelopmentAction, 0, len(want))
-	for id := range want {
-		result = append(result, byID[id])
-	}
-	sort.Slice(result, func(i, j int) bool { return result[i].CapabilityID < result[j].CapabilityID })
-	return result, nil
-}
-
-func developmentCatalog(actions []DevelopmentAction) map[string]actionMetadata {
-	catalog := make(map[string]actionMetadata, len(actions))
-	for _, item := range actions {
-		catalog[item.ObjectName+"."+item.Name] = actionMetadata{Name: item.Name, ObjectName: item.ObjectName, Label: item.Label,
-			Description: item.Description, RequiresRecord: item.RequiresRecord, RequiresConfirmation: item.RequiresConfirmation, Params: item.Params}
-	}
-	return catalog
-}
-
 func newDispatcher(host contract.ToolDispatcher, ids []string, catalog map[string]actionMetadata) (*dispatcher, error) {
 	return newDispatcherWithNotice(host, ids, catalog, "仅在当前员工明确授权且本次固定材料已核对时调用。")
 }
@@ -639,7 +518,7 @@ func newDispatcherWithBindings(host contract.ToolDispatcher, ids []string, catal
 			name := actionParameterName(param)
 			if isSystemIdempotencyParameter(name) {
 				parsed.idempotencyParams = append(parsed.idempotencyParams, name)
-				if _, simulated := host.(developmentHost); simulated {
+				if mock, simulated := host.(developmentHost); simulated && !mock.trackOutcomes {
 					injected[name] = "weave-development-operation"
 				}
 			}
@@ -659,35 +538,6 @@ func newDispatcherWithBindings(host contract.ToolDispatcher, ids []string, catal
 	}
 	d.bound = bound
 	return d, nil
-}
-
-type developmentHost struct {
-	syntheticMaterialCount int
-}
-
-func (developmentHost) ListTools(context.Context) ([]contract.ToolDef, error) { return nil, nil }
-func (h developmentHost) Dispatch(_ context.Context, call contract.ToolCall) (*contract.ToolResult, error) {
-	if call.Name != "run_action" {
-		return &contract.ToolResult{CallID: call.ID, ToolName: call.Name, Content: "开发调试只允许模拟已绑定的业务动作", IsError: true}, nil
-	}
-	var payload map[string]any
-	if err := json.Unmarshal([]byte(call.Args), &payload); err != nil {
-		return &contract.ToolResult{CallID: call.ID, ToolName: call.Name, Content: "调试动作输入无效", IsError: true}, nil
-	}
-	payload["simulated"] = true
-	payload["message"] = fmt.Sprintf("隔离调试使用 %d 份合成材料验证动作名称、输入字段和成员调用路径；未访问 Forge，未写入业务数据。", h.syntheticMaterialCount)
-	content, _ := json.Marshal(payload)
-	return &contract.ToolResult{CallID: call.ID, ToolName: call.Name, Content: string(content)}, nil
-}
-
-func newDevelopmentDispatcher(ids []string, actions []DevelopmentAction) (*dispatcher, error) {
-	return newDispatcherWithNotice(developmentHost{}, ids, developmentCatalog(actions), "开发调试会记录本次调用，但不会访问 Forge 或写入业务数据。")
-}
-
-func newDevelopmentDispatcherWithBindings(ids []string, actions []DevelopmentAction, bindings []frozen.BusinessCapabilityBinding) (*dispatcher, error) {
-	checksum := sha256.Sum256([]byte("development-trial-material"))
-	resources := []delegatedResource{{Type: "forge-file", ID: "development-trial-material", Name: "试跑样例材料.txt", Bytes: 1, SHA256: hex.EncodeToString(checksum[:])}}
-	return newDispatcherWithBindings(developmentHost{syntheticMaterialCount: len(resources)}, ids, developmentCatalog(actions), bindings, resources, "隔离调试使用合成材料值验证参数映射；不会访问 Forge 或写入业务数据。")
 }
 
 func actionInputSchema(metadata actionMetadata) (json.RawMessage, error) {
@@ -1085,7 +935,7 @@ func (d *dispatcher) Dispatch(ctx context.Context, call contract.ToolCall) (*con
 		slot := execution.OperationID(ctx)
 		if call.ID == "" || utf8.RuneCountInString(call.ID) > 256 || invocationID == "" || d.inputRevisionID == "" || slot == "" ||
 			utf8.RuneCountInString(selected.objectName) > 128 || utf8.RuneCountInString(input.RecordID) > 128 {
-			return nil, errors.New("Forge action call is missing durable operation provenance")
+			return nil, errors.New("business action call is missing durable operation provenance")
 		}
 		operationID := execution.EngineOperationID(d.inputRevisionID, invocationID, slot, selected.capabilityID)
 		for _, name := range selected.idempotencyParams {
@@ -1097,8 +947,12 @@ func (d *dispatcher) Dispatch(ctx context.Context, call contract.ToolCall) (*con
 			}
 			input.Params[name] = operationID
 		}
+		source := ActionOutcomeSourceForgeMCP
+		if _, simulated := d.host.(developmentHost); simulated {
+			source = ActionOutcomeSourceDevelopmentSimulation
+		}
 		outcome = ActionOutcomeEvent{
-			Source: ActionOutcomeSourceForgeMCP, OperationID: operationID, OperationSlot: slot, InvocationID: invocationID, CallID: call.ID,
+			Source: source, OperationID: operationID, OperationSlot: slot, InvocationID: invocationID, CallID: call.ID,
 			CapabilityID: selected.capabilityID, ActionKey: selected.objectName + "." + selected.actionName,
 			ActionLabel: boundedActionOutcomeLabel(selected.label), ActionName: selected.actionName, ObjectName: selected.objectName,
 			InputRevisionID: d.inputRevisionID, RecordID: input.RecordID,
@@ -1110,17 +964,17 @@ func (d *dispatcher) Dispatch(ctx context.Context, call contract.ToolCall) (*con
 		"recordId": input.RecordID, "params": input.Params,
 	})
 	if marshalErr != nil {
-		return nil, fmt.Errorf("encode Forge action request: %w", marshalErr)
+		return nil, fmt.Errorf("encode business action request: %w", marshalErr)
 	}
 	if d.trackOutcomes {
 		paramsDigest, digestErr := frozen.HashCanonicalJSON(upstream)
 		if digestErr != nil {
-			return nil, fmt.Errorf("digest Forge action request: %w", digestErr)
+			return nil, fmt.Errorf("digest business action request: %w", digestErr)
 		}
 		outcome.ParamsSHA256 = paramsDigest
 		replay, guardErr := checkActionOutcomeReplay(ctx, outcome)
 		if guardErr != nil {
-			return nil, fmt.Errorf("check prior Forge action outcome before dispatch: %w", guardErr)
+			return nil, fmt.Errorf("check prior business action outcome before dispatch: %w", guardErr)
 		}
 		if replay.Blocked {
 			return actionReplayResult(call, replay), nil
@@ -1132,7 +986,7 @@ func (d *dispatcher) Dispatch(ctx context.Context, call contract.ToolCall) (*con
 					// committed original receipt, never issue a second Forge call.
 					replay, guardErr := checkActionOutcomeReplay(ctx, outcome)
 					if guardErr != nil {
-						return nil, fmt.Errorf("read concurrent Forge action receipt: %w", guardErr)
+						return nil, fmt.Errorf("read concurrent business action receipt: %w", guardErr)
 					}
 					return actionReplayResult(call, replay), nil
 				}
@@ -1140,7 +994,7 @@ func (d *dispatcher) Dispatch(ctx context.Context, call contract.ToolCall) (*con
 					return &contract.ToolResult{CallID: call.ID, ToolName: call.Name,
 						Content: "同一父运行中的业务动作仍有未确认结果；当前调用没有再次发送，请先核对业务记录。", IsError: true, StopLoop: true}, nil
 				}
-				return nil, fmt.Errorf("persist Forge action start before dispatch: %w", err)
+				return nil, fmt.Errorf("persist business action start before dispatch: %w", err)
 			}
 		}
 	}
@@ -1170,7 +1024,7 @@ func (d *dispatcher) Dispatch(ctx context.Context, call contract.ToolCall) (*con
 				result.CallID, result.ToolName = call.ID, call.Name
 				return result, nil
 			}
-			return nil, errors.New("Forge action did not establish a durable dispatch reservation")
+			return nil, errors.New("business action did not establish a durable dispatch reservation")
 		}
 	} else {
 		result, err = d.host.Dispatch(ctx, upstreamCall)
@@ -1195,13 +1049,22 @@ func (d *dispatcher) Dispatch(ctx context.Context, call contract.ToolCall) (*con
 			if errors.Is(err, ErrDelegationExpired) {
 				message = "员工对本次工作的授权已过期，业务动作没有执行；需要员工从原工作重新提交后才能继续。"
 			}
+			if outcome.Source == ActionOutcomeSourceDevelopmentSimulation {
+				message = "开发模拟动作执行失败。"
+				if status == ActionOutcomeStatusUnknown {
+					message = "开发模拟动作结果未知，本次调用不能重试。"
+				}
+			}
 			// Keep transport error internals out of both the model and ledger.
 			body, _ := json.Marshal(map[string]any{"ok": false, "error": message})
 			result = &contract.ToolResult{CallID: call.ID, ToolName: call.Name, Content: string(body), IsError: true}
 			err = nil
 		} else if result == nil || status == ActionOutcomeStatusUnknown {
-			result = &contract.ToolResult{CallID: call.ID, ToolName: call.Name,
-				Content: "Forge 未返回可确认的业务动作结果，请先核对业务记录后再继续。", IsError: true}
+			message := "Forge 未返回可确认的业务动作结果，请先核对业务记录后再继续。"
+			if outcome.Source == ActionOutcomeSourceDevelopmentSimulation {
+				message = "模拟器未返回可确认的结果，本次调用不能重试。"
+			}
+			result = &contract.ToolResult{CallID: call.ID, ToolName: call.Name, Content: message, IsError: true}
 		}
 		if status == ActionOutcomeStatusFailed {
 			result.IsError = true
@@ -1215,7 +1078,7 @@ func (d *dispatcher) Dispatch(ctx context.Context, call contract.ToolCall) (*con
 			outcome.Result = SanitizeActionOutcomeResult(result)
 		}
 		if persistErr := recordActionOutcome(ctx, outcome); persistErr != nil {
-			return nil, fmt.Errorf("persist Forge action result: %w", persistErr)
+			return nil, fmt.Errorf("persist business action result: %w", persistErr)
 		}
 	}
 	if result != nil {

@@ -9,9 +9,11 @@ import (
 	"sort"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jinyitao123/weave/internal/base/deliverable"
 	"github.com/jinyitao123/weave/internal/base/execution"
+	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/kernel/businessaction"
 	"github.com/jinyitao123/weave/internal/kernel/deliverycheck"
 	"github.com/jinyitao123/weave/internal/kernel/publication"
@@ -31,9 +33,10 @@ func BusinessReceiptReader(pool *pgxpool.Pool) deliverycheck.BusinessReceiptRead
 		var raw []byte
 		var inputID, status, workflowID string
 		var workflowVersion int
-		err := pool.QueryRow(ctx, `SELECT b.contract,b.input_revision_id,r.status,r.workflow_id,r.workflow_version
+		var terminalAt pgtype.Timestamptz
+		err := pool.QueryRow(ctx, `SELECT b.contract,b.input_revision_id,r.status,r.workflow_id,r.workflow_version,r.terminal_at
  FROM weave_team_runs r JOIN weave_run_delivery_state b ON b.workspace_id=r.workspace_id AND b.run_snapshot_id=r.run_snapshot_id
- WHERE r.workspace_id=$1 AND r.run_id=$2 AND r.run_snapshot_id=$3 AND (b.run_id IS NULL OR b.run_id=r.run_id) AND b.workflow_id=r.workflow_id AND b.workflow_version=r.workflow_version`, c.WorkspaceID, c.RunID, c.RunSnapshotID).Scan(&raw, &inputID, &status, &workflowID, &workflowVersion)
+		WHERE r.workspace_id=$1 AND r.run_id=$2 AND r.run_snapshot_id=$3 AND (b.run_id IS NULL OR b.run_id=r.run_id) AND b.workflow_id=r.workflow_id AND b.workflow_version=r.workflow_version`, c.WorkspaceID, c.RunID, c.RunSnapshotID).Scan(&raw, &inputID, &status, &workflowID, &workflowVersion, &terminalAt)
 		if err != nil {
 			return frame, err
 		}
@@ -46,11 +49,16 @@ func BusinessReceiptReader(pool *pgxpool.Pool) deliverycheck.BusinessReceiptRead
 			return frame, err
 		}
 		frame.Scope = deliverycheck.BusinessReceiptScope{WorkspaceID: c.WorkspaceID, RunID: c.RunID, RunSnapshotID: c.RunSnapshotID, InputRevisionID: inputID, Closed: status == "cancelled" || status == "abandoned" || status == "cancel_requested"}
+		if terminalAt.Valid {
+			value := terminalAt.Time.UTC()
+			frame.Scope.TerminalAt = &value
+		}
 		// The kernel receipt and task commit atomically. The product's trial
 		// receipt is written afterwards and may still be NULL when work starts.
 		var trialActor, trialTeam, trialRequestID string
-		var trialRequest, admissionReceipt []byte
-		trialErr := pool.QueryRow(ctx, `SELECT t.actor_id,t.team_id,q.context_key,t.request,p.receipt
+		var trialRequest, admissionReceipt, trialActions []byte
+		var trialRequestDigest string
+		trialErr := pool.QueryRow(ctx, `SELECT t.actor_id,t.team_id,q.context_key,t.request,t.request_digest,t.business_actions,p.receipt
  FROM weave_team_runs r
  JOIN weave_task_queue q ON q.workspace_id=r.workspace_id AND q.id=r.source_task_id AND q.run_snapshot_id=r.run_snapshot_id
  JOIN weave_kernel_publication_requests p ON p.workspace_id=q.workspace_id AND p.request_id=q.context_key AND p.operation='candidate_run'
@@ -58,23 +66,48 @@ func BusinessReceiptReader(pool *pgxpool.Pool) deliverycheck.BusinessReceiptRead
  WHERE r.workspace_id=$1 AND r.run_id=$2 AND r.run_snapshot_id=$3
  AND p.receipt->>'task_id'=q.id AND p.receipt->>'run_id'=r.run_id AND p.receipt->>'run_snapshot_id'=r.run_snapshot_id
  AND p.actor_subject=q.actor_subject AND p.receipt->'subject'=p.actor_subject
- AND p.receipt->'revision'->>'workflow_id'=r.workflow_id AND p.receipt->'revision'->>'workflow_version'=r.workflow_version::text`, c.WorkspaceID, c.RunID, c.RunSnapshotID).Scan(&trialActor, &trialTeam, &trialRequestID, &trialRequest, &admissionReceipt)
+		 AND p.receipt->'revision'->>'workflow_id'=r.workflow_id AND p.receipt->'revision'->>'workflow_version'=r.workflow_version::text`, c.WorkspaceID, c.RunID, c.RunSnapshotID).Scan(&trialActor, &trialTeam, &trialRequestID, &trialRequest, &trialRequestDigest, &trialActions, &admissionReceipt)
 		if trialErr == nil {
 			var request publication.CandidateRunRequest
 			var receipt publication.AdmissionReceipt
 			var trialInput string
-			if json.Unmarshal(trialRequest, &request) != nil || json.Unmarshal(admissionReceipt, &receipt) != nil || json.Unmarshal(request.Input, &trialInput) != nil ||
+			var actions []businessaction.DevelopmentAction
+			if json.Unmarshal(trialRequest, &request) != nil || json.Unmarshal(admissionReceipt, &receipt) != nil || json.Unmarshal(trialActions, &actions) != nil || json.Unmarshal(request.Input, &trialInput) != nil ||
 				request.RequestID != trialRequestID || request.InputVersion != inputID || request.SourceRef != "team-development:"+trialTeam || request.Purpose != "developer-trial" ||
+				request.Candidate.WorkspaceID != c.WorkspaceID || request.Candidate.WorkflowID != workflowID || request.Candidate.WorkflowVersion != workflowVersion ||
 				receipt.Verify(execution.WithSubject(ctx, execution.Subject{WorkspaceID: c.WorkspaceID, UserID: trialActor}), request) != nil {
 				return frame, errors.New("trial admission binding mismatch")
 			}
+			payload, payloadErr := frozen.DecodeArtifactEnvelopeV1(request.Candidate)
+			if payloadErr != nil {
+				return frame, errors.New("trial candidate binding mismatch")
+			}
+			graph, report := machine.DecodeGraphDefinitionV1(payload.GraphDefinition)
+			if report != nil && len(report.Issues) > 0 {
+				return frame, errors.New("trial workflow binding mismatch")
+			}
+			normalizedActions, actionErr := businessaction.ValidateDevelopmentActions(machine.GraphBusinessCapabilities(graph, payload), actions)
+			if actionErr != nil {
+				return frame, errors.New("trial action scope mismatch")
+			}
+			actionScopeDigest, digestErr := businessaction.DevelopmentTrialRequestDigest(ctx, request, normalizedActions)
+			if digestErr != nil || actionScopeDigest != trialRequestDigest {
+				return frame, errors.New("trial action scope digest mismatch")
+			}
 			encodedInput, _ := json.Marshal(trialInput)
-			digest := sha256.Sum256(encodedInput)
-			if trialActor == "" || inputID != hex.EncodeToString(digest[:]) {
+			inputDigest := sha256.Sum256(encodedInput)
+			if trialActor == "" || inputID != hex.EncodeToString(inputDigest[:]) {
 				return frame, errors.New("trial input binding mismatch")
 			}
 			frame.Scope.SubjectID = trialActor
+			frame.Scope.DevelopmentTrial = true
 			frame.Scope.AllowedCapabilityIDs = []string{}
+			for _, action := range normalizedActions {
+				if action.SimulationAuthorized {
+					frame.Scope.AllowedCapabilityIDs = append(frame.Scope.AllowedCapabilityIDs, action.CapabilityID)
+				}
+			}
+			sort.Strings(frame.Scope.AllowedCapabilityIDs)
 		} else if !errors.Is(trialErr, pgx.ErrNoRows) {
 			return frame, trialErr
 		} else {

@@ -338,24 +338,32 @@ func (r *WorkflowSerialRuntime) withBusinessActionOutcomeContext(ctx context.Con
 		return ctx
 	}
 	ctx = businessaction.WithActionOutcomeRecorder(ctx, func(eventCtx context.Context, outcome businessaction.ActionOutcomeEvent) error {
+		if outcome.Source == businessaction.ActionOutcomeSourceDevelopmentSimulation {
+			current, exists := execution.CurrentTaskFromContext(eventCtx)
+			if !exists || current.Subject.UserID == "" || current.WorkspaceID != run.WorkspaceID {
+				return errors.New("development simulation outcome has no current developer task")
+			}
+			outcome.RunSnapshotID = run.RunSnapshotID
+			outcome.ActorID = current.Subject.UserID
+		}
 		scope, exists := eventCtx.Value(runtimeActivityScopeKey{}).(runtimeActivityScope)
 		if !exists || scope.NodeID == "" || scope.MemberID == "" ||
 			outcome.InvocationID == "" || outcome.InvocationID != execution.InvocationID(eventCtx) || outcome.CallID == "" {
-			return errors.New("Forge action outcome does not match the active workflow invocation")
+			return errors.New("business action outcome does not match the active workflow invocation")
 		}
 		if len(outcome.OperationSlot) > MaxBusinessActionOperationSlotBytes || len([]rune(scope.NodeID)) > 128 || len([]rune(outcome.CallID)) > 256 || len([]rune(outcome.ObjectName)) > 128 || len([]rune(outcome.RecordID)) > 128 {
-			return errors.New("Forge action outcome exceeds the continuation contract limits")
+			return errors.New("business action outcome exceeds the continuation contract limits")
 		}
 		if outcome.Phase != "started" && outcome.Phase != "result" {
-			return errors.New("Forge action outcome phase is invalid")
+			return errors.New("business action outcome phase is invalid")
 		}
 		if outcome.Phase == "result" && outcome.Status != businessaction.ActionOutcomeStatusSucceeded &&
 			outcome.Status != businessaction.ActionOutcomeStatusFailed && outcome.Status != businessaction.ActionOutcomeStatusUnknown {
-			return errors.New("Forge action outcome status is invalid")
+			return errors.New("business action outcome status is invalid")
 		}
 		detail, err := json.Marshal(outcome)
 		if err != nil {
-			return fmt.Errorf("encode Forge action outcome: %w", err)
+			return fmt.Errorf("encode business action outcome: %w", err)
 		}
 		kind := "business_action_started"
 		if outcome.Phase == "result" {

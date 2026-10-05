@@ -18,7 +18,12 @@ import (
 func ProjectBusinessCompletionReceipts(events []ActivityEvent) ([]deliverycheck.BusinessReceipt, error) {
 	receipts := []deliverycheck.BusinessReceipt{}
 	_, err := projectBusinessActionOutcomes(events, func(event ActivityEvent, detail businessActionActivityDetailV1, status string) {
-		receipts = append(receipts, deliverycheck.BusinessReceipt{WorkspaceID: event.WorkspaceID, RunID: event.RunID, InputRevisionID: detail.InputRevisionID, CapabilityID: detail.CapabilityID, ObjectName: detail.ObjectName, RecordID: detail.RecordID, OperationID: detail.OperationID, Status: status})
+		receipts = append(receipts, deliverycheck.BusinessReceipt{
+			WorkspaceID: event.WorkspaceID, RunID: event.RunID, RunSnapshotID: detail.RunSnapshotID, SubjectID: detail.ActorID,
+			InputRevisionID: detail.InputRevisionID, CapabilityID: detail.CapabilityID, ObjectName: detail.ObjectName,
+			RecordID: detail.RecordID, OperationID: detail.OperationID, Status: status,
+			Simulated: detail.Source == businessaction.ActionOutcomeSourceDevelopmentSimulation, OccurredAt: event.OccurredAt,
+		})
 	})
 	if err != nil {
 		return nil, err

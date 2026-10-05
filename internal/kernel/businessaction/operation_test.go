@@ -253,10 +253,10 @@ func TestSystemIdempotencyParameterRequiresUnconstrainedText(t *testing.T) {
 
 func TestDevelopmentIdempotencyKeyUsesOnlySyntheticSystemValue(t *testing.T) {
 	id := "forge:action:sales_quote.AdjustPrice"
-	dispatcher, err := newDevelopmentDispatcherWithBindings([]string{id}, []DevelopmentAction{{
+	dispatcher, err := newDispatcherWithBindings(developmentHost{}, []string{id}, developmentCatalog([]DevelopmentAction{{
 		CapabilityID: id, Name: "AdjustPrice", ObjectName: "sales_quote",
 		Params: []actionParam{{Name: "idempotency_key", Type: "text", Required: true}},
-	}}, nil)
+	}}), nil, nil, "隔离模拟不会访问 Forge 或写入业务数据。")
 	if err != nil {
 		t.Fatal(err)
 	}

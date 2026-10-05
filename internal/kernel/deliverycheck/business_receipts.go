@@ -10,6 +10,7 @@ import (
 	"io"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/jinyitao123/weave/internal/base/deliverable"
 	"github.com/jinyitao123/weave/internal/base/frozen"
@@ -111,10 +112,15 @@ type BusinessReceiptScope struct {
 	WorkspaceID, RunID, RunSnapshotID, InputRevisionID, SubjectID string
 	AllowedCapabilityIDs                                          []string
 	ObjectName, RecordID                                          string
+	DevelopmentTrial                                              bool
+	TerminalAt                                                    *time.Time
 	Closed                                                        bool
 }
 type BusinessReceipt struct {
-	WorkspaceID, RunID, InputRevisionID, CapabilityID, ObjectName, RecordID, OperationID, Status string
+	WorkspaceID, RunID, RunSnapshotID, SubjectID, InputRevisionID, CapabilityID string
+	ObjectName, RecordID, OperationID, Status                                   string
+	Simulated                                                                   bool
+	OccurredAt                                                                  time.Time
 }
 type BusinessReceiptFrame struct {
 	Contract *deliverable.DeliveryContract
@@ -168,19 +174,28 @@ func EvaluateBusinessReceipts(params BusinessReceiptParameters, scope BusinessRe
 			required[id] = true
 		}
 	}
-	if len(required) > 0 && (scope.InputRevisionID == "" || scope.ObjectName == "" || scope.RecordID == "") {
+	if len(required) > 0 && scope.InputRevisionID == "" {
 		return hard("business_receipt_record_binding_missing")
 	}
-	for id := range required {
-		if !strings.HasPrefix(id, "forge:action:"+scope.ObjectName+".") {
-			return hard("business_receipt_record_binding_mismatch")
+	if len(required) > 0 && !scope.DevelopmentTrial && (scope.ObjectName == "" || scope.RecordID == "") {
+		return hard("business_receipt_record_binding_missing")
+	}
+	if !scope.DevelopmentTrial {
+		for id := range required {
+			if !strings.HasPrefix(id, "forge:action:"+scope.ObjectName+".") {
+				return hard("business_receipt_record_binding_mismatch")
+			}
 		}
 	}
 	operations := map[string]BusinessReceipt{}
 	succeeded := map[string]bool{}
 	failed, unknown := false, false
 	for _, receipt := range receipts {
-		if receipt.WorkspaceID != scope.WorkspaceID || receipt.RunID != scope.RunID || receipt.InputRevisionID != scope.InputRevisionID || receipt.OperationID == "" || !allowed[receipt.CapabilityID] || receipt.ObjectName != scope.ObjectName || receipt.RecordID != scope.RecordID {
+		if receipt.WorkspaceID != scope.WorkspaceID || receipt.RunID != scope.RunID || receipt.InputRevisionID != scope.InputRevisionID || receipt.OperationID == "" || !allowed[receipt.CapabilityID] ||
+			receipt.Simulated != scope.DevelopmentTrial ||
+			(scope.DevelopmentTrial && (receipt.RunSnapshotID != scope.RunSnapshotID || receipt.SubjectID != scope.SubjectID || receipt.ObjectName != capabilityObjectName(receipt.CapabilityID))) ||
+			(!scope.DevelopmentTrial && (receipt.ObjectName != scope.ObjectName || receipt.RecordID != scope.RecordID)) ||
+			(scope.DevelopmentTrial && scope.TerminalAt != nil && receipt.OccurredAt.After(*scope.TerminalAt)) {
 			return hard("business_receipt_identity_mismatch")
 		}
 		if previous, ok := operations[receipt.OperationID]; ok {
@@ -217,6 +232,9 @@ func EvaluateBusinessReceipts(params BusinessReceiptParameters, scope BusinessRe
 		// An authorized action without any operation gets one correction before
 		// a missing-input result is judged; tool choice is never forced for it.
 		if final.RequireInputReview && len(operations) == 0 {
+			if scope.DevelopmentTrial {
+				return result(false, false, deliverable.VerificationFailed, ReasonInputReview, "The developer selected these actions for isolated simulation: "+strings.Join(sortedKeys(required), ", ")+". No call is recorded. Only inputs that block those actions count as missing: an absent receipt, optional fields left unknown, or values already supplied in the task are not missing input. If the prerequisites are met, call the selected simulated tool now and wait for its simulated receipt. If an input that blocks the action is genuinely absent, return needs_input again listing only those inputs. Do not repeat actions that already succeeded. Do not claim a tool was called without its receipt.")
+			}
 			return result(false, false, deliverable.VerificationFailed, ReasonInputReview, "The employee authorized: "+strings.Join(sortedKeys(required), ", ")+". No call is recorded. Only inputs that block those actions count as missing: an absent receipt, optional fields left unknown, or values already supplied in the task are not missing input. If the prerequisites are met, call the authorized tool now and wait for its receipt. If an input that blocks the action is genuinely absent, return needs_input again listing only those inputs. Do not repeat actions that already succeeded. Do not claim a tool was called without its receipt.")
 		}
 		if params.AllowNeedsInput && len(final.MissingItems) > 0 && len(operations) == 0 {
@@ -235,9 +253,25 @@ func EvaluateBusinessReceipts(params BusinessReceiptParameters, scope BusinessRe
 	}
 	sort.Strings(missing)
 	if len(missing) > 0 {
+		if scope.DevelopmentTrial {
+			return result(false, false, deliverable.VerificationFailed, ReasonRequiredActionMissing, "The frozen trial check requires successful simulated receipts for: "+strings.Join(missing, ", ")+". No matching call is recorded. Use only the selected simulated tools if prerequisites are met, or report genuine missing input. Do not repeat actions that already succeeded. Do not claim a tool was called without its receipt.")
+		}
 		return result(false, false, deliverable.VerificationFailed, ReasonRequiredActionMissing, "The frozen delivery contract requires successful platform receipts for: "+strings.Join(missing, ", ")+". No matching call is recorded. Use only the authorized tools if prerequisites are met, or report genuine missing input. Do not repeat actions that already succeeded. Do not claim a tool was called without its receipt.")
 	}
 	return result(true, false, deliverable.VerificationPassed, "required_business_actions_recorded", "")
+}
+
+func capabilityObjectName(id string) string {
+	const prefix = "forge:action:"
+	if !strings.HasPrefix(id, prefix) {
+		return ""
+	}
+	remainder := strings.TrimPrefix(id, prefix)
+	separator := strings.LastIndexByte(remainder, '.')
+	if separator <= 0 || separator == len(remainder)-1 {
+		return ""
+	}
+	return remainder[:separator]
 }
 
 type BusinessReceiptResult struct {
@@ -259,7 +293,9 @@ func UnattemptedRequiredCapabilities(params BusinessReceiptParameters, scope Bus
 	}
 	attempted := map[string]bool{}
 	for _, receipt := range receipts {
-		attempted[receipt.CapabilityID] = true
+		if receipt.Simulated == scope.DevelopmentTrial {
+			attempted[receipt.CapabilityID] = true
+		}
 	}
 	missing := []string{}
 	for _, id := range params.RequiredCapabilityIDs {
