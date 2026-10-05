@@ -27,6 +27,7 @@ type memberOperation struct {
 	AttemptGeneration    int64                           `json:"attempt_generation"`
 	Attempts             int64                           `json:"attempts"`
 	UsageIncomplete      bool                            `json:"usage_incomplete,omitempty"`
+	ProtocolProbe        []ModelProtocolProbeSample      `json:"protocol_probe,omitempty"`
 }
 
 // InstallFrozenMemberJournal is applied after InstallFrozenUsageTracking, so
@@ -39,7 +40,7 @@ func InstallFrozenMemberJournal(opts compiler.FrozenBuildOpts) compiler.FrozenBu
 		if caller != nil {
 			inner = caller(inner)
 		}
-		return stdlib.NewJournaledLLM(inner, journal)
+		return stdlib.NewJournaledLLM(modelProtocolProbeLLM{inner: inner}, journal)
 	}
 	opts.Tools = stdlib.NewJournaledToolDispatcher(memberOperationTools{inner: opts.Tools}, journal, stdlib.JournaledToolOpts{SerializeWhenActive: true})
 	opts.Hooks.BeforeStepHooks = append([]loom.StepHook{memberBeforeStep}, opts.Hooks.BeforeStepHooks...)
@@ -308,6 +309,13 @@ func (member *memberExecution) operation(ctx context.Context, kind string, input
 		(limits.MaxTokens > 0 && int64(totals.InputTokens+totals.OutputTokens) >= limits.MaxTokens) {
 		return nil, errors.New("member cumulative execution budget exhausted")
 	}
+	var probe *modelProtocolProbeCollector
+	if kind == "model" {
+		probe = member.reserveProtocolProbe(ctx, tx, &op)
+	}
+	if err := member.mergeProtocolProbeTx(ctx, tx, ns, key, &op); err != nil {
+		return nil, err
+	}
 	encoded, err := json.Marshal(op)
 	if err != nil {
 		return nil, err
@@ -329,7 +337,13 @@ func (member *memberExecution) operation(ctx context.Context, kind string, input
 		return nil, err
 	}
 	effectStarted = true
+	member.protocolProbe = probe
 	response, performErr := perform()
+	member.protocolProbe = nil
+	if probe != nil {
+		op.ProtocolProbe[len(op.ProtocolProbe)-1] = probe.result()
+		member.persistProtocolProbe(ctx, ns, key, hash, len(op.ProtocolProbe)-1, op.ProtocolProbe[len(op.ProtocolProbe)-1])
+	}
 	if performErr != nil && kind == "tool" {
 		if proof, trusted := execution.AuthorizationRefusalFromError(performErr); trusted {
 			op.AuthorizationRefusal = &proof
@@ -364,6 +378,13 @@ func (member *memberExecution) operation(ctx context.Context, kind string, input
 	}
 	defer tx.Rollback(ctx)
 	if err := member.guardTx(ctx, tx); err != nil {
+		return nil, err
+	}
+	if err := member.mergeProtocolProbeTx(ctx, tx, ns, key, &op); err != nil {
+		return nil, err
+	}
+	encoded, err = json.Marshal(op)
+	if err != nil {
 		return nil, err
 	}
 	if err := member.runner.store.PutValueTx(ctx, tx, ns, key, encoded); err != nil {

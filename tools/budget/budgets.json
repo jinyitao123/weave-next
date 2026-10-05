@@ -743,6 +743,23 @@
         "lines_added": -16685,
         "production_lines_added": -13653
       }
+    },
+    {
+      "date": "2026-10-05",
+      "reason": "Register the reviewed exact growth for a default-off, workspace/workflow/run-scoped expiring protocol probe in the original durable model journal. Reserve at most 64 model-perform attempts across nodes and restarts, each with at most four physical metadata-only observations; preserve original operation/input hashes, request/response bytes, usage, fencing and replay. Real HTTP/PostgreSQL regressions cover repeated member/call IDs across nodes, no extra replay quota or effects, failures/cancellation, expiration, scope, caps, diagnostic-query failure, late-generation observations and Forge receipt identity. The first budget guard failed against the prior ceilings; retain that fact and register only measured growth. Kernel includes the separately committed 16 test-only lines from 41183c36 clarifying required current input and simulated receipts. No spare allowance, new packages/dependencies, import exceptions, tables, queues, execution loops or changes to original migration targets. Rebased onto W7 retirement; exact growth applies after its lowered ceilings and does not restore retired surfaces.",
+      "record": "https://github.com/jinyitao123/weave-workbench/blob/b4d018ee/contracts/v1/README.md#工具协议诊断探针",
+      "kernel": {
+        "previous_lines": 103091,
+        "previous_production_lines": 83517,
+        "lines_added": 1038,
+        "production_lines_added": 547
+      },
+      "app": {
+        "previous_lines": 72188,
+        "previous_production_lines": 50640,
+        "lines_added": 83,
+        "production_lines_added": 5
+      }
     }
   ],
   "migration_targets": {
@@ -780,8 +797,8 @@
     ]
   },
   "kernel": {
-    "lines": 103091,
-    "production_lines": 83517,
+    "lines": 104129,
+    "production_lines": 84064,
     "packages": 49,
     "external_dependencies": 5,
     "allowed_dependencies": [
@@ -800,8 +817,8 @@
     "allowed_dependencies": []
   },
   "app": {
-    "lines": 72188,
-    "production_lines": 50640,
+    "lines": 72271,
+    "production_lines": 50645,
     "packages": 24,
     "external_dependencies": 6,
     "allowed_dependencies": [

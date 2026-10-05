@@ -24,13 +24,14 @@ import (
 
 // MemberJournalEntry is one recorded operation of a member run.
 type MemberJournalEntry struct {
-	Segment   string          `json:"segment"`
-	Cursor    int64           `json:"cursor"`
-	Kind      string          `json:"kind"`
-	Input     json.RawMessage `json:"input"`
-	InputHash string          `json:"input_hash"`
-	Response  json.RawMessage `json:"response,omitempty"`
-	Attempts  int64           `json:"attempts"`
+	Segment       string                     `json:"segment"`
+	Cursor        int64                      `json:"cursor"`
+	Kind          string                     `json:"kind"`
+	Input         json.RawMessage            `json:"input"`
+	InputHash     string                     `json:"input_hash"`
+	Response      json.RawMessage            `json:"response,omitempty"`
+	Attempts      int64                      `json:"attempts"`
+	ProtocolProbe []ModelProtocolProbeSample `json:"protocol_probe,omitempty"`
 }
 
 // Outcomes of a replay.
@@ -97,7 +98,7 @@ func ReadMemberJournal(ctx context.Context, db memberJournalQuerier, workspaceID
 			return nil, fmt.Errorf("journal key %q has an invalid cursor", key)
 		}
 		entries = append(entries, MemberJournalEntry{Segment: rest[:cut], Cursor: cursor, Kind: op.Kind, Input: op.Input,
-			InputHash: op.InputHash, Response: op.Response, Attempts: op.Attempts})
+			InputHash: op.InputHash, Response: op.Response, Attempts: op.Attempts, ProtocolProbe: op.ProtocolProbe})
 	}
 	return entries, rows.Err()
 }

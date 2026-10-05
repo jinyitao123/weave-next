@@ -712,6 +712,11 @@ func (s *Server) ConfigureTeamRunWorkers() {
 		panic(fmt.Sprintf("configure frozen member runner: %v", err))
 	}
 	runtime.Members = memberRunner
+	if s.Config != nil && s.Config.ToolProtocolProbe != nil {
+		probe := s.Config.ToolProtocolProbe
+		memberRunner.ProtocolProbe = &loomruntime.ModelProtocolProbePolicy{WorkspaceID: probe.WorkspaceID, WorkflowID: probe.WorkflowID,
+			RunID: probe.RunID, ExpiresAt: probe.ExpiresAt, MaxModelCalls: probe.MaxModelCalls}
+	}
 	checkpointReader := &teamrun.FanoutCheckpointReader{
 		Transactions: pool, Runs: runStore, Checkpoints: checkpointStore,
 	}

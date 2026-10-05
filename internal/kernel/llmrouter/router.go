@@ -223,3 +223,20 @@ func maskKey(key string) string {
 
 // Compile-time interface check.
 var _ contract.LLM = (*Router)(nil)
+
+// ObserveModelProtocolCall keeps provider coupling inside the adapter. It
+// attaches a passive observer, sanitizes its metadata, and separately measures
+// the returned standard ToolCalls. Request/response/error are never rewritten.
+func ObserveModelProtocolCall(ctx context.Context, inner contract.LLM, request contract.ChatRequest,
+	observe func(ModelProtocolObservation), normalized func(NormalizedModelProtocol)) (*contract.ChatResponse, error) {
+	if observe != nil {
+		ctx = openai.WithProtocolObserver(ctx, openai.ProtocolObserverOptions{MaxDataFrames: 4096, MaxToolDeltas: 4096, MaxToolIndexes: protocolToolLimit}, func(value contract.ProtocolObservation) {
+			observe(boundedProtocolObservation(value))
+		})
+	}
+	response, err := inner.Chat(ctx, request)
+	if normalized != nil {
+		normalized(normalizedModelProtocol(response, err))
+	}
+	return response, err
+}

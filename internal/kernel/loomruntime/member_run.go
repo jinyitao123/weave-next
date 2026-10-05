@@ -44,6 +44,8 @@ type MemberRequest struct {
 type MemberRunner struct {
 	records TerminalRecordStore
 	store   expectedRunAdmissionTxStore
+	// ProtocolProbe is an operator sampling policy, never frozen execution data.
+	ProtocolProbe *ModelProtocolProbePolicy
 }
 
 func NewMemberRunner(records TerminalRecordStore) (*MemberRunner, error) {
@@ -63,13 +65,14 @@ type memberExecution struct {
 	input         loom.State
 	// Journal fields are scoped to one serial graph step; replay reconstructs
 	// the existing generic ToolLoop from recorded model/tool responses.
-	step        string
-	segment     string
-	cursor      int64
-	state       loom.State
-	fatal       error
-	resumeDelta loom.State
-	budgetGrant *memberBudgetGrant
+	step          string
+	segment       string
+	cursor        int64
+	state         loom.State
+	fatal         error
+	resumeDelta   loom.State
+	budgetGrant   *memberBudgetGrant
+	protocolProbe *modelProtocolProbeCollector
 }
 
 type memberExecutionKey struct{}
