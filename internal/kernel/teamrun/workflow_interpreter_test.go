@@ -58,7 +58,7 @@ func TestWorkbenchResultPromptIsScopedToOptedInDeliverySource(t *testing.T) {
 		t.Fatal("selected source node did not receive its protocol prompt")
 	}
 	prompt := withWorkbenchResultInstruction(instruction, workbenchResultPromptRequired(graph, "inspect"))
-	for _, required := range []string{"disposition", "complete", "needs_input", "summary", "missing_items", "no Markdown", "at least one concrete missing item"} {
+	for _, required := range []string{"disposition", "complete", "needs_input", "summary", "missing_items", "no Markdown", "at least one concrete missing item", "prerequisites that block this task", "optional unknown information", "not an input the employee must supply", "controlled tool result explicitly marked simulated"} {
 		if !strings.Contains(prompt, required) {
 			t.Fatalf("platform result prompt lacks %q: %s", required, prompt)
 		}
@@ -76,6 +76,21 @@ func TestWorkbenchResultPromptIsScopedToOptedInDeliverySource(t *testing.T) {
 	legacyPrompt := instruction + "\n\nInputs:\n{}"
 	if got := withWorkbenchResultInstruction(legacyPrompt, workbenchResultPromptRequired(graph, "inspect")); got != legacyPrompt {
 		t.Fatalf("legacy prompt changed: %q", got)
+	}
+}
+
+func TestWorkbenchFactsSeparateSimulationFromRealEffectsAndDoNotPrecludeFirstCall(t *testing.T) {
+	prompt, err := appendPlatformBusinessActionFacts("Inspect this input.", []BusinessActionOutcomeV1{}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{"read before this node executes", "does not block a first authorized call", "not missing employee input", "not real Forge receipts", "actual tool result explicitly marked simulated", "do not claim any call occurred"} {
+		if !strings.Contains(prompt, required) {
+			t.Fatalf("business facts prompt lacks %q", required)
+		}
+	}
+	if got, err := appendPlatformBusinessActionFacts("Inspect this input.", nil, false); err != nil || got != "Inspect this input." {
+		t.Fatalf("facts changed a non-opted-in empty projection: %q, %v", got, err)
 	}
 }
 

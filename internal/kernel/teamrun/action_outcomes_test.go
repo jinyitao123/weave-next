@@ -106,8 +106,9 @@ func TestWorkbenchResultPromptExplicitlyReportsZeroActionReceipts(t *testing.T) 
 	}
 	if !strings.Contains(prompt, "Platform-recorded Forge run_action receipts") ||
 		!strings.Contains(prompt, "[]") ||
-		!strings.Contains(prompt, "zero Forge run_action calls were recorded") ||
-		!strings.Contains(prompt, "any claim that a business action was called or completed is unverified") ||
+		!strings.Contains(prompt, "no real Forge call was recorded when this input was read") ||
+		!strings.Contains(prompt, "without actual tool evidence, do not claim any call occurred") ||
+		!strings.Contains(prompt, "does not block a first authorized call") ||
 		!strings.Contains(prompt, modelSummary) {
 		t.Fatalf("final result prompt did not separate model claims from the empty platform receipt list: %s", prompt)
 	}

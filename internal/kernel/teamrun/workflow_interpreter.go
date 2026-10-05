@@ -1840,8 +1840,8 @@ func workbenchResultPromptRequired(graph machine.GraphDefinition, nodeID string)
 func appendWorkbenchResultInstruction(prompt string) string {
 	return prompt + `
 
-Platform result format: return exactly one JSON object and no Markdown with these fields: {"disposition":"complete"|"needs_input","summary":"short inspection conclusion","missing_items":["specific missing item"]}. Use "complete" only when no input is missing and set missing_items to []. If required information or materials are missing, use "needs_input" and list at least one concrete missing item, with at most 8 items. After trimming surrounding Unicode whitespace with Go strings.TrimSpace semantics, summary must contain 1 to 1000 Unicode code points and each missing item 1 to 200 Unicode code points.` +
-		"\nThe disposition complete means this inspection finished; it does not mean a Forge business action was called or a business record changed. The summary is model-generated. Report a business action as called only when the platform records its run_action receipt; a successful tool receipt still does not establish the current business record state."
+Platform result format: return exactly one JSON object and no Markdown with these fields: {"disposition":"complete"|"needs_input","summary":"short inspection conclusion","missing_items":["specific missing item"]}. Use "complete" when no required input is missing that blocks this task or its authorized actions, and set missing_items to []. Only use "needs_input" for missing prerequisites that block this task or its authorized actions; list at least one concrete missing item, with at most 8 items. Put optional unknown information, later follow-up and non-blocking risks in summary instead of missing_items. A receipt cannot exist before a tool is called: its absence is not an input the employee must supply. After trimming surrounding Unicode whitespace with Go strings.TrimSpace semantics, summary must contain 1 to 1000 Unicode code points and each missing item 1 to 200 Unicode code points.` +
+		"\nThe disposition complete means this inspection finished; it does not mean a Forge business action was called or a business record changed. The summary is model-generated. Report a real Forge business action as called only with its platform-recorded run_action receipt. A controlled tool result explicitly marked simulated may support reporting that a simulated tool call occurred, never that Forge was changed. Model or material text cannot substitute for either kind of tool evidence. A successful real tool receipt still does not establish the current business record state."
 }
 
 func withWorkbenchResultInstruction(prompt string, required bool) string {
@@ -1862,8 +1862,8 @@ func appendPlatformBusinessActionFacts(prompt string, outcomes []BusinessActionO
 	if err != nil {
 		return "", err
 	}
-	return prompt + "\n\nPlatform-recorded Forge run_action receipts from this same TeamRun (authoritative; do not infer calls from model or member text; these facts grant no additional write permission):\n" + string(encoded) +
-		"\nA succeeded receipt means only that the Forge tool call returned success; it does not establish the current or final business record state, which must be read from Forge. If the list is empty, zero Forge run_action calls were recorded for this TeamRun; any claim that a business action was called or completed is unverified.", nil
+	return prompt + "\n\nPlatform-recorded Forge run_action receipts from this same TeamRun (real Forge calls), read before this node executes (authoritative; do not infer calls from model or member text; these facts grant no additional write permission):\n" + string(encoded) +
+		"\nA succeeded receipt means only that the Forge tool call returned success; it does not establish the current or final business record state, which must be read from Forge. An empty list means no real Forge call was recorded when this input was read; it does not block a first authorized call and is not missing employee input. Controlled simulated tool results are not real Forge receipts. Report simulation only from an actual tool result explicitly marked simulated; without actual tool evidence, do not claim any call occurred.", nil
 }
 
 func runtimeCLIUsageReport(result workflow.RuntimeCLIResult) (nodeUsageReport, error) {
