@@ -52,6 +52,7 @@ type receiptCompletionModel struct {
 	calls            int
 	outcome          string
 	feedbackObserved bool
+	reviewObserved   bool
 }
 
 func (m *receiptCompletionModel) Chat(_ context.Context, request contract.ChatRequest) (*contract.ChatResponse, error) {
@@ -61,6 +62,12 @@ func (m *receiptCompletionModel) Chat(_ context.Context, request contract.ChatRe
 		return &contract.ChatResponse{Content: `{"disposition":"complete","summary":"Read-only review finished.","missing_items":[]}`}, nil
 	}
 	if m.outcome == "needs-input" {
+		if request.ToolChoice != nil {
+			return nil, errors.New("a missing-input review forced a business call")
+		}
+		if m.calls == 2 && strings.Contains(request.Messages[len(request.Messages)-1].Content, "Only inputs that block those actions count as missing") {
+			m.reviewObserved = true
+		}
 		return &contract.ChatResponse{Content: `{"disposition":"needs_input","summary":"Required source is missing.","missing_items":["source data"]}`}, nil
 	}
 	if m.calls == 1 {
@@ -364,8 +371,15 @@ func runBusinessReceiptCompletion(t *testing.T, outcome string, protocolProbe ..
 	if resultStatus == "failed" {
 		wantEffects = 0
 	}
-	if outcome == "not-authorized" || outcome == "needs-input" || outcome == "trial" {
+	if outcome == "not-authorized" || outcome == "trial" {
 		wantCalls, wantEffects, wantModels = 0, 0, 1
+	}
+	if outcome == "needs-input" {
+		// One platform review precedes accepting a deferral with no attempt.
+		wantCalls, wantEffects, wantModels = 0, 0, 2
+		if !model.reviewObserved {
+			t.Fatal("missing-input review feedback did not reach the model")
+		}
 	}
 	if forgeCalls.Load() != wantCalls || effects.Load() != wantEffects || model.calls != wantModels {
 		t.Fatalf("Forge calls=%d effects=%d model calls=%d cause=%v", forgeCalls.Load(), effects.Load(), model.calls, cause)

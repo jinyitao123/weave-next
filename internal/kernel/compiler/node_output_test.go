@@ -482,3 +482,60 @@ func messagesContain(messages []contract.Message, text string) bool {
 	}
 	return false
 }
+
+// A text tool-call carrier is told to use the structured interface; unlike an
+// invalid final JSON it must not disable tools for the correcting round.
+func TestWorkbenchResultTextToolCallKeepsStructuredToolsUsable(t *testing.T) {
+	carrier := "办理中。\n\n<｜DSML｜ calls>\n<｜DSML｜ invoke name=\"submit_material\">\n</｜DSML｜ invoke>\n</｜DSML｜ calls>"
+	llm := &schemaTestLLM{responses: []contract.ChatResponse{
+		{StopReason: "stop", Content: carrier},
+		{StopReason: "tool_calls", ToolCalls: []contract.ToolCall{{ID: "write-1", Name: "submit_material", Args: `{}`}}},
+		{StopReason: "stop", Content: workbenchOutput(t, "已提交材料")},
+	}}
+	calls := &atomic.Int32{}
+	step := nodeToolLoopStep(llm, &workbenchActionDispatcher{calls: calls}, stdlib.ToolLoopOpts{Model: "test", MaxIterations: 5})
+	ctx := WithWorkbenchResultOutput(WithNodeOutputSchema(t.Context(), machine.WorkbenchResultSchemaV1()))
+	result, err := step(ctx, schemaInput())
+	if err != nil || result["output"] != workbenchOutput(t, "已提交材料") || calls.Load() != 1 || len(llm.requests) != 3 {
+		t.Fatalf("result=%#v calls=%d requests=%d err=%v", result, calls.Load(), len(llm.requests), err)
+	}
+	for _, message := range llm.requests[2].Messages {
+		if message.Role == "tool" && strings.Contains(message.Content, "Tools are unavailable") {
+			t.Fatal("structured call after a text carrier was blocked as a JSON correction")
+		}
+	}
+}
+
+func TestNodeCompletionReasonDrivesOneForcedRoundAndNotHonoredFails(t *testing.T) {
+	llm := &schemaTestLLM{responses: []contract.ChatResponse{
+		{StopReason: "stop", Content: workbenchOutput(t, "已提交")},
+		{StopReason: "stop", Content: workbenchOutput(t, "已提交（再次声称）")},
+	}}
+	calls := &atomic.Int32{}
+	var inputs []NodeToolChoiceInput
+	policy := NodeCompletionPolicy{
+		Review: func(context.Context, NodeCompletionCandidate) (NodeCompletionVerdict, error) {
+			return NodeCompletionVerdict{Feedback: "required receipt missing", Reason: "required_business_action_missing"}, nil
+		},
+		ChooseTool: func(_ context.Context, input NodeToolChoiceInput) (*contract.ToolChoice, error) {
+			inputs = append(inputs, input)
+			if input.CompletionRejected && input.CompletionRejectionReason == "required_business_action_missing" {
+				return &contract.ToolChoice{Mode: contract.ToolChoiceTool, Name: "submit_material"}, nil
+			}
+			return nil, nil
+		},
+	}
+	step := nodeToolLoopStep(llm, &workbenchActionDispatcher{calls: calls}, stdlib.ToolLoopOpts{Model: "test", MaxIterations: 5})
+	ctx := WithNodeCompletionPolicy(WithWorkbenchResultOutput(WithNodeOutputSchema(t.Context(), machine.WorkbenchResultSchemaV1())), "receipt-policy-v2", policy)
+	_, err := step(ctx, schemaInput())
+	var check *NodeCompletionCheckError
+	if !errors.As(err, &check) || check.Reason != requiredToolNotCalledReason {
+		t.Fatalf("err = %v", err)
+	}
+	if calls.Load() != 0 || len(llm.requests) != 2 || llm.requests[1].ToolChoice == nil || llm.requests[1].ToolChoice.Name != "submit_material" {
+		t.Fatalf("calls=%d requests=%d choice=%#v", calls.Load(), len(llm.requests), llm.requests[len(llm.requests)-1].ToolChoice)
+	}
+	if len(inputs) != 2 || inputs[0].CompletionRejected || !inputs[1].CompletionRejected {
+		t.Fatalf("policy inputs = %#v", inputs)
+	}
+}

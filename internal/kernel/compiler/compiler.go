@@ -1025,7 +1025,8 @@ func nodeToolLoopStep(llm contract.LLM, tools contract.ToolDispatcher, base stdl
 			})
 		}
 		verifier := stdlib.RejectBareToolProtocolCompletion(schemaVerifier)
-		completionPolicy, completionCheck, beforeTool := nodeCompletionCheck(ctx)
+		completionPolicy, completion := nodeCompletionPolicy(ctx)
+		completionReview, beforeTool := completion.Review, completion.BeforeTool
 		var dispatchStop error
 		var dispatchStopMu sync.Mutex
 		invocationTools := tools
@@ -1047,29 +1048,42 @@ func nodeToolLoopStep(llm contract.LLM, tools contract.ToolDispatcher, base stdl
 		}
 		verifiedCompletion := false
 		verifiedContent := ""
-		if completionCheck != nil {
+		if completionReview != nil {
 			opts.CompletionVerifierID += ":" + completionPolicy
+			if choose := completion.ChooseTool; choose != nil {
+				opts.ToolChoicePolicy = stdlib.ToolChoicePolicyFunc(func(ctx context.Context, input stdlib.ToolChoiceInput) (*contract.ToolChoice, error) {
+					return choose(ctx, NodeToolChoiceInput{Tools: input.Tools, CompletionRejected: input.CompletionRejected, CompletionRejectionReason: input.CompletionRejectionReason})
+				})
+				opts.ToolChoicePolicyID = completionPolicy + ":tool-choice"
+			}
 		}
 		opts.CompletionVerifier = stdlib.CompletionVerifierFunc(func(ctx context.Context, candidate stdlib.CompletionCandidate) (stdlib.CompletionDecision, error) {
 			last = nil
 			verifiedCompletion = false
 			decision, err := verifier.VerifyCompletion(ctx, candidate)
+			textToolCall := err == nil && !decision.Accepted && decision.Reason == stdlib.BareToolProtocolRejectionReason
 			if err == nil && !decision.Accepted && last == nil {
 				last = outputViolation("unexecuted_tool_protocol", "/", []byte(candidate.Content))
 			}
 			if workbenchResult && err == nil {
-				correctionOnly.Store(!decision.Accepted)
+				// Only an invalid final JSON blocks tools. A text tool-call carrier is
+				// told to use the structured interface, so tools must stay usable.
+				correctionOnly.Store(!decision.Accepted && !textToolCall)
 			}
-			if err == nil && decision.Accepted && completionCheck != nil {
-				accepted, feedback, checkErr := completionCheck(ctx, candidate.Content)
+			if err == nil && decision.Accepted && completionReview != nil {
+				verdict, checkErr := completionReview(ctx, NodeCompletionCandidate{Content: candidate.Content, Transcript: candidate.Transcript, PriorRejections: candidate.PriorRejections})
 				if checkErr != nil {
 					return stdlib.CompletionDecision{}, checkErr
 				}
-				if !accepted {
-					last = outputViolation("required_business_action_missing", "/", []byte(candidate.Content))
+				if !verdict.Accepted {
+					code := "required_business_action_missing"
+					if verdict.Reason != "" {
+						code = verdict.Reason
+					}
+					last = outputViolation(code, "/", []byte(candidate.Content))
 				}
-				verifiedCompletion, verifiedContent = accepted, candidate.Content
-				return stdlib.CompletionDecision{Accepted: accepted, Feedback: feedback}, nil
+				verifiedCompletion, verifiedContent = verdict.Accepted, candidate.Content
+				return stdlib.CompletionDecision{Accepted: verdict.Accepted, Feedback: verdict.Feedback, Reason: verdict.Reason}, nil
 			}
 			return decision, err
 		})
@@ -1092,14 +1106,19 @@ func nodeToolLoopStep(llm contract.LLM, tools contract.ToolDispatcher, base stdl
 		// A tool's StopLoop is an execution stop, not proof of the declared
 		// business result. Check its returned output once without opening a new
 		// model/tool round; paused executions without output remain untouched.
-		if output, hasOutput := result["output"].(string); err == nil && hasOutput && result["__yield"] != true && completionCheck != nil && (!verifiedCompletion || verifiedContent != output) {
-			accepted, _, checkErr := completionCheck(ctx, output)
+		if output, hasOutput := result["output"].(string); err == nil && hasOutput && result["__yield"] != true && completionReview != nil && (!verifiedCompletion || verifiedContent != output) {
+			verdict, checkErr := completionReview(ctx, NodeCompletionCandidate{Content: output})
 			if checkErr != nil {
 				return result, checkErr
 			}
-			if !accepted {
+			if !verdict.Accepted {
 				return result, &NodeCompletionCheckError{Reason: "business_completion_unverified_after_tool_stop"}
 			}
+		}
+		// The declared check forced the missing action and the model still did
+		// not call it: an explicit failure, never another free-text completion.
+		if err != nil && completion.ChooseTool != nil && errors.Is(err, stdlib.ErrToolChoiceNotHonored) {
+			return result, &NodeCompletionCheckError{Reason: requiredToolNotCalledReason}
 		}
 		if err != nil && last != nil && errors.Is(err, stdlib.ErrCompletionUnverified) {
 			last.cause = err

@@ -329,6 +329,11 @@ func (s *Server) handlePublishWorkflowVersion(c echo.Context) error {
 	if candidate == nil || !candidate.ExpectedUpdatedAt.Equal(preflight.version.UpdatedAt) {
 		return mapWorkflowPublishError(c, workflow.ErrVersionConflict)
 	}
+	if graph, report := machine.DecodeGraphDefinitionV1(candidate.Payload.GraphDefinition); report == nil || len(report.Issues) == 0 {
+		if err := machine.RequireBusinessReceiptGraph(graph, candidate.Payload); errors.Is(err, machine.ErrBusinessReceiptCheckRequired) {
+			return mapWorkflowPublishError(c, err)
+		}
+	}
 	// Candidate building uses the product read transaction only. Publication has
 	// its own durable request and kernel transaction, so the product lock must
 	// not be held across that boundary.
@@ -378,6 +383,8 @@ func mapWorkflowPublishError(c echo.Context, err error) error {
 	case errors.Is(err, publication.ErrInvalidRequest),
 		errors.Is(err, publication.ErrInvalidReceipt):
 		return workflowError(c, http.StatusUnprocessableEntity, "workflow_publication_invalid", "workflow publication could not be verified")
+	case errors.Is(err, machine.ErrBusinessReceiptCheckRequired):
+		return workflowError(c, http.StatusUnprocessableEntity, "business_completion_check_required", businessCompletionCheckRequiredMessage)
 	case errors.Is(err, execution.ErrSubjectMismatch):
 		return workflowError(c, http.StatusConflict, "workflow_publication_owner_conflict", "workflow publication is already owned by another operator")
 	case errors.Is(err, execution.ErrSubjectRequired):

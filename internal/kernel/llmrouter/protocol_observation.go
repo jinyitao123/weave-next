@@ -30,6 +30,24 @@ type ModelProtocolObservation struct {
 	DoneSeen           bool                      `json:"done_seen"`
 	Arguments          []ToolArgumentObservation `json:"arguments"`
 	Truncated          bool                      `json:"truncated"`
+	// Absent when not collected. Options are enums of the actual wire values;
+	// content holds counts only, never text.
+	RequestOptions *ModelRequestOptions     `json:"request_options,omitempty"`
+	Content        *ModelContentObservation `json:"content,omitempty"`
+}
+
+type ModelRequestOptions struct {
+	Thinking        string `json:"thinking,omitempty"`
+	ReasoningEffort string `json:"reasoning_effort,omitempty"`
+	ResponseFormat  string `json:"response_format,omitempty"`
+	ToolChoice      string `json:"tool_choice,omitempty"`
+}
+
+type ModelContentObservation struct {
+	ContentBytes            int `json:"content_bytes"`
+	TextToolProtocolMarkers int `json:"text_tool_protocol_markers"`
+	ReasoningFrames         int `json:"reasoning_frames"`
+	ReasoningBytes          int `json:"reasoning_bytes"`
 }
 
 type ToolArgumentObservation struct {
@@ -108,7 +126,36 @@ func boundedProtocolObservation(value contract.ProtocolObservation) ModelProtoco
 		}
 		result.Arguments = append(result.Arguments, ToolArgumentObservation{argument.Index, argument.Bytes, argument.SHA256})
 	}
+	if options := value.RequestOptions; options != nil {
+		result.RequestOptions = &ModelRequestOptions{
+			Thinking:        protocolEnum(options.Thinking, "enabled", "disabled"),
+			ReasoningEffort: protocolEnum(options.ReasoningEffort, "none", "minimal", "low", "medium", "high", "xhigh", "max"),
+			ResponseFormat:  protocolEnum(options.ResponseFormat, "json_object", "json_schema", "text"),
+			ToolChoice:      protocolEnum(options.ToolChoice, "auto", "none", "required", "tool"),
+		}
+	}
+	if content := value.Content; content != nil {
+		if content.ContentBytes < 0 || content.TextToolProtocolMarkers < 0 || content.ReasoningFrames < 0 || content.ReasoningBytes < 0 {
+			result.Complete = false
+		} else {
+			observed := ModelContentObservation(*content)
+			result.Content = &observed
+		}
+	}
 	return result
+}
+
+// protocolEnum keeps known option values and folds anything else to "other".
+func protocolEnum(value string, known ...string) string {
+	if value == "" {
+		return ""
+	}
+	for _, candidate := range known {
+		if value == candidate {
+			return value
+		}
+	}
+	return "other"
 }
 
 func normalizedModelProtocol(response *contract.ChatResponse, err error) NormalizedModelProtocol {

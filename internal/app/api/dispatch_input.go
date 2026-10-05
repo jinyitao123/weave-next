@@ -271,7 +271,8 @@ func supportedDispatchInputMediaType(value string) bool {
 	}
 }
 
-func authorizedBusinessActions(published []string, requested *[]string) ([]string, error) {
+func authorizedBusinessActions(scope publishedActionScope, requested *[]string) ([]string, error) {
+	published := scope.actions
 	if requested == nil {
 		if len(published) == 0 {
 			return []string{}, nil
@@ -302,6 +303,13 @@ func authorizedBusinessActions(published []string, requested *[]string) ([]strin
 		actions = append(actions, value)
 	}
 	sort.Strings(actions)
+	// Authorizing an executable action makes it the employee's expected outcome;
+	// only a frozen graph that verifies real receipts may accept that duty.
+	for _, action := range actions {
+		if scope.executable[action] && !scope.receiptChecked {
+			return nil, errBusinessCompletionCheckRequired
+		}
+	}
 	return actions, nil
 }
 
@@ -413,6 +421,16 @@ func (s *Server) handlePrepareDispatchInput(c echo.Context) error {
 	if ok, err := s.ensureTeamAvailable(c, workspaceID, request.TeamID); !ok {
 		return err
 	}
+	if request.WorkflowID != "" && request.WorkflowVersion != nil {
+		scope, scopeErr := s.publishedActionScope(c.Request().Context(), workspaceID, request.WorkflowID, *request.WorkflowVersion)
+		if scopeErr != nil {
+			return workflowStoreFailure(c, fmt.Errorf("read published business actions: %w", scopeErr))
+		}
+		// Refuse before the Host asks Forge for a task grant it could not use.
+		if _, actionsErr := authorizedBusinessActions(scope, request.AuthorizedBusinessCapabilityIDs); errors.Is(actionsErr, errBusinessCompletionCheckRequired) {
+			return businessActionScopeError(c, actionsErr)
+		}
+	}
 	id, err := s.preparedDispatchInputID(c.Request().Context(), workspaceID, userID, request)
 	if errors.Is(err, errInputRegistrationConflict) {
 		return workflowError(c, 409, "input_registration_conflict", "registration_id was already used for different input facts")
@@ -460,13 +478,13 @@ func (s *Server) handleRegisterDispatchInput(c echo.Context) error {
 	request.InputRevisionID = inputRevisionID
 	var preparedDelegation *preparedBusinessDelegation
 	if request.WorkflowID != "" && request.WorkflowVersion != nil {
-		publishedActions, actionsErr := s.publishedBusinessActions(c.Request().Context(), workspaceID, request.WorkflowID, *request.WorkflowVersion)
+		publishedActions, actionsErr := s.publishedActionScope(c.Request().Context(), workspaceID, request.WorkflowID, *request.WorkflowVersion)
 		if actionsErr != nil {
 			return workflowStoreFailure(c, fmt.Errorf("read published business actions: %w", actionsErr))
 		}
 		actions, actionsErr := authorizedBusinessActions(publishedActions, request.AuthorizedBusinessCapabilityIDs)
 		if actionsErr != nil {
-			return workflowError(c, http.StatusUnprocessableEntity, "business_action_scope_invalid", actionsErr.Error())
+			return businessActionScopeError(c, actionsErr)
 		}
 		var preparationErr *businessDelegationPreparationError
 		preparedDelegation, preparationErr = s.prepareBusinessDelegation(
@@ -498,13 +516,13 @@ func (s *Server) handleRegisterDispatchInput(c echo.Context) error {
 		if existing.RegistrationSHA256 != registrationSHA256 {
 			return workflowError(c, http.StatusConflict, "input_registration_conflict", "registration_id was already used for different input facts")
 		}
-		publishedActions, actionsErr := loadPublishedBusinessActionsTx(ctx, tx, workspaceID, existing.WorkflowID, existing.WorkflowVersion)
+		publishedActions, actionsErr := loadPublishedActionScopeTx(ctx, tx, workspaceID, existing.WorkflowID, existing.WorkflowVersion)
 		if actionsErr != nil {
 			return workflowStoreFailure(c, fmt.Errorf("read published business actions: %w", actionsErr))
 		}
 		actions, actionsErr := authorizedBusinessActions(publishedActions, request.AuthorizedBusinessCapabilityIDs)
 		if actionsErr != nil {
-			return workflowError(c, http.StatusUnprocessableEntity, "business_action_scope_invalid", actionsErr.Error())
+			return businessActionScopeError(c, actionsErr)
 		}
 		if !ensurePreparedActions(preparedDelegation, actions) {
 			return workflowError(c, http.StatusUnauthorized, "business_delegation_required", "an exact Forge task delegation is required")
@@ -582,13 +600,13 @@ func (s *Server) handleRegisterDispatchInput(c echo.Context) error {
 	if handled || err != nil {
 		return err
 	}
-	publishedActions, err := loadPublishedBusinessActionsTx(ctx, tx, workspaceID, workflowID, version)
+	publishedActions, err := loadPublishedActionScopeTx(ctx, tx, workspaceID, workflowID, version)
 	if err != nil {
 		return workflowStoreFailure(c, fmt.Errorf("read published business actions: %w", err))
 	}
 	actions, err := authorizedBusinessActions(publishedActions, request.AuthorizedBusinessCapabilityIDs)
 	if err != nil {
-		return workflowError(c, http.StatusUnprocessableEntity, "business_action_scope_invalid", err.Error())
+		return businessActionScopeError(c, err)
 	}
 	if !ensurePreparedActions(preparedDelegation, actions) {
 		return workflowError(c, http.StatusUnauthorized, "business_delegation_required", "an exact Forge task delegation is required")

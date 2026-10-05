@@ -760,6 +760,23 @@
         "lines_added": 83,
         "production_lines_added": 5
       }
+    },
+    {
+      "date": "2026-10-05",
+      "reason": "Register the measured growth for required business action completion (total plan W9). Authorized dispatch and product publication refuse action-bound graphs without the declared weave.business-action-receipts check; the kernel publication service and artifact loading keep the existing rule. Completion review v2 adds a one-time missing-input review, decided from Loom structured rejection history rather than message text, and a single-round Loom tool choice after a completion claimed without receipts, never forcing an attempted, failed or unknown action; a forced round without the call fails explicitly. Bounded protocol observations add wire option enums and content counts. Vendored Loom moves to 13716ba4d678 outside the bands. Regressions cover unit, HTTP and real PostgreSQL paths, including the PR21 lead-conversion fixture now declaring the check. No spare allowance, new packages/dependencies, tables, queues, execution loops or changes to original migration targets.",
+      "record": "docs/治理/2026-09-30-平台范围收窄整改登记.md",
+      "kernel": {
+        "previous_lines": 104129,
+        "previous_production_lines": 84064,
+        "lines_added": 635,
+        "production_lines_added": 280
+      },
+      "app": {
+        "previous_lines": 72271,
+        "previous_production_lines": 50645,
+        "lines_added": 162,
+        "production_lines_added": 91
+      }
     }
   ],
   "migration_targets": {
@@ -797,8 +814,8 @@
     ]
   },
   "kernel": {
-    "lines": 104129,
-    "production_lines": 84064,
+    "lines": 104764,
+    "production_lines": 84344,
     "packages": 49,
     "external_dependencies": 5,
     "allowed_dependencies": [
@@ -817,8 +834,8 @@
     "allowed_dependencies": []
   },
   "app": {
-    "lines": 72271,
-    "production_lines": 50645,
+    "lines": 72433,
+    "production_lines": 50736,
     "packages": 24,
     "external_dependencies": 6,
     "allowed_dependencies": [

@@ -1237,6 +1237,16 @@ func parseAction(id string) (action, error) {
 	return action{capabilityID: id, objectName: objectName, actionName: actionName}, nil
 }
 
+// CapabilityToolName is the model-facing tool name the dispatcher registers for
+// one Forge action capability, so completion policies can name the same tool.
+func CapabilityToolName(capabilityID string) (string, error) {
+	parsed, err := parseAction(capabilityID)
+	if err != nil {
+		return "", err
+	}
+	return virtualToolName(parsed), nil
+}
+
 func virtualToolName(value action) string {
 	base := strings.ToLower(value.objectName + "_" + value.actionName)
 	base = strings.Trim(toolPart.ReplaceAllString(base, "_"), "_")

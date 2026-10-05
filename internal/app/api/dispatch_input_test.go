@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -113,10 +114,11 @@ func TestDispatchInputFrozenResourceBudgetMatchesMaterialContract(t *testing.T) 
 }
 
 func TestAuthorizedBusinessActionsRequireAnExplicitPublishedSubset(t *testing.T) {
-	published := []string{
+	actions := []string{
 		"forge:action:sales_contract.ContractSubmit",
 		"forge:action:sales_contract.RequestRevision",
 	}
+	published := publishedActionScope{actions: actions, receiptChecked: true}
 	if _, err := authorizedBusinessActions(published, nil); err == nil {
 		t.Fatal("missing task scope was accepted for a workflow with business actions")
 	}
@@ -124,23 +126,39 @@ func TestAuthorizedBusinessActionsRequireAnExplicitPublishedSubset(t *testing.T)
 	if got, err := authorizedBusinessActions(published, &empty); err != nil || len(got) != 0 {
 		t.Fatalf("material-only scope=%v err=%v", got, err)
 	}
-	requested := []string{published[1], published[0]}
+	requested := []string{actions[1], actions[0]}
 	got, err := authorizedBusinessActions(published, &requested)
-	if err != nil || len(got) != 2 || got[0] != published[0] || got[1] != published[1] {
+	if err != nil || len(got) != 2 || got[0] != actions[0] || got[1] != actions[1] {
 		t.Fatalf("authorized scope=%v err=%v", got, err)
 	}
 	outside := []string{"forge:action:sales_contract.Delete"}
 	if _, err := authorizedBusinessActions(published, &outside); err == nil {
 		t.Fatal("action outside the published workflow was accepted")
 	}
-	duplicate := []string{published[0], published[0]}
+	duplicate := []string{actions[0], actions[0]}
 	if _, err := authorizedBusinessActions(published, &duplicate); err == nil {
 		t.Fatal("duplicate action scope was accepted")
 	}
 }
 
+func TestAuthorizedBusinessActionsRequireDeclaredReceiptCheck(t *testing.T) {
+	unchecked := publishedActionScope{actions: []string{"forge:action:crm_lead.ConvertLead"}, executable: map[string]bool{"forge:action:crm_lead.ConvertLead": true}}
+	requested := []string{"forge:action:crm_lead.ConvertLead"}
+	if _, err := authorizedBusinessActions(unchecked, &requested); !errors.Is(err, errBusinessCompletionCheckRequired) {
+		t.Fatalf("an unchecked published version authorized an action: %v", err)
+	}
+	inert := publishedActionScope{actions: unchecked.actions, executable: map[string]bool{}}
+	if got, err := authorizedBusinessActions(inert, &requested); err != nil || len(got) != 1 {
+		t.Fatalf("an action no graph member can execute = %v, %v", got, err)
+	}
+	readOnly := []string{}
+	if got, err := authorizedBusinessActions(unchecked, &readOnly); err != nil || len(got) != 0 {
+		t.Fatalf("read-only dispatch to an unchecked version = %v, %v", got, err)
+	}
+}
+
 func TestAuthorizedBusinessActionsAllowOmissionWhenWorkflowHasNone(t *testing.T) {
-	got, err := authorizedBusinessActions(nil, nil)
+	got, err := authorizedBusinessActions(publishedActionScope{}, nil)
 	if err != nil || len(got) != 0 {
 		t.Fatalf("scope=%v err=%v", got, err)
 	}

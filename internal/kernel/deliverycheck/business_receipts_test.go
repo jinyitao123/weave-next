@@ -104,3 +104,49 @@ func TestBusinessReceiptParameterAndContractValidation(t *testing.T) {
 		t.Fatal("unknown checker version accepted")
 	}
 }
+
+func TestBusinessReceiptInputReviewHappensOnceAndNeverHidesEffects(t *testing.T) {
+	params := BusinessReceiptParameters{RequiredCapabilityIDs: []string{receiptAction}, WhenAuthorized: true, AllowNeedsInput: true}
+	needsInput := BusinessReceiptResult{Disposition: "needs_input", MissingItems: []string{"receipt"}}
+	review := needsInput
+	review.RequireInputReview = true
+	first := EvaluateBusinessReceipts(params, receiptScope(), []BusinessReceipt{}, review)
+	if first.Accept || first.HardStop || first.Result.Reason != ReasonInputReview || !strings.Contains(first.Feedback, "Only inputs that block those actions count as missing") || !strings.Contains(first.Feedback, "Do not repeat actions") {
+		t.Fatalf("first needs_input = %+v", first)
+	}
+	if later := EvaluateBusinessReceipts(params, receiptScope(), []BusinessReceipt{}, needsInput); !later.Accept || later.Result.Reason != "business_actions_deferred_for_input" {
+		t.Fatalf("reviewed needs_input = %+v", later)
+	}
+	strict := params
+	strict.AllowNeedsInput = false
+	if later := EvaluateBusinessReceipts(strict, receiptScope(), []BusinessReceipt{}, needsInput); !later.HardStop || later.Result.Reason != "business_actions_cannot_be_deferred" {
+		t.Fatalf("strict reviewed needs_input = %+v", later)
+	}
+	if effect := EvaluateBusinessReceipts(params, receiptScope(), []BusinessReceipt{receipt("succeeded")}, review); !effect.HardStop || effect.Result.Reason != "business_actions_cannot_be_deferred" {
+		t.Fatalf("review hid an existing effect: %+v", effect)
+	}
+	readOnly := receiptScope()
+	readOnly.AllowedCapabilityIDs = []string{}
+	if got := EvaluateBusinessReceipts(params, readOnly, []BusinessReceipt{}, review); !got.Accept || got.Result.Reason != "business_actions_not_requested" {
+		t.Fatalf("unauthorized action was reviewed: %+v", got)
+	}
+}
+
+func TestUnattemptedRequiredCapabilitiesIgnoreAnyRecordedOperation(t *testing.T) {
+	other := "forge:action:record.other"
+	params := BusinessReceiptParameters{RequiredCapabilityIDs: []string{other, receiptAction}, WhenAuthorized: true}
+	scope := receiptScope()
+	scope.AllowedCapabilityIDs = []string{receiptAction, other}
+	if got := UnattemptedRequiredCapabilities(params, scope, []BusinessReceipt{}); strings.Join(got, ",") != "forge:action:record.other,forge:action:record.submit" {
+		t.Fatalf("unattempted = %v", got)
+	}
+	for _, status := range []string{"succeeded", "failed", "unknown"} {
+		if got := UnattemptedRequiredCapabilities(params, scope, []BusinessReceipt{receipt(status)}); strings.Join(got, ",") != other {
+			t.Fatalf("%s operation still forced: %v", status, got)
+		}
+	}
+	scope.AllowedCapabilityIDs = []string{receiptAction}
+	if got := UnattemptedRequiredCapabilities(params, scope, []BusinessReceipt{}); strings.Join(got, ",") != receiptAction {
+		t.Fatalf("unauthorized capability forced: %v", got)
+	}
+}
