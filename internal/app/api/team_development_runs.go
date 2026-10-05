@@ -65,16 +65,10 @@ func (s *Server) handleTrialTeamDevelopment(c echo.Context) error {
 	input, _ := json.Marshal(req.Input)
 	hash := sha256.Sum256(input)
 	request := publication.CandidateRunRequest{Version: publication.ContractVersion, RequestID: "development:" + req.RequestID, Candidate: selected.Envelope, Input: input, InputVersion: hex.EncodeToString(hash[:]), SourceRef: "team-development:" + id, Purpose: "developer-trial"}
-	requestDigest, err := request.Fingerprint(ctx)
+	digest, err := businessaction.DevelopmentTrialRequestDigest(ctx, request, normalizedActions)
 	if err != nil {
 		return err
 	}
-	digestSource, _ := json.Marshal(struct {
-		RequestDigest string                             `json:"request_digest"`
-		Actions       []businessaction.DevelopmentAction `json:"actions"`
-	}{requestDigest, normalizedActions})
-	digestHash := sha256.Sum256(digestSource)
-	digest := hex.EncodeToString(digestHash[:])
 	_, err = s.Pool.Exec(ctx, `INSERT INTO weave_team_development_trials(workspace_id,team_id,request_id,revision,workflow_id,actor_id,request_digest,request,business_actions) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT DO NOTHING`, ws, id, req.RequestID, req.Revision, req.WorkflowID, actor, digest, encodeDevelopment(request), encodeDevelopment(normalizedActions))
 	if err != nil {
 		return err
@@ -132,17 +126,16 @@ func (s *Server) handlePublishTeamDevelopment(c echo.Context) error {
 		return developmentError("请先试跑当前草稿")
 	}
 	for _, p := range d.Prepared {
-		var passed bool
-		err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM weave_team_development_trials t JOIN weave_team_runs r ON r.workspace_id=t.workspace_id AND r.run_id=t.receipt->>'run_id' WHERE t.workspace_id=$1 AND t.team_id=$2 AND t.revision=$3 AND t.workflow_id=$4 AND r.status='succeeded')`, ws, id, d.Revision, p.ID).Scan(&passed)
-		if err != nil {
-			return err
-		}
-		if !passed {
-			return developmentError("每条待发布流程都需要完成当前草稿的试跑")
-		}
 		if err = requireDevelopmentReceiptCheck(p.Envelope); err != nil {
 			return err
 		}
+	}
+	readiness, err := buildDevelopmentPublicationReadiness(ctx, tx, ws, id, actor, d.PreparedActor, d.Revision, d.PreparedRevision, d.Prepared)
+	if err != nil {
+		return err
+	}
+	if !readiness.Ready {
+		return developmentError("每条待发布流程都需要当前草稿成功试跑，并覆盖已声明的必办模拟动作")
 	}
 	if err = checkDevelopmentBaseline(ctx, tx, ws, id, d.Baseline); err != nil {
 		return err

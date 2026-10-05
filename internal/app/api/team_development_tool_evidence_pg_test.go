@@ -153,7 +153,7 @@ func runDevelopmentToolEvidence(t *testing.T, large bool) *trialEvidenceFixture 
 	draft.Document.Workflows = []developmentWorkflow{{ID: flowID, Name: "Tool evidence", Graph: graph, Trigger: json.RawMessage(`{"schema_version":1,"type":"conversation_explicit","config":{}}`)}}
 	call(http.MethodPut, map[string]any{"expected_revision": draft.Revision, "document": draft.Document}, server.handleSaveTeamDevelopment)
 	var actions []businessaction.DevelopmentAction
-	if err := json.Unmarshal([]byte(`[{"capability_id":"forge:action:test_object.RecordCheck","name":"RecordCheck","object_name":"test_object","requires_record":true,"params":[{"name":"value","type":"string","required":true}]}]`), &actions); err != nil {
+	if err := json.Unmarshal([]byte(`[{"capability_id":"forge:action:test_object.RecordCheck","name":"RecordCheck","object_name":"test_object","requires_record":true,"simulation_authorized":true,"params":[{"name":"value","type":"string","required":true}]}]`), &actions); err != nil {
 		t.Fatal(err)
 	}
 	trial := developmentTrialRequest{Revision: draft.Revision + 1, WorkflowID: flowID, RequestID: uuid.NewString(), Input: "Check both steps with their exact values", BusinessActions: actions}
@@ -246,9 +246,18 @@ func TestDevelopmentTrialToolJournalEvidenceRealPG(t *testing.T) {
 	if found != 2 || strings.Contains(body, "Private model rationale") {
 		t.Fatal("node or tool-only evidence boundary failed")
 	}
-	var copied, formal int
-	if err := fixture.pool.QueryRow(fixture.ctx, `SELECT count(*) FILTER(WHERE kind IN('tool_started','tool_completed') AND (detail ? 'input' OR detail ? 'output')),count(*) FILTER(WHERE kind IN('business_action_started','business_action_result')) FROM weave_team_run_activity_events WHERE workspace_id=$1 AND run_id=$2`, fixture.workspace, fixture.run.RunID).Scan(&copied, &formal); err != nil || copied != 0 || formal != 0 {
-		t.Fatalf("trial leaked payload or formal business facts: copied=%d formal=%d err=%v", copied, formal, err)
+	var copied, formal, simulated, unexpectedSource, unbound int
+	if err := fixture.pool.QueryRow(fixture.ctx, `SELECT
+		count(*) FILTER(WHERE kind IN('tool_started','tool_completed') AND (detail ? 'input' OR detail ? 'output')),
+		count(*) FILTER(WHERE kind IN('business_action_started','business_action_result') AND detail->>'source'='forge_mcp.run_action'),
+		count(*) FILTER(WHERE kind IN('business_action_started','business_action_result') AND detail->>'source'='development_simulation'),
+		count(*) FILTER(WHERE kind IN('business_action_started','business_action_result') AND COALESCE(detail->>'source','') NOT IN ('forge_mcp.run_action','development_simulation')),
+		count(*) FILTER(WHERE kind IN('business_action_started','business_action_result') AND detail->>'source'='development_simulation' AND (
+			COALESCE(detail->>'run_snapshot_id','')<>$3 OR COALESCE(detail->>'actor_id','')<>$4 OR
+			COALESCE(detail->>'input_revision_id','')='' OR COALESCE(detail->>'capability_id','')<>$5 OR
+			COALESCE(detail->>'operation_id','')=''))
+		FROM weave_team_run_activity_events WHERE workspace_id=$1 AND run_id=$2`, fixture.workspace, fixture.run.RunID, fixture.run.RunSnapshotID, fixture.actor, trialEvidenceCapability).Scan(&copied, &formal, &simulated, &unexpectedSource, &unbound); err != nil || copied != 0 || formal != 0 || simulated != 4 || unexpectedSource != 0 || unbound != 0 {
+		t.Fatalf("trial ledger evidence invalid: copied=%d formal=%d simulated=%d unexpected_source=%d unbound=%d err=%v", copied, formal, simulated, unexpectedSource, unbound, err)
 	}
 	var key string
 	var savedReceipt []byte

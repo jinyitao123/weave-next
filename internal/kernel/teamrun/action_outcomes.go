@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/jinyitao123/loom/contract"
+	"github.com/jinyitao123/weave/internal/kernel/businessaction"
 )
 
 const MaxBusinessActionOutcomesPerRun = 100
@@ -23,12 +24,15 @@ type BusinessActionOutcomeV1 struct {
 	ActionName string `json:"action_name"`
 	ObjectName string `json:"object_name"`
 	RecordID   string `json:"record_id,omitempty"`
+	Simulated  bool   `json:"simulated,omitempty"`
 	Status     string `json:"status"`
 	Summary    string `json:"summary"`
 }
 
 type businessActionActivityDetailV1 struct {
 	Source             string               `json:"source"`
+	RunSnapshotID      string               `json:"run_snapshot_id,omitempty"`
+	ActorID            string               `json:"actor_id,omitempty"`
 	Phase              string               `json:"phase"`
 	InvocationID       string               `json:"invocation_id"`
 	CallID             string               `json:"tool_call_id"`
@@ -72,14 +76,18 @@ func projectBusinessActionOutcomes(events []ActivityEvent, capture func(Activity
 		if err := json.Unmarshal(event.Detail, &detail); err != nil {
 			return nil, fmt.Errorf("decode business action activity: %w", err)
 		}
+		validSource := detail.Source == businessaction.ActionOutcomeSourceForgeMCP || detail.Source == businessaction.ActionOutcomeSourceDevelopmentSimulation
 		if event.WorkspaceID == "" || event.RunID == "" || event.NodeID == "" || event.MemberID == "" ||
-			detail.Source != "forge_mcp.run_action" ||
+			!validSource ||
 			strings.TrimSpace(detail.InvocationID) == "" || strings.TrimSpace(detail.CallID) == "" ||
 			strings.TrimSpace(detail.CapabilityID) == "" || strings.TrimSpace(detail.ActionKey) == "" ||
 			strings.TrimSpace(detail.ActionName) == "" || strings.TrimSpace(detail.ObjectName) == "" ||
 			strings.TrimSpace(detail.InputRevisionID) == "" || len(detail.OperationSlot) > MaxBusinessActionOperationSlotBytes ||
 			(detail.Phase != "started" && detail.Phase != "result") {
 			return nil, errors.New("business action activity provenance is incomplete")
+		}
+		if detail.Source == businessaction.ActionOutcomeSourceDevelopmentSimulation && (detail.RunSnapshotID == "" || detail.ActorID == "") {
+			return nil, errors.New("development simulation activity identity is incomplete")
 		}
 		if workspaceID == "" {
 			workspaceID, runID = event.WorkspaceID, event.RunID
@@ -137,8 +145,8 @@ func projectBusinessActionOutcomes(events []ActivityEvent, capture func(Activity
 		items = append(items, BusinessActionOutcomeV1{
 			NodeID: item.started.NodeID, CallID: item.detail.CallID,
 			ActionName: label, ObjectName: item.detail.ObjectName,
-			RecordID: item.detail.RecordID, Status: status,
-			Summary: businessActionOutcomeSummary(label, status),
+			RecordID: item.detail.RecordID, Simulated: item.detail.Source == businessaction.ActionOutcomeSourceDevelopmentSimulation, Status: status,
+			Summary: businessActionOutcomeSummary(label, status, item.detail.Source == businessaction.ActionOutcomeSourceDevelopmentSimulation),
 		})
 	}
 	return items, nil
@@ -154,7 +162,8 @@ func boundedBusinessActionLabel(value string) string {
 }
 
 func sameBusinessActionDetail(left, right businessActionActivityDetailV1) bool {
-	return left.OperationSlot == right.OperationSlot && left.OperationID == right.OperationID && left.Source == right.Source && left.InvocationID == right.InvocationID && left.CallID == right.CallID &&
+	return left.OperationSlot == right.OperationSlot && left.OperationID == right.OperationID && left.Source == right.Source &&
+		left.RunSnapshotID == right.RunSnapshotID && left.ActorID == right.ActorID && left.InvocationID == right.InvocationID && left.CallID == right.CallID &&
 		left.CapabilityID == right.CapabilityID && left.ActionKey == right.ActionKey &&
 		left.ActionName == right.ActionName && left.ActionLabel == right.ActionLabel &&
 		left.ObjectName == right.ObjectName && left.InputRevisionID == right.InputRevisionID &&
@@ -162,7 +171,18 @@ func sameBusinessActionDetail(left, right businessActionActivityDetailV1) bool {
 		left.ParamsSHA256 == right.ParamsSHA256
 }
 
-func businessActionOutcomeSummary(label, status string) string {
+func businessActionOutcomeSummary(label, status string, simulated bool) string {
+	if simulated {
+		prefix := "开发试跑模拟动作“" + label + "”"
+		switch status {
+		case "succeeded":
+			return "平台记录：" + prefix + "的工具调用完成；这不是 Forge 业务回执。"
+		case "failed":
+			return "平台记录：" + prefix + "的工具调用失败。"
+		default:
+			return "平台记录：" + prefix + "的工具调用结果未知。"
+		}
+	}
 	switch status {
 	case "succeeded":
 		return "平台记录：业务动作“" + label + "”的工具调用返回成功；该回执不代表业务记录已达到最终状态。"

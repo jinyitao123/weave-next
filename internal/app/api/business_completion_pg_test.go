@@ -61,6 +61,9 @@ func (m *receiptCompletionModel) Chat(_ context.Context, request contract.ChatRe
 	if m.outcome == "not-authorized" || m.outcome == "trial" {
 		return &contract.ChatResponse{Content: `{"disposition":"complete","summary":"Read-only review finished.","missing_items":[]}`}, nil
 	}
+	if m.outcome == "trial-authorized-no-call" {
+		return &contract.ChatResponse{Content: `{"disposition":"complete","summary":"A simulated business receipt was recorded.","missing_items":[]}`}, nil
+	}
 	if m.outcome == "needs-input" {
 		if request.ToolChoice != nil {
 			return nil, errors.New("a missing-input review forced a business call")
@@ -81,9 +84,13 @@ func (m *receiptCompletionModel) Chat(_ context.Context, request contract.ChatRe
 		m.feedbackObserved = true
 		for _, tool := range request.Tools {
 			if strings.HasPrefix(tool.Name, "forge_sales_quote_adjustprice_") {
-				calls := []contract.ToolCall{{ID: "model-call", Name: tool.Name, Args: `{"params":{"line_id":"line-a"}}`}}
+				args := `{"params":{"line_id":"line-a"}}`
+				if strings.HasPrefix(m.outcome, "trial-authorized") {
+					args = `{"recordId":"simulated-record","params":{"line_id":"line-a"}}`
+				}
+				calls := []contract.ToolCall{{ID: "model-call", Name: tool.Name, Args: args}}
 				if strings.HasSuffix(m.outcome, "-batch") {
-					calls = append(calls, contract.ToolCall{ID: "second-model-call", Name: tool.Name, Args: `{"params":{"line_id":"line-a"}}`})
+					calls = append(calls, contract.ToolCall{ID: "second-model-call", Name: tool.Name, Args: args})
 				}
 				return &contract.ChatResponse{Content: complete, ToolCalls: calls}, nil
 			}
@@ -108,7 +115,7 @@ func (*receiptCompletionModel) Stream(context.Context, contract.ChatRequest) (<-
 }
 
 func TestBusinessReceiptCompletionPublishedRuntimeRealPG(t *testing.T) {
-	for _, outcome := range []string{"succeeded", "failed", "unknown", "failed-retry", "failed-batch", "unknown-batch", "not-authorized", "needs-input", "trial"} {
+	for _, outcome := range []string{"succeeded", "failed", "unknown", "failed-retry", "failed-batch", "unknown-batch", "not-authorized", "needs-input", "trial", "trial-authorized", "trial-authorized-no-call"} {
 		t.Run(outcome, func(t *testing.T) { runBusinessReceiptCompletion(t, outcome) })
 	}
 }
@@ -241,7 +248,8 @@ func runBusinessReceiptCompletion(t *testing.T, outcome string, protocolProbe ..
 	var trial publication.CandidateRunRequest
 	var trialAdmission publication.AdmissionReceipt
 	var trialID string
-	if outcome == "trial" {
+	var trialActions []businessaction.DevelopmentAction
+	if strings.HasPrefix(outcome, "trial") {
 		trialID = uuid.NewString()
 		input, _ := json.Marshal("Read-only developer trial with quoted \"source\" and newline\ncontent")
 		hash := sha256.Sum256(input)
@@ -250,14 +258,20 @@ func runBusinessReceiptCompletion(t *testing.T, outcome string, protocolProbe ..
 		if err != nil {
 			t.Fatal(err)
 		}
-		actions := []businessaction.DevelopmentAction{{CapabilityID: publishedBusinessCapability, Name: "AdjustPrice", ObjectName: "sales_quote", Label: "Adjust price", RequiresRecord: true}}
+		rawActions := `[{"capability_id":"forge:action:sales_quote.AdjustPrice","name":"AdjustPrice","object_name":"sales_quote","label":"Adjust price","requires_record":true,"params":[{"name":"line_id","type":"string","required":true},{"name":"idempotency_key","type":"string","required":true}],"simulation_authorized":false}]`
+		if outcome == "trial-authorized" || outcome == "trial-authorized-no-call" {
+			rawActions = strings.Replace(rawActions, `"simulation_authorized":false`, `"simulation_authorized":true`, 1)
+		}
+		if err := json.Unmarshal([]byte(rawActions), &trialActions); err != nil {
+			t.Fatal(err)
+		}
 		source, _ := json.Marshal(struct {
 			RequestDigest string                             `json:"request_digest"`
 			Actions       []businessaction.DevelopmentAction `json:"actions"`
-		}{digest, actions})
+		}{digest, trialActions})
 		bindingDigest := sha256.Sum256(source)
 		digest = hex.EncodeToString(bindingDigest[:])
-		if _, err := pool.Exec(ctx, `INSERT INTO weave_team_development_trials(workspace_id,team_id,request_id,revision,workflow_id,actor_id,request_digest,request,business_actions) VALUES('ws','team',$1,1,'flow','user',$2,$3,$4)`, trialID, digest, encodeDevelopment(trial), encodeDevelopment(actions)); err != nil {
+		if _, err := pool.Exec(ctx, `INSERT INTO weave_team_development_trials(workspace_id,team_id,request_id,revision,workflow_id,actor_id,request_digest,request,business_actions) VALUES('ws','team',$1,1,'flow','user',$2,$3,$4)`, trialID, digest, encodeDevelopment(trial), encodeDevelopment(trialActions)); err != nil {
 			t.Fatal(err)
 		}
 		admission, err := server.KernelPublication.AdmitCandidate(ctx, trial)
@@ -325,6 +339,9 @@ func runBusinessReceiptCompletion(t *testing.T, outcome string, protocolProbe ..
 	if resultStatus == "failed" || resultStatus == "unknown" {
 		wantStatus = teamrun.StatusFailed
 	}
+	if outcome == "trial-authorized-no-call" {
+		wantStatus = teamrun.StatusFailed
+	}
 	cause := ""
 	if finished.CauseSummary != nil {
 		cause = *finished.CauseSummary
@@ -332,14 +349,25 @@ func runBusinessReceiptCompletion(t *testing.T, outcome string, protocolProbe ..
 	if err != nil || finished.Status != wantStatus {
 		t.Fatalf("status=%s want=%s cause=%v err=%v", finished.Status, wantStatus, cause, err)
 	}
-	if outcome == "trial" {
+	if strings.HasPrefix(outcome, "trial") {
 		candidate := deliverable.Candidate{WorkspaceID: "ws", RunID: trialAdmission.RunID, RunSnapshotID: trialAdmission.RunSnapshotID}
 		read := deliveryverify.BusinessReceiptReader(pool)
 		assertTrial := func() {
 			t.Helper()
 			frame, err := read(ctx, candidate)
-			if err != nil || frame.Scope.InputRevisionID != trial.InputVersion || frame.Scope.SubjectID != "user" || frame.Scope.AllowedCapabilityIDs == nil || len(frame.Scope.AllowedCapabilityIDs) != 0 {
+			wantAllowed := 0
+			if outcome == "trial-authorized" || outcome == "trial-authorized-no-call" {
+				wantAllowed = 1
+			}
+			if err != nil || frame.Scope.InputRevisionID != trial.InputVersion || frame.Scope.SubjectID != "user" || !frame.Scope.DevelopmentTrial || frame.Scope.AllowedCapabilityIDs == nil || len(frame.Scope.AllowedCapabilityIDs) != wantAllowed {
 				t.Fatalf("trial frozen scope=%+v err=%v", frame.Scope, err)
+			}
+			wantSimulationReceipts := 0
+			if outcome == "trial-authorized" {
+				wantSimulationReceipts = 1
+			}
+			if len(frame.Receipts) != wantSimulationReceipts || wantSimulationReceipts == 1 && (!frame.Receipts[0].Simulated || frame.Receipts[0].SubjectID != "user" || frame.Receipts[0].RunSnapshotID != candidate.RunSnapshotID) {
+				t.Fatalf("trial did not read only its actual simulated activity: %+v", frame.Receipts)
 			}
 			check, err := deliverycheck.BusinessReceiptCheck(frame.Contract)
 			if err != nil || check == nil {
@@ -347,6 +375,15 @@ func runBusinessReceiptCompletion(t *testing.T, outcome string, protocolProbe ..
 			}
 		}
 		assertTrial()
+		readiness, err := buildDevelopmentPublicationReadiness(ctx, pool, "ws", "team", "user", "user", 1, 1,
+			[]developmentPrepared{{ID: "flow", Envelope: envelope}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		wantReady := outcome == "trial-authorized"
+		if readiness.Ready != wantReady || len(readiness.Workflows) != 1 || readiness.Workflows[0].Passed != wantReady {
+			t.Fatalf("publication readiness=%+v want ready=%v", readiness, wantReady)
+		}
 		if _, err := pool.Exec(ctx, `UPDATE weave_team_development_trials SET actor_id='another-actor' WHERE workspace_id='ws' AND request_id=$1`, trialID); err != nil {
 			t.Fatal(err)
 		}
@@ -363,6 +400,18 @@ func runBusinessReceiptCompletion(t *testing.T, outcome string, protocolProbe ..
 			t.Fatal(err)
 		}
 		assertTrial()
+		if outcome == "trial" {
+			if _, err := pool.Exec(ctx, `UPDATE weave_team_development_trials SET business_actions=jsonb_set(business_actions,'{0,simulation_authorized}','true'::jsonb,true) WHERE workspace_id='ws' AND request_id=$1`, trialID); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := read(ctx, candidate); err == nil {
+				t.Fatal("trial accepted an action scope changed outside its request digest")
+			}
+			if _, err := pool.Exec(ctx, `UPDATE weave_team_development_trials SET business_actions=$2 WHERE workspace_id='ws' AND request_id=$1`, trialID, encodeDevelopment(trialActions)); err != nil {
+				t.Fatal(err)
+			}
+			assertTrial()
+		}
 	}
 	wantCalls, wantEffects, wantModels := int32(1), int32(1), 3
 	if resultStatus == "unknown" || outcome == "failed-batch" {
@@ -374,6 +423,12 @@ func runBusinessReceiptCompletion(t *testing.T, outcome string, protocolProbe ..
 	if outcome == "not-authorized" || outcome == "trial" {
 		wantCalls, wantEffects, wantModels = 0, 0, 1
 	}
+	if outcome == "trial-authorized" {
+		wantCalls, wantEffects, wantModels = 0, 0, 3
+	}
+	if outcome == "trial-authorized-no-call" {
+		wantCalls, wantEffects, wantModels = 0, 0, 2
+	}
 	if outcome == "needs-input" {
 		// One platform review precedes accepting a deferral with no attempt.
 		wantCalls, wantEffects, wantModels = 0, 0, 2
@@ -384,7 +439,7 @@ func runBusinessReceiptCompletion(t *testing.T, outcome string, protocolProbe ..
 	if forgeCalls.Load() != wantCalls || effects.Load() != wantEffects || model.calls != wantModels {
 		t.Fatalf("Forge calls=%d effects=%d model calls=%d cause=%v", forgeCalls.Load(), effects.Load(), model.calls, cause)
 	}
-	if wantCalls == 1 && !model.feedbackObserved {
+	if (wantCalls == 1 || outcome == "trial-authorized") && !model.feedbackObserved {
 		t.Fatal("fake completion was not corrected through the existing model loop")
 	}
 	events, err := activities.ListBusinessActionEvents(ctx, "ws", dispatched.RunID)
@@ -392,11 +447,18 @@ func runBusinessReceiptCompletion(t *testing.T, outcome string, protocolProbe ..
 		t.Fatal(err)
 	}
 	receipts, err := teamrun.ProjectBusinessCompletionReceipts(events)
-	if err != nil || len(receipts) != int(wantCalls) {
+	wantActionReceipts := int(wantCalls)
+	if outcome == "trial-authorized" {
+		wantActionReceipts = 1
+	}
+	if err != nil || len(receipts) != wantActionReceipts {
 		t.Fatalf("receipts=%+v err=%v", receipts, err)
 	}
 	if wantCalls == 1 && (receipts[0].Status != resultStatus || receipts[0].InputRevisionID != receipt.InputRevisionID || receipts[0].RecordID != "record-a" || receipts[0].CapabilityID != publishedBusinessCapability || receipts[0].OperationID == "") {
 		t.Fatalf("receipt not bound to this operation: %+v", receipts)
+	}
+	if outcome == "trial-authorized" && (!receipts[0].Simulated || receipts[0].SubjectID != "user" || receipts[0].RunSnapshotID != trialAdmission.RunSnapshotID || receipts[0].InputRevisionID != trial.InputVersion || receipts[0].OperationID == "") {
+		t.Fatalf("simulated receipt lost run identity: %+v", receipts[0])
 	}
 	state, err := deliveryverify.NewStore(pool).GetDeliveryState(ctx, "ws", dispatched.RunID)
 	if err != nil {
@@ -428,7 +490,7 @@ func runBusinessReceiptCompletion(t *testing.T, outcome string, protocolProbe ..
 	if ok, err := executor.ProcessNext(ctx, "no-replay"); err != nil || ok {
 		t.Fatalf("terminal result queued another execution: %v %v", ok, err)
 	}
-	if outcome == "trial" && forgeRequests.Load() != 0 {
+	if strings.HasPrefix(outcome, "trial") && forgeRequests.Load() != 0 {
 		t.Fatal("developer trial contacted real Forge HTTP fixture")
 	}
 	if forgeCalls.Load() != wantCalls {
@@ -510,12 +572,13 @@ func TestBusinessReceiptCompletionProtocolProbeIdentityRealPG(t *testing.T) {
 	runBusinessReceiptCompletion(t, "succeeded", true)
 }
 
-func publishBusinessCompletionSample(t *testing.T, pool *pgxpool.Pool, key []byte, origin string) (frozen.FrozenExecutionBundle, *workflow.PublishedArtifactContent, frozen.ArtifactEnvelopeV1, *teamconstruction.PublicationAuthority) {
+func publishBusinessCompletionSample(t *testing.T, pool *pgxpool.Pool, key []byte, origin string, additionalCapabilities ...string) (frozen.FrozenExecutionBundle, *workflow.PublishedArtifactContent, frozen.ArtifactEnvelopeV1, *teamconstruction.PublicationAuthority) {
 	t.Helper()
 	ctx := execution.WithSubject(t.Context(), execution.Subject{WorkspaceID: "ws", UserID: "user"})
+	capabilities := append([]string{publishedBusinessCapability}, additionalCapabilities...)
 	bundle, _, _ := publishConfiguredMemberIntegrationSample(t, pool, key, "ws", "user", origin, "", 0, "", "Perform the declared authorized action and then report the actual outcome.", func(record *registry.AgentRecord) {
 		record.MCPServers = nil
-		record.BusinessCapabilityIDs = []string{publishedBusinessCapability}
+		record.BusinessCapabilityIDs = capabilities
 	})
 	artifacts := workflow.NewArtifactStore(pool, nil)
 	flows := workflowcatalog.New(pool, nil, artifacts)
@@ -543,7 +606,7 @@ func publishBusinessCompletionSample(t *testing.T, pool *pgxpool.Pool, key []byt
 		}
 	}
 	graph["nodes"], _ = json.Marshal(nodes)
-	params, _ := json.Marshal(deliverycheck.BusinessReceiptParameters{RequiredCapabilityIDs: []string{publishedBusinessCapability}, WhenAuthorized: true, AllowNeedsInput: true})
+	params, _ := json.Marshal(deliverycheck.BusinessReceiptParameters{RequiredCapabilityIDs: capabilities, WhenAuthorized: true, AllowNeedsInput: true})
 	contract := deliverable.DeliveryContract{Version: 1, Coverage: deliverable.CoverageExplicit, Output: deliverable.OutputRequirement{Type: "json", Schema: machine.WorkbenchResultSchemaV1()}, RequiredChecks: []deliverable.CheckSpec{{ID: "business-effect", Title: "Required business receipt", VerifierID: deliverycheck.BusinessReceiptsID, VerifierVersion: deliverycheck.BusinessReceiptsVersion, Parameters: params}}, ExternalEffects: deliverable.ExternalEffectsRequired, ExternalEffectsCheckID: "business-effect"}
 	graph["delivery_contract"], _ = json.Marshal(contract)
 	raw, _ := json.Marshal(graph)

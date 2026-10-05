@@ -777,6 +777,23 @@
         "lines_added": 162,
         "production_lines_added": 91
       }
+    },
+    {
+      "date": "2026-10-06",
+      "reason": "Register exact measured growth for the W9 developer-trial completion gate: bind explicit simulation_authorized flags into the existing trial request digest; expose only selected candidate actions through the isolated dispatcher; record source-tagged simulated outcomes in the existing activity ledger; keep formal receipt evaluation separate; and require same-actor, same-revision, same-candidate required-capability coverage before publication. Real PostgreSQL regressions cover read-only and zero-call trials, one forced mock action, no-call failure, changed-scope request conflict, replay refusal after failed/unknown outcomes, multi-trial capability union, and bound simulation provenance alongside private, bounded tool payload evidence. The first budget guard failed against prior ceilings; register only measured growth. No spare allowance, new packages/dependencies, tables, queues, execution loops, or changes to original migration targets.",
+      "record": "docs/治理/2026-09-30-平台范围收窄整改登记.md",
+      "kernel": {
+        "previous_lines": 104764,
+        "previous_production_lines": 84344,
+        "lines_added": 323,
+        "production_lines_added": 206
+      },
+      "app": {
+        "previous_lines": 72433,
+        "previous_production_lines": 50736,
+        "lines_added": 619,
+        "production_lines_added": 279
+      }
     }
   ],
   "migration_targets": {
@@ -814,8 +831,8 @@
     ]
   },
   "kernel": {
-    "lines": 104764,
-    "production_lines": 84344,
+    "lines": 105087,
+    "production_lines": 84550,
     "packages": 49,
     "external_dependencies": 5,
     "allowed_dependencies": [
@@ -834,8 +851,8 @@
     "allowed_dependencies": []
   },
   "app": {
-    "lines": 72433,
-    "production_lines": 50736,
+    "lines": 73052,
+    "production_lines": 51015,
     "packages": 24,
     "external_dependencies": 6,
     "allowed_dependencies": [

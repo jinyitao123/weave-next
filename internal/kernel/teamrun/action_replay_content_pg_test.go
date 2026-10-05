@@ -144,6 +144,75 @@ func TestPGOperationReplayReturnsOriginalNativeReceiptAndOneNetworkEffect(t *tes
 	}
 }
 
+func TestPGDevelopmentSimulationFailedAndUnknownOperationsNeverRedispatch(t *testing.T) {
+	for _, status := range []string{"failed", "unknown"} {
+		t.Run(status, func(t *testing.T) {
+			h := newProcessNextHarness(t)
+			runID := "development-simulation-replay-" + status
+			_, run := h.seedRunningWorkflowTaskBeforeAdmission(t, runID)
+			store := &PGActivityStore{Transactions: h.pool}
+			callID, operationID := "simulation-call", "simulation-operation-"+status
+			started := operationActivity(runID, operationID, callID, digestA, "started", "", nil)
+			setSimulationOutcomeIdentity(&started, run.RunSnapshotID)
+			if err := storeRawBusinessActionEvent(t.Context(), store, started); err != nil {
+				t.Fatal(err)
+			}
+			var result *contract.ToolResult
+			if status == "failed" {
+				result = &contract.ToolResult{CallID: callID, ToolName: "run_action", IsError: true, Content: `{"ok":false,"error":"simulated failure"}`}
+			}
+			finished := operationActivity(runID, operationID, callID, digestA, "result", status, result)
+			setSimulationOutcomeIdentity(&finished, run.RunSnapshotID)
+			if err := storeRawBusinessActionEvent(t.Context(), store, finished); err != nil {
+				t.Fatal(err)
+			}
+
+			decision, err := (&PGActivityStore{Transactions: h.pool}).CheckBusinessActionReplay(t.Context(), operationCheck(runID, operationID, callID, digestA))
+			if err != nil || !decision.Blocked || !decision.SameOperation || decision.Status != status {
+				t.Fatalf("simulation outcome did not remain authoritative: decision=%+v err=%v", decision, err)
+			}
+			var redispatches atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				redispatches.Add(1)
+				_, _ = io.WriteString(w, `{"ok":true}`)
+			}))
+			defer server.Close()
+			result, err = sendPrecheckedOperation(t.Context(), store, server.URL, runID, operationID, "retry-call", digestA, decision)
+			if status == "unknown" {
+				if !errors.Is(err, businessaction.ErrActionOutcomeUnresolved) || result != nil {
+					t.Fatalf("unknown simulation was replayed: result=%+v err=%v", result, err)
+				}
+			} else if err != nil || result == nil || !result.IsError {
+				t.Fatalf("failed simulation was not returned as the cached failure: result=%+v err=%v", result, err)
+			}
+			if redispatches.Load() != 0 {
+				t.Fatalf("simulation retried after %s outcome: dispatches=%d", status, redispatches.Load())
+			}
+		})
+	}
+}
+
+func setSimulationOutcomeIdentity(event *ActivityEvent, snapshotID string) {
+	var detail map[string]any
+	_ = json.Unmarshal(event.Detail, &detail)
+	detail["source"] = businessaction.ActionOutcomeSourceDevelopmentSimulation
+	detail["run_snapshot_id"] = snapshotID
+	detail["actor_id"] = "user-1"
+	event.Detail, _ = json.Marshal(detail)
+}
+
+func storeRawBusinessActionEvent(ctx context.Context, store *PGActivityStore, event ActivityEvent) error {
+	tx, err := store.Transactions.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if err := store.RecordTx(ctx, tx, event); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
 func TestPGDifferentOperationsPermit900To1000To900WithSameModelCallID(t *testing.T) {
 	h := newProcessNextHarness(t)
 	runID := "operation-intentional-repeat"

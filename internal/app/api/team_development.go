@@ -46,17 +46,18 @@ type developmentPrepared struct {
 	Members  map[string]registry.AgentRecord `json:"members"`
 }
 type developmentDraft struct {
-	PublishedDocument  developmentDocument    `json:"published_document"`
-	PreparedActor      string                 `json:"-"`
-	Revision           int64                  `json:"revision"`
-	PublishingRevision int64                  `json:"publishing_revision"`
-	PublishedRevision  int64                  `json:"published_revision"`
-	Document           developmentDocument    `json:"document"`
-	Baseline           developmentBaseline    `json:"-"`
-	PreparedRevision   int64                  `json:"prepared_revision"`
-	Prepared           []developmentPrepared  `json:"-"`
-	UpdatedAt          time.Time              `json:"updated_at"`
-	Trials             []developmentTrialView `json:"trials"`
+	PublishedDocument    developmentDocument             `json:"published_document"`
+	PreparedActor        string                          `json:"-"`
+	Revision             int64                           `json:"revision"`
+	PublishingRevision   int64                           `json:"publishing_revision"`
+	PublishedRevision    int64                           `json:"published_revision"`
+	Document             developmentDocument             `json:"document"`
+	Baseline             developmentBaseline             `json:"-"`
+	PreparedRevision     int64                           `json:"prepared_revision"`
+	Prepared             []developmentPrepared           `json:"-"`
+	UpdatedAt            time.Time                       `json:"updated_at"`
+	Trials               []developmentTrialView          `json:"trials"`
+	PublicationReadiness developmentPublicationReadiness `json:"publication_readiness"`
 }
 type developmentTrialView struct {
 	RequestID  string    `json:"request_id"`
@@ -186,6 +187,17 @@ func (s *Server) handleGetTeamDevelopment(c echo.Context) error {
 			return err
 		}
 		d.Trials = append(d.Trials, v)
+	}
+	if err = rows.Err(); err != nil {
+		return err
+	}
+	readiness, err := buildDevelopmentPublicationReadiness(ctx, tx, ws, id, getUserID(c), d.PreparedActor, d.Revision, d.PreparedRevision, d.Prepared)
+	if err != nil {
+		return err
+	}
+	d.PublicationReadiness = readiness
+	if err = tx.Commit(ctx); err != nil {
+		return err
 	}
 	return c.JSON(http.StatusOK, d)
 }
