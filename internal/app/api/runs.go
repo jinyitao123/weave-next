@@ -493,6 +493,10 @@ type runActivityTool struct {
 	CompletedAt *time.Time `json:"completed_at,omitempty"`
 	Input       string     `json:"input,omitempty"`
 	Output      string     `json:"output,omitempty"`
+	InputState  string     `json:"input_state,omitempty"`
+	OutputState string     `json:"output_state,omitempty"`
+	InputBytes  int        `json:"input_bytes,omitempty"`
+	OutputBytes int        `json:"output_bytes,omitempty"`
 }
 
 type runActivityRuntime struct {
@@ -1171,6 +1175,9 @@ func (s *Server) handleGetRunActivity(c echo.Context) error {
 			if trial.ActorID != getUserID(c) {
 				return c.JSON(http.StatusNotFound, map[string]string{"error": "run_not_found"})
 			}
+			if !humanTaskDeveloperAccess(c) {
+				return c.JSON(http.StatusForbidden, map[string]string{"error": "insufficient permissions"})
+			}
 			developmentTrial = &trial
 		}
 	}
@@ -1305,6 +1312,9 @@ func (s *Server) handleGetRunActivity(c echo.Context) error {
 	if trialOutputsPartial {
 		completeness["member_outputs"] = "partial"
 		completeness["stages"] = "partial"
+	}
+	if developmentTrial != nil {
+		s.projectDevelopmentTrialToolEvidence(c.Request().Context(), run, members, completeness)
 	}
 	corrections := []teamrun.Correction{}
 	if s.teamRunCorrections != nil {

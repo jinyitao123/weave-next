@@ -708,6 +708,24 @@
         "lines_added": 132,
         "production_lines_added": 0
       }
+    },
+    {
+      "date": "2026-10-05",
+      "source_commit": "e5f524d46de2e489ff7df4622796c7d3d9ebbf39",
+      "reason": "Authorized exact growth for developer-owned trial tool evidence projected read-only from the existing durable member journal, with current developer/admin/owner access, exact parent/snapshot/node/member/call attribution, explicit missing/truncated/recorded states and recorded empty wire values. Real PostgreSQL regressions execute the actual trial, simulated business dispatcher, journal and activity endpoint; cover repeated agent/call IDs across nodes, missing receipts, empty responses, bounded UTF-8 payloads, invocation ambiguity, receipt caps, role loss and ordinary-run non-exposure. The initial budget guard failed against the prior ceilings; register only the final measured growth, no spare allowance, package/dependency changes, new collection or persisted production payloads, queues, loops or changed original migration targets.",
+      "record": "docs/架构/2026-08-27-预算闸设计.md",
+      "kernel": {
+        "previous_lines": 103020,
+        "previous_production_lines": 83435,
+        "lines_added": 190,
+        "production_lines_added": 129
+      },
+      "app": {
+        "previous_lines": 88370,
+        "previous_production_lines": 64188,
+        "lines_added": 503,
+        "production_lines_added": 105
+      }
     }
   ],
   "migration_targets": {
@@ -745,8 +763,8 @@
     ]
   },
   "kernel": {
-    "lines": 103020,
-    "production_lines": 83435,
+    "lines": 103210,
+    "production_lines": 83564,
     "packages": 49,
     "external_dependencies": 5,
     "allowed_dependencies": [
@@ -770,8 +788,8 @@
     ]
   },
   "app": {
-    "lines": 88370,
-    "production_lines": 64188,
+    "lines": 88873,
+    "production_lines": 64293,
     "packages": 30,
     "external_dependencies": 7,
     "allowed_dependencies": [
