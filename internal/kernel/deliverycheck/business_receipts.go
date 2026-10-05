@@ -18,6 +18,16 @@ import (
 const BusinessReceiptsID = "weave.business-action-receipts"
 const BusinessReceiptsVersion = "v1"
 
+// Soft rejection reasons. The completion loop forwards them to its tool choice
+// policy; only ReasonRequiredActionMissing may lead to forcing an action tool.
+const (
+	ReasonRequiredActionMissing = "required_business_action_missing"
+	ReasonInputReview           = "business_action_input_review"
+	// ReasonRequiredActionNotCalled is the hard stop used when a forced round
+	// still returned no call for the missing action.
+	ReasonRequiredActionNotCalled = "required_business_action_not_called"
+)
+
 type BusinessReceiptParameters struct {
 	RequiredCapabilityIDs []string `json:"required_capability_ids"`
 	WhenAuthorized        bool     `json:"when_authorized"`
@@ -204,6 +214,11 @@ func EvaluateBusinessReceipts(params BusinessReceiptParameters, scope BusinessRe
 		return result(true, false, deliverable.VerificationPassed, "business_actions_not_requested", "")
 	}
 	if final.Disposition == "needs_input" {
+		// An authorized action without any operation gets one correction before
+		// a missing-input result is judged; tool choice is never forced for it.
+		if final.RequireInputReview && len(operations) == 0 {
+			return result(false, false, deliverable.VerificationFailed, ReasonInputReview, "The employee authorized: "+strings.Join(sortedKeys(required), ", ")+". No call is recorded. Only inputs that block those actions count as missing: an absent receipt, optional fields left unknown, or values already supplied in the task are not missing input. If the prerequisites are met, call the authorized tool now and wait for its receipt. If an input that blocks the action is genuinely absent, return needs_input again listing only those inputs. Do not repeat actions that already succeeded. Do not claim a tool was called without its receipt.")
+		}
 		if params.AllowNeedsInput && len(final.MissingItems) > 0 && len(operations) == 0 {
 			return result(true, false, deliverable.VerificationUnknown, "business_actions_deferred_for_input", "")
 		}
@@ -220,7 +235,7 @@ func EvaluateBusinessReceipts(params BusinessReceiptParameters, scope BusinessRe
 	}
 	sort.Strings(missing)
 	if len(missing) > 0 {
-		return result(false, false, deliverable.VerificationFailed, "required_business_action_missing", "The frozen delivery contract requires successful platform receipts for: "+strings.Join(missing, ", ")+". No matching call is recorded. Use only the authorized tools if prerequisites are met, or report genuine missing input. Do not repeat actions that already succeeded. Do not claim a tool was called without its receipt.")
+		return result(false, false, deliverable.VerificationFailed, ReasonRequiredActionMissing, "The frozen delivery contract requires successful platform receipts for: "+strings.Join(missing, ", ")+". No matching call is recorded. Use only the authorized tools if prerequisites are met, or report genuine missing input. Do not repeat actions that already succeeded. Do not claim a tool was called without its receipt.")
 	}
 	return result(true, false, deliverable.VerificationPassed, "required_business_actions_recorded", "")
 }
@@ -228,4 +243,39 @@ func EvaluateBusinessReceipts(params BusinessReceiptParameters, scope BusinessRe
 type BusinessReceiptResult struct {
 	Disposition  string
 	MissingItems []string
+	// RequireInputReview asks for one correction before a needs_input result
+	// with authorized but unattempted actions is judged. Only the live loop sets
+	// it, from Loom's rejection history; post-run verification keeps the rule.
+	RequireInputReview bool
+}
+
+// UnattemptedRequiredCapabilities lists the required, authorized capabilities
+// that have no recorded operation at all. Any operation, whatever its status,
+// removes a capability: failed or unknown outcomes must never be forced again.
+func UnattemptedRequiredCapabilities(params BusinessReceiptParameters, scope BusinessReceiptScope, receipts []BusinessReceipt) []string {
+	allowed := map[string]bool{}
+	for _, id := range scope.AllowedCapabilityIDs {
+		allowed[id] = true
+	}
+	attempted := map[string]bool{}
+	for _, receipt := range receipts {
+		attempted[receipt.CapabilityID] = true
+	}
+	missing := []string{}
+	for _, id := range params.RequiredCapabilityIDs {
+		if allowed[id] && !attempted[id] {
+			missing = append(missing, id)
+		}
+	}
+	sort.Strings(missing)
+	return missing
+}
+
+func sortedKeys(set map[string]bool) []string {
+	keys := make([]string, 0, len(set))
+	for key := range set {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
 }

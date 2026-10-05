@@ -22,6 +22,7 @@ import (
 	"github.com/jinyitao123/weave/internal/app/teamconstruction"
 	"github.com/jinyitao123/weave/internal/app/workflowcatalog"
 	"github.com/jinyitao123/weave/internal/base/db"
+	"github.com/jinyitao123/weave/internal/base/deliverable"
 	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/base/snapshot"
@@ -32,6 +33,7 @@ import (
 	"github.com/jinyitao123/weave/internal/kernel/config"
 	"github.com/jinyitao123/weave/internal/kernel/credentials"
 	"github.com/jinyitao123/weave/internal/kernel/delivery"
+	"github.com/jinyitao123/weave/internal/kernel/deliverycheck"
 	"github.com/jinyitao123/weave/internal/kernel/loomruntime"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 	"github.com/jinyitao123/weave/internal/kernel/schedule"
@@ -39,6 +41,7 @@ import (
 	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 	"github.com/jinyitao123/weave/internal/kernel/teamrun"
 	"github.com/jinyitao123/weave/internal/kernel/workflow"
+	"github.com/jinyitao123/weave/internal/kernel/workflow/machine"
 )
 
 const publishedBusinessCapability = "forge:action:sales_quote.AdjustPrice"
@@ -116,7 +119,7 @@ func (m *leadBusinessActionOnceModel) Chat(_ context.Context, request contract.C
 		}
 		return nil, errors.New("published lead business capability was not offered")
 	}
-	return &contract.ChatResponse{Content: "The final lead summary is ready."}, nil
+	return &contract.ChatResponse{Content: `{"disposition":"complete","summary":"The final lead summary is ready.","missing_items":[]}`}, nil
 }
 
 func (*leadBusinessActionOnceModel) Stream(context.Context, contract.ChatRequest) (<-chan contract.StreamChunk, error) {
@@ -133,6 +136,7 @@ type leadDispatchScenario struct {
 	wantEffects            int32
 	wantJournalToolRecords int
 	wantOutcomeStatus      string
+	wantRunStatus          teamrun.Status
 	reservedCallID         string
 }
 
@@ -142,8 +146,10 @@ type leadDispatchScenario struct {
 // injects an operation ID or installs a journal by hand.
 func TestBusinessLeadDispatchUsesDurableProvenanceBesideLegacyWorkerRealPG(t *testing.T) {
 	for _, scenario := range []leadDispatchScenario{
-		{name: "empty args become an object before Forge MCP validation", firstArgs: `{}`, wantLeadCalls: 3, wantForgeCalls: 1, wantOutcomeStatus: "failed", wantJournalToolRecords: 1, reservedCallID: "0123456789abcdef0123456789abcdef"},
-		{name: "missing required amount is journaled then corrected before one Forge dispatch", firstArgs: `{}`, retryArgs: `{"params":{"amount":"2300"}}`, amountRequired: true, wantLeadCalls: 4, wantForgeCalls: 1, wantEffects: 1, wantOutcomeStatus: "succeeded", wantJournalToolRecords: 2, reservedCallID: "abcdef0123456789abcdef0123456789"},
+		// The declared receipt check turns a failed authorized action into a failed
+		// run instead of a successful summary; the action is still never replayed.
+		{name: "empty args become an object before Forge MCP validation", firstArgs: `{}`, wantLeadCalls: 3, wantForgeCalls: 1, wantOutcomeStatus: "failed", wantRunStatus: teamrun.StatusFailed, wantJournalToolRecords: 1, reservedCallID: "0123456789abcdef0123456789abcdef"},
+		{name: "missing required amount is journaled then corrected before one Forge dispatch", firstArgs: `{}`, retryArgs: `{"params":{"amount":"2300"}}`, amountRequired: true, wantLeadCalls: 4, wantForgeCalls: 1, wantEffects: 1, wantOutcomeStatus: "succeeded", wantRunStatus: teamrun.StatusSucceeded, wantJournalToolRecords: 2, reservedCallID: "abcdef0123456789abcdef0123456789"},
 	} {
 		t.Run(scenario.name, func(t *testing.T) { runBusinessLeadDispatchScenario(t, scenario) })
 	}
@@ -267,7 +273,7 @@ func runBusinessLeadDispatchScenario(t *testing.T, scenario leadDispatchScenario
 		},
 		func(record *registry.AgentRecord) { record.MCPServers = nil },
 		func(lead, worker *registry.AgentRecord) json.RawMessage {
-			return json.RawMessage(fmt.Sprintf(`{"schema_version":1,"entry_node_id":"understand","input_contract":{"type":"text"},"output_contract":{"type":"text"},"nodes":[{"id":"understand","type":"lead","config":{"instruction":"Understand and handle the authorized action."},"inputs":{"task":{"value":{"source":"run_input","path":""},"expected_type":"text"}},"output":{"type":"text"}},{"id":"work","type":"worker","config":{"kind":"consult","agent_id":%q,"agent_version":%d,"result_requirement":"Perform read-only middle-step analysis"},"inputs":{"task":{"value":{"source":"node_output","node_id":"understand","path":""},"expected_type":"text"}},"output":{"type":"text"}},{"id":"summarize","type":"lead","config":{"instruction":"Summarize the completed work."},"inputs":{"task":{"value":{"source":"node_output","node_id":"work","path":""},"expected_type":"text"}},"output":{"type":"text"}},{"id":"deliver","type":"deliver","config":{"result":{"source":"node_output","node_id":"summarize","path":""}}}],"edges":[{"id":"a","from_node_id":"understand","to_node_id":"work","route":"success"},{"id":"b","from_node_id":"work","to_node_id":"summarize","route":"success"},{"id":"c","from_node_id":"summarize","to_node_id":"deliver","route":"success"}]}`, worker.ID, worker.Version))
+			return withLeadConversionReceiptCheck(t, json.RawMessage(fmt.Sprintf(`{"schema_version":1,"entry_node_id":"understand","input_contract":{"type":"text"},"output_contract":{"type":"text"},"nodes":[{"id":"understand","type":"lead","config":{"instruction":"Understand and handle the authorized action."},"inputs":{"task":{"value":{"source":"run_input","path":""},"expected_type":"text"}},"output":{"type":"text"}},{"id":"work","type":"worker","config":{"kind":"consult","agent_id":%q,"agent_version":%d,"result_requirement":"Perform read-only middle-step analysis"},"inputs":{"task":{"value":{"source":"node_output","node_id":"understand","path":""},"expected_type":"text"}},"output":{"type":"text"}},{"id":"summarize","type":"lead","config":{"instruction":"Summarize the completed work."},"inputs":{"task":{"value":{"source":"node_output","node_id":"work","path":""},"expected_type":"text"}},"output":{"type":"text"}},{"id":"deliver","type":"deliver","config":{"result":{"source":"node_output","node_id":"summarize","path":""}}}],"edges":[{"id":"a","from_node_id":"understand","to_node_id":"work","route":"success"},{"id":"b","from_node_id":"work","to_node_id":"summarize","route":"success"},{"id":"c","from_node_id":"summarize","to_node_id":"deliver","route":"success"}]}`, worker.ID, worker.Version)))
 		},
 	)
 	if leadBundle.FactoryKey != compiler.StandardFrozenToolsKey() || len(leadBundle.Agent.BusinessCapabilityIDs) != 1 || workerBundle.FactoryKey != compiler.NewStandardFrozenDescriptor().Key() || len(workerBundle.Agent.BusinessCapabilityIDs) != 0 {
@@ -313,13 +319,13 @@ func runBusinessLeadDispatchScenario(t *testing.T, scenario leadDispatchScenario
 		}
 		return compiler.FrozenBuildOpts{LLM: workerModel, Tools: &memberIntegrationExport{}}, io.NopCloser(strings.NewReader("")), nil
 	})
-	runtime := &teamrun.WorkflowSerialRuntime{OutputRecorder: deliveryverify.NewStore(pool), Members: members, Artifacts: artifacts, Loader: &workflow.RuntimeLoader{Registry: memberIntegrationDescriptors(t)}, HostFactory: businessaction.Factory{Inner: host, Store: businessaction.NewStore(pool, tasks, key)}, CredentialResolvers: func(string) (workflow.RuntimeCredentialResolver, error) { return memberIntegrationSecrets{}, nil }, Transactions: pool, Runs: runs, Checkpoints: checkpoints, Tasks: tasks, Snapshots: snapshots, Activities: activities}
+	runtime := &teamrun.WorkflowSerialRuntime{BusinessReceiptReader: deliveryverify.BusinessReceiptReader(pool), OutputRecorder: deliveryverify.NewStore(pool), Members: members, Artifacts: artifacts, Loader: &workflow.RuntimeLoader{Registry: memberIntegrationDescriptors(t)}, HostFactory: businessaction.Factory{Inner: host, Store: businessaction.NewStore(pool, tasks, key)}, CredentialResolvers: func(string) (workflow.RuntimeCredentialResolver, error) { return memberIntegrationSecrets{}, nil }, Transactions: pool, Runs: runs, Checkpoints: checkpoints, Tasks: tasks, Snapshots: snapshots, Activities: activities}
 	executor := &teamrun.Executor{Tasks: tasks, Transactions: pool, Runs: runs, Checkpoints: checkpoints, Runtime: runtime, Consumer: &teamrun.Consumer{Transactions: pool, Snapshots: snapshots, Runs: runs, Tasks: tasks}}
 	if ok, err := executor.ProcessNext(ctx, "business-worker"); err != nil || !ok {
 		t.Fatalf("execute=%v err=%v", ok, err)
 	}
 	finished, err := runs.Get(ctx, "ws", dispatched.RunID)
-	if err != nil || finished.Status != teamrun.StatusSucceeded || effects.Load() != scenario.wantEffects || forgeRunActionCalls.Load() != scenario.wantForgeCalls || leadModel.calls != scenario.wantLeadCalls || leadModel.amountRequiredVisible != scenario.amountRequired || workerModel.calls != 1 {
+	if err != nil || finished.Status != scenario.wantRunStatus || effects.Load() != scenario.wantEffects || forgeRunActionCalls.Load() != scenario.wantForgeCalls || leadModel.calls != scenario.wantLeadCalls || leadModel.amountRequiredVisible != scenario.amountRequired || workerModel.calls != 1 {
 		t.Fatalf("run status=%s effects=%d Forge calls=%d lead model=%d worker model=%d amount-required-visible=%v err=%v", finished.Status, effects.Load(), forgeRunActionCalls.Load(), leadModel.calls, workerModel.calls, leadModel.amountRequiredVisible, err)
 	}
 	events, err := activities.ListBusinessActionEvents(ctx, "ws", dispatched.RunID)
@@ -368,6 +374,39 @@ func runBusinessLeadDispatchScenario(t *testing.T, scenario leadDispatchScenario
 	if _, _, err := authority.BuildCandidateTx(ctx, tx, workflow.CandidateInput{WorkspaceID: "ws", WorkflowID: "flow", WorkflowVersion: draft.Version}); !errors.Is(err, compiler.ErrFactoryCompileFailed) {
 		t.Fatalf("parallel business publication was not refused: %v", err)
 	}
+}
+
+// withLeadConversionReceiptCheck makes the final summary a workbench result and
+// declares the authorized conversion as a required receipt, which authorized
+// dispatch now demands of any graph whose members can execute the action.
+func withLeadConversionReceiptCheck(t *testing.T, raw json.RawMessage) json.RawMessage {
+	t.Helper()
+	var graph map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &graph); err != nil {
+		t.Fatal(err)
+	}
+	output, _ := json.Marshal(machine.OutputContract{Type: machine.ValueJSON, Schema: machine.WorkbenchResultSchemaV1()})
+	graph["output_contract"] = output
+	graph["result_protocol"], _ = json.Marshal(machine.ResultProtocolWorkbenchV1)
+	var nodes []map[string]json.RawMessage
+	if err := json.Unmarshal(graph["nodes"], &nodes); err != nil {
+		t.Fatal(err)
+	}
+	for _, node := range nodes {
+		if string(node["id"]) == `"summarize"` {
+			node["output"] = output
+		}
+	}
+	graph["nodes"], _ = json.Marshal(nodes)
+	params, _ := json.Marshal(deliverycheck.BusinessReceiptParameters{RequiredCapabilityIDs: []string{publishedLeadConversionCapability}, WhenAuthorized: true, AllowNeedsInput: true})
+	graph["delivery_contract"], _ = json.Marshal(deliverable.DeliveryContract{Version: 1, Coverage: deliverable.CoverageExplicit, Output: deliverable.OutputRequirement{Type: "json", Schema: machine.WorkbenchResultSchemaV1()},
+		RequiredChecks:  []deliverable.CheckSpec{{ID: "business-effect", Title: "Required business receipt", VerifierID: deliverycheck.BusinessReceiptsID, VerifierVersion: deliverycheck.BusinessReceiptsVersion, Parameters: params}},
+		ExternalEffects: deliverable.ExternalEffectsRequired, ExternalEffectsCheckID: "business-effect"})
+	encoded, err := json.Marshal(graph)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return encoded
 }
 
 func businessParallelGraph(agentID string, version int64) json.RawMessage {

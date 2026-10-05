@@ -19,6 +19,8 @@ import (
 	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/kernel/businessaction"
 	"github.com/jinyitao123/weave/internal/kernel/secret"
+	"github.com/jinyitao123/weave/internal/kernel/workflow/machine"
+	"github.com/labstack/echo/v4"
 )
 
 const forgeDelegationHeader = "X-Weave-Forge-Authorization"
@@ -79,32 +81,93 @@ func publishedBusinessActions(payload frozen.ArtifactPayloadV1) []string {
 	return actions
 }
 
+// publishedActionScope is what a dispatch may authorize: the published actions
+// and whether the frozen graph declares the receipt completion check that
+// authorized actions require. Versions without it remain usable read-only.
+type publishedActionScope struct {
+	actions []string
+	// executable holds actions bound to members the frozen graph uses. Only
+	// those can produce effects, so only those require the receipt check.
+	executable     map[string]bool
+	receiptChecked bool
+}
+
+func newPublishedActionScope(payload frozen.ArtifactPayloadV1) publishedActionScope {
+	scope := publishedActionScope{actions: publishedBusinessActions(payload), executable: map[string]bool{}}
+	graph, report := machine.DecodeGraphDefinitionV1(payload.GraphDefinition)
+	if report != nil && len(report.Issues) > 0 {
+		// An undecodable graph cannot prove which actions are inert.
+		for _, action := range scope.actions {
+			scope.executable[action] = true
+		}
+		return scope
+	}
+	for _, action := range machine.GraphBusinessCapabilities(graph, payload) {
+		scope.executable[action] = true
+	}
+	scope.receiptChecked = machine.DeclaresBusinessReceiptCheck(graph)
+	return scope
+}
+
 func (s *Server) publishedBusinessActions(ctx context.Context, workspaceID, workflowID string, version int) ([]string, error) {
+	scope, err := s.publishedActionScope(ctx, workspaceID, workflowID, version)
+	return scope.actions, err
+}
+
+func (s *Server) publishedActionScope(ctx context.Context, workspaceID, workflowID string, version int) (publishedActionScope, error) {
 	if s.WorkflowArtifacts == nil || workflowID == "" || version < 1 {
-		return nil, nil
+		return publishedActionScope{}, nil
 	}
 	artifact, err := s.WorkflowArtifacts.GetArtifact(ctx, workspaceID, workflowID, version)
 	if err != nil {
-		return nil, err
+		return publishedActionScope{}, err
 	}
 	payload, err := frozen.DecodeArtifactPayloadV1(artifact.Payload)
 	if err != nil {
-		return nil, err
+		return publishedActionScope{}, err
 	}
-	return publishedBusinessActions(payload), nil
+	return newPublishedActionScope(payload), nil
 }
 
-func loadPublishedBusinessActionsTx(ctx context.Context, tx pgx.Tx, workspaceID, workflowID string, version int) ([]string, error) {
+func loadPublishedActionScopeTx(ctx context.Context, tx pgx.Tx, workspaceID, workflowID string, version int) (publishedActionScope, error) {
 	var raw []byte
 	if err := tx.QueryRow(ctx, `SELECT payload FROM weave_published_artifact_contents
 		WHERE workspace_id=$1 AND workflow_id=$2 AND workflow_version=$3`, workspaceID, workflowID, version).Scan(&raw); err != nil {
-		return nil, err
+		return publishedActionScope{}, err
 	}
 	payload, err := frozen.DecodeArtifactPayloadV1(raw)
 	if err != nil {
-		return nil, err
+		return publishedActionScope{}, err
 	}
-	return publishedBusinessActions(payload), nil
+	return newPublishedActionScope(payload), nil
+}
+
+// requireDevelopmentReceiptCheck fails publication early, in product words,
+// when action-bound members lack the declared receipt completion check.
+func requireDevelopmentReceiptCheck(envelope frozen.ArtifactEnvelopeV1) error {
+	payload, err := frozen.DecodeArtifactEnvelopeV1(envelope)
+	if err != nil {
+		return err
+	}
+	graph, report := machine.DecodeGraphDefinitionV1(payload.GraphDefinition)
+	if report != nil && len(report.Issues) > 0 {
+		return nil // the publication service reports invalid graphs itself
+	}
+	if errors.Is(machine.RequireBusinessReceiptGraph(graph, payload), machine.ErrBusinessReceiptCheckRequired) {
+		return developmentError(businessCompletionCheckRequiredMessage)
+	}
+	return nil
+}
+
+const businessCompletionCheckRequiredMessage = "流程成员绑定了业务动作，须先为最终交付声明“已授权业务动作具备成功回执”检查，才能发布或授权办理"
+
+var errBusinessCompletionCheckRequired = errors.New("the published workflow does not declare a business receipt completion check")
+
+func businessActionScopeError(c echo.Context, err error) error {
+	if errors.Is(err, errBusinessCompletionCheckRequired) {
+		return workflowError(c, http.StatusUnprocessableEntity, "business_completion_check_required", businessCompletionCheckRequiredMessage)
+	}
+	return workflowError(c, http.StatusUnprocessableEntity, "business_action_scope_invalid", err.Error())
 }
 
 func (s *Server) prepareBusinessDelegation(ctx context.Context, workspaceID, userID, authorization, inputRevisionID, registrationID, taskSHA, workflowID string, version int, actions []string, resources []dispatchInputResource, record *dispatchBusinessRecord) (*preparedBusinessDelegation, *businessDelegationPreparationError) {

@@ -140,6 +140,9 @@ func (s *Server) handlePublishTeamDevelopment(c echo.Context) error {
 		if !passed {
 			return developmentError("每条待发布流程都需要完成当前草稿的试跑")
 		}
+		if err = requireDevelopmentReceiptCheck(p.Envelope); err != nil {
+			return err
+		}
 	}
 	if err = checkDevelopmentBaseline(ctx, tx, ws, id, d.Baseline); err != nil {
 		return err

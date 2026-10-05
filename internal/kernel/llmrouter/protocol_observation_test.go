@@ -60,3 +60,29 @@ func TestProtocolObservationRejectsFreeTextAndBoundsMetadata(t *testing.T) {
 		t.Fatal("invalid protocol strings or unbounded metadata were accepted")
 	}
 }
+
+func TestProtocolObservationKeepsWireOptionEnumsAndContentCounts(t *testing.T) {
+	value := contract.ProtocolObservation{Version: 1, Protocol: "openai_sse", End: "done", FinishReason: "stop", Complete: true,
+		RequestOptions: &contract.ProtocolRequestOptions{Thinking: "disabled", ReasoningEffort: "none", ResponseFormat: "private-format-marker", ToolChoice: "tool"},
+		Content:        &contract.ProtocolContentObservation{ContentBytes: 42, TextToolProtocolMarkers: 2, ReasoningFrames: 1, ReasoningBytes: 7},
+	}
+	bounded := boundedProtocolObservation(value)
+	want := ModelRequestOptions{Thinking: "disabled", ReasoningEffort: "none", ResponseFormat: "other", ToolChoice: "tool"}
+	if bounded.RequestOptions == nil || *bounded.RequestOptions != want {
+		t.Fatalf("options = %#v", bounded.RequestOptions)
+	}
+	if bounded.Content == nil || *bounded.Content != (ModelContentObservation{ContentBytes: 42, TextToolProtocolMarkers: 2, ReasoningFrames: 1, ReasoningBytes: 7}) {
+		t.Fatalf("content = %#v", bounded.Content)
+	}
+	if raw, _ := json.Marshal(bounded); bytes.Contains(raw, []byte("private-")) {
+		t.Fatal("free-text option value entered diagnostic metadata")
+	}
+	value.Content = &contract.ProtocolContentObservation{ContentBytes: -1}
+	if bounded := boundedProtocolObservation(value); bounded.Complete || bounded.Content != nil {
+		t.Fatal("invalid content counts were accepted")
+	}
+	value.RequestOptions, value.Content = nil, nil
+	if bounded := boundedProtocolObservation(value); bounded.RequestOptions != nil || bounded.Content != nil {
+		t.Fatal("uncollected values were invented")
+	}
+}
