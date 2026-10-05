@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -23,6 +24,7 @@ import (
 	"github.com/jinyitao123/weave/internal/kernel/publication"
 	"github.com/jinyitao123/weave/internal/kernel/teamrun"
 	"github.com/jinyitao123/weave/internal/kernel/workflow/machine"
+	"github.com/labstack/echo/v4"
 )
 
 const publishedSecondBusinessCapability = "forge:action:sales_quote.AdjustDiscount"
@@ -62,11 +64,21 @@ func TestDevelopmentPublicationReadinessUnionsCurrentCandidateSimulationReceipts
 	if len(capabilities) != 2 {
 		t.Fatalf("candidate required capabilities=%v, want 2", capabilities)
 	}
+	// Historical trial action JSON omits simulation_authorized. Treat it as
+	// explicitly unselected: a successful old run cannot cover required writes.
+	legacy := admitDevelopmentCoverageTrial(t, ctx, pool, kernelPublication, envelope,
+		developmentTestActionDefinitions(t, false, false), "legacy unselected action trial")
+	completeDevelopmentCoverageTrial(t, pool, legacy)
+	readiness, err := buildDevelopmentPublicationReadinessInTransaction(ctx, pool, "ws", "team", "user", "user", 1, 1, []developmentPrepared{{ID: "flow", Envelope: envelope}})
+	if err != nil || readiness.Ready || len(readiness.Workflows) != 1 || readiness.Workflows[0].Passed ||
+		len(readiness.Workflows[0].CoveredCapabilityIDs) != 0 || len(readiness.Workflows[0].MissingCapabilityIDs) != 2 {
+		t.Fatalf("legacy unselected trial covered required actions: readiness=%+v err=%v", readiness, err)
+	}
 	allDefinitions := developmentTestActionDefinitions(t, true, false)
 
 	first := admitDevelopmentCoverageTrial(t, ctx, pool, kernelPublication, envelope, allDefinitions, "first simulated action")
 	writeSimulationOutcome(t, pool, first, publishedBusinessCapability)
-	readiness, err := buildDevelopmentPublicationReadiness(ctx, pool, "ws", "team", "user", "user", 1, 1, []developmentPrepared{{ID: "flow", Envelope: envelope}})
+	readiness, err = buildDevelopmentPublicationReadinessInTransaction(ctx, pool, "ws", "team", "user", "user", 1, 1, []developmentPrepared{{ID: "flow", Envelope: envelope}})
 	if err != nil || readiness.Ready || len(readiness.Workflows) != 1 || readiness.Workflows[0].Passed ||
 		len(readiness.Workflows[0].CoveredCapabilityIDs) != 1 || len(readiness.Workflows[0].MissingCapabilityIDs) != 1 {
 		t.Fatalf("partial action simulation unlocked publication: readiness=%+v err=%v", readiness, err)
@@ -79,11 +91,62 @@ func TestDevelopmentPublicationReadinessUnionsCurrentCandidateSimulationReceipts
 	secondDefinitions := developmentTestActionDefinitions(t, false, true)
 	second := admitDevelopmentCoverageTrial(t, ctx, pool, kernelPublication, envelope, secondDefinitions, "second simulated action")
 	writeSimulationOutcome(t, pool, second, publishedSecondBusinessCapability)
-	readiness, err = buildDevelopmentPublicationReadiness(ctx, pool, "ws", "team", "user", "user", 1, 1, []developmentPrepared{{ID: "flow", Envelope: envelope}})
+	readiness, err = buildDevelopmentPublicationReadinessInTransaction(ctx, pool, "ws", "team", "user", "user", 1, 1, []developmentPrepared{{ID: "flow", Envelope: envelope}})
 	if err != nil || !readiness.Ready || len(readiness.Workflows) != 1 || !readiness.Workflows[0].Passed ||
 		len(readiness.Workflows[0].CoveredCapabilityIDs) != 2 || len(readiness.Workflows[0].MissingCapabilityIDs) != 0 {
 		t.Fatalf("same-candidate action union did not unlock publication: readiness=%+v err=%v", readiness, err)
 	}
+	assertDevelopmentReadinessHTTP200(t, ctx, pool, envelope)
+}
+
+func assertDevelopmentReadinessHTTP200(t *testing.T, ctx context.Context, pool *pgxpool.Pool, envelope frozen.ArtifactEnvelopeV1) {
+	t.Helper()
+	document := developmentDocument{Name: "Readiness fixture", Members: []developmentMember{}, Workflows: []developmentWorkflow{}}
+	baseline := developmentBaseline{Members: map[string]int{}, Workflows: map[string]time.Time{}}
+	prepared := []developmentPrepared{{ID: envelope.WorkflowID, Envelope: envelope}}
+	if _, err := pool.Exec(ctx, `INSERT INTO weave_team_development_drafts(
+		workspace_id,team_id,revision,published_revision,publishing_revision,document,published_document,
+		baseline,prepared_actor,prepared_revision,prepared,updated_by)
+		VALUES('ws','team',1,0,0,$1,$1,$2,'user',1,$3,'user')`,
+		encodeDevelopment(document), encodeDevelopment(baseline), encodeDevelopment(prepared)); err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest("GET", "/v1/teams/team/development", nil).WithContext(ctx)
+	recorder := httptest.NewRecorder()
+	c := echo.New().NewContext(request, recorder)
+	c.SetParamNames("id")
+	c.SetParamValues("team")
+	c.Set("tenant", "ws")
+	c.Set("user_id", "user")
+	if err := (&Server{Pool: pool}).handleGetTeamDevelopment(c); err != nil {
+		t.Fatalf("GET team development failed: %v", err)
+	}
+	if recorder.Code != 200 {
+		t.Fatalf("GET team development status=%d", recorder.Code)
+	}
+	var response developmentDraft
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if !response.PublicationReadiness.Ready || len(response.PublicationReadiness.Workflows) != 1 ||
+		!response.PublicationReadiness.Workflows[0].Passed || len(response.PublicationReadiness.Workflows[0].MissingCapabilityIDs) != 0 {
+		t.Fatalf("GET readiness did not preserve simulation coverage: %+v", response.PublicationReadiness)
+	}
+}
+
+func buildDevelopmentPublicationReadinessInTransaction(
+	ctx context.Context,
+	pool *pgxpool.Pool,
+	workspaceID, teamID, actorID, preparedActor string,
+	revision, preparedRevision int64,
+	prepared []developmentPrepared,
+) (developmentPublicationReadiness, error) {
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		return developmentPublicationReadiness{}, err
+	}
+	defer tx.Rollback(ctx)
+	return buildDevelopmentPublicationReadiness(ctx, tx, workspaceID, teamID, actorID, preparedActor, revision, preparedRevision, prepared)
 }
 
 type developmentCoverageTrial struct {
@@ -202,6 +265,26 @@ func admitDevelopmentCoverageTrial(
 	return developmentCoverageTrial{runID: admission.RunID, snapshotID: admission.RunSnapshotID, requestID: requestID, inputVersion: request.InputVersion}
 }
 
+func completeDevelopmentCoverageTrial(t *testing.T, pool *pgxpool.Pool, trial developmentCoverageTrial) {
+	t.Helper()
+	tx, err := pool.Begin(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := teamrun.NewPGStore().SucceedTx(t.Context(), tx, teamrun.SucceedRequest{
+		WorkspaceID: "ws", RunID: trial.runID, ExpectedStatus: teamrun.StatusRunning,
+		ExpectedTeamRunGeneration: 1, ExpectedExecutionLeaseEpoch: 1, ExpectedResumeGeneration: 0,
+		ExecutorID: "coverage-fixture-worker", IdempotencyKey: "coverage-succeed:" + trial.runID,
+		Actor: "coverage-fixture-worker", Source: "coverage-fixture", OccurredAt: time.Now().UTC(),
+	}); err != nil {
+		_ = tx.Rollback(t.Context())
+		t.Fatal(err)
+	}
+	if err := tx.Commit(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func writeSimulationOutcome(t *testing.T, pool *pgxpool.Pool, trial developmentCoverageTrial, capabilityID string) {
 	t.Helper()
 	parts := strings.Split(strings.TrimPrefix(capabilityID, "forge:action:"), ".")
@@ -242,20 +325,5 @@ func writeSimulationOutcome(t *testing.T, pool *pgxpool.Pool, trial developmentC
 		}
 		occurred = occurred.Add(time.Millisecond)
 	}
-	tx, err := pool.Begin(t.Context())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := teamrun.NewPGStore().SucceedTx(t.Context(), tx, teamrun.SucceedRequest{
-		WorkspaceID: "ws", RunID: trial.runID, ExpectedStatus: teamrun.StatusRunning,
-		ExpectedTeamRunGeneration: 1, ExpectedExecutionLeaseEpoch: 1, ExpectedResumeGeneration: 0,
-		ExecutorID: "coverage-fixture-worker", IdempotencyKey: "coverage-succeed:" + trial.runID,
-		Actor: "coverage-fixture-worker", Source: "coverage-fixture", OccurredAt: time.Now().UTC(),
-	}); err != nil {
-		_ = tx.Rollback(t.Context())
-		t.Fatal(err)
-	}
-	if err := tx.Commit(t.Context()); err != nil {
-		t.Fatal(err)
-	}
+	completeDevelopmentCoverageTrial(t, pool, trial)
 }

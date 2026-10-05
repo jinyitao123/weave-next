@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"sort"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -29,6 +30,12 @@ type developmentWorkflowReadiness struct {
 	CoveredCapabilityIDs  []string `json:"covered_capability_ids"`
 	MissingCapabilityIDs  []string `json:"missing_capability_ids"`
 	Passed                bool     `json:"passed"`
+}
+
+type developmentTrialLedgerScope struct {
+	runID, runSnapshotID, inputRevisionID string
+	terminalAt                            time.Time
+	actions                               []businessaction.DevelopmentAction
 }
 
 type developmentReadQueryer interface {
@@ -117,6 +124,7 @@ func developmentWorkflowPublicationReadiness(
 	defer queryRows.Close()
 	covered := map[string]bool{}
 	foundSuccessfulTrial := false
+	trialsWithRequiredActions := []developmentTrialLedgerScope{}
 	requestedActions := machine.GraphBusinessCapabilities(graph, payload)
 	for queryRows.Next() {
 		var requestID, storedDigest, runID, runSnapshotID string
@@ -155,11 +163,22 @@ func developmentWorkflowPublicationReadiness(
 			continue
 		}
 		foundSuccessfulTrial = true
-		if !contractValid || len(result.RequiredCapabilityIDs) == 0 {
-			continue
+		if contractValid && len(result.RequiredCapabilityIDs) > 0 {
+			trialsWithRequiredActions = append(trialsWithRequiredActions, developmentTrialLedgerScope{
+				runID: runID, runSnapshotID: runSnapshotID, inputRevisionID: request.InputVersion,
+				terminalAt: terminalAt.Time.UTC(), actions: normalizedActions,
+			})
 		}
+	}
+	if err := queryRows.Err(); err != nil {
+		return result, err
+	}
+	queryRows.Close()
 
-		events, err := listDevelopmentBusinessActionEvents(ctx, query, workspaceID, runID)
+	// A pgx.Tx owns a single connection. Drain and close the trial cursor before
+	// reading each durable action ledger through that same transaction.
+	for _, trial := range trialsWithRequiredActions {
+		events, err := listDevelopmentBusinessActionEvents(ctx, query, workspaceID, trial.runID)
 		if err != nil {
 			return result, err
 		}
@@ -168,17 +187,16 @@ func developmentWorkflowPublicationReadiness(
 			continue
 		}
 		allowed := []string{}
-		for _, action := range normalizedActions {
+		for _, action := range trial.actions {
 			if action.SimulationAuthorized {
 				allowed = append(allowed, action.CapabilityID)
 			}
 		}
 		sort.Strings(allowed)
-		terminal := terminalAt.Time.UTC()
 		scope := deliverycheck.BusinessReceiptScope{
-			WorkspaceID: workspaceID, RunID: runID, RunSnapshotID: runSnapshotID,
-			InputRevisionID: request.InputVersion, SubjectID: actorID,
-			AllowedCapabilityIDs: allowed, DevelopmentTrial: true, TerminalAt: &terminal,
+			WorkspaceID: workspaceID, RunID: trial.runID, RunSnapshotID: trial.runSnapshotID,
+			InputRevisionID: trial.inputRevisionID, SubjectID: actorID,
+			AllowedCapabilityIDs: allowed, DevelopmentTrial: true, TerminalAt: &trial.terminalAt,
 		}
 		evaluation := deliverycheck.EvaluateBusinessReceipts(params, scope, receipts, deliverycheck.BusinessReceiptResult{Disposition: "complete"})
 		if evaluation.HardStop {
@@ -193,9 +211,6 @@ func developmentWorkflowPublicationReadiness(
 		for _, capabilityID := range evidence.Matched {
 			covered[capabilityID] = true
 		}
-	}
-	if err := queryRows.Err(); err != nil {
-		return result, err
 	}
 	for _, capabilityID := range result.RequiredCapabilityIDs {
 		if covered[capabilityID] {
