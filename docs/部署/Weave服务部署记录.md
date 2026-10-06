@@ -68,6 +68,8 @@ Dispatcher 只接受 `deploy <40位小写 SHA>` 并原样转交 stdin。runner �
 
 **2026-09-27 当日观察：** 经本机当时已有的 SSH 转发读取 `127.0.0.1:18080/v1/health`，服务返回 `status=ok`、`build_commit=135fcaa371df0c22961c596e898d53f687df7d3d`；该提交与本仓 `main` 一致。此状态未在本轮复验。员工消息、Pi 续看和三场景的实际业务读回维护在产品总仓，不以本页的服务健康代替验收。
 
+**2026-10-06 Runtime 兼容性变更（`codex/claude107-runtime`，待评审）：** 该分支调整 daemon 对 Claude CLI 的运行时兼容处理。已在独立 Windows 环境核验：第一方 Claude 登录状态分类；子进程失败与超时被拒绝；进程重启后重放已持久化的结果，且不再次运行 CLI。Windows runtime 二进制可构建，daemon `go vet` 通过。核验边界：本次不能证明断电后 rename 元数据的持久性，也不能证明 Windows ACL 私密性，这两项仍是已记录的限制。本记录不涉及安装脚本、调度配置或中心服务部署，未在 `<SERVICE_DATA_PATH>` 所指的部署上复验。
+
 ## 历史部署探针
 
 以下命令记录了当时的服务探针。主机需由维护者在本机私下配置；本文未复验该部署，也不据此声明当前可用。
