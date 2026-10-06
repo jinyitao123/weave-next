@@ -174,6 +174,9 @@ func readActionCatalog(
 		} else if string(required) != "true" && string(required) != "false" {
 			return nil, fmt.Errorf("%w: Forge action record requirement is invalid", mcphost.ErrFailClosed)
 		}
+		if required, exists := fields["requiresConfirmation"]; exists && string(required) != "true" && string(required) != "false" {
+			return nil, fmt.Errorf("%w: Forge action confirmation requirement is invalid", mcphost.ErrFailClosed)
+		}
 		if strings.TrimSpace(item.Name) == "" || strings.TrimSpace(item.ObjectName) == "" ||
 			item.Name != strings.TrimSpace(item.Name) || item.ObjectName != strings.TrimSpace(item.ObjectName) {
 			return nil, fmt.Errorf("%w: Forge action catalog contains an invalid action identity", mcphost.ErrFailClosed)

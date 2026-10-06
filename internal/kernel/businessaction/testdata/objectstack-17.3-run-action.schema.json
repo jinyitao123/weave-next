@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "actionName": {
+      "type": "string",
+      "description": "The action name from list_actions, e.g. \"complete_task\""
+    },
+    "objectName": {
+      "description": "The object the action belongs to. Optional; required only to disambiguate a name shared by multiple objects.",
+      "type": "string"
+    },
+    "recordId": {
+      "description": "The id of the record to act on (for record-scoped actions).",
+      "type": "string"
+    },
+    "params": {
+      "description": "Input parameters declared by the action.",
+      "type": "object",
+      "propertyNames": {
+        "type": "string"
+      },
+      "additionalProperties": {}
+    }
+  },
+  "required": [
+    "actionName"
+  ],
+  "additionalProperties": false
+}

@@ -794,6 +794,17 @@
         "lines_added": 702,
         "production_lines_added": 294
       }
+    },
+    {
+      "date": "2026-10-06",
+      "reason": "Native action confirmation compatibility for the supported Forge task transport: consume requiresConfirmation only after the existing frozen-input, current employee, published/action-scope and online task authority checks; bind the declared run_action boolean confirmation schema and recheck it before the existing dispatch guard/reservation; project confirm:true only into the native transport, preserving business parameter digests, operation identity and receipt recovery. Closed HTTP/PostgreSQL regressions cover old ObjectStack 17.3 protocol and exact conversion/price request bytes, unconfirmed and read-only scopes, unsupported/changed schemas, identity/record/file denials, expired/revoked/cancelled/terminal/replaced work, simulated isolation and post-send unknown/HTTP428/native-error replay protection; an opt-in integration exercises an isolated native Forge runtime using only a short-lived task handoff. The initial budget guard failed against prior ceilings; register only measured growth, with no spare allowance, new packages/dependencies, import exceptions, tables, queues, execution loops or changes to original migration targets.",
+      "record": "https://github.com/jinyitao123/weave-workbench/blob/9f7130baecec1cb844a82fabceb7361767b9e386/contracts/v1/README.md#原生动作确认与已有授权的传递",
+      "kernel": {
+        "previous_lines": 105087,
+        "previous_production_lines": 84550,
+        "lines_added": 804,
+        "production_lines_added": 177
+      }
     }
   ],
   "migration_targets": {
@@ -831,8 +842,8 @@
     ]
   },
   "kernel": {
-    "lines": 105087,
-    "production_lines": 84550,
+    "lines": 105891,
+    "production_lines": 84727,
     "packages": 49,
     "external_dependencies": 5,
     "allowed_dependencies": [

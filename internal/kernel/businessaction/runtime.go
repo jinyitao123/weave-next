@@ -185,6 +185,9 @@ func (s *Store) dispatcher(ctx context.Context, requested []string, bindings []f
 	if err != nil {
 		return nil, err
 	}
+	if err := host.bindNativeConfirmations(ctx, catalog); err != nil {
+		return nil, err
+	}
 	dispatcher, err := newDispatcherWithResourcesAndBindings(host, bound.actions, catalog, bound.resources, bindings)
 	if err != nil {
 		return nil, err
@@ -554,6 +557,9 @@ func validateActionMetadata(metadata actionMetadata) error {
 		name := strings.TrimSpace(rawName)
 		if name == "" || name != rawName {
 			return errors.New("parameter name is empty or padded")
+		}
+		if name == "confirm" {
+			return errors.New("native confirmation cannot be exposed as a business parameter")
 		}
 		if _, exists := seen[name]; exists {
 			return fmt.Errorf("duplicate parameter %q", name)

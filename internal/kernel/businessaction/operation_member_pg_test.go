@@ -603,15 +603,16 @@ func memberTaskGrant(issuer string) businessaction.TaskDelegationGrant {
 	return grant
 }
 
-func seedMemberActionRuntime(t *testing.T, pool *pgxpool.Pool, issuer string, key []byte, grant businessaction.TaskDelegationGrant) {
+func seedMemberActionRuntime(t *testing.T, pool *pgxpool.Pool, issuer string, key []byte, grant businessaction.TaskDelegationGrant, suppliedCredential ...[]byte) {
 	t.Helper()
 	ctx := t.Context()
+	scope := grant.Scope
 	if _, err := pool.Exec(ctx, `INSERT INTO weave_workspaces(id,slug,name) VALUES('workspace','workspace','Workspace'); INSERT INTO weave_teams(id,workspace_id,name) VALUES('team','workspace','Team')`); err != nil {
 		t.Fatal(err)
 	}
 	trigger, definition := json.RawMessage(`{"schema_version":1}`), json.RawMessage(`{"schema_version":1}`)
 	payload := frozen.ArtifactPayloadV1{SchemaVersion: frozen.ArtifactSchemaVersion, TriggerConfig: trigger, GraphDefinition: definition, Team: frozen.ArtifactTeamV1{WorkspaceID: "workspace", TeamID: "team", LeadAgentID: "agent"}, Bundles: []frozen.FrozenExecutionBundle{}, DeliveryTargets: []frozen.FrozenDeliveryTarget{}}
-	hash, err := frozen.ComputeArtifactContentHash(frozen.ArtifactEnvelopeHashInputV1{WorkspaceID: "workspace", WorkflowID: "workflow", WorkflowVersion: 1, ArtifactSchemaVersion: frozen.ArtifactSchemaVersion, CanonicalizationAlgorithm: frozen.ArtifactCanonicalizationAlgorithm, CanonicalizationVersion: frozen.ArtifactCanonicalizationVersion, HashAlgorithm: frozen.ArtifactHashAlgorithm, Payload: payload})
+	hash, err := frozen.ComputeArtifactContentHash(frozen.ArtifactEnvelopeHashInputV1{WorkspaceID: "workspace", WorkflowID: scope.WorkflowID, WorkflowVersion: scope.WorkflowVersion, ArtifactSchemaVersion: frozen.ArtifactSchemaVersion, CanonicalizationAlgorithm: frozen.ArtifactCanonicalizationAlgorithm, CanonicalizationVersion: frozen.ArtifactCanonicalizationVersion, HashAlgorithm: frozen.ArtifactHashAlgorithm, Payload: payload})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -619,36 +620,42 @@ func seedMemberActionRuntime(t *testing.T, pool *pgxpool.Pool, issuer string, ke
 	if err != nil {
 		t.Fatal(err)
 	}
-	envelope, _ := json.Marshal(frozen.ArtifactEnvelopeV1{WorkspaceID: "workspace", WorkflowID: "workflow", WorkflowVersion: 1, ArtifactSchemaVersion: frozen.ArtifactSchemaVersion, CanonicalizationAlgorithm: frozen.ArtifactCanonicalizationAlgorithm, CanonicalizationVersion: frozen.ArtifactCanonicalizationVersion, HashAlgorithm: frozen.ArtifactHashAlgorithm, ContentHash: hash, Payload: encoded})
+	envelope, _ := json.Marshal(frozen.ArtifactEnvelopeV1{WorkspaceID: "workspace", WorkflowID: scope.WorkflowID, WorkflowVersion: scope.WorkflowVersion, ArtifactSchemaVersion: frozen.ArtifactSchemaVersion, CanonicalizationAlgorithm: frozen.ArtifactCanonicalizationAlgorithm, CanonicalizationVersion: frozen.ArtifactCanonicalizationVersion, HashAlgorithm: frozen.ArtifactHashAlgorithm, ContentHash: hash, Payload: encoded})
 	if _, err := pool.Exec(ctx, `
- INSERT INTO weave_team_workflows(workspace_id,id,team_id,name) VALUES('workspace','workflow','team','Workflow');
- INSERT INTO weave_team_workflow_versions(workspace_id,workflow_id,version,status,trigger_config,graph_definition,created_by) VALUES('workspace','workflow',1,'draft',$1::jsonb,$2::jsonb,'fixture');
- UPDATE weave_team_workflow_versions SET status='published',published_at=now(),updated_at=now() WHERE workspace_id='workspace' AND workflow_id='workflow' AND version=1;
- INSERT INTO weave_published_artifact_contents(workspace_id,workflow_id,workflow_version,artifact_schema_version,canonicalization_algorithm,canonicalization_version,hash_algorithm,content_hash,payload) VALUES('workspace','workflow',1,1,'rfc8785+jcs-preorder',1,'sha256',$3,$4::jsonb);
- INSERT INTO weave_team_workflow_candidates(workspace_id,workflow_id,workflow_version,content_hash,envelope_json,dependencies_json,expected_updated_at,created_by,created_at) VALUES('workspace','workflow',1,$3,$5::jsonb,'[]',now(),'fixture',now());`, string(trigger), string(definition), hash, string(encoded), string(envelope)); err != nil {
+ INSERT INTO weave_team_workflows(workspace_id,id,team_id,name) VALUES('workspace',$6,'team','Workflow');
+ INSERT INTO weave_team_workflow_versions(workspace_id,workflow_id,version,status,trigger_config,graph_definition,created_by) VALUES('workspace',$6,$7,'draft',$1::jsonb,$2::jsonb,'fixture');
+ UPDATE weave_team_workflow_versions SET status='published',published_at=now(),updated_at=now() WHERE workspace_id='workspace' AND workflow_id=$6 AND version=$7;
+ INSERT INTO weave_published_artifact_contents(workspace_id,workflow_id,workflow_version,artifact_schema_version,canonicalization_algorithm,canonicalization_version,hash_algorithm,content_hash,payload) VALUES('workspace',$6,$7,1,'rfc8785+jcs-preorder',1,'sha256',$3,$4::jsonb);
+ INSERT INTO weave_team_workflow_candidates(workspace_id,workflow_id,workflow_version,content_hash,envelope_json,dependencies_json,expected_updated_at,created_by,created_at) VALUES('workspace',$6,$7,$3,$5::jsonb,'[]',now(),'fixture',now());`, string(trigger), string(definition), hash, string(encoded), string(envelope), scope.WorkflowID, scope.WorkflowVersion); err != nil {
 		t.Fatal(err)
 	}
-	_, err = snapshot.NewStore(pool).Create(ctx, snapshot.TeamRunSnapshot{Subject: execution.Subject{WorkspaceID: "workspace", UserID: "employee"}, RunID: "snapshot", WorkspaceID: "workspace", TeamID: "team", SnapshotSchemaVersion: 2, Mode: "fixed_workflow", WorkflowID: "workflow", WorkflowVersion: 1, ArtifactWorkflowID: "workflow", ArtifactWorkflowVersion: 1, AdmissionDecision: json.RawMessage(`{"schema_version":1,"team_active":true,"workflow_active":true,"workers_enabled":true,"version_blocked":false,"decided_at":"2026-10-01T00:00:00Z"}`), RunAssociations: json.RawMessage(`{"schema_version":1,"parent_run_id":null,"source_snapshot_id":null,"task_group_id":null}`), TriggerSourceV2: json.RawMessage(`{"schema_version":1,"type":"api","source_ref":"fixture"}`), RuntimeAssignment: json.RawMessage(`{}`), SourceRef: "fixture", CandidateContentHash: hash})
+	_, err = snapshot.NewStore(pool).Create(ctx, snapshot.TeamRunSnapshot{Subject: execution.Subject{WorkspaceID: "workspace", UserID: "employee"}, RunID: "snapshot", WorkspaceID: "workspace", TeamID: "team", SnapshotSchemaVersion: 2, Mode: "fixed_workflow", WorkflowID: scope.WorkflowID, WorkflowVersion: scope.WorkflowVersion, ArtifactWorkflowID: scope.WorkflowID, ArtifactWorkflowVersion: scope.WorkflowVersion, AdmissionDecision: json.RawMessage(`{"schema_version":1,"team_active":true,"workflow_active":true,"workers_enabled":true,"version_blocked":false,"decided_at":"2026-10-01T00:00:00Z"}`), RunAssociations: json.RawMessage(`{"schema_version":1,"parent_run_id":null,"source_snapshot_id":null,"task_group_id":null}`), TriggerSourceV2: json.RawMessage(`{"schema_version":1,"type":"api","source_ref":"fixture"}`), RuntimeAssignment: json.RawMessage(`{}`), SourceRef: "fixture", CandidateContentHash: hash})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := pool.Exec(ctx, `
- INSERT INTO weave_task_queue(id,workspace_id,identity_kind,identity_schema_version,workflow_id,workflow_version,status,worker_id,claim_epoch,lease_expires_at,payload,actor_subject,run_snapshot_id) VALUES('task','workspace','team_workflow',2,'workflow',1,'running','worker',1,now()+interval '1 hour','{}','{"workspace_id":"workspace","user_id":"employee"}','snapshot');
- INSERT INTO weave_team_runs(workspace_id,run_id,status,team_run_generation,current_executor_id,team_id,workflow_id,workflow_version,run_snapshot_id,source_kind,source_task_id,establish_idempotency_key,created_at,updated_at) VALUES('workspace','parent','running',1,'executor','team','workflow',1,'snapshot','api','task','fixture-parent',now(),now());
- INSERT INTO weave_dispatch_input_revisions(workspace_id,user_id,workbench_session_id,input_revision_id,registration_id,registration_sha256,source_messages,task,task_sha256,team_id,mode,workflow_id,workflow_version,client_request_id,execution_task,revision_kind,root_input_revision_id) VALUES('workspace','employee','session','revision','registration',repeat('a',64),'["fixture-message"]','Adjust price twice',repeat('a',64),'team','workflow','workflow',1,'client-request','Adjust price twice','initial','revision');
- INSERT INTO weave_run_delivery_state(workspace_id,run_snapshot_id,run_id,input_revision_id,workflow_id,workflow_version,published_digest,contract,contract_digest) VALUES('workspace','snapshot','parent','revision','workflow',1,$1,'null',repeat('a',64));`, hash); err != nil {
+ INSERT INTO weave_task_queue(id,workspace_id,identity_kind,identity_schema_version,workflow_id,workflow_version,status,worker_id,claim_epoch,lease_expires_at,payload,actor_subject,run_snapshot_id) VALUES('task','workspace','team_workflow',2,$5,$6,'running','worker',1,now()+interval '1 hour','{}','{"workspace_id":"workspace","user_id":"employee"}','snapshot');
+ INSERT INTO weave_team_runs(workspace_id,run_id,status,team_run_generation,current_executor_id,team_id,workflow_id,workflow_version,run_snapshot_id,source_kind,source_task_id,establish_idempotency_key,created_at,updated_at) VALUES('workspace','parent','running',1,'executor','team',$5,$6,'snapshot','api','task','fixture-parent',now(),now());
+ INSERT INTO weave_dispatch_input_revisions(workspace_id,user_id,workbench_session_id,input_revision_id,registration_id,registration_sha256,source_messages,task,task_sha256,team_id,mode,workflow_id,workflow_version,client_request_id,execution_task,revision_kind,root_input_revision_id) VALUES('workspace','employee','session',$2,$3,repeat('a',64),'["fixture-message"]','Native action probe',$4,'team','workflow',$5,$6,'client-request','Native action probe','initial',$2);
+ INSERT INTO weave_run_delivery_state(workspace_id,run_snapshot_id,run_id,input_revision_id,workflow_id,workflow_version,published_digest,contract,contract_digest) VALUES('workspace','snapshot','parent',$2,$5,$6,$1,'null',repeat('a',64));`, hash, scope.InputRevisionID, scope.RegistrationID, scope.TaskSHA256, scope.WorkflowID, scope.WorkflowVersion); err != nil {
 		t.Fatal(err)
 	}
 	credential := []byte("fixture-task-token")
+	if len(suppliedCredential) > 0 {
+		credential = suppliedCredential[0]
+	}
 	ciphertext, err := secret.Seal(key, credential)
 	if err != nil {
 		t.Fatal(err)
 	}
 	digest := sha256.Sum256(credential)
-	recordRaw, _ := json.Marshal(map[string]string{"object_name": "sales_quote", "id": "record-a"})
+	recordRaw, _ := json.Marshal(map[string]string{"object_name": scope.BusinessRecord.ObjectName, "id": scope.BusinessRecord.RecordID})
 	recordDigest := sha256.Sum256(recordRaw)
-	resources, _ := json.Marshal([]map[string]string{{"type": "dispatch-input", "id": "revision", "sha256": strings.Repeat("a", 64)}, {"type": "forge-record", "id": "record-a", "object_name": "sales_quote", "sha256": hex.EncodeToString(recordDigest[:])}})
-	if _, err := pool.Exec(ctx, `INSERT INTO weave_task_business_delegations(workspace_id,user_id,input_revision_id,delegation_id,credential_ref,issuer,external_subject,external_organization,credential_ciphertext,credential_sha256,allowed_actions,resources,workflow_id,workflow_version,issued_at,expires_at,grant_id,scope_sha256,refresh_generation,forge_base_url,forge_delegation_id) VALUES('workspace','employee','revision',gen_random_uuid(),'fixture-ref',$1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,'workflow',1,$8,$9,$10,$11,1,$12,$10)`, grant.IdentityIssuer, grant.Subject.ID, grant.Subject.OrganizationID, ciphertext, hex.EncodeToString(digest[:]), `["forge:action:sales_quote.AdjustPrice"]`, string(resources), grant.IssuedAt, grant.ExpiresAt, grant.GrantID, grant.ScopeSHA256, issuer); err != nil {
+	resourceList := []businessaction.TaskDelegationResource{{Type: "dispatch-input", ID: scope.InputRevisionID, SHA256: scope.TaskSHA256}, {Type: "forge-record", ID: scope.BusinessRecord.RecordID, ObjectName: scope.BusinessRecord.ObjectName, SHA256: hex.EncodeToString(recordDigest[:])}}
+	resourceList = append(resourceList, scope.Resources...)
+	resources, _ := json.Marshal(resourceList)
+	actions, _ := json.Marshal(scope.AllowedActions)
+	if _, err := pool.Exec(ctx, `INSERT INTO weave_task_business_delegations(workspace_id,user_id,input_revision_id,delegation_id,credential_ref,issuer,external_subject,external_organization,credential_ciphertext,credential_sha256,allowed_actions,resources,workflow_id,workflow_version,issued_at,expires_at,grant_id,scope_sha256,refresh_generation,forge_base_url,forge_delegation_id) VALUES('workspace','employee',$13,gen_random_uuid(),'fixture-ref',$1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,$14,$15,$8,$9,$10,$11,$16,$12,$10)`, grant.IdentityIssuer, grant.Subject.ID, grant.Subject.OrganizationID, ciphertext, hex.EncodeToString(digest[:]), string(actions), string(resources), grant.IssuedAt, grant.ExpiresAt, grant.GrantID, grant.ScopeSHA256, issuer, scope.InputRevisionID, scope.WorkflowID, scope.WorkflowVersion, grant.Generation); err != nil {
 		t.Fatal(err)
 	}
 }
