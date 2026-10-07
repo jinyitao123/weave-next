@@ -149,19 +149,42 @@ func (s *Server) handleListSystemProviders(c echo.Context) error {
 	if !ok {
 		return providerStoreError(c, credentials.ErrProviderRevisionRequired)
 	}
+	configs := lister.ListProviders()
 	mirrored := map[string]credentials.ProviderHead{}
 	if s.Credentials != nil {
-		heads, err := s.Credentials.ListMetadata(c.Request().Context(), getTenant(c))
+		tenant, actor := getTenant(c), getUserID(c)
+		serviceReferences := make(map[string]string, len(configs))
+		for _, cfg := range configs {
+			serviceReferences["system/"+cfg.ID] = "system-provider:" + cfg.ID
+		}
+		// This admin route reads only the current workspace's configured system
+		// mirrors. Keep the permit local to the metadata query: neither the
+		// request context nor any credential/secret read receives it.
+		metadataContext := credentials.WithServiceReferenceAuthorization(c.Request().Context(),
+			func(_ context.Context, subject execution.Subject, ref frozen.CredentialReference) error {
+				serviceID, configured := serviceReferences[ref.ResourceID]
+				if actor == "" || subject.UserID != actor || subject.ServiceID != "" ||
+					subject.WorkspaceID != tenant || ref.WorkspaceID != tenant ||
+					ref.Scope != frozen.CredentialScopeWorkspaceService ||
+					ref.Kind != frozen.CredentialProviderAPIKey || ref.Slot != "api_key" ||
+					!configured || ref.ServiceID != serviceID {
+					return execution.ErrSubjectMismatch
+				}
+				return nil
+			})
+		heads, err := s.Credentials.ListMetadata(metadataContext, tenant)
 		if err != nil {
 			return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		}
 		for _, head := range heads {
-			if head.SourceKind == "system_mirror" && head.SourceProviderID != nil {
+			if head.SourceKind == "system_mirror" && head.SourceProviderID != nil &&
+				head.CredentialScope == frozen.CredentialScopeWorkspaceService &&
+				head.ID == "system/"+*head.SourceProviderID &&
+				head.CredentialServiceID == serviceReferences[head.ID] {
 				mirrored[*head.SourceProviderID] = head
 			}
 		}
 	}
-	configs := lister.ListProviders()
 	out := make([]systemProviderSummaryJSON, 0, len(configs))
 	for _, cfg := range configs {
 		summary := systemProviderSummaryJSON{
