@@ -805,6 +805,18 @@
         "lines_added": 804,
         "production_lines_added": 177
       }
+    },
+    {
+      "date": "2026-10-07",
+      "source_commit": "6d8809a2b083017cf14a924e540993b47f4df4c0",
+      "reason": "Authorized exact growth for current-workspace system provider catalog mirror metadata. The existing admin-only GET attaches a request-local service-reference permit solely to ListMetadata for configured system provider IDs, preserving the POST role gate, generic credential authorization and all secret reads. Four real PostgreSQL/HTTP regressions cover committed mirror readback, member/developer/scope denials, cross-workspace isolation, unrelated and personal providers, unchanged ordinary credential access, closed or mismatched mirrors and metadata reads without decryption. Register exactly 23 production lines plus 247 test lines after the original budget guard failed; no spare allowance, package/dependency growth, new API fields or changed migration targets.",
+      "record": "docs/治理/2026-09-30-平台范围收窄整改登记.md",
+      "app": {
+        "previous_lines": 73295,
+        "previous_production_lines": 51052,
+        "lines_added": 270,
+        "production_lines_added": 23
+      }
     }
   ],
   "migration_targets": {
@@ -862,8 +874,8 @@
     "allowed_dependencies": []
   },
   "app": {
-    "lines": 73295,
-    "production_lines": 51052,
+    "lines": 73565,
+    "production_lines": 51075,
     "packages": 24,
     "external_dependencies": 6,
     "allowed_dependencies": [
