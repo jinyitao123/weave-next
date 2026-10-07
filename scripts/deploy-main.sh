@@ -6,6 +6,34 @@ expected_sha="${1:-}"
 [[ "$expected_sha" =~ ^[0-9a-f]{40}$ ]] || { echo 'Expected a full commit SHA.' >&2; exit 2; }
 state_dir="${WEAVE_DEPLOY_STATE_DIR:-$HOME/.local/share/weave-deploy}"
 env_file="${WEAVE_DEPLOY_ENV_FILE:-$HOME/.config/weave-main/server.env}"
+min_build_free="${WEAVE_DEPLOY_MIN_BUILD_FREE_BYTES-8589934592}"
+min_activate_free="${WEAVE_DEPLOY_MIN_ACTIVATE_FREE_BYTES-1073741824}"
+for threshold in "$min_build_free" "$min_activate_free"; do
+  [[ "$threshold" =~ ^[1-9][0-9]*$ ]] || { echo 'Deployment free-space thresholds must be positive integer bytes.' >&2; exit 2; }
+done
+
+# Inspect ordinary Available bytes, including when Docker and backups use
+# separate filesystems. This is a fail-closed observation, not a reservation.
+check_capacity() {
+  local required="$1" docker_root available path
+  docker_root="$(sudo docker info --format '{{.DockerRootDir}}')" || return 1
+  [[ "$docker_root" == /* && "$docker_root" != *$'\n'* ]] || { echo 'Cannot determine DockerRootDir.' >&2; return 1; }
+  for path in "$state_dir" "$state_dir/backups" "$docker_root"; do
+    available="$(sudo env LC_ALL=C df -B1 --output=avail -- "$path")" || return 1
+    python3 - "$required" "$available" <<'PY'
+import re
+import sys
+
+required, output = sys.argv[1:]
+lines = output.strip().splitlines()
+if len(lines) != 2 or lines[0].strip() != 'Avail' or not re.fullmatch(r'[0-9]+', lines[1].strip()):
+    raise SystemExit('Cannot determine filesystem Available bytes; refusing deployment.')
+available = int(lines[1].strip())
+if available < int(required):
+    raise SystemExit(f'Insufficient deployment capacity: {available} Available bytes; {required} required.')
+PY
+  done
+}
 mkdir -p "$state_dir/releases" "$state_dir/backups"
 exec 9>"$state_dir/deploy.lock"
 flock -w 1800 9
@@ -111,6 +139,7 @@ compose=(sudo docker compose --project-name weave-main --project-directory "$rel
   --env-file "$env_file" --env-file "$release_env" -f "$release_dir/docker-compose.platform.yml")
 "${compose[@]}" config --quiet
 phase=build
+check_capacity "$min_build_free"
 "${compose[@]}" build weave
 
 # Recheck through GitHub's lightweight API before cutover; source bytes were already
@@ -124,6 +153,7 @@ if [[ "$upstream_sha" != "$expected_sha" ]]; then
 fi
 
 phase=backup
+check_capacity "$min_activate_free"
 backup_dir="$state_dir/backups/$(date -u +%Y%m%dT%H%M%SZ)-$expected_sha"
 mkdir -p "$backup_dir"
 cp -p "$env_file" "$backup_dir/server.env"
@@ -131,6 +161,7 @@ if [[ -n "$("${compose[@]}" ps --status running -q db)" ]]; then
   "${compose[@]}" exec -T db pg_dump -U weave -d weave -Fc > "$backup_dir/database.dump"
 fi
 phase=api-startup
+check_capacity "$min_activate_free"
 "${compose[@]}" up -d --no-build --wait --wait-timeout 120 db weave
 phase=bootstrap
 python3 "$release_dir/scripts/deployment-state.py" bootstrap "$env_file" "$state_dir" -- "${compose[@]}"
