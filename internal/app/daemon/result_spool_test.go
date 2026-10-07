@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"runtime"
 	"sync/atomic"
 	"testing"
 
@@ -23,7 +24,12 @@ func TestRestartReplaysDurableResultWithoutExecutingCLI(t *testing.T) {
 		t.Fatal(err)
 	}
 	info, err := os.Stat(first.path(journal.TaskID))
-	if err != nil || info.Mode().Perm() != 0600 {
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runtime.GOOS == "windows" {
+		t.Log("result file privacy not asserted: Windows Mode().Perm() mirrors the read-only attribute, not the ACL")
+	} else if info.Mode().Perm() != 0600 {
 		t.Fatal("result file permissions are not private")
 	}
 	var reports atomic.Int32

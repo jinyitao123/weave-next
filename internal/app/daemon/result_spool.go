@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -78,13 +79,18 @@ func (s *resultSpool) save(journal resultJournal) error {
 	if err := os.Rename(file.Name(), s.path(journal.TaskID)); err != nil {
 		return err
 	}
-	dir, err := os.Open(s.dir)
-	if err != nil {
-		return err
-	}
-	defer dir.Close()
-	if err := dir.Sync(); err != nil {
-		return err
+	// Windows has no documented directory fsync and FlushFileBuffers rejects the
+	// read-only handle os.Open returns: there a saved journal survives a daemon
+	// restart, but its rename may be lost to an OS crash or power loss.
+	if runtime.GOOS != "windows" {
+		dir, err := os.Open(s.dir)
+		if err != nil {
+			return err
+		}
+		defer dir.Close()
+		if err := dir.Sync(); err != nil {
+			return err
+		}
 	}
 	s.active[journal.TaskID] = true
 	return nil

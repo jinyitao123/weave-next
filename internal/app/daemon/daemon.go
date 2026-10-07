@@ -700,6 +700,14 @@ func claudeLoggedInWithFirstPartyOAuth(ctx context.Context, cliPath string) bool
 	if err != nil {
 		return false
 	}
+	return claudeAuthStatusIsFirstPartyOAuth(output)
+}
+
+// claudeAuthStatusIsFirstPartyOAuth accepts `claude auth status` output only for
+// a logged-in first-party account whose method is on the allowlist. Claude Code
+// 2.1.285 reports subscription login as claude.ai. API keys, third-party
+// providers and unknown methods are rejected.
+func claudeAuthStatusIsFirstPartyOAuth(output []byte) bool {
 	var status struct {
 		LoggedIn    bool   `json:"loggedIn"`
 		AuthMethod  string `json:"authMethod"`
@@ -708,7 +716,15 @@ func claudeLoggedInWithFirstPartyOAuth(ctx context.Context, cliPath string) bool
 	if json.Unmarshal(output, &status) != nil {
 		return false
 	}
-	return status.LoggedIn && status.AuthMethod == "oauth_token" && status.APIProvider == "firstParty"
+	if !status.LoggedIn || status.APIProvider != "firstParty" {
+		return false
+	}
+	switch status.AuthMethod {
+	case "claude.ai", "oauth_token":
+		return true
+	default:
+		return false
+	}
 }
 
 func envWithoutKeys(in []string, keys ...string) []string {
