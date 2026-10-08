@@ -31,7 +31,7 @@ type Config struct {
 	MCPBoundaryBase string // WEAVE_MCP_BOUNDARY_BASE, default http://127.0.0.1:<Port>
 
 	// External engine execution settings.
-	LocalRuntimeEnabled  bool     // WEAVE_LOCAL_RUNTIME_ENABLED, default true
+	LocalRuntimeEnabled  bool     // WEAVE_LOCAL_RUNTIME_ENABLED, default false; explicit co-located Host opt-in
 	LocalRuntimeServices []string // WEAVE_LOCAL_RUNTIME_SHARED_PROVIDERS, explicit service IDs
 	WorkspacesRoot       string   // WEAVE_WORKSPACES_ROOT, default ~/.weave/workspaces
 	OneAPIBase           string   // OPENAI_BASE_URL
@@ -81,7 +81,7 @@ func Load() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	localRuntimeEnabled, err := boolEnv("WEAVE_LOCAL_RUNTIME_ENABLED", true)
+	localRuntimeEnabled, err := boolEnv("WEAVE_LOCAL_RUNTIME_ENABLED", false)
 	if err != nil {
 		return nil, err
 	}
