@@ -173,9 +173,11 @@ func (store *PGActivityStore) ListBusinessActionEvents(ctx context.Context, work
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("read business action activity rows: %w", err)
 	}
+	rows.Close()
 	if err := tx.Commit(ctx); err != nil {
 		return nil, fmt.Errorf("commit list business action activity: %w", err)
 	}
+	store.enrichBusinessActionFailureReasons(ctx, events)
 	return events, nil
 }
 
@@ -213,6 +215,7 @@ func (store *PGActivityStore) RecordBusinessActionEvent(ctx context.Context, eve
 			return errors.New("business action operation requires a request digest")
 		}
 	}
+	rewriteDetail := detail.Result != nil || detail.PublicReason != ""
 	if detail.Result != nil {
 		cleaned := businessaction.SanitizeActionOutcomeResult(detail.Result)
 		if cleaned == nil {
@@ -222,10 +225,17 @@ func (store *PGActivityStore) RecordBusinessActionEvent(ctx context.Context, eve
 			return err
 		}
 		detail.Result = cleaned
+	}
+	if detail.Source == businessaction.ActionOutcomeSourceForgeMCP && detail.Phase == "result" && detail.Status == businessaction.ActionOutcomeStatusFailed {
+		detail.PublicReason = businessaction.SafePublicActionReason(detail.PublicReason)
+	} else {
+		detail.PublicReason = ""
+	}
+	if rewriteDetail {
 		var err error
 		event.Detail, err = json.Marshal(detail)
 		if err != nil {
-			return fmt.Errorf("encode business action result cache: %w", err)
+			return fmt.Errorf("encode business action result detail: %w", err)
 		}
 	}
 	tx, err := store.Transactions.Begin(ctx)
