@@ -37,6 +37,12 @@ make compose-check
 
 产品开通、部署边界和当前验收状态见[产品总仓](https://github.com/jinyitao123/weave-workbench)。平台 Compose 文件用于开发与组件验证。
 
+默认 Docker 构建和 Compose 的 `weave` 服务使用 `server` target，只包含 Go 服务、健康检查所需的 Node 及六平台 Runtime Host 下载产物，不安装 Codex、Claude Code 或 OpenCode。Loom 可以使用已配置的模型服务在主服务内执行。CLI 成员以及借 CLI 提供推理的 providerless Loom，需要已注册、对应引擎和认证均已就绪的执行节点。
+
+在执行节点安装所需的 CLI 引擎，通过运行时运维入口注册节点，再使用其节点令牌启动现有 `weave runtime` 命令。`/install.sh` 和 `/install.ps1` 安装 Runtime Host，由 Host 上报其执行环境中可用的引擎。容器执行节点可显式构建 `docker build --target executor -t weave-executor .`；Compose 的可选 `runtime` profile 构建该 target，使用独立的 `WEAVE_RUNTIME_IMAGE` 标签，默认是 `weave-executor`。`WEAVE_PLATFORM_IMAGE` 仅指向主服务镜像。
+
+`WEAVE_LOCAL_RUNTIME_ENABLED` 默认是 `false`，主服务 Compose 也保持关闭。运维人员明确选择同机 Host 时，仍可在自有部署中设为 `true`，并自行提供所需 CLI。此开关不会改写已发布工作流冻结的节点绑定，也不会替代缺失的外部节点。
+
 [架构入口](docs/架构/README.md)导航 Weave 当前分层、契约和迁移证据。带日期的验收记录保留当时观察到的结论与限制，不能证明当前工作树或部署仍然通过。
 
 ## 许可
