@@ -48,6 +48,7 @@ type businessActionActivityDetailV1 struct {
 	FrozenRecordSHA256 string               `json:"frozen_record_sha256,omitempty"`
 	ParamsSHA256       string               `json:"params_sha256,omitempty"`
 	Status             string               `json:"status,omitempty"`
+	PublicReason       string               `json:"public_reason,omitempty"`
 	Result             *contract.ToolResult `json:"result,omitempty"`
 }
 
@@ -63,6 +64,7 @@ func projectBusinessActionOutcomes(events []ActivityEvent, capture func(Activity
 		started ActivityEvent
 		detail  businessActionActivityDetailV1
 		status  string
+		reason  string
 	}
 
 	receipts := make(map[key]receipt)
@@ -123,6 +125,10 @@ func projectBusinessActionOutcomes(events []ActivityEvent, capture func(Activity
 			return nil, errors.New("business action result has no matching start record")
 		}
 		current.status = detail.Status
+		current.reason = ""
+		if detail.Source == businessaction.ActionOutcomeSourceForgeMCP && detail.Status == businessaction.ActionOutcomeStatusFailed {
+			current.reason = businessaction.SafePublicActionReason(detail.PublicReason)
+		}
 		receipts[id] = current
 	}
 	if len(receipts) > MaxBusinessActionOutcomesPerRun {
@@ -146,7 +152,7 @@ func projectBusinessActionOutcomes(events []ActivityEvent, capture func(Activity
 			NodeID: item.started.NodeID, CallID: item.detail.CallID,
 			ActionName: label, ObjectName: item.detail.ObjectName,
 			RecordID: item.detail.RecordID, Simulated: item.detail.Source == businessaction.ActionOutcomeSourceDevelopmentSimulation, Status: status,
-			Summary: businessActionOutcomeSummary(label, status, item.detail.Source == businessaction.ActionOutcomeSourceDevelopmentSimulation),
+			Summary: businessActionOutcomeSummary(label, status, item.detail.Source == businessaction.ActionOutcomeSourceDevelopmentSimulation, item.reason),
 		})
 	}
 	return items, nil
@@ -171,7 +177,7 @@ func sameBusinessActionDetail(left, right businessActionActivityDetailV1) bool {
 		left.ParamsSHA256 == right.ParamsSHA256
 }
 
-func businessActionOutcomeSummary(label, status string, simulated bool) string {
+func businessActionOutcomeSummary(label, status string, simulated bool, reason string) string {
 	if simulated {
 		prefix := "开发试跑模拟动作“" + label + "”"
 		switch status {
@@ -187,6 +193,9 @@ func businessActionOutcomeSummary(label, status string, simulated bool) string {
 	case "succeeded":
 		return "平台记录：业务动作“" + label + "”的工具调用返回成功；该回执不代表业务记录已达到最终状态。"
 	case "failed":
+		if reason = businessaction.SafePublicActionReason(reason); reason != "" {
+			return "业务动作“" + label + "”未完成：" + reason
+		}
 		return "平台记录：业务动作“" + label + "”的工具调用返回失败。"
 	default:
 		return "平台记录：业务动作“" + label + "”的工具调用结果未知，请先核对业务记录。"

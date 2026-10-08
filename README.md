@@ -37,6 +37,12 @@ Build the operator binary with `go build -o ./bin/weave ./cmd/weave`. The `weave
 
 For product setup, deployment boundaries, and current acceptance status, use the [product repository](https://github.com/jinyitao123/weave-workbench). The platform Compose file remains a development and validation aid.
 
+The default Docker build and the Compose `weave` service use the `server` target. It contains the Go service, Node for the health probe, and the six-platform Runtime Host downloads; it does not install Codex, Claude Code, or OpenCode. Loom can execute in the service using a configured model provider. CLI members, including CLI-backed inference for providerless Loom, require a registered execution node with the corresponding engine and authentication ready.
+
+Install the required CLI engines on execution nodes, register each node through runtime maintenance, and start the existing `weave runtime` command with its node token. The `/install.sh` and `/install.ps1` helpers install the Runtime Host; the Host reports engines visible in its execution environment. For container-based nodes, explicitly build `docker build --target executor -t weave-executor .`; the optional Compose `runtime` profile builds that target under the separate `WEAVE_RUNTIME_IMAGE` tag (default `weave-executor`). `WEAVE_PLATFORM_IMAGE` continues to name only the server image.
+
+`WEAVE_LOCAL_RUNTIME_ENABLED` defaults to `false`, and the server Compose service keeps it disabled. Operators who deliberately assemble a co-located Host can still opt in with `true` in their own deployment, which must supply its CLI engines. This option does not change a published workflow's frozen node binding or replace a missing external node.
+
 The [architecture index](docs/架构/README.md) is the current navigation for Weave's layering, contracts, and migration evidence. Dated acceptance records preserve the conclusions and limitations observed at the time; they do not certify the current working tree or deployment.
 
 ## License

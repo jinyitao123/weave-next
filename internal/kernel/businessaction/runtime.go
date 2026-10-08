@@ -1047,6 +1047,9 @@ func (d *dispatcher) Dispatch(ctx context.Context, call contract.ToolCall) (*con
 		case result != nil:
 			status = classifyNativeActionResult(result)
 		}
+		if err == nil && status == ActionOutcomeStatusFailed && outcome.Source == ActionOutcomeSourceForgeMCP {
+			outcome.PublicReason = PublicActionFailureReason(result, selected.actionName)
+		}
 		if err != nil {
 			message := "Forge 业务动作返回失败。"
 			if status == ActionOutcomeStatusUnknown {

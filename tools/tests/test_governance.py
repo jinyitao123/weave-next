@@ -1,5 +1,6 @@
 import os
 import pathlib
+import re
 import subprocess
 import sys
 import tempfile
@@ -29,10 +30,10 @@ class BudgetGovernanceTests(unittest.TestCase):
         self.assertEqual(len(errors), 1)
         self.assertIn("lower it to 90", errors[0])
 
-    def growth_budgets(self, *amendments, kernel_lines=100):
+    def growth_budgets(self, *amendments, kernel_lines=100, recorded=0):
         budgets = {band: {"lines": 0, "production_lines": 0} for band in ("base", "kernel", "build", "app")}
         budgets["kernel"] = {"lines": kernel_lines, "production_lines": 80}
-        budgets["growth_policy"] = {"effective": "2026-10-08", "baseline_lines": 100, "baseline_production_lines": 80}
+        budgets["growth_policy"] = {"recorded_amendments": recorded, "baseline_lines": 100, "baseline_production_lines": 80}
         budgets["amendments"] = list(amendments)
         return budgets
 
@@ -48,8 +49,10 @@ class BudgetGovernanceTests(unittest.TestCase):
         self.assertIn("without a deletion_trigger", growth_policy_violations(self.growth_budgets(untriggered, kernel_lines=110))[0])
         triggered = dict(untriggered, deletion_trigger="delete the old exporter once W6 lands")
         self.assertEqual(growth_policy_violations(self.growth_budgets(triggered, kernel_lines=110)), [])
-        earlier = {"date": "2026-10-01", "reason": "registered before the policy"}
-        self.assertEqual(growth_policy_violations(self.growth_budgets(earlier)), [])
+        # An amendment recorded before the policy, even on the same day, is not re-judged.
+        earlier = {"date": "2026-10-09", "reason": "registered before the policy"}
+        self.assertEqual(growth_policy_violations(self.growth_budgets(earlier, recorded=1)), [])
+        self.assertIn("non-negative growth", growth_policy_violations(self.growth_budgets(earlier, {"date": "2026-10-09"}, recorded=1))[0])
         self.assertIn("non-negative growth", growth_policy_violations(self.growth_budgets({"date": "2026-10-09"}))[0])
 
 
@@ -142,6 +145,45 @@ import "github.com/jinyitao123/weave/internal/app/api"
         self.assertEqual(external_module("github.com/google/uuid-evil"), "github.com/google/uuid-evil")
 
 
+class PlatformBuildTests(unittest.TestCase):
+    def test_default_server_excludes_executor_layers(self):
+        dockerfile = (TOOLS.parent / "Dockerfile").read_text()
+        stages = {}
+        for stage in re.split(r"(?m)^FROM ", dockerfile)[1:]:
+            header, body = stage.split("\n", 1)
+            base, keyword, name = header.split()
+            self.assertEqual(keyword, "AS")
+            stages[name] = (base, body)
+        self.assertEqual(name, "server", "plain docker build must select the server")
+
+        def dependencies(target, visited=None):
+            visited = set() if visited is None else visited
+            if target not in stages or target in visited:
+                return visited
+            visited.add(target)
+            base, body = stages[target]
+            for source in [base] + re.findall(r"--from=([\w-]+)", body):
+                dependencies(source, visited)
+            return visited
+
+        server_stages = dependencies("server")
+        executor_stages = dependencies("executor")
+        server = "\n".join(stages[name][1] for name in server_stages)
+        executor = "\n".join(stages[name][1] for name in executor_stages)
+        self.assertNotIn("executor", server_stages)
+        self.assertTrue(any(stages[name][0].startswith("node:") for name in server_stages))
+        self.assertNotIn("npm install", server)
+        for package in ("opencode-ai@", "@openai/codex@", "@anthropic-ai/claude-code@"):
+            self.assertNotIn(package, server)
+            self.assertIn(package, executor)
+        for path in ("/weave /usr/local/bin/weave", "/dist/runtime /dist/runtime"):
+            self.assertIn("COPY --from=builder " + path, server)
+        for platform in ("linux/amd64", "linux/arm64", "darwin/amd64", "darwin/arm64", "windows/amd64", "windows/arm64"):
+            self.assertIn(platform, server)
+        self.assertIn("ENV WEAVE_RUNTIME_DIST_DIR=/dist/runtime", server)
+        self.assertIn('ENTRYPOINT ["weave"]', server)
+
+
 class PlatformComposeTests(unittest.TestCase):
     def test_first_boot_and_runtime_profile(self):
         # Explicit opt-in: ordinary unit checks do not require Docker CLI.
@@ -151,6 +193,8 @@ class PlatformComposeTests(unittest.TestCase):
         env = dict(os.environ, JWT_SECRET="ci", WEAVE_ADMIN_PASS="ci",
                    WEAVE_SECRET_KEY="0" * 64, BUILD_COMMIT="governance-check")
         env.pop("WEAVE_RUNTIME_TOKEN", None)
+        env.pop("WEAVE_PLATFORM_IMAGE", None)
+        env.pop("WEAVE_RUNTIME_IMAGE", None)
         command = ["docker", "compose", "--env-file", os.devnull, "-f",
                    str(TOOLS.parent / "docker-compose.platform.yml")]
         default = subprocess.run(command + ["config", "--format", "json"],
@@ -159,6 +203,7 @@ class PlatformComposeTests(unittest.TestCase):
         self.assertEqual(sorted(default_services), ["db", "weave"])
         weave_env = default_services["weave"]["environment"]
         self.assertNotIn("WEAVE_DISABLE_LOCAL_LOGIN", weave_env)
+        self.assertEqual(weave_env["WEAVE_LOCAL_RUNTIME_ENABLED"], "false")
         self.assertNotIn("WEAVE_METATEAM_ENABLED", weave_env)
         self.assertNotIn("WEAVE_RETIRE_LEGACY_PLATFORM_APIS", weave_env)
         for profile in [[], ["--profile", "runtime"]]:
@@ -166,19 +211,28 @@ class PlatformComposeTests(unittest.TestCase):
                                     env=env, capture_output=True, text=True, check=True)
             services = json.loads(result.stdout)["services"]
             self.assertNotIn("workbench", services)
+            self.assertEqual(services["weave"]["build"]["target"], "server")
+            self.assertEqual(services["weave"]["image"], "weave-platform")
+            self.assertNotIn("OPENCODE_VERSION", services["weave"]["build"]["args"])
             self.assertEqual(services["weave"]["build"]["args"]["BUILD_COMMIT"], "governance-check")
             self.assertEqual(services["weave"]["build"]["args"]["WEAVE_VERSION"], "0.1.0-dev")
             self.assertEqual(services["weave"]["build"]["args"]["HTTP_PROXY"], "")
             self.assertEqual(services["weave"]["build"]["args"]["http_proxy"], "")
             if "runtime" in profile:
+                self.assertEqual(services["runtime"]["build"]["target"], "executor")
+                self.assertEqual(services["runtime"]["image"], "weave-executor")
+                self.assertEqual(services["runtime"]["build"]["args"]["BUILD_COMMIT"], "governance-check")
+                self.assertIn("OPENCODE_VERSION", services["runtime"]["build"]["args"])
                 self.assertEqual(services["runtime"]["environment"]["WEAVE_RUNTIME_TOKEN"], "")
                 self.assertEqual(services["runtime"]["environment"]["HTTP_PROXY"], "")
                 self.assertIn("weave", services["runtime"]["environment"]["NO_PROXY"])
         env["WEAVE_RUNTIME_TOKEN"] = "rtk_ci"
+        env["WEAVE_RUNTIME_IMAGE"] = "registry.example.test/weave-executor:operator-selected"
         result = subprocess.run(command + ["--profile", "runtime", "config", "--format", "json"],
                                 env=env, capture_output=True, text=True, check=True)
         runtime = json.loads(result.stdout)["services"]["runtime"]
         self.assertEqual(runtime["environment"]["WEAVE_RUNTIME_TOKEN"], "rtk_ci")
+        self.assertEqual(runtime["image"], env["WEAVE_RUNTIME_IMAGE"])
         self.assertNotIn("--runtime-token", runtime["command"])
 
 

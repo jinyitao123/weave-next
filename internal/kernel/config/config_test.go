@@ -30,3 +30,39 @@ func TestLoadWorkflowHealthDefaultsAndBounds(t *testing.T) {
 		t.Fatal("failure warning rate greater than one accepted")
 	}
 }
+
+func TestLoadBooleanDefaultsAndOverrides(t *testing.T) {
+	for _, setting := range []struct {
+		name         string
+		defaultValue bool
+		value        func(*Config) bool
+	}{
+		{"WEAVE_LOCAL_RUNTIME_ENABLED", false, func(c *Config) bool { return c.LocalRuntimeEnabled }},
+	} {
+		for _, input := range []string{"", "true", "false", "sometimes"} {
+			t.Run(setting.name+"/"+input, func(t *testing.T) {
+				t.Setenv("DATABASE_URL", "postgres://example")
+				t.Setenv("JWT_SECRET", "secret")
+				t.Setenv("WEAVE_WORKSPACES_ROOT", t.TempDir())
+				t.Setenv(setting.name, input)
+				cfg, err := Load()
+				if input == "sometimes" {
+					if err == nil {
+						t.Fatal("invalid boolean configuration was accepted")
+					}
+					return
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				want := setting.defaultValue
+				if input != "" {
+					want = input == "true"
+				}
+				if setting.value(cfg) != want {
+					t.Fatalf("%s=%q: got %t, want %t", setting.name, input, setting.value(cfg), want)
+				}
+			})
+		}
+	}
+}

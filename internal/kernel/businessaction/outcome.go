@@ -47,6 +47,7 @@ type ActionOutcomeEvent struct {
 	FrozenRecordSHA256 string               `json:"frozen_record_sha256,omitempty"`
 	ParamsSHA256       string               `json:"params_sha256,omitempty"`
 	Status             string               `json:"status,omitempty"`
+	PublicReason       string               `json:"public_reason,omitempty"`
 	Result             *contract.ToolResult `json:"result,omitempty"`
 }
 

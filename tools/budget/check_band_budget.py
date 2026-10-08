@@ -84,8 +84,12 @@ def growth_policy_violations(budgets: dict) -> list[str]:
         return ["growth_policy is missing"]
     failures = []
     allowance = {metric: 0 for metric in GROWTH_METRICS}
+    recorded = policy["recorded_amendments"]
     for index, amendment in enumerate(budgets.get("amendments", [])):
-        if amendment.get("date", "") < policy["effective"]:
+        # Amendments that existed when the policy was introduced keep their
+        # original meaning; only later ones must pair growth with a trigger.
+        # Position, not date: several amendments can share a day.
+        if index < recorded:
             continue
         growth = amendment.get("growth")
         trigger = str(amendment.get("deletion_trigger", "")).strip()

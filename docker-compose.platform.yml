@@ -1,6 +1,6 @@
 # Weave platform deployment — server + optional remote runtime.
-# The root Dockerfile bundles the CLI engines (opencode/codex/claude), so the
-# same image serves both roles: default entrypoint = server, `runtime ...` = remote runtime.
+# The server target has no CLI engines. The optional executor target supplies
+# them to a separately registered Runtime Host with its own image.
 #
 # First boot: `docker compose -f docker-compose.platform.yml up -d`
 # Then register a runtime through runtime maintenance, put its
@@ -22,16 +22,13 @@ services:
       retries: 15
 
   weave:
-    build:
+    build: &weave-build
       context: .
-      args:
+      target: server
+      args: &weave-build-args
         BUILD_COMMIT: ${BUILD_COMMIT:-unknown}
         WEAVE_VERSION: ${WEAVE_VERSION:-0.1.0-dev}
-        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmjs.org}
         GOPROXY: ${GOPROXY:-https://proxy.golang.org,direct}
-        OPENCODE_VERSION: ${OPENCODE_VERSION:-1.18.11}
-        CODEX_VERSION: ${CODEX_VERSION:-0.146.0}
-        CLAUDE_CODE_VERSION: ${CLAUDE_CODE_VERSION:-2.1.220}
         HTTP_PROXY: ${DOCKER_BUILD_HTTP_PROXY:-}
         HTTPS_PROXY: ${DOCKER_BUILD_HTTPS_PROXY:-}
         ALL_PROXY: ${DOCKER_BUILD_ALL_PROXY:-}
@@ -61,6 +58,8 @@ services:
       WEAVE_TOOL_PROTOCOL_PROBE_RUN_ID: ${WEAVE_TOOL_PROTOCOL_PROBE_RUN_ID:-}
       WEAVE_TOOL_PROTOCOL_PROBE_EXPIRES_AT: ${WEAVE_TOOL_PROTOCOL_PROBE_EXPIRES_AT:-}
       WEAVE_TOOL_PROTOCOL_PROBE_MAX_MODEL_CALLS: ${WEAVE_TOOL_PROTOCOL_PROBE_MAX_MODEL_CALLS:-}
+      # Main service execution uses Loom or registered external Runtime Hosts.
+      WEAVE_LOCAL_RUNTIME_ENABLED: 'false'
       # Engine credentials are injected at runtime — never baked into the image.
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       WEAVE_LOOM_MODEL: ${WEAVE_LOOM_MODEL:-}
@@ -92,7 +91,16 @@ services:
   # typically runs on a DIFFERENT machine via `weave runtime --server https://…`;
   # this service is the single-host / staging shape of the same thing.
   runtime:
-    image: ${WEAVE_PLATFORM_IMAGE:-weave-platform}
+    build:
+      <<: *weave-build
+      target: executor
+      args:
+        <<: *weave-build-args
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmjs.org}
+        OPENCODE_VERSION: ${OPENCODE_VERSION:-1.18.11}
+        CODEX_VERSION: ${CODEX_VERSION:-0.146.0}
+        CLAUDE_CODE_VERSION: ${CLAUDE_CODE_VERSION:-2.1.220}
+    image: ${WEAVE_RUNTIME_IMAGE:-weave-executor}
     profiles: ["runtime"]
     # The CLI validates this when the runtime starts. Requiring it during
     # interpolation also blocks first boot with the runtime profile disabled.
