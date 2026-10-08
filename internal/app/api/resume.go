@@ -68,39 +68,6 @@ func loadAPIResumeCheckpoint(
 	return checkpoint, nil
 }
 
-func loadTeamAPIResumeCheckpoint(
-	ctx context.Context,
-	store loom.Store,
-	snap snapshot.TeamRunSnapshot,
-	runID string,
-) (apiRunCheckpoint, error) {
-	if store == nil {
-		return apiRunCheckpoint{}, fmt.Errorf("resume checkpoint store is unavailable")
-	}
-	graph := teamCheckpointGraph(snap)
-	data, err := store.Get(ctx, "checkpoint:"+graph, runID)
-	if err != nil {
-		return apiRunCheckpoint{}, err
-	}
-	var checkpoint apiRunCheckpoint
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.UseNumber()
-	if err := decoder.Decode(&checkpoint); err != nil {
-		return apiRunCheckpoint{}, fmt.Errorf("decode team resume checkpoint: %w", err)
-	}
-	if err := decoder.Decode(&struct{}{}); err != io.EOF {
-		return apiRunCheckpoint{}, fmt.Errorf("decode team resume checkpoint: trailing JSON")
-	}
-	if checkpoint.RunID != runID || checkpoint.Graph != graph || checkpoint.State == nil {
-		return apiRunCheckpoint{}, fmt.Errorf("team resume checkpoint ownership mismatch")
-	}
-	return checkpoint, nil
-}
-
-func teamCheckpointGraph(snap snapshot.TeamRunSnapshot) string {
-	return "team:" + snap.WorkspaceID + ":" + snap.TeamID + ":" + snap.RunID
-}
-
 func (s *Server) resolveResumeAgentForEntry(
 	ctx context.Context,
 	tenant string,
@@ -514,15 +481,6 @@ func runtimeAssignmentForTeamExecution(execution *teamSessionExecution) *runtime
 	}
 	assignment, _ := snapshotRuntimeAssignment(execution.Snapshot)
 	return assignment
-}
-
-func appendTeamExecutionResponseIdentity(response *ChatResponse, execution *teamSessionExecution) {
-	if response == nil || execution == nil {
-		return
-	}
-	response.ProjectID = execution.Lease.ProjectID
-	response.ConversationID = execution.ConversationID
-	response.SessionID = execution.Lease.Key.SessionID
 }
 
 func appendTeamExecutionEventIdentity(payload map[string]any, execution *teamSessionExecution) {

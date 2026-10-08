@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"slices"
 	"sort"
-	"strings"
 )
 
 // Plan is the immutable execution view consumed by runtime adapters.
@@ -200,13 +199,4 @@ func appendUnique(values []string, value string) []string {
 		}
 	}
 	return append(values, value)
-}
-func containsString(values []string, value string) bool {
-	value = strings.TrimSpace(value)
-	for _, v := range values {
-		if strings.TrimSpace(v) == value {
-			return true
-		}
-	}
-	return false
 }

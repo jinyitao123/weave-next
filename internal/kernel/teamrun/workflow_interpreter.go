@@ -106,10 +106,6 @@ type serialMachineResult struct {
 	Err                   error
 }
 
-func serialFailure(err error, usage loomruntime.UsageAccumulator) serialMachineResult {
-	return serialMachineResult{Status: serialFailed, Usage: usage, Err: err}
-}
-
 // nodeUsageAttemptID derives one deterministic physical attempt id per node
 // invocation from the logical call id, so a replay of the same invocation
 // confirms idempotently instead of creating a second contribution.

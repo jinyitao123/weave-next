@@ -268,13 +268,9 @@ func TestMemberReplayAllControlledSegmentsUsesEntrySnapshotsRealPG(t *testing.T)
 	}
 }
 
-func TestMemberReplayRefusesInferredConfigurationAndCorruptInputHash(t *testing.T) {
-	report := ReplayMemberSegment(t.Context(), "private-run", nil, nil)
-	if report.Outcome != ReplayConfigurationUnavailable || report.ConfigVerified {
-		t.Fatal("missing configuration was inferred")
-	}
+func TestMemberReplayRefusesCorruptInputHash(t *testing.T) {
 	entries := []MemberJournalEntry{{Segment: "000000000001/chat", Cursor: 1, Kind: "model", Input: json.RawMessage(`{}`), InputHash: strings.Repeat("0", 64)}}
-	report = ReplayMemberJournal(t.Context(), "private-run", entries, nil, replayFixtureConfiguration(0))
+	report := ReplayMemberJournal(t.Context(), "private-run", entries, nil, replayFixtureConfiguration(0))
 	if report.Outcome != ReplayDiverged || report.ConfigVerified {
 		t.Fatal("tampered request digest was ignored")
 	}

@@ -49,7 +49,6 @@ type PauseError struct {
 }
 
 func (e *PauseError) Error() string { return "human confirmation required" }
-func IsPause(err error) bool        { var pause *PauseError; return errors.As(err, &pause) }
 
 // ResumeHuman records the reviewed value into a checkpoint. Execution resumes
 // at the next unfinished step and never replays completed model or tool work.

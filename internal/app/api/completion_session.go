@@ -11,12 +11,12 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jinyitao123/loom/contract"
 	"github.com/jinyitao123/weave/internal/base/execution"
-	"github.com/jinyitao123/weave/internal/kernel/fanout"
 	"github.com/jinyitao123/weave/internal/base/snapshot"
-	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
+	"github.com/jinyitao123/weave/internal/kernel/fanout"
 	"github.com/jinyitao123/weave/internal/kernel/loomruntime"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 	"github.com/jinyitao123/weave/internal/kernel/sessionexec"
+	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 )
 
 type completionAdmissionRetry struct {
@@ -131,17 +131,6 @@ func completionSnapshot(
 		RunAssociations:       associations,
 		TriggerSourceV2:       trigger,
 	}
-}
-
-func (s *Server) acquireCompletionSession(
-	ctx context.Context,
-	workspaceID string,
-	groupID string,
-) (*registry.AgentRecord, *teamSessionExecution, error) {
-	return s.acquireCompletionSessionEvent(ctx, workspaceID, completionRequestIdentity{
-		LegacyGroupID: groupID,
-		CompletionID:  "completion:" + groupID,
-	})
 }
 
 type workflowCompletionSource struct {

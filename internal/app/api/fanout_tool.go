@@ -385,24 +385,6 @@ func (d *FanoutToolDispatcher) cardConversationID() string {
 	return d.conversationID
 }
 
-func fanoutContainsAgent(agents []registry.ManagedAgent, name string) bool {
-	for _, agent := range agents {
-		if agent.Name == name {
-			return true
-		}
-	}
-	return false
-}
-
-func fanoutContainsAgentKind(agents []registry.ManagedAgent, name, kind string) bool {
-	for _, agent := range agents {
-		if agent.Name == name && agent.Kind == kind {
-			return true
-		}
-	}
-	return false
-}
-
 func fanoutTaskOverview(tasks []fanoutDispatchTask) string {
 	var overview strings.Builder
 	for i, task := range tasks {

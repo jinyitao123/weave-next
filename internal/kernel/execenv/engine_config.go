@@ -8,14 +8,6 @@ import (
 	"github.com/jinyitao123/weave/internal/kernel/secret"
 )
 
-// WriteEngineConfig writes the runtime-specific configuration for the named
-// CLI engine into workDir. Each engine owns exactly one case so adapters can
-// land independently; an unbuilt engine fails loudly instead of running
-// half-configured.
-func WriteEngineConfig(engineName, workDir string, rec *registry.AgentRecord, oneapiBase, boundaryBase, apiKeyEnvValue string) error {
-	return WriteEngineConfigWithAuthMode(engineName, workDir, rec, oneapiBase, boundaryBase, apiKeyEnvValue, "")
-}
-
 func WriteEngineConfigWithAuthMode(engineName, workDir string, rec *registry.AgentRecord, oneapiBase, boundaryBase, apiKeyEnvValue, authMode string, targets ...TaskMCPTarget) error {
 	if len(targets) > 0 {
 		copy := *rec

@@ -58,16 +58,6 @@ func (s Step) AllowedKeys() []string {
 	return keys
 }
 
-// HasField reports whether the step schema declares the key.
-func (s Step) HasField(key string) bool {
-	for _, field := range s.Fields {
-		if field.Key == key {
-			return true
-		}
-	}
-	return false
-}
-
 // StepFor returns the config schema for one declarative step type. The
 // worker step is deliberately absent: employee internal graphs forbid it
 // and frozen v1 does not support it.

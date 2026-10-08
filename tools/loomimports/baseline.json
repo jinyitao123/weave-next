@@ -7,7 +7,7 @@
   {
     "package": "internal/app/api",
     "import": "loom",
-    "files": 11
+    "files": 10
   },
   {
     "package": "internal/app/api",
@@ -106,16 +106,6 @@
   },
   {
     "package": "internal/kernel/registry",
-    "import": "loom/stdlib",
-    "files": 1
-  },
-  {
-    "package": "internal/kernel/teamcompiler",
-    "import": "loom",
-    "files": 2
-  },
-  {
-    "package": "internal/kernel/teamcompiler",
     "import": "loom/stdlib",
     "files": 1
   },

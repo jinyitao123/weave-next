@@ -111,12 +111,6 @@ var (
 	errReplayInvalidHistory = errors.New("recorded tool result identity is invalid")
 )
 
-// ReplayMemberSegment cannot infer the runtime configuration from a request.
-// Use ReplayMemberJournal with the immutable configuration and checkpoints.
-func ReplayMemberSegment(_ context.Context, memberRunID string, _ []MemberJournalEntry, _ json.RawMessage) *MemberReplayReport {
-	return &MemberReplayReport{MemberRunID: memberRunID, Outcome: ReplayConfigurationUnavailable, Detail: "frozen configuration and segment entry checkpoints are required", ReplayScope: "model_tool_journal", NoLiveCalls: true}
-}
-
 func decodeReplayState(raw json.RawMessage) (loom.State, error) {
 	state := loom.State{}
 	if len(raw) > 0 && string(raw) != "null" {

@@ -119,8 +119,6 @@ var runBundleTables = []runBundleTableSpec{
 // exact about token: "input_tokens" is usage, "refresh_token" is a secret.
 var secretJSONKey = regexp.MustCompile(`(?i)^(.*[_-])?(token|secret|password|passwd|api[_-]?key|apikey|authorization|cookie|credentials?|ciphertext|private[_-]?key)$`)
 
-const redactedSecret = `"[redacted]"`
-
 // ExportRunBundle reads one run in a single repeatable-read snapshot. Without
 // includeContent every business-material column is replaced by its length and
 // digest, so the bundle shows how the run was recorded without carrying what

@@ -107,52 +107,6 @@ func AuthMiddleware(jwtSecret string, keyStoreGetter func() *apikeys.Store, user
 	}
 }
 
-// OptionalAuthMiddleware tries to authenticate but allows unauthenticated requests through.
-// Used for endpoints like /register that need auth context when available but allow first-user bootstrap.
-func OptionalAuthMiddleware(jwtSecret string, keyStoreGetter func() *apikeys.Store, userStoreGetter func() *users.Store) echo.MiddlewareFunc {
-	return func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
-			auth := c.Request().Header.Get("Authorization")
-			if auth == "" {
-				return next(c)
-			}
-
-			tokenStr := strings.TrimPrefix(auth, "Bearer ")
-			if tokenStr == auth {
-				return next(c)
-			}
-
-			// Try API Key.
-			if strings.HasPrefix(tokenStr, "wv_sk_") {
-				if ks := keyStoreGetter(); ks != nil {
-					if key, err := ks.Validate(c.Request().Context(), tokenStr); err == nil {
-						setAPIKeyContext(c, key)
-						go ks.TouchLastUsed(context.Background(), key.ID)
-					}
-				}
-				return next(c)
-			}
-
-			// Try JWT.
-			claims := &Claims{}
-			token, err := jwt.ParseWithClaims(tokenStr, claims, func(t *jwt.Token) (interface{}, error) {
-				return []byte(jwtSecret), nil
-			})
-			if err == nil && token.Valid {
-				if user, ok := resolveJWTUser(c.Request().Context(), userStoreGetter, claims); ok {
-					c.Set("tenant", user.TenantID)
-					c.Set("user_id", user.ID)
-					c.Set("roles", []string{user.Role})
-					c.Set(authSourceContextKey, authSourceJWT)
-					setExecutionSubject(c, execution.Subject{WorkspaceID: user.TenantID, UserID: user.ID})
-				}
-			}
-
-			return next(c)
-		}
-	}
-}
-
 func setAPIKeyContext(c echo.Context, key *apikeys.APIKey) {
 	userID := key.OwnerUserID
 	subject := execution.Subject{WorkspaceID: key.TenantID, UserID: userID}

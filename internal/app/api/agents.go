@@ -410,26 +410,6 @@ func (s *Server) handleUpdateAgent(c echo.Context) error {
 	return c.JSON(http.StatusOK, incoming)
 }
 
-// mergeAgentRecord overlays incoming values onto existing.
-//
-// API-managed fields are always overwritten (zero value = clear).
-// Fields outside the partial update contract use non-zero override to avoid
-// accidental clearing when the frontend doesn't send them.
-func mergeAgentRecord(
-	existing, incoming *registry.AgentRecord,
-	subAgentsPresent, skillRefsPresent bool,
-) *registry.AgentRecord {
-	return mergeAgentRecordWithPresence(existing, incoming, agentMergePresence{
-		subAgentsPresent:       subAgentsPresent,
-		skillRefsPresent:       skillRefsPresent,
-		enginePresent:          true,
-		runtimeIDPresent:       true,
-		mcpServersPresent:      true,
-		permissionsPresent:     true,
-		toolLoopControlPresent: true,
-	})
-}
-
 type agentMergePresence struct {
 	subAgentsPresent       bool
 	skillRefsPresent       bool

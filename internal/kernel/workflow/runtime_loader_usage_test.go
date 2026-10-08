@@ -2,7 +2,6 @@ package workflow
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -13,7 +12,7 @@ import (
 	"github.com/jinyitao123/weave/internal/kernel/engine"
 	"github.com/jinyitao123/weave/internal/kernel/execspec"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
-	"github.com/jinyitao123/weave/internal/kernel/runtimes"
+	"github.com/jinyitao123/weave/internal/kernel/runtimehost"
 )
 
 type runtimeCLIReceiptExecutor struct {
@@ -133,7 +132,7 @@ func TestRuntimeCLITextOutputResolvesOnlyCollectedCurrentAbsoluteReferences(t *t
 	for _, location := range []string{"brief.md", "outputs/brief.md", "other/brief.md"} {
 		t.Run(location, func(t *testing.T) {
 			workDir := t.TempDir()
-			before := runtimes.SnapshotOutputArtifacts(workDir)
+			before := runtimehost.SnapshotOutputArtifacts(workDir)
 			name := filepath.Join(workDir, location)
 			if err := os.MkdirAll(filepath.Dir(name), 0o700); err != nil {
 				t.Fatal(err)
@@ -144,7 +143,7 @@ func TestRuntimeCLITextOutputResolvesOnlyCollectedCurrentAbsoluteReferences(t *t
 			}
 			answer := "Saved [brief](" + filepath.ToSlash(name) + ":1)."
 			runResult := engine.RunResult{Output: answer, Status: "completed"}
-			runtimes.CollectRunOutputArtifacts(workDir, before, &runResult)
+			runtimehost.CollectRunOutputArtifacts(workDir, before, &runResult)
 			if location == "other/brief.md" {
 				if runResult.Status != "completed" || runResult.Err != "" || len(runResult.Artifacts) != 0 || len(runResult.Diagnostics) != 1 || runResult.ArtifactCollection == nil || len(runResult.ArtifactCollection.Issues) != 1 {
 					t.Fatalf("out-of-scope file became a receipt-only success: %#v", runResult)
@@ -171,12 +170,7 @@ func TestRuntimeCLITextOutputResolvesOnlyCollectedCurrentAbsoluteReferences(t *t
 func TestRuntimeCLIEntryPreservesEngineIdentityAndReturnsTechnicalCollectionError(t *testing.T) {
 	for _, kind := range []string{"limit", "error"} {
 		original := engine.RunResult{Status: "completed", SessionID: "session-original", Output: "Saved report", Usage: &engine.UsageReceipt{InputTokens: 7, HasTokens: true}, ArtifactCollection: &fileartifact.CollectionEvidence{SchemaVersion: 1, Complete: false, Limits: fileartifact.CollectionLimits{MaxFiles: 128, MaxFileBytes: 262144, MaxTotalBytes: 524288}, Issues: []fileartifact.CollectionIssue{{Path: "report.md", Reason: "fixture_reason", Kind: kind, Claimed: true}}}}
-		encoded, _ := json.Marshal(runtimes.CLIEngineExecResult(original))
-		var wire runtimes.EngineExecResult
-		if err := json.Unmarshal(encoded, &wire); err != nil {
-			t.Fatal(err)
-		}
-		entry, err := NewRuntimeCLIEntry(runtimeCLIReceiptExecutor{result: wire.EngineRunResult()}, &registry.AgentRecord{}, execution.AgentExecutionStamp{})
+		entry, err := NewRuntimeCLIEntry(runtimeCLIReceiptExecutor{result: original}, &registry.AgentRecord{}, execution.AgentExecutionStamp{})
 		if err != nil {
 			t.Fatal(err)
 		}

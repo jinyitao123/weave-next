@@ -168,10 +168,6 @@ func compileStandardFrozenVersion(
 	return graph, capability, nil
 }
 
-func validateStandardFrozenBundle(bundle frozen.FrozenExecutionBundle) error {
-	return validateStandardFrozenBundleVersion(bundle, standardFrozenFactoryVersion)
-}
-
 func validateStandardFrozenBundleVersion(bundle frozen.FrozenExecutionBundle, version string) error {
 	if err := ValidateFrozenBusinessActionFactory(bundle); err != nil {
 		return err

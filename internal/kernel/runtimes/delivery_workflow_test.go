@@ -17,7 +17,7 @@ import (
 	"github.com/jinyitao123/weave/internal/kernel/engine"
 	"github.com/jinyitao123/weave/internal/kernel/execspec"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
-	"github.com/jinyitao123/weave/internal/kernel/runtimes"
+	"github.com/jinyitao123/weave/internal/kernel/runtimehost"
 	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 	"github.com/jinyitao123/weave/internal/kernel/teamrun"
 	"github.com/jinyitao123/weave/internal/kernel/workflow"
@@ -70,7 +70,7 @@ func TestWorkflowFinalDeliveryUsesCurrentStageFileEvidenceAfterResume(t *testing
 					t.Fatal(err)
 				}
 			}
-			before := runtimes.SnapshotOutputArtifacts(workDir)
+			before := runtimehost.SnapshotOutputArtifacts(workDir)
 			if test.file {
 				if err := os.WriteFile(file, []byte(body), 0o600); err != nil {
 					t.Fatal(err)
@@ -79,19 +79,11 @@ func TestWorkflowFinalDeliveryUsesCurrentStageFileEvidenceAfterResume(t *testing
 			// Deliberately omit creation verbs: final selection, not wording,
 			// must enforce whether this file was actually collected.
 			result := engine.RunResult{Status: "completed", Output: "最终简报：`outputs/acceptance.md`。"}
-			runtimes.CollectRunOutputArtifacts(workDir, before, &result)
+			runtimehost.CollectRunOutputArtifacts(workDir, before, &result)
 			if result.Status != "completed" {
 				t.Fatalf("reference should defer to final boundary: %#v", result)
 			}
-			wire, err := json.Marshal(runtimes.CLIEngineExecResult(result))
-			if err != nil {
-				t.Fatal(err)
-			}
-			var remote runtimes.EngineExecResult
-			if err := json.Unmarshal(wire, &remote); err != nil {
-				t.Fatal(err)
-			}
-			entry, err := workflow.NewRuntimeCLIEntry(collectedDeliveryExecutor{remote.EngineRunResult()},
+			entry, err := workflow.NewRuntimeCLIEntry(collectedDeliveryExecutor{result},
 				&registry.AgentRecord{WorkspaceID: "workspace-1", ID: "finalizer", Version: 1}, execution.AgentExecutionStamp{})
 			if err != nil {
 				t.Fatal(err)

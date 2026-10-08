@@ -112,15 +112,3 @@ func writeAccessChangeOutcome(c echo.Context, result accesschange.Result, err er
 	c.Response().Header().Set("X-Weave-Operation-State", "pending")
 	return c.JSON(http.StatusAccepted, map[string]any{"state": "pending", "operation_id": operationID, "retryable": true, "message": "权限变更正在确认，请稍后重试。"})
 }
-
-func (s *Server) handleGetAccessChange(c echo.Context) error {
-	result, err := accesschange.NewStore(s.GetPool()).Get(c.Request().Context(), getTenant(c), c.Param("operationID"))
-	if err != nil {
-		return c.JSON(http.StatusNotFound, map[string]string{"error": "找不到这项权限变更。"})
-	}
-	state := "pending"
-	if result.State == "completed" {
-		state = "completed"
-	}
-	return c.JSON(http.StatusOK, map[string]any{"operation_id": result.OperationID, "state": state, "retryable": state != "completed", "result": result.Value})
-}

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -624,21 +623,6 @@ func NewWorkflowCoordinator(transactions coordinatorTransactions, store *Store, 
 	}
 }
 
-func resumeConflict(format string, args ...any) (ResumeResult, error) {
-	return ResumeResult{Status: ResumeClaimConflict}, workflowError(ErrorResumeConflict, format, args...)
-}
-
 func wrapStoreUnavailable(operation string, err error) error {
 	return workflowError(ErrorStoreUnavailable, "%s: %v", operation, err)
-}
-
-func requireResumeIdentity(req ResumeParkedRunRequest) error {
-	if req.WorkspaceID == "" || req.ParentRunID == "" || req.RunSnapshotID == "" ||
-		req.IntentID == "" || req.GroupID == "" || req.Generation == "" || req.ResumeToken == "" ||
-		req.GroupCompletionID == "" || req.ClaimID == "" || req.ExpectedAttemptGeneration < 1 ||
-		req.ExpectedAttemptID == "" || req.NewAttemptGeneration != req.ExpectedAttemptGeneration+1 ||
-		req.NewAttemptID == "" || !json.Valid(req.JoinResult) {
-		return fmt.Errorf("resume request identity is invalid")
-	}
-	return nil
 }

@@ -62,8 +62,49 @@ def budget_violations(band: str, actual: dict, dependencies: set[str], limit: di
         f"{band} {metric}: actual {value} exceeds budget {limit[metric]}"
         for metric, value in actual.items() if value > limit[metric]
     ]
+    # Deleted code must lower the limit in the same change, so later growth
+    # cannot silently reuse the room it left.
+    failures.extend(
+        f"{band} {metric}: budget {limit[metric]} is above the measured {value}; lower it to {value}"
+        for metric, value in actual.items() if value < limit[metric]
+    )
     for dependency in sorted(dependencies - set(limit["allowed_dependencies"])):
         failures.append(f"{band} dependency is not approved: {dependency}")
+    return failures
+
+
+GROWTH_METRICS = ("lines", "production_lines")
+
+
+def growth_policy_violations(budgets: dict) -> list[str]:
+    """Total size may exceed the policy baseline only by growth that an
+    amendment pairs with a stated deletion trigger."""
+    policy = budgets.get("growth_policy")
+    if policy is None:
+        return ["growth_policy is missing"]
+    failures = []
+    allowance = {metric: 0 for metric in GROWTH_METRICS}
+    for index, amendment in enumerate(budgets.get("amendments", [])):
+        if amendment.get("date", "") < policy["effective"]:
+            continue
+        growth = amendment.get("growth")
+        trigger = str(amendment.get("deletion_trigger", "")).strip()
+        if not isinstance(growth, dict) or any(not isinstance(growth.get(metric), int) or growth[metric] < 0 for metric in GROWTH_METRICS):
+            failures.append(f"amendment {index} ({amendment.get('date')}) must state non-negative growth lines and production_lines")
+            continue
+        if any(growth[metric] > 0 for metric in GROWTH_METRICS) and not trigger:
+            failures.append(f"amendment {index} ({amendment.get('date')}) grows the total without a deletion_trigger")
+            continue
+        for metric in GROWTH_METRICS:
+            allowance[metric] += growth[metric]
+    for metric in GROWTH_METRICS:
+        total = sum(budgets[band][metric] for band in BANDS)
+        ceiling = policy[f"baseline_{metric}"] + allowance[metric]
+        if total > ceiling:
+            failures.append(
+                f"total {metric} budget {total} exceeds the growth ceiling {ceiling}; "
+                "delete equal code in the same change or register growth with a deletion_trigger"
+            )
     return failures
 
 
@@ -110,6 +151,7 @@ def main() -> int:
         if debt:
             print(f"  unresolved migration debt against original target: {', '.join(debt)}")
 
+    failures.extend(growth_policy_violations(budgets))
     if failures:
         for failure in failures:
             print(f"band budget violation: {failure}", file=sys.stderr)

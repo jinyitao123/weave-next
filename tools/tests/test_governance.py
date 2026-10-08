@@ -10,7 +10,7 @@ sys.path[:0] = [str(TOOLS), str(TOOLS / "depguard")]
 from go_inventory import MODULE, go_inventory
 from check_depguard import ALLOWED_EDGES, check
 from check_base_dependencies import external_module
-from budget.check_band_budget import budget_violations
+from budget.check_band_budget import budget_violations, growth_policy_violations
 
 
 class BudgetGovernanceTests(unittest.TestCase):
@@ -22,6 +22,35 @@ class BudgetGovernanceTests(unittest.TestCase):
         limit = {"external_dependencies": 1, "allowed_dependencies": ["approved.org/module"]}
         errors = budget_violations("base", {"external_dependencies": 1}, {"other.org/module"}, limit)
         self.assertIn("not approved", errors[0])
+
+    def test_deleted_code_must_lower_the_budget(self):
+        limit = {"lines": 100, "production_lines": 80, "allowed_dependencies": []}
+        errors = budget_violations("base", {"lines": 90, "production_lines": 80}, set(), limit)
+        self.assertEqual(len(errors), 1)
+        self.assertIn("lower it to 90", errors[0])
+
+    def growth_budgets(self, *amendments, kernel_lines=100):
+        budgets = {band: {"lines": 0, "production_lines": 0} for band in ("base", "kernel", "build", "app")}
+        budgets["kernel"] = {"lines": kernel_lines, "production_lines": 80}
+        budgets["growth_policy"] = {"effective": "2026-10-08", "baseline_lines": 100, "baseline_production_lines": 80}
+        budgets["amendments"] = list(amendments)
+        return budgets
+
+    def test_total_growth_needs_a_deletion_trigger(self):
+        self.assertEqual(growth_policy_violations(self.growth_budgets()), [])
+        # Moving code between bands, or deleting as much as is added, needs no amendment.
+        moved = self.growth_budgets()
+        moved["kernel"] = {"lines": 60, "production_lines": 50}
+        moved["app"] = {"lines": 40, "production_lines": 30}
+        self.assertEqual(growth_policy_violations(moved), [])
+        self.assertIn("exceeds the growth ceiling", growth_policy_violations(self.growth_budgets(kernel_lines=110))[0])
+        untriggered = {"date": "2026-10-09", "growth": {"lines": 10, "production_lines": 0}}
+        self.assertIn("without a deletion_trigger", growth_policy_violations(self.growth_budgets(untriggered, kernel_lines=110))[0])
+        triggered = dict(untriggered, deletion_trigger="delete the old exporter once W6 lands")
+        self.assertEqual(growth_policy_violations(self.growth_budgets(triggered, kernel_lines=110)), [])
+        earlier = {"date": "2026-10-01", "reason": "registered before the policy"}
+        self.assertEqual(growth_policy_violations(self.growth_budgets(earlier)), [])
+        self.assertIn("non-negative growth", growth_policy_violations(self.growth_budgets({"date": "2026-10-09"}))[0])
 
 
 class ImportGovernanceTests(unittest.TestCase):
@@ -129,7 +158,7 @@ class PlatformComposeTests(unittest.TestCase):
         default_services = json.loads(default.stdout)["services"]
         self.assertEqual(sorted(default_services), ["db", "weave"])
         weave_env = default_services["weave"]["environment"]
-        self.assertEqual(weave_env["WEAVE_DISABLE_LOCAL_LOGIN"], "true")
+        self.assertNotIn("WEAVE_DISABLE_LOCAL_LOGIN", weave_env)
         self.assertNotIn("WEAVE_METATEAM_ENABLED", weave_env)
         self.assertNotIn("WEAVE_RETIRE_LEGACY_PLATFORM_APIS", weave_env)
         for profile in [[], ["--profile", "runtime"]]:

@@ -308,20 +308,6 @@ func LoadRunAgentExecutionStamp(
 	return loadRunAgentExecutionStamp(ctx, store, tenant, agent, runID, "", nil)
 }
 
-// LoadRunAgentExecutionStampAt reads and validates one immutable historical
-// checkpoint selected by seq. It never falls back to the latest checkpoint.
-func LoadRunAgentExecutionStampAt(
-	ctx context.Context,
-	store loom.Store,
-	tenant string,
-	agent string,
-	runID string,
-	seq int64,
-) (*execution.AgentExecutionStamp, error) {
-	key := fmt.Sprintf("%s/%012d", runID, seq)
-	return loadRunAgentExecutionStamp(ctx, store, tenant, agent, runID, key, &seq)
-}
-
 func loadRunAgentExecutionStamp(
 	ctx context.Context,
 	store loom.Store,

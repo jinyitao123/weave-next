@@ -45,16 +45,6 @@ func NewSSEWriter(c echo.Context) (*SSEWriter, error) {
 	return &SSEWriter{w: w, flusher: flusher}, nil
 }
 
-// ContextSuppressStream returns a context that tells StreamingLLMAdapter
-// to bypass streaming and call the inner LLM directly.
-func ContextSuppressStream(ctx context.Context) context.Context {
-	return streamctx.SuppressStream(ctx)
-}
-
-func isSuppressStream(ctx context.Context) bool {
-	return streamctx.IsSuppressStream(ctx)
-}
-
 // ContextWithSSE returns a new context carrying the SSEWriter.
 func ContextWithSSE(ctx context.Context, sse *SSEWriter) context.Context {
 	return streamctx.WithEventSender(ctx, sse)
@@ -701,25 +691,6 @@ func (s *Server) handleChatStream(c echo.Context, tenant string, rec *registry.A
 	return nil
 }
 
-// getConversationIntent returns the persistent intent of a conversation, or
-// "" when the conversation or its intent is absent. When the store is
-// unavailable the caller treats this as "no intent" and skips structured
-// processing, so a nil receiver or error is a safe no-op.
-func getConversationIntent(ctx context.Context, store conversationIntentReader, workspaceID, conversationID string) (string, error) {
-	if store == nil {
-		return "", nil
-	}
-	conversation, err := store.GetConversation(ctx, workspaceID, conversationID)
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(conversation.Intent), nil
-}
-
-type conversationIntentReader interface {
-	GetConversation(ctx context.Context, workspaceID, conversationID string) (conversation.Conversation, error)
-}
-
 // mergeDiscoveryMetadata shallow-merges discovery protocol fields from
 // assistantFields into the given metadata JSON byte slice. Discovery proto
 // values replace same-named keys that already exist in the raw bytes so
@@ -745,140 +716,4 @@ func mergeDiscoveryMetadata(metadata json.RawMessage, assistantFields map[string
 		return nil, fmt.Errorf("merge discovery metadata: %w", err)
 	}
 	return encoded, nil
-}
-
-// ---------------------------------------------------------------------------
-// discovery output validation — structured protocol
-// ---------------------------------------------------------------------------
-
-type discoveryOutput struct {
-	Status          string   `json:"status"`
-	Summary         string   `json:"summary"`
-	Questions       []string `json:"questions,omitempty"`
-	BuildRunID      *string  `json:"build_run_id,omitempty"`
-	BlockingReasons []string `json:"blocking_reasons,omitempty"`
-}
-
-const (
-	maxDiscoverySummaryChars        = 500
-	maxDiscoveryQuestionChars       = 200
-	maxDiscoveryQuestions           = 5
-	maxDiscoveryBlockingReasonChars = 200
-	maxDiscoveryBlockingReasons     = 5
-)
-
-// validateAndRenderDiscoveryOutput extracts a discoveryOutput from the raw
-// LLM response and produces the validated content and metadata to persist.
-// When the output is a valid discovery protocol message the rendered content
-// is the summary text; the full validated object goes into metadata.
-func validateAndRenderDiscoveryOutput(
-	rawOutput string,
-	boundBuildRunID string,
-) (content string, discoveryJSON json.RawMessage, ok bool) {
-	output := extractDiscoveryJSON(rawOutput)
-	if output == nil {
-		return "", nil, false
-	}
-	if err := validateDiscoveryOutput(output, boundBuildRunID); err != nil {
-		return "", nil, false
-	}
-	encoded, err := json.Marshal(output)
-	if err != nil {
-		return "", nil, false
-	}
-	return strings.TrimSpace(output.Summary), encoded, true
-}
-
-func extractDiscoveryJSON(raw string) *discoveryOutput {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return nil
-	}
-	// Try the output as a top-level JSON object first.
-	var output discoveryOutput
-	if json.Unmarshal([]byte(raw), &output) == nil {
-		if output.Status != "" || output.Summary != "" {
-			return &output
-		}
-	}
-	// Try to find the last JSON object in the output — models often embed
-	// structured output after narrative text.
-	if idx := strings.LastIndex(raw, `{"status"`); idx >= 0 {
-		for i := idx; i >= 0; i-- {
-			if raw[i] == '\n' || i == 0 {
-				candidate := raw[i:]
-				if i == 0 {
-					candidate = raw
-				} else {
-					candidate = raw[i+1:]
-				}
-				if json.Unmarshal([]byte(candidate), &output) == nil {
-					if output.Status != "" || output.Summary != "" {
-						return &output
-					}
-				}
-				break
-			}
-		}
-	}
-	return nil
-}
-
-func validateDiscoveryOutput(output *discoveryOutput, boundBuildRunID string) error {
-	if output == nil {
-		return fmt.Errorf("discovery output is nil")
-	}
-	switch output.Status {
-	case "needs_clarification", "planning_created", "blocked":
-	default:
-		return fmt.Errorf("discovery output status must be needs_clarification, planning_created, or blocked")
-	}
-	output.Summary = strings.TrimSpace(output.Summary)
-	if output.Summary == "" {
-		return fmt.Errorf("discovery output summary is required")
-	}
-	if len([]rune(output.Summary)) > maxDiscoverySummaryChars {
-		return fmt.Errorf("discovery output summary exceeds %d characters", maxDiscoverySummaryChars)
-	}
-	if len(output.Questions) > maxDiscoveryQuestions {
-		return fmt.Errorf("discovery output has more than %d questions", maxDiscoveryQuestions)
-	}
-	seen := make(map[string]struct{}, len(output.Questions))
-	for i, q := range output.Questions {
-		q = strings.TrimSpace(q)
-		output.Questions[i] = q
-		if q == "" {
-			return fmt.Errorf("discovery output question %d is empty", i+1)
-		}
-		if len([]rune(q)) > maxDiscoveryQuestionChars {
-			return fmt.Errorf("discovery output question %d exceeds %d characters", i+1, maxDiscoveryQuestionChars)
-		}
-		normalized := strings.ToLower(q)
-		if _, duplicate := seen[normalized]; duplicate {
-			return fmt.Errorf("discovery output question %d is duplicate", i+1)
-		}
-		seen[normalized] = struct{}{}
-	}
-	if output.BuildRunID != nil && *output.BuildRunID != "" {
-		if boundBuildRunID != "" && *output.BuildRunID != boundBuildRunID {
-			return fmt.Errorf("discovery output build_run_id %q does not match the bound active run", *output.BuildRunID)
-		}
-	}
-	if output.Status != "blocked" && len(output.BlockingReasons) > 0 {
-		return fmt.Errorf("discovery output blocking_reasons is only allowed when status is blocked")
-	}
-	if len(output.BlockingReasons) > maxDiscoveryBlockingReasons {
-		return fmt.Errorf("discovery output has more than %d blocking_reasons", maxDiscoveryBlockingReasons)
-	}
-	for i, r := range output.BlockingReasons {
-		r = strings.TrimSpace(r)
-		output.BlockingReasons[i] = r
-		if r == "" {
-			return fmt.Errorf("discovery output blocking_reason %d is empty", i+1)
-		}
-		if len([]rune(r)) > maxDiscoveryBlockingReasonChars {
-			return fmt.Errorf("discovery output blocking_reason %d exceeds %d characters", i+1, maxDiscoveryBlockingReasonChars)
-		}
-	}
-	return nil
 }

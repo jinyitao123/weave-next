@@ -98,14 +98,6 @@ const (
 	PreorderArtifactEnvelopeHashInputV1  PreorderSchema = "artifact_envelope_hash_input_v1"
 )
 
-func DecodeFrozenAgentRecord(raw []byte) (FrozenAgentRecord, error) {
-	value, err := strictDecode[FrozenAgentRecord](raw)
-	if err != nil {
-		return FrozenAgentRecord{}, err
-	}
-	return NormalizeFrozenAgentRecord(value)
-}
-
 func DecodeFrozenSkill(raw []byte) (FrozenSkill, error) {
 	value, err := strictDecode[FrozenSkill](raw)
 	if err != nil {
@@ -133,14 +125,6 @@ func DecodeFrozenMCPBinding(raw []byte) (FrozenMCPBinding, error) {
 	return normalizeFrozenMCPBinding(value)
 }
 
-func DecodeFrozenModelBinding(raw []byte) (FrozenModelBinding, error) {
-	value, err := strictDecode[FrozenModelBinding](raw)
-	if err != nil {
-		return FrozenModelBinding{}, err
-	}
-	return normalizeFrozenModelBinding(value)
-}
-
 func DecodeFrozenRuntimeBinding(raw []byte) (FrozenRuntimeBinding, error) {
 	value, err := strictDecode[FrozenRuntimeBinding](raw)
 	if err != nil {
@@ -149,66 +133,12 @@ func DecodeFrozenRuntimeBinding(raw []byte) (FrozenRuntimeBinding, error) {
 	return normalizeFrozenRuntimeBinding(value)
 }
 
-func DecodeCredentialReference(raw []byte) (CredentialReference, error) {
-	value, err := strictDecode[CredentialReference](raw)
-	if err != nil {
-		return CredentialReference{}, err
-	}
-	if err := ValidateCredentialReference(value); err != nil {
-		return CredentialReference{}, err
-	}
-	return value, nil
-}
-
-func DecodeFrozenDeliveryTarget(raw []byte) (FrozenDeliveryTarget, error) {
-	value, err := strictDecode[FrozenDeliveryTarget](raw)
-	if err != nil {
-		return FrozenDeliveryTarget{}, err
-	}
-	return normalizeFrozenDeliveryTarget(value)
-}
-
 func DecodeFrozenTeamWorker(raw []byte) (FrozenTeamWorker, error) {
 	value, err := strictDecode[FrozenTeamWorker](raw)
 	if err != nil {
 		return FrozenTeamWorker{}, err
 	}
 	return normalizeFrozenTeamWorker(value)
-}
-
-func DecodeEnumeratedDependencyManifest(raw []byte) (EnumeratedDependencyManifest, error) {
-	value, err := strictDecode[EnumeratedDependencyManifest](raw)
-	if err != nil {
-		return EnumeratedDependencyManifest{}, err
-	}
-	return normalizeEnumeratedDependencyManifest(value)
-}
-
-func DecodeFrozenDependencyManifest(raw []byte) (FrozenDependencyManifest, error) {
-	value, err := strictDecode[FrozenDependencyManifest](raw)
-	if err != nil {
-		return FrozenDependencyManifest{}, err
-	}
-	if err := ValidateManifest(value); err != nil {
-		return FrozenDependencyManifest{}, err
-	}
-	return value, nil
-}
-
-func DecodeCapabilityManifest(raw []byte) (CapabilityManifest, error) {
-	value, err := strictDecode[CapabilityManifest](raw)
-	if err != nil {
-		return CapabilityManifest{}, err
-	}
-	return normalizeCapabilityManifest(value)
-}
-
-func DecodeFrozenExecutionBundle(raw []byte) (FrozenExecutionBundle, error) {
-	value, err := strictDecode[FrozenExecutionBundle](raw)
-	if err != nil {
-		return FrozenExecutionBundle{}, err
-	}
-	return normalizeFrozenExecutionBundle(value)
 }
 
 func DecodeArtifactPayloadV1(raw []byte) (ArtifactPayloadV1, error) {

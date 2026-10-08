@@ -318,7 +318,3 @@ var defaultDescriptorRegistry = NewDescriptorRegistry()
 func RegisterDescriptor(descriptor GraphFactoryDescriptor) error {
 	return defaultDescriptorRegistry.Register(descriptor)
 }
-
-func LookupDescriptor(key frozen.FactoryKey) (GraphFactoryDescriptor, error) {
-	return defaultDescriptorRegistry.Lookup(key)
-}

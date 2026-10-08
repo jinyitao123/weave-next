@@ -9,22 +9,9 @@ import (
 	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 )
 
-// WorkflowResumeScheduler is the fixed-workflow side of the scheduler seam.
-// Free-collaboration synthesis is deliberately implemented in CFANOUT-3.
-type WorkflowResumeScheduler struct{}
-
-func (WorkflowResumeScheduler) ScheduleFromCompletion(_ context.Context, completion GroupCompletion) (LateSynthesisResult, error) {
-	if completion.Mode != string(WorkflowResumeMode) {
-		return LateSynthesisResult{}, workflowError(ErrorInvalidRequest, "free collaboration synthesis belongs to CFANOUT-3")
-	}
-	return LateSynthesisResult{Status: "already_scheduled", CompletionID: completion.GroupCompletionID}, nil
-}
-
 func NewWorkflowError(code ErrorCode, format string, args ...any) error {
 	return workflowError(code, format, args...)
 }
-
-var _ LateSynthesisScheduler = WorkflowResumeScheduler{}
 
 type LateSynthesisTaskBuilder interface {
 	BuildLateSynthesisTask(context.Context, pgx.Tx, GroupCompletion) (*taskqueue.Task, error)

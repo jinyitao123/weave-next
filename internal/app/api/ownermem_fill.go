@@ -218,11 +218,3 @@ func mergeDefinedSlots(
 	}
 	return merged
 }
-
-func cloneStringMap(source map[string]string) map[string]string {
-	cloned := make(map[string]string, len(source))
-	for key, value := range source {
-		cloned[key] = value
-	}
-	return cloned
-}

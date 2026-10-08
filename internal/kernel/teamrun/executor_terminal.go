@@ -41,16 +41,8 @@ func frozenAttemptIDForEpoch(run TeamRun, epoch ExecutionLeaseEpoch) uuid.UUID {
 	return uuid.NewSHA1(uuid.NameSpaceOID, []byte(identity))
 }
 
-func FrozenAttemptIDForEpoch(run TeamRun, epoch ExecutionLeaseEpoch) uuid.UUID {
-	return frozenAttemptIDForEpoch(run, epoch)
-}
-
 func frozenAttemptRunStartedAt(run TeamRun) string {
 	return run.UpdatedAt.UTC().Format(time.RFC3339Nano)
-}
-
-func FrozenAttemptRunStartedAt(run TeamRun) string {
-	return frozenAttemptRunStartedAt(run)
 }
 
 func frozenExpectedRun(run TeamRun) loomruntime.ExpectedRunRecordV1 {

@@ -50,11 +50,6 @@ type Config struct {
 	HealthWarningSlowRate    float64 // WEAVE_HEALTH_WARNING_SLOW_RATE, default 0.5
 	HealthSlowRunSeconds     int     // WEAVE_HEALTH_SLOW_RUN_SECONDS, default 600
 
-	// DisableLocalLogin leaves Weave local password login and first-user
-	// registration unregistered. Employees and developers sign in through Forge
-	// identity exchange only; `weave bootstrap` creates the operator. Load()
-	// defaults it to true; the zero value keeps the local routes for tests.
-	DisableLocalLogin bool               // WEAVE_DISABLE_LOCAL_LOGIN, default true
 	ToolProtocolProbe *ToolProtocolProbe // operator-only, default nil
 }
 
@@ -82,10 +77,6 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 	localRuntimeEnabled, err := boolEnv("WEAVE_LOCAL_RUNTIME_ENABLED", true)
-	if err != nil {
-		return nil, err
-	}
-	disableLocalLogin, err := boolEnv("WEAVE_DISABLE_LOCAL_LOGIN", true)
 	if err != nil {
 		return nil, err
 	}
@@ -146,7 +137,6 @@ func Load() (*Config, error) {
 		HealthWarningFailureRate: healthWarningFailureRate,
 		HealthWarningSlowRate:    healthWarningSlowRate,
 		HealthSlowRunSeconds:     healthSlowRunSeconds,
-		DisableLocalLogin:        disableLocalLogin,
 	}
 
 	if cfg.DatabaseURL == "" {

@@ -213,14 +213,6 @@ func (s *Server) handleListRuns(c echo.Context) error {
 	})
 }
 
-func (s *Server) listRunKeysByProject(
-	ctx context.Context,
-	workspaceID, projectID string,
-	limit, offset int,
-) ([]string, int, error) {
-	return s.listRunKeysByAttribution(ctx, workspaceID, runAttributionFilter{ProjectID: projectID}, limit, offset)
-}
-
 type runAttributionFilter struct {
 	ProjectID      string
 	ConversationID string

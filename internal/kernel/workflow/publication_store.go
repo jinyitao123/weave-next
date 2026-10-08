@@ -85,68 +85,6 @@ func (s *ArtifactStore) ListDependencies(
 	return dependencies, nil
 }
 
-func validatePublicationIdentity(publication Publication) error {
-	artifact := publication.Artifact
-	if artifact.WorkspaceID != publication.WorkspaceID ||
-		artifact.WorkflowID != publication.WorkflowID ||
-		artifact.WorkflowVersion != publication.WorkflowVersion {
-		return errors.New("insert workflow publication: artifact identity does not match publication")
-	}
-	for i, dependency := range publication.Dependencies {
-		if dependency.WorkspaceID != publication.WorkspaceID ||
-			dependency.WorkflowID != publication.WorkflowID ||
-			dependency.WorkflowVersion != publication.WorkflowVersion {
-			return fmt.Errorf(
-				"insert workflow publication: dependency %d identity does not match publication",
-				i,
-			)
-		}
-	}
-	return nil
-}
-
-func dependencyLess(left, right TeamWorkflowDependency) bool {
-	if left.WorkspaceID != right.WorkspaceID {
-		return left.WorkspaceID < right.WorkspaceID
-	}
-	if left.OwnerType != right.OwnerType {
-		return left.OwnerType < right.OwnerType
-	}
-	if left.OwnerID != right.OwnerID {
-		return left.OwnerID < right.OwnerID
-	}
-	if comparison := compareDependencyOptionalInt64(left.OwnerAgentVersion, right.OwnerAgentVersion); comparison != 0 {
-		return comparison < 0
-	}
-	if left.DependencyType != right.DependencyType {
-		return left.DependencyType < right.DependencyType
-	}
-	if left.DependencyKey != right.DependencyKey {
-		return left.DependencyKey < right.DependencyKey
-	}
-	if comparison := compareDependencyOptionalInt64(left.DependencyVersion, right.DependencyVersion); comparison != 0 {
-		return comparison < 0
-	}
-	return left.ContentHash < right.ContentHash
-}
-
-func compareDependencyOptionalInt64(left, right *int64) int {
-	switch {
-	case left == nil && right == nil:
-		return 0
-	case left == nil:
-		return -1
-	case right == nil:
-		return 1
-	case *left < *right:
-		return -1
-	case *left > *right:
-		return 1
-	default:
-		return 0
-	}
-}
-
 func scanArtifact(row rowScanner) (*PublishedArtifactContent, error) {
 	var artifact PublishedArtifactContent
 	var payload []byte

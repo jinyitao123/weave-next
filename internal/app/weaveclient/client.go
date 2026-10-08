@@ -502,36 +502,6 @@ func (c *Client) DeliverableGetPath(ctx context.Context, id, pointer string, off
 	return c.getJSON(ctx, path)
 }
 
-type teamDetail struct {
-	Team struct {
-		Status string `json:"status"`
-	} `json:"team"`
-	Lead *struct {
-		Name string `json:"name"`
-	} `json:"lead"`
-}
-
-func (c *Client) resolveTeamLead(ctx context.Context, teamID string) (teamDetail, error) {
-	body, err := c.getJSON(ctx, "/v1/teams/"+url.PathEscape(teamID))
-	if err != nil {
-		if apiErr, ok := err.(*Error); ok && apiErr.StatusCode == http.StatusNotFound {
-			return teamDetail{}, &Error{Code: "team_not_found", StatusCode: http.StatusNotFound}
-		}
-		return teamDetail{}, err
-	}
-	var team teamDetail
-	if err := json.Unmarshal(body, &team); err != nil {
-		return teamDetail{}, &Error{Code: "invalid_api_response"}
-	}
-	if team.Team.Status != "active" {
-		return teamDetail{}, &Error{Code: "team_not_active", StatusCode: http.StatusConflict}
-	}
-	if team.Lead == nil || strings.TrimSpace(team.Lead.Name) == "" {
-		return teamDetail{}, &Error{Code: "team_lead_unavailable", StatusCode: http.StatusConflict}
-	}
-	return team, nil
-}
-
 func terminalDispatchStatus(body json.RawMessage) bool {
 	var response struct {
 		Status string `json:"status"`
