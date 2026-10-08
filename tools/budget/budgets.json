@@ -817,6 +817,17 @@
         "lines_added": 270,
         "production_lines_added": 23
       }
+    },
+    {
+      "date": "2026-10-08",
+      "reason": "Authorized bounded display-only reasons for controlled Forge business-action failures. The existing activity detail carries an optional public_reason after native failure provenance and conservative text filtering; current work cards, Pi continuation and new terminal summaries consume the same reason. Historical failed events can read only the exact workspace/run/snapshot/node/member/invocation/operation journal slot and correlate its canonical input hash and tool call, enriching memory without writing the ledger. Missing or unreadable optional journal evidence keeps generic failure, while authoritative activity read failures remain errors. Status classification, noEffect, original ToolResult, JSON-only receipt cache, replay, reconciliation and authorization remain unchanged. The first budget guard failed at +413 total/+204 production; the final reviewed growth is exactly +445 total/+211 production after SQL-isolation and redaction cases including bare IPv4/IPv6/host endpoints, with no spare allowance, new packages/dependencies, exceptions, tables, queues or changed migration targets.",
+      "record": "docs/治理/2026-09-30-平台范围收窄整改登记.md",
+      "kernel": {
+        "previous_lines": 105891,
+        "previous_production_lines": 84727,
+        "lines_added": 445,
+        "production_lines_added": 211
+      }
     }
   ],
   "migration_targets": {
@@ -854,8 +865,8 @@
     ]
   },
   "kernel": {
-    "lines": 105891,
-    "production_lines": 84727,
+    "lines": 106336,
+    "production_lines": 84938,
     "packages": 49,
     "external_dependencies": 5,
     "allowed_dependencies": [

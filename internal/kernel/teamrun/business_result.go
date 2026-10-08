@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"sort"
 	"strings"
+
+	"github.com/jinyitao123/weave/internal/kernel/businessaction"
 )
 
 // RunBusinessResult is the one server-side answer to "how did this run end for
@@ -76,6 +78,7 @@ func CountBusinessActions(events []ActivityEvent) BusinessActionCounts {
 	type result struct {
 		seq    int64
 		status string
+		reason string
 	}
 	type detailFields struct {
 		Source          string `json:"source"`
@@ -86,6 +89,7 @@ func CountBusinessActions(events []ActivityEvent) BusinessActionCounts {
 		ActionLabel     string `json:"action_label"`
 		ActionName      string `json:"action_name"`
 		Status          string `json:"status"`
+		PublicReason    string `json:"public_reason"`
 	}
 	started := map[key]call{}
 	results := map[key]result{}
@@ -118,7 +122,11 @@ func CountBusinessActions(events []ActivityEvent) BusinessActionCounts {
 			continue
 		}
 		if latest, seen := results[id]; !seen || event.Seq > latest.seq {
-			results[id] = result{event.Seq, detail.Status}
+			reason := ""
+			if detail.Source == businessaction.ActionOutcomeSourceForgeMCP && detail.Status == businessaction.ActionOutcomeStatusFailed {
+				reason = businessaction.SafePublicActionReason(detail.PublicReason)
+			}
+			results[id] = result{event.Seq, detail.Status, reason}
 		}
 	}
 	ordered := make([]key, 0, len(started))
@@ -137,6 +145,9 @@ func CountBusinessActions(events []ActivityEvent) BusinessActionCounts {
 		case "failed":
 			counts.Failed++
 			text = "调用返回失败，请先核对业务记录后再处理。"
+			if results[id].reason != "" {
+				text = "未完成：" + results[id].reason
+			}
 		default:
 			counts.Unknown++
 		}
