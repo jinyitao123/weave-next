@@ -40,6 +40,7 @@ import (
 	"github.com/jinyitao123/weave/internal/kernel/engine"
 	"github.com/jinyitao123/weave/internal/kernel/loomruntime"
 	"github.com/jinyitao123/weave/internal/kernel/mcpregistry"
+	"github.com/jinyitao123/weave/internal/kernel/runtimehost"
 	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 
 	orgstore "github.com/jinyitao123/weave/internal/app/org"
@@ -458,7 +459,7 @@ func (f *teamDeliveryFixture) startCLIWorker(ctx context.Context, scenario teamD
 				done <- err
 				return
 			}
-			before := runtimes.SnapshotOutputArtifacts(workDir)
+			before := runtimehost.SnapshotOutputArtifacts(workDir)
 			if request.NodeID == "compute" {
 				if err := teamDeliveryWriteEffects(ctx, f.pool, task.RunSnapshotID, scenario.extraObject); err != nil {
 					os.RemoveAll(workDir)
@@ -479,13 +480,13 @@ func (f *teamDeliveryFixture) startCLIWorker(ctx context.Context, scenario teamD
 					}
 				}
 			}
-			collectionErr := runtimes.CollectRunOutputArtifacts(workDir, before, &result)
+			collectionErr := runtimehost.CollectRunOutputArtifacts(workDir, before, &result)
 			os.RemoveAll(workDir)
 			if collectionErr != nil {
 				done <- collectionErr
 				return
 			}
-			wire, err := json.Marshal(runtimeReceiptForTask(task, runtimes.CLIEngineExecResult(result)))
+			wire, err := json.Marshal(runtimeReceiptForTask(task, cliEngineExecResult(result)))
 			if err != nil {
 				done <- err
 				return
@@ -752,4 +753,22 @@ func teamDeliveryAPIHasReason(checks []runDeliveryCheck, reason string) bool {
 		}
 	}
 	return false
+}
+
+// cliEngineExecResult builds the stored result of a completed CLI task for
+// fixtures; production results arrive as runtime receipts.
+func cliEngineExecResult(result engine.RunResult) runtimes.EngineExecResult {
+	return runtimes.EngineExecResult{
+		SessionID:                result.SessionID,
+		ArtifactCollection:       result.ArtifactCollection,
+		Output:                   result.Output,
+		ReportedModels:           append([]string(nil), result.ReportedModels...),
+		RetrySafeBeforeExecution: result.RetrySafeBeforeExecution,
+		Status:                   result.Status,
+		Error:                    result.Err,
+		UsageReceipt:             result.Usage,
+		Diagnostics:              append([]engine.Diagnostic(nil), result.Diagnostics...),
+		Events:                   append([]engine.Event(nil), result.Events...),
+		Artifacts:                append([]engine.Artifact(nil), result.Artifacts...),
+	}
 }

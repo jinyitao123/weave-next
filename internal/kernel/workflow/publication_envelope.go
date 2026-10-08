@@ -37,17 +37,3 @@ func CandidateEnvelope(candidate *PublicationCandidate) (frozen.ArtifactEnvelope
 	}
 	return candidateEnvelope(candidate)
 }
-
-// CandidateFromEnvelope restores only the immutable candidate facts. Product
-// activation timestamps belong to the server's retained request target.
-func CandidateFromEnvelope(envelope frozen.ArtifactEnvelopeV1) (*PublicationCandidate, error) {
-	facts, err := PublicationFromEnvelope(envelope)
-	if err != nil {
-		return nil, err
-	}
-	payload, err := frozen.DecodeArtifactEnvelopeV1(envelope)
-	if err != nil {
-		return nil, err
-	}
-	return &PublicationCandidate{WorkspaceID: envelope.WorkspaceID, WorkflowID: envelope.WorkflowID, WorkflowVersion: envelope.WorkflowVersion, ArtifactSchemaVersion: envelope.ArtifactSchemaVersion, CanonicalizationAlgorithm: envelope.CanonicalizationAlgorithm, CanonicalizationVersion: envelope.CanonicalizationVersion, HashAlgorithm: envelope.HashAlgorithm, ContentHash: envelope.ContentHash, Payload: payload, Dependencies: facts.Dependencies}, nil
-}

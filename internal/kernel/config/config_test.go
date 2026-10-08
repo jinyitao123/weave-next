@@ -37,7 +37,6 @@ func TestLoadBooleanDefaultsAndOverrides(t *testing.T) {
 		defaultValue bool
 		value        func(*Config) bool
 	}{
-		{"WEAVE_DISABLE_LOCAL_LOGIN", true, func(c *Config) bool { return c.DisableLocalLogin }},
 		{"WEAVE_LOCAL_RUNTIME_ENABLED", false, func(c *Config) bool { return c.LocalRuntimeEnabled }},
 	} {
 		for _, input := range []string{"", "true", "false", "sometimes"} {

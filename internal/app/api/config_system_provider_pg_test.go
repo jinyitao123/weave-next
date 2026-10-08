@@ -45,7 +45,7 @@ func newSystemCatalogFixture(t *testing.T) *systemCatalogFixture {
 		})
 	}
 	server := &Server{
-		Echo: echo.New(), Config: &config.Config{JWTSecret: "catalog-test-jwt", DisableLocalLogin: true},
+		Echo: echo.New(), Config: &config.Config{JWTSecret: "catalog-test-jwt"},
 		Pool: pool, UserStore: users.NewStore(pool), KeyStore: apikeys.NewStore(pool),
 		Credentials: credentials.New(pool, bytes.Repeat([]byte{'k'}, 32)), SystemProviders: router,
 	}

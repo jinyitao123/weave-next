@@ -191,10 +191,6 @@ type codexOutput struct {
 
 const codexJSONLMaxEventBytes = 16 * 1024 * 1024
 
-func parseCodexOutput(stdout interface{ Read([]byte) (int, error) }) codexOutput {
-	return parseCodexOutputWithEvents(stdout, nil)
-}
-
 func parseCodexOutputWithEvents(stdout interface{ Read([]byte) (int, error) }, publish func(Event, bool)) codexOutput {
 	var output codexOutput
 	var lastMessageID, lastMessageText string

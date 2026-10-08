@@ -55,7 +55,6 @@ import (
 	"github.com/jinyitao123/weave/internal/kernel/secret"
 	importskills "github.com/jinyitao123/weave/internal/kernel/skills"
 	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
-	"github.com/jinyitao123/weave/internal/kernel/teamcompiler"
 	"github.com/jinyitao123/weave/internal/kernel/teamrun"
 	"github.com/jinyitao123/weave/internal/kernel/workflow"
 	"github.com/jinyitao123/weave/internal/kernel/workflowhealth"
@@ -69,7 +68,6 @@ type Server struct {
 	Store                     loom.Store
 	Registry                  *agentcatalog.AgentRegistry
 	Descriptors               *compiler.DescriptorRegistry
-	TeamAssembler             teamcompiler.TeamInteractionAssembler // optional test seam; nil uses the production assembler
 	Models                    *llmrouter.Resolver
 	Config                    *config.Config
 	ExternalIdentity          ExternalIdentityVerifier
@@ -304,10 +302,6 @@ func (s *Server) registerRoutes() {
 	s.Echo.GET("/install.sh", s.handleInstallScript)
 	s.Echo.GET("/install.ps1", s.handleInstallScript)
 	s.Echo.GET("/v1/downloads/runtime/:os/:arch", s.handleDownloadRuntime)
-	s.Echo.POST("/v1/auth/token", s.handleIssueToken)
-	if !s.Config.DisableLocalLogin {
-		s.Echo.POST("/v1/auth/login", s.handleLogin)
-	}
 	s.Echo.POST("/v1/auth/external/exchange", s.handleExternalIdentityExchange)
 	s.Echo.Any("/v1/mcp-boundary/:tenant/:agent/:idx", s.handleMCPBoundary)
 	s.Echo.Any("/v1/mcp-gateway/:workspace/:agent/:serverID", s.handleMCPGateway)
@@ -315,14 +309,6 @@ func (s *Server) registerRoutes() {
 	// Lazy getter for KeyStore (set after route registration in main.go).
 	keyStoreGetter := func() *apikeys.Store { return s.KeyStore }
 	userStoreGetter := func() *users.Store { return s.UserStore }
-
-	// Register endpoint — uses optional auth (first user bootstrap needs no auth, subsequent need admin).
-	// It is not registered when local login is disabled, so an empty user table
-	// can never be claimed through HTTP; `weave bootstrap` creates the operator.
-	if !s.Config.DisableLocalLogin {
-		s.Echo.POST("/v1/auth/register", s.handleRegister,
-			OptionalAuthMiddleware(s.Config.JWTSecret, keyStoreGetter, userStoreGetter), RequireScope("admin"))
-	}
 
 	// Authenticated endpoints.
 	auth := authenticatedRouteGroup(s.Echo, "/v1", AuthMiddleware(s.Config.JWTSecret, keyStoreGetter, userStoreGetter))
@@ -332,12 +318,6 @@ func (s *Server) registerRoutes() {
 	runsScope := RequireScope("runs")
 	memoryScope := RequireScope("memory")
 	orgScope := RequireScope("org")
-
-	// Auth: refresh & me.
-	auth.POST("/auth/refresh", s.handleRefresh)
-	auth.GET("/auth/me", s.handleMe)
-	auth.PUT("/auth/me", s.handleUpdateMe)
-	auth.PUT("/auth/me/password", s.handleChangeMyPassword)
 
 	// Developer capability contract endpoints. Execution is admitted here;
 	// runtime scheduling is intentionally a separate follow-up integration.
@@ -359,10 +339,6 @@ func (s *Server) registerRoutes() {
 	capabilityAPI.POST("/capability-apps/actions", s.handleCapabilityAppAction, requireCapabilityAccess("manage"))
 
 	// User management (admin or owner).
-	auth.GET("/users", s.handleListUsers, RequireAnyRole("admin", "owner"), adminScope)
-	auth.GET("/users/:id", s.handleGetUser, RequireAnyRole("admin", "owner"), adminScope)
-	auth.PUT("/users/:id", s.handleUpdateUser, RequireAnyRole("admin", "owner"), adminScope)
-	auth.DELETE("/users/:id", s.handleDeleteUser, RequireAnyRole("admin", "owner"), adminScope)
 
 	// API Key management (admin only).
 	auth.POST("/auth/api-keys", s.handleCreateAPIKey, RequireRole("admin"), adminScope)
@@ -370,10 +346,6 @@ func (s *Server) registerRoutes() {
 	auth.DELETE("/auth/api-keys/:id", s.handleDeleteAPIKey, RequireRole("admin"), adminScope)
 
 	// Organization.
-	auth.GET("/workspace", s.handleGetWorkspace, orgScope)
-	auth.GET("/workspace/members", s.handleListMembers, orgScope)
-	auth.POST("/workspace/members", s.handleAddMember, RequireAnyRole("admin", "owner"), orgScope)
-	auth.DELETE("/workspace/members/:userID", s.handleRemoveMember, RequireAnyRole("admin", "owner"), orgScope)
 	auth.GET("/deliverables", s.handleListFinalDeliverables, chatScope)
 	auth.GET("/deliverables/:id", s.handleGetFinalDeliverable, chatScope)
 	auth.GET("/deliverables/:id/content", s.handleDownloadFinalDeliverable, chatScope)
@@ -393,10 +365,6 @@ func (s *Server) registerRoutes() {
 	auth.GET("/teams/:id/dispatch-rules", s.handleGetTeamDispatchRules, orgScope)
 	auth.PUT("/teams/:id/dispatch-rules", s.handlePutTeamDispatchRules, RequireAnyRole("admin", "owner"), orgScope)
 	auth.POST("/teams/:id/dispatch", s.handleDispatchTeam, orgScope, chatScope)
-	auth.PUT("/decision-bindings/:key_id", s.handleBindDecision, RequireRole("admin"), adminScope)
-	auth.POST("/decisions", s.handleAdmitDecision, RequireScope("decisions"))
-	auth.GET("/decisions/:decision_id", s.handleReadDecision, RequireScope("decisions"))
-	auth.POST("/decisions:cancel", s.handleCancelDecision, RequireScope("decisions"))
 	auth.POST("/workbench/dispatch-inputs/prepare", s.handlePrepareDispatchInput, orgScope, chatScope)
 	auth.POST("/workbench/dispatch-inputs/:input_revision_id/authorization", s.handleRenewDispatchAuthorization, orgScope, chatScope)
 	auth.POST("/workbench/dispatch-inputs", s.handleRegisterDispatchInput, orgScope, chatScope)
@@ -423,15 +391,8 @@ func (s *Server) registerRoutes() {
 	auth.GET("/workflows/:id/versions/:version/admission", s.handleGetWorkflowVersionAdmission, orgScope)
 
 	// Revisioned outbound delivery targets (admin only).
-	auth.GET("/delivery-targets", s.handleListDeliveryTargets, RequireRole("admin"), adminScope)
-	auth.POST("/delivery-targets", s.handleCreateDeliveryTarget, RequireRole("admin"), adminScope)
-	auth.GET("/delivery-targets/:id", s.handleGetDeliveryTarget, RequireRole("admin"), adminScope)
-	auth.PUT("/delivery-targets/:id", s.handleUpdateDeliveryTarget, RequireRole("admin"), adminScope)
-	auth.GET("/delivery-targets/:id/revisions/:revision", s.handleGetDeliveryTargetRevision, RequireRole("admin"), adminScope)
-	auth.POST("/delivery-targets/:id/rotate-headers", s.handleRotateDeliveryTargetHeaders, RequireRole("admin"), adminScope)
-	auth.POST("/delivery-targets/:id/disable", s.handleDisableDeliveryTarget, RequireRole("admin"), adminScope)
-	auth.POST("/delivery-targets/:id/revoke", s.handleRevokeDeliveryTarget, RequireRole("admin"), adminScope)
-	auth.DELETE("/delivery-targets/:id", s.handleDeleteDeliveryTarget, RequireRole("admin"), adminScope)
+	// Delivery-target management is closed (W10, close first then delete); the
+	// handlers stay until the deletion trigger in the remediation plan is met.
 
 	// Remote engine runtimes.
 	auth.GET("/agent-execution-settings", s.handleListAgentExecutionSettings, orgScope)

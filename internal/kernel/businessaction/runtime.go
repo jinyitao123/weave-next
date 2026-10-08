@@ -1129,19 +1129,6 @@ func virtualToolName(value action) string {
 	return "forge_" + base + "_" + hex.EncodeToString(digest[:4])
 }
 
-func containsAll(allowed, requested []string) bool {
-	set := make(map[string]struct{}, len(allowed))
-	for _, value := range allowed {
-		set[value] = struct{}{}
-	}
-	for _, value := range requested {
-		if _, ok := set[value]; !ok {
-			return false
-		}
-	}
-	return true
-}
-
 func intersectActions(memberPublished, taskAllowed []string) []string {
 	published := make(map[string]struct{}, len(memberPublished))
 	for _, value := range memberPublished {
@@ -1159,12 +1146,6 @@ func intersectActions(memberPublished, taskAllowed []string) []string {
 func clear(value []byte) {
 	for index := range value {
 		value[index] = 0
-	}
-}
-func clearHeader(headers map[string]string) {
-	for key := range headers {
-		headers[key] = ""
-		delete(headers, key)
 	}
 }
 

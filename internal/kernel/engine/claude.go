@@ -158,10 +158,6 @@ type claudeOutput struct {
 	toolObserved   bool
 }
 
-func parseClaudeOutput(stdout io.Reader) claudeOutput {
-	return parseClaudeOutputWithEvents(stdout, nil)
-}
-
 func parseClaudeOutputWithEvents(stdout io.Reader, publish func(Event, bool)) claudeOutput {
 	var output claudeOutput
 	tools := map[string]string{}

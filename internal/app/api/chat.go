@@ -346,66 +346,6 @@ func freeCollaborationSessionSnapshot(
 	}
 }
 
-func (s *Server) freezeTeamSessionRoster(
-	ctx context.Context,
-	tx pgx.Tx,
-	workspaceID string,
-	team *registry.PublicationTeamRead,
-) (json.RawMessage, json.RawMessage, error) {
-	if team == nil || s.Registry == nil {
-		return nil, nil, fmt.Errorf("team admission frozen descriptor registry is unavailable")
-	}
-	if len(team.Workers) > 0 && s.Descriptors == nil {
-		return nil, nil, fmt.Errorf("team admission frozen descriptor registry is unavailable")
-	}
-	workers := make([]snapshot.FrozenTeamWorker, 0, len(team.Workers))
-	for _, relation := range team.Workers {
-		var version int
-		err := tx.QueryRow(ctx, `SELECT version FROM weave_agents
-			WHERE workspace_id=$1 AND id=$2 AND role='worker' AND deleted=false
-			FOR SHARE`, workspaceID, relation.WorkerAgentID).Scan(&version)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, nil, fmt.Errorf("team worker %q frozen descriptor is unavailable", relation.WorkerAgentID)
-		}
-		if err != nil {
-			return nil, nil, fmt.Errorf("lock team worker %q: %w", relation.WorkerAgentID, err)
-		}
-		version64 := int64(version)
-		record, err := s.Registry.ResolveAgentVersionTx(
-			ctx, tx, workspaceID, relation.WorkerAgentID, &version64,
-		)
-		if err != nil {
-			return nil, nil, fmt.Errorf("resolve team worker %q frozen descriptor: %w", relation.WorkerAgentID, err)
-		}
-		if record.Role != "worker" {
-			return nil, nil, fmt.Errorf("team worker %q frozen descriptor role is %q", relation.WorkerAgentID, record.Role)
-		}
-		proof, err := s.Descriptors.DescribeWorkerRoleProof(ctx, *record, nil)
-		if err != nil {
-			return nil, nil, fmt.Errorf("describe team worker %q role proof: %w", relation.WorkerAgentID, err)
-		}
-		displayName := record.DisplayName
-		if displayName == "" {
-			displayName = record.Name
-		}
-		workers = append(workers, snapshot.FrozenTeamWorker{
-			SchemaVersion: snapshot.TeamWorkerSnapshotSchemaVersion,
-			WorkerAgentID: relation.WorkerAgentID, WorkerAgentVersion: version,
-			Name: displayName, Duty: relation.Duty, WhenToUse: relation.WhenToUse,
-			ContextInstruction: relation.ContextInstruction,
-			AllowedKinds:       append([]string(nil), relation.AllowedKinds...),
-			DefaultKind:        relation.DefaultKind, ResultRequirement: relation.ResultRequirement,
-			EnabledAtSnapshot: relation.Enabled,
-			RoleProof: snapshot.FrozenWorkerRoleProof{
-				Role: proof.Role, AgentContentHash: proof.AgentContentHash,
-				CapabilitySchema:      proof.CapabilitySchema,
-				CapabilityContentHash: proof.CapabilityContentHash,
-			},
-		})
-	}
-	return snapshot.EncodeTeamWorkerSnapshot(workers)
-}
-
 func (s *Server) acquireTeamSession(
 	ctx context.Context,
 	rec *registry.AgentRecord,

@@ -58,9 +58,6 @@ services:
       WEAVE_TOOL_PROTOCOL_PROBE_RUN_ID: ${WEAVE_TOOL_PROTOCOL_PROBE_RUN_ID:-}
       WEAVE_TOOL_PROTOCOL_PROBE_EXPIRES_AT: ${WEAVE_TOOL_PROTOCOL_PROBE_EXPIRES_AT:-}
       WEAVE_TOOL_PROTOCOL_PROBE_MAX_MODEL_CALLS: ${WEAVE_TOOL_PROTOCOL_PROBE_MAX_MODEL_CALLS:-}
-      # Weave local login/registration is off by default (AGENTS.md, decision 001);
-      # identity comes only from Forge.
-      WEAVE_DISABLE_LOCAL_LOGIN: ${WEAVE_DISABLE_LOCAL_LOGIN:-true}
       # Main service execution uses Loom or registered external Runtime Hosts.
       WEAVE_LOCAL_RUNTIME_ENABLED: 'false'
       # Engine credentials are injected at runtime — never baked into the image.

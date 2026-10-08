@@ -4,13 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"github.com/jinyitao123/weave/internal/base/execution"
-	"github.com/jinyitao123/weave/internal/kernel/admissionfence"
-	"github.com/jinyitao123/weave/internal/kernel/registry"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/jinyitao123/weave/internal/base/execution"
+	"github.com/jinyitao123/weave/internal/kernel/admissionfence"
+	"github.com/jinyitao123/weave/internal/kernel/registry"
 
 	"github.com/jinyitao123/weave/internal/app/apikeys"
 	"github.com/jinyitao123/weave/internal/app/users"
@@ -18,7 +19,7 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-func TestAccessChangeAuthenticatedUserMembershipAndWorkflowAdmissionRealPG(t *testing.T) {
+func TestAccessChangeAuthenticatedWorkflowAdmissionRealPG(t *testing.T) {
 	s, pool := newTeamDispatchTestServer(t)
 	ctx := context.Background()
 	if _, err := pool.Exec(ctx, `INSERT INTO weave_members(workspace_id,user_id,role)VALUES('ws','user','owner'),('ws','user-other','member')`); err != nil {
@@ -30,9 +31,6 @@ func TestAccessChangeAuthenticatedUserMembershipAndWorkflowAdmissionRealPG(t *te
 	e := echo.New()
 	e.Use(AuthMiddleware(s.Config.JWTSecret, func() *apikeys.Store { return s.KeyStore }, func() *users.Store { return s.UserStore }))
 	admin := RequireAnyRole("admin", "owner")
-	e.DELETE("/members/:userID", s.handleRemoveMember, admin)
-	e.POST("/members", s.handleAddMember, admin)
-	e.PUT("/users/:id", s.handleUpdateUser, admin)
 	e.PUT("/flows/:id/versions/:version/admission", s.handlePutWorkflowAdmission, admin)
 	e.POST("/teams/:id/dispatch", s.handleDispatchTeam)
 	token, err := s.signJWT("ws", "user", []string{"admin"})
@@ -59,20 +57,14 @@ func TestAccessChangeAuthenticatedUserMembershipAndWorkflowAdmissionRealPG(t *te
 		}
 		return rec
 	}
-	request(http.MethodDelete, "/members/user-other", "", token, nil, http.StatusBadRequest)
-	request(http.MethodDelete, "/members/user-other", "forged", member, map[string]string{"user_id": "user"}, http.StatusForbidden)
+	yes, no := true, false
+	request(http.MethodPut, "/flows/flow/versions/1/admission", "", token, admissionChangeRequest{DesiredBlocked: &yes, Reason: "withdraw version"}, http.StatusBadRequest)
+	request(http.MethodPut, "/flows/flow/versions/1/admission", "forged", member, admissionChangeRequest{DesiredBlocked: &yes, Reason: "withdraw version"}, http.StatusForbidden)
 	var operations int
 	if err = pool.QueryRow(ctx, `SELECT count(*) FROM weave_access_change_operations`).Scan(&operations); err != nil || operations != 0 {
 		t.Fatalf("rejected request wrote intent: %d %v", operations, err)
 	}
-	request(http.MethodDelete, "/members/user-other", "remove-member", token, nil, http.StatusNoContent)
-	request(http.MethodDelete, "/members/user-other", "remove-member", token, nil, http.StatusNoContent)
-	request(http.MethodPost, "/teams/team/dispatch", "", member, teamDispatchRequest{Task: "member task", ClientRequestID: "00000000-0000-0000-0000-000000000701"}, http.StatusConflict)
-	request(http.MethodPut, "/users/user-other", "enable-account", token, UpdateUserRequest{DisplayName: "Other", Role: "member", Disabled: false}, http.StatusNoContent)
-	request(http.MethodPost, "/teams/team/dispatch", "", member, teamDispatchRequest{Task: "member task", ClientRequestID: "00000000-0000-0000-0000-000000000702"}, http.StatusConflict)
-	request(http.MethodPost, "/members", "new-member-authorization", token, memberRequest{UserID: "user-other", Role: "member"}, http.StatusNoContent)
 	request(http.MethodPost, "/teams/team/dispatch", "", member, teamDispatchRequest{Task: "member task", ClientRequestID: "00000000-0000-0000-0000-000000000703"}, http.StatusCreated)
-	yes, no := true, false
 	request(http.MethodPut, "/flows/flow/versions/1/admission", "block-version", token, admissionChangeRequest{DesiredBlocked: &yes, Reason: "withdraw version"}, http.StatusOK)
 	request(http.MethodPost, "/teams/team/dispatch", "", member, teamDispatchRequest{Task: "member task", ClientRequestID: "00000000-0000-0000-0000-000000000704"}, http.StatusConflict)
 	request(http.MethodPut, "/flows/flow/versions/1/admission", "new-version-authorization", token, admissionChangeRequest{DesiredBlocked: &no, Reason: "new approval"}, http.StatusOK)

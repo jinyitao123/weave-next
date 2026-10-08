@@ -5,12 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/jackc/pgx/v5"
-	"github.com/jinyitao123/weave/internal/kernel/admissionfence"
 	"net/http"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jinyitao123/weave/internal/kernel/admissionfence"
 
 	org "github.com/jinyitao123/weave/internal/kernel/orgspec"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
@@ -38,11 +39,6 @@ type TeamRoster struct {
 	Team    org.Team       `json:"team"`
 	Lead    *AgentSummary  `json:"lead"`
 	Workers []AgentSummary `json:"workers"`
-}
-
-type memberRequest struct {
-	UserID string `json:"user_id"`
-	Role   string `json:"role"`
 }
 
 type teamRequest struct {
@@ -89,64 +85,6 @@ type teamDispatchRulesRequest struct {
 type teamDispatchRulesResponse struct {
 	org.TeamDispatchRules
 	Execution string `json:"execution"`
-}
-
-func (s *Server) handleGetWorkspace(c echo.Context) error {
-	ctx := c.Request().Context()
-	workspaceID := getTenant(c)
-	workspace, err := s.OrgStore.GetWorkspace(ctx, workspaceID)
-	if err != nil {
-		return c.JSON(http.StatusNotFound, map[string]string{"error": err.Error()})
-	}
-	members, err := s.OrgStore.ListMembers(ctx, workspaceID)
-	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
-	}
-	role := ""
-	for _, member := range members {
-		if member.UserID == getUserID(c) {
-			role = member.Role
-			break
-		}
-	}
-	return c.JSON(http.StatusOK, map[string]any{
-		"workspace": workspace,
-		"role":      role,
-	})
-}
-
-func (s *Server) handleListMembers(c echo.Context) error {
-	members, err := s.OrgStore.ListMembers(c.Request().Context(), getTenant(c))
-	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
-	}
-	return c.JSON(http.StatusOK, members)
-}
-
-func (s *Server) handleAddMember(c echo.Context) error {
-	var req memberRequest
-	if err := c.Bind(&req); err != nil || req.UserID == "" || (req.Role != "owner" && req.Role != "member") {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
-	}
-	intent, err := newAccessChangeIntent(c, "member.add", req.UserID, req, nil, []admissionfence.Resource{admissionfence.Member(req.UserID)}, nil)
-	if err != nil {
-		return err
-	}
-	result, err := s.applyAccessChange(c.Request().Context(), intent, func(ctx context.Context, tx pgx.Tx) (json.RawMessage, error) {
-		return json.RawMessage(`{}`), s.OrgStore.AddMemberTx(ctx, tx, getTenant(c), req.UserID, req.Role)
-	})
-	return writeAccessChangeOutcome(c, result, err, http.StatusNoContent)
-}
-
-func (s *Server) handleRemoveMember(c echo.Context) error {
-	intent, err := newAccessChangeIntent(c, "member.remove", c.Param("userID"), map[string]string{"user_id": c.Param("userID")}, []admissionfence.Resource{admissionfence.Member(c.Param("userID"))}, nil, nil)
-	if err != nil {
-		return err
-	}
-	result, err := s.applyAccessChange(c.Request().Context(), intent, func(ctx context.Context, tx pgx.Tx) (json.RawMessage, error) {
-		return json.RawMessage(`{}`), s.OrgStore.RemoveMemberTx(ctx, tx, getTenant(c), c.Param("userID"))
-	})
-	return writeAccessChangeOutcome(c, result, err, http.StatusNoContent)
 }
 
 func (s *Server) handleListTeams(c echo.Context) error {
@@ -623,27 +561,6 @@ func validateTeamRosterRequest(req teamRosterRequest) error {
 		}
 		if !defaultAllowed {
 			return fmt.Errorf("worker %q default_kind must belong to allowed_kinds", agentID)
-		}
-	}
-	return nil
-}
-
-func validateTeamRosterAgentIdentities(req teamRosterRequest, agents []registry.AgentRecord) error {
-	agentsByID := make(map[string]registry.AgentRecord, len(agents))
-	for _, agent := range agents {
-		agentsByID[agent.ID] = agent
-	}
-	lead, exists := agentsByID[req.LeadAgentID]
-	if !exists || lead.Role != "avatar" {
-		return fmt.Errorf("lead_agent_id must identify an active avatar in the workspace")
-	}
-	for _, worker := range req.Workers {
-		agent, exists := agentsByID[worker.WorkerAgentID]
-		if !exists || agent.Role != "worker" {
-			return fmt.Errorf("worker_agent_id %q must identify an active worker in the workspace", worker.WorkerAgentID)
-		}
-		if err := registry.ValidateTeamWorkerAgentRecord(&agent); err != nil {
-			return fmt.Errorf("worker_agent_id %q is invalid: %w", worker.WorkerAgentID, err)
 		}
 	}
 	return nil

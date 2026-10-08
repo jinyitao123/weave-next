@@ -102,24 +102,6 @@ type EngineExecResult struct {
 	Artifacts                []engine.Artifact                `json:"artifacts,omitempty"`
 }
 
-// CLIEngineExecResult preserves the complete external-engine outcome across
-// the daemon/server task boundary.
-func CLIEngineExecResult(result engine.RunResult) EngineExecResult {
-	return EngineExecResult{
-		SessionID:                result.SessionID,
-		ArtifactCollection:       result.ArtifactCollection,
-		Output:                   result.Output,
-		ReportedModels:           append([]string(nil), result.ReportedModels...),
-		RetrySafeBeforeExecution: result.RetrySafeBeforeExecution,
-		Status:                   result.Status,
-		Error:                    result.Err,
-		UsageReceipt:             result.Usage,
-		Diagnostics:              append([]engine.Diagnostic(nil), result.Diagnostics...),
-		Events:                   append([]engine.Event(nil), result.Events...),
-		Artifacts:                append([]engine.Artifact(nil), result.Artifacts...),
-	}
-}
-
 // EngineRunResult maps a remote task result back to the engine carrier.
 func (result EngineExecResult) EngineRunResult() engine.RunResult {
 	status := result.Status

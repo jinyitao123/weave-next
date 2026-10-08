@@ -224,40 +224,6 @@ func (r *assistantExecutionRecorder) snapshotSegments() []assistantExecutionSegm
 	return segments
 }
 
-func (r *assistantExecutionRecorder) lastToolCallFailed(names ...string) bool {
-	if r == nil {
-		return false
-	}
-	wanted := make(map[string]struct{}, len(names))
-	for _, name := range names {
-		wanted[name] = struct{}{}
-	}
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	for index := len(r.execution.ToolCalls) - 1; index >= 0; index-- {
-		call := r.execution.ToolCalls[index]
-		if _, ok := wanted[call.Name]; ok {
-			return call.Status == "error"
-		}
-	}
-	return false
-}
-
-func (r *assistantExecutionRecorder) lastSuccessfulToolResult(name string) (string, bool) {
-	if r == nil {
-		return "", false
-	}
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	for index := len(r.execution.ToolCalls) - 1; index >= 0; index-- {
-		call := r.execution.ToolCalls[index]
-		if call.Name == name && call.Status == "success" && call.Result != "" {
-			return call.Result, true
-		}
-	}
-	return "", false
-}
-
 func (r *assistantExecutionRecorder) finishToolSegment(agent string, call contract.ToolCall, result, status string, completedAt time.Time) {
 	for index := len(r.segments) - 1; index >= 0; index-- {
 		segment := &r.segments[index]

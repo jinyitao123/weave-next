@@ -59,31 +59,41 @@ var retiredRoutes = []string{
 	"POST /v1/internal/team-build-runs/candidate-runs", "POST /v1/internal/team-build-runs/publish",
 }
 
-// Local login and registration are the only retired routes still gated by
-// configuration; every other retired route has been deleted from the code.
-var localAuthRoutes = map[string]bool{"POST /v1/auth/login": true, "POST /v1/auth/register": true}
+// W10 removed Weave's local accounts (identity comes from the external
+// exchange and admin API keys) and the unused bounded-decision interface.
+var w10DeletedRoutes = []string{
+	"POST /v1/auth/token", "POST /v1/auth/refresh", "GET /v1/auth/me", "PUT /v1/auth/me", "PUT /v1/auth/me/password",
+	"GET /v1/users", "GET /v1/users/:id", "PUT /v1/users/:id", "DELETE /v1/users/:id",
+	"GET /v1/workspace", "GET /v1/workspace/members", "POST /v1/workspace/members", "DELETE /v1/workspace/members/:userID",
+	"PUT /v1/decision-bindings/:key_id", "POST /v1/decisions", "GET /v1/decisions/:decision_id", "POST /v1/decisions:cancel",
+}
+
+// Delivery targets are closed first and deleted later; see W10 in
+// weave-workbench docs/plans/Weave与Loom整改方案.md for the deletion trigger.
+var closedDeliveryTargetRoutes = []string{
+	"GET /v1/delivery-targets", "POST /v1/delivery-targets", "GET /v1/delivery-targets/:id", "PUT /v1/delivery-targets/:id",
+	"GET /v1/delivery-targets/:id/revisions/:revision", "POST /v1/delivery-targets/:id/rotate-headers",
+	"POST /v1/delivery-targets/:id/disable", "POST /v1/delivery-targets/:id/revoke", "DELETE /v1/delivery-targets/:id",
+}
 
 func TestRetiredRoutesAreNeverRegistered(t *testing.T) {
-	for name, cfg := range map[string]*config.Config{
-		"default":            {JWTSecret: "test"},
-		"local login closed": {JWTSecret: "test", DisableLocalLogin: true},
-	} {
-		routes := registeredRoutes(t, cfg)
-		var stillRegistered []string
-		for _, route := range retiredRoutes {
-			if routes[route] && !(localAuthRoutes[route] && !cfg.DisableLocalLogin) {
+	routes := registeredRoutes(t, &config.Config{JWTSecret: "test"})
+	var stillRegistered []string
+	for _, group := range [][]string{retiredRoutes, w10DeletedRoutes, closedDeliveryTargetRoutes} {
+		for _, route := range group {
+			if routes[route] {
 				stillRegistered = append(stillRegistered, route)
 			}
 		}
-		sort.Strings(stillRegistered)
-		if len(stillRegistered) != 0 {
-			t.Fatalf("%s: retired routes still registered: %v", name, stillRegistered)
-		}
+	}
+	sort.Strings(stillRegistered)
+	if len(stillRegistered) != 0 {
+		t.Fatalf("retired routes still registered: %v", stillRegistered)
 	}
 }
 
 func TestSupportedClientRoutesSurviveRetirement(t *testing.T) {
-	routes := registeredRoutes(t, &config.Config{JWTSecret: "test", DisableLocalLogin: true})
+	routes := registeredRoutes(t, &config.Config{JWTSecret: "test"})
 	var missing []string
 	for _, route := range supportedClientRoutes {
 		if !routes[route] {
@@ -92,18 +102,5 @@ func TestSupportedClientRoutesSurviveRetirement(t *testing.T) {
 	}
 	if len(missing) != 0 {
 		t.Fatalf("supported client routes missing after retirement: %v", missing)
-	}
-}
-
-func TestLocalLoginRoutesFollowTheDisableFlag(t *testing.T) {
-	open := registeredRoutes(t, &config.Config{JWTSecret: "test"})
-	closed := registeredRoutes(t, &config.Config{JWTSecret: "test", DisableLocalLogin: true})
-	for route := range localAuthRoutes {
-		if !open[route] {
-			t.Errorf("%s missing while local login is enabled", route)
-		}
-		if closed[route] {
-			t.Errorf("%s registered while local login is disabled", route)
-		}
 	}
 }

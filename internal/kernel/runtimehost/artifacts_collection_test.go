@@ -1,7 +1,6 @@
-package runtimes
+package runtimehost
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -43,18 +42,10 @@ func TestSourceDeliveryKeepsApplicationAndVerificationDependenciesAcrossRuntimeW
 	}
 	result := engine.RunResult{Status: "completed", Output: "Saved `outputs/app/index.html` and its local dependencies."}
 	CollectRunOutputArtifacts(workDir, before, &result)
-	wire, err := json.Marshal(CLIEngineExecResult(result))
-	if err != nil {
-		t.Fatal(err)
+	if result.Status != "completed" || len(result.Artifacts) != len(files) {
+		t.Fatalf("incomplete executable delivery: status=%s files=%d", result.Status, len(result.Artifacts))
 	}
-	var received EngineExecResult
-	if err := json.Unmarshal(wire, &received); err != nil {
-		t.Fatal(err)
-	}
-	if received.Status != "completed" || len(received.Artifacts) != len(files) {
-		t.Fatalf("incomplete executable delivery: status=%s files=%d", received.Status, len(received.Artifacts))
-	}
-	for _, file := range received.Artifacts {
+	for _, file := range result.Artifacts {
 		if want, ok := files[file.Path]; !ok || file.Content != want {
 			t.Fatalf("lost or changed dependency: %s", file.Path)
 		}
@@ -243,20 +234,6 @@ func TestCollectRunOutputArtifactsPreservesEngineOutcomeWithUncollectedDelivery(
 				if artifact.Path == filepath.Base(test.filename) {
 					t.Fatal("uncollected final was transported")
 				}
-			}
-			// The daemon/server carrier preserves execution facts, actual files,
-			// and collection gaps independently across JSON serialization.
-			wire, err := json.Marshal(CLIEngineExecResult(result))
-			if err != nil {
-				t.Fatal(err)
-			}
-			var remote EngineExecResult
-			if err := json.Unmarshal(wire, &remote); err != nil {
-				t.Fatal(err)
-			}
-			restored := remote.EngineRunResult()
-			if restored.Status != "completed" || restored.Err != "" || restored.SessionID != "engine-session-1" || restored.Usage == nil || restored.Usage.InputTokens != 13 || !collectionHasIssue(restored.ArtifactCollection, test.reason, true) || len(restored.Artifacts) != wantFiles || len(restored.Diagnostics) != 1 {
-				t.Fatalf("remote delivery gap lost: %#v", restored)
 			}
 		})
 	}

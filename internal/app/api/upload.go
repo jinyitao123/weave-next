@@ -163,11 +163,6 @@ func importAgentPackage(file *multipart.FileHeader) (*importedAgentPackage, func
 	return &importedAgentPackage{Spec: spec, Root: tmpDir, Files: files, Skipped: skipped, ArchiveSHA256: fmt.Sprintf("%x", hash.Sum(nil))}, cleanup, nil
 }
 
-func extractZip(zipPath, destDir string) error {
-	_, _, err := extractZipWithManifest(zipPath, destDir)
-	return err
-}
-
 func extractZipWithManifest(zipPath, destDir string) ([]importedFile, []skippedArchiveEntry, error) {
 	r, err := zip.OpenReader(zipPath)
 	if err != nil {

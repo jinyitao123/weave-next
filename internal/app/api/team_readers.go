@@ -11,7 +11,6 @@ import (
 	"sort"
 	"strconv"
 
-	"github.com/jinyitao123/loom"
 	"github.com/jinyitao123/weave/internal/base/snapshot"
 	"github.com/jinyitao123/weave/internal/kernel/loomruntime"
 	"github.com/labstack/echo/v4"
@@ -137,10 +136,6 @@ type teamBulkValueStore interface {
 
 type pgTeamTerminalLoader struct {
 	store teamBulkValueStore
-}
-
-type loomStoreTeamTerminalLoader struct {
-	store loom.Store
 }
 
 func (source snapshotRegistryTeamExpectedSource) resolve(
@@ -293,37 +288,6 @@ func (loader pgTeamTerminalLoader) load(
 	}
 	if values == nil {
 		values = make(map[string][]byte)
-	}
-	return values, nil
-}
-
-func (loader loomStoreTeamTerminalLoader) load(
-	ctx context.Context,
-	workspaceID string,
-	runIDs []string,
-) (map[string][]byte, error) {
-	if loader.store == nil {
-		return nil, errors.New("fallback team terminal loader is not configured")
-	}
-	namespace := "audit:" + workspaceID
-	keys, err := loader.store.List(ctx, namespace, "")
-	if err != nil {
-		return nil, fmt.Errorf("list team terminal presence: %w", err)
-	}
-	present := make(map[string]struct{}, len(keys))
-	for _, key := range keys {
-		present[key] = struct{}{}
-	}
-	values := make(map[string][]byte)
-	for _, runID := range runIDs {
-		if _, exists := present[runID]; !exists {
-			continue
-		}
-		value, err := loader.store.Get(ctx, namespace, runID)
-		if err != nil {
-			return nil, fmt.Errorf("get present team terminal %q: %w", runID, err)
-		}
-		values[runID] = value
 	}
 	return values, nil
 }
