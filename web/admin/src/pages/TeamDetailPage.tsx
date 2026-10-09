@@ -118,16 +118,16 @@ function Members({ document, nodes, accepting, onEdit }: { document: Development
   return <div className="member-grid">{workers.map((member) => {
     const config = member.configuration
     const engineNodes = nodes.filter((node) => node.engine_readiness.some((engine) => engine.engine === config.engine)).map((node) => ({ value: node.id, label: node.name, detail: node.accepting ? '可接任务' : '暂不可接' }))
-    const nodeOptions = isCLIEngine(config.engine) ? engineNodes : [{ value: '', label: '不需要节点' }]
+    const usesNode = isCLIEngine(config.engine)
     return <section key={member.id} className="member-card" aria-label={config.display_name}>
       <label className="field"><span>名称</span><input className="input" value={config.display_name} maxLength={80} onChange={(event) => onEdit(member.id, { display_name: event.target.value })} /></label>
       <div className="member-card__row">
-        <div className="field"><span>引擎</span><Select label={`${config.display_name}的引擎`} value={config.engine} options={engines.map((engine) => ({ value: engine, label: engineName(engine), detail: isCLIEngine(engine) ? `${accepting[engine] ?? 0} 个节点可接` : '无需节点' }))} onChange={(engine) => onEdit(member.id, { engine, runtime_id: '' })} /></div>
-        <div className="field"><span>节点</span><Select label={`${config.display_name}的节点`} value={config.runtime_id ?? ''} placeholder={nodeOptions.length ? '选择节点' : '没有提供该引擎的节点'} options={nodeOptions} onChange={(runtime) => onEdit(member.id, { runtime_id: runtime })} /></div>
+        <div className="field"><span>引擎</span><Select label={`${config.display_name}的引擎`} value={config.engine} options={engines.map((engine) => ({ value: engine, label: engineName(engine), detail: isCLIEngine(engine) ? `${accepting[engine] ?? 0} 个节点可接` : undefined }))} onChange={(engine) => onEdit(member.id, { engine, runtime_id: '' })} /></div>
+        {usesNode ? <div className="field"><span>节点</span><Select label={`${config.display_name}的节点`} value={config.runtime_id ?? ''} placeholder={engineNodes.length ? '选择节点' : '没有提供该引擎的节点'} options={engineNodes} onChange={(runtime) => onEdit(member.id, { runtime_id: runtime })} /></div> : null}
       </div>
       <label className="field"><span>模型</span><input className="input" value={config.model ?? ''} placeholder="留空使用引擎默认模型" onChange={(event) => onEdit(member.id, { model: event.target.value })} /></label>
       <label className="field"><span>职责</span><textarea className="input textarea" rows={4} value={config.system_prompt ?? ''} onChange={(event) => onEdit(member.id, { system_prompt: event.target.value })} /></label>
-      <p className="muted small">{!isCLIEngine(config.engine) ? `${engineName(config.engine)}在服务端运行，不需要节点` : accepting[config.engine] ? `${accepting[config.engine]} 个节点可接 ${engineName(config.engine)}` : `没有节点可接 ${engineName(config.engine)}`}</p>
+      {usesNode ? <p className="muted small">{accepting[config.engine] ? `${accepting[config.engine]} 个节点可接 ${engineName(config.engine)}` : `没有节点可接 ${engineName(config.engine)}`}</p> : null}
     </section>
   })}</div>
 }
