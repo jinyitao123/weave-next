@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import fixtureText from '../../../../../internal/kernel/workflow/machine/testdata/code_verify_loop.json?raw'
 import { serialGraph, type Graph } from '../../lib/graph'
 import type { DevelopmentMember } from '../../lib/teams'
+import { layout } from './FlowCanvas'
 import { WorkflowEditor } from './WorkflowEditor'
 
 const members: DevelopmentMember[] = ['编码', '验证', '核对'].map(id => ({ id, configuration: { display_name: id, role: 'worker', engine: 'loom', runtime_id: '', model: '', system_prompt: '' }, relationship: { duty: '', result_requirement: '', enabled: true } }))
@@ -62,5 +63,28 @@ describe('workflow canvas interactions', () => {
     expect(screen.getByText('输入沿用验证回路的本轮结果与上一轮验证意见。')).toBeTruthy()
     expect(screen.queryByRole('button', { name: '添加并行分支' })).toBeNull()
     expect(screen.queryByRole('button', { name: '删除步骤' })).toBeNull()
+  })
+
+  it('places delivery after the verification step and labels the back edge with its rounds', () => {
+    const graph = JSON.parse(fixtureText) as Graph
+    const box = layout(graph)
+    const x = (id: string) => box.positions.get(id)!.x
+    expect(x('loop')).toBeLessThan(x('code'))
+    expect(x('code')).toBeLessThan(x('verify'))
+    expect(x('verify')).toBeLessThan(x('deliver'))
+    render(<Controlled initial={graph} />)
+    expect(screen.getByText('未通过退回 · 最多 3 轮')).toBeTruthy()
+  })
+
+  it('edits the loop rounds from the loop step', () => {
+    const graph = JSON.parse(fixtureText) as Graph
+    let saved: Graph | undefined
+    render(<Controlled initial={graph} changed={value => { saved = value }} />)
+    fireEvent.click(screen.getByRole('button', { name: '编辑步骤 编码与验证' }))
+    expect(screen.queryByText('该步骤暂不提供配置编辑，原有节点与连接会保留。')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '验证回路最多轮数' }))
+    fireEvent.mouseDown(screen.getByRole('option', { name: '5 轮' }))
+    expect(saved?.nodes.find(node => node.id === 'loop')?.config?.max_iterations).toBe(5)
+    expect(screen.getByText('未通过退回 · 最多 5 轮')).toBeTruthy()
   })
 })

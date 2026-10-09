@@ -53,7 +53,9 @@ export function WorkflowEditor({ graph, members, onChange }: { graph: Graph; mem
           {step.type === 'parallel' ? <button type="button" className="button" onClick={() => structure(current => serializeParallel(current, step.id))}>改为依次执行</button> : null}
           {['lead', 'worker'].includes(step.type) && step.id !== graph.entry_node_id ? <button type="button" className="button" onClick={() => setDeleting(true)}><Trash2 size={14} />删除步骤</button> : null}
         </div> : null}
-        <StepInspector graph={graph} step={step} members={members} loop={Boolean(loop)} onChange={update} onGraph={change} />
+        {loop && step.id === loop.loopId
+          ? <div className="field"><span>最多轮数</span><Select label="验证回路最多轮数" value={String(loop.rounds)} options={Array.from({ length: maxVerifyRounds }, (_, index) => ({ value: String(index + 1), label: `${index + 1} 轮` }))} onChange={value => change(current => setVerificationLoop(current, true, Number(value)))} /></div>
+          : <StepInspector graph={graph} step={step} members={members} loop={Boolean(loop)} onChange={update} onGraph={change} />}
       </section> : <p className="muted">流程中还没有步骤。</p>}
     </div>
     {error ? <InlineError message={error} /> : null}

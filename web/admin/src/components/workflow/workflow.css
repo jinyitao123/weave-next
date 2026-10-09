@@ -7,6 +7,7 @@
 .flow-editor__graph path { fill: none; stroke: var(--border-strong); stroke-width: 1.5; }
 .flow-editor__graph path.is-back { stroke: var(--accent); stroke-dasharray: 4 3; }
 .flow-editor__graph marker path { fill: var(--border-strong); stroke: none; }
+.flow-editor__edge-label { position: absolute; transform: translate(-50%, -50%); padding: 0 6px; color: var(--accent); background: var(--subtle); font-size: var(--text-xs); white-space: nowrap; pointer-events: none; }
 .flow-editor__node { position: absolute; display: flex; align-items: center; gap: 8px; padding: 10px; border: 1px solid var(--border-strong); border-radius: var(--radius-md); color: var(--text); background: var(--canvas); text-align: left; cursor: pointer; }
 .flow-editor__node:hover { background: var(--hover); }
 .flow-editor__node.is-selected { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
