@@ -37,6 +37,18 @@ type RuntimeHostFactory interface {
 	) (compiler.FrozenBuildOpts, io.Closer, error)
 }
 
+type runtimeStructuredCLIExecutor interface {
+	ExecRemoteStructured(
+		context.Context,
+		string,
+		*registry.AgentRecord,
+		execution.AgentExecutionStamp,
+		string,
+		[]execspec.Attachment,
+		json.RawMessage,
+	) (engine.RunResult, error)
+}
+
 type RuntimeCLIExecutor interface {
 	ExecRemote(
 		context.Context,
@@ -234,6 +246,13 @@ func (e *RuntimeCLIEntry) ExecuteResult(ctx context.Context, prompt string) (eng
 	}
 	if e.frozenMCP != nil {
 		ctx = execspec.WithFrozenMCPInvocation(ctx, *e.frozenMCP)
+	}
+	// A JSON workflow node's frozen schema constrains the member's final
+	// message, as it does for in-process members.
+	if schema := compiler.NodeOutputSchema(ctx); len(schema) > 0 {
+		if structured, ok := e.executor.(runtimeStructuredCLIExecutor); ok {
+			return structured.ExecRemoteStructured(ctx, e.record.WorkspaceID, e.record, e.stamp, prompt, nil, schema)
+		}
 	}
 	return e.executor.ExecRemote(
 		ctx,

@@ -26,6 +26,12 @@ func WithNodeOutputSchema(ctx context.Context, schema json.RawMessage) context.C
 	return context.WithValue(ctx, nodeOutputSchemaKey{}, append(json.RawMessage(nil), schema...))
 }
 
+// NodeOutputSchema returns the frozen node schema bound to this invocation.
+func NodeOutputSchema(ctx context.Context) json.RawMessage {
+	schema, _ := ctx.Value(nodeOutputSchemaKey{}).(json.RawMessage)
+	return append(json.RawMessage(nil), schema...)
+}
+
 // WithWorkbenchResultOutput opts this invocation into workbench_result_v1's
 // semantic normalization in addition to the frozen node schema.
 func WithWorkbenchResultOutput(ctx context.Context) context.Context {

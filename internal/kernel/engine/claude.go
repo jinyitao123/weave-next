@@ -52,7 +52,7 @@ func (b *claudeBackend) Run(ctx context.Context, spec RunSpec) (RunResult, error
 	}
 	cmd.Dir = spec.WorkDir
 	cmd.Env = envWithCLIPath(mergedClaudeEnv(spec.Env), cliPath)
-	cmd.Stdin = strings.NewReader(spec.Prompt)
+	cmd.Stdin = strings.NewReader(promptWithOutputSchema(spec.Prompt, spec.OutputSchema))
 	applyProcAttr(cmd)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -86,6 +86,9 @@ func (b *claudeBackend) Run(ctx context.Context, spec RunSpec) (RunResult, error
 		}
 		result, err := finishClaudeRun(finished.parsed, stderr.String(), finished.err)
 		bindUsageReceipt(&result, spec)
+		if len(spec.OutputSchema) > 0 {
+			result.Output = unwrapJSONOutput(result.Output)
+		}
 		return result, err
 	case <-runCtx.Done():
 		_ = terminateProcess(cmd)

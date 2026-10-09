@@ -52,7 +52,7 @@ func (b *opencodeBackend) Run(ctx context.Context, spec RunSpec) (RunResult, err
 	}
 	cmd.Dir = spec.WorkDir
 	cmd.Env = envWithCLIPath(mergedEnv(spec.Env), cliPath)
-	cmd.Stdin = strings.NewReader(spec.Prompt)
+	cmd.Stdin = strings.NewReader(promptWithOutputSchema(spec.Prompt, spec.OutputSchema))
 	applyProcAttr(cmd)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -78,6 +78,9 @@ func (b *opencodeBackend) Run(ctx context.Context, spec RunSpec) (RunResult, err
 	case finished := <-done:
 		result, err := finishOpenCodeRun(finished.parsed, stderr.String(), finished.err)
 		bindUsageReceipt(&result, spec)
+		if len(spec.OutputSchema) > 0 {
+			result.Output = unwrapJSONOutput(result.Output)
+		}
 		return result, err
 	case <-runCtx.Done():
 		_ = terminateProcess(cmd)
