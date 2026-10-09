@@ -70,7 +70,7 @@ func (b *opencodeBackend) Run(ctx context.Context, spec RunSpec) (RunResult, err
 	}
 	done := make(chan outcome, 1)
 	go func() {
-		parsed := parseOpenCodeOutput(stdout)
+		parsed := parseOpenCodeOutputWithEvents(stdout, spec.OnPublicEvent)
 		done <- outcome{parsed: parsed, err: cmd.Wait()}
 	}()
 
@@ -142,6 +142,13 @@ type openCodeStepReceipt struct {
 }
 
 func parseOpenCodeOutput(stdout interface{ Read([]byte) (int, error) }) openCodeOutput {
+	return parseOpenCodeOutputWithEvents(stdout, nil)
+}
+
+// parseOpenCodeOutputWithEvents publishes assistant text and finished tool
+// parts as they arrive. Reasoning parts and unknown event types are never
+// published.
+func parseOpenCodeOutputWithEvents(stdout interface{ Read([]byte) (int, error) }, publish func(Event, bool)) openCodeOutput {
 	var output openCodeOutput
 	scanner := bufio.NewScanner(stdout)
 	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
@@ -168,6 +175,15 @@ func parseOpenCodeOutput(stdout interface{ Read([]byte) (int, error) }) openCode
 			}
 			if text := eventText(event); text != "" {
 				output.text.WriteString(text)
+				if publish != nil {
+					publish(Event{Kind: "text", CallID: jsonString(jsonObject(event["part"])["id"]), Text: boundedCodexText(text)}, len(text) > 4096)
+				}
+			}
+		case "tool_use":
+			if publish != nil {
+				if activity, truncated, ok := openCodeToolEvent(event); ok {
+					publish(activity, truncated)
+				}
 			}
 		case "error":
 			if message := eventErrorMessage(event); message != "" {
@@ -198,6 +214,25 @@ func parseOpenCodeOutput(stdout interface{ Read([]byte) (int, error) }) openCode
 	}
 	output.finalizeUsage()
 	return output
+}
+
+func openCodeToolEvent(event map[string]json.RawMessage) (Event, bool, bool) {
+	part := jsonObject(event["part"])
+	if part == nil || jsonString(part["tool"]) == "" {
+		return Event{}, false, false
+	}
+	state := jsonObject(part["state"])
+	status := jsonString(state["status"])
+	kind := "tool_result"
+	if status == "pending" || status == "running" {
+		kind = "tool_call"
+	}
+	input, output := string(state["input"]), codexRawText(firstJSONRaw(state, "output", "error"))
+	if input == "null" {
+		input = ""
+	}
+	truncated := len(input) > 4096 || len(jsonString(firstJSONRaw(state, "output", "error"))) > 4096
+	return Event{Kind: kind, Tool: jsonString(part["tool"]), CallID: firstJSONField(part, "callID", "id"), Status: status, Input: boundedCodexText(input), Output: output}, truncated, true
 }
 
 func parseOpenCodeStep(event map[string]json.RawMessage, raw string) (openCodeStepReceipt, error) {

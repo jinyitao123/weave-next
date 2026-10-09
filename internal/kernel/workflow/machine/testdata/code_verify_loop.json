@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "entry_node_id": "loop",
+  "input_contract": {"type": "text"},
+  "output_contract": {"type": "text"},
+  "nodes": [
+    {"id": "loop", "type": "loop", "label": "编码与验证", "config": {"max_iterations": 3, "latch_node_id": "verify",
+      "continue_predicate": {"left": {"source": "node_output", "node_id": "verify", "path": "/passed", "iteration": "current_iteration"}, "operator": "eq", "right": {"source": "literal", "value": false}}}},
+    {"id": "code", "type": "worker", "label": "编码", "config": {"kind": "consult", "agent_id": "coder", "agent_version": 1, "result_requirement": "完成代码修改"},
+      "inputs": {
+        "original": {"value": {"source": "run_input", "path": ""}, "expected_type": "text"},
+        "review": {"value": {"source": "node_output", "node_id": "verify", "path": "/summary", "iteration": "previous_iteration", "default": {"source": "literal", "value": ""}}, "expected_type": "text"}
+      },
+      "output": {"type": "text"}},
+    {"id": "verify", "type": "worker", "label": "验证", "config": {"kind": "consult", "agent_id": "verifier", "agent_version": 1, "result_requirement": "独立验证"},
+      "inputs": {
+        "original": {"value": {"source": "run_input", "path": ""}, "expected_type": "text"},
+        "previous": {"value": {"source": "node_output", "node_id": "code", "path": "", "iteration": "current_iteration"}, "expected_type": "text"}
+      },
+      "output": {"type": "json", "schema": {"type": "object", "additionalProperties": false, "required": ["passed", "summary"],
+        "properties": {"passed": {"type": "boolean"}, "summary": {"type": "string"}}}}},
+    {"id": "deliver", "type": "deliver", "label": "交付结果", "config": {"result": {"source": "node_output", "node_id": "loop", "path": "/latch_result/summary"}}}
+  ],
+  "edges": [
+    {"id": "e1", "from_node_id": "loop", "to_node_id": "code", "route": "body"},
+    {"id": "e2", "from_node_id": "code", "to_node_id": "verify", "route": "success"},
+    {"id": "e3", "from_node_id": "verify", "to_node_id": "loop", "route": "back"},
+    {"id": "e4", "from_node_id": "loop", "to_node_id": "deliver", "route": "exit"}
+  ]
+}

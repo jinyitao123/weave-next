@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jinyitao123/weave/internal/kernel/engine"
 )
 
 const tokenPrefix = "rtk_"
@@ -84,8 +85,12 @@ type Runtime struct {
 	DeletedAt                *time.Time                  `json:"deleted_at,omitempty"`
 	Online                   bool                        `json:"online"`
 	LastHeartbeatAt          *time.Time                  `json:"last_heartbeat_at,omitempty"`
-	CreatedAt                time.Time                   `json:"created_at"`
-	UpdatedAt                time.Time                   `json:"updated_at"`
+	// PausedAt marks a runtime that takes no new work; it keeps what it holds.
+	PausedAt *time.Time `json:"paused_at,omitempty"`
+	// ProbeRequestedAt asks the Host to re-detect its engines.
+	ProbeRequestedAt *time.Time `json:"probe_requested_at,omitempty"`
+	CreatedAt        time.Time  `json:"created_at"`
+	UpdatedAt        time.Time  `json:"updated_at"`
 }
 
 // Store persists runtime registrations and heartbeats.
@@ -200,7 +205,7 @@ func (s *Store) HelloWithCapabilities(
 			        OR total_slots IS DISTINCT FROM $5 THEN 1
 			      ELSE 0
 			    END,
-			    last_heartbeat_at=$6, updated_at=$6
+			    last_heartbeat_at=$6, updated_at=$6, probe_requested_at=NULL
 			WHERE workspace_id=$1 AND id=$2
 			  AND enabled=true AND revoked_at IS NULL AND deleted_at IS NULL
 	`, workspaceID, id, string(encoded), string(encodedCapabilities), totalSlots, now)
@@ -242,7 +247,7 @@ func canonicalEngineCapabilities(
 			return nil, fmt.Errorf("runtime engine configuration metadata is too long")
 		}
 		capability.ConfiguredEndpoint = SafeEndpointOrigin(capability.ConfiguredEndpoint)
-		if capability.Engine != "codex" && capability.Engine != "claude" {
+		if !engine.PublishesPublicEvents(capability.Engine) {
 			capability.PublicEvents = false
 		}
 		if !slices.Contains(engines, capability.Engine) {
@@ -408,7 +413,7 @@ func (s *Store) List(ctx context.Context, workspaceID string) ([]Runtime, error)
 			&runtime.HealthStatus, &runtime.ConsecutiveInfraFailures, &runtime.QuarantineUntil,
 			&runtime.LastFailureReason, &runtime.Enabled,
 			&runtime.RevokedAt, &runtime.DeletedAt,
-			&runtime.LastHeartbeatAt, &runtime.CreatedAt, &runtime.UpdatedAt, &runtime.Online,
+			&runtime.LastHeartbeatAt, &runtime.CreatedAt, &runtime.UpdatedAt, &runtime.PausedAt, &runtime.ProbeRequestedAt, &runtime.Online,
 		); err != nil {
 			return nil, fmt.Errorf("scan runtime: %w", err)
 		}
@@ -443,7 +448,7 @@ func (s *Store) Get(ctx context.Context, workspaceID, id string) (*Runtime, erro
 		&runtime.HealthStatus, &runtime.ConsecutiveInfraFailures, &runtime.QuarantineUntil,
 		&runtime.LastFailureReason, &runtime.Enabled,
 		&runtime.RevokedAt, &runtime.DeletedAt,
-		&runtime.LastHeartbeatAt, &runtime.CreatedAt, &runtime.UpdatedAt, &runtime.Online,
+		&runtime.LastHeartbeatAt, &runtime.CreatedAt, &runtime.UpdatedAt, &runtime.PausedAt, &runtime.ProbeRequestedAt, &runtime.Online,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, fmt.Errorf("%w: runtime %q", ErrRuntimeUnavailable, id)
@@ -501,7 +506,8 @@ const runtimeColumns = `
 		functional_revision, total_slots, active_slots, COALESCE(pool_id, ''),
 		health_status, consecutive_infra_failures, quarantine_until,
 		COALESCE(last_failure_reason, ''), enabled,
-		revoked_at, deleted_at, last_heartbeat_at, created_at, updated_at`
+		revoked_at, deleted_at, last_heartbeat_at, created_at, updated_at,
+		paused_at, probe_requested_at`
 
 type rowScanner interface {
 	Scan(dest ...any) error
@@ -516,7 +522,7 @@ func scanRuntime(row rowScanner) (*Runtime, error) {
 		&runtime.HealthStatus, &runtime.ConsecutiveInfraFailures, &runtime.QuarantineUntil,
 		&runtime.LastFailureReason, &runtime.Enabled,
 		&runtime.RevokedAt, &runtime.DeletedAt,
-		&runtime.LastHeartbeatAt, &runtime.CreatedAt, &runtime.UpdatedAt,
+		&runtime.LastHeartbeatAt, &runtime.CreatedAt, &runtime.UpdatedAt, &runtime.PausedAt, &runtime.ProbeRequestedAt,
 	); err != nil {
 		return nil, err
 	}
@@ -559,4 +565,57 @@ func generateToken() (string, error) {
 func hashToken(token string) string {
 	hash := sha256.Sum256([]byte(token))
 	return hex.EncodeToString(hash[:])
+}
+
+// RotateToken replaces a runtime's credential and returns the new raw token
+// once. The previous token stops authenticating immediately.
+func (s *Store) RotateToken(ctx context.Context, workspaceID, id string) (string, error) {
+	token, err := generateToken()
+	if err != nil {
+		return "", fmt.Errorf("generate runtime token: %w", err)
+	}
+	tag, err := s.pool.Exec(ctx, `
+		UPDATE weave_runtimes
+		SET token_hash=$3, updated_at=$4
+		WHERE workspace_id=$1 AND id=$2 AND deleted_at IS NULL AND revoked_at IS NULL
+	`, workspaceID, id, hashToken(token), s.now())
+	if err != nil {
+		return "", fmt.Errorf("rotate runtime token: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return "", fmt.Errorf("%w: runtime %q", ErrRuntimeUnavailable, id)
+	}
+	return token, nil
+}
+
+// SetPaused stops or resumes new work for one runtime. Running work is kept.
+func (s *Store) SetPaused(ctx context.Context, workspaceID, id string, paused bool) error {
+	tag, err := s.pool.Exec(ctx, `
+		UPDATE weave_runtimes
+		SET paused_at=CASE WHEN $3 THEN COALESCE(paused_at, $4) ELSE NULL END, updated_at=$4
+		WHERE workspace_id=$1 AND id=$2 AND deleted_at IS NULL AND revoked_at IS NULL
+	`, workspaceID, id, paused, s.now())
+	if err != nil {
+		return fmt.Errorf("pause runtime: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("%w: runtime %q", ErrRuntimeUnavailable, id)
+	}
+	return nil
+}
+
+// RequestProbe asks the runtime to re-detect its engines at its next
+// heartbeat.
+func (s *Store) RequestProbe(ctx context.Context, workspaceID, id string) error {
+	tag, err := s.pool.Exec(ctx, `
+		UPDATE weave_runtimes SET probe_requested_at=$3
+		WHERE workspace_id=$1 AND id=$2 AND deleted_at IS NULL AND revoked_at IS NULL AND enabled=true
+	`, workspaceID, id, s.now())
+	if err != nil {
+		return fmt.Errorf("request runtime probe: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("%w: runtime %q", ErrRuntimeUnavailable, id)
+	}
+	return nil
 }

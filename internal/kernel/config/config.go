@@ -23,6 +23,9 @@ type Config struct {
 	AdminPass             string // WEAVE_ADMIN_PASS — seed admin password on startup
 	ForgeSessionURL       string // WEAVE_FORGE_SESSION_URL — Forge endpoint that resolves the signed-in account
 	ForgeDefaultWorkspace string // WEAVE_FORGE_DEFAULT_WORKSPACE — fallback workspace when Forge has no organization claim
+	// AdminForgeURL is the browser-facing Forge origin the admin console signs
+	// in against; empty leaves only operator API key sign-in.
+	AdminForgeURL string // WEAVE_ADMIN_FORGE_URL
 
 	// CORS settings.
 	CORSOrigins string // CORS_ORIGINS — comma-separated allowed origins; "*" for dev (default when DevMode)
@@ -121,6 +124,7 @@ func Load() (*Config, error) {
 		AdminPass:                os.Getenv("WEAVE_ADMIN_PASS"),
 		ForgeSessionURL:          strings.TrimSpace(os.Getenv("WEAVE_FORGE_SESSION_URL")),
 		ForgeDefaultWorkspace:    strings.TrimSpace(os.Getenv("WEAVE_FORGE_DEFAULT_WORKSPACE")),
+		AdminForgeURL:            strings.TrimRight(strings.TrimSpace(os.Getenv("WEAVE_ADMIN_FORGE_URL")), "/"),
 		CORSOrigins:              corsOrigins,
 		MCPBoundaryBase:          envOr("WEAVE_MCP_BOUNDARY_BASE", "http://127.0.0.1:"+port),
 		WorkspacesRoot:           workspacesRoot,

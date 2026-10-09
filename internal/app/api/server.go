@@ -224,7 +224,7 @@ func NewServer(cfg *config.Config, store loom.Store, models *llmrouter.Resolver)
 	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
 		AllowOrigins: corsOrigins,
 		AllowMethods: []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowHeaders: []string{"Authorization", "Content-Type", forgeDelegationHeader},
+		AllowHeaders: []string{"Authorization", "Content-Type", forgeDelegationHeader, adminRequestHeader},
 	}))
 
 	s := &Server{
@@ -298,6 +298,9 @@ func NewServer(cfg *config.Config, store loom.Store, models *llmrouter.Resolver)
 }
 
 func (s *Server) registerRoutes() {
+	s.Echo.Pre(adminSessionCookieMiddleware)
+	s.registerAdminConsole()
+
 	// Public endpoints (no auth).
 	s.Echo.POST("/v1/integrations/feishu/events", s.handleFeishuEvent)
 	s.Echo.GET("/v1/health", s.handleHealth)
@@ -324,6 +327,26 @@ func (s *Server) registerRoutes() {
 	runsScope := RequireScope("runs")
 	memoryScope := RequireScope("memory")
 	orgScope := RequireScope("org")
+	consoleAccess := RequireAnyRole("developer", "admin", "owner")
+
+	// Developer and operator console.
+	auth.GET("/admin/session", s.handleGetAdminSession, consoleAccess)
+	auth.GET("/admin/tasks", s.handleListAdminTasks, consoleAccess, runsScope)
+	auth.GET("/admin/tasks/:id", s.handleListAdminTasks, consoleAccess, runsScope)
+	auth.POST("/admin/tasks", s.handleSubmitAdminTask, consoleAccess, orgScope, chatScope)
+	auth.GET("/admin/tasks/:id/code", s.handleGetAdminTaskCode, consoleAccess, runsScope)
+	auth.GET("/admin/tasks/:id/evidence", s.handleExportAdminTaskEvidence, consoleAccess, runsScope)
+	auth.POST("/admin/tasks/:id/follow-ups", s.handleSubmitFollowUp, consoleAccess, orgScope, chatScope)
+	auth.POST("/admin/tasks/:id/pull-request", s.handleCreatePullRequest, consoleAccess, orgScope, chatScope)
+	auth.GET("/admin/tasks/:id/thread", s.handleGetTaskThread, consoleAccess, runsScope)
+	auth.GET("/admin/tasks/:id/logs", s.handleGetAdminTaskLogs, consoleAccess, runsScope)
+	auth.GET("/admin/tasks/:id/stream", s.handleAdminTaskStream, consoleAccess, runsScope)
+	auth.GET("/admin/tasks/:id/queue", s.handleGetAdminTaskQueue, consoleAccess, runsScope)
+	auth.GET("/admin/metrics", s.handleGetAdminMetrics, consoleAccess, runsScope)
+	auth.GET("/environments", s.handleListEnvironments, consoleAccess, orgScope)
+	auth.POST("/environments", s.handleSaveEnvironment, consoleAccess, orgScope)
+	auth.PUT("/environments/:id", s.handleSaveEnvironment, consoleAccess, orgScope)
+	auth.DELETE("/environments/:id", s.handleArchiveEnvironment, consoleAccess, orgScope)
 
 	// Developer capability contract endpoints. Execution is admitted here;
 	// runtime scheduling is intentionally a separate follow-up integration.
@@ -405,7 +428,11 @@ func (s *Server) registerRoutes() {
 	auth.GET("/agent-execution-settings", s.handleListAgentExecutionSettings, orgScope)
 	auth.GET("/runtimes", s.handleListRuntimes, orgScope)
 	auth.POST("/runtimes", s.handleCreateRuntime, RequireAnyRole("admin", "owner"), orgScope)
+	auth.GET("/runtimes/:id", s.handleGetRuntime, orgScope)
 	auth.PUT("/runtimes/:id", s.handleRenameRuntime, RequireAnyRole("admin", "owner"), orgScope)
+	auth.POST("/runtimes/:id/token", s.handleRotateRuntimeToken, RequireAnyRole("admin", "owner"), orgScope)
+	auth.PUT("/runtimes/:id/paused", s.handleSetRuntimePaused, RequireAnyRole("admin", "owner"), orgScope)
+	auth.POST("/runtimes/:id/probe", s.handleProbeRuntime, RequireAnyRole("admin", "owner"), orgScope)
 	auth.DELETE("/runtimes/:id", s.handleDeleteRuntime, RequireAnyRole("admin", "owner"), orgScope)
 	runtimeAPI := authenticatedRouteGroup(s.Echo, "/v1/runtime", s.runtimeAuthMiddleware())
 	runtimeAPI.POST("/hello", s.handleRuntimeHello)
@@ -415,6 +442,9 @@ func (s *Server) registerRoutes() {
 	runtimeAPI.POST("/tasks/:id/complete", s.handleRuntimeTaskComplete)
 	runtimeAPI.POST("/tasks/:id/stopped", s.handleRuntimeTaskStopped)
 	runtimeAPI.POST("/tasks/:id/events", s.handleRuntimeTaskEvents)
+	runtimeAPI.POST("/tasks/:id/logs", s.handleRuntimeTaskLogs)
+	runtimeAPI.GET("/tasks/:id/git/*", s.handleRuntimeGitProxy)
+	runtimeAPI.POST("/tasks/:id/git/*", s.handleRuntimeGitProxy)
 	runtimeAPI.GET("/tasks/:id/attachments/:aid", s.handleRuntimeTaskAttachment)
 	// Task-scoped MCP gateway: a remote loom daemon dials one of these per MCP
 	// server index; auth is the runtime lease, the record is the frozen task

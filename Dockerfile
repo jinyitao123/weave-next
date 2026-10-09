@@ -3,6 +3,17 @@ ARG OPENCODE_VERSION=1.18.11
 ARG CODEX_VERSION=0.146.0
 ARG CLAUDE_CODE_VERSION=2.1.220
 
+# Admin console: built first and embedded into the server binary below.
+FROM node:22-slim AS admin
+ARG NPM_REGISTRY
+WORKDIR /src/web/admin
+COPY web/admin/package.json web/admin/package-lock.json ./
+RUN --mount=type=cache,id=weave-admin-npm,target=/root/.npm \
+    npm ci --no-audit --no-fund --registry="${NPM_REGISTRY}"
+COPY web/admin ./
+COPY internal/app/adminui/dist/.gitkeep /src/internal/app/adminui/dist/.gitkeep
+RUN npm run build
+
 FROM golang:1.26-alpine AS builder
 
 RUN apk add --no-cache git ca-certificates
@@ -17,6 +28,7 @@ RUN --mount=type=cache,id=weave-gomod,target=/go/pkg/mod,sharing=locked \
     go mod download
 
 COPY . .
+COPY --from=admin /src/internal/app/adminui/dist ./internal/app/adminui/dist
 # Git metadata is excluded by .dockerignore, so the commit must be supplied by
 # the host (see `make docker-build`); plain `docker compose build` falls back
 # to "unknown".

@@ -30,6 +30,7 @@ type teamDispatchRequest struct {
 	ClientRequestID string `json:"client_request_id,omitempty"`
 	ProjectID       string `json:"project_id,omitempty"`
 	ConversationID  string `json:"conversation_id,omitempty"`
+	codeContext     *adminRunCodeContext
 	inputBinding    *dispatchInputRevision
 }
 
@@ -198,15 +199,16 @@ func (s *Server) dispatchAdmittedTeam(c echo.Context, request teamDispatchReques
 
 func workflowDispatchFingerprint(teamID string, request teamDispatchRequest) string {
 	encoded, _ := json.Marshal(struct {
-		TeamID          string `json:"team_id"`
-		Task            string `json:"task"`
-		InputRevisionID string `json:"input_revision_id,omitempty"`
-		Mode            string `json:"mode"`
-		WorkflowID      string `json:"workflow_id,omitempty"`
-		WorkflowVersion *int   `json:"workflow_version,omitempty"`
-		ProjectID       string `json:"project_id,omitempty"`
-		ConversationID  string `json:"conversation_id,omitempty"`
-	}{teamID, request.Task, request.InputRevisionID, request.Mode, request.WorkflowID, request.WorkflowVersion, request.ProjectID, request.ConversationID})
+		TeamID          string               `json:"team_id"`
+		Task            string               `json:"task"`
+		InputRevisionID string               `json:"input_revision_id,omitempty"`
+		Mode            string               `json:"mode"`
+		WorkflowID      string               `json:"workflow_id,omitempty"`
+		WorkflowVersion *int                 `json:"workflow_version,omitempty"`
+		ProjectID       string               `json:"project_id,omitempty"`
+		ConversationID  string               `json:"conversation_id,omitempty"`
+		CodeContext     *adminRunCodeContext `json:"code_context,omitempty"`
+	}{teamID, request.Task, request.InputRevisionID, request.Mode, request.WorkflowID, request.WorkflowVersion, request.ProjectID, request.ConversationID, request.codeContext})
 	digest := sha256.Sum256(encoded)
 	return "team-dispatch:" + request.ClientRequestID + ":" + fmt.Sprintf("%x", digest[:])
 }

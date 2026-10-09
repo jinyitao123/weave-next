@@ -65,14 +65,19 @@ type service struct {
 	runEngine          runEngineFunc
 	detectedEngines    []string
 	engineCapabilities []runtimeprotocol.EngineCapability
-	claimWaitSeconds   int
-	renewInterval      time.Duration
-	heartbeatInterval  time.Duration
-	minBackoff         time.Duration
-	maxBackoff         time.Duration
-	active             atomic.Int32
-	publicSpool        *publicSpool
-	resultSpool        *resultSpool
+	// redetect is set when engines come from this host rather than a test
+	// fixture; capabilityMu guards the engine fields it refreshes.
+	redetect          bool
+	publicEventsReady bool
+	capabilityMu      sync.RWMutex
+	claimWaitSeconds  int
+	renewInterval     time.Duration
+	heartbeatInterval time.Duration
+	minBackoff        time.Duration
+	maxBackoff        time.Duration
+	active            atomic.Int32
+	publicSpool       *publicSpool
+	resultSpool       *resultSpool
 }
 
 // Main parses daemon flags and runs until SIGINT or SIGTERM.
@@ -133,7 +138,8 @@ func newDaemon(cfg daemonConfig) (*service, error) {
 	if cfg.runEngine == nil {
 		cfg.runEngine = runEngine
 	}
-	if cfg.detectedEngines == nil {
+	redetect := cfg.detectedEngines == nil
+	if redetect {
 		cfg.detectedEngines = detectEngines()
 		cfg.engineCapabilities = detectEngineCapabilities(context.Background(), cfg.detectedEngines)
 	}
@@ -156,9 +162,7 @@ func newDaemon(cfg daemonConfig) (*service, error) {
 	if spoolErr != nil {
 		slog.Warn("runtime public progress unavailable; using completion updates", "error", spoolErr)
 	}
-	for index := range cfg.engineCapabilities {
-		cfg.engineCapabilities[index].PublicEvents = (cfg.engineCapabilities[index].Engine == engine.Codex || cfg.engineCapabilities[index].Engine == engine.Claude) && spoolErr == nil
-	}
+	markPublicEvents(cfg.engineCapabilities, spoolErr == nil)
 	results, err := newResultSpool(cfg.workspacesRoot, cfg.token)
 	if err != nil {
 		return nil, fmt.Errorf("initialize durable runtime results: %w", err)
@@ -173,6 +177,8 @@ func newDaemon(cfg daemonConfig) (*service, error) {
 		runEngine:          cfg.runEngine,
 		detectedEngines:    cfg.detectedEngines,
 		engineCapabilities: cfg.engineCapabilities,
+		redetect:           redetect,
+		publicEventsReady:  spoolErr == nil,
 		claimWaitSeconds:   defaultClaimWait,
 		renewInterval:      cfg.renewInterval,
 		heartbeatInterval:  cfg.heartbeatInterval,
@@ -208,9 +214,10 @@ func (d *service) Run(ctx context.Context) error {
 func (d *service) helloUntilConnected(ctx context.Context) bool {
 	backoff := newBackoff(d.minBackoff, d.maxBackoff)
 	for {
-		err := d.client.hello(ctx, d.detectedEngines, d.engineCapabilities, d.concurrency)
+		engines, capabilities := d.engines()
+		err := d.client.hello(ctx, engines, capabilities, d.concurrency)
 		if err == nil {
-			slog.Info("runtime daemon connected", "server", d.server, "engines", d.detectedEngines)
+			slog.Info("runtime daemon connected", "server", d.server, "engines", engines)
 			return true
 		}
 		if ctx.Err() != nil {
@@ -239,7 +246,10 @@ func (d *service) heartbeatLoop(ctx context.Context) {
 func (d *service) heartbeatUntilConnected(ctx context.Context) {
 	backoff := newBackoff(d.minBackoff, d.maxBackoff)
 	for {
-		if err := d.client.heartbeat(ctx, int(d.active.Load())); err == nil {
+		if probe, err := d.client.heartbeat(ctx, int(d.active.Load())); err == nil {
+			if probe {
+				d.probe(ctx)
+			}
 			return
 		} else if ctx.Err() == nil {
 			slog.Warn("runtime heartbeat failed; retrying", "error", err)
@@ -247,6 +257,37 @@ func (d *service) heartbeatUntilConnected(ctx context.Context) {
 		if !waitFor(ctx, backoff.next()) {
 			return
 		}
+	}
+}
+
+// probe re-detects the installed engines and reports them with a fresh
+// hello, which also clears the request on the server.
+func (d *service) probe(ctx context.Context) {
+	if d.redetect {
+		engines := detectEngines()
+		capabilities := detectEngineCapabilities(ctx, engines)
+		markPublicEvents(capabilities, d.publicEventsReady)
+		d.capabilityMu.Lock()
+		d.detectedEngines, d.engineCapabilities = engines, capabilities
+		d.capabilityMu.Unlock()
+	}
+	engines, capabilities := d.engines()
+	if err := d.client.hello(ctx, engines, capabilities, d.concurrency); err != nil {
+		slog.Warn("runtime probe report failed", "error", err)
+		return
+	}
+	slog.Info("runtime engines re-detected", "engines", engines)
+}
+
+func (d *service) engines() ([]string, []runtimeprotocol.EngineCapability) {
+	d.capabilityMu.RLock()
+	defer d.capabilityMu.RUnlock()
+	return append([]string(nil), d.detectedEngines...), append([]runtimeprotocol.EngineCapability(nil), d.engineCapabilities...)
+}
+
+func markPublicEvents(capabilities []runtimeprotocol.EngineCapability, ready bool) {
+	for index := range capabilities {
+		capabilities[index].PublicEvents = engine.PublishesPublicEvents(capabilities[index].Engine) && ready
 	}
 }
 
@@ -549,6 +590,21 @@ func (d *service) executeTask(ctx context.Context, task *runtimeprotocol.Executi
 	if err := materializeInputFiles(workDir, request.InputFiles); err != nil {
 		return runtimeprotocol.ExecutionReceipt{}, fmt.Errorf("materialize upstream files: %w", err)
 	}
+	prompt := request.Prompt
+	logs := startTaskLogs(ctx, d.client, task)
+	defer logs.close()
+	var code *codeSession
+	if request.Code != nil {
+		remote := codeRemote{}
+		if request.Code.Proxy {
+			remote = proxiedCodeRemote(d.client.baseURL, d.client.token, task)
+		}
+		code, err = prepareCodeWorkspace(ctx, d.workspacesRoot, workDir, *request.Code, remote, request.NodeID, logs)
+		if err != nil {
+			return runtimeprotocol.ExecutionReceipt{}, fmt.Errorf("prepare code workspace: %w", err)
+		}
+		prompt = code.prompt(prompt)
+	}
 	for key, value := range task.Subject.Environment() {
 		runEnv[key] = value
 	}
@@ -557,20 +613,25 @@ func (d *service) executeTask(ctx context.Context, task *runtimeprotocol.Executi
 	if timeoutSeconds <= 0 {
 		timeoutSeconds = defaultTimeoutSeconds
 	}
-	publish, finishProgress := d.publicEventCapture(task, (request.Engine == engine.Codex || request.Engine == engine.Claude) && request.NodeID != "" && task.RunSnapshotID != "")
+	publish, finishProgress := d.publicEventCapture(task, engine.PublishesPublicEvents(request.Engine) && request.NodeID != "" && task.RunSnapshotID != "")
 	if task.DeadlineAt != nil {
 		var stop context.CancelFunc
 		ctx, stop = context.WithDeadline(ctx, *task.DeadlineAt)
 		defer stop()
 	}
 	result, err := d.runEngine(ctx, request.Engine, engine.RunSpec{
-		DisableTools:  deniesAllTools(record.Permissions.Deny),
-		Subject:       task.Subject,
-		Isolation:     isolation,
-		OnPublicEvent: publish,
+		DisableTools: deniesAllTools(record.Permissions.Deny),
+		Subject:      task.Subject,
+		Isolation:    isolation,
+		OnPublicEvent: func(event engine.Event, truncated bool) {
+			if publish != nil {
+				publish(event, truncated)
+			}
+			logs.event(event)
+		},
 		MCPServers:    engineTaskMCPServers(taskTargets),
 		WorkDir:       workDir,
-		Prompt:        request.Prompt,
+		Prompt:        prompt,
 		Model:         request.Model,
 		Env:           runEnv,
 		Timeout:       time.Duration(timeoutSeconds) * time.Second,
@@ -579,6 +640,9 @@ func (d *service) executeTask(ctx context.Context, task *runtimeprotocol.Executi
 	})
 	finishProgress(&result)
 	err = errors.Join(err, runtimehost.CollectRunOutputArtifacts(workDir, outputsBefore, &result))
+	if code != nil && err == nil && result.Status == "completed" {
+		err = code.finish(ctx, &result)
+	}
 	receipt := runtimeprotocol.ExecutionReceipt{Versioned: runtimeprotocol.NewVersioned(), SchemaVersion: runtimeprotocol.ReceiptSchemaV1,
 		TaskID: task.TaskID, Subject: task.Subject, ClaimEpoch: task.ClaimEpoch, SessionID: result.SessionID,
 		ArtifactCollection: result.ArtifactCollection, Output: result.Output, RetrySafeBeforeExecution: result.RetrySafeBeforeExecution,
@@ -607,7 +671,8 @@ func deniesAllTools(denied []string) bool {
 }
 
 func (d *service) engineVersion(name string) string {
-	for _, capability := range d.engineCapabilities {
+	_, capabilities := d.engines()
+	for _, capability := range capabilities {
 		if capability.Engine == name {
 			return capability.BinaryVersion
 		}

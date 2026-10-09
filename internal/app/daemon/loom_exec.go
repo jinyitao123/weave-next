@@ -34,16 +34,17 @@ func (d *service) executeLoomTask(ctx context.Context, task *runtimeprotocol.Exe
 		return runtimeprotocol.ExecutionReceipt{}, err
 	}
 	ctx = withTaskProof(ctx, task.Subject, task.ClaimEpoch)
+	logs := startTaskLogs(ctx, d.client, task)
+	defer logs.close()
+	mcpServers := 0
+	if request.Loom != nil {
+		mcpServers = request.Loom.MCPServerCount
+	}
 	result, err := loomadapter.Execute(ctx, daemonLoomAssembler{}, loomadapter.RunRequest{
 		Claim: *task,
 		Ports: loomadapter.Ports{
-			Model: newRuntimeLLMClient(d.client, task.TaskID),
-			Tools: newRuntimeToolDispatcher(d.client, task.TaskID, func() int {
-				if request.Loom == nil {
-					return 0
-				}
-				return request.Loom.MCPServerCount
-			}()),
+			Model: loggedLoomModel{next: newRuntimeLLMClient(d.client, task.TaskID), logs: logs},
+			Tools: loggedLoomTools{next: newRuntimeToolDispatcher(d.client, task.TaskID, mcpServers), logs: logs},
 		},
 	})
 	if err != nil {

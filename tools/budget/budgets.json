@@ -919,6 +919,28 @@
         "lines_added": 92,
         "production_lines_added": 25
       }
+    },
+    {
+      "date": "2026-10-09",
+      "reason": "Converge the owner-approved developer/operator console from 0c374067 onto main 158b4965, retaining W7/W10 retirements, Feishu privacy, installed identity self-read, CLI schema and cancellation, and separate server/executor images. Add current-role HTTP access checks, immutable code context in the existing admission transaction, and delivered HEAD/tree verification with tracked-change refusal. Exact measured code and existing/new boundary regression growth; one embedded adminui app package, no new external dependencies or upward exceptions.",
+      "record": "web/admin/README.md#主线归并与验证边界",
+      "growth": {
+        "lines": 6111,
+        "production_lines": 3596
+      },
+      "deletion_trigger": "If the supported developer/operator console is replaced or retired by an explicit product decision, first turn off its routes and embedded UI, then remove its app transport, code environment/log storage and dedicated tests after one release with no callers; lower measured budgets in that change. Shared runtime, dispatch, identity, recovery and verification authority remain. No current retirement is scheduled.",
+      "kernel": {
+        "previous_lines": 104601,
+        "previous_production_lines": 83148,
+        "lines_added": 277,
+        "production_lines_added": 190
+      },
+      "app": {
+        "previous_lines": 72613,
+        "previous_production_lines": 50085,
+        "lines_added": 5834,
+        "production_lines_added": 3406
+      }
     }
   ],
   "migration_targets": {
@@ -962,8 +984,8 @@
     ]
   },
   "kernel": {
-    "lines": 104601,
-    "production_lines": 83148,
+    "lines": 104878,
+    "production_lines": 83338,
     "packages": 48,
     "external_dependencies": 5,
     "allowed_dependencies": [
@@ -982,9 +1004,9 @@
     "allowed_dependencies": []
   },
   "app": {
-    "lines": 72613,
-    "production_lines": 50085,
-    "packages": 24,
+    "lines": 78447,
+    "production_lines": 53491,
+    "packages": 25,
     "external_dependencies": 6,
     "allowed_dependencies": [
       "github.com/golang-jwt/jwt/v5",

@@ -249,39 +249,50 @@ type stableNativeExternalIdentityBinder interface {
 	BindExternalInOrganizationFromOrigin(context.Context, string, string, string, string, string, string, string) (*users.User, error)
 }
 
-func (s *Server) handleExternalIdentityExchange(c echo.Context) error {
-	authorization := c.Request().Header.Get("Authorization")
-	bearer := strings.TrimPrefix(authorization, "Bearer ")
-	if bearer == authorization || bearer == "" {
-		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "missing external identity token"})
-	}
+// externalIdentityExchange is one verified, bound external identity and the
+// product session issued for it.
+type externalIdentityExchange struct {
+	Identity   ExternalIdentity
+	User       *users.User
+	AccessRole string
+	Token      string
+}
+
+// exchangeFailure keeps the exchange endpoint's established status codes and
+// messages so every caller reports the same refusal.
+type exchangeFailure struct {
+	Status  int
+	Message string
+}
+
+func (s *Server) exchangeExternalIdentity(ctx context.Context, bearer string) (*externalIdentityExchange, *exchangeFailure) {
 	if s.ExternalIdentity == nil {
-		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "external identity is not configured"})
+		return nil, &exchangeFailure{http.StatusServiceUnavailable, "external identity is not configured"}
 	}
-	identity, err := s.ExternalIdentity.Verify(c.Request().Context(), bearer)
+	identity, err := s.ExternalIdentity.Verify(ctx, bearer)
 	if err != nil {
-		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "external identity verification failed"})
+		return nil, &exchangeFailure{http.StatusUnauthorized, "external identity verification failed"}
 	}
 	binder := s.ExternalIdentityBinder
 	if binder == nil && s.UserStore != nil {
 		binder = s.UserStore
 	}
 	if binder == nil {
-		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "account binding is not configured"})
+		return nil, &exchangeFailure{http.StatusServiceUnavailable, "account binding is not configured"}
 	}
 	if identity.NativeOrganization == "" || identity.Issuer == "" || identity.BaseURL == "" {
-		return c.JSON(http.StatusForbidden, map[string]string{"error": "native organization binding is unavailable"})
+		return nil, &exchangeFailure{http.StatusForbidden, "native organization binding is unavailable"}
 	}
 	var user *users.User
 	if stableBinder, supported := binder.(stableNativeExternalIdentityBinder); supported {
-		user, err = stableBinder.BindExternalInOrganizationFromOrigin(c.Request().Context(), identity.Issuer, identity.BaseURL, identity.Subject, identity.Organization, identity.Email, identity.Name, identity.NativeOrganization)
+		user, err = stableBinder.BindExternalInOrganizationFromOrigin(ctx, identity.Issuer, identity.BaseURL, identity.Subject, identity.Organization, identity.Email, identity.Name, identity.NativeOrganization)
 	} else if nativeBinder, supported := binder.(nativeExternalIdentityBinder); supported {
-		user, err = nativeBinder.BindExternalInOrganization(c.Request().Context(), identity.Issuer, identity.Subject, identity.Organization, identity.Email, identity.Name, identity.NativeOrganization)
+		user, err = nativeBinder.BindExternalInOrganization(ctx, identity.Issuer, identity.Subject, identity.Organization, identity.Email, identity.Name, identity.NativeOrganization)
 	} else {
-		return c.JSON(http.StatusForbidden, map[string]string{"error": "native organization binding is unavailable"})
+		return nil, &exchangeFailure{http.StatusForbidden, "native organization binding is unavailable"}
 	}
 	if err != nil {
-		return c.JSON(http.StatusForbidden, map[string]string{"error": "account binding failed"})
+		return nil, &exchangeFailure{http.StatusForbidden, "account binding failed"}
 	}
 	accessRole := identity.AccessRole
 	if accessRole != "developer" && accessRole != "admin" {
@@ -289,13 +300,27 @@ func (s *Server) handleExternalIdentityExchange(c echo.Context) error {
 	}
 	token, err := s.signJWTWithPermissionSets(user.TenantID, user.ID, []string{accessRole}, "forge", identity.PermissionSets, externalSessionTTL)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "could not issue product session"})
+		return nil, &exchangeFailure{http.StatusInternalServerError, "could not issue product session"}
 	}
+	return &externalIdentityExchange{Identity: identity, User: user, AccessRole: accessRole, Token: token}, nil
+}
+
+func (s *Server) handleExternalIdentityExchange(c echo.Context) error {
+	authorization := c.Request().Header.Get("Authorization")
+	bearer := strings.TrimPrefix(authorization, "Bearer ")
+	if bearer == authorization || bearer == "" {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "missing external identity token"})
+	}
+	exchanged, failure := s.exchangeExternalIdentity(c.Request().Context(), bearer)
+	if failure != nil {
+		return c.JSON(failure.Status, map[string]string{"error": failure.Message})
+	}
+	identity, user := exchanged.Identity, exchanged.User
 	return c.JSON(http.StatusOK, map[string]any{
-		"token": token, "tokenType": "Bearer", "expiresIn": int(externalSessionTTL.Seconds()),
+		"token": exchanged.Token, "tokenType": "Bearer", "expiresIn": int(externalSessionTTL.Seconds()),
 		"subject":      map[string]string{"id": user.ID, "externalId": identity.Subject, "email": identity.Email, "name": user.DisplayName},
 		"organization": map[string]string{"id": user.TenantID},
-		"permissions":  productPermissions(accessRole),
+		"permissions":  productPermissions(exchanged.AccessRole),
 		"issuer":       identity.Issuer,
 	})
 }

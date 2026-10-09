@@ -98,24 +98,10 @@ func (s *Store) Select(
 			TotalSlots: runtime.TotalSlots, ActiveSlots: runtime.ActiveSlots,
 			Enabled: runtime.Enabled, Online: runtime.Online,
 		}
-		capability, capabilityExists := runtime.EngineCapabilities[engine]
-		if capabilityExists {
+		if capability, capabilityExists := runtime.EngineCapabilities[engine]; capabilityExists {
 			fact.EngineAvailability = capability.Availability
 		}
-		switch {
-		case !runtime.Enabled:
-			fact.UnavailableReason = "runtime_disabled"
-		case runtime.RevokedAt != nil:
-			fact.UnavailableReason = "runtime_revoked"
-		case !runtime.Online:
-			fact.UnavailableReason = "runtime_offline"
-		case runtime.HealthStatus == "quarantined":
-			fact.UnavailableReason = "runtime_quarantined"
-		case !containsEngine(runtime.Engines, engine):
-			fact.UnavailableReason = "engine_unavailable"
-		case capabilityExists && capability.Availability == EngineAvailabilityUnavailable:
-			fact.UnavailableReason = capability.UnavailableReason
-		default:
+		if fact.UnavailableReason = UnavailableReason(runtime, engine); fact.UnavailableReason == "" {
 			fact.Eligible = true
 			eligible = append(eligible, runtime)
 		}
@@ -141,6 +127,34 @@ func (s *Store) Select(
 		return Assignment{}, ErrNoEligibleRuntime
 	}
 	return runtimeAssignment(eligible[0], engine, SelectionAuto, ReasonMostRecent, facts), nil
+}
+
+// UnavailableReason explains why a Runtime cannot be selected for an engine,
+// or returns "" when it is eligible. Selection and every readiness projection
+// share this one rule; full slots do not make a Runtime ineligible because the
+// task waits for a free slot.
+func UnavailableReason(runtime Runtime, engine string) string {
+	capability, capabilityExists := runtime.EngineCapabilities[engine]
+	switch {
+	case !runtime.Enabled:
+		return "runtime_disabled"
+	case runtime.RevokedAt != nil:
+		return "runtime_revoked"
+	case runtime.PausedAt != nil:
+		return "runtime_paused"
+	case !runtime.Online:
+		return "runtime_offline"
+	case runtime.HealthStatus == "quarantined":
+		return "runtime_quarantined"
+	case !containsEngine(runtime.Engines, engine):
+		return "engine_unavailable"
+	case capabilityExists && capability.Availability == EngineAvailabilityUnavailable:
+		if capability.UnavailableReason == "" {
+			return "engine_unavailable"
+		}
+		return capability.UnavailableReason
+	}
+	return ""
 }
 
 func runtimeAssignment(

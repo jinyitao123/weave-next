@@ -28,6 +28,12 @@ const (
 	Claude   = "claude"
 )
 
+// PublishesPublicEvents reports whether the engine streams public text and
+// tool activity while it runs.
+func PublishesPublicEvents(name string) bool {
+	return name == Codex || name == Claude || name == OpenCode
+}
+
 // promptWithOutputSchema states the required final message shape for CLIs
 // that have no native schema option; Codex receives the schema natively.
 func promptWithOutputSchema(prompt string, schema json.RawMessage) string {

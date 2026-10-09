@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jinyitao123/weave/internal/kernel/engine"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 	"github.com/jinyitao123/weave/internal/kernel/workflow"
 	"github.com/labstack/echo/v4"
@@ -42,19 +43,45 @@ func (s *Server) prepareDevelopment(ctx context.Context, ws, id, actor string, r
 	if err = validateDevelopmentDocument(d.Document); err != nil {
 		return d, err
 	}
+	// A frozen runtime binding is identified by node and revision but carries
+	// the member's engine, so one node can serve CLI members of one engine only
+	// within a publication. Report that before compilation fails opaquely.
+	nodeEngines := map[string]teamMemberAgentConfiguration{}
+	for _, m := range d.Document.Members {
+		cfg := m.Configuration
+		runtimeID := strings.TrimSpace(cfg.RuntimeID)
+		if !engine.IsCLIEngine(cfg.Engine) || runtimeID == "" {
+			continue
+		}
+		if other, exists := nodeEngines[runtimeID]; exists && other.Engine != cfg.Engine {
+			return d, echo.NewHTTPError(422, fmt.Sprintf("“%s”和“%s”使用不同引擎，请把它们分配到不同节点", other.DisplayName, cfg.DisplayName))
+		}
+		nodeEngines[runtimeID] = cfg
+	}
 	team := registry.PublicationTeamRead{WorkspaceID: ws, TeamID: id, Status: "active", Workers: []registry.TeamWorker{}}
 	members := map[string]registry.AgentRecord{}
 	for _, m := range d.Document.Members {
 		cfg := m.Configuration
-		if strings.TrimSpace(cfg.SystemPrompt) == "" || strings.TrimSpace(m.Relationship.Duty) == "" || strings.TrimSpace(cfg.Model) == "" {
-			return d, echo.NewHTTPError(422, "请为每位成员填写职责、工作方法并选择模型")
+		// CLI members (Claude, Codex, OpenCode) run on registered runtime nodes
+		// with the node's own engine login, so they need no model selection;
+		// built-in Loom members still bind an explicit provider model.
+		cliMember := engine.IsCLIEngine(cfg.Engine)
+		// A Loom lead without a model is providerless: it borrows the model of the
+		// run's CLI runtime (runtimeDefaultForProviderlessLoom) and is never a
+		// step of a serial CLI workflow.
+		providerlessLead := cfg.Role == "avatar" && cfg.Engine == "loom"
+		if strings.TrimSpace(cfg.SystemPrompt) == "" || strings.TrimSpace(m.Relationship.Duty) == "" || (!cliMember && !providerlessLead && strings.TrimSpace(cfg.Model) == "") {
+			return d, echo.NewHTTPError(422, "请为每位成员填写职责和工作方法；内置引擎成员还需选择模型")
 		}
 		// Forge business actions are supplied to candidate trials through the
 		// isolated development dispatcher. Other external resources still require
 		// their own sandbox binding; never borrow production credentials or silently
 		// remove those capabilities.
-		if cfg.Engine != "loom" || len(cfg.MCPServerIDs) > 0 || len(cfg.SkillNames) > 0 || len(cfg.PermissionAllow) > 0 || len(cfg.PermissionAsk) > 0 {
-			return d, echo.NewHTTPError(422, "当前试跑支持无外部工具的 Weave 内置成员；此团队需要先配置隔离的测试工具环境")
+		// No Weave-held external resource is lent to a trial: CLI members use the
+		// node's own engine login and carry no MCP servers, skills or extra tool
+		// permissions here.
+		if (cfg.Engine != "loom" && !cliMember) || len(cfg.MCPServerIDs) > 0 || len(cfg.SkillNames) > 0 || len(cfg.PermissionAllow) > 0 || len(cfg.PermissionAsk) > 0 {
+			return d, echo.NewHTTPError(422, "当前试跑支持无外部工具的成员；此团队需要先配置隔离的测试工具环境")
 		}
 		var rec registry.AgentRecord
 		if _, exists := d.Baseline.Members[m.ID]; exists {

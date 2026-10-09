@@ -5,6 +5,7 @@ import (
 	"errors"
 	"github.com/jinyitao123/weave/internal/base/execution"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -43,6 +44,70 @@ type runtimeListItem struct {
 	Online                   bool                                 `json:"online"`
 	LastHeartbeatAt          *time.Time                           `json:"last_heartbeat_at"`
 	CreatedAt                time.Time                            `json:"created_at"`
+	// Accepting is true when at least one engine can be selected now; a full
+	// runtime still accepts because its tasks wait for a free slot.
+	Accepting       bool                     `json:"accepting"`
+	Paused          bool                     `json:"paused"`
+	ProbePending    bool                     `json:"probe_pending"`
+	EngineReadiness []runtimeEngineReadiness `json:"engine_readiness"`
+}
+
+// runtimeEngineReadiness projects the scheduler's own eligibility rule.
+type runtimeEngineReadiness struct {
+	Engine        string `json:"engine"`
+	Accepting     bool   `json:"accepting"`
+	Reason        string `json:"reason,omitempty"`
+	BinaryVersion string `json:"binary_version,omitempty"`
+	AuthMode      string `json:"auth_mode,omitempty"`
+	Model         string `json:"configured_model,omitempty"`
+}
+
+func runtimeView(runtime runtimes.Runtime) runtimeListItem {
+	item := runtimeListItem{
+		ID:                       runtime.ID,
+		Name:                     runtime.Name,
+		Engines:                  runtime.Engines,
+		EngineCapabilities:       runtime.EngineCapabilities,
+		FunctionalRevision:       runtime.FunctionalRevision,
+		HealthStatus:             runtimeHealthStatus(runtime),
+		TotalSlots:               runtime.TotalSlots,
+		ActiveSlots:              runtime.ActiveSlots,
+		PoolID:                   runtime.PoolID,
+		ConsecutiveInfraFailures: runtime.ConsecutiveInfraFailures,
+		QuarantineUntil:          runtime.QuarantineUntil,
+		LastFailureReason:        runtime.LastFailureReason,
+		Enabled:                  runtime.Enabled,
+		RevokedAt:                runtime.RevokedAt,
+		DeletedAt:                runtime.DeletedAt,
+		Online:                   runtime.Online,
+		LastHeartbeatAt:          runtime.LastHeartbeatAt,
+		CreatedAt:                runtime.CreatedAt,
+		EngineReadiness:          []runtimeEngineReadiness{},
+		Paused:                   runtime.PausedAt != nil,
+		ProbePending:             runtime.ProbeRequestedAt != nil,
+	}
+	engines := map[string]bool{}
+	for _, name := range runtime.Engines {
+		engines[name] = true
+	}
+	for name := range runtime.EngineCapabilities {
+		engines[name] = true
+	}
+	names := make([]string, 0, len(engines))
+	for name := range engines {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		capability := runtime.EngineCapabilities[name]
+		reason := runtimes.UnavailableReason(runtime, name)
+		item.EngineReadiness = append(item.EngineReadiness, runtimeEngineReadiness{
+			Engine: name, Accepting: reason == "", Reason: reason,
+			BinaryVersion: capability.BinaryVersion, AuthMode: capability.AuthMode, Model: capability.ConfiguredModel,
+		})
+		item.Accepting = item.Accepting || reason == ""
+	}
+	return item
 }
 
 func (s *Server) handleListRuntimes(c echo.Context) error {
@@ -55,28 +120,73 @@ func (s *Server) handleListRuntimes(c echo.Context) error {
 	}
 	items := make([]runtimeListItem, 0, len(stored))
 	for _, runtime := range stored {
-		items = append(items, runtimeListItem{
-			ID:                       runtime.ID,
-			Name:                     runtime.Name,
-			Engines:                  runtime.Engines,
-			EngineCapabilities:       runtime.EngineCapabilities,
-			FunctionalRevision:       runtime.FunctionalRevision,
-			HealthStatus:             runtimeHealthStatus(runtime),
-			TotalSlots:               runtime.TotalSlots,
-			ActiveSlots:              runtime.ActiveSlots,
-			PoolID:                   runtime.PoolID,
-			ConsecutiveInfraFailures: runtime.ConsecutiveInfraFailures,
-			QuarantineUntil:          runtime.QuarantineUntil,
-			LastFailureReason:        runtime.LastFailureReason,
-			Enabled:                  runtime.Enabled,
-			RevokedAt:                runtime.RevokedAt,
-			DeletedAt:                runtime.DeletedAt,
-			Online:                   runtime.Online,
-			LastHeartbeatAt:          runtime.LastHeartbeatAt,
-			CreatedAt:                runtime.CreatedAt,
-		})
+		items = append(items, runtimeView(runtime))
 	}
 	return c.JSON(http.StatusOK, map[string]any{"runtimes": items})
+}
+
+func (s *Server) handleGetRuntime(c echo.Context) error {
+	if s.Runtimes == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "runtime store not configured"})
+	}
+	// Store.Get serves execution and only returns enabled runtimes; the admin
+	// detail must also show paused ones, so it reads the workspace listing.
+	stored, err := s.Runtimes.List(c.Request().Context(), getTenant(c))
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "runtime read failed"})
+	}
+	for _, runtime := range stored {
+		if runtime.ID == c.Param("id") && runtime.DeletedAt == nil {
+			return c.JSON(http.StatusOK, runtimeView(runtime))
+		}
+	}
+	return c.JSON(http.StatusNotFound, map[string]string{"error": "runtime not found"})
+}
+
+func (s *Server) handleSetRuntimePaused(c echo.Context) error {
+	if s.Runtimes == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "runtime store not configured"})
+	}
+	var request struct {
+		Paused *bool `json:"paused"`
+	}
+	if err := c.Bind(&request); err != nil || request.Paused == nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "paused is required"})
+	}
+	if err := s.Runtimes.SetPaused(c.Request().Context(), getTenant(c), c.Param("id"), *request.Paused); err != nil {
+		if errors.Is(err, runtimes.ErrRuntimeUnavailable) {
+			return c.JSON(http.StatusNotFound, map[string]string{"error": "runtime not found"})
+		}
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "runtime update failed"})
+	}
+	return c.NoContent(http.StatusNoContent)
+}
+
+func (s *Server) handleProbeRuntime(c echo.Context) error {
+	if s.Runtimes == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "runtime store not configured"})
+	}
+	if err := s.Runtimes.RequestProbe(c.Request().Context(), getTenant(c), c.Param("id")); err != nil {
+		if errors.Is(err, runtimes.ErrRuntimeUnavailable) {
+			return c.JSON(http.StatusNotFound, map[string]string{"error": "runtime not found"})
+		}
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "runtime probe failed"})
+	}
+	return c.NoContent(http.StatusAccepted)
+}
+
+func (s *Server) handleRotateRuntimeToken(c echo.Context) error {
+	if s.Runtimes == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "runtime store not configured"})
+	}
+	token, err := s.Runtimes.RotateToken(c.Request().Context(), getTenant(c), c.Param("id"))
+	if err != nil {
+		if errors.Is(err, runtimes.ErrRuntimeUnavailable) {
+			return c.JSON(http.StatusNotFound, map[string]string{"error": "runtime not found"})
+		}
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "runtime token rotation failed"})
+	}
+	return c.JSON(http.StatusOK, map[string]string{"token": token})
 }
 
 func runtimeHealthStatus(runtime runtimes.Runtime) string {
@@ -241,6 +351,9 @@ func (s *Server) handleRuntimeHeartbeat(c echo.Context) error {
 		}
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
+	if runtime.ProbeRequestedAt != nil {
+		return c.JSON(http.StatusOK, runtimeprotocol.HostHeartbeatResponse{Versioned: runtimeprotocol.NewVersioned(), Probe: true})
+	}
 	return c.NoContent(http.StatusNoContent)
 }
 
@@ -263,6 +376,11 @@ func (s *Server) handleRuntimeClaim(c echo.Context) error {
 		request.WaitSeconds = maxRuntimeClaimWaitSeconds
 	}
 
+	// A paused runtime keeps renewing and completing what it holds but takes
+	// no new work.
+	if runtime.PausedAt != nil {
+		return c.NoContent(http.StatusNoContent)
+	}
 	workerID := runtimes.RuntimeWorkerID(runtime.WorkspaceID, runtime.ID)
 	filter := taskqueue.ClaimFilter{
 		Kind: "engine_exec", WorkspaceID: runtime.WorkspaceID,
@@ -288,6 +406,13 @@ func (s *Server) handleRuntimeClaim(c echo.Context) error {
 			claim, err := runtimebridge.Claim(task, redacted)
 			if err != nil {
 				return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			}
+			if engine.IsCLIEngine(claim.Request.Engine) {
+				code, codeErr := s.runCodeWorkspace(c.Request().Context(), task.WorkspaceID, task.RunSnapshotID)
+				if codeErr != nil {
+					return c.JSON(http.StatusInternalServerError, map[string]string{"error": "code_context_unavailable"})
+				}
+				claim.Request.Code = code
 			}
 			return c.JSON(http.StatusOK, runtimeprotocol.ClaimResponse{Versioned: runtimeprotocol.NewVersioned(), Claim: claim})
 		}

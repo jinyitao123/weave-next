@@ -42,3 +42,9 @@ __pycache__/
 
 # Local review/build scratch files
 /tmp/
+
+# Weave 管理端构建产物：由 web/admin 构建后复制，占位文件保持 go:embed 可用
+/internal/app/adminui/dist/*
+!/internal/app/adminui/dist/.gitkeep
+/web/admin/dist/
+/web/admin/node_modules/

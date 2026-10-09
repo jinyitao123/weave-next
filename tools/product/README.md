@@ -12,6 +12,10 @@ checks the guard by recreating retired artifacts in temporary repositories.
 The registered HTTP surface and authentication are covered by
 `internal/app/api/workbench_boundary_test.go` through the real Echo router.
 
+The admin console is the one allowed browser UI (`web/admin`, embedded by
+`internal/app/adminui`, served at `/admin`); the retired `console`, `workbench`
+and `webui` paths stay rejected.
+
 This is an explicit regression boundary, not semantic classification of every
 future file or API. New product surfaces still require review against the
 product contract in `weave-workbench/contracts/v1`.
