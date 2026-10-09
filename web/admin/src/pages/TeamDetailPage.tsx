@@ -1,9 +1,10 @@
-import { ArrowLeft, Plus, Trash2 } from 'lucide-react'
+import { ArrowLeft } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Badge, InlineError, Select, Switch } from '../components/ui'
+import { Badge, InlineError, Select } from '../components/ui'
 import { errorMessage } from '../lib/api'
 import { engineName, relativeTime } from '../lib/format'
-import { insertStepAfter, maxVerifyRounds, removeStep, serialSteps, updateStep, verifyLoop, withoutVerifyLoop, withVerifyLoop, type Graph } from '../lib/graph'
+import type { Graph } from '../lib/graph'
+import { WorkflowEditor } from '../components/workflow/WorkflowEditor'
 import { listNodes, type RuntimeNode } from '../lib/nodes'
 import { executionLabel } from '../lib/tasks'
 import { isCLIEngine, memberIssues, pinMembers, publishDevelopment, readDevelopment, saveDevelopment, startTrial, withStarterWorkflow, type DevelopmentDocument, type DevelopmentDraft, type DevelopmentMember } from '../lib/teams'
@@ -109,7 +110,7 @@ export function TeamDetailPage({ teamId, navigate }: { teamId: string; navigate(
         {([['members', '成员'], ['workflow', '流程'], ['trial', '试跑与发布']] as const).map(([value, label]) => <button key={value} type="button" role="tab" aria-selected={tab === value} onClick={() => setTab(value)}>{label}</button>)}
       </div>
       {tab === 'members' ? <Members document={document} nodes={nodes} accepting={accepting} onEdit={editMember} /> : null}
-      {tab === 'workflow' ? workflow ? <Workflow graph={workflow.graph_definition} members={document.members} onChange={editGraph} /> : <p className="muted">至少需要两名执行成员才能生成流程。</p> : null}
+      {tab === 'workflow' ? workflow ? <WorkflowEditor key={workflow.id} graph={workflow.graph_definition} members={document.members} onChange={editGraph} /> : <p className="muted">至少需要两名执行成员才能生成流程。</p> : null}
       {tab === 'trial' ? <Trial teamId={teamId} draft={draft} dirty={dirty} workflowId={workflow?.id} navigate={navigate} onStarted={() => void load()} /> : null}
     </>}
   </section>
@@ -132,42 +133,6 @@ function Members({ document, nodes, accepting, onEdit }: { document: Development
       <p className="muted small">{accepting[config.engine] ? `${accepting[config.engine]} 个节点可接 ${engineName(config.engine)}` : `没有节点可接 ${engineName(config.engine)}`}</p>
     </section>
   })}</div>
-}
-
-function Workflow({ graph, members, onChange }: { graph: Graph; members: DevelopmentMember[]; onChange(change: (graph: Graph) => Graph): void }) {
-  const loop = verifyLoop(graph)
-  const serialShape = serialSteps(graph)
-  const steps = loop ? loop.steps : serialShape.steps
-  const workers = members.filter((member) => member.configuration.role === 'worker')
-  const memberOptions = workers.map((member) => ({ value: member.id, label: `${member.configuration.display_name}（${engineName(member.configuration.engine)}）` }))
-  if (!loop && !serialShape.serial) return <p className="notice">这个流程包含并行或条件分支，请在桌面团队工作区调整。</p>
-  const loopable = Boolean(loop) || (steps.length === 2 && steps.every((step) => step.type === 'worker'))
-  return <div className="stack">
-  {loopable ? <div className="member-card__row">
-    <Switch checked={Boolean(loop)} label="验证未通过时退回第一步" onChange={(on) => onChange((current) => on ? withVerifyLoop(current, 3) : withoutVerifyLoop(current))} />
-    {loop ? <div className="field"><span>最多轮数</span><Select label="最多轮数" value={String(loop.rounds)} options={Array.from({ length: maxVerifyRounds }, (_, index) => ({ value: String(index + 1), label: `${index + 1} 轮` }))}
-      onChange={(value) => onChange((current) => withVerifyLoop(current, Number(value)))} /></div> : null}
-  </div> : null}
-  <ol className="step-list">{steps.map((step, index) => {
-    const agentId = String(step.config?.agent_id ?? '')
-    return <li key={step.id} className="step-card">
-      <div className="step-card__index" aria-hidden="true">{index + 1}</div>
-      <div className="stack">
-        <div className="member-card__row">
-          <label className="field"><span>步骤名称</span><input className="input" value={step.label ?? ''} onChange={(event) => onChange((current) => updateStep(current, step.id, { label: event.target.value }))} /></label>
-          <div className="field"><span>执行成员</span><Select label={`第 ${index + 1} 步的执行成员`} value={agentId} options={memberOptions} onChange={(value) => onChange((current) => updateStep(current, step.id, { agentId: value }))} /></div>
-        </div>
-        <label className="field"><span>结果要求</span><textarea className="input textarea" rows={2} value={String(step.config?.result_requirement ?? '')} onChange={(event) => onChange((current) => updateStep(current, step.id, { requirement: event.target.value }))} /></label>
-        {index > 0 ? <p className="chain__handoff small">接收：{steps[index - 1].label || '上一步'}的结果</p> : null}
-        {loop && index === 0 ? <p className="chain__handoff small">重做时接收：{steps[1].label || '下一步'}的验证意见</p> : null}
-        {loop ? null : <div className="toolbar">
-          {workers[0] ? <button type="button" className="button" onClick={() => onChange((current) => insertStepAfter(current, step.id, { id: workers[0].id, displayName: workers[0].configuration.display_name }))}><Plus size={14} />在此后添加步骤</button> : null}
-          {index > 0 ? <button type="button" className="button" onClick={() => onChange((current) => removeStep(current, step.id))}><Trash2 size={14} />删除</button> : null}
-        </div>}
-      </div>
-    </li>
-  })}<li className="step-card step-card--end"><div className="step-card__index" aria-hidden="true">✓</div><span>{loop ? '交付最后一轮的验证结论' : '交付最后一步的结果'}</span></li></ol>
-  </div>
 }
 
 function Trial({ teamId, draft, dirty, workflowId, navigate, onStarted }: { teamId: string; draft: DevelopmentDraft; dirty: boolean; workflowId?: string; navigate(path: string): void; onStarted(): void }) {
