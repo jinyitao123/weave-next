@@ -1,3 +1,4 @@
+import { createUUID } from './ids'
 // Serial workflow editing over Weave's graph definition. Ported from the
 // GooeyPi desktop team workspace (weave-workbench desktop/src/pages/
 // team-workspace/graph.ts, MIT) so both clients produce the same graphs.
@@ -29,11 +30,11 @@ export interface StepMember { id: string; displayName: string; resultRequirement
 
 export const originalBinding = (): Binding => ({ value: { source: 'run_input', path: '' }, expected_type: 'text' })
 
-const edge = (from: string, to: string, route = 'success'): GraphEdge => ({ id: crypto.randomUUID(), from_node_id: from, to_node_id: to, route })
+const edge = (from: string, to: string, route = 'success'): GraphEdge => ({ id: createUUID(), from_node_id: from, to_node_id: to, route })
 
 function workerStep(member: StepMember, previous?: Step, requirement?: string): Step {
   return {
-    id: `step-${crypto.randomUUID()}`,
+    id: `step-${createUUID()}`,
     type: 'worker',
     label: member.displayName,
     config: { kind: 'consult', agent_id: member.id, agent_version: 1, result_requirement: requirement || member.resultRequirement || '按照成员职责处理任务输入，返回结果与依据。' },
@@ -155,7 +156,7 @@ export function withVerifyLoop(graph: Graph, rounds: number): Graph {
   if (!serial || steps.length !== 2 || steps.some((step) => step.type !== 'worker')) throw new Error('只有两步流程可以设置验证退回')
   const [code, verify] = steps
   const loop: Step = {
-    id: `loop-${crypto.randomUUID()}`, type: 'loop', label: '验证未通过时退回',
+    id: `loop-${createUUID()}`, type: 'loop', label: '验证未通过时退回',
     config: {
       max_iterations: rounds, latch_node_id: verify.id,
       continue_predicate: { left: { source: 'node_output', node_id: verify.id, path: '/passed', iteration: 'current_iteration' }, operator: 'eq', right: { source: 'literal', value: false } },

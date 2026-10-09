@@ -1,3 +1,4 @@
+import { createUUID } from './ids'
 import { api } from './api'
 import { serialGraph, withVerifyLoop, type Graph } from './graph'
 
@@ -86,7 +87,7 @@ export const starterMembers = [
 // using the same agent and team endpoints as the desktop. Agents created before
 // a failure are removed again.
 export async function createStarterTeam(name: string, objective: string): Promise<string> {
-  const suffix = crypto.randomUUID()
+  const suffix = createUUID()
   const created: string[] = []
   try {
     const lead = await createAgent(`team-${suffix}-lead`, '团队负责人', 'avatar', 'loom', `负责理解“${name}”的目标并汇总可核验结果。`)
@@ -134,7 +135,7 @@ export function withStarterWorkflow(document: DevelopmentDocument): DevelopmentD
   return {
     ...document,
     workflows: [{
-      id: crypto.randomUUID(), name: '开发与验证', description: '编码后由另一引擎独立验证，未通过时退回编码',
+      id: createUUID(), name: '开发与验证', description: '编码后由另一引擎独立验证，未通过时退回编码',
       trigger_config: { schema_version: 1, type: 'conversation_explicit', config: {} },
       graph_definition: withVerifyLoop(serialGraph(steps), 3),
     }],

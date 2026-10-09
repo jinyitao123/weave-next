@@ -1,3 +1,4 @@
+import { createUUID } from '../lib/ids'
 import { ArrowLeft, CircleCheck, Download, CircleDashed, CircleX, LoaderCircle, Square } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Badge, InlineError } from '../components/ui'
@@ -39,7 +40,7 @@ export function TaskDetailPage({ runId, navigate }: { runId: string; navigate(pa
   const [tab, setTab] = useState<'output' | 'changes' | 'evidence' | 'details'>('output')
   const [loadedCode, setCode] = useState<TaskCode | null>()
   const [busy, setBusy] = useState(false)
-  const [stopKey] = useState(() => crypto.randomUUID())
+  const [stopKey] = useState(() => createUUID())
   const [missing, setMissing] = useState(false)
   const [waiting, setWaiting] = useState(false)
   const [openedAt] = useState(() => Date.now())
@@ -157,7 +158,7 @@ export function TaskDetailPage({ runId, navigate }: { runId: string; navigate(pa
         <div className="tabs" role="tablist" aria-label="任务内容">
           {([['output', '输出'], ...(code ? [['changes', '变更']] as const : []), ['evidence', '证据'], ['details', '详情']] as const).map(([value, label]) => <button key={value} type="button" role="tab" aria-selected={tab === value} onClick={() => setTab(value)}>{label}</button>)}
         </div>
-        {tab === 'output' ? current ? <StageOutput runId={runId} version={version} logStream={logStream} item={current} busy={busy} onRetry={() => void act(() => retryStage(runId, current.stage.node_id, crypto.randomUUID()))} /> : <p className="muted">尚未开始执行。</p> : null}
+        {tab === 'output' ? current ? <StageOutput runId={runId} version={version} logStream={logStream} item={current} busy={busy} onRetry={() => void act(() => retryStage(runId, current.stage.node_id, createUUID()))} /> : <p className="muted">尚未开始执行。</p> : null}
         {tab === 'changes' && code ? <CodeChanges code={code} runId={runId} done={done} onChanged={() => void refresh()} /> : null}
         {tab === 'evidence' ? code ? <CodeEvidencePanel code={code} /> : <Evidence activity={activity} /> : null}
         {tab === 'details' ? <Details activity={activity} firstOutputAt={task?.first_output_at} /> : null}
