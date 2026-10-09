@@ -19,12 +19,13 @@ func registeredRoutes(t *testing.T, cfg *config.Config) map[string]bool {
 	return routes
 }
 
-// supportedClientRoutes are the Weave endpoints the GooeyPi desktop with Forge
-// calls: identity exchange, team authoring and trials, workflow publication,
+// supportedClientRoutes are endpoints used by GooeyPi, Forge and installation:
+// identity exchange and self-read, team authoring and trials, publication,
 // handoff registration and dispatch, and run and result reads. Retiring legacy
 // platform APIs must never remove any of them.
 var supportedClientRoutes = []string{
 	"POST /v1/auth/external/exchange",
+	"GET /v1/auth/me",
 	"GET /v1/health",
 	"GET /v1/agents", "POST /v1/agents", "GET /v1/agents/:name", "PUT /v1/agents/:name",
 	"GET /v1/teams", "POST /v1/teams", "GET /v1/teams/:id", "PUT /v1/teams/:id/profile",
@@ -62,7 +63,7 @@ var retiredRoutes = []string{
 // W10 removed Weave's local accounts (identity comes from the external
 // exchange and admin API keys) and the unused bounded-decision interface.
 var w10DeletedRoutes = []string{
-	"POST /v1/auth/token", "POST /v1/auth/refresh", "GET /v1/auth/me", "PUT /v1/auth/me", "PUT /v1/auth/me/password",
+	"POST /v1/auth/token", "POST /v1/auth/refresh", "PUT /v1/auth/me", "PUT /v1/auth/me/password",
 	"GET /v1/users", "GET /v1/users/:id", "PUT /v1/users/:id", "DELETE /v1/users/:id",
 	"GET /v1/workspace", "GET /v1/workspace/members", "POST /v1/workspace/members", "DELETE /v1/workspace/members/:userID",
 	"PUT /v1/decision-bindings/:key_id", "POST /v1/decisions", "GET /v1/decisions/:decision_id", "POST /v1/decisions:cancel",

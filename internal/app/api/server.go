@@ -338,7 +338,8 @@ func (s *Server) registerRoutes() {
 	capabilityAPI.GET("/capability-apps", s.handleCapabilityApps, requireCapabilityAccess("manage"))
 	capabilityAPI.POST("/capability-apps/actions", s.handleCapabilityAppAction, requireCapabilityAccess("manage"))
 
-	// User management (admin or owner).
+	// Current identity self-read supports installation and operator checks.
+	auth.GET("/auth/me", s.handleMe)
 
 	// API Key management (admin only).
 	auth.POST("/auth/api-keys", s.handleCreateAPIKey, RequireRole("admin"), adminScope)

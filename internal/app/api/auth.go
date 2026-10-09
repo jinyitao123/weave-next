@@ -23,6 +23,20 @@ type CreateAPIKeyRequest struct {
 	ExpiresAt *time.Time `json:"expires_at"`
 }
 
+// handleMe exposes only the current authenticated identity for installation
+// and operator checks. Authentication and the effective role stay owned by
+// AuthMiddleware; this endpoint cannot select or mutate an account.
+func (s *Server) handleMe(c echo.Context) error {
+	identity := map[string]any{
+		"id": getUserID(c), "tenant_id": getTenant(c),
+		"role": firstRole(c), "source": c.Get(authSourceContextKey),
+	}
+	if c.Get(authSourceContextKey) == authSourceAPIKey {
+		identity["api_key_id"] = c.Get(apiKeyIDContextKey)
+	}
+	return c.JSON(http.StatusOK, identity)
+}
+
 // ── API Key management (admin only) ─────────────────────────
 
 func (s *Server) handleCreateAPIKey(c echo.Context) error {

@@ -855,6 +855,22 @@
         "previous_production_lines": 51075,
         "production_lines": 49133
       }
+    },
+    {
+      "date": "2026-10-09",
+      "reason": "Restore the supported GET /v1/auth/me self-read used by the official installer and deployment verification after W10 removed it with local account management. Reuse existing bearer authentication and expose only the current id, tenant_id, effective role, authentication source and optional API key id. Do not restore password login, registration, token refresh, profile writes or user administration. Register exactly 15 production lines and 99 test lines after the first budget guard failed, with no spare allowance, new packages/dependencies or changed guard logic.",
+      "record": "docs/治理/2026-09-30-平台范围收窄整改登记.md",
+      "growth": {
+        "lines": 114,
+        "production_lines": 15
+      },
+      "deletion_trigger": "Only after all official installation and operator consumers have migrated to an equivalent verified self-read and a complete release has actually shown no remaining calls may this GET route, identity projection and its dedicated regression be removed, lowering the measured budgets in the same change. This supported endpoint is not currently scheduled for retirement and creates no deletion task for this release.",
+      "app": {
+        "previous_lines": 71119,
+        "previous_production_lines": 49133,
+        "lines_added": 114,
+        "production_lines_added": 15
+      }
     }
   ],
   "migration_targets": {
@@ -918,8 +934,8 @@
     "allowed_dependencies": []
   },
   "app": {
-    "lines": 71119,
-    "production_lines": 49133,
+    "lines": 71233,
+    "production_lines": 49148,
     "packages": 24,
     "external_dependencies": 6,
     "allowed_dependencies": [
