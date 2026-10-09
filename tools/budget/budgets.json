@@ -871,6 +871,22 @@
         "lines_added": 114,
         "production_lines_added": 15
       }
+    },
+    {
+      "date": "2026-10-09",
+      "reason": "Select the independent CLI JSON-node schema fix from console candidate 9fdb2ee4 onto current main. Pass the frozen node schema through the existing structured remote executor and normalize fenced JSON replies for Claude and OpenCode before the existing workflow schema gate. Preserve current cancellation and server/execution-node boundaries. Exact measured kernel growth: 58 production and 65 existing regression lines; no new packages, dependencies, queues or spare allowance.",
+      "record": "docs/架构/2026-09-13-分层收敛与Loom职责基线.md",
+      "growth": {
+        "lines": 123,
+        "production_lines": 58
+      },
+      "deletion_trigger": "Remove the optional structured-CLI adapter and prompt/fence helpers with their dedicated regressions only when every supported CLI consumes the frozen node schema through an equivalent verified shared execution contract, and lower the measured budget in that same change. Do not remove the workflow schema gate or retire supported CLI members to meet this trigger.",
+      "kernel": {
+        "previous_lines": 104478,
+        "previous_production_lines": 83090,
+        "lines_added": 123,
+        "production_lines_added": 58
+      }
     }
   ],
   "migration_targets": {
@@ -914,8 +930,8 @@
     ]
   },
   "kernel": {
-    "lines": 104478,
-    "production_lines": 83090,
+    "lines": 104601,
+    "production_lines": 83148,
     "packages": 48,
     "external_dependencies": 5,
     "allowed_dependencies": [

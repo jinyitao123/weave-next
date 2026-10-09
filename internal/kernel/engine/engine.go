@@ -28,6 +28,33 @@ const (
 	Claude   = "claude"
 )
 
+// promptWithOutputSchema states the required final message shape for CLIs
+// that have no native schema option; Codex receives the schema natively.
+func promptWithOutputSchema(prompt string, schema json.RawMessage) string {
+	if len(schema) == 0 {
+		return prompt
+	}
+	return prompt + "\n\n最终回复必须且只能是一个符合以下 JSON Schema 的 JSON 对象，不要附加其他文字或代码块标记：\n" + string(schema)
+}
+
+// unwrapJSONOutput removes a Markdown code fence around a JSON reply. Any
+// other text is returned unchanged for the workflow's schema gate to judge.
+func unwrapJSONOutput(output string) string {
+	trimmed := strings.TrimSpace(output)
+	if !strings.HasPrefix(trimmed, "```") || !strings.HasSuffix(trimmed, "```") || len(trimmed) < 6 {
+		return output
+	}
+	body := strings.TrimSuffix(trimmed[3:], "```")
+	if newline := strings.IndexByte(body, '\n'); newline >= 0 && !strings.ContainsAny(body[:newline], "{[") {
+		body = body[newline+1:]
+	}
+	body = strings.TrimSpace(body)
+	if !json.Valid([]byte(body)) {
+		return output
+	}
+	return body
+}
+
 // ErrUnsupported is returned by New for an engine with no registered backend.
 var ErrUnsupported = errors.New("engine: unsupported runtime")
 
