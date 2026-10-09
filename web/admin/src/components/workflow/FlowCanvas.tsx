@@ -1,5 +1,5 @@
-import { Bot, CheckCircle2, GitBranch, GitMerge, Repeat2, UsersRound } from 'lucide-react'
-import { useId } from 'react'
+import { Bot, CheckCircle2, GitBranch, GitMerge, Maximize2, Repeat2, UsersRound, ZoomIn, ZoomOut } from 'lucide-react'
+import { useId, useLayoutEffect, useRef, useState } from 'react'
 import type { Graph } from '../../lib/graph'
 import type { DevelopmentMember } from '../../lib/teams'
 
@@ -39,16 +39,45 @@ export function layout(graph: Graph) {
   return { width: Math.max(width + 48, levels.length * column), height: hasBack ? backLane + 24 : rows * row + 32, positions, backLane }
 }
 
+const zoomSteps = [0.5, 0.6, 0.75, 0.9, 1, 1.25, 1.5]
+const minFit = 0.5
+
+// 'fit' shrinks a wide graph to the canvas width (never below minFit, never
+// above 100%); a number is the scale the user chose.
 export function FlowCanvas({ graph, members, selected, onSelect }: { graph: Graph; members: DevelopmentMember[]; selected?: string; onSelect(id: string): void }) {
   const box = layout(graph), arrow = useId().replace(/:/g, '')
+  const canvas = useRef<HTMLDivElement>(null)
+  const [available, setAvailable] = useState(0)
+  const [zoom, setZoom] = useState<'fit' | number>('fit')
+  useLayoutEffect(() => {
+    const element = canvas.current
+    if (!element) return
+    const measure = () => setAvailable(element.clientWidth)
+    measure()
+    if (typeof ResizeObserver !== 'function') return
+    const observer = new ResizeObserver(measure)
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [])
+  const fitted = available > 0 ? Math.min(1, Math.max(minFit, available / box.width)) : 1
+  const scale = zoom === 'fit' ? fitted : zoom
+  const step = (direction: 1 | -1) => setZoom(direction > 0 ? zoomSteps.find(value => value > scale + 0.001) ?? zoomSteps[zoomSteps.length - 1] : [...zoomSteps].reverse().find(value => value < scale - 0.001) ?? zoomSteps[0])
   const backs = graph.edges.flatMap(edge => {
     const from = box.positions.get(edge.from_node_id), to = box.positions.get(edge.to_node_id)
     if (!from || !to || !(edge.route === 'back' || to.x <= from.x)) return []
     const rounds = loopRounds(graph, edge.to_node_id)
     return [{ edge, fx: from.x + width / 2, tx: to.x + width / 2, fy: from.y + height, ty: to.y + height + 2, label: rounds ? `未通过退回 · 最多 ${rounds} 轮` : '' }]
   })
-  return <div className="flow-editor__canvas" role="region" aria-label="流程画布" tabIndex={0}>
-    <div className="flow-editor__graph" style={{ width: box.width, height: box.height }}>
+  return <div className="flow-editor__stage">
+    <div className="flow-editor__zoom" role="group" aria-label="画布缩放">
+      <button type="button" className="icon-button" aria-label="缩小" disabled={scale <= zoomSteps[0] + 0.001} onClick={() => step(-1)}><ZoomOut size={15} /></button>
+      <span className="flow-editor__zoom-value" aria-live="polite">{Math.round(scale * 100)}%</span>
+      <button type="button" className="icon-button" aria-label="放大" disabled={scale >= zoomSteps[zoomSteps.length - 1] - 0.001} onClick={() => step(1)}><ZoomIn size={15} /></button>
+      <button type="button" className="icon-button" aria-label="适应宽度" aria-pressed={zoom === 'fit'} onClick={() => setZoom('fit')}><Maximize2 size={15} /></button>
+    </div>
+    <div ref={canvas} className="flow-editor__canvas" role="region" aria-label="流程画布" tabIndex={0}>
+    <div className="flow-editor__sizer" style={{ width: box.width * scale, height: box.height * scale }}>
+    <div className="flow-editor__graph" style={{ width: box.width, height: box.height, transform: `scale(${scale})` }}>
       <svg width={box.width} height={box.height} aria-hidden="true"><defs><marker id={arrow} viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L8 4L0 8Z" /></marker></defs>
         {graph.edges.map((edge, index) => {
           const from = box.positions.get(edge.from_node_id), to = box.positions.get(edge.to_node_id)
@@ -68,6 +97,8 @@ export function FlowCanvas({ graph, members, selected, onSelect }: { graph: Grap
           <Icon size={17} /><span><strong>{title}</strong>{subtitle !== title ? <small>{subtitle}</small> : null}</span>
         </button>
       })}
+    </div>
+    </div>
     </div>
   </div>
 }

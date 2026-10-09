@@ -1,8 +1,12 @@
 .flow-editor { display: grid; gap: 16px; }
 .flow-editor__loop { display: flex; align-items: center; flex-wrap: wrap; gap: 16px; }
 .flow-editor__workspace { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 16px; align-items: start; }
-.flow-editor__canvas { overflow: auto; min-width: 0; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--subtle); }
-.flow-editor__graph { position: relative; min-height: 150px; }
+.flow-editor__stage { display: grid; gap: 8px; min-width: 0; align-content: start; }
+.flow-editor__zoom { display: flex; align-items: center; justify-content: flex-end; gap: 4px; }
+.flow-editor__zoom-value { min-width: 40px; text-align: center; color: var(--text-secondary); font-size: var(--text-sm); }
+.flow-editor__canvas { display: flex; overflow: auto; min-width: 0; min-height: 320px; max-height: 85vh; resize: vertical; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--subtle); }
+.flow-editor__sizer { position: relative; flex-shrink: 0; margin: auto; }
+.flow-editor__graph { position: absolute; top: 0; left: 0; transform-origin: 0 0; }
 .flow-editor__graph > svg { position: absolute; inset: 0; overflow: visible; pointer-events: none; }
 .flow-editor__graph path { fill: none; stroke: var(--border-strong); stroke-width: 1.5; }
 .flow-editor__graph path.is-back { stroke: var(--accent); stroke-dasharray: 4 3; }

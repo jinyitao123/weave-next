@@ -1,5 +1,6 @@
 import { createUUID } from './ids'
 import { api } from './api'
+import { engineName } from './format'
 import { serialGraph, withVerifyLoop, type Graph } from './graph'
 
 export interface TeamRecord {
@@ -165,6 +166,20 @@ export function pinMembers(document: DevelopmentDocument, nodes: NodeChoice[]): 
     return { ...member, configuration: { ...config, runtime_id: choice.id } }
   })
   return changed ? { ...document, members } : document
+}
+
+// Built-in engines run on the server; only CLI members depend on registered
+// nodes. A member with no node and no accepting node gets one combined line.
+export function nodeReadinessIssues(document: DevelopmentDocument, accepting: Record<string, number>): string[] {
+  const lines: string[] = []
+  const covered = new Set<string>()
+  for (const member of document.members) {
+    const config = member.configuration
+    if (config.role !== 'worker' || member.relationship.enabled === false || !isCLIEngine(config.engine) || accepting[config.engine]) continue
+    covered.add(`“${config.display_name}”还没有指定节点`)
+    lines.push(`“${config.display_name}”使用的 ${engineName(config.engine)} 当前没有可接任务的节点${config.runtime_id ? '' : '，也还没有指定节点'}`)
+  }
+  return [...lines, ...memberIssues(document).filter((issue) => !covered.has(issue))]
 }
 
 export function memberIssues(document: DevelopmentDocument): string[] {
