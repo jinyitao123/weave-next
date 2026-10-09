@@ -124,7 +124,12 @@ func (s *Server) handleFeishuEvent(c echo.Context) error {
 	if !s.Feishu.configured() || s.GetPool() == nil {
 		return c.NoContent(http.StatusServiceUnavailable)
 	}
-	event, err := s.Feishu.decodeEvent(c.Request())
+	return s.receiveFeishuEvent(c, s.Feishu)
+}
+
+// receiveFeishuEvent verifies one callback against the app that owns its route.
+func (s *Server) receiveFeishuEvent(c echo.Context, app *feishuClient) error {
+	event, err := app.decodeEvent(c.Request())
 	if err != nil {
 		return c.NoContent(http.StatusUnauthorized)
 	}
@@ -134,7 +139,7 @@ func (s *Server) handleFeishuEvent(c echo.Context) error {
 		}
 		return c.JSON(200, map[string]string{"challenge": event.Challenge})
 	}
-	if event.Header.AppID != s.Feishu.appID || event.Header.TenantKey != s.Feishu.tenantKey || event.Event.Sender.TenantKey != s.Feishu.tenantKey {
+	if event.Header.AppID != app.appID || event.Header.TenantKey != app.tenantKey || event.Event.Sender.TenantKey != app.tenantKey {
 		return c.NoContent(http.StatusForbidden)
 	}
 	m := event.Event.Message
@@ -160,7 +165,7 @@ func (s *Server) handleFeishuEvent(c echo.Context) error {
  CASE WHEN link.user_id IS NULL AND $6 NOT LIKE '绑定 %' THEN '请先在桌面登录，并使用绑定码发送：绑定 <码>。' END
  FROM (SELECT 1) AS seed LEFT JOIN weave_feishu_links AS link ON link.app_id=$1 AND link.open_id=$3 AND link.expires_at>statement_timestamp()
  ON CONFLICT(app_id,message_id) DO UPDATE SET message_id=EXCLUDED.message_id
- WHERE weave_feishu_messages.content_hash=EXCLUDED.content_hash`, s.Feishu.appID, m.MessageID, sender.SenderID.OpenID, hash, string(command), strings.TrimSpace(content.Text))
+ WHERE weave_feishu_messages.content_hash=EXCLUDED.content_hash`, app.appID, m.MessageID, sender.SenderID.OpenID, hash, string(command), strings.TrimSpace(content.Text))
 	if err != nil {
 		return c.NoContent(503)
 	}
@@ -171,7 +176,11 @@ func (s *Server) handleFeishuEvent(c echo.Context) error {
 }
 
 func (s *Server) handleFeishuLinkCode(c echo.Context) error {
-	if !s.Feishu.configured() || s.GetPool() == nil {
+	if s.GetPool() == nil {
+		return c.NoContent(503)
+	}
+	app, err := s.feishuForWorkspace(c.Request().Context(), getTenant(c))
+	if err != nil || !app.configured() {
 		return c.NoContent(503)
 	}
 	if source, _ := c.Get(identitySourceContextKey).(string); source != "forge" {
@@ -198,7 +207,7 @@ func (s *Server) handleFeishuLinkCode(c echo.Context) error {
 	_, err = s.GetPool().Exec(c.Request().Context(), `INSERT INTO weave_feishu_links(app_id,workspace_id,user_id,code_hash,code_expires_at,permission_sets,expires_at)
  VALUES($1,$2,$3,$4,statement_timestamp()+interval '10 minutes',$5::jsonb,$6)
  ON CONFLICT(app_id,workspace_id,user_id) DO UPDATE SET code_hash=EXCLUDED.code_hash,code_expires_at=EXCLUDED.code_expires_at,
- permission_sets=EXCLUDED.permission_sets,expires_at=EXCLUDED.expires_at`, s.Feishu.appID, getTenant(c), getUserID(c), dispatchInputDigest([]byte(code)), string(sets), expires)
+ permission_sets=EXCLUDED.permission_sets,expires_at=EXCLUDED.expires_at`, app.appID, getTenant(c), getUserID(c), dispatchInputDigest([]byte(code)), string(sets), expires)
 	if err != nil {
 		return c.NoContent(503)
 	}
@@ -207,13 +216,14 @@ func (s *Server) handleFeishuLinkCode(c echo.Context) error {
 }
 
 func (s *Server) handleFeishuUnlink(c echo.Context) error {
-	if s.Feishu == nil || s.GetPool() == nil {
+	if s.GetPool() == nil {
 		return c.NoContent(503)
 	}
 	if source, _ := c.Get(identitySourceContextKey).(string); source != "forge" {
 		return c.NoContent(403)
 	}
-	_, err := s.GetPool().Exec(c.Request().Context(), `DELETE FROM weave_feishu_links WHERE app_id=$1 AND workspace_id=$2 AND user_id=$3`, s.Feishu.appID, getTenant(c), getUserID(c))
+	// Unlinking is per employee and workspace, across every app that served it.
+	_, err := s.GetPool().Exec(c.Request().Context(), `DELETE FROM weave_feishu_links WHERE workspace_id=$1 AND user_id=$2`, getTenant(c), getUserID(c))
 	if err != nil {
 		return c.NoContent(503)
 	}
@@ -239,11 +249,18 @@ func (s *Server) handleFeishuBinding(c echo.Context) error {
 	if source, _ := c.Get(identitySourceContextKey).(string); source != "forge" {
 		return c.NoContent(403)
 	}
-	if !s.Feishu.configured() || s.GetPool() == nil {
+	if s.GetPool() == nil {
+		return c.JSON(200, map[string]bool{"available": false, "bound": false})
+	}
+	app, err := s.feishuForWorkspace(c.Request().Context(), getTenant(c))
+	if err != nil {
+		return c.NoContent(503)
+	}
+	if !app.configured() {
 		return c.JSON(200, map[string]bool{"available": false, "bound": false})
 	}
 	var expires *time.Time
-	err := s.GetPool().QueryRow(c.Request().Context(), `SELECT expires_at FROM weave_feishu_links WHERE app_id=$1 AND workspace_id=$2 AND user_id=$3 AND open_id IS NOT NULL AND expires_at>statement_timestamp()`, s.Feishu.appID, getTenant(c), getUserID(c)).Scan(&expires)
+	err = s.GetPool().QueryRow(c.Request().Context(), `SELECT expires_at FROM weave_feishu_links WHERE app_id=$1 AND workspace_id=$2 AND user_id=$3 AND open_id IS NOT NULL AND expires_at>statement_timestamp()`, app.appID, getTenant(c), getUserID(c)).Scan(&expires)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return c.JSON(200, map[string]bool{"available": true, "bound": false})
 	}

@@ -17,18 +17,28 @@ import (
 	"time"
 )
 
+// workspace is empty for the deployment app read from the environment, which
+// serves only workspaces that have not saved an app of their own.
 type feishuClient struct {
 	appID, appSecret, base, verificationToken, encryptKey, tenantKey string
+	workspace                                                        string
 	client                                                           *http.Client
 	mu                                                               sync.Mutex
 	token                                                            string
 	tokenExp                                                         time.Time
 }
 
+// feishuAPIBase is replaced only by tests that stand in for the provider.
+var feishuAPIBase = "https://open.feishu.cn"
+
+func newFeishuClient(workspace, appID, appSecret, verificationToken, encryptKey, tenantKey string) *feishuClient {
+	return &feishuClient{appID: appID, appSecret: appSecret, verificationToken: verificationToken, encryptKey: encryptKey, tenantKey: tenantKey, workspace: workspace,
+		base: feishuAPIBase, client: &http.Client{Timeout: 10 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
+}
+
 func feishuFromEnv() *feishuClient {
-	f := &feishuClient{appID: strings.TrimSpace(os.Getenv("WEAVE_FEISHU_APP_ID")), appSecret: os.Getenv("WEAVE_FEISHU_APP_SECRET"),
-		verificationToken: os.Getenv("WEAVE_FEISHU_VERIFICATION_TOKEN"), encryptKey: os.Getenv("WEAVE_FEISHU_ENCRYPT_KEY"), tenantKey: strings.TrimSpace(os.Getenv("WEAVE_FEISHU_TENANT_KEY")),
-		base: "https://open.feishu.cn", client: &http.Client{Timeout: 10 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
+	f := newFeishuClient("", strings.TrimSpace(os.Getenv("WEAVE_FEISHU_APP_ID")), os.Getenv("WEAVE_FEISHU_APP_SECRET"),
+		os.Getenv("WEAVE_FEISHU_VERIFICATION_TOKEN"), os.Getenv("WEAVE_FEISHU_ENCRYPT_KEY"), strings.TrimSpace(os.Getenv("WEAVE_FEISHU_TENANT_KEY")))
 	if f.appID == "" && f.appSecret == "" {
 		return nil
 	}

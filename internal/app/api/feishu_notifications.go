@@ -30,8 +30,8 @@ func prepareFeishuHuman(workspace string, input dispatchInputRevision, raw []byt
 
 // Each destination has a durable receipt on the same platform event. Holding
 // the event row while sending fences concurrent sweepers; failures keep it pending.
-func (s *Server) sweepFeishuNotification(ctx context.Context) (int, error) {
-	if !s.Feishu.configured() {
+func (s *Server) sweepFeishuNotification(ctx context.Context, app *feishuClient) (int, error) {
+	if !app.configured() {
 		return 0, nil
 	}
 	tx, err := s.GetPool().Begin(ctx)
@@ -39,18 +39,20 @@ func (s *Server) sweepFeishuNotification(ctx context.Context) (int, error) {
 		return 0, err
 	}
 	defer tx.Rollback(ctx)
-	var eventID, openID, workspace, user, runID, inputID string
+	var eventID, openID, workspace, user, runID, inputID, team string
 	var raw, permissions []byte
 	var attempts int
-	err = tx.QueryRow(ctx, `SELECT e.event_id::text,link.open_id,e.workspace_id,link.user_id,e.run_id,e.input_revision_id,e.payload,link.permission_sets,e.feishu_attempts
+	err = tx.QueryRow(ctx, `SELECT e.event_id::text,link.open_id,e.workspace_id,link.user_id,e.run_id,e.input_revision_id,e.payload,link.permission_sets,e.feishu_attempts,COALESCE(run.team_id,'')
  FROM weave_employee_run_event_outbox e
  JOIN weave_feishu_messages m ON m.app_id=$1 AND m.run_id=e.run_id AND m.input_revision_id=e.input_revision_id AND m.workspace_id=e.workspace_id
  JOIN weave_feishu_links link ON link.app_id=m.app_id AND link.open_id=m.open_id AND link.workspace_id=m.workspace_id AND link.user_id=m.user_id AND link.expires_at>statement_timestamp()
  JOIN weave_users u ON u.id=link.user_id AND u.tenant_id=link.workspace_id AND NOT u.disabled
  JOIN weave_members member ON member.workspace_id=link.workspace_id AND member.user_id=link.user_id
  JOIN weave_dispatch_input_revisions input ON input.workspace_id=e.workspace_id AND input.input_revision_id=e.input_revision_id AND input.user_id=link.user_id AND input.is_current AND input.closed_at IS NULL
+ LEFT JOIN weave_team_runs run ON run.workspace_id=e.workspace_id AND run.run_id=e.run_id
  WHERE e.feishu_state='pending' AND e.feishu_next_attempt_at<=statement_timestamp()
- ORDER BY e.created_at,e.event_id FOR UPDATE OF e SKIP LOCKED LIMIT 1`, s.Feishu.appID).Scan(&eventID, &openID, &workspace, &user, &runID, &inputID, &raw, &permissions, &attempts)
+   AND ($2 OR NOT EXISTS(SELECT 1 FROM weave_feishu_apps own WHERE own.workspace_id=link.workspace_id))
+ ORDER BY e.created_at,e.event_id FOR UPDATE OF e SKIP LOCKED LIMIT 1`, app.appID, app.workspace != "").Scan(&eventID, &openID, &workspace, &user, &runID, &inputID, &raw, &permissions, &attempts, &team)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return 0, nil
 	}
@@ -67,6 +69,19 @@ func (s *Server) sweepFeishuNotification(ctx context.Context) (int, error) {
 	}
 	if json.Unmarshal(raw, &payload) != nil {
 		return 0, errors.New("feishu notification payload invalid")
+	}
+	// The team chose which kinds reach Feishu; others are settled, not retried.
+	if team != "" {
+		access, err := s.feishuTeamAccess(ctx, tx, workspace, team)
+		if err != nil {
+			return 0, err
+		}
+		if !access.Notify.allows(payload.Kind) {
+			if _, err = tx.Exec(ctx, `UPDATE weave_employee_run_event_outbox SET feishu_state='suppressed',feishu_last_error=NULL WHERE event_id=$1`, eventID); err != nil {
+				return 0, err
+			}
+			return 1, tx.Commit(ctx)
+		}
 	}
 	text := payload.Title
 	if payload.Kind == "human_review" {
@@ -94,7 +109,7 @@ func (s *Server) sweepFeishuNotification(ctx context.Context) (int, error) {
 	} else {
 		text += "\n发送“查看”读取本轮成果；发送“继续 补充要求”修订原工作。"
 	}
-	id, sendErr := s.Feishu.send(ctx, openID, feishuMessageKey(s.Feishu.appID, eventID), text)
+	id, sendErr := app.send(ctx, openID, feishuMessageKey(app.appID, eventID), text)
 	if sendErr != nil {
 		_, err = tx.Exec(ctx, `UPDATE weave_employee_run_event_outbox SET feishu_attempts=feishu_attempts+1,feishu_last_error=$2,feishu_next_attempt_at=statement_timestamp()+($3::text||' seconds')::interval WHERE event_id=$1`, eventID, sendErr.Error(), fmt.Sprint(1<<min(attempts+1, 8)))
 	} else {
@@ -110,10 +125,16 @@ func (s *Server) sweepFeishuNotification(ctx context.Context) (int, error) {
 }
 
 func (worker *employeeRunEventWorker) sweepFeishu(ctx context.Context) (int, error) {
-	if worker.FeishuServer == nil || !worker.FeishuServer.Feishu.configured() {
+	if worker.FeishuServer == nil {
 		return 0, nil
 	}
-	commandCount, commandErr := worker.FeishuServer.sweepFeishuCommand(ctx)
-	notificationCount, notificationErr := worker.FeishuServer.sweepFeishuNotification(ctx)
-	return commandCount + notificationCount, errors.Join(commandErr, notificationErr)
+	apps, appsErr := worker.FeishuServer.feishuClients(ctx)
+	total, failures := 0, []error{appsErr}
+	for _, app := range apps {
+		commandCount, commandErr := worker.FeishuServer.sweepFeishuCommand(ctx, app)
+		notificationCount, notificationErr := worker.FeishuServer.sweepFeishuNotification(ctx, app)
+		total += commandCount + notificationCount
+		failures = append(failures, commandErr, notificationErr)
+	}
+	return total, errors.Join(failures...)
 }
