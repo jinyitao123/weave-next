@@ -13,6 +13,10 @@ export interface TeamRecord {
   updated_at: string
 }
 
+export interface MemberSkill { name: string; description: string; body: string; always_active: boolean }
+
+// Only the fields the console edits are typed; anything else the server sent is
+// carried through a save unchanged.
 export interface MemberConfiguration {
   display_name: string
   role: string
@@ -20,13 +24,33 @@ export interface MemberConfiguration {
   runtime_id: string
   model: string
   system_prompt: string
+  skills?: MemberSkill[] | null
+  permission_deny?: string[] | null
+  memory_enabled?: boolean
+  memory_scope?: string
+  max_tokens?: number
+  max_output_tokens?: number
+  step_budget?: number
+  max_cost_usd?: number
+  max_tool_repeats?: number
+  [key: string]: unknown
+}
+
+export interface MemberRelationship {
+  duty: string
+  when_to_use?: string
+  context_instruction?: string
+  allowed_kinds?: string[] | null
+  default_kind?: string
+  result_requirement: string
+  enabled: boolean
   [key: string]: unknown
 }
 
 export interface DevelopmentMember {
   id: string
   configuration: MemberConfiguration
-  relationship: { duty: string; result_requirement: string; enabled: boolean; [key: string]: unknown }
+  relationship: MemberRelationship
 }
 
 export interface DevelopmentWorkflow {
@@ -166,6 +190,41 @@ export function pinMembers(document: DevelopmentDocument, nodes: NodeChoice[]): 
     return { ...member, configuration: { ...config, runtime_id: choice.id } }
   })
   return changed ? { ...document, members } : document
+}
+
+export const handoffKinds = [
+  { value: 'consult', label: '咨询' },
+  { value: 'dispatch', label: '派发' },
+  { value: 'handoff', label: '交接' },
+] as const
+
+export const loadModelCatalog = () => api<{ models: string[] }>('/v1/development/model-catalog').then((catalog) => catalog.models ?? [])
+
+const listed = (value: unknown) => Array.isArray(value) && value.some((item) => typeof item === 'string' && item.trim())
+
+// What trial preparation would reject for one member, worded for the page.
+// Isolated trials refuse MCP servers, library skills and allow/ask tool
+// permissions, so a member carrying them cannot be published from here.
+export function memberProblems(member: DevelopmentMember): string[] {
+  const config = member.configuration, relationship = member.relationship
+  const problems: string[] = []
+  if (!relationship.duty?.trim()) problems.push('还没有填写职责')
+  if (!config.system_prompt?.trim()) problems.push('还没有填写工作方法')
+  if (config.role === 'worker' && !isCLIEngine(config.engine) && !config.model?.trim()) problems.push('使用内置引擎时需要选择模型')
+  const kinds = relationship.allowed_kinds ?? []
+  if (config.role === 'worker' && kinds.length && !kinds.includes(relationship.default_kind ?? '')) problems.push('默认交接方式必须是已选方式之一')
+  const skills = config.skills ?? []
+  if (skills.some((skill) => !skill.name?.trim() || !skill.body?.trim())) problems.push('技能需要填写名称和内容')
+  const names = skills.map((skill) => skill.name?.trim()).filter(Boolean)
+  if (new Set(names).size !== names.length) problems.push('技能名称不能重复')
+  if (listed(config.mcp_server_ids) || listed(config.skill_names) || listed(config.permission_allow) || listed(config.permission_ask)) {
+    problems.push('带有试跑暂不支持的外部工具（MCP 服务、技能库技能或工具许可）')
+  }
+  return problems
+}
+
+export function memberConfigIssues(document: DevelopmentDocument): string[] {
+  return document.members.flatMap((member) => memberProblems(member).map((problem) => `“${member.configuration.display_name || '未命名成员'}”${problem}`))
 }
 
 // Built-in engines run on the server; only CLI members depend on registered

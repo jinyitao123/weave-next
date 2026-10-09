@@ -1,16 +1,15 @@
 import { createUUID } from '../lib/ids'
 import { ArrowLeft } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Badge, InlineError, Select } from '../components/ui'
+import { Badge, InlineError } from '../components/ui'
+import { MemberEditor } from '../components/members/MemberEditor'
 import { errorMessage } from '../lib/api'
-import { engineName, relativeTime } from '../lib/format'
+import { relativeTime } from '../lib/format'
 import type { Graph } from '../lib/graph'
 import { WorkflowEditor } from '../components/workflow/WorkflowEditor'
 import { listNodes, type RuntimeNode } from '../lib/nodes'
 import { executionLabel } from '../lib/tasks'
-import { isCLIEngine, nodeReadinessIssues, pinMembers, publishDevelopment, readDevelopment, saveDevelopment, startTrial, withStarterWorkflow, type DevelopmentDocument, type DevelopmentDraft, type DevelopmentMember } from '../lib/teams'
-
-const engines = ['claude', 'codex', 'opencode', 'loom']
+import { memberConfigIssues, nodeReadinessIssues, pinMembers, publishDevelopment, readDevelopment, saveDevelopment, startTrial, withStarterWorkflow, type DevelopmentDocument, type DevelopmentDraft, type DevelopmentMember } from '../lib/teams'
 
 export function TeamDetailPage({ teamId, navigate }: { teamId: string; navigate(path: string): void }) {
   const [draft, setDraft] = useState<DevelopmentDraft>()
@@ -52,7 +51,7 @@ export function TeamDetailPage({ teamId, navigate }: { teamId: string; navigate(
   const workflow = document?.workflows[0]
   const issues = useMemo(() => {
     if (!document) return []
-    const found = nodeReadinessIssues(document, accepting)
+    const found = [...nodeReadinessIssues(document, accepting), ...memberConfigIssues(document)]
     if (!workflow) found.push('还没有工作流程')
     return found
   }, [document, accepting, workflow])
@@ -79,6 +78,7 @@ export function TeamDetailPage({ teamId, navigate }: { teamId: string; navigate(
     // Changing the engine re-pins the member to a node that accepts it.
     return patch.engine !== undefined ? pinMembers(next, nodeChoices) : next
   })
+  const editRelationship = (id: string, patch: Partial<DevelopmentMember['relationship']>) => setDocument((current) => current && { ...current, members: current.members.map((member) => member.id === id ? { ...member, relationship: { ...member.relationship, ...patch } } : member) })
   const editGraph = (change: (graph: Graph) => Graph) => {
     if (!document?.workflows.length) return
     try {
@@ -106,30 +106,11 @@ export function TeamDetailPage({ teamId, navigate }: { teamId: string; navigate(
       <div className="tabs" role="tablist" aria-label="团队配置">
         {([['members', '成员'], ['workflow', '流程'], ['trial', '试跑与发布']] as const).map(([value, label]) => <button key={value} type="button" role="tab" aria-selected={tab === value} onClick={() => setTab(value)}>{label}</button>)}
       </div>
-      {tab === 'members' ? <Members document={document} nodes={nodes} accepting={accepting} onEdit={editMember} /> : null}
+      {tab === 'members' ? <MemberEditor document={document} nodes={nodes} accepting={accepting} onConfig={editMember} onRelationship={editRelationship} /> : null}
       {tab === 'workflow' ? workflow ? <WorkflowEditor key={workflow.id} graph={workflow.graph_definition} members={document.members} onChange={editGraph} /> : <p className="muted">至少需要两名执行成员才能生成流程。</p> : null}
       {tab === 'trial' ? <Trial teamId={teamId} draft={draft} dirty={dirty} workflowId={workflow?.id} navigate={navigate} onStarted={() => void load()} /> : null}
     </>}
   </section>
-}
-
-function Members({ document, nodes, accepting, onEdit }: { document: DevelopmentDocument; nodes: RuntimeNode[]; accepting: Record<string, number>; onEdit(id: string, patch: Partial<DevelopmentMember['configuration']>): void }) {
-  const workers = document.members.filter((member) => member.configuration.role === 'worker')
-  return <div className="member-grid">{workers.map((member) => {
-    const config = member.configuration
-    const engineNodes = nodes.filter((node) => node.engine_readiness.some((engine) => engine.engine === config.engine)).map((node) => ({ value: node.id, label: node.name, detail: node.accepting ? '可接任务' : '暂不可接' }))
-    const usesNode = isCLIEngine(config.engine)
-    return <section key={member.id} className="member-card" aria-label={config.display_name}>
-      <label className="field"><span>名称</span><input className="input" value={config.display_name} maxLength={80} onChange={(event) => onEdit(member.id, { display_name: event.target.value })} /></label>
-      <div className="member-card__row">
-        <div className="field"><span>引擎</span><Select label={`${config.display_name}的引擎`} value={config.engine} options={engines.map((engine) => ({ value: engine, label: engineName(engine), detail: isCLIEngine(engine) ? `${accepting[engine] ?? 0} 个节点可接` : undefined }))} onChange={(engine) => onEdit(member.id, { engine, runtime_id: '' })} /></div>
-        {usesNode ? <div className="field"><span>节点</span><Select label={`${config.display_name}的节点`} value={config.runtime_id ?? ''} placeholder={engineNodes.length ? '选择节点' : '没有提供该引擎的节点'} options={engineNodes} onChange={(runtime) => onEdit(member.id, { runtime_id: runtime })} /></div> : null}
-      </div>
-      <label className="field"><span>模型</span><input className="input" value={config.model ?? ''} placeholder="留空使用引擎默认模型" onChange={(event) => onEdit(member.id, { model: event.target.value })} /></label>
-      <label className="field"><span>职责</span><textarea className="input textarea" rows={4} value={config.system_prompt ?? ''} onChange={(event) => onEdit(member.id, { system_prompt: event.target.value })} /></label>
-      {usesNode ? <p className="muted small">{accepting[config.engine] ? `${accepting[config.engine]} 个节点可接 ${engineName(config.engine)}` : `没有节点可接 ${engineName(config.engine)}`}</p> : null}
-    </section>
-  })}</div>
 }
 
 function Trial({ teamId, draft, dirty, workflowId, navigate, onStarted }: { teamId: string; draft: DevelopmentDraft; dirty: boolean; workflowId?: string; navigate(path: string): void; onStarted(): void }) {
