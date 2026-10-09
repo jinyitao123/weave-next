@@ -1,3 +1,4 @@
+import { createUUID } from '../lib/ids'
 import { ArrowLeft } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Badge, InlineError, Select } from '../components/ui'
@@ -139,7 +140,7 @@ function Trial({ teamId, draft, dirty, workflowId, navigate, onStarted }: { team
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const [requestId, setRequestId] = useState(() => crypto.randomUUID())
+  const [requestId, setRequestId] = useState(() => createUUID())
   const start = async () => {
     if (dirty) { setError('请先保存草稿'); return }
     if (!workflowId) { setError('还没有工作流程'); return }
@@ -148,7 +149,7 @@ function Trial({ teamId, draft, dirty, workflowId, navigate, onStarted }: { team
     setError('')
     try {
       const result = await startTrial(teamId, draft.revision, workflowId, input.trim(), requestId)
-      setRequestId(crypto.randomUUID())
+      setRequestId(createUUID())
       onStarted()
       navigate(`/tasks/${encodeURIComponent(result.run_id)}`)
     } catch (failure) {
