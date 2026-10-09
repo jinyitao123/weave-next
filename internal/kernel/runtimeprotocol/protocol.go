@@ -11,6 +11,7 @@ import (
 	"path"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/jinyitao123/loom/contract"
 	"github.com/jinyitao123/weave/internal/base/execution"
@@ -69,6 +70,13 @@ type HostHelloResponse struct {
 	Versioned
 	RuntimeID string `json:"runtime_id"`
 	Name      string `json:"name"`
+}
+
+// HostHeartbeatResponse is returned with 200 when the server asks the Host to
+// re-detect its engines; an ordinary heartbeat is acknowledged with 204.
+type HostHeartbeatResponse struct {
+	Versioned
+	Probe bool `json:"probe"`
 }
 
 type HostHeartbeatRequest struct {
@@ -152,6 +160,35 @@ type ExecutionRequest struct {
 	InputFiles          []InputFile     `json:"input_files,omitempty"`
 	TaskMCP             []TaskMCPTarget `json:"task_mcp,omitempty"`
 	Loom                *LoomInput      `json:"loom,omitempty"`
+	// Code asks a CLI Host to run the member inside an exact checkout of a
+	// repository and to report the resulting commit and, when commands are
+	// declared, Host-executed verification evidence. It is attached at claim
+	// time from the run's immutable code context.
+	Code *CodeWorkspace `json:"code,omitempty"`
+}
+
+// CodeWorkspace is the repository a run works on. The Host fetches it with its
+// own git credentials, starts from Ref (or from the commit handed over by an
+// upstream stage) and never lets the member's own claims stand in for the
+// recorded commit or command results.
+type CodeWorkspace struct {
+	Repository     string   `json:"repository"`
+	Ref            string   `json:"ref"`
+	SetupScript    string   `json:"setup_script,omitempty"`
+	VerifyCommands []string `json:"verify_commands,omitempty"`
+	PushBranch     string   `json:"push_branch,omitempty"`
+	// Proxy is true when the server holds the repository credential: the Host
+	// fetches and pushes through the task-scoped git proxy instead of using
+	// its own credentials.
+	Proxy bool `json:"proxy,omitempty"`
+	// Seed carries the version and cumulative patch a previous run delivered;
+	// the first stage of a follow-up rebuilds that exact commit before it starts.
+	Seed *CodeSeed `json:"seed,omitempty"`
+}
+
+type CodeSeed struct {
+	Version string `json:"version"`
+	Patch   string `json:"patch,omitempty"`
 }
 
 type LoomInput struct {
@@ -226,6 +263,41 @@ type PublicEventsRequest struct {
 type PublicEventsResponse struct {
 	Versioned
 	AckSeq int64 `json:"ack_seq"`
+}
+
+// Task logs carry every line of an execution, beyond the bounded public
+// progress projection.
+const (
+	TaskLogBatchLimit = 200
+	TaskLogLineBytes  = 8192
+	TaskLogMaxLines   = 100000
+)
+
+type TaskLogLine struct {
+	Stream     string    `json:"stream"`
+	Seq        int64     `json:"seq"`
+	OccurredAt time.Time `json:"occurred_at"`
+	Text       string    `json:"text"`
+}
+
+type TaskLogRequest struct {
+	Versioned
+	Lines []TaskLogLine `json:"lines"`
+}
+
+func ValidateTaskLogLine(line TaskLogLine) error {
+	if line.Seq < 1 || line.Seq > TaskLogMaxLines || line.OccurredAt.IsZero() || len(line.Text) > TaskLogLineBytes || !utf8.ValidString(line.Text) {
+		return errors.New("invalid task log line")
+	}
+	if len(line.Stream) == 0 || len(line.Stream) > 40 || line.Stream[0] < 'a' || line.Stream[0] > 'z' {
+		return errors.New("invalid task log stream")
+	}
+	for _, char := range line.Stream {
+		if !(char >= 'a' && char <= 'z' || char >= '0' && char <= '9' || char == '_' || char == ':' || char == '-') {
+			return errors.New("invalid task log stream")
+		}
+	}
+	return nil
 }
 
 func ValidatePublicEvent(event PublicEvent) error {

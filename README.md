@@ -6,7 +6,7 @@
 
 The supported employee and developer product path is the [GooeyPi desktop plus Forge](https://github.com/jinyitao123/weave-workbench). Weave owns teams, published workflow versions, scheduling, execution state, leases, budgets, cancellation, recovery, and usage. Forge owns employee identity, business records and actions, permissions, approvals, and final business state.
 
-The retired web Workbench has been removed. Direct HTTP and MCP interfaces support the product integration and service operations; they do not create a second employee-facing business application.
+The retired web Workbench has been removed. Direct HTTP and MCP interfaces support the product integration and service operations; they do not create a second employee-facing business application. The server binary also serves the admin console at `/admin` for developers and operators to manage runtimes, environments, teams and tasks; its source is in [web/admin](web/admin/README.md).
 
 ## Responsibilities
 

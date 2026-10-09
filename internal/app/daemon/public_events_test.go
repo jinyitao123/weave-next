@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -162,7 +163,9 @@ func TestPublicJournalCapacityAndDiskFailureDegradeExplicitly(t *testing.T) {
 		t.Fatalf("event bound lost its explicit end: %+v %v", journal, err)
 	}
 	info, _ := os.Stat(spool.path("task-bound"))
-	if info.Mode().Perm() != 0600 {
+	// Windows has no Unix permission bits; privacy there comes from the
+	// per-user profile directory.
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0600 {
 		t.Fatal("public journal is not private")
 	}
 	for index := 0; index < publicJournalMaxFiles-1; index++ {

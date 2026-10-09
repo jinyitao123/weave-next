@@ -24,7 +24,7 @@ func (s *Server) handleRuntimeTaskEvents(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusServiceUnavailable, "activity store unavailable")
 	}
 	var payload runtimes.EngineExecRequest
-	if json.Unmarshal(task.Payload, &payload) != nil || (payload.Engine != engine.Codex && payload.Engine != engine.Claude) || payload.NodeID == "" || task.RunSnapshotID == "" {
+	if json.Unmarshal(task.Payload, &payload) != nil || !engine.PublishesPublicEvents(payload.Engine) || payload.NodeID == "" || task.RunSnapshotID == "" {
 		return echo.NewHTTPError(http.StatusConflict, "task does not support public progress")
 	}
 	var request runtimeprotocol.PublicEventsRequest

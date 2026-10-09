@@ -17,6 +17,7 @@ const (
 	identitySourceContextKey = "identity_source"
 	scopesContextKey         = "scopes"
 	apiKeyIDContextKey       = "api_key_id"
+	apiKeyNameContextKey     = "api_key_name"
 	workbenchActorContextKey = "workbench_actor_id"
 	authSourceAPIKey         = "apikey"
 	authSourceJWT            = "jwt"
@@ -119,6 +120,7 @@ func setAPIKeyContext(c echo.Context, key *apikeys.APIKey) {
 	c.Set("user_id", userID)
 	c.Set("roles", []string{key.Role})
 	c.Set(authSourceContextKey, authSourceAPIKey)
+	c.Set(apiKeyNameContextKey, key.Name)
 	c.Set(scopesContextKey, key.Scopes)
 	c.Set(apiKeyIDContextKey, key.ID)
 }

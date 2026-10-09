@@ -36,6 +36,28 @@ jobs:
       - name: Build, test, and governance
         run: make ci
 
+  admin-console:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/admin/package-lock.json
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+          cache: true
+      - name: Install console dependencies
+        run: make admin-install
+      - name: Typecheck and test the console
+        run: make admin-check
+      - name: Build the console and serve it from the embedded package
+        run: |
+          make admin-build
+          go test ./internal/app/adminui/ ./internal/app/api/ -run 'Admin|Console|WeaveService'
+
   compose-validate:
     runs-on: ubuntu-latest
     steps:

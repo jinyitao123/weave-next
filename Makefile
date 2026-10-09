@@ -1,4 +1,4 @@
-.PHONY: build test test-integration vet depguard base-depguard budgetguard governance-test productguard compose-check ci docker-build docker-image
+.PHONY: admin-install admin-check admin-build build test test-integration vet depguard base-depguard budgetguard governance-test productguard compose-check ci docker-build docker-image
 
 BUILD_COMMIT := $(shell commit=$$(git rev-parse HEAD 2>/dev/null || echo unknown); if [ "$$commit" != unknown ] && [ -n "$$(git status --porcelain 2>/dev/null)" ]; then commit="$$commit-dirty"; fi; echo "$$commit")
 WEAVE_VERSION := $(shell tr -d '[:space:]' < VERSION)
@@ -6,6 +6,16 @@ GO_PACKAGES := ./internal/... ./cmd/... ./tools/...
 
 build:
 	go build $(GO_PACKAGES)
+
+# Admin console (web/admin). admin-build embeds the result into the next Go build.
+admin-install:
+	cd web/admin && npm ci --no-audit --no-fund
+
+admin-check:
+	cd web/admin && npm run typecheck && npm test
+
+admin-build:
+	cd web/admin && npm run build
 
 test:
 	go test ./internal/... ./cmd/...

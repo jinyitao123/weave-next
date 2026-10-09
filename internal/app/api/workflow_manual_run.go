@@ -190,7 +190,13 @@ func (s *Server) admitTeamWorkflowDispatch(c echo.Context, workflowID string, re
 		Input: payload, InputVersion: inputVersion, ProjectID: admitted.ProjectID, ContextKey: contextKey,
 		Trigger: publication.PublishedTrigger{Type: expectedTrigger, SourceRef: sourceRef}, DeliveryContract: contract}
 	_, err = s.workflowAdmissions().ReserveTx(ctx, tx, intent, workflowadmission.Target{TeamID: admitted.TeamID, InputRevisionID: request.InputRevisionID, ConversationID: conversationID})
+	if errors.Is(err, publication.ErrRequestConflict) {
+		return workflowError(c, http.StatusConflict, "client_request_conflict", "client_request_id was already used for different dispatch facts")
+	}
 	if err != nil {
+		return workflowStoreFailure(c, err)
+	}
+	if err = freezeAdminCodeContext(ctx, tx, workspaceID, getUserID(c), admitted.RunID, request.codeContext); err != nil {
 		return workflowStoreFailure(c, err)
 	}
 	if err = tx.Commit(ctx); err != nil {

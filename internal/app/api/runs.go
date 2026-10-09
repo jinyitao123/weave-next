@@ -972,7 +972,7 @@ func enrichRunActivityRuntimes(
 				members[memberIndex].Runtime.ConfigurationSource = capability.ConfigurationSource
 				members[memberIndex].Runtime.AuthMode = capability.AuthMode
 			}
-			if capability, exists := runtime.EngineCapabilities[members[memberIndex].Runtime.Engine]; exists && (capability.Engine == "codex" || capability.Engine == "claude") && capability.PublicEvents {
+			if capability, exists := runtime.EngineCapabilities[members[memberIndex].Runtime.Engine]; exists && engine.PublishesPublicEvents(capability.Engine) && capability.PublicEvents {
 				members[memberIndex].Runtime.UpdateMode = "live"
 			}
 		}

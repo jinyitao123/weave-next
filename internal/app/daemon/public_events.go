@@ -154,12 +154,7 @@ func (s *publicSpool) save(journal publicJournal) error {
 	if err := os.Rename(tmp, path); err != nil {
 		return err
 	}
-	dir, err := os.Open(s.dir)
-	if err != nil {
-		return err
-	}
-	defer dir.Close()
-	return dir.Sync()
+	return syncDir(s.dir)
 }
 
 func (s *publicSpool) begin(taskID string) error {

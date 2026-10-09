@@ -61,8 +61,28 @@ func (c *runtimeClient) hello(
 	return nil
 }
 
-func (c *runtimeClient) heartbeat(ctx context.Context, activeSlots int) error {
-	return c.postNoContent(ctx, "/v1/runtime/heartbeat", runtimeprotocol.HostHeartbeatRequest{Versioned: runtimeprotocol.NewVersioned(), ActiveSlots: activeSlots})
+// heartbeat reports liveness; probe is true when an operator asked this host
+// to re-detect its engines.
+func (c *runtimeClient) heartbeat(ctx context.Context, activeSlots int) (probe bool, err error) {
+	response, err := c.do(ctx, http.MethodPost, "/v1/runtime/heartbeat", runtimeprotocol.HostHeartbeatRequest{Versioned: runtimeprotocol.NewVersioned(), ActiveSlots: activeSlots})
+	if err != nil {
+		return false, err
+	}
+	defer response.Body.Close()
+	if response.StatusCode == http.StatusNoContent {
+		return false, nil
+	}
+	if err := expectStatus(response, http.StatusOK); err != nil {
+		return false, err
+	}
+	var heartbeat runtimeprotocol.HostHeartbeatResponse
+	if err := json.NewDecoder(response.Body).Decode(&heartbeat); err != nil {
+		return false, fmt.Errorf("daemon: decode heartbeat response: %w", err)
+	}
+	if err := heartbeat.Versioned.Validate(); err != nil {
+		return false, err
+	}
+	return heartbeat.Probe, nil
 }
 
 func (c *runtimeClient) claim(ctx context.Context, waitSeconds int) (*runtimeprotocol.ExecutionClaim, error) {

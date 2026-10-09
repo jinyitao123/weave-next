@@ -76,7 +76,8 @@ func NewManagedHost(ctx context.Context, cfg HostConfig) (Host, error) {
 }
 
 func (d *service) Capabilities() []runtimeprotocol.EngineCapability {
-	return append([]runtimeprotocol.EngineCapability(nil), d.engineCapabilities...)
+	_, capabilities := d.engines()
+	return capabilities
 }
 
 type subjectBinding struct {
@@ -150,12 +151,7 @@ func (g *subjectGuard) bind(subject execution.Subject) (string, *engine.ProcessI
 		if err != nil {
 			return "", nil, err
 		}
-		dir, err := os.Open(bindingRoot)
-		if err != nil {
-			return "", nil, err
-		}
-		err = errors.Join(dir.Sync(), dir.Close())
-		if err != nil {
+		if err = syncDir(bindingRoot); err != nil {
 			return "", nil, err
 		}
 	}

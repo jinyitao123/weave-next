@@ -6,7 +6,7 @@
 
 员工和开发者使用 [GooeyPi 桌面加 Forge](https://github.com/jinyitao123/weave-workbench) 完成受支持的产品流程。Weave 负责团队与成员定义、已发布工作流版本、调度、执行状态、租约、额度、取消、恢复、用量和运行时接入。Forge 负责员工身份、业务记录与动作、权限、审批及最终业务状态。
 
-已退役的网页 Workbench 代码已删除。HTTP 与 MCP 接口用于产品集成和服务运维，不构成第二套员工业务界面。
+已退役的网页 Workbench 代码已删除。HTTP 与 MCP 接口用于产品集成和服务运维，不构成第二套员工业务界面。服务端二进制在 `/admin` 提供管理端，供开发者和运维管理节点、环境、团队与任务，源码见 [web/admin](web/admin/README.md)。
 
 ## 职责
 
