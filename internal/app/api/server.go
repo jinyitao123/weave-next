@@ -64,6 +64,7 @@ import (
 
 // Server holds all shared dependencies for the HTTP API.
 type Server struct {
+	Feishu                    *feishuClient
 	Echo                      *echo.Echo
 	Store                     loom.Store
 	Registry                  *agentcatalog.AgentRegistry
@@ -291,12 +292,14 @@ func NewServer(cfg *config.Config, store loom.Store, models *llmrouter.Resolver)
 		s.sessionExecutionWorkers = newSessionExecutionWorkers(s)
 	}
 
+	s.Feishu = feishuFromEnv()
 	s.registerRoutes()
 	return s
 }
 
 func (s *Server) registerRoutes() {
 	// Public endpoints (no auth).
+	s.Echo.POST("/v1/integrations/feishu/events", s.handleFeishuEvent)
 	s.Echo.GET("/v1/health", s.handleHealth)
 	s.Echo.GET("/v1/ready", s.handleReady)
 	s.Echo.GET("/install.sh", s.handleInstallScript)
@@ -312,6 +315,9 @@ func (s *Server) registerRoutes() {
 
 	// Authenticated endpoints.
 	auth := authenticatedRouteGroup(s.Echo, "/v1", AuthMiddleware(s.Config.JWTSecret, keyStoreGetter, userStoreGetter))
+	auth.GET("/integrations/feishu/binding", s.handleFeishuBinding)
+	auth.POST("/integrations/feishu/link-code", s.handleFeishuLinkCode)
+	auth.DELETE("/integrations/feishu/binding", s.handleFeishuUnlink)
 	adminScope := RequireScope("admin")
 	agentsScope := RequireScope("agents")
 	chatScope := RequireScope("chat")
@@ -601,6 +607,7 @@ func (s *Server) ConfigureTeamRunWorkers() {
 		return
 	}
 	s.employeeRunEventWorker = newEmployeeRunEventWorker(pool)
+	s.employeeRunEventWorker.FeishuServer = s
 	s.taskDelegationRevoker = newTaskDelegationRevoker(pool)
 	runStore := teamrun.NewPGStore()
 	runStore.Transactions = pool

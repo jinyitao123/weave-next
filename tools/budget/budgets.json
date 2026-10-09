@@ -887,6 +887,38 @@
         "lines_added": 123,
         "production_lines_added": 58
       }
+    },
+    {
+      "date": "2026-10-09",
+      "reason": "Owner-requested Feishu integration adapted from nexus: verified private callback receipts, expiring Forge employee pairing, existing fixed-input/workflow dispatch and revision, schema-bound human continuation, and independent receipts on the existing employee event outbox. No new packages, external modules, execution queues or dependency exceptions. Exact measured production and regression growth.",
+      "record": "README.zh-CN.md#飞书机器人",
+      "growth": {
+        "lines": 1288,
+        "production_lines": 912
+      },
+      "deletion_trigger": "Remove this app-specific transport, callback receipt/link tables and dedicated tests only after every supported Feishu deployment has migrated to an equivalent verified shared message transport and a full release has no remaining calls; lower measured budgets in that change. Existing task, workflow, native inbox and authority checks remain. This supported optional integration has no current retirement task.",
+      "app": {
+        "previous_lines": 71233,
+        "previous_production_lines": 49148,
+        "lines_added": 1288,
+        "production_lines_added": 912
+      }
+    },
+    {
+      "date": "2026-10-09",
+      "reason": "Recheck the original Feishu message employee binding immediately before cached work replies are delivered. Replace revoked replies durably with non-sensitive text; retain fixed pairing and unlink acknowledgements. Existing PostgreSQL tests cover valid binding, unlink, disabled account, expiry, account rebinding, removed membership and fixed acknowledgements. Exact measured growth with no new packages, dependencies or execution paths.",
+      "record": "README.zh-CN.md#飞书机器人",
+      "growth": {
+        "lines": 92,
+        "production_lines": 25
+      },
+      "deletion_trigger": "Remove this delivery authorization check and its dedicated regressions only when the Feishu transport is retired under its existing migration trigger, or an equivalent shared delivery gate enforces the same original-employee binding and revocation rules; lower the measured budgets in that change.",
+      "app": {
+        "previous_lines": 72521,
+        "previous_production_lines": 50060,
+        "lines_added": 92,
+        "production_lines_added": 25
+      }
     }
   ],
   "migration_targets": {
@@ -950,8 +982,8 @@
     "allowed_dependencies": []
   },
   "app": {
-    "lines": 71233,
-    "production_lines": 49148,
+    "lines": 72613,
+    "production_lines": 50085,
     "packages": 24,
     "external_dependencies": 6,
     "allowed_dependencies": [

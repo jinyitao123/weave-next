@@ -48,3 +48,25 @@ make compose-check
 ## 许可
 
 本仓使用 [MIT 许可证](LICENSE)。
+
+## 飞书机器人
+
+可选双向消息接入，默认关闭。发送实现改编自[nexus](https://github.com/jinyitao123/nexus/blob/100890744f1189d149f4000919539fb057dd4c75/orchestration/internal/notify/feishu.go)，保留应用token内存缓存并补充HTTP/JSON/业务码/消息回执检查、禁止重定向和来源消息去重。接收及任务适配在`internal/app/api/feishu_*.go`；不增加SDK依赖、执行队列、员工角色、业务审批或待办体系。共享契约由[产品总仓](https://github.com/jinyitao123/weave-workbench/blob/main/contracts/v1/README.md#飞书机器人双向接入)维护。
+
+部署方从安全的环境配置提供以下变量，不把值写入Git或模型输入：
+
+| 变量 | 含义 |
+| --- | --- |
+| `WEAVE_FEISHU_APP_ID` | 自建应用App ID |
+| `WEAVE_FEISHU_APP_SECRET` | 自建应用密钥 |
+| `WEAVE_FEISHU_VERIFICATION_TOKEN` | 事件订阅Verification Token |
+| `WEAVE_FEISHU_ENCRYPT_KEY` | 事件订阅Encrypt Key |
+| `WEAVE_FEISHU_TENANT_KEY` | 唯一允许接入的飞书租户 |
+
+飞书自建应用启用机器人、私聊消息接收事件`im.message.receive_v1`及`im:message:send_as_bot`发送权限，订阅地址设为部署方可访问的`/v1/integrations/feishu/events`。协议参见[发送消息](https://open.feishu.cn/document/server-docs/im-v1/message/create)与[官方事件实现](https://github.com/larksuite/oapi-sdk-go/blob/v3_main/event/event.go)。普通事件回调核对签名、时间、Verification Token、App ID与租户；URL校验按飞书官方协议仅验证加密challenge/token，不要求签名头，再持久化消息回执并应答；既有员工运行事件worker处理该回执，使接收请求不等待模型执行。仅接受真人私聊文本。
+
+员工在GooeyPi桌面“设置／企业账号／飞书”取得绑定码，向机器人发送`绑定 <码>`，然后可发送`团队`、`开始 <团队名称> <任务>`、`查看`、`继续 <补充要求>`和`确认 <JSON>`。绑定码只保存摘要，10分钟单次有效；连接到期不超过员工登录会话到期及8小时，过期需本人重新登录/绑定。解除连接可从桌面或机器人`解绑`办理；解绑不取消已接单工作。
+
+发起与修订复用现有固定输入、已发布流程、成员队列和成果记录，授权业务动作空集。继续绑定原目标、原输入与上一版成果；团队人工确认沿用当前交互ID、schema和既有续办服务。涉及Forge正式业务、文件或授权续签须回桌面办理。运行事件分别保留Forge与飞书真实回执；飞书仅通知该来源工作绑定的本人，其他员工和群聊不能代办或读取。本地schema隔离的PostgreSQL回归实际运行已发布的确定性流程，覆盖接单去重、成果修订、人工停等/确认、终态推送及账号隔离；该证据不表示飞书线上或业务闭环已验收。
+
+飞书消息请求使用稳定`uuid`。其原生去重有时间窗，断网后超窗重试仍可能重复消息，因此不能宣称严格一次投递；固定输入和任务准入保留平台幂等。每个私聊按接收顺序办理；服务或投递失败保留原消息和固定版本，稍后重试，不能切换到新父任务。运行状态和业务状态仍由各自服务拥有。

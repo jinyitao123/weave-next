@@ -34,6 +34,7 @@ type employeeRunEvent struct {
 }
 
 type employeeRunEventWorker struct {
+	FeishuServer *Server
 	Pool         *pgxpool.Pool
 	Endpoint     string
 	Secret       string
@@ -60,7 +61,7 @@ func newEmployeeRunEventWorker(pool *pgxpool.Pool) *employeeRunEventWorker {
 }
 
 func (worker *employeeRunEventWorker) configured() bool {
-	return worker != nil && worker.Pool != nil && worker.Endpoint != "" && worker.Secret != ""
+	return worker != nil && worker.Pool != nil && ((worker.Endpoint != "" && worker.Secret != "") || (worker.FeishuServer != nil && worker.FeishuServer.Feishu.configured()))
 }
 
 func (worker *employeeRunEventWorker) Start() {
@@ -124,12 +125,17 @@ func (worker *employeeRunEventWorker) Sweep(ctx context.Context) (int, error) {
 	if !worker.configured() {
 		return 0, nil
 	}
+	feishuProcessed, feishuErr := worker.sweepFeishu(ctx)
 	if err := worker.materialize(ctx); err != nil {
-		return 0, err
+		return feishuProcessed, errors.Join(feishuErr, err)
 	}
+	if worker.Endpoint == "" || worker.Secret == "" {
+		return feishuProcessed, feishuErr
+	}
+
 	event, err := worker.claim(ctx)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return 0, nil
+		return feishuProcessed, feishuErr
 	}
 	if err != nil {
 		return 0, err
@@ -138,7 +144,7 @@ func (worker *employeeRunEventWorker) Sweep(ctx context.Context) (int, error) {
 	if err := worker.finish(ctx, event, status, notificationID, deliveryErr); err != nil {
 		return 0, err
 	}
-	return 1, nil
+	return 1 + feishuProcessed, feishuErr
 }
 
 // employeeRunEventBatch bounds how many terminal runs one sweep turns into
