@@ -1,3 +1,4 @@
+import { createUUID } from '../lib/ids'
 import { ArrowUp } from 'lucide-react'
 import { useEffect, useState, type KeyboardEvent } from 'react'
 import { Badge, InlineError } from '../components/ui'
@@ -30,7 +31,7 @@ export function FollowUpComposer({ runId, status, navigate }: { runId: string; s
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const [requestId, setRequestId] = useState(() => crypto.randomUUID())
+  const [requestId, setRequestId] = useState(() => createUUID())
   if (!terminal(status)) return null
   const submit = async () => {
     if (!text.trim()) { setError('请描述这一轮要做的事'); return }
@@ -39,7 +40,7 @@ export function FollowUpComposer({ runId, status, navigate }: { runId: string; s
     try {
       const result = await submitFollowUp(runId, text.trim(), requestId)
       setText('')
-      setRequestId(crypto.randomUUID())
+      setRequestId(createUUID())
       navigate(`/tasks/${encodeURIComponent(result.run_id)}`)
     } catch (failure) {
       setError(errorMessage(failure))

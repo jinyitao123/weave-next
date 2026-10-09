@@ -1,3 +1,4 @@
+import { createUUID } from '../lib/ids'
 import { ArrowUp } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState, type KeyboardEvent } from 'react'
 import { Badge, EmptyState, InlineError, Select } from '../components/ui'
@@ -97,7 +98,7 @@ function Composer({ teams, nodes, environments, onSubmitted, navigate }: { teams
   }
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const [requestId, setRequestId] = useState(() => crypto.randomUUID())
+  const [requestId, setRequestId] = useState(() => createUUID())
   const team = teams?.find((item) => item.id === teamId) ?? teams?.[0]
   const accepting = useMemo(() => nodes?.filter((node) => node.accepting).length ?? 0, [nodes])
 
@@ -119,7 +120,7 @@ function Composer({ teams, nodes, environments, onSubmitted, navigate }: { teams
       writeLastTeam(team.id)
       writeLastEnvironment(environment?.id ?? '')
       setText('')
-      setRequestId(crypto.randomUUID())
+      setRequestId(createUUID())
       onSubmitted(result.run_id)
     } catch (failure) {
       setError(errorMessage(failure))
