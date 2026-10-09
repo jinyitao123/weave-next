@@ -8,7 +8,7 @@ import type { Graph } from '../lib/graph'
 import { WorkflowEditor } from '../components/workflow/WorkflowEditor'
 import { listNodes, type RuntimeNode } from '../lib/nodes'
 import { executionLabel } from '../lib/tasks'
-import { isCLIEngine, memberIssues, pinMembers, publishDevelopment, readDevelopment, saveDevelopment, startTrial, withStarterWorkflow, type DevelopmentDocument, type DevelopmentDraft, type DevelopmentMember } from '../lib/teams'
+import { isCLIEngine, nodeReadinessIssues, pinMembers, publishDevelopment, readDevelopment, saveDevelopment, startTrial, withStarterWorkflow, type DevelopmentDocument, type DevelopmentDraft, type DevelopmentMember } from '../lib/teams'
 
 const engines = ['claude', 'codex', 'opencode', 'loom']
 
@@ -52,11 +52,7 @@ export function TeamDetailPage({ teamId, navigate }: { teamId: string; navigate(
   const workflow = document?.workflows[0]
   const issues = useMemo(() => {
     if (!document) return []
-    const found: string[] = []
-    for (const member of document.members.filter((item) => item.configuration.role === 'worker' && item.relationship.enabled !== false)) {
-      if (!accepting[member.configuration.engine]) found.push(`“${member.configuration.display_name}”使用的 ${engineName(member.configuration.engine)} 当前没有可接任务的节点`)
-    }
-    found.push(...memberIssues(document))
+    const found = nodeReadinessIssues(document, accepting)
     if (!workflow) found.push('还没有工作流程')
     return found
   }, [document, accepting, workflow])
@@ -94,7 +90,7 @@ export function TeamDetailPage({ teamId, navigate }: { teamId: string; navigate(
     }
   }
 
-  return <section className="page">
+  return <section className={`page${tab === 'workflow' ? ' page--wide' : ''}`}>
     <header className="task-header">
       <button type="button" className="icon-button" aria-label="返回团队列表" onClick={() => navigate('/teams')}><ArrowLeft size={16} /></button>
       <div className="task-header__title"><h1>{document?.name ?? '团队'}</h1><p className="muted small">{document?.objective}</p></div>
@@ -126,12 +122,12 @@ function Members({ document, nodes, accepting, onEdit }: { document: Development
     return <section key={member.id} className="member-card" aria-label={config.display_name}>
       <label className="field"><span>名称</span><input className="input" value={config.display_name} maxLength={80} onChange={(event) => onEdit(member.id, { display_name: event.target.value })} /></label>
       <div className="member-card__row">
-        <div className="field"><span>引擎</span><Select label={`${config.display_name}的引擎`} value={config.engine} options={engines.map((engine) => ({ value: engine, label: engineName(engine), detail: `${accepting[engine] ?? 0} 个节点可接` }))} onChange={(engine) => onEdit(member.id, { engine, runtime_id: '' })} /></div>
+        <div className="field"><span>引擎</span><Select label={`${config.display_name}的引擎`} value={config.engine} options={engines.map((engine) => ({ value: engine, label: engineName(engine), detail: isCLIEngine(engine) ? `${accepting[engine] ?? 0} 个节点可接` : '无需节点' }))} onChange={(engine) => onEdit(member.id, { engine, runtime_id: '' })} /></div>
         <div className="field"><span>节点</span><Select label={`${config.display_name}的节点`} value={config.runtime_id ?? ''} placeholder={nodeOptions.length ? '选择节点' : '没有提供该引擎的节点'} options={nodeOptions} onChange={(runtime) => onEdit(member.id, { runtime_id: runtime })} /></div>
       </div>
       <label className="field"><span>模型</span><input className="input" value={config.model ?? ''} placeholder="留空使用引擎默认模型" onChange={(event) => onEdit(member.id, { model: event.target.value })} /></label>
       <label className="field"><span>职责</span><textarea className="input textarea" rows={4} value={config.system_prompt ?? ''} onChange={(event) => onEdit(member.id, { system_prompt: event.target.value })} /></label>
-      <p className="muted small">{accepting[config.engine] ? `${accepting[config.engine]} 个节点可接 ${engineName(config.engine)}` : `没有节点可接 ${engineName(config.engine)}`}</p>
+      <p className="muted small">{!isCLIEngine(config.engine) ? `${engineName(config.engine)}在服务端运行，不需要节点` : accepting[config.engine] ? `${accepting[config.engine]} 个节点可接 ${engineName(config.engine)}` : `没有节点可接 ${engineName(config.engine)}`}</p>
     </section>
   })}</div>
 }

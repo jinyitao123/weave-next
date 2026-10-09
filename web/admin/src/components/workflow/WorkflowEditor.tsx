@@ -1,5 +1,5 @@
 import { GitBranch, Plus, Trash2 } from 'lucide-react'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { Drawer, InlineError, Select, Switch } from '../ui'
 import { maxVerifyRounds, serialSteps, verifyLoop, type Graph, type Step } from '../../lib/graph'
 import type { DevelopmentMember } from '../../lib/teams'
@@ -14,6 +14,13 @@ export function WorkflowEditor({ graph, members, onChange }: { graph: Graph; mem
   const [form, setForm] = useState<Form>()
   const [deleting, setDeleting] = useState(false)
   const [error, setError] = useState('')
+  const inspector = useRef<HTMLElement>(null)
+  // Below the two-column breakpoint the inspector sits under the canvas, so a
+  // selected step brings it into view instead of leaving the edit off screen.
+  const revealInspector = () => {
+    if (typeof window.matchMedia !== 'function' || !window.matchMedia('(max-width: 1100px)').matches) return
+    requestAnimationFrame(() => inspector.current?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' }))
+  }
   const step = graph.nodes.find(node => node.id === selected) ?? graph.nodes[0]
   const loop = verifyLoop(graph), serial = serialSteps(graph)
   const loopable = Boolean(loop) || (serial.serial && serial.steps.length === 2 && serial.steps.every(node => node.type === 'worker'))
@@ -44,8 +51,8 @@ export function WorkflowEditor({ graph, members, onChange }: { graph: Graph; mem
       {loop ? <div className="field"><span>最多轮数</span><Select label="最多轮数" value={String(loop.rounds)} options={Array.from({ length: maxVerifyRounds }, (_, index) => ({ value: String(index + 1), label: `${index + 1} 轮` }))} onChange={value => change(current => setVerificationLoop(current, true, Number(value)))} /></div> : null}
     </div> : null}
     <div className="flow-editor__workspace">
-      <FlowCanvas graph={graph} members={members} selected={step?.id} onSelect={id => { setSelected(id); setError('') }} />
-      {step ? <section className="flow-editor__inspector" aria-label={`${step.label || stepLabel(step.type)}配置`}>
+      <FlowCanvas graph={graph} members={members} selected={step?.id} onSelect={id => { setSelected(id); setError(''); revealInspector() }} />
+      {step ? <section ref={inspector} className="flow-editor__inspector" aria-label={`${step.label || stepLabel(step.type)}配置`}>
         <h2>{step.label || stepLabel(step.type)}</h2>
         {!loop ? <div className="flow-editor__actions">
           {canInsertSerialStep(graph, step.id) ? <button type="button" className="button" onClick={() => open('serial')}><Plus size={14} />{step.type === 'parallel' ? '汇合后添加步骤' : '添加下一步'}</button> : null}
@@ -64,10 +71,11 @@ export function WorkflowEditor({ graph, members, onChange }: { graph: Graph; mem
         <div className="field"><span>执行成员</span><Select label="新步骤执行成员" value={form.member} options={available.map(member => ({ value: member.id, label: member.configuration.display_name }))} onChange={member => setForm({ ...form, member })} /></div>
         <label className="field"><span>步骤名称</span><input className="input" value={form.name} maxLength={80} onChange={event => setForm({ ...form, name: event.target.value })} /></label>
         <label className="field"><span>工作要求</span><textarea className="input textarea" rows={4} value={form.requirement} onChange={event => setForm({ ...form, requirement: event.target.value })} /></label>
+        {!form.member || !form.name.trim() || !form.requirement.trim() ? <p className="muted small">选择执行成员，并填写步骤名称和工作要求后才能添加。</p> : null}
         {error ? <InlineError message={error} /> : null}
       </div>
     </Drawer> : null}
-    {deleting && step ? <Drawer title="删除步骤" onClose={() => setDeleting(false)} footer={<><button type="button" className="button" onClick={() => setDeleting(false)}>取消</button><button type="button" className="button" onClick={() => { if (structure(current => removeStep(current, step.id))) { setDeleting(false); setSelected(graph.entry_node_id) } }}>确定删除</button></>}><p>删除“{step.label || stepLabel(step.type)}”？</p>{error ? <InlineError message={error} /> : null}</Drawer> : null}
+    {deleting && step ? <Drawer title="删除步骤" onClose={() => setDeleting(false)} footer={<><button type="button" className="button" onClick={() => setDeleting(false)}>取消</button><button type="button" className="button button--danger" onClick={() => { if (structure(current => removeStep(current, step.id))) { setDeleting(false); setSelected(graph.entry_node_id) } }}>确定删除</button></>}><p>删除“{step.label || stepLabel(step.type)}”？</p>{error ? <InlineError message={error} /> : null}</Drawer> : null}
   </div>
 }
 
