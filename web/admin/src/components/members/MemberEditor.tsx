@@ -50,7 +50,7 @@ function MemberDetail({ member, nodes, accepting, models, onConfig, onRelationsh
   const kinds = relation.allowed_kinds?.length ? relation.allowed_kinds : defaultKinds
   const defaultKind = relation.allowed_kinds?.length ? relation.default_kind ?? '' : 'dispatch'
   const toggleKind = (kind: string) => {
-    const next = handoffKinds.map((item) => item.value).filter((value) => value === kind ? !kinds.includes(value) : kinds.includes(value))
+    const next: string[] = handoffKinds.map((item) => item.value).filter((value) => value === kind ? !kinds.includes(value) : kinds.includes(value))
     if (!next.length) return
     onRelationship({ allowed_kinds: next, default_kind: next.includes(defaultKind) ? defaultKind : next[0] })
   }
