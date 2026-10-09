@@ -74,8 +74,12 @@ export async function signInWithForge(forgeOrigin: string, email: string, passwo
   try {
     return await api<AdminSession>('/v1/admin/session', { method: 'POST', body: JSON.stringify({ forge_token: forgeToken }) })
   } finally {
-    void fetch(new URL('/api/v1/auth/sign-out', forgeOrigin), {
-      method: 'POST', headers: { Authorization: `Bearer ${forgeToken}` }, credentials: 'omit',
+    await fetch(new URL('/api/v1/auth/sign-out', forgeOrigin), {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${forgeToken}`, 'Content-Type': 'application/json' },
+      body: '{}',
+      credentials: 'omit',
+      signal: AbortSignal.timeout(10_000),
     }).catch(() => undefined)
   }
 }
