@@ -1,0 +1,24 @@
+.flow-editor { display: grid; gap: 16px; }
+.flow-editor__loop { display: flex; align-items: center; flex-wrap: wrap; gap: 16px; }
+.flow-editor__workspace { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 16px; align-items: start; }
+.flow-editor__canvas { overflow: auto; min-width: 0; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--subtle); }
+.flow-editor__graph { position: relative; min-height: 150px; }
+.flow-editor__graph > svg { position: absolute; inset: 0; overflow: visible; pointer-events: none; }
+.flow-editor__graph path { fill: none; stroke: var(--border-strong); stroke-width: 1.5; }
+.flow-editor__graph path.is-back { stroke: var(--accent); stroke-dasharray: 4 3; }
+.flow-editor__graph marker path { fill: var(--border-strong); stroke: none; }
+.flow-editor__edge-label { position: absolute; transform: translate(-50%, -50%); padding: 0 6px; color: var(--accent); background: var(--subtle); font-size: var(--text-xs); white-space: nowrap; pointer-events: none; }
+.flow-editor__node { position: absolute; display: flex; align-items: center; gap: 8px; padding: 10px; border: 1px solid var(--border-strong); border-radius: var(--radius-md); color: var(--text); background: var(--canvas); text-align: left; cursor: pointer; }
+.flow-editor__node:hover { background: var(--hover); }
+.flow-editor__node.is-selected { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+.flow-editor__node > svg { flex-shrink: 0; color: var(--accent); }
+.flow-editor__node > span { min-width: 0; display: grid; }
+.flow-editor__node strong, .flow-editor__node small { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.flow-editor__node small { color: var(--text-muted); font-size: var(--text-xs); }
+.flow-editor__inspector { min-width: 0; padding: 16px; display: grid; gap: 16px; border: 1px solid var(--border); border-radius: var(--radius-lg); }
+.flow-editor__actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.flow-editor__sources { display: grid; gap: 8px; }
+.flow-editor__sources h3 { font-size: var(--text-md); margin: 0; }
+.flow-editor__sources .button { justify-content: flex-start; white-space: normal; height: auto; min-height: 32px; text-align: left; }
+.flow-editor__sources .button[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+@media (max-width: 1100px) { .flow-editor__workspace { grid-template-columns: minmax(0, 1fr); } }
