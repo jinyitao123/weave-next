@@ -222,3 +222,70 @@ func TestFeishuHumanContinuationAndDurableNotificationsRealPG(t *testing.T) {
 		t.Fatalf("unexpected duplicate lifecycle events: %d", count)
 	}
 }
+
+func TestFeishuCachedReplyRechecksOriginalEmployeeRealPG(t *testing.T) {
+	s, pool := newTeamDispatchTestServer(t)
+	for _, scenario := range []struct {
+		name, mutation, command, cached string
+		allowed                         bool
+	}{
+		{"current binding", "", `{"text":"查看"}`, "private old result", true},
+		{"unlinked", `DELETE FROM weave_feishu_links`, `{"text":"查看"}`, "private old result", false},
+		{"disabled", `UPDATE weave_users SET disabled=true WHERE id='user'`, `{"text":"查看"}`, "private old result", false},
+		{"expired", `UPDATE weave_feishu_links SET expires_at=now()-interval '1 second'`, `{"text":"查看"}`, "private old result", false},
+		{"rebound", `UPDATE weave_feishu_links SET user_id='user-other'`, `{"text":"查看"}`, "private old result", false},
+		{"membership removed", `DELETE FROM weave_members WHERE user_id='user'`, `{"text":"查看"}`, "private old result", false},
+		{"binding acknowledgement", `DELETE FROM weave_feishu_links`, `{"text":"绑定","binding_code_hash":"used-code"}`, "已绑定。", true},
+		{"unlink acknowledgement", `DELETE FROM weave_feishu_links`, `{"text":"解绑"}`, "已解绑。已接单的工作继续运行。", true},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			f, _, sent := testFeishuClient(t)
+			s.Feishu = f
+			_, err := pool.Exec(t.Context(), `DELETE FROM weave_feishu_messages; DELETE FROM weave_feishu_links;
+ UPDATE weave_users SET disabled=false WHERE id='user';
+ INSERT INTO weave_members(workspace_id,user_id,role) VALUES('ws','user','member'),('ws','user-other','member') ON CONFLICT DO NOTHING;
+ INSERT INTO weave_feishu_links(app_id,workspace_id,user_id,open_id,expires_at) VALUES('app','ws','user','open-user',now()+interval '1 hour')`)
+			if err != nil {
+				t.Fatal(err)
+			}
+			// The prior sweep already read the result and persisted its reply.
+			// Change authorization before the next sweep sends that cached body.
+			_, err = pool.Exec(t.Context(), `INSERT INTO weave_feishu_messages(app_id,message_id,open_id,workspace_id,user_id,content_hash,command,response)
+ VALUES('app','cached','open-user','ws','user','hash',$1::jsonb,$2)`, scenario.command, scenario.cached)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if scenario.mutation != "" {
+				if _, err = pool.Exec(t.Context(), scenario.mutation); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if n, err := s.sweepFeishuCommand(t.Context()); err != nil || n != 1 {
+				t.Fatalf("delivery n=%d err=%v", n, err)
+			}
+			if len(*sent) != 1 {
+				t.Fatalf("messages=%d", len(*sent))
+			}
+			var payload struct {
+				Text string `json:"text"`
+			}
+			if err := json.Unmarshal([]byte((*sent)[0]), &payload); err != nil {
+				t.Fatal(err)
+			}
+			if scenario.allowed {
+				if payload.Text != scenario.cached {
+					t.Fatalf("authorized reply changed: %q", payload.Text)
+				}
+			} else if strings.Contains(payload.Text, scenario.cached) || !strings.Contains(payload.Text, "绑定已失效") {
+				t.Fatalf("revoked employee received cached result: %q", payload.Text)
+			}
+			var stored, receipt string
+			if err := pool.QueryRow(t.Context(), `SELECT response,reply_message_id FROM weave_feishu_messages WHERE message_id='cached'`).Scan(&stored, &receipt); err != nil || stored != payload.Text || receipt == "" {
+				t.Fatalf("reply replacement/receipt not durable: err=%v", err)
+			}
+			if n, err := s.sweepFeishuCommand(t.Context()); err != nil || n != 0 || len(*sent) != 1 {
+				t.Fatalf("reply repeated: n=%d err=%v", n, err)
+			}
+		})
+	}
+}

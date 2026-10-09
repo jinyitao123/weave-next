@@ -92,6 +92,31 @@ func (s *Server) sweepFeishuCommand(ctx context.Context) (processed int, outcome
 		return 0, errors.New("feishu command invalid")
 	}
 	if response != nil {
+		// Work replies can contain a cached result. Authorization at command
+		// execution does not authorize delivery after expiry, unlink or rebinding.
+		// Pairing and unlink acknowledgements contain only fixed, public text.
+		if command.BindingCodeHash == "" && strings.TrimSpace(command.Text) != "解绑" {
+			var allowed bool
+			if workspace != nil && user != nil {
+				err = tx.QueryRow(ctx, `SELECT EXISTS(
+ SELECT 1 FROM weave_feishu_links link
+ JOIN weave_users u ON u.id=link.user_id AND u.tenant_id=link.workspace_id AND NOT u.disabled
+ JOIN weave_members member ON member.workspace_id=link.workspace_id AND member.user_id=link.user_id
+ WHERE link.app_id=$1 AND link.open_id=$2 AND link.workspace_id=$3 AND link.user_id=$4
+ AND link.expires_at>statement_timestamp())`, s.Feishu.appID, openID, *workspace, *user).Scan(&allowed)
+				if err != nil {
+					return 0, err
+				}
+			}
+			if !allowed {
+				*response = "绑定已失效或员工当前无权查看，请在桌面重新登录并绑定。"
+				// Persist the replacement even if sending fails, so a later binding
+				// cannot revive the old account's cached result on retry.
+				if _, err = tx.Exec(ctx, `UPDATE weave_feishu_messages SET response=$3 WHERE app_id=$1 AND message_id=$2`, s.Feishu.appID, messageID, *response); err != nil {
+					return 0, err
+				}
+			}
+		}
 		id, err := s.Feishu.send(ctx, openID, feishuMessageKey(s.Feishu.appID, messageID), *response)
 		if err != nil {
 			if _, delayErr := tx.Exec(ctx, `UPDATE weave_feishu_messages SET attempts=attempts+1,next_attempt_at=statement_timestamp()+interval '30 seconds' WHERE app_id=$1 AND message_id=$2`, s.Feishu.appID, messageID); delayErr != nil {
