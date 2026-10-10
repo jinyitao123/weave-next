@@ -319,8 +319,8 @@ func TestDevelopmentTrialToolJournalEvidenceRealPG(t *testing.T) {
 	if _, err := fixture.pool.Exec(fixture.ctx, `UPDATE loom_store SET value=$3 WHERE namespace='member-operation:' || $1 AND key=$2`, fixture.workspace, key, savedReceipt); err != nil {
 		t.Fatal(err)
 	}
-	if status, _, _, body := fixture.activity(t, "another-developer"); status != http.StatusNotFound || strings.Contains(body, "record-node") {
-		t.Fatal("another developer received trial tool evidence")
+	if status, _, _, body := fixture.activity(t, "another-developer"); status != http.StatusOK || !strings.Contains(body, "record-node") {
+		t.Fatalf("another developer of the workspace could not read trial tool evidence: status=%d", status)
 	}
 	if status, _, _, body := fixture.activity(t, fixture.actor, "member"); status != http.StatusForbidden || strings.Contains(body, "record-node") {
 		t.Fatal("the trial actor retained raw evidence after losing developer access")
