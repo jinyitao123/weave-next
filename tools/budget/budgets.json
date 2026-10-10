@@ -957,6 +957,22 @@
         "lines_added": 961,
         "production_lines_added": 724
       }
+    },
+    {
+      "date": "2026-10-09",
+      "reason": "Let the admin console offer the Forge business actions a member may use without holding a Forge credential: a developer, administrator or owner Forge sign-in reads the current action catalog once with that session and keeps a bounded definition snapshot per workspace, served to the console for developers and above. Reads are time and size limited, normalized against unknown values, never store or log the token and leave the previous snapshot in place on failure; publication and runs still check the live catalog under the employee delegation. No new packages, dependencies or execution paths. Real PostgreSQL tests cover capture, replacement, failed refresh, role gating and workspace isolation.",
+      "record": "README.zh-CN.md#业务能力目录快照",
+      "growth": {
+        "lines": 348,
+        "production_lines": 213
+      },
+      "deletion_trigger": "Remove the catalog snapshot table, its sign-in capture and read route with their regressions when the console reads the catalog through a Forge-issued delegation of its own, or when a recorded decision stops offering business action selection in the console; lower the measured budgets in that change.",
+      "app": {
+        "previous_lines": 79408,
+        "previous_production_lines": 54215,
+        "lines_added": 348,
+        "production_lines_added": 213
+      }
     }
   ],
   "migration_targets": {
@@ -1020,8 +1036,8 @@
     "allowed_dependencies": []
   },
   "app": {
-    "lines": 79408,
-    "production_lines": 54215,
+    "lines": 79756,
+    "production_lines": 54428,
     "packages": 25,
     "external_dependencies": 6,
     "allowed_dependencies": [
