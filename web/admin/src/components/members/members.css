@@ -38,3 +38,8 @@
 .members__catalog { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 .members__catalog-item { width: 100%; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid var(--border-strong); border-radius: var(--radius-md); background: var(--canvas); color: var(--text); text-align: left; cursor: pointer; }
 .members__catalog-item:hover { background: var(--hover); }
+.members__side { display: grid; gap: 10px; align-content: start; position: sticky; top: 16px; }
+.members__side .members__list { position: static; }
+.members__header { position: relative; }
+.members__remove { position: absolute; top: 0; right: 0; }
+@media (max-width: 900px) { .members__side { position: static; } }

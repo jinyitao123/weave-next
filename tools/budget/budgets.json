@@ -973,6 +973,22 @@
         "lines_added": 348,
         "production_lines_added": 213
       }
+    },
+    {
+      "date": "2026-10-10",
+      "reason": "Let administrators and owners read every team run of the workspace in the console, with where it was started and by whom, and record each view of someone else's run without its content; acting on a run stays with its submitter. Let a developer refresh the business action catalog snapshot on request by proving the same Forge account once more, reusing the sign-in verification and the existing snapshot writer. No new packages, dependencies or execution paths. Real PostgreSQL tests cover the widened list, its filters, the unchanged developer view and the refresh with a matching, a foreign and an under-privileged account.",
+      "record": "README.zh-CN.md#管理端查看运行与刷新目录",
+      "growth": {
+        "lines": 197,
+        "production_lines": 107
+      },
+      "deletion_trigger": "Remove the run view audit and the widened list when a recorded decision returns run reading to submitters only; remove the on-request refresh with the catalog snapshot under its own trigger. Lower the measured budgets in that change.",
+      "app": {
+        "previous_lines": 79659,
+        "previous_production_lines": 54349,
+        "lines_added": 197,
+        "production_lines_added": 107
+      }
     }
   ],
   "migration_targets": {
@@ -1036,8 +1052,8 @@
     "allowed_dependencies": []
   },
   "app": {
-    "lines": 79659,
-    "production_lines": 54349,
+    "lines": 79856,
+    "production_lines": 54456,
     "packages": 25,
     "external_dependencies": 6,
     "allowed_dependencies": [

@@ -67,7 +67,7 @@ func (s *Server) handleGetAdminTaskLogs(c echo.Context) error {
 		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "task_logs_unavailable"})
 	}
 	runID := c.Param("id")
-	tasks, err := s.queryAdminTasks(c, pool, "", time.Now().Add(time.Minute), 1, runID)
+	tasks, err := s.queryAdminTasks(c, pool, adminTaskQuery{RunID: runID})
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "task_logs_failed"})
 	}
@@ -148,7 +148,7 @@ func (s *Server) handleAdminTaskStream(c echo.Context) error {
 		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "task_stream_unavailable"})
 	}
 	runID := c.Param("id")
-	tasks, err := s.queryAdminTasks(c, pool, "", time.Now().Add(time.Minute), 1, runID)
+	tasks, err := s.queryAdminTasks(c, pool, adminTaskQuery{RunID: runID})
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "task_stream_failed"})
 	}

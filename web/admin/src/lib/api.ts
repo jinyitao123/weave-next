@@ -53,8 +53,8 @@ export const signInWithAPIKey = (apiKey: string) =>
   api<AdminSession>('/v1/admin/session', { method: 'POST', body: JSON.stringify({ api_key: apiKey }) })
 
 // Forge sign-in happens in the browser so the password never reaches Weave.
-// The Forge session token is exchanged once and then released.
-export async function signInWithForge(forgeOrigin: string, email: string, password: string): Promise<AdminSession> {
+// The short Forge session is handed to one call and then released.
+export async function withForgeSession<T>(forgeOrigin: string, email: string, password: string, use: (forgeToken: string) => Promise<T>): Promise<T> {
   let signedIn: Response
   try {
     signedIn = await fetch(new URL('/api/v1/auth/sign-in/email', forgeOrigin), {
@@ -72,7 +72,7 @@ export async function signInWithForge(forgeOrigin: string, email: string, passwo
   if (typeof forge?.token !== 'string') throw new ApiError(502, 'forge_response_unrecognized')
   const forgeToken = forge.token
   try {
-    return await api<AdminSession>('/v1/admin/session', { method: 'POST', body: JSON.stringify({ forge_token: forgeToken }) })
+    return await use(forgeToken)
   } finally {
     await fetch(new URL('/api/v1/auth/sign-out', forgeOrigin), {
       method: 'POST',
@@ -83,6 +83,9 @@ export async function signInWithForge(forgeOrigin: string, email: string, passwo
     }).catch(() => undefined)
   }
 }
+
+export const signInWithForge = (forgeOrigin: string, email: string, password: string) =>
+  withForgeSession(forgeOrigin, email, password, (forge_token) => api<AdminSession>('/v1/admin/session', { method: 'POST', body: JSON.stringify({ forge_token }) }))
 
 const messages: Record<string, string> = {
   forge_unreachable: '无法连接 Forge，请确认 Forge 允许本地址跨域登录',

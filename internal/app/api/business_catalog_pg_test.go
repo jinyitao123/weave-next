@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/jinyitao123/weave/internal/app/users"
 	"github.com/labstack/echo/v4"
 )
 
@@ -122,6 +123,86 @@ func TestBusinessCatalogSnapshotRealPG(t *testing.T) {
 	}
 	if err := s.refreshBusinessCatalog(ctx, "ftp://forge", "token", "ws", "user"); err == nil {
 		t.Fatal("unsupported source scheme was accepted")
+	}
+}
+
+type catalogIdentityStub struct {
+	identity ExternalIdentity
+	err      error
+}
+
+func (v catalogIdentityStub) Verify(context.Context, string) (ExternalIdentity, error) {
+	return v.identity, v.err
+}
+
+type catalogBinderStub struct{ user *users.User }
+
+func (b catalogBinderStub) BindExternal(context.Context, string, string, string, string, string) (*users.User, error) {
+	return b.user, nil
+}
+
+func (b catalogBinderStub) BindExternalInOrganization(context.Context, string, string, string, string, string, string) (*users.User, error) {
+	return b.user, nil
+}
+
+func TestBusinessCatalogRefreshOnRequestRealPG(t *testing.T) {
+	s, _ := newTeamDispatchTestServer(t)
+	s.Echo = echo.New()
+	status := atomic.Int32{}
+	status.Store(200)
+	forge := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer fresh-forge-session" {
+			t.Errorf("catalog request auth = %q", r.Header.Get("Authorization"))
+		}
+		w.WriteHeader(int(status.Load()))
+		_, _ = w.Write([]byte(catalogBody("v9", catalogAction("forge:action:a.one", "team_delegable", "available"))))
+	}))
+	t.Cleanup(forge.Close)
+	identity := ExternalIdentity{Issuer: "forge:test", BaseURL: forge.URL, Subject: "native-user", Organization: "ws", NativeOrganization: "native-org", AccessRole: "developer"}
+	s.ExternalIdentity = catalogIdentityStub{identity: identity}
+	s.ExternalIdentityBinder = catalogBinderStub{user: &users.User{ID: "user", TenantID: "ws"}}
+	refresh := func(caller, body string) *httptest.ResponseRecorder {
+		t.Helper()
+		request := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body))
+		request.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		c := s.Echo.NewContext(request, rec)
+		c.Set("tenant", "ws")
+		c.Set("user_id", caller)
+		if err := s.handleRefreshBusinessCapabilities(c); err != nil {
+			t.Fatal(err)
+		}
+		return rec
+	}
+	if rec := refresh("user", `{}`); rec.Code != http.StatusBadRequest {
+		t.Fatalf("refresh without a Forge session status=%d", rec.Code)
+	}
+	// Someone else's Forge session cannot refresh on this console session.
+	if rec := refresh("user-other", `{"forge_token":"fresh-forge-session"}`); rec.Code != http.StatusForbidden {
+		t.Fatalf("refresh with another account status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	rec := refresh("user", `{"forge_token":"fresh-forge-session"}`)
+	var view businessCapabilitiesView
+	if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &view) != nil || !view.Available || view.Version != "v9" || len(view.Capabilities) != 1 {
+		t.Fatalf("refresh status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), "fresh-forge-session") {
+		t.Fatal("refresh returned the Forge session")
+	}
+	// A failed read reports it and keeps the snapshot.
+	status.Store(503)
+	if rec := refresh("user", `{"forge_token":"fresh-forge-session"}`); rec.Code != http.StatusBadGateway {
+		t.Fatalf("failed refresh status=%d", rec.Code)
+	}
+	// A member-level Forge account cannot read the developer catalog.
+	identity.AccessRole = "member"
+	s.ExternalIdentity = catalogIdentityStub{identity: identity}
+	if rec := refresh("user", `{"forge_token":"fresh-forge-session"}`); rec.Code != http.StatusForbidden {
+		t.Fatalf("member refresh status=%d", rec.Code)
+	}
+	s.ExternalIdentity = catalogIdentityStub{err: context.Canceled}
+	if rec := refresh("user", `{"forge_token":"fresh-forge-session"}`); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("unverified refresh status=%d", rec.Code)
 	}
 }
 

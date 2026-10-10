@@ -11,9 +11,10 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-// Visibility follows the run readers: a run submitted from an employee's
-// desktop input is visible only to that employee, like its activity; other
-// runs are visible to their submitter and to administrators.
+// Visibility: administrators and owners read every team run of the workspace,
+// including the ones employees started from the desktop or Feishu; everyone
+// else reads the runs they submitted. Reading is all an administrator gets on
+// someone else's run: follow-ups and pull requests stay with the submitter.
 
 // adminTask is one team run as the admin console lists it. Status stays the
 // run's own execution status; delivery verification is a separate fact read
@@ -28,6 +29,11 @@ type adminTask struct {
 	Status          string     `json:"status"`
 	WaitKind        string     `json:"wait_kind,omitempty"`
 	SourceKind      string     `json:"source_kind"`
+	// Source is where the run was started: console, desktop, feishu or schedule.
+	Source string `json:"source"`
+	// Actor is the display name of whoever started the run.
+	Actor string `json:"actor"`
+	Mine  bool   `json:"mine"`
 	CreatedAt       time.Time  `json:"created_at"`
 	UpdatedAt       time.Time  `json:"updated_at"`
 	TerminalAt      *time.Time `json:"terminal_at,omitempty"`
@@ -67,6 +73,39 @@ var adminTaskFilters = map[string]string{
 
 const adminTaskTitleLimit = 200
 
+var adminTaskSources = map[string]bool{"console": true, "desktop": true, "feishu": true, "schedule": true}
+
+// adminTaskQuery selects the runs a console request may see. Write is set by
+// the endpoints that act on a run: they keep the narrower rule.
+type adminTaskQuery struct {
+	Filter string
+	Before time.Time
+	Limit  int
+	RunID  string
+	TeamID string
+	Source string
+	Write  bool
+}
+
+// adminRunReader reports whether the caller reads every run of the workspace.
+func adminRunReader(c echo.Context) bool {
+	role := firstRole(c)
+	return role == "admin" || role == "owner"
+}
+
+// auditRunView records that an administrator opened someone else's run. One
+// row per viewer, run and surface an hour keeps a polling page from flooding it.
+func (s *Server) auditRunView(c echo.Context, runID, surface string) {
+	pool := s.GetPool()
+	if pool == nil || runID == "" {
+		return
+	}
+	_, _ = pool.Exec(c.Request().Context(), `INSERT INTO weave_run_view_audit(workspace_id,run_id,viewer_id,viewer_role,surface)
+		SELECT $1,$2,$3,$4,$5 WHERE NOT EXISTS (SELECT 1 FROM weave_run_view_audit
+		 WHERE workspace_id=$1 AND run_id=$2 AND viewer_id=$3 AND surface=$5 AND viewed_at > now() - interval '1 hour')`,
+		getTenant(c), runID, getUserID(c), firstRole(c), surface)
+}
+
 func (s *Server) handleListAdminTasks(c echo.Context) error {
 	pool := s.GetPool()
 	if pool == nil {
@@ -88,7 +127,11 @@ func (s *Server) handleListAdminTasks(c echo.Context) error {
 		}
 		before = parsed
 	}
-	tasks, err := s.queryAdminTasks(c, pool, filter, before, limit, c.Param("id"))
+	source := c.QueryParam("source")
+	if source != "" && !adminTaskSources[source] {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid_source"})
+	}
+	tasks, err := s.queryAdminTasks(c, pool, adminTaskQuery{Filter: filter, Before: before, Limit: limit, RunID: c.Param("id"), TeamID: strings.TrimSpace(c.QueryParam("team")), Source: source})
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "task_list_failed"})
 	}
@@ -106,7 +149,16 @@ func (s *Server) handleListAdminTasks(c echo.Context) error {
 }
 
 // queryAdminTasks lists the tasks the caller may see, newest first.
-func (s *Server) queryAdminTasks(c echo.Context, pool *pgxpool.Pool, filter string, before time.Time, limit int, runID string) ([]adminTask, error) {
+func (s *Server) queryAdminTasks(c echo.Context, pool *pgxpool.Pool, query adminTaskQuery) ([]adminTask, error) {
+	if query.Before.IsZero() {
+		query.Before = time.Now().Add(time.Minute)
+	}
+	if query.Limit <= 0 {
+		query.Limit = 1
+	}
+	const source = `CASE WHEN EXISTS (SELECT 1 FROM weave_feishu_messages f WHERE f.workspace_id=q.workspace_id AND f.run_id=q.request->>'run_id') THEN 'feishu'
+		WHEN COALESCE(q.target->>'input_revision_id','')<>'' THEN 'desktop'
+		WHEN r.source_kind='schedule' THEN 'schedule' ELSE 'console' END`
 	// Admission is the durable record of a submission and exists before the
 	// team run is established by its consumer, so a just-submitted task is
 	// listed (as queued) and readable immediately.
@@ -116,16 +168,21 @@ func (s *Server) queryAdminTasks(c echo.Context, pool *pgxpool.Pool, filter stri
 		       COALESCE(r.status,'queued'), COALESCE(r.wait_kind,''), COALESCE(r.source_kind,''), q.created_at,
 		       COALESCE(r.updated_at, q.created_at), r.terminal_at, q.request->'input', COALESCE(r.cause_summary,''),
 		       (SELECT min(l.occurred_at) FROM weave_task_logs l JOIN weave_task_queue tq ON tq.workspace_id=l.workspace_id AND tq.id=l.task_id
-		         WHERE tq.workspace_id=q.workspace_id AND tq.run_snapshot_id=q.request->>'run_id' AND tq.kind='engine_exec')
+		         WHERE tq.workspace_id=q.workspace_id AND tq.run_snapshot_id=q.request->>'run_id' AND tq.kind='engine_exec'),
+		       `+source+`, COALESCE(NULLIF(u.display_name,''),u.username,''), COALESCE(q.actor_subject->>'user_id','')=$4
 		FROM weave_workflow_admission_requests q
 		LEFT JOIN weave_team_runs r ON r.workspace_id=q.workspace_id AND r.run_id=q.request->>'run_id'
 		LEFT JOIN weave_teams t ON t.workspace_id=q.workspace_id AND t.id=q.target->>'team_id'
+		LEFT JOIN weave_users u ON u.id=q.actor_subject->>'user_id'
 		WHERE q.workspace_id=$1 AND q.created_at < $2 AND COALESCE(q.request->>'run_id','')<>''
 		  AND ($6='' OR q.request->>'run_id'=$6)
-		  AND (COALESCE(q.actor_subject->>'user_id','')=$4 OR ($5 AND COALESCE(q.target->>'input_revision_id','')=''))
-		  `+filter+`
+		  AND (COALESCE(q.actor_subject->>'user_id','')=$4 OR $5 OR ($7 AND COALESCE(q.target->>'input_revision_id','')=''))
+		  AND ($8='' OR q.target->>'team_id'=$8)
+		  AND ($9='' OR `+source+`=$9)
+		  `+query.Filter+`
 		ORDER BY q.created_at DESC, q.request_id DESC
-		LIMIT $3`, getTenant(c), before, limit, getUserID(c), firstRole(c) == "admin", runID)
+		LIMIT $3`, getTenant(c), query.Before, query.Limit, getUserID(c), adminRunReader(c) && !query.Write, query.RunID,
+		firstRole(c) == "admin", query.TeamID, query.Source)
 	if err != nil {
 		return nil, err
 	}
@@ -136,7 +193,8 @@ func (s *Server) queryAdminTasks(c echo.Context, pool *pgxpool.Pool, filter stri
 		var input []byte
 		var cause string
 		if err := rows.Scan(&task.RunID, &task.TeamID, &task.TeamName, &task.WorkflowID, &task.WorkflowVersion,
-			&task.Status, &task.WaitKind, &task.SourceKind, &task.CreatedAt, &task.UpdatedAt, &task.TerminalAt, &input, &cause, &task.FirstOutputAt); err != nil {
+			&task.Status, &task.WaitKind, &task.SourceKind, &task.CreatedAt, &task.UpdatedAt, &task.TerminalAt, &input, &cause, &task.FirstOutputAt,
+			&task.Source, &task.Actor, &task.Mine); err != nil {
 			return nil, err
 		}
 		task.Title = adminTaskTitle(input)

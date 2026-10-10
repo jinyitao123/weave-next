@@ -30,12 +30,12 @@ export function EnvironmentsPage({ session }: { session: AdminSession }) {
 
   return <section className="page">
     <header className="page__header">
-      <h1>环境</h1>
-      {canEdit(session) ? <button type="button" className="button button--primary" onClick={() => setEditing('new')}><Plus size={15} />新建环境</button> : null}
+      <h1>代码仓库</h1>
+      {canEdit(session) ? <button type="button" className="button button--primary" onClick={() => setEditing('new')}><Plus size={15} />添加代码仓库</button> : null}
     </header>
     {error ? <InlineError message={error} onRetry={() => void refresh()} /> : null}
-    {!environments ? null : environments.length === 0 ? <EmptyState title="还没有环境" action={canEdit(session) ? <button type="button" className="button button--primary" onClick={() => setEditing('new')}><Plus size={15} />新建环境</button> : undefined}>
-      环境记录团队要处理的代码仓库、默认分支和验证命令。
+    {!environments ? null : environments.length === 0 ? <EmptyState title="还没有代码仓库" action={canEdit(session) ? <button type="button" className="button button--primary" onClick={() => setEditing('new')}><Plus size={15} />添加代码仓库</button> : undefined}>
+      只有处理代码的团队需要：记录仓库地址、默认分支和验证命令。
     </EmptyState> : <div className="task-list">{environments.map((environment) => <button key={environment.id} type="button" className="task-row" onClick={() => setEditing(environment)}>
       <span className="task-row__main">
         <strong>{environment.name}</strong>
@@ -84,7 +84,7 @@ function EnvironmentDrawer({ environment, teams, editable, onClose, onSaved }: {
       setBusy(false)
     }
   }
-  return <Drawer title={environment ? environment.name : '新建环境'} onClose={onClose} footer={editable ? <div className="toolbar">
+  return <Drawer title={environment ? environment.name : '添加代码仓库'} onClose={onClose} footer={editable ? <div className="toolbar">
     <button type="button" className="button button--primary" disabled={busy} onClick={() => void submit()}>{busy ? '正在保存…' : '保存'}</button>
     {environment ? <button type="button" className="button button--danger" disabled={busy} onClick={() => setConfirmArchive(true)}>归档</button> : null}
   </div> : undefined}>
@@ -104,7 +104,7 @@ function EnvironmentDrawer({ environment, teams, editable, onClose, onSaved }: {
       {hasToken && editable ? <div className="toolbar">
         <button type="button" className="button" disabled={busy} onClick={() => { setClearToken(true); setToken(''); setError('') }}>清除令牌</button></div> : null}
       {clearToken && !token.trim() ? <p className="muted small">保存后清除令牌</p> : null}
-      {confirmArchive ? <div className="confirm" role="alertdialog" aria-label="确认归档环境">
+      {confirmArchive ? <div className="confirm" role="alertdialog" aria-label="确认归档代码仓库">
         <p>归档后不能再用它提交新任务，已提交的任务不受影响。</p>
         <div className="toolbar"><button type="button" className="button" onClick={() => setConfirmArchive(false)}>取消</button><button type="button" className="button button--danger" disabled={busy} onClick={() => void archive()}>归档</button></div>
       </div> : null}

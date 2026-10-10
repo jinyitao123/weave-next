@@ -1141,7 +1141,12 @@ func (s *Server) handleGetRunActivity(c echo.Context) error {
 		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "run_read_unavailable"})
 	}
 	if workbenchBound && !owned {
-		return c.JSON(http.StatusNotFound, map[string]string{"error": "run_not_found"})
+		// Administrators and owners read every run of the workspace; the view
+		// of someone else's run is recorded. Nobody else learns the run exists.
+		if !adminRunReader(c) {
+			return c.JSON(http.StatusNotFound, map[string]string{"error": "run_not_found"})
+		}
+		s.auditRunView(c, c.Param("id"), "activity")
 	}
 	if s.teamRunCancel == nil || s.teamRunCancel.Runs == nil {
 		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "team_run_unavailable"})

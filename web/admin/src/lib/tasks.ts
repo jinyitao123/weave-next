@@ -17,7 +17,17 @@ export interface TaskSummary {
   terminal_at?: string | null
   failure_reason?: string
   first_output_at?: string | null
+  /** Where the run was started. */
+  source?: TaskSource
+  /** Display name of whoever started it. */
+  actor?: string
+  /** False for a run someone else started: it is read-only here. */
+  mine?: boolean
 }
+
+export const taskSources = ['desktop', 'feishu', 'console', 'schedule'] as const
+export type TaskSource = typeof taskSources[number]
+export const sourceLabel = (source?: string): string => ({ desktop: '桌面', feishu: '飞书', console: '管理端', schedule: '定时' }[source ?? ''] ?? '')
 
 export interface TeamOption {
   id: string
@@ -85,10 +95,12 @@ export interface Activity {
   total_stages: number
 }
 
-export function listTasks(filter: TaskFilter, before?: string) {
+export function listTasks(filter: TaskFilter, before?: string, scope: { team?: string; source?: string } = {}) {
   const query = new URLSearchParams()
   if (filter) query.set('filter', filter)
   if (before) query.set('before', before)
+  if (scope.team) query.set('team', scope.team)
+  if (scope.source) query.set('source', scope.source)
   return api<{ tasks: TaskSummary[]; next_before?: string }>(`/v1/admin/tasks${query.size ? `?${query}` : ''}`)
 }
 
@@ -149,7 +161,7 @@ export function verificationLabel(delivery: Delivery | undefined, status: string
     case 'passed': return { label: '验证通过', tone: 'success' }
     case 'failed': return { label: '验证未通过', tone: 'danger' }
     case 'pending': return { label: '待验证', tone: 'neutral' }
-    default: return { label: delivery?.available === false || !delivery ? '未声明验证' : '无法确认', tone: 'warning' }
+    default: return { label: delivery?.available === false || !delivery ? '未设置自动检查' : '需人工查看', tone: 'warning' }
   }
 }
 

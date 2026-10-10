@@ -3,7 +3,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { Badge, Dialog, Select, Switch } from '../ui'
 import { engineName } from '../../lib/format'
 import type { RuntimeNode } from '../../lib/nodes'
-import { bindingSourceLabel, capabilityName, defaultCapabilityBinding, describeCapability, handoffKinds, isCLIEngine, loadModelCatalog, memberProblems, parseOutputSchema, requiredHandoffKinds, toolLoopLimits, type BusinessCatalog, type CatalogCapability, type DevelopmentDocument, type DevelopmentMember, type MemberConfiguration, type MemberRelationship, type MemberSkill } from '../../lib/teams'
+import { CatalogRefresh } from '../team/CatalogRefresh'
+import { bindingSourceLabel, capabilityName, defaultCapabilityBinding, describeCapability, handoffKinds, isCLIEngine, loadModelCatalog, memberProblems, memberSteps, newMember, parseOutputSchema, requiredHandoffKinds, toolLoopLimits, type BusinessCatalog, type CatalogCapability, type DevelopmentDocument, type DevelopmentMember, type MemberConfiguration, type MemberRelationship, type MemberSkill } from '../../lib/teams'
 import './members.css'
 
 const engines = ['claude', 'codex', 'opencode', 'loom']
@@ -20,18 +21,30 @@ const defaultKinds = ['consult', 'dispatch']
 const tabs = [{ id: 'duty', label: '职责' }, { id: 'ability', label: '能力' }, { id: 'run', label: '执行' }] as const
 type TabId = typeof tabs[number]['id']
 
-type Edit = { onConfig(id: string, patch: Partial<MemberConfiguration>): void; onRelationship(id: string, patch: Partial<MemberRelationship>): void }
+type Edit = {
+  onConfig(id: string, patch: Partial<MemberConfiguration>): void
+  onRelationship(id: string, patch: Partial<MemberRelationship>): void
+  onAdd?(member: DevelopmentMember): void
+  onRemove?(id: string): void
+  onCatalog?(catalog: BusinessCatalog): void
+}
 
 const count = (value: unknown) => Array.isArray(value) ? value.filter((item) => typeof item === 'string' && item.trim()).length : 0
 
-export function MemberEditor({ document, nodes, accepting, catalog, onConfig, onRelationship }: { document: DevelopmentDocument; nodes: RuntimeNode[]; accepting: Record<string, number>; catalog?: BusinessCatalog } & Edit) {
+export function MemberEditor({ document, nodes, accepting, catalog, onConfig, onRelationship, onAdd, onRemove, onCatalog }: { document: DevelopmentDocument; nodes: RuntimeNode[]; accepting: Record<string, number>; catalog?: BusinessCatalog } & Edit) {
   const ordered = useMemo(() => [...document.members].sort((a, b) => Number(b.configuration.role === 'avatar') - Number(a.configuration.role === 'avatar')), [document.members])
   const [selected, setSelected] = useState(ordered[0]?.id)
   const [models, setModels] = useState<string[]>([])
   useEffect(() => { void loadModelCatalog().then(setModels).catch(() => setModels([])) }, [])
   const member = ordered.find((item) => item.id === selected) ?? ordered[0]
   if (!member) return <p className="muted">团队还没有成员。</p>
+  const add = () => {
+    const created = newMember(models[0] ?? '')
+    onAdd?.(created)
+    setSelected(created.id)
+  }
   return <div className="members">
+    <div className="members__side">
     <ul className="members__list" aria-label="成员列表">{ordered.map((item) => {
       const problems = memberProblems(item)
       const actions = count(item.configuration.business_capability_ids)
@@ -43,14 +56,19 @@ export function MemberEditor({ document, nodes, accepting, catalog, onConfig, on
         {problems.length ? <span className="members__flag"><Badge tone="warning">待补充</Badge></span> : null}
       </button></li>
     })}</ul>
-    <MemberDetail key={member.id} member={member} nodes={nodes} accepting={accepting} models={models} catalog={catalog} kindsInUse={requiredHandoffKinds(document, member.id)} onConfig={(patch) => onConfig(member.id, patch)} onRelationship={(patch) => onRelationship(member.id, patch)} />
+    {onAdd ? <button type="button" className="button" onClick={add}><Plus size={14} />添加成员</button> : null}
+    </div>
+    <MemberDetail key={member.id} member={member} nodes={nodes} accepting={accepting} models={models} catalog={catalog} kindsInUse={requiredHandoffKinds(document, member.id)} steps={memberSteps(document, member.id)}
+      onConfig={(patch) => onConfig(member.id, patch)} onRelationship={(patch) => onRelationship(member.id, patch)} onCatalog={onCatalog}
+      onRemove={onRemove && member.configuration.role !== 'avatar' ? () => onRemove(member.id) : undefined} />
   </div>
 }
 
 type DetailProps = { member: DevelopmentMember; onConfig(patch: Partial<MemberConfiguration>): void; onRelationship(patch: Partial<MemberRelationship>): void }
 
-function MemberDetail({ member, nodes, accepting, models, catalog, kindsInUse, onConfig, onRelationship }: DetailProps & { nodes: RuntimeNode[]; accepting: Record<string, number>; models: string[]; catalog?: BusinessCatalog; kindsInUse: string[] }) {
+function MemberDetail({ member, nodes, accepting, models, catalog, kindsInUse, steps, onConfig, onRelationship, onCatalog, onRemove }: DetailProps & { nodes: RuntimeNode[]; accepting: Record<string, number>; models: string[]; catalog?: BusinessCatalog; kindsInUse: string[]; steps: string[]; onCatalog?(catalog: BusinessCatalog): void; onRemove?(): void }) {
   const [tab, setTab] = useState<TabId>('duty')
+  const [removing, setRemoving] = useState(false)
   const config = member.configuration, relation = member.relationship
   const lead = config.role === 'avatar', cli = isCLIEngine(config.engine)
   const name = config.display_name || '未命名成员'
@@ -58,12 +76,20 @@ function MemberDetail({ member, nodes, accepting, models, catalog, kindsInUse, o
     <header className="members__header">
       <div className="members__title"><h2>{name}</h2>{lead ? <Badge tone="accent">负责人</Badge> : null}{!lead && relation.enabled === false ? <Badge>不参与</Badge> : null}</div>
       <p className="muted small">{engineName(config.engine)}{config.model ? ` · ${config.model}` : ''}</p>
+      {onRemove ? <button type="button" className="button members__remove" onClick={() => setRemoving(true)}><Trash2 size={14} />删除成员</button> : null}
     </header>
+    {removing && onRemove ? <div className="members__confirm" role="alertdialog" aria-label={`确认删除 ${name}`}>
+      {steps.length ? <><span>流程里的“{steps.join('”“')}”还由这个成员负责，请先在流程里换人或删除这些步骤。</span>
+        <button type="button" className="button" onClick={() => setRemoving(false)}>知道了</button></>
+        : <><span>删除后，这个成员的配置不会保留。</span>
+          <button type="button" className="button" onClick={() => setRemoving(false)}>取消</button>
+          <button type="button" className="button button--danger" onClick={onRemove}>删除</button></>}
+    </div> : null}
     <div className="tabs" role="tablist" aria-label={`${name}的配置`}>
       {tabs.map((item) => <button key={item.id} type="button" role="tab" aria-selected={tab === item.id} onClick={() => setTab(item.id)}>{item.label}</button>)}
     </div>
     {tab === 'duty' ? <DutyPanel member={member} onConfig={onConfig} onRelationship={onRelationship} /> : null}
-    {tab === 'ability' ? <AbilityPanel member={member} cli={cli} catalog={catalog} onConfig={onConfig} /> : null}
+    {tab === 'ability' ? <AbilityPanel member={member} cli={cli} catalog={catalog} onConfig={onConfig} onCatalog={onCatalog} /> : null}
     {tab === 'run' ? <RunPanel member={member} nodes={nodes} accepting={accepting} models={models} kindsInUse={kindsInUse} onConfig={onConfig} onRelationship={onRelationship} /> : null}
   </section>
 }
@@ -101,7 +127,7 @@ function DutyPanel({ member, onConfig, onRelationship }: DetailProps) {
   </div>
 }
 
-function AbilityPanel({ member, cli, catalog, onConfig }: { member: DevelopmentMember; cli: boolean; catalog?: BusinessCatalog; onConfig(patch: Partial<MemberConfiguration>): void }) {
+function AbilityPanel({ member, cli, catalog, onConfig, onCatalog }: { member: DevelopmentMember; cli: boolean; catalog?: BusinessCatalog; onConfig(patch: Partial<MemberConfiguration>): void; onCatalog?(catalog: BusinessCatalog): void }) {
   const config = member.configuration
   const actions = (config.business_capability_ids ?? []).filter((id) => typeof id === 'string' && id.trim())
   const bindings = config.business_capability_bindings ?? []
@@ -152,7 +178,8 @@ function AbilityPanel({ member, cli, catalog, onConfig }: { member: DevelopmentM
       })}</ul> : <p className="muted">还没有分配业务动作，这个成员只能整理和分析，不能写入业务系统。</p>}
       <div className="toolbar">
         <button type="button" className="button" disabled={!addable.length} onClick={() => setPicking(true)}><Plus size={14} />添加业务动作</button>
-        {!catalog?.available ? <span className="muted small">还没有读到业务动作目录，退出后重新登录一次即可读取。</span>
+        {onCatalog ? <CatalogRefresh catalog={catalog} onRefreshed={onCatalog} /> : null}
+        {!catalog?.available ? <span className="muted small">还没有读到业务动作目录。</span>
           : !addable.length ? <span className="muted small">目录里没有可再添加的业务动作。</span> : null}
       </div>
     </section>

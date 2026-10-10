@@ -1,7 +1,8 @@
 import { GitBranch, Plus, Trash2 } from 'lucide-react'
 import { useRef, useState } from 'react'
-import { Dialog, InlineError, Select, Switch } from '../ui'
+import { Checkbox, Dialog, InlineError, Select, Switch } from '../ui'
 import { maxVerifyRounds, serialSteps, verifyLoop, type Graph, type Step } from '../../lib/graph'
+import { requiredActions, setRequiredActions } from '../../lib/business-completion'
 import type { DevelopmentMember } from '../../lib/teams'
 import { addParallelBranch, assignExecutor, canAddParallelBranch, canInsertSerialStep, feedsDelivery, configureWorkflowResultProtocol, hasNodeInput, insertStep, isParallelBranchWorker, predecessors, removeStep, serializeParallel, setVerificationLoop, stepFeeds, toggleNodeInput, toggleTaskInput, validateWorkflowResultProtocol, WORKBENCH_RESULT_PROTOCOL } from '../../lib/workflow-graph'
 import { FlowCanvas, stepLabel } from './FlowCanvas'
@@ -34,7 +35,10 @@ function modeLabel(graph: Graph, step: Step, loop: boolean): string {
   return stepLabel(step.type)
 }
 
-export function WorkflowEditor({ graph, members, onChange }: { graph: Graph; members: DevelopmentMember[]; onChange(change: (graph: Graph) => Graph): void }) {
+/** A business action the flow's members can carry out, named for the page. */
+export interface FlowAction { id: string; name: string }
+
+export function WorkflowEditor({ graph, members, actions = [], onChange }: { graph: Graph; members: DevelopmentMember[]; actions?: FlowAction[]; onChange(change: (graph: Graph) => Graph): void }) {
   const [selected, setSelected] = useState(graph.entry_node_id)
   const [form, setForm] = useState<Form>()
   const [deleting, setDeleting] = useState(false)
@@ -92,7 +96,7 @@ export function WorkflowEditor({ graph, members, onChange }: { graph: Graph; mem
         {!loop && step.type === 'worker' && feedsDelivery(graph, step.id) && !canAddParallelBranch(graph, step.id) ? <p className="muted small flow-editor__hint">交付前的最后一步不能并行。需要并行时，先在它后面添加一个汇总步骤。</p> : null}
         {loop && step.id === loop.loopId
           ? <div className="field"><span>最多轮数</span><Select label="验证回路最多轮数" value={String(loop.rounds)} options={Array.from({ length: maxVerifyRounds }, (_, index) => ({ value: String(index + 1), label: `${index + 1} 轮` }))} onChange={value => change(current => setVerificationLoop(current, true, Number(value)))} /></div>
-          : <StepInspector graph={graph} step={step} members={members} loop={Boolean(loop)} onChange={update} onGraph={change} onHot={setHot} />}
+          : <StepInspector graph={graph} step={step} members={members} actions={actions} loop={Boolean(loop)} onChange={update} onGraph={change} onHot={setHot} />}
       </section> : <p className="muted">流程中还没有步骤。</p>}
     </div>
     {error && !form && !deleting ? <InlineError message={error} /> : null}
@@ -116,7 +120,9 @@ function SourceRow({ checked, title, detail, hotKey, onToggle, onHot }: { checke
   </label></li>
 }
 
-function StepInspector({ graph, step, members, loop, onChange, onGraph, onHot }: { graph: Graph; step: Step; members: DevelopmentMember[]; loop: boolean; onChange(step: Step): void; onGraph(operation: (graph: Graph) => Graph): boolean; onHot(key?: string): void }) {
+function StepInspector({ graph, step, members, actions, loop, onChange, onGraph, onHot }: { graph: Graph; step: Step; members: DevelopmentMember[]; actions: FlowAction[]; loop: boolean; onChange(step: Step): void; onGraph(operation: (graph: Graph) => Graph): boolean; onHot(key?: string): void }) {
+  const required = requiredActions(graph) ?? []
+  const toggleRequired = (id: string, on: boolean) => onGraph(current => setRequiredActions(current, on ? [...required.filter(item => item !== id), id] : required.filter(item => item !== id)))
   const lead = members.find(member => member.configuration.role === 'avatar' && member.relationship.enabled)
   const branch = isParallelBranchWorker(graph, step.id)
   const actors = members.filter(member => member.relationship.enabled && (!(branch || loop) || member.configuration.role === 'worker'))
@@ -145,7 +151,11 @@ function StepInspector({ graph, step, members, loop, onChange, onGraph, onHot }:
       </> : null}
       {step.type === 'deliver' ? loop ? <p>交付最后一轮的验证结论。</p> : <>
         <div className="field"><span>交付哪一步的结果</span><Select label="交付来源" value={String((step.config?.result as { node_id?: string })?.node_id ?? '')} options={candidates.map(prior => ({ value: prior.id, label: nodeTitle(prior) }))} onChange={id => configureDelivery(graph.result_protocol === WORKBENCH_RESULT_PROTOCOL, id)} /></div>
-        <div className="field"><span>材料不全时</span><Select label="材料不全时" value={graph.result_protocol === WORKBENCH_RESULT_PROTOCOL ? WORKBENCH_RESULT_PROTOCOL : 'ordinary'} options={[{ value: 'ordinary', label: '照常交付结果' }, { value: WORKBENCH_RESULT_PROTOCOL, label: '可以退回，请发起人补充材料' }]} onChange={value => configureDelivery(value === WORKBENCH_RESULT_PROTOCOL)} /></div>
+        <div className="field"><span>材料不全时</span><Select label="材料不全时" disabled={actions.length > 0 && graph.result_protocol === WORKBENCH_RESULT_PROTOCOL} value={graph.result_protocol === WORKBENCH_RESULT_PROTOCOL ? WORKBENCH_RESULT_PROTOCOL : 'ordinary'} options={[{ value: 'ordinary', label: '照常交付结果' }, { value: WORKBENCH_RESULT_PROTOCOL, label: '可以退回，请发起人补充材料' }]} onChange={value => configureDelivery(value === WORKBENCH_RESULT_PROTOCOL)} /></div>
+        {actions.length ? <div className="field" role="group" aria-label="必须办成的业务动作"><span>必须办成的业务动作</span>
+          <div className="flow-editor__required">{actions.map(action => <Checkbox key={action.id} checked={required.includes(action.id)} label={action.name} disabled={required.length === 1 && required[0] === action.id} onChange={on => toggleRequired(action.id, on)} />)}</div>
+          <p className="muted small">任务里授权办理这些动作时，要拿到业务系统的成功回执，这次任务才算办完。</p>
+        </div> : null}
         {issue ? <InlineError message={issue} /> : null}
       </> : null}
     </section>

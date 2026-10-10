@@ -127,7 +127,7 @@ describe('member editor', () => {
     pick(/^整理/)
     tab('能力')
     expect((screen.getByRole('button', { name: '添加业务动作' }) as HTMLButtonElement).disabled).toBe(true)
-    expect(screen.getByRole('region', { name: '业务动作' }).textContent).toContain('重新登录')
+    expect(screen.getByRole('region', { name: '业务动作' }).textContent).toContain('还没有读到业务动作目录')
   })
 
   it('offers node engines only while a node can take their work and keeps the handoff kinds a flow uses', () => {

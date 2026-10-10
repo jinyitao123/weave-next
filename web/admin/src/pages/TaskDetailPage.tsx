@@ -11,7 +11,7 @@ import { CodeChanges, CodeEvidencePanel, CodeSummary, CodeVerdict } from './Task
 import { FollowUpComposer, TaskThread } from './TaskThread'
 import { LogViewer } from './LogViewer'
 import {
-  duration, executionLabel, failureText, readQueue, subscribeTask, waitText, type TaskWait, executionTone, readActivity, readTask, retryStage, stageLabel, stopTask, terminal, verificationLabel,
+  duration, executionLabel, failureText, readQueue, subscribeTask, waitText, type TaskWait, executionTone, readActivity, readTask, retryStage, sourceLabel, stageLabel, stopTask, terminal, verificationLabel,
   type Activity, type ActivityMember, type MemberStage, type TaskSummary,
 } from '../lib/tasks'
 
@@ -97,8 +97,10 @@ export function TaskDetailPage({ runId, navigate }: { runId: string; navigate(pa
   const stageHead = (nodeId: string) => code?.stages.find((stage) => stage.node_id === nodeId)?.version.head_sha
   const stagePasses = (nodeId: string) => code?.stages.find((stage) => stage.node_id === nodeId)?.passes
   const trial = activity?.development_trial === true
-  const backPath = trial ? activity.team_id ? `/teams/${encodeURIComponent(activity.team_id)}/trial` : '/teams' : '/'
-  const backLabel = trial ? '返回团队试跑' : '返回任务列表'
+  const backPath = trial ? activity.team_id ? `/teams/${encodeURIComponent(activity.team_id)}/trial` : '/teams' : '/runs'
+  const backLabel = trial ? '返回团队试跑' : '返回运行列表'
+  // A run someone else started is read here, never acted on.
+  const readOnly = task?.mine === false
 
   const act = async (action: () => Promise<unknown>) => {
     setBusy(true)
@@ -117,13 +119,13 @@ export function TaskDetailPage({ runId, navigate }: { runId: string; navigate(pa
       <button type="button" className="icon-button" aria-label={backLabel} disabled={!activity && !task} onClick={() => navigate(backPath)}><ArrowLeft size={16} /></button>
       <div className="task-header__title">
         <h1>{task?.title || task?.team_name || '试跑结果'}</h1>
-        <p className="muted small">{task ? `${task.team_name || '团队'} · 第 ${task.workflow_version} 版 · ${relativeTime(task.created_at)}` : ''}{code ? <> · <CodeSummary code={code} /></> : null}</p>
+        <p className="muted small">{task ? [task.team_name || '团队', `第 ${task.workflow_version} 版`, sourceLabel(task.source), task.actor, relativeTime(task.created_at)].filter(Boolean).join(' · ') : ''}{code ? <> · <CodeSummary code={code} /></> : null}</p>
       </div>
       {activity ? <div className="task-header__state">
         <Badge tone={executionTone(activity.status)}>{executionLabel(activity.status, activity.wait_kind)}</Badge>
         <Badge tone={verification.tone}>{verification.label}</Badge>
         {done && task ? <a className="button" href={`/v1/admin/tasks/${encodeURIComponent(runId)}/evidence`} download><Download size={13} />导出证据</a> : null}
-        {!done ? <button type="button" className="button" disabled={busy || activity.status === 'cancel_requested'} onClick={() => void act(() => stopTask(runId, stopKey))}><Square size={13} />{activity.status === 'cancel_requested' ? '正在停止' : '停止'}</button> : null}
+        {!done && !readOnly ? <button type="button" className="button" disabled={busy || activity.status === 'cancel_requested'} onClick={() => void act(() => stopTask(runId, stopKey))}><Square size={13} />{activity.status === 'cancel_requested' ? '正在停止' : '停止'}</button> : null}
       </div> : null}
     </header>
     {activity?.stop_unconfirmed ? <p className="notice">已请求停止，节点尚未确认。</p> : null}
@@ -156,13 +158,13 @@ export function TaskDetailPage({ runId, navigate }: { runId: string; navigate(pa
           setTab('output')
         }} /> : <Verdict activity={activity} />}
         {code ? <TaskThread runId={runId} status={activity.status} navigate={navigate} /> : null}
-        {code ? <FollowUpComposer runId={runId} status={activity.status} navigate={navigate} /> : null}
+        {code && !readOnly ? <FollowUpComposer runId={runId} status={activity.status} navigate={navigate} /> : null}
       </aside>
       <div className="task-panel">
         <div className="tabs" role="tablist" aria-label="任务内容">
           {([['output', '输出'], ...(code ? [['changes', '变更']] as const : []), ['evidence', '证据'], ['details', '详情']] as const).map(([value, label]) => <button key={value} type="button" role="tab" aria-selected={tab === value} onClick={() => setTab(value)}>{label}</button>)}
         </div>
-        {tab === 'output' ? current ? <StageOutput runId={runId} version={version} logStream={logStream} item={current} busy={busy} onRetry={() => void act(() => retryStage(runId, current.stage.node_id, createUUID()))} /> : <p className="muted">尚未开始执行。</p> : null}
+        {tab === 'output' ? current ? <StageOutput runId={runId} version={version} logStream={logStream} item={current} busy={busy} onRetry={readOnly ? undefined : () => void act(() => retryStage(runId, current.stage.node_id, createUUID()))} /> : <p className="muted">尚未开始执行。</p> : null}
         {tab === 'changes' && code ? <CodeChanges code={code} runId={runId} done={done} onChanged={() => void refresh()} /> : null}
         {tab === 'evidence' ? code ? <CodeEvidencePanel code={code} /> : <Evidence activity={activity} /> : null}
         {tab === 'details' ? <Details activity={activity} firstOutputAt={task?.first_output_at} /> : null}
@@ -171,13 +173,13 @@ export function TaskDetailPage({ runId, navigate }: { runId: string; navigate(pa
   </section>
 }
 
-function StageOutput({ runId, version, logStream, item, busy, onRetry }: { runId: string; version: number; logStream?: string; item: FlatStage; busy: boolean; onRetry(): void }) {
+function StageOutput({ runId, version, logStream, item, busy, onRetry }: { runId: string; version: number; logStream?: string; item: FlatStage; busy: boolean; onRetry?(): void }) {
   const { stage, member } = item
   const updates = stage.public_updates ?? []
   return <div className="stack">
     <div className="stage-head">
       <div><h2>{stage.name || member.name}</h2><p className="muted small">{member.name}{member.runtime?.engine ? ` · ${engineName(member.runtime.engine)}` : ''}{member.runtime?.model ? ` · ${member.runtime.model}` : ''} · {stageLabel(stage.status)}</p></div>
-      {stage.status === 'failed' && stage.retryable ? <button type="button" className="button" disabled={busy} onClick={onRetry}>重试此阶段</button> : null}
+      {stage.status === 'failed' && stage.retryable && onRetry ? <button type="button" className="button" disabled={busy} onClick={onRetry}>重试此阶段</button> : null}
     </div>
     <LogViewer runId={runId} nodeId={stage.node_id} version={version} preferredStream={logStream} fallback={updates.length ? <div className="stream" aria-live="polite">
       {updates.map((update) => <div key={update.seq} className={`stream__line stream__line--${update.kind}`}>{update.kind === 'tool_call' ? '▸ ' : ''}{update.text}</div>)}

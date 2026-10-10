@@ -38,6 +38,7 @@
 .flow-editor__panel { display: grid; gap: 12px; align-content: start; min-width: 0; }
 .flow-editor__panel + .flow-editor__panel { padding-top: 16px; border-top: 1px solid var(--border); }
 .flow-editor__hint { margin: 0; }
+.flow-editor__required { display: grid; gap: 6px; }
 .flow-editor__panel h3 { margin: 0; font-size: var(--text-md); }
 .flow-sources { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 .flow-source { display: flex; align-items: flex-start; gap: 10px; padding: 9px 11px; border: 1px solid var(--border-strong); border-radius: var(--radius-md); background: var(--canvas); cursor: pointer; }

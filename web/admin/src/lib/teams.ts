@@ -1,7 +1,8 @@
 import { createUUID } from './ids'
-import { api } from './api'
+import { api, withForgeSession } from './api'
 import { engineName } from './format'
 import { serialGraph, withVerifyLoop, type Graph } from './graph'
+import { initialGraph } from './workflow-graph'
 
 export interface TeamRecord {
   id: string
@@ -119,8 +120,17 @@ export interface CatalogCapability {
 }
 export interface BusinessCatalog { available: boolean; fetchedAt?: string; fetchedBy?: string; capabilities: CatalogCapability[] }
 
-export const loadBusinessCatalog = () => api<BusinessCatalog>('/v1/development/business-capabilities')
-  .then((catalog) => ({ ...catalog, capabilities: catalog.capabilities ?? [] }))
+const readCatalog = (catalog: BusinessCatalog): BusinessCatalog => ({ ...catalog, capabilities: catalog.capabilities ?? [] })
+
+export const loadBusinessCatalog = () => api<BusinessCatalog>('/v1/development/business-capabilities').then(readCatalog)
+
+// Reads the catalog again on request. The console keeps no Forge credential,
+// so the signed-in person proves the same Forge account once more; the
+// password goes to Forge only.
+export const refreshBusinessCatalog = (forgeOrigin: string, email: string, password: string) =>
+  withForgeSession(forgeOrigin, email, password, (forge_token) => api<BusinessCatalog>('/v1/development/business-capabilities/refresh', { method: 'POST', body: JSON.stringify({ forge_token }) })).then(readCatalog)
+
+export const archiveTeam = (teamId: string) => api<void>(`${base(teamId)}/team`, { method: 'DELETE' })
 
 // A frozen action definition sent with a trial; simulated calls never reach Forge.
 export interface TrialAction {
@@ -189,6 +199,7 @@ const bindingSources: Record<string, string> = {
   'materials.single.name': '材料的名称',
   'materials.single.sha256': '材料的校验值',
   'materials.single.manifest_json': '材料清单',
+  'materials.manifest_json': '材料清单',
 }
 export const bindingSourceLabel = (source: string) => bindingSources[source] ?? source
 
@@ -230,17 +241,24 @@ export const starterMembers = [
   { key: 'verify', displayName: '验证', engine: 'codex', prompt: '独立验证上一步的代码：运行测试和检查，逐条记录执行的命令与结果，不根据描述推断结果。', requirement: '列出执行的检查命令和真实结果。全部通过时 passed 为 true；否则为 false，并在 summary 中写明未通过项和原因。' },
 ] as const
 
-// Creates a team pre-filled with a coding member and an independent verifier,
-// using the same agent and team endpoints as the desktop. Agents created before
-// a failure are removed again.
-export async function createStarterTeam(name: string, objective: string): Promise<string> {
+export type TeamKind = 'business' | 'code'
+
+// A business team starts with one member who handles the task; more are added
+// on the member page.
+const businessStarter = [
+  { key: 'handle', displayName: '业务办理员', engine: 'loom', prompt: '只依据本次任务的原话和材料办理。把事实、估计和待确认事项分开写；没有给出的数字和日期不要推测。', requirement: '说明办理结果、依据和待确认项。' },
+] as const
+
+// Creates a team from a starting set of members, using the same agent and team
+// endpoints as the desktop. Agents created before a failure are removed again.
+export async function createStarterTeam(name: string, objective: string, kind: TeamKind = 'business'): Promise<string> {
   const suffix = createUUID()
   const created: string[] = []
   try {
     const lead = await createAgent(`team-${suffix}-lead`, '团队负责人', 'avatar', 'loom', `负责理解“${name}”的目标并汇总可核验结果。`)
     created.push(`team-${suffix}-lead`)
     const workers: Array<{ id: string; requirement: string; duty: string }> = []
-    for (const member of starterMembers) {
+    for (const member of kind === 'code' ? starterMembers : businessStarter) {
       const agentName = `team-${suffix}-${member.key}`
       const agent = await createAgent(agentName, member.displayName, 'worker', member.engine, member.prompt)
       created.push(agentName)
@@ -250,9 +268,9 @@ export async function createStarterTeam(name: string, objective: string): Promis
       method: 'POST',
       body: JSON.stringify({
         name: `team-${suffix}`, display_name: name, objective, primary_scenario: objective,
-        success_criteria: '交付经过独立验证的代码改动', lead_avatar_id: lead.id,
+        success_criteria: kind === 'code' ? '交付经过独立验证的代码改动' : '按任务要求交付结果并说明依据', lead_avatar_id: lead.id,
         workers: workers.map((worker) => ({
-          worker_agent_id: worker.id, duty: worker.duty, when_to_use: '负责人分配相关工作时', context_instruction: '保留任务上下文、代码版本和材料来源。',
+          worker_agent_id: worker.id, duty: worker.duty, when_to_use: '负责人分配相关工作时', context_instruction: kind === 'code' ? '保留任务上下文、代码版本和材料来源。' : '保留本次任务的原话和材料来源。',
           allowed_kinds: ['consult', 'dispatch', 'handoff'], default_kind: 'dispatch', result_requirement: worker.requirement,
         })),
       }),
@@ -274,6 +292,15 @@ export function withStarterWorkflow(document: DevelopmentDocument): DevelopmentD
     ? { ...member, relationship: { ...member.relationship, duty: '理解任务目标并汇总可核验结果' } }
     : member) }
   const workers = document.members.filter((member) => member.configuration.role === 'worker')
+  // A team that starts with one member gets the plain flow: the lead reads the
+  // task, the member handles it, the result is delivered.
+  if (workers.length === 1) {
+    return { ...document, workflows: [{
+      id: createUUID(), name: '业务流程', description: document.objective,
+      trigger_config: { schema_version: 1, type: 'conversation_explicit', config: {} },
+      graph_definition: initialGraph(workers[0]),
+    }] }
+  }
   if (workers.length < 2) return document
   const steps = starterMembers.map((starter, index) => {
     const member = workers.find((item) => item.configuration.display_name === starter.displayName) ?? workers[index]
@@ -287,6 +314,34 @@ export function withStarterWorkflow(document: DevelopmentDocument): DevelopmentD
       graph_definition: withVerifyLoop(serialGraph(steps), 3),
     }],
   }
+}
+
+// Saves the starting flow right after creation, so a new team opens as a
+// clean draft instead of one with changes nobody made. Built-in members get
+// the first available model.
+export async function prepareNewTeam(teamId: string): Promise<void> {
+  const [draft, models] = await Promise.all([readDevelopment(teamId), loadModelCatalog().catch(() => [] as string[])])
+  const members = draft.document.members.map((member) => member.configuration.role === 'worker' && !isCLIEngine(member.configuration.engine) && !member.configuration.model && models[0]
+    ? { ...member, configuration: { ...member.configuration, model: models[0] } } : member)
+  const document = withStarterWorkflow({ ...draft.document, members })
+  if (JSON.stringify(document) !== JSON.stringify(draft.document)) await saveDevelopment(teamId, draft.revision, document)
+}
+
+// A member added on the page; the server creates it when the draft is trialled.
+export function newMember(model: string): DevelopmentMember {
+  return {
+    id: createUUID(),
+    configuration: { display_name: '新成员', role: 'worker', engine: 'loom', runtime_id: '', model, system_prompt: '' },
+    relationship: { duty: '', when_to_use: '流程执行到本成员负责的步骤时', context_instruction: '保留本次任务的原话和材料来源。', allowed_kinds: ['consult', 'dispatch', 'handoff'], default_kind: 'consult', result_requirement: '', enabled: true },
+  }
+}
+
+// The steps a member is assigned to, by name; a member in use cannot be removed.
+export function memberSteps(document: DevelopmentDocument, memberId: string): string[] {
+  const member = document.members.find((item) => item.id === memberId)
+  return document.workflows.flatMap((flow) => (flow.graph_definition.nodes ?? [])
+    .filter((node) => member?.configuration.role === 'avatar' ? node.type === 'lead' : node.type === 'worker' && node.config?.agent_id === memberId)
+    .map((node) => node.label || '未命名步骤'))
 }
 
 export const cliEngines = ['claude', 'codex', 'opencode']
