@@ -38,7 +38,6 @@ func TestDevelopmentTrialSerialOutputActivityRealPG(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-
 	response := fixture.activity(t, fixture.actorID)
 	if got := response.Completeness["member_outputs"]; got != "complete" {
 		t.Fatalf("member_outputs completeness = %q, want complete", got)
@@ -277,34 +276,35 @@ func (fixture *developmentTrialOutputFixture) recordMemberEvents(t *testing.T, w
 	}
 }
 
-func (fixture *developmentTrialOutputFixture) activity(t *testing.T, actorID string) struct {
+type developmentTrialActivityResponse struct {
 	Completeness map[string]string   `json:"completeness"`
 	Members      []runActivityMember `json:"members"`
 	Stages       []runActivityStage  `json:"stages"`
-} {
+	TeamID       string              `json:"team_id"`
+	Trial        bool                `json:"development_trial"`
+}
+
+func (fixture *developmentTrialOutputFixture) activity(t *testing.T, actorID string) developmentTrialActivityResponse {
 	t.Helper()
 	response := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodGet, "/v1/runs/"+fixture.runID+"/activity", nil).WithContext(fixture.ctx)
-	ctx := echo.New().NewContext(request, response)
+	ctx := echo.New().NewContext(httptest.NewRequest(http.MethodGet, "/v1/runs/"+fixture.runID+"/activity", nil).WithContext(fixture.ctx), response)
 	ctx.Set("tenant", fixture.workspaceID)
 	ctx.Set("user_id", actorID)
 	ctx.Set("roles", []string{"developer"})
 	ctx.SetParamNames("id")
 	ctx.SetParamValues(fixture.runID)
-	err := fixture.server.handleGetRunActivity(ctx)
-	if err != nil {
+	if err := fixture.server.handleGetRunActivity(ctx); err != nil {
 		t.Fatal(err)
 	}
 	if response.Code != http.StatusOK {
 		t.Fatalf("activity status=%d body=%s", response.Code, response.Body.String())
 	}
-	var decoded struct {
-		Completeness map[string]string   `json:"completeness"`
-		Members      []runActivityMember `json:"members"`
-		Stages       []runActivityStage  `json:"stages"`
-	}
+	var decoded developmentTrialActivityResponse
 	if err := json.Unmarshal(response.Body.Bytes(), &decoded); err != nil {
 		t.Fatal(err)
+	}
+	if !decoded.Trial || decoded.TeamID == "" {
+		t.Fatal("trial activity is missing its return context")
 	}
 	return decoded
 }

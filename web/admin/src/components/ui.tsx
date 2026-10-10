@@ -14,16 +14,19 @@ export function Dot({ on, label }: { on: boolean; label: string }) {
 // Focus moves into a modal panel on open and back on close; Escape closes it.
 function useModalPanel(onClose: () => void) {
   const panel = useRef<HTMLElement>(null)
+  const close = useRef(onClose)
+  close.current = onClose
+  // Field updates replace inline callbacks; focus belongs to the mounted panel.
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null
     panel.current?.focus()
-    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose() }
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') close.current() }
     window.addEventListener('keydown', onKey)
     return () => {
       window.removeEventListener('keydown', onKey)
       previous?.focus?.()
     }
-  }, [onClose])
+  }, [])
   return panel
 }
 
@@ -149,4 +152,12 @@ export function Switch({ checked, label, onChange, disabled }: { checked: boolea
     <span className="switch__track" aria-hidden="true"><span className="switch__thumb" /></span>
     <span>{label}</span>
   </button>
+}
+
+export function Checkbox({ checked, label, onChange, disabled }: { checked: boolean; label: string; onChange(value: boolean): void; disabled?: boolean }) {
+  return <label className={`checkbox${disabled ? ' is-disabled' : ''}`}>
+    <input type="checkbox" className="sr-only" checked={checked} disabled={disabled} onChange={event => onChange(event.target.checked)} />
+    <span className="checkbox__box" aria-hidden="true">{checked ? <Check size={12} /> : null}</span>
+    <span>{label}</span>
+  </label>
 }

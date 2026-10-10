@@ -2,6 +2,7 @@ import { createUUID } from '../lib/ids'
 import { ArrowLeft, CircleCheck, Download, CircleDashed, CircleX, LoaderCircle, Square } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Badge, InlineError } from '../components/ui'
+import { ResultContent } from '../components/ResultContent'
 import { ApiError, errorMessage } from '../lib/api'
 import { checkReason, checkTitle, engineName, relativeTime } from '../lib/format'
 import { usePolling } from '../lib/polling'
@@ -95,6 +96,9 @@ export function TaskDetailPage({ runId, navigate }: { runId: string; navigate(pa
   const verification = code ? verdictLabel(code.verdict) : verificationLabel(activity?.delivery, activity?.status ?? '')
   const stageHead = (nodeId: string) => code?.stages.find((stage) => stage.node_id === nodeId)?.version.head_sha
   const stagePasses = (nodeId: string) => code?.stages.find((stage) => stage.node_id === nodeId)?.passes
+  const trial = activity?.development_trial === true
+  const backPath = trial ? activity.team_id ? `/teams/${encodeURIComponent(activity.team_id)}/trial` : '/teams' : '/'
+  const backLabel = trial ? '返回团队试跑' : '返回任务列表'
 
   const act = async (action: () => Promise<unknown>) => {
     setBusy(true)
@@ -110,7 +114,7 @@ export function TaskDetailPage({ runId, navigate }: { runId: string; navigate(pa
 
   return <section className="page page--wide">
     <header className="task-header">
-      <button type="button" className="icon-button" aria-label="返回任务列表" onClick={() => navigate('/')}><ArrowLeft size={16} /></button>
+      <button type="button" className="icon-button" aria-label={backLabel} disabled={!activity && !task} onClick={() => navigate(backPath)}><ArrowLeft size={16} /></button>
       <div className="task-header__title">
         <h1>{task?.title || task?.team_name || '试跑结果'}</h1>
         <p className="muted small">{task ? `${task.team_name || '团队'} · 第 ${task.workflow_version} 版 · ${relativeTime(task.created_at)}` : ''}{code ? <> · <CodeSummary code={code} /></> : null}</p>
@@ -184,8 +188,7 @@ function StageOutput({ runId, version, logStream, item, busy, onRetry }: { runId
         {tool.input ? <pre>{tool.input}</pre> : null}{tool.output ? <pre>{tool.output}</pre> : null}</li>)}</ul>
     </details> : null}
     {stage.outputs?.length ? <div className="stack">{stage.outputs.map((output, index) => <div key={`${output.path ?? output.kind}:${index}`} className="artifact">
-      <div className="artifact__head"><span className="mono">{output.path || '结果'}</span><span className="muted small">{output.content_bytes} 字节{output.truncated ? ' · 已截断' : ''}</span></div>
-      <pre>{output.content}</pre>
+      <ResultContent content={output.content} label={output.path || '结果'} detail={`${output.content_bytes} 字节${output.truncated ? ' · 已截断' : ''}`} />
     </div>)}</div> : null}
   </div>
 }

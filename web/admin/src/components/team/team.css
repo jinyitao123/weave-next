@@ -1,6 +1,7 @@
-.team-profile { display: grid; gap: 12px; max-width: 720px; padding: 16px; border: 1px solid var(--border); border-radius: var(--radius-lg); }
-.flow-profile { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(240px, 2fr); gap: 12px; align-items: start; }
-@media (max-width: 720px) { .flow-profile { grid-template-columns: minmax(0, 1fr); } }
+.team-profile { display: grid; gap: 16px; max-width: 640px; padding: 16px; border: 1px solid var(--border); border-radius: var(--radius-lg); }
+.flow-profile { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-shrink: 0; }
+.flow-profile > strong { min-width: 0; overflow-wrap: anywhere; font-weight: 500; }
+.flow-profile > .icon-button { flex-shrink: 0; }
 
 .release { display: grid; gap: 16px; max-width: 720px; }
 .release__section { display: grid; gap: 12px; padding: 16px; border: 1px solid var(--border); border-radius: var(--radius-lg); }

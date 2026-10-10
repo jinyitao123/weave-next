@@ -1,0 +1,8 @@
+.account-card { width: 100%; min-width: 0; padding: 8px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--canvas); box-shadow: none; }
+.account-card__identity { display: flex; align-items: center; gap: 8px; }
+.account-card__avatar { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 24px; height: 24px; border-radius: 50%; background: #866e48; color: #fff; font-size: 11px; font-weight: 500; }
+.account-card__name { flex: 1; min-width: 0; display: grid; gap: 1px; }
+.account-card__name strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-sm); font-weight: 500; }
+.account-card__name > span { color: var(--text-muted); font-size: var(--text-xs); }
+.account-card__logout { flex-shrink: 0; width: 24px; height: 24px; }
+@media (max-width: 720px) { .account-card { width: 168px; padding: 6px 8px; } }

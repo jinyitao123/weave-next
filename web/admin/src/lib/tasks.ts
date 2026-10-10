@@ -69,6 +69,8 @@ export interface Delivery {
 
 export interface Activity {
   run_id: string
+  team_id?: string
+  development_trial?: boolean
   status: string
   wait_kind?: string | null
   stop_unconfirmed?: boolean

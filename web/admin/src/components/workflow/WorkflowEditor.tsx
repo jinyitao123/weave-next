@@ -44,7 +44,7 @@ export function WorkflowEditor({ graph, members, onChange }: { graph: Graph; mem
   // Below the two-column breakpoint the inspector sits under the canvas, so a
   // selected step brings it into view instead of leaving the edit off screen.
   const revealInspector = () => {
-    if (typeof window.matchMedia !== 'function' || !window.matchMedia('(max-width: 1100px)').matches) return
+    if (typeof window.matchMedia !== 'function' || !window.matchMedia('(max-width: 1040px)').matches) return
     requestAnimationFrame(() => inspector.current?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' }))
   }
   const step = graph.nodes.find(node => node.id === selected) ?? graph.nodes[0]
