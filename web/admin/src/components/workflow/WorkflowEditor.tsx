@@ -1,9 +1,9 @@
 import { GitBranch, Plus, Trash2 } from 'lucide-react'
 import { useRef, useState } from 'react'
-import { Drawer, InlineError, Select, Switch } from '../ui'
+import { Dialog, InlineError, Select, Switch } from '../ui'
 import { maxVerifyRounds, serialSteps, verifyLoop, type Graph, type Step } from '../../lib/graph'
 import type { DevelopmentMember } from '../../lib/teams'
-import { addParallelBranch, assignExecutor, canInsertSerialStep, configureWorkflowResultProtocol, hasNodeInput, insertStep, isParallelBranchWorker, predecessors, removeStep, serializeParallel, setVerificationLoop, stepFeeds, toggleNodeInput, toggleTaskInput, validateWorkflowResultProtocol, WORKBENCH_RESULT_PROTOCOL } from '../../lib/workflow-graph'
+import { addParallelBranch, assignExecutor, canAddParallelBranch, canInsertSerialStep, feedsDelivery, configureWorkflowResultProtocol, hasNodeInput, insertStep, isParallelBranchWorker, predecessors, removeStep, serializeParallel, setVerificationLoop, stepFeeds, toggleNodeInput, toggleTaskInput, validateWorkflowResultProtocol, WORKBENCH_RESULT_PROTOCOL } from '../../lib/workflow-graph'
 import { FlowCanvas, stepLabel } from './FlowCanvas'
 import './workflow.css'
 
@@ -18,6 +18,14 @@ function actorName(node: Step, members: DevelopmentMember[]): string {
     ? members.find(item => item.configuration.role === 'avatar' && item.relationship.enabled)
     : members.find(item => item.id === node.config?.agent_id)
   return member?.configuration.display_name ?? stepLabel(node.type)
+}
+
+// Where a new step goes, in the words of the flow.
+function placementText(graph: Graph, form: Form): string {
+  const anchor = graph.nodes.find(node => node.id === form.after)
+  const name = anchor ? nodeTitle(anchor) : '当前步骤'
+  if (form.placement === 'serial') return anchor?.type === 'parallel' ? `加在“${name}”各分支汇合之后` : `加在“${name}”之后`
+  return anchor?.type === 'parallel' || (anchor && isParallelBranchWorker(graph, anchor.id)) ? `在“${name}”所在的并行分工里再加一个分支` : `与“${name}”同时执行，两边完成后汇合`
 }
 
 function modeLabel(graph: Graph, step: Step, loop: boolean): string {
@@ -73,30 +81,31 @@ export function WorkflowEditor({ graph, members, onChange }: { graph: Graph; mem
       <FlowCanvas graph={graph} members={members} selected={step?.id} feeds={step ? stepFeeds(graph, step) : undefined} highlight={hot} onSelect={select} />
       {step ? <section ref={inspector} className="flow-editor__inspector" aria-label={`${nodeTitle(step)}配置`}>
         <header className="flow-editor__head">
-          <div><h2>{nodeTitle(step)}</h2><p className="muted small">{modeLabel(graph, step, Boolean(loop))}</p></div>
+          <div><h2>{nodeTitle(step)}</h2>{modeLabel(graph, step, Boolean(loop)) !== nodeTitle(step) ? <p className="muted small">{modeLabel(graph, step, Boolean(loop))}</p> : null}</div>
           {!loop ? <div className="flow-editor__actions">
             {canInsertSerialStep(graph, step.id) ? <button type="button" className="button" onClick={() => open('serial')}><Plus size={14} />{step.type === 'parallel' ? '汇合后添加步骤' : '添加下一步'}</button> : null}
-            {(step.type === 'parallel' || step.type === 'worker' && graph.edges.filter(edge => edge.to_node_id === step.id).length === 1 && graph.edges.filter(edge => edge.from_node_id === step.id).length === 1) ? <button type="button" className="button" onClick={() => open('parallel')}><GitBranch size={14} />添加并行分支</button> : null}
+            {canAddParallelBranch(graph, step.id) ? <button type="button" className="button" onClick={() => open('parallel')}><GitBranch size={14} />添加并行分支</button> : null}
             {step.type === 'parallel' ? <button type="button" className="button" onClick={() => structure(current => serializeParallel(current, step.id))}>改为依次执行</button> : null}
             {['lead', 'worker'].includes(step.type) && step.id !== graph.entry_node_id ? <button type="button" className="button" onClick={() => setDeleting(true)}><Trash2 size={14} />删除步骤</button> : null}
           </div> : null}
         </header>
+        {!loop && step.type === 'worker' && feedsDelivery(graph, step.id) && !canAddParallelBranch(graph, step.id) ? <p className="muted small flow-editor__hint">交付前的最后一步不能并行。需要并行时，先在它后面添加一个汇总步骤。</p> : null}
         {loop && step.id === loop.loopId
           ? <div className="field"><span>最多轮数</span><Select label="验证回路最多轮数" value={String(loop.rounds)} options={Array.from({ length: maxVerifyRounds }, (_, index) => ({ value: String(index + 1), label: `${index + 1} 轮` }))} onChange={value => change(current => setVerificationLoop(current, true, Number(value)))} /></div>
           : <StepInspector graph={graph} step={step} members={members} loop={Boolean(loop)} onChange={update} onGraph={change} onHot={setHot} />}
       </section> : <p className="muted">流程中还没有步骤。</p>}
     </div>
-    {error ? <InlineError message={error} /> : null}
-    {form ? <Drawer title={form.placement === 'parallel' ? '添加并行分支' : '添加步骤'} onClose={() => setForm(undefined)} footer={<><button type="button" className="button" onClick={() => setForm(undefined)}>取消</button><button type="button" className="button button--primary" disabled={!form.member || !form.name.trim() || !form.requirement.trim()} onClick={add}>添加步骤</button></>}>
-      <div className="stack"><p>{graph.nodes.find(node => node.id === form.after)?.label || '当前步骤'}之后</p>
+    {error && !form && !deleting ? <InlineError message={error} /> : null}
+    {form ? <Dialog title={form.placement === 'parallel' ? '添加并行分支' : '添加步骤'} onClose={() => { setForm(undefined); setError('') }} footer={<><button type="button" className="button" onClick={() => { setForm(undefined); setError('') }}>取消</button><button type="button" className="button button--primary" disabled={!form.member || !form.name.trim() || !form.requirement.trim()} onClick={add}>{form.placement === 'parallel' ? '添加分支' : '添加步骤'}</button></>}>
+      <div className="stack"><p>{placementText(graph, form)}</p>
         <div className="field"><span>执行成员</span><Select label="新步骤执行成员" value={form.member} options={available.map(member => ({ value: member.id, label: member.configuration.display_name }))} onChange={member => setForm({ ...form, member })} /></div>
         <label className="field"><span>步骤名称</span><input className="input" value={form.name} maxLength={80} onChange={event => setForm({ ...form, name: event.target.value })} /></label>
         <label className="field"><span>工作要求</span><textarea className="input textarea" rows={4} value={form.requirement} onChange={event => setForm({ ...form, requirement: event.target.value })} /></label>
         {!form.member || !form.name.trim() || !form.requirement.trim() ? <p className="muted small">选择执行成员，并填写步骤名称和工作要求后才能添加。</p> : null}
         {error ? <InlineError message={error} /> : null}
       </div>
-    </Drawer> : null}
-    {deleting && step ? <Drawer title="删除步骤" onClose={() => setDeleting(false)} footer={<><button type="button" className="button" onClick={() => setDeleting(false)}>取消</button><button type="button" className="button button--danger" onClick={() => { if (structure(current => removeStep(current, step.id))) { setDeleting(false); setSelected(graph.entry_node_id) } }}>确定删除</button></>}><p>删除“{nodeTitle(step)}”？</p>{error ? <InlineError message={error} /> : null}</Drawer> : null}
+    </Dialog> : null}
+    {deleting && step ? <Dialog title="删除步骤" onClose={() => { setDeleting(false); setError('') }} footer={<><button type="button" className="button" onClick={() => { setDeleting(false); setError('') }}>取消</button><button type="button" className="button button--danger" onClick={() => { if (structure(current => removeStep(current, step.id))) { setDeleting(false); setSelected(graph.entry_node_id) } }}>确定删除</button></>}><p>删除“{nodeTitle(step)}”？</p>{error ? <InlineError message={error} /> : null}</Dialog> : null}
   </div>
 }
 
@@ -126,7 +135,7 @@ function StepInspector({ graph, step, members, loop, onChange, onGraph, onHot }:
       {['lead', 'worker'].includes(step.type) ? <>
         {!actor ? <InlineError message="原执行成员不可用，请重新选择已启用的成员。" /> : null}
         {step.type === 'lead' && step.id === graph.entry_node_id ? <p>由负责人{actor ? `“${actor.configuration.display_name}”` : ''}执行</p> : <div className="field"><span>执行成员</span><Select label="执行成员" value={actor?.id ?? ''} options={actors.map(member => ({ value: member.id, label: member.configuration.display_name }))} onChange={id => { const member = actors.find(item => item.id === id); if (member) onGraph(current => assignExecutor(current, step.id, member)) }} /></div>}
-        <label className="field"><span>{step.type === 'lead' ? '处理指令' : '交付要求'}</span><textarea className="input textarea" rows={5} value={String(step.config?.[step.type === 'lead' ? 'instruction' : 'result_requirement'] ?? '')} onChange={event => onChange({ ...step, config: { ...step.config, [step.type === 'lead' ? 'instruction' : 'result_requirement']: event.target.value } })} /></label>
+        <label className="field"><span>工作要求</span><textarea className="input textarea" rows={5} value={String(step.config?.[step.type === 'lead' ? 'instruction' : 'result_requirement'] ?? '')} onChange={event => onChange({ ...step, config: { ...step.config, [step.type === 'lead' ? 'instruction' : 'result_requirement']: event.target.value } })} /></label>
       </> : null}
       {step.type === 'parallel' ? <p className="muted">分支成员同时执行，全部进入后面的汇合步骤。</p> : null}
       {step.type === 'join' ? <>
@@ -136,7 +145,7 @@ function StepInspector({ graph, step, members, loop, onChange, onGraph, onHot }:
       </> : null}
       {step.type === 'deliver' ? loop ? <p>交付最后一轮的验证结论。</p> : <>
         <div className="field"><span>交付哪一步的结果</span><Select label="交付来源" value={String((step.config?.result as { node_id?: string })?.node_id ?? '')} options={candidates.map(prior => ({ value: prior.id, label: nodeTitle(prior) }))} onChange={id => configureDelivery(graph.result_protocol === WORKBENCH_RESULT_PROTOCOL, id)} /></div>
-        <div className="field"><span>结果分类</span><Select label="结果分类" value={graph.result_protocol === WORKBENCH_RESULT_PROTOCOL ? WORKBENCH_RESULT_PROTOCOL : 'ordinary'} options={[{ value: 'ordinary', label: '普通结果' }, { value: WORKBENCH_RESULT_PROTOCOL, label: '可要求补充材料' }]} onChange={value => configureDelivery(value === WORKBENCH_RESULT_PROTOCOL)} /></div>
+        <div className="field"><span>材料不全时</span><Select label="材料不全时" value={graph.result_protocol === WORKBENCH_RESULT_PROTOCOL ? WORKBENCH_RESULT_PROTOCOL : 'ordinary'} options={[{ value: 'ordinary', label: '照常交付结果' }, { value: WORKBENCH_RESULT_PROTOCOL, label: '可以退回，请发起人补充材料' }]} onChange={value => configureDelivery(value === WORKBENCH_RESULT_PROTOCOL)} /></div>
         {issue ? <InlineError message={issue} /> : null}
       </> : null}
     </section>
@@ -146,7 +155,7 @@ function StepInspector({ graph, step, members, loop, onChange, onGraph, onHot }:
       {loop ? <p className="muted">输入沿用验证回路的本轮结果与上一轮验证意见。</p> : <>
         <ul className="flow-sources">
           <SourceRow checked={feeds.task} title="本次任务输入" detail="发起任务时提交的原始内容" hotKey="task" onToggle={() => onChange(toggleTaskInput(step))} onHot={onHot} />
-          {candidates.map(prior => <SourceRow key={prior.id} checked={hasNodeInput(step, prior.id)} title={`${nodeTitle(prior)}的结果`} detail={`由${actorName(prior, members)}产出`} hotKey={prior.id} onToggle={() => onChange(toggleNodeInput(step, prior))} onHot={onHot} />)}
+          {candidates.map(prior => <SourceRow key={prior.id} checked={hasNodeInput(step, prior.id)} title={`${nodeTitle(prior)}的结果`} detail={prior.type === 'join' ? '各分支结果的汇总' : `由${actorName(prior, members)}产出`} hotKey={prior.id} onToggle={() => onChange(toggleNodeInput(step, prior))} onHot={onHot} />)}
         </ul>
         {candidates.length === 0 ? <p className="muted small">这是第一步，前面没有其他步骤可选。</p> : null}
         {received.length ? <p className="flow-sources__summary" role="status">开始时会收到：{received.join('、')}</p>

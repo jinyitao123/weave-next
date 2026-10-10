@@ -54,7 +54,7 @@ func TestDevelopmentTrialSerialOutputActivityRealPG(t *testing.T) {
 		t.Fatalf("top-level serial stages = %#v", response.Stages)
 	}
 	fixture.assertNoFormalDeliverables(t)
-	fixture.assertActivityDeniedToOtherDeveloper(t)
+	fixture.assertActivityNeedsDeveloperAccess(t)
 }
 
 func TestDevelopmentTrialParallelJoinOutputsActivityRealPG(t *testing.T) {
@@ -102,7 +102,7 @@ func TestDevelopmentTrialParallelJoinOutputsActivityRealPG(t *testing.T) {
 		t.Fatalf("parallel stage progress = %d/%d, want 3/3", completed, total)
 	}
 	fixture.assertNoFormalDeliverables(t)
-	fixture.assertActivityDeniedToOtherDeveloper(t)
+	fixture.assertActivityNeedsDeveloperAccess(t)
 }
 
 func TestDevelopmentTrialTruncatedOutputRemainsPartial(t *testing.T) {
@@ -320,7 +320,7 @@ func (fixture *developmentTrialOutputFixture) assertNoFormalDeliverables(t *test
 	}
 }
 
-func (fixture *developmentTrialOutputFixture) assertActivityDeniedToOtherDeveloper(t *testing.T) {
+func (fixture *developmentTrialOutputFixture) assertActivityNeedsDeveloperAccess(t *testing.T) {
 	t.Helper()
 	response := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodGet, "/v1/runs/"+fixture.runID+"/activity", nil).WithContext(execution.WithSubject(context.Background(), execution.Subject{WorkspaceID: fixture.workspaceID, UserID: "other-developer"}))
@@ -332,8 +332,10 @@ func (fixture *developmentTrialOutputFixture) assertActivityDeniedToOtherDevelop
 	if err := fixture.server.handleGetRunActivity(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if response.Code != http.StatusNotFound {
-		t.Fatalf("other developer activity status=%d, want 404", response.Code)
+	// The request carries no developer role: trial activity is open to every
+	// developer of the workspace, and to nobody else.
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("activity without developer access status=%d, want 403", response.Code)
 	}
 }
 

@@ -33,3 +33,8 @@
   .members { grid-template-columns: minmax(0, 1fr); }
   .members__list { position: static; grid-auto-flow: column; grid-auto-columns: minmax(180px, 1fr); overflow-x: auto; }
 }
+.members__confirm { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 6px; padding: 8px 10px; border-radius: var(--radius-md); background: var(--warning-soft); color: var(--warning); font-size: var(--text-sm); }
+.members__confirm span { flex: 1; min-width: 180px; }
+.members__catalog { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.members__catalog-item { width: 100%; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid var(--border-strong); border-radius: var(--radius-md); background: var(--canvas); color: var(--text); text-align: left; cursor: pointer; }
+.members__catalog-item:hover { background: var(--hover); }

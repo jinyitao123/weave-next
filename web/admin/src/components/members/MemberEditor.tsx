@@ -1,9 +1,9 @@
 import { Plus, Trash2, X } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
-import { Badge, Select, Switch } from '../ui'
+import { Badge, Dialog, Select, Switch } from '../ui'
 import { engineName } from '../../lib/format'
 import type { RuntimeNode } from '../../lib/nodes'
-import { describeCapability, handoffKinds, isCLIEngine, loadModelCatalog, memberProblems, parseOutputSchema, toolLoopLimits, type DevelopmentDocument, type DevelopmentMember, type MemberConfiguration, type MemberRelationship, type MemberSkill } from '../../lib/teams'
+import { bindingSourceLabel, capabilityName, defaultCapabilityBinding, describeCapability, handoffKinds, isCLIEngine, loadModelCatalog, memberProblems, parseOutputSchema, requiredHandoffKinds, toolLoopLimits, type BusinessCatalog, type CatalogCapability, type DevelopmentDocument, type DevelopmentMember, type MemberConfiguration, type MemberRelationship, type MemberSkill } from '../../lib/teams'
 import './members.css'
 
 const engines = ['claude', 'codex', 'opencode', 'loom']
@@ -24,7 +24,7 @@ type Edit = { onConfig(id: string, patch: Partial<MemberConfiguration>): void; o
 
 const count = (value: unknown) => Array.isArray(value) ? value.filter((item) => typeof item === 'string' && item.trim()).length : 0
 
-export function MemberEditor({ document, nodes, accepting, onConfig, onRelationship }: { document: DevelopmentDocument; nodes: RuntimeNode[]; accepting: Record<string, number> } & Edit) {
+export function MemberEditor({ document, nodes, accepting, catalog, onConfig, onRelationship }: { document: DevelopmentDocument; nodes: RuntimeNode[]; accepting: Record<string, number>; catalog?: BusinessCatalog } & Edit) {
   const ordered = useMemo(() => [...document.members].sort((a, b) => Number(b.configuration.role === 'avatar') - Number(a.configuration.role === 'avatar')), [document.members])
   const [selected, setSelected] = useState(ordered[0]?.id)
   const [models, setModels] = useState<string[]>([])
@@ -43,32 +43,32 @@ export function MemberEditor({ document, nodes, accepting, onConfig, onRelations
         {problems.length ? <span className="members__flag"><Badge tone="warning">待补充</Badge></span> : null}
       </button></li>
     })}</ul>
-    <MemberDetail key={member.id} member={member} nodes={nodes} accepting={accepting} models={models} onConfig={(patch) => onConfig(member.id, patch)} onRelationship={(patch) => onRelationship(member.id, patch)} />
+    <MemberDetail key={member.id} member={member} nodes={nodes} accepting={accepting} models={models} catalog={catalog} kindsInUse={requiredHandoffKinds(document, member.id)} onConfig={(patch) => onConfig(member.id, patch)} onRelationship={(patch) => onRelationship(member.id, patch)} />
   </div>
 }
 
-function MemberDetail({ member, nodes, accepting, models, onConfig, onRelationship }: { member: DevelopmentMember; nodes: RuntimeNode[]; accepting: Record<string, number>; models: string[]; onConfig(patch: Partial<MemberConfiguration>): void; onRelationship(patch: Partial<MemberRelationship>): void }) {
+type DetailProps = { member: DevelopmentMember; onConfig(patch: Partial<MemberConfiguration>): void; onRelationship(patch: Partial<MemberRelationship>): void }
+
+function MemberDetail({ member, nodes, accepting, models, catalog, kindsInUse, onConfig, onRelationship }: DetailProps & { nodes: RuntimeNode[]; accepting: Record<string, number>; models: string[]; catalog?: BusinessCatalog; kindsInUse: string[] }) {
   const [tab, setTab] = useState<TabId>('duty')
   const config = member.configuration, relation = member.relationship
   const lead = config.role === 'avatar', cli = isCLIEngine(config.engine)
   const name = config.display_name || '未命名成员'
-  const problems = memberProblems(member)
   return <section className="members__detail" aria-label={`${name}配置`}>
     <header className="members__header">
       <div className="members__title"><h2>{name}</h2>{lead ? <Badge tone="accent">负责人</Badge> : null}{!lead && relation.enabled === false ? <Badge>不参与</Badge> : null}</div>
       <p className="muted small">{engineName(config.engine)}{config.model ? ` · ${config.model}` : ''}</p>
     </header>
-    {problems.length ? <ul className="readiness">{problems.map((problem) => <li key={problem}>{problem}</li>)}</ul> : null}
     <div className="tabs" role="tablist" aria-label={`${name}的配置`}>
       {tabs.map((item) => <button key={item.id} type="button" role="tab" aria-selected={tab === item.id} onClick={() => setTab(item.id)}>{item.label}</button>)}
     </div>
     {tab === 'duty' ? <DutyPanel member={member} onConfig={onConfig} onRelationship={onRelationship} /> : null}
-    {tab === 'ability' ? <AbilityPanel member={member} cli={cli} onConfig={onConfig} /> : null}
-    {tab === 'run' ? <RunPanel member={member} nodes={nodes} accepting={accepting} models={models} onConfig={onConfig} onRelationship={onRelationship} /> : null}
+    {tab === 'ability' ? <AbilityPanel member={member} cli={cli} catalog={catalog} onConfig={onConfig} /> : null}
+    {tab === 'run' ? <RunPanel member={member} nodes={nodes} accepting={accepting} models={models} kindsInUse={kindsInUse} onConfig={onConfig} onRelationship={onRelationship} /> : null}
   </section>
 }
 
-function DutyPanel({ member, onConfig, onRelationship }: { member: DevelopmentMember; onConfig(patch: Partial<MemberConfiguration>): void; onRelationship(patch: Partial<MemberRelationship>): void }) {
+function DutyPanel({ member, onConfig, onRelationship }: DetailProps) {
   const config = member.configuration, relation = member.relationship, lead = config.role === 'avatar'
   const stored = config.output_schema ? JSON.stringify(config.output_schema, null, 2) : ''
   const [schema, setSchema] = useState(stored)
@@ -101,12 +101,14 @@ function DutyPanel({ member, onConfig, onRelationship }: { member: DevelopmentMe
   </div>
 }
 
-function AbilityPanel({ member, cli, onConfig }: { member: DevelopmentMember; cli: boolean; onConfig(patch: Partial<MemberConfiguration>): void }) {
+function AbilityPanel({ member, cli, catalog, onConfig }: { member: DevelopmentMember; cli: boolean; catalog?: BusinessCatalog; onConfig(patch: Partial<MemberConfiguration>): void }) {
   const config = member.configuration
   const actions = (config.business_capability_ids ?? []).filter((id) => typeof id === 'string' && id.trim())
   const bindings = config.business_capability_bindings ?? []
   const deny = config.permission_deny ?? []
   const skills = config.skills ?? []
+  const [removing, setRemoving] = useState<string>()
+  const [picking, setPicking] = useState(false)
   const external = [
     ['MCP 服务', config.mcp_server_ids], ['技能库技能', config.skill_names], ['允许的工具', config.permission_allow], ['需确认的工具', config.permission_ask],
   ] as const
@@ -116,21 +118,43 @@ function AbilityPanel({ member, cli, onConfig }: { member: DevelopmentMember; cl
     business_capability_ids: actions.filter((item) => item !== id),
     business_capability_bindings: bindings.filter((binding) => binding.capability_id !== id),
   })
+  const addAction = (capability: CatalogCapability) => {
+    const binding = defaultCapabilityBinding(capability)
+    onConfig({
+      business_capability_ids: [...actions, capability.id],
+      business_capability_bindings: binding ? [...bindings.filter((item) => item.capability_id !== capability.id), binding] : bindings,
+    })
+    setPicking(false)
+  }
+  // Only actions a team may carry out on an employee's behalf can be added.
+  const addable = (catalog?.capabilities ?? []).filter((capability) => capability.status === 'available' && capability.executionMode !== 'employee_only' && !actions.includes(capability.id))
   return <div className="members__panel" role="tabpanel" aria-label="能力">
     <section className="members__section" aria-label="业务动作">
       <h3>业务动作</h3>
       {actions.length ? <ul className="members__actions">{actions.map((id) => {
-        const info = describeCapability(id)
+        const known = catalog?.capabilities.find((capability) => capability.id === id)
+        const title = capabilityName(id, catalog)
         const mapped = bindings.find((binding) => binding.capability_id === id)?.parameters ?? []
+        const parameterName = (name: string) => known?.params?.find((parameter) => parameter.name === name)?.label || name
         return <li key={id} className="members__action">
           <div className="members__action-main">
-            <strong>{info.action}</strong>
-            <span className="muted small mono">{info.object || id}</span>
-            {mapped.length ? <span className="members__chips">{mapped.map((parameter) => <span key={parameter.name} className="members__chip"><code>{parameter.name}</code> ← <code>{parameter.source}</code></span>)}</span> : null}
+            <strong>{title}</strong>
+            {known?.description ? <span className="muted small">{known.description}</span> : null}
+            {mapped.length ? <span className="members__chips">{mapped.map((parameter) => <span key={parameter.name} className="members__chip">{parameterName(parameter.name)}：取自{bindingSourceLabel(parameter.source)}</span>)}</span> : null}
+            {removing === id ? <div className="members__confirm" role="alertdialog" aria-label={`确认移除 ${title}`}>
+              <span>移除后，这个成员不能再办理“{title}”。</span>
+              <button type="button" className="button" onClick={() => setRemoving(undefined)}>取消</button>
+              <button type="button" className="button button--danger" onClick={() => { removeAction(id); setRemoving(undefined) }}>移除</button>
+            </div> : null}
           </div>
-          <button type="button" className="icon-button" aria-label={`移除业务动作 ${info.action}`} onClick={() => removeAction(id)}><X size={14} /></button>
+          {removing === id ? null : <button type="button" className="icon-button" aria-label={`移除业务动作 ${title}`} onClick={() => setRemoving(id)}><X size={14} /></button>}
         </li>
       })}</ul> : <p className="muted">还没有分配业务动作，这个成员只能整理和分析，不能写入业务系统。</p>}
+      <div className="toolbar">
+        <button type="button" className="button" disabled={!addable.length} onClick={() => setPicking(true)}><Plus size={14} />添加业务动作</button>
+        {!catalog?.available ? <span className="muted small">还没有读到业务动作目录，退出后重新登录一次即可读取。</span>
+          : !addable.length ? <span className="muted small">目录里没有可再添加的业务动作。</span> : null}
+      </div>
     </section>
 
     {cli ? null : <section className="members__section" aria-label="技能">
@@ -158,15 +182,28 @@ function AbilityPanel({ member, cli, onConfig }: { member: DevelopmentMember; cl
         <button type="button" className="button" onClick={() => onConfig({ mcp_server_ids: [], skill_names: [], permission_allow: [], permission_ask: [] })}>移除这些配置</button>
       </div> : null}
     </section>
+
+    {picking ? <Dialog title="添加业务动作" onClose={() => setPicking(false)}>
+      <ul className="members__catalog">{addable.map((capability) => <li key={capability.id}>
+        <button type="button" className="members__catalog-item" onClick={() => addAction(capability)}>
+          <span className="members__action-main"><strong>{capability.name || describeCapability(capability.id).action}</strong>{capability.description ? <span className="muted small">{capability.description}</span> : null}</span>
+          <Badge tone={capability.effect === 'write' ? 'warning' : 'neutral'}>{capability.effect === 'write' ? '会写入' : '只读取'}</Badge>
+        </button>
+      </li>)}</ul>
+    </Dialog> : null}
   </div>
 }
 
-function RunPanel({ member, nodes, accepting, models, onConfig, onRelationship }: { member: DevelopmentMember; nodes: RuntimeNode[]; accepting: Record<string, number>; models: string[]; onConfig(patch: Partial<MemberConfiguration>): void; onRelationship(patch: Partial<MemberRelationship>): void }) {
+function RunPanel({ member, nodes, accepting, models, kindsInUse, onConfig, onRelationship }: DetailProps & { nodes: RuntimeNode[]; accepting: Record<string, number>; models: string[]; kindsInUse: string[] }) {
   const config = member.configuration, relation = member.relationship
   const lead = config.role === 'avatar', cli = isCLIEngine(config.engine)
   const name = config.display_name || '未命名成员'
   const engineNodes = nodes.filter((node) => node.engine_readiness.some((engine) => engine.engine === config.engine)).map((node) => ({ value: node.id, label: node.name, detail: node.accepting ? '可接任务' : '暂不可接' }))
   const modelOptions = [...(lead ? [{ value: '', label: '不指定' }] : []), ...[...new Set([config.model, ...models].filter(Boolean))].map((model) => ({ value: model, label: model }))]
+  // An engine that runs on nodes is offered only while a node can take its work.
+  const engineOptions = engines.filter((engine) => engine === config.engine || !isCLIEngine(engine) || accepting[engine])
+    .map((engine) => ({ value: engine, label: engineName(engine), detail: isCLIEngine(engine) ? `${accepting[engine] ?? 0} 个节点可接` : undefined }))
+  const memoryScope = memoryScopes.some((scope) => scope.value === config.memory_scope) ? config.memory_scope! : 'tenant'
   const kinds = relation.allowed_kinds?.length ? relation.allowed_kinds : defaultKinds
   const defaultKind = relation.allowed_kinds?.length ? relation.default_kind ?? '' : 'dispatch'
   const toggleKind = (kind: string) => {
@@ -180,11 +217,12 @@ function RunPanel({ member, nodes, accepting, models, onConfig, onRelationship }
   }
   const loopControl = config.tool_loop_control
   const setLoop = (patch: Partial<NonNullable<typeof loopControl>>) => onConfig({ tool_loop_control: { slice_rounds: 20, initial_total_rounds: 20, ...loopControl, ...patch } })
+  const locked = handoffKinds.filter((kind) => kindsInUse.includes(kind.value) && kinds.includes(kind.value)).map((kind) => kind.label)
   return <div className="members__panel" role="tabpanel" aria-label="执行">
     <section className="members__section" aria-label="引擎与模型">
       <h3>引擎与模型</h3>
       <div className="members__grid">
-        <div className="field"><span>引擎</span><Select label={`${name}的引擎`} value={config.engine} disabled={lead} options={engines.map((engine) => ({ value: engine, label: engineName(engine), detail: isCLIEngine(engine) ? `${accepting[engine] ?? 0} 个节点可接` : undefined }))} onChange={(engine) => onConfig({ engine, runtime_id: '' })} /></div>
+        <div className="field"><span>引擎</span><Select label={`${name}的引擎`} value={config.engine} disabled={lead} options={engineOptions} onChange={(engine) => onConfig({ engine, runtime_id: '' })} /></div>
         {cli ? <div className="field"><span>节点</span><Select label={`${name}的节点`} value={config.runtime_id ?? ''} placeholder={engineNodes.length ? '选择节点' : '没有提供该引擎的节点'} options={engineNodes} onChange={(runtime) => onConfig({ runtime_id: runtime })} /></div> : null}
         {cli
           ? <label className="field"><span>模型</span><input className="input" value={config.model ?? ''} placeholder="留空使用节点上的默认模型" onChange={(event) => onConfig({ model: event.target.value })} /></label>
@@ -210,20 +248,21 @@ function RunPanel({ member, nodes, accepting, models, onConfig, onRelationship }
 
       <section className="members__section" aria-label="记忆">
         <h3>记忆</h3>
-        <Switch checked={Boolean(config.memory_enabled)} label="启用记忆" onChange={(memory_enabled) => onConfig({ memory_enabled, memory_scope: config.memory_scope || 'tenant' })} />
-        {config.memory_enabled ? <div className="field"><span>记忆范围</span><Select label="记忆范围" value={config.memory_scope || 'tenant'} options={memoryScopes} onChange={(memory_scope) => onConfig({ memory_scope })} /></div> : null}
+        <Switch checked={Boolean(config.memory_enabled)} label="启用记忆" onChange={(memory_enabled) => onConfig({ memory_enabled, memory_scope: memoryScope })} />
+        {config.memory_enabled ? <div className="field"><span>记忆范围</span><Select label="记忆范围" value={memoryScope} options={memoryScopes} onChange={(memory_scope) => onConfig({ memory_scope })} /></div> : null}
       </section>
     </>}
 
     {lead ? null : <section className="members__section" aria-label="允许的交接方式">
       <h3>允许的交接方式</h3>
-      <p className="muted small">流程里的步骤只能用这里勾选的方式调用该成员，发布时检查；依次执行的步骤是咨询，并行分支是派发。</p>
+      <p className="muted small">流程按步骤所在位置决定用哪种方式：依次执行的步骤是咨询，并行分支是派发。把成员放进流程时会自动允许所需的方式，一般不用改这里。</p>
       <div className="members__grid">
         <div className="field"><span>允许</span><div className="members__choices" role="group" aria-label="交接方式">
-          {handoffKinds.map((kind) => <button key={kind.value} type="button" className="button" aria-pressed={kinds.includes(kind.value)} onClick={() => toggleKind(kind.value)}>{kind.label}</button>)}
+          {handoffKinds.map((kind) => <button key={kind.value} type="button" className="button" aria-pressed={kinds.includes(kind.value)} disabled={kindsInUse.includes(kind.value) && kinds.includes(kind.value)} onClick={() => toggleKind(kind.value)}>{kind.label}</button>)}
         </div></div>
         <div className="field"><span>新建步骤时默认</span><Select label="默认交接方式" value={defaultKind} options={handoffKinds.filter((kind) => kinds.includes(kind.value)).map((kind) => ({ value: kind.value, label: kind.label }))} onChange={(kind) => onRelationship({ allowed_kinds: kinds, default_kind: kind })} /></div>
       </div>
+      {locked.length ? <p className="muted small">流程里已有步骤在用“{locked.join('”“')}”，不能取消；要取消请先在流程里调整。</p> : null}
     </section>}
   </div>
 }

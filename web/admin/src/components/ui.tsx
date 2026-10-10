@@ -11,10 +11,9 @@ export function Dot({ on, label }: { on: boolean; label: string }) {
   return <span className="dot-label"><span className={`dot ${on ? 'dot--on' : ''}`} aria-hidden="true" />{label}</span>
 }
 
-// Right-side panel. Focus moves in on open and Escape closes it.
-export function Drawer({ title, onClose, children, footer }: { title: string; onClose(): void; children: ReactNode; footer?: ReactNode }) {
+// Focus moves into a modal panel on open and back on close; Escape closes it.
+function useModalPanel(onClose: () => void) {
   const panel = useRef<HTMLElement>(null)
-  const titleId = useId()
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null
     panel.current?.focus()
@@ -25,6 +24,28 @@ export function Drawer({ title, onClose, children, footer }: { title: string; on
       previous?.focus?.()
     }
   }, [onClose])
+  return panel
+}
+
+// Centered panel for a short form or a confirmation; its buttons sit right
+// under the content.
+export function Dialog({ title, onClose, children, footer }: { title: string; onClose(): void; children: ReactNode; footer?: ReactNode }) {
+  const panel = useModalPanel(onClose)
+  const titleId = useId()
+  return <div className="dialog-layer">
+    <button type="button" className="drawer-scrim" aria-label="关闭" onClick={onClose} />
+    <section ref={panel} className="dialog" role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1}>
+      <header className="dialog__header"><h2 id={titleId}>{title}</h2><button type="button" className="icon-button" aria-label="关闭" onClick={onClose}><X size={16} /></button></header>
+      <div className="dialog__body">{children}</div>
+      {footer ? <footer className="dialog__footer">{footer}</footer> : null}
+    </section>
+  </div>
+}
+
+// Right-side panel for longer forms.
+export function Drawer({ title, onClose, children, footer }: { title: string; onClose(): void; children: ReactNode; footer?: ReactNode }) {
+  const panel = useModalPanel(onClose)
+  const titleId = useId()
   return <div className="drawer-layer">
     <button type="button" className="drawer-scrim" aria-label="关闭" onClick={onClose} />
     <aside ref={panel} className="drawer" role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1}>
@@ -123,8 +144,8 @@ export function Select<T extends string>({ value, options, onChange, label, plac
   </div>
 }
 
-export function Switch({ checked, label, onChange }: { checked: boolean; label: string; onChange(value: boolean): void }) {
-  return <button type="button" role="switch" aria-checked={checked} className={`switch${checked ? ' is-on' : ''}`} onClick={() => onChange(!checked)}>
+export function Switch({ checked, label, onChange, disabled }: { checked: boolean; label: string; onChange(value: boolean): void; disabled?: boolean }) {
+  return <button type="button" role="switch" aria-checked={checked} disabled={disabled} className={`switch${checked ? ' is-on' : ''}`} onClick={() => onChange(!checked)}>
     <span className="switch__track" aria-hidden="true"><span className="switch__thumb" /></span>
     <span>{label}</span>
   </button>

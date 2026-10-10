@@ -14,7 +14,7 @@ import { TasksPage } from './TasksPage'
 import { TeamDetailPage } from './TeamDetailPage'
 import { TeamsPage } from './TeamsPage'
 
-interface RenderContext { session: AdminSession; path: string; navigate(path: string): void }
+interface RenderContext { session: AdminSession; path: string; navigate(path: string, options?: { force?: boolean }): void }
 
 interface Section {
   path: string

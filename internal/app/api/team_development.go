@@ -66,6 +66,9 @@ type developmentTrialView struct {
 	RunID      string    `json:"run_id"`
 	Status     string    `json:"status"`
 	CreatedAt  time.Time `json:"created_at"`
+	// Actor is the display name of whoever started the trial.
+	Actor string `json:"actor"`
+	Mine  bool   `json:"mine"`
 }
 
 func developmentError(message string) error { return echo.NewHTTPError(http.StatusConflict, message) }
@@ -176,14 +179,20 @@ func (s *Server) handleGetTeamDevelopment(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	rows, err := tx.Query(ctx, `SELECT t.request_id::text,t.revision,t.workflow_id,COALESCE(t.receipt->>'run_id',''),COALESCE(r.status,'submitting'),t.created_at FROM weave_team_development_trials t LEFT JOIN weave_team_runs r ON r.workspace_id=t.workspace_id AND r.run_id=t.receipt->>'run_id' WHERE t.workspace_id=$1 AND t.team_id=$2 AND t.actor_id=$3 ORDER BY t.created_at DESC LIMIT 30`, ws, id, getUserID(c))
+	// Every developer of the workspace sees the team's trials, not only their own.
+	rows, err := tx.Query(ctx, `SELECT t.request_id::text,t.revision,t.workflow_id,COALESCE(t.receipt->>'run_id',''),COALESCE(r.status,'submitting'),t.created_at,
+		COALESCE(NULLIF(u.display_name,''),u.username,''),t.actor_id=$3
+		FROM weave_team_development_trials t
+		LEFT JOIN weave_team_runs r ON r.workspace_id=t.workspace_id AND r.run_id=t.receipt->>'run_id'
+		LEFT JOIN weave_users u ON u.id=t.actor_id
+		WHERE t.workspace_id=$1 AND t.team_id=$2 ORDER BY t.created_at DESC LIMIT 30`, ws, id, getUserID(c))
 	if err != nil {
 		return err
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var v developmentTrialView
-		if err = rows.Scan(&v.RequestID, &v.Revision, &v.WorkflowID, &v.RunID, &v.Status, &v.CreatedAt); err != nil {
+		if err = rows.Scan(&v.RequestID, &v.Revision, &v.WorkflowID, &v.RunID, &v.Status, &v.CreatedAt, &v.Actor, &v.Mine); err != nil {
 			return err
 		}
 		d.Trials = append(d.Trials, v)
@@ -191,7 +200,7 @@ func (s *Server) handleGetTeamDevelopment(c echo.Context) error {
 	if err = rows.Err(); err != nil {
 		return err
 	}
-	readiness, err := buildDevelopmentPublicationReadiness(ctx, tx, ws, id, getUserID(c), d.PreparedActor, d.Revision, d.PreparedRevision, d.Prepared)
+	readiness, err := buildDevelopmentPublicationReadiness(ctx, tx, ws, id, d.Revision, d.PreparedRevision, d.Prepared)
 	if err != nil {
 		return err
 	}

@@ -235,7 +235,10 @@ export function insertStep(graph: Graph, id: string, member: TeamDefinition['mem
   if (!previous || !['lead', 'worker', 'join'].includes(previous.type) || outgoing.length !== 1 || outgoing[0].route !== 'success') throw new Error('请选择连接完整的步骤后添加下一步')
   const next = memberStep(member, previous), after = outgoing[0].to_node_id
   const nextRoute = outgoing[0].route
-  return { selected: next.id, graph: { ...graph, nodes: [...graph.nodes.map((n) => n.id === after && n.type === 'deliver' ? { ...n, config: { ...n.config, result: { ...(n.config?.result as object), source: 'node_output', node_id: next.id, path: '' } } } : n), next], edges: [...graph.edges.filter((e) => e !== outgoing[0]), edge(id, next.id), { ...outgoing[0], from_node_id: next.id, route: nextRoute }] } }
+  // The step that used to follow keeps what it received and also receives the
+  // new step's result, so the inserted work is not left unread.
+  const handOn = (n: Step): Step => n.id === after && ['lead', 'worker'].includes(n.type) && hasNodeInput(n, id) ? toggleNodeInput(n, next) : n
+  return { selected: next.id, graph: { ...graph, nodes: [...graph.nodes.map((n) => n.id === after && n.type === 'deliver' ? { ...n, config: { ...n.config, result: { ...(n.config?.result as object), source: 'node_output', node_id: next.id, path: '' } } } : handOn(n)), next], edges: [...graph.edges.filter((e) => e !== outgoing[0]), edge(id, next.id), { ...outgoing[0], from_node_id: next.id, route: nextRoute }] } }
 }
 export function addParallelBranch(graph: Graph, id: string, member: TeamDefinition['members'][number]): { graph: Graph; selected: string } {
   if (member.configuration.role !== 'worker' || !member.relationship.enabled) throw new Error('并行分支只能由已启用的执行成员负责')
@@ -252,15 +255,34 @@ export function addParallelBranch(graph: Graph, id: string, member: TeamDefiniti
   const parallel = `parallel-${createUUID()}`, join = `join-${createUUID()}`, next = memberStep(member, graph.nodes.find((n) => n.id === incoming[0].from_node_id), 'dispatch')
   const existingDispatch = { ...node, config: { ...node.config, kind: 'dispatch' } }
   const nodes: Step[] = [...graph.nodes.map((item) => item.id === node.id ? existingDispatch : item), next, { id: parallel, type: 'parallel', label: '并行分工', config: { join_node_id: join } }, { id: join, type: 'join', label: '汇总分支', config: { policy: 'all_success' } }]
-  // Existing consumers of this worker remain bound to it. A finalizer may also
-  // select the new join result explicitly, instead of silently changing types.
-  return { selected: next.id, graph: { ...graph, nodes, edges: [...graph.edges.filter((e) => e !== incoming[0] && e !== outgoing[0]), { ...incoming[0], to_node_id: parallel }, edge(parallel, id, 'branch'), edge(parallel, next.id, 'branch'), edge(id, join, 'join'), edge(next.id, join, 'join'), { ...outgoing[0], from_node_id: join }] } }
+  // The step right after the region read this worker's result; it now reads
+  // the merged result of both branches instead. Other consumers stay as they are.
+  const joined = nodes.find((item) => item.id === join)!, afterId = outgoing[0].to_node_id
+  const merged = nodes.map((item) => item.id === afterId && ['lead', 'worker'].includes(item.type) && hasNodeInput(item, id) ? toggleNodeInput(toggleNodeInput(item, node), joined) : item)
+  return { selected: next.id, graph: { ...graph, nodes: merged, edges: [...graph.edges.filter((e) => e !== incoming[0] && e !== outgoing[0]), { ...incoming[0], to_node_id: parallel }, edge(parallel, id, 'branch'), edge(parallel, next.id, 'branch'), edge(id, join, 'join'), edge(next.id, join, 'join'), { ...outgoing[0], from_node_id: join }] } }
+}
+// A step that feeds the delivery cannot become a parallel region: the merged
+// result of branches is not something the delivery step can hand over.
+export function canAddParallelBranch(graph: Graph, id: string): boolean {
+  const node = graph.nodes.find((n) => n.id === id)
+  if (node?.type === 'parallel') return true
+  if (node?.type !== 'worker') return false
+  const incoming = graph.edges.filter((e) => e.to_node_id === id), outgoing = graph.edges.filter((e) => e.from_node_id === id)
+  if (incoming.length !== 1 || outgoing.length !== 1) return false
+  if (incoming[0].route === 'branch') return true
+  return graph.nodes.find((n) => n.id === outgoing[0].to_node_id)?.type !== 'deliver'
+}
+export function feedsDelivery(graph: Graph, id: string): boolean {
+  const outgoing = graph.edges.filter((e) => e.from_node_id === id)
+  return outgoing.length === 1 && graph.nodes.find((n) => n.id === outgoing[0].to_node_id)?.type === 'deliver'
 }
 export function removeStep(graph: Graph, id: string): Graph {
   const node = graph.nodes.find((n) => n.id === id), incoming = graph.edges.filter((e) => e.to_node_id === id), outgoing = graph.edges.filter((e) => e.from_node_id === id)
   if (!node || !['worker', 'lead'].includes(node.type) || id === graph.entry_node_id || incoming.length !== 1 || outgoing.length !== 1) throw new Error('请选择连接完整的执行步骤')
   const dependent = graph.nodes.filter((n) => n.id !== id && (Object.values(bindings(n)).some((b) => b.value?.node_id === id) || (incoming[0].route === 'branch' && (n.config?.result as { node_id?: string })?.node_id === id)))
-  if (dependent.length) throw new Error(`请先调整“${dependent.map((n) => n.label || '执行步骤').join('、')}”的输入来源`)
+  // A removed branch leaves nothing to read in its place, so its readers are
+  // adjusted first. A step in a row hands its readers on to the step before it.
+  if (dependent.length && incoming[0].route === 'branch') throw new Error(`请先调整“${dependent.map((n) => n.label || '执行步骤').join('、')}”的输入来源`)
   if (incoming[0].route === 'branch') {
     if (node.type !== 'worker') throw new Error('并行分支只能移除执行成员')
     const siblings = graph.edges.filter((e) => e.from_node_id === incoming[0].from_node_id)
@@ -271,7 +293,13 @@ export function removeStep(graph: Graph, id: string): Graph {
   }
   const previous = incoming[0].from_node_id
   if (incoming[0].route !== 'success' || outgoing[0].route !== 'success') throw new Error('循环或条件连接中的步骤不能直接删除')
-  return { ...graph, nodes: graph.nodes.filter((n) => n.id !== id).map((n) => n.type === 'deliver' && (n.config?.result as { node_id?: string })?.node_id === id ? { ...n, config: { ...n.config, result: { ...(n.config?.result as object), source: 'node_output', node_id: previous, path: '' } } } : n), edges: [...graph.edges.filter((e) => e.from_node_id !== id && e.to_node_id !== id), { ...outgoing[0], from_node_id: previous }] }
+  const before = graph.nodes.find((n) => n.id === previous)
+  const reread = (n: Step): Step => {
+    if (!hasNodeInput(n, id)) return n
+    const without = toggleNodeInput(n, node)
+    return before && ['lead', 'worker', 'join'].includes(before.type) && !hasNodeInput(without, before.id) ? toggleNodeInput(without, before) : without
+  }
+  return { ...graph, nodes: graph.nodes.filter((n) => n.id !== id).map((n) => n.type === 'deliver' && (n.config?.result as { node_id?: string })?.node_id === id ? { ...n, config: { ...n.config, result: { ...(n.config?.result as object), source: 'node_output', node_id: previous, path: '' } } } : reread(n)), edges: [...graph.edges.filter((e) => e.from_node_id !== id && e.to_node_id !== id), { ...outgoing[0], from_node_id: previous }] }
 }
 export function serializeParallel(graph: Graph, id: string): Graph {
   const parallel = graph.nodes.find((n) => n.id === id), join = String(parallel?.config?.join_node_id ?? '')

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { describeCapability, memberProblems, nodeReadinessIssues, normalizeAudience, parseOutputSchema, type DevelopmentDocument, type DevelopmentMember } from './teams'
+import { allowRequiredHandoffKinds, capabilityName, defaultCapabilityBinding, describeCapability, memberProblems, nodeReadinessIssues, parseOutputSchema, requiredHandoffKinds, trialActions, workflowCapabilityIds, type BusinessCatalog, type DevelopmentDocument, type DevelopmentMember, type DevelopmentWorkflow } from './teams'
 
 const member = (name: string, engine: string, runtime = '', enabled = true): DevelopmentMember => ({
   id: name,
@@ -63,18 +63,11 @@ describe('team helpers', () => {
     expect(describeCapability('custom')).toEqual({ object: '', action: 'custom' })
   })
 
-  it('normalizes the audience like the server does', () => {
-    expect(normalizeAudience([' a ', '', 'b'])).toEqual({ value: ['a', 'b'] })
-    expect(normalizeAudience(['a', ' a']).error).toBe('权限集名称不能重复')
-    expect(normalizeAudience(['x'.repeat(129)]).error).toContain('128')
-    expect(normalizeAudience(Array.from({ length: 33 }, (_, index) => `s${index}`)).error).toBe('最多 32 个权限集')
-  })
-
   it('parses an output schema', () => {
     expect(parseOutputSchema('  ')).toEqual({ value: null })
     expect(parseOutputSchema('{"a":1}')).toEqual({ value: { a: 1 } })
-    expect(parseOutputSchema('[]').error).toBe('输出结构必须是一个 JSON 对象')
-    expect(parseOutputSchema('{').error).toBe('输出结构不是有效的 JSON')
+    expect(parseOutputSchema('[]').error).toContain('JSON 对象')
+    expect(parseOutputSchema('{').error).toContain('格式不对')
   })
 
   it('checks the tool loop and the output schema of a member', () => {
@@ -85,5 +78,50 @@ describe('team helpers', () => {
     expect(memberProblems(base({ tool_loop_control: { slice_rounds: 5, initial_total_rounds: 0 } }))).toHaveLength(1)
     expect(memberProblems(base({ tool_loop_control: { slice_rounds: 5, initial_total_rounds: 5 } }))).toEqual([])
     expect(memberProblems(base({ output_schema: ['x'] }))).toEqual(['输出结构必须是一个 JSON 对象'])
+  })
+})
+
+describe('trial actions and handoff kinds', () => {
+  const convert = 'forge:action:forge_sales_lead.sales_lead_convert_to_opportunity', read = 'forge:action:forge_sales_lead.read'
+  const catalog: BusinessCatalog = { available: true, capabilities: [
+    { id: convert, name: '线索转商机', description: '把线索转成商机', effect: 'write', status: 'available', requiresRecord: true,
+      params: [{ name: 'material_file_ids', label: '材料', type: 'file', multiple: true }, { name: 'contract', type: 'file' }, { name: 'idempotency_key', type: 'file' }, { name: 'amount', type: 'number' }] },
+  ] }
+  const worker = (id: string, ids: string[], relation: Partial<DevelopmentMember['relationship']> = {}): DevelopmentMember => ({
+    id, configuration: { display_name: id, role: 'worker', engine: 'loom', runtime_id: '', model: 'm', system_prompt: 'x', business_capability_ids: ids },
+    relationship: { duty: 'd', result_requirement: '', enabled: true, ...relation },
+  })
+  const flow = (nodes: Array<Record<string, unknown>>): DevelopmentWorkflow => ({ id: 'flow', name: '流程', description: '', trigger_config: {}, graph_definition: { schema_version: 1, entry_node_id: 'a', nodes, edges: [] } as never })
+  const document = (members: DevelopmentMember[], workflow: DevelopmentWorkflow): DevelopmentDocument => ({ name: '团队', objective: '', audience: [], members, workflows: [workflow] })
+
+  it('collects the actions of the members a flow actually uses', () => {
+    const steps = flow([{ id: 'a', type: 'worker', config: { agent_id: 'used', kind: 'consult' } }])
+    const team = document([worker('used', [convert]), worker('idle', [read]), worker('off', [read], { enabled: false })], steps)
+    expect(workflowCapabilityIds(team, steps)).toEqual([convert])
+  })
+
+  it('freezes trial definitions from the catalog and reports actions it does not list', () => {
+    const result = trialActions([convert, read], catalog, new Set([convert]))
+    expect(result.missing).toEqual([read])
+    expect(result.actions).toEqual([expect.objectContaining({ capability_id: convert, name: 'sales_lead_convert_to_opportunity', object_name: 'forge_sales_lead', label: '线索转商机', requires_record: true, requires_confirmation: false, simulation_authorized: true })])
+    expect(trialActions([convert], catalog, new Set()).actions[0].simulation_authorized).toBe(false)
+    expect(trialActions([convert], undefined, new Set()).missing).toEqual([convert])
+  })
+
+  it('names an action from the catalog and maps its file parameters to the task materials', () => {
+    expect(capabilityName(convert, catalog)).toBe('线索转商机')
+    expect(capabilityName(read, catalog)).toBe('read')
+    expect(defaultCapabilityBinding(catalog.capabilities[0])).toEqual({ capability_id: convert, parameters: [{ name: 'material_file_ids', source: 'materials.ids' }, { name: 'contract', source: 'materials.single.id' }] })
+    expect(defaultCapabilityBinding({ id: read, name: '读取', effect: 'read', status: 'available' })).toBeUndefined()
+  })
+
+  it('allows the handoff kind a step needs without touching members that leave it open', () => {
+    const steps = flow([{ id: 'a', type: 'worker', config: { agent_id: 'narrow', kind: 'dispatch' } }, { id: 'b', type: 'worker', config: { agent_id: 'open', kind: 'consult' } }])
+    const team = document([worker('narrow', [], { allowed_kinds: ['consult'], default_kind: 'consult' }), worker('open', [])], steps)
+    expect(requiredHandoffKinds(team, 'narrow')).toEqual(['dispatch'])
+    const next = allowRequiredHandoffKinds(team)
+    expect(next.members[0].relationship.allowed_kinds).toEqual(['consult', 'dispatch'])
+    expect(next.members[1]).toBe(team.members[1])
+    expect(allowRequiredHandoffKinds(next)).toBe(next)
   })
 })

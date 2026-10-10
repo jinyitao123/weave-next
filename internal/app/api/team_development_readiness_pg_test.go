@@ -69,7 +69,7 @@ func TestDevelopmentPublicationReadinessUnionsCurrentCandidateSimulationReceipts
 	legacy := admitDevelopmentCoverageTrial(t, ctx, pool, kernelPublication, envelope,
 		developmentTestActionDefinitions(t, false, false), "legacy unselected action trial")
 	completeDevelopmentCoverageTrial(t, pool, legacy)
-	readiness, err := buildDevelopmentPublicationReadinessInTransaction(ctx, pool, "ws", "team", "user", "user", 1, 1, []developmentPrepared{{ID: "flow", Envelope: envelope}})
+	readiness, err := buildDevelopmentPublicationReadinessInTransaction(ctx, pool, "ws", "team", 1, 1, []developmentPrepared{{ID: "flow", Envelope: envelope}})
 	if err != nil || readiness.Ready || len(readiness.Workflows) != 1 || readiness.Workflows[0].Passed ||
 		len(readiness.Workflows[0].CoveredCapabilityIDs) != 0 || len(readiness.Workflows[0].MissingCapabilityIDs) != 2 {
 		t.Fatalf("legacy unselected trial covered required actions: readiness=%+v err=%v", readiness, err)
@@ -78,7 +78,7 @@ func TestDevelopmentPublicationReadinessUnionsCurrentCandidateSimulationReceipts
 
 	first := admitDevelopmentCoverageTrial(t, ctx, pool, kernelPublication, envelope, allDefinitions, "first simulated action")
 	writeSimulationOutcome(t, pool, first, publishedBusinessCapability)
-	readiness, err = buildDevelopmentPublicationReadinessInTransaction(ctx, pool, "ws", "team", "user", "user", 1, 1, []developmentPrepared{{ID: "flow", Envelope: envelope}})
+	readiness, err = buildDevelopmentPublicationReadinessInTransaction(ctx, pool, "ws", "team", 1, 1, []developmentPrepared{{ID: "flow", Envelope: envelope}})
 	if err != nil || readiness.Ready || len(readiness.Workflows) != 1 || readiness.Workflows[0].Passed ||
 		len(readiness.Workflows[0].CoveredCapabilityIDs) != 1 || len(readiness.Workflows[0].MissingCapabilityIDs) != 1 {
 		t.Fatalf("partial action simulation unlocked publication: readiness=%+v err=%v", readiness, err)
@@ -91,7 +91,7 @@ func TestDevelopmentPublicationReadinessUnionsCurrentCandidateSimulationReceipts
 	secondDefinitions := developmentTestActionDefinitions(t, false, true)
 	second := admitDevelopmentCoverageTrial(t, ctx, pool, kernelPublication, envelope, secondDefinitions, "second simulated action")
 	writeSimulationOutcome(t, pool, second, publishedSecondBusinessCapability)
-	readiness, err = buildDevelopmentPublicationReadinessInTransaction(ctx, pool, "ws", "team", "user", "user", 1, 1, []developmentPrepared{{ID: "flow", Envelope: envelope}})
+	readiness, err = buildDevelopmentPublicationReadinessInTransaction(ctx, pool, "ws", "team", 1, 1, []developmentPrepared{{ID: "flow", Envelope: envelope}})
 	if err != nil || !readiness.Ready || len(readiness.Workflows) != 1 || !readiness.Workflows[0].Passed ||
 		len(readiness.Workflows[0].CoveredCapabilityIDs) != 2 || len(readiness.Workflows[0].MissingCapabilityIDs) != 0 {
 		t.Fatalf("same-candidate action union did not unlock publication: readiness=%+v err=%v", readiness, err)
@@ -137,7 +137,7 @@ func assertDevelopmentReadinessHTTP200(t *testing.T, ctx context.Context, pool *
 func buildDevelopmentPublicationReadinessInTransaction(
 	ctx context.Context,
 	pool *pgxpool.Pool,
-	workspaceID, teamID, actorID, preparedActor string,
+	workspaceID, teamID string,
 	revision, preparedRevision int64,
 	prepared []developmentPrepared,
 ) (developmentPublicationReadiness, error) {
@@ -146,7 +146,7 @@ func buildDevelopmentPublicationReadinessInTransaction(
 		return developmentPublicationReadiness{}, err
 	}
 	defer tx.Rollback(ctx)
-	return buildDevelopmentPublicationReadiness(ctx, tx, workspaceID, teamID, actorID, preparedActor, revision, preparedRevision, prepared)
+	return buildDevelopmentPublicationReadiness(ctx, tx, workspaceID, teamID, revision, preparedRevision, prepared)
 }
 
 type developmentCoverageTrial struct {

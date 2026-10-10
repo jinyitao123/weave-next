@@ -100,7 +100,8 @@ a.button { color: inherit; text-decoration: none; }
 .nav__account { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .nav__account strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
 .nav__connection { display: flex; align-items: center; gap: 4px; color: var(--text-muted); }
-.main { overflow: auto; }
+/* The gutter is always reserved so a page growing past one screen does not shift sideways. */
+.main { overflow: auto; scrollbar-gutter: stable; }
 .page { max-width: 1120px; margin: 0 auto; padding: 24px 24px 48px; display: grid; gap: 16px; }
 .page__header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 
@@ -152,6 +153,12 @@ h3 { font-size: var(--text-md); font-weight: 600; margin: 4px 0 0; }
 .drawer__header { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 14px 16px; border-bottom: 1px solid var(--border); }
 .drawer__body { overflow: auto; padding: 16px; }
 .drawer__footer { padding: 12px 16px; border-top: 1px solid var(--border); }
+
+.dialog-layer { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 16px; }
+.dialog { position: relative; width: min(480px, 100%); max-height: calc(100vh - 32px); display: grid; grid-template-rows: auto minmax(0, 1fr) auto; border-radius: var(--radius-lg); border: 1px solid var(--border-strong); background: var(--canvas); box-shadow: 0 16px 48px rgb(0 0 0 / 20%); outline: none; }
+.dialog__header { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 14px 16px 0; }
+.dialog__body { overflow: auto; padding: 12px 16px 16px; }
+.dialog__footer { display: flex; justify-content: flex-end; gap: 8px; padding: 0 16px 16px; }
 
 .copy-field { display: grid; gap: 4px; }
 .copy-field__label { font-size: var(--text-sm); color: var(--text-secondary); }
@@ -249,6 +256,7 @@ pre { margin: 6px 0 0; padding: 8px 10px; max-height: 360px; overflow: auto; bor
 .step-card .select__button { width: 100%; }
 
 .switch { display: inline-flex; align-items: center; gap: 8px; padding: 0; border: 0; background: none; cursor: pointer; text-align: left; }
+.switch:disabled { opacity: .5; cursor: default; }
 .switch__track { position: relative; flex: none; width: 30px; height: 18px; border-radius: 999px; background: var(--border-strong); transition: background .15s; }
 .switch__thumb { position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: var(--canvas); transition: transform .15s; }
 .switch.is-on .switch__track { background: var(--text); }

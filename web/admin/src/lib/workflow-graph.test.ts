@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import fixtureText from '../../../../internal/kernel/workflow/machine/testdata/code_verify_loop.json?raw'
 import { serialGraph, verifyLoop, type Graph } from './graph'
 import type { DevelopmentMember } from './teams'
-import { addParallelBranch, assignExecutor, configureWorkflowResultProtocol, insertStep, predecessors, removeStep, serializeParallel, setVerificationLoop } from './workflow-graph'
+import { addParallelBranch, assignExecutor, canAddParallelBranch, configureWorkflowResultProtocol, hasNodeInput, insertStep, predecessors, removeStep, serializeParallel, setVerificationLoop } from './workflow-graph'
 
 export const member = (id: string): DevelopmentMember => ({ id, configuration: { display_name: id, role: 'worker', engine: 'loom', runtime_id: '', model: '', system_prompt: '' }, relationship: { duty: '', result_requirement: '返回依据', enabled: true } })
 function graph() {
@@ -89,5 +89,43 @@ describe('workflow canvas graph edits', () => {
     expect(flow.graph_definition.result_protocol).toBe('workbench_result_v1')
     expect(flow.graph_definition.output_contract.type).toBe('json')
     expect(() => configureWorkflowResultProtocol({ graph_definition: input }, true, input.nodes[0].id)).toThrow('直接连接')
+  })
+})
+
+describe('what the next step receives after a structural edit', () => {
+  const chain = () => serialGraph(['编码', '验证', '核对'].map(name => ({ member: { id: name, displayName: name }, label: name, requirement: '返回依据' })))
+
+  it('hands an inserted step\'s result to the step that follows it', () => {
+    const input = chain(), [first, second] = input.nodes
+    const changed = insertStep(input, first.id, member('新增'))
+    const next = changed.graph.nodes.find(node => node.id === second.id)!
+    expect(hasNodeInput(next, changed.selected)).toBe(true)
+    expect(hasNodeInput(next, first.id)).toBe(true)
+  })
+
+  it('moves the following step onto the merged result of a new parallel region', () => {
+    const input = chain(), [, second, third] = input.nodes
+    const changed = addParallelBranch(input, second.id, member('并行成员')).graph
+    const join = changed.nodes.find(node => node.type === 'join')!
+    const next = changed.nodes.find(node => node.id === third.id)!
+    expect(hasNodeInput(next, join.id)).toBe(true)
+    expect(hasNodeInput(next, second.id)).toBe(false)
+  })
+
+  it('does not offer a parallel region on the step that feeds the delivery', () => {
+    const input = chain(), [, second, third] = input.nodes
+    expect(canAddParallelBranch(input, second.id)).toBe(true)
+    expect(canAddParallelBranch(input, third.id)).toBe(false)
+  })
+})
+
+describe('removing a step other steps read', () => {
+  it('lets the readers of a removed step read the step before it', () => {
+    const input = serialGraph(['编码', '验证', '核对'].map(name => ({ member: { id: name, displayName: name }, label: name, requirement: '返回依据' })))
+    const [first, second, third] = input.nodes
+    const changed = removeStep(input, second.id)
+    const reader = changed.nodes.find(node => node.id === third.id)!
+    expect(hasNodeInput(reader, second.id)).toBe(false)
+    expect(hasNodeInput(reader, first.id)).toBe(true)
   })
 })

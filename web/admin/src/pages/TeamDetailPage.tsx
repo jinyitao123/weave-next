@@ -1,25 +1,29 @@
-import { createUUID } from '../lib/ids'
 import { ArrowLeft } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Badge, InlineError } from '../components/ui'
+import { Badge, Dialog, InlineError, type Tone } from '../components/ui'
 import { MemberEditor } from '../components/members/MemberEditor'
+import { PublishPanel, TrialPanel } from '../components/team/Release'
 import { FlowProfile, TeamProfile } from '../components/team/TeamProfile'
 import { FeishuTeamAccessPanel } from '../components/feishu/FeishuTeamAccess'
 import { errorMessage } from '../lib/api'
-import { relativeTime } from '../lib/format'
 import type { Graph } from '../lib/graph'
 import { WorkflowEditor } from '../components/workflow/WorkflowEditor'
 import { listNodes, type RuntimeNode } from '../lib/nodes'
-import { executionLabel } from '../lib/tasks'
-import { memberConfigIssues, nodeReadinessIssues, pinMembers, publishDevelopment, readDevelopment, saveDevelopment, startTrial, withStarterWorkflow, type DevelopmentDocument, type DevelopmentDraft, type DevelopmentMember } from '../lib/teams'
+import { useLeaveGuard } from '../lib/router'
+import { allowRequiredHandoffKinds, loadBusinessCatalog, memberConfigIssues, nodeReadinessIssues, pinMembers, publishDevelopment, readDevelopment, saveDevelopment, withStarterWorkflow, type BusinessCatalog, type DevelopmentDocument, type DevelopmentDraft, type DevelopmentMember } from '../lib/teams'
 
-export function TeamDetailPage({ teamId, navigate }: { teamId: string; navigate(path: string): void }) {
+const tabs = [['profile', '资料'], ['members', '成员'], ['workflow', '流程'], ['access', '接入'], ['trial', '试跑'], ['publish', '发布']] as const
+type TabId = typeof tabs[number][0]
+
+export function TeamDetailPage({ teamId, navigate }: { teamId: string; navigate(path: string, options?: { force?: boolean }): void }) {
   const [draft, setDraft] = useState<DevelopmentDraft>()
   const [document, setDocument] = useState<DevelopmentDocument>()
   const [nodes, setNodes] = useState<RuntimeNode[]>([])
-  const [tab, setTab] = useState<'profile' | 'members' | 'workflow' | 'access' | 'trial'>('members')
+  const [catalog, setCatalog] = useState<BusinessCatalog>()
+  const [tab, setTab] = useState<TabId>('profile')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [leaving, setLeaving] = useState<string>()
   const load = useCallback(async () => {
     try {
       const current = await readDevelopment(teamId)
@@ -33,6 +37,7 @@ export function TeamDetailPage({ teamId, navigate }: { teamId: string; navigate(
   useEffect(() => {
     void load()
     void listNodes().then(setNodes).catch(() => setNodes([]))
+    void loadBusinessCatalog().then(setCatalog).catch(() => setCatalog({ available: false, capabilities: [] }))
   }, [load])
   const nodeChoices = useMemo(() => nodes.filter((node) => node.enabled).map((node) => ({ id: node.id, engines: node.engine_readiness.map((engine) => engine.engine) })), [nodes])
   // A new team gets its CLI members pinned once nodes are known.
@@ -45,6 +50,8 @@ export function TeamDetailPage({ teamId, navigate }: { teamId: string; navigate(
   const dirty = Boolean(draft && document && JSON.stringify(draft.document) !== JSON.stringify(document))
   const published = Boolean(draft && draft.published_revision > 0)
   const upToDate = Boolean(draft && draft.published_revision === draft.revision && !dirty)
+  // Leaving with unsaved edits asks first instead of dropping them silently.
+  useLeaveGuard(dirty, setLeaving)
   const accepting = useMemo(() => {
     const counts: Record<string, number> = {}
     for (const node of nodes) for (const engine of node.engine_readiness) if (engine.accepting) counts[engine.engine] = (counts[engine.engine] ?? 0) + 1
@@ -74,6 +81,7 @@ export function TeamDetailPage({ teamId, navigate }: { teamId: string; navigate(
     }
   }
   const save = () => run(() => saveDevelopment(teamId, draft!.revision, document!))
+  const discard = () => { if (draft) { setDocument(withStarterWorkflow(draft.document)); setError('') } }
   const editMember = (id: string, patch: Partial<DevelopmentMember['configuration']>) => setDocument((current) => {
     if (!current) return current
     const next = { ...current, members: current.members.map((member) => member.id === id ? { ...member, configuration: { ...member.configuration, ...patch } } : member) }
@@ -87,69 +95,43 @@ export function TeamDetailPage({ teamId, navigate }: { teamId: string; navigate(
     if (!document?.workflows.length) return
     try {
       const next = change(document.workflows[0].graph_definition)
-      setDocument({ ...document, workflows: document.workflows.map((flow, index) => index === 0 ? { ...flow, graph_definition: next } : flow) })
+      // A member placed on a step is allowed the handoff kind that step needs.
+      setDocument(allowRequiredHandoffKinds({ ...document, workflows: document.workflows.map((flow, index) => index === 0 ? { ...flow, graph_definition: next } : flow) }))
       setError('')
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : '流程修改失败')
     }
   }
+  const state: { tone: Tone; label: string } = dirty ? { tone: 'warning', label: '有未保存的修改' }
+    : !published ? { tone: 'neutral', label: '未发布' }
+      : upToDate ? { tone: 'success', label: '已发布' } : { tone: 'accent', label: '有未发布的修改' }
 
-  return <section className={`page${tab === 'workflow' ? ' page--wide' : ''}`}>
+  return <section className="page">
     <header className="task-header">
       <button type="button" className="icon-button" aria-label="返回团队列表" onClick={() => navigate('/teams')}><ArrowLeft size={16} /></button>
       <div className="task-header__title"><h1>{document?.name ?? '团队'}</h1><p className="muted small">{document?.objective}</p></div>
       {draft ? <div className="task-header__state">
-        <Badge tone={upToDate ? 'success' : 'neutral'}>{!published ? '未发布' : upToDate ? '已发布' : '有未发布的修改'}</Badge>
+        <Badge tone={state.tone}>{state.label}</Badge>
+        {dirty ? <button type="button" className="button" disabled={busy} onClick={discard}>放弃修改</button> : null}
         {dirty ? <button type="button" className="button button--primary" disabled={busy} onClick={() => void save()}>{busy ? '正在保存…' : '保存草稿'}</button> : null}
-        {!dirty && !upToDate ? <button type="button" className="button button--primary" disabled={busy} onClick={() => void run(() => publishDevelopment(teamId, draft.revision))}>发布</button> : null}
       </div> : null}
     </header>
     {issues.length ? <ul className="readiness">{issues.map((issue) => <li key={issue}>{issue}</li>)}</ul> : null}
     {error ? <InlineError message={error} onRetry={draft ? undefined : () => void load()} /> : null}
     {!document || !draft ? null : <>
       <div className="tabs" role="tablist" aria-label="团队配置">
-        {([['profile', '资料'], ['members', '成员'], ['workflow', '流程'], ['access', '接入'], ['trial', '试跑与发布']] as const).map(([value, label]) => <button key={value} type="button" role="tab" aria-selected={tab === value} onClick={() => setTab(value)}>{label}</button>)}
+        {tabs.map(([value, label]) => <button key={value} type="button" role="tab" aria-selected={tab === value} onClick={() => setTab(value)}>{label}</button>)}
       </div>
       {tab === 'profile' ? <TeamProfile document={document} onChange={editTeam} /> : null}
-      {tab === 'members' ? <MemberEditor document={document} nodes={nodes} accepting={accepting} onConfig={editMember} onRelationship={editRelationship} /> : null}
+      {tab === 'members' ? <MemberEditor document={document} nodes={nodes} accepting={accepting} catalog={catalog} onConfig={editMember} onRelationship={editRelationship} /> : null}
       {tab === 'workflow' ? workflow ? <><FlowProfile name={workflow.name} description={workflow.description} onChange={editFlow} /><WorkflowEditor key={workflow.id} graph={workflow.graph_definition} members={document.members} onChange={editGraph} /></> : <p className="muted">至少需要两名执行成员才能生成流程。</p> : null}
       {tab === 'access' ? <FeishuTeamAccessPanel teamId={teamId} workflows={document.workflows.map((flow) => ({ id: flow.id, name: flow.name }))} /> : null}
-      {tab === 'trial' ? <Trial teamId={teamId} draft={draft} dirty={dirty} workflowId={workflow?.id} navigate={navigate} onStarted={() => void load()} /> : null}
+      {tab === 'trial' ? <TrialPanel teamId={teamId} draft={draft} dirty={dirty} catalog={catalog} navigate={navigate} onStarted={() => void load()} /> : null}
+      {tab === 'publish' ? <PublishPanel draft={draft} dirty={dirty} busy={busy} catalog={catalog} onPublish={() => void run(() => publishDevelopment(teamId, draft.revision))} onOpenTrial={() => setTab('trial')} /> : null}
     </>}
+    {leaving ? <Dialog title="有未保存的修改" onClose={() => setLeaving(undefined)} footer={<>
+      <button type="button" className="button" onClick={() => setLeaving(undefined)}>留在此页</button>
+      <button type="button" className="button button--danger" onClick={() => navigate(leaving, { force: true })}>放弃修改并离开</button>
+    </>}><p>离开后，这些修改不会保留。</p></Dialog> : null}
   </section>
-}
-
-function Trial({ teamId, draft, dirty, workflowId, navigate, onStarted }: { teamId: string; draft: DevelopmentDraft; dirty: boolean; workflowId?: string; navigate(path: string): void; onStarted(): void }) {
-  const [input, setInput] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
-  const [requestId, setRequestId] = useState(() => createUUID())
-  const start = async () => {
-    if (dirty) { setError('请先保存草稿'); return }
-    if (!workflowId) { setError('还没有工作流程'); return }
-    if (!input.trim()) { setError('请填写试跑任务'); return }
-    setBusy(true)
-    setError('')
-    try {
-      const result = await startTrial(teamId, draft.revision, workflowId, input.trim(), requestId)
-      setRequestId(createUUID())
-      onStarted()
-      navigate(`/tasks/${encodeURIComponent(result.run_id)}`)
-    } catch (failure) {
-      setError(errorMessage(failure))
-    } finally {
-      setBusy(false)
-    }
-  }
-  const trials = [...draft.trials].sort((left, right) => Date.parse(right.created_at) - Date.parse(left.created_at))
-  return <div className="stack">
-    <p className="muted small">当前草稿的每个流程都试跑成功后才能发布。</p>
-    <textarea className="input textarea" rows={3} value={input} placeholder="用于试跑的任务" onChange={(event) => { setInput(event.target.value); setError('') }} aria-label="试跑任务" />
-    <div className="toolbar"><button type="button" className="button button--primary" disabled={busy} onClick={() => void start()}>{busy ? '正在提交…' : '试跑当前草稿'}</button></div>
-    {error ? <InlineError message={error} /> : null}
-    {trials.length ? <div className="task-list">{trials.map((trial) => <button key={trial.request_id} type="button" className="task-row" onClick={() => trial.run_id && navigate(`/tasks/${encodeURIComponent(trial.run_id)}`)}>
-      <span className="task-row__main"><strong>草稿第 {trial.revision} 版试跑</strong><span className="muted small">{relativeTime(trial.created_at)}{trial.revision !== draft.revision ? ' · 不是当前草稿' : ''}</span></span>
-      <Badge tone={trial.status === 'succeeded' ? 'success' : trial.status === 'failed' ? 'danger' : 'neutral'}>{executionLabel(trial.status)}</Badge>
-    </button>)}</div> : null}
-  </div>
 }
