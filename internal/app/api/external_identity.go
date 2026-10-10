@@ -302,6 +302,9 @@ func (s *Server) exchangeExternalIdentity(ctx context.Context, bearer string) (*
 	if err != nil {
 		return nil, &exchangeFailure{http.StatusInternalServerError, "could not issue product session"}
 	}
+	// Developers keep the console's business action choices current from the
+	// session they just proved; the token is not kept.
+	s.captureBusinessCatalog(identity.BaseURL, bearer, user.TenantID, user.ID, accessRole)
 	return &externalIdentityExchange{Identity: identity, User: user, AccessRole: accessRole, Token: token}, nil
 }
 
