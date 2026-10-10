@@ -27,7 +27,8 @@ func TestFeishuPrivateDispatchRevisionAndIsolationRealPG(t *testing.T) {
 	s.teamRunActivities = &teamrun.PGActivityStore{Transactions: pool}
 	_, err := pool.Exec(t.Context(), `INSERT INTO weave_members(workspace_id,user_id,role) VALUES('ws','user','member'),('ws','user-other','member');
  INSERT INTO weave_external_identities(issuer,subject,workspace_id,user_id,native_organization) VALUES('forge:feishu-test','native-user','ws','user','native-org');
- UPDATE weave_teams SET display_name='资料团队' WHERE workspace_id='ws' AND id='team'`)
+ UPDATE weave_teams SET display_name='资料团队' WHERE workspace_id='ws' AND id='team';
+ INSERT INTO weave_feishu_team_access(workspace_id,team_id,enabled,notify,updated_by) VALUES('ws','team',true,'{"result":true,"revisionRequired":true,"humanReview":true,"failure":true,"cancelled":true}','user');`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +66,7 @@ func TestFeishuPrivateDispatchRevisionAndIsolationRealPG(t *testing.T) {
 	drain := func() {
 		t.Helper()
 		for i := 0; i < 10; i++ {
-			n, err := s.sweepFeishuCommand(t.Context())
+			n, err := s.sweepFeishuCommand(t.Context(), s.Feishu)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -146,6 +147,7 @@ func TestFeishuHumanContinuationAndDurableNotificationsRealPG(t *testing.T) {
 	_, err = pool.Exec(t.Context(), `INSERT INTO weave_members(workspace_id,user_id,role) VALUES('ws','user','member');
  INSERT INTO weave_external_identities(issuer,subject,workspace_id,user_id,native_organization) VALUES('forge:feishu-human','native-user','ws','user','native-org');
  UPDATE weave_teams SET display_name='复核团队' WHERE workspace_id='ws' AND id='team';
+ INSERT INTO weave_feishu_team_access(workspace_id,team_id,enabled,notify,updated_by) VALUES('ws','team',true,'{"result":true,"revisionRequired":true,"humanReview":true,"failure":true,"cancelled":true}','user');
  INSERT INTO weave_feishu_links(app_id,workspace_id,user_id,open_id,chat_id,expires_at) VALUES('app','ws','user','human-user','chat',now()+interval '1 hour')`)
 	if err != nil {
 		t.Fatal(err)
@@ -165,7 +167,7 @@ func TestFeishuHumanContinuationAndDurableNotificationsRealPG(t *testing.T) {
 			t.Fatalf("event rejected: %v status=%d", err, response.Code)
 		}
 		for i := 0; i < 4; i++ {
-			n, err := s.sweepFeishuCommand(t.Context())
+			n, err := s.sweepFeishuCommand(t.Context(), s.Feishu)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -260,7 +262,7 @@ func TestFeishuCachedReplyRechecksOriginalEmployeeRealPG(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			if n, err := s.sweepFeishuCommand(t.Context()); err != nil || n != 1 {
+			if n, err := s.sweepFeishuCommand(t.Context(), s.Feishu); err != nil || n != 1 {
 				t.Fatalf("delivery n=%d err=%v", n, err)
 			}
 			if len(*sent) != 1 {
@@ -283,7 +285,7 @@ func TestFeishuCachedReplyRechecksOriginalEmployeeRealPG(t *testing.T) {
 			if err := pool.QueryRow(t.Context(), `SELECT response,reply_message_id FROM weave_feishu_messages WHERE message_id='cached'`).Scan(&stored, &receipt); err != nil || stored != payload.Text || receipt == "" {
 				t.Fatalf("reply replacement/receipt not durable: err=%v", err)
 			}
-			if n, err := s.sweepFeishuCommand(t.Context()); err != nil || n != 0 || len(*sent) != 1 {
+			if n, err := s.sweepFeishuCommand(t.Context(), s.Feishu); err != nil || n != 0 || len(*sent) != 1 {
 				t.Fatalf("reply repeated: n=%d err=%v", n, err)
 			}
 		})

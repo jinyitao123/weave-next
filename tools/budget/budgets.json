@@ -941,6 +941,22 @@
         "lines_added": 5834,
         "production_lines_added": 3406
       }
+    },
+    {
+      "date": "2026-10-09",
+      "reason": "Let a workspace administrator save its own Feishu app in the admin console (sealed with the server credential key, never returned, revision-guarded, audited by field name) with its own callback route and a token check, and let developers gate each team: opt-in Feishu access, the published workflow Feishu starts, and which run event kinds are delivered, with turned-off kinds settled as suppressed. An app_id serves one workspace, so the existing app_id-scoped transport is reused and the employee event worker drains every configured app; no new packages, dependencies or execution paths. Real PostgreSQL tests cover save, conflicts, secret sealing, callback routing, the deployment app stepping aside, deletion, audit and team gating.",
+      "record": "README.zh-CN.md#飞书机器人",
+      "growth": {
+        "lines": 961,
+        "production_lines": 724
+      },
+      "deletion_trigger": "Remove the workspace app registry, its callback route and the team access gates with their regressions when the Feishu transport is retired under its existing migration trigger, or when a recorded decision replaces per-workspace apps with deployment-wide configuration; lower the measured budgets in that change.",
+      "app": {
+        "previous_lines": 78447,
+        "previous_production_lines": 53491,
+        "lines_added": 961,
+        "production_lines_added": 724
+      }
     }
   ],
   "migration_targets": {
@@ -1004,8 +1020,8 @@
     "allowed_dependencies": []
   },
   "app": {
-    "lines": 78447,
-    "production_lines": 53491,
+    "lines": 79408,
+    "production_lines": 54215,
     "packages": 25,
     "external_dependencies": 6,
     "allowed_dependencies": [

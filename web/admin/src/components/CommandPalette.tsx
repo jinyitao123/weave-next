@@ -12,6 +12,7 @@ const pages: Item[] = [
   { id: 'page-environments', group: '页面', label: '环境', path: '/environments' },
   { id: 'page-teams', group: '页面', label: '团队', path: '/teams' },
   { id: 'page-nodes', group: '页面', label: '节点', path: '/nodes' },
+  { id: 'page-integrations', group: '页面', label: '集成', path: '/integrations' },
 ]
 
 // Ctrl/⌘+K jumps to any page, task, team, environment or node.

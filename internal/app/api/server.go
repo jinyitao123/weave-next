@@ -65,6 +65,7 @@ import (
 // Server holds all shared dependencies for the HTTP API.
 type Server struct {
 	Feishu                    *feishuClient
+	feishuApps                feishuAppCache
 	Echo                      *echo.Echo
 	Store                     loom.Store
 	Registry                  *agentcatalog.AgentRegistry
@@ -303,6 +304,7 @@ func (s *Server) registerRoutes() {
 
 	// Public endpoints (no auth).
 	s.Echo.POST("/v1/integrations/feishu/events", s.handleFeishuEvent)
+	s.Echo.POST("/v1/integrations/feishu/events/:callback", s.handleFeishuWorkspaceEvent)
 	s.Echo.GET("/v1/health", s.handleHealth)
 	s.Echo.GET("/v1/ready", s.handleReady)
 	s.Echo.GET("/install.sh", s.handleInstallScript)
@@ -385,6 +387,12 @@ func (s *Server) registerRoutes() {
 	auth.GET("/teams/:id/members/:agent/config-draft", s.handleGetTeamMemberConfigDraft, RequireAnyRole("developer", "admin", "owner"), orgScope)
 	auth.PUT("/teams/:id/members/:agent/config-draft", s.handlePutTeamMemberConfigDraft, RequireAnyRole("developer", "admin", "owner"), orgScope)
 	auth.POST("/teams/:id/members/:agent/config-draft/apply", s.handleApplyTeamMemberConfigDraft, RequireAnyRole("developer", "admin", "owner"), orgScope)
+	auth.GET("/integrations/feishu/app", s.handleGetFeishuApp, RequireAnyRole("developer", "admin", "owner"), orgScope)
+	auth.PUT("/integrations/feishu/app", s.handlePutFeishuApp, RequireAnyRole("admin", "owner"), orgScope)
+	auth.DELETE("/integrations/feishu/app", s.handleDeleteFeishuApp, RequireAnyRole("admin", "owner"), orgScope)
+	auth.POST("/integrations/feishu/app/check", s.handleCheckFeishuApp, RequireAnyRole("admin", "owner"), orgScope)
+	auth.GET("/teams/:id/feishu-access", s.handleGetFeishuTeamAccess, RequireAnyRole("developer", "admin", "owner"), orgScope)
+	auth.PUT("/teams/:id/feishu-access", s.handlePutFeishuTeamAccess, RequireAnyRole("developer", "admin", "owner"), orgScope)
 	auth.GET("/teams/:id/development", s.handleGetTeamDevelopment, RequireAnyRole("developer", "admin", "owner"), orgScope)
 	auth.PUT("/teams/:id/development", s.handleSaveTeamDevelopment, RequireAnyRole("developer", "admin", "owner"), orgScope)
 	auth.POST("/teams/:id/development/trials", s.handleTrialTeamDevelopment, RequireAnyRole("developer", "admin", "owner"), orgScope)
