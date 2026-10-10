@@ -989,6 +989,22 @@
         "lines_added": 197,
         "production_lines_added": 107
       }
+    },
+    {
+      "date": "2026-10-10",
+      "reason": "Serve controlled edits of a team draft from Weave so every surface that changes a team reads one place: a layered catalog of what may be changed, a group of named operations applied to the draft with name resolution and the same validation, a dry run that writes nothing, a request ledger that returns the first outcome to a repeated request, and the list of what a draft still lacks on the draft read. The desktop assistant carried this translation itself and the console inferred the open issues on its own. No new packages, dependencies or execution paths; saving, trials and publication keep their routes and conditions. Unit tests check the edited graphs against the kernel decoder and the receipt check parser; a real PostgreSQL test covers the dry run, save, replay, reused request id, stale revision, refusal with its item index and the ledger.",
+      "record": "README.zh-CN.md#受控修改与草稿待办",
+      "growth": {
+        "lines": 2441,
+        "production_lines": 1942
+      },
+      "deletion_trigger": "Remove the controlled edit route, its catalog, the request ledger table and their regressions when a recorded decision returns team editing to whole-document saves from the console only, with no assistant or other agent entry changing drafts through Weave; keep or remove the draft issue list by whether the console still reads it. Lower the measured budgets in that change.",
+      "app": {
+        "previous_lines": 79856,
+        "previous_production_lines": 54456,
+        "lines_added": 2441,
+        "production_lines_added": 1942
+      }
     }
   ],
   "migration_targets": {
@@ -1052,8 +1068,8 @@
     "allowed_dependencies": []
   },
   "app": {
-    "lines": 79856,
-    "production_lines": 54456,
+    "lines": 82297,
+    "production_lines": 56398,
     "packages": 25,
     "external_dependencies": 6,
     "allowed_dependencies": [

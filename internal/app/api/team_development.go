@@ -58,6 +58,8 @@ type developmentDraft struct {
 	UpdatedAt            time.Time                       `json:"updated_at"`
 	Trials               []developmentTrialView          `json:"trials"`
 	PublicationReadiness developmentPublicationReadiness `json:"publication_readiness"`
+	// Issues lists what the draft still lacks, for every surface that edits it.
+	Issues []developmentIssue `json:"issues"`
 }
 type developmentTrialView struct {
 	RequestID  string    `json:"request_id"`
@@ -205,6 +207,11 @@ func (s *Server) handleGetTeamDevelopment(c echo.Context) error {
 		return err
 	}
 	d.PublicationReadiness = readiness
+	catalog, catalogKnown, err := readBusinessCapabilities(ctx, tx, ws)
+	if err != nil {
+		return err
+	}
+	d.Issues = developmentIssues(d.Document, catalog, catalogKnown)
 	if err = tx.Commit(ctx); err != nil {
 		return err
 	}
