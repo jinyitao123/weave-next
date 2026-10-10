@@ -153,6 +153,41 @@ export function configureWorkflowResultProtocol(
 
 export function bindings(step: Step): Record<string, Binding> { return (step.inputs ?? {}) as Record<string, Binding> }
 export function originalBinding(): Binding { return { value: { source: 'run_input', path: '' }, expected_type: 'text' } }
+
+// What a step receives when it starts: the task text and/or the results of
+// earlier steps. Bindings with a path, iteration or default are other shapes
+// of the same two sources; toggling here never rewrites them unless the
+// whole source is switched off.
+export interface StepFeeds { task: boolean; nodes: string[] }
+
+export function stepFeeds(graph: Graph, step: Step): StepFeeds {
+  const values = Object.values(bindings(step)).map(binding => binding.value)
+  const nodes = new Set(values.flatMap(value => value.source === 'node_output' && value.node_id ? [value.node_id] : []))
+  if (step.type === 'deliver') {
+    const delivered = (step.config?.result as { node_id?: string } | undefined)?.node_id
+    if (delivered) nodes.add(delivered)
+  }
+  if (step.type === 'join') for (const edge of graph.edges) if (edge.to_node_id === step.id && edge.route !== 'back') nodes.add(edge.from_node_id)
+  return { task: values.some(value => value.source === 'run_input'), nodes: [...nodes].filter(id => graph.nodes.some(node => node.id === id)) }
+}
+
+export const hasNodeInput = (step: Step, nodeId: string): boolean => Object.values(bindings(step)).some(binding => binding.value.node_id === nodeId)
+
+export function toggleTaskInput(step: Step): Step {
+  const current = bindings(step)
+  const enabled = Object.values(current).some(binding => binding.value.source === 'run_input')
+  const next = Object.fromEntries(Object.entries(current).filter(([, binding]) => binding.value.source !== 'run_input'))
+  if (!enabled) next.original = originalBinding()
+  return { ...step, inputs: next }
+}
+
+export function toggleNodeInput(step: Step, prior: Step): Step {
+  const current = bindings(step)
+  const enabled = hasNodeInput(step, prior.id)
+  const next = Object.fromEntries(Object.entries(current).filter(([, binding]) => binding.value.node_id !== prior.id))
+  if (!enabled) next[`result_${prior.id.replace(/[^a-zA-Z0-9_]/g, '_')}`] = { value: { source: 'node_output', node_id: prior.id, path: '' }, expected_type: prior.type === 'join' ? 'json' : 'text' }
+  return { ...step, inputs: next }
+}
 export function predecessors(graph: Graph, id: string): Step[] {
   const found = new Set<string>()
   const visit = (to: string) => { for (const edge of graph.edges.filter((e) => e.to_node_id === to && e.route !== 'back')) { if (!found.has(edge.from_node_id)) { found.add(edge.from_node_id); visit(edge.from_node_id) } } }
