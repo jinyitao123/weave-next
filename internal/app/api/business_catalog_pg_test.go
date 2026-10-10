@@ -17,7 +17,7 @@ func catalogBody(version string, capabilities ...map[string]any) string {
 	return string(raw)
 }
 
-func capability(id, mode, status string) map[string]any {
+func catalogAction(id, mode, status string) map[string]any {
 	return map[string]any{"id": id, "name": "动作 " + id, "description": "说明", "effect": "write", "executionMode": mode, "status": status,
 		"objectName": "forge_sales_lead", "actionName": "convert", "requiresRecord": true, "unexpected": "dropped",
 		"params": []map[string]any{{"name": "material_file_ids", "label": "全部材料", "type": "file", "multiple": true, "required": true}}}
@@ -28,7 +28,7 @@ func TestBusinessCatalogSnapshotRealPG(t *testing.T) {
 	s.Echo = echo.New()
 	var seenAuth atomic.Value
 	var next atomic.Value
-	next.Store(catalogBody("v1", capability("forge:action:a.one", "team_delegable", "available"), capability("forge:action:a.two", "employee_only", "available")))
+	next.Store(catalogBody("v1", catalogAction("forge:action:a.one", "team_delegable", "available"), catalogAction("forge:action:a.two", "employee_only", "available")))
 	status := atomic.Int32{}
 	status.Store(200)
 	forge := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -89,11 +89,11 @@ func TestBusinessCatalogSnapshotRealPG(t *testing.T) {
 		t.Fatal("refused catalog was accepted")
 	}
 	status.Store(200)
-	next.Store(catalogBody("v2", capability("forge:action:a.one", "sometimes", "available")))
+	next.Store(catalogBody("v2", catalogAction("forge:action:a.one", "sometimes", "available")))
 	if err := s.refreshBusinessCatalog(ctx, forge.URL, "forge-session-secret", "ws", "user"); err == nil {
 		t.Fatal("invalid execution mode was accepted")
 	}
-	next.Store(catalogBody("v2", capability("forge:action:a.one", "team_delegable", "available"), capability("forge:action:a.one", "team_delegable", "available")))
+	next.Store(catalogBody("v2", catalogAction("forge:action:a.one", "team_delegable", "available"), catalogAction("forge:action:a.one", "team_delegable", "available")))
 	if err := s.refreshBusinessCatalog(ctx, forge.URL, "forge-session-secret", "ws", "user"); err == nil {
 		t.Fatal("duplicate ids were accepted")
 	}
@@ -102,7 +102,7 @@ func TestBusinessCatalogSnapshotRealPG(t *testing.T) {
 	}
 
 	// A legacy catalog without executionMode is team-delegable; success replaces the snapshot.
-	legacy := capability("forge:action:b.legacy", "", "available")
+	legacy := catalogAction("forge:action:b.legacy", "", "available")
 	delete(legacy, "executionMode")
 	next.Store(catalogBody("v3", legacy))
 	if err := s.refreshBusinessCatalog(ctx, forge.URL, "forge-session-secret", "ws", "user"); err != nil {
