@@ -14,6 +14,8 @@ export interface TeamRecord {
 }
 
 export interface MemberSkill { name: string; description: string; body: string; always_active: boolean }
+export interface CapabilityBinding { capability_id: string; parameters: Array<{ name: string; source: string }> }
+export interface ToolLoopControl { slice_rounds: number; initial_total_rounds: number }
 
 // Only the fields the console edits are typed; anything else the server sent is
 // carried through a save unchanged.
@@ -25,6 +27,10 @@ export interface MemberConfiguration {
   model: string
   system_prompt: string
   skills?: MemberSkill[] | null
+  business_capability_ids?: string[] | null
+  business_capability_bindings?: CapabilityBinding[] | null
+  tool_loop_control?: ToolLoopControl | null
+  output_schema?: unknown
   permission_deny?: string[] | null
   memory_enabled?: boolean
   memory_scope?: string
@@ -200,6 +206,43 @@ export const handoffKinds = [
 
 export const loadModelCatalog = () => api<{ models: string[] }>('/v1/development/model-catalog').then((catalog) => catalog.models ?? [])
 
+// A Forge business action id looks like forge:action:<object>.<action>; the
+// parts are shown as written until a catalog supplies the Chinese name.
+export function describeCapability(id: string): { object: string; action: string } {
+  const body = id.replace(/^forge:action:/, "")
+  const dot = body.indexOf(".")
+  return dot < 0 ? { object: "", action: body } : { object: body.slice(0, dot), action: body.slice(dot + 1) }
+}
+
+export const audienceLimit = 32
+
+export function normalizeAudience(values: string[]): { value: string[]; error?: string } {
+  const value: string[] = []
+  for (const raw of values) {
+    const item = raw.trim()
+    if (!item) continue
+    if (item.length > 128 || /[\u0000\r\n]/.test(item)) return { value, error: "权限集名称不能超过 128 个字符，也不能换行" }
+    if (value.includes(item)) return { value, error: "权限集名称不能重复" }
+    value.push(item)
+  }
+  if (value.length > audienceLimit) return { value, error: `最多 ${audienceLimit} 个权限集` }
+  return { value }
+}
+
+// Empty text clears the schema; anything else must be a JSON object.
+export function parseOutputSchema(text: string): { value: Record<string, unknown> | null; error?: string } {
+  if (!text.trim()) return { value: null }
+  try {
+    const parsed: unknown = JSON.parse(text)
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return { value: null, error: "输出结构必须是一个 JSON 对象" }
+    return { value: parsed as Record<string, unknown> }
+  } catch {
+    return { value: null, error: "输出结构不是有效的 JSON" }
+  }
+}
+
+export const toolLoopLimits = { sliceMax: 1000 }
+
 const listed = (value: unknown) => Array.isArray(value) && value.some((item) => typeof item === 'string' && item.trim())
 
 // What trial preparation would reject for one member, worded for the page.
@@ -211,6 +254,9 @@ export function memberProblems(member: DevelopmentMember): string[] {
   if (!relationship.duty?.trim()) problems.push('还没有填写职责')
   if (!config.system_prompt?.trim()) problems.push('还没有填写工作方法')
   if (config.role === 'worker' && !isCLIEngine(config.engine) && !config.model?.trim()) problems.push('使用内置引擎时需要选择模型')
+  const loopControl = config.tool_loop_control
+  if (loopControl && (!(loopControl.slice_rounds >= 1 && loopControl.slice_rounds <= toolLoopLimits.sliceMax) || !(loopControl.initial_total_rounds >= 1))) problems.push("工具循环的每片轮次需在 1 到 1000 之间，总轮次不能小于 1")
+  if (config.output_schema != null && (typeof config.output_schema !== "object" || Array.isArray(config.output_schema))) problems.push("输出结构必须是一个 JSON 对象")
   const kinds = relationship.allowed_kinds ?? []
   if (config.role === 'worker' && kinds.length && !kinds.includes(relationship.default_kind ?? '')) problems.push('默认交接方式必须是已选方式之一')
   const skills = config.skills ?? []
