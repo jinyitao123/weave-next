@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { memberProblems, nodeReadinessIssues, type DevelopmentDocument, type DevelopmentMember } from './teams'
+import { describeCapability, memberProblems, nodeReadinessIssues, normalizeAudience, parseOutputSchema, type DevelopmentDocument, type DevelopmentMember } from './teams'
 
 const member = (name: string, engine: string, runtime = '', enabled = true): DevelopmentMember => ({
   id: name,
@@ -54,5 +54,36 @@ describe('memberProblems', () => {
 
   it('flags external tools that isolated trials refuse', () => {
     expect(memberProblems(ready('codex', { mcp_server_ids: ['crm'] }))).toEqual(['带有试跑暂不支持的外部工具（MCP 服务、技能库技能或工具许可）'])
+  })
+})
+
+describe('team helpers', () => {
+  it('describes a Forge business action id', () => {
+    expect(describeCapability('forge:action:forge_sales_lead.sales_lead_convert_to_opportunity')).toEqual({ object: 'forge_sales_lead', action: 'sales_lead_convert_to_opportunity' })
+    expect(describeCapability('custom')).toEqual({ object: '', action: 'custom' })
+  })
+
+  it('normalizes the audience like the server does', () => {
+    expect(normalizeAudience([' a ', '', 'b'])).toEqual({ value: ['a', 'b'] })
+    expect(normalizeAudience(['a', ' a']).error).toBe('权限集名称不能重复')
+    expect(normalizeAudience(['x'.repeat(129)]).error).toContain('128')
+    expect(normalizeAudience(Array.from({ length: 33 }, (_, index) => `s${index}`)).error).toBe('最多 32 个权限集')
+  })
+
+  it('parses an output schema', () => {
+    expect(parseOutputSchema('  ')).toEqual({ value: null })
+    expect(parseOutputSchema('{"a":1}')).toEqual({ value: { a: 1 } })
+    expect(parseOutputSchema('[]').error).toBe('输出结构必须是一个 JSON 对象')
+    expect(parseOutputSchema('{').error).toBe('输出结构不是有效的 JSON')
+  })
+
+  it('checks the tool loop and the output schema of a member', () => {
+    const base = (extra: Partial<DevelopmentMember['configuration']>): DevelopmentMember => ({
+      id: 'm', configuration: { display_name: '成员', role: 'worker', engine: 'loom', runtime_id: '', model: 'm', system_prompt: '方法', ...extra }, relationship: { duty: '职责', result_requirement: '', enabled: true },
+    })
+    expect(memberProblems(base({ tool_loop_control: { slice_rounds: 1001, initial_total_rounds: 5 } }))).toEqual(['工具循环的每片轮次需在 1 到 1000 之间，总轮次不能小于 1'])
+    expect(memberProblems(base({ tool_loop_control: { slice_rounds: 5, initial_total_rounds: 0 } }))).toHaveLength(1)
+    expect(memberProblems(base({ tool_loop_control: { slice_rounds: 5, initial_total_rounds: 5 } }))).toEqual([])
+    expect(memberProblems(base({ output_schema: ['x'] }))).toEqual(['输出结构必须是一个 JSON 对象'])
   })
 })

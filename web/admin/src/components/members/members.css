@@ -1,22 +1,35 @@
-.members { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 16px; align-items: start; }
-.members__list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; position: sticky; top: 16px; }
-.members__item { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "name flag" "meta flag"; gap: 2px 8px; padding: 10px 12px; border: 1px solid transparent; border-radius: var(--radius-md); background: none; color: var(--text); text-align: left; cursor: pointer; }
+.members { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 20px; align-items: start; }
+.members__list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; position: sticky; top: 16px; }
+.members__item { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "name flag" "meta flag" "duty duty"; gap: 2px 8px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--canvas); color: var(--text); text-align: left; cursor: pointer; }
 .members__item:hover { background: var(--hover); }
 .members__item.is-selected { border-color: var(--accent); background: var(--accent-soft); }
 .members__name { grid-area: name; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-weight: 600; }
 .members__meta { grid-area: meta; }
+.members__duty { grid-area: duty; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .members__flag { grid-area: flag; align-self: center; }
-.members__detail { display: grid; gap: 16px; min-width: 0; }
-.members__header { display: flex; align-items: center; gap: 8px; }
-.members__header h2 { margin: 0; font-size: var(--text-lg); }
-.members__section { display: grid; gap: 12px; padding: 16px; border: 1px solid var(--border); border-radius: var(--radius-lg); }
+.members__detail { display: grid; gap: 14px; min-width: 0; }
+.members__header { display: grid; gap: 2px; }
+.members__header p { margin: 0; }
+.members__title { display: flex; align-items: center; gap: 8px; }
+.members__title h2 { margin: 0; font-size: var(--text-lg); }
+.members__panel { display: grid; gap: 14px; min-width: 0; }
+.members__section { display: grid; gap: 12px; padding: 14px 16px; border: 1px solid var(--border); border-radius: var(--radius-lg); }
 .members__section h3 { margin: 0; font-size: var(--text-md); }
 .members__grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
 .members__grid .select__button { width: 100%; }
 .members__choices { display: flex; flex-wrap: wrap; gap: 8px; }
 .members__choices .button[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
 .members__skill { display: grid; gap: 10px; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-md); }
+.members__actions { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.members__action { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid var(--border-strong); border-radius: var(--radius-md); background: var(--canvas); }
+.members__action-main { display: grid; gap: 3px; min-width: 0; }
+.members__chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.members__chip { padding: 1px 8px; border-radius: 999px; background: var(--subtle); font-size: var(--text-xs); }
+.members__attached { display: grid; gap: 8px; padding: 10px 12px; border-radius: var(--radius-md); background: var(--warning-soft); color: var(--warning); }
+.members__attached p, .members__attached ul { margin: 0; }
+.members__attached ul { padding-left: 18px; }
+.members__error { margin: 0; color: var(--danger); font-size: var(--text-sm); }
 @media (max-width: 900px) {
   .members { grid-template-columns: minmax(0, 1fr); }
-  .members__list { position: static; grid-auto-flow: column; grid-auto-columns: minmax(160px, 1fr); overflow-x: auto; }
+  .members__list { position: static; grid-auto-flow: column; grid-auto-columns: minmax(180px, 1fr); overflow-x: auto; }
 }
