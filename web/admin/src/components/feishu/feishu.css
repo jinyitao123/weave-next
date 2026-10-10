@@ -1,0 +1,11 @@
+.integration { display: grid; gap: 16px; padding: 16px; border: 1px solid var(--border); border-radius: var(--radius-lg); }
+.integration__header { display: flex; align-items: center; gap: 8px; }
+.integration__header h2 { margin: 0; font-size: var(--text-lg); }
+.integration__facts { display: flex; flex-wrap: wrap; gap: 24px; margin: 0; }
+.integration__facts div { display: grid; gap: 2px; }
+.integration__facts dt { color: var(--text-secondary); font-size: var(--text-sm); }
+.integration__facts dd { margin: 0; }
+.integration__grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+.integration__ok { margin: 0; color: var(--success); }
+.integration__failed { margin: 0; color: var(--danger); }
+.integration__notify { display: flex; flex-wrap: wrap; gap: 8px 20px; }

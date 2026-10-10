@@ -53,7 +53,7 @@ make compose-check
 
 可选双向消息接入，默认关闭。发送实现改编自[nexus](https://github.com/jinyitao123/nexus/blob/100890744f1189d149f4000919539fb057dd4c75/orchestration/internal/notify/feishu.go)，保留应用token内存缓存并补充HTTP/JSON/业务码/消息回执检查、禁止重定向和来源消息去重。接收及任务适配在`internal/app/api/feishu_*.go`；不增加SDK依赖、执行队列、员工角色、业务审批或待办体系。共享契约由[产品总仓](https://github.com/jinyitao123/weave-workbench/blob/main/contracts/v1/README.md#飞书机器人双向接入)维护。
 
-部署方从安全的环境配置提供以下变量，不把值写入Git或模型输入：
+部署方可以从安全的环境配置提供以下变量作为部署应用，不把值写入Git或模型输入；部署应用只服务尚未在管理端保存自己应用的工作区：
 
 | 变量 | 含义 |
 | --- | --- |
@@ -62,6 +62,10 @@ make compose-check
 | `WEAVE_FEISHU_VERIFICATION_TOKEN` | 事件订阅Verification Token |
 | `WEAVE_FEISHU_ENCRYPT_KEY` | 事件订阅Encrypt Key |
 | `WEAVE_FEISHU_TENANT_KEY` | 唯一允许接入的飞书租户 |
+
+工作区管理员（`admin`、`owner`）也可以在管理端“集成”页保存本工作区自己的应用（`/v1/integrations/feishu/app`）：三项密钥用服务端凭据密钥（`WEAVE_SECRET_KEY`）加密保存，任何接口都不返回原文，审计只记字段名；保存与删除带修订号，首次保存或更换应用须填全三项密钥；一个App ID只能属于一个工作区，也不能与部署应用相同，因此原有按App ID隔离的收发查询仍限于该工作区。工作区应用使用独立回调地址`/v1/integrations/feishu/events/<回调键>`，可在页面一键检查令牌申请；保存后，部署应用对该工作区的旧绑定只回复重新绑定提示，也不再投递其通知。
+
+团队默认不出现在飞书中，须在团队详情“接入”页开启（`/v1/teams/:id/feishu-access`），可指定飞书发起时使用的已发布流程（默认团队流程），并分别关闭完成、需要补充、需要人工确认、失败、取消五类通知；关闭的类别记为`suppressed`，不重试，不影响Forge收件箱。
 
 飞书自建应用启用机器人、私聊消息接收事件`im.message.receive_v1`及`im:message:send_as_bot`发送权限，订阅地址设为部署方可访问的`/v1/integrations/feishu/events`。协议参见[发送消息](https://open.feishu.cn/document/server-docs/im-v1/message/create)与[官方事件实现](https://github.com/larksuite/oapi-sdk-go/blob/v3_main/event/event.go)。普通事件回调核对签名、时间、Verification Token、App ID与租户；URL校验按飞书官方协议仅验证加密challenge/token，不要求签名头，再持久化消息回执并应答；既有员工运行事件worker处理该回执，使接收请求不等待模型执行。仅接受真人私聊文本。
 

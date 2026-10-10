@@ -1,4 +1,4 @@
-import { Boxes, FolderGit2, ListTodo, Lock, LockOpen, LogOut, Server, type LucideIcon } from 'lucide-react'
+import { Boxes, FolderGit2, ListTodo, Lock, LockOpen, LogOut, Plug, Server, type LucideIcon } from 'lucide-react'
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { CommandPalette } from '../components/CommandPalette'
 import { trackTasks } from '../lib/notify'
@@ -7,6 +7,7 @@ import { listTasks } from '../lib/tasks'
 import type { AdminConfig, AdminSession } from '../lib/api'
 import { useRoute } from '../lib/router'
 import { EnvironmentsPage } from './EnvironmentsPage'
+import { IntegrationsPage } from './IntegrationsPage'
 import { NodesPage } from './NodesPage'
 import { TaskDetailPage } from './TaskDetailPage'
 import { TasksPage } from './TasksPage'
@@ -31,6 +32,7 @@ const sections: Section[] = [
     ? <TeamDetailPage key={path} teamId={decodeURIComponent(path.slice('/teams/'.length))} navigate={navigate} />
     : <TeamsPage session={session} navigate={navigate} /> },
   { path: '/nodes', label: '节点', icon: Server, render: ({ session }) => <NodesPage session={session} /> },
+  { path: '/integrations', label: '集成', icon: Plug, render: ({ session }) => <IntegrationsPage session={session} /> },
 ]
 
 const roleLabel = (role: string) => ({ admin: '管理员', developer: '开发者', member: '成员' }[role] ?? '成员')
