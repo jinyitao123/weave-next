@@ -105,3 +105,53 @@ describe('workflow canvas interactions', () => {
     expect(fit.getAttribute('aria-pressed')).toBe('true')
   })
 })
+
+describe("step inputs", () => {
+  const chain = () => serialGraph(members.map(member => ({ member: { id: member.id, displayName: member.id }, label: member.id, requirement: "返回依据" })))
+
+  it("lists the task and every earlier step as checkboxes with who produces them", () => {
+    render(<Controlled initial={chain()} />)
+    fireEvent.click(screen.getByRole("button", { name: "编辑步骤 核对" }))
+    const panel = screen.getByRole("region", { name: "这一步会收到" })
+    const boxes = Array.from(panel.querySelectorAll("input[type=checkbox]")) as HTMLInputElement[]
+    expect(boxes.map(box => box.closest("label")?.textContent)).toEqual(["本次任务输入发起任务时提交的原始内容", "编码的结果由编码产出", "验证的结果由验证产出"])
+    expect(boxes.map(box => box.checked)).toEqual([true, false, true])
+    expect(screen.getByRole("status").textContent).toBe("开始时会收到：本次任务输入、验证的结果")
+  })
+
+  it("marks the chosen sources on the canvas and follows the checkboxes", () => {
+    let saved: Graph | undefined
+    render(<Controlled initial={chain()} changed={value => { saved = value }} />)
+    fireEvent.click(screen.getByRole("button", { name: "编辑步骤 核对" }))
+    const canvas = screen.getByRole("region", { name: "流程画布" })
+    expect(canvas.querySelectorAll(".flow-editor__node.is-feeding")).toHaveLength(1)
+    expect(canvas.querySelectorAll("path.is-feed")).toHaveLength(2)
+    expect(canvas.querySelector(".flow-editor__task")).toBeTruthy()
+    fireEvent.click(screen.getByRole("checkbox", { name: /编码的结果/ }))
+    expect(canvas.querySelectorAll(".flow-editor__node.is-feeding")).toHaveLength(2)
+    expect(screen.getByRole("status").textContent).toBe("开始时会收到：本次任务输入、编码的结果、验证的结果")
+    expect(Object.values(saved!.nodes[2].inputs ?? {}).some(binding => binding.value.node_id === saved!.nodes[0].id)).toBe(true)
+  })
+
+  it("drops every binding of a source it switches off and warns when nothing is left", () => {
+    const graph = chain()
+    graph.nodes[1].inputs = { ...graph.nodes[1].inputs, review: { value: { source: "node_output", node_id: graph.nodes[0].id, path: "/summary", iteration: "previous_iteration" }, expected_type: "text" } as never }
+    let saved: Graph | undefined
+    render(<Controlled initial={graph} changed={value => { saved = value }} />)
+    fireEvent.click(screen.getByRole("button", { name: "编辑步骤 验证" }))
+    fireEvent.click(screen.getByRole("checkbox", { name: /本次任务输入/ }))
+    fireEvent.click(screen.getByRole("checkbox", { name: /编码的结果/ }))
+    expect(saved?.nodes[1].inputs).toEqual({})
+    expect(screen.getByRole("status").textContent).toContain("没有选择任何内容")
+  })
+
+  it("highlights the source on the canvas while its row is pointed at", () => {
+    render(<Controlled initial={chain()} />)
+    fireEvent.click(screen.getByRole("button", { name: "编辑步骤 核对" }))
+    const row = screen.getByRole("checkbox", { name: /验证的结果/ }).closest("label")!
+    fireEvent.mouseEnter(row)
+    expect(screen.getByRole("button", { name: "编辑步骤 验证" }).className).toContain("is-hot")
+    fireEvent.mouseLeave(row)
+    expect(screen.getByRole("button", { name: "编辑步骤 验证" }).className).not.toContain("is-hot")
+  })
+})
