@@ -12,7 +12,7 @@ type Form = { placement: 'serial' | 'parallel'; after: string; member: string; n
 const nodeTitle = (node: Step) => node.label || stepLabel(node.type)
 
 // Who produces a step's result, for the source list.
-function actorName(graph: Graph, node: Step, members: DevelopmentMember[]): string {
+function actorName(node: Step, members: DevelopmentMember[]): string {
   if (node.type === 'join') return '汇合各分支的结果'
   const member = node.type === 'lead'
     ? members.find(item => item.configuration.role === 'avatar' && item.relationship.enabled)
@@ -143,10 +143,10 @@ function StepInspector({ graph, step, members, loop, onChange, onGraph, onHot }:
 
     {['lead', 'worker'].includes(step.type) ? <section className="flow-editor__panel" aria-label="这一步会收到">
       <h3>这一步会收到</h3>
-      {loop ? <p className="muted">验证回路里的输入固定为本轮的编码结果和上一轮的验证意见。</p> : <>
+      {loop ? <p className="muted">输入沿用验证回路的本轮结果与上一轮验证意见。</p> : <>
         <ul className="flow-sources">
           <SourceRow checked={feeds.task} title="本次任务输入" detail="发起任务时提交的原始内容" hotKey="task" onToggle={() => onChange(toggleTaskInput(step))} onHot={onHot} />
-          {candidates.map(prior => <SourceRow key={prior.id} checked={hasNodeInput(step, prior.id)} title={`${nodeTitle(prior)}的结果`} detail={`由${actorName(graph, prior, members)}产出`} hotKey={prior.id} onToggle={() => onChange(toggleNodeInput(step, prior))} onHot={onHot} />)}
+          {candidates.map(prior => <SourceRow key={prior.id} checked={hasNodeInput(step, prior.id)} title={`${nodeTitle(prior)}的结果`} detail={`由${actorName(prior, members)}产出`} hotKey={prior.id} onToggle={() => onChange(toggleNodeInput(step, prior))} onHot={onHot} />)}
         </ul>
         {candidates.length === 0 ? <p className="muted small">这是第一步，前面没有其他步骤可选。</p> : null}
         {received.length ? <p className="flow-sources__summary" role="status">开始时会收到：{received.join('、')}</p>
@@ -158,7 +158,7 @@ function StepInspector({ graph, step, members, loop, onChange, onGraph, onHot }:
       <h3>汇合这些分支的结果</h3>
       <ul className="flow-sources">{feeds.nodes.map(id => {
         const node = graph.nodes.find(item => item.id === id)
-        return node ? <li key={id}><div className="flow-source is-on" onMouseEnter={() => onHot(id)} onMouseLeave={() => onHot(undefined)}><span className="flow-source__body"><strong>{nodeTitle(node)}</strong><small>由{actorName(graph, node, members)}产出</small></span></div></li> : null
+        return node ? <li key={id}><div className="flow-source is-on" onMouseEnter={() => onHot(id)} onMouseLeave={() => onHot(undefined)}><span className="flow-source__body"><strong>{nodeTitle(node)}</strong><small>由{actorName(node, members)}产出</small></span></div></li> : null
       })}</ul>
     </section> : null}
   </div>
