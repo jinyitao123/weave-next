@@ -41,15 +41,15 @@ export function FeishuTeamAccessPanel({ teamId, workflows }: { teamId: string; w
   return <section className="integration" aria-label="飞书接入">
     <header className="integration__header"><h2>飞书接入</h2></header>
     <Switch checked={access.enabled} label="可在飞书中使用" onChange={(enabled) => setAccess({ ...access, enabled })} />
-    <div className="field"><span>飞书发起时使用的流程</span><Select label="飞书发起时使用的流程" value={access.workflowId ?? ''} options={workflowOptions}
+    <div className="field"><span>飞书发起时使用的流程</span><Select label="飞书发起时使用的流程" value={access.workflowId ?? ''} options={workflowOptions} disabled={!access.enabled}
       onChange={(value) => setAccess({ ...access, workflowId: value || null })} /></div>
     <div className="field"><span>推送的通知</span><div className="integration__notify" role="group" aria-label="推送的通知">
-      {notifyKinds.map((kind) => <Switch key={kind.key} checked={access.notify[kind.key]} label={kind.label} onChange={(on) => setAccess({ ...access, notify: { ...access.notify, [kind.key]: on } })} />)}
+      {notifyKinds.map((kind) => <Switch key={kind.key} checked={access.notify[kind.key]} label={kind.label} disabled={!access.enabled} onChange={(on) => setAccess({ ...access, notify: { ...access.notify, [kind.key]: on } })} />)}
     </div></div>
-    {saved.updatedAt ? <p className="muted small">{saved.updatedBy || '开发者'} · {relativeTime(saved.updatedAt)}</p> : null}
+    {saved.updatedAt ? <p className="muted small">最近修改：{saved.updatedBy || '开发者'} · {relativeTime(saved.updatedAt)}</p> : null}
     {error ? <InlineError message={error} /> : null}
     <div className="toolbar">
-      <button type="button" className="button button--primary" disabled={busy || !dirty} onClick={() => void save()}>{busy ? '正在保存…' : '保存'}</button>
+      <button type="button" className="button button--primary" disabled={busy || !dirty} onClick={() => void save()}>{busy ? '正在保存…' : '保存接入设置'}</button>
       {dirty ? <button type="button" className="button" disabled={busy} onClick={() => { setAccess(saved); setError('') }}>放弃修改</button> : null}
     </div>
   </section>

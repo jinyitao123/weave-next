@@ -13,6 +13,7 @@
 .flow-editor__graph path.is-back { stroke: var(--accent); stroke-dasharray: 4 3; }
 .flow-editor__graph path.is-feed { stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 5 3; opacity: 0.8; }
 .flow-editor__graph path.is-feed.is-hot { stroke-width: 2.5; opacity: 1; stroke-dasharray: none; }
+.flow-editor__graph path.is-feed { stroke-linejoin: round; }
 .flow-editor__graph marker path { fill: var(--border-strong); stroke: none; }
 .flow-editor__graph marker path.is-feed-head { fill: var(--accent); }
 .flow-editor__edge-label { position: absolute; transform: translate(-50%, -50%); padding: 0 6px; color: var(--accent); background: var(--subtle); font-size: var(--text-xs); white-space: nowrap; pointer-events: none; }
@@ -33,8 +34,11 @@
 .flow-editor__head h2 { margin: 0; font-size: var(--text-lg); }
 .flow-editor__head p { margin: 2px 0 0; }
 .flow-editor__actions { display: flex; flex-wrap: wrap; gap: 8px; }
-.flow-editor__panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; align-items: start; }
-.flow-editor__panel { display: grid; gap: 12px; min-width: 0; padding: 14px; border: 1px solid var(--border); border-radius: var(--radius-md); }
+.flow-editor__panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; align-items: stretch; }
+.flow-editor__panel { display: grid; gap: 12px; align-content: start; min-width: 0; padding: 14px; border: 1px solid var(--border); border-radius: var(--radius-md); }
+/* A step with a single group of settings does not stretch across the page. */
+.flow-editor__panel:only-child { max-width: 560px; }
+.flow-editor__hint { margin: 0; }
 .flow-editor__panel h3 { margin: 0; font-size: var(--text-md); }
 .flow-sources { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 .flow-source { display: flex; align-items: flex-start; gap: 10px; padding: 9px 11px; border: 1px solid var(--border-strong); border-radius: var(--radius-md); background: var(--canvas); cursor: pointer; }

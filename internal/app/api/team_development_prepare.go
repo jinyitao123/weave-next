@@ -34,10 +34,9 @@ func (s *Server) prepareDevelopment(ctx context.Context, ws, id, actor string, r
 	if err = checkDevelopmentBaseline(ctx, tx, ws, id, d.Baseline); err != nil {
 		return d, err
 	}
+	// The frozen candidate belongs to the saved revision, not to whoever
+	// prepared it first: every developer of the workspace trials the same one.
 	if d.PreparedRevision == revision && len(d.Prepared) > 0 {
-		if d.PreparedActor != actor {
-			return d, developmentError("这份草稿已由其他开发者试跑，请保存自己的修改后重新试跑")
-		}
 		return d, nil
 	}
 	if err = validateDevelopmentDocument(d.Document); err != nil {

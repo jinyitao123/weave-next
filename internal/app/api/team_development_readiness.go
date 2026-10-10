@@ -33,7 +33,7 @@ type developmentWorkflowReadiness struct {
 }
 
 type developmentTrialLedgerScope struct {
-	runID, runSnapshotID, inputRevisionID string
+	runID, runSnapshotID, inputRevisionID, actorID string
 	terminalAt                            time.Time
 	actions                               []businessaction.DevelopmentAction
 }
@@ -46,18 +46,17 @@ type developmentReadQueryer interface {
 func buildDevelopmentPublicationReadiness(
 	ctx context.Context,
 	query developmentReadQueryer,
-	workspaceID, teamID, actorID, preparedActor string,
+	workspaceID, teamID string,
 	revision, preparedRevision int64,
 	prepared []developmentPrepared,
 ) (developmentPublicationReadiness, error) {
 	readiness := developmentPublicationReadiness{Ready: false, Workflows: []developmentWorkflowReadiness{}}
-	if query == nil || workspaceID == "" || teamID == "" || actorID == "" || actorID != preparedActor ||
-		revision < 1 || preparedRevision != revision || len(prepared) == 0 {
+	if query == nil || workspaceID == "" || teamID == "" || revision < 1 || preparedRevision != revision || len(prepared) == 0 {
 		return readiness, nil
 	}
 	readiness.Ready = true
 	for _, candidate := range prepared {
-		workflow, err := developmentWorkflowPublicationReadiness(ctx, query, workspaceID, teamID, actorID, revision, candidate)
+		workflow, err := developmentWorkflowPublicationReadiness(ctx, query, workspaceID, teamID, revision, candidate)
 		if err != nil {
 			return developmentPublicationReadiness{}, err
 		}
@@ -73,7 +72,7 @@ func buildDevelopmentPublicationReadiness(
 func developmentWorkflowPublicationReadiness(
 	ctx context.Context,
 	query developmentReadQueryer,
-	workspaceID, teamID, actorID string,
+	workspaceID, teamID string,
 	revision int64,
 	candidate developmentPrepared,
 ) (developmentWorkflowReadiness, error) {
@@ -103,21 +102,23 @@ func developmentWorkflowPublicationReadiness(
 		}
 	}
 
-	queryRows, err := query.Query(ctx, `SELECT t.request_id::text,t.request_digest,t.request,t.business_actions,
+	// Trials of this candidate count whoever ran them; each one is still
+	// verified against the account that started it.
+	queryRows, err := query.Query(ctx, `SELECT t.request_id::text,t.actor_id,t.request_digest,t.request,t.business_actions,
 		r.run_id,r.run_snapshot_id,r.terminal_at,p.receipt
 		FROM weave_team_development_trials t
 		JOIN weave_team_runs r ON r.workspace_id=t.workspace_id AND r.team_id=t.team_id AND r.workflow_id=t.workflow_id
 		JOIN weave_task_queue q ON q.workspace_id=r.workspace_id AND q.id=r.source_task_id AND q.run_snapshot_id=r.run_snapshot_id
 		JOIN weave_kernel_publication_requests p ON p.workspace_id=q.workspace_id AND p.request_id=q.context_key AND p.operation='candidate_run'
-		WHERE t.workspace_id=$1 AND t.team_id=$2 AND t.actor_id=$3 AND t.revision=$4 AND t.workflow_id=$5
-		  AND t.request->'candidate'->>'content_hash'=$6
+		WHERE t.workspace_id=$1 AND t.team_id=$2 AND t.revision=$3 AND t.workflow_id=$4
+		  AND t.request->'candidate'->>'content_hash'=$5
 		  AND p.request_id='development:'||t.request_id::text AND q.source_ref='team-development:'||t.team_id
 		  AND p.receipt->>'task_id'=q.id AND p.receipt->>'run_id'=r.run_id AND p.receipt->>'run_snapshot_id'=r.run_snapshot_id
 		  AND p.actor_subject=q.actor_subject AND p.receipt->'subject'=p.actor_subject
 		  AND p.receipt->'revision'->>'workflow_id'=r.workflow_id
 		  AND p.receipt->'revision'->>'workflow_version'=r.workflow_version::text
 		  AND r.status='succeeded'
-		ORDER BY t.created_at`, workspaceID, teamID, actorID, revision, candidate.ID, candidate.Envelope.ContentHash)
+		ORDER BY t.created_at`, workspaceID, teamID, revision, candidate.ID, candidate.Envelope.ContentHash)
 	if err != nil {
 		return result, err
 	}
@@ -127,10 +128,10 @@ func developmentWorkflowPublicationReadiness(
 	trialsWithRequiredActions := []developmentTrialLedgerScope{}
 	requestedActions := machine.GraphBusinessCapabilities(graph, payload)
 	for queryRows.Next() {
-		var requestID, storedDigest, runID, runSnapshotID string
+		var requestID, actorID, storedDigest, runID, runSnapshotID string
 		var requestRaw, actionsRaw, receiptRaw []byte
 		var terminalAt pgtype.Timestamptz
-		if err := queryRows.Scan(&requestID, &storedDigest, &requestRaw, &actionsRaw, &runID, &runSnapshotID, &terminalAt, &receiptRaw); err != nil {
+		if err := queryRows.Scan(&requestID, &actorID, &storedDigest, &requestRaw, &actionsRaw, &runID, &runSnapshotID, &terminalAt, &receiptRaw); err != nil {
 			return result, err
 		}
 		if !terminalAt.Valid {
@@ -140,7 +141,7 @@ func developmentWorkflowPublicationReadiness(
 		var admission publication.AdmissionReceipt
 		var actions []businessaction.DevelopmentAction
 		var trialInput string
-		if json.Unmarshal(requestRaw, &request) != nil || json.Unmarshal(actionsRaw, &actions) != nil ||
+		if actorID == "" || json.Unmarshal(requestRaw, &request) != nil || json.Unmarshal(actionsRaw, &actions) != nil ||
 			json.Unmarshal(receiptRaw, &admission) != nil || json.Unmarshal(request.Input, &trialInput) != nil ||
 			request.RequestID != "development:"+requestID || request.SourceRef != "team-development:"+teamID ||
 			request.Purpose != "developer-trial" || request.Candidate.WorkspaceID != workspaceID ||
@@ -165,7 +166,7 @@ func developmentWorkflowPublicationReadiness(
 		foundSuccessfulTrial = true
 		if contractValid && len(result.RequiredCapabilityIDs) > 0 {
 			trialsWithRequiredActions = append(trialsWithRequiredActions, developmentTrialLedgerScope{
-				runID: runID, runSnapshotID: runSnapshotID, inputRevisionID: request.InputVersion,
+				runID: runID, runSnapshotID: runSnapshotID, inputRevisionID: request.InputVersion, actorID: actorID,
 				terminalAt: terminalAt.Time.UTC(), actions: normalizedActions,
 			})
 		}
@@ -195,7 +196,7 @@ func developmentWorkflowPublicationReadiness(
 		sort.Strings(allowed)
 		scope := deliverycheck.BusinessReceiptScope{
 			WorkspaceID: workspaceID, RunID: trial.runID, RunSnapshotID: trial.runSnapshotID,
-			InputRevisionID: trial.inputRevisionID, SubjectID: actorID,
+			InputRevisionID: trial.inputRevisionID, SubjectID: trial.actorID,
 			AllowedCapabilityIDs: allowed, DevelopmentTrial: true, TerminalAt: &trial.terminalAt,
 		}
 		evaluation := deliverycheck.EvaluateBusinessReceipts(params, scope, receipts, deliverycheck.BusinessReceiptResult{Disposition: "complete"})

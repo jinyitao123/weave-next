@@ -375,7 +375,7 @@ func runBusinessReceiptCompletion(t *testing.T, outcome string, protocolProbe ..
 			}
 		}
 		assertTrial()
-		readiness, err := buildDevelopmentPublicationReadiness(ctx, pool, "ws", "team", "user", "user", 1, 1,
+		readiness, err := buildDevelopmentPublicationReadiness(ctx, pool, "ws", "team", 1, 1,
 			[]developmentPrepared{{ID: "flow", Envelope: envelope}})
 		if err != nil {
 			t.Fatal(err)

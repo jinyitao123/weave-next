@@ -75,16 +75,19 @@ export interface DevelopmentDocument {
   workflows: DevelopmentWorkflow[]
 }
 
-export interface DevelopmentTrial { request_id: string; revision: number; workflow_id: string; run_id: string; status: string; created_at: string }
+export interface DevelopmentTrial { request_id: string; revision: number; workflow_id: string; run_id: string; status: string; created_at: string; actor?: string; mine?: boolean }
+
+export interface WorkflowReadiness { workflow_id: string; required_capability_ids: string[]; covered_capability_ids: string[]; missing_capability_ids: string[]; passed: boolean }
 
 export interface DevelopmentDraft {
   revision: number
   published_revision: number
+  prepared_revision?: number
   document: DevelopmentDocument
   published_document?: DevelopmentDocument
   updated_at: string
   trials: DevelopmentTrial[]
-  publication_readiness?: { ready: boolean }
+  publication_readiness?: { ready: boolean; workflows?: WorkflowReadiness[] }
 }
 
 export const listTeamRecords = () => api<TeamRecord[]>('/v1/teams?status=all&purpose=development')
@@ -97,8 +100,121 @@ export const saveDevelopment = (teamId: string, revision: number, document: Deve
   api<DevelopmentDraft>(base(teamId), { method: 'PUT', body: JSON.stringify({ expected_revision: revision, document }) })
 export const publishDevelopment = (teamId: string, revision: number) =>
   api<DevelopmentDraft>(`${base(teamId)}/publish`, { method: 'POST', body: JSON.stringify({ revision }) })
-export const startTrial = (teamId: string, revision: number, workflowId: string, input: string, requestId: string) =>
-  api<{ run_id: string }>(`${base(teamId)}/trials`, { method: 'POST', body: JSON.stringify({ revision, workflow_id: workflowId, request_id: requestId, input, business_actions: [] }) })
+export const startTrial = (teamId: string, revision: number, workflowId: string, input: string, requestId: string, actions: TrialAction[]) =>
+  api<{ run_id: string }>(`${base(teamId)}/trials`, { method: 'POST', body: JSON.stringify({ revision, workflow_id: workflowId, request_id: requestId, input, business_actions: actions }) })
+
+// The workspace's last reading of the Forge business action catalog.
+export interface CatalogParameter { name: string; label?: string; type: string; multiple?: boolean; required?: boolean; description?: string; enum?: string[] }
+export interface CatalogCapability {
+  id: string
+  name: string
+  description?: string
+  effect: string
+  executionMode?: string
+  requiresRecord?: boolean
+  requiresConfirmation?: boolean
+  status: string
+  unavailableReason?: string
+  params?: CatalogParameter[]
+}
+export interface BusinessCatalog { available: boolean; fetchedAt?: string; fetchedBy?: string; capabilities: CatalogCapability[] }
+
+export const loadBusinessCatalog = () => api<BusinessCatalog>('/v1/development/business-capabilities')
+  .then((catalog) => ({ ...catalog, capabilities: catalog.capabilities ?? [] }))
+
+// A frozen action definition sent with a trial; simulated calls never reach Forge.
+export interface TrialAction {
+  capability_id: string
+  name: string
+  object_name: string
+  label: string
+  description: string
+  requires_record: boolean
+  requires_confirmation: boolean
+  simulation_authorized: boolean
+  params: CatalogParameter[]
+}
+
+// The business actions one workflow can call: those of the lead and of every
+// enabled member a step is assigned to.
+export function workflowCapabilityIds(document: DevelopmentDocument, workflow: DevelopmentWorkflow): string[] {
+  const used = new Set<string>()
+  for (const node of workflow.graph_definition.nodes ?? []) {
+    if (node.type === 'lead') for (const member of document.members) if (member.configuration.role === 'avatar') used.add(member.id)
+    if (node.type === 'worker' && typeof node.config?.agent_id === 'string') used.add(node.config.agent_id)
+  }
+  const ids = new Set<string>()
+  for (const member of document.members) {
+    if (!used.has(member.id) || member.relationship.enabled === false) continue
+    for (const id of member.configuration.business_capability_ids ?? []) if (typeof id === 'string' && id.trim()) ids.add(id)
+  }
+  return [...ids]
+}
+
+// Definitions for a trial come from the catalog; an action the catalog does
+// not list cannot be trialled and is returned as missing.
+export function trialActions(ids: string[], catalog: BusinessCatalog | undefined, simulate: ReadonlySet<string>): { actions: TrialAction[]; missing: string[] } {
+  const actions: TrialAction[] = [], missing: string[] = []
+  for (const id of ids) {
+    const found = catalog?.capabilities.find((capability) => capability.id === id)
+    if (!found) { missing.push(id); continue }
+    const parts = describeCapability(id)
+    actions.push({
+      capability_id: id, name: parts.action, object_name: parts.object, label: found.name, description: found.description ?? '',
+      requires_record: found.requiresRecord === true, requires_confirmation: found.requiresConfirmation === true,
+      simulation_authorized: simulate.has(id), params: found.params ?? [],
+    })
+  }
+  return { actions, missing }
+}
+
+export function capabilityName(id: string, catalog?: BusinessCatalog): string {
+  return catalog?.capabilities.find((capability) => capability.id === id)?.name || describeCapability(id).action
+}
+
+const systemParameters = ['idempotency_key', 'idempotencyKey']
+
+// File parameters of a newly added action read the task's materials: all of
+// them for a multiple parameter, the single one otherwise.
+export function defaultCapabilityBinding(capability: CatalogCapability): CapabilityBinding | undefined {
+  const parameters = (capability.params ?? [])
+    .filter((parameter) => parameter.type?.toLowerCase() === 'file' && !systemParameters.includes(parameter.name))
+    .map((parameter) => ({ name: parameter.name, source: parameter.multiple ? 'materials.ids' : 'materials.single.id' }))
+  return parameters.length ? { capability_id: capability.id, parameters } : undefined
+}
+
+const bindingSources: Record<string, string> = {
+  'materials.ids': '本次提交的全部材料',
+  'materials.single.id': '本次提交的那份材料',
+  'materials.single.name': '材料的名称',
+  'materials.single.sha256': '材料的校验值',
+  'materials.single.manifest_json': '材料清单',
+}
+export const bindingSourceLabel = (source: string) => bindingSources[source] ?? source
+
+// The handoff kind a step needs follows from where it sits in the flow.
+export function requiredHandoffKinds(document: DevelopmentDocument, memberId: string): string[] {
+  const kinds = new Set<string>()
+  for (const flow of document.workflows) for (const node of flow.graph_definition.nodes ?? []) {
+    if (node.type === 'worker' && node.config?.agent_id === memberId && typeof node.config.kind === 'string') kinds.add(node.config.kind)
+  }
+  return [...kinds]
+}
+
+// Assigning a member to a step also allows the handoff kind that step needs,
+// so a flow built on the page never fails publication on this setting.
+export function allowRequiredHandoffKinds(document: DevelopmentDocument): DevelopmentDocument {
+  let changed = false
+  const members = document.members.map((member) => {
+    const allowed = member.relationship.allowed_kinds ?? []
+    if (member.configuration.role !== 'worker' || !allowed.length) return member
+    const missing = requiredHandoffKinds(document, member.id).filter((kind) => !allowed.includes(kind))
+    if (!missing.length) return member
+    changed = true
+    return { ...member, relationship: { ...member.relationship, allowed_kinds: [...allowed, ...missing] } }
+  })
+  return changed ? { ...document, members } : document
+}
 
 interface CreatedAgent { id: string }
 
@@ -214,30 +330,15 @@ export function describeCapability(id: string): { object: string; action: string
   return dot < 0 ? { object: "", action: body } : { object: body.slice(0, dot), action: body.slice(dot + 1) }
 }
 
-export const audienceLimit = 32
-
-export function normalizeAudience(values: string[]): { value: string[]; error?: string } {
-  const value: string[] = []
-  for (const raw of values) {
-    const item = raw.trim()
-    if (!item) continue
-    if (item.length > 128 || /[\u0000\r\n]/.test(item)) return { value, error: "权限集名称不能超过 128 个字符，也不能换行" }
-    if (value.includes(item)) return { value, error: "权限集名称不能重复" }
-    value.push(item)
-  }
-  if (value.length > audienceLimit) return { value, error: `最多 ${audienceLimit} 个权限集` }
-  return { value }
-}
-
 // Empty text clears the schema; anything else must be a JSON object.
 export function parseOutputSchema(text: string): { value: Record<string, unknown> | null; error?: string } {
   if (!text.trim()) return { value: null }
   try {
     const parsed: unknown = JSON.parse(text)
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return { value: null, error: "输出结构必须是一个 JSON 对象" }
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return { value: null, error: "这里需要一个以 { 开头、} 结尾的 JSON 对象；不需要固定格式时留空" }
     return { value: parsed as Record<string, unknown> }
   } catch {
-    return { value: null, error: "输出结构不是有效的 JSON" }
+    return { value: null, error: "格式不对：这里需要一段 JSON；不需要固定格式时留空" }
   }
 }
 

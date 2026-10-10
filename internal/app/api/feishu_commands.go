@@ -246,13 +246,9 @@ func (s *Server) feishuTeams(ctx context.Context, actor feishuActor) (string, er
 	if err != nil {
 		return "", err
 	}
-	audiences, err := s.teamAudiences(ctx, actor.WorkspaceID)
-	if err != nil {
-		return "", err
-	}
 	names := []string{}
 	for _, team := range teams {
-		if team.Status != "active" || !teamAvailableTo(audiences[team.ID], actor.Permissions) {
+		if team.Status != "active" {
 			continue
 		}
 		workflow, err := s.feishuTeamWorkflow(ctx, actor.WorkspaceID, team.ID, team.DefaultWorkflowID)

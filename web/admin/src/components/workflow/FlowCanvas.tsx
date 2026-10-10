@@ -8,8 +8,10 @@ export const stepLabel = (type: string): string => ({ lead: '负责人处理', w
 const width = 172, height = 60, column = width + 48, row = height + 36
 // Above the first row: the task pill and the arcs that show what the selected
 // step receives. Always reserved, so selecting a step never moves the nodes.
-const lane = 52
-const pill = { x: 24, y: 12, width: 104, height: 26 }
+const lane = 64
+const pill = { x: 24, y: 8, width: 104, height: 24 }
+// Source lines run between these heights, spread evenly however many there are.
+const laneTop = 38, laneBottom = 60
 
 // A loop leaves through its exit only after the latch step, so the exit
 // target is ordered behind the latch instead of beside the loop body.
@@ -85,12 +87,22 @@ export function FlowCanvas({ graph, members, selected, feeds, highlight, onSelec
     return [{ edge, fx: from.x + width / 2, tx: to.x + width / 2, fy: from.y + height, ty: to.y + height + 2, label: rounds ? `未通过退回 · 最多 ${rounds} 轮` : '' }]
   })
   const target = selected ? box.positions.get(selected) : undefined
-  // Arcs run in the lane above the nodes, one level per source so they do not
-  // lie on top of each other.
-  const arcs = target ? [
-    ...(feeds?.task ? [{ key: 'task', fx: pill.x + pill.width / 2, fy: pill.y + pill.height }] : []),
-    ...(feeds?.nodes ?? []).flatMap(id => { const from = box.positions.get(id); return from && id !== selected ? [{ key: id, fx: from.x + width / 2, fy: from.y }] : [] }),
-  ].map((arc, index) => ({ ...arc, level: 40 + (index % 4) * 3, tx: target.x + width / 2, ty: target.y - 2 })) : []
+  // A step below another one in its column is reached through the gap beside
+  // the column, so a line never crosses a step it does not belong to.
+  const covered = (at: { x: number; y: number }) => [...box.positions.values()].some(other => other.x === at.x && other.y < at.y)
+  const sources = target ? [
+    ...(feeds?.task ? [{ key: 'task', fx: pill.x + pill.width / 2, fy: pill.y + pill.height, from: undefined as { x: number; y: number } | undefined }] : []),
+    ...(feeds?.nodes ?? []).flatMap(id => { const from = box.positions.get(id); return from && id !== selected ? [{ key: id, fx: from.x + width / 2, fy: from.y, from }] : [] }),
+  ] : []
+  // Each source keeps its own height in the lane and its own entry point on
+  // the step, so several sources stay readable as separate lines.
+  const arcs = target ? sources.map((arc, index) => {
+    const level = sources.length > 1 ? laneTop + index * Math.min(8, (laneBottom - laneTop) / (sources.length - 1)) : laneTop + 6
+    const tx = target.x + width * (index + 1) / (sources.length + 1), ty = target.y - 2
+    const rise = arc.from && covered(arc.from) ? `V ${arc.fy - 10} H ${arc.from.x - 12 - index * 4} ` : ''
+    const fall = covered(target) ? `H ${target.x - 12 - index * 4} V ${target.y - 12 - index * 2} H ${tx} ` : `H ${tx} `
+    return { key: arc.key, d: `M ${arc.fx} ${arc.fy} ${rise}V ${level} ${fall}V ${ty}` }
+  }) : []
   return <div className="flow-editor__stage">
     <div className="flow-editor__zoom" role="group" aria-label="画布缩放">
       <button type="button" className="icon-button" aria-label="缩小" disabled={scale <= zoomSteps[0] + 0.001} onClick={() => step(-1)}><ZoomOut size={15} /></button>
@@ -112,7 +124,7 @@ export function FlowCanvas({ graph, members, selected, feeds, highlight, onSelec
           return <path key={edge.id || index} d={`M ${sx} ${sy} C ${(sx + ex) / 2} ${sy}, ${(sx + ex) / 2} ${ey}, ${ex} ${ey}`} markerEnd={`url(#${arrow})`} />
         })}
         {backs.map(({ edge, fx, tx, fy, ty }, index) => <path key={edge.id || `back-${index}`} d={`M ${fx} ${fy} V ${box.backLane} H ${tx} V ${ty}`} className="is-back" markerEnd={`url(#${arrow})`} />)}
-        {arcs.map(arc => <path key={`feed-${arc.key}`} d={`M ${arc.fx} ${arc.fy} V ${arc.level} H ${arc.tx} V ${arc.ty}`} className={`is-feed${highlight === arc.key ? ' is-hot' : ''}`} markerEnd={`url(#${arrow}-feed)`} />)}
+        {arcs.map(arc => <path key={`feed-${arc.key}`} d={arc.d} className={`is-feed${highlight === arc.key ? ' is-hot' : ''}`} markerEnd={`url(#${arrow}-feed)`} />)}
       </svg>
       {feeds?.task && target ? <span className={`flow-editor__task${highlight === 'task' ? ' is-hot' : ''}`} style={{ left: pill.x, top: pill.y, width: pill.width, height: pill.height }}><FileInput size={13} />任务输入</span> : null}
       {backs.filter(back => back.label).map(({ edge, fx, tx, label }, index) => <span key={edge.id || `label-${index}`} className="flow-editor__edge-label" style={{ left: (fx + tx) / 2, top: box.backLane }}>{label}</span>)}

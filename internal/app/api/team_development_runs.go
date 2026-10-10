@@ -119,9 +119,6 @@ func (s *Server) handlePublishTeamDevelopment(c echo.Context) error {
 	if d.PublishedRevision == d.Revision {
 		return s.handleGetTeamDevelopment(c)
 	}
-	if d.PreparedActor != actor {
-		return developmentError("请使用本次试跑的开发者账号发布")
-	}
 	if d.PreparedRevision != d.Revision || len(d.Prepared) == 0 {
 		return developmentError("请先试跑当前草稿")
 	}
@@ -130,7 +127,7 @@ func (s *Server) handlePublishTeamDevelopment(c echo.Context) error {
 			return err
 		}
 	}
-	readiness, err := buildDevelopmentPublicationReadiness(ctx, tx, ws, id, actor, d.PreparedActor, d.Revision, d.PreparedRevision, d.Prepared)
+	readiness, err := buildDevelopmentPublicationReadiness(ctx, tx, ws, id, d.Revision, d.PreparedRevision, d.Prepared)
 	if err != nil {
 		return err
 	}
@@ -164,9 +161,9 @@ func (s *Server) handlePublishTeamDevelopment(c echo.Context) error {
 func (s *Server) handleDevelopmentTrialInput(c echo.Context) error {
 	ctx, workspaceID := c.Request().Context(), getTenant(c)
 	var raw, receiptRaw []byte
-	err := s.Pool.QueryRow(ctx, `SELECT request,COALESCE(receipt,'{}'::jsonb) FROM weave_team_development_trials WHERE workspace_id=$1 AND team_id=$2 AND request_id=$3 AND actor_id=$4`, workspaceID, c.Param("id"), c.Param("request"), getUserID(c)).Scan(&raw, &receiptRaw)
+	err := s.Pool.QueryRow(ctx, `SELECT request,COALESCE(receipt,'{}'::jsonb) FROM weave_team_development_trials WHERE workspace_id=$1 AND team_id=$2 AND request_id=$3`, workspaceID, c.Param("id"), c.Param("request")).Scan(&raw, &receiptRaw)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return echo.NewHTTPError(404, "试跑材料不存在或不属于当前账号")
+		return echo.NewHTTPError(404, "试跑材料不存在")
 	}
 	if err != nil {
 		return err
