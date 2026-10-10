@@ -43,3 +43,10 @@
 .members__header { position: relative; }
 .members__remove { position: absolute; top: 0; right: 0; }
 @media (max-width: 900px) { .members__side { position: static; } }
+.members__advanced { display: flex; align-items: center; gap: 6px; height: 36px; padding: 0 4px; border: 0; background: none; color: var(--text-secondary); cursor: pointer; text-align: left; }
+.members__advanced:hover { color: var(--text); }
+.members__field { display: grid; grid-template-columns: minmax(0, 1fr) 140px auto auto; align-items: end; gap: 10px 12px; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-md); }
+.members__field .select__button { width: 100%; min-width: 0; }
+.members__field .checkbox, .members__field > .icon-button { margin-bottom: 6px; }
+.members__field-note { grid-column: 1 / -1; }
+@media (max-width: 720px) { .members__field { grid-template-columns: minmax(0, 1fr) auto; } }

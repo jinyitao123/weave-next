@@ -210,6 +210,14 @@ h3 { font-size: var(--text-md); font-weight: 600; margin: 4px 0 0; }
 .task-row:hover, .task-row:focus-visible { background: var(--subtle); }
 .task-row__main { display: grid; gap: 2px; min-width: 0; }
 .task-row__main strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.team-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
+.team-card { display: grid; grid-template-rows: auto 1fr auto; gap: 8px; padding: 14px 16px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--canvas); color: var(--text); text-align: left; cursor: pointer; }
+.team-card:hover, .team-card:focus-visible { background: var(--subtle); border-color: var(--border-strong); }
+.team-card__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.team-card__head strong { min-width: 0; overflow-wrap: anywhere; font-size: var(--text-lg); font-weight: 600; }
+.team-card__goal { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; color: var(--text-secondary); }
+.team-card__meta { display: grid; gap: 2px; }
+.team-card__meta span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .checklist { display: grid; gap: 10px; margin: 0; padding: 16px; list-style: none; border: 1px dashed var(--border-strong); border-radius: var(--radius-lg); }
 .checklist li { display: flex; align-items: center; gap: 10px; }
 .checklist__mark { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; border: 1px solid var(--border-strong); font-size: 11px; }
@@ -217,7 +225,8 @@ h3 { font-size: var(--text-md); font-weight: 600; margin: 4px 0 0; }
 .checklist .is-done { color: var(--text-secondary); text-decoration: line-through; }
 
 .page--wide { max-width: 1400px; }
-.page--workflow { max-width: none; height: 100%; min-height: 640px; padding-bottom: 24px; display: flex; flex-direction: column; gap: 12px; }
+/* The flow page is as tall as its content: the canvas sizes itself to the graph. */
+.page--workflow { max-width: none; padding-bottom: 24px; display: flex; flex-direction: column; gap: 12px; }
 .page--workflow > .task-header, .page--workflow > .tabs { flex-shrink: 0; }
 .task-header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .task-header__title { flex: 1; min-width: 0; }

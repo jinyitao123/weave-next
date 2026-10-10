@@ -94,6 +94,17 @@ export interface DevelopmentDraft {
 export const listTeamRecords = () => api<TeamRecord[]>('/v1/teams?status=all&purpose=development')
   .then((teams) => teams.filter((team) => team.status !== 'archived'))
 
+// A team as the list shows it: its record and who is on it.
+export interface TeamCard extends TeamRecord { members: string[] }
+interface RosterMember { name: string; display_name?: string }
+
+export const listTeamCards = (): Promise<TeamCard[]> => api<Array<{ team: TeamRecord; lead?: RosterMember | null; workers?: RosterMember[] | null }>>('/v1/teams?status=all&purpose=development&include=roster')
+  .then((rosters) => rosters.filter((roster) => roster.team.status !== 'archived').map((roster) => ({
+    ...roster.team, members: [roster.lead, ...(roster.workers ?? [])].flatMap((member) => member ? [member.display_name || member.name] : []),
+  })))
+  // The roster needs the member registry; the plain list still names the teams.
+  .catch(() => listTeamRecords().then((teams) => teams.map((team) => ({ ...team, members: [] }))))
+
 const base = (teamId: string) => `/v1/teams/${encodeURIComponent(teamId)}/development`
 
 export const readDevelopment = (teamId: string) => api<DevelopmentDraft>(base(teamId))

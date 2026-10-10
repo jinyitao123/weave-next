@@ -46,6 +46,9 @@ export function layout(graph: Graph) {
 }
 
 const minScale = 0.25, maxScale = 2.5
+// The canvas is as tall as its graph needs, within these bounds; a longer
+// flow is reached by panning instead of pushing the page down.
+const minHeight = 280, maxHeight = 720, margin = 56
 type Viewport = { x: number; y: number; scale: number }
 
 // Start at readable size. Fitting the whole graph is an explicit overview action.
@@ -131,7 +134,7 @@ export function FlowCanvas({ graph, members, selected, feeds, highlight, onSelec
     if (!arc.from && target.y === 56) return { key: arc.key, d: `M ${arc.fx} ${arc.fy} C ${arc.fx} 44, ${tx} 44, ${tx} ${target.y - 2}` }
     return { key: arc.key, d: `M ${arc.fx} ${arc.fy} V ${arc.fy + (arc.from ? -12 : 10)} H ${track} V ${target.y - 16} H ${tx} V ${target.y - 2}` }
   }) : []
-  return <div className="flow-editor__stage">
+  return <div className="flow-editor__stage" style={{ height: Math.max(minHeight, Math.min(maxHeight, box.height + margin)) }}>
     <div className="flow-editor__zoom" role="group" aria-label="画布缩放">
       <button type="button" className="icon-button" aria-label="缩小" disabled={scale <= minScale + 0.001} onClick={() => zoomAt(current => current / 1.25)}><ZoomOut size={15} /></button>
       <span className="flow-editor__zoom-value" aria-live="polite">{Math.round(scale * 100)}%</span>

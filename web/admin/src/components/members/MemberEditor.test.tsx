@@ -29,7 +29,8 @@ function Controlled({ changed, initial, catalog }: { changed?(document: Developm
 
 const saved = (document: DevelopmentDocument | undefined, id: string) => document?.members.find((item) => item.id === id)
 const pick = (name: RegExp) => fireEvent.click(screen.getByRole('button', { name }))
-const tab = (name: string) => fireEvent.click(screen.getByRole('tab', { name }))
+const advanced = () => { const toggle = screen.getByRole('button', { name: /高级设置/ }); if (toggle.getAttribute('aria-expanded') !== 'true') fireEvent.click(toggle) }
+const tab = (name: string) => { if (name !== '职责') advanced() }
 
 beforeEach(() => {
   vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ version: '1', models: ['deepseek-flash', 'qwen-max'] }), { status: 200 })))
@@ -49,21 +50,52 @@ describe('member editor', () => {
     expect(screen.queryByRole('group', { name: '交接方式' })).toBeNull()
   })
 
-  it('splits the detail into duty, ability and run tabs with engine-specific sections', () => {
+  it('shows the basics first and keeps engine settings behind the advanced switch', () => {
     render(<Controlled />)
-    pick(/^编码/)
-    expect(screen.getByRole('region', { name: '输出结构' })).toBeTruthy()
-    tab('能力')
-    expect(screen.queryByRole('region', { name: '技能' })).toBeNull()
-    tab('执行')
-    expect(screen.getByRole('button', { name: '编码的节点' })).toBeTruthy()
-    expect(screen.queryByRole('region', { name: '执行限制' })).toBeNull()
     pick(/^整理/)
-    tab('能力')
-    expect(screen.getByRole('region', { name: '技能' })).toBeTruthy()
-    tab('执行')
+    for (const region of ['基本信息', '业务动作', '交付格式']) expect(screen.getByRole('region', { name: region })).toBeTruthy()
+    expect(screen.getByRole('button', { name: /高级设置/ }).getAttribute('aria-expanded')).toBe('false')
+    for (const region of ['技能', '引擎与模型', '执行限制', '被流程调用时']) expect(screen.queryByRole('region', { name: region })).toBeNull()
+    advanced()
     expect(screen.queryByRole('button', { name: '整理的节点' })).toBeNull()
-    for (const region of ['执行限制', '工具循环', '记忆']) expect(screen.getByRole('region', { name: region })).toBeTruthy()
+    for (const region of ['被流程调用时', '技能', '工具权限', '引擎与模型', '执行限制', '工具循环', '记忆', '允许的交接方式']) expect(screen.getByRole('region', { name: region })).toBeTruthy()
+    // The switch stays as it was left when another member is opened.
+    pick(/^编码/)
+    expect(screen.getByRole('button', { name: '编码的节点' })).toBeTruthy()
+    expect(screen.queryByRole('region', { name: '技能' })).toBeNull()
+    expect(screen.queryByRole('region', { name: '执行限制' })).toBeNull()
+  })
+
+  it('opens the advanced settings by itself when they hold something to fix', () => {
+    const initial = team()
+    initial.members[2].configuration.model = ''
+    render(<Controlled initial={initial} />)
+    pick(/^整理/)
+    expect(screen.getByRole('button', { name: /高级设置/ }).getAttribute('aria-expanded')).toBe('true')
+    expect(screen.getByRole('button', { name: '整理的模型' })).toBeTruthy()
+  })
+
+  it('builds a fixed answer format from named fields', () => {
+    let last: DevelopmentDocument | undefined
+    render(<Controlled changed={(document) => { last = document }} />)
+    pick(/^整理/)
+    const format = () => screen.getByRole('region', { name: '交付格式' })
+    fireEvent.click(screen.getByRole('switch', { name: '按固定格式交付' }))
+    expect(last).toBeUndefined()
+    const nameInputs = () => Array.from(format().querySelectorAll('input.input')).filter((input) => (input as HTMLInputElement).placeholder.startsWith('例如')) as HTMLInputElement[]
+    fireEvent.change(nameInputs()[0], { target: { value: '是否跟进' } })
+    expect(saved(last, 'w-loom')?.configuration.output_schema).toEqual({ type: 'object', properties: { 是否跟进: { type: 'string' } }, required: ['是否跟进'], additionalProperties: false })
+    fireEvent.click(screen.getByRole('button', { name: '添加一项' }))
+    expect(format().textContent).toContain('每一项都要有名称')
+    fireEvent.change(nameInputs()[1], { target: { value: '待确认项' } })
+    fireEvent.click(screen.getByRole('button', { name: '第 2 项的类型' }))
+    fireEvent.mouseDown(screen.getByRole('option', { name: '多条文字' }))
+    fireEvent.click(screen.getAllByRole('checkbox', { name: '必填' })[1])
+    expect(saved(last, 'w-loom')?.configuration.output_schema).toEqual({
+      type: 'object', properties: { 是否跟进: { type: 'string' }, 待确认项: { type: 'array', items: { type: 'string' } } }, required: ['是否跟进'], additionalProperties: false,
+    })
+    fireEvent.click(screen.getByRole('switch', { name: '按固定格式交付' }))
+    expect(saved(last, 'w-loom')?.configuration.output_schema).toBeNull()
   })
 
   it('writes duty to the relationship and keeps other tool denials when toggling deny-all', () => {
@@ -159,6 +191,8 @@ describe('member editor', () => {
     let last: DevelopmentDocument | undefined
     render(<Controlled changed={(document) => { last = document }} />)
     pick(/^整理/)
+    fireEvent.click(screen.getByRole('switch', { name: '按固定格式交付' }))
+    fireEvent.click(screen.getByRole('button', { name: '直接编辑 JSON' }))
     const field = screen.getByRole('textbox', { name: /JSON Schema/ })
     fireEvent.change(field, { target: { value: '{"type":"object"' } })
     expect(screen.getByRole('alert').textContent).toContain('格式不对')

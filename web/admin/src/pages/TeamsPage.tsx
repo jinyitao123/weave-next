@@ -3,17 +3,17 @@ import { useCallback, useEffect, useState } from 'react'
 import { Badge, Dialog, EmptyState, InlineError } from '../components/ui'
 import { errorMessage, type AdminSession } from '../lib/api'
 import { relativeTime } from '../lib/format'
-import { createStarterTeam, listTeamRecords, prepareNewTeam, type TeamKind, type TeamRecord } from '../lib/teams'
+import { createStarterTeam, listTeamCards, prepareNewTeam, type TeamCard, type TeamKind } from '../lib/teams'
 
 const canDevelop = (session: AdminSession) => ['developer', 'admin', 'owner'].includes(session.role)
 
 export function TeamsPage({ session, navigate }: { session: AdminSession; navigate(path: string): void }) {
-  const [teams, setTeams] = useState<TeamRecord[]>()
+  const [teams, setTeams] = useState<TeamCard[]>()
   const [error, setError] = useState('')
   const [creating, setCreating] = useState(false)
   const refresh = useCallback(async () => {
     try {
-      setTeams(await listTeamRecords())
+      setTeams(await listTeamCards())
       setError('')
     } catch (failure) {
       setError(errorMessage(failure))
@@ -29,10 +29,14 @@ export function TeamsPage({ session, navigate }: { session: AdminSession; naviga
     {error ? <InlineError message={error} onRetry={() => void refresh()} /> : null}
     {!teams ? null : teams.length === 0 ? <EmptyState title="还没有团队" action={canDevelop(session) ? <button type="button" className="button button--primary" onClick={() => setCreating(true)}><Plus size={15} />新建团队</button> : undefined}>
       团队由一位负责人和若干成员组成，按流程一步步完成任务。
-    </EmptyState> : <div className="task-list">{teams.map((team) => <button key={team.id} type="button" className="task-row" onClick={() => navigate(`/teams/${encodeURIComponent(team.id)}`)}>
-      <span className="task-row__main"><strong>{team.display_name || team.name}</strong><span className="muted small">{team.objective || '未填写目标'} · 更新于 {relativeTime(team.updated_at)}</span></span>
-      <Badge tone={team.status === 'active' && team.default_workflow_id ? 'success' : 'neutral'}>{team.status === 'active' && team.default_workflow_id ? '已发布' : '未发布'}</Badge>
-    </button>)}</div>}
+    </EmptyState> : <div className="team-cards">{teams.map((team) => {
+      const published = team.status === 'active' && Boolean(team.default_workflow_id)
+      return <button key={team.id} type="button" className="team-card" onClick={() => navigate(`/teams/${encodeURIComponent(team.id)}`)}>
+        <span className="team-card__head"><strong>{team.display_name || team.name}</strong><Badge tone={published ? 'success' : 'neutral'}>{published ? '已发布' : '未发布'}</Badge></span>
+        <span className="team-card__goal">{team.objective || '未填写目标'}</span>
+        <span className="team-card__meta muted small">{team.members.length ? <span>{team.members.length} 位成员：{team.members.join('、')}</span> : null}<span>更新于 {relativeTime(team.updated_at)}</span></span>
+      </button>
+    })}</div>}
     {creating ? <CreateTeamDrawer onClose={() => setCreating(false)} onCreated={(id) => navigate(`/teams/${encodeURIComponent(id)}`)} /> : null}
   </section>
 }

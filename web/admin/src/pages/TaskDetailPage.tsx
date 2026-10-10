@@ -10,6 +10,7 @@ import { readTaskCode, shortSHA, verdictLabel, type TaskCode } from '../lib/envi
 import { CodeChanges, CodeEvidencePanel, CodeSummary, CodeVerdict } from './TaskCodePanels'
 import { FollowUpComposer, TaskThread } from './TaskThread'
 import { LogViewer } from './LogViewer'
+import { readDevelopment } from '../lib/teams'
 import {
   duration, executionLabel, failureText, readQueue, subscribeTask, waitText, type TaskWait, executionTone, readActivity, readTask, retryStage, sourceLabel, stageLabel, stopTask, terminal, verificationLabel,
   type Activity, type ActivityMember, type MemberStage, type TaskSummary,
@@ -49,6 +50,7 @@ export function TaskDetailPage({ runId, navigate }: { runId: string; navigate(pa
   const [streamBroken, setStreamBroken] = useState(false)
   const [logStream, setLogStream] = useState<string>()
   const [wait, setWait] = useState<TaskWait>()
+  const [trialTeam, setTrialTeam] = useState('')
   const done = activity ? terminal(activity.status) : false
   const refresh = useCallback(async () => {
     try {
@@ -97,6 +99,11 @@ export function TaskDetailPage({ runId, navigate }: { runId: string; navigate(pa
   const stageHead = (nodeId: string) => code?.stages.find((stage) => stage.node_id === nodeId)?.version.head_sha
   const stagePasses = (nodeId: string) => code?.stages.find((stage) => stage.node_id === nodeId)?.passes
   const trial = activity?.development_trial === true
+  // A trial has no task record; its page is named after the team it trials.
+  const trialTeamId = trial && !task ? activity.team_id : undefined
+  useEffect(() => {
+    if (trialTeamId) void readDevelopment(trialTeamId).then((draft) => setTrialTeam(draft.document.name)).catch(() => undefined)
+  }, [trialTeamId])
   const backPath = trial ? activity.team_id ? `/teams/${encodeURIComponent(activity.team_id)}/trial` : '/teams' : '/runs'
   const backLabel = trial ? '返回团队试跑' : '返回运行列表'
   // A run someone else started is read here, never acted on.
@@ -118,7 +125,7 @@ export function TaskDetailPage({ runId, navigate }: { runId: string; navigate(pa
     <header className="task-header">
       <button type="button" className="icon-button" aria-label={backLabel} disabled={!activity && !task} onClick={() => navigate(backPath)}><ArrowLeft size={16} /></button>
       <div className="task-header__title">
-        <h1>{task?.title || task?.team_name || '试跑结果'}</h1>
+        <h1>{task?.title || task?.team_name || (trialTeam ? `${trialTeam} · 试跑结果` : '试跑结果')}</h1>
         <p className="muted small">{task ? [task.team_name || '团队', `第 ${task.workflow_version} 版`, sourceLabel(task.source), task.actor, relativeTime(task.created_at)].filter(Boolean).join(' · ') : ''}{code ? <> · <CodeSummary code={code} /></> : null}</p>
       </div>
       {activity ? <div className="task-header__state">
