@@ -101,7 +101,7 @@ func (s *Server) handleCreatePullRequest(c echo.Context) error {
 	}
 	ctx := c.Request().Context()
 	runID := c.Param("id")
-	tasks, err := s.queryAdminTasks(c, pool, "", time.Now().Add(time.Minute), 1, runID)
+	tasks, err := s.queryAdminTasks(c, pool, adminTaskQuery{RunID: runID, Write: true})
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "pull_request_failed"})
 	}

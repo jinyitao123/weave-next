@@ -73,8 +73,8 @@ func TestAdminTaskListShowsReadableTasksWithinRunVisibilityRealPG(t *testing.T) 
 		t.Fatalf("submitter list = %#v", own)
 	}
 
-	// A run admitted from an employee's desktop input stays private to that
-	// employee, matching the run activity reader.
+	// Administrators read every run of the workspace, including the one an
+	// employee started from the desktop; a developer still reads only their own.
 	// Admission records are immutable, so the employee desktop submission is
 	// its own record carrying the desktop input revision.
 	if _, err := pool.Exec(ctx, `INSERT INTO weave_workflow_admission_requests(workspace_id,request_id,actor_subject,request_digest,request,target)
@@ -83,14 +83,23 @@ func TestAdminTaskListShowsReadableTasksWithinRunVisibilityRealPG(t *testing.T) 
 		'{"team_id":"team","input_revision_id":"desktop-input"}')`); err != nil {
 		t.Fatal(err)
 	}
-	if _, admin := list("user", "admin", ""); len(admin) != 2 {
+	if _, admin := list("user", "admin", ""); len(admin) != 3 || admin[0].RunID != "desktop-run" || admin[0].Source != "desktop" || admin[0].Mine {
 		t.Fatalf("admin list after desktop submission = %#v", admin)
-	} else {
-		for _, task := range admin {
-			if task.RunID == "desktop-run" {
-				t.Fatalf("admin sees an employee desktop run: %#v", task)
-			}
-		}
+	}
+	if _, owner := list("user", "owner", "?source=desktop"); len(owner) != 1 || owner[0].RunID != "desktop-run" {
+		t.Fatalf("owner desktop filter = %#v", owner)
+	}
+	if _, console := list("user", "admin", "?source=console&team=team"); len(console) != 2 || console[0].Source != "console" {
+		t.Fatalf("console filter = %#v", console)
+	}
+	if _, none := list("user", "admin", "?team=another-team"); len(none) != 0 {
+		t.Fatalf("team filter = %#v", none)
+	}
+	if code, _ := list("user", "admin", "?source=elsewhere"); code != http.StatusBadRequest {
+		t.Fatalf("unknown source = %d", code)
+	}
+	if _, developer := list("user-b", "developer", ""); len(developer) != 0 {
+		t.Fatalf("developer sees runs they did not submit: %#v", developer)
 	}
 	if _, own := list("user-a", "member", ""); len(own) != 2 || own[0].RunID != "desktop-run" || own[0].Status != "queued" || own[0].Title != "员工桌面任务" {
 		t.Fatalf("employee desktop run = %#v", own)
@@ -111,7 +120,7 @@ func TestAdminTaskListShowsReadableTasksWithinRunVisibilityRealPG(t *testing.T) 
 		return recorder.Code
 	}
 	if read("user", "admin", mine.RunID) != http.StatusOK || read("user-b", "member", theirs.RunID) != http.StatusNotFound || read("user-a", "member", theirs.RunID) != http.StatusOK ||
-		read("user", "admin", "desktop-run") != http.StatusNotFound || read("user-a", "member", "desktop-run") != http.StatusOK {
+		read("user", "admin", "desktop-run") != http.StatusOK || read("user-b", "developer", "desktop-run") != http.StatusNotFound || read("user-a", "member", "desktop-run") != http.StatusOK {
 		t.Fatal("single task read does not follow list visibility")
 	}
 	if code, _ := list("user", "admin", "?filter=unknown"); code != http.StatusBadRequest {
@@ -120,7 +129,7 @@ func TestAdminTaskListShowsReadableTasksWithinRunVisibilityRealPG(t *testing.T) 
 	if _, done := list("user", "admin", "?filter=done"); len(done) != 0 {
 		t.Fatalf("queued task listed as done: %#v", done)
 	}
-	if _, active := list("user", "admin", "?filter=active"); len(active) != 2 {
+	if _, active := list("user", "admin", "?filter=active"); len(active) != 3 {
 		t.Fatalf("active filter = %#v", active)
 	}
 	if code, _ := list("user", "admin", "?before=yesterday"); code != http.StatusBadRequest {

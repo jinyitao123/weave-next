@@ -1,9 +1,11 @@
-import { Plus, Trash2, X } from 'lucide-react'
+import { ChevronDown, ChevronRight, Plus, Trash2, X } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
-import { Badge, Dialog, Select, Switch } from '../ui'
+import { Badge, Checkbox, Dialog, Select, Switch } from '../ui'
 import { engineName } from '../../lib/format'
 import type { RuntimeNode } from '../../lib/nodes'
-import { bindingSourceLabel, capabilityName, defaultCapabilityBinding, describeCapability, handoffKinds, isCLIEngine, loadModelCatalog, memberProblems, parseOutputSchema, requiredHandoffKinds, toolLoopLimits, type BusinessCatalog, type CatalogCapability, type DevelopmentDocument, type DevelopmentMember, type MemberConfiguration, type MemberRelationship, type MemberSkill } from '../../lib/teams'
+import { fieldTypes, fieldsProblem, fieldsSchema, schemaFields, type OutputField } from '../../lib/output-format'
+import { CatalogRefresh } from '../team/CatalogRefresh'
+import { bindingSourceLabel, capabilityName, defaultCapabilityBinding, describeCapability, handoffKinds, isCLIEngine, loadModelCatalog, memberProblems, memberSteps, newMember, parseOutputSchema, requiredHandoffKinds, toolLoopLimits, type BusinessCatalog, type CatalogCapability, type DevelopmentDocument, type DevelopmentMember, type MemberConfiguration, type MemberRelationship, type MemberSkill } from '../../lib/teams'
 import './members.css'
 
 const engines = ['claude', 'codex', 'opencode', 'loom']
@@ -17,21 +19,36 @@ const limits = [
 ] as const
 // Trial preparation fills these in when a worker has none.
 const defaultKinds = ['consult', 'dispatch']
-const tabs = [{ id: 'duty', label: '职责' }, { id: 'ability', label: '能力' }, { id: 'run', label: '执行' }] as const
-type TabId = typeof tabs[number]['id']
+// What a newcomer has to fill in is on the page; everything an engine expert
+// tunes sits behind this one switch, which opens by itself when it holds
+// something that still needs attention.
+const basicProblems = ['还没有填写职责', '还没有填写工作方法']
 
-type Edit = { onConfig(id: string, patch: Partial<MemberConfiguration>): void; onRelationship(id: string, patch: Partial<MemberRelationship>): void }
+type Edit = {
+  onConfig(id: string, patch: Partial<MemberConfiguration>): void
+  onRelationship(id: string, patch: Partial<MemberRelationship>): void
+  onAdd?(member: DevelopmentMember): void
+  onRemove?(id: string): void
+  onCatalog?(catalog: BusinessCatalog): void
+}
 
 const count = (value: unknown) => Array.isArray(value) ? value.filter((item) => typeof item === 'string' && item.trim()).length : 0
 
-export function MemberEditor({ document, nodes, accepting, catalog, onConfig, onRelationship }: { document: DevelopmentDocument; nodes: RuntimeNode[]; accepting: Record<string, number>; catalog?: BusinessCatalog } & Edit) {
+export function MemberEditor({ document, nodes, accepting, catalog, onConfig, onRelationship, onAdd, onRemove, onCatalog }: { document: DevelopmentDocument; nodes: RuntimeNode[]; accepting: Record<string, number>; catalog?: BusinessCatalog } & Edit) {
   const ordered = useMemo(() => [...document.members].sort((a, b) => Number(b.configuration.role === 'avatar') - Number(a.configuration.role === 'avatar')), [document.members])
   const [selected, setSelected] = useState(ordered[0]?.id)
   const [models, setModels] = useState<string[]>([])
+  const [advanced, setAdvanced] = useState(false)
   useEffect(() => { void loadModelCatalog().then(setModels).catch(() => setModels([])) }, [])
   const member = ordered.find((item) => item.id === selected) ?? ordered[0]
   if (!member) return <p className="muted">团队还没有成员。</p>
+  const add = () => {
+    const created = newMember(models[0] ?? '')
+    onAdd?.(created)
+    setSelected(created.id)
+  }
   return <div className="members">
+    <div className="members__side">
     <ul className="members__list" aria-label="成员列表">{ordered.map((item) => {
       const problems = memberProblems(item)
       const actions = count(item.configuration.business_capability_ids)
@@ -43,65 +60,117 @@ export function MemberEditor({ document, nodes, accepting, catalog, onConfig, on
         {problems.length ? <span className="members__flag"><Badge tone="warning">待补充</Badge></span> : null}
       </button></li>
     })}</ul>
-    <MemberDetail key={member.id} member={member} nodes={nodes} accepting={accepting} models={models} catalog={catalog} kindsInUse={requiredHandoffKinds(document, member.id)} onConfig={(patch) => onConfig(member.id, patch)} onRelationship={(patch) => onRelationship(member.id, patch)} />
+    {onAdd ? <button type="button" className="button" onClick={add}><Plus size={14} />添加成员</button> : null}
+    </div>
+    <MemberDetail key={member.id} member={member} nodes={nodes} accepting={accepting} models={models} catalog={catalog} kindsInUse={requiredHandoffKinds(document, member.id)} steps={memberSteps(document, member.id)} advanced={advanced} onAdvanced={setAdvanced}
+      onConfig={(patch) => onConfig(member.id, patch)} onRelationship={(patch) => onRelationship(member.id, patch)} onCatalog={onCatalog}
+      onRemove={onRemove && member.configuration.role !== 'avatar' ? () => onRemove(member.id) : undefined} />
   </div>
 }
 
 type DetailProps = { member: DevelopmentMember; onConfig(patch: Partial<MemberConfiguration>): void; onRelationship(patch: Partial<MemberRelationship>): void }
 
-function MemberDetail({ member, nodes, accepting, models, catalog, kindsInUse, onConfig, onRelationship }: DetailProps & { nodes: RuntimeNode[]; accepting: Record<string, number>; models: string[]; catalog?: BusinessCatalog; kindsInUse: string[] }) {
-  const [tab, setTab] = useState<TabId>('duty')
+function MemberDetail({ member, nodes, accepting, models, catalog, kindsInUse, steps, advanced, onAdvanced, onConfig, onRelationship, onCatalog, onRemove }: DetailProps & { nodes: RuntimeNode[]; accepting: Record<string, number>; models: string[]; catalog?: BusinessCatalog; kindsInUse: string[]; steps: string[]; advanced: boolean; onAdvanced(open: boolean): void; onCatalog?(catalog: BusinessCatalog): void; onRemove?(): void }) {
+  const [removing, setRemoving] = useState(false)
   const config = member.configuration, relation = member.relationship
   const lead = config.role === 'avatar', cli = isCLIEngine(config.engine)
   const name = config.display_name || '未命名成员'
+  const pending = memberProblems(member).some((problem) => !basicProblems.includes(problem))
+  const open = advanced || pending
   return <section className="members__detail" aria-label={`${name}配置`}>
     <header className="members__header">
       <div className="members__title"><h2>{name}</h2>{lead ? <Badge tone="accent">负责人</Badge> : null}{!lead && relation.enabled === false ? <Badge>不参与</Badge> : null}</div>
       <p className="muted small">{engineName(config.engine)}{config.model ? ` · ${config.model}` : ''}</p>
+      {onRemove ? <button type="button" className="button members__remove" onClick={() => setRemoving(true)}><Trash2 size={14} />删除成员</button> : null}
     </header>
-    <div className="tabs" role="tablist" aria-label={`${name}的配置`}>
-      {tabs.map((item) => <button key={item.id} type="button" role="tab" aria-selected={tab === item.id} onClick={() => setTab(item.id)}>{item.label}</button>)}
+    {removing && onRemove ? <div className="members__confirm" role="alertdialog" aria-label={`确认删除 ${name}`}>
+      {steps.length ? <><span>流程里的“{steps.join('”“')}”还由这个成员负责，请先在流程里换人或删除这些步骤。</span>
+        <button type="button" className="button" onClick={() => setRemoving(false)}>知道了</button></>
+        : <><span>删除后，这个成员的配置不会保留。</span>
+          <button type="button" className="button" onClick={() => setRemoving(false)}>取消</button>
+          <button type="button" className="button button--danger" onClick={onRemove}>删除</button></>}
+    </div> : null}
+    <div className="members__panel">
+      <section className="members__section" aria-label="基本信息">
+        <label className="field"><span>名称</span><input className="input" value={config.display_name} maxLength={80} onChange={(event) => onConfig({ display_name: event.target.value })} /></label>
+        <label className="field"><span>职责</span><textarea className="input textarea" rows={2} value={relation.duty ?? ''} placeholder="一句话说清这个成员负责什么，例如：整理线索材料，列出客户需求和待确认项" onChange={(event) => onRelationship({ duty: event.target.value })} /></label>
+        <label className="field"><span>工作方法</span><textarea className="input textarea" rows={7} value={config.system_prompt ?? ''} placeholder={'写给这个成员的做事规矩，例如：\n只依据本次任务的原话和材料。\n把事实、估计和待确认事项分开写。\n没有给出的金额和日期不要推测。'} onChange={(event) => onConfig({ system_prompt: event.target.value })} /></label>
+        {lead ? null : <label className="field"><span>结果要求</span><textarea className="input textarea" rows={2} value={relation.result_requirement ?? ''} placeholder="这个成员交出的结果要包含什么，例如：按出处列出事实、判断和待确认项" onChange={(event) => onRelationship({ result_requirement: event.target.value })} /></label>}
+        {lead ? null : <Switch checked={relation.enabled !== false} label="参与团队工作" onChange={(enabled) => onRelationship({ enabled })} />}
+      </section>
+      <AbilityPanel part="actions" member={member} cli={cli} catalog={catalog} onConfig={onConfig} onCatalog={onCatalog} />
+      <OutputFormat key={member.id} member={member} onConfig={onConfig} />
+      <button type="button" className="members__advanced" aria-expanded={open} onClick={() => onAdvanced(!open)}>
+        {open ? <ChevronDown size={15} aria-hidden="true" /> : <ChevronRight size={15} aria-hidden="true" />}高级设置
+        {pending ? <Badge tone="warning">有待补充</Badge> : null}
+      </button>
+      {open ? <>
+        {lead ? null : <section className="members__section" aria-label="被流程调用时">
+          <h3>被流程调用时</h3>
+          <label className="field"><span>何时参与</span><textarea className="input textarea" rows={2} value={relation.when_to_use ?? ''} onChange={(event) => onRelationship({ when_to_use: event.target.value })} /></label>
+          <label className="field"><span>需要带上的上下文</span><textarea className="input textarea" rows={2} value={relation.context_instruction ?? ''} onChange={(event) => onRelationship({ context_instruction: event.target.value })} /></label>
+        </section>}
+        <AbilityPanel part="tools" member={member} cli={cli} catalog={catalog} onConfig={onConfig} onCatalog={onCatalog} />
+        <RunPanel member={member} nodes={nodes} accepting={accepting} models={models} kindsInUse={kindsInUse} onConfig={onConfig} onRelationship={onRelationship} />
+      </> : null}
     </div>
-    {tab === 'duty' ? <DutyPanel member={member} onConfig={onConfig} onRelationship={onRelationship} /> : null}
-    {tab === 'ability' ? <AbilityPanel member={member} cli={cli} catalog={catalog} onConfig={onConfig} /> : null}
-    {tab === 'run' ? <RunPanel member={member} nodes={nodes} accepting={accepting} models={models} kindsInUse={kindsInUse} onConfig={onConfig} onRelationship={onRelationship} /> : null}
   </section>
 }
 
-function DutyPanel({ member, onConfig, onRelationship }: DetailProps) {
-  const config = member.configuration, relation = member.relationship, lead = config.role === 'avatar'
-  const stored = config.output_schema ? JSON.stringify(config.output_schema, null, 2) : ''
-  const [schema, setSchema] = useState(stored)
-  const [schemaError, setSchemaError] = useState('')
-  const editSchema = (text: string) => {
-    setSchema(text)
-    const parsed = parseOutputSchema(text)
-    setSchemaError(parsed.error ?? '')
-    if (!parsed.error) onConfig({ output_schema: parsed.value })
+// A fixed answer format as a list of named fields. The same format stays
+// editable as JSON for the shapes the list cannot express.
+function OutputFormat({ member, onConfig }: { member: DevelopmentMember; onConfig(patch: Partial<MemberConfiguration>): void }) {
+  const stored = member.configuration.output_schema
+  const [fixed, setFixed] = useState(stored != null)
+  const [fields, setFields] = useState<OutputField[] | undefined>(() => stored == null ? [] : schemaFields(stored))
+  const [text, setText] = useState(() => stored ? JSON.stringify(stored, null, 2) : '')
+  const [raw, setRaw] = useState(false)
+  const [error, setError] = useState('')
+  const write = (next: OutputField[]) => {
+    setFields(next)
+    const problem = next.length ? fieldsProblem(next) : '至少添加一项'
+    setError(problem ?? '')
+    if (problem) return
+    const schema = fieldsSchema(next)
+    setText(JSON.stringify(schema, null, 2))
+    onConfig({ output_schema: schema })
   }
-  return <div className="members__panel" role="tabpanel" aria-label="职责">
-    <section className="members__section" aria-label="职责与协作">
-      <label className="field"><span>名称</span><input className="input" value={config.display_name} maxLength={80} onChange={(event) => onConfig({ display_name: event.target.value })} /></label>
-      <label className="field"><span>职责</span><textarea className="input textarea" rows={3} value={relation.duty ?? ''} onChange={(event) => onRelationship({ duty: event.target.value })} /></label>
-      <label className="field"><span>工作方法</span><textarea className="input textarea" rows={8} value={config.system_prompt ?? ''} onChange={(event) => onConfig({ system_prompt: event.target.value })} /></label>
-    </section>
-    {lead ? null : <section className="members__section" aria-label="被流程调用时">
-      <h3>被流程调用时</h3>
-      <label className="field"><span>何时参与</span><textarea className="input textarea" rows={2} value={relation.when_to_use ?? ''} onChange={(event) => onRelationship({ when_to_use: event.target.value })} /></label>
-      <label className="field"><span>需要带上的上下文</span><textarea className="input textarea" rows={2} value={relation.context_instruction ?? ''} onChange={(event) => onRelationship({ context_instruction: event.target.value })} /></label>
-      <label className="field"><span>结果要求</span><textarea className="input textarea" rows={3} value={relation.result_requirement ?? ''} onChange={(event) => onRelationship({ result_requirement: event.target.value })} /></label>
-      <Switch checked={relation.enabled !== false} label="参与团队工作" onChange={(enabled) => onRelationship({ enabled })} />
-    </section>}
-    <section className="members__section" aria-label="输出结构">
-      <h3>输出结构</h3>
-      <label className="field"><span>JSON Schema（留空表示自由文本）</span>
-        <textarea className="input textarea mono" rows={8} spellCheck={false} value={schema} aria-invalid={Boolean(schemaError)} onChange={(event) => editSchema(event.target.value)} /></label>
-      {schemaError ? <p className="members__error" role="alert">{schemaError}</p> : null}
-    </section>
-  </div>
+  const toggle = (on: boolean) => {
+    setFixed(on)
+    setError('')
+    if (!on) { setFields([]); setText(''); setRaw(false); onConfig({ output_schema: null }) } else if (!fields?.length) setFields([{ name: '', description: '', type: 'string', required: true }])
+  }
+  const editText = (value: string) => {
+    setText(value)
+    const parsed = parseOutputSchema(value)
+    setError(parsed.error ?? '')
+    if (parsed.error) return
+    setFields(parsed.value ? schemaFields(parsed.value) : [])
+    setFixed(parsed.value != null)
+    onConfig({ output_schema: parsed.value })
+  }
+  const edit = (index: number, patch: Partial<OutputField>) => write((fields ?? []).map((field, at) => at === index ? { ...field, ...patch } : field))
+  return <section className="members__section" aria-label="交付格式">
+    <h3>交付格式</h3>
+    <Switch checked={fixed} label="按固定格式交付" onChange={toggle} />
+    {!fixed ? <p className="muted small">不固定格式时，这个成员用自己的话写结果。</p> : fields ? <>
+      {fields.map((field, index) => <div key={index} className="members__field" role="group" aria-label={`第 ${index + 1} 项`}>
+        <label className="field"><span>名称</span><input className="input" value={field.name} maxLength={60} placeholder="例如：是否跟进" onChange={(event) => edit(index, { name: event.target.value })} /></label>
+        <div className="field"><span>类型</span><Select label={`第 ${index + 1} 项的类型`} value={field.type} options={fieldTypes} onChange={(type) => edit(index, { type })} /></div>
+        <Checkbox checked={field.required} label="必填" onChange={(required) => edit(index, { required })} />
+        <button type="button" className="icon-button" aria-label={`删除第 ${index + 1} 项`} onClick={() => write(fields.filter((_, at) => at !== index))}><X size={14} /></button>
+        <label className="field members__field-note"><span>说明</span><input className="input" value={field.description} placeholder="可不填" onChange={(event) => edit(index, { description: event.target.value })} /></label>
+      </div>)}
+      <div className="toolbar"><button type="button" className="button" onClick={() => write([...fields, { name: '', description: '', type: 'string', required: true }])}><Plus size={14} />添加一项</button></div>
+    </> : <p className="muted small">这个格式不是简单的几项内容，只能直接编辑 JSON。</p>}
+    {fixed ? <div className="toolbar"><button type="button" className="link-button small" aria-expanded={raw || !fields} onClick={() => setRaw(!raw)}>直接编辑 JSON</button></div> : null}
+    {fixed && (raw || !fields) ? <label className="field"><span>JSON Schema</span>
+      <textarea className="input textarea mono" rows={8} spellCheck={false} value={text} aria-invalid={Boolean(error)} onChange={(event) => editText(event.target.value)} /></label> : null}
+    {error ? <p className="members__error" role="alert">{error}</p> : null}
+  </section>
 }
 
-function AbilityPanel({ member, cli, catalog, onConfig }: { member: DevelopmentMember; cli: boolean; catalog?: BusinessCatalog; onConfig(patch: Partial<MemberConfiguration>): void }) {
+function AbilityPanel({ part, member, cli, catalog, onConfig, onCatalog }: { part: 'actions' | 'tools'; member: DevelopmentMember; cli: boolean; catalog?: BusinessCatalog; onConfig(patch: Partial<MemberConfiguration>): void; onCatalog?(catalog: BusinessCatalog): void }) {
   const config = member.configuration
   const actions = (config.business_capability_ids ?? []).filter((id) => typeof id === 'string' && id.trim())
   const bindings = config.business_capability_bindings ?? []
@@ -128,8 +197,8 @@ function AbilityPanel({ member, cli, catalog, onConfig }: { member: DevelopmentM
   }
   // Only actions a team may carry out on an employee's behalf can be added.
   const addable = (catalog?.capabilities ?? []).filter((capability) => capability.status === 'available' && capability.executionMode !== 'employee_only' && !actions.includes(capability.id))
-  return <div className="members__panel" role="tabpanel" aria-label="能力">
-    <section className="members__section" aria-label="业务动作">
+  return <>
+    {part === 'actions' ? <section className="members__section" aria-label="业务动作">
       <h3>业务动作</h3>
       {actions.length ? <ul className="members__actions">{actions.map((id) => {
         const known = catalog?.capabilities.find((capability) => capability.id === id)
@@ -152,12 +221,13 @@ function AbilityPanel({ member, cli, catalog, onConfig }: { member: DevelopmentM
       })}</ul> : <p className="muted">还没有分配业务动作，这个成员只能整理和分析，不能写入业务系统。</p>}
       <div className="toolbar">
         <button type="button" className="button" disabled={!addable.length} onClick={() => setPicking(true)}><Plus size={14} />添加业务动作</button>
-        {!catalog?.available ? <span className="muted small">还没有读到业务动作目录，退出后重新登录一次即可读取。</span>
+        {onCatalog ? <CatalogRefresh catalog={catalog} onRefreshed={onCatalog} /> : null}
+        {!catalog?.available ? <span className="muted small">还没有读到业务动作目录。</span>
           : !addable.length ? <span className="muted small">目录里没有可再添加的业务动作。</span> : null}
       </div>
-    </section>
+    </section> : null}
 
-    {cli ? null : <section className="members__section" aria-label="技能">
+    {part === 'tools' && !cli ? <section className="members__section" aria-label="技能">
       <h3>技能</h3>
       {skills.map((skill, index) => <div key={index} className="members__skill" role="group" aria-label={`技能 ${index + 1}`}>
         <div className="members__grid">
@@ -171,9 +241,9 @@ function AbilityPanel({ member, cli, catalog, onConfig }: { member: DevelopmentM
         </div>
       </div>)}
       <div className="toolbar"><button type="button" className="button" onClick={() => onConfig({ skills: [...skills, { name: '', description: '', body: '', always_active: false }] })}><Plus size={14} />添加技能</button></div>
-    </section>}
+    </section> : null}
 
-    <section className="members__section" aria-label="工具权限">
+    {part === 'tools' ? <section className="members__section" aria-label="工具权限">
       <h3>工具权限</h3>
       <Switch checked={deny.includes('*')} label="禁止使用工具" onChange={(on) => onConfig({ permission_deny: on ? [...deny.filter((item) => item !== '*'), '*'] : deny.filter((item) => item !== '*') })} />
       {attached.length ? <div className="members__attached" role="status">
@@ -181,7 +251,7 @@ function AbilityPanel({ member, cli, catalog, onConfig }: { member: DevelopmentM
         <ul>{attached.map(([label, value]) => <li key={label}>{label}：{(value as string[]).filter(Boolean).join('、')}</li>)}</ul>
         <button type="button" className="button" onClick={() => onConfig({ mcp_server_ids: [], skill_names: [], permission_allow: [], permission_ask: [] })}>移除这些配置</button>
       </div> : null}
-    </section>
+    </section> : null}
 
     {picking ? <Dialog title="添加业务动作" onClose={() => setPicking(false)}>
       <ul className="members__catalog">{addable.map((capability) => <li key={capability.id}>
@@ -191,7 +261,7 @@ function AbilityPanel({ member, cli, catalog, onConfig }: { member: DevelopmentM
         </button>
       </li>)}</ul>
     </Dialog> : null}
-  </div>
+  </>
 }
 
 function RunPanel({ member, nodes, accepting, models, kindsInUse, onConfig, onRelationship }: DetailProps & { nodes: RuntimeNode[]; accepting: Record<string, number>; models: string[]; kindsInUse: string[] }) {
@@ -218,7 +288,7 @@ function RunPanel({ member, nodes, accepting, models, kindsInUse, onConfig, onRe
   const loopControl = config.tool_loop_control
   const setLoop = (patch: Partial<NonNullable<typeof loopControl>>) => onConfig({ tool_loop_control: { slice_rounds: 20, initial_total_rounds: 20, ...loopControl, ...patch } })
   const locked = handoffKinds.filter((kind) => kindsInUse.includes(kind.value) && kinds.includes(kind.value)).map((kind) => kind.label)
-  return <div className="members__panel" role="tabpanel" aria-label="执行">
+  return <>
     <section className="members__section" aria-label="引擎与模型">
       <h3>引擎与模型</h3>
       <div className="members__grid">
@@ -264,5 +334,5 @@ function RunPanel({ member, nodes, accepting, models, kindsInUse, onConfig, onRe
       </div>
       {locked.length ? <p className="muted small">流程里已有步骤在用“{locked.join('”“')}”，不能取消；要取消请先在流程里调整。</p> : null}
     </section>}
-  </div>
+  </>
 }

@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -49,7 +48,7 @@ func (s *Server) handleSubmitFollowUp(c echo.Context) error {
 	}
 	ctx := c.Request().Context()
 	parentID := c.Param("id")
-	tasks, err := s.queryAdminTasks(c, pool, "", time.Now().Add(time.Minute), 1, parentID)
+	tasks, err := s.queryAdminTasks(c, pool, adminTaskQuery{RunID: parentID, Write: true})
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "follow_up_failed"})
 	}
@@ -153,7 +152,7 @@ func (s *Server) handleGetTaskThread(c echo.Context) error {
 	rows.Close()
 	thread := []adminTask{}
 	for _, id := range ids {
-		tasks, err := s.queryAdminTasks(c, pool, "", time.Now().Add(time.Minute), 1, id)
+		tasks, err := s.queryAdminTasks(c, pool, adminTaskQuery{RunID: id})
 		if err != nil {
 			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "task_thread_failed"})
 		}

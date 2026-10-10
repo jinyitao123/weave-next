@@ -34,12 +34,15 @@ func (s *Server) handleExportAdminTaskEvidence(c echo.Context) error {
 		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "task_evidence_unavailable"})
 	}
 	runID := c.Param("id")
-	tasks, err := s.queryAdminTasks(c, pool, "", time.Now().Add(time.Minute), 1, runID)
+	tasks, err := s.queryAdminTasks(c, pool, adminTaskQuery{RunID: runID})
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "task_evidence_failed"})
 	}
 	if len(tasks) == 0 {
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "task_not_found"})
+	}
+	if !tasks[0].Mine {
+		s.auditRunView(c, runID, "evidence")
 	}
 	body := taskEvidenceBody{Task: tasks[0]}
 	view, found, err := loadTaskCode(c.Request().Context(), pool, getTenant(c), runID, tasks[0].Status)

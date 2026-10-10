@@ -178,6 +178,37 @@ func (s *Server) captureBusinessCatalog(baseURL, bearer, workspace, actor, role 
 	}()
 }
 
+// handleRefreshBusinessCapabilities re-reads the catalog on request. The
+// console keeps no Forge credential, so the developer proves the same Forge
+// account once more and that one session is used for this read only.
+func (s *Server) handleRefreshBusinessCapabilities(c echo.Context) error {
+	var request struct {
+		ForgeToken string `json:"forge_token"`
+	}
+	if err := c.Bind(&request); err != nil || strings.TrimSpace(request.ForgeToken) == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "请重新验证 Forge 账号"})
+	}
+	bearer, ctx := strings.TrimSpace(request.ForgeToken), c.Request().Context()
+	identity, user, role, failure := s.bindVerifiedExternalIdentity(ctx, bearer)
+	if failure != nil {
+		if failure.Status == http.StatusUnauthorized {
+			return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Forge 账号验证失败"})
+		}
+		return c.JSON(failure.Status, map[string]string{"error": failure.Message})
+	}
+	if user.ID != getUserID(c) || user.TenantID != getTenant(c) {
+		return c.JSON(http.StatusForbidden, map[string]string{"error": "验证的不是当前登录的账号"})
+	}
+	if role != "developer" && role != "admin" {
+		return c.JSON(http.StatusForbidden, map[string]string{"error": "当前账号不能读取业务动作目录"})
+	}
+	if err := s.refreshBusinessCatalog(ctx, identity.BaseURL, bearer, user.TenantID, user.ID); err != nil {
+		slog.Warn("business capability catalog refresh failed", "workspace", user.TenantID, "reason", err.Error())
+		return c.JSON(http.StatusBadGateway, map[string]string{"error": "没有读到业务动作目录，已保留上一份"})
+	}
+	return s.handleGetBusinessCapabilities(c)
+}
+
 type businessCapabilitiesView struct {
 	Available    bool                `json:"available"`
 	Version      string              `json:"version,omitempty"`

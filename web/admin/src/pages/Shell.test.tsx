@@ -40,12 +40,28 @@ describe('result return navigation', () => {
     expect(window.location.pathname).toBe('/admin/teams')
   })
 
-  it('keeps ordinary task results returning to the task list', async () => {
+  it('keeps ordinary task results returning to the run list', async () => {
     openRun(false)
     await screen.findByRole('heading', { name: '正常任务' })
-    await waitFor(() => expect(screen.getByRole('button', { name: '返回任务列表' }).hasAttribute('disabled')).toBe(false))
-    fireEvent.click(screen.getByRole('button', { name: '返回任务列表' }))
-    expect(window.location.pathname).toBe('/admin/')
-    await screen.findByLabelText('任务内容')
+    await waitFor(() => expect(screen.getByRole('button', { name: '返回运行列表' }).hasAttribute('disabled')).toBe(false))
+    fireEvent.click(screen.getByRole('button', { name: '返回运行列表' }))
+    expect(window.location.pathname).toBe('/admin/runs')
+    await screen.findByRole('heading', { name: '运行' })
+  })
+
+  it('lands on teams and keeps the code pages folded until they are needed', async () => {
+    vi.mocked(api).mockImplementation(async (path) => {
+      if (path === '/v1/admin/tasks') return { tasks: [] }
+      if (path === '/v1/runtimes') return { runtimes: [] }
+      if (path === '/v1/environments') return { environments: [] }
+      if (String(path).startsWith('/v1/teams')) return []
+      throw new ApiError(404, 'not_found')
+    })
+    render(<Shell session={{ name: '开发者', role: 'developer', source: 'forge' }} onSignOut={vi.fn()} />)
+    await screen.findByRole('heading', { name: '团队' })
+    const nav = screen.getByRole('navigation', { name: '主导航' })
+    expect(Array.from(nav.querySelectorAll('.nav__item')).map((item) => item.textContent)).toEqual(['团队', '运行', '集成'])
+    fireEvent.click(screen.getByRole('button', { name: '代码任务' }))
+    expect(Array.from(nav.querySelectorAll('.nav__item')).map((item) => item.textContent)).toEqual(['团队', '运行', '集成', '代码仓库', '节点'])
   })
 })

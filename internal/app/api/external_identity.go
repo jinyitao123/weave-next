@@ -265,23 +265,25 @@ type exchangeFailure struct {
 	Message string
 }
 
-func (s *Server) exchangeExternalIdentity(ctx context.Context, bearer string) (*externalIdentityExchange, *exchangeFailure) {
+// bindVerifiedExternalIdentity proves a Forge session and resolves the Weave
+// account bound to it, without issuing anything.
+func (s *Server) bindVerifiedExternalIdentity(ctx context.Context, bearer string) (ExternalIdentity, *users.User, string, *exchangeFailure) {
 	if s.ExternalIdentity == nil {
-		return nil, &exchangeFailure{http.StatusServiceUnavailable, "external identity is not configured"}
+		return ExternalIdentity{}, nil, "", &exchangeFailure{http.StatusServiceUnavailable, "external identity is not configured"}
 	}
 	identity, err := s.ExternalIdentity.Verify(ctx, bearer)
 	if err != nil {
-		return nil, &exchangeFailure{http.StatusUnauthorized, "external identity verification failed"}
+		return identity, nil, "", &exchangeFailure{http.StatusUnauthorized, "external identity verification failed"}
 	}
 	binder := s.ExternalIdentityBinder
 	if binder == nil && s.UserStore != nil {
 		binder = s.UserStore
 	}
 	if binder == nil {
-		return nil, &exchangeFailure{http.StatusServiceUnavailable, "account binding is not configured"}
+		return identity, nil, "", &exchangeFailure{http.StatusServiceUnavailable, "account binding is not configured"}
 	}
 	if identity.NativeOrganization == "" || identity.Issuer == "" || identity.BaseURL == "" {
-		return nil, &exchangeFailure{http.StatusForbidden, "native organization binding is unavailable"}
+		return identity, nil, "", &exchangeFailure{http.StatusForbidden, "native organization binding is unavailable"}
 	}
 	var user *users.User
 	if stableBinder, supported := binder.(stableNativeExternalIdentityBinder); supported {
@@ -289,14 +291,22 @@ func (s *Server) exchangeExternalIdentity(ctx context.Context, bearer string) (*
 	} else if nativeBinder, supported := binder.(nativeExternalIdentityBinder); supported {
 		user, err = nativeBinder.BindExternalInOrganization(ctx, identity.Issuer, identity.Subject, identity.Organization, identity.Email, identity.Name, identity.NativeOrganization)
 	} else {
-		return nil, &exchangeFailure{http.StatusForbidden, "native organization binding is unavailable"}
+		return identity, nil, "", &exchangeFailure{http.StatusForbidden, "native organization binding is unavailable"}
 	}
 	if err != nil {
-		return nil, &exchangeFailure{http.StatusForbidden, "account binding failed"}
+		return identity, nil, "", &exchangeFailure{http.StatusForbidden, "account binding failed"}
 	}
 	accessRole := identity.AccessRole
 	if accessRole != "developer" && accessRole != "admin" {
 		accessRole = "member"
+	}
+	return identity, user, accessRole, nil
+}
+
+func (s *Server) exchangeExternalIdentity(ctx context.Context, bearer string) (*externalIdentityExchange, *exchangeFailure) {
+	identity, user, accessRole, failure := s.bindVerifiedExternalIdentity(ctx, bearer)
+	if failure != nil {
+		return nil, failure
 	}
 	token, err := s.signJWTWithPermissionSets(user.TenantID, user.ID, []string{accessRole}, "forge", identity.PermissionSets, externalSessionTTL)
 	if err != nil {

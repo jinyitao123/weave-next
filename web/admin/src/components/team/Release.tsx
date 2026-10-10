@@ -6,19 +6,21 @@ import { relativeTime } from '../../lib/format'
 import { createUUID } from '../../lib/ids'
 import { executionLabel } from '../../lib/tasks'
 import { capabilityName, startTrial, trialActions, workflowCapabilityIds, type BusinessCatalog, type DevelopmentDraft } from '../../lib/teams'
+import { CatalogRefresh } from './CatalogRefresh'
 import './team.css'
 
 const flowName = (draft: DevelopmentDraft, id: string) => draft.document.workflows.find((flow) => flow.id === id)?.name || '未命名流程'
 
 // Runs the saved draft once. Business actions are only simulated, and every
 // developer of the workspace sees the same trial records.
-export function TrialPanel({ teamId, draft, dirty, catalog, navigate, onStarted }: {
+export function TrialPanel({ teamId, draft, dirty, catalog, navigate, onStarted, onCatalog }: {
   teamId: string
   draft: DevelopmentDraft
   dirty: boolean
   catalog?: BusinessCatalog
   navigate(path: string): void
   onStarted(): void
+  onCatalog?(catalog: BusinessCatalog): void
 }) {
   const flows = draft.document.workflows
   const [flowId, setFlowId] = useState(flows[0]?.id ?? '')
@@ -37,8 +39,8 @@ export function TrialPanel({ teamId, draft, dirty, catalog, navigate, onStarted 
   const { actions, missing } = trialActions(ids, catalog, simulate)
   const blocked = dirty ? '有未保存的修改。试跑用的是已保存的草稿，请先保存。'
     : !flow ? '还没有流程，先到“流程”页添加步骤。'
-      : missing.length && !catalog?.available ? '还没有读到业务动作目录，这个流程用到的业务动作无法试跑。退出后重新登录一次，登录时会自动读取。'
-        : missing.length ? `业务动作目录里没有“${missing.map((id) => capabilityName(id, catalog)).join('”“')}”。请在“成员”页移除它，或退出后重新登录以更新目录。`
+      : missing.length && !catalog?.available ? '还没有读到业务动作目录，这个流程用到的业务动作无法试跑。请先刷新目录。'
+        : missing.length ? `业务动作目录里没有“${missing.map((id) => capabilityName(id, catalog)).join('”“')}”。请刷新目录，或在“成员”页移除它。`
           : ''
 
   const start = async () => {
@@ -73,6 +75,7 @@ export function TrialPanel({ teamId, draft, dirty, catalog, navigate, onStarted 
       <label className="field"><span>试跑任务</span>
         <textarea className="input textarea" rows={4} value={input} placeholder="贴一段真实的任务原话，例如员工平时会怎么提这件事" onChange={(event) => change(() => setInput(event.target.value))} /></label>
       {blocked ? <p className="notice" role="status">{blocked}</p> : null}
+      {missing.length && !dirty && onCatalog ? <div className="toolbar"><CatalogRefresh catalog={catalog} onRefreshed={onCatalog} /></div> : null}
       {error ? <InlineError message={error} /> : null}
       <div className="toolbar"><button type="button" className="button button--primary" disabled={busy || Boolean(blocked)} onClick={() => void start()}>{busy ? '正在提交…' : '开始试跑'}</button></div>
     </section>
@@ -91,13 +94,16 @@ export function TrialPanel({ teamId, draft, dirty, catalog, navigate, onStarted 
 }
 
 // What is live, what is waiting, and what still stands between the two.
-export function PublishPanel({ draft, dirty, busy, catalog, onPublish, onOpenTrial }: {
+export function PublishPanel({ draft, dirty, busy, catalog, blockers = [], onPublish, onOpenTrial, onOpenFlow }: {
   draft: DevelopmentDraft
   dirty: boolean
   busy: boolean
   catalog?: BusinessCatalog
+  /** What the saved draft still lacks before any trial can count. */
+  blockers?: string[]
   onPublish(): void
   onOpenTrial(): void
+  onOpenFlow?(): void
 }) {
   const published = draft.published_revision > 0
   const pending = dirty || draft.revision !== draft.published_revision
@@ -114,7 +120,7 @@ export function PublishPanel({ draft, dirty, busy, catalog, onPublish, onOpenTri
           : '这一版草稿还没有成功的试跑。',
     }
   })
-  const ready = !dirty && pending && flows.length > 0 && readiness?.ready === true
+  const ready = !dirty && pending && flows.length > 0 && !blockers.length && readiness?.ready === true
 
   return <div className="release">
     <section className="release__section" aria-label="版本">
@@ -130,13 +136,16 @@ export function PublishPanel({ draft, dirty, busy, catalog, onPublish, onOpenTri
         <ul className="release__checks">
           <li>{dirty ? <CircleDashed size={15} className="muted" aria-hidden="true" /> : <CircleCheck size={15} className="icon--success" aria-hidden="true" />}
             <span><strong>保存草稿</strong><span className="muted small">{dirty ? '有未保存的修改，先在页面右上角保存。' : '修改已保存。'}</span></span></li>
+          {blockers.map((blocker) => <li key={blocker}><CircleDashed size={15} className="muted" aria-hidden="true" />
+            <span><strong>选定必须办成的业务动作</strong><span className="muted small">{blocker}。到“流程”页点“交付结果”设置，保存后重新试跑。</span></span></li>)}
           {checks.map((check) => <li key={check.id}>{check.passed ? <CircleCheck size={15} className="icon--success" aria-hidden="true" /> : <CircleDashed size={15} className="muted" aria-hidden="true" />}
             <span><strong>{check.title}</strong><span className="muted small">{check.detail}</span></span></li>)}
           {flows.length === 0 ? <li><CircleDashed size={15} className="muted" aria-hidden="true" /><span><strong>添加流程</strong><span className="muted small">还没有流程。</span></span></li> : null}
         </ul>
         <div className="toolbar">
           <button type="button" className="button button--primary" disabled={busy || !ready} onClick={onPublish}>{busy ? '正在发布…' : `发布第 ${draft.revision} 版`}</button>
-          {!ready && !dirty && flows.length ? <button type="button" className="button" onClick={onOpenTrial}>去试跑</button> : null}
+          {!ready && !dirty && blockers.length && onOpenFlow ? <button type="button" className="button" onClick={onOpenFlow}>去流程页</button> : null}
+          {!ready && !dirty && !blockers.length && flows.length ? <button type="button" className="button" onClick={onOpenTrial}>去试跑</button> : null}
         </div>
       </>}
     </section>

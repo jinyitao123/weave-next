@@ -49,22 +49,22 @@ export function relativeTime(value?: string | null, now = Date.now()): string {
 }
 
 const checkTitles: Record<string, string> = {
-  _coverage: '验证要求覆盖',
+  _coverage: '自动检查',
   _output: '输出格式',
-  _external_effects: '外部影响',
+  _external_effects: '对业务系统的影响',
 }
 
 export function checkTitle(checkId: string, title?: string): string {
   if (title) return title
-  if (checkId.startsWith('_limitation:')) return '无法自动核验的要求'
+  if (checkId.startsWith('_limitation:')) return '无法自动检查的要求'
   return checkTitles[checkId] ?? '检查'
 }
 
 const checkReasons: Record<string, string> = {
-  requirements_not_explicit: '团队没有声明可计算的验证要求',
-  unsupported_requirement: '存在无法自动核验的要求',
+  requirements_not_explicit: '这个流程没有设置自动检查，结果需要人工查看',
+  unsupported_requirement: '有的要求不能自动检查',
   output_type_valid: '输出格式符合要求',
-  external_effects_scope_unverified: '未核实对外部系统的影响',
+  external_effects_scope_unverified: '没有核对这次任务是否改动了业务系统',
 }
 
 export function checkReason(reason?: string): string {
