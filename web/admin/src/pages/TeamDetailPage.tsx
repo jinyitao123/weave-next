@@ -12,15 +12,15 @@ import { listNodes, type RuntimeNode } from '../lib/nodes'
 import { useLeaveGuard } from '../lib/router'
 import { allowRequiredHandoffKinds, loadBusinessCatalog, memberConfigIssues, nodeReadinessIssues, pinMembers, publishDevelopment, readDevelopment, saveDevelopment, withStarterWorkflow, type BusinessCatalog, type DevelopmentDocument, type DevelopmentDraft, type DevelopmentMember } from '../lib/teams'
 
-const tabs = [['profile', '资料'], ['members', '成员'], ['workflow', '流程'], ['access', '接入'], ['trial', '试跑'], ['publish', '发布']] as const
+const tabs = [['profile', '资料'], ['members', '成员'], ['workflow', '流程'], ['trial', '试跑'], ['publish', '发布'], ['access', '接入']] as const
 type TabId = typeof tabs[number][0]
 
-export function TeamDetailPage({ teamId, navigate }: { teamId: string; navigate(path: string, options?: { force?: boolean }): void }) {
+export function TeamDetailPage({ teamId, navigate, initialTab = 'profile' }: { teamId: string; initialTab?: TabId; navigate(path: string, options?: { force?: boolean }): void }) {
   const [draft, setDraft] = useState<DevelopmentDraft>()
   const [document, setDocument] = useState<DevelopmentDocument>()
   const [nodes, setNodes] = useState<RuntimeNode[]>([])
   const [catalog, setCatalog] = useState<BusinessCatalog>()
-  const [tab, setTab] = useState<TabId>('profile')
+  const [tab, setTab] = useState<TabId>(initialTab)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [leaving, setLeaving] = useState<string>()
@@ -106,10 +106,10 @@ export function TeamDetailPage({ teamId, navigate }: { teamId: string; navigate(
     : !published ? { tone: 'neutral', label: '未发布' }
       : upToDate ? { tone: 'success', label: '已发布' } : { tone: 'accent', label: '有未发布的修改' }
 
-  return <section className="page">
+  return <section className={`page${tab === 'workflow' ? ' page--workflow' : ''}`}>
     <header className="task-header">
       <button type="button" className="icon-button" aria-label="返回团队列表" onClick={() => navigate('/teams')}><ArrowLeft size={16} /></button>
-      <div className="task-header__title"><h1>{document?.name ?? '团队'}</h1><p className="muted small">{document?.objective}</p></div>
+      <div className="task-header__title"><h1>{document?.name ?? '团队'}</h1>{tab !== 'workflow' && tab !== 'profile' ? <p className="muted small">{document?.objective}</p> : null}</div>
       {draft ? <div className="task-header__state">
         <Badge tone={state.tone}>{state.label}</Badge>
         {dirty ? <button type="button" className="button" disabled={busy} onClick={discard}>放弃修改</button> : null}

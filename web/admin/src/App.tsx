@@ -37,7 +37,7 @@ export function App() {
   if (state.kind === 'signed-out') {
     return <SignInPage config={state.config} onSignedIn={(session) => setState({ kind: 'signed-in', config: state.config, session })} />
   }
-  return <Shell config={state.config} session={state.session} onSignOut={async () => {
+  return <Shell session={state.session} onSignOut={async () => {
     await signOut().catch(() => undefined)
     setState({ kind: 'signed-out', config: state.config })
   }} />

@@ -1132,8 +1132,7 @@ func latestRunActivityStage(members []runActivityMember, fallback []runActivityS
 	return ""
 }
 
-// handleGetRunActivity is the small exact-run read contract used by
-// Workbench. It intentionally returns persisted execution facts only.
+// handleGetRunActivity returns the exact run's persisted execution facts.
 func (s *Server) handleGetRunActivity(c echo.Context) error {
 	workbenchRun, owned, workbenchBound, accessErr := s.workbenchRunAccess(
 		c.Request().Context(), getTenant(c), getUserID(c), c.Param("id"),
@@ -1326,6 +1325,7 @@ func (s *Server) handleGetRunActivity(c echo.Context) error {
 		"project_id":               run.ProjectID,
 		"status":                   run.Status,
 		"team_id":                  run.TeamID,
+		"development_trial":        developmentTrial != nil,
 		"workflow_id":              run.WorkflowID,
 		"workflow_version":         run.WorkflowVersion,
 		"run_snapshot_id":          run.RunSnapshotID,

@@ -5,6 +5,7 @@ import fixtureText from '../../../../../internal/kernel/workflow/machine/testdat
 import { serialGraph, type Graph } from '../../lib/graph'
 import type { DevelopmentMember } from '../../lib/teams'
 import { layout } from './FlowCanvas'
+import { addParallelBranch } from '../../lib/workflow-graph'
 import { WorkflowEditor } from './WorkflowEditor'
 
 const members: DevelopmentMember[] = ['编码', '验证', '核对'].map(id => ({ id, configuration: { display_name: id, role: 'worker', engine: 'loom', runtime_id: '', model: '', system_prompt: '' }, relationship: { duty: '', result_requirement: '', enabled: true } }))
@@ -73,10 +74,10 @@ describe('workflow canvas interactions', () => {
   it('places delivery after the verification step and labels the back edge with its rounds', () => {
     const graph = JSON.parse(fixtureText) as Graph
     const box = layout(graph)
-    const x = (id: string) => box.positions.get(id)!.x
-    expect(x('loop')).toBeLessThan(x('code'))
-    expect(x('code')).toBeLessThan(x('verify'))
-    expect(x('verify')).toBeLessThan(x('deliver'))
+    const y = (id: string) => box.positions.get(id)!.y
+    expect(y('loop')).toBeLessThan(y('code'))
+    expect(y('code')).toBeLessThan(y('verify'))
+    expect(y('verify')).toBeLessThan(y('deliver'))
     render(<Controlled initial={graph} />)
     expect(screen.getByText('未通过退回 · 最多 3 轮')).toBeTruthy()
   })
@@ -93,21 +94,65 @@ describe('workflow canvas interactions', () => {
     expect(screen.getByText('未通过退回 · 最多 5 轮')).toBeTruthy()
   })
 
-  it('zooms the canvas in steps and returns to fit-to-width', () => {
+  it('starts at readable size and keeps overview and normal size separate', () => {
     render(<Controlled initial={JSON.parse(fixtureText) as Graph} />)
-    const fit = screen.getByRole('button', { name: '适应宽度' })
-    expect(fit.getAttribute('aria-pressed')).toBe('true')
+    const fit = screen.getByRole('button', { name: '查看全图' })
+    expect(fit.getAttribute('aria-pressed')).toBe('false')
     expect(screen.getByText('100%')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: '缩小' }))
-    expect(screen.getByText('90%')).toBeTruthy()
+    expect(screen.getByText('80%')).toBeTruthy()
     expect(fit.getAttribute('aria-pressed')).toBe('false')
-    expect((screen.getByRole('region', { name: '流程画布' }).querySelector('.flow-editor__graph') as HTMLElement).style.transform).toBe('scale(0.9)')
+    expect((screen.getByRole('region', { name: '流程画布' }).querySelector('.flow-editor__graph') as HTMLElement).style.transform).toContain('scale(0.8)')
     fireEvent.click(screen.getByRole('button', { name: '放大' }))
     fireEvent.click(screen.getByRole('button', { name: '放大' }))
     expect(screen.getByText('125%')).toBeTruthy()
     fireEvent.click(fit)
     expect(screen.getByText('100%')).toBeTruthy()
     expect(fit.getAttribute('aria-pressed')).toBe('true')
+    fireEvent.click(screen.getByRole('button', { name: '重置视图' }))
+    expect(fit.getAttribute('aria-pressed')).toBe('false')
+    expect(screen.getByText('100%')).toBeTruthy()
+  })
+
+  it('zooms continuously around the pointer without moving the page', () => {
+    render(<Controlled initial={JSON.parse(fixtureText) as Graph} />)
+    const canvas = screen.getByRole('region', { name: '流程画布' })
+    const transform = () => (canvas.querySelector('.flow-editor__graph') as HTMLElement).style.transform
+    fireEvent.wheel(canvas, { deltaY: -100, clientX: 140, clientY: 120 })
+    expect(screen.getByText('122%')).toBeTruthy()
+    expect(transform()).toContain('scale(1.2214')
+    expect(transform()).not.toContain('translate(0px, 0px)')
+    fireEvent.wheel(canvas, { deltaY: 100, clientX: 140, clientY: 120 })
+    expect(screen.getByText('100%')).toBeTruthy()
+    expect(canvas.scrollTop).toBe(0)
+  })
+
+  it('pans a fitting graph beyond scroll bounds and resets without changing selection', () => {
+    render(<Controlled initial={JSON.parse(fixtureText) as Graph} />)
+    const canvas = screen.getByRole('region', { name: '流程画布' })
+    fireEvent.keyDown(canvas, { key: 'ArrowRight' })
+    fireEvent.keyDown(canvas, { key: 'ArrowDown' })
+    expect((canvas.querySelector('.flow-editor__graph') as HTMLElement).style.transform).toContain('translate(-40px, -40px)')
+    expect(canvas.scrollTop).toBe(0)
+    fireEvent.keyDown(canvas, { key: 'Home' })
+    expect((canvas.querySelector('.flow-editor__graph') as HTMLElement).style.transform).toBe('translate(0px, 0px) scale(1)')
+    expect(screen.getByRole('button', { name: '编辑步骤 编码与验证' }).getAttribute('aria-pressed')).toBe('true')
+  })
+
+  it('places parallel branches beside each other between their fork and join without rewriting the graph', () => {
+    const serial = serialGraph(members.map(member => ({ member: { id: member.id, displayName: member.id }, label: member.id, requirement: '交付要求' })))
+    const graph = addParallelBranch(serial, serial.nodes[1].id, members[2]).graph
+    const before = JSON.stringify(graph)
+    const box = layout(graph)
+    const fork = graph.nodes.find(node => node.type === 'parallel')!
+    const join = graph.nodes.find(node => node.type === 'join')!
+    const branches = graph.edges.filter(edge => edge.from_node_id === fork.id).map(edge => box.positions.get(edge.to_node_id)!)
+    expect(branches).toHaveLength(2)
+    expect(branches[0].y).toBe(branches[1].y)
+    expect(Math.abs(branches[0].x - branches[1].x)).toBeGreaterThan(172)
+    expect(box.positions.get(fork.id)!.y).toBeLessThan(branches[0].y)
+    expect(box.positions.get(join.id)!.y).toBeGreaterThan(branches[0].y)
+    expect(JSON.stringify(graph)).toBe(before)
   })
 })
 
