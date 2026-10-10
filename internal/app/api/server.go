@@ -387,6 +387,7 @@ func (s *Server) registerRoutes() {
 	auth.GET("/teams/:id/members/:agent/config-draft", s.handleGetTeamMemberConfigDraft, RequireAnyRole("developer", "admin", "owner"), orgScope)
 	auth.PUT("/teams/:id/members/:agent/config-draft", s.handlePutTeamMemberConfigDraft, RequireAnyRole("developer", "admin", "owner"), orgScope)
 	auth.POST("/teams/:id/members/:agent/config-draft/apply", s.handleApplyTeamMemberConfigDraft, RequireAnyRole("developer", "admin", "owner"), orgScope)
+	auth.GET("/development/business-capabilities", s.handleGetBusinessCapabilities, RequireAnyRole("developer", "admin", "owner"), orgScope)
 	auth.GET("/integrations/feishu/app", s.handleGetFeishuApp, RequireAnyRole("developer", "admin", "owner"), orgScope)
 	auth.PUT("/integrations/feishu/app", s.handlePutFeishuApp, RequireAnyRole("admin", "owner"), orgScope)
 	auth.DELETE("/integrations/feishu/app", s.handleDeleteFeishuApp, RequireAnyRole("admin", "owner"), orgScope)
