@@ -3,6 +3,7 @@ import { ArrowLeft } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Badge, InlineError } from '../components/ui'
 import { MemberEditor } from '../components/members/MemberEditor'
+import { FlowProfile, TeamProfile } from '../components/team/TeamProfile'
 import { FeishuTeamAccessPanel } from '../components/feishu/FeishuTeamAccess'
 import { errorMessage } from '../lib/api'
 import { relativeTime } from '../lib/format'
@@ -16,7 +17,7 @@ export function TeamDetailPage({ teamId, navigate }: { teamId: string; navigate(
   const [draft, setDraft] = useState<DevelopmentDraft>()
   const [document, setDocument] = useState<DevelopmentDocument>()
   const [nodes, setNodes] = useState<RuntimeNode[]>([])
-  const [tab, setTab] = useState<'members' | 'workflow' | 'access' | 'trial'>('members')
+  const [tab, setTab] = useState<'profile' | 'members' | 'workflow' | 'access' | 'trial'>('members')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const load = useCallback(async () => {
@@ -80,6 +81,8 @@ export function TeamDetailPage({ teamId, navigate }: { teamId: string; navigate(
     return patch.engine !== undefined ? pinMembers(next, nodeChoices) : next
   })
   const editRelationship = (id: string, patch: Partial<DevelopmentMember['relationship']>) => setDocument((current) => current && { ...current, members: current.members.map((member) => member.id === id ? { ...member, relationship: { ...member.relationship, ...patch } } : member) })
+  const editTeam = (patch: Partial<DevelopmentDocument>) => setDocument((current) => current && { ...current, ...patch })
+  const editFlow = (patch: { name?: string; description?: string }) => setDocument((current) => current && { ...current, workflows: current.workflows.map((flow, index) => index === 0 ? { ...flow, ...patch } : flow) })
   const editGraph = (change: (graph: Graph) => Graph) => {
     if (!document?.workflows.length) return
     try {
@@ -105,10 +108,11 @@ export function TeamDetailPage({ teamId, navigate }: { teamId: string; navigate(
     {error ? <InlineError message={error} onRetry={draft ? undefined : () => void load()} /> : null}
     {!document || !draft ? null : <>
       <div className="tabs" role="tablist" aria-label="团队配置">
-        {([['members', '成员'], ['workflow', '流程'], ['access', '接入'], ['trial', '试跑与发布']] as const).map(([value, label]) => <button key={value} type="button" role="tab" aria-selected={tab === value} onClick={() => setTab(value)}>{label}</button>)}
+        {([['profile', '资料'], ['members', '成员'], ['workflow', '流程'], ['access', '接入'], ['trial', '试跑与发布']] as const).map(([value, label]) => <button key={value} type="button" role="tab" aria-selected={tab === value} onClick={() => setTab(value)}>{label}</button>)}
       </div>
+      {tab === 'profile' ? <TeamProfile document={document} onChange={editTeam} /> : null}
       {tab === 'members' ? <MemberEditor document={document} nodes={nodes} accepting={accepting} onConfig={editMember} onRelationship={editRelationship} /> : null}
-      {tab === 'workflow' ? workflow ? <WorkflowEditor key={workflow.id} graph={workflow.graph_definition} members={document.members} onChange={editGraph} /> : <p className="muted">至少需要两名执行成员才能生成流程。</p> : null}
+      {tab === 'workflow' ? workflow ? <><FlowProfile name={workflow.name} description={workflow.description} onChange={editFlow} /><WorkflowEditor key={workflow.id} graph={workflow.graph_definition} members={document.members} onChange={editGraph} /></> : <p className="muted">至少需要两名执行成员才能生成流程。</p> : null}
       {tab === 'access' ? <FeishuTeamAccessPanel teamId={teamId} workflows={document.workflows.map((flow) => ({ id: flow.id, name: flow.name }))} /> : null}
       {tab === 'trial' ? <Trial teamId={teamId} draft={draft} dirty={dirty} workflowId={workflow?.id} navigate={navigate} onStarted={() => void load()} /> : null}
     </>}
