@@ -143,7 +143,7 @@ func (s *Server) handleMCPRegisterClient(c echo.Context) error {
 	_, _ = pool.Exec(ctx, `DELETE FROM weave_mcp_clients c WHERE c.created_at < now() - interval '30 days'
 		AND NOT EXISTS (SELECT 1 FROM weave_mcp_sessions m WHERE m.client_id=c.id)`)
 	id := "mcp_" + uuid.NewString()
-	if _, err := pool.Exec(ctx, `INSERT INTO weave_mcp_clients(id,name,redirect_uris) VALUES($1,$2,$3)`, id, name, redirects); err != nil {
+	if _, err := pool.Exec(ctx, `INSERT INTO weave_mcp_clients(id,name,redirect_uris) VALUES($1,$2,$3)`, id, name, string(redirects)); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "server_error"})
 	}
 	return c.JSON(http.StatusCreated, map[string]any{
@@ -245,7 +245,7 @@ func (s *Server) handleMCPConsent(c echo.Context) error {
 	code, digest := mcpSecret("")
 	_, _ = pool.Exec(ctx, `DELETE FROM weave_mcp_sessions WHERE token_digest IS NULL AND code_expires_at < now() - interval '1 hour'`)
 	if _, err := pool.Exec(ctx, `INSERT INTO weave_mcp_sessions(id,workspace_id,user_id,client_id,client_name,role,identity_source,permission_sets,code_digest,code_challenge,redirect_uri,code_expires_at)
-		VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`, uuid.New(), getTenant(c), getUserID(c), request.Client, client.Name, firstRole(c), source, permissionSets,
+		VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`, uuid.New(), getTenant(c), getUserID(c), request.Client, client.Name, firstRole(c), source, string(permissionSets),
 		digest, request.Challenge, request.Redirect, time.Now().Add(mcpCodeTTL)); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "server_error"})
 	}

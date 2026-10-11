@@ -80,8 +80,8 @@ func mcpCaller(c echo.Context) string {
 	}
 	account := getTenant(c) + "/" + getUserID(c)
 	if c.Get(authSourceContextKey) == authSourceAPIKey {
-		name, _ := c.Get(apiKeyNameContextKey).(string)
-		return "key:" + account + "/" + name
+		id, _ := c.Get(apiKeyIDContextKey).(string)
+		return "key:" + id
 	}
 	return "account:" + account
 }
