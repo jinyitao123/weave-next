@@ -1005,6 +1005,22 @@
         "lines_added": 2441,
         "production_lines_added": 1942
       }
+    },
+    {
+      "date": "2026-10-11",
+      "reason": "Let whoever may read a run in the console read what each step produced: published runs keep step results as saved records the run page only listed by reference, so an administrator saw the steps of an employee run but none of their content. One read route returns a bounded result of a run the caller may already read and records a view of someone else's run like the existing surfaces. Work handed over from the desktop is titled by its goal instead of by its envelope. No new packages, dependencies or execution paths. A real PostgreSQL test covers the administrator, the submitter, a result of another run, an unknown result, a developer who did not submit the run and the recorded view.",
+      "record": "README.zh-CN.md#管理端查看运行与刷新目录",
+      "growth": {
+        "lines": 103,
+        "production_lines": 48
+      },
+      "deletion_trigger": "Remove the step result route with the widened run list and its view audit when a recorded decision returns run reading to submitters only. Lower the measured budgets in that change.",
+      "app": {
+        "previous_lines": 82297,
+        "previous_production_lines": 56398,
+        "lines_added": 103,
+        "production_lines_added": 48
+      }
     }
   ],
   "migration_targets": {
@@ -1068,8 +1084,8 @@
     "allowed_dependencies": []
   },
   "app": {
-    "lines": 82297,
-    "production_lines": 56398,
+    "lines": 82400,
+    "production_lines": 56446,
     "packages": 25,
     "external_dependencies": 6,
     "allowed_dependencies": [

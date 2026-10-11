@@ -48,6 +48,8 @@ export interface MemberStage {
   status: string
   inputs: StageInput[]
   outputs?: StageOutput[]
+  /** Saved results of a published run; their content is read on demand. */
+  output_refs?: string[]
   started_at?: string
   completed_at?: string
   duration_ms?: number
@@ -106,6 +108,8 @@ export function listTasks(filter: TaskFilter, before?: string, scope: { team?: s
 
 export const readTask = (runId: string) => api<TaskSummary>(`/v1/admin/tasks/${encodeURIComponent(runId)}`)
 export const readActivity = (runId: string) => api<Activity>(`/v1/runs/${encodeURIComponent(runId)}/activity`)
+export interface SavedOutput { id: string; title: string; content_type: string; content: string; content_bytes: number; truncated: boolean }
+export const readTaskOutput = (runId: string, outputId: string) => api<SavedOutput>(`/v1/admin/tasks/${encodeURIComponent(runId)}/outputs/${encodeURIComponent(outputId)}`)
 
 export async function listTeams(): Promise<TeamOption[]> {
   const teams = await api<TeamOption[]>('/v1/teams?status=active&purpose=development')

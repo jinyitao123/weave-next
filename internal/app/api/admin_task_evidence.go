@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/labstack/echo/v4"
@@ -26,6 +27,41 @@ type taskEvidenceExport struct {
 type taskEvidenceBody struct {
 	Task adminTask     `json:"task"`
 	Code *taskCodeView `json:"code,omitempty"`
+}
+
+const adminTaskOutputLimit = 256 << 10
+
+// handleGetAdminTaskOutput returns what one step of a run produced, to anyone
+// who may read the run. Reading someone else's result is recorded like any
+// other view of their run.
+func (s *Server) handleGetAdminTaskOutput(c echo.Context) error {
+	pool := s.GetPool()
+	if pool == nil || s.Deliverables == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "task_output_unavailable"})
+	}
+	runID := c.Param("id")
+	tasks, err := s.queryAdminTasks(c, pool, adminTaskQuery{RunID: runID})
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "task_output_failed"})
+	}
+	if len(tasks) == 0 {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "task_not_found"})
+	}
+	item, err := s.Deliverables.Get(c.Request().Context(), getTenant(c), c.Param("output"))
+	if err != nil || item.RunID != runID {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "task_output_not_found"})
+	}
+	if !tasks[0].Mine {
+		s.auditRunView(c, runID, "output")
+	}
+	content := item.Content
+	if len(content) > adminTaskOutputLimit {
+		content = strings.ToValidUTF8(content[:adminTaskOutputLimit], "")
+	}
+	return c.JSON(http.StatusOK, map[string]any{
+		"id": item.ID, "title": item.Title, "content_type": item.ContentType,
+		"content": content, "content_bytes": len(item.Content), "truncated": len(content) < len(item.Content),
+	})
 }
 
 func (s *Server) handleExportAdminTaskEvidence(c echo.Context) error {

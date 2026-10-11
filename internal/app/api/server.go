@@ -338,6 +338,7 @@ func (s *Server) registerRoutes() {
 	auth.POST("/admin/tasks", s.handleSubmitAdminTask, consoleAccess, orgScope, chatScope)
 	auth.GET("/admin/tasks/:id/code", s.handleGetAdminTaskCode, consoleAccess, runsScope)
 	auth.GET("/admin/tasks/:id/evidence", s.handleExportAdminTaskEvidence, consoleAccess, runsScope)
+	auth.GET("/admin/tasks/:id/outputs/:output", s.handleGetAdminTaskOutput, consoleAccess, runsScope)
 	auth.POST("/admin/tasks/:id/follow-ups", s.handleSubmitFollowUp, consoleAccess, orgScope, chatScope)
 	auth.POST("/admin/tasks/:id/pull-request", s.handleCreatePullRequest, consoleAccess, orgScope, chatScope)
 	auth.GET("/admin/tasks/:id/thread", s.handleGetTaskThread, consoleAccess, runsScope)
