@@ -1094,6 +1094,22 @@
     },
     {
       "date": "2026-10-11",
+      "reason": "Let an MCP client sign a person in with their account, as the MCP entry contract specifies and the owner asked to be finished on 2026-10-11: the client sends the browser to Weave, the person signs in on the console's own page and allows the client by name, and the client receives a two-week session that works on the MCP entry only. The entry answers an unauthenticated client with where signing in is described; clients register by name with the addresses a sign-in may return to (this machine or HTTPS); the one-time code is bound to the client, its address and its PKCE challenge and is spent in a single statement; only digests of the code and the token are stored. People list and take back their own sessions and an administrator the workspace's, and the retained rows are the record of who signed in from which client and who ended it. The session is swapped for a short session of the same person before authentication runs, so no route learns another credential path. Each caller of the entry — a client session, or the key presented directly — has an allowance of 120 calls a minute and a separate 10 a minute for the three tools that start a team working, counted in the process; a call beyond it is answered with how long to wait. No new packages or dependencies. A real PostgreSQL test covers the descriptions, registration and its refused addresses, the redirect to the console, consent with and without a session, declined consent, exchange with a wrong verifier, another address, twice and late, use on the entry and refusal elsewhere, a member's narrower tools, listing by person and by administrator, taking back, a disabled account and an expired session. A unit test covers the allowance running out, refilling, and being kept per caller.",
+      "record": "README.zh-CN.md#mcp-入口",
+      "growth": {
+        "lines": 846,
+        "production_lines": 496
+      },
+      "deletion_trigger": "Remove the MCP sign-in endpoints, the session middleware, the two tables and the console pages when a recorded decision moves MCP client sign-in to an identity provider that issues tokens Weave can verify directly. Lower the measured budgets in that change.",
+      "app": {
+        "previous_lines": 84068,
+        "previous_production_lines": 57602,
+        "lines_added": 846,
+        "production_lines_added": 496
+      }
+    },
+    {
+      "date": "2026-10-11",
       "reason": "Let the people who build teams give their workspace a model, as the owner decided on 2026-10-11 (decision 008 in the product repository: whatever the person signed in to the desktop may do in Weave is finished there; administrators and developers may add or replace the organization's models). Until now a shared model could only come from a provider configured in the deployment and switched on by an administrator, so a workspace without one could not be given a model from where its teams are built. A developer or administrator now lists the shared providers and adds or replaces one that was added this way: a name, an address, the model names it serves and a key. The key is sealed by the existing credential store under a workspace-service reference authorized for exactly that provider, is kept when a later change leaves it out, and is returned by no route; a provider that came with the deployment or belongs to one person is not touched, and a model already served by another shared provider is refused so the choice at run time stays unambiguous. No new packages or dependencies, no change to the credential store or to how a run resolves a model.",
       "record": "README.zh-CN.md#受控修改与草稿待办",
       "growth": {
@@ -1102,8 +1118,8 @@
       },
       "deletion_trigger": "Remove the two model-provider routes when a recorded decision returns shared model credentials to deployment configuration only, or moves them to an identity or secret service outside Weave. Lower the measured budgets in that change.",
       "app": {
-        "previous_lines": 84068,
-        "previous_production_lines": 57602,
+        "previous_lines": 84914,
+        "previous_production_lines": 58098,
         "lines_added": 167,
         "production_lines_added": 167
       }
@@ -1170,8 +1186,8 @@
     "allowed_dependencies": []
   },
   "app": {
-    "lines": 84235,
-    "production_lines": 57769,
+    "lines": 85081,
+    "production_lines": 58265,
     "packages": 25,
     "external_dependencies": 6,
     "allowed_dependencies": [

@@ -118,7 +118,7 @@ func TestMCPEntryServesTeamToolsAsTheCallerRealPG(t *testing.T) {
 	}
 	draft, failed := tool("user", "admin", "weave_development_read", map[string]any{"team_id": teamID})
 	team, _ := draft["team"].(map[string]any)
-	if failed || len(list(team["members"])) != 2 || len(list(team["workflows"])) != 1 || len(list(draft["editable"])) != len(developmentOperationTopics) || len(list(draft["issues"])) != 1 {
+	if failed || len(list(team["members"])) != 2 || len(list(team["workflows"])) != 1 || len(list(draft["editable"])) != len(developmentOperationTopics) || len(list(draft["issues"])) != 2 {
 		t.Fatalf("draft: %v", draft)
 	}
 	if text, _ := json.Marshal(draft); strings.Contains(string(text), "agent_id") || strings.Contains(string(text), `"kind":`) {
