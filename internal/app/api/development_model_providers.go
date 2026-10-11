@@ -90,7 +90,7 @@ func (s *Server) handlePutDevelopmentModelProvider(c echo.Context) error {
 	if name == "" || utf8.RuneCountInString(name) > 80 {
 		return invalid("请给出供应方名称（80 字以内）")
 	}
-	if len(key) > 4096 || strings.ContainsAny(key, " \t\r\n") {
+	if key == credentials.MaskedKey || len(key) > 4096 || strings.ContainsAny(key, " \t\r\n") {
 		return invalid("密钥格式无效")
 	}
 	seen, models := map[string]bool{}, []string{}
@@ -110,8 +110,17 @@ func (s *Server) handlePutDevelopmentModelProvider(c echo.Context) error {
 	sort.Strings(models)
 
 	ctx, tenant := c.Request().Context(), getTenant(c)
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		return workflowStoreFailure(c, err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	// Serialize shared model claims across server processes before checking or saving.
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, "development-model-providers:"+tenant); err != nil {
+		return workflowStoreFailure(c, err)
+	}
 	var scope, source string
-	err := pool.QueryRow(ctx, `SELECT credential_scope,source_kind FROM weave_provider_credentials WHERE workspace_id=$1 AND id=$2`, tenant, id).Scan(&scope, &source)
+	err = tx.QueryRow(ctx, `SELECT credential_scope,source_kind FROM weave_provider_credentials WHERE workspace_id=$1 AND id=$2`, tenant, id).Scan(&scope, &source)
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
 		if key == "" {
@@ -125,7 +134,7 @@ func (s *Server) handlePutDevelopmentModelProvider(c echo.Context) error {
 	}
 	// A model is served by one shared provider, or the choice at run time would be ambiguous.
 	var taken, by string
-	err = pool.QueryRow(ctx, `SELECT model,name FROM weave_provider_credentials, unnest(models) AS model
+	err = tx.QueryRow(ctx, `SELECT model,name FROM weave_provider_credentials, unnest(models) AS model
 		WHERE workspace_id=$1 AND id<>$2 AND credential_scope='workspace_service' AND source_kind='workspace'
 		  AND enabled AND revoked_at IS NULL AND deleted_at IS NULL AND model=ANY($3) ORDER BY model LIMIT 1`, tenant, id, models).Scan(&taken, &by)
 	if err == nil {
@@ -144,7 +153,7 @@ func (s *Server) handlePutDevelopmentModelProvider(c echo.Context) error {
 		}
 		return nil
 	})
-	if _, err = s.Credentials.UpsertRevision(authorized, tenant, llmrouter.ProviderConfig{
+	if _, err = s.Credentials.UpsertRevisionTx(authorized, tx, tenant, llmrouter.ProviderConfig{
 		CredentialScope: frozen.CredentialScopeWorkspaceService, CredentialServiceID: service,
 		ID: id, Name: name, BaseURL: strings.TrimSpace(request.BaseURL), APIKey: key, Models: models,
 	}); err != nil {
@@ -155,6 +164,9 @@ func (s *Server) handlePutDevelopmentModelProvider(c echo.Context) error {
 		if errors.As(err, &coded) {
 			return workflowError(c, http.StatusConflict, "model_provider_conflict", "这个供应方现在不能修改")
 		}
+		return workflowStoreFailure(c, err)
+	}
+	if err := tx.Commit(ctx); err != nil {
 		return workflowStoreFailure(c, err)
 	}
 	if s.Models != nil {

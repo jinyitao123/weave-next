@@ -1123,6 +1123,28 @@
         "lines_added": 167,
         "production_lines_added": 167
       }
+    },
+    {
+      "date": "2026-10-11",
+      "reason": "Verify organization provider permissions, isolation, sealed and retained secrets, configured model requests, and concurrent model claims with real PostgreSQL. Reject masked key placeholders and serialize workspace model claims while reusing the existing credential sealing and immutable revision operation in the same transaction. No new packages, dependencies or runtime loops.",
+      "record": "README.zh-CN.md#受控修改与草稿待办",
+      "growth": {
+        "lines": 222,
+        "production_lines": 21
+      },
+      "deletion_trigger": "Remove the model-provider endpoint regressions and its workspace claim transaction when decision 008 organization provider configuration is retired or moves to an external identity or secret service; remove the transaction overload once no atomic credential caller remains, lowering measured budgets in that change.",
+      "kernel": {
+        "previous_lines": 104891,
+        "previous_production_lines": 83351,
+        "lines_added": 9,
+        "production_lines_added": 9
+      },
+      "app": {
+        "previous_lines": 85081,
+        "previous_production_lines": 58265,
+        "lines_added": 213,
+        "production_lines_added": 12
+      }
     }
   ],
   "migration_targets": {
@@ -1166,8 +1188,8 @@
     ]
   },
   "kernel": {
-    "lines": 104891,
-    "production_lines": 83351,
+    "lines": 104900,
+    "production_lines": 83360,
     "packages": 48,
     "external_dependencies": 5,
     "allowed_dependencies": [
@@ -1186,8 +1208,8 @@
     "allowed_dependencies": []
   },
   "app": {
-    "lines": 85081,
-    "production_lines": 58265,
+    "lines": 85294,
+    "production_lines": 58277,
     "packages": 25,
     "external_dependencies": 6,
     "allowed_dependencies": [
