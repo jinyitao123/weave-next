@@ -339,6 +339,9 @@ export async function prepareNewTeam(teamId: string): Promise<void> {
 }
 
 // A member added on the page; the server creates it when the draft is trialled.
+// A catalog entry sometimes repeats its name as its description; that says nothing new.
+export const capabilityNote = (name: string | undefined, description: string | undefined): string => description && description.trim() !== (name ?? '').trim() ? description.trim() : ''
+
 export function newMember(model: string): DevelopmentMember {
   return {
     id: createUUID(),

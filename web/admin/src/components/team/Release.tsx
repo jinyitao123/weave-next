@@ -1,6 +1,6 @@
 import { CircleCheck, CircleDashed } from 'lucide-react'
 import { useMemo, useState } from 'react'
-import { Badge, InlineError, Select, Switch } from '../ui'
+import { Badge, Dialog, InlineError, Select, Switch } from '../ui'
 import { errorMessage } from '../../lib/api'
 import { relativeTime } from '../../lib/format'
 import { createUUID } from '../../lib/ids'
@@ -84,8 +84,8 @@ export function TrialPanel({ teamId, draft, dirty, catalog, navigate, onStarted,
       <h2>试跑记录</h2>
       {trials.length ? <div className="task-list">{trials.map((trial) => <button key={trial.request_id} type="button" className="task-row" disabled={!trial.run_id} onClick={() => trial.run_id && navigate(`/tasks/${encodeURIComponent(trial.run_id)}`)}>
         <span className="task-row__main">
-          <strong>第 {trial.revision} 版草稿 · {flowName(draft, trial.workflow_id)}</strong>
-          <span className="muted small">{trial.actor || '开发者'} · {relativeTime(trial.created_at)}{trial.revision !== draft.revision ? ' · 不是当前草稿' : ''}</span>
+          <strong>{trial.revision === draft.revision ? '当前草稿' : '较早的草稿'} · {flowName(draft, trial.workflow_id)}</strong>
+          <span className="muted small">{trial.actor || '开发者'} · {relativeTime(trial.created_at)}</span>
         </span>
         <Badge tone={trial.status === 'succeeded' ? 'success' : trial.status === 'failed' ? 'danger' : 'neutral'}>{executionLabel(trial.status)}</Badge>
       </button>)}</div> : <p className="muted">还没有试跑记录。</p>}
@@ -105,6 +105,7 @@ export function PublishPanel({ draft, dirty, busy, catalog, blockers = [], onPub
   onOpenTrial(): void
   onOpenFlow?(): void
 }) {
+  const [confirming, setConfirming] = useState(false)
   const published = draft.published_revision > 0
   const pending = dirty || draft.revision !== draft.published_revision
   const readiness = draft.publication_readiness
@@ -115,9 +116,9 @@ export function PublishPanel({ draft, dirty, busy, catalog, blockers = [], onPub
     return {
       id: flow.id, passed: !dirty && item?.passed === true,
       title: `试跑“${flow.name || '未命名流程'}”`,
-      detail: !dirty && item?.passed ? '这一版草稿已经试跑成功。'
+      detail: !dirty && item?.passed ? '当前草稿已经试跑成功。'
         : missing.length ? `试跑里还需要模拟执行：${missing.map((id) => capabilityName(id, catalog)).join('、')}。`
-          : '这一版草稿还没有成功的试跑。',
+          : '当前草稿还没有成功的试跑。',
     }
   })
   const ready = !dirty && pending && flows.length > 0 && !blockers.length && readiness?.ready === true
@@ -126,8 +127,8 @@ export function PublishPanel({ draft, dirty, busy, catalog, blockers = [], onPub
     <section className="release__section" aria-label="版本">
       <h2>版本</h2>
       <dl className="release__facts">
-        <div><dt>线上版本</dt><dd>{published ? `第 ${draft.published_revision} 版` : '还没有发布过'}</dd></div>
-        <div><dt>草稿</dt><dd>{dirty ? `第 ${draft.revision} 版，另有未保存的修改` : pending ? `第 ${draft.revision} 版，尚未发布` : `第 ${draft.revision} 版，与线上一致`}</dd></div>
+        <div><dt>线上版本</dt><dd>{published ? '已发布' : '还没有发布过'}</dd></div>
+        <div><dt>草稿</dt><dd>{dirty ? '有未保存的修改' : pending ? published ? '有修改还没有发布' : '还没有发布' : '与线上一致'}</dd></div>
       </dl>
     </section>
     <section className="release__section" aria-label="发布">
@@ -143,11 +144,17 @@ export function PublishPanel({ draft, dirty, busy, catalog, blockers = [], onPub
           {flows.length === 0 ? <li><CircleDashed size={15} className="muted" aria-hidden="true" /><span><strong>添加流程</strong><span className="muted small">还没有流程。</span></span></li> : null}
         </ul>
         <div className="toolbar">
-          <button type="button" className="button button--primary" disabled={busy || !ready} onClick={onPublish}>{busy ? '正在发布…' : `发布第 ${draft.revision} 版`}</button>
+          <button type="button" className="button button--primary" disabled={busy || !ready} onClick={() => setConfirming(true)}>{busy ? '正在发布…' : '发布'}</button>
           {!ready && !dirty && blockers.length && onOpenFlow ? <button type="button" className="button" onClick={onOpenFlow}>去流程页</button> : null}
           {!ready && !dirty && !blockers.length && flows.length ? <button type="button" className="button" onClick={onOpenTrial}>去试跑</button> : null}
         </div>
       </>}
+      {confirming ? <Dialog title="发布团队" onClose={() => setConfirming(false)} footer={<>
+        <button type="button" className="button" onClick={() => setConfirming(false)}>取消</button>
+        <button type="button" className="button button--primary" onClick={() => { setConfirming(false); onPublish() }}>发布</button>
+      </>}>
+        <p>{published ? '发布后，新发起的任务使用当前草稿的配置；正在进行的任务不受影响。' : '发布后，员工就可以使用这个团队。'}</p>
+      </Dialog> : null}
     </section>
   </div>
 }
