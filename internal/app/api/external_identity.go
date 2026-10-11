@@ -16,7 +16,7 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-const externalSessionTTL = 8 * time.Hour
+const externalSessionTTL = 14 * 24 * time.Hour
 
 const forgeTeamDeveloperPermissionSet = "weave_team_developer"
 
