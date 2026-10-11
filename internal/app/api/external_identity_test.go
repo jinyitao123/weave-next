@@ -149,7 +149,7 @@ func TestExternalIdentityExchangeBindsAccountAndIssuesWeaveSession(t *testing.T)
 	if claims.IdentitySource != "forge" || claims.TenantID != "workspace-1" || claims.UserID != "ext-user-1" || firstClaimRole(claims.Roles) != "developer" || len(claims.PermissionSets) != 1 || claims.PermissionSets[0] != forgeTeamDeveloperPermissionSet || response.Issuer != "forge:workbench-example" {
 		t.Fatalf("unexpected claims: %#v", claims)
 	}
-	if response.ExpiresIn != 28800 {
+	if response.ExpiresIn != 1209600 || claims.ExpiresAt.Unix()-claims.IssuedAt.Unix() < int64(response.ExpiresIn) || claims.ExpiresAt.Unix()-claims.IssuedAt.Unix() > int64(response.ExpiresIn)+1 {
 		t.Fatalf("expiresIn = %d", response.ExpiresIn)
 	}
 	if len(response.Permissions) != 2 || response.Permissions[1] != "teams:develop" {
