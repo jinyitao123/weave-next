@@ -722,6 +722,10 @@ func (s *Server) handleMCPEntry(c echo.Context) error {
 			if tool.Name != name {
 				continue
 			}
+			if wait := s.mcpThrottle(c, name); wait != nil {
+				raw, _ := json.Marshal(wait)
+				return string(raw), true
+			}
 			args := map[string]any{}
 			if err := json.Unmarshal([]byte(arguments), &args); err != nil {
 				raw, _ := json.Marshal(mcpFail("invalid_arguments", "参数不是有效的 JSON 对象"))

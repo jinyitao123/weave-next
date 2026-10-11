@@ -119,6 +119,7 @@ type Server struct {
 	Conversations             *conversation.Store    // nil if PG pool unavailable
 	OwnerMem                  OwnerMemoryStore       // nil if PG pool unavailable
 	sessionExecutionWorkers   *sessionExecutionWorkers
+	mcpLimiter                mcpRateLimiter
 	teamRunWorkers            *teamrun.Workers
 	teamRunCancel             *teamrun.CancelService
 	teamRunStageRetry         *teamrun.StageRetryService

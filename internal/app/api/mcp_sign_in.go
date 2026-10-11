@@ -332,6 +332,8 @@ func (s *Server) mcpSessionMiddleware() echo.MiddlewareFunc {
 				_, _ = pool.Exec(request.Context(), `UPDATE weave_mcp_sessions SET last_used_at=now() WHERE id=$1`, id)
 			}
 			request.Header.Set(echo.HeaderAuthorization, prefix+session)
+			// The call spends this session's allowance, not the account's.
+			c.Set(mcpSessionContextKey, id.String())
 			return next(c)
 		}
 	}
