@@ -315,10 +315,10 @@ func TestControlledEditsChooseAModelOnlyFromTheWorkspaceList(t *testing.T) {
 	if message := refused(`[{"kind":"member","member":"整理员","model":"deepseek-flash"}]`, nil, nil); !strings.Contains(message, "还没有可用的模型") {
 		t.Fatalf("empty list: %s", message)
 	}
-	// A member on an external engine keeps its model with the console.
+	// A member on an external engine takes its model through the engine edit, not from this list.
 	if message := refused(`[{"kind":"member","member":"整理员","model":"deepseek-flash"}]`, models, func(doc *developmentDocument) {
 		doc.Members[1].Configuration.Engine = "codex"
-	}); !strings.Contains(message, "不使用内置引擎") {
+	}); !strings.Contains(message, "member_engine") {
 		t.Fatalf("external engine: %s", message)
 	}
 	if message := refused(`[{"kind":"member","member":"整理员","model":7}]`, models, nil); message == "" {

@@ -20,7 +20,7 @@ import (
 // console and the desktop already use, made with the caller's own credential,
 // so validation, permissions and audit are the ones those routes apply.
 
-const mcpEntryInstructions = "Weave 的团队开发与使用工具。修改团队前先用 weave_development_read 读取草稿和可修改的类别，再用 weave_development_guide 读取要用到的那一类写法；不要猜测字段。经这里交接的工作不带业务动作授权，需要办理业务的部分由员工在桌面办理。团队和流程的标识只用于调用，不要展示给使用者。"
+const mcpEntryInstructions = "Weave 的团队开发与使用工具。修改团队前先用 weave_development_read 读取草稿和可修改的类别，再用 weave_development_guide 读取要用到的那一类写法；不要猜测字段。团队草稿以外的操作（归档团队、运行、执行节点、代码仓库、飞书、客户端会话）用 weave_workspace_guide 读取类别和写法，再用 weave_workspace_apply 办理；要填写或显示密钥的操作不经这里办理。经这里交接的工作不带业务动作授权，需要办理业务的部分由员工在桌面办理。团队和流程的标识只用于调用，不要展示给使用者。"
 
 const (
 	mcpMaterialLimit = 200 << 10
@@ -37,6 +37,8 @@ type mcpEntryTool struct {
 type mcpEntryError struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
+	// Status is the status of the route that refused, when one did.
+	Status int `json:"-"`
 }
 
 func mcpFail(code, format string, args ...any) *mcpEntryError {
@@ -127,7 +129,7 @@ func (call *mcpEntryCall) route(method, path string, body, into any) *mcpEntryEr
 		if failure.Index != nil {
 			message = fmt.Sprintf("第 %d 项：%s", *failure.Index+1, message)
 		}
-		return &mcpEntryError{Code: code, Message: message}
+		return &mcpEntryError{Code: code, Message: message, Status: capture.status}
 	}
 	if into != nil && capture.body.Len() > 0 {
 		if err := json.Unmarshal(capture.body.Bytes(), into); err != nil {
@@ -533,6 +535,24 @@ var mcpEntryTools = []mcpEntryTool{
 			}
 			return map[string]any{"published": true, "revision": published.PublishedRevision}, nil
 		}},
+	{Name: "weave_workspace_guide", Description: "读取团队草稿以外的操作：不给 topic 时返回类别清单（团队与业务动作目录、运行、执行节点、代码仓库、飞书、客户端会话），给 topic 时返回这一类每项操作的准确写法、是否需要确认和当前账号能否办理。办理前对要用到的类别先读一次。",
+		Schema: mcpSchema(`"topic":{"type":"string"}`),
+		Run: func(call *mcpEntryCall, args map[string]any) (any, *mcpEntryError) {
+			path := "/v1/development/workspace-operations"
+			if topic := mcpText(args, "topic"); topic != "" {
+				path += "/" + url.PathEscape(topic)
+			}
+			var guide map[string]any
+			failure := call.route(http.MethodGet, path, nil, &guide)
+			return guide, failure
+		}},
+	{Name: "weave_workspace_apply", Description: "办理一项团队草稿以外的操作，写法见 weave_workspace_guide。说明里带 confirm 的操作不可撤回：第一次调用返回 confirmation_required 和后果说明，把后果告诉使用者并得到明确同意后，再带 confirmed 为 true 调用。",
+		Schema: mcpSchema(`"operation":{"type":"object","description":"一项操作，含 kind"},"confirmed":{"type":"boolean","description":"使用者已明确同意不可撤回的后果"}`, "operation"),
+		Run: func(call *mcpEntryCall, args map[string]any) (any, *mcpEntryError) {
+			var result map[string]any
+			failure := call.route(http.MethodPost, "/v1/development/workspace-operations", map[string]any{"operation": args["operation"], "confirmed": args["confirmed"] == true}, &result)
+			return result, failure
+		}},
 	{Name: "weave_team_search", Description: "按一段工作摘要查找可能合适的团队，至多 8 个。这是名称与目标的文字相关性筛选，是否合适由你结合上下文判断。",
 		Schema: mcpSchema(`"work_summary":{"type":"string","maxLength":4000,"description":"根据完整对话概括的工作与期望结果"}`, "work_summary"),
 		Run: func(call *mcpEntryCall, args map[string]any) (any, *mcpEntryError) {
@@ -711,25 +731,35 @@ func mcpSubmit(call *mcpEntryCall, args map[string]any) (any, *mcpEntryError) {
 	return map[string]any{"accepted": true, "run_id": accepted.RunID, "note": "已接单，尚未处理完成"}, nil
 }
 
-// handleMCPEntry serves the tools to an authenticated caller: a person signed in
-// with their own account, or the holder of a key, as on the console.
-func (s *Server) handleMCPEntry(c echo.Context) error {
-	call := &mcpEntryCall{
+// entryCall is the caller of this request, for calling Weave's own routes as them.
+func (s *Server) entryCall(c echo.Context) *mcpEntryCall {
+	return &mcpEntryCall{
 		server: s, ctx: c.Request().Context(), auth: c.Request().Header.Get(echo.HeaderAuthorization), remote: c.Request().RemoteAddr,
 		tenant: getTenant(c), user: getUserID(c), role: firstRole(c), reader: adminRunReader(c),
 	}
+}
+
+// handleMCPEntry serves the tools to an authenticated caller: a person signed in
+// with their own account, or the holder of a key, as on the console.
+func (s *Server) handleMCPEntry(c echo.Context) error {
+	call := s.entryCall(c)
 	return serveWeaveTools(c, mcpEntryTools, mcpEntryInstructions, func(name, arguments string) (string, bool) {
 		for _, tool := range mcpEntryTools {
 			if tool.Name != name {
 				continue
 			}
-			if wait := s.mcpThrottle(c, name); wait != nil {
-				raw, _ := json.Marshal(wait)
-				return string(raw), true
-			}
 			args := map[string]any{}
 			if err := json.Unmarshal([]byte(arguments), &args); err != nil {
 				raw, _ := json.Marshal(mcpFail("invalid_arguments", "参数不是有效的 JSON 对象"))
+				return string(raw), true
+			}
+			// A workspace operation that starts work is limited like handing work over.
+			limited := name
+			if name == "weave_workspace_apply" && workspaceStarts(editObject(args["operation"])) {
+				limited = "weave_work_submit"
+			}
+			if wait := s.mcpThrottle(c, limited); wait != nil {
+				raw, _ := json.Marshal(wait)
 				return string(raw), true
 			}
 			result, failure := tool.Run(call, args)

@@ -101,7 +101,22 @@ make compose-check
 - `GET /v1/development/model-providers` 列出本组织共享的供应方：标识、名称、接口地址、提供的模型，以及是否随部署提供。不返回密钥。
 - `PUT /v1/development/model-providers/:id` 新增或更换一个供应方，提交 `name`、`base_url`、`models` 和 `api_key`。更换时省略 `api_key` 即沿用已保存的密钥；隐藏占位符不能当作新密钥。`base_url` 是兼容OpenAI的接口基址，运行时追加 `/v1/chat/completions`。密钥到达后即加密保存，任何接口都不再返回。随部署提供的供应方和个人的供应方不能在这里修改；一个模型只能由一个组织供应方提供，重复时返回 `409 model_already_provided`，同组织的占用检查与保存共用事务和数据库锁，并发请求只成功一个。
 
+成员怎样运行也用受控修改设置，写法在“成员的引擎与运行设置”一类（`member_settings`），该类说明同时返回可选的模型和节点：
+
+- `member_engine` 更换引擎、执行节点和模型。外部引擎的成员按节点名称指定节点，内置引擎的成员从组织已启用的模型中选；负责人不能更换引擎。
+- `member_limits` 设置执行限制和工具循环轮次，`member_memory` 设置记忆，两者只对内置引擎的成员有效。
+- `member_tools` 禁止成员使用工具，或整体移除成员带有的 MCP 服务、技能库技能、允许和需确认的工具；`member_handoff` 设置允许的交接方式，流程已在用的方式不能取消。
+
 保存受控修改不改变已发布的团队；试跑和发布仍走原来的接口和条件。
+
+### 团队草稿以外的操作
+
+归档团队、刷新业务动作目录，以及运行、执行节点、代码仓库、飞书和客户端会话的操作不属于团队草稿，由“工作区操作”提供，桌面助手与 MCP 入口共用：
+
+- `GET /v1/development/workspace-operations` 列出类别；`GET /v1/development/workspace-operations/:topic` 给出该类每项操作的写法、是否需要确认、当前账号能否办理。
+- `POST /v1/development/workspace-operations` 办理一项操作，请求体为 `{operation, confirmed, interactive, secrets, forge_token}`。每项操作都是以调用者本人的凭据调用管理端已经在用的接口，权限、校验和审计与那些接口一致；节点和代码仓库按名称引用。
+- 不可撤回的操作（归档、移除、停止、收回、更换令牌、创建拉取请求）第一次调用只返回 `confirmation_required` 和后果说明，带 `confirmed: true` 再次调用才办理。
+- 密钥不是操作的字段。操作在 `enter` 里写出要填写的密钥项，服务端向能弹出输入框的调用方（`interactive: true`，即桌面）返回 `needs_input`，由它收取后放在 `secrets` 里重发；操作产生的密钥（节点接入令牌和安装命令）放在 `reveal` 里与结果分开返回，由同一调用方显示。刷新业务动作目录需要本人的 Forge 登录，同样只由桌面提供。非交互的调用方办理这三种操作返回 `409 desktop_only`。
 
 ## 登录密钥
 
@@ -117,6 +132,7 @@ make compose-check
 它不带自己的业务逻辑：每个工具都是以调用者本人的凭据去调用管理端和桌面已经在用的接口，所以校验、权限和审计与那些接口一致。
 
 - 开发团队（需要开发权限）：`weave_team_list`、`weave_development_read`、`weave_development_guide`、`weave_development_apply`、`weave_team_create`、`weave_development_trial`、`weave_development_trial_read`、`weave_development_publish`。草稿和运行按名称呈现；某一类修改的写法用到时再读。
+- 团队草稿以外的操作：`weave_workspace_guide`、`weave_workspace_apply`，对应上文“团队草稿以外的操作”。要填写或显示密钥、或要用到本人 Forge 登录的操作不经这里办理；会让团队开始工作的操作（追加要求、发起代码任务）与交接工作共用每分钟 10 次的限额。
 - 使用团队：`weave_team_search`、`weave_team_describe`、`weave_work_submit`、`weave_work_read`、`weave_work_cancel`。交接的工作不带业务动作授权，材料第一版只接受文本；一件工作只有提交人、管理员和所有者能读取，只有提交人能停止。
 
 凭据有三种，任选其一：

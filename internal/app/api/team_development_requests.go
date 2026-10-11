@@ -210,7 +210,7 @@ func (s *Server) handleApplyTeamDevelopmentOperations(c echo.Context) error {
 	}
 	// An unreadable model list refuses a model choice; every other edit goes ahead.
 	models, _ := s.developmentModels(ctx, ws)
-	changes, err := applyDevelopmentOperationsWith(&d.Document, request.Operations, catalog, models)
+	changes, err := applyDevelopmentOperationsWith(&d.Document, request.Operations, catalog, models, s.developmentRuntimes(ctx, ws)...)
 	var refusal *editError
 	if errors.As(err, &refusal) {
 		return c.JSON(http.StatusUnprocessableEntity, map[string]any{"code": "operation_invalid", "error": refusal.Message, "index": refusal.Index})
@@ -260,18 +260,20 @@ func (s *Server) handleGetDevelopmentOperationTopic(c echo.Context) error {
 		if topic.Topic != c.Param("topic") {
 			continue
 		}
-		if topic.Topic != "member" {
+		if !editOneOf(topic.Topic, "member", "member_settings") {
 			return c.JSON(http.StatusOK, topic)
 		}
-		// The member topic comes with the models a member may be given right now.
-		models, err := s.developmentModels(c.Request().Context(), getTenant(c))
+		// These topics come with the models and nodes a member may be given right now.
+		ctx, ws := c.Request().Context(), getTenant(c)
+		models, err := s.developmentModels(ctx, ws)
 		if err != nil {
 			models = []string{}
 		}
 		return c.JSON(http.StatusOK, struct {
 			developmentOperationTopic
-			Models []string `json:"models"`
-		}{topic, models})
+			Models []string      `json:"models"`
+			Nodes  []editRuntime `json:"nodes"`
+		}{topic, models, s.developmentRuntimes(ctx, ws)})
 	}
 	return workflowError(c, http.StatusNotFound, "operation_topic_not_found", "没有这一类修改")
 }

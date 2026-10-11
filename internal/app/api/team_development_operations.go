@@ -16,10 +16,12 @@ type editSession struct {
 	doc     *developmentDocument
 	catalog []catalogCapability
 	// models are the names the workspace may bind; a choice outside them is refused.
-	models  []string
-	graphs  map[string]editGraph
-	added   map[string]string
-	changes []string
+	models []string
+	// runtimes are the nodes a member on an external engine may be placed on.
+	runtimes []editRuntime
+	graphs   map[string]editGraph
+	added    map[string]string
+	changes  []string
 }
 
 func (e *editSession) note(format string, args ...any) {
@@ -156,6 +158,16 @@ func (e *editSession) apply(operation map[string]any) error {
 		return e.addMember(operation)
 	case "member":
 		return e.changeMember(operation)
+	case "member_engine":
+		return e.changeMemberEngine(operation)
+	case "member_limits":
+		return e.changeMemberLimits(operation)
+	case "member_memory":
+		return e.changeMemberMemory(operation)
+	case "member_tools":
+		return e.changeMemberTools(operation)
+	case "member_handoff":
+		return e.changeMemberHandoff(operation)
 	case "member_remove":
 		target, err := e.member(operation)
 		if err != nil {
@@ -419,7 +431,7 @@ func (e *editSession) chooseModel(target *developmentMember, operation map[strin
 		return false, err
 	}
 	if target.Configuration.Engine != "loom" {
-		return false, editFail("成员“%s”不使用内置引擎，它的模型在 Weave 管理端配置", target.Configuration.DisplayName)
+		return false, editFail("成员“%s”使用外部引擎，它的模型用 member_engine 修改设置", target.Configuration.DisplayName)
 	}
 	if len(e.models) == 0 {
 		return false, editFail("当前组织还没有可用的模型，请先为组织配置模型供应方")
@@ -780,12 +792,13 @@ func applyDevelopmentOperations(doc *developmentDocument, operations []map[strin
 
 // applyDevelopmentOperationsWith applies 1 to 24 controlled edits to doc in
 // place and returns what changed, one line per edit. models are the names a
-// member's model may be chosen from. On error doc must be discarded.
-func applyDevelopmentOperationsWith(doc *developmentDocument, operations []map[string]any, catalog []catalogCapability, models []string) ([]string, error) {
+// member's model may be chosen from and runtimes the nodes it may be placed
+// on. On error doc must be discarded.
+func applyDevelopmentOperationsWith(doc *developmentDocument, operations []map[string]any, catalog []catalogCapability, models []string, runtimes ...editRuntime) ([]string, error) {
 	if len(operations) < 1 || len(operations) > 24 {
 		return nil, editFail("一次须提交 1 至 24 项团队修改")
 	}
-	session := &editSession{doc: doc, catalog: catalog, models: models, graphs: map[string]editGraph{}, added: map[string]string{}}
+	session := &editSession{doc: doc, catalog: catalog, models: models, runtimes: runtimes, graphs: map[string]editGraph{}, added: map[string]string{}}
 	for index, operation := range operations {
 		err := editFail("修改格式无效")
 		if operation != nil {
