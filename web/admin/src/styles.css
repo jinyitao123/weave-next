@@ -101,7 +101,7 @@ a.button { color: inherit; text-decoration: none; }
 .nav__footer { margin-top: auto; display: flex; align-items: center; padding: 8px; }
 /* The gutter is always reserved so a page growing past one screen does not shift sideways. */
 .main { overflow: auto; scrollbar-gutter: stable; }
-.page { max-width: 1120px; margin: 0 auto; padding: 24px 24px 48px; display: grid; gap: 16px; }
+.page { max-width: 1120px; margin: 0 auto; padding: 24px 24px 48px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
 .page__header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 
 .empty { display: grid; justify-items: start; gap: 8px; padding: 32px; border: 1px dashed var(--border-strong); border-radius: var(--radius-lg); }

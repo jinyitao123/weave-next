@@ -5,7 +5,7 @@ import { engineName } from '../../lib/format'
 import type { RuntimeNode } from '../../lib/nodes'
 import { fieldTypes, fieldsProblem, fieldsSchema, schemaFields, type OutputField } from '../../lib/output-format'
 import { CatalogRefresh } from '../team/CatalogRefresh'
-import { bindingSourceLabel, capabilityName, defaultCapabilityBinding, describeCapability, handoffKinds, isCLIEngine, loadModelCatalog, memberProblems, memberSteps, newMember, parseOutputSchema, requiredHandoffKinds, toolLoopLimits, type BusinessCatalog, type CatalogCapability, type DevelopmentDocument, type DevelopmentMember, type MemberConfiguration, type MemberRelationship, type MemberSkill } from '../../lib/teams'
+import { bindingSourceLabel, capabilityName, capabilityNote, defaultCapabilityBinding, describeCapability, handoffKinds, isCLIEngine, loadModelCatalog, memberProblems, memberSteps, newMember, parseOutputSchema, requiredHandoffKinds, toolLoopLimits, type BusinessCatalog, type CatalogCapability, type DevelopmentDocument, type DevelopmentMember, type MemberConfiguration, type MemberRelationship, type MemberSkill } from '../../lib/teams'
 import './members.css'
 
 const engines = ['claude', 'codex', 'opencode', 'loom']
@@ -208,7 +208,7 @@ function AbilityPanel({ part, member, cli, catalog, onConfig, onCatalog }: { par
         return <li key={id} className="members__action">
           <div className="members__action-main">
             <strong>{title}</strong>
-            {known?.description ? <span className="muted small">{known.description}</span> : null}
+            {capabilityNote(title, known?.description) ? <span className="muted small">{known?.description}</span> : null}
             {mapped.length ? <span className="members__chips">{mapped.map((parameter) => <span key={parameter.name} className="members__chip">{parameterName(parameter.name)}：取自{bindingSourceLabel(parameter.source)}</span>)}</span> : null}
             {removing === id ? <div className="members__confirm" role="alertdialog" aria-label={`确认移除 ${title}`}>
               <span>移除后，这个成员不能再办理“{title}”。</span>
@@ -256,7 +256,7 @@ function AbilityPanel({ part, member, cli, catalog, onConfig, onCatalog }: { par
     {picking ? <Dialog title="添加业务动作" onClose={() => setPicking(false)}>
       <ul className="members__catalog">{addable.map((capability) => <li key={capability.id}>
         <button type="button" className="members__catalog-item" onClick={() => addAction(capability)}>
-          <span className="members__action-main"><strong>{capability.name || describeCapability(capability.id).action}</strong>{capability.description ? <span className="muted small">{capability.description}</span> : null}</span>
+          <span className="members__action-main"><strong>{capability.name || describeCapability(capability.id).action}</strong>{capabilityNote(capability.name, capability.description) ? <span className="muted small">{capability.description}</span> : null}</span>
           <Badge tone={capability.effect === 'write' ? 'warning' : 'neutral'}>{capability.effect === 'write' ? '会写入' : '只读取'}</Badge>
         </button>
       </li>)}</ul>

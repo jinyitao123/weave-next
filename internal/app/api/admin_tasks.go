@@ -204,14 +204,25 @@ func (s *Server) queryAdminTasks(c echo.Context, pool *pgxpool.Pool, query admin
 	return tasks, rows.Err()
 }
 
-// adminTaskTitle uses the first line of the submitted task text. Inputs that
-// are structured rather than text yield "" and the page names the team instead.
+// adminTaskTitle uses the first line of the submitted task text. Work handed
+// over from the desktop arrives as an envelope whose goal is what the employee
+// asked for. Inputs that are structured rather than text yield "" and the page
+// names the team instead.
 func adminTaskTitle(input []byte) string {
 	var text string
 	if len(input) == 0 || json.Unmarshal(input, &text) != nil {
 		return ""
 	}
 	text = strings.TrimSpace(text)
+	if strings.HasPrefix(text, "{") {
+		var envelope struct {
+			Goal string `json:"goal"`
+		}
+		if json.Unmarshal([]byte(text), &envelope) != nil || strings.TrimSpace(envelope.Goal) == "" {
+			return ""
+		}
+		text = strings.TrimSpace(envelope.Goal)
+	}
 	if line, _, found := strings.Cut(text, "\n"); found {
 		text = strings.TrimSpace(line)
 	}
