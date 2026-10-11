@@ -105,6 +105,24 @@ func (s *Store) UpsertRevision(
 	workspaceID string,
 	cfg llmrouter.ProviderConfig,
 ) (ProviderRevisionResult, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return ProviderRevisionResult{}, fmt.Errorf("begin ProviderRevision upsert: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	result, err := s.UpsertRevisionTx(ctx, tx, workspaceID, cfg)
+	if err != nil {
+		return ProviderRevisionResult{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return ProviderRevisionResult{}, fmt.Errorf("commit ProviderRevision upsert: %w", err)
+	}
+	return result, nil
+}
+
+// UpsertRevisionTx reuses credential ownership, sealing and revision rules in
+// the caller's transaction. The caller must roll back on error and commit on success.
+func (s *Store) UpsertRevisionTx(ctx context.Context, tx pgx.Tx, workspaceID string, cfg llmrouter.ProviderConfig) (ProviderRevisionResult, error) {
 	normalized, err := normalizeProviderConfig(workspaceID, cfg)
 	if err != nil {
 		return ProviderRevisionResult{}, err
@@ -123,12 +141,6 @@ func (s *Store) UpsertRevision(
 	if err != nil {
 		return ProviderRevisionResult{}, fmt.Errorf("seal empty provider credential: %w", err)
 	}
-
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return ProviderRevisionResult{}, fmt.Errorf("begin ProviderRevision upsert: %w", err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
 
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO weave_provider_credentials (
@@ -238,9 +250,6 @@ func (s *Store) UpsertRevision(
 	head.Models = append([]string(nil), normalized.Models...)
 	head.JSONObjectMode = normalized.JSONObjectMode
 	head.LatestRevision = nextRevision
-	if err := tx.Commit(ctx); err != nil {
-		return ProviderRevisionResult{}, fmt.Errorf("commit ProviderRevision upsert: %w", err)
-	}
 	return ProviderRevisionResult{
 		Head:     head,
 		Revision: revision,

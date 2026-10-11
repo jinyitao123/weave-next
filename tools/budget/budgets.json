@@ -1107,6 +1107,44 @@
         "lines_added": 846,
         "production_lines_added": 496
       }
+    },
+    {
+      "date": "2026-10-11",
+      "reason": "Let the people who build teams give their workspace a model, as the owner decided on 2026-10-11 (decision 008 in the product repository: whatever the person signed in to the desktop may do in Weave is finished there; administrators and developers may add or replace the organization's models). Until now a shared model could only come from a provider configured in the deployment and switched on by an administrator, so a workspace without one could not be given a model from where its teams are built. A developer or administrator now lists the shared providers and adds or replaces one that was added this way: a name, an address, the model names it serves and a key. The key is sealed by the existing credential store under a workspace-service reference authorized for exactly that provider, is kept when a later change leaves it out, and is returned by no route; a provider that came with the deployment or belongs to one person is not touched, and a model already served by another shared provider is refused so the choice at run time stays unambiguous. No new packages or dependencies, no change to the credential store or to how a run resolves a model.",
+      "record": "README.zh-CN.md#受控修改与草稿待办",
+      "growth": {
+        "lines": 167,
+        "production_lines": 167
+      },
+      "deletion_trigger": "Remove the two model-provider routes when a recorded decision returns shared model credentials to deployment configuration only, or moves them to an identity or secret service outside Weave. Lower the measured budgets in that change.",
+      "app": {
+        "previous_lines": 84914,
+        "previous_production_lines": 58098,
+        "lines_added": 167,
+        "production_lines_added": 167
+      }
+    },
+    {
+      "date": "2026-10-11",
+      "reason": "Verify organization provider permissions, isolation, sealed and retained secrets, configured model requests, and concurrent model claims with real PostgreSQL. Reject masked key placeholders and serialize workspace model claims while reusing the existing credential sealing and immutable revision operation in the same transaction. No new packages, dependencies or runtime loops.",
+      "record": "README.zh-CN.md#受控修改与草稿待办",
+      "growth": {
+        "lines": 222,
+        "production_lines": 21
+      },
+      "deletion_trigger": "Remove the model-provider endpoint regressions and its workspace claim transaction when decision 008 organization provider configuration is retired or moves to an external identity or secret service; remove the transaction overload once no atomic credential caller remains, lowering measured budgets in that change.",
+      "kernel": {
+        "previous_lines": 104891,
+        "previous_production_lines": 83351,
+        "lines_added": 9,
+        "production_lines_added": 9
+      },
+      "app": {
+        "previous_lines": 85081,
+        "previous_production_lines": 58265,
+        "lines_added": 213,
+        "production_lines_added": 12
+      }
     }
   ],
   "migration_targets": {
@@ -1150,8 +1188,8 @@
     ]
   },
   "kernel": {
-    "lines": 104891,
-    "production_lines": 83351,
+    "lines": 104900,
+    "production_lines": 83360,
     "packages": 48,
     "external_dependencies": 5,
     "allowed_dependencies": [
@@ -1170,8 +1208,8 @@
     "allowed_dependencies": []
   },
   "app": {
-    "lines": 84914,
-    "production_lines": 58098,
+    "lines": 85294,
+    "production_lines": 58277,
     "packages": 25,
     "external_dependencies": 6,
     "allowed_dependencies": [

@@ -422,7 +422,7 @@ func (e *editSession) chooseModel(target *developmentMember, operation map[strin
 		return false, editFail("成员“%s”不使用内置引擎，它的模型在 Weave 管理端配置", target.Configuration.DisplayName)
 	}
 	if len(e.models) == 0 {
-		return false, editFail("当前组织还没有可用的模型，请管理员先在 Weave 管理端配置")
+		return false, editFail("当前组织还没有可用的模型，请先为组织配置模型供应方")
 	}
 	for _, available := range e.models {
 		if available == model {
