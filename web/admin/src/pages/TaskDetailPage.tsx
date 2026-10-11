@@ -12,8 +12,8 @@ import { FollowUpComposer, TaskThread } from './TaskThread'
 import { LogViewer } from './LogViewer'
 import { readDevelopment } from '../lib/teams'
 import {
-  duration, executionLabel, failureText, readQueue, subscribeTask, waitText, type TaskWait, executionTone, readActivity, readTask, retryStage, sourceLabel, stageLabel, stopTask, terminal, verificationLabel,
-  type Activity, type ActivityMember, type MemberStage, type TaskSummary,
+  duration, executionLabel, failureText, readQueue, subscribeTask, waitText, type TaskWait, executionTone, readActivity, readTask, readTaskOutput, retryStage, sourceLabel, stageLabel, stopTask, terminal, verificationLabel,
+  type Activity, type ActivityMember, type MemberStage, type SavedOutput, type TaskSummary,
 } from '../lib/tasks'
 
 interface FlatStage { member: ActivityMember; stage: MemberStage; key: string }
@@ -121,11 +121,14 @@ export function TaskDetailPage({ runId, navigate }: { runId: string; navigate(pa
     }
   }
 
+  // Until the run has loaded there is nothing to call it; only a trial is titled by its team.
+  const heading = task?.title || task?.team_name || (trial ? trialTeam ? `${trialTeam} · 试跑结果` : '试跑结果' : '')
+
   return <section className="page page--wide">
     <header className="task-header">
       <button type="button" className="icon-button" aria-label={backLabel} disabled={!activity && !task} onClick={() => navigate(backPath)}><ArrowLeft size={16} /></button>
       <div className="task-header__title">
-        <h1>{task?.title || task?.team_name || (trialTeam ? `${trialTeam} · 试跑结果` : '试跑结果')}</h1>
+        <h1 title={heading}>{heading}</h1>
         <p className="muted small">{task ? [task.team_name || '团队', `第 ${task.workflow_version} 版`, sourceLabel(task.source), task.actor, relativeTime(task.created_at)].filter(Boolean).join(' · ') : ''}{code ? <> · <CodeSummary code={code} /></> : null}</p>
       </div>
       {activity ? <div className="task-header__state">
@@ -198,7 +201,27 @@ function StageOutput({ runId, version, logStream, item, busy, onRetry }: { runId
     </details> : null}
     {stage.outputs?.length ? <div className="stack">{stage.outputs.map((output, index) => <div key={`${output.path ?? output.kind}:${index}`} className="artifact">
       <ResultContent content={output.content} label={output.path || '结果'} detail={`${output.content_bytes} 字节${output.truncated ? ' · 已截断' : ''}`} />
-    </div>)}</div> : null}
+    </div>)}</div> : stage.output_refs?.length ? <SavedOutputs key={stage.output_refs.join()} runId={runId} refs={stage.output_refs} /> : null}
+  </div>
+}
+
+// A published run keeps each step's result as a saved record; trial runs carry theirs inline.
+function SavedOutputs({ runId, refs }: { runId: string; refs: string[] }) {
+  const [outputs, setOutputs] = useState<SavedOutput[]>()
+  const [missing, setMissing] = useState(0)
+  const load = useCallback(() => {
+    void Promise.allSettled(refs.map((id) => readTaskOutput(runId, id))).then((results) => {
+      setOutputs(results.flatMap((result) => result.status === 'fulfilled' ? [result.value] : []))
+      setMissing(results.filter((result) => result.status === 'rejected').length)
+    })
+  }, [runId, refs])
+  useEffect(load, [load])
+  if (!outputs) return <p className="muted">正在读取结果…</p>
+  return <div className="stack">
+    {outputs.map((output) => <div key={output.id} className="artifact">
+      <ResultContent content={output.content} label="结果" detail={`${output.content_bytes} 字节${output.truncated ? ' · 已截断' : ''}`} />
+    </div>)}
+    {missing ? <InlineError message={outputs.length ? `另有 ${missing} 项结果暂时读取不到` : '这一步的结果暂时读取不到'} onRetry={load} /> : null}
   </div>
 }
 

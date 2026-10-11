@@ -319,10 +319,14 @@ func (s *Server) registerRoutes() {
 	userStoreGetter := func() *users.Store { return s.UserStore }
 
 	// Authenticated endpoints.
-	auth := authenticatedRouteGroup(s.Echo, "/v1", AuthMiddleware(s.Config.JWTSecret, keyStoreGetter, userStoreGetter))
+	if s.Config.LoginKeyDefault {
+		slog.Warn("the login key is the default \"admin\"; set WEAVE_LOGIN_KEY for this deployment")
+	}
+	auth := authenticatedRouteGroup(s.Echo, "/v1", s.loginKeyMiddleware(), AuthMiddleware(s.Config.JWTSecret, keyStoreGetter, userStoreGetter))
 	auth.GET("/integrations/feishu/binding", s.handleFeishuBinding)
 	auth.POST("/integrations/feishu/link-code", s.handleFeishuLinkCode)
 	auth.DELETE("/integrations/feishu/binding", s.handleFeishuUnlink)
+	auth.POST("/mcp", s.handleMCPEntry)
 	adminScope := RequireScope("admin")
 	agentsScope := RequireScope("agents")
 	chatScope := RequireScope("chat")
@@ -338,6 +342,7 @@ func (s *Server) registerRoutes() {
 	auth.POST("/admin/tasks", s.handleSubmitAdminTask, consoleAccess, orgScope, chatScope)
 	auth.GET("/admin/tasks/:id/code", s.handleGetAdminTaskCode, consoleAccess, runsScope)
 	auth.GET("/admin/tasks/:id/evidence", s.handleExportAdminTaskEvidence, consoleAccess, runsScope)
+	auth.GET("/admin/tasks/:id/outputs/:output", s.handleGetAdminTaskOutput, consoleAccess, runsScope)
 	auth.POST("/admin/tasks/:id/follow-ups", s.handleSubmitFollowUp, consoleAccess, orgScope, chatScope)
 	auth.POST("/admin/tasks/:id/pull-request", s.handleCreatePullRequest, consoleAccess, orgScope, chatScope)
 	auth.GET("/admin/tasks/:id/thread", s.handleGetTaskThread, consoleAccess, runsScope)
@@ -398,6 +403,7 @@ func (s *Server) registerRoutes() {
 	auth.GET("/teams/:id/development", s.handleGetTeamDevelopment, RequireAnyRole("developer", "admin", "owner"), orgScope)
 	auth.PUT("/teams/:id/development", s.handleSaveTeamDevelopment, RequireAnyRole("developer", "admin", "owner"), orgScope)
 	auth.POST("/teams/:id/development/operations", s.handleApplyTeamDevelopmentOperations, RequireAnyRole("developer", "admin", "owner"), orgScope)
+	auth.POST("/development/teams", s.handleCreateDevelopmentTeam, RequireAnyRole("developer", "admin", "owner"), orgScope)
 	auth.GET("/development/operations", s.handleListDevelopmentOperations, RequireAnyRole("developer", "admin", "owner"), orgScope)
 	auth.GET("/development/operations/:topic", s.handleGetDevelopmentOperationTopic, RequireAnyRole("developer", "admin", "owner"), orgScope)
 	auth.POST("/teams/:id/development/trials", s.handleTrialTeamDevelopment, RequireAnyRole("developer", "admin", "owner"), orgScope)

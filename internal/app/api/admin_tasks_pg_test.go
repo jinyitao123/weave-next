@@ -8,6 +8,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/google/uuid"
+	"github.com/jinyitao123/weave/internal/base/deliverable"
 	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/labstack/echo/v4"
 )
@@ -123,6 +125,57 @@ func TestAdminTaskListShowsReadableTasksWithinRunVisibilityRealPG(t *testing.T) 
 		read("user", "admin", "desktop-run") != http.StatusOK || read("user-b", "developer", "desktop-run") != http.StatusNotFound || read("user-a", "member", "desktop-run") != http.StatusOK {
 		t.Fatal("single task read does not follow list visibility")
 	}
+	// Work handed over from the desktop is titled by its goal, not by its envelope.
+	if got := adminTaskTitle([]byte(`"{\"goal\":\"核对报价草稿\\n逐行说明差异\",\"materialHandling\":\"按原件\"}"`)); got != "核对报价草稿" {
+		t.Fatalf("envelope title = %q", got)
+	}
+	if got := adminTaskTitle([]byte(`"{\"materials\":[]}"`)); got != "" {
+		t.Fatalf("envelope without a goal = %q", got)
+	}
+
+	// The result of a step is read by whoever may read the run, and a read of
+	// someone else's result is recorded.
+	server.Deliverables = deliverable.New(pool)
+	if _, err := pool.Exec(ctx, `INSERT INTO weave_final_deliverables(id,workspace_id,user_id,lead_avatar_id,session_id,event_id,run_id,run_snapshot_id,title,content,content_type,metadata)
+		VALUES('step-result','ws','user-a','lead','session-a',$1,$2,$2,'阶段产物 · 核对','逐行核对完成，合计一致。','text/markdown','{"artifact_kind":"stage"}'::jsonb)`, uuid.NewString(), theirs.RunID); err != nil {
+		t.Fatal(err)
+	}
+	output := func(user, role, runID, id string) (int, map[string]any) {
+		t.Helper()
+		recorder := httptest.NewRecorder()
+		c := echo.New().NewContext(httptest.NewRequest(http.MethodGet, "/", nil), recorder)
+		c.SetParamNames("id", "output")
+		c.SetParamValues(runID, id)
+		c.Set("tenant", "ws")
+		c.Set("user_id", user)
+		c.Set("roles", []string{role})
+		if err := server.handleGetAdminTaskOutput(c); err != nil {
+			t.Fatal(err)
+		}
+		var body map[string]any
+		_ = json.Unmarshal(recorder.Body.Bytes(), &body)
+		return recorder.Code, body
+	}
+	if code, body := output("user", "admin", theirs.RunID, "step-result"); code != http.StatusOK || body["content"] != "逐行核对完成，合计一致。" || body["truncated"] != false || body["content_type"] != "text/markdown" {
+		t.Fatalf("admin reads a step result = %d %v", code, body)
+	}
+	if code, _ := output("user-a", "member", theirs.RunID, "step-result"); code != http.StatusOK {
+		t.Fatalf("submitter reads their own step result = %d", code)
+	}
+	for name, code := range map[string]int{
+		"another run's result":  first(output("user", "admin", mine.RunID, "step-result")),
+		"unknown result":        first(output("user", "admin", theirs.RunID, "missing")),
+		"developer, not theirs": first(output("user-b", "developer", theirs.RunID, "step-result")),
+	} {
+		if code != http.StatusNotFound {
+			t.Errorf("%s = %d", name, code)
+		}
+	}
+	var views int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM weave_run_view_audit WHERE workspace_id='ws' AND run_id=$1 AND surface='output'`, theirs.RunID).Scan(&views); err != nil || views != 1 {
+		t.Fatalf("output views recorded = %d %v", views, err)
+	}
+
 	if code, _ := list("user", "admin", "?filter=unknown"); code != http.StatusBadRequest {
 		t.Fatalf("unknown filter = %d", code)
 	}
@@ -136,3 +189,5 @@ func TestAdminTaskListShowsReadableTasksWithinRunVisibilityRealPG(t *testing.T) 
 		t.Fatalf("bad cursor = %d", code)
 	}
 }
+
+func first(code int, _ map[string]any) int { return code }

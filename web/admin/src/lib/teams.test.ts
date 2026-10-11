@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { allowRequiredHandoffKinds, capabilityName, defaultCapabilityBinding, describeCapability, memberProblems, nodeReadinessIssues, parseOutputSchema, requiredHandoffKinds, trialActions, workflowCapabilityIds, type BusinessCatalog, type DevelopmentDocument, type DevelopmentMember, type DevelopmentWorkflow } from './teams'
+import { allowRequiredHandoffKinds, capabilityName, capabilityNote, defaultCapabilityBinding, describeCapability, memberProblems, nodeReadinessIssues, parseOutputSchema, requiredHandoffKinds, trialActions, workflowCapabilityIds, type BusinessCatalog, type DevelopmentDocument, type DevelopmentMember, type DevelopmentWorkflow } from './teams'
 
 const member = (name: string, engine: string, runtime = '', enabled = true): DevelopmentMember => ({
   id: name,
@@ -123,5 +123,13 @@ describe('trial actions and handoff kinds', () => {
     expect(next.members[0].relationship.allowed_kinds).toEqual(['consult', 'dispatch'])
     expect(next.members[1]).toBe(team.members[1])
     expect(allowRequiredHandoffKinds(next)).toBe(next)
+  })
+})
+
+describe('what a catalog entry adds to its name', () => {
+  it('drops a description that only repeats the name', () => {
+    expect(capabilityNote('读取旧版提交回执', ' 读取旧版提交回执 ')).toBe('')
+    expect(capabilityNote('转为商机', '确认后会将线索转为客户档案和销售商机。')).toBe('确认后会将线索转为客户档案和销售商机。')
+    expect(capabilityNote('转为商机', undefined)).toBe('')
   })
 })

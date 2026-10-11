@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"crypto/hmac"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
@@ -190,4 +191,48 @@ func handleMCPProtocolRequest(
 	default:
 		return c.JSON(http.StatusOK, result.Response)
 	}
+}
+
+// weaveTools serves Weave's own tools through the shared MCP adapter.
+type weaveTools struct {
+	tools []mcpEntryTool
+	call  func(name, arguments string) (string, bool)
+}
+
+func (w weaveTools) ListTools(context.Context) ([]contract.ToolDef, error) {
+	defs := make([]contract.ToolDef, len(w.tools))
+	for i, tool := range w.tools {
+		defs[i] = contract.ToolDef{Name: tool.Name, Description: tool.Description, InputSchema: tool.Schema}
+	}
+	return defs, nil
+}
+
+func (w weaveTools) Dispatch(_ context.Context, call contract.ToolCall) (*contract.ToolResult, error) {
+	content, failed := w.call(call.Name, call.Args)
+	return &contract.ToolResult{CallID: call.ID, Content: content, IsError: failed, ToolName: call.Name}, nil
+}
+
+// serveWeaveTools answers one MCP request. What a tool reports as an error is
+// its answer to the caller, so it is passed on as written.
+func serveWeaveTools(c echo.Context, tools []mcpEntryTool, instructions string, call func(name, arguments string) (string, bool)) error {
+	request, err := mcpprotocol.Decode(c.Request().Body)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid JSON-RPC request"})
+	}
+	if request.Method == "ping" {
+		return c.JSON(http.StatusOK, map[string]any{"jsonrpc": "2.0", "id": json.RawMessage(request.ID), "result": map[string]any{}})
+	}
+	result, err := (mcpprotocol.Adapter{
+		Dispatcher: weaveTools{tools: tools, call: call}, ServerName: "weave", Instructions: instructions,
+		UnsupportedMethodMessage: "method not supported",
+	}).Handle(c.Request().Context(), request)
+	switch {
+	case errors.Is(err, mcpprotocol.ErrInvalidCallParams):
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid tools/call params"})
+	case err != nil:
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "tool call failed"})
+	case result.Notification:
+		return c.NoContent(http.StatusAccepted)
+	}
+	return c.JSON(http.StatusOK, result.Response)
 }

@@ -81,7 +81,7 @@ make compose-check
 
 ## 管理端查看运行与刷新目录
 
-管理员和所有者在管理端的运行页读取本工作区全部团队运行，包括员工从桌面、飞书发起的任务；开发者只读取本人提交的。读取他人运行的活动或导出证据时，在 `weave_run_view_audit` 记录查看人、角色、运行和时间，不记录内容；同一查看人、同一运行、同一入口一小时内只记一条。追加要求和创建合并请求仍只限提交者本人，停止与重试沿用运行自身的归属判断。
+管理员和所有者在管理端的运行页读取本工作区全部团队运行，包括员工从桌面、飞书发起的任务；开发者只读取本人提交的。每一步产出的结果经 `GET /v1/admin/tasks/:id/outputs/:output` 按需读取，单项最多返回 256 KiB。读取他人运行的活动、步骤结果或导出证据时，在 `weave_run_view_audit` 记录查看人、角色、运行和时间，不记录内容；同一查看人、同一运行、同一入口一小时内只记一条。追加要求和创建合并请求仍只限提交者本人，停止与重试沿用运行自身的归属判断。
 
 `POST /v1/development/business-capabilities/refresh` 让开发者主动刷新业务能力目录快照：浏览器用当前登录人重新取得的一次性 Forge 会话调用，服务端核对它与当前管理端会话是同一账号后同步读取目录并替换快照；读取失败保留旧快照。
 
@@ -91,6 +91,25 @@ make compose-check
 
 - `GET /v1/development/operations` 列出可修改的类别，每类一行；`GET /v1/development/operations/:topic` 给出该类每种修改的说明和例子。调用方用到哪类再读哪类。
 - `POST /v1/teams/:id/development/operations` 提交 1 至 24 项修改，带 `expected_revision` 和 `request_id`。任何一项不合法时整组不保存，并指出是第几项；`dry_run` 只返回会带来的变化，不写入。保存过的请求按 `request_id` 记在 `weave_team_development_requests`（操作人、修订前后、各类修改的数量和逐项说明，不含修改内容），同一请求重发返回首次结果，同一标识换了内容返回冲突。
+- `POST /v1/development/teams` 按 `request_id` 新建一个业务团队：负责人、一位业务办理员和基础流程，返回团队和草稿修订。同一请求重发返回同一个团队；中途失败后重发会接着已建好的部分完成，不会多建。代码团队仍在管理端新建。
 - `GET /v1/teams/:id/development` 多返回 `issues`：草稿还差什么、挡住试跑还是发布，或只是建议。例如成员带业务动作而流程没有选定必须办成的动作、流程说明为空。
 
 保存受控修改不改变已发布的团队；试跑和发布仍走原来的接口和条件。
+
+## 登录密钥
+
+管理端登录页提供两种方式：账号登录（已接入 Forge 等账号系统时）和密钥登录。密钥登录除了接受签发的 API Key，还接受部署时设置的登录密钥：`WEAVE_LOGIN_KEY`。持有它的人以工作区管理员身份进入管理端，也可以把它作为 `Authorization: Bearer` 凭据调用 MCP 入口和其他接口。
+
+- 没有设置 `WEAVE_LOGIN_KEY` 时，登录密钥是默认值 `admin`，从任何地方都可以使用。此时服务启动日志、登录页和登录后的每个页面都会提醒正在使用默认密钥。公网可达的部署应当设置自己的密钥。
+- 登录密钥代表的管理员是 `WEAVE_LOGIN_WORKSPACE` 指定工作区里最早的管理员；没有指定时取整个部署里最早的管理员。还没有管理员的部署不能用登录密钥登录，需要先完成初始化。
+- 登录密钥不保存在数据库里，改动环境变量并重启后立即生效，旧密钥随即失效。
+## MCP 入口
+
+`POST /v1/mcp` 让外部智能体（编码助手、客户自有的智能体）开发和使用团队。传输为 JSON-RPC，提供 `initialize`、`tools/list`、`tools/call`；凭据与其他接口相同，放在 `Authorization: Bearer` 里。
+
+它不带自己的业务逻辑：每个工具都是以调用者本人的凭据去调用管理端和桌面已经在用的接口，所以校验、权限和审计与那些接口一致。
+
+- 开发团队（需要开发权限）：`weave_team_list`、`weave_development_read`、`weave_development_guide`、`weave_development_apply`、`weave_team_create`、`weave_development_trial`、`weave_development_trial_read`、`weave_development_publish`。草稿和运行按名称呈现；某一类修改的写法用到时再读。
+- 使用团队：`weave_team_search`、`weave_team_describe`、`weave_work_submit`、`weave_work_read`、`weave_work_cancel`。交接的工作不带业务动作授权，材料第一版只接受文本；一件工作只有提交人、管理员和所有者能读取，只有提交人能停止。
+
+面向 MCP 客户端的浏览器登录和会话管理尚未实现。

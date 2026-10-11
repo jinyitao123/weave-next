@@ -101,6 +101,9 @@ func (s *Server) handleAdminConfig(c echo.Context) error {
 		methods = append([]string{"forge"}, methods...)
 	}
 	response := map[string]any{"sign_in_methods": methods, "secure": adminRequestSecure(c.Request())}
+	if s.Config != nil && s.Config.LoginKeyDefault {
+		response["default_key"] = true
+	}
 	if forge != "" {
 		response["forge_origin"] = forge
 	}
@@ -117,6 +120,8 @@ type adminSessionView struct {
 	Role      string    `json:"role"`
 	Source    string    `json:"source"`
 	ExpiresAt time.Time `json:"expires_at"`
+	// DefaultKey marks a session opened with the default login key.
+	DefaultKey bool `json:"default_key,omitempty"`
 }
 
 func (s *Server) handleCreateAdminSession(c echo.Context) error {
@@ -129,6 +134,14 @@ func (s *Server) handleCreateAdminSession(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "exactly one credential is required"})
 	}
 	expiresAt := time.Now().Add(adminSessionTTL)
+	if s.isLoginKey(request.APIKey) {
+		token, user, err := s.loginKeySession(c.Request().Context(), time.Until(expiresAt))
+		if err != nil {
+			return c.JSON(http.StatusUnauthorized, map[string]string{"error": "这个部署还没有管理员，请先完成初始化"})
+		}
+		s.setAdminSessionCookie(c, token, expiresAt)
+		return c.JSON(http.StatusOK, adminSessionView{Name: user.Name, Role: "admin", Source: "api_key", ExpiresAt: expiresAt, DefaultKey: s.Config.LoginKeyDefault})
+	}
 	if request.APIKey != "" {
 		if !strings.HasPrefix(request.APIKey, "wv_sk_") {
 			return c.JSON(http.StatusUnauthorized, map[string]string{"error": "invalid api key"})
@@ -198,11 +211,11 @@ func (s *Server) setAdminSessionCookie(c echo.Context, credential string, expire
 // handleGetAdminSession reports who the current console session belongs to.
 // It is registered behind the ordinary authentication middleware.
 func (s *Server) handleGetAdminSession(c echo.Context) error {
-	view := adminSessionView{Role: firstRole(c), Source: "forge"}
+	view := adminSessionView{Role: firstRole(c), Source: "forge", DefaultKey: s.defaultLoginKeySession(c)}
 	if c.Get(authSourceContextKey) == authSourceAPIKey {
 		view.Source = "api_key"
 		view.Name, _ = c.Get(apiKeyNameContextKey).(string)
-	} else if source, _ := c.Get(identitySourceContextKey).(string); source == adminAPIKeyIdentitySource {
+	} else if source, _ := c.Get(identitySourceContextKey).(string); source == adminAPIKeyIdentitySource || source == loginKeyIdentitySource {
 		view.Source = "api_key"
 	} else if source != "forge" {
 		view.Source = "session"
