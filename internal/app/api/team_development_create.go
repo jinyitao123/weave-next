@@ -12,7 +12,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jinyitao123/loom/stdlib"
 	"github.com/labstack/echo/v4"
 
 	org "github.com/jinyitao123/weave/internal/kernel/orgspec"
@@ -112,7 +111,8 @@ func (s *Server) starterAgent(ctx context.Context, ws, name, displayName, role, 
 	if existing, err := s.Registry.Get(ctx, ws, name); err == nil && existing != nil {
 		return existing.ID, nil
 	}
-	record := registry.AgentRecord{Name: name, DisplayName: displayName, Role: role, Engine: "loom", Model: model, GraphType: "standard", Spec: stdlib.AgentSpec{SystemPrompt: prompt}}
+	record := registry.AgentRecord{Name: name, DisplayName: displayName, Role: role, Engine: "loom", Model: model, GraphType: "standard"}
+	record.Spec.SystemPrompt = prompt
 	if err := s.Registry.Put(ctx, ws, &record); err != nil {
 		return "", err
 	}
