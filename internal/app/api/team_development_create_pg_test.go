@@ -27,7 +27,7 @@ func TestDevelopmentTeamIsCreatedOncePerRequestRealPG(t *testing.T) {
 	if _, err := pool.Exec(ctx, `INSERT INTO weave_workspaces(id,slug,name) VALUES('create-workspace','create-workspace','Create'); INSERT INTO weave_users(id,tenant_id,username,password,role) VALUES('developer','create-workspace','developer','unused','admin')`); err != nil {
 		t.Fatal(err)
 	}
-	server := &Server{Pool: pool, Registry: agentcatalog.New(pool), OrgStore: orgstore.NewStore(pool)}
+	server := &Server{Pool: pool, Store: teamDispatchPoolStore{pool: pool}, Registry: agentcatalog.New(pool), OrgStore: orgstore.NewStore(pool)}
 	call := func(method string, body any, handler echo.HandlerFunc, teamID string) (int, map[string]any) {
 		t.Helper()
 		raw, _ := json.Marshal(body)
