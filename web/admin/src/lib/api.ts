@@ -37,6 +37,8 @@ export interface AdminConfig {
   sign_in_methods: Array<'forge' | 'api_key'>
   forge_origin?: string
   secure: boolean
+  /** No key was set for this deployment, so the well-known default is in force. */
+  default_key?: boolean
 }
 
 export interface AdminSession {
@@ -44,6 +46,8 @@ export interface AdminSession {
   role: 'member' | 'developer' | 'admin' | string
   source: 'forge' | 'api_key' | 'session'
   expires_at?: string
+  /** The session was opened with the default key. */
+  default_key?: boolean
 }
 
 export const readConfig = () => api<AdminConfig>('/v1/admin/config')

@@ -64,4 +64,24 @@ describe('result return navigation', () => {
     fireEvent.click(screen.getByRole('button', { name: '代码任务' }))
     expect(Array.from(nav.querySelectorAll('.nav__item')).map((item) => item.textContent)).toEqual(['团队', '运行', '集成', '代码仓库', '节点'])
   })
+
+  it('reminds whoever signed in with the default key on every page, and nobody else', async () => {
+    vi.mocked(api).mockImplementation(async (path) => {
+      if (path === '/v1/admin/tasks') return { tasks: [] }
+      if (path === '/v1/runtimes') return { runtimes: [] }
+      if (path === '/v1/environments') return { environments: [] }
+      if (String(path).startsWith('/v1/teams')) return []
+      throw new ApiError(404, 'not_found')
+    })
+    const shown = render(<Shell session={{ name: '管理员', role: 'admin', source: 'api_key', default_key: true }} onSignOut={vi.fn()} />)
+    await screen.findByRole('heading', { name: '团队' })
+    expect(screen.getByRole('status').textContent).toContain('默认密钥')
+    fireEvent.click(screen.getByRole('button', { name: '运行' }))
+    await screen.findByRole('heading', { name: '运行' })
+    expect(screen.getByRole('status').textContent).toContain('默认密钥')
+    shown.unmount()
+    render(<Shell session={{ name: '管理员', role: 'admin', source: 'api_key' }} onSignOut={vi.fn()} />)
+    await screen.findByRole('heading', { name: '运行' })
+    expect(screen.queryByText(/默认密钥/)).toBeNull()
+  })
 })

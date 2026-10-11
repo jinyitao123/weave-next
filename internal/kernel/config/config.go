@@ -26,6 +26,14 @@ type Config struct {
 	// AdminForgeURL is the browser-facing Forge origin the admin console signs
 	// in against; empty leaves only operator API key sign-in.
 	AdminForgeURL string // WEAVE_ADMIN_FORGE_URL
+	// LoginKey signs its holder in as the workspace administrator on the
+	// console and the MCP entry. Unset, it is "admin" and LoginKeyDefault is
+	// true, which the console shows on every page.
+	LoginKey        string // WEAVE_LOGIN_KEY
+	LoginKeyDefault bool
+	// LoginWorkspace names the workspace the login key signs in to; unset, the
+	// deployment's first administrator decides.
+	LoginWorkspace string // WEAVE_LOGIN_WORKSPACE
 
 	// CORS settings.
 	CORSOrigins string // CORS_ORIGINS — comma-separated allowed origins; "*" for dev (default when DevMode)
@@ -125,6 +133,8 @@ func Load() (*Config, error) {
 		ForgeSessionURL:          strings.TrimSpace(os.Getenv("WEAVE_FORGE_SESSION_URL")),
 		ForgeDefaultWorkspace:    strings.TrimSpace(os.Getenv("WEAVE_FORGE_DEFAULT_WORKSPACE")),
 		AdminForgeURL:            strings.TrimRight(strings.TrimSpace(os.Getenv("WEAVE_ADMIN_FORGE_URL")), "/"),
+		LoginKey:                 strings.TrimSpace(os.Getenv("WEAVE_LOGIN_KEY")),
+		LoginWorkspace:           strings.TrimSpace(os.Getenv("WEAVE_LOGIN_WORKSPACE")),
 		CORSOrigins:              corsOrigins,
 		MCPBoundaryBase:          envOr("WEAVE_MCP_BOUNDARY_BASE", "http://127.0.0.1:"+port),
 		WorkspacesRoot:           workspacesRoot,
@@ -145,6 +155,9 @@ func Load() (*Config, error) {
 
 	if cfg.DatabaseURL == "" {
 		return nil, fmt.Errorf("DATABASE_URL is required")
+	}
+	if cfg.LoginKey == "" {
+		cfg.LoginKey, cfg.LoginKeyDefault = "admin", true
 	}
 	if cfg.JWTSecret == "" {
 		return nil, fmt.Errorf("JWT_SECRET is required")
