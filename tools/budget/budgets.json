@@ -1075,6 +1075,22 @@
         "lines_added": 185,
         "production_lines_added": 94
       }
+    },
+    {
+      "date": "2026-10-11",
+      "reason": "Close issue 63: a team created on request left its lead without a model, the lead takes the first step of the starting flow, and model choice was offered only in the console, so a team built from the desktop failed before its first trial with no way to repair it there. The starter team now gives the lead and the member the same enabled workspace model, and where none is enabled the draft says both still need one. Controlled edits take a model for a member or a new member, accepted only for the built-in engine and only from the workspace's enabled models; the member guide returns that list, and a lead with a flow to run is reported as needing a model like any member. One function now lists the enabled models for the catalogue endpoint, the starter team and the edits. No new packages or dependencies. Unit tests cover choosing a model for the lead, a member and a new member, a name off the list, an empty list, an external engine, and the lead's finding with and without a flow.",
+      "record": "README.zh-CN.md#受控修改与草稿待办",
+      "growth": {
+        "lines": 140,
+        "production_lines": 67
+      },
+      "deletion_trigger": "Remove the model field from controlled edits and the list from the member guide when a recorded decision moves model assignment out of team drafts, for example to a workspace-wide default applied at run time. Lower the measured budgets in that change.",
+      "app": {
+        "previous_lines": 83928,
+        "previous_production_lines": 57535,
+        "lines_added": 140,
+        "production_lines_added": 67
+      }
     }
   ],
   "migration_targets": {
@@ -1138,8 +1154,8 @@
     "allowed_dependencies": []
   },
   "app": {
-    "lines": 83928,
-    "production_lines": 57535,
+    "lines": 84068,
+    "production_lines": 57602,
     "packages": 25,
     "external_dependencies": 6,
     "allowed_dependencies": [
