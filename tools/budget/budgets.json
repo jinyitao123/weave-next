@@ -1053,6 +1053,28 @@
         "lines_added": 1009,
         "production_lines_added": 789
       }
+    },
+    {
+      "date": "2026-10-11",
+      "reason": "Give a deployment one login key that signs its holder in as the workspace administrator on the console and the MCP entry without an account, as the owner decided on 2026-10-11: the sign-in page offers an account or a key, the key is set at deployment and is \"admin\" when unset, and the default is accepted from anywhere with a reminder on every page. The key is swapped for a short administrator session before authentication runs, so no route learns a second credential path; the default is announced in the server log, in the console configuration and on each session read. No new packages or dependencies. A real PostgreSQL test covers the default key on the console and the MCP entry, wrong keys, a key set at deployment replacing the default, and a deployment with no administrator to sign in as.",
+      "record": "README.zh-CN.md#登录密钥",
+      "growth": {
+        "lines": 198,
+        "production_lines": 107
+      },
+      "deletion_trigger": "Remove the login key, its middleware, its configuration and the console reminder when a recorded decision requires every sign-in to be an account or an issued API key. Lower the measured budgets in that change.",
+      "kernel": {
+        "previous_lines": 104878,
+        "previous_production_lines": 83338,
+        "lines_added": 13,
+        "production_lines_added": 13
+      },
+      "app": {
+        "previous_lines": 83743,
+        "previous_production_lines": 57441,
+        "lines_added": 185,
+        "production_lines_added": 94
+      }
     }
   ],
   "migration_targets": {
@@ -1096,8 +1118,8 @@
     ]
   },
   "kernel": {
-    "lines": 104878,
-    "production_lines": 83338,
+    "lines": 104891,
+    "production_lines": 83351,
     "packages": 48,
     "external_dependencies": 5,
     "allowed_dependencies": [
@@ -1116,8 +1138,8 @@
     "allowed_dependencies": []
   },
   "app": {
-    "lines": 83743,
-    "production_lines": 57441,
+    "lines": 83928,
+    "production_lines": 57535,
     "packages": 25,
     "external_dependencies": 6,
     "allowed_dependencies": [

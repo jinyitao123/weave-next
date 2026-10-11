@@ -17,13 +17,14 @@ afterEach(() => {
 })
 
 describe('management sign-in', () => {
-  it('defaults to Forge credentials without an API Key switch', async () => {
+  it('offers an account first and a key beside it', async () => {
     const onSignedIn = vi.fn()
     const session = { name: '开发者', role: 'developer', source: 'forge' as const }
     vi.mocked(signInWithForge).mockResolvedValue(session)
     render(<SignInPage config={configured} onSignedIn={onSignedIn} />)
-    expect(screen.queryByText('API Key')).toBeNull()
-    expect(screen.queryByRole('group', { name: '登录方式' })).toBeNull()
+    expect(screen.getByRole('group', { name: '登录方式' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '账号登录' }).getAttribute('aria-pressed')).toBe('true')
+    expect(screen.queryByLabelText('认证密钥')).toBeNull()
     fireEvent.change(screen.getByLabelText('账号'), { target: { value: 'dev@example.test' } })
     fireEvent.change(screen.getByLabelText('密码'), { target: { value: 'test-password' } })
     fireEvent.click(screen.getByRole('button', { name: '登录' }))
@@ -32,11 +33,36 @@ describe('management sign-in', () => {
     expect(signInWithAPIKey).not.toHaveBeenCalled()
   })
 
-  it('reports missing Forge configuration instead of falling back to a key', () => {
-    render(<SignInPage config={{ sign_in_methods: ['api_key'], secure: false }} onSignedIn={vi.fn()} />)
-    expect(screen.getByRole('alert').textContent).toContain('Forge 登录尚未配置')
-    expect(screen.queryByLabelText('API Key')).toBeNull()
-    expect(screen.queryByRole('button', { name: '登录' })).toBeNull()
+  it('signs in with a key alone where no account system is connected, and names the default', async () => {
+    const onSignedIn = vi.fn()
+    const session = { name: '管理员', role: 'admin', source: 'api_key' as const, default_key: true }
+    vi.mocked(signInWithAPIKey).mockResolvedValue(session)
+    render(<SignInPage config={{ sign_in_methods: ['api_key'], secure: false, default_key: true }} onSignedIn={onSignedIn} />)
+    expect(screen.queryByRole('group', { name: '登录方式' })).toBeNull()
+    expect(screen.queryByLabelText('账号')).toBeNull()
+    expect(screen.getByText('部署时没有设置密钥，默认密钥是 admin。')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '登录' }))
+    expect(screen.getByRole('alert').textContent).toContain('请输入认证密钥')
+    fireEvent.change(screen.getByLabelText('认证密钥'), { target: { value: 'admin' } })
+    fireEvent.click(screen.getByRole('button', { name: '登录' }))
+    await waitFor(() => expect(onSignedIn).toHaveBeenCalledWith(session))
+    expect(signInWithAPIKey).toHaveBeenCalledWith('admin')
+  })
+
+  it('switches between the two ways in and says nothing about a default once a key is set', async () => {
+    const onSignedIn = vi.fn()
+    const session = { name: '运维', role: 'admin', source: 'api_key' as const }
+    vi.mocked(signInWithAPIKey).mockResolvedValue(session)
+    render(<SignInPage config={configured} onSignedIn={onSignedIn} />)
+    fireEvent.click(screen.getByRole('button', { name: '密钥登录' }))
+    expect(screen.queryByLabelText('账号')).toBeNull()
+    expect(screen.queryByText(/默认密钥/)).toBeNull()
+    fireEvent.change(screen.getByLabelText('认证密钥'), { target: { value: 'set-at-deployment' } })
+    fireEvent.click(screen.getByRole('button', { name: '登录' }))
+    await waitFor(() => expect(onSignedIn).toHaveBeenCalledWith(session))
+    expect(signInWithForge).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: '账号登录' }))
+    expect(screen.getByLabelText('账号')).toBeTruthy()
   })
 
   it('keeps the key form on the explicitly requested operator URL', async () => {
@@ -46,7 +72,8 @@ describe('management sign-in', () => {
     vi.mocked(signInWithAPIKey).mockResolvedValue(session)
     render(<SignInPage config={configured} onSignedIn={onSignedIn} />)
     expect(screen.queryByLabelText('账号')).toBeNull()
-    fireEvent.change(screen.getByLabelText('API Key'), { target: { value: ' test-key ' } })
+    expect(screen.getByRole('button', { name: '密钥登录' }).getAttribute('aria-pressed')).toBe('true')
+    fireEvent.change(screen.getByLabelText('认证密钥'), { target: { value: ' test-key ' } })
     fireEvent.click(screen.getByRole('button', { name: '登录' }))
     await waitFor(() => expect(onSignedIn).toHaveBeenCalledWith(session))
     expect(signInWithAPIKey).toHaveBeenCalledWith('test-key')

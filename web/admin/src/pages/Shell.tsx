@@ -89,6 +89,9 @@ export function Shell({ session, onSignOut }: { session: AdminSession; onSignOut
         <AccountCard session={session} onSignOut={onSignOut} />
       </div>
     </nav>
-    <div className="main">{active.render({ session, path, navigate })}</div>
+    <div className="main">
+      {session.default_key ? <p className="notice shell__warning" role="status">当前用默认密钥登录。默认密钥人人都知道，能访问这个地址的人都可以用它以管理员身份进入；请在部署配置中设置自己的登录密钥。</p> : null}
+      {active.render({ session, path, navigate })}
+    </div>
   </div>
 }

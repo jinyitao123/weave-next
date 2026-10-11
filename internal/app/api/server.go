@@ -319,7 +319,10 @@ func (s *Server) registerRoutes() {
 	userStoreGetter := func() *users.Store { return s.UserStore }
 
 	// Authenticated endpoints.
-	auth := authenticatedRouteGroup(s.Echo, "/v1", AuthMiddleware(s.Config.JWTSecret, keyStoreGetter, userStoreGetter))
+	if s.Config.LoginKeyDefault {
+		slog.Warn("the login key is the default \"admin\"; set WEAVE_LOGIN_KEY for this deployment")
+	}
+	auth := authenticatedRouteGroup(s.Echo, "/v1", s.loginKeyMiddleware(), AuthMiddleware(s.Config.JWTSecret, keyStoreGetter, userStoreGetter))
 	auth.GET("/integrations/feishu/binding", s.handleFeishuBinding)
 	auth.POST("/integrations/feishu/link-code", s.handleFeishuLinkCode)
 	auth.DELETE("/integrations/feishu/binding", s.handleFeishuUnlink)
