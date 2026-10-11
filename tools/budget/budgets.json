@@ -1091,6 +1091,22 @@
         "lines_added": 140,
         "production_lines_added": 67
       }
+    },
+    {
+      "date": "2026-10-11",
+      "reason": "Let the people who build teams give their workspace a model, as the owner decided on 2026-10-11 (decision 008 in the product repository: whatever the person signed in to the desktop may do in Weave is finished there; administrators and developers may add or replace the organization's models). Until now a shared model could only come from a provider configured in the deployment and switched on by an administrator, so a workspace without one could not be given a model from where its teams are built. A developer or administrator now lists the shared providers and adds or replaces one that was added this way: a name, an address, the model names it serves and a key. The key is sealed by the existing credential store under a workspace-service reference authorized for exactly that provider, is kept when a later change leaves it out, and is returned by no route; a provider that came with the deployment or belongs to one person is not touched, and a model already served by another shared provider is refused so the choice at run time stays unambiguous. No new packages or dependencies, no change to the credential store or to how a run resolves a model.",
+      "record": "README.zh-CN.md#受控修改与草稿待办",
+      "growth": {
+        "lines": 167,
+        "production_lines": 167
+      },
+      "deletion_trigger": "Remove the two model-provider routes when a recorded decision returns shared model credentials to deployment configuration only, or moves them to an identity or secret service outside Weave. Lower the measured budgets in that change.",
+      "app": {
+        "previous_lines": 84068,
+        "previous_production_lines": 57602,
+        "lines_added": 167,
+        "production_lines_added": 167
+      }
     }
   ],
   "migration_targets": {
@@ -1154,8 +1170,8 @@
     "allowed_dependencies": []
   },
   "app": {
-    "lines": 84068,
-    "production_lines": 57602,
+    "lines": 84235,
+    "production_lines": 57769,
     "packages": 25,
     "external_dependencies": 6,
     "allowed_dependencies": [
