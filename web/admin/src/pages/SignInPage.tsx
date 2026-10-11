@@ -5,7 +5,8 @@ import { errorMessage, signInWithAPIKey, signInWithForge, signOut, type AdminCon
 
 type Method = 'forge' | 'api_key'
 
-export function SignInPage({ config, onSignedIn }: { config: AdminConfig; onSignedIn(session: AdminSession): void }) {
+// anyRole: the page signs in whoever it is, for a caller that is open to every account.
+export function SignInPage({ config, onSignedIn, anyRole }: { config: AdminConfig; onSignedIn(session: AdminSession): void; anyRole?: boolean }) {
   const forgeAvailable = config.sign_in_methods.includes('forge') && Boolean(config.forge_origin)
   const keyAvailable = config.sign_in_methods.includes('api_key')
   // An account is the usual way in; the key is offered beside it, and alone
@@ -38,7 +39,7 @@ export function SignInPage({ config, onSignedIn }: { config: AdminConfig; onSign
     try {
       // An account is confirmed on Forge's own page; no password is typed here.
       const session = method === 'forge' ? await approve(signInWithForge) : await signInWithAPIKey(apiKey.trim())
-      if (session.role === 'member') {
+      if (session.role === 'member' && !anyRole) {
         await signOut().catch(() => undefined)
         setError('当前账号没有管理端权限，请使用 Forge 管理员或开发者账号。')
         return

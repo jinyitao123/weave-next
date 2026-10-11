@@ -94,6 +94,8 @@ make compose-check
 - `POST /v1/development/teams` 按 `request_id` 新建一个业务团队：负责人、一位业务办理员和基础流程，返回团队和草稿修订。同一请求重发返回同一个团队；中途失败后重发会接着已建好的部分完成，不会多建。代码团队仍在管理端新建。
 - `GET /v1/teams/:id/development` 多返回 `issues`：草稿还差什么、挡住试跑还是发布，或只是建议。例如成员带业务动作而流程没有选定必须办成的动作、流程说明为空。
 
+成员的模型也可以用受控修改指定（`member` 与 `member_add` 的 `model`）：只对使用内置引擎的成员有效，只能取当前组织已启用的模型，这份清单随“成员”一类的说明一起返回；组织还没有启用任何模型时修改被拒绝并说明原因。新建的团队，负责人和成员都使用组织已启用的第一个模型；负责人要执行流程的第一步，没有模型时同样列入草稿待办。
+
 保存受控修改不改变已发布的团队；试跑和发布仍走原来的接口和条件。
 
 ## 登录密钥
@@ -112,4 +114,11 @@ make compose-check
 - 开发团队（需要开发权限）：`weave_team_list`、`weave_development_read`、`weave_development_guide`、`weave_development_apply`、`weave_team_create`、`weave_development_trial`、`weave_development_trial_read`、`weave_development_publish`。草稿和运行按名称呈现；某一类修改的写法用到时再读。
 - 使用团队：`weave_team_search`、`weave_team_describe`、`weave_work_submit`、`weave_work_read`、`weave_work_cancel`。交接的工作不带业务动作授权，材料第一版只接受文本；一件工作只有提交人、管理员和所有者能读取，只有提交人能停止。
 
-面向 MCP 客户端的浏览器登录和会话管理尚未实现。
+凭据有三种，任选其一：
+
+- **账号登录。** 支持登录的 MCP 客户端（多数编码助手）只需填入口地址。客户端首次调用得到 401，按其中指向的说明（`/.well-known/oauth-protected-resource`、`/.well-known/oauth-authorization-server`）登记自己并打开浏览器；本人在 Weave 的页面登录——账号经 Forge 确认，或密钥——再按名称允许这个客户端，客户端即得到自己的会话。会话两周有效，只能用于 MCP 入口；本人的角色以登录时核实的为准，账号被停用或会话被收回后立即失效。回跳地址只接受本机地址和 HTTPS 地址。
+- **登录密钥**或**签发的 API Key**：直接作为 `Authorization: Bearer` 凭据，不经过浏览器。
+
+每个调用方每分钟可调用 120 次；其中会让团队开始工作的三个工具（试跑、交接工作、发布）另计，每分钟 10 次。调用方指客户端的会话；直接使用密钥时指这把密钥。超出时工具返回 `rate_limited` 并说明多少秒后重试。计数在单个服务进程内，多进程部署各自计数。
+
+管理端“集成”页列出已登录的 MCP 客户端并可收回：每个人看到并收回自己的，管理员看到并收回本工作区全部的。对应接口为 `GET /v1/mcp/sessions` 与 `DELETE /v1/mcp/sessions/:id`。服务端只保存令牌摘要；已结束的会话记录保留，作为谁从哪个客户端登录、由谁收回的记录。

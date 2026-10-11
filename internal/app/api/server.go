@@ -119,6 +119,7 @@ type Server struct {
 	Conversations             *conversation.Store    // nil if PG pool unavailable
 	OwnerMem                  OwnerMemoryStore       // nil if PG pool unavailable
 	sessionExecutionWorkers   *sessionExecutionWorkers
+	mcpLimiter                mcpRateLimiter
 	teamRunWorkers            *teamrun.Workers
 	teamRunCancel             *teamrun.CancelService
 	teamRunStageRetry         *teamrun.StageRetryService
@@ -322,11 +323,12 @@ func (s *Server) registerRoutes() {
 	if s.Config.LoginKeyDefault {
 		slog.Warn("the login key is the default \"admin\"; set WEAVE_LOGIN_KEY for this deployment")
 	}
-	auth := authenticatedRouteGroup(s.Echo, "/v1", s.loginKeyMiddleware(), AuthMiddleware(s.Config.JWTSecret, keyStoreGetter, userStoreGetter))
+	auth := authenticatedRouteGroup(s.Echo, "/v1", s.mcpSessionMiddleware(), s.loginKeyMiddleware(), AuthMiddleware(s.Config.JWTSecret, keyStoreGetter, userStoreGetter))
 	auth.GET("/integrations/feishu/binding", s.handleFeishuBinding)
 	auth.POST("/integrations/feishu/link-code", s.handleFeishuLinkCode)
 	auth.DELETE("/integrations/feishu/binding", s.handleFeishuUnlink)
 	auth.POST("/mcp", s.handleMCPEntry)
+	s.registerMCPSignIn(auth)
 	adminScope := RequireScope("admin")
 	agentsScope := RequireScope("agents")
 	chatScope := RequireScope("chat")

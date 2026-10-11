@@ -6,7 +6,7 @@ package api
 
 const developmentOperationsVersion = "1"
 
-const developmentConsoleOnly = "归档团队、引擎与模型、执行限制、记忆、工具权限和刷新业务动作目录在 Weave 管理端办理，受控修改不提供。"
+const developmentConsoleOnly = "归档团队、更换引擎、外部引擎成员的模型、执行限制、记忆、工具权限和刷新业务动作目录在 Weave 管理端办理，受控修改不提供。"
 
 type developmentOperationDoc struct {
 	Kind    string `json:"kind"`
@@ -29,10 +29,10 @@ var developmentOperationTopics = []developmentOperationTopic{
 		{Kind: "team", Summary: "name 与 objective 至少给一项", Example: `{"kind":"team","name":"线索跟进团队","objective":"整理销售线索材料，判断是否值得跟进"}`},
 	}, Rules: []string{developmentNamingRule, "目标决定员工在桌面能否找到这个团队：写清处理什么事，并使用员工平时的说法。"}},
 	{Topic: "member", Title: "成员", Covers: "新增、修改、停用或移出成员，设置成员的交付格式", Operations: []developmentOperationDoc{
-		{Kind: "member_add", Summary: "ref、name、duty 均必填；ref 只供同一组后续修改引用。新成员是执行成员，使用内置引擎，模型沿用草稿中第一位执行成员的模型，业务动作和技能为空", Example: `{"kind":"member_add","ref":"new_worker","name":"材料协调员","duty":"整理本次材料并保留原文依据"}`},
-		{Kind: "member", Summary: "可改 name、duty、instruction（工作方法）、resultRequirement（结果要求）、whenToUse（何时参与）、contextInstruction（需要带上的上下文）、enabled、outputSchema（交付格式，JSON Schema 对象的字符串），至少给一项；负责人不能停用", Example: `{"kind":"member","member":"材料协调员","duty":"整理材料并标出缺项","outputSchema":"{\"type\":\"object\",\"properties\":{\"是否齐全\":{\"type\":\"boolean\"}},\"required\":[\"是否齐全\"],\"additionalProperties\":false}"}`},
+		{Kind: "member_add", Summary: "ref、name、duty 均必填；ref 只供同一组后续修改引用。新成员是执行成员，使用内置引擎，业务动作和技能为空；模型沿用草稿中第一位执行成员的，也可用 model 指定", Example: `{"kind":"member_add","ref":"new_worker","name":"材料协调员","duty":"整理本次材料并保留原文依据"}`},
+		{Kind: "member", Summary: "可改 name、duty、instruction（工作方法）、resultRequirement（结果要求）、whenToUse（何时参与）、contextInstruction（需要带上的上下文）、enabled、outputSchema（交付格式，JSON Schema 对象的字符串）、model（模型），至少给一项；负责人不能停用", Example: `{"kind":"member","member":"材料协调员","duty":"整理材料并标出缺项","outputSchema":"{\"type\":\"object\",\"properties\":{\"是否齐全\":{\"type\":\"boolean\"}},\"required\":[\"是否齐全\"],\"additionalProperties\":false}"}`},
 		{Kind: "member_remove", Summary: "负责人不能移出，团队至少保留一位执行成员；仍被流程步骤使用的成员须先改步骤的执行者", Example: `{"kind":"member_remove","member":"材料协调员"}`},
-	}, Rules: []string{developmentNamingRule}},
+	}, Rules: []string{developmentNamingRule, "model 只能取本说明 models 列出的名称，即当前组织已启用的模型，只对使用内置引擎的成员有效。models 为空表示组织还没有可用的模型，需要管理员先在 Weave 管理端配置，此时不要猜测模型名称。"}},
 	{Topic: "skill", Title: "成员技能", Covers: "给成员添加、更新或移除技能正文", Operations: []developmentOperationDoc{
 		{Kind: "skill", Summary: "selected 为 true 时 body 必填，同名技能被替换；为 false 时移除", Example: `{"kind":"skill","member":"材料协调员","name":"报价核对","selected":true,"body":"技能正文","description":"何时使用","alwaysActive":false}`},
 	}, Rules: []string{developmentNamingRule}},

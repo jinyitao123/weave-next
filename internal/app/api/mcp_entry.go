@@ -51,6 +51,7 @@ type mcpEntryCall struct {
 	remote string
 	tenant string
 	user   string
+	role   string
 	// reader may read every run of the workspace, as in the console.
 	reader bool
 }
@@ -204,12 +205,11 @@ func (team mcpTeam) view() map[string]any {
 }
 
 func (call *mcpEntryCall) teams(development bool) ([]mcpTeam, *mcpEntryError) {
-	path := "/v1/teams?status=active"
-	if development {
-		path += "&purpose=development"
+	if development && !editOneOf(call.role, "developer", "admin", "owner") {
+		return nil, mcpFail("forbidden", "当前账号没有开发团队的权限")
 	}
 	var teams []mcpTeam
-	if failure := call.route(http.MethodGet, path, nil, &teams); failure != nil {
+	if failure := call.route(http.MethodGet, "/v1/teams?status=active", nil, &teams); failure != nil {
 		return nil, failure
 	}
 	return teams, nil
@@ -252,6 +252,7 @@ func mcpDraftView(draft developmentDraft, catalog []catalogCapability) map[strin
 			"name": cfg.DisplayName, "role": role, "enabled": member.Relationship.Enabled, "duty": member.Relationship.Duty,
 			"instruction": cfg.SystemPrompt, "result_requirement": member.Relationship.ResultRequirement,
 			"business_actions": mcpCapabilityNames(cfg.BusinessCapabilityIDs, catalog), "fixed_output": len(cfg.OutputSchema) > 0,
+			"model": cfg.Model,
 		})
 	}
 	flows := []map[string]any{}
@@ -715,12 +716,16 @@ func mcpSubmit(call *mcpEntryCall, args map[string]any) (any, *mcpEntryError) {
 func (s *Server) handleMCPEntry(c echo.Context) error {
 	call := &mcpEntryCall{
 		server: s, ctx: c.Request().Context(), auth: c.Request().Header.Get(echo.HeaderAuthorization), remote: c.Request().RemoteAddr,
-		tenant: getTenant(c), user: getUserID(c), reader: adminRunReader(c),
+		tenant: getTenant(c), user: getUserID(c), role: firstRole(c), reader: adminRunReader(c),
 	}
 	return serveWeaveTools(c, mcpEntryTools, mcpEntryInstructions, func(name, arguments string) (string, bool) {
 		for _, tool := range mcpEntryTools {
 			if tool.Name != name {
 				continue
+			}
+			if wait := s.mcpThrottle(c, name); wait != nil {
+				raw, _ := json.Marshal(wait)
+				return string(raw), true
 			}
 			args := map[string]any{}
 			if err := json.Unmarshal([]byte(arguments), &args); err != nil {

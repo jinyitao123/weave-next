@@ -75,6 +75,8 @@ const messages: Record<string, string> = {
   'native organization binding is unavailable': '当前账号没有可用的组织',
   'external identity is not configured': '服务端未配置外部身份',
   admin_request_rejected: '请求被拒绝，请刷新页面后重试',
+  mcp_client_unknown: '接入请求无效，请回到客户端重新发起',
+  mcp_session_not_found: '这个登录已经结束',
   task_not_found: '任务不存在，或你没有查看权限',
   run_not_found: '任务不存在，或你没有查看权限',
   team_not_found: '团队不存在',

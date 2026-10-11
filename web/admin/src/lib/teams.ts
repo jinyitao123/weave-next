@@ -354,7 +354,7 @@ export function withStarterWorkflow(document: DevelopmentDocument): DevelopmentD
 // the first available model.
 export async function prepareNewTeam(teamId: string): Promise<void> {
   const [draft, models] = await Promise.all([readDevelopment(teamId), loadModelCatalog().catch(() => [] as string[])])
-  const members = draft.document.members.map((member) => member.configuration.role === 'worker' && !isCLIEngine(member.configuration.engine) && !member.configuration.model && models[0]
+  const members = draft.document.members.map((member) => !isCLIEngine(member.configuration.engine) && !member.configuration.model && models[0]
     ? { ...member, configuration: { ...member.configuration, model: models[0] } } : member)
   const document = withStarterWorkflow({ ...draft.document, members })
   if (JSON.stringify(document) !== JSON.stringify(draft.document)) await saveDevelopment(teamId, draft.revision, document)
@@ -445,7 +445,7 @@ export function memberProblems(member: DevelopmentMember): string[] {
   const problems: string[] = []
   if (!relationship.duty?.trim()) problems.push('还没有填写职责')
   if (!config.system_prompt?.trim()) problems.push('还没有填写工作方法')
-  if (config.role === 'worker' && !isCLIEngine(config.engine) && !config.model?.trim()) problems.push('使用内置引擎时需要选择模型')
+  if (!isCLIEngine(config.engine) && !config.model?.trim()) problems.push('使用内置引擎时需要选择模型')
   const loopControl = config.tool_loop_control
   if (loopControl && (!(loopControl.slice_rounds >= 1 && loopControl.slice_rounds <= toolLoopLimits.sliceMax) || !(loopControl.initial_total_rounds >= 1))) problems.push("工具循环的每片轮次需在 1 到 1000 之间，总轮次不能小于 1")
   if (config.output_schema != null && (typeof config.output_schema !== "object" || Array.isArray(config.output_schema))) problems.push("输出结构必须是一个 JSON 对象")

@@ -11,7 +11,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 	"github.com/labstack/echo/v4"
 
 	org "github.com/jinyitao123/weave/internal/kernel/orgspec"
@@ -123,14 +122,18 @@ func (s *Server) starterAgent(ctx context.Context, ws, name, displayName, role, 
 // so a repeated request finds what an earlier attempt left behind.
 func (s *Server) createStarterTeam(c echo.Context, suffix, name, objective string) (string, error) {
 	ctx, ws := c.Request().Context(), getTenant(c)
-	var model string
-	err := s.Pool.QueryRow(ctx, `SELECT model FROM weave_provider_credentials, unnest(models) AS model
-		WHERE workspace_id=$1 AND credential_scope='workspace_service' AND enabled AND revoked_at IS NULL AND deleted_at IS NULL AND latest_revision > 0
-		ORDER BY model LIMIT 1`, ws).Scan(&model)
-	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+	// The lead takes the first step of the starting flow, so it needs a model
+	// as much as the member does. A workspace with none enabled gets a team
+	// whose draft says both members still need one; no stand-in is invented.
+	models, err := s.developmentModels(ctx, ws)
+	if err != nil {
 		return "", err
 	}
-	lead, err := s.starterAgent(ctx, ws, "team-"+suffix+"-lead", starterLeadName, "avatar", "", fmt.Sprintf("负责理解“%s”的目标并汇总可核验结果。", name))
+	model := ""
+	if len(models) > 0 {
+		model = models[0]
+	}
+	lead, err := s.starterAgent(ctx, ws, "team-"+suffix+"-lead", starterLeadName, "avatar", model, fmt.Sprintf("负责理解“%s”的目标并汇总可核验结果。", name))
 	if err != nil {
 		return "", err
 	}

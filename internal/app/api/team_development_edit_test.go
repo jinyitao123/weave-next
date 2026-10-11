@@ -271,3 +271,76 @@ func TestControlledEditsRefuseTheWholeGroupAndNameTheItem(t *testing.T) {
 	}
 	editKernelGraph(t, doc.Workflows[0])
 }
+
+func TestControlledEditsChooseAModelOnlyFromTheWorkspaceList(t *testing.T) {
+	models := []string{"deepseek-flash", "deepseek-reasoner"}
+	apply := func(doc *developmentDocument, raw string, available []string) error {
+		_, err := applyDevelopmentOperationsWith(doc, editOps(t, raw), editTestCatalog, available)
+		return err
+	}
+	refused := func(raw string, available []string, change func(*developmentDocument)) string {
+		t.Helper()
+		doc := editTestDocument()
+		if change != nil {
+			change(&doc)
+		}
+		var refusal *editError
+		if err := apply(&doc, raw, available); !errors.As(err, &refusal) {
+			t.Fatalf("expected a refusal for %s, got %v", raw, err)
+		}
+		return refusal.Message
+	}
+
+	// The lead and a member each take a model from the list; choosing the same one again is not an error.
+	doc := editTestDocument()
+	if err := apply(&doc, `[{"kind":"member","member":"负责人","model":"deepseek-reasoner"},{"kind":"member","member":"整理员","model":"deepseek-flash"}]`, models); err != nil {
+		t.Fatal(err)
+	}
+	if doc.Members[0].Configuration.Model != "deepseek-reasoner" || doc.Members[1].Configuration.Model != "deepseek-flash" {
+		t.Fatalf("models = %q, %q", doc.Members[0].Configuration.Model, doc.Members[1].Configuration.Model)
+	}
+	// A new member takes the first member's model unless one is named.
+	if err := apply(&doc, `[{"kind":"member_add","ref":"a","name":"协调员","duty":"协调"},{"kind":"member_add","ref":"b","name":"复核员","duty":"复核","model":"deepseek-reasoner"}]`, models); err != nil {
+		t.Fatal(err)
+	}
+	if doc.Members[3].Configuration.Model != "deepseek-flash" || doc.Members[4].Configuration.Model != "deepseek-reasoner" {
+		t.Fatalf("new members' models = %q, %q", doc.Members[3].Configuration.Model, doc.Members[4].Configuration.Model)
+	}
+
+	// A name off the list is refused and the list is named; nothing is guessed.
+	if message := refused(`[{"kind":"member","member":"整理员","model":"gpt-unknown"}]`, models, nil); !strings.Contains(message, "gpt-unknown") || !strings.Contains(message, "deepseek-flash、deepseek-reasoner") {
+		t.Fatalf("unknown model: %s", message)
+	}
+	// A workspace with no model enabled says so instead of accepting any name.
+	if message := refused(`[{"kind":"member","member":"整理员","model":"deepseek-flash"}]`, nil, nil); !strings.Contains(message, "还没有可用的模型") {
+		t.Fatalf("empty list: %s", message)
+	}
+	// A member on an external engine keeps its model with the console.
+	if message := refused(`[{"kind":"member","member":"整理员","model":"deepseek-flash"}]`, models, func(doc *developmentDocument) {
+		doc.Members[1].Configuration.Engine = "codex"
+	}); !strings.Contains(message, "不使用内置引擎") {
+		t.Fatalf("external engine: %s", message)
+	}
+	if message := refused(`[{"kind":"member","member":"整理员","model":7}]`, models, nil); message == "" {
+		t.Fatal("a model that is not text was accepted")
+	}
+}
+
+func TestALeadWithAFlowToRunNeedsAModelLikeAnyMember(t *testing.T) {
+	doc := editTestDocument()
+	doc.Members[0].Configuration.Model = ""
+	// With no flow the lead has nothing to run.
+	for _, issue := range developmentIssues(doc, editTestCatalog, true) {
+		if issue.Code == "member_model_missing" {
+			t.Fatalf("lead without a flow: %+v", issue)
+		}
+	}
+	editApply(t, &doc, `[{"kind":"flow_add","name":"线索跟进流程","description":"接线索，交付结论","member":"整理员"}]`)
+	found := false
+	for _, issue := range developmentIssues(doc, editTestCatalog, true) {
+		found = found || issue.Code == "member_model_missing" && issue.Target == "负责人" && issue.Blocks == "trial"
+	}
+	if !found {
+		t.Fatal("a lead that takes the first step of a flow was not asked for a model")
+	}
+}

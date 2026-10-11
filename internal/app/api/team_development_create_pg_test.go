@@ -27,7 +27,7 @@ func TestDevelopmentTeamIsCreatedOncePerRequestRealPG(t *testing.T) {
 	if _, err := pool.Exec(ctx, `INSERT INTO weave_workspaces(id,slug,name) VALUES('create-workspace','create-workspace','Create'); INSERT INTO weave_users(id,tenant_id,username,password,role) VALUES('developer','create-workspace','developer','unused','admin')`); err != nil {
 		t.Fatal(err)
 	}
-	server := &Server{Pool: pool, Registry: agentcatalog.New(pool), OrgStore: orgstore.NewStore(pool)}
+	server := &Server{Pool: pool, Store: teamDispatchPoolStore{pool: pool}, Registry: agentcatalog.New(pool), OrgStore: orgstore.NewStore(pool)}
 	call := func(method string, body any, handler echo.HandlerFunc, teamID string) (int, map[string]any) {
 		t.Helper()
 		raw, _ := json.Marshal(body)
@@ -88,9 +88,9 @@ func TestDevelopmentTeamIsCreatedOncePerRequestRealPG(t *testing.T) {
 	if flow["name"] != "业务流程" || flow["description"] != "整理销售线索材料，判断是否值得跟进" {
 		t.Fatalf("starter flow = %v", flow["name"])
 	}
-	// No model provider is configured here, so the one thing left is choosing a model.
+	// No model provider is configured here, so what is left is choosing a model for the lead and the member.
 	issues := draft["issues"].([]any)
-	if len(issues) != 1 || issues[0].(map[string]any)["code"] != "member_model_missing" {
+	if len(issues) != 2 || issues[0].(map[string]any)["code"] != "member_model_missing" || issues[1].(map[string]any)["code"] != "member_model_missing" {
 		t.Fatalf("starter issues = %v", issues)
 	}
 

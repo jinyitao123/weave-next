@@ -1075,6 +1075,38 @@
         "lines_added": 185,
         "production_lines_added": 94
       }
+    },
+    {
+      "date": "2026-10-11",
+      "reason": "Close issue 63: a team created on request left its lead without a model, the lead takes the first step of the starting flow, and model choice was offered only in the console, so a team built from the desktop failed before its first trial with no way to repair it there. The starter team now gives the lead and the member the same enabled workspace model, and where none is enabled the draft says both still need one. Controlled edits take a model for a member or a new member, accepted only for the built-in engine and only from the workspace's enabled models; the member guide returns that list, and a lead with a flow to run is reported as needing a model like any member. One function now lists the enabled models for the catalogue endpoint, the starter team and the edits. No new packages or dependencies. Unit tests cover choosing a model for the lead, a member and a new member, a name off the list, an empty list, an external engine, and the lead's finding with and without a flow.",
+      "record": "README.zh-CN.md#受控修改与草稿待办",
+      "growth": {
+        "lines": 140,
+        "production_lines": 67
+      },
+      "deletion_trigger": "Remove the model field from controlled edits and the list from the member guide when a recorded decision moves model assignment out of team drafts, for example to a workspace-wide default applied at run time. Lower the measured budgets in that change.",
+      "app": {
+        "previous_lines": 83928,
+        "previous_production_lines": 57535,
+        "lines_added": 140,
+        "production_lines_added": 67
+      }
+    },
+    {
+      "date": "2026-10-11",
+      "reason": "Let an MCP client sign a person in with their account, as the MCP entry contract specifies and the owner asked to be finished on 2026-10-11: the client sends the browser to Weave, the person signs in on the console's own page and allows the client by name, and the client receives a two-week session that works on the MCP entry only. The entry answers an unauthenticated client with where signing in is described; clients register by name with the addresses a sign-in may return to (this machine or HTTPS); the one-time code is bound to the client, its address and its PKCE challenge and is spent in a single statement; only digests of the code and the token are stored. People list and take back their own sessions and an administrator the workspace's, and the retained rows are the record of who signed in from which client and who ended it. The session is swapped for a short session of the same person before authentication runs, so no route learns another credential path. Each caller of the entry — a client session, or the key presented directly — has an allowance of 120 calls a minute and a separate 10 a minute for the three tools that start a team working, counted in the process; a call beyond it is answered with how long to wait. No new packages or dependencies. A real PostgreSQL test covers the descriptions, registration and its refused addresses, the redirect to the console, consent with and without a session, declined consent, exchange with a wrong verifier, another address, twice and late, use on the entry and refusal elsewhere, a member's narrower tools, listing by person and by administrator, taking back, a disabled account and an expired session. A unit test covers the allowance running out, refilling, and being kept per caller.",
+      "record": "README.zh-CN.md#mcp-入口",
+      "growth": {
+        "lines": 846,
+        "production_lines": 496
+      },
+      "deletion_trigger": "Remove the MCP sign-in endpoints, the session middleware, the two tables and the console pages when a recorded decision moves MCP client sign-in to an identity provider that issues tokens Weave can verify directly. Lower the measured budgets in that change.",
+      "app": {
+        "previous_lines": 84068,
+        "previous_production_lines": 57602,
+        "lines_added": 846,
+        "production_lines_added": 496
+      }
     }
   ],
   "migration_targets": {
@@ -1138,8 +1170,8 @@
     "allowed_dependencies": []
   },
   "app": {
-    "lines": 83928,
-    "production_lines": 57535,
+    "lines": 84914,
+    "production_lines": 58098,
     "packages": 25,
     "external_dependencies": 6,
     "allowed_dependencies": [

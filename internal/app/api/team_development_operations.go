@@ -15,6 +15,8 @@ import (
 type editSession struct {
 	doc     *developmentDocument
 	catalog []catalogCapability
+	// models are the names the workspace may bind; a choice outside them is refused.
+	models  []string
 	graphs  map[string]editGraph
 	added   map[string]string
 	changes []string
@@ -399,10 +401,36 @@ func (e *editSession) addMember(operation map[string]any) error {
 		Duty: duty, WhenToUse: "流程执行到本成员负责的步骤时", ContextInstruction: "保留本次任务的原话和材料来源。",
 		AllowedKinds: []string{"consult", "dispatch", "handoff"}, DefaultKind: "consult", Enabled: true,
 	}
+	if _, err := e.chooseModel(&member, operation); err != nil {
+		return err
+	}
 	e.doc.Members = append(e.doc.Members, member)
 	e.added[ref] = member.ID
 	e.note("新增成员：%s", name)
 	return nil
+}
+
+// chooseModel sets a member's model when the edit names one. Only members on
+// the built-in engine take a model from the workspace's list, and only a name
+// on that list is accepted; nothing about how the model is reached is exposed.
+func (e *editSession) chooseModel(target *developmentMember, operation map[string]any) (bool, error) {
+	model, err := editOptionalText(operation, "model", "模型", 200)
+	if err != nil || model == "" {
+		return false, err
+	}
+	if target.Configuration.Engine != "loom" {
+		return false, editFail("成员“%s”不使用内置引擎，它的模型在 Weave 管理端配置", target.Configuration.DisplayName)
+	}
+	if len(e.models) == 0 {
+		return false, editFail("当前组织还没有可用的模型，请管理员先在 Weave 管理端配置")
+	}
+	for _, available := range e.models {
+		if available == model {
+			target.Configuration.Model = model
+			return true, nil
+		}
+	}
+	return false, editFail("模型“%s”不在当前组织可用的模型中，可选：%s", model, strings.Join(e.models, "、"))
 }
 
 func (e *editSession) changeMember(operation map[string]any) error {
@@ -453,7 +481,11 @@ func (e *editSession) changeMember(operation map[string]any) error {
 		target.Relationship.Enabled = enabled
 		changed = true
 	}
-	if !changed {
+	chosen, err := e.chooseModel(target, operation)
+	if err != nil {
+		return err
+	}
+	if !changed && !chosen {
 		return editFail("成员修改缺少目标字段")
 	}
 	e.note("修改成员：%s", target.Configuration.DisplayName)
@@ -741,13 +773,19 @@ func (e *editSession) finish() error {
 	return nil
 }
 
-// applyDevelopmentOperations applies 1 to 24 controlled edits to doc in place
-// and returns what changed, one line per edit. On error doc must be discarded.
+// applyDevelopmentOperations applies edits that choose no model.
 func applyDevelopmentOperations(doc *developmentDocument, operations []map[string]any, catalog []catalogCapability) ([]string, error) {
+	return applyDevelopmentOperationsWith(doc, operations, catalog, nil)
+}
+
+// applyDevelopmentOperationsWith applies 1 to 24 controlled edits to doc in
+// place and returns what changed, one line per edit. models are the names a
+// member's model may be chosen from. On error doc must be discarded.
+func applyDevelopmentOperationsWith(doc *developmentDocument, operations []map[string]any, catalog []catalogCapability, models []string) ([]string, error) {
 	if len(operations) < 1 || len(operations) > 24 {
 		return nil, editFail("一次须提交 1 至 24 项团队修改")
 	}
-	session := &editSession{doc: doc, catalog: catalog, graphs: map[string]editGraph{}, added: map[string]string{}}
+	session := &editSession{doc: doc, catalog: catalog, models: models, graphs: map[string]editGraph{}, added: map[string]string{}}
 	for index, operation := range operations {
 		err := editFail("修改格式无效")
 		if operation != nil {

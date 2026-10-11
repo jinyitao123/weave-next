@@ -73,7 +73,8 @@ func developmentIssues(doc developmentDocument, catalog []catalogCapability, cat
 		if strings.TrimSpace(cfg.SystemPrompt) == "" || strings.TrimSpace(member.Relationship.Duty) == "" {
 			add("member", name, "", "member_incomplete", "trial", "请填写职责和工作方法")
 		}
-		if !cli && !(cfg.Role == "avatar" && cfg.Engine == "loom") && strings.TrimSpace(cfg.Model) == "" {
+		// A lead with no flow to run has nothing to do; once there is one it takes a step like any member.
+		if !cli && strings.TrimSpace(cfg.Model) == "" && (cfg.Role != "avatar" || cfg.Engine != "loom" || len(doc.Workflows) > 0) {
 			add("member", name, "", "member_model_missing", "trial", "内置引擎成员需要选择模型")
 		}
 		if cfg.Engine != "loom" && !cli || len(cfg.MCPServerIDs) > 0 || len(cfg.SkillNames) > 0 || len(cfg.PermissionAllow) > 0 || len(cfg.PermissionAsk) > 0 {
@@ -207,7 +208,9 @@ func (s *Server) handleApplyTeamDevelopmentOperations(c echo.Context) error {
 	if d.Revision != request.Revision || d.PublishingRevision != 0 {
 		return workflowError(c, http.StatusConflict, "development_revision_stale", "草稿已变化或正在发布，请重新读取后再提交")
 	}
-	changes, err := applyDevelopmentOperations(&d.Document, request.Operations, catalog)
+	// An unreadable model list refuses a model choice; every other edit goes ahead.
+	models, _ := s.developmentModels(ctx, ws)
+	changes, err := applyDevelopmentOperationsWith(&d.Document, request.Operations, catalog, models)
 	var refusal *editError
 	if errors.As(err, &refusal) {
 		return c.JSON(http.StatusUnprocessableEntity, map[string]any{"code": "operation_invalid", "error": refusal.Message, "index": refusal.Index})
@@ -254,9 +257,21 @@ func (s *Server) handleListDevelopmentOperations(c echo.Context) error {
 
 func (s *Server) handleGetDevelopmentOperationTopic(c echo.Context) error {
 	for _, topic := range developmentOperationTopics {
-		if topic.Topic == c.Param("topic") {
+		if topic.Topic != c.Param("topic") {
+			continue
+		}
+		if topic.Topic != "member" {
 			return c.JSON(http.StatusOK, topic)
 		}
+		// The member topic comes with the models a member may be given right now.
+		models, err := s.developmentModels(c.Request().Context(), getTenant(c))
+		if err != nil {
+			models = []string{}
+		}
+		return c.JSON(http.StatusOK, struct {
+			developmentOperationTopic
+			Models []string `json:"models"`
+		}{topic, models})
 	}
 	return workflowError(c, http.StatusNotFound, "operation_topic_not_found", "没有这一类修改")
 }
