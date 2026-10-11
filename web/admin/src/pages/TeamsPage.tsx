@@ -1,9 +1,10 @@
 import { Plus } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Badge, Dialog, EmptyState, InlineError } from '../components/ui'
 import { errorMessage, type AdminSession } from '../lib/api'
 import { relativeTime } from '../lib/format'
-import { createStarterTeam, listTeamCards, prepareNewTeam, type TeamCard, type TeamKind } from '../lib/teams'
+import { createUUID } from '../lib/ids'
+import { createBusinessTeam, createStarterTeam, listTeamCards, prepareNewTeam, type TeamCard, type TeamKind } from '../lib/teams'
 
 const canDevelop = (session: AdminSession) => ['developer', 'admin', 'owner'].includes(session.role)
 
@@ -47,6 +48,9 @@ function CreateTeamDrawer({ onClose, onCreated }: { onClose(): void; onCreated(i
   const [kind, setKind] = useState<TeamKind>('business')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  // One request id for this dialog: pressing create again after a lost answer
+  // returns the team the first attempt made instead of making another.
+  const request = useRef({ id: createUUID(), content: '' })
   const create = async () => {
     if (!name.trim() || !objective.trim()) {
       setError('请填写团队名称和目标')
@@ -55,11 +59,17 @@ function CreateTeamDrawer({ onClose, onCreated }: { onClose(): void; onCreated(i
     setBusy(true)
     setError('')
     try {
-      const id = await createStarterTeam(name.trim(), objective.trim(), kind)
-      // The starting flow is saved with the team; if that fails the page still
-      // opens and offers to save it.
-      await prepareNewTeam(id).catch(() => undefined)
-      onCreated(id)
+      if (kind === 'code') {
+        const id = await createStarterTeam(name.trim(), objective.trim(), kind)
+        // The starting flow is saved with the team; if that fails the page still
+        // opens and offers to save it.
+        await prepareNewTeam(id).catch(() => undefined)
+        onCreated(id)
+        return
+      }
+      const content = `${name.trim()}\n${objective.trim()}`
+      if (request.current.content !== content) request.current = { id: createUUID(), content }
+      onCreated(await createBusinessTeam(request.current.id, name.trim(), objective.trim()))
     } catch (failure) {
       setError(errorMessage(failure))
     } finally {

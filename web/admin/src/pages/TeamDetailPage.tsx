@@ -11,7 +11,7 @@ import type { Graph } from '../lib/graph'
 import { WorkflowEditor } from '../components/workflow/WorkflowEditor'
 import { listNodes, type RuntimeNode } from '../lib/nodes'
 import { useLeaveGuard } from '../lib/router'
-import { allowRequiredHandoffKinds, archiveTeam, capabilityName, loadBusinessCatalog, memberConfigIssues, nodeReadinessIssues, pinMembers, publishDevelopment, readDevelopment, saveDevelopment, withStarterWorkflow, workflowCapabilityIds, type BusinessCatalog, type DevelopmentDocument, type DevelopmentDraft, type DevelopmentMember } from '../lib/teams'
+import { serverIssues, allowRequiredHandoffKinds, archiveTeam, capabilityName, loadBusinessCatalog, memberConfigIssues, nodeReadinessIssues, pinMembers, publishDevelopment, readDevelopment, saveDevelopment, withStarterWorkflow, workflowCapabilityIds, type BusinessCatalog, type DevelopmentDocument, type DevelopmentDraft, type DevelopmentMember } from '../lib/teams'
 
 export const teamTabs = [['profile', '资料'], ['members', '成员'], ['workflow', '流程'], ['trial', '试跑'], ['publish', '发布'], ['access', '接入']] as const
 export type TeamTab = typeof teamTabs[number][0]
@@ -66,8 +66,10 @@ export function TeamDetailPage({ teamId, tab = 'profile', navigate }: { teamId: 
     const found = [...nodeReadinessIssues(document, accepting), ...memberConfigIssues(document)]
     if (!workflow) found.push('还没有工作流程')
     for (const flow of document.workflows) { const issue = businessCompletionIssue(document, flow); if (issue) found.push(`${issue}，请到“流程”页点“交付结果”设置`) }
+    // The server's findings describe the saved draft, so they are shown only while nothing is unsaved.
+    if (!dirty) found.push(...serverIssues(draft))
     return found
-  }, [document, accepting, workflow])
+  }, [document, accepting, workflow, dirty, draft])
   const actions = useMemo(() => document && workflow ? workflowCapabilityIds(document, workflow).map((id) => ({ id, name: capabilityName(id, catalog) })) : [], [document, workflow, catalog])
   const blockers = useMemo(() => draft ? draft.document.workflows.flatMap((flow) => businessCompletionIssue(draft.document, flow) ?? []) : [], [draft])
 
