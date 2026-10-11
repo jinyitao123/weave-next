@@ -89,7 +89,29 @@ export interface DevelopmentDraft {
   updated_at: string
   trials: DevelopmentTrial[]
   publication_readiness?: { ready: boolean; workflows?: WorkflowReadiness[] }
+  /** What the saved draft still lacks, worked out by the server for every surface. */
+  issues?: DraftIssue[]
 }
+
+export interface DraftIssue { scope: 'team' | 'member' | 'workflow' | 'step'; target: string; workflow?: string; code: string; message: string; blocks: 'trial' | 'publish' | 'none' }
+
+// The page works these out itself as the document is edited, so the server's
+// copy of them would only repeat what is already on screen.
+const shownByThePage = new Set(['member_incomplete', 'member_model_missing', 'workflow_missing', 'business_completion_missing'])
+
+/** The server's findings about the saved draft that the page does not already show, as sentences. */
+export function serverIssues(draft: DevelopmentDraft | undefined): string[] {
+  return (draft?.issues ?? []).filter((issue) => !shownByThePage.has(issue.code)).map((issue) => {
+    if (issue.scope === 'member') return `“${issue.target}”：${issue.message}`
+    if (issue.scope === 'workflow') return `流程“${issue.target}”：${issue.message}`
+    if (issue.scope === 'step') return `流程“${issue.workflow ?? ''}”的步骤“${issue.target}”：${issue.message}`
+    return issue.message
+  })
+}
+
+/** Creates a business team on the server; the same request id never creates a second team. */
+export const createBusinessTeam = (requestId: string, name: string, objective: string) =>
+  api<{ team_id: string }>('/v1/development/teams', { method: 'POST', body: JSON.stringify({ request_id: requestId, name, objective, kind: 'business' }) }).then((created) => created.team_id)
 
 export const listTeamRecords = () => api<TeamRecord[]>('/v1/teams?status=all&purpose=development')
   .then((teams) => teams.filter((team) => team.status !== 'archived'))

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { allowRequiredHandoffKinds, capabilityName, capabilityNote, defaultCapabilityBinding, describeCapability, memberProblems, nodeReadinessIssues, parseOutputSchema, requiredHandoffKinds, trialActions, workflowCapabilityIds, type BusinessCatalog, type DevelopmentDocument, type DevelopmentMember, type DevelopmentWorkflow } from './teams'
+import { allowRequiredHandoffKinds, capabilityName, capabilityNote, defaultCapabilityBinding, describeCapability, memberProblems, nodeReadinessIssues, parseOutputSchema, requiredHandoffKinds, serverIssues, trialActions, workflowCapabilityIds, type BusinessCatalog, type DevelopmentDocument, type DevelopmentMember, type DevelopmentWorkflow } from './teams'
 
 const member = (name: string, engine: string, runtime = '', enabled = true): DevelopmentMember => ({
   id: name,
@@ -131,5 +131,24 @@ describe('what a catalog entry adds to its name', () => {
     expect(capabilityNote('读取旧版提交回执', ' 读取旧版提交回执 ')).toBe('')
     expect(capabilityNote('转为商机', '确认后会将线索转为客户档案和销售商机。')).toBe('确认后会将线索转为客户档案和销售商机。')
     expect(capabilityNote('转为商机', undefined)).toBe('')
+  })
+})
+
+describe('what the server found in the saved draft', () => {
+  it('says each finding the page does not already show, naming what it is about', () => {
+    const draft = { revision: 1, published_revision: 0, updated_at: '', trials: [], document: { name: '团队', objective: '', audience: [], members: [], workflows: [] }, issues: [
+      { scope: 'team', target: '团队', code: 'objective_missing', message: '团队目标为空，员工在桌面查不到这个团队', blocks: 'none' },
+      { scope: 'member', target: '整理员', code: 'member_model_missing', message: '内置引擎成员需要选择模型', blocks: 'trial' },
+      { scope: 'member', target: '整理员', code: 'business_action_unavailable', message: '绑定的一项业务动作已不在目录中或暂不可用，请重新选择', blocks: 'trial' },
+      { scope: 'workflow', target: '跟进流程', workflow: '跟进流程', code: 'workflow_description_missing', message: '流程说明为空', blocks: 'none' },
+      { scope: 'step', target: '核对', workflow: '跟进流程', code: 'step_member_missing', message: '步骤引用了已移出的成员，请重新选择执行者', blocks: 'trial' },
+    ] } as Parameters<typeof serverIssues>[0]
+    expect(serverIssues(draft)).toEqual([
+      '团队目标为空，员工在桌面查不到这个团队',
+      '“整理员”：绑定的一项业务动作已不在目录中或暂不可用，请重新选择',
+      '流程“跟进流程”：流程说明为空',
+      '流程“跟进流程”的步骤“核对”：步骤引用了已移出的成员，请重新选择执行者',
+    ])
+    expect(serverIssues(undefined)).toEqual([])
   })
 })
