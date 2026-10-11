@@ -95,3 +95,14 @@ make compose-check
 - `GET /v1/teams/:id/development` 多返回 `issues`：草稿还差什么、挡住试跑还是发布，或只是建议。例如成员带业务动作而流程没有选定必须办成的动作、流程说明为空。
 
 保存受控修改不改变已发布的团队；试跑和发布仍走原来的接口和条件。
+
+## MCP 入口
+
+`POST /v1/mcp` 让外部智能体（编码助手、客户自有的智能体）开发和使用团队。传输为 JSON-RPC，提供 `initialize`、`tools/list`、`tools/call`；凭据与其他接口相同，放在 `Authorization: Bearer` 里。
+
+它不带自己的业务逻辑：每个工具都是以调用者本人的凭据去调用管理端和桌面已经在用的接口，所以校验、权限和审计与那些接口一致。
+
+- 开发团队（需要开发权限）：`weave_team_list`、`weave_development_read`、`weave_development_guide`、`weave_development_apply`、`weave_team_create`、`weave_development_trial`、`weave_development_trial_read`、`weave_development_publish`。草稿和运行按名称呈现；某一类修改的写法用到时再读。
+- 使用团队：`weave_team_search`、`weave_team_describe`、`weave_work_submit`、`weave_work_read`、`weave_work_cancel`。交接的工作不带业务动作授权，材料第一版只接受文本；一件工作只有提交人、管理员和所有者能读取，只有提交人能停止。
+
+面向 MCP 客户端的浏览器登录和会话管理尚未实现。
