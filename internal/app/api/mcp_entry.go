@@ -252,6 +252,7 @@ func mcpDraftView(draft developmentDraft, catalog []catalogCapability) map[strin
 			"name": cfg.DisplayName, "role": role, "enabled": member.Relationship.Enabled, "duty": member.Relationship.Duty,
 			"instruction": cfg.SystemPrompt, "result_requirement": member.Relationship.ResultRequirement,
 			"business_actions": mcpCapabilityNames(cfg.BusinessCapabilityIDs, catalog), "fixed_output": len(cfg.OutputSchema) > 0,
+			"model": cfg.Model,
 		})
 	}
 	flows := []map[string]any{}

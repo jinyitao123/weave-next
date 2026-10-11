@@ -43,8 +43,9 @@ describe('memberProblems', () => {
     expect(memberProblems(ready('loom', { system_prompt: ' ' }, { duty: '' }))).toEqual(['还没有填写职责', '还没有填写工作方法', '使用内置引擎时需要选择模型'])
   })
 
-  it('lets a built-in lead go without a model', () => {
-    expect(memberProblems(ready('loom', { role: 'avatar' }))).toEqual([])
+  it('asks a built-in lead for a model too, since it takes a step of the flow', () => {
+    expect(memberProblems(ready('loom', { role: 'avatar' }))).toEqual(['使用内置引擎时需要选择模型'])
+    expect(memberProblems(ready('loom', { role: 'avatar', model: 'deepseek-flash' }))).toEqual([])
   })
 
   it('checks the default handoff kind and the skills', () => {
