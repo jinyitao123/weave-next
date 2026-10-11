@@ -1,5 +1,5 @@
 import { createUUID } from './ids'
-import { api, withForgeSession } from './api'
+import { api } from './api'
 import { engineName } from './format'
 import { serialGraph, withVerifyLoop, type Graph } from './graph'
 import { initialGraph } from './workflow-graph'
@@ -158,10 +158,10 @@ const readCatalog = (catalog: BusinessCatalog): BusinessCatalog => ({ ...catalog
 export const loadBusinessCatalog = () => api<BusinessCatalog>('/v1/development/business-capabilities').then(readCatalog)
 
 // Reads the catalog again on request. The console keeps no Forge credential,
-// so the signed-in person proves the same Forge account once more; the
-// password goes to Forge only.
-export const refreshBusinessCatalog = (forgeOrigin: string, email: string, password: string) =>
-  withForgeSession(forgeOrigin, email, password, (forge_token) => api<BusinessCatalog>('/v1/development/business-capabilities/refresh', { method: 'POST', body: JSON.stringify({ forge_token }) })).then(readCatalog)
+// so the signed-in person approves once more on Forge and the session Forge
+// releases for that is what reads the catalog.
+export const refreshBusinessCatalog = (forge_token: string) =>
+  api<BusinessCatalog>('/v1/development/business-capabilities/refresh', { method: 'POST', body: JSON.stringify({ forge_token }) }).then(readCatalog)
 
 export const archiveTeam = (teamId: string) => api<void>(`${base(teamId)}/team`, { method: 'DELETE' })
 

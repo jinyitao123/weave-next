@@ -20,8 +20,9 @@ make admin-build     # 构建并复制到嵌入目录；之后再 go build
 
 ## 登录
 
-- 默认入口 `/admin/` 使用 Forge 管理员或开发者账号。配置 `WEAVE_ADMIN_FORGE_URL` 为浏览器可访问的 Forge 地址；未配置时页面提示配置不足，不自动切换为 API Key。浏览器直接向 Forge 登录，密码不经过 Weave；Forge 需要把管理端地址加入可信来源并允许跨域。拿到的 Forge 会话只用于一次交换，随后释放。
-- 运维明确使用 `/admin/?login=api_key` 时显示既有 API Key 表单，密钥仍由 `weave bootstrap` 签发。默认页面不提供登录方式切换；后端 API Key 功能、角色和 scope 边界不变。
+- 默认入口 `/admin/` 提供账号登录和密钥登录。账号登录使用 Forge 管理员或开发者账号，页面上不输入账号密码：页面向 Forge 取一个确认码并打开 Forge 的确认页，本人在 Forge 页面核对确认码并确认后，Forge 签发一个短会话，管理端用它向 Weave 换取登录，随后把这个 Forge 会话注销。刷新业务动作目录时同样到 Forge 页面再确认一次。
+- 账号登录需要：`WEAVE_ADMIN_FORGE_URL` 配置为浏览器可访问的 Forge 地址；Forge 已启用设备登录，并在允许的客户端名单里列出 `weave-console`；Forge 把管理端地址加入可信来源（管理端从浏览器直接调用 Forge）。任何一项不满足时页面说明原因，密钥登录不受影响。
+- 密钥登录填写部署时设置的登录密钥或 `weave bootstrap` 签发的 API Key；`/admin/?login=api_key` 直接打开这一种。后端 API Key 功能、角色和 scope 边界不变。
 
 登录成功后，凭据只保存在 HttpOnly、SameSite=Strict 的同源 Cookie 中；页面脚本无法读取。所有写请求必须带 `X-Weave-Admin: 1`，跨站来源一律拒绝。
 

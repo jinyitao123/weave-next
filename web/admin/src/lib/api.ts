@@ -56,44 +56,16 @@ export const signOut = () => api<void>('/v1/admin/session', { method: 'DELETE' }
 export const signInWithAPIKey = (apiKey: string) =>
   api<AdminSession>('/v1/admin/session', { method: 'POST', body: JSON.stringify({ api_key: apiKey }) })
 
-// Forge sign-in happens in the browser so the password never reaches Weave.
-// The short Forge session is handed to one call and then released.
-export async function withForgeSession<T>(forgeOrigin: string, email: string, password: string, use: (forgeToken: string) => Promise<T>): Promise<T> {
-  let signedIn: Response
-  try {
-    signedIn = await fetch(new URL('/api/v1/auth/sign-in/email', forgeOrigin), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({ email: email.trim(), password }),
-      credentials: 'omit',
-    })
-  } catch {
-    throw new ApiError(0, 'forge_unreachable')
-  }
-  if (signedIn.status === 401 || signedIn.status === 403) throw new ApiError(signedIn.status, 'forge_credentials_rejected')
-  if (!signedIn.ok) throw new ApiError(signedIn.status, 'forge_unavailable')
-  const forge = (await signedIn.json().catch(() => undefined)) as { token?: unknown } | undefined
-  if (typeof forge?.token !== 'string') throw new ApiError(502, 'forge_response_unrecognized')
-  const forgeToken = forge.token
-  try {
-    return await use(forgeToken)
-  } finally {
-    await fetch(new URL('/api/v1/auth/sign-out', forgeOrigin), {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${forgeToken}`, 'Content-Type': 'application/json' },
-      body: '{}',
-      credentials: 'omit',
-      signal: AbortSignal.timeout(10_000),
-    }).catch(() => undefined)
-  }
-}
-
-export const signInWithForge = (forgeOrigin: string, email: string, password: string) =>
-  withForgeSession(forgeOrigin, email, password, (forge_token) => api<AdminSession>('/v1/admin/session', { method: 'POST', body: JSON.stringify({ forge_token }) }))
+/** Opens the console session for the Forge account that just approved it. */
+export const signInWithForge = (forge_token: string) =>
+  api<AdminSession>('/v1/admin/session', { method: 'POST', body: JSON.stringify({ forge_token }) })
 
 const messages: Record<string, string> = {
   forge_unreachable: '无法连接 Forge，请确认 Forge 允许本地址跨域登录',
-  forge_credentials_rejected: '账号或密码不正确',
+  forge_approval_unavailable: '这个 Forge 还没有启用浏览器确认登录，请联系管理员',
+  forge_client_refused: '这个 Forge 不接受 Weave 管理端登录，请联系管理员',
+  forge_approval_denied: '已在 Forge 页面拒绝',
+  forge_approval_expired: '确认已过期，请重新开始',
   forge_unavailable: 'Forge 登录服务暂时不可用',
   forge_response_unrecognized: 'Forge 返回了无法识别的登录结果',
   'invalid api key': 'API Key 无效或已过期',
