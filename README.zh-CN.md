@@ -112,4 +112,9 @@ make compose-check
 - 开发团队（需要开发权限）：`weave_team_list`、`weave_development_read`、`weave_development_guide`、`weave_development_apply`、`weave_team_create`、`weave_development_trial`、`weave_development_trial_read`、`weave_development_publish`。草稿和运行按名称呈现；某一类修改的写法用到时再读。
 - 使用团队：`weave_team_search`、`weave_team_describe`、`weave_work_submit`、`weave_work_read`、`weave_work_cancel`。交接的工作不带业务动作授权，材料第一版只接受文本；一件工作只有提交人、管理员和所有者能读取，只有提交人能停止。
 
-面向 MCP 客户端的浏览器登录和会话管理尚未实现。
+凭据有三种，任选其一：
+
+- **账号登录。** 支持登录的 MCP 客户端（多数编码助手）只需填入口地址。客户端首次调用得到 401，按其中指向的说明（`/.well-known/oauth-protected-resource`、`/.well-known/oauth-authorization-server`）登记自己并打开浏览器；本人在 Weave 的页面登录——账号经 Forge 确认，或密钥——再按名称允许这个客户端，客户端即得到自己的会话。会话两周有效，只能用于 MCP 入口；本人的角色以登录时核实的为准，账号被停用或会话被收回后立即失效。回跳地址只接受本机地址和 HTTPS 地址。
+- **登录密钥**或**签发的 API Key**：直接作为 `Authorization: Bearer` 凭据，不经过浏览器。
+
+管理端“集成”页列出已登录的 MCP 客户端并可收回：每个人看到并收回自己的，管理员看到并收回本工作区全部的。对应接口为 `GET /v1/mcp/sessions` 与 `DELETE /v1/mcp/sessions/:id`。服务端只保存令牌摘要；已结束的会话记录保留，作为谁从哪个客户端登录、由谁收回的记录。

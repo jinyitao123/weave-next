@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { McpSessions } from '../components/McpSessions'
 import { Badge, CopyField, InlineError } from '../components/ui'
 import { ApiError, errorMessage, type AdminSession } from '../lib/api'
 import { checkFeishuApp, checkReasons, deleteFeishuApp, readFeishuApp, saveFeishuApp, type FeishuApp, type FeishuAppInput } from '../lib/feishu'
@@ -24,6 +25,7 @@ export function IntegrationsPage({ session }: { session: AdminSession }) {
     <header className="page__header"><h1>集成</h1></header>
     {error ? <InlineError message={error} onRetry={() => void load()} /> : null}
     {app ? <FeishuAppPanel key={`${app.source}-${app.revision}`} app={app} editable={canAdminister(session)} onChanged={setApp} /> : null}
+    <McpSessions />
   </section>
 }
 
