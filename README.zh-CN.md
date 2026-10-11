@@ -91,6 +91,7 @@ make compose-check
 
 - `GET /v1/development/operations` 列出可修改的类别，每类一行；`GET /v1/development/operations/:topic` 给出该类每种修改的说明和例子。调用方用到哪类再读哪类。
 - `POST /v1/teams/:id/development/operations` 提交 1 至 24 项修改，带 `expected_revision` 和 `request_id`。任何一项不合法时整组不保存，并指出是第几项；`dry_run` 只返回会带来的变化，不写入。保存过的请求按 `request_id` 记在 `weave_team_development_requests`（操作人、修订前后、各类修改的数量和逐项说明，不含修改内容），同一请求重发返回首次结果，同一标识换了内容返回冲突。
+- `POST /v1/development/teams` 按 `request_id` 新建一个业务团队：负责人、一位业务办理员和基础流程，返回团队和草稿修订。同一请求重发返回同一个团队；中途失败后重发会接着已建好的部分完成，不会多建。代码团队仍在管理端新建。
 - `GET /v1/teams/:id/development` 多返回 `issues`：草稿还差什么、挡住试跑还是发布，或只是建议。例如成员带业务动作而流程没有选定必须办成的动作、流程说明为空。
 
 保存受控修改不改变已发布的团队；试跑和发布仍走原来的接口和条件。
