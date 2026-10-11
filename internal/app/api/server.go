@@ -323,6 +323,7 @@ func (s *Server) registerRoutes() {
 	auth.GET("/integrations/feishu/binding", s.handleFeishuBinding)
 	auth.POST("/integrations/feishu/link-code", s.handleFeishuLinkCode)
 	auth.DELETE("/integrations/feishu/binding", s.handleFeishuUnlink)
+	auth.POST("/mcp", s.handleMCPEntry)
 	adminScope := RequireScope("admin")
 	agentsScope := RequireScope("agents")
 	chatScope := RequireScope("chat")

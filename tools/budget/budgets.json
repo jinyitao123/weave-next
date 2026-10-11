@@ -1037,6 +1037,22 @@
         "lines_added": 334,
         "production_lines_added": 206
       }
+    },
+    {
+      "date": "2026-10-11",
+      "reason": "Open Weave to outside agents through one MCP entry for developing and using teams. The entry adds no behaviour of its own: each of its thirteen tools makes one or two calls to routes the console and the desktop already use, with the caller's own credential, so validation, permissions and audit are the ones those routes apply. It adds the views an agent reads (a draft and a run by names instead of identifiers), the text comparison for finding a team, and an ownership check so handed-over work is read and stopped only by its submitter or by those who read every run. Reuses the shared MCP protocol adapter; no new packages, dependencies or execution paths. A real PostgreSQL test drives the entry over HTTP through creating, reading, previewing and saving a team, the role refusals, finding a team, handing work over once per request id and reading it back.",
+      "record": "README.zh-CN.md#MCP-入口",
+      "growth": {
+        "lines": 1009,
+        "production_lines": 789
+      },
+      "deletion_trigger": "Remove the MCP entry with its tools and regressions when a recorded decision closes Weave to outside agents again; the routes it calls stay under their own triggers. Lower the measured budgets in that change.",
+      "app": {
+        "previous_lines": 82734,
+        "previous_production_lines": 56652,
+        "lines_added": 1009,
+        "production_lines_added": 789
+      }
     }
   ],
   "migration_targets": {
@@ -1100,8 +1116,8 @@
     "allowed_dependencies": []
   },
   "app": {
-    "lines": 82734,
-    "production_lines": 56652,
+    "lines": 83743,
+    "production_lines": 57441,
     "packages": 25,
     "external_dependencies": 6,
     "allowed_dependencies": [
