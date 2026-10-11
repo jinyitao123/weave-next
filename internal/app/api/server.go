@@ -399,6 +399,7 @@ func (s *Server) registerRoutes() {
 	auth.GET("/teams/:id/development", s.handleGetTeamDevelopment, RequireAnyRole("developer", "admin", "owner"), orgScope)
 	auth.PUT("/teams/:id/development", s.handleSaveTeamDevelopment, RequireAnyRole("developer", "admin", "owner"), orgScope)
 	auth.POST("/teams/:id/development/operations", s.handleApplyTeamDevelopmentOperations, RequireAnyRole("developer", "admin", "owner"), orgScope)
+	auth.POST("/development/teams", s.handleCreateDevelopmentTeam, RequireAnyRole("developer", "admin", "owner"), orgScope)
 	auth.GET("/development/operations", s.handleListDevelopmentOperations, RequireAnyRole("developer", "admin", "owner"), orgScope)
 	auth.GET("/development/operations/:topic", s.handleGetDevelopmentOperationTopic, RequireAnyRole("developer", "admin", "owner"), orgScope)
 	auth.POST("/teams/:id/development/trials", s.handleTrialTeamDevelopment, RequireAnyRole("developer", "admin", "owner"), orgScope)

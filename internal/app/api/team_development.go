@@ -153,10 +153,10 @@ func readDevelopment(ctx context.Context, tx pgx.Tx, ws, teamID string, lock boo
 	d.Trials = []developmentTrialView{}
 	return d, nil
 }
-func (s *Server) handleGetTeamDevelopment(c echo.Context) error {
-	if s.Pool == nil {
-		return echo.NewHTTPError(503, "开发服务暂不可用")
-	}
+
+// ensureDevelopmentDraft starts a team's draft from what is live the first time
+// the team is opened for development.
+func (s *Server) ensureDevelopmentDraft(c echo.Context) error {
 	ctx, ws, id := c.Request().Context(), getTenant(c), c.Param("id")
 	var exists bool
 	if err := s.Pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM weave_team_development_drafts WHERE workspace_id=$1 AND team_id=$2)`, ws, id).Scan(&exists); err != nil {
@@ -172,6 +172,17 @@ func (s *Server) handleGetTeamDevelopment(c echo.Context) error {
 			return err
 		}
 	}
+	return nil
+}
+
+func (s *Server) handleGetTeamDevelopment(c echo.Context) error {
+	if s.Pool == nil {
+		return echo.NewHTTPError(503, "开发服务暂不可用")
+	}
+	if err := s.ensureDevelopmentDraft(c); err != nil {
+		return err
+	}
+	ctx, ws, id := c.Request().Context(), getTenant(c), c.Param("id")
 	tx, err := s.Pool.Begin(ctx)
 	if err != nil {
 		return err

@@ -1021,6 +1021,22 @@
         "lines_added": 103,
         "production_lines_added": 48
       }
+    },
+    {
+      "date": "2026-10-11",
+      "reason": "Create a starter business team on the server once per request id, so the desktop assistant and the coming MCP entry can create a team without each composing agents, the team and its first flow themselves, and so a repeated request cannot create a second team. Names derive from the request id and an interrupted attempt is picked up, not repeated; the starter flow is written through the controlled edits. Reuses the agent registry, the team store and the draft seeding; no new packages, dependencies or execution paths. A real PostgreSQL test covers creation, the starter draft and its one open issue, a repeated request, a reused request id, an unsupported kind and a second team under the same name.",
+      "record": "README.zh-CN.md#受控修改与草稿待办",
+      "growth": {
+        "lines": 334,
+        "production_lines": 206
+      },
+      "deletion_trigger": "Remove the creation route and its request table with the controlled edit route under that trigger, or earlier if a recorded decision returns team creation to the console alone. Lower the measured budgets in that change.",
+      "app": {
+        "previous_lines": 82400,
+        "previous_production_lines": 56446,
+        "lines_added": 334,
+        "production_lines_added": 206
+      }
     }
   ],
   "migration_targets": {
@@ -1084,8 +1100,8 @@
     "allowed_dependencies": []
   },
   "app": {
-    "lines": 82400,
-    "production_lines": 56446,
+    "lines": 82734,
+    "production_lines": 56652,
     "packages": 25,
     "external_dependencies": 6,
     "allowed_dependencies": [
