@@ -78,4 +78,24 @@ describe('signing in through the Forge page around the console', () => {
     await expect(entering).rejects.toMatchObject({ code: 'forge_approval_denied' })
     expect(paths).not.toContain('/api/v1/auth/device/token')
   })
+
+  it('does not mark the surrounding page approved if identity exchange fails', async () => {
+    const paths = forge()
+    const { posted, answer } = insideForge()
+    const entering = withForgePageApproval(FORGE, new AbortController().signal, async () => { throw new ApiError(403, 'forbidden') })
+    const refused = expect(entering).rejects.toMatchObject({ code: 'forbidden' })
+    await vi.waitFor(() => expect(posted).toHaveLength(1))
+    answer({ type: APPROVE_ANSWER, userCode: 'WXYZ2345', approved: true })
+    await refused
+    expect(approvesThroughForgePage()).toBe(false)
+    expect(paths.at(-1)).toBe('/api/v1/auth/sign-out')
+  })
+
+  it('does not issue a code after the caller has already cancelled', async () => {
+    const paths = forge()
+    insideForge()
+    await expect(withForgePageApproval(FORGE, AbortSignal.abort(), async () => 'used')).rejects.toMatchObject({ code: 'forge_approval_cancelled' })
+    expect(paths).toEqual([])
+    expect(approvesThroughForgePage()).toBe(false)
+  })
 })

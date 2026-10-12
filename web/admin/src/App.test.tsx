@@ -95,6 +95,8 @@ describe('console start', () => {
     render(<App />)
     expect(await screen.findByText('已进入：小林')).toBeTruthy()
     expect(readSession).not.toHaveBeenCalled()
+    expect(signOut).toHaveBeenCalledOnce()
+    expect(vi.mocked(signOut).mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(withForgePageApproval).mock.invocationCallOrder[0])
     expect(vi.mocked(withForgePageApproval).mock.calls[0]?.[0]).toBe('https://forge.example')
   })
 
@@ -106,13 +108,38 @@ describe('console start', () => {
     expect(await screen.findByRole('heading', { name: '当前账号不能进入管理端' })).toBeTruthy()
   })
 
-  it('falls back to its own sign-in when the page around it does not confirm', async () => {
+  it.each(['forge_page_unavailable', 'forge_approval_denied', 'forge_approval_unavailable', 'forge_client_refused'])('does not reuse a prior administrator session when embedded approval fails with %s', async (code) => {
     vi.mocked(readConfig).mockResolvedValue(config)
     vi.mocked(embedded).mockReturnValue(true)
-    vi.mocked(withForgePageApproval).mockRejectedValue(new ApiError(0, 'forge_page_unavailable'))
-    vi.mocked(readSession).mockRejectedValue(new ApiError(401, 'missing authorization header'))
+    vi.mocked(withForgePageApproval).mockRejectedValue(new ApiError(0, code))
+    vi.mocked(readSession).mockResolvedValue({ name: '上一位管理员', role: 'admin', source: 'forge' })
     render(<App />)
     expect(await screen.findByRole('button', { name: '登录页' })).toBeTruthy()
+    expect(readSession).not.toHaveBeenCalled()
+    expect(signOut).toHaveBeenCalledOnce()
+    expect(screen.queryByText('已进入：上一位管理员')).toBeNull()
+  })
+
+  it('stops if the previous embedded identity cannot be cleared', async () => {
+    vi.mocked(readConfig).mockResolvedValue(config)
+    vi.mocked(embedded).mockReturnValue(true)
+    vi.mocked(signOut).mockRejectedValue(new ApiError(500, 'http_500'))
+    render(<App />)
+    expect(await screen.findByRole('heading', { name: 'Weave 暂时无法访问' })).toBeTruthy()
+    expect(withForgePageApproval).not.toHaveBeenCalled()
+    expect(readSession).not.toHaveBeenCalled()
+  })
+
+  it('cancels the pending embedded approval when the console closes', async () => {
+    vi.mocked(readConfig).mockResolvedValue(config)
+    vi.mocked(embedded).mockReturnValue(true)
+    vi.mocked(withForgePageApproval).mockReturnValue(new Promise(() => undefined))
+    const view = render(<App />)
+    await waitFor(() => expect(withForgePageApproval).toHaveBeenCalledOnce())
+    const signal = vi.mocked(withForgePageApproval).mock.calls[0]![1]
+    expect(signal.aborted).toBe(false)
+    view.unmount()
+    expect(signal.aborted).toBe(true)
   })
 
   it('does not ask a surrounding page when no Forge sign-in is configured', async () => {

@@ -24,6 +24,8 @@ export function embedded(): boolean {
 
 /** Runs one approval that the surrounding Forge page confirms. Fails with forge_page_unavailable when no such page answers. */
 export async function withForgePageApproval<T>(forgeOrigin: string, signal: AbortSignal, use: (forgeToken: string) => Promise<T>, answerMilliseconds = ANSWER_MILLISECONDS): Promise<T> {
+  pageApproves = false
+  if (signal.aborted) throw new ApiError(0, 'forge_approval_cancelled')
   const origin = new URL(forgeOrigin).origin
   const controller = new AbortController()
   const stop = () => controller.abort()
@@ -38,7 +40,6 @@ export async function withForgePageApproval<T>(forgeOrigin: string, signal: Abor
     const data = event.data as { type?: unknown; userCode?: unknown; approved?: unknown } | null
     if (!data || data.type !== APPROVE_ANSWER || data.userCode !== userCode) return
     if (data.approved === true) {
-      pageApproves = true
       confirm()
     } else {
       failure = new ApiError(403, 'forge_approval_denied')
@@ -49,7 +50,7 @@ export async function withForgePageApproval<T>(forgeOrigin: string, signal: Abor
   let timer: ReturnType<typeof setTimeout> | undefined
   let hurried = false
   try {
-    return await withForgeApproval(origin, {
+    const result = await withForgeApproval(origin, {
       signal: controller.signal,
       onPending: (pending) => {
         userCode = pending.userCode
@@ -70,6 +71,9 @@ export async function withForgePageApproval<T>(forgeOrigin: string, signal: Abor
         return Promise.race([timed, confirmed.then(() => { hurried = true })])
       },
     }, use)
+    if (controller.signal.aborted) throw new ApiError(0, 'forge_approval_cancelled')
+    pageApproves = true
+    return result
   } catch (error) {
     throw failure ?? error
   } finally {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { ApiError, readConfig, readSession, signInWithForge, signOut, type AdminConfig, type AdminSession } from './lib/api'
 import { embedded, withForgePageApproval } from './lib/forge-embed'
 import { currentPath } from './lib/router'
@@ -19,36 +19,52 @@ export function App() {
   // An MCP client's sign-in lands here and is answered by whoever signs in, whatever their role.
   const [connecting] = useState(() => currentPath() === '/connect')
   const [state, setState] = useState<State>({ kind: 'loading' })
+  const loading = useRef<AbortController | undefined>(undefined)
   const load = useCallback(async () => {
+    loading.current?.abort()
+    const controller = new AbortController()
+    loading.current = controller
+    const { signal } = controller
+    const update = (next: State) => { if (!signal.aborted) setState(next) }
     let config: AdminConfig
     try {
-      config = await readConfig()
+      config = await readConfig(signal)
     } catch {
-      setState({ kind: 'unavailable' })
+      update({ kind: 'unavailable' })
       return
     }
+    if (signal.aborted) return
     if (connecting) {
-      setState({ kind: 'connecting', config })
+      update({ kind: 'connecting', config })
       return
     }
     // Shown inside the Forge it signs in with, the console enters as whoever is signed in there,
-    // whatever session it held before. Anywhere else, or if that page does not answer, its own sign-in applies.
+    // whatever session it held before. A failed approval must never revive that previous identity.
     if (embedded() && config.forge_origin && config.sign_in_methods.includes('forge')) {
       try {
-        const session = await withForgePageApproval(config.forge_origin, new AbortController().signal, signInWithForge)
-        setState(session.role === 'member' ? { kind: 'refused', config } : { kind: 'signed-in', config, session })
+        await signOut(signal)
+      } catch {
+        update({ kind: 'unavailable' })
         return
-      } catch { /* falls through to the console's own sign-in */ }
+      }
+      if (signal.aborted) return
+      try {
+        const session = await withForgePageApproval(config.forge_origin, signal, (token) => signInWithForge(token, signal))
+        update(session.role === 'member' ? { kind: 'refused', config } : { kind: 'signed-in', config, session })
+      } catch {
+        update({ kind: 'signed-out', config })
+      }
+      return
     }
     try {
-      setState({ kind: 'signed-in', config, session: await readSession() })
+      update({ kind: 'signed-in', config, session: await readSession(signal) })
     } catch (error) {
       const status = error instanceof ApiError ? error.status : 0
       // Not signed in and not allowed in are answers; only the rest means Weave could not be reached.
-      setState(status === 401 ? { kind: 'signed-out', config } : status === 403 ? { kind: 'refused', config } : { kind: 'unavailable' })
+      update(status === 401 ? { kind: 'signed-out', config } : status === 403 ? { kind: 'refused', config } : { kind: 'unavailable' })
     }
   }, [connecting])
-  useEffect(() => { void load() }, [load])
+  useEffect(() => { void load(); return () => loading.current?.abort() }, [load])
 
   if (state.kind === 'loading') return null
   if (state.kind === 'unavailable') {
