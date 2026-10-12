@@ -11,7 +11,7 @@ vi.mock('./lib/api', async (original) => ({
 vi.mock('./lib/forge-embed', () => ({ embedded: vi.fn(() => false), withForgePageApproval: vi.fn() }))
 const developer: AdminSession = { name: '小周', role: 'developer', source: 'forge' }
 vi.mock('./pages/SignInPage', () => ({
-  SignInPage: ({ onSignedIn }: { onSignedIn(session: AdminSession): void }) => <button type="button" onClick={() => onSignedIn({ name: '小周', role: 'developer', source: 'forge' })}>登录页</button>,
+  SignInPage: ({ onSignedIn, initialError }: { onSignedIn(session: AdminSession): void; initialError?: string }) => <>{initialError ? <p role="alert">{initialError}</p> : null}<button type="button" onClick={() => onSignedIn({ name: '小周', role: 'developer', source: 'forge' })}>登录页</button></>,
 }))
 vi.mock('./pages/Shell', () => ({ Shell: ({ session }: { session: AdminSession }) => <p>已进入：{session.name}</p> }))
 
@@ -118,6 +118,7 @@ describe('console start', () => {
     expect(readSession).not.toHaveBeenCalled()
     expect(signOut).toHaveBeenCalledOnce()
     expect(screen.queryByText('已进入：上一位管理员')).toBeNull()
+    expect(screen.getByRole('alert').textContent).toBe(code === 'forge_page_unavailable' ? 'Forge 页面没有回应，请重试' : code === 'forge_approval_denied' ? '已在 Forge 页面拒绝' : code === 'forge_approval_unavailable' ? '这个 Forge 还没有启用浏览器确认登录，请联系管理员' : '这个 Forge 不接受 Weave 管理端登录，请联系管理员')
   })
 
   it('stops if the previous embedded identity cannot be cleared', async () => {

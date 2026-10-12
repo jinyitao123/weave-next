@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ApiError, readConfig, readSession, signInWithForge, signOut, type AdminConfig, type AdminSession } from './lib/api'
+import { ApiError, errorMessage, readConfig, readSession, signInWithForge, signOut, type AdminConfig, type AdminSession } from './lib/api'
 import { embedded, withForgePageApproval } from './lib/forge-embed'
 import { currentPath } from './lib/router'
 import { ConnectPage } from './pages/ConnectPage'
@@ -9,7 +9,7 @@ import { SignInPage } from './pages/SignInPage'
 type State =
   | { kind: 'loading' }
   | { kind: 'unavailable' }
-  | { kind: 'signed-out'; config: AdminConfig }
+  | { kind: 'signed-out'; config: AdminConfig; error?: string }
   | { kind: 'connecting'; config: AdminConfig }
   // Signed in, but as an account the console is not open to.
   | { kind: 'refused'; config: AdminConfig; leaving?: 'busy' | 'failed' }
@@ -51,8 +51,8 @@ export function App() {
       try {
         const session = await withForgePageApproval(config.forge_origin, signal, (token) => signInWithForge(token, signal))
         update(session.role === 'member' ? { kind: 'refused', config } : { kind: 'signed-in', config, session })
-      } catch {
-        update({ kind: 'signed-out', config })
+      } catch (failure) {
+        update({ kind: 'signed-out', config, error: errorMessage(failure) })
       }
       return
     }
@@ -94,7 +94,7 @@ export function App() {
     </section></main>
   }
   if (state.kind === 'signed-out') {
-    return <SignInPage config={state.config} onSignedIn={(session) => setState({ kind: 'signed-in', config: state.config, session })} />
+    return <SignInPage config={state.config} initialError={state.error} onSignedIn={(session) => setState({ kind: 'signed-in', config: state.config, session })} />
   }
   return <Shell session={state.session} onSignOut={async () => {
     await signOut().catch(() => undefined)

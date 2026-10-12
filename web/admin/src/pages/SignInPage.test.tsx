@@ -35,6 +35,13 @@ afterEach(() => {
 })
 
 describe('management sign-in', () => {
+  it('shows a failed embedded approval and clears it when the person chooses another method', () => {
+    render(<SignInPage config={configured} onSignedIn={vi.fn()} initialError="已在 Forge 页面拒绝" />)
+    expect(screen.getByRole('alert').textContent).toBe('已在 Forge 页面拒绝')
+    fireEvent.click(screen.getByRole('button', { name: '密钥登录' }))
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
   it('offers an account first, confirmed on Forge without a password typed here', async () => {
     const onSignedIn = vi.fn()
     const session = { name: '开发者', role: 'developer', source: 'forge' as const }

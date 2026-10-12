@@ -6,7 +6,7 @@ import { errorMessage, signInWithAPIKey, signInWithForge, signOut, type AdminCon
 type Method = 'forge' | 'api_key'
 
 // anyRole: the page signs in whoever it is, for a caller that is open to every account.
-export function SignInPage({ config, onSignedIn, anyRole }: { config: AdminConfig; onSignedIn(session: AdminSession): void; anyRole?: boolean }) {
+export function SignInPage({ config, onSignedIn, anyRole, initialError }: { config: AdminConfig; onSignedIn(session: AdminSession): void; anyRole?: boolean; initialError?: string }) {
   const forgeAvailable = config.sign_in_methods.includes('forge') && Boolean(config.forge_origin)
   const keyAvailable = config.sign_in_methods.includes('api_key')
   // An account is the usual way in; the key is offered beside it, and alone
@@ -15,7 +15,7 @@ export function SignInPage({ config, onSignedIn, anyRole }: { config: AdminConfi
   const available = method === 'forge' ? forgeAvailable : keyAvailable
   const [apiKey, setAPIKey] = useState('')
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
+  const [error, setError] = useState(initialError ?? '')
   const { pending, approve, cancel } = useForgeApproval(config.forge_origin)
   // Choosing the key puts the cursor in its field, so typing can start at once.
   const first = useRef<HTMLInputElement>(null)
