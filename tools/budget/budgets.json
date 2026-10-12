@@ -1145,6 +1145,22 @@
         "lines_added": 213,
         "production_lines_added": 12
       }
+    },
+    {
+      "date": "2026-10-11",
+      "reason": "Close the list of things that could only be done in the console, as the owner decided on 2026-10-11 (decision 008 in the product repository: whatever the person signed in to the desktop may do in Weave is finished there). Two additions. Controlled edits gain how a member runs — engine, node and model, execution limits and tool loop, memory, tool permissions and handoff kinds — with the checks the console applies. And the operations that are not part of a team draft (archiving a team, refreshing the business action catalog, runs, nodes, code repositories, Feishu, client sessions) are offered as one described catalog with a single apply route, shared by the desktop assistant and the MCP entry. Each operation is a call to the route the console already uses, made as the caller, so no permission, validation or audit rule is written a second time; the catalog adds only names instead of identifiers, a confirmation step for what cannot be taken back, and the rule that a secret is never an operation field: it is asked of, or shown by, an interactive caller only, and the MCP entry is refused both. No new packages, dependencies, tables or runtime loops.",
+      "record": "README.zh-CN.md#受控修改与草稿待办",
+      "growth": {
+        "lines": 1703,
+        "production_lines": 1302
+      },
+      "deletion_trigger": "Remove the workspace operation catalog and its two MCP tools when a recorded decision returns these operations to the console only, or when the routes they call gain a described, name-addressed form of their own that the desktop and MCP entry can call directly. Remove the member run-setting edits if member execution settings move out of the team draft. Lower the measured budgets in that change.",
+      "app": {
+        "previous_lines": 85294,
+        "previous_production_lines": 58277,
+        "lines_added": 1703,
+        "production_lines_added": 1302
+      }
     }
   ],
   "migration_targets": {
@@ -1208,8 +1224,8 @@
     "allowed_dependencies": []
   },
   "app": {
-    "lines": 85294,
-    "production_lines": 58277,
+    "lines": 86997,
+    "production_lines": 59579,
     "packages": 25,
     "external_dependencies": 6,
     "allowed_dependencies": [

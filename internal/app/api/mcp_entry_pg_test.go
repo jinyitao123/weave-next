@@ -91,7 +91,7 @@ func TestMCPEntryServesTeamToolsAsTheCallerRealPG(t *testing.T) {
 	}
 	_, listed := rpc("user", "admin", "tools/list", nil)
 	tools := list(listed["result"].(map[string]any)["tools"])
-	if len(tools) != 13 {
+	if len(tools) != 15 {
 		t.Fatalf("tools = %d", len(tools))
 	}
 	for _, raw := range tools {
@@ -134,6 +134,24 @@ func TestMCPEntryServesTeamToolsAsTheCallerRealPG(t *testing.T) {
 	}
 	if missing, failed := tool("user", "admin", "weave_development_guide", map[string]any{"topic": "engine"}); !failed || missing["code"] != "operation_topic_not_found" {
 		t.Fatalf("unknown topic: %v", missing)
+	}
+	// Operations outside the draft: described here, carried out unless they need a secret shown or typed.
+	if guide, failed := tool("user", "admin", "weave_workspace_guide", map[string]any{}); failed || len(list(guide["topics"])) != len(workspaceTopics) {
+		t.Fatalf("workspace guide: %v", guide)
+	}
+	if guide, failed := tool("user", "admin", "weave_workspace_guide", map[string]any{"topic": "node"}); failed || len(list(guide["operations"])) != 7 {
+		t.Fatalf("workspace node guide: %v", guide)
+	}
+	if sessions, failed := tool("user", "admin", "weave_workspace_apply", map[string]any{"operation": map[string]any{"kind": "client_session_list"}}); failed || sessions["status"] != "done" {
+		t.Fatalf("workspace apply: %v", sessions)
+	}
+	if asked, failed := tool("user", "admin", "weave_workspace_apply", map[string]any{"operation": map[string]any{"kind": "team_archive", "team_id": teamID}}); failed || asked["status"] != "confirmation_required" {
+		t.Fatalf("an archive without consent: %v", asked)
+	}
+	for _, operation := range []map[string]any{{"kind": "node_add", "name": "研发一号机"}, {"kind": "catalog_refresh"}, {"kind": "repository_save", "name": "订单服务", "enter": []string{"git_token"}}} {
+		if refused, failed := tool("user", "admin", "weave_workspace_apply", map[string]any{"operation": operation, "confirmed": true}); !failed || refused["code"] != "desktop_only" {
+			t.Fatalf("%v reached an agent that cannot show or take a secret: %v", operation["kind"], refused)
+		}
 	}
 	change := []map[string]any{{"kind": "member", "member": "业务办理员", "duty": "整理线索并给出是否跟进的结论"}}
 	preview, failed := tool("user", "admin", "weave_development_apply", map[string]any{"team_id": teamID, "request_id": uuid.NewString(), "expected_revision": draft["revision"], "dry_run": true, "operations": change})
