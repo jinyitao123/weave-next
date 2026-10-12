@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
-import { ApiError, readConfig, readSession, signOut, type AdminConfig, type AdminSession } from './lib/api'
+import { ApiError, readConfig, readSession, signInWithForge, signOut, type AdminConfig, type AdminSession } from './lib/api'
+import { embedded, withForgePageApproval } from './lib/forge-embed'
 import { currentPath } from './lib/router'
 import { ConnectPage } from './pages/ConnectPage'
 import { Shell } from './pages/Shell'
@@ -29,6 +30,15 @@ export function App() {
     if (connecting) {
       setState({ kind: 'connecting', config })
       return
+    }
+    // Shown inside the Forge it signs in with, the console enters as whoever is signed in there,
+    // whatever session it held before. Anywhere else, or if that page does not answer, its own sign-in applies.
+    if (embedded() && config.forge_origin && config.sign_in_methods.includes('forge')) {
+      try {
+        const session = await withForgePageApproval(config.forge_origin, new AbortController().signal, signInWithForge)
+        setState(session.role === 'member' ? { kind: 'refused', config } : { kind: 'signed-in', config, session })
+        return
+      } catch { /* falls through to the console's own sign-in */ }
     }
     try {
       setState({ kind: 'signed-in', config, session: await readSession() })

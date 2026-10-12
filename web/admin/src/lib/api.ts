@@ -65,6 +65,7 @@ const messages: Record<string, string> = {
   forge_approval_unavailable: '这个 Forge 还没有启用浏览器确认登录，请联系管理员',
   forge_client_refused: '这个 Forge 不接受 Weave 管理端登录，请联系管理员',
   forge_approval_denied: '已在 Forge 页面拒绝',
+  forge_page_unavailable: 'Forge 页面没有回应，请重试',
   forge_approval_expired: '确认已过期，请重新开始',
   forge_unavailable: 'Forge 登录服务暂时不可用',
   forge_response_unrecognized: 'Forge 返回了无法识别的登录结果',

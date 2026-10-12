@@ -2,11 +2,13 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { App } from './App'
 import { ApiError, readConfig, readSession, signOut, type AdminConfig, type AdminSession } from './lib/api'
+import { embedded, withForgePageApproval } from './lib/forge-embed'
 
 vi.mock('./lib/api', async (original) => ({
   ...await original<typeof import('./lib/api')>(),
   readConfig: vi.fn(), readSession: vi.fn(), signOut: vi.fn(),
 }))
+vi.mock('./lib/forge-embed', () => ({ embedded: vi.fn(() => false), withForgePageApproval: vi.fn() }))
 const developer: AdminSession = { name: '小周', role: 'developer', source: 'forge' }
 vi.mock('./pages/SignInPage', () => ({
   SignInPage: ({ onSignedIn }: { onSignedIn(session: AdminSession): void }) => <button type="button" onClick={() => onSignedIn({ name: '小周', role: 'developer', source: 'forge' })}>登录页</button>,
@@ -84,5 +86,41 @@ describe('console start', () => {
     render(<App />)
     expect(await screen.findByRole('heading', { name: 'Weave 暂时无法访问' })).toBeTruthy()
     expect(readSession).not.toHaveBeenCalled()
+  })
+
+  it('enters as the person signed in to the Forge page around it, whatever session it held', async () => {
+    vi.mocked(readConfig).mockResolvedValue(config)
+    vi.mocked(embedded).mockReturnValue(true)
+    vi.mocked(withForgePageApproval).mockResolvedValue({ name: '小林', role: 'admin', source: 'forge' })
+    render(<App />)
+    expect(await screen.findByText('已进入：小林')).toBeTruthy()
+    expect(readSession).not.toHaveBeenCalled()
+    expect(vi.mocked(withForgePageApproval).mock.calls[0]?.[0]).toBe('https://forge.example')
+  })
+
+  it('does not open for an employee who came in through Forge', async () => {
+    vi.mocked(readConfig).mockResolvedValue(config)
+    vi.mocked(embedded).mockReturnValue(true)
+    vi.mocked(withForgePageApproval).mockResolvedValue({ name: '小王', role: 'member', source: 'forge' })
+    render(<App />)
+    expect(await screen.findByRole('heading', { name: '当前账号不能进入管理端' })).toBeTruthy()
+  })
+
+  it('falls back to its own sign-in when the page around it does not confirm', async () => {
+    vi.mocked(readConfig).mockResolvedValue(config)
+    vi.mocked(embedded).mockReturnValue(true)
+    vi.mocked(withForgePageApproval).mockRejectedValue(new ApiError(0, 'forge_page_unavailable'))
+    vi.mocked(readSession).mockRejectedValue(new ApiError(401, 'missing authorization header'))
+    render(<App />)
+    expect(await screen.findByRole('button', { name: '登录页' })).toBeTruthy()
+  })
+
+  it('does not ask a surrounding page when no Forge sign-in is configured', async () => {
+    vi.mocked(readConfig).mockResolvedValue({ sign_in_methods: ['api_key'], secure: true })
+    vi.mocked(embedded).mockReturnValue(true)
+    vi.mocked(readSession).mockResolvedValue(developer)
+    render(<App />)
+    expect(await screen.findByText('已进入：小周')).toBeTruthy()
+    expect(withForgePageApproval).not.toHaveBeenCalled()
   })
 })

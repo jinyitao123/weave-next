@@ -1161,6 +1161,22 @@
         "lines_added": 1703,
         "production_lines_added": 1302
       }
+    },
+    {
+      "date": "2026-10-12",
+      "reason": "Let the Forge the console signs in with show the console inside its own pages, as the owner asked on 2026-10-12 (the console opens from Forge's Setup without a second sign-in). The console was served with a policy that no page may frame it; the policy now names the one origin already configured as the console's Forge sign-in origin, and stays closed to every page when none is configured. The header that cannot name an origin is sent only while the console is closed to all. The sign-in itself is unchanged on the server: the page around the console approves the same confirmation code the person would have approved by hand. No new packages, dependencies, routes or tables.",
+      "record": "README.zh-CN.md#在-forge-里使用管理端",
+      "growth": {
+        "lines": 23,
+        "production_lines": 18
+      },
+      "deletion_trigger": "Remove the frame-ancestors option when the console is no longer shown inside Forge, or when Forge serves the console under its own origin. Lower the measured budgets in that change.",
+      "app": {
+        "previous_lines": 86997,
+        "previous_production_lines": 59579,
+        "lines_added": 23,
+        "production_lines_added": 18
+      }
     }
   ],
   "migration_targets": {
@@ -1224,8 +1240,8 @@
     "allowed_dependencies": []
   },
   "app": {
-    "lines": 86997,
-    "production_lines": 59579,
+    "lines": 87020,
+    "production_lines": 59597,
     "packages": 25,
     "external_dependencies": 6,
     "allowed_dependencies": [

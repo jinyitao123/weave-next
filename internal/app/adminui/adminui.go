@@ -23,6 +23,9 @@ type Options struct {
 	// ConnectSources are extra origins the console may call from the browser,
 	// such as the Forge sign-in origin. Same-origin Weave calls are always allowed.
 	ConnectSources []string
+	// FrameAncestors are the origins whose pages may show the console inside
+	// them, such as the Forge it signs in with. Empty means no page may.
+	FrameAncestors []string
 }
 
 // Handler serves the embedded console build.
@@ -37,7 +40,8 @@ func Handler(options Options) http.Handler {
 // NewHandler serves a console build from files. Paths without a file extension
 // fall back to index.html so client routes can be opened directly.
 func NewHandler(files fs.FS, options Options) http.Handler {
-	policy := contentSecurityPolicy(options.ConnectSources)
+	policy := contentSecurityPolicy(options.ConnectSources, options.FrameAncestors)
+	sealed := strings.Contains(policy, "frame-ancestors 'none'")
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
 			w.Header().Set("Allow", "GET, HEAD")
@@ -57,7 +61,11 @@ func NewHandler(files fs.FS, options Options) http.Handler {
 		header.Set("Content-Security-Policy", policy)
 		header.Set("X-Content-Type-Options", "nosniff")
 		header.Set("Referrer-Policy", "same-origin")
-		header.Set("X-Frame-Options", "DENY")
+		// X-Frame-Options cannot name an origin; where one may frame the
+		// console the policy above is the whole rule.
+		if sealed {
+			header.Set("X-Frame-Options", "DENY")
+		}
 
 		name := strings.TrimPrefix(path.Clean(rest), "/")
 		if name != "" && name != "." && isFile(files, name) {
@@ -99,7 +107,16 @@ func isFile(files fs.FS, name string) bool {
 	return err == nil && !info.IsDir()
 }
 
-func contentSecurityPolicy(connectSources []string) string {
+func contentSecurityPolicy(connectSources, frameAncestors []string) string {
+	ancestors := []string{}
+	for _, source := range frameAncestors {
+		if source = strings.TrimSpace(source); source != "" {
+			ancestors = append(ancestors, source)
+		}
+	}
+	if len(ancestors) == 0 {
+		ancestors = []string{"'none'"}
+	}
 	connect := []string{"'self'"}
 	for _, source := range connectSources {
 		if source = strings.TrimSpace(source); source != "" {
@@ -113,7 +130,7 @@ func contentSecurityPolicy(connectSources []string) string {
 		"img-src 'self' data:",
 		"font-src 'self'",
 		"connect-src " + strings.Join(connect, " "),
-		"frame-ancestors 'none'",
+		"frame-ancestors " + strings.Join(ancestors, " "),
 		"base-uri 'self'",
 		"form-action 'self'",
 	}, "; ")
