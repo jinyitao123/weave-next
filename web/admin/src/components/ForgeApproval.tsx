@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { ApiError } from '../lib/api'
 import { withForgeApproval, type PendingApproval } from '../lib/forge-approval'
+import { approvesThroughForgePage, withForgePageApproval } from '../lib/forge-embed'
 
 /** Whether a failure is the person giving up, which is not something to report back to them. */
 export const approvalCancelled = (failure: unknown) => failure instanceof ApiError && failure.code === 'forge_approval_cancelled'
@@ -16,6 +17,14 @@ export function useForgeApproval(forgeOrigin: string | undefined) {
     running.current?.abort()
     const controller = new AbortController()
     running.current = controller
+    // Inside the Forge it signs in with, that page confirms for the person already signed in there.
+    if (approvesThroughForgePage()) {
+      try {
+        return await withForgePageApproval(forgeOrigin, controller.signal, use)
+      } finally {
+        if (running.current === controller) running.current = undefined
+      }
+    }
     // Opened inside the click so the browser allows it, and pointed at Forge once the page is known.
     const tab = window.open('about:blank', '_blank')
     let shown = false

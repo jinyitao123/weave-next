@@ -54,15 +54,15 @@ export interface AdminSession {
   default_key?: boolean
 }
 
-export const readConfig = () => api<AdminConfig>('/v1/admin/config')
-export const readSession = () => api<AdminSession>('/v1/admin/session')
-export const signOut = () => api<void>('/v1/admin/session', { method: 'DELETE' })
+export const readConfig = (signal?: AbortSignal) => api<AdminConfig>('/v1/admin/config', { signal })
+export const readSession = (signal?: AbortSignal) => api<AdminSession>('/v1/admin/session', { signal })
+export const signOut = (signal?: AbortSignal) => api<void>('/v1/admin/session', { method: 'DELETE', signal })
 export const signInWithAPIKey = (apiKey: string) =>
   api<AdminSession>('/v1/admin/session', { method: 'POST', body: JSON.stringify({ api_key: apiKey }) })
 
 /** Opens the console session for the Forge account that just approved it. */
-export const signInWithForge = (forge_token: string) =>
-  api<AdminSession>('/v1/admin/session', { method: 'POST', body: JSON.stringify({ forge_token }) })
+export const signInWithForge = (forge_token: string, signal?: AbortSignal) =>
+  api<AdminSession>('/v1/admin/session', { method: 'POST', body: JSON.stringify({ forge_token }), signal })
 
 const messages: Record<string, string> = {
   organization_connection_unavailable: '部署连接尚未配置，请联系部署管理员',
@@ -71,6 +71,7 @@ const messages: Record<string, string> = {
   forge_approval_unavailable: '这个 Forge 还没有启用浏览器确认登录，请联系管理员',
   forge_client_refused: '这个 Forge 不接受 Weave 管理端登录，请联系管理员',
   forge_approval_denied: '已在 Forge 页面拒绝',
+  forge_page_unavailable: 'Forge 页面没有回应，请重试',
   forge_approval_expired: '确认已过期，请重新开始',
   forge_unavailable: 'Forge 登录服务暂时不可用',
   forge_response_unrecognized: 'Forge 返回了无法识别的登录结果',

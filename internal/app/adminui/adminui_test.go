@@ -26,8 +26,13 @@ func TestConsoleServesBuildAndClientRoutes(t *testing.T) {
 	if root.Code != http.StatusOK || !strings.Contains(root.Body.String(), "<title>Weave</title>") {
 		t.Fatalf("root = %d %q", root.Code, root.Body.String())
 	}
-	if policy := root.Header().Get("Content-Security-Policy"); !strings.Contains(policy, "connect-src 'self' https://forge.example") || !strings.Contains(policy, "frame-ancestors 'none'") {
+	if policy := root.Header().Get("Content-Security-Policy"); !strings.Contains(policy, "connect-src 'self' https://forge.example") || !strings.Contains(policy, "frame-ancestors 'none'") || root.Header().Get("X-Frame-Options") != "DENY" {
 		t.Fatalf("policy = %q", policy)
+	}
+	// Only a named origin may show the console inside its pages, and then only that origin.
+	framed := serve(t, NewHandler(fstest.MapFS{"index.html": {Data: []byte("<!doctype html>")}}, Options{FrameAncestors: []string{"https://forge.example", " "}}), http.MethodGet, "/admin/")
+	if policy := framed.Header().Get("Content-Security-Policy"); !strings.Contains(policy, "frame-ancestors https://forge.example;") || framed.Header().Get("X-Frame-Options") != "" {
+		t.Fatalf("framed policy = %q, X-Frame-Options = %q", policy, framed.Header().Get("X-Frame-Options"))
 	}
 	route := serve(t, handler, http.MethodGet, "/admin/tasks/readable-task")
 	if route.Code != http.StatusOK || route.Header().Get("Cache-Control") != "no-cache" || !strings.Contains(route.Body.String(), "<title>Weave</title>") {

@@ -33,7 +33,8 @@ func (s *Server) registerAdminConsole() {
 	if origin := s.adminForgeOrigin(); origin != "" {
 		connect = append(connect, origin)
 	}
-	console := echo.WrapHandler(adminui.Handler(adminui.Options{ConnectSources: connect}))
+	// The Forge the console signs in with may also show the console inside its own pages.
+	console := echo.WrapHandler(adminui.Handler(adminui.Options{ConnectSources: connect, FrameAncestors: connect}))
 	for _, path := range []string{adminui.Prefix, adminui.Prefix + "/*"} {
 		s.Echo.GET(path, console)
 		s.Echo.HEAD(path, console)

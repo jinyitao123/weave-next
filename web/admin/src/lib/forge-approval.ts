@@ -24,7 +24,8 @@ export interface ApprovalOptions {
 
 const cancelled = () => new ApiError(0, 'forge_approval_cancelled')
 
-function wait(milliseconds: number, signal: AbortSignal): Promise<void> {
+/** Resolves after the given time, or rejects as cancelled when the signal fires first. */
+export function waitFor(milliseconds: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     if (signal.aborted) { reject(cancelled()); return }
     const stop = () => { clearTimeout(timer); reject(cancelled()) }
@@ -75,7 +76,7 @@ export async function withForgeApproval<T>(forgeOrigin: string, options: Approva
 
   let forgeToken: string | undefined
   while (!forgeToken) {
-    await (options.wait ?? wait)(interval * 1000, signal)
+    await (options.wait ?? waitFor)(interval * 1000, signal)
     if (signal.aborted) throw cancelled()
     if (Date.now() >= deadline) throw new ApiError(400, 'forge_approval_expired')
     const polled = await forge(forgeOrigin, '/api/v1/auth/device/token', { grant_type: 'urn:ietf:params:oauth:grant-type:device_code', device_code: deviceCode, client_id: CONSOLE_CLIENT_ID }, signal)
