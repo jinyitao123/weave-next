@@ -1,4 +1,4 @@
-import { Activity, Boxes, ChevronDown, ChevronRight, FolderGit2, Plug, Server, type LucideIcon } from 'lucide-react'
+import { Activity, Boxes, ChevronDown, ChevronRight, FolderGit2, Plug, Server, Settings, type LucideIcon } from 'lucide-react'
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { AccountCard } from '../components/AccountCard'
 import { listEnvironments } from '../lib/environments'
@@ -15,6 +15,7 @@ import { TaskDetailPage } from './TaskDetailPage'
 import { TasksPage } from './TasksPage'
 import { TeamDetailPage, teamTabs, type TeamTab } from './TeamDetailPage'
 import { TeamsPage } from './TeamsPage'
+import { DeploymentConnectionPage } from './DeploymentConnectionPage'
 
 interface RenderContext { session: AdminSession; path: string; navigate(path: string, options?: { force?: boolean }): void }
 
@@ -53,6 +54,8 @@ const matches = (section: Section, path: string) => path === section.path || pat
 
 export function Shell({ session, onSignOut }: { session: AdminSession; onSignOut(): void }) {
   const [path, navigate] = useRoute()
+  const deployment: Section = { path: '/deployment-connection', label: '部署连接', icon: Settings, render: ({ session }) => <DeploymentConnectionPage session={session} /> }
+  const available = ['admin', 'owner'].includes(session.role) ? [...sections, deployment] : sections
   // The group opens by itself once the workspace has a node or a repository;
   // after that it stays as the person left it.
   const [codeOpen, setCodeOpen] = useState(() => { try { return localStorage.getItem(codeGroupKey) === 'open' } catch { return false } })
@@ -72,7 +75,7 @@ export function Shell({ session, onSignOut }: { session: AdminSession; onSignOut
     if (recent) trackTasks(recent.tasks.filter((task) => task.mine !== false), (runId) => navigate(`/tasks/${encodeURIComponent(runId)}`))
   }, [navigate])
   usePolling(track, 5000)
-  const active = [...sections, ...codeSections].find((section) => matches(section, path)) ?? sections[0]
+  const active = [...available, ...codeSections].find((section) => matches(section, path)) ?? sections[0]
   const codeShown = codeOpen || codeSections.includes(active)
   const item = (section: Section) => <button key={section.path} type="button" className="nav__item" aria-current={section === active ? 'page' : undefined} onClick={() => navigate(section.path)}>
     <section.icon size={16} aria-hidden="true" />{section.label}
@@ -80,7 +83,7 @@ export function Shell({ session, onSignOut }: { session: AdminSession; onSignOut
   return <div className="shell">
     <nav className="nav" aria-label="主导航">
       <div className="nav__brand"><img src="/admin/favicon.svg" width={20} height={20} alt="" />Weave</div>
-      {sections.map(item)}
+      {available.map(item)}
       <button type="button" className="nav__group" aria-expanded={codeShown} onClick={toggleCode}>
         {codeShown ? <ChevronDown size={14} aria-hidden="true" /> : <ChevronRight size={14} aria-hidden="true" />}代码任务
       </button>

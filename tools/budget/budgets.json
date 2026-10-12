@@ -1164,6 +1164,28 @@
     },
     {
       "date": "2026-10-12",
+      "reason": "Administrator-only read and exact-byte download of the installer organization connection projection. Reuse existing account, role, API scope and console session checks; no new tables, dependencies or runtime loops. Regressions bind permissions, strict file validation, changed state and Python serialization.",
+      "record": "README.zh-CN.md#管理端部署连接",
+      "growth": {
+        "lines": 275,
+        "production_lines": 158
+      },
+      "deletion_trigger": "Remove this read-only file adapter and its regression fixtures when a recorded deployment contract replaces the installation connection file or retires manual desktop import; lower the exact measured budgets in that change.",
+      "kernel": {
+        "previous_lines": 104900,
+        "previous_production_lines": 83360,
+        "lines_added": 5,
+        "production_lines_added": 5
+      },
+      "app": {
+        "previous_lines": 86997,
+        "previous_production_lines": 59579,
+        "lines_added": 270,
+        "production_lines_added": 153
+      }
+    },
+    {
+      "date": "2026-10-12",
       "reason": "Let the Forge the console signs in with show the console inside its own pages, as the owner asked on 2026-10-12 (the console opens from Forge's Setup without a second sign-in). The console was served with a policy that no page may frame it; the policy now names the one origin already configured as the console's Forge sign-in origin, and stays closed to every page when none is configured. The header that cannot name an origin is sent only while the console is closed to all. The sign-in itself is unchanged on the server: the page around the console approves the same confirmation code the person would have approved by hand. No new packages, dependencies, routes or tables.",
       "record": "README.zh-CN.md#在-forge-里使用管理端",
       "growth": {
@@ -1172,8 +1194,8 @@
       },
       "deletion_trigger": "Remove the frame-ancestors option when the console is no longer shown inside Forge, or when Forge serves the console under its own origin. Lower the measured budgets in that change.",
       "app": {
-        "previous_lines": 86997,
-        "previous_production_lines": 59579,
+        "previous_lines": 87267,
+        "previous_production_lines": 59732,
         "lines_added": 23,
         "production_lines_added": 18
       }
@@ -1220,8 +1242,8 @@
     ]
   },
   "kernel": {
-    "lines": 104900,
-    "production_lines": 83360,
+    "lines": 104905,
+    "production_lines": 83365,
     "packages": 48,
     "external_dependencies": 5,
     "allowed_dependencies": [
@@ -1240,8 +1262,8 @@
     "allowed_dependencies": []
   },
   "app": {
-    "lines": 87020,
-    "production_lines": 59597,
+    "lines": 87290,
+    "production_lines": 59750,
     "packages": 25,
     "external_dependencies": 6,
     "allowed_dependencies": [

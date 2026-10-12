@@ -35,6 +35,9 @@ type Config struct {
 	// deployment's first administrator decides.
 	LoginWorkspace string // WEAVE_LOGIN_WORKSPACE
 
+	// Read-only installer connection projection.
+	OrganizationConnectionFile string // WEAVE_ORGANIZATION_CONNECTION_FILE
+
 	// CORS settings.
 	CORSOrigins string // CORS_ORIGINS — comma-separated allowed origins; "*" for dev (default when DevMode)
 
@@ -122,6 +125,8 @@ func Load() (*Config, error) {
 	}
 
 	cfg := &Config{
+		OrganizationConnectionFile: strings.TrimSpace(os.Getenv("WEAVE_ORGANIZATION_CONNECTION_FILE")),
+
 		ToolProtocolProbe:        toolProtocolProbe,
 		Port:                     port,
 		DatabaseURL:              os.Getenv("DATABASE_URL"),

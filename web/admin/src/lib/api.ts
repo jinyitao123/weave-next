@@ -8,21 +8,25 @@ export class ApiError extends Error {
   }
 }
 
-export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
+export async function apiResponse(path: string, init: RequestInit = {}): Promise<Response> {
   const headers = new Headers(init.headers)
   headers.set('X-Weave-Admin', '1')
   headers.set('Accept', 'application/json')
   if (init.body !== undefined && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json')
   const response = await fetch(path, { ...init, headers, credentials: 'same-origin' })
-  if (response.status === 204) return undefined as T
-  const text = await response.text()
-  const body = text ? safeJSON(text) : undefined
   if (!response.ok) {
+    const body = safeJSON(await response.text())
     const fields = typeof body === 'object' && body ? body as { error?: unknown; message?: unknown } : {}
     const code = fields.error !== undefined ? String(fields.error) : fields.message !== undefined ? String(fields.message) : `http_${response.status}`
     throw new ApiError(response.status, code)
   }
-  return body as T
+  return response
+}
+
+export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const response = await apiResponse(path, init)
+  if (response.status === 204) return undefined as T
+  return safeJSON(await response.text()) as T
 }
 
 function safeJSON(text: string): unknown {
@@ -61,6 +65,8 @@ export const signInWithForge = (forge_token: string) =>
   api<AdminSession>('/v1/admin/session', { method: 'POST', body: JSON.stringify({ forge_token }) })
 
 const messages: Record<string, string> = {
+  organization_connection_unavailable: '部署连接尚未配置，请联系部署管理员',
+  organization_connection_invalid: '部署连接配置无效或不可读取，请联系部署管理员',
   forge_unreachable: '无法连接 Forge，请确认 Forge 允许本地址跨域登录',
   forge_approval_unavailable: '这个 Forge 还没有启用浏览器确认登录，请联系管理员',
   forge_client_refused: '这个 Forge 不接受 Weave 管理端登录，请联系管理员',
