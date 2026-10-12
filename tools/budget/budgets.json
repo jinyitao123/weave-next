@@ -1161,6 +1161,28 @@
         "lines_added": 1703,
         "production_lines_added": 1302
       }
+    },
+    {
+      "date": "2026-10-12",
+      "reason": "Administrator-only read and exact-byte download of the installer organization connection projection. Reuse existing account, role, API scope and console session checks; no new tables, dependencies or runtime loops. Regressions bind permissions, strict file validation, changed state and Python serialization.",
+      "record": "README.zh-CN.md#管理端部署连接",
+      "growth": {
+        "lines": 275,
+        "production_lines": 158
+      },
+      "deletion_trigger": "Remove this read-only file adapter and its regression fixtures when a recorded deployment contract replaces the installation connection file or retires manual desktop import; lower the exact measured budgets in that change.",
+      "kernel": {
+        "previous_lines": 104900,
+        "previous_production_lines": 83360,
+        "lines_added": 5,
+        "production_lines_added": 5
+      },
+      "app": {
+        "previous_lines": 86997,
+        "previous_production_lines": 59579,
+        "lines_added": 270,
+        "production_lines_added": 153
+      }
     }
   ],
   "migration_targets": {
@@ -1204,8 +1226,8 @@
     ]
   },
   "kernel": {
-    "lines": 104900,
-    "production_lines": 83360,
+    "lines": 104905,
+    "production_lines": 83365,
     "packages": 48,
     "external_dependencies": 5,
     "allowed_dependencies": [
@@ -1224,8 +1246,8 @@
     "allowed_dependencies": []
   },
   "app": {
-    "lines": 86997,
-    "production_lines": 59579,
+    "lines": 87267,
+    "production_lines": 59732,
     "packages": 25,
     "external_dependencies": 6,
     "allowed_dependencies": [

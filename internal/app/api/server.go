@@ -338,6 +338,7 @@ func (s *Server) registerRoutes() {
 	consoleAccess := RequireAnyRole("developer", "admin", "owner")
 
 	// Developer and operator console.
+	auth.GET("/admin/organization-connection", s.handleOrganizationConnection, RequireAnyRole("admin", "owner"), adminScope)
 	auth.GET("/admin/session", s.handleGetAdminSession, consoleAccess)
 	auth.GET("/admin/tasks", s.handleListAdminTasks, consoleAccess, runsScope)
 	auth.GET("/admin/tasks/:id", s.handleListAdminTasks, consoleAccess, runsScope)
