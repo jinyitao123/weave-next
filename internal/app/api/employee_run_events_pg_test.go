@@ -427,7 +427,8 @@ func TestEmployeeRunEventBackfillDeliversOnceToForgeInboxRealPG(t *testing.T) {
 			if event["title"] != "团队运行已完成：flow" ||
 				!strings.Contains(summary, "团队成果（模型输出）：已调用业务提交动作") ||
 				!strings.Contains(summary, "Forge 业务动作调用记录为 0 条") ||
-				!strings.Contains(summary, "不证明业务写入或正式业务状态") || len([]rune(summary)) != 4000 {
+				!strings.Contains(summary, "不证明业务写入或正式业务状态") || len([]rune(summary)) != 4000 ||
+				!strings.HasSuffix(summary, "（以上为预览，完整结果请在桌面打开本次工作查看）") {
 				t.Errorf("empty action receipts did not override the model's write claim: title=%#v summary=%q", event["title"], summary)
 			}
 		} else if runReference == cancelledRunID && event["title"] != "团队运行已取消：flow" {

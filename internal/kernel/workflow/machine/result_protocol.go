@@ -14,7 +14,13 @@ import (
 const ResultProtocolWorkbenchV1 = "workbench_result_v1"
 
 var workbenchResultSchemaV1 = json.RawMessage(`{"type":"object","additionalProperties":false,"required":["disposition","summary","missing_items"],"properties":{"disposition":{"type":"string","enum":["complete","needs_input"]},"summary":{"type":"string"},"missing_items":{"type":"array","items":{"type":"string"}}}}`)
-var workbenchResultProviderSchemaV1 = json.RawMessage(`{"type":"object","additionalProperties":false,"required":["disposition","summary","missing_items"],"properties":{"disposition":{"type":"string","enum":["complete","needs_input"]},"summary":{"type":"string","minLength":1,"maxLength":1000},"missing_items":{"type":"array","maxItems":8,"items":{"type":"string","minLength":1,"maxLength":200}}}}`)
+var workbenchResultProviderSchemaV1 = json.RawMessage(`{"type":"object","additionalProperties":false,"required":["disposition","summary","missing_items"],"properties":{"disposition":{"type":"string","enum":["complete","needs_input"]},"summary":{"type":"string","minLength":1},"missing_items":{"type":"array","items":{"type":"string","minLength":1}}}}`)
+
+// WorkbenchResultMaxBytes is the capacity budget for one normalized result.
+// It bounds what a run stores and returns; it is not a business rule, so the
+// number of missing items and the length of each one are not limited apart
+// from it.
+const WorkbenchResultMaxBytes = 256 * 1024
 
 // WorkbenchResultViolationV1 carries bounded diagnostics for the semantic
 // rules that the frozen v1 executable schema cannot express. It never includes
@@ -124,18 +130,11 @@ func NormalizeWorkbenchResultV1(raw []byte) (WorkbenchResultV1, json.RawMessage,
 	result.Summary = strings.TrimSpace(result.Summary)
 	if runeCount := utf8.RuneCountInString(result.Summary); runeCount < 1 {
 		return WorkbenchResultV1{}, nil, workbenchResultViolation("string_length_invalid", "/summary", "min", 1, runeCount)
-	} else if runeCount > 1000 {
-		return WorkbenchResultV1{}, nil, workbenchResultViolation("string_length_invalid", "/summary", "max", 1000, runeCount)
-	}
-	if len(result.MissingItems) > 8 {
-		return WorkbenchResultV1{}, nil, workbenchResultViolation("item_count_invalid", "/missing_items", "max", 8, len(result.MissingItems))
 	}
 	for index, item := range result.MissingItems {
 		item = strings.TrimSpace(item)
 		if runeCount := utf8.RuneCountInString(item); runeCount < 1 {
 			return WorkbenchResultV1{}, nil, workbenchResultViolation("string_length_invalid", fmt.Sprintf("/missing_items/%d", index), "min", 1, runeCount)
-		} else if runeCount > 200 {
-			return WorkbenchResultV1{}, nil, workbenchResultViolation("string_length_invalid", fmt.Sprintf("/missing_items/%d", index), "max", 200, runeCount)
 		}
 		result.MissingItems[index] = item
 	}
@@ -154,6 +153,9 @@ func NormalizeWorkbenchResultV1(raw []byte) (WorkbenchResultV1, json.RawMessage,
 	normalized, err := json.Marshal(result)
 	if err != nil {
 		return WorkbenchResultV1{}, nil, workbenchResultViolation("normalization_failed", "/", "", 0, 0)
+	}
+	if len(normalized) > WorkbenchResultMaxBytes {
+		return WorkbenchResultV1{}, nil, workbenchResultViolation("result_too_large", "/", "max_bytes", WorkbenchResultMaxBytes, len(normalized))
 	}
 	return result, normalized, nil
 }
