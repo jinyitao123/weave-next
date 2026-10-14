@@ -498,7 +498,7 @@ func (r *WorkflowSerialRuntime) activityRecorder(run TeamRun) func(context.Conte
 }
 
 type engineExecObservationStore interface {
-	ListEngineExecObservations(context.Context, string, string, string) ([]taskqueue.EngineExecObservation, error)
+	ListEngineExecObservations(context.Context, string, string, string, string) ([]taskqueue.EngineExecObservation, error)
 }
 
 func (r *WorkflowSerialRuntime) observedEventLoader(run TeamRun) func(context.Context, machine.Node, string) []workflow.RuntimeCLIEvent {
@@ -507,10 +507,10 @@ func (r *WorkflowSerialRuntime) observedEventLoader(run TeamRun) func(context.Co
 		return nil
 	}
 	return func(ctx context.Context, node machine.Node, memberID string) []workflow.RuntimeCLIEvent {
-		if strings.TrimSpace(memberID) == "" {
+		if strings.TrimSpace(memberID) == "" || strings.TrimSpace(node.ID) == "" {
 			return nil
 		}
-		observations, err := store.ListEngineExecObservations(ctx, run.WorkspaceID, run.RunSnapshotID, memberID)
+		observations, err := store.ListEngineExecObservations(ctx, run.WorkspaceID, run.RunSnapshotID, node.ID, memberID)
 		if err != nil {
 			slog.Warn("team run observed activity reconciliation failed", "run_id", run.RunID, "node_id", node.ID, "error", err)
 			return nil
