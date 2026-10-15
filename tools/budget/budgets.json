@@ -1267,6 +1267,28 @@
         "lines_added": 96,
         "production_lines_added": 2
       }
+    },
+    {
+      "date": "2026-10-14",
+      "reason": "Stop losing or refusing what a team produced, as the owner asked on 2026-10-14. A structured team result is no longer refused for more than 8 missing items, a summary over 1000 characters or an item over 200: those limits had no business reason and are replaced by one 256 KiB capacity for the whole result, refused as result_too_large rather than cut; the employee message marks a cut summary as a preview. Every development trial output is kept whole in its own table and read page by page or one at a time, with the activity's access rule, instead of being cut at 64 KiB and 64 outputs. The CLI event compensation query is scoped to the step being settled. No new packages, dependencies or runtime loops.",
+      "record": "README.zh-CN.md#团队结果与试跑输出",
+      "growth": {
+        "lines": 270,
+        "production_lines": 149
+      },
+      "deletion_trigger": "Remove the trial output body table and its two reads if trials stop keeping step outputs, or when step outputs move to a shared artifact store. Lower the measured budgets in that change.",
+      "kernel": {
+        "previous_lines": 107764,
+        "previous_production_lines": 84475,
+        "lines_added": -1,
+        "production_lines_added": 4
+      },
+      "app": {
+        "previous_lines": 91775,
+        "previous_production_lines": 61883,
+        "lines_added": 271,
+        "production_lines_added": 145
+      }
     }
   ],
   "migration_targets": {
@@ -1310,8 +1332,8 @@
     ]
   },
   "kernel": {
-    "lines": 107764,
-    "production_lines": 84475,
+    "lines": 107763,
+    "production_lines": 84479,
     "packages": 48,
     "external_dependencies": 5,
     "allowed_dependencies": [
@@ -1330,8 +1352,8 @@
     "allowed_dependencies": []
   },
   "app": {
-    "lines": 91775,
-    "production_lines": 61883,
+    "lines": 92046,
+    "production_lines": 62028,
     "packages": 25,
     "external_dependencies": 6,
     "allowed_dependencies": [

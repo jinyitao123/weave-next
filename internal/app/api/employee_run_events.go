@@ -329,48 +329,9 @@ func (worker *employeeRunEventWorker) materialize(ctx context.Context) error {
 		  ELSE '失败' END||CASE
 		  WHEN COALESCE(business_action_summary.needs_verification,false)
 		    THEN '（业务动作需核对）' ELSE '' END||'：'||team_name,300),
-		'summary',left(CASE
-			WHEN COALESCE(business_action_summary.action_count,0)=0
-				THEN '平台回执：本轮 Forge 业务动作调用记录为 0 条。模型摘要或团队成果不证明业务写入或正式业务状态。'
-			ELSE '' END||CASE
-		  WHEN status='succeeded' AND workbench_result->>'disposition'='needs_input' THEN
-			CASE WHEN business_action_summary.business_result='needs_input'
-			  THEN '团队检查摘要（模型输出）：' ELSE '团队检查意见（模型输出）：' END||
-			COALESCE(NULLIF(workbench_result->>'summary',''),'本轮检查发现需要补充的信息。')||CASE
-			  WHEN CASE WHEN jsonb_typeof(workbench_result->'missing_items')='array' THEN jsonb_array_length(workbench_result->'missing_items') ELSE 0 END>0 THEN
-			    CASE WHEN business_action_summary.business_result='needs_input' THEN ' 需要补充：' ELSE ' 模型意见提及：' END||(
-				SELECT string_agg(item.value,'；') FROM jsonb_array_elements_text(workbench_result->'missing_items') AS item(value)
-			  ) ELSE '' END
-			||CASE
-			  WHEN business_action_summary.action_count>12 THEN
-				'。业务动作调用结果：成功 '||business_action_summary.succeeded_count||' 项，失败 '||business_action_summary.failed_count||
-				' 项，结果未知 '||business_action_summary.unknown_count||' 项。失败或未知结果请先核对 Forge 业务记录后再决定下一步。'||
-				CASE WHEN COALESCE(business_action_summary.succeeded_count,0)>0
-				  THEN '后续正式业务事项由 Forge 原生业务状态决定。' ELSE '' END
-			  WHEN business_action_summary.action_count>0 THEN
-				'。业务动作调用结果：'||business_action_summary.summary||CASE
-				  WHEN COALESCE(business_action_summary.succeeded_count,0)>0
-				    THEN '本消息中的动作结果只反映调用回执；后续正式业务事项由 Forge 原生业务状态决定。'
-				  ELSE '本消息中的动作结果只反映调用回执；正式审批状态请以 Forge 业务记录为准。' END
-			  ELSE '' END
-		  WHEN business_action_summary.action_count>12 THEN
-			'团队运行状态：'||CASE status WHEN 'succeeded' THEN '已完成' WHEN 'cancelled' THEN '已取消' WHEN 'abandoned' THEN '已放弃' ELSE '失败' END||
-			'。业务动作调用结果：成功 '||business_action_summary.succeeded_count||' 项，失败 '||business_action_summary.failed_count||
-			' 项，结果未知 '||business_action_summary.unknown_count||' 项。失败或未知结果请先核对 Forge 业务记录后再决定下一步；本消息不代表正式审批状态。'
-		  WHEN business_action_summary.action_count>0 THEN
-			'团队运行状态：'||CASE status WHEN 'succeeded' THEN '已完成' WHEN 'cancelled' THEN '已取消' WHEN 'abandoned' THEN '已放弃' ELSE '失败' END||
-			'。业务动作调用结果：'||business_action_summary.summary||
-			'本消息中的动作结果只反映调用回执；正式审批状态请以 Forge 业务记录为准。'
-		  WHEN status='succeeded' AND workbench_result->>'disposition'='complete' THEN
-			'团队检查摘要（模型输出）：'||COALESCE(NULLIF(workbench_result->>'summary',''),'本轮检查已完成。')
-		  WHEN status='succeeded' AND deliverable_content<>'' THEN '团队运行状态：已完成。团队成果（模型输出）：'||deliverable_content
-		  WHEN status='succeeded' THEN '团队运行状态：已完成。团队工作已结束，可在桌面查看结果。'
-		  WHEN status='cancelled' THEN '团队运行状态：已取消。'
-		  WHEN status='abandoned' THEN '团队运行状态：已放弃。'
-		  WHEN cause_summary IS NOT NULL THEN '团队运行状态：失败。团队处理失败：'||cause_summary
-			ELSE '团队运行状态：失败。团队处理失败，请在桌面查看运行记录。' END||CASE
-			WHEN status='failed' AND business_action_summary.action_count>0 AND cause_summary IS NOT NULL
-			  THEN '团队处理失败：'||cause_summary ELSE '' END,4000),
+		'summary',CASE WHEN char_length(projected.summary)>4000
+		  THEN left(projected.summary,4000-char_length(projected.preview_note))||projected.preview_note
+		  ELSE projected.summary END,
 		'occurredAt',terminal_at,
 		'source',jsonb_build_object(
 		  'workReference',input_revision_id,'runReference',fixed.run_id,
@@ -380,6 +341,50 @@ func (worker *employeeRunEventWorker) materialize(ctx context.Context) error {
 	  )
 	FROM (SELECT candidates.*,md5('weave-team-run-event'||chr(31)||workspace_id||chr(31)||run_id) AS hash FROM candidates) AS fixed
 	LEFT JOIN business_action_summary ON business_action_summary.workspace_id=fixed.workspace_id AND business_action_summary.run_id=fixed.run_id
+	-- The message carries a preview; the run keeps the whole result, which the
+	-- employee reads by opening the work. A cut preview says so.
+	CROSS JOIN LATERAL (SELECT '…（以上为预览，完整结果请在桌面打开本次工作查看）'::text AS preview_note,CASE
+				WHEN COALESCE(business_action_summary.action_count,0)=0
+					THEN '平台回执：本轮 Forge 业务动作调用记录为 0 条。模型摘要或团队成果不证明业务写入或正式业务状态。'
+				ELSE '' END||CASE
+			  WHEN status='succeeded' AND workbench_result->>'disposition'='needs_input' THEN
+				CASE WHEN business_action_summary.business_result='needs_input'
+				  THEN '团队检查摘要（模型输出）：' ELSE '团队检查意见（模型输出）：' END||
+				COALESCE(NULLIF(workbench_result->>'summary',''),'本轮检查发现需要补充的信息。')||CASE
+				  WHEN CASE WHEN jsonb_typeof(workbench_result->'missing_items')='array' THEN jsonb_array_length(workbench_result->'missing_items') ELSE 0 END>0 THEN
+				    CASE WHEN business_action_summary.business_result='needs_input' THEN ' 需要补充：' ELSE ' 模型意见提及：' END||(
+					SELECT string_agg(item.value,'；') FROM jsonb_array_elements_text(workbench_result->'missing_items') AS item(value)
+				  ) ELSE '' END
+				||CASE
+				  WHEN business_action_summary.action_count>12 THEN
+					'。业务动作调用结果：成功 '||business_action_summary.succeeded_count||' 项，失败 '||business_action_summary.failed_count||
+					' 项，结果未知 '||business_action_summary.unknown_count||' 项。失败或未知结果请先核对 Forge 业务记录后再决定下一步。'||
+					CASE WHEN COALESCE(business_action_summary.succeeded_count,0)>0
+					  THEN '后续正式业务事项由 Forge 原生业务状态决定。' ELSE '' END
+				  WHEN business_action_summary.action_count>0 THEN
+					'。业务动作调用结果：'||business_action_summary.summary||CASE
+					  WHEN COALESCE(business_action_summary.succeeded_count,0)>0
+					    THEN '本消息中的动作结果只反映调用回执；后续正式业务事项由 Forge 原生业务状态决定。'
+					  ELSE '本消息中的动作结果只反映调用回执；正式审批状态请以 Forge 业务记录为准。' END
+				  ELSE '' END
+			  WHEN business_action_summary.action_count>12 THEN
+				'团队运行状态：'||CASE status WHEN 'succeeded' THEN '已完成' WHEN 'cancelled' THEN '已取消' WHEN 'abandoned' THEN '已放弃' ELSE '失败' END||
+				'。业务动作调用结果：成功 '||business_action_summary.succeeded_count||' 项，失败 '||business_action_summary.failed_count||
+				' 项，结果未知 '||business_action_summary.unknown_count||' 项。失败或未知结果请先核对 Forge 业务记录后再决定下一步；本消息不代表正式审批状态。'
+			  WHEN business_action_summary.action_count>0 THEN
+				'团队运行状态：'||CASE status WHEN 'succeeded' THEN '已完成' WHEN 'cancelled' THEN '已取消' WHEN 'abandoned' THEN '已放弃' ELSE '失败' END||
+				'。业务动作调用结果：'||business_action_summary.summary||
+				'本消息中的动作结果只反映调用回执；正式审批状态请以 Forge 业务记录为准。'
+			  WHEN status='succeeded' AND workbench_result->>'disposition'='complete' THEN
+				'团队检查摘要（模型输出）：'||COALESCE(NULLIF(workbench_result->>'summary',''),'本轮检查已完成。')
+			  WHEN status='succeeded' AND deliverable_content<>'' THEN '团队运行状态：已完成。团队成果（模型输出）：'||deliverable_content
+			  WHEN status='succeeded' THEN '团队运行状态：已完成。团队工作已结束，可在桌面查看结果。'
+			  WHEN status='cancelled' THEN '团队运行状态：已取消。'
+			  WHEN status='abandoned' THEN '团队运行状态：已放弃。'
+			  WHEN cause_summary IS NOT NULL THEN '团队运行状态：失败。团队处理失败：'||cause_summary
+				ELSE '团队运行状态：失败。团队处理失败，请在桌面查看运行记录。' END||CASE
+				WHEN status='failed' AND business_action_summary.action_count>0 AND cause_summary IS NOT NULL
+				  THEN '团队处理失败：'||cause_summary ELSE '' END AS summary) AS projected
 	ON CONFLICT (workspace_id,run_id,event_scope) DO NOTHING`, string(encoded), workspaces, runs)
 	if err != nil {
 		return fmt.Errorf("materialize employee run events: %w", err)

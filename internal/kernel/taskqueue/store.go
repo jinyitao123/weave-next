@@ -686,14 +686,15 @@ func (s *Store) ListByGroup(ctx context.Context, workspaceID, groupID string) ([
 }
 
 // ListEngineExecObservations returns completed runtime task results for one
-// exact run snapshot and agent identity. TeamRun uses it to reconcile durable
-// CLI tool observations after a member settles.
+// exact run snapshot, workflow node and agent identity. TeamRun uses it to
+// reconcile durable CLI tool observations after a member settles; the node
+// keeps a member that serves two steps from taking the other step's events.
 func (s *Store) ListEngineExecObservations(
 	ctx context.Context,
-	workspaceID, runSnapshotID, agentID string,
+	workspaceID, runSnapshotID, nodeID, agentID string,
 ) ([]EngineExecObservation, error) {
-	if workspaceID == "" || runSnapshotID == "" || agentID == "" {
-		return nil, fmt.Errorf("workspace, run snapshot, and agent are required")
+	if workspaceID == "" || runSnapshotID == "" || nodeID == "" || agentID == "" {
+		return nil, fmt.Errorf("workspace, run snapshot, node, and agent are required")
 	}
 	rows, err := s.pool.Query(ctx, `
 		SELECT id, result
@@ -703,9 +704,10 @@ func (s *Store) ListEngineExecObservations(
 		  AND agent_id=$3
 		  AND kind='engine_exec'
 		  AND status=$4
+		  AND payload->>'node_id'=$6
 		  AND result IS NOT NULL AND ($5::jsonb IS NULL OR actor_subject=$5::jsonb)
 		ORDER BY COALESCE(completed_at, updated_at), created_at, id
-	`, workspaceID, runSnapshotID, agentID, StatusCompleted, subjectFilter(ctx))
+	`, workspaceID, runSnapshotID, agentID, StatusCompleted, subjectFilter(ctx), nodeID)
 	if err != nil {
 		return nil, fmt.Errorf("list engine exec observations: %w", err)
 	}
