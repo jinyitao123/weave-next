@@ -77,8 +77,8 @@ func developmentIssues(doc developmentDocument, catalog []catalogCapability, cat
 		if !cli && strings.TrimSpace(cfg.Model) == "" && (cfg.Role != "avatar" || cfg.Engine != "loom" || len(doc.Workflows) > 0) {
 			add("member", name, "", "member_model_missing", "trial", "内置引擎成员需要选择模型")
 		}
-		if cfg.Engine != "loom" && !cli || len(cfg.MCPServerIDs) > 0 || len(cfg.SkillNames) > 0 || len(cfg.PermissionAllow) > 0 || len(cfg.PermissionAsk) > 0 {
-			add("member", name, "", "member_tools_unsupported", "trial", "试跑只支持不带外部工具的成员")
+		if cfg.Engine != "loom" && !cli {
+			add("member", name, "", "member_engine_unsupported", "trial", "成员的引擎不受支持，请改用内置引擎或 claude、codex、opencode")
 		}
 		for _, id := range cfg.BusinessCapabilityIDs {
 			if action := editCapability(catalog, id); catalogKnown && (action == nil || action.Status != "available" || action.ExecutionMode == "employee_only") {
@@ -210,7 +210,11 @@ func (s *Server) handleApplyTeamDevelopmentOperations(c echo.Context) error {
 	}
 	// An unreadable model list refuses a model choice; every other edit goes ahead.
 	models, _ := s.developmentModels(ctx, ws)
-	changes, err := applyDevelopmentOperationsWith(&d.Document, request.Operations, catalog, models, s.developmentRuntimes(ctx, ws)...)
+	tools, err := readDevelopmentTools(ctx, tx, ws)
+	if err != nil {
+		return err
+	}
+	changes, err := applyDevelopmentOperationsWith(&d.Document, request.Operations, catalog, models, tools, s.developmentRuntimes(ctx, ws)...)
 	var refusal *editError
 	if errors.As(err, &refusal) {
 		return c.JSON(http.StatusUnprocessableEntity, map[string]any{"code": "operation_invalid", "error": refusal.Message, "index": refusal.Index})
@@ -259,6 +263,17 @@ func (s *Server) handleGetDevelopmentOperationTopic(c echo.Context) error {
 	for _, topic := range developmentOperationTopics {
 		if topic.Topic != c.Param("topic") {
 			continue
+		}
+		if topic.Topic == "member_external" {
+			// The services and library skills a member may be given right now.
+			tools, err := readDevelopmentTools(c.Request().Context(), s.Pool, getTenant(c))
+			if err != nil {
+				return err
+			}
+			return c.JSON(http.StatusOK, struct {
+				developmentOperationTopic
+				developmentMemberTools
+			}{topic, tools.view()})
 		}
 		if !editOneOf(topic.Topic, "member", "member_settings") {
 			return c.JSON(http.StatusOK, topic)
