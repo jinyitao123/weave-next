@@ -58,7 +58,7 @@ func TestWorkbenchResultPromptIsScopedToOptedInDeliverySource(t *testing.T) {
 		t.Fatal("selected source node did not receive its protocol prompt")
 	}
 	prompt := withWorkbenchResultInstruction(instruction, workbenchResultPromptRequired(graph, "inspect"))
-	for _, required := range []string{"disposition", "complete", "needs_input", "summary", "missing_items", "no Markdown", "at least one concrete missing item", "prerequisites that block this task", "optional unknown information", "not an input the employee must supply", "controlled tool result explicitly marked simulated"} {
+	for _, required := range []string{"disposition", "complete", "needs_input", "summary", "missing_items", "no Markdown", "list every concrete missing item, at least one", "under 256 KiB", "prerequisites that block this task", "optional unknown information", "not an input the employee must supply", "controlled tool result explicitly marked simulated"} {
 		if !strings.Contains(prompt, required) {
 			t.Fatalf("platform result prompt lacks %q: %s", required, prompt)
 		}

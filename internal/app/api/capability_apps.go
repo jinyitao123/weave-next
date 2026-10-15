@@ -93,6 +93,13 @@ func (s *Server) handleCapabilityAppAction(c echo.Context) error {
 		if err := s.CapabilityAccess.SetApplicationEnabled(ctx, ws, actor, request.AppID, *request.Enabled); err != nil {
 			return capabilityHTTPError(c, err)
 		}
+		if !*request.Enabled {
+			if service := s.workflowCapabilityInvocations(); service != nil {
+				if err := service.RevokeGrant(ctx, ws, request.AppID, "", 0); err != nil {
+					return capabilityHTTPError(c, err)
+				}
+			}
+		}
 	case "issue":
 		if request.AppID == "" || strings.TrimSpace(request.Name) == "" || len(request.Name) > 160 {
 			return c.JSON(400, map[string]string{"error": "application and credential name required"})
@@ -125,6 +132,13 @@ func (s *Server) handleCapabilityAppAction(c echo.Context) error {
 		}
 		if err := s.CapabilityAccess.SetGrant(ctx, ws, actor, capabilities.VersionGrant{AppID: request.AppID, CapabilityID: request.CapabilityID, Revision: request.Revision, Enabled: *request.Enabled}); err != nil {
 			return capabilityHTTPError(c, err)
+		}
+		if !*request.Enabled {
+			if service := s.workflowCapabilityInvocations(); service != nil {
+				if err := service.RevokeGrant(ctx, ws, request.AppID, request.CapabilityID, request.Revision); err != nil {
+					return capabilityHTTPError(c, err)
+				}
+			}
 		}
 	default:
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "unknown application action"})

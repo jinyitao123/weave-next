@@ -5,15 +5,18 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"sort"
 	"strconv"
 	"strings"
 
+	"github.com/google/uuid"
 	appcapabilities "github.com/jinyitao123/weave/internal/app/capabilities"
 	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/kernel/capability"
 	"github.com/jinyitao123/weave/internal/kernel/llmrouter"
+	"github.com/jinyitao123/weave/internal/kernel/publication"
 	"github.com/labstack/echo/v4"
 )
 
@@ -22,8 +25,28 @@ type saveCapabilityDraftRequest struct {
 }
 
 type invokeCapabilityRequest struct {
-	RequestID string          `json:"request_id"`
-	Input     json.RawMessage `json:"input"`
+	RequestID    string                         `json:"request_id"`
+	InvocationID optionalCapabilityInvocationID `json:"invocation_id,omitempty"`
+	Lane         string                         `json:"lane,omitempty"`
+	Input        json.RawMessage                `json:"input"`
+}
+
+type optionalCapabilityInvocationID struct {
+	value    string
+	supplied bool
+}
+
+func (id *optionalCapabilityInvocationID) UnmarshalJSON(raw []byte) error {
+	var value string
+	if string(raw) == "null" || json.Unmarshal(raw, &value) != nil {
+		return errors.New("invocation_id must be a canonical UUID")
+	}
+	parsed, err := uuid.Parse(value)
+	if err != nil || parsed.String() != value {
+		return errors.New("invocation_id must be a canonical UUID")
+	}
+	id.value, id.supplied = value, true
+	return nil
 }
 
 type debugCapabilityRequest struct {
@@ -124,7 +147,15 @@ func (s *Server) handlePublishCapability(c echo.Context) error {
 	if err != nil {
 		return capabilityHTTPError(c, err)
 	}
-	if err := s.capabilityRunner().ValidateRuntime(c.Request().Context(), workspaceID, draft.Runtime); err != nil {
+	if draft.Workflow != nil {
+		service := s.workflowCapabilityInvocations()
+		if service == nil {
+			return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "workflow invocation service unavailable"})
+		}
+		if err := service.ValidateDefinition(c.Request().Context(), workspaceID, draft); err != nil {
+			return capabilityHTTPError(c, err)
+		}
+	} else if err := s.capabilityRunner().ValidateRuntime(c.Request().Context(), workspaceID, draft.Runtime); err != nil {
 		return c.JSON(http.StatusUnprocessableEntity, map[string]string{"code": "capability_runtime_unavailable", "error": "Select a configured model on the local Loom runtime; pools and additional runtime requirements are not connected."})
 	}
 	published, err := s.Capabilities.Publish(c.Request().Context(), workspaceID, c.Param("capabilityID"), revision)
@@ -154,6 +185,16 @@ func (s *Server) handleInvokeCapability(c echo.Context) error {
 		if err := s.CapabilityAccess.AuthorizeInvocation(c.Request().Context(), p, c.Param("capabilityID"), revision); err != nil {
 			return capabilityHTTPError(c, err)
 		}
+	}
+	published, err := appcapabilities.NewPGStore(s.Pool).GetRevision(c.Request().Context(), workspaceID, c.Param("capabilityID"), revision)
+	if err != nil {
+		return capabilityHTTPError(c, err)
+	}
+	if published.Definition.Workflow != nil {
+		return s.invokeWorkflowCapability(c, request, revision)
+	}
+	if request.InvocationID.supplied || request.Lane != "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"code": "capability_request_invalid", "error": "caller invocation IDs and lanes require a published workflow capability"})
 	}
 	quota, quotaErr := appcapabilities.NewPGStore(s.Pool).GetQuota(c.Request().Context(), workspaceID)
 	if quotaErr != nil {
@@ -195,6 +236,9 @@ func (s *Server) handleGetCapabilityInvocation(c echo.Context) error {
 		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "capability service unavailable"})
 	}
 	workspaceID, _ := c.Get("tenant").(string)
+	if handled, err := s.getWorkflowCapabilityInvocation(c, false); handled {
+		return err
+	}
 	invocation, err := s.Capabilities.GetInvocation(c.Request().Context(), workspaceID, capabilityApplicationID(c), c.Param("invocationID"))
 	if err != nil {
 		return capabilityHTTPError(c, err)
@@ -221,6 +265,16 @@ func (s *Server) handleCancelCapabilityInvocation(c echo.Context) error {
 		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "capability service unavailable"})
 	}
 	workspaceID, _ := c.Get("tenant").(string)
+	// Existing inline invocations keep their established cancellation owner.
+	// Unknown IDs from an application are handled by workflow cancellation,
+	// which records the application's pre-admission stop intent.
+	if _, err := s.Capabilities.GetInvocation(c.Request().Context(), workspaceID, capabilityApplicationID(c), c.Param("invocationID")); errors.Is(err, appcapabilities.ErrInvocationNotFound) {
+		if handled, cancelErr := s.cancelWorkflowCapabilityInvocation(c); handled {
+			return cancelErr
+		}
+	} else if err != nil {
+		return capabilityHTTPError(c, err)
+	}
 	invocation, err := s.Capabilities.CancelInvocation(c.Request().Context(), workspaceID, capabilityApplicationID(c), c.Param("invocationID"))
 	if err != nil {
 		return capabilityHTTPError(c, err)
@@ -247,6 +301,14 @@ func capabilityHTTPError(c echo.Context, err error) error {
 		status, code = http.StatusNotFound, "capability_not_found"
 	case errors.Is(err, appcapabilities.ErrIdempotencyConflict):
 		status, code = http.StatusConflict, "idempotency_conflict"
+	case errors.Is(err, appcapabilities.ErrInvocationLaneActive):
+		status, code = http.StatusConflict, "invocation_lane_active"
+	case errors.Is(err, appcapabilities.ErrInvocationIdentityConflict):
+		status, code = http.StatusConflict, "invocation_identity_conflict"
+	case errors.Is(err, appcapabilities.ErrWorkflowInvocationCancelled), errors.Is(err, publication.ErrAdmissionClosed):
+		status, code = http.StatusConflict, "invocation_cancelled"
+	case errors.Is(err, appcapabilities.ErrWorkflowSourceRequired):
+		status, code = http.StatusBadRequest, "workflow_source_required"
 	case errors.Is(err, appcapabilities.ErrInvocationNotFound):
 		status, code = http.StatusNotFound, "invocation_not_found"
 	case errors.Is(err, appcapabilities.ErrInvocationTerminal):
@@ -255,6 +317,9 @@ func capabilityHTTPError(c echo.Context, err error) error {
 		status, code = http.StatusTooManyRequests, "capability_quota_exceeded"
 	}
 	message := code
+	if status >= http.StatusInternalServerError {
+		slog.Error("capability operation failed", "code", code, "error", err)
+	}
 	if status == http.StatusBadRequest {
 		message = err.Error()
 	}
@@ -345,9 +410,27 @@ func (s *Server) handleListCapabilityInvocations(c echo.Context) error {
 	if err != nil {
 		return capabilityHTTPError(c, err)
 	}
-	return c.JSON(http.StatusOK, map[string]any{"invocations": items})
+	combined := make([]any, 0, len(items))
+	for _, item := range items {
+		combined = append(combined, item)
+	}
+	if principal, ok := c.Get(capabilityPrincipalKey).(appcapabilities.ApplicationPrincipal); ok {
+		if service := s.workflowCapabilityInvocations(); service != nil {
+			workflows, err := service.List(c.Request().Context(), principal.WorkspaceID, principal.AppID)
+			if err != nil {
+				return capabilityHTTPError(c, err)
+			}
+			for _, item := range workflows {
+				combined = append(combined, item)
+			}
+		}
+	}
+	return c.JSON(http.StatusOK, map[string]any{"invocations": combined})
 }
 func (s *Server) handleGetCapabilityInvocationEvents(c echo.Context) error {
+	if handled, err := s.getWorkflowCapabilityInvocation(c, true); handled {
+		return err
+	}
 	store := appcapabilities.NewPGStore(s.Pool)
 	workspace, _ := c.Get("tenant").(string)
 	inv, err := s.Capabilities.GetInvocation(c.Request().Context(), workspace, capabilityApplicationID(c), c.Param("invocationID"))

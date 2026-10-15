@@ -523,6 +523,7 @@ func withPublishedServiceCredentialAuthorization(
 	ctx context.Context,
 	payload frozen.ArtifactPayloadV1,
 ) context.Context {
+	previous := frozen.ServiceReferenceAuthorizationFromContext(ctx)
 	allowed := make([]frozen.CredentialReference, 0)
 	for _, bundle := range payload.Bundles {
 		for _, ref := range bundle.Credentials {
@@ -542,17 +543,31 @@ func withPublishedServiceCredentialAuthorization(
 		}
 	}
 	return frozen.WithServiceReferenceAuthorization(ctx, func(
-		_ context.Context,
+		callCtx context.Context,
 		subject execution.Subject,
 		requested frozen.CredentialReference,
 	) error {
-		if subject.UserID == "" || subject.WorkspaceID != requested.WorkspaceID {
+		if subject.WorkspaceID != requested.WorkspaceID {
 			return execution.ErrSubjectMismatch
 		}
+		found := false
 		for _, ref := range allowed {
 			if sameCredentialReference(ref, requested) {
-				return nil
+				found = true
+				break
 			}
+		}
+		if !found {
+			return execution.ErrSubjectMismatch
+		}
+		if subject.UserID != "" {
+			if subject.ServiceID != "" {
+				return execution.ErrSubjectMismatch
+			}
+			return nil
+		}
+		if previous != nil {
+			return previous(callCtx, subject, requested)
 		}
 		return execution.ErrSubjectMismatch
 	})

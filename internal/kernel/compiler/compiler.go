@@ -1001,7 +1001,7 @@ func nodeToolLoopStep(llm contract.LLM, tools contract.ToolDispatcher, base stdl
 			}
 			system = system + "\n\nThe final response must be JSON satisfying this exact output schema without Markdown. Tools remain available when needed; only the final response is constrained:\n" + string(providerSchema)
 			if workbenchResult {
-				system += "\n\nFor workbench_result_v1, trim surrounding Unicode whitespace using Go strings.TrimSpace semantics before validation. Count the normalized summary and each normalized missing item in Unicode code points: summary 1-1000, each item 1-200. complete requires an empty missing_items array; needs_input requires at least one item. If a final JSON response is rejected, tools are disabled until a valid final JSON response is returned; do not repeat completed business actions."
+				system += "\n\nFor workbench_result_v1, trim surrounding Unicode whitespace using Go strings.TrimSpace semantics before validation. The summary and each missing item must be non-empty after trimming. List every missing item you found; there is no limit on how many or how long, but the whole JSON must stay under 256 KiB. complete requires an empty missing_items array; needs_input requires at least one item. If a final JSON response is rejected, tools are disabled until a valid final JSON response is returned; do not repeat completed business actions."
 			}
 			boundState["__system_prompt"] = system
 			digest := sha256.Sum256(providerSchema)

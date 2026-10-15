@@ -213,7 +213,7 @@ func workbenchProcessResponses(t *testing.T, phase string) []contract.ChatRespon
 	case "action":
 		return []contract.ChatResponse{{StopReason: "tool_calls", ToolCalls: []contract.ToolCall{{ID: "write-1", Name: "submit_material", Args: `{}`}}}}
 	case "overlong":
-		return []contract.ChatResponse{{StopReason: "stop", Content: workbenchOutput(t, strings.Repeat("界", 1033))}}
+		return []contract.ChatResponse{{StopReason: "stop", Content: workbenchOutput(t, strings.Repeat("界", machine.WorkbenchResultMaxBytes/3+11))}}
 	case "replay":
 		return []contract.ChatResponse{{StopReason: "tool_calls", ToolCalls: []contract.ToolCall{{ID: "write-2", Name: "submit_material", Args: `{}`}}}}
 	case "complete":

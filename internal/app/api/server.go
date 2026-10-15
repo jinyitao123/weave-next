@@ -29,6 +29,7 @@ import (
 	"github.com/jinyitao123/weave/internal/app/users"
 	"github.com/jinyitao123/weave/internal/base/deliverable"
 	"github.com/jinyitao123/weave/internal/base/execution"
+	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/base/snapshot"
 	"github.com/jinyitao123/weave/internal/base/storeext"
 	"github.com/jinyitao123/weave/internal/kernel/audit"
@@ -415,6 +416,8 @@ func (s *Server) registerRoutes() {
 	auth.POST("/teams/:id/development/trials", s.handleTrialTeamDevelopment, RequireAnyRole("developer", "admin", "owner"), orgScope)
 	auth.POST("/teams/:id/development/publish", s.handlePublishTeamDevelopment, RequireAnyRole("developer", "admin", "owner"), orgScope)
 	auth.GET("/teams/:id/development/trials/:request/input", s.handleDevelopmentTrialInput, RequireAnyRole("developer", "admin", "owner"), orgScope)
+	auth.GET("/runs/:id/trial-outputs", s.handleListDevelopmentTrialOutputs, RequireAnyRole("developer", "admin", "owner"), orgScope)
+	auth.GET("/runs/:id/trial-outputs/:output", s.handleGetDevelopmentTrialOutput, RequireAnyRole("developer", "admin", "owner"), orgScope)
 	auth.DELETE("/teams/:id/development/team", s.handleArchiveDevelopmentTeam, RequireAnyRole("developer", "admin", "owner"), orgScope)
 	auth.GET("/development/member-tools", s.handleDevelopmentMemberTools, RequireAnyRole("developer", "admin", "owner"), orgScope)
 	auth.GET("/development/model-catalog", s.handleDevelopmentModelCatalog, RequireAnyRole("developer", "admin", "owner"), orgScope)
@@ -645,7 +648,9 @@ const teamRunWorkersDisableEnv = "WEAVE_TEAMRUN_WORKERS_DISABLED"
 const (
 	temporaryTeamRunWorkerPollInterval = 2 * time.Second
 	temporaryTeamRunWorkerBatchSize    = 32
-	temporaryTeamRunTaskHeartbeat      = 20 * time.Second
+	// Running local members observe durable cancellation on this heartbeat.
+	// Keep detection within the ordinary caller's cancellation confirmation window.
+	temporaryTeamRunTaskHeartbeat = 5 * time.Second
 )
 
 func teamRunWorkersDisabled() bool {
@@ -692,6 +697,13 @@ func (s *Server) ConfigureTeamRunWorkers() {
 	s.BusinessDelegations = businessDelegations
 	runtime := &teamrun.WorkflowSerialRuntime{
 		BusinessReceiptReader: deliveryverify.BusinessReceiptReader(pool),
+		CredentialAuthorizer: func(ctx context.Context, run teamrun.TeamRun, task *taskqueue.Task, subject execution.Subject, ref frozen.CredentialReference) error {
+			service := s.workflowCapabilityInvocations()
+			if service == nil {
+				return frozen.ErrCredentialSubjectDenied
+			}
+			return service.AuthorizeRuntimeCredential(ctx, run, task, subject, ref)
+		},
 		AuthorizationRetry: func(ctx context.Context, proof execution.AuthorizationRefusal) (bool, error) {
 			if businessDelegations == nil {
 				return false, nil
