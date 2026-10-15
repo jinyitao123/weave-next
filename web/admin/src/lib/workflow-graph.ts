@@ -194,10 +194,27 @@ export function predecessors(graph: Graph, id: string): Step[] {
   visit(id)
   return graph.nodes.filter((n) => found.has(n.id) && n.id !== id && ['lead', 'worker', 'join'].includes(n.type))
 }
+// A parallel branch runs one or more dispatch workers in turn, then joins.
 export function isParallelBranchWorker(graph: Graph, id: string): boolean {
-  const incoming = graph.edges.filter((edge) => edge.to_node_id === id)
-  const outgoing = graph.edges.filter((edge) => edge.from_node_id === id)
-  return incoming.length === 1 && incoming[0].route === 'branch' && outgoing.length === 1 && outgoing[0].route === 'join'
+  const node = graph.nodes.find((item) => item.id === id)
+  return node?.type === 'worker' && node.config?.kind === 'dispatch'
+}
+// The steps of the branch a dispatch worker belongs to, first to last.
+export function branchSteps(graph: Graph, id: string): Step[] {
+  let head = id
+  for (;;) {
+    const incoming = graph.edges.filter((e) => e.to_node_id === head)
+    if (incoming.length !== 1 || incoming[0].route !== 'success' || !isParallelBranchWorker(graph, incoming[0].from_node_id)) break
+    head = incoming[0].from_node_id
+  }
+  const steps: Step[] = []
+  for (let current = graph.nodes.find((n) => n.id === head); current && isParallelBranchWorker(graph, current.id) && !steps.includes(current);) {
+    steps.push(current)
+    const outgoing = graph.edges.filter((e) => e.from_node_id === current!.id)
+    if (outgoing.length !== 1 || outgoing[0].route !== 'success') break
+    current = graph.nodes.find((n) => n.id === outgoing[0].to_node_id)
+  }
+  return steps
 }
 export function canInsertSerialStep(graph: Graph, id: string): boolean {
   const node = graph.nodes.find((item) => item.id === id)
@@ -205,9 +222,9 @@ export function canInsertSerialStep(graph: Graph, id: string): boolean {
     const join = String(node.config?.join_node_id ?? '')
     return graph.nodes.some((item) => item.id === join && item.type === 'join')
   }
-  if (!node || !['lead', 'worker', 'join'].includes(node.type) || isParallelBranchWorker(graph, id)) return false
+  if (!node || !['lead', 'worker', 'join'].includes(node.type)) return false
   const outgoing = graph.edges.filter((edge) => edge.from_node_id === id)
-  return outgoing.length === 1 && outgoing[0].route === 'success'
+  return outgoing.length === 1 && (outgoing[0].route === 'success' || isParallelBranchWorker(graph, id) && outgoing[0].route === 'join')
 }
 export function initialGraph(member: TeamDefinition['members'][number]): Graph {
   return { schema_version: 1, entry_node_id: 'lead', input_contract: { type: 'text' }, output_contract: { type: 'text' }, nodes: [
@@ -230,10 +247,12 @@ export function insertStep(graph: Graph, id: string, member: TeamDefinition['mem
     if (!graph.nodes.some((n) => n.id === join && n.type === 'join')) throw new Error('并行区域缺少汇合步骤')
     return insertStep(graph, join, member)
   }
-  if (isParallelBranchWorker(graph, id)) throw new Error('并行分支由单个成员直接进入汇合；请选中“并行分工”，在汇合后添加串行步骤')
+  // A step after a branch step stays in the branch, which joins after its last step.
+  const inBranch = isParallelBranchWorker(graph, id)
+  if (inBranch && member.configuration.role !== 'worker') throw new Error('并行分支里的步骤只能由执行成员负责')
   const outgoing = graph.edges.filter((e) => e.from_node_id === id)
-  if (!previous || !['lead', 'worker', 'join'].includes(previous.type) || outgoing.length !== 1 || outgoing[0].route !== 'success') throw new Error('请选择连接完整的步骤后添加下一步')
-  const next = memberStep(member, previous), after = outgoing[0].to_node_id
+  if (!previous || !['lead', 'worker', 'join'].includes(previous.type) || outgoing.length !== 1 || !(outgoing[0].route === 'success' || inBranch && outgoing[0].route === 'join')) throw new Error('请选择连接完整的步骤后添加下一步')
+  const next = memberStep(member, previous, inBranch ? 'dispatch' : 'consult'), after = outgoing[0].to_node_id
   const nextRoute = outgoing[0].route
   // The step that used to follow keeps what it received and also receives the
   // new step's result, so the inserted work is not left unread.
@@ -252,6 +271,13 @@ export function addParallelBranch(graph: Graph, id: string, member: TeamDefiniti
   const incoming = graph.edges.filter((e) => e.to_node_id === id), outgoing = graph.edges.filter((e) => e.from_node_id === id)
   if (incoming.length !== 1 || outgoing.length !== 1 || !['success', 'branch'].includes(incoming[0].route) || !['success', 'join'].includes(outgoing[0].route)) throw new Error('该步骤连接不完整，请先调整流程')
   if (incoming[0].route === 'branch') return addParallelBranch(graph, incoming[0].from_node_id, member)
+  if (isParallelBranchWorker(graph, id)) {
+    // A later step of a branch: the new branch goes beside the whole branch.
+    const head = branchSteps(graph, id)[0]
+    const start = graph.edges.find((e) => e.to_node_id === head?.id && e.route === 'branch')
+    if (!start) throw new Error('该步骤连接不完整，请先调整流程')
+    return addParallelBranch(graph, start.from_node_id, member)
+  }
   const parallel = `parallel-${createUUID()}`, join = `join-${createUUID()}`, next = memberStep(member, graph.nodes.find((n) => n.id === incoming[0].from_node_id), 'dispatch')
   const existingDispatch = { ...node, config: { ...node.config, kind: 'dispatch' } }
   const nodes: Step[] = [...graph.nodes.map((item) => item.id === node.id ? existingDispatch : item), next, { id: parallel, type: 'parallel', label: '并行分工', config: { join_node_id: join } }, { id: join, type: 'join', label: '汇总分支', config: { policy: 'all_success' } }]
@@ -269,7 +295,7 @@ export function canAddParallelBranch(graph: Graph, id: string): boolean {
   if (node?.type !== 'worker') return false
   const incoming = graph.edges.filter((e) => e.to_node_id === id), outgoing = graph.edges.filter((e) => e.from_node_id === id)
   if (incoming.length !== 1 || outgoing.length !== 1) return false
-  if (incoming[0].route === 'branch') return true
+  if (incoming[0].route === 'branch' || isParallelBranchWorker(graph, id)) return true
   return graph.nodes.find((n) => n.id === outgoing[0].to_node_id)?.type !== 'deliver'
 }
 export function feedsDelivery(graph: Graph, id: string): boolean {
@@ -279,11 +305,13 @@ export function feedsDelivery(graph: Graph, id: string): boolean {
 export function removeStep(graph: Graph, id: string): Graph {
   const node = graph.nodes.find((n) => n.id === id), incoming = graph.edges.filter((e) => e.to_node_id === id), outgoing = graph.edges.filter((e) => e.from_node_id === id)
   if (!node || !['worker', 'lead'].includes(node.type) || id === graph.entry_node_id || incoming.length !== 1 || outgoing.length !== 1) throw new Error('请选择连接完整的执行步骤')
-  const dependent = graph.nodes.filter((n) => n.id !== id && (Object.values(bindings(n)).some((b) => b.value?.node_id === id) || (incoming[0].route === 'branch' && (n.config?.result as { node_id?: string })?.node_id === id)))
+  // A branch of several steps loses only this step; a branch of one step goes.
+  const wholeBranch = incoming[0].route === 'branch' && outgoing[0].route === 'join'
+  const dependent = graph.nodes.filter((n) => n.id !== id && (Object.values(bindings(n)).some((b) => b.value?.node_id === id) || (wholeBranch && (n.config?.result as { node_id?: string })?.node_id === id)))
   // A removed branch leaves nothing to read in its place, so its readers are
   // adjusted first. A step in a row hands its readers on to the step before it.
-  if (dependent.length && incoming[0].route === 'branch') throw new Error(`请先调整“${dependent.map((n) => n.label || '执行步骤').join('、')}”的输入来源`)
-  if (incoming[0].route === 'branch') {
+  if (dependent.length && wholeBranch) throw new Error(`请先调整“${dependent.map((n) => n.label || '执行步骤').join('、')}”的输入来源`)
+  if (wholeBranch) {
     if (node.type !== 'worker') throw new Error('并行分支只能移除执行成员')
     const siblings = graph.edges.filter((e) => e.from_node_id === incoming[0].from_node_id)
     if (siblings.length <= 2) throw new Error('并行区域至少保留两个分支；可先将并行区域改为串行')
@@ -292,14 +320,15 @@ export function removeStep(graph: Graph, id: string): Graph {
     return { ...graph, nodes: graph.nodes.filter((n) => n.id !== id), edges: graph.edges.filter((e) => e.from_node_id !== id && e.to_node_id !== id) }
   }
   const previous = incoming[0].from_node_id
-  if (incoming[0].route !== 'success' || outgoing[0].route !== 'success') throw new Error('循环或条件连接中的步骤不能直接删除')
+  const inBranch = isParallelBranchWorker(graph, id)
+  if (!(incoming[0].route === 'success' || inBranch && incoming[0].route === 'branch') || !(outgoing[0].route === 'success' || inBranch && outgoing[0].route === 'join')) throw new Error('循环或条件连接中的步骤不能直接删除')
   const before = graph.nodes.find((n) => n.id === previous)
   const reread = (n: Step): Step => {
     if (!hasNodeInput(n, id)) return n
     const without = toggleNodeInput(n, node)
     return before && ['lead', 'worker', 'join'].includes(before.type) && !hasNodeInput(without, before.id) ? toggleNodeInput(without, before) : without
   }
-  return { ...graph, nodes: graph.nodes.filter((n) => n.id !== id).map((n) => n.type === 'deliver' && (n.config?.result as { node_id?: string })?.node_id === id ? { ...n, config: { ...n.config, result: { ...(n.config?.result as object), source: 'node_output', node_id: previous, path: '' } } } : reread(n)), edges: [...graph.edges.filter((e) => e.from_node_id !== id && e.to_node_id !== id), { ...outgoing[0], from_node_id: previous }] }
+  return { ...graph, nodes: graph.nodes.filter((n) => n.id !== id).map((n) => n.type === 'deliver' && (n.config?.result as { node_id?: string })?.node_id === id ? { ...n, config: { ...n.config, result: { ...(n.config?.result as object), source: 'node_output', node_id: previous, path: '' } } } : reread(n)), edges: [...graph.edges.filter((e) => e.from_node_id !== id && e.to_node_id !== id), { ...outgoing[0], from_node_id: previous, route: incoming[0].route === 'branch' ? 'branch' : outgoing[0].route }] }
 }
 export function serializeParallel(graph: Graph, id: string): Graph {
   const parallel = graph.nodes.find((n) => n.id === id), join = String(parallel?.config?.join_node_id ?? '')
@@ -308,8 +337,12 @@ export function serializeParallel(graph: Graph, id: string): Graph {
   if (parallel?.type !== 'parallel' || incoming.length !== 1 || outgoing.length !== 1 || !branches.length) throw new Error('并行区域连接不完整')
   if (graph.nodes.some((n) => Object.values(bindings(n)).some((b) => b.value?.node_id === join) || (n.config?.result as { node_id?: string })?.node_id === join)) throw new Error('请先将汇总结果的使用者改为读取各成员结果，再改为串行')
   const removed = new Set([id, join])
-  const branchIds = new Set(branches)
-  return { ...graph, nodes: graph.nodes.filter((n) => !removed.has(n.id)).map((node) => branchIds.has(node.id) && node.type === 'worker' ? { ...node, config: { ...node.config, kind: 'consult' } } : node), edges: [...graph.edges.filter((e) => !removed.has(e.from_node_id) && !removed.has(e.to_node_id)), { ...incoming[0], to_node_id: branches[0] }, ...branches.slice(1).map((to, i) => edge(branches[i], to)), { ...outgoing[0], from_node_id: branches[branches.length - 1] }] }
+  // Each branch keeps its steps in order; the branches then run one after another.
+  const chains = branches.map((head) => branchSteps(graph, head).map((step) => step.id))
+  if (chains.some((chain) => !chain.length)) throw new Error('并行区域连接不完整')
+  const branchIds = new Set(chains.flat())
+  const tails = chains.map((chain) => chain[chain.length - 1])
+  return { ...graph, nodes: graph.nodes.filter((n) => !removed.has(n.id)).map((node) => branchIds.has(node.id) && node.type === 'worker' ? { ...node, config: { ...node.config, kind: 'consult' } } : node), edges: [...graph.edges.filter((e) => !removed.has(e.from_node_id) && !removed.has(e.to_node_id)), { ...incoming[0], to_node_id: chains[0][0] }, ...chains.slice(1).map((chain, i) => edge(tails[i], chain[0])), { ...outgoing[0], from_node_id: tails[tails.length - 1] }] }
 }
 
 

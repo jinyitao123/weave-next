@@ -68,7 +68,7 @@ var developmentOperationTopics = []developmentOperationTopic{
 		{Kind: "step_remove", Summary: "只能移除负责人或成员步骤，且不是第一步；其他步骤仍读取它的结果时须先调整", Example: `{"kind":"step_remove","flow":"合同复核流程","step":"汇总检查结果"}`},
 	}, Rules: []string{
 		developmentNamingRule,
-		"串行步骤可由负责人或已启用的执行成员负责；并行分支只能由执行成员负责，且由单个成员直接进入汇合，不能在分支内部再加串行步骤。要在并行之后增加工作，把 after 指向“并行分工”，新步骤会放在汇合之后。",
+		"串行步骤可由负责人或已启用的执行成员负责；并行分支只能由执行成员负责。一个分支可以依次有多步（最多 16 步）：placement 为 serial、after 指向分支里的某一步，新步骤接在它之后、仍在同一分支内，分支在最后一步之后进入汇合。要在并行之后增加工作，把 after 指向“并行分工”，新步骤会放在汇合之后。",
 	}},
 	{Topic: "step_input", Title: "步骤能看到的内容", Covers: "控制每一步收到本次任务输入或哪些前序步骤的结果", Operations: []developmentOperationDoc{
 		{Kind: "step_input", Summary: "source 为 run_input（本次任务输入）或 node_output（另给 from：前序步骤名称）；selected 表示添加或移除", Example: `{"kind":"step_input","flow":"合同复核流程","step":"汇总检查结果","source":"node_output","from":"核对条款","selected":true}`},

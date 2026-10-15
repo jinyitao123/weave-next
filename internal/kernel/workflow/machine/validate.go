@@ -1158,7 +1158,8 @@ func validOutgoingCardinality(node Node, edgeIndexes []int, edges []Edge, loopBy
 	case NodeWorker:
 		config, _ := node.Config.(WorkerConfig)
 		if config.Kind == WorkerDispatch {
-			return counts[RouteJoin] == 1 && only(RouteJoin)
+			// The parallel phase checks that a success edge continues the same branch.
+			return counts[RouteJoin]+counts[RouteSuccess] == 1 && only(RouteJoin, RouteSuccess)
 		}
 		if isLatch {
 			return counts[RouteBack] == 1 && counts[RouteFailure] <= 1 && only(RouteBack, RouteFailure)
@@ -1231,7 +1232,7 @@ func routeAllowedForNode(node Node, edge Edge, loopByLatch loopHeaderIndex) bool
 	case NodeWorker:
 		config, _ := node.Config.(WorkerConfig)
 		if config.Kind == WorkerDispatch {
-			return edge.Route == RouteJoin
+			return edge.Route == RouteJoin || edge.Route == RouteSuccess
 		}
 		return edge.Route == RouteSuccess || edge.Route == RouteFailure
 	case NodeCondition:

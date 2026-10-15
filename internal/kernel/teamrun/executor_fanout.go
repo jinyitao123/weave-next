@@ -276,10 +276,117 @@ func (r *WorkflowSerialRuntime) ExecuteFanoutLeg(
 	if err := validateFanoutLegFrozenIdentity(leg, loaded, branch, worker); err != nil {
 		return nil, err
 	}
+	// A branch may run several dispatch workers in turn; the leg's result is
+	// the last one's output. Later steps were frozen with the same artifact, so
+	// each only has to be proven unable to park the leg.
+	steps, err := machine.ParallelBranchSteps(loaded.graph, leg.BranchID)
+	if err != nil {
+		return nil, executionError(ErrorCodeRuntimeIncompatible, err)
+	}
+	bundles := make(map[string]frozen.FrozenExecutionBundle, len(loaded.payload.Bundles))
+	for _, bundle := range loaded.payload.Bundles {
+		bundles[runtimeEntryKey(bundle.Agent.AgentID, bundle.Agent.AgentVersion)] = bundle
+	}
+	for _, step := range steps[1:] {
+		config, _ := step.Config.(machine.WorkerConfig)
+		if bundle, present := bundles[runtimeEntryKey(config.AgentID, config.AgentVersion)]; !present || bundle.Capability.MayYield {
+			return nil, executionError(ErrorCodeUnexpectedInteractiveYield, fmt.Errorf("parallel branch step %q lacks a may_yield=false bundle", step.ID))
+		}
+	}
 	entries := make(map[string]workflow.RuntimeGraphEntry, len(runtimeArtifact.Entries))
 	for _, entry := range runtimeArtifact.Entries {
 		entries[runtimeEntryKey(entry.AgentID, entry.AgentVersion)] = entry
 	}
+	// Fanout legs still do not contribute to run-level usage settlement; that
+	// remains owned by T14B-2B. Their measured usage is retained in the
+	// activity ledger so the worksite can show honest member-level facts.
+	var retry struct {
+		Generation int `json:"retry_generation"`
+	}
+	if len(task.RuntimeAssignment) > 0 {
+		if err := json.Unmarshal(task.RuntimeAssignment, &retry); err != nil || retry.Generation < 0 {
+			return nil, executionError(ErrorCodeIdentityMismatch, errors.New("invalid explicit retry generation"))
+		}
+	}
+	var actionOutcomes []BusinessActionOutcomeV1
+	if load := r.actionOutcomesLoader(parent); load != nil {
+		actionOutcomes, err = load(ctx)
+		if err != nil {
+			return nil, executionError(ErrorCodeSnapshotUnavailable, fmt.Errorf("load platform business action outcomes: %w", err))
+		}
+	}
+	finished, err := r.finishedFanoutLegSteps(ctx, task.WorkspaceID, leg)
+	if err != nil {
+		return nil, executionError(ErrorCodeSnapshotUnavailable, err)
+	}
+	var encodedOutput json.RawMessage
+	artifactTaskIDs := []string{}
+	// A later step reads files an earlier step of the same branch produced.
+	stepArtifacts := make(map[string][]string, len(checkpoint.ArtifactTaskIDs)+len(steps))
+	for nodeID, ids := range checkpoint.ArtifactTaskIDs {
+		stepArtifacts[nodeID] = ids
+	}
+	checkpoint.ArtifactTaskIDs = stepArtifacts
+	for ordinal, step := range steps {
+		if done, present := finished[step.ID]; present {
+			// A step that finished before is not run again; its output feeds the next.
+			var output any
+			if err := decodeJSONValue(done.Output, &output); err != nil {
+				return nil, executionError(ErrorCodeSnapshotUnavailable, err)
+			}
+			outputs[step.ID] = output
+			stepArtifacts[step.ID] = done.ArtifactTaskIDs
+			encodedOutput, artifactTaskIDs = done.Output, done.ArtifactTaskIDs
+			continue
+		}
+		// The first step keeps the leg's own invocation identity, as before
+		// branches had several steps; each later step has one of its own.
+		invocationID := "fanout/" + leg.LegID
+		if ordinal > 0 {
+			invocationID += "/" + step.ID
+		}
+		output, stepArtifactTaskIDs, err := r.runFanoutLegStep(ctx, parent, loaded, entries, step, invocationID, retry.Generation,
+			runInput, outputs, checkpoint, actionOutcomes)
+		if err != nil {
+			return nil, err
+		}
+		encoded, err := json.Marshal(output)
+		if err != nil {
+			return nil, executionError(ErrorCodeOutputInvalid, err)
+		}
+		if err := r.recordFanoutLegStep(ctx, task.WorkspaceID, leg, step.ID, ordinal, encoded, stepArtifactTaskIDs); err != nil {
+			return nil, executionError(ErrorCodeSnapshotUnavailable, err)
+		}
+		outputs[step.ID] = output
+		stepArtifacts[step.ID] = stepArtifactTaskIDs
+		encodedOutput, artifactTaskIDs = encoded, stepArtifactTaskIDs
+	}
+	encoded, err := json.Marshal(fanoutLegExecutionResultV1{
+		SchemaVersion: 1, InternalKind: fanoutLegExecutionResultKind,
+		Output: encodedOutput, ArtifactTaskIDs: artifactTaskIDs,
+	})
+	if err != nil {
+		return nil, executionError(ErrorCodeOutputInvalid, err)
+	}
+	return encoded, nil
+}
+
+// runFanoutLegStep runs one dispatch worker of a parallel branch and records
+// its activity, output and artifacts like any other step of the run.
+func (r *WorkflowSerialRuntime) runFanoutLegStep(
+	ctx context.Context,
+	parent TeamRun,
+	loaded loadedWorkflowGraph,
+	entries map[string]workflow.RuntimeGraphEntry,
+	branch machine.Node,
+	invocationID string,
+	retryGeneration int,
+	runInput any,
+	outputs map[string]any,
+	checkpoint WorkflowCheckpointV1,
+	actionOutcomes []BusinessActionOutcomeV1,
+) (any, []string, error) {
+	worker, _ := branch.Config.(machine.WorkerConfig)
 	memberID, memberVersion, _ := agentNodeIdentity(branch, loaded.payload)
 	startedAt := time.Now().UTC()
 	recordActivity := r.activityRecorder(parent)
@@ -296,28 +403,9 @@ func (r *WorkflowSerialRuntime) ExecuteFanoutLeg(
 		recordActivity(ctx, "member_started", branch, memberID, memberVersion,
 			map[string]any{"input_names": inputNames, "input_summary": inputSummary})
 	}
-	// Fanout legs still do not contribute to run-level usage settlement; that
-	// remains owned by T14B-2B. Their measured usage is retained in the
-	// activity ledger so the worksite can show honest member-level facts.
-	var retry struct {
-		Generation int `json:"retry_generation"`
-	}
-	if len(task.RuntimeAssignment) > 0 {
-		if err := json.Unmarshal(task.RuntimeAssignment, &retry); err != nil || retry.Generation < 0 {
-			return nil, executionError(ErrorCodeIdentityMismatch, errors.New("invalid explicit retry generation"))
-		}
-	}
-	invocationID := "fanout/" + leg.LegID
-	rootID := execution.EngineTaskID(task.WorkspaceID, invocationID)
-	if retry.Generation > 0 {
-		invocationID += fmt.Sprintf("/retry-%d", retry.Generation)
-	}
-	var actionOutcomes []BusinessActionOutcomeV1
-	if load := r.actionOutcomesLoader(parent); load != nil {
-		actionOutcomes, err = load(ctx)
-		if err != nil {
-			return nil, executionError(ErrorCodeSnapshotUnavailable, fmt.Errorf("load platform business action outcomes: %w", err))
-		}
+	rootID := execution.EngineTaskID(parent.WorkspaceID, invocationID)
+	if retryGeneration > 0 {
+		invocationID += fmt.Sprintf("/retry-%d", retryGeneration)
 	}
 	inputCtx := execution.WithAttemptLineage(execution.WithInputTaskIDs(ctx, nodeInputTaskIDs(branch, checkpoint.ArtifactTaskIDs)), rootID, "")
 	output, nodeUsage, err := runAgentNode(
@@ -326,11 +414,10 @@ func (r *WorkflowSerialRuntime) ExecuteFanoutLeg(
 		func(ctx context.Context) context.Context { return r.withBusinessActionOutcomeContext(ctx, parent) },
 		workbenchResultPromptRequired(loaded.graph, branch.ID),
 	)
+	owner := workflowArtifactOwner{NodeID: branch.ID, NodeLabel: branch.Label, NodeType: string(branch.Type), AgentID: worker.AgentID}
 	if err != nil {
-		if recordErr := r.recordWorkflowArtifacts(ctx, parent, workflowArtifactOwner{
-			NodeID: branch.ID, NodeLabel: branch.Label, NodeType: string(branch.Type), AgentID: worker.AgentID,
-		}, nodeUsage.Artifacts, false); recordErr != nil {
-			return nil, executionError(ErrorCodeDeliveryUnavailable, errors.Join(err, recordErr))
+		if recordErr := r.recordWorkflowArtifacts(ctx, parent, owner, nodeUsage.Artifacts, false); recordErr != nil {
+			return nil, nil, executionError(ErrorCodeDeliveryUnavailable, errors.Join(err, recordErr))
 		}
 		if recordActivity != nil {
 			failure := ClassifyFailure(err)
@@ -340,7 +427,7 @@ func (r *WorkflowSerialRuntime) ExecuteFanoutLeg(
 				"output_validation": nodeOutputViolation(err),
 			})
 		}
-		return nil, err
+		return nil, nil, err
 	}
 	if recordActivity != nil {
 		recordActivity(ctx, "member_completed", branch, memberID, memberVersion, map[string]any{
@@ -350,17 +437,11 @@ func (r *WorkflowSerialRuntime) ExecuteFanoutLeg(
 	}
 	if recorder := r.workflowOutputRecorder(parent); recorder != nil {
 		if err := recorder(ctx, branch, output, false); err != nil {
-			return nil, executionError(ErrorCodeDeliveryUnavailable, err)
+			return nil, nil, executionError(ErrorCodeDeliveryUnavailable, err)
 		}
 	}
-	if err := r.recordWorkflowArtifacts(ctx, parent, workflowArtifactOwner{
-		NodeID: branch.ID, NodeLabel: branch.Label, NodeType: string(branch.Type), AgentID: worker.AgentID,
-	}, nodeUsage.Artifacts, false); err != nil {
-		return nil, executionError(ErrorCodeDeliveryUnavailable, err)
-	}
-	encodedOutput, err := json.Marshal(output)
-	if err != nil {
-		return nil, executionError(ErrorCodeOutputInvalid, err)
+	if err := r.recordWorkflowArtifacts(ctx, parent, owner, nodeUsage.Artifacts, false); err != nil {
+		return nil, nil, executionError(ErrorCodeDeliveryUnavailable, err)
 	}
 	artifactTaskIDs := []string{}
 	if nodeUsage.MemberRunID != "" {
@@ -371,14 +452,68 @@ func (r *WorkflowSerialRuntime) ExecuteFanoutLeg(
 			artifactTaskIDs = []string{attempt.AttemptID}
 		}
 	}
-	encoded, err := json.Marshal(fanoutLegExecutionResultV1{
-		SchemaVersion: 1, InternalKind: fanoutLegExecutionResultKind,
-		Output: encodedOutput, ArtifactTaskIDs: artifactTaskIDs,
-	})
+	return output, artifactTaskIDs, nil
+}
+
+type finishedFanoutLegStep struct {
+	Output          json.RawMessage
+	ArtifactTaskIDs []string
+}
+
+func (r *WorkflowSerialRuntime) finishedFanoutLegSteps(ctx context.Context, workspaceID string, leg FanoutLegTaskPayloadV1) (map[string]finishedFanoutLegStep, error) {
+	tx, err := r.Transactions.Begin(ctx)
 	if err != nil {
-		return nil, executionError(ErrorCodeOutputInvalid, err)
+		return nil, err
 	}
-	return encoded, nil
+	defer func() { _ = tx.Rollback(ctx) }()
+	rows, err := tx.Query(ctx, `SELECT node_id,output,artifact_task_ids FROM weave_fanout_leg_steps
+		WHERE workspace_id=$1 AND group_id=$2 AND leg_id=$3`, workspaceID, leg.GroupID, leg.LegID)
+	if err != nil {
+		return nil, fmt.Errorf("read finished branch steps: %w", err)
+	}
+	finished := map[string]finishedFanoutLegStep{}
+	for rows.Next() {
+		var nodeID string
+		var step finishedFanoutLegStep
+		var ids []byte
+		if err := rows.Scan(&nodeID, &step.Output, &ids); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		if err := json.Unmarshal(ids, &step.ArtifactTaskIDs); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		finished[nodeID] = step
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return finished, tx.Commit(ctx)
+}
+
+// recordFanoutLegStep keeps a finished branch step. A step recorded by an
+// earlier run of the same leg wins; the leg then continues from its output.
+func (r *WorkflowSerialRuntime) recordFanoutLegStep(ctx context.Context, workspaceID string, leg FanoutLegTaskPayloadV1, nodeID string, ordinal int, output json.RawMessage, artifactTaskIDs []string) error {
+	if artifactTaskIDs == nil {
+		artifactTaskIDs = []string{}
+	}
+	ids, err := json.Marshal(artifactTaskIDs)
+	if err != nil {
+		return err
+	}
+	tx, err := r.Transactions.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if _, err = tx.Exec(ctx, `INSERT INTO weave_fanout_leg_steps(workspace_id,group_id,leg_id,node_id,step_ordinal,output,artifact_task_ids)
+		VALUES($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb) ON CONFLICT (workspace_id,group_id,leg_id,node_id) DO NOTHING`,
+		workspaceID, leg.GroupID, leg.LegID, nodeID, ordinal, string(output), string(ids)); err != nil {
+		return fmt.Errorf("record finished branch step: %w", err)
+	}
+	return tx.Commit(ctx)
 }
 
 func validateFanoutLegFrozenIdentity(

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import fixtureText from '../../../../internal/kernel/workflow/machine/testdata/code_verify_loop.json?raw'
 import { serialGraph, verifyLoop, type Graph } from './graph'
 import type { DevelopmentMember } from './teams'
-import { addParallelBranch, assignExecutor, canAddParallelBranch, configureWorkflowResultProtocol, hasNodeInput, insertStep, predecessors, removeStep, serializeParallel, setVerificationLoop } from './workflow-graph'
+import { addParallelBranch, assignExecutor, branchSteps, canAddParallelBranch, canInsertSerialStep, configureWorkflowResultProtocol, hasNodeInput, insertStep, predecessors, removeStep, serializeParallel, setVerificationLoop } from './workflow-graph'
 
 export const member = (id: string): DevelopmentMember => ({ id, configuration: { display_name: id, role: 'worker', engine: 'loom', runtime_id: '', model: '', system_prompt: '' }, relationship: { duty: '', result_requirement: '返回依据', enabled: true } })
 function graph() {
@@ -44,6 +44,33 @@ describe('workflow canvas graph edits', () => {
     const serial = serializeParallel(removed, split.id)
     expect(serial.nodes.some(node => ['parallel', 'join'].includes(node.type))).toBe(false)
     expect(serial.nodes.filter(node => node.type === 'worker').every(node => node.config?.kind === 'consult')).toBe(true)
+  })
+
+  it('runs several steps inside one branch, removes one and turns the region back into a row', () => {
+    const input = graph(), first = input.nodes[1]
+    const parallel = addParallelBranch(input, first.id, member('并行成员')).graph
+    const split = parallel.nodes.find(node => node.type === 'parallel')!
+    expect(canInsertSerialStep(parallel, first.id)).toBe(true)
+    const longer = insertStep(parallel, first.id, member('复核成员'))
+    const added = longer.graph.nodes.find(node => node.id === longer.selected)!
+    expect(added.config?.kind).toBe('dispatch')
+    expect(branchSteps(longer.graph, added.id).map(step => step.id)).toEqual([first.id, added.id])
+    expect(longer.graph.edges.find(edge => edge.from_node_id === added.id)?.route).toBe('join')
+    expect(longer.graph.edges.find(edge => edge.from_node_id === first.id)?.route).toBe('success')
+    expect(() => insertStep(parallel, first.id, { ...member('负责人'), configuration: { ...member('负责人').configuration, role: 'avatar' } })).toThrow('执行成员')
+    // A new branch from a later step goes beside the whole branch.
+    const beside = addParallelBranch(longer.graph, added.id, member('第三成员'))
+    expect(beside.graph.edges.filter(edge => edge.from_node_id === split.id)).toHaveLength(3)
+    // Removing the branch's last step lets the one before join again.
+    const shorter = removeStep(longer.graph, added.id)
+    expect(shorter.edges.find(edge => edge.from_node_id === first.id)?.route).toBe('join')
+    expect(branchSteps(shorter, first.id)).toHaveLength(1)
+    // A row keeps each branch's steps in order.
+    const serial = serializeParallel(longer.graph, split.id)
+    const order: string[] = []
+    for (let at = serial.entry_node_id; at;) { order.push(at); at = serial.edges.find(edge => edge.from_node_id === at)?.to_node_id ?? '' }
+    expect(order.indexOf(added.id)).toBe(order.indexOf(first.id) + 1)
+    expect(serial.nodes.some(node => node.config?.kind === 'dispatch')).toBe(false)
   })
 
   it('blocks deleting referenced results and changing parallel structure against quorum', () => {

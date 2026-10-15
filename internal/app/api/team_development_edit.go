@@ -181,9 +181,11 @@ func editPredecessors(graph editGraph, id string) []map[string]any {
 	return steps
 }
 
+// editParallelBranchWorker says whether a step is one of the dispatch workers
+// a parallel branch runs in turn.
 func editParallelBranchWorker(graph editGraph, id string) bool {
-	incoming, outgoing := editEdges(graph, "to_node_id", id), editEdges(graph, "from_node_id", id)
-	return len(incoming) == 1 && editString(incoming[0]["route"]) == "branch" && len(outgoing) == 1 && editString(outgoing[0]["route"]) == "join"
+	node := editNode(graph, id)
+	return node != nil && editNodeType(node) == "worker" && editString(editObject(node["config"])["kind"]) == "dispatch"
 }
 
 func editFirst(values ...string) string {
@@ -264,14 +266,20 @@ func editInsertStep(graph editGraph, id string, member *developmentMember) (stri
 		}
 		return editInsertStep(graph, join, member)
 	}
+	// A step after a branch step is the branch's next step; the branch joins
+	// after its last one.
+	kind := "consult"
 	if editParallelBranchWorker(graph, id) {
-		return "", editFail("并行分支由单个成员直接进入汇合；请把前一步指向“并行分工”，在汇合后添加串行步骤")
+		if member.Configuration.Role != "worker" {
+			return "", editFail("并行分支里的步骤只能由执行成员负责")
+		}
+		kind = "dispatch"
 	}
 	outgoing := editEdges(graph, "from_node_id", id)
 	if previous == nil || !editOneOf(editNodeType(previous), "lead", "worker", "join") || len(outgoing) != 1 {
 		return "", editFail("请选择连接完整的步骤后添加下一步")
 	}
-	next, after := editMemberStep(member, previous, "consult"), editString(outgoing[0]["to_node_id"])
+	next, after := editMemberStep(member, previous, kind), editString(outgoing[0]["to_node_id"])
 	route := "success"
 	if editString(outgoing[0]["route"]) == "join" {
 		route = "join"
@@ -312,6 +320,10 @@ func editAddParallelBranch(graph editGraph, id string, member *developmentMember
 	}
 	before := editString(incoming[0]["from_node_id"])
 	if editString(incoming[0]["route"]) == "branch" {
+		return editAddParallelBranch(graph, before, member)
+	}
+	if editParallelBranchWorker(graph, id) {
+		// A later step of a branch: the new branch goes beside the whole branch.
 		return editAddParallelBranch(graph, before, member)
 	}
 	parallel, join := "parallel-"+uuid.NewString(), "join-"+uuid.NewString()
@@ -357,7 +369,10 @@ func editRemoveStep(graph editGraph, id string) error {
 	if node == nil || !editOneOf(editNodeType(node), "worker", "lead") || id == editString(graph["entry_node_id"]) || len(incoming) != 1 || len(outgoing) != 1 {
 		return editFail("只能移除连接完整、且不是第一步的负责人或成员步骤")
 	}
-	branch := editString(incoming[0]["route"]) == "branch"
+	// A branch whose first step is removed keeps going from its next step; only
+	// a branch of one step goes away with it.
+	continues := editParallelBranchWorker(graph, editString(outgoing[0]["to_node_id"])) && editString(outgoing[0]["route"]) == "success"
+	branch := editString(incoming[0]["route"]) == "branch" && !continues
 	var dependent []string
 	for _, other := range editItems(graph, "nodes") {
 		if editString(other["id"]) != id && (editReadsNode(other, id) || branch && editResultSource(other) == id) {
@@ -397,7 +412,14 @@ func editRemoveStep(graph editGraph, id string) error {
 				editConfig(other)["result"] = editNodeOutputRef(previous)
 			}
 		}
-		edges = append(edges, editNewEdge(previous, editString(outgoing[0]["to_node_id"]), "success"))
+		route := "success"
+		switch {
+		case editString(incoming[0]["route"]) == "branch":
+			route = "branch"
+		case editString(outgoing[0]["route"]) == "join":
+			route = "join"
+		}
+		edges = append(edges, editNewEdge(previous, editString(outgoing[0]["to_node_id"]), route))
 	}
 	editSetItems(graph, "nodes", nodes)
 	editSetItems(graph, "edges", edges)

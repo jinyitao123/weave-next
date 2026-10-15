@@ -520,6 +520,7 @@ func validateParallelJoin(ctx ValidationContext) Report {
 		}
 
 		legSet := newNodeBitSet(len(graph.Nodes))
+		tailSet := newNodeBitSet(len(graph.Nodes))
 		for _, edgeIndex := range branches {
 			edge := graph.Edges[edgeIndex]
 			leg := analysis.nodeIndex[edge.ToNodeID]
@@ -548,30 +549,66 @@ func validateParallelJoin(ctx ValidationContext) Report {
 				)
 			}
 			legSet.add(leg)
-			outgoing := analysis.outgoing[leg]
-			if len(outgoing) != 1 {
-				report.AddNode(
-					PhaseParallelJoin,
-					fmt.Sprintf("/nodes/%d", leg),
-					node.ID,
-					CodeParallelBranchNotExclusive,
-					"parallel branch worker must have exactly one join output",
-				)
-				continue
-			}
-			output := graph.Edges[outgoing[0]]
-			if output.Route != RouteJoin || analysis.nodeIndex[output.ToNodeID] != joinIndex {
-				report.AddNode(
-					PhaseParallelJoin,
-					fmt.Sprintf("/edges/%d", outgoing[0]),
-					node.ID,
-					CodeParallelJoinInvalid,
-					"parallel branch worker must join its owner's join node",
-				)
+			// A branch is a chain of dispatch workers: each continues to the next
+			// one by a success edge, and the last joins its owner's join node.
+			step, steps := leg, 1
+			for {
+				outgoing := analysis.outgoing[step]
+				if len(outgoing) != 1 {
+					report.AddNode(
+						PhaseParallelJoin,
+						fmt.Sprintf("/nodes/%d", step),
+						node.ID,
+						CodeParallelBranchNotExclusive,
+						"parallel branch worker must have exactly one output",
+					)
+					break
+				}
+				output := graph.Edges[outgoing[0]]
+				next, known := analysis.nodeIndex[output.ToNodeID]
+				if output.Route == RouteJoin {
+					if !known || next != joinIndex {
+						report.AddNode(
+							PhaseParallelJoin,
+							fmt.Sprintf("/edges/%d", outgoing[0]),
+							node.ID,
+							CodeParallelJoinInvalid,
+							"parallel branch worker must join its owner's join node",
+						)
+					}
+					tailSet.add(step)
+					break
+				}
+				nextWorker, isNextWorker := graph.Nodes[next].Config.(WorkerConfig)
+				if output.Route != RouteSuccess || !known || graph.Nodes[next].Type != NodeWorker || !isNextWorker ||
+					nextWorker.Kind != WorkerDispatch || legSet.contains(next) ||
+					len(analysis.incoming[next]) != 1 || analysis.incoming[next][0] != outgoing[0] {
+					report.AddNode(
+						PhaseParallelJoin,
+						fmt.Sprintf("/edges/%d", outgoing[0]),
+						node.ID,
+						CodeParallelBranchNotExclusive,
+						"a parallel branch step must continue to the next dispatch worker of the same branch or join its owner's join node",
+					)
+					break
+				}
+				if steps++; steps > MaxParallelBranchSteps {
+					report.AddNode(
+						PhaseParallelJoin,
+						fmt.Sprintf("/nodes/%d", next),
+						node.ID,
+						CodeParallelBranchNotExclusive,
+						fmt.Sprintf("a parallel branch may have at most %d steps", MaxParallelBranchSteps),
+					)
+					break
+				}
+				legSet.add(next)
+				branchOwnerCount[next]++
+				step = next
 			}
 		}
 
-		if joinValid && !joinInputsMatch(graph, analysis, joinIndex, legSet, len(branches)) {
+		if joinValid && !joinInputsMatch(graph, analysis, joinIndex, tailSet, len(branches)) {
 			report.AddNode(
 				PhaseParallelJoin,
 				joinPath(joinPath(nodePath, "config"), "join_node_id"),
@@ -611,6 +648,45 @@ func validateParallelJoin(ctx ValidationContext) Report {
 		}
 	}
 	return report
+}
+
+// MaxParallelBranchSteps bounds the dispatch workers one parallel branch runs
+// in turn before it joins.
+const MaxParallelBranchSteps = 16
+
+// ParallelBranchSteps returns the dispatch workers one validated parallel
+// branch runs in order, starting at the branch's first worker.
+func ParallelBranchSteps(graph GraphDefinition, headID string) ([]Node, error) {
+	nodes := make(map[string]Node, len(graph.Nodes))
+	for _, node := range graph.Nodes {
+		nodes[node.ID] = node
+	}
+	steps := []Node{}
+	current, present := nodes[headID]
+	for present && len(steps) < MaxParallelBranchSteps {
+		worker, ok := current.Config.(WorkerConfig)
+		if current.Type != NodeWorker || !ok || worker.Kind != WorkerDispatch {
+			break
+		}
+		steps = append(steps, current)
+		var outgoing []Edge
+		for _, edge := range graph.Edges {
+			if edge.FromNodeID == current.ID {
+				outgoing = append(outgoing, edge)
+			}
+		}
+		if len(outgoing) != 1 {
+			break
+		}
+		if outgoing[0].Route == RouteJoin {
+			return steps, nil
+		}
+		if outgoing[0].Route != RouteSuccess {
+			break
+		}
+		current, present = nodes[outgoing[0].ToNodeID]
+	}
+	return nil, fmt.Errorf("parallel branch %q is not a chain of dispatch workers ending at its join", headID)
 }
 
 func joinInputsMatch(graph GraphDefinition, analysis controlFlowAnalysis, joinIndex int, legs nodeBitSet, legCount int) bool {
