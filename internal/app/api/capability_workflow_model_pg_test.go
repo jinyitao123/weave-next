@@ -82,6 +82,15 @@ func TestCapabilityWorkflowModelParallelReviewWorksWithOneConnectionRealPG(t *te
 
 func runCapabilityWorkflowModelAcceptance(t *testing.T, parallel bool, maxConns ...int32) {
 	t.Helper()
+	runCapabilityWorkflowModelScenario(t, parallel, maxConns, false)
+}
+
+func TestCapabilityWorkflowModelProductionCancellationPersistsLiveProgressRealPG(t *testing.T) {
+	runCapabilityWorkflowModelScenario(t, false, nil, true)
+}
+
+func runCapabilityWorkflowModelScenario(t *testing.T, parallel bool, maxConns []int32, cancelRunning bool) {
+	t.Helper()
 	ctx := execution.WithSubject(t.Context(), execution.Subject{WorkspaceID: "ws", UserID: "user"})
 	pool := testutil.PostgresPool(t)
 	if err := db.Migrate(ctx, pool); err != nil {
@@ -110,6 +119,7 @@ func runCapabilityWorkflowModelAcceptance(t *testing.T, parallel bool, maxConns 
 	var modelCalls atomic.Int32
 	var requestMu sync.Mutex
 	var requests [][]byte
+	modelStarted, modelStopped, releaseModel := make(chan struct{}), make(chan struct{}), make(chan struct{})
 	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		modelCalls.Add(1)
 		body, err := io.ReadAll(r.Body)
@@ -131,6 +141,15 @@ func runCapabilityWorkflowModelAcceptance(t *testing.T, parallel bool, maxConns 
 		}
 		if request.Model != capabilityWorkflowModelName || len(request.Tools) != 0 {
 			t.Errorf("pure review workflow sent an unexpected model/tool request: model=%q tools=%d", request.Model, len(request.Tools))
+		}
+		if cancelRunning {
+			close(modelStarted)
+			defer close(modelStopped)
+			select {
+			case <-r.Context().Done():
+			case <-releaseModel:
+			}
+			return
 		}
 		content := "审核完成：资料已核对。"
 		finalWorkerRequest := false
@@ -165,6 +184,7 @@ func runCapabilityWorkflowModelAcceptance(t *testing.T, parallel bool, maxConns 
 		_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
 	}))
 	defer provider.Close()
+	defer close(releaseModel)
 
 	key := []byte(strings.Repeat("k", 32))
 	providers := credentials.New(pool, key)
@@ -200,7 +220,11 @@ func runCapabilityWorkflowModelAcceptance(t *testing.T, parallel bool, maxConns 
 	// normal publish. The API handler and background TeamRun worker below then own
 	// invocation, credential authorization, task execution, terminal state and result.
 
-	tasks := taskqueue.New(pool, nil, 250*time.Millisecond)
+	leaseDuration := 250 * time.Millisecond
+	if cancelRunning {
+		leaseDuration = 3 * temporaryTeamRunTaskHeartbeat
+	}
+	tasks := taskqueue.New(pool, nil, leaseDuration)
 	snapshots := snapshot.NewStore(pool)
 	access := capabilities.NewAccessStore(pool)
 	capabilityStore := capabilities.NewPGStoreWithTaskQueue(pool, tasks)
@@ -265,6 +289,13 @@ func runCapabilityWorkflowModelAcceptance(t *testing.T, parallel bool, maxConns 
 	invocationID, runID := accepted.stringField(t, "invocation_id"), accepted.stringField(t, "run_id")
 	if invocationID == "" || runID == "" || accepted.stringField(t, "status") == "" {
 		t.Fatalf("accepted response lost invocation or run identity: %+v", accepted.body)
+	}
+	if cancelRunning {
+		assertCapabilityWorkflowModelCancellation(t, appAccess, appKey, invocationID, runID, modelStarted, modelStopped)
+		if got := modelCalls.Load(); got != 1 {
+			t.Fatalf("cancellation dispatched extra model calls: %d", got)
+		}
+		return
 	}
 
 	deadlineDuration := 20 * time.Second
@@ -370,6 +401,69 @@ func runCapabilityWorkflowModelAcceptance(t *testing.T, parallel bool, maxConns 
 	}
 	if strings.Contains(strings.ToLower(string(requests[0])), "tool_choice") {
 		t.Fatal("pure computation invocation unexpectedly requested a model tool call")
+	}
+}
+
+func assertCapabilityWorkflowModelCancellation(t *testing.T, fixture *capabilityWorkflowContractFixture, key, invocationID, runID string, modelStarted, modelStopped <-chan struct{}) {
+	t.Helper()
+	select {
+	case <-modelStarted:
+	case <-time.After(5 * time.Second):
+		t.Fatal("production worker did not start the controlled model request")
+	}
+	var liveEvents int
+	for deadline := time.Now().Add(time.Second); time.Now().Before(deadline); {
+		if err := fixture.pool.QueryRow(t.Context(), `SELECT count(*) FROM weave_team_run_activity_events
+			WHERE workspace_id='ws' AND run_id=$1 AND kind IN ('model_started','model_request_written')`, runID).Scan(&liveEvents); err != nil {
+			t.Fatal(err)
+		}
+		if liveEvents == 2 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if liveEvents != 2 {
+		t.Fatalf("in-flight request has no durable progress: count=%d", liveEvents)
+	}
+	started := time.Now()
+	cancelled := fixture.call(t, key, http.MethodPost, "/v1/invocations/"+invocationID+"/cancel", nil)
+	if cancelled.status != http.StatusOK {
+		t.Fatalf("cancel request returned status=%d", cancelled.status)
+	}
+	deadline := started.Add(10 * time.Second)
+	var status string
+	var terminal capabilityWorkflowHTTPResult
+	for time.Now().Before(deadline) {
+		result := fixture.call(t, key, http.MethodGet, "/v1/invocations/"+invocationID, nil)
+		status = result.stringField(t, "status")
+		if status == "cancelled" {
+			terminal = result
+			break
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	if status != "cancelled" {
+		t.Fatalf("production cancellation did not settle within caller's window: status=%s", status)
+	}
+	var complete *bool
+	if err := json.Unmarshal(terminal.body["usage_complete"], &complete); err != nil || complete == nil || *complete {
+		t.Fatalf("unreturned model receipt was reported as complete usage: value=%s err=%v", terminal.body["usage_complete"], err)
+	}
+	select {
+	case <-modelStopped:
+	default:
+		t.Fatal("task acknowledged cancellation before the HTTP request exited")
+	}
+	var phase string
+	if err := fixture.pool.QueryRow(t.Context(), `SELECT state FROM weave_run_attempt_leases WHERE workspace_id='ws' AND run_id=$1`, runID).Scan(&phase); err != nil || phase == "active" {
+		t.Fatalf("cancelled attempt remains active: state=%s err=%v", phase, err)
+	}
+	var cancellationMarkers, endEvents int
+	if err := fixture.pool.QueryRow(t.Context(), `SELECT count(*) FROM weave_run_terminal_markers WHERE workspace_id='ws' AND run_id=$1 AND stop_reason='cancelled'`, runID).Scan(&cancellationMarkers); err != nil || cancellationMarkers != 1 {
+		t.Fatalf("cancellation has no root terminal evidence: count=%d err=%v", cancellationMarkers, err)
+	}
+	if err := fixture.pool.QueryRow(t.Context(), `SELECT count(*) FROM weave_team_run_activity_events WHERE workspace_id='ws' AND run_id=$1 AND kind='model_cancelled'`, runID).Scan(&endEvents); err != nil || endEvents != 1 {
+		t.Fatalf("cancelled context swallowed model end evidence: count=%d err=%v", endEvents, err)
 	}
 }
 

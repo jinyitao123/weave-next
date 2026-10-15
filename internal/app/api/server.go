@@ -645,7 +645,9 @@ const teamRunWorkersDisableEnv = "WEAVE_TEAMRUN_WORKERS_DISABLED"
 const (
 	temporaryTeamRunWorkerPollInterval = 2 * time.Second
 	temporaryTeamRunWorkerBatchSize    = 32
-	temporaryTeamRunTaskHeartbeat      = 20 * time.Second
+	// Running local members observe durable cancellation on this heartbeat.
+	// Keep detection within the ordinary caller's cancellation confirmation window.
+	temporaryTeamRunTaskHeartbeat = 5 * time.Second
 )
 
 func teamRunWorkersDisabled() bool {

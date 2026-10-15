@@ -930,6 +930,7 @@ func (r *WorkflowSerialRuntime) prepare(
 	loader.RunSnapshotID = run.RunSnapshotID
 	ctx = r.withCredentialAuthorization(ctx, run, task)
 	hostFactory := workflow.ObserveRuntimeTools(r.hostFactoryFor(loaded), r.toolObserver(run))
+	hostFactory = workflow.ObserveRuntimeModels(hostFactory, r.modelObserver(run))
 	runtimeArtifact, err := loader.Load(ctx, loaded.envelope, hostFactory, resolver)
 	if err != nil {
 		return nil, executionError(ErrorCodeRuntimeIncompatible, err)
