@@ -51,7 +51,12 @@ func (a *PublicationAuthority) AuthorizePublished(ctx context.Context, request p
 		return err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	if err = authorizePublicationActorTx(ctx, tx, subject.WorkspaceID, payload.Team.TeamID); err != nil {
+	if isCapabilityApplicationSubject(subject) {
+		err = a.authorizeCapabilityApplicationInvocationTx(ctx, tx, subject, request, envelope)
+	} else {
+		err = authorizePublicationActorTx(ctx, tx, subject.WorkspaceID, payload.Team.TeamID)
+	}
+	if err != nil {
 		return err
 	}
 	var teamID, workflowStatus, versionStatus, teamStatus, leadID string

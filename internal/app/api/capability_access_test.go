@@ -41,7 +41,7 @@ func TestCapabilityAccessRequiresExplicitOperationScope(t *testing.T) {
 
 func TestCapabilityBodyRejectsDuplicateAndCallerSuppliedIdentity(t *testing.T) {
 	for _, body := range []string{
-		`{"request_id":"x","input":{},"invocation_id":"caller-selected"}`,
+		`{"request_id":"x","input":{},"application_id":"caller-selected"}`,
 		`{"request_id":"x","request_id":"y","input":{}}`,
 		`{"request_id":"x","input":{}}{}`,
 	} {

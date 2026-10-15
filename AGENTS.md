@@ -27,13 +27,15 @@ Rules:
 - Durable recovery is a core platform capability. The model/tool replay contract belongs to Loom (`stdlib.ExecutionJournal`); Weave supplies storage, leases and fencing. Add provider-specific recovery regressions to Loom instead of patching around them in Weave.
 - Product acceptance follows `weave-workbench`'s acceptance rules: start from the GooeyPi desktop's normal path and read back business results independently in Forge pages. Admin console work is accepted through the console's normal path, with code results read back independently in the repository; the phases and exit conditions are in the console design. The web Workbench protocol in [`docs/验收/Workbench真人式验收协议.md`](docs/验收/Workbench真人式验收协议.md) is historical; its principles still apply. Raw evidence directories under `docs/验收/` were removed in W7 and remain in Git history. Use the product's normal user path before inspecting APIs or fixtures. Test the same task as a user, a task owner, a deliverable consumer, and an independent auditor. Keep deterministic tasks direct; add method discovery only for a concrete unknown that blocks route selection. Report observed behavior, evidence, defects, and unverified gaps separately; a model claim, completed stage, tool call, or health response is not delivery acceptance.
 
-Scoped exception (initially approved 2026-09-10, generalized and approved by the
-repository owner 2026-10-03, PR #18): a server-to-server service key may request bounded decisions, choosing
-exactly one caller-supplied option through one published Team/Workflow version
-plus a caller contract registered as data (input/output JSON Schema, option and
-choice locations, optional instruction). Reuse the existing workflow engine, run
-ledger and delivery projection. Members stay Loom model members with deny-all
-tools and no memory, skills, MCP, runtime or fallback models. Weave code must not
-encode any consumer's domain vocabulary; that belongs in the caller contract.
-This does not open arbitrary team dispatch or Workbench user-event impersonation
-to service clients. See [docs/架构/2026-10-02-受限选择决策接口.md](docs/架构/2026-10-02-受限选择决策接口.md).
+Application-call exception (approved 2026-10-15): reuse capability applications,
+exact-version grants and the invocation API to call a published Team/Workflow
+through an immutable capability reference and input/output Schema. The published
+workflow remains the only executable graph; publication admission, TeamRun and
+the existing task queue own execution, recovery, cancellation and terminal state.
+Invocation records hold request associations and project those facts. Initial
+workflow references support pure-computation Loom members with deny-all tools
+and no memory, skills, MCP, runtime or fallback models. Consumer rules and
+business-state checks belong to the calling application. This does not authorize
+arbitrary team dispatch or employee impersonation and does not restore the
+W10-retired decisions routes. It supersedes the 2026-10-03 bounded-decision
+exception. See [docs/架构/2026-10-15-发布工作流的应用调用.md](docs/架构/2026-10-15-发布工作流的应用调用.md).

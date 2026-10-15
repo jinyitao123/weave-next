@@ -1199,6 +1199,74 @@
         "lines_added": 23,
         "production_lines_added": 18
       }
+    },
+    {
+      "date": "2026-10-15",
+      "reason": "User-authorized published-workflow application invocation through the existing capability API. Keep one published graph and the existing TeamRun execution owner; register exact measured source, persistence and regression growth without package/dependency exceptions or spare allowance. No retired decisions routes restored.",
+      "record": "docs/架构/2026-10-15-发布工作流的应用调用.md",
+      "growth": {
+        "lines": 5316,
+        "production_lines": 2492
+      },
+      "deletion_trigger": "When the last inline capability caller migrates to the published-workflow contract and a deployed release has no inline callers, remove the inline capability compiler/executor, runner wiring and their exclusive tests and lower measured band budgets in that change. If workflow application calls are retired, disable their grants first and delete the associated invocation adapter and exclusive tests after the no-caller release.",
+      "base": {
+        "previous_lines": 8448,
+        "previous_production_lines": 6792,
+        "lines_added": 139,
+        "production_lines_added": 18
+      },
+      "kernel": {
+        "previous_lines": 104905,
+        "previous_production_lines": 83365,
+        "lines_added": 788,
+        "production_lines_added": 343
+      },
+      "build": {
+        "previous_lines": 0,
+        "previous_production_lines": 0,
+        "lines_added": 0,
+        "production_lines_added": 0
+      },
+      "app": {
+        "previous_lines": 87290,
+        "previous_production_lines": 59750,
+        "lines_added": 4389,
+        "production_lines_added": 2131
+      }
+    },
+    {
+      "date": "2026-10-15",
+      "reason": "User-requested investigation and generic robustness repair after an untraceable workflow timeout: live secret-free model activity, physical execution/stream join before cancellation acknowledgement, epoch-fenced root cancellation settlement and restart recovery, and atomic TeamRun/attempt terminals. Reuse the existing activity, task queue and V3 audit owners; no new packages, tables or dependencies. Exact measured code and regression growth without spare allowance.",
+      "record": "docs/架构/2026-10-15-发布工作流的应用调用.md#超时调查后的通用加固",
+      "growth": {
+        "lines": 2167,
+        "production_lines": 769
+      },
+      "deletion_trigger": "When non-durable standard V1 members are retired, delete their exclusive graph/stream stop adapters and regression fixtures. When shared provider lifecycle observation replaces the workflow host decorator, delete that decorator and its exclusive tests. Lower the exact measured budgets in the same changes; keep the existing cancellation ownership and fencing invariants.",
+      "base": {
+        "previous_lines": 8587,
+        "previous_production_lines": 6810,
+        "lines_added": 0,
+        "production_lines_added": 0
+      },
+      "kernel": {
+        "previous_lines": 105693,
+        "previous_production_lines": 83708,
+        "lines_added": 2071,
+        "production_lines_added": 767
+      },
+      "build": {
+        "previous_lines": 0,
+        "previous_production_lines": 0,
+        "lines_added": 0,
+        "production_lines_added": 0
+      },
+      "app": {
+        "previous_lines": 91679,
+        "previous_production_lines": 61881,
+        "lines_added": 96,
+        "production_lines_added": 2
+      }
     }
   ],
   "migration_targets": {
@@ -1230,8 +1298,8 @@
     "rule": "Each band limit equals its measured size. The total of the band limits may exceed this baseline only by the growth of amendments added after the first recorded_amendments entries, each of which must state its growth and a deletion_trigger."
   },
   "base": {
-    "lines": 8448,
-    "production_lines": 6792,
+    "lines": 8587,
+    "production_lines": 6810,
     "packages": 9,
     "external_dependencies": 4,
     "allowed_dependencies": [
@@ -1242,8 +1310,8 @@
     ]
   },
   "kernel": {
-    "lines": 104905,
-    "production_lines": 83365,
+    "lines": 107764,
+    "production_lines": 84475,
     "packages": 48,
     "external_dependencies": 5,
     "allowed_dependencies": [
@@ -1262,8 +1330,8 @@
     "allowed_dependencies": []
   },
   "app": {
-    "lines": 87290,
-    "production_lines": 59750,
+    "lines": 91775,
+    "production_lines": 61883,
     "packages": 25,
     "external_dependencies": 6,
     "allowed_dependencies": [
