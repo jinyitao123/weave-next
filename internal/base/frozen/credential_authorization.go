@@ -25,6 +25,14 @@ func HasServiceReferenceAuthorization(ctx context.Context) bool {
 	return fn != nil
 }
 
+// ServiceReferenceAuthorizationFromContext returns the server-installed
+// authorization hook so trusted layers can compose a narrower policy around
+// one frozen execution without replacing the existing owner check.
+func ServiceReferenceAuthorizationFromContext(ctx context.Context) ServiceReferenceAuthorization {
+	fn, _ := ctx.Value(serviceReferenceAuthorizationKey{}).(ServiceReferenceAuthorization)
+	return fn
+}
+
 func AuthorizeCredentialReference(ctx context.Context, ref CredentialReference) error {
 	if ValidateCredentialReference(ref) != nil {
 		return ErrCredentialSubjectDenied
@@ -40,12 +48,22 @@ func AuthorizeCredentialReference(ctx context.Context, ref CredentialReference) 
 		return nil
 	}
 	if subject.ServiceID != "" {
-		if subject.ServiceID != ref.ServiceID {
+		if ref.Scope == CredentialScopeWorkspaceService && subject.ServiceID == ref.ServiceID {
+			return nil
+		}
+		fn := ServiceReferenceAuthorizationFromContext(ctx)
+		if fn == nil || fn(ctx, subject, ref) != nil {
 			return ErrCredentialSubjectDenied
 		}
 		return nil
 	}
-	fn, _ := ctx.Value(serviceReferenceAuthorizationKey{}).(ServiceReferenceAuthorization)
+	if ref.Scope == CredentialScopeUser {
+		if subject.UserID != ref.UserID {
+			return ErrCredentialSubjectDenied
+		}
+		return nil
+	}
+	fn := ServiceReferenceAuthorizationFromContext(ctx)
 	if fn == nil || fn(ctx, subject, ref) != nil {
 		return ErrCredentialSubjectDenied
 	}

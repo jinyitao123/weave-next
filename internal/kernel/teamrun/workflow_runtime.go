@@ -232,6 +232,8 @@ type RuntimeCredentialResolverFactory func(
 	string,
 ) (workflow.RuntimeCredentialResolver, error)
 
+type WorkflowCredentialAuthorizer func(context.Context, TeamRun, *taskqueue.Task, execution.Subject, frozen.CredentialReference) error
+
 type WorkflowOutputRecorder interface {
 	RecordWorkflowOutput(context.Context, deliverable.WorkflowOutput) error
 }
@@ -250,15 +252,18 @@ type WorkflowSerialRuntime struct {
 	// production HostFactory for every run (zero behavior change).
 	HostFactoryForSnapshot func(sourceRef, candidateHash string) workflow.RuntimeHostFactory
 	CredentialResolvers    RuntimeCredentialResolverFactory
-	Transactions           TransactionBeginner
-	Runs                   *PGStore
-	Checkpoints            *PGCheckpointStore
-	Tasks                  ExecutorTaskStore
-	Snapshots              SnapshotReader
-	OutputRecorder         WorkflowOutputRecorder
-	Corrections            *CorrectionStore
-	Activities             ActivityRecorder
-	Now                    func() time.Time
+	// CredentialAuthorizer composes a server-owned service grant check with the
+	// frozen workflow reference check performed by RuntimeLoader.
+	CredentialAuthorizer WorkflowCredentialAuthorizer
+	Transactions         TransactionBeginner
+	Runs                 *PGStore
+	Checkpoints          *PGCheckpointStore
+	Tasks                ExecutorTaskStore
+	Snapshots            SnapshotReader
+	OutputRecorder       WorkflowOutputRecorder
+	Corrections          *CorrectionStore
+	Activities           ActivityRecorder
+	Now                  func() time.Time
 }
 
 type runtimeActivityScope struct {
@@ -923,6 +928,7 @@ func (r *WorkflowSerialRuntime) prepare(
 	}
 	loader := *r.Loader
 	loader.RunSnapshotID = run.RunSnapshotID
+	ctx = r.withCredentialAuthorization(ctx, run, task)
 	hostFactory := workflow.ObserveRuntimeTools(r.hostFactoryFor(loaded), r.toolObserver(run))
 	runtimeArtifact, err := loader.Load(ctx, loaded.envelope, hostFactory, resolver)
 	if err != nil {
@@ -960,6 +966,26 @@ func (r *WorkflowSerialRuntime) prepare(
 		artifact:            runtimeArtifact,
 		runInput:            runInput,
 	}, nil
+}
+
+// withCredentialAuthorization installs the same server-owned credential
+// boundary for every published execution path, including separately queued
+// fanout legs that load their own frozen runtime artifact.
+func (r *WorkflowSerialRuntime) withCredentialAuthorization(
+	ctx context.Context,
+	run TeamRun,
+	task *taskqueue.Task,
+) context.Context {
+	if r == nil || r.CredentialAuthorizer == nil {
+		return ctx
+	}
+	return frozen.WithServiceReferenceAuthorization(ctx, func(
+		callCtx context.Context,
+		subject execution.Subject,
+		ref frozen.CredentialReference,
+	) error {
+		return r.CredentialAuthorizer(callCtx, run, task, subject, ref)
+	})
 }
 
 func decodeCheckpointOutputs(raw map[string]json.RawMessage) (map[string]any, error) {

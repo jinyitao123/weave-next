@@ -29,6 +29,7 @@ import (
 	"github.com/jinyitao123/weave/internal/app/users"
 	"github.com/jinyitao123/weave/internal/base/deliverable"
 	"github.com/jinyitao123/weave/internal/base/execution"
+	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/base/snapshot"
 	"github.com/jinyitao123/weave/internal/base/storeext"
 	"github.com/jinyitao123/weave/internal/kernel/audit"
@@ -691,6 +692,13 @@ func (s *Server) ConfigureTeamRunWorkers() {
 	s.BusinessDelegations = businessDelegations
 	runtime := &teamrun.WorkflowSerialRuntime{
 		BusinessReceiptReader: deliveryverify.BusinessReceiptReader(pool),
+		CredentialAuthorizer: func(ctx context.Context, run teamrun.TeamRun, task *taskqueue.Task, subject execution.Subject, ref frozen.CredentialReference) error {
+			service := s.workflowCapabilityInvocations()
+			if service == nil {
+				return frozen.ErrCredentialSubjectDenied
+			}
+			return service.AuthorizeRuntimeCredential(ctx, run, task, subject, ref)
+		},
 		AuthorizationRetry: func(ctx context.Context, proof execution.AuthorizationRefusal) (bool, error) {
 			if businessDelegations == nil {
 				return false, nil

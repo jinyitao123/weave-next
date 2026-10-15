@@ -51,12 +51,20 @@ type Definition struct {
 	Description   string              `json:"description,omitempty"`
 	InputSchema   json.RawMessage     `json:"input_schema"`
 	OutputSchema  json.RawMessage     `json:"output_schema"`
+	Workflow      *WorkflowReference  `json:"workflow,omitempty"`
 	Roles         []Role              `json:"roles"`
 	Steps         []Step              `json:"steps"`
 	Relations     []Relation          `json:"relations"`
 	Runtime       RuntimeRequirement  `json:"runtime"`
 	Resources     ResourceRequirement `json:"resources"`
 	Result        *ValueRef           `json:"result,omitempty"`
+}
+
+// WorkflowReference pins a capability revision to one already-published
+// workflow. The workflow remains the sole execution definition.
+type WorkflowReference struct {
+	WorkflowID      string `json:"workflow_id"`
+	WorkflowVersion int    `json:"workflow_version"`
 }
 
 type Role struct {
@@ -148,6 +156,12 @@ func (d Definition) Validate() error {
 	}
 	if err := validateObjectSchema("output_schema", d.OutputSchema); err != nil {
 		return err
+	}
+	if d.Workflow != nil {
+		if err := validateWorkflowReference(d); err != nil {
+			return err
+		}
+		return nil
 	}
 	if len(d.Roles) == 0 || len(d.Steps) == 0 {
 		return invalid("roles/steps", "must contain at least one role and step")
@@ -283,8 +297,27 @@ func (d Definition) ValidateDraft() error {
 	if err := validateObjectSchema("output_schema", d.OutputSchema); err != nil {
 		return err
 	}
+	if d.Workflow != nil {
+		return validateWorkflowReference(d)
+	}
 	if len(d.Steps) > 32 || len(d.Roles) > 64 {
 		return invalid("definition", "exceeds draft size limits")
+	}
+	return nil
+}
+
+func validateWorkflowReference(d Definition) error {
+	if d.Workflow == nil || strings.TrimSpace(d.Workflow.WorkflowID) == "" ||
+		strings.TrimSpace(d.Workflow.WorkflowID) != d.Workflow.WorkflowID || d.Workflow.WorkflowVersion < 1 {
+		return invalid("workflow", "workflow_id and positive workflow_version are required")
+	}
+	if len(d.Roles) != 0 || len(d.Steps) != 0 || len(d.Relations) != 0 || d.Result != nil {
+		return invalid("workflow", "cannot be combined with inline roles, steps, relations, or result")
+	}
+	if d.Runtime.Model != "" || d.Runtime.Engine != "" || len(d.Runtime.Capabilities) != 0 || d.Runtime.Pool != "" ||
+		len(d.Resources.ToolIDs) != 0 || len(d.Resources.Tools) != 0 ||
+		len(d.Resources.DataRefs) != 0 || len(d.Resources.CredentialRefs) != 0 {
+		return invalid("workflow", "cannot be combined with inline runtime or resources")
 	}
 	return nil
 }

@@ -367,7 +367,11 @@ func authorizeApplicationInvocation(ctx context.Context, tx pgx.Tx, i Invocation
 	return authorizeApplicationGrant(ctx, tx, i)
 }
 
-func authorizeApplicationGrant(ctx context.Context, tx pgx.Tx, i Invocation) error {
+type capabilityGrantQuerier interface {
+	QueryRow(context.Context, string, ...any) pgx.Row
+}
+
+func authorizeApplicationGrant(ctx context.Context, tx capabilityGrantQuerier, i Invocation) error {
 	var app string
 	if err := tx.QueryRow(ctx, `SELECT id FROM weave_capability_apps WHERE workspace_id=$1 AND id=$2 AND enabled FOR SHARE`, i.WorkspaceID, i.ApplicationID).Scan(&app); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
