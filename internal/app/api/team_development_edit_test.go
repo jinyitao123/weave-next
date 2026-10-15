@@ -190,7 +190,7 @@ func TestControlledEditsKeepParallelRegionsWhole(t *testing.T) {
 	}
 	for raw, message := range map[string]string{
 		`[{"kind":"step_remove","flow":"复核流程","step":"核对条款"}]`:                                                                     "输入来源",
-		`[{"kind":"step_add","flow":"复核流程","after":"核对条款","member":"负责人","name":"再看一遍","requirement":"复查"}]`:                       "并行分支由单个成员直接进入汇合",
+		`[{"kind":"step_add","flow":"复核流程","after":"核对条款","member":"负责人","name":"再看一遍","requirement":"复查"}]`:                       "并行分支里的步骤只能由执行成员负责",
 		`[{"kind":"join","flow":"复核流程","step":"汇总分支","policy":"quorum","successCount":3}]`:                                         "所需成功分支数无效",
 		`[{"kind":"step_add","flow":"复核流程","after":"并行分工","member":"负责人","name":"并行汇总","requirement":"x","placement":"parallel"}]`: "并行分支须选择已启用的执行成员",
 		`[{"kind":"delivery","flow":"复核流程","from":"交付结果"}]`:                                                                        "交付来源必须是当前流程的前序步骤",
@@ -204,6 +204,34 @@ func TestControlledEditsKeepParallelRegionsWhole(t *testing.T) {
 	editApply(t, &doc, `[{"kind":"step_input","flow":"复核流程","step":"汇总检查结果","source":"node_output","from":"核对条款","selected":false}]`)
 	if refusal := editRefusal(t, doc, `[{"kind":"step_remove","flow":"复核流程","step":"核对条款"}]`); !strings.Contains(refusal.Message, "至少保留两个分支") {
 		t.Fatalf("refusal = %s", refusal.Message)
+	}
+}
+
+func TestControlledEditsAddAndRemoveStepsInsideABranch(t *testing.T) {
+	doc := editTestDocument()
+	editApply(t, &doc, `[
+		{"kind":"flow_add","name":"复核流程","description":"复核合同","member":"整理员"},
+		{"kind":"step_add","flow":"复核流程","after":"整理员","member":"核对员","name":"核对条款","requirement":"核对付款条件","placement":"parallel"},
+		{"kind":"step_add","flow":"复核流程","after":"核对条款","member":"整理员","name":"复核条款","requirement":"复核上一步的结论"}
+	]`)
+	kernel := editKernelGraph(t, doc.Workflows[0])
+	graph := editGraphOf(t, doc.Workflows[0])
+	check, recheck := editLabelled(t, graph, "核对条款"), editLabelled(t, graph, "复核条款")
+	steps, err := machine.ParallelBranchSteps(kernel, editString(check["id"]))
+	if err != nil || len(steps) != 2 || steps[1].ID != editString(recheck["id"]) {
+		t.Fatalf("branch steps = %+v, %v", steps, err)
+	}
+	if kind := editString(editObject(recheck["config"])["kind"]); kind != "dispatch" {
+		t.Fatalf("a step inside a branch is %s", kind)
+	}
+	if previous := editObject(editObject(editObject(recheck["inputs"])["previous"])["value"]); editString(previous["node_id"]) != editString(check["id"]) {
+		t.Fatalf("the second step does not read the first: %v", recheck["inputs"])
+	}
+	// Removing the branch's last step lets the one before join again.
+	editApply(t, &doc, `[{"kind":"step_remove","flow":"复核流程","step":"复核条款"}]`)
+	kernel = editKernelGraph(t, doc.Workflows[0])
+	if steps, err := machine.ParallelBranchSteps(kernel, editString(check["id"])); err != nil || len(steps) != 1 {
+		t.Fatalf("after removal branch steps = %+v, %v", steps, err)
 	}
 }
 

@@ -87,7 +87,7 @@ export function WorkflowEditor({ graph, members, actions = [], onChange }: { gra
         <header className="flow-editor__head">
           <div><h2>{nodeTitle(step)}</h2>{modeLabel(graph, step, Boolean(loop)) !== nodeTitle(step) ? <p className="muted small">{modeLabel(graph, step, Boolean(loop))}</p> : null}</div>
           {!loop ? <div className="flow-editor__actions">
-            {canInsertSerialStep(graph, step.id) ? <button type="button" className="button" onClick={() => open('serial')}><Plus size={14} />{step.type === 'parallel' ? '汇合后添加步骤' : '添加下一步'}</button> : null}
+            {canInsertSerialStep(graph, step.id) ? <button type="button" className="button" onClick={() => open('serial')}><Plus size={14} />{step.type === 'parallel' ? '汇合后添加步骤' : isParallelBranchWorker(graph, step.id) ? '在本分支添加下一步' : '添加下一步'}</button> : null}
             {canAddParallelBranch(graph, step.id) ? <button type="button" className="button" onClick={() => open('parallel')}><GitBranch size={14} />添加并行分支</button> : null}
             {step.type === 'parallel' ? <button type="button" className="button" onClick={() => structure(current => serializeParallel(current, step.id))}>改为依次执行</button> : null}
             {['lead', 'worker'].includes(step.type) && step.id !== graph.entry_node_id ? <button type="button" className="button" onClick={() => setDeleting(true)}><Trash2 size={14} />删除步骤</button> : null}

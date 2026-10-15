@@ -1199,6 +1199,28 @@
         "lines_added": 23,
         "production_lines_added": 18
       }
+    },
+    {
+      "date": "2026-10-14",
+      "reason": "Let a parallel branch run several steps in turn, as the owner asked on 2026-10-14; a branch could only be one worker joining at once. The validator accepts a chain of dispatch workers linked by success edges that ends at its owner's join, at most 16 steps. A leg task runs its branch's steps in order and records each finished step, so a leg that runs again after a failure or a retry never repeats a step's tool calls or business actions; the join still sees one result per branch, its last step's. Controlled edits and the console canvas add, remove and serialise such branches. No new packages, dependencies, queues or runtime loops: the existing leg task, join and resume carry the branch.",
+      "record": "README.zh-CN.md#并行分支里的多个步骤",
+      "growth": {
+        "lines": 371,
+        "production_lines": 234
+      },
+      "deletion_trigger": "Remove the branch step record and the chain walk if parallel branches go back to one step each, or when legs gain a general checkpoint that replaces the per-step record. Lower the measured budgets in that change.",
+      "kernel": {
+        "previous_lines": 104905,
+        "previous_production_lines": 83365,
+        "lines_added": 321,
+        "production_lines_added": 212
+      },
+      "app": {
+        "previous_lines": 87290,
+        "previous_production_lines": 59750,
+        "lines_added": 50,
+        "production_lines_added": 22
+      }
     }
   ],
   "migration_targets": {
@@ -1242,8 +1264,8 @@
     ]
   },
   "kernel": {
-    "lines": 104905,
-    "production_lines": 83365,
+    "lines": 105226,
+    "production_lines": 83577,
     "packages": 48,
     "external_dependencies": 5,
     "allowed_dependencies": [
@@ -1262,8 +1284,8 @@
     "allowed_dependencies": []
   },
   "app": {
-    "lines": 87290,
-    "production_lines": 59750,
+    "lines": 87340,
+    "production_lines": 59772,
     "packages": 25,
     "external_dependencies": 6,
     "allowed_dependencies": [

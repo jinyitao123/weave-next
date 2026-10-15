@@ -39,6 +39,13 @@ export function layout(graph: Graph) {
   const top = 56
   const positions = new Map<string, { x: number; y: number }>()
   levels.forEach((level, index) => level.forEach((node, branch) => positions.set(node.id, { x: lane + (columns - level.length) * column / 2 + branch * column, y: top + index * row })))
+  // A later step of a parallel branch stays in its branch's column.
+  const dispatch = (id: string) => graph.nodes.some(node => node.id === id && node.type === 'worker' && node.config?.kind === 'dispatch')
+  for (const level of levels) for (const node of level) {
+    const from = graph.edges.find(edge => edge.to_node_id === node.id && edge.route === 'success' && dispatch(edge.from_node_id))?.from_node_id
+    const at = positions.get(node.id), above = from ? positions.get(from) : undefined
+    if (dispatch(node.id) && at && above) positions.set(node.id, { ...at, x: above.x })
+  }
   const bottom = top + Math.max(0, levels.length - 1) * row + height
   const hasBack = graph.edges.some(edge => edge.route === 'back')
   const backLane = lane + (columns - 1) * column + width + 28
