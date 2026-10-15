@@ -49,3 +49,14 @@ func ValidateValue(schema, value json.RawMessage) error {
 	}
 	return compiled.Validate(decoded)
 }
+
+// ValidateSchemas compiles both capability-level contracts without executing
+// inline steps. Workflow-backed capability revisions use it at publication.
+func ValidateSchemas(definition Definition) error {
+	for _, schema := range []json.RawMessage{definition.InputSchema, definition.OutputSchema} {
+		if _, err := compileSchema(schema); err != nil {
+			return fmt.Errorf("invalid capability schema: %w", err)
+		}
+	}
+	return nil
+}

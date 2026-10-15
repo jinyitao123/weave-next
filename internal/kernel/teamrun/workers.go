@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jinyitao123/weave/internal/kernel/loomruntime"
 	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 )
 
@@ -93,6 +94,7 @@ func (s *CancelGraceSweeper) Sweep(ctx context.Context) (int, error) {
 		return 0, err
 	}
 	settled := 0
+	rootStopAcks := make([]cancelledRootStopAck, 0, len(runs))
 	for _, run := range runs {
 		if s.Tasks != nil {
 			// Reapply the durable stop request after a crash between registration
@@ -114,6 +116,18 @@ func (s *CancelGraceSweeper) Sweep(ctx context.Context) (int, error) {
 					return 0, err
 				}
 				settled++
+				continue
+			}
+			proof, err := stoppedCancelledRootAttemptTx(ctx, tx, run)
+			if err != nil {
+				return 0, fmt.Errorf("inspect cancelled root attempt %q: %w", run.RunID, err)
+			}
+			if proof && run.SourceTaskID != "" {
+				rootStopAcks = append(rootStopAcks, cancelledRootStopAck{
+					WorkspaceID: run.WorkspaceID,
+					TaskID:      run.SourceTaskID,
+					SnapshotID:  run.RunSnapshotID,
+				})
 				continue
 			}
 		}
@@ -147,7 +161,103 @@ func (s *CancelGraceSweeper) Sweep(ctx context.Context) (int, error) {
 	if err := tx.Commit(ctx); err != nil {
 		return 0, fmt.Errorf("commit team run cancel grace sweep: %w", err)
 	}
+	for _, ack := range rootStopAcks {
+		task, err := s.Tasks.Get(ctx, ack.WorkspaceID, ack.TaskID)
+		if err != nil {
+			return settled, fmt.Errorf("read cancelled root task %q: %w", ack.TaskID, err)
+		}
+		if task == nil || task.Kind != "team_workflow" ||
+			task.IdentityKind != taskqueue.IdentityTeamWorkflow ||
+			task.RunSnapshotID != ack.SnapshotID || task.WorkerID == "" ||
+			task.ClaimEpoch < 1 || task.Status != taskqueue.StatusCancelRequested {
+			continue
+		}
+		if _, err := s.Tasks.AcknowledgeCancelledWorkflowStoppedAtEpoch(
+			ctx, ack.WorkspaceID, task.ID, task.WorkerID, task.ClaimEpoch,
+		); err != nil {
+			return settled, fmt.Errorf("acknowledge terminal cancelled root task %q: %w", task.ID, err)
+		}
+	}
 	return settled, nil
+}
+
+type cancelledRootStopAck struct {
+	WorkspaceID string
+	TaskID      string
+	SnapshotID  string
+}
+
+// stoppedCancelledRootAttemptTx treats the existing root attempt terminal
+// marker as a durable proof that the local workflow execution joined before a
+// crash between attempt settlement and task acknowledgement. The next normal
+// cancel sweep still owns TeamRun confirmation.
+func stoppedCancelledRootAttemptTx(ctx context.Context, tx pgx.Tx, run TeamRun) (bool, error) {
+	if run.Status != StatusCancelRequested || run.WorkspaceID == "" || run.RunID == "" ||
+		run.RunSnapshotID == "" || run.ExecutionLeaseEpoch < 1 {
+		return false, nil
+	}
+	stateStore := loomruntime.NewPGTerminalStateStore()
+	lease, leasePresent, err := stateStore.ReadAttemptLeaseForUpdate(ctx, tx, run.WorkspaceID, run.RunID)
+	if err != nil || !leasePresent {
+		return false, err
+	}
+	marker, markerPresent, err := stateStore.ReadTerminalMarkerForUpdate(ctx, tx, run.WorkspaceID, run.RunID)
+	if err != nil || !markerPresent {
+		return false, err
+	}
+	if err := loomruntime.ValidateRunAttemptLease(lease); err != nil {
+		return false, fmt.Errorf("validate root attempt lease: %w", err)
+	}
+	if err := loomruntime.ValidateTerminalMarkerV1(marker); err != nil {
+		return false, fmt.Errorf("validate root terminal marker: %w", err)
+	}
+	if lease.State != loomruntime.AttemptLeaseClosed ||
+		lease.WorkspaceID != run.WorkspaceID || lease.RunID != run.RunID ||
+		lease.AttemptGeneration != int64(run.ExecutionLeaseEpoch) ||
+		lease.AttemptID != frozenAttemptID(run) || lease.GraphName != frozenGraphName(run) ||
+		marker.WorkspaceID != run.WorkspaceID || marker.RunID != run.RunID ||
+		marker.AttemptGeneration != lease.AttemptGeneration || marker.AttemptID != lease.AttemptID ||
+		marker.Agent != lease.GraphName || marker.RunStartedAt != lease.RunStartedAt ||
+		marker.AttributionScope != loomruntime.TerminalAttributionFixedWorkflow ||
+		marker.TeamID == nil || *marker.TeamID != run.TeamID ||
+		marker.WorkflowID == nil || *marker.WorkflowID != run.WorkflowID ||
+		marker.WorkflowVersion == nil || int(*marker.WorkflowVersion) != run.WorkflowVersion ||
+		marker.Phase != loomruntime.TerminalMarkerPhaseFinal ||
+		marker.Status != loomruntime.TerminalMarkerStatusFailed ||
+		marker.StopReason != teamRunCancelledTerminalStopReason ||
+		marker.Source != loomruntime.TerminalMarkerSourceNormal ||
+		marker.EvidenceKind != loomruntime.TerminalMarkerEvidenceRunResult ||
+		marker.AuditState != loomruntime.TerminalMarkerAuditMaterialized ||
+		marker.AuditSchemaVersion == nil || *marker.AuditSchemaVersion != 3 ||
+		marker.RunSnapshotID == nil || *marker.RunSnapshotID != run.RunSnapshotID {
+		return false, nil
+	}
+	var auditRaw []byte
+	err = tx.QueryRow(ctx, `
+		SELECT value FROM loom_store
+		WHERE namespace=$1 AND key=$2
+	`, "audit:"+run.WorkspaceID, run.RunID).Scan(&auditRaw)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("read root terminal audit: %w", err)
+	}
+	inspection := loomruntime.InspectTerminalRecord(true, auditRaw)
+	if inspection.Classification != loomruntime.TerminalRecordValid || inspection.Entry == nil || inspection.Err != nil {
+		return false, fmt.Errorf("root cancellation audit is not a valid terminal record: %v", inspection.Err)
+	}
+	audit := inspection.Entry
+	if audit.SchemaVersion != 3 || audit.Tenant != run.WorkspaceID || audit.RunID != run.RunID ||
+		audit.AttributionScope != loomruntime.TerminalAttributionFixedWorkflow ||
+		audit.TeamID == nil || *audit.TeamID != run.TeamID ||
+		audit.WorkflowID == nil || *audit.WorkflowID != run.WorkflowID ||
+		audit.WorkflowVersion == nil || *audit.WorkflowVersion != run.WorkflowVersion ||
+		audit.RunSnapshotID == nil || *audit.RunSnapshotID != run.RunSnapshotID ||
+		audit.Status != "failed" || audit.StopReason != teamRunCancelledTerminalStopReason {
+		return false, nil
+	}
+	return true, nil
 }
 
 type CancelRequest struct {

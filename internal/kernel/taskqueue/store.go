@@ -529,6 +529,45 @@ func (s *Store) AcknowledgeExecutionStopped(ctx context.Context, id, workerID st
 	return err
 }
 
+// AcknowledgeCancelledWorkflowStoppedAtEpoch releases only the exact root
+// workflow claim whose cancellation terminal marker proves that its local
+// execution joined. The caller must supply the observed workspace, worker,
+// and claim epoch; this method deliberately cannot acknowledge ordinary
+// running work or another claim of the same task.
+func (s *Store) AcknowledgeCancelledWorkflowStoppedAtEpoch(
+	ctx context.Context,
+	workspaceID string,
+	id string,
+	workerID string,
+	claimEpoch int64,
+) (bool, error) {
+	if workspaceID == "" || id == "" || workerID == "" || claimEpoch < 1 {
+		return false, errors.New("workspace, task, worker, and positive claim epoch are required")
+	}
+	var acknowledged bool
+	err := s.pool.QueryRow(ctx, `UPDATE weave_task_queue
+	SET status=$6,
+		stopped_epoch=claim_epoch,
+		stopped_worker_id=worker_id,
+		worker_id=NULL,
+		lease_expires_at=NULL,
+		completed_at=$7,
+		updated_at=$7
+	WHERE workspace_id=$1 AND id=$2 AND worker_id=$3 AND claim_epoch=$4
+	  AND kind='team_workflow' AND identity_kind=$5 AND status=$8
+	RETURNING true`,
+		workspaceID, id, workerID, claimEpoch, IdentityTeamWorkflow,
+		StatusCancelled, s.clock.Now(), StatusCancelRequested,
+	).Scan(&acknowledged)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("acknowledge cancelled workflow task at exact claim epoch: %w", err)
+	}
+	return acknowledged, nil
+}
+
 // RunExecutionsStoppedTx requires per-task terminal acknowledgements, including
 // remote executions which failed after losing contact with their runtime.
 func (*Store) RunExecutionsStoppedTx(ctx context.Context, tx pgx.Tx, workspaceID, runSnapshotID string) (bool, error) {

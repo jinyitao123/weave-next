@@ -17,14 +17,18 @@ import (
 )
 
 var (
-	ErrNotFound            = errors.New("capability not found")
-	ErrRevisionNotFound    = errors.New("published capability revision not found")
-	ErrIdempotencyConflict = errors.New("invocation request id already used with different input")
-	ErrInvocationNotFound  = errors.New("invocation not found")
-	ErrInvocationTerminal  = errors.New("invocation is already terminal")
-	ErrClaimLost           = errors.New("capability execution claim lost")
-	ErrRevisionConflict    = errors.New("published revision already exists with different content")
-	ErrQuotaExceeded       = errors.New("capability quota exceeded")
+	ErrNotFound                    = errors.New("capability not found")
+	ErrRevisionNotFound            = errors.New("published capability revision not found")
+	ErrIdempotencyConflict         = errors.New("invocation request id already used with different input")
+	ErrInvocationNotFound          = errors.New("invocation not found")
+	ErrInvocationTerminal          = errors.New("invocation is already terminal")
+	ErrClaimLost                   = errors.New("capability execution claim lost")
+	ErrRevisionConflict            = errors.New("published revision already exists with different content")
+	ErrQuotaExceeded               = errors.New("capability quota exceeded")
+	ErrInvocationIdentityConflict  = errors.New("invocation id is already used by another request")
+	ErrInvocationLaneActive        = errors.New("another invocation is active in this lane")
+	ErrWorkflowInvocationCancelled = errors.New("workflow invocation was cancelled before admission")
+	ErrWorkflowSourceRequired      = errors.New("published capability does not reference a workflow")
 )
 
 type DraftStore interface {
@@ -119,8 +123,14 @@ func (s *Service) Publish(ctx context.Context, workspaceID, capabilityID string,
 	if err != nil {
 		return capability.PublishedRevision{}, err
 	}
-	if _, err := capability.Compile(published); err != nil {
-		return capability.PublishedRevision{}, err
+	if published.Definition.Workflow != nil {
+		if err := capability.ValidateSchemas(published.Definition); err != nil {
+			return capability.PublishedRevision{}, err
+		}
+	} else {
+		if _, err := capability.Compile(published); err != nil {
+			return capability.PublishedRevision{}, err
+		}
 	}
 	if err := s.drafts.SaveRevision(ctx, workspaceID, published); err != nil {
 		return capability.PublishedRevision{}, err

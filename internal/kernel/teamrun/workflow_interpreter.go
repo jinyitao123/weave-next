@@ -1749,10 +1749,30 @@ func runAgentNode(
 	select {
 	case graphResult = <-graphOutcomes:
 	case <-nodeCtx.Done():
-		if timeout := timeoutErr(); timeout != nil {
-			return nil, nodeUsageReport{}, timeout
+		// The graph runs in a separate goroutine because both durable and V1
+		// member graphs share this entry point. A canceled context asks the
+		// graph to stop, but it does not prove that the graph (or an in-flight
+		// model call) has returned. Do not let the enclosing TeamRun acknowledge
+		// its task until this local execution has actually joined.
+		graphResult = <-graphOutcomes
+		usage, usageErr := frozenNodeUsage(graphResult.result)
+		if usageErr != nil {
+			usage.UsageIncompleteReason = UsageIncompleteReasonAttemptLost
+			usageErr = fmt.Errorf("read frozen graph usage for canceled node %q: %w", node.ID, usageErr)
+		} else if graphResult.result == nil || graphResult.result.State == nil ||
+			!usage.Coverage.HasTokens || !usage.Coverage.HasCost || usage.MemberUsageIncomplete {
+			usage.UsageIncompleteReason = UsageIncompleteReasonAttemptLost
 		}
-		return nil, nodeUsageReport{}, executionError(ErrorCodeExecutionUnrecoverable, nodeCtx.Err())
+		if timeout := timeoutErr(); timeout != nil {
+			if usageErr != nil {
+				return nil, usage, executionError(ErrorCodeExecutionUnrecoverable, errors.Join(timeout, usageErr))
+			}
+			return nil, usage, timeout
+		}
+		if usageErr != nil {
+			return nil, usage, executionError(ErrorCodeExecutionUnrecoverable, errors.Join(nodeCtx.Err(), usageErr))
+		}
+		return nil, usage, executionError(ErrorCodeExecutionUnrecoverable, nodeCtx.Err())
 	}
 	result, err := graphResult.result, graphResult.err
 	usage, usageErr := frozenNodeUsage(result)

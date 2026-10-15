@@ -313,14 +313,24 @@ func (l *runtimeStreamingLLM) Chat(
 		return nil, errors.New("workflow streaming LLM is unavailable")
 	}
 	streamCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
 	stream, err := l.inner.Stream(streamCtx, request)
 	if err != nil {
+		cancel()
+		if stream != nil {
+			for range stream {
+			}
+		}
 		return nil, err
 	}
 	if stream == nil {
+		cancel()
 		return nil, errors.New("workflow streaming LLM returned no stream")
 	}
+	defer func() {
+		cancel()
+		for range stream {
+		}
+	}()
 	var content strings.Builder
 	var toolCalls []contract.ToolCall
 	var usage contract.Usage
@@ -343,6 +353,7 @@ readStream:
 		if chunk.Err != nil {
 			return nil, fmt.Errorf("workflow model stream failed: %w", chunk.Err)
 		}
+		notifyRuntimeModelFirstChunk(ctx)
 		content.WriteString(chunk.Content)
 		toolCalls = append(toolCalls, chunk.ToolCalls...)
 		if chunk.FinishReason != "" {

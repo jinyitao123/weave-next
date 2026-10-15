@@ -16,6 +16,10 @@ import (
 	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 )
 
+var errCancelledTerminalCannotReplayAsFailure = errors.New("cancelled terminal marker cannot be replayed as ordinary failure")
+
+const teamRunCancelledTerminalStopReason = "cancelled"
+
 const frozenAttemptLeaseTTL = 120 * time.Second
 
 func frozenGraphName(run TeamRun) string {
@@ -276,6 +280,24 @@ func (e *Executor) commitFrozenNormalTerminal(
 	usageIncompleteReason string,
 	memberBreakdown ...map[string]loomruntime.TerminalChildBreakdownV3,
 ) error {
+	return e.commitFrozenNormalTerminalWithMutation(
+		ctx, run, status, stopReason, usage, usageCoverage,
+		usageComplete, usageIncompleteReason, nil, memberBreakdown...,
+	)
+}
+
+func (e *Executor) commitFrozenNormalTerminalWithMutation(
+	ctx context.Context,
+	run TeamRun,
+	status string,
+	stopReason string,
+	usage loomruntime.UsageTotals,
+	usageCoverage *loomruntime.UsageCoverage,
+	usageComplete bool,
+	usageIncompleteReason string,
+	terminalMutation func(context.Context, pgx.Tx) error,
+	memberBreakdown ...map[string]loomruntime.TerminalChildBreakdownV3,
+) error {
 	records, err := e.runtimeRecordStore()
 	if err != nil {
 		return err
@@ -354,9 +376,52 @@ func (e *Executor) commitFrozenNormalTerminal(
 		loomruntime.NormalTerminalCommit{
 			Candidate: candidate,
 			Owner:     frozenAttemptOwner(lease),
+			BeforeLock: func(ctx context.Context, tx pgx.Tx) error {
+				current, err := e.Runs.GetForUpdateTx(ctx, tx, run.WorkspaceID, run.RunID)
+				if err != nil {
+					return fmt.Errorf("lock TeamRun before attempt terminal: %w", err)
+				}
+				return validateTeamRunTerminalOwner(current, run, status, stopReason)
+			},
+			BeforeCommit: terminalMutation,
 		},
 	); err != nil {
 		return fmt.Errorf("commit frozen normal terminal: %w", err)
+	}
+	return nil
+}
+
+func validateTeamRunTerminalOwner(current, expected TeamRun, status, stopReason string) error {
+	if current.WorkspaceID != expected.WorkspaceID || current.RunID != expected.RunID ||
+		current.TeamID != expected.TeamID || current.WorkflowID != expected.WorkflowID ||
+		current.WorkflowVersion != expected.WorkflowVersion || current.RunSnapshotID != expected.RunSnapshotID {
+		return errors.New("TeamRun identity changed before attempt terminal commit")
+	}
+	if status == "failed" && stopReason == teamRunCancelledTerminalStopReason {
+		switch current.Status {
+		case StatusCancelRequested:
+			if current.ExecutionLeaseEpoch == expected.ExecutionLeaseEpoch &&
+				current.Generation == expected.Generation && current.ResumeGeneration == expected.ResumeGeneration {
+				return nil
+			}
+		case StatusAbandoned:
+			if current.ExecutionLeaseEpoch == expected.ExecutionLeaseEpoch+1 {
+				return nil
+			}
+		case StatusCancelled:
+			// A restart replay is allowed only for the exact same execution epoch;
+			// the terminal coordinator additionally requires an equivalent closed
+			// attempt marker and V3 audit.
+			if current.ExecutionLeaseEpoch == expected.ExecutionLeaseEpoch {
+				return nil
+			}
+		}
+		return fmt.Errorf("TeamRun state %q is not the matching cancellation owner", current.Status)
+	}
+	if current.Status != StatusRunning || current.Generation != expected.Generation ||
+		current.ExecutionLeaseEpoch != expected.ExecutionLeaseEpoch ||
+		current.ResumeGeneration != expected.ResumeGeneration {
+		return fmt.Errorf("TeamRun state %q changed before normal terminal commit", current.Status)
 	}
 	return nil
 }
@@ -454,6 +519,9 @@ func (e *Executor) replayFrozenTerminalTx(
 		marker.RunStartedAt != owner.RunStartedAt {
 		return TeamRun{}, errors.New("frozen terminal marker differs from TeamRun epoch identity")
 	}
+	if marker.Status == loomruntime.TerminalMarkerStatusFailed && marker.StopReason == teamRunCancelledTerminalStopReason {
+		return TeamRun{}, errCancelledTerminalCannotReplayAsFailure
+	}
 	if run.CurrentExecutorID == nil || *run.CurrentExecutorID == "" {
 		return TeamRun{}, errors.New("running TeamRun lacks current executor for terminal replay")
 	}
@@ -475,7 +543,7 @@ func (e *Executor) replayFrozenTerminalTx(
 		})
 	case loomruntime.TerminalMarkerStatusFailed:
 		code := ErrorCode(marker.StopReason)
-		if !ValidateErrorCode(code) || code == ErrorCodeCancelled {
+		if !ValidateErrorCode(code) {
 			return TeamRun{}, fmt.Errorf(
 				"frozen failed terminal stop_reason %q is not a TeamRun error code",
 				marker.StopReason,

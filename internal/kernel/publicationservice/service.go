@@ -38,6 +38,12 @@ type CredentialAuthority interface {
 	AuthorizeCredential(context.Context, frozen.ArtifactEnvelopeV1, frozen.CredentialReference) error
 }
 
+// PublishedCredentialAuthority receives the exact admitted call identity so a
+// service caller can be rechecked against its persisted publication grant.
+type PublishedCredentialAuthority interface {
+	AuthorizePublishedCredential(context.Context, publication.PublishedRunRequest, frozen.ArtifactEnvelopeV1, frozen.CredentialReference) error
+}
+
 type Service struct {
 	pool      *pgxpool.Pool
 	authority Authority
@@ -251,4 +257,11 @@ func (s *Service) authorizeCredential(ctx context.Context, envelope frozen.Artif
 		return authority.AuthorizeCredential(ctx, envelope, ref)
 	}
 	return credentials.AuthorizeReference(ctx, ref)
+}
+
+func (s *Service) authorizePublishedCredential(ctx context.Context, request publication.PublishedRunRequest, envelope frozen.ArtifactEnvelopeV1, ref frozen.CredentialReference) error {
+	if authority, ok := s.authority.(PublishedCredentialAuthority); ok {
+		return authority.AuthorizePublishedCredential(ctx, request, envelope, ref)
+	}
+	return s.authorizeCredential(ctx, envelope, ref)
 }
