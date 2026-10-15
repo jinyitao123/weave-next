@@ -5,7 +5,7 @@ import { engineName } from '../../lib/format'
 import type { RuntimeNode } from '../../lib/nodes'
 import { fieldTypes, fieldsProblem, fieldsSchema, schemaFields, type OutputField } from '../../lib/output-format'
 import { CatalogRefresh } from '../team/CatalogRefresh'
-import { bindingSourceLabel, capabilityName, capabilityNote, defaultCapabilityBinding, describeCapability, handoffKinds, isCLIEngine, loadModelCatalog, memberProblems, memberSteps, newMember, parseOutputSchema, requiredHandoffKinds, toolLoopLimits, type BusinessCatalog, type CatalogCapability, type DevelopmentDocument, type DevelopmentMember, type MemberConfiguration, type MemberRelationship, type MemberSkill } from '../../lib/teams'
+import { bindingSourceLabel, capabilityName, capabilityNote, defaultCapabilityBinding, describeCapability, handoffKinds, isCLIEngine, loadMemberTools, loadModelCatalog, type MemberTools, memberProblems, memberSteps, newMember, parseOutputSchema, requiredHandoffKinds, toolLoopLimits, type BusinessCatalog, type CatalogCapability, type DevelopmentDocument, type DevelopmentMember, type MemberConfiguration, type MemberRelationship, type MemberSkill } from '../../lib/teams'
 import './members.css'
 
 const engines = ['claude', 'codex', 'opencode', 'loom']
@@ -178,10 +178,14 @@ function AbilityPanel({ part, member, cli, catalog, onConfig, onCatalog }: { par
   const skills = config.skills ?? []
   const [removing, setRemoving] = useState<string>()
   const [picking, setPicking] = useState(false)
-  const external = [
-    ['MCP 服务', config.mcp_server_ids], ['技能库技能', config.skill_names], ['允许的工具', config.permission_allow], ['需确认的工具', config.permission_ask],
-  ] as const
-  const attached = external.filter(([, value]) => count(value) > 0)
+  const servers = (config.mcp_server_ids ?? []).filter(Boolean)
+  const librarySkills = (config.skill_names ?? []).filter(Boolean)
+  const [tools, setTools] = useState<MemberTools>()
+  const [choosing, setChoosing] = useState<'server' | 'skill'>()
+  useEffect(() => { if (part === 'tools') loadMemberTools().then(setTools).catch(() => setTools(undefined)) }, [part])
+  const serverName = (id: string) => tools?.mcp_servers.find((server) => server.id === id)?.name ?? '已不可用的服务'
+  const addableServers = (tools?.mcp_servers ?? []).filter((server) => server.usable && !servers.includes(server.id))
+  const addableSkills = (tools?.skills ?? []).filter((name) => !librarySkills.includes(name))
   const editSkill = (index: number, patch: Partial<MemberSkill>) => onConfig({ skills: skills.map((skill, at) => at === index ? { ...skill, ...patch } : skill) })
   const removeAction = (id: string) => onConfig({
     business_capability_ids: actions.filter((item) => item !== id),
@@ -246,12 +250,37 @@ function AbilityPanel({ part, member, cli, catalog, onConfig, onCatalog }: { par
     {part === 'tools' ? <section className="members__section" aria-label="工具权限">
       <h3>工具权限</h3>
       <Switch checked={deny.includes('*')} label="禁止使用工具" onChange={(on) => onConfig({ permission_deny: on ? [...deny.filter((item) => item !== '*'), '*'] : deny.filter((item) => item !== '*') })} />
-      {attached.length ? <div className="members__attached" role="status">
-        <p>该成员带有试跑暂不支持的外部工具配置，发布前需要移除：</p>
-        <ul>{attached.map(([label, value]) => <li key={label}>{label}：{(value as string[]).filter(Boolean).join('、')}</li>)}</ul>
-        <button type="button" className="button" onClick={() => onConfig({ mcp_server_ids: [], skill_names: [], permission_allow: [], permission_ask: [] })}>移除这些配置</button>
-      </div> : null}
+      {cli ? null : <>
+        <ToolRules label="允许直接使用的工具" rules={config.permission_allow ?? []} onChange={(permission_allow) => onConfig({ permission_allow })} />
+        <ToolRules label="使用前需确认的工具" rules={config.permission_ask ?? []} onChange={(permission_ask) => onConfig({ permission_ask })} />
+      </>}
     </section> : null}
+
+    {part === 'tools' ? <section className="members__section" aria-label="外部工具">
+      <h3>MCP 服务</h3>
+      {servers.length ? <ul className="members__chips">{servers.map((id) => <li key={id} className="members__chip">{serverName(id)}
+        <button type="button" className="icon-button" aria-label={`移除 MCP 服务 ${serverName(id)}`} onClick={() => onConfig({ mcp_server_ids: servers.filter((item) => item !== id) })}><X size={12} /></button>
+      </li>)}</ul> : <p className="muted">还没有 MCP 服务。服务里声明为只读的工具会真实调用，其他工具会被拒绝执行。</p>}
+      <div className="toolbar"><button type="button" className="button" disabled={!addableServers.length} onClick={() => setChoosing('server')}><Plus size={14} />添加 MCP 服务</button>
+        {tools && !addableServers.length ? <span className="muted small">没有可再添加的已连通服务。</span> : null}</div>
+      {cli ? null : <>
+        <h3>技能库技能</h3>
+        {librarySkills.length ? <ul className="members__chips">{librarySkills.map((name) => <li key={name} className="members__chip">{name}
+          <button type="button" className="icon-button" aria-label={`移除技能库技能 ${name}`} onClick={() => onConfig({ skill_names: librarySkills.filter((item) => item !== name) })}><X size={12} /></button>
+        </li>)}</ul> : <p className="muted">还没有技能库技能。</p>}
+        <div className="toolbar"><button type="button" className="button" disabled={!addableSkills.length} onClick={() => setChoosing('skill')}><Plus size={14} />添加技能库技能</button></div>
+      </>}
+    </section> : null}
+
+    {choosing ? <Dialog title={choosing === 'server' ? '添加 MCP 服务' : '添加技能库技能'} onClose={() => setChoosing(undefined)}>
+      <ul className="members__catalog">{(choosing === 'server' ? addableServers.map((server) => ({ key: server.id, name: server.name })) : addableSkills.map((name) => ({ key: name, name }))).map((item) => <li key={item.key}>
+        <button type="button" className="members__catalog-item" onClick={() => {
+          if (choosing === 'server') onConfig({ mcp_server_ids: [...servers, item.key] })
+          else onConfig({ skill_names: [...librarySkills, item.key] })
+          setChoosing(undefined)
+        }}><span className="members__action-main"><strong>{item.name}</strong></span></button>
+      </li>)}</ul>
+    </Dialog> : null}
 
     {picking ? <Dialog title="添加业务动作" onClose={() => setPicking(false)}>
       <ul className="members__catalog">{addable.map((capability) => <li key={capability.id}>
@@ -335,4 +364,24 @@ function RunPanel({ member, nodes, accepting, models, kindsInUse, onConfig, onRe
       {locked.length ? <p className="muted small">流程里已有步骤在用“{locked.join('”“')}”，不能取消；要取消请先在流程里调整。</p> : null}
     </section>}
   </>
+}
+
+// One list of tool names, added by typing a name and removed one at a time.
+function ToolRules({ label, rules, onChange }: { label: string; rules: string[]; onChange(rules: string[]): void }) {
+  const [name, setName] = useState('')
+  const add = () => {
+    const tool = name.trim()
+    if (tool && !rules.includes(tool)) onChange([...rules, tool])
+    setName('')
+  }
+  return <div className="field">
+    <span>{label}</span>
+    {rules.length ? <ul className="members__chips">{rules.map((rule) => <li key={rule} className="members__chip">{rule}
+      <button type="button" className="icon-button" aria-label={`从${label}中移除 ${rule}`} onClick={() => onChange(rules.filter((item) => item !== rule))}><X size={12} /></button>
+    </li>)}</ul> : null}
+    <div className="toolbar">
+      <input className="input" value={name} maxLength={200} aria-label={`${label}名称`} onChange={(event) => setName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); add() } }} />
+      <button type="button" className="button" disabled={!name.trim()} onClick={add}><Plus size={14} />添加</button>
+    </div>
+  </div>
 }

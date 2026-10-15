@@ -1289,6 +1289,22 @@
         "lines_added": 271,
         "production_lines_added": 145
       }
+    },
+    {
+      "date": "2026-10-14",
+      "reason": "Close two more of the operations only the console could do, as the owner asked on 2026-10-14 (decision 008 in the product repository). A code team is created through the shared request-id endpoint, so the desktop, the MCP entry and the console make the same team once per request; the console no longer builds one from the browser. Members may be given a workspace MCP service, a library skill and allow/ask tool rules by name through controlled edits, with the services and skills listed for the console; such members are no longer refused a trial: read-only MCP tools run, every other tool stays behind the existing write gate in trials and published work alike, so a trial never writes to an outside system. No new packages, dependencies, tables or runtime loops.",
+      "record": "README.zh-CN.md#成员的外部工具",
+      "growth": {
+        "lines": 642,
+        "production_lines": 448
+      },
+      "deletion_trigger": "Remove the member tool edits and the member-tools listing if member MCP services, library skills and tool rules leave the team draft, or if a recorded decision returns them to the console only. Lower the measured budgets in that change.",
+      "app": {
+        "previous_lines": 92046,
+        "previous_production_lines": 62028,
+        "lines_added": 642,
+        "production_lines_added": 448
+      }
     }
   ],
   "migration_targets": {
@@ -1352,8 +1368,8 @@
     "allowed_dependencies": []
   },
   "app": {
-    "lines": 92046,
-    "production_lines": 62028,
+    "lines": 92688,
+    "production_lines": 62476,
     "packages": 25,
     "external_dependencies": 6,
     "allowed_dependencies": [

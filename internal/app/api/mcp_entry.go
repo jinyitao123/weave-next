@@ -490,11 +490,11 @@ var mcpEntryTools = []mcpEntryTool{
 			failure := call.route(http.MethodPost, "/v1/teams/"+url.PathEscape(mcpText(args, "team_id"))+"/development/operations", body, &result)
 			return result, failure
 		}},
-	{Name: "weave_team_create", Description: "新建一个业务团队：负责人、一位业务办理员和基础流程。只在使用者明确要求新建时调用。同一个 request_id 重发返回同一个团队。",
-		Schema: mcpSchema(mcpRequestProp+`,"name":{"type":"string","maxLength":80},"objective":{"type":"string","maxLength":2000,"description":"团队处理什么事，用员工平时的说法"}`, "request_id", "name", "objective"),
+	{Name: "weave_team_create", Description: "新建一个团队。业务团队带负责人、一位业务办理员和基础流程；代码团队带负责人、编码与验证两位成员，以及验证未通过时退回编码的流程。只在使用者明确要求新建时调用。同一个 request_id 重发返回同一个团队。",
+		Schema: mcpSchema(mcpRequestProp+`,"name":{"type":"string","maxLength":80},"objective":{"type":"string","maxLength":2000,"description":"团队处理什么事，用员工平时的说法"},"kind":{"type":"string","enum":["business","code"],"description":"business 业务团队（默认）；code 代码团队"}`, "request_id", "name", "objective"),
 		Run: func(call *mcpEntryCall, args map[string]any) (any, *mcpEntryError) {
 			var result map[string]any
-			failure := call.route(http.MethodPost, "/v1/development/teams", map[string]any{"request_id": mcpText(args, "request_id"), "name": mcpText(args, "name"), "objective": mcpText(args, "objective")}, &result)
+			failure := call.route(http.MethodPost, "/v1/development/teams", map[string]any{"request_id": mcpText(args, "request_id"), "name": mcpText(args, "name"), "objective": mcpText(args, "objective"), "kind": mcpText(args, "kind")}, &result)
 			return result, failure
 		}},
 	{Name: "weave_development_trial", Description: "在已保存的草稿上隔离试跑一条流程。只做模拟，不访问业务系统。simulate_actions 列出本次允许模拟的业务动作名称，省略则不开放任何动作。返回接受回执，结果用 weave_development_trial_read 读取。",

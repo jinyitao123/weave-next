@@ -275,7 +275,7 @@ func TestControlledEditsRefuseTheWholeGroupAndNameTheItem(t *testing.T) {
 func TestControlledEditsChooseAModelOnlyFromTheWorkspaceList(t *testing.T) {
 	models := []string{"deepseek-flash", "deepseek-reasoner"}
 	apply := func(doc *developmentDocument, raw string, available []string) error {
-		_, err := applyDevelopmentOperationsWith(doc, editOps(t, raw), editTestCatalog, available)
+		_, err := applyDevelopmentOperationsWith(doc, editOps(t, raw), editTestCatalog, available, editTools{})
 		return err
 	}
 	refused := func(raw string, available []string, change func(*developmentDocument)) string {

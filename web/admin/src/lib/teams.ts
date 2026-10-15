@@ -33,6 +33,10 @@ export interface MemberConfiguration {
   tool_loop_control?: ToolLoopControl | null
   output_schema?: unknown
   permission_deny?: string[] | null
+  permission_allow?: string[] | null
+  permission_ask?: string[] | null
+  mcp_server_ids?: string[] | null
+  skill_names?: string[] | null
   memory_enabled?: boolean
   memory_scope?: string
   max_tokens?: number
@@ -110,8 +114,9 @@ export function serverIssues(draft: DevelopmentDraft | undefined): string[] {
 }
 
 /** Creates a business team on the server; the same request id never creates a second team. */
-export const createBusinessTeam = (requestId: string, name: string, objective: string) =>
-  api<{ team_id: string }>('/v1/development/teams', { method: 'POST', body: JSON.stringify({ request_id: requestId, name, objective, kind: 'business' }) }).then((created) => created.team_id)
+// The server makes the team, its starting members and flow once per request id.
+export const createTeam = (requestId: string, name: string, objective: string, kind: TeamKind = 'business') =>
+  api<{ team_id: string }>('/v1/development/teams', { method: 'POST', body: JSON.stringify({ request_id: requestId, name, objective, kind }) }).then((created) => created.team_id)
 
 export const listTeamRecords = () => api<TeamRecord[]>('/v1/teams?status=all&purpose=development')
   .then((teams) => teams.filter((team) => team.status !== 'archived'))
@@ -260,60 +265,12 @@ export function allowRequiredHandoffKinds(document: DevelopmentDocument): Develo
   return changed ? { ...document, members } : document
 }
 
-interface CreatedAgent { id: string }
-
-async function createAgent(name: string, displayName: string, role: 'avatar' | 'worker', engine: string, prompt: string): Promise<CreatedAgent> {
-  return api<CreatedAgent>('/v1/agents', {
-    method: 'POST',
-    body: JSON.stringify({ name, display_name: displayName, role, engine, graph_type: 'standard', spec: { system_prompt: prompt } }),
-  })
-}
-
 export const starterMembers = [
   { key: 'code', displayName: '编码', engine: 'claude', prompt: '分析需求、设计方案并修改代码。收到验证意见时先逐条修复。说明改了什么、为什么这样改，以及还没完成的部分。', requirement: '完成代码修改，说明改动内容、依据和未完成项。' },
   { key: 'verify', displayName: '验证', engine: 'codex', prompt: '独立验证上一步的代码：运行测试和检查，逐条记录执行的命令与结果，不根据描述推断结果。', requirement: '列出执行的检查命令和真实结果。全部通过时 passed 为 true；否则为 false，并在 summary 中写明未通过项和原因。' },
 ] as const
 
 export type TeamKind = 'business' | 'code'
-
-// A business team starts with one member who handles the task; more are added
-// on the member page.
-const businessStarter = [
-  { key: 'handle', displayName: '业务办理员', engine: 'loom', prompt: '只依据本次任务的原话和材料办理。把事实、估计和待确认事项分开写；没有给出的数字和日期不要推测。', requirement: '说明办理结果、依据和待确认项。' },
-] as const
-
-// Creates a team from a starting set of members, using the same agent and team
-// endpoints as the desktop. Agents created before a failure are removed again.
-export async function createStarterTeam(name: string, objective: string, kind: TeamKind = 'business'): Promise<string> {
-  const suffix = createUUID()
-  const created: string[] = []
-  try {
-    const lead = await createAgent(`team-${suffix}-lead`, '团队负责人', 'avatar', 'loom', `负责理解“${name}”的目标并汇总可核验结果。`)
-    created.push(`team-${suffix}-lead`)
-    const workers: Array<{ id: string; requirement: string; duty: string }> = []
-    for (const member of kind === 'code' ? starterMembers : businessStarter) {
-      const agentName = `team-${suffix}-${member.key}`
-      const agent = await createAgent(agentName, member.displayName, 'worker', member.engine, member.prompt)
-      created.push(agentName)
-      workers.push({ id: agent.id, requirement: member.requirement, duty: member.prompt })
-    }
-    const team = await api<{ id: string }>('/v1/teams', {
-      method: 'POST',
-      body: JSON.stringify({
-        name: `team-${suffix}`, display_name: name, objective, primary_scenario: objective,
-        success_criteria: kind === 'code' ? '交付经过独立验证的代码改动' : '按任务要求交付结果并说明依据', lead_avatar_id: lead.id,
-        workers: workers.map((worker) => ({
-          worker_agent_id: worker.id, duty: worker.duty, when_to_use: '负责人分配相关工作时', context_instruction: kind === 'code' ? '保留任务上下文、代码版本和材料来源。' : '保留本次任务的原话和材料来源。',
-          allowed_kinds: ['consult', 'dispatch', 'handoff'], default_kind: 'dispatch', result_requirement: worker.requirement,
-        })),
-      }),
-    })
-    return team.id
-  } catch (error) {
-    await Promise.allSettled(created.map((agentName) => api(`/v1/agents/${encodeURIComponent(agentName)}`, { method: 'DELETE' })))
-    throw error
-  }
-}
 
 // Adds the starter workflow (coding, then independent verification) when the
 // draft has no workflow yet.
@@ -347,17 +304,6 @@ export function withStarterWorkflow(document: DevelopmentDocument): DevelopmentD
       graph_definition: withVerifyLoop(serialGraph(steps), 3),
     }],
   }
-}
-
-// Saves the starting flow right after creation, so a new team opens as a
-// clean draft instead of one with changes nobody made. Built-in members get
-// the first available model.
-export async function prepareNewTeam(teamId: string): Promise<void> {
-  const [draft, models] = await Promise.all([readDevelopment(teamId), loadModelCatalog().catch(() => [] as string[])])
-  const members = draft.document.members.map((member) => !isCLIEngine(member.configuration.engine) && !member.configuration.model && models[0]
-    ? { ...member, configuration: { ...member.configuration, model: models[0] } } : member)
-  const document = withStarterWorkflow({ ...draft.document, members })
-  if (JSON.stringify(document) !== JSON.stringify(draft.document)) await saveDevelopment(teamId, draft.revision, document)
 }
 
 // A member added on the page; the server creates it when the draft is trialled.
@@ -411,6 +357,11 @@ export const handoffKinds = [
   { value: 'handoff', label: '交接' },
 ] as const
 
+// The MCP services and library skills a member may be given; a service that is
+// not usable is listed so a member that already has it can still drop it.
+export interface MemberTools { mcp_servers: Array<{ id: string; name: string; usable: boolean }>; skills: string[] }
+export const loadMemberTools = () => api<Partial<MemberTools>>('/v1/development/member-tools').then((body): MemberTools => ({ mcp_servers: body.mcp_servers ?? [], skills: body.skills ?? [] }))
+
 export const loadModelCatalog = () => api<{ models: string[] }>('/v1/development/model-catalog').then((catalog) => catalog.models ?? [])
 
 // A Forge business action id looks like forge:action:<object>.<action>; the
@@ -435,7 +386,6 @@ export function parseOutputSchema(text: string): { value: Record<string, unknown
 
 export const toolLoopLimits = { sliceMax: 1000 }
 
-const listed = (value: unknown) => Array.isArray(value) && value.some((item) => typeof item === 'string' && item.trim())
 
 // What trial preparation would reject for one member, worded for the page.
 // Isolated trials refuse MCP servers, library skills and allow/ask tool
@@ -455,9 +405,6 @@ export function memberProblems(member: DevelopmentMember): string[] {
   if (skills.some((skill) => !skill.name?.trim() || !skill.body?.trim())) problems.push('技能需要填写名称和内容')
   const names = skills.map((skill) => skill.name?.trim()).filter(Boolean)
   if (new Set(names).size !== names.length) problems.push('技能名称不能重复')
-  if (listed(config.mcp_server_ids) || listed(config.skill_names) || listed(config.permission_allow) || listed(config.permission_ask)) {
-    problems.push('带有试跑暂不支持的外部工具（MCP 服务、技能库技能或工具许可）')
-  }
   return problems
 }
 

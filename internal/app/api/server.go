@@ -419,6 +419,7 @@ func (s *Server) registerRoutes() {
 	auth.GET("/runs/:id/trial-outputs", s.handleListDevelopmentTrialOutputs, RequireAnyRole("developer", "admin", "owner"), orgScope)
 	auth.GET("/runs/:id/trial-outputs/:output", s.handleGetDevelopmentTrialOutput, RequireAnyRole("developer", "admin", "owner"), orgScope)
 	auth.DELETE("/teams/:id/development/team", s.handleArchiveDevelopmentTeam, RequireAnyRole("developer", "admin", "owner"), orgScope)
+	auth.GET("/development/member-tools", s.handleDevelopmentMemberTools, RequireAnyRole("developer", "admin", "owner"), orgScope)
 	auth.GET("/development/model-catalog", s.handleDevelopmentModelCatalog, RequireAnyRole("developer", "admin", "owner"), orgScope)
 	auth.GET("/development/model-providers", s.handleListDevelopmentModelProviders, RequireAnyRole("developer", "admin", "owner"), orgScope)
 	auth.PUT("/development/model-providers/:id", s.handlePutDevelopmentModelProvider, RequireAnyRole("developer", "admin", "owner"), orgScope)

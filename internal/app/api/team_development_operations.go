@@ -19,9 +19,11 @@ type editSession struct {
 	models []string
 	// runtimes are the nodes a member on an external engine may be placed on.
 	runtimes []editRuntime
-	graphs   map[string]editGraph
-	added    map[string]string
-	changes  []string
+	// tools are the MCP services and library skills a member may be given.
+	tools   editTools
+	graphs  map[string]editGraph
+	added   map[string]string
+	changes []string
 }
 
 func (e *editSession) note(format string, args ...any) {
@@ -168,6 +170,12 @@ func (e *editSession) apply(operation map[string]any) error {
 		return e.changeMemberTools(operation)
 	case "member_handoff":
 		return e.changeMemberHandoff(operation)
+	case "member_mcp":
+		return e.changeMemberMCP(operation)
+	case "member_library_skill":
+		return e.changeMemberLibrarySkill(operation)
+	case "member_tool_rule":
+		return e.changeMemberToolRule(operation)
 	case "member_remove":
 		target, err := e.member(operation)
 		if err != nil {
@@ -787,18 +795,18 @@ func (e *editSession) finish() error {
 
 // applyDevelopmentOperations applies edits that choose no model.
 func applyDevelopmentOperations(doc *developmentDocument, operations []map[string]any, catalog []catalogCapability) ([]string, error) {
-	return applyDevelopmentOperationsWith(doc, operations, catalog, nil)
+	return applyDevelopmentOperationsWith(doc, operations, catalog, nil, editTools{})
 }
 
 // applyDevelopmentOperationsWith applies 1 to 24 controlled edits to doc in
 // place and returns what changed, one line per edit. models are the names a
 // member's model may be chosen from and runtimes the nodes it may be placed
 // on. On error doc must be discarded.
-func applyDevelopmentOperationsWith(doc *developmentDocument, operations []map[string]any, catalog []catalogCapability, models []string, runtimes ...editRuntime) ([]string, error) {
+func applyDevelopmentOperationsWith(doc *developmentDocument, operations []map[string]any, catalog []catalogCapability, models []string, tools editTools, runtimes ...editRuntime) ([]string, error) {
 	if len(operations) < 1 || len(operations) > 24 {
 		return nil, editFail("一次须提交 1 至 24 项团队修改")
 	}
-	session := &editSession{doc: doc, catalog: catalog, models: models, runtimes: runtimes, graphs: map[string]editGraph{}, added: map[string]string{}}
+	session := &editSession{doc: doc, catalog: catalog, models: models, runtimes: runtimes, tools: tools, graphs: map[string]editGraph{}, added: map[string]string{}}
 	for index, operation := range operations {
 		err := editFail("修改格式无效")
 		if operation != nil {
