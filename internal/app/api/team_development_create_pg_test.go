@@ -102,13 +102,8 @@ func TestDevelopmentTeamIsCreatedOncePerRequestRealPG(t *testing.T) {
 	if status, conflict := create(requestID, "另一个团队", "别的目标", "business"); status != http.StatusConflict || conflict["code"] != "request_conflict" {
 		t.Fatalf("reused request id: %d %v", status, conflict)
 	}
-	for body, code := range map[string]string{"code": "team_kind_unsupported", "": ""} {
-		if body == "" {
-			continue
-		}
-		if status, refused := create(uuid.NewString(), "代码团队", "实现需求", body); status != http.StatusUnprocessableEntity || refused["code"] != code {
-			t.Fatalf("kind %s: %d %v", body, status, refused)
-		}
+	if status, refused := create(uuid.NewString(), "运维团队", "处理告警", "ops"); status != http.StatusUnprocessableEntity || refused["code"] != "team_kind_unsupported" {
+		t.Fatalf("unknown kind: %d %v", status, refused)
 	}
 	if status, invalid := create("not-a-uuid", "团队", "目标", "business"); status != http.StatusUnprocessableEntity || invalid["code"] != "team_create_invalid" {
 		t.Fatalf("invalid request: %d %v", status, invalid)
@@ -118,6 +113,38 @@ func TestDevelopmentTeamIsCreatedOncePerRequestRealPG(t *testing.T) {
 		(SELECT count(*) FROM weave_agents WHERE workspace_id='create-workspace' AND NOT deleted),
 		(SELECT count(*) FROM weave_team_development_creations WHERE workspace_id='create-workspace' AND actor_id='developer' AND team_id=$1)`, teamID).Scan(&teams, &agents, &records); err != nil || teams != 1 || agents != 2 || records != 1 {
 		t.Fatalf("teams=%d agents=%d records=%d err=%v", teams, agents, records, err)
+	}
+
+	// A code team starts like the console's: coding then independent
+	// verification on another engine, sent back while verification fails.
+	status, codeTeam := create(uuid.NewString(), "支付服务开发", "为支付服务实现需求，并在合入前通过测试", "code")
+	if status != http.StatusCreated || codeTeam["team_id"] == "" {
+		t.Fatalf("code team: %d %v", status, codeTeam)
+	}
+	status, codeDraft := call("GET", nil, server.handleGetTeamDevelopment, codeTeam["team_id"].(string))
+	if status != http.StatusOK {
+		t.Fatalf("code draft: %d %v", status, codeDraft)
+	}
+	codeDocument := codeDraft["document"].(map[string]any)
+	engines := map[string]string{}
+	for _, raw := range codeDocument["members"].([]any) {
+		configuration := raw.(map[string]any)["configuration"].(map[string]any)
+		engines[configuration["display_name"].(string)] = configuration["engine"].(string)
+	}
+	if engines["团队负责人"] != "loom" || engines["编码"] != "claude" || engines["验证"] != "codex" {
+		t.Fatalf("code team members = %v", engines)
+	}
+	codeFlows := codeDocument["workflows"].([]any)
+	if len(codeFlows) != 1 || codeFlows[0].(map[string]any)["name"] != "开发与验证" {
+		t.Fatalf("code team flow = %v", codeFlows)
+	}
+	graph := codeFlows[0].(map[string]any)["graph_definition"].(map[string]any)
+	types := map[string]int{}
+	for _, raw := range graph["nodes"].([]any) {
+		types[raw.(map[string]any)["type"].(string)]++
+	}
+	if types["loop"] != 1 || types["worker"] != 2 || types["deliver"] != 1 || len(graph["edges"].([]any)) != 4 {
+		t.Fatalf("code team graph = %v", types)
 	}
 
 	// A second request is a second team, even under the same name.

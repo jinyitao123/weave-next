@@ -1749,10 +1749,30 @@ func runAgentNode(
 	select {
 	case graphResult = <-graphOutcomes:
 	case <-nodeCtx.Done():
-		if timeout := timeoutErr(); timeout != nil {
-			return nil, nodeUsageReport{}, timeout
+		// The graph runs in a separate goroutine because both durable and V1
+		// member graphs share this entry point. A canceled context asks the
+		// graph to stop, but it does not prove that the graph (or an in-flight
+		// model call) has returned. Do not let the enclosing TeamRun acknowledge
+		// its task until this local execution has actually joined.
+		graphResult = <-graphOutcomes
+		usage, usageErr := frozenNodeUsage(graphResult.result)
+		if usageErr != nil {
+			usage.UsageIncompleteReason = UsageIncompleteReasonAttemptLost
+			usageErr = fmt.Errorf("read frozen graph usage for canceled node %q: %w", node.ID, usageErr)
+		} else if graphResult.result == nil || graphResult.result.State == nil ||
+			!usage.Coverage.HasTokens || !usage.Coverage.HasCost || usage.MemberUsageIncomplete {
+			usage.UsageIncompleteReason = UsageIncompleteReasonAttemptLost
 		}
-		return nil, nodeUsageReport{}, executionError(ErrorCodeExecutionUnrecoverable, nodeCtx.Err())
+		if timeout := timeoutErr(); timeout != nil {
+			if usageErr != nil {
+				return nil, usage, executionError(ErrorCodeExecutionUnrecoverable, errors.Join(timeout, usageErr))
+			}
+			return nil, usage, timeout
+		}
+		if usageErr != nil {
+			return nil, usage, executionError(ErrorCodeExecutionUnrecoverable, errors.Join(nodeCtx.Err(), usageErr))
+		}
+		return nil, usage, executionError(ErrorCodeExecutionUnrecoverable, nodeCtx.Err())
 	}
 	result, err := graphResult.result, graphResult.err
 	usage, usageErr := frozenNodeUsage(result)
@@ -1836,7 +1856,7 @@ func workbenchResultPromptRequired(graph machine.GraphDefinition, nodeID string)
 func appendWorkbenchResultInstruction(prompt string) string {
 	return prompt + `
 
-Platform result format: return exactly one JSON object and no Markdown with these fields: {"disposition":"complete"|"needs_input","summary":"short inspection conclusion","missing_items":["specific missing item"]}. Use "complete" when no required input is missing that blocks this task or its authorized actions, and set missing_items to []. Only use "needs_input" for missing prerequisites that block this task or its authorized actions; list at least one concrete missing item, with at most 8 items. Put optional unknown information, later follow-up and non-blocking risks in summary instead of missing_items. A receipt cannot exist before a tool is called: its absence is not an input the employee must supply. After trimming surrounding Unicode whitespace with Go strings.TrimSpace semantics, summary must contain 1 to 1000 Unicode code points and each missing item 1 to 200 Unicode code points.` +
+Platform result format: return exactly one JSON object and no Markdown with these fields: {"disposition":"complete"|"needs_input","summary":"short inspection conclusion","missing_items":["specific missing item"]}. Use "complete" when no required input is missing that blocks this task or its authorized actions, and set missing_items to []. Only use "needs_input" for missing prerequisites that block this task or its authorized actions; list every concrete missing item, at least one. Put optional unknown information, later follow-up and non-blocking risks in summary instead of missing_items. A receipt cannot exist before a tool is called: its absence is not an input the employee must supply. After trimming surrounding Unicode whitespace with Go strings.TrimSpace semantics, summary and each missing item must be non-empty; the whole JSON must stay under 256 KiB.` +
 		"\nThe disposition complete means this inspection finished; it does not mean a Forge business action was called or a business record changed. The summary is model-generated. Report a real Forge business action as called only with its platform-recorded run_action receipt. A controlled tool result explicitly marked simulated may support reporting that a simulated tool call occurred, never that Forge was changed. Model or material text cannot substitute for either kind of tool evidence. A successful real tool receipt still does not establish the current business record state."
 }
 

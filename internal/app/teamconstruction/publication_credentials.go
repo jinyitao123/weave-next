@@ -12,6 +12,7 @@ import (
 	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/kernel/credentials"
+	"github.com/jinyitao123/weave/internal/kernel/publication"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 	"github.com/jinyitao123/weave/internal/kernel/workflow"
 	"github.com/jinyitao123/weave/internal/kernel/workflow/machine"
@@ -79,6 +80,26 @@ func (a *PublicationAuthority) AuthorizeCredential(ctx context.Context, envelope
 }
 
 func (a *PublicationAuthority) verifyCredentialProof(ctx context.Context, proof publicationCredentialProof, ref frozen.CredentialReference) error {
+	return a.verifyCredentialProofForInvocation(ctx, proof, ref, nil, nil)
+}
+
+func (a *PublicationAuthority) verifyPublishedCredentialProof(
+	ctx context.Context,
+	proof publicationCredentialProof,
+	ref frozen.CredentialReference,
+	request publication.PublishedRunRequest,
+	envelope frozen.ArtifactEnvelopeV1,
+) error {
+	return a.verifyCredentialProofForInvocation(ctx, proof, ref, &request, &envelope)
+}
+
+func (a *PublicationAuthority) verifyCredentialProofForInvocation(
+	ctx context.Context,
+	proof publicationCredentialProof,
+	ref frozen.CredentialReference,
+	request *publication.PublishedRunRequest,
+	envelope *frozen.ArtifactEnvelopeV1,
+) error {
 	if a == nil || a.pool == nil || !time.Now().Before(proof.expiresAt) || !slices.Contains(proof.references, ref) {
 		return execution.ErrSubjectMismatch
 	}
@@ -92,7 +113,7 @@ func (a *PublicationAuthority) verifyCredentialProof(ctx context.Context, proof 
 	if err = frozen.ValidateCredentialReference(ref); err != nil {
 		return err
 	}
-	if ref.Scope == frozen.CredentialScopeUser {
+	if ref.Scope == frozen.CredentialScopeUser && request == nil {
 		if err = credentials.AuthorizeReference(ctx, ref); err != nil {
 			return err
 		}
@@ -108,7 +129,12 @@ func (a *PublicationAuthority) verifyCredentialProof(ctx context.Context, proof 
 		}
 		defer func() { _ = tx.Rollback(ctx) }()
 	}
-	if err = authorizePublicationActorTx(ctx, tx, subject.WorkspaceID, proof.scope.TeamID); err != nil {
+	if request != nil && envelope != nil {
+		err = a.authorizeCapabilityApplicationInvocationTx(ctx, tx, subject, *request, *envelope)
+	} else {
+		err = authorizePublicationActorTx(ctx, tx, subject.WorkspaceID, proof.scope.TeamID)
+	}
+	if err != nil {
 		return err
 	}
 	var leadID string

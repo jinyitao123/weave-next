@@ -2,6 +2,8 @@ package api
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -364,4 +366,84 @@ func developmentTrialTopLevelStage(t *testing.T, stages []runActivityStage, node
 	}
 	t.Fatalf("top-level stage %s not found: %#v", nodeID, stages)
 	return runActivityStage{}
+}
+
+func TestDevelopmentTrialKeepsEveryOutputWholeRealPG(t *testing.T) {
+	fixture := newDevelopmentTrialOutputFixture(t, 1)
+	worker := fixture.workers[0]
+	fixture.recordMemberEvents(t, worker, "large-step")
+	recorder := &developmentTrialWorkflowOutputRecorder{pool: fixture.pool, fallback: fixture.server.Deliverables}
+	record := func(nodeID string, content string, at time.Time) {
+		t.Helper()
+		if err := recorder.RecordWorkflowOutput(fixture.ctx, deliverable.WorkflowOutput{
+			WorkspaceID: fixture.workspaceID, RunID: fixture.runID, RunSnapshotID: fixture.runID,
+			NodeID: nodeID, NodeLabel: "输出", NodeType: "worker", AgentID: worker.ID,
+			Output: content, CreatedAt: at,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	large := strings.Repeat("合同条款逐条核对。", developmentTrialStageOutputMaxBytes/8)
+	record("large-step", large, fixture.now)
+	for index := 1; index <= developmentTrialStageOutputMaxCount; index++ {
+		record("large-step", fmt.Sprintf("第%d条输出", index), fixture.now.Add(time.Duration(index)*time.Millisecond))
+	}
+	record("large-step", strings.Repeat("x", developmentTrialOutputBodyMaxBytes+1), fixture.now.Add(time.Second))
+
+	response := fixture.activity(t, fixture.actorID)
+	if response.Completeness["member_outputs"] != "partial" {
+		t.Fatalf("activity with a preview and more than one page was reported complete: %#v", response.Completeness)
+	}
+	stage := developmentTrialMemberStage(t, response.Members, worker.ID, "large-step")
+	if len(stage.Outputs) != developmentTrialStageOutputMaxCount || !stage.Outputs[0].Truncated || stage.Outputs[0].FullContent != "stored" {
+		t.Fatalf("first page = %d outputs, first %#v", len(stage.Outputs), stage.Outputs[0].FullContent)
+	}
+
+	call := func(handler echo.HandlerFunc, roles []string, query string, params ...string) *httptest.ResponseRecorder {
+		t.Helper()
+		recorder := httptest.NewRecorder()
+		ctx := echo.New().NewContext(httptest.NewRequest(http.MethodGet, "/"+query, nil).WithContext(fixture.ctx), recorder)
+		ctx.Set("tenant", fixture.workspaceID)
+		ctx.Set("user_id", fixture.actorID)
+		ctx.Set("roles", roles)
+		ctx.SetParamNames(append([]string{"id"}, params[:len(params)/2]...)...)
+		ctx.SetParamValues(append([]string{fixture.runID}, params[len(params)/2:]...)...)
+		if err := handler(ctx); err != nil {
+			t.Fatal(err)
+		}
+		return recorder
+	}
+	whole := call(fixture.server.handleGetDevelopmentTrialOutput, []string{"developer"}, "", "output", stage.Outputs[0].OutputID)
+	var full developmentTrialStageOutputView
+	if err := json.Unmarshal(whole.Body.Bytes(), &full); err != nil || whole.Code != http.StatusOK {
+		t.Fatalf("whole output status=%d err=%v", whole.Code, err)
+	}
+	digest := sha256.Sum256([]byte(large))
+	if full.Content != large || full.ContentSHA != hex.EncodeToString(digest[:]) || full.ContentBytes != int64(len(large)) {
+		t.Fatalf("whole output differs from what the step produced: %d bytes", len(full.Content))
+	}
+
+	page := call(fixture.server.handleListDevelopmentTrialOutputs, []string{"developer"}, "?offset=64")
+	var listed struct {
+		Outputs    []developmentTrialStageOutputView `json:"outputs"`
+		Total      int                               `json:"total"`
+		NextOffset *int                              `json:"next_offset"`
+	}
+	if err := json.Unmarshal(page.Body.Bytes(), &listed); err != nil || page.Code != http.StatusOK {
+		t.Fatalf("second page status=%d err=%v", page.Code, err)
+	}
+	if listed.Total != developmentTrialStageOutputMaxCount+2 || len(listed.Outputs) != 2 || listed.NextOffset != nil {
+		t.Fatalf("second page = total %d, %d outputs, next %v", listed.Total, len(listed.Outputs), listed.NextOffset)
+	}
+	if listed.Outputs[0].Content != fmt.Sprintf("第%d条输出", developmentTrialStageOutputMaxCount) || listed.Outputs[0].FullContent != "stored" {
+		t.Fatalf("the 65th output was not kept: %#v", listed.Outputs[0])
+	}
+	if tooLarge := listed.Outputs[1]; tooLarge.FullContent != "storage_failed" || tooLarge.ContentBytes != developmentTrialOutputBodyMaxBytes+1 {
+		t.Fatalf("an output too large to keep was not reported as a storage failure: %s %d", tooLarge.FullContent, tooLarge.ContentBytes)
+	}
+
+	if denied := call(fixture.server.handleGetDevelopmentTrialOutput, nil, "", "output", stage.Outputs[0].OutputID); denied.Code != http.StatusForbidden {
+		t.Fatalf("whole output without developer access status=%d, want 403", denied.Code)
+	}
+	fixture.assertNoFormalDeliverables(t)
 }

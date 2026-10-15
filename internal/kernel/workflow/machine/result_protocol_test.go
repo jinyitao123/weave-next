@@ -3,6 +3,7 @@ package machine
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -113,17 +114,15 @@ func TestNormalizeWorkbenchResultV1BoundsAndDisposition(t *testing.T) {
 		t.Fatalf("normalized output=%s err=%v", normalized, err)
 	}
 
-	tooLongSummary, _ := json.Marshal(WorkbenchResultV1{Disposition: "complete", Summary: strings.Repeat("界", 1001), MissingItems: []string{}})
-	tooManyItems, _ := json.Marshal(WorkbenchResultV1{Disposition: "needs_input", Summary: "补充材料", MissingItems: []string{"1", "2", "3", "4", "5", "6", "7", "8", "9"}})
-	tooLongItem, _ := json.Marshal(WorkbenchResultV1{Disposition: "needs_input", Summary: "补充材料", MissingItems: []string{strings.Repeat("x", 201)}})
+	tooLarge, _ := json.Marshal(WorkbenchResultV1{Disposition: "complete", Summary: strings.Repeat("界", WorkbenchResultMaxBytes/3+1), MissingItems: []string{}})
+	blankItem := []byte(`{"disposition":"needs_input","summary":"补充材料","missing_items":["  "]}`)
 	needsInputWithoutItems := []byte(`{"disposition":"needs_input","summary":"补充材料","missing_items":[]}`)
 	completeWithItems := []byte(`{"disposition":"complete","summary":"已完成检查","missing_items":["其他材料"]}`)
 	missingItemsField := []byte(`{"disposition":"complete","summary":"已完成检查"}`)
 	nullItemsField := []byte(`{"disposition":"complete","summary":"已完成检查","missing_items":null}`)
 	for name, raw := range map[string][]byte{
-		"summary limit":          tooLongSummary,
-		"item count limit":       tooManyItems,
-		"item length limit":      tooLongItem,
+		"capacity budget":        tooLarge,
+		"blank item":             blankItem,
 		"needs_input items":      needsInputWithoutItems,
 		"complete items":         completeWithItems,
 		"missing required field": missingItemsField,
@@ -137,40 +136,36 @@ func TestNormalizeWorkbenchResultV1BoundsAndDisposition(t *testing.T) {
 	}
 }
 
-func TestWorkbenchResultV1UsesUnicodeCodePointBoundsAndBoundedDiagnostics(t *testing.T) {
-	validSummary := strings.Repeat("界", 998) + "😀🙂"
-	if got := utf8.RuneCountInString(validSummary); got != 1000 {
-		t.Fatalf("fixture code points=%d", got)
+func TestWorkbenchResultV1KeepsEveryFindingWithinTheCapacityBudget(t *testing.T) {
+	// A check that finds nine problems, each explained at length, under a long
+	// conclusion is a valid result: none of it may be dropped or refused.
+	items := make([]string, 12)
+	for index := range items {
+		items[index] = fmt.Sprintf("第%d项：", index+1) + strings.Repeat("条款与附件不一致，需要补充盖章页及对应版本说明。", 20)
 	}
-	valid, _, err := NormalizeWorkbenchResultV1(mustWorkbenchJSON(t, WorkbenchResultV1{
-		Disposition: "complete", Summary: validSummary, MissingItems: []string{},
+	summary := strings.Repeat("合同主件与技术协议在交付范围、验收标准和付款节点上存在差异。", 60) + "😀"
+	valid, normalized, err := NormalizeWorkbenchResultV1(mustWorkbenchJSON(t, WorkbenchResultV1{
+		Disposition: "needs_input", Summary: summary, MissingItems: items,
 	}))
-	if err != nil || valid.Summary != validSummary {
-		t.Fatalf("1000-code-point summary rejected: err=%v", err)
+	if err != nil || valid.Summary != summary || len(valid.MissingItems) != len(items) || valid.MissingItems[11] != items[11] {
+		t.Fatalf("long result was not kept whole: err=%v", err)
 	}
-	validItem := strings.Repeat("中", 198) + "😀🙂"
-	if got := utf8.RuneCountInString(validItem); got != 200 {
-		t.Fatalf("item fixture code points=%d", got)
-	}
-	if _, _, err := NormalizeWorkbenchResultV1(mustWorkbenchJSON(t, WorkbenchResultV1{
-		Disposition: "needs_input", Summary: "补充材料", MissingItems: []string{validItem},
-	})); err != nil {
-		t.Fatalf("200-code-point item rejected: %v", err)
+	if utf8.RuneCountInString(summary) <= 1000 || utf8.RuneCountInString(items[0]) <= 200 || len(normalized) > WorkbenchResultMaxBytes {
+		t.Fatal("fixture no longer exercises the removed limits")
 	}
 
-	const observed = 1033
-	tooLong := strings.Repeat("界", observed)
-	raw := mustWorkbenchJSON(t, WorkbenchResultV1{Disposition: "complete", Summary: tooLong, MissingItems: []string{}})
+	tooLarge := strings.Repeat("界", WorkbenchResultMaxBytes/3+10)
+	raw := mustWorkbenchJSON(t, WorkbenchResultV1{Disposition: "complete", Summary: tooLarge, MissingItems: []string{}})
 	_, _, err = NormalizeWorkbenchResultV1(raw)
 	var violation *WorkbenchResultViolationV1
-	if !errors.As(err, &violation) || violation.Code != "string_length_invalid" || violation.Path != "/summary" || violation.LimitKind != "max" || violation.Limit != 1000 || violation.ObservedLength != observed {
+	if !errors.As(err, &violation) || violation.Code != "result_too_large" || violation.Path != "/" || violation.LimitKind != "max_bytes" || violation.Limit != WorkbenchResultMaxBytes || violation.ObservedLength <= WorkbenchResultMaxBytes {
 		t.Fatalf("bounded violation=%+v err=%v", violation, err)
 	}
-	if strings.Contains(err.Error(), tooLong) {
-		t.Fatal("semantic diagnostic includes the rejected summary")
+	if strings.Contains(err.Error(), tooLarge) {
+		t.Fatal("capacity diagnostic includes the rejected summary")
 	}
 
-	trimmed, _, err := NormalizeWorkbenchResultV1([]byte(`{"disposition":"complete","summary":"\u0085已完成\u0085","missing_items":[]}`))
+	trimmed, _, err := NormalizeWorkbenchResultV1([]byte(`{"disposition":"complete","summary":"已完成","missing_items":[]}`))
 	if err != nil || trimmed.Summary != "已完成" {
 		t.Fatalf("Go Unicode whitespace semantics changed: %+v %v", trimmed, err)
 	}
@@ -206,9 +201,8 @@ func TestWorkbenchResultProviderBoundsDoNotChangeFrozenSchema(t *testing.T) {
 	if err := json.Unmarshal(enriched.Properties["missing_items"], &items); err != nil {
 		t.Fatal(err)
 	}
-	if summary.MinLength == nil || *summary.MinLength != 1 || summary.MaxLength == nil || *summary.MaxLength != 1000 ||
-		items.MaxItems == nil || *items.MaxItems != 8 || items.Items.MinLength == nil || *items.Items.MinLength != 1 ||
-		items.Items.MaxLength == nil || *items.Items.MaxLength != 200 {
+	if summary.MinLength == nil || *summary.MinLength != 1 || summary.MaxLength != nil ||
+		items.MaxItems != nil || items.Items.MinLength == nil || *items.Items.MinLength != 1 || items.Items.MaxLength != nil {
 		t.Fatalf("provider constraints missing: summary=%+v items=%+v", summary, items)
 	}
 	if problems := ValidateRuntimeInputSchema(frozen); len(problems) != 0 {

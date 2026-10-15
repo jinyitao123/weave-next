@@ -3,11 +3,15 @@ package api
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
+	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -16,11 +20,17 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jinyitao123/weave/internal/base/deliverable"
 	"github.com/jinyitao123/weave/internal/kernel/teamrun"
+	"github.com/labstack/echo/v4"
 )
 
 const (
+	// The activity view shows at most this much of each output and this many
+	// outputs; neither bounds what is kept.
 	developmentTrialStageOutputMaxBytes = 64 * 1024
 	developmentTrialStageOutputMaxCount = 64
+	// developmentTrialOutputBodyMaxBytes is what one trial output may keep
+	// whole. A larger output is recorded as a storage failure.
+	developmentTrialOutputBodyMaxBytes = 16 * 1024 * 1024
 )
 
 type developmentTrialRun struct {
@@ -48,20 +58,31 @@ type developmentTrialStageOutput struct {
 	ContentBytes int64     `json:"content_bytes"`
 	Truncated    bool      `json:"truncated"`
 	CreatedAt    time.Time `json:"created_at"`
+	body         []byte
 }
 
+// developmentTrialStageOutputView is one output as the activity shows it.
+// Content is a preview when Truncated is set; FullContent says whether the
+// whole body can be read: "stored", "storage_failed" (the output was larger
+// than a trial may keep) or "not_stored" (recorded before whole bodies were
+// kept).
 type developmentTrialStageOutputView struct {
-	NodeID       string    `json:"-"`
-	MemberID     string    `json:"-"`
-	NodeLabel    string    `json:"-"`
-	Kind         string    `json:"kind"`
-	Path         string    `json:"path,omitempty"`
-	ContentType  string    `json:"content_type"`
-	Content      string    `json:"content"`
-	ContentSHA   string    `json:"content_sha256"`
-	ContentBytes int64     `json:"content_bytes"`
-	Truncated    bool      `json:"truncated"`
-	CreatedAt    time.Time `json:"created_at"`
+	NodeID      string `json:"-"`
+	MemberID    string `json:"-"`
+	NodeLabel   string `json:"-"`
+	OutputID    string `json:"output_id"`
+	FullContent string `json:"full_content"`
+	Kind        string `json:"kind"`
+	Path        string `json:"path,omitempty"`
+	ContentType string `json:"content_type"`
+	Content     string `json:"content"`
+	// ContentEncoding is "base64" when a whole body that is not UTF-8 text
+	// is returned; empty otherwise.
+	ContentEncoding string    `json:"content_encoding,omitempty"`
+	ContentSHA      string    `json:"content_sha256"`
+	ContentBytes    int64     `json:"content_bytes"`
+	Truncated       bool      `json:"truncated"`
+	CreatedAt       time.Time `json:"created_at"`
 }
 
 // developmentTrialWorkflowOutputRecorder keeps candidate trial outputs with
@@ -153,63 +174,37 @@ func persistDevelopmentTrialStageOutput(ctx context.Context, pool *pgxpool.Pool,
 	if err != nil {
 		return err
 	}
-	encoded, err := json.Marshal(recorded)
-	if err != nil {
-		return fmt.Errorf("encode development trial stage output: %w", err)
+	state, body := "stored", recorded.body
+	if len(body) > developmentTrialOutputBodyMaxBytes {
+		state, body = "storage_failed", nil
 	}
-	tx, err := pool.Begin(ctx)
-	if err != nil {
-		return fmt.Errorf("begin development trial output write: %w", err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-
-	var raw []byte
-	var truncated bool
-	err = tx.QueryRow(ctx, `SELECT stage_outputs,stage_outputs_truncated
-		FROM weave_team_development_trials
-		WHERE workspace_id=$1 AND team_id=$2 AND request_id=$3::uuid AND actor_id=$4
-		  AND revision=$5 AND workflow_id=$6 FOR UPDATE`,
+	tag, err := pool.Exec(ctx, `INSERT INTO weave_team_development_trial_output_bodies
+		(workspace_id,request_id,output_id,team_id,actor_id,run_id,node_id,member_id,node_label,node_type,
+		 kind,path,content_type,content_sha256,content_bytes,body_state,body,created_at)
+		SELECT trial.workspace_id,trial.request_id,$7,trial.team_id,trial.actor_id,$8,$9,$10,$11,$12,
+		 $13,$14,$15,$16,$17,$18,$19,$20
+		FROM weave_team_development_trials AS trial
+		WHERE trial.workspace_id=$1 AND trial.team_id=$2 AND trial.request_id=$3::uuid AND trial.actor_id=$4
+		  AND trial.revision=$5 AND trial.workflow_id=$6
+		ON CONFLICT (workspace_id,request_id,output_id) DO NOTHING`,
 		output.WorkspaceID, trial.TeamID, trial.RequestID, trial.ActorID, trial.Revision, trial.WorkflowID,
-	).Scan(&raw, &truncated)
-	if err != nil {
-		return fmt.Errorf("read development trial output record: %w", err)
-	}
-	outputs := map[string]json.RawMessage{}
-	if err = json.Unmarshal(raw, &outputs); err != nil {
-		return fmt.Errorf("decode development trial output record: %w", err)
-	}
-	if _, exists := outputs[recorded.OutputID]; exists {
-		return tx.Commit(ctx)
-	}
-	if len(outputs) >= developmentTrialStageOutputMaxCount {
-		tag, updateErr := tx.Exec(ctx, `UPDATE weave_team_development_trials SET stage_outputs_truncated=true
-			WHERE workspace_id=$1 AND team_id=$2 AND request_id=$3::uuid AND actor_id=$4
-			  AND revision=$5 AND workflow_id=$6`,
-			output.WorkspaceID, trial.TeamID, trial.RequestID, trial.ActorID, trial.Revision, trial.WorkflowID)
-		if updateErr != nil {
-			return fmt.Errorf("mark development trial outputs truncated: %w", updateErr)
-		}
-		if tag.RowsAffected() != 1 {
-			return errors.New("development trial output owner changed")
-		}
-		return tx.Commit(ctx)
-	}
-	outputs[recorded.OutputID] = encoded
-	updated, err := json.Marshal(outputs)
-	if err != nil {
-		return fmt.Errorf("encode development trial output index: %w", err)
-	}
-	tag, err := tx.Exec(ctx, `UPDATE weave_team_development_trials SET stage_outputs=$5::jsonb
-		WHERE workspace_id=$1 AND team_id=$2 AND request_id=$3::uuid AND actor_id=$4
-		  AND revision=$6 AND workflow_id=$7`,
-		output.WorkspaceID, trial.TeamID, trial.RequestID, trial.ActorID, string(updated), trial.Revision, trial.WorkflowID)
+		recorded.OutputID, recorded.RunID, recorded.NodeID, recorded.MemberID, recorded.NodeLabel, recorded.NodeType,
+		recorded.Kind, recorded.Path, recorded.ContentType, recorded.ContentSHA, recorded.ContentBytes, state, body, recorded.CreatedAt)
 	if err != nil {
 		return fmt.Errorf("persist development trial stage output: %w", err)
 	}
-	if tag.RowsAffected() != 1 {
-		return errors.New("development trial output owner changed")
+	if tag.RowsAffected() == 0 {
+		var exists bool
+		if err = pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM weave_team_development_trial_output_bodies
+			WHERE workspace_id=$1 AND request_id=$2::uuid AND output_id=$3)`,
+			output.WorkspaceID, trial.RequestID, recorded.OutputID).Scan(&exists); err != nil {
+			return fmt.Errorf("check development trial stage output: %w", err)
+		}
+		if !exists {
+			return errors.New("development trial output owner changed")
+		}
 	}
-	return tx.Commit(ctx)
+	return nil
 }
 
 func encodeDevelopmentTrialStageOutput(output deliverable.WorkflowOutput) (developmentTrialStageOutput, error) {
@@ -240,7 +235,27 @@ func encodeDevelopmentTrialStageOutput(output deliverable.WorkflowOutput) (devel
 	}
 	full := []byte(content)
 	digest := sha256.Sum256(full)
-	truncated := false
+	content, truncated := developmentTrialOutputPreview(full)
+	createdAt := output.CreatedAt.UTC()
+	if createdAt.IsZero() {
+		createdAt = time.Now().UTC()
+	}
+	identity := strings.Join([]string{output.RunID, output.NodeID, kind, path, hex.EncodeToString(digest[:])}, "\x00")
+	outputIDHash := sha256.Sum256([]byte(identity))
+	return developmentTrialStageOutput{
+		OutputID: hex.EncodeToString(outputIDHash[:]), RunID: output.RunID,
+		NodeID: output.NodeID, MemberID: output.AgentID, NodeLabel: output.NodeLabel, NodeType: output.NodeType,
+		Kind: kind, Path: path, ContentType: contentType, Content: content,
+		ContentSHA: hex.EncodeToString(digest[:]), ContentBytes: int64(len(full)),
+		Truncated: truncated, CreatedAt: createdAt, body: full,
+	}, nil
+}
+
+// developmentTrialOutputPreview is the part of an output the activity shows:
+// at most developmentTrialStageOutputMaxBytes of valid UTF-8, flagged when
+// anything was cut or replaced.
+func developmentTrialOutputPreview(full []byte) (string, bool) {
+	content, truncated := string(full), false
 	if len(content) > developmentTrialStageOutputMaxBytes {
 		cut := developmentTrialStageOutputMaxBytes
 		for cut > 0 && !utf8.ValidString(content[:cut]) {
@@ -253,22 +268,14 @@ func encodeDevelopmentTrialStageOutput(output deliverable.WorkflowOutput) (devel
 		content = strings.ToValidUTF8(content, "�")
 		truncated = true
 	}
-	createdAt := output.CreatedAt.UTC()
-	if createdAt.IsZero() {
-		createdAt = time.Now().UTC()
-	}
-	identity := strings.Join([]string{output.RunID, output.NodeID, kind, path, hex.EncodeToString(digest[:])}, "\x00")
-	outputIDHash := sha256.Sum256([]byte(identity))
-	return developmentTrialStageOutput{
-		OutputID: hex.EncodeToString(outputIDHash[:]), RunID: output.RunID,
-		NodeID: output.NodeID, MemberID: output.AgentID, NodeLabel: output.NodeLabel, NodeType: output.NodeType,
-		Kind: kind, Path: path, ContentType: contentType, Content: content,
-		ContentSHA: hex.EncodeToString(digest[:]), ContentBytes: int64(len(full)),
-		Truncated: truncated, CreatedAt: createdAt,
-	}, nil
+	return content, truncated
 }
 
-func listDevelopmentTrialStageOutputs(ctx context.Context, pool *pgxpool.Pool, trial developmentTrialRun, runID string) ([]developmentTrialStageOutputView, bool, error) {
+// readDevelopmentTrialStageOutputs returns one trial run's outputs in the
+// order they were produced, starting at offset and at most limit of them,
+// with the total count and whether the old index dropped outputs. Outputs
+// recorded before whole bodies were kept come from the trial row's index.
+func readDevelopmentTrialStageOutputs(ctx context.Context, pool *pgxpool.Pool, trial developmentTrialRun, runID string, offset, limit int) ([]developmentTrialStageOutputView, int, bool, error) {
 	var raw []byte
 	var storedTruncated bool
 	err := pool.QueryRow(ctx, `SELECT stage_outputs,stage_outputs_truncated
@@ -278,40 +285,81 @@ func listDevelopmentTrialStageOutputs(ctx context.Context, pool *pgxpool.Pool, t
 		trial.WorkspaceID, trial.TeamID, trial.RequestID, trial.ActorID, trial.Revision, trial.WorkflowID,
 	).Scan(&raw, &storedTruncated)
 	if err != nil {
-		return nil, false, err
+		return nil, 0, false, err
 	}
 	var stored map[string]developmentTrialStageOutput
 	if err = json.Unmarshal(raw, &stored); err != nil {
-		return nil, false, fmt.Errorf("decode development trial activity outputs: %w", err)
+		return nil, 0, false, fmt.Errorf("decode development trial activity outputs: %w", err)
 	}
-	outputs := make([]developmentTrialStageOutput, 0, len(stored))
+	views := make([]developmentTrialStageOutputView, 0, len(stored))
 	for _, output := range stored {
-		if output.RunID == runID {
-			outputs = append(outputs, output)
+		if output.RunID != runID {
+			continue
 		}
-	}
-	sort.Slice(outputs, func(i, j int) bool {
-		if outputs[i].CreatedAt.Equal(outputs[j].CreatedAt) {
-			if outputs[i].NodeID == outputs[j].NodeID {
-				return outputs[i].OutputID < outputs[j].OutputID
-			}
-			return outputs[i].NodeID < outputs[j].NodeID
+		full := "stored"
+		if output.Truncated {
+			full = "not_stored"
 		}
-		return outputs[i].CreatedAt.Before(outputs[j].CreatedAt)
-	})
-	partial := storedTruncated || len(outputs) > developmentTrialStageOutputMaxCount
-	if len(outputs) > developmentTrialStageOutputMaxCount {
-		outputs = outputs[:developmentTrialStageOutputMaxCount]
-	}
-	views := make([]developmentTrialStageOutputView, 0, len(outputs))
-	for _, output := range outputs {
 		views = append(views, developmentTrialStageOutputView{
 			NodeID: output.NodeID, MemberID: output.MemberID, NodeLabel: output.NodeLabel,
+			OutputID: output.OutputID, FullContent: full,
 			Kind: output.Kind, Path: output.Path, ContentType: output.ContentType,
 			Content: output.Content, ContentSHA: output.ContentSHA, ContentBytes: output.ContentBytes,
 			Truncated: output.Truncated, CreatedAt: output.CreatedAt,
 		})
-		partial = partial || output.Truncated
+	}
+	rows, err := pool.Query(ctx, `SELECT output_id,node_id,member_id,node_label,kind,path,content_type,
+			content_sha256,content_bytes,body_state,COALESCE(substring(body from 1 for $5),''::bytea),created_at
+		FROM weave_team_development_trial_output_bodies
+		WHERE workspace_id=$1 AND request_id=$2::uuid AND actor_id=$3 AND run_id=$4`,
+		trial.WorkspaceID, trial.RequestID, trial.ActorID, runID, developmentTrialStageOutputMaxBytes+4)
+	if err != nil {
+		return nil, 0, false, fmt.Errorf("read development trial outputs: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var view developmentTrialStageOutputView
+		var head []byte
+		if err = rows.Scan(&view.OutputID, &view.NodeID, &view.MemberID, &view.NodeLabel, &view.Kind, &view.Path, &view.ContentType,
+			&view.ContentSHA, &view.ContentBytes, &view.FullContent, &head, &view.CreatedAt); err != nil {
+			return nil, 0, false, fmt.Errorf("scan development trial output: %w", err)
+		}
+		view.Content, view.Truncated = developmentTrialOutputPreview(head)
+		view.Truncated = view.Truncated || int64(len(head)) < view.ContentBytes
+		views = append(views, view)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, 0, false, fmt.Errorf("read development trial outputs: %w", err)
+	}
+	sort.Slice(views, func(i, j int) bool {
+		if views[i].CreatedAt.Equal(views[j].CreatedAt) {
+			if views[i].NodeID == views[j].NodeID {
+				return views[i].OutputID < views[j].OutputID
+			}
+			return views[i].NodeID < views[j].NodeID
+		}
+		return views[i].CreatedAt.Before(views[j].CreatedAt)
+	})
+	total := len(views)
+	offset = min(max(offset, 0), total)
+	views = views[offset:]
+	if len(views) > limit {
+		views = views[:limit]
+	}
+	return views, total, storedTruncated, nil
+}
+
+// listDevelopmentTrialStageOutputs is the activity's view: the first page of
+// outputs, partial when an output is shown as a preview or more outputs
+// exist than the page holds.
+func listDevelopmentTrialStageOutputs(ctx context.Context, pool *pgxpool.Pool, trial developmentTrialRun, runID string) ([]developmentTrialStageOutputView, bool, error) {
+	views, total, legacyOverflow, err := readDevelopmentTrialStageOutputs(ctx, pool, trial, runID, 0, developmentTrialStageOutputMaxCount)
+	if err != nil {
+		return nil, false, err
+	}
+	partial := legacyOverflow || total > len(views)
+	for _, view := range views {
+		partial = partial || view.Truncated
 	}
 	return views, partial, nil
 }
@@ -375,4 +423,92 @@ func projectDevelopmentTrialStageOutputs(
 		stages[stageIndex].Outputs = append(stages[stageIndex].Outputs, output)
 	}
 	return stages, partial
+}
+
+// handleListDevelopmentTrialOutputs pages through every output of one trial
+// run, beyond the first page the activity shows.
+func (s *Server) handleListDevelopmentTrialOutputs(c echo.Context) error {
+	trial, ok, err := s.developmentTrialOfRun(c)
+	if err != nil || !ok {
+		return err
+	}
+	offset := 0
+	if raw := c.QueryParam("offset"); raw != "" {
+		if offset, err = strconv.Atoi(raw); err != nil || offset < 0 {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": "offset_invalid"})
+		}
+	}
+	views, total, legacyOverflow, err := readDevelopmentTrialStageOutputs(c.Request().Context(), s.GetPool(), trial, c.Param("id"), offset, developmentTrialStageOutputMaxCount)
+	if err != nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "run_read_unavailable"})
+	}
+	return c.JSON(http.StatusOK, map[string]any{
+		"outputs": views, "offset": offset, "total": total,
+		"next_offset": func() any {
+			if next := offset + len(views); next < total {
+				return next
+			}
+			return nil
+		}(),
+		// Outputs that an earlier version dropped once a trial had 64 of them.
+		"earlier_outputs_dropped": legacyOverflow,
+	})
+}
+
+// handleGetDevelopmentTrialOutput returns one trial output whole.
+func (s *Server) handleGetDevelopmentTrialOutput(c echo.Context) error {
+	trial, ok, err := s.developmentTrialOfRun(c)
+	if err != nil || !ok {
+		return err
+	}
+	ctx := c.Request().Context()
+	var view developmentTrialStageOutputView
+	var body []byte
+	err = s.GetPool().QueryRow(ctx, `SELECT output_id,kind,path,content_type,content_sha256,content_bytes,body_state,body,created_at
+		FROM weave_team_development_trial_output_bodies
+		WHERE workspace_id=$1 AND request_id=$2::uuid AND actor_id=$3 AND run_id=$4 AND output_id=$5`,
+		trial.WorkspaceID, trial.RequestID, trial.ActorID, c.Param("id"), c.Param("output"),
+	).Scan(&view.OutputID, &view.Kind, &view.Path, &view.ContentType, &view.ContentSHA, &view.ContentBytes, &view.FullContent, &body, &view.CreatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		// An output recorded before whole bodies were kept has only its preview.
+		views, _, _, readErr := readDevelopmentTrialStageOutputs(ctx, s.GetPool(), trial, c.Param("id"), 0, math.MaxInt)
+		if readErr != nil {
+			return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "run_read_unavailable"})
+		}
+		for _, legacy := range views {
+			if legacy.OutputID == c.Param("output") {
+				return c.JSON(http.StatusOK, legacy)
+			}
+		}
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "output_not_found"})
+	}
+	if err != nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "run_read_unavailable"})
+	}
+	if view.FullContent == "stored" {
+		view.Content = string(body)
+		if !utf8.Valid(body) {
+			// Bytes that are not text travel as base64 so none is altered.
+			view.Content = base64.StdEncoding.EncodeToString(body)
+			view.ContentEncoding = "base64"
+		}
+	}
+	return c.JSON(http.StatusOK, view)
+}
+
+// developmentTrialOfRun resolves the trial behind the run in the path for a
+// developer of this workspace. A run that is not a development trial is not
+// found here; the response is written when ok is false.
+func (s *Server) developmentTrialOfRun(c echo.Context) (developmentTrialRun, bool, error) {
+	if !humanTaskDeveloperAccess(c) {
+		return developmentTrialRun{}, false, c.JSON(http.StatusForbidden, map[string]string{"error": "insufficient permissions"})
+	}
+	trial, found, err := developmentTrialForRun(c.Request().Context(), s.GetPool(), getTenant(c), c.Param("id"))
+	if err != nil {
+		return developmentTrialRun{}, false, c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "run_read_unavailable"})
+	}
+	if !found {
+		return developmentTrialRun{}, false, c.JSON(http.StatusNotFound, map[string]string{"error": "run_not_found"})
+	}
+	return trial, true, nil
 }

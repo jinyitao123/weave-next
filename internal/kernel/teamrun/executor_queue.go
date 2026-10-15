@@ -35,7 +35,7 @@ func (e *Executor) ProcessNext(ctx context.Context, workerID string) (bool, erro
 	return true, e.processClaimedWorkflowTask(ctx, task, workerID)
 }
 
-func (e *Executor) processClaimedWorkflowTask(ctx context.Context, task *taskqueue.Task, workerID string) error {
+func (e *Executor) processClaimedWorkflowTask(ctx context.Context, task *taskqueue.Task, workerID string) (resultErr error) {
 	bound, err := taskqueue.BindTaskExecution(ctx, task, e.Tasks)
 	if err != nil {
 		if tasks, ok := e.Tasks.(interface {
@@ -54,9 +54,18 @@ func (e *Executor) processClaimedWorkflowTask(ctx context.Context, task *taskque
 		AcknowledgeExecutionStopped(context.Context, string, string) error
 	}); ok {
 		defer func() {
+			if errors.Is(resultErr, errCancellationTerminalNotSettled) {
+				// The execution has joined, but the durable root attempt has not
+				// been settled. Keep the cancel_requested task owned so the
+				// sweeper cannot confirm TeamRun cancellation without its attempt
+				// terminal fact.
+				return
+			}
 			ackCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 			defer cancel()
-			_ = tasks.AcknowledgeExecutionStopped(ackCtx, task.ID, workerID)
+			if err := tasks.AcknowledgeExecutionStopped(ackCtx, task.ID, workerID); err != nil {
+				resultErr = errors.Join(resultErr, fmt.Errorf("acknowledge stopped workflow task: %w", err))
+			}
 		}()
 	}
 	if task.WorkerID == "" {

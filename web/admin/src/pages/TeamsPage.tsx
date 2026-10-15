@@ -4,7 +4,7 @@ import { Badge, Dialog, EmptyState, InlineError } from '../components/ui'
 import { errorMessage, type AdminSession } from '../lib/api'
 import { relativeTime } from '../lib/format'
 import { createUUID } from '../lib/ids'
-import { createBusinessTeam, createStarterTeam, listTeamCards, prepareNewTeam, type TeamCard, type TeamKind } from '../lib/teams'
+import { createTeam, listTeamCards, type TeamCard, type TeamKind } from '../lib/teams'
 
 const canDevelop = (session: AdminSession) => ['developer', 'admin', 'owner'].includes(session.role)
 
@@ -59,17 +59,9 @@ function CreateTeamDrawer({ onClose, onCreated }: { onClose(): void; onCreated(i
     setBusy(true)
     setError('')
     try {
-      if (kind === 'code') {
-        const id = await createStarterTeam(name.trim(), objective.trim(), kind)
-        // The starting flow is saved with the team; if that fails the page still
-        // opens and offers to save it.
-        await prepareNewTeam(id).catch(() => undefined)
-        onCreated(id)
-        return
-      }
-      const content = `${name.trim()}\n${objective.trim()}`
+      const content = `${kind}\n${name.trim()}\n${objective.trim()}`
       if (request.current.content !== content) request.current = { id: createUUID(), content }
-      onCreated(await createBusinessTeam(request.current.id, name.trim(), objective.trim()))
+      onCreated(await createTeam(request.current.id, name.trim(), objective.trim(), kind))
     } catch (failure) {
       setError(errorMessage(failure))
     } finally {

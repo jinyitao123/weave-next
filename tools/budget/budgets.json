@@ -1201,6 +1201,112 @@
       }
     },
     {
+      "date": "2026-10-15",
+      "reason": "User-authorized published-workflow application invocation through the existing capability API. Keep one published graph and the existing TeamRun execution owner; register exact measured source, persistence and regression growth without package/dependency exceptions or spare allowance. No retired decisions routes restored.",
+      "record": "docs/架构/2026-10-15-发布工作流的应用调用.md",
+      "growth": {
+        "lines": 5316,
+        "production_lines": 2492
+      },
+      "deletion_trigger": "When the last inline capability caller migrates to the published-workflow contract and a deployed release has no inline callers, remove the inline capability compiler/executor, runner wiring and their exclusive tests and lower measured band budgets in that change. If workflow application calls are retired, disable their grants first and delete the associated invocation adapter and exclusive tests after the no-caller release.",
+      "base": {
+        "previous_lines": 8448,
+        "previous_production_lines": 6792,
+        "lines_added": 139,
+        "production_lines_added": 18
+      },
+      "kernel": {
+        "previous_lines": 104905,
+        "previous_production_lines": 83365,
+        "lines_added": 788,
+        "production_lines_added": 343
+      },
+      "build": {
+        "previous_lines": 0,
+        "previous_production_lines": 0,
+        "lines_added": 0,
+        "production_lines_added": 0
+      },
+      "app": {
+        "previous_lines": 87290,
+        "previous_production_lines": 59750,
+        "lines_added": 4389,
+        "production_lines_added": 2131
+      }
+    },
+    {
+      "date": "2026-10-15",
+      "reason": "User-requested investigation and generic robustness repair after an untraceable workflow timeout: live secret-free model activity, physical execution/stream join before cancellation acknowledgement, epoch-fenced root cancellation settlement and restart recovery, and atomic TeamRun/attempt terminals. Reuse the existing activity, task queue and V3 audit owners; no new packages, tables or dependencies. Exact measured code and regression growth without spare allowance.",
+      "record": "docs/架构/2026-10-15-发布工作流的应用调用.md#超时调查后的通用加固",
+      "growth": {
+        "lines": 2167,
+        "production_lines": 769
+      },
+      "deletion_trigger": "When non-durable standard V1 members are retired, delete their exclusive graph/stream stop adapters and regression fixtures. When shared provider lifecycle observation replaces the workflow host decorator, delete that decorator and its exclusive tests. Lower the exact measured budgets in the same changes; keep the existing cancellation ownership and fencing invariants.",
+      "base": {
+        "previous_lines": 8587,
+        "previous_production_lines": 6810,
+        "lines_added": 0,
+        "production_lines_added": 0
+      },
+      "kernel": {
+        "previous_lines": 105693,
+        "previous_production_lines": 83708,
+        "lines_added": 2071,
+        "production_lines_added": 767
+      },
+      "build": {
+        "previous_lines": 0,
+        "previous_production_lines": 0,
+        "lines_added": 0,
+        "production_lines_added": 0
+      },
+      "app": {
+        "previous_lines": 91679,
+        "previous_production_lines": 61881,
+        "lines_added": 96,
+        "production_lines_added": 2
+      }
+    },
+    {
+      "date": "2026-10-14",
+      "reason": "Stop losing or refusing what a team produced, as the owner asked on 2026-10-14. A structured team result is no longer refused for more than 8 missing items, a summary over 1000 characters or an item over 200: those limits had no business reason and are replaced by one 256 KiB capacity for the whole result, refused as result_too_large rather than cut; the employee message marks a cut summary as a preview. Every development trial output is kept whole in its own table and read page by page or one at a time, with the activity's access rule, instead of being cut at 64 KiB and 64 outputs. The CLI event compensation query is scoped to the step being settled. No new packages, dependencies or runtime loops.",
+      "record": "README.zh-CN.md#团队结果与试跑输出",
+      "growth": {
+        "lines": 270,
+        "production_lines": 149
+      },
+      "deletion_trigger": "Remove the trial output body table and its two reads if trials stop keeping step outputs, or when step outputs move to a shared artifact store. Lower the measured budgets in that change.",
+      "kernel": {
+        "previous_lines": 107764,
+        "previous_production_lines": 84475,
+        "lines_added": -1,
+        "production_lines_added": 4
+      },
+      "app": {
+        "previous_lines": 91775,
+        "previous_production_lines": 61883,
+        "lines_added": 271,
+        "production_lines_added": 145
+      }
+    },
+    {
+      "date": "2026-10-14",
+      "reason": "Close two more of the operations only the console could do, as the owner asked on 2026-10-14 (decision 008 in the product repository). A code team is created through the shared request-id endpoint, so the desktop, the MCP entry and the console make the same team once per request; the console no longer builds one from the browser. Members may be given a workspace MCP service, a library skill and allow/ask tool rules by name through controlled edits, with the services and skills listed for the console; such members are no longer refused a trial: read-only MCP tools run, every other tool stays behind the existing write gate in trials and published work alike, so a trial never writes to an outside system. No new packages, dependencies, tables or runtime loops.",
+      "record": "README.zh-CN.md#成员的外部工具",
+      "growth": {
+        "lines": 642,
+        "production_lines": 448
+      },
+      "deletion_trigger": "Remove the member tool edits and the member-tools listing if member MCP services, library skills and tool rules leave the team draft, or if a recorded decision returns them to the console only. Lower the measured budgets in that change.",
+      "app": {
+        "previous_lines": 92046,
+        "previous_production_lines": 62028,
+        "lines_added": 642,
+        "production_lines_added": 448
+      }
+    },
+    {
       "date": "2026-10-14",
       "reason": "Let a parallel branch run several steps in turn, as the owner asked on 2026-10-14; a branch could only be one worker joining at once. The validator accepts a chain of dispatch workers linked by success edges that ends at its owner's join, at most 16 steps. A leg task runs its branch's steps in order and records each finished step, so a leg that runs again after a failure or a retry never repeats a step's tool calls or business actions; the join still sees one result per branch, its last step's. Controlled edits and the console canvas add, remove and serialise such branches. No new packages, dependencies, queues or runtime loops: the existing leg task, join and resume carry the branch.",
       "record": "README.zh-CN.md#并行分支里的多个步骤",
@@ -1210,14 +1316,14 @@
       },
       "deletion_trigger": "Remove the branch step record and the chain walk if parallel branches go back to one step each, or when legs gain a general checkpoint that replaces the per-step record. Lower the measured budgets in that change.",
       "kernel": {
-        "previous_lines": 104905,
-        "previous_production_lines": 83365,
+        "previous_lines": 107763,
+        "previous_production_lines": 84479,
         "lines_added": 321,
         "production_lines_added": 212
       },
       "app": {
-        "previous_lines": 87290,
-        "previous_production_lines": 59750,
+        "previous_lines": 92688,
+        "previous_production_lines": 62476,
         "lines_added": 50,
         "production_lines_added": 22
       }
@@ -1252,8 +1358,8 @@
     "rule": "Each band limit equals its measured size. The total of the band limits may exceed this baseline only by the growth of amendments added after the first recorded_amendments entries, each of which must state its growth and a deletion_trigger."
   },
   "base": {
-    "lines": 8448,
-    "production_lines": 6792,
+    "lines": 8587,
+    "production_lines": 6810,
     "packages": 9,
     "external_dependencies": 4,
     "allowed_dependencies": [
@@ -1264,8 +1370,8 @@
     ]
   },
   "kernel": {
-    "lines": 105226,
-    "production_lines": 83577,
+    "lines": 108084,
+    "production_lines": 84691,
     "packages": 48,
     "external_dependencies": 5,
     "allowed_dependencies": [
@@ -1284,8 +1390,8 @@
     "allowed_dependencies": []
   },
   "app": {
-    "lines": 87340,
-    "production_lines": 59772,
+    "lines": 92738,
+    "production_lines": 62498,
     "packages": 25,
     "external_dependencies": 6,
     "allowed_dependencies": [

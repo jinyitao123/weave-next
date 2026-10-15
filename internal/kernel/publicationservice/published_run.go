@@ -82,17 +82,17 @@ func (s *Service) AdmitPublished(ctx context.Context, request publication.Publis
 	}
 	for _, bundle := range payload.Bundles {
 		for _, ref := range bundle.Credentials {
-			if err = s.authorizeCredential(ctx, envelope, ref); err != nil {
+			if err = s.authorizePublishedCredential(ctx, request, envelope, ref); err != nil {
 				return publication.AdmissionReceipt{}, err
 			}
 		}
 	}
 	for _, target := range payload.DeliveryTargets {
-		if err = s.authorizeCredential(ctx, envelope, target.AccessRef); err != nil {
+		if err = s.authorizePublishedCredential(ctx, request, envelope, target.AccessRef); err != nil {
 			return publication.AdmissionReceipt{}, err
 		}
 		for _, binding := range target.CredentialBindings {
-			if err = s.authorizeCredential(ctx, envelope, binding.CredentialRef); err != nil {
+			if err = s.authorizePublishedCredential(ctx, request, envelope, binding.CredentialRef); err != nil {
 				return publication.AdmissionReceipt{}, err
 			}
 		}

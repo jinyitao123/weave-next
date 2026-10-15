@@ -174,17 +174,28 @@ describe('member editor', () => {
     expect((screen.getByRole('button', { name: '派发' }) as HTMLButtonElement).disabled).toBe(false)
   })
 
-  it('flags external tool configuration that trials refuse and clears it on request', () => {
+  it('adds and removes MCP services, library skills and tool rules one at a time', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => new Response(JSON.stringify(String(url).includes('member-tools')
+      ? { mcp_servers: [{ id: 'crm', name: '客户库', usable: true }, { id: 'offline', name: '未连通服务', usable: false }], skills: ['报价核对'] }
+      : { version: '1', models: ['deepseek-flash'] }), { status: 200 })))
     let last: DevelopmentDocument | undefined
-    const initial = team()
-    initial.members[0].configuration.mcp_server_ids = ['crm']
-    initial.members[0].configuration.permission_ask = ['bash']
-    render(<Controlled initial={initial} changed={(document) => { last = document }} />)
-    pick(/^编码/)
+    render(<Controlled changed={(document) => { last = document }} />)
+    pick(/^整理/)
     tab('能力')
-    expect(screen.getByRole('status').textContent).toContain('MCP 服务：crm')
-    fireEvent.click(screen.getByRole('button', { name: '移除这些配置' }))
-    expect(saved(last, 'w-cli')?.configuration).toMatchObject({ mcp_server_ids: [], skill_names: [], permission_allow: [], permission_ask: [] })
+    await waitFor(() => expect(screen.getByRole('button', { name: '添加 MCP 服务' }).hasAttribute('disabled')).toBe(false))
+    fireEvent.click(screen.getByRole('button', { name: '添加 MCP 服务' }))
+    expect(screen.queryByRole('button', { name: '未连通服务' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '客户库' }))
+    expect(saved(last, 'w-loom')?.configuration.mcp_server_ids).toEqual(['crm'])
+    fireEvent.click(screen.getByRole('button', { name: '添加技能库技能' }))
+    fireEvent.click(screen.getByRole('button', { name: '报价核对' }))
+    expect(saved(last, 'w-loom')?.configuration.skill_names).toEqual(['报价核对'])
+    const ask = screen.getByRole('textbox', { name: '使用前需确认的工具名称' })
+    fireEvent.change(ask, { target: { value: 'send_mail' } })
+    fireEvent.keyDown(ask, { key: 'Enter' })
+    expect(saved(last, 'w-loom')?.configuration.permission_ask).toEqual(['send_mail'])
+    fireEvent.click(screen.getByRole('button', { name: '移除 MCP 服务 客户库' }))
+    expect(saved(last, 'w-loom')?.configuration.mcp_server_ids).toEqual([])
   })
 
   it('stores a valid output schema, refuses invalid JSON and clears on empty', () => {

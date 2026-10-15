@@ -7,7 +7,7 @@ package api
 const developmentOperationsVersion = "1"
 
 // developmentConsoleOnly names what a controlled edit does not cover and where it is done instead.
-const developmentConsoleOnly = "归档团队、刷新业务动作目录，以及运行、执行节点、代码仓库、飞书和客户端会话的操作不属于团队草稿，用工作区操作办理（见工作区操作的类别清单）。成员已带有的 MCP 服务、技能库技能、允许和需确认的工具只能整体移除，新增在 Weave 管理端之外暂不提供。"
+const developmentConsoleOnly = "归档团队、刷新业务动作目录，以及运行、执行节点、代码仓库、飞书和客户端会话的操作不属于团队草稿，用工作区操作办理（见工作区操作的类别清单）。成员的 MCP 服务、技能库技能和工具许可用“成员的外部工具”类别逐项添加或移除。"
 
 type developmentOperationDoc struct {
 	Kind    string `json:"kind"`
@@ -38,9 +38,16 @@ var developmentOperationTopics = []developmentOperationTopic{
 		{Kind: "member_engine", Summary: "engine 为 loom（内置引擎）、claude、codex 或 opencode；负责人不能更换引擎。更换引擎会清空原来的节点和模型。外部引擎须给 node（节点名称，见本说明 nodes 中提供该引擎的节点），model 可省略或给空字符串表示用节点上的默认模型；改用内置引擎须给 model（见本说明 models）。不换引擎时可只改 node 或 model", Example: `{"kind":"member_engine","member":"代码实现员","engine":"claude","node":"研发一号机"}`},
 		{Kind: "member_limits", Summary: "只对内置引擎成员有效。maxTokens（累计 token 上限）、maxOutputTokens（单次回复 token 上限）、stepBudget（最多执行步数）、maxCostUsd（费用上限，美元）、maxToolRepeats（同一工具连续调用上限）至少给一项，0 表示不限制；toolLoop 给 {sliceRounds, totalRounds} 自定义工具循环轮次，给 null 恢复平台默认", Example: `{"kind":"member_limits","member":"材料协调员","maxCostUsd":2,"stepBudget":40,"toolLoop":{"sliceRounds":20,"totalRounds":60}}`},
 		{Kind: "member_memory", Summary: "只对内置引擎成员有效。enabled 必填；scope 可为 tenant（工作区共享）、user（按员工区分）、session（仅本次会话），省略时沿用原值", Example: `{"kind":"member_memory","member":"材料协调员","enabled":true,"scope":"user"}`},
-		{Kind: "member_tools", Summary: "denyAll 为 true 时禁止该成员使用任何工具，为 false 时取消；clearExternal 为 true 时移除成员带有的 MCP 服务、技能库技能、允许和需确认的工具（带着这些配置的成员不能试跑）。至少给一项", Example: `{"kind":"member_tools","member":"材料协调员","denyAll":true}`},
+		{Kind: "member_tools", Summary: "denyAll 为 true 时禁止该成员使用任何工具，为 false 时取消；clearExternal 为 true 时一次移除成员带有的全部 MCP 服务、技能库技能、允许和需确认的工具；逐项添加或移除用“成员的外部工具”类别。至少给一项", Example: `{"kind":"member_tools","member":"材料协调员","denyAll":true}`},
 		{Kind: "member_handoff", Summary: "allowed 是 consult（咨询）、dispatch（派发）、handoff（移交）中的至少一项，default 是其中之一；负责人不设置。流程里已有步骤在用的方式不能取消", Example: `{"kind":"member_handoff","member":"材料协调员","allowed":["consult","dispatch"],"default":"consult"}`},
 	}, Rules: []string{developmentNamingRule, "流程按步骤所在位置决定用哪种交接方式：依次执行的步骤是咨询，并行分支是派发；一般不需要改交接方式。", "同一个节点在一次发布里只能服务一种外部引擎；两位成员使用不同外部引擎时须分配到不同节点。", "外部引擎成员在节点上用节点自己的引擎登录运行，执行限制、记忆和技能正文对它们不生效。"}},
+	{Topic: "member_external", Title: "成员的外部工具", Covers: "给成员添加或移除 MCP 服务、技能库技能，以及允许直接使用或使用前需确认的工具", Operations: []developmentOperationDoc{
+		{Kind: "member_mcp", Summary: "server 是本说明 mcpServers 列出的服务名称；selected 为 true 添加、false 移除。只有 usable 为 true 的服务能添加", Example: `{"kind":"member_mcp","member":"材料协调员","server":"合同库","selected":true}`},
+		{Kind: "member_library_skill", Summary: "只对内置引擎成员有效。skill 是本说明 skills 列出的技能库技能名称；selected 为 true 添加、false 移除。准备试跑时固定为技能库当时的最新版本", Example: `{"kind":"member_library_skill","member":"材料协调员","skill":"报价核对","selected":true}`},
+		{Kind: "member_tool_rule", Summary: "只对内置引擎成员有效。list 为 allow（允许直接使用）或 ask（使用前需确认）；tool 是工具名称；selected 为 true 添加、false 移除", Example: `{"kind":"member_tool_rule","member":"材料协调员","list":"ask","tool":"send_mail","selected":true}`},
+	}, Rules: []string{developmentNamingRule,
+		"MCP 服务里声明为只读的工具在试跑和正式工作中都会真实调用；其他工具（包括没有声明的）会被拒绝执行，不会写入外部系统。",
+		"使用外部引擎的成员带 MCP 服务时须先选定执行节点。"}},
 	{Topic: "skill", Title: "成员技能", Covers: "给成员添加、更新或移除技能正文", Operations: []developmentOperationDoc{
 		{Kind: "skill", Summary: "selected 为 true 时 body 必填，同名技能被替换；为 false 时移除", Example: `{"kind":"skill","member":"材料协调员","name":"报价核对","selected":true,"body":"技能正文","description":"何时使用","alwaysActive":false}`},
 	}, Rules: []string{developmentNamingRule}},

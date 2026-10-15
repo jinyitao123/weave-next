@@ -254,6 +254,7 @@ func (r *WorkflowSerialRuntime) ExecuteFanoutLeg(
 	}
 	loader := *r.Loader
 	loader.RunSnapshotID = parent.RunSnapshotID
+	ctx = r.withCredentialAuthorization(ctx, parent, task)
 	hostFactory := workflow.ObserveRuntimeTools(r.hostFactoryFor(loaded), r.toolObserver(parent))
 	runtimeArtifact, err := loader.Load(ctx, loaded.envelope, hostFactory, resolver)
 	if err != nil {

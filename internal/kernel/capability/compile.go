@@ -42,6 +42,9 @@ func Compile(revision PublishedRevision) (Plan, error) {
 		return Plan{}, err
 	}
 	definition := revision.Definition
+	if definition.Workflow != nil {
+		return Plan{}, fmt.Errorf("%w: workflow-backed capabilities execute through published workflow admission", ErrInvalidRevision)
+	}
 	if len(definition.Steps) > 32 {
 		return Plan{}, fmt.Errorf("%w: maximum 32 steps", ErrInvalidRevision)
 	}

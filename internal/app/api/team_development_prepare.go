@@ -73,14 +73,12 @@ func (s *Server) prepareDevelopment(ctx context.Context, ws, id, actor string, r
 			return d, echo.NewHTTPError(422, "请为每位成员填写职责和工作方法；内置引擎成员还需选择模型")
 		}
 		// Forge business actions are supplied to candidate trials through the
-		// isolated development dispatcher. Other external resources still require
-		// their own sandbox binding; never borrow production credentials or silently
-		// remove those capabilities.
-		// No Weave-held external resource is lent to a trial: CLI members use the
-		// node's own engine login and carry no MCP servers, skills or extra tool
-		// permissions here.
-		if (cfg.Engine != "loom" && !cliMember) || len(cfg.MCPServerIDs) > 0 || len(cfg.SkillNames) > 0 || len(cfg.PermissionAllow) > 0 || len(cfg.PermissionAsk) > 0 {
-			return d, echo.NewHTTPError(422, "当前试跑支持无外部工具的成员；此团队需要先配置隔离的测试工具环境")
+		// isolated development dispatcher. A member's MCP services run in a trial
+		// as they do once published: read-only tools are called, every other tool
+		// is refused by the write gate, so a trial never writes to an outside
+		// system. Library skills and tool rules are text and settings only.
+		if cfg.Engine != "loom" && !cliMember {
+			return d, echo.NewHTTPError(422, "成员的引擎不受支持，请改用内置引擎或 claude、codex、opencode")
 		}
 		var rec registry.AgentRecord
 		if _, exists := d.Baseline.Members[m.ID]; exists {
@@ -104,9 +102,14 @@ func (s *Server) prepareDevelopment(ctx context.Context, ws, id, actor string, r
 		if e != nil {
 			return d, e
 		}
+		servers, skillRefs, e := memberToolBindings(ctx, tx, ws, cfg, rec)
+		if e != nil {
+			return d, e
+		}
 		if err = configureDevelopmentMember(&rec, cfg, m.Relationship, cfg.Role == "avatar", skills); err != nil {
 			return d, err
 		}
+		rec.MCPServers, rec.SkillRefs = servers, skillRefs
 		if err = s.Registry.StageTx(ctx, tx, ws, &rec); err != nil {
 			return d, err
 		}

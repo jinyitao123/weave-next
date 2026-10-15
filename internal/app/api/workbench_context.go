@@ -17,7 +17,9 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-const workbenchContextFinalContentMax = 100_000
+// The final content a continuation carries matches the capacity a structured
+// result may use, so a whole result always reaches the employee.
+const workbenchContextFinalContentMax = machine.WorkbenchResultMaxBytes
 
 var errWorkbenchContextNotFound = errors.New("Workbench run context not found")
 

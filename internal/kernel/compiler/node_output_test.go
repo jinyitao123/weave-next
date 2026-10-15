@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/url"
 	"os"
 	"strings"
@@ -251,7 +252,7 @@ func (d *workbenchActionDispatcher) Dispatch(_ context.Context, call contract.To
 
 func TestWorkbenchResultCorrectionDoesNotReplayToolsAcrossControlledResume(t *testing.T) {
 	frozenSchema := machine.WorkbenchResultSchemaV1()
-	invalid := workbenchOutput(t, strings.Repeat("界", 1033))
+	invalid := workbenchOutput(t, strings.Repeat("界", machine.WorkbenchResultMaxBytes/3+11))
 	validSummary := strings.Repeat("中", 998) + "😀🙂"
 	if got := utf8.RuneCountInString(validSummary); got != 1000 {
 		t.Fatalf("valid fixture code points=%d", got)
@@ -302,8 +303,8 @@ func TestWorkbenchResultCorrectionDoesNotReplayToolsAcrossControlledResume(t *te
 		t.Fatalf("correction state did not survive pause: %q", marker)
 	}
 	transcript, ok := paused.State["__toolloop_msgs"].([]contract.Message)
-	if !ok || !messagesContain(transcript, "observed=1033") {
-		t.Fatal("bounded codepoint diagnostic was not returned through Loom correction feedback")
+	if !ok || !messagesContain(transcript, "result_too_large") || !messagesContain(transcript, fmt.Sprintf("max_bytes=%d", machine.WorkbenchResultMaxBytes)) {
+		t.Fatal("bounded capacity diagnostic was not returned through Loom correction feedback")
 	}
 
 	paused = resumeWorkbenchOutput(t, graph, store, ctx, paused, "resume-2")
@@ -379,7 +380,7 @@ func assertWorkbenchPGCheckpoint(t *testing.T, pool *pgxpool.Pool, graphName, ru
 }
 
 func TestWorkbenchResultViolationExposesBoundsWithoutOutputText(t *testing.T) {
-	private := strings.Repeat("密", 1033)
+	private := strings.Repeat("密", machine.WorkbenchResultMaxBytes/3+11)
 	bad := workbenchOutput(t, private)
 	llm := &schemaTestLLM{responses: []contract.ChatResponse{{StopReason: "stop", Content: bad}, {StopReason: "stop", Content: bad}}}
 	step := nodeToolLoopStep(llm, &CompileGuardDispatcher{}, stdlib.ToolLoopOpts{Model: "test", MaxIterations: 2})
@@ -389,7 +390,7 @@ func TestWorkbenchResultViolationExposesBoundsWithoutOutputText(t *testing.T) {
 	if !errors.As(err, &violation) || !errors.Is(err, stdlib.ErrCompletionUnverified) {
 		t.Fatalf("lost Workbench output failure: %v", err)
 	}
-	if violation.Path != "/summary" || violation.LimitKind != "max" || violation.Limit != 1000 || violation.ObservedLength != 1033 || violation.OutputBytes != len(bad) || len(violation.OutputSHA256) != 64 {
+	if violation.Code != "result_too_large" || violation.Path != "/" || violation.LimitKind != "max_bytes" || violation.Limit != machine.WorkbenchResultMaxBytes || violation.ObservedLength <= machine.WorkbenchResultMaxBytes || violation.OutputBytes != len(bad) || len(violation.OutputSHA256) != 64 {
 		t.Fatalf("diagnostic=%+v", violation)
 	}
 	encoded, marshalErr := json.Marshal(violation)
@@ -400,7 +401,7 @@ func TestWorkbenchResultViolationExposesBoundsWithoutOutputText(t *testing.T) {
 
 func TestWorkbenchTextCorrectionReopensMissingActionFlow(t *testing.T) {
 	llm := &schemaTestLLM{responses: []contract.ChatResponse{
-		{StopReason: "stop", Content: workbenchOutput(t, strings.Repeat("界", 1001))},
+		{StopReason: "stop", Content: workbenchOutput(t, strings.Repeat("界", machine.WorkbenchResultMaxBytes/3+11))},
 		{StopReason: "tool_calls", ToolCalls: []contract.ToolCall{{ID: "premature", Name: "submit_material", Args: `{}`}}},
 		{StopReason: "stop", Content: workbenchOutput(t, "已完成材料检查")},
 		{StopReason: "tool_calls", ToolCalls: []contract.ToolCall{{ID: "required", Name: "submit_material", Args: `{}`}}},

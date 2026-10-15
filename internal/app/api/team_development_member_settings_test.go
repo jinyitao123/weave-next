@@ -14,7 +14,7 @@ func TestControlledEditsSetHowAMemberRuns(t *testing.T) {
 		{ID: "node-2", Name: "研发二号机", Engines: []string{"claude"}},
 	}
 	apply := func(doc *developmentDocument, raw string) error {
-		_, err := applyDevelopmentOperationsWith(doc, editOps(t, raw), editTestCatalog, models, nodes...)
+		_, err := applyDevelopmentOperationsWith(doc, editOps(t, raw), editTestCatalog, models, editTools{}, nodes...)
 		return err
 	}
 	refused := func(doc developmentDocument, raw string) string {

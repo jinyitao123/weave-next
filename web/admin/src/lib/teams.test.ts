@@ -53,8 +53,8 @@ describe('memberProblems', () => {
       .toEqual(['默认交接方式必须是已选方式之一', '技能需要填写名称和内容', '技能名称不能重复'])
   })
 
-  it('flags external tools that isolated trials refuse', () => {
-    expect(memberProblems(ready('codex', { mcp_server_ids: ['crm'] }))).toEqual(['带有试跑暂不支持的外部工具（MCP 服务、技能库技能或工具许可）'])
+  it('does not hold back a member for its MCP services, library skills or tool rules', () => {
+    expect(memberProblems(ready('codex', { mcp_server_ids: ['crm'], permission_ask: ['bash'] }))).toEqual([])
   })
 })
 

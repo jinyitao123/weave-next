@@ -8,8 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
+	"github.com/jackc/pgx/v5"
 	"github.com/jinyitao123/weave/internal/kernel/loomruntime"
+	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 )
 
 type ExecutionError struct {
@@ -152,13 +153,13 @@ func (e *Executor) executeWithHeartbeat(
 		select {
 		case <-ctx.Done():
 			cancel()
-			<-outcomes
-			return RuntimeResult{}, ctx.Err()
+			outcome := <-outcomes
+			return outcome.result, errors.Join(ctx.Err(), outcome.err)
 		case <-ticker.C:
 			if err := e.Tasks.Heartbeat(ctx, task.ID, workerID); err != nil {
 				cancel()
-				<-outcomes
-				return RuntimeResult{}, fmt.Errorf("%w: %v", errTaskLeaseLost, err)
+				outcome := <-outcomes
+				return outcome.result, errors.Join(fmt.Errorf("%w: %v", errTaskLeaseLost, err), outcome.err)
 			}
 		case outcome := <-outcomes:
 			return outcome.result, outcome.err
@@ -341,35 +342,33 @@ func (e *Executor) succeedRunning(
 	usageIncompleteReason string,
 	memberBreakdown ...map[string]loomruntime.TerminalChildBreakdownV3,
 ) (TeamRun, error) {
-	if err := e.commitFrozenNormalTerminal(
+	var succeeded TeamRun
+	if err := e.commitFrozenNormalTerminalWithMutation(
 		ctx, run, "success", "completed", usage, usageCoverage,
-		usageComplete, usageIncompleteReason, memberBreakdown...,
+		usageComplete, usageIncompleteReason,
+		func(ctx context.Context, tx pgx.Tx) error {
+			var err error
+			succeeded, err = e.Runs.SucceedTx(ctx, tx, SucceedRequest{
+				WorkspaceID:                 run.WorkspaceID,
+				RunID:                       run.RunID,
+				ExpectedStatus:              StatusRunning,
+				ExpectedTeamRunGeneration:   run.Generation,
+				ExpectedExecutionLeaseEpoch: run.ExecutionLeaseEpoch,
+				ExpectedResumeGeneration:    run.ResumeGeneration,
+				ExecutorID:                  executorID,
+				IdempotencyKey:              executorTerminalKey(task.ID, StatusSucceeded),
+				Actor:                       executorID,
+				Source:                      consumerSource,
+				OccurredAt:                  e.now(),
+			})
+			if err != nil {
+				return fmt.Errorf("succeed TeamRun in terminal transaction: %w", err)
+			}
+			return nil
+		},
+		memberBreakdown...,
 	); err != nil {
 		return TeamRun{}, err
-	}
-	tx, err := e.Transactions.Begin(ctx)
-	if err != nil {
-		return TeamRun{}, fmt.Errorf("begin team run success: %w", err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-	succeeded, err := e.Runs.SucceedTx(ctx, tx, SucceedRequest{
-		WorkspaceID:                 run.WorkspaceID,
-		RunID:                       run.RunID,
-		ExpectedStatus:              StatusRunning,
-		ExpectedTeamRunGeneration:   run.Generation,
-		ExpectedExecutionLeaseEpoch: run.ExecutionLeaseEpoch,
-		ExpectedResumeGeneration:    run.ResumeGeneration,
-		ExecutorID:                  executorID,
-		IdempotencyKey:              executorTerminalKey(task.ID, StatusSucceeded),
-		Actor:                       executorID,
-		Source:                      consumerSource,
-		OccurredAt:                  e.now(),
-	})
-	if err != nil {
-		return TeamRun{}, fmt.Errorf("succeed team run: %w", err)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return TeamRun{}, fmt.Errorf("commit team run success: %w", err)
 	}
 	return succeeded, nil
 }
@@ -392,37 +391,35 @@ func (e *Executor) failRunning(
 		classified.Code != ErrorCodeCancelled {
 		code = classified.Code
 	}
-	if err := e.commitFrozenNormalTerminal(
+	var failed TeamRun
+	if err := e.commitFrozenNormalTerminalWithMutation(
 		ctx, run, "failed", string(code), usage, usageCoverage,
-		usageComplete, usageIncompleteReason, memberBreakdown...,
+		usageComplete, usageIncompleteReason,
+		func(ctx context.Context, tx pgx.Tx) error {
+			var err error
+			failed, err = e.Runs.FailTx(ctx, tx, FailRequest{
+				WorkspaceID:                 run.WorkspaceID,
+				RunID:                       run.RunID,
+				ExpectedStatus:              StatusRunning,
+				ExpectedTeamRunGeneration:   run.Generation,
+				ExpectedExecutionLeaseEpoch: run.ExecutionLeaseEpoch,
+				ExpectedResumeGeneration:    run.ResumeGeneration,
+				ExecutorID:                  executorID,
+				ErrorCode:                   code,
+				Cause:                       runErr,
+				IdempotencyKey:              executorTerminalKey(task.ID, StatusFailed),
+				Actor:                       executorID,
+				Source:                      consumerSource,
+				OccurredAt:                  e.now(),
+			})
+			if err != nil {
+				return fmt.Errorf("fail TeamRun in terminal transaction: %w", err)
+			}
+			return nil
+		},
+		memberBreakdown...,
 	); err != nil {
 		return TeamRun{}, err
-	}
-	tx, err := e.Transactions.Begin(ctx)
-	if err != nil {
-		return TeamRun{}, fmt.Errorf("begin team run failure: %w", err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-	failed, err := e.Runs.FailTx(ctx, tx, FailRequest{
-		WorkspaceID:                 run.WorkspaceID,
-		RunID:                       run.RunID,
-		ExpectedStatus:              StatusRunning,
-		ExpectedTeamRunGeneration:   run.Generation,
-		ExpectedExecutionLeaseEpoch: run.ExecutionLeaseEpoch,
-		ExpectedResumeGeneration:    run.ResumeGeneration,
-		ExecutorID:                  executorID,
-		ErrorCode:                   code,
-		Cause:                       runErr,
-		IdempotencyKey:              executorTerminalKey(task.ID, StatusFailed),
-		Actor:                       executorID,
-		Source:                      consumerSource,
-		OccurredAt:                  e.now(),
-	})
-	if err != nil {
-		return TeamRun{}, fmt.Errorf("fail team run: %w", err)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return TeamRun{}, fmt.Errorf("commit team run failure: %w", err)
 	}
 	return failed, nil
 }

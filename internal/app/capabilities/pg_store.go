@@ -243,25 +243,6 @@ func (s *PGStore) claimInvocation(ctx context.Context, invocation Invocation, de
 		return Invocation{}, false, err
 	}
 	taskID := "cap-task-" + uuid.NewString()
-	var quotaMaxSteps, quotaMaxActive int
-	if err := tx.QueryRow(ctx, `SELECT max_steps_per_invocation,max_active_invocations FROM weave_capability_quotas WHERE workspace_id=$1`, invocation.WorkspaceID).Scan(&quotaMaxSteps, &quotaMaxActive); errors.Is(err, pgx.ErrNoRows) {
-		quotaMaxSteps, quotaMaxActive = 100, 20
-	} else if err != nil {
-		return Invocation{}, false, err
-	}
-	if invocation.MaxSteps <= 0 || invocation.MaxSteps > quotaMaxSteps {
-		invocation.MaxSteps = quotaMaxSteps
-	}
-	var active int
-	if err := tx.QueryRow(ctx, `SELECT count(*) FROM weave_capability_invocations i JOIN weave_task_queue q
-	 ON q.workspace_id=i.workspace_id AND q.id=i.task_id AND q.capability_invocation_id=i.invocation_id
-	 WHERE i.workspace_id=$1 AND (q.status IN ('queued','running','cancel_requested') OR (q.status='completed' AND i.status='waiting') OR (q.status='failed' AND q.worker_id IS NOT NULL))
-	 AND NOT (i.application_id=$2 AND i.request_id=$3)`, invocation.WorkspaceID, invocation.ApplicationID, invocation.RequestID).Scan(&active); err != nil {
-		return Invocation{}, false, err
-	}
-	if active >= quotaMaxActive {
-		return Invocation{}, false, ErrQuotaExceeded
-	}
 	if invocation.CredentialID != "" {
 		if invocation.RunKind != "published" || debug != nil {
 			return Invocation{}, false, ErrAccessDenied
@@ -281,6 +262,49 @@ func (s *PGStore) claimInvocation(ctx context.Context, invocation Invocation, de
 		return Invocation{}, false, execution.ErrSubjectMismatch
 	}
 	invocation.ActorUserID = subject.UserID
+	requestLock := invocationLockKey("request", invocation.WorkspaceID, invocation.ApplicationID, invocation.RequestID)
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, requestLock); err != nil {
+		return Invocation{}, false, fmt.Errorf("lock capability request identity: %w", err)
+	}
+	invocationLock := invocationLockKey("invocation", invocation.WorkspaceID, invocation.ApplicationID, invocation.InvocationID)
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, invocationLock); err != nil {
+		return Invocation{}, false, fmt.Errorf("lock capability invocation identity: %w", err)
+	}
+	var workflowRequestExists, workflowInvocationExists bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM weave_capability_workflow_invocations
+	 WHERE workspace_id=$1 AND application_id=$2 AND request_id=$3),
+	 EXISTS(SELECT 1 FROM weave_capability_workflow_invocations WHERE workspace_id=$1 AND application_id=$2 AND invocation_id=$4)`,
+		invocation.WorkspaceID, invocation.ApplicationID, invocation.RequestID, invocation.InvocationID).Scan(&workflowRequestExists, &workflowInvocationExists); err != nil {
+		return Invocation{}, false, err
+	}
+	if workflowRequestExists {
+		return Invocation{}, false, ErrIdempotencyConflict
+	}
+	if workflowInvocationExists {
+		return Invocation{}, false, ErrInvocationIdentityConflict
+	}
+	var existingRequest bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM weave_capability_invocations
+	 WHERE workspace_id=$1 AND application_id=$2 AND request_id=$3)`,
+		invocation.WorkspaceID, invocation.ApplicationID, invocation.RequestID).Scan(&existingRequest); err != nil {
+		return Invocation{}, false, err
+	}
+	if !existingRequest {
+		quota, err := lockWorkspaceCapabilityQuota(ctx, tx, invocation.WorkspaceID)
+		if err != nil {
+			return Invocation{}, false, err
+		}
+		if invocation.MaxSteps <= 0 || invocation.MaxSteps > quota.MaxStepsPerInvocation {
+			invocation.MaxSteps = quota.MaxStepsPerInvocation
+		}
+		active, err := countActiveCapabilityInvocations(ctx, tx, invocation.WorkspaceID, invocation.ApplicationID, invocation.RequestID)
+		if err != nil {
+			return Invocation{}, false, err
+		}
+		if active >= quota.MaxActiveInvocations {
+			return Invocation{}, false, ErrQuotaExceeded
+		}
+	}
 	result, err := tx.Exec(ctx, `
 		INSERT INTO weave_capability_invocations (
 			workspace_id, application_id, request_id, invocation_id,

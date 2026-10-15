@@ -23,6 +23,9 @@ type NormalTerminalCommit struct {
 	// BeforeLock binds a member result and its parent fence to this same
 	// terminal transaction. It runs before the member terminal locks.
 	BeforeLock func(context.Context, pgx.Tx) error
+	// BeforeCommit lets the owning kernel persist its corresponding TeamRun
+	// transition in the same transaction as the root attempt terminal facts.
+	BeforeCommit func(context.Context, pgx.Tx) error
 }
 
 type NormalTerminalCoordinator interface {
@@ -403,6 +406,11 @@ func commitNormalTerminalPGWithOutcome(
 			TerminalMarkerPersistenceVerify,
 			fmt.Errorf("normal terminal durable verification mismatch"),
 		)
+	}
+	if commit.BeforeCommit != nil {
+		if err := commit.BeforeCommit(ctx, tx); err != nil {
+			return fail(TerminalMarkerPersistenceCommit, err)
+		}
 	}
 
 	if err := runNormalTerminalStageHook(
