@@ -112,6 +112,8 @@ a.button { color: inherit; text-decoration: none; }
 .main { overflow: auto; scrollbar-gutter: stable; }
 .page { max-width: 1120px; margin: 0 auto; padding: 24px 24px 48px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
 .page__header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.page__actions { display: flex; align-items: center; gap: 8px; }
+.file-choice { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 
 .empty { display: grid; justify-items: start; gap: 8px; padding: 32px; border: 1px dashed var(--border-strong); border-radius: var(--radius-lg); }
 

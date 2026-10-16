@@ -48,6 +48,9 @@ type developmentTeamCreated struct {
 	TeamID   string `json:"team_id"`
 	Name     string `json:"name"`
 	Revision int64  `json:"revision"`
+	// Adjustments says, for an imported team, what could not be carried over
+	// as it was. A repeated request does not repeat them.
+	Adjustments []string `json:"adjustments,omitempty"`
 }
 
 // handleCreateDevelopmentTeam creates a starter team once per request id. A
@@ -79,6 +82,15 @@ func (s *Server) handleCreateDevelopmentTeam(c echo.Context) error {
 	if kind != "business" && kind != "code" {
 		return workflowError(c, http.StatusUnprocessableEntity, "team_kind_unsupported", "团队类型只能是业务团队（business）或代码团队（code）")
 	}
+	return s.createDevelopmentTeamOnce(c, requestID, name, objective, kind, func() (string, error) {
+		return s.createStarterTeam(c, requestID.String(), name, objective, kind)
+	}, nil)
+}
+
+// createDevelopmentTeamOnce runs create at most once per request id and
+// answers with the team it made. kind tells requests apart beyond name and
+// objective: the team type, or the exact package an import was made from.
+func (s *Server) createDevelopmentTeamOnce(c echo.Context, requestID uuid.UUID, name, objective, kind string, create func() (string, error), adjustments func() []string) error {
 	sum := sha256.Sum256([]byte(name + "\x00" + objective + "\x00" + kind))
 	digest := hex.EncodeToString(sum[:])
 
@@ -100,7 +112,7 @@ func (s *Server) handleCreateDevelopmentTeam(c echo.Context) error {
 	}
 	status := http.StatusOK
 	if teamID == "" {
-		if teamID, err = s.createStarterTeam(c, requestID.String(), name, objective, kind); err != nil {
+		if teamID, err = create(); err != nil {
 			var failure *echo.HTTPError
 			if errors.As(err, &failure) {
 				return err
@@ -113,6 +125,9 @@ func (s *Server) handleCreateDevelopmentTeam(c echo.Context) error {
 		status = http.StatusCreated
 	}
 	created := developmentTeamCreated{TeamID: teamID}
+	if status == http.StatusCreated && adjustments != nil {
+		created.Adjustments = adjustments()
+	}
 	if err = tx.QueryRow(ctx, `SELECT revision,document->>'name' FROM weave_team_development_drafts WHERE workspace_id=$1 AND team_id=$2`, ws, teamID).Scan(&created.Revision, &created.Name); err != nil {
 		return err
 	}

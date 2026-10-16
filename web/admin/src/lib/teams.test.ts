@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { allowRequiredHandoffKinds, capabilityName, capabilityNote, defaultCapabilityBinding, describeCapability, memberProblems, nodeReadinessIssues, parseOutputSchema, requiredHandoffKinds, serverIssues, trialActions, workflowCapabilityIds, type BusinessCatalog, type DevelopmentDocument, type DevelopmentMember, type DevelopmentWorkflow } from './teams'
+import { allowRequiredHandoffKinds, capabilityName, capabilityNote, defaultCapabilityBinding, describeCapability, memberProblems, readTeamPackage, teamPackageFileName, nodeReadinessIssues, parseOutputSchema, requiredHandoffKinds, serverIssues, trialActions, workflowCapabilityIds, type BusinessCatalog, type DevelopmentDocument, type DevelopmentMember, type DevelopmentWorkflow } from './teams'
 
 const member = (name: string, engine: string, runtime = '', enabled = true): DevelopmentMember => ({
   id: name,
@@ -151,5 +151,18 @@ describe('what the server found in the saved draft', () => {
       '流程“跟进流程”的步骤“核对”：步骤引用了已移出的成员，请重新选择执行者',
     ])
     expect(serverIssues(undefined)).toEqual([])
+  })
+})
+
+describe('team package files', () => {
+  it('accepts an exported team and refuses other files and versions', () => {
+    expect(readTeamPackage('{"format":"weave-team-package","version":1,"team":{"name":"团队","objective":"目标"}}').team.name).toBe('团队')
+    expect(() => readTeamPackage('not json')).toThrow('这个文件不是团队导出文件')
+    expect(() => readTeamPackage('{"format":"weave-team-package","version":2,"team":{"name":"团队"}}')).toThrow('这个团队导出文件的版本当前不支持')
+  })
+
+  it('names the file after the team without characters a file system refuses', () => {
+    expect(teamPackageFileName('合同/复核:团队')).toBe('合同_复核_团队.weave-team.json')
+    expect(teamPackageFileName('  ')).toBe('团队.weave-team.json')
   })
 })

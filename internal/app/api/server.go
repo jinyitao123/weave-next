@@ -408,6 +408,8 @@ func (s *Server) registerRoutes() {
 	auth.PUT("/teams/:id/development", s.handleSaveTeamDevelopment, RequireAnyRole("developer", "admin", "owner"), orgScope)
 	auth.POST("/teams/:id/development/operations", s.handleApplyTeamDevelopmentOperations, RequireAnyRole("developer", "admin", "owner"), orgScope)
 	auth.POST("/development/teams", s.handleCreateDevelopmentTeam, RequireAnyRole("developer", "admin", "owner"), orgScope)
+	auth.POST("/development/teams/import", s.handleImportDevelopmentTeam, RequireAnyRole("developer", "admin", "owner"), orgScope)
+	auth.GET("/teams/:id/development/export", s.handleExportTeamDevelopment, RequireAnyRole("developer", "admin", "owner"), orgScope)
 	auth.GET("/development/operations", s.handleListDevelopmentOperations, RequireAnyRole("developer", "admin", "owner"), orgScope)
 	auth.GET("/development/operations/:topic", s.handleGetDevelopmentOperationTopic, RequireAnyRole("developer", "admin", "owner"), orgScope)
 	auth.GET("/development/workspace-operations", s.handleListWorkspaceOperations, orgScope)
