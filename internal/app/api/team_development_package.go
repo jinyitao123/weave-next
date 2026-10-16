@@ -202,12 +202,12 @@ func checkTeamPackage(pkg teamPackage) string {
 	if name == "" || utf8.RuneCountInString(name) > 80 || objective == "" || utf8.RuneCountInString(objective) > 2000 {
 		return "团队包须有团队名称（80 字以内）和目标（2000 字以内）"
 	}
-	keys, leads, workers := map[string]bool{}, 0, 0
+	keys, leads, workers := map[string]string{}, 0, 0
 	for _, member := range pkg.Members {
-		if member.Key == "" || keys[member.Key] {
+		if member.Key == "" || keys[member.Key] != "" {
 			return "团队包里的成员标识为空或重复"
 		}
-		keys[member.Key] = true
+		keys[member.Key] = member.Key
 		switch member.Configuration.Role {
 		case "avatar":
 			leads++
@@ -219,6 +219,24 @@ func checkTeamPackage(pkg teamPackage) string {
 	}
 	if leads != 1 || workers < 1 || len(pkg.Members) > 32 || len(pkg.Workflows) > 20 {
 		return "团队包须有一位负责人和至少一位成员（合计最多 32 位），流程最多 20 条"
+	}
+	// Validate the complete draft before the starter path persists any rows.
+	doc := developmentDocument{Name: name, Objective: objective, Audience: []string{}}
+	for _, member := range pkg.Members {
+		doc.Members = append(doc.Members, developmentMember{ID: uuid.NewString(), Configuration: member.Configuration, Relationship: member.Relationship})
+	}
+	for _, flow := range pkg.Workflows {
+		if _, err := remapGraphMembers(flow.Graph, keys, true); err != nil {
+			return "团队包流程无效，或流程步骤的执行成员不在团队包里"
+		}
+		trigger := flow.Trigger
+		if len(trigger) == 0 {
+			trigger = json.RawMessage(`{}`)
+		}
+		doc.Workflows = append(doc.Workflows, developmentWorkflow{ID: uuid.NewString(), Name: flow.Name, Description: flow.Description, Graph: flow.Graph, Trigger: trigger})
+	}
+	if err := validateDevelopmentDocument(doc); err != nil {
+		return "团队包的成员名称或流程定义无效"
 	}
 	return ""
 }

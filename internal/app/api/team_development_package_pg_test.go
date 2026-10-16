@@ -161,6 +161,24 @@ func TestTeamPackageCarriesATeamToAnotherWorkspaceRealPG(t *testing.T) {
 		t.Fatal("the imported flow does not name the imported member")
 	}
 
+	// Reject invalid packages before creating any starter team or registry rows.
+	var teamsBefore, teamsAfter int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM weave_teams WHERE workspace_id='target'`).Scan(&teamsBefore); err != nil {
+		t.Fatal(err)
+	}
+	invalid := pkg
+	invalid.Workflows = append([]teamPackageFlow(nil), pkg.Workflows...)
+	invalid.Workflows[0].Graph = json.RawMessage(strings.ReplaceAll(string(pkg.Workflows[0].Graph), `"agent_id":"`+exported.Key+`"`, `"agent_id":"outside-package"`))
+	if status, raw = call("target", "dev-target", "POST", map[string]any{"request_id": uuid.NewString(), "package": invalid}, server.handleImportDevelopmentTeam, ""); status != http.StatusUnprocessableEntity {
+		t.Fatalf("invalid graph: %d %s", status, raw)
+	}
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM weave_teams WHERE workspace_id='target'`).Scan(&teamsAfter); err != nil {
+		t.Fatal(err)
+	}
+	if teamsAfter != teamsBefore {
+		t.Fatalf("refused package created a team: before=%d after=%d", teamsBefore, teamsAfter)
+	}
+
 	// The same request again is the same team; a package without a lead is refused.
 	status, raw = call("target", "dev-target", "POST", map[string]any{"request_id": requestID, "package": pkg}, server.handleImportDevelopmentTeam, "")
 	var replay developmentTeamCreated

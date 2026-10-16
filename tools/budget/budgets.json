@@ -1333,15 +1333,15 @@
       "reason": "Let a team be exported and imported, as the owner asked on 2026-10-15. Export writes the saved draft as a package that names members by package keys and MCP services and library skills by name, and carries library skill text; it has no secrets, runs or publish state. Import makes a new unpublished draft through the shared create path, once per request id, never over an existing team; models, nodes, MCP services and skills are looked up by name in the target workspace, and what is missing is dropped or carried as a member skill and listed. The console team pages and the desktop assistant use the two endpoints. No new packages, dependencies, tables or runtime loops.",
       "record": "README.zh-CN.md#团队导出与导入",
       "growth": {
-        "lines": 517,
-        "production_lines": 342
+        "lines": 553,
+        "production_lines": 360
       },
       "deletion_trigger": "Remove the package export and import if teams are copied between workspaces by another recorded mechanism, or if a recorded decision drops moving teams between workspaces. Lower the measured budgets in that change.",
       "app": {
         "previous_lines": 92738,
         "previous_production_lines": 62498,
-        "lines_added": 517,
-        "production_lines_added": 342
+        "lines_added": 553,
+        "production_lines_added": 360
       }
     }
   ],
@@ -1406,8 +1406,8 @@
     "allowed_dependencies": []
   },
   "app": {
-    "lines": 93255,
-    "production_lines": 62840,
+    "lines": 93291,
+    "production_lines": 62858,
     "packages": 25,
     "external_dependencies": 6,
     "allowed_dependencies": [
