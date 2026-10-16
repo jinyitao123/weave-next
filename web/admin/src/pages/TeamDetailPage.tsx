@@ -11,7 +11,7 @@ import type { Graph } from '../lib/graph'
 import { WorkflowEditor } from '../components/workflow/WorkflowEditor'
 import { listNodes, type RuntimeNode } from '../lib/nodes'
 import { useLeaveGuard } from '../lib/router'
-import { serverIssues, allowRequiredHandoffKinds, archiveTeam, capabilityName, loadBusinessCatalog, memberConfigIssues, nodeReadinessIssues, pinMembers, publishDevelopment, readDevelopment, saveDevelopment, withStarterWorkflow, workflowCapabilityIds, type BusinessCatalog, type DevelopmentDocument, type DevelopmentDraft, type DevelopmentMember } from '../lib/teams'
+import { serverIssues, allowRequiredHandoffKinds, archiveTeam, capabilityName, exportTeam, teamPackageFileName, loadBusinessCatalog, memberConfigIssues, nodeReadinessIssues, pinMembers, publishDevelopment, readDevelopment, saveDevelopment, withStarterWorkflow, workflowCapabilityIds, type BusinessCatalog, type DevelopmentDocument, type DevelopmentDraft, type DevelopmentMember } from '../lib/teams'
 
 export const teamTabs = [['profile', '资料'], ['members', '成员'], ['workflow', '流程'], ['trial', '试跑'], ['publish', '发布'], ['access', '接入']] as const
 export type TeamTab = typeof teamTabs[number][0]
@@ -89,6 +89,16 @@ export function TeamDetailPage({ teamId, tab = 'profile', navigate }: { teamId: 
     }
   }
   const save = () => run(() => saveDevelopment(teamId, draft!.revision, document!))
+  // The package is the saved draft, so unsaved edits are not in it.
+  const exportPackage = () => run(async () => {
+    const pkg = await exportTeam(teamId)
+    const url = URL.createObjectURL(new Blob([JSON.stringify(pkg, null, 2)], { type: 'application/json' }))
+    const link = window.document.createElement('a')
+    link.href = url
+    link.download = teamPackageFileName(pkg.team.name)
+    link.click()
+    URL.revokeObjectURL(url)
+  })
   const discard = () => { if (draft) { setDocument(withStarterWorkflow(draft.document)); setError('') } }
   // Every edit keeps two things in step with it: a member placed on a step is
   // allowed the handoff kind that step needs, and a flow whose members carry
@@ -147,7 +157,10 @@ export function TeamDetailPage({ teamId, tab = 'profile', navigate }: { teamId: 
       </div>
       {tab === 'profile' ? <>
         <TeamProfile document={document} onChange={editTeam} />
-        <div className="toolbar"><button type="button" className="button button--danger" disabled={busy} onClick={() => setArchiving(true)}>归档团队</button></div>
+        <div className="toolbar">
+          <button type="button" className="button" disabled={busy || dirty} title={dirty ? '请先保存草稿' : undefined} onClick={() => void exportPackage()}>导出团队</button>
+          <button type="button" className="button button--danger" disabled={busy} onClick={() => setArchiving(true)}>归档团队</button>
+        </div>
       </> : null}
       {tab === 'members' ? <MemberEditor document={document} nodes={nodes} accepting={accepting} catalog={catalog} onConfig={editMember} onRelationship={editRelationship} onAdd={addMember} onRemove={removeMember} onCatalog={setCatalog} /> : null}
       {tab === 'workflow' ? workflow ? <><FlowProfile name={workflow.name} description={workflow.description} onChange={editFlow} /><WorkflowEditor key={workflow.id} graph={workflow.graph_definition} members={document.members} actions={actions} onChange={editGraph} /></> : <p className="muted">还没有流程。先在“成员”页添加一位成员。</p> : null}
