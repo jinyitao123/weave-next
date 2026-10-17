@@ -1,0 +1,10 @@
+# The cua-driver release Weave serves to personal devices (weave-workbench
+# decision 009). The image carries exactly these files; fetch-cua-driver.sh
+# refuses any whose SHA-256 differs. Digests are from the release's SHA256SUMS
+# (trycua/cua tag cua-driver-rs-v0.32.0, published 2026-10-01) and from
+# LICENSE.md at that tag. MIT, Copyright (c) 2025 Cua AI, Inc.
+version 0.32.0
+8ea16a3f533c056c0aaeb86e6dbf7f792c9cf43532f24595427d7ccde6921a3d  cua-driver-rs-0.32.0-darwin-universal.tar.gz
+6d70b45c8c901db773010dd720c8bb9d58c59bb301e9891c58ca1d3860e75652  cua-driver-rs-0.32.0-windows-x86_64.zip
+51f5723a6734afb7125c92fe05835bb815f7c37b75e2332dd48ae184ddb0a9f8  cua-driver-rs-0.32.0-windows-arm64.zip
+c0779290c1d4783169aa3dbfb55feb505e563ef8a004bbf55298ceffcfbda8d9  LICENSE.md

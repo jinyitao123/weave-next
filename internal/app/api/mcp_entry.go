@@ -51,6 +51,8 @@ type mcpEntryCall struct {
 	ctx    context.Context
 	auth   string
 	remote string
+	host   string
+	secure bool
 	tenant string
 	user   string
 	role   string
@@ -102,6 +104,11 @@ func (call *mcpEntryCall) route(method, path string, body, into any) *mcpEntryEr
 	request.Header.Set(echo.HeaderAuthorization, call.auth)
 	request.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
 	request.RemoteAddr = call.remote
+	// Routes that hand out commands name this server by the address the caller used.
+	request.Host = call.host
+	if call.secure {
+		request.Header.Set("X-Forwarded-Proto", "https")
+	}
 	capture := &mcpCapture{header: http.Header{}, status: http.StatusOK}
 	call.server.Echo.ServeHTTP(capture, request)
 	if capture.status >= 400 {
@@ -638,6 +645,15 @@ var mcpEntryTools = []mcpEntryTool{
 			}
 			return map[string]any{"stop_requested": true}, nil
 		}},
+	{Name: "device_enroll", Description: "为使用者本人添加一台 Mac 或 Windows 设备：返回一次性注册码（10 分钟内有效，只能用一次）和在那台机器上运行的一条注册命令。只接受本人账号登录的会话。把命令交给使用者，或在你已能到达那台机器时替使用者运行；Mac 上最后要使用者本人在系统设置中打开“辅助功能”和“屏幕录制”。",
+		Schema: mcpSchema(``),
+		Run: func(call *mcpEntryCall, args map[string]any) (any, *mcpEntryError) {
+			var enrollment map[string]any
+			if failure := call.route(http.MethodPost, "/v1/devices/enrollments", map[string]any{}, &enrollment); failure != nil {
+				return nil, failure
+			}
+			return enrollment, nil
+		}},
 }
 
 func mcpTrial(call *mcpEntryCall, args map[string]any) (any, *mcpEntryError) {
@@ -735,6 +751,7 @@ func mcpSubmit(call *mcpEntryCall, args map[string]any) (any, *mcpEntryError) {
 func (s *Server) entryCall(c echo.Context) *mcpEntryCall {
 	return &mcpEntryCall{
 		server: s, ctx: c.Request().Context(), auth: c.Request().Header.Get(echo.HeaderAuthorization), remote: c.Request().RemoteAddr,
+		host: c.Request().Host, secure: adminRequestSecure(c.Request()),
 		tenant: getTenant(c), user: getUserID(c), role: firstRole(c), reader: adminRunReader(c),
 	}
 }

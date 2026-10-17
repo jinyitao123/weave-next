@@ -121,6 +121,7 @@ type Server struct {
 	OwnerMem                  OwnerMemoryStore       // nil if PG pool unavailable
 	sessionExecutionWorkers   *sessionExecutionWorkers
 	mcpLimiter                mcpRateLimiter
+	deviceEnrollLimiter       mcpRateLimiter
 	teamRunWorkers            *teamrun.Workers
 	teamRunCancel             *teamrun.CancelService
 	teamRunStageRetry         *teamrun.StageRetryService
@@ -312,6 +313,9 @@ func (s *Server) registerRoutes() {
 	s.Echo.GET("/install.sh", s.handleInstallScript)
 	s.Echo.GET("/install.ps1", s.handleInstallScript)
 	s.Echo.GET("/v1/downloads/runtime/:os/:arch", s.handleDownloadRuntime)
+	s.Echo.GET("/v1/downloads/cua-driver/:os/:arch", s.handleDownloadCuaDriver)
+	// The one-time enrollment code is the credential of this exchange.
+	s.Echo.POST("/v1/runtime/device-enrollments", s.handleDeviceEnrollmentExchange)
 	s.Echo.POST("/v1/auth/external/exchange", s.handleExternalIdentityExchange)
 	s.Echo.Any("/v1/mcp-boundary/:tenant/:agent/:idx", s.handleMCPBoundary)
 	s.Echo.Any("/v1/mcp-gateway/:workspace/:agent/:serverID", s.handleMCPGateway)
@@ -329,6 +333,7 @@ func (s *Server) registerRoutes() {
 	auth.POST("/integrations/feishu/link-code", s.handleFeishuLinkCode)
 	auth.DELETE("/integrations/feishu/binding", s.handleFeishuUnlink)
 	auth.POST("/mcp", s.handleMCPEntry)
+	auth.POST("/devices/enrollments", s.handleCreateDeviceEnrollment)
 	s.registerMCPSignIn(auth)
 	adminScope := RequireScope("admin")
 	agentsScope := RequireScope("agents")

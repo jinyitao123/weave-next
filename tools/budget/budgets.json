@@ -1343,6 +1343,28 @@
         "lines_added": 553,
         "production_lines_added": 360
       }
+    },
+    {
+      "date": "2026-10-16",
+      "reason": "Let a person add their own Mac or Windows PC with one command, as the owner asked on 2026-10-16 (weave-workbench decision 009 and its supplement). An account session issues a one-time code; the install scripts download the node and a SHA-256-pinned cua-driver release from this server, trade the code for a runtime token in one transaction that binds the new device runtime to that account, and start both at login. Keys and API-key console sessions cannot issue codes; the code exchange is rate limited per address. A device runtime detects no engines, so no team work reaches it. The MCP entry gains device_enroll, and routes it calls now see the caller's address. No new packages, dependencies, queues or runtime loops; one table and one column.",
+      "record": "README.zh-CN.md#本人设备",
+      "growth": {
+        "lines": 885,
+        "production_lines": 468
+      },
+      "deletion_trigger": "Remove device enrollment, the device download and the device flag if a recorded decision withdraws decision 009, or when devices enroll through another recorded mechanism. Lower the measured budgets in that change.",
+      "kernel": {
+        "previous_lines": 108084,
+        "previous_production_lines": 84691,
+        "lines_added": 396,
+        "production_lines_added": 231
+      },
+      "app": {
+        "previous_lines": 93291,
+        "previous_production_lines": 62858,
+        "lines_added": 489,
+        "production_lines_added": 237
+      }
     }
   ],
   "migration_targets": {
@@ -1386,8 +1408,8 @@
     ]
   },
   "kernel": {
-    "lines": 108084,
-    "production_lines": 84691,
+    "lines": 108480,
+    "production_lines": 84922,
     "packages": 48,
     "external_dependencies": 5,
     "allowed_dependencies": [
@@ -1406,8 +1428,8 @@
     "allowed_dependencies": []
   },
   "app": {
-    "lines": 93291,
-    "production_lines": 62858,
+    "lines": 93780,
+    "production_lines": 63095,
     "packages": 25,
     "external_dependencies": 6,
     "allowed_dependencies": [

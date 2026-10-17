@@ -53,6 +53,11 @@ type daemonConfig struct {
 	heartbeatInterval  time.Duration
 	minBackoff         time.Duration
 	maxBackoff         time.Duration
+	// device runs this process as the person's own device (weave-workbench
+	// decision 009): it detects no engines, so no team work is routed to it,
+	// and drives the machine through cuaDriver.
+	device    bool
+	cuaDriver string
 }
 
 type service struct {
@@ -106,8 +111,18 @@ func parseFlags(args []string) (daemonConfig, error) {
 	flags.StringVar(&cfg.token, "runtime-token", "", "runtime bearer token (or WEAVE_RUNTIME_TOKEN)")
 	flags.StringVar(&cfg.workspacesRoot, "workspaces-root", filepath.Join(home, ".weave", "runtime-workspaces"), "runtime workspace root")
 	flags.IntVar(&cfg.concurrency, "concurrency", defaultConcurrency, "number of concurrent task claims")
+	flags.BoolVar(&cfg.device, "device", false, "run as the person's own device instead of a team runtime")
+	flags.StringVar(&cfg.cuaDriver, "cua-driver", "", "cua-driver command-line path (device mode)")
 	if err := flags.Parse(args); err != nil {
 		return daemonConfig{}, err
+	}
+	if cfg.device {
+		workspaces := false
+		flags.Visit(func(f *flag.Flag) { workspaces = workspaces || f.Name == "workspaces-root" })
+		if !workspaces {
+			cfg.workspacesRoot = filepath.Join(home, ".weave", "device-workspaces")
+		}
+		cfg.detectedEngines, cfg.engineCapabilities = []string{}, []runtimeprotocol.EngineCapability{}
 	}
 	if cfg.server == "" {
 		return daemonConfig{}, errors.New("runtime: --server is required")

@@ -191,3 +191,14 @@ make compose-check
 每个调用方每分钟可调用 120 次；其中会让团队开始工作的三个工具（试跑、交接工作、发布）另计，每分钟 10 次。调用方指客户端的会话；直接使用密钥时指这把密钥。超出时工具返回 `rate_limited` 并说明多少秒后重试。计数在单个服务进程内，多进程部署各自计数。
 
 管理端“集成”页列出已登录的 MCP 客户端并可收回：每个人看到并收回自己的，管理员看到并收回本工作区全部的。对应接口为 `GET /v1/mcp/sessions` 与 `DELETE /v1/mcp/sessions/:id`。服务端只保存令牌摘要；已结束的会话记录保留，作为谁从哪个客户端登录、由谁收回的记录。
+
+## 本人设备
+
+本人可以把自己的 Mac 或 Windows 电脑接入 Weave，供本人登录的智能体查看和操作（weave-workbench 决策 009，契约见 `weave-workbench/contracts/v1/设备控制契约.md`）。设备就是一个绑定到本人账号的节点：只上报设备能力，不检测编码引擎，团队工作不会派到这里。
+
+- **取得注册码。** 本人账号会话调用 `POST /v1/devices/enrollments`，或在 MCP 入口调用 `device_enroll`，得到一次性注册码（10 分钟内有效，只能用一次）和 Mac、Windows 上各一条注册命令。部署登录密钥、API Key 和以 API Key 登录的管理端会话都返回 `account_session_required`。服务端只保存注册码摘要；用过的记录保留，作为谁在何时添加了哪台设备的记录。
+- **一条命令接入。** 注册命令与执行节点的 `install.sh`／`install.ps1` 是同一套脚本，带 `--device-code`／`-DeviceCode` 时：从本服务下载节点程序与固定版本的 cua-driver，逐个核对 `X-Weave-SHA256`，不一致就停止；先用注册码向 `POST /v1/runtime/device-enrollments` 换取节点令牌，换取失败时机器上什么都不留；再安装驱动并设开机自动运行（Mac 为本人的 LaunchAgent `com.weave.device`，即使经 ssh 运行也加载到本人的图形会话；Windows 为登录时启动的计划任务 `WeaveDevice`，cua-driver 自身的登录任务要一次管理员确认）。Mac 上最后要本人在系统设置中为 CuaDriver 打开“辅助功能”和“屏幕与系统录音”。在已接入的机器上重跑命令即为重新接入：同一账号沿用原设备、换发令牌，原令牌立即失效；属于其他账号的设备返回 `runtime_binding_mismatch`。
+- **换取令牌不需要登录**，注册码就是凭据：同一来源每分钟 10 次，失败时不说明注册码属于谁。
+- **驱动来源。** 镜像构建时 `scripts/fetch-cua-driver.sh` 按 `scripts/cua-driver.sha256` 取 cua-driver 的 macOS 与 Windows 发布包及许可证，任一校验不符即构建失败；`GET /v1/downloads/cua-driver/{os}/{arch}` 与 `/license/notice` 提供这些文件。cua-driver 为 MIT 许可，见 `THIRD_PARTY_NOTICES.md`。节点程序下载同样附 `X-Weave-SHA256`。
+
+经 MCP 入口转调的接口按客户端实际使用的地址生成命令，执行节点的安装命令也随之使用正确地址。设备上的控制会话与查看、操作、执行工具尚未实现。

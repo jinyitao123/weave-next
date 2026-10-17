@@ -24,3 +24,16 @@ checksum-verified Go module artifact.
 The package is locked as an exact development dependency in
 `console-v2/package-lock.json`. Its distributed Apache-2.0 license text does
 not include a package-specific NOTICE file.
+
+## cua-driver 0.32.0
+
+- Source: https://github.com/trycua/cua/releases/tag/cua-driver-rs-v0.32.0
+- Upstream repository: https://github.com/trycua/cua (`libs/cua-driver`)
+- Copyright: Copyright (c) 2025 Cua AI, Inc.
+- License: MIT License
+
+The server image carries the macOS and Windows release archives and the
+upstream `LICENSE.md`, each pinned by SHA-256 in `scripts/cua-driver.sha256`,
+and serves them to personal devices; the install scripts keep the license
+beside the installed driver. The optional `cua-perception` extension, which
+contains AGPL-3.0 components, is not distributed.
