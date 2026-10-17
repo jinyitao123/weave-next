@@ -91,7 +91,8 @@ func TestMCPEntryServesTeamToolsAsTheCallerRealPG(t *testing.T) {
 	}
 	_, listed := rpc("user", "admin", "tools/list", nil)
 	tools := list(listed["result"].(map[string]any)["tools"])
-	if len(tools) != 15 {
+	// 15 team tools and device_enroll.
+	if len(tools) != 16 {
 		t.Fatalf("tools = %d", len(tools))
 	}
 	for _, raw := range tools {
