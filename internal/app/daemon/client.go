@@ -42,8 +42,9 @@ func (c *runtimeClient) hello(
 	engines []string,
 	capabilities []runtimeprotocol.EngineCapability,
 	totalSlots int,
+	device *runtimeprotocol.DeviceFacts,
 ) error {
-	response, err := c.do(ctx, http.MethodPost, "/v1/runtime/hello", runtimeprotocol.HostHelloRequest{Versioned: runtimeprotocol.NewVersioned(), Engines: engines, EngineCapabilities: capabilities, TotalSlots: totalSlots})
+	response, err := c.do(ctx, http.MethodPost, "/v1/runtime/hello", runtimeprotocol.HostHelloRequest{Versioned: runtimeprotocol.NewVersioned(), Engines: engines, EngineCapabilities: capabilities, TotalSlots: totalSlots, Device: device})
 	if err != nil {
 		return err
 	}
