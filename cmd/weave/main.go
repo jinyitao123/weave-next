@@ -107,15 +107,6 @@ func main() {
 		}
 		return
 	}
-	// "device stop" ends the control session running on this machine.
-	if len(os.Args) > 2 && os.Args[1] == "device" && os.Args[2] == "stop" {
-		if err := daemon.StopDevice(); err != nil {
-			slog.Error("could not ask the device to stop", "error", err)
-			os.Exit(1)
-		}
-		_, _ = os.Stdout.WriteString("已请求结束这台机器上的控制会话。\n")
-		return
-	}
 
 	cfg, err := config.Load()
 	if err != nil {
@@ -429,6 +420,16 @@ func main() {
 }
 
 func dispatchEarlyCommand(args []string, stdout, stderr io.Writer) (bool, int) {
+	// The installed device node must be able to stop without server config;
+	// the generic CLI dispatcher otherwise rejects this command as unknown.
+	if len(args) == 2 && args[0] == "device" && args[1] == "stop" {
+		if err := daemon.StopDevice(); err != nil {
+			_, _ = io.WriteString(stderr, "{\"error\":\"device_stop_failed\"}\n")
+			return true, 1
+		}
+		_, _ = io.WriteString(stdout, "已请求结束这台机器上的控制会话。\n")
+		return true, 0
+	}
 	if len(args) > 0 && args[0] == "bootstrap" {
 		return true, runBootstrapCommand(args[1:], stdout, stderr)
 	}

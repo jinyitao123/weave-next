@@ -61,6 +61,10 @@ install_device() {
     arm64) ARCH=arm64 ;;
     *) echo "Unsupported architecture: $(uname -m)" >&2; exit 1 ;;
   esac
+  if [ "$DRY_RUN" -eq 1 ]; then
+    echo "Dry run: would install the Weave device node and cua-driver; no code was exchanged."
+    return 0
+  fi
   WEAVE_DIR="$HOME/.weave"
   BIN="$WEAVE_DIR/bin/weave-runtime"
   ENV_FILE="$WEAVE_DIR/device.env"
@@ -104,10 +108,6 @@ install_device() {
   [ -w "$APP_DIR" ] || { APP_DIR="$HOME/Applications"; mkdir -p "$APP_DIR"; }
   APP="$APP_DIR/CuaDriver.app"
   DRIVER="$APP/Contents/MacOS/cua-driver"
-  if [ "$DRY_RUN" -eq 1 ]; then
-    echo "Dry run: would install $APP and $BIN and load com.weave.device"
-    return 0
-  fi
   [ -x "$DRIVER" ] && "$DRIVER" stop >/dev/null 2>&1 || true
   rm -rf "$APP"
   ditto "$NEW_APP" "$APP"

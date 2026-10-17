@@ -99,7 +99,7 @@ var mcpDeviceTools = []mcpEntryTool{
 			return devices, nil
 		}},
 	{Name: "device_session_open", Description: "在一台设备上打开控制会话。reason 写清要做什么，会显示在被控机器上并记入审计。一台设备同一时间只有一个会话，已有会话时返回它；state 为 opening 时稍后用 device_session_read 查看，变为 ready 后才能操作。会话空闲 5 分钟或满 60 分钟自动结束。",
-		Schema: mcpSchema(`"device_id":{"type":"string"},"reason":{"type":"string"},`+mcpRequestProp, "device_id", "reason", "request_id"),
+		Schema: mcpSchema(`"device_id":{"type":"string"},"reason":{"type":"string","maxLength":1000},`+mcpRequestProp, "device_id", "reason", "request_id"),
 		Run: func(call *mcpEntryCall, args map[string]any) (any, *mcpEntryError) {
 			if failure := mcpRequire(args, "device_id", "reason", "request_id"); failure != nil {
 				return nil, failure

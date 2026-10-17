@@ -10,8 +10,10 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/labstack/echo/v4"
 
 	"github.com/jinyitao123/weave/internal/kernel/runtimeprotocol"
@@ -24,14 +26,16 @@ import (
 // operation is queued here, taken by the device with a long poll and answered.
 
 const (
-	deviceSessionIdle        = 5 * time.Minute
-	deviceSessionLimit       = 60 * time.Minute
-	deviceSessionUnreachable = 30 * time.Second
-	deviceOperationWait      = 60 * time.Second
-	deviceExecTimeoutMax     = 600
-	deviceNextWaitMax        = 25
-	deviceParamsLimit        = 1 << 20
-	devicePollInterval       = 200 * time.Millisecond
+	deviceSessionRequestLimit = 256
+	deviceSessionReasonLimit  = 1000
+	deviceSessionIdle         = 5 * time.Minute
+	deviceSessionLimit        = 60 * time.Minute
+	deviceSessionUnreachable  = 30 * time.Second
+	deviceOperationWait       = 60 * time.Second
+	deviceExecTimeoutMax      = 600
+	deviceNextWaitMax         = 25
+	deviceParamsLimit         = 1 << 20
+	devicePollInterval        = 200 * time.Millisecond
 )
 
 // deviceOperationLevels maps each operation to the level that allows it.
@@ -152,9 +156,10 @@ func (s *Server) activeDeviceSession(ctx context.Context, workspaceID, runtimeID
 }
 
 type deviceSessionPayload struct {
-	RequestID string `json:"request_id"`
-	Reason    string `json:"reason"`
-	OpenedBy  string `json:"opened_by"`
+	RequestID string            `json:"request_id"`
+	Reason    string            `json:"reason"`
+	OpenedBy  string            `json:"opened_by"`
+	Requests  map[string]string `json:"requests,omitempty"`
 }
 
 func (s *Server) handleOpenDeviceSession(c echo.Context) error {
@@ -169,26 +174,76 @@ func (s *Server) handleOpenDeviceSession(c echo.Context) error {
 		Reason    string `json:"reason"`
 		RequestID string `json:"request_id"`
 	}
-	if err := c.Bind(&request); err != nil || strings.TrimSpace(request.Reason) == "" || uuid.Validate(request.RequestID) != nil {
-		return deviceFail(c, http.StatusBadRequest, "invalid_arguments", "需要说明原因，并给出 UUID 形式的 request_id")
+	if err := c.Bind(&request); err != nil || strings.TrimSpace(request.Reason) == "" || utf8.RuneCountInString(strings.TrimSpace(request.Reason)) > deviceSessionReasonLimit || uuid.Validate(request.RequestID) != nil {
+		return deviceFail(c, http.StatusBadRequest, "invalid_arguments", "原因须为 1 至 1000 字，并给出 UUID 形式的 request_id")
 	}
 	ctx := c.Request().Context()
-	// The same request returns the same session, whatever became of it.
-	var existing string
+	openedBy := s.callerName(c)
+	tx, err := s.GetPool().Begin(ctx)
+	if err != nil {
+		return deviceFail(c, http.StatusInternalServerError, "failed", "会话登记失败")
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	// Serialize the request across devices, then admission to this device. Both
+	// locks and EnqueueTx belong to the same existing task-queue transaction.
+	for _, identity := range [][]string{
+		{"request", runtime.WorkspaceID, getUserID(c), request.RequestID},
+		{"device", runtime.WorkspaceID, runtime.ID},
+	} {
+		key, _ := json.Marshal(identity)
+		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended(current_schema() || $1,0))`, "device-session:"+string(key)); err != nil {
+			return deviceFail(c, http.StatusInternalServerError, "failed", "会话登记失败")
+		}
+	}
+	// Every acknowledged request keeps its device and reason binding, including
+	// requests that joined an already active session, even after that session ends.
+	var existing, existingRuntime string
 	var raw []byte
-	err := s.GetPool().QueryRow(ctx, `SELECT id, payload FROM weave_task_queue
-		WHERE workspace_id=$1 AND kind=$2 AND payload->>'request_id'=$3 AND actor_subject->>'user_id'=$4`,
-		runtime.WorkspaceID, taskqueue.KindDeviceSession, request.RequestID, getUserID(c)).Scan(&existing, &raw)
+	err = tx.QueryRow(ctx, `SELECT id, runtime_id, payload FROM weave_task_queue
+		WHERE workspace_id=$1 AND kind=$2 AND actor_subject->>'user_id'=$4
+		AND (payload->>'request_id'=$3 OR payload->'requests' ? $3)`,
+		runtime.WorkspaceID, taskqueue.KindDeviceSession, request.RequestID, getUserID(c)).Scan(&existing, &existingRuntime, &raw)
 	if err == nil {
 		var payload deviceSessionPayload
-		_ = json.Unmarshal(raw, &payload)
-		if payload.Reason != strings.TrimSpace(request.Reason) {
+		if err := json.Unmarshal(raw, &payload); err != nil {
+			return deviceFail(c, http.StatusInternalServerError, "failed", "会话读取失败")
+		}
+		reason := payload.Reason
+		if payload.RequestID != request.RequestID {
+			reason = payload.Requests[request.RequestID]
+		}
+		if existingRuntime != runtime.ID || reason != strings.TrimSpace(request.Reason) {
 			return deviceFail(c, http.StatusConflict, "request_conflict", "同一个 request_id 用于了不同的内容")
+		}
+		_ = tx.Rollback(ctx)
+		return s.deviceSessionResponse(c, existing)
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return deviceFail(c, http.StatusInternalServerError, "failed", "会话读取失败")
+	}
+	err = tx.QueryRow(ctx, `SELECT id, payload FROM weave_task_queue
+		WHERE workspace_id=$1 AND runtime_id=$2 AND kind=$3 AND status IN ('queued','running','cancel_requested')
+		ORDER BY created_at DESC LIMIT 1`, runtime.WorkspaceID, runtime.ID, taskqueue.KindDeviceSession).Scan(&existing, &raw)
+	if err == nil {
+		var payload deviceSessionPayload
+		if err := json.Unmarshal(raw, &payload); err != nil {
+			return deviceFail(c, http.StatusInternalServerError, "failed", "会话读取失败")
+		}
+		if len(payload.Requests)+1 >= deviceSessionRequestLimit {
+			return deviceFail(c, http.StatusConflict, "session_request_limit", "当前会话的请求记录已满，请先结束该会话，再重新打开")
+		}
+		if _, err := tx.Exec(ctx, `UPDATE weave_task_queue SET payload=payload || jsonb_build_object('requests',
+			COALESCE(payload->'requests','{}'::jsonb) || jsonb_build_object($3::text,$4::text))
+			WHERE workspace_id=$1 AND id=$2`, runtime.WorkspaceID, existing, request.RequestID, strings.TrimSpace(request.Reason)); err != nil {
+			return deviceFail(c, http.StatusInternalServerError, "failed", "会话登记失败")
+		}
+		if err := tx.Commit(ctx); err != nil {
+			return deviceFail(c, http.StatusInternalServerError, "failed", "会话登记失败")
 		}
 		return s.deviceSessionResponse(c, existing)
 	}
-	if active, err := s.activeDeviceSession(ctx, runtime.WorkspaceID, runtime.ID); err == nil && active != "" {
-		return s.deviceSessionResponse(c, active)
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return deviceFail(c, http.StatusInternalServerError, "failed", "会话读取失败")
 	}
 	facts := deviceFactsOf(runtime)
 	if reason := deviceUnavailableReason(runtime, facts); reason != "" {
@@ -198,7 +253,7 @@ func (s *Server) handleOpenDeviceSession(c echo.Context) error {
 		}
 		return deviceFail(c, http.StatusConflict, code, reason)
 	}
-	payload, _ := json.Marshal(deviceSessionPayload{RequestID: request.RequestID, Reason: strings.TrimSpace(request.Reason), OpenedBy: s.callerName(c)})
+	payload, _ := json.Marshal(deviceSessionPayload{RequestID: request.RequestID, Reason: strings.TrimSpace(request.Reason), OpenedBy: openedBy})
 	deadline := time.Now().Add(deviceSessionLimit)
 	task := &taskqueue.Task{
 		ID: uuid.NewString(), WorkspaceID: runtime.WorkspaceID,
@@ -206,7 +261,10 @@ func (s *Server) handleOpenDeviceSession(c echo.Context) error {
 		Source: "device", Kind: taskqueue.KindDeviceSession, RuntimeID: runtime.ID,
 		Payload: payload, DeadlineAt: &deadline, OutcomeSensitive: true,
 	}
-	if err := s.Tasks.Enqueue(ctx, task); err != nil {
+	if err := s.Tasks.EnqueueTx(ctx, tx, task); err != nil {
+		return deviceFail(c, http.StatusInternalServerError, "failed", "会话登记失败")
+	}
+	if err := tx.Commit(ctx); err != nil {
 		return deviceFail(c, http.StatusInternalServerError, "failed", "会话登记失败")
 	}
 	return s.deviceSessionResponse(c, task.ID)

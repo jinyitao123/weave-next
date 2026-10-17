@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 	"unicode/utf16"
 )
@@ -64,7 +65,12 @@ func indicatorAvailable() bool {
 func showIndicator(ctx context.Context, reason string) func() {
 	switch runtime.GOOS {
 	case "darwin":
-		notify(ctx, "Weave 正在控制这台 Mac", reason+"（在终端运行 weave device stop 可随时停止）")
+		executable, err := os.Executable()
+		if err != nil {
+			home, _ := os.UserHomeDir()
+			executable = filepath.Join(home, ".weave", "bin", "weave-runtime")
+		}
+		notify(ctx, "Weave 正在控制这台 Mac", reason+"（在终端运行 "+deviceStopCommand(executable)+" 可请求停止）")
 		return func() { notify(context.Background(), "Weave 已结束控制", reason) }
 	case "windows":
 		cmd := exec.Command("powershell", "-NoProfile", "-STA", "-WindowStyle", "Hidden", "-EncodedCommand", encodePowerShell(trayScript))
@@ -80,6 +86,12 @@ func showIndicator(ctx context.Context, reason string) func() {
 		}
 	}
 	return func() {}
+}
+
+// deviceStopCommand quotes the running node path for the Mac's shell, so it
+// works on a fresh install without a global weave command or a changed PATH.
+func deviceStopCommand(executable string) string {
+	return "'" + strings.ReplaceAll(executable, "'", "'\\''") + "' device stop"
 }
 
 // notify passes the text as arguments, never inside the script, so a reason
