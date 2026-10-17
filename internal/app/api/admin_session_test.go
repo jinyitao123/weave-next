@@ -78,6 +78,11 @@ func TestAdminConfigListsOnlyUsableSignInMethods(t *testing.T) {
 	if methods := body["sign_in_methods"].([]any); len(methods) != 2 || methods[0] != "forge" || body["forge_origin"] != "https://forge.example" {
 		t.Fatalf("config with Forge = %v", body)
 	}
+	missing := adminConsoleServer(&config.Config{AdminForgeURL: "https://forge.example"})
+	missing.ExternalIdentity = NewForgeSessionVerifier("", "", nil)
+	if methods := read(missing)["sign_in_methods"].([]any); len(methods) != 1 || methods[0] != "api_key" {
+		t.Fatalf("unconfigured verifier offered Forge sign-in: %v", methods)
+	}
 	unsafeOrigin := read(adminConsoleServer(&config.Config{AdminForgeURL: "https://forge.example/path?x=1"}))
 	if unsafeOrigin["forge_origin"] != nil {
 		t.Fatalf("non-origin Forge URL accepted: %v", unsafeOrigin)

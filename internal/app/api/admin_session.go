@@ -98,7 +98,11 @@ func (s *Server) adminForgeOrigin() string {
 func (s *Server) handleAdminConfig(c echo.Context) error {
 	forge := s.adminForgeOrigin()
 	methods := []string{"api_key"}
-	if forge != "" && s.ExternalIdentity != nil {
+	configured := s.ExternalIdentity != nil
+	if verifier, ok := s.ExternalIdentity.(*ForgeSessionVerifier); ok {
+		configured = verifier != nil && verifier.endpoint != nil
+	}
+	if forge != "" && configured {
 		methods = append([]string{"forge"}, methods...)
 	}
 	response := map[string]any{"sign_in_methods": methods, "secure": adminRequestSecure(c.Request())}

@@ -22,7 +22,7 @@ type Config struct {
 	AdminUser             string // WEAVE_ADMIN_USER — seed admin username on startup
 	AdminPass             string // WEAVE_ADMIN_PASS — seed admin password on startup
 	ForgeSessionURL       string // WEAVE_FORGE_SESSION_URL — Forge endpoint that resolves the signed-in account
-	ForgeDefaultWorkspace string // WEAVE_FORGE_DEFAULT_WORKSPACE — fallback workspace when Forge has no organization claim
+	ForgeDefaultWorkspace string // WEAVE_FORGE_DEFAULT_WORKSPACE — explicit mapping; otherwise use the verified native organization
 	// AdminForgeURL is the browser-facing Forge origin the admin console signs
 	// in against; empty leaves only operator API key sign-in.
 	AdminForgeURL string // WEAVE_ADMIN_FORGE_URL
