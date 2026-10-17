@@ -224,7 +224,7 @@ func serveWeaveTools(c echo.Context, tools []mcpEntryTool, instructions string, 
 	}
 	result, err := (mcpprotocol.Adapter{
 		Dispatcher: weaveTools{tools: tools, call: call}, ServerName: "weave", Instructions: instructions,
-		UnsupportedMethodMessage: "method not supported",
+		UnsupportedMethodMessage: "method not supported", Render: renderWeaveContent,
 	}).Handle(c.Request().Context(), request)
 	switch {
 	case errors.Is(err, mcpprotocol.ErrInvalidCallParams):

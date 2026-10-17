@@ -20,7 +20,7 @@ import (
 // console and the desktop already use, made with the caller's own credential,
 // so validation, permissions and audit are the ones those routes apply.
 
-const mcpEntryInstructions = "Weave 的团队开发与使用工具。修改团队前先用 weave_development_read 读取草稿和可修改的类别，再用 weave_development_guide 读取要用到的那一类写法；不要猜测字段。团队草稿以外的操作（归档团队、运行、执行节点、代码仓库、飞书、客户端会话）用 weave_workspace_guide 读取类别和写法，再用 weave_workspace_apply 办理；要填写或显示密钥的操作不经这里办理。经这里交接的工作不带业务动作授权，需要办理业务的部分由员工在桌面办理。团队和流程的标识只用于调用，不要展示给使用者。"
+const mcpEntryInstructions = "Weave 的团队开发与使用工具。修改团队前先用 weave_development_read 读取草稿和可修改的类别，再用 weave_development_guide 读取要用到的那一类写法；不要猜测字段。团队草稿以外的操作（归档团队、运行、执行节点、代码仓库、飞书、客户端会话）用 weave_workspace_guide 读取类别和写法，再用 weave_workspace_apply 办理；要填写或显示密钥的操作不经这里办理。经这里交接的工作不带业务动作授权，需要办理业务的部分由员工在桌面办理。团队和流程的标识只用于调用，不要展示给使用者。设备工具（device_*）只对本人账号会话开放，用来查看和操作使用者本人绑定的 Mac 与 Windows：先 device_list，再 device_session_open，ready 后截图或读取界面结构再操作；会改变机器的操作带 op_id，结果不确定时用同一个 op_id 重试。不得用设备工具在 Forge 或小满界面中办理业务写入。"
 
 const (
 	mcpMaterialLimit = 200 << 10
@@ -51,6 +51,8 @@ type mcpEntryCall struct {
 	ctx    context.Context
 	auth   string
 	remote string
+	host   string
+	secure bool
 	tenant string
 	user   string
 	role   string
@@ -102,6 +104,11 @@ func (call *mcpEntryCall) route(method, path string, body, into any) *mcpEntryEr
 	request.Header.Set(echo.HeaderAuthorization, call.auth)
 	request.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
 	request.RemoteAddr = call.remote
+	// Routes that hand out commands name this server by the address the caller used.
+	request.Host = call.host
+	if call.secure {
+		request.Header.Set("X-Forwarded-Proto", "https")
+	}
 	capture := &mcpCapture{header: http.Header{}, status: http.StatusOK}
 	call.server.Echo.ServeHTTP(capture, request)
 	if capture.status >= 400 {
@@ -638,6 +645,15 @@ var mcpEntryTools = []mcpEntryTool{
 			}
 			return map[string]any{"stop_requested": true}, nil
 		}},
+	{Name: "device_enroll", Description: "为使用者本人添加一台 Mac 或 Windows 设备：返回一次性注册码（10 分钟内有效，只能用一次）和在那台机器上运行的一条注册命令。只接受本人账号登录的会话。把命令交给使用者，或在你已能到达那台机器时替使用者运行；Mac 上最后要使用者本人在系统设置中打开“辅助功能”和“屏幕录制”。",
+		Schema: mcpSchema(``),
+		Run: func(call *mcpEntryCall, args map[string]any) (any, *mcpEntryError) {
+			var enrollment map[string]any
+			if failure := call.route(http.MethodPost, "/v1/devices/enrollments", map[string]any{}, &enrollment); failure != nil {
+				return nil, failure
+			}
+			return enrollment, nil
+		}},
 }
 
 func mcpTrial(call *mcpEntryCall, args map[string]any) (any, *mcpEntryError) {
@@ -735,6 +751,7 @@ func mcpSubmit(call *mcpEntryCall, args map[string]any) (any, *mcpEntryError) {
 func (s *Server) entryCall(c echo.Context) *mcpEntryCall {
 	return &mcpEntryCall{
 		server: s, ctx: c.Request().Context(), auth: c.Request().Header.Get(echo.HeaderAuthorization), remote: c.Request().RemoteAddr,
+		host: c.Request().Host, secure: adminRequestSecure(c.Request()),
 		tenant: getTenant(c), user: getUserID(c), role: firstRole(c), reader: adminRunReader(c),
 	}
 }

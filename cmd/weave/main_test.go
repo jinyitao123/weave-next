@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -78,5 +79,35 @@ func TestServeAndEmptyArgsRemainOnServerPath(t *testing.T) {
 		if handled, code := dispatchEarlyCommand(args, &bytes.Buffer{}, &bytes.Buffer{}); handled || code != 0 {
 			t.Fatalf("dispatch(%v) = %v, %d", args, handled, code)
 		}
+	}
+}
+
+func TestDeviceStopEarlyCommandDoesNotLoadServerConfig(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("DATABASE_URL", "")
+	t.Setenv("JWT_SECRET", "")
+	var stdout, stderr bytes.Buffer
+	handled, code := dispatchEarlyCommand([]string{"device", "stop"}, &stdout, &stderr)
+	if !handled || code != 0 || stderr.Len() != 0 || !strings.Contains(stdout.String(), "已请求结束") {
+		t.Fatalf("device stop = %v, %d, stdout=%s stderr=%s", handled, code, stdout.String(), stderr.String())
+	}
+	if data, err := os.ReadFile(filepath.Join(home, ".weave", "device-stop")); err != nil || len(data) == 0 {
+		t.Fatalf("device stop left no local request: %q, %v", data, err)
+	}
+}
+
+func TestDeviceStopEarlyCommandReportsLocalWriteFailure(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "not-a-directory")
+	if err := os.WriteFile(home, []byte("file"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	var stdout, stderr bytes.Buffer
+	handled, code := dispatchEarlyCommand([]string{"device", "stop"}, &stdout, &stderr)
+	if !handled || code != 1 || stdout.Len() != 0 || !strings.Contains(stderr.String(), "device_stop_failed") {
+		t.Fatalf("failed device stop = %v, %d, stdout=%s stderr=%s", handled, code, stdout.String(), stderr.String())
 	}
 }

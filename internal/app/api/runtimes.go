@@ -333,6 +333,12 @@ func (s *Server) handleRuntimeHello(c echo.Context) error {
 		}
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
+	if runtime.DeviceOwnerUserID != "" && request.Device != nil {
+		facts, _ := json.Marshal(request.Device)
+		if err := s.Runtimes.SetDeviceFacts(c.Request().Context(), runtime.WorkspaceID, runtime.ID, facts); err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "device facts unavailable"})
+		}
+	}
 	return c.JSON(http.StatusOK, runtimeprotocol.HostHelloResponse{Versioned: runtimeprotocol.NewVersioned(), RuntimeID: runtime.ID, Name: runtime.Name})
 }
 
@@ -382,6 +388,10 @@ func (s *Server) handleRuntimeClaim(c echo.Context) error {
 		return c.NoContent(http.StatusNoContent)
 	}
 	workerID := runtimes.RuntimeWorkerID(runtime.WorkspaceID, runtime.ID)
+	// A person's own device takes only its control sessions, never team work.
+	if runtime.DeviceOwnerUserID != "" {
+		return s.claimDeviceSession(c, runtime, workerID, request.WaitSeconds)
+	}
 	filter := taskqueue.ClaimFilter{
 		Kind: "engine_exec", WorkspaceID: runtime.WorkspaceID,
 		RuntimeID: runtime.ID, IdentityKind: taskqueue.IdentityAgent,
@@ -700,7 +710,7 @@ func (s *Server) runtimeTask(c echo.Context) (*runtimes.Runtime, *taskqueue.Task
 		return nil, nil, echo.NewHTTPError(http.StatusServiceUnavailable, "task queue not configured")
 	}
 	task, err := s.Tasks.Get(c.Request().Context(), runtime.WorkspaceID, c.Param("id"))
-	if err != nil || task.Kind != "engine_exec" || task.RuntimeID != runtime.ID {
+	if err != nil || (task.Kind != "engine_exec" && task.Kind != taskqueue.KindDeviceSession) || task.RuntimeID != runtime.ID {
 		return nil, nil, echo.NewHTTPError(http.StatusNotFound, "task not found")
 	}
 	if err := validateRuntimeTaskProof(c, task); err != nil {
