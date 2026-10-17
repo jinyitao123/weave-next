@@ -430,6 +430,10 @@ func (s *Server) handleDeviceOperation(c echo.Context) error {
 			if taken.Status == runtimes.DeviceOperationFailed {
 				return c.JSON(http.StatusOK, map[string]any{"status": "failed", "error": taken.Error})
 			}
+			// Results are not kept once read; a retry learns the outcome only.
+			if len(taken.Result) == 0 {
+				return c.JSON(http.StatusOK, map[string]any{"status": "succeeded", "result": json.RawMessage(`{}`), "result_already_delivered": true})
+			}
 			return c.JSON(http.StatusOK, map[string]any{"status": "succeeded", "result": json.RawMessage(orEmptyObject(taken.Result))})
 		case runtimes.DeviceOperationUnknown:
 			return deviceFail(c, http.StatusOK, "unknown_result", "操作已发往设备，但会话在回执前结束；请先查看设备上的实际状态，再决定下一步")

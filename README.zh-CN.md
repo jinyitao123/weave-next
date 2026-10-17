@@ -211,4 +211,4 @@ make compose-check
 - **设备上。** 截图、界面结构、窗口列表和点击、输入、按键、滚动、拖动、启动应用经 `cua-driver mcp`（标准输入输出的 MCP）完成，工具以驱动 `tools/list` 为准；截图文件读取后即删除。命令（`argv`，不经 shell）、文件读写由节点在允许目录内完成，路径先解析链接再核对；命令输出各 256 KB 封顶，文件 8 MB 封顶，写入核对原摘要。
 - **MCP。** `device_list`、`device_session_open`、`device_session_read`、`device_session_close`、`device_screenshot`（返回 MCP 图片内容）、`device_ui_tree`、`device_windows`、`device_act`、`device_exec`、`device_file_read`、`device_file_write`。
 
-被控机器上的标识与本机一键停止尚未实现。
+- **看得见、停得下。** 会话期间，Windows 通知区显示一个图标，提示正在被控制及原因，菜单“停止 Weave 控制”结束会话；macOS 在开始与结束时发通知，操作期间显示 cua-driver 的会话光标。任一平台在本机运行 `weave device stop` 都会结束当前会话（写入 `~/.weave/device-stop`，节点在每项操作前后检查），结束原因记为 `stopped_on_device`。无法显示标识的机器报告为不可用，不能打开会话。

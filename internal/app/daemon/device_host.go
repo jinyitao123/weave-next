@@ -85,6 +85,10 @@ func (h *deviceHost) facts(ctx context.Context) *runtimeprotocol.DeviceFacts {
 		facts.UnavailableReason = "找不到 cua-driver，请在这台机器上重新运行注册命令"
 		return facts
 	}
+	if !indicatorAvailable() {
+		facts.UnavailableReason = "这台机器无法显示被控标识"
+		return facts
+	}
 	versionCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	if out, err := exec.CommandContext(versionCtx, h.driver, "--version").Output(); err == nil {
@@ -142,12 +146,25 @@ func (d *service) serveDeviceSession(ctx context.Context, session *runtimeprotoc
 	renewDone := make(chan struct{})
 	go func() { defer close(renewDone); d.renewLoop(sessionCtx, cancel, claim, leaseLost) }()
 	slog.Info("device session started", "session", session.TaskID, "reason", session.Reason, "opened_by", session.OpenedBy)
+	// A stop asked for before this session belonged to an earlier one.
+	clearDeviceStop()
+	hideIndicator := showIndicator(ctx, session.Reason)
+	defer hideIndicator()
 
 	var driver *cuaClient
-	defer func() { driver.close() }()
+	defer func() {
+		if driver != nil && driver.has("end_session") {
+			_, _ = driver.call(context.Background(), "end_session", map[string]any{"session": "weave-" + session.TaskID})
+		}
+		driver.close()
+	}()
 	reason := "ended_on_device"
 	for sessionCtx.Err() == nil {
-		next, err := d.client.deviceNext(sessionCtx, session.TaskID, session.ClaimEpoch, 20)
+		if deviceStopRequested() {
+			reason = "stopped_on_device"
+			break
+		}
+		next, err := d.client.deviceNext(sessionCtx, session.TaskID, session.ClaimEpoch, 5)
 		if err != nil {
 			if errors.Is(err, errLeaseLost) || sessionCtx.Err() != nil {
 				reason = "device_disconnected"
@@ -173,6 +190,9 @@ func (d *service) serveDeviceSession(ctx context.Context, session *runtimeprotoc
 				if driver, err = startCuaClient(sessionCtx, d.device.driver); err != nil {
 					driver = nil
 					result = deviceFailed("cua-driver 无法启动：" + err.Error())
+				} else if driver.has("start_session") {
+					// The driver's session shows its cursor on screen while it acts.
+					_, _ = driver.call(sessionCtx, "start_session", map[string]any{"session": "weave-" + session.TaskID})
 				}
 			}
 			if result.Status == "" {
@@ -186,7 +206,12 @@ func (d *service) serveDeviceSession(ctx context.Context, session *runtimeprotoc
 			reason = "device_disconnected"
 			break
 		}
+		if deviceStopRequested() {
+			reason = "stopped_on_device"
+			break
+		}
 	}
+	clearDeviceStop()
 	cancel()
 	<-renewDone
 	if !leaseLost.Load() {

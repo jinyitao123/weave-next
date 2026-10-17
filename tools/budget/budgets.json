@@ -1368,11 +1368,11 @@
     },
     {
       "date": "2026-10-17",
-      "reason": "Let the person control their own enrolled device, as the owner decided on 2026-10-16 (weave-workbench decision 009, one delivery). A control session is one task of kind device_session with identity kind device, pinned to the device runtime through the existing runtime claim path and renewed by the existing lease; the device takes operations by long poll and answers them; session state stays the task status and only the end reason is recorded once. Operations keep params and results until delivered and afterwards only a content-free audit; an operation delivered without an answer ends unknown and is never replayed. The device drives cua-driver over its stdio MCP server and runs programs and file reads and writes inside the roots its owner allows. The MCP entry gains ten device tools and returns screenshots as image content. No new packages, dependencies, queues or runtime loops; two tables and one column.",
+      "reason": "Let the person control their own enrolled device, as the owner decided on 2026-10-16 (weave-workbench decision 009, one delivery). A control session is one task of kind device_session with identity kind device, pinned to the device runtime through the existing runtime claim path and renewed by the existing lease; the device takes operations by long poll and answers them; session state stays the task status and only the end reason is recorded once. Operations keep params and results until delivered and afterwards only a content-free audit; an operation delivered without an answer ends unknown and is never replayed. The device drives cua-driver over its stdio MCP server and runs programs and file reads and writes inside the roots its owner allows. While a session runs the machine shows it (a Windows tray icon whose menu stops it; macOS notifications and the driver session cursor) and `weave device stop` ends it. The MCP entry gains eleven device tools and returns screenshots as image content. No new packages, dependencies, queues or runtime loops; two tables and one column.",
       "record": "README.zh-CN.md#控制会话",
       "growth": {
-        "lines": 2556,
-        "production_lines": 2116
+        "lines": 2744,
+        "production_lines": 2271
       },
       "deletion_trigger": "Remove device sessions, operations, the device daemon mode and the device MCP tools if a recorded decision withdraws decision 009. Lower the measured budgets in that change.",
       "kernel": {
@@ -1384,8 +1384,8 @@
       "app": {
         "previous_lines": 93780,
         "previous_production_lines": 63095,
-        "lines_added": 2224,
-        "production_lines_added": 1784
+        "lines_added": 2412,
+        "production_lines_added": 1939
       }
     }
   ],
@@ -1450,8 +1450,8 @@
     "allowed_dependencies": []
   },
   "app": {
-    "lines": 96004,
-    "production_lines": 64879,
+    "lines": 96192,
+    "production_lines": 65034,
     "packages": 25,
     "external_dependencies": 6,
     "allowed_dependencies": [

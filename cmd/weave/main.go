@@ -107,6 +107,15 @@ func main() {
 		}
 		return
 	}
+	// "device stop" ends the control session running on this machine.
+	if len(os.Args) > 2 && os.Args[1] == "device" && os.Args[2] == "stop" {
+		if err := daemon.StopDevice(); err != nil {
+			slog.Error("could not ask the device to stop", "error", err)
+			os.Exit(1)
+		}
+		_, _ = os.Stdout.WriteString("已请求结束这台机器上的控制会话。\n")
+		return
+	}
 
 	cfg, err := config.Load()
 	if err != nil {

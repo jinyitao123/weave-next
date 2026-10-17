@@ -222,3 +222,36 @@ func TestDeviceLocalConfigNarrowsLevels(t *testing.T) {
 		t.Fatalf("a device without a driver reported available: %+v", facts)
 	}
 }
+
+func TestDeviceStopFileEndsAndClears(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	if deviceStopRequested() {
+		t.Fatal("a stop was requested before anyone asked")
+	}
+	if err := StopDevice(); err != nil {
+		t.Fatal(err)
+	}
+	if !deviceStopRequested() {
+		t.Fatal("weave device stop left no request")
+	}
+	clearDeviceStop()
+	if deviceStopRequested() {
+		t.Fatal("the stop request outlived its session")
+	}
+}
+
+func TestTrayScriptIsEncodedForPowerShell(t *testing.T) {
+	encoded, err := base64.StdEncoding.DecodeString(encodePowerShell(trayScript))
+	if err != nil || len(encoded)%2 != 0 {
+		t.Fatal(err)
+	}
+	units := make([]rune, 0, len(encoded)/2)
+	for i := 0; i < len(encoded); i += 2 {
+		units = append(units, rune(uint16(encoded[i])|uint16(encoded[i+1])<<8))
+	}
+	if string(units) != trayScript || !strings.Contains(trayScript, "$env:WEAVE_DEVICE_STOP") {
+		t.Fatal("the tray script does not survive encoding")
+	}
+}
