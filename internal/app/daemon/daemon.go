@@ -80,6 +80,7 @@ type service struct {
 	heartbeatInterval time.Duration
 	minBackoff        time.Duration
 	maxBackoff        time.Duration
+	device            *deviceHost
 	active            atomic.Int32
 	publicSpool       *publicSpool
 	resultSpool       *resultSpool
@@ -182,7 +183,12 @@ func newDaemon(cfg daemonConfig) (*service, error) {
 	if err != nil {
 		return nil, fmt.Errorf("initialize durable runtime results: %w", err)
 	}
+	var device *deviceHost
+	if cfg.device {
+		device = newDeviceHost(cfg.cuaDriver)
+	}
 	return &service{
+		device:             device,
 		publicSpool:        spool,
 		resultSpool:        results,
 		client:             client,
@@ -205,6 +211,9 @@ func newDaemon(cfg daemonConfig) (*service, error) {
 func (d *service) Run(ctx context.Context) error {
 	if !d.helloUntilConnected(ctx) {
 		return nil
+	}
+	if d.device != nil {
+		return d.runDevice(ctx)
 	}
 
 	var workers sync.WaitGroup
@@ -230,7 +239,7 @@ func (d *service) helloUntilConnected(ctx context.Context) bool {
 	backoff := newBackoff(d.minBackoff, d.maxBackoff)
 	for {
 		engines, capabilities := d.engines()
-		err := d.client.hello(ctx, engines, capabilities, d.concurrency)
+		err := d.client.hello(ctx, engines, capabilities, d.concurrency, d.deviceFacts(ctx))
 		if err == nil {
 			slog.Info("runtime daemon connected", "server", d.server, "engines", engines)
 			return true
@@ -287,7 +296,7 @@ func (d *service) probe(ctx context.Context) {
 		d.capabilityMu.Unlock()
 	}
 	engines, capabilities := d.engines()
-	if err := d.client.hello(ctx, engines, capabilities, d.concurrency); err != nil {
+	if err := d.client.hello(ctx, engines, capabilities, d.concurrency, d.deviceFacts(ctx)); err != nil {
 		slog.Warn("runtime probe report failed", "error", err)
 		return
 	}

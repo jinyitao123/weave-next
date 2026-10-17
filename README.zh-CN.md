@@ -201,4 +201,14 @@ make compose-check
 - **换取令牌不需要登录**，注册码就是凭据：同一来源每分钟 10 次，失败时不说明注册码属于谁。
 - **驱动来源。** 镜像构建时 `scripts/fetch-cua-driver.sh` 按 `scripts/cua-driver.sha256` 取 cua-driver 的 macOS 与 Windows 发布包及许可证，任一校验不符即构建失败；`GET /v1/downloads/cua-driver/{os}/{arch}` 与 `/license/notice` 提供这些文件。cua-driver 为 MIT 许可，见 `THIRD_PARTY_NOTICES.md`。节点程序下载同样附 `X-Weave-SHA256`。
 
-经 MCP 入口转调的接口按客户端实际使用的地址生成命令，执行节点的安装命令也随之使用正确地址。设备上的控制会话与查看、操作、执行工具尚未实现。
+经 MCP 入口转调的接口按客户端实际使用的地址生成命令，执行节点的安装命令也随之使用正确地址。
+
+### 控制会话
+
+- **会话就是任务。** `POST /v1/devices/:id/sessions`（本人账号会话，带原因与 `request_id`）登记一个 `kind=device_session`、身份类型 `device`、固定到该设备的任务；同一 `request_id` 返回同一会话，一台设备同一时间只有一个未结束的会话。设备节点（`--device`）只领取自己的会话，不领团队工作；续租复用既有接口。会话状态由任务决定：排队为 opening、运行为 ready、请求停止为 closing、终态为 ended；结束原因另记一次（`weave_device_session_ends`），不新增任务终态。领取超过 30 秒未开始、空闲 5 分钟或满 60 分钟时，下一次被查看就结束。
+- **操作。** `POST /v1/device-sessions/:id/ops` 登记一项操作（`op_id` 幂等，同一 `op_id` 换内容为 `request_conflict`），等待设备回执后返回；超过等待时间返回 202，用同一 `op_id` 再调用即可继续等待同一项操作。设备以长轮询 `/v1/runtime/tasks/:id/device/next` 取操作、`/device/ops/:op` 交回结果、`/device/end` 结束会话。参数在交给设备时清空，结果在交给调用方时清空，`weave_device_operations` 只留审计：操作类型、动作与目标应用、文字长度、程序名与参数个数、路径与摘要、状态和时间。已交给设备却未回执就结束的操作记为 `unknown`，不重放；从未交出的记为 `stopped`。
+- **级别。** 设备在 hello 中上报平台、cua-driver 是否可用和本机允许的级别（`~/.weave/device.json`，缺省为 observe、act、exec 三级，文件目录为用户主目录）；操作的级别不在其中时服务端与设备都拒绝。
+- **设备上。** 截图、界面结构、窗口列表和点击、输入、按键、滚动、拖动、启动应用经 `cua-driver mcp`（标准输入输出的 MCP）完成，工具以驱动 `tools/list` 为准；截图文件读取后即删除。命令（`argv`，不经 shell）、文件读写由节点在允许目录内完成，路径先解析链接再核对；命令输出各 256 KB 封顶，文件 8 MB 封顶，写入核对原摘要。
+- **MCP。** `device_list`、`device_session_open`、`device_session_read`、`device_session_close`、`device_screenshot`（返回 MCP 图片内容）、`device_ui_tree`、`device_windows`、`device_act`、`device_exec`、`device_file_read`、`device_file_write`。
+
+被控机器上的标识与本机一键停止尚未实现。

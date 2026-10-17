@@ -91,6 +91,11 @@ type Runtime struct {
 	ProbeRequestedAt *time.Time `json:"probe_requested_at,omitempty"`
 	CreatedAt        time.Time  `json:"created_at"`
 	UpdatedAt        time.Time  `json:"updated_at"`
+	// DeviceOwnerUserID marks the person's own device (weave-workbench
+	// decision 009); only that person may control it. DeviceFacts is what the
+	// device last reported about itself.
+	DeviceOwnerUserID string          `json:"device_owner_user_id,omitempty"`
+	DeviceFacts       json.RawMessage `json:"device_facts,omitempty"`
 }
 
 // Store persists runtime registrations and heartbeats.
@@ -413,7 +418,7 @@ func (s *Store) List(ctx context.Context, workspaceID string) ([]Runtime, error)
 			&runtime.HealthStatus, &runtime.ConsecutiveInfraFailures, &runtime.QuarantineUntil,
 			&runtime.LastFailureReason, &runtime.Enabled,
 			&runtime.RevokedAt, &runtime.DeletedAt,
-			&runtime.LastHeartbeatAt, &runtime.CreatedAt, &runtime.UpdatedAt, &runtime.PausedAt, &runtime.ProbeRequestedAt, &runtime.Online,
+			&runtime.LastHeartbeatAt, &runtime.CreatedAt, &runtime.UpdatedAt, &runtime.PausedAt, &runtime.ProbeRequestedAt, &runtime.DeviceOwnerUserID, &runtime.DeviceFacts, &runtime.Online,
 		); err != nil {
 			return nil, fmt.Errorf("scan runtime: %w", err)
 		}
@@ -448,7 +453,7 @@ func (s *Store) Get(ctx context.Context, workspaceID, id string) (*Runtime, erro
 		&runtime.HealthStatus, &runtime.ConsecutiveInfraFailures, &runtime.QuarantineUntil,
 		&runtime.LastFailureReason, &runtime.Enabled,
 		&runtime.RevokedAt, &runtime.DeletedAt,
-		&runtime.LastHeartbeatAt, &runtime.CreatedAt, &runtime.UpdatedAt, &runtime.PausedAt, &runtime.ProbeRequestedAt, &runtime.Online,
+		&runtime.LastHeartbeatAt, &runtime.CreatedAt, &runtime.UpdatedAt, &runtime.PausedAt, &runtime.ProbeRequestedAt, &runtime.DeviceOwnerUserID, &runtime.DeviceFacts, &runtime.Online,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, fmt.Errorf("%w: runtime %q", ErrRuntimeUnavailable, id)
@@ -507,7 +512,7 @@ const runtimeColumns = `
 		health_status, consecutive_infra_failures, quarantine_until,
 		COALESCE(last_failure_reason, ''), enabled,
 		revoked_at, deleted_at, last_heartbeat_at, created_at, updated_at,
-		paused_at, probe_requested_at`
+		paused_at, probe_requested_at, COALESCE(device_owner_user_id, ''), device_facts`
 
 type rowScanner interface {
 	Scan(dest ...any) error
@@ -523,6 +528,7 @@ func scanRuntime(row rowScanner) (*Runtime, error) {
 		&runtime.LastFailureReason, &runtime.Enabled,
 		&runtime.RevokedAt, &runtime.DeletedAt,
 		&runtime.LastHeartbeatAt, &runtime.CreatedAt, &runtime.UpdatedAt, &runtime.PausedAt, &runtime.ProbeRequestedAt,
+		&runtime.DeviceOwnerUserID, &runtime.DeviceFacts,
 	); err != nil {
 		return nil, err
 	}

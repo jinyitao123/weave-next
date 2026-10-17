@@ -59,6 +59,9 @@ type Adapter struct {
 	Instructions             string
 	UnsupportedMethodMessage string
 	RedactToolErrors         bool
+	// Render turns a tool's answer into MCP content items; nil keeps the
+	// answer as a single text item.
+	Render func(content string, isError bool) []map[string]string
 }
 
 func Decode(reader io.Reader) (Request, error) {
@@ -129,10 +132,14 @@ func (a Adapter) Handle(ctx context.Context, request Request) (Result, error) {
 		if result.IsError && a.RedactToolErrors {
 			content = mcphost.RedactedToolError(content)
 		}
+		items := []map[string]string{{"type": "text", "text": content}}
+		if a.Render != nil {
+			items = a.Render(content, result.IsError)
+		}
 		return Result{Response: &Response{
 			JSONRPC: "2.0", ID: responseID(request.ID),
 			Result: map[string]any{
-				"content": []map[string]string{{"type": "text", "text": content}},
+				"content": items,
 				"isError": result.IsError,
 			},
 		}}, nil
