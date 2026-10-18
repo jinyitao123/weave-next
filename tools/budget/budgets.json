@@ -1387,6 +1387,22 @@
         "lines_added": 2791,
         "production_lines_added": 2009
       }
+    },
+    {
+      "date": "2026-10-17",
+      "reason": "Resolve workspace identity from the verified Forge native organization on first sign-in; retain explicit existing mappings, native permission verification and durable account binding. Classify configuration, connectivity, organization and session failures before returning them to callers. No new runtime, queue, table or dependency.",
+      "record": "README.zh-CN.md",
+      "growth": {
+        "lines": 104,
+        "production_lines": 36
+      },
+      "deletion_trigger": "Remove the Forge-specific session verifier when this deployment migrates all consumers to a recorded standard identity exchange, and lower these exact budgets in that change.",
+      "app": {
+        "previous_lines": 96571,
+        "previous_production_lines": 65104,
+        "lines_added": 104,
+        "production_lines_added": 36
+      }
     }
   ],
   "migration_targets": {
@@ -1450,8 +1466,8 @@
     "allowed_dependencies": []
   },
   "app": {
-    "lines": 96571,
-    "production_lines": 65104,
+    "lines": 96675,
+    "production_lines": 65140,
     "packages": 25,
     "external_dependencies": 6,
     "allowed_dependencies": [
