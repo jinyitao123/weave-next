@@ -34,7 +34,7 @@ type ProviderConfig struct {
 	// 不做 model-name 猜测。
 	ThinkingDefaultMode string `json:"thinking_default_mode,omitempty"`
 	// ThinkingDisableWithTools 中文：携带 tools 时强制 thinking=disabled
-	// （DeepSeek 官方 OMP 适配要求；M1 fail-safe，不做 reasoning 连续性回传）。
+	// （明确的非思考工具 profile；历史回传能力不隐式改变模式）。
 	ThinkingDisableWithTools bool `json:"thinking_disable_with_tools,omitempty"`
 	// AttemptTimeoutSeconds 中文：单个物理 attempt 的超时秒数；0 = 应用默认 900s。
 	// 只约束单次 HTTP 调用（含流式读 body），
@@ -78,6 +78,7 @@ var NewProviderClient = func(cfg ProviderConfig) contract.LLM {
 	}
 	if cfg.ThinkingDefaultMode != "" {
 		opts = append(opts, openai.WithThinkingControl(cfg.ThinkingDefaultMode, cfg.ThinkingDisableWithTools))
+		opts = append(opts, openai.WithReasoningContentReplay())
 	}
 	attemptTimeoutSeconds := cfg.AttemptTimeoutSeconds
 	if attemptTimeoutSeconds <= 0 {

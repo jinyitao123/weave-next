@@ -112,7 +112,10 @@ func validatedTerminalExclusiveUsage(state loom.State) (TerminalUsage, error) {
 			err,
 		)
 	}
+	coverage := accumulator.Coverage()
 	exclusive := TerminalUsage{
+		CacheReadTokens: totals.CacheReadTokens, CacheWriteTokens: totals.CacheWriteTokens,
+		CacheReadComplete: coverage.HasCacheRead, CacheWriteComplete: coverage.HasCacheWrite,
 		InputTokens:  totals.InputTokens,
 		OutputTokens: totals.OutputTokens,
 		CostUSD:      totals.CostUSD,
@@ -131,7 +134,7 @@ func assembleTerminalV3Base(
 	input terminalV3BaseAssemblyInput,
 ) (TerminalEntryV3, error) {
 	exclusive := input.Exclusive
-	subtree, err := addTerminalUsage(TerminalUsage{}, exclusive)
+	subtree, err := addTerminalUsage(TerminalUsage{CacheReadComplete: true, CacheWriteComplete: true}, exclusive)
 	if err != nil {
 		return TerminalEntryV3{}, fmt.Errorf(
 			"assemble terminal schema-v3: invalid initial subtree_total: %w",

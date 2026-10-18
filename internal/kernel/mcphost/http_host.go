@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -512,8 +513,10 @@ func (h *HTTPHost) Dispatch(ctx context.Context, call contract.ToolCall) (*contr
 
 	var resp struct {
 		Content []struct {
-			Type string `json:"type"`
-			Text string `json:"text"`
+			Type     string `json:"type"`
+			Text     string `json:"text"`
+			MIMEType string `json:"mimeType"`
+			Data     string `json:"data"`
 		} `json:"content"`
 		IsError bool `json:"isError"`
 	}
@@ -525,15 +528,39 @@ func (h *HTTPHost) Dispatch(ctx context.Context, call contract.ToolCall) (*contr
 	}
 
 	var content string
+	var parts []contract.ContentPart
+	hasImage, imageBytes := false, 0
 	for _, c := range resp.Content {
 		if c.Type == "text" {
 			content += c.Text
+			parts = append(parts, contract.ContentPart{Type: "text", Text: c.Text})
 		}
+		if c.Type == "image" {
+			media, _, mediaErr := mime.ParseMediaType(c.MIMEType)
+			var data []byte
+			var decodeErr error
+			if len(c.Data) <= base64.StdEncoding.EncodedLen(2<<20) {
+				data, decodeErr = base64.StdEncoding.DecodeString(c.Data)
+			}
+			imageBytes += len(data)
+			if mediaErr != nil || !strings.HasPrefix(media, "image/") || decodeErr != nil || len(data) == 0 || imageBytes > 2<<20 {
+				if h.unknownDispatchOutcome {
+					return nil, fmt.Errorf("%w: invalid or oversized MCP image content", ErrDispatchOutcomeUnknown)
+				}
+				return &contract.ToolResult{CallID: call.ID, Content: "MCP image content is invalid or exceeds 2 MiB", IsError: true}, nil
+			}
+			hasImage = true
+			parts = append(parts, contract.ContentPart{Type: "image", MediaType: media, Data: c.Data})
+		}
+	}
+	if !hasImage {
+		parts = nil
 	}
 	return &contract.ToolResult{
 		CallID:  call.ID,
 		Content: content,
 		IsError: resp.IsError,
+		Parts:   parts,
 	}, nil
 }
 

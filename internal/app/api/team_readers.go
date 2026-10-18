@@ -962,7 +962,7 @@ func foldTeamContributions(
 	sort.Slice(contributions, func(left, right int) bool {
 		return contributions[left].RunID < contributions[right].RunID
 	})
-	total := loomruntime.TerminalUsage{}
+	total := loomruntime.TerminalUsage{CacheReadComplete: true, CacheWriteComplete: true}
 	agents := make(map[string]teamAgentUsage)
 	for _, contribution := range contributions {
 		next, err := addTeamUsage(total, contribution.Usage)
@@ -1176,6 +1176,9 @@ func addTeamAgentContribution(
 		return fmt.Errorf("run %q has empty agent", runID)
 	}
 	current := agents[agent]
+	if current.Runs == 0 {
+		current.Usage.CacheReadComplete, current.Usage.CacheWriteComplete = true, true
+	}
 	next, err := addTeamUsage(current.Usage, usage)
 	if err != nil {
 		return fmt.Errorf("agent %q run %q: %w", agent, runID, err)
@@ -1228,7 +1231,14 @@ func addTeamUsage(
 		math.IsInf(left.CostUSD, 0) || math.IsInf(right.CostUSD, 0) || math.IsInf(cost, 0) {
 		return loomruntime.TerminalUsage{}, errors.New("cost_usd must remain finite and non-negative")
 	}
+	read, readOK := addTeamInt(left.CacheReadTokens, right.CacheReadTokens)
+	write, writeOK := addTeamInt(left.CacheWriteTokens, right.CacheWriteTokens)
+	if !readOK || !writeOK || left.CacheReadTokens < 0 || right.CacheReadTokens < 0 || left.CacheWriteTokens < 0 || right.CacheWriteTokens < 0 {
+		return loomruntime.TerminalUsage{}, errors.New("invalid cache token total")
+	}
 	return loomruntime.TerminalUsage{
+		CacheReadTokens: read, CacheWriteTokens: write,
+		CacheReadComplete: left.CacheReadComplete && right.CacheReadComplete, CacheWriteComplete: left.CacheWriteComplete && right.CacheWriteComplete,
 		InputTokens:  input,
 		OutputTokens: output,
 		CostUSD:      cost,
