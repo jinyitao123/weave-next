@@ -64,3 +64,26 @@ func TestCarryForwardYieldedUsagePreservesEarlierObservedTotals(t *testing.T) {
 		t.Fatalf("subtree total = %+v", got)
 	}
 }
+
+func TestTeamTerminalCacheBreakdownAndCheckpointFloor(t *testing.T) {
+	started := time.Date(2026, 10, 18, 0, 0, 0, 0, time.UTC)
+	run := TeamRun{WorkspaceID: "workspace", RunID: "parent", TeamID: "team", WorkflowID: "workflow", WorkflowVersion: 1, RunSnapshotID: "snapshot"}
+	lease := loomruntime.RunAttemptLease{WorkspaceID: run.WorkspaceID, RunID: run.RunID, AttemptGeneration: 1, AttemptID: uuid.New(), GraphName: frozenGraphName(run), RunStartedAt: started.Format(time.RFC3339Nano)}
+	usage := loomruntime.UsageTotals{InputTokens: 100, CacheReadTokens: 80, CacheWriteTokens: 10}
+	coverage := loomruntime.UsageCoverage{HasTokens: true, HasCost: true, HasCacheRead: true, HasCacheWrite: true}
+	candidate, err := frozenTerminalCandidate(run, lease, "succeeded", "completed", started.Add(time.Second), usage, &coverage, true, "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	child := loomruntime.TerminalChildBreakdownV3{RunID: "child", ParentRunID: run.RunID, ParentSeq: 1, Agent: "worker", TeamID: &run.TeamID, WorkflowID: &run.WorkflowID, WorkflowVersion: &run.WorkflowVersion, RunSnapshotID: &run.RunSnapshotID, SelfExclusive: candidate.SelfExclusive}
+	if err := applyMemberTerminalBreakdown(&candidate, map[string]loomruntime.TerminalChildBreakdownV3{"child": child}); err != nil {
+		t.Fatal(err)
+	}
+	if candidate.SelfExclusive.CacheReadTokens != 0 || candidate.SubtreeTotal.CacheReadTokens != 80 || candidate.SubtreeTotal.CacheWriteTokens != 10 || !candidate.SubtreeTotal.CacheReadComplete {
+		t.Fatalf("cache was lost or double-counted in member breakdown: %+v", candidate)
+	}
+	floor := carryCheckpointUsageFloor(loomruntime.UsageTotals{}, usage)
+	if floor != usage || carryCheckpointUsageFloor(floor, usage) != usage {
+		t.Fatalf("yielded checkpoint cache was erased or counted twice: %+v", floor)
+	}
+}

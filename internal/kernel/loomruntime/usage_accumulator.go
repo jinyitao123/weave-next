@@ -18,7 +18,8 @@ import (
 
 const (
 	usageAccumulatorStateKey  = "__usage_accumulator"
-	usageAccumulatorSchema    = 2
+	usageAccumulatorSchema    = 3
+	usageAccumulatorSchemaV2  = 2
 	usageAccumulatorSchemaV1  = 1
 	maxUsageCheckpointInteger = uint64(1<<53 - 1)
 	usageCallIDPrefix         = "uc1_"
@@ -31,19 +32,23 @@ var ErrUsageConflict = errors.New("usage accumulator conflict")
 
 // UsageTotals is the sum of confirmed logical-call usage in an accumulator.
 type UsageTotals struct {
-	InputTokens  int
-	OutputTokens int
-	CostUSD      float64
-	ToolCalls    int
+	CacheReadTokens  int
+	CacheWriteTokens int
+	InputTokens      int
+	OutputTokens     int
+	CostUSD          float64
+	ToolCalls        int
 }
 
 // UsageCoverage preserves whether every physical attempt reported each
 // budget dimension. Sources contains the sorted, distinct non-empty receipt
 // sources represented by the confirmed attempts.
 type UsageCoverage struct {
-	HasTokens bool
-	HasCost   bool
-	Sources   []string
+	HasCacheRead  bool
+	HasCacheWrite bool
+	HasTokens     bool
+	HasCost       bool
+	Sources       []string
 }
 
 // UsageAttemptMetadata carries the lossless completeness/provenance fields
@@ -283,7 +288,7 @@ func (a *UsageAccumulator) ConfirmAttemptWithMetadata(
 	if toolCalls < 0 {
 		return fmt.Errorf("usage tool_calls must be non-negative")
 	}
-	if !metadata.HasTokens && (usage.InputTokens != 0 || usage.OutputTokens != 0) {
+	if !metadata.HasTokens && (usage.InputTokens != 0 || usage.OutputTokens != 0 || usage.CacheReadTokens != 0 || usage.CacheWriteTokens != 0 || usage.CacheReadReported || usage.CacheWriteReported) {
 		return fmt.Errorf("unreported token dimension must be zero-valued")
 	}
 	if !metadata.HasCost && usage.CostUSD != 0 {
@@ -333,6 +338,9 @@ func validateUsage(usage contract.Usage) error {
 	}
 	if usage.CostUSD < 0 || math.IsNaN(usage.CostUSD) || math.IsInf(usage.CostUSD, 0) {
 		return fmt.Errorf("usage cost_usd must be finite and non-negative")
+	}
+	if usage.CacheReadTokens < 0 || usage.CacheWriteTokens < 0 || usage.CacheReadTokens > usage.InputTokens || usage.CacheWriteTokens > usage.InputTokens {
+		return fmt.Errorf("cache token subtotals must be within input_tokens")
 	}
 	return nil
 }
@@ -387,17 +395,20 @@ func (a UsageAccumulator) validatedTotals() (UsageTotals, error) {
 // request occurred; a started but unconfirmed attempt is incomplete.
 func (a UsageAccumulator) Coverage() UsageCoverage {
 	a = normalizedUsageAccumulator(a)
-	coverage := UsageCoverage{HasTokens: true, HasCost: true}
+	coverage := UsageCoverage{HasTokens: true, HasCost: true, HasCacheRead: true, HasCacheWrite: true}
 	sources := make(map[string]struct{})
 	for _, call := range a.calls {
 		for _, attempt := range call.Attempts {
 			if !attempt.Confirmed {
 				coverage.HasTokens = false
 				coverage.HasCost = false
+				coverage.HasCacheRead, coverage.HasCacheWrite = false, false
 				continue
 			}
 			coverage.HasTokens = coverage.HasTokens && attempt.Metadata.HasTokens
 			coverage.HasCost = coverage.HasCost && attempt.Metadata.HasCost
+			coverage.HasCacheRead = coverage.HasCacheRead && (attempt.Usage.CacheReadReported || attempt.Usage.CacheReadTokens != 0)
+			coverage.HasCacheWrite = coverage.HasCacheWrite && (attempt.Usage.CacheWriteReported || attempt.Usage.CacheWriteTokens != 0)
 			if attempt.Metadata.Source != "" {
 				sources[attempt.Metadata.Source] = struct{}{}
 			}
@@ -431,7 +442,12 @@ func addUsageTotals(current UsageTotals, usage contract.Usage, toolCalls int) (U
 	if !ok || toolCalls < 0 {
 		return UsageTotals{}, fmt.Errorf("tool_calls total is invalid")
 	}
-	return UsageTotals{InputTokens: input, OutputTokens: output, CostUSD: cost, ToolCalls: tools}, nil
+	read, readOK := safeAddInt(current.CacheReadTokens, usage.CacheReadTokens)
+	write, writeOK := safeAddInt(current.CacheWriteTokens, usage.CacheWriteTokens)
+	if !readOK || !writeOK {
+		return UsageTotals{}, fmt.Errorf("cache token total overflows int")
+	}
+	return UsageTotals{InputTokens: input, OutputTokens: output, CostUSD: cost, ToolCalls: tools, CacheReadTokens: read, CacheWriteTokens: write}, nil
 }
 
 // Totals returns the sum of all confirmed logical calls.
@@ -458,15 +474,19 @@ type usageCallCheckpoint struct {
 }
 
 type usageAttemptCheckpoint struct {
-	AttemptID    string  `json:"attempt_id"`
-	Confirmed    bool    `json:"confirmed"`
-	InputTokens  int     `json:"input_tokens"`
-	OutputTokens int     `json:"output_tokens"`
-	CostUSD      float64 `json:"cost_usd"`
-	ToolCalls    int     `json:"tool_calls,omitempty"`
-	HasTokens    bool    `json:"has_tokens"`
-	HasCost      bool    `json:"has_cost"`
-	Source       string  `json:"source,omitempty"`
+	CacheReadTokens    int     `json:"cache_read_tokens,omitempty"`
+	CacheWriteTokens   int     `json:"cache_write_tokens,omitempty"`
+	CacheReadReported  bool    `json:"cache_read_reported,omitempty"`
+	CacheWriteReported bool    `json:"cache_write_reported,omitempty"`
+	AttemptID          string  `json:"attempt_id"`
+	Confirmed          bool    `json:"confirmed"`
+	InputTokens        int     `json:"input_tokens"`
+	OutputTokens       int     `json:"output_tokens"`
+	CostUSD            float64 `json:"cost_usd"`
+	ToolCalls          int     `json:"tool_calls,omitempty"`
+	HasTokens          bool    `json:"has_tokens"`
+	HasCost            bool    `json:"has_cost"`
+	Source             string  `json:"source,omitempty"`
 }
 
 type usageAccumulatorCheckpointInput struct {
@@ -484,15 +504,19 @@ type usageCallCheckpointInput struct {
 }
 
 type usageAttemptCheckpointInput struct {
-	AttemptID    *string  `json:"attempt_id"`
-	Confirmed    *bool    `json:"confirmed"`
-	InputTokens  *int     `json:"input_tokens"`
-	OutputTokens *int     `json:"output_tokens"`
-	CostUSD      *float64 `json:"cost_usd"`
-	ToolCalls    *int     `json:"tool_calls,omitempty"`
-	HasTokens    *bool    `json:"has_tokens"`
-	HasCost      *bool    `json:"has_cost"`
-	Source       *string  `json:"source,omitempty"`
+	CacheReadTokens    *int     `json:"cache_read_tokens,omitempty"`
+	CacheWriteTokens   *int     `json:"cache_write_tokens,omitempty"`
+	CacheReadReported  *bool    `json:"cache_read_reported,omitempty"`
+	CacheWriteReported *bool    `json:"cache_write_reported,omitempty"`
+	AttemptID          *string  `json:"attempt_id"`
+	Confirmed          *bool    `json:"confirmed"`
+	InputTokens        *int     `json:"input_tokens"`
+	OutputTokens       *int     `json:"output_tokens"`
+	CostUSD            *float64 `json:"cost_usd"`
+	ToolCalls          *int     `json:"tool_calls,omitempty"`
+	HasTokens          *bool    `json:"has_tokens"`
+	HasCost            *bool    `json:"has_cost"`
+	Source             *string  `json:"source,omitempty"`
 }
 
 type usageAccumulatorCheckpointV1Input struct {
@@ -527,7 +551,7 @@ func (a UsageAccumulator) checkpoint() (usageAccumulatorCheckpoint, error) {
 		return usageAccumulatorCheckpoint{}, err
 	}
 	checkpoint := usageAccumulatorCheckpoint{
-		SchemaVersion:    usageAccumulatorSchema,
+		SchemaVersion:    usageAccumulatorSchemaV2,
 		NextCallOrdinals: make(map[string]uint64, len(a.nextCallOrdinals)),
 		Calls:            make([]usageCallCheckpoint, 0, len(a.calls)),
 	}
@@ -553,8 +577,13 @@ func (a UsageAccumulator) checkpoint() (usageAccumulatorCheckpoint, error) {
 		}
 		for _, attemptID := range attemptIDs {
 			attempt := call.Attempts[attemptID]
+			if attempt.Usage.CacheReadTokens != 0 || attempt.Usage.CacheWriteTokens != 0 || attempt.Usage.CacheReadReported || attempt.Usage.CacheWriteReported {
+				checkpoint.SchemaVersion = usageAccumulatorSchema
+			}
 			encoded.Attempts = append(encoded.Attempts, usageAttemptCheckpoint{
 				AttemptID: attemptID, Confirmed: attempt.Confirmed,
+				CacheReadTokens: attempt.Usage.CacheReadTokens, CacheWriteTokens: attempt.Usage.CacheWriteTokens,
+				CacheReadReported: attempt.Usage.CacheReadReported, CacheWriteReported: attempt.Usage.CacheWriteReported,
 				InputTokens: attempt.Usage.InputTokens, OutputTokens: attempt.Usage.OutputTokens,
 				CostUSD: attempt.Usage.CostUSD, ToolCalls: attempt.ToolCalls,
 				HasTokens: attempt.Metadata.HasTokens, HasCost: attempt.Metadata.HasCost,
@@ -587,7 +616,7 @@ func UnmarshalUsageAccumulator(data []byte) (UsageAccumulator, error) {
 		return UsageAccumulator{}, fmt.Errorf("usage accumulator schema_version is required")
 	}
 	switch *header.SchemaVersion {
-	case usageAccumulatorSchema:
+	case usageAccumulatorSchema, usageAccumulatorSchemaV2:
 		return unmarshalUsageAccumulatorV2(data)
 	case usageAccumulatorSchemaV1:
 		return unmarshalUsageAccumulatorV1(data)
@@ -647,6 +676,9 @@ func unmarshalUsageAccumulatorV2(data []byte) (UsageAccumulator, error) {
 			if rawAttempt.AttemptID == nil || rawAttempt.Confirmed == nil || rawAttempt.InputTokens == nil || rawAttempt.OutputTokens == nil || rawAttempt.CostUSD == nil || rawAttempt.HasTokens == nil || rawAttempt.HasCost == nil {
 				return UsageAccumulator{}, fmt.Errorf("usage accumulator calls[%d].attempts[%d] has missing required fields", index, attemptIndex)
 			}
+			if *input.SchemaVersion == usageAccumulatorSchemaV2 && (rawAttempt.CacheReadTokens != nil || rawAttempt.CacheWriteTokens != nil || rawAttempt.CacheReadReported != nil || rawAttempt.CacheWriteReported != nil) {
+				return UsageAccumulator{}, fmt.Errorf("cache usage requires checkpoint schema_version 3")
+			}
 			attemptID := *rawAttempt.AttemptID
 			if _, duplicate := call.Attempts[attemptID]; duplicate || attemptID == "" {
 				return UsageAccumulator{}, fmt.Errorf("duplicate or empty attempt_id %q", attemptID)
@@ -656,7 +688,7 @@ func unmarshalUsageAccumulatorV2(data []byte) (UsageAccumulator, error) {
 			}
 			call.Attempts[attemptID] = usageAttempt{
 				Confirmed: *rawAttempt.Confirmed,
-				Usage:     contract.Usage{InputTokens: *rawAttempt.InputTokens, OutputTokens: *rawAttempt.OutputTokens, CostUSD: *rawAttempt.CostUSD},
+				Usage:     contract.Usage{InputTokens: *rawAttempt.InputTokens, OutputTokens: *rawAttempt.OutputTokens, CostUSD: *rawAttempt.CostUSD, CacheReadTokens: optionalInt(rawAttempt.CacheReadTokens), CacheWriteTokens: optionalInt(rawAttempt.CacheWriteTokens), CacheReadReported: rawAttempt.CacheReadReported != nil && *rawAttempt.CacheReadReported, CacheWriteReported: rawAttempt.CacheWriteReported != nil && *rawAttempt.CacheWriteReported},
 				ToolCalls: optionalInt(rawAttempt.ToolCalls),
 				Metadata:  UsageAttemptMetadata{HasTokens: *rawAttempt.HasTokens, HasCost: *rawAttempt.HasCost, Source: optionalString(rawAttempt.Source)},
 			}
@@ -788,7 +820,7 @@ func (a UsageAccumulator) validate() error {
 			if attempt.ToolCalls < 0 {
 				return fmt.Errorf("attempt_id %q has negative tool_calls", attemptID)
 			}
-			if !attempt.Metadata.HasTokens && (attempt.Usage.InputTokens != 0 || attempt.Usage.OutputTokens != 0) {
+			if !attempt.Metadata.HasTokens && (attempt.Usage.InputTokens != 0 || attempt.Usage.OutputTokens != 0 || attempt.Usage.CacheReadTokens != 0 || attempt.Usage.CacheWriteTokens != 0 || attempt.Usage.CacheReadReported || attempt.Usage.CacheWriteReported) {
 				return fmt.Errorf("attempt_id %q carries unreported token usage", attemptID)
 			}
 			if !attempt.Metadata.HasCost && attempt.Usage.CostUSD != 0 {

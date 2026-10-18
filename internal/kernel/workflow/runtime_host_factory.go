@@ -225,8 +225,8 @@ func buildRuntimeHostsWithLLM(
 				Models: []string{binding.ModelID}, JSONObjectMode: binding.JSONObjectMode,
 			}
 			// This frozen system provider is DeepSeek's OpenAI-compatible endpoint.
-			// Tool histories cannot replay reasoning_content yet, so all member
-			// requests must use its non-thinking mode, including the first turn.
+			// Preserve the published non-thinking profile. Reasoning replay is
+			// supported by this explicit dialect without changing its mode.
 			if binding.ProviderID == "system/deepseek" && binding.CredentialRef.ServiceID == "system-provider:deepseek" {
 				provider.ThinkingDefaultMode = "disabled"
 				provider.ThinkingDisableWithTools = true
@@ -332,6 +332,7 @@ func (l *runtimeStreamingLLM) Chat(
 		}
 	}()
 	var content strings.Builder
+	var reasoning []contract.Reasoning
 	var toolCalls []contract.ToolCall
 	var usage contract.Usage
 	var stopReason string
@@ -355,6 +356,9 @@ readStream:
 		}
 		notifyRuntimeModelFirstChunk(ctx)
 		content.WriteString(chunk.Content)
+		if chunk.ReasoningBlock != nil {
+			reasoning = append(reasoning, *chunk.ReasoningBlock)
+		}
 		toolCalls = append(toolCalls, chunk.ToolCalls...)
 		if chunk.FinishReason != "" {
 			stopReason = chunk.FinishReason
@@ -378,7 +382,7 @@ readStream:
 			return nil, err
 		}
 		if response == nil ||
-			(response.Content == "" && len(response.ToolCalls) == 0 && response.Usage == (contract.Usage{})) {
+			(response.Content == "" && len(response.ToolCalls) == 0 && len(response.Reasoning) == 0 && response.Usage == (contract.Usage{})) {
 			return nil, errors.New("workflow model stream ended before done")
 		}
 		return response, nil
@@ -391,6 +395,7 @@ readStream:
 		ToolCalls:  toolCalls,
 		Usage:      usage,
 		StopReason: stopReason,
+		Reasoning:  reasoning,
 	}, nil
 }
 

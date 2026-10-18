@@ -210,10 +210,14 @@ func frozenTerminalCandidate(
 	workflowVersion := run.WorkflowVersion
 	runSnapshotID := run.RunSnapshotID
 	selfExclusive := loomruntime.TerminalUsage{
+		CacheReadTokens: usage.CacheReadTokens, CacheWriteTokens: usage.CacheWriteTokens,
 		InputTokens:  usage.InputTokens,
 		OutputTokens: usage.OutputTokens,
 		CostUSD:      usage.CostUSD,
 		ToolCalls:    usage.ToolCalls,
+	}
+	if usageCoverage != nil {
+		selfExclusive.CacheReadComplete, selfExclusive.CacheWriteComplete = usageCoverage.HasCacheRead, usageCoverage.HasCacheWrite
 	}
 	var usageCompletePtr *bool
 	// A started request can fail before its provider returns a usage receipt.
@@ -336,6 +340,29 @@ func (e *Executor) commitFrozenNormalTerminalWithMutation(
 	)
 	if err != nil {
 		return fmt.Errorf("read frozen terminal marker: %w", err)
+	}
+	if markerPresent && marker.Phase == loomruntime.TerminalMarkerPhaseYielded && e.Checkpoints != nil {
+		checkpoint, readErr := e.Checkpoints.GetTx(ctx, tx, run.WorkspaceID, run.RunID)
+		if readErr != nil && !errors.Is(readErr, ErrWorkflowCheckpointMissing) {
+			return fmt.Errorf("read yielded usage checkpoint: %w", readErr)
+		}
+		if readErr == nil && len(checkpoint.Usage) != 0 {
+			if checkpoint.RunID != run.RunID || checkpoint.Stamp.RunSnapshotID != run.RunSnapshotID {
+				return ErrTeamRunSnapshotUnavailable
+			}
+			prior, decodeErr := loomruntime.UnmarshalUsageAccumulator(checkpoint.Usage)
+			if decodeErr != nil {
+				return fmt.Errorf("read yielded usage receipt: %w", decodeErr)
+			}
+			usage = carryCheckpointUsageFloor(usage, prior.Totals())
+			if usageCoverage != nil {
+				coverage := *usageCoverage
+				previous := prior.Coverage()
+				coverage.HasCacheRead = coverage.HasCacheRead && previous.HasCacheRead
+				coverage.HasCacheWrite = coverage.HasCacheWrite && previous.HasCacheWrite
+				usageCoverage = &coverage
+			}
+		}
 	}
 	endedAt := e.now()
 	if markerPresent && marker.Source == loomruntime.TerminalMarkerSourceNormal &&
@@ -645,12 +672,14 @@ func applyMemberTerminalBreakdown(candidate *loomruntime.TerminalEntryV3, contri
 		self.OutputTokens -= child.SelfExclusive.OutputTokens
 		self.CostUSD -= child.SelfExclusive.CostUSD
 		self.ToolCalls -= child.SelfExclusive.ToolCalls
+		self.CacheReadTokens -= child.SelfExclusive.CacheReadTokens
+		self.CacheWriteTokens -= child.SelfExclusive.CacheWriteTokens
 		children = append(children, child)
 	}
 	if math.Abs(self.CostUSD) < 1e-12 {
 		self.CostUSD = 0
 	}
-	if self.InputTokens < 0 || self.OutputTokens < 0 || self.CostUSD < 0 || self.ToolCalls < 0 {
+	if self.InputTokens < 0 || self.OutputTokens < 0 || self.CostUSD < 0 || self.ToolCalls < 0 || self.CacheReadTokens < 0 || self.CacheWriteTokens < 0 {
 		return fmt.Errorf("member contribution exceeds parent accumulated usage")
 	}
 	candidate.SelfExclusive = self
@@ -664,6 +693,21 @@ func applyMemberTerminalBreakdown(candidate *loomruntime.TerminalEntryV3, contri
 		candidate.SubtreeTotal.OutputTokens += child.SelfExclusive.OutputTokens
 		candidate.SubtreeTotal.CostUSD += child.SelfExclusive.CostUSD
 		candidate.SubtreeTotal.ToolCalls += child.SelfExclusive.ToolCalls
+		candidate.SubtreeTotal.CacheReadTokens += child.SelfExclusive.CacheReadTokens
+		candidate.SubtreeTotal.CacheWriteTokens += child.SelfExclusive.CacheWriteTokens
+		candidate.SubtreeTotal.CacheReadComplete = candidate.SubtreeTotal.CacheReadComplete && child.SelfExclusive.CacheReadComplete
+		candidate.SubtreeTotal.CacheWriteComplete = candidate.SubtreeTotal.CacheWriteComplete && child.SelfExclusive.CacheWriteComplete
 	}
 	return loomruntime.ValidateTerminalV3(*candidate)
+}
+
+// carryCheckpointUsageFloor reuses confirmed counts without creating another physical receipt.
+func carryCheckpointUsageFloor(current, previous loomruntime.UsageTotals) loomruntime.UsageTotals {
+	current.InputTokens = max(current.InputTokens, previous.InputTokens)
+	current.OutputTokens = max(current.OutputTokens, previous.OutputTokens)
+	current.CostUSD = max(current.CostUSD, previous.CostUSD)
+	current.ToolCalls = max(current.ToolCalls, previous.ToolCalls)
+	current.CacheReadTokens = max(current.CacheReadTokens, previous.CacheReadTokens)
+	current.CacheWriteTokens = max(current.CacheWriteTokens, previous.CacheWriteTokens)
+	return current
 }

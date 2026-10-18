@@ -324,12 +324,8 @@ func validateTerminalV3(entry TerminalEntryV3) error {
 	if err := validateTerminalUsage(entry.SelfExclusive); err != nil {
 		return terminalRecordError(TerminalRecordCorrupt, "terminal self_exclusive: %v", err)
 	}
-	alias := TerminalUsage{
-		InputTokens:  entry.TokensIn,
-		OutputTokens: entry.TokensOut,
-		CostUSD:      entry.CostUSD,
-		ToolCalls:    entry.ToolCalls,
-	}
+	alias := entry.SelfExclusive
+	alias.InputTokens, alias.OutputTokens, alias.CostUSD, alias.ToolCalls = entry.TokensIn, entry.TokensOut, entry.CostUSD, entry.ToolCalls
 	if err := validateTerminalUsage(alias); err != nil {
 		return terminalRecordError(TerminalRecordCorrupt, "terminal usage alias: %v", err)
 	}
@@ -438,6 +434,9 @@ func validateTerminalUsage(usage TerminalUsage) error {
 	if usage.CostUSD < 0 || math.IsNaN(usage.CostUSD) || math.IsInf(usage.CostUSD, 0) {
 		return fmt.Errorf("cost_usd must be finite and non-negative")
 	}
+	if usage.CacheReadTokens < 0 || usage.CacheWriteTokens < 0 || usage.CacheReadTokens > usage.InputTokens || usage.CacheWriteTokens > usage.InputTokens {
+		return fmt.Errorf("cache token subtotals must be within input_tokens")
+	}
 	return nil
 }
 
@@ -464,7 +463,12 @@ func addTerminalUsage(left, right TerminalUsage) (TerminalUsage, error) {
 	if !ok {
 		return TerminalUsage{}, fmt.Errorf("tool_calls overflows int")
 	}
-	return TerminalUsage{InputTokens: input, OutputTokens: output, CostUSD: cost, ToolCalls: tools}, nil
+	read, readOK := safeAddInt(left.CacheReadTokens, right.CacheReadTokens)
+	write, writeOK := safeAddInt(left.CacheWriteTokens, right.CacheWriteTokens)
+	if !readOK || !writeOK {
+		return TerminalUsage{}, fmt.Errorf("cache token total overflows int")
+	}
+	return TerminalUsage{InputTokens: input, OutputTokens: output, CostUSD: cost, ToolCalls: tools, CacheReadTokens: read, CacheWriteTokens: write, CacheReadComplete: left.CacheReadComplete && right.CacheReadComplete, CacheWriteComplete: left.CacheWriteComplete && right.CacheWriteComplete}, nil
 }
 
 func validateTerminalAssociation(entry TerminalEntryV3) error {

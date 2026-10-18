@@ -347,7 +347,7 @@ func runSerialMachine(
 						RunID: nodeUsage.MemberRunID, ParentRunID: start.Run.RunID, ParentSeq: int64(activeMember.EntryOrdinal) + 1,
 						Agent:  entries[runtimeEntryKey(memberID, memberVersion)].Bundle.Agent.Name,
 						TeamID: &teamID, WorkflowID: &workflowID, WorkflowVersion: &version, RunSnapshotID: &snapshotID,
-						SelfExclusive: loomruntime.TerminalUsage{InputTokens: nodeUsage.Totals.InputTokens, OutputTokens: nodeUsage.Totals.OutputTokens, CostUSD: nodeUsage.Totals.CostUSD, ToolCalls: nodeUsage.Totals.ToolCalls},
+						SelfExclusive: loomruntime.TerminalUsage{CacheReadTokens: nodeUsage.Totals.CacheReadTokens, CacheWriteTokens: nodeUsage.Totals.CacheWriteTokens, CacheReadComplete: nodeUsage.Coverage.HasCacheRead, CacheWriteComplete: nodeUsage.Coverage.HasCacheWrite, InputTokens: nodeUsage.Totals.InputTokens, OutputTokens: nodeUsage.Totals.OutputTokens, CostUSD: nodeUsage.Totals.CostUSD, ToolCalls: nodeUsage.Totals.ToolCalls},
 					}
 				}
 				for _, receipt := range nodeUsage.MemberReceipts {

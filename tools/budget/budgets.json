@@ -1403,6 +1403,34 @@
         "lines_added": 104,
         "production_lines_added": 36
       }
+    },
+    {
+      "date": "2026-10-18",
+      "reason": "Loom engine upgrade: retain cache receipt presence and immutable checkpoint identity, preserve completed reasoning, and carry MCP images through the existing member path. Includes real PostgreSQL recovery and negative protocol regressions; no new packages, execution loops or external dependencies.",
+      "record": "docs/治理/2026-09-30-平台范围收窄整改登记.md",
+      "growth": {
+        "lines": 613,
+        "production_lines": 132
+      },
+      "deletion_trigger": "When an active-checkpoint inventory proves schema-v1 usage accumulators are absent and source-version recovery tests pass, remove usageAccumulatorSchemaV1, its input structs and unmarshalUsageAccumulatorV1 from internal/kernel/loomruntime/usage_accumulator.go, and lower the exact budgets in that change.",
+      "base": {
+        "previous_lines": 8587,
+        "previous_production_lines": 6810,
+        "lines_added": 4,
+        "production_lines_added": 4
+      },
+      "kernel": {
+        "previous_lines": 108812,
+        "previous_production_lines": 85254,
+        "lines_added": 581,
+        "production_lines_added": 118
+      },
+      "app": {
+        "previous_lines": 96675,
+        "previous_production_lines": 65140,
+        "lines_added": 28,
+        "production_lines_added": 10
+      }
     }
   ],
   "migration_targets": {
@@ -1434,8 +1462,8 @@
     "rule": "Each band limit equals its measured size. The total of the band limits may exceed this baseline only by the growth of amendments added after the first recorded_amendments entries, each of which must state its growth and a deletion_trigger."
   },
   "base": {
-    "lines": 8587,
-    "production_lines": 6810,
+    "lines": 8591,
+    "production_lines": 6814,
     "packages": 9,
     "external_dependencies": 4,
     "allowed_dependencies": [
@@ -1446,8 +1474,8 @@
     ]
   },
   "kernel": {
-    "lines": 108812,
-    "production_lines": 85254,
+    "lines": 109393,
+    "production_lines": 85372,
     "packages": 48,
     "external_dependencies": 5,
     "allowed_dependencies": [
@@ -1466,8 +1494,8 @@
     "allowed_dependencies": []
   },
   "app": {
-    "lines": 96675,
-    "production_lines": 65140,
+    "lines": 96703,
+    "production_lines": 65150,
     "packages": 25,
     "external_dependencies": 6,
     "allowed_dependencies": [

@@ -108,6 +108,26 @@ completion (`result` carries final status + session id).
 process invocations. This is how a per-turn CLI sustains a multi-turn,
 in-presence agent.
 
+## Optional reasoning history and cache accounting
+
+The compatibility provider accepts `openai.WithReasoningContentReplay()` for
+endpoints using the `reasoning_content` history dialect. Without this option,
+history serialization is unchanged. With it, assistant text reasoning blocks
+are returned in order with the original tool-call history. Signed or redacted
+blocks cannot be represented by this dialect and are rejected before sending.
+Forced tool choices with explicitly enabled thinking are rejected as unsupported;
+the adapter never drops the constraint to make a request succeed. Hosts must
+freeze this capability with their provider configuration and persist completed
+`ReasoningBlock` values, rather than saving streamed display deltas twice.
+
+`Usage.CacheReadReported` and `CacheWriteReported` distinguish a reported zero
+from missing data. Non-zero counts also establish reporting for existing callers.
+Cache subtotals are already included in `InputTokens`, not added to it. The
+compatibility adapter reads `prompt_tokens_details.cached_tokens` and the
+`prompt_cache_hit_tokens` dialect; cache misses are not cache writes. Hosts must
+preserve these facts in physical receipts and checkpoints, and report incomplete
+coverage rather than inventing zero values for earlier unobserved calls.
+
 ## Optional provider protocol observations
 
 Embedded Go hosts may opt a single provider invocation into
@@ -142,6 +162,8 @@ text tool-call markers (`｜DSML｜`) found in ordinary content, and reasoning
 frames/bytes. Marker text is not an executable call, so a zero-call response
 with markers indicates a provider-side text call carrier rather than a prose
 answer. Only counts are kept; no content or reasoning text is retained.
+Reasoning text itself reaches the caller through `ChatResponse.Reasoning` and
+`StreamChunk.Reasoning` / `ReasoningBlock`, never through observations.
 
 Absence means not collected or unsupported. `Complete=false` means the counts
 cannot establish zero calls. Malformed/unsupported frames, sparse/negative indexes, missing
@@ -153,7 +175,7 @@ Normal text with an observed finish and DONE can prove a complete zero-call
 protocol response, which is not proof that a requested task succeeded.
 
 The supported SSE delta and non-streaming message fields are `content`, `tool_calls`, `role`,
-`reasoning_content` and `refusal`. The last three do not carry tool calls and
+`reasoning_content`, `reasoning` and `refusal`. The last four do not carry tool calls and
 are never copied into observations. A non-null `function_call` or other unknown
 delta/message field makes the observation incomplete: the adapter does not execute that
 unsupported protocol, and cannot call its ignored value a complete zero-call

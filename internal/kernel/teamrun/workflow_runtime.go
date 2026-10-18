@@ -163,12 +163,14 @@ func validateWorkflowCheckpoint(checkpoint WorkflowCheckpointV1) error {
 			child.ParentSeq < 1 || child.Agent == "" || child.WorkflowID == nil || *child.WorkflowID != checkpoint.Stamp.WorkflowID ||
 			child.WorkflowVersion == nil || *child.WorkflowVersion != checkpoint.Stamp.WorkflowVersion ||
 			child.RunSnapshotID == nil || *child.RunSnapshotID != checkpoint.Stamp.RunSnapshotID ||
-			u.InputTokens < 0 || u.OutputTokens < 0 || u.ToolCalls < 0 || u.CostUSD < 0 || math.IsNaN(u.CostUSD) || math.IsInf(u.CostUSD, 0) {
+			u.CacheReadTokens < 0 || u.CacheWriteTokens < 0 || u.CacheReadTokens > u.InputTokens || u.CacheWriteTokens > u.InputTokens || u.InputTokens < 0 || u.OutputTokens < 0 || u.ToolCalls < 0 || u.CostUSD < 0 || math.IsNaN(u.CostUSD) || math.IsInf(u.CostUSD, 0) {
 			return fmt.Errorf("%w: checkpoint member contribution is invalid", ErrTeamRunSnapshotUnavailable)
 		}
 		memberUsage.InputTokens += u.InputTokens
 		memberUsage.OutputTokens += u.OutputTokens
 		memberUsage.ToolCalls += u.ToolCalls
+		memberUsage.CacheReadTokens += u.CacheReadTokens
+		memberUsage.CacheWriteTokens += u.CacheWriteTokens
 		memberUsage.CostUSD += u.CostUSD
 	}
 	if len(checkpoint.MemberBreakdown) > 0 {
@@ -178,7 +180,7 @@ func validateWorkflowCheckpoint(checkpoint WorkflowCheckpointV1) error {
 		}
 		total := accumulator.Totals()
 		if memberUsage.InputTokens > total.InputTokens || memberUsage.OutputTokens > total.OutputTokens ||
-			memberUsage.ToolCalls > total.ToolCalls || memberUsage.CostUSD-total.CostUSD > 1e-12 {
+			memberUsage.CacheReadTokens > total.CacheReadTokens || memberUsage.CacheWriteTokens > total.CacheWriteTokens || memberUsage.ToolCalls > total.ToolCalls || memberUsage.CostUSD-total.CostUSD > 1e-12 {
 			return fmt.Errorf("%w: member contribution exceeds recorded usage", ErrTeamRunSnapshotUnavailable)
 		}
 	}
