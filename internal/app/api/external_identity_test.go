@@ -105,6 +105,69 @@ func TestForgeSessionVerifierMapsForgeAdminAndMemberAccess(t *testing.T) {
 	}
 }
 
+func TestForgeSessionVerifierBootstrapsOnlyTheVerifiedNativeOrganization(t *testing.T) {
+	for _, test := range []struct {
+		name, workspace, nativeOrg, nativeUser string
+		wantStatus                             int
+	}{
+		{"new installation", "", "native-org", "native-user", 0},
+		{"existing explicit mapping", "existing-workspace", "native-org", "native-user", 0},
+		{"organization not selected", "", "", "native-user", http.StatusForbidden},
+		{"subject mismatch", "", "native-org", "another-user", http.StatusUnauthorized},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/api/v1/auth/get-session":
+					_ = json.NewEncoder(w).Encode(map[string]any{"user": map[string]string{"id": test.nativeUser}, "session": map[string]string{"userId": test.nativeUser, "activeOrganizationId": test.nativeOrg}})
+				case "/api/v1/auth/me/permissions":
+					_ = json.NewEncoder(w).Encode(map[string]any{"authenticated": true, "permissionSets": []string{"admin_full_access"}})
+				case "/api/v1/workbench/identity-source":
+					_ = json.NewEncoder(w).Encode(map[string]string{"version": "1", "issuer": "forge:installation"})
+				default:
+					_ = json.NewEncoder(w).Encode(map[string]any{"user": map[string]string{"id": "native-user"}, "organization": map[string]string{"id": "unverified-workspace"}})
+				}
+			}))
+			defer upstream.Close()
+			identity, err := NewForgeSessionVerifier(upstream.URL, test.workspace, upstream.Client()).Verify(t.Context(), "native-session")
+			if test.wantStatus != 0 {
+				failure, ok := err.(*forgeIdentityFailure)
+				if !ok || failure.status != test.wantStatus {
+					t.Fatalf("failure = %v", err)
+				}
+				return
+			}
+			want := test.workspace
+			if want == "" {
+				want = test.nativeOrg
+			}
+			if err != nil || identity.Organization != want || identity.NativeOrganization != test.nativeOrg || identity.AccessRole != "admin" {
+				t.Fatalf("verified identity = %+v, err=%v", identity, err)
+			}
+		})
+	}
+}
+
+func TestForgeSessionVerifierPreservesConfigurationAndUpstreamFailures(t *testing.T) {
+	for _, status := range []int{401, 403, 429, 503} {
+		upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(status) }))
+		_, err := NewForgeSessionVerifier(upstream.URL, "", upstream.Client()).Verify(t.Context(), "session")
+		upstream.Close()
+		want := status
+		if status != 401 && status != 403 {
+			want = 503
+		}
+		failure, ok := err.(*forgeIdentityFailure)
+		if !ok || failure.status != want {
+			t.Fatalf("status %d: %v", status, err)
+		}
+	}
+	_, err := NewForgeSessionVerifier("", "", nil).Verify(t.Context(), "session")
+	if failure, ok := err.(*forgeIdentityFailure); !ok || failure.status != 503 {
+		t.Fatalf("configuration failure = %v", err)
+	}
+}
+
 func TestExternalIdentityExchangeBindsAccountAndIssuesWeaveSession(t *testing.T) {
 	e := echo.New()
 	s := &Server{

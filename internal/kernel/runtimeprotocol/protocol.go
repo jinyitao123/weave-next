@@ -64,6 +64,8 @@ type HostHelloRequest struct {
 	Engines            []string           `json:"engines"`
 	EngineCapabilities []EngineCapability `json:"engine_capabilities"`
 	TotalSlots         int                `json:"total_slots"`
+	// Device is reported only by a device runtime.
+	Device *DeviceFacts `json:"device,omitempty"`
 }
 
 type HostHelloResponse struct {
@@ -108,6 +110,8 @@ type ClaimRequest struct {
 type ClaimResponse struct {
 	Versioned
 	Claim *ExecutionClaim `json:"claim,omitempty"`
+	// DeviceSession is what a device runtime claims instead of engine work.
+	DeviceSession *DeviceSessionClaim `json:"device_session,omitempty"`
 }
 
 type LeaseRequest struct {

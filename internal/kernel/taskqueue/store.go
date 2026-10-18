@@ -225,11 +225,12 @@ func (s *Store) Claim(ctx context.Context, workerID string, filter ClaimFilter) 
 		identityKind = IdentityAgent
 	}
 	switch identityKind {
-	case IdentityAgent, IdentityTeamWorkflow, IdentityTeamBuild, IdentityCapability:
+	case IdentityAgent, IdentityTeamWorkflow, IdentityTeamBuild, IdentityCapability, IdentityDevice:
 	default:
 		return nil, fmt.Errorf("unsupported claim identity kind %q", identityKind)
 	}
-	if filter.Kind == "engine_exec" {
+	// Engine work and device sessions are pinned to one runtime.
+	if filter.Kind == "engine_exec" || filter.Kind == KindDeviceSession {
 		if filter.WorkspaceID == "" {
 			return nil, fmt.Errorf("engine claim workspace is required")
 		}
@@ -246,7 +247,7 @@ func (s *Store) Claim(ctx context.Context, workerID string, filter ClaimFilter) 
 		WHERE id = (
 			SELECT id FROM weave_task_queue
 				WHERE status='queued' AND available_at <= $3
-					AND kind <> 'engine_exec'
+					AND kind NOT IN ('engine_exec','device_session')
 				AND kind=$5
 				AND identity_kind=$6
 					AND ($7='' OR workspace_id=$7)
@@ -313,7 +314,7 @@ func (s *Store) claimEngineTask(
 		WHERE id = (
 			SELECT id FROM weave_task_queue
 				WHERE status='queued' AND available_at <= $3
-				AND kind='engine_exec'
+				AND kind=$8
 				AND workspace_id=$5
 					AND runtime_id=$6
 					AND identity_kind=$7
@@ -330,7 +331,7 @@ func (s *Store) claimEngineTask(
 		)
 		RETURNING `+taskColumns,
 		StatusRunning, workerID, now, leaseExpiresAt,
-		filter.WorkspaceID, filter.RuntimeID, identityKind)
+		filter.WorkspaceID, filter.RuntimeID, identityKind, filter.Kind)
 	task, err := scanTask(row)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil

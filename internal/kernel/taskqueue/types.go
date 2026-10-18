@@ -29,7 +29,12 @@ const (
 	IdentityAudit        IdentityKind = "audit"
 	IdentityTeamBuild    IdentityKind = "team_build"
 	IdentityCapability   IdentityKind = "capability"
+	// IdentityDevice is a control session on the person's own device.
+	IdentityDevice IdentityKind = "device"
 )
+
+// KindDeviceSession is the task kind of a device control session.
+const KindDeviceSession = "device_session"
 
 // ExecutionScope is the shared durable Agent execution scope.
 type ExecutionScope = execution.Scope

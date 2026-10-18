@@ -47,6 +47,8 @@ RUN --mount=type=cache,id=weave-gomod,target=/go/pkg/mod,sharing=locked \
       CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build \
         -ldflags "-X main.buildCommit=${BUILD_COMMIT} -X main.buildVersion=${WEAVE_VERSION}" -o "$out" ./cmd/weave || exit 1; \
     done
+# The cua-driver release personal devices install, pinned by SHA-256.
+RUN sh ./scripts/fetch-cua-driver.sh /dist/cua-driver
 
 # Node remains available for the existing service health probe. Loom runs in
 # the Go service; CLI engines belong only to the optional executor target.
@@ -56,7 +58,8 @@ FROM node:22-slim AS server-base
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=builder /weave /usr/local/bin/weave
 COPY --from=builder /dist/runtime /dist/runtime
-ENV WEAVE_RUNTIME_DIST_DIR=/dist/runtime
+COPY --from=builder /dist/cua-driver /dist/cua-driver
+ENV WEAVE_RUNTIME_DIST_DIR=/dist/runtime WEAVE_CUA_DRIVER_DIST_DIR=/dist/cua-driver
 EXPOSE 8080
 ENTRYPOINT ["weave"]
 

@@ -125,6 +125,15 @@ make compose-check
 
 保存受控修改不改变已发布的团队；试跑和发布仍走原来的接口和条件。
 
+### 团队导出与导入
+
+团队可以导出成一个团队包，在另一个工作区导入成新团队，管理端团队页和桌面助手都提供这两个入口：
+
+- `GET /v1/teams/:id/development/export` 返回已保存草稿的团队包（`format: weave-team-package`，`version: 1`）：团队名称和目标、成员的设置与关系、流程和触发设置。成员在包里用 `lead`、`member-1` 这样的标识互相指代，不带工作区内的编号；MCP 服务和技能库技能按名称记录，技能库技能连同最新版本的正文一起带上。包里不含密钥、运行记录和发布状态。
+- `POST /v1/development/teams/import` 带 `request_id` 和 `package`，用团队包新建一个未发布的团队草稿，不覆盖已有团队，也不发布；包不超过 4 MiB，须有一位负责人和至少一位成员（合计最多 32 位），流程最多 20 条。同一请求重发返回同一个团队。
+- 导入时，模型、执行节点、MCP 服务和技能库技能都在本工作区按名称查找：找不到的模型清空，节点按名称和引擎匹配，MCP 服务只在已启用且连通过时带上，同名技能库技能直接引用，没有的技能改为成员自带技能。每项被去掉或改动的内容都写在返回的 `adjustments` 里，首次创建时返回一次。
+本轮验收（2026-10-16）：Mac管理端24文件151项检查、完整构建及独立PostgreSQL16的`make ci`通过；Compose与部署脚本检查通过。可见Chrome中的新建／导出、未保存禁用导出、跨工作区导入新草稿、缺失依赖提示及确认、重新导出读回和原团队保留已验证。补修无效流程引用的前置校验，拒绝文件不再留下团队，真实PG及页面回归通过。GitHub Actions被账号计费限制阻止启动；原生PG没有pgvector，对应既有条件跳过保留。桌面实际文件窗口与配套副本／锁同步由总仓PR继续验证，本轮未部署。
+
 ### 团队草稿以外的操作
 
 归档团队、刷新业务动作目录，以及运行、执行节点、代码仓库、飞书和客户端会话的操作不属于团队草稿，由“工作区操作”提供，桌面助手与 MCP 入口共用：
@@ -155,6 +164,10 @@ make compose-check
 - 登录密钥不保存在数据库里，改动环境变量并重启后立即生效，旧密钥随即失效。
 ## 在 Forge 里使用管理端
 
+Forge原生Setup创建管理员及组织后即可进入管理端。身份交换从已验证会话的`activeOrganizationId`取得组织，沿既有持久绑定事务自动建立工作空间和员工映射；不要求先填写`WEAVE_FORGE_DEFAULT_WORKSPACE`或运行组织绑定命令。已有明确工作空间映射继续保持其原生组织边界。企业业务准备由管理员登录小满后办理，不影响Weave登录。
+
+配置或身份服务不可用返回503，会话失效401，账号或组织无权403。管理端分别提示具体原因；部署信任配置仍由部署管理员维护，普通员工不输入服务或组织技术编号。
+
 配置了 `WEAVE_ADMIN_FORGE_URL` 的部署，允许那一个 Forge 把管理端放进它自己的页面（Forge“系统设置 → 集成 → Weave 管理端”），其他任何页面都不能内嵌；没有配置时管理端不能被任何页面内嵌。
 
 在 Forge 页面里打开时不需要再登录：管理端照常向 Forge 发起一次账号登录，把确认码交给外层的 Forge 页面，由它用当前登录人的 Forge 会话确认，随后的兑换、身份交换和注销与手动确认之后完全相同。两个页面之间只传确认码。
@@ -182,3 +195,24 @@ make compose-check
 每个调用方每分钟可调用 120 次；其中会让团队开始工作的三个工具（试跑、交接工作、发布）另计，每分钟 10 次。调用方指客户端的会话；直接使用密钥时指这把密钥。超出时工具返回 `rate_limited` 并说明多少秒后重试。计数在单个服务进程内，多进程部署各自计数。
 
 管理端“集成”页列出已登录的 MCP 客户端并可收回：每个人看到并收回自己的，管理员看到并收回本工作区全部的。对应接口为 `GET /v1/mcp/sessions` 与 `DELETE /v1/mcp/sessions/:id`。服务端只保存令牌摘要；已结束的会话记录保留，作为谁从哪个客户端登录、由谁收回的记录。
+
+## 本人设备
+
+本人可以把自己的 Mac 或 Windows 电脑接入 Weave，供本人登录的智能体查看和操作（weave-workbench 决策 009，契约见 `weave-workbench/contracts/v1/设备控制契约.md`）。设备就是一个绑定到本人账号的节点：只上报设备能力，不检测编码引擎，团队工作不会派到这里。
+
+- **取得注册码。** 本人账号会话调用 `POST /v1/devices/enrollments`，或在 MCP 入口调用 `device_enroll`，得到一次性注册码（10 分钟内有效，只能用一次）和 Mac、Windows 上各一条注册命令。部署登录密钥、API Key 和以 API Key 登录的管理端会话都返回 `account_session_required`。服务端只保存注册码摘要；用过的记录保留，作为谁在何时添加了哪台设备的记录。
+- **一条命令接入。** 注册命令与执行节点的 `install.sh`／`install.ps1` 是同一套脚本，带 `--device-code`／`-DeviceCode` 时：从本服务下载节点程序与固定版本的 cua-driver，逐个核对 `X-Weave-SHA256`，不一致就停止；先用注册码向 `POST /v1/runtime/device-enrollments` 换取节点令牌，换取失败时不安装程序或改写节点凭据；再安装驱动并设开机自动运行（Mac 为本人的 LaunchAgent `com.weave.device`，即使经 ssh 运行也加载到本人的图形会话；Windows 为登录时启动的计划任务 `WeaveDevice`，cua-driver 自身的登录任务要一次管理员确认）。Mac 上最后要本人在系统设置中为 CuaDriver 打开“辅助功能”和“屏幕与系统录音”。在已接入的机器上重跑命令即为重新接入：同一账号沿用原设备、换发令牌，原令牌立即失效；属于其他账号的设备返回 `runtime_binding_mismatch`。Mac 的 `--dry-run` 只说明将执行的安装，不下载、兑换注册码、换发令牌或修改本机文件。
+- **换取令牌不需要登录**，注册码就是凭据：同一来源每分钟 10 次，失败时不说明注册码属于谁。
+- **驱动来源。** 镜像构建时 `scripts/fetch-cua-driver.sh` 按 `scripts/cua-driver.sha256` 取 cua-driver 的 macOS 与 Windows 发布包及许可证，任一校验不符即构建失败；`GET /v1/downloads/cua-driver/{os}/{arch}` 与 `/license/notice` 提供这些文件。cua-driver 为 MIT 许可，见 `THIRD_PARTY_NOTICES.md`。节点程序下载同样附 `X-Weave-SHA256`。
+
+经 MCP 入口转调的接口按客户端实际使用的地址生成命令，执行节点的安装命令也随之使用正确地址。
+
+### 控制会话
+
+- **会话就是任务。** `POST /v1/devices/:id/sessions`（本人账号会话，带原因与 `request_id`）登记一个 `kind=device_session`、身份类型 `device`、固定到该设备的任务；同一 `request_id` 返回同一会话，换设备或原因返回 `request_conflict`，一台设备同一时间只有一个未结束的会话。请求键与设备的准入在同一任务队列事务内串行核对；复用已有会话时也保存本次请求绑定，结束后重试仍返回原会话。每个会话最多保存 256 个请求键、每次原因最多 1000 字；达到上限后新键返回 `session_request_limit`，原有请求仍可重放。设备节点（`--device`）只领取自己的会话，不领团队工作；续租复用既有接口。会话状态由任务决定：排队为 opening、运行为 ready、请求停止为 closing、终态为 ended；结束原因另记一次（`weave_device_session_ends`），不新增任务终态。领取超过 30 秒未开始、空闲 5 分钟或满 60 分钟时，下一次被查看就结束。
+- **操作。** `POST /v1/device-sessions/:id/ops` 登记一项操作（`op_id` 幂等，同一 `op_id` 换内容为 `request_conflict`），等待设备回执后返回；超过等待时间返回 202，用同一 `op_id` 再调用即可继续等待同一项操作。设备以长轮询 `/v1/runtime/tasks/:id/device/next` 取操作、`/device/ops/:op` 交回结果、`/device/end` 结束会话。参数在交给设备时清空，结果在交给调用方时清空，`weave_device_operations` 只留审计：操作类型、动作与目标应用、文字长度、程序名与参数个数、路径与摘要、状态和时间。已交给设备却未回执就结束的操作记为 `unknown`，不重放；从未交出的记为 `stopped`。
+- **级别。** 设备在 hello 中上报平台、cua-driver 是否可用和本机允许的级别（`~/.weave/device.json`，缺省为 observe、act、exec 三级，文件目录为用户主目录）；操作的级别不在其中时服务端与设备都拒绝。
+- **设备上。** 截图、界面结构、窗口列表和点击、输入、按键、滚动、拖动、启动应用经 `cua-driver mcp`（标准输入输出的 MCP）完成，工具以驱动 `tools/list` 为准；截图文件读取后即删除。命令（`argv`，不经 shell）、文件读写由节点在允许目录内完成，路径先解析链接再核对；命令输出各 256 KB 封顶，文件 8 MB 封顶，写入核对原摘要。
+- **MCP。** `device_list`、`device_session_open`、`device_session_read`、`device_session_close`、`device_screenshot`（返回 MCP 图片内容）、`device_ui_tree`、`device_windows`、`device_act`、`device_exec`、`device_file_read`、`device_file_write`。
+
+- **看得见、停得下。** 会话期间，Windows 通知区显示一个图标，提示正在被控制及原因，菜单“停止 Weave 控制”结束会话；macOS 在开始与结束时发通知，操作期间显示 cua-driver 的会话光标。Mac 在本机运行 `"$HOME/.weave/bin/weave-runtime" device stop`，Windows 在 PowerShell 运行 `& "$env:USERPROFILE\.weave\bin\weave-runtime.exe" device stop`，都可请求结束当前会话；不需要预装全局 `weave` 命令，Mac 通知会给出当前节点的准确可执行文件路径。停止命令写入 `~/.weave/device-stop`，节点在每项操作前后检查；结束原因记为 `stopped_on_device`。无法显示标识的机器报告为不可用，不能打开会话。

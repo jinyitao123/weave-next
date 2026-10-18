@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -59,6 +58,23 @@ type ForgeSessionVerifier struct {
 	client           *http.Client
 }
 
+type forgeIdentityFailure struct {
+	status int
+	code   string
+}
+
+func (e *forgeIdentityFailure) Error() string    { return e.code }
+func forgeFailure(status int, code string) error { return &forgeIdentityFailure{status, code} }
+func forgeResponseFailure(status int) error {
+	if status == http.StatusUnauthorized {
+		return forgeFailure(status, "forge_session_invalid")
+	}
+	if status == http.StatusForbidden {
+		return forgeFailure(status, "forge_account_forbidden")
+	}
+	return forgeFailure(http.StatusServiceUnavailable, "forge_identity_unavailable")
+}
+
 func NewForgeSessionVerifier(rawURL, defaultWorkspace string, client *http.Client) *ForgeSessionVerifier {
 	endpoint, err := url.Parse(strings.TrimSpace(rawURL))
 	if err != nil || endpoint.Scheme == "" || endpoint.Host == "" || (endpoint.Scheme != "http" && endpoint.Scheme != "https") || endpoint.User != nil {
@@ -73,8 +89,11 @@ func NewForgeSessionVerifier(rawURL, defaultWorkspace string, client *http.Clien
 }
 
 func (v *ForgeSessionVerifier) Verify(ctx context.Context, bearer string) (ExternalIdentity, error) {
-	if v == nil || v.endpoint == nil || strings.TrimSpace(bearer) == "" {
-		return ExternalIdentity{}, errors.New("external identity is not configured")
+	if v == nil || v.endpoint == nil {
+		return ExternalIdentity{}, forgeFailure(http.StatusServiceUnavailable, "external identity is not configured")
+	}
+	if strings.TrimSpace(bearer) == "" {
+		return ExternalIdentity{}, forgeFailure(http.StatusUnauthorized, "forge_session_invalid")
 	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, v.endpoint.String(), nil)
 	if err != nil {
@@ -84,29 +103,26 @@ func (v *ForgeSessionVerifier) Verify(ctx context.Context, bearer string) (Exter
 	request.Header.Set("Authorization", "Bearer "+bearer)
 	response, err := v.client.Do(request)
 	if err != nil {
-		return ExternalIdentity{}, fmt.Errorf("verify external identity: %w", err)
+		return ExternalIdentity{}, forgeFailure(http.StatusServiceUnavailable, "forge_identity_unavailable")
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
 		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 64<<10))
-		return ExternalIdentity{}, fmt.Errorf("verify external identity: status %d", response.StatusCode)
+		return ExternalIdentity{}, forgeResponseFailure(response.StatusCode)
 	}
 	var body struct {
-		Sub          string `json:"sub"`
-		ID           string `json:"id"`
-		Email        string `json:"email"`
-		Name         string `json:"name"`
-		Organization struct {
-			ID string `json:"id"`
-		} `json:"organization"`
-		User struct {
+		Sub   string `json:"sub"`
+		ID    string `json:"id"`
+		Email string `json:"email"`
+		Name  string `json:"name"`
+		User  struct {
 			ID    string `json:"id"`
 			Email string `json:"email"`
 			Name  string `json:"name"`
 		} `json:"user"`
 	}
 	if err := json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&body); err != nil {
-		return ExternalIdentity{}, errors.New("invalid external identity response")
+		return ExternalIdentity{}, forgeFailure(http.StatusServiceUnavailable, "forge_identity_response_invalid")
 	}
 	subject := strings.TrimSpace(body.Sub)
 	if subject == "" {
@@ -123,12 +139,8 @@ func (v *ForgeSessionVerifier) Verify(ctx context.Context, bearer string) (Exter
 	if name == "" {
 		name = strings.TrimSpace(body.User.Name)
 	}
-	workspace := strings.TrimSpace(body.Organization.ID)
-	if workspace == "" {
-		workspace = v.defaultWorkspace
-	}
-	if subject == "" || workspace == "" {
-		return ExternalIdentity{}, errors.New("external identity is missing subject or workspace")
+	if subject == "" {
+		return ExternalIdentity{}, forgeFailure(http.StatusUnauthorized, "forge_session_invalid")
 	}
 	sessionEndpoint := *v.endpoint
 	sessionEndpoint.Path, sessionEndpoint.RawPath, sessionEndpoint.RawQuery, sessionEndpoint.Fragment = "/api/v1/auth/get-session", "", "", ""
@@ -139,11 +151,11 @@ func (v *ForgeSessionVerifier) Verify(ctx context.Context, bearer string) (Exter
 	sessionRequest.Header.Set("Authorization", "Bearer "+bearer)
 	sessionResponse, err := v.client.Do(sessionRequest)
 	if err != nil {
-		return ExternalIdentity{}, errors.New("native session could not be verified")
+		return ExternalIdentity{}, forgeFailure(http.StatusServiceUnavailable, "forge_identity_unavailable")
 	}
 	defer sessionResponse.Body.Close()
 	if sessionResponse.StatusCode != http.StatusOK {
-		return ExternalIdentity{}, errors.New("native session is unavailable")
+		return ExternalIdentity{}, forgeResponseFailure(sessionResponse.StatusCode)
 	}
 	var nativeSession struct {
 		User struct {
@@ -154,8 +166,18 @@ func (v *ForgeSessionVerifier) Verify(ctx context.Context, bearer string) (Exter
 			ActiveOrganizationID string `json:"activeOrganizationId"`
 		} `json:"session"`
 	}
-	if json.NewDecoder(io.LimitReader(sessionResponse.Body, 1<<20)).Decode(&nativeSession) != nil || nativeSession.User.ID != subject || (nativeSession.Session.UserID != "" && nativeSession.Session.UserID != subject) || nativeSession.Session.ActiveOrganizationID == "" {
-		return ExternalIdentity{}, errors.New("native session identity or organization differs")
+	if json.NewDecoder(io.LimitReader(sessionResponse.Body, 1<<20)).Decode(&nativeSession) != nil {
+		return ExternalIdentity{}, forgeFailure(http.StatusServiceUnavailable, "forge_identity_response_invalid")
+	}
+	if nativeSession.User.ID != subject || (nativeSession.Session.UserID != "" && nativeSession.Session.UserID != subject) {
+		return ExternalIdentity{}, forgeFailure(http.StatusUnauthorized, "forge_session_invalid")
+	}
+	if strings.TrimSpace(nativeSession.Session.ActiveOrganizationID) == "" {
+		return ExternalIdentity{}, forgeFailure(http.StatusForbidden, "forge_organization_required")
+	}
+	workspace := v.defaultWorkspace
+	if workspace == "" {
+		workspace = nativeSession.Session.ActiveOrganizationID
 	}
 	permissionEndpoint := *v.endpoint
 	permissionEndpoint.Path = "/api/v1/auth/me/permissions"
@@ -170,19 +192,22 @@ func (v *ForgeSessionVerifier) Verify(ctx context.Context, bearer string) (Exter
 	permissionRequest.Header.Set("Authorization", "Bearer "+bearer)
 	permissionResponse, err := v.client.Do(permissionRequest)
 	if err != nil {
-		return ExternalIdentity{}, fmt.Errorf("verify Forge permissions: %w", err)
+		return ExternalIdentity{}, forgeFailure(http.StatusServiceUnavailable, "forge_identity_unavailable")
 	}
 	defer permissionResponse.Body.Close()
 	if permissionResponse.StatusCode != http.StatusOK {
 		_, _ = io.Copy(io.Discard, io.LimitReader(permissionResponse.Body, 64<<10))
-		return ExternalIdentity{}, fmt.Errorf("verify Forge permissions: status %d", permissionResponse.StatusCode)
+		return ExternalIdentity{}, forgeResponseFailure(permissionResponse.StatusCode)
 	}
 	var permissionBody struct {
 		Authenticated  bool     `json:"authenticated"`
 		PermissionSets []string `json:"permissionSets"`
 	}
-	if err := json.NewDecoder(io.LimitReader(permissionResponse.Body, 1<<20)).Decode(&permissionBody); err != nil || !permissionBody.Authenticated {
-		return ExternalIdentity{}, errors.New("invalid Forge permission response")
+	if err := json.NewDecoder(io.LimitReader(permissionResponse.Body, 1<<20)).Decode(&permissionBody); err != nil {
+		return ExternalIdentity{}, forgeFailure(http.StatusServiceUnavailable, "forge_identity_response_invalid")
+	}
+	if !permissionBody.Authenticated {
+		return ExternalIdentity{}, forgeFailure(http.StatusForbidden, "forge_account_forbidden")
 	}
 	identitySourceURL := *v.endpoint
 	identitySourceURL.Path, identitySourceURL.RawPath, identitySourceURL.RawQuery, identitySourceURL.Fragment = "/api/v1/workbench/identity-source", "", "", ""
@@ -193,12 +218,12 @@ func (v *ForgeSessionVerifier) Verify(ctx context.Context, bearer string) (Exter
 	identitySourceRequest.Header.Set("Accept", "application/json")
 	identitySourceResponse, err := v.client.Do(identitySourceRequest)
 	if err != nil {
-		return ExternalIdentity{}, errors.New("Forge identity source is unavailable")
+		return ExternalIdentity{}, forgeFailure(http.StatusServiceUnavailable, "forge_identity_source_unavailable")
 	}
 	defer identitySourceResponse.Body.Close()
 	if identitySourceResponse.StatusCode != http.StatusOK {
 		_, _ = io.Copy(io.Discard, io.LimitReader(identitySourceResponse.Body, 64<<10))
-		return ExternalIdentity{}, errors.New("Forge identity source is unavailable")
+		return ExternalIdentity{}, forgeFailure(http.StatusServiceUnavailable, "forge_identity_source_unavailable")
 	}
 	var identitySource struct {
 		Version string `json:"version"`
@@ -206,7 +231,7 @@ func (v *ForgeSessionVerifier) Verify(ctx context.Context, bearer string) (Exter
 	}
 	if json.NewDecoder(io.LimitReader(identitySourceResponse.Body, 64<<10)).Decode(&identitySource) != nil ||
 		identitySource.Version != "1" || !validForgeIdentityIssuer(identitySource.Issuer) {
-		return ExternalIdentity{}, errors.New("invalid Forge identity source")
+		return ExternalIdentity{}, forgeFailure(http.StatusServiceUnavailable, "forge_identity_source_unavailable")
 	}
 	accessRole := "member"
 	for _, permissionSet := range permissionBody.PermissionSets {
@@ -273,6 +298,13 @@ func (s *Server) bindVerifiedExternalIdentity(ctx context.Context, bearer string
 	}
 	identity, err := s.ExternalIdentity.Verify(ctx, bearer)
 	if err != nil {
+		var failure *forgeIdentityFailure
+		if errors.As(err, &failure) {
+			if s.Echo != nil {
+				s.Echo.Logger.Warnf("Forge identity verification: %s", failure.code)
+			}
+			return identity, nil, "", &exchangeFailure{failure.status, failure.code}
+		}
 		return identity, nil, "", &exchangeFailure{http.StatusUnauthorized, "external identity verification failed"}
 	}
 	binder := s.ExternalIdentityBinder

@@ -1329,6 +1329,82 @@
       }
     },
     {
+      "date": "2026-10-15",
+      "reason": "Let a team be exported and imported, as the owner asked on 2026-10-15. Export writes the saved draft as a package that names members by package keys and MCP services and library skills by name, and carries library skill text; it has no secrets, runs or publish state. Import makes a new unpublished draft through the shared create path, once per request id, never over an existing team; models, nodes, MCP services and skills are looked up by name in the target workspace, and what is missing is dropped or carried as a member skill and listed. The console team pages and the desktop assistant use the two endpoints. No new packages, dependencies, tables or runtime loops.",
+      "record": "README.zh-CN.md#团队导出与导入",
+      "growth": {
+        "lines": 553,
+        "production_lines": 360
+      },
+      "deletion_trigger": "Remove the package export and import if teams are copied between workspaces by another recorded mechanism, or if a recorded decision drops moving teams between workspaces. Lower the measured budgets in that change.",
+      "app": {
+        "previous_lines": 92738,
+        "previous_production_lines": 62498,
+        "lines_added": 553,
+        "production_lines_added": 360
+      }
+    },
+    {
+      "date": "2026-10-16",
+      "reason": "Let a person add their own Mac or Windows PC with one command, as the owner asked on 2026-10-16 (weave-workbench decision 009 and its supplement). An account session issues a one-time code; the install scripts download the node and a SHA-256-pinned cua-driver release from this server, trade the code for a runtime token in one transaction that binds the new device runtime to that account, and start both at login. Keys and API-key console sessions cannot issue codes; the code exchange is rate limited per address. A device runtime detects no engines, so no team work reaches it. The MCP entry gains device_enroll, and routes it calls now see the caller's address. No new packages, dependencies, queues or runtime loops; one table and one column.",
+      "record": "README.zh-CN.md#本人设备",
+      "growth": {
+        "lines": 885,
+        "production_lines": 468
+      },
+      "deletion_trigger": "Remove device enrollment, the device download and the device flag if a recorded decision withdraws decision 009, or when devices enroll through another recorded mechanism. Lower the measured budgets in that change.",
+      "kernel": {
+        "previous_lines": 108084,
+        "previous_production_lines": 84691,
+        "lines_added": 396,
+        "production_lines_added": 231
+      },
+      "app": {
+        "previous_lines": 93291,
+        "previous_production_lines": 62858,
+        "lines_added": 489,
+        "production_lines_added": 237
+      }
+    },
+    {
+      "date": "2026-10-17",
+      "reason": "Let the person control their own enrolled device, as the owner decided on 2026-10-16 (weave-workbench decision 009, one delivery). A control session is one task of kind device_session with identity kind device, pinned to the device runtime through the existing runtime claim path and renewed by the existing lease; the device takes operations by long poll and answers them; session state stays the task status and only the end reason is recorded once. Operations keep params and results until delivered and afterwards only a content-free audit; an operation delivered without an answer ends unknown and is never replayed. The device drives cua-driver over its stdio MCP server and runs programs and file reads and writes inside the roots its owner allows. While a session runs the machine shows it (a Windows tray icon whose menu stops it; macOS notifications and the driver session cursor) and the installed node's `device stop` command ends it. The MCP entry gains eleven device tools and returns screenshots as image content. No new packages, dependencies, queues or runtime loops; two tables and one column. Admission now binds every acknowledged request id to its device and reason, including requests that reuse an active session, and locks the request and device in the same existing task-queue transaction through EnqueueTx. PostgreSQL regressions cover changed-device conflicts, active-session retries after end, and concurrent same-device or same-request admission; the Mac installer dry run exits before downloads, code exchange or local changes. Request associations are bounded to 256 ids per session with a 1000-character reason limit; full sessions reject new ids while preserving recorded retries. Display-name reads happen before opening the transaction, including on a one-connection pool. Mac notifications quote the running node's exact executable path, and the existing stop handler runs in the early dispatcher without server configuration; installed-binary and path-quoting regressions cover it.",
+      "record": "README.zh-CN.md#控制会话",
+      "growth": {
+        "lines": 3123,
+        "production_lines": 2341
+      },
+      "deletion_trigger": "Remove device sessions, operations, the device daemon mode and the device MCP tools if a recorded decision withdraws decision 009. Lower the measured budgets in that change.",
+      "kernel": {
+        "previous_lines": 108480,
+        "previous_production_lines": 84922,
+        "lines_added": 332,
+        "production_lines_added": 332
+      },
+      "app": {
+        "previous_lines": 93780,
+        "previous_production_lines": 63095,
+        "lines_added": 2791,
+        "production_lines_added": 2009
+      }
+    },
+    {
+      "date": "2026-10-17",
+      "reason": "Resolve workspace identity from the verified Forge native organization on first sign-in; retain explicit existing mappings, native permission verification and durable account binding. Classify configuration, connectivity, organization and session failures before returning them to callers. No new runtime, queue, table or dependency.",
+      "record": "README.zh-CN.md",
+      "growth": {
+        "lines": 104,
+        "production_lines": 36
+      },
+      "deletion_trigger": "Remove the Forge-specific session verifier when this deployment migrates all consumers to a recorded standard identity exchange, and lower these exact budgets in that change.",
+      "app": {
+        "previous_lines": 96571,
+        "previous_production_lines": 65104,
+        "lines_added": 104,
+        "production_lines_added": 36
+      }
+    },
+    {
       "date": "2026-10-18",
       "reason": "Loom engine upgrade: retain cache receipt presence and immutable checkpoint identity, preserve completed reasoning, and carry MCP images through the existing member path. Includes real PostgreSQL recovery and negative protocol regressions; no new packages, execution loops or external dependencies.",
       "record": "docs/治理/2026-09-30-平台范围收窄整改登记.md",
@@ -1344,14 +1420,14 @@
         "production_lines_added": 4
       },
       "kernel": {
-        "previous_lines": 108084,
-        "previous_production_lines": 84691,
+        "previous_lines": 108812,
+        "previous_production_lines": 85254,
         "lines_added": 581,
         "production_lines_added": 118
       },
       "app": {
-        "previous_lines": 92738,
-        "previous_production_lines": 62498,
+        "previous_lines": 96675,
+        "previous_production_lines": 65140,
         "lines_added": 28,
         "production_lines_added": 10
       }
@@ -1398,8 +1474,8 @@
     ]
   },
   "kernel": {
-    "lines": 108665,
-    "production_lines": 84809,
+    "lines": 109393,
+    "production_lines": 85372,
     "packages": 48,
     "external_dependencies": 5,
     "allowed_dependencies": [
@@ -1418,8 +1494,8 @@
     "allowed_dependencies": []
   },
   "app": {
-    "lines": 92766,
-    "production_lines": 62508,
+    "lines": 96703,
+    "production_lines": 65150,
     "packages": 25,
     "external_dependencies": 6,
     "allowed_dependencies": [

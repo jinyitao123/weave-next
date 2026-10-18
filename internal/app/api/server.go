@@ -121,6 +121,7 @@ type Server struct {
 	OwnerMem                  OwnerMemoryStore       // nil if PG pool unavailable
 	sessionExecutionWorkers   *sessionExecutionWorkers
 	mcpLimiter                mcpRateLimiter
+	deviceEnrollLimiter       mcpRateLimiter
 	teamRunWorkers            *teamrun.Workers
 	teamRunCancel             *teamrun.CancelService
 	teamRunStageRetry         *teamrun.StageRetryService
@@ -312,6 +313,9 @@ func (s *Server) registerRoutes() {
 	s.Echo.GET("/install.sh", s.handleInstallScript)
 	s.Echo.GET("/install.ps1", s.handleInstallScript)
 	s.Echo.GET("/v1/downloads/runtime/:os/:arch", s.handleDownloadRuntime)
+	s.Echo.GET("/v1/downloads/cua-driver/:os/:arch", s.handleDownloadCuaDriver)
+	// The one-time enrollment code is the credential of this exchange.
+	s.Echo.POST("/v1/runtime/device-enrollments", s.handleDeviceEnrollmentExchange)
 	s.Echo.POST("/v1/auth/external/exchange", s.handleExternalIdentityExchange)
 	s.Echo.Any("/v1/mcp-boundary/:tenant/:agent/:idx", s.handleMCPBoundary)
 	s.Echo.Any("/v1/mcp-gateway/:workspace/:agent/:serverID", s.handleMCPGateway)
@@ -329,6 +333,12 @@ func (s *Server) registerRoutes() {
 	auth.POST("/integrations/feishu/link-code", s.handleFeishuLinkCode)
 	auth.DELETE("/integrations/feishu/binding", s.handleFeishuUnlink)
 	auth.POST("/mcp", s.handleMCPEntry)
+	auth.POST("/devices/enrollments", s.handleCreateDeviceEnrollment)
+	auth.GET("/devices", s.handleListDevices)
+	auth.POST("/devices/:id/sessions", s.handleOpenDeviceSession)
+	auth.GET("/device-sessions/:id", s.handleReadDeviceSession)
+	auth.DELETE("/device-sessions/:id", s.handleCloseDeviceSession)
+	auth.POST("/device-sessions/:id/ops", s.handleDeviceOperation)
 	s.registerMCPSignIn(auth)
 	adminScope := RequireScope("admin")
 	agentsScope := RequireScope("agents")
@@ -408,6 +418,8 @@ func (s *Server) registerRoutes() {
 	auth.PUT("/teams/:id/development", s.handleSaveTeamDevelopment, RequireAnyRole("developer", "admin", "owner"), orgScope)
 	auth.POST("/teams/:id/development/operations", s.handleApplyTeamDevelopmentOperations, RequireAnyRole("developer", "admin", "owner"), orgScope)
 	auth.POST("/development/teams", s.handleCreateDevelopmentTeam, RequireAnyRole("developer", "admin", "owner"), orgScope)
+	auth.POST("/development/teams/import", s.handleImportDevelopmentTeam, RequireAnyRole("developer", "admin", "owner"), orgScope)
+	auth.GET("/teams/:id/development/export", s.handleExportTeamDevelopment, RequireAnyRole("developer", "admin", "owner"), orgScope)
 	auth.GET("/development/operations", s.handleListDevelopmentOperations, RequireAnyRole("developer", "admin", "owner"), orgScope)
 	auth.GET("/development/operations/:topic", s.handleGetDevelopmentOperationTopic, RequireAnyRole("developer", "admin", "owner"), orgScope)
 	auth.GET("/development/workspace-operations", s.handleListWorkspaceOperations, orgScope)
@@ -470,6 +482,9 @@ func (s *Server) registerRoutes() {
 	runtimeAPI.POST("/heartbeat", s.handleRuntimeHeartbeat)
 	runtimeAPI.POST("/claim", s.handleRuntimeClaim)
 	runtimeAPI.POST("/tasks/:id/renew", s.handleRuntimeTaskRenew)
+	runtimeAPI.POST("/tasks/:id/device/next", s.handleDeviceNext)
+	runtimeAPI.POST("/tasks/:id/device/ops/:op", s.handleDeviceOperationResult)
+	runtimeAPI.POST("/tasks/:id/device/end", s.handleDeviceSessionEnd)
 	runtimeAPI.POST("/tasks/:id/complete", s.handleRuntimeTaskComplete)
 	runtimeAPI.POST("/tasks/:id/stopped", s.handleRuntimeTaskStopped)
 	runtimeAPI.POST("/tasks/:id/events", s.handleRuntimeTaskEvents)

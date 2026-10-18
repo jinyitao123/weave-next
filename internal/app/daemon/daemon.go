@@ -53,6 +53,11 @@ type daemonConfig struct {
 	heartbeatInterval  time.Duration
 	minBackoff         time.Duration
 	maxBackoff         time.Duration
+	// device runs this process as the person's own device (weave-workbench
+	// decision 009): it detects no engines, so no team work is routed to it,
+	// and drives the machine through cuaDriver.
+	device    bool
+	cuaDriver string
 }
 
 type service struct {
@@ -75,6 +80,7 @@ type service struct {
 	heartbeatInterval time.Duration
 	minBackoff        time.Duration
 	maxBackoff        time.Duration
+	device            *deviceHost
 	active            atomic.Int32
 	publicSpool       *publicSpool
 	resultSpool       *resultSpool
@@ -106,8 +112,18 @@ func parseFlags(args []string) (daemonConfig, error) {
 	flags.StringVar(&cfg.token, "runtime-token", "", "runtime bearer token (or WEAVE_RUNTIME_TOKEN)")
 	flags.StringVar(&cfg.workspacesRoot, "workspaces-root", filepath.Join(home, ".weave", "runtime-workspaces"), "runtime workspace root")
 	flags.IntVar(&cfg.concurrency, "concurrency", defaultConcurrency, "number of concurrent task claims")
+	flags.BoolVar(&cfg.device, "device", false, "run as the person's own device instead of a team runtime")
+	flags.StringVar(&cfg.cuaDriver, "cua-driver", "", "cua-driver command-line path (device mode)")
 	if err := flags.Parse(args); err != nil {
 		return daemonConfig{}, err
+	}
+	if cfg.device {
+		workspaces := false
+		flags.Visit(func(f *flag.Flag) { workspaces = workspaces || f.Name == "workspaces-root" })
+		if !workspaces {
+			cfg.workspacesRoot = filepath.Join(home, ".weave", "device-workspaces")
+		}
+		cfg.detectedEngines, cfg.engineCapabilities = []string{}, []runtimeprotocol.EngineCapability{}
 	}
 	if cfg.server == "" {
 		return daemonConfig{}, errors.New("runtime: --server is required")
@@ -167,7 +183,12 @@ func newDaemon(cfg daemonConfig) (*service, error) {
 	if err != nil {
 		return nil, fmt.Errorf("initialize durable runtime results: %w", err)
 	}
+	var device *deviceHost
+	if cfg.device {
+		device = newDeviceHost(cfg.cuaDriver)
+	}
 	return &service{
+		device:             device,
 		publicSpool:        spool,
 		resultSpool:        results,
 		client:             client,
@@ -190,6 +211,9 @@ func newDaemon(cfg daemonConfig) (*service, error) {
 func (d *service) Run(ctx context.Context) error {
 	if !d.helloUntilConnected(ctx) {
 		return nil
+	}
+	if d.device != nil {
+		return d.runDevice(ctx)
 	}
 
 	var workers sync.WaitGroup
@@ -215,7 +239,7 @@ func (d *service) helloUntilConnected(ctx context.Context) bool {
 	backoff := newBackoff(d.minBackoff, d.maxBackoff)
 	for {
 		engines, capabilities := d.engines()
-		err := d.client.hello(ctx, engines, capabilities, d.concurrency)
+		err := d.client.hello(ctx, engines, capabilities, d.concurrency, d.deviceFacts(ctx))
 		if err == nil {
 			slog.Info("runtime daemon connected", "server", d.server, "engines", engines)
 			return true
@@ -272,7 +296,7 @@ func (d *service) probe(ctx context.Context) {
 		d.capabilityMu.Unlock()
 	}
 	engines, capabilities := d.engines()
-	if err := d.client.hello(ctx, engines, capabilities, d.concurrency); err != nil {
+	if err := d.client.hello(ctx, engines, capabilities, d.concurrency, d.deviceFacts(ctx)); err != nil {
 		slog.Warn("runtime probe report failed", "error", err)
 		return
 	}

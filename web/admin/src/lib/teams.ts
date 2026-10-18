@@ -118,6 +118,33 @@ export function serverIssues(draft: DevelopmentDraft | undefined): string[] {
 export const createTeam = (requestId: string, name: string, objective: string, kind: TeamKind = 'business') =>
   api<{ team_id: string }>('/v1/development/teams', { method: 'POST', body: JSON.stringify({ request_id: requestId, name, objective, kind }) }).then((created) => created.team_id)
 
+// A team package carries a team's saved draft to another workspace. It is
+// read as JSON and sent back whole; only the server interprets it.
+export interface TeamPackage { format: string; version: number; team: { name: string; objective: string } }
+export interface TeamImported { team_id: string; name: string; adjustments?: string[] }
+
+export const exportTeam = (teamId: string) => api<TeamPackage>(`/v1/teams/${encodeURIComponent(teamId)}/development/export`)
+
+/** Makes a new team draft from a package; the same request id never makes a second team. */
+export const importTeam = (requestId: string, pkg: TeamPackage) =>
+  api<TeamImported>('/v1/development/teams/import', { method: 'POST', body: JSON.stringify({ request_id: requestId, package: pkg }) })
+
+// readTeamPackage checks only what a person fixes by choosing another file;
+// the server decides everything else.
+export const readTeamPackage = (text: string): TeamPackage => {
+  let parsed: Partial<TeamPackage> | null
+  try {
+    parsed = JSON.parse(text) as Partial<TeamPackage> | null
+  } catch {
+    throw new Error('这个文件不是团队导出文件')
+  }
+  if (!parsed || parsed.format !== 'weave-team-package' || typeof parsed.team?.name !== 'string') throw new Error('这个文件不是团队导出文件')
+  if (parsed.version !== 1) throw new Error('这个团队导出文件的版本当前不支持')
+  return parsed as TeamPackage
+}
+
+export const teamPackageFileName = (name: string) => `${name.replace(/[\\/:*?"<>|]/g, '_').trim() || '团队'}.weave-team.json`
+
 export const listTeamRecords = () => api<TeamRecord[]>('/v1/teams?status=all&purpose=development')
   .then((teams) => teams.filter((team) => team.status !== 'archived'))
 
