@@ -13,6 +13,41 @@ type Message struct {
 	Content    string     `json:"content,omitempty"`      // 文本内容；纯工具调用消息可为空
 	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`   // assistant 消息携带的工具调用请求（可多个）
 	ToolCallID string     `json:"tool_call_id,omitempty"` // tool 消息回填的调用 ID，与发起方 ToolCall.ID 配对
+	// Parts optionally carries the message as ordered text and image parts.
+	// Content always holds the text rendering, so providers without
+	// multi-part input keep working; providers that accept images send Parts.
+	// Parts 可选地以有序的文本/图片片段表达消息；Content 始终保留纯文本形态，
+	// 不支持多片段输入的 provider 照常工作，支持图片的 provider 改发 Parts。
+	Parts []ContentPart `json:"parts,omitempty"`
+	// Reasoning carries an assistant message's reasoning blocks, as the
+	// provider returned them. Providers that continue reasoning across
+	// requests send them back; others ignore them.
+	// Reasoning 是 assistant 消息的推理块，按提供方返回原样保存；需要跨请求延续推理的
+	// provider 回传它们，其余 provider 忽略。
+	Reasoning []Reasoning `json:"reasoning,omitempty"`
+}
+
+// Reasoning is one block of a model's reasoning. Text is the readable
+// reasoning or a summary of it. Signature is opaque provider data that must
+// travel back unchanged with the block. Redacted marks reasoning the provider
+// withheld; it is then carried only in Signature and Text is empty.
+// Reasoning 是模型推理的一块：Text 为可读推理或其摘要；Signature 是须随该块原样回传的
+// 提供方不透明数据；Redacted 表示提供方隐去的推理，此时只在 Signature 中携带、Text 为空。
+type Reasoning struct {
+	Text      string `json:"text,omitempty"`
+	Signature string `json:"signature,omitempty"`
+	Redacted  bool   `json:"redacted,omitempty"`
+}
+
+// ContentPart is one part of a multi-part message. Type "text" uses Text;
+// type "image" uses MediaType (for example image/png) and Data, the base64
+// encoded bytes without a data: prefix.
+// ContentPart 是多片段消息中的一段：text 用 Text；image 用 MediaType 与 Data（不带 data: 前缀的 base64）。
+type ContentPart struct {
+	Type      string `json:"type"`
+	Text      string `json:"text,omitempty"`
+	MediaType string `json:"media_type,omitempty"`
+	Data      string `json:"data,omitempty"`
 }
 
 // ToolCall represents a tool invocation requested by the LLM.
@@ -44,6 +79,9 @@ type ToolResult struct {
 	// ToolName 冗余记录工具名：ToolHook 的 Post 阶段只拿到结果时仍能按工具名匹配。
 	Park    bool   `json:"park,omitempty"`     // true=本次调用未执行，已被平台扣下等外部批准；Content 仅为占位说明，循环不得将其当作执行结果
 	ParkRef string `json:"park_ref,omitempty"` // 平台侧不透明关联引用（如审批动作 ID），原样带进暂停现场供宿主定位
+	// Parts optionally carries the result as text and image parts; Content
+	// stays the text rendering. 可选的文本/图片片段，Content 仍为纯文本形态。
+	Parts []ContentPart `json:"parts,omitempty"`
 	// Park marks an unexecuted call held for external approval; ParkRef carries the platform's opaque correlation reference.
 }
 
@@ -54,6 +92,7 @@ func (r *ToolResult) AsMessage() Message {
 		Role:       "tool",    // 固定为 tool 角色，模型据此识别这是工具回执
 		Content:    r.Content, // 结果正文原样进入上下文
 		ToolCallID: r.CallID,  // 回填调用 ID，与发起该调用的 assistant 消息配对
+		Parts:      r.Parts,   // 富内容片段随回执一并入史
 	}
 }
 
@@ -64,6 +103,11 @@ type Usage struct {
 	OutputTokens int     `json:"output_tokens"`      // 输出（补全）token 数
 	CostUSD      float64 `json:"cost_usd,omitempty"` // provider-computed cost
 	// CostUSD 由 provider 按自家价格表算好再填入：contract 层不维护任何价格知识。
+	// CacheReadTokens and CacheWriteTokens are the parts of InputTokens read
+	// from and written to the provider's prompt cache, when it reports them.
+	// CacheReadTokens / CacheWriteTokens 是 InputTokens 中读自、写入提供方提示缓存的部分（提供方上报时填写）。
+	CacheReadTokens  int `json:"cache_read_tokens,omitempty"`
+	CacheWriteTokens int `json:"cache_write_tokens,omitempty"`
 }
 
 // StreamChunk represents a piece of streaming output.
@@ -73,6 +117,13 @@ type StreamChunk struct {
 	ToolCalls []ToolCall `json:"tool_calls,omitempty"` // 本块携带的工具调用片段，由消费方自行累积
 	Done      bool       `json:"done,omitempty"`       // true 表示流结束：终止块通常不带内容、只带 Usage
 	Usage     *Usage     `json:"usage,omitempty"`      // 用量统计，一般仅在终止块出现；指针以区分"未上报"
+	// Reasoning is a delta of readable reasoning, for display only.
+	// ReasoningBlock is a completed reasoning block, the copy consumers keep:
+	// a provider that streams reasoning sends the deltas and then the block.
+	// Reasoning 是可读推理的增量，仅供展示；ReasoningBlock 是完成的推理块，消费方以它为准保存：
+	// 流式推理的 provider 先发增量、再发整块。
+	Reasoning      string     `json:"reasoning,omitempty"`
+	ReasoningBlock *Reasoning `json:"reasoning_block,omitempty"`
 	// FinishReason 中文：provider 的结束原因（stop / tool_calls / length ...），
 	// 只出现在终止块（Done 或 Err）上，供消费方与适配层做收尾语义校验。
 	FinishReason string `json:"finish_reason,omitempty"`
@@ -146,6 +197,9 @@ type ChatResponse struct {
 	ToolCalls  []ToolCall `json:"tool_calls,omitempty"` // 模型请求的工具调用；非空时工具循环据此继续迭代
 	Usage      Usage      `json:"usage"`                // 本次调用的 token/成本统计，供预算钩子累计
 	StopReason string     `json:"stop_reason"`          // 停止原因（如自然结束/工具调用/长度截断），语义由 provider 归一化
+	// Reasoning carries the response's reasoning blocks, in order.
+	// Reasoning 按顺序携带本次响应的推理块。
+	Reasoning []Reasoning `json:"reasoning,omitempty"`
 }
 
 // AsMessage converts a ChatResponse to a Message for conversation history.
@@ -155,6 +209,7 @@ func (r *ChatResponse) AsMessage() Message {
 		Role:      "assistant", // 模型侧发言固定为 assistant 角色
 		Content:   r.Content,   // 输出文本原样入史
 		ToolCalls: r.ToolCalls, // 工具调用请求也必须入史，后续 tool 消息才有配对对象
+		Reasoning: r.Reasoning, // 推理块随消息入史，供需要延续推理的 provider 回传
 	}
 }
 
