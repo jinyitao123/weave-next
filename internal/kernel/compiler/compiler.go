@@ -949,6 +949,7 @@ func nodeToolLoopStep(llm contract.LLM, tools contract.ToolDispatcher, base stdl
 		verifier := stdlib.RejectBareToolProtocolCompletion(schemaVerifier)
 		completionPolicy, completion := nodeCompletionPolicy(ctx)
 		completionReview, beforeTool := completion.Review, completion.BeforeTool
+		var toolsForbidden atomic.Bool
 		var dispatchStop error
 		var dispatchStopMu sync.Mutex
 		invocationTools := tools
@@ -974,7 +975,9 @@ func nodeToolLoopStep(llm contract.LLM, tools contract.ToolDispatcher, base stdl
 			opts.CompletionVerifierID += ":" + completionPolicy
 			if choose := completion.ChooseTool; choose != nil {
 				opts.ToolChoicePolicy = stdlib.ToolChoicePolicyFunc(func(ctx context.Context, input stdlib.ToolChoiceInput) (*contract.ToolChoice, error) {
-					return choose(ctx, NodeToolChoiceInput{Tools: input.Tools, CompletionRejected: input.CompletionRejected, CompletionRejectionReason: input.CompletionRejectionReason})
+					choice, err := choose(ctx, NodeToolChoiceInput{Tools: input.Tools, CompletionRejected: input.CompletionRejected, CompletionRejectionReason: input.CompletionRejectionReason})
+					toolsForbidden.Store(choice != nil && choice.Mode == contract.ToolChoiceNone)
+					return choice, err
 				})
 				opts.ToolChoicePolicyID = completionPolicy + ":tool-choice"
 			}
@@ -1040,6 +1043,9 @@ func nodeToolLoopStep(llm contract.LLM, tools contract.ToolDispatcher, base stdl
 		// The declared check forced the missing action and the model still did
 		// not call it: an explicit failure, never another free-text completion.
 		if err != nil && completion.ChooseTool != nil && errors.Is(err, stdlib.ErrToolChoiceNotHonored) {
+			if toolsForbidden.Load() {
+				return result, &NodeCompletionCheckError{Reason: "tool_call_forbidden_during_completion_review"}
+			}
 			return result, &NodeCompletionCheckError{Reason: requiredToolNotCalledReason}
 		}
 		if err != nil && last != nil && errors.Is(err, stdlib.ErrCompletionUnverified) {

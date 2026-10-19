@@ -108,9 +108,13 @@ func (r *WorkflowSerialRuntime) completionContext(run TeamRun, graph machine.Gra
 			return verdict, nil
 		}
 		// Only a rejected completion claim with no recorded attempt for a required
-		// action constrains the next round. Missing-input reviews never force a
-		// call, and any existing operation (even failed or unknown) is never retried.
+		// action constrains the next round. A missing-input review is read-only:
+		// no tool may dispatch while the model rechecks existing evidence. Any
+		// existing operation (even failed or unknown) is never retried.
 		chooseTool := func(nextCtx context.Context, input compiler.NodeToolChoiceInput) (*contract.ToolChoice, error) {
+			if input.CompletionRejected && input.CompletionRejectionReason == deliverycheck.ReasonInputReview && len(input.Tools) > 0 {
+				return &contract.ToolChoice{Mode: contract.ToolChoiceNone}, nil
+			}
 			if !input.CompletionRejected || input.CompletionRejectionReason != deliverycheck.ReasonRequiredActionMissing {
 				return nil, nil
 			}
@@ -134,9 +138,9 @@ func (r *WorkflowSerialRuntime) completionContext(run TeamRun, graph machine.Gra
 			}
 			return nil
 		}
-		// v2 adds the one-time missing-input review and the required-action tool
-		// choice; a pause taken under v1 semantics must not resume under v2.
-		return compiler.WithNodeCompletionPolicy(ctx, deliverycheck.BusinessReceiptsID+"/"+deliverycheck.BusinessReceiptsVersion+":dispatch-barrier.v2:"+hex.EncodeToString(hash[:]),
+		// v3 forbids dispatch during the one-time missing-input review. A pause
+		// under an earlier policy must not resume with changed tool constraints.
+		return compiler.WithNodeCompletionPolicy(ctx, deliverycheck.BusinessReceiptsID+"/"+deliverycheck.BusinessReceiptsVersion+":dispatch-barrier.v3:"+hex.EncodeToString(hash[:]),
 			compiler.NodeCompletionPolicy{Review: review, BeforeTool: beforeTool, ChooseTool: chooseTool}), nil
 	}
 }
