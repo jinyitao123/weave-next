@@ -95,5 +95,8 @@ func (s *Server) localRuntimeCredentials(ctx context.Context, runtimeID string, 
 	if err != nil {
 		return daemon.ProviderCredentials{}, err
 	}
+	if provider.Protocol != frozen.ProtocolOpenAICompletions {
+		return daemon.ProviderCredentials{}, errors.New("managed runtime does not support this model provider protocol")
+	}
 	return daemon.ProviderCredentials{BaseURL: provider.BaseURL, APIKey: provider.APIKey}, nil
 }

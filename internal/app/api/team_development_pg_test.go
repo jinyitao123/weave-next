@@ -56,7 +56,7 @@ func TestTeamDevelopmentStagingAndAtomicPublicationRealPG(t *testing.T) {
 	key := []byte(strings.Repeat("k", 32))
 	providers := credentials.New(pool, key)
 	providerService := execution.WithSubject(context.Background(), execution.Subject{WorkspaceID: "dev-workspace", ServiceID: "provider:fixture"})
-	if err = providers.Upsert(providerService, "dev-workspace", llmrouter.ProviderConfig{CredentialScope: frozen.CredentialScopeWorkspaceService, CredentialServiceID: "provider:fixture", ID: "fixture", Name: "Fixture", BaseURL: "http://127.0.0.1:1", APIKey: "test-only", Models: []string{"fixture-model"}}); err != nil {
+	if err = providers.Upsert(providerService, "dev-workspace", llmrouter.ProviderConfig{Protocol: "openai-completions", CredentialScope: frozen.CredentialScopeWorkspaceService, CredentialServiceID: "provider:fixture", ID: "fixture", Name: "Fixture", BaseURL: "http://127.0.0.1:1", APIKey: "test-only", Models: []string{"fixture-model"}}); err != nil {
 		t.Fatal(err)
 	}
 	store := workflowcatalog.New(pool, nil, workflow.NewArtifactStore(pool, nil))

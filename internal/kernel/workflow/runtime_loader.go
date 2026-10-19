@@ -316,6 +316,14 @@ func (l *RuntimeLoader) Load(
 	}
 	businessMembers := make(map[machine.AgentVersionKey]bool)
 	for _, bundle := range payload.Bundles {
+		if bundle.Agent.Engine != "loom" {
+			models := append([]frozen.FrozenModelBinding{bundle.PrimaryModel}, bundle.FallbackModels...)
+			for _, model := range models {
+				if model.ModelID != "" && model.Protocol != frozen.ProtocolOpenAICompletions {
+					return nil, runtimeHostUnsupportedError("external runtime does not support native model protocol")
+				}
+			}
+		}
 		if err := compiler.ValidateFrozenBusinessActionFactory(bundle); err != nil {
 			return nil, err
 		}

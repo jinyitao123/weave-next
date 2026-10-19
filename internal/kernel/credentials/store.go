@@ -46,7 +46,7 @@ func (s *Store) List(ctx context.Context, workspaceID string) ([]llmrouter.Provi
 		return nil, err
 	}
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, name, base_url, api_key_cipher, models, json_object_mode,credential_scope,credential_user_id,credential_service_id
+		SELECT id, name, base_url, api_key_cipher, models, json_object_mode, protocol, thinking_default_mode, thinking_disable_with_tools, attempt_timeout_seconds,credential_scope,credential_user_id,credential_service_id
 		FROM weave_provider_credentials
 		WHERE workspace_id=$1
 		  AND enabled
@@ -161,7 +161,7 @@ type rowScanner interface {
 func (s *Store) scanProvider(ctx context.Context, workspaceID string, row rowScanner) (llmrouter.ProviderConfig, error) {
 	var cfg llmrouter.ProviderConfig
 	var ciphertext string
-	if err := row.Scan(&cfg.ID, &cfg.Name, &cfg.BaseURL, &ciphertext, &cfg.Models, &cfg.JSONObjectMode, &cfg.CredentialScope, &cfg.CredentialUserID, &cfg.CredentialServiceID); err != nil {
+	if err := row.Scan(&cfg.ID, &cfg.Name, &cfg.BaseURL, &ciphertext, &cfg.Models, &cfg.JSONObjectMode, &cfg.Protocol, &cfg.ThinkingDefaultMode, &cfg.ThinkingDisableWithTools, &cfg.AttemptTimeoutSeconds, &cfg.CredentialScope, &cfg.CredentialUserID, &cfg.CredentialServiceID); err != nil {
 		return llmrouter.ProviderConfig{}, err
 	}
 	if err := AuthorizeReference(ctx, providerConfigReference(workspaceID, cfg)); err != nil {
@@ -170,6 +170,9 @@ func (s *Store) scanProvider(ctx context.Context, workspaceID string, row rowSca
 	plaintext, err := secret.Open(s.key, ciphertext)
 	if err != nil {
 		return llmrouter.ProviderConfig{}, fmt.Errorf("%w: provider %q: %v", ErrDecrypt, cfg.ID, err)
+	}
+	if err := cfg.Validate(); err != nil {
+		return llmrouter.ProviderConfig{}, err
 	}
 	cfg.APIKey = string(plaintext)
 	return cfg, nil

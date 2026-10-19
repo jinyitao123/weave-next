@@ -54,7 +54,7 @@ func TestLocallyVerifiedOutputHTTPMatrix(t *testing.T) {
 					writeVerifiedTestResponse(w, stream)
 				}))
 				defer server.Close()
-				llm := NewProviderClient(ProviderConfig{BaseURL: server.URL, JSONObjectMode: test.objectMode})
+				llm := NewProviderClient(ProviderConfig{Protocol: "openai-completions", BaseURL: server.URL, JSONObjectMode: test.objectMode})
 				request := verifiedTestRequest()
 				ctx := t.Context()
 				if test.marked {
@@ -168,7 +168,7 @@ func TestLocallyVerifiedLeafKeepsJournalRequestAndReplay(t *testing.T) {
 	}))
 	defer server.Close()
 	journal := &verifiedRequestJournal{}
-	llm := stdlib.NewJournaledLLM(NewProviderClient(ProviderConfig{BaseURL: server.URL, JSONObjectMode: true}), journal)
+	llm := stdlib.NewJournaledLLM(NewProviderClient(ProviderConfig{Protocol: "openai-completions", BaseURL: server.URL, JSONObjectMode: true}), journal)
 	request := verifiedTestRequest()
 	expected, _ := json.Marshal(request)
 	if _, err := llm.Chat(WithLocallyVerifiedOutput(t.Context(), *request.Schema), request); err != nil {
@@ -213,8 +213,8 @@ func TestLocallyVerifiedOutputFallbackUsesEachProviderProfile(t *testing.T) {
 	}))
 	defer server.Close()
 	router := New("object")
-	router.RegisterProvider(ProviderConfig{ID: "object", BaseURL: server.URL, Models: []string{"object"}, JSONObjectMode: true})
-	router.RegisterProvider(ProviderConfig{ID: "native", BaseURL: server.URL, Models: []string{"native"}})
+	router.RegisterProvider(ProviderConfig{Protocol: "openai-completions", ID: "object", BaseURL: server.URL, Models: []string{"object"}, JSONObjectMode: true})
+	router.RegisterProvider(ProviderConfig{Protocol: "openai-completions", ID: "native", BaseURL: server.URL, Models: []string{"native"}})
 	llm := NewFallbackLLM(router, "object", []string{"native"}, 1)
 	request := verifiedTestRequest()
 	if _, err := llm.Chat(WithLocallyVerifiedOutput(t.Context(), *request.Schema), request); err != nil {

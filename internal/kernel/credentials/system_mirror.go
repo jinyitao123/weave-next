@@ -131,10 +131,10 @@ func (s *Store) MirrorSystemProvider(
 		if _, err := tx.Exec(ctx, `
 			INSERT INTO weave_provider_credentials (
 			  workspace_id, id, name, base_url, api_key_cipher, models,
-			  json_object_mode, latest_revision, source_kind, source_provider_id,credential_scope,credential_user_id,credential_service_id
-			) VALUES ($1, $2, $3, $4, $5, $6, $7, 0, 'system_mirror', $8,$9,$10,$11)
+			  json_object_mode, protocol, thinking_default_mode, thinking_disable_with_tools, attempt_timeout_seconds, latest_revision, source_kind, source_provider_id,credential_scope,credential_user_id,credential_service_id
+			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 0, 'system_mirror', $12,$13,$14,$15)
 		`, workspaceID, targetID, normalized.Name, normalized.BaseURL,
-			sourceCiphertext, normalized.Models, normalized.JSONObjectMode,
+			sourceCiphertext, normalized.Models, normalized.JSONObjectMode, normalized.Protocol, normalized.ThinkingDefaultMode, normalized.ThinkingDisableWithTools, normalized.AttemptTimeoutSeconds,
 			systemProviderID, normalized.CredentialScope, normalized.CredentialUserID, normalized.CredentialServiceID,
 		); err != nil {
 			return SystemProviderMirrorResult{}, fmt.Errorf("create mirrored provider head: %w", err)
@@ -207,7 +207,8 @@ func (s *Store) MirrorSystemProvider(
 			BaseURL:        normalized.BaseURL,
 			Models:         append([]string(nil), normalized.Models...),
 			JSONObjectMode: normalized.JSONObjectMode,
-			ContentHash:    contentHash,
+			Protocol:       normalized.Protocol, ThinkingDefaultMode: normalized.ThinkingDefaultMode, ThinkingDisableWithTools: normalized.ThinkingDisableWithTools, AttemptTimeoutSeconds: normalized.AttemptTimeoutSeconds,
+			ContentHash: contentHash,
 		}
 		modelsJSON, err := json.Marshal(revision.Models)
 		if err != nil {
@@ -219,10 +220,10 @@ func (s *Store) MirrorSystemProvider(
 		if _, err := tx.Exec(ctx, `
 			INSERT INTO weave_provider_revisions (
 			  workspace_id, provider_id, revision, name, base_url, models,
-			  json_object_mode, content_hash
-			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+			  json_object_mode, protocol, thinking_default_mode, thinking_disable_with_tools, attempt_timeout_seconds, content_hash
+			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 		`, revision.WorkspaceID, revision.ProviderID, revision.Revision,
-			revision.Name, revision.BaseURL, string(modelsJSON), revision.JSONObjectMode,
+			revision.Name, revision.BaseURL, string(modelsJSON), revision.JSONObjectMode, revision.Protocol, revision.ThinkingDefaultMode, revision.ThinkingDisableWithTools, revision.AttemptTimeoutSeconds,
 			revision.ContentHash,
 		); err != nil {
 			return SystemProviderMirrorResult{}, fmt.Errorf("insert mirrored ProviderRevision: %w", err)
@@ -240,11 +241,12 @@ func (s *Store) MirrorSystemProvider(
 		    api_key_cipher=$5,
 		    models=$6,
 		    json_object_mode=$7,
-		    latest_revision=$8,
+ protocol=$8, thinking_default_mode=$9, thinking_disable_with_tools=$10, attempt_timeout_seconds=$11,
+		    latest_revision=$12,
 		    updated_at=now()
 		WHERE workspace_id=$1 AND id=$2
 	`, workspaceID, targetID, normalized.Name, normalized.BaseURL,
-		nextCiphertext, normalized.Models, normalized.JSONObjectMode, afterRevision,
+		nextCiphertext, normalized.Models, normalized.JSONObjectMode, normalized.Protocol, normalized.ThinkingDefaultMode, normalized.ThinkingDisableWithTools, normalized.AttemptTimeoutSeconds, afterRevision,
 	); err != nil {
 		return SystemProviderMirrorResult{}, fmt.Errorf("update mirrored provider head: %w", err)
 	}

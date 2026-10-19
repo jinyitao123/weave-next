@@ -1431,6 +1431,30 @@
         "lines_added": 28,
         "production_lines_added": 10
       }
+    },
+    {
+      "date": "2026-10-19",
+      "reason": "Explicit native provider protocol configuration, immutable revision/freezing and runtime routing with real PostgreSQL regression; no parallel executor or dependency growth. Restrict the existing missing-input review round to tool_choice=none so a correction cannot dispatch an action after needs_input; retain mandatory actual receipts and record policy v3. Clarify the existing multi-file primary selection. Includes adversarial no-dispatch and false-completion regression. Use one current usage checkpoint schema (v3), including unknown cache reporting and empty accumulators; delete retired v1/v2 readers and the old-format fixture rather than converting snapshots.",
+      "record": "docs/架构/2026-09-13-分层收敛与Loom职责基线.md",
+      "growth": {
+        "lines": 365,
+        "production_lines": 100
+      },
+      "deletion_trigger": "Completed in this change after new-task PostgreSQL recovery and same-version restart checks: retired schema-v1/v2 usage checkpoint readers and obsolete fixture branches are removed; measured ceilings are lowered in the same change. No old-checkpoint conversion or alternate reader remains.",
+      "bands": {
+        "base": {
+          "lines": 47,
+          "production_lines": 47
+        },
+        "kernel": {
+          "lines": 227,
+          "production_lines": -4
+        },
+        "app": {
+          "lines": 91,
+          "production_lines": 57
+        }
+      }
     }
   ],
   "migration_targets": {
@@ -1462,8 +1486,8 @@
     "rule": "Each band limit equals its measured size. The total of the band limits may exceed this baseline only by the growth of amendments added after the first recorded_amendments entries, each of which must state its growth and a deletion_trigger."
   },
   "base": {
-    "lines": 8591,
-    "production_lines": 6814,
+    "lines": 8638,
+    "production_lines": 6861,
     "packages": 9,
     "external_dependencies": 4,
     "allowed_dependencies": [
@@ -1474,8 +1498,8 @@
     ]
   },
   "kernel": {
-    "lines": 109393,
-    "production_lines": 85372,
+    "lines": 109620,
+    "production_lines": 85368,
     "packages": 48,
     "external_dependencies": 5,
     "allowed_dependencies": [
@@ -1494,8 +1518,8 @@
     "allowed_dependencies": []
   },
   "app": {
-    "lines": 96703,
-    "production_lines": 65150,
+    "lines": 96794,
+    "production_lines": 65207,
     "packages": 25,
     "external_dependencies": 6,
     "allowed_dependencies": [

@@ -7,7 +7,9 @@ import (
 	"time"
 
 	"github.com/jinyitao123/loom/contract"
+	"github.com/jinyitao123/loom/provider/anthropic"
 	"github.com/jinyitao123/loom/provider/openai"
+	"github.com/jinyitao123/loom/provider/openairesponses"
 	"github.com/jinyitao123/weave/internal/base/frozen"
 )
 
@@ -19,6 +21,7 @@ const DefaultAttemptTimeoutSeconds = 900
 
 // ProviderConfig describes a configured LLM provider.
 type ProviderConfig struct {
+	Protocol            string                 `json:"protocol"`
 	CredentialScope     frozen.CredentialScope `json:"credential_scope"`
 	CredentialUserID    string                 `json:"credential_user_id,omitempty"`
 	CredentialServiceID string                 `json:"credential_service_id,omitempty"`
@@ -61,13 +64,27 @@ func New(fallback string) *Router {
 	}
 }
 
-// NewProviderClient builds the OpenAI-compatible client for one provider
+// NewProviderClient builds the explicit native-protocol client for one provider
 // config. Package-level variable so resolver and API tests can substitute a
 // recording stub; production wiring never overrides it.
 var NewProviderClient = func(cfg ProviderConfig) contract.LLM {
+	if err := cfg.Validate(); err != nil {
+		return &invalidProviderLLM{err: err}
+	}
 	defaultModel := ""
 	if len(cfg.Models) > 0 {
 		defaultModel = cfg.Models[0]
+	}
+	seconds := cfg.AttemptTimeoutSeconds
+	if seconds == 0 {
+		seconds = DefaultAttemptTimeoutSeconds
+	}
+	timeout := time.Duration(seconds) * time.Second
+	switch cfg.Protocol {
+	case frozen.ProtocolAnthropicMessages:
+		return anthropic.New(cfg.APIKey, anthropic.WithBaseURL(cfg.BaseURL), anthropic.WithDefaultModel(defaultModel), anthropic.WithAttemptTimeout(timeout))
+	case frozen.ProtocolOpenAIResponses:
+		return openairesponses.New(cfg.APIKey, openairesponses.WithBaseURL(cfg.BaseURL), openairesponses.WithDefaultModel(defaultModel), openairesponses.WithAttemptTimeout(timeout))
 	}
 	opts := []openai.Option{
 		openai.WithBaseURL(cfg.BaseURL),
@@ -240,4 +257,18 @@ func ObserveModelProtocolCall(ctx context.Context, inner contract.LLM, request c
 		normalized(normalizedModelProtocol(response, err))
 	}
 	return response, err
+}
+
+// Validate rejects incomplete or incompatible profiles before persistence or use.
+func (cfg ProviderConfig) Validate() error {
+	return frozen.ValidateProviderProfile(cfg.Protocol, cfg.JSONObjectMode, cfg.ThinkingDefaultMode, cfg.ThinkingDisableWithTools, cfg.AttemptTimeoutSeconds)
+}
+
+type invalidProviderLLM struct{ err error }
+
+func (l *invalidProviderLLM) Chat(context.Context, contract.ChatRequest) (*contract.ChatResponse, error) {
+	return nil, l.err
+}
+func (l *invalidProviderLLM) Stream(context.Context, contract.ChatRequest) (<-chan contract.StreamChunk, error) {
+	return nil, l.err
 }

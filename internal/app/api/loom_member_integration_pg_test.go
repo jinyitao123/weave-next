@@ -311,7 +311,7 @@ func publishConfiguredMemberIntegrationSampleForGraph(t *testing.T, pool *pgxpoo
 	t.Helper()
 	ctx := execution.WithSubject(t.Context(), execution.Subject{WorkspaceID: workspace, UserID: actor})
 	providers := credentials.New(pool, key)
-	if err := providers.Upsert(ctx, workspace, llmrouter.ProviderConfig{CredentialScope: frozen.CredentialScopeUser, CredentialUserID: actor, ID: "fixture", Name: "Fixture", BaseURL: serverURL, APIKey: "test-provider-secret", Models: []string{"fixture-model"}}); err != nil {
+	if err := providers.Upsert(ctx, workspace, llmrouter.ProviderConfig{Protocol: "openai-completions", CredentialScope: frozen.CredentialScopeUser, CredentialUserID: actor, ID: "fixture", Name: "Fixture", BaseURL: serverURL, APIKey: "test-provider-secret", Models: []string{"fixture-model"}}); err != nil {
 		t.Fatal(err)
 	}
 	agents := agentcatalog.New(pool)

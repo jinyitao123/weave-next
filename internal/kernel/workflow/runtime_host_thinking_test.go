@@ -20,9 +20,9 @@ func (thinkingTestResolver) Resolve(context.Context, credentials.ResolveRequest)
 	return credentials.NewSecretMaterial([]byte("test-key"), nil, nil), nil
 }
 
-func TestFrozenSystemDeepSeekMemberDisablesThinkingAndEffortTogether(t *testing.T) {
+func TestFrozenProviderUsesExplicitThinkingProfile(t *testing.T) {
 	for _, systemProvider := range []bool{true, false} {
-		t.Run(map[bool]string{true: "system-deepseek", false: "other-provider"}[systemProvider], func(t *testing.T) {
+		t.Run(map[bool]string{true: "explicit-profile", false: "no-dialect-profile"}[systemProvider], func(t *testing.T) {
 			var captured map[string]json.RawMessage
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				body, err := io.ReadAll(r.Body)
@@ -35,10 +35,10 @@ func TestFrozenSystemDeepSeekMemberDisablesThinkingAndEffortTogether(t *testing.
 				_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n")
 			}))
 			defer server.Close()
-			binding := frozen.FrozenModelBinding{ProviderID: "custom", ModelID: "deepseek-flash", BaseURL: server.URL}
+			binding := frozen.FrozenModelBinding{Protocol: "openai-completions", ProviderID: "custom", ModelID: "deepseek-flash", BaseURL: server.URL}
 			if systemProvider {
-				binding.ProviderID = "system/deepseek"
-				binding.CredentialRef.ServiceID = "system-provider:deepseek"
+				binding.ThinkingDefaultMode = "disabled"
+				binding.ThinkingDisableWithTools = true
 			}
 			bundle := frozen.FrozenExecutionBundle{Agent: frozen.FrozenAgentRecord{Model: "deepseek-flash"}, PrimaryModel: binding}
 			opts, closer, err := NewRuntimeHostFactory().Build(t.Context(), bundle, thinkingTestResolver{})

@@ -41,6 +41,9 @@ func (s *Server) handleAddProvider(c echo.Context) error {
 	if err := c.Bind(&req); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 	}
+	if err := req.Validate(); err != nil {
+		return c.JSON(http.StatusUnprocessableEntity, map[string]string{"error": "invalid model provider protocol or options"})
+	}
 	if req.ID == "" {
 		req.ID = req.Name
 	}
@@ -70,6 +73,9 @@ func (s *Server) handleUpdateProvider(c echo.Context) error {
 	var req llmrouter.ProviderConfig
 	if err := c.Bind(&req); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+	}
+	if err := req.Validate(); err != nil {
+		return c.JSON(http.StatusUnprocessableEntity, map[string]string{"error": "invalid model provider protocol or options"})
 	}
 	req.ID = id
 	if req.Name == "" {
@@ -132,6 +138,7 @@ type mirrorSystemProviderRequest struct {
 // current workspace's mirror state so the console can offer the action only
 // where it is meaningful.
 type systemProviderSummaryJSON struct {
+	Protocol       string   `json:"protocol"`
 	ID             string   `json:"id"`
 	Name           string   `json:"name"`
 	BaseURL        string   `json:"base_url"`
@@ -188,7 +195,7 @@ func (s *Server) handleListSystemProviders(c echo.Context) error {
 	out := make([]systemProviderSummaryJSON, 0, len(configs))
 	for _, cfg := range configs {
 		summary := systemProviderSummaryJSON{
-			ID:      cfg.ID,
+			ID: cfg.ID, Protocol: cfg.Protocol,
 			Name:    cfg.Name,
 			BaseURL: cfg.BaseURL,
 			Models:  append([]string(nil), cfg.Models...),

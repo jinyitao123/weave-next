@@ -24,7 +24,7 @@ func withPendingMember(t *testing.T, cp WorkflowCheckpointV1) WorkflowCheckpoint
 	}
 	h.Write(make([]byte, 8))
 	call := fmt.Sprintf("uc1_%x", h.Sum(nil))
-	cp.Usage, _ = json.Marshal(map[string]any{"schema_version": 2, "next_call_ordinals": map[string]int{cp.NodeID: 1}, "calls": []any{map[string]any{"usage_call_id": call, "run_id": cp.RunID, "step": cp.NodeID, "call_ordinal": 0, "attempts": []any{}}}})
+	cp.Usage, _ = json.Marshal(map[string]any{"schema_version": 3, "next_call_ordinals": map[string]int{cp.NodeID: 1}, "calls": []any{map[string]any{"usage_call_id": call, "run_id": cp.RunID, "step": cp.NodeID, "call_ordinal": 0, "attempts": []any{}}}})
 	cp.ActiveMember = &ActiveMemberInvocation{NodeID: cp.NodeID, CallID: call}
 	return cp
 }

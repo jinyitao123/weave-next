@@ -72,7 +72,7 @@ func TestDevelopmentModelProvidersIsolationAndSecretsRealPG(t *testing.T) {
 		}
 		return rec
 	}
-	body := map[string]any{"name": "Organization model", "base_url": provider.URL, "models": []string{"test-model"}, "api_key": keys[0]}
+	body := map[string]any{"protocol": "openai-completions", "name": "Organization model", "base_url": provider.URL, "models": []string{"test-model"}, "api_key": keys[0]}
 	path := "/v1/development/model-providers/local"
 	for _, user := range []string{"", "user-other"} {
 		for _, method := range []string{http.MethodGet, http.MethodPut} {
@@ -168,7 +168,7 @@ func TestDevelopmentModelProvidersConcurrentModelClaimRealPG(t *testing.T) {
 		go func(id string) {
 			defer workers.Done()
 			<-start
-			req := httptest.NewRequest(http.MethodPut, "/", strings.NewReader(`{"name":"Concurrent model","base_url":"https://models.example.test","models":["claimed-model"],"api_key":"fake-test-key"}`))
+			req := httptest.NewRequest(http.MethodPut, "/", strings.NewReader(`{"protocol":"openai-completions","name":"Concurrent model","base_url":"https://models.example.test","models":["claimed-model"],"api_key":"fake-test-key"}`))
 			req.Header.Set("Content-Type", "application/json")
 			req = req.WithContext(execution.WithSubject(t.Context(), execution.Subject{WorkspaceID: "ws", UserID: "user"}))
 			rec := httptest.NewRecorder()

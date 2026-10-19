@@ -44,7 +44,7 @@ func TestPublicationAuthorityRefreshesCurrentUserAndExactDependencyProofsRealPG(
 			}
 			key := []byte(strings.Repeat("k", 32))
 			providers := credentials.New(pool, key)
-			config := llmrouter.ProviderConfig{ID: "provider", Name: "Provider", BaseURL: "https://fixture.invalid/v1", APIKey: "fixture-secret", Models: []string{"fixture"}, CredentialScope: scope, CredentialUserID: "alice"}
+			config := llmrouter.ProviderConfig{Protocol: "openai-completions", ID: "provider", Name: "Provider", BaseURL: "https://fixture.invalid/v1", APIKey: "fixture-secret", Models: []string{"fixture"}, CredentialScope: scope, CredentialUserID: "alice"}
 			if scope == frozen.CredentialScopeWorkspaceService {
 				config.CredentialUserID = ""
 				config.CredentialServiceID = "provider:provider"

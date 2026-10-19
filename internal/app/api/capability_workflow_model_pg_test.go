@@ -189,7 +189,7 @@ func runCapabilityWorkflowModelScenario(t *testing.T, parallel bool, maxConns []
 	key := []byte(strings.Repeat("k", 32))
 	providers := credentials.New(pool, key)
 	providerService := execution.WithSubject(ctx, execution.Subject{WorkspaceID: "ws", ServiceID: "provider:fixture"})
-	if err := providers.Upsert(providerService, "ws", llmrouter.ProviderConfig{
+	if err := providers.Upsert(providerService, "ws", llmrouter.ProviderConfig{Protocol: "openai-completions",
 		CredentialScope: frozen.CredentialScopeWorkspaceService, CredentialServiceID: "provider:fixture",
 		ID: "fixture", Name: "Controlled local model", BaseURL: provider.URL, APIKey: "controlled-model-secret",
 		Models: []string{capabilityWorkflowModelName},

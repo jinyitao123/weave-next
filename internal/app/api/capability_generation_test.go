@@ -45,7 +45,7 @@ func TestHandleGenerateCapabilityBuildsValidatedDraft(t *testing.T) {
 	}
 	t.Cleanup(func() { llmrouter.NewProviderClient = newProviderClient })
 	router := llmrouter.New("design-model")
-	router.RegisterProvider(llmrouter.ProviderConfig{
+	router.RegisterProvider(llmrouter.ProviderConfig{Protocol: "openai-completions",
 		ID: "design", BaseURL: "https://provider.invalid", APIKey: "test", Models: []string{"design-model"},
 		CredentialScope: frozen.CredentialScopeUser, CredentialUserID: "designer",
 	})

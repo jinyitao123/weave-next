@@ -61,23 +61,26 @@ func TestUsageAccumulatorDeduplicatesReplayAndSumsPhysicalAttempts(t *testing.T)
 	}
 }
 
-func TestUsageAccumulatorReadsSchemaV1WithoutInventingAttemptUsage(t *testing.T) {
-	callID := usageCallID("run-v1", "step-v1", 0)
-	legacy := []byte(fmt.Sprintf(`{"schema_version":1,"next_call_ordinals":{"step-v1":1},"calls":[{"usage_call_id":%q,"run_id":"run-v1","step":"step-v1","call_ordinal":0,"attempt_ids":["attempt-a","attempt-b"],"confirmed":true,"input_tokens":7,"output_tokens":2,"cost_usd":0.5}]}`, callID))
-	restored, err := UnmarshalUsageAccumulator(legacy)
+func TestUsageAccumulatorRejectsRetiredCheckpointFormats(t *testing.T) {
+	for _, version := range []int{1, 2} {
+		data := []byte(fmt.Sprintf(`{"schema_version":%d,"next_call_ordinals":{},"calls":[]}`, version))
+		if _, err := UnmarshalUsageAccumulator(data); err == nil {
+			t.Fatalf("retired schema %d was accepted", version)
+		}
+	}
+	encoded, err := NewUsageAccumulator().MarshalCheckpoint()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := restored.Totals(); got.InputTokens != 7 || got.OutputTokens != 2 || got.CostUSD != 0.5 {
-		t.Fatalf("legacy totals = %+v", got)
+	if !bytes.Contains(encoded, []byte(`"schema_version":3`)) {
+		t.Fatalf("empty current accumulator changed format: %s", encoded)
 	}
-	coverage := restored.Coverage()
-	if coverage.HasTokens || coverage.HasCost {
-		t.Fatalf("legacy multi-attempt coverage = %+v, want unknown attempt incomplete", coverage)
+	if _, err := UnmarshalUsageAccumulator(encoded); err != nil {
+		t.Fatal(err)
 	}
 }
 
-func TestUsageAccumulatorToolCallsCheckpointCompatibility(t *testing.T) {
+func TestUsageAccumulatorToolCallsCheckpointRoundTrip(t *testing.T) {
 	accumulator := NewUsageAccumulator()
 	callID, err := accumulator.NextCall("run-1", "step-1")
 	if err != nil {
@@ -106,12 +109,12 @@ func TestUsageAccumulatorToolCallsCheckpointCompatibility(t *testing.T) {
 		t.Fatalf("restored tool calls = %d, want 2", got.ToolCalls)
 	}
 
-	legacy := bytes.Replace(encoded, []byte(`,"tool_calls":2`), nil, 1)
-	restoredLegacy, err := UnmarshalUsageAccumulator(legacy)
+	withoutToolCalls := bytes.Replace(encoded, []byte(`,"tool_calls":2`), nil, 1)
+	restoredWithoutToolCalls, err := UnmarshalUsageAccumulator(withoutToolCalls)
 	if err != nil {
-		t.Fatalf("legacy checkpoint without tool_calls is unreadable: %v", err)
+		t.Fatalf("current checkpoint with omitted optional tool_calls is unreadable: %v", err)
 	}
-	if got := restoredLegacy.Totals().ToolCalls; got != 0 {
-		t.Fatalf("legacy tool calls = %d, want unknown historical zero", got)
+	if got := restoredWithoutToolCalls.Totals().ToolCalls; got != 0 {
+		t.Fatalf("omitted tool calls = %d, want zero", got)
 	}
 }
