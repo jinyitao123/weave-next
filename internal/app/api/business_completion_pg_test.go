@@ -65,8 +65,8 @@ func (m *receiptCompletionModel) Chat(_ context.Context, request contract.ChatRe
 		return &contract.ChatResponse{Content: `{"disposition":"complete","summary":"A simulated business receipt was recorded.","missing_items":[]}`}, nil
 	}
 	if m.outcome == "needs-input" {
-		if request.ToolChoice != nil {
-			return nil, errors.New("a missing-input review forced a business call")
+		if m.calls == 1 && request.ToolChoice != nil || m.calls == 2 && (request.ToolChoice == nil || request.ToolChoice.Mode != contract.ToolChoiceNone) {
+			return nil, errors.New("missing-input review did not forbid tool calls")
 		}
 		if m.calls == 2 && strings.Contains(request.Messages[len(request.Messages)-1].Content, "Only inputs that block those actions count as missing") {
 			m.reviewObserved = true
