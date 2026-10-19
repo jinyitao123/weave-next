@@ -118,19 +118,34 @@ func (e *editSession) step(graph editGraph, operation map[string]any, key, label
 }
 
 func (e *editSession) capability(name string) (*catalogCapability, error) {
-	var found *catalogCapability
+	var match, available *catalogCapability
+	matches := 0
 	for i := range e.catalog {
-		if e.catalog[i].Name == name {
-			if found != nil {
+		candidate := &e.catalog[i]
+		if candidate.Name != name {
+			continue
+		}
+		match = candidate
+		matches++
+		// The directory also describes employee-only and unavailable actions.
+		// Resolve within the same actionable team scope that binding enforces.
+		if candidate.Status == "available" && candidate.ExecutionMode != "employee_only" {
+			if available != nil {
 				return nil, editFail("业务动作“%s”在目录中名称重复，无法确定是哪一个", name)
 			}
-			found = &e.catalog[i]
+			available = candidate
 		}
 	}
-	if found == nil {
+	if available != nil {
+		return available, nil
+	}
+	if matches > 1 {
+		return nil, editFail("业务动作“%s”在目录中名称重复，无法确定是哪一个", name)
+	}
+	if match == nil {
 		return nil, editFail("业务动作“%s”不在当前业务动作目录中", name)
 	}
-	return found, nil
+	return match, nil
 }
 
 func editProtocolOn(graph editGraph) bool { return graph["result_protocol"] == workbenchResultProtocol }
@@ -556,13 +571,31 @@ func (e *editSession) changeCapability(operation map[string]any) error {
 	if err != nil {
 		return err
 	}
-	capability, err := e.capability(name)
-	if err != nil {
-		return err
-	}
 	selected, isBool := operation["selected"].(bool)
 	if !isBool {
 		return editFail("业务动作须明确选择添加或移除")
+	}
+	var capability *catalogCapability
+	if !selected {
+		bound := map[string]bool{}
+		for _, id := range target.Configuration.BusinessCapabilityIDs {
+			bound[id] = true
+		}
+		for i := range e.catalog {
+			c := &e.catalog[i]
+			if c.Name == name && bound[c.ID] {
+				if capability != nil {
+					return editFail("已绑定业务动作“%s”名称重复，无法确定是哪一个", name)
+				}
+				capability = c
+			}
+		}
+	}
+	if capability == nil {
+		capability, err = e.capability(name)
+		if err != nil {
+			return err
+		}
 	}
 	ids := []string{}
 	for _, id := range target.Configuration.BusinessCapabilityIDs {
