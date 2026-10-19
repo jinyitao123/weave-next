@@ -1434,21 +1434,21 @@
     },
     {
       "date": "2026-10-19",
-      "reason": "Explicit native provider protocol configuration, immutable revision/freezing and runtime routing with real PostgreSQL regression; no parallel executor or dependency growth. Restrict the existing missing-input review round to tool_choice=none so a correction cannot dispatch an action after needs_input; retain mandatory actual receipts and record policy v3. Clarify the existing multi-file primary selection. Includes adversarial no-dispatch and false-completion regression.",
+      "reason": "Explicit native provider protocol configuration, immutable revision/freezing and runtime routing with real PostgreSQL regression; no parallel executor or dependency growth. Restrict the existing missing-input review round to tool_choice=none so a correction cannot dispatch an action after needs_input; retain mandatory actual receipts and record policy v3. Clarify the existing multi-file primary selection. Includes adversarial no-dispatch and false-completion regression. Use one current usage checkpoint schema (v3), including unknown cache reporting and empty accumulators; delete retired v1/v2 readers and the old-format fixture rather than converting snapshots.",
       "record": "docs/架构/2026-09-13-分层收敛与Loom职责基线.md",
       "growth": {
-        "lines": 444,
-        "production_lines": 179
+        "lines": 365,
+        "production_lines": 100
       },
-      "deletion_trigger": "When the unified current provider/usage format is enabled and new-task pause/restart checks pass, delete schema-v1 usage checkpoint reading and its obsolete fixture branches, and lower exact budgets in the same change.",
+      "deletion_trigger": "Completed in this change after new-task PostgreSQL recovery and same-version restart checks: retired schema-v1/v2 usage checkpoint readers and obsolete fixture branches are removed; measured ceilings are lowered in the same change. No old-checkpoint conversion or alternate reader remains.",
       "bands": {
         "base": {
           "lines": 47,
           "production_lines": 47
         },
         "kernel": {
-          "lines": 306,
-          "production_lines": 75
+          "lines": 227,
+          "production_lines": -4
         },
         "app": {
           "lines": 91,
@@ -1498,8 +1498,8 @@
     ]
   },
   "kernel": {
-    "lines": 109699,
-    "production_lines": 85447,
+    "lines": 109620,
+    "production_lines": 85368,
     "packages": 48,
     "external_dependencies": 5,
     "allowed_dependencies": [

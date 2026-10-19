@@ -166,10 +166,7 @@ func TestCacheUsagePresenceVersionsAndConflict(t *testing.T) {
 		if err := json.Unmarshal(encoded, &header); err != nil {
 			t.Fatal(err)
 		}
-		wantVersion := 2
-		if known {
-			wantVersion = 3
-		}
+		wantVersion := 3
 		if header.Schema != wantVersion {
 			t.Fatalf("version=%d want=%d", header.Schema, wantVersion)
 		}
