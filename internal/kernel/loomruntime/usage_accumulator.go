@@ -19,8 +19,6 @@ import (
 const (
 	usageAccumulatorStateKey  = "__usage_accumulator"
 	usageAccumulatorSchema    = 3
-	usageAccumulatorSchemaV2  = 2
-	usageAccumulatorSchemaV1  = 1
 	maxUsageCheckpointInteger = uint64(1<<53 - 1)
 	usageCallIDPrefix         = "uc1_"
 	usageCallIdentityDomain   = "weave-usage-call-v1"
@@ -519,25 +517,6 @@ type usageAttemptCheckpointInput struct {
 	Source             *string  `json:"source,omitempty"`
 }
 
-type usageAccumulatorCheckpointV1Input struct {
-	SchemaVersion    *int                          `json:"schema_version"`
-	NextCallOrdinals *map[string]uint64            `json:"next_call_ordinals"`
-	Calls            *[]usageCallCheckpointV1Input `json:"calls"`
-}
-
-type usageCallCheckpointV1Input struct {
-	UsageCallID  *string   `json:"usage_call_id"`
-	RunID        *string   `json:"run_id"`
-	Step         *string   `json:"step"`
-	CallOrdinal  *uint64   `json:"call_ordinal"`
-	AttemptIDs   *[]string `json:"attempt_ids"`
-	Confirmed    *bool     `json:"confirmed"`
-	InputTokens  *int      `json:"input_tokens"`
-	OutputTokens *int      `json:"output_tokens"`
-	CostUSD      *float64  `json:"cost_usd"`
-	ToolCalls    *int      `json:"tool_calls,omitempty"`
-}
-
 func optionalInt(value *int) int {
 	if value == nil {
 		return 0
@@ -551,7 +530,7 @@ func (a UsageAccumulator) checkpoint() (usageAccumulatorCheckpoint, error) {
 		return usageAccumulatorCheckpoint{}, err
 	}
 	checkpoint := usageAccumulatorCheckpoint{
-		SchemaVersion:    usageAccumulatorSchemaV2,
+		SchemaVersion:    usageAccumulatorSchema,
 		NextCallOrdinals: make(map[string]uint64, len(a.nextCallOrdinals)),
 		Calls:            make([]usageCallCheckpoint, 0, len(a.calls)),
 	}
@@ -577,9 +556,6 @@ func (a UsageAccumulator) checkpoint() (usageAccumulatorCheckpoint, error) {
 		}
 		for _, attemptID := range attemptIDs {
 			attempt := call.Attempts[attemptID]
-			if attempt.Usage.CacheReadTokens != 0 || attempt.Usage.CacheWriteTokens != 0 || attempt.Usage.CacheReadReported || attempt.Usage.CacheWriteReported {
-				checkpoint.SchemaVersion = usageAccumulatorSchema
-			}
 			encoded.Attempts = append(encoded.Attempts, usageAttemptCheckpoint{
 				AttemptID: attemptID, Confirmed: attempt.Confirmed,
 				CacheReadTokens: attempt.Usage.CacheReadTokens, CacheWriteTokens: attempt.Usage.CacheWriteTokens,
@@ -616,10 +592,8 @@ func UnmarshalUsageAccumulator(data []byte) (UsageAccumulator, error) {
 		return UsageAccumulator{}, fmt.Errorf("usage accumulator schema_version is required")
 	}
 	switch *header.SchemaVersion {
-	case usageAccumulatorSchema, usageAccumulatorSchemaV2:
-		return unmarshalUsageAccumulatorV2(data)
-	case usageAccumulatorSchemaV1:
-		return unmarshalUsageAccumulatorV1(data)
+	case usageAccumulatorSchema:
+		return unmarshalUsageAccumulatorCurrent(data)
 	default:
 		return UsageAccumulator{}, fmt.Errorf("unsupported usage accumulator schema_version %d", *header.SchemaVersion)
 	}
@@ -654,7 +628,7 @@ func newCheckpointAccumulator(next *map[string]uint64, callsPresent bool) (Usage
 	return accumulator, nil
 }
 
-func unmarshalUsageAccumulatorV2(data []byte) (UsageAccumulator, error) {
+func unmarshalUsageAccumulatorCurrent(data []byte) (UsageAccumulator, error) {
 	var input usageAccumulatorCheckpointInput
 	if err := decodeUsageAccumulatorCheckpoint(data, &input); err != nil {
 		return UsageAccumulator{}, err
@@ -676,9 +650,6 @@ func unmarshalUsageAccumulatorV2(data []byte) (UsageAccumulator, error) {
 			if rawAttempt.AttemptID == nil || rawAttempt.Confirmed == nil || rawAttempt.InputTokens == nil || rawAttempt.OutputTokens == nil || rawAttempt.CostUSD == nil || rawAttempt.HasTokens == nil || rawAttempt.HasCost == nil {
 				return UsageAccumulator{}, fmt.Errorf("usage accumulator calls[%d].attempts[%d] has missing required fields", index, attemptIndex)
 			}
-			if *input.SchemaVersion == usageAccumulatorSchemaV2 && (rawAttempt.CacheReadTokens != nil || rawAttempt.CacheWriteTokens != nil || rawAttempt.CacheReadReported != nil || rawAttempt.CacheWriteReported != nil) {
-				return UsageAccumulator{}, fmt.Errorf("cache usage requires checkpoint schema_version 3")
-			}
 			attemptID := *rawAttempt.AttemptID
 			if _, duplicate := call.Attempts[attemptID]; duplicate || attemptID == "" {
 				return UsageAccumulator{}, fmt.Errorf("duplicate or empty attempt_id %q", attemptID)
@@ -693,56 +664,6 @@ func unmarshalUsageAccumulatorV2(data []byte) (UsageAccumulator, error) {
 				Metadata:  UsageAttemptMetadata{HasTokens: *rawAttempt.HasTokens, HasCost: *rawAttempt.HasCost, Source: optionalString(rawAttempt.Source)},
 			}
 			accumulator.attemptOwners[attemptID] = callID
-		}
-		accumulator.calls[callID] = call
-	}
-	if err := accumulator.validate(); err != nil {
-		return UsageAccumulator{}, err
-	}
-	return accumulator.clone(), nil
-}
-
-func unmarshalUsageAccumulatorV1(data []byte) (UsageAccumulator, error) {
-	var input usageAccumulatorCheckpointV1Input
-	if err := decodeUsageAccumulatorCheckpoint(data, &input); err != nil {
-		return UsageAccumulator{}, err
-	}
-	accumulator, err := newCheckpointAccumulator(input.NextCallOrdinals, input.Calls != nil)
-	if err != nil {
-		return UsageAccumulator{}, err
-	}
-	for index, raw := range *input.Calls {
-		if raw.UsageCallID == nil || raw.RunID == nil || raw.Step == nil || raw.CallOrdinal == nil || raw.AttemptIDs == nil || raw.Confirmed == nil || raw.InputTokens == nil || raw.OutputTokens == nil || raw.CostUSD == nil {
-			return UsageAccumulator{}, fmt.Errorf("usage accumulator calls[%d] has missing required fields", index)
-		}
-		callID := *raw.UsageCallID
-		call := usageCall{RunID: *raw.RunID, Step: *raw.Step, CallOrdinal: *raw.CallOrdinal, Attempts: make(map[string]usageAttempt)}
-		attemptIDs := append([]string(nil), (*raw.AttemptIDs)...)
-		sort.Strings(attemptIDs)
-		for attemptIndex, attemptID := range attemptIDs {
-			if attemptID == "" {
-				return UsageAccumulator{}, fmt.Errorf("empty attempt_id for %q", callID)
-			}
-			if _, duplicate := call.Attempts[attemptID]; duplicate {
-				return UsageAccumulator{}, fmt.Errorf("duplicate attempt_id %q", attemptID)
-			}
-			attempt := usageAttempt{}
-			if *raw.Confirmed && attemptIndex == 0 {
-				attempt = usageAttempt{
-					Confirmed: true,
-					Usage:     contract.Usage{InputTokens: *raw.InputTokens, OutputTokens: *raw.OutputTokens, CostUSD: *raw.CostUSD},
-					ToolCalls: optionalInt(raw.ToolCalls),
-					Metadata:  UsageAttemptMetadata{HasTokens: true, HasCost: true},
-				}
-			}
-			call.Attempts[attemptID] = attempt
-			if owner, duplicate := accumulator.attemptOwners[attemptID]; duplicate {
-				return UsageAccumulator{}, fmt.Errorf("%w: attempt_id %q belongs to %q", ErrUsageConflict, attemptID, owner)
-			}
-			accumulator.attemptOwners[attemptID] = callID
-		}
-		if _, duplicate := accumulator.calls[callID]; duplicate {
-			return UsageAccumulator{}, fmt.Errorf("duplicate usage_call_id %q", callID)
 		}
 		accumulator.calls[callID] = call
 	}

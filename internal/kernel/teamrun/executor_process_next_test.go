@@ -118,7 +118,7 @@ func TestExecutorProcessNextParkTimerCompletesTaskAndPersistsCheckpoint(t *testi
 			CompletedOutputs: map[string]json.RawMessage{"lead": json.RawMessage(`{"done":true}`)},
 			WaitKind:         WaitTimer,
 			WaitDetail:       json.RawMessage(`{"wake_at":"2026-08-25T10:05:00Z","node_id":"wait-node"}`),
-			UsageCheckpoint:  json.RawMessage(`{"schema_version":1,"next_call_ordinals":{},"calls":[]}`),
+			UsageCheckpoint:  json.RawMessage(`{"schema_version":3,"next_call_ordinals":{},"calls":[]}`),
 			UsageComplete:    true,
 		},
 	}
