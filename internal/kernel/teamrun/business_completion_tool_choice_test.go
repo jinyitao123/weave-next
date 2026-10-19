@@ -150,10 +150,11 @@ func TestMissingInputIsReviewedOnceWithoutForcingAction(t *testing.T) {
 	if tools.dispatched != 0 || len(llm.requests) != 2 {
 		t.Fatalf("dispatched=%d requests=%d", tools.dispatched, len(llm.requests))
 	}
-	for index, request := range llm.requests {
-		if request.ToolChoice != nil {
-			t.Fatalf("missing-input review forced a call in round %d: %#v", index+1, request.ToolChoice)
-		}
+	if llm.requests[0].ToolChoice != nil {
+		t.Fatal("the initial round was constrained")
+	}
+	if got := llm.requests[1].ToolChoice; got == nil || got.Mode != contract.ToolChoiceNone {
+		t.Fatalf("missing-input review must forbid calls: %#v", got)
 	}
 	feedback := llm.requests[1].Messages[len(llm.requests[1].Messages)-1].Content
 	if !strings.Contains(feedback, "optional fields left unknown") {
@@ -193,5 +194,46 @@ func TestBusinessInputReviewUsesStructuredRejectionHistory(t *testing.T) {
 	}
 	if !businessInputReviewed([]string{deliverycheck.ReasonRequiredActionMissing, deliverycheck.ReasonInputReview}) {
 		t.Fatal("the recorded missing-input review was not recognized")
+	}
+}
+
+func TestMissingInputReviewRejectsToolCallBeforeDispatch(t *testing.T) {
+	name, _ := businessaction.CapabilityToolName(completionAction)
+	llm := &scriptedCompletionLLM{responses: []contract.ChatResponse{
+		{Content: workbenchResult(t, "needs_input", "缺少真实材料", "技术协议PDF"), StopReason: "stop"},
+		{ToolCalls: []contract.ToolCall{{ID: "incorrect-review-write", Name: name, Args: `{}`}}, StopReason: "tool_calls"},
+	}}
+	tools, err := runCompletionNode(t, llm)
+	var check *compiler.NodeCompletionCheckError
+	if !errors.As(err, &check) || check.Reason != "tool_call_forbidden_during_completion_review" {
+		t.Fatalf("err = %v", err)
+	}
+	if tools.dispatched != 0 || len(tools.frame.Receipts) != 0 || len(llm.requests) != 2 {
+		t.Fatalf("review dispatched a side effect: calls=%d receipts=%d rounds=%d", tools.dispatched, len(tools.frame.Receipts), len(llm.requests))
+	}
+	if failure := ClassifyFailure(err); failure.Class != FailureClassVerification || failure.Retryable {
+		t.Fatalf("forbidden review call classified as %+v", failure)
+	}
+}
+
+func TestReviewedCompletionStillRequiresActualReceipt(t *testing.T) {
+	llm := &scriptedCompletionLLM{responses: []contract.ChatResponse{
+		{Content: workbenchResult(t, "needs_input", "待核实", "缺少业务回执"), StopReason: "stop"},
+		{Content: workbenchResult(t, "complete", "复核后仍声称完成"), StopReason: "stop"},
+		{Content: workbenchResult(t, "complete", "未调用却声称完成"), StopReason: "stop"},
+	}}
+	tools, err := runCompletionNode(t, llm)
+	var check *compiler.NodeCompletionCheckError
+	if !errors.As(err, &check) || check.Reason != deliverycheck.ReasonRequiredActionNotCalled {
+		t.Fatalf("err = %v", err)
+	}
+	if tools.dispatched != 0 || len(llm.requests) != 3 {
+		t.Fatalf("calls=%d rounds=%d", tools.dispatched, len(llm.requests))
+	}
+	if got := llm.requests[1].ToolChoice; got == nil || got.Mode != contract.ToolChoiceNone {
+		t.Fatalf("review choice = %#v", got)
+	}
+	if got := llm.requests[2].ToolChoice; got == nil || got.Mode != contract.ToolChoiceTool {
+		t.Fatalf("missing-receipt choice = %#v", got)
 	}
 }

@@ -55,7 +55,7 @@ var developmentOperationTopics = []developmentOperationTopic{
 		{Kind: "capability", Summary: "capability 是目录中可绑定动作的准确名称；selected 为 false 时移除。parameterSources 按参数逐项说明材料来源", Example: `{"kind":"capability","member":"材料提交员","capability":"提交材料包","selected":true,"parameterSources":[{"name":"material_file_ids","source":"materials.ids"}]}`},
 	}, Rules: []string{
 		developmentNamingRule,
-		"单值 file 参数只能映射 materials.single.id，只在明确绑定唯一文件时才映射；多值 file 参数必须映射 materials.ids，表示本次提交的全部文件。materials.single.name、materials.single.sha256、materials.manifest_json 只用于文本参数。不能根据参数名猜测材料来源。",
+		"单值 file 参数可不做来源映射，由模型从本次冻结文件的具名枚举中选择；只有明确绑定唯一文件时才映射 materials.single.id；多值 file 参数必须映射 materials.ids，表示本次提交的全部文件。materials.single.name、materials.single.sha256、materials.manifest_json 只用于文本参数。不能根据参数名猜测材料来源。",
 		"绑定只表示成员可以使用该动作，是否执行由员工每次交接时授权。成员带业务动作的流程发布前还要设置必须办成的业务动作，见 business_completion。",
 	}},
 	{Topic: "flow", Title: "流程", Covers: "新建流程，修改流程名称和说明", Operations: []developmentOperationDoc{
