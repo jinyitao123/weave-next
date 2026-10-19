@@ -372,3 +372,37 @@ func TestALeadWithAFlowToRunNeedsAModelLikeAnyMember(t *testing.T) {
 		t.Fatal("a lead that takes the first step of a flow was not asked for a model")
 	}
 }
+
+func TestDevelopmentCapabilityNameUsesActionableTeamScope(t *testing.T) {
+	catalog := []catalogCapability{
+		{ID: "forge:action:opening.submit", Name: "提交审批", Status: "available", ExecutionMode: "employee_only"},
+		{ID: "forge:action:contract.submit", Name: "提交审批", Status: "available", ExecutionMode: "team_delegable"},
+		{ID: "forge:action:retired.submit", Name: "提交审批", Status: "unavailable", ExecutionMode: "team_delegable"},
+	}
+	session := editSession{catalog: catalog}
+	selected, err := session.capability("提交审批")
+	if err != nil || selected.ID != "forge:action:contract.submit" {
+		t.Fatalf("unique actionable team capability blocked: %+v, %v", selected, err)
+	}
+	session.catalog = append(catalog, catalogCapability{ID: "forge:action:other.submit", Name: "提交审批", Status: "available", ExecutionMode: "team_delegable"})
+	if _, err := session.capability("提交审批"); err == nil {
+		t.Fatal("ambiguous team actions were silently selected")
+	}
+}
+
+func TestDevelopmentCapabilityRemovalTargetsExistingBinding(t *testing.T) {
+	doc := editTestDocument()
+	member := &doc.Members[1]
+	member.Configuration.BusinessCapabilityIDs = []string{"forge:action:retired.submit"}
+	catalog := []catalogCapability{
+		{ID: "forge:action:current.submit", Name: "提交审批", Status: "available", ExecutionMode: "team_delegable"},
+		{ID: "forge:action:retired.submit", Name: "提交审批", Status: "unavailable", ExecutionMode: "team_delegable"},
+	}
+	op := editOps(t, `[{"kind":"capability","member":"整理员","capability":"提交审批","selected":false}]`)
+	if _, err := applyDevelopmentOperations(&doc, op, catalog); err != nil {
+		t.Fatal(err)
+	}
+	if len(doc.Members[1].Configuration.BusinessCapabilityIDs) != 0 {
+		t.Fatal("unavailable existing binding was left behind")
+	}
+}

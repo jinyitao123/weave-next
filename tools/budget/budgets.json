@@ -1437,8 +1437,8 @@
       "reason": "Explicit native provider protocol configuration, immutable revision/freezing and runtime routing with real PostgreSQL regression; no parallel executor or dependency growth.",
       "record": "docs/架构/2026-09-13-分层收敛与Loom职责基线.md",
       "growth": {
-        "lines": 328,
-        "production_lines": 139
+        "lines": 395,
+        "production_lines": 172
       },
       "deletion_trigger": "When the unified current provider/usage format is enabled and new-task pause/restart checks pass, delete schema-v1 usage checkpoint reading and its obsolete fixture branches, and lower exact budgets in the same change.",
       "bands": {
@@ -1451,8 +1451,8 @@
           "production_lines": 68
         },
         "app": {
-          "lines": 24,
-          "production_lines": 24
+          "lines": 91,
+          "production_lines": 57
         }
       }
     }
@@ -1518,8 +1518,8 @@
     "allowed_dependencies": []
   },
   "app": {
-    "lines": 96727,
-    "production_lines": 65174,
+    "lines": 96794,
+    "production_lines": 65207,
     "packages": 25,
     "external_dependencies": 6,
     "allowed_dependencies": [
