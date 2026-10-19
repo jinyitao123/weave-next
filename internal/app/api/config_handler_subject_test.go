@@ -11,7 +11,7 @@ import (
 
 func TestBindUserProviderOwnerUsesAuthenticatedSubject(t *testing.T) {
 	ctx := execution.WithSubject(context.Background(), execution.Subject{WorkspaceID: "workspace", UserID: "alice"})
-	config := llmrouter.ProviderConfig{
+	config := llmrouter.ProviderConfig{Protocol: "openai-completions",
 		CredentialScope:  frozen.CredentialScopeWorkspaceService,
 		CredentialUserID: "bob", CredentialServiceID: "untrusted",
 	}

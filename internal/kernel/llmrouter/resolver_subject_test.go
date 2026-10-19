@@ -31,7 +31,7 @@ func (s *subjectProviderSource) List(ctx context.Context, workspace string) ([]P
 	if s.block != nil {
 		<-s.block
 	}
-	cfg := ProviderConfig{ID: "same-provider-id", Models: []string{"model"}, APIKey: subject.UserID, CredentialScope: frozen.CredentialScopeUser, CredentialUserID: subject.UserID}
+	cfg := ProviderConfig{Protocol: "openai-completions", ID: "same-provider-id", Models: []string{"model"}, APIKey: subject.UserID, CredentialScope: frozen.CredentialScopeUser, CredentialUserID: subject.UserID}
 	if s.service {
 		cfg.APIKey = "shared"
 		cfg.CredentialScope = frozen.CredentialScopeWorkspaceService

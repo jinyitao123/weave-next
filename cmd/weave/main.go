@@ -166,7 +166,7 @@ func main() {
 			thinkingMode = "enabled"
 		}
 		router.RegisterProvider(llmrouter.ProviderConfig{
-			ID:                       "deepseek",
+			ID: "deepseek", Protocol: frozen.ProtocolOpenAICompletions,
 			Name:                     "DeepSeek",
 			BaseURL:                  "https://api.deepseek.com",
 			APIKey:                   key,
@@ -181,7 +181,7 @@ func main() {
 	}
 	if key := os.Getenv("ANTHROPIC_API_KEY"); key != "" {
 		router.RegisterProvider(llmrouter.ProviderConfig{
-			ID:                    "anthropic",
+			ID: "anthropic", Protocol: frozen.ProtocolAnthropicMessages,
 			Name:                  "Anthropic",
 			BaseURL:               "https://api.anthropic.com/v1",
 			APIKey:                key,
@@ -197,7 +197,7 @@ func main() {
 			baseURL = "https://api.openai.com/v1"
 		}
 		router.RegisterProvider(llmrouter.ProviderConfig{
-			ID:      "openai",
+			ID: "openai", Protocol: frozen.ProtocolOpenAICompletions,
 			Name:    "OpenAI",
 			BaseURL: baseURL,
 			APIKey:  key,

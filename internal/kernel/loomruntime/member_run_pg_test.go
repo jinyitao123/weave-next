@@ -535,7 +535,7 @@ func TestProtocolProbeProviderJournalNodeIdentityAndReplayRealPG(t *testing.T) {
 		json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"finish_reason": finish, "message": message}}, "usage": map[string]int{"prompt_tokens": 3, "completion_tokens": 4}})
 	}))
 	defer server.Close()
-	client := llmrouter.NewProviderClient(llmrouter.ProviderConfig{BaseURL: server.URL, APIKey: "fixture-private-key-marker", Models: []string{"fixture"}})
+	client := llmrouter.NewProviderClient(llmrouter.ProviderConfig{Protocol: "openai-completions", BaseURL: server.URL, APIKey: "fixture-private-key-marker", Models: []string{"fixture"}})
 	var requests []MemberRequest
 	var samples int
 	for _, node := range []string{"A", "B"} {
@@ -680,7 +680,7 @@ func TestProtocolProbePhysicalFailureAndCancelledJournalPreservesErrorRealPG(t *
 				io.WriteString(w, "fixture-provider-failure-marker")
 			}))
 			defer server.Close()
-			client := llmrouter.NewProviderClient(llmrouter.ProviderConfig{BaseURL: server.URL, APIKey: "fixture-private-key-marker", Models: []string{"fixture"}})
+			client := llmrouter.NewProviderClient(llmrouter.ProviderConfig{Protocol: "openai-completions", BaseURL: server.URL, APIKey: "fixture-private-key-marker", Models: []string{"fixture"}})
 			h.request.Graph = protocolProbeGraph(client, h.tools)
 			_, err := runner.Run(ctx, h.request)
 			if err == nil || mode == "cancel" && !errors.Is(err, context.Canceled) || mode == "http-error" && !strings.Contains(err.Error(), "fixture-provider-failure-marker") {
@@ -725,7 +725,7 @@ func TestProtocolProbeLateGenerationObservationSurvivesCurrentReceiptRealPG(t *t
 		secondRelease.Do(func() { close(releaseSecond) })
 		server.Close()
 	})
-	client := llmrouter.NewProviderClient(llmrouter.ProviderConfig{BaseURL: server.URL, APIKey: "fixture", Models: []string{"fixture"}})
+	client := llmrouter.NewProviderClient(llmrouter.ProviderConfig{Protocol: "openai-completions", BaseURL: server.URL, APIKey: "fixture", Models: []string{"fixture"}})
 	h.request.Graph = protocolProbeGraph(client, h.tools)
 	firstDone, secondDone := make(chan error, 1), make(chan error, 1)
 	go func() { _, err := runner.Run(firstCtx, h.request); firstDone <- err }()

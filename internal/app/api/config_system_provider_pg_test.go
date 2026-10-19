@@ -39,7 +39,7 @@ func newSystemCatalogFixture(t *testing.T) *systemCatalogFixture {
 	}
 	router := llmrouter.New("fixture-model")
 	for _, id := range []string{"fixture", "unmirrored"} {
-		router.RegisterProvider(llmrouter.ProviderConfig{
+		router.RegisterProvider(llmrouter.ProviderConfig{Protocol: "openai-completions",
 			ID: id, Name: "Server " + id, BaseURL: "https://models.example.test",
 			APIKey: "catalog-test-secret-" + id, Models: []string{"fixture-model"},
 		})
@@ -185,9 +185,9 @@ func TestSystemProviderCatalogDoesNotGrantGeneralCredentialReadsRealPG(t *testin
 	adminUser, admin := f.account(t, "workspace-a", "admin-a", "admin")
 	f.mirror(t, admin)
 	f.request(t, http.MethodPost, "/v1/providers", admin,
-		`{"id":"personal","name":"Personal fixture","base_url":"https://models.example.test","api_key":"personal-test-only","models":["personal-model"]}`, http.StatusCreated)
+		`{"protocol":"openai-completions","id":"personal","name":"Personal fixture","base_url":"https://models.example.test","api_key":"personal-test-only","models":["personal-model"]}`, http.StatusCreated)
 	service := execution.WithSubject(t.Context(), execution.Subject{WorkspaceID: "workspace-a", ServiceID: "other-service"})
-	if err := f.server.Credentials.Upsert(service, "workspace-a", llmrouter.ProviderConfig{
+	if err := f.server.Credentials.Upsert(service, "workspace-a", llmrouter.ProviderConfig{Protocol: "openai-completions",
 		ID: "other-service-provider", Name: "Other service", BaseURL: "https://models.example.test", APIKey: "other-test-only", Models: []string{"other-model"},
 		CredentialScope: frozen.CredentialScopeWorkspaceService, CredentialServiceID: "other-service",
 	}); err != nil {

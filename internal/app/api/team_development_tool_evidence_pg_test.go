@@ -108,7 +108,7 @@ func runDevelopmentToolEvidence(t *testing.T, large bool) *trialEvidenceFixture 
 	key := []byte(strings.Repeat("k", 32))
 	providers := credentials.New(pool, key)
 	providerActor := execution.WithSubject(t.Context(), execution.Subject{WorkspaceID: workspace, ServiceID: "provider:fixture"})
-	if err := providers.Upsert(providerActor, workspace, llmrouter.ProviderConfig{CredentialScope: frozen.CredentialScopeWorkspaceService, CredentialServiceID: "provider:fixture", ID: "fixture", Name: "Fixture", BaseURL: "http://127.0.0.1:1", APIKey: "test-only", Models: []string{"fixture-model"}}); err != nil {
+	if err := providers.Upsert(providerActor, workspace, llmrouter.ProviderConfig{Protocol: "openai-completions", CredentialScope: frozen.CredentialScopeWorkspaceService, CredentialServiceID: "provider:fixture", ID: "fixture", Name: "Fixture", BaseURL: "http://127.0.0.1:1", APIKey: "test-only", Models: []string{"fixture-model"}}); err != nil {
 		t.Fatal(err)
 	}
 	artifacts := workflow.NewArtifactStore(pool, nil)

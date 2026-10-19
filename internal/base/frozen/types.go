@@ -199,6 +199,11 @@ type FrozenMCPBinding struct {
 }
 
 type FrozenModelBinding struct {
+	Protocol                 string `json:"protocol"`
+	ThinkingDefaultMode      string `json:"thinking_default_mode"`
+	ThinkingDisableWithTools bool   `json:"thinking_disable_with_tools"`
+	AttemptTimeoutSeconds    int    `json:"attempt_timeout_seconds"`
+
 	SchemaVersion int `json:"schema_version"`
 
 	WorkspaceID      string              `json:"workspace_id"`

@@ -25,10 +25,15 @@ import (
 // built in. The key is sealed on arrival and is never read back by any route.
 
 type developmentModelProvider struct {
-	ID      string   `json:"id"`
-	Name    string   `json:"name"`
-	BaseURL string   `json:"base_url"`
-	Models  []string `json:"models"`
+	Protocol                 string   `json:"protocol"`
+	JSONObjectMode           bool     `json:"json_object_mode"`
+	ThinkingDefaultMode      string   `json:"thinking_default_mode"`
+	ThinkingDisableWithTools bool     `json:"thinking_disable_with_tools"`
+	AttemptTimeoutSeconds    int      `json:"attempt_timeout_seconds"`
+	ID                       string   `json:"id"`
+	Name                     string   `json:"name"`
+	BaseURL                  string   `json:"base_url"`
+	Models                   []string `json:"models"`
 	// A provider that came with the deployment is switched on by an
 	// administrator and is not changed here.
 	Deployment bool `json:"deployment"`
@@ -41,7 +46,7 @@ func (s *Server) handleListDevelopmentModelProviders(c echo.Context) error {
 	if pool == nil {
 		return workflowError(c, http.StatusServiceUnavailable, "development_model_provider_unavailable", "组织模型暂时无法读取")
 	}
-	rows, err := pool.Query(c.Request().Context(), `SELECT id,name,base_url,models,source_kind FROM weave_provider_credentials
+	rows, err := pool.Query(c.Request().Context(), `SELECT id,name,base_url,models,source_kind,protocol,json_object_mode,thinking_default_mode,thinking_disable_with_tools,attempt_timeout_seconds FROM weave_provider_credentials
 		WHERE workspace_id=$1 AND credential_scope='workspace_service' AND enabled AND revoked_at IS NULL AND deleted_at IS NULL AND latest_revision > 0
 		ORDER BY name,id`, getTenant(c))
 	if err != nil {
@@ -52,7 +57,7 @@ func (s *Server) handleListDevelopmentModelProviders(c echo.Context) error {
 	for rows.Next() {
 		var provider developmentModelProvider
 		var source string
-		if err := rows.Scan(&provider.ID, &provider.Name, &provider.BaseURL, &provider.Models, &source); err != nil {
+		if err := rows.Scan(&provider.ID, &provider.Name, &provider.BaseURL, &provider.Models, &source, &provider.Protocol, &provider.JSONObjectMode, &provider.ThinkingDefaultMode, &provider.ThinkingDisableWithTools, &provider.AttemptTimeoutSeconds); err != nil {
 			return workflowStoreFailure(c, err)
 		}
 		provider.Deployment = source != "workspace"
@@ -75,15 +80,23 @@ func (s *Server) handlePutDevelopmentModelProvider(c echo.Context) error {
 		return workflowError(c, http.StatusUnprocessableEntity, "model_provider_invalid", message)
 	}
 	var request struct {
-		Name    string   `json:"name"`
-		BaseURL string   `json:"base_url"`
-		APIKey  string   `json:"api_key"`
-		Models  []string `json:"models"`
+		Protocol                 string   `json:"protocol"`
+		JSONObjectMode           bool     `json:"json_object_mode"`
+		ThinkingDefaultMode      string   `json:"thinking_default_mode"`
+		ThinkingDisableWithTools bool     `json:"thinking_disable_with_tools"`
+		AttemptTimeoutSeconds    int      `json:"attempt_timeout_seconds"`
+		Name                     string   `json:"name"`
+		BaseURL                  string   `json:"base_url"`
+		APIKey                   string   `json:"api_key"`
+		Models                   []string `json:"models"`
 	}
 	if err := decodeWorkflowBody(c, &request); err != nil {
 		return workflowSchemaError(c)
 	}
 	id, name, key := c.Param("id"), strings.TrimSpace(request.Name), strings.TrimSpace(request.APIKey)
+	if err := frozen.ValidateProviderProfile(request.Protocol, request.JSONObjectMode, request.ThinkingDefaultMode, request.ThinkingDisableWithTools, request.AttemptTimeoutSeconds); err != nil {
+		return invalid("请提供有效的模型接口协议、思考与超时配置")
+	}
 	if !developmentModelProviderID.MatchString(id) {
 		return invalid("供应方标识只能用小写字母、数字和连字符，以字母或数字开头，不超过 63 个字符")
 	}
@@ -156,6 +169,7 @@ func (s *Server) handlePutDevelopmentModelProvider(c echo.Context) error {
 	if _, err = s.Credentials.UpsertRevisionTx(authorized, tx, tenant, llmrouter.ProviderConfig{
 		CredentialScope: frozen.CredentialScopeWorkspaceService, CredentialServiceID: service,
 		ID: id, Name: name, BaseURL: strings.TrimSpace(request.BaseURL), APIKey: key, Models: models,
+		Protocol: request.Protocol, JSONObjectMode: request.JSONObjectMode, ThinkingDefaultMode: request.ThinkingDefaultMode, ThinkingDisableWithTools: request.ThinkingDisableWithTools, AttemptTimeoutSeconds: request.AttemptTimeoutSeconds,
 	}); err != nil {
 		var coded *credentials.Error
 		if errors.As(err, &coded) && errors.Is(coded, credentials.ErrProviderRevisionRequired) {
@@ -173,5 +187,5 @@ func (s *Server) handlePutDevelopmentModelProvider(c echo.Context) error {
 		s.Models.Invalidate(tenant)
 	}
 	slog.Info("workspace model provider configured", "workspace", tenant, "provider", id, "actor", getUserID(c), "key_replaced", key != "")
-	return c.JSON(http.StatusOK, map[string]any{"id": id, "name": name, "models": models, "key_replaced": key != ""})
+	return c.JSON(http.StatusOK, map[string]any{"id": id, "name": name, "models": models, "protocol": request.Protocol, "key_replaced": key != ""})
 }

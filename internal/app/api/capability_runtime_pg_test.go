@@ -92,7 +92,7 @@ func TestCapabilityHTTPToLoomRuntimeRealPG(t *testing.T) {
 	}))
 	defer provider.Close()
 	router := llmrouter.New("test-model")
-	router.RegisterProvider(llmrouter.ProviderConfig{
+	router.RegisterProvider(llmrouter.ProviderConfig{Protocol: "openai-completions",
 		ID: "test", BaseURL: provider.URL, APIKey: "test", Models: []string{"test-model"},
 		CredentialScope: frozen.CredentialScopeUser, CredentialUserID: "dev",
 	})

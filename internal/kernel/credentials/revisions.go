@@ -57,6 +57,11 @@ func (e *Error) Is(target error) bool {
 }
 
 type ProviderHead struct {
+	Protocol                 string `json:"protocol"`
+	ThinkingDefaultMode      string `json:"thinking_default_mode"`
+	ThinkingDisableWithTools bool   `json:"thinking_disable_with_tools"`
+	AttemptTimeoutSeconds    int    `json:"attempt_timeout_seconds"`
+
 	CredentialScope     frozen.CredentialScope `json:"credential_scope"`
 	CredentialUserID    string                 `json:"credential_user_id,omitempty"`
 	CredentialServiceID string                 `json:"credential_service_id,omitempty"`
@@ -76,6 +81,11 @@ type ProviderHead struct {
 }
 
 type ProviderRevision struct {
+	Protocol                 string `json:"protocol"`
+	ThinkingDefaultMode      string `json:"thinking_default_mode"`
+	ThinkingDisableWithTools bool   `json:"thinking_disable_with_tools"`
+	AttemptTimeoutSeconds    int    `json:"attempt_timeout_seconds"`
+
 	WorkspaceID    string    `json:"workspace_id"`
 	ProviderID     string    `json:"provider_id"`
 	Revision       int64     `json:"revision"`
@@ -94,6 +104,11 @@ type ProviderRevisionResult struct {
 }
 
 type providerRevisionHashInput struct {
+	Protocol                 string `json:"protocol"`
+	ThinkingDefaultMode      string `json:"thinking_default_mode"`
+	ThinkingDisableWithTools bool   `json:"thinking_disable_with_tools"`
+	AttemptTimeoutSeconds    int    `json:"attempt_timeout_seconds"`
+
 	Name           string   `json:"name"`
 	BaseURL        string   `json:"base_url"`
 	Models         []string `json:"models"`
@@ -145,11 +160,11 @@ func (s *Store) UpsertRevisionTx(ctx context.Context, tx pgx.Tx, workspaceID str
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO weave_provider_credentials (
 		  workspace_id, id, name, base_url, api_key_cipher, models,
-		  json_object_mode,credential_scope,credential_user_id,credential_service_id
-		) VALUES ($1, $2, $3, $4, $5, $6, $7,$8,$9,$10)
+		  json_object_mode, protocol, thinking_default_mode, thinking_disable_with_tools, attempt_timeout_seconds,credential_scope,credential_user_id,credential_service_id
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,$12,$13,$14)
 		ON CONFLICT (workspace_id, id) DO NOTHING
 	`, workspaceID, normalized.ID, normalized.Name, normalized.BaseURL,
-		initialCipher, normalized.Models, normalized.JSONObjectMode, normalized.CredentialScope, normalized.CredentialUserID, normalized.CredentialServiceID,
+		initialCipher, normalized.Models, normalized.JSONObjectMode, normalized.Protocol, normalized.ThinkingDefaultMode, normalized.ThinkingDisableWithTools, normalized.AttemptTimeoutSeconds, normalized.CredentialScope, normalized.CredentialUserID, normalized.CredentialServiceID,
 	); err != nil {
 		return ProviderRevisionResult{}, fmt.Errorf("create provider head: %w", err)
 	}
@@ -204,7 +219,8 @@ func (s *Store) UpsertRevisionTx(ctx context.Context, tx pgx.Tx, workspaceID str
 			BaseURL:        normalized.BaseURL,
 			Models:         append([]string(nil), normalized.Models...),
 			JSONObjectMode: normalized.JSONObjectMode,
-			ContentHash:    contentHash,
+			Protocol:       normalized.Protocol, ThinkingDefaultMode: normalized.ThinkingDefaultMode, ThinkingDisableWithTools: normalized.ThinkingDisableWithTools, AttemptTimeoutSeconds: normalized.AttemptTimeoutSeconds,
+			ContentHash: contentHash,
 		}
 		modelsJSON, marshalErr := json.Marshal(revision.Models)
 		if marshalErr != nil {
@@ -216,11 +232,11 @@ func (s *Store) UpsertRevisionTx(ctx context.Context, tx pgx.Tx, workspaceID str
 		err = tx.QueryRow(ctx, `
 			INSERT INTO weave_provider_revisions (
 			  workspace_id, provider_id, revision, name, base_url, models,
-			  json_object_mode, content_hash
-			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+			  json_object_mode, protocol, thinking_default_mode, thinking_disable_with_tools, attempt_timeout_seconds, content_hash
+			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 			RETURNING created_at
 		`, revision.WorkspaceID, revision.ProviderID, revision.Revision,
-			revision.Name, revision.BaseURL, string(modelsJSON), revision.JSONObjectMode,
+			revision.Name, revision.BaseURL, string(modelsJSON), revision.JSONObjectMode, revision.Protocol, revision.ThinkingDefaultMode, revision.ThinkingDisableWithTools, revision.AttemptTimeoutSeconds,
 			revision.ContentHash,
 		).Scan(&revision.CreatedAt)
 		if err != nil {
@@ -235,11 +251,12 @@ func (s *Store) UpsertRevisionTx(ctx context.Context, tx pgx.Tx, workspaceID str
 		    api_key_cipher=$5,
 		    models=$6,
 		    json_object_mode=$7,
-		    latest_revision=$8,
+ protocol=$8, thinking_default_mode=$9, thinking_disable_with_tools=$10, attempt_timeout_seconds=$11,
+		    latest_revision=$12,
 		    updated_at=now()
 		WHERE workspace_id=$1 AND id=$2
 	`, workspaceID, normalized.ID, normalized.Name, normalized.BaseURL,
-		ciphertext, normalized.Models, normalized.JSONObjectMode, nextRevision,
+		ciphertext, normalized.Models, normalized.JSONObjectMode, normalized.Protocol, normalized.ThinkingDefaultMode, normalized.ThinkingDisableWithTools, normalized.AttemptTimeoutSeconds, nextRevision,
 	); err != nil {
 		return ProviderRevisionResult{}, fmt.Errorf("update provider head: %w", err)
 	}
@@ -249,6 +266,10 @@ func (s *Store) UpsertRevisionTx(ctx context.Context, tx pgx.Tx, workspaceID str
 	head.APIKey = MaskedKey
 	head.Models = append([]string(nil), normalized.Models...)
 	head.JSONObjectMode = normalized.JSONObjectMode
+	head.Protocol = normalized.Protocol
+	head.ThinkingDefaultMode = normalized.ThinkingDefaultMode
+	head.ThinkingDisableWithTools = normalized.ThinkingDisableWithTools
+	head.AttemptTimeoutSeconds = normalized.AttemptTimeoutSeconds
 	head.LatestRevision = nextRevision
 	return ProviderRevisionResult{
 		Head:     head,
@@ -279,7 +300,7 @@ func (s *Store) ListMetadata(
 		return nil, err
 	}
 	rows, err := s.pool.Query(ctx, `
-		SELECT workspace_id, id, name, base_url, models, json_object_mode,
+		SELECT workspace_id, id, name, base_url, models, json_object_mode, protocol, thinking_default_mode, thinking_disable_with_tools, attempt_timeout_seconds,
 		       latest_revision, source_kind, source_provider_id, enabled,
 		       revoked_at, deleted_at,credential_scope,credential_user_id,credential_service_id
 		FROM weave_provider_credentials
@@ -299,7 +320,7 @@ func (s *Store) ListMetadata(
 		var head ProviderHead
 		if err := rows.Scan(
 			&head.WorkspaceID, &head.ID, &head.Name, &head.BaseURL, &head.Models,
-			&head.JSONObjectMode, &head.LatestRevision, &head.SourceKind,
+			&head.JSONObjectMode, &head.Protocol, &head.ThinkingDefaultMode, &head.ThinkingDisableWithTools, &head.AttemptTimeoutSeconds, &head.LatestRevision, &head.SourceKind,
 			&head.SourceProviderID, &head.Enabled, &head.RevokedAt, &head.DeletedAt, &head.CredentialScope, &head.CredentialUserID, &head.CredentialServiceID,
 		); err != nil {
 			return nil, err
@@ -496,14 +517,14 @@ func getProviderHeadTx(
 	var ciphertext string
 	err := querier.QueryRow(ctx, `
 		SELECT workspace_id, id, name, base_url, api_key_cipher, models,
-		       json_object_mode, latest_revision, source_kind, source_provider_id,
+		       json_object_mode, protocol, thinking_default_mode, thinking_disable_with_tools, attempt_timeout_seconds, latest_revision, source_kind, source_provider_id,
 		       enabled, revoked_at, deleted_at,credential_scope,credential_user_id,credential_service_id
 		FROM weave_provider_credentials
 		WHERE workspace_id=$1 AND id=$2`+lock,
 		workspaceID, providerID,
 	).Scan(
 		&head.WorkspaceID, &head.ID, &head.Name, &head.BaseURL, &ciphertext,
-		&head.Models, &head.JSONObjectMode, &head.LatestRevision, &head.SourceKind,
+		&head.Models, &head.JSONObjectMode, &head.Protocol, &head.ThinkingDefaultMode, &head.ThinkingDisableWithTools, &head.AttemptTimeoutSeconds, &head.LatestRevision, &head.SourceKind,
 		&head.SourceProviderID, &head.Enabled, &head.RevokedAt, &head.DeletedAt, &head.CredentialScope, &head.CredentialUserID, &head.CredentialServiceID,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -568,13 +589,13 @@ func getProviderRevisionTx(
 	var modelsJSON []byte
 	err := querier.QueryRow(ctx, `
 		SELECT workspace_id, provider_id, revision, name, base_url, models,
-		       json_object_mode, content_hash, created_at
+		       json_object_mode, protocol, thinking_default_mode, thinking_disable_with_tools, attempt_timeout_seconds, content_hash, created_at
 		FROM weave_provider_revisions
 		WHERE workspace_id=$1 AND provider_id=$2 AND revision=$3`+lock,
 		workspaceID, providerID, revision,
 	).Scan(
 		&stored.WorkspaceID, &stored.ProviderID, &stored.Revision, &stored.Name,
-		&stored.BaseURL, &modelsJSON, &stored.JSONObjectMode, &stored.ContentHash,
+		&stored.BaseURL, &modelsJSON, &stored.JSONObjectMode, &stored.Protocol, &stored.ThinkingDefaultMode, &stored.ThinkingDisableWithTools, &stored.AttemptTimeoutSeconds, &stored.ContentHash,
 		&stored.CreatedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -598,6 +619,7 @@ func getProviderRevisionTx(
 		BaseURL:        stored.BaseURL,
 		Models:         stored.Models,
 		JSONObjectMode: stored.JSONObjectMode,
+		Protocol:       stored.Protocol, ThinkingDefaultMode: stored.ThinkingDefaultMode, ThinkingDisableWithTools: stored.ThinkingDisableWithTools, AttemptTimeoutSeconds: stored.AttemptTimeoutSeconds,
 	}
 	var normalized llmrouter.ProviderConfig
 	if strings.HasPrefix(providerID, "system/") {
@@ -639,6 +661,9 @@ func normalizeProviderConfig(
 	workspaceID string,
 	cfg llmrouter.ProviderConfig,
 ) (llmrouter.ProviderConfig, error) {
+	if err := cfg.Validate(); err != nil {
+		return llmrouter.ProviderConfig{}, coded(CodeProviderRevisionRequired, err.Error())
+	}
 	if strings.TrimSpace(workspaceID) == "" ||
 		strings.TrimSpace(cfg.ID) == "" ||
 		strings.TrimSpace(cfg.Name) == "" {
@@ -698,6 +723,7 @@ func hashProviderRevision(cfg llmrouter.ProviderConfig) (string, error) {
 		BaseURL:        cfg.BaseURL,
 		Models:         cfg.Models,
 		JSONObjectMode: cfg.JSONObjectMode,
+		Protocol:       cfg.Protocol, ThinkingDefaultMode: cfg.ThinkingDefaultMode, ThinkingDisableWithTools: cfg.ThinkingDisableWithTools, AttemptTimeoutSeconds: cfg.AttemptTimeoutSeconds,
 	})
 	if err != nil {
 		return "", err

@@ -209,7 +209,7 @@ func publishStandardToolSample(t *testing.T, pool *pgxpool.Pool, key []byte, wor
 		t.Fatal(err)
 	}
 	providers := credentials.New(pool, key)
-	if err := providers.Upsert(ctx, workspace, llmrouter.ProviderConfig{ID: "fixture", Name: "Fixture", CredentialScope: frozen.CredentialScopeUser, CredentialUserID: "test", BaseURL: serverURL, APIKey: "test-provider-secret", Models: []string{"fixture-model"}}); err != nil {
+	if err := providers.Upsert(ctx, workspace, llmrouter.ProviderConfig{Protocol: "openai-completions", ID: "fixture", Name: "Fixture", CredentialScope: frozen.CredentialScopeUser, CredentialUserID: "test", BaseURL: serverURL, APIKey: "test-provider-secret", Models: []string{"fixture-model"}}); err != nil {
 		t.Fatal(err)
 	}
 	agents := agentcatalog.New(pool)

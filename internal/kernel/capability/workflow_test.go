@@ -155,7 +155,7 @@ func sourceBundleWithCredentialScope(t *testing.T, id, role string, allow []stri
 	} else {
 		credential.ServiceID = "system-model-provider"
 	}
-	model := frozen.FrozenModelBinding{
+	model := frozen.FrozenModelBinding{Protocol: "openai-completions",
 		SchemaVersion: frozen.FrozenSchemaVersion,
 		WorkspaceID:   workspaceID, ProviderID: "system-provider", ProviderRevision: 2,
 		ModelID: "model-" + id, BaseURL: "https://provider.example/v1", CredentialRef: credential,

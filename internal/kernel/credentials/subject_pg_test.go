@@ -33,10 +33,10 @@ func TestProviderStoredOwnershipCannotBeRewrittenByReference(t *testing.T) {
 		}
 		return providerConfigReference("workspace", cfg)
 	}
-	a := create(alice, llmrouter.ProviderConfig{ID: "alice-provider", APIKey: "alice-private-key", CredentialScope: frozen.CredentialScopeUser, CredentialUserID: "alice"})
-	b := create(bob, llmrouter.ProviderConfig{ID: "bob-provider", APIKey: "bob-private-key", CredentialScope: frozen.CredentialScopeUser, CredentialUserID: "bob"})
+	a := create(alice, llmrouter.ProviderConfig{Protocol: "openai-completions", ID: "alice-provider", APIKey: "alice-private-key", CredentialScope: frozen.CredentialScopeUser, CredentialUserID: "alice"})
+	b := create(bob, llmrouter.ProviderConfig{Protocol: "openai-completions", ID: "bob-provider", APIKey: "bob-private-key", CredentialScope: frozen.CredentialScopeUser, CredentialUserID: "bob"})
 	serviceCtx := execution.WithSubject(context.Background(), execution.Subject{WorkspaceID: "workspace", ServiceID: "shared-models"})
-	shared := create(serviceCtx, llmrouter.ProviderConfig{ID: "shared-provider", APIKey: "workspace-key", CredentialScope: frozen.CredentialScopeWorkspaceService, CredentialServiceID: "shared-models"})
+	shared := create(serviceCtx, llmrouter.ProviderConfig{Protocol: "openai-completions", ID: "shared-provider", APIKey: "workspace-key", CredentialScope: frozen.CredentialScopeWorkspaceService, CredentialServiceID: "shared-models"})
 	resolve := func(ctx context.Context, ref frozen.CredentialReference) (string, error) {
 		tx, err := pool.Begin(ctx)
 		if err != nil {
@@ -67,7 +67,7 @@ func TestProviderStoredOwnershipCannotBeRewrittenByReference(t *testing.T) {
 	if _, err := store.GetHead(bob, "workspace", a.ResourceID); err == nil {
 		t.Fatal("another user read alice's credential head")
 	}
-	if _, err := store.UpsertRevision(bob, "workspace", llmrouter.ProviderConfig{ID: a.ResourceID, Name: "takeover", BaseURL: "https://models.invalid/v1", Models: []string{"model"}, APIKey: "attacker-key", CredentialScope: frozen.CredentialScopeUser, CredentialUserID: "bob"}); err == nil {
+	if _, err := store.UpsertRevision(bob, "workspace", llmrouter.ProviderConfig{Protocol: "openai-completions", ID: a.ResourceID, Name: "takeover", BaseURL: "https://models.invalid/v1", Models: []string{"model"}, APIKey: "attacker-key", CredentialScope: frozen.CredentialScopeUser, CredentialUserID: "bob"}); err == nil {
 		t.Fatal("another user overwrote the credential")
 	}
 	for _, test := range []struct {
@@ -105,5 +105,47 @@ func TestProviderStoredOwnershipCannotBeRewrittenByReference(t *testing.T) {
 	}
 	if key, err := resolve(alice, a); err != nil || key != "alice-private-key" {
 		t.Fatal("denied operations changed alice's key")
+	}
+}
+
+func TestProviderProfileFieldsAdvanceImmutableRevisionRealPG(t *testing.T) {
+	pool := testutil.PostgresPool(t)
+	ctx := execution.WithSubject(context.Background(), execution.Subject{WorkspaceID: "profiles", UserID: "owner"})
+	if err := db.Migrate(ctx, pool); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO weave_workspaces(id,slug,name) VALUES('profiles','profiles','Profiles')`); err != nil {
+		t.Fatal(err)
+	}
+	store := New(pool, []byte("0123456789abcdef0123456789abcdef"))
+	cases := []struct {
+		name   string
+		change func(*llmrouter.ProviderConfig)
+	}{
+		{"thinking", func(c *llmrouter.ProviderConfig) { c.ThinkingDefaultMode = "disabled" }},
+		{"tool-thinking", func(c *llmrouter.ProviderConfig) { c.ThinkingDisableWithTools = true }},
+		{"timeout", func(c *llmrouter.ProviderConfig) { c.AttemptTimeoutSeconds = 37 }},
+		{"protocol", func(c *llmrouter.ProviderConfig) { c.Protocol = frozen.ProtocolOpenAIResponses }},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := llmrouter.ProviderConfig{Protocol: frozen.ProtocolOpenAICompletions, ID: tc.name, Name: tc.name, BaseURL: "https://provider.invalid/v1", Models: []string{"model-" + tc.name}, APIKey: "synthetic-key", CredentialScope: frozen.CredentialScopeUser, CredentialUserID: "owner"}
+			if tc.name == "tool-thinking" {
+				cfg.ThinkingDefaultMode = "disabled"
+			}
+			before, err := store.UpsertRevision(ctx, "profiles", cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			tc.change(&cfg)
+			after, err := store.UpsertRevision(ctx, "profiles", cfg)
+			if err != nil || !after.Advanced || after.Revision.Revision != before.Revision.Revision+1 || after.Revision.ContentHash == before.Revision.ContentHash {
+				t.Fatalf("functional profile change did not create exact revision: %v", err)
+			}
+			same, err := store.UpsertRevision(ctx, "profiles", cfg)
+			if err != nil || same.Advanced {
+				t.Fatalf("repeated profile changed revision: %v", err)
+			}
+		})
 	}
 }
