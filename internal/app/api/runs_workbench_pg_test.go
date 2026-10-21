@@ -223,6 +223,23 @@ func TestWorkbenchRunsUseAuthenticatedInputOwnerAndMatchDetailsRealPG(t *testing
 	if status := stop("user-b"); status != http.StatusNotFound {
 		t.Fatalf("same-workspace developer stopped another employee's run: %d", status)
 	}
+	// Retry, corrections and delivery recheck share the stop guard.
+	guard := func(userID string) (bool, int) {
+		recorder := httptest.NewRecorder()
+		c := echo.New().NewContext(httptest.NewRequest(http.MethodPost, "/", nil), recorder)
+		c.Set("tenant", "ws")
+		c.Set("user_id", userID)
+		c.Set("roles", []string{"admin"})
+		c.SetParamNames("id")
+		c.SetParamValues(runA.RunID)
+		return server.runWriteDenied(c), recorder.Code
+	}
+	if denied, code := guard("user-b"); !denied || code != http.StatusNotFound {
+		t.Fatalf("same-workspace admin may change another employee's run: denied=%v code=%d", denied, code)
+	}
+	if denied, _ := guard("user-a"); denied {
+		t.Fatal("run write guard refused the run's owner")
+	}
 	if code, current := detail("user-a", runA.RunID); code != http.StatusOK || current["status"] != "running" {
 		t.Fatalf("denied stop changed run: %d %+v", code, current)
 	}

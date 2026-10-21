@@ -15,7 +15,6 @@ import (
 const (
 	authSourceContextKey     = "auth_source"
 	identitySourceContextKey = "identity_source"
-	scopesContextKey         = "scopes"
 	apiKeyIDContextKey       = "api_key_id"
 	apiKeyNameContextKey     = "api_key_name"
 	workbenchActorContextKey = "workbench_actor_id"
@@ -71,6 +70,10 @@ func AuthMiddleware(jwtSecret string, keyStoreGetter func() *apikeys.Store, user
 				if err != nil {
 					return c.JSON(http.StatusUnauthorized, map[string]string{"error": "invalid api key"})
 				}
+				// API keys are admin operator credentials; "owner" is the one retained legacy spelling.
+				if key.Role != roleAdmin && key.Role != "owner" {
+					return c.JSON(http.StatusUnauthorized, map[string]string{"error": "api key role is retired"})
+				}
 				setAPIKeyContext(c, key)
 				if err := bindDelegatedUser(c, jwtSecret, userStoreGetter, key); err != nil {
 					return c.JSON(http.StatusUnauthorized, map[string]string{"error": "invalid delegated user authorization"})
@@ -121,7 +124,6 @@ func setAPIKeyContext(c echo.Context, key *apikeys.APIKey) {
 	c.Set("roles", []string{key.Role})
 	c.Set(authSourceContextKey, authSourceAPIKey)
 	c.Set(apiKeyNameContextKey, key.Name)
-	c.Set(scopesContextKey, key.Scopes)
 	c.Set(apiKeyIDContextKey, key.ID)
 }
 
@@ -196,61 +198,42 @@ func firstClaimRole(roles []string) string {
 	return roles[0]
 }
 
-// RequireScope limits API key access to a route group.
-func RequireScope(scope string) echo.MiddlewareFunc {
-	return func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
-			if c.Get(authSourceContextKey) != authSourceAPIKey {
-				return next(c)
-			}
-			scopes, _ := c.Get(scopesContextKey).([]string)
-			if len(scopes) == 0 {
-				return next(c)
-			}
-			for _, allowed := range scopes {
-				if allowed == scope {
-					return next(c)
-				}
-			}
-			return c.JSON(http.StatusForbidden, map[string]string{"error": "insufficient scope"})
-		}
-	}
+// Product roles rank member < developer < admin. Forge sessions carry only
+// these three; "owner" remains as a legacy API key role and ranks as admin.
+const (
+	roleDeveloper = "developer"
+	roleAdmin     = "admin"
+)
+
+var roleRanks = map[string]int{"member": 1, roleDeveloper: 2, roleAdmin: 3, "owner": 3}
+
+// roleAtLeast reports whether role grants at least minimum's access.
+func roleAtLeast(role, minimum string) bool {
+	return roleRanks[role] > 0 && roleRanks[role] >= roleRanks[minimum]
 }
 
-// RequireRole checks that the authenticated user has the required role.
-func RequireRole(role string) echo.MiddlewareFunc {
-	return func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
-			roles, ok := c.Get("roles").([]string)
-			if !ok {
-				return c.JSON(http.StatusForbidden, map[string]string{"error": "no roles"})
-			}
-			for _, r := range roles {
-				if r == role {
-					return next(c)
-				}
-			}
-			return c.JSON(http.StatusForbidden, map[string]string{"error": "insufficient permissions"})
+// callerAtLeast reports whether any role on the request grants at least minimum's access.
+func callerAtLeast(c echo.Context, minimum string) bool {
+	roles, _ := c.Get("roles").([]string)
+	for _, role := range roles {
+		if roleAtLeast(role, minimum) {
+			return true
 		}
 	}
+	return false
 }
 
-// RequireAnyRole allows callers that hold at least one of the supplied roles.
-func RequireAnyRole(allowedRoles ...string) echo.MiddlewareFunc {
+// RequireAtLeast admits callers whose role grants at least minimum's access.
+func RequireAtLeast(minimum string) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
-			roles, ok := c.Get("roles").([]string)
-			if !ok {
+			if _, ok := c.Get("roles").([]string); !ok {
 				return c.JSON(http.StatusForbidden, map[string]string{"error": "no roles"})
 			}
-			for _, role := range roles {
-				for _, allowed := range allowedRoles {
-					if role == allowed {
-						return next(c)
-					}
-				}
+			if !callerAtLeast(c, minimum) {
+				return c.JSON(http.StatusForbidden, map[string]string{"error": "insufficient permissions"})
 			}
-			return c.JSON(http.StatusForbidden, map[string]string{"error": "insufficient permissions"})
+			return next(c)
 		}
 	}
 }

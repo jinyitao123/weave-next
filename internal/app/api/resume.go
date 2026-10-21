@@ -295,6 +295,14 @@ func (s *Server) handleResume(c echo.Context) error {
 	if err != nil {
 		return c.JSON(checkpointResolutionHTTPStatus(err), map[string]string{"error": err.Error()})
 	}
+	// Only the person who started the run may answer it; a run with no person behind it needs an admin.
+	checkpoint, err := loadAPIResumeCheckpoint(ctx, s.Store, tenant, req.Agent, req.RunID)
+	if err != nil {
+		return c.JSON(checkpointResolutionHTTPStatus(err), map[string]string{"error": err.Error()})
+	}
+	if owner, _ := checkpoint.State["user_id"].(string); owner != userID && (owner != "" || !callerAtLeast(c, roleAdmin)) {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "run_not_found"})
+	}
 
 	// Merge human input into state.
 	input := bindResumeInputIdentity(loom.State(req.Input), tenant, rec)

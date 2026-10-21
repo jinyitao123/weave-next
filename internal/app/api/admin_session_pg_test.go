@@ -38,6 +38,10 @@ func TestAdminConsoleAPIKeySignInRealPG(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	_, serviceKey, err := keys.Create(ctx, workspaceID, "retired", "service", owner.ID, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	s := adminConsoleServer(nil)
 	s.KeyStore, s.UserStore = keys, userStore
@@ -87,16 +91,11 @@ func TestAdminConsoleAPIKeySignInRealPG(t *testing.T) {
 		t.Fatalf("admin console session refused by agent scope: %d %s", agents.Code, agents.Body.String())
 	}
 
-	// A narrower key keeps its own scopes.
-	runsCookie, _ := signIn(runsKey)
-	if runsCookie.Value != runsKey {
-		t.Fatal("scoped key was widened into an owner session")
+	// Scopes no longer narrow an admin key, and a retired key role cannot sign in.
+	if runsCookie, _ := signIn(runsKey); strings.HasPrefix(runsCookie.Value, "wv_sk_") {
+		t.Fatal("an admin key with an owner did not sign in as its owner")
 	}
-	if view := readSession(runsCookie); view.Source != "api_key" || view.Name != "runs-only" {
-		t.Fatalf("scoped key session read = %#v", view)
-	}
-	refused := serveAdmin(s, adminRequest(http.MethodPost, "/v1/agents", `{}`, func(r *http.Request) { trusted(r); r.AddCookie(runsCookie) }))
-	if refused.Code != http.StatusForbidden {
-		t.Fatalf("scoped key reached the agent route: %d", refused.Code)
+	if refused := serveAdmin(s, adminRequest(http.MethodPost, "/v1/admin/session", `{"api_key":"`+serviceKey+`"}`, trusted)); refused.Code != http.StatusUnauthorized {
+		t.Fatalf("retired service key signed in: %d", refused.Code)
 	}
 }

@@ -214,7 +214,7 @@ func (team mcpTeam) view() map[string]any {
 }
 
 func (call *mcpEntryCall) teams(development bool) ([]mcpTeam, *mcpEntryError) {
-	if development && !editOneOf(call.role, "developer", "admin", "owner") {
+	if development && !roleAtLeast(call.role, roleDeveloper) {
 		return nil, mcpFail("forbidden", "当前账号没有开发团队的权限")
 	}
 	var teams []mcpTeam

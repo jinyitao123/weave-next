@@ -89,8 +89,7 @@ type adminTaskQuery struct {
 
 // adminRunReader reports whether the caller reads every run of the workspace.
 func adminRunReader(c echo.Context) bool {
-	role := firstRole(c)
-	return role == "admin" || role == "owner"
+	return roleAtLeast(firstRole(c), roleAdmin)
 }
 
 // auditRunView records that an administrator opened someone else's run. One
