@@ -62,7 +62,7 @@ func (s *Server) handleListHumanTasks(c echo.Context) error {
 	if s.teamRunHumanTasks == nil {
 		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "human task inbox unavailable"})
 	}
-	if !humanTaskDeveloperAccess(c) {
+	if !callerAtLeast(c, roleDeveloper) {
 		return c.JSON(http.StatusForbidden, map[string]string{"error": "human task list requires developer access"})
 	}
 	reader := *s.teamRunHumanTasks
@@ -427,10 +427,6 @@ func humanTaskNotFound() error {
 	return echo.NewHTTPError(http.StatusNotFound, map[string]string{"error": "human task not found"})
 }
 
-func humanTaskDeveloperAccess(c echo.Context) bool {
-	return callerAtLeast(c, roleDeveloper)
-}
-
 // requireHumanTaskSource protects both reads and completions. A native inbox
 // reference is only a locator; Weave checks its immutable input, employee,
 // session and run binding before revealing the question or resuming a run.
@@ -443,7 +439,7 @@ func (s *Server) requireHumanTaskSource(c echo.Context, runID string, source hum
 		return false, echo.NewHTTPError(http.StatusServiceUnavailable, map[string]string{"error": "human task authorization unavailable"})
 	}
 	if !bound {
-		if source.InputRevisionID != "" || source.WorkbenchSessionID != "" || !humanTaskDeveloperAccess(c) {
+		if source.InputRevisionID != "" || source.WorkbenchSessionID != "" || !callerAtLeast(c, roleDeveloper) {
 			return false, humanTaskNotFound()
 		}
 		return false, nil

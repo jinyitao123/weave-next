@@ -71,6 +71,10 @@ func AuthMiddleware(jwtSecret string, keyStoreGetter func() *apikeys.Store, user
 				if err != nil {
 					return c.JSON(http.StatusUnauthorized, map[string]string{"error": "invalid api key"})
 				}
+				// API keys are admin operator credentials; "owner" is the one retained legacy spelling.
+				if key.Role != roleAdmin && key.Role != "owner" {
+					return c.JSON(http.StatusUnauthorized, map[string]string{"error": "api key role is retired"})
+				}
 				setAPIKeyContext(c, key)
 				if err := bindDelegatedUser(c, jwtSecret, userStoreGetter, key); err != nil {
 					return c.JSON(http.StatusUnauthorized, map[string]string{"error": "invalid delegated user authorization"})

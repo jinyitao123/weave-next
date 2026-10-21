@@ -1171,7 +1171,7 @@ func (s *Server) handleGetRunActivity(c echo.Context) error {
 			return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "run_read_unavailable"})
 		}
 		if found {
-			if !humanTaskDeveloperAccess(c) {
+			if !callerAtLeast(c, roleDeveloper) {
 				return c.JSON(http.StatusForbidden, map[string]string{"error": "insufficient permissions"})
 			}
 			developmentTrial = &trial
