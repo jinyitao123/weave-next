@@ -23,6 +23,7 @@ func TestRunDeliveryRecheckAndHistoryAPIRealPG(t *testing.T) {
 	if _, err := f.pool.Exec(t.Context(), `INSERT INTO fixture_delivery_objects VALUES ('ws',$1,'unexpected',42)`, executed.runID); err != nil {
 		t.Fatal(err)
 	}
+	role := roleDeveloper
 	invoke := func(tenant, runID, method, reportID string, body any, handler echo.HandlerFunc) *httptest.ResponseRecorder {
 		t.Helper()
 		raw, _ := json.Marshal(body)
@@ -32,6 +33,7 @@ func TestRunDeliveryRecheckAndHistoryAPIRealPG(t *testing.T) {
 		c := echo.New().NewContext(request, recorded)
 		c.Set("tenant", tenant)
 		c.Set("user_id", "user")
+		c.Set("roles", []string{role})
 		c.SetParamNames("id", "verification_id")
 		c.SetParamValues(runID, reportID)
 		if err := handler(c); err != nil {
@@ -40,6 +42,11 @@ func TestRunDeliveryRecheckAndHistoryAPIRealPG(t *testing.T) {
 		return recorded
 	}
 	request := map[string]string{"revision_id": executed.state.RevisionID, "contract_digest": executed.state.ContractDigest}
+	role = "member"
+	if denied := invoke("ws", executed.runID, http.MethodPost, "", request, f.server.handleRecheckRunDelivery); denied.Code != http.StatusNotFound {
+		t.Fatalf("member recheck of a non-workbench run=%d %s", denied.Code, denied.Body.String())
+	}
+	role = roleDeveloper
 	response := invoke("ws", executed.runID, http.MethodPost, "", request, f.server.handleRecheckRunDelivery)
 	if response.Code != http.StatusOK {
 		t.Fatalf("recheck=%d %s", response.Code, response.Body.String())

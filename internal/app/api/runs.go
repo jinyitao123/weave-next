@@ -392,6 +392,9 @@ func (s *Server) handleRetryRunStage(c echo.Context) error {
 	if decoder.Decode(new(any)) != io.EOF || len(request.IdempotencyKey) > 256 || strings.TrimSpace(request.IdempotencyKey) != request.IdempotencyKey {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid_stage_retry_request"})
 	}
+	if s.runWriteDenied(c) {
+		return nil
+	}
 	result, err := s.teamRunStageRetry.Retry(c.Request().Context(), teamrun.StageRetryRequest{
 		WorkspaceID: getTenant(c), RunID: c.Param("id"), NodeID: strings.TrimSpace(c.Param("node_id")),
 		IdempotencyKey: request.IdempotencyKey, AuthorizedTotalRounds: request.AuthorizedTotalRounds, Actor: getUserID(c),
@@ -1372,16 +1375,28 @@ func (s *Server) handleGetRunActivity(c echo.Context) error {
 
 // handleStopRun exposes Weave's existing exact TeamRun cancellation state
 // machine as one authenticated, idempotent product command.
+// runWriteDenied guards every run mutation: a run started from an employee's
+// workbench belongs to that employee alone, and other runs need at least
+// developer. It returns true when it has written the refusal.
+func (s *Server) runWriteDenied(c echo.Context) bool {
+	_, owned, bound, err := s.workbenchRunAccess(c.Request().Context(), getTenant(c), getUserID(c), c.Param("id"))
+	if err != nil {
+		_ = c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "run_authorization_unavailable"})
+		return true
+	}
+	if owned || (!bound && callerAtLeast(c, roleDeveloper)) {
+		return false
+	}
+	_ = c.JSON(http.StatusNotFound, map[string]string{"error": "run_not_found"})
+	return true
+}
+
 func (s *Server) handleStopRun(c echo.Context) error {
 	if s.teamRunCancel == nil {
 		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "team_run_cancel_unavailable"})
 	}
-	_, owned, bound, accessErr := s.workbenchRunAccess(c.Request().Context(), getTenant(c), getUserID(c), c.Param("id"))
-	if accessErr != nil {
-		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "run_stop_authorization_unavailable"})
-	}
-	if (bound && !owned) || (!bound && !humanTaskDeveloperAccess(c)) {
-		return c.JSON(http.StatusNotFound, map[string]string{"error": "run_not_found"})
+	if s.runWriteDenied(c) {
+		return nil
 	}
 	var request stopRunRequest
 	if c.Request().Body != nil {

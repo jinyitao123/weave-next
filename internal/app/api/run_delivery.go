@@ -140,6 +140,9 @@ func (s *Server) handleRecheckRunDelivery(c echo.Context) error {
 	if err := decodeOneJSON(c, &body, 2048); err != nil || body.RevisionID == "" || body.ContractDigest == "" {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid_request"})
 	}
+	if s.runWriteDenied(c) {
+		return nil
+	}
 	result, err := s.Deliverables.RecheckCurrentDelivery(c.Request().Context(), deliverable.RecheckRequest{
 		WorkspaceID: getTenant(c), RunID: c.Param("id"), RevisionID: body.RevisionID, ContractDigest: body.ContractDigest,
 	})

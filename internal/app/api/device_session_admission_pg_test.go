@@ -241,3 +241,27 @@ func TestDeviceSessionRequestLimitKeepsRecordedRetriesRealPG(t *testing.T) {
 		}
 	}
 }
+
+// A device session is a queued task. The task store only reads tasks of the
+// authenticated subject, so another member cannot cancel it.
+func TestJobCancelOnlyBySubmitterRealPG(t *testing.T) {
+	s, host, alice := deviceAdmissionFixture(t)
+	if _, err := s.Pool.Exec(t.Context(), `INSERT INTO weave_users(id,tenant_id,username,password,role) VALUES('bob','ws','bob','unused','member')`); err != nil {
+		t.Fatal(err)
+	}
+	bob, err := s.signJWTWithPermissionSets("ws", "bob", []string{"member"}, "forge", nil, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	opened := openAdmissionDevice(host, alice, readyAdmissionDevice(t, s, host, "Mac A"), uuid.NewString(), "查看桌面")
+	if opened.err != nil || opened.status != http.StatusOK {
+		t.Fatalf("open session: %+v", opened)
+	}
+	path := "/v1/jobs/" + opened.body["session_id"].(string) + "/cancel"
+	if other := sendDeviceAdmission(host, bob, path, nil); other.status == http.StatusOK {
+		t.Fatalf("another member cancelled the task: %+v", other)
+	}
+	if own := sendDeviceAdmission(host, alice, path, nil); own.status != http.StatusOK {
+		t.Fatalf("the submitter could not cancel: %+v", own)
+	}
+}

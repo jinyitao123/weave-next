@@ -51,6 +51,9 @@ func (s *Server) handleRequestRunCorrection(c echo.Context) error {
 	body.TargetMemberID = strings.TrimSpace(body.TargetMemberID)
 	body.Instruction = strings.TrimSpace(body.Instruction)
 	body.IdempotencyKey = strings.TrimSpace(body.IdempotencyKey)
+	if s.runWriteDenied(c) {
+		return nil
+	}
 	if body.TargetKind == "member" {
 		if s.teamRunCancel == nil || s.teamRunCancel.Runs == nil || s.Workflow == nil {
 			return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "correction_target_unavailable"})
@@ -130,6 +133,9 @@ func (s *Server) handleConfirmRunCorrection(c echo.Context) error {
 	}
 	body.Disposition = strings.TrimSpace(body.Disposition)
 	body.IdempotencyKey = strings.TrimSpace(body.IdempotencyKey)
+	if s.runWriteDenied(c) {
+		return nil
+	}
 	result, err := s.teamRunCorrectionResume.Confirm(c.Request().Context(), teamrun.ConfirmCorrectionRequest{
 		WorkspaceID: getTenant(c), RunID: c.Param("id"), CorrectionID: c.Param("correction_id"),
 		Disposition: body.Disposition, IdempotencyKey: body.IdempotencyKey,
