@@ -165,12 +165,12 @@ func TestSystemProviderCatalogKeepsRoleScopeAndWorkspaceBoundariesRealPG(t *test
 	for _, token := range []string{"", "invalid"} {
 		f.request(t, http.MethodGet, "/v1/providers/system", token, "", http.StatusUnauthorized)
 	}
-	_, limitedKey, err := f.server.KeyStore.Create(t.Context(), "workspace-a", "catalog-no-admin-scope", "admin", adminUser.ID, []string{"runs"}, nil)
+	_, retiredKey, err := f.server.KeyStore.Create(t.Context(), "workspace-a", "catalog-retired-role", "service", adminUser.ID, []string{"admin"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.request(t, http.MethodGet, "/v1/providers/system", limitedKey, "", http.StatusForbidden)
-	f.request(t, http.MethodPost, "/v1/providers/system/fixture/mirror", limitedKey, `{}`, http.StatusForbidden)
+	f.request(t, http.MethodGet, "/v1/providers/system", retiredKey, "", http.StatusUnauthorized)
+	f.request(t, http.MethodPost, "/v1/providers/system/fixture/mirror", retiredKey, `{}`, http.StatusUnauthorized)
 	// A valid account from A with a signed-but-mismatched B workspace must
 	// still fail at the real account lookup, before catalog authorization.
 	wrongWorkspace, err := f.server.signJWTFor("workspace-b", adminUser.ID, []string{"admin"}, "forge", time.Hour)

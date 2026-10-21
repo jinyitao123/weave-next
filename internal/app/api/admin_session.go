@@ -154,7 +154,7 @@ func (s *Server) handleCreateAdminSession(c echo.Context) error {
 			return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "api keys not configured"})
 		}
 		key, err := s.KeyStore.Validate(c.Request().Context(), request.APIKey)
-		if err != nil {
+		if err != nil || key.Role != roleAdmin && key.Role != "owner" {
 			return c.JSON(http.StatusUnauthorized, map[string]string{"error": "invalid api key"})
 		}
 		if key.ExpiresAt != nil && key.ExpiresAt.Before(expiresAt) {
