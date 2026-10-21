@@ -511,10 +511,10 @@ func (s *Server) registerRoutes() {
 	auth.GET("/agents/:name/memory-slots", s.handleGetMemorySlots, agentsScope)
 	auth.PUT("/agents/:name/memory-slots", s.handlePutMemorySlots, RequireAtLeast(roleAdmin), adminScope)
 	auth.GET("/agents/:name/memory-profile", s.handleGetMemoryProfile, RequireAtLeast(roleAdmin), memoryScope)
-	auth.POST("/agents", s.handleCreateAgent, agentsScope)
-	auth.PUT("/agents/:name", s.handleUpdateAgent, agentsScope)
+	auth.POST("/agents", s.handleCreateAgent, RequireAtLeast(roleDeveloper), agentsScope)
+	auth.PUT("/agents/:name", s.handleUpdateAgent, RequireAtLeast(roleDeveloper), agentsScope)
 	auth.PUT("/agents/:name/execution", s.handleConfigureAgentExecution, RequireAtLeast(roleAdmin), orgScope)
-	auth.DELETE("/agents/:name", s.handleDeleteAgent, agentsScope)
+	auth.DELETE("/agents/:name", s.handleDeleteAgent, RequireAtLeast(roleDeveloper), agentsScope)
 	auth.GET("/agents/:name/managed", s.handleListManaged, agentsScope)
 	auth.POST("/agents/:name/managed", s.handleLinkManages, RequireAtLeast(roleAdmin), agentsScope)
 	auth.DELETE("/agents/:name/managed/:worker", s.handleUnlinkManages, RequireAtLeast(roleAdmin), agentsScope)
@@ -525,8 +525,8 @@ func (s *Server) registerRoutes() {
 	auth.POST("/agents/cleanup-orphans", s.handleCleanupOrphanWorkers, RequireAtLeast(roleAdmin), agentsScope)
 	auth.POST("/agents/:name/preview-prompt", s.handlePreviewPrompt, agentsScope)
 	auth.GET("/agents/:name/topology", s.handleTopology, agentsScope)
-	auth.POST("/agents/upload", s.handleUploadAgent, agentsScope)
-	auth.POST("/agents/import/preview", s.handleImportPreview, agentsScope)
+	auth.POST("/agents/upload", s.handleUploadAgent, RequireAtLeast(roleDeveloper), agentsScope)
+	auth.POST("/agents/import/preview", s.handleImportPreview, RequireAtLeast(roleDeveloper), agentsScope)
 
 	// Execution MCP registry and maintenance.
 	auth.GET("/mcp-servers", s.handleListMCPServers, agentsScope)
@@ -543,9 +543,9 @@ func (s *Server) registerRoutes() {
 	// Skills (reusable prompt modules).
 	auth.GET("/skills", s.handleListSkills, agentsScope)
 	auth.GET("/skills/:id", s.handleGetSkill, agentsScope)
-	auth.POST("/skills", s.handleCreateSkill, agentsScope)
-	auth.PUT("/skills/:id", s.handleUpdateSkill, agentsScope)
-	auth.DELETE("/skills/:id", s.handleDeleteSkill, agentsScope)
+	auth.POST("/skills", s.handleCreateSkill, RequireAtLeast(roleDeveloper), agentsScope)
+	auth.PUT("/skills/:id", s.handleUpdateSkill, RequireAtLeast(roleDeveloper), agentsScope)
+	auth.DELETE("/skills/:id", s.handleDeleteSkill, RequireAtLeast(roleDeveloper), agentsScope)
 	auth.POST("/skills/:id/import-legacy", s.handleImportLegacySkill, RequireAtLeast(roleAdmin), adminScope)
 
 	// Chat & Resume.
