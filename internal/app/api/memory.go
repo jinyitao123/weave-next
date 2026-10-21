@@ -56,12 +56,15 @@ func disabledMemoryResponse(c echo.Context) error {
 	})
 }
 
-// resolveMemoryNamespace looks up the agent's memory scope and builds the
-// appropriate namespace. Falls back to tenant-level if agent is not found.
+// resolveMemoryNamespace looks up the agent's memory scope and builds the namespace. An unknown name
+// gets the caller's own namespace, so it cannot be shaped into another person's or a Project's.
 func (s *Server) resolveMemoryNamespace(c echo.Context, tenant, agentName string) string {
-	scope := ""
-	if rec, err := s.Registry.Get(c.Request().Context(), tenant, agentName); err == nil && rec.MemoryConfig != nil {
-		scope = rec.MemoryConfig.Scope
+	scope := "user"
+	if rec, err := s.Registry.Get(c.Request().Context(), tenant, agentName); err == nil {
+		scope = ""
+		if rec.MemoryConfig != nil {
+			scope = rec.MemoryConfig.Scope
+		}
 	}
 	return memory.ScopedNamespace(tenant, getUserID(c), agentName, "", scope)
 }

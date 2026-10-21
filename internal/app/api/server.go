@@ -600,8 +600,8 @@ func (s *Server) registerRoutes() {
 
 	// Memory.
 	auth.GET("/agents/:name/memories", s.handleListMemories, memoryScope)
-	auth.POST("/agents/:name/memories", s.handleCreateMemory, memoryScope)
-	auth.DELETE("/agents/:name/memories/:id", s.handleDeleteMemory, memoryScope)
+	auth.POST("/agents/:name/memories", s.handleCreateMemory, RequireAtLeast(roleDeveloper), memoryScope)
+	auth.DELETE("/agents/:name/memories/:id", s.handleDeleteMemory, RequireAtLeast(roleDeveloper), memoryScope)
 	auth.POST("/agents/:name/memories/search", s.handleSearchMemories, memoryScope)
 
 }

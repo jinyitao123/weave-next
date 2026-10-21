@@ -39,7 +39,7 @@ func TestMemberCannotChangeSharedDevelopmentResources(t *testing.T) {
 		for _, route := range [][2]string{
 			{http.MethodPost, "/v1/agents"}, {http.MethodPut, "/v1/agents/a"}, {http.MethodDelete, "/v1/agents/a"},
 			{http.MethodPost, "/v1/agents/upload"}, {http.MethodPost, "/v1/agents/import/preview"},
-			{http.MethodPost, "/v1/skills"}, {http.MethodPut, "/v1/skills/s"}, {http.MethodDelete, "/v1/skills/s"},
+			{http.MethodPost, "/v1/skills"}, {http.MethodPut, "/v1/skills/s"}, {http.MethodDelete, "/v1/skills/s"}, {http.MethodPost, "/v1/agents/a/memories"}, {http.MethodDelete, "/v1/agents/a/memories/m"},
 		} {
 			request := httptest.NewRequest(route[0], route[1], strings.NewReader("{}"))
 			request.Header.Set(echo.HeaderAuthorization, "Bearer "+token)
