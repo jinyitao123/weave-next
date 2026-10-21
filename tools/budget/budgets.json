@@ -1494,7 +1494,7 @@
     "allowed_dependencies": []
   },
   "app": {
-    "lines": 96755,
+    "lines": 96782,
     "production_lines": 65126,
     "packages": 25,
     "external_dependencies": 6,
