@@ -3,7 +3,6 @@ package api
 import (
 	"net/http"
 	"net/url"
-	"slices"
 	"strings"
 	"time"
 
@@ -162,11 +161,9 @@ func (s *Server) handleCreateAdminSession(c echo.Context) error {
 			expiresAt = *key.ExpiresAt
 		}
 		credential := request.APIKey
-		// An administrator key that carries the admin scope can already issue
-		// itself a key with every scope, so the console signs in as the key's
-		// owner instead of being limited by the operator key's narrower scopes.
-		// Any other key keeps its own scopes.
-		if key.Role == "admin" && key.OwnerUserID != "" && slices.Contains(key.Scopes, "admin") {
+		// An administrator key with an owner signs the console in as that owner,
+		// so console actions are attributed to a person rather than to the key.
+		if key.Role == "admin" && key.OwnerUserID != "" {
 			token, err := s.signJWTWithPermissionSets(key.TenantID, key.OwnerUserID, []string{"admin"}, adminAPIKeyIdentitySource, nil, time.Until(expiresAt))
 			if err != nil {
 				return c.JSON(http.StatusInternalServerError, map[string]string{"error": "could not issue console session"})

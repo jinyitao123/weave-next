@@ -377,16 +377,6 @@ func requireCapabilityAccess(action string) echo.MiddlewareFunc {
 				}
 				return c.JSON(http.StatusForbidden, map[string]string{"error": "insufficient application scope"})
 			}
-			if c.Get(authSourceContextKey) == authSourceAPIKey {
-				scopes, _ := c.Get(scopesContextKey).([]string)
-				isAdmin := callerAtLeast(c, roleAdmin)
-				for _, scope := range scopes {
-					if scope == "capabilities:"+action || (scope == "admin" && isAdmin) {
-						return next(c)
-					}
-				}
-				return c.JSON(http.StatusForbidden, map[string]string{"error": "insufficient capability scope"})
-			}
 			return RequireAtLeast(roleDeveloper)(next)(c)
 		}
 	}

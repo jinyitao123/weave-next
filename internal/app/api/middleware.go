@@ -15,7 +15,6 @@ import (
 const (
 	authSourceContextKey     = "auth_source"
 	identitySourceContextKey = "identity_source"
-	scopesContextKey         = "scopes"
 	apiKeyIDContextKey       = "api_key_id"
 	apiKeyNameContextKey     = "api_key_name"
 	workbenchActorContextKey = "workbench_actor_id"
@@ -125,7 +124,6 @@ func setAPIKeyContext(c echo.Context, key *apikeys.APIKey) {
 	c.Set("roles", []string{key.Role})
 	c.Set(authSourceContextKey, authSourceAPIKey)
 	c.Set(apiKeyNameContextKey, key.Name)
-	c.Set(scopesContextKey, key.Scopes)
 	c.Set(apiKeyIDContextKey, key.ID)
 }
 
@@ -198,27 +196,6 @@ func firstClaimRole(roles []string) string {
 		return ""
 	}
 	return roles[0]
-}
-
-// RequireScope limits API key access to a route group.
-func RequireScope(scope string) echo.MiddlewareFunc {
-	return func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
-			if c.Get(authSourceContextKey) != authSourceAPIKey {
-				return next(c)
-			}
-			scopes, _ := c.Get(scopesContextKey).([]string)
-			if len(scopes) == 0 {
-				return next(c)
-			}
-			for _, allowed := range scopes {
-				if allowed == scope {
-					return next(c)
-				}
-			}
-			return c.JSON(http.StatusForbidden, map[string]string{"error": "insufficient scope"})
-		}
-	}
 }
 
 // Product roles rank member < developer < admin. Forge sessions carry only

@@ -60,7 +60,7 @@ func TestStoredAudienceDoesNotLimitTeamUseRealPG(t *testing.T) {
 			return err
 		}
 		return c.NoContent(http.StatusNoContent)
-	}, AuthMiddleware("delegation-test-secret", func() *apikeys.Store { return keyStore }, func() *users.Store { return userStore }), RequireScope("org"))
+	}, AuthMiddleware("delegation-test-secret", func() *apikeys.Store { return keyStore }, func() *users.Store { return userStore }))
 	for _, delegated := range []bool{true, false} {
 		request := httptest.NewRequest(http.MethodGet, "/v1/teams/team/audience", nil)
 		request.Header.Set("Authorization", "Bearer "+rawKey)

@@ -38,7 +38,7 @@ func newDispatchInputHTTPFixture(t *testing.T, handler *Server) *dispatchInputHT
 		Format: "${status} ${method} ${uri}\n",
 	}))
 	e.POST("/v1/workbench/dispatch-inputs", handler.handleRegisterDispatchInput,
-		AuthMiddleware(secret, nil, nil), RequireScope("org"), RequireScope("chat"))
+		AuthMiddleware(secret, nil, nil))
 	handler.Echo = e
 	server := httptest.NewServer(e)
 	claims := Claims{

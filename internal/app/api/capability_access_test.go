@@ -8,26 +8,23 @@ import (
 	"testing"
 )
 
-func TestCapabilityAccessRequiresExplicitOperationScope(t *testing.T) {
+// API keys are admin operator credentials; people need at least developer.
+func TestCapabilityAccessRequiresDeveloperOrAdminKey(t *testing.T) {
 	for _, test := range []struct {
 		name, source, action string
-		scopes, roles        []string
+		roles                []string
 		status               int
 	}{
-		{"empty key", authSourceAPIKey, "invoke", nil, []string{"admin"}, 403},
-		{"Workbench admin key", authSourceAPIKey, "invoke", []string{"admin"}, []string{"admin"}, 204},
-		{"invoke only", authSourceAPIKey, "manage", []string{"capabilities:invoke"}, []string{"admin"}, 403},
-		{"read only", authSourceAPIKey, "cancel", []string{"capabilities:read"}, nil, 403},
-		{"allowed", authSourceAPIKey, "invoke", []string{"capabilities:invoke"}, nil, 204},
-		{"developer", authSourceJWT, "manage", nil, []string{"developer"}, 204},
-		{"unknown role", authSourceJWT, "invoke", nil, []string{"guest"}, 403},
+		{"admin key", authSourceAPIKey, "manage", []string{"admin"}, 204},
+		{"developer", authSourceJWT, "manage", []string{"developer"}, 204},
+		{"member", authSourceJWT, "invoke", []string{"member"}, 403},
+		{"unknown role", authSourceJWT, "invoke", []string{"guest"}, 403},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			e := echo.New()
 			response := httptest.NewRecorder()
 			c := e.NewContext(httptest.NewRequest("POST", "/", nil), response)
 			c.Set(authSourceContextKey, test.source)
-			c.Set(scopesContextKey, test.scopes)
 			c.Set("roles", test.roles)
 			if err := requireCapabilityAccess(test.action)(func(c echo.Context) error { return c.NoContent(204) })(c); err != nil {
 				t.Fatal(err)

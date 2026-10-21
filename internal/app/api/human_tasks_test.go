@@ -47,7 +47,7 @@ func TestAPIKeyOwnerPassesLiveHumanTaskMembershipRealPG(t *testing.T) {
 			return err
 		}
 		return c.NoContent(http.StatusNoContent)
-	}, AuthMiddleware("unused", func() *apikeys.Store { return keyStore }, func() *users.Store { return userStore }), RequireScope("runs"))
+	}, AuthMiddleware("unused", func() *apikeys.Store { return keyStore }, func() *users.Store { return userStore }))
 
 	request := func() *httptest.ResponseRecorder {
 		recorder := httptest.NewRecorder()
