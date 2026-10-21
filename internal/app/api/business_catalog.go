@@ -166,7 +166,7 @@ func (s *Server) refreshBusinessCatalog(ctx context.Context, baseURL, bearer, wo
 // captureBusinessCatalog is the sign-in hook: best effort, detached from the
 // request so a slow or failing Forge never delays or fails the sign-in.
 func (s *Server) captureBusinessCatalog(baseURL, bearer, workspace, actor, role string) {
-	if role != "developer" && role != "admin" && role != "owner" {
+	if !roleAtLeast(role, roleDeveloper) {
 		return
 	}
 	go func() {
@@ -199,7 +199,7 @@ func (s *Server) handleRefreshBusinessCapabilities(c echo.Context) error {
 	if user.ID != getUserID(c) || user.TenantID != getTenant(c) {
 		return c.JSON(http.StatusForbidden, map[string]string{"error": "验证的不是当前登录的账号"})
 	}
-	if role != "developer" && role != "admin" {
+	if !roleAtLeast(role, roleDeveloper) {
 		return c.JSON(http.StatusForbidden, map[string]string{"error": "当前账号不能读取业务动作目录"})
 	}
 	if err := s.refreshBusinessCatalog(ctx, identity.BaseURL, bearer, user.TenantID, user.ID); err != nil {

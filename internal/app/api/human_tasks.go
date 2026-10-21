@@ -428,13 +428,7 @@ func humanTaskNotFound() error {
 }
 
 func humanTaskDeveloperAccess(c echo.Context) bool {
-	roles, _ := c.Get("roles").([]string)
-	for _, role := range roles {
-		if role == "developer" || role == "admin" || role == "owner" {
-			return true
-		}
-	}
-	return false
+	return callerAtLeast(c, roleDeveloper)
 }
 
 // requireHumanTaskSource protects both reads and completions. A native inbox

@@ -217,40 +217,42 @@ func RequireScope(scope string) echo.MiddlewareFunc {
 	}
 }
 
-// RequireRole checks that the authenticated user has the required role.
-func RequireRole(role string) echo.MiddlewareFunc {
-	return func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
-			roles, ok := c.Get("roles").([]string)
-			if !ok {
-				return c.JSON(http.StatusForbidden, map[string]string{"error": "no roles"})
-			}
-			for _, r := range roles {
-				if r == role {
-					return next(c)
-				}
-			}
-			return c.JSON(http.StatusForbidden, map[string]string{"error": "insufficient permissions"})
-		}
-	}
+// Product roles rank member < developer < admin. Forge sessions carry only
+// these three; "owner" remains as a legacy API key role and ranks as admin.
+const (
+	roleDeveloper = "developer"
+	roleAdmin     = "admin"
+)
+
+var roleRanks = map[string]int{"member": 1, roleDeveloper: 2, roleAdmin: 3, "owner": 3}
+
+// roleAtLeast reports whether role grants at least minimum's access.
+func roleAtLeast(role, minimum string) bool {
+	return roleRanks[role] > 0 && roleRanks[role] >= roleRanks[minimum]
 }
 
-// RequireAnyRole allows callers that hold at least one of the supplied roles.
-func RequireAnyRole(allowedRoles ...string) echo.MiddlewareFunc {
+// callerAtLeast reports whether any role on the request grants at least minimum's access.
+func callerAtLeast(c echo.Context, minimum string) bool {
+	roles, _ := c.Get("roles").([]string)
+	for _, role := range roles {
+		if roleAtLeast(role, minimum) {
+			return true
+		}
+	}
+	return false
+}
+
+// RequireAtLeast admits callers whose role grants at least minimum's access.
+func RequireAtLeast(minimum string) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
-			roles, ok := c.Get("roles").([]string)
-			if !ok {
+			if _, ok := c.Get("roles").([]string); !ok {
 				return c.JSON(http.StatusForbidden, map[string]string{"error": "no roles"})
 			}
-			for _, role := range roles {
-				for _, allowed := range allowedRoles {
-					if role == allowed {
-						return next(c)
-					}
-				}
+			if !callerAtLeast(c, minimum) {
+				return c.JSON(http.StatusForbidden, map[string]string{"error": "insufficient permissions"})
 			}
-			return c.JSON(http.StatusForbidden, map[string]string{"error": "insufficient permissions"})
+			return next(c)
 		}
 	}
 }
