@@ -98,5 +98,11 @@ func (s *Server) localRuntimeCredentials(ctx context.Context, runtimeID string, 
 	if provider.Protocol != frozen.ProtocolOpenAICompletions {
 		return daemon.ProviderCredentials{}, errors.New("managed runtime does not support this model provider protocol")
 	}
-	return daemon.ProviderCredentials{BaseURL: provider.BaseURL, APIKey: provider.APIKey}, nil
+	// The managed CLIs are OpenAI SDK clients and append /chat/completions to
+	// the base themselves; they get the base that reaches the same address.
+	base, ok := provider.OpenAISDKBaseURL()
+	if !ok {
+		return daemon.ProviderCredentials{}, errors.New("managed runtime needs a chat path ending in /chat/completions")
+	}
+	return daemon.ProviderCredentials{BaseURL: base, APIKey: provider.APIKey}, nil
 }

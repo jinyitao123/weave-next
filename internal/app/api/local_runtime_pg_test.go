@@ -89,7 +89,7 @@ if [ "$prompt" = block ]; then while true; do sleep 1; done; fi
 	credentialStore := credentials.New(prepared, []byte("0123456789abcdef0123456789abcdef"))
 	for _, user := range []string{"alice", "bob"} {
 		subject := execution.Subject{WorkspaceID: "managed", UserID: user}
-		if err := credentialStore.Upsert(execution.WithSubject(ctx, subject), "managed", llmrouter.ProviderConfig{Protocol: "openai-completions", ID: user, Name: user, BaseURL: "https://provider.invalid/v1", APIKey: user + "-key", Models: []string{"fixture"}, CredentialScope: frozen.CredentialScopeUser, CredentialUserID: user}); err != nil {
+		if err := credentialStore.Upsert(execution.WithSubject(ctx, subject), "managed", llmrouter.ProviderConfig{Protocol: "openai-completions", ChatPath: "/chat/completions", ID: user, Name: user, BaseURL: "https://provider.invalid/v1", APIKey: user + "-key", Models: []string{"fixture"}, CredentialScope: frozen.CredentialScopeUser, CredentialUserID: user}); err != nil {
 			t.Fatal(err)
 		}
 	}

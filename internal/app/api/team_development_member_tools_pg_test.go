@@ -81,7 +81,7 @@ func TestDevelopmentMemberExternalToolsRealPG(t *testing.T) {
 	}
 	key := []byte(strings.Repeat("k", 32))
 	providers := credentials.New(pool, key)
-	if err = providers.Upsert(execution.WithSubject(context.Background(), execution.Subject{WorkspaceID: ws, ServiceID: "provider:fixture"}), ws, llmrouter.ProviderConfig{Protocol: "openai-completions", CredentialScope: frozen.CredentialScopeWorkspaceService, CredentialServiceID: "provider:fixture", ID: "fixture", Name: "Fixture", BaseURL: "http://127.0.0.1:1", APIKey: "test-only", Models: []string{"fixture-model"}}); err != nil {
+	if err = providers.Upsert(execution.WithSubject(context.Background(), execution.Subject{WorkspaceID: ws, ServiceID: "provider:fixture"}), ws, llmrouter.ProviderConfig{Protocol: "openai-completions", ChatPath: "/v1/chat/completions", CredentialScope: frozen.CredentialScopeWorkspaceService, CredentialServiceID: "provider:fixture", ID: "fixture", Name: "Fixture", BaseURL: "http://127.0.0.1:1", APIKey: "test-only", Models: []string{"fixture-model"}}); err != nil {
 		t.Fatal(err)
 	}
 	store := workflowcatalog.New(pool, nil, workflow.NewArtifactStore(pool, nil))

@@ -17,9 +17,9 @@ func (s *claimProviderSource) List(context.Context, string) ([]ProviderConfig, e
 
 func TestClaimProviderResolvesFreshUserOrExplicitServiceCredentials(t *testing.T) {
 	source := &claimProviderSource{configs: []ProviderConfig{
-		{Protocol: "openai-completions", ID: "alice", BaseURL: "https://provider.invalid/v1", APIKey: "alice-key", Models: []string{"model"}, CredentialScope: frozen.CredentialScopeUser, CredentialUserID: "alice"},
-		{Protocol: "openai-completions", ID: "bob", BaseURL: "https://provider.invalid/v1", APIKey: "bob-key", Models: []string{"model"}, CredentialScope: frozen.CredentialScopeUser, CredentialUserID: "bob"},
-		{Protocol: "openai-completions", ID: "shared", BaseURL: "https://provider.invalid/v1", APIKey: "service-key", Models: []string{"shared-model"}, CredentialScope: frozen.CredentialScopeWorkspaceService, CredentialServiceID: "shared-models"},
+		{Protocol: "openai-completions", ChatPath: "/chat/completions", ID: "alice", BaseURL: "https://provider.invalid/v1", APIKey: "alice-key", Models: []string{"model"}, CredentialScope: frozen.CredentialScopeUser, CredentialUserID: "alice"},
+		{Protocol: "openai-completions", ChatPath: "/chat/completions", ID: "bob", BaseURL: "https://provider.invalid/v1", APIKey: "bob-key", Models: []string{"model"}, CredentialScope: frozen.CredentialScopeUser, CredentialUserID: "bob"},
+		{Protocol: "openai-completions", ChatPath: "/chat/completions", ID: "shared", BaseURL: "https://provider.invalid/v1", APIKey: "service-key", Models: []string{"shared-model"}, CredentialScope: frozen.CredentialScopeWorkspaceService, CredentialServiceID: "shared-models"},
 	}}
 	resolver := NewResolver(New("model"))
 	resolver.SetSource(source)

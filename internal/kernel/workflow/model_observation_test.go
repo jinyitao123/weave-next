@@ -210,7 +210,7 @@ func TestObserveRuntimeModelsReportsTransportAndStreamMilestonesBeforeChatReturn
 	}))
 	defer server.Close()
 
-	provider := llmrouter.NewProviderClient(llmrouter.ProviderConfig{Protocol: "openai-completions",
+	provider := llmrouter.NewProviderClient(llmrouter.ProviderConfig{Protocol: "openai-completions", ChatPath: "/v1/chat/completions",
 		ID: "controlled", BaseURL: server.URL, APIKey: "test-only-key", Models: []string{"fixture-model"},
 		AttemptTimeoutSeconds: 10,
 	})
@@ -318,7 +318,7 @@ func TestObserveRuntimeModelsStreamCancellationClosesObserverPump(t *testing.T) 
 		<-request.Context().Done()
 	}))
 	defer server.Close()
-	provider := llmrouter.NewProviderClient(llmrouter.ProviderConfig{Protocol: "openai-completions",
+	provider := llmrouter.NewProviderClient(llmrouter.ProviderConfig{Protocol: "openai-completions", ChatPath: "/v1/chat/completions",
 		ID: "controlled", BaseURL: server.URL, APIKey: "test-only-key", Models: []string{"fixture-model"},
 		AttemptTimeoutSeconds: 10,
 	})

@@ -165,7 +165,7 @@ func main() {
 		if thinkingMode == "" {
 			thinkingMode = "enabled"
 		}
-		router.RegisterProvider(llmrouter.ProviderConfig{
+		registerSystemProvider(router, llmrouter.ProviderConfig{
 			ID: "deepseek", Protocol: frozen.ProtocolOpenAICompletions,
 			Name:                     "DeepSeek",
 			BaseURL:                  "https://api.deepseek.com",
@@ -180,10 +180,10 @@ func main() {
 		})
 	}
 	if key := os.Getenv("ANTHROPIC_API_KEY"); key != "" {
-		router.RegisterProvider(llmrouter.ProviderConfig{
+		registerSystemProvider(router, llmrouter.ProviderConfig{
 			ID: "anthropic", Protocol: frozen.ProtocolAnthropicMessages,
 			Name:                  "Anthropic",
-			BaseURL:               "https://api.anthropic.com/v1",
+			BaseURL:               "https://api.anthropic.com",
 			APIKey:                key,
 			Models:                []string{"claude-sonnet-4-20250514"},
 			AttemptTimeoutSeconds: attemptTimeoutSeconds,
@@ -192,15 +192,18 @@ func main() {
 		})
 	}
 	if key := os.Getenv("OPENAI_API_KEY"); key != "" {
+		// OPENAI_BASE_URL follows the OpenAI SDK convention: the client
+		// appends /chat/completions to it.
 		baseURL := os.Getenv("OPENAI_BASE_URL")
 		if baseURL == "" {
 			baseURL = "https://api.openai.com/v1"
 		}
-		router.RegisterProvider(llmrouter.ProviderConfig{
+		registerSystemProvider(router, llmrouter.ProviderConfig{
 			ID: "openai", Protocol: frozen.ProtocolOpenAICompletions,
-			Name:    "OpenAI",
-			BaseURL: baseURL,
-			APIKey:  key,
+			Name:     "OpenAI",
+			BaseURL:  baseURL,
+			ChatPath: "/chat/completions",
+			APIKey:   key,
 			Models: csvEnvOrDefault("OPENAI_MODELS", []string{
 				"gpt-5.4", "gpt-5.4-mini", "gpt-5.4-nano",
 				"gpt-5.2", "gpt-5.1-codex", "gpt-5-codex",
@@ -437,4 +440,15 @@ func dispatchEarlyCommand(args []string, stdout, stderr io.Writer) (bool, int) {
 		return true, runOpsCommand(args[1:], stdout, stderr)
 	}
 	return cli.Dispatch(args, stdout, stderr)
+}
+
+// registerSystemProvider adds a provider from process configuration once its
+// endpoint is valid. A refused endpoint is logged with its reason and the
+// provider stays unavailable rather than sending requests to a guessed address.
+func registerSystemProvider(router *llmrouter.Router, cfg llmrouter.ProviderConfig) {
+	if err := cfg.NormalizeEndpoint(); err != nil {
+		slog.Error("system model provider endpoint is invalid; provider not registered", "provider", cfg.ID, "base_url", cfg.BaseURL, "error", err)
+		return
+	}
+	router.RegisterProvider(cfg)
 }

@@ -30,7 +30,7 @@ func TestRunActivityPublishedMembersBindsFrozenExecutionFacts(t *testing.T) {
 					AgentID: "worker-1", DisplayName: "Verifier", Engine: "claude-code",
 				},
 				Runtime:      &frozen.FrozenRuntimeBinding{RuntimeID: "runtime-1", Engine: "claude-code"},
-				PrimaryModel: frozen.FrozenModelBinding{Protocol: "openai-completions", ProviderID: "provider-1", ModelID: "model-1"},
+				PrimaryModel: frozen.FrozenModelBinding{Protocol: "openai-completions", ChatPath: "/v1/chat/completions", ProviderID: "provider-1", ModelID: "model-1"},
 			},
 		},
 	}

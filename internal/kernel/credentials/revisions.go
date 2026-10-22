@@ -61,6 +61,7 @@ type ProviderHead struct {
 	ThinkingDefaultMode      string `json:"thinking_default_mode"`
 	ThinkingDisableWithTools bool   `json:"thinking_disable_with_tools"`
 	AttemptTimeoutSeconds    int    `json:"attempt_timeout_seconds"`
+	ChatPath                 string `json:"chat_path"`
 
 	CredentialScope     frozen.CredentialScope `json:"credential_scope"`
 	CredentialUserID    string                 `json:"credential_user_id,omitempty"`
@@ -85,6 +86,7 @@ type ProviderRevision struct {
 	ThinkingDefaultMode      string `json:"thinking_default_mode"`
 	ThinkingDisableWithTools bool   `json:"thinking_disable_with_tools"`
 	AttemptTimeoutSeconds    int    `json:"attempt_timeout_seconds"`
+	ChatPath                 string `json:"chat_path"`
 
 	WorkspaceID    string    `json:"workspace_id"`
 	ProviderID     string    `json:"provider_id"`
@@ -108,6 +110,7 @@ type providerRevisionHashInput struct {
 	ThinkingDefaultMode      string `json:"thinking_default_mode"`
 	ThinkingDisableWithTools bool   `json:"thinking_disable_with_tools"`
 	AttemptTimeoutSeconds    int    `json:"attempt_timeout_seconds"`
+	ChatPath                 string `json:"chat_path"`
 
 	Name           string   `json:"name"`
 	BaseURL        string   `json:"base_url"`
@@ -160,11 +163,11 @@ func (s *Store) UpsertRevisionTx(ctx context.Context, tx pgx.Tx, workspaceID str
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO weave_provider_credentials (
 		  workspace_id, id, name, base_url, api_key_cipher, models,
-		  json_object_mode, protocol, thinking_default_mode, thinking_disable_with_tools, attempt_timeout_seconds,credential_scope,credential_user_id,credential_service_id
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,$12,$13,$14)
+		  json_object_mode, protocol, thinking_default_mode, thinking_disable_with_tools, attempt_timeout_seconds,credential_scope,credential_user_id,credential_service_id, chat_path
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,$12,$13,$14, $15)
 		ON CONFLICT (workspace_id, id) DO NOTHING
 	`, workspaceID, normalized.ID, normalized.Name, normalized.BaseURL,
-		initialCipher, normalized.Models, normalized.JSONObjectMode, normalized.Protocol, normalized.ThinkingDefaultMode, normalized.ThinkingDisableWithTools, normalized.AttemptTimeoutSeconds, normalized.CredentialScope, normalized.CredentialUserID, normalized.CredentialServiceID,
+		initialCipher, normalized.Models, normalized.JSONObjectMode, normalized.Protocol, normalized.ThinkingDefaultMode, normalized.ThinkingDisableWithTools, normalized.AttemptTimeoutSeconds, normalized.CredentialScope, normalized.CredentialUserID, normalized.CredentialServiceID, normalized.ChatPath,
 	); err != nil {
 		return ProviderRevisionResult{}, fmt.Errorf("create provider head: %w", err)
 	}
@@ -220,6 +223,7 @@ func (s *Store) UpsertRevisionTx(ctx context.Context, tx pgx.Tx, workspaceID str
 			Models:         append([]string(nil), normalized.Models...),
 			JSONObjectMode: normalized.JSONObjectMode,
 			Protocol:       normalized.Protocol, ThinkingDefaultMode: normalized.ThinkingDefaultMode, ThinkingDisableWithTools: normalized.ThinkingDisableWithTools, AttemptTimeoutSeconds: normalized.AttemptTimeoutSeconds,
+			ChatPath:    normalized.ChatPath,
 			ContentHash: contentHash,
 		}
 		modelsJSON, marshalErr := json.Marshal(revision.Models)
@@ -232,12 +236,12 @@ func (s *Store) UpsertRevisionTx(ctx context.Context, tx pgx.Tx, workspaceID str
 		err = tx.QueryRow(ctx, `
 			INSERT INTO weave_provider_revisions (
 			  workspace_id, provider_id, revision, name, base_url, models,
-			  json_object_mode, protocol, thinking_default_mode, thinking_disable_with_tools, attempt_timeout_seconds, content_hash
-			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+			  json_object_mode, protocol, thinking_default_mode, thinking_disable_with_tools, attempt_timeout_seconds, content_hash, chat_path
+			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 			RETURNING created_at
 		`, revision.WorkspaceID, revision.ProviderID, revision.Revision,
 			revision.Name, revision.BaseURL, string(modelsJSON), revision.JSONObjectMode, revision.Protocol, revision.ThinkingDefaultMode, revision.ThinkingDisableWithTools, revision.AttemptTimeoutSeconds,
-			revision.ContentHash,
+			revision.ContentHash, revision.ChatPath,
 		).Scan(&revision.CreatedAt)
 		if err != nil {
 			return ProviderRevisionResult{}, fmt.Errorf("insert ProviderRevision: %w", err)
@@ -252,11 +256,11 @@ func (s *Store) UpsertRevisionTx(ctx context.Context, tx pgx.Tx, workspaceID str
 		    models=$6,
 		    json_object_mode=$7,
  protocol=$8, thinking_default_mode=$9, thinking_disable_with_tools=$10, attempt_timeout_seconds=$11,
-		    latest_revision=$12,
+		    latest_revision=$12, chat_path=$13,
 		    updated_at=now()
 		WHERE workspace_id=$1 AND id=$2
 	`, workspaceID, normalized.ID, normalized.Name, normalized.BaseURL,
-		ciphertext, normalized.Models, normalized.JSONObjectMode, normalized.Protocol, normalized.ThinkingDefaultMode, normalized.ThinkingDisableWithTools, normalized.AttemptTimeoutSeconds, nextRevision,
+		ciphertext, normalized.Models, normalized.JSONObjectMode, normalized.Protocol, normalized.ThinkingDefaultMode, normalized.ThinkingDisableWithTools, normalized.AttemptTimeoutSeconds, nextRevision, normalized.ChatPath,
 	); err != nil {
 		return ProviderRevisionResult{}, fmt.Errorf("update provider head: %w", err)
 	}
@@ -270,6 +274,7 @@ func (s *Store) UpsertRevisionTx(ctx context.Context, tx pgx.Tx, workspaceID str
 	head.ThinkingDefaultMode = normalized.ThinkingDefaultMode
 	head.ThinkingDisableWithTools = normalized.ThinkingDisableWithTools
 	head.AttemptTimeoutSeconds = normalized.AttemptTimeoutSeconds
+	head.ChatPath = normalized.ChatPath
 	head.LatestRevision = nextRevision
 	return ProviderRevisionResult{
 		Head:     head,
@@ -302,7 +307,7 @@ func (s *Store) ListMetadata(
 	rows, err := s.pool.Query(ctx, `
 		SELECT workspace_id, id, name, base_url, models, json_object_mode, protocol, thinking_default_mode, thinking_disable_with_tools, attempt_timeout_seconds,
 		       latest_revision, source_kind, source_provider_id, enabled,
-		       revoked_at, deleted_at,credential_scope,credential_user_id,credential_service_id
+		       revoked_at, deleted_at,credential_scope,credential_user_id,credential_service_id, chat_path
 		FROM weave_provider_credentials
 		WHERE workspace_id=$1
 		  AND enabled
@@ -321,7 +326,7 @@ func (s *Store) ListMetadata(
 		if err := rows.Scan(
 			&head.WorkspaceID, &head.ID, &head.Name, &head.BaseURL, &head.Models,
 			&head.JSONObjectMode, &head.Protocol, &head.ThinkingDefaultMode, &head.ThinkingDisableWithTools, &head.AttemptTimeoutSeconds, &head.LatestRevision, &head.SourceKind,
-			&head.SourceProviderID, &head.Enabled, &head.RevokedAt, &head.DeletedAt, &head.CredentialScope, &head.CredentialUserID, &head.CredentialServiceID,
+			&head.SourceProviderID, &head.Enabled, &head.RevokedAt, &head.DeletedAt, &head.CredentialScope, &head.CredentialUserID, &head.CredentialServiceID, &head.ChatPath,
 		); err != nil {
 			return nil, err
 		}
@@ -518,14 +523,14 @@ func getProviderHeadTx(
 	err := querier.QueryRow(ctx, `
 		SELECT workspace_id, id, name, base_url, api_key_cipher, models,
 		       json_object_mode, protocol, thinking_default_mode, thinking_disable_with_tools, attempt_timeout_seconds, latest_revision, source_kind, source_provider_id,
-		       enabled, revoked_at, deleted_at,credential_scope,credential_user_id,credential_service_id
+		       enabled, revoked_at, deleted_at,credential_scope,credential_user_id,credential_service_id, chat_path
 		FROM weave_provider_credentials
 		WHERE workspace_id=$1 AND id=$2`+lock,
 		workspaceID, providerID,
 	).Scan(
 		&head.WorkspaceID, &head.ID, &head.Name, &head.BaseURL, &ciphertext,
 		&head.Models, &head.JSONObjectMode, &head.Protocol, &head.ThinkingDefaultMode, &head.ThinkingDisableWithTools, &head.AttemptTimeoutSeconds, &head.LatestRevision, &head.SourceKind,
-		&head.SourceProviderID, &head.Enabled, &head.RevokedAt, &head.DeletedAt, &head.CredentialScope, &head.CredentialUserID, &head.CredentialServiceID,
+		&head.SourceProviderID, &head.Enabled, &head.RevokedAt, &head.DeletedAt, &head.CredentialScope, &head.CredentialUserID, &head.CredentialServiceID, &head.ChatPath,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ProviderHead{}, "", coded(
@@ -589,14 +594,14 @@ func getProviderRevisionTx(
 	var modelsJSON []byte
 	err := querier.QueryRow(ctx, `
 		SELECT workspace_id, provider_id, revision, name, base_url, models,
-		       json_object_mode, protocol, thinking_default_mode, thinking_disable_with_tools, attempt_timeout_seconds, content_hash, created_at
+		       json_object_mode, protocol, thinking_default_mode, thinking_disable_with_tools, attempt_timeout_seconds, content_hash, created_at, chat_path
 		FROM weave_provider_revisions
 		WHERE workspace_id=$1 AND provider_id=$2 AND revision=$3`+lock,
 		workspaceID, providerID, revision,
 	).Scan(
 		&stored.WorkspaceID, &stored.ProviderID, &stored.Revision, &stored.Name,
 		&stored.BaseURL, &modelsJSON, &stored.JSONObjectMode, &stored.Protocol, &stored.ThinkingDefaultMode, &stored.ThinkingDisableWithTools, &stored.AttemptTimeoutSeconds, &stored.ContentHash,
-		&stored.CreatedAt,
+		&stored.CreatedAt, &stored.ChatPath,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ProviderRevision{}, coded(
@@ -620,6 +625,7 @@ func getProviderRevisionTx(
 		Models:         stored.Models,
 		JSONObjectMode: stored.JSONObjectMode,
 		Protocol:       stored.Protocol, ThinkingDefaultMode: stored.ThinkingDefaultMode, ThinkingDisableWithTools: stored.ThinkingDisableWithTools, AttemptTimeoutSeconds: stored.AttemptTimeoutSeconds,
+		ChatPath: stored.ChatPath,
 	}
 	var normalized llmrouter.ProviderConfig
 	if strings.HasPrefix(providerID, "system/") {
@@ -724,6 +730,7 @@ func hashProviderRevision(cfg llmrouter.ProviderConfig) (string, error) {
 		Models:         cfg.Models,
 		JSONObjectMode: cfg.JSONObjectMode,
 		Protocol:       cfg.Protocol, ThinkingDefaultMode: cfg.ThinkingDefaultMode, ThinkingDisableWithTools: cfg.ThinkingDisableWithTools, AttemptTimeoutSeconds: cfg.AttemptTimeoutSeconds,
+		ChatPath: cfg.ChatPath,
 	})
 	if err != nil {
 		return "", err

@@ -37,7 +37,7 @@ func TestMirrorSystemProviderRepairsUnreadableCiphertext(t *testing.T) {
 	serviceID := "system-provider:deepseek"
 	serviceCtx := execution.WithSubject(ctx, execution.Subject{WorkspaceID: workspaceID, ServiceID: serviceID})
 	provider := func(apiKey string) recoverySystemProvider {
-		return recoverySystemProvider{config: llmrouter.ProviderConfig{Protocol: "openai-completions",
+		return recoverySystemProvider{config: llmrouter.ProviderConfig{Protocol: "openai-completions", ChatPath: "/v1/chat/completions",
 			ID: "deepseek", Name: "DeepSeek", BaseURL: "https://api.deepseek.com",
 			APIKey: apiKey, Models: []string{"deepseek-flash"},
 			CredentialScope:     frozen.CredentialScopeWorkspaceService,

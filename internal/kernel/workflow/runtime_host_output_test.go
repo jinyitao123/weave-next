@@ -36,7 +36,7 @@ func TestFrozenNodeOutputUsesDeclaredProviderModeAndLocalVerification(t *testing
 				_, _ = fmt.Fprintf(w, "data: %s\n\ndata: [DONE]\n\n", payload)
 			}))
 			defer server.Close()
-			binding := frozen.FrozenModelBinding{Protocol: "openai-completions", ProviderID: "system/deepseek", ModelID: "deepseek-flash", BaseURL: server.URL, JSONObjectMode: objectMode}
+			binding := frozen.FrozenModelBinding{Protocol: "openai-completions", ChatPath: "/v1/chat/completions", ProviderID: "system/deepseek", ModelID: "deepseek-flash", BaseURL: server.URL, JSONObjectMode: objectMode}
 			binding.CredentialRef.ServiceID = "system-provider:deepseek"
 			opts, closer, err := NewRuntimeHostFactory().Build(t.Context(), frozen.FrozenExecutionBundle{Agent: frozen.FrozenAgentRecord{Model: "deepseek-flash"}, PrimaryModel: binding}, thinkingTestResolver{})
 			if err != nil {

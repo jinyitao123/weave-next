@@ -104,8 +104,10 @@ make compose-check
 
 组织共享的模型来自模型供应方。开发者和管理员可以查看并配置：
 
-- `GET /v1/development/model-providers` 列出本组织共享的供应方：标识、名称、接口地址、提供的模型，以及是否随部署提供。不返回密钥。
-- `PUT /v1/development/model-providers/:id` 新增或更换一个供应方，提交 `name`、`base_url`、`models` 和 `api_key`。更换时省略 `api_key` 即沿用已保存的密钥；隐藏占位符不能当作新密钥。`base_url` 是兼容OpenAI的接口基址，运行时追加 `/v1/chat/completions`。密钥到达后即加密保存，任何接口都不再返回。随部署提供的供应方和个人的供应方不能在这里修改；一个模型只能由一个组织供应方提供，重复时返回 `409 model_already_provided`，同组织的占用检查与保存共用事务和数据库锁，并发请求只成功一个。
+- `GET /v1/development/model-providers` 列出本组织共享的供应方：标识、名称、接口协议、`base_url`、`chat_path`、最终请求地址 `chat_url`、提供的模型，以及是否随部署提供。不返回密钥。
+- `PUT /v1/development/model-providers/:id` 新增或更换一个供应方，提交 `protocol`（`openai-completions`、`openai-responses` 或 `anthropic-messages`）、`name`、`base_url`、可选的 `chat_path`、`models` 和 `api_key`。请求一律发往 `base_url` 后接 `chat_path`：`base_url` 是服务地址或网关前缀，不含接口路径，自定义前缀原样保留；`chat_path` 省略时按协议取 `/v1/chat/completions`、`/v1/responses` 或 `/v1/messages`，保存时写入修订并随发布冻结，供应方之后改动不影响已发布的团队。`base_url` 已含接口路径，或它的最后一段与 `chat_path` 的第一段相同（例如 `…/v1` 配 `/v1/chat/completions`），返回 `422 model_provider_endpoint_invalid`，附 `reason` 和建议的拆分 `suggestion`，由调用方确认后再提交，不自动改写。原生协议的路径结尾固定（`/responses`、`/v1/messages`）。外部引擎按 OpenAI SDK 约定使用去掉 `/chat/completions` 后的地址，所以它们要求路径以此结尾。更换时省略 `api_key` 即沿用已保存的密钥；隐藏占位符不能当作新密钥。密钥到达后即加密保存，任何接口都不再返回。
+- `POST /v1/development/model-providers/endpoint` 提交 `protocol`、`base_url`、`chat_path`，返回规范化后的地址和最终 `chat_url`，或同样的拒绝原因和建议拆分；不保存任何内容，供配置页面在保存前显示最终地址。
+- `POST /v1/development/model-providers/:id/probe` 用运行时同一个客户端向已保存的供应方发一次最小请求（可选 `model`，默认第一个模型），返回 `chat_url`、`category`（`ok`、`unreachable`、`timeout`、`unauthorized`、`endpoint_not_found`、`request_rejected`、`rate_limited`、`provider_error`、`invalid_response`、`invalid_configuration`）、供应方的 HTTP 状态和可操作的说明；不返回密钥、请求头、提示内容或供应方回复正文。随部署提供的供应方和个人的供应方不能在这里修改；一个模型只能由一个组织供应方提供，重复时返回 `409 model_already_provided`，同组织的占用检查与保存共用事务和数据库锁，并发请求只成功一个。
 
 成员怎样运行也用受控修改设置，写法在“成员的引擎与运行设置”一类（`member_settings`），该类说明同时返回可选的模型和节点：
 

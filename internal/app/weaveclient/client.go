@@ -125,7 +125,9 @@ type HumanTaskCompleteRequest struct {
 type ProviderAddRequest struct {
 	ID                       string   `json:"id"`
 	Name                     string   `json:"name"`
+	Protocol                 string   `json:"protocol"`
 	BaseURL                  string   `json:"base_url"`
+	ChatPath                 string   `json:"chat_path,omitempty"`
 	APIKey                   string   `json:"api_key"`
 	Models                   []string `json:"models"`
 	JSONObjectMode           bool     `json:"json_object_mode,omitempty"`

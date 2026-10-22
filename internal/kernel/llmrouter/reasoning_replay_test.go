@@ -29,7 +29,7 @@ func TestExplicitThinkingProfileReplaysHistoryWithoutChangingItsMode(t *testing.
 				_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`))
 			}))
 			defer server.Close()
-			model := NewProviderClient(ProviderConfig{Protocol: "openai-completions", BaseURL: server.URL, APIKey: "synthetic", Models: []string{"synthetic"}, ThinkingDefaultMode: mode})
+			model := NewProviderClient(ProviderConfig{Protocol: "openai-completions", ChatPath: "/v1/chat/completions", BaseURL: server.URL, APIKey: "synthetic", Models: []string{"synthetic"}, ThinkingDefaultMode: mode})
 			_, err := model.Chat(t.Context(), contract.ChatRequest{Messages: []contract.Message{{Role: "assistant", Content: "ok", Reasoning: []contract.Reasoning{{Text: "synthetic continuity"}}}}})
 			if err != nil {
 				t.Fatal(err)

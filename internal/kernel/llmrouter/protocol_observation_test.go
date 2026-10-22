@@ -22,7 +22,7 @@ func TestProtocolObservationPreservesProviderRequestResponseAndPrivacy(t *testin
 		io.WriteString(w, `{"choices":[{"finish_reason":"tool_calls","message":{"content":"private-response-marker","reasoning_content":"private-reasoning-marker","tool_calls":[{"id":"private-call-marker","type":"function","function":{"name":"private-tool-marker","arguments":"{ \"value\" : \"private-argument-marker\" }"}}]}}],"usage":{"prompt_tokens":3,"completion_tokens":4}}`)
 	}))
 	defer server.Close()
-	client := NewProviderClient(ProviderConfig{Protocol: "openai-completions", BaseURL: server.URL, APIKey: "fixture-private-key-marker", Models: []string{"fixture"}})
+	client := NewProviderClient(ProviderConfig{Protocol: "openai-completions", ChatPath: "/v1/chat/completions", BaseURL: server.URL, APIKey: "fixture-private-key-marker", Models: []string{"fixture"}})
 	request := contract.ChatRequest{Model: "fixture", Messages: []contract.Message{{Role: "user", Content: "private-request-marker"}}, Tools: []contract.ToolDef{{Name: "private-tool-marker", Description: "private-description-marker", InputSchema: json.RawMessage(`{"type":"object"}`)}}}
 	plain, plainErr := client.Chat(t.Context(), request)
 	var observations []ModelProtocolObservation

@@ -25,7 +25,7 @@ import (
 type workspaceMirrorSource struct{}
 
 func (workspaceMirrorSource) SystemProvider(id string) (llmrouter.ProviderConfig, bool) {
-	return llmrouter.ProviderConfig{Protocol: "openai-completions", ID: id, Name: "Configured model", BaseURL: "https://models.invalid/v1", APIKey: "fixture-secret", Models: []string{"model"}}, true
+	return llmrouter.ProviderConfig{Protocol: "openai-completions", ChatPath: "/chat/completions", ID: id, Name: "Configured model", BaseURL: "https://models.invalid/v1", APIKey: "fixture-secret", Models: []string{"model"}}, true
 }
 
 // Resource stores cannot create a product workspace as a side effect. The
@@ -57,7 +57,7 @@ func TestKernelResourcesNeverCreateProductWorkspaceRealPG(t *testing.T) {
 			return err
 		}},
 		{"provider", func(ctx context.Context, ws, user string) error {
-			return provider.Upsert(ctx, ws, llmrouter.ProviderConfig{Protocol: "openai-completions", ID: "model", Name: "Model", BaseURL: "https://models.invalid/v1", APIKey: "fixture-secret", Models: []string{"model"}, CredentialScope: frozen.CredentialScopeUser, CredentialUserID: user})
+			return provider.Upsert(ctx, ws, llmrouter.ProviderConfig{Protocol: "openai-completions", ChatPath: "/chat/completions", ID: "model", Name: "Model", BaseURL: "https://models.invalid/v1", APIKey: "fixture-secret", Models: []string{"model"}, CredentialScope: frozen.CredentialScopeUser, CredentialUserID: user})
 		}},
 		{"embedder", func(ctx context.Context, ws, user string) error {
 			return provider.UpsertEmbedder(ctx, ws, credentials.EmbedderConfig{BaseURL: "https://models.invalid/v1", APIKey: "fixture-secret", Model: "embedding", Dimension: 8})

@@ -700,8 +700,8 @@ var toolDefinitions = []contract.ToolDef{
 	},
 	{
 		Name:        "provider_add",
-		Description: "Add or revise an OpenAI-compatible model provider. Requires administrator role and admin access. The API key is accepted as secret input and is never returned. Errors: invalid_arguments, http_400, http_401, http_403, http_409.",
-		InputSchema: json.RawMessage(`{"type":"object","properties":{"id":{"type":"string"},"name":{"type":"string"},"base_url":{"type":"string"},"api_key":{"type":"string"},"models":{"type":"array","items":{"type":"string"},"minItems":1},"json_object_mode":{"type":"boolean"},"thinking_default_mode":{"type":"string"},"thinking_disable_with_tools":{"type":"boolean"},"attempt_timeout_seconds":{"type":"integer","minimum":0}},"required":["name","base_url","api_key","models"],"additionalProperties":false}`),
+		Description: "Add or revise a model provider. protocol is openai-completions, openai-responses or anthropic-messages. Requests go to base_url followed by chat_path; chat_path defaults to the protocol's own path, and a base_url that already holds the endpoint or repeats the path's first segment is refused with a suggested split. Requires administrator role and admin access. The API key is accepted as secret input and is never returned. Errors: invalid_arguments, http_400, http_401, http_403, http_409, http_422.",
+		InputSchema: json.RawMessage(`{"type":"object","properties":{"id":{"type":"string"},"name":{"type":"string"},"protocol":{"type":"string","enum":["openai-completions","openai-responses","anthropic-messages"]},"base_url":{"type":"string"},"chat_path":{"type":"string"},"api_key":{"type":"string"},"models":{"type":"array","items":{"type":"string"},"minItems":1},"json_object_mode":{"type":"boolean"},"thinking_default_mode":{"type":"string"},"thinking_disable_with_tools":{"type":"boolean"},"attempt_timeout_seconds":{"type":"integer","minimum":0}},"required":["name","protocol","base_url","api_key","models"],"additionalProperties":false}`),
 	},
 	{
 		Name:        "apikey_create",

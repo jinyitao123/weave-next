@@ -1455,6 +1455,30 @@
           "production_lines": 57
         }
       }
+    },
+    {
+      "date": "2026-10-22",
+      "reason": "Provider endpoints become explicit: base_url plus a stored chat_path whose concatenation is the only request address, frozen into provider revisions and model bindings and used by members, trials, fallbacks and probes through the same client. Ambiguous endpoints (endpoint inside base_url, repeated path segment) are refused with a suggested split for confirmation; external CLI runtimes receive the SDK base that reaches the same address. Adds an endpoint preview route and a probe route that classifies failures without returning secrets, prompts or provider bodies. One migration adds the chat_path columns; no new package, queue, runtime or dependency.",
+      "record": "https://github.com/jinyitao123/weave-next/issues/83",
+      "growth": {
+        "lines": 868,
+        "production_lines": 533
+      },
+      "deletion_trigger": "When every configuration client sends an explicit chat_path and the probe route is replaced by the model gateway health check proposed in the 2026-10-21 execution plane design, delete handleResolveDevelopmentModelEndpoint, ProbeProvider and their tests, and lower these exact budgets in that change.",
+      "bands": {
+        "base": {
+          "lines": 292,
+          "production_lines": 181
+        },
+        "kernel": {
+          "lines": 353,
+          "production_lines": 177
+        },
+        "app": {
+          "lines": 223,
+          "production_lines": 175
+        }
+      }
     }
   ],
   "migration_targets": {
@@ -1486,8 +1510,8 @@
     "rule": "Each band limit equals its measured size. The total of the band limits may exceed this baseline only by the growth of amendments added after the first recorded_amendments entries, each of which must state its growth and a deletion_trigger."
   },
   "base": {
-    "lines": 8638,
-    "production_lines": 6861,
+    "lines": 8930,
+    "production_lines": 7042,
     "packages": 9,
     "external_dependencies": 4,
     "allowed_dependencies": [
@@ -1498,8 +1522,8 @@
     ]
   },
   "kernel": {
-    "lines": 109620,
-    "production_lines": 85368,
+    "lines": 109973,
+    "production_lines": 85545,
     "packages": 48,
     "external_dependencies": 5,
     "allowed_dependencies": [
@@ -1518,8 +1542,8 @@
     "allowed_dependencies": []
   },
   "app": {
-    "lines": 96794,
-    "production_lines": 65207,
+    "lines": 97017,
+    "production_lines": 65382,
     "packages": 25,
     "external_dependencies": 6,
     "allowed_dependencies": [

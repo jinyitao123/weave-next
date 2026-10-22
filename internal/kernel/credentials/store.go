@@ -46,7 +46,7 @@ func (s *Store) List(ctx context.Context, workspaceID string) ([]llmrouter.Provi
 		return nil, err
 	}
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, name, base_url, api_key_cipher, models, json_object_mode, protocol, thinking_default_mode, thinking_disable_with_tools, attempt_timeout_seconds,credential_scope,credential_user_id,credential_service_id
+		SELECT id, name, base_url, api_key_cipher, models, json_object_mode, protocol, thinking_default_mode, thinking_disable_with_tools, attempt_timeout_seconds,credential_scope,credential_user_id,credential_service_id, chat_path
 		FROM weave_provider_credentials
 		WHERE workspace_id=$1
 		  AND enabled
@@ -161,7 +161,7 @@ type rowScanner interface {
 func (s *Store) scanProvider(ctx context.Context, workspaceID string, row rowScanner) (llmrouter.ProviderConfig, error) {
 	var cfg llmrouter.ProviderConfig
 	var ciphertext string
-	if err := row.Scan(&cfg.ID, &cfg.Name, &cfg.BaseURL, &ciphertext, &cfg.Models, &cfg.JSONObjectMode, &cfg.Protocol, &cfg.ThinkingDefaultMode, &cfg.ThinkingDisableWithTools, &cfg.AttemptTimeoutSeconds, &cfg.CredentialScope, &cfg.CredentialUserID, &cfg.CredentialServiceID); err != nil {
+	if err := row.Scan(&cfg.ID, &cfg.Name, &cfg.BaseURL, &ciphertext, &cfg.Models, &cfg.JSONObjectMode, &cfg.Protocol, &cfg.ThinkingDefaultMode, &cfg.ThinkingDisableWithTools, &cfg.AttemptTimeoutSeconds, &cfg.CredentialScope, &cfg.CredentialUserID, &cfg.CredentialServiceID, &cfg.ChatPath); err != nil {
 		return llmrouter.ProviderConfig{}, err
 	}
 	if err := AuthorizeReference(ctx, providerConfigReference(workspaceID, cfg)); err != nil {
@@ -194,4 +194,25 @@ func (s *Store) embedderCipherForUpdate(ctx context.Context, workspaceID, apiKey
 		return "", err
 	}
 	return secret.Seal(s.key, nil)
+}
+
+// GetProvider returns one decrypted provider configuration, authorized and
+// validated exactly as List does.
+func (s *Store) GetProvider(ctx context.Context, workspaceID, id string) (llmrouter.ProviderConfig, error) {
+	if _, err := execution.RequireSubject(ctx, workspaceID); err != nil {
+		return llmrouter.ProviderConfig{}, err
+	}
+	row := s.pool.QueryRow(ctx, `
+		SELECT id, name, base_url, api_key_cipher, models, json_object_mode, protocol, thinking_default_mode, thinking_disable_with_tools, attempt_timeout_seconds,credential_scope,credential_user_id,credential_service_id, chat_path
+		FROM weave_provider_credentials
+		WHERE workspace_id=$1 AND id=$2
+		  AND enabled
+		  AND revoked_at IS NULL
+		  AND deleted_at IS NULL
+	`, workspaceID, id)
+	cfg, err := s.scanProvider(ctx, workspaceID, row)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return llmrouter.ProviderConfig{}, ErrCredentialUnavailable
+	}
+	return cfg, err
 }

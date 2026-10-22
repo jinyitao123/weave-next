@@ -435,6 +435,8 @@ func (s *Server) registerRoutes() {
 	auth.GET("/development/model-catalog", s.handleDevelopmentModelCatalog, RequireAnyRole("developer", "admin", "owner"), orgScope)
 	auth.GET("/development/model-providers", s.handleListDevelopmentModelProviders, RequireAnyRole("developer", "admin", "owner"), orgScope)
 	auth.PUT("/development/model-providers/:id", s.handlePutDevelopmentModelProvider, RequireAnyRole("developer", "admin", "owner"), orgScope)
+	auth.POST("/development/model-providers/endpoint", s.handleResolveDevelopmentModelEndpoint, RequireAnyRole("developer", "admin", "owner"), orgScope)
+	auth.POST("/development/model-providers/:id/probe", s.handleProbeDevelopmentModelProvider, RequireAnyRole("developer", "admin", "owner"), orgScope)
 	auth.GET("/teams/:id/dispatch-rules", s.handleGetTeamDispatchRules, orgScope)
 	auth.PUT("/teams/:id/dispatch-rules", s.handlePutTeamDispatchRules, RequireAnyRole("admin", "owner"), orgScope)
 	auth.POST("/teams/:id/dispatch", s.handleDispatchTeam, orgScope, chatScope)

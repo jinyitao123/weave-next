@@ -38,7 +38,7 @@ func TestPublishedCapabilityAppRechecksExactProviderGrantRealPG(t *testing.T) {
 	}
 	key := []byte(strings.Repeat("k", 32))
 	providers := credentials.New(pool, key)
-	provider := llmrouter.ProviderConfig{Protocol: "openai-completions", ID: "provider", Name: "Provider", BaseURL: "https://fixture.invalid/v1",
+	provider := llmrouter.ProviderConfig{Protocol: "openai-completions", ChatPath: "/chat/completions", ID: "provider", Name: "Provider", BaseURL: "https://fixture.invalid/v1",
 		APIKey: "fixture-secret", Models: []string{"fixture"}, CredentialScope: frozen.CredentialScopeWorkspaceService,
 		CredentialServiceID: "provider:provider"}
 	providerContext := execution.WithSubject(context.Background(), execution.Subject{WorkspaceID: "app-provider", ServiceID: provider.CredentialServiceID})

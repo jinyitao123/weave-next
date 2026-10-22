@@ -74,7 +74,7 @@ func TestVerifiedNodeToolsThenJSONCorrectionUsesOneToolEffect(t *testing.T) {
 		_, _ = fmt.Fprintf(w, "data: %s\n\ndata: [DONE]\n\n", payload)
 	}))
 	defer server.Close()
-	binding := frozen.FrozenModelBinding{Protocol: "openai-completions", ProviderID: "fixture", ModelID: "fixture", BaseURL: server.URL, JSONObjectMode: true}
+	binding := frozen.FrozenModelBinding{Protocol: "openai-completions", ChatPath: "/v1/chat/completions", ProviderID: "fixture", ModelID: "fixture", BaseURL: server.URL, JSONObjectMode: true}
 	opts, closer, err := NewRuntimeHostFactory().Build(t.Context(), frozen.FrozenExecutionBundle{Agent: frozen.FrozenAgentRecord{Model: "fixture"}, PrimaryModel: binding}, thinkingTestResolver{})
 	if err != nil {
 		t.Fatal(err)
@@ -137,7 +137,7 @@ func TestAgentSchemaWithoutNodeVerifierKeepsProviderFormat(t *testing.T) {
 				_, _ = fmt.Fprint(w, `{"choices":[{"message":{"role":"assistant","content":"{\"answer\":\"ok\"}"},"finish_reason":"stop"}]}`)
 			}))
 			defer server.Close()
-			client := llmrouter.NewProviderClient(llmrouter.ProviderConfig{Protocol: "openai-completions", BaseURL: server.URL, JSONObjectMode: true})
+			client := llmrouter.NewProviderClient(llmrouter.ProviderConfig{Protocol: "openai-completions", ChatPath: "/v1/chat/completions", BaseURL: server.URL, JSONObjectMode: true})
 			schema := json.RawMessage(`{"type":"object"}`)
 			graph, err := compiler.CompileAgent("ws", &registry.AgentRecord{Name: "worker", OutputSchema: &schema, Spec: stdlib.AgentSpec{SystemPrompt: "Return JSON."}, Compaction: &registry.CompactionConfig{Enabled: false}}, client, &verifiedOutputTools{}, compiler.CompileOpts{})
 			if err != nil {

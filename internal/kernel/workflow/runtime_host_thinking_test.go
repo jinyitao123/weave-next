@@ -35,7 +35,7 @@ func TestFrozenProviderUsesExplicitThinkingProfile(t *testing.T) {
 				_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n")
 			}))
 			defer server.Close()
-			binding := frozen.FrozenModelBinding{Protocol: "openai-completions", ProviderID: "custom", ModelID: "deepseek-flash", BaseURL: server.URL}
+			binding := frozen.FrozenModelBinding{Protocol: "openai-completions", ChatPath: "/v1/chat/completions", ProviderID: "custom", ModelID: "deepseek-flash", BaseURL: server.URL}
 			if systemProvider {
 				binding.ThinkingDefaultMode = "disabled"
 				binding.ThinkingDisableWithTools = true

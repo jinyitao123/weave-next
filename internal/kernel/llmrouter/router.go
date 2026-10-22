@@ -3,6 +3,7 @@ package llmrouter
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -43,6 +44,42 @@ type ProviderConfig struct {
 	// 只约束单次 HTTP 调用（含流式读 body），
 	// 多轮 ToolLoop 的每一轮各占一次 attempt，互不累计。
 	AttemptTimeoutSeconds int `json:"attempt_timeout_seconds,omitempty"`
+	// ChatPath is appended to BaseURL; together they are the exact request
+	// address (see frozen.NormalizeProviderEndpoint).
+	ChatPath string `json:"chat_path,omitempty"`
+}
+
+// NormalizeEndpoint puts BaseURL and ChatPath in stored form, filling the
+// protocol's default path when none is given, or explains why they are refused.
+func (cfg *ProviderConfig) NormalizeEndpoint() error {
+	endpoint, err := frozen.NormalizeProviderEndpoint(cfg.Protocol, cfg.BaseURL, cfg.ChatPath)
+	if err != nil {
+		return err
+	}
+	cfg.BaseURL, cfg.ChatPath = endpoint.BaseURL, endpoint.ChatPath
+	return nil
+}
+
+// ChatURL is the address every request of this provider goes to.
+func (cfg ProviderConfig) ChatURL() string {
+	return frozen.ProviderEndpoint{BaseURL: cfg.BaseURL, ChatPath: cfg.ChatPath}.URL()
+}
+
+// OpenAISDKBaseURL is the base an OpenAI SDK client (which appends
+// /chat/completions itself) needs to reach ChatURL; false when the provider's
+// path does not end that way, so no SDK base reaches the same address.
+func (cfg ProviderConfig) OpenAISDKBaseURL() (string, bool) {
+	const sdkPath = "/chat/completions"
+	if cfg.Protocol != frozen.ProtocolOpenAICompletions || !strings.HasSuffix(cfg.ChatPath, sdkPath) {
+		return "", false
+	}
+	return cfg.adapterBaseURL(sdkPath), true
+}
+
+// adapterBaseURL is what a native adapter, which appends its own fixed path,
+// must be given so that its request still goes to ChatURL.
+func (cfg ProviderConfig) adapterBaseURL(fixedSuffix string) string {
+	return cfg.BaseURL + strings.TrimSuffix(cfg.ChatPath, fixedSuffix)
 }
 
 // Router implements contract.LLM by dispatching to model-specific providers.
@@ -82,12 +119,13 @@ var NewProviderClient = func(cfg ProviderConfig) contract.LLM {
 	timeout := time.Duration(seconds) * time.Second
 	switch cfg.Protocol {
 	case frozen.ProtocolAnthropicMessages:
-		return anthropic.New(cfg.APIKey, anthropic.WithBaseURL(cfg.BaseURL), anthropic.WithDefaultModel(defaultModel), anthropic.WithAttemptTimeout(timeout))
+		return anthropic.New(cfg.APIKey, anthropic.WithBaseURL(cfg.adapterBaseURL("/v1/messages")), anthropic.WithDefaultModel(defaultModel), anthropic.WithAttemptTimeout(timeout))
 	case frozen.ProtocolOpenAIResponses:
-		return openairesponses.New(cfg.APIKey, openairesponses.WithBaseURL(cfg.BaseURL), openairesponses.WithDefaultModel(defaultModel), openairesponses.WithAttemptTimeout(timeout))
+		return openairesponses.New(cfg.APIKey, openairesponses.WithBaseURL(cfg.adapterBaseURL("/responses")), openairesponses.WithDefaultModel(defaultModel), openairesponses.WithAttemptTimeout(timeout))
 	}
 	opts := []openai.Option{
 		openai.WithBaseURL(cfg.BaseURL),
+		openai.WithChatPath(cfg.ChatPath),
 		openai.WithDefaultModel(defaultModel),
 	}
 	if cfg.JSONObjectMode {
@@ -261,7 +299,10 @@ func ObserveModelProtocolCall(ctx context.Context, inner contract.LLM, request c
 
 // Validate rejects incomplete or incompatible profiles before persistence or use.
 func (cfg ProviderConfig) Validate() error {
-	return frozen.ValidateProviderProfile(cfg.Protocol, cfg.JSONObjectMode, cfg.ThinkingDefaultMode, cfg.ThinkingDisableWithTools, cfg.AttemptTimeoutSeconds)
+	if err := frozen.ValidateProviderProfile(cfg.Protocol, cfg.JSONObjectMode, cfg.ThinkingDefaultMode, cfg.ThinkingDisableWithTools, cfg.AttemptTimeoutSeconds); err != nil {
+		return err
+	}
+	return frozen.ValidateProviderEndpoint(cfg.Protocol, cfg.BaseURL, cfg.ChatPath)
 }
 
 type invalidProviderLLM struct{ err error }

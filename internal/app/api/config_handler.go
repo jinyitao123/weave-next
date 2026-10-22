@@ -41,6 +41,9 @@ func (s *Server) handleAddProvider(c echo.Context) error {
 	if err := c.Bind(&req); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 	}
+	if err := req.NormalizeEndpoint(); err != nil {
+		return providerEndpointRefusal(c, err)
+	}
 	if err := req.Validate(); err != nil {
 		return c.JSON(http.StatusUnprocessableEntity, map[string]string{"error": "invalid model provider protocol or options"})
 	}
@@ -73,6 +76,9 @@ func (s *Server) handleUpdateProvider(c echo.Context) error {
 	var req llmrouter.ProviderConfig
 	if err := c.Bind(&req); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+	}
+	if err := req.NormalizeEndpoint(); err != nil {
+		return providerEndpointRefusal(c, err)
 	}
 	if err := req.Validate(); err != nil {
 		return c.JSON(http.StatusUnprocessableEntity, map[string]string{"error": "invalid model provider protocol or options"})
@@ -142,6 +148,8 @@ type systemProviderSummaryJSON struct {
 	ID             string   `json:"id"`
 	Name           string   `json:"name"`
 	BaseURL        string   `json:"base_url"`
+	ChatPath       string   `json:"chat_path"`
+	ChatURL        string   `json:"chat_url"`
 	Models         []string `json:"models"`
 	Mirrored       bool     `json:"mirrored"`
 	MirroredAs     string   `json:"mirrored_as,omitempty"`
@@ -197,8 +205,8 @@ func (s *Server) handleListSystemProviders(c echo.Context) error {
 		summary := systemProviderSummaryJSON{
 			ID: cfg.ID, Protocol: cfg.Protocol,
 			Name:    cfg.Name,
-			BaseURL: cfg.BaseURL,
-			Models:  append([]string(nil), cfg.Models...),
+			BaseURL: cfg.BaseURL, ChatPath: cfg.ChatPath, ChatURL: cfg.ChatURL(),
+			Models: append([]string(nil), cfg.Models...),
 		}
 		if head, exists := mirrored[cfg.ID]; exists {
 			summary.Mirrored = true

@@ -33,10 +33,10 @@ func TestProviderStoredOwnershipCannotBeRewrittenByReference(t *testing.T) {
 		}
 		return providerConfigReference("workspace", cfg)
 	}
-	a := create(alice, llmrouter.ProviderConfig{Protocol: "openai-completions", ID: "alice-provider", APIKey: "alice-private-key", CredentialScope: frozen.CredentialScopeUser, CredentialUserID: "alice"})
-	b := create(bob, llmrouter.ProviderConfig{Protocol: "openai-completions", ID: "bob-provider", APIKey: "bob-private-key", CredentialScope: frozen.CredentialScopeUser, CredentialUserID: "bob"})
+	a := create(alice, llmrouter.ProviderConfig{Protocol: "openai-completions", ChatPath: "/v1/chat/completions", ID: "alice-provider", APIKey: "alice-private-key", CredentialScope: frozen.CredentialScopeUser, CredentialUserID: "alice"})
+	b := create(bob, llmrouter.ProviderConfig{Protocol: "openai-completions", ChatPath: "/v1/chat/completions", ID: "bob-provider", APIKey: "bob-private-key", CredentialScope: frozen.CredentialScopeUser, CredentialUserID: "bob"})
 	serviceCtx := execution.WithSubject(context.Background(), execution.Subject{WorkspaceID: "workspace", ServiceID: "shared-models"})
-	shared := create(serviceCtx, llmrouter.ProviderConfig{Protocol: "openai-completions", ID: "shared-provider", APIKey: "workspace-key", CredentialScope: frozen.CredentialScopeWorkspaceService, CredentialServiceID: "shared-models"})
+	shared := create(serviceCtx, llmrouter.ProviderConfig{Protocol: "openai-completions", ChatPath: "/v1/chat/completions", ID: "shared-provider", APIKey: "workspace-key", CredentialScope: frozen.CredentialScopeWorkspaceService, CredentialServiceID: "shared-models"})
 	resolve := func(ctx context.Context, ref frozen.CredentialReference) (string, error) {
 		tx, err := pool.Begin(ctx)
 		if err != nil {
@@ -67,7 +67,7 @@ func TestProviderStoredOwnershipCannotBeRewrittenByReference(t *testing.T) {
 	if _, err := store.GetHead(bob, "workspace", a.ResourceID); err == nil {
 		t.Fatal("another user read alice's credential head")
 	}
-	if _, err := store.UpsertRevision(bob, "workspace", llmrouter.ProviderConfig{Protocol: "openai-completions", ID: a.ResourceID, Name: "takeover", BaseURL: "https://models.invalid/v1", Models: []string{"model"}, APIKey: "attacker-key", CredentialScope: frozen.CredentialScopeUser, CredentialUserID: "bob"}); err == nil {
+	if _, err := store.UpsertRevision(bob, "workspace", llmrouter.ProviderConfig{Protocol: "openai-completions", ChatPath: "/chat/completions", ID: a.ResourceID, Name: "takeover", BaseURL: "https://models.invalid/v1", Models: []string{"model"}, APIKey: "attacker-key", CredentialScope: frozen.CredentialScopeUser, CredentialUserID: "bob"}); err == nil {
 		t.Fatal("another user overwrote the credential")
 	}
 	for _, test := range []struct {
@@ -129,7 +129,7 @@ func TestProviderProfileFieldsAdvanceImmutableRevisionRealPG(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			cfg := llmrouter.ProviderConfig{Protocol: frozen.ProtocolOpenAICompletions, ID: tc.name, Name: tc.name, BaseURL: "https://provider.invalid/v1", Models: []string{"model-" + tc.name}, APIKey: "synthetic-key", CredentialScope: frozen.CredentialScopeUser, CredentialUserID: "owner"}
+			cfg := llmrouter.ProviderConfig{Protocol: frozen.ProtocolOpenAICompletions, ChatPath: "/chat/completions", ID: tc.name, Name: tc.name, BaseURL: "https://provider.invalid/v1", Models: []string{"model-" + tc.name}, APIKey: "synthetic-key", CredentialScope: frozen.CredentialScopeUser, CredentialUserID: "owner"}
 			if tc.name == "tool-thinking" {
 				cfg.ThinkingDefaultMode = "disabled"
 			}

@@ -203,6 +203,8 @@ type FrozenModelBinding struct {
 	ThinkingDefaultMode      string `json:"thinking_default_mode"`
 	ThinkingDisableWithTools bool   `json:"thinking_disable_with_tools"`
 	AttemptTimeoutSeconds    int    `json:"attempt_timeout_seconds"`
+	// ChatPath is appended to BaseURL to form the exact request address.
+	ChatPath string `json:"chat_path"`
 
 	SchemaVersion int `json:"schema_version"`
 

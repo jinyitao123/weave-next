@@ -322,6 +322,10 @@ func (l *RuntimeLoader) Load(
 				if model.ModelID != "" && model.Protocol != frozen.ProtocolOpenAICompletions {
 					return nil, runtimeHostUnsupportedError("external runtime does not support native model protocol")
 				}
+				// External CLIs append /chat/completions to the base themselves.
+				if model.ModelID != "" && !strings.HasSuffix(model.ChatPath, "/chat/completions") {
+					return nil, runtimeHostUnsupportedError("external runtime needs a chat path ending in /chat/completions")
+				}
 			}
 		}
 		if err := compiler.ValidateFrozenBusinessActionFactory(bundle); err != nil {
