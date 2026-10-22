@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/kernel/engine"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 	"github.com/jinyitao123/weave/internal/kernel/workflow"
@@ -35,9 +36,16 @@ func (s *Server) prepareDevelopment(ctx context.Context, ws, id, actor string, r
 		return d, err
 	}
 	// The frozen candidate belongs to the saved revision, not to whoever
-	// prepared it first: every developer of the workspace trials the same one.
+	// prepared it first: every developer of the workspace trials the same one,
+	// as long as the providers it froze have not changed since.
 	if d.PreparedRevision == revision && len(d.Prepared) > 0 {
-		return d, nil
+		current, err := preparedModelBindingsCurrent(ctx, tx, d.Prepared)
+		if err != nil {
+			return d, err
+		}
+		if current {
+			return d, nil
+		}
 	}
 	if err = validateDevelopmentDocument(d.Document); err != nil {
 		return d, err
@@ -330,4 +338,43 @@ func (s *Server) activateDevelopment(ctx context.Context, ws, id, actor string, 
 		return err
 	}
 	return tx.Commit(ctx)
+}
+
+// preparedModelBindingsCurrent reports whether every model binding frozen
+// into the prepared candidates still names its provider's current, usable
+// revision. A provider updated since preparation (a new address, models or
+// key) makes the cached candidate stale, so the same draft is prepared again
+// and the new candidate needs its own trial. Only revision metadata is read;
+// preparing again authorizes the provider as before.
+func preparedModelBindingsCurrent(ctx context.Context, tx pgx.Tx, prepared []developmentPrepared) (bool, error) {
+	type providerRevision struct {
+		workspaceID, providerID string
+		revision                int64
+	}
+	frozenRevisions := map[providerRevision]bool{}
+	for _, candidate := range prepared {
+		payload, err := frozen.DecodeArtifactEnvelopeV1(candidate.Envelope)
+		if err != nil {
+			return false, nil
+		}
+		for _, bundle := range payload.Bundles {
+			for _, binding := range append([]frozen.FrozenModelBinding{bundle.PrimaryModel}, bundle.FallbackModels...) {
+				if binding.ProviderID != "" {
+					frozenRevisions[providerRevision{binding.WorkspaceID, binding.ProviderID, binding.ProviderRevision}] = true
+				}
+			}
+		}
+	}
+	for frozenRevision := range frozenRevisions {
+		var current bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM weave_provider_credentials
+			WHERE workspace_id=$1 AND id=$2 AND latest_revision=$3 AND enabled AND revoked_at IS NULL AND deleted_at IS NULL)`,
+			frozenRevision.workspaceID, frozenRevision.providerID, frozenRevision.revision).Scan(&current); err != nil {
+			return false, fmt.Errorf("check prepared provider revision: %w", err)
+		}
+		if !current {
+			return false, nil
+		}
+	}
+	return true, nil
 }

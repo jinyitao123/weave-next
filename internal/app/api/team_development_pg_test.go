@@ -225,8 +225,33 @@ func TestTeamDevelopmentStagingAndAtomicPublicationRealPG(t *testing.T) {
 	if _, err = call("PUT", map[string]any{"expected_revision": d.Revision, "document": d.Document}, server.handleSaveTeamDevelopment); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = server.prepareDevelopment(ctx, "dev-workspace", created.Team.ID, "developer", 3); err != nil {
+	third, err := server.prepareDevelopment(ctx, "dev-workspace", created.Team.ID, "developer", 3)
+	if err != nil {
 		t.Fatal("edit after publication", err)
+	}
+	// A provider updated after preparation makes the cached candidate stale:
+	// the same draft revision is prepared again with the new provider revision.
+	if err = providers.Upsert(providerService, "dev-workspace", llmrouter.ProviderConfig{CredentialScope: frozen.CredentialScopeWorkspaceService, CredentialServiceID: "provider:fixture", ID: "fixture", Name: "Fixture", BaseURL: "http://127.0.0.1:2", APIKey: "test-only", Models: []string{"fixture-model"}}); err != nil {
+		t.Fatal(err)
+	}
+	refreshed, err := server.prepareDevelopment(ctx, "dev-workspace", created.Team.ID, "developer", 3)
+	if err != nil {
+		t.Fatal("prepare after a provider update", err)
+	}
+	if refreshed.Prepared[0].Envelope.ContentHash == third.Prepared[0].Envelope.ContentHash {
+		t.Fatal("a provider update reused the stale prepared candidate")
+	}
+	payload, err := frozen.DecodeArtifactEnvelopeV1(refreshed.Prepared[0].Envelope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, bundle := range payload.Bundles {
+		if bundle.PrimaryModel.ProviderID == "fixture" && bundle.PrimaryModel.BaseURL != "http://127.0.0.1:2" {
+			t.Fatalf("refreshed candidate froze the old provider: %+v", bundle.PrimaryModel)
+		}
+	}
+	if again, err := server.prepareDevelopment(ctx, "dev-workspace", created.Team.ID, "developer", 3); err != nil || again.Prepared[0].Envelope.ContentHash != refreshed.Prepared[0].Envelope.ContentHash {
+		t.Fatalf("an unchanged provider prepared the draft again: %v", err)
 	}
 }
 
