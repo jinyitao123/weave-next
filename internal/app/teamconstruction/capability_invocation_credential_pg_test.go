@@ -120,6 +120,10 @@ func TestPublishedCapabilityAppRechecksExactProviderGrantRealPG(t *testing.T) {
 	}
 	invocationID := "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 	inputHash := strings.Repeat("a", 64)
+	if _, err := pool.Exec(ctx, `INSERT INTO weave_workflow_admission_requests(workspace_id,request_id,actor_subject,request_digest,request,target)
+	 VALUES('app-provider',$1,'{"workspace_id":"app-provider","user_id":"alice"}',repeat('a',64),'{}','{}')`, "admission-"+invocationID); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := pool.Exec(ctx, `INSERT INTO weave_capability_workflow_invocations(
 	 workspace_id,application_id,request_id,invocation_id,credential_id,capability_id,revision,definition_hash,
 	 workflow_id,workflow_version,input,input_hash,admission_request_id,run_id,task_id)
