@@ -73,6 +73,9 @@ func (s *Server) handleUploadAgent(c echo.Context) error {
 		name = filepath.Base(file.Filename)
 		name = name[:len(name)-len(filepath.Ext(name))]
 	}
+	if !isValidAgentName(name) {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "name must be lowercase alphanumeric, hyphens, or underscores (e.g. my-agent-1)"})
+	}
 
 	model := c.FormValue("model")
 	if model == "" {

@@ -61,15 +61,17 @@ func TestCurrentIdentitySelfReadHTTPRealPG(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			// The key fixes both the effective role and workspace; query fields
-			// cannot select another identity. An exact DTO also excludes secrets.
-			actual := request(t, http.MethodGet, "/v1/auth/me?tenant_id=other&role=admin&user_id=other", rawKey, http.StatusOK)
-			want := map[string]string{"id": user.ID, "tenant_id": workspace, "role": role, "source": "apikey", "api_key_id": key.ID}
-			if !reflect.DeepEqual(actual, want) {
-				t.Fatal("API key identity differs from its authenticated principal")
-			}
+			// Only admin keys authenticate. The key fixes both the effective role and
+			// workspace; query fields cannot select another identity. An exact DTO
+			// also excludes secrets.
 			if role == "member" {
-				request(t, http.MethodGet, "/v1/auth/api-keys", rawKey, http.StatusForbidden)
+				request(t, http.MethodGet, "/v1/auth/me", rawKey, http.StatusUnauthorized)
+			} else {
+				actual := request(t, http.MethodGet, "/v1/auth/me?tenant_id=other&role=admin&user_id=other", rawKey, http.StatusOK)
+				want := map[string]string{"id": user.ID, "tenant_id": workspace, "role": role, "source": "apikey", "api_key_id": key.ID}
+				if !reflect.DeepEqual(actual, want) {
+					t.Fatal("API key identity differs from its authenticated principal")
+				}
 			}
 			// Forge roles come from the verified session, not the account's
 			// initial stored role. Self-read cannot mint or refresh a session.
@@ -77,8 +79,8 @@ func TestCurrentIdentitySelfReadHTTPRealPG(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			actual = request(t, http.MethodGet, "/v1/auth/me", token, http.StatusOK)
-			want = map[string]string{"id": user.ID, "tenant_id": workspace, "role": role, "source": "jwt"}
+			actual := request(t, http.MethodGet, "/v1/auth/me", token, http.StatusOK)
+			want := map[string]string{"id": user.ID, "tenant_id": workspace, "role": role, "source": "jwt"}
 			if !reflect.DeepEqual(actual, want) {
 				t.Fatal("Forge session identity differs from its authenticated principal")
 			}

@@ -30,7 +30,7 @@ func TestAccessChangeAuthenticatedWorkflowAdmissionRealPG(t *testing.T) {
 	s.Config = &config.Config{JWTSecret: "isolated-access-test"}
 	e := echo.New()
 	e.Use(AuthMiddleware(s.Config.JWTSecret, func() *apikeys.Store { return s.KeyStore }, func() *users.Store { return s.UserStore }))
-	admin := RequireAnyRole("admin", "owner")
+	admin := RequireAtLeast(roleAdmin)
 	e.PUT("/flows/:id/versions/:version/admission", s.handlePutWorkflowAdmission, admin)
 	e.POST("/teams/:id/dispatch", s.handleDispatchTeam)
 	token, err := s.signJWT("ws", "user", []string{"admin"})

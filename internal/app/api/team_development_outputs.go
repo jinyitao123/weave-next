@@ -500,7 +500,7 @@ func (s *Server) handleGetDevelopmentTrialOutput(c echo.Context) error {
 // developer of this workspace. A run that is not a development trial is not
 // found here; the response is written when ok is false.
 func (s *Server) developmentTrialOfRun(c echo.Context) (developmentTrialRun, bool, error) {
-	if !humanTaskDeveloperAccess(c) {
+	if !callerAtLeast(c, roleDeveloper) {
 		return developmentTrialRun{}, false, c.JSON(http.StatusForbidden, map[string]string{"error": "insufficient permissions"})
 	}
 	trial, found, err := developmentTrialForRun(c.Request().Context(), s.GetPool(), getTenant(c), c.Param("id"))

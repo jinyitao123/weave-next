@@ -167,3 +167,30 @@ func TestMemberExecutionPublishesNativeModelsAndRollsBackDraftConflictRealPG(t *
 	}
 	call(agentExecutionRequest{ExpectedVersion: saved.Version - 1, Engine: engine.Claude, RuntimeID: runtime.ID, Model: "stale"}, 409)
 }
+
+// A memory route name that is not an agent must not reach another person's,
+// a Project's or a session's namespace.
+func TestMemoryNamespaceCannotBeShapedRealPG(t *testing.T) {
+	pool := testutil.PostgresPool(t)
+	if err := db.Migrate(t.Context(), pool); err != nil {
+		t.Fatal(err)
+	}
+	ctx := execution.WithSubject(t.Context(), execution.Subject{WorkspaceID: "ws", UserID: "alice"})
+	agents := agentcatalog.New(pool)
+	for name, scope := range map[string]string{"shared": "tenant", "private": "user"} {
+		if err := agents.Put(ctx, "ws", &registry.AgentRecord{Name: name, Role: "worker", Engine: engine.Claude, GraphType: "standard", MemoryConfig: &registry.MemoryConfig{Scope: scope}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	server := &Server{Registry: agents}
+	for name, want := range map[string]string{
+		"shared": "memory:ws:shared", "private": "memory:ws:alice:private",
+		"bob:private": "memory:ws:alice:bob:private", "project-1": "memory:ws:alice:project-1", "shared:s1": "memory:ws:alice:shared:s1",
+	} {
+		c := echo.New().NewContext(httptest.NewRequest("GET", "/", nil).WithContext(ctx), httptest.NewRecorder())
+		c.Set("user_id", "alice")
+		if got := server.resolveMemoryNamespace(c, "ws", name); got != want {
+			t.Errorf("%s: namespace %s, want %s", name, got, want)
+		}
+	}
+}

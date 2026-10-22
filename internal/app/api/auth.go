@@ -47,9 +47,11 @@ func (s *Server) handleCreateAPIKey(c echo.Context) error {
 	if req.Name == "" {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "name is required"})
 	}
-	if req.Role == "" {
-		req.Role = "service"
+	// API keys are admin operator credentials.
+	if req.Role != "" && req.Role != roleAdmin {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "role must be admin"})
 	}
+	req.Role = roleAdmin
 
 	tenant := getTenant(c)
 	createdBy := getUserID(c)

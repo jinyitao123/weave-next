@@ -187,16 +187,7 @@ func agentWritePutErrorResponse(c echo.Context, err error) error {
 }
 
 func canChangeAgentOwner(c echo.Context) bool {
-	if c.Get(authSourceContextKey) != authSourceJWT {
-		return false
-	}
-	roles, _ := c.Get("roles").([]string)
-	for _, role := range roles {
-		if role == "admin" || role == "owner" {
-			return true
-		}
-	}
-	return false
+	return c.Get(authSourceContextKey) == authSourceJWT && callerAtLeast(c, roleAdmin)
 }
 
 func ownerUserIDsEqual(left, right *string) bool {

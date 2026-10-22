@@ -49,6 +49,9 @@ type PreviewPromptResponse struct {
 func (s *Server) handlePreviewPrompt(c echo.Context) error {
 	tenant := getTenant(c)
 	name := c.Param("name")
+	if isPlatformInternalAgent(name) {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "agent not found"})
+	}
 
 	rec, err := s.Registry.Get(c.Request().Context(), tenant, name)
 	if err != nil {
