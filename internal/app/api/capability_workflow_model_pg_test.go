@@ -242,7 +242,9 @@ func runCapabilityWorkflowModelScenario(t *testing.T, parallel bool, maxConns []
 	server.KernelPublication = openAPIKernelPublication(t, ctx, pool, authority)
 	server.Models = llmrouter.NewResolver(llmrouter.New(capabilityWorkflowModelName))
 	server.Models.SetSource(providers)
-	server.ConfigureTeamRunWorkers()
+	if err := server.ConfigureTeamRunWorkers(); err != nil {
+		t.Fatal(err)
+	}
 	if server.teamRunWorkers == nil || server.teamRunCancel == nil || server.workflowFanoutReconciler == nil {
 		t.Fatal("production TeamRun workers or cancellation service were not configured")
 	}

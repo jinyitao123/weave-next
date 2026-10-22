@@ -43,7 +43,7 @@ make compose-check
 
 `WEAVE_LOCAL_RUNTIME_ENABLED` 默认是 `false`，主服务 Compose 也保持关闭。运维人员明确选择同机 Host 时，仍可在自有部署中设为 `true`，并自行提供所需 CLI。此开关不会改写已发布工作流冻结的节点绑定，也不会替代缺失的外部节点。
 
-`WEAVE_TEAMRUN_EXECUTOR_CONCURRENCY` 设定本进程同时持有的工作流认领数，默认 4，可取 1–4096，无效值保留默认并记警告日志。每个认领各自轮询与续租，调大时须同步放大数据库连接池（在 `DATABASE_URL` 加 `pool_max_conns`，并确认 PostgreSQL 的 `max_connections` 容得下所有连接池）与工作区的 `max_active_invocations` 配额。
+`WEAVE_TEAMRUN_EXECUTOR_CONCURRENCY` 设定本进程同时持有的工作流认领数，默认 4，可取 1–4096，其他值会让进程启动失败。`GET /v1/admin/metrics` 的 `teamrun_capacity` 返回实际生效的容量（`executor_concurrency`、`executor_mode`，以及 `running`：本进程不运行 workers 时为 false）。每个认领各自轮询与续租，调大时须同步放大数据库连接池（在 `DATABASE_URL` 加 `pool_max_conns`，并确认 PostgreSQL 的 `max_connections` 容得下所有连接池）与工作区的 `max_active_invocations` 配额。
 
 高并发执行面的开关（缺省都与现状一致）：`WEAVE_TEAMRUN_EXECUTOR=pooled` 改用单认领协程加执行池，批量认领与续租、经 PostgreSQL 通知唤醒，池大小即上面的并发数；`WEAVE_TEAMRUN_DRAIN_TIMEOUT`（如 `30s`）让停机时先停止认领、等在途执行收尾，只在 `pooled` 下生效，缺省 0 即立即取消在途；`WEAVE_TEAMRUN_OBSERVATION_WRITES=buffered` 把模型观测合并为批量写入，成员与终态事件仍同步写；`WEAVE_MODEL_GATEWAY_CONFIG` 指向模型网关配置文件，按 provider 与模型限定在途数、RPM、TPM。`weave executor` 只运行工作流执行器、不监听 HTTP，可与设了 `WEAVE_TEAMRUN_WORKERS_DISABLED=true` 的 API 进程分开部署；多个进程各自执行网关限额，跨进程按 `share` 分配。
 

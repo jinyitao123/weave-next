@@ -672,19 +672,19 @@ const (
 
 // teamRunExecutorConcurrency bounds this process's durable workflow claims.
 // Each claim polls and renews its own lease, so the bound also sizes the
-// queue's SQL load; an unusable value keeps the default and says so.
-func teamRunExecutorConcurrency() int {
+// queue's SQL load. Unset means the default; any other value outside the
+// range is an error, so the process refuses to start with a capacity nobody
+// chose.
+func teamRunExecutorConcurrency() (int, error) {
 	raw := strings.TrimSpace(os.Getenv(teamRunExecutorConcurrencyEnv))
 	if raw == "" {
-		return defaultTeamRunExecutorConcurrency
+		return defaultTeamRunExecutorConcurrency, nil
 	}
 	value, err := strconv.Atoi(raw)
 	if err != nil || value < 1 || value > maxTeamRunExecutorConcurrency {
-		slog.Warn("ignoring invalid team run executor concurrency", "env", teamRunExecutorConcurrencyEnv,
-			"value", raw, "allowed", fmt.Sprintf("1..%d", maxTeamRunExecutorConcurrency), "using", defaultTeamRunExecutorConcurrency)
-		return defaultTeamRunExecutorConcurrency
+		return 0, fmt.Errorf("%s=%q: want an integer in 1..%d", teamRunExecutorConcurrencyEnv, raw, maxTeamRunExecutorConcurrency)
 	}
-	return value
+	return value, nil
 }
 
 func teamRunWorkersDisabled() bool {
@@ -697,11 +697,16 @@ func teamRunWorkersDisabled() bool {
 }
 
 // ConfigureTeamRunWorkers wires the no-session schedule executor after main
-// has installed task, runtime, and credential stores.
-func (s *Server) ConfigureTeamRunWorkers() {
+// has installed task, runtime, and credential stores. It fails only on
+// invalid worker configuration.
+func (s *Server) ConfigureTeamRunWorkers() error {
 	pool := s.GetPool()
 	if pool == nil || s.Tasks == nil || s.Snapshots == nil || s.Workflow == nil {
-		return
+		return nil
+	}
+	concurrency, err := teamRunExecutorConcurrency()
+	if err != nil {
+		return err
 	}
 	s.employeeRunEventWorker = newEmployeeRunEventWorker(pool)
 	s.employeeRunEventWorker.FeishuServer = s
@@ -835,7 +840,7 @@ func (s *Server) ConfigureTeamRunWorkers() {
 		// Four durable claims are enough to make ordinary multi-runtime fanout
 		// genuinely concurrent without introducing an unbounded worker pool.
 		// Deployments with many concurrent pure-model members raise it explicitly.
-		ExecutorConcurrency: teamRunExecutorConcurrency(),
+		ExecutorConcurrency: concurrency,
 		CancelGrace: &teamrun.CancelGraceSweeper{
 			Tasks:        s.Tasks,
 			Transactions: pool,
@@ -883,6 +888,31 @@ func (s *Server) ConfigureTeamRunWorkers() {
 		Transactions: pool, Store: s.Fanout, Coordinator: coordinator,
 		BatchSize:    temporaryTeamRunWorkerBatchSize,
 		PollInterval: temporaryTeamRunWorkerPollInterval,
+	}
+	return nil
+}
+
+// teamRunCapacity reports this process's workflow execution capacity as
+// configured: Running is false when this process does not run the workers
+// (they are disabled or not wired), whatever other executor processes run.
+type teamRunCapacity struct {
+	ExecutorConcurrency int    `json:"executor_concurrency"`
+	ExecutorMode        string `json:"executor_mode"`
+	Running             bool   `json:"running"`
+}
+
+func (s *Server) teamRunCapacity() teamRunCapacity {
+	if s.teamRunWorkers == nil {
+		return teamRunCapacity{}
+	}
+	mode := "legacy"
+	if s.teamRunWorkers.Pooled {
+		mode = "pooled"
+	}
+	return teamRunCapacity{
+		ExecutorConcurrency: s.teamRunWorkers.ExecutorConcurrency,
+		ExecutorMode:        mode,
+		Running:             !teamRunWorkersDisabled(),
 	}
 }
 
