@@ -97,6 +97,15 @@ type ToolLoopOpts struct {
 	OutputSchema *json.RawMessage     // 结构化输出的 JSON Schema，非 nil 时要求模型按此格式作答
 	Effort       contract.EffortLevel // v1.4: default EffortMedium
 	// Effort：推理强度档位，空值时补齐为中档（EffortMedium）。
+	// ProviderDefaultEffort keeps an empty Effort empty, so providers omit
+	// their reasoning parameter and apply their own default.
+	// ProviderDefaultEffort：为 true 时空 Effort 不再补齐，provider 不下发推理档位，由供应方自定默认值。
+	ProviderDefaultEffort bool
+	// WaitBudget bounds how long each model call waits for model output;
+	// nil leaves calls bounded by the context alone.
+	// WaitBudget：每次模型调用等待模型输出的阶段预算，nil 表示只受 context 约束。
+	WaitBudget *contract.WaitBudget
+
 	ToolHooks []contract.ToolHook // v1.4: per-tool pre/post hooks
 	// ToolHooks：工具级前置/后置钩子——前置可改写或拦截调用，后置用于审计观测。
 	Compaction *CompactionPolicy // v1.4: auto-summarize when context grows
@@ -272,7 +281,7 @@ func NewToolLoopStep(llm contract.LLM, tools contract.ToolDispatcher, opts ToolL
 
 		// 推理强度缺省补齐为中档。
 		effort := opts.Effort
-		if effort == "" {
+		if effort == "" && !opts.ProviderDefaultEffort {
 			effort = contract.EffortMedium
 		}
 
@@ -318,13 +327,14 @@ func NewToolLoopStep(llm contract.LLM, tools contract.ToolDispatcher, opts ToolL
 			}
 
 			// 本轮询问 LLM：携带完整历史、工具清单与输出约束。
-			resp, err := llm.Chat(ctx, contract.ChatRequest{
+			resp, err := llm.Chat(contract.WithCallPurpose(ctx, contract.CallPurposeGeneration), contract.ChatRequest{
 				Model:      opts.Model,
 				Messages:   msgs,
 				Tools:      availableTools,
 				MaxTokens:  opts.MaxTokens,
 				Schema:     opts.OutputSchema,
 				Effort:     effort,
+				WaitBudget: opts.WaitBudget,
 				ToolChoice: choice,
 			})
 			// 调用失败：把错误文本写入状态键 __error（供下游路由器/观测使用）并同时向引擎上抛。
@@ -461,11 +471,12 @@ func NewToolLoopStep(llm contract.LLM, tools contract.ToolDispatcher, opts ToolL
 				"should be handled (for example, delegating it as a background task).", opts.MaxIterations),
 		})
 		// 最后一问：请求里刻意不带 Tools 字段——从协议层面断掉继续调用工具的可能性。
-		resp, err := llm.Chat(ctx, contract.ChatRequest{
-			Model:     opts.Model,
-			Messages:  msgs,
-			MaxTokens: opts.MaxTokens,
-			Effort:    effort,
+		resp, err := llm.Chat(contract.WithCallPurpose(ctx, contract.CallPurposeWrapUp), contract.ChatRequest{
+			Model:      opts.Model,
+			Messages:   msgs,
+			MaxTokens:  opts.MaxTokens,
+			Effort:     effort,
+			WaitBudget: opts.WaitBudget,
 		})
 		// 收尾调用也失败时，同样记录 __error 并上抛。
 		if err != nil {

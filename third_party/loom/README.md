@@ -134,7 +134,7 @@ go install github.com/jinyitao123/loom/cmd/loom@latest
 curl -fsSL https://raw.githubusercontent.com/jinyitao123/loom/main/install.sh | sh
 ```
 
-See [cmd/loom/README.md](cmd/loom/README.md) for the event wire format, and [docs/host-integration.md](docs/host-integration.md) for driving it from any host process.
+See [cmd/loom/README.md](cmd/loom/README.md) for the event wire format, and [docs/host-integration.md](docs/host-integration.md) for driving it from any host process. For a long-lived interactive agent with a session file, see [docs/interactive.md](docs/interactive.md) (`loom agent --mode rpc`).
 
 ## Project structure
 
@@ -152,7 +152,9 @@ loom/
 ├── contract/         Pure interfaces: LLM / ToolDispatcher / Embedder
 ├── stdlib/           Pre-built Steps & Hooks (tool loop, permissions, budget, session, …)
 ├── pgstore/          PostgreSQL Store
-├── provider/         LLM providers (OpenAI-compatible / DeepSeek)
+├── provider/         LLM providers (OpenAI-compatible / DeepSeek / Anthropic / Responses)
+├── localtools/       Opt-in local files, search and shell ToolDispatcher
+├── mcpclient/        Opt-in stdio / streamable HTTP ToolDispatcher
 ├── cmd/loom/         The `loom` CLI
 ├── tests/            Black-box test suite (public API only)
 └── docs/             Host-integration contract & orchestration design
