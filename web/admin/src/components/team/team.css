@@ -1,7 +1,9 @@
 .team-profile { display: grid; gap: 16px; max-width: 640px; padding: 16px; border: 1px solid var(--border); border-radius: var(--radius-lg); }
-.flow-profile { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-shrink: 0; }
-.flow-profile > strong { min-width: 0; overflow-wrap: anywhere; font-weight: 500; }
-.flow-profile > .icon-button { flex-shrink: 0; }
+.flow-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 12px; flex-shrink: 0; min-width: 0; }
+.flow-bar__name { min-width: 0; overflow-wrap: anywhere; font-weight: 500; }
+.flow-bar__select { min-width: 0; max-width: 320px; }
+.flow-bar > .icon-button { flex-shrink: 0; }
+.flow-bar__note { margin-left: auto; }
 
 .release { display: grid; gap: 16px; max-width: 720px; }
 .release__section { display: grid; gap: 12px; padding: 16px; border: 1px solid var(--border); border-radius: var(--radius-lg); }

@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Badge, Dialog, InlineError, type Tone } from '../components/ui'
 import { MemberEditor } from '../components/members/MemberEditor'
 import { PublishPanel, TrialPanel } from '../components/team/Release'
-import { FlowProfile, TeamProfile } from '../components/team/TeamProfile'
+import { FlowBar, TeamProfile } from '../components/team/TeamProfile'
 import { FeishuTeamAccessPanel } from '../components/feishu/FeishuTeamAccess'
 import { errorMessage } from '../lib/api'
 import { businessCompletionIssue, syncBusinessCompletion } from '../lib/business-completion'
@@ -60,7 +60,11 @@ export function TeamDetailPage({ teamId, tab = 'profile', navigate }: { teamId: 
     for (const node of nodes) for (const engine of node.engine_readiness) if (engine.accepting) counts[engine.engine] = (counts[engine.engine] ?? 0) + 1
     return counts
   }, [nodes])
-  const workflow = document?.workflows[0]
+  // The flow page, its info dialog and the trial all act on the one chosen
+  // flow, by id; the first flow stands in until one is chosen or after the
+  // chosen one is gone.
+  const [flowId, setFlowId] = useState<string>()
+  const workflow = document?.workflows.find((flow) => flow.id === flowId) ?? document?.workflows[0]
   const issues = useMemo(() => {
     if (!document) return []
     const found = [...nodeReadinessIssues(document, accepting), ...memberConfigIssues(document)]
@@ -113,12 +117,17 @@ export function TeamDetailPage({ teamId, tab = 'profile', navigate }: { teamId: 
   const addMember = (member: DevelopmentMember) => edit((current) => ({ ...current, members: [...current.members, member] }))
   const removeMember = (id: string) => edit((current) => ({ ...current, members: current.members.filter((member) => member.id !== id) }))
   const editTeam = (patch: Partial<DevelopmentDocument>) => edit((current) => ({ ...current, ...patch }))
-  const editFlow = (patch: { name?: string; description?: string }) => edit((current) => ({ ...current, workflows: current.workflows.map((flow, index) => index === 0 ? { ...flow, ...patch } : flow) }))
+  const editFlow = (patch: { name?: string; description?: string }) => {
+    if (!workflow) return
+    const id = workflow.id
+    edit((current) => ({ ...current, workflows: current.workflows.map((flow) => flow.id === id ? { ...flow, ...patch } : flow) }))
+  }
   const editGraph = (change: (graph: Graph) => Graph) => {
-    if (!document?.workflows.length) return
+    if (!workflow) return
+    const id = workflow.id
     try {
-      const next = change(document.workflows[0].graph_definition)
-      edit((current) => ({ ...current, workflows: current.workflows.map((flow, index) => index === 0 ? { ...flow, graph_definition: next } : flow) }))
+      const next = change(workflow.graph_definition)
+      edit((current) => ({ ...current, workflows: current.workflows.map((flow) => flow.id === id ? { ...flow, graph_definition: next } : flow) }))
       setError('')
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : '流程修改失败')
@@ -163,9 +172,9 @@ export function TeamDetailPage({ teamId, tab = 'profile', navigate }: { teamId: 
         </div>
       </> : null}
       {tab === 'members' ? <MemberEditor document={document} nodes={nodes} accepting={accepting} catalog={catalog} onConfig={editMember} onRelationship={editRelationship} onAdd={addMember} onRemove={removeMember} onCatalog={setCatalog} /> : null}
-      {tab === 'workflow' ? workflow ? <><FlowProfile name={workflow.name} description={workflow.description} onChange={editFlow} /><WorkflowEditor key={workflow.id} graph={workflow.graph_definition} members={document.members} actions={actions} onChange={editGraph} /></> : <p className="muted">还没有流程。先在“成员”页添加一位成员。</p> : null}
+      {tab === 'workflow' ? workflow ? <><FlowBar flows={document.workflows} flow={{ id: workflow.id, name: workflow.name, description: workflow.description, nodes: workflow.graph_definition.nodes.length }} onSelect={setFlowId} onChange={editFlow} /><WorkflowEditor key={workflow.id} graph={workflow.graph_definition} members={document.members} actions={actions} onChange={editGraph} /></> : <p className="muted">还没有流程。先在“成员”页添加一位成员。</p> : null}
       {tab === 'access' ? <FeishuTeamAccessPanel teamId={teamId} workflows={document.workflows.map((flow) => ({ id: flow.id, name: flow.name }))} /> : null}
-      {tab === 'trial' ? <TrialPanel teamId={teamId} draft={draft} dirty={dirty} catalog={catalog} navigate={navigate} onStarted={() => void load()} onCatalog={setCatalog} /> : null}
+      {tab === 'trial' ? <TrialPanel teamId={teamId} draft={draft} dirty={dirty} flowId={workflow?.id} onFlow={setFlowId} catalog={catalog} navigate={navigate} onStarted={() => void load()} onCatalog={setCatalog} /> : null}
       {tab === 'publish' ? <PublishPanel draft={draft} dirty={dirty} busy={busy} catalog={catalog} blockers={blockers} onPublish={() => void run(() => publishDevelopment(teamId, draft.revision))} onOpenTrial={() => setTab('trial')} onOpenFlow={() => setTab('workflow')} /> : null}
     </>}
     {leaving ? <Dialog title="有未保存的修改" onClose={() => setLeaving(undefined)} footer={<>

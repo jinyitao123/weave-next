@@ -13,17 +13,19 @@ const flowName = (draft: DevelopmentDraft, id: string) => draft.document.workflo
 
 // Runs the saved draft once. Business actions are only simulated, and every
 // developer of the workspace sees the same trial records.
-export function TrialPanel({ teamId, draft, dirty, catalog, navigate, onStarted, onCatalog }: {
+export function TrialPanel({ teamId, draft, dirty, flowId, onFlow, catalog, navigate, onStarted, onCatalog }: {
   teamId: string
   draft: DevelopmentDraft
   dirty: boolean
+  /** The flow chosen on the team page; the trial runs its saved revision. */
+  flowId?: string
+  onFlow(id: string): void
   catalog?: BusinessCatalog
   navigate(path: string): void
   onStarted(): void
   onCatalog?(catalog: BusinessCatalog): void
 }) {
   const flows = draft.document.workflows
-  const [flowId, setFlowId] = useState(flows[0]?.id ?? '')
   const flow = flows.find((item) => item.id === flowId) ?? flows[0]
   const [input, setInput] = useState('')
   const [skipped, setSkipped] = useState<string[]>([])
@@ -65,7 +67,7 @@ export function TrialPanel({ teamId, draft, dirty, catalog, navigate, onStarted,
     <section className="release__section" aria-label="发起试跑">
       <h2>发起试跑</h2>
       <p className="muted small">试跑把已保存的草稿完整执行一遍，不影响线上版本，也不会访问业务系统。</p>
-      {flows.length > 1 ? <div className="field"><span>流程</span><Select label="试跑的流程" value={flow?.id ?? ''} options={flows.map((item) => ({ value: item.id, label: item.name || '未命名流程' }))} onChange={(id) => change(() => setFlowId(id))} /></div> : null}
+      {flows.length > 1 ? <div className="field"><span>流程</span><Select label="试跑的流程" value={flow?.id ?? ''} options={flows.map((item) => ({ value: item.id, label: item.name || '未命名流程' }))} onChange={(id) => change(() => onFlow(id))} /></div> : null}
       {ids.length ? <div className="field"><span>业务动作（试跑中只模拟，不写入业务系统）</span>
         <ul className="release__actions">{ids.map((id) => <li key={id}>
           <span>{capabilityName(id, catalog)}</span>
@@ -138,6 +140,7 @@ export function PublishPanel({ draft, dirty, busy, catalog, blockers = [], onPub
     <section className="release__section" aria-label="发布">
       <h2>发布</h2>
       {!pending ? <p className="muted">没有待发布的修改。</p> : <>
+        {flows.length > 1 ? <p className="muted small">发布的是整个团队草稿，其中 {flows.length} 条流程一起上线。</p> : null}
         <ul className="release__checks">
           <li>{dirty ? <CircleDashed size={15} className="muted" aria-hidden="true" /> : <CircleCheck size={15} className="icon--success" aria-hidden="true" />}
             <span><strong>保存草稿</strong><span className="muted small">{dirty ? '有未保存的修改，先在页面右上角保存。' : '修改已保存。'}</span></span></li>
