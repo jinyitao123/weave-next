@@ -61,8 +61,10 @@ type Executor struct {
 	ClaimRunSnapshotID string
 }
 
+const executorIdentityPrefix = "teamrun-executor:"
+
 func executorIdentity(taskID, workerID string) string {
-	return "teamrun-executor:" + taskID + ":" + workerID
+	return executorIdentityPrefix + taskID + ":" + workerID
 }
 
 func executorClaimKey(taskID string) string {

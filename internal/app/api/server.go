@@ -857,6 +857,13 @@ func (s *Server) ConfigureTeamRunWorkers() error {
 			Tasks:        s.Tasks,
 			BatchSize:    temporaryTeamRunWorkerBatchSize,
 		},
+		StoppedWorkflows: &teamrun.StoppedWorkflowSweeper{
+			Tasks:        s.Tasks,
+			Transactions: pool,
+			Runs:         runStore,
+			Executor:     executor,
+			BatchSize:    temporaryTeamRunWorkerBatchSize,
+		},
 		PollInterval: temporaryTeamRunWorkerPollInterval,
 	}
 	s.teamRunCancel = &teamrun.CancelService{

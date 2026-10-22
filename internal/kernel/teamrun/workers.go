@@ -387,7 +387,9 @@ type Workers struct {
 	CancelGrace  *CancelGraceSweeper
 	TimerWake    *TimerWakeSweeper
 	HumanTimeout *HumanTimeoutSweeper
-	PollInterval time.Duration
+	// StoppedWorkflows recovers runs whose source execution provably stopped.
+	StoppedWorkflows *StoppedWorkflowSweeper
+	PollInterval     time.Duration
 	// ExecutorConcurrency bounds independent workflow/fanout claims. A single
 	// executor loop makes a Parallel node observationally serial even when its
 	// branches target different runtimes.
@@ -426,6 +428,9 @@ func (workers *Workers) Start() {
 	if workers.HumanTimeout != nil {
 		workerCount++
 	}
+	if workers.StoppedWorkflows != nil {
+		workerCount++
+	}
 	workers.wg.Add(workerCount)
 	for index := 0; index < executorCount; index++ {
 		go func(index int) {
@@ -449,6 +454,12 @@ func (workers *Workers) Start() {
 		go func() {
 			defer workers.wg.Done()
 			workers.humanTimeoutLoop(ctx)
+		}()
+	}
+	if workers.StoppedWorkflows != nil {
+		go func() {
+			defer workers.wg.Done()
+			workers.stoppedWorkflowLoop(ctx)
 		}()
 	}
 	slog.Info("team run background workers started")
@@ -511,6 +522,17 @@ func (workers *Workers) humanTimeoutLoop(ctx context.Context) {
 	for {
 		if _, err := workers.HumanTimeout.Sweep(ctx); err != nil && ctx.Err() == nil {
 			slog.Error("team run human timeout iteration failed", "error", err)
+		}
+		if !workers.wait(ctx) {
+			return
+		}
+	}
+}
+
+func (workers *Workers) stoppedWorkflowLoop(ctx context.Context) {
+	for {
+		if _, err := workers.StoppedWorkflows.Sweep(ctx); err != nil && ctx.Err() == nil {
+			slog.Error("team run stopped workflow iteration failed", "error", err)
 		}
 		if !workers.wait(ctx) {
 			return
