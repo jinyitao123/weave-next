@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { allowRequiredHandoffKinds, capabilityName, capabilityNote, defaultCapabilityBinding, describeCapability, memberProblems, readTeamPackage, teamPackageFileName, nodeReadinessIssues, parseOutputSchema, requiredHandoffKinds, serverIssues, trialActions, workflowCapabilityIds, type BusinessCatalog, type DevelopmentDocument, type DevelopmentMember, type DevelopmentWorkflow } from './teams'
+import { allowRequiredHandoffKinds, capabilityName, capabilityNote, defaultCapabilityBinding, describeCapability, memberProblems, readTeamPackage, teamPackageFileName, nodeReadinessIssues, parseOutputSchema, requiredHandoffKinds, serverIssues, trialActions, trialStatus, workflowCapabilityIds, type BusinessCatalog, type DevelopmentDocument, type DevelopmentMember, type DevelopmentWorkflow } from './teams'
 
 const member = (name: string, engine: string, runtime = '', enabled = true): DevelopmentMember => ({
   id: name,
@@ -164,5 +164,19 @@ describe('team package files', () => {
   it('names the file after the team without characters a file system refuses', () => {
     expect(teamPackageFileName('合同/复核:团队')).toBe('合同_复核_团队.weave-team.json')
     expect(teamPackageFileName('  ')).toBe('团队.weave-team.json')
+  })
+})
+
+describe('trialStatus', () => {
+  const trial = (status: string, rejected_code?: string) => ({ request_id: 'r', revision: 1, workflow_id: 'w', run_id: '', status, created_at: '', rejected_code })
+  const runLabel = (status: string) => `run:${status}`
+  it('ends a refused trial with its reason instead of leaving it submitting', () => {
+    expect(trialStatus(trial('rejected', 'workflow_version_conflict'), runLabel)).toEqual({ label: '未被接受', tone: 'danger', note: '草稿或它依赖的模型配置已变化，请重新准备后发起新的试跑' })
+    expect(trialStatus(trial('rejected', 'unknown_code'), runLabel).note).toBe('这次试跑没有被接受，请重新准备后再试')
+  })
+  it('names a trial without a receipt and defers to the run once one exists', () => {
+    expect(trialStatus(trial('submitting'), runLabel)).toEqual({ label: '提交中', tone: 'neutral' })
+    expect(trialStatus(trial('succeeded'), runLabel)).toEqual({ label: 'run:succeeded', tone: 'success' })
+    expect(trialStatus(trial('failed'), runLabel).tone).toBe('danger')
   })
 })

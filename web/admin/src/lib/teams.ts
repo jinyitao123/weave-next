@@ -80,7 +80,25 @@ export interface DevelopmentDocument {
   workflows: DevelopmentWorkflow[]
 }
 
-export interface DevelopmentTrial { request_id: string; revision: number; workflow_id: string; run_id: string; status: string; created_at: string; actor?: string; mine?: boolean }
+export interface DevelopmentTrial { request_id: string; revision: number; workflow_id: string; run_id: string; status: string; created_at: string; actor?: string; mine?: boolean; rejected_code?: string }
+
+const trialRejections: Record<string, string> = {
+  workflow_version_conflict: '草稿或它依赖的模型配置已变化，请重新准备后发起新的试跑',
+  workflow_not_found: '要试跑的流程已不存在',
+  workflow_publication_invalid: '试跑请求没有通过校验，请重新准备后再试',
+  business_completion_check_required: '流程缺少业务完成检查，补上后再试跑',
+  workflow_publication_owner_conflict: '这次试跑由其他人发起，不能代为提交',
+}
+
+// trialStatus states a trial's standing before a run exists: refused trials
+// never ran and say why; one still submitting has no receipt yet.
+export function trialStatus(trial: DevelopmentTrial, runLabel: (status: string) => string): { label: string; tone: 'neutral' | 'success' | 'danger'; note?: string } {
+  if (trial.status === 'rejected') {
+    return { label: '未被接受', tone: 'danger', note: trialRejections[trial.rejected_code ?? ''] ?? '这次试跑没有被接受，请重新准备后再试' }
+  }
+  if (trial.status === 'submitting') return { label: '提交中', tone: 'neutral' }
+  return { label: runLabel(trial.status), tone: trial.status === 'succeeded' ? 'success' : trial.status === 'failed' ? 'danger' : 'neutral' }
+}
 
 export interface WorkflowReadiness { workflow_id: string; required_capability_ids: string[]; covered_capability_ids: string[]; missing_capability_ids: string[]; passed: boolean }
 

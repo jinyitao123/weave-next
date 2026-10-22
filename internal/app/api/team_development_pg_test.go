@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http/httptest"
 	"strings"
@@ -141,6 +142,53 @@ func TestTeamDevelopmentStagingAndAtomicPublicationRealPG(t *testing.T) {
 	if _, err = call("POST", scopeChanged, server.handleTrialTeamDevelopment); err == nil {
 		t.Fatal("same request accepted a changed simulation scope")
 	}
+	// A definite admission refusal ends a trial visibly; an uncertain outcome
+	// stays submitting, and admitting the same request later clears a refusal.
+	listedTrial := func(requestID string) developmentTrialView {
+		t.Helper()
+		rr, err := call("GET", nil, server.handleGetTeamDevelopment)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var view struct {
+			Trials []developmentTrialView `json:"trials"`
+		}
+		if err := json.Unmarshal(rr.Body.Bytes(), &view); err != nil {
+			t.Fatal(err)
+		}
+		for _, listed := range view.Trials {
+			if listed.RequestID == requestID {
+				return listed
+			}
+		}
+		t.Fatalf("trial %s is not listed", requestID)
+		return developmentTrialView{}
+	}
+	kernel := server.KernelPublication
+	uncertain := scopeChanged
+	uncertain.BusinessActions = trial.BusinessActions
+	uncertain.RequestID = uuid.NewString()
+	server.KernelPublication = refusingAdmission{Service: kernel, err: errors.New("connection lost after kernel committed")}
+	_, _ = call("POST", uncertain, server.handleTrialTeamDevelopment)
+	if listed := listedTrial(uncertain.RequestID); listed.Status != "submitting" || listed.RejectedCode != "" {
+		t.Fatalf("uncertain admission recorded as %+v", listed)
+	}
+	refused := uncertain
+	refused.RequestID = uuid.NewString()
+	server.KernelPublication = refusingAdmission{Service: kernel, err: fmt.Errorf("admit candidate: %w", workflow.ErrVersionConflict)}
+	if rr, _ := call("POST", refused, server.handleTrialTeamDevelopment); rr.Code != 409 {
+		t.Fatalf("refused trial returned %d: %s", rr.Code, rr.Body.String())
+	}
+	if listed := listedTrial(refused.RequestID); listed.Status != "rejected" || listed.RejectedCode != "workflow_version_conflict" || listed.RunID != "" {
+		t.Fatalf("refused trial listed as %+v", listed)
+	}
+	server.KernelPublication = kernel
+	if rr, err := call("POST", refused, server.handleTrialTeamDevelopment); err != nil || rr.Code != 201 {
+		t.Fatalf("retrying the refused request after the cause cleared: %v %s", err, rr.Body.String())
+	}
+	if listed := listedTrial(refused.RequestID); listed.Status == "rejected" || listed.RejectedCode != "" || listed.RunID == "" {
+		t.Fatalf("admitted retry still listed as %+v", listed)
+	}
 	if _, err = call("POST", map[string]int{"revision": 2}, server.handlePublishTeamDevelopment); err == nil {
 		t.Fatal("published without successful trial")
 	}
@@ -180,4 +228,14 @@ func TestTeamDevelopmentStagingAndAtomicPublicationRealPG(t *testing.T) {
 	if _, err = server.prepareDevelopment(ctx, "dev-workspace", created.Team.ID, "developer", 3); err != nil {
 		t.Fatal("edit after publication", err)
 	}
+}
+
+// refusingAdmission fails every candidate admission with err.
+type refusingAdmission struct {
+	publication.Service
+	err error
+}
+
+func (r refusingAdmission) AdmitCandidate(context.Context, publication.CandidateRunRequest) (publication.AdmissionReceipt, error) {
+	return publication.AdmissionReceipt{}, r.err
 }

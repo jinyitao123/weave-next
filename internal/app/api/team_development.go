@@ -71,6 +71,9 @@ type developmentTrialView struct {
 	// Actor is the display name of whoever started the trial.
 	Actor string `json:"actor"`
 	Mine  bool   `json:"mine"`
+	// RejectedCode names why admission refused a trial whose status is
+	// rejected; such a trial never ran.
+	RejectedCode string `json:"rejected_code,omitempty"`
 }
 
 func developmentError(message string) error { return echo.NewHTTPError(http.StatusConflict, message) }
@@ -193,8 +196,9 @@ func (s *Server) handleGetTeamDevelopment(c echo.Context) error {
 		return err
 	}
 	// Every developer of the workspace sees the team's trials, not only their own.
-	rows, err := tx.Query(ctx, `SELECT t.request_id::text,t.revision,t.workflow_id,COALESCE(t.receipt->>'run_id',''),COALESCE(r.status,'submitting'),t.created_at,
-		COALESCE(NULLIF(u.display_name,''),u.username,''),t.actor_id=$3
+	rows, err := tx.Query(ctx, `SELECT t.request_id::text,t.revision,t.workflow_id,COALESCE(t.receipt->>'run_id',''),
+		CASE WHEN t.rejected_code IS NOT NULL THEN 'rejected' ELSE COALESCE(r.status,'submitting') END,t.created_at,
+		COALESCE(NULLIF(u.display_name,''),u.username,''),t.actor_id=$3,COALESCE(t.rejected_code,'')
 		FROM weave_team_development_trials t
 		LEFT JOIN weave_team_runs r ON r.workspace_id=t.workspace_id AND r.run_id=t.receipt->>'run_id'
 		LEFT JOIN weave_users u ON u.id=t.actor_id
@@ -205,7 +209,7 @@ func (s *Server) handleGetTeamDevelopment(c echo.Context) error {
 	defer rows.Close()
 	for rows.Next() {
 		var v developmentTrialView
-		if err = rows.Scan(&v.RequestID, &v.Revision, &v.WorkflowID, &v.RunID, &v.Status, &v.CreatedAt, &v.Actor, &v.Mine); err != nil {
+		if err = rows.Scan(&v.RequestID, &v.Revision, &v.WorkflowID, &v.RunID, &v.Status, &v.CreatedAt, &v.Actor, &v.Mine, &v.RejectedCode); err != nil {
 			return err
 		}
 		d.Trials = append(d.Trials, v)

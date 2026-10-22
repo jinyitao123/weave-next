@@ -5,7 +5,7 @@ import { errorMessage } from '../../lib/api'
 import { relativeTime } from '../../lib/format'
 import { createUUID } from '../../lib/ids'
 import { executionLabel } from '../../lib/tasks'
-import { capabilityName, startTrial, trialActions, workflowCapabilityIds, type BusinessCatalog, type DevelopmentDraft } from '../../lib/teams'
+import { capabilityName, startTrial, trialActions, trialStatus, workflowCapabilityIds, type BusinessCatalog, type DevelopmentDraft } from '../../lib/teams'
 import { CatalogRefresh } from './CatalogRefresh'
 import './team.css'
 
@@ -82,13 +82,17 @@ export function TrialPanel({ teamId, draft, dirty, catalog, navigate, onStarted,
 
     <section className="release__section" aria-label="试跑记录">
       <h2>试跑记录</h2>
-      {trials.length ? <div className="task-list">{trials.map((trial) => <button key={trial.request_id} type="button" className="task-row" disabled={!trial.run_id} onClick={() => trial.run_id && navigate(`/tasks/${encodeURIComponent(trial.run_id)}`)}>
-        <span className="task-row__main">
-          <strong>{trial.revision === draft.revision ? '当前草稿' : '较早的草稿'} · {flowName(draft, trial.workflow_id)}</strong>
-          <span className="muted small">{trial.actor || '开发者'} · {relativeTime(trial.created_at)}</span>
-        </span>
-        <Badge tone={trial.status === 'succeeded' ? 'success' : trial.status === 'failed' ? 'danger' : 'neutral'}>{executionLabel(trial.status)}</Badge>
-      </button>)}</div> : <p className="muted">还没有试跑记录。</p>}
+      {trials.length ? <div className="task-list">{trials.map((trial) => {
+        const standing = trialStatus(trial, (status) => executionLabel(status))
+        return <button key={trial.request_id} type="button" className="task-row" disabled={!trial.run_id} onClick={() => trial.run_id && navigate(`/tasks/${encodeURIComponent(trial.run_id)}`)}>
+          <span className="task-row__main">
+            <strong>{trial.revision === draft.revision ? '当前草稿' : '较早的草稿'} · {flowName(draft, trial.workflow_id)}</strong>
+            <span className="muted small">{trial.actor || '开发者'} · {relativeTime(trial.created_at)}</span>
+            {standing.note ? <span className="muted small">{standing.note}</span> : null}
+          </span>
+          <Badge tone={standing.tone}>{standing.label}</Badge>
+        </button>
+      })}</div> : <p className="muted">还没有试跑记录。</p>}
     </section>
   </div>
 }

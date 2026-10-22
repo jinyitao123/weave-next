@@ -9,10 +9,34 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/kernel/businessaction"
 	"github.com/jinyitao123/weave/internal/kernel/publication"
+	"github.com/jinyitao123/weave/internal/kernel/workflow"
+	"github.com/jinyitao123/weave/internal/kernel/workflow/machine"
 	"github.com/labstack/echo/v4"
 )
+
+// trialRejectionCode names a definite admission refusal: the kernel did not
+// admit the trial request and will refuse the same request again, so the
+// trial is over. Any other error, a lost connection after the kernel may
+// have committed included, leaves the outcome uncertain and returns "".
+func trialRejectionCode(err error) string {
+	switch {
+	case errors.Is(err, workflow.ErrNotFound):
+		return "workflow_not_found"
+	case errors.Is(err, workflow.ErrArchived), errors.Is(err, workflow.ErrVersionConflict),
+		errors.Is(err, publication.ErrRequestConflict):
+		return "workflow_version_conflict"
+	case errors.Is(err, publication.ErrInvalidRequest):
+		return "workflow_publication_invalid"
+	case errors.Is(err, machine.ErrBusinessReceiptCheckRequired):
+		return "business_completion_check_required"
+	case errors.Is(err, execution.ErrSubjectMismatch):
+		return "workflow_publication_owner_conflict"
+	}
+	return ""
+}
 
 type developmentTrialRequest struct {
 	Revision        int64                              `json:"revision"`
@@ -86,12 +110,21 @@ func (s *Server) handleTrialTeamDevelopment(c echo.Context) error {
 	}
 	receipt, err := s.KernelPublication.AdmitCandidate(ctx, request)
 	if err != nil {
+		// A definite refusal ends the trial visibly. An uncertain outcome is
+		// left as submitting: retrying the same request returns the kernel's
+		// receipt if it did admit it.
+		if code := trialRejectionCode(err); code != "" {
+			if _, recordErr := s.Pool.Exec(ctx, `UPDATE weave_team_development_trials SET rejected_code=$3,rejected_at=now()
+				WHERE workspace_id=$1 AND request_id=$2 AND receipt IS NULL AND rejected_code IS NULL`, ws, req.RequestID, code); recordErr != nil {
+				return recordErr
+			}
+		}
 		return mapWorkflowPublishError(c, err)
 	}
 	if err = receipt.Verify(ctx, request); err != nil {
 		return err
 	}
-	if _, err = s.Pool.Exec(ctx, `UPDATE weave_team_development_trials SET receipt=$3 WHERE workspace_id=$1 AND request_id=$2`, ws, req.RequestID, encodeDevelopment(receipt)); err != nil {
+	if _, err = s.Pool.Exec(ctx, `UPDATE weave_team_development_trials SET receipt=$3,rejected_code=NULL,rejected_at=NULL WHERE workspace_id=$1 AND request_id=$2`, ws, req.RequestID, encodeDevelopment(receipt)); err != nil {
 		return err
 	}
 	return c.JSON(http.StatusCreated, map[string]any{"request_id": req.RequestID, "run_id": receipt.RunID, "revision": req.Revision, "workflow_id": req.WorkflowID, "input_sha256": hex.EncodeToString(hash[:])})
@@ -161,7 +194,8 @@ func (s *Server) handlePublishTeamDevelopment(c echo.Context) error {
 func (s *Server) handleDevelopmentTrialInput(c echo.Context) error {
 	ctx, workspaceID := c.Request().Context(), getTenant(c)
 	var raw, receiptRaw []byte
-	err := s.Pool.QueryRow(ctx, `SELECT request,COALESCE(receipt,'{}'::jsonb) FROM weave_team_development_trials WHERE workspace_id=$1 AND team_id=$2 AND request_id=$3`, workspaceID, c.Param("id"), c.Param("request")).Scan(&raw, &receiptRaw)
+	var rejectedCode string
+	err := s.Pool.QueryRow(ctx, `SELECT request,COALESCE(receipt,'{}'::jsonb),COALESCE(rejected_code,'') FROM weave_team_development_trials WHERE workspace_id=$1 AND team_id=$2 AND request_id=$3`, workspaceID, c.Param("id"), c.Param("request")).Scan(&raw, &receiptRaw, &rejectedCode)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return echo.NewHTTPError(404, "试跑材料不存在")
 	}
@@ -175,10 +209,17 @@ func (s *Server) handleDevelopmentTrialInput(c echo.Context) error {
 	var receipt publication.AdmissionReceipt
 	_ = json.Unmarshal(receiptRaw, &receipt)
 	status, output := "submitting", ""
+	if rejectedCode != "" {
+		status = "rejected"
+	}
 	if receipt.RunID != "" {
 		if err = s.Pool.QueryRow(ctx, `SELECT r.status,COALESCE((SELECT q.result->>'output' FROM weave_task_queue q WHERE q.workspace_id=r.workspace_id AND q.run_id=r.run_id AND q.status='completed' AND q.result ? 'output' ORDER BY q.completed_at DESC NULLS LAST,q.id DESC LIMIT 1),'') FROM weave_team_runs r WHERE r.workspace_id=$1 AND r.run_id=$2`, workspaceID, receipt.RunID).Scan(&status, &output); err != nil && !errors.Is(err, pgx.ErrNoRows) {
 			return err
 		}
 	}
-	return c.JSON(200, map[string]any{"input": req.Input, "input_version": req.InputVersion, "workflow_version": req.Candidate.WorkflowVersion, "status": status, "output": output})
+	body := map[string]any{"input": req.Input, "input_version": req.InputVersion, "workflow_version": req.Candidate.WorkflowVersion, "status": status, "output": output}
+	if rejectedCode != "" {
+		body["rejected_code"] = rejectedCode
+	}
+	return c.JSON(200, body)
 }
