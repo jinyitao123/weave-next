@@ -43,6 +43,8 @@ make compose-check
 
 `WEAVE_LOCAL_RUNTIME_ENABLED` 默认是 `false`，主服务 Compose 也保持关闭。运维人员明确选择同机 Host 时，仍可在自有部署中设为 `true`，并自行提供所需 CLI。此开关不会改写已发布工作流冻结的节点绑定，也不会替代缺失的外部节点。
 
+`WEAVE_TEAMRUN_EXECUTOR_CONCURRENCY` 设定本进程同时持有的工作流认领数，默认 4，可取 1–4096，无效值保留默认并记警告日志。每个认领各自轮询与续租，调大时须同步放大数据库连接池（在 `DATABASE_URL` 加 `pool_max_conns`，并确认 PostgreSQL 的 `max_connections` 容得下所有连接池）与工作区的 `max_active_invocations` 配额。
+
 [架构入口](docs/架构/README.md)导航 Weave 当前分层、契约和迁移证据。带日期的验收记录保留当时观察到的结论与限制，不能证明当前工作树或部署仍然通过。
 
 ## 管理端部署连接

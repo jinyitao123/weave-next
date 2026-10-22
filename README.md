@@ -43,6 +43,8 @@ Install the required CLI engines on execution nodes, register each node through 
 
 `WEAVE_LOCAL_RUNTIME_ENABLED` defaults to `false`, and the server Compose service keeps it disabled. Operators who deliberately assemble a co-located Host can still opt in with `true` in their own deployment, which must supply its CLI engines. This option does not change a published workflow's frozen node binding or replace a missing external node.
 
+`WEAVE_TEAMRUN_EXECUTOR_CONCURRENCY` sets how many workflow claims this process holds at once. It defaults to 4 and accepts 1–4096; an invalid value keeps the default and logs a warning. Every claim polls and renews its own lease, so raising it also requires a larger database pool (add `pool_max_conns` to `DATABASE_URL` and confirm PostgreSQL's `max_connections` covers every pool) and a matching workspace `max_active_invocations` quota.
+
 The [architecture index](docs/架构/README.md) is the current navigation for Weave's layering, contracts, and migration evidence. Dated acceptance records preserve the conclusions and limitations observed at the time; they do not certify the current working tree or deployment.
 
 ## License

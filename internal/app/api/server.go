@@ -668,6 +668,29 @@ const (
 	temporaryTeamRunTaskHeartbeat = 5 * time.Second
 )
 
+const (
+	teamRunExecutorConcurrencyEnv     = "WEAVE_TEAMRUN_EXECUTOR_CONCURRENCY"
+	defaultTeamRunExecutorConcurrency = 4
+	maxTeamRunExecutorConcurrency     = 4096
+)
+
+// teamRunExecutorConcurrency bounds this process's durable workflow claims.
+// Each claim polls and renews its own lease, so the bound also sizes the
+// queue's SQL load; an unusable value keeps the default and says so.
+func teamRunExecutorConcurrency() int {
+	raw := strings.TrimSpace(os.Getenv(teamRunExecutorConcurrencyEnv))
+	if raw == "" {
+		return defaultTeamRunExecutorConcurrency
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil || value < 1 || value > maxTeamRunExecutorConcurrency {
+		slog.Warn("ignoring invalid team run executor concurrency", "env", teamRunExecutorConcurrencyEnv,
+			"value", raw, "allowed", fmt.Sprintf("1..%d", maxTeamRunExecutorConcurrency), "using", defaultTeamRunExecutorConcurrency)
+		return defaultTeamRunExecutorConcurrency
+	}
+	return value
+}
+
 func teamRunWorkersDisabled() bool {
 	value := strings.TrimSpace(os.Getenv(teamRunWorkersDisableEnv))
 	if value == "" {
@@ -808,7 +831,8 @@ func (s *Server) ConfigureTeamRunWorkers() {
 		Executor: executor,
 		// Four durable claims are enough to make ordinary multi-runtime fanout
 		// genuinely concurrent without introducing an unbounded worker pool.
-		ExecutorConcurrency: 4,
+		// Deployments with many concurrent pure-model members raise it explicitly.
+		ExecutorConcurrency: teamRunExecutorConcurrency(),
 		CancelGrace: &teamrun.CancelGraceSweeper{
 			Tasks:        s.Tasks,
 			Transactions: pool,
