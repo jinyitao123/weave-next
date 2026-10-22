@@ -48,13 +48,16 @@ const legacyWorkflowLaneActiveSQL = `SELECT EXISTS(SELECT 1 FROM weave_capabilit
 // TestLiveAdmissionQueriesMatchLegacyRealPG checks the live-owner quota count
 // and lane check against the legacy queries over random owner states. The
 // tables carry only the queried columns and the production keys; every
-// workflow invocation has its admission request, as the foreign key requires.
+// workflow invocation has its admission request, as the foreign key requires,
+// and only capability tasks carry an invocation, as the task identity check
+// requires.
 func TestLiveAdmissionQueriesMatchLegacyRealPG(t *testing.T) {
 	pool := testutil.PostgresPool(t)
 	ctx := t.Context()
 	if _, err := pool.Exec(ctx, `
 	 CREATE TABLE weave_task_queue(id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, status TEXT NOT NULL,
-	  worker_id TEXT, capability_invocation_id TEXT, UNIQUE(workspace_id,id));
+	  worker_id TEXT, capability_invocation_id TEXT, identity_kind TEXT NOT NULL DEFAULT 'team_workflow',
+	  UNIQUE(workspace_id,id), CHECK((capability_invocation_id IS NOT NULL) = (identity_kind='capability')));
 	 CREATE TABLE weave_team_runs(workspace_id TEXT, run_id TEXT, status TEXT NOT NULL, PRIMARY KEY(workspace_id,run_id));
 	 CREATE TABLE weave_capability_invocations(workspace_id TEXT, application_id TEXT, request_id TEXT,
 	  invocation_id TEXT NOT NULL, task_id TEXT, status TEXT NOT NULL,
@@ -145,7 +148,7 @@ func TestLiveAdmissionQueriesMatchLegacyRealPG(t *testing.T) {
 					if rng.Intn(5) == 0 {
 						owner = "another-invocation"
 					}
-					exec(`UPDATE weave_task_queue SET capability_invocation_id=$2 WHERE id=$1`, taskID, owner)
+					exec(`UPDATE weave_task_queue SET capability_invocation_id=$2,identity_kind='capability' WHERE id=$1`, taskID, owner)
 				}
 			}
 			for k := 0; k < rng.Intn(9); k++ {

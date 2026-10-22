@@ -67,14 +67,17 @@ const notKernelClosed = `NOT EXISTS (SELECT 1 FROM weave_kernel_publication_requ
 // activity remains taskqueue-owned; published workflow activity is projected
 // from its TeamRun/task association, excluding kernel-closed admissions. Each
 // part starts from live rows (partial indexes in migration 0200), so the
-// count does not grow with the workspace's history.
+// count does not grow with the workspace's history. Only capability tasks
+// carry a capability_invocation_id (weave_task_queue_identity_shape_check),
+// so the identity_kind filter changes no result; it lets the inline part read
+// live capability tasks alone instead of every live workflow task.
 func countActiveCapabilityInvocations(ctx context.Context, tx pgx.Tx, workspaceID, applicationID, requestID string) (int, error) {
 	var active int
 	err := tx.QueryRow(ctx, `SELECT
 	 (SELECT count(*) FROM weave_task_queue q
 	  JOIN weave_capability_invocations i ON i.workspace_id=q.workspace_id AND i.task_id=q.id
 	    AND i.invocation_id=q.capability_invocation_id
-	  WHERE q.workspace_id=$1
+	  WHERE q.workspace_id=$1 AND q.identity_kind='capability'
 	    AND (q.status IN ('queued','running','cancel_requested') OR (q.status='failed' AND q.worker_id IS NOT NULL))
 	    AND NOT (i.application_id=$2 AND i.request_id=$3))
 	 +
