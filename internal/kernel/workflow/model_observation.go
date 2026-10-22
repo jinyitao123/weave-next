@@ -46,6 +46,7 @@ const (
 	ModelCallErrorStreamTruncated    ModelCallErrorClass = llmrouter.CallFailureStreamTruncated
 	ModelCallErrorEmptyResponse      ModelCallErrorClass = llmrouter.CallFailureEmptyResponse
 	ModelCallErrorOutputLimit        ModelCallErrorClass = llmrouter.CallFailureOutputLimit
+	ModelCallErrorStageTimeout       ModelCallErrorClass = llmrouter.CallFailureStageTimeout
 )
 
 // ModelCallEvent contains only safe correlation and lifecycle facts. It never
@@ -60,6 +61,9 @@ type ModelCallEvent struct {
 	// intermediate phase that arrived, whether or not it was also emitted alone.
 	Phases        map[ModelCallPhase]int64 `json:"phases_ms,omitempty"`
 	GatewayWaitMS int64                    `json:"gateway_wait_ms,omitempty"`
+	// Purpose is why the call was made, as the engine marked it: generation,
+	// wrap_up or compaction; empty when the caller marked nothing.
+	Purpose string `json:"purpose,omitempty"`
 	// Failure facts, set only on a failed or cancelled event: whether model
 	// output had started streaming, the provider's HTTP status and a known
 	// finish_reason when typed evidence carries them, and whether repeating
@@ -68,6 +72,9 @@ type ModelCallEvent struct {
 	HTTPStatus    int    `json:"http_status,omitempty"`
 	FinishReason  string `json:"finish_reason,omitempty"`
 	Retryable     *bool  `json:"retryable,omitempty"`
+	// TimeoutStage names the wait budget stage that ended a stage_timeout
+	// call: first_chunk or stream_idle.
+	TimeoutStage string `json:"timeout_stage,omitempty"`
 }
 
 // ModelCallObserver should record the bounded event promptly. Panics are
@@ -294,12 +301,14 @@ type runtimeModelCall struct {
 	slowTimer     *time.Timer
 	gatewayWaitMS int64
 	failure       llmrouter.CallFailure
+	purpose       string
 }
 
-func newModelCall(_ context.Context, model string, observer ModelCallObserver) *runtimeModelCall {
+func newModelCall(ctx context.Context, model string, observer ModelCallObserver) *runtimeModelCall {
 	return &runtimeModelCall{
 		callID: uuid.NewString(), model: model, started: time.Now(), observer: observer,
 		emitted: make(map[ModelCallPhase]struct{}, 6),
+		purpose: string(contract.CallPurposeOf(ctx)),
 	}
 }
 
@@ -383,13 +392,14 @@ func (call *runtimeModelCall) emit(ctx context.Context, phase ModelCallPhase, er
 		}
 	}
 	event := ModelCallEvent{
-		GatewayWaitMS: call.gatewayWaitMS,
-		CallID:        call.callID, Model: call.model, Phase: phase,
+		GatewayWaitMS: call.gatewayWaitMS, Purpose: call.purpose,
+		CallID: call.callID, Model: call.model, Phase: phase,
 		ElapsedMS: time.Since(call.started).Milliseconds(), ErrorClass: errorClass,
 	}
 	if phase == ModelCallFailed || phase == ModelCallCancelled {
 		_, event.StreamStarted = call.emitted[ModelCallFirstChunk]
 		event.HTTPStatus, event.FinishReason, event.Retryable = call.failure.HTTPStatus, call.failure.FinishReason, call.failure.Retryable
+		event.TimeoutStage = call.failure.Stage
 	}
 	if call.options.CompactPhases {
 		if phase == ModelCallStarted {

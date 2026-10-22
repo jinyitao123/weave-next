@@ -373,8 +373,12 @@ func mapStandardFrozenToLegacy(
 		ExecutionLLMWrapper: opts.ExecutionLLMWrapper,
 	}
 	if profile := bundle.Agent.RequestProfile; profile != nil {
-		record.RequestProfile = &frozen.FrozenRequestProfile{ReasoningEffort: profile.ReasoningEffort}
+		copied := *profile
+		record.RequestProfile = &copied
 		compileOpts.Effort = contract.EffortLevel(profile.ReasoningEffort)
+		if profile.FirstChunkTimeoutMS > 0 || profile.IdleTimeoutMS > 0 {
+			compileOpts.WaitBudget = &contract.WaitBudget{FirstChunkMS: profile.FirstChunkTimeoutMS, IdleMS: profile.IdleTimeoutMS}
+		}
 	}
 	if record.MemoryConfig != nil &&
 		record.MemoryConfig.Enabled &&

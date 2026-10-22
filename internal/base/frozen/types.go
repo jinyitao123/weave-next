@@ -84,7 +84,15 @@ type FrozenCompaction struct {
 type FrozenRequestProfile struct {
 	// ReasoningEffort is sent as reasoning_effort, one of ReasoningEfforts.
 	ReasoningEffort string `json:"reasoning_effort,omitempty"`
+	// FirstChunkTimeoutMS and IdleTimeoutMS bound a streamed call's wait for
+	// its first model output and between outputs; zero waits as long as the
+	// task allows.
+	FirstChunkTimeoutMS int64 `json:"first_chunk_timeout_ms,omitempty"`
+	IdleTimeoutMS       int64 `json:"idle_timeout_ms,omitempty"`
 }
+
+// MaxWaitTimeoutMS is the longest stage wait a member may set: one hour.
+const MaxWaitTimeoutMS = 3600000
 
 // ReasoningEfforts are the reasoning_effort values a member may request.
 // Whether a provider honours a value is the provider's to report.
@@ -95,6 +103,11 @@ var ReasoningEfforts = []string{"none", "minimal", "low", "medium", "high", "xhi
 func ValidateRequestProfile(profile FrozenRequestProfile) error {
 	if profile.ReasoningEffort != "" && !slices.Contains(ReasoningEfforts, profile.ReasoningEffort) {
 		return fmt.Errorf("reasoning_effort %q is not one of %v", profile.ReasoningEffort, ReasoningEfforts)
+	}
+	for name, value := range map[string]int64{"first_chunk_timeout_ms": profile.FirstChunkTimeoutMS, "idle_timeout_ms": profile.IdleTimeoutMS} {
+		if value < 0 || value > MaxWaitTimeoutMS {
+			return fmt.Errorf("%s must be between 0 and %d", name, MaxWaitTimeoutMS)
+		}
 	}
 	return nil
 }

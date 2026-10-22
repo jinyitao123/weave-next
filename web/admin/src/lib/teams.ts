@@ -42,6 +42,8 @@ export interface MemberConfiguration {
   max_tokens?: number
   max_output_tokens?: number
   reasoning_effort?: string
+  first_chunk_timeout_ms?: number
+  idle_timeout_ms?: number
   step_budget?: number
   max_cost_usd?: number
   max_tool_repeats?: number

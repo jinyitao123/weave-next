@@ -146,3 +146,51 @@ func awaitCancellation(w http.ResponseWriter, r *http.Request) {
 	w.(http.Flusher).Flush()
 	<-r.Context().Done()
 }
+
+func TestModelCallEndedByWaitBudgetIsTypedWithItsStage(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(awaitCancellation))
+	defer server.Close()
+	provider := llmrouter.NewProviderClient(llmrouter.ProviderConfig{
+		ID: "recorded", BaseURL: server.URL, APIKey: "test-only-key", Models: []string{"fixture-model"}, AttemptTimeoutSeconds: 10,
+	})
+	recorder := newModelObservationTestRecorder()
+	model := buildObservedModelLLM(t, &runtimeStreamingLLM{inner: provider}, recorder.observe)
+	_, err := model.Chat(context.Background(), contract.ChatRequest{Model: "fixture-model", WaitBudget: &contract.WaitBudget{FirstChunkMS: 100},
+		Messages: []contract.Message{{Role: "user", Content: "recorded"}}})
+	if err == nil {
+		t.Fatal("a late first chunk did not end the call")
+	}
+	event := recorder.wait(t, ModelCallFailed)
+	if event.ErrorClass != ModelCallErrorStageTimeout || event.TimeoutStage != "first_chunk" || event.Retryable != nil {
+		t.Fatalf("wait budget event = %+v", event)
+	}
+}
+
+func TestModelCallEventsCarryTheEnginePurpose(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = fmt.Fprint(w, "data: {\"id\":\"x\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n")
+	}))
+	defer server.Close()
+	for _, purpose := range []contract.CallPurpose{contract.CallPurposeCompaction, ""} {
+		provider := llmrouter.NewProviderClient(llmrouter.ProviderConfig{
+			ID: "recorded", BaseURL: server.URL, APIKey: "test-only-key", Models: []string{"fixture-model"}, AttemptTimeoutSeconds: 10,
+		})
+		recorder := newModelObservationTestRecorder()
+		model := buildObservedModelLLM(t, &runtimeStreamingLLM{inner: provider}, recorder.observe)
+		ctx := context.Background()
+		if purpose != "" {
+			ctx = contract.WithCallPurpose(ctx, purpose)
+		}
+		if _, err := model.Chat(ctx, contract.ChatRequest{Model: "fixture-model", Messages: []contract.Message{{Role: "user", Content: "recorded"}}}); err != nil {
+			t.Fatal(err)
+		}
+		recorder.wait(t, ModelCallCompleted)
+		for _, event := range recorder.snapshot() {
+			if event.Purpose != string(purpose) {
+				t.Fatalf("purpose %q: event %s carries %q", purpose, event.Phase, event.Purpose)
+			}
+		}
+	}
+}

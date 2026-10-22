@@ -41,10 +41,14 @@ type teamMemberAgentConfiguration struct {
 	MaxOutputTokens            int                                `json:"max_output_tokens"`
 	// ReasoningEffort is sent as reasoning_effort on every model request of
 	// the member; empty leaves the provider default.
-	ReasoningEffort string          `json:"reasoning_effort,omitempty"`
-	StepBudget      int64           `json:"step_budget"`
-	MaxCostUSD      float64         `json:"max_cost_usd"`
-	OutputSchema    json.RawMessage `json:"output_schema,omitempty"`
+	ReasoningEffort string `json:"reasoning_effort,omitempty"`
+	// FirstChunkTimeoutMS and IdleTimeoutMS bound how long each model call
+	// waits for its first output and between outputs; zero is unbounded.
+	FirstChunkTimeoutMS int64           `json:"first_chunk_timeout_ms,omitempty"`
+	IdleTimeoutMS       int64           `json:"idle_timeout_ms,omitempty"`
+	StepBudget          int64           `json:"step_budget"`
+	MaxCostUSD          float64         `json:"max_cost_usd"`
+	OutputSchema        json.RawMessage `json:"output_schema,omitempty"`
 }
 
 type teamMemberInlineSkill struct {
@@ -160,6 +164,8 @@ func (s *Server) seedTeamMemberConfigDraft(c echo.Context) (*teamMemberConfigDra
 	}
 	if record.RequestProfile != nil {
 		configuration.ReasoningEffort = record.RequestProfile.ReasoningEffort
+		configuration.FirstChunkTimeoutMS = record.RequestProfile.FirstChunkTimeoutMS
+		configuration.IdleTimeoutMS = record.RequestProfile.IdleTimeoutMS
 	}
 	relationship := teamMemberRelationshipDraft{Duty: duty, WhenToUse: whenToUse, ContextInstruction: contextInstruction, AllowedKinds: allowedKinds, DefaultKind: defaultKind, ResultRequirement: resultRequirement, Enabled: enabled}
 	return &teamMemberConfigDraftResponse{
@@ -480,12 +486,16 @@ func configureDevelopmentMember(record *registry.AgentRecord, configuration team
 	record.MaxTokens, record.MaxOutputTokens, record.StepBudget, record.MaxCostUSD = configuration.MaxTokens, configuration.MaxOutputTokens, configuration.StepBudget, configuration.MaxCostUSD
 	// A request profile reaches built-in Loom model calls only; a CLI member's
 	// runtime chooses its own, so a setting there would silently do nothing.
-	profile := frozen.FrozenRequestProfile{ReasoningEffort: strings.TrimSpace(configuration.ReasoningEffort)}
+	profile := frozen.FrozenRequestProfile{ReasoningEffort: strings.TrimSpace(configuration.ReasoningEffort),
+		FirstChunkTimeoutMS: configuration.FirstChunkTimeoutMS, IdleTimeoutMS: configuration.IdleTimeoutMS}
 	if err := frozen.ValidateRequestProfile(profile); err != nil {
-		return echo.NewHTTPError(422, "推理档位只能是 "+strings.Join(frozen.ReasoningEfforts, "、")+" 之一，或留空使用供应方默认")
+		if profile.ReasoningEffort != "" && !slices.Contains(frozen.ReasoningEfforts, profile.ReasoningEffort) {
+			return echo.NewHTTPError(422, "推理档位只能是 "+strings.Join(frozen.ReasoningEfforts, "、")+" 之一，或留空使用供应方默认")
+		}
+		return echo.NewHTTPError(422, "等待时长须在 0 到 3600000 毫秒之间，0 表示不限")
 	}
-	if profile.ReasoningEffort != "" && engine.IsCLIEngine(record.Engine) {
-		return echo.NewHTTPError(422, "命令行引擎成员不使用推理档位，请留空")
+	if profile != (frozen.FrozenRequestProfile{}) && engine.IsCLIEngine(record.Engine) {
+		return echo.NewHTTPError(422, "命令行引擎成员不使用推理档位和等待时长，请留空")
 	}
 	record.RequestProfile = nil
 	if profile != (frozen.FrozenRequestProfile{}) {

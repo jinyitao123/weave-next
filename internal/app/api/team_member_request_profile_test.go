@@ -24,4 +24,20 @@ func TestDevelopmentMemberReasoningEffort(t *testing.T) {
 	if _, err := configure("claude", "low"); err == nil {
 		t.Fatal("a CLI member accepted a reasoning effort it would never send")
 	}
+	timed := func(engine string, firstChunk, idle int64) (*registry.AgentRecord, error) {
+		record := &registry.AgentRecord{Name: "member"}
+		err := configureDevelopmentMember(record, teamMemberAgentConfiguration{DisplayName: "成员", Engine: engine,
+			FirstChunkTimeoutMS: firstChunk, IdleTimeoutMS: idle}, teamMemberRelationshipDraft{}, false, nil)
+		return record, err
+	}
+	if record, err := timed("loom", 30000, 10000); err != nil || record.RequestProfile == nil ||
+		record.RequestProfile.FirstChunkTimeoutMS != 30000 || record.RequestProfile.IdleTimeoutMS != 10000 {
+		t.Fatalf("wait budgets: %+v %v", record.RequestProfile, err)
+	}
+	if _, err := timed("loom", -5, 0); err == nil {
+		t.Fatal("a negative wait budget was accepted")
+	}
+	if _, err := timed("codex", 30000, 0); err == nil {
+		t.Fatal("a CLI member accepted a wait budget it would never apply")
+	}
 }

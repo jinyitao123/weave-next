@@ -33,6 +33,9 @@ func (r *WorkflowSerialRuntime) modelObserver(run TeamRun) workflow.ModelCallObs
 			"phases_ms":       event.Phases,
 			"gateway_wait_ms": event.GatewayWaitMS,
 		}
+		if event.Purpose != "" {
+			fields["purpose"] = event.Purpose
+		}
 		// Failure facts appear only when known; an absent key means unknown.
 		if event.Phase == "failed" || event.Phase == "cancelled" {
 			fields["stream_started"] = event.StreamStarted
@@ -44,6 +47,9 @@ func (r *WorkflowSerialRuntime) modelObserver(run TeamRun) workflow.ModelCallObs
 			}
 			if event.Retryable != nil {
 				fields["retryable"] = *event.Retryable
+			}
+			if event.TimeoutStage != "" {
+				fields["timeout_stage"] = event.TimeoutStage
 			}
 		}
 		detail, err := json.Marshal(fields)

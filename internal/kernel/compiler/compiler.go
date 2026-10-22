@@ -67,6 +67,7 @@ type CompileOpts struct {
 	DurableMember        bool
 	Profile              string
 	Effort               contract.EffortLevel
+	WaitBudget           *contract.WaitBudget    // bounds each model call's wait for output; nil leaves the context deadline only
 	ToolHooks            []contract.ToolHook     // injected hooks (e.g. SSE tool_result emitter)
 	BeforeStepHooks      []loom.StepHook         // injected Before step hooks (e.g. SSE step_start)
 	AfterStepHooks       []loom.StepHook         // injected After step hooks (e.g. SSE step_end)
@@ -144,10 +145,9 @@ func CompileAgent(tenant string, rec *registry.AgentRecord, llm contract.LLM, to
 
 	graphName := tenant + ":" + rec.Name
 
+	// An unset effort stays unset: reasoning_effort is then omitted and the
+	// provider's own default applies (ToolLoopOpts.ProviderDefaultEffort).
 	effort := opts.Effort
-	if effort == "" {
-		effort = contract.EffortMedium
-	}
 
 	model := rec.Model
 	if model == "" {
@@ -282,6 +282,9 @@ func CompileAgent(tenant string, rec *registry.AgentRecord, llm contract.LLM, to
 		MaxTokens:     rec.MaxOutputTokens,
 		Effort:        effort,
 		ToolHooks:     toolHooks,
+
+		ProviderDefaultEffort: true,
+		WaitBudget:            opts.WaitBudget,
 	}
 	if rec.ToolLoopControl != nil {
 		toolLoopOpts.MaxToolRepeats = rec.MaxToolRepeats
@@ -306,6 +309,9 @@ func CompileAgent(tenant string, rec *registry.AgentRecord, llm contract.LLM, to
 		toolLoopOpts.Compaction = stdlib.NewSummaryCompactionPolicy(activeLLM, stdlib.SummaryCompactionOpts{
 			Model:          model,
 			TokenThreshold: threshold,
+			// Members reading long materials compact repeatedly; the original
+			// task stays verbatim instead of fading into the summaries.
+			PinTask: true,
 		})
 	}
 

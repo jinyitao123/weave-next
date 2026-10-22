@@ -439,20 +439,20 @@ func runCapabilityWorkflowModelScenario(t *testing.T, parallel bool, maxConns []
 		t.Fatal("pure computation invocation unexpectedly requested a model tool call")
 	}
 	// The member that froze a reasoning effort sends exactly it. Members that
-	// left it unset still get Loom's documented default, medium.
+	// left it unset send no reasoning_effort, so the provider default applies.
 	for _, body := range requests {
 		var wire struct {
-			ReasoningEffort string `json:"reasoning_effort"`
+			ReasoningEffort *string `json:"reasoning_effort"`
 		}
 		if err := json.Unmarshal(body, &wire); err != nil {
 			t.Fatal(err)
 		}
-		want := "medium"
-		if strings.Contains(string(body), "fixture-role-final") {
-			want = "high"
-		}
-		if wire.ReasoningEffort != want {
-			t.Fatalf("member sent reasoning_effort %q, want %q", wire.ReasoningEffort, want)
+		finalMember := strings.Contains(string(body), "fixture-role-final")
+		switch {
+		case finalMember && (wire.ReasoningEffort == nil || *wire.ReasoningEffort != "high"):
+			t.Fatalf("member with reasoning_effort high sent %v", wire.ReasoningEffort)
+		case !finalMember && wire.ReasoningEffort != nil:
+			t.Fatalf("member without a reasoning effort sent reasoning_effort %q", *wire.ReasoningEffort)
 		}
 	}
 }

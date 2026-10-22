@@ -26,3 +26,19 @@ func TestRequestProfileNormalizesAndValidates(t *testing.T) {
 		t.Fatal("an unknown reasoning effort was frozen")
 	}
 }
+
+func TestRequestProfileWaitTimeoutsAreBounded(t *testing.T) {
+	for _, tc := range []struct {
+		profile FrozenRequestProfile
+		valid   bool
+	}{
+		{FrozenRequestProfile{FirstChunkTimeoutMS: 30000, IdleTimeoutMS: 15000}, true},
+		{FrozenRequestProfile{FirstChunkTimeoutMS: MaxWaitTimeoutMS}, true},
+		{FrozenRequestProfile{FirstChunkTimeoutMS: -1}, false},
+		{FrozenRequestProfile{IdleTimeoutMS: MaxWaitTimeoutMS + 1}, false},
+	} {
+		if err := ValidateRequestProfile(tc.profile); (err == nil) != tc.valid {
+			t.Errorf("%+v: valid=%v, error %v", tc.profile, tc.valid, err)
+		}
+	}
+}

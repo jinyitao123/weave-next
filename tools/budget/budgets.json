@@ -1503,6 +1503,34 @@
         "lines_added": 68,
         "production_lines_added": 20
       }
+    },
+    {
+      "date": "2026-10-22",
+      "reason": "Enable the Loom 64e2882 controls: unset reasoning efforts are omitted so the provider default applies (#82), member summary compaction pins the original task (#90), members may freeze first-chunk and idle wait budgets that end a streamed call as stage_timeout with its stage and are never retried or failed over (#96), and model call events carry the engine's call purpose (#89). No new packages, loops or dependencies.",
+      "record": "docs/治理/2026-10-22-执行面与供应方协议增长登记.md",
+      "growth": {
+        "lines": 190,
+        "production_lines": 71
+      },
+      "deletion_trigger": "When CLI runtimes accept a member request profile, delete the CLI refusal of reasoning efforts and wait budgets in configureDevelopmentMember (internal/app/api/team_member_config_drafts.go) and lower the exact budgets in that change.",
+      "base": {
+        "previous_lines": 9009,
+        "previous_production_lines": 7043,
+        "lines_added": 29,
+        "production_lines_added": 13
+      },
+      "kernel": {
+        "previous_lines": 113992,
+        "previous_production_lines": 88090,
+        "lines_added": 135,
+        "production_lines_added": 48
+      },
+      "app": {
+        "previous_lines": 94991,
+        "previous_production_lines": 63623,
+        "lines_added": 26,
+        "production_lines_added": 10
+      }
     }
   ],
   "migration_targets": {
@@ -1534,8 +1562,8 @@
     "rule": "Each band limit equals its measured size. The total of the band limits may exceed this baseline only by the growth of amendments added after the first recorded_amendments entries, each of which must state its growth and a deletion_trigger."
   },
   "base": {
-    "lines": 9009,
-    "production_lines": 7043,
+    "lines": 9038,
+    "production_lines": 7056,
     "packages": 9,
     "external_dependencies": 4,
     "allowed_dependencies": [
@@ -1546,8 +1574,8 @@
     ]
   },
   "kernel": {
-    "lines": 113992,
-    "production_lines": 88090,
+    "lines": 114127,
+    "production_lines": 88138,
     "packages": 48,
     "external_dependencies": 5,
     "allowed_dependencies": [
@@ -1566,8 +1594,8 @@
     "allowed_dependencies": []
   },
   "app": {
-    "lines": 94991,
-    "production_lines": 63623,
+    "lines": 95017,
+    "production_lines": 63633,
     "packages": 25,
     "external_dependencies": 6,
     "allowed_dependencies": [

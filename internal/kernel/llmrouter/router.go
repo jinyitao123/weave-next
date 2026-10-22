@@ -289,6 +289,9 @@ const (
 	CallFailureStreamTruncated    = "stream_truncated"
 	CallFailureEmptyResponse      = "provider_empty_response"
 	CallFailureOutputLimit        = "provider_output_limit"
+	// CallFailureStageTimeout is a call ended by its member's wait budget;
+	// whether repeating it could succeed is the caller's decision.
+	CallFailureStageTimeout = "stage_timeout"
 )
 
 // CallFailure is the safe, typed account of a failed model call. Class is
@@ -301,6 +304,9 @@ type CallFailure struct {
 	HTTPStatus   int
 	FinishReason string
 	Retryable    *bool
+	// Stage names the wait budget stage that ran out: first_chunk or
+	// stream_idle.
+	Stage string
 }
 
 // DiagnoseCallError classifies a model call error from typed evidence only:
@@ -309,6 +315,10 @@ type CallFailure struct {
 func DiagnoseCallError(err error) CallFailure {
 	if err == nil {
 		return CallFailure{}
+	}
+	var stage *openai.StageTimeoutError
+	if errors.As(err, &stage) {
+		return CallFailure{Class: CallFailureStageTimeout, Stage: stage.Stage}
 	}
 	retry := func(value bool) *bool { return &value }
 	var status interface{ HTTPStatus() int }

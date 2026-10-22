@@ -59,6 +59,12 @@ func (f *FallbackLLM) Chat(ctx context.Context, req contract.ChatRequest) (*cont
 				return nil, fmt.Errorf("fallback: context cancelled: %w", lastErr)
 			}
 
+			// A member's wait budget ending the call is the member's own decision
+			// to stop waiting; the abandoned request may still be generating
+			// upstream, so neither a retry nor another model is sent in its place.
+			if errors.Is(err, openai.ErrStageTimeout) {
+				return nil, err
+			}
 			if !isRetryable(err) {
 				slog.Warn("fallback: non-retryable error, switching model",
 					"model", model, "error", err)
@@ -99,6 +105,12 @@ func (f *FallbackLLM) Stream(ctx context.Context, req contract.ChatRequest) (<-c
 				return nil, fmt.Errorf("fallback: context cancelled: %w", lastErr)
 			}
 
+			// A member's wait budget ending the call is the member's own decision
+			// to stop waiting; the abandoned request may still be generating
+			// upstream, so neither a retry nor another model is sent in its place.
+			if errors.Is(err, openai.ErrStageTimeout) {
+				return nil, err
+			}
 			if !isRetryable(err) {
 				slog.Warn("fallback: non-retryable error, switching model",
 					"model", model, "error", err)

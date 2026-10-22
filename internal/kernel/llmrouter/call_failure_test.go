@@ -1,10 +1,13 @@
 package llmrouter
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"testing"
+	"time"
 
+	"github.com/jinyitao123/loom/contract"
 	"github.com/jinyitao123/loom/provider/openai"
 )
 
@@ -33,5 +36,41 @@ func TestDiagnoseCallErrorUsesTypedEvidenceOnly(t *testing.T) {
 	}
 	if failure := DiagnoseCallError(nil); failure != (CallFailure{}) {
 		t.Errorf("nil error diagnosed as %+v", failure)
+	}
+}
+
+// countingLLM fails every call with err and counts the calls per model.
+type countingLLM struct {
+	err   error
+	calls map[string]int
+}
+
+func (c *countingLLM) Chat(_ context.Context, req contract.ChatRequest) (*contract.ChatResponse, error) {
+	c.calls[req.Model]++
+	return nil, c.err
+}
+
+func (c *countingLLM) Stream(_ context.Context, req contract.ChatRequest) (<-chan contract.StreamChunk, error) {
+	c.calls[req.Model]++
+	return nil, c.err
+}
+
+func TestFallbackNeverRepeatsACallEndedByItsWaitBudget(t *testing.T) {
+	timeout := fmt.Errorf("attempt: %w", &openai.StageTimeoutError{Stage: "first_chunk", Budget: time.Second})
+	if failure := DiagnoseCallError(timeout); failure.Class != CallFailureStageTimeout || failure.Stage != "first_chunk" || failure.Retryable != nil {
+		t.Fatalf("stage timeout diagnosed as %+v", failure)
+	}
+	for _, stream := range []bool{false, true} {
+		inner := &countingLLM{err: timeout, calls: map[string]int{}}
+		llm := NewFallbackLLM(inner, "primary", []string{"backup"}, 2)
+		var err error
+		if stream {
+			_, err = llm.Stream(t.Context(), contract.ChatRequest{Model: "primary"})
+		} else {
+			_, err = llm.Chat(t.Context(), contract.ChatRequest{Model: "primary"})
+		}
+		if !errors.Is(err, openai.ErrStageTimeout) || inner.calls["primary"] != 1 || inner.calls["backup"] != 0 {
+			t.Fatalf("stream=%v: err=%v calls=%v; want one primary call and the timeout", stream, err, inner.calls)
+		}
 	}
 }
