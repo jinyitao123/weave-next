@@ -1,6 +1,6 @@
 # Weave 管理端
 
-面向开发者与运维的网页管理端：节点、环境、团队、任务及其证据。产品范围与页面设计以总仓 [Weave管理端设计](https://github.com/jinyitao123/weave-workbench/blob/main/docs/architecture/Weave管理端设计.md) 为准，依据为决策 003。管理端不承载业务记录、审批、员工待办和组织管理。
+面向开发者与运维的网页管理端：节点、环境、组织模型供应方、团队、任务及其证据。产品范围与页面设计以总仓 [Weave管理端设计](https://github.com/jinyitao123/weave-workbench/blob/main/docs/architecture/Weave管理端设计.md) 为准，依据为决策 003。管理端不承载业务记录、审批、员工待办和组织管理。
 
 ## 打包方式
 

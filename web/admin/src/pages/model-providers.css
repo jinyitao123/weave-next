@@ -1,0 +1,10 @@
+.providers { display: grid; gap: 16px; max-width: 880px; }
+.provider__url { overflow-wrap: anywhere; }
+.provider__probed { display: block; margin-top: 2px; overflow-wrap: anywhere; }
+.provider__preview { display: grid; gap: 6px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--subtle); }
+.provider__preview code { overflow-wrap: anywhere; }
+.provider__preview p { margin: 0; }
+.provider__suggestion { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.provider__suggestion > span { flex: 1; min-width: 220px; overflow-wrap: anywhere; }
+.provider__advanced summary { cursor: pointer; color: var(--text-secondary); }
+.provider__advanced > .stack { margin-top: 12px; }

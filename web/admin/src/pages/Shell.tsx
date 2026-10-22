@@ -1,4 +1,4 @@
-import { Activity, Boxes, ChevronDown, ChevronRight, FolderGit2, Plug, Server, Settings, type LucideIcon } from 'lucide-react'
+import { Activity, Boxes, ChevronDown, ChevronRight, Cpu, FolderGit2, Plug, Server, Settings, type LucideIcon } from 'lucide-react'
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { AccountCard } from '../components/AccountCard'
 import { listEnvironments } from '../lib/environments'
@@ -10,6 +10,7 @@ import type { AdminSession } from '../lib/api'
 import { useRoute } from '../lib/router'
 import { EnvironmentsPage } from './EnvironmentsPage'
 import { IntegrationsPage } from './IntegrationsPage'
+import { ModelProvidersPage } from './ModelProvidersPage'
 import { NodesPage } from './NodesPage'
 import { TaskDetailPage } from './TaskDetailPage'
 import { TasksPage } from './TasksPage'
@@ -40,6 +41,7 @@ const sections: Section[] = [
   { path: '/runs', label: '运行', icon: Activity, owns: (path) => path.startsWith('/tasks/'), render: ({ path, navigate }) => path.startsWith('/tasks/')
     ? <TaskDetailPage key={path} runId={decodeURIComponent(path.slice('/tasks/'.length))} navigate={navigate} />
     : <TasksPage navigate={navigate} /> },
+  { path: '/models', label: '模型', icon: Cpu, render: () => <ModelProvidersPage /> },
   { path: '/integrations', label: '集成', icon: Plug, render: ({ session }) => <IntegrationsPage session={session} /> },
 ]
 
