@@ -186,6 +186,9 @@ func (registry *expectedRunRegistry) RenewAttempt(
 			ErrA4AttemptLeaseHeartbeatUnsupported,
 		)
 	}
+	if batcher, ok := ctx.Value(attemptBatchKey{}).(*AttemptLeaseBatcher); ok && batcher != nil {
+		return batcher.renew(ctx, owner, ttl)
+	}
 	tx, err := registry.txStore.BeginTx(ctx)
 	if err != nil {
 		return fail(AttemptLeaseHeartbeatBegin, err)

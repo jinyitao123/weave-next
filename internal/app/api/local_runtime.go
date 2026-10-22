@@ -11,6 +11,7 @@ import (
 	"github.com/jinyitao123/weave/internal/app/localruntime"
 	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/base/frozen"
+	"github.com/jinyitao123/weave/internal/kernel/llmrouter"
 	"github.com/jinyitao123/weave/internal/kernel/runtimeprotocol"
 	"github.com/jinyitao123/weave/internal/kernel/runtimes"
 	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
@@ -94,6 +95,11 @@ func (s *Server) localRuntimeCredentials(ctx context.Context, runtimeID string, 
 	provider, err := s.Models.ResolveProviderConfiguration(bound, task.WorkspaceID, payload.Model)
 	if err != nil {
 		return daemon.ProviderCredentials{}, err
+	}
+	// CLI engines speak OpenAI-compatible chat; a decision-model provider
+	// serves Loom model members only.
+	if provider.Protocol == llmrouter.ProtocolSystemOne {
+		return daemon.ProviderCredentials{}, errors.New("a systemone provider cannot serve a CLI runtime")
 	}
 	return daemon.ProviderCredentials{BaseURL: provider.BaseURL, APIKey: provider.APIKey}, nil
 }

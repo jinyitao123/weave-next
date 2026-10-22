@@ -26,17 +26,24 @@ export function useLeaveGuard(active: boolean, onBlocked: (path: string) => void
   }, [active, onBlocked])
 }
 
-export function useRoute(): [string, (path: string, options?: { force?: boolean }) => void] {
+export interface NavigateOptions {
+  force?: boolean
+  /** Replace the current history entry instead of adding one (redirects). */
+  replace?: boolean
+}
+
+export function useRoute(): [string, (path: string, options?: NavigateOptions) => void] {
   const [path, setPath] = useState(currentPath)
   useEffect(() => {
     const update = () => setPath(currentPath())
     window.addEventListener('popstate', update)
     return () => window.removeEventListener('popstate', update)
   }, [])
-  const navigate = useCallback((next: string, options?: { force?: boolean }) => {
+  const navigate = useCallback((next: string, options?: NavigateOptions) => {
     if (next === currentPath()) return
     if (leaveGuard && !options?.force) { leaveGuard(next); return }
-    window.history.pushState(null, '', base + next)
+    if (options?.replace) window.history.replaceState(null, '', base + next)
+    else window.history.pushState(null, '', base + next)
     setPath(next)
   }, [])
   return [path, navigate]

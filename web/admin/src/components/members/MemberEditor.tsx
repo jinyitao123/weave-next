@@ -39,7 +39,13 @@ export function MemberEditor({ document, nodes, accepting, catalog, onConfig, on
   const [selected, setSelected] = useState(ordered[0]?.id)
   const [models, setModels] = useState<string[]>([])
   const [advanced, setAdvanced] = useState(false)
-  useEffect(() => { void loadModelCatalog().then(setModels).catch(() => setModels([])) }, [])
+  // Models may be configured in another tab ("去配置模型"); coming back reads the catalog again.
+  useEffect(() => {
+    const load = () => { void loadModelCatalog().then(setModels).catch(() => setModels([])) }
+    load()
+    window.addEventListener('focus', load)
+    return () => window.removeEventListener('focus', load)
+  }, [])
   const member = ordered.find((item) => item.id === selected) ?? ordered[0]
   if (!member) return <p className="muted">团队还没有成员。</p>
   const add = () => {
@@ -327,6 +333,7 @@ function RunPanel({ member, nodes, accepting, models, kindsInUse, onConfig, onRe
           ? <label className="field"><span>模型</span><input className="input" value={config.model ?? ''} placeholder="留空使用节点上的默认模型" onChange={(event) => onConfig({ model: event.target.value })} /></label>
           : <div className="field"><span>模型</span><Select label={`${name}的模型`} value={config.model ?? ''} placeholder={modelOptions.length ? '选择模型' : '还没有可用模型'} options={modelOptions} onChange={(model) => onConfig({ model })} /></div>}
       </div>
+      {cli ? null : <p className="muted small">没有合适的模型？<a className="link-button" href="/admin/deployment/models" target="_blank" rel="noreferrer">去配置模型</a>，回到这里后列表会更新。</p>}
     </section>
 
     {cli ? null : <>

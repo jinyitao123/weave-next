@@ -131,7 +131,8 @@ func (d *ToolDispatcher) Dispatch(ctx context.Context, call contract.ToolCall) (
 	case "provider_add":
 		var input weaveclient.ProviderAddRequest
 		if err := decodeArguments(call.Args, &input); err != nil || strings.TrimSpace(input.Name) == "" ||
-			strings.TrimSpace(input.BaseURL) == "" || strings.TrimSpace(input.APIKey) == "" || len(input.Models) == 0 {
+			strings.TrimSpace(input.BaseURL) == "" || len(input.Models) == 0 ||
+			(input.Protocol != "" && input.Protocol != "openai" && input.Protocol != "systemone") {
 			return toolError(call.ID, "invalid_arguments"), nil
 		}
 		result, err := d.client.ProviderAdd(ctx, input)
@@ -700,8 +701,8 @@ var toolDefinitions = []contract.ToolDef{
 	},
 	{
 		Name:        "provider_add",
-		Description: "Add or revise an OpenAI-compatible model provider. Requires administrator role and admin access. The API key is accepted as secret input and is never returned. Errors: invalid_arguments, http_400, http_401, http_403, http_409.",
-		InputSchema: json.RawMessage(`{"type":"object","properties":{"id":{"type":"string"},"name":{"type":"string"},"base_url":{"type":"string"},"api_key":{"type":"string"},"models":{"type":"array","items":{"type":"string"},"minItems":1},"json_object_mode":{"type":"boolean"},"thinking_default_mode":{"type":"string"},"thinking_disable_with_tools":{"type":"boolean"},"attempt_timeout_seconds":{"type":"integer","minimum":0}},"required":["name","base_url","api_key","models"],"additionalProperties":false}`),
+		Description: "Add or revise a personal model provider. protocol is openai (OpenAI-compatible chat completions, default) or systemone (System One decision models that answer structured choice, score and yes-or-no questions instead of generating text). The API key is optional secret input and is never returned: omit api_key to keep the stored key, pass a value to replace it, or pass an empty string to clear it. Requires administrator role and admin access. Errors: invalid_arguments, http_400, http_401, http_403, http_409.",
+		InputSchema: json.RawMessage(`{"type":"object","properties":{"id":{"type":"string"},"name":{"type":"string"},"base_url":{"type":"string"},"protocol":{"type":"string","enum":["openai","systemone"]},"api_key":{"type":"string"},"models":{"type":"array","items":{"type":"string"},"minItems":1},"json_object_mode":{"type":"boolean"},"thinking_default_mode":{"type":"string"},"thinking_disable_with_tools":{"type":"boolean"},"attempt_timeout_seconds":{"type":"integer","minimum":0}},"required":["name","base_url","models"],"additionalProperties":false}`),
 	},
 	{
 		Name:        "apikey_create",

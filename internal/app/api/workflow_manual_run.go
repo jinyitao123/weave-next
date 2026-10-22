@@ -196,9 +196,6 @@ func (s *Server) admitTeamWorkflowDispatch(c echo.Context, workflowID string, re
 	if err != nil {
 		return workflowStoreFailure(c, err)
 	}
-	if err = freezeAdminCodeContext(ctx, tx, workspaceID, getUserID(c), admitted.RunID, request.codeContext); err != nil {
-		return workflowStoreFailure(c, err)
-	}
 	if err = tx.Commit(ctx); err != nil {
 		return workflowStoreFailure(c, fmt.Errorf("commit workflow admission intent: %w", err))
 	}

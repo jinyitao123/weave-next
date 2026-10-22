@@ -28,6 +28,8 @@ type invokeCapabilityRequest struct {
 	RequestID    string                         `json:"request_id"`
 	InvocationID optionalCapabilityInvocationID `json:"invocation_id,omitempty"`
 	Lane         string                         `json:"lane,omitempty"`
+	Priority     string                         `json:"priority,omitempty"`
+	FairnessKey  string                         `json:"fairness_key,omitempty"`
 	Input        json.RawMessage                `json:"input"`
 }
 

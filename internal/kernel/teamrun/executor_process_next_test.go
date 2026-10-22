@@ -393,13 +393,14 @@ func newProcessNextHarness(t *testing.T) *processNextHarness {
 	}
 }
 
-func (h *processNextHarness) enqueueWorkflowTask(t *testing.T, runID string) string {
+func (h *processNextHarness) enqueueWorkflowTask(t *testing.T, runID string, outcomeSensitive ...bool) string {
 	t.Helper()
 	ctx := context.Background()
 	h.seedWorkflowSnapshot(t, runID)
 	taskID := "task-" + runID
 	err := h.tasks.Enqueue(ctx, &taskqueue.Task{Subject: execution.Subject{WorkspaceID: "workspace-1", UserID: "user-1"},
-		ID: taskID, WorkspaceID: "workspace-1",
+		OutcomeSensitive: len(outcomeSensitive) > 0 && outcomeSensitive[0],
+		ID:               taskID, WorkspaceID: "workspace-1",
 		IdentityKind: taskqueue.IdentityTeamWorkflow, IdentitySchemaVersion: 2,
 		WorkflowID: "workflow-1", WorkflowVersion: 1, RunSnapshotID: runID,
 		Source: "api", SourceRef: "build-" + runID, Kind: "team_workflow", Payload: json.RawMessage(`{"input":true}`),

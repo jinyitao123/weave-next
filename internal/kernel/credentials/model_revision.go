@@ -203,6 +203,7 @@ func ResolveModelRevisionTx(
 		ModelID:          modelID,
 		BaseURL:          revision.BaseURL,
 		JSONObjectMode:   revision.JSONObjectMode,
+		Protocol:         frozenModelProtocol(revision.Protocol),
 		CredentialRef: frozen.CredentialReference{
 			SchemaVersion: frozen.FrozenSchemaVersion,
 			WorkspaceID:   workspaceID,
@@ -228,4 +229,13 @@ func ResolveModelRevisionTx(
 	}
 	binding.ContentHash = contentHash
 	return binding, nil
+}
+
+// frozenModelProtocol keeps the default protocol out of the frozen binding,
+// so OpenAI bindings keep the canonical bytes they had before protocols.
+func frozenModelProtocol(protocol string) string {
+	if protocol == frozen.ModelProtocolSystemOne {
+		return protocol
+	}
+	return ""
 }

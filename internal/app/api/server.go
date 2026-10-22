@@ -123,6 +123,8 @@ type Server struct {
 	mcpLimiter                mcpRateLimiter
 	deviceEnrollLimiter       mcpRateLimiter
 	teamRunWorkers            *teamrun.Workers
+	modelActivityBuffer       *teamrun.BufferedActivityRecorder
+	ModelGateway              *llmrouter.ModelGateway
 	teamRunCancel             *teamrun.CancelService
 	teamRunStageRetry         *teamrun.StageRetryService
 	teamRunHumanResume        *teamrun.HumanResumeService
@@ -348,20 +350,12 @@ func (s *Server) registerRoutes() {
 	auth.GET("/admin/tasks", s.handleListAdminTasks, consoleAccess)
 	auth.GET("/admin/tasks/:id", s.handleListAdminTasks, consoleAccess)
 	auth.POST("/admin/tasks", s.handleSubmitAdminTask, consoleAccess)
-	auth.GET("/admin/tasks/:id/code", s.handleGetAdminTaskCode, consoleAccess)
 	auth.GET("/admin/tasks/:id/evidence", s.handleExportAdminTaskEvidence, consoleAccess)
 	auth.GET("/admin/tasks/:id/outputs/:output", s.handleGetAdminTaskOutput, consoleAccess)
-	auth.POST("/admin/tasks/:id/follow-ups", s.handleSubmitFollowUp, consoleAccess)
-	auth.POST("/admin/tasks/:id/pull-request", s.handleCreatePullRequest, consoleAccess)
-	auth.GET("/admin/tasks/:id/thread", s.handleGetTaskThread, consoleAccess)
 	auth.GET("/admin/tasks/:id/logs", s.handleGetAdminTaskLogs, consoleAccess)
 	auth.GET("/admin/tasks/:id/stream", s.handleAdminTaskStream, consoleAccess)
 	auth.GET("/admin/tasks/:id/queue", s.handleGetAdminTaskQueue, consoleAccess)
 	auth.GET("/admin/metrics", s.handleGetAdminMetrics, consoleAccess)
-	auth.GET("/environments", s.handleListEnvironments, consoleAccess)
-	auth.POST("/environments", s.handleSaveEnvironment, consoleAccess)
-	auth.PUT("/environments/:id", s.handleSaveEnvironment, consoleAccess)
-	auth.DELETE("/environments/:id", s.handleArchiveEnvironment, consoleAccess)
 
 	// Developer capability contract endpoints. Execution is admitted here;
 	// runtime scheduling is intentionally a separate follow-up integration.
@@ -429,6 +423,7 @@ func (s *Server) registerRoutes() {
 	auth.GET("/development/model-catalog", s.handleDevelopmentModelCatalog, RequireAtLeast(roleDeveloper))
 	auth.GET("/development/model-providers", s.handleListDevelopmentModelProviders, RequireAtLeast(roleDeveloper))
 	auth.PUT("/development/model-providers/:id", s.handlePutDevelopmentModelProvider, RequireAtLeast(roleDeveloper))
+	auth.DELETE("/development/model-providers/:id", s.handleDeleteDevelopmentModelProvider, RequireAtLeast(roleAdmin))
 	auth.GET("/teams/:id/dispatch-rules", s.handleGetTeamDispatchRules)
 	auth.PUT("/teams/:id/dispatch-rules", s.handlePutTeamDispatchRules, RequireAtLeast(roleAdmin))
 	auth.POST("/teams/:id/dispatch", s.handleDispatchTeam)
@@ -483,8 +478,6 @@ func (s *Server) registerRoutes() {
 	runtimeAPI.POST("/tasks/:id/stopped", s.handleRuntimeTaskStopped)
 	runtimeAPI.POST("/tasks/:id/events", s.handleRuntimeTaskEvents)
 	runtimeAPI.POST("/tasks/:id/logs", s.handleRuntimeTaskLogs)
-	runtimeAPI.GET("/tasks/:id/git/*", s.handleRuntimeGitProxy)
-	runtimeAPI.POST("/tasks/:id/git/*", s.handleRuntimeGitProxy)
 	runtimeAPI.GET("/tasks/:id/attachments/:aid", s.handleRuntimeTaskAttachment)
 	// Task-scoped MCP gateway: a remote loom daemon dials one of these per MCP
 	// server index; auth is the runtime lease, the record is the frozen task
@@ -602,6 +595,9 @@ func (s *Server) registerRoutes() {
 
 // Start runs the HTTP server.
 func (s *Server) Start() error {
+	if s.modelActivityBuffer != nil {
+		defer s.modelActivityBuffer.Close()
+	}
 	s.reconcileOrphanedChatRequests()
 	if s.sessionExecutionWorkers != nil && !sessionExecutionWorkersDisabled() {
 		s.sessionExecutionWorkers.Start()
@@ -746,7 +742,7 @@ func (s *Server) ConfigureTeamRunWorkers() {
 		Loader: &workflow.RuntimeLoader{
 			Registry: s.Descriptors, CLIExecutor: s.teamRunCLIExecutor(),
 		},
-		HostFactory: businessaction.Factory{Inner: workflow.NewRuntimeHostFactory(), Store: businessDelegations, MaterialStore: materialReads},
+		HostFactory: businessaction.Factory{Inner: workflow.NewRuntimeHostFactoryWithGateway(s.ModelGateway), Store: businessDelegations, MaterialStore: materialReads},
 		CredentialResolvers: func(
 			workspaceID string,
 		) (workflow.RuntimeCredentialResolver, error) {
@@ -777,6 +773,11 @@ func (s *Server) ConfigureTeamRunWorkers() {
 		OutputRecorder: &developmentTrialWorkflowOutputRecorder{pool: pool, fallback: s.Deliverables},
 		Corrections:    correctionStore,
 		Activities:     activityStore,
+	}
+	if os.Getenv("WEAVE_TEAMRUN_OBSERVATION_WRITES") == "buffered" {
+		s.modelActivityBuffer = teamrun.NewBufferedActivityRecorder(activityStore)
+		runtime.Activities = s.modelActivityBuffer
+		runtime.ModelObservationOptions = workflow.ModelObservationOptions{CompactPhases: true, SlowAfter: 30 * time.Second}
 	}
 	memberRunner, err := loomruntime.NewMemberRunner(kernelbindings.WithTerminalActivity(storeext.New(pool)))
 	if err != nil {
@@ -822,7 +823,9 @@ func (s *Server) ConfigureTeamRunWorkers() {
 		HeartbeatInterval: temporaryTeamRunTaskHeartbeat,
 	}
 	s.teamRunWorkers = &teamrun.Workers{
-		Executor: executor,
+		Executor:     executor,
+		Pooled:       os.Getenv("WEAVE_TEAMRUN_EXECUTOR") == "pooled",
+		DrainTimeout: teamRunDrainTimeout(),
 		// Four durable claims are enough to make ordinary multi-runtime fanout
 		// genuinely concurrent without introducing an unbounded worker pool.
 		// Deployments with many concurrent pure-model members raise it explicitly.

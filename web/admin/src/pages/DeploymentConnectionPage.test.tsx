@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../lib/api'
 import { readOrganizationConnection, saveOrganizationConnection } from '../lib/organization-connection'
-import { DeploymentConnectionPage } from './DeploymentConnectionPage'
+import { DeploymentConnectionSection as DeploymentConnectionPage } from './DeploymentConnectionPage'
 
 vi.mock('../lib/organization-connection', () => ({ readOrganizationConnection: vi.fn(), saveOrganizationConnection: vi.fn() }))
 afterEach(() => { cleanup(); vi.resetAllMocks() })

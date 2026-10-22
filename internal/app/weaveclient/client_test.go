@@ -288,7 +288,7 @@ func TestReadEndpointsAndResumeAreThinHTTPMappings(t *testing.T) {
 	client := newTestClient(t, handler)
 	ctx := context.Background()
 	_, _ = client.ProviderList(ctx)
-	_, _ = client.ProviderAdd(ctx, ProviderAddRequest{Name: "openai", BaseURL: "https://example.test", APIKey: "secret", Models: []string{"model"}})
+	_, _ = client.ProviderAdd(ctx, ProviderAddRequest{Name: "openai", BaseURL: "https://example.test", APIKey: &providerTestKey, Models: []string{"model"}})
 	_, _ = client.APIKeyCreate(ctx, APIKeyCreateRequest{Name: "codex", Scopes: []string{"runs"}})
 	_, _ = client.RuntimeCreate(ctx, "mac")
 	_, _ = client.TeamList(ctx, "all", true)
@@ -389,3 +389,5 @@ func assertClientError(t *testing.T, err error, code string, status int) {
 		t.Fatalf("error = %#v, want code=%q status=%d", err, code, status)
 	}
 }
+
+var providerTestKey = "secret"

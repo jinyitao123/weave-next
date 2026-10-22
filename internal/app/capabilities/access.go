@@ -22,10 +22,11 @@ const CredentialPrefix = "wv_cap_"
 var ErrAccessDenied = errors.New("capability access denied")
 
 type Application struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	Enabled   bool      `json:"enabled"`
-	CreatedAt time.Time `json:"created_at"`
+	MaxPriority string    `json:"max_priority"`
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	Enabled     bool      `json:"enabled"`
+	CreatedAt   time.Time `json:"created_at"`
 }
 type ApplicationCredential struct {
 	ID        string     `json:"id"`
@@ -131,7 +132,7 @@ func (s *AccessStore) CreateApplication(ctx context.Context, ws, actor, name str
 		return Application{}, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	app := Application{ID: "app_" + uuid.NewString(), Name: name, Enabled: true}
+	app := Application{ID: "app_" + uuid.NewString(), Name: name, Enabled: true, MaxPriority: "normal"}
 	if err := tx.QueryRow(ctx, `INSERT INTO weave_capability_apps(workspace_id,id,name,created_by) VALUES($1,$2,$3,$4) RETURNING created_at`, ws, app.ID, name, actor).Scan(&app.CreatedAt); err != nil {
 		return Application{}, err
 	}
@@ -273,13 +274,13 @@ func (s *AccessStore) Snapshot(ctx context.Context, ws, actor string) (AccessSna
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	result := AccessSnapshot{Apps: []Application{}, Credentials: []ApplicationCredential{}, Grants: []VersionGrant{}, Versions: []VersionSummary{}}
-	rows, err := tx.Query(ctx, `SELECT id,name,enabled,created_at FROM weave_capability_apps WHERE workspace_id=$1 ORDER BY created_at,id`, ws)
+	rows, err := tx.Query(ctx, `SELECT id,name,enabled,created_at,max_priority FROM weave_capability_apps WHERE workspace_id=$1 ORDER BY created_at,id`, ws)
 	if err != nil {
 		return result, err
 	}
 	for rows.Next() {
 		var app Application
-		if err := rows.Scan(&app.ID, &app.Name, &app.Enabled, &app.CreatedAt); err != nil {
+		if err := rows.Scan(&app.ID, &app.Name, &app.Enabled, &app.CreatedAt, &app.MaxPriority); err != nil {
 			rows.Close()
 			return result, err
 		}

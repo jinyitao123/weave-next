@@ -25,8 +25,7 @@ type taskEvidenceExport struct {
 }
 
 type taskEvidenceBody struct {
-	Task adminTask     `json:"task"`
-	Code *taskCodeView `json:"code,omitempty"`
+	Task adminTask `json:"task"`
 }
 
 const adminTaskOutputLimit = 256 << 10
@@ -81,13 +80,6 @@ func (s *Server) handleExportAdminTaskEvidence(c echo.Context) error {
 		s.auditRunView(c, runID, "evidence")
 	}
 	body := taskEvidenceBody{Task: tasks[0]}
-	view, found, err := loadTaskCode(c.Request().Context(), pool, getTenant(c), runID, tasks[0].Status)
-	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "task_evidence_failed"})
-	}
-	if found {
-		body.Code = &view
-	}
 	content, err := json.Marshal(body)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "task_evidence_failed"})

@@ -131,11 +131,13 @@ func (s *Store) MirrorSystemProvider(
 		if _, err := tx.Exec(ctx, `
 			INSERT INTO weave_provider_credentials (
 			  workspace_id, id, name, base_url, api_key_cipher, models,
-			  json_object_mode, latest_revision, source_kind, source_provider_id,credential_scope,credential_user_id,credential_service_id
-			) VALUES ($1, $2, $3, $4, $5, $6, $7, 0, 'system_mirror', $8,$9,$10,$11)
+			  json_object_mode, latest_revision, source_kind, source_provider_id,credential_scope,credential_user_id,credential_service_id,
+			  protocol, api_key_set
+			) VALUES ($1, $2, $3, $4, $5, $6, $7, 0, 'system_mirror', $8,$9,$10,$11,$12,true)
 		`, workspaceID, targetID, normalized.Name, normalized.BaseURL,
 			sourceCiphertext, normalized.Models, normalized.JSONObjectMode,
 			systemProviderID, normalized.CredentialScope, normalized.CredentialUserID, normalized.CredentialServiceID,
+			normalized.Protocol,
 		); err != nil {
 			return SystemProviderMirrorResult{}, fmt.Errorf("create mirrored provider head: %w", err)
 		}
@@ -205,6 +207,7 @@ func (s *Store) MirrorSystemProvider(
 			Revision:       afterRevision,
 			Name:           normalized.Name,
 			BaseURL:        normalized.BaseURL,
+			Protocol:       normalized.Protocol,
 			Models:         append([]string(nil), normalized.Models...),
 			JSONObjectMode: normalized.JSONObjectMode,
 			ContentHash:    contentHash,
@@ -219,11 +222,11 @@ func (s *Store) MirrorSystemProvider(
 		if _, err := tx.Exec(ctx, `
 			INSERT INTO weave_provider_revisions (
 			  workspace_id, provider_id, revision, name, base_url, models,
-			  json_object_mode, content_hash
-			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+			  json_object_mode, content_hash, protocol
+			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		`, revision.WorkspaceID, revision.ProviderID, revision.Revision,
 			revision.Name, revision.BaseURL, string(modelsJSON), revision.JSONObjectMode,
-			revision.ContentHash,
+			revision.ContentHash, revision.Protocol,
 		); err != nil {
 			return SystemProviderMirrorResult{}, fmt.Errorf("insert mirrored ProviderRevision: %w", err)
 		}
@@ -241,10 +244,13 @@ func (s *Store) MirrorSystemProvider(
 		    models=$6,
 		    json_object_mode=$7,
 		    latest_revision=$8,
+		    protocol=$9,
+		    api_key_set=true,
 		    updated_at=now()
 		WHERE workspace_id=$1 AND id=$2
 	`, workspaceID, targetID, normalized.Name, normalized.BaseURL,
 		nextCiphertext, normalized.Models, normalized.JSONObjectMode, afterRevision,
+		normalized.Protocol,
 	); err != nil {
 		return SystemProviderMirrorResult{}, fmt.Errorf("update mirrored provider head: %w", err)
 	}

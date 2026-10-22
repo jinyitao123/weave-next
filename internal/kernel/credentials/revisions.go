@@ -64,10 +64,14 @@ type ProviderHead struct {
 	ID                  string                 `json:"id"`
 	Name                string                 `json:"name"`
 	BaseURL             string                 `json:"base_url"`
-	APIKey              string                 `json:"api_key,omitempty"`
-	Models              []string               `json:"models"`
-	JSONObjectMode      bool                   `json:"json_object_mode,omitempty"`
-	LatestRevision      int64                  `json:"latest_revision"`
+	Protocol            string                 `json:"protocol"`
+	// APIKey is MaskedKey when a key is stored and empty (omitted) when none
+	// is; APIKeySet (has_api_key) states the same fact explicitly. Secrets are never read.
+	APIKey         string     `json:"api_key,omitempty"`
+	APIKeySet      bool       `json:"has_api_key"`
+	Models         []string   `json:"models"`
+	JSONObjectMode bool       `json:"json_object_mode,omitempty"`
+	LatestRevision int64      `json:"latest_revision"`
 	SourceKind          string                 `json:"source_kind"`
 	SourceProviderID    *string                `json:"source_provider_id,omitempty"`
 	Enabled             bool                   `json:"enabled"`
@@ -81,6 +85,7 @@ type ProviderRevision struct {
 	Revision       int64     `json:"revision"`
 	Name           string    `json:"name"`
 	BaseURL        string    `json:"base_url"`
+	Protocol       string    `json:"protocol"`
 	Models         []string  `json:"models"`
 	JSONObjectMode bool      `json:"json_object_mode"`
 	ContentHash    string    `json:"content_hash"`
@@ -98,19 +103,36 @@ type providerRevisionHashInput struct {
 	BaseURL        string   `json:"base_url"`
 	Models         []string `json:"models"`
 	JSONObjectMode bool     `json:"json_object_mode"`
+	// Protocol is omitted for the default openai protocol so revisions
+	// written before protocols existed keep their content hash; any other
+	// protocol is part of the functional identity.
+	Protocol string `json:"protocol,omitempty"`
+}
+
+// UpsertOption adjusts one provider upsert.
+type UpsertOption func(*upsertOptions)
+
+type upsertOptions struct{ clearAPIKey bool }
+
+// ClearAPIKey removes the stored API key. An empty or masked APIKey in the
+// config otherwise means "keep the stored key"; combining this option with a
+// new key is rejected.
+func ClearAPIKey() UpsertOption {
+	return func(options *upsertOptions) { options.clearAPIKey = true }
 }
 
 func (s *Store) UpsertRevision(
 	ctx context.Context,
 	workspaceID string,
 	cfg llmrouter.ProviderConfig,
+	options ...UpsertOption,
 ) (ProviderRevisionResult, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return ProviderRevisionResult{}, fmt.Errorf("begin ProviderRevision upsert: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	result, err := s.UpsertRevisionTx(ctx, tx, workspaceID, cfg)
+	result, err := s.UpsertRevisionTx(ctx, tx, workspaceID, cfg, options...)
 	if err != nil {
 		return ProviderRevisionResult{}, err
 	}
@@ -122,10 +144,27 @@ func (s *Store) UpsertRevision(
 
 // UpsertRevisionTx reuses credential ownership, sealing and revision rules in
 // the caller's transaction. The caller must roll back on error and commit on success.
-func (s *Store) UpsertRevisionTx(ctx context.Context, tx pgx.Tx, workspaceID string, cfg llmrouter.ProviderConfig) (ProviderRevisionResult, error) {
+//
+// API key semantics: a non-empty key other than MaskedKey replaces the stored
+// key; an empty or masked key keeps it (a new provider then has none); the
+// ClearAPIKey option removes it. Keys are optional for every protocol.
+func (s *Store) UpsertRevisionTx(ctx context.Context, tx pgx.Tx, workspaceID string, cfg llmrouter.ProviderConfig, options ...UpsertOption) (ProviderRevisionResult, error) {
+	var settings upsertOptions
+	for _, option := range options {
+		if option != nil {
+			option(&settings)
+		}
+	}
 	normalized, err := normalizeProviderConfig(workspaceID, cfg)
 	if err != nil {
 		return ProviderRevisionResult{}, err
+	}
+	replaceKey := normalized.APIKey != "" && normalized.APIKey != MaskedKey
+	if settings.clearAPIKey && replaceKey {
+		return ProviderRevisionResult{}, coded(
+			CodeProviderRevisionRequired,
+			"an API key cannot be replaced and cleared at once",
+		)
 	}
 	if err := AuthorizeReference(ctx, providerConfigReference(workspaceID, normalized)); err != nil {
 		return ProviderRevisionResult{}, err
@@ -145,11 +184,13 @@ func (s *Store) UpsertRevisionTx(ctx context.Context, tx pgx.Tx, workspaceID str
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO weave_provider_credentials (
 		  workspace_id, id, name, base_url, api_key_cipher, models,
-		  json_object_mode,credential_scope,credential_user_id,credential_service_id
-		) VALUES ($1, $2, $3, $4, $5, $6, $7,$8,$9,$10)
+		  json_object_mode,credential_scope,credential_user_id,credential_service_id,
+		  protocol, api_key_set
+		) VALUES ($1, $2, $3, $4, $5, $6, $7,$8,$9,$10,$11,false)
 		ON CONFLICT (workspace_id, id) DO NOTHING
 	`, workspaceID, normalized.ID, normalized.Name, normalized.BaseURL,
 		initialCipher, normalized.Models, normalized.JSONObjectMode, normalized.CredentialScope, normalized.CredentialUserID, normalized.CredentialServiceID,
+		normalized.Protocol,
 	); err != nil {
 		return ProviderRevisionResult{}, fmt.Errorf("create provider head: %w", err)
 	}
@@ -167,11 +208,17 @@ func (s *Store) UpsertRevisionTx(ctx context.Context, tx pgx.Tx, workspaceID str
 			"closed provider credentials cannot be revived by ordinary CRUD",
 		)
 	}
-	if normalized.APIKey != "" && normalized.APIKey != MaskedKey {
+	apiKeySet := head.APIKeySet
+	switch {
+	case replaceKey:
 		ciphertext, err = secret.Seal(s.key, []byte(normalized.APIKey))
 		if err != nil {
 			return ProviderRevisionResult{}, fmt.Errorf("seal provider credential: %w", err)
 		}
+		apiKeySet = true
+	case settings.clearAPIKey:
+		ciphertext = initialCipher
+		apiKeySet = false
 	}
 
 	var revision ProviderRevision
@@ -202,6 +249,7 @@ func (s *Store) UpsertRevisionTx(ctx context.Context, tx pgx.Tx, workspaceID str
 			Revision:       nextRevision,
 			Name:           normalized.Name,
 			BaseURL:        normalized.BaseURL,
+			Protocol:       normalized.Protocol,
 			Models:         append([]string(nil), normalized.Models...),
 			JSONObjectMode: normalized.JSONObjectMode,
 			ContentHash:    contentHash,
@@ -216,12 +264,12 @@ func (s *Store) UpsertRevisionTx(ctx context.Context, tx pgx.Tx, workspaceID str
 		err = tx.QueryRow(ctx, `
 			INSERT INTO weave_provider_revisions (
 			  workspace_id, provider_id, revision, name, base_url, models,
-			  json_object_mode, content_hash
-			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+			  json_object_mode, content_hash, protocol
+			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 			RETURNING created_at
 		`, revision.WorkspaceID, revision.ProviderID, revision.Revision,
 			revision.Name, revision.BaseURL, string(modelsJSON), revision.JSONObjectMode,
-			revision.ContentHash,
+			revision.ContentHash, revision.Protocol,
 		).Scan(&revision.CreatedAt)
 		if err != nil {
 			return ProviderRevisionResult{}, fmt.Errorf("insert ProviderRevision: %w", err)
@@ -236,17 +284,22 @@ func (s *Store) UpsertRevisionTx(ctx context.Context, tx pgx.Tx, workspaceID str
 		    models=$6,
 		    json_object_mode=$7,
 		    latest_revision=$8,
+		    protocol=$9,
+		    api_key_set=$10,
 		    updated_at=now()
 		WHERE workspace_id=$1 AND id=$2
 	`, workspaceID, normalized.ID, normalized.Name, normalized.BaseURL,
 		ciphertext, normalized.Models, normalized.JSONObjectMode, nextRevision,
+		normalized.Protocol, apiKeySet,
 	); err != nil {
 		return ProviderRevisionResult{}, fmt.Errorf("update provider head: %w", err)
 	}
 
 	head.Name = normalized.Name
 	head.BaseURL = normalized.BaseURL
-	head.APIKey = MaskedKey
+	head.Protocol = normalized.Protocol
+	head.APIKeySet = apiKeySet
+	head.APIKey = maskedKeyFor(apiKeySet)
 	head.Models = append([]string(nil), normalized.Models...)
 	head.JSONObjectMode = normalized.JSONObjectMode
 	head.LatestRevision = nextRevision
@@ -281,7 +334,8 @@ func (s *Store) ListMetadata(
 	rows, err := s.pool.Query(ctx, `
 		SELECT workspace_id, id, name, base_url, models, json_object_mode,
 		       latest_revision, source_kind, source_provider_id, enabled,
-		       revoked_at, deleted_at,credential_scope,credential_user_id,credential_service_id
+		       revoked_at, deleted_at,credential_scope,credential_user_id,credential_service_id,
+		       protocol, api_key_set
 		FROM weave_provider_credentials
 		WHERE workspace_id=$1
 		  AND enabled
@@ -301,13 +355,14 @@ func (s *Store) ListMetadata(
 			&head.WorkspaceID, &head.ID, &head.Name, &head.BaseURL, &head.Models,
 			&head.JSONObjectMode, &head.LatestRevision, &head.SourceKind,
 			&head.SourceProviderID, &head.Enabled, &head.RevokedAt, &head.DeletedAt, &head.CredentialScope, &head.CredentialUserID, &head.CredentialServiceID,
+			&head.Protocol, &head.APIKeySet,
 		); err != nil {
 			return nil, err
 		}
 		if AuthorizeReference(ctx, headReference(head)) != nil {
 			continue
 		}
-		head.APIKey = MaskedKey
+		head.APIKey = maskedKeyFor(head.APIKeySet)
 		heads = append(heads, head)
 	}
 	return heads, rows.Err()
@@ -497,7 +552,8 @@ func getProviderHeadTx(
 	err := querier.QueryRow(ctx, `
 		SELECT workspace_id, id, name, base_url, api_key_cipher, models,
 		       json_object_mode, latest_revision, source_kind, source_provider_id,
-		       enabled, revoked_at, deleted_at,credential_scope,credential_user_id,credential_service_id
+		       enabled, revoked_at, deleted_at,credential_scope,credential_user_id,credential_service_id,
+		       protocol, api_key_set
 		FROM weave_provider_credentials
 		WHERE workspace_id=$1 AND id=$2`+lock,
 		workspaceID, providerID,
@@ -505,6 +561,7 @@ func getProviderHeadTx(
 		&head.WorkspaceID, &head.ID, &head.Name, &head.BaseURL, &ciphertext,
 		&head.Models, &head.JSONObjectMode, &head.LatestRevision, &head.SourceKind,
 		&head.SourceProviderID, &head.Enabled, &head.RevokedAt, &head.DeletedAt, &head.CredentialScope, &head.CredentialUserID, &head.CredentialServiceID,
+		&head.Protocol, &head.APIKeySet,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ProviderHead{}, "", coded(
@@ -518,8 +575,16 @@ func getProviderHeadTx(
 	if err := AuthorizeReference(ctx, headReference(head)); err != nil {
 		return ProviderHead{}, "", err
 	}
-	head.APIKey = MaskedKey
+	head.APIKey = maskedKeyFor(head.APIKeySet)
 	return head, ciphertext, nil
+}
+
+// maskedKeyFor renders a stored key as MaskedKey and an absent key as unset.
+func maskedKeyFor(set bool) string {
+	if set {
+		return MaskedKey
+	}
+	return ""
 }
 
 func getProviderRevisionTx(
@@ -568,14 +633,14 @@ func getProviderRevisionTx(
 	var modelsJSON []byte
 	err := querier.QueryRow(ctx, `
 		SELECT workspace_id, provider_id, revision, name, base_url, models,
-		       json_object_mode, content_hash, created_at
+		       json_object_mode, content_hash, created_at, protocol
 		FROM weave_provider_revisions
 		WHERE workspace_id=$1 AND provider_id=$2 AND revision=$3`+lock,
 		workspaceID, providerID, revision,
 	).Scan(
 		&stored.WorkspaceID, &stored.ProviderID, &stored.Revision, &stored.Name,
 		&stored.BaseURL, &modelsJSON, &stored.JSONObjectMode, &stored.ContentHash,
-		&stored.CreatedAt,
+		&stored.CreatedAt, &stored.Protocol,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ProviderRevision{}, coded(
@@ -596,6 +661,7 @@ func getProviderRevisionTx(
 		ID:             providerID,
 		Name:           stored.Name,
 		BaseURL:        stored.BaseURL,
+		Protocol:       stored.Protocol,
 		Models:         stored.Models,
 		JSONObjectMode: stored.JSONObjectMode,
 	}
@@ -609,6 +675,12 @@ func getProviderRevisionTx(
 		return ProviderRevision{}, coded(
 			CodeFrozenManifestMismatch,
 			"stored provider functional configuration is invalid",
+		)
+	}
+	if normalized.Protocol != stored.Protocol {
+		return ProviderRevision{}, coded(
+			CodeFrozenManifestMismatch,
+			"stored provider protocol is not normalized",
 		)
 	}
 	if len(normalized.Models) != len(stored.Models) {
@@ -659,6 +731,14 @@ func normalizeProviderConfig(
 			"provider base URL is invalid",
 		)
 	}
+	protocol, err := llmrouter.NormalizeProtocol(cfg.Protocol)
+	if err != nil {
+		return llmrouter.ProviderConfig{}, coded(
+			CodeProviderRevisionRequired,
+			"provider protocol must be openai or systemone",
+		)
+	}
+	cfg.Protocol = protocol
 	parsed, err := url.Parse(cfg.BaseURL)
 	if err != nil || !parsed.IsAbs() || parsed.Host == "" ||
 		(parsed.Scheme != "http" && parsed.Scheme != "https") ||
@@ -693,11 +773,16 @@ func normalizeProviderConfig(
 }
 
 func hashProviderRevision(cfg llmrouter.ProviderConfig) (string, error) {
+	protocol := cfg.Protocol
+	if protocol == llmrouter.ProtocolOpenAI {
+		protocol = "" // the default keeps pre-protocol revision hashes
+	}
 	raw, err := json.Marshal(providerRevisionHashInput{
 		Name:           cfg.Name,
 		BaseURL:        cfg.BaseURL,
 		Models:         cfg.Models,
 		JSONObjectMode: cfg.JSONObjectMode,
+		Protocol:       protocol,
 	})
 	if err != nil {
 		return "", err

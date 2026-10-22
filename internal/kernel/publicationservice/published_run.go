@@ -168,6 +168,10 @@ func (s *Service) AdmitPublished(ctx context.Context, request publication.Publis
 		IdentityKind: taskqueue.IdentityTeamWorkflow, IdentitySchemaVersion: 2, Kind: "team_workflow", Source: source,
 		WorkflowID: request.Revision.WorkflowID, WorkflowVersion: request.Revision.WorkflowVersion, RunSnapshotID: request.RunID,
 		ParentTaskID: request.ParentTaskID, ContextKey: request.ContextKey, DeadlineAt: deadline, OutcomeSensitive: true, Payload: append([]byte(nil), request.Input...)}
+	if request.Scheduling != nil {
+		task.Priority = request.Scheduling.Priority
+		task.FairnessKey = request.Scheduling.FairnessKey
+	}
 	if err = taskqueue.New(s.pool, nil, time.Minute).EnqueueTx(ctx, tx, task); err != nil {
 		return receipt, err
 	}

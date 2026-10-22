@@ -46,6 +46,8 @@ type WorkflowInvokeRequest struct {
 	Lane                    string
 	Input                   json.RawMessage
 	InvocationIDWasSupplied bool
+	Priority                string
+	FairnessKey             string
 }
 
 type WorkflowInvocation struct {
@@ -131,6 +133,7 @@ func NewWorkflowInvocationService(
 }
 
 type workflowInvocationRecord struct {
+	Scheduling         *execution.SchedulingHints
 	WorkspaceID        string
 	ApplicationID      string
 	RequestID          string
@@ -215,6 +218,13 @@ func (s *WorkflowInvocationService) Invoke(ctx context.Context, request Workflow
 	if err := validateWorkflowInvokeRequest(request); err != nil {
 		return WorkflowInvocation{}, false, err
 	}
+	priority, err := schedulingPriority(request.Priority)
+	if err != nil {
+		return WorkflowInvocation{}, false, err
+	}
+	if len(request.FairnessKey) > 64 || strings.TrimSpace(request.FairnessKey) != request.FairnessKey || strings.ContainsAny(request.FairnessKey, "\x00\r\n") {
+		return WorkflowInvocation{}, false, fmt.Errorf("%w: invalid fairness_key", capability.ErrInvalidDefinition)
+	}
 	subject, err := execution.RequireSubject(ctx, request.WorkspaceID)
 	if err != nil || subject.UserID != "" || subject.ServiceID != "capability-app:"+request.ApplicationID {
 		return WorkflowInvocation{}, false, ErrAccessDenied
@@ -256,7 +266,8 @@ func (s *WorkflowInvocationService) Invoke(ctx context.Context, request Workflow
 	runID := "capability-run-" + uuid.NewString()
 	taskID := "capability-task-" + uuid.NewString()
 	record := workflowInvocationRecord{WorkspaceID: request.WorkspaceID, ApplicationID: request.ApplicationID,
-		RequestID: request.RequestID, InvocationID: invocationID, CredentialID: request.CredentialID,
+		Scheduling: &execution.SchedulingHints{Priority: priority, FairnessKey: request.FairnessKey},
+		RequestID:  request.RequestID, InvocationID: invocationID, CredentialID: request.CredentialID,
 		CapabilityID: request.CapabilityID, Revision: request.Revision, DefinitionHash: revision.DefinitionHash,
 		WorkflowID: definition.Workflow.WorkflowID, WorkflowVersion: definition.Workflow.WorkflowVersion,
 		Input: canonicalInput, InputHash: inputHash, Lane: request.Lane, AdmissionRequestID: admissionRequestID,
@@ -450,6 +461,7 @@ func (s *WorkflowInvocationService) reserve(
 		return workflowInvocationRecord{}, false, false, err
 	}
 	if desired.Lane != "" {
+		// Lane serialization is independent of priority and remains unchanged.
 		laneLock := invocationLockKey("lane", request.WorkspaceID, request.ApplicationID, desired.Lane)
 		if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, laneLock); err != nil {
 			return workflowInvocationRecord{}, false, false, fmt.Errorf("lock capability workflow lane: %w", err)
@@ -489,13 +501,25 @@ func (s *WorkflowInvocationService) reserve(
 	if _, err = admissions.ReserveTx(ctx, tx, runRequest, workflowadmission.Target{TeamID: teamID}); err != nil {
 		return workflowInvocationRecord{}, false, false, fmt.Errorf("reserve published workflow admission: %w", err)
 	}
+	var maxPriority string
+	if err := tx.QueryRow(ctx, `SELECT max_priority FROM weave_capability_apps WHERE workspace_id=$1 AND id=$2 FOR SHARE`, request.WorkspaceID, request.ApplicationID).Scan(&maxPriority); err != nil {
+		return workflowInvocationRecord{}, false, false, err
+	}
+	ceiling, err := schedulingPriority(maxPriority)
+	if err != nil || desired.Scheduling.Priority > ceiling {
+		return workflowInvocationRecord{}, false, false, fmt.Errorf("%w: requested priority exceeds application max_priority", capability.ErrInvalidDefinition)
+	}
+	schedulingJSON, err := json.Marshal(desired.Scheduling)
+	if err != nil {
+		return workflowInvocationRecord{}, false, false, err
+	}
 	_, err = tx.Exec(ctx, `INSERT INTO weave_capability_workflow_invocations(
 	 workspace_id,application_id,request_id,invocation_id,credential_id,capability_id,revision,definition_hash,
-	 workflow_id,workflow_version,input,input_hash,lane,admission_request_id,run_id,task_id)
-	 VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12,NULLIF($13,''),$14,$15,$16)`,
+	 workflow_id,workflow_version,input,input_hash,lane,admission_request_id,run_id,task_id,scheduling)
+	 VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12,NULLIF($13,''),$14,$15,$16,$17::jsonb)`,
 		desired.WorkspaceID, desired.ApplicationID, desired.RequestID, desired.InvocationID, desired.CredentialID,
 		desired.CapabilityID, desired.Revision, desired.DefinitionHash, desired.WorkflowID, desired.WorkflowVersion,
-		string(desired.Input), desired.InputHash, desired.Lane, desired.AdmissionRequestID, desired.RunID, desired.TaskID)
+		string(desired.Input), desired.InputHash, desired.Lane, desired.AdmissionRequestID, desired.RunID, desired.TaskID, string(schedulingJSON))
 	if err != nil {
 		return workflowInvocationRecord{}, false, false, fmt.Errorf("insert capability workflow invocation: %w", translateWorkflowInvocationInsertError(err))
 	}
@@ -507,8 +531,21 @@ func (s *WorkflowInvocationService) reserve(
 }
 
 func publishedRequest(record workflowInvocationRecord, envelope frozen.ArtifactEnvelopeV1, input json.RawMessage) publication.PublishedRunRequest {
+	var scheduling *execution.SchedulingHints
+	if record.Scheduling != nil {
+		hints := *record.Scheduling
+		if hints.FairnessKey == "" {
+			hints.FairnessKey = record.Lane
+			if hints.FairnessKey == "" {
+				hints.FairnessKey = record.InvocationID
+			}
+		}
+		hints.FairnessKey = record.ApplicationID + ":" + hints.FairnessKey
+		scheduling = &hints
+	}
 	return publication.PublishedRunRequest{
-		Version: publication.ContractVersion, RequestID: record.AdmissionRequestID,
+		Scheduling: scheduling,
+		Version:    publication.ContractVersion, RequestID: record.AdmissionRequestID,
 		Revision: publication.RevisionRef{WorkspaceID: record.WorkspaceID, WorkflowID: record.WorkflowID,
 			WorkflowVersion: record.WorkflowVersion, ContentHash: envelope.ContentHash},
 		RunID: record.RunID, TaskID: record.TaskID, Input: input,
@@ -542,7 +579,7 @@ func sameWorkflowInvocationRequest(stored, wanted workflowInvocationRecord, invo
 		(!invocationIDSupplied || stored.InvocationID == wanted.InvocationID) &&
 		stored.CapabilityID == wanted.CapabilityID && stored.Revision == wanted.Revision &&
 		stored.DefinitionHash == wanted.DefinitionHash && stored.WorkflowID == wanted.WorkflowID &&
-		stored.WorkflowVersion == wanted.WorkflowVersion && stored.InputHash == wanted.InputHash && stored.Lane == wanted.Lane
+		stored.WorkflowVersion == wanted.WorkflowVersion && stored.InputHash == wanted.InputHash && stored.Lane == wanted.Lane && sameScheduling(stored.Scheduling, wanted.Scheduling)
 }
 
 func invocationLockKey(kind, workspaceID, applicationID, identity string) string {
@@ -566,7 +603,7 @@ func (s *WorkflowInvocationService) hasCancelIntent(ctx context.Context, workspa
 
 func readWorkflowInvocationByRequest(ctx context.Context, q workflowInvocationRecordReader, workspaceID, applicationID, requestID string, lock bool) (workflowInvocationRecord, bool, error) {
 	query := `SELECT workspace_id,application_id,request_id,invocation_id,credential_id,capability_id,revision,definition_hash,
-	 workflow_id,workflow_version,input,input_hash,COALESCE(lane,''),admission_request_id,run_id,task_id,created_at
+	 workflow_id,workflow_version,input,input_hash,COALESCE(lane,''),admission_request_id,run_id,task_id,created_at,scheduling
 	 FROM weave_capability_workflow_invocations WHERE workspace_id=$1 AND application_id=$2 AND request_id=$3`
 	if lock {
 		query += " FOR UPDATE"
@@ -583,7 +620,7 @@ func readWorkflowInvocationByRequest(ctx context.Context, q workflowInvocationRe
 
 func readWorkflowInvocation(ctx context.Context, q workflowInvocationRecordReader, workspaceID, applicationID, invocationID string, lock bool) (workflowInvocationRecord, error) {
 	query := `SELECT workspace_id,application_id,request_id,invocation_id,credential_id,capability_id,revision,definition_hash,
-	 workflow_id,workflow_version,input,input_hash,COALESCE(lane,''),admission_request_id,run_id,task_id,created_at
+	 workflow_id,workflow_version,input,input_hash,COALESCE(lane,''),admission_request_id,run_id,task_id,created_at,scheduling
 	 FROM weave_capability_workflow_invocations WHERE workspace_id=$1 AND application_id=$2 AND invocation_id=$3`
 	if lock {
 		query += " FOR UPDATE"
@@ -593,10 +630,14 @@ func readWorkflowInvocation(ctx context.Context, q workflowInvocationRecordReade
 
 func scanWorkflowInvocation(row pgx.Row) (workflowInvocationRecord, error) {
 	var record workflowInvocationRecord
+	var scheduling []byte
 	err := row.Scan(&record.WorkspaceID, &record.ApplicationID, &record.RequestID, &record.InvocationID,
 		&record.CredentialID, &record.CapabilityID, &record.Revision, &record.DefinitionHash,
 		&record.WorkflowID, &record.WorkflowVersion, &record.Input, &record.InputHash,
-		&record.Lane, &record.AdmissionRequestID, &record.RunID, &record.TaskID, &record.CreatedAt)
+		&record.Lane, &record.AdmissionRequestID, &record.RunID, &record.TaskID, &record.CreatedAt, &scheduling)
+	if err == nil && len(scheduling) > 0 {
+		err = json.Unmarshal(scheduling, &record.Scheduling)
+	}
 	return record, err
 }
 
@@ -1021,7 +1062,7 @@ func (s *WorkflowInvocationService) RevokeGrant(ctx context.Context, workspaceID
 	}
 	rows, err := s.pool.Query(ctx, `SELECT i.workspace_id,i.application_id,i.request_id,i.invocation_id,i.credential_id,
 	 i.capability_id,i.revision,i.definition_hash,i.workflow_id,i.workflow_version,i.input,i.input_hash,COALESCE(i.lane,''),
-	 i.admission_request_id,i.run_id,i.task_id,i.created_at
+	 i.admission_request_id,i.run_id,i.task_id,i.created_at,i.scheduling
 	 FROM weave_capability_workflow_invocations i
 	 LEFT JOIN weave_workflow_admission_requests a ON a.workspace_id=i.workspace_id AND a.request_id=i.admission_request_id
 	 LEFT JOIN weave_kernel_publication_requests k ON k.workspace_id=i.workspace_id AND k.request_id=i.admission_request_id
@@ -1218,7 +1259,7 @@ func (s *WorkflowInvocationService) authorizeRuntimeCredentialWithQueries(
 	}
 	record, err := scanWorkflowInvocation(queries.QueryRow(ctx, `SELECT workspace_id,application_id,request_id,invocation_id,credential_id,
 	 capability_id,revision,definition_hash,workflow_id,workflow_version,input,input_hash,COALESCE(lane,''),
-	 admission_request_id,run_id,task_id,created_at
+	 admission_request_id,run_id,task_id,created_at,scheduling
 	 FROM weave_capability_workflow_invocations WHERE workspace_id=$1 AND application_id=$2 AND run_id=$3 FOR SHARE`,
 		run.WorkspaceID, applicationID, run.RunID))
 	if err != nil {

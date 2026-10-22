@@ -617,18 +617,6 @@ func (d *service) executeTask(ctx context.Context, task *runtimeprotocol.Executi
 	prompt := request.Prompt
 	logs := startTaskLogs(ctx, d.client, task)
 	defer logs.close()
-	var code *codeSession
-	if request.Code != nil {
-		remote := codeRemote{}
-		if request.Code.Proxy {
-			remote = proxiedCodeRemote(d.client.baseURL, d.client.token, task)
-		}
-		code, err = prepareCodeWorkspace(ctx, d.workspacesRoot, workDir, *request.Code, remote, request.NodeID, logs)
-		if err != nil {
-			return runtimeprotocol.ExecutionReceipt{}, fmt.Errorf("prepare code workspace: %w", err)
-		}
-		prompt = code.prompt(prompt)
-	}
 	for key, value := range task.Subject.Environment() {
 		runEnv[key] = value
 	}
@@ -664,9 +652,6 @@ func (d *service) executeTask(ctx context.Context, task *runtimeprotocol.Executi
 	})
 	finishProgress(&result)
 	err = errors.Join(err, runtimehost.CollectRunOutputArtifacts(workDir, outputsBefore, &result))
-	if code != nil && err == nil && result.Status == "completed" {
-		err = code.finish(ctx, &result)
-	}
 	receipt := runtimeprotocol.ExecutionReceipt{Versioned: runtimeprotocol.NewVersioned(), SchemaVersion: runtimeprotocol.ReceiptSchemaV1,
 		TaskID: task.TaskID, Subject: task.Subject, ClaimEpoch: task.ClaimEpoch, SessionID: result.SessionID,
 		ArtifactCollection: result.ArtifactCollection, Output: result.Output, RetrySafeBeforeExecution: result.RetrySafeBeforeExecution,

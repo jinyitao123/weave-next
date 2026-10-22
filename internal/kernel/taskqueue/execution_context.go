@@ -32,6 +32,7 @@ func BindTaskExecution(ctx context.Context, task *Task, reader ClaimedTaskReader
 		current.Status != StatusRunning || current.WorkerID != task.WorkerID || current.ClaimEpoch != task.ClaimEpoch {
 		return nil, execution.ErrCurrentTaskMismatch
 	}
+	bound = execution.WithScheduling(bound, execution.SchedulingHints{Priority: current.Priority, FairnessKey: current.FairnessKey})
 	return execution.WithCurrentTask(bound, execution.CurrentTask{ID: current.ID, WorkspaceID: current.WorkspaceID,
 		Subject: current.Subject, WorkerID: current.WorkerID, ClaimEpoch: current.ClaimEpoch})
 }

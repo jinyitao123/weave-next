@@ -149,7 +149,8 @@ func TestMCPEntryServesTeamToolsAsTheCallerRealPG(t *testing.T) {
 	if asked, failed := tool("user", "admin", "weave_workspace_apply", map[string]any{"operation": map[string]any{"kind": "team_archive", "team_id": teamID}}); failed || asked["status"] != "confirmation_required" {
 		t.Fatalf("an archive without consent: %v", asked)
 	}
-	for _, operation := range []map[string]any{{"kind": "node_add", "name": "研发一号机"}, {"kind": "catalog_refresh"}, {"kind": "repository_save", "name": "订单服务", "enter": []string{"git_token"}}} {
+	// repository_save left with the code repository line on 2026-10-21.
+	for _, operation := range []map[string]any{{"kind": "node_add", "name": "研发一号机"}, {"kind": "catalog_refresh"}} {
 		if refused, failed := tool("user", "admin", "weave_workspace_apply", map[string]any{"operation": operation, "confirmed": true}); !failed || refused["code"] != "desktop_only" {
 			t.Fatalf("%v reached an agent that cannot show or take a secret: %v", operation["kind"], refused)
 		}

@@ -6,9 +6,6 @@ import { ResultContent } from '../components/ResultContent'
 import { ApiError, errorMessage } from '../lib/api'
 import { checkReason, checkTitle, engineName, relativeTime } from '../lib/format'
 import { usePolling } from '../lib/polling'
-import { readTaskCode, shortSHA, verdictLabel, type TaskCode } from '../lib/environments'
-import { CodeChanges, CodeEvidencePanel, CodeSummary, CodeVerdict } from './TaskCodePanels'
-import { FollowUpComposer, TaskThread } from './TaskThread'
 import { LogViewer } from './LogViewer'
 import { readDevelopment } from '../lib/teams'
 import {
@@ -39,8 +36,7 @@ export function TaskDetailPage({ runId, navigate }: { runId: string; navigate(pa
   const [activity, setActivity] = useState<Activity>()
   const [error, setError] = useState('')
   const [selected, setSelected] = useState<string>()
-  const [tab, setTab] = useState<'output' | 'changes' | 'evidence' | 'details'>('output')
-  const [loadedCode, setCode] = useState<TaskCode | null>()
+  const [tab, setTab] = useState<'output' | 'evidence' | 'details'>('output')
   const [busy, setBusy] = useState(false)
   const [stopKey] = useState(() => createUUID())
   const [missing, setMissing] = useState(false)
@@ -48,7 +44,6 @@ export function TaskDetailPage({ runId, navigate }: { runId: string; navigate(pa
   const [openedAt] = useState(() => Date.now())
   const [version, setVersion] = useState(0)
   const [streamBroken, setStreamBroken] = useState(false)
-  const [logStream, setLogStream] = useState<string>()
   const [wait, setWait] = useState<TaskWait>()
   const [trialTeam, setTrialTeam] = useState('')
   const done = activity ? terminal(activity.status) : false
@@ -61,10 +56,6 @@ export function TaskDetailPage({ runId, navigate }: { runId: string; navigate(pa
       setActivity(current)
       setVersion((value) => value + 1)
       setWait(terminal(current.status) ? undefined : await readQueue(runId).catch(() => undefined))
-      if (summary && loadedCode !== null) {
-        // Code context is fixed at submission: a task without one stays plain.
-        setCode(await readTaskCode(runId).catch((failure) => failure instanceof ApiError && failure.status === 404 ? null : loadedCode))
-      }
       setError('')
       setWaiting(false)
     } catch (failure) {
@@ -78,7 +69,7 @@ export function TaskDetailPage({ runId, navigate }: { runId: string; navigate(pa
       setError(errorMessage(failure))
       if (failure instanceof ApiError && failure.status === 404) setMissing(true)
     }
-  }, [runId, task, activity, openedAt, loadedCode])
+  }, [runId, task, activity, openedAt])
   // The change stream drives refreshes; polling remains as a slow backup and
   // takes over when the stream is unavailable.
   usePolling(refresh, streamBroken ? 2000 : 10000, !done && !missing)
@@ -92,12 +83,7 @@ export function TaskDetailPage({ runId, navigate }: { runId: string; navigate(pa
   const stages = useMemo(() => flatten(activity), [activity])
   const byNode = useMemo(() => new Map(stages.map((item) => [item.stage.node_id, item])), [stages])
   const current = stages.find((item) => item.key === selected) ?? stages.find((item) => item.stage.status === 'running') ?? stages.at(-1)
-  // Activity and code are separate reads; until the activity itself shows a
-  // finished run, the verdict stays pending so the page never contradicts itself.
-  const code = loadedCode && activity && !terminal(activity.status) ? { ...loadedCode, verdict: { status: 'pending' as const } } : loadedCode
-  const verification = code ? verdictLabel(code.verdict) : verificationLabel(activity?.delivery, activity?.status ?? '')
-  const stageHead = (nodeId: string) => code?.stages.find((stage) => stage.node_id === nodeId)?.version.head_sha
-  const stagePasses = (nodeId: string) => code?.stages.find((stage) => stage.node_id === nodeId)?.passes
+  const verification = verificationLabel(activity?.delivery, activity?.status ?? '')
   const trial = activity?.development_trial === true
   // A trial has no task record; its page is named after the team it trials.
   const trialTeamId = trial && !task ? activity.team_id : undefined
@@ -129,7 +115,7 @@ export function TaskDetailPage({ runId, navigate }: { runId: string; navigate(pa
       <button type="button" className="icon-button" aria-label={backLabel} disabled={!activity && !task} onClick={() => navigate(backPath)}><ArrowLeft size={16} /></button>
       <div className="task-header__title">
         <h1 title={heading}>{heading}</h1>
-        <p className="muted small">{task ? [task.team_name || '团队', `第 ${task.workflow_version} 版`, sourceLabel(task.source), task.actor, relativeTime(task.created_at)].filter(Boolean).join(' · ') : ''}{code ? <> · <CodeSummary code={code} /></> : null}</p>
+        <p className="muted small">{task ? [task.team_name || '团队', `第 ${task.workflow_version} 版`, sourceLabel(task.source), task.actor, relativeTime(task.created_at)].filter(Boolean).join(' · ') : ''}</p>
       </div>
       {activity ? <div className="task-header__state">
         <Badge tone={executionTone(activity.status)}>{executionLabel(activity.status, activity.wait_kind)}</Badge>
@@ -154,29 +140,19 @@ export function TaskDetailPage({ runId, navigate }: { runId: string; navigate(pa
               <span className="chain__text">
                 <strong>{item.stage.name || item.member.name}</strong>
                 <span className="muted small">{item.member.name}{item.member.runtime?.engine ? ` · ${engineName(item.member.runtime.engine)}` : ''}{item.stage.duration_ms ? ` · ${duration(item.stage.duration_ms)}` : ''}</span>
-                {upstream.length ? <span className="chain__handoff small">接收：{upstream.map((source) => source.stage.name || source.member.name).join('、')}{stageHead(upstream[0].stage.node_id) ? ` · 提交 ${shortSHA(stageHead(upstream[0].stage.node_id))}` : ''}</span> : null}
-                {stageHead(item.stage.node_id) ? <span className="mono small muted">产出 {shortSHA(stageHead(item.stage.node_id))}</span> : null}
-                {(stagePasses(item.stage.node_id) ?? 1) > 1 ? <span className="small muted">第 {stagePasses(item.stage.node_id)} 轮</span> : null}
+                {upstream.length ? <span className="chain__handoff small">接收：{upstream.map((source) => source.stage.name || source.member.name).join('、')}</span> : null}
               </span>
             </button>
           </li>
         })}</ol>
-        {code ? <CodeVerdict code={code} executionLabel={executionLabel(activity.status, activity.wait_kind)} onOpenCommand={(nodeId, index) => {
-          const target = stages.find((entry) => entry.stage.node_id === nodeId)
-          if (target) setSelected(target.key)
-          setLogStream(`command-${index + 1}`)
-          setTab('output')
-        }} /> : <Verdict activity={activity} />}
-        {code ? <TaskThread runId={runId} status={activity.status} navigate={navigate} /> : null}
-        {code && !readOnly ? <FollowUpComposer runId={runId} status={activity.status} navigate={navigate} /> : null}
+        <Verdict activity={activity} />
       </aside>
       <div className="task-panel">
         <div className="tabs" role="tablist" aria-label="任务内容">
-          {([['output', '输出'], ...(code ? [['changes', '变更']] as const : []), ['evidence', '证据'], ['details', '详情']] as const).map(([value, label]) => <button key={value} type="button" role="tab" aria-selected={tab === value} onClick={() => setTab(value)}>{label}</button>)}
+          {([['output', '输出'], ['evidence', '证据'], ['details', '详情']] as const).map(([value, label]) => <button key={value} type="button" role="tab" aria-selected={tab === value} onClick={() => setTab(value)}>{label}</button>)}
         </div>
-        {tab === 'output' ? current ? <StageOutput runId={runId} version={version} logStream={logStream} item={current} busy={busy} onRetry={readOnly ? undefined : () => void act(() => retryStage(runId, current.stage.node_id, createUUID()))} /> : <p className="muted">尚未开始执行。</p> : null}
-        {tab === 'changes' && code ? <CodeChanges code={code} runId={runId} done={done} onChanged={() => void refresh()} /> : null}
-        {tab === 'evidence' ? code ? <CodeEvidencePanel code={code} /> : <Evidence activity={activity} /> : null}
+        {tab === 'output' ? current ? <StageOutput runId={runId} version={version} item={current} busy={busy} onRetry={readOnly ? undefined : () => void act(() => retryStage(runId, current.stage.node_id, createUUID()))} /> : <p className="muted">尚未开始执行。</p> : null}
+        {tab === 'evidence' ? <Evidence activity={activity} /> : null}
         {tab === 'details' ? <Details activity={activity} firstOutputAt={task?.first_output_at} /> : null}
       </div>
     </div>}

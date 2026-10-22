@@ -1,0 +1,2 @@
+ALTER TABLE weave_capability_quotas DROP CONSTRAINT weave_capability_quotas_max_active_invocations_check;
+ALTER TABLE weave_capability_quotas ADD CONSTRAINT weave_capability_quotas_max_active_invocations_check CHECK (max_active_invocations BETWEEN 1 AND 20000);

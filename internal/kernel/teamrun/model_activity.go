@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jinyitao123/weave/internal/kernel/workflow"
 )
 
@@ -28,7 +29,9 @@ func (r *WorkflowSerialRuntime) modelObserver(run TeamRun) workflow.ModelCallObs
 		detail, err := json.Marshal(map[string]any{
 			"model_call_id": event.CallID, "model": event.Model,
 			"phase": event.Phase, "elapsed_ms": event.ElapsedMS,
-			"error_class": event.ErrorClass,
+			"error_class":     event.ErrorClass,
+			"phases_ms":       event.Phases,
+			"gateway_wait_ms": event.GatewayWaitMS,
 		})
 		if err != nil {
 			return
@@ -38,6 +41,7 @@ func (r *WorkflowSerialRuntime) modelObserver(run TeamRun) workflow.ModelCallObs
 		recordCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Second)
 		defer cancel()
 		if err := r.Activities.Record(recordCtx, ActivityEvent{
+			EventID:     uuid.NewSHA1(uuid.NameSpaceURL, []byte(run.WorkspaceID+"\x00"+run.RunID+"\x00"+event.CallID+"\x00"+string(event.Phase))).String(),
 			WorkspaceID: run.WorkspaceID, RunID: run.RunID, Kind: "model_" + string(event.Phase),
 			NodeID: scope.NodeID, MemberID: scope.MemberID, MemberVersion: scope.MemberVersion,
 			Detail: detail, OccurredAt: time.Now().UTC(),

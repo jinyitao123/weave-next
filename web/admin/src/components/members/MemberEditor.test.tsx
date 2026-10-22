@@ -264,4 +264,16 @@ describe('member editor', () => {
     fireEvent.click(screen.getByRole('button', { name: '整理的模型' }))
     expect(await screen.findByRole('option', { name: 'qwen-max' })).toBeTruthy()
   })
+
+  it('links to the models page and reads the catalog again on return', async () => {
+    render(<Controlled />)
+    pick(/^整理/)
+    tab('执行')
+    expect(screen.getByRole('link', { name: '去配置模型' }).getAttribute('href')).toBe('/admin/deployment/models')
+    await waitFor(() => expect(globalThis.fetch).toHaveBeenCalled())
+    vi.mocked(globalThis.fetch).mockImplementation(async () => new Response(JSON.stringify({ version: '1', models: ['deepseek-flash', 'typesafe-jev'] }), { status: 200 }))
+    fireEvent.focus(window)
+    fireEvent.click(screen.getByRole('button', { name: '整理的模型' }))
+    expect(await screen.findByRole('option', { name: 'typesafe-jev' })).toBeTruthy()
+  })
 })

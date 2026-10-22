@@ -56,6 +56,9 @@ func TestDevelopmentModelProvidersIsolationAndSecretsRealPG(t *testing.T) {
 		raw, _ := json.Marshal(body)
 		req := httptest.NewRequest(method, path, strings.NewReader(string(raw)))
 		req.Header.Set("Content-Type", "application/json")
+		if method == http.MethodDelete {
+			req.Header.Set("Idempotency-Key", "delete-shared-provider-"+user+"-"+workspace)
+		}
 		if user != "" {
 			token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, Claims{UserID: user, TenantID: workspace, RegisteredClaims: jwt.RegisteredClaims{ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour))}}).SignedString([]byte(s.Config.JWTSecret))
 			if err != nil {
@@ -112,7 +115,7 @@ func TestDevelopmentModelProvidersIsolationAndSecretsRealPG(t *testing.T) {
 	if rec := call("developer", "ws", http.MethodPut, path, body); rec.Code != http.StatusOK {
 		t.Fatalf("replace returned %d", rec.Code)
 	}
-	if rec := call("developer", "ws", http.MethodGet, "/v1/development/model-providers", nil); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "Renamed model") || strings.Contains(rec.Body.String(), "api_key") {
+	if rec := call("developer", "ws", http.MethodGet, "/v1/development/model-providers", nil); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "Renamed model") || strings.Contains(rec.Body.String(), `"api_key"`) {
 		t.Fatal("list missing provider or exposing a key field")
 	}
 	if rec := call("other-admin", "other", http.MethodGet, "/v1/development/model-providers", nil); rec.Code != http.StatusOK || strings.Contains(rec.Body.String(), "Renamed model") {
@@ -149,6 +152,19 @@ func TestDevelopmentModelProvidersIsolationAndSecretsRealPG(t *testing.T) {
 	response, err := llm.Chat(granted, contract.ChatRequest{Model: "test-model"})
 	if err != nil || response.Content != "model reached" {
 		t.Fatalf("configured model call failed: %v", err)
+	}
+	if rec := call("developer", "ws", http.MethodDelete, path, nil); rec.Code != http.StatusForbidden {
+		t.Fatalf("developer deletion exceeded its role: %d", rec.Code)
+	}
+	if rec := call("user", "ws", http.MethodDelete, path, nil); rec.Code != http.StatusNoContent {
+		t.Fatalf("shared provider deletion: %d %s", rec.Code, rec.Body.String())
+	}
+	if _, err := llm.Chat(granted, contract.ChatRequest{Model: "test-model"}); err == nil {
+		t.Fatal("a cached route still called a revoked provider")
+	}
+	var revisions int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM weave_provider_revisions WHERE workspace_id='ws' AND provider_id='local'`).Scan(&revisions); err != nil || revisions < 1 {
+		t.Fatalf("deletion erased immutable revisions: %d %v", revisions, err)
 	}
 }
 

@@ -1,0 +1,8 @@
+.models__title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
+.models__title strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.models__static { cursor: default; }
+.models__static:hover { background: var(--canvas); }
+.models__list { display: grid; gap: 8px; }
+.models__item { display: flex; align-items: center; gap: 6px; }
+.models__item .input { flex: 1; min-width: 0; }
+.models__advanced { margin-top: 10px; }

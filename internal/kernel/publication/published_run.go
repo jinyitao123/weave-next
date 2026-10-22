@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/jinyitao123/weave/internal/base/deliverable"
@@ -47,6 +48,7 @@ type PublishedRunRequest struct {
 	ParentTaskID     string                        `json:"parent_task_id,omitempty"`
 	DeadlineAt       *time.Time                    `json:"deadline_at,omitempty"`
 	DeliveryContract *deliverable.DeliveryContract `json:"delivery_contract,omitempty"`
+	Scheduling       *execution.SchedulingHints    `json:"scheduling,omitempty"`
 }
 
 func (r PublishedRunRequest) Fingerprint(ctx context.Context) (string, error) {
@@ -63,6 +65,9 @@ func (r PublishedRunRequest) Fingerprint(ctx context.Context) (string, error) {
 		if value != "" && !validID(value) {
 			return "", ErrInvalidRequest
 		}
+	}
+	if r.Scheduling != nil && (r.Scheduling.Priority < -1 || r.Scheduling.Priority > 1 || len(r.Scheduling.FairnessKey) > 512 || strings.ContainsAny(r.Scheduling.FairnessKey, "\x00\r\n")) {
+		return "", ErrInvalidRequest
 	}
 	switch r.Trigger.Type {
 	case "manual", "conversation_explicit":

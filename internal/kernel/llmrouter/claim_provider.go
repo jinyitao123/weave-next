@@ -30,7 +30,9 @@ func (r *Resolver) ResolveProviderConfiguration(ctx context.Context, workspaceID
 		model = snapshot.router.fallback
 	}
 	provider := snapshot.router.providers[snapshot.router.models[model]]
-	if provider == nil || provider.APIKey == "" || provider.BaseURL == "" {
+	// The API key is optional (local and decision-model providers run
+	// without one); an address is still required.
+	if provider == nil || provider.BaseURL == "" {
 		return ProviderConfig{}, errors.New("model provider credentials are unavailable")
 	}
 	if err := frozen.AuthorizeCredentialReference(ctx, providerReference(workspaceID, *provider)); err != nil {
