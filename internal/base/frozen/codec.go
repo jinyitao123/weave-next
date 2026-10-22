@@ -164,6 +164,10 @@ func DecodeArtifactEnvelopeV1(envelope ArtifactEnvelopeV1) (ArtifactPayloadV1, e
 	if !validLowerHexHash(envelope.ContentHash) {
 		return ArtifactPayloadV1{}, artifactInvalid(ErrFrozenContentHashMismatch)
 	}
+	key := newArtifactCacheKey(envelope)
+	if payload, ok := verifiedArtifacts.get(key); ok {
+		return payload, nil
+	}
 	payload, err := DecodeArtifactPayloadV1(envelope.Payload)
 	if err != nil {
 		return ArtifactPayloadV1{}, artifactInvalid(err)
@@ -184,6 +188,7 @@ func DecodeArtifactEnvelopeV1(envelope ArtifactEnvelopeV1) (ArtifactPayloadV1, e
 	if subtle.ConstantTimeCompare([]byte(computed), []byte(envelope.ContentHash)) != 1 {
 		return ArtifactPayloadV1{}, artifactInvalid(ErrFrozenContentHashMismatch)
 	}
+	verifiedArtifacts.put(key, payload)
 	return payload, nil
 }
 
