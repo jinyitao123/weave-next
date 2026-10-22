@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"time"
 
 	"github.com/google/uuid"
@@ -34,6 +35,14 @@ const pooledDefaultLeaseTTL = 60 * time.Second
 
 // pooledFillDelay coalesces completions and notifications into one claim pass.
 const pooledFillDelay = 20 * time.Millisecond
+
+// pooledBusyPoll is the polling period while the pool has work; measured on
+// 2026-10-21, a 2s period here halved decide throughput at 200 lanes because
+// some claimable transitions raise no notification.
+const pooledBusyPoll = 200 * time.Millisecond
+
+// pooledWorkspaceRefresh bounds how stale the ready-workspace list may be.
+const pooledWorkspaceRefresh = time.Second
 
 func claimLeaseTTL(task *taskqueue.Task) time.Duration {
 	if task.StartedAt != nil && task.LeaseExpiresAt != nil {
@@ -95,13 +104,46 @@ func (workers *Workers) pooledLoop(stop context.Context, capacity int) {
 	defer func() { cancelListener(); <-listenerDone }()
 	active := make(map[string]activeWorkflowClaim)
 	completed := make(chan string, capacity)
-	// Notifications are the primary wake-up; polling only covers a lost one.
-	pollInterval := workers.PollInterval
-	if pollInterval <= 0 {
-		pollInterval = 2 * time.Second
+	// Notifications are the primary wake-up. Polling covers transitions that
+	// raise none, such as a delayed retry becoming available or a lost
+	// notification: it stays fast while the pool has work and backs off to the
+	// idle interval once nothing runs and nothing was claimed.
+	idlePoll := workers.PollInterval
+	if idlePoll <= 0 {
+		idlePoll = 2 * time.Second
 	}
-	poll := time.NewTicker(pollInterval)
+	busyPoll := min(pooledBusyPoll, idlePoll)
+	pollDelay := busyPoll
+	poll := time.NewTimer(pollDelay)
 	defer poll.Stop()
+	schedulePoll := func(busy bool) {
+		if busy {
+			pollDelay = busyPoll
+		} else {
+			pollDelay = min(pollDelay*2, idlePoll)
+		}
+		poll.Reset(pollDelay)
+	}
+	// The ready-workspace list is a full read of queued work; refresh it at
+	// most once per pooledWorkspaceRefresh and learn new workspaces from the
+	// notification payload in between. A stale entry costs one indexed claim.
+	var readyCache []string
+	var readyAt time.Time
+	readyWorkspaces := func(ctx context.Context) ([]string, error) {
+		if len(readyCache) > 0 && time.Since(readyAt) < pooledWorkspaceRefresh {
+			return readyCache, nil
+		}
+		workspaces, err := store.ReadyWorkspaces(ctx)
+		if err == nil {
+			readyCache, readyAt = workspaces, time.Now()
+		}
+		return workspaces, err
+	}
+	noteWorkspace := func(workspace string) {
+		if workspace != "" && !slices.Contains(readyCache, workspace) {
+			readyCache = append(readyCache, workspace)
+		}
+	}
 	var fillSoon <-chan time.Time
 	var fillTimer *time.Timer
 	defer func() {
@@ -130,21 +172,21 @@ func (workers *Workers) pooledLoop(stop context.Context, capacity int) {
 		}
 	}()
 	draining, cursor := false, 0
-	fill := func() {
+	fill := func() (claimed int) {
 		if draining || len(active) >= capacity {
-			return
+			return 0
 		}
 		ctx, cancel := context.WithTimeout(execCtx, 5*time.Second)
 		defer cancel()
-		workspaces, err := store.ReadyWorkspaces(ctx)
+		workspaces, err := readyWorkspaces(ctx)
 		if err != nil {
 			if ctx.Err() == nil {
 				slog.Error("list workflow workspaces", "error", err)
 			}
-			return
+			return 0
 		}
 		if len(workspaces) == 0 {
-			return
+			return 0
 		}
 		counts := make(map[string]int)
 		for _, claim := range active {
@@ -166,6 +208,7 @@ func (workers *Workers) pooledLoop(stop context.Context, capacity int) {
 					break
 				}
 				counts[workspace] += len(tasks)
+				claimed += len(tasks)
 				for _, task := range tasks {
 					taskCtx, cancel := context.WithCancelCause(context.WithValue(execCtx, pooledLeaseKey{}, true))
 					ttl := claimLeaseTTL(task)
@@ -184,6 +227,7 @@ func (workers *Workers) pooledLoop(stop context.Context, capacity int) {
 			}
 		}
 		cursor++
+		return claimed
 	}
 	fill()
 	for {
@@ -230,13 +274,18 @@ func (workers *Workers) pooledLoop(stop context.Context, capacity int) {
 					}
 				}
 			} else {
+				noteWorkspace(event.payload)
 				requestFill()
 			}
 		case <-fillSoon:
 			fillTimer, fillSoon = nil, nil
-			fill()
+			if fill() > 0 && pollDelay > busyPoll {
+				// Work arrived while polling had backed off.
+				schedulePoll(true)
+			}
 		case <-poll.C:
-			fill()
+			claimed := fill()
+			schedulePoll(claimed > 0 || len(active) > 0)
 		case <-heartbeat.C:
 			if len(active) == 0 {
 				continue

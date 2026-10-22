@@ -106,7 +106,13 @@ func TestPooledExecutorDrainsAndJoinsBeforeStoppingRealPG(t *testing.T) {
 			h.executor.Tasks = tasks
 			h.executor.Runtime = blocked
 			h.executor.HeartbeatInterval = 20 * time.Millisecond
-			workers := &Workers{Pooled: true, Executor: h.executor, ExecutorConcurrency: 2, DrainTimeout: 100 * time.Millisecond, PollInterval: time.Hour,
+			// A finishing execution gets ample drain time so completion, not the
+			// timer, decides the outcome; a forced drain needs the timer to fire.
+			drainTimeout := 100 * time.Millisecond
+			if finish {
+				drainTimeout = 5 * time.Second
+			}
+			workers := &Workers{Pooled: true, Executor: h.executor, ExecutorConcurrency: 2, DrainTimeout: drainTimeout, PollInterval: time.Hour,
 				CancelGrace: &CancelGraceSweeper{Tasks: h.tasks, Transactions: h.pool, Runs: NewPGStore()}, TimerWake: &TimerWakeSweeper{Transactions: h.pool, Runs: NewPGStore(), Executor: h.executor}}
 			workers.Start()
 			defer workers.Stop()
