@@ -1475,6 +1475,34 @@
         "lines_added": 326,
         "production_lines_added": 141
       }
+    },
+    {
+      "date": "2026-10-22",
+      "reason": "Member reasoning effort (#82, first part): an optional request_profile.reasoning_effort on member configuration, frozen into the agent version and FrozenAgentRecord content hash (absent profiles keep their hash), compiled into the request effort of every model call; invalid values and CLI members are refused before publication. No new packages, loops or dependencies.",
+      "record": "docs/治理/2026-10-22-执行面与供应方协议增长登记.md",
+      "growth": {
+        "lines": 148,
+        "production_lines": 72
+      },
+      "deletion_trigger": "When provider capability declarations (#82) state which reasoning efforts each provider accepts, replace frozen.ReasoningEfforts and its fixed validation in ValidateRequestProfile with the provider's declaration and delete the list, lowering the exact budgets in that change.",
+      "base": {
+        "previous_lines": 8942,
+        "previous_production_lines": 7004,
+        "lines_added": 67,
+        "production_lines_added": 39
+      },
+      "kernel": {
+        "previous_lines": 113979,
+        "previous_production_lines": 88077,
+        "lines_added": 13,
+        "production_lines_added": 13
+      },
+      "app": {
+        "previous_lines": 94923,
+        "previous_production_lines": 63603,
+        "lines_added": 68,
+        "production_lines_added": 20
+      }
     }
   ],
   "migration_targets": {
@@ -1506,8 +1534,8 @@
     "rule": "Each band limit equals its measured size. The total of the band limits may exceed this baseline only by the growth of amendments added after the first recorded_amendments entries, each of which must state its growth and a deletion_trigger."
   },
   "base": {
-    "lines": 8942,
-    "production_lines": 7004,
+    "lines": 9009,
+    "production_lines": 7043,
     "packages": 9,
     "external_dependencies": 4,
     "allowed_dependencies": [
@@ -1518,8 +1546,8 @@
     ]
   },
   "kernel": {
-    "lines": 113979,
-    "production_lines": 88077,
+    "lines": 113992,
+    "production_lines": 88090,
     "packages": 48,
     "external_dependencies": 5,
     "allowed_dependencies": [
@@ -1538,8 +1566,8 @@
     "allowed_dependencies": []
   },
   "app": {
-    "lines": 94923,
-    "production_lines": 63603,
+    "lines": 94991,
+    "production_lines": 63623,
     "packages": 25,
     "external_dependencies": 6,
     "allowed_dependencies": [

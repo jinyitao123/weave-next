@@ -10,6 +10,11 @@ import './members.css'
 
 const engines = ['claude', 'codex', 'opencode', 'loom']
 const memoryScopes = [{ value: 'tenant', label: '工作区共享' }, { value: 'user', label: '按员工区分' }, { value: 'session', label: '仅本次会话' }]
+// Mirrors frozen.ReasoningEfforts; unset keeps the engine default, medium.
+const reasoningEfforts = [
+  { value: '', label: '默认（medium）' },
+  ...['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'].map((value) => ({ value, label: value })),
+]
 const limits = [
   ['max_tokens', '累计 token 上限'],
   ['max_output_tokens', '单次回复 token 上限'],
@@ -327,12 +332,14 @@ function RunPanel({ member, nodes, accepting, models, kindsInUse, onConfig, onRe
     <section className="members__section" aria-label="引擎与模型">
       <h3>引擎与模型</h3>
       <div className="members__grid">
-        <div className="field"><span>引擎</span><Select label={`${name}的引擎`} value={config.engine} disabled={lead} options={engineOptions} onChange={(engine) => onConfig({ engine, runtime_id: '' })} /></div>
+        <div className="field"><span>引擎</span><Select label={`${name}的引擎`} value={config.engine} disabled={lead} options={engineOptions} onChange={(engine) => onConfig({ engine, runtime_id: '', ...(isCLIEngine(engine) ? { reasoning_effort: '' } : {}) })} /></div>
         {cli ? <div className="field"><span>节点</span><Select label={`${name}的节点`} value={config.runtime_id ?? ''} placeholder={engineNodes.length ? '选择节点' : '没有提供该引擎的节点'} options={engineNodes} onChange={(runtime) => onConfig({ runtime_id: runtime })} /></div> : null}
         {cli
           ? <label className="field"><span>模型</span><input className="input" value={config.model ?? ''} placeholder="留空使用节点上的默认模型" onChange={(event) => onConfig({ model: event.target.value })} /></label>
           : <div className="field"><span>模型</span><Select label={`${name}的模型`} value={config.model ?? ''} placeholder={modelOptions.length ? '选择模型' : '还没有可用模型'} options={modelOptions} onChange={(model) => onConfig({ model })} /></div>}
+        {cli ? null : <div className="field"><span>推理档位</span><Select label={`${name}的推理档位`} value={config.reasoning_effort ?? ''} options={reasoningEfforts} onChange={(reasoning_effort) => onConfig({ reasoning_effort })} /></div>}
       </div>
+      {cli ? null : <p className="muted small">推理档位随发布冻结，作为 reasoning_effort 发给模型；供应方是否真正采用由供应方决定。</p>}
       {cli ? null : <p className="muted small">没有合适的模型？<a className="link-button" href="/admin/deployment/models" target="_blank" rel="noreferrer">去配置模型</a>，回到这里后列表会更新。</p>}
     </section>
 

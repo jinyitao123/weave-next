@@ -584,6 +584,17 @@ func NormalizeFrozenAgentRecord(value FrozenAgentRecord) (FrozenAgentRecord, err
 	if err := ValidateToolLoopControl(cloned.Limits.ToolLoopControl); err != nil {
 		return FrozenAgentRecord{}, err
 	}
+	if cloned.RequestProfile != nil {
+		profile := *cloned.RequestProfile
+		if err := ValidateRequestProfile(profile); err != nil {
+			return FrozenAgentRecord{}, err
+		}
+		// An empty profile is the same as none, and hashes the same.
+		cloned.RequestProfile = nil
+		if profile != (FrozenRequestProfile{}) {
+			cloned.RequestProfile = &profile
+		}
+	}
 	if cloned.GraphType == "standard" && string(cloned.FactoryInput) != "{}" {
 		var version struct {
 			SchemaVersion int `json:"schema_version"`

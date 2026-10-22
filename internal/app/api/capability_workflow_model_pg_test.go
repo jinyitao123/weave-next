@@ -438,6 +438,23 @@ func runCapabilityWorkflowModelScenario(t *testing.T, parallel bool, maxConns []
 	if strings.Contains(strings.ToLower(string(requests[0])), "tool_choice") {
 		t.Fatal("pure computation invocation unexpectedly requested a model tool call")
 	}
+	// The member that froze a reasoning effort sends exactly it. Members that
+	// left it unset still get Loom's documented default, medium.
+	for _, body := range requests {
+		var wire struct {
+			ReasoningEffort string `json:"reasoning_effort"`
+		}
+		if err := json.Unmarshal(body, &wire); err != nil {
+			t.Fatal(err)
+		}
+		want := "medium"
+		if strings.Contains(string(body), "fixture-role-final") {
+			want = "high"
+		}
+		if wire.ReasoningEffort != want {
+			t.Fatalf("member sent reasoning_effort %q, want %q", wire.ReasoningEffort, want)
+		}
+	}
 }
 
 func assertCapabilityWorkflowModelCancellation(t *testing.T, fixture *capabilityWorkflowContractFixture, key, invocationID, runID string, modelStarted, modelStopped <-chan struct{}) {
@@ -608,6 +625,10 @@ func publishCapabilityModelWorkflow(
 			Name: "materials-" + role, DisplayName: "资料" + role, Role: "worker", Engine: "loom",
 			Model: capabilityWorkflowModelName, GraphType: "standard", Permissions: registry.PermissionConfig{Deny: []string{"*"}},
 			Spec: stdlib.AgentSpec{SystemPrompt: prompt},
+		}
+		if role == "final" {
+			// Only this member chooses a reasoning effort; the others leave it unset.
+			record.RequestProfile = &frozen.FrozenRequestProfile{ReasoningEffort: "high"}
 		}
 		if err := leadRegistry.Put(ctx, "ws", record); err != nil {
 			t.Fatalf("create published Loom worker %q: %v", role, err)

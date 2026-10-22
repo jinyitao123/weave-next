@@ -134,6 +134,9 @@
       "blocked"
     ]
   },
+  "request_profile": {
+    "reasoning_effort": "low"
+  },
   "compaction": {
     "enabled": true,
     "token_threshold": 6000

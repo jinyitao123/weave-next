@@ -328,6 +328,7 @@ type AgentRecord struct {
 	FallbackModels             []string                           `json:"fallback_models,omitempty"`  // ordered list of models to try if primary fails
 	FallbackRetries            int                                `json:"fallback_retries,omitempty"` // retries per model on transient errors (default 2)
 	Guard                      *GuardConfig                       `json:"guard,omitempty"`
+	RequestProfile             *frozen.FrozenRequestProfile       `json:"request_profile,omitempty"` // request settings frozen with this version; nil keeps the engine defaults
 	Compaction                 *CompactionConfig                  `json:"compaction,omitempty"`
 	SubAgents                  []SubAgentRef                      `json:"sub_agents,omitempty"`
 	SkillRefs                  []SkillRef                         `json:"skill_refs,omitempty"`       // explicit skill bindings (registry_version/legacy/builtin)

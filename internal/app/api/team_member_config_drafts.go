@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jinyitao123/loom/stdlib"
 	"github.com/jinyitao123/weave/internal/base/frozen"
+	"github.com/jinyitao123/weave/internal/kernel/engine"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 	"github.com/labstack/echo/v4"
 )
@@ -38,9 +39,12 @@ type teamMemberAgentConfiguration struct {
 	MemoryScope                string                             `json:"memory_scope"`
 	MaxTokens                  int64                              `json:"max_tokens"`
 	MaxOutputTokens            int                                `json:"max_output_tokens"`
-	StepBudget                 int64                              `json:"step_budget"`
-	MaxCostUSD                 float64                            `json:"max_cost_usd"`
-	OutputSchema               json.RawMessage                    `json:"output_schema,omitempty"`
+	// ReasoningEffort is sent as reasoning_effort on every model request of
+	// the member; empty leaves the provider default.
+	ReasoningEffort string          `json:"reasoning_effort,omitempty"`
+	StepBudget      int64           `json:"step_budget"`
+	MaxCostUSD      float64         `json:"max_cost_usd"`
+	OutputSchema    json.RawMessage `json:"output_schema,omitempty"`
 }
 
 type teamMemberInlineSkill struct {
@@ -153,6 +157,9 @@ func (s *Server) seedTeamMemberConfigDraft(c echo.Context) (*teamMemberConfigDra
 		PermissionAllow:            record.Permissions.Allow, PermissionAsk: record.Permissions.Ask, PermissionDeny: record.Permissions.Deny,
 		MemoryEnabled: memoryEnabled, MemoryScope: memoryScope, MaxTokens: record.MaxTokens, MaxOutputTokens: record.MaxOutputTokens,
 		StepBudget: record.StepBudget, MaxCostUSD: record.MaxCostUSD, OutputSchema: outputSchema,
+	}
+	if record.RequestProfile != nil {
+		configuration.ReasoningEffort = record.RequestProfile.ReasoningEffort
 	}
 	relationship := teamMemberRelationshipDraft{Duty: duty, WhenToUse: whenToUse, ContextInstruction: contextInstruction, AllowedKinds: allowedKinds, DefaultKind: defaultKind, ResultRequirement: resultRequirement, Enabled: enabled}
 	return &teamMemberConfigDraftResponse{
@@ -471,6 +478,19 @@ func configureDevelopmentMember(record *registry.AgentRecord, configuration team
 	}
 	record.MemoryConfig.Enabled, record.MemoryConfig.Scope = configuration.MemoryEnabled, configuration.MemoryScope
 	record.MaxTokens, record.MaxOutputTokens, record.StepBudget, record.MaxCostUSD = configuration.MaxTokens, configuration.MaxOutputTokens, configuration.StepBudget, configuration.MaxCostUSD
+	// A request profile reaches built-in Loom model calls only; a CLI member's
+	// runtime chooses its own, so a setting there would silently do nothing.
+	profile := frozen.FrozenRequestProfile{ReasoningEffort: strings.TrimSpace(configuration.ReasoningEffort)}
+	if err := frozen.ValidateRequestProfile(profile); err != nil {
+		return echo.NewHTTPError(422, "推理档位只能是 "+strings.Join(frozen.ReasoningEfforts, "、")+" 之一，或留空使用供应方默认")
+	}
+	if profile.ReasoningEffort != "" && engine.IsCLIEngine(record.Engine) {
+		return echo.NewHTTPError(422, "命令行引擎成员不使用推理档位，请留空")
+	}
+	record.RequestProfile = nil
+	if profile != (frozen.FrozenRequestProfile{}) {
+		record.RequestProfile = &profile
+	}
 	if len(configuration.OutputSchema) == 0 || string(configuration.OutputSchema) == "null" {
 		record.OutputSchema = nil
 	} else {

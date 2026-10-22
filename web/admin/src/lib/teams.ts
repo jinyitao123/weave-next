@@ -41,6 +41,7 @@ export interface MemberConfiguration {
   memory_scope?: string
   max_tokens?: number
   max_output_tokens?: number
+  reasoning_effort?: string
   step_budget?: number
   max_cost_usd?: number
   max_tool_repeats?: number

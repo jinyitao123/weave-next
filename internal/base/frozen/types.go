@@ -1,6 +1,10 @@
 package frozen
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"fmt"
+	"slices"
+)
 
 const FrozenSchemaVersion = 1
 
@@ -74,6 +78,27 @@ type FrozenCompaction struct {
 	TokenThreshold int64 `json:"token_threshold"`
 }
 
+// FrozenRequestProfile is the model request configuration a developer chose
+// for a member, frozen with its published version. An unset field keeps the
+// engine default.
+type FrozenRequestProfile struct {
+	// ReasoningEffort is sent as reasoning_effort, one of ReasoningEfforts.
+	ReasoningEffort string `json:"reasoning_effort,omitempty"`
+}
+
+// ReasoningEfforts are the reasoning_effort values a member may request.
+// Whether a provider honours a value is the provider's to report.
+var ReasoningEfforts = []string{"none", "minimal", "low", "medium", "high", "xhigh", "max"}
+
+// ValidateRequestProfile rejects a value no provider is asked for, so an
+// unsupported setting is refused before publication instead of being dropped.
+func ValidateRequestProfile(profile FrozenRequestProfile) error {
+	if profile.ReasoningEffort != "" && !slices.Contains(ReasoningEfforts, profile.ReasoningEffort) {
+		return fmt.Errorf("reasoning_effort %q is not one of %v", profile.ReasoningEffort, ReasoningEfforts)
+	}
+	return nil
+}
+
 type FrozenAgentRecord struct {
 	SchemaVersion int `json:"schema_version"`
 
@@ -98,6 +123,9 @@ type FrozenAgentRecord struct {
 	Fallback     FrozenFallback                `json:"fallback"`
 	Guard        *FrozenGuard                  `json:"guard"`
 	Compaction   *FrozenCompaction             `json:"compaction"`
+	// RequestProfile is omitted when empty, so versions without one keep
+	// their content hash.
+	RequestProfile *FrozenRequestProfile `json:"request_profile,omitempty"`
 	GraphType    string                        `json:"graph_type"`
 	FactoryInput json.RawMessage               `json:"factory_input"`
 	// BusinessCapabilityIDs are the exact Forge actions selected by the

@@ -201,6 +201,10 @@ func freezeDescriptorAgent(
 			BlockedTerms: append([]string(nil), record.Guard.BlockedTerms...),
 		}
 	}
+	if record.RequestProfile != nil {
+		profile := *record.RequestProfile
+		value.RequestProfile = &profile
+	}
 	if record.Compaction != nil {
 		value.Compaction = &frozen.FrozenCompaction{
 			Enabled:        record.Compaction.Enabled,

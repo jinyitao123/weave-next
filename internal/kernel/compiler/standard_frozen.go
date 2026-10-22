@@ -372,6 +372,10 @@ func mapStandardFrozenToLegacy(
 		AfterStepHooks:      afterHooks,
 		ExecutionLLMWrapper: opts.ExecutionLLMWrapper,
 	}
+	if profile := bundle.Agent.RequestProfile; profile != nil {
+		record.RequestProfile = &frozen.FrozenRequestProfile{ReasoningEffort: profile.ReasoningEffort}
+		compileOpts.Effort = contract.EffortLevel(profile.ReasoningEffort)
+	}
 	if record.MemoryConfig != nil &&
 		record.MemoryConfig.Enabled &&
 		opts.MemoryService != nil {
