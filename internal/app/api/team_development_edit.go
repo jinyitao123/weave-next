@@ -293,8 +293,11 @@ func editInsertStep(graph editGraph, id string, member *developmentMember) (stri
 	return nextID, nil
 }
 
-// editAddParallelBranch turns a member step into a parallel region, or adds
-// one more branch to an existing region.
+// editAddParallelBranch places a new branch by the step it is anchored to:
+// beside a member step (which becomes a region of two), inside a "parallel"
+// region, or in the region right after a lead or join step, opening that
+// region when there is none yet. A region opened this way has one branch
+// until the same group adds another; finish refuses it otherwise.
 func editAddParallelBranch(graph editGraph, id string, member *developmentMember) (string, error) {
 	if member.Configuration.Role != "worker" || !member.Relationship.Enabled {
 		return "", editFail("并行分支只能由已启用的执行成员负责")
@@ -305,14 +308,22 @@ func editAddParallelBranch(graph editGraph, id string, member *developmentMember
 		if err != nil {
 			return "", err
 		}
-		next := editMemberStep(member, nil, "dispatch")
+		// Every branch reads what the step before the region produced.
+		var before map[string]any
+		if incoming := editEdges(graph, "to_node_id", id); len(incoming) == 1 {
+			before = editNode(graph, editString(incoming[0]["from_node_id"]))
+		}
+		next := editMemberStep(member, before, "dispatch")
 		nextID := editString(next["id"])
 		editSetItems(graph, "nodes", append(editItems(graph, "nodes"), next))
 		editSetItems(graph, "edges", append(editItems(graph, "edges"), editNewEdge(id, nextID, "branch"), editNewEdge(nextID, join, "join")))
 		return nextID, nil
 	}
+	if node != nil && editOneOf(editNodeType(node), "lead", "join") {
+		return editParallelAfter(graph, node, member)
+	}
 	if node == nil || editNodeType(node) != "worker" {
-		return "", editFail("并行分支须接在成员执行的步骤或“并行分工”之后")
+		return "", editFail("并行分支须接在负责人、成员执行的步骤、汇合或“并行分工”上")
 	}
 	incoming, outgoing := editEdges(graph, "to_node_id", id), editEdges(graph, "from_node_id", id)
 	if len(incoming) != 1 || len(outgoing) != 1 {
@@ -339,6 +350,58 @@ func editAddParallelBranch(graph editGraph, id string, member *developmentMember
 		map[string]any{"id": parallel, "type": "parallel", "label": "并行分工", "config": map[string]any{"join_node_id": join}},
 		map[string]any{"id": join, "type": "join", "label": "汇总分支", "config": map[string]any{"policy": "all_success"}}))
 	return nextID, nil
+}
+
+// editParallelAfter adds a branch to the region that follows a lead or join
+// step, opening a region of this one branch between the step and its next one
+// when the next one is not a region already.
+func editParallelAfter(graph editGraph, node map[string]any, member *developmentMember) (string, error) {
+	id := editString(node["id"])
+	outgoing := editEdges(graph, "from_node_id", id)
+	if len(outgoing) != 1 || editString(outgoing[0]["route"]) != "success" {
+		return "", editFail("该步骤连接不完整，请先调整流程")
+	}
+	after := editNode(graph, editString(outgoing[0]["to_node_id"]))
+	if after == nil {
+		return "", editFail("该步骤连接不完整，请先调整流程")
+	}
+	switch editNodeType(after) {
+	case "parallel":
+		return editAddParallelBranch(graph, editString(after["id"]), member)
+	case "deliver":
+		return "", editFail("“%s”之后就是交付，并行分支汇合后需要有步骤汇总结果：请先在它之后添加汇总步骤，再添加并行分支", editFirst(editString(node["label"]), "该步骤"))
+	}
+	parallel, join := "parallel-"+uuid.NewString(), "join-"+uuid.NewString()
+	next := editMemberStep(member, node, "dispatch")
+	nextID := editString(next["id"])
+	// The next step keeps reading what it read before; it may read the join
+	// result explicitly.
+	editSetItems(graph, "edges", append(editWithoutEdges(graph, outgoing[0]),
+		editNewEdge(id, parallel, "success"), editNewEdge(parallel, nextID, "branch"),
+		editNewEdge(nextID, join, "join"), editNewEdge(join, editString(after["id"]), "success")))
+	editSetItems(graph, "nodes", append(editItems(graph, "nodes"), next,
+		map[string]any{"id": parallel, "type": "parallel", "label": "并行分工", "config": map[string]any{"join_node_id": join}},
+		map[string]any{"id": join, "type": "join", "label": "汇总分支", "config": map[string]any{"policy": "all_success"}}))
+	return nextID, nil
+}
+
+// editLoneBranchRegion names a region left with fewer than two branches.
+func editLoneBranchRegion(graph editGraph) string {
+	for _, node := range editItems(graph, "nodes") {
+		if editNodeType(node) != "parallel" {
+			continue
+		}
+		branches := 0
+		for _, edge := range editEdges(graph, "from_node_id", editString(node["id"])) {
+			if editString(edge["route"]) == "branch" {
+				branches++
+			}
+		}
+		if branches < 2 {
+			return editFirst(editString(node["label"]), "并行分工")
+		}
+	}
+	return ""
 }
 
 func editNumber(value any) float64 {

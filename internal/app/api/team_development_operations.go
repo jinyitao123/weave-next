@@ -117,35 +117,45 @@ func (e *editSession) step(graph editGraph, operation map[string]any, key, label
 	return found, nil
 }
 
+// capability resolves an action by its exact catalog id, or else by name.
+// Names may repeat across business objects, so an ambiguous name is refused
+// with each candidate's id for the caller to send instead.
 func (e *editSession) capability(name string) (*catalogCapability, error) {
-	var match, available *catalogCapability
-	matches := 0
+	var matches, available []*catalogCapability
 	for i := range e.catalog {
 		candidate := &e.catalog[i]
+		if candidate.ID == name {
+			return candidate, nil
+		}
 		if candidate.Name != name {
 			continue
 		}
-		match = candidate
-		matches++
+		matches = append(matches, candidate)
 		// The directory also describes employee-only and unavailable actions.
 		// Resolve within the same actionable team scope that binding enforces.
 		if candidate.Status == "available" && candidate.ExecutionMode != "employee_only" {
-			if available != nil {
-				return nil, editFail("业务动作“%s”在目录中名称重复，无法确定是哪一个", name)
-			}
-			available = candidate
+			available = append(available, candidate)
 		}
 	}
-	if available != nil {
-		return available, nil
-	}
-	if matches > 1 {
-		return nil, editFail("业务动作“%s”在目录中名称重复，无法确定是哪一个", name)
-	}
-	if match == nil {
+	switch {
+	case len(available) == 1:
+		return available[0], nil
+	case len(available) > 1:
+		return nil, editAmbiguousCapability(name, available)
+	case len(matches) > 1:
+		return nil, editAmbiguousCapability(name, matches)
+	case len(matches) == 0:
 		return nil, editFail("业务动作“%s”不在当前业务动作目录中", name)
 	}
-	return match, nil
+	return matches[0], nil
+}
+
+func editAmbiguousCapability(name string, candidates []*catalogCapability) error {
+	described := make([]string, 0, len(candidates))
+	for _, candidate := range candidates {
+		described = append(described, fmt.Sprintf("%s（%s）", editFirst(candidate.ObjectName, candidate.Description, candidate.Name), candidate.ID))
+	}
+	return editFail("业务动作“%s”在目录中名称重复，无法确定是哪一个：%s。请改用目录标识", name, strings.Join(described, "、"))
 }
 
 func editProtocolOn(graph editGraph) bool { return graph["result_protocol"] == workbenchResultProtocol }
@@ -583,9 +593,9 @@ func (e *editSession) changeCapability(operation map[string]any) error {
 		}
 		for i := range e.catalog {
 			c := &e.catalog[i]
-			if c.Name == name && bound[c.ID] {
+			if (c.Name == name || c.ID == name) && bound[c.ID] {
 				if capability != nil {
-					return editFail("已绑定业务动作“%s”名称重复，无法确定是哪一个", name)
+					return editAmbiguousCapability(name, []*catalogCapability{capability, c})
 				}
 				capability = c
 			}
@@ -805,6 +815,9 @@ func (e *editSession) finish() error {
 		}
 		if issue := editResultProtocolIssue(graph); issue != "" {
 			return editFail("流程“%s”：%s", flow.Name, issue)
+		}
+		if region := editLoneBranchRegion(graph); region != "" {
+			return editFail("流程“%s”：“%s”只有一个分支，请在同一组修改里再添加一个并行分支", flow.Name, region)
 		}
 		completion, err := editCompletionRequirement(graph)
 		if err == nil && completion != nil {

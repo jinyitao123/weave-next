@@ -406,3 +406,74 @@ func TestDevelopmentCapabilityRemovalTargetsExistingBinding(t *testing.T) {
 		t.Fatal("unavailable existing binding was left behind")
 	}
 }
+
+// A desktop caller opens a parallel check right after the lead's step, as the
+// guide describes, then adds work after the region (issue #66).
+func TestControlledEditsOpenAParallelRegionAfterTheLead(t *testing.T) {
+	doc := editTestDocument()
+	editApply(t, &doc, `[{"kind":"flow_add","name":"合同流程","description":"整理并提交合同","member":"整理员"}]`)
+	refusal := editRefusal(t, doc, `[{"kind":"step_add","flow":"合同流程","after":"理解任务","member":"核对员","name":"交付检查","requirement":"检查交付条款","placement":"parallel"}]`)
+	if !strings.Contains(refusal.Message, "只有一个分支") {
+		t.Fatalf("a region of one branch: %s", refusal.Message)
+	}
+	editApply(t, &doc, `[
+		{"kind":"member_add","ref":"business","name":"商务检查员","duty":"检查商务条款"},
+		{"kind":"step_add","flow":"合同流程","after":"理解任务","member":"核对员","name":"交付检查","requirement":"检查交付条款","placement":"parallel"},
+		{"kind":"step_add","flow":"合同流程","after":"理解任务","member":"business","name":"商务检查","requirement":"检查商务条款","placement":"parallel"},
+		{"kind":"step_add","flow":"合同流程","after":"并行分工","member":"负责人","name":"汇总检查结果","requirement":"汇总两项检查"}
+	]`)
+	kernel := editKernelGraph(t, doc.Workflows[0])
+	graph := editGraphOf(t, doc.Workflows[0])
+	lead, parallel := editLabelled(t, graph, "理解任务"), editLabelled(t, graph, "并行分工")
+	if next := editEdges(graph, "from_node_id", editString(lead["id"])); len(next) != 1 || editString(next[0]["to_node_id"]) != editString(parallel["id"]) {
+		t.Fatalf("the lead does not lead into the region: %v", next)
+	}
+	for _, label := range []string{"交付检查", "商务检查"} {
+		step := editLabelled(t, graph, label)
+		steps, err := machine.ParallelBranchSteps(kernel, editString(step["id"]))
+		if err != nil || len(steps) != 1 {
+			t.Fatalf("%s branch = %+v, %v", label, steps, err)
+		}
+		if previous := editObject(editObject(editObject(step["inputs"])["previous"])["value"]); editString(previous["node_id"]) != editString(lead["id"]) {
+			t.Fatalf("%s does not read the lead: %v", label, step["inputs"])
+		}
+	}
+	join := editLabelled(t, graph, "汇总分支")
+	summary := editLabelled(t, graph, "汇总检查结果")
+	if next := editEdges(graph, "from_node_id", editString(join["id"])); len(next) != 1 || editString(next[0]["to_node_id"]) != editString(summary["id"]) {
+		t.Fatalf("the summary is not after the join: %v", next)
+	}
+
+	// Right before delivery there is no step to gather the branches.
+	editApply(t, &doc, `[{"kind":"step_add","flow":"合同流程","after":"整理员","member":"负责人","name":"最终汇总","requirement":"汇总全部结果"}]`)
+	refusal = editRefusal(t, doc, `[{"kind":"step_add","flow":"合同流程","after":"最终汇总","member":"核对员","name":"再查一次","requirement":"复查","placement":"parallel"}]`)
+	if !strings.Contains(refusal.Message, "之后就是交付") {
+		t.Fatalf("parallel right before delivery: %s", refusal.Message)
+	}
+}
+
+func TestDevelopmentCapabilityIDResolvesRepeatedNames(t *testing.T) {
+	doc := editTestDocument()
+	catalog := []catalogCapability{
+		{ID: "forge:action:contract.submit", Name: "提交审批", ObjectName: "合同", Status: "available", ExecutionMode: "team_delegable"},
+		{ID: "forge:action:expense.submit", Name: "提交审批", ObjectName: "报销单", Status: "available", ExecutionMode: "team_delegable"},
+	}
+	_, err := applyDevelopmentOperations(&doc, editOps(t, `[{"kind":"capability","member":"整理员","capability":"提交审批","selected":true}]`), catalog)
+	var refusal *editError
+	if !errors.As(err, &refusal) || !strings.Contains(refusal.Message, "合同（forge:action:contract.submit）") || !strings.Contains(refusal.Message, "报销单（forge:action:expense.submit）") {
+		t.Fatalf("ambiguous name refusal does not name the candidates: %v", err)
+	}
+	if _, err := applyDevelopmentOperations(&doc, editOps(t, `[{"kind":"capability","member":"整理员","capability":"forge:action:contract.submit","selected":true}]`), catalog); err != nil {
+		t.Fatal(err)
+	}
+	if ids := doc.Members[1].Configuration.BusinessCapabilityIDs; !reflect.DeepEqual(ids, []string{"forge:action:contract.submit"}) {
+		t.Fatalf("bound = %v", ids)
+	}
+	// The bound one of two same-named actions is removed by its name.
+	if _, err := applyDevelopmentOperations(&doc, editOps(t, `[{"kind":"capability","member":"整理员","capability":"提交审批","selected":false}]`), catalog); err != nil {
+		t.Fatal(err)
+	}
+	if ids := doc.Members[1].Configuration.BusinessCapabilityIDs; len(ids) != 0 {
+		t.Fatalf("left bound = %v", ids)
+	}
+}
