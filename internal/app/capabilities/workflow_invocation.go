@@ -466,36 +466,13 @@ func (s *WorkflowInvocationService) reserve(
 		if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, laneLock); err != nil {
 			return workflowInvocationRecord{}, false, false, fmt.Errorf("lock capability workflow lane: %w", err)
 		}
-		var active bool
-		err = tx.QueryRow(ctx, `SELECT EXISTS(
-		 SELECT 1 FROM weave_capability_workflow_invocations i
-		 LEFT JOIN weave_workflow_admission_requests a ON a.workspace_id=i.workspace_id AND a.request_id=i.admission_request_id
-		 LEFT JOIN weave_kernel_publication_requests k ON k.workspace_id=i.workspace_id AND k.request_id=i.admission_request_id
-		 LEFT JOIN weave_team_runs r ON r.workspace_id=i.workspace_id AND r.run_id=i.run_id
-		 LEFT JOIN weave_task_queue q ON q.workspace_id=i.workspace_id AND q.id=i.task_id
-		 WHERE i.workspace_id=$1 AND i.application_id=$2 AND i.lane=$3 AND i.invocation_id<>$4
-		 AND k.operation IS DISTINCT FROM 'published_closed'
-		 AND ((a.receipt IS NULL AND q.id IS NULL AND r.run_id IS NULL) OR COALESCE(r.status,
-		   CASE q.status WHEN 'queued' THEN 'queued' WHEN 'dispatched' THEN 'queued' WHEN 'running' THEN 'running'
-		     WHEN 'cancel_requested' THEN 'cancel_requested' ELSE q.status END) IN ('queued','running','parked','cancel_requested'))
-		)`, request.WorkspaceID, request.ApplicationID, desired.Lane, desired.InvocationID).Scan(&active)
+		active, err := workflowLaneActive(ctx, tx, request.WorkspaceID, request.ApplicationID, desired.Lane, desired.InvocationID)
 		if err != nil {
-			return workflowInvocationRecord{}, false, false, fmt.Errorf("check active capability workflow lane: %w", err)
+			return workflowInvocationRecord{}, false, false, err
 		}
 		if active {
 			return workflowInvocationRecord{}, false, false, ErrInvocationLaneActive
 		}
-	}
-	quota, err := lockWorkspaceCapabilityQuota(ctx, tx, request.WorkspaceID)
-	if err != nil {
-		return workflowInvocationRecord{}, false, false, err
-	}
-	active, err := countActiveCapabilityInvocations(ctx, tx, request.WorkspaceID, request.ApplicationID, request.RequestID)
-	if err != nil {
-		return workflowInvocationRecord{}, false, false, err
-	}
-	if active >= quota.MaxActiveInvocations {
-		return workflowInvocationRecord{}, false, false, ErrQuotaExceeded
 	}
 	runRequest := publishedRequest(desired, envelope, workflowInput)
 	if _, err = admissions.ReserveTx(ctx, tx, runRequest, workflowadmission.Target{TeamID: teamID}); err != nil {
@@ -522,6 +499,22 @@ func (s *WorkflowInvocationService) reserve(
 		string(desired.Input), desired.InputHash, desired.Lane, desired.AdmissionRequestID, desired.RunID, desired.TaskID, string(schedulingJSON))
 	if err != nil {
 		return workflowInvocationRecord{}, false, false, fmt.Errorf("insert capability workflow invocation: %w", translateWorkflowInvocationInsertError(err))
+	}
+	// The workspace quota serializes admissions, so it is taken last: only the
+	// count and the commit run under it. Under READ COMMITTED the count starts
+	// after the lock is granted and therefore sees every admission committed by
+	// the previous holder; this admission excludes itself by request, and an
+	// exceeded quota rolls back everything above.
+	quota, err := lockWorkspaceCapabilityQuota(ctx, tx, request.WorkspaceID)
+	if err != nil {
+		return workflowInvocationRecord{}, false, false, err
+	}
+	active, err := countActiveCapabilityInvocations(ctx, tx, request.WorkspaceID, request.ApplicationID, request.RequestID)
+	if err != nil {
+		return workflowInvocationRecord{}, false, false, err
+	}
+	if active >= quota.MaxActiveInvocations {
+		return workflowInvocationRecord{}, false, false, ErrQuotaExceeded
 	}
 	if err = tx.Commit(ctx); err != nil {
 		return workflowInvocationRecord{}, false, false, fmt.Errorf("commit capability workflow invocation: %w", err)

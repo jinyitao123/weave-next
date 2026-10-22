@@ -87,6 +87,10 @@ func TestWorkflowRuntimeCredentialRechecksApplicationGrantRealPG(t *testing.T) {
 	if err := access.SetGrant(t.Context(), "workflow-auth", "workflow-auth-user", grant); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := pool.Exec(t.Context(), `INSERT INTO weave_workflow_admission_requests(workspace_id,request_id,actor_subject,request_digest,request,target)
+	 VALUES('workflow-auth','admission','{"workspace_id":"workflow-auth","user_id":"workflow-auth-user"}',repeat('a',64),'{}','{}')`); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := pool.Exec(t.Context(), `INSERT INTO weave_capability_workflow_invocations(
 	 workspace_id,application_id,request_id,invocation_id,credential_id,capability_id,revision,definition_hash,
 	 workflow_id,workflow_version,input,input_hash,admission_request_id,run_id,task_id)
