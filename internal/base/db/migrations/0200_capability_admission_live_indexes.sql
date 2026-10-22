@@ -12,9 +12,11 @@ CREATE INDEX weave_capability_invocations_waiting_idx
 CREATE INDEX weave_team_runs_live_idx
   ON weave_team_runs (workspace_id, run_id)
   WHERE status IN ('queued', 'running', 'parked', 'cancel_requested');
-CREATE INDEX weave_task_queue_unacknowledged_failure_idx
-  ON weave_task_queue (workspace_id, id)
-  WHERE status = 'failed' AND worker_id IS NOT NULL;
+CREATE INDEX weave_task_queue_live_capability_idx
+  ON weave_task_queue (workspace_id, capability_invocation_id)
+  WHERE identity_kind = 'capability'
+    AND (status IN ('queued', 'running', 'cancel_requested')
+      OR (status = 'failed' AND worker_id IS NOT NULL));
 
 -- Every workflow invocation is inserted after its admission request in the
 -- same transaction and neither is ever deleted. The live-candidate count
