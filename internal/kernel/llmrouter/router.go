@@ -2,6 +2,7 @@ package llmrouter
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -276,4 +277,87 @@ func ObserveModelProtocolCall(ctx context.Context, inner contract.LLM, request c
 		normalized(normalizedModelProtocol(response, err))
 	}
 	return response, err
+}
+
+// Call failure classes that only typed evidence can establish: an HTTP status
+// or a provider adapter's own error type. Nothing is read from error text.
+const (
+	CallFailureRateLimited        = "rate_limited"
+	CallFailureAuth               = "auth"
+	CallFailureUnsupportedRequest = "unsupported_request"
+	CallFailureUpstream5xx        = "upstream_5xx"
+	CallFailureStreamTruncated    = "stream_truncated"
+	CallFailureEmptyResponse      = "provider_empty_response"
+	CallFailureOutputLimit        = "provider_output_limit"
+)
+
+// CallFailure is the safe, typed account of a failed model call. Class is
+// empty when the error carries no typed evidence. HTTPStatus is zero unless
+// the provider answered with one, and FinishReason is one of the known
+// OpenAI-compatible values or empty. Retryable is nil when the evidence does
+// not say whether repeating the same request could succeed.
+type CallFailure struct {
+	Class        string
+	HTTPStatus   int
+	FinishReason string
+	Retryable    *bool
+}
+
+// DiagnoseCallError classifies a model call error from typed evidence only:
+// a status reported through HTTPStatus() (OpenAI-compatible and System One
+// providers) or the OpenAI adapter's empty-response and stream-close errors.
+func DiagnoseCallError(err error) CallFailure {
+	if err == nil {
+		return CallFailure{}
+	}
+	retry := func(value bool) *bool { return &value }
+	var status interface{ HTTPStatus() int }
+	if errors.As(err, &status) {
+		code := status.HTTPStatus()
+		failure := CallFailure{HTTPStatus: code}
+		switch {
+		case code == http.StatusTooManyRequests:
+			failure.Class, failure.Retryable = CallFailureRateLimited, retry(true)
+		case code == http.StatusUnauthorized || code == http.StatusForbidden:
+			failure.Class, failure.Retryable = CallFailureAuth, retry(false)
+		case code >= 500:
+			failure.Class, failure.Retryable = CallFailureUpstream5xx, retry(true)
+		case code >= 400:
+			failure.Class, failure.Retryable = CallFailureUnsupportedRequest, retry(false)
+		}
+		return failure
+	}
+	var empty *openai.EmptyResponseError
+	if errors.As(err, &empty) {
+		failure := CallFailure{FinishReason: knownFinishReason(empty.FinishReason)}
+		switch {
+		case empty.FinishReason == "length":
+			// The output budget ran out; the same request runs out again.
+			failure.Class, failure.Retryable = CallFailureOutputLimit, retry(false)
+		case empty.Stream && (empty.CloseKind == "eof" || empty.CloseKind == "scanner"):
+			failure.Class, failure.Retryable = CallFailureStreamTruncated, retry(true)
+		default:
+			failure.Class = CallFailureEmptyResponse
+		}
+		return failure
+	}
+	if errors.Is(err, openai.ErrStreamClosedWithoutDone) || errors.Is(err, openai.ErrStreamScanner) {
+		return CallFailure{Class: CallFailureStreamTruncated, Retryable: retry(true)}
+	}
+	if errors.Is(err, openai.ErrJSONModeInstructionMissing) || errors.Is(err, openai.ErrToolChoiceInvalid) ||
+		errors.Is(err, openai.ErrToolChoiceUnsupported) {
+		// Refused before sending: the request itself is not acceptable.
+		return CallFailure{Class: CallFailureUnsupportedRequest, Retryable: retry(false)}
+	}
+	return CallFailure{}
+}
+
+// knownFinishReason passes through only the documented finish_reason values,
+// so a provider cannot place arbitrary text in a diagnostic.
+func knownFinishReason(reason string) string {
+	switch reason {
+	case "stop", "length", "tool_calls", "content_filter", "function_call":
+		return reason
+	}
+	return ""
 }

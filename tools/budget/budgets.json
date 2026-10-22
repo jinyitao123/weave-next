@@ -1459,6 +1459,22 @@
         "lines_added": -1858,
         "production_lines_added": -1523
       }
+    },
+    {
+      "date": "2026-10-22",
+      "reason": "Typed model call failure diagnosis (#88): rate_limited, auth, unsupported_request, upstream_5xx, stream_truncated, provider_empty_response and provider_output_limit from HTTP status or adapter error types only, with http_status, a known finish_reason, retryability and stream_started on failed events. No new packages, loops or dependencies.",
+      "record": "docs/治理/2026-10-22-执行面与供应方协议增长登记.md",
+      "growth": {
+        "lines": 326,
+        "production_lines": 141
+      },
+      "deletion_trigger": "When the Loom OpenAI adapter returns typed errors for response decoding and protocol violations, delete the untyped provider fallback of classifyModelCallError in internal/kernel/workflow/model_observation.go so every provider failure comes from llmrouter.DiagnoseCallError, and lower the exact budgets in that change.",
+      "kernel": {
+        "previous_lines": 113653,
+        "previous_production_lines": 87936,
+        "lines_added": 326,
+        "production_lines_added": 141
+      }
     }
   ],
   "migration_targets": {
@@ -1502,8 +1518,8 @@
     ]
   },
   "kernel": {
-    "lines": 113653,
-    "production_lines": 87936,
+    "lines": 113979,
+    "production_lines": 88077,
     "packages": 48,
     "external_dependencies": 5,
     "allowed_dependencies": [

@@ -26,13 +26,27 @@ func (r *WorkflowSerialRuntime) modelObserver(run TeamRun) workflow.ModelCallObs
 		default:
 			return
 		}
-		detail, err := json.Marshal(map[string]any{
+		fields := map[string]any{
 			"model_call_id": event.CallID, "model": event.Model,
 			"phase": event.Phase, "elapsed_ms": event.ElapsedMS,
 			"error_class":     event.ErrorClass,
 			"phases_ms":       event.Phases,
 			"gateway_wait_ms": event.GatewayWaitMS,
-		})
+		}
+		// Failure facts appear only when known; an absent key means unknown.
+		if event.Phase == "failed" || event.Phase == "cancelled" {
+			fields["stream_started"] = event.StreamStarted
+			if event.HTTPStatus != 0 {
+				fields["http_status"] = event.HTTPStatus
+			}
+			if event.FinishReason != "" {
+				fields["finish_reason"] = event.FinishReason
+			}
+			if event.Retryable != nil {
+				fields["retryable"] = *event.Retryable
+			}
+		}
+		detail, err := json.Marshal(fields)
 		if err != nil {
 			return
 		}

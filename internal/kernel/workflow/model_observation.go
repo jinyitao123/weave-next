@@ -36,6 +36,16 @@ const (
 	ModelCallErrorTransport        ModelCallErrorClass = "transport"
 	ModelCallErrorProvider         ModelCallErrorClass = "provider"
 	ModelCallErrorUnknown          ModelCallErrorClass = "unknown"
+
+	// Finer provider classes, set only on typed evidence (llmrouter.DiagnoseCallError);
+	// a provider error without such evidence stays "provider".
+	ModelCallErrorRateLimited        ModelCallErrorClass = llmrouter.CallFailureRateLimited
+	ModelCallErrorAuth               ModelCallErrorClass = llmrouter.CallFailureAuth
+	ModelCallErrorUnsupportedRequest ModelCallErrorClass = llmrouter.CallFailureUnsupportedRequest
+	ModelCallErrorUpstream5xx        ModelCallErrorClass = llmrouter.CallFailureUpstream5xx
+	ModelCallErrorStreamTruncated    ModelCallErrorClass = llmrouter.CallFailureStreamTruncated
+	ModelCallErrorEmptyResponse      ModelCallErrorClass = llmrouter.CallFailureEmptyResponse
+	ModelCallErrorOutputLimit        ModelCallErrorClass = llmrouter.CallFailureOutputLimit
 )
 
 // ModelCallEvent contains only safe correlation and lifecycle facts. It never
@@ -50,6 +60,14 @@ type ModelCallEvent struct {
 	// intermediate phase that arrived, whether or not it was also emitted alone.
 	Phases        map[ModelCallPhase]int64 `json:"phases_ms,omitempty"`
 	GatewayWaitMS int64                    `json:"gateway_wait_ms,omitempty"`
+	// Failure facts, set only on a failed or cancelled event: whether model
+	// output had started streaming, the provider's HTTP status and a known
+	// finish_reason when typed evidence carries them, and whether repeating
+	// the request could succeed (nil: the evidence does not say).
+	StreamStarted bool   `json:"stream_started,omitempty"`
+	HTTPStatus    int    `json:"http_status,omitempty"`
+	FinishReason  string `json:"finish_reason,omitempty"`
+	Retryable     *bool  `json:"retryable,omitempty"`
 }
 
 // ModelCallObserver should record the bounded event promptly. Panics are
@@ -275,6 +293,7 @@ type runtimeModelCall struct {
 	slow          bool
 	slowTimer     *time.Timer
 	gatewayWaitMS int64
+	failure       llmrouter.CallFailure
 }
 
 func newModelCall(_ context.Context, model string, observer ModelCallObserver) *runtimeModelCall {
@@ -326,11 +345,14 @@ func (call *runtimeModelCall) finish(ctx context.Context, err error) {
 		call.emit(ctx, ModelCallCompleted, "")
 		return
 	}
-	class := classifyModelCallError(ctx, err)
+	class, failure := diagnoseModelCallError(ctx, err)
 	phase := ModelCallFailed
 	if class == ModelCallErrorContextCancelled {
 		phase = ModelCallCancelled
 	}
+	call.mu.Lock()
+	call.failure = failure
+	call.mu.Unlock()
 	call.emit(ctx, phase, class)
 }
 
@@ -364,6 +386,10 @@ func (call *runtimeModelCall) emit(ctx context.Context, phase ModelCallPhase, er
 		GatewayWaitMS: call.gatewayWaitMS,
 		CallID:        call.callID, Model: call.model, Phase: phase,
 		ElapsedMS: time.Since(call.started).Milliseconds(), ErrorClass: errorClass,
+	}
+	if phase == ModelCallFailed || phase == ModelCallCancelled {
+		_, event.StreamStarted = call.emitted[ModelCallFirstChunk]
+		event.HTTPStatus, event.FinishReason, event.Retryable = call.failure.HTTPStatus, call.failure.FinishReason, call.failure.Retryable
 	}
 	if call.options.CompactPhases {
 		if phase == ModelCallStarted {
@@ -408,6 +434,23 @@ func (call *runtimeModelCall) emitSlowPhases(ctx context.Context) {
 	for _, event := range events {
 		func() { defer func() { _ = recover() }(); call.observer(ctx, event) }()
 	}
+}
+
+// diagnoseModelCallError classifies a failed call. The caller's own deadline
+// and cancellation come first; then typed provider evidence (an HTTP status,
+// an empty or truncated response); then network errors. Error text is never
+// read, so anything else is only "provider".
+func diagnoseModelCallError(ctx context.Context, err error) (ModelCallErrorClass, llmrouter.CallFailure) {
+	if ctx != nil && errors.Is(ctx.Err(), context.DeadlineExceeded) || errors.Is(err, context.DeadlineExceeded) {
+		return ModelCallErrorContextDeadline, llmrouter.CallFailure{}
+	}
+	if ctx != nil && errors.Is(ctx.Err(), context.Canceled) || errors.Is(err, context.Canceled) {
+		return ModelCallErrorContextCancelled, llmrouter.CallFailure{}
+	}
+	if failure := llmrouter.DiagnoseCallError(err); failure.Class != "" {
+		return ModelCallErrorClass(failure.Class), failure
+	}
+	return classifyModelCallError(ctx, err), llmrouter.CallFailure{}
 }
 
 func classifyModelCallError(ctx context.Context, err error) ModelCallErrorClass {
