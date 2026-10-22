@@ -128,6 +128,7 @@ type ProviderAddRequest struct {
 	Protocol                 string   `json:"protocol"`
 	BaseURL                  string   `json:"base_url"`
 	ChatPath                 string   `json:"chat_path,omitempty"`
+	OutputLimitField         string   `json:"output_limit_field,omitempty"`
 	APIKey                   string   `json:"api_key"`
 	Models                   []string `json:"models"`
 	JSONObjectMode           bool     `json:"json_object_mode,omitempty"`

@@ -3,10 +3,24 @@ package frozen
 import "fmt"
 
 const (
-	ProtocolOpenAICompletions = "openai-completions"
-	ProtocolOpenAIResponses   = "openai-responses"
-	ProtocolAnthropicMessages = "anthropic-messages"
+	ProtocolOpenAICompletions      = "openai-completions"
+	ProtocolOpenAIResponses        = "openai-responses"
+	ProtocolAnthropicMessages      = "anthropic-messages"
+	OutputLimitMaxTokens           = "max_tokens"
+	OutputLimitMaxCompletionTokens = "max_completion_tokens"
 )
+
+// ValidateOutputLimitField rejects declarations that the selected adapter cannot
+// honor. Empty preserves the protocol's existing output-limit field.
+func ValidateOutputLimitField(protocol, field string) error {
+	if field == "" {
+		return nil
+	}
+	if protocol != ProtocolOpenAICompletions || (field != OutputLimitMaxTokens && field != OutputLimitMaxCompletionTokens) {
+		return fmt.Errorf("output_limit_field must be max_tokens or max_completion_tokens and requires openai-completions")
+	}
+	return nil
+}
 
 // ValidateProviderProfile checks the complete request-affecting frozen profile.
 // Protocol is explicit; neither addresses nor model names select a protocol.

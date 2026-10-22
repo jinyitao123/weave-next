@@ -39,10 +39,12 @@ func TestDevelopmentModelProvidersIsolationAndSecretsRealPG(t *testing.T) {
 	keys := []string{"model-test-key-one", "model-test-key-two"}
 	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var request struct {
-			Model string `json:"model"`
+			Model               string `json:"model"`
+			MaxCompletionTokens int    `json:"max_completion_tokens"`
+			MaxTokens           int    `json:"max_tokens"`
 		}
 		_ = json.NewDecoder(r.Body).Decode(&request)
-		if r.URL.Path != "/v1/chat/completions" || request.Model != "test-model" || r.Header.Get("Authorization") != "Bearer "+keys[1] {
+		if r.URL.Path != "/v1/chat/completions" || request.Model != "test-model" || request.MaxCompletionTokens != 31 || request.MaxTokens != 0 || r.Header.Get("Authorization") != "Bearer "+keys[1] {
 			t.Error("model runtime did not use the configured endpoint, model and replacement key")
 			w.WriteHeader(http.StatusUnauthorized)
 			return
@@ -72,7 +74,7 @@ func TestDevelopmentModelProvidersIsolationAndSecretsRealPG(t *testing.T) {
 		}
 		return rec
 	}
-	body := map[string]any{"protocol": "openai-completions", "name": "Organization model", "base_url": provider.URL, "models": []string{"test-model"}, "api_key": keys[0]}
+	body := map[string]any{"output_limit_field": "max_completion_tokens", "protocol": "openai-completions", "name": "Organization model", "base_url": provider.URL, "models": []string{"test-model"}, "api_key": keys[0]}
 	path := "/v1/development/model-providers/local"
 	for _, user := range []string{"", "user-other"} {
 		for _, method := range []string{http.MethodGet, http.MethodPut} {
@@ -112,7 +114,7 @@ func TestDevelopmentModelProvidersIsolationAndSecretsRealPG(t *testing.T) {
 	if rec := call("developer", "ws", http.MethodPut, path, body); rec.Code != http.StatusOK {
 		t.Fatalf("replace returned %d", rec.Code)
 	}
-	if rec := call("developer", "ws", http.MethodGet, "/v1/development/model-providers", nil); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "Renamed model") || strings.Contains(rec.Body.String(), "api_key") {
+	if rec := call("developer", "ws", http.MethodGet, "/v1/development/model-providers", nil); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "Renamed model") || !strings.Contains(rec.Body.String(), "max_completion_tokens") || strings.Contains(rec.Body.String(), "api_key") {
 		t.Fatal("list missing provider or exposing a key field")
 	}
 	if rec := call("other-admin", "other", http.MethodGet, "/v1/development/model-providers", nil); rec.Code != http.StatusOK || strings.Contains(rec.Body.String(), "Renamed model") {
@@ -146,7 +148,7 @@ func TestDevelopmentModelProvidersIsolationAndSecretsRealPG(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	response, err := llm.Chat(granted, contract.ChatRequest{Model: "test-model"})
+	response, err := llm.Chat(granted, contract.ChatRequest{Model: "test-model", MaxTokens: 31})
 	if err != nil || response.Content != "model reached" {
 		t.Fatalf("configured model call failed: %v", err)
 	}

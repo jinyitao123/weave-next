@@ -41,6 +41,8 @@ type ModelRequestOptions struct {
 	ReasoningEffort string `json:"reasoning_effort,omitempty"`
 	ResponseFormat  string `json:"response_format,omitempty"`
 	ToolChoice      string `json:"tool_choice,omitempty"`
+	OutputLimit     string `json:"output_limit,omitempty"`
+	Temperature     bool   `json:"temperature,omitempty"`
 }
 
 type ModelContentObservation struct {
@@ -132,6 +134,8 @@ func boundedProtocolObservation(value contract.ProtocolObservation) ModelProtoco
 			ReasoningEffort: protocolEnum(options.ReasoningEffort, "none", "minimal", "low", "medium", "high", "xhigh", "max"),
 			ResponseFormat:  protocolEnum(options.ResponseFormat, "json_object", "json_schema", "text"),
 			ToolChoice:      protocolEnum(options.ToolChoice, "auto", "none", "required", "tool"),
+			OutputLimit:     protocolEnum(options.OutputLimit, "max_tokens", "max_completion_tokens"),
+			Temperature:     options.Temperature,
 		}
 	}
 	if content := value.Content; content != nil {

@@ -47,6 +47,9 @@ type ProviderConfig struct {
 	// ChatPath is appended to BaseURL; together they are the exact request
 	// address (see frozen.NormalizeProviderEndpoint).
 	ChatPath string `json:"chat_path,omitempty"`
+	// OutputLimitField explicitly selects the Chat Completions output-limit
+	// field. Empty uses max_tokens; model names never select this dialect.
+	OutputLimitField string `json:"output_limit_field,omitempty"`
 }
 
 // NormalizeEndpoint puts BaseURL and ChatPath in stored form, filling the
@@ -130,6 +133,9 @@ var NewProviderClient = func(cfg ProviderConfig) contract.LLM {
 	}
 	if cfg.JSONObjectMode {
 		opts = append(opts, openai.WithJSONObjectMode())
+	}
+	if cfg.OutputLimitField == frozen.OutputLimitMaxCompletionTokens {
+		opts = append(opts, openai.WithMaxCompletionTokens())
 	}
 	if cfg.ThinkingDefaultMode != "" {
 		opts = append(opts, openai.WithThinkingControl(cfg.ThinkingDefaultMode, cfg.ThinkingDisableWithTools))
@@ -299,6 +305,9 @@ func ObserveModelProtocolCall(ctx context.Context, inner contract.LLM, request c
 
 // Validate rejects incomplete or incompatible profiles before persistence or use.
 func (cfg ProviderConfig) Validate() error {
+	if err := frozen.ValidateOutputLimitField(cfg.Protocol, cfg.OutputLimitField); err != nil {
+		return err
+	}
 	if err := frozen.ValidateProviderProfile(cfg.Protocol, cfg.JSONObjectMode, cfg.ThinkingDefaultMode, cfg.ThinkingDisableWithTools, cfg.AttemptTimeoutSeconds); err != nil {
 		return err
 	}

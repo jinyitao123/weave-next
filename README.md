@@ -45,6 +45,15 @@ Install the required CLI engines on execution nodes, register each node through 
 
 The [architecture index](docs/架构/README.md) is the current navigation for Weave's layering, contracts, and migration evidence. Dated acceptance records preserve the conclusions and limitations observed at the time; they do not certify the current working tree or deployment.
 
+Chat Completions providers can set `output_limit_field` to `max_tokens` or
+`max_completion_tokens` in the organization provider API or the admin console's
+model provider advanced settings. Empty retains `max_tokens`. This declaration
+is frozen and hashed with each provider revision and model binding, including
+fallbacks. It selects the wire field for a member's per-reply `max_output_tokens`;
+the cumulative `max_tokens` budget is unchanged. No per-reply limit omits both
+fields. Other native protocols and managed CLI nodes reject this explicit
+declaration. See the [implementation and validation record](docs/计划/2026-10-22-供应方输出上限字段.md).
+
 ## License
 
 This repository is licensed under [MIT](LICENSE).

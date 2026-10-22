@@ -63,11 +63,11 @@ func TestProtocolObservationRejectsFreeTextAndBoundsMetadata(t *testing.T) {
 
 func TestProtocolObservationKeepsWireOptionEnumsAndContentCounts(t *testing.T) {
 	value := contract.ProtocolObservation{Version: 1, Protocol: "openai_sse", End: "done", FinishReason: "stop", Complete: true,
-		RequestOptions: &contract.ProtocolRequestOptions{Thinking: "disabled", ReasoningEffort: "none", ResponseFormat: "private-format-marker", ToolChoice: "tool"},
+		RequestOptions: &contract.ProtocolRequestOptions{Thinking: "disabled", ReasoningEffort: "none", ResponseFormat: "private-format-marker", ToolChoice: "tool", OutputLimit: "max_completion_tokens", Temperature: true},
 		Content:        &contract.ProtocolContentObservation{ContentBytes: 42, TextToolProtocolMarkers: 2, ReasoningFrames: 1, ReasoningBytes: 7},
 	}
 	bounded := boundedProtocolObservation(value)
-	want := ModelRequestOptions{Thinking: "disabled", ReasoningEffort: "none", ResponseFormat: "other", ToolChoice: "tool"}
+	want := ModelRequestOptions{Thinking: "disabled", ReasoningEffort: "none", ResponseFormat: "other", ToolChoice: "tool", OutputLimit: "max_completion_tokens", Temperature: true}
 	if bounded.RequestOptions == nil || *bounded.RequestOptions != want {
 		t.Fatalf("options = %#v", bounded.RequestOptions)
 	}

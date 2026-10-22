@@ -4,6 +4,7 @@ import { api, ApiError } from './api'
 // by chat_path, exactly; the server resolves and freezes that address.
 
 export type Protocol = 'openai-completions' | 'openai-responses' | 'anthropic-messages'
+export type OutputLimitField = '' | 'max_tokens' | 'max_completion_tokens'
 
 export const protocols: Array<{ value: Protocol; label: string; path: string }> = [
   { value: 'openai-completions', label: 'OpenAI Chat Completions 兼容', path: '/v1/chat/completions' },
@@ -17,6 +18,7 @@ export interface ModelProvider {
   protocol: Protocol | ''
   base_url: string
   chat_path: string
+  output_limit_field?: OutputLimitField
   /** Empty for a provider saved before chat paths were recorded. */
   chat_url: string
   models: string[]
@@ -33,6 +35,7 @@ export interface ProviderInput {
   protocol: Protocol
   base_url: string
   chat_path: string
+  output_limit_field?: OutputLimitField
   models: string[]
   api_key?: string
   json_object_mode: boolean
@@ -46,7 +49,10 @@ export interface Endpoint { base_url: string; chat_path: string; chat_url: strin
 /** A refused address: why, and the split that reaches what was most likely meant. */
 export interface EndpointRefusal { message: string; suggestion?: Endpoint }
 
-export const listProviders = () => api<ModelProvider[]>('/v1/development/model-providers')
+export const listProviders = async () => {
+  const result = await api<{ version: '1'; providers: ModelProvider[] }>('/v1/development/model-providers')
+  return result.providers
+}
 
 export const saveProvider = (id: string, input: ProviderInput) =>
   api<{ id: string; chat_url: string }>(`/v1/development/model-providers/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(input) })

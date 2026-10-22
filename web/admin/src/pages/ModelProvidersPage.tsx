@@ -54,6 +54,7 @@ function ProviderCard({ provider, onEdit }: { provider: ModelProvider; onEdit():
     <dl className="integration__facts">
       <div><dt>请求地址</dt><dd className="mono provider__url">{provider.chat_url || '—'}</dd></div>
       <div><dt>模型</dt><dd>{provider.models.join('、')}</dd></div>
+      {provider.protocol === 'openai-completions' ? <div><dt>输出上限字段</dt><dd className="mono">{provider.output_limit_field || 'max_tokens（默认）'}</dd></div> : null}
     </dl>
     {!provider.chat_url && !provider.deployment ? <p className="integration__failed" role="status">还没有记录接口路径，请编辑后重新保存。</p> : null}
     {result ? <p className={result.ok ? 'integration__ok' : 'integration__failed'} role="status">
@@ -69,12 +70,13 @@ function ProviderCard({ provider, onEdit }: { provider: ModelProvider; onEdit():
   </section>
 }
 
-const blank: ProviderInput = { name: '', protocol: 'openai-completions', base_url: '', chat_path: '', models: [], json_object_mode: false, thinking_default_mode: '', thinking_disable_with_tools: false, attempt_timeout_seconds: 0 }
+const blank: ProviderInput = { name: '', protocol: 'openai-completions', base_url: '', chat_path: '', output_limit_field: '', models: [], json_object_mode: false, thinking_default_mode: '', thinking_disable_with_tools: false, attempt_timeout_seconds: 0 }
 
 function ProviderEditor({ provider, onClose, onSaved }: { provider?: ModelProvider; onClose(): void; onSaved(): void }) {
   const [id, setID] = useState(provider?.id ?? '')
   const [input, setInput] = useState<ProviderInput>(() => provider ? {
     name: provider.name, protocol: (provider.protocol || 'openai-completions') as Protocol, base_url: provider.base_url, chat_path: provider.chat_path,
+    output_limit_field: provider.output_limit_field || '',
     models: provider.models, json_object_mode: provider.json_object_mode, thinking_default_mode: provider.thinking_default_mode,
     thinking_disable_with_tools: provider.thinking_disable_with_tools, attempt_timeout_seconds: provider.attempt_timeout_seconds,
   } : blank)
@@ -127,7 +129,7 @@ function ProviderEditor({ provider, onClose, onSaved }: { provider?: ModelProvid
         <label className="field"><span>标识</span><input className="input mono" spellCheck={false} disabled={Boolean(provider)} value={id} placeholder="例如 kimi" onChange={(event) => setID(event.target.value)} /></label>
         <label className="field"><span>名称</span><input className="input" value={input.name} maxLength={80} onChange={(event) => change({ name: event.target.value })} /></label>
       </div>
-      <div className="field"><span>接口协议</span><Select label="接口协议" value={input.protocol} options={protocols.map((item) => ({ value: item.value, label: item.label }))} onChange={(protocol) => change({ protocol })} /></div>
+      <div className="field"><span>接口协议</span><Select label="接口协议" value={input.protocol} options={protocols.map((item) => ({ value: item.value, label: item.label }))} onChange={(protocol) => change({ protocol, ...(protocol !== 'openai-completions' ? { output_limit_field: '' } : {}) })} /></div>
       <label className="field"><span>服务地址</span><input className="input mono" spellCheck={false} value={input.base_url} placeholder="https://api.example.com" onChange={(event) => change({ base_url: event.target.value })} /></label>
       <label className="field"><span>接口路径</span><input className="input mono" spellCheck={false} value={input.chat_path} placeholder={`留空使用 ${defaultPath}`} onChange={(event) => change({ chat_path: event.target.value })} /></label>
       <div className="provider__preview" aria-live="polite">
@@ -149,6 +151,9 @@ function ProviderEditor({ provider, onClose, onSaved }: { provider?: ModelProvid
         <div className="stack">
           <label className="field"><span>单次请求超时（秒，0 为默认 900）</span><input className="input" type="number" min={0} max={86400} value={input.attempt_timeout_seconds} onChange={(event) => change({ attempt_timeout_seconds: Math.max(0, Number(event.target.value) || 0) })} /></label>
           {completions ? <>
+            <div className="field"><span>输出上限字段</span><Select label="输出上限字段" value={input.output_limit_field || ''} options={[{ value: '', label: '默认（max_tokens）' }, { value: 'max_tokens', label: 'max_tokens' }, { value: 'max_completion_tokens', label: 'max_completion_tokens' }]}
+              onChange={(field) => change({ output_limit_field: field })} /></div>
+            <p className="muted small">按供应方的接口要求选择。成员的“单次输出上限”将通过这个字段发送；未设置单次上限时省略。累计 token 预算不变。</p>
             <Switch checked={input.json_object_mode} label="结构化输出只要求 JSON 对象（服务不支持 json_schema 时开启）" onChange={(json_object_mode) => change({ json_object_mode })} />
             <div className="field"><span>思考开关（DeepSeek 方言）</span><Select label="思考开关" value={input.thinking_default_mode || 'none'} options={[{ value: 'none', label: '不发送' }, { value: 'enabled', label: '默认开启' }, { value: 'disabled', label: '默认关闭' }]}
               onChange={(mode) => change({ thinking_default_mode: mode === 'none' ? '' : mode as 'enabled' | 'disabled', ...(mode === 'none' ? { thinking_disable_with_tools: false } : {}) })} /></div>

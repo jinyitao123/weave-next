@@ -144,16 +144,17 @@ type mirrorSystemProviderRequest struct {
 // current workspace's mirror state so the console can offer the action only
 // where it is meaningful.
 type systemProviderSummaryJSON struct {
-	Protocol       string   `json:"protocol"`
-	ID             string   `json:"id"`
-	Name           string   `json:"name"`
-	BaseURL        string   `json:"base_url"`
-	ChatPath       string   `json:"chat_path"`
-	ChatURL        string   `json:"chat_url"`
-	Models         []string `json:"models"`
-	Mirrored       bool     `json:"mirrored"`
-	MirroredAs     string   `json:"mirrored_as,omitempty"`
-	MirrorRevision int64    `json:"mirror_revision,omitempty"`
+	Protocol         string   `json:"protocol"`
+	ID               string   `json:"id"`
+	Name             string   `json:"name"`
+	BaseURL          string   `json:"base_url"`
+	ChatPath         string   `json:"chat_path"`
+	OutputLimitField string   `json:"output_limit_field,omitempty"`
+	ChatURL          string   `json:"chat_url"`
+	Models           []string `json:"models"`
+	Mirrored         bool     `json:"mirrored"`
+	MirroredAs       string   `json:"mirrored_as,omitempty"`
+	MirrorRevision   int64    `json:"mirror_revision,omitempty"`
 }
 
 func (s *Server) handleListSystemProviders(c echo.Context) error {
@@ -205,7 +206,7 @@ func (s *Server) handleListSystemProviders(c echo.Context) error {
 		summary := systemProviderSummaryJSON{
 			ID: cfg.ID, Protocol: cfg.Protocol,
 			Name:    cfg.Name,
-			BaseURL: cfg.BaseURL, ChatPath: cfg.ChatPath, ChatURL: cfg.ChatURL(),
+			BaseURL: cfg.BaseURL, ChatPath: cfg.ChatPath, OutputLimitField: cfg.OutputLimitField, ChatURL: cfg.ChatURL(),
 			Models: append([]string(nil), cfg.Models...),
 		}
 		if head, exists := mirrored[cfg.ID]; exists {

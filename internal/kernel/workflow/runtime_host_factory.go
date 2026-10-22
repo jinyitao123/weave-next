@@ -224,7 +224,8 @@ func buildRuntimeHostsWithLLM(
 				BaseURL: binding.BaseURL, APIKey: string(material.Value()),
 				Models: []string{binding.ModelID}, JSONObjectMode: binding.JSONObjectMode,
 				Protocol: binding.Protocol, ThinkingDefaultMode: binding.ThinkingDefaultMode, ThinkingDisableWithTools: binding.ThinkingDisableWithTools, AttemptTimeoutSeconds: binding.AttemptTimeoutSeconds,
-				ChatPath: binding.ChatPath,
+				ChatPath:         binding.ChatPath,
+				OutputLimitField: binding.OutputLimitField,
 			}
 			if err := provider.Validate(); err != nil {
 				return compiler.FrozenBuildOpts{}, nil, err

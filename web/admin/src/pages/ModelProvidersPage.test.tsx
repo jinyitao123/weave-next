@@ -13,6 +13,7 @@ const stale: ModelProvider = { ...saved, id: 'old', name: '旧供应方', chat_p
 type Call = { url: string; method: string; body?: Record<string, unknown> }
 function serve() {
   const calls: Call[] = []
+  let entries = [saved, stale]
   vi.stubGlobal('fetch', vi.fn(async (url: string, init: RequestInit = {}) => {
     const method = init.method ?? 'GET'
     const body = init.body ? JSON.parse(String(init.body)) : undefined
@@ -30,8 +31,12 @@ function serve() {
     if (url.endsWith('/probe')) {
       return new Response(JSON.stringify({ ok: false, chat_url: saved.chat_url, model: body.model, category: 'endpoint_not_found', status: 404, latency_ms: 30, message: '服务存在，但这个接口路径不存在：请检查供应方地址和接口路径' }), { status: 200 })
     }
-    if (method === 'PUT') return new Response(JSON.stringify({ id: 'glm', chat_url: '' }), { status: 200 })
-    return new Response(JSON.stringify([saved, stale]), { status: 200 })
+    if (method === 'PUT') {
+      const id = url.split('/').at(-1)!
+      entries = entries.map((entry) => entry.id === id ? { ...entry, ...body } : entry)
+      return new Response(JSON.stringify({ id, chat_url: '' }), { status: 200 })
+    }
+    return new Response(JSON.stringify({ version: '1', providers: entries }), { status: 200 })
   }))
   return calls
 }
@@ -39,6 +44,23 @@ function serve() {
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
 describe('model providers page', () => {
+  it('saves and reloads an explicit output-limit field without changing the address', async () => {
+    const calls = serve()
+    render(<ModelProvidersPage />)
+    const card = await screen.findByRole('region', { name: 'Kimi' })
+    fireEvent.click(within(card).getByRole('button', { name: '编辑' }))
+    const dialog = screen.getByRole('dialog')
+    fireEvent.click(within(dialog).getByText('高级设置'))
+    fireEvent.click(within(dialog).getByRole('button', { name: '输出上限字段' }))
+    fireEvent.mouseDown(within(dialog).getByRole('option', { name: 'max_completion_tokens' }))
+    fireEvent.click(within(dialog).getByRole('button', { name: '保存' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(calls.find((call) => call.method === 'PUT')?.body).toMatchObject({ output_limit_field: 'max_completion_tokens', base_url: saved.base_url, chat_path: saved.chat_path })
+    expect(within(screen.getByRole('region', { name: 'Kimi' })).getByText('max_completion_tokens')).toBeTruthy()
+    fireEvent.click(within(screen.getByRole('region', { name: 'Kimi' })).getByRole('button', { name: '编辑' }))
+    expect(within(screen.getByRole('dialog')).getByRole('button', { name: '输出上限字段' }).textContent).toContain('max_completion_tokens')
+  })
+
   it('shows where each provider sends requests and asks to resave one without a path', async () => {
     serve()
     render(<ModelProvidersPage />)

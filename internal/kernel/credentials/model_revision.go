@@ -204,7 +204,7 @@ func ResolveModelRevisionTx(
 		BaseURL:          revision.BaseURL,
 		JSONObjectMode:   revision.JSONObjectMode,
 		Protocol:         revision.Protocol, ThinkingDefaultMode: revision.ThinkingDefaultMode, ThinkingDisableWithTools: revision.ThinkingDisableWithTools, AttemptTimeoutSeconds: revision.AttemptTimeoutSeconds,
-		ChatPath: revision.ChatPath,
+		ChatPath: revision.ChatPath, OutputLimitField: revision.OutputLimitField,
 		CredentialRef: frozen.CredentialReference{
 			SchemaVersion: frozen.FrozenSchemaVersion,
 			WorkspaceID:   workspaceID,

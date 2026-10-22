@@ -109,6 +109,8 @@ make compose-check
 - `POST /v1/development/model-providers/endpoint` 提交 `protocol`、`base_url`、`chat_path`，返回规范化后的地址和最终 `chat_url`，或同样的拒绝原因和建议拆分；不保存任何内容，供配置页面在保存前显示最终地址。
 - `POST /v1/development/model-providers/:id/probe` 用运行时同一个客户端向已保存的供应方发一次最小请求（可选 `model`，默认第一个模型），返回 `chat_url`、`category`（`ok`、`unreachable`、`timeout`、`unauthorized`、`endpoint_not_found`、`request_rejected`、`rate_limited`、`provider_error`、`invalid_response`、`invalid_configuration`）、供应方的 HTTP 状态和可操作的说明；不返回密钥、请求头、提示内容或供应方回复正文。随部署提供的供应方和个人的供应方不能在这里修改；一个模型只能由一个组织供应方提供，重复时返回 `409 model_already_provided`，同组织的占用检查与保存共用事务和数据库锁，并发请求只成功一个。
 
+Chat Completions 供应方还可声明 `output_limit_field`：省略或空值保持 `max_tokens`，也可显式选择 `max_tokens` 或 `max_completion_tokens`。管理端“模型 → 编辑 → 高级设置”可修改；字段随供应方修订和发布冻结，主模型及备用模型各用自己的声明，不按模型名推测。成员的 `max_output_tokens` 是每次回复上限，`max_tokens` 是累计预算；没有单次上限时两个 HTTP 字段都省略。其他原生协议不接受此声明；外部 CLI 节点不能保证该映射，会明确拒绝显式声明，应使用 Loom 成员。安全观测的 `request_options.output_limit` 显示实际发送的字段名，`temperature` 只表示是否发送采样温度。
+
 成员怎样运行也用受控修改设置，写法在“成员的引擎与运行设置”一类（`member_settings`），该类说明同时返回可选的模型和节点：
 
 - `member_engine` 更换引擎、执行节点和模型。外部引擎的成员按节点名称指定节点，内置引擎的成员从组织已启用的模型中选；负责人不能更换引擎。

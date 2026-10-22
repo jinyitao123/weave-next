@@ -34,6 +34,7 @@ type developmentModelProvider struct {
 	Name                     string `json:"name"`
 	BaseURL                  string `json:"base_url"`
 	ChatPath                 string `json:"chat_path"`
+	OutputLimitField         string `json:"output_limit_field,omitempty"`
 	// ChatURL is where every request goes: base_url followed by chat_path.
 	ChatURL string   `json:"chat_url"`
 	Models  []string `json:"models"`
@@ -49,7 +50,7 @@ func (s *Server) handleListDevelopmentModelProviders(c echo.Context) error {
 	if pool == nil {
 		return workflowError(c, http.StatusServiceUnavailable, "development_model_provider_unavailable", "组织模型暂时无法读取")
 	}
-	rows, err := pool.Query(c.Request().Context(), `SELECT id,name,base_url,models,source_kind,protocol,json_object_mode,thinking_default_mode,thinking_disable_with_tools,attempt_timeout_seconds,chat_path FROM weave_provider_credentials
+	rows, err := pool.Query(c.Request().Context(), `SELECT id,name,base_url,models,source_kind,protocol,json_object_mode,thinking_default_mode,thinking_disable_with_tools,attempt_timeout_seconds,chat_path,output_limit_field FROM weave_provider_credentials
 		WHERE workspace_id=$1 AND credential_scope='workspace_service' AND enabled AND revoked_at IS NULL AND deleted_at IS NULL AND latest_revision > 0
 		ORDER BY name,id`, getTenant(c))
 	if err != nil {
@@ -60,7 +61,7 @@ func (s *Server) handleListDevelopmentModelProviders(c echo.Context) error {
 	for rows.Next() {
 		var provider developmentModelProvider
 		var source string
-		if err := rows.Scan(&provider.ID, &provider.Name, &provider.BaseURL, &provider.Models, &source, &provider.Protocol, &provider.JSONObjectMode, &provider.ThinkingDefaultMode, &provider.ThinkingDisableWithTools, &provider.AttemptTimeoutSeconds, &provider.ChatPath); err != nil {
+		if err := rows.Scan(&provider.ID, &provider.Name, &provider.BaseURL, &provider.Models, &source, &provider.Protocol, &provider.JSONObjectMode, &provider.ThinkingDefaultMode, &provider.ThinkingDisableWithTools, &provider.AttemptTimeoutSeconds, &provider.ChatPath, &provider.OutputLimitField); err != nil {
 			return workflowStoreFailure(c, err)
 		}
 		// A provider saved before chat paths were recorded shows no address
@@ -96,6 +97,7 @@ func (s *Server) handlePutDevelopmentModelProvider(c echo.Context) error {
 		Name                     string   `json:"name"`
 		BaseURL                  string   `json:"base_url"`
 		ChatPath                 string   `json:"chat_path"`
+		OutputLimitField         string   `json:"output_limit_field,omitempty"`
 		APIKey                   string   `json:"api_key"`
 		Models                   []string `json:"models"`
 	}
@@ -105,6 +107,9 @@ func (s *Server) handlePutDevelopmentModelProvider(c echo.Context) error {
 	id, name, key := c.Param("id"), strings.TrimSpace(request.Name), strings.TrimSpace(request.APIKey)
 	if err := frozen.ValidateProviderProfile(request.Protocol, request.JSONObjectMode, request.ThinkingDefaultMode, request.ThinkingDisableWithTools, request.AttemptTimeoutSeconds); err != nil {
 		return invalid("请提供有效的模型接口协议、思考与超时配置")
+	}
+	if err := frozen.ValidateOutputLimitField(request.Protocol, request.OutputLimitField); err != nil {
+		return invalid(err.Error())
 	}
 	endpoint, err := frozen.NormalizeProviderEndpoint(request.Protocol, request.BaseURL, request.ChatPath)
 	if err != nil {
@@ -181,7 +186,7 @@ func (s *Server) handlePutDevelopmentModelProvider(c echo.Context) error {
 	})
 	if _, err = s.Credentials.UpsertRevisionTx(authorized, tx, tenant, llmrouter.ProviderConfig{
 		CredentialScope: frozen.CredentialScopeWorkspaceService, CredentialServiceID: service,
-		ID: id, Name: name, BaseURL: endpoint.BaseURL, ChatPath: endpoint.ChatPath, APIKey: key, Models: models,
+		ID: id, Name: name, BaseURL: endpoint.BaseURL, ChatPath: endpoint.ChatPath, OutputLimitField: request.OutputLimitField, APIKey: key, Models: models,
 		Protocol: request.Protocol, JSONObjectMode: request.JSONObjectMode, ThinkingDefaultMode: request.ThinkingDefaultMode, ThinkingDisableWithTools: request.ThinkingDisableWithTools, AttemptTimeoutSeconds: request.AttemptTimeoutSeconds,
 	}); err != nil {
 		var coded *credentials.Error
@@ -201,5 +206,5 @@ func (s *Server) handlePutDevelopmentModelProvider(c echo.Context) error {
 	}
 	slog.Info("workspace model provider configured", "workspace", tenant, "provider", id, "actor", getUserID(c), "key_replaced", key != "")
 	return c.JSON(http.StatusOK, map[string]any{"id": id, "name": name, "models": models, "protocol": request.Protocol,
-		"base_url": endpoint.BaseURL, "chat_path": endpoint.ChatPath, "chat_url": endpoint.URL(), "key_replaced": key != ""})
+		"base_url": endpoint.BaseURL, "chat_path": endpoint.ChatPath, "chat_url": endpoint.URL(), "output_limit_field": request.OutputLimitField, "key_replaced": key != ""})
 }

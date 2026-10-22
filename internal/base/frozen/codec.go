@@ -360,7 +360,7 @@ func HashDTO(value any, schema PreorderSchema) (string, error) {
 			ModelID: typed.ModelID, BaseURL: typed.BaseURL,
 			JSONObjectMode: typed.JSONObjectMode, CredentialRef: typed.CredentialRef,
 			Protocol: typed.Protocol, ThinkingDefaultMode: typed.ThinkingDefaultMode, ThinkingDisableWithTools: typed.ThinkingDisableWithTools, AttemptTimeoutSeconds: typed.AttemptTimeoutSeconds,
-			ChatPath: typed.ChatPath,
+			ChatPath: typed.ChatPath, OutputLimitField: typed.OutputLimitField,
 		}
 	case FrozenRuntimeBinding:
 		normalized = frozenRuntimeHashInput{
@@ -748,6 +748,9 @@ func normalizeFrozenMCPBinding(value FrozenMCPBinding) (FrozenMCPBinding, error)
 
 func normalizeFrozenModelBinding(value FrozenModelBinding) (FrozenModelBinding, error) {
 	if err := ValidateProviderProfile(value.Protocol, value.JSONObjectMode, value.ThinkingDefaultMode, value.ThinkingDisableWithTools, value.AttemptTimeoutSeconds); err != nil {
+		return FrozenModelBinding{}, fmt.Errorf("%w: %v", ErrFrozenSchemaMismatch, err)
+	}
+	if err := ValidateOutputLimitField(value.Protocol, value.OutputLimitField); err != nil {
 		return FrozenModelBinding{}, fmt.Errorf("%w: %v", ErrFrozenSchemaMismatch, err)
 	}
 	if err := ValidateProviderEndpoint(value.Protocol, value.BaseURL, value.ChatPath); err != nil {
@@ -1913,6 +1916,7 @@ type frozenModelHashInput struct {
 	ThinkingDisableWithTools bool   `json:"thinking_disable_with_tools"`
 	AttemptTimeoutSeconds    int    `json:"attempt_timeout_seconds"`
 	ChatPath                 string `json:"chat_path"`
+	OutputLimitField         string `json:"output_limit_field,omitempty"`
 
 	SchemaVersion    int                 `json:"schema_version"`
 	WorkspaceID      string              `json:"workspace_id"`

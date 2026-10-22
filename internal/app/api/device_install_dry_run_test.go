@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -20,6 +21,11 @@ func TestDeviceInstallDryRunDoesNotEnrollOrTouchTheMachine(t *testing.T) {
 	}
 	calls := filepath.Join(t.TempDir(), "network-calls")
 	cmd := exec.Command("sh", "install_assets/install.sh", "--server", "http://install.example.invalid", "--device-code", "not-a-real-code", "--dry-run")
+	if runtime.GOOS == "windows" {
+		// Git sh needs a POSIX PATH entry to find the extensionless fixture
+		// scripts before its own uname.exe/curl.exe. Pass paths as arguments.
+		cmd = exec.Command("sh", "-c", `fixture_bin=$(cygpath -u "$1") || exit; shift; PATH="$fixture_bin:$PATH"; export PATH; exec sh "$@"`, "install-dry-run", bin, "install_assets/install.sh", "--server", "http://install.example.invalid", "--device-code", "not-a-real-code", "--dry-run")
+	}
 	cmd.Env = append(os.Environ(), "HOME="+home, "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "WEAVE_INSTALL_TEST_CALLS="+calls)
 	out, err := cmd.CombinedOutput()
 	if err != nil || !strings.Contains(string(out), "Dry run:") {

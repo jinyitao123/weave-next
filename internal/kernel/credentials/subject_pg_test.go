@@ -26,7 +26,7 @@ func TestProviderStoredOwnershipCannotBeRewrittenByReference(t *testing.T) {
 	create := func(ctx context.Context, cfg llmrouter.ProviderConfig) frozen.CredentialReference {
 		t.Helper()
 		cfg.Name = cfg.ID
-		cfg.BaseURL = "https://models.invalid/v1"
+		cfg.BaseURL = "https://models.invalid"
 		cfg.Models = []string{"model"}
 		if _, err := store.UpsertRevision(ctx, "workspace", cfg); err != nil {
 			t.Fatal(err)
@@ -125,7 +125,12 @@ func TestProviderProfileFieldsAdvanceImmutableRevisionRealPG(t *testing.T) {
 		{"thinking", func(c *llmrouter.ProviderConfig) { c.ThinkingDefaultMode = "disabled" }},
 		{"tool-thinking", func(c *llmrouter.ProviderConfig) { c.ThinkingDisableWithTools = true }},
 		{"timeout", func(c *llmrouter.ProviderConfig) { c.AttemptTimeoutSeconds = 37 }},
-		{"protocol", func(c *llmrouter.ProviderConfig) { c.Protocol = frozen.ProtocolOpenAIResponses }},
+		{"protocol", func(c *llmrouter.ProviderConfig) {
+			c.Protocol = frozen.ProtocolOpenAIResponses
+			c.ChatPath = "/responses"
+		}},
+		{"output-limit", func(c *llmrouter.ProviderConfig) { c.OutputLimitField = frozen.OutputLimitMaxTokens }},
+		{"completion-output-limit", func(c *llmrouter.ProviderConfig) { c.OutputLimitField = frozen.OutputLimitMaxCompletionTokens }},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

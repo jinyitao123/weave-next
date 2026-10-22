@@ -1479,6 +1479,40 @@
           "production_lines": 175
         }
       }
+    },
+    {
+      "date": "2026-10-22",
+      "reason": "Explicit provider output-limit declaration: immutable credential revisions, frozen model hash and primary/fallback routing, safe wire observation and real HTTP/PostgreSQL regressions. Exact measured limits; packages, dependencies and dependency exceptions unchanged.",
+      "record": "docs/计划/2026-10-22-供应方输出上限字段.md",
+      "base": {
+        "previous_lines": 8930,
+        "previous_production_lines": 7042,
+        "lines_added": 19,
+        "production_lines_added": 19
+      },
+      "kernel": {
+        "previous_lines": 109973,
+        "previous_production_lines": 85545,
+        "lines_added": 274,
+        "production_lines_added": 18
+      },
+      "build": {
+        "previous_lines": 0,
+        "previous_production_lines": 0,
+        "lines_added": 0,
+        "production_lines_added": 0
+      },
+      "app": {
+        "previous_lines": 97017,
+        "previous_production_lines": 65382,
+        "lines_added": 56,
+        "production_lines_added": 10
+      },
+      "growth": {
+        "lines": 349,
+        "production_lines": 47
+      },
+      "deletion_trigger": "At integration with the already committed code-repository retirement in 77cfbeba, delete internal/app/api/admin_environments.go, admin_git_proxy.go, admin_task_code.go, admin_follow_ups.go, admin_pull_requests.go and internal/app/daemon/code_workspace.go, then remeasure and lower the band limits by their exact deletion. This applies no later than that combined feature merge and offsets this entire amendment."
     }
   ],
   "migration_targets": {
@@ -1510,8 +1544,8 @@
     "rule": "Each band limit equals its measured size. The total of the band limits may exceed this baseline only by the growth of amendments added after the first recorded_amendments entries, each of which must state its growth and a deletion_trigger."
   },
   "base": {
-    "lines": 8930,
-    "production_lines": 7042,
+    "lines": 8949,
+    "production_lines": 7061,
     "packages": 9,
     "external_dependencies": 4,
     "allowed_dependencies": [
@@ -1522,8 +1556,8 @@
     ]
   },
   "kernel": {
-    "lines": 109973,
-    "production_lines": 85545,
+    "lines": 110247,
+    "production_lines": 85563,
     "packages": 48,
     "external_dependencies": 5,
     "allowed_dependencies": [
@@ -1542,8 +1576,8 @@
     "allowed_dependencies": []
   },
   "app": {
-    "lines": 97017,
-    "production_lines": 65382,
+    "lines": 97073,
+    "production_lines": 65392,
     "packages": 25,
     "external_dependencies": 6,
     "allowed_dependencies": [

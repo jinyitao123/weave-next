@@ -40,7 +40,8 @@ func newSystemCatalogFixture(t *testing.T) *systemCatalogFixture {
 	router := llmrouter.New("fixture-model")
 	for _, id := range []string{"fixture", "unmirrored"} {
 		router.RegisterProvider(llmrouter.ProviderConfig{Protocol: "openai-completions", ChatPath: "/v1/chat/completions",
-			ID: id, Name: "Server " + id, BaseURL: "https://models.example.test",
+			OutputLimitField: frozen.OutputLimitMaxCompletionTokens,
+			ID:               id, Name: "Server " + id, BaseURL: "https://models.example.test",
 			APIKey: "catalog-test-secret-" + id, Models: []string{"fixture-model"},
 		})
 	}
@@ -146,6 +147,35 @@ func TestSystemProviderCatalogMirrorReadbackRealPG(t *testing.T) {
 	}
 	if actual := f.catalog(t, admin, "/v1/providers/system")["fixture"]; !actual.Mirrored || actual.MirrorRevision != receipt.Revision {
 		t.Fatal("metadata reading unexpectedly required credential decryption")
+	}
+}
+
+func TestSystemMirrorOutputLimitRevisionRealPG(t *testing.T) {
+	f := newSystemCatalogFixture(t)
+	_, admin := f.account(t, "workspace-a", "output-limit-admin", "admin")
+	first := f.mirror(t, admin)
+	if got := f.catalog(t, admin, "/v1/providers/system")["fixture"].OutputLimitField; got != frozen.OutputLimitMaxCompletionTokens {
+		t.Fatalf("system declaration lost: %s", got)
+	}
+	cfg, _ := f.router.SystemProvider("fixture")
+	cfg.OutputLimitField = frozen.OutputLimitMaxTokens
+	f.router.RegisterProvider(cfg)
+	var second credentials.SystemProviderMirrorResult
+	if err := json.Unmarshal(f.request(t, http.MethodPost, "/v1/providers/system/fixture/mirror", admin, `{}`, http.StatusOK), &second); err != nil {
+		t.Fatal(err)
+	}
+	if second.Revision <= first.Revision {
+		t.Fatal("functional mirror revision did not advance")
+	}
+	var head, old string
+	if err := f.pool.QueryRow(t.Context(), `SELECT output_limit_field FROM weave_provider_credentials WHERE workspace_id='workspace-a' AND id='system/fixture'`).Scan(&head); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.pool.QueryRow(t.Context(), `SELECT output_limit_field FROM weave_provider_revisions WHERE workspace_id='workspace-a' AND provider_id='system/fixture' AND revision=$1`, first.Revision).Scan(&old); err != nil {
+		t.Fatal(err)
+	}
+	if head != frozen.OutputLimitMaxTokens || old != frozen.OutputLimitMaxCompletionTokens {
+		t.Fatalf("mirror head=%s, frozen revision=%s", head, old)
 	}
 }
 

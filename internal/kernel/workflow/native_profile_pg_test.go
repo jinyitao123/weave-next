@@ -49,7 +49,11 @@ func TestNativeProfilePersistsFreezesAndRoutesRealPG(t *testing.T) {
 			}))
 			defer server.Close()
 			store := credentials.New(pool, []byte("0123456789abcdef0123456789abcdef"))
-			cfg := llmrouter.ProviderConfig{Protocol: protocol, ID: "native", Name: "Native", BaseURL: server.URL + "/v1", Models: []string{"native-model"}, APIKey: "synthetic-key", AttemptTimeoutSeconds: 7, CredentialScope: frozen.CredentialScopeUser, CredentialUserID: "alice"}
+			path := "/v1/responses"
+			if protocol == frozen.ProtocolAnthropicMessages {
+				path = "/v1/messages"
+			}
+			cfg := llmrouter.ProviderConfig{Protocol: protocol, ID: "native", Name: "Native", BaseURL: server.URL, ChatPath: path, Models: []string{"native-model"}, APIKey: "synthetic-key", AttemptTimeoutSeconds: 7, CredentialScope: frozen.CredentialScopeUser, CredentialUserID: "alice"}
 			first, err := store.UpsertRevision(ctx, "native", cfg)
 			if err != nil {
 				t.Fatal(err)
@@ -83,6 +87,7 @@ func TestNativeProfilePersistsFreezesAndRoutesRealPG(t *testing.T) {
 				t.Fatal(err)
 			}
 			cfg.Protocol = frozen.ProtocolOpenAICompletions
+			cfg.ChatPath = "/v1/chat/completions"
 			cfg.BaseURL = server.URL + "/changed"
 			cfg.APIKey = ""
 			cfg.AttemptTimeoutSeconds = 8

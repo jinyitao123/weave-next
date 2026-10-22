@@ -46,7 +46,7 @@ func (s *Store) List(ctx context.Context, workspaceID string) ([]llmrouter.Provi
 		return nil, err
 	}
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, name, base_url, api_key_cipher, models, json_object_mode, protocol, thinking_default_mode, thinking_disable_with_tools, attempt_timeout_seconds,credential_scope,credential_user_id,credential_service_id, chat_path
+		SELECT id, name, base_url, api_key_cipher, models, json_object_mode, protocol, thinking_default_mode, thinking_disable_with_tools, attempt_timeout_seconds,credential_scope,credential_user_id,credential_service_id, chat_path, output_limit_field
 		FROM weave_provider_credentials
 		WHERE workspace_id=$1
 		  AND enabled
@@ -161,7 +161,7 @@ type rowScanner interface {
 func (s *Store) scanProvider(ctx context.Context, workspaceID string, row rowScanner) (llmrouter.ProviderConfig, error) {
 	var cfg llmrouter.ProviderConfig
 	var ciphertext string
-	if err := row.Scan(&cfg.ID, &cfg.Name, &cfg.BaseURL, &ciphertext, &cfg.Models, &cfg.JSONObjectMode, &cfg.Protocol, &cfg.ThinkingDefaultMode, &cfg.ThinkingDisableWithTools, &cfg.AttemptTimeoutSeconds, &cfg.CredentialScope, &cfg.CredentialUserID, &cfg.CredentialServiceID, &cfg.ChatPath); err != nil {
+	if err := row.Scan(&cfg.ID, &cfg.Name, &cfg.BaseURL, &ciphertext, &cfg.Models, &cfg.JSONObjectMode, &cfg.Protocol, &cfg.ThinkingDefaultMode, &cfg.ThinkingDisableWithTools, &cfg.AttemptTimeoutSeconds, &cfg.CredentialScope, &cfg.CredentialUserID, &cfg.CredentialServiceID, &cfg.ChatPath, &cfg.OutputLimitField); err != nil {
 		return llmrouter.ProviderConfig{}, err
 	}
 	if err := AuthorizeReference(ctx, providerConfigReference(workspaceID, cfg)); err != nil {
@@ -203,7 +203,7 @@ func (s *Store) GetProvider(ctx context.Context, workspaceID, id string) (llmrou
 		return llmrouter.ProviderConfig{}, err
 	}
 	row := s.pool.QueryRow(ctx, `
-		SELECT id, name, base_url, api_key_cipher, models, json_object_mode, protocol, thinking_default_mode, thinking_disable_with_tools, attempt_timeout_seconds,credential_scope,credential_user_id,credential_service_id, chat_path
+		SELECT id, name, base_url, api_key_cipher, models, json_object_mode, protocol, thinking_default_mode, thinking_disable_with_tools, attempt_timeout_seconds,credential_scope,credential_user_id,credential_service_id, chat_path, output_limit_field
 		FROM weave_provider_credentials
 		WHERE workspace_id=$1 AND id=$2
 		  AND enabled
