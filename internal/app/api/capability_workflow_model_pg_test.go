@@ -395,6 +395,40 @@ func runCapabilityWorkflowModelScenario(t *testing.T, parallel bool, maxConns []
 	if parallel && traceAgentForNode(trace, "final_review") != workerIDs["final"] {
 		t.Fatalf("final review node is not bound to the published final worker: trace=%+v", trace.Nodes)
 	}
+	// Every worker, fanout legs included, reports its model call on the
+	// parent run under its own node and member, once per phase, without any
+	// prompt, material or response text.
+	rows, err := pool.Query(ctx, `SELECT COALESCE(node_id,''),COALESCE(member_id,''),kind,detail::text FROM weave_team_run_activity_events
+		WHERE workspace_id='ws' AND run_id=$1 AND kind IN ('model_started','model_completed')`, runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	phases := map[string]int{}
+	for rows.Next() {
+		var nodeID, memberID, kind, detail string
+		if err := rows.Scan(&nodeID, &memberID, &kind, &detail); err != nil {
+			t.Fatal(err)
+		}
+		if memberID != traceAgentForNode(trace, nodeID) {
+			t.Fatalf("model activity on node %q names member %q, trace has %q", nodeID, memberID, traceAgentForNode(trace, nodeID))
+		}
+		for _, private := range []string{"检查附件", "核实材料", "核对材料", caseData.wantOutput, "document"} {
+			if strings.Contains(detail, private) {
+				t.Fatalf("model activity detail carries %q: %s", private, detail)
+			}
+		}
+		phases[nodeID+"/"+kind]++
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	for _, nodeID := range wantWorkerNodes {
+		for _, kind := range []string{"model_started", "model_completed"} {
+			if phases[nodeID+"/"+kind] != 1 {
+				t.Fatalf("worker %q recorded %d %s events, want 1: %v", nodeID, phases[nodeID+"/"+kind], kind, phases)
+			}
+		}
+	}
 
 	requestMu.Lock()
 	defer requestMu.Unlock()

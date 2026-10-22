@@ -255,7 +255,10 @@ func (r *WorkflowSerialRuntime) ExecuteFanoutLeg(
 	loader := *r.Loader
 	loader.RunSnapshotID = parent.RunSnapshotID
 	ctx = r.withCredentialAuthorization(ctx, parent, task)
+	// Legs observe tools and model calls on the parent run, as serial
+	// members do, so a slow branch shows where its time went.
 	hostFactory := workflow.ObserveRuntimeTools(r.hostFactoryFor(loaded), r.toolObserver(parent))
+	hostFactory = workflow.ObserveRuntimeModelsWithOptions(hostFactory, r.modelObserver(parent), r.ModelObservationOptions)
 	runtimeArtifact, err := loader.Load(ctx, loaded.envelope, hostFactory, resolver)
 	if err != nil {
 		return nil, executionError(ErrorCodeRuntimeIncompatible, err)
