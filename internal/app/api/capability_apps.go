@@ -64,6 +64,7 @@ type capabilityAppAction struct {
 	CapabilityID string   `json:"capability_id,omitempty"`
 	Revision     int64    `json:"revision,omitempty"`
 	Enabled      *bool    `json:"enabled,omitempty"`
+	MaxPriority  string   `json:"max_priority,omitempty"`
 }
 
 func (s *Server) handleCapabilityAppAction(c echo.Context) error {
@@ -77,6 +78,13 @@ func (s *Server) handleCapabilityAppAction(c echo.Context) error {
 	ctx, ws, actor := c.Request().Context(), getTenant(c), getUserID(c)
 	c.Response().Header().Set("Cache-Control", "no-store")
 	switch request.Action {
+	case "priority":
+		if request.AppID == "" {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": "application required"})
+		}
+		if err := s.CapabilityAccess.SetApplicationMaxPriority(ctx, ws, actor, request.AppID, request.MaxPriority); err != nil {
+			return capabilityHTTPError(c, err)
+		}
 	case "create":
 		if strings.TrimSpace(request.Name) == "" || len(request.Name) > 160 {
 			return c.JSON(400, map[string]string{"error": "invalid application name"})

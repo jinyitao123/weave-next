@@ -3,6 +3,8 @@ package llmrouter
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -19,15 +21,23 @@ const DefaultAttemptTimeoutSeconds = 900
 
 // ProviderConfig describes a configured LLM provider.
 type ProviderConfig struct {
+	GatewayProviderID   string                 `json:"-"`
+	Transport           http.RoundTripper      `json:"-"`
 	CredentialScope     frozen.CredentialScope `json:"credential_scope"`
 	CredentialUserID    string                 `json:"credential_user_id,omitempty"`
 	CredentialServiceID string                 `json:"credential_service_id,omitempty"`
 	ID                  string                 `json:"id"`
 	Name                string                 `json:"name"`
 	BaseURL             string                 `json:"base_url"`
-	APIKey              string                 `json:"api_key,omitempty"`
-	Models              []string               `json:"models"`                     // model IDs served by this provider
-	JSONObjectMode      bool                   `json:"json_object_mode,omitempty"` // use json_object instead of json_schema
+	// Protocol is the provider's wire protocol: "" or "openai" (default,
+	// OpenAI-compatible chat completions) or "systemone" (System One
+	// decision protocol). See NormalizeProtocol.
+	Protocol string `json:"protocol,omitempty"`
+	// APIKey may be empty: openai providers then send an empty bearer token,
+	// systemone providers send no Authorization header.
+	APIKey         string   `json:"api_key,omitempty"`
+	Models         []string `json:"models"`                     // model IDs served by this provider
+	JSONObjectMode bool     `json:"json_object_mode,omitempty"` // use json_object instead of json_schema
 	// ThinkingDefaultMode 中文：DeepSeek 方言 thinking 开关的无 tools 默认值
 	// （"enabled"/"disabled"）。空串 = 未 opt-in：请求体绝不下发 thinking 键，
 	// OpenAI/OneAPI 等兼容端点请求零变化。由调用方按 provider profile 显式声明，
@@ -49,6 +59,7 @@ type Router struct {
 	models    map[string]string          // model ID → provider ID
 	clients   map[string]contract.LLM    // provider ID → LLM client
 	fallback  string                     // default model ID
+	gateway   *ModelGateway
 }
 
 // New creates a Router with a default fallback model.
@@ -61,16 +72,20 @@ func New(fallback string) *Router {
 	}
 }
 
-// NewProviderClient builds the OpenAI-compatible client for one provider
-// config. Package-level variable so resolver and API tests can substitute a
+// NewProviderClient builds the client for one provider config: the System One
+// client for protocol "systemone", otherwise the OpenAI-compatible client.
+// Package-level variable so resolver and API tests can substitute a
 // recording stub; production wiring never overrides it.
 var NewProviderClient = func(cfg ProviderConfig) contract.LLM {
+	if cfg.Protocol == ProtocolSystemOne {
+		return newSystemOneClient(cfg)
+	}
 	defaultModel := ""
 	if len(cfg.Models) > 0 {
 		defaultModel = cfg.Models[0]
 	}
 	opts := []openai.Option{
-		openai.WithBaseURL(cfg.BaseURL),
+		openai.WithBaseURL(strings.TrimSuffix(strings.TrimRight(cfg.BaseURL, "/"), "/v1")),
 		openai.WithDefaultModel(defaultModel),
 	}
 	if cfg.JSONObjectMode {
@@ -85,6 +100,9 @@ var NewProviderClient = func(cfg ProviderConfig) contract.LLM {
 		attemptTimeoutSeconds = DefaultAttemptTimeoutSeconds
 	}
 	opts = append(opts, openai.WithAttemptTimeout(time.Duration(attemptTimeoutSeconds)*time.Second))
+	if cfg.Transport != nil {
+		opts = append(opts, openai.WithHTTPTransport(cfg.Transport))
+	}
 	client := openai.New(cfg.APIKey, opts...)
 	if cfg.JSONObjectMode {
 		return &locallyVerifiedJSONObjectLLM{inner: client}
@@ -110,12 +128,27 @@ func (r *Router) RegisterProvider(cfg ProviderConfig) {
 	r.providers[stored.ID] = &stored
 
 	// Create OpenAI-compatible client.
-	r.clients[stored.ID] = NewProviderClient(stored)
+	if r.gateway != nil {
+		stored.Transport = r.gateway.transport(stored.BaseURL)
+	}
+	client := NewProviderClient(stored)
+	if r.gateway != nil {
+		client = r.gateway.WrapProvider(stored, client)
+	}
+	r.clients[stored.ID] = client
 
 	// Map each model to this provider.
 	for _, m := range stored.Models {
 		r.models[m] = stored.ID
 	}
+}
+
+// SetGateway configures deployment capacity policy for subsequently registered
+// providers. It does not change any provider's immutable execution definition.
+func (r *Router) SetGateway(gateway *ModelGateway) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.gateway = gateway
 }
 
 // RemoveProvider removes a provider and its model mappings.
@@ -216,6 +249,9 @@ func (r *Router) Stream(ctx context.Context, req contract.ChatRequest) (<-chan c
 }
 
 func maskKey(key string) string {
+	if key == "" {
+		return "" // unset, not masked
+	}
 	if len(key) <= 8 {
 		return "********"
 	}

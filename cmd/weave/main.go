@@ -142,6 +142,13 @@ func main() {
 		defaultModel = "deepseek-flash"
 	}
 	router := llmrouter.New(defaultModel)
+	modelGateway, err := llmrouter.LoadModelGateway(os.Getenv("WEAVE_MODEL_GATEWAY_CONFIG"))
+	if err != nil {
+		slog.Error("invalid model gateway configuration", "error", err)
+		os.Exit(1)
+	}
+	defer modelGateway.Close()
+	router.SetGateway(modelGateway)
 
 	// Register default providers from environment if keys are set.
 	// 物理 attempt 超时：LLM_ATTEMPT_TIMEOUT_SECONDS 覆盖，缺省 900s。
@@ -218,7 +225,9 @@ func main() {
 	// The env-provider router above is the system namespace; workspace
 	// providers are resolved per request through the resolver.
 	models := llmrouter.NewResolver(router)
+	models.SetGateway(modelGateway)
 	srv := api.NewServer(cfg, store, models)
+	srv.ModelGateway = modelGateway
 	descriptors := compiler.NewDescriptorRegistry()
 	if err := descriptors.Register(compiler.NewStandardFrozenDescriptor()); err != nil {
 		slog.Error("failed to register server standard graph descriptor", "error", err)
@@ -369,7 +378,7 @@ func main() {
 		)
 		authority := teamconstruction.NewPublicationAuthority(pool, candidateBuilder)
 		srv.PublicationAuthority = authority
-		kernelPublication, err := publicationservice.Open(context.Background(), cfg.DatabaseURL, authority)
+		kernelPublication, err := publicationservice.NewWithPool(pool, authority)
 		if err != nil {
 			slog.Error("failed to initialize publication service", "error", err)
 			os.Exit(1)
@@ -381,6 +390,15 @@ func main() {
 	}
 
 	srv.ConfigureTeamRunWorkers()
+	if len(os.Args) > 1 && os.Args[1] == "executor" {
+		ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+		defer cancel()
+		if err := srv.RunExecutor(ctx); err != nil {
+			slog.Error("workflow executor stopped", "error", err)
+			os.Exit(1)
+		}
+		return
+	}
 
 	if srv.TaskWorker != nil {
 		srv.TaskWorker.Start()
@@ -420,6 +438,13 @@ func main() {
 }
 
 func dispatchEarlyCommand(args []string, stdout, stderr io.Writer) (bool, int) {
+	if len(args) > 0 && args[0] == "executor" {
+		if len(args) > 1 {
+			_, _ = io.WriteString(stderr, "usage: weave executor\n")
+			return true, 2
+		}
+		return false, 0
+	}
 	// The installed device node must be able to stop without server config;
 	// the generic CLI dispatcher otherwise rejects this command as unknown.
 	if len(args) == 2 && args[0] == "device" && args[1] == "stop" {

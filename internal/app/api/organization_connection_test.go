@@ -3,12 +3,15 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/jinyitao123/weave/internal/kernel/config"
@@ -99,12 +102,17 @@ func TestOrganizationConnectionRefusesInvalidFiles(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "connection.json")
 	os.WriteFile(file, []byte(valid), 0600)
 	link := file + ".link"
-	if err := os.Symlink(file, link); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := readOrganizationConnection(link); err == nil {
-		t.Fatal("symlink accepted")
-	}
+	t.Run("symbolic link", func(t *testing.T) {
+		if err := os.Symlink(file, link); err != nil {
+			if runtime.GOOS == "windows" && errors.Is(err, syscall.Errno(1314)) {
+				t.Skip("Windows symbolic-link privilege is unavailable")
+			}
+			t.Fatal(err)
+		}
+		if _, err := readOrganizationConnection(link); err == nil {
+			t.Fatal("symlink accepted")
+		}
+	})
 	if _, err := readOrganizationConnection(filepath.Dir(file)); err == nil {
 		t.Fatal("directory accepted")
 	}

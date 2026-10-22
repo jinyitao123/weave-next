@@ -132,6 +132,9 @@ func (e *Executor) executeWithHeartbeat(
 	workerID string,
 	execute func(context.Context) (RuntimeResult, error),
 ) (RuntimeResult, error) {
+	if pooled, _ := ctx.Value(pooledLeaseKey{}).(bool); pooled {
+		return pooledExecution(ctx, execute)
+	}
 	interval := e.HeartbeatInterval
 	if interval <= 0 {
 		interval = 20 * time.Second

@@ -22,16 +22,25 @@ type resolverKey struct{ workspaceID, subjectDigest string }
 // Shared service routes are never cached; their authorization is checked again
 // on every Chat/Stream, including calls through previously returned snapshots.
 type Resolver struct {
-	mu     sync.RWMutex
-	system *Router
-	source ProviderSource
-	cache  map[resolverKey]*subjectRouter
-	gen    map[string]uint64
-	epoch  uint64
+	mu      sync.RWMutex
+	system  *Router
+	source  ProviderSource
+	cache   map[resolverKey]*subjectRouter
+	gen     map[string]uint64
+	epoch   uint64
+	gateway *ModelGateway
 }
 
 func NewResolver(system *Router) *Resolver {
 	return &Resolver{system: system, cache: make(map[resolverKey]*subjectRouter), gen: make(map[string]uint64)}
+}
+
+func (r *Resolver) SetGateway(gateway *ModelGateway) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.gateway = gateway
+	r.cache = make(map[resolverKey]*subjectRouter)
+	r.epoch++
 }
 func (r *Resolver) SetSource(src ProviderSource) {
 	r.mu.Lock()
@@ -126,6 +135,10 @@ func (r *Resolver) build(ctx context.Context, subject execution.Subject, source 
 		configs = append(configs, owned...)
 	}
 	snap := &subjectRouter{router: New(fallback), subject: subject, refs: make(map[string]frozen.CredentialReference)}
+	r.mu.RLock()
+	gateway := r.gateway
+	r.mu.RUnlock()
+	snap.router.SetGateway(gateway)
 	shared := false
 	// Personal routes override only their named models after authorized service
 	// routes. API keys and provider clients are never shared between subjects.

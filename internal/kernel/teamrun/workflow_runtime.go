@@ -256,16 +256,17 @@ type WorkflowSerialRuntime struct {
 	CredentialResolvers    RuntimeCredentialResolverFactory
 	// CredentialAuthorizer composes a server-owned service grant check with the
 	// frozen workflow reference check performed by RuntimeLoader.
-	CredentialAuthorizer WorkflowCredentialAuthorizer
-	Transactions         TransactionBeginner
-	Runs                 *PGStore
-	Checkpoints          *PGCheckpointStore
-	Tasks                ExecutorTaskStore
-	Snapshots            SnapshotReader
-	OutputRecorder       WorkflowOutputRecorder
-	Corrections          *CorrectionStore
-	Activities           ActivityRecorder
-	Now                  func() time.Time
+	CredentialAuthorizer    WorkflowCredentialAuthorizer
+	Transactions            TransactionBeginner
+	Runs                    *PGStore
+	Checkpoints             *PGCheckpointStore
+	Tasks                   ExecutorTaskStore
+	Snapshots               SnapshotReader
+	OutputRecorder          WorkflowOutputRecorder
+	Corrections             *CorrectionStore
+	Activities              ActivityRecorder
+	ModelObservationOptions workflow.ModelObservationOptions
+	Now                     func() time.Time
 }
 
 type runtimeActivityScope struct {
@@ -932,7 +933,7 @@ func (r *WorkflowSerialRuntime) prepare(
 	loader.RunSnapshotID = run.RunSnapshotID
 	ctx = r.withCredentialAuthorization(ctx, run, task)
 	hostFactory := workflow.ObserveRuntimeTools(r.hostFactoryFor(loaded), r.toolObserver(run))
-	hostFactory = workflow.ObserveRuntimeModels(hostFactory, r.modelObserver(run))
+	hostFactory = workflow.ObserveRuntimeModelsWithOptions(hostFactory, r.modelObserver(run), r.ModelObservationOptions)
 	runtimeArtifact, err := loader.Load(ctx, loaded.envelope, hostFactory, resolver)
 	if err != nil {
 		return nil, executionError(ErrorCodeRuntimeIncompatible, err)

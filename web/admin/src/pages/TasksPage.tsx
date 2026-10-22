@@ -5,10 +5,9 @@ import { Badge, Dialog, EmptyState, InlineError, Select } from '../components/ui
 import { errorMessage } from '../lib/api'
 import { relativeTime } from '../lib/format'
 import { usePolling } from '../lib/polling'
-import { listEnvironments, submitCodeTask, type Environment } from '../lib/environments'
-import { executionLabel, executionTone, listTasks, listTeams, readMetrics, sourceLabel, taskSources, type TaskFilter, type TaskSource, type TaskSummary, type TeamOption } from '../lib/tasks'
+import { submitTask, executionLabel, executionTone, listTasks, listTeams, readMetrics, sourceLabel, taskSources, type TaskFilter, type TaskSource, type TaskSummary, type TeamOption } from '../lib/tasks'
 import { disableNotifications, enableNotifications, notificationsEnabled } from '../lib/notify'
-import { isCLIEngine, readDevelopment, type DevelopmentDocument } from '../lib/teams'
+import { readDevelopment, type DevelopmentDocument } from '../lib/teams'
 
 const filters: Array<{ value: TaskFilter; label: string }> = [
   { value: '', label: '全部' },
@@ -18,7 +17,6 @@ const filters: Array<{ value: TaskFilter; label: string }> = [
 ]
 
 const lastTeamKey = 'weave-admin:last-team'
-const lastEnvironmentKey = 'weave-admin:last-environment'
 
 function readLast(key: string): string {
   try { return localStorage.getItem(key) ?? '' } catch { return '' }
@@ -88,27 +86,21 @@ export function TasksPage({ navigate }: { navigate(path: string): void }) {
 
 // Starting a task from the console follows the chosen team: a team that
 // carries business actions needs the employee's own authorization and cannot
-// be started here, and a code repository is offered only to teams that run on nodes.
+// be started here.
 function StartDialog({ teams, onClose, onSubmitted, navigate }: { teams?: TeamOption[]; onClose(): void; onSubmitted(runId: string): void; navigate(path: string): void }) {
   const [text, setText] = useState('')
   const [teamId, setTeamId] = useState(() => readLast(lastTeamKey))
   const [published, setPublished] = useState<DevelopmentDocument>()
-  const [environments, setEnvironments] = useState<Environment[]>([])
-  const [environmentId, setEnvironmentId] = useState(() => readLast(lastEnvironmentKey))
-  const [branch, setBranch] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [requestId, setRequestId] = useState(() => createUUID())
   const team = teams?.find((item) => item.id === teamId) ?? teams?.[0]
-  useEffect(() => { void listEnvironments().then(setEnvironments).catch(() => setEnvironments([])) }, [])
   useEffect(() => {
     setPublished(undefined)
     if (team) void readDevelopment(team.id).then((draft) => setPublished(draft.published_document ?? draft.document)).catch(() => setPublished(undefined))
   }, [team?.id])
   const members = useMemo(() => (published?.members ?? []).filter((member) => member.relationship.enabled !== false), [published])
   const business = members.some((member) => (member.configuration.business_capability_ids ?? []).length > 0)
-  const usesNodes = members.some((member) => isCLIEngine(member.configuration.engine))
-  const environment = usesNodes ? environments.find((item) => item.id === environmentId) : undefined
 
   const submit = async () => {
     if (!team) { setError('请先选择团队'); return }
@@ -118,9 +110,8 @@ function StartDialog({ teams, onClose, onSubmitted, navigate }: { teams?: TeamOp
     try {
       // The same request id is reused until the submission succeeds, so a
       // retried click cannot create a second run.
-      const result = await submitCodeTask({ teamId: team.id, environmentId: environment?.id, ref: environment ? (branch.trim() || environment.default_branch) : undefined, task: text.trim(), clientRequestId: requestId })
+      const result = await submitTask(team.id, text.trim(), requestId)
       writeLast(lastTeamKey, team.id)
-      writeLast(lastEnvironmentKey, environment?.id ?? '')
       setRequestId(createUUID())
       onSubmitted(result.run_id)
     } catch (failure) {
@@ -140,10 +131,6 @@ function StartDialog({ teams, onClose, onSubmitted, navigate }: { teams?: TeamOp
       <div className="field"><span>团队</span><Select label="团队" value={team?.id ?? ''} placeholder={teams && !teams.length ? '没有已发布的团队' : '选择团队'}
         options={(teams ?? []).map((item) => ({ value: item.id, label: item.display_name || item.name }))} onChange={(id) => { setTeamId(id); setError('') }} /></div>
       {business ? <p className="notice" role="status">这个团队会办理业务动作，需要员工本人的授权，不能从这里发起。要验证它，请到团队的“试跑”页；正式使用由员工从桌面或飞书发起。</p> : <>
-        {usesNodes ? <div className="field"><span>代码仓库</span><Select label="代码仓库" value={environment?.id ?? ''} placeholder="不使用代码仓库"
-          options={[{ value: '', label: '不使用代码仓库' }, ...environments.map((item) => ({ value: item.id, label: item.name, detail: item.repository_url }))]}
-          onChange={(id) => { setEnvironmentId(id); setBranch(environments.find((item) => item.id === id)?.default_branch ?? '') }} /></div> : null}
-        {environment ? <label className="field"><span>分支</span><input className="input mono" value={branch || environment.default_branch} onChange={(event) => setBranch(event.target.value)} spellCheck={false} /></label> : null}
         <label className="field"><span>任务内容</span><textarea className="input textarea" rows={5} value={text} placeholder="描述要做的事" onChange={(event) => { setText(event.target.value); setError('') }} autoFocus /></label>
       </>}
       {error ? <InlineError message={error} /> : null}

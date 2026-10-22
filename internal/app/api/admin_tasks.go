@@ -14,7 +14,7 @@ import (
 // Visibility: administrators and owners read every team run of the workspace,
 // including the ones employees started from the desktop or Feishu; everyone
 // else reads the runs they submitted. Reading is all an administrator gets on
-// someone else's run: follow-ups and pull requests stay with the submitter.
+// someone else's run.
 
 // adminTask is one team run as the admin console lists it. Status stays the
 // run's own execution status; delivery verification is a separate fact read

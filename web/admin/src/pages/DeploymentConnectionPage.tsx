@@ -3,7 +3,8 @@ import { CopyField, InlineError } from '../components/ui'
 import { errorMessage, type AdminSession } from '../lib/api'
 import { readOrganizationConnection, saveOrganizationConnection, type OrganizationConnection } from '../lib/organization-connection'
 
-export function DeploymentConnectionPage({ session }: { session: AdminSession }) {
+// The deployment page's "连接" section.
+export function DeploymentConnectionSection({ session }: { session: AdminSession }) {
   const administrator = ['admin', 'owner'].includes(session.role)
   const [config, setConfig] = useState<OrganizationConnection>()
   const [error, setError] = useState('')
@@ -26,9 +27,9 @@ export function DeploymentConnectionPage({ session }: { session: AdminSession })
     } catch (reason) { setConfig(undefined); setError(errorMessage(reason)) }
     finally { setBusy(false) }
   }
-  if (!administrator) return <section className="page"><InlineError message="只有管理员可以查看部署连接。" /></section>
-  return <section className="page">
-    <header className="page__header"><h1>部署连接</h1></header>
+  if (!administrator) return <InlineError message="只有管理员可以查看部署连接。" />
+  return <div className="stack">
+    <p className="muted">业务系统接入本组织团队时使用的地址与连接文件。</p>
     {error ? <InlineError message={error} onRetry={() => { void readOrganizationConnection().then(({ config }) => { setConfig(config); setError('') }).catch(reason => setError(errorMessage(reason))) }} /> : null}
     {notice ? <p className="notice" role="status">{notice}</p> : null}
     {config ? <div className="stack">
@@ -36,5 +37,5 @@ export function DeploymentConnectionPage({ session }: { session: AdminSession })
       <CopyField label="团队服务地址（Weave）" value={config.weaveOrigin} />
       <div className="toolbar"><button type="button" className="button button--primary" disabled={busy} onClick={() => void download()}>{busy ? '正在下载…' : '下载组织连接文件'}</button></div>
     </div> : !error ? <p role="status">正在读取部署连接…</p> : null}
-  </section>
+  </div>
 }

@@ -47,6 +47,7 @@ type PublishedCredentialAuthority interface {
 type Service struct {
 	pool      *pgxpool.Pool
 	authority Authority
+	ownsPool  bool
 }
 
 func Open(ctx context.Context, databaseURL string, authority Authority) (*Service, error) {
@@ -57,11 +58,20 @@ func Open(ctx context.Context, databaseURL string, authority Authority) (*Servic
 	if err != nil {
 		return nil, err
 	}
+	return &Service{pool: pool, authority: authority, ownsPool: true}, nil
+}
+
+// NewWithPool reuses the composition root's pool; closing the publication
+// service never closes a pool owned by that root.
+func NewWithPool(pool *pgxpool.Pool, authority Authority) (*Service, error) {
+	if pool == nil || authority == nil {
+		return nil, errors.New("publication pool and authority are required")
+	}
 	return &Service{pool: pool, authority: authority}, nil
 }
 
 func (s *Service) Close() {
-	if s != nil && s.pool != nil {
+	if s != nil && s.pool != nil && s.ownsPool {
 		s.pool.Close()
 	}
 }

@@ -1,21 +1,17 @@
-import { Activity, Boxes, ChevronDown, ChevronRight, FolderGit2, Plug, Server, Settings, type LucideIcon } from 'lucide-react'
-import { useCallback, useEffect, useState, type ReactNode } from 'react'
+import { Activity, Boxes, Plug, Settings, type LucideIcon } from 'lucide-react'
+import { useCallback, useEffect, type ReactNode } from 'react'
 import { AccountCard } from '../components/AccountCard'
-import { listEnvironments } from '../lib/environments'
-import { listNodes } from '../lib/nodes'
 import { trackTasks } from '../lib/notify'
 import { usePolling } from '../lib/polling'
 import { listTasks } from '../lib/tasks'
 import type { AdminSession } from '../lib/api'
 import { useRoute } from '../lib/router'
-import { EnvironmentsPage } from './EnvironmentsPage'
 import { IntegrationsPage } from './IntegrationsPage'
-import { NodesPage } from './NodesPage'
+import { DeploymentPage, legacyDeploymentPath } from './DeploymentPage'
 import { TaskDetailPage } from './TaskDetailPage'
 import { TasksPage } from './TasksPage'
 import { TeamDetailPage, teamTabs, type TeamTab } from './TeamDetailPage'
 import { TeamsPage } from './TeamsPage'
-import { DeploymentConnectionPage } from './DeploymentConnectionPage'
 
 interface RenderContext { session: AdminSession; path: string; navigate(path: string, options?: { force?: boolean }): void }
 
@@ -41,42 +37,26 @@ const sections: Section[] = [
     ? <TaskDetailPage key={path} runId={decodeURIComponent(path.slice('/tasks/'.length))} navigate={navigate} />
     : <TasksPage navigate={navigate} /> },
   { path: '/integrations', label: '集成', icon: Plug, render: ({ session }) => <IntegrationsPage session={session} /> },
+  { path: '/deployment', label: '部署', icon: Settings, owns: (path) => Boolean(legacyDeploymentPath(path)), render: ({ session, path, navigate }) =>
+    <DeploymentPage session={session} tab={(legacyDeploymentPath(path) ?? path).split('/')[2]} navigate={navigate} /> },
 ]
 
-// Only teams whose members run on nodes need these two.
-const codeSections: Section[] = [
-  { path: '/environments', label: '代码仓库', icon: FolderGit2, render: ({ session }) => <EnvironmentsPage session={session} /> },
-  { path: '/nodes', label: '节点', icon: Server, render: ({ session }) => <NodesPage session={session} /> },
-]
-
-const codeGroupKey = 'weave-admin:code-group'
 const matches = (section: Section, path: string) => path === section.path || path.startsWith(`${section.path}/`) || Boolean(section.owns?.(path))
 
 export function Shell({ session, onSignOut }: { session: AdminSession; onSignOut(): void }) {
   const [path, navigate] = useRoute()
-  const deployment: Section = { path: '/deployment-connection', label: '部署连接', icon: Settings, render: ({ session }) => <DeploymentConnectionPage session={session} /> }
-  const available = ['admin', 'owner'].includes(session.role) ? [...sections, deployment] : sections
-  // The group opens by itself once the workspace has a node or a repository;
-  // after that it stays as the person left it.
-  const [codeOpen, setCodeOpen] = useState(() => { try { return localStorage.getItem(codeGroupKey) === 'open' } catch { return false } })
+  const available = sections
   useEffect(() => {
-    let stored: string | null = null
-    try { stored = localStorage.getItem(codeGroupKey) } catch { /* per-viewer convenience only */ }
-    if (stored) return
-    void Promise.all([listNodes().catch(() => []), listEnvironments().catch(() => [])]).then(([nodes, environments]) => { if (nodes.length || environments.length) setCodeOpen(true) })
-  }, [])
-  const toggleCode = () => setCodeOpen((open) => {
-    try { localStorage.setItem(codeGroupKey, open ? 'closed' : 'open') } catch { /* per-viewer convenience only */ }
-    return !open
-  })
+    const redirected = legacyDeploymentPath(path)
+    if (redirected) navigate(redirected, { replace: true })
+  }, [path, navigate])
   // Finished tasks raise a notice on any page; only the person's own tasks do.
   const track = useCallback(async () => {
     const recent = await listTasks('').catch(() => undefined)
     if (recent) trackTasks(recent.tasks.filter((task) => task.mine !== false), (runId) => navigate(`/tasks/${encodeURIComponent(runId)}`))
   }, [navigate])
   usePolling(track, 5000)
-  const active = [...available, ...codeSections].find((section) => matches(section, path)) ?? sections[0]
-  const codeShown = codeOpen || codeSections.includes(active)
+  const active = available.find((section) => matches(section, path)) ?? sections[0]
   const item = (section: Section) => <button key={section.path} type="button" className="nav__item" aria-current={section === active ? 'page' : undefined} onClick={() => navigate(section.path)}>
     <section.icon size={16} aria-hidden="true" />{section.label}
   </button>
@@ -84,10 +64,6 @@ export function Shell({ session, onSignOut }: { session: AdminSession; onSignOut
     <nav className="nav" aria-label="主导航">
       <div className="nav__brand"><img src="/admin/favicon.svg" width={20} height={20} alt="" />Weave</div>
       {available.map(item)}
-      <button type="button" className="nav__group" aria-expanded={codeShown} onClick={toggleCode}>
-        {codeShown ? <ChevronDown size={14} aria-hidden="true" /> : <ChevronRight size={14} aria-hidden="true" />}代码任务
-      </button>
-      {codeShown ? codeSections.map(item) : null}
       <div className="nav__footer">
         <AccountCard session={session} onSignOut={onSignOut} />
       </div>

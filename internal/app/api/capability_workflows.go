@@ -36,6 +36,7 @@ func (s *Server) invokeWorkflowCapability(c echo.Context, request invokeCapabili
 		CapabilityID: c.Param("capabilityID"), Revision: revision, RequestID: request.RequestID,
 		InvocationID: request.InvocationID.value, Lane: request.Lane, Input: request.Input,
 		InvocationIDWasSupplied: request.InvocationID.supplied,
+		Priority:                request.Priority, FairnessKey: request.FairnessKey,
 	})
 	if err != nil {
 		return capabilityHTTPError(c, err)

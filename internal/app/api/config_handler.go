@@ -37,9 +37,9 @@ func (s *Server) handleAddProvider(c echo.Context) error {
 	if s.Credentials == nil {
 		return credentialStoreUnavailable(c)
 	}
-	var req llmrouter.ProviderConfig
-	if err := c.Bind(&req); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+	req, options, failure := decodeProviderRequest(c)
+	if failure != nil {
+		return failure
 	}
 	if req.ID == "" {
 		req.ID = req.Name
@@ -49,7 +49,7 @@ func (s *Server) handleAddProvider(c echo.Context) error {
 		return c.JSON(http.StatusForbidden, map[string]string{"error": "user credential identity is required"})
 	}
 
-	if _, err := s.Credentials.UpsertRevision(c.Request().Context(), tenant, req); err != nil {
+	if _, err := s.Credentials.UpsertRevision(c.Request().Context(), tenant, req, options...); err != nil {
 		var coded *credentials.Error
 		if errors.As(err, &coded) {
 			return providerStoreError(c, coded)
@@ -67,9 +67,9 @@ func (s *Server) handleUpdateProvider(c echo.Context) error {
 		return credentialStoreUnavailable(c)
 	}
 	id := c.Param("id")
-	var req llmrouter.ProviderConfig
-	if err := c.Bind(&req); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+	req, options, failure := decodeProviderRequest(c)
+	if failure != nil {
+		return failure
 	}
 	req.ID = id
 	if req.Name == "" {
@@ -80,7 +80,7 @@ func (s *Server) handleUpdateProvider(c echo.Context) error {
 		return c.JSON(http.StatusForbidden, map[string]string{"error": "user credential identity is required"})
 	}
 
-	if _, err := s.Credentials.UpsertRevision(c.Request().Context(), tenant, req); err != nil {
+	if _, err := s.Credentials.UpsertRevision(c.Request().Context(), tenant, req, options...); err != nil {
 		var coded *credentials.Error
 		if errors.As(err, &coded) {
 			return providerStoreError(c, coded)
@@ -260,6 +260,35 @@ func (s *Server) handleMirrorSystemProvider(c echo.Context) error {
 		status = http.StatusCreated
 	}
 	return c.JSON(status, result)
+}
+
+// decodeProviderRequest reads a provider body. API key: absent (or the
+// masked placeholder) keeps the stored key, a non-empty value replaces it,
+// and an explicit "" clears it. protocol is "openai" (default when omitted)
+// or "systemone"; any other value is a 400.
+func decodeProviderRequest(c echo.Context) (llmrouter.ProviderConfig, []credentials.UpsertOption, error) {
+	invalid := func(code, message string) error {
+		return echo.NewHTTPError(http.StatusBadRequest, map[string]string{"code": code, "error": message})
+	}
+	body, err := io.ReadAll(io.LimitReader(c.Request().Body, 1<<20))
+	if err != nil {
+		return llmrouter.ProviderConfig{}, nil, invalid("invalid_request", "invalid request body")
+	}
+	var req llmrouter.ProviderConfig
+	var key struct {
+		APIKey *string `json:"api_key"`
+	}
+	if json.Unmarshal(body, &req) != nil || json.Unmarshal(body, &key) != nil {
+		return llmrouter.ProviderConfig{}, nil, invalid("invalid_request", "invalid request body")
+	}
+	if _, err := llmrouter.NormalizeProtocol(req.Protocol); err != nil {
+		return llmrouter.ProviderConfig{}, nil, invalid("provider_protocol_invalid", "protocol must be openai or systemone")
+	}
+	var options []credentials.UpsertOption
+	if key.APIKey != nil && *key.APIKey == "" {
+		options = append(options, credentials.ClearAPIKey())
+	}
+	return req, options, nil
 }
 
 func bindUserProviderOwner(ctx context.Context, workspaceID string, config *llmrouter.ProviderConfig) error {

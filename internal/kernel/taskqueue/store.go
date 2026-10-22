@@ -188,7 +188,7 @@ func (s *Store) enqueueTx(
 			workflow_id, workflow_version, run_snapshot_id,
 				source, kind, runtime_id, runtime_assignment, status, priority,
 			context_key, trace_id, parent_task_id, task_group_id,
-			subtask_deadline_at, payload, created_at, updated_at, build_run_id, available_at, actor_subject, deadline_at, outcome_sensitive, capability_invocation_id, source_ref
+				subtask_deadline_at, payload, created_at, updated_at, build_run_id, available_at, actor_subject, deadline_at, outcome_sensitive, capability_invocation_id, source_ref, fairness_key
 		) VALUES (
 				$1, $2, COALESCE(
 					NULLIF($3, ''),
@@ -203,16 +203,18 @@ func (s *Store) enqueueTx(
 				), NULLIF($4, ''), NULLIF($5, ''), NULLIF($6, 0),
 				$7, $8, NULLIF($9, ''),
 				NULLIF($10, ''), NULLIF($11, 0), NULLIF($12, ''),
-				$13, $14, NULLIF($15, ''), $16::jsonb, $17, $18,
+				$13, $14, NULLIF($15, ''), $16::jsonb, $17,
+				CASE WHEN $14='team_workflow' THEN COALESCE((SELECT priority FROM weave_task_queue WHERE workspace_id=$2 AND run_snapshot_id=$12 ORDER BY created_at,id LIMIT 1),$18) ELSE $18 END,
 				$19, $20, $21, NULLIF($22, ''),
-				$23, $24, $25, $25, NULLIF($26, ''), $25, $27::jsonb, $28, $29, NULLIF($30,''), $31
+				$23, $24, $25, $25, NULLIF($26, ''), $25, $27::jsonb, $28, $29, NULLIF($30,''), $31,
+				COALESCE(NULLIF($32,''),(SELECT fairness_key FROM weave_task_queue WHERE workspace_id=$2 AND run_snapshot_id=$12 ORDER BY created_at,id LIMIT 1))
 			)
 		`, task.ID, task.WorkspaceID, task.ProjectID, task.Agent, task.AgentID, task.AgentVersion,
 		task.IdentityKind, task.IdentitySchemaVersion, task.ExecutionScope,
 		task.WorkflowID, task.WorkflowVersion, task.RunSnapshotID,
 		source, kind, task.RuntimeID, task.RuntimeAssignment, StatusQueued, task.Priority,
 		nullIfEmpty(task.ContextKey), nullIfEmpty(task.TraceID), nullIfEmpty(task.ParentTaskID),
-		task.TaskGroupID, task.SubtaskDeadlineAt, task.Payload, now, task.BuildRunID, string(encodedSubject), task.DeadlineAt, task.OutcomeSensitive || kind == "engine_exec" || kind == "team_build", task.CapabilityInvocationID, task.SourceRef); err != nil {
+		task.TaskGroupID, task.SubtaskDeadlineAt, task.Payload, now, task.BuildRunID, string(encodedSubject), task.DeadlineAt, task.OutcomeSensitive || kind == "engine_exec" || kind == "team_build", task.CapabilityInvocationID, task.SourceRef, task.FairnessKey); err != nil {
 		return fmt.Errorf("enqueue task: %w", err)
 	}
 	return nil
@@ -974,7 +976,7 @@ const taskColumns = `
 	COALESCE(context_key, ''), COALESCE(trace_id, ''), COALESCE(parent_task_id, ''),
 	COALESCE(task_group_id, ''), subtask_deadline_at,
 	payload, result, COALESCE(error, ''), COALESCE(run_id, ''), COALESCE(worker_id, ''),
-	lease_expires_at, created_at, started_at, completed_at, updated_at, claim_epoch, COALESCE(build_run_id, ''), available_at, actor_subject, deadline_at, outcome_sensitive, physical_usage, unreported_attempts, stopped_epoch, COALESCE(stopped_worker_id,''), COALESCE(capability_invocation_id,''), source_ref`
+	lease_expires_at, created_at, started_at, completed_at, updated_at, claim_epoch, COALESCE(build_run_id, ''), available_at, actor_subject, deadline_at, outcome_sensitive, physical_usage, unreported_attempts, stopped_epoch, COALESCE(stopped_worker_id,''), COALESCE(capability_invocation_id,''), source_ref, COALESCE(fairness_key,'')`
 
 type rowScanner interface {
 	Scan(dest ...any) error
@@ -991,7 +993,7 @@ func scanTask(row rowScanner) (*Task, error) {
 		&task.ContextKey, &task.TraceID, &task.ParentTaskID,
 		&task.TaskGroupID, &task.SubtaskDeadlineAt,
 		&task.Payload, &task.Result, &task.Error, &task.RunID, &task.WorkerID,
-		&task.LeaseExpiresAt, &task.CreatedAt, &task.StartedAt, &task.CompletedAt, &task.UpdatedAt, &task.ClaimEpoch, &task.BuildRunID, &task.AvailableAt, &actorSubject, &task.DeadlineAt, &task.OutcomeSensitive, &physicalUsage, &task.UnreportedAttempts, &task.StoppedEpoch, &task.StoppedWorkerID, &task.CapabilityInvocationID, &task.SourceRef,
+		&task.LeaseExpiresAt, &task.CreatedAt, &task.StartedAt, &task.CompletedAt, &task.UpdatedAt, &task.ClaimEpoch, &task.BuildRunID, &task.AvailableAt, &actorSubject, &task.DeadlineAt, &task.OutcomeSensitive, &physicalUsage, &task.UnreportedAttempts, &task.StoppedEpoch, &task.StoppedWorkerID, &task.CapabilityInvocationID, &task.SourceRef, &task.FairnessKey,
 	); err != nil {
 		return nil, err
 	}

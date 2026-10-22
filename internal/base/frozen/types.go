@@ -207,9 +207,16 @@ type FrozenModelBinding struct {
 	ModelID          string              `json:"model_id"`
 	BaseURL          string              `json:"base_url"`
 	JSONObjectMode   bool                `json:"json_object_mode"`
-	CredentialRef    CredentialReference `json:"credential_ref"`
-	ContentHash      string              `json:"content_hash"`
+	// Protocol is the provider wire protocol. Empty means OpenAI-compatible
+	// chat completions, so existing bindings keep their content hash;
+	// ModelProtocolSystemOne selects the System One decision protocol.
+	Protocol      string              `json:"protocol,omitempty"`
+	CredentialRef CredentialReference `json:"credential_ref"`
+	ContentHash   string              `json:"content_hash"`
 }
+
+// ModelProtocolSystemOne is the only non-default frozen model protocol.
+const ModelProtocolSystemOne = "systemone"
 
 type FrozenRuntimeBinding struct {
 	SchemaVersion int `json:"schema_version"`

@@ -45,6 +45,8 @@ Install the required CLI engines on execution nodes, register each node through 
 
 `WEAVE_TEAMRUN_EXECUTOR_CONCURRENCY` sets how many workflow claims this process holds at once. It defaults to 4 and accepts 1–4096; an invalid value keeps the default and logs a warning. Every claim polls and renews its own lease, so raising it also requires a larger database pool (add `pool_max_conns` to `DATABASE_URL` and confirm PostgreSQL's `max_connections` covers every pool) and a matching workspace `max_active_invocations` quota.
 
+High-concurrency execution switches (each default keeps current behaviour): `WEAVE_TEAMRUN_EXECUTOR=pooled` uses one claimant with an execution pool, batched claims and renewals and PostgreSQL notifications, sized by the concurrency above; `WEAVE_TEAMRUN_DRAIN_TIMEOUT` (for example `30s`) stops claiming on shutdown and lets running executions finish, only under `pooled`, and the default 0 cancels them at once; `WEAVE_TEAMRUN_OBSERVATION_WRITES=buffered` batches model observations while member and terminal events stay synchronous; `WEAVE_MODEL_GATEWAY_CONFIG` names the model gateway file that bounds in-flight calls, RPM and TPM per provider and model. `weave executor` runs only the workflow executor without HTTP and can be deployed beside an API process started with `WEAVE_TEAMRUN_WORKERS_DISABLED=true`; each process enforces its gateway limits separately, divided across processes with `share`.
+
 The [architecture index](docs/架构/README.md) is the current navigation for Weave's layering, contracts, and migration evidence. Dated acceptance records preserve the conclusions and limitations observed at the time; they do not certify the current working tree or deployment.
 
 ## License

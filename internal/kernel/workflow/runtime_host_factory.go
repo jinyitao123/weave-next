@@ -44,10 +44,10 @@ type RuntimeHostFactoryWithLLM interface {
 	BuildWithLLM(context.Context, frozen.FrozenExecutionBundle, RuntimeCredentialResolver, contract.LLM) (compiler.FrozenBuildOpts, io.Closer, error)
 }
 
-type runtimeHostFactory struct{}
+type runtimeHostFactory struct{ gateway *llmrouter.ModelGateway }
 
-func (runtimeHostFactory) Build(ctx context.Context, bundle frozen.FrozenExecutionBundle, resolver RuntimeCredentialResolver) (compiler.FrozenBuildOpts, io.Closer, error) {
-	return buildRuntimeHosts(ctx, bundle, resolver)
+func (f runtimeHostFactory) Build(ctx context.Context, bundle frozen.FrozenExecutionBundle, resolver RuntimeCredentialResolver) (compiler.FrozenBuildOpts, io.Closer, error) {
+	return buildRuntimeHosts(llmrouter.WithModelGateway(ctx, f.gateway), bundle, resolver)
 }
 
 func (runtimeHostFactory) BuildWithLLM(ctx context.Context, bundle frozen.FrozenExecutionBundle, resolver RuntimeCredentialResolver, llm contract.LLM) (compiler.FrozenBuildOpts, io.Closer, error) {
@@ -56,6 +56,10 @@ func (runtimeHostFactory) BuildWithLLM(ctx context.Context, bundle frozen.Frozen
 
 func NewRuntimeHostFactory() RuntimeHostFactory {
 	return runtimeHostFactory{}
+}
+
+func NewRuntimeHostFactoryWithGateway(gateway *llmrouter.ModelGateway) RuntimeHostFactory {
+	return runtimeHostFactory{gateway: gateway}
 }
 
 // RuntimeToolEvent is the secret-free observable envelope for one frozen
@@ -213,6 +217,7 @@ func buildRuntimeHostsWithLLM(
 	if llm == nil {
 		primaryModelID := bindings[0].ModelID
 		router := llmrouter.New(primaryModelID)
+		router.SetGateway(llmrouter.ModelGatewayFromContext(ctx))
 		fallbackModelIDs := make([]string, 0, len(bindings)-1)
 		for index, binding := range bindings {
 			material, err := resolver.Resolve(ctx, credentials.ResolveRequest{Reference: binding.CredentialRef})
@@ -220,9 +225,13 @@ func buildRuntimeHostsWithLLM(
 				return compiler.FrozenBuildOpts{}, nil, err
 			}
 			provider := llmrouter.ProviderConfig{
-				ID:      fmt.Sprintf("%d#%s#%s", index, binding.ProviderID, binding.ModelID),
-				BaseURL: binding.BaseURL, APIKey: string(material.Value()),
+				GatewayProviderID: binding.ProviderID,
+				ID:                fmt.Sprintf("%d#%s#%s", index, binding.ProviderID, binding.ModelID),
+				BaseURL:           binding.BaseURL, APIKey: string(material.Value()),
 				Models: []string{binding.ModelID}, JSONObjectMode: binding.JSONObjectMode,
+				// The frozen protocol picks the wire client; the member and
+				// its execution path are the same for every protocol.
+				Protocol: binding.Protocol,
 			}
 			// This frozen system provider is DeepSeek's OpenAI-compatible endpoint.
 			// Preserve the published non-thinking profile. Reasoning replay is

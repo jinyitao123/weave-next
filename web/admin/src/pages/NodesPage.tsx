@@ -8,7 +8,8 @@ import { usePolling } from '../lib/polling'
 
 const canManage = (session: AdminSession) => session.role === 'admin' || session.role === 'owner'
 
-export function NodesPage({ session }: { session: AdminSession }) {
+// The deployment page's "执行节点" section.
+export function NodesSection({ session }: { session: AdminSession }) {
   const [nodes, setNodes] = useState<RuntimeNode[]>()
   const [error, setError] = useState('')
   const [connecting, setConnecting] = useState(false)
@@ -26,9 +27,9 @@ export function NodesPage({ session }: { session: AdminSession }) {
   const accepting = nodes?.filter((node) => node.accepting).length ?? 0
   const online = nodes?.filter((node) => node.online).length ?? 0
   const current = nodes?.find((node) => node.id === selected)
-  return <section className="page">
+  return <div className="stack">
     <header className="page__header">
-      <div><h1>节点</h1>{nodes?.length ? <p className="muted">{accepting} 个可接任务 · {online} 个在线 · 共 {nodes.length} 个</p> : null}</div>
+      <p className="muted">{nodes?.length ? `${accepting} 个可接任务 · ${online} 个在线 · 共 ${nodes.length} 个` : '节点上运行 Claude、Codex 等引擎，团队任务由它们执行。'}</p>
       <div className="toolbar">
         <button type="button" className="icon-button" aria-label="刷新" onClick={() => void refresh()}><RefreshCw size={15} /></button>
         {canManage(session) ? <button type="button" className="button button--primary" onClick={() => setConnecting(true)}><Plus size={15} />接入节点</button> : null}
@@ -50,7 +51,7 @@ export function NodesPage({ session }: { session: AdminSession }) {
     </table></div>}
     {connecting ? <ConnectDrawer onConnected={refresh} onClose={() => { setConnecting(false); void refresh() }} /> : null}
     {current ? <NodeDrawer node={current} manage={canManage(session)} onClose={() => setSelected(undefined)} onChanged={refresh} /> : null}
-  </section>
+  </div>
 }
 
 function NodeStatus({ node }: { node: RuntimeNode }) {

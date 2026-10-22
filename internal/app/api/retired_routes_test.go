@@ -77,10 +77,19 @@ var closedDeliveryTargetRoutes = []string{
 	"POST /v1/delivery-targets/:id/disable", "POST /v1/delivery-targets/:id/revoke", "DELETE /v1/delivery-targets/:id",
 }
 
+// The code repository line was deleted on 2026-10-21; see
+// docs/治理/2026-10-21-代码仓库功能清理.md.
+var codeRepositoryDeletedRoutes = []string{
+	"GET /v1/environments", "POST /v1/environments", "PUT /v1/environments/:id", "DELETE /v1/environments/:id",
+	"GET /v1/admin/tasks/:id/code", "GET /v1/admin/tasks/:id/thread",
+	"POST /v1/admin/tasks/:id/follow-ups", "POST /v1/admin/tasks/:id/pull-request",
+	"GET /v1/runtime/tasks/:id/git/*", "POST /v1/runtime/tasks/:id/git/*",
+}
+
 func TestRetiredRoutesAreNeverRegistered(t *testing.T) {
 	routes := registeredRoutes(t, &config.Config{JWTSecret: "test"})
 	var stillRegistered []string
-	for _, group := range [][]string{retiredRoutes, w10DeletedRoutes, closedDeliveryTargetRoutes} {
+	for _, group := range [][]string{retiredRoutes, w10DeletedRoutes, closedDeliveryTargetRoutes, codeRepositoryDeletedRoutes} {
 		for _, route := range group {
 			if routes[route] {
 				stillRegistered = append(stillRegistered, route)

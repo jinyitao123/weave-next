@@ -126,7 +126,11 @@ type ProviderAddRequest struct {
 	ID                       string   `json:"id"`
 	Name                     string   `json:"name"`
 	BaseURL                  string   `json:"base_url"`
-	APIKey                   string   `json:"api_key"`
+	// Protocol is "openai" (default) or "systemone".
+	Protocol string `json:"protocol,omitempty"`
+	// APIKey is optional: nil keeps the stored key, a value replaces it and
+	// "" clears it.
+	APIKey                   *string  `json:"api_key,omitempty"`
 	Models                   []string `json:"models"`
 	JSONObjectMode           bool     `json:"json_object_mode,omitempty"`
 	ThinkingDefaultMode      string   `json:"thinking_default_mode,omitempty"`

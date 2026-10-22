@@ -417,13 +417,6 @@ func (s *Server) handleRuntimeClaim(c echo.Context) error {
 			if err != nil {
 				return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			}
-			if engine.IsCLIEngine(claim.Request.Engine) {
-				code, codeErr := s.runCodeWorkspace(c.Request().Context(), task.WorkspaceID, task.RunSnapshotID)
-				if codeErr != nil {
-					return c.JSON(http.StatusInternalServerError, map[string]string{"error": "code_context_unavailable"})
-				}
-				claim.Request.Code = code
-			}
 			return c.JSON(http.StatusOK, runtimeprotocol.ClaimResponse{Versioned: runtimeprotocol.NewVersioned(), Claim: claim})
 		}
 

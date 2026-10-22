@@ -60,9 +60,9 @@ describe('result return navigation', () => {
     render(<Shell session={{ name: '开发者', role: 'developer', source: 'forge' }} onSignOut={vi.fn()} />)
     await screen.findByRole('heading', { name: '团队' })
     const nav = screen.getByRole('navigation', { name: '主导航' })
-    expect(Array.from(nav.querySelectorAll('.nav__item')).map((item) => item.textContent)).toEqual(['团队', '运行', '集成'])
-    fireEvent.click(screen.getByRole('button', { name: '代码任务' }))
-    expect(Array.from(nav.querySelectorAll('.nav__item')).map((item) => item.textContent)).toEqual(['团队', '运行', '集成', '代码仓库', '节点'])
+    expect(Array.from(nav.querySelectorAll('.nav__item')).map((item) => item.textContent)).toEqual(['团队', '运行', '集成', '部署'])
+    expect(screen.queryByRole('button', { name: '代码任务' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '代码仓库' })).toBeNull()
   })
 
   it('reminds whoever signed in with the default key on every page, and nobody else', async () => {

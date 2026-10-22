@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
@@ -244,6 +245,13 @@ func (c *WorkflowCoordinator) RecordLegCompletion(ctx context.Context, req LegCo
 	if decided {
 		if err := c.applyTaskCancellation(ctx, req.WorkspaceID, req.GroupID, req.Generation, evaluation.Actions); err != nil {
 			return LegCompletionResult{}, err
+		}
+		// Completion remains durable before attempting the existing idempotent
+		// resume path. The reconciler retries it after crashes or transient errors.
+		if c.Resumer != nil && c.CreatorLeases != nil {
+			if err := c.ReconcileGroup(ctx, req.WorkspaceID, req.GroupID); err != nil {
+				slog.Warn("immediate fanout resume deferred to reconciler", "group", req.GroupID, "error", err)
+			}
 		}
 	}
 	return result, nil

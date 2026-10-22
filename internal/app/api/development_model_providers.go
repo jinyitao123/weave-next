@@ -19,16 +19,22 @@ import (
 	"github.com/jinyitao123/weave/internal/kernel/llmrouter"
 )
 
-// The models a workspace shares come from providers: an address, the model
-// names it serves and a key. Developers and administrators add or replace one
-// here, so a team can be given a model without leaving the place it is being
-// built in. The key is sealed on arrival and is never read back by any route.
+// The models a workspace shares come from providers: an address, the wire
+// protocol, the model names it serves and an optional key. Developers and
+// administrators add or replace one here, so a team can be given a model
+// without leaving the place it is being built in. The key is sealed on
+// arrival and is never read back by any route; listings say only whether one
+// is stored.
 
 type developmentModelProvider struct {
 	ID      string   `json:"id"`
 	Name    string   `json:"name"`
 	BaseURL string   `json:"base_url"`
 	Models  []string `json:"models"`
+	// Protocol is "openai" (chat completions) or "systemone" (decision models).
+	Protocol       string `json:"protocol"`
+	HasAPIKey      bool   `json:"has_api_key"`
+	JSONObjectMode bool   `json:"json_object_mode"`
 	// A provider that came with the deployment is switched on by an
 	// administrator and is not changed here.
 	Deployment bool `json:"deployment"`
@@ -41,7 +47,7 @@ func (s *Server) handleListDevelopmentModelProviders(c echo.Context) error {
 	if pool == nil {
 		return workflowError(c, http.StatusServiceUnavailable, "development_model_provider_unavailable", "组织模型暂时无法读取")
 	}
-	rows, err := pool.Query(c.Request().Context(), `SELECT id,name,base_url,models,source_kind FROM weave_provider_credentials
+	rows, err := pool.Query(c.Request().Context(), `SELECT id,name,base_url,models,source_kind,protocol,api_key_set,json_object_mode FROM weave_provider_credentials
 		WHERE workspace_id=$1 AND credential_scope='workspace_service' AND enabled AND revoked_at IS NULL AND deleted_at IS NULL AND latest_revision > 0
 		ORDER BY name,id`, getTenant(c))
 	if err != nil {
@@ -52,7 +58,7 @@ func (s *Server) handleListDevelopmentModelProviders(c echo.Context) error {
 	for rows.Next() {
 		var provider developmentModelProvider
 		var source string
-		if err := rows.Scan(&provider.ID, &provider.Name, &provider.BaseURL, &provider.Models, &source); err != nil {
+		if err := rows.Scan(&provider.ID, &provider.Name, &provider.BaseURL, &provider.Models, &source, &provider.Protocol, &provider.HasAPIKey, &provider.JSONObjectMode); err != nil {
 			return workflowStoreFailure(c, err)
 		}
 		provider.Deployment = source != "workspace"
@@ -65,7 +71,9 @@ func (s *Server) handleListDevelopmentModelProviders(c echo.Context) error {
 }
 
 // handlePutDevelopmentModelProvider adds a shared provider or replaces one
-// that was added here. Leaving the key out keeps the one already stored.
+// that was added here. The key is optional: leaving api_key out (or sending
+// the masked placeholder) keeps the stored key, a value replaces it, and an
+// explicit "" clears it. protocol is "openai" (default) or "systemone".
 func (s *Server) handlePutDevelopmentModelProvider(c echo.Context) error {
 	pool := s.GetPool()
 	if pool == nil || s.Credentials == nil {
@@ -75,23 +83,40 @@ func (s *Server) handlePutDevelopmentModelProvider(c echo.Context) error {
 		return workflowError(c, http.StatusUnprocessableEntity, "model_provider_invalid", message)
 	}
 	var request struct {
-		Name    string   `json:"name"`
-		BaseURL string   `json:"base_url"`
-		APIKey  string   `json:"api_key"`
-		Models  []string `json:"models"`
+		Name           string   `json:"name"`
+		BaseURL        string   `json:"base_url"`
+		Protocol       string   `json:"protocol"`
+		APIKey         *string  `json:"api_key"`
+		Models         []string `json:"models"`
+		JSONObjectMode bool     `json:"json_object_mode"`
 	}
 	if err := decodeWorkflowBody(c, &request); err != nil {
 		return workflowSchemaError(c)
 	}
-	id, name, key := c.Param("id"), strings.TrimSpace(request.Name), strings.TrimSpace(request.APIKey)
+	id, name := c.Param("id"), strings.TrimSpace(request.Name)
 	if !developmentModelProviderID.MatchString(id) {
 		return invalid("供应方标识只能用小写字母、数字和连字符，以字母或数字开头，不超过 63 个字符")
 	}
 	if name == "" || utf8.RuneCountInString(name) > 80 {
 		return invalid("请给出供应方名称（80 字以内）")
 	}
-	if key == credentials.MaskedKey || len(key) > 4096 || strings.ContainsAny(key, " \t\r\n") {
-		return invalid("密钥格式无效")
+	protocol, err := llmrouter.NormalizeProtocol(request.Protocol)
+	if err != nil {
+		return workflowError(c, http.StatusBadRequest, "provider_protocol_invalid", "协议只能是 openai 或 systemone")
+	}
+	key, clearKey, masked := "", false, false
+	if request.APIKey != nil {
+		switch raw := *request.APIKey; {
+		case raw == "":
+			clearKey = true
+		case raw == credentials.MaskedKey:
+			masked = true // keeps the stored key; never a new key
+		default:
+			key = strings.TrimSpace(raw)
+			if key == "" || key != raw || len(key) > 4096 || strings.ContainsAny(key, " \t\r\n") {
+				return invalid("密钥格式无效")
+			}
+		}
 	}
 	seen, models := map[string]bool{}, []string{}
 	for _, model := range request.Models {
@@ -123,8 +148,10 @@ func (s *Server) handlePutDevelopmentModelProvider(c echo.Context) error {
 	err = tx.QueryRow(ctx, `SELECT credential_scope,source_kind FROM weave_provider_credentials WHERE workspace_id=$1 AND id=$2`, tenant, id).Scan(&scope, &source)
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
-		if key == "" {
-			return invalid("新增模型供应方需要密钥")
+		// A new provider may have no key (local and decision-model servers),
+		// but the masked placeholder is not a key it could keep.
+		if masked {
+			return invalid("密钥格式无效")
 		}
 	case err != nil:
 		return workflowStoreFailure(c, err)
@@ -153,10 +180,16 @@ func (s *Server) handlePutDevelopmentModelProvider(c echo.Context) error {
 		}
 		return nil
 	})
-	if _, err = s.Credentials.UpsertRevisionTx(authorized, tx, tenant, llmrouter.ProviderConfig{
+	var options []credentials.UpsertOption
+	if clearKey {
+		options = append(options, credentials.ClearAPIKey())
+	}
+	result, err := s.Credentials.UpsertRevisionTx(authorized, tx, tenant, llmrouter.ProviderConfig{
 		CredentialScope: frozen.CredentialScopeWorkspaceService, CredentialServiceID: service,
-		ID: id, Name: name, BaseURL: strings.TrimSpace(request.BaseURL), APIKey: key, Models: models,
-	}); err != nil {
+		ID: id, Name: name, BaseURL: strings.TrimSpace(request.BaseURL), Protocol: protocol, APIKey: key, Models: models,
+		JSONObjectMode: request.JSONObjectMode,
+	}, options...)
+	if err != nil {
 		var coded *credentials.Error
 		if errors.As(err, &coded) && errors.Is(coded, credentials.ErrProviderRevisionRequired) {
 			return invalid("供应方地址须是完整的 http 或 https 地址，不带账号、查询参数和片段")
@@ -172,6 +205,10 @@ func (s *Server) handlePutDevelopmentModelProvider(c echo.Context) error {
 	if s.Models != nil {
 		s.Models.Invalidate(tenant)
 	}
-	slog.Info("workspace model provider configured", "workspace", tenant, "provider", id, "actor", getUserID(c), "key_replaced", key != "")
-	return c.JSON(http.StatusOK, map[string]any{"id": id, "name": name, "models": models, "key_replaced": key != ""})
+	slog.Info("workspace model provider configured", "workspace", tenant, "provider", id, "actor", getUserID(c),
+		"protocol", protocol, "key_replaced", key != "", "key_cleared", clearKey)
+	return c.JSON(http.StatusOK, map[string]any{
+		"id": id, "name": name, "protocol": protocol, "models": models,
+		"key_replaced": key != "", "key_cleared": clearKey, "has_api_key": result.Head.APIKeySet,
+	})
 }

@@ -47,7 +47,7 @@ func TestWorkspaceOperationsAreDescribedAndKnown(t *testing.T) {
 			}
 		}
 	}
-	if len(kinds) != 28 || !workspaceStarts(map[string]any{"kind": "code_task_submit"}) || workspaceStarts(map[string]any{"kind": "run_stop"}) || workspaceStarts(nil) {
+	if len(kinds) != 21 || workspaceStarts(map[string]any{"kind": "code_task_submit"}) || workspaceStarts(map[string]any{"kind": "run_stop"}) || workspaceStarts(nil) {
 		t.Fatalf("kinds = %d", len(kinds))
 	}
 }
@@ -173,34 +173,10 @@ func TestWorkspaceOperationsRunAsTheCallerRealPG(t *testing.T) {
 	}
 
 	// Code repositories: the access token is asked for, never taken from the operation.
-	save := map[string]any{"kind": "repository_save", "name": "订单服务", "repository_url": "https://git.example.com/shop/orders.git", "default_branch": "main", "verify_commands": []string{"make test"}, "enter": []string{"git_token"}}
-	if status, answer := send("developer", http.MethodPost, "/v1/development/workspace-operations", map[string]any{"operation": save, "secrets": map[string]string{"git_token": "t0ken"}}); status != http.StatusConflict || answer["code"] != "desktop_only" {
-		t.Fatalf("a secret was accepted from a caller without an input field: %d %v", status, answer)
-	}
-	status, asked := apply("developer", save, nil)
-	if wanted := list(asked["secrets"]); status != http.StatusOK || asked["status"] != "needs_input" || len(wanted) != 1 || wanted[0].(map[string]any)["field"] != "git_token" || asked["forge_session"] != false {
-		t.Fatalf("repository_save without the token: %d %v", status, asked)
-	}
-	if status, answer := apply("developer", map[string]any{"kind": "repository_save", "name": "订单服务", "enter": []string{"password"}}, nil); status != http.StatusUnprocessableEntity {
-		t.Fatalf("an undeclared secret: %d %v", status, answer)
-	}
-	saved := done("developer", save, map[string]any{"secrets": map[string]string{"git_token": "t0ken"}})
-	if text, _ := json.Marshal(saved); saved["has_access_token"] != true || saved["name"] != "订单服务" || strings.Contains(string(text), "t0ken") {
-		t.Fatalf("repository_save: %v", saved)
-	}
-	changed := done("developer", map[string]any{"kind": "repository_save", "repository": "订单服务", "default_branch": "release"}, nil)
-	if changed["default_branch"] != "release" || changed["repository_url"] != "https://git.example.com/shop/orders.git" || changed["has_access_token"] != true {
-		t.Fatalf("a partial change lost what it did not name: %v", changed)
-	}
-	if cleared := done("developer", map[string]any{"kind": "repository_save", "repository": "订单服务", "clear_token": true}, nil); cleared["has_access_token"] != false {
-		t.Fatalf("clear_token: %v", cleared)
-	}
-	if repositories := list(done("developer", map[string]any{"kind": "repository_list"}, nil)["repositories"]); len(repositories) != 1 || repositories[0].(map[string]any)["id"] != nil {
-		t.Fatalf("repository_list: %v", repositories)
-	}
-	done("developer", map[string]any{"kind": "repository_archive", "repository": "订单服务"}, confirmed)
-	if repositories := list(done("developer", map[string]any{"kind": "repository_list"}, nil)["repositories"]); len(repositories) != 0 {
-		t.Fatalf("archived repository still listed: %v", repositories)
+	for _, kind := range []string{"repository_list", "repository_save", "repository_archive", "code_task_submit", "run_code", "run_follow_up", "run_pull_request"} {
+		if status, _ := apply("developer", map[string]any{"kind": kind}, nil); status < 400 {
+			t.Fatalf("retired operation accepted: %s", kind)
+		}
 	}
 
 	// Refreshing the catalog needs the person's own Forge sign-in, which only the desktop holds.

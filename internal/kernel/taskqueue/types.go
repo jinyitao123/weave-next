@@ -71,6 +71,7 @@ type Task struct {
 	RuntimeAssignment      json.RawMessage         `json:"runtime_assignment,omitempty"`
 	Status                 string                  `json:"status"`
 	Priority               int                     `json:"priority"`
+	FairnessKey            string                  `json:"fairness_key,omitempty"`
 	ContextKey             string                  `json:"context_key,omitempty"`
 	TraceID                string                  `json:"trace_id,omitempty"`
 	ParentTaskID           string                  `json:"parent_task_id,omitempty"`

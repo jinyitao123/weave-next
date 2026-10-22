@@ -392,6 +392,8 @@ type Workers struct {
 	// executor loop makes a Parallel node observationally serial even when its
 	// branches target different runtimes.
 	ExecutorConcurrency int
+	Pooled              bool
+	DrainTimeout        time.Duration
 
 	mu     sync.Mutex
 	cancel context.CancelFunc
@@ -416,15 +418,23 @@ func (workers *Workers) Start() {
 	if executorConcurrency <= 0 {
 		executorConcurrency = 1
 	}
-	workerCount := executorConcurrency + 2
+	executorCount := executorConcurrency
+	if workers.Pooled {
+		executorCount = 1
+	}
+	workerCount := executorCount + 2
 	if workers.HumanTimeout != nil {
 		workerCount++
 	}
 	workers.wg.Add(workerCount)
-	for index := 0; index < executorConcurrency; index++ {
+	for index := 0; index < executorCount; index++ {
 		go func(index int) {
 			defer workers.wg.Done()
-			workers.executorLoop(ctx, index)
+			if workers.Pooled {
+				workers.pooledLoop(ctx, executorConcurrency)
+			} else {
+				workers.executorLoop(ctx, index)
+			}
 		}(index)
 	}
 	go func() {

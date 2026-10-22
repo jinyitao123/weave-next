@@ -7,6 +7,16 @@ import sys
 
 
 RETIRED_PATHS = (
+    "internal/app/api/admin_environments.go",
+    "internal/app/api/admin_task_code.go",
+    "internal/app/api/admin_git_proxy.go",
+    "internal/app/api/admin_pull_requests.go",
+    "internal/app/api/admin_follow_ups.go",
+    "internal/app/daemon/code_workspace.go",
+    "web/admin/src/pages/EnvironmentsPage.tsx",
+    "web/admin/src/pages/TaskCodePanels.tsx",
+    "web/admin/src/pages/TaskThread.tsx",
+    "web/admin/src/lib/environments.ts",
     "deploy/docker-compose.yml",
     "deploy/Dockerfile.weave-prebuilt",
     "deploy/.env.example",

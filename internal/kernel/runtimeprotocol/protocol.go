@@ -164,35 +164,6 @@ type ExecutionRequest struct {
 	InputFiles          []InputFile     `json:"input_files,omitempty"`
 	TaskMCP             []TaskMCPTarget `json:"task_mcp,omitempty"`
 	Loom                *LoomInput      `json:"loom,omitempty"`
-	// Code asks a CLI Host to run the member inside an exact checkout of a
-	// repository and to report the resulting commit and, when commands are
-	// declared, Host-executed verification evidence. It is attached at claim
-	// time from the run's immutable code context.
-	Code *CodeWorkspace `json:"code,omitempty"`
-}
-
-// CodeWorkspace is the repository a run works on. The Host fetches it with its
-// own git credentials, starts from Ref (or from the commit handed over by an
-// upstream stage) and never lets the member's own claims stand in for the
-// recorded commit or command results.
-type CodeWorkspace struct {
-	Repository     string   `json:"repository"`
-	Ref            string   `json:"ref"`
-	SetupScript    string   `json:"setup_script,omitempty"`
-	VerifyCommands []string `json:"verify_commands,omitempty"`
-	PushBranch     string   `json:"push_branch,omitempty"`
-	// Proxy is true when the server holds the repository credential: the Host
-	// fetches and pushes through the task-scoped git proxy instead of using
-	// its own credentials.
-	Proxy bool `json:"proxy,omitempty"`
-	// Seed carries the version and cumulative patch a previous run delivered;
-	// the first stage of a follow-up rebuilds that exact commit before it starts.
-	Seed *CodeSeed `json:"seed,omitempty"`
-}
-
-type CodeSeed struct {
-	Version string `json:"version"`
-	Patch   string `json:"patch,omitempty"`
 }
 
 type LoomInput struct {
