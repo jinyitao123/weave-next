@@ -184,27 +184,51 @@ func scanTerminalLineageRecords(
 	targetRunID string,
 ) ([]TerminalLineageRecord, map[string]TerminalRecordInspection, error) {
 	namespace := "audit:" + tenant
-	keys, err := store.ListKeys(ctx, namespace)
-	if err != nil {
-		return nil, nil, fmt.Errorf(
-			"list terminal lineage namespace %q: %w",
-			namespace,
-			err,
-		)
+	var keys []string
+	var inspect func(key string) (TerminalRecordInspection, bool, error)
+	if related, ok := store.(terminalLineageRelatedReader); ok {
+		inspections, err := readTerminalLineageClosure(ctx, related, namespace, targetRunID)
+		if err != nil {
+			return nil, nil, err
+		}
+		keys = make([]string, 0, len(inspections))
+		for key := range inspections {
+			keys = append(keys, key)
+		}
+		inspect = func(key string) (TerminalRecordInspection, bool, error) {
+			return inspections[key], true, nil
+		}
+	} else {
+		listed, err := store.ListKeys(ctx, namespace)
+		if err != nil {
+			return nil, nil, fmt.Errorf(
+				"list terminal lineage namespace %q: %w",
+				namespace,
+				err,
+			)
+		}
+		keys = listed
+		inspect = func(key string) (TerminalRecordInspection, bool, error) {
+			value, present, err := store.ReadValue(ctx, namespace, key)
+			if err != nil {
+				return TerminalRecordInspection{}, false, fmt.Errorf(
+					"read terminal lineage %q/%q: %w",
+					namespace,
+					key,
+					err,
+				)
+			}
+			return InspectTerminalRecord(present, value), present, nil
+		}
 	}
 	sort.Strings(keys)
 
 	records := make([]TerminalLineageRecord, 0, len(keys))
 	invalidByKey := make(map[string]TerminalRecordInspection)
 	for _, key := range keys {
-		value, present, err := store.ReadValue(ctx, namespace, key)
+		inspection, present, err := inspect(key)
 		if err != nil {
-			return nil, nil, fmt.Errorf(
-				"read terminal lineage %q/%q: %w",
-				namespace,
-				key,
-				err,
-			)
+			return nil, nil, err
 		}
 		if !present {
 			if key == targetRunID {
@@ -217,7 +241,6 @@ func scanTerminalLineageRecords(
 			}
 			continue
 		}
-		inspection := InspectTerminalRecord(true, value)
 		if inspection.Classification != TerminalRecordValid || inspection.Entry == nil {
 			invalidByKey[key] = inspection
 			if key == targetRunID {
@@ -241,6 +264,68 @@ func scanTerminalLineageRecords(
 		})
 	}
 	return records, invalidByKey, nil
+}
+
+// terminalLineageRelatedReader is implemented by stores that index which
+// audit records name which runs (storeext.PGExt over migration 0201).
+type terminalLineageRelatedReader interface {
+	ReadTerminalLineageRelated(
+		ctx context.Context,
+		namespace string,
+		runIDs []string,
+		includeUnparsed bool,
+	) (map[string][]byte, error)
+}
+
+// readTerminalLineageClosure reads every record that assembling targetRunID's
+// lineage can consult, instead of the whole namespace: starting from the
+// target, each round fetches the records keyed by a known run or naming it as
+// run, parent or aggregation parent, and learns the runs those records name
+// (their run and old child breakdown). Assembly walks only down from the
+// target through such records, and extra records cannot change its result, so
+// the closure assembles exactly as the full namespace does.
+func readTerminalLineageClosure(
+	ctx context.Context,
+	store terminalLineageRelatedReader,
+	namespace string,
+	targetRunID string,
+) (map[string]TerminalRecordInspection, error) {
+	inspections := make(map[string]TerminalRecordInspection)
+	known := map[string]bool{targetRunID: true}
+	frontier := []string{targetRunID}
+	for round := 0; len(frontier) > 0; round++ {
+		values, err := store.ReadTerminalLineageRelated(ctx, namespace, frontier, round == 0)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"read terminal lineage %q around %v: %w",
+				namespace,
+				frontier,
+				err,
+			)
+		}
+		frontier = nil
+		learn := func(runID string) {
+			if !known[runID] {
+				known[runID] = true
+				frontier = append(frontier, runID)
+			}
+		}
+		for key, value := range values {
+			if _, seen := inspections[key]; seen {
+				continue
+			}
+			inspection := InspectTerminalRecord(true, value)
+			inspections[key] = inspection
+			learn(key)
+			if inspection.Classification == TerminalRecordValid && inspection.Entry != nil {
+				learn(inspection.Entry.RunID)
+				for _, child := range inspection.Entry.ChildBreakdown {
+					learn(child.RunID)
+				}
+			}
+		}
+	}
+	return inspections, nil
 }
 
 func restoreTerminalLineageInspection(

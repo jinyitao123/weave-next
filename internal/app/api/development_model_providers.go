@@ -88,7 +88,7 @@ func (s *Server) handlePutDevelopmentModelProvider(c echo.Context) error {
 		Protocol       string   `json:"protocol"`
 		APIKey         *string  `json:"api_key"`
 		Models         []string `json:"models"`
-		JSONObjectMode bool     `json:"json_object_mode"`
+		JSONObjectMode *bool    `json:"json_object_mode"`
 	}
 	if err := decodeWorkflowBody(c, &request); err != nil {
 		return workflowSchemaError(c)
@@ -100,8 +100,7 @@ func (s *Server) handlePutDevelopmentModelProvider(c echo.Context) error {
 	if name == "" || utf8.RuneCountInString(name) > 80 {
 		return invalid("请给出供应方名称（80 字以内）")
 	}
-	protocol, err := llmrouter.NormalizeProtocol(request.Protocol)
-	if err != nil {
+	if _, err := llmrouter.NormalizeProtocol(request.Protocol); err != nil {
 		return workflowError(c, http.StatusBadRequest, "provider_protocol_invalid", "协议只能是 openai 或 systemone")
 	}
 	key, clearKey, masked := "", false, false
@@ -144,8 +143,13 @@ func (s *Server) handlePutDevelopmentModelProvider(c echo.Context) error {
 	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, "development-model-providers:"+tenant); err != nil {
 		return workflowStoreFailure(c, err)
 	}
-	var scope, source string
-	err = tx.QueryRow(ctx, `SELECT credential_scope,source_kind FROM weave_provider_credentials WHERE workspace_id=$1 AND id=$2`, tenant, id).Scan(&scope, &source)
+	// An omitted protocol or output mode keeps the provider's current one, as
+	// an omitted key does; a new provider starts from OpenAI chat with strict
+	// JSON Schema output.
+	var scope, source, currentProtocol string
+	var currentJSONObjectMode bool
+	err = tx.QueryRow(ctx, `SELECT credential_scope,source_kind,protocol,json_object_mode FROM weave_provider_credentials WHERE workspace_id=$1 AND id=$2`,
+		tenant, id).Scan(&scope, &source, &currentProtocol, &currentJSONObjectMode)
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
 		// A new provider may have no key (local and decision-model servers),
@@ -158,6 +162,18 @@ func (s *Server) handlePutDevelopmentModelProvider(c echo.Context) error {
 	case scope != string(frozen.CredentialScopeWorkspaceService) || source != "workspace":
 		// A personal provider or one that came with the deployment keeps its identity.
 		return workflowError(c, http.StatusConflict, "model_provider_conflict", "这个供应方标识已被占用，请换一个")
+	}
+	protocolInput := request.Protocol
+	if protocolInput == "" {
+		protocolInput = currentProtocol
+	}
+	protocol, err := llmrouter.NormalizeProtocol(protocolInput)
+	if err != nil {
+		return workflowStoreFailure(c, err)
+	}
+	jsonObjectMode := currentJSONObjectMode
+	if request.JSONObjectMode != nil {
+		jsonObjectMode = *request.JSONObjectMode
 	}
 	// A model is served by one shared provider, or the choice at run time would be ambiguous.
 	var taken, by string
@@ -187,7 +203,7 @@ func (s *Server) handlePutDevelopmentModelProvider(c echo.Context) error {
 	result, err := s.Credentials.UpsertRevisionTx(authorized, tx, tenant, llmrouter.ProviderConfig{
 		CredentialScope: frozen.CredentialScopeWorkspaceService, CredentialServiceID: service,
 		ID: id, Name: name, BaseURL: strings.TrimSpace(request.BaseURL), Protocol: protocol, APIKey: key, Models: models,
-		JSONObjectMode: request.JSONObjectMode,
+		JSONObjectMode: jsonObjectMode,
 	}, options...)
 	if err != nil {
 		var coded *credentials.Error
@@ -208,7 +224,7 @@ func (s *Server) handlePutDevelopmentModelProvider(c echo.Context) error {
 	slog.Info("workspace model provider configured", "workspace", tenant, "provider", id, "actor", getUserID(c),
 		"protocol", protocol, "key_replaced", key != "", "key_cleared", clearKey)
 	return c.JSON(http.StatusOK, map[string]any{
-		"id": id, "name": name, "protocol": protocol, "models": models,
+		"id": id, "name": name, "protocol": protocol, "models": models, "json_object_mode": jsonObjectMode,
 		"key_replaced": key != "", "key_cleared": clearKey, "has_api_key": result.Head.APIKeySet,
 	})
 }

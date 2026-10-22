@@ -105,5 +105,6 @@ func (s *Server) handleGetAdminMetrics(c echo.Context) error {
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "metrics_failed"})
 	}
-	return c.JSON(http.StatusOK, map[string]any{"first_output_median_seconds": median, "sample": sample})
+	return c.JSON(http.StatusOK, map[string]any{"first_output_median_seconds": median, "sample": sample,
+		"teamrun_capacity": s.teamRunCapacity()})
 }

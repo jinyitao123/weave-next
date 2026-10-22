@@ -343,6 +343,36 @@ func (e *PGExt) GetByKeys(ctx context.Context, ns string, keys []string) (map[st
 	return result, rows.Err()
 }
 
+// ReadTerminalLineageRelated returns the audit records of namespace that are
+// keyed by one of runIDs or name one of them as a run, parent or aggregation
+// parent (weave_audit_lineage_refs, migration 0201). With includeUnparsed it
+// also returns every record PostgreSQL could not index, which the caller must
+// consider once per closure.
+func (e *PGExt) ReadTerminalLineageRelated(ctx context.Context, namespace string, runIDs []string, includeUnparsed bool) (map[string][]byte, error) {
+	rows, err := e.pool.Query(ctx,
+		`SELECT stored.key, stored.value FROM loom_store stored
+		 WHERE stored.namespace=$1 AND stored.key IN (
+		   SELECT unnest($2::text[])
+		   UNION SELECT ref.key FROM weave_audit_lineage_refs ref WHERE ref.namespace=$1 AND ref.ref = ANY($2)
+		   UNION SELECT unparsed.key FROM weave_audit_lineage_unparsed unparsed WHERE unparsed.namespace=$1 AND $3)`,
+		namespace, runIDs, includeUnparsed)
+	if err != nil {
+		return nil, fmt.Errorf("storeext: read terminal lineage: %w", err)
+	}
+	defer rows.Close()
+
+	result := make(map[string][]byte)
+	for rows.Next() {
+		var k string
+		var v []byte
+		if err := rows.Scan(&k, &v); err != nil {
+			return nil, fmt.Errorf("storeext: read terminal lineage scan: %w", err)
+		}
+		result[k] = v
+	}
+	return result, rows.Err()
+}
+
 // AggregateUsage performs server-side aggregation of audit entries.
 // Returns per-agent usage stats without loading all rows into application memory.
 type UsageAgg struct {

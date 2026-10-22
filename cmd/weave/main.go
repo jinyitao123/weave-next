@@ -389,7 +389,10 @@ func main() {
 		srv.ProductPublication = productPublication
 	}
 
-	srv.ConfigureTeamRunWorkers()
+	if err := srv.ConfigureTeamRunWorkers(); err != nil {
+		slog.Error("invalid team run worker configuration", "error", err)
+		os.Exit(1)
+	}
 	if len(os.Args) > 1 && os.Args[1] == "executor" {
 		ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 		defer cancel()
