@@ -9,10 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jinyitao123/weave/internal/app/agentcatalog"
-	"github.com/jinyitao123/weave/internal/app/chatrequest"
 	orgstore "github.com/jinyitao123/weave/internal/app/org"
 	"github.com/jinyitao123/weave/internal/app/teamconstruction"
 	"github.com/jinyitao123/weave/internal/app/workflowcatalog"
@@ -156,48 +154,5 @@ func TestPublishedInputReconcileOrdersUnknownAcceptanceRealPG(t *testing.T) {
 				t.Fatalf("reconciliation created/duplicated execution: %d", n)
 			}
 		})
-	}
-}
-
-func TestPublishedChatRecoversUnboundKernelReceiptRealPG(t *testing.T) {
-	server, pool := newTeamDispatchTestServer(t)
-	ctx := execution.WithSubject(context.Background(), execution.Subject{WorkspaceID: "ws", UserID: "user"})
-	if _, err := pool.Exec(ctx, `INSERT INTO weave_projects(id,workspace_id,avatar_id,name,team_id)VALUES('project','ws','lead','Project','team');
- INSERT INTO weave_conversations(id,workspace_id,agent_id,user_id,project_id)VALUES('conversation','ws','lead','user','project');
- INSERT INTO weave_messages(id,conversation_id,workspace_id,role,content)VALUES('user-message','conversation','ws','user','Do this once')`); err != nil {
-		t.Fatal(err)
-	}
-	server.ChatRequests = chatrequest.New(pool, nil)
-	requestID := uuid.NewString()
-	if _, _, err := server.ChatRequests.Begin(ctx, chatrequest.BeginRequest{WorkspaceID: "ws", UserID: "user", ClientRequestID: requestID, RequestFingerprint: "chat-fingerprint", ProjectID: "project", AgentID: "lead"}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := server.ChatRequests.MarkAdmitted(ctx, "ws", "user", requestID, "session", "conversation", "user-message"); err != nil {
-		t.Fatal(err)
-	}
-	real := server.KernelPublication
-	kernel := &ambiguousPublishedKernel{Service: real, published: real.(publication.PublishedService), reconciler: real.(publication.PublishedReconciler)}
-	kernel.lose.Store(true)
-	server.KernelPublication = kernel
-	if _, _, err := server.admitPublishedWorkflowChat(ctx, "ws", "flow", "project", "conversation", "user-message", requestID, "Do this once"); err == nil {
-		t.Fatal("response loss did not reach caller")
-	}
-	original, err := server.ChatRequests.Get(ctx, "ws", "user", requestID)
-	if err != nil || original.RunID != "" {
-		t.Fatalf("unverified receipt associated %+v %v", original, err)
-	}
-	// Recreate the adapter, as a restart would, without the original HTTP handler.
-	server.ChatRequests = chatrequest.New(pool, nil)
-	recovered, err := server.recoverPublishedChatAdmission(ctx, original)
-	if err != nil || recovered.RunID == "" || recovered.TaskID == "" || recovered.Status != "running" {
-		t.Fatalf("recovery %+v %v", recovered, err)
-	}
-	repeated, err := server.recoverPublishedChatAdmission(ctx, recovered)
-	if err != nil || repeated.RunID != recovered.RunID {
-		t.Fatalf("repeated recovery %+v %v", repeated, err)
-	}
-	var n int
-	if err = pool.QueryRow(ctx, `SELECT count(*) FROM weave_task_queue`).Scan(&n); err != nil || n != 1 {
-		t.Fatalf("chat recovery queued %d %v", n, err)
 	}
 }

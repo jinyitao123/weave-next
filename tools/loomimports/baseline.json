@@ -7,7 +7,7 @@
   {
     "package": "internal/app/api",
     "import": "loom",
-    "files": 10
+    "files": 6
   },
   {
     "package": "internal/app/api",
@@ -17,7 +17,7 @@
   {
     "package": "internal/app/api",
     "import": "loom/stdlib",
-    "files": 8
+    "files": 4
   },
   {
     "package": "internal/app/daemon",
@@ -77,7 +77,7 @@
   {
     "package": "internal/kernel/mcphost",
     "import": "loom",
-    "files": 2
+    "files": 1
   },
   {
     "package": "internal/kernel/mcphost",

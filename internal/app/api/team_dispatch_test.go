@@ -35,7 +35,7 @@ func TestWorkflowDispatchFingerprintCoversDispatchFacts(t *testing.T) {
 		edit func(*teamDispatchRequest)
 	}{
 		{"task", func(request *teamDispatchRequest) { request.Task = "changed" }},
-		{"mode", func(request *teamDispatchRequest) { request.Mode = teamDispatchModeFreeCollab }},
+		{"mode", func(request *teamDispatchRequest) { request.Mode = "other" }},
 		{"workflow", func(request *teamDispatchRequest) { request.WorkflowID = "workflow-2" }},
 		{"version", func(request *teamDispatchRequest) { changed := 3; request.WorkflowVersion = &changed }},
 		{"project", func(request *teamDispatchRequest) { request.ProjectID = "project-2" }},

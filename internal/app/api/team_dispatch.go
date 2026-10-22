@@ -16,10 +16,9 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-const (
-	teamDispatchModeWorkflow   = "workflow"
-	teamDispatchModeFreeCollab = "free_collab"
-)
+// Free collaboration (mode "free_collab") ran the team lead through the retired
+// chat chain; every dispatch now runs a published workflow.
+const teamDispatchModeWorkflow = "workflow"
 
 type teamDispatchRequest struct {
 	Task            string `json:"task"`
@@ -102,8 +101,7 @@ func (wire teamDispatchWireRequest) matchesInput(teamID string, input dispatchIn
 }
 
 // handleDispatchTeam is the single product dispatch boundary. It freezes the
-// requested execution mode before enqueueing and never falls back from a fixed
-// workflow to free collaboration.
+// requested workflow before enqueueing.
 func (s *Server) handleDispatchTeam(c echo.Context) error {
 	if s.OrgStore == nil || s.Registry == nil || s.Workflow == nil {
 		return workflowError(c, http.StatusServiceUnavailable, "team_dispatch_unavailable", "team dispatch service unavailable")
@@ -159,8 +157,8 @@ func (s *Server) dispatchAdmittedTeam(c echo.Context, request teamDispatchReques
 	if request.Mode == "" {
 		request.Mode = teamDispatchModeWorkflow
 	}
-	if request.Mode != teamDispatchModeWorkflow && request.Mode != teamDispatchModeFreeCollab {
-		return workflowError(c, http.StatusBadRequest, "team_dispatch_mode_invalid", "team dispatch mode must be workflow or free_collab")
+	if request.Mode != teamDispatchModeWorkflow {
+		return workflowError(c, http.StatusBadRequest, "team_dispatch_mode_invalid", "team dispatch mode must be workflow")
 	}
 	if request.ClientRequestID == "" {
 		request.ClientRequestID = uuid.NewString()
@@ -179,12 +177,6 @@ func (s *Server) dispatchAdmittedTeam(c echo.Context, request teamDispatchReques
 		return workflowError(c, http.StatusConflict, "team_not_active", "team is not active")
 	}
 
-	if request.Mode == teamDispatchModeFreeCollab {
-		if request.WorkflowID != "" || request.WorkflowVersion != nil {
-			return workflowError(c, http.StatusBadRequest, "team_dispatch_request_invalid", "free_collab forbids workflow selection")
-		}
-		return s.dispatchTeamFreeCollab(c, team, request)
-	}
 	runID, taskID := deterministicWorkflowDispatchIDs(getTenant(c), getUserID(c), request.ClientRequestID)
 	fingerprint := workflowDispatchFingerprint(team.ID, request)
 	if replayed, err := s.replayWorkflowDispatch(c, team, request, runID, taskID, fingerprint); replayed || err != nil {
@@ -262,34 +254,12 @@ func (s *Server) loadWorkflowDispatchReplay(ctx context.Context, workspaceID, ru
 	return workflowAdmissionResponse(record, ""), record.Target.TeamID, string(record.Request.Input), record.Request.ContextKey, true, nil
 }
 
-func (s *Server) dispatchTeamFreeCollab(c echo.Context, team org.Team, request teamDispatchRequest) error {
-	agents, err := s.Registry.List(c.Request().Context(), getTenant(c))
-	if err != nil {
-		return workflowStoreFailure(c, err)
-	}
-	leadName := ""
-	for _, agent := range agents {
-		if agent.ID == team.LeadAvatarID && !agent.Deleted {
-			leadName = agent.Name
-			break
-		}
-	}
-	if leadName == "" {
-		return workflowError(c, http.StatusConflict, "team_lead_unavailable", "team lead is unavailable")
-	}
-	return s.handleChatRequest(c, ChatRequest{
-		Agent: leadName, ProjectID: request.ProjectID, ConversationID: request.ConversationID,
-		ClientRequestID: request.ClientRequestID, Message: request.Task,
-		Async: true, Stream: false,
-	})
-}
-
 func (s *Server) dispatchTeamWorkflow(c echo.Context, team org.Team, request teamDispatchRequest) error {
 	workflowID := request.WorkflowID
 	if workflowID == "" {
 		workflowID = strings.TrimSpace(team.DefaultWorkflowID)
 		if workflowID == "" {
-			return workflowError(c, http.StatusConflict, "no_default_workflow", "team has no default workflow; select a workflow or use explicit free_collab mode")
+			return workflowError(c, http.StatusConflict, "no_default_workflow", "team has no default workflow; select a workflow")
 		}
 	}
 	selected, err := s.Workflow.Get(c.Request().Context(), getTenant(c), workflowID)

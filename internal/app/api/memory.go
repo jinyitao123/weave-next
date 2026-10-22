@@ -1,50 +1,13 @@
 package api
 
 import (
-	"context"
 	"net/http"
 
-	"github.com/jinyitao123/weave/internal/kernel/compiler"
 	"github.com/jinyitao123/weave/internal/kernel/memory"
-	"github.com/jinyitao123/weave/internal/kernel/registry"
 	"github.com/labstack/echo/v4"
 )
 
 const memoryDisabledMessage = "记忆未启用 · 嵌入服务未配置"
-
-func configureProjectMemory(
-	opts *compiler.CompileOpts,
-	workspaceID string,
-	avatar *registry.AgentRecord,
-	projectID string,
-) {
-	if opts == nil || opts.MemoryService == nil || avatar == nil ||
-		workspaceID == "" || avatar.ID == "" || projectID == "" {
-		return
-	}
-	namespace := memory.ProjectNamespace(workspaceID, avatar.ID, projectID)
-	opts.MemoryReadSources = append(opts.MemoryReadSources, memory.RetrieveSource{
-		Namespace: namespace,
-		Label:     "当前 Project 记忆",
-		Source:    "project",
-	})
-	if opts.AutoRemember {
-		opts.MemoryWriteNamespace = namespace
-		opts.MemoryWriteSource = "project_auto"
-	}
-}
-
-func (s *Server) projectMemoryIDForRun(
-	ctx context.Context,
-	workspaceID, runID string,
-	execution *teamSessionExecution,
-) (string, error) {
-	if execution != nil {
-		return execution.Snapshot.ProjectID, nil
-	}
-	projectID, _, err := s.runProjectAttribution(ctx, workspaceID, runID)
-	return projectID, err
-}
 
 func disabledMemoryResponse(c echo.Context) error {
 	return c.JSON(http.StatusOK, struct {

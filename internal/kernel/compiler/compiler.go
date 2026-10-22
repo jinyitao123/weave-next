@@ -504,9 +504,6 @@ type SubAgentRouteTable struct {
 	byCanonical map[string]SubAgentRoute
 }
 
-func BuildSubAgentRouteTable(refs []registry.SubAgentRef) (*SubAgentRouteTable, error) {
-	return buildSubAgentRouteTable(refs)
-}
 func buildSubAgentRouteTable(refs []registry.SubAgentRef) (*SubAgentRouteTable, error) {
 	t := &SubAgentRouteTable{byAlias: map[string]SubAgentRoute{}, byCanonical: map[string]SubAgentRoute{}}
 	claimed := map[string]string{}
@@ -548,19 +545,6 @@ func buildSubAgentRouteTable(refs []registry.SubAgentRef) (*SubAgentRouteTable, 
 		t.byCanonical[canonical] = r
 	}
 	return t, nil
-}
-func (t *SubAgentRouteTable) Routes() []SubAgentRoute {
-	if t == nil {
-		return nil
-	}
-	return append([]SubAgentRoute(nil), t.routes...)
-}
-func (t *SubAgentRouteTable) Resolve(alias string) (SubAgentRoute, bool) {
-	if t == nil {
-		return SubAgentRoute{}, false
-	}
-	r, ok := t.byAlias[alias]
-	return r, ok
 }
 func (t *SubAgentRouteTable) CanonicalKeys() []string {
 	keys := make([]string, 0, len(t.byCanonical))

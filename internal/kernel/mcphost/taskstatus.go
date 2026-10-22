@@ -63,19 +63,6 @@ type TaskStatusDispatcher struct {
 	readOnly    bool
 }
 
-// NewTaskStatusDispatcher creates the full five-tool dispatcher. Wrap it in a
-// WriteGateDispatcher with TaskStatusWriteTools before registering it.
-func NewTaskStatusDispatcher(
-	groups TaskGroupReader,
-	legs TaskLegWriter,
-	workspaceID, agent, userID string,
-) *TaskStatusDispatcher {
-	return &TaskStatusDispatcher{
-		groups: groups, legs: legs, writes: legs,
-		workspaceID: workspaceID, agent: agent, userID: userID,
-	}
-}
-
 // NewReadOnlyTaskStatusDispatcher creates the sub-agent variant exposing only
 // the three read tools; write calls are rejected at dispatch as well.
 func NewReadOnlyTaskStatusDispatcher(

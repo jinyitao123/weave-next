@@ -284,14 +284,6 @@ func (s *Server) listRunKeysByAttribution(
 	return keys, total, nil
 }
 
-func (s *Server) runProjectAttribution(
-	ctx context.Context,
-	workspaceID, runID string,
-) (string, string, error) {
-	projectID, _, attribution, err := s.runAttribution(ctx, workspaceID, runID)
-	return projectID, attribution, err
-}
-
 func (s *Server) runAttribution(
 	ctx context.Context,
 	workspaceID, runID string,

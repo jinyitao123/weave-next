@@ -86,10 +86,16 @@ var codeRepositoryDeletedRoutes = []string{
 	"GET /v1/runtime/tasks/:id/git/*", "POST /v1/runtime/tasks/:id/git/*",
 }
 
+// The single-member chat chain was deleted on 2026-10-22; see
+// docs/治理/2026-10-22-退役产品面删除登记.md.
+var chatChainDeletedRoutes = []string{
+	"GET /v1/chat-requests/:id", "POST /v1/resume",
+}
+
 func TestRetiredRoutesAreNeverRegistered(t *testing.T) {
 	routes := registeredRoutes(t, &config.Config{JWTSecret: "test"})
 	var stillRegistered []string
-	for _, group := range [][]string{retiredRoutes, w10DeletedRoutes, closedDeliveryTargetRoutes, codeRepositoryDeletedRoutes} {
+	for _, group := range [][]string{retiredRoutes, w10DeletedRoutes, closedDeliveryTargetRoutes, codeRepositoryDeletedRoutes, chatChainDeletedRoutes} {
 		for _, route := range group {
 			if routes[route] {
 				stillRegistered = append(stillRegistered, route)

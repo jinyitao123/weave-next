@@ -83,7 +83,7 @@ func (s *Store) CreateParkIntentTx(ctx context.Context, tx pgx.Tx, req PreparePa
 	if len(modes) == 1 {
 		mode = modes[0]
 	}
-	if mode != WorkflowResumeMode && mode != FreeCollabSynthesisMode {
+	if mode != WorkflowResumeMode {
 		return ParkIntent{}, workflowError(ErrorInvalidRequest, "unknown fanout mode %q", mode)
 	}
 	generation, err := DeriveGeneration(req.WorkspaceID, req.ParentRunID, req.NodeID,

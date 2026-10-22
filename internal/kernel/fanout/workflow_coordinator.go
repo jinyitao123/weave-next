@@ -16,7 +16,6 @@ var ErrYieldedCheckpointUnavailable = errors.New("yielded fanout checkpoint is u
 
 type FanoutCoordinator interface {
 	PreparePark(context.Context, pgx.Tx, PrepareParkRequest) (ParkIntent, error)
-	PrepareFreeCollabSynthesis(context.Context, pgx.Tx, PrepareParkRequest) (ParkIntent, error)
 	ActivatePark(context.Context, ActivateParkRequest) (ActivationResult, error)
 	RecordLegCompletion(context.Context, LegCompletionRequest) (LegCompletionResult, error)
 	ReconcileIntent(context.Context, string, string) error
@@ -39,10 +38,6 @@ type CreatorLeaseReader interface {
 	CreatorLeaseState(context.Context, CreatorLeaseIdentity) (CreatorLeaseState, error)
 }
 
-type LateSynthesisScheduler interface {
-	ScheduleFromCompletion(context.Context, GroupCompletion) (LateSynthesisResult, error)
-}
-
 type coordinatorTransactions interface {
 	Begin(context.Context) (pgx.Tx, error)
 }
@@ -59,7 +54,6 @@ type WorkflowCoordinator struct {
 	Checkpoints       CheckpointReader
 	Resumer           ParentRunResumer
 	CreatorLeases     CreatorLeaseReader
-	Synthesis         LateSynthesisScheduler
 	Tasks             workflowTaskStore
 	Now               func() time.Time
 	CancellationGrace time.Duration
@@ -84,17 +78,6 @@ func (c *WorkflowCoordinator) PreparePark(ctx context.Context, tx pgx.Tx, req Pr
 		return ParkIntent{}, err
 	}
 	return c.Store.CreateParkIntentTx(ctx, tx, req, WorkflowResumeMode)
-}
-
-func (c *WorkflowCoordinator) PrepareFreeCollabSynthesis(
-	ctx context.Context,
-	tx pgx.Tx,
-	req PrepareParkRequest,
-) (ParkIntent, error) {
-	if err := c.validateCore(); err != nil {
-		return ParkIntent{}, err
-	}
-	return c.Store.CreateParkIntentTx(ctx, tx, req, FreeCollabSynthesisMode)
 }
 
 func (c *WorkflowCoordinator) ActivatePark(ctx context.Context, req ActivateParkRequest) (ActivationResult, error) {
@@ -341,17 +324,6 @@ func (c *WorkflowCoordinator) ReconcileGroup(ctx context.Context, workspaceID, g
 	}
 	if plan.Status != WorkflowGroupDecided {
 		return nil
-	}
-	if plan.Mode == FreeCollabSynthesisMode {
-		if c.Synthesis == nil {
-			return nil
-		}
-		_, err := c.Synthesis.ScheduleFromCompletion(ctx, GroupCompletion{
-			WorkspaceID: plan.WorkspaceID, GroupID: plan.GroupID,
-			GroupCompletionID: plan.GroupCompletionID, Mode: string(plan.Mode),
-			Generation: plan.Generation, JoinResult: plan.JoinResult,
-		})
-		return err
 	}
 	if c.Resumer == nil || c.CreatorLeases == nil {
 		return workflowError(ErrorStoreUnavailable, "workflow resume dependencies are unavailable")
@@ -629,8 +601,4 @@ func NewWorkflowCoordinator(transactions coordinatorTransactions, store *Store, 
 		Transactions: transactions, Store: store, Checkpoints: checkpoints,
 		CancellationGrace: 30 * time.Second,
 	}
-}
-
-func wrapStoreUnavailable(operation string, err error) error {
-	return workflowError(ErrorStoreUnavailable, "%s: %v", operation, err)
 }

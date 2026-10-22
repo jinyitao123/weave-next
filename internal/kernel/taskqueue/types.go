@@ -20,6 +20,13 @@ const (
 	StatusTimedOut        = "timed_out"
 )
 
+// Attachment is one uploaded file a runtime fetches for its task.
+type Attachment struct {
+	ID       string `json:"id"`
+	Filename string `json:"filename"`
+	Path     string `json:"path"`
+}
+
 // IdentityKind selects the durable execution stamp represented by a task.
 type IdentityKind string
 

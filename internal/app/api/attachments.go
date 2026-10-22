@@ -1,10 +1,8 @@
 package api
 
 import (
-	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -152,42 +150,6 @@ func pathWithin(parent, child string) bool {
 	return err == nil && rel != "." && rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator))
 }
 
-func (s *Server) resolveAttachments(ctx context.Context, tenant string, ids []string) ([]taskqueue.Attachment, error) {
-	if len(ids) == 0 {
-		return nil, nil
-	}
-	root := ""
-	if s.Config != nil {
-		root = s.Config.WorkspacesRoot
-	}
-	attachments := make([]taskqueue.Attachment, 0, len(ids))
-	for _, id := range ids {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-		attachment, err := ResolveAttachment(root, tenant, id)
-		if err != nil {
-			return nil, fmt.Errorf("attachment %s not found", id)
-		}
-		attachments = append(attachments, attachment)
-	}
-	return attachments, nil
-}
-
-func injectAttachmentNotice(message string, attachments []taskqueue.Attachment) string {
-	if len(attachments) == 0 {
-		return message
-	}
-	var notice strings.Builder
-	notice.WriteString(message)
-	notice.WriteString("\n\n[附件] 用户上传了以下文件，需要处理时请派给能读文件的员工：")
-	for _, attachment := range attachments {
-		notice.WriteString("\n- ")
-		notice.WriteString(attachment.Filename)
-	}
-	return notice.String()
-}
-
 type messageAttachment struct {
 	ID       string `json:"id"`
 	Filename string `json:"filename"`
@@ -195,15 +157,4 @@ type messageAttachment struct {
 
 type userMessageMetadata struct {
 	Attachments []messageAttachment `json:"attachments"`
-}
-
-func encodeUserAttachmentMetadata(attachments []taskqueue.Attachment) (json.RawMessage, error) {
-	if len(attachments) == 0 {
-		return nil, nil
-	}
-	items := make([]messageAttachment, 0, len(attachments))
-	for _, attachment := range attachments {
-		items = append(items, messageAttachment{ID: attachment.ID, Filename: attachment.Filename})
-	}
-	return json.Marshal(userMessageMetadata{Attachments: items})
 }

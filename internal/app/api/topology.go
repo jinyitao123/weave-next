@@ -26,7 +26,7 @@ func (s *Server) handleTopology(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 	memSvc := s.memoryFor(c.Request().Context(), tenant)
-	tools := s.buildToolDispatcher(rec, tenant, getUserID(c), "", llm, memSvc, false)
+	tools := s.buildAuditedMCPDispatcher(rec, tenant, "")
 	compileOpts := compiler.CompileOpts{
 		Store:                s.Store,
 		SubAgentStepResolver: s.resolveSubAgent,

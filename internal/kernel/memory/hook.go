@@ -35,24 +35,6 @@ const extractPrompt = `从以下对话中提取值得长期记住的关键事实
 // count is the number of new facts stored.
 type UpdateFunc func(count int)
 
-type sessionExecutionLeaseContextKey struct{}
-
-// ContextWithSessionExecutionLease binds one immutable lease handle to hooks
-// launched by the current team-session run.
-func ContextWithSessionExecutionLease(
-	ctx context.Context,
-	handle SessionExecutionLeaseHandle,
-) context.Context {
-	return context.WithValue(ctx, sessionExecutionLeaseContextKey{}, handle)
-}
-
-func sessionExecutionLeaseFromContext(
-	ctx context.Context,
-) (SessionExecutionLeaseHandle, bool) {
-	handle, ok := ctx.Value(sessionExecutionLeaseContextKey{}).(SessionExecutionLeaseHandle)
-	return handle, ok
-}
-
 // AutoRememberHook returns an AfterHook that extracts key facts from the
 // conversation after the "chat" step and stores them as long-term memories.
 //
@@ -107,7 +89,6 @@ func autoRememberHook(
 		if ns == "" {
 			ns = ScopedNamespace(tenant, userID, agent, sessionID, scope)
 		}
-		leaseHandle, fenced := sessionExecutionLeaseFromContext(ctx)
 
 		// Run extraction asynchronously with a timeout to prevent goroutine leaks.
 		go func() {
@@ -144,17 +125,9 @@ func autoRememberHook(
 					continue
 				}
 
-				var isNew bool
-				var err error
-				if fenced {
-					_, isNew, err = memorySvc.RememberIfNewFenced(
-						bgCtx, leaseHandle, ns, fact, map[string]any{"source": metadataSource},
-					)
-				} else {
-					_, isNew, err = memorySvc.RememberIfNew(
-						bgCtx, ns, fact, map[string]any{"source": metadataSource},
-					)
-				}
+				_, isNew, err := memorySvc.RememberIfNew(
+					bgCtx, ns, fact, map[string]any{"source": metadataSource},
+				)
 				if err != nil {
 					slog.Warn("auto-remember: store failed", "error", err, "fact", fact)
 					continue

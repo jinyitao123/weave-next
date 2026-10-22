@@ -65,24 +65,6 @@ func usageCallFrameFromContext(ctx context.Context) (*usageCallFrame, bool) {
 	return frame, ok && frame != nil
 }
 
-// RestartUsageAttempt starts another physical request under the current
-// logical call. It is a no-op outside a PreparedRun usage scope so standalone
-// transport adapters retain their existing behavior.
-func RestartUsageAttempt(ctx context.Context) error {
-	scope, hasScope := usageScopeFromContext(ctx)
-	if !hasScope {
-		return nil
-	}
-	frame, hasFrame := usageCallFrameFromContext(ctx)
-	if !hasFrame {
-		return fmt.Errorf("usage call frame is required to restart an attempt")
-	}
-	if frame.scope != scope {
-		return fmt.Errorf("%w: usage call frame belongs to another run scope", ErrUsageConflict)
-	}
-	return frame.startNextAttempt()
-}
-
 // ReportPhysicalUsage confirms one or more physical transport attempts under
 // the current logical LLM call. It is a no-op outside a bound usage scope.
 // Adapters must call it before returning an execution error so failed spend is

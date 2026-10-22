@@ -19,10 +19,6 @@ func (c *isolatingCoordinator) PreparePark(context.Context, pgx.Tx, PrepareParkR
 	return ParkIntent{}, nil
 }
 
-func (c *isolatingCoordinator) PrepareFreeCollabSynthesis(context.Context, pgx.Tx, PrepareParkRequest) (ParkIntent, error) {
-	return ParkIntent{}, nil
-}
-
 func (c *isolatingCoordinator) ActivatePark(context.Context, ActivateParkRequest) (ActivationResult, error) {
 	return ActivationResult{}, nil
 }

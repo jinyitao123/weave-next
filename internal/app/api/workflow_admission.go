@@ -6,7 +6,6 @@ import (
 	"net/http"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jinyitao123/weave/internal/app/chatrequest"
 	"github.com/jinyitao123/weave/internal/app/workflowadmission"
 	"github.com/jinyitao123/weave/internal/kernel/publication"
 	"github.com/labstack/echo/v4"
@@ -68,31 +67,4 @@ func (s *Server) finishWorkflowAdmission(c echo.Context, requestID, clientReques
 		return workflowStoreFailure(c, err)
 	}
 	return c.JSON(status, workflowAdmissionResponse(record, clientRequestID))
-}
-
-// Recover only a server-persisted chat intent. This is a same-request receipt
-// check performed by reconnect/replay, not a second execution loop.
-func (s *Server) recoverPublishedChatAdmission(ctx context.Context, record chatrequest.Request) (chatrequest.Request, error) {
-	if record.UserMessageID == "" || record.RunID != "" || s.ChatRequests == nil {
-		return record, nil
-	}
-	admissions := s.workflowAdmissions()
-	if admissions == nil {
-		return record, nil
-	}
-	requestID := "chat:" + record.UserMessageID
-	prepared, err := admissions.Get(ctx, record.WorkspaceID, requestID)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return record, nil
-	}
-	if err != nil {
-		return record, err
-	}
-	if prepared.Target.ChatRequestID != record.ClientRequestID {
-		return record, publication.ErrRequestConflict
-	}
-	if _, err = admissions.Admit(ctx, record.WorkspaceID, requestID, s.associateWorkflowAdmission); err != nil {
-		return record, err
-	}
-	return s.ChatRequests.Get(ctx, record.WorkspaceID, record.UserID, record.ClientRequestID)
 }

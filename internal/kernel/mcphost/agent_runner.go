@@ -34,6 +34,11 @@ type AgentRunResult struct {
 	Attempts    []engine.UsageAttempt
 }
 
+type agentRegistry interface {
+	Get(ctx context.Context, tenant, name string) (*registry.AgentRecord, error)
+	GetVersion(ctx context.Context, tenant, agentID string, version int) (*registry.AgentRecord, error)
+}
+
 // AgentRunner runs registered agents through their configured execution path.
 type AgentRunner struct {
 	registry      agentRegistry

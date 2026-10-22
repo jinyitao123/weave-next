@@ -18,7 +18,6 @@ import (
 	"github.com/jinyitao123/weave/internal/app/apikeys"
 	"github.com/jinyitao123/weave/internal/app/attachments"
 	"github.com/jinyitao123/weave/internal/app/cli"
-	"github.com/jinyitao123/weave/internal/app/conversation"
 	"github.com/jinyitao123/weave/internal/app/daemon"
 	"github.com/jinyitao123/weave/internal/app/deliveryverify"
 	"github.com/jinyitao123/weave/internal/app/projects"
@@ -287,7 +286,6 @@ func main() {
 		srv.Attachments = attachments.New(pool)
 		srv.Deliverables = deliveryverify.NewStore(pool)
 		srv.Audit = audit.New(pool, audit.RealClock{})
-		srv.Conversations = conversation.New(pool, conversation.RealClock{})
 		srv.Credentials = credentials.New(pool, secretKey)
 		srv.DeliveryTargets = delivery.New(pool, secretKey)
 		models.SetSource(srv.Credentials)
@@ -312,9 +310,6 @@ func main() {
 			defer localHost.Close()
 		}
 		srv.Fanout = kernelbindings.NewFanout(pool, fanout.RealClock{})
-		srv.FanoutReconciler = fanout.NewReconciler(
-			srv.Fanout, taskStore, srv.Conversations,
-		)
 		if recovered, err := taskStore.RecoverStale(context.Background()); err != nil {
 			slog.Error("failed to recover stale tasks at startup", "error", err)
 		} else if recovered > 0 {
@@ -337,18 +332,11 @@ func main() {
 					} else if recovered > 0 {
 						slog.Info("recovered stale tasks", "count", recovered)
 					}
-					if err := srv.FanoutReconciler.SweepDeadlines(recoveryCtx, time.Now()); err != nil {
-						slog.Error("failed to sweep fan-out deadlines", "error", err)
-					}
 				}
 			}
 		}()
 
 		srv.TaskWorker = taskqueue.NewWorker(taskStore, 4)
-		if err := srv.TaskWorker.Register("chat", taskqueue.IdentityAgent, taskqueue.ChatHandler{Executor: srv}); err != nil {
-			slog.Error("register chat handler", "error", err)
-			os.Exit(1)
-		}
 		capabilityHandler, err := srv.ConfigureCapabilityTaskHandler()
 		if err != nil {
 			slog.Error("configure capability task handler", "error", err)
@@ -358,10 +346,6 @@ func main() {
 			slog.Error("register capability task handler", "error", err)
 			os.Exit(1)
 		}
-		srv.TaskWorker.SetOnLegTerminal(func(ctx context.Context, workspaceID, groupID string) {
-			_ = srv.FanoutReconciler.RefreshCard(ctx, workspaceID, groupID)
-			_ = srv.FanoutReconciler.ReconcileGroup(ctx, workspaceID, groupID, false)
-		})
 	}
 
 	// Initialize schedule store if PG pool is available.

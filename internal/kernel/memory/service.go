@@ -2,13 +2,10 @@ package memory
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
 	"time"
 
 	"github.com/jinyitao123/loom/contract"
-	"github.com/jinyitao123/weave/internal/kernel/sessionexec"
 )
 
 // Service orchestrates embedding generation and vector storage.
@@ -16,17 +13,6 @@ type Service struct {
 	store                  *Store
 	embedder               contract.Embedder
 	deduplicationThreshold float64
-}
-
-// SessionExecutionLeaseHandle is the immutable fencing identity captured by
-// asynchronous memory work before the request context returns.
-type SessionExecutionLeaseHandle struct {
-	Key         sessionexec.SessionKey
-	LeaseEpoch  int64
-	ActiveRunID string
-	// OutboxCommitted gates asynchronous embedding until the final outbox
-	// transaction is durable. Nil preserves legacy/direct adapter behavior.
-	OutboxCommitted <-chan struct{}
 }
 
 // NewService creates a Service with default deduplication threshold.
@@ -42,13 +28,6 @@ func (ms *Service) Embedder() contract.Embedder {
 // Namespace builds the canonical namespace for agent memory (tenant-level).
 func Namespace(tenant, agent string) string {
 	return "memory:" + tenant + ":" + agent
-}
-
-// ProjectNamespace builds the stable workspace/Project namespace. The
-// avatarID argument is retained during the T2 compatibility window for callers
-// that have not dropped the old shape yet.
-func ProjectNamespace(workspaceID, avatarID, projectID string) string {
-	return "memory:" + workspaceID + ":" + projectID
 }
 
 // ScopedNamespace builds a memory namespace according to the isolation scope.
@@ -121,81 +100,6 @@ func (ms *Service) RememberIfNew(ctx context.Context, ns, content string, metada
 		return "", false, fmt.Errorf("memory: store: %w", err)
 	}
 	return id, true, nil
-}
-
-// RememberIfNewFenced repeats the final epoch check immediately before Put.
-// Embedding and duplicate search intentionally happen before the transaction.
-func (ms *Service) RememberIfNewFenced(
-	ctx context.Context,
-	handle SessionExecutionLeaseHandle,
-	ns string,
-	content string,
-	metadata map[string]any,
-) (string, bool, error) {
-	if handle.OutboxCommitted != nil {
-		select {
-		case <-handle.OutboxCommitted:
-		case <-ctx.Done():
-			return "", false, fmt.Errorf("memory: wait for final outbox: %w", ctx.Err())
-		}
-	}
-	embeddings, err := ms.embedder.Embed(ctx, []string{content})
-	if err != nil {
-		return "", false, fmt.Errorf("memory: embed: %w", err)
-	}
-	if len(embeddings) == 0 || len(embeddings[0]) == 0 {
-		return "", false, fmt.Errorf("memory: empty embedding returned")
-	}
-	existing, err := ms.store.Search(
-		ctx, ns, embeddings[0], 1, ms.deduplicationThreshold,
-	)
-	if err != nil {
-		return "", false, fmt.Errorf("memory: dedup search: %w", err)
-	}
-	if len(existing) > 0 {
-		return "", false, nil
-	}
-	if metadata == nil {
-		metadata = map[string]any{}
-	} else {
-		cloned := make(map[string]any, len(metadata)+1)
-		for key, value := range metadata {
-			cloned[key] = value
-		}
-		metadata = cloned
-	}
-	metadata["active_run_id"] = handle.ActiveRunID
-	payload, err := json.Marshal(map[string]any{
-		"namespace": ns,
-		"content":   content,
-		"embedding": embeddings[0],
-		"metadata":  metadata,
-	})
-	if err != nil {
-		return "", false, fmt.Errorf("memory: encode fenced put: %w", err)
-	}
-	tx, err := ms.store.pool.Begin(ctx)
-	if err != nil {
-		return "", false, fmt.Errorf("memory: begin fenced put: %w", err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-	err = sessionexec.NewPGStore().PutMemoryTx(
-		ctx, tx, handle.Key, handle.LeaseEpoch, payload,
-	)
-	if err != nil {
-		if errors.Is(err, sessionexec.ErrLeaseEpochFenced) {
-			if commitErr := tx.Commit(ctx); commitErr != nil {
-				return "", false, fmt.Errorf(
-					"memory: commit isolated fencing audit: %w", commitErr,
-				)
-			}
-		}
-		return "", false, err
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return "", false, fmt.Errorf("memory: commit fenced put: %w", err)
-	}
-	return "", true, nil
 }
 
 // Recall embeds the query and retrieves top-K similar memories.

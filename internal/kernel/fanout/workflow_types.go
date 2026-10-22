@@ -72,10 +72,7 @@ const (
 
 type WorkflowGroupMode string
 
-const (
-	WorkflowResumeMode      WorkflowGroupMode = "workflow_resume"
-	FreeCollabSynthesisMode WorkflowGroupMode = "free_collab_synthesis"
-)
+const WorkflowResumeMode WorkflowGroupMode = "workflow_resume"
 
 type JoinPolicyKind string
 
@@ -486,13 +483,6 @@ type GroupCompletion struct {
 	Generation        string
 	JoinResult        json.RawMessage
 	DecidedAt         time.Time
-}
-
-type LateSynthesisResult struct {
-	Status         string
-	CompletionID   string
-	SessionEventID string
-	ChildRunID     string
 }
 
 type JoinProjectionV1 struct {

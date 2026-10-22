@@ -295,43 +295,6 @@ func (err *TerminalPersistenceError) Unwrap() error {
 	return err.Err
 }
 
-// LoadRunAgentExecutionStamp reads the latest root checkpoint without
-// compiling an agent. The caller-provided agent name is only a checkpoint
-// locator; the stored stamp decides which immutable record and scope apply.
-func LoadRunAgentExecutionStamp(
-	ctx context.Context,
-	store loom.Store,
-	tenant string,
-	agent string,
-	runID string,
-) (*execution.AgentExecutionStamp, error) {
-	return loadRunAgentExecutionStamp(ctx, store, tenant, agent, runID, "", nil)
-}
-
-func loadRunAgentExecutionStamp(
-	ctx context.Context,
-	store loom.Store,
-	tenant string,
-	agent string,
-	runID string,
-	key string,
-	expectedSeq *int64,
-) (*execution.AgentExecutionStamp, error) {
-	checkpoint, err := loadRunCheckpoint(
-		ctx,
-		store,
-		tenant,
-		agent,
-		runID,
-		key,
-		expectedSeq,
-	)
-	if err != nil {
-		return nil, err
-	}
-	return agentExecutionStampFromCheckpoint(checkpoint.State, runID)
-}
-
 type runCheckpoint struct {
 	Schema int        `json:"schema_version"`
 	RunID  string     `json:"run_id"`
@@ -1437,22 +1400,4 @@ func Run(
 		return Result{}, fmt.Errorf("agent compilation failed: %w", err)
 	}
 	return prepared.Run(ctx, BuildState(tenant, rec, in))
-}
-
-// Resume compiles rec, restores runID from the injected store, and returns
-// the same Result contract as Run. The caller owns construction of resume
-// input because it is merged into checkpoint state by loom.
-func Resume(
-	ctx context.Context,
-	tenant string,
-	rec *registry.AgentRecord,
-	runID string,
-	input loom.State,
-	deps Dependencies,
-) (Result, error) {
-	prepared, err := Prepare(RunRequest{Tenant: tenant, Agent: rec, Dependencies: deps})
-	if err != nil {
-		return Result{}, fmt.Errorf("agent compilation failed: %w", err)
-	}
-	return prepared.Resume(ctx, runID, input)
 }

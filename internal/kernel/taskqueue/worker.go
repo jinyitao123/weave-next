@@ -19,6 +19,11 @@ type Handler interface {
 	ExecuteTask(context.Context, Task) (TaskResult, error)
 }
 
+// retryableTaskError lets a handler hand a failed attempt back to the queue.
+type retryableTaskError interface {
+	RetryTask() bool
+}
+
 type TaskResult struct {
 	// Pause settles this physical invocation; business state determines later resumption.
 	Pause         bool

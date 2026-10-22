@@ -20,8 +20,6 @@ import (
 	"github.com/jinyitao123/weave/internal/app/apikeys"
 	"github.com/jinyitao123/weave/internal/app/attachments"
 	appcapabilities "github.com/jinyitao123/weave/internal/app/capabilities"
-	"github.com/jinyitao123/weave/internal/app/chatrequest"
-	"github.com/jinyitao123/weave/internal/app/conversation"
 	"github.com/jinyitao123/weave/internal/app/deliveryverify"
 	"github.com/jinyitao123/weave/internal/app/ownermem"
 	"github.com/jinyitao123/weave/internal/app/projects"
@@ -50,7 +48,6 @@ import (
 	orgstore "github.com/jinyitao123/weave/internal/app/org"
 	"github.com/jinyitao123/weave/internal/app/workflowcatalog"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
-	"github.com/jinyitao123/weave/internal/kernel/runtimellm"
 	"github.com/jinyitao123/weave/internal/kernel/runtimes"
 	"github.com/jinyitao123/weave/internal/kernel/schedule"
 	"github.com/jinyitao123/weave/internal/kernel/secret"
@@ -78,7 +75,6 @@ type Server struct {
 	Embedders                 *memory.EmbedderResolver // nil if PG pool unavailable — resolves workspace-scoped memory services
 	StoreExt                  *storeext.PGExt          // nil if Store is not PGStore
 	Fanout                    *fanout.Store            // nil if PG pool unavailable
-	FanoutReconciler          *fanout.Reconciler       // nil if fan-out completion is unavailable
 	Tasks                     *taskqueue.Store         // nil if PG pool unavailable
 	Runtimes                  *runtimes.Store          // nil if PG pool unavailable
 	RemoteExec                executionport.RemoteEngineExecutor
@@ -96,7 +92,6 @@ type Server struct {
 	OrgStore                  *orgstore.Store                     // nil if PG pool unavailable
 	Projects                  *projects.Store                     // nil if PG pool unavailable
 	Attachments               *attachments.Store                  // nil if PG pool unavailable
-	ChatRequests              *chatrequest.Store                  // nil if PG pool unavailable
 	WorkflowArtifacts         *workflow.ArtifactStore
 	Workflow                  *workflowcatalog.Store               // nil if PG pool unavailable
 	KernelPublication         publication.Service                  // nil until the process-owned kernel publication unit is configured
@@ -117,9 +112,7 @@ type Server struct {
 	MCPRegistry               *mcpregistry.Store     // nil if WEAVE_SECRET_KEY is not configured
 	MCPResolver               mcphost.AccessResolver // optional override; defaults to MCPRegistry-backed resolver
 	BusinessDelegations       *businessaction.Store  // task-scoped Forge identity and action boundary
-	Conversations             *conversation.Store    // nil if PG pool unavailable
 	OwnerMem                  OwnerMemoryStore       // nil if PG pool unavailable
-	sessionExecutionWorkers   *sessionExecutionWorkers
 	mcpLimiter                mcpRateLimiter
 	deviceEnrollLimiter       mcpRateLimiter
 	teamRunWorkers            *teamrun.Workers
@@ -155,33 +148,6 @@ func (s *Server) llmFor(ctx context.Context, tenant string) (contract.LLM, error
 		return nil, errors.New("model resolver not configured")
 	}
 	return s.Models.ForWorkspace(ctx, tenant)
-}
-
-// runtimeLLMForNode binds one immutable Loom node identity to the runtime
-// selected for the enclosing turn. Only the inference transport is replaced;
-// callers still compile and execute the original Loom graph and tool surface.
-func (s *Server) runtimeLLMForNode(
-	tenant string,
-	identity, runtimeBinding *registry.AgentRecord,
-	scope execution.Scope,
-	runSnapshotID string,
-) (contract.LLM, error) {
-	if identity == nil || runtimeBinding == nil {
-		return nil, errors.New("runtime LLM binding is incomplete")
-	}
-	bound := *identity
-	bound.Engine = runtimeBinding.Engine
-	bound.Model = ""
-	bound.RuntimeID = runtimeBinding.RuntimeID
-	bound.RuntimePoolID = runtimeBinding.RuntimePoolID
-	bound.RuntimePolicyMode = runtimeBinding.RuntimePolicyMode
-	return runtimellm.New(
-		s.engineExecutor(), tenant, &bound,
-		execution.AgentExecutionStamp{
-			AgentID: bound.ID, AgentVersion: bound.Version, ExecutionScope: scope,
-			RunSnapshotID: runSnapshotID,
-		},
-	)
 }
 
 // memoryFor resolves the workspace memory service on the soft paths
@@ -250,7 +216,6 @@ func NewServer(cfg *config.Config, store loom.Store, models *llmrouter.Resolver)
 		s.Capabilities = appcapabilities.NewService(capabilityStore, capabilityStore)
 		s.CapabilityAccess = appcapabilities.NewAccessStore(ps.Pool())
 		s.TeamWorkers = agentcatalog.NewTeamWorkerRepository(ps.Pool())
-		s.ChatRequests = chatrequest.New(ps.Pool(), chatrequest.RealClock{})
 		s.Attachments = attachments.New(ps.Pool())
 		s.OwnerMem = ownermem.New(ps.Pool(), ownermem.RealClock{})
 		s.WorkflowArtifacts = workflow.NewArtifactStore(ps.Pool(), workflow.RealClock{})
@@ -295,7 +260,6 @@ func NewServer(cfg *config.Config, store loom.Store, models *llmrouter.Resolver)
 		s.SkillImporter = importskills.NewImporter(
 			ps.Pool(), importskills.New(ps.Pool()), importskills.NewPGLegacyReader(ps.Pool()),
 		)
-		s.sessionExecutionWorkers = newSessionExecutionWorkers(s)
 	}
 
 	s.Feishu = feishuFromEnv()
@@ -538,9 +502,7 @@ func (s *Server) registerRoutes() {
 	auth.DELETE("/skills/:id", s.handleDeleteSkill, RequireAtLeast(roleDeveloper))
 	auth.POST("/skills/:id/import-legacy", s.handleImportLegacySkill, RequireAtLeast(roleAdmin))
 
-	// Chat & Resume.
-	auth.GET("/chat-requests/:id", s.handleGetChatRequest)
-	auth.POST("/resume", s.handleResume)
+	// Human tasks.
 	auth.GET("/human-tasks", s.handleListHumanTasks)
 	auth.GET("/human-tasks/:run_id", s.handleGetHumanTask)
 	auth.POST("/human-tasks/:run_id/complete", s.handleCompleteHumanTask)
@@ -579,14 +541,14 @@ func (s *Server) registerRoutes() {
 	auth.PUT("/embedder", s.handleUpdateEmbedder, RequireAtLeast(roleAdmin))
 	auth.DELETE("/embedder", s.handleDeleteEmbedder, RequireAtLeast(roleAdmin))
 
+	// Data sources (MCP server aggregation).
+
+	// 数字员工定时上班（agent 调度）。
+
 	// Task ledger (the legacy /jobs route paths are retained).
 	auth.GET("/jobs", s.handleListJobs)
 	auth.GET("/jobs/:id", s.handleGetJob)
 	auth.POST("/jobs/:id/cancel", s.handleCancelJob)
-
-	// Data sources (MCP server aggregation).
-
-	// 数字员工定时上班（agent 调度）。
 
 	// Memory.
 	auth.GET("/agents/:name/memories", s.handleListMemories)
@@ -600,11 +562,6 @@ func (s *Server) registerRoutes() {
 func (s *Server) Start() error {
 	if s.modelActivityBuffer != nil {
 		defer s.modelActivityBuffer.Close()
-	}
-	s.reconcileOrphanedChatRequests()
-	if s.sessionExecutionWorkers != nil && !sessionExecutionWorkersDisabled() {
-		s.sessionExecutionWorkers.Start()
-		defer s.sessionExecutionWorkers.Stop()
 	}
 	if s.teamRunWorkers != nil && !teamRunWorkersDisabled() {
 		s.teamRunWorkers.Start()
@@ -623,30 +580,6 @@ func (s *Server) Start() error {
 		defer s.employeeRunEventWorker.Stop()
 	}
 	return s.Echo.Start(":" + s.Config.Port)
-}
-
-// orphanedChatRequestStaleAfter is how long a chat request may stay in
-// 'running' before startup reconciliation treats it as orphaned (its handler
-// died without writing terminal state, e.g. the server was restarted mid-run).
-const orphanedChatRequestStaleAfter = 15 * time.Minute
-
-// reconcileOrphanedChatRequests finalizes chat requests whose stream handler
-// died without writing terminal state, so a restart cannot leave them stuck in
-// 'running' forever.
-func (s *Server) reconcileOrphanedChatRequests() {
-	if s.ChatRequests == nil {
-		return
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	reconciled, err := s.ChatRequests.FailOrphaned(ctx, orphanedChatRequestStaleAfter)
-	if err != nil {
-		slog.Warn("failed to reconcile orphaned chat requests", "error", err)
-		return
-	}
-	if reconciled > 0 {
-		slog.Info("reconciled orphaned chat requests", "count", reconciled)
-	}
 }
 
 const teamRunWorkersDisableEnv = "WEAVE_TEAMRUN_WORKERS_DISABLED"
@@ -810,12 +743,6 @@ func (s *Server) ConfigureTeamRunWorkers() error {
 	}
 	coordinator.CreatorLeases = creatorLeases
 	coordinator.Resumer = resumer
-	coordinator.Synthesis = fanout.DurableLateSynthesisScheduler{
-		Transactions: pool,
-		Store:        s.Fanout,
-		Tasks:        s.Tasks,
-		Builder:      completionTaskBuilder{Server: s},
-	}
 	coordinator.Tasks = s.Tasks
 	executor := &teamrun.Executor{
 		MemberBudgets:     loomruntime.MemberBudgetCoordinator{},
