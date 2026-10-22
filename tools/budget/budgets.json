@@ -1431,6 +1431,34 @@
         "lines_added": 28,
         "production_lines_added": 10
       }
+    },
+    {
+      "date": "2026-10-22",
+      "reason": "Execution plane and provider protocols merged after PR #80: System One provider protocol, model gateway, pooled executor with batch claim/renewal and adaptive polling, buffered observation writes, stopped-workflow recovery, live-row admission counting, closure-based terminal lineage, published artifact decode cache, and the #84/#85/#86/#87/#91/#95 fixes, net of the removed code-repository line in app. Measured on c9926cad; no new packages or external dependencies.",
+      "record": "docs/治理/2026-10-22-执行面与供应方协议增长登记.md",
+      "growth": {
+        "lines": 2753,
+        "production_lines": 1231
+      },
+      "deletion_trigger": "When the pooled executor is the default and has run one release without rollback, delete the per-task executorLoop and the WEAVE_TEAMRUN_EXECUTOR switch in internal/kernel/teamrun/workers.go; when buffered observation writes are the default, delete the synchronous write branch and WEAVE_TEAMRUN_OBSERVATION_WRITES; when every TerminalRecordStore implements terminalLineageRelatedReader, delete the full-namespace branch of scanTerminalLineageRecords. Lower the exact budgets in each such change.",
+      "base": {
+        "previous_lines": 8591,
+        "previous_production_lines": 6814,
+        "lines_added": 351,
+        "production_lines_added": 190
+      },
+      "kernel": {
+        "previous_lines": 109393,
+        "previous_production_lines": 85372,
+        "lines_added": 4260,
+        "production_lines_added": 2564
+      },
+      "app": {
+        "previous_lines": 96781,
+        "previous_production_lines": 65126,
+        "lines_added": -1858,
+        "production_lines_added": -1523
+      }
     }
   ],
   "migration_targets": {
@@ -1462,8 +1490,8 @@
     "rule": "Each band limit equals its measured size. The total of the band limits may exceed this baseline only by the growth of amendments added after the first recorded_amendments entries, each of which must state its growth and a deletion_trigger."
   },
   "base": {
-    "lines": 8591,
-    "production_lines": 6814,
+    "lines": 8942,
+    "production_lines": 7004,
     "packages": 9,
     "external_dependencies": 4,
     "allowed_dependencies": [
@@ -1474,8 +1502,8 @@
     ]
   },
   "kernel": {
-    "lines": 109393,
-    "production_lines": 85372,
+    "lines": 113653,
+    "production_lines": 87936,
     "packages": 48,
     "external_dependencies": 5,
     "allowed_dependencies": [
@@ -1494,8 +1522,8 @@
     "allowed_dependencies": []
   },
   "app": {
-    "lines": 96781,
-    "production_lines": 65126,
+    "lines": 94923,
+    "production_lines": 63603,
     "packages": 25,
     "external_dependencies": 6,
     "allowed_dependencies": [
