@@ -7,7 +7,7 @@ package api
 const developmentOperationsVersion = "1"
 
 // developmentConsoleOnly names what a controlled edit does not cover and where it is done instead.
-const developmentConsoleOnly = "归档团队、刷新业务动作目录，以及运行、执行节点、代码仓库、飞书和客户端会话的操作不属于团队草稿，用工作区操作办理（见工作区操作的类别清单）。成员的 MCP 服务、技能库技能和工具许可用“成员的外部工具”类别逐项添加或移除。"
+const developmentConsoleOnly = "归档团队、刷新业务动作目录，以及运行、执行节点、飞书和客户端会话的操作不属于团队草稿，用工作区操作办理（见工作区操作的类别清单）。成员的 MCP 服务、技能库技能和工具许可用“成员的外部工具”类别逐项添加或移除。"
 
 type developmentOperationDoc struct {
 	Kind    string `json:"kind"`

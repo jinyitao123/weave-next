@@ -186,13 +186,6 @@ export function duration(ms?: number): string {
 }
 
 const failureCopy: Record<string, string> = {
-  git_missing: '执行节点没有安装 git',
-  ref_not_found: '仓库里找不到所选分支',
-  repository_fetch_failed: '执行节点无法拉取仓库，请检查节点的 git 登录和仓库地址',
-  repository_checkout_failed: '执行节点无法检出代码',
-  handoff_mismatch: '上一步交来的代码无法在本节点精确还原，已拒绝在其他提交上执行',
-  change_too_large: '上一步的改动过大，无法交接',
-  handoff_conflict: '多个上游步骤交来了不同的代码版本',
   engine_login_failed: '执行节点上的引擎登录失效，请在节点上重新登录',
 }
 

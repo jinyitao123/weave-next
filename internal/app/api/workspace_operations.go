@@ -74,7 +74,7 @@ type workspaceRun struct {
 	reveal    []workspaceReveal
 }
 
-const workspaceIdentifierRule = "团队用 team（准确名称）或 team_id 指明，节点和代码仓库用列表中的准确名称；run_id、session_id 来自相应的列表，只用于调用，不要展示给使用者。"
+const workspaceIdentifierRule = "团队用 team（准确名称）或 team_id 指明，节点用列表中的准确名称；run_id、session_id 来自相应的列表，只用于调用，不要展示给使用者。"
 
 func (run *workspaceRun) text(key string) string { return mcpText(run.operation, key) }
 
@@ -273,7 +273,7 @@ var workspaceTopics = []workspaceTopic{
 				return map[string]any{"refreshed": view.Available, "business_actions": len(view.Capabilities), "fetched_at": view.FetchedAt}, nil
 			}},
 	}},
-	{Topic: "run", Title: "运行", Covers: "查看运行列表和一次运行的进展、结果、日志与代码结果；停止运行；追加要求；发起代码任务；创建拉取请求", Rules: []string{workspaceIdentifierRule, "开发者看到本人发起的运行，管理员看到本组织的全部运行。"}, Operations: []workspaceOperation{
+	{Topic: "run", Title: "运行", Covers: "查看运行列表和一次运行的进展、结果与日志；停止运行", Rules: []string{workspaceIdentifierRule, "开发者看到本人发起的运行，管理员看到本组织的全部运行。"}, Operations: []workspaceOperation{
 		{Kind: "run_list", Summary: "列出运行，新的在前。filter 可为 active（进行中）、attention（需要处理）、done（已结束），省略为全部；可用 team、source（console、desktop、feishu、schedule）筛选；limit 至多 50；before 接上一页返回的 more_before", Example: `{"kind":"run_list","filter":"attention","limit":20}`, MinRole: roleDeveloper,
 			Run: func(run *workspaceRun) (any, *mcpEntryError) {
 				query := url.Values{}

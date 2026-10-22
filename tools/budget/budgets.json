@@ -1531,6 +1531,21 @@
         "lines_added": 26,
         "production_lines_added": 10
       }
+    },
+    {
+      "date": "2026-10-22",
+      "reason": "清除代码仓库功能删除后残留的失败原因映射与说明文字",
+      "record": "docs/治理/2026-10-21-代码仓库功能清理.md",
+      "growth": {
+        "lines": 0,
+        "production_lines": 0
+      },
+      "app": {
+        "previous_lines": 95017,
+        "previous_production_lines": 63633,
+        "lines_added": -7,
+        "production_lines_added": -7
+      }
     }
   ],
   "migration_targets": {
@@ -1594,8 +1609,8 @@
     "allowed_dependencies": []
   },
   "app": {
-    "lines": 95017,
-    "production_lines": 63633,
+    "lines": 95010,
+    "production_lines": 63626,
     "packages": 25,
     "external_dependencies": 6,
     "allowed_dependencies": [

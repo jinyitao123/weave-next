@@ -45,13 +45,6 @@ type adminTask struct {
 }
 
 var adminFailureReasons = []struct{ needle, reason string }{
-	{"code task requires git", "git_missing"},
-	{"is not in the repository", "ref_not_found"},
-	{"prepare code workspace: fetch repository", "repository_fetch_failed"},
-	{"could not be rebuilt exactly", "handoff_mismatch"},
-	{"too large to hand over", "change_too_large"},
-	{"different code versions", "handoff_conflict"},
-	{"prepare code workspace", "repository_checkout_failed"},
 	{"OAuth token", "engine_login_failed"},
 }
 
