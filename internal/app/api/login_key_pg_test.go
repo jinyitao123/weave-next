@@ -10,6 +10,7 @@ import (
 
 	"github.com/labstack/echo/v4"
 
+	"github.com/jinyitao123/weave/internal/app/capabilities"
 	"github.com/jinyitao123/weave/internal/app/users"
 	"github.com/jinyitao123/weave/internal/kernel/config"
 )
@@ -87,5 +88,60 @@ func TestLoginKeySignsInAsTheAdministratorRealPG(t *testing.T) {
 	}
 	if status, _, _ := call("POST", "/v1/admin/session", "", `{"api_key":"set-at-deployment"}`); status != http.StatusUnauthorized {
 		t.Fatalf("console sign-in without an administrator: %d", status)
+	}
+}
+
+// TestLoginKeyManagesCapabilityAppsRealPG checks that the deployment login key
+// manages capability applications as it does every other administrator
+// route, while an application credential still cannot reach manage.
+func TestLoginKeyManagesCapabilityAppsRealPG(t *testing.T) {
+	s, pool := newTeamDispatchTestServer(t)
+	s.Echo, s.UserStore = echo.New(), users.NewStore(pool)
+	s.Config = &config.Config{JWTSecret: "login-key-apps-test", LoginKey: "deployment-login-key"}
+	s.CapabilityAccess = capabilities.NewAccessStore(pool)
+	s.registerRoutes()
+	call := func(method, path, bearer, body string) (int, string) {
+		t.Helper()
+		req := httptest.NewRequest(method, path, strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+bearer)
+		rec := httptest.NewRecorder()
+		s.Echo.ServeHTTP(rec, req)
+		if strings.Contains(rec.Body.String(), s.Config.LoginKey) {
+			t.Fatalf("%s %s disclosed the login key", method, path)
+		}
+		return rec.Code, rec.Body.String()
+	}
+	if status, body := call("GET", "/v1/capability-apps", "deployment-login-key", ""); status != http.StatusOK {
+		t.Fatalf("list applications with the login key: %d %s", status, body)
+	}
+	status, body := call("POST", "/v1/capability-apps/actions", "deployment-login-key", `{"action":"create","name":"Operator app"}`)
+	var app struct {
+		ID string `json:"id"`
+	}
+	if status != http.StatusCreated || json.Unmarshal([]byte(body), &app) != nil || app.ID == "" {
+		t.Fatalf("create an application with the login key: %d %s", status, body)
+	}
+	status, body = call("POST", "/v1/capability-apps/actions", "deployment-login-key",
+		`{"action":"issue","app_id":"`+app.ID+`","name":"Operator key","scopes":["invoke","read"]}`)
+	var issued struct {
+		Key string `json:"key"`
+	}
+	if status != http.StatusCreated || json.Unmarshal([]byte(body), &issued) != nil || !strings.HasPrefix(issued.Key, capabilities.CredentialPrefix) {
+		t.Fatalf("issue a credential with the login key: %d", status)
+	}
+	if status, body := call("GET", "/v1/capability-apps", "deployment-login-key", ""); status != http.StatusOK || strings.Contains(body, issued.Key) {
+		t.Fatalf("application listing: %d, or it disclosed the issued key", status)
+	}
+	for _, request := range []struct{ method, path, body string }{
+		{"GET", "/v1/capability-apps", ""},
+		{"POST", "/v1/capability-apps/actions", `{"action":"create","name":"Escalation"}`},
+	} {
+		if status, _ := call(request.method, request.path, issued.Key, request.body); status != http.StatusForbidden {
+			t.Fatalf("application credential reached manage via %s %s: %d", request.method, request.path, status)
+		}
+	}
+	if status, _ := call("GET", "/v1/capability-apps", "deployment-login-key-wrong", ""); status != http.StatusUnauthorized {
+		t.Fatalf("a wrong login key managed applications: %d", status)
 	}
 }

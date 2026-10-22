@@ -359,7 +359,10 @@ func (s *Server) registerRoutes() {
 
 	// Developer capability contract endpoints. Execution is admitted here;
 	// runtime scheduling is intentionally a separate follow-up integration.
-	capabilityAPI := authenticatedRouteGroup(s.Echo, "/v1", s.capabilityAuthentication())
+	// The deployment login key signs in as the administrator here as on every
+	// other route; an application credential never matches it and keeps only
+	// its own scopes, which never include manage.
+	capabilityAPI := authenticatedRouteGroup(s.Echo, "/v1", s.loginKeyMiddleware(), s.capabilityAuthentication())
 	capabilityAPI.POST("/capabilities/drafts", s.handleSaveCapabilityDraft, requireCapabilityAccess("manage"))
 	capabilityAPI.GET("/capabilities/drafts", s.handleListCapabilityDrafts, requireCapabilityAccess("manage"))
 	capabilityAPI.POST("/capabilities/generate", s.handleGenerateCapability, requireCapabilityAccess("manage"))
