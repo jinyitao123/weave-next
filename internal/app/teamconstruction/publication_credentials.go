@@ -144,28 +144,48 @@ func (a *PublicationAuthority) verifyCredentialProofForInvocation(
 	if leadID != proof.scope.Lead.AgentID {
 		return execution.ErrSubjectMismatch
 	}
-	var records []registry.AgentRecord
 	catalog := agentcatalog.New(a.pool)
 	stagedRoster, err := readStagedDevelopmentRosterTx(ctx, tx, proof.scope)
 	if err != nil {
 		return err
 	}
+	// The scope's members and their exact versions are read in one statement
+	// each, not once per member, since every model call authorizes again.
+	workers := make([]string, 0, len(proof.scope.Agents))
+	keys := make([]agentcatalog.AgentVersionKey, 0, len(proof.scope.Agents))
 	for _, key := range proof.scope.Agents {
 		if key.AgentID != leadID {
-			var member bool
-			if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM weave_team_workers WHERE workspace_id=$1 AND team_id=$2 AND worker_agent_id=$3 AND enabled)`, subject.WorkspaceID, proof.scope.TeamID, key.AgentID).Scan(&member); err != nil {
-				return err
-			}
-			if !member && !stagedRosterAllowsAgent(stagedRoster, key.AgentID) {
-				return execution.ErrSubjectMismatch
-			}
+			workers = append(workers, key.AgentID)
 		}
-		version := key.AgentVersion
-		record, err := catalog.ResolveAgentVersionTx(ctx, tx, subject.WorkspaceID, key.AgentID, &version)
+		keys = append(keys, agentcatalog.AgentVersionKey{AgentID: key.AgentID, Version: key.AgentVersion})
+	}
+	enabled := map[string]bool{}
+	if len(workers) > 0 {
+		rows, err := tx.Query(ctx, `SELECT worker_agent_id FROM weave_team_workers WHERE workspace_id=$1 AND team_id=$2 AND enabled AND worker_agent_id=ANY($3)`, subject.WorkspaceID, proof.scope.TeamID, workers)
 		if err != nil {
 			return err
 		}
-		records = append(records, *record)
+		for rows.Next() {
+			var id string
+			if err := rows.Scan(&id); err != nil {
+				rows.Close()
+				return err
+			}
+			enabled[id] = true
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return err
+		}
+	}
+	for _, id := range workers {
+		if !enabled[id] && !stagedRosterAllowsAgent(stagedRoster, id) {
+			return execution.ErrSubjectMismatch
+		}
+	}
+	records, err := catalog.ResolveAgentVersionsTx(ctx, tx, subject.WorkspaceID, keys)
+	if err != nil {
+		return err
 	}
 	allowed, err := credentialSelectedByTeamTx(ctx, tx, proof.scope, records, ref)
 	if err != nil {

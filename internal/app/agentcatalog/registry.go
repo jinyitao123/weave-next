@@ -129,6 +129,69 @@ func (r *AgentRegistry) ResolveAgentVersionTx(
 	return &rec, nil
 }
 
+// AgentVersionKey names one exact agent version.
+type AgentVersionKey struct {
+	AgentID string
+	Version int64
+}
+
+// ResolveAgentVersionsTx reads and share-locks several exact agent versions
+// of one workspace in one statement, with the checks ResolveAgentVersionTx
+// makes for each, and returns them in the order asked.
+func (r *AgentRegistry) ResolveAgentVersionsTx(ctx context.Context, tx pgx.Tx, workspaceID string, keys []AgentVersionKey) ([]registry.AgentRecord, error) {
+	if tx == nil || strings.TrimSpace(workspaceID) == "" || workspaceID != strings.TrimSpace(workspaceID) {
+		return nil, registry.NewResolverError(registry.CodeDependencyVersionRequired, nil)
+	}
+	ids, versions := make([]string, 0, len(keys)), make([]int64, 0, len(keys))
+	for _, key := range keys {
+		if strings.TrimSpace(key.AgentID) == "" || key.AgentID != strings.TrimSpace(key.AgentID) ||
+			key.Version < 1 || key.Version > frozen.MaxJCSSafeInteger {
+			return nil, registry.NewResolverError(registry.CodeDependencyVersionRequired, nil)
+		}
+		ids, versions = append(ids, key.AgentID), append(versions, key.Version)
+	}
+	rows, err := tx.Query(ctx, `
+		SELECT agent_id, version, spec
+		FROM weave_agent_versions
+		WHERE workspace_id=$1 AND (agent_id, version) IN (SELECT * FROM unnest($2::text[], $3::bigint[]))
+		ORDER BY agent_id, version
+		FOR SHARE
+	`, workspaceID, ids, versions)
+	if err != nil {
+		return nil, fmt.Errorf("read exact agent versions: %w", err)
+	}
+	found := make(map[AgentVersionKey][]byte, len(keys))
+	for rows.Next() {
+		var key AgentVersionKey
+		var data []byte
+		if err := rows.Scan(&key.AgentID, &key.Version, &data); err != nil {
+			rows.Close()
+			return nil, fmt.Errorf("read exact agent versions: %w", err)
+		}
+		found[key] = data
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read exact agent versions: %w", err)
+	}
+	records := make([]registry.AgentRecord, 0, len(keys))
+	for _, key := range keys {
+		data, present := found[key]
+		if !present {
+			return nil, registry.NewResolverError(registry.CodeDependencyVersionRequired, nil)
+		}
+		var rec registry.AgentRecord
+		if err := json.Unmarshal(data, &rec); err != nil {
+			return nil, registry.NewResolverError(registry.CodeFrozenManifestMismatch, err)
+		}
+		if rec.ID != key.AgentID || rec.WorkspaceID != workspaceID || int64(rec.Version) != key.Version || strings.TrimSpace(rec.Name) == "" {
+			return nil, registry.NewResolverError(registry.CodeFrozenManifestMismatch, nil)
+		}
+		records = append(records, rec)
+	}
+	return records, nil
+}
+
 // ResolveAgentHeadVersionsTx locks the exact agent head rows of one workspace
 // and returns their current version numbers using the caller-owned
 // transaction. Missing or deleted agents fail closed, so a baseline can never
