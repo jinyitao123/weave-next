@@ -391,6 +391,9 @@ func (r *WorkflowSerialRuntime) runFanoutLegStep(
 ) (any, []string, error) {
 	worker, _ := branch.Config.(machine.WorkerConfig)
 	memberID, memberVersion, _ := agentNodeIdentity(branch, loaded.payload)
+	if err := loadRuntimeGraph(entries, memberID, memberVersion); err != nil {
+		return nil, nil, executionError(ErrorCodeRuntimeIncompatible, err)
+	}
 	startedAt := time.Now().UTC()
 	recordActivity := r.activityRecorder(parent)
 	if recordActivity != nil {

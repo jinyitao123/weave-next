@@ -7,6 +7,7 @@ import (
 	"io"
 	"reflect"
 	"strings"
+	"sync"
 
 	"github.com/jinyitao123/loom"
 	"github.com/jinyitao123/loom/stdlib"
@@ -270,6 +271,34 @@ type RuntimeGraphEntry struct {
 	Graph        *loom.Graph
 	CLI          *RuntimeCLIEntry
 	Bundle       *frozen.FrozenExecutionBundle
+
+	// build compiles Graph the first time the member runs. It is nil for CLI
+	// members and for entries whose Graph was supplied directly.
+	build *runtimeGraphBuild
+}
+
+type runtimeGraphBuild struct {
+	once  sync.Once
+	run   func() (*loom.Graph, error)
+	graph *loom.Graph
+	err   error
+}
+
+// InProcess reports whether the member runs as a Loom graph in this process,
+// whether or not its graph has been built yet.
+func (entry RuntimeGraphEntry) InProcess() bool {
+	return entry.Graph != nil || entry.build != nil
+}
+
+// LoadGraph returns the member's graph, building its runtime host and
+// resolving its credentials on the first call. Later calls, including through
+// copies of the entry, return the same graph or the same error.
+func (entry RuntimeGraphEntry) LoadGraph() (*loom.Graph, error) {
+	if entry.Graph != nil || entry.build == nil {
+		return entry.Graph, nil
+	}
+	entry.build.once.Do(func() { entry.build.graph, entry.build.err = entry.build.run() })
+	return entry.build.graph, entry.build.err
 }
 
 type RuntimeArtifact struct {
@@ -279,12 +308,30 @@ type RuntimeArtifact struct {
 	Entries         []RuntimeGraphEntry
 	DeliveryTargets []frozen.FrozenDeliveryTarget
 
+	mu      sync.Mutex
 	closers []io.Closer
 	closed  bool
 }
 
+// keep registers a member host built after Load. A host finished after the
+// artifact was closed is closed at once and its graph is not used.
+func (a *RuntimeArtifact) keep(closer io.Closer) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.closed {
+		return errors.Join(errors.New("runtime artifact is closed"), closer.Close())
+	}
+	a.closers = append(a.closers, closer)
+	return nil
+}
+
 func (a *RuntimeArtifact) Close() error {
-	if a == nil || a.closed {
+	if a == nil {
+		return nil
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.closed {
 		return nil
 	}
 	a.closed = true
@@ -429,7 +476,6 @@ func (l *RuntimeLoader) Load(
 			})
 			continue
 		}
-		opts, closer, buildErr := compiler.FrozenBuildOpts{}, io.Closer(nil), error(nil)
 		if providerlessLoomBundle(bundle) && runtimeLLMDefaultErr != nil {
 			cleanup()
 			return nil, runtimeLLMDefaultErr
@@ -443,77 +489,96 @@ func (l *RuntimeLoader) Load(
 				cleanup()
 				return nil, credentials.ErrCredentialUnavailable
 			}
-			if err := credentialResolver.Validate(ctx, runtimeLLMDefault.AccessRef); err != nil {
-				cleanup()
-				if runtimeNilLike(err) {
-					return nil, credentials.ErrCredentialUnavailable
-				}
-				return nil, err
-			}
-			runtimeRecord := runtimeLLMAgentRecord(bundle, *runtimeLLMDefault)
-			runtimeLLM, runtimeErr := runtimellm.New(
-				l.CLIExecutor,
-				envelope.WorkspaceID,
-				runtimeRecord,
-				execution.AgentExecutionStamp{
-					AgentID:        bundle.Agent.AgentID,
-					AgentVersion:   int(bundle.Agent.AgentVersion),
-					ExecutionScope: execution.ScopeTeamFreeCollab,
-					RunSnapshotID:  l.RunSnapshotID,
-				},
-			)
-			if runtimeErr != nil {
-				cleanup()
-				return nil, runtimeErr
-			}
-			if withLLM, ok := factory.(RuntimeHostFactoryWithLLM); ok {
-				opts, closer, buildErr = withLLM.BuildWithLLM(ctx, bundle, credentialResolver, runtimeLLM)
-			} else {
-				opts, closer, buildErr = buildRuntimeHostsWithLLM(
-					ctx,
-					bundle,
-					credentialResolver,
-					newRuntimeMCPTransport,
-					runtimeLLM,
-				)
-			}
-		} else {
-			opts, closer, buildErr = factory.Build(ctx, bundle, credentialResolver)
 		}
-		if buildErr != nil {
-			cleanup()
-			return nil, buildErr
-		}
-		if closer == nil {
-			cleanup()
-			return nil, compiler.ErrFactoryCompileFailed
-		}
-		artifact.closers = append(artifact.closers, closer)
-		// Frozen graphs execute with the same logical usage tracking as
-		// PreparedRun: a before-step binding hook plus the logical wrapper and
-		// the physical usage boundary. Outside a usage-scoped run the wiring
-		// is transparent, so direct graph execution keeps its old behavior.
-		opts = loomruntime.InstallFrozenUsageTracking(opts)
-		if bundle.FactoryKey == compiler.StandardFrozenToolsKey() {
-			opts = loomruntime.InstallFrozenMemberJournal(opts)
-		}
-
-		var graph *loom.Graph
-		if l.Registry == nil {
-			graph, err = compiler.CompileFrozen(ctx, bundle, resolver, opts)
-		} else {
-			graph, err = compiler.CompileFrozenWithRegistry(ctx, l.Registry, bundle, resolver, opts)
-		}
-		if err != nil {
-			cleanup()
-			return nil, err
-		}
+		// The member's host is built, and its credentials resolved, when it
+		// first runs: a step that reaches one member of a team does not
+		// authorize and connect all the others.
+		loader := *l
 		artifact.Entries = append(artifact.Entries, RuntimeGraphEntry{
-			AgentID: bundle.Agent.AgentID, AgentVersion: bundle.Agent.AgentVersion, Graph: graph,
+			AgentID: bundle.Agent.AgentID, AgentVersion: bundle.Agent.AgentVersion,
 			Bundle: &bundle,
+			build: &runtimeGraphBuild{run: func() (*loom.Graph, error) {
+				return loader.buildGraph(ctx, envelope.WorkspaceID, bundle, resolver, factory, credentialResolver, runtimeLLMDefault, artifact)
+			}},
 		})
 	}
 	return artifact, nil
+}
+
+// buildGraph builds one Loom member's runtime host and compiles its frozen
+// graph, registering the host with the artifact that closes it.
+func (l *RuntimeLoader) buildGraph(
+	ctx context.Context,
+	workspaceID string,
+	bundle frozen.FrozenExecutionBundle,
+	resolver compiler.FrozenResolver,
+	factory RuntimeHostFactory,
+	credentialResolver RuntimeCredentialResolver,
+	runtimeLLMDefault *frozen.FrozenRuntimeBinding,
+	artifact *RuntimeArtifact,
+) (*loom.Graph, error) {
+	var (
+		opts     compiler.FrozenBuildOpts
+		closer   io.Closer
+		buildErr error
+	)
+	if providerlessLoomBundle(bundle) && runtimeLLMDefault != nil {
+		if err := credentialResolver.Validate(ctx, runtimeLLMDefault.AccessRef); err != nil {
+			if runtimeNilLike(err) {
+				return nil, credentials.ErrCredentialUnavailable
+			}
+			return nil, err
+		}
+		runtimeRecord := runtimeLLMAgentRecord(bundle, *runtimeLLMDefault)
+		runtimeLLM, runtimeErr := runtimellm.New(
+			l.CLIExecutor,
+			workspaceID,
+			runtimeRecord,
+			execution.AgentExecutionStamp{
+				AgentID:        bundle.Agent.AgentID,
+				AgentVersion:   int(bundle.Agent.AgentVersion),
+				ExecutionScope: execution.ScopeTeamFreeCollab,
+				RunSnapshotID:  l.RunSnapshotID,
+			},
+		)
+		if runtimeErr != nil {
+			return nil, runtimeErr
+		}
+		if withLLM, ok := factory.(RuntimeHostFactoryWithLLM); ok {
+			opts, closer, buildErr = withLLM.BuildWithLLM(ctx, bundle, credentialResolver, runtimeLLM)
+		} else {
+			opts, closer, buildErr = buildRuntimeHostsWithLLM(
+				ctx,
+				bundle,
+				credentialResolver,
+				newRuntimeMCPTransport,
+				runtimeLLM,
+			)
+		}
+	} else {
+		opts, closer, buildErr = factory.Build(ctx, bundle, credentialResolver)
+	}
+	if buildErr != nil {
+		return nil, buildErr
+	}
+	if closer == nil {
+		return nil, compiler.ErrFactoryCompileFailed
+	}
+	if err := artifact.keep(closer); err != nil {
+		return nil, err
+	}
+	// Frozen graphs execute with the same logical usage tracking as
+	// PreparedRun: a before-step binding hook plus the logical wrapper and
+	// the physical usage boundary. Outside a usage-scoped run the wiring
+	// is transparent, so direct graph execution keeps its old behavior.
+	opts = loomruntime.InstallFrozenUsageTracking(opts)
+	if bundle.FactoryKey == compiler.StandardFrozenToolsKey() {
+		opts = loomruntime.InstallFrozenMemberJournal(opts)
+	}
+	if l.Registry == nil {
+		return compiler.CompileFrozen(ctx, bundle, resolver, opts)
+	}
+	return compiler.CompileFrozenWithRegistry(ctx, l.Registry, bundle, resolver, opts)
 }
 
 // withPublishedServiceCredentialAuthorization treats the immutable execution
@@ -723,5 +788,5 @@ func runtimeNilLike(value any) bool {
 
 // DurableMember identifies the explicitly versioned member execution contract.
 func (entry RuntimeGraphEntry) DurableMember() bool {
-	return entry.Graph != nil && entry.Bundle != nil && entry.Bundle.FactoryKey == compiler.StandardFrozenToolsKey()
+	return entry.InProcess() && entry.Bundle != nil && entry.Bundle.FactoryKey == compiler.StandardFrozenToolsKey()
 }

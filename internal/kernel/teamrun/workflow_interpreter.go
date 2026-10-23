@@ -276,6 +276,9 @@ func runSerialMachine(
 		switch node.Type {
 		case machine.NodeLead, machine.NodeWorker:
 			memberID, memberVersion, _ := agentNodeIdentity(node, payload)
+			if err := loadRuntimeGraph(entries, memberID, memberVersion); err != nil {
+				return fail(executionError(ErrorCodeRuntimeIncompatible, err))
+			}
 			startedAt := time.Now().UTC()
 			if start.RecordActivity != nil {
 				inputNames := make([]string, 0, len(node.Inputs))
@@ -1533,6 +1536,25 @@ func buildFanoutParkPlan(
 
 func runtimeEntryKey(agentID string, version int64) string {
 	return fmt.Sprintf("%s\x00%d", agentID, version)
+}
+
+// loadRuntimeGraph builds the member's graph before its node starts, so a
+// member whose host or credentials fail is refused before any call, usage or
+// checkpoint is recorded for it, as it was when every member was built up
+// front.
+func loadRuntimeGraph(entries map[string]workflow.RuntimeGraphEntry, agentID string, version int64) error {
+	key := runtimeEntryKey(agentID, version)
+	entry, ok := entries[key]
+	if !ok || entry.Graph != nil || !entry.InProcess() {
+		return nil
+	}
+	graph, err := entry.LoadGraph()
+	if err != nil {
+		return err
+	}
+	entry.Graph = graph
+	entries[key] = entry
+	return nil
 }
 
 func runAgentNode(

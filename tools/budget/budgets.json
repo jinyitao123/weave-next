@@ -1713,6 +1713,28 @@
         "lines_added": 349,
         "production_lines_added": 214
       }
+    },
+    {
+      "date": "2026-10-22",
+      "reason": "Build each Loom member's runtime host when it first runs instead of every member on every step (#93), with its real-PG test",
+      "record": "docs/治理/2026-10-22-成员运行时按需构建.md",
+      "growth": {
+        "lines": 186,
+        "production_lines": 90
+      },
+      "deletion_trigger": "Delete RuntimeGraphEntry.build and the eager path's leftovers if a step ever again needs every member built up front, or once member hosts are pooled across steps.",
+      "kernel": {
+        "previous_lines": 106862,
+        "previous_production_lines": 81414,
+        "lines_added": 90,
+        "production_lines_added": 90
+      },
+      "app": {
+        "previous_lines": 81578,
+        "previous_production_lines": 52264,
+        "lines_added": 96,
+        "production_lines_added": 0
+      }
     }
   ],
   "migration_targets": {
@@ -1756,8 +1778,8 @@
     ]
   },
   "kernel": {
-    "lines": 106862,
-    "production_lines": 81414,
+    "lines": 106952,
+    "production_lines": 81504,
     "packages": 44,
     "external_dependencies": 5,
     "allowed_dependencies": [
@@ -1776,7 +1798,7 @@
     "allowed_dependencies": []
   },
   "app": {
-    "lines": 81578,
+    "lines": 81674,
     "production_lines": 52264,
     "packages": 21,
     "external_dependencies": 6,

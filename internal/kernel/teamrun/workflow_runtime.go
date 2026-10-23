@@ -1080,7 +1080,7 @@ func (r *WorkflowSerialRuntime) serialCheckpointWriter(run TeamRun, artifact *wo
 	}
 	allCLI, hasDurable := true, false
 	for _, entry := range artifact.Entries {
-		allCLI = allCLI && entry.CLI != nil
+		allCLI = allCLI && entry.CLI != nil && !entry.InProcess()
 		hasDurable = hasDurable || isDurableMemberEntry(entry)
 	}
 	if !allCLI && !hasDurable {
