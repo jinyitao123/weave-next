@@ -11,6 +11,9 @@
 .flow-editor__graph > svg { position: absolute; inset: 0; overflow: visible; pointer-events: none; }
 .flow-editor__graph path { fill: none; stroke: var(--border-strong); stroke-width: 1.5; }
 .flow-editor__graph path.is-back { stroke: var(--accent); stroke-dasharray: 4 3; }
+.flow-editor__graph path.is-failure { stroke: var(--danger); stroke-dasharray: 4 3; }
+.flow-editor__route-label { position: absolute; transform: translate(-50%, -50%); padding: 0 4px; border-radius: 999px; color: var(--accent); background: var(--subtle); font-size: var(--text-xs); white-space: nowrap; pointer-events: none; }
+.flow-editor__route-label.is-failure { color: var(--danger); }
 .flow-editor__graph path.is-feed { stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 5 3; opacity: 0.8; }
 .flow-editor__graph path.is-feed.is-hot { stroke-width: 2.5; opacity: 1; stroke-dasharray: none; }
 .flow-editor__graph path.is-feed { stroke-linejoin: round; }

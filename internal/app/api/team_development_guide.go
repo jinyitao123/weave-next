@@ -81,6 +81,19 @@ var developmentOperationTopics = []developmentOperationTopic{
 		developmentNamingRule,
 		"只有负责人或成员步骤能生成结果分类；交付来源是并行汇合时，先在汇合后添加汇总步骤并把它设为交付来源。不要改写成员已有的工作方法来塞入格式要求。",
 	}},
+	// Approval (approval, approval_remove) stays accepted but undocumented until
+	// the approver is enforced by the server and a rejection ends the run
+	// without success; documented, agents would rely on it as an audit control.
+	{Topic: "guarantee", Title: "流程保证", Covers: "为步骤设置失败分支：步骤失败时由流程强制转给指定成员处理，成员无法跳过", Operations: []developmentOperationDoc{
+		{Kind: "on_failure", Summary: "step 是可能失败的步骤；它失败时改由 member 按 requirement 处理，name 是这一步的名称，处理结果作为本次任务的交付", Example: `{"kind":"on_failure","flow":"合同复核流程","step":"核对条款","member":"合同协调员","name":"核对失败说明","requirement":"说明核对没有完成的原因，列出已经核对的部分和需要人工补充的内容"}`},
+		{Kind: "on_failure_remove", Summary: "step 是设置了失败分支的步骤；整条失败分支一起移除", Example: `{"kind":"on_failure_remove","flow":"合同复核流程","step":"核对条款"}`},
+	}, Rules: []string{
+		developmentNamingRule,
+		"使用者要求“出错时要怎样处理”时，用失败分支落实，不要只写进成员的工作要求：工作要求只能要求成员遵守，失败分支由流程强制执行。",
+		"团队流程目前不提供人工审批保证。使用者要求“必须经某人同意”时，如实说明团队流程还不能强制审批；不要用成员的工作要求冒充审批环节。",
+		"失败分支：只能设置在负责人或成员执行（不在并行分支里）的步骤上，每个步骤一条。处理步骤收到失败步骤原本收到的内容，不会收到失败步骤的结果；处理结果作为本次任务的交付，原流程在失败处之后的步骤不再执行。设置失败分支后，这一步遇到可重试的运行故障也会直接进入失败分支，而不是等待重试。",
+		"设置了失败分支的流程有多个交付，不能同时启用“可要求补充材料”的结果分类或必须办成的业务动作。",
+	}},
 	{Topic: "business_completion", Title: "必须办成的业务动作", Covers: "声明流程交付前哪些业务动作必须有成功回执；成员带业务动作的流程发布前必须设置", Operations: []developmentOperationDoc{
 		{Kind: "business_completion", Summary: "capabilities 是 1 至 16 个不重复的业务动作名称（名称重复时用目录标识），且已绑定到该流程的已启用成员；allowNeedsInput 说明是否允许没有业务效果的缺件结果交还员工", Example: `{"kind":"business_completion","flow":"线索跟进流程","capabilities":["线索转商机"],"allowNeedsInput":true}`},
 	}, Rules: []string{

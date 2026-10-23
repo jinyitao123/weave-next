@@ -50,6 +50,28 @@ describe('workflow canvas interactions', () => {
     expect(screen.getByRole('button', { name: '编辑步骤 并行核对' })).toBeTruthy()
   })
 
+  it('names approvals and failure branches the server compiled', () => {
+    const graph = serialGraph(members.slice(0, 1).map(member => ({ member: { id: member.id, displayName: member.id }, label: '核对条款', requirement: '' })))
+    const work = graph.nodes[0].id, deliver = graph.nodes[1].id
+    graph.nodes.push(
+      { id: 'approval', type: 'wait', label: '法务审批', config: { kind: 'human', task: { title: '法务审批', instructions: '核对金额与条款', audience_ref: '法务总监' } } },
+      { id: 'check', type: 'condition', label: '法务审批：是否批准', config: {} },
+      { id: 'rejected', type: 'deliver', label: '法务审批：驳回意见', config: { result: { source: 'node_output', node_id: 'approval', path: '/comment' } } },
+      { id: 'fallback', type: 'worker', label: '核对失败说明', config: { kind: 'consult', agent_id: '验证' } },
+      { id: 'fallback-deliver', type: 'deliver', label: '核对失败说明：交付', config: { result: { source: 'node_output', node_id: 'fallback', path: '' } } },
+    )
+    graph.edges = [
+      { id: 'a', from_node_id: work, to_node_id: 'approval', route: 'success' }, { id: 'b', from_node_id: 'approval', to_node_id: 'check', route: 'success' },
+      { id: 'c', from_node_id: 'check', to_node_id: deliver, route: 'case' }, { id: 'd', from_node_id: 'check', to_node_id: 'rejected', route: 'default' },
+      { id: 'e', from_node_id: work, to_node_id: 'fallback', route: 'failure' }, { id: 'f', from_node_id: 'fallback', to_node_id: 'fallback-deliver', route: 'success' },
+    ]
+    render(<Controlled initial={graph} />)
+    for (const label of ['批准', '驳回', '失败时']) expect(screen.getByText(label)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '编辑步骤 法务审批' }))
+    expect(screen.getByRole('region', { name: '人工审批' }).textContent).toContain('核对金额与条款')
+    expect(screen.getByText('审批人：法务总监')).toBeTruthy()
+  })
+
   it('renders unsupported raw nodes and exposes a read-only inspector without serial conversion', () => {
     const graph = serialGraph(members.slice(0, 2).map(member => ({ member: { id: member.id, displayName: member.id }, label: member.id, requirement: '' })))
     graph.nodes.push({ id: 'condition', type: 'condition', label: '已有条件', config: { raw: true } })

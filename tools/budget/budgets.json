@@ -1799,6 +1799,28 @@
         "lines_added": 184,
         "production_lines_added": 57
       }
+    },
+    {
+      "date": "2026-10-23",
+      "reason": "Flow guarantees as controlled team edits: a step's failure branch (documented) and a person's approval (accepted but kept out of the guide until #105), compiled to machine nodes and checked against the machine's structural phases, shown in the MCP draft view, with unit and interpreter regression tests",
+      "record": "docs/治理/2026-10-23-流程保证审批与失败分支.md",
+      "growth": {
+        "lines": 799,
+        "production_lines": 505
+      },
+      "deletion_trigger": "Delete the approval operations and TestApprovalDecisionChoosesWhatTheRunDelivers if #105 is closed without reopening approval; delete team_development_guarantees.go if the console and MCP edit flow graphs through one shared server-side graph editor that already exposes failure routes.",
+      "kernel": {
+        "previous_lines": 107136,
+        "previous_production_lines": 81561,
+        "lines_added": 62,
+        "production_lines_added": 0
+      },
+      "app": {
+        "previous_lines": 82291,
+        "previous_production_lines": 52492,
+        "lines_added": 737,
+        "production_lines_added": 505
+      }
     }
   ],
   "migration_targets": {
@@ -1842,7 +1864,7 @@
     ]
   },
   "kernel": {
-    "lines": 107136,
+    "lines": 107198,
     "production_lines": 81561,
     "packages": 44,
     "external_dependencies": 5,
@@ -1862,8 +1884,8 @@
     "allowed_dependencies": []
   },
   "app": {
-    "lines": 82291,
-    "production_lines": 52492,
+    "lines": 83028,
+    "production_lines": 52997,
     "packages": 21,
     "external_dependencies": 6,
     "allowed_dependencies": [

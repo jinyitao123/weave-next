@@ -306,6 +306,14 @@ func (e *editSession) apply(operation map[string]any) error {
 		e.note("移除流程步骤：%s", editString(node["label"]))
 	case "step_input":
 		return e.changeStepInput(operation)
+	case "approval":
+		return e.addApproval(operation)
+	case "approval_remove":
+		return e.removeApproval(operation)
+	case "on_failure":
+		return e.addFailureBranch(operation)
+	case "on_failure_remove":
+		return e.removeFailureBranch(operation)
 	case "delivery":
 		_, graph, err := e.flow(operation)
 		if err != nil {
@@ -327,6 +335,9 @@ func (e *editSession) apply(operation map[string]any) error {
 		enabled, isBool := operation["enabled"].(bool)
 		if !isBool {
 			return editFail("结果分类须明确选择普通结果或可要求补充材料。")
+		}
+		if enabled && editDeliveries(graph) > 1 {
+			return editFail("%s", editProtocolSingleDelivery)
 		}
 		source := ""
 		if _, given := operation["from"]; given {
@@ -827,6 +838,18 @@ func (e *editSession) finish() error {
 		}
 		if err != nil {
 			return editFail("流程“%s”：%s", flow.Name, err.Error())
+		}
+		if issue := editSingleDeliveryIssue(graph); issue != "" {
+			return editFail("流程“%s”：%s", flow.Name, issue)
+		}
+		if editHasGuarantees(graph) {
+			issue, err := editStructureIssue(graph)
+			if err != nil {
+				return err
+			}
+			if issue != "" {
+				return editFail("流程“%s”：%s", flow.Name, issue)
+			}
 		}
 		raw, err := json.Marshal(graph)
 		if err != nil {

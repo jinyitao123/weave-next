@@ -5,7 +5,7 @@ import { maxVerifyRounds, serialSteps, verifyLoop, type Graph, type Step } from 
 import { requiredActions, setRequiredActions } from '../../lib/business-completion'
 import type { DevelopmentMember } from '../../lib/teams'
 import { addParallelBranch, assignExecutor, canAddParallelBranch, canInsertSerialStep, feedsDelivery, configureWorkflowResultProtocol, hasNodeInput, insertStep, isParallelBranchWorker, predecessors, removeStep, serializeParallel, setVerificationLoop, stepFeeds, toggleNodeInput, toggleTaskInput, validateWorkflowResultProtocol, WORKBENCH_RESULT_PROTOCOL } from '../../lib/workflow-graph'
-import { FlowCanvas, stepLabel } from './FlowCanvas'
+import { FlowCanvas, isApproval, stepLabel } from './FlowCanvas'
 import './workflow.css'
 
 type Form = { placement: 'serial' | 'parallel'; after: string; member: string; name: string; requirement: string }
@@ -130,6 +130,15 @@ function StepInspector({ graph, step, members, actions, loop, onChange, onGraph,
   const feeds = stepFeeds(graph, step)
   const configureDelivery = (enabled: boolean, source?: string) => onGraph(current => configureWorkflowResultProtocol({ graph_definition: current }, enabled, source).graph_definition)
   const issue = validateWorkflowResultProtocol({ graph_definition: graph })
+  if (isApproval(step)) {
+    const task = (step.config?.task ?? {}) as { instructions?: string; audience_ref?: string }
+    return <section className="flow-editor__panel" aria-label="人工审批">
+      <h3>人工审批</h3>
+      {task.instructions ? <p>{task.instructions}</p> : null}
+      {task.audience_ref ? <p className="muted small">审批人：{task.audience_ref}</p> : null}
+      <p className="muted small">批准后继续后面的步骤；驳回时本次任务交付审批意见并结束。</p>
+    </section>
+  }
   if (!['lead', 'worker', 'join', 'parallel', 'deliver'].includes(step.type)) return <p className="muted">该步骤暂不提供配置编辑，原有节点与连接会保留。</p>
   const candidates = predecessors(graph, step.id)
   const received = [feeds.task ? '本次任务输入' : '', ...candidates.filter(prior => hasNodeInput(step, prior.id)).map(prior => `${nodeTitle(prior)}的结果`)].filter(Boolean)

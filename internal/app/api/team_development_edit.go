@@ -275,7 +275,8 @@ func editInsertStep(graph editGraph, id string, member *developmentMember) (stri
 		}
 		kind = "dispatch"
 	}
-	outgoing := editEdges(graph, "from_node_id", id)
+	// A failure branch stays on the step; the new step follows its success.
+	outgoing := editMainOutgoing(graph, id)
 	if previous == nil || !editOneOf(editNodeType(previous), "lead", "worker", "join") || len(outgoing) != 1 {
 		return "", editFail("请选择连接完整的步骤后添加下一步")
 	}
@@ -429,6 +430,12 @@ func editReadsNode(node map[string]any, id string) bool {
 func editRemoveStep(graph editGraph, id string) error {
 	node := editNode(graph, id)
 	incoming, outgoing := editEdges(graph, "to_node_id", id), editEdges(graph, "from_node_id", id)
+	if node != nil && editFailureEdge(graph, id) != nil {
+		return editFail("“%s”设置了失败分支，请先用 on_failure_remove 移除", editString(node["label"]))
+	}
+	if len(incoming) == 1 && editString(incoming[0]["route"]) == "failure" {
+		return editFail("“%s”是失败分支的第一步，请用 on_failure_remove 移除整个失败分支", editString(node["label"]))
+	}
 	if node == nil || !editOneOf(editNodeType(node), "worker", "lead") || id == editString(graph["entry_node_id"]) || len(incoming) != 1 || len(outgoing) != 1 {
 		return editFail("只能移除连接完整、且不是第一步的负责人或成员步骤")
 	}
@@ -470,13 +477,27 @@ func editRemoveStep(graph editGraph, id string) error {
 			return editFail("请先降低汇合所需的成功分支数")
 		}
 	} else {
+		// After an approval the step before is a condition; the delivery then
+		// hands over the last member result before the approval.
+		source := editMemberBefore(graph, id)
 		for _, other := range nodes {
 			if editNodeType(other) == "deliver" && editResultSource(other) == id {
-				editConfig(other)["result"] = editNodeOutputRef(previous)
+				if source == "" {
+					return editFail("移除后交付没有可交付的步骤结果，请先调整交付来源")
+				}
+				editConfig(other)["result"] = editNodeOutputRef(source)
 			}
 		}
 		route := "success"
 		switch {
+		case editOneOf(editString(incoming[0]["route"]), "case", "default"):
+			// The condition keeps its route and predicate, now to the next step.
+			kept := editObject(editCopy(incoming[0]))
+			kept["to_node_id"] = editString(outgoing[0]["to_node_id"])
+			edges = append(edges, kept)
+			editSetItems(graph, "nodes", nodes)
+			editSetItems(graph, "edges", edges)
+			return nil
 		case editString(incoming[0]["route"]) == "branch":
 			route = "branch"
 		case editString(outgoing[0]["route"]) == "join":

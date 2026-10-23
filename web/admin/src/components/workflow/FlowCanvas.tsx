@@ -1,10 +1,21 @@
-import { Bot, CheckCircle2, FileInput, GitBranch, GitMerge, Maximize2, Repeat2, RotateCcw, UsersRound, ZoomIn, ZoomOut } from 'lucide-react'
+import { Bot, CheckCircle2, FileInput, GitBranch, GitMerge, Maximize2, Repeat2, RotateCcw, ShieldCheck, Split, UsersRound, ZoomIn, ZoomOut } from 'lucide-react'
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
-import type { Graph } from '../../lib/graph'
+import type { Graph, Step } from '../../lib/graph'
 import type { DevelopmentMember } from '../../lib/teams'
 import type { StepFeeds } from '../../lib/workflow-graph'
 
 export const stepLabel = (type: string): string => ({ lead: '负责人处理', worker: '成员执行', parallel: '并行分工', join: '汇合', deliver: '交付结果', loop: '验证回路', condition: '条件分支', wait: '等待', transform: '转换', handoff: '交接' }[type] ?? '流程步骤')
+export const isApproval = (node?: Step): boolean => node?.type === 'wait' && node.config?.kind === 'human'
+const kindLabel = (node: Step): string => isApproval(node) ? '人工审批' : stepLabel(node.type)
+
+// Routes other than the plain next step, named where they leave a step. A
+// condition right after an approval lets only "approve" go on.
+function routeLabel(graph: Graph, edge: Graph['edges'][number]): string {
+  if (edge.route === 'failure') return '失败时'
+  if (edge.route !== 'case' && edge.route !== 'default') return ''
+  const approval = graph.edges.some(item => item.to_node_id === edge.from_node_id && isApproval(graph.nodes.find(node => node.id === item.from_node_id)))
+  return edge.route === 'case' ? approval ? '批准' : '条件满足' : approval ? '驳回' : '否则'
+}
 const width = 172, height = 64, column = width + 24, row = height + 32
 // Input references run to the left of the vertical flow, outside the nodes.
 const lane = 64
@@ -181,18 +192,22 @@ export function FlowCanvas({ graph, members, selected, feeds, highlight, onSelec
           const from = box.positions.get(edge.from_node_id), to = box.positions.get(edge.to_node_id)
           if (!from || !to || backs.some(back => back.edge === edge)) return null
           const sx = from.x + width / 2, sy = from.y + height, ex = to.x + width / 2, ey = to.y - 2
-          return <path key={edge.id || index} d={`M ${sx} ${sy} C ${sx} ${(sy + ey) / 2}, ${ex} ${(sy + ey) / 2}, ${ex} ${ey}`} markerEnd={`url(#${arrow})`} />
+          return <path key={edge.id || index} d={`M ${sx} ${sy} C ${sx} ${(sy + ey) / 2}, ${ex} ${(sy + ey) / 2}, ${ex} ${ey}`} className={edge.route === 'failure' ? 'is-failure' : undefined} markerEnd={`url(#${arrow})`} />
         })}
         {backs.map(({ edge, fx, tx, fy, ty }, index) => <path key={edge.id || `back-${index}`} d={`M ${fx} ${fy} H ${box.backLane} V ${ty} H ${tx}`} className="is-back" markerEnd={`url(#${arrow})`} />)}
         {arcs.map(arc => <path key={`feed-${arc.key}`} d={arc.d} className={`is-feed${highlight === arc.key ? ' is-hot' : ''}`} markerEnd={`url(#${arrow}-feed)`} />)}
       </svg>
       {feeds?.task && target ? <span className={`flow-editor__task${highlight === 'task' ? ' is-hot' : ''}`} style={{ left: task.x, top: task.y, width: task.width, height: task.height }}><FileInput size={13} />任务输入</span> : null}
       {backs.filter(back => back.label).map(({ edge, fy, ty, label }, index) => <span key={edge.id || `label-${index}`} className="flow-editor__edge-label" style={{ left: box.backLane, top: (fy + ty) / 2 }}>{label}</span>)}
+      {graph.edges.map((edge, index) => {
+        const label = routeLabel(graph, edge), from = box.positions.get(edge.from_node_id), to = box.positions.get(edge.to_node_id)
+        return label && from && to && to.y > from.y ? <span key={`route-${edge.id || index}`} className={`flow-editor__route-label${edge.route === 'failure' ? ' is-failure' : ''}`} style={{ left: (from.x + to.x + width) / 2, top: (from.y + height + to.y) / 2 }}>{label}</span> : null
+      })}
       {graph.nodes.map(node => {
         const position = box.positions.get(node.id)!
         const member = node.type === 'lead' ? members.find(item => item.configuration.role === 'avatar' && item.relationship.enabled) : members.find(item => item.id === node.config?.agent_id)
-        const Icon = node.type === 'deliver' ? CheckCircle2 : node.type === 'lead' ? UsersRound : node.type === 'parallel' ? GitBranch : node.type === 'join' ? GitMerge : node.type === 'loop' ? Repeat2 : Bot
-        const title = node.label || stepLabel(node.type), subtitle = member?.configuration.display_name || stepLabel(node.type)
+        const Icon = node.type === 'deliver' ? CheckCircle2 : node.type === 'lead' ? UsersRound : node.type === 'parallel' ? GitBranch : node.type === 'join' ? GitMerge : node.type === 'loop' ? Repeat2 : isApproval(node) ? ShieldCheck : node.type === 'condition' ? Split : Bot
+        const title = node.label || kindLabel(node), subtitle = member?.configuration.display_name || kindLabel(node)
         const feeding = selected !== node.id && Boolean(feeds?.nodes.includes(node.id))
         const classes = ['flow-editor__node', selected === node.id ? 'is-selected' : '', feeding ? 'is-feeding' : '', highlight === node.id ? 'is-hot' : ''].filter(Boolean).join(' ')
         return <button type="button" key={node.id} style={{ left: position.x, top: position.y, width, height }} className={classes} aria-label={`编辑步骤 ${title}`} aria-pressed={selected === node.id} onClick={() => onSelect(node.id)}>

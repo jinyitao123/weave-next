@@ -20,7 +20,7 @@ import (
 // console and the desktop already use, made with the caller's own credential,
 // so validation, permissions and audit are the ones those routes apply.
 
-const mcpEntryInstructions = "Weave 的团队开发与使用工具。修改团队前先用 weave_development_read 读取草稿和可修改的类别，再用 weave_development_guide 读取要用到的那一类写法；不要猜测字段。团队草稿以外的操作（归档团队、运行、执行节点、飞书、客户端会话）用 weave_workspace_guide 读取类别和写法，再用 weave_workspace_apply 办理；要填写或显示密钥的操作不经这里办理。经这里交接的工作不带业务动作授权，需要办理业务的部分由员工在桌面办理。团队和流程的标识只用于调用，不要展示给使用者。设备工具（device_*）只对本人账号会话开放，用来查看和操作使用者本人绑定的 Mac 与 Windows：先 device_list，再 device_session_open，ready 后截图或读取界面结构再操作；会改变机器的操作带 op_id，结果不确定时用同一个 op_id 重试。不得用设备工具在 Forge 或小满界面中办理业务写入。"
+const mcpEntryInstructions = "Weave 的团队开发与使用工具。修改团队前先用 weave_development_read 读取草稿和可修改的类别，再用 weave_development_guide 读取要用到的那一类写法；不要猜测字段。使用者要求出错时要按规定处理时，用 guarantee 类别设置失败分支，不要只写进成员的工作要求。团队草稿以外的操作（归档团队、运行、执行节点、飞书、客户端会话）用 weave_workspace_guide 读取类别和写法，再用 weave_workspace_apply 办理；要填写或显示密钥的操作不经这里办理。经这里交接的工作不带业务动作授权，需要办理业务的部分由员工在桌面办理。团队和流程的标识只用于调用，不要展示给使用者。设备工具（device_*）只对本人账号会话开放，用来查看和操作使用者本人绑定的 Mac 与 Windows：先 device_list，再 device_session_open，ready 后截图或读取界面结构再操作；会改变机器的操作带 op_id，结果不确定时用同一个 op_id 重试。不得用设备工具在 Forge 或小满界面中办理业务写入。"
 
 const (
 	mcpMaterialLimit = 200 << 10
@@ -284,12 +284,22 @@ func mcpDraftView(draft developmentDraft, catalog []catalogCapability) map[strin
 					step["type"], step["policy"] = "汇合结果", editString(config["policy"])
 				case "deliver":
 					step["type"], step["delivers"] = "交付结果", label(editResultSource(node))
+				case "wait":
+					step["type"] = "等待"
+					if task := editObject(config["task"]); editString(config["kind"]) == "human" {
+						step["type"], step["instructions"], step["approver"] = "人工审批", editString(task["instructions"]), editString(task["audience_ref"])
+					}
+				case "condition":
+					step["type"] = "条件分支"
+				case "loop":
+					step["type"], step["max_rounds"] = "循环", config["max_iterations"]
 				default:
 					step["type"] = "其他步骤"
 				}
 				next := []string{}
 				for _, edge := range editEdges(graph, "from_node_id", editString(node["id"])) {
-					next = append(next, label(editString(edge["to_node_id"])))
+					when := map[string]string{"failure": "（失败时）", "case": "（条件满足时）", "default": "（其他情况）", "timeout": "（超时）"}[editString(edge["route"])]
+					next = append(next, label(editString(edge["to_node_id"]))+when)
 				}
 				if len(next) > 0 {
 					step["next"] = next
