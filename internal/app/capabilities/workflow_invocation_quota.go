@@ -10,23 +10,29 @@ import (
 )
 
 // A workspace admits at most max_active_invocations capability invocations in
-// flight. Each in-flight invocation holds one row of
-// weave_capability_quota_slots; an admission takes a free slot with
-// FOR UPDATE SKIP LOCKED inside its own transaction, so admissions that find a
-// free slot never wait for each other, and a slot is only ever held by one
-// committed invocation. Slots are released lazily: an admission that finds no
-// free slot rolls back, reclaims every slot whose holder is no longer in
-// flight, by the same live-owner definition the count used, and tries once
-// more. In-flight work is never evicted.
+// flight, and an application with an admission limit at most its own
+// max_active_invocations of them. Each in-flight invocation holds one row of
+// weave_capability_quota_slots in the workspace's scope (scope_application_id
+// '') and, when its application is limited, one in the application's scope.
+// An admission takes a free slot with FOR UPDATE SKIP LOCKED inside its own
+// transaction, so admissions that find a free slot never wait for each other,
+// and a slot is only ever held by one committed invocation. Slots are released
+// lazily: an admission that finds no free slot rolls back, reclaims every slot
+// whose holder is no longer in flight, by the same live-owner definition the
+// count used, and tries once more. In-flight work is never evicted.
 
 const (
 	slotHolderWorkflow = "workflow"
 	slotHolderInline   = "inline"
 )
 
-// errQuotaSlotsFull asks the admission's caller to refresh the workspace's
-// slots and retry; after the retry it is reported as ErrQuotaExceeded.
-var errQuotaSlotsFull = errors.New("capability quota slots are full")
+// errQuotaSlotsFull and errApplicationQuotaSlotsFull ask the admission's
+// caller to refresh the slots and retry; after the retry they are reported as
+// ErrQuotaExceeded and ErrApplicationQuotaExceeded.
+var (
+	errQuotaSlotsFull            = errors.New("capability quota slots are full")
+	errApplicationQuotaSlotsFull = errors.New("capability application quota slots are full")
+)
 
 // slotHolder names the invocation a slot is held for: workflow holders by
 // invocation_id, inline holders by request_id.
@@ -34,23 +40,63 @@ type slotHolder struct {
 	Kind, ApplicationID, ID string
 }
 
-// acquireCapabilityQuotaSlot takes a slot for holder, whose invocation row this
-// transaction has already inserted, or returns errQuotaSlotsFull.
+// quotaScope is a set of slots: the workspace's, or, with ApplicationID, one
+// application's.
+type quotaScope struct {
+	WorkspaceID, ApplicationID string
+}
+
+func (q quotaScope) full() error {
+	if q.ApplicationID != "" {
+		return errApplicationQuotaSlotsFull
+	}
+	return errQuotaSlotsFull
+}
+
+// acquireCapabilityQuotaSlot takes the slots holder needs, whose invocation row
+// this transaction has already inserted: its application's first, when that
+// application is limited, then the workspace's. It returns the scope's full
+// error when one has no free slot.
 func acquireCapabilityQuotaSlot(ctx context.Context, tx pgx.Tx, workspaceID string, holder slotHolder) error {
 	if workspaceID == "" {
 		return fmt.Errorf("workspace is required for capability quota")
 	}
+	limited, err := applicationAdmissionLimited(ctx, tx, workspaceID, holder.ApplicationID)
+	if err != nil {
+		return err
+	}
+	if limited {
+		if err := acquireQuotaSlot(ctx, tx, quotaScope{workspaceID, holder.ApplicationID}, holder); err != nil {
+			return err
+		}
+	}
+	return acquireQuotaSlot(ctx, tx, quotaScope{WorkspaceID: workspaceID}, holder)
+}
+
+func applicationAdmissionLimited(ctx context.Context, tx pgx.Tx, workspaceID, applicationID string) (bool, error) {
+	if applicationID == "" {
+		return false, nil
+	}
+	var limited bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM weave_capability_application_quotas
+	 WHERE workspace_id=$1 AND application_id=$2)`, workspaceID, applicationID).Scan(&limited); err != nil {
+		return false, fmt.Errorf("read application admission limit: %w", err)
+	}
+	return limited, nil
+}
+
+func acquireQuotaSlot(ctx context.Context, tx pgx.Tx, scope quotaScope, holder slotHolder) error {
 	var retiredHeld bool
 	err := tx.QueryRow(ctx, `UPDATE weave_capability_quota_slots
-	 SET holder_kind=$2,holder_application_id=$3,holder_id=$4,held_at=now()
-	 WHERE workspace_id=$1 AND slot=(SELECT slot FROM weave_capability_quota_slots
-	  WHERE workspace_id=$1 AND holder_kind IS NULL AND NOT retired
+	 SET holder_kind=$3,holder_application_id=$4,holder_id=$5,held_at=now()
+	 WHERE workspace_id=$1 AND scope_application_id=$2 AND slot=(SELECT slot FROM weave_capability_quota_slots
+	  WHERE workspace_id=$1 AND scope_application_id=$2 AND holder_kind IS NULL AND NOT retired
 	  ORDER BY slot LIMIT 1 FOR UPDATE SKIP LOCKED)
 	 RETURNING EXISTS(SELECT 1 FROM weave_capability_quota_slots
-	  WHERE workspace_id=$1 AND retired AND holder_kind IS NOT NULL)`,
-		workspaceID, holder.Kind, holder.ApplicationID, holder.ID).Scan(&retiredHeld)
+	  WHERE workspace_id=$1 AND scope_application_id=$2 AND retired AND holder_kind IS NOT NULL)`,
+		scope.WorkspaceID, scope.ApplicationID, holder.Kind, holder.ApplicationID, holder.ID).Scan(&retiredHeld)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return errQuotaSlotsFull
+		return scope.full()
 	}
 	if err != nil {
 		return fmt.Errorf("take capability quota slot: %w", err)
@@ -58,51 +104,65 @@ func acquireCapabilityQuotaSlot(ctx context.Context, tx pgx.Tx, workspaceID stri
 	if !retiredHeld {
 		return nil
 	}
-	// A lowered quota still has work in flight above it, so a free slot below
+	// A lowered limit still has work in flight above it, so a free slot below
 	// the limit does not prove room. Until that work ends, admissions take the
-	// workspace lock and count every held slot, this one included.
-	quota, _, err := lockWorkspaceCapabilityQuota(ctx, tx, workspaceID)
-	if err != nil {
+	// scope's lock and count every held slot, this one included.
+	limit, _, exists, err := lockQuotaScope(ctx, tx, scope)
+	if err != nil || !exists {
 		return err
 	}
 	var held int
 	if err := tx.QueryRow(ctx, `SELECT count(*) FROM weave_capability_quota_slots
-	 WHERE workspace_id=$1 AND holder_kind IS NOT NULL`, workspaceID).Scan(&held); err != nil {
+	 WHERE workspace_id=$1 AND scope_application_id=$2 AND holder_kind IS NOT NULL`, scope.WorkspaceID, scope.ApplicationID).Scan(&held); err != nil {
 		return fmt.Errorf("count held capability quota slots: %w", err)
 	}
-	if held > quota.MaxActiveInvocations {
-		return errQuotaSlotsFull
+	if held > limit {
+		return scope.full()
 	}
 	return nil
 }
 
-// refreshQuotaSlots creates the workspace's slots on first use and frees the
-// slots of ended work, in a transaction of its own.
-func refreshQuotaSlots(ctx context.Context, pool *pgxpool.Pool, workspaceID string) error {
+// refreshQuotaSlots creates the slots of the workspace and, when it is
+// limited, of the application on first use, and frees the slots of ended
+// work, each scope in a transaction of its own.
+func refreshQuotaSlots(ctx context.Context, pool *pgxpool.Pool, workspaceID, applicationID string) error {
+	scopes := []quotaScope{{WorkspaceID: workspaceID}}
+	if applicationID != "" {
+		scopes = append(scopes, quotaScope{workspaceID, applicationID})
+	}
+	for _, scope := range scopes {
+		if err := refreshQuotaScope(ctx, pool, scope); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func refreshQuotaScope(ctx context.Context, pool *pgxpool.Pool, scope quotaScope) error {
 	tx, err := pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("begin capability quota slot refresh: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	if err := ensureQuotaSlots(ctx, tx, workspaceID); err != nil {
+	if err := ensureQuotaSlots(ctx, tx, scope); err != nil {
 		return err
 	}
-	if err := reclaimQuotaSlots(ctx, tx, workspaceID); err != nil {
+	if err := reclaimQuotaSlots(ctx, tx, scope); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
 }
 
-// reclaimQuotaSlots frees every slot whose holder is no longer in flight and
-// removes freed retired slots. The scan locks its candidates in slot order,
-// waiting for slots another admission or reclaim holds, so a refusal that
-// follows has seen every release in progress; the release then rechecks the
-// candidates in a new statement, so a holder that committed after the scan
-// began is seen and keeps its slot.
-func reclaimQuotaSlots(ctx context.Context, tx pgx.Tx, workspaceID string) error {
+// reclaimQuotaSlots frees every slot of scope whose holder is no longer in
+// flight and removes freed retired slots. The scan locks its candidates in
+// slot order, waiting for slots another admission or reclaim holds, so a
+// refusal that follows has seen every release in progress; the release then
+// rechecks the candidates in a new statement, so a holder that committed after
+// the scan began is seen and keeps its slot.
+func reclaimQuotaSlots(ctx context.Context, tx pgx.Tx, scope quotaScope) error {
 	rows, err := tx.Query(ctx, `SELECT s.slot FROM weave_capability_quota_slots s
-	 WHERE s.workspace_id=$1 AND s.holder_kind IS NOT NULL AND NOT (`+slotHolderLiveSQL+`)
-	 ORDER BY s.slot FOR UPDATE`, workspaceID)
+	 WHERE s.workspace_id=$1 AND s.scope_application_id=$2 AND s.holder_kind IS NOT NULL AND NOT (`+slotHolderLiveSQL+`)
+	 ORDER BY s.slot FOR UPDATE`, scope.WorkspaceID, scope.ApplicationID)
 	if err != nil {
 		return fmt.Errorf("scan capability quota slots: %w", err)
 	}
@@ -113,56 +173,91 @@ func reclaimQuotaSlots(ctx context.Context, tx pgx.Tx, workspaceID string) error
 	if len(slots) > 0 {
 		if _, err := tx.Exec(ctx, `UPDATE weave_capability_quota_slots s
 		 SET holder_kind=NULL,holder_application_id=NULL,holder_id=NULL,held_at=NULL
-		 WHERE s.workspace_id=$1 AND s.slot=ANY($2) AND NOT (`+slotHolderLiveSQL+`)`, workspaceID, slots); err != nil {
+		 WHERE s.workspace_id=$1 AND s.scope_application_id=$2 AND s.slot=ANY($3) AND NOT (`+slotHolderLiveSQL+`)`,
+			scope.WorkspaceID, scope.ApplicationID, slots); err != nil {
 			return fmt.Errorf("release capability quota slots: %w", err)
 		}
 	}
-	if _, err := tx.Exec(ctx, `DELETE FROM weave_capability_quota_slots WHERE workspace_id=$1 AND slot IN (
-	  SELECT slot FROM weave_capability_quota_slots WHERE workspace_id=$1 AND retired AND holder_kind IS NULL
-	  FOR UPDATE SKIP LOCKED)`, workspaceID); err != nil {
+	if _, err := tx.Exec(ctx, `DELETE FROM weave_capability_quota_slots WHERE workspace_id=$1 AND scope_application_id=$2 AND slot IN (
+	  SELECT slot FROM weave_capability_quota_slots WHERE workspace_id=$1 AND scope_application_id=$2 AND retired AND holder_kind IS NULL
+	  FOR UPDATE SKIP LOCKED)`, scope.WorkspaceID, scope.ApplicationID); err != nil {
 		return fmt.Errorf("remove retired capability quota slots: %w", err)
 	}
 	return nil
 }
 
-// ensureQuotaSlots creates the workspace's slots on first use. Initialization
-// runs once per workspace under the workspace quota lock and gives every
-// invocation already in flight its own slot; holders beyond the quota get
-// retired slots, which are counted until they end.
-func ensureQuotaSlots(ctx context.Context, tx pgx.Tx, workspaceID string) error {
+// ensureQuotaSlots creates the scope's slots on first use. Initialization runs
+// once per scope under the scope's lock and gives every invocation already in
+// flight in it its own slot; holders beyond the limit get retired slots, which
+// are counted until they end. An application without a limit has no slots.
+func ensureQuotaSlots(ctx context.Context, tx pgx.Tx, scope quotaScope) error {
 	var ready bool
-	err := tx.QueryRow(ctx, `SELECT slots_ready FROM weave_capability_quotas WHERE workspace_id=$1`, workspaceID).Scan(&ready)
+	readyQuery := `SELECT slots_ready FROM weave_capability_quotas WHERE workspace_id=$1 AND $2::text=''`
+	if scope.ApplicationID != "" {
+		readyQuery = `SELECT slots_ready FROM weave_capability_application_quotas WHERE workspace_id=$1 AND application_id=$2`
+	}
+	err := tx.QueryRow(ctx, readyQuery, scope.WorkspaceID, scope.ApplicationID).Scan(&ready)
 	if err == nil && ready {
 		return nil
 	}
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return fmt.Errorf("read capability quota slots: %w", err)
 	}
-	quota, ready, err := lockWorkspaceCapabilityQuota(ctx, tx, workspaceID)
-	if err != nil || ready {
+	limit, ready, exists, err := lockQuotaScope(ctx, tx, scope)
+	if err != nil || ready || !exists {
 		return err
 	}
-	if _, err := tx.Exec(ctx, `INSERT INTO weave_capability_quota_slots(workspace_id,slot)
-	 SELECT $1,n FROM generate_series(0,$2::int-1) AS n ON CONFLICT DO NOTHING`, workspaceID, quota.MaxActiveInvocations); err != nil {
+	if _, err := tx.Exec(ctx, `INSERT INTO weave_capability_quota_slots(workspace_id,scope_application_id,slot)
+	 SELECT $1,$2,n FROM generate_series(0,$3::int-1) AS n ON CONFLICT DO NOTHING`, scope.WorkspaceID, scope.ApplicationID, limit); err != nil {
 		return fmt.Errorf("create capability quota slots: %w", err)
 	}
+	// The scope's live work: the workspace's, or the application's alone.
+	filter := `($2::text='' OR i.application_id=$2)`
 	if _, err := tx.Exec(ctx, `WITH live AS (
-	   SELECT 'inline' AS kind,i.application_id,i.request_id AS id FROM (`+liveInlineInvocationsSQL+`) i
+	   SELECT 'inline' AS kind,i.application_id,i.request_id AS id FROM (`+liveInlineInvocationsSQL+`) i WHERE `+filter+`
 	   UNION ALL
-	   SELECT 'workflow',c.application_id,c.invocation_id FROM (`+liveWorkflowInvocationsSQL(`true`)+`) c
+	   SELECT 'workflow',c.application_id,c.invocation_id FROM (`+liveWorkflowInvocationsSQL(filter)+`) c
 	    WHERE `+notKernelClosed+`),
 	  numbered AS (SELECT kind,application_id,id,(row_number() OVER (ORDER BY kind,application_id,id))::int-1 AS n FROM live)
-	 INSERT INTO weave_capability_quota_slots(workspace_id,slot,retired,holder_kind,holder_application_id,holder_id,held_at)
-	 SELECT $1,n,n>=$2::int,kind,application_id,id,now() FROM numbered
-	 ON CONFLICT (workspace_id,slot) DO UPDATE SET retired=EXCLUDED.retired,holder_kind=EXCLUDED.holder_kind,
+	 INSERT INTO weave_capability_quota_slots(workspace_id,scope_application_id,slot,retired,holder_kind,holder_application_id,holder_id,held_at)
+	 SELECT $1,$2,n,n>=$3::int,kind,application_id,id,now() FROM numbered
+	 ON CONFLICT (workspace_id,scope_application_id,slot) DO UPDATE SET retired=EXCLUDED.retired,holder_kind=EXCLUDED.holder_kind,
 	  holder_application_id=EXCLUDED.holder_application_id,holder_id=EXCLUDED.holder_id,held_at=EXCLUDED.held_at`,
-		workspaceID, quota.MaxActiveInvocations); err != nil {
+		scope.WorkspaceID, scope.ApplicationID, limit); err != nil {
 		return fmt.Errorf("assign in-flight capability invocations to quota slots: %w", err)
 	}
-	if _, err := tx.Exec(ctx, `UPDATE weave_capability_quotas SET slots_ready=true WHERE workspace_id=$1`, workspaceID); err != nil {
+	markReady := `UPDATE weave_capability_quotas SET slots_ready=true WHERE workspace_id=$1 AND $2::text=''`
+	if scope.ApplicationID != "" {
+		markReady = `UPDATE weave_capability_application_quotas SET slots_ready=true WHERE workspace_id=$1 AND application_id=$2`
+	}
+	if _, err := tx.Exec(ctx, markReady, scope.WorkspaceID, scope.ApplicationID); err != nil {
 		return fmt.Errorf("mark capability quota slots ready: %w", err)
 	}
 	return nil
+}
+
+// lockQuotaScope serializes the scope's slot initialization, limit changes,
+// which create, retire and remove slots, and admissions while a lowered limit
+// still has work in flight above it. exists is false for an application whose
+// limit was removed.
+func lockQuotaScope(ctx context.Context, tx pgx.Tx, scope quotaScope) (limit int, ready, exists bool, err error) {
+	if scope.ApplicationID == "" {
+		quota, ready, err := lockWorkspaceCapabilityQuota(ctx, tx, scope.WorkspaceID)
+		return quota.MaxActiveInvocations, ready, err == nil, err
+	}
+	lock := invocationLockKey("capability-quota", scope.WorkspaceID, scope.ApplicationID, "active")
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, lock); err != nil {
+		return 0, false, false, fmt.Errorf("lock application capability quota: %w", err)
+	}
+	err = tx.QueryRow(ctx, `SELECT max_active_invocations,slots_ready FROM weave_capability_application_quotas
+	 WHERE workspace_id=$1 AND application_id=$2 FOR UPDATE`, scope.WorkspaceID, scope.ApplicationID).Scan(&limit, &ready)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, false, false, nil
+	}
+	if err != nil {
+		return 0, false, false, fmt.Errorf("read application capability quota: %w", err)
+	}
+	return limit, ready, true, nil
 }
 
 // lockWorkspaceCapabilityQuota serializes the workspace's slot initialization,
@@ -187,21 +282,21 @@ func lockWorkspaceCapabilityQuota(ctx context.Context, tx pgx.Tx, workspaceID st
 	return quota, ready, nil
 }
 
-// resizeQuotaSlots makes slots 0..max-1 the admissible ones after a quota
-// change on initialized slots: a raise adds slots and reopens retired ones
-// below the new limit; a cut retires the slots above it, removing free ones
-// at once and held ones when their holders end.
-func resizeQuotaSlots(ctx context.Context, tx pgx.Tx, workspaceID string, max int) error {
-	if _, err := tx.Exec(ctx, `INSERT INTO weave_capability_quota_slots(workspace_id,slot)
-	 SELECT $1,n FROM generate_series(0,$2::int-1) AS n ON CONFLICT DO NOTHING`, workspaceID, max); err != nil {
+// resizeQuotaSlots makes slots 0..max-1 of scope the admissible ones after a
+// limit change on initialized slots: a raise adds slots and reopens retired
+// ones below the new limit; a cut retires the slots above it, removing free
+// ones at once and held ones when their holders end.
+func resizeQuotaSlots(ctx context.Context, tx pgx.Tx, scope quotaScope, max int) error {
+	if _, err := tx.Exec(ctx, `INSERT INTO weave_capability_quota_slots(workspace_id,scope_application_id,slot)
+	 SELECT $1,$2,n FROM generate_series(0,$3::int-1) AS n ON CONFLICT DO NOTHING`, scope.WorkspaceID, scope.ApplicationID, max); err != nil {
 		return fmt.Errorf("add capability quota slots: %w", err)
 	}
-	if _, err := tx.Exec(ctx, `UPDATE weave_capability_quota_slots SET retired=(slot>=$2::int)
-	 WHERE workspace_id=$1 AND retired<>(slot>=$2::int)`, workspaceID, max); err != nil {
+	if _, err := tx.Exec(ctx, `UPDATE weave_capability_quota_slots SET retired=(slot>=$3::int)
+	 WHERE workspace_id=$1 AND scope_application_id=$2 AND retired<>(slot>=$3::int)`, scope.WorkspaceID, scope.ApplicationID, max); err != nil {
 		return fmt.Errorf("retire capability quota slots: %w", err)
 	}
 	if _, err := tx.Exec(ctx, `DELETE FROM weave_capability_quota_slots
-	 WHERE workspace_id=$1 AND retired AND holder_kind IS NULL`, workspaceID); err != nil {
+	 WHERE workspace_id=$1 AND scope_application_id=$2 AND retired AND holder_kind IS NULL`, scope.WorkspaceID, scope.ApplicationID); err != nil {
 		return fmt.Errorf("remove retired capability quota slots: %w", err)
 	}
 	return nil

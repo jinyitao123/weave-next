@@ -98,6 +98,11 @@ func (f *quotaSlotFixture) request() string {
 // insertInvocation records an in-flight workflow invocation for request
 // through exec.
 func (f *quotaSlotFixture) insertInvocation(exec func(string, ...any) error, request string) (string, error) {
+	return f.insertInvocationFor(exec, request, f.app, f.credential)
+}
+
+// insertInvocationFor records an in-flight workflow invocation of app.
+func (f *quotaSlotFixture) insertInvocationFor(exec func(string, ...any) error, request, app, credential string) (string, error) {
 	invocation := uuid.NewString()
 	if err := exec(`INSERT INTO weave_workflow_admission_requests(workspace_id,request_id,actor_subject,request_digest,request,target)
 	 VALUES($1,$2,'{"workspace_id":"quota-slots","user_id":"quota-user"}',repeat('a',64),'{}','{}')`, f.ws, "admission-"+request); err != nil {
@@ -107,7 +112,7 @@ func (f *quotaSlotFixture) insertInvocation(exec func(string, ...any) error, req
 	 workspace_id,application_id,request_id,invocation_id,credential_id,capability_id,revision,definition_hash,
 	 workflow_id,workflow_version,input,input_hash,admission_request_id,run_id,task_id)
 	 VALUES($1,$2,$3,$4,$5,'quota-cap',1,$6,'flow',1,'{}'::jsonb,repeat('a',64),$7,$8,$9)`,
-		f.ws, f.app, request, invocation, f.credential, f.hash, "admission-"+request, "run-"+request, "task-"+request); err != nil {
+		f.ws, app, request, invocation, credential, f.hash, "admission-"+request, "run-"+request, "task-"+request); err != nil {
 		return "", err
 	}
 	return invocation, nil
@@ -125,7 +130,7 @@ func (f *quotaSlotFixture) admit(ctx context.Context) (string, bool, error) {
 		if attempt == 1 {
 			return "", false, nil
 		}
-		if err := refreshQuotaSlots(ctx, f.pool, f.ws); err != nil {
+		if err := refreshQuotaSlots(ctx, f.pool, f.ws, ""); err != nil {
 			return "", false, err
 		}
 	}
@@ -207,7 +212,7 @@ func TestQuotaSlotsAdmitExactlyTheQuotaUnderContentionRealPG(t *testing.T) {
 	}
 	// An admission that rolls back, as a crashed process does, holds nothing.
 	f.end(admitted[2])
-	if err := refreshQuotaSlots(t.Context(), f.pool, f.ws); err != nil {
+	if err := refreshQuotaSlots(t.Context(), f.pool, f.ws, ""); err != nil {
 		t.Fatal(err)
 	}
 	tx, err := f.pool.Begin(t.Context())
@@ -245,7 +250,7 @@ func TestQuotaSlotsRefuseOnlyAfterReleasesInProgressRealPG(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = reclaim.Rollback(t.Context()) }()
-	if err := reclaimQuotaSlots(t.Context(), reclaim, f.ws); err != nil {
+	if err := reclaimQuotaSlots(t.Context(), reclaim, quotaScope{WorkspaceID: f.ws}); err != nil {
 		t.Fatal(err)
 	}
 	result := make(chan bool, 1)
@@ -338,7 +343,7 @@ func TestQuotaSlotsStartFromWorkAlreadyInFlightRealPG(t *testing.T) {
 	// The slot beyond the quota goes once all the earlier work has ended.
 	f.end(before[2])
 	f.end(before[3])
-	if err := refreshQuotaSlots(t.Context(), f.pool, f.ws); err != nil {
+	if err := refreshQuotaSlots(t.Context(), f.pool, f.ws, ""); err != nil {
 		t.Fatal(err)
 	}
 	var slots, retired int

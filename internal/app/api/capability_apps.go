@@ -65,6 +65,9 @@ type capabilityAppAction struct {
 	Revision     int64    `json:"revision,omitempty"`
 	Enabled      *bool    `json:"enabled,omitempty"`
 	MaxPriority  string   `json:"max_priority,omitempty"`
+	// MaxActiveInvocations sets the application's own admission limit; null
+	// or absent removes it.
+	MaxActiveInvocations *int `json:"max_active_invocations,omitempty"`
 }
 
 func (s *Server) handleCapabilityAppAction(c echo.Context) error {
@@ -78,6 +81,13 @@ func (s *Server) handleCapabilityAppAction(c echo.Context) error {
 	ctx, ws, actor := c.Request().Context(), getTenant(c), getUserID(c)
 	c.Response().Header().Set("Cache-Control", "no-store")
 	switch request.Action {
+	case "active_limit":
+		if request.AppID == "" {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": "application required"})
+		}
+		if err := s.CapabilityAccess.SetApplicationActiveLimit(ctx, ws, actor, request.AppID, request.MaxActiveInvocations); err != nil {
+			return capabilityHTTPError(c, err)
+		}
 	case "priority":
 		if request.AppID == "" {
 			return c.JSON(http.StatusBadRequest, map[string]string{"error": "application required"})

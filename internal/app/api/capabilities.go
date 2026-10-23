@@ -202,6 +202,8 @@ func capabilityHTTPError(c echo.Context, err error) error {
 		status, code = http.StatusNotFound, "invocation_not_found"
 	case errors.Is(err, appcapabilities.ErrInvocationTerminal):
 		status, code = http.StatusConflict, "invocation_terminal"
+	case errors.Is(err, appcapabilities.ErrApplicationQuotaExceeded):
+		status, code = http.StatusTooManyRequests, "application_quota_exceeded"
 	case errors.Is(err, appcapabilities.ErrQuotaExceeded):
 		status, code = http.StatusTooManyRequests, "capability_quota_exceeded"
 	}

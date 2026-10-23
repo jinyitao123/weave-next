@@ -27,6 +27,9 @@ type Application struct {
 	Name        string    `json:"name"`
 	Enabled     bool      `json:"enabled"`
 	CreatedAt   time.Time `json:"created_at"`
+	// MaxActiveInvocations is the application's own limit on invocations in
+	// flight; null leaves it limited by its workspace alone.
+	MaxActiveInvocations *int `json:"max_active_invocations"`
 }
 type ApplicationCredential struct {
 	ID        string     `json:"id"`
@@ -274,13 +277,15 @@ func (s *AccessStore) Snapshot(ctx context.Context, ws, actor string) (AccessSna
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	result := AccessSnapshot{Apps: []Application{}, Credentials: []ApplicationCredential{}, Grants: []VersionGrant{}, Versions: []VersionSummary{}}
-	rows, err := tx.Query(ctx, `SELECT id,name,enabled,created_at,max_priority FROM weave_capability_apps WHERE workspace_id=$1 ORDER BY created_at,id`, ws)
+	rows, err := tx.Query(ctx, `SELECT a.id,a.name,a.enabled,a.created_at,a.max_priority,q.max_active_invocations
+	 FROM weave_capability_apps a LEFT JOIN weave_capability_application_quotas q ON q.workspace_id=a.workspace_id AND q.application_id=a.id
+	 WHERE a.workspace_id=$1 ORDER BY a.created_at,a.id`, ws)
 	if err != nil {
 		return result, err
 	}
 	for rows.Next() {
 		var app Application
-		if err := rows.Scan(&app.ID, &app.Name, &app.Enabled, &app.CreatedAt, &app.MaxPriority); err != nil {
+		if err := rows.Scan(&app.ID, &app.Name, &app.Enabled, &app.CreatedAt, &app.MaxPriority, &app.MaxActiveInvocations); err != nil {
 			rows.Close()
 			return result, err
 		}

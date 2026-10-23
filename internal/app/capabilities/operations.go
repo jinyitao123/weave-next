@@ -40,7 +40,7 @@ func (s *PGStore) SetQuota(ctx context.Context, workspaceID string, q Quota) (Qu
 	}
 	// Slots not yet created are created from the new limit on first admission.
 	if ready {
-		if err := resizeQuotaSlots(ctx, tx, workspaceID, q.MaxActiveInvocations); err != nil {
+		if err := resizeQuotaSlots(ctx, tx, quotaScope{WorkspaceID: workspaceID}, q.MaxActiveInvocations); err != nil {
 			return Quota{}, err
 		}
 	}

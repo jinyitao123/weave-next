@@ -14,14 +14,17 @@ import (
 )
 
 var (
-	ErrNotFound                    = errors.New("capability not found")
-	ErrRevisionNotFound            = errors.New("published capability revision not found")
-	ErrIdempotencyConflict         = errors.New("invocation request id already used with different input")
-	ErrInvocationNotFound          = errors.New("invocation not found")
-	ErrInvocationTerminal          = errors.New("invocation is already terminal")
-	ErrClaimLost                   = errors.New("capability execution claim lost")
-	ErrRevisionConflict            = errors.New("published revision already exists with different content")
-	ErrQuotaExceeded               = errors.New("capability quota exceeded")
+	ErrNotFound            = errors.New("capability not found")
+	ErrRevisionNotFound    = errors.New("published capability revision not found")
+	ErrIdempotencyConflict = errors.New("invocation request id already used with different input")
+	ErrInvocationNotFound  = errors.New("invocation not found")
+	ErrInvocationTerminal  = errors.New("invocation is already terminal")
+	ErrClaimLost           = errors.New("capability execution claim lost")
+	ErrRevisionConflict    = errors.New("published revision already exists with different content")
+	ErrQuotaExceeded       = errors.New("capability quota exceeded")
+	// ErrApplicationQuotaExceeded refuses an admission its application's own
+	// limit has no room for, while the workspace may still have room.
+	ErrApplicationQuotaExceeded    = errors.New("capability application quota exceeded")
 	ErrInvocationIdentityConflict  = errors.New("invocation id is already used by another request")
 	ErrInvocationLaneActive        = errors.New("another invocation is active in this lane")
 	ErrWorkflowInvocationCancelled = errors.New("workflow invocation was cancelled before admission")

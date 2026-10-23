@@ -277,13 +277,16 @@ func (s *WorkflowInvocationService) Invoke(ctx context.Context, request Workflow
 		return WorkflowInvocation{}, false, errors.New("published workflow admission is unavailable")
 	}
 	stored, replayed, cancelled, err := s.reserve(ctx, request, record, admission, envelope, payload.Team.TeamID, workflowInput)
-	if errors.Is(err, errQuotaSlotsFull) {
+	if errors.Is(err, errQuotaSlotsFull) || errors.Is(err, errApplicationQuotaSlotsFull) {
 		// Free the slots of ended work in a transaction of its own, so the
 		// release survives this admission being refused, then try once more.
-		if err = refreshQuotaSlots(ctx, s.pool, request.WorkspaceID); err == nil {
+		if err = refreshQuotaSlots(ctx, s.pool, request.WorkspaceID, request.ApplicationID); err == nil {
 			stored, replayed, cancelled, err = s.reserve(ctx, request, record, admission, envelope, payload.Team.TeamID, workflowInput)
 		}
-		if errors.Is(err, errQuotaSlotsFull) {
+		switch {
+		case errors.Is(err, errApplicationQuotaSlotsFull):
+			err = ErrApplicationQuotaExceeded
+		case errors.Is(err, errQuotaSlotsFull):
 			err = ErrQuotaExceeded
 		}
 	}
