@@ -3,6 +3,7 @@ package teamrun
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"time"
 
@@ -57,6 +58,13 @@ func (r *WorkflowSerialRuntime) modelObserver(run TeamRun) workflow.ModelCallObs
 			if event.Phase == "cancelled" || event.TimeoutStage != "" {
 				fields["local_stopped"] = true
 				fields["upstream_cancel"] = "unknown"
+			}
+			// A stopping executor names why it cancelled the call.
+			switch cause := context.Cause(ctx); {
+			case errors.Is(cause, ErrShutdownDrainTimeout):
+				fields["cancel_cause"] = "shutdown_drain_timeout"
+			case errors.Is(cause, ErrExecutorShutdown):
+				fields["cancel_cause"] = "executor_shutdown"
 			}
 		}
 		// What the provider boundary observed about the last request: the

@@ -82,3 +82,40 @@ func TestModelActivityRecordsObservedProviderFactsRealPG(t *testing.T) {
 		}
 	}
 }
+
+// A model call cancelled by a stopping executor says which way it stopped:
+// without draining, or because the shutdown drain ran out (#107).
+func TestModelCancellationNamesAnExecutorShutdownRealPG(t *testing.T) {
+	h := newProcessNextHarness(t)
+	_, run := h.seedRunningWorkflowTaskBeforeAdmission(t, "model-activity-shutdown")
+	store := &PGActivityStore{Transactions: h.pool}
+	runtime := &WorkflowSerialRuntime{Activities: store}
+	for _, tc := range []struct {
+		call  string
+		cause error
+		want  any
+	}{
+		{"call-drain", ErrShutdownDrainTimeout, "shutdown_drain_timeout"},
+		{"call-stop", ErrExecutorShutdown, "executor_shutdown"},
+		{"call-caller", context.Canceled, nil},
+	} {
+		ctx, cancel := context.WithCancelCause(context.WithValue(context.Background(), runtimeActivityScopeKey{}, runtimeActivityScope{NodeID: "player", MemberID: "worker-1", MemberVersion: 1}))
+		cancel(tc.cause)
+		runtime.modelObserver(run)(ctx, workflow.ModelCallEvent{CallID: tc.call, Model: "frozen-model", Phase: "cancelled", ErrorClass: "context_cancelled"})
+	}
+	events, err := store.List(context.Background(), run.WorkspaceID, run.RunID, 10)
+	if err != nil || len(events) != 3 {
+		t.Fatalf("events=%d err=%v", len(events), err)
+	}
+	causes := map[string]any{}
+	for _, event := range events {
+		var detail map[string]any
+		if err := json.Unmarshal(event.Detail, &detail); err != nil {
+			t.Fatal(err)
+		}
+		causes[detail["model_call_id"].(string)] = detail["cancel_cause"]
+	}
+	if causes["call-drain"] != "shutdown_drain_timeout" || causes["call-stop"] != "executor_shutdown" || causes["call-caller"] != nil {
+		t.Fatalf("cancel causes = %v", causes)
+	}
+}

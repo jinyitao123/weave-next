@@ -239,14 +239,14 @@ func (workers *Workers) pooledLoop(stop context.Context, capacity int) {
 			draining = true
 			stopCh = nil
 			if workers.DrainTimeout <= 0 {
-				cancelExecutions(context.Canceled)
+				cancelExecutions(ErrExecutorShutdown)
 			} else {
 				drainTimer = time.NewTimer(workers.DrainTimeout)
 				drain = drainTimer.C
 			}
 		case <-drain:
 			drain = nil
-			cancelExecutions(context.Canceled)
+			cancelExecutions(ErrShutdownDrainTimeout)
 		case id := <-completed:
 			claim := active[id]
 			stopping := context.Cause(claim.ctx) != nil
@@ -332,6 +332,14 @@ func reconcileRenewal(active map[string]activeWorkflowClaim, renewed map[string]
 	}
 	return lost
 }
+
+// ErrExecutorShutdown and ErrShutdownDrainTimeout say why a stopping pooled
+// executor cancelled work in flight: it stops without draining, or its
+// WEAVE_TEAMRUN_DRAIN_TIMEOUT ran out. Both wrap context.Canceled.
+var (
+	ErrExecutorShutdown     = fmt.Errorf("executor stopped without draining work in flight: %w", context.Canceled)
+	ErrShutdownDrainTimeout = fmt.Errorf("executor shutdown drain ran out with work in flight: %w", context.Canceled)
+)
 
 func pooledExecution(ctx context.Context, execute func(context.Context) (RuntimeResult, error)) (RuntimeResult, error) {
 	result, err := execute(ctx)
