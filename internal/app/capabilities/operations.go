@@ -25,6 +25,24 @@ func (s *PGStore) SetQuota(ctx context.Context, workspaceID string, q Quota) (Qu
 	if q.MaxStepsPerInvocation < 1 || q.MaxStepsPerInvocation > 1000 || q.MaxActiveInvocations < 1 || q.MaxActiveInvocations > 20000 {
 		return Quota{}, capability.ErrInvalidDefinition
 	}
-	err := s.pool.QueryRow(ctx, `INSERT INTO weave_capability_quotas(workspace_id,max_steps_per_invocation,max_active_invocations) VALUES($1,$2,$3) ON CONFLICT(workspace_id) DO UPDATE SET max_steps_per_invocation=EXCLUDED.max_steps_per_invocation,max_active_invocations=EXCLUDED.max_active_invocations,updated_at=now() RETURNING max_steps_per_invocation,max_active_invocations`, workspaceID, q.MaxStepsPerInvocation, q.MaxActiveInvocations).Scan(&q.MaxStepsPerInvocation, &q.MaxActiveInvocations)
-	return q, err
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return Quota{}, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	_, ready, err := lockWorkspaceCapabilityQuota(ctx, tx, workspaceID)
+	if err != nil {
+		return Quota{}, err
+	}
+	err = tx.QueryRow(ctx, `UPDATE weave_capability_quotas SET max_steps_per_invocation=$2,max_active_invocations=$3,updated_at=now() WHERE workspace_id=$1 RETURNING max_steps_per_invocation,max_active_invocations`, workspaceID, q.MaxStepsPerInvocation, q.MaxActiveInvocations).Scan(&q.MaxStepsPerInvocation, &q.MaxActiveInvocations)
+	if err != nil {
+		return Quota{}, err
+	}
+	// Slots not yet created are created from the new limit on first admission.
+	if ready {
+		if err := resizeQuotaSlots(ctx, tx, workspaceID, q.MaxActiveInvocations); err != nil {
+			return Quota{}, err
+		}
+	}
+	return q, tx.Commit(ctx)
 }

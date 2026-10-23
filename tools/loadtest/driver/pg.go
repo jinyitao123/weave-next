@@ -176,8 +176,9 @@ type snapshot struct {
 }
 
 type statementCounter struct {
-	Query string
-	Calls int64
+	Query  string
+	Calls  int64
+	ExecMS float64
 }
 
 func (p *pgEnv) snapshot(ctx context.Context) (snapshot, error) {
@@ -223,7 +224,7 @@ func (p *pgEnv) snapshot(ctx context.Context) (snapshot, error) {
 
 // statementCounters reads pg_stat_statements for the test database only.
 func statementCounters(ctx context.Context, conn *pgx.Conn) (map[int64]statementCounter, error) {
-	rows, err := conn.Query(ctx, `SELECT queryid, max(query), sum(calls)::bigint FROM pg_stat_statements
+	rows, err := conn.Query(ctx, `SELECT queryid, max(query), sum(calls)::bigint, sum(total_exec_time)::float8 FROM pg_stat_statements
 		WHERE dbid = (SELECT oid FROM pg_database WHERE datname = current_database()) AND queryid IS NOT NULL GROUP BY queryid`)
 	if err != nil {
 		return nil, err
@@ -233,7 +234,7 @@ func statementCounters(ctx context.Context, conn *pgx.Conn) (map[int64]statement
 	for rows.Next() {
 		var id int64
 		var c statementCounter
-		if err := rows.Scan(&id, &c.Query, &c.Calls); err != nil {
+		if err := rows.Scan(&id, &c.Query, &c.Calls, &c.ExecMS); err != nil {
 			return nil, err
 		}
 		out[id] = c
@@ -274,14 +275,19 @@ type dbRates struct {
 	TotalRowWrites int64       `json:"row_writes"`
 	Rollbacks      int64       `json:"rollbacks"`
 	// Statements counts every statement call on the test database between the
-	// snapshots; TopStatements lists the most frequent fingerprints.
-	Statements    int64           `json:"statements,omitempty"`
-	TopStatements []statementRate `json:"top_statements,omitempty"`
+	// snapshots and StatementMS their execution time, lock waits included;
+	// TopStatements lists the most frequent fingerprints, SlowestStatements
+	// those with the most execution time.
+	Statements        int64           `json:"statements,omitempty"`
+	StatementMS       float64         `json:"statement_ms,omitempty"`
+	TopStatements     []statementRate `json:"top_statements,omitempty"`
+	SlowestStatements []statementRate `json:"slowest_statements,omitempty"`
 }
 
 type statementRate struct {
-	Calls int64  `json:"calls"`
-	Query string `json:"query"`
+	Calls  int64   `json:"calls"`
+	ExecMS float64 `json:"exec_ms"`
+	Query  string  `json:"query"`
 }
 
 func diffSnapshots(a, b snapshot) dbRates {
@@ -305,20 +311,25 @@ func diffSnapshots(a, b snapshot) dbRates {
 	}
 	r.Rollbacks = b.DB.XactRollback - a.DB.XactRollback
 	if b.Statements != nil {
+		var all []statementRate
 		for id, sb := range b.Statements {
 			calls := sb.Calls - a.Statements[id].Calls
 			if calls <= 0 {
 				continue
 			}
+			execMS := sb.ExecMS - a.Statements[id].ExecMS
 			r.Statements += calls
+			r.StatementMS += execMS
 			query := strings.Join(strings.Fields(sb.Query), " ")
 			if len(query) > 200 {
 				query = query[:200]
 			}
-			r.TopStatements = append(r.TopStatements, statementRate{Calls: calls, Query: query})
+			all = append(all, statementRate{Calls: calls, ExecMS: execMS, Query: query})
 		}
-		sort.Slice(r.TopStatements, func(i, j int) bool { return r.TopStatements[i].Calls > r.TopStatements[j].Calls })
-		r.TopStatements = r.TopStatements[:min(len(r.TopStatements), 40)]
+		sort.Slice(all, func(i, j int) bool { return all[i].Calls > all[j].Calls })
+		r.TopStatements = append([]statementRate(nil), all[:min(len(all), 40)]...)
+		sort.Slice(all, func(i, j int) bool { return all[i].ExecMS > all[j].ExecMS })
+		r.SlowestStatements = all[:min(len(all), 15)]
 	}
 	r.TotalRowWrites = (b.DB.TupInserted - a.DB.TupInserted) + (b.DB.TupUpdated - a.DB.TupUpdated) + (b.DB.TupDeleted - a.DB.TupDeleted)
 	r.WritesPerS = float64(r.TotalRowWrites) / sec

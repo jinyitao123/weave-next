@@ -277,6 +277,16 @@ func (s *WorkflowInvocationService) Invoke(ctx context.Context, request Workflow
 		return WorkflowInvocation{}, false, errors.New("published workflow admission is unavailable")
 	}
 	stored, replayed, cancelled, err := s.reserve(ctx, request, record, admission, envelope, payload.Team.TeamID, workflowInput)
+	if errors.Is(err, errQuotaSlotsFull) {
+		// Free the slots of ended work in a transaction of its own, so the
+		// release survives this admission being refused, then try once more.
+		if err = refreshQuotaSlots(ctx, s.pool, request.WorkspaceID); err == nil {
+			stored, replayed, cancelled, err = s.reserve(ctx, request, record, admission, envelope, payload.Team.TeamID, workflowInput)
+		}
+		if errors.Is(err, errQuotaSlotsFull) {
+			err = ErrQuotaExceeded
+		}
+	}
 	if err != nil {
 		return WorkflowInvocation{}, false, err
 	}
@@ -500,21 +510,11 @@ func (s *WorkflowInvocationService) reserve(
 	if err != nil {
 		return workflowInvocationRecord{}, false, false, fmt.Errorf("insert capability workflow invocation: %w", translateWorkflowInvocationInsertError(err))
 	}
-	// The workspace quota serializes admissions, so it is taken last: only the
-	// count and the commit run under it. Under READ COMMITTED the count starts
-	// after the lock is granted and therefore sees every admission committed by
-	// the previous holder; this admission excludes itself by request, and an
-	// exceeded quota rolls back everything above.
-	quota, err := lockWorkspaceCapabilityQuota(ctx, tx, request.WorkspaceID)
-	if err != nil {
+	// The quota slot is taken last, after the invocation row it is held for;
+	// an exceeded quota rolls back everything above, the slot included.
+	if err := acquireCapabilityQuotaSlot(ctx, tx, request.WorkspaceID,
+		slotHolder{Kind: slotHolderWorkflow, ApplicationID: desired.ApplicationID, ID: desired.InvocationID}); err != nil {
 		return workflowInvocationRecord{}, false, false, err
-	}
-	active, err := countActiveCapabilityInvocations(ctx, tx, request.WorkspaceID, request.ApplicationID, request.RequestID)
-	if err != nil {
-		return workflowInvocationRecord{}, false, false, err
-	}
-	if active >= quota.MaxActiveInvocations {
-		return workflowInvocationRecord{}, false, false, ErrQuotaExceeded
 	}
 	if err = tx.Commit(ctx); err != nil {
 		return workflowInvocationRecord{}, false, false, fmt.Errorf("commit capability workflow invocation: %w", err)

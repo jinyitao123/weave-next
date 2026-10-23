@@ -42,8 +42,38 @@ const legacyWorkflowLaneActiveSQL = `SELECT EXISTS(SELECT 1 FROM weave_capabilit
         WHEN 'running' THEN 'running' WHEN 'cancel_requested' THEN 'cancel_requested' ELSE q.status END)
         IN ('queued','running','parked','cancel_requested')))`
 
-// TestLiveAdmissionQueriesMatchLegacyRealPG checks the live-owner quota count
-// and lane check against the legacy queries over random owner states. The
+// countActiveCapabilityInvocations counts the in-flight invocations of the
+// workspace other than the given request, from the live sets the quota slots
+// are initialized from.
+func countActiveCapabilityInvocations(ctx context.Context, tx pgx.Tx, workspaceID, applicationID, requestID string) (int, error) {
+	var active int
+	err := tx.QueryRow(ctx, `SELECT
+	 (SELECT count(*) FROM (`+liveInlineInvocationsSQL+`) i WHERE NOT (i.application_id=$2 AND i.request_id=$3))
+	 +
+	 (SELECT count(*) FROM (`+liveWorkflowInvocationsSQL(`NOT (i.application_id=$2 AND i.request_id=$3)`)+`) c
+	  WHERE `+notKernelClosed+`)`, workspaceID, applicationID, requestID).Scan(&active)
+	return active, err
+}
+
+// slotHoldersLive counts the live slot holders among the invocations, inline
+// and workflow, of the workspace's given application and request.
+func slotHoldersLive(ctx context.Context, tx pgx.Tx, workspaceID, applicationID, requestID string) (int, error) {
+	var live int
+	err := tx.QueryRow(ctx, `SELECT count(*) FILTER (WHERE `+slotHolderLiveSQL+`) FROM (
+	  SELECT workspace_id,'inline' AS holder_kind,application_id AS holder_application_id,request_id AS holder_id
+	   FROM weave_capability_invocations WHERE workspace_id=$1 AND application_id=$2 AND request_id=$3
+	  UNION ALL
+	  SELECT workspace_id,'workflow',application_id,invocation_id
+	   FROM weave_capability_workflow_invocations WHERE workspace_id=$1 AND application_id=$2 AND request_id=$3) s`,
+		workspaceID, applicationID, requestID).Scan(&live)
+	return live, err
+}
+
+// TestLiveAdmissionQueriesMatchLegacyRealPG checks the live-owner quota count,
+// the quota slot holder liveness and the lane check against the legacy queries
+// over random owner states. A request names at most one inline and one
+// workflow invocation, so its holders are live exactly as often as the legacy
+// count drops when that request is excluded. The
 // tables carry only the queried columns and the production keys; every
 // workflow invocation has its admission request, as the foreign key requires,
 // and only capability tasks carry an invocation, as the task identity check
@@ -174,10 +204,21 @@ func TestLiveAdmissionQueriesMatchLegacyRealPG(t *testing.T) {
 		}
 		for _, ws := range workspaces {
 			for _, app := range apps {
+				var all int
+				if err := tx.QueryRow(ctx, legacyActiveCapabilityInvocationsSQL, ws, app, "unused").Scan(&all); err != nil {
+					t.Fatal(err)
+				}
 				for _, request := range []string{"r0", "r1", "r2", "r3", "unused"} {
 					var want int
 					if err := tx.QueryRow(ctx, legacyActiveCapabilityInvocationsSQL, ws, app, request).Scan(&want); err != nil {
 						t.Fatal(err)
+					}
+					live, err := slotHoldersLive(ctx, tx, ws, app, request)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if live != all-want {
+						t.Fatalf("round %d: live slot holders of %s/%s/%s = %d, legacy %d", round, ws, app, request, live, all-want)
 					}
 					got, err := countActiveCapabilityInvocations(ctx, tx, ws, app, request)
 					if err != nil {
