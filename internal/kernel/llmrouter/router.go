@@ -55,6 +55,9 @@ type ProviderConfig struct {
 	// address. Empty keeps the address providers had before paths were
 	// recorded (see frozen.ResolveProviderEndpoint).
 	ChatPath string `json:"chat_path,omitempty"`
+	// OutputLimitField selects the Chat Completions field the output limit is
+	// sent as: max_completion_tokens, or max_tokens when empty.
+	OutputLimitField string `json:"output_limit_field,omitempty"`
 }
 
 // Endpoint is the base URL and chat path this provider's requests go to.
@@ -117,6 +120,9 @@ var NewProviderClient = func(cfg ProviderConfig) contract.LLM {
 	}
 	if cfg.JSONObjectMode {
 		opts = append(opts, openai.WithJSONObjectMode())
+	}
+	if cfg.OutputLimitField == frozen.OutputLimitMaxCompletionTokens {
+		opts = append(opts, openai.WithMaxCompletionTokens())
 	}
 	if cfg.ThinkingDefaultMode != "" {
 		opts = append(opts, openai.WithThinkingControl(cfg.ThinkingDefaultMode, cfg.ThinkingDisableWithTools))

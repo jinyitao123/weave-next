@@ -101,6 +101,10 @@ func (s *Server) localRuntimeCredentials(ctx context.Context, runtimeID string, 
 	if provider.Protocol == llmrouter.ProtocolSystemOne {
 		return daemon.ProviderCredentials{}, errors.New("a systemone provider cannot serve a CLI runtime")
 	}
+	if provider.OutputLimitField == frozen.OutputLimitMaxCompletionTokens {
+		// The CLI chooses its own request fields; it cannot honor the declaration.
+		return daemon.ProviderCredentials{}, errors.New("a CLI runtime cannot send the provider's declared max_completion_tokens field")
+	}
 	if provider.ChatPath == "" {
 		// Saved before paths were recorded: the CLI keeps the base it always had.
 		return daemon.ProviderCredentials{BaseURL: provider.BaseURL, APIKey: provider.APIKey}, nil

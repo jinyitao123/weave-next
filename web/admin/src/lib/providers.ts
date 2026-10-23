@@ -5,6 +5,7 @@ import { api, apiResponse, ApiError, errorMessage } from './api'
 
 export type ProviderProtocol = 'openai' | 'systemone'
 export type ThinkingMode = '' | 'enabled' | 'disabled'
+export type OutputLimitField = '' | 'max_tokens' | 'max_completion_tokens'
 
 export interface Provider {
   id: string
@@ -20,6 +21,8 @@ export interface Provider {
   api_key?: string
   has_api_key?: boolean
   json_object_mode?: boolean
+  /** The field the output limit is sent as; empty means max_tokens. */
+  output_limit_field?: OutputLimitField
   thinking_default_mode?: ThinkingMode
   thinking_disable_with_tools?: boolean
   attempt_timeout_seconds?: number
@@ -46,6 +49,7 @@ export interface ProviderInput {
   protocol: ProviderProtocol
   models: string[]
   json_object_mode: boolean
+  output_limit_field: OutputLimitField
 }
 
 /** What happens to the stored key on save. A new provider only keeps or replaces. */
@@ -73,6 +77,7 @@ export function providerBody(input: ProviderInput, key: KeyChange): Record<strin
   // The tuning switches only mean something to the OpenAI-compatible client.
   const tuning = input.protocol === 'openai' ? {
     json_object_mode: input.json_object_mode,
+    output_limit_field: input.output_limit_field,
   } : {}
   return { ...base, ...tuning, ...keyPayload(key) }
 }
@@ -85,6 +90,7 @@ export function providerInput(provider?: Provider): ProviderInput {
     protocol: provider ? protocolOf(provider) : 'openai',
     models: provider?.models?.length ? [...provider.models] : [''],
     json_object_mode: Boolean(provider?.json_object_mode),
+    output_limit_field: provider?.output_limit_field ?? '',
   }
 }
 

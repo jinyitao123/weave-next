@@ -85,6 +85,18 @@ func TestDevelopmentModelProviderChatPathRealPG(t *testing.T) {
 		t.Fatalf("re-save = %d %v", status, kept)
 	}
 
+	// The output-limit field is declared explicitly, kept when omitted, and only
+	// max_tokens or max_completion_tokens are accepted.
+	if status, declared := call(http.MethodPut, "/v1/development/model-providers/glm", map[string]any{"name": "GLM renamed", "base_url": upstream.URL + "/api/paas/v4", "models": []string{"glm"}, "output_limit_field": "max_completion_tokens"}); status != http.StatusOK || declared["output_limit_field"] != "max_completion_tokens" {
+		t.Fatalf("declare output limit = %d %v", status, declared)
+	}
+	if status, kept := call(http.MethodPut, "/v1/development/model-providers/glm", map[string]any{"name": "GLM renamed", "base_url": upstream.URL + "/api/paas/v4", "models": []string{"glm"}}); status != http.StatusOK || kept["output_limit_field"] != "max_completion_tokens" {
+		t.Fatalf("omitted output limit = %d %v", status, kept)
+	}
+	if status, _ := call(http.MethodPut, "/v1/development/model-providers/glm", map[string]any{"name": "GLM renamed", "base_url": upstream.URL + "/api/paas/v4", "models": []string{"glm"}, "output_limit_field": "max_output_tokens"}); status != http.StatusUnprocessableEntity {
+		t.Fatalf("unknown output limit field = %d", status)
+	}
+
 	// A new provider without a path records the address its client always used.
 	status, fresh := call(http.MethodPut, "/v1/development/model-providers/sdk-style", map[string]any{"name": "SDK style", "base_url": "https://api.example.test/v1", "models": []string{"sdk-model"}})
 	if status != http.StatusOK || fresh["base_url"] != "https://api.example.test" || fresh["chat_path"] != "/v1/chat/completions" {

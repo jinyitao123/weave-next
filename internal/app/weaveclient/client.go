@@ -116,6 +116,8 @@ type ProviderAddRequest struct {
 	// ChatPath is appended to BaseURL to form the request address; omitted, the
 	// protocol's own path is used.
 	ChatPath string `json:"chat_path,omitempty"`
+	// OutputLimitField is max_tokens (default) or max_completion_tokens.
+	OutputLimitField string `json:"output_limit_field,omitempty"`
 	// Protocol is "openai" (default) or "systemone".
 	Protocol string `json:"protocol,omitempty"`
 	// APIKey is optional: nil keeps the stored key, a value replaces it and

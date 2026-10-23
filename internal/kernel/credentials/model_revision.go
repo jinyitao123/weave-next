@@ -205,6 +205,7 @@ func ResolveModelRevisionTx(
 		JSONObjectMode:   revision.JSONObjectMode,
 		Protocol:         frozenModelProtocol(revision.Protocol),
 		ChatPath:         revision.ChatPath,
+		OutputLimit:      revision.OutputLimit,
 		CredentialRef: frozen.CredentialReference{
 			SchemaVersion: frozen.FrozenSchemaVersion,
 			WorkspaceID:   workspaceID,

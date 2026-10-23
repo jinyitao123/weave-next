@@ -253,6 +253,9 @@ function ProviderDrawer({ provider, existing, editable, canDelete, onClose, onSa
         <summary>高级选项</summary>
         <div className="stack models__advanced">
           <Switch checked={form.json_object_mode} disabled={!editable} label="结构化输出使用 JSON object 模式" onChange={(value) => set('json_object_mode', value)} />
+          <div className="field"><span>输出上限字段</span><Select label="输出上限字段" value={form.output_limit_field || 'max_tokens'} disabled={!editable}
+            options={[{ value: 'max_tokens', label: 'max_tokens（默认）' }, { value: 'max_completion_tokens', label: 'max_completion_tokens（推理模型和部分兼容服务要求）' }]}
+            onChange={(field) => set('output_limit_field', field === 'max_tokens' ? '' : field as 'max_completion_tokens')} /></div>
         </div>
       </details> : null}
 

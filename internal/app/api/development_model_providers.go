@@ -35,6 +35,9 @@ type developmentModelProvider struct {
 	// were recorded; ChatURL is the address requests go to either way.
 	ChatPath string `json:"chat_path"`
 	ChatURL  string `json:"chat_url"`
+	// OutputLimitField is the Chat Completions field the output limit is sent
+	// as; empty means max_tokens.
+	OutputLimitField string `json:"output_limit_field"`
 	// Protocol is "openai" (chat completions) or "systemone" (decision models).
 	Protocol       string `json:"protocol"`
 	HasAPIKey      bool   `json:"has_api_key"`
@@ -51,7 +54,7 @@ func (s *Server) handleListDevelopmentModelProviders(c echo.Context) error {
 	if pool == nil {
 		return workflowError(c, http.StatusServiceUnavailable, "development_model_provider_unavailable", "组织模型暂时无法读取")
 	}
-	rows, err := pool.Query(c.Request().Context(), `SELECT id,name,base_url,models,source_kind,protocol,api_key_set,json_object_mode,chat_path FROM weave_provider_credentials
+	rows, err := pool.Query(c.Request().Context(), `SELECT id,name,base_url,models,source_kind,protocol,api_key_set,json_object_mode,chat_path,output_limit_field FROM weave_provider_credentials
 		WHERE workspace_id=$1 AND credential_scope='workspace_service' AND enabled AND revoked_at IS NULL AND deleted_at IS NULL AND latest_revision > 0
 		ORDER BY name,id`, getTenant(c))
 	if err != nil {
@@ -62,7 +65,7 @@ func (s *Server) handleListDevelopmentModelProviders(c echo.Context) error {
 	for rows.Next() {
 		var provider developmentModelProvider
 		var source string
-		if err := rows.Scan(&provider.ID, &provider.Name, &provider.BaseURL, &provider.Models, &source, &provider.Protocol, &provider.HasAPIKey, &provider.JSONObjectMode, &provider.ChatPath); err != nil {
+		if err := rows.Scan(&provider.ID, &provider.Name, &provider.BaseURL, &provider.Models, &source, &provider.Protocol, &provider.HasAPIKey, &provider.JSONObjectMode, &provider.ChatPath, &provider.OutputLimitField); err != nil {
 			return workflowStoreFailure(c, err)
 		}
 		provider.ChatURL = frozen.ResolveProviderEndpoint(provider.Protocol, provider.BaseURL, provider.ChatPath).URL()
@@ -98,6 +101,9 @@ func (s *Server) handlePutDevelopmentModelProvider(c echo.Context) error {
 		APIKey         *string  `json:"api_key"`
 		Models         []string `json:"models"`
 		JSONObjectMode *bool    `json:"json_object_mode"`
+		// OutputLimitField is max_tokens or max_completion_tokens; omitted keeps
+		// the current declaration and "" clears it.
+		OutputLimitField *string `json:"output_limit_field"`
 	}
 	if err := decodeWorkflowBody(c, &request); err != nil {
 		return workflowSchemaError(c)
@@ -155,10 +161,10 @@ func (s *Server) handlePutDevelopmentModelProvider(c echo.Context) error {
 	// An omitted protocol or output mode keeps the provider's current one, as
 	// an omitted key does; a new provider starts from OpenAI chat with strict
 	// JSON Schema output.
-	var scope, source, currentProtocol, currentChatPath string
+	var scope, source, currentProtocol, currentChatPath, currentOutputLimit string
 	var currentJSONObjectMode bool
-	err = tx.QueryRow(ctx, `SELECT credential_scope,source_kind,protocol,json_object_mode,chat_path FROM weave_provider_credentials WHERE workspace_id=$1 AND id=$2`,
-		tenant, id).Scan(&scope, &source, &currentProtocol, &currentJSONObjectMode, &currentChatPath)
+	err = tx.QueryRow(ctx, `SELECT credential_scope,source_kind,protocol,json_object_mode,chat_path,output_limit_field FROM weave_provider_credentials WHERE workspace_id=$1 AND id=$2`,
+		tenant, id).Scan(&scope, &source, &currentProtocol, &currentJSONObjectMode, &currentChatPath, &currentOutputLimit)
 	existing := err == nil
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
@@ -184,6 +190,16 @@ func (s *Server) handlePutDevelopmentModelProvider(c echo.Context) error {
 	jsonObjectMode := currentJSONObjectMode
 	if request.JSONObjectMode != nil {
 		jsonObjectMode = *request.JSONObjectMode
+	}
+	outputLimit := currentOutputLimit
+	if request.OutputLimitField != nil {
+		outputLimit = strings.TrimSpace(*request.OutputLimitField)
+	}
+	if protocol == llmrouter.ProtocolSystemOne {
+		outputLimit = "" // only the OpenAI-compatible client has a field to choose
+	}
+	if err := frozen.ValidateOutputLimitField("", outputLimit); err != nil {
+		return invalid("输出上限字段只能是 max_tokens 或 max_completion_tokens")
 	}
 	chatPath := request.ChatPath
 	if chatPath == nil && currentChatPath != "" {
@@ -224,7 +240,7 @@ func (s *Server) handlePutDevelopmentModelProvider(c echo.Context) error {
 	}
 	result, err := s.Credentials.UpsertRevisionTx(authorized, tx, tenant, llmrouter.ProviderConfig{
 		CredentialScope: frozen.CredentialScopeWorkspaceService, CredentialServiceID: service,
-		ID: id, Name: name, BaseURL: endpoint.BaseURL, ChatPath: endpoint.ChatPath, Protocol: protocol, APIKey: key, Models: models,
+		ID: id, Name: name, BaseURL: endpoint.BaseURL, ChatPath: endpoint.ChatPath, OutputLimitField: outputLimit, Protocol: protocol, APIKey: key, Models: models,
 		JSONObjectMode: jsonObjectMode,
 	}, options...)
 	if err != nil {
@@ -248,6 +264,7 @@ func (s *Server) handlePutDevelopmentModelProvider(c echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]any{
 		"id": id, "name": name, "protocol": protocol, "models": models, "json_object_mode": jsonObjectMode,
 		"base_url": endpoint.BaseURL, "chat_path": endpoint.ChatPath, "chat_url": frozen.ResolveProviderEndpoint(protocol, endpoint.BaseURL, endpoint.ChatPath).URL(),
-		"key_replaced": key != "", "key_cleared": clearKey, "has_api_key": result.Head.APIKeySet,
+		"output_limit_field": outputLimit,
+		"key_replaced":       key != "", "key_cleared": clearKey, "has_api_key": result.Head.APIKeySet,
 	})
 }

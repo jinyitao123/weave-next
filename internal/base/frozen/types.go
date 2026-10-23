@@ -253,6 +253,7 @@ type FrozenModelBinding struct {
 	// ModelProtocolSystemOne selects the System One decision protocol.
 	Protocol      string              `json:"protocol,omitempty"`
 	ChatPath      string              `json:"chat_path,omitempty"` // appended to BaseURL; empty keeps the pre-chat-path address and hash
+	OutputLimit   string              `json:"output_limit_field,omitempty"`
 	CredentialRef CredentialReference `json:"credential_ref"`
 	ContentHash   string              `json:"content_hash"`
 }

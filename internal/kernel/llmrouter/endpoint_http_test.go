@@ -2,11 +2,14 @@ package llmrouter
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/jinyitao123/loom/contract"
 )
 
 // pathRecorder answers every chat request with a minimal completion and keeps
@@ -100,5 +103,27 @@ func TestProbeNamesWhatToCheck(t *testing.T) {
 	unreachable := ProviderConfig{ID: "p", BaseURL: "http://127.0.0.1:1", ChatPath: "/v1/chat/completions", Models: []string{"m"}, Protocol: ProtocolOpenAI}
 	if result := ProbeProvider(context.Background(), unreachable, "m", 5*time.Second); result.Category != ProbeUnreachable {
 		t.Errorf("closed port: probe = %+v", result)
+	}
+}
+
+func TestDeclaredOutputLimitFieldReachesTheWire(t *testing.T) {
+	var fields []map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		fields = append(fields, body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"c","object":"chat.completion","model":"m","choices":[{"index":0,"message":{"role":"assistant","content":"pong"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`))
+	}))
+	defer server.Close()
+	for _, declared := range []string{"", "max_completion_tokens"} {
+		cfg := ProviderConfig{ID: "p", BaseURL: server.URL, ChatPath: "/v1/chat/completions", Models: []string{"m"}, Protocol: ProtocolOpenAI, OutputLimitField: declared}
+		if _, err := NewProviderClient(cfg).Chat(context.Background(), contract.ChatRequest{Model: "m", Messages: []contract.Message{{Role: "user", Content: "ping"}}, MaxTokens: 64}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(fields) != 2 || fields[0]["max_tokens"] != float64(64) || fields[0]["max_completion_tokens"] != nil ||
+		fields[1]["max_completion_tokens"] != float64(64) || fields[1]["max_tokens"] != nil {
+		t.Fatalf("request bodies = %v", fields)
 	}
 }

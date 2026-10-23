@@ -64,6 +64,16 @@ describe('models page', () => {
     expect(saved(calls)[0].body).toMatchObject({ base_url: 'https://open.example.test', chat_path: '/v1/chat/completions' })
   })
 
+  it('declares the output-limit field an OpenAI-compatible provider sends', async () => {
+    const calls = serve()
+    render(<ModelsPage session={admin} />)
+    await open(/^deepseek/)
+    choose('输出上限字段', 'max_completion_tokens（推理模型和部分兼容服务要求）')
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+    await waitFor(() => expect(saved(calls)).toHaveLength(1))
+    expect(saved(calls)[0].body).toMatchObject({ output_limit_field: 'max_completion_tokens' })
+  })
+
   it('checks a saved provider and says what to check next', async () => {
     const calls = serve()
     render(<ModelsPage session={admin} />)
@@ -110,7 +120,7 @@ describe('models page', () => {
     await waitFor(() => expect(saved(calls)).toHaveLength(1))
     expect(saved(calls)[0].body).toEqual({
       name: 'jev', base_url: 'http://127.0.0.1:9000', protocol: 'openai', models: ['typesafe-jev', 'typesafe-jev-fast'],
-      json_object_mode: false,
+      json_object_mode: false, output_limit_field: '',
     })
     await waitFor(() => expect(reads(calls, '/v1/development/model-catalog')).toBeGreaterThan(before))
     expect(screen.queryByRole('dialog')).toBeNull()

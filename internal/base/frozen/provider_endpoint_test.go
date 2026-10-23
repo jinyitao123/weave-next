@@ -139,3 +139,35 @@ func TestFrozenModelBindingHashCoversTheChatPathOnlyWhenRecorded(t *testing.T) {
 		t.Fatal("a recorded chat path is not part of the binding hash")
 	}
 }
+
+func TestOutputLimitFieldIsDeclaredOnlyForChatCompletions(t *testing.T) {
+	for _, field := range []string{"", OutputLimitMaxTokens, OutputLimitMaxCompletionTokens} {
+		if err := ValidateOutputLimitField("", field); err != nil {
+			t.Fatalf("openai %q refused: %v", field, err)
+		}
+	}
+	if err := ValidateOutputLimitField(ModelProtocolSystemOne, OutputLimitMaxCompletionTokens); err == nil {
+		t.Fatal("systemone accepted an output-limit field")
+	}
+	if err := ValidateOutputLimitField("", "max_output_tokens"); err == nil {
+		t.Fatal("an unknown output-limit field was accepted")
+	}
+	binding := FrozenModelBinding{
+		SchemaVersion: FrozenSchemaVersion, WorkspaceID: "ws", ProviderID: "p", ProviderRevision: 1, ModelID: "m",
+		BaseURL:       "https://api.example.test",
+		CredentialRef: CredentialReference{SchemaVersion: FrozenSchemaVersion, WorkspaceID: "ws", Scope: CredentialScopeWorkspaceService, ServiceID: "svc", Kind: CredentialProviderAPIKey, ResourceID: "p", Slot: "api_key"},
+	}
+	plain, err := HashDTO(binding, PreorderFrozenModelBinding)
+	if err != nil {
+		t.Fatal(err)
+	}
+	binding.OutputLimit = OutputLimitMaxCompletionTokens
+	declared, err := HashDTO(binding, PreorderFrozenModelBinding)
+	if err != nil || declared == plain {
+		t.Fatalf("declared output-limit field is not part of the binding hash: %v", err)
+	}
+	binding.Protocol = ModelProtocolSystemOne
+	if _, err := HashDTO(binding, PreorderFrozenModelBinding); err == nil {
+		t.Fatal("a systemone binding with an output-limit field was frozen")
+	}
+}
