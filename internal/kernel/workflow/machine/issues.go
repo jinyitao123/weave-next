@@ -98,6 +98,7 @@ const (
 	CodeJSONPointerUnprovable             = "workflow_json_pointer_unprovable"
 	CodeValueSourceUnavailable            = "workflow_value_source_unavailable"
 	CodeValueNotDominating                = "workflow_value_not_dominating"
+	CodeValueUnavailableOnRoute           = "workflow_value_unavailable_on_route"
 	CodeValueLoopScopeInvalid             = "workflow_value_loop_scope_invalid"
 	CodeValueIterationRequired            = "workflow_value_iteration_required"
 	CodeValueIterationForbidden           = "workflow_value_iteration_forbidden"

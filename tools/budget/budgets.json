@@ -1783,6 +1783,22 @@
         "lines_added": 40,
         "production_lines_added": 1
       }
+    },
+    {
+      "date": "2026-10-23",
+      "reason": "Value availability on failure and timeout routes (#104): a reference must have its producer's output on every forward path, not only the producer's dominance, with regression tests and a dominance-equivalence check",
+      "record": "docs/治理/2026-10-23-取值检查失败与超时路由.md",
+      "growth": {
+        "lines": 184,
+        "production_lines": 57
+      },
+      "deletion_trigger": "Delete buildOutputAvailability and requireOutput if the machine stops accepting failure and timeout routes, or if value availability is folded into the dominator analysis itself.",
+      "kernel": {
+        "previous_lines": 106952,
+        "previous_production_lines": 81504,
+        "lines_added": 184,
+        "production_lines_added": 57
+      }
     }
   ],
   "migration_targets": {
@@ -1826,8 +1842,8 @@
     ]
   },
   "kernel": {
-    "lines": 106952,
-    "production_lines": 81504,
+    "lines": 107136,
+    "production_lines": 81561,
     "packages": 44,
     "external_dependencies": 5,
     "allowed_dependencies": [

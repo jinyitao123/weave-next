@@ -18,6 +18,7 @@ type valueValidationStats struct {
 type valueValidator struct {
 	graph       GraphDefinition
 	analysis    controlFlowAnalysis
+	available   []nodeBitSet
 	loops       naturalLoopFacts
 	nodeOutputs []parsedOutputContract
 	nodeHasOut  []bool
@@ -46,6 +47,7 @@ func newValueValidator(graph GraphDefinition, report *Report, stats *valueValida
 	validator := &valueValidator{
 		graph:       graph,
 		analysis:    analysis,
+		available:   buildOutputAvailability(graph, analysis),
 		loops:       buildNaturalLoopFacts(graph, analysis),
 		nodeOutputs: make([]parsedOutputContract, len(graph.Nodes)),
 		nodeHasOut:  make([]bool, len(graph.Nodes)),
@@ -335,13 +337,16 @@ func (validator *valueValidator) validateNodeOutputScope(path string, ref ValueR
 					validator.add(use.ownerNodeID, joinPath(path, "node_id"), CodeValueNotDominating, "current_iteration producer must strictly dominate its consumer")
 					return false
 				}
-				return true
+				return validator.requireOutput(path, use, producer, consumer)
 			case IterationPrevious:
 				if ref.Default == nil {
 					validator.add(use.ownerNodeID, joinPath(path, "default"), CodeValuePreviousDefaultRequired, "previous_iteration requires a first-iteration literal default")
 				}
 				if !validator.dominates(producer, loop.latch) {
 					validator.add(use.ownerNodeID, joinPath(path, "node_id"), CodeValueNotDominating, "previous_iteration producer must dominate the loop latch")
+					return false
+				}
+				if producer != loop.latch && !validator.requireOutput(path, use, producer, loop.latch) {
 					return false
 				}
 				return ref.Default != nil
@@ -371,7 +376,7 @@ func (validator *valueValidator) validateNodeOutputScope(path string, ref ValueR
 			validator.add(use.ownerNodeID, joinPath(path, "node_id"), CodeValueNotDominating, "loop invariant producer must strictly dominate the header")
 			return false
 		}
-		return true
+		return validator.requireOutput(path, use, producer, loop.header)
 	}
 
 	if producerLoop >= 0 {
@@ -394,7 +399,18 @@ func (validator *valueValidator) validateNodeOutputScope(path string, ref ValueR
 		validator.add(use.ownerNodeID, joinPath(path, "node_id"), CodeValueNotDominating, "producer must strictly dominate its consumer")
 		return false
 	}
-	return true
+	return validator.requireOutput(path, use, producer, consumer)
+}
+
+// requireOutput refuses a reference whose producer, though it runs on every
+// path to the consumer, leaves by a failure or timeout route on one of them:
+// there it produced no output, and the read would fail at run time.
+func (validator *valueValidator) requireOutput(path string, use valueUse, producer, consumer int) bool {
+	if consumer >= 0 && consumer < len(validator.available) && validator.available[consumer].contains(producer) {
+		return true
+	}
+	validator.add(use.ownerNodeID, joinPath(path, "node_id"), CodeValueUnavailableOnRoute, "producer has no output on a failure or timeout route that reaches its consumer")
+	return false
 }
 
 func (validator *valueValidator) loopOwner(node int) int {

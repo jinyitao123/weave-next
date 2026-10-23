@@ -120,6 +120,46 @@ func buildControlFlowAnalysis(graph GraphDefinition) controlFlowAnalysis {
 	return analysis
 }
 
+// routeCarriesOutput says whether taking a route leaves its source's output
+// behind. A failure route leaves after the source failed and a timeout route
+// after its wait expired; neither source produced anything.
+func routeCarriesOutput(route EdgeRoute) bool {
+	return route != RouteFailure && route != RouteTimeout
+}
+
+// buildOutputAvailability lists, per node, the nodes whose output exists on
+// every forward path to it. Without failure or timeout routes this equals the
+// node's strict dominators; those routes only remove their source.
+func buildOutputAvailability(graph GraphDefinition, analysis controlFlowAnalysis) []nodeBitSet {
+	nodeCount := len(graph.Nodes)
+	if !analysis.forwardAcyclic || nodeCount == 0 {
+		return nil
+	}
+	available := make([]nodeBitSet, nodeCount)
+	entry := analysis.nodeIndex[graph.EntryNodeID]
+	for _, nodeIndex := range analysis.topologicalOrder {
+		var set nodeBitSet
+		for _, edgeIndex := range analysis.forwardIncoming[nodeIndex] {
+			edge := graph.Edges[edgeIndex]
+			from := analysis.nodeIndex[edge.FromNodeID]
+			carried := available[from].clone()
+			if routeCarriesOutput(edge.Route) {
+				carried.add(from)
+			}
+			if set == nil {
+				set = carried
+			} else {
+				set.intersect(carried)
+			}
+		}
+		if set == nil || nodeIndex == entry {
+			set = newNodeBitSet(nodeCount)
+		}
+		available[nodeIndex] = set
+	}
+	return available
+}
+
 func (analysis controlFlowAnalysis) dominates(dominator, node int) bool {
 	return node >= 0 && node < len(analysis.dominators) &&
 		dominator >= 0 && dominator < len(analysis.dominators) &&
