@@ -10,10 +10,6 @@ import (
 // ErrTeamNotFound indicates that a workspace-scoped team does not exist.
 var ErrTeamNotFound = errors.New("team not found")
 
-// ErrTeamArchiveBlocked means the team still owns Projects or active
-// collaboration bindings and cannot be archived.
-var ErrTeamArchiveBlocked = errors.New("team archive blocked by projects")
-
 // ErrArchivedTeamImmutable prevents audit history from being rewritten after
 // a team leaves the active organization directory.
 var ErrArchivedTeamImmutable = errors.New("archived team is immutable")

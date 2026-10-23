@@ -1592,6 +1592,28 @@
         "production_lines_added": -627,
         "previous_packages": 23
       }
+    },
+    {
+      "date": "2026-10-22",
+      "reason": "删除项目（B12）",
+      "record": "docs/治理/2026-10-22-退役产品面删除登记.md",
+      "growth": {
+        "lines": 0,
+        "production_lines": 0
+      },
+      "kernel": {
+        "previous_lines": 109779,
+        "previous_production_lines": 83794,
+        "lines_added": -4,
+        "production_lines_added": -4
+      },
+      "app": {
+        "previous_lines": 85291,
+        "previous_production_lines": 54627,
+        "lines_added": -481,
+        "production_lines_added": -468,
+        "previous_packages": 22
+      }
     }
   ],
   "migration_targets": {
@@ -1635,8 +1657,8 @@
     ]
   },
   "kernel": {
-    "lines": 109779,
-    "production_lines": 83794,
+    "lines": 109775,
+    "production_lines": 83790,
     "packages": 45,
     "external_dependencies": 5,
     "allowed_dependencies": [
@@ -1655,9 +1677,9 @@
     "allowed_dependencies": []
   },
   "app": {
-    "lines": 85291,
-    "production_lines": 54627,
-    "packages": 22,
+    "lines": 84810,
+    "production_lines": 54159,
+    "packages": 21,
     "external_dependencies": 6,
     "allowed_dependencies": [
       "github.com/golang-jwt/jwt/v5",

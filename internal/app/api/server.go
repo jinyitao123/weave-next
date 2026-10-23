@@ -21,7 +21,6 @@ import (
 	"github.com/jinyitao123/weave/internal/app/attachments"
 	appcapabilities "github.com/jinyitao123/weave/internal/app/capabilities"
 	"github.com/jinyitao123/weave/internal/app/deliveryverify"
-	"github.com/jinyitao123/weave/internal/app/projects"
 	"github.com/jinyitao123/weave/internal/app/teamconstruction"
 	"github.com/jinyitao123/weave/internal/app/users"
 	"github.com/jinyitao123/weave/internal/base/deliverable"
@@ -86,7 +85,6 @@ type Server struct {
 	UserStore                 *users.Store                        // nil if PG pool unavailable
 	KeyStore                  *apikeys.Store                      // nil if PG pool unavailable
 	OrgStore                  *orgstore.Store                     // nil if PG pool unavailable
-	Projects                  *projects.Store                     // nil if PG pool unavailable
 	Attachments               *attachments.Store                  // nil if PG pool unavailable
 	WorkflowArtifacts         *workflow.ArtifactStore
 	Workflow                  *workflowcatalog.Store               // nil if PG pool unavailable

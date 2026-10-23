@@ -15,7 +15,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jinyitao123/loom"
 	"github.com/jinyitao123/weave/internal/app/deliveryverify"
-	"github.com/jinyitao123/weave/internal/app/projects"
 	"github.com/jinyitao123/weave/internal/app/teamconstruction"
 	"github.com/jinyitao123/weave/internal/app/workflowcatalog"
 	"github.com/jinyitao123/weave/internal/base/db"
@@ -91,7 +90,7 @@ func newTeamDispatchTestServerWithGraph(t *testing.T, graph json.RawMessage, bun
 		t.Fatal(err)
 	}
 	server := &Server{Store: teamDispatchPoolStore{pool: pool}, OrgStore: orgstore.NewStore(pool), Registry: agentcatalog.New(pool),
-		Workflow: workflowcatalog.New(pool, nil, workflow.NewArtifactStore(pool, nil)), WorkflowArtifacts: workflow.NewArtifactStore(pool, nil), Deliverables: deliveryverify.NewStore(pool), ScheduleTransactions: pool, Snapshots: snapshot.NewStore(pool), Tasks: taskqueue.New(pool, nil, time.Minute), Projects: projects.New(pool, nil)}
+		Workflow: workflowcatalog.New(pool, nil, workflow.NewArtifactStore(pool, nil)), WorkflowArtifacts: workflow.NewArtifactStore(pool, nil), Deliverables: deliveryverify.NewStore(pool), ScheduleTransactions: pool, Snapshots: snapshot.NewStore(pool), Tasks: taskqueue.New(pool, nil, time.Minute)}
 	server.KernelPublication = openAPIKernelPublication(t, ctx, pool, teamconstruction.NewPublicationAuthority(pool, nil))
 	return server, pool
 }
@@ -135,29 +134,16 @@ func TestTeamWorkflowDispatchKeepsInputIdentityAndAdmissionRealPG(t *testing.T) 
 	if err != nil || json.Unmarshal(task.Payload, &taskText) != nil || taskText != input.Task || task.RunSnapshotID != first.RunID {
 		t.Fatalf("task lost original input or run identity: %+v %v", task, err)
 	}
-	// A Workbench conversation is bound to its owning project, and an identical
-	// replay must keep that identity.
-	if _, err := pool.Exec(ctx, `
- INSERT INTO weave_projects(id,workspace_id,avatar_id,name,team_id) VALUES('project','ws','lead','Project','team');
- INSERT INTO weave_conversations(id,workspace_id,agent_id,user_id,project_id) VALUES('conversation','ws','lead','user','project');
- `); err != nil {
-		t.Fatal(err)
-	}
+	// Projects and conversations were retired: naming one refuses the dispatch
+	// before anything is admitted.
 	conversationInput := input
 	conversationInput.ConversationID = "conversation"
-	conversationInput.ProjectID = "project"
 	conversationInput.ClientRequestID = "00000000-0000-0000-0000-000000000003"
-	attributed := dispatch(conversationInput, http.StatusCreated)
-	if attributed.ProjectID != "project" {
-		t.Fatalf("inferred project lost: %+v", attributed)
-	}
-	if replay := dispatch(conversationInput, http.StatusOK); replay != attributed {
-		t.Fatalf("conversation replay changed: %+v", replay)
-	}
-	mismatched := conversationInput
-	mismatched.ClientRequestID = "00000000-0000-0000-0000-000000000004"
-	mismatched.ProjectID = "different-project"
-	dispatch(mismatched, http.StatusConflict)
+	dispatch(conversationInput, http.StatusNotFound)
+	projectInput := input
+	projectInput.ProjectID = "project"
+	projectInput.ClientRequestID = "00000000-0000-0000-0000-000000000004"
+	dispatch(projectInput, http.StatusNotFound)
 	changed := input
 	changed.Task = "changed"
 	dispatch(changed, http.StatusConflict)
@@ -168,7 +154,7 @@ func TestTeamWorkflowDispatchKeepsInputIdentityAndAdmissionRealPG(t *testing.T) 
 	input.ClientRequestID = "00000000-0000-0000-0000-000000000002"
 	dispatch(input, http.StatusConflict)
 	var count int
-	if err := pool.QueryRow(ctx, `SELECT count(*) FROM weave_task_queue`).Scan(&count); err != nil || count != 2 {
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM weave_task_queue`).Scan(&count); err != nil || count != 1 {
 		t.Fatalf("replay or rejected admission queued more work: %d %v", count, err)
 	}
 }

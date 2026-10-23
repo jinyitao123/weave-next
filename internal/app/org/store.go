@@ -346,9 +346,6 @@ func (s *Store) ArchiveTeam(ctx context.Context, workspaceID, id string) error {
 	if status == "archived" {
 		return tx.Commit(ctx)
 	}
-	if err := ensureTeamArchiveAllowed(ctx, tx, workspaceID, id); err != nil {
-		return err
-	}
 
 	_, err = tx.Exec(ctx, `
 		UPDATE weave_teams
@@ -360,39 +357,6 @@ func (s *Store) ArchiveTeam(ctx context.Context, workspaceID, id string) error {
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("commit archive team %q: %w", id, err)
-	}
-	return nil
-}
-
-func ensureTeamArchiveAllowed(ctx context.Context, tx pgx.Tx, workspaceID, teamID string) error {
-	rows, err := tx.Query(ctx, `
-		SELECT 'owner:' || id
-		FROM weave_projects
-		WHERE workspace_id=$1 AND team_id=$2 AND archived_at IS NULL
-		UNION ALL
-		SELECT 'collaborator:' || project_id
-		FROM weave_project_collaborators
-		WHERE workspace_id=$1 AND team_id=$2 AND removed_at IS NULL
-		ORDER BY 1
-		LIMIT 20
-	`, workspaceID, teamID)
-	if err != nil {
-		return fmt.Errorf("check team archive blockers: %w", err)
-	}
-	defer rows.Close()
-	blockers := make([]string, 0)
-	for rows.Next() {
-		var blocker string
-		if err := rows.Scan(&blocker); err != nil {
-			return fmt.Errorf("scan team archive blockers: %w", err)
-		}
-		blockers = append(blockers, blocker)
-	}
-	if err := rows.Err(); err != nil {
-		return fmt.Errorf("check team archive blockers: %w", err)
-	}
-	if len(blockers) > 0 {
-		return fmt.Errorf("%w: team %q blockers=%s", orgspec.ErrTeamArchiveBlocked, teamID, strings.Join(blockers, ","))
 	}
 	return nil
 }

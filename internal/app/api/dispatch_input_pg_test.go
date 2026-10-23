@@ -311,8 +311,9 @@ func TestBoundDispatchInputProvenanceAndAtomicAdmissionRealPG(t *testing.T) {
 	if secondRun.ClientRequestID != second.ClientRequestID || secondRun.InputRevisionID != second.InputRevisionID {
 		t.Fatalf("dispatch receipt lost input identity: %+v", secondRun)
 	}
-	if secondRun.ProjectID == "" || secondRun.ProjectID == secondRequest.ProjectID {
-		t.Fatalf("legacy Workbench project was not resolved to a server-owned project: %+v", secondRun)
+	// The Workbench project key owns nothing in Weave and never becomes the run's project.
+	if secondRun.ProjectID != "" {
+		t.Fatalf("Workbench project key reached the run: %+v", secondRun)
 	}
 	task, err := server.Tasks.Get(ctx, "ws", secondRun.TaskID)
 	var storedTask string

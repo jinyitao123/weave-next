@@ -9,7 +9,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jinyitao123/weave/internal/app/projects"
 	"github.com/jinyitao123/weave/internal/app/workflowadmission"
 	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/base/snapshot"
@@ -40,7 +39,15 @@ func (s *Server) admitTeamWorkflowDispatch(c echo.Context, workflowID string, re
 			"workflow run service unavailable",
 		)
 	}
-	projectID, conversationID := request.ProjectID, request.ConversationID
+	// Projects and conversations were retired. A Workbench input still carries
+	// its client-derived project key, which owns nothing here; any other
+	// project or conversation can no longer exist.
+	if request.ProjectID != "" && request.inputBinding == nil {
+		return workflowError(c, http.StatusNotFound, "workflow_run_project_not_found", "project not found in current workspace")
+	}
+	if request.ConversationID != "" {
+		return workflowError(c, http.StatusNotFound, "workflow_run_conversation_not_found", "conversation not found in current workspace")
+	}
 	payload, err := json.Marshal(request.Task)
 	if err != nil {
 		return workflowSchemaError(c)
@@ -51,30 +58,8 @@ func (s *Server) admitTeamWorkflowDispatch(c echo.Context, workflowID string, re
 	if err != nil {
 		return s.respondWorkflowManualRunAdmissionError(c, nil, workflowID, err)
 	}
-	frozenPayload, err := frozen.DecodeArtifactEnvelopeV1(envelope)
-	if err != nil {
+	if _, err := frozen.DecodeArtifactEnvelopeV1(envelope); err != nil {
 		return workflowStoreFailure(c, err)
-	}
-	// A trusted Workbench input may carry an older, client-derived project key
-	// that was never created in Weave. Resolve that compatibility value to the
-	// team's real unclassified Project before admission. New callers can omit
-	// project_id and receive the same server-owned Project.
-	if s.Projects != nil && (projectID == "" || request.inputBinding != nil) {
-		needsDefaultProject := projectID == ""
-		if projectID != "" {
-			_, projectErr := s.Projects.GetActive(ctx, workspaceID, projectID)
-			if projectErr != nil && !errors.Is(projectErr, projects.ErrNotFound) {
-				return workflowManualRunProjectError(c, projectErr)
-			}
-			needsDefaultProject = errors.Is(projectErr, projects.ErrNotFound)
-		}
-		if needsDefaultProject {
-			resolved, projectErr := s.Projects.EnsureUnclassified(ctx, workspaceID, frozenPayload.Team.LeadAgentID)
-			if projectErr != nil {
-				return workflowManualRunProjectError(c, projectErr)
-			}
-			projectID = resolved.ID
-		}
 	}
 	tx, err := s.ScheduleTransactions.Begin(ctx)
 	if err != nil {
@@ -91,11 +76,6 @@ func (s *Server) admitTeamWorkflowDispatch(c echo.Context, workflowID string, re
 	}
 	triggerType := ""
 	expectedTrigger := "manual"
-	if conversationID != "" {
-		sourceRef = conversationID
-		triggerType = "conversation_explicit"
-		expectedTrigger = triggerType
-	}
 	admitted, err := s.Workflow.PrepareWorkflowManualRunTx(
 		ctx,
 		tx,
@@ -118,60 +98,6 @@ func (s *Server) admitTeamWorkflowDispatch(c echo.Context, workflowID string, re
 	); err != nil {
 		return workflowStoreFailure(c, err)
 	}
-	var project projects.Project
-	conversationAgentID := ""
-	if conversationID != "" {
-		var conversationProjectID string
-		if err := tx.QueryRow(ctx, `
-			SELECT project_id, agent_id
-			FROM weave_conversations
-			WHERE workspace_id=$1 AND id=$2 AND user_id=$3 AND parent_message_id IS NULL
-			FOR SHARE
-		`, workspaceID, conversationID, getUserID(c)).Scan(&conversationProjectID, &conversationAgentID); errors.Is(err, pgx.ErrNoRows) {
-			return workflowError(c, http.StatusNotFound, "workflow_run_conversation_not_found", "conversation not found in current workspace")
-		} else if err != nil {
-			return workflowStoreFailure(c, fmt.Errorf("read workflow run conversation: %w", err))
-		} else if projectID != "" && conversationProjectID != projectID {
-			return workflowError(c, http.StatusConflict, "workflow_run_conversation_project_mismatch", "conversation does not belong to selected project")
-		} else if projectID == "" {
-			projectID = conversationProjectID
-		}
-	}
-	if projectID != "" && s.Projects == nil {
-		return workflowError(
-			c,
-			http.StatusServiceUnavailable,
-			"workflow_run_project_unavailable",
-			"project store unavailable for attributed workflow run",
-		)
-	}
-	if projectID != "" {
-		project, err = loadWorkflowManualRunProject(ctx, tx, workspaceID, projectID)
-		if err != nil {
-			return workflowManualRunProjectError(c, err)
-		}
-	}
-	if projectID != "" {
-		leadAvatarID := frozenPayload.Team.LeadAgentID
-		if project.AvatarID != leadAvatarID {
-			return workflowError(
-				c,
-				http.StatusConflict,
-				"workflow_run_project_avatar_mismatch",
-				"project avatar does not match admitted workflow lead avatar",
-			)
-		}
-		if conversationAgentID != "" && conversationAgentID != leadAvatarID {
-			return workflowError(
-				c,
-				http.StatusConflict,
-				"workflow_run_conversation_avatar_mismatch",
-				"conversation avatar does not match admitted workflow lead avatar",
-			)
-		}
-		admitted.ProjectID = project.ID
-	}
-
 	taskID := "task-" + uuid.NewString()
 	if dispatchTaskID, ok := c.Get("workflow_dispatch_task_id").(string); ok && dispatchTaskID != "" {
 		taskID = dispatchTaskID
@@ -189,7 +115,7 @@ func (s *Server) admitTeamWorkflowDispatch(c echo.Context, workflowID string, re
 		Revision: publication.CandidateRevision(envelope), RunID: admitted.RunID, TaskID: taskID,
 		Input: payload, InputVersion: inputVersion, ProjectID: admitted.ProjectID, ContextKey: contextKey,
 		Trigger: publication.PublishedTrigger{Type: expectedTrigger, SourceRef: sourceRef}, DeliveryContract: contract}
-	_, err = s.workflowAdmissions().ReserveTx(ctx, tx, intent, workflowadmission.Target{TeamID: admitted.TeamID, InputRevisionID: request.InputRevisionID, ConversationID: conversationID})
+	_, err = s.workflowAdmissions().ReserveTx(ctx, tx, intent, workflowadmission.Target{TeamID: admitted.TeamID, InputRevisionID: request.InputRevisionID})
 	if errors.Is(err, publication.ErrRequestConflict) {
 		return workflowError(c, http.StatusConflict, "client_request_conflict", "client_request_id was already used for different dispatch facts")
 	}
@@ -200,74 +126,6 @@ func (s *Server) admitTeamWorkflowDispatch(c echo.Context, workflowID string, re
 		return workflowStoreFailure(c, fmt.Errorf("commit workflow admission intent: %w", err))
 	}
 	return s.finishWorkflowAdmission(c, intent.RequestID, request.ClientRequestID, http.StatusCreated)
-}
-
-func loadWorkflowManualRunProject(
-	ctx context.Context,
-	tx pgx.Tx,
-	workspaceID, projectID string,
-) (projects.Project, error) {
-	var project projects.Project
-	var archived bool
-	err := tx.QueryRow(ctx, `
-		SELECT id, workspace_id, avatar_id, archived_at IS NOT NULL
-		FROM weave_projects
-		WHERE workspace_id=$1 AND id=$2
-		FOR SHARE
-	`, workspaceID, projectID).Scan(
-		&project.ID, &project.WorkspaceID, &project.AvatarID, &archived,
-	)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return projects.Project{}, projects.ErrNotFound
-	}
-	if err != nil {
-		return projects.Project{}, &workflowManualRunProjectUnavailableError{cause: err}
-	}
-	if archived {
-		return projects.Project{}, projects.ErrArchived
-	}
-	return project, nil
-}
-
-type workflowManualRunProjectUnavailableError struct {
-	cause error
-}
-
-func (e *workflowManualRunProjectUnavailableError) Error() string {
-	return "manual workflow project is unavailable"
-}
-
-func (e *workflowManualRunProjectUnavailableError) Unwrap() error {
-	return e.cause
-}
-
-func workflowManualRunProjectError(c echo.Context, err error) error {
-	var unavailable *workflowManualRunProjectUnavailableError
-	switch {
-	case errors.Is(err, projects.ErrNotFound):
-		return workflowError(
-			c,
-			http.StatusNotFound,
-			"workflow_run_project_not_found",
-			"project not found in current workspace",
-		)
-	case errors.Is(err, projects.ErrArchived):
-		return workflowError(
-			c,
-			http.StatusConflict,
-			"workflow_run_project_archived",
-			"archived project cannot own a workflow run",
-		)
-	case errors.As(err, &unavailable):
-		return workflowError(
-			c,
-			http.StatusServiceUnavailable,
-			"workflow_run_project_unavailable",
-			"project is unavailable for attributed workflow run",
-		)
-	default:
-		return workflowStoreFailure(c, err)
-	}
 }
 
 func (s *Server) respondWorkflowManualRunAdmissionError(

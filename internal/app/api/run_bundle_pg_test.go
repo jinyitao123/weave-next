@@ -271,7 +271,7 @@ func TestRunBundleImportEnforcesAllParentsAndRetainsTriggerModesRealPG(t *testin
 	var missing RunBundle
 	_ = json.Unmarshal(raw, &missing)
 	for index := range missing.Tables {
-		if missing.Tables[index].Name == "weave_agents" {
+		if missing.Tables[index].Name == "weave_team_run_snapshots" {
 			missing.Tables[index].Rows = nil
 		}
 	}

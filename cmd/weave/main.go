@@ -20,7 +20,6 @@ import (
 	"github.com/jinyitao123/weave/internal/app/cli"
 	"github.com/jinyitao123/weave/internal/app/daemon"
 	"github.com/jinyitao123/weave/internal/app/deliveryverify"
-	"github.com/jinyitao123/weave/internal/app/projects"
 	"github.com/jinyitao123/weave/internal/app/teamconstruction"
 	"github.com/jinyitao123/weave/internal/app/users"
 	"github.com/jinyitao123/weave/internal/app/workflowcatalog"
@@ -268,7 +267,6 @@ func main() {
 		srv.KeyStore = apikeys.NewStore(pool)
 		srv.Skills = skills.New(pool)
 		srv.Runtimes = runtimes.NewStore(pool)
-		srv.Projects = projects.New(pool, projects.RealClock{})
 		srv.Attachments = attachments.New(pool)
 		srv.Deliverables = deliveryverify.NewStore(pool)
 		srv.Audit = audit.New(pool, audit.RealClock{})

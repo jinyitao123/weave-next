@@ -549,11 +549,6 @@ func applyTeamRosterMutationTx(
 	); err != nil {
 		return teamRosterMutationOutcome{}, err
 	}
-	if request.Status == "archived" {
-		if err := ensureRosterTeamArchiveAllowed(ctx, tx, request.WorkspaceID, request.TeamID); err != nil {
-			return teamRosterMutationOutcome{}, err
-		}
-	}
 	if err := tx.QueryRow(ctx, `
 		UPDATE weave_teams
 		SET lead_avatar_id=$3, status=$4
@@ -564,51 +559,7 @@ func applyTeamRosterMutationTx(
 	); err != nil {
 		return teamRosterMutationOutcome{}, fmt.Errorf("update team roster state: %w", err)
 	}
-	if request.Status == "active" {
-		if _, err := tx.Exec(ctx, `
-			UPDATE weave_projects
-			SET avatar_id=$3
-			WHERE workspace_id=$1 AND team_id=$2
-			  AND archived_at IS NULL
-			  AND COALESCE(system_kind,'') <> 'unclassified'
-		`, request.WorkspaceID, request.TeamID, request.LeadAgentID); err != nil {
-			return teamRosterMutationOutcome{}, fmt.Errorf("sync project lead mirror: %w", err)
-		}
-	}
 	return outcome, nil
-}
-
-func ensureRosterTeamArchiveAllowed(ctx context.Context, tx pgx.Tx, workspaceID, teamID string) error {
-	rows, err := tx.Query(ctx, `
-		SELECT 'owner:' || id
-		FROM weave_projects
-		WHERE workspace_id=$1 AND team_id=$2 AND archived_at IS NULL
-		UNION ALL
-		SELECT 'collaborator:' || project_id
-		FROM weave_project_collaborators
-		WHERE workspace_id=$1 AND team_id=$2 AND removed_at IS NULL
-		ORDER BY 1
-		LIMIT 20
-	`, workspaceID, teamID)
-	if err != nil {
-		return fmt.Errorf("check team archive blockers: %w", err)
-	}
-	defer rows.Close()
-	blockers := make([]string, 0)
-	for rows.Next() {
-		var blocker string
-		if err := rows.Scan(&blocker); err != nil {
-			return fmt.Errorf("scan team archive blockers: %w", err)
-		}
-		blockers = append(blockers, blocker)
-	}
-	if err := rows.Err(); err != nil {
-		return fmt.Errorf("check team archive blockers: %w", err)
-	}
-	if len(blockers) > 0 {
-		return fmt.Errorf("%w: archive blockers=%s", registry.ErrTeamRosterInvalidRequest, strings.Join(blockers, ","))
-	}
-	return nil
 }
 
 func validateRosterFinalState(request teamRosterMutationRequest) error {
