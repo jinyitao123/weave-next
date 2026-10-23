@@ -334,6 +334,7 @@ func (s *Server) registerRoutes() {
 	auth.PUT("/teams/:id/feishu-access", s.handlePutFeishuTeamAccess, RequireAtLeast(roleDeveloper))
 	auth.GET("/teams/:id/development", s.handleGetTeamDevelopment, RequireAtLeast(roleDeveloper))
 	auth.PUT("/teams/:id/development", s.handleSaveTeamDevelopment, RequireAtLeast(roleDeveloper))
+	auth.POST("/teams/:id/development/rebase", s.handleRebaseTeamDevelopment, RequireAtLeast(roleDeveloper))
 	auth.POST("/teams/:id/development/operations", s.handleApplyTeamDevelopmentOperations, RequireAtLeast(roleDeveloper))
 	auth.POST("/development/teams", s.handleCreateDevelopmentTeam, RequireAtLeast(roleDeveloper))
 	auth.POST("/development/teams/import", s.handleImportDevelopmentTeam, RequireAtLeast(roleDeveloper))

@@ -4,14 +4,15 @@ import { Badge, Dialog, InlineError, type Tone } from '../components/ui'
 import { MemberEditor } from '../components/members/MemberEditor'
 import { PublishPanel, TrialPanel } from '../components/team/Release'
 import { FlowBar, TeamProfile } from '../components/team/TeamProfile'
+import { BaselineBanner, RebaseSummary } from '../components/team/Baseline'
 import { FeishuTeamAccessPanel } from '../components/feishu/FeishuTeamAccess'
-import { errorMessage } from '../lib/api'
+import { ApiError, errorMessage } from '../lib/api'
 import { businessCompletionIssue, syncBusinessCompletion } from '../lib/business-completion'
 import type { Graph } from '../lib/graph'
 import { WorkflowEditor } from '../components/workflow/WorkflowEditor'
 import { listNodes, type RuntimeNode } from '../lib/nodes'
 import { useLeaveGuard } from '../lib/router'
-import { serverIssues, allowRequiredHandoffKinds, archiveTeam, capabilityName, exportTeam, teamPackageFileName, loadBusinessCatalog, memberConfigIssues, nodeReadinessIssues, pinMembers, publishDevelopment, readDevelopment, saveDevelopment, withStarterWorkflow, workflowCapabilityIds, type BusinessCatalog, type DevelopmentDocument, type DevelopmentDraft, type DevelopmentMember } from '../lib/teams'
+import { serverIssues, allowRequiredHandoffKinds, archiveTeam, capabilityName, exportTeam, teamPackageFileName, loadBusinessCatalog, memberConfigIssues, nodeReadinessIssues, pinMembers, publishDevelopment, readDevelopment, rebaseDevelopment, saveDevelopment, withStarterWorkflow, workflowCapabilityIds, type BusinessCatalog, type DevelopmentDocument, type DevelopmentDraft, type DevelopmentMember, type RebaseChange, type RebaseConflict } from '../lib/teams'
 
 export const teamTabs = [['profile', '资料'], ['members', '成员'], ['workflow', '流程'], ['trial', '试跑'], ['publish', '发布'], ['access', '接入']] as const
 export type TeamTab = typeof teamTabs[number][0]
@@ -25,6 +26,8 @@ export function TeamDetailPage({ teamId, tab = 'profile', navigate }: { teamId: 
   const [busy, setBusy] = useState(false)
   const [leaving, setLeaving] = useState<string>()
   const [archiving, setArchiving] = useState(false)
+  const [conflicts, setConflicts] = useState<RebaseConflict[]>()
+  const [merged, setMerged] = useState<RebaseChange[]>()
   // Tabs are addresses of the same page: switching keeps unsaved edits.
   const setTab = (next: TeamTab) => navigate(`/teams/${encodeURIComponent(teamId)}${next === 'profile' ? '' : `/${next}`}`, { force: true })
   const load = useCallback(async () => {
@@ -93,6 +96,23 @@ export function TeamDetailPage({ teamId, tab = 'profile', navigate }: { teamId: 
     }
   }
   const save = () => run(() => saveDevelopment(teamId, draft!.revision, document!))
+  // Merging takes in what changed live; a refusal names the parts both sides changed.
+  const rebase = (keepDraft: boolean) => run(async () => {
+    setConflicts(undefined)
+    setMerged(undefined)
+    try {
+      const next = await rebaseDevelopment(teamId, draft!.revision, keepDraft)
+      setMerged(next.rebase_changes ?? [])
+      return next
+    } catch (failure) {
+      const body = failure instanceof ApiError ? failure.body as { conflicts?: RebaseConflict[] } | undefined : undefined
+      if (body?.conflicts?.length) {
+        setConflicts(body.conflicts)
+        return
+      }
+      throw failure
+    }
+  })
   // The package is the saved draft, so unsaved edits are not in it.
   const exportPackage = () => run(async () => {
     const pkg = await exportTeam(teamId)
@@ -159,6 +179,8 @@ export function TeamDetailPage({ teamId, tab = 'profile', navigate }: { teamId: 
       </div> : null}
     </header>
     {issues.length ? <ul className="readiness">{issues.map((issue) => <li key={issue}>{issue}</li>)}</ul> : null}
+    {draft ? <BaselineBanner draft={draft} dirty={dirty} busy={busy} conflicts={conflicts} onRebase={(keepDraft) => void rebase(keepDraft)} /> : null}
+    <RebaseSummary changes={merged} />
     {error ? <InlineError message={error} onRetry={draft ? undefined : () => void load()} /> : null}
     {!document || !draft ? null : <>
       <div className="tabs" role="tablist" aria-label="团队配置">

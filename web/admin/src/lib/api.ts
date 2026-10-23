@@ -66,6 +66,8 @@ export const signInWithForge = (forge_token: string, signal?: AbortSignal) =>
   api<AdminSession>('/v1/admin/session', { method: 'POST', body: JSON.stringify({ forge_token }), signal })
 
 const messages: Record<string, string> = {
+  development_baseline_changed: '线上团队已变化，请先读取线上变化并合并',
+  development_rebase_conflict: '草稿和线上都改了同一处，请选择保留草稿的修改，或先在草稿中撤销这些修改',
   organization_connection_unavailable: '部署连接尚未配置，请联系部署管理员',
   organization_connection_invalid: '部署连接配置无效或不可读取，请联系部署管理员',
   forge_unreachable: '无法连接 Forge，请确认 Forge 允许本地址跨域登录',

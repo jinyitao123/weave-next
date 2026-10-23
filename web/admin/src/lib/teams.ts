@@ -114,7 +114,14 @@ export interface DevelopmentDraft {
   publication_readiness?: { ready: boolean; workflows?: WorkflowReadiness[] }
   /** What the saved draft still lacks, worked out by the server for every surface. */
   issues?: DraftIssue[]
+  /** The live team changed after the draft was opened; trials and publishing wait for a merge. */
+  baseline_changed?: boolean
+  /** What a merge just took in or kept; only on the merge's reply. */
+  rebase_changes?: RebaseChange[]
 }
+
+export interface RebaseChange { kind: 'team' | 'member' | 'workflow'; id?: string; field?: string; name: string; action: 'taken' | 'added' | 'removed' | 'kept' }
+export interface RebaseConflict { kind: 'team' | 'member' | 'workflow'; id?: string; field?: string; name: string; live_removed?: boolean }
 
 export interface DraftIssue { scope: 'team' | 'member' | 'workflow' | 'step'; target: string; workflow?: string; code: string; message: string; blocks: 'trial' | 'publish' | 'none' }
 
@@ -183,6 +190,9 @@ const base = (teamId: string) => `/v1/teams/${encodeURIComponent(teamId)}/develo
 export const readDevelopment = (teamId: string) => api<DevelopmentDraft>(base(teamId))
 export const saveDevelopment = (teamId: string, revision: number, document: DevelopmentDocument) =>
   api<DevelopmentDraft>(base(teamId), { method: 'PUT', body: JSON.stringify({ expected_revision: revision, document }) })
+/** Merges what changed live into the draft; keepDraft keeps the draft's edits where both changed. */
+export const rebaseDevelopment = (teamId: string, revision: number, keepDraft: boolean) =>
+  api<DevelopmentDraft>(`${base(teamId)}/rebase`, { method: 'POST', body: JSON.stringify({ expected_revision: revision, keep_draft: keepDraft }) })
 export const publishDevelopment = (teamId: string, revision: number) =>
   api<DevelopmentDraft>(`${base(teamId)}/publish`, { method: 'POST', body: JSON.stringify({ revision }) })
 export const startTrial = (teamId: string, revision: number, workflowId: string, input: string, requestId: string, actions: TrialAction[]) =>

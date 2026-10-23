@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -60,6 +61,11 @@ type developmentDraft struct {
 	PublicationReadiness developmentPublicationReadiness `json:"publication_readiness"`
 	// Issues lists what the draft still lacks, for every surface that edits it.
 	Issues []developmentIssue `json:"issues"`
+	// BaselineChanged reports that the live team, a member or a flow changed
+	// after the draft was opened; trials and publishing wait for a rebase.
+	BaselineChanged bool `json:"baseline_changed"`
+	// RebaseChanges lists what a rebase just took in or kept; only on its reply.
+	RebaseChanges []developmentRebaseChange `json:"rebase_changes,omitempty"`
 }
 type developmentTrialView struct {
 	RequestID  string    `json:"request_id"`
@@ -227,6 +233,16 @@ func (s *Server) handleGetTeamDevelopment(c echo.Context) error {
 		return err
 	}
 	d.Issues = developmentIssues(d.Document, catalog, catalogKnown)
+	if baselineErr := checkDevelopmentBaseline(ctx, tx, ws, id, d.Baseline); baselineErr != nil {
+		var httpErr *echo.HTTPError
+		if !errors.As(baselineErr, &httpErr) {
+			return baselineErr
+		}
+		d.BaselineChanged = true
+	}
+	if changes, ok := c.Get(developmentRebaseChangesKey).([]developmentRebaseChange); ok {
+		d.RebaseChanges = changes
+	}
 	if err = tx.Commit(ctx); err != nil {
 		return err
 	}
@@ -294,26 +310,35 @@ func (s *Server) handleSaveTeamDevelopment(c echo.Context) error {
 func checkDevelopmentBaseline(ctx context.Context, tx pgx.Tx, ws, id string, base developmentBaseline) error {
 	var updated time.Time
 	if err := tx.QueryRow(ctx, `SELECT updated_at FROM weave_teams WHERE workspace_id=$1 AND id=$2 AND status IN ('active','building') FOR UPDATE`, ws, id).Scan(&updated); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return developmentBaselineChanged("线上团队已不可用")
+		}
 		return err
 	}
 	if !updated.Equal(base.TeamUpdatedAt) {
-		return developmentError("线上团队已变化，请重新读取并合并修改")
+		return developmentBaselineChanged("线上团队已变化，请读取线上变化并合并")
 	}
 	for agent, want := range base.Members {
 		var version int
 		if err := tx.QueryRow(ctx, `SELECT version FROM weave_agents WHERE workspace_id=$1 AND id=$2 AND NOT deleted FOR UPDATE`, ws, agent).Scan(&version); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return developmentBaselineChanged("线上成员已删除，请读取线上变化并合并")
+			}
 			return err
 		}
 		if version != want {
-			return developmentError("线上成员配置已变化，请合并后重试")
+			return developmentBaselineChanged("线上成员配置已变化，请读取线上变化并合并")
 		}
 	}
 	for flow, want := range base.Workflows {
 		if err := tx.QueryRow(ctx, `SELECT updated_at FROM weave_team_workflows WHERE workspace_id=$1 AND id=$2 FOR UPDATE`, ws, flow).Scan(&updated); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return developmentBaselineChanged("线上流程已删除，请读取线上变化并合并")
+			}
 			return err
 		}
 		if !updated.Equal(want) {
-			return developmentError("线上流程已变化，请合并后重试")
+			return developmentBaselineChanged("线上流程已变化，请读取线上变化并合并")
 		}
 	}
 	return nil

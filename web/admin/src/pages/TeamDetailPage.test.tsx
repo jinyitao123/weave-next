@@ -126,3 +126,43 @@ describe('team with several flows', () => {
     }
   })
 })
+
+describe('live team changed after the draft was opened', () => {
+  function serveChanged(rebase: (keepDraft: boolean) => Response) {
+    const calls: Call[] = []
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init: RequestInit = {}) => {
+      const method = init.method ?? 'GET'
+      const body = init.body ? JSON.parse(String(init.body)) : undefined
+      calls.push({ url, method, body })
+      if (url.endsWith('/development/rebase')) return rebase(Boolean(body?.keep_draft))
+      if (url.endsWith('/teams/team-1/development')) return new Response(JSON.stringify({ ...draft, baseline_changed: true }), { status: 200 })
+      if (url.includes('business-capabilities')) return new Response(JSON.stringify({ available: true, capabilities: [] }), { status: 200 })
+      if (url.endsWith('/runtimes')) return new Response(JSON.stringify({ runtimes: [] }), { status: 200 })
+      return new Response('[]', { status: 200 })
+    }))
+    return calls
+  }
+
+  it('merges the live changes and says what it took in', async () => {
+    const merged = { ...draft, revision: 4, document: { ...document, name: '合同审核组' }, rebase_changes: [{ kind: 'team', field: 'name', name: '合同审核组', action: 'taken' }] }
+    const calls = serveChanged(() => new Response(JSON.stringify(merged), { status: 200 }))
+    render(<Harness initial="profile" />)
+    fireEvent.click(await screen.findByRole('button', { name: '读取线上变化并合并' }))
+    expect(await screen.findByText('已合并线上变化：团队名称（已采用线上）。')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: '读取线上变化并合并' })).toBeNull()
+    expect(calls.find((call) => call.url.endsWith('/rebase'))?.body).toEqual({ expected_revision: 3, keep_draft: false })
+  })
+
+  it('names what both sides changed and keeps the draft’s edits on request', async () => {
+    const conflict = { error: 'development_rebase_conflict', message: '冲突', conflicts: [{ kind: 'team', field: 'objective', name: '合同团队' }] }
+    const calls = serveChanged((keepDraft) => keepDraft
+      ? new Response(JSON.stringify({ ...draft, revision: 4, rebase_changes: [{ kind: 'team', field: 'objective', name: '合同团队', action: 'kept' }] }), { status: 200 })
+      : new Response(JSON.stringify(conflict), { status: 409 }))
+    render(<Harness initial="profile" />)
+    fireEvent.click(await screen.findByRole('button', { name: '读取线上变化并合并' }))
+    expect(await screen.findByText('草稿和线上都改了这些地方：团队目标。')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '保留草稿的修改' }))
+    expect(await screen.findByText('已合并线上变化：团队目标（保留草稿）。')).toBeTruthy()
+    expect(calls.filter((call) => call.url.endsWith('/rebase')).map((call) => call.body?.keep_draft)).toEqual([false, true])
+  })
+})
