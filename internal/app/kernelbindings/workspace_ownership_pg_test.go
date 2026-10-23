@@ -3,12 +3,12 @@ package kernelbindings
 import (
 	"context"
 	"errors"
+	"strings"
+	"testing"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"strings"
-	"testing"
-	"time"
 
 	"github.com/jinyitao123/weave/internal/app/users"
 	"github.com/jinyitao123/weave/internal/base/db"
@@ -16,10 +16,8 @@ import (
 	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/base/testutil"
 	"github.com/jinyitao123/weave/internal/kernel/credentials"
-	"github.com/jinyitao123/weave/internal/kernel/fanout"
 	"github.com/jinyitao123/weave/internal/kernel/llmrouter"
 	"github.com/jinyitao123/weave/internal/kernel/mcpregistry"
-	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 )
 
 type workspaceMirrorSource struct{}
@@ -49,13 +47,6 @@ func TestKernelResourcesNeverCreateProductWorkspaceRealPG(t *testing.T) {
 		name  string
 		write func(context.Context, string, string) error
 	}{
-		{"dispatch", func(ctx context.Context, ws, user string) error {
-			return taskqueue.New(pool, nil, time.Minute).RecordDispatch(ctx, ws, "lead", "worker", "input", "result", true)
-		}},
-		{"fanout", func(ctx context.Context, ws, user string) error {
-			_, err := fanout.New(pool, nil).CreateGroup(ctx, fanout.Group{WorkspaceID: ws, UserID: user, AvatarAgent: "lead", OriginalRequest: "input"})
-			return err
-		}},
 		{"provider", func(ctx context.Context, ws, user string) error {
 			return provider.Upsert(ctx, ws, llmrouter.ProviderConfig{ID: "model", Name: "Model", BaseURL: "https://models.invalid/v1", APIKey: "fixture-secret", Models: []string{"model"}, CredentialScope: frozen.CredentialScopeUser, CredentialUserID: user})
 		}},
@@ -78,7 +69,7 @@ func TestKernelResourcesNeverCreateProductWorkspaceRealPG(t *testing.T) {
 			if err != nil && (!errors.As(err, &foreignKey) || foreignKey.Code != "23503") {
 				t.Fatalf("unexpected resource error: %v", err)
 			}
-			if tc.name != "dispatch" && err == nil {
+			if err == nil {
 				t.Fatal("product foreign key was not enforced")
 			}
 			var count int

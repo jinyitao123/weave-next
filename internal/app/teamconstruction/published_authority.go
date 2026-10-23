@@ -84,23 +84,10 @@ func (a *PublicationAuthority) AuthorizePublished(ctx context.Context, request p
 	} else if strings.HasPrefix(subject.ServiceID, "workflow-schedule:") {
 		return execution.ErrSubjectMismatch
 	}
-	if record.Target.ConversationID != "" {
-		var allowed bool
-		if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM weave_conversations WHERE workspace_id=$1 AND user_id=$2 AND id=$3 AND project_id=$4)`, subject.WorkspaceID, subject.UserID, record.Target.ConversationID, request.ProjectID).Scan(&allowed); err != nil {
-			return err
-		}
-		if !allowed {
-			return publication.ErrRequestConflict
-		}
-	}
-	if record.Target.ChatRequestID != "" {
-		var allowed bool
-		if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM weave_chat_requests WHERE workspace_id=$1 AND user_id=$2 AND client_request_id=$3 AND user_message_id=$4 AND conversation_id=$5 AND project_id=$6)`, subject.WorkspaceID, subject.UserID, record.Target.ChatRequestID, request.InputVersion, record.Target.ConversationID, request.ProjectID).Scan(&allowed); err != nil {
-			return err
-		}
-		if !allowed {
-			return publication.ErrRequestConflict
-		}
+	// Conversations and chat requests were retired; nothing admits a target
+	// that names one any more, and an old record naming one cannot be honored.
+	if record.Target.ConversationID != "" || record.Target.ChatRequestID != "" {
+		return publication.ErrRequestConflict
 	}
 	if record.Target.InputRevisionID != "" {
 		var current, closed bool

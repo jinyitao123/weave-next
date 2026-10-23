@@ -17,7 +17,6 @@ const (
 	identitySourceContextKey = "identity_source"
 	apiKeyIDContextKey       = "api_key_id"
 	apiKeyNameContextKey     = "api_key_name"
-	workbenchActorContextKey = "workbench_actor_id"
 	authSourceAPIKey         = "apikey"
 	authSourceJWT            = "jwt"
 )
@@ -158,7 +157,6 @@ func bindDelegatedUser(c echo.Context, jwtSecret string, userStoreGetter func() 
 	if claims.IdentitySource == "forge" {
 		c.Set(forgePermissionSetsContextKey, append([]string(nil), claims.PermissionSets...))
 	}
-	c.Set(workbenchActorContextKey, subject.Digest())
 	return nil
 }
 

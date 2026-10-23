@@ -89,10 +89,9 @@ type ListFilter struct {
 
 // Store reads immutable final deliverables.
 type Store struct {
-	pool              *pgxpool.Pool
-	verifiers         *VerifierRegistry
-	conversationOwner ConversationOwner
-	agentLabel        AgentLabel
+	pool       *pgxpool.Pool
+	verifiers  *VerifierRegistry
+	agentLabel AgentLabel
 }
 
 // New creates a final deliverable store.
@@ -191,30 +190,14 @@ func (s *Store) recordWorkflowOutput(ctx context.Context, tx pgx.Tx, output Work
 	if err != nil {
 		return fmt.Errorf("resolve workflow deliverable trigger: %w", err)
 	}
-	var conversationID, userID string
-	switch triggerType {
-	case "conversation_explicit":
-		if s.conversationOwner == nil {
-			return ErrConversationOwnerUnavailable
-		}
-		var found bool
-		userID, found, err = s.conversationOwner(ctx, tx, output.WorkspaceID, sourceRef)
-		if err != nil {
-			return fmt.Errorf("resolve workflow deliverable conversation: %w", err)
-		}
-		if !found {
-			return nil
-		}
-		if strings.TrimSpace(userID) == "" {
-			return errors.New("workflow deliverable conversation owner is empty")
-		}
-		conversationID = sourceRef
-	case "manual":
-		userID = strings.TrimSpace(sourceRef)
-		if userID == "" || userID == "manual" {
-			return nil
-		}
-	default:
+	// Only a manual run names the person its deliverables belong to. A
+	// conversation_explicit run once resolved its owner through the retired
+	// conversation table; such runs keep no final-deliverable projection.
+	if triggerType != "manual" {
+		return nil
+	}
+	userID := strings.TrimSpace(sourceRef)
+	if userID == "" || userID == "manual" {
 		return nil
 	}
 
@@ -276,22 +259,15 @@ func (s *Store) recordWorkflowOutput(ctx context.Context, tx pgx.Tx, output Work
 	if projectID != "" {
 		nullableProjectID = projectID
 	}
-	var nullableConversationID any
-	if conversationID != "" {
-		nullableConversationID = conversationID
-	}
-	sessionID := conversationID
-	if sessionID == "" {
-		sessionID = "workflow:" + output.RunSnapshotID
-	}
+	sessionID := "workflow:" + output.RunSnapshotID
 	_, err = tx.Exec(ctx, `
 		INSERT INTO weave_final_deliverables (
-			id, workspace_id, project_id, conversation_id, user_id, lead_avatar_id,
+			id, workspace_id, project_id, user_id, lead_avatar_id,
 			session_id, event_id, run_id, run_snapshot_id, title, content,
 			content_type, metadata, created_at
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14::jsonb,$15)
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb,$14)
 		ON CONFLICT DO NOTHING
-	`, id, output.WorkspaceID, nullableProjectID, nullableConversationID, userID, leadAvatarID,
+	`, id, output.WorkspaceID, nullableProjectID, userID, leadAvatarID,
 		sessionID, eventID, output.RunID, output.RunSnapshotID, title, content,
 		contentType, string(metadata), createdAt)
 	if err != nil {

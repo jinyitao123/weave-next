@@ -1636,6 +1636,33 @@
         "lines_added": -3619,
         "production_lines_added": -2125
       }
+    },
+    {
+      "date": "2026-10-22",
+      "reason": "清理会话与项目残留接缝（#99）",
+      "record": "docs/治理/2026-10-22-退役产品面删除登记.md",
+      "growth": {
+        "lines": 0,
+        "production_lines": 0
+      },
+      "base": {
+        "previous_lines": 9038,
+        "previous_production_lines": 7056,
+        "lines_added": -35,
+        "production_lines_added": -35
+      },
+      "kernel": {
+        "previous_lines": 107697,
+        "previous_production_lines": 82420,
+        "lines_added": -1109,
+        "production_lines_added": -1109
+      },
+      "app": {
+        "previous_lines": 81191,
+        "previous_production_lines": 52034,
+        "lines_added": -177,
+        "production_lines_added": -94
+      }
     }
   ],
   "migration_targets": {
@@ -1667,8 +1694,8 @@
     "rule": "Each band limit equals its measured size. The total of the band limits may exceed this baseline only by the growth of amendments added after the first recorded_amendments entries, each of which must state its growth and a deletion_trigger."
   },
   "base": {
-    "lines": 9038,
-    "production_lines": 7056,
+    "lines": 9003,
+    "production_lines": 7021,
     "packages": 9,
     "external_dependencies": 4,
     "allowed_dependencies": [
@@ -1679,8 +1706,8 @@
     ]
   },
   "kernel": {
-    "lines": 107697,
-    "production_lines": 82420,
+    "lines": 106588,
+    "production_lines": 81311,
     "packages": 44,
     "external_dependencies": 5,
     "allowed_dependencies": [
@@ -1699,8 +1726,8 @@
     "allowed_dependencies": []
   },
   "app": {
-    "lines": 81191,
-    "production_lines": 52034,
+    "lines": 81014,
+    "production_lines": 51940,
     "packages": 21,
     "external_dependencies": 6,
     "allowed_dependencies": [

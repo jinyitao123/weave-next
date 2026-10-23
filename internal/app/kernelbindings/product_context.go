@@ -1,18 +1,16 @@
 // Package kernelbindings supplies product-owned reads and projections to the
-// kernel without giving its packages access to account or conversation tables.
+// kernel without giving its packages access to account tables.
 package kernelbindings
 
 import (
 	"context"
 	"errors"
-	"time"
 
 	"github.com/jinyitao123/weave/internal/app/agentcatalog"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jinyitao123/weave/internal/base/deliverable"
-	"github.com/jinyitao123/weave/internal/base/storeext"
 	"github.com/jinyitao123/weave/internal/kernel/fanout"
 
 	orgstore "github.com/jinyitao123/weave/internal/app/org"
@@ -51,52 +49,14 @@ func NewOrganization(pool *pgxpool.Pool) *orgstore.Store {
 	}))
 }
 
-func ConversationOwner(ctx context.Context, tx pgx.Tx, workspaceID, conversationID string) (string, bool, error) {
-	var userID string
-	err := tx.QueryRow(ctx, `SELECT user_id FROM weave_conversations WHERE workspace_id=$1 AND id=$2 AND parent_message_id IS NULL`, workspaceID, conversationID).Scan(&userID)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return "", false, nil
-	}
-	return userID, err == nil, err
-}
-
 func DeliverableOptions() []deliverable.StoreOption {
 	return []deliverable.StoreOption{
-		deliverable.WithConversationOwner(ConversationOwner),
 		deliverable.WithAgentLabel(AgentLabel),
 	}
 }
 
 func NewFanout(pool *pgxpool.Pool, clock fanout.Clock) *fanout.Store {
-	return fanout.New(pool, clock,
-		fanout.WithConversationProject(ConversationProject),
-		fanout.WithCompletionLeadResolver(CompletionLead),
-	)
-}
-
-func ConversationProject(ctx context.Context, tx pgx.Tx, workspaceID, conversationID string) (string, error) {
-	var projectID string
-	err := tx.QueryRow(ctx, `SELECT COALESCE(project_id, '') FROM weave_conversations WHERE workspace_id=$1 AND id=$2`, workspaceID, conversationID).Scan(&projectID)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return "", nil
-	}
-	return projectID, err
-}
-
-// TerminalRecords retains every platform store operation and adds only the
-// product activity projection consumed by the terminal coordinator.
-type TerminalRecords struct{ *storeext.PGExt }
-
-func WithTerminalActivity(records *storeext.PGExt) *TerminalRecords {
-	return &TerminalRecords{PGExt: records}
-}
-func (*TerminalRecords) ProjectTerminalActivityTx(ctx context.Context, tx pgx.Tx, workspaceID, conversationID string, at time.Time) error {
-	_, err := tx.Exec(ctx, `UPDATE weave_projects AS project
- SET last_activity_at=GREATEST(COALESCE(project.last_activity_at, project.updated_at), $3)
- FROM weave_conversations AS conversation
- WHERE conversation.workspace_id=$1 AND conversation.id=$2
- AND project.workspace_id=conversation.workspace_id AND project.id=conversation.project_id`, workspaceID, conversationID, at)
-	return err
+	return fanout.New(pool, clock)
 }
 
 // AgentLabel is a product presentation projection, scoped to the execution's
@@ -109,16 +69,4 @@ func AgentLabel(ctx context.Context, tx pgx.Tx, workspaceID, agentID string) (st
 		return "", nil
 	}
 	return label, err
-}
-
-// CompletionLead supplies the product directory fallback for a group without
-// a frozen source. It cannot override an existing snapshot's version binding.
-func CompletionLead(ctx context.Context, tx pgx.Tx, workspaceID, avatarName string) (fanout.CompletionLead, error) {
-	var lead fanout.CompletionLead
-	err := tx.QueryRow(ctx, `SELECT agent.id,agent.version,EXISTS(
- SELECT 1 FROM weave_teams WHERE workspace_id=agent.workspace_id
- AND lead_avatar_id=agent.id AND status='active')
- FROM weave_agents AS agent WHERE agent.workspace_id=$1 AND agent.name=$2 AND agent.deleted=false`,
-		workspaceID, avatarName).Scan(&lead.AgentID, &lead.AgentVersion, &lead.TeamFreeCollab)
-	return lead, err
 }

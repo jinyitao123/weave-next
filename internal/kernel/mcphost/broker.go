@@ -8,9 +8,9 @@ import (
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 )
 
-// ToolBroker is the single assembly point for the complete in-process tool
-// pipeline. MCP tools retain the access factory's resolve, authorize, gate,
-// and audit layers; platform tools are merged only at the governed boundary.
+// ToolBroker is the single assembly point for the in-process tool pipeline.
+// MCP tools retain the access factory's resolve, authorize, gate, and audit
+// layers.
 type ToolBroker struct {
 	access *MCPAccessFactory
 }
@@ -21,22 +21,15 @@ func NewToolBroker(access *MCPAccessFactory) *ToolBroker {
 	return &ToolBroker{access: access}
 }
 
-// PlatformToolBuilder materializes non-MCP tools from the already-resolved
-// per-workspace runtime snapshots supplied to the broker.
-type PlatformToolBuilder func(contract.LLM) []contract.ToolDispatcher
-
 // ToolBrokerRequest contains one run's immutable tool assembly inputs.
 type ToolBrokerRequest struct {
 	WorkspaceID    string
 	Agent          *registry.AgentRecord
 	ConversationID string
-	LLM            contract.LLM
-	PlatformTools  PlatformToolBuilder
 }
 
-// Build assembles governed MCP tools with any platform dispatchers. Resolution
-// failures remain a dispatcher-level fail-closed error so chat compilation
-// observes the same behavior as before broker adoption.
+// Build assembles governed MCP tools. Resolution failures remain a
+// dispatcher-level fail-closed error.
 func (b *ToolBroker) Build(
 	ctx context.Context,
 	request ToolBrokerRequest,
@@ -49,14 +42,7 @@ func (b *ToolBroker) Build(
 	if err != nil {
 		mcp = NewRejectedMCPDispatcher(err)
 	}
-	var platform []contract.ToolDispatcher
-	if request.PlatformTools != nil {
-		platform = request.PlatformTools(request.LLM)
-	}
-	dispatchers := make([]contract.ToolDispatcher, 0, 1+len(platform))
-	dispatchers = append(dispatchers, mcp)
-	dispatchers = append(dispatchers, platform...)
-	return NewCompositeDispatcher(dispatchers...)
+	return NewCompositeDispatcher(mcp)
 }
 
 // BuildMCPServerAt builds one index-addressed MCP boundary through the same

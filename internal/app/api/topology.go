@@ -28,7 +28,7 @@ func (s *Server) handleTopology(c echo.Context) error {
 	compileOpts := compiler.CompileOpts{
 		Store:                s.Store,
 		SubAgentStepResolver: s.resolveSubAgent,
-		AgentRunner:          s.compilerAgentRunner(tenant, getUserID(c), llm, nil),
+		AgentRunner:          s.compilerAgentRunner(tenant, llm),
 	}
 
 	prepared, compileErr := loomruntime.Prepare(loomruntime.RunRequest{

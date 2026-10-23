@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jinyitao123/weave/internal/base/execution"
@@ -48,58 +47,6 @@ func New(pool *pgxpool.Pool, clock Clock, leaseTTL time.Duration) *Store {
 func (s *Store) leaseTimes() (time.Time, time.Time) {
 	now := s.clock.Now()
 	return now, now.Add(s.leaseTTL)
-}
-
-// RecordDispatch inserts a completed single-agent dispatch for tracing.
-func (s *Store) RecordDispatch(
-	ctx context.Context,
-	workspaceID, fromAgent, toAgent, message, result string,
-	ok bool,
-) error {
-	subject, err := execution.RequireSubject(ctx, workspaceID)
-	if err != nil {
-		return err
-	}
-	actorSubject, _ := json.Marshal(subject)
-	payload, err := json.Marshal(map[string]string{
-		"from":    fromAgent,
-		"to":      toAgent,
-		"message": message,
-	})
-	if err != nil {
-		return fmt.Errorf("marshal dispatch payload: %w", err)
-	}
-	resultJSON, err := json.Marshal(map[string]string{"output": result})
-	if err != nil {
-		return fmt.Errorf("marshal dispatch result: %w", err)
-	}
-	status := StatusFailed
-	if ok {
-		status = StatusCompleted
-	}
-	now := s.clock.Now()
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return fmt.Errorf("begin record dispatch: %w", err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-
-	if _, err := tx.Exec(ctx, `
-		INSERT INTO weave_task_queue (
-			id, workspace_id, agent, identity_kind, identity_schema_version,
-			source, status, payload, result,
-			created_at, started_at, completed_at, updated_at, actor_subject
-		) VALUES (
-			$1, $2, NULL, $3, 2,
-			'dispatch', $4, $5, $6, $7, $7, $7, $7, $8::jsonb
-		)
-	`, "task-"+uuid.NewString(), workspaceID, IdentityAudit, status, payload, resultJSON, now, string(actorSubject)); err != nil {
-		return fmt.Errorf("insert dispatch task: %w", err)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("commit dispatch task: %w", err)
-	}
-	return nil
 }
 
 // Enqueue inserts a queued task in a workspace established by the product.
@@ -662,32 +609,6 @@ func (s *Store) RecoverStale(ctx context.Context) (int, error) {
 	return count, nil
 }
 
-// ListByGroup returns all tasks of one workspace task group ordered by creation.
-func (s *Store) ListByGroup(ctx context.Context, workspaceID, groupID string) ([]Task, error) {
-	rows, err := s.pool.Query(ctx, `
-		SELECT `+taskColumns+`
-		FROM weave_task_queue
-		WHERE workspace_id=$1 AND task_group_id=$2 AND ($3::jsonb IS NULL OR actor_subject=$3::jsonb)
-		ORDER BY created_at, id
-	`, workspaceID, groupID, subjectFilter(ctx))
-	if err != nil {
-		return nil, fmt.Errorf("list task group legs: %w", err)
-	}
-	defer rows.Close()
-	tasks := make([]Task, 0)
-	for rows.Next() {
-		task, err := scanTask(rows)
-		if err != nil {
-			return nil, fmt.Errorf("scan task group leg: %w", err)
-		}
-		tasks = append(tasks, *task)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("list task group legs: %w", err)
-	}
-	return tasks, nil
-}
-
 // ListEngineExecObservations returns completed runtime task results for one
 // exact run snapshot, workflow node and agent identity. TeamRun uses it to
 // reconcile durable CLI tool observations after a member settles; the node
@@ -727,51 +648,6 @@ func (s *Store) ListEngineExecObservations(
 		return nil, fmt.Errorf("list engine exec observation rows: %w", err)
 	}
 	return observations, nil
-}
-
-// CancelGroupLegs marks every queued, dispatched, or running leg of one group
-// as cancelled and returns how many legs changed. In-flight workers lose their
-// lease on the next heartbeat; their late completions are dropped because the
-// leg is no longer running.
-func (s *Store) CancelGroupLegs(ctx context.Context, workspaceID, groupID string) (int, error) {
-	now := s.clock.Now()
-	tag, err := s.pool.Exec(ctx, `
-		UPDATE weave_task_queue
-		SET status=$3, worker_id=NULL, lease_expires_at=NULL, completed_at=$4, updated_at=$4
-		WHERE workspace_id=$1 AND task_group_id=$2 AND status IN ($5, $6, $7)
-	`, workspaceID, groupID, StatusCancelled, now,
-		StatusQueued, StatusDispatched, StatusRunning)
-	if err != nil {
-		return 0, fmt.Errorf("cancel task group legs: %w", err)
-	}
-	return int(tag.RowsAffected()), nil
-}
-
-// RequeueFailedLeg moves the newest failed leg of one worker in one group back
-// to queued so a worker claims it again. Result, error, run, and lease state
-// are reset; the original payload and creation time are kept.
-func (s *Store) RequeueFailedLeg(ctx context.Context, workspaceID, groupID, agent string) (*Task, error) {
-	now := s.clock.Now()
-	row := s.pool.QueryRow(ctx, `
-		UPDATE weave_task_queue
-		SET status=$4, result=NULL, error=NULL, run_id=NULL, worker_id=NULL,
-			lease_expires_at=NULL, started_at=NULL, completed_at=NULL, updated_at=$5
-		WHERE id = (
-			SELECT id FROM weave_task_queue
-			WHERE workspace_id=$1 AND task_group_id=$2 AND agent=$3 AND status=$6 AND worker_id IS NULL AND ($7::jsonb IS NULL OR actor_subject=$7::jsonb)
-			ORDER BY created_at DESC, id DESC
-			LIMIT 1
-		)
-		RETURNING `+taskColumns,
-		workspaceID, groupID, agent, StatusQueued, now, StatusFailed, subjectFilter(ctx))
-	task, err := scanTask(row)
-	if err != nil {
-		if err == pgx.ErrNoRows {
-			return nil, fmt.Errorf("no failed leg for worker %q in task group %q", agent, groupID)
-		}
-		return nil, fmt.Errorf("requeue failed leg: %w", err)
-	}
-	return task, nil
 }
 
 // RequeueFailedTask retries one exact failed task while retaining its frozen

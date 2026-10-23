@@ -668,7 +668,7 @@ func (s *Server) ConfigureTeamRunWorkers() error {
 		runtime.Activities = s.modelActivityBuffer
 		runtime.ModelObservationOptions = workflow.ModelObservationOptions{CompactPhases: true, SlowAfter: 30 * time.Second}
 	}
-	memberRunner, err := loomruntime.NewMemberRunner(kernelbindings.WithTerminalActivity(storeext.New(pool)))
+	memberRunner, err := loomruntime.NewMemberRunner(storeext.New(pool))
 	if err != nil {
 		panic(fmt.Sprintf("configure frozen member runner: %v", err))
 	}
@@ -815,7 +815,7 @@ func (s *Server) resolveSubAgent(tenant, agentName string) (loom.Step, error) {
 	// Prepare child without sub-agent resolution (prevent infinite recursion).
 	childOpts := compiler.CompileOpts{
 		Store:       s.Store,
-		AgentRunner: s.compilerAgentRunner(tenant, "", llm, nil),
+		AgentRunner: s.compilerAgentRunner(tenant, llm),
 	}
 	prepared, err := loomruntime.Prepare(loomruntime.RunRequest{
 		Tenant: tenant,

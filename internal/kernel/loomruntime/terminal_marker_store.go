@@ -532,7 +532,7 @@ func scanTerminalMarker(row rowScanner) (TerminalMarkerV1, error) {
 	return m, nil
 }
 
-type PGTerminalStateStore struct{ activityProjector TerminalActivityProjector }
+type PGTerminalStateStore struct{}
 
 func NewPGTerminalStateStore() *PGTerminalStateStore { return &PGTerminalStateStore{} }
 func (*PGTerminalStateStore) LockTerminalRun(ctx context.Context, tx pgx.Tx, workspaceID, runID string) error {
@@ -603,11 +603,6 @@ func (s *PGTerminalStateStore) ApplyTerminalMarkerTransition(ctx context.Context
 	out, err := scanTerminalMarker(tx.QueryRow(ctx, q, args...))
 	if err != nil {
 		return TerminalMarkerV1{}, fmt.Errorf("apply terminal marker transition: %w", err)
-	}
-	if out.ConversationID != nil && s.activityProjector != nil {
-		if err := s.activityProjector.ProjectTerminalActivityTx(ctx, tx, out.WorkspaceID, *out.ConversationID, out.TerminalAt); err != nil {
-			return TerminalMarkerV1{}, fmt.Errorf("project terminal activity: %w", err)
-		}
 	}
 	return out, nil
 }

@@ -42,15 +42,14 @@ type registration struct {
 
 // Worker routes typed tasks through one shared claim, lease and cancellation loop.
 type Worker struct {
-	store         *Store
-	handlers      []registration
-	concurrency   int
-	pollInterval  time.Duration
-	onLegTerminal func(context.Context, string, string)
-	mu            sync.Mutex
-	cancel        context.CancelFunc
-	cancellers    map[string]context.CancelFunc
-	pollWG        sync.WaitGroup
+	store        *Store
+	handlers     []registration
+	concurrency  int
+	pollInterval time.Duration
+	mu           sync.Mutex
+	cancel       context.CancelFunc
+	cancellers   map[string]context.CancelFunc
+	pollWG       sync.WaitGroup
 }
 
 func NewWorker(store *Store, concurrency int) *Worker {
@@ -79,8 +78,6 @@ func (w *Worker) Register(kind string, identity IdentityKind, handler Handler) e
 	w.handlers = append(w.handlers, registration{kind, identity, handler})
 	return nil
 }
-
-func (w *Worker) SetOnLegTerminal(hook func(context.Context, string, string)) { w.onLegTerminal = hook }
 
 func (w *Worker) Start() {
 	w.mu.Lock()
@@ -173,11 +170,6 @@ func waitForPoll(ctx context.Context, interval time.Duration) bool {
 }
 
 func (w *Worker) executeTask(workerCtx context.Context, task Task, handler Handler) {
-	defer func() {
-		if task.TaskGroupID != "" && w.onLegTerminal != nil {
-			w.onLegTerminal(context.Background(), task.WorkspaceID, task.TaskGroupID)
-		}
-	}()
 	boundCtx, err := BindTaskExecution(workerCtx, &task, w.store)
 	if err != nil {
 		// The handler has not started; acknowledge only the exact stopped claim.

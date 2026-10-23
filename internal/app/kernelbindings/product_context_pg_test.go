@@ -4,14 +4,12 @@ import (
 	"context"
 	"errors"
 	"testing"
-	"time"
 
 	"github.com/jinyitao123/weave/internal/app/agentcatalog"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jinyitao123/weave/internal/base/deliverable"
 	"github.com/jinyitao123/weave/internal/base/testutil"
-	"github.com/jinyitao123/weave/internal/kernel/fanout"
 
 	orgstore "github.com/jinyitao123/weave/internal/app/org"
 )
@@ -89,77 +87,6 @@ func TestProductDirectoryRejectsCrossWorkspaceAndUsesCallerTransaction(t *testin
 	}
 }
 
-func TestConversationPortsAndActivityPreserveWorkspaceAndRollback(t *testing.T) {
-	pool := productContextFixture(t)
-	ctx := context.Background()
-	tx, err := pool.Begin(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer tx.Rollback(ctx)
-	for _, tc := range []struct {
-		id    string
-		found bool
-	}{{"conversation-a", true}, {"conversation-b", false}, {"thread-a", false}, {"missing", false}} {
-		user, found, err := ConversationOwner(ctx, tx, "a", tc.id)
-		if err != nil || found != tc.found || (found && user != "alice") {
-			t.Fatalf("owner %s: %s %v %v", tc.id, user, found, err)
-		}
-	}
-	if project, err := ConversationProject(ctx, tx, "a", "conversation-a"); err != nil || project != "project-a" {
-		t.Fatalf("project: %s %v", project, err)
-	}
-	if project, err := ConversationProject(ctx, tx, "a", "conversation-b"); err != nil || project != "" {
-		t.Fatalf("foreign project: %s %v", project, err)
-	}
-	at := time.Date(2026, 9, 14, 0, 0, 0, 0, time.UTC)
-	records := WithTerminalActivity(nil)
-	if err := records.ProjectTerminalActivityTx(ctx, tx, "a", "conversation-a", at); err != nil {
-		t.Fatal(err)
-	}
-	if err := records.ProjectTerminalActivityTx(ctx, tx, "a", "conversation-b", at); err != nil {
-		t.Fatal(err)
-	}
-	var a, b *time.Time
-	if err := tx.QueryRow(ctx, `SELECT last_activity_at FROM weave_projects WHERE id='project-a'`).Scan(&a); err != nil {
-		t.Fatal(err)
-	}
-	if err := tx.QueryRow(ctx, `SELECT last_activity_at FROM weave_projects WHERE id='project-b'`).Scan(&b); err != nil {
-		t.Fatal(err)
-	}
-	if a == nil || !a.Equal(at) || b != nil {
-		t.Fatalf("projection scope: %v %v", a, b)
-	}
-	if err := tx.Rollback(ctx); err != nil {
-		t.Fatal(err)
-	}
-	if err := pool.QueryRow(ctx, `SELECT last_activity_at FROM weave_projects WHERE id='project-a'`).Scan(&a); err != nil || a != nil {
-		t.Fatalf("rolled back activity persisted: %v %v", a, err)
-	}
-}
-
-func TestFanoutAssociationRequiresExplicitProductPort(t *testing.T) {
-	pool := productContextFixture(t)
-	ctx := context.Background()
-	request := fanout.Group{WorkspaceID: "a", AvatarAgent: "lead", UserID: "alice", ConversationID: "conversation-a"}
-	if _, err := fanout.New(pool, nil).CreateGroup(ctx, request); !errors.Is(err, fanout.ErrConversationProjectUnavailable) {
-		t.Fatalf("unbound association: %v", err)
-	}
-	created, err := NewFanout(pool, nil).CreateGroup(ctx, request)
-	if err != nil || created.ProjectID != "project-a" {
-		t.Fatalf("association: %+v %v", created, err)
-	}
-	request.ConversationID = "conversation-b"
-	created, err = NewFanout(pool, nil).CreateGroup(ctx, request)
-	if err != nil || created.ProjectID != "" {
-		t.Fatalf("foreign association: %+v %v", created, err)
-	}
-	request.ConversationID = ""
-	if _, err = fanout.New(pool, nil).CreateGroup(ctx, request); err != nil {
-		t.Fatalf("standalone fanout requires product data: %v", err)
-	}
-}
-
 func workflowDeliverableFixture(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 	pool := productContextFixture(t)
@@ -172,38 +99,37 @@ func workflowDeliverableFixture(t *testing.T) *pgxpool.Pool {
  INSERT INTO weave_teams VALUES ('team','a','lead');
  INSERT INTO weave_agents VALUES ('lead','a','lead','Report owner'),('foreign','b','other','Private name');
  INSERT INTO weave_published_artifact_contents VALUES ('a','workflow',1,'{"team":{"workspace_id":"a","team_id":"team","lead_agent_id":"lead"}}'),('a','workflow',2,'{"team":{"workspace_id":"a","team_id":"team","lead_agent_id":"new-lead"}}');
- INSERT INTO weave_team_run_snapshots VALUES ('snapshot','a','team','project-a','fixed_workflow','{"type":"conversation_explicit","source_ref":"conversation-a"}','workflow',1);`)
+ INSERT INTO weave_team_run_snapshots VALUES ('snapshot','a','team','project-a','fixed_workflow','{"type":"manual","source_ref":"alice"}','workflow',1);`)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return pool
 }
 
-func TestWorkflowDeliverableRequiresProductOwnerAndKeepsAttribution(t *testing.T) {
+func TestWorkflowDeliverableBelongsToTheManualRunOwner(t *testing.T) {
 	pool := workflowDeliverableFixture(t)
 	ctx := context.Background()
 	output := deliverable.WorkflowOutput{WorkspaceID: "a", RunID: "run", RunSnapshotID: "snapshot", NodeID: "deliver", NodeLabel: "Report", Output: "final report", Final: true}
-	if err := deliverable.New(pool).RecordWorkflowOutput(ctx, output); !errors.Is(err, deliverable.ErrConversationOwnerUnavailable) {
-		t.Fatalf("unbound owner accepted: %v", err)
-	}
 	store := deliverable.New(pool, DeliverableOptions()...)
 	if err := store.RecordWorkflowOutput(ctx, output); err != nil {
 		t.Fatal(err)
 	}
-	var user, conversation, lead string
-	if err := pool.QueryRow(ctx, `SELECT user_id,conversation_id,lead_avatar_id FROM weave_final_deliverables`).Scan(&user, &conversation, &lead); err != nil || user != "alice" || conversation != "conversation-a" || lead != "lead" {
-		t.Fatalf("attribution: %s %s %s %v", user, conversation, lead, err)
+	var user, lead string
+	if err := pool.QueryRow(ctx, `SELECT user_id,lead_avatar_id FROM weave_final_deliverables`).Scan(&user, &lead); err != nil || user != "alice" || lead != "lead" {
+		t.Fatalf("attribution: %s %s %v", user, lead, err)
 	}
+	// A conversation-triggered run once found its owner through the retired
+	// conversation table; it now records no final deliverable.
 	if _, err := pool.Exec(ctx, `UPDATE weave_team_run_snapshots SET trigger_source_v2='{"type":"conversation_explicit","source_ref":"conversation-b"}'`); err != nil {
 		t.Fatal(err)
 	}
-	output.RunID = "foreign"
+	output.RunID = "conversation"
 	if err := store.RecordWorkflowOutput(ctx, output); err != nil {
 		t.Fatal(err)
 	}
 	var count int
 	if err := pool.QueryRow(ctx, `SELECT count(*) FROM weave_final_deliverables`).Scan(&count); err != nil || count != 1 {
-		t.Fatalf("foreign conversation generated artifact: %d %v", count, err)
+		t.Fatalf("conversation-triggered run generated a deliverable: %d %v", count, err)
 	}
 }
 
@@ -234,7 +160,7 @@ func TestWorkflowDeliverableKeepsFrozenLeadAfterDirectoryChange(t *testing.T) {
 	}
 	output.NodeID = "fallback-label"
 	output.NodeLabel = ""
-	if err := deliverable.New(pool, deliverable.WithConversationOwner(ConversationOwner)).RecordWorkflowOutput(ctx, output); err != nil {
+	if err := deliverable.New(pool).RecordWorkflowOutput(ctx, output); err != nil {
 		t.Fatalf("optional label required product directory: %v", err)
 	}
 }

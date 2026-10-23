@@ -53,7 +53,6 @@ type AgentRunner struct {
 	// live compilation. Nil keeps legacy behavior (and fails closed for
 	// agents that pin registry_version refs on this runner).
 	SkillVersionReader compiler.SkillVersionReader
-	InnerPlatformTools func(rec *registry.AgentRecord) []contract.ToolDispatcher
 	RunLifecycleHook   loomruntime.RunLifecycleHook
 	// UsageAttributionHook is passed through to loomruntime.PreparedRun so
 	// callers (e.g. the team build phase) can durably associate the
@@ -186,14 +185,7 @@ func (r *AgentRunner) runRecord(
 	if len(rec.MCPServers) > 0 && r.Broker == nil {
 		return AgentRunResult{}, fmt.Errorf("agent tool broker is unavailable")
 	}
-	innerRequest := ToolBrokerRequest{WorkspaceID: r.tenant, Agent: rec, LLM: r.llm}
-	if r.InnerPlatformTools != nil {
-		builders := r.InnerPlatformTools
-		innerRequest.PlatformTools = func(contract.LLM) []contract.ToolDispatcher {
-			return builders(rec)
-		}
-	}
-	innerTools := r.Broker.Build(ctx, innerRequest)
+	innerTools := r.Broker.Build(ctx, ToolBrokerRequest{WorkspaceID: r.tenant, Agent: rec})
 
 	// Depth-limited like host-managed sub-agent steps: inner runs get no AgentRunner, so a
 	// delegated/worker target must be a leaf — declarative worker steps fire only
