@@ -121,14 +121,37 @@ func (s *Service) captureFenceStates(ctx context.Context, workspaceID string, re
 		return nil, err
 	}
 	defer tx.Rollback(ctx)
-	states := make([]admissionfence.State, 0, len(resources))
+	// Fences already exist for every resource admitted before, so they are
+	// read in one statement and only the missing ones are created.
+	found, err := readFenceStatesTx(ctx, tx, workspaceID, resources, "")
+	if err != nil {
+		return nil, err
+	}
+	var missing []admissionfence.Resource
 	for _, resource := range resources {
-		if err = ensureFenceTx(ctx, tx, workspaceID, resource); err != nil {
+		if _, present := found[resource]; !present {
+			missing = append(missing, resource)
+		}
+	}
+	if len(missing) > 0 {
+		kinds, ids, versions := fenceArrays(missing)
+		if _, err = tx.Exec(ctx, `INSERT INTO weave_resource_admission_fences(workspace_id,resource_kind,resource_id,resource_version)
+			SELECT $1,kind,id,version FROM unnest($2::text[],$3::text[],$4::text[]) AS r(kind,id,version) ON CONFLICT DO NOTHING`, workspaceID, kinds, ids, versions); err != nil {
 			return nil, err
 		}
-		state := admissionfence.State{Resource: resource}
-		if err = tx.QueryRow(ctx, `SELECT epoch,blocked FROM weave_resource_admission_fences WHERE workspace_id=$1 AND resource_kind=$2 AND resource_id=$3 AND resource_version=$4`, workspaceID, resource.Kind, resource.ID, resource.Version).Scan(&state.Epoch, &state.Blocked); err != nil {
+		created, err := readFenceStatesTx(ctx, tx, workspaceID, missing, "")
+		if err != nil {
 			return nil, err
+		}
+		for resource, state := range created {
+			found[resource] = state
+		}
+	}
+	states := make([]admissionfence.State, 0, len(resources))
+	for _, resource := range resources {
+		state, present := found[resource]
+		if !present {
+			return nil, pgx.ErrNoRows
 		}
 		if state.Blocked && !allowBlocked {
 			return nil, admissionfence.ErrBlocked
@@ -140,6 +163,37 @@ func (s *Service) captureFenceStates(ctx context.Context, workspaceID string, re
 	}
 	return states, nil
 }
+
+// readFenceStatesTx reads the fences of resources in one statement, locking
+// them in key order when lock is set.
+func readFenceStatesTx(ctx context.Context, tx pgx.Tx, workspaceID string, resources []admissionfence.Resource, lock string) (map[admissionfence.Resource]admissionfence.State, error) {
+	kinds, ids, versions := fenceArrays(resources)
+	rows, err := tx.Query(ctx, `SELECT resource_kind,resource_id,resource_version,epoch,blocked FROM weave_resource_admission_fences
+		WHERE workspace_id=$1 AND (resource_kind,resource_id,resource_version) IN (SELECT * FROM unnest($2::text[],$3::text[],$4::text[]))
+		ORDER BY resource_kind,resource_id,resource_version`+lock, workspaceID, kinds, ids, versions)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	found := make(map[admissionfence.Resource]admissionfence.State, len(resources))
+	for rows.Next() {
+		var state admissionfence.State
+		if err := rows.Scan(&state.Resource.Kind, &state.Resource.ID, &state.Resource.Version, &state.Epoch, &state.Blocked); err != nil {
+			return nil, err
+		}
+		found[state.Resource] = state
+	}
+	return found, rows.Err()
+}
+
+func fenceArrays(resources []admissionfence.Resource) (kinds, ids, versions []string) {
+	kinds, ids, versions = make([]string, 0, len(resources)), make([]string, 0, len(resources)), make([]string, 0, len(resources))
+	for _, resource := range resources {
+		kinds, ids, versions = append(kinds, resource.Kind), append(ids, resource.ID), append(versions, resource.Version)
+	}
+	return kinds, ids, versions
+}
+
 func ensureFenceTx(ctx context.Context, tx pgx.Tx, workspaceID string, r admissionfence.Resource) error {
 	_, err := tx.Exec(ctx, `INSERT INTO weave_resource_admission_fences(workspace_id,resource_kind,resource_id,resource_version)VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING`, workspaceID, r.Kind, r.ID, r.Version)
 	return err
@@ -160,17 +214,24 @@ func checkFenceStatesTx(ctx context.Context, tx pgx.Tx, workspaceID string, stat
 		// simultaneous grants both upgrading a shared lock.
 		lock = " FOR UPDATE"
 	}
+	resources := make([]admissionfence.Resource, 0, len(states))
 	for _, expected := range states {
-		var epoch int64
-		var blocked bool
-		r := expected.Resource
-		if err := tx.QueryRow(ctx, `SELECT epoch,blocked FROM weave_resource_admission_fences WHERE workspace_id=$1 AND resource_kind=$2 AND resource_id=$3 AND resource_version=$4`+lock, workspaceID, r.Kind, r.ID, r.Version).Scan(&epoch, &blocked); err != nil {
-			return err
+		resources = append(resources, expected.Resource)
+	}
+	// One statement locks every fence, in key order, instead of one per resource.
+	current, err := readFenceStatesTx(ctx, tx, workspaceID, resources, lock)
+	if err != nil {
+		return err
+	}
+	for _, expected := range states {
+		state, present := current[expected.Resource]
+		if !present {
+			return pgx.ErrNoRows
 		}
-		if blocked && !allowBlocked {
+		if state.Blocked && !allowBlocked {
 			return admissionfence.ErrBlocked
 		}
-		if epoch != expected.Epoch {
+		if state.Epoch != expected.Epoch {
 			return admissionfence.ErrChanged
 		}
 	}
