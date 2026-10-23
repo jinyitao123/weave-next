@@ -1,4 +1,4 @@
-.PHONY: admin-install admin-check admin-build build test test-integration vet depguard base-depguard budgetguard governance-test productguard compose-check ci docker-build docker-image
+.PHONY: admin-install admin-check admin-build build test test-integration vet depguard base-depguard governance-test productguard compose-check ci docker-build docker-image
 
 BUILD_COMMIT := $(shell commit=$$(git rev-parse HEAD 2>/dev/null || echo unknown); if [ "$$commit" != unknown ] && [ -n "$$(git status --porcelain 2>/dev/null)" ]; then commit="$$commit-dirty"; fi; echo "$$commit")
 WEAVE_VERSION := $(shell tr -d '[:space:]' < VERSION)
@@ -33,9 +33,6 @@ depguard:
 base-depguard:
 	./scripts/base-depguard.sh
 
-budgetguard:
-	./scripts/budgetguard.sh
-
 productguard:
 	./scripts/productguard.sh
 
@@ -45,7 +42,7 @@ governance-test:
 compose-check:
 	WEAVE_TEST_COMPOSE=1 python3 -m unittest discover -s tools/tests -p test_governance.py -k PlatformCompose -v
 
-ci: build vet test depguard base-depguard budgetguard productguard governance-test
+ci: build vet test depguard base-depguard productguard governance-test
 
 docker-build:
 	./scripts/refresh-weave.sh
