@@ -154,12 +154,22 @@ func refreshQuotaScope(ctx context.Context, pool *pgxpool.Pool, scope quotaScope
 }
 
 // reclaimQuotaSlots frees every slot of scope whose holder is no longer in
-// flight and removes freed retired slots. The scan locks its candidates in
-// slot order, waiting for slots another admission or reclaim holds, so a
-// refusal that follows has seen every release in progress; the release then
-// rechecks the candidates in a new statement, so a holder that committed after
-// the scan began is seen and keeps its slot.
+// flight and removes freed retired slots. Reclaims of a scope take turns, so a
+// refusal that follows has seen every release in progress. The scan locks its
+// candidates in slot order, waiting for slots an admission holds; the release
+// then rechecks the candidates in a new statement, so a holder that committed
+// after the scan began is seen and keeps its slot.
 func reclaimQuotaSlots(ctx context.Context, tx pgx.Tx, scope quotaScope) error {
+	// Reclaims of one scope run one after another. A reclaim that waited for
+	// another's release and then found those slots already free would still
+	// keep their row locks until it committed, and admissions retrying with
+	// SKIP LOCKED would then see no free slot and be refused. Taken in turn, a
+	// reclaim starts after the previous one committed and never locks a slot
+	// it does not release. Only admissions that found the scope full get here.
+	lock := invocationLockKey("capability-quota-reclaim", scope.WorkspaceID, scope.ApplicationID, "")
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, lock); err != nil {
+		return fmt.Errorf("serialize capability quota slot reclaim: %w", err)
+	}
 	rows, err := tx.Query(ctx, `SELECT s.slot FROM weave_capability_quota_slots s
 	 WHERE s.workspace_id=$1 AND s.scope_application_id=$2 AND s.holder_kind IS NOT NULL AND NOT (`+slotHolderLiveSQL+`)
 	 ORDER BY s.slot FOR UPDATE`, scope.WorkspaceID, scope.ApplicationID)

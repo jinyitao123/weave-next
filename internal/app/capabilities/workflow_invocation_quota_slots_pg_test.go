@@ -351,3 +351,26 @@ func TestQuotaSlotsStartFromWorkAlreadyInFlightRealPG(t *testing.T) {
 		t.Fatalf("after the earlier work ended: %d slots, %d retired, %v", slots, retired, err)
 	}
 }
+
+// When the slots fill up with work that has ended, a burst of admissions that
+// all find them full must each be admitted once the ended work is reclaimed,
+// not refused because another admission's reclaim was still releasing them.
+func TestQuotaSlotsAdmitABurstOnceEndedWorkIsReclaimedRealPG(t *testing.T) {
+	f := newQuotaSlotFixture(t, 20)
+	first := f.admitConcurrently(20)
+	if len(first) != 20 {
+		t.Fatalf("admitted %d of 20", len(first))
+	}
+	for _, request := range first[:15] {
+		f.end(request)
+	}
+	for round := 0; round < 3; round++ {
+		burst := f.admitConcurrently(15)
+		if len(burst) != 15 {
+			t.Fatalf("round %d: admitted %d of 15 with 15 slots held by ended work", round, len(burst))
+		}
+		for _, request := range burst {
+			f.end(request)
+		}
+	}
+}
