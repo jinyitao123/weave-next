@@ -51,6 +51,30 @@ type ProviderConfig struct {
 	// 只约束单次 HTTP 调用（含流式读 body），
 	// 多轮 ToolLoop 的每一轮各占一次 attempt，互不累计。
 	AttemptTimeoutSeconds int `json:"attempt_timeout_seconds,omitempty"`
+	// ChatPath is appended to BaseURL; together they are the exact request
+	// address. Empty keeps the address providers had before paths were
+	// recorded (see frozen.ResolveProviderEndpoint).
+	ChatPath string `json:"chat_path,omitempty"`
+}
+
+// Endpoint is the base URL and chat path this provider's requests go to.
+func (cfg ProviderConfig) Endpoint() frozen.ProviderEndpoint {
+	return frozen.ResolveProviderEndpoint(cfg.Protocol, cfg.BaseURL, cfg.ChatPath)
+}
+
+// ChatURL is the address every request of this provider goes to.
+func (cfg ProviderConfig) ChatURL() string { return cfg.Endpoint().URL() }
+
+// OpenAISDKBaseURL is the base an OpenAI SDK client, which appends
+// /chat/completions itself, needs to reach ChatURL; false when the path does
+// not end that way, so no SDK base reaches the same address.
+func (cfg ProviderConfig) OpenAISDKBaseURL() (string, bool) {
+	const sdkPath = "/chat/completions"
+	endpoint := cfg.Endpoint()
+	if cfg.Protocol == ProtocolSystemOne || !strings.HasSuffix(endpoint.ChatPath, sdkPath) {
+		return "", false
+	}
+	return endpoint.BaseURL + strings.TrimSuffix(endpoint.ChatPath, sdkPath), true
 }
 
 // Router implements contract.LLM by dispatching to model-specific providers.
@@ -85,8 +109,10 @@ var NewProviderClient = func(cfg ProviderConfig) contract.LLM {
 	if len(cfg.Models) > 0 {
 		defaultModel = cfg.Models[0]
 	}
+	endpoint := cfg.Endpoint()
 	opts := []openai.Option{
-		openai.WithBaseURL(strings.TrimSuffix(strings.TrimRight(cfg.BaseURL, "/"), "/v1")),
+		openai.WithBaseURL(endpoint.BaseURL),
+		openai.WithChatPath(endpoint.ChatPath),
 		openai.WithDefaultModel(defaultModel),
 	}
 	if cfg.JSONObjectMode {

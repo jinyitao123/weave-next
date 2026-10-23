@@ -113,6 +113,9 @@ type ProviderAddRequest struct {
 	ID      string `json:"id"`
 	Name    string `json:"name"`
 	BaseURL string `json:"base_url"`
+	// ChatPath is appended to BaseURL to form the request address; omitted, the
+	// protocol's own path is used.
+	ChatPath string `json:"chat_path,omitempty"`
 	// Protocol is "openai" (default) or "systemone".
 	Protocol string `json:"protocol,omitempty"`
 	// APIKey is optional: nil keeps the stored key, a value replaces it and

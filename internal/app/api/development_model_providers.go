@@ -31,6 +31,10 @@ type developmentModelProvider struct {
 	Name    string   `json:"name"`
 	BaseURL string   `json:"base_url"`
 	Models  []string `json:"models"`
+	// ChatPath is the recorded path, empty for a provider saved before paths
+	// were recorded; ChatURL is the address requests go to either way.
+	ChatPath string `json:"chat_path"`
+	ChatURL  string `json:"chat_url"`
 	// Protocol is "openai" (chat completions) or "systemone" (decision models).
 	Protocol       string `json:"protocol"`
 	HasAPIKey      bool   `json:"has_api_key"`
@@ -47,7 +51,7 @@ func (s *Server) handleListDevelopmentModelProviders(c echo.Context) error {
 	if pool == nil {
 		return workflowError(c, http.StatusServiceUnavailable, "development_model_provider_unavailable", "组织模型暂时无法读取")
 	}
-	rows, err := pool.Query(c.Request().Context(), `SELECT id,name,base_url,models,source_kind,protocol,api_key_set,json_object_mode FROM weave_provider_credentials
+	rows, err := pool.Query(c.Request().Context(), `SELECT id,name,base_url,models,source_kind,protocol,api_key_set,json_object_mode,chat_path FROM weave_provider_credentials
 		WHERE workspace_id=$1 AND credential_scope='workspace_service' AND enabled AND revoked_at IS NULL AND deleted_at IS NULL AND latest_revision > 0
 		ORDER BY name,id`, getTenant(c))
 	if err != nil {
@@ -58,9 +62,10 @@ func (s *Server) handleListDevelopmentModelProviders(c echo.Context) error {
 	for rows.Next() {
 		var provider developmentModelProvider
 		var source string
-		if err := rows.Scan(&provider.ID, &provider.Name, &provider.BaseURL, &provider.Models, &source, &provider.Protocol, &provider.HasAPIKey, &provider.JSONObjectMode); err != nil {
+		if err := rows.Scan(&provider.ID, &provider.Name, &provider.BaseURL, &provider.Models, &source, &provider.Protocol, &provider.HasAPIKey, &provider.JSONObjectMode, &provider.ChatPath); err != nil {
 			return workflowStoreFailure(c, err)
 		}
+		provider.ChatURL = frozen.ResolveProviderEndpoint(provider.Protocol, provider.BaseURL, provider.ChatPath).URL()
 		provider.Deployment = source != "workspace"
 		providers = append(providers, provider)
 	}
@@ -74,6 +79,9 @@ func (s *Server) handleListDevelopmentModelProviders(c echo.Context) error {
 // that was added here. The key is optional: leaving api_key out (or sending
 // the masked placeholder) keeps the stored key, a value replaces it, and an
 // explicit "" clears it. protocol is "openai" (default) or "systemone".
+// chat_path is appended to base_url to form the request address; omitted, a
+// new provider records the address its protocol's client has always used and
+// an existing one keeps what it has.
 func (s *Server) handlePutDevelopmentModelProvider(c echo.Context) error {
 	pool := s.GetPool()
 	if pool == nil || s.Credentials == nil {
@@ -85,6 +93,7 @@ func (s *Server) handlePutDevelopmentModelProvider(c echo.Context) error {
 	var request struct {
 		Name           string   `json:"name"`
 		BaseURL        string   `json:"base_url"`
+		ChatPath       *string  `json:"chat_path"`
 		Protocol       string   `json:"protocol"`
 		APIKey         *string  `json:"api_key"`
 		Models         []string `json:"models"`
@@ -146,10 +155,11 @@ func (s *Server) handlePutDevelopmentModelProvider(c echo.Context) error {
 	// An omitted protocol or output mode keeps the provider's current one, as
 	// an omitted key does; a new provider starts from OpenAI chat with strict
 	// JSON Schema output.
-	var scope, source, currentProtocol string
+	var scope, source, currentProtocol, currentChatPath string
 	var currentJSONObjectMode bool
-	err = tx.QueryRow(ctx, `SELECT credential_scope,source_kind,protocol,json_object_mode FROM weave_provider_credentials WHERE workspace_id=$1 AND id=$2`,
-		tenant, id).Scan(&scope, &source, &currentProtocol, &currentJSONObjectMode)
+	err = tx.QueryRow(ctx, `SELECT credential_scope,source_kind,protocol,json_object_mode,chat_path FROM weave_provider_credentials WHERE workspace_id=$1 AND id=$2`,
+		tenant, id).Scan(&scope, &source, &currentProtocol, &currentJSONObjectMode, &currentChatPath)
+	existing := err == nil
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
 		// A new provider may have no key (local and decision-model servers),
@@ -174,6 +184,18 @@ func (s *Server) handlePutDevelopmentModelProvider(c echo.Context) error {
 	jsonObjectMode := currentJSONObjectMode
 	if request.JSONObjectMode != nil {
 		jsonObjectMode = *request.JSONObjectMode
+	}
+	chatPath := request.ChatPath
+	if chatPath == nil && currentChatPath != "" {
+		chatPath = &currentChatPath
+	}
+	endpoint := frozen.ProviderEndpoint{BaseURL: strings.TrimSpace(request.BaseURL)}
+	if chatPath != nil || !existing {
+		// An existing provider saved before paths were recorded keeps that form,
+		// and its address, until a path is given.
+		if endpoint, err = requestedProviderEndpoint(protocol, request.BaseURL, chatPath); err != nil {
+			return providerEndpointRefusal(c, err)
+		}
 	}
 	// A model is served by one shared provider, or the choice at run time would be ambiguous.
 	var taken, by string
@@ -202,7 +224,7 @@ func (s *Server) handlePutDevelopmentModelProvider(c echo.Context) error {
 	}
 	result, err := s.Credentials.UpsertRevisionTx(authorized, tx, tenant, llmrouter.ProviderConfig{
 		CredentialScope: frozen.CredentialScopeWorkspaceService, CredentialServiceID: service,
-		ID: id, Name: name, BaseURL: strings.TrimSpace(request.BaseURL), Protocol: protocol, APIKey: key, Models: models,
+		ID: id, Name: name, BaseURL: endpoint.BaseURL, ChatPath: endpoint.ChatPath, Protocol: protocol, APIKey: key, Models: models,
 		JSONObjectMode: jsonObjectMode,
 	}, options...)
 	if err != nil {
@@ -225,6 +247,7 @@ func (s *Server) handlePutDevelopmentModelProvider(c echo.Context) error {
 		"protocol", protocol, "key_replaced", key != "", "key_cleared", clearKey)
 	return c.JSON(http.StatusOK, map[string]any{
 		"id": id, "name": name, "protocol": protocol, "models": models, "json_object_mode": jsonObjectMode,
+		"base_url": endpoint.BaseURL, "chat_path": endpoint.ChatPath, "chat_url": frozen.ResolveProviderEndpoint(protocol, endpoint.BaseURL, endpoint.ChatPath).URL(),
 		"key_replaced": key != "", "key_cleared": clearKey, "has_api_key": result.Head.APIKeySet,
 	})
 }

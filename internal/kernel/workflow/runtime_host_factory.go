@@ -232,6 +232,7 @@ func buildRuntimeHostsWithLLM(
 				// The frozen protocol picks the wire client; the member and
 				// its execution path are the same for every protocol.
 				Protocol: binding.Protocol,
+				ChatPath: binding.ChatPath,
 			}
 			// This frozen system provider is DeepSeek's OpenAI-compatible endpoint.
 			// Preserve the published non-thinking profile. Reasoning replay is

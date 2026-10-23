@@ -252,6 +252,7 @@ type FrozenModelBinding struct {
 	// chat completions, so existing bindings keep their content hash;
 	// ModelProtocolSystemOne selects the System One decision protocol.
 	Protocol      string              `json:"protocol,omitempty"`
+	ChatPath      string              `json:"chat_path,omitempty"` // appended to BaseURL; empty keeps the pre-chat-path address and hash
 	CredentialRef CredentialReference `json:"credential_ref"`
 	ContentHash   string              `json:"content_hash"`
 }

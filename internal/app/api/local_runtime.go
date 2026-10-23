@@ -101,5 +101,15 @@ func (s *Server) localRuntimeCredentials(ctx context.Context, runtimeID string, 
 	if provider.Protocol == llmrouter.ProtocolSystemOne {
 		return daemon.ProviderCredentials{}, errors.New("a systemone provider cannot serve a CLI runtime")
 	}
-	return daemon.ProviderCredentials{BaseURL: provider.BaseURL, APIKey: provider.APIKey}, nil
+	if provider.ChatPath == "" {
+		// Saved before paths were recorded: the CLI keeps the base it always had.
+		return daemon.ProviderCredentials{BaseURL: provider.BaseURL, APIKey: provider.APIKey}, nil
+	}
+	// The managed CLIs are OpenAI SDK clients and append /chat/completions to
+	// the base themselves; they get the base that reaches the same address.
+	base, ok := provider.OpenAISDKBaseURL()
+	if !ok {
+		return daemon.ProviderCredentials{}, errors.New("a CLI runtime needs a provider chat path ending in /chat/completions")
+	}
+	return daemon.ProviderCredentials{BaseURL: base, APIKey: provider.APIKey}, nil
 }

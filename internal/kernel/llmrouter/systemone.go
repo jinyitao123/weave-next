@@ -54,7 +54,6 @@ var ErrSystemOneTools = errors.New("systemone: 决策模型不调用工具：请
 var ErrSystemOneAnswer = errors.New("systemone: invalid answer")
 
 const (
-	systemOnePath             = "/v1/systemone"
 	systemOneMaxQuestions     = 64
 	systemOneMaxChoices       = 255
 	systemOneMinScoreLevels   = 2
@@ -85,7 +84,7 @@ func newSystemOneClient(cfg ProviderConfig) *systemOneClient {
 		attemptTimeoutSeconds = DefaultAttemptTimeoutSeconds
 	}
 	return &systemOneClient{
-		endpoint:     strings.TrimSuffix(strings.TrimRight(cfg.BaseURL, "/"), "/v1") + systemOnePath,
+		endpoint:     cfg.ChatURL(),
 		apiKey:       cfg.APIKey,
 		defaultModel: defaultModel,
 		client:       &http.Client{Timeout: time.Duration(attemptTimeoutSeconds) * time.Second, Transport: cfg.Transport},

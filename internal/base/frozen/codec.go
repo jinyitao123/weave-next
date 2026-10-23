@@ -363,7 +363,7 @@ func HashDTO(value any, schema PreorderSchema) (string, error) {
 			SchemaVersion: typed.SchemaVersion, WorkspaceID: typed.WorkspaceID,
 			ProviderID: typed.ProviderID, ProviderRevision: typed.ProviderRevision,
 			ModelID: typed.ModelID, BaseURL: typed.BaseURL,
-			JSONObjectMode: typed.JSONObjectMode, Protocol: typed.Protocol, CredentialRef: typed.CredentialRef,
+			JSONObjectMode: typed.JSONObjectMode, Protocol: typed.Protocol, ChatPath: typed.ChatPath, CredentialRef: typed.CredentialRef,
 		}
 	case FrozenRuntimeBinding:
 		normalized = frozenRuntimeHashInput{
@@ -778,6 +778,9 @@ func normalizeFrozenModelBinding(value FrozenModelBinding) (FrozenModelBinding, 
 	// their canonical bytes and content hash.
 	if cloned.Protocol != "" && cloned.Protocol != ModelProtocolSystemOne {
 		return FrozenModelBinding{}, errors.New("unsupported frozen model protocol")
+	}
+	if err := ValidateProviderEndpoint(cloned.Protocol, cloned.BaseURL, cloned.ChatPath); err != nil {
+		return FrozenModelBinding{}, err
 	}
 	if err := ValidateCredentialReference(cloned.CredentialRef); err != nil ||
 		cloned.CredentialRef.Kind != CredentialProviderAPIKey ||
@@ -1929,6 +1932,7 @@ type frozenModelHashInput struct {
 	BaseURL          string              `json:"base_url"`
 	JSONObjectMode   bool                `json:"json_object_mode"`
 	Protocol         string              `json:"protocol,omitempty"`
+	ChatPath         string              `json:"chat_path,omitempty"`
 	CredentialRef    CredentialReference `json:"credential_ref"`
 }
 
