@@ -1767,6 +1767,22 @@
         "lines_added": 24,
         "production_lines_added": 24
       }
+    },
+    {
+      "date": "2026-10-22",
+      "reason": "Make quota slot reclaim wait for releases in progress so a full workspace never refuses beside a slot being freed (#92), with its regression test",
+      "record": "docs/治理/2026-10-22-能力准入配额槽位.md",
+      "growth": {
+        "lines": 40,
+        "production_lines": 1
+      },
+      "deletion_trigger": "Delete TestQuotaSlotsRefuseOnlyAfterReleasesInProgressRealPG's timing wait if slots are released eagerly at terminal states instead of reclaimed by admissions.",
+      "app": {
+        "previous_lines": 82251,
+        "previous_production_lines": 52491,
+        "lines_added": 40,
+        "production_lines_added": 1
+      }
     }
   ],
   "migration_targets": {
@@ -1830,8 +1846,8 @@
     "allowed_dependencies": []
   },
   "app": {
-    "lines": 82251,
-    "production_lines": 52491,
+    "lines": 82291,
+    "production_lines": 52492,
     "packages": 21,
     "external_dependencies": 6,
     "allowed_dependencies": [

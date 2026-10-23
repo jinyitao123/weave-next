@@ -94,14 +94,15 @@ func refreshQuotaSlots(ctx context.Context, pool *pgxpool.Pool, workspaceID stri
 }
 
 // reclaimQuotaSlots frees every slot whose holder is no longer in flight and
-// removes freed retired slots. The scan locks its candidates; the release then
-// rechecks them in a new statement, so a holder that committed after the scan
-// began is seen and keeps its slot. Slots held by admissions still in progress
-// are locked by them and skipped.
+// removes freed retired slots. The scan locks its candidates in slot order,
+// waiting for slots another admission or reclaim holds, so a refusal that
+// follows has seen every release in progress; the release then rechecks the
+// candidates in a new statement, so a holder that committed after the scan
+// began is seen and keeps its slot.
 func reclaimQuotaSlots(ctx context.Context, tx pgx.Tx, workspaceID string) error {
 	rows, err := tx.Query(ctx, `SELECT s.slot FROM weave_capability_quota_slots s
 	 WHERE s.workspace_id=$1 AND s.holder_kind IS NOT NULL AND NOT (`+slotHolderLiveSQL+`)
-	 FOR UPDATE SKIP LOCKED`, workspaceID)
+	 ORDER BY s.slot FOR UPDATE`, workspaceID)
 	if err != nil {
 		return fmt.Errorf("scan capability quota slots: %w", err)
 	}

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -227,6 +228,44 @@ func TestQuotaSlotsAdmitExactlyTheQuotaUnderContentionRealPG(t *testing.T) {
 	}
 	if again := f.admitConcurrently(5); len(again) != 1 {
 		t.Fatalf("after a rolled back admission, admitted %d", len(again))
+	}
+}
+
+// An admission that finds the slots full while another reclaim is releasing
+// one waits for that release instead of being refused beside a free slot.
+func TestQuotaSlotsRefuseOnlyAfterReleasesInProgressRealPG(t *testing.T) {
+	f := newQuotaSlotFixture(t, 1)
+	admitted := f.admitConcurrently(1)
+	if len(admitted) != 1 {
+		t.Fatalf("admitted %d with quota 1", len(admitted))
+	}
+	f.end(admitted[0])
+	reclaim, err := f.pool.Begin(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = reclaim.Rollback(t.Context()) }()
+	if err := reclaimQuotaSlots(t.Context(), reclaim, f.ws); err != nil {
+		t.Fatal(err)
+	}
+	result := make(chan bool, 1)
+	go func() {
+		_, ok, err := f.admit(t.Context())
+		if err != nil {
+			t.Error(err)
+		}
+		result <- ok
+	}()
+	select {
+	case ok := <-result:
+		t.Fatalf("admission finished while a release was in progress: admitted=%v", ok)
+	case <-time.After(500 * time.Millisecond):
+	}
+	if err := reclaim.Commit(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if !<-result {
+		t.Fatal("admission was refused although the release freed a slot")
 	}
 }
 
