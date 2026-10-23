@@ -52,6 +52,9 @@ const (
 	UsageIncompleteReasonCLINode       = "CLI node without usage receipt"
 	UsageIncompleteReasonCLIDimensions = "CLI receipt missing usage dimensions"
 	UsageIncompleteReasonAttemptLost   = "usage attempt did not produce a complete receipt"
+	// UsageIncompleteReasonLegRerun marks a parallel branch step that ran again
+	// after an unfinished attempt whose spend left no receipt.
+	UsageIncompleteReasonLegRerun = "parallel branch step ran again after an unfinished attempt"
 )
 
 func ValidateErrorCode(code ErrorCode) bool {

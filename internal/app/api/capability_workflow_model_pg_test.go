@@ -64,6 +64,13 @@ type capabilityWorkflowModelTrace struct {
 	} `json:"nodes"`
 }
 
+// capabilityWorkflowModelPromptTokens is the input each controlled member
+// reports; members differ so a missing or doubled member changes the total.
+var capabilityWorkflowModelPromptTokens = map[string]int{
+	"fixture-role-completeness": 100, "fixture-role-policy": 200, "fixture-role-accuracy": 400,
+	"fixture-role-final": 800, "fixture-role-single": 50,
+}
+
 func TestCapabilityWorkflowModelSingleMemberRunsThroughPublishedLoomRealPG(t *testing.T) {
 	runCapabilityWorkflowModelAcceptance(t, false)
 }
@@ -153,6 +160,7 @@ func runCapabilityWorkflowModelScenario(t *testing.T, parallel bool, maxConns []
 		}
 		content := "审核完成：资料已核对。"
 		finalWorkerRequest := false
+		promptTokens := 0
 		for marker, response := range map[string]string{
 			"fixture-role-completeness": "完整性复核：已检查所需资料。",
 			"fixture-role-policy":       "规则复核：资料符合约定要求。",
@@ -163,6 +171,7 @@ func runCapabilityWorkflowModelScenario(t *testing.T, parallel bool, maxConns []
 			if strings.Contains(string(body), marker) {
 				content = response
 				finalWorkerRequest = marker == "fixture-role-final"
+				promptTokens = capabilityWorkflowModelPromptTokens[marker]
 				break
 			}
 		}
@@ -181,6 +190,13 @@ func runCapabilityWorkflowModelScenario(t *testing.T, parallel bool, maxConns []
 		w.Header().Set("Content-Type", "text/event-stream")
 		_, _ = fmt.Fprintf(w, "data: %s\n\n", firstChunk)
 		_, _ = fmt.Fprintf(w, "data: %s\n\n", lastChunk)
+		// Each member reports its own spend, so the root total shows whether
+		// every member, parallel legs included, was counted exactly once.
+		usageChunk, _ := json.Marshal(map[string]any{
+			"id": "controlled-model-response", "object": "chat.completion.chunk", "choices": []any{},
+			"usage": map[string]int{"prompt_tokens": promptTokens, "completion_tokens": promptTokens / 10, "total_tokens": promptTokens + promptTokens/10},
+		})
+		_, _ = fmt.Fprintf(w, "data: %s\n\n", usageChunk)
 		_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
 	}))
 	defer provider.Close()
@@ -355,6 +371,27 @@ func runCapabilityWorkflowModelScenario(t *testing.T, parallel bool, maxConns []
 		t.Fatalf("published output schema/result mismatch: result=%s err=%v result_state=%s error=%s; %s",
 			completed.body["result"], err, completed.stringField(t, "result_state"), completed.stringField(t, "error"),
 			capabilityWorkflowModelRunDiagnostics(ctx, pool, tasks, runID))
+	}
+	var physical struct {
+		InputTokens  int `json:"input_tokens"`
+		OutputTokens int `json:"output_tokens"`
+	}
+	wantInput := capabilityWorkflowModelPromptTokens["fixture-role-single"]
+	if parallel {
+		wantInput = 0
+		for _, marker := range []string{"fixture-role-completeness", "fixture-role-policy", "fixture-role-accuracy", "fixture-role-final"} {
+			wantInput += capabilityWorkflowModelPromptTokens[marker]
+		}
+	}
+	if err := json.Unmarshal(completed.body["physical_usage"], &physical); err != nil ||
+		physical.InputTokens != wantInput || physical.OutputTokens != wantInput/10 {
+		t.Fatalf("root usage = %s (err=%v), want input=%d output=%d: every member, parallel legs included, counted once",
+			completed.body["physical_usage"], err, wantInput, wantInput/10)
+	}
+	// Every member reported tokens and none ran again, so nothing is unknown.
+	var complete bool
+	if err := json.Unmarshal(completed.body["usage_complete"], &complete); err != nil || !complete {
+		t.Fatalf("usage_complete = %s (err=%v), want true", completed.body["usage_complete"], err)
 	}
 	if got := modelCalls.Load(); got != caseData.wantCalls {
 		t.Fatalf("controlled provider calls=%d, want %d", got, caseData.wantCalls)

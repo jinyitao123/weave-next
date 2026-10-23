@@ -300,9 +300,8 @@ func (r *WorkflowSerialRuntime) ExecuteFanoutLeg(
 	for _, entry := range runtimeArtifact.Entries {
 		entries[runtimeEntryKey(entry.AgentID, entry.AgentVersion)] = entry
 	}
-	// Fanout legs still do not contribute to run-level usage settlement; that
-	// remains owned by T14B-2B. Their measured usage is retained in the
-	// activity ledger so the worksite can show honest member-level facts.
+	// Each finished step stores what it spent with its output; the parent
+	// adds it to its own usage when the group joins.
 	var retry struct {
 		Generation int `json:"retry_generation"`
 	}
@@ -330,6 +329,7 @@ func (r *WorkflowSerialRuntime) ExecuteFanoutLeg(
 		stepArtifacts[nodeID] = ids
 	}
 	checkpoint.ArtifactTaskIDs = stepArtifacts
+	rerunChecked := false
 	for ordinal, step := range steps {
 		if done, present := finished[step.ID]; present {
 			// A step that finished before is not run again; its output feeds the next.
@@ -348,7 +348,7 @@ func (r *WorkflowSerialRuntime) ExecuteFanoutLeg(
 		if ordinal > 0 {
 			invocationID += "/" + step.ID
 		}
-		output, stepArtifactTaskIDs, err := r.runFanoutLegStep(ctx, parent, loaded, entries, step, invocationID, retry.Generation,
+		output, stepArtifactTaskIDs, nodeUsage, err := r.runFanoutLegStep(ctx, parent, loaded, entries, step, invocationID, retry.Generation,
 			runInput, outputs, checkpoint, actionOutcomes)
 		if err != nil {
 			return nil, err
@@ -357,7 +357,14 @@ func (r *WorkflowSerialRuntime) ExecuteFanoutLeg(
 		if err != nil {
 			return nil, executionError(ErrorCodeOutputInvalid, err)
 		}
-		if err := r.recordFanoutLegStep(ctx, task.WorkspaceID, leg, step.ID, ordinal, encoded, stepArtifactTaskIDs); err != nil {
+		stepUsage := newFanoutLegStepUsage(leg.GroupID+"/"+invocationID, nodeUsage)
+		// An earlier claim of this task, or an earlier retry generation, may
+		// have started this step and spent tokens that left no receipt.
+		if !rerunChecked && (task.ClaimEpoch > 1 || retry.Generation > 0) && stepUsage.IncompleteReason == "" {
+			stepUsage.IncompleteReason = UsageIncompleteReasonLegRerun
+		}
+		rerunChecked = true
+		if err := r.recordFanoutLegStep(ctx, task.WorkspaceID, leg, step.ID, ordinal, encoded, stepArtifactTaskIDs, stepUsage); err != nil {
 			return nil, executionError(ErrorCodeSnapshotUnavailable, err)
 		}
 		outputs[step.ID] = output
@@ -388,11 +395,11 @@ func (r *WorkflowSerialRuntime) runFanoutLegStep(
 	outputs map[string]any,
 	checkpoint WorkflowCheckpointV1,
 	actionOutcomes []BusinessActionOutcomeV1,
-) (any, []string, error) {
+) (any, []string, nodeUsageReport, error) {
 	worker, _ := branch.Config.(machine.WorkerConfig)
 	memberID, memberVersion, _ := agentNodeIdentity(branch, loaded.payload)
 	if err := loadRuntimeGraph(entries, memberID, memberVersion); err != nil {
-		return nil, nil, executionError(ErrorCodeRuntimeIncompatible, err)
+		return nil, nil, nodeUsageReport{}, executionError(ErrorCodeRuntimeIncompatible, err)
 	}
 	startedAt := time.Now().UTC()
 	recordActivity := r.activityRecorder(parent)
@@ -423,7 +430,7 @@ func (r *WorkflowSerialRuntime) runFanoutLegStep(
 	owner := workflowArtifactOwner{NodeID: branch.ID, NodeLabel: branch.Label, NodeType: string(branch.Type), AgentID: worker.AgentID}
 	if err != nil {
 		if recordErr := r.recordWorkflowArtifacts(ctx, parent, owner, nodeUsage.Artifacts, false); recordErr != nil {
-			return nil, nil, executionError(ErrorCodeDeliveryUnavailable, errors.Join(err, recordErr))
+			return nil, nil, nodeUsage, executionError(ErrorCodeDeliveryUnavailable, errors.Join(err, recordErr))
 		}
 		if recordActivity != nil {
 			failure := ClassifyFailure(err)
@@ -433,7 +440,7 @@ func (r *WorkflowSerialRuntime) runFanoutLegStep(
 				"output_validation": nodeOutputViolation(err),
 			})
 		}
-		return nil, nil, err
+		return nil, nil, nodeUsage, err
 	}
 	if recordActivity != nil {
 		recordActivity(ctx, "member_completed", branch, memberID, memberVersion, map[string]any{
@@ -443,11 +450,11 @@ func (r *WorkflowSerialRuntime) runFanoutLegStep(
 	}
 	if recorder := r.workflowOutputRecorder(parent); recorder != nil {
 		if err := recorder(ctx, branch, output, false); err != nil {
-			return nil, nil, executionError(ErrorCodeDeliveryUnavailable, err)
+			return nil, nil, nodeUsage, executionError(ErrorCodeDeliveryUnavailable, err)
 		}
 	}
 	if err := r.recordWorkflowArtifacts(ctx, parent, owner, nodeUsage.Artifacts, false); err != nil {
-		return nil, nil, executionError(ErrorCodeDeliveryUnavailable, err)
+		return nil, nil, nodeUsage, executionError(ErrorCodeDeliveryUnavailable, err)
 	}
 	artifactTaskIDs := []string{}
 	if nodeUsage.MemberRunID != "" {
@@ -458,7 +465,7 @@ func (r *WorkflowSerialRuntime) runFanoutLegStep(
 			artifactTaskIDs = []string{attempt.AttemptID}
 		}
 	}
-	return output, artifactTaskIDs, nil
+	return output, artifactTaskIDs, nodeUsage, nil
 }
 
 type finishedFanoutLegStep struct {
@@ -501,11 +508,15 @@ func (r *WorkflowSerialRuntime) finishedFanoutLegSteps(ctx context.Context, work
 
 // recordFanoutLegStep keeps a finished branch step. A step recorded by an
 // earlier run of the same leg wins; the leg then continues from its output.
-func (r *WorkflowSerialRuntime) recordFanoutLegStep(ctx context.Context, workspaceID string, leg FanoutLegTaskPayloadV1, nodeID string, ordinal int, output json.RawMessage, artifactTaskIDs []string) error {
+func (r *WorkflowSerialRuntime) recordFanoutLegStep(ctx context.Context, workspaceID string, leg FanoutLegTaskPayloadV1, nodeID string, ordinal int, output json.RawMessage, artifactTaskIDs []string, usage fanoutLegStepUsageV1) error {
 	if artifactTaskIDs == nil {
 		artifactTaskIDs = []string{}
 	}
 	ids, err := json.Marshal(artifactTaskIDs)
+	if err != nil {
+		return err
+	}
+	encodedUsage, err := encodeFanoutLegStepUsage(usage)
 	if err != nil {
 		return err
 	}
@@ -514,9 +525,9 @@ func (r *WorkflowSerialRuntime) recordFanoutLegStep(ctx context.Context, workspa
 		return err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	if _, err = tx.Exec(ctx, `INSERT INTO weave_fanout_leg_steps(workspace_id,group_id,leg_id,node_id,step_ordinal,output,artifact_task_ids)
-		VALUES($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb) ON CONFLICT (workspace_id,group_id,leg_id,node_id) DO NOTHING`,
-		workspaceID, leg.GroupID, leg.LegID, nodeID, ordinal, string(output), string(ids)); err != nil {
+	if _, err = tx.Exec(ctx, `INSERT INTO weave_fanout_leg_steps(workspace_id,group_id,leg_id,node_id,step_ordinal,output,artifact_task_ids,usage)
+		VALUES($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,$8::jsonb) ON CONFLICT (workspace_id,group_id,leg_id,node_id) DO NOTHING`,
+		workspaceID, leg.GroupID, leg.LegID, nodeID, ordinal, string(output), string(ids), encodedUsage); err != nil {
 		return fmt.Errorf("record finished branch step: %w", err)
 	}
 	return tx.Commit(ctx)

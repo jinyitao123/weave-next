@@ -384,14 +384,26 @@ func (r *FanoutParentRunResumer) advanceGraph(ctx context.Context, req fanout.Re
 		checkpoint.ArtifactTaskIDs[checkpoint.NodeID] = append(checkpoint.ArtifactTaskIDs[checkpoint.NodeID], joinedArtifactTaskIDs[leg.BranchID]...)
 	}
 
+	taskID, err := fanout.DeriveResumeTaskID(req.WorkspaceID, req.ParentRunID, req.ClaimID)
+	if err != nil {
+		return fanout.ResumeResult{}, err
+	}
+	// The resume task is written with the joined checkpoint, so when it exists
+	// the legs' usage is already in the checkpoint and must not be added twice.
+	var advanced bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM weave_task_queue WHERE workspace_id=$1 AND id=$2)`,
+		req.WorkspaceID, taskID).Scan(&advanced); err != nil {
+		return fanout.ResumeResult{}, err
+	}
+	if !advanced {
+		if err := mergeFanoutLegUsageTx(ctx, tx, req.WorkspaceID, &checkpoint, join); err != nil {
+			return fanout.ResumeResult{}, fanout.NewWorkflowError(fanout.ErrorResumeConflict, "join branch usage: %v", err)
+		}
+	}
 	checkpoint.TeamRunGeneration = run.Generation
 	checkpoint.ExecutionLeaseEpoch = run.ExecutionLeaseEpoch
 	checkpoint.WrittenAt = r.now()
 	if _, err := r.Checkpoints.PutTx(ctx, tx, checkpoint); err != nil {
-		return fanout.ResumeResult{}, err
-	}
-	taskID, err := fanout.DeriveResumeTaskID(req.WorkspaceID, req.ParentRunID, req.ClaimID)
-	if err != nil {
 		return fanout.ResumeResult{}, err
 	}
 	payload, _ := json.Marshal(map[string]any{

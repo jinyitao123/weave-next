@@ -19,14 +19,14 @@ func TestFinishedBranchStepsAreKeptOncePerLeg(t *testing.T) {
 	}
 	runtime := &WorkflowSerialRuntime{Transactions: pool}
 	leg := FanoutLegTaskPayloadV1{GroupID: "group", LegID: "leg"}
-	if err := runtime.recordFanoutLegStep(ctx, "ws", leg, "draft", 0, json.RawMessage(`"初稿"`), []string{"member:draft-run"}); err != nil {
+	if err := runtime.recordFanoutLegStep(ctx, "ws", leg, "draft", 0, json.RawMessage(`"初稿"`), []string{"member:draft-run"}, fanoutLegStepUsageV1{SchemaVersion: 1, Attempts: []nodeUsageAttempt{}}); err != nil {
 		t.Fatal(err)
 	}
-	if err := runtime.recordFanoutLegStep(ctx, "ws", leg, "draft", 0, json.RawMessage(`"另一份初稿"`), nil); err != nil {
+	if err := runtime.recordFanoutLegStep(ctx, "ws", leg, "draft", 0, json.RawMessage(`"另一份初稿"`), nil, fanoutLegStepUsageV1{SchemaVersion: 1, Attempts: []nodeUsageAttempt{}}); err != nil {
 		t.Fatal(err)
 	}
 	other := FanoutLegTaskPayloadV1{GroupID: "group", LegID: "other-leg"}
-	if err := runtime.recordFanoutLegStep(ctx, "ws", other, "check", 0, json.RawMessage(`"核对"`), []string{}); err != nil {
+	if err := runtime.recordFanoutLegStep(ctx, "ws", other, "check", 0, json.RawMessage(`"核对"`), []string{}, fanoutLegStepUsageV1{SchemaVersion: 1, Attempts: []nodeUsageAttempt{}}); err != nil {
 		t.Fatal(err)
 	}
 	finished, err := runtime.finishedFanoutLegSteps(ctx, "ws", leg)

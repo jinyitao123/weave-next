@@ -365,90 +365,24 @@ func runSerialMachine(
 				if nodeUsage.MemberUsageIncomplete {
 					usageComplete, usageIncompleteReason = false, "member_model_response_lost"
 				}
-			} else if len(nodeUsage.MemberReceipts) > 0 {
-				// Preserve each confirmed Loom attempt instead of collapsing partial
-				// usage into one synthetic receipt. A later unreported attempt can
-				// make coverage incomplete while earlier attempts still have real
-				// token counts; combining those values with HasTokens=false would
-				// reject the entire business run.
-				for _, receipt := range nodeUsage.MemberReceipts {
-					attemptID := nodePhysicalUsageAttemptID(callID, receipt.AttemptID, 0)
-					if usageErr := usage.StartAttempt(callID, attemptID); usageErr != nil {
-						return fail(executionError(ErrorCodeExecutionUnrecoverable, usageErr))
-					}
-					if usageErr := usage.ConfirmAttemptWithMetadata(callID, attemptID, receipt.Usage, receipt.ToolCalls, receipt.Metadata); usageErr != nil {
-						return fail(executionError(ErrorCodeExecutionUnrecoverable, usageErr))
-					}
+			} else {
+				attempts, coverageLost := nodeUsageAttempts(callID, nodeUsage)
+				if usageErr := confirmNodeUsageAttempts(&usage, callID, attempts); usageErr != nil {
+					return fail(executionError(ErrorCodeExecutionUnrecoverable, usageErr))
 				}
-				if !nodeUsage.Coverage.HasTokens || !nodeUsage.Coverage.HasCost {
+				if coverageLost {
 					usageComplete = false
 					if usageIncompleteReason == "" {
 						usageIncompleteReason = UsageIncompleteReasonAttemptLost
-					}
-				}
-			} else if nodeUsage.CLIExecution {
-				for index, physical := range nodeUsage.CLIAttempts {
-					attemptID := nodePhysicalUsageAttemptID(callID, physical.AttemptID, index)
-					if startErr := usage.StartAttempt(callID, attemptID); startErr != nil {
-						return fail(executionError(ErrorCodeExecutionUnrecoverable, startErr))
-					}
-					if confirmErr := usage.ConfirmAttemptWithMetadata(callID, attemptID, contract.Usage{
-						InputTokens: physical.InputTokens, OutputTokens: physical.OutputTokens, CostUSD: physical.CostUSD,
-					}, physical.ToolCalls, loomruntime.UsageAttemptMetadata{
-						HasTokens: physical.HasTokens, HasCost: physical.HasCost, Source: physical.Source,
-					}); confirmErr != nil {
-						return fail(executionError(ErrorCodeExecutionUnrecoverable, confirmErr))
-					}
-				}
-			} else if nodeUsage.UsageIncompleteReason != "" {
-				attemptID := nodeUsageAttemptID(callID)
-				if startErr := usage.StartAttempt(callID, attemptID); startErr != nil {
-					return fail(executionError(ErrorCodeExecutionUnrecoverable, startErr))
-				}
-				if confirmErr := usage.ConfirmAttemptWithMetadata(callID, attemptID, contract.Usage{}, 0, loomruntime.UsageAttemptMetadata{}); confirmErr != nil {
-					return fail(executionError(ErrorCodeExecutionUnrecoverable, confirmErr))
-				}
-			} else if len(nodeUsage.CLIAttempts) == 0 {
-				attemptID := nodeUsageAttemptID(callID)
-				if startErr := usage.StartAttempt(callID, attemptID); startErr != nil {
-					return fail(executionError(ErrorCodeExecutionUnrecoverable, startErr))
-				}
-				if confirmErr := usage.ConfirmAttemptWithMetadata(callID, attemptID, contract.Usage{
-					InputTokens: nodeUsage.Totals.InputTokens, OutputTokens: nodeUsage.Totals.OutputTokens,
-					CostUSD: nodeUsage.Totals.CostUSD,
-				}, nodeUsage.Totals.ToolCalls, loomruntime.UsageAttemptMetadata{
-					HasTokens: nodeUsage.Coverage.HasTokens, HasCost: nodeUsage.Coverage.HasCost,
-				}); confirmErr != nil {
-					return fail(executionError(ErrorCodeExecutionUnrecoverable, confirmErr))
-				}
-			} else {
-				for index, physical := range nodeUsage.CLIAttempts {
-					attemptID := nodePhysicalUsageAttemptID(callID, physical.AttemptID, index)
-					if startErr := usage.StartAttempt(callID, attemptID); startErr != nil {
-						return fail(executionError(ErrorCodeExecutionUnrecoverable, startErr))
-					}
-					if confirmErr := usage.ConfirmAttemptWithMetadata(callID, attemptID, contract.Usage{
-						InputTokens: physical.InputTokens, OutputTokens: physical.OutputTokens, CostUSD: physical.CostUSD,
-					}, physical.ToolCalls, loomruntime.UsageAttemptMetadata{
-						HasTokens: physical.HasTokens, HasCost: physical.HasCost, Source: physical.Source,
-					}); confirmErr != nil {
-						return fail(executionError(ErrorCodeExecutionUnrecoverable, confirmErr))
 					}
 				}
 			}
 			// A CLI runtime agent has no usage receipt: the candidate run
 			// executes it normally, records zero measured usage, and marks
 			// the result usage-incomplete instead of failing closed.
-			if nodeUsage.UsageIncompleteReason != "" && usageIncompleteReason == "" {
+			if reason := nodeUsageIncompleteReason(nodeUsage); reason != "" && usageIncompleteReason == "" {
 				usageComplete = false
-				usageIncompleteReason = nodeUsage.UsageIncompleteReason
-			}
-			if nodeUsage.CLIExecution && (!nodeUsage.Coverage.HasTokens || !nodeUsage.Coverage.HasCost) && usageIncompleteReason == "" {
-				usageComplete = false
-				usageIncompleteReason = UsageIncompleteReasonCLINode
-				if nodeUsage.Coverage.HasTokens || nodeUsage.Coverage.HasCost {
-					usageIncompleteReason = UsageIncompleteReasonCLIDimensions
-				}
+				usageIncompleteReason = reason
 			}
 			if len(nodeUsage.Events) == 0 && start.LoadObservedEvents != nil {
 				nodeUsage.Events = start.LoadObservedEvents(ctx, node, memberID)
@@ -667,14 +601,8 @@ func runSerialMachine(
 			}
 			current = next
 		case machine.NodeParallel:
-			// Round-bound candidate runs proceed through fanout like any
-			// other run; leg-level usage settlement is owned by T14B-2B, so
-			// the measured serial/loop usage is annotated usage-incomplete
-			// (unmeasured parallel legs) instead of failing closed.
-			if start.Candidate && usageIncompleteReason == "" {
-				usageComplete = false
-				usageIncompleteReason = UsageIncompleteReasonParallelLegs
-			}
+			// The legs' usage joins the parent's when the group is joined
+			// (mergeFanoutLegUsageTx), which also marks any leg it cannot count.
 			plan, joinNodeID, err := buildFanoutParkPlan(
 				node, nodes, edges[current], payload, runInput, outputs, start,
 			)
