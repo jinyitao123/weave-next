@@ -1663,6 +1663,28 @@
         "lines_added": -177,
         "production_lines_added": -94
       }
+    },
+    {
+      "date": "2026-10-22",
+      "reason": "移植遗留本地分支的多流程选择、完成复核禁用工具、业务动作名称解析、检查点格式收敛与并行步骤修正",
+      "record": "docs/治理/2026-10-22-遗留分支内容移植登记.md",
+      "growth": {
+        "lines": 185,
+        "production_lines": 38
+      },
+      "deletion_trigger": "业务动作改为只按目录 id 绑定后，删除 team_development_operations 中按名称消歧的分支",
+      "kernel": {
+        "previous_lines": 106588,
+        "previous_production_lines": 81311,
+        "lines_added": -30,
+        "production_lines_added": -72
+      },
+      "app": {
+        "previous_lines": 81014,
+        "previous_production_lines": 51940,
+        "lines_added": 215,
+        "production_lines_added": 110
+      }
     }
   ],
   "migration_targets": {
@@ -1706,8 +1728,8 @@
     ]
   },
   "kernel": {
-    "lines": 106588,
-    "production_lines": 81311,
+    "lines": 106558,
+    "production_lines": 81239,
     "packages": 44,
     "external_dependencies": 5,
     "allowed_dependencies": [
@@ -1726,8 +1748,8 @@
     "allowed_dependencies": []
   },
   "app": {
-    "lines": 81014,
-    "production_lines": 51940,
+    "lines": 81229,
+    "production_lines": 52050,
     "packages": 21,
     "external_dependencies": 6,
     "allowed_dependencies": [
