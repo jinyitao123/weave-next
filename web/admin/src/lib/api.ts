@@ -3,7 +3,8 @@
 // requires before it accepts a cookie-authenticated write.
 
 export class ApiError extends Error {
-  constructor(readonly status: number, readonly code: string) {
+  /** body is the decoded error response, for routes that answer with more than a message. */
+  constructor(readonly status: number, readonly code: string, readonly body?: unknown) {
     super(code)
   }
 }
@@ -18,7 +19,7 @@ export async function apiResponse(path: string, init: RequestInit = {}): Promise
     const body = safeJSON(await response.text())
     const fields = typeof body === 'object' && body ? body as { error?: unknown; message?: unknown } : {}
     const code = fields.error !== undefined ? String(fields.error) : fields.message !== undefined ? String(fields.message) : `http_${response.status}`
-    throw new ApiError(response.status, code)
+    throw new ApiError(response.status, code, body)
   }
   return response
 }

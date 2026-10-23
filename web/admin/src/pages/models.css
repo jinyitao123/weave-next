@@ -6,3 +6,4 @@
 .models__item { display: flex; align-items: center; gap: 6px; }
 .models__item .input { flex: 1; min-width: 0; }
 .models__advanced { margin-top: 10px; }
+.models__preview { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; overflow-wrap: anywhere; }

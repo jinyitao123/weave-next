@@ -3,8 +3,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { Badge, Drawer, EmptyState, InlineError, Select, Switch } from '../components/ui'
 import type { AdminSession } from '../lib/api'
 import {
-  cleanModels, deleteProvider, hasKey, listProviders, listSystemProviders, mirrorSystemProvider, protocolLabels, protocolOf, providerError, providerInput, saveProvider, validBaseURL,
-  type KeyChange, type Provider, type ProviderInput, type ProviderProtocol, type SystemProvider,
+  cleanModels, deleteProvider, endpointRefusal, hasKey, listProviders, listSystemProviders, mirrorSystemProvider, probeProvider, protocolLabels, protocolOf, providerError, providerInput, resolveEndpoint, saveProvider, validBaseURL,
+  type Endpoint, type EndpointRefusal, type KeyChange, type ProbeResult, type Provider, type ProviderInput, type ProviderProtocol, type SystemProvider,
 } from '../lib/providers'
 import { loadModelCatalog } from '../lib/teams'
 import './models.css'
@@ -68,7 +68,7 @@ export function ModelsSection({ session }: { session: AdminSession }) {
       </EmptyState> : <div className="task-list">{providers.map((provider) => <button key={provider.id} type="button" className="task-row" onClick={() => setEditing(provider)}>
         <span className="task-row__main">
           <span className="models__title"><strong>{provider.name || provider.id}</strong><Badge tone={protocolOf(provider) === 'systemone' ? 'claimed' : 'neutral'}>{protocolLabels[protocolOf(provider)]}</Badge></span>
-          <span className="muted small mono">{provider.base_url}</span>
+          <span className="muted small mono">{provider.chat_url || provider.base_url}</span>
           <ModelChips models={provider.models} selectable={catalog ? selectable : undefined} />
         </span>
         <Badge tone={hasKey(provider) ? 'success' : 'neutral'}>{hasKey(provider) ? '密钥已设置' : '密钥未设置'}</Badge>
@@ -121,7 +121,36 @@ function ProviderDrawer({ provider, existing, editable, canDelete, onClose, onSa
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [preview, setPreview] = useState<{ endpoint?: Endpoint; refusal?: EndpointRefusal }>({})
+  const [probeModel, setProbeModel] = useState(provider?.models?.[0] ?? '')
+  const [probing, setProbing] = useState(false)
+  const [probe, setProbe] = useState<ProbeResult>()
   const stored = provider ? hasKey(provider) : false
+  // The address is resolved by the server, the same way it is saved.
+  useEffect(() => {
+    if (!validBaseURL(form.base_url)) { setPreview({}); return }
+    let current = true
+    const timer = setTimeout(() => {
+      resolveEndpoint(form.protocol, form.base_url, form.chat_path)
+        .then((endpoint) => { if (current) setPreview(endpoint?.chat_url ? { endpoint } : {}) })
+        .catch((failure) => { if (current) setPreview({ refusal: endpointRefusal(failure) ?? { message: providerError(failure) } }) })
+    }, 250)
+    return () => { current = false; clearTimeout(timer) }
+  }, [form.protocol, form.base_url, form.chat_path])
+  const adopt = (endpoint: Endpoint) => setForm((current) => ({ ...current, base_url: endpoint.base_url, chat_path: endpoint.chat_path }))
+  const check = async () => {
+    if (!provider) return
+    setProbing(true)
+    setProbe(undefined)
+    setError('')
+    try {
+      setProbe(await probeProvider(provider.id, probeModel))
+    } catch (failure) {
+      setError(providerError(failure))
+    } finally {
+      setProbing(false)
+    }
+  }
   const openai = form.protocol === 'openai'
   const set = <K extends keyof ProviderInput>(field: K, value: ProviderInput[K]) => { setForm((current) => ({ ...current, [field]: value })); setError('') }
   const setModel = (index: number, value: string) => set('models', form.models.map((model, position) => position === index ? value : model))
@@ -151,7 +180,9 @@ function ProviderDrawer({ provider, existing, editable, canDelete, onClose, onSa
       await saveProvider({ ...form, name, base_url: form.base_url.trim(), models }, change, provider?.id)
       onSaved()
     } catch (failure) {
-      setError(providerError(failure))
+      const refusal = endpointRefusal(failure)
+      if (refusal) setPreview({ refusal })
+      setError(refusal?.message ?? providerError(failure))
     } finally {
       setBusy(false)
     }
@@ -169,13 +200,27 @@ function ProviderDrawer({ provider, existing, editable, canDelete, onClose, onSa
   }
 
   return <Drawer title={provider ? provider.name || provider.id : '添加 provider'} onClose={onClose} footer={editable ? <div className="toolbar">
-    <button type="button" className="button button--primary" disabled={busy} onClick={() => void submit()}>{busy ? '正在保存…' : '保存'}</button>
+    <button type="button" className="button button--primary" disabled={busy || Boolean(preview.refusal)} onClick={() => void submit()}>{busy ? '正在保存…' : '保存'}</button>
     {provider && canDelete ? <button type="button" className="button button--danger" disabled={busy} onClick={() => setConfirmDelete(true)}>删除</button> : null}
   </div> : undefined}>
     <form className="stack" onSubmit={(event) => { event.preventDefault(); void submit() }}>
       <label className="field"><span>名称</span><input className="input" value={form.name} maxLength={80} disabled={!editable} onChange={(event) => set('name', event.target.value)} placeholder="deepseek" autoFocus /></label>
       <label className="field"><span>地址</span><input className="input mono" value={form.base_url} disabled={!editable} onChange={(event) => set('base_url', event.target.value)} placeholder="https://api.example.com/v1" spellCheck={false} /></label>
       <div className="field"><span>协议</span><Select label="协议" value={form.protocol} disabled={!editable} options={protocolOptions} onChange={(protocol) => set('protocol', protocol)} /></div>
+      <label className="field"><span>接口路径</span><input className="input mono" value={form.chat_path} disabled={!editable} onChange={(event) => set('chat_path', event.target.value)}
+        placeholder={form.protocol === 'systemone' ? '留空使用 /v1/systemone' : '留空使用 /v1/chat/completions'} spellCheck={false} /></label>
+      <div className="models__preview" aria-live="polite" aria-label="实际请求地址">
+        <span className="muted small">实际请求地址</span>
+        {preview.endpoint ? <code className="mono">{preview.endpoint.chat_url}</code> : null}
+        {preview.refusal ? <>
+          <p className="small" role="alert">{preview.refusal.message}</p>
+          {preview.refusal.suggestion ? <div className="toolbar">
+            <span className="small">建议：地址 <code className="mono">{preview.refusal.suggestion.base_url}</code>，接口路径 <code className="mono">{preview.refusal.suggestion.chat_path}</code>，请求发往 <code className="mono">{preview.refusal.suggestion.chat_url}</code></span>
+            {editable ? <button type="button" className="button" onClick={() => adopt(preview.refusal!.suggestion!)}>按建议填写</button> : null}
+          </div> : null}
+        </> : null}
+        {!preview.endpoint && !preview.refusal ? <span className="muted small">{provider?.chat_url || '填写地址后显示'}</span> : null}
+      </div>
       {form.protocol === 'systemone' ? <p className="muted small">{systemOneNote}</p> : null}
 
       <div className="field" role="group" aria-label="模型"><span>模型</span>
@@ -210,6 +255,15 @@ function ProviderDrawer({ provider, existing, editable, canDelete, onClose, onSa
           <Switch checked={form.json_object_mode} disabled={!editable} label="结构化输出使用 JSON object 模式" onChange={(value) => set('json_object_mode', value)} />
         </div>
       </details> : null}
+
+      {provider ? <div className="field" role="group" aria-label="检查连接"><span>检查连接</span>
+        <div className="toolbar">
+          {provider.models.length > 1 ? <Select label="检查用的模型" value={probeModel} options={provider.models.map((model) => ({ value: model, label: model }))} onChange={setProbeModel} /> : null}
+          <button type="button" className="button" disabled={probing} onClick={() => void check()}>{probing ? '正在检查…' : '检查连接'}</button>
+        </div>
+        {probe ? <p className="small" role="status">{probe.message}{probe.status ? `（HTTP ${probe.status}）` : ''}{probe.ok ? ` · ${probe.latency_ms} 毫秒` : ''}
+          <span className="muted small"> · 已请求 {probe.chat_url} · 模型 {probe.model}</span></p> : null}
+      </div> : null}
 
       {confirmDelete && provider ? <div className="confirm" role="alertdialog" aria-label="确认删除 provider">
         <p>使用该 provider 模型的成员将无模型可用，需改选。</p>

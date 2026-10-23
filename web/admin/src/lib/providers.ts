@@ -10,6 +10,10 @@ export interface Provider {
   id: string
   name: string
   base_url: string
+  /** The recorded path, empty for a provider saved before paths were recorded. */
+  chat_path?: string
+  /** The address requests go to, as the server resolves it. */
+  chat_url?: string
   protocol?: ProviderProtocol
   models: string[]
   /** A masked string when a key is stored; empty or absent when there is none. */
@@ -37,6 +41,8 @@ export interface SystemProvider {
 export interface ProviderInput {
   name: string
   base_url: string
+  /** Empty leaves the path to the server: a new provider records its protocol's default, an existing one keeps its own. */
+  chat_path: string
   protocol: ProviderProtocol
   models: string[]
   json_object_mode: boolean
@@ -62,7 +68,8 @@ export function keyPayload(change: KeyChange): { api_key?: string } {
 }
 
 export function providerBody(input: ProviderInput, key: KeyChange): Record<string, unknown> {
-  const base = { name: input.name, base_url: input.base_url, protocol: input.protocol, models: input.models }
+  const base = { name: input.name, base_url: input.base_url, protocol: input.protocol, models: input.models,
+    ...(input.chat_path.trim() ? { chat_path: input.chat_path.trim() } : {}) }
   // The tuning switches only mean something to the OpenAI-compatible client.
   const tuning = input.protocol === 'openai' ? {
     json_object_mode: input.json_object_mode,
@@ -74,6 +81,7 @@ export function providerInput(provider?: Provider): ProviderInput {
   return {
     name: provider?.name ?? '',
     base_url: provider?.base_url ?? '',
+    chat_path: provider?.chat_path ?? '',
     protocol: provider ? protocolOf(provider) : 'openai',
     models: provider?.models?.length ? [...provider.models] : [''],
     json_object_mode: Boolean(provider?.json_object_mode),
@@ -121,6 +129,28 @@ export async function deleteProvider(id: string): Promise<void> {
   }
   throw new ApiError(409, '删除尚未完成，请稍后重试')
 }
+export interface Endpoint { base_url: string; chat_path: string; chat_url: string }
+
+/** A refused address: why, and the split that reaches what was most likely meant. */
+export interface EndpointRefusal { message: string; suggestion?: Endpoint }
+
+// The server resolves the address the same way it saves it; nothing is stored.
+export const resolveEndpoint = (protocol: ProviderProtocol, baseURL: string, chatPath: string) =>
+  api<Endpoint>(`${sharedProviders}/endpoint`, { method: 'POST', body: JSON.stringify({ protocol, base_url: baseURL, ...(chatPath.trim() ? { chat_path: chatPath.trim() } : {}) }) })
+
+export interface ProbeResult { ok: boolean; chat_url: string; model: string; category: string; status: number; latency_ms: number; message: string }
+
+export const probeProvider = (id: string, model: string) =>
+  api<ProbeResult>(`${sharedProviders}/${encodeURIComponent(id)}/probe`, { method: 'POST', body: JSON.stringify({ model }) })
+
+/** The refusal carried by a failed save or preview, when it was about the address. */
+export function endpointRefusal(failure: unknown): EndpointRefusal | undefined {
+  if (!(failure instanceof ApiError) || failure.status !== 422) return undefined
+  const body = failure.body as { code?: string; error?: string; suggestion?: Endpoint } | undefined
+  if (body?.code !== 'model_provider_endpoint_invalid') return undefined
+  return { message: body.error ?? '地址无效', suggestion: body.suggestion }
+}
+
 export const mirrorSystemProvider = (id: string) => api<unknown>(`/v1/providers/system/${encodeURIComponent(id)}/mirror`, { method: 'POST', body: '{}' })
 
 const messages: Record<string, string> = {

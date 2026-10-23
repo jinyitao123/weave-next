@@ -16,6 +16,14 @@ function serve(providers: Provider[] = [deepseek, nimble], catalog: string[] = [
     const method = init.method ?? 'GET'
     calls.push({ url, method, body: init.body ? JSON.parse(String(init.body)) : undefined })
     if (method === 'DELETE') return new Response(null, { status: 204 })
+    if (url === '/v1/development/model-providers/endpoint') {
+      const body = JSON.parse(String(init.body)) as { base_url: string; chat_path?: string }
+      if (body.base_url.endsWith('/v1') && body.chat_path === '/v1/chat/completions') return new Response(JSON.stringify({ code: 'model_provider_endpoint_invalid', reason: 'duplicate_path_segment', error: '供应方地址和接口路径拼接后会出现重复的路径段',
+        suggestion: { base_url: body.base_url.slice(0, -3), chat_path: '/v1/chat/completions', chat_url: `${body.base_url.slice(0, -3)}/v1/chat/completions` } }), { status: 422 })
+      const path = body.chat_path ?? '/v1/chat/completions'
+      return new Response(JSON.stringify({ base_url: body.base_url, chat_path: path, chat_url: body.base_url + path }), { status: 200 })
+    }
+    if (url.endsWith('/probe')) return new Response(JSON.stringify({ ok: false, chat_url: 'https://api.deepseek.com/v1/chat/completions', model: 'deepseek-chat', category: 'endpoint_not_found', status: 404, latency_ms: 12, message: '服务存在，但这个接口路径不存在' }), { status: 200 })
     if (method === 'POST' || method === 'PUT') return new Response(JSON.stringify({ status: 'created' }), { status: 201 })
     if (url === '/v1/providers/system') return new Response(JSON.stringify(system), { status: 200 })
     if (url === '/v1/development/model-providers') return new Response(JSON.stringify({ version: '1', providers }), { status: 200 })
@@ -37,6 +45,36 @@ const choose = (select: string, option: string) => {
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
 describe('models page', () => {
+  it('shows the exact request address, offers the suggested split and sends the chat path', async () => {
+    const calls = serve()
+    render(<ModelsPage session={admin} />)
+    await open(/添加 provider/)
+    type('名称', 'glm')
+    type('地址', 'https://open.example.test/v1')
+    type('接口路径', '/v1/chat/completions')
+    const preview = screen.getByLabelText('实际请求地址')
+    await waitFor(() => expect(preview.textContent).toContain('重复的路径段'))
+    expect((screen.getByRole('button', { name: '保存' }) as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.click(within(preview).getByRole('button', { name: '按建议填写' }))
+    await waitFor(() => expect(within(preview).queryByRole('button', { name: '按建议填写' })).toBeNull())
+    expect(preview.textContent).toContain('https://open.example.test/v1/chat/completions')
+    type('模型 1', 'glm-4')
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+    await waitFor(() => expect(saved(calls)).toHaveLength(1))
+    expect(saved(calls)[0].body).toMatchObject({ base_url: 'https://open.example.test', chat_path: '/v1/chat/completions' })
+  })
+
+  it('checks a saved provider and says what to check next', async () => {
+    const calls = serve()
+    render(<ModelsPage session={admin} />)
+    await open(/^deepseek/)
+    fireEvent.click(screen.getByRole('button', { name: '检查连接' }))
+    const status = await screen.findByRole('status')
+    expect(status.textContent).toContain('接口路径不存在')
+    expect(status.textContent).toContain('HTTP 404')
+    expect(calls.some((call) => call.method === 'POST' && call.url === '/v1/development/model-providers/deepseek/probe' && call.body?.model === 'deepseek-chat')).toBe(true)
+  })
+
   it('lists workspace providers with their protocol, address, models and key state, and the built-in ones apart', async () => {
     serve()
     render(<ModelsPage session={admin} />)
