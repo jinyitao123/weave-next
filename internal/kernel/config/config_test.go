@@ -1,10 +1,14 @@
 package config
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestLoadWorkflowHealthDefaultsAndBounds(t *testing.T) {
 	t.Setenv("DATABASE_URL", "postgres://example")
 	t.Setenv("JWT_SECRET", "secret")
+	t.Setenv("WEAVE_LOGIN_KEY", "deployment-login-key")
 	t.Setenv("WEAVE_WORKSPACES_ROOT", t.TempDir())
 	for _, key := range []string{
 		"WEAVE_HEALTH_WINDOW_SIZE", "WEAVE_HEALTH_MIN_SAMPLES", "WEAVE_HEALTH_WARNING_FAILURE_RATE",
@@ -43,6 +47,7 @@ func TestLoadBooleanDefaultsAndOverrides(t *testing.T) {
 			t.Run(setting.name+"/"+input, func(t *testing.T) {
 				t.Setenv("DATABASE_URL", "postgres://example")
 				t.Setenv("JWT_SECRET", "secret")
+				t.Setenv("WEAVE_LOGIN_KEY", "deployment-login-key")
 				t.Setenv("WEAVE_WORKSPACES_ROOT", t.TempDir())
 				t.Setenv(setting.name, input)
 				cfg, err := Load()
@@ -65,4 +70,45 @@ func TestLoadBooleanDefaultsAndOverrides(t *testing.T) {
 			})
 		}
 	}
+}
+
+// A deployment never starts with the well-known login key by accident: only
+// development mode falls back to it, and errors never echo a key.
+func TestLoadRequiresDeploymentLoginKey(t *testing.T) {
+	base := func(t *testing.T) {
+		t.Setenv("DATABASE_URL", "postgres://example")
+		t.Setenv("JWT_SECRET", "secret")
+		t.Setenv("WEAVE_WORKSPACES_ROOT", t.TempDir())
+		t.Setenv("WEAVE_DEV_MODE", "")
+	}
+	for name, key := range map[string]string{"unset": "", "blank": "   ", "development default": "admin"} {
+		t.Run(name, func(t *testing.T) {
+			base(t)
+			t.Setenv("WEAVE_LOGIN_KEY", key)
+			cfg, err := Load()
+			if err == nil {
+				t.Fatalf("started with login key %q: %+v", key, cfg)
+			}
+			if strings.Contains(err.Error(), `"admin"`) || (strings.TrimSpace(key) != "" && strings.Contains(err.Error(), key)) {
+				t.Fatalf("error echoes a key: %v", err)
+			}
+		})
+	}
+	t.Run("explicit", func(t *testing.T) {
+		base(t)
+		t.Setenv("WEAVE_LOGIN_KEY", "  set-at-deployment  ")
+		cfg, err := Load()
+		if err != nil || cfg.LoginKey != "set-at-deployment" || cfg.LoginKeyDefault {
+			t.Fatalf("explicit key = %+v, %v", cfg, err)
+		}
+	})
+	t.Run("development mode", func(t *testing.T) {
+		base(t)
+		t.Setenv("WEAVE_DEV_MODE", "true")
+		t.Setenv("WEAVE_LOGIN_KEY", "")
+		cfg, err := Load()
+		if err != nil || cfg.LoginKey != "admin" || !cfg.LoginKeyDefault {
+			t.Fatalf("development default = %+v, %v", cfg, err)
+		}
+	})
 }

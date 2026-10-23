@@ -40,6 +40,7 @@ func concreteRoutePath(path string) string {
 func TestRetiredRoutesReturn404ThroughRealHTTPWithDisabledDefaults(t *testing.T) {
 	t.Setenv("DATABASE_URL", "postgres://fixture.invalid/unused")
 	t.Setenv("JWT_SECRET", "retired-http-fixture")
+	t.Setenv("WEAVE_LOGIN_KEY", "retired-http-login-key")
 	cfg, err := config.Load()
 	if err != nil {
 		t.Fatal(err)

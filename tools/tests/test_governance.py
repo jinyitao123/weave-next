@@ -147,7 +147,7 @@ class PlatformComposeTests(unittest.TestCase):
         if os.environ.get("WEAVE_TEST_COMPOSE") != "1":
             self.skipTest("run make compose-check to validate platform configuration")
         import json
-        env = dict(os.environ, JWT_SECRET="ci", WEAVE_ADMIN_PASS="ci",
+        env = dict(os.environ, JWT_SECRET="ci", WEAVE_ADMIN_PASS="ci", WEAVE_LOGIN_KEY="ci",
                    WEAVE_SECRET_KEY="0" * 64, BUILD_COMMIT="governance-check")
         env.pop("WEAVE_RUNTIME_TOKEN", None)
         env.pop("WEAVE_PLATFORM_IMAGE", None)

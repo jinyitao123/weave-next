@@ -27,7 +27,8 @@ type Config struct {
 	// in against; empty leaves only operator API key sign-in.
 	AdminForgeURL string // WEAVE_ADMIN_FORGE_URL
 	// LoginKey signs its holder in as the workspace administrator on the
-	// console and the MCP entry. Unset, it is "admin" and LoginKeyDefault is
+	// console and the MCP entry. A deployment must set it; only development
+	// mode (WEAVE_DEV_MODE=true) falls back to "admin", with LoginKeyDefault
 	// true, which the console shows on every page.
 	LoginKey        string // WEAVE_LOGIN_KEY
 	LoginKeyDefault bool
@@ -150,8 +151,13 @@ func Load() (*Config, error) {
 	if cfg.DatabaseURL == "" {
 		return nil, fmt.Errorf("DATABASE_URL is required")
 	}
-	if cfg.LoginKey == "" {
+	switch {
+	case cfg.LoginKey == "" && devMode:
 		cfg.LoginKey, cfg.LoginKeyDefault = "admin", true
+	case cfg.LoginKey == "":
+		return nil, fmt.Errorf("WEAVE_LOGIN_KEY is required: set the key that signs its holder in as workspace administrator (only WEAVE_DEV_MODE=true falls back to a development default)")
+	case cfg.LoginKey == "admin" && !devMode:
+		return nil, fmt.Errorf("WEAVE_LOGIN_KEY must not be the well-known development default outside WEAVE_DEV_MODE=true")
 	}
 	if cfg.JWTSecret == "" {
 		return nil, fmt.Errorf("JWT_SECRET is required")
