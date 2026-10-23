@@ -5,6 +5,7 @@ import { DeploymentPage, legacyDeploymentPath, visibleDeploymentTabs } from './D
 vi.mock('./DeploymentConnectionPage', () => ({ DeploymentConnectionSection: () => <p>连接内容</p> }))
 vi.mock('./NodesPage', () => ({ NodesSection: () => <p>节点内容</p> }))
 vi.mock('./ModelsPage', () => ({ ModelsSection: () => <p>模型内容</p> }))
+vi.mock('./TimingPage', () => ({ TimingSection: () => <p>时间内容</p> }))
 afterEach(() => { cleanup(); vi.resetAllMocks() })
 
 const admin = { name: '管理员', role: 'admin', source: 'forge' as const }
@@ -12,8 +13,8 @@ const developer = { name: '开发者', role: 'developer', source: 'forge' as con
 
 describe('deployment page', () => {
   it('keeps the connection part for administrators only', () => {
-    expect(visibleDeploymentTabs(admin).map(([value]) => value)).toEqual(['connection', 'nodes', 'models'])
-    expect(visibleDeploymentTabs(developer).map(([value]) => value)).toEqual(['nodes', 'models'])
+    expect(visibleDeploymentTabs(admin).map(([value]) => value)).toEqual(['connection', 'nodes', 'models', 'timing'])
+    expect(visibleDeploymentTabs(developer).map(([value]) => value)).toEqual(['nodes', 'models', 'timing'])
   })
   it('sends the replaced pages to their part of the merged page', () => {
     expect(legacyDeploymentPath('/deployment-connection')).toBe('/deployment/connection')

@@ -3,11 +3,12 @@ import type { AdminSession } from '../lib/api'
 import { DeploymentConnectionSection } from './DeploymentConnectionPage'
 import { ModelsSection } from './ModelsPage'
 import { NodesSection } from './NodesPage'
+import { TimingSection } from './TimingPage'
 
 // One page for what the deployment provides: how business systems connect,
 // the nodes that run engines, and the models members can use. Each part keeps
 // its own permission rule; the connection part is for administrators only.
-export const deploymentTabs = [['connection', '连接'], ['nodes', '执行节点'], ['models', '模型']] as const
+export const deploymentTabs = [['connection', '连接'], ['nodes', '执行节点'], ['models', '模型'], ['timing', '时间上限']] as const
 export type DeploymentTab = typeof deploymentTabs[number][0]
 
 const administers = (session: AdminSession) => ['admin', 'owner'].includes(session.role)
@@ -35,7 +36,8 @@ export function DeploymentPage({ session, tab, navigate }: { session: AdminSessi
     <div id={`${id}-panel`} role="tabpanel" aria-labelledby={`${id}-${active}`}>
       {active === 'connection' ? <DeploymentConnectionSection session={session} />
         : active === 'nodes' ? <NodesSection session={session} />
-          : <ModelsSection session={session} />}
+          : active === 'timing' ? <TimingSection />
+            : <ModelsSection session={session} />}
     </div>
   </section>
 }
