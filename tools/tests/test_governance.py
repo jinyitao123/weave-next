@@ -192,6 +192,46 @@ class PlatformComposeTests(unittest.TestCase):
         self.assertEqual(runtime["image"], env["WEAVE_RUNTIME_IMAGE"])
         self.assertNotIn("--runtime-token", runtime["command"])
 
+    def test_optional_file_overrides(self):
+        if os.environ.get("WEAVE_TEST_COMPOSE") != "1":
+            self.skipTest("run make compose-check to validate platform configuration")
+        import json
+        root = TOOLS.parent
+        env = dict(os.environ, JWT_SECRET="ci", WEAVE_ADMIN_PASS="ci", WEAVE_LOGIN_KEY="ci", BUILD_COMMIT="governance-check")
+        for name in ("WEAVE_SECRET_KEY", "WEAVE_ORGANIZATION_CONNECTION_HOST_FILE", "WEAVE_SECRET_KEY_HOST_FILE"):
+            env.pop(name, None)
+
+        def config(*overrides):
+            files = ["-f", str(root / "docker-compose.platform.yml")]
+            for override in overrides:
+                files += ["-f", str(root / "deploy" / "compose" / override)]
+            return subprocess.run(["docker", "compose", "--env-file", os.devnull] + files + ["config", "--format", "json"],
+                                  env=env, capture_output=True, text=True)
+
+        # The base file alone needs no optional file and no inline key at
+        # configuration time; the server itself refuses a missing key.
+        self.assertEqual(config().returncode, 0)
+        for override, variable in (("organization-connection.yml", "WEAVE_ORGANIZATION_CONNECTION_HOST_FILE"),
+                                   ("secret-key-file.yml", "WEAVE_SECRET_KEY_HOST_FILE")):
+            missing = config(override)
+            self.assertNotEqual(missing.returncode, 0)
+            self.assertIn(variable, missing.stderr)
+        env["WEAVE_ORGANIZATION_CONNECTION_HOST_FILE"] = "/etc/weave/organization-connection.json"
+        env["WEAVE_SECRET_KEY_HOST_FILE"] = "/etc/weave/secret-key"
+        env["WEAVE_SECRET_KEY"] = "0" * 64
+        both = config("organization-connection.yml", "secret-key-file.yml")
+        self.assertEqual(both.returncode, 0, both.stderr)
+        weave = json.loads(both.stdout)["services"]["weave"]
+        self.assertEqual(weave["environment"]["WEAVE_ORGANIZATION_CONNECTION_FILE"], "/run/weave/organization-connection.json")
+        self.assertEqual(weave["environment"]["WEAVE_SECRET_KEY_FILE"], "/run/weave/secret-key")
+        self.assertEqual(weave["environment"]["WEAVE_SECRET_KEY"], "")
+        mounts = {volume["target"]: volume for volume in weave["volumes"] if volume.get("type") == "bind"}
+        for target, source in (("/run/weave/organization-connection.json", env["WEAVE_ORGANIZATION_CONNECTION_HOST_FILE"]),
+                               ("/run/weave/secret-key", env["WEAVE_SECRET_KEY_HOST_FILE"])):
+            self.assertEqual(mounts[target]["source"], source)
+            self.assertTrue(mounts[target]["read_only"])
+            self.assertFalse(mounts[target].get("bind", {}).get("create_host_path", False))
+
 
 if __name__ == "__main__":
     unittest.main()

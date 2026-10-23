@@ -43,8 +43,10 @@ services:
     environment:
       DATABASE_URL: postgres://weave:${POSTGRES_PASSWORD:-weave}@db:5432/weave?sslmode=disable
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
-      # Credential-vault key (64 hex chars = 32 bytes). REQUIRED for workspace LLM providers.
-      WEAVE_SECRET_KEY: ${WEAVE_SECRET_KEY:?set WEAVE_SECRET_KEY (openssl rand -hex 32)}
+      # Credential-vault key (64 hex chars = 32 bytes), required: set it here, or
+      # mount it as a file with deploy/compose/secret-key-file.yml instead.
+      # The server refuses to start with neither or both.
+      WEAVE_SECRET_KEY: ${WEAVE_SECRET_KEY:-}
       WEAVE_ADMIN_USER: ${WEAVE_ADMIN_USER:-admin}
       WEAVE_ADMIN_PASS: ${WEAVE_ADMIN_PASS:?set WEAVE_ADMIN_PASS}
       WEAVE_LOGIN_KEY: ${WEAVE_LOGIN_KEY:?set WEAVE_LOGIN_KEY (openssl rand -hex 24)}

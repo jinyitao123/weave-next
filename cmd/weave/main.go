@@ -419,6 +419,9 @@ func dispatchEarlyCommand(args []string, stdout, stderr io.Writer) (bool, int) {
 	if len(args) > 0 && args[0] == "bootstrap" {
 		return true, runBootstrapCommand(args[1:], stdout, stderr)
 	}
+	if len(args) > 0 && args[0] == "config-check" {
+		return true, runConfigCheck(args[1:], stdout, stderr)
+	}
 	if len(args) > 0 && args[0] == "ops" {
 		return true, runOpsCommand(args[1:], stdout, stderr)
 	}
