@@ -1685,6 +1685,34 @@
         "lines_added": 215,
         "production_lines_added": 110
       }
+    },
+    {
+      "date": "2026-10-22",
+      "reason": "移植遗留本地分支的明确请求地址（#83）与输出上限字段",
+      "record": "docs/治理/2026-10-22-遗留分支内容移植登记.md",
+      "growth": {
+        "lines": 1021,
+        "production_lines": 584
+      },
+      "deletion_trigger": "所有已存供应方都记录接口路径后，删除 frozen.LegacyProviderEndpoint 及其空路径分支",
+      "base": {
+        "previous_lines": 9003,
+        "previous_production_lines": 7021,
+        "lines_added": 368,
+        "production_lines_added": 195
+      },
+      "kernel": {
+        "previous_lines": 106558,
+        "previous_production_lines": 81239,
+        "lines_added": 304,
+        "production_lines_added": 175
+      },
+      "app": {
+        "previous_lines": 81229,
+        "previous_production_lines": 52050,
+        "lines_added": 349,
+        "production_lines_added": 214
+      }
     }
   ],
   "migration_targets": {
@@ -1716,8 +1744,8 @@
     "rule": "Each band limit equals its measured size. The total of the band limits may exceed this baseline only by the growth of amendments added after the first recorded_amendments entries, each of which must state its growth and a deletion_trigger."
   },
   "base": {
-    "lines": 9003,
-    "production_lines": 7021,
+    "lines": 9371,
+    "production_lines": 7216,
     "packages": 9,
     "external_dependencies": 4,
     "allowed_dependencies": [
@@ -1728,8 +1756,8 @@
     ]
   },
   "kernel": {
-    "lines": 106558,
-    "production_lines": 81239,
+    "lines": 106862,
+    "production_lines": 81414,
     "packages": 44,
     "external_dependencies": 5,
     "allowed_dependencies": [
@@ -1748,8 +1776,8 @@
     "allowed_dependencies": []
   },
   "app": {
-    "lines": 81229,
-    "production_lines": 52050,
+    "lines": 81578,
+    "production_lines": 52264,
     "packages": 21,
     "external_dependencies": 6,
     "allowed_dependencies": [
