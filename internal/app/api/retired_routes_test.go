@@ -100,10 +100,17 @@ var memoryDeletedRoutes = []string{
 	"GET /v1/embedder", "PUT /v1/embedder", "DELETE /v1/embedder",
 }
 
+// Inline capability execution was deleted on 2026-10-22; capabilities run
+// published workflows only.
+var inlineCapabilityDeletedRoutes = []string{
+	"POST /v1/capabilities/generate", "POST /v1/capabilities/:capabilityID/debug",
+	"POST /v1/invocations/:invocationID/resume",
+}
+
 func TestRetiredRoutesAreNeverRegistered(t *testing.T) {
 	routes := registeredRoutes(t, &config.Config{JWTSecret: "test"})
 	var stillRegistered []string
-	for _, group := range [][]string{retiredRoutes, w10DeletedRoutes, closedDeliveryTargetRoutes, codeRepositoryDeletedRoutes, chatChainDeletedRoutes, memoryDeletedRoutes} {
+	for _, group := range [][]string{retiredRoutes, w10DeletedRoutes, closedDeliveryTargetRoutes, codeRepositoryDeletedRoutes, chatChainDeletedRoutes, memoryDeletedRoutes, inlineCapabilityDeletedRoutes} {
 		for _, route := range group {
 			if routes[route] {
 				stillRegistered = append(stillRegistered, route)

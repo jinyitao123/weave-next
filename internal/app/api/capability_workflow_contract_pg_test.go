@@ -45,12 +45,12 @@ func newCapabilityWorkflowContractFixture(t *testing.T) *capabilityWorkflowContr
 	graph := json.RawMessage(`{"schema_version":1,"entry_node_id":"deliver","input_contract":{"type":"json","schema":{"type":"object","additionalProperties":false,"properties":{"document":{"type":"string"}},"required":["document"]}},"output_contract":{"type":"json","schema":{"type":"object","additionalProperties":false,"properties":{"document":{"type":"string"}},"required":["document"]}},"nodes":[{"id":"deliver","type":"deliver","config":{"result":{"source":"run_input","path":""}}}],"edges":[]}`)
 	server, pool := newTeamDispatchTestServerWithGraph(t, graph)
 	access := capabilities.NewAccessStore(pool)
-	store := capabilities.NewPGStoreWithTaskQueue(pool, server.Tasks)
+	store := capabilities.NewPGStore(pool)
 	server.Echo = echo.New()
 	server.Config = &config.Config{JWTSecret: "workflow-contract-test"}
 	server.Pool = pool
 	server.UserStore = users.NewStore(pool)
-	server.Capabilities = capabilities.NewService(store, store)
+	server.Capabilities = capabilities.NewService(store)
 	server.CapabilityAccess = access
 	server.registerRoutes()
 	return &capabilityWorkflowContractFixture{server: server, pool: pool, access: access}
@@ -846,36 +846,5 @@ func TestCapabilityWorkflowOptionalInvocationIDValidationRealPG(t *testing.T) {
 	var rows int
 	if err := f.pool.QueryRow(t.Context(), `SELECT count(*) FROM weave_capability_workflow_invocations WHERE workspace_id='ws' AND application_id=$1`, app.ID).Scan(&rows); err != nil || rows != 1 {
 		t.Fatalf("invalid optional invocation IDs created records: count=%d err=%v", rows, err)
-	}
-}
-
-func TestCapabilityWorkflowRequestIDConflictsWithInlineCapabilityRealPG(t *testing.T) {
-	f := newCapabilityWorkflowContractFixture(t)
-	f.publishCapability(t, "workflow-review")
-	f.publishInlineCapability(t, "inline-review")
-	app, key := f.application(t, "shared request app")
-	f.grant(t, app.ID, "workflow-review", true)
-	f.grant(t, app.ID, "inline-review", true)
-	input := map[string]any{"document": "Shared request identity"}
-
-	inline := f.call(t, key, http.MethodPost, workflowInvocationPath("inline-review", 1), map[string]any{
-		"request_id": "shared-request-id", "input": input,
-	})
-	if inline.status != http.StatusAccepted {
-		t.Fatalf("initial inline invocation status=%d body=%+v", inline.status, inline.body)
-	}
-	workflowCall := f.call(t, key, http.MethodPost, workflowInvocationPath("workflow-review", 1), map[string]any{
-		"request_id": "shared-request-id", "input": input,
-		"invocation_id": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
-	})
-	if workflowCall.status != http.StatusConflict || workflowCall.stringField(t, "code") != "idempotency_conflict" {
-		t.Fatalf("workflow and inline invocations did not share one app request-id namespace: status=%d body=%+v", workflowCall.status, workflowCall.body)
-	}
-	var workflowRows, inlineRows int
-	if err := f.pool.QueryRow(t.Context(), `SELECT count(*) FROM weave_capability_workflow_invocations WHERE workspace_id='ws' AND application_id=$1 AND request_id='shared-request-id'`, app.ID).Scan(&workflowRows); err != nil || workflowRows != 0 {
-		t.Fatalf("conflicting workflow invocation was persisted: count=%d err=%v", workflowRows, err)
-	}
-	if err := f.pool.QueryRow(t.Context(), `SELECT count(*) FROM weave_capability_invocations WHERE workspace_id='ws' AND application_id=$1 AND request_id='shared-request-id'`, app.ID).Scan(&inlineRows); err != nil || inlineRows != 1 {
-		t.Fatalf("original inline invocation was lost: count=%d err=%v", inlineRows, err)
 	}
 }

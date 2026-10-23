@@ -10,21 +10,28 @@ func fixtureDefinition() Definition {
 	return Definition{
 		SchemaVersion: 1, CapabilityID: "cap-review", Name: "Review",
 		InputSchema: json.RawMessage(`{"type":"object"}`), OutputSchema: json.RawMessage(`{"type":"object"}`),
-		Roles: []Role{{ID: "author", Name: "Author"}, {ID: "reviewer", Name: "Reviewer"}},
-		Steps: []Step{
-			{ID: "write", Name: "Write", RoleID: "author", Kind: StepWorker, Instruction: "write"},
-			{ID: "check", Name: "Check", RoleID: "reviewer", Kind: StepWorker, Instruction: "check", MaxIterations: 2},
-		},
-		Relations: []Relation{{From: "write", To: "check", Kind: RelationSequence}},
+		Workflow: &WorkflowReference{WorkflowID: "review-flow", WorkflowVersion: 1},
 	}
 }
 
-func TestDefinitionValidateRejectsUnboundedLoop(t *testing.T) {
-	d := fixtureDefinition()
-	d.Relations = []Relation{{From: "write", To: "check", Kind: RelationLoop}}
-	d.Steps[1].MaxIterations = 0
-	if err := d.Validate(); !errors.Is(err, ErrInvalidDefinition) {
-		t.Fatalf("expected invalid definition, got %v", err)
+func TestDefinitionRequiresAPublishedWorkflow(t *testing.T) {
+	inline := fixtureDefinition()
+	inline.Workflow = nil
+	inline.Roles = []Role{{ID: "author", Name: "Author"}}
+	inline.Steps = []Step{{ID: "write", Name: "Write", RoleID: "author", Kind: StepWorker, Instruction: "write"}}
+	if err := inline.Validate(); !errors.Is(err, ErrInvalidDefinition) {
+		t.Fatalf("inline definition validated: %v", err)
+	}
+	if err := inline.ValidateDraft(); !errors.Is(err, ErrInvalidDefinition) {
+		t.Fatalf("inline draft validated: %v", err)
+	}
+	mixed := fixtureDefinition()
+	mixed.Steps = inline.Steps
+	if err := mixed.Validate(); !errors.Is(err, ErrInvalidDefinition) {
+		t.Fatalf("workflow combined with inline steps validated: %v", err)
+	}
+	if err := fixtureDefinition().Validate(); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -43,62 +50,15 @@ func TestPublishFreezesDefinitionHash(t *testing.T) {
 	}
 }
 
-func TestPublishUsesCanonicalDefinitionHash(t *testing.T) {
-	one := fixtureDefinition()
-	two := fixtureDefinition()
-	one.Resources.ToolIDs = []string{"a", "z"}
-	two.Resources.ToolIDs = []string{"z", "a"}
-	first, err := Publish(one, 1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	second, err := Publish(two, 1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if first.DefinitionHash != second.DefinitionHash {
-		t.Fatal("resource order should not change the published hash")
-	}
-}
-
-func TestToolStepRequiresExactUnambiguousMCPResource(t *testing.T) {
+func TestPublishedDefinitionDetachesDraft(t *testing.T) {
 	d := fixtureDefinition()
-	d.Steps[0].Kind = StepTool
-	d.Steps[0].ToolID = "calculate"
-	d.Resources.ToolIDs = []string{"calculate"}
-	if err := d.Validate(); !errors.Is(err, ErrInvalidDefinition) {
-		t.Fatalf("bare tool name granted execution authority: %v", err)
-	}
-	d.Resources.Tools = []ToolReference{{MCPServerID: "finance", ToolName: "calculate"}}
-	if err := d.Validate(); err != nil {
-		t.Fatalf("exact MCP reference rejected: %v", err)
-	}
-	d.Resources.Tools = append(d.Resources.Tools, ToolReference{MCPServerID: "shadow", ToolName: "calculate"})
-	if err := d.Validate(); !errors.Is(err, ErrInvalidDefinition) {
-		t.Fatalf("ambiguous MCP tool accepted: %v", err)
-	}
-}
-
-func TestCompileProducesStablePlanAndRejectsNonLoopCycle(t *testing.T) {
-	d := fixtureDefinition()
-	d.Steps[1].MaxIterations = 0
-	revision, err := Publish(d, 1)
+	r, err := Publish(d, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	plan, err := Compile(revision)
-	if err != nil || len(plan.Steps) != 2 || plan.Steps[0].ID != "write" || plan.Steps[1].ID != "check" {
-		t.Fatalf("plan=%+v err=%v", plan, err)
-	}
-	truth := true
-	d.Steps[1].Kind = StepCondition
-	d.Steps[1].Condition = &Predicate{Left: ValueRef{Source: "literal", Literal: json.RawMessage(`true`)}, Operator: "truthy"}
-	d.Relations = []Relation{{From: "write", To: "check", Kind: RelationSequence}, {From: "check", To: "write", Kind: RelationCondition, When: &truth}}
-	revision, err = Publish(d, 1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := Compile(revision); !errors.Is(err, ErrInvalidRevision) {
-		t.Fatalf("expected cycle rejection, got %v", err)
+	d.InputSchema[0] = '!'
+	d.Workflow.WorkflowVersion = 2
+	if err := r.Validate(); err != nil || r.Definition.Workflow.WorkflowVersion != 1 {
+		t.Fatalf("draft mutation changed publication: %v", err)
 	}
 }

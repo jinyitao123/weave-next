@@ -1,6 +1,5 @@
-// Package capability owns capability definitions, compilation, and resumable
-// execution semantics. It is independent of concrete member engines and of
-// product services; capabilityruntime binds its steps to execution engines.
+// Package capability owns capability definitions: a published contract that
+// pins one already-published workflow, plus its input and output schemas.
 package capability
 
 import (
@@ -157,133 +156,11 @@ func (d Definition) Validate() error {
 	if err := validateObjectSchema("output_schema", d.OutputSchema); err != nil {
 		return err
 	}
-	if d.Workflow != nil {
-		if err := validateWorkflowReference(d); err != nil {
-			return err
-		}
-		return nil
-	}
-	if len(d.Roles) == 0 || len(d.Steps) == 0 {
-		return invalid("roles/steps", "must contain at least one role and step")
-	}
-	roles := make(map[string]struct{}, len(d.Roles))
-	for i, role := range d.Roles {
-		if strings.TrimSpace(role.ID) == "" || strings.TrimSpace(role.Name) == "" {
-			return invalid(fmt.Sprintf("roles[%d]", i), "id and name are required")
-		}
-		if _, exists := roles[role.ID]; exists {
-			return invalid("roles", "contains duplicate id "+role.ID)
-		}
-		roles[role.ID] = struct{}{}
-	}
-	steps := make(map[string]struct{}, len(d.Steps))
-	toolServers := make(map[string]string, len(d.Resources.Tools))
-	for i, ref := range d.Resources.Tools {
-		if ref.MCPServerID == "" || ref.ToolName == "" || strings.TrimSpace(ref.MCPServerID) != ref.MCPServerID || strings.TrimSpace(ref.ToolName) != ref.ToolName {
-			return invalid(fmt.Sprintf("resources.tools[%d]", i), "requires exact MCP server and tool names")
-		}
-		if _, exists := toolServers[ref.ToolName]; exists {
-			return invalid("resources.tools", "contains an ambiguous tool name "+ref.ToolName)
-		}
-		toolServers[ref.ToolName] = ref.MCPServerID
-	}
-	for i, step := range d.Steps {
-		if strings.TrimSpace(step.ID) == "" || strings.TrimSpace(step.Name) == "" {
-			return invalid(fmt.Sprintf("steps[%d]", i), "id and name are required")
-		}
-		if _, exists := steps[step.ID]; exists {
-			return invalid("steps", "contains duplicate id "+step.ID)
-		}
-		if _, exists := roles[step.RoleID]; !exists {
-			return invalid("steps."+step.ID+".role_id", "references an unknown role")
-		}
-		switch step.Kind {
-		case StepWorker, StepTransform, StepCondition, StepWait, StepTool, StepDeliver:
-		default:
-			return invalid("steps."+step.ID+".kind", "is unsupported")
-		}
-		if step.Kind == StepWorker && strings.TrimSpace(step.Instruction) == "" {
-			return invalid("steps."+step.ID+".instruction", "is required for worker steps")
-		}
-		if step.Kind == StepCondition && step.Condition == nil {
-			return invalid("steps."+step.ID+".condition", "is required for condition steps")
-		}
-		if step.Kind == StepTool && strings.TrimSpace(step.ToolID) == "" {
-			return invalid("steps."+step.ID+".tool_id", "is required for tool steps")
-		}
-		if step.Kind == StepTool {
-			if _, exists := toolServers[step.ToolID]; !exists {
-				return invalid("steps."+step.ID+".tool_id", "requires an explicit MCP server and tool resource")
-			}
-		}
-		if step.Kind == StepWait && strings.TrimSpace(step.ApprovalTitle) == "" {
-			return invalid("steps."+step.ID+".approval_title", "is required for wait steps")
-		}
-		if step.MaxIterations < 0 {
-			return invalid("steps."+step.ID+".max_iterations", "cannot be negative")
-		}
-		if step.Kind == StepWait && step.MaxIterations != 0 {
-			return invalid("steps."+step.ID+".max_iterations", "is not valid for wait steps")
-		}
-		steps[step.ID] = struct{}{}
-	}
-	for i, relation := range d.Relations {
-		if _, exists := steps[relation.From]; !exists {
-			return invalid(fmt.Sprintf("relations[%d].from", i), "references an unknown step")
-		}
-		if _, exists := steps[relation.To]; !exists {
-			return invalid(fmt.Sprintf("relations[%d].to", i), "references an unknown step")
-		}
-		switch relation.Kind {
-		case RelationSequence, RelationParallel, RelationCondition, RelationJoin, RelationLoop:
-		default:
-			return invalid(fmt.Sprintf("relations[%d].kind", i), "is unsupported")
-		}
-		if relation.Kind == RelationCondition && relation.When == nil {
-			return invalid(fmt.Sprintf("relations[%d].when", i), "is required for condition relations")
-		}
-		if relation.Kind == RelationLoop {
-			bounded := false
-			for _, step := range d.Steps {
-				if step.ID == relation.To && step.MaxIterations > 0 {
-					bounded = true
-				}
-			}
-			if !bounded {
-				return invalid(fmt.Sprintf("relations[%d]", i), "loop target must declare max_iterations")
-			}
-		}
-	}
-	if d.Result != nil {
-		if err := validateValueRef(*d.Result, steps); err != nil {
-			return invalid("result", err.Error())
-		}
-	}
-	return nil
+	return validateWorkflowReference(d)
 }
 
-func validateValueRef(ref ValueRef, steps map[string]struct{}) error {
-	switch ref.Source {
-	case "input":
-		if ref.StepID != "" {
-			return errors.New("input cannot name a step")
-		}
-	case "step_output":
-		if _, ok := steps[ref.StepID]; !ok {
-			return errors.New("references an unknown step")
-		}
-	case "literal":
-		if len(ref.Literal) == 0 || !json.Valid(ref.Literal) {
-			return errors.New("literal must contain valid JSON")
-		}
-	default:
-		return errors.New("source is unsupported")
-	}
-	return validPointer(ref.Path)
-}
-
-// Drafts can be incomplete while their author is editing roles and steps.
-// Execution and publication continue to require the full Validate contract.
+// Drafts may differ from a publishable definition only in what Validate adds
+// later; both require the workflow reference.
 func (d Definition) ValidateDraft() error {
 	if d.SchemaVersion != SchemaVersionV1 {
 		return invalid("schema_version", "must be 1")
@@ -297,15 +174,12 @@ func (d Definition) ValidateDraft() error {
 	if err := validateObjectSchema("output_schema", d.OutputSchema); err != nil {
 		return err
 	}
-	if d.Workflow != nil {
-		return validateWorkflowReference(d)
-	}
-	if len(d.Steps) > 32 || len(d.Roles) > 64 {
-		return invalid("definition", "exceeds draft size limits")
-	}
-	return nil
+	return validateWorkflowReference(d)
 }
 
+// Inline roles, steps and relations were retired: every capability runs one
+// already-published workflow. The inline fields stay on Definition, always
+// empty, because published revisions hash the whole document.
 func validateWorkflowReference(d Definition) error {
 	if d.Workflow == nil || strings.TrimSpace(d.Workflow.WorkflowID) == "" ||
 		strings.TrimSpace(d.Workflow.WorkflowID) != d.Workflow.WorkflowID || d.Workflow.WorkflowVersion < 1 {

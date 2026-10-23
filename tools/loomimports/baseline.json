@@ -30,16 +30,6 @@
     "files": 1
   },
   {
-    "package": "internal/kernel/capabilityruntime",
-    "import": "loom",
-    "files": 2
-  },
-  {
-    "package": "internal/kernel/capabilityruntime",
-    "import": "loom/stdlib",
-    "files": 1
-  },
-  {
     "package": "internal/kernel/compiler",
     "import": "loom",
     "files": 6

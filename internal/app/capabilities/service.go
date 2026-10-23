@@ -10,9 +10,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/google/uuid"
-	"github.com/jinyitao123/weave/internal/base/execution"
-	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/kernel/capability"
 )
 
@@ -39,34 +36,12 @@ type DraftStore interface {
 	GetRevision(context.Context, string, string, int64) (capability.PublishedRevision, error)
 }
 
-type InvocationStore interface {
-	ClaimDebugInvocation(context.Context, Invocation, capability.DefinitionSnapshot) (Invocation, bool, error)
-	ClaimInvocation(context.Context, Invocation) (Invocation, bool, error)
-	GetInvocation(context.Context, string, string, string) (Invocation, error)
-	CancelInvocation(context.Context, string, string, string) (Invocation, error)
-}
-
-func (s *Service) GetInvocation(ctx context.Context, workspaceID, applicationID, invocationID string) (Invocation, error) {
-	if s == nil || s.invocations == nil {
-		return Invocation{}, errors.New("capability invocation service is not configured")
-	}
-	return s.invocations.GetInvocation(ctx, workspaceID, applicationID, invocationID)
-}
-
-func (s *Service) CancelInvocation(ctx context.Context, workspaceID, applicationID, invocationID string) (Invocation, error) {
-	if s == nil || s.invocations == nil {
-		return Invocation{}, errors.New("capability invocation service is not configured")
-	}
-	return s.invocations.CancelInvocation(ctx, workspaceID, applicationID, invocationID)
-}
-
 type Service struct {
-	drafts      DraftStore
-	invocations InvocationStore
+	drafts DraftStore
 }
 
-func NewService(drafts DraftStore, invocations InvocationStore) *Service {
-	return &Service{drafts: drafts, invocations: invocations}
+func NewService(drafts DraftStore) *Service {
+	return &Service{drafts: drafts}
 }
 
 type DraftRequest struct {
@@ -123,14 +98,8 @@ func (s *Service) Publish(ctx context.Context, workspaceID, capabilityID string,
 	if err != nil {
 		return capability.PublishedRevision{}, err
 	}
-	if published.Definition.Workflow != nil {
-		if err := capability.ValidateSchemas(published.Definition); err != nil {
-			return capability.PublishedRevision{}, err
-		}
-	} else {
-		if _, err := capability.Compile(published); err != nil {
-			return capability.PublishedRevision{}, err
-		}
+	if err := capability.ValidateSchemas(published.Definition); err != nil {
+		return capability.PublishedRevision{}, err
 	}
 	if err := s.drafts.SaveRevision(ctx, workspaceID, published); err != nil {
 		return capability.PublishedRevision{}, err
@@ -138,145 +107,24 @@ func (s *Service) Publish(ctx context.Context, workspaceID, capabilityID string,
 	return published, nil
 }
 
-type Invocation struct {
-	CapabilityName     string                    `json:"-"`
-	StepNames          map[string]string         `json:"-"`
-	ResultSteps        []string                  `json:"-"`
-	CredentialID       string                    `json:"-"`
-	CallerKind         string                    `json:"caller_kind"`
-	RunKind            string                    `json:"run_kind"`
-	DefinitionHash     string                    `json:"definition_hash"`
-	WorkspaceID        string                    `json:"workspace_id"`
-	ApplicationID      string                    `json:"application_id"`
-	InvocationID       string                    `json:"invocation_id"`
-	TaskID             string                    `json:"task_id,omitempty"`
-	RequestID          string                    `json:"request_id"`
-	CapabilityID       string                    `json:"capability_id"`
-	Revision           int64                     `json:"revision"`
-	Input              json.RawMessage           `json:"input"`
-	Status             string                    `json:"status"`
-	ResultState        string                    `json:"result_state"`
-	Result             json.RawMessage           `json:"result,omitempty"`
-	Error              string                    `json:"error,omitempty"`
-	ActorUserID        string                    `json:"actor_user_id,omitempty"`
-	RuntimeID          string                    `json:"runtime_id,omitempty"`
-	UsedSteps          int                       `json:"used_steps"`
-	MaxSteps           int                       `json:"max_steps"`
-	PhysicalUsage      execution.TerminalUsage   `json:"physical_usage"`
-	UnreportedAttempts int                       `json:"unreported_attempts"`
-	Checkpoint         capability.ExecutionState `json:"-"`
-}
-
-type InvocationTask struct {
-	RunKind      string
-	WorkerID     string
-	ClaimEpoch   int64
-	TaskID       string
-	WorkspaceID  string
-	InvocationID string
-	CapabilityID string
-	Revision     int64
-	Input        json.RawMessage
-	Plan         capability.Plan
-	State        capability.ExecutionState
-	ActorUserID  string
-	UsedSteps    int
-	MaxSteps     int
-	ToolBindings []frozen.FrozenMCPBinding
-}
-
-type TaskExecutor interface {
-	Execute(context.Context, InvocationTask) (json.RawMessage, error)
-}
-
-func executeSafely(ctx context.Context, executor TaskExecutor, task InvocationTask) (result json.RawMessage, err error) {
-	defer func() {
-		if recover() != nil {
-			result = nil
-			err = errors.New("capability executor panicked")
-		}
-	}()
-	return executor.Execute(ctx, task)
-}
-
-type InvokeRequest struct {
-	CredentialID  string
+// grantIdentity names the application call an access grant is checked for.
+type grantIdentity struct {
 	WorkspaceID   string
 	ApplicationID string
-	InvocationID  string
-	RequestID     string
+	CredentialID  string
 	CapabilityID  string
 	Revision      int64
-	Input         json.RawMessage
-	ActorUserID   string
-	MaxSteps      int
 }
 
-func (s *Service) Invoke(ctx context.Context, request InvokeRequest) (Invocation, bool, error) {
-	if s == nil || s.drafts == nil || s.invocations == nil {
-		return Invocation{}, false, errors.New("capability invocation service is not configured")
-	}
-	if strings.TrimSpace(request.WorkspaceID) == "" || strings.TrimSpace(request.ApplicationID) == "" || strings.TrimSpace(request.RequestID) == "" {
-		return Invocation{}, false, fmt.Errorf("%w: workspace, application, and request id are required", capability.ErrInvalidDefinition)
-	}
-	if request.Revision < 1 || strings.TrimSpace(request.CapabilityID) == "" {
-		return Invocation{}, false, fmt.Errorf("%w: capability id and positive revision are required", capability.ErrInvalidDefinition)
-	}
-	var input map[string]any
-	if len(request.Input) == 0 || json.Unmarshal(request.Input, &input) != nil || input == nil {
-		return Invocation{}, false, fmt.Errorf("%w: input must be a JSON object", capability.ErrInvalidDefinition)
-	}
-	canonicalInput, err := frozen.CanonicalizeJSON(request.Input)
-	if err != nil {
-		return Invocation{}, false, fmt.Errorf("%w: input must be canonicalizable JSON", capability.ErrInvalidDefinition)
-	}
-	published, err := s.drafts.GetRevision(ctx, request.WorkspaceID, request.CapabilityID, request.Revision)
-	if err != nil {
-		return Invocation{}, false, err
-	}
-	if _, err := capability.Compile(published); err != nil {
-		return Invocation{}, false, err
-	}
-	if err := capability.ValidateValue(published.Definition.InputSchema, canonicalInput); err != nil {
-		return Invocation{}, false, fmt.Errorf("%w: input schema: %v", capability.ErrInvalidDefinition, err)
-	}
-	invocation := Invocation{
-		CredentialID: request.CredentialID, CallerKind: "developer",
-		RunKind: "published", DefinitionHash: published.DefinitionHash,
-		WorkspaceID: request.WorkspaceID, ApplicationID: request.ApplicationID,
-		InvocationID: request.InvocationID, RequestID: request.RequestID,
-		CapabilityID: request.CapabilityID, Revision: request.Revision,
-		Input: canonicalInput, Status: "queued", ResultState: "unavailable", ActorUserID: request.ActorUserID, MaxSteps: request.MaxSteps,
-	}
-	if invocation.MaxSteps <= 0 {
-		invocation.MaxSteps = 100
-	}
-	if request.CredentialID != "" {
-		invocation.CallerKind = "application"
-	}
-	if invocation.InvocationID == "" {
-		invocation.InvocationID = uuid.NewString()
-	}
-	stored, replayed, err := s.invocations.ClaimInvocation(ctx, invocation)
-	if err != nil {
-		return Invocation{}, false, err
-	}
-	return stored, replayed, nil
-}
-
-// MemoryStore is a deterministic store for contract and adapter tests. A
-// PostgreSQL implementation can satisfy the same interfaces without changing
-// the application service.
+// MemoryStore is a deterministic draft store for contract and adapter tests.
 type MemoryStore struct {
-	debug     map[string]capability.DefinitionSnapshot
 	mu        sync.Mutex
 	drafts    map[string]capability.Definition
 	revisions map[string]capability.PublishedRevision
-	invokes   map[string]Invocation
 }
 
 func NewMemoryStore() *MemoryStore {
-	return &MemoryStore{debug: map[string]capability.DefinitionSnapshot{}, drafts: map[string]capability.Definition{}, revisions: map[string]capability.PublishedRevision{}, invokes: map[string]Invocation{}}
+	return &MemoryStore{drafts: map[string]capability.Definition{}, revisions: map[string]capability.PublishedRevision{}}
 }
 
 func (m *MemoryStore) SaveDraft(_ context.Context, workspaceID string, definition capability.Definition) error {
@@ -315,66 +163,6 @@ func (m *MemoryStore) GetRevision(_ context.Context, workspaceID, capabilityID s
 		return capability.PublishedRevision{}, ErrRevisionNotFound
 	}
 	return cloneValue(r), nil
-}
-
-func (m *MemoryStore) ClaimInvocation(_ context.Context, invocation Invocation) (Invocation, bool, error) {
-	if invocation.CredentialID != "" || invocation.CallerKind == "application" {
-		return Invocation{}, false, ErrAccessDenied
-	}
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	key := invocation.WorkspaceID + "\x00" + invocation.ApplicationID + "\x00" + invocation.RequestID
-	if existing, ok := m.invokes[key]; ok {
-		if string(existing.Input) != string(invocation.Input) || existing.CapabilityID != invocation.CapabilityID || existing.Revision != invocation.Revision || existing.RunKind != invocation.RunKind || existing.DefinitionHash != invocation.DefinitionHash {
-			return Invocation{}, false, ErrIdempotencyConflict
-		}
-		return cloneValue(existing), true, nil
-	}
-	if invocation.TaskID == "" {
-		invocation.TaskID = "cap-task-memory-" + invocation.InvocationID
-	}
-	m.invokes[key] = cloneValue(invocation)
-	return cloneValue(invocation), false, nil
-}
-
-func (m *MemoryStore) GetInvocation(_ context.Context, workspaceID, applicationID, invocationID string) (Invocation, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	for _, invocation := range m.invokes {
-		if applicationID != "" && invocation.WorkspaceID == workspaceID && invocation.ApplicationID == applicationID && invocation.InvocationID == invocationID {
-			invocation = cloneValue(invocation)
-			definition := m.revisions[workspaceID+"\x00"+invocation.CapabilityID+"\x00"+fmt.Sprint(invocation.Revision)].Definition
-			if invocation.RunKind == "debug" {
-				definition = m.debug[workspaceID+"\x00"+invocationID].Definition
-			}
-			presentInvocation(&invocation, definition)
-			return invocation, nil
-		}
-	}
-	return Invocation{}, ErrInvocationNotFound
-}
-
-func (m *MemoryStore) CancelInvocation(_ context.Context, workspaceID, applicationID, invocationID string) (Invocation, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	for key, invocation := range m.invokes {
-		if invocation.WorkspaceID == workspaceID && invocation.ApplicationID == applicationID && invocation.InvocationID == invocationID {
-			if invocation.Status == "cancelled" || invocation.Status == "cancel_requested" {
-				return cloneValue(invocation), nil
-			}
-			if invocation.Status == "completed" || invocation.Status == "failed" {
-				return Invocation{}, ErrInvocationTerminal
-			}
-			if invocation.Status == "running" {
-				invocation.Status = "cancel_requested"
-			} else {
-				invocation.Status = "cancelled"
-			}
-			m.invokes[key] = invocation
-			return invocation, nil
-		}
-	}
-	return Invocation{}, ErrInvocationNotFound
 }
 
 func cloneValue[T any](value T) T {

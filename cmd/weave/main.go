@@ -320,15 +320,6 @@ func main() {
 		}()
 
 		srv.TaskWorker = taskqueue.NewWorker(taskStore, 4)
-		capabilityHandler, err := srv.ConfigureCapabilityTaskHandler()
-		if err != nil {
-			slog.Error("configure capability task handler", "error", err)
-			os.Exit(1)
-		}
-		if err := srv.TaskWorker.Register("capability_invocation", taskqueue.IdentityCapability, capabilityHandler); err != nil {
-			slog.Error("register capability task handler", "error", err)
-			os.Exit(1)
-		}
 	}
 
 	// Initialize schedule store if PG pool is available.

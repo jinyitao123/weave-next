@@ -402,7 +402,7 @@ func (s *WorkflowInvocationService) reserve(
 		if !sameWorkflowInvocationRequest(existing, desired, request.InvocationIDWasSupplied) {
 			return workflowInvocationRecord{}, false, false, ErrIdempotencyConflict
 		}
-		if err := authorizeApplicationInvocation(ctx, tx, Invocation{WorkspaceID: request.WorkspaceID,
+		if err := authorizeApplicationInvocation(ctx, tx, grantIdentity{WorkspaceID: request.WorkspaceID,
 			ApplicationID: request.ApplicationID, CredentialID: request.CredentialID,
 			CapabilityID: request.CapabilityID, Revision: request.Revision}); err != nil {
 			return workflowInvocationRecord{}, false, false, err
@@ -455,7 +455,7 @@ func (s *WorkflowInvocationService) reserve(
 		}
 		return desired, false, true, nil
 	}
-	if err := authorizeApplicationInvocation(ctx, tx, Invocation{WorkspaceID: request.WorkspaceID,
+	if err := authorizeApplicationInvocation(ctx, tx, grantIdentity{WorkspaceID: request.WorkspaceID,
 		ApplicationID: request.ApplicationID, CredentialID: request.CredentialID,
 		CapabilityID: request.CapabilityID, Revision: request.Revision}); err != nil {
 		return workflowInvocationRecord{}, false, false, err
@@ -1277,7 +1277,7 @@ func (s *WorkflowInvocationService) authorizeRuntimeCredentialWithQueries(
 		sourceTask.Subject != subject {
 		return frozen.ErrCredentialSubjectDenied
 	}
-	if err := authorizeApplicationGrant(ctx, queries, Invocation{WorkspaceID: record.WorkspaceID,
+	if err := authorizeApplicationGrant(ctx, queries, grantIdentity{WorkspaceID: record.WorkspaceID,
 		ApplicationID: record.ApplicationID, CapabilityID: record.CapabilityID, Revision: record.Revision}); err != nil {
 		return ErrAccessDenied
 	}

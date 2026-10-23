@@ -31,8 +31,8 @@ func TestWorkbenchHostRequiresVerifiedUserIdentity(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if getUserID(first) == getUserID(second) || capabilityApplicationID(first) == capabilityApplicationID(second) {
-		t.Fatal("verified users share application identity")
+	if getUserID(first) == getUserID(second) {
+		t.Fatal("verified users share one identity")
 	}
 	subject, err := execution.RequireSubject(first.Request().Context(), "ws")
 	if err != nil || subject.UserID != "alice" {
@@ -55,7 +55,7 @@ func TestUntrustedWorkbenchActorHeaderCannotImpersonateUser(t *testing.T) {
 	c := e.NewContext(httptest.NewRequest("GET", "/", nil), httptest.NewRecorder())
 	c.Request().Header.Set("X-Weave-Actor-ID", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 	setAPIKeyContext(c, &apikeys.APIKey{ID: "key", TenantID: "ws", Role: "admin", OwnerUserID: "owner"})
-	if getUserID(c) != "owner" || capabilityApplicationID(c) != "key" {
+	if getUserID(c) != "owner" {
 		t.Fatal("arbitrary header overrode authenticated actor")
 	}
 }

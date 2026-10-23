@@ -1614,6 +1614,28 @@
         "production_lines_added": -468,
         "previous_packages": 22
       }
+    },
+    {
+      "date": "2026-10-22",
+      "reason": "删除内联能力调用（B3）",
+      "record": "docs/治理/2026-10-22-退役产品面删除登记.md",
+      "growth": {
+        "lines": 0,
+        "production_lines": 0
+      },
+      "kernel": {
+        "previous_lines": 109775,
+        "previous_production_lines": 83790,
+        "lines_added": -2078,
+        "production_lines_added": -1370,
+        "previous_packages": 45
+      },
+      "app": {
+        "previous_lines": 84810,
+        "previous_production_lines": 54159,
+        "lines_added": -3619,
+        "production_lines_added": -2125
+      }
     }
   ],
   "migration_targets": {
@@ -1657,9 +1679,9 @@
     ]
   },
   "kernel": {
-    "lines": 109775,
-    "production_lines": 83790,
-    "packages": 45,
+    "lines": 107697,
+    "production_lines": 82420,
+    "packages": 44,
     "external_dependencies": 5,
     "allowed_dependencies": [
       "github.com/google/uuid",
@@ -1677,8 +1699,8 @@
     "allowed_dependencies": []
   },
   "app": {
-    "lines": 84810,
-    "production_lines": 54159,
+    "lines": 81191,
+    "production_lines": 52034,
     "packages": 21,
     "external_dependencies": 6,
     "allowed_dependencies": [

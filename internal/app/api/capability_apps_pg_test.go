@@ -3,6 +3,11 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/jinyitao123/weave/internal/app/capabilities"
 	"github.com/jinyitao123/weave/internal/app/users"
@@ -11,10 +16,6 @@ import (
 	"github.com/jinyitao123/weave/internal/kernel/capability"
 	"github.com/jinyitao123/weave/internal/kernel/config"
 	"github.com/labstack/echo/v4"
-	"net/http/httptest"
-	"strings"
-	"testing"
-	"time"
 )
 
 func TestCapabilityApplicationHTTPIdentityRotationAndScopesRealPG(t *testing.T) {
@@ -27,8 +28,8 @@ func TestCapabilityApplicationHTTPIdentityRotationAndScopesRealPG(t *testing.T) 
 		t.Fatal(err)
 	}
 	store := capabilities.NewPGStore(pool)
-	service := capabilities.NewService(store, store)
-	d := capability.Definition{SchemaVersion: 1, CapabilityID: "published", Name: "Published", InputSchema: json.RawMessage(`{"type":"object"}`), OutputSchema: json.RawMessage(`{"type":"object"}`), Roles: []capability.Role{{ID: "r", Name: "r"}}, Steps: []capability.Step{{ID: "s", Name: "s", RoleID: "r", Kind: capability.StepWorker, Instruction: "run"}}}
+	service := capabilities.NewService(store)
+	d := capability.Definition{SchemaVersion: 1, CapabilityID: "published", Name: "Published", InputSchema: json.RawMessage(`{"type":"object"}`), OutputSchema: json.RawMessage(`{"type":"object"}`), Workflow: &capability.WorkflowReference{WorkflowID: "flow", WorkflowVersion: 1}}
 	if err := service.SaveDraft(t.Context(), capabilities.DraftRequest{WorkspaceID: "apps-ws", Definition: d}); err != nil {
 		t.Fatal(err)
 	}
@@ -84,20 +85,14 @@ func TestCapabilityApplicationHTTPIdentityRotationAndScopesRealPG(t *testing.T) 
 	invokePath := "/v1/capabilities/published/versions/1/invocations"
 	call(key, "POST", invokePath, request, 403)
 	call(token, "POST", "/v1/capability-apps/actions", map[string]any{"action": "grant", "app_id": appID, "capability_id": "published", "revision": 1, "enabled": true}, 204)
-	first := call(key, "POST", invokePath, request, 202)
-	invocationID := field(first, "invocation_id")
 	replacement := call(token, "POST", "/v1/capability-apps/actions", map[string]any{"action": "issue", "app_id": appID, "name": "Replacement", "scopes": []string{"invoke", "read"}}, 201)
 	nextKey := field(replacement, "key")
-	replay := call(nextKey, "POST", invokePath, request, 202)
-	if field(replay, "invocation_id") != invocationID || string(replay["replayed"]) != "true" {
-		t.Fatal("rotation lost invocation identity")
-	}
 	call(token, "POST", "/v1/capability-apps/actions", map[string]any{"action": "revoke", "app_id": appID, "credential_id": credential.ID}, 204)
-	call(key, "GET", "/v1/invocations/"+invocationID, nil, 401)
-	call(nextKey, "GET", "/v1/invocations/"+invocationID, nil, 200)
+	call(key, "GET", "/v1/capability-invocations", nil, 401)
+	call(nextKey, "GET", "/v1/capability-invocations", nil, 200)
+	invocationID := "00000000-0000-0000-0000-000000000001"
 	call(nextKey, "POST", "/v1/invocations/"+invocationID+"/cancel", map[string]any{}, 403)
 	call(nextKey, "POST", "/v1/capabilities/drafts", map[string]any{"definition": d}, 403)
-	call(nextKey, "POST", "/v1/capabilities/published/debug", map[string]any{}, 403)
 	call(nextKey, "GET", "/v1/capability-apps", nil, 403)
 	call(nextKey, "GET", "/v1/auth/api-keys", nil, 401)
 	otherApp := call(token, "POST", "/v1/capability-apps/actions", map[string]any{"action": "create", "name": "Other"}, 201)
@@ -109,5 +104,5 @@ func TestCapabilityApplicationHTTPIdentityRotationAndScopesRealPG(t *testing.T) 
 		t.Fatal("snapshot leaked key material")
 	}
 	call(token, "POST", "/v1/capability-apps/actions", map[string]any{"action": "enable", "app_id": appID, "enabled": false}, 204)
-	call(nextKey, "GET", "/v1/invocations/"+invocationID, nil, 401)
+	call(nextKey, "GET", "/v1/capability-invocations", nil, 401)
 }

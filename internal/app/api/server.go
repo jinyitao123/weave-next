@@ -180,7 +180,7 @@ func NewServer(cfg *config.Config, store loom.Store, models *llmrouter.Resolver)
 		s.StoreExt = storeext.New(ps.Pool())
 		s.Pool = ps.Pool()
 		capabilityStore := appcapabilities.NewPGStore(ps.Pool())
-		s.Capabilities = appcapabilities.NewService(capabilityStore, capabilityStore)
+		s.Capabilities = appcapabilities.NewService(capabilityStore)
 		s.CapabilityAccess = appcapabilities.NewAccessStore(ps.Pool())
 		s.TeamWorkers = agentcatalog.NewTeamWorkerRepository(ps.Pool())
 		s.Attachments = attachments.New(ps.Pool())
@@ -287,22 +287,19 @@ func (s *Server) registerRoutes() {
 	auth.GET("/admin/tasks/:id/queue", s.handleGetAdminTaskQueue, consoleAccess)
 	auth.GET("/admin/metrics", s.handleGetAdminMetrics, consoleAccess)
 
-	// Developer capability contract endpoints. Execution is admitted here;
-	// runtime scheduling is intentionally a separate follow-up integration.
+	// Capability contract endpoints: each published capability runs one
+	// already-published workflow.
 	// The deployment login key signs in as the administrator here as on every
 	// other route; an application credential never matches it and keeps only
 	// its own scopes, which never include manage.
 	capabilityAPI := authenticatedRouteGroup(s.Echo, "/v1", s.loginKeyMiddleware(), s.capabilityAuthentication())
 	capabilityAPI.POST("/capabilities/drafts", s.handleSaveCapabilityDraft, requireCapabilityAccess("manage"))
 	capabilityAPI.GET("/capabilities/drafts", s.handleListCapabilityDrafts, requireCapabilityAccess("manage"))
-	capabilityAPI.POST("/capabilities/generate", s.handleGenerateCapability, requireCapabilityAccess("manage"))
-	capabilityAPI.POST("/capabilities/:capabilityID/debug", s.handleDebugCapability, requireCapabilityAccess("manage"))
 	capabilityAPI.POST("/capabilities/:capabilityID/versions/:revision/publish", s.handlePublishCapability, requireCapabilityAccess("manage"))
 	capabilityAPI.POST("/capabilities/:capabilityID/versions/:revision/invocations", s.handleInvokeCapability, requireCapabilityAccess("invoke"))
 	capabilityAPI.GET("/capability-invocations", s.handleListCapabilityInvocations, requireCapabilityAccess("read"))
 	capabilityAPI.GET("/invocations/:invocationID", s.handleGetCapabilityInvocation, requireCapabilityAccess("read"))
 	capabilityAPI.GET("/invocations/:invocationID/events", s.handleGetCapabilityInvocationEvents, requireCapabilityAccess("read"))
-	capabilityAPI.POST("/invocations/:invocationID/resume", s.handleResumeCapabilityInvocation, requireCapabilityAccess("invoke"))
 	capabilityAPI.POST("/invocations/:invocationID/cancel", s.handleCancelCapabilityInvocation, requireCapabilityAccess("cancel"))
 	capabilityAPI.GET("/capability-quotas", s.handleCapabilityQuota, requireCapabilityAccess("manage"))
 	capabilityAPI.PUT("/capability-quotas", s.handleCapabilityQuota, requireCapabilityAccess("manage"))

@@ -37,7 +37,7 @@ func TestWorkflowRuntimeCredentialRechecksApplicationGrantRealPG(t *testing.T) {
 		t.Fatal(err)
 	}
 	store := NewPGStore(pool)
-	definitions := NewService(store, store)
+	definitions := NewService(store)
 	if _, err := pool.Exec(t.Context(), `INSERT INTO weave_workspaces(id,slug,name) VALUES('workflow-auth','workflow-auth','Workflow Auth');
 	 INSERT INTO weave_users(id,tenant_id,username,password,role) VALUES('workflow-auth-user','workflow-auth','owner','unused','developer')`); err != nil {
 		t.Fatal(err)

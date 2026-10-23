@@ -96,7 +96,7 @@ func TestPublishedCapabilityAppRechecksExactProviderGrantRealPG(t *testing.T) {
 	}
 
 	definitionsStore := appcapabilities.NewPGStore(pool)
-	definitions := appcapabilities.NewService(definitionsStore, definitionsStore)
+	definitions := appcapabilities.NewService(definitionsStore)
 	capabilityDefinition := machineCapabilityDefinition(envelope.WorkflowID, envelope.WorkflowVersion)
 	if err := definitions.SaveDraft(ctx, appcapabilities.DraftRequest{WorkspaceID: "app-provider", Definition: capabilityDefinition}); err != nil {
 		t.Fatal(err)

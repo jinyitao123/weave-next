@@ -29,99 +29,6 @@ func TestConfigFromEnv(t *testing.T) {
 	}
 }
 
-func TestCapabilityPlanUsesStableDraftIdentity(t *testing.T) {
-	var savedIDs []string
-	client := newTestClient(t, http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
-		switch request.URL.Path {
-		case "/v1/capabilities/generate":
-			writeJSON(response, http.StatusOK, `{"definition":{"capability_id":"generated","name":"核对","description":"核对资料","input_schema":{"type":"object"},"output_schema":{"type":"object"},"runtime":{"engine":"loom","model":"model"},"roles":[{"id":"role","name":"核对员","description":"核对"}],"steps":[{"id":"step","name":"核对","role_id":"role","kind":"worker","instruction":"核对"}]}}`)
-		case "/v1/capabilities/drafts":
-			var body struct {
-				Definition map[string]any `json:"definition"`
-			}
-			if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
-				t.Fatal(err)
-			}
-			savedIDs = append(savedIDs, body.Definition["capability_id"].(string))
-			writeJSON(response, http.StatusAccepted, `{"status":"draft_saved"}`)
-		default:
-			t.Fatalf("unexpected request %s", request.URL.Path)
-		}
-	}))
-	request := CapabilityPlanRequest{Prompt: "核对资料", Model: "model", IdempotencyKey: "018f5f5a-c73c-7e31-8f4a-9b36797553a2"}
-	if _, err := client.CapabilityPlan(context.Background(), request); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := client.CapabilityPlan(context.Background(), request); err != nil {
-		t.Fatal(err)
-	}
-	if len(savedIDs) != 2 || savedIDs[0] == "" || savedIDs[0] != savedIDs[1] {
-		t.Fatalf("saved ids = %#v", savedIDs)
-	}
-	request.IdempotencyKey = "not-a-uuid"
-	if _, err := client.CapabilityPlan(context.Background(), request); err == nil {
-		t.Fatal("CapabilityPlan accepted an invalid idempotency key")
-	}
-}
-
-func TestTeamDispatchUsesUnifiedFreeCollabAndPollsToYielded(t *testing.T) {
-	var polls atomic.Int32
-	handler := http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
-		if request.Header.Get("Authorization") != "Bearer "+testAPIKey {
-			t.Fatalf("authorization = %q", request.Header.Get("Authorization"))
-		}
-		switch request.Method + " " + request.URL.Path {
-		case "POST /v1/teams/team-1/dispatch":
-			var body map[string]any
-			if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
-				t.Fatal(err)
-			}
-			if body["task"] != "do work" || body["mode"] != "free_collab" || body["client_request_id"] != "5d60aa9f-31d7-4fdf-a40c-53a46094e9d0" {
-				t.Fatalf("chat body = %#v", body)
-			}
-			writeJSON(response, http.StatusAccepted, `{"status":"queued"}`)
-		case "GET /v1/chat-requests/5d60aa9f-31d7-4fdf-a40c-53a46094e9d0":
-			if polls.Add(1) == 1 {
-				writeJSON(response, http.StatusOK, `{"status":"queued"}`)
-				return
-			}
-			writeJSON(response, http.StatusOK, `{"status":"yielded","run_id":"run-1"}`)
-		default:
-			t.Fatalf("unexpected request %s %s", request.Method, request.URL.String())
-		}
-	})
-	client := newTestClient(t, handler)
-	id, result, err := client.TeamDispatchAndWait(context.Background(), DispatchRequest{
-		TeamID: "team-1", Task: "do work", Mode: "free_collab", ClientRequestID: "5d60aa9f-31d7-4fdf-a40c-53a46094e9d0",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if id != "5d60aa9f-31d7-4fdf-a40c-53a46094e9d0" || !strings.Contains(string(result), `"status":"yielded"`) {
-		t.Fatalf("result = %q, %s", id, result)
-	}
-}
-
-func TestTeamDispatchHandlesInProgressConflict(t *testing.T) {
-	handler := http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
-		switch request.Method + " " + request.URL.Path {
-		case "POST /v1/teams/team-1/dispatch":
-			writeJSON(response, http.StatusConflict, `{"code":"client_request_in_progress"}`)
-		case "GET /v1/chat-requests/5d60aa9f-31d7-4fdf-a40c-53a46094e9d0":
-			writeJSON(response, http.StatusOK, `{"status":"failed","error_code":"provider_failed"}`)
-		default:
-			t.Fatalf("unexpected request %s %s", request.Method, request.URL.String())
-		}
-	})
-	client := newTestClient(t, handler)
-	_, result, err := client.TeamDispatch(context.Background(), DispatchRequest{
-		TeamID: "team-1", Task: "do work", ClientRequestID: "5d60aa9f-31d7-4fdf-a40c-53a46094e9d0",
-	})
-	if err != nil || !strings.Contains(string(result), `"status":"failed"`) {
-		t.Fatalf("result = %s, error = %v", result, err)
-	}
-}
-
 func TestTeamDispatchWaitsForFixedWorkflowRun(t *testing.T) {
 	var polls atomic.Int32
 	handler := http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
@@ -274,15 +181,11 @@ func TestTeamDispatchRejectsMissingOrInactiveTeam(t *testing.T) {
 	}
 }
 
-func TestReadEndpointsAndResumeAreThinHTTPMappings(t *testing.T) {
+func TestReadEndpointsAreThinHTTPMappings(t *testing.T) {
 	seen := make(map[string]bool)
 	handler := http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		key := request.Method + " " + request.URL.RequestURI()
 		seen[key] = true
-		if request.URL.Path == "/v1/resume" {
-			writeJSON(response, http.StatusOK, "event: done\ndata: {}\n\n")
-			return
-		}
 		writeJSON(response, http.StatusOK, `{}`)
 	})
 	client := newTestClient(t, handler)
@@ -294,7 +197,6 @@ func TestReadEndpointsAndResumeAreThinHTTPMappings(t *testing.T) {
 	_, _ = client.TeamList(ctx, "all", true)
 	_, _ = client.TeamStatus(ctx, "team-1")
 	_, _ = client.UsageSummary(ctx)
-	_, _ = client.DispatchStatus(ctx, "dispatch-1")
 	_, _ = client.TeamRunStatus(ctx, "snapshot-1")
 	_, _ = client.HumanTaskList(ctx, 20, "next")
 	_, _ = client.HumanTaskGet(ctx, "human-1", "/predecessor_outputs/chapter", 10, 50)
@@ -304,18 +206,17 @@ func TestReadEndpointsAndResumeAreThinHTTPMappings(t *testing.T) {
 	_, _ = client.DeliverableList(ctx, 20, 5)
 	_, _ = client.DeliverableGet(ctx, "delivery-1")
 	_, _ = client.DeliverableGetPath(ctx, "delivery-1", "/chapters/one", 0, 25)
-	_, _ = client.Resume(ctx, ResumeRequest{RunID: "run-1", Agent: "lead", Input: map[string]any{"answer": "yes"}})
 	want := []string{
 		"GET /v1/providers", "POST /v1/providers", "POST /v1/auth/api-keys", "POST /v1/runtimes",
 		"GET /v1/teams?include=summary&status=all", "GET /v1/teams/team-1?include=summary",
-		"GET /v1/usage", "GET /v1/chat-requests/dispatch-1",
+		"GET /v1/usage",
 		"GET /v1/runs?aggregation_mode=all-exclusive&run_snapshot_id=snapshot-1&view=run",
 		"GET /v1/human-tasks?cursor=next&limit=20",
 		"GET /v1/human-tasks/human-1?limit=50&offset=10&path=%2Fpredecessor_outputs%2Fchapter",
 		"POST /v1/human-tasks/human-1/complete",
 		"GET /v1/deliverables?limit=20&offset=5",
 		"GET /v1/deliverables/delivery-1",
-		"GET /v1/deliverables/delivery-1?limit=25&offset=0&path=%2Fchapters%2Fone", "POST /v1/resume",
+		"GET /v1/deliverables/delivery-1?limit=25&offset=0&path=%2Fchapters%2Fone",
 	}
 	for _, key := range want {
 		if !seen[key] {

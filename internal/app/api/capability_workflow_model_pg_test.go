@@ -227,7 +227,7 @@ func runCapabilityWorkflowModelScenario(t *testing.T, parallel bool, maxConns []
 	tasks := taskqueue.New(pool, nil, leaseDuration)
 	snapshots := snapshot.NewStore(pool)
 	access := capabilities.NewAccessStore(pool)
-	capabilityStore := capabilities.NewPGStoreWithTaskQueue(pool, tasks)
+	capabilityStore := capabilities.NewPGStore(pool)
 	server := &Server{
 		Echo: echo.New(), Config: &config.Config{JWTSecret: "capability-model-test"},
 		Pool: pool, Store: teamDispatchPoolStore{pool: pool}, UserStore: users.NewStore(pool),
@@ -236,7 +236,7 @@ func runCapabilityWorkflowModelScenario(t *testing.T, parallel bool, maxConns []
 		Deliverables: deliveryverify.NewStore(pool), StoreExt: storeext.New(pool),
 		Fanout: fanout.New(pool, nil), Runtimes: runtimes.NewStore(pool),
 		Credentials: providers, MCPRegistry: mcpregistry.New(pool, key), DeliveryTargets: delivery.New(pool, key),
-		Capabilities: capabilities.NewService(capabilityStore, capabilityStore), CapabilityAccess: access,
+		Capabilities: capabilities.NewService(capabilityStore), CapabilityAccess: access,
 		PublicationAuthority: authority,
 	}
 	server.KernelPublication = openAPIKernelPublication(t, ctx, pool, authority)

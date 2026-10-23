@@ -2,11 +2,8 @@ package capabilities
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
 	"math/rand"
-	"sync"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
@@ -222,43 +219,5 @@ func TestLiveAdmissionQueriesMatchLegacyRealPG(t *testing.T) {
 	// Guard against a generator that only ever produces empty answers.
 	if nonzero < compared/10 || active == 0 {
 		t.Fatalf("random states too sparse: %d comparisons, %d nonzero counts, %d active lanes", compared, nonzero, active)
-	}
-}
-
-// TestConcurrentInvocationsRespectQuotaRealPG admits concurrent invocations
-// against a small workspace quota: exactly the remaining capacity is admitted.
-func TestConcurrentInvocationsRespectQuotaRealPG(t *testing.T) {
-	pool, store, _ := executionFixture(t)
-	ctx := capabilityTestContext(t.Context(), "ws")
-	if _, err := pool.Exec(ctx, `UPDATE weave_capability_quotas SET max_active_invocations=5 WHERE workspace_id='ws'`); err != nil {
-		t.Fatal(err)
-	}
-	service := NewService(store, store)
-	const callers = 20
-	errs := make([]error, callers)
-	var wg sync.WaitGroup
-	for n := range callers {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			_, _, errs[n] = service.Invoke(ctx, InvokeRequest{WorkspaceID: "ws", ApplicationID: "app", CapabilityID: "cap", Revision: 1,
-				RequestID: fmt.Sprintf("concurrent-%d", n), Input: json.RawMessage(`{"x":1}`)})
-		}()
-	}
-	wg.Wait()
-	var admitted, refused int
-	for _, err := range errs {
-		switch {
-		case err == nil:
-			admitted++
-		case errors.Is(err, ErrQuotaExceeded):
-			refused++
-		default:
-			t.Fatalf("unexpected invocation error: %v", err)
-		}
-	}
-	// The fixture's own invocation already holds one of the five places.
-	if admitted != 4 || refused != callers-4 {
-		t.Fatalf("admitted %d and refused %d of %d concurrent invocations, want 4 admitted", admitted, refused, callers)
 	}
 }

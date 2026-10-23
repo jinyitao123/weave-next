@@ -15,13 +15,6 @@ import (
 	"github.com/jinyitao123/weave/internal/app/weaveclient"
 )
 
-type capabilityPlanArguments struct {
-	BusinessRequest string `json:"business_request"`
-	Model           string `json:"model"`
-	CapabilityID    string `json:"capability_id,omitempty"`
-	IdempotencyKey  string `json:"idempotency_key"`
-}
-
 type capabilityPublishArguments struct {
 	CapabilityID string `json:"capability_id"`
 	Revision     int64  `json:"revision"`
@@ -62,16 +55,6 @@ func (d *ToolDispatcher) Dispatch(ctx context.Context, call contract.ToolCall) (
 			result, err = compactCapabilityCatalog(result)
 		}
 		return documentResult(call.ID, result, err), nil
-	case "capability_plan":
-		var input capabilityPlanArguments
-		if err := decodeArguments(call.Args, &input); err != nil || strings.TrimSpace(input.BusinessRequest) == "" || strings.TrimSpace(input.Model) == "" || strings.TrimSpace(input.IdempotencyKey) == "" {
-			return toolError(call.ID, "invalid_arguments"), nil
-		}
-		result, err := d.client.CapabilityPlan(ctx, weaveclient.CapabilityPlanRequest{Prompt: input.BusinessRequest, Model: input.Model, CapabilityID: input.CapabilityID, IdempotencyKey: input.IdempotencyKey})
-		if err == nil {
-			result, err = compactCapabilityPlan(result)
-		}
-		return documentResult(call.ID, result, err), nil
 	case "capability_publish":
 		var input capabilityPublishArguments
 		if err := decodeArguments(call.Args, &input); err != nil || strings.TrimSpace(input.CapabilityID) == "" || input.Revision < 1 {
@@ -109,17 +92,6 @@ func (d *ToolDispatcher) Dispatch(ctx context.Context, call contract.ToolCall) (
 			return toolError(call.ID, "invalid_arguments"), nil
 		}
 		result, err := d.client.CapabilityHistory(ctx)
-		return documentResult(call.ID, result, err), nil
-	case "capability_resume":
-		var input struct {
-			InvocationID string          `json:"invocation_id"`
-			StepID       string          `json:"step_id"`
-			Response     json.RawMessage `json:"response"`
-		}
-		if err := decodeArguments(call.Args, &input); err != nil {
-			return toolError(call.ID, "invalid_arguments"), nil
-		}
-		result, err := d.client.CapabilityResume(ctx, input.InvocationID, input.StepID, input.Response)
 		return documentResult(call.ID, result, err), nil
 	case "provider_list":
 		var input struct{}
@@ -229,15 +201,6 @@ func (d *ToolDispatcher) Dispatch(ctx context.Context, call contract.ToolCall) (
 			return toolError(call.ID, "output_failed"), nil
 		}
 		return &contract.ToolResult{CallID: call.ID, Content: string(body)}, nil
-	case "dispatch_status":
-		var input struct {
-			ClientRequestID string `json:"client_request_id"`
-		}
-		if err := decodeArguments(call.Args, &input); err != nil || strings.TrimSpace(input.ClientRequestID) == "" {
-			return toolError(call.ID, "invalid_arguments"), nil
-		}
-		result, err := d.client.DispatchStatus(ctx, input.ClientRequestID)
-		return documentResult(call.ID, result, err), nil
 	case "team_run_status":
 		var input struct {
 			SnapshotID string `json:"snapshot_id"`
@@ -306,17 +269,6 @@ func (d *ToolDispatcher) Dispatch(ctx context.Context, call contract.ToolCall) (
 			Payload: input.Payload, IdempotencyKey: input.IdempotencyKey,
 		})
 		return documentResult(call.ID, result, err), nil
-	case "resume":
-		var input weaveclient.ResumeRequest
-		if err := decodeArguments(call.Args, &input); err != nil ||
-			strings.TrimSpace(input.RunID) == "" || strings.TrimSpace(input.Agent) == "" {
-			return toolError(call.ID, "invalid_arguments"), nil
-		}
-		result, err := d.client.Resume(ctx, input)
-		if err != nil {
-			return toolError(call.ID, clientErrorCode(err)), nil
-		}
-		return &contract.ToolResult{CallID: call.ID, Content: string(result)}, nil
 	case "deliverable_list":
 		var input struct {
 			Limit  int    `json:"limit"`
@@ -504,16 +456,6 @@ type capabilityDefinitionDocument struct {
 	} `json:"steps"`
 }
 
-func compactCapabilityPlan(document json.RawMessage) (json.RawMessage, error) {
-	var response struct {
-		Definition capabilityDefinitionDocument `json:"definition"`
-	}
-	if err := json.Unmarshal(document, &response); err != nil {
-		return nil, err
-	}
-	return json.Marshal(capabilityBusinessView(response.Definition, nil, "draft"))
-}
-
 func compactCapabilityCatalog(document json.RawMessage) (json.RawMessage, error) {
 	var response struct {
 		Drafts   []capabilityDefinitionDocument `json:"drafts"`
@@ -647,12 +589,10 @@ type toolAccessPolicy struct {
 
 var toolAccessPolicies = map[string]toolAccessPolicy{
 	"capability_list":     {Role: "admin", Scopes: []string{"admin"}},
-	"capability_plan":     {Role: "admin", Scopes: []string{"admin"}},
 	"capability_publish":  {Role: "admin", Scopes: []string{"admin"}},
 	"capability_invoke":   {Role: "any", Scopes: []string{"admin"}},
 	"capability_status":   {Role: "any", Scopes: []string{"admin"}},
 	"capability_history":  {Role: "any", Scopes: []string{"admin"}},
-	"capability_resume":   {Role: "any", Scopes: []string{"admin"}},
 	"provider_list":       {Role: "any", Scopes: []string{"admin"}},
 	"provider_add":        {Role: "admin", Scopes: []string{"admin"}},
 	"apikey_create":       {Role: "admin", Scopes: []string{"admin"}},
@@ -661,14 +601,12 @@ var toolAccessPolicies = map[string]toolAccessPolicy{
 	"team_status":         {Role: "any", Scopes: []string{"org"}},
 	"usage_summary":       {Role: "any", Scopes: []string{"runs", "org"}},
 	"team_dispatch":       {Role: "any", Scopes: []string{"org", "chat"}},
-	"dispatch_status":     {Role: "any", Scopes: []string{"chat"}},
 	"team_run_status":     {Role: "any", Scopes: []string{"runs"}},
 	"team_run_activity":   {Role: "any", Scopes: []string{"runs"}},
 	"team_run_stop":       {Role: "any", Scopes: []string{"runs"}},
 	"human_task_list":     {Role: "workspace_member", Scopes: []string{"runs"}},
 	"human_task_get":      {Role: "workspace_member", Scopes: []string{"runs"}},
 	"human_task_complete": {Role: "workspace_member", Scopes: []string{"runs"}},
-	"resume":              {Role: "any", Scopes: []string{"chat"}},
 	"deliverable_list":    {Role: "any", Scopes: []string{"chat"}},
 	"deliverable_get":     {Role: "any", Scopes: []string{"chat"}},
 }
@@ -681,11 +619,6 @@ var toolDefinitions = []contract.ToolDef{
 		InputSchema: json.RawMessage(`{"type":"object","additionalProperties":false}`),
 	},
 	{
-		Name:        "capability_plan",
-		Description: "Ask Weave to draft or revise a reusable capability from a business request. This creates a reviewable draft only; it does not publish or make the capability callable. Return the proposal in business language and request confirmation before capability_publish. Reuse the same idempotency key when retrying the same unresolved plan. Requires capability management access.",
-		InputSchema: json.RawMessage(`{"type":"object","properties":{"business_request":{"type":"string","minLength":1,"maxLength":12000},"model":{"type":"string","minLength":1},"capability_id":{"type":"string","description":"Existing draft to revise; omit for a new capability."},"idempotency_key":{"type":"string","format":"uuid"}},"required":["business_request","model","idempotency_key"],"additionalProperties":false}`),
-	},
-	{
 		Name:        "capability_publish",
 		Description: "Publish one exact reviewed capability draft as an immutable revision. Use only after the user confirms the proposal, expected inputs, outputs and publication. Later changes require a new revision. Requires capability management access.",
 		InputSchema: json.RawMessage(`{"type":"object","properties":{"capability_id":{"type":"string","minLength":1},"revision":{"type":"integer","minimum":1}},"required":["capability_id","revision"],"additionalProperties":false}`),
@@ -693,7 +626,6 @@ var toolDefinitions = []contract.ToolDef{
 	{Name: "capability_invoke", Description: "Run one published capability revision with business input. Returns a durable invocation that can be followed with capability_status.", InputSchema: json.RawMessage(`{"type":"object","properties":{"capability_id":{"type":"string"},"revision":{"type":"integer","minimum":1},"request_id":{"type":"string"},"input":{"type":"object"}},"required":["capability_id","revision","request_id","input"],"additionalProperties":false}`)},
 	{Name: "capability_status", ReadOnly: true, Description: "Read one capability run, its execution history, quota usage and any pending human confirmation.", InputSchema: json.RawMessage(`{"type":"object","properties":{"invocation_id":{"type":"string"}},"required":["invocation_id"],"additionalProperties":false}`)},
 	{Name: "capability_history", ReadOnly: true, Description: "List capability runs belonging to the current user.", InputSchema: json.RawMessage(`{"type":"object","additionalProperties":false}`)},
-	{Name: "capability_resume", Description: "Complete the pending human confirmation for a capability run and resume from its checkpoint.", InputSchema: json.RawMessage(`{"type":"object","properties":{"invocation_id":{"type":"string"},"step_id":{"type":"string"},"response":{}},"required":["invocation_id","step_id","response"],"additionalProperties":false}`)},
 	{
 		Name: "provider_list", ReadOnly: true,
 		Description: "List configured model providers without secret values. Requires admin access. Returns provider metadata and immutable revision facts. Errors: http_401, http_403, http_500.",
@@ -735,11 +667,6 @@ var toolDefinitions = []contract.ToolDef{
 		InputSchema: json.RawMessage(`{"type":"object","properties":{"team_id":{"type":"string"},"input_revision_id":{"type":"string","format":"uuid"},"task":{"type":"string"},"client_request_id":{"type":"string","format":"uuid"},"wait":{"type":"boolean","default":false}},"required":["team_id","input_revision_id"],"additionalProperties":false}`),
 	},
 	{
-		Name: "dispatch_status", ReadOnly: true,
-		Description: "Get one dispatch request's status. Requires chat access, the exact client_request_id, and the same API key used to dispatch. Returns queued, completed, failed, or yielded details when available. Errors: chat_request_not_found, http_401, http_403.",
-		InputSchema: json.RawMessage(`{"type":"object","properties":{"client_request_id":{"type":"string","format":"uuid"}},"required":["client_request_id"],"additionalProperties":false}`),
-	},
-	{
 		Name: "team_run_status", ReadOnly: true,
 		Description: "Get run records for one exact team run snapshot. Requires run access and snapshot_id; IDs are not auto-detected. Returns matching run summaries. Errors: http_400, http_401, http_403.",
 		InputSchema: json.RawMessage(`{"type":"object","properties":{"snapshot_id":{"type":"string"}},"required":["snapshot_id"],"additionalProperties":false}`),
@@ -768,11 +695,6 @@ var toolDefinitions = []contract.ToolDef{
 		Name:        "human_task_complete",
 		Description: "Complete one human task with the exact interaction_id returned for the current question, a payload matching its resume_schema, and a caller-supplied idempotency_key. Requires current workspace membership. Returns queued status and whether the completion was idempotent. Errors: http_400, http_401, http_403, http_404, http_409, http_422.",
 		InputSchema: json.RawMessage(`{"type":"object","properties":{"run_id":{"type":"string"},"interaction_id":{"type":"string","minLength":1,"maxLength":256},"payload":{},"idempotency_key":{"type":"string","minLength":1,"maxLength":256}},"required":["run_id","interaction_id","payload","idempotency_key"],"additionalProperties":false}`),
-	},
-	{
-		Name:        "resume",
-		Description: "Resume a yielded run with human input. Requires chat access plus the yielded run_id and its lead agent name. Returns the server event stream as text. Errors: invalid_arguments, stream_required, http_401, http_403, http_404, http_409.",
-		InputSchema: json.RawMessage(`{"type":"object","properties":{"run_id":{"type":"string"},"agent":{"type":"string"},"input":{"type":"object"}},"required":["run_id","agent","input"],"additionalProperties":false}`),
 	},
 	{
 		Name: "deliverable_list", ReadOnly: true,

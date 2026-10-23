@@ -88,13 +88,6 @@ func New(config Config, httpClient *http.Client) (*Client, error) {
 	}, nil
 }
 
-type CapabilityPlanRequest struct {
-	Prompt         string
-	Model          string
-	CapabilityID   string
-	IdempotencyKey string
-}
-
 type DispatchRequest struct {
 	TeamID string
 	Task   string
@@ -109,12 +102,6 @@ type DispatchRequest struct {
 	ConversationID  string
 }
 
-type ResumeRequest struct {
-	RunID string         `json:"run_id"`
-	Agent string         `json:"agent"`
-	Input map[string]any `json:"input"`
-}
-
 type HumanTaskCompleteRequest struct {
 	RunID          string          `json:"-"`
 	InteractionID  string          `json:"interaction_id"`
@@ -123,9 +110,9 @@ type HumanTaskCompleteRequest struct {
 }
 
 type ProviderAddRequest struct {
-	ID                       string   `json:"id"`
-	Name                     string   `json:"name"`
-	BaseURL                  string   `json:"base_url"`
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	BaseURL string `json:"base_url"`
 	// Protocol is "openai" (default) or "systemone".
 	Protocol string `json:"protocol,omitempty"`
 	// APIKey is optional: nil keeps the stored key, a value replaces it and
@@ -207,33 +194,6 @@ func (c *Client) CapabilityList(ctx context.Context) (json.RawMessage, error) {
 	return c.getJSON(ctx, "/v1/capabilities/drafts")
 }
 
-func (c *Client) CapabilityPlan(ctx context.Context, request CapabilityPlanRequest) (json.RawMessage, error) {
-	prompt, model := strings.TrimSpace(request.Prompt), strings.TrimSpace(request.Model)
-	idempotencyKey, err := uuid.Parse(strings.TrimSpace(request.IdempotencyKey))
-	if prompt == "" || model == "" || err != nil {
-		return nil, &Error{Code: "invalid_arguments"}
-	}
-	generated, err := c.sendJSON(ctx, http.MethodPost, "/v1/capabilities/generate", map[string]string{"prompt": prompt, "model": model})
-	if err != nil {
-		return nil, err
-	}
-	var response struct {
-		Definition map[string]any `json:"definition"`
-	}
-	if err := json.Unmarshal(generated, &response); err != nil || response.Definition == nil {
-		return nil, &Error{Code: "capability_generation_invalid"}
-	}
-	capabilityID := strings.TrimSpace(request.CapabilityID)
-	if capabilityID == "" {
-		capabilityID = uuid.NewSHA1(uuid.NameSpaceOID, []byte("weave-capability-plan:"+idempotencyKey.String())).String()
-	}
-	response.Definition["capability_id"] = capabilityID
-	if _, err := c.sendJSON(ctx, http.MethodPost, "/v1/capabilities/drafts", map[string]any{"definition": response.Definition}); err != nil {
-		return nil, err
-	}
-	return json.Marshal(response)
-}
-
 func (c *Client) CapabilityPublish(ctx context.Context, capabilityID string, revision int64) (json.RawMessage, error) {
 	capabilityID = strings.TrimSpace(capabilityID)
 	if capabilityID == "" || revision < 1 {
@@ -303,10 +263,6 @@ func (c *Client) TeamDispatch(ctx context.Context, request DispatchRequest) (str
 		}
 		clientRequestID = receipt.ClientRequestID
 	}
-	if apiErr, ok := err.(*Error); ok && apiErr.StatusCode == http.StatusConflict &&
-		apiErr.Code == "client_request_in_progress" {
-		result, err = c.DispatchStatus(ctx, clientRequestID)
-	}
 	return clientRequestID, result, err
 }
 
@@ -320,11 +276,12 @@ func (c *Client) TeamDispatchAndWait(ctx context.Context, request DispatchReques
 	}
 	waitCtx, cancel := context.WithTimeout(ctx, c.waitTimeout)
 	defer cancel()
-	if runID := workflowDispatchRunID(result); runID != "" {
-		result, err = c.WaitTeamRun(waitCtx, runID)
-		return clientRequestID, result, err
+	// Every dispatch runs a published workflow; its receipt names the run.
+	runID := workflowDispatchRunID(result)
+	if runID == "" {
+		return clientRequestID, result, nil
 	}
-	result, err = c.WaitDispatch(waitCtx, clientRequestID)
+	result, err = c.WaitTeamRun(waitCtx, runID)
 	return clientRequestID, result, err
 }
 
@@ -353,37 +310,6 @@ func (c *Client) WaitTeamRun(ctx context.Context, snapshotID string) (json.RawMe
 		case <-timer.C:
 		}
 	}
-}
-
-func (c *Client) WaitDispatch(ctx context.Context, clientRequestID string) (json.RawMessage, error) {
-	var latest json.RawMessage
-	for {
-		result, err := c.DispatchStatus(ctx, clientRequestID)
-		if err != nil {
-			if errors.Is(ctx.Err(), context.DeadlineExceeded) && len(latest) != 0 {
-				return latest, nil
-			}
-			return nil, err
-		}
-		latest = result
-		if terminalDispatchStatus(result) {
-			return result, nil
-		}
-		timer := time.NewTimer(c.pollInterval)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			if errors.Is(ctx.Err(), context.DeadlineExceeded) && len(latest) != 0 {
-				return latest, nil
-			}
-			return nil, &Error{Code: "poll_cancelled"}
-		case <-timer.C:
-		}
-	}
-}
-
-func (c *Client) DispatchStatus(ctx context.Context, clientRequestID string) (json.RawMessage, error) {
-	return c.getJSON(ctx, "/v1/chat-requests/"+url.PathEscape(strings.TrimSpace(clientRequestID)))
 }
 
 func (c *Client) TeamRunStatus(ctx context.Context, snapshotID string) (json.RawMessage, error) {
@@ -454,14 +380,6 @@ func (c *Client) HumanTaskComplete(ctx context.Context, request HumanTaskComplet
 	}{InteractionID: request.InteractionID, Payload: request.Payload, IdempotencyKey: request.IdempotencyKey}
 	return c.sendJSON(ctx, http.MethodPost,
 		"/v1/human-tasks/"+url.PathEscape(strings.TrimSpace(request.RunID))+"/complete", input)
-}
-
-func (c *Client) Resume(ctx context.Context, request ResumeRequest) ([]byte, error) {
-	body := struct {
-		ResumeRequest
-		Stream bool `json:"stream"`
-	}{ResumeRequest: request, Stream: true}
-	return c.send(ctx, http.MethodPost, "/v1/resume", body)
 }
 
 func (c *Client) DeliverableList(ctx context.Context, limit, offset int) (json.RawMessage, error) {
@@ -638,10 +556,4 @@ func (c *Client) CapabilityInvocation(ctx context.Context, invocationID string) 
 }
 func (c *Client) CapabilityHistory(ctx context.Context) (json.RawMessage, error) {
 	return c.getJSON(ctx, "/v1/capability-invocations")
-}
-func (c *Client) CapabilityResume(ctx context.Context, invocationID, stepID string, response json.RawMessage) (json.RawMessage, error) {
-	if strings.TrimSpace(invocationID) == "" || strings.TrimSpace(stepID) == "" || !json.Valid(response) {
-		return nil, &Error{Code: "invalid_arguments"}
-	}
-	return c.sendJSON(ctx, http.MethodPost, "/v1/invocations/"+url.PathEscape(invocationID)+"/resume", map[string]any{"step_id": stepID, "response": json.RawMessage(response)})
 }

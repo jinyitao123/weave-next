@@ -91,7 +91,7 @@ func (s *AccessStore) AuthorizeInvocation(ctx context.Context, p ApplicationPrin
 		return err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	if err := authorizeApplicationInvocation(ctx, tx, Invocation{WorkspaceID: p.WorkspaceID, ApplicationID: p.AppID, CredentialID: p.CredentialID, CapabilityID: capabilityID, Revision: revision}); err != nil {
+	if err := authorizeApplicationInvocation(ctx, tx, grantIdentity{WorkspaceID: p.WorkspaceID, ApplicationID: p.AppID, CredentialID: p.CredentialID, CapabilityID: capabilityID, Revision: revision}); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
@@ -347,7 +347,7 @@ func (s *AccessStore) Snapshot(ctx context.Context, ws, actor string) (AccessSna
 
 // Admission locks the app, credential and grant with the insertion transaction.
 // Rotating credentials changes authentication, not invocation ownership.
-func authorizeApplicationInvocation(ctx context.Context, tx pgx.Tx, i Invocation) error {
+func authorizeApplicationInvocation(ctx context.Context, tx pgx.Tx, i grantIdentity) error {
 	var app string
 	err := tx.QueryRow(ctx, `SELECT id FROM weave_capability_apps WHERE workspace_id=$1 AND id=$2 AND enabled FOR SHARE`, i.WorkspaceID, i.ApplicationID).Scan(&app)
 	if err != nil {
@@ -372,7 +372,7 @@ type capabilityGrantQuerier interface {
 	QueryRow(context.Context, string, ...any) pgx.Row
 }
 
-func authorizeApplicationGrant(ctx context.Context, tx capabilityGrantQuerier, i Invocation) error {
+func authorizeApplicationGrant(ctx context.Context, tx capabilityGrantQuerier, i grantIdentity) error {
 	var app string
 	if err := tx.QueryRow(ctx, `SELECT id FROM weave_capability_apps WHERE workspace_id=$1 AND id=$2 AND enabled FOR SHARE`, i.WorkspaceID, i.ApplicationID).Scan(&app); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
