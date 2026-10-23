@@ -332,23 +332,30 @@ func (store *CorrectionStore) GetActive(ctx context.Context, workspaceID, runID 
 	if store == nil || store.Transactions == nil {
 		return Correction{}, false, errors.New("team run correction store is unavailable")
 	}
-	tx, err := store.Transactions.Begin(ctx)
-	if err != nil {
-		return Correction{}, false, err
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-	item, err := scanCorrection(tx.QueryRow(ctx, `SELECT `+correctionColumns+` FROM weave_team_run_corrections
+	query := `SELECT ` + correctionColumns + ` FROM weave_team_run_corrections
 		WHERE workspace_id=$1 AND run_id=$2 AND status IN ('requested','ready','confirmed')
-		ORDER BY requested_at DESC LIMIT 1`, workspaceID, runID))
+		ORDER BY requested_at DESC LIMIT 1`
+	// Every workflow step asks this; one statement needs no transaction of
+	// its own when the store can query directly.
+	var row pgx.Row
+	if querier, ok := store.Transactions.(interface {
+		QueryRow(context.Context, string, ...any) pgx.Row
+	}); ok {
+		row = querier.QueryRow(ctx, query, workspaceID, runID)
+	} else {
+		tx, err := store.Transactions.Begin(ctx)
+		if err != nil {
+			return Correction{}, false, err
+		}
+		defer func() { _ = tx.Rollback(ctx) }()
+		row = tx.QueryRow(ctx, query, workspaceID, runID)
+	}
+	item, err := scanCorrection(row)
 	if errors.Is(err, pgx.ErrNoRows) {
-		_ = tx.Commit(ctx)
 		return Correction{}, false, nil
 	}
 	if err != nil {
 		return Correction{}, false, fmt.Errorf("read active correction: %w", err)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return Correction{}, false, err
 	}
 	return item, true, nil
 }

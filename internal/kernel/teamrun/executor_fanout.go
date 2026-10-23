@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 	"github.com/jinyitao123/weave/internal/kernel/workflow"
@@ -222,6 +223,11 @@ func (r *WorkflowSerialRuntime) ExecuteFanoutLeg(
 	if err := ValidateCheckpointRun(checkpoint, parent); err != nil {
 		return nil, executionError(ErrorCodeIdentityMismatch, err)
 	}
+	// Steps an earlier run of this leg finished are read with the parent.
+	finished, err := finishedFanoutLegStepsTx(ctx, tx, task.WorkspaceID, leg)
+	if err != nil {
+		return nil, executionError(ErrorCodeSnapshotUnavailable, err)
+	}
 	sourceTaskID := parent.SourceTaskID
 	if err := tx.Commit(ctx); err != nil {
 		return nil, executionError(ErrorCodeSnapshotUnavailable, err)
@@ -316,10 +322,6 @@ func (r *WorkflowSerialRuntime) ExecuteFanoutLeg(
 		if err != nil {
 			return nil, executionError(ErrorCodeSnapshotUnavailable, fmt.Errorf("load platform business action outcomes: %w", err))
 		}
-	}
-	finished, err := r.finishedFanoutLegSteps(ctx, task.WorkspaceID, leg)
-	if err != nil {
-		return nil, executionError(ErrorCodeSnapshotUnavailable, err)
 	}
 	var encodedOutput json.RawMessage
 	artifactTaskIDs := []string{}
@@ -479,6 +481,14 @@ func (r *WorkflowSerialRuntime) finishedFanoutLegSteps(ctx context.Context, work
 		return nil, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+	finished, err := finishedFanoutLegStepsTx(ctx, tx, workspaceID, leg)
+	if err != nil {
+		return nil, err
+	}
+	return finished, tx.Commit(ctx)
+}
+
+func finishedFanoutLegStepsTx(ctx context.Context, tx pgx.Tx, workspaceID string, leg FanoutLegTaskPayloadV1) (map[string]finishedFanoutLegStep, error) {
 	rows, err := tx.Query(ctx, `SELECT node_id,output,artifact_task_ids FROM weave_fanout_leg_steps
 		WHERE workspace_id=$1 AND group_id=$2 AND leg_id=$3`, workspaceID, leg.GroupID, leg.LegID)
 	if err != nil {
@@ -503,7 +513,7 @@ func (r *WorkflowSerialRuntime) finishedFanoutLegSteps(ctx context.Context, work
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	return finished, tx.Commit(ctx)
+	return finished, nil
 }
 
 // recordFanoutLegStep keeps a finished branch step. A step recorded by an
