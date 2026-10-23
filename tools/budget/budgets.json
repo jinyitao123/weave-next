@@ -1735,6 +1735,22 @@
         "lines_added": 96,
         "production_lines_added": 0
       }
+    },
+    {
+      "date": "2026-10-22",
+      "reason": "Admit capability invocations through per-invocation quota slots instead of one workspace lock and count (#92), with equivalence, contention and quota-change tests",
+      "record": "docs/治理/2026-10-22-能力准入配额槽位.md",
+      "growth": {
+        "lines": 553,
+        "production_lines": 203
+      },
+      "deletion_trigger": "Delete the slot initialization from live-owner queries (ensureQuotaSlots' assignment of in-flight work and liveInlineInvocationsSQL) once every workspace has slots_ready and no inline invocation remains in flight.",
+      "app": {
+        "previous_lines": 81674,
+        "previous_production_lines": 52264,
+        "lines_added": 553,
+        "production_lines_added": 203
+      }
     }
   ],
   "migration_targets": {
@@ -1798,8 +1814,8 @@
     "allowed_dependencies": []
   },
   "app": {
-    "lines": 81674,
-    "production_lines": 52264,
+    "lines": 82227,
+    "production_lines": 52467,
     "packages": 21,
     "external_dependencies": 6,
     "allowed_dependencies": [
