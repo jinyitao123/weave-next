@@ -25,6 +25,9 @@ type pgEnv struct {
 	// database, so they can be subtracted from xact_commit deltas.
 	testQueries  int64
 	ownsDatabase bool
+	// statements is set when pg_stat_statements is loaded; snapshots then
+	// also count statement calls on the test database by fingerprint.
+	statements bool
 }
 
 func openPGEnv(ctx context.Context, target pgTarget, testDB string) (*pgEnv, error) {
@@ -73,6 +76,7 @@ func (p *pgEnv) info(ctx context.Context) (serverInfo, error) {
 		current_setting('stats_fetch_consistency')`).Scan(
 		&s.Version, &s.MaxConnections, &s.SharedPreload, &s.TrackIOTiming, &s.ConnectionsInUse, &s.StatsFetchConsist)
 	s.PGStatStatements = strings.Contains(s.SharedPreload, "pg_stat_statements")
+	p.statements = s.PGStatStatements
 	return s, err
 }
 
@@ -119,6 +123,16 @@ func (p *pgEnv) recreate(ctx context.Context) error {
 		return err
 	}
 	p.ownsDatabase = true
+	// The statement view is created in the disposable test database only, so
+	// no other database gains an object.
+	if p.statements {
+		if err := p.withTestConn(ctx, func(conn *pgx.Conn) error {
+			_, err := conn.Exec(ctx, "CREATE EXTENSION IF NOT EXISTS pg_stat_statements")
+			return err
+		}); err != nil {
+			p.statements = false
+		}
+	}
 	return nil
 }
 
@@ -158,6 +172,12 @@ type snapshot struct {
 	DB          dbCounters
 	Tables      map[string]tableCounters
 	TestQueries int64
+	Statements  map[int64]statementCounter
+}
+
+type statementCounter struct {
+	Query string
+	Calls int64
 }
 
 func (p *pgEnv) snapshot(ctx context.Context) (snapshot, error) {
@@ -178,13 +198,20 @@ func (p *pgEnv) snapshot(ctx context.Context) (snapshot, error) {
 			}
 			s.Tables[name] = t
 		}
-		return rows.Err()
+		if err := rows.Err(); err != nil || !p.statements {
+			return err
+		}
+		s.Statements, err = statementCounters(ctx, conn)
+		return err
 	})
 	if err != nil {
 		return s, err
 	}
 	p.mu.Lock()
 	p.testQueries++
+	if s.Statements != nil {
+		p.testQueries++
+	}
 	s.TestQueries = p.testQueries
 	err = p.admin.QueryRow(ctx, `SELECT xact_commit, xact_rollback, tup_returned, tup_fetched, tup_inserted,
 		tup_updated, tup_deleted, blks_read, blks_hit FROM pg_stat_database WHERE datname=$1`, p.testDB).Scan(
@@ -192,6 +219,26 @@ func (p *pgEnv) snapshot(ctx context.Context) (snapshot, error) {
 		&s.DB.TupUpdated, &s.DB.TupDeleted, &s.DB.BlksRead, &s.DB.BlksHit)
 	p.mu.Unlock()
 	return s, err
+}
+
+// statementCounters reads pg_stat_statements for the test database only.
+func statementCounters(ctx context.Context, conn *pgx.Conn) (map[int64]statementCounter, error) {
+	rows, err := conn.Query(ctx, `SELECT queryid, max(query), sum(calls)::bigint FROM pg_stat_statements
+		WHERE dbid = (SELECT oid FROM pg_database WHERE datname = current_database()) AND queryid IS NOT NULL GROUP BY queryid`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[int64]statementCounter{}
+	for rows.Next() {
+		var id int64
+		var c statementCounter
+		if err := rows.Scan(&id, &c.Query, &c.Calls); err != nil {
+			return nil, err
+		}
+		out[id] = c
+	}
+	return out, rows.Err()
 }
 
 // flushStats asks PostgreSQL to make pending per-backend counters visible.
@@ -225,6 +272,16 @@ type dbRates struct {
 	Tables         []tableRate `json:"tables"`
 	TotalXacts     int64       `json:"xacts"`
 	TotalRowWrites int64       `json:"row_writes"`
+	Rollbacks      int64       `json:"rollbacks"`
+	// Statements counts every statement call on the test database between the
+	// snapshots; TopStatements lists the most frequent fingerprints.
+	Statements    int64           `json:"statements,omitempty"`
+	TopStatements []statementRate `json:"top_statements,omitempty"`
+}
+
+type statementRate struct {
+	Calls int64  `json:"calls"`
+	Query string `json:"query"`
 }
 
 func diffSnapshots(a, b snapshot) dbRates {
@@ -245,6 +302,23 @@ func diffSnapshots(a, b snapshot) dbRates {
 		TupDelPerS:   float64(b.DB.TupDeleted-a.DB.TupDeleted) / sec,
 		TupReturnedS: float64(b.DB.TupReturned-a.DB.TupReturned) / sec,
 		TupFetchedS:  float64(b.DB.TupFetched-a.DB.TupFetched) / sec,
+	}
+	r.Rollbacks = b.DB.XactRollback - a.DB.XactRollback
+	if b.Statements != nil {
+		for id, sb := range b.Statements {
+			calls := sb.Calls - a.Statements[id].Calls
+			if calls <= 0 {
+				continue
+			}
+			r.Statements += calls
+			query := strings.Join(strings.Fields(sb.Query), " ")
+			if len(query) > 200 {
+				query = query[:200]
+			}
+			r.TopStatements = append(r.TopStatements, statementRate{Calls: calls, Query: query})
+		}
+		sort.Slice(r.TopStatements, func(i, j int) bool { return r.TopStatements[i].Calls > r.TopStatements[j].Calls })
+		r.TopStatements = r.TopStatements[:min(len(r.TopStatements), 40)]
 	}
 	r.TotalRowWrites = (b.DB.TupInserted - a.DB.TupInserted) + (b.DB.TupUpdated - a.DB.TupUpdated) + (b.DB.TupDeleted - a.DB.TupDeleted)
 	r.WritesPerS = float64(r.TotalRowWrites) / sec

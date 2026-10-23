@@ -40,6 +40,10 @@ type latencyResult struct {
 	ObservedOverheadP95MS float64 `json:"observed_overhead_p95_ms"`
 	ModelMaxInFlight      int64   `json:"model_max_in_flight"`
 	Rates                 dbRates `json:"database_rates"`
+	// Invocations counts every invocation finished between the database
+	// snapshots, warm-up included, so per-invocation statement and
+	// transaction counts divide by the same span the rates cover.
+	Invocations int `json:"invocations"`
 }
 type cancelResult struct {
 	Cancelled       int     `json:"cancelled"`
@@ -245,6 +249,7 @@ func runDecide(ctx context.Context, e *scenarioEnv, lanes int) (*latencyResult, 
 	var measurements []measuredInvocation
 	var failures []error
 	var wg sync.WaitGroup
+	finished := 0
 	for lane := 0; lane < lanes; lane++ {
 		wg.Add(1)
 		go func(lane int) {
@@ -257,6 +262,7 @@ func runDecide(ctx context.Context, e *scenarioEnv, lanes int) (*latencyResult, 
 					mu.Unlock()
 					return
 				}
+				finished++
 				if measurement.started.After(measureAt) {
 					measurements = append(measurements, measurement)
 				}
@@ -266,6 +272,9 @@ func runDecide(ctx context.Context, e *scenarioEnv, lanes int) (*latencyResult, 
 	}
 	wg.Wait()
 	result, err := summarize(ctx, e, flowDecide, lanes, measurements, started, before)
+	if result != nil {
+		result.Invocations = finished
+	}
 	return result, errors.Join(append(failures, err)...)
 }
 func runCancel(ctx context.Context, e *scenarioEnv) (*cancelResult, error) {
