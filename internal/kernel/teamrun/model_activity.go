@@ -52,6 +52,41 @@ func (r *WorkflowSerialRuntime) modelObserver(run TeamRun) workflow.ModelCallObs
 				fields["timeout_stage"] = event.TimeoutStage
 			}
 		}
+		// What the provider boundary observed about the last request: the
+		// status (200 included), its request ID, the request as sent and how
+		// the exchange ended. An absent key means not observed.
+		if facts := event.Facts; facts != nil {
+			if facts.HTTPStatus != 0 {
+				fields["http_status"] = facts.HTTPStatus
+			}
+			if facts.ProviderRequestID != "" {
+				fields["provider_request_id"] = facts.ProviderRequestID
+			}
+			if facts.End != "" {
+				fields["protocol_end"] = facts.End
+			}
+			if facts.FinishReason != "" {
+				fields["finish_reason"] = facts.FinishReason
+			}
+			if facts.DoneSeen {
+				fields["done_seen"] = true
+			}
+			if facts.ContentBytes != nil {
+				fields["content_bytes"] = *facts.ContentBytes
+			}
+			if facts.ReasoningBytes != nil {
+				fields["reasoning_bytes"] = *facts.ReasoningBytes
+			}
+			if facts.RequestBytes != 0 {
+				fields["request_bytes"] = facts.RequestBytes
+			}
+			if facts.Request != nil {
+				fields["request"] = facts.Request
+			}
+			if event.Attempts > 1 {
+				fields["attempts"] = event.Attempts
+			}
+		}
 		detail, err := json.Marshal(fields)
 		if err != nil {
 			return

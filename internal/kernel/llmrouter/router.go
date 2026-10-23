@@ -300,8 +300,14 @@ var _ contract.LLM = (*Router)(nil)
 func ObserveModelProtocolCall(ctx context.Context, inner contract.LLM, request contract.ChatRequest,
 	observe func(ModelProtocolObservation), normalized func(NormalizedModelProtocol)) (*contract.ChatResponse, error) {
 	if observe != nil {
+		// The probe's observer replaces any outer one for this call, so it
+		// also forwards to the call facts observer the caller attached.
+		facts := callFactsObserverFrom(ctx)
 		ctx = openai.WithProtocolObserver(ctx, openai.ProtocolObserverOptions{MaxDataFrames: 4096, MaxToolDeltas: 4096, MaxToolIndexes: protocolToolLimit}, func(value contract.ProtocolObservation) {
 			observe(boundedProtocolObservation(value))
+			if facts != nil {
+				facts(callFactsFrom(value))
+			}
 		})
 	}
 	response, err := inner.Chat(ctx, request)

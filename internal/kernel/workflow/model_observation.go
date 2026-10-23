@@ -75,6 +75,11 @@ type ModelCallEvent struct {
 	// TimeoutStage names the wait budget stage that ended a stage_timeout
 	// call: first_chunk or stream_idle.
 	TimeoutStage string `json:"timeout_stage,omitempty"`
+	// Facts, set only on a terminal event, are what the provider boundary
+	// observed about the call's last physical request; nil when the provider
+	// adapter observes nothing. Attempts counts the requests observed.
+	Facts    *llmrouter.CallFacts `json:"facts,omitempty"`
+	Attempts int                  `json:"attempts,omitempty"`
 }
 
 // ModelCallObserver should record the bounded event promptly. Panics are
@@ -169,7 +174,7 @@ func (llm *observedRuntimeModelLLM) Chat(ctx context.Context, request contract.C
 	call.emit(ctx, ModelCallStarted, "")
 	callCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	response, err := llm.inner.Chat(call.withHTTPTrace(callCtx), request)
+	response, err := llm.inner.Chat(call.withProviderFacts(call.withHTTPTrace(callCtx)), request)
 	call.finish(ctx, err)
 	return response, err
 }
@@ -181,7 +186,7 @@ func (llm *observedRuntimeModelLLM) Stream(ctx context.Context, request contract
 	call := newModelCallWithOptions(ctx, request.Model, llm.observer, llm.options)
 	call.emit(ctx, ModelCallStarted, "")
 	callCtx, cancel := context.WithCancel(ctx)
-	stream, err := llm.inner.Stream(call.withHTTPTrace(callCtx), request)
+	stream, err := llm.inner.Stream(call.withProviderFacts(call.withHTTPTrace(callCtx)), request)
 	if err != nil {
 		cancel()
 		if stream != nil {
@@ -302,6 +307,8 @@ type runtimeModelCall struct {
 	gatewayWaitMS int64
 	failure       llmrouter.CallFailure
 	purpose       string
+	facts         *llmrouter.CallFacts
+	attempts      int
 }
 
 func newModelCall(ctx context.Context, model string, observer ModelCallObserver) *runtimeModelCall {
@@ -335,6 +342,17 @@ func (call *runtimeModelCall) withHTTPTrace(ctx context.Context) context.Context
 		GotFirstResponseByte: func() {
 			call.emit(ctx, ModelCallFirstResponseByte, "")
 		},
+	})
+}
+
+// withProviderFacts keeps what the provider boundary observes about each
+// physical request of this call; the last one is reported with the outcome.
+func (call *runtimeModelCall) withProviderFacts(ctx context.Context) context.Context {
+	return llmrouter.WithCallFactsObserver(ctx, func(facts llmrouter.CallFacts) {
+		call.mu.Lock()
+		defer call.mu.Unlock()
+		call.facts = &facts
+		call.attempts++
 	})
 }
 
@@ -400,6 +418,10 @@ func (call *runtimeModelCall) emit(ctx context.Context, phase ModelCallPhase, er
 		_, event.StreamStarted = call.emitted[ModelCallFirstChunk]
 		event.HTTPStatus, event.FinishReason, event.Retryable = call.failure.HTTPStatus, call.failure.FinishReason, call.failure.Retryable
 		event.TimeoutStage = call.failure.Stage
+	}
+	if call.terminal && call.facts != nil {
+		facts := *call.facts
+		event.Facts, event.Attempts = &facts, call.attempts
 	}
 	if call.options.CompactPhases {
 		if phase == ModelCallStarted {
