@@ -38,7 +38,7 @@ import (
 // reading evidence, building an application, and running bounded checks. Keep
 // the execution finite, but do not turn useful progress into a false failure at
 // the former short ceiling.
-var agentNodeExecutionTimeout = 45 * time.Minute
+var agentNodeExecutionTimeout = time.Duration(frozen.MemberNodeExecutionLimitMS) * time.Millisecond
 
 type serialMachineStatus string
 

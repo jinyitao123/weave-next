@@ -22,6 +22,7 @@ const limits = [
   ['max_tool_repeats', '同一工具连续调用上限'],
   ['first_chunk_timeout_ms', '等待首个输出上限（毫秒）'],
   ['idle_timeout_ms', '输出间隔上限（毫秒）'],
+  ['call_timeout_ms', '整次调用上限（毫秒）'],
 ] as const
 // Trial preparation fills these in when a worker has none.
 const defaultKinds = ['consult', 'dispatch']
@@ -332,7 +333,7 @@ function RunPanel({ member, nodes, accepting, models, kindsInUse, onConfig, onRe
     <section className="members__section" aria-label="引擎与模型">
       <h3>引擎与模型</h3>
       <div className="members__grid">
-        <div className="field"><span>引擎</span><Select label={`${name}的引擎`} value={config.engine} disabled={lead} options={engineOptions} onChange={(engine) => onConfig({ engine, runtime_id: '', ...(isCLIEngine(engine) ? { reasoning_effort: '', first_chunk_timeout_ms: 0, idle_timeout_ms: 0 } : {}) })} /></div>
+        <div className="field"><span>引擎</span><Select label={`${name}的引擎`} value={config.engine} disabled={lead} options={engineOptions} onChange={(engine) => onConfig({ engine, runtime_id: '', ...(isCLIEngine(engine) ? { reasoning_effort: '', first_chunk_timeout_ms: 0, idle_timeout_ms: 0, call_timeout_ms: 0 } : {}) })} /></div>
         {cli ? <div className="field"><span>节点</span><Select label={`${name}的节点`} value={config.runtime_id ?? ''} placeholder={engineNodes.length ? '选择节点' : '没有提供该引擎的节点'} options={engineNodes} onChange={(runtime) => onConfig({ runtime_id: runtime })} /></div> : null}
         {cli
           ? <label className="field"><span>模型</span><input className="input" value={config.model ?? ''} placeholder="留空使用节点上的默认模型" onChange={(event) => onConfig({ model: event.target.value })} /></label>

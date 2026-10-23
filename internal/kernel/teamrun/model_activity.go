@@ -51,6 +51,13 @@ func (r *WorkflowSerialRuntime) modelObserver(run TeamRun) workflow.ModelCallObs
 			if event.TimeoutStage != "" {
 				fields["timeout_stage"] = event.TimeoutStage
 			}
+			// The event is recorded once the local call has returned. An
+			// abandoned HTTP request carries no acknowledgement, so whether the
+			// provider stopped generating is not known.
+			if event.Phase == "cancelled" || event.TimeoutStage != "" {
+				fields["local_stopped"] = true
+				fields["upstream_cancel"] = "unknown"
+			}
 		}
 		// What the provider boundary observed about the last request: the
 		// status (200 included), its request ID, the request as sent and how

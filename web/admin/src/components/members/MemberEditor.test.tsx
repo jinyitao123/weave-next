@@ -266,6 +266,8 @@ describe('member editor', () => {
     expect(saved(last, 'w-loom')?.configuration.reasoning_effort).toBe('high')
     fireEvent.change(screen.getByLabelText('等待首个输出上限（毫秒）'), { target: { value: '30000' } })
     expect(saved(last, 'w-loom')?.configuration.first_chunk_timeout_ms).toBe(30000)
+    fireEvent.change(screen.getByLabelText('整次调用上限（毫秒）'), { target: { value: '120000' } })
+    expect(saved(last, 'w-loom')?.configuration.call_timeout_ms).toBe(120000)
     // A CLI member's runtime makes its own requests, so it has no such setting.
     pick(/^编码/)
     expect(screen.queryByRole('button', { name: '编码的推理档位' })).toBeNull()

@@ -23,6 +23,7 @@ func checkEnvironment(t *testing.T) string {
 	t.Setenv("WEAVE_SECRET_KEY", "")
 	t.Setenv("WEAVE_SECRET_KEY_FILE", "")
 	t.Setenv("WEAVE_ORGANIZATION_CONNECTION_FILE", "")
+	t.Setenv("WEAVE_TEAMRUN_DRAIN_TIMEOUT", "")
 	return dir
 }
 
@@ -105,5 +106,22 @@ func TestConfigCheckReportsAMissingLoginKey(t *testing.T) {
 func TestShippedOrganizationConnectionExampleIsValid(t *testing.T) {
 	if err := api.CheckOrganizationConnectionFile(filepath.Join("..", "..", "deploy", "compose", "organization-connection.example.json")); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// A drain timeout the server would ignore is reported before startup (#107).
+func TestConfigCheckReportsTimingSettings(t *testing.T) {
+	checkEnvironment(t)
+	t.Setenv("WEAVE_SECRET_KEY", checkSecretKey)
+	if code, output := runCheck(t); code != 0 || !strings.Contains(output, "ok   shutdown drain: WEAVE_TEAMRUN_DRAIN_TIMEOUT unset") || !strings.Contains(output, "ok   slow-run alert: 600s") {
+		t.Fatalf("defaults: code %d\n%s", code, output)
+	}
+	t.Setenv("WEAVE_TEAMRUN_DRAIN_TIMEOUT", "30s")
+	if code, output := runCheck(t); code != 0 || !strings.Contains(output, "waits up to 30s") {
+		t.Fatalf("drain 30s: code %d\n%s", code, output)
+	}
+	t.Setenv("WEAVE_TEAMRUN_DRAIN_TIMEOUT", "30")
+	if code, output := runCheck(t); code != 1 || !strings.Contains(output, "fail shutdown drain") {
+		t.Fatalf("drain without a unit: code %d\n%s", code, output)
 	}
 }

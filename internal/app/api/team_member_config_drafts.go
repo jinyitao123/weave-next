@@ -46,6 +46,8 @@ type teamMemberAgentConfiguration struct {
 	// waits for its first output and between outputs; zero is unbounded.
 	FirstChunkTimeoutMS int64           `json:"first_chunk_timeout_ms,omitempty"`
 	IdleTimeoutMS       int64           `json:"idle_timeout_ms,omitempty"`
+	// CallTimeoutMS bounds each model call from its request to its end.
+	CallTimeoutMS int64 `json:"call_timeout_ms,omitempty"`
 	StepBudget          int64           `json:"step_budget"`
 	MaxCostUSD          float64         `json:"max_cost_usd"`
 	OutputSchema        json.RawMessage `json:"output_schema,omitempty"`
@@ -166,6 +168,7 @@ func (s *Server) seedTeamMemberConfigDraft(c echo.Context) (*teamMemberConfigDra
 		configuration.ReasoningEffort = record.RequestProfile.ReasoningEffort
 		configuration.FirstChunkTimeoutMS = record.RequestProfile.FirstChunkTimeoutMS
 		configuration.IdleTimeoutMS = record.RequestProfile.IdleTimeoutMS
+		configuration.CallTimeoutMS = record.RequestProfile.CallTimeoutMS
 	}
 	relationship := teamMemberRelationshipDraft{Duty: duty, WhenToUse: whenToUse, ContextInstruction: contextInstruction, AllowedKinds: allowedKinds, DefaultKind: defaultKind, ResultRequirement: resultRequirement, Enabled: enabled}
 	return &teamMemberConfigDraftResponse{
@@ -491,12 +494,22 @@ func configureDevelopmentMember(record *registry.AgentRecord, configuration team
 	// A request profile reaches built-in Loom model calls only; a CLI member's
 	// runtime chooses its own, so a setting there would silently do nothing.
 	profile := frozen.FrozenRequestProfile{ReasoningEffort: strings.TrimSpace(configuration.ReasoningEffort),
-		FirstChunkTimeoutMS: configuration.FirstChunkTimeoutMS, IdleTimeoutMS: configuration.IdleTimeoutMS}
+		FirstChunkTimeoutMS: configuration.FirstChunkTimeoutMS, IdleTimeoutMS: configuration.IdleTimeoutMS, CallTimeoutMS: configuration.CallTimeoutMS}
 	if err := frozen.ValidateRequestProfile(profile); err != nil {
 		if profile.ReasoningEffort != "" && !slices.Contains(frozen.ReasoningEfforts, profile.ReasoningEffort) {
 			return echo.NewHTTPError(422, "推理档位只能是 "+strings.Join(frozen.ReasoningEfforts, "、")+" 之一，或留空使用供应方默认")
 		}
+		if profile.CallTimeoutMS > 0 && (profile.FirstChunkTimeoutMS >= profile.CallTimeoutMS || profile.IdleTimeoutMS >= profile.CallTimeoutMS) {
+			return echo.NewHTTPError(422, "等待首个输出和输出间隔的上限须短于整次调用上限，否则永远不会生效")
+		}
 		return echo.NewHTTPError(422, "等待时长须在 0 到 3600000 毫秒之间，0 表示不限")
+	}
+	// Every model call of a member step also ends with the step, so a budget
+	// that is not shorter than the step limit would never be the one to end it.
+	for _, value := range []int64{profile.FirstChunkTimeoutMS, profile.IdleTimeoutMS, profile.CallTimeoutMS} {
+		if value >= frozen.MemberNodeExecutionLimitMS {
+			return echo.NewHTTPError(422, "等待时长须短于成员单步执行上限 45 分钟（2700000 毫秒），否则永远不会先于它生效")
+		}
 	}
 	if profile != (frozen.FrozenRequestProfile{}) && engine.IsCLIEngine(record.Engine) {
 		return echo.NewHTTPError(422, "命令行引擎成员不使用推理档位和等待时长，请留空")

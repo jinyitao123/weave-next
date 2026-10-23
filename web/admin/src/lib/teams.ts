@@ -42,6 +42,8 @@ export interface MemberConfiguration {
   reasoning_effort?: string
   first_chunk_timeout_ms?: number
   idle_timeout_ms?: number
+  /** Bounds each model call from its request to its end; 0 leaves only the step limit. */
+  call_timeout_ms?: number
   step_budget?: number
   max_cost_usd?: number
   max_tool_repeats?: number

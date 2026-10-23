@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/jinyitao123/weave/internal/app/api"
 	"github.com/jinyitao123/weave/internal/kernel/config"
@@ -43,6 +44,17 @@ func runConfigCheck(args []string, stdout, stderr io.Writer) int {
 		report("fail", "credential encryption key", err.Error())
 	} else {
 		report("ok", "credential encryption key", "read from "+keySource)
+	}
+	// Timing settings that are easy to leave at a default unknowingly.
+	if raw := strings.TrimSpace(os.Getenv("WEAVE_TEAMRUN_DRAIN_TIMEOUT")); raw == "" {
+		report("ok", "shutdown drain", "WEAVE_TEAMRUN_DRAIN_TIMEOUT unset: a pooled executor stops without waiting for work in flight")
+	} else if drain, err := time.ParseDuration(raw); err != nil || drain < 0 {
+		report("fail", "shutdown drain", "WEAVE_TEAMRUN_DRAIN_TIMEOUT must be a non-negative duration such as 30s; the server would ignore it and not wait")
+	} else {
+		report("ok", "shutdown drain", "waits up to "+drain.String()+" for work in flight")
+	}
+	if cfg, err := config.Load(); err == nil {
+		report("ok", "slow-run alert", fmt.Sprintf("%ds (WEAVE_HEALTH_SLOW_RUN_SECONDS); observation only, it never ends a run", cfg.HealthSlowRunSeconds))
 	}
 	if path := strings.TrimSpace(os.Getenv("WEAVE_ORGANIZATION_CONNECTION_FILE")); path == "" {
 		report("off", "organization connection", "not configured; optional, needed only to download the organization connection from the console")

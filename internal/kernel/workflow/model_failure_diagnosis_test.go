@@ -194,3 +194,37 @@ func TestModelCallEventsCarryTheEnginePurpose(t *testing.T) {
 		}
 	}
 }
+
+// A call that keeps producing output past its whole-call budget ends as a
+// stage timeout of stage "total", not retried and not a caller cancellation.
+func TestModelCallEndedByCallBudgetIsTypedAsTotal(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		w.Header().Set("Content-Type", "text/event-stream")
+		for i := 0; ; i++ {
+			select {
+			case <-r.Context().Done():
+				return
+			case <-time.After(40 * time.Millisecond):
+			}
+			_, _ = fmt.Fprintf(w, "data: {\"id\":\"x\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"%d\"},\"finish_reason\":null}]}\n\n", i)
+			w.(http.Flusher).Flush()
+		}
+	}))
+	defer server.Close()
+	provider := llmrouter.NewProviderClient(llmrouter.ProviderConfig{
+		ID: "recorded", BaseURL: server.URL, APIKey: "test-only-key", Models: []string{"fixture-model"}, AttemptTimeoutSeconds: 10,
+	})
+	recorder := newModelObservationTestRecorder()
+	model := buildObservedModelLLM(t, &runtimeStreamingLLM{inner: provider}, recorder.observe)
+	_, err := model.Chat(context.Background(), contract.ChatRequest{Model: "fixture-model",
+		WaitBudget: &contract.WaitBudget{IdleMS: 1000, TotalMS: 300},
+		Messages:   []contract.Message{{Role: "user", Content: "recorded"}}})
+	if err == nil {
+		t.Fatal("steady output past the call budget did not end the call")
+	}
+	event := recorder.wait(t, ModelCallFailed)
+	if event.ErrorClass != ModelCallErrorStageTimeout || event.TimeoutStage != "total" || event.Retryable != nil {
+		t.Fatalf("call budget event = %+v", event)
+	}
+}

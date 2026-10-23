@@ -362,8 +362,8 @@ func mapStandardFrozenToLegacy(
 		copied := *profile
 		record.RequestProfile = &copied
 		compileOpts.Effort = contract.EffortLevel(profile.ReasoningEffort)
-		if profile.FirstChunkTimeoutMS > 0 || profile.IdleTimeoutMS > 0 {
-			compileOpts.WaitBudget = &contract.WaitBudget{FirstChunkMS: profile.FirstChunkTimeoutMS, IdleMS: profile.IdleTimeoutMS}
+		if profile.FirstChunkTimeoutMS > 0 || profile.IdleTimeoutMS > 0 || profile.CallTimeoutMS > 0 {
+			compileOpts.WaitBudget = &contract.WaitBudget{FirstChunkMS: profile.FirstChunkTimeoutMS, IdleMS: profile.IdleTimeoutMS, TotalMS: profile.CallTimeoutMS}
 		}
 	}
 	return record, compileOpts, nil

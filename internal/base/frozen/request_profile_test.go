@@ -42,3 +42,34 @@ func TestRequestProfileWaitTimeoutsAreBounded(t *testing.T) {
 		}
 	}
 }
+
+// A whole-call budget is frozen like the stage budgets, and a stage budget
+// that is not shorter than it, which could never fire, is refused (#96, #107).
+func TestRequestProfileCallTimeoutOrdersTheStageBudgets(t *testing.T) {
+	for _, tc := range []struct {
+		profile FrozenRequestProfile
+		valid   bool
+	}{
+		{FrozenRequestProfile{CallTimeoutMS: 120000}, true},
+		{FrozenRequestProfile{FirstChunkTimeoutMS: 30000, IdleTimeoutMS: 15000, CallTimeoutMS: 120000}, true},
+		{FrozenRequestProfile{FirstChunkTimeoutMS: 120000, CallTimeoutMS: 120000}, false},
+		{FrozenRequestProfile{IdleTimeoutMS: 180000, CallTimeoutMS: 120000}, false},
+		{FrozenRequestProfile{CallTimeoutMS: MaxWaitTimeoutMS + 1}, false},
+	} {
+		if err := ValidateRequestProfile(tc.profile); (err == nil) != tc.valid {
+			t.Fatalf("%+v: err=%v, want valid=%v", tc.profile, err, tc.valid)
+		}
+	}
+	base := FrozenAgentRecord{SchemaVersion: 1, WorkspaceID: "ws", AgentID: "a", AgentVersion: 1, Name: "a",
+		Profiles: map[string]FrozenAgentProfile{}, OutputSchema: []byte("null"), FactoryInput: []byte("{}"),
+		RequestProfile: &FrozenRequestProfile{FirstChunkTimeoutMS: 30000}}
+	before, err := Canonicalize(base, PreorderFrozenAgentRecord)
+	if err != nil {
+		t.Fatal(err)
+	}
+	base.RequestProfile = &FrozenRequestProfile{FirstChunkTimeoutMS: 30000, CallTimeoutMS: 120000}
+	after, err := Canonicalize(base, PreorderFrozenAgentRecord)
+	if err != nil || string(after) == string(before) {
+		t.Fatalf("a call budget did not reach the canonical record: %v", err)
+	}
+}

@@ -40,4 +40,20 @@ func TestDevelopmentMemberReasoningEffort(t *testing.T) {
 	if _, err := timed("codex", 30000, 0); err == nil {
 		t.Fatal("a CLI member accepted a wait budget it would never apply")
 	}
+	called := func(firstChunk, idle, call int64) (*registry.AgentRecord, error) {
+		record := &registry.AgentRecord{Name: "member"}
+		err := configureDevelopmentMember(record, teamMemberAgentConfiguration{DisplayName: "成员", Engine: "loom",
+			FirstChunkTimeoutMS: firstChunk, IdleTimeoutMS: idle, CallTimeoutMS: call}, teamMemberRelationshipDraft{}, false, nil)
+		return record, err
+	}
+	if record, err := called(30000, 15000, 120000); err != nil || record.RequestProfile == nil || record.RequestProfile.CallTimeoutMS != 120000 {
+		t.Fatalf("call budget: %+v %v", record.RequestProfile, err)
+	}
+	// A stage wait as long as the whole call, or any budget as long as the
+	// member step limit, would never be the one to end a call.
+	for _, tc := range [][3]int64{{120000, 0, 120000}, {0, 180000, 120000}, {2700000, 0, 0}, {0, 0, 3000000}} {
+		if _, err := called(tc[0], tc[1], tc[2]); err == nil {
+			t.Fatalf("budgets %v were accepted although one can never fire", tc)
+		}
+	}
 }

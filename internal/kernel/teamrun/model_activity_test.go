@@ -32,7 +32,8 @@ func TestModelCancellationActivityPersistsAfterCallerCancelledRealPG(t *testing.
 		t.Fatal(err)
 	}
 	if event.Kind != "model_cancelled" || event.NodeID != "player" || event.MemberID != "worker-1" ||
-		detail["model_call_id"] != "model-call-1" || detail["error_class"] != "context_cancelled" {
+		detail["model_call_id"] != "model-call-1" || detail["error_class"] != "context_cancelled" ||
+		detail["local_stopped"] != true || detail["upstream_cancel"] != "unknown" {
 		t.Fatalf("model cancellation identity missing: event=%+v detail=%v", event, detail)
 	}
 	if hidden, err := store.List(context.Background(), "another-workspace", run.RunID, 10); err != nil || len(hidden) != 0 {

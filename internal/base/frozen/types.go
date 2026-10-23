@@ -89,10 +89,18 @@ type FrozenRequestProfile struct {
 	// task allows.
 	FirstChunkTimeoutMS int64 `json:"first_chunk_timeout_ms,omitempty"`
 	IdleTimeoutMS       int64 `json:"idle_timeout_ms,omitempty"`
+	// CallTimeoutMS bounds one streamed model call from its request to its
+	// end, however steadily output arrives; zero leaves only the outer bounds.
+	CallTimeoutMS int64 `json:"call_timeout_ms,omitempty"`
 }
 
 // MaxWaitTimeoutMS is the longest stage wait a member may set: one hour.
 const MaxWaitTimeoutMS = 3600000
+
+// MemberNodeExecutionLimitMS bounds one member step of a workflow, every model
+// call of it included: 45 minutes. A wait budget that is not shorter never
+// ends a call first.
+const MemberNodeExecutionLimitMS = 45 * 60 * 1000
 
 // ReasoningEfforts are the reasoning_effort values a member may request.
 // Whether a provider honours a value is the provider's to report.
@@ -104,10 +112,14 @@ func ValidateRequestProfile(profile FrozenRequestProfile) error {
 	if profile.ReasoningEffort != "" && !slices.Contains(ReasoningEfforts, profile.ReasoningEffort) {
 		return fmt.Errorf("reasoning_effort %q is not one of %v", profile.ReasoningEffort, ReasoningEfforts)
 	}
-	for name, value := range map[string]int64{"first_chunk_timeout_ms": profile.FirstChunkTimeoutMS, "idle_timeout_ms": profile.IdleTimeoutMS} {
+	for name, value := range map[string]int64{"first_chunk_timeout_ms": profile.FirstChunkTimeoutMS, "idle_timeout_ms": profile.IdleTimeoutMS, "call_timeout_ms": profile.CallTimeoutMS} {
 		if value < 0 || value > MaxWaitTimeoutMS {
 			return fmt.Errorf("%s must be between 0 and %d", name, MaxWaitTimeoutMS)
 		}
+	}
+	// A stage wait as long as the whole call never fires.
+	if profile.CallTimeoutMS > 0 && (profile.FirstChunkTimeoutMS >= profile.CallTimeoutMS || profile.IdleTimeoutMS >= profile.CallTimeoutMS) {
+		return fmt.Errorf("first_chunk_timeout_ms and idle_timeout_ms must be shorter than call_timeout_ms")
 	}
 	return nil
 }
