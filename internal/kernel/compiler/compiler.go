@@ -19,7 +19,6 @@ import (
 	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/kernel/grounding"
 	"github.com/jinyitao123/weave/internal/kernel/llmrouter"
-	"github.com/jinyitao123/weave/internal/kernel/memory"
 	"github.com/jinyitao123/weave/internal/kernel/otel"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 	"github.com/jinyitao123/weave/internal/kernel/skills"
@@ -64,30 +63,18 @@ func lookupFactory(graphType string) (GraphFactory, bool) {
 type CompileOpts struct {
 	// DurableMember retains required checkpoints for the new frozen member
 	// protocol. Legacy graph factories keep their original options.
-	DurableMember        bool
-	Profile              string
-	Effort               contract.EffortLevel
-	WaitBudget           *contract.WaitBudget    // bounds each model call's wait for output; nil leaves the context deadline only
-	ToolHooks            []contract.ToolHook     // injected hooks (e.g. SSE tool_result emitter)
-	BeforeStepHooks      []loom.StepHook         // injected Before step hooks (e.g. SSE step_start)
-	AfterStepHooks       []loom.StepHook         // injected After step hooks (e.g. SSE step_end)
-	Store                loom.Store              // for audit logging
-	MemoryService        *memory.Service         // if non-nil, enables memory retrieval
-	MemoryTopK           int                     // top-K memories to retrieve (default 5)
-	MemoryScope          string                  // "tenant" (default) | "user" | "session"
-	MemoryReadSources    []memory.RetrieveSource // immutable sources appended after Avatar memory
-	AutoRemember         bool                    // if true, auto-extract facts after chat
-	MemoryWriteNamespace string                  // optional immutable auto-remember destination
-	MemoryWriteSource    string                  // metadata source for an explicit destination
-	HookLLM              contract.LLM            // LLM for hooks (e.g. auto-remember); defaults to main LLM
-	OnMemoryUpdate       memory.UpdateFunc       // called when auto-remember stores new facts
+	DurableMember   bool
+	Profile         string
+	Effort          contract.EffortLevel
+	WaitBudget      *contract.WaitBudget // bounds each model call's wait for output; nil leaves the context deadline only
+	ToolHooks       []contract.ToolHook  // injected hooks (e.g. SSE tool_result emitter)
+	BeforeStepHooks []loom.StepHook      // injected Before step hooks (e.g. SSE step_start)
+	AfterStepHooks  []loom.StepHook      // injected After step hooks (e.g. SSE step_end)
+	Store           loom.Store           // for audit logging
 	// ExecutionLLMWrapper decorates synchronous graph-execution calls. Standard
 	// compilation applies it outside fallback; custom factories receive the
 	// decorated LLM without gaining fallback behavior.
 	ExecutionLLMWrapper func(contract.LLM) contract.LLM
-
-	// Embedder for semantic skill matching (optional; falls back to KeywordMatcher).
-	Embedder contract.Embedder
 
 	// Context is runtime key-value context injected into the system prompt
 	// as a "## 当前上下文" section. Tools can read it from State["context"].
@@ -111,10 +98,10 @@ type CompileOpts struct {
 // The graph topology adapts to the agent's configuration:
 //
 //	Simple agent (default):
-//	  guard? → prompt_assemble → memory_retrieve? → chat
+//	  guard? → prompt_assemble → chat
 //
 //	Orchestrator agent (sub_agents configured):
-//	  guard? → prompt_assemble → memory_retrieve? → chat → route → sub_agent_*...
+//	  guard? → prompt_assemble → chat → route → sub_agent_*...
 //
 // Each capability is wired only when configured, keeping simple agents simple.
 func CompileAgent(tenant string, rec *registry.AgentRecord, llm contract.LLM, tools contract.ToolDispatcher, opts CompileOpts) (*loom.Graph, error) {
@@ -180,7 +167,6 @@ func CompileAgent(tenant string, rec *registry.AgentRecord, llm contract.LLM, to
 	}
 	// --- Determine graph topology ---
 	hasGuard := rec.Guard != nil && rec.Guard.Enabled
-	hasMemory := opts.MemoryService != nil
 	resolverAvailable := opts.SubAgentStepResolver != nil
 	hasSubAgents := HasSubAgents(rec, resolverAvailable)
 	var subAgentRoutes *SubAgentRouteTable
@@ -225,7 +211,7 @@ func CompileAgent(tenant string, rec *registry.AgentRecord, llm contract.LLM, to
 	// grounding, always-active/builtin direct injection, matchable subset, and
 	// matcher selection. The same preparation drives declarative graphs and
 	// the preview endpoint, so every live path agrees on what is injected.
-	prepared := PreparePrompt(rec, opts.Embedder)
+	prepared := PreparePrompt(rec)
 
 	// --- Step: Guard (optional) ---
 	if hasGuard {
@@ -242,9 +228,6 @@ func CompileAgent(tenant string, rec *registry.AgentRecord, llm contract.LLM, to
 
 	// --- Step: Prompt assembly ---
 	promptTarget := "chat"
-	if hasMemory {
-		promptTarget = "memory_retrieve"
-	}
 	g.AddStep("prompt_assemble", stdlib.NewPromptAssembleStep(stdlib.PromptConfig{
 		Identity:              prepared.Identity,
 		Skills:                prepared.MatchableSkills, // only skills that need matching (not always_active/builtin)
@@ -254,20 +237,6 @@ func CompileAgent(tenant string, rec *registry.AgentRecord, llm contract.LLM, to
 		MaxSystemPromptTokens: 8000,
 		SkillMatcher:          prepared.Matcher,
 	}), loom.Always(promptTarget))
-
-	// --- Step: Memory retrieval (optional) ---
-	if hasMemory {
-		topK := opts.MemoryTopK
-		if topK <= 0 {
-			topK = 5
-		}
-		g.AddStep("memory_retrieve", memory.NewRetrieveStep(memory.RetrieveConfig{
-			Service:           opts.MemoryService,
-			TopK:              topK,
-			Scope:             opts.MemoryScope,
-			AdditionalSources: append([]memory.RetrieveSource(nil), opts.MemoryReadSources...),
-		}), loom.Always("chat"))
-	}
 
 	// --- Step: Chat (ToolLoop) ---
 	toolHooks := append([]contract.ToolHook{}, opts.ToolHooks...)
@@ -349,33 +318,6 @@ func CompileAgent(tenant string, rec *registry.AgentRecord, llm contract.LLM, to
 		afterHooks = append(afterHooks, otel.TraceEnd(opts.Store))
 		afterHooks = append(afterHooks, otel.AuditHook(opts.Store, tenant, rec.Name))
 	}
-	memoryHookStart := len(afterHooks)
-	if opts.MemoryService != nil && opts.AutoRemember {
-		hookLLM := opts.HookLLM
-		if hookLLM == nil {
-			hookLLM = llm
-		}
-		if opts.MemoryWriteNamespace != "" {
-			afterHooks = append(afterHooks, memory.AutoRememberHookForNamespace(
-				hookLLM, opts.MemoryService, model, tenant, rec.Name, opts.MemoryScope,
-				opts.MemoryWriteNamespace, opts.MemoryWriteSource, opts.OnMemoryUpdate,
-			))
-		} else {
-			afterHooks = append(afterHooks, memory.AutoRememberHook(
-				hookLLM, opts.MemoryService, model, tenant, rec.Name, opts.MemoryScope, opts.OnMemoryUpdate,
-			))
-		}
-	}
-	if rec.ToolLoopControl != nil {
-		for i, hook := range afterHooks[memoryHookStart:] {
-			afterHooks[memoryHookStart+i] = func(ctx context.Context, step string, state loom.State) error {
-				if yielded, _ := state["__yield"].(bool); yielded {
-					return nil
-				}
-				return hook(ctx, step, state)
-			}
-		}
-	}
 	if rec.MaxCostUSD > 0 {
 		afterHooks = append(afterHooks, stdlib.CostBudgetHook(rec.MaxCostUSD))
 	}
@@ -393,9 +335,6 @@ func CompileAgent(tenant string, rec *registry.AgentRecord, llm contract.LLM, to
 		topo = append(topo, loom.StepInfo{Name: "guard", Detail: "input validation", Edges: []loom.Edge{{To: "prompt_assemble", Label: "pass"}, {To: "", Label: "blocked"}}})
 	}
 	topo = append(topo, loom.StepInfo{Name: "prompt_assemble", Detail: fmt.Sprintf("%d skills", len(rec.Spec.Skills)), Edges: []loom.Edge{{To: promptTarget}}})
-	if hasMemory {
-		topo = append(topo, loom.StepInfo{Name: "memory_retrieve", Detail: fmt.Sprintf("top_k=%d", opts.MemoryTopK), Edges: []loom.Edge{{To: "chat"}}})
-	}
 	chatNext := ""
 	if hasSubAgents {
 		chatNext = "router"
@@ -879,12 +818,11 @@ type PreparedPrompt struct {
 //   - always-active/builtin skills are injected directly into identity.Core;
 //   - remaining skills form the matchable subset (index always shown, body
 //     disclosed only on match);
-//   - SemanticMatcher is used when an embedder is available, otherwise
-//     KeywordMatcher.
+//   - KeywordMatcher selects the matchable skills.
 //
 // Callers must pass a record whose Spec.Skills are already resolved via
 // ResolveLiveSkills.
-func PreparePrompt(rec *registry.AgentRecord, embedder contract.Embedder) PreparedPrompt {
+func PreparePrompt(rec *registry.AgentRecord) PreparedPrompt {
 	identity := rec.Spec.Identity
 	if identity.Core == "" && rec.Spec.SystemPrompt != "" {
 		identity.Core = rec.Spec.SystemPrompt
@@ -906,16 +844,10 @@ func PreparePrompt(rec *registry.AgentRecord, embedder contract.Embedder) Prepar
 			matchableSkills = append(matchableSkills, s)
 		}
 	}
-	var matcher stdlib.SkillMatcher
-	if embedder != nil {
-		matcher = NewSemanticMatcher(embedder)
-	} else {
-		matcher = &stdlib.KeywordMatcher{}
-	}
 	return PreparedPrompt{
 		Identity:        identity,
 		MatchableSkills: matchableSkills,
-		Matcher:         matcher,
+		Matcher:         &stdlib.KeywordMatcher{},
 	}
 }
 

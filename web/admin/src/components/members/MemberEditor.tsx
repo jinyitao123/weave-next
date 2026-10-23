@@ -9,7 +9,6 @@ import { bindingSourceLabel, capabilityName, capabilityNote, defaultCapabilityBi
 import './members.css'
 
 const engines = ['claude', 'codex', 'opencode', 'loom']
-const memoryScopes = [{ value: 'tenant', label: '工作区共享' }, { value: 'user', label: '按员工区分' }, { value: 'session', label: '仅本次会话' }]
 // Mirrors frozen.ReasoningEfforts; unset sends none, so the provider default applies.
 const reasoningEfforts = [
   { value: '', label: '供应方默认' },
@@ -315,7 +314,6 @@ function RunPanel({ member, nodes, accepting, models, kindsInUse, onConfig, onRe
   // An engine that runs on nodes is offered only while a node can take its work.
   const engineOptions = engines.filter((engine) => engine === config.engine || !isCLIEngine(engine) || accepting[engine])
     .map((engine) => ({ value: engine, label: engineName(engine), detail: isCLIEngine(engine) ? `${accepting[engine] ?? 0} 个节点可接` : undefined }))
-  const memoryScope = memoryScopes.some((scope) => scope.value === config.memory_scope) ? config.memory_scope! : 'tenant'
   const kinds = relation.allowed_kinds?.length ? relation.allowed_kinds : defaultKinds
   const defaultKind = relation.allowed_kinds?.length ? relation.default_kind ?? '' : 'dispatch'
   const toggleKind = (kind: string) => {
@@ -359,12 +357,6 @@ function RunPanel({ member, nodes, accepting, models, kindsInUse, onConfig, onRe
           <label className="field"><span>每片最多轮次（1 到 {toolLoopLimits.sliceMax}）</span><input className="input" inputMode="numeric" value={String(loopControl.slice_rounds)} onChange={(event) => setLoop({ slice_rounds: Math.floor(Number(event.target.value)) || 0 })} /></label>
           <label className="field"><span>总轮次上限</span><input className="input" inputMode="numeric" value={String(loopControl.initial_total_rounds)} onChange={(event) => setLoop({ initial_total_rounds: Math.floor(Number(event.target.value)) || 0 })} /></label>
         </div> : <p className="muted small">未自定义时使用平台默认的工具循环轮次。</p>}
-      </section>
-
-      <section className="members__section" aria-label="记忆">
-        <h3>记忆</h3>
-        <Switch checked={Boolean(config.memory_enabled)} label="启用记忆" onChange={(memory_enabled) => onConfig({ memory_enabled, memory_scope: memoryScope })} />
-        {config.memory_enabled ? <div className="field"><span>记忆范围</span><Select label="记忆范围" value={memoryScope} options={memoryScopes} onChange={(memory_scope) => onConfig({ memory_scope })} /></div> : null}
       </section>
     </>}
 

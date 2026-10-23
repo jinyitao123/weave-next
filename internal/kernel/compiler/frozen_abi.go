@@ -9,7 +9,6 @@ import (
 	"github.com/jinyitao123/loom"
 	"github.com/jinyitao123/loom/contract"
 	"github.com/jinyitao123/weave/internal/base/frozen"
-	"github.com/jinyitao123/weave/internal/kernel/memory"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 )
 
@@ -205,7 +204,6 @@ type FrozenBuildOpts struct {
 	LLM             contract.LLM
 	Tools           contract.ToolDispatcher
 	Hooks           FrozenHookPoints
-	MemoryService   *memory.Service
 	CheckpointStore loom.Store
 	AuditStore      loom.Store
 	// ExecutionLLMWrapper decorates the LLM the compiled graph executes with,

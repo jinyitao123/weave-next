@@ -43,11 +43,11 @@ func TestTeamMemberConfigDraftCanBeSavedRepeatedlyWithRevisionCheck(t *testing.T
 		t.Fatal(err)
 	}
 	server := &Server{Pool: pool, Registry: agents}
-	save := func(revision int, duty string) (int, teamMemberConfigDraftResponse) {
+	saveWith := func(revision int, duty string, memoryEnabled bool) (int, teamMemberConfigDraftResponse) {
 		t.Helper()
 		raw, _ := json.Marshal(saveTeamMemberConfigDraftRequest{
 			Revision:      revision,
-			Configuration: teamMemberAgentConfiguration{DisplayName: "执行成员", Role: "worker", Engine: "loom", Skills: []teamMemberInlineSkill{{Name: "合同复核", Description: "检查合同条款", Body: "逐条检查合同并列出风险。"}}, BusinessCapabilityIDs: []string{"forge:action:sales_contract.ContractSubmit"}, BusinessCapabilityBindings: []frozen.BusinessCapabilityBinding{{CapabilityID: "forge:action:sales_contract.ContractSubmit", Parameters: []frozen.BusinessCapabilityParameterBinding{{Name: "material_file_id", Source: frozen.BusinessSourceMaterialID}}}}},
+			Configuration: teamMemberAgentConfiguration{DisplayName: "执行成员", Role: "worker", Engine: "loom", MemoryEnabled: memoryEnabled, Skills: []teamMemberInlineSkill{{Name: "合同复核", Description: "检查合同条款", Body: "逐条检查合同并列出风险。"}}, BusinessCapabilityIDs: []string{"forge:action:sales_contract.ContractSubmit"}, BusinessCapabilityBindings: []frozen.BusinessCapabilityBinding{{CapabilityID: "forge:action:sales_contract.ContractSubmit", Parameters: []frozen.BusinessCapabilityParameterBinding{{Name: "material_file_id", Source: frozen.BusinessSourceMaterialID}}}}},
 			Relationship:  teamMemberRelationshipDraft{Duty: duty, AllowedKinds: []string{"dispatch"}, DefaultKind: "dispatch", Enabled: true},
 		})
 		request := httptest.NewRequest(http.MethodPut, "/", bytes.NewReader(raw)).WithContext(ctx)
@@ -69,6 +69,10 @@ func TestTeamMemberConfigDraftCanBeSavedRepeatedlyWithRevisionCheck(t *testing.T
 		}
 		return recorder.Code, response
 	}
+	save := func(revision int, duty string) (int, teamMemberConfigDraftResponse) {
+		t.Helper()
+		return saveWith(revision, duty, false)
+	}
 
 	if status, result := save(0, "第一次保存"); status != http.StatusOK || result.Revision != 1 {
 		t.Fatalf("first save status=%d revision=%d", status, result.Revision)
@@ -78,6 +82,10 @@ func TestTeamMemberConfigDraftCanBeSavedRepeatedlyWithRevisionCheck(t *testing.T
 	}
 	if status, _ := save(1, "过期覆盖"); status != http.StatusConflict {
 		t.Fatalf("stale save status=%d want %d", status, http.StatusConflict)
+	}
+	// Long-term memory was retired; a draft cannot turn it back on.
+	if status, _ := saveWith(2, "开启记忆", true); status != http.StatusUnprocessableEntity {
+		t.Fatalf("memory save status=%d want %d", status, http.StatusUnprocessableEntity)
 	}
 
 	applyBody, _ := json.Marshal(applyTeamMemberConfigDraftRequest{Revision: 2})

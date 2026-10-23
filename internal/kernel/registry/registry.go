@@ -147,16 +147,6 @@ func DefaultMemoryConfig() *MemoryConfig {
 	return &MemoryConfig{Enabled: true, TopK: 5, AutoRemember: true, Scope: "tenant"}
 }
 
-// EffectiveMemoryConfig returns the agent's memory configuration, defaulting to
-// the platform default when the record omits one. Explicit Enabled=false is
-// respected.
-func EffectiveMemoryConfig(rec *AgentRecord) *MemoryConfig {
-	if rec != nil && rec.MemoryConfig != nil {
-		return rec.MemoryConfig
-	}
-	return DefaultMemoryConfig()
-}
-
 // DefaultCompactionConfig is the platform default for context compaction:
 // enabled, with the compiler's default threshold (6000 estimated tokens).
 func DefaultCompactionConfig() *CompactionConfig {

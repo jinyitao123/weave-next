@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/jinyitao123/loom/contract"
-	"github.com/jinyitao123/weave/internal/kernel/memory"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 )
 
@@ -24,7 +23,7 @@ func NewToolBroker(access *MCPAccessFactory) *ToolBroker {
 
 // PlatformToolBuilder materializes non-MCP tools from the already-resolved
 // per-workspace runtime snapshots supplied to the broker.
-type PlatformToolBuilder func(contract.LLM, *memory.Service) []contract.ToolDispatcher
+type PlatformToolBuilder func(contract.LLM) []contract.ToolDispatcher
 
 // ToolBrokerRequest contains one run's immutable tool assembly inputs.
 type ToolBrokerRequest struct {
@@ -32,7 +31,6 @@ type ToolBrokerRequest struct {
 	Agent          *registry.AgentRecord
 	ConversationID string
 	LLM            contract.LLM
-	Memory         *memory.Service
 	PlatformTools  PlatformToolBuilder
 }
 
@@ -53,7 +51,7 @@ func (b *ToolBroker) Build(
 	}
 	var platform []contract.ToolDispatcher
 	if request.PlatformTools != nil {
-		platform = request.PlatformTools(request.LLM, request.Memory)
+		platform = request.PlatformTools(request.LLM)
 	}
 	dispatchers := make([]contract.ToolDispatcher, 0, 1+len(platform))
 	dispatchers = append(dispatchers, mcp)

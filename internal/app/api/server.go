@@ -21,7 +21,6 @@ import (
 	"github.com/jinyitao123/weave/internal/app/attachments"
 	appcapabilities "github.com/jinyitao123/weave/internal/app/capabilities"
 	"github.com/jinyitao123/weave/internal/app/deliveryverify"
-	"github.com/jinyitao123/weave/internal/app/ownermem"
 	"github.com/jinyitao123/weave/internal/app/projects"
 	"github.com/jinyitao123/weave/internal/app/teamconstruction"
 	"github.com/jinyitao123/weave/internal/app/users"
@@ -42,12 +41,10 @@ import (
 	"github.com/jinyitao123/weave/internal/kernel/loomruntime"
 	"github.com/jinyitao123/weave/internal/kernel/mcphost"
 	"github.com/jinyitao123/weave/internal/kernel/mcpregistry"
-	"github.com/jinyitao123/weave/internal/kernel/memory"
 	"github.com/jinyitao123/weave/internal/kernel/publication"
 
 	orgstore "github.com/jinyitao123/weave/internal/app/org"
 	"github.com/jinyitao123/weave/internal/app/workflowcatalog"
-	"github.com/jinyitao123/weave/internal/kernel/registry"
 	"github.com/jinyitao123/weave/internal/kernel/runtimes"
 	"github.com/jinyitao123/weave/internal/kernel/schedule"
 	"github.com/jinyitao123/weave/internal/kernel/secret"
@@ -72,11 +69,10 @@ type Server struct {
 	Config                    *config.Config
 	ExternalIdentity          ExternalIdentityVerifier
 	ExternalIdentityBinder    externalIdentityBinder
-	Embedders                 *memory.EmbedderResolver // nil if PG pool unavailable — resolves workspace-scoped memory services
-	StoreExt                  *storeext.PGExt          // nil if Store is not PGStore
-	Fanout                    *fanout.Store            // nil if PG pool unavailable
-	Tasks                     *taskqueue.Store         // nil if PG pool unavailable
-	Runtimes                  *runtimes.Store          // nil if PG pool unavailable
+	StoreExt                  *storeext.PGExt  // nil if Store is not PGStore
+	Fanout                    *fanout.Store    // nil if PG pool unavailable
+	Tasks                     *taskqueue.Store // nil if PG pool unavailable
+	Runtimes                  *runtimes.Store  // nil if PG pool unavailable
 	RemoteExec                executionport.RemoteEngineExecutor
 	TaskWorker                *taskqueue.Worker // nil if Tasks is nil
 	AgentSchedules            *schedule.Store   // nil if PG pool unavailable
@@ -112,7 +108,6 @@ type Server struct {
 	MCPRegistry               *mcpregistry.Store     // nil if WEAVE_SECRET_KEY is not configured
 	MCPResolver               mcphost.AccessResolver // optional override; defaults to MCPRegistry-backed resolver
 	BusinessDelegations       *businessaction.Store  // task-scoped Forge identity and action boundary
-	OwnerMem                  OwnerMemoryStore       // nil if PG pool unavailable
 	mcpLimiter                mcpRateLimiter
 	deviceEnrollLimiter       mcpRateLimiter
 	teamRunWorkers            *teamrun.Workers
@@ -148,32 +143,6 @@ func (s *Server) llmFor(ctx context.Context, tenant string) (contract.LLM, error
 		return nil, errors.New("model resolver not configured")
 	}
 	return s.Models.ForWorkspace(ctx, tenant)
-}
-
-// memoryFor resolves the workspace memory service on the soft paths
-// (chat/sse/jobs/resume/topology/preview/sub-agents): resolution failures are
-// only logged and degrade to "memory not configured", matching the existing
-// memSvc == nil semantics.
-func (s *Server) memoryFor(ctx context.Context, tenant string) *memory.Service {
-	if s.Embedders == nil {
-		return nil
-	}
-	svc, err := s.Embedders.ForWorkspace(ctx, tenant)
-	if err != nil {
-		slog.Warn("embedder resolution failed", "workspace", tenant, "error", err)
-		return nil
-	}
-	return svc
-}
-
-// memoryForStrict resolves the workspace memory service for the memory CRUD
-// API: resolution errors surface to the caller (500), while an unconfigured
-// embedder still returns (nil, nil) so handlers keep their existing 501.
-func (s *Server) memoryForStrict(ctx context.Context, tenant string) (*memory.Service, error) {
-	if s.Embedders == nil {
-		return nil, nil
-	}
-	return s.Embedders.ForWorkspace(ctx, tenant)
 }
 
 // NewServer creates a new API server with all dependencies wired.
@@ -217,7 +186,6 @@ func NewServer(cfg *config.Config, store loom.Store, models *llmrouter.Resolver)
 		s.CapabilityAccess = appcapabilities.NewAccessStore(ps.Pool())
 		s.TeamWorkers = agentcatalog.NewTeamWorkerRepository(ps.Pool())
 		s.Attachments = attachments.New(ps.Pool())
-		s.OwnerMem = ownermem.New(ps.Pool(), ownermem.RealClock{})
 		s.WorkflowArtifacts = workflow.NewArtifactStore(ps.Pool(), workflow.RealClock{})
 		s.Workflow = workflowcatalog.New(ps.Pool(), workflow.RealClock{}, s.WorkflowArtifacts)
 		healthStore, healthErr := workflowhealth.New(ps.Pool(), workflowhealth.Policy{
@@ -462,9 +430,6 @@ func (s *Server) registerRoutes() {
 	auth.GET("/agents/:name", s.handleGetAgent)
 	auth.GET("/agents/:name/team-memberships", s.handleGetAgentTeamMemberships)
 	auth.GET("/agents/:name/run-summary", s.handleGetAgentRunSummary)
-	auth.GET("/agents/:name/memory-slots", s.handleGetMemorySlots)
-	auth.PUT("/agents/:name/memory-slots", s.handlePutMemorySlots, RequireAtLeast(roleAdmin))
-	auth.GET("/agents/:name/memory-profile", s.handleGetMemoryProfile, RequireAtLeast(roleAdmin))
 	auth.POST("/agents", s.handleCreateAgent, RequireAtLeast(roleDeveloper))
 	auth.PUT("/agents/:name", s.handleUpdateAgent, RequireAtLeast(roleDeveloper))
 	auth.PUT("/agents/:name/execution", s.handleConfigureAgentExecution, RequireAtLeast(roleAdmin))
@@ -536,11 +501,6 @@ func (s *Server) registerRoutes() {
 	auth.PUT("/providers/:id", s.handleUpdateProvider, RequireAtLeast(roleAdmin))
 	auth.DELETE("/providers/:id", s.handleDeleteProvider, RequireAtLeast(roleAdmin))
 
-	// Embedding provider.
-	auth.GET("/embedder", s.handleGetEmbedder)
-	auth.PUT("/embedder", s.handleUpdateEmbedder, RequireAtLeast(roleAdmin))
-	auth.DELETE("/embedder", s.handleDeleteEmbedder, RequireAtLeast(roleAdmin))
-
 	// Data sources (MCP server aggregation).
 
 	// 数字员工定时上班（agent 调度）。
@@ -549,13 +509,6 @@ func (s *Server) registerRoutes() {
 	auth.GET("/jobs", s.handleListJobs)
 	auth.GET("/jobs/:id", s.handleGetJob)
 	auth.POST("/jobs/:id/cancel", s.handleCancelJob)
-
-	// Memory.
-	auth.GET("/agents/:name/memories", s.handleListMemories)
-	auth.POST("/agents/:name/memories", s.handleCreateMemory, RequireAtLeast(roleDeveloper))
-	auth.DELETE("/agents/:name/memories/:id", s.handleDeleteMemory, RequireAtLeast(roleDeveloper))
-	auth.POST("/agents/:name/memories/search", s.handleSearchMemories)
-
 }
 
 // Start runs the HTTP server.
@@ -860,7 +813,6 @@ func (s *Server) resolveSubAgent(tenant, agentName string) (loom.Step, error) {
 		return nil, fmt.Errorf("resolve models for sub-agent %q: %w", agentName, err)
 	}
 	tools := s.buildAuditedMCPDispatcher(rec, tenant, "")
-	memSvc := s.memoryFor(ctx, tenant)
 	terminalSink, err := s.rootTerminalSink()
 	if err != nil {
 		return nil, fmt.Errorf("prepare terminal sink for sub-agent %q: %w", agentName, err)
@@ -868,15 +820,7 @@ func (s *Server) resolveSubAgent(tenant, agentName string) (loom.Step, error) {
 	// Prepare child without sub-agent resolution (prevent infinite recursion).
 	childOpts := compiler.CompileOpts{
 		Store:       s.Store,
-		AgentRunner: s.compilerAgentRunner(tenant, "", llm, memSvc, nil),
-	}
-	if cfg := registry.EffectiveMemoryConfig(rec); memSvc != nil && cfg.Enabled {
-		childOpts.MemoryService = memSvc
-		if cfg.TopK > 0 {
-			childOpts.MemoryTopK = cfg.TopK
-		}
-		childOpts.AutoRemember = cfg.AutoRemember
-		childOpts.MemoryScope = cfg.Scope
+		AgentRunner: s.compilerAgentRunner(tenant, "", llm, nil),
 	}
 	prepared, err := loomruntime.Prepare(loomruntime.RunRequest{
 		Tenant: tenant,

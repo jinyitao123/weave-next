@@ -47,7 +47,7 @@
   {
     "package": "internal/kernel/compiler",
     "import": "loom/stdlib",
-    "files": 3
+    "files": 2
   },
   {
     "package": "internal/kernel/declarative",
@@ -88,11 +88,6 @@
     "package": "internal/kernel/mcphost",
     "import": "loom/stdlib",
     "files": 1
-  },
-  {
-    "package": "internal/kernel/memory",
-    "import": "loom",
-    "files": 2
   },
   {
     "package": "internal/kernel/otel",

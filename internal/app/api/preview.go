@@ -6,7 +6,6 @@ import (
 	"unicode"
 
 	"github.com/jinyitao123/loom"
-	"github.com/jinyitao123/loom/contract"
 	"github.com/jinyitao123/loom/stdlib"
 	"github.com/jinyitao123/weave/internal/kernel/compiler"
 	"github.com/labstack/echo/v4"
@@ -81,11 +80,7 @@ func (s *Server) handlePreviewPrompt(c echo.Context) error {
 
 	// Shared prompt preparation: identity fallback + grounding,
 	// always-active/builtin injection, matchable subset, matcher selection.
-	var embedder contract.Embedder
-	if memSvc := s.memoryFor(c.Request().Context(), tenant); memSvc != nil {
-		embedder = memSvc.Embedder()
-	}
-	prepared := compiler.PreparePrompt(&recCopy, embedder)
+	prepared := compiler.PreparePrompt(&recCopy)
 
 	// Run the PromptAssembleStep to get the compiled prompt.
 	step := stdlib.NewPromptAssembleStep(stdlib.PromptConfig{

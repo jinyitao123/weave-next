@@ -13,7 +13,6 @@ import (
 	"github.com/jinyitao123/loom/stdlib"
 	"github.com/jinyitao123/weave/internal/base/streamctx"
 	"github.com/jinyitao123/weave/internal/kernel/compiler"
-	"github.com/jinyitao123/weave/internal/kernel/memory"
 	"github.com/jinyitao123/weave/internal/kernel/otel"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 )
@@ -291,7 +290,7 @@ func buildBuiltinStep(config map[string]any, llm contract.LLM, tools contract.To
 		// and matcher selection). Skills are already resolved by CompileAgent
 		// before custom factory dispatch, so rec.Spec.Skills is authoritative
 		// and this step never performs its own store lookup.
-		prepared := compiler.PreparePrompt(rec, opts.Embedder)
+		prepared := compiler.PreparePrompt(rec)
 		return stdlib.NewPromptAssembleStep(stdlib.PromptConfig{
 			Identity:              prepared.Identity,
 			Skills:                prepared.MatchableSkills,
@@ -300,16 +299,8 @@ func buildBuiltinStep(config map[string]any, llm contract.LLM, tools contract.To
 			SkillMatcher:          prepared.Matcher,
 		})
 	case "memory_retrieve":
-		if opts.MemoryService != nil {
-			topK := 5
-			if rec.MemoryConfig != nil && rec.MemoryConfig.TopK > 0 {
-				topK = rec.MemoryConfig.TopK
-			}
-			return memory.NewRetrieveStep(memory.RetrieveConfig{
-				Service: opts.MemoryService,
-				TopK:    topK,
-			})
-		}
+		// Long-term memory was retired; the step stays a pass-through so graphs
+		// that name it still compile.
 		return func(_ context.Context, s loom.State) (loom.State, error) { return s, nil }
 	default:
 		return func(_ context.Context, s loom.State) (loom.State, error) {

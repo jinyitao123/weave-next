@@ -7,7 +7,6 @@ import (
 	"github.com/jinyitao123/weave/internal/kernel/compiler"
 	"github.com/jinyitao123/weave/internal/kernel/execspec"
 	"github.com/jinyitao123/weave/internal/kernel/mcphost"
-	"github.com/jinyitao123/weave/internal/kernel/memory"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 )
 
@@ -38,12 +37,11 @@ func (s *Server) mcpAccessFactory() *mcphost.MCPAccessFactory {
 func (s *Server) compilerAgentRunner(
 	tenant, userID string,
 	llm contract.LLM,
-	memSvc *memory.Service,
 	attachments []execspec.Attachment,
 ) compiler.AgentRunner {
 	broker := mcphost.NewToolBroker(s.mcpAccessFactory())
 	runner := mcphost.NewAgentRunner(
-		s.Registry, tenant, llm, s.Store, memSvc,
+		s.Registry, tenant, llm, s.Store,
 		attachments,
 	)
 	runner.Broker = broker

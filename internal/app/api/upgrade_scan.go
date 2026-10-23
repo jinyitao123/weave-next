@@ -2,10 +2,8 @@ package api
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jinyitao123/weave/internal/kernel/engine"
 )
 
@@ -31,17 +29,8 @@ func (s *Server) WarnLegacyCrossWorkspaceConfig(ctx context.Context) {
 		return
 	}
 
-	defaultHasEmbedder := false
-	if s.Credentials != nil {
-		if _, err := s.Credentials.GetEmbedder(ctx, "default"); err == nil {
-			defaultHasEmbedder = true
-		}
-	}
-	systemEmbedder := s.Config != nil && s.Config.EmbedderURL != ""
-
 	for _, ws := range workspaces {
 		s.warnUnresolvableModels(ctx, ws)
-		s.warnOrphanedMemory(ctx, ws, defaultHasEmbedder, systemEmbedder)
 	}
 }
 
@@ -81,18 +70,5 @@ func (s *Server) warnUnresolvableModels(ctx context.Context, ws string) {
 					"workspace", ws, "agent", rec.Name, "model", model)
 			}
 		}
-	}
-}
-
-func (s *Server) warnOrphanedMemory(ctx context.Context, ws string, defaultHasEmbedder, systemEmbedder bool) {
-	if ws == "default" || !defaultHasEmbedder || systemEmbedder || s.Credentials == nil {
-		return
-	}
-	_, err := s.Credentials.GetEmbedder(ctx, ws)
-	if errors.Is(err, pgx.ErrNoRows) {
-		slog.Warn("workspace has no embedder of its own — memory no longer inherits the "+
-			"\"default\" workspace's embedder; copy the config into this workspace "+
-			"(PUT /v1/embedder) or set EMBEDDER_URL as the system fallback",
-			"workspace", ws)
 	}
 }

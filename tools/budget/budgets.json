@@ -1569,6 +1569,29 @@
         "production_lines_added": -8372,
         "previous_packages": 25
       }
+    },
+    {
+      "date": "2026-10-22",
+      "reason": "删除长期记忆（B10）",
+      "record": "docs/治理/2026-10-22-退役产品面删除登记.md",
+      "growth": {
+        "lines": 0,
+        "production_lines": 0
+      },
+      "kernel": {
+        "previous_lines": 111033,
+        "previous_production_lines": 85048,
+        "lines_added": -1254,
+        "production_lines_added": -1254,
+        "previous_packages": 47
+      },
+      "app": {
+        "previous_lines": 85935,
+        "previous_production_lines": 55254,
+        "lines_added": -644,
+        "production_lines_added": -627,
+        "previous_packages": 23
+      }
     }
   ],
   "migration_targets": {
@@ -1612,9 +1635,9 @@
     ]
   },
   "kernel": {
-    "lines": 111033,
-    "production_lines": 85048,
-    "packages": 47,
+    "lines": 109779,
+    "production_lines": 83794,
+    "packages": 45,
     "external_dependencies": 5,
     "allowed_dependencies": [
       "github.com/google/uuid",
@@ -1632,9 +1655,9 @@
     "allowed_dependencies": []
   },
   "app": {
-    "lines": 85935,
-    "production_lines": 55254,
-    "packages": 23,
+    "lines": 85291,
+    "production_lines": 54627,
+    "packages": 22,
     "external_dependencies": 6,
     "allowed_dependencies": [
       "github.com/golang-jwt/jwt/v5",

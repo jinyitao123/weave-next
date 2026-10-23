@@ -35,7 +35,6 @@ import (
 	"github.com/jinyitao123/weave/internal/kernel/fanout"
 	"github.com/jinyitao123/weave/internal/kernel/llmrouter"
 	"github.com/jinyitao123/weave/internal/kernel/mcpregistry"
-	"github.com/jinyitao123/weave/internal/kernel/memory"
 	"github.com/jinyitao123/weave/internal/kernel/publicationservice"
 	"github.com/jinyitao123/weave/internal/kernel/runtimes"
 	"github.com/jinyitao123/weave/internal/kernel/schedule"
@@ -254,19 +253,6 @@ func main() {
 		userStore := users.NewStore(pool)
 		srv.UserStore = userStore
 
-		// Workspace-level memory: EMBEDDER_URL is the runtime system fallback;
-		// workspace embedders are resolved per request through the resolver.
-		var systemEmb *memory.EmbedderSettings
-		if cfg.EmbedderURL != "" {
-			systemEmb = &memory.EmbedderSettings{
-				BaseURL:   cfg.EmbedderURL,
-				APIKey:    cfg.EmbedderKey,
-				Model:     cfg.EmbedderModel,
-				Dimension: cfg.EmbedderDimension,
-			}
-		}
-		srv.Embedders = memory.NewEmbedderResolver(pool, systemEmb)
-
 		// Seed admin user from environment variables (only when missing,
 		// so password changes survive container rebuilds).
 		if cfg.AdminUser != "" && cfg.AdminPass != "" {
@@ -289,7 +275,6 @@ func main() {
 		srv.Credentials = credentials.New(pool, secretKey)
 		srv.DeliveryTargets = delivery.New(pool, secretKey)
 		models.SetSource(srv.Credentials)
-		srv.Embedders.SetSource(api.CredentialEmbedderSource{Store: srv.Credentials})
 		srv.MCPRegistry = mcpregistry.New(pool, secretKey)
 
 		// Upgrade diagnostics: name the agents/workspaces still relying on the

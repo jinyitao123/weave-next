@@ -35,7 +35,7 @@ type teamMemberAgentConfiguration struct {
 	PermissionAllow            []string                           `json:"permission_allow"`
 	PermissionAsk              []string                           `json:"permission_ask"`
 	PermissionDeny             []string                           `json:"permission_deny"`
-	MemoryEnabled              bool                               `json:"memory_enabled"`
+	MemoryEnabled              bool                               `json:"memory_enabled"` // memory was retired: reads report false, true is rejected
 	MemoryScope                string                             `json:"memory_scope"`
 	MaxTokens                  int64                              `json:"max_tokens"`
 	MaxOutputTokens            int                                `json:"max_output_tokens"`
@@ -141,9 +141,9 @@ func (s *Server) seedTeamMemberConfigDraft(c echo.Context) (*teamMemberConfigDra
 			serverIDs = append(serverIDs, server.ServerID)
 		}
 	}
-	memoryEnabled, memoryScope := false, ""
+	memoryScope := ""
 	if record.MemoryConfig != nil {
-		memoryEnabled, memoryScope = record.MemoryConfig.Enabled, record.MemoryConfig.Scope
+		memoryScope = record.MemoryConfig.Scope
 	}
 	var outputSchema json.RawMessage
 	if record.OutputSchema != nil {
@@ -159,7 +159,7 @@ func (s *Server) seedTeamMemberConfigDraft(c echo.Context) (*teamMemberConfigDra
 		BusinessCapabilityIDs:      append([]string(nil), record.BusinessCapabilityIDs...),
 		BusinessCapabilityBindings: append([]frozen.BusinessCapabilityBinding(nil), record.BusinessCapabilityBindings...),
 		PermissionAllow:            record.Permissions.Allow, PermissionAsk: record.Permissions.Ask, PermissionDeny: record.Permissions.Deny,
-		MemoryEnabled: memoryEnabled, MemoryScope: memoryScope, MaxTokens: record.MaxTokens, MaxOutputTokens: record.MaxOutputTokens,
+		MemoryScope: memoryScope, MaxTokens: record.MaxTokens, MaxOutputTokens: record.MaxOutputTokens,
 		StepBudget: record.StepBudget, MaxCostUSD: record.MaxCostUSD, OutputSchema: outputSchema,
 	}
 	if record.RequestProfile != nil {
@@ -409,6 +409,9 @@ func (s *Server) handlePutTeamMemberConfigDraft(c echo.Context) error {
 	if err := c.Bind(&request); err != nil || request.Revision < 0 || strings.TrimSpace(request.Configuration.DisplayName) == "" {
 		return c.JSON(http.StatusBadRequest, map[string]string{"code": "invalid_team_member_config_draft", "error": "invalid team member configuration draft"})
 	}
+	if request.Configuration.MemoryEnabled {
+		return c.JSON(http.StatusUnprocessableEntity, map[string]string{"code": "member_memory_retired", "error": "long-term member memory has been retired"})
+	}
 	capabilityIDs, err := normalizedCapabilityIDs(request.Configuration.BusinessCapabilityIDs)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
@@ -482,7 +485,8 @@ func configureDevelopmentMember(record *registry.AgentRecord, configuration team
 	if record.MemoryConfig == nil {
 		record.MemoryConfig = &registry.MemoryConfig{}
 	}
-	record.MemoryConfig.Enabled, record.MemoryConfig.Scope = configuration.MemoryEnabled, configuration.MemoryScope
+	// Long-term memory was retired: a draft saved before then cannot turn it on.
+	record.MemoryConfig.Enabled, record.MemoryConfig.Scope = false, configuration.MemoryScope
 	record.MaxTokens, record.MaxOutputTokens, record.StepBudget, record.MaxCostUSD = configuration.MaxTokens, configuration.MaxOutputTokens, configuration.StepBudget, configuration.MaxCostUSD
 	// A request profile reaches built-in Loom model calls only; a CLI member's
 	// runtime chooses its own, so a setting there would silently do nothing.

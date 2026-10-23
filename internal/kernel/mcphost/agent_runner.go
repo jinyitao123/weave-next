@@ -17,7 +17,6 @@ import (
 	"github.com/jinyitao123/weave/internal/kernel/execspec"
 	"github.com/jinyitao123/weave/internal/kernel/executionport"
 	"github.com/jinyitao123/weave/internal/kernel/loomruntime"
-	"github.com/jinyitao123/weave/internal/kernel/memory"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 )
 
@@ -41,16 +40,15 @@ type agentRegistry interface {
 
 // AgentRunner runs registered agents through their configured execution path.
 type AgentRunner struct {
-	registry      agentRegistry
-	tenant        string
-	llm           contract.LLM
-	store         loom.Store
-	memoryService *memory.Service
-	attachments   []execspec.Attachment
-	compileAgent  compiler.GraphFactory
-	expectedRuns  loomruntime.ExpectedRunRegistry
-	RemoteExec    executionport.RemoteEngineExecutor
-	Broker        *ToolBroker
+	registry     agentRegistry
+	tenant       string
+	llm          contract.LLM
+	store        loom.Store
+	attachments  []execspec.Attachment
+	compileAgent compiler.GraphFactory
+	expectedRuns loomruntime.ExpectedRunRegistry
+	RemoteExec   executionport.RemoteEngineExecutor
+	Broker       *ToolBroker
 	// SkillVersionReader resolves exact registry_version SkillRefs during
 	// live compilation. Nil keeps legacy behavior (and fails closed for
 	// agents that pin registry_version refs on this runner).
@@ -68,19 +66,18 @@ type AgentRunner struct {
 	RunTimeout time.Duration
 }
 
-// NewAgentRunner creates a runner with the same execution dependencies used by
-// NewAgentToolDispatcher.
+// NewAgentRunner creates a runner for the members a declarative graph's
+// worker steps name.
 func NewAgentRunner(
 	reg agentRegistry,
 	tenant string,
 	llm contract.LLM,
 	store loom.Store,
-	memSvc *memory.Service,
 	attachments []execspec.Attachment,
 ) *AgentRunner {
 	runner := &AgentRunner{
 		registry: reg, tenant: tenant, llm: llm, store: store,
-		memoryService: memSvc, attachments: attachments,
+		attachments:  attachments,
 		compileAgent: compiler.CompileAgent,
 	}
 	if pgStore, ok := store.(*pgstore.PGStore); ok {
@@ -189,10 +186,10 @@ func (r *AgentRunner) runRecord(
 	if len(rec.MCPServers) > 0 && r.Broker == nil {
 		return AgentRunResult{}, fmt.Errorf("agent tool broker is unavailable")
 	}
-	innerRequest := ToolBrokerRequest{WorkspaceID: r.tenant, Agent: rec, LLM: r.llm, Memory: r.memoryService}
+	innerRequest := ToolBrokerRequest{WorkspaceID: r.tenant, Agent: rec, LLM: r.llm}
 	if r.InnerPlatformTools != nil {
 		builders := r.InnerPlatformTools
-		innerRequest.PlatformTools = func(contract.LLM, *memory.Service) []contract.ToolDispatcher {
+		innerRequest.PlatformTools = func(contract.LLM) []contract.ToolDispatcher {
 			return builders(rec)
 		}
 	}
@@ -204,14 +201,6 @@ func (r *AgentRunner) runRecord(
 	compileOpts := compiler.CompileOpts{Store: r.store}
 	if r.SkillVersionReader != nil {
 		compileOpts.SkillVersionReader = r.SkillVersionReader
-	}
-	if cfg := registry.EffectiveMemoryConfig(rec); r.memoryService != nil && cfg.Enabled {
-		compileOpts.MemoryService = r.memoryService
-		if cfg.TopK > 0 {
-			compileOpts.MemoryTopK = cfg.TopK
-		}
-		compileOpts.MemoryScope = cfg.Scope
-		compileOpts.AutoRemember = cfg.AutoRemember
 	}
 	terminalAttribution, terminalAttributionErr := loomruntime.NewTerminalAttribution(
 		loomruntime.TerminalAttributionInput{

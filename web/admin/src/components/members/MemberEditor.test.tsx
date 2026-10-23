@@ -58,7 +58,7 @@ describe('member editor', () => {
     for (const region of ['技能', '引擎与模型', '执行限制', '被流程调用时']) expect(screen.queryByRole('region', { name: region })).toBeNull()
     advanced()
     expect(screen.queryByRole('button', { name: '整理的节点' })).toBeNull()
-    for (const region of ['被流程调用时', '技能', '工具权限', '引擎与模型', '执行限制', '工具循环', '记忆', '允许的交接方式']) expect(screen.getByRole('region', { name: region })).toBeTruthy()
+    for (const region of ['被流程调用时', '技能', '工具权限', '引擎与模型', '执行限制', '工具循环', '允许的交接方式']) expect(screen.getByRole('region', { name: region })).toBeTruthy()
     // The switch stays as it was left when another member is opened.
     pick(/^编码/)
     expect(screen.getByRole('button', { name: '编码的节点' })).toBeTruthy()

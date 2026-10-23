@@ -11,7 +11,7 @@ import (
 )
 
 // How a member runs: its engine, node and model, its execution limits, its
-// memory, its tool permissions and the handoff kinds it accepts. These are the
+// tool permissions and the handoff kinds it accepts. These are the
 // settings the console keeps under a member's advanced panel.
 
 // editRuntime is a node a member on an external engine may be placed on.
@@ -25,7 +25,6 @@ type editRuntime struct {
 
 var (
 	editEngines      = []string{"loom", "claude", "codex", "opencode"}
-	editMemoryScopes = []string{"tenant", "user", "session"}
 	editHandoffKinds = []string{"consult", "dispatch", "handoff"}
 )
 
@@ -225,33 +224,6 @@ func (e *editSession) changeMemberLimits(operation map[string]any) error {
 		return editFail("执行限制修改缺少目标字段")
 	}
 	e.note("修改成员的执行限制：%s", cfg.DisplayName)
-	return nil
-}
-
-func (e *editSession) changeMemberMemory(operation map[string]any) error {
-	target, err := e.settingsTarget(operation, "记忆")
-	if err != nil {
-		return err
-	}
-	cfg := &target.Configuration
-	enabled, isBool := operation["enabled"].(bool)
-	if !isBool {
-		return editFail("enabled 须为 true 或 false")
-	}
-	scope, err := editOptionalText(operation, "scope", "记忆范围", 32)
-	if err != nil {
-		return err
-	}
-	if scope != "" && !editOneOf(scope, editMemoryScopes...) {
-		return editFail("记忆范围须为 tenant（工作区共享）、user（按员工区分）或 session（仅本次会话）")
-	}
-	cfg.MemoryEnabled = enabled
-	if scope != "" {
-		cfg.MemoryScope = scope
-	} else if !editOneOf(cfg.MemoryScope, editMemoryScopes...) {
-		cfg.MemoryScope = "tenant"
-	}
-	e.note("修改成员的记忆：%s", cfg.DisplayName)
 	return nil
 }
 

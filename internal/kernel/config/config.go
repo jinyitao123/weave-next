@@ -51,12 +51,6 @@ type Config struct {
 	OneAPIBase           string   // OPENAI_BASE_URL
 	OneAPIKey            string   // OPENAI_API_KEY
 
-	// Embedder settings (optional — enables memory features).
-	EmbedderURL       string // EMBEDDER_URL, e.g. "https://api.openai.com"
-	EmbedderKey       string // EMBEDDER_API_KEY
-	EmbedderModel     string // EMBEDDER_MODEL, default "text-embedding-3-small"
-	EmbedderDimension int    // EMBEDDER_DIMENSION, default 1536
-
 	// Read-only operational health observation policy.
 	HealthWindowSize         int     // WEAVE_HEALTH_WINDOW_SIZE, default 20
 	HealthMinSamples         int     // WEAVE_HEALTH_MIN_SAMPLES, default 3
@@ -69,7 +63,6 @@ type Config struct {
 
 // Load reads configuration from environment variables.
 func Load() (*Config, error) {
-	dim, _ := strconv.Atoi(envOr("EMBEDDER_DIMENSION", "1536"))
 	healthWindowSize, err := positiveIntEnv("WEAVE_HEALTH_WINDOW_SIZE", 20)
 	if err != nil {
 		return nil, err
@@ -147,10 +140,6 @@ func Load() (*Config, error) {
 		LocalRuntimeServices:     strings.FieldsFunc(os.Getenv("WEAVE_LOCAL_RUNTIME_SHARED_PROVIDERS"), func(r rune) bool { return r == ',' || r == ' ' }),
 		OneAPIBase:               os.Getenv("OPENAI_BASE_URL"),
 		OneAPIKey:                os.Getenv("OPENAI_API_KEY"),
-		EmbedderURL:              os.Getenv("EMBEDDER_URL"),
-		EmbedderKey:              os.Getenv("EMBEDDER_API_KEY"),
-		EmbedderModel:            envOr("EMBEDDER_MODEL", "text-embedding-3-small"),
-		EmbedderDimension:        dim,
 		HealthWindowSize:         healthWindowSize,
 		HealthMinSamples:         healthMinSamples,
 		HealthWarningFailureRate: healthWarningFailureRate,

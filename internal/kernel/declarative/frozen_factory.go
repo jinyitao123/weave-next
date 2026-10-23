@@ -12,9 +12,9 @@ import (
 	"github.com/jinyitao123/loom"
 	"github.com/jinyitao123/loom/contract"
 	"github.com/jinyitao123/loom/stdlib"
+	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/kernel/compiler"
 	"github.com/jinyitao123/weave/internal/kernel/declarative/schema"
-	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/kernel/grounding"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 )
@@ -303,7 +303,7 @@ func compileFrozenDeclarative(
 				opts.LLM,
 				opts.Tools,
 				&record,
-				compiler.CompileOpts{MemoryService: opts.MemoryService},
+				compiler.CompileOpts{},
 			)
 		}
 		graph.AddStep(

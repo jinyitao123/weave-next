@@ -11,7 +11,6 @@ import (
 	"github.com/jinyitao123/loom/stdlib"
 	"github.com/jinyitao123/weave/internal/base/frozen"
 	"github.com/jinyitao123/weave/internal/kernel/grounding"
-	"github.com/jinyitao123/weave/internal/kernel/memory"
 	"github.com/jinyitao123/weave/internal/kernel/otel"
 	"github.com/jinyitao123/weave/internal/kernel/registry"
 )
@@ -344,19 +343,6 @@ func mapStandardFrozenToLegacy(
 			otel.AuditHook(opts.AuditStore, bundle.Agent.WorkspaceID, bundle.Agent.Name),
 		)
 	}
-	if record.MemoryConfig != nil &&
-		record.MemoryConfig.Enabled &&
-		record.MemoryConfig.AutoRemember &&
-		opts.MemoryService != nil {
-		afterHooks = append(afterHooks, memory.AutoRememberHook(
-			opts.LLM,
-			opts.MemoryService,
-			bundle.PrimaryModel.ModelID,
-			bundle.Agent.WorkspaceID,
-			bundle.Agent.Name,
-			record.MemoryConfig.Scope,
-		))
-	}
 	if record.MaxCostUSD > 0 {
 		afterHooks = append(afterHooks, stdlib.CostBudgetHook(record.MaxCostUSD))
 		record.MaxCostUSD = 0
@@ -379,17 +365,6 @@ func mapStandardFrozenToLegacy(
 		if profile.FirstChunkTimeoutMS > 0 || profile.IdleTimeoutMS > 0 {
 			compileOpts.WaitBudget = &contract.WaitBudget{FirstChunkMS: profile.FirstChunkTimeoutMS, IdleMS: profile.IdleTimeoutMS}
 		}
-	}
-	if record.MemoryConfig != nil &&
-		record.MemoryConfig.Enabled &&
-		opts.MemoryService != nil {
-		memoryTopK := record.MemoryConfig.TopK
-		if memoryTopK <= 0 {
-			memoryTopK = 5
-		}
-		compileOpts.MemoryService = opts.MemoryService
-		compileOpts.MemoryTopK = memoryTopK
-		compileOpts.MemoryScope = record.MemoryConfig.Scope
 	}
 	return record, compileOpts, nil
 }
@@ -420,13 +395,7 @@ func installStandardFrozenPromptStep(
 	}
 
 	var matcher stdlib.SkillMatcher = &stdlib.KeywordMatcher{}
-	if opts.Embedder != nil {
-		matcher = NewSemanticMatcher(opts.Embedder)
-	}
 	promptTarget := "chat"
-	if opts.MemoryService != nil {
-		promptTarget = "memory_retrieve"
-	}
 	graph.AddStep("prompt_assemble", stdlib.NewPromptAssembleStep(stdlib.PromptConfig{
 		Identity:              identity,
 		Skills:                matchableSkills,

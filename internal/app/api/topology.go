@@ -6,7 +6,6 @@ import (
 	"github.com/jinyitao123/loom"
 	"github.com/jinyitao123/weave/internal/kernel/compiler"
 	"github.com/jinyitao123/weave/internal/kernel/loomruntime"
-	"github.com/jinyitao123/weave/internal/kernel/registry"
 	"github.com/labstack/echo/v4"
 )
 
@@ -25,20 +24,11 @@ func (s *Server) handleTopology(c echo.Context) error {
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
-	memSvc := s.memoryFor(c.Request().Context(), tenant)
 	tools := s.buildAuditedMCPDispatcher(rec, tenant, "")
 	compileOpts := compiler.CompileOpts{
 		Store:                s.Store,
 		SubAgentStepResolver: s.resolveSubAgent,
-		AgentRunner:          s.compilerAgentRunner(tenant, getUserID(c), llm, memSvc, nil),
-	}
-	if cfg := registry.EffectiveMemoryConfig(rec); memSvc != nil && cfg.Enabled {
-		compileOpts.MemoryService = memSvc
-		if cfg.TopK > 0 {
-			compileOpts.MemoryTopK = cfg.TopK
-		}
-		compileOpts.MemoryScope = cfg.Scope
-		compileOpts.AutoRemember = cfg.AutoRemember
+		AgentRunner:          s.compilerAgentRunner(tenant, getUserID(c), llm, nil),
 	}
 
 	prepared, compileErr := loomruntime.Prepare(loomruntime.RunRequest{

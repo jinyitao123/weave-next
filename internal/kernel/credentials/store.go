@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jinyitao123/weave/internal/base/execution"
 	"github.com/jinyitao123/weave/internal/kernel/llmrouter"
@@ -20,14 +19,6 @@ const MaskedKey = "••••••••"
 // ErrDecrypt marks credential rows whose ciphertext cannot be opened with the
 // current WEAVE_SECRET_KEY (rotated/lost key or a corrupt row).
 var ErrDecrypt = errors.New("credential decrypt failed")
-
-// EmbedderConfig is the persisted embedding provider configuration.
-type EmbedderConfig struct {
-	BaseURL   string `json:"url"`
-	APIKey    string `json:"api_key,omitempty"`
-	Model     string `json:"model"`
-	Dimension int    `json:"dimension"`
-}
 
 // Store persists credentials encrypted with a process-provided key.
 type Store struct {
@@ -104,56 +95,6 @@ func (s *Store) Delete(ctx context.Context, workspaceID, id string) error {
 	return err
 }
 
-// GetEmbedder returns the decrypted embedder configuration for one workspace.
-func (s *Store) GetEmbedder(ctx context.Context, workspaceID string) (EmbedderConfig, error) {
-	var cfg EmbedderConfig
-	var ciphertext string
-	err := s.pool.QueryRow(ctx, `
-		SELECT base_url, api_key_cipher, model, dimension
-		FROM weave_embedder_credentials
-		WHERE workspace_id=$1
-	`, workspaceID).Scan(&cfg.BaseURL, &ciphertext, &cfg.Model, &cfg.Dimension)
-	if err != nil {
-		return EmbedderConfig{}, err
-	}
-	plaintext, err := secret.Open(s.key, ciphertext)
-	if err != nil {
-		return EmbedderConfig{}, fmt.Errorf("%w: embedder for workspace %q: %v", ErrDecrypt, workspaceID, err)
-	}
-	cfg.APIKey = string(plaintext)
-	return cfg, nil
-}
-
-// UpsertEmbedder encrypts and persists an embedder configuration for one workspace.
-// A masked or empty API key preserves an existing ciphertext.
-func (s *Store) UpsertEmbedder(ctx context.Context, workspaceID string, cfg EmbedderConfig) error {
-	ciphertext, err := s.embedderCipherForUpdate(ctx, workspaceID, cfg.APIKey)
-	if err != nil {
-		return err
-	}
-	_, err = s.pool.Exec(ctx, `
-		INSERT INTO weave_embedder_credentials (
-			workspace_id, base_url, api_key_cipher, model, dimension
-		)
-		VALUES ($1, $2, $3, $4, $5)
-		ON CONFLICT (workspace_id) DO UPDATE SET
-			base_url=EXCLUDED.base_url,
-			api_key_cipher=EXCLUDED.api_key_cipher,
-			model=EXCLUDED.model,
-			dimension=EXCLUDED.dimension,
-			updated_at=now()
-	`, workspaceID, cfg.BaseURL, ciphertext, cfg.Model, cfg.Dimension)
-	return err
-}
-
-// DeleteEmbedder removes an embedder configuration from one workspace.
-func (s *Store) DeleteEmbedder(ctx context.Context, workspaceID string) error {
-	_, err := s.pool.Exec(ctx, `
-		DELETE FROM weave_embedder_credentials WHERE workspace_id=$1
-	`, workspaceID)
-	return err
-}
-
 type rowScanner interface {
 	Scan(dest ...any) error
 }
@@ -173,22 +114,4 @@ func (s *Store) scanProvider(ctx context.Context, workspaceID string, row rowSca
 	}
 	cfg.APIKey = string(plaintext)
 	return cfg, nil
-}
-
-func (s *Store) embedderCipherForUpdate(ctx context.Context, workspaceID, apiKey string) (string, error) {
-	if apiKey != "" && apiKey != MaskedKey {
-		return secret.Seal(s.key, []byte(apiKey))
-	}
-	var ciphertext string
-	err := s.pool.QueryRow(ctx, `
-		SELECT api_key_cipher FROM weave_embedder_credentials
-		WHERE workspace_id=$1
-	`, workspaceID).Scan(&ciphertext)
-	if err == nil {
-		return ciphertext, nil
-	}
-	if !errors.Is(err, pgx.ErrNoRows) {
-		return "", err
-	}
-	return secret.Seal(s.key, nil)
 }

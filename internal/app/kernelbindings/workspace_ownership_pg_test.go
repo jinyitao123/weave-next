@@ -59,9 +59,6 @@ func TestKernelResourcesNeverCreateProductWorkspaceRealPG(t *testing.T) {
 		{"provider", func(ctx context.Context, ws, user string) error {
 			return provider.Upsert(ctx, ws, llmrouter.ProviderConfig{ID: "model", Name: "Model", BaseURL: "https://models.invalid/v1", APIKey: "fixture-secret", Models: []string{"model"}, CredentialScope: frozen.CredentialScopeUser, CredentialUserID: user})
 		}},
-		{"embedder", func(ctx context.Context, ws, user string) error {
-			return provider.UpsertEmbedder(ctx, ws, credentials.EmbedderConfig{BaseURL: "https://models.invalid/v1", APIKey: "fixture-secret", Model: "embedding", Dimension: 8})
-		}},
 		{"mirror", func(ctx context.Context, ws, user string) error {
 			ctx = execution.WithSubject(ctx, execution.Subject{WorkspaceID: ws, ServiceID: "system-provider:fixture"})
 			_, err := provider.MirrorSystemProvider(ctx, ws, user, "fixture", workspaceMirrorSource{})

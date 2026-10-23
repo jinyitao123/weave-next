@@ -43,7 +43,7 @@ func TestDevelopmentOperationCatalogMatchesWhatIsAccepted(t *testing.T) {
 			}
 		}
 	}
-	if len(documented) != 24 {
+	if len(documented) != 23 {
 		t.Fatalf("documented kinds = %d", len(documented))
 	}
 	doc := editTestDocument()

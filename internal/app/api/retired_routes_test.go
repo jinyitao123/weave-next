@@ -92,10 +92,18 @@ var chatChainDeletedRoutes = []string{
 	"GET /v1/chat-requests/:id", "POST /v1/resume",
 }
 
+// Long-term member memory and its embedder were deleted on 2026-10-22.
+var memoryDeletedRoutes = []string{
+	"GET /v1/agents/:name/memories", "POST /v1/agents/:name/memories",
+	"DELETE /v1/agents/:name/memories/:id", "POST /v1/agents/:name/memories/search",
+	"GET /v1/agents/:name/memory-slots", "PUT /v1/agents/:name/memory-slots", "GET /v1/agents/:name/memory-profile",
+	"GET /v1/embedder", "PUT /v1/embedder", "DELETE /v1/embedder",
+}
+
 func TestRetiredRoutesAreNeverRegistered(t *testing.T) {
 	routes := registeredRoutes(t, &config.Config{JWTSecret: "test"})
 	var stillRegistered []string
-	for _, group := range [][]string{retiredRoutes, w10DeletedRoutes, closedDeliveryTargetRoutes, codeRepositoryDeletedRoutes, chatChainDeletedRoutes} {
+	for _, group := range [][]string{retiredRoutes, w10DeletedRoutes, closedDeliveryTargetRoutes, codeRepositoryDeletedRoutes, chatChainDeletedRoutes, memoryDeletedRoutes} {
 		for _, route := range group {
 			if routes[route] {
 				stillRegistered = append(stillRegistered, route)

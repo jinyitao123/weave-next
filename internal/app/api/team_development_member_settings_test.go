@@ -48,7 +48,6 @@ func TestControlledEditsSetHowAMemberRuns(t *testing.T) {
 	}
 	for raw, want := range map[string]string{
 		`[{"kind":"member_limits","member":"整理员","maxCostUsd":1}]`:                             "外部引擎",
-		`[{"kind":"member_memory","member":"整理员","enabled":true}]`:                             "外部引擎",
 		`[{"kind":"member","member":"整理员","model":"deepseek-flash"}]`:                          "member_engine",
 		`[{"kind":"member_engine","member":"整理员","engine":"codex","node":"研发二号机"}]`:            "不提供 codex",
 		`[{"kind":"member_engine","member":"整理员","engine":"opencode","node":"研发一号机"}]`:         "还没有提供 opencode",
@@ -71,11 +70,10 @@ func TestControlledEditsSetHowAMemberRuns(t *testing.T) {
 		t.Fatalf("built-in member = %+v", worker)
 	}
 
-	// Limits, the tool loop, memory, tool permissions and handoff kinds.
+	// Limits, the tool loop, tool permissions and handoff kinds.
 	worker.MCPServerIDs, worker.PermissionAllow, worker.PermissionDeny = []string{"srv"}, []string{"read"}, []string{"shell"}
 	if err := apply(&doc, `[
 		{"kind":"member_limits","member":"整理员","maxTokens":200000,"maxCostUsd":1.5,"stepBudget":40,"toolLoop":{"sliceRounds":20,"totalRounds":60}},
-		{"kind":"member_memory","member":"整理员","enabled":true,"scope":"user"},
 		{"kind":"member_tools","member":"整理员","denyAll":true,"clearExternal":true},
 		{"kind":"member_handoff","member":"整理员","allowed":["consult","dispatch"],"default":"dispatch"}
 	]`); err != nil {
@@ -84,8 +82,8 @@ func TestControlledEditsSetHowAMemberRuns(t *testing.T) {
 	if worker.MaxTokens != 200000 || worker.MaxCostUSD != 1.5 || worker.StepBudget != 40 || worker.ToolLoopControl == nil || worker.ToolLoopControl.SliceRounds != 20 || worker.ToolLoopControl.InitialTotalRounds != 60 {
 		t.Fatalf("limits = %+v %+v", worker, worker.ToolLoopControl)
 	}
-	if !worker.MemoryEnabled || worker.MemoryScope != "user" || len(worker.MCPServerIDs) != 0 || len(worker.PermissionAllow) != 0 || strings.Join(worker.PermissionDeny, ",") != "shell,*" {
-		t.Fatalf("memory and tools = %+v", worker)
+	if len(worker.MCPServerIDs) != 0 || len(worker.PermissionAllow) != 0 || strings.Join(worker.PermissionDeny, ",") != "shell,*" {
+		t.Fatalf("tools = %+v", worker)
 	}
 	if relation := doc.Members[1].Relationship; strings.Join(relation.AllowedKinds, ",") != "consult,dispatch" || relation.DefaultKind != "dispatch" {
 		t.Fatalf("handoff = %+v", relation)
@@ -102,8 +100,7 @@ func TestControlledEditsSetHowAMemberRuns(t *testing.T) {
 		`[{"kind":"member_limits","member":"整理员","maxTokens":-1}]`:                                  "0 表示不限制",
 		`[{"kind":"member_limits","member":"整理员","maxTokens":"many"}]`:                              "须是数字",
 		`[{"kind":"member_limits","member":"整理员","toolLoop":{"sliceRounds":2000,"totalRounds":5}}]`: "sliceRounds",
-		`[{"kind":"member_memory","member":"整理员"}]`:                                                 "enabled",
-		`[{"kind":"member_memory","member":"整理员","enabled":true,"scope":"planet"}]`:                 "记忆范围须为",
+		`[{"kind":"member_memory","member":"整理员","enabled":true}]`:                                  "不支持“member_memory”",
 		`[{"kind":"member_tools","member":"整理员"}]`:                                                  "缺少目标字段",
 		`[{"kind":"member_tools","member":"整理员","clearExternal":false}]`:                            "只能为 true",
 		`[{"kind":"member_handoff","member":"负责人","allowed":["consult"]}]`:                          "负责人不设置",

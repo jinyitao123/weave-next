@@ -37,8 +37,6 @@ export interface MemberConfiguration {
   permission_ask?: string[] | null
   mcp_server_ids?: string[] | null
   skill_names?: string[] | null
-  memory_enabled?: boolean
-  memory_scope?: string
   max_tokens?: number
   max_output_tokens?: number
   reasoning_effort?: string

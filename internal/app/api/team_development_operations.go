@@ -164,8 +164,6 @@ func (e *editSession) apply(operation map[string]any) error {
 		return e.changeMemberEngine(operation)
 	case "member_limits":
 		return e.changeMemberLimits(operation)
-	case "member_memory":
-		return e.changeMemberMemory(operation)
 	case "member_tools":
 		return e.changeMemberTools(operation)
 	case "member_handoff":
