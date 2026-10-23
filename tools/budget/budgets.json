@@ -1751,6 +1751,22 @@
         "lines_added": 553,
         "production_lines_added": 203
       }
+    },
+    {
+      "date": "2026-10-22",
+      "reason": "Read a runtime credential's authorization in two statements instead of six (#93)",
+      "record": "docs/治理/2026-10-22-成员运行时按需构建.md",
+      "growth": {
+        "lines": 24,
+        "production_lines": 24
+      },
+      "deletion_trigger": "Delete scannedTaskAuthorizationIdentity and taskAuthorizationColumns if runtime authorization is reused per attempt and no longer reads task identities per resolution.",
+      "app": {
+        "previous_lines": 82227,
+        "previous_production_lines": 52467,
+        "lines_added": 24,
+        "production_lines_added": 24
+      }
     }
   ],
   "migration_targets": {
@@ -1814,8 +1830,8 @@
     "allowed_dependencies": []
   },
   "app": {
-    "lines": 82227,
-    "production_lines": 52467,
+    "lines": 82251,
+    "production_lines": 52491,
     "packages": 21,
     "external_dependencies": 6,
     "allowed_dependencies": [

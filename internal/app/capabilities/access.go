@@ -372,16 +372,14 @@ type capabilityGrantQuerier interface {
 	QueryRow(context.Context, string, ...any) pgx.Row
 }
 
+// authorizeApplicationGrant requires the enabled application and its enabled
+// grant for the exact revision, and share-locks both for the transaction.
 func authorizeApplicationGrant(ctx context.Context, tx capabilityGrantQuerier, i grantIdentity) error {
-	var app string
-	if err := tx.QueryRow(ctx, `SELECT id FROM weave_capability_apps WHERE workspace_id=$1 AND id=$2 AND enabled FOR SHARE`, i.WorkspaceID, i.ApplicationID).Scan(&app); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return ErrAccessDenied
-		}
-		return err
-	}
 	var granted bool
-	err := tx.QueryRow(ctx, `SELECT enabled FROM weave_capability_grants WHERE workspace_id=$1 AND app_id=$2 AND capability_id=$3 AND revision=$4 AND enabled FOR SHARE`,
+	err := tx.QueryRow(ctx, `SELECT g.enabled FROM weave_capability_apps a
+	 JOIN weave_capability_grants g ON g.workspace_id=a.workspace_id AND g.app_id=a.id
+	 WHERE a.workspace_id=$1 AND a.id=$2 AND a.enabled AND g.capability_id=$3 AND g.revision=$4 AND g.enabled
+	 FOR SHARE OF a,g`,
 		i.WorkspaceID, i.ApplicationID, i.CapabilityID, i.Revision).Scan(&granted)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

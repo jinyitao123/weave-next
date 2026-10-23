@@ -1206,24 +1206,34 @@ type workflowTaskAuthorizationIdentity struct {
 	Subject         execution.Subject
 }
 
-func readWorkflowTaskAuthorizationIdentity(
-	ctx context.Context,
-	queries kernelcredentials.ReferenceAuthorizationQueries,
-	workspaceID, taskID string,
-) (workflowTaskAuthorizationIdentity, error) {
-	var identity workflowTaskAuthorizationIdentity
-	var kind string
-	var actorSubject []byte
-	err := queries.QueryRow(ctx, `SELECT id,workspace_id,COALESCE(run_snapshot_id,''),COALESCE(workflow_id,''),
-	 COALESCE(workflow_version,0),kind,identity_schema_version,identity_kind,actor_subject
-	 FROM weave_task_queue WHERE workspace_id=$1 AND id=$2`, workspaceID, taskID).Scan(
-		&identity.ID, &identity.WorkspaceID, &identity.RunSnapshotID, &identity.WorkflowID,
-		&identity.WorkflowVersion, &identity.Kind, &identity.IdentitySchema, &kind, &actorSubject)
-	if err != nil {
-		return workflowTaskAuthorizationIdentity{}, err
+// taskAuthorizationColumns selects the identity of the task joined as alias,
+// led by whether the task exists.
+func taskAuthorizationColumns(alias string) string {
+	return alias + `.id IS NOT NULL,COALESCE(` + alias + `.id,''),COALESCE(` + alias + `.workspace_id,''),
+	 COALESCE(` + alias + `.run_snapshot_id,''),COALESCE(` + alias + `.workflow_id,''),COALESCE(` + alias + `.workflow_version,0),
+	 COALESCE(` + alias + `.kind,''),COALESCE(` + alias + `.identity_schema_version,0),COALESCE(` + alias + `.identity_kind,''),` + alias + `.actor_subject`
+}
+
+type scannedTaskAuthorizationIdentity struct {
+	present      bool
+	identity     workflowTaskAuthorizationIdentity
+	kind         string
+	actorSubject []byte
+}
+
+func (s *scannedTaskAuthorizationIdentity) targets() []any {
+	return []any{&s.present, &s.identity.ID, &s.identity.WorkspaceID, &s.identity.RunSnapshotID, &s.identity.WorkflowID,
+		&s.identity.WorkflowVersion, &s.identity.Kind, &s.identity.IdentitySchema, &s.kind, &s.actorSubject}
+}
+
+// result is the task's identity, or an error when the task does not exist.
+func (s *scannedTaskAuthorizationIdentity) result() (workflowTaskAuthorizationIdentity, error) {
+	if !s.present {
+		return workflowTaskAuthorizationIdentity{}, pgx.ErrNoRows
 	}
-	identity.IdentityKind = taskqueue.IdentityKind(kind)
-	if err := json.Unmarshal(actorSubject, &identity.Subject); err != nil {
+	identity := s.identity
+	identity.IdentityKind = taskqueue.IdentityKind(s.kind)
+	if err := json.Unmarshal(s.actorSubject, &identity.Subject); err != nil {
 		return workflowTaskAuthorizationIdentity{}, err
 	}
 	return identity, nil
@@ -1250,18 +1260,37 @@ func (s *WorkflowInvocationService) authorizeRuntimeCredentialWithQueries(
 	if queries == nil {
 		return frozen.ErrCredentialSubjectDenied
 	}
-	record, err := scanWorkflowInvocation(queries.QueryRow(ctx, `SELECT workspace_id,application_id,request_id,invocation_id,credential_id,
-	 capability_id,revision,definition_hash,workflow_id,workflow_version,input,input_hash,COALESCE(lane,''),
-	 admission_request_id,run_id,task_id,created_at,scheduling
-	 FROM weave_capability_workflow_invocations WHERE workspace_id=$1 AND application_id=$2 AND run_id=$3 FOR SHARE`,
-		run.WorkspaceID, applicationID, run.RunID))
+	// One read takes the invocation, share-locked, with the current and
+	// source task identities and the frozen definition it is checked against.
+	var record workflowInvocationRecord
+	var scheduling, definitionRaw []byte
+	var current, source scannedTaskAuthorizationIdentity
+	targets := []any{&record.WorkspaceID, &record.ApplicationID, &record.RequestID, &record.InvocationID,
+		&record.CredentialID, &record.CapabilityID, &record.Revision, &record.DefinitionHash,
+		&record.WorkflowID, &record.WorkflowVersion, &record.Input, &record.InputHash,
+		&record.Lane, &record.AdmissionRequestID, &record.RunID, &record.TaskID, &record.CreatedAt, &scheduling}
+	targets = append(append(append(targets, current.targets()...), source.targets()...), &definitionRaw)
+	err := queries.QueryRow(ctx, `SELECT i.workspace_id,i.application_id,i.request_id,i.invocation_id,i.credential_id,
+	 i.capability_id,i.revision,i.definition_hash,i.workflow_id,i.workflow_version,i.input,i.input_hash,COALESCE(i.lane,''),
+	 i.admission_request_id,i.run_id,i.task_id,i.created_at,i.scheduling,
+	 `+taskAuthorizationColumns("qc")+`,`+taskAuthorizationColumns("qs")+`,rev.definition
+	 FROM weave_capability_workflow_invocations i
+	 LEFT JOIN weave_task_queue qc ON qc.workspace_id=$4 AND qc.id=$5
+	 LEFT JOIN weave_task_queue qs ON qs.workspace_id=i.workspace_id AND qs.id=$6
+	 LEFT JOIN weave_capability_revisions rev ON rev.workspace_id=i.workspace_id AND rev.capability_id=i.capability_id
+	   AND rev.revision=i.revision AND rev.definition_hash=i.definition_hash
+	 WHERE i.workspace_id=$1 AND i.application_id=$2 AND i.run_id=$3 FOR SHARE OF i`,
+		run.WorkspaceID, applicationID, run.RunID, task.WorkspaceID, task.ID, run.SourceTaskID).Scan(targets...)
+	if err == nil && len(scheduling) > 0 {
+		err = json.Unmarshal(scheduling, &record.Scheduling)
+	}
 	if err != nil {
 		return frozen.ErrCredentialSubjectDenied
 	}
 	if record.TaskID != run.SourceTaskID || record.WorkflowID != run.WorkflowID || record.WorkflowVersion != run.WorkflowVersion {
 		return frozen.ErrCredentialSubjectDenied
 	}
-	currentTask, err := readWorkflowTaskAuthorizationIdentity(ctx, queries, task.WorkspaceID, task.ID)
+	currentTask, err := current.result()
 	if err != nil || currentTask.ID != task.ID || currentTask.WorkspaceID != run.WorkspaceID ||
 		currentTask.RunSnapshotID != run.RunSnapshotID || currentTask.WorkflowID != run.WorkflowID ||
 		currentTask.WorkflowVersion != run.WorkflowVersion || currentTask.Kind != task.Kind ||
@@ -1269,7 +1298,7 @@ func (s *WorkflowInvocationService) authorizeRuntimeCredentialWithQueries(
 		currentTask.Subject != subject || task.Subject != subject {
 		return frozen.ErrCredentialSubjectDenied
 	}
-	sourceTask, err := readWorkflowTaskAuthorizationIdentity(ctx, queries, run.WorkspaceID, run.SourceTaskID)
+	sourceTask, err := source.result()
 	if err != nil || sourceTask.ID != record.TaskID || sourceTask.WorkspaceID != run.WorkspaceID ||
 		sourceTask.RunSnapshotID != run.RunSnapshotID || sourceTask.WorkflowID != run.WorkflowID ||
 		sourceTask.WorkflowVersion != run.WorkflowVersion || sourceTask.Kind != "team_workflow" ||
@@ -1281,10 +1310,7 @@ func (s *WorkflowInvocationService) authorizeRuntimeCredentialWithQueries(
 		ApplicationID: record.ApplicationID, CapabilityID: record.CapabilityID, Revision: record.Revision}); err != nil {
 		return ErrAccessDenied
 	}
-	var definitionRaw []byte
-	if err := queries.QueryRow(ctx, `SELECT definition FROM weave_capability_revisions
-	 WHERE workspace_id=$1 AND capability_id=$2 AND revision=$3 AND definition_hash=$4`,
-		record.WorkspaceID, record.CapabilityID, record.Revision, record.DefinitionHash).Scan(&definitionRaw); err != nil {
+	if definitionRaw == nil {
 		return ErrAccessDenied
 	}
 	var definition capability.Definition
