@@ -82,6 +82,16 @@ func TestBranchStepOutputsCommitWithTheStep(t *testing.T) {
 	if len(recorder.recorded) != 1 || recorder.recorded[0].NodeID != "draft" {
 		t.Fatalf("recorded outputs = %+v", recorder.recorded)
 	}
+	// A replay loses to the already committed step and must not append its
+	// different output or depend on the output store being available.
+	recorder.fail = errors.New("deliverable store unavailable")
+	replayed := []deliverable.WorkflowOutput{{WorkspaceID: "ws", RunID: "run", RunSnapshotID: "run", NodeID: "draft", Output: "另一份初稿"}}
+	if err := runtime.recordFanoutLegStep(ctx, "ws", leg, "draft", 0, json.RawMessage(`"另一份初稿"`), nil, usage, replayed); err != nil {
+		t.Fatalf("replaying a committed step wrote its outputs again: %v", err)
+	}
+	if len(recorder.recorded) != 1 || recorder.recorded[0].Output != "初稿" {
+		t.Fatalf("replay changed the committed outputs: %+v", recorder.recorded)
+	}
 	recorder.fail = errors.New("deliverable store unavailable")
 	failing := []deliverable.WorkflowOutput{{WorkspaceID: "ws", RunID: "run", RunSnapshotID: "run", NodeID: "check", Output: "核对"}}
 	err := runtime.recordFanoutLegStep(ctx, "ws", leg, "check", 1, json.RawMessage(`"核对"`), nil, usage, failing)

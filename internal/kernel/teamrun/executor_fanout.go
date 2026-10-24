@@ -549,12 +549,13 @@ func (r *WorkflowSerialRuntime) recordFanoutLegStep(ctx context.Context, workspa
 		return err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	if _, err = tx.Exec(ctx, `INSERT INTO weave_fanout_leg_steps(workspace_id,group_id,leg_id,node_id,step_ordinal,output,artifact_task_ids,usage)
+	tag, err := tx.Exec(ctx, `INSERT INTO weave_fanout_leg_steps(workspace_id,group_id,leg_id,node_id,step_ordinal,output,artifact_task_ids,usage)
 		VALUES($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,$8::jsonb) ON CONFLICT (workspace_id,group_id,leg_id,node_id) DO NOTHING`,
-		workspaceID, leg.GroupID, leg.LegID, nodeID, ordinal, string(output), string(ids), encodedUsage); err != nil {
+		workspaceID, leg.GroupID, leg.LegID, nodeID, ordinal, string(output), string(ids), encodedUsage)
+	if err != nil {
 		return fmt.Errorf("record finished branch step: %w", err)
 	}
-	if len(outputs) > 0 {
+	if tag.RowsAffected() > 0 && len(outputs) > 0 {
 		recorder, ok := r.OutputRecorder.(WorkflowOutputTxRecorder)
 		if !ok {
 			return executionError(ErrorCodeDeliveryUnavailable, errors.New("workflow output recorder cannot join the branch step"))

@@ -171,12 +171,7 @@ func (recorder *developmentTrialWorkflowOutputRecorder) RecordWorkflowOutputsTx(
 	if fallback, ok := recorder.fallback.(teamrun.WorkflowOutputTxRecorder); ok {
 		return fallback.RecordWorkflowOutputsTx(ctx, tx, others)
 	}
-	for _, output := range others {
-		if err := recorder.fallback.RecordWorkflowOutput(ctx, output); err != nil {
-			return err
-		}
-	}
-	return nil
+	return errors.New("fallback workflow output recorder cannot join the transaction")
 }
 
 // developmentTrialQueries is a pool or a transaction.

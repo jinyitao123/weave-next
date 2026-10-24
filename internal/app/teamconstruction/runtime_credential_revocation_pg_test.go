@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -52,7 +53,7 @@ type runtimeCredentialFixture struct {
 
 const runtimeCredentialWorkspace = "runtime-revocation"
 
-func newRuntimeCredentialFixture(t *testing.T) *runtimeCredentialFixture {
+func newRuntimeCredentialFixture(t *testing.T, singleConnection ...bool) *runtimeCredentialFixture {
 	t.Helper()
 	pool := testutil.PostgresPool(t)
 	ws := runtimeCredentialWorkspace
@@ -198,6 +199,17 @@ func newRuntimeCredentialFixture(t *testing.T) *runtimeCredentialFixture {
 	if err := tasks.Enqueue(subjectContext, task); err != nil {
 		t.Fatal(err)
 	}
+	if len(singleConnection) > 0 && singleConnection[0] {
+		config := pool.Config()
+		config.MaxConns, config.MinConns = 1, 0
+		runtimePool, err := pgxpool.NewWithConfig(context.Background(), config)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(runtimePool.Close)
+		pool = runtimePool
+		authority = NewPublicationAuthority(pool, builder)
+	}
 	authorizations := &appcapabilities.RuntimeCredentialAuthorizations{Team: authority}
 	service := appcapabilities.NewWorkflowInvocationService(pool, definitions, unusedWorkflowResolver{}, unusedWorkflowPublisher{}, tasks, nil)
 	service.UseRuntimeAuthorizations(authorizations)
@@ -226,12 +238,29 @@ func newRuntimeCredentialFixture(t *testing.T) *runtimeCredentialFixture {
 	return &runtimeCredentialFixture{pool: pool, access: access, providers: providers, grant: grant, appID: app.ID,
 		credentialID: credential.ID, workerID: worker.ID, ref: ref, authorization: authorizations,
 		call: func() error {
-			material, err := resolver.Resolve(callContext, credentials.ResolveRequest{Reference: ref})
+			ctx, cancel := context.WithTimeout(callContext, 5*time.Second)
+			defer cancel()
+			material, err := resolver.Resolve(ctx, credentials.ResolveRequest{Reference: ref})
 			if err == nil && string(material.Value()) != "fixture-secret" {
 				return errors.New("resolved another secret")
 			}
 			return err
 		}}
+}
+
+func TestRuntimeCredentialFirstCallUsesOnlyTheResolverConnectionRealPG(t *testing.T) {
+	f := newRuntimeCredentialFixture(t, true)
+	if err := f.call(); err != nil {
+		t.Fatalf("first call with a one-connection pool: %v", err)
+	}
+	grant := f.grant
+	grant.Enabled = false
+	if err := f.access.SetGrant(context.Background(), runtimeCredentialWorkspace, "alice", grant); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.call(); err == nil {
+		t.Fatal("the call after the revocation resolved the provider credential")
+	}
 }
 
 type unusedWorkflowResolver struct{}
@@ -276,6 +305,9 @@ func TestRuntimeCredentialRefusesTheNextCallAfterEachRevocationRealPG(t *testing
 		{"team member disabled", func(t *testing.T, f *runtimeCredentialFixture) {
 			f.exec(t, `UPDATE weave_team_workers SET enabled=false WHERE workspace_id=$1 AND worker_agent_id=$2`, ws, f.workerID)
 		}},
+		{"team archived", func(t *testing.T, f *runtimeCredentialFixture) {
+			f.exec(t, `UPDATE weave_teams SET status='archived' WHERE workspace_id=$1 AND id='team'`, ws)
+		}},
 		{"team members changed", func(t *testing.T, f *runtimeCredentialFixture) {
 			// Exact member versions are immutable; what changes is which
 			// members the team has. With another lead the published
@@ -288,6 +320,12 @@ func TestRuntimeCredentialRefusesTheNextCallAfterEachRevocationRealPG(t *testing
 		}},
 		{"provider revoked", func(t *testing.T, f *runtimeCredentialFixture) {
 			f.exec(t, `UPDATE weave_provider_credentials SET revoked_at=now() WHERE workspace_id=$1 AND id='provider'`, ws)
+		}},
+		{"provider disabled", func(t *testing.T, f *runtimeCredentialFixture) {
+			f.exec(t, `UPDATE weave_provider_credentials SET enabled=false WHERE workspace_id=$1 AND id='provider'`, ws)
+		}},
+		{"provider models changed", func(t *testing.T, f *runtimeCredentialFixture) {
+			f.exec(t, `UPDATE weave_provider_credentials SET models=ARRAY['other']::text[] WHERE workspace_id=$1 AND id='provider'`, ws)
 		}},
 		{"provider deleted", func(t *testing.T, f *runtimeCredentialFixture) {
 			if err := f.providers.Delete(execution.WithSubject(context.Background(), execution.Subject{WorkspaceID: ws, ServiceID: "provider:provider"}), ws, "provider"); err != nil {

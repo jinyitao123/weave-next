@@ -26,7 +26,19 @@ func (s *ArtifactStore) GetArtifact(
 	workspaceID, workflowID string,
 	version int,
 ) (*PublishedArtifactContent, error) {
-	artifact, err := scanArtifact(s.pool.QueryRow(ctx, `
+	return getArtifact(ctx, s.pool, workspaceID, workflowID, version)
+}
+
+// GetArtifactTx reads the same immutable publication through the caller's
+// transaction, without acquiring a second connection from the pool.
+func (s *ArtifactStore) GetArtifactTx(ctx context.Context, tx pgx.Tx, workspaceID, workflowID string, version int) (*PublishedArtifactContent, error) {
+	return getArtifact(ctx, tx, workspaceID, workflowID, version)
+}
+
+func getArtifact(ctx context.Context, queries interface {
+	QueryRow(context.Context, string, ...any) pgx.Row
+}, workspaceID, workflowID string, version int) (*PublishedArtifactContent, error) {
+	artifact, err := scanArtifact(queries.QueryRow(ctx, `
 		SELECT `+artifactColumns+`
 		FROM weave_published_artifact_contents
 		WHERE workspace_id=$1 AND workflow_id=$2 AND workflow_version=$3
