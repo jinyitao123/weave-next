@@ -116,30 +116,32 @@ func (s *Service) captureResourceFences(ctx context.Context, envelope frozen.Art
 	return s.captureFenceStates(ctx, subject.WorkspaceID, resources, false)
 }
 func (s *Service) captureFenceStates(ctx context.Context, workspaceID string, resources []admissionfence.Resource, allowBlocked bool) ([]admissionfence.State, error) {
+	// Fences already exist for every resource admitted before, so they are
+	// read in one statement without a transaction; only a missing one takes
+	// the transaction that creates it.
+	found, err := readFenceStates(ctx, s.pool, workspaceID, resources, "")
+	if err != nil {
+		return nil, err
+	}
+	if len(missingFences(resources, found)) == 0 {
+		return fenceStatesOf(resources, found, allowBlocked)
+	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return nil, err
 	}
 	defer tx.Rollback(ctx)
-	// Fences already exist for every resource admitted before, so they are
-	// read in one statement and only the missing ones are created.
-	found, err := readFenceStatesTx(ctx, tx, workspaceID, resources, "")
+	found, err = readFenceStates(ctx, tx, workspaceID, resources, "")
 	if err != nil {
 		return nil, err
 	}
-	var missing []admissionfence.Resource
-	for _, resource := range resources {
-		if _, present := found[resource]; !present {
-			missing = append(missing, resource)
-		}
-	}
-	if len(missing) > 0 {
+	if missing := missingFences(resources, found); len(missing) > 0 {
 		kinds, ids, versions := fenceArrays(missing)
 		if _, err = tx.Exec(ctx, `INSERT INTO weave_resource_admission_fences(workspace_id,resource_kind,resource_id,resource_version)
 			SELECT $1,kind,id,version FROM unnest($2::text[],$3::text[],$4::text[]) AS r(kind,id,version) ON CONFLICT DO NOTHING`, workspaceID, kinds, ids, versions); err != nil {
 			return nil, err
 		}
-		created, err := readFenceStatesTx(ctx, tx, workspaceID, missing, "")
+		created, err := readFenceStates(ctx, tx, workspaceID, missing, "")
 		if err != nil {
 			return nil, err
 		}
@@ -147,6 +149,29 @@ func (s *Service) captureFenceStates(ctx context.Context, workspaceID string, re
 			found[resource] = state
 		}
 	}
+	states, err := fenceStatesOf(resources, found, allowBlocked)
+	if err != nil {
+		return nil, err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	return states, nil
+}
+
+func missingFences(resources []admissionfence.Resource, found map[admissionfence.Resource]admissionfence.State) []admissionfence.Resource {
+	var missing []admissionfence.Resource
+	for _, resource := range resources {
+		if _, present := found[resource]; !present {
+			missing = append(missing, resource)
+		}
+	}
+	return missing
+}
+
+// fenceStatesOf lists the states of resources in their order, refusing a
+// blocked fence unless allowBlocked.
+func fenceStatesOf(resources []admissionfence.Resource, found map[admissionfence.Resource]admissionfence.State, allowBlocked bool) ([]admissionfence.State, error) {
 	states := make([]admissionfence.State, 0, len(resources))
 	for _, resource := range resources {
 		state, present := found[resource]
@@ -158,17 +183,19 @@ func (s *Service) captureFenceStates(ctx context.Context, workspaceID string, re
 		}
 		states = append(states, state)
 	}
-	if err = tx.Commit(ctx); err != nil {
-		return nil, err
-	}
 	return states, nil
 }
 
-// readFenceStatesTx reads the fences of resources in one statement, locking
-// them in key order when lock is set.
-func readFenceStatesTx(ctx context.Context, tx pgx.Tx, workspaceID string, resources []admissionfence.Resource, lock string) (map[admissionfence.Resource]admissionfence.State, error) {
+// fenceQuerier is a pool or a transaction.
+type fenceQuerier interface {
+	Query(context.Context, string, ...any) (pgx.Rows, error)
+}
+
+// readFenceStates reads the fences of resources in one statement, locking
+// them in key order when lock is set (inside a transaction).
+func readFenceStates(ctx context.Context, queries fenceQuerier, workspaceID string, resources []admissionfence.Resource, lock string) (map[admissionfence.Resource]admissionfence.State, error) {
 	kinds, ids, versions := fenceArrays(resources)
-	rows, err := tx.Query(ctx, `SELECT resource_kind,resource_id,resource_version,epoch,blocked FROM weave_resource_admission_fences
+	rows, err := queries.Query(ctx, `SELECT resource_kind,resource_id,resource_version,epoch,blocked FROM weave_resource_admission_fences
 		WHERE workspace_id=$1 AND (resource_kind,resource_id,resource_version) IN (SELECT * FROM unnest($2::text[],$3::text[],$4::text[]))
 		ORDER BY resource_kind,resource_id,resource_version`+lock, workspaceID, kinds, ids, versions)
 	if err != nil {
@@ -219,7 +246,7 @@ func checkFenceStatesTx(ctx context.Context, tx pgx.Tx, workspaceID string, stat
 		resources = append(resources, expected.Resource)
 	}
 	// One statement locks every fence, in key order, instead of one per resource.
-	current, err := readFenceStatesTx(ctx, tx, workspaceID, resources, lock)
+	current, err := readFenceStates(ctx, tx, workspaceID, resources, lock)
 	if err != nil {
 		return err
 	}

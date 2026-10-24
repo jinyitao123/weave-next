@@ -546,13 +546,15 @@ func (c *WorkflowCoordinator) tryDecideGroup(ctx context.Context, workspaceID, g
 	if err != nil {
 		return err
 	}
+	if !decided {
+		// A group not ready yet was only read under its lock: the rollback
+		// releases it without waiting for a WAL flush.
+		return nil
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return workflowError(ErrorStoreUnavailable, "commit group decision: %v", err)
 	}
-	if decided {
-		return c.applyTaskCancellation(ctx, workspaceID, groupID, evaluation.Frozen.Generation, evaluation.Actions)
-	}
-	return nil
+	return c.applyTaskCancellation(ctx, workspaceID, groupID, evaluation.Frozen.Generation, evaluation.Actions)
 }
 
 func (c *WorkflowCoordinator) readResumePlan(ctx context.Context, workspaceID, groupID string) (WorkflowResumePlan, error) {
@@ -560,15 +562,10 @@ func (c *WorkflowCoordinator) readResumePlan(ctx context.Context, workspaceID, g
 	if err != nil {
 		return WorkflowResumePlan{}, workflowError(ErrorStoreUnavailable, "begin resume plan read: %v", err)
 	}
+	// The plan is read under the group's lock and nothing is written, so the
+	// read ends with a rollback, which does not wait for a WAL flush.
 	defer func() { _ = tx.Rollback(ctx) }()
-	plan, err := c.Store.GetWorkflowResumePlanTx(ctx, tx, workspaceID, groupID)
-	if err != nil {
-		return WorkflowResumePlan{}, err
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return WorkflowResumePlan{}, workflowError(ErrorStoreUnavailable, "commit resume plan read: %v", err)
-	}
-	return plan, nil
+	return c.Store.GetWorkflowResumePlanTx(ctx, tx, workspaceID, groupID)
 }
 
 func (c *WorkflowCoordinator) claimResume(ctx context.Context, plan WorkflowResumePlan, claimID string, lease CreatorLeaseState) error {

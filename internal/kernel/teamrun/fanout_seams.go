@@ -33,6 +33,8 @@ func (r *FanoutCheckpointReader) GetYieldedCheckpoint(ctx context.Context, works
 	if err != nil {
 		return fanout.YieldedCheckpoint{}, fanout.NewWorkflowError(fanout.ErrorStoreUnavailable, "begin checkpoint read: %v", err)
 	}
+	// Read only, under the parent's lock: the rollback releases it without
+	// waiting for a WAL flush.
 	defer func() { _ = tx.Rollback(ctx) }()
 	run, err := r.Runs.GetForUpdateTx(ctx, tx, workspaceID, parentRunID)
 	if errors.Is(err, ErrTeamRunIdentityMismatch) || (err == nil && (run.Status != StatusParked ||
@@ -60,9 +62,6 @@ func (r *FanoutCheckpointReader) GetYieldedCheckpoint(ctx context.Context, works
 	}
 	if err := ValidateCheckpointRun(checkpoint, run); err != nil || checkpoint.NodeID != payload.JoinNodeID {
 		return fanout.YieldedCheckpoint{}, fanout.NewWorkflowError(fanout.ErrorGenerationMismatch, "yielded workflow checkpoint identity differs")
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return fanout.YieldedCheckpoint{}, fanout.NewWorkflowError(fanout.ErrorStoreUnavailable, "commit checkpoint read: %v", err)
 	}
 	return fanout.YieldedCheckpoint{
 		WorkspaceID: workspaceID, ParentRunID: parentRunID, Sequence: sequence, Payload: payload,
@@ -98,6 +97,8 @@ func (r *FanoutCreatorLeaseReader) CreatorLeaseState(ctx context.Context, identi
 	if err != nil {
 		return fanout.CreatorLeaseState{}, fanout.NewWorkflowError(fanout.ErrorStoreUnavailable, "begin creator lease read: %v", err)
 	}
+	// Read only, under the lease's lock: the rollback releases it without
+	// waiting for a WAL flush.
 	defer func() { _ = tx.Rollback(ctx) }()
 	stateStore := loomruntime.NewPGTerminalStateStore()
 	lease, leasePresent, err := stateStore.ReadAttemptLeaseForUpdate(ctx, tx, identity.WorkspaceID, identity.RunID)
@@ -111,14 +112,7 @@ func (r *FanoutCreatorLeaseReader) CreatorLeaseState(ctx context.Context, identi
 	if err != nil {
 		return fanout.CreatorLeaseState{}, fanout.NewWorkflowError(fanout.ErrorStoreUnavailable, "read creator terminal marker: %v", err)
 	}
-	result, err := creatorLeaseStateOf(lease, marker, markerPresent)
-	if err != nil {
-		return fanout.CreatorLeaseState{}, err
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return fanout.CreatorLeaseState{}, fanout.NewWorkflowError(fanout.ErrorStoreUnavailable, "commit creator lease read: %v", err)
-	}
-	return result, nil
+	return creatorLeaseStateOf(lease, marker, markerPresent)
 }
 
 func creatorLeaseStateOf(lease loomruntime.RunAttemptLease, marker loomruntime.TerminalMarkerV1, markerPresent bool) (fanout.CreatorLeaseState, error) {

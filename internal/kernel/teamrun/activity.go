@@ -100,17 +100,28 @@ func (store *PGActivityStore) List(ctx context.Context, workspaceID, runID strin
 	if limit < 1 || limit > 1000 {
 		limit = 250
 	}
-	tx, err := store.Transactions.Begin(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("begin list team run activity: %w", err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-	rows, err := tx.Query(ctx, `SELECT workspace_id,run_id,seq,event_id,kind,
+	query := `SELECT workspace_id,run_id,seq,event_id,kind,
 		COALESCE(node_id,''),COALESCE(member_id,''),COALESCE(member_version,0),detail,occurred_at
 		FROM (SELECT * FROM weave_team_run_activity_events
 			WHERE workspace_id=$1 AND run_id=$2
 			ORDER BY seq DESC LIMIT $3) AS recent
-		ORDER BY seq`, workspaceID, runID, limit)
+		ORDER BY seq`
+	// Every status read of a run lists its activity; one statement needs no
+	// transaction of its own when the store can query directly.
+	var rows pgx.Rows
+	var err error
+	if querier, ok := store.Transactions.(interface {
+		Query(context.Context, string, ...any) (pgx.Rows, error)
+	}); ok {
+		rows, err = querier.Query(ctx, query, workspaceID, runID, limit)
+	} else {
+		tx, beginErr := store.Transactions.Begin(ctx)
+		if beginErr != nil {
+			return nil, fmt.Errorf("begin list team run activity: %w", beginErr)
+		}
+		defer func() { _ = tx.Rollback(ctx) }()
+		rows, err = tx.Query(ctx, query, workspaceID, runID, limit)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("list team run activity: %w", err)
 	}
@@ -127,9 +138,6 @@ func (store *PGActivityStore) List(ctx context.Context, workspaceID, runID strin
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("list team run activity rows: %w", err)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return nil, fmt.Errorf("commit list team run activity: %w", err)
 	}
 	return events, nil
 }
