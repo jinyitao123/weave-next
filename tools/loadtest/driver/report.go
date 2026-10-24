@@ -10,6 +10,7 @@ import (
 // frequent statements of every step.
 func writeDecide(text *strings.Builder, run concurrencyResult) {
 	fmt.Fprintf(text, "\n## Decide, executor concurrency %d\n\n", run.Concurrency)
+	text.WriteString("Completed/s uses the measurement window plus its drain, excluding warm-up. Database counts cover warm-up, the window and drain and divide by every workflow completed in that span. Platform time subtracts model time and estimated executor queueing from server time.\n\n")
 	text.WriteString("| Lanes | Submitted | Completed | Failed | Cancelled | Unsettled | Rejected | Success | All p50 / p95 ms | Completed/s | Running at window end | Backlog at window end | Step |\n|---|---|---|---|---|---|---|---|---|---|---|---|---|\n")
 	for _, d := range run.Decide {
 		backlog := "-"
@@ -63,6 +64,12 @@ func writeDecide(text *strings.Builder, run concurrencyResult) {
 			float64(pool.EmptyAcquires)/n, 100*pool.EmptyShare, 1000*pool.EmptyAcquireWaitS/n)
 	}
 	for _, d := range run.Decide {
+		if d.Pool != nil && d.Pool.Err != "" {
+			fmt.Fprintf(text, "\nPool measurements at %d lanes unavailable: %s. Zero pool values in the table are not measurements.\n", d.Lanes, d.Pool.Err)
+		}
+		if d.WindowSeconds > 0 {
+			fmt.Fprintf(text, "\n%d lanes: %.1fs measurement window + %.1fs drain; %.1fs database probe span.\n", d.Lanes, d.WindowSeconds, d.DrainSeconds, d.Seconds)
+		}
 		if d.Locks != nil && len(d.Locks.Waits) > 0 {
 			fmt.Fprintf(text, "\n### Waits at %d lanes (%d samples every %s, %.1f active backends on average)\n\n| Wait | Object | Samples | Backend seconds |\n|---|---|---|---|\n",
 				d.Lanes, d.Locks.Samples, d.Locks.Every, d.Locks.ActiveMean)

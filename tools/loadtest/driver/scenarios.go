@@ -38,6 +38,11 @@ type latencyResult struct {
 	Completed  int     `json:"completed"`
 	Seconds    float64 `json:"seconds"`
 	Throughput float64 `json:"completed_per_second"`
+	// The decide rate excludes warm-up and includes draining every measured
+	// invocation. Seconds and database rates still cover the full probe span.
+	MeasuredSeconds float64 `json:"measured_seconds,omitempty"`
+	WindowSeconds   float64 `json:"window_seconds,omitempty"`
+	DrainSeconds    float64 `json:"drain_seconds,omitempty"`
 	// TotalP50MS and TotalP95MS cover completed invocations only; AllP50MS
 	// and AllP95MS cover every measured invocation whatever its outcome,
 	// with an invocation that never settled counted as slower than any
@@ -195,9 +200,12 @@ func (e *scenarioEnv) invoke(ctx context.Context, flow, lane string) (measuredIn
 	measurement.probe = probe
 	if err != nil {
 		measurement.ended = time.Now()
-		measurement.outcome = outcomeRejected
-		if ctx.Err() != nil {
-			measurement.outcome = outcomeUnsettled
+		// A lost response or 5xx does not prove admission never happened.
+		// Only an explicit client-error response is a rejection.
+		measurement.outcome = outcomeUnsettled
+		var response *httpError
+		if errors.As(err, &response) && response.Status >= 400 && response.Status < 500 {
+			measurement.outcome = outcomeRejected
 		}
 		return measurement, err
 	}
@@ -499,6 +507,18 @@ func runDecide(ctx context.Context, e *scenarioEnv, lanes int) (*latencyResult, 
 	if err != nil {
 		return result, err
 	}
+	lastEnd := finishAt
+	for _, measurement := range measurements {
+		if measurement.ended.After(lastEnd) {
+			lastEnd = measurement.ended
+		}
+	}
+	result.WindowSeconds = e.o.s1Duration.Seconds()
+	result.DrainSeconds = lastEnd.Sub(finishAt).Seconds()
+	result.MeasuredSeconds = result.WindowSeconds + result.DrainSeconds
+	if result.MeasuredSeconds > 0 {
+		result.Throughput = float64(result.Completed) / result.MeasuredSeconds
+	}
 	result.Step = e.verdict(result)
 	log.Printf("decide %d lanes: %d/%d completed, all p95 %.0f ms, %.2f completed/s, step passed=%v %s", lanes,
 		result.Outcomes.Completed, result.Outcomes.Submitted, result.AllP95MS, result.Throughput, result.Step.Passed, result.Step.Reason)
@@ -516,6 +536,8 @@ func (e *scenarioEnv) verdict(result *latencyResult) *stepVerdict {
 	switch {
 	case result.Outcomes.Submitted == 0:
 		return &stepVerdict{Reason: "no invocation was measured"}
+	case result.Outcomes.Unsettled > 0:
+		return &stepVerdict{Reason: "not every invocation settled; do not start the next step"}
 	case result.SuccessRate < e.o.minSuccess:
 		return &stepVerdict{Reason: fmt.Sprintf("success %.2f%% < %.2f%%", 100*result.SuccessRate, 100*e.o.minSuccess)}
 	case result.AllP95Unbounded:

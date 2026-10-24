@@ -95,12 +95,12 @@ func (p *pgEnv) recreate(ctx context.Context) error {
 		return fmt.Errorf("refusing existing database without a load-test ownership marker: %s", p.testDB)
 	}
 	var others int
-	if err := p.admin.QueryRow(ctx, `SELECT count(*) FROM pg_stat_activity WHERE datname=$1 AND pid<>pg_backend_pid()`, p.testDB).Scan(&others); err != nil {
+	if err := p.admin.QueryRow(ctx, `SELECT count(*) FROM pg_stat_activity WHERE datname=$1 AND backend_type='client backend' AND pid<>pg_backend_pid()`, p.testDB).Scan(&others); err != nil {
 		return err
 	}
 	if others > 0 {
 		var foreign int
-		if err := p.admin.QueryRow(ctx, `SELECT count(*) FROM pg_stat_activity WHERE datname=$1 AND pid<>pg_backend_pid() AND COALESCE(application_name,'') NOT IN ('weave-loadtest','weave-loadtest-driver')`, p.testDB).Scan(&foreign); err != nil {
+		if err := p.admin.QueryRow(ctx, `SELECT count(*) FROM pg_stat_activity WHERE datname=$1 AND backend_type='client backend' AND pid<>pg_backend_pid() AND COALESCE(application_name,'') NOT IN ('weave-loadtest','weave-loadtest-driver')`, p.testDB).Scan(&foreign); err != nil {
 			return err
 		}
 		if foreign > 0 {
@@ -108,7 +108,7 @@ func (p *pgEnv) recreate(ctx context.Context) error {
 		}
 		// Only our own previous Weave/driver sessions can be connected to a
 		// loadtest database; terminate them.
-		if _, err := p.admin.Exec(ctx, `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=$1 AND pid<>pg_backend_pid()`, p.testDB); err != nil {
+		if _, err := p.admin.Exec(ctx, `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=$1 AND backend_type='client backend' AND pid<>pg_backend_pid()`, p.testDB); err != nil {
 			return err
 		}
 		time.Sleep(500 * time.Millisecond)
