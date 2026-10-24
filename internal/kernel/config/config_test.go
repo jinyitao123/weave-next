@@ -3,6 +3,7 @@ package config
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestLoadWorkflowHealthDefaultsAndBounds(t *testing.T) {
@@ -111,4 +112,19 @@ func TestLoadRequiresDeploymentLoginKey(t *testing.T) {
 			t.Fatalf("development default = %+v, %v", cfg, err)
 		}
 	})
+}
+
+func TestParseSlowRunOverrides(t *testing.T) {
+	got, err := ParseSlowRunOverrides(" chat = 2m , report=30m,")
+	if err != nil || len(got) != 2 || got["chat"] != 2*time.Minute || got["report"] != 30*time.Minute {
+		t.Fatalf("overrides = %v, %v", got, err)
+	}
+	if got, err := ParseSlowRunOverrides(""); err != nil || got != nil {
+		t.Fatalf("empty = %v, %v", got, err)
+	}
+	for _, raw := range []string{"chat", "chat=", "=2m", "chat=120", "chat=-1m", "chat=0s", "chat=2m,chat=3m"} {
+		if _, err := ParseSlowRunOverrides(raw); err == nil {
+			t.Errorf("%q was accepted", raw)
+		}
+	}
 }

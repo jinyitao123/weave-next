@@ -17,6 +17,9 @@ type effectiveTimingValue struct {
 	// configurable).
 	Source string `json:"source"`
 	Scope  string `json:"scope"`
+	// Overrides lists, by workflow ID, the seconds that replace Seconds for
+	// single workflows; only the slow-run alert has them.
+	Overrides map[string]float64 `json:"overrides,omitempty"`
 }
 
 func timingSource(env string) string {
@@ -38,8 +41,15 @@ func (s *Server) effectiveTiming() map[string]effectiveTimingValue {
 			Scope: "how long a stopping pooled executor waits for work in flight; 0 does not wait"},
 	}
 	if s.Config != nil {
-		timing["slow_run_alert"] = effectiveTimingValue{Seconds: float64(s.Config.HealthSlowRunSeconds), Source: timingSource("WEAVE_HEALTH_SLOW_RUN_SECONDS"),
-			Scope: "when workflow health counts a run as slow; observation only, it never ends a run"}
+		alert := effectiveTimingValue{Seconds: float64(s.Config.HealthSlowRunSeconds), Source: timingSource("WEAVE_HEALTH_SLOW_RUN_SECONDS"),
+			Scope: "when workflow health counts a run as slow; observation only, it never ends a run; WEAVE_HEALTH_SLOW_RUN_OVERRIDES sets it for single workflows"}
+		if len(s.Config.HealthSlowRunOverrides) > 0 {
+			alert.Overrides = make(map[string]float64, len(s.Config.HealthSlowRunOverrides))
+			for workflowID, threshold := range s.Config.HealthSlowRunOverrides {
+				alert.Overrides[workflowID] = threshold.Seconds()
+			}
+		}
+		timing["slow_run_alert"] = alert
 	}
 	return timing
 }

@@ -24,6 +24,7 @@ func checkEnvironment(t *testing.T) string {
 	t.Setenv("WEAVE_SECRET_KEY_FILE", "")
 	t.Setenv("WEAVE_ORGANIZATION_CONNECTION_FILE", "")
 	t.Setenv("WEAVE_TEAMRUN_DRAIN_TIMEOUT", "")
+	t.Setenv("WEAVE_HEALTH_SLOW_RUN_OVERRIDES", "")
 	return dir
 }
 
@@ -123,5 +124,20 @@ func TestConfigCheckReportsTimingSettings(t *testing.T) {
 	t.Setenv("WEAVE_TEAMRUN_DRAIN_TIMEOUT", "30")
 	if code, output := runCheck(t); code != 1 || !strings.Contains(output, "fail shutdown drain") {
 		t.Fatalf("drain without a unit: code %d\n%s", code, output)
+	}
+}
+
+// Per-workflow slow-run thresholds are listed, and a malformed list fails the
+// check as it would fail the server's start (#107).
+func TestConfigCheckListsSlowRunOverrides(t *testing.T) {
+	checkEnvironment(t)
+	t.Setenv("WEAVE_SECRET_KEY", checkSecretKey)
+	t.Setenv("WEAVE_HEALTH_SLOW_RUN_OVERRIDES", "report=30m,chat=2m")
+	if code, output := runCheck(t); code != 0 || !strings.Contains(output, "ok   slow-run alert overrides: chat 2m0s, report 30m0s") {
+		t.Fatalf("overrides: code %d\n%s", code, output)
+	}
+	t.Setenv("WEAVE_HEALTH_SLOW_RUN_OVERRIDES", "chat=120")
+	if code, output := runCheck(t); code != 1 || !strings.Contains(output, "WEAVE_HEALTH_SLOW_RUN_OVERRIDES must list") {
+		t.Fatalf("malformed overrides: code %d\n%s", code, output)
 	}
 }

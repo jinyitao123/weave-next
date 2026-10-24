@@ -56,3 +56,39 @@ func TestEvaluateIncompleteFactsRemainUnknown(t *testing.T) {
 		t.Fatalf("health = %#v", got.Health)
 	}
 }
+
+// A workflow with its own slow-run threshold is judged by it and the others
+// keep the deployment's; a policy without overrides keeps its config hash, so
+// existing observations stay current (#107).
+func TestEvaluateUsesAWorkflowsOwnSlowRunThreshold(t *testing.T) {
+	now := time.Date(2026, 10, 23, 12, 0, 0, 0, time.UTC)
+	facts := make([]runFact, 3)
+	for i := range facts {
+		facts[i] = runFact{RunID: string(rune('a' + i)), Status: "succeeded", CreatedAt: now.Add(-3 * time.Minute), TerminalAt: now, FactsComplete: true, UsageComplete: true}
+	}
+	policy := DefaultPolicy()
+	policy.SlowRunOverrides = map[string]time.Duration{"chat": 2 * time.Minute}
+	if err := validatePolicy(policy); err != nil {
+		t.Fatal(err)
+	}
+	chat := evaluate(versionKey{WorkspaceID: "w", WorkflowID: "chat", Version: 1, ContentHash: "h"}, facts, policy, now)
+	report := evaluate(versionKey{WorkspaceID: "w", WorkflowID: "report", Version: 1, ContentHash: "h"}, facts, policy, now)
+	if chat.SlowCount != 3 || chat.Conclusion != "warning" || report.SlowCount != 0 || report.Conclusion != "healthy" {
+		t.Fatalf("chat = %+v, report = %+v", chat.Health, report.Health)
+	}
+	plain := evaluate(versionKey{WorkspaceID: "w", WorkflowID: "report", Version: 1, ContentHash: "h"}, facts, DefaultPolicy(), now)
+	empty := DefaultPolicy()
+	empty.SlowRunOverrides = map[string]time.Duration{}
+	if again := evaluate(versionKey{WorkspaceID: "w", WorkflowID: "report", Version: 1, ContentHash: "h"}, facts, empty, now); again.ConfigHash != plain.ConfigHash {
+		t.Fatal("an empty override list changed the config hash")
+	}
+	if report.ConfigHash == plain.ConfigHash {
+		t.Fatal("overrides are not part of the config hash, so changing them would not re-evaluate health")
+	}
+	for _, bad := range []map[string]time.Duration{{"": time.Minute}, {"chat": 0}} {
+		policy.SlowRunOverrides = bad
+		if validatePolicy(policy) == nil {
+			t.Fatalf("override %v accepted", bad)
+		}
+	}
+}

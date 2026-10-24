@@ -24,6 +24,10 @@ type Policy struct {
 	WarningFailureRate float64       `json:"warning_failure_rate"`
 	WarningSlowRate    float64       `json:"warning_slow_rate"`
 	SlowRunThreshold   time.Duration `json:"slow_run_threshold_ns"`
+	// SlowRunOverrides replaces SlowRunThreshold for single workflows by
+	// workflow ID. Omitted while empty, so policies without overrides keep
+	// their config hash and existing observations stay current.
+	SlowRunOverrides map[string]time.Duration `json:"slow_run_overrides_ns,omitempty"`
 }
 
 func DefaultPolicy() Policy {
@@ -95,6 +99,11 @@ type observation struct {
 func validatePolicy(policy Policy) error {
 	if policy.WindowSize <= 0 || policy.MinSamples <= 0 || policy.MinSamples > policy.WindowSize || policy.SlowRunThreshold <= 0 {
 		return errors.New("workflow health policy has invalid window or duration")
+	}
+	for workflowID, threshold := range policy.SlowRunOverrides {
+		if workflowID == "" || threshold <= 0 {
+			return errors.New("workflow health slow-run overrides need a workflow ID and a positive duration")
+		}
 	}
 	for _, rate := range []float64{policy.WarningFailureRate, policy.WarningSlowRate} {
 		if rate <= 0 || rate > 1 || math.IsNaN(rate) || math.IsInf(rate, 0) {
@@ -223,6 +232,7 @@ func evaluate(key versionKey, facts []runFact, policy Policy, cutoff time.Time) 
 		Conclusion: "unknown", WorkflowID: key.WorkflowID, WorkflowVersion: key.Version,
 		ArtifactContentHash: key.ContentHash, ReasonCodes: []string{},
 	}, ConfigHash: configHash, ConfigJSON: configJSON, CutoffAt: cutoff, SelectedRunIDs: []string{}}
+	slowRunThreshold := policy.SlowRunThresholdFor(key.WorkflowID)
 	if len(facts) > 0 {
 		oldest, newest := facts[0].TerminalAt, facts[0].TerminalAt
 		for _, fact := range facts {
@@ -238,7 +248,7 @@ func evaluate(key versionKey, facts []runFact, policy Policy, cutoff time.Time) 
 			} else {
 				result.FailedCount++
 			}
-			if fact.TerminalAt.Sub(fact.CreatedAt) >= policy.SlowRunThreshold {
+			if fact.TerminalAt.Sub(fact.CreatedAt) >= slowRunThreshold {
 				result.SlowCount++
 			}
 			if fact.HumanCompleted {
@@ -368,4 +378,12 @@ func uniqueSorted(values []string) []string {
 	}
 	sort.Strings(values)
 	return values
+}
+
+// SlowRunThresholdFor is how long a run of workflowID takes to count as slow.
+func (policy Policy) SlowRunThresholdFor(workflowID string) time.Duration {
+	if threshold, ok := policy.SlowRunOverrides[workflowID]; ok {
+		return threshold
+	}
+	return policy.SlowRunThreshold
 }

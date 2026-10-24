@@ -12,7 +12,7 @@ describe('time bounds in force', () => {
         member_step_limit: { seconds: 2700, source: 'fixed', scope: '' },
         provider_attempt_default: { seconds: 900, source: 'default', scope: '' },
         shutdown_drain: { seconds: 30, source: 'env', scope: '' },
-        slow_run_alert: { seconds: 600, source: 'default', scope: '' },
+        slow_run_alert: { seconds: 600, source: 'default', scope: '', overrides: { chat: 120 } },
       },
     }), { status: 200 })))
     render(<TimingSection />)
@@ -23,6 +23,8 @@ describe('time bounds in force', () => {
     expect(within(step).getByText('45 分钟')).toBeTruthy()
     expect(within(step).getByText('固定')).toBeTruthy()
     expect(screen.getByText('慢运行告警').closest('tr')!.textContent).toContain('不会结束运行')
+    const chat = screen.getByText('慢运行告警：chat').closest('tr')!
+    expect(within(chat).getByText('2 分钟')).toBeTruthy()
   })
   it('formats durations', () => {
     expect(formatSeconds(0)).toBe('0')

@@ -31,9 +31,11 @@ export function TimingSection() {
     {error ? <InlineError message={error} /> : null}
     {timing ? <table className="table">
       <thead><tr><th>上限</th><th>当前值</th><th>来源</th><th>作用</th></tr></thead>
-      <tbody>{timingRows.filter(([key]) => timing[key]).map(([key, label, scope]) => <tr key={key}>
+      <tbody>{timingRows.filter(([key]) => timing[key]).flatMap(([key, label, scope]) => [<tr key={key}>
         <td>{label}</td><td>{formatSeconds(timing[key].seconds)}</td><td>{sourceLabels[timing[key].source] ?? timing[key].source}</td><td className="muted small">{scope}</td>
-      </tr>)}</tbody>
+      </tr>, ...Object.entries(timing[key].overrides ?? {}).sort(([a], [b]) => a.localeCompare(b)).map(([workflow, seconds]) => <tr key={`${key}:${workflow}`}>
+        <td>{label}：{workflow}</td><td>{formatSeconds(seconds)}</td><td>部署设置</td><td className="muted small">只对这个工作流生效（WEAVE_HEALTH_SLOW_RUN_OVERRIDES）</td>
+      </tr>)])}</tbody>
     </table> : null}
   </div>
 }

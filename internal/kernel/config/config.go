@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Config holds all platform configuration, loaded from environment variables.
@@ -58,6 +59,10 @@ type Config struct {
 	HealthWarningFailureRate float64 // WEAVE_HEALTH_WARNING_FAILURE_RATE, default 0.25
 	HealthWarningSlowRate    float64 // WEAVE_HEALTH_WARNING_SLOW_RATE, default 0.5
 	HealthSlowRunSeconds     int     // WEAVE_HEALTH_SLOW_RUN_SECONDS, default 600
+	// HealthSlowRunOverrides sets the slow-run threshold of single workflows
+	// by workflow ID (WEAVE_HEALTH_SLOW_RUN_OVERRIDES, "flow-a=2m,flow-b=30m");
+	// the others use HealthSlowRunSeconds.
+	HealthSlowRunOverrides map[string]time.Duration
 
 	ToolProtocolProbe *ToolProtocolProbe // operator-only, default nil
 }
@@ -81,6 +86,10 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 	healthSlowRunSeconds, err := positiveIntEnv("WEAVE_HEALTH_SLOW_RUN_SECONDS", 600)
+	if err != nil {
+		return nil, err
+	}
+	healthSlowRunOverrides, err := ParseSlowRunOverrides(os.Getenv("WEAVE_HEALTH_SLOW_RUN_OVERRIDES"))
 	if err != nil {
 		return nil, err
 	}
@@ -146,6 +155,7 @@ func Load() (*Config, error) {
 		HealthWarningFailureRate: healthWarningFailureRate,
 		HealthWarningSlowRate:    healthWarningSlowRate,
 		HealthSlowRunSeconds:     healthSlowRunSeconds,
+		HealthSlowRunOverrides:   healthSlowRunOverrides,
 	}
 
 	if cfg.DatabaseURL == "" {
@@ -220,4 +230,31 @@ func envOr(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+// ParseSlowRunOverrides reads WEAVE_HEALTH_SLOW_RUN_OVERRIDES: comma-separated
+// workflow_id=duration pairs such as "flow-a=2m,flow-b=30m". Empty sets none.
+func ParseSlowRunOverrides(raw string) (map[string]time.Duration, error) {
+	invalid := fmt.Errorf("WEAVE_HEALTH_SLOW_RUN_OVERRIDES must list workflow_id=duration pairs such as flow-a=2m,flow-b=30m, each duration positive and each workflow once")
+	overrides := map[string]time.Duration{}
+	for _, entry := range strings.Split(raw, ",") {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		workflowID, value, ok := strings.Cut(entry, "=")
+		workflowID = strings.TrimSpace(workflowID)
+		duration, err := time.ParseDuration(strings.TrimSpace(value))
+		if !ok || workflowID == "" || err != nil || duration <= 0 {
+			return nil, invalid
+		}
+		if _, repeated := overrides[workflowID]; repeated {
+			return nil, invalid
+		}
+		overrides[workflowID] = duration
+	}
+	if len(overrides) == 0 {
+		return nil, nil
+	}
+	return overrides, nil
 }

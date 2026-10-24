@@ -219,7 +219,8 @@ export function subscribeTask(runId: string, onUpdate: () => void, onBroken: () 
 export interface TaskWait { waiting: boolean; reason?: string; position?: number; node_name?: string; engine?: string }
 export const readQueue = (runId: string) => api<TaskWait>(`/v1/admin/tasks/${encodeURIComponent(runId)}/queue`)
 /** Deployment-wide time bounds in force, each with where it came from (env, default or fixed). */
-export type EffectiveTiming = Record<string, { seconds: number; source: string; scope: string }>
+/** overrides: by workflow ID, the seconds that replace seconds for single workflows (slow-run alert only). */
+export type EffectiveTiming = Record<string, { seconds: number; source: string; scope: string; overrides?: Record<string, number> }>
 export const readMetrics = () => api<{ first_output_median_seconds: number | null; sample: number; timing?: EffectiveTiming }>('/v1/admin/metrics')
 
 export function waitText(wait: TaskWait): string {

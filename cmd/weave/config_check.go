@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -55,6 +56,17 @@ func runConfigCheck(args []string, stdout, stderr io.Writer) int {
 	}
 	if cfg, err := config.Load(); err == nil {
 		report("ok", "slow-run alert", fmt.Sprintf("%ds (WEAVE_HEALTH_SLOW_RUN_SECONDS); observation only, it never ends a run", cfg.HealthSlowRunSeconds))
+		if len(cfg.HealthSlowRunOverrides) > 0 {
+			workflows := make([]string, 0, len(cfg.HealthSlowRunOverrides))
+			for workflowID := range cfg.HealthSlowRunOverrides {
+				workflows = append(workflows, workflowID)
+			}
+			sort.Strings(workflows)
+			for index, workflowID := range workflows {
+				workflows[index] = workflowID + " " + cfg.HealthSlowRunOverrides[workflowID].String()
+			}
+			report("ok", "slow-run alert overrides", strings.Join(workflows, ", ")+" (WEAVE_HEALTH_SLOW_RUN_OVERRIDES)")
+		}
 	}
 	if path := strings.TrimSpace(os.Getenv("WEAVE_ORGANIZATION_CONNECTION_FILE")); path == "" {
 		report("off", "organization connection", "not configured; optional, needed only to download the organization connection from the console")

@@ -190,6 +190,7 @@ func NewServer(cfg *config.Config, store loom.Store, models *llmrouter.Resolver)
 			WindowSize: cfg.HealthWindowSize, MinSamples: cfg.HealthMinSamples,
 			WarningFailureRate: cfg.HealthWarningFailureRate, WarningSlowRate: cfg.HealthWarningSlowRate,
 			SlowRunThreshold: time.Duration(cfg.HealthSlowRunSeconds) * time.Second,
+			SlowRunOverrides: cfg.HealthSlowRunOverrides,
 		})
 		if healthErr != nil {
 			slog.Error("workflow health initialization failed", "error", healthErr)
