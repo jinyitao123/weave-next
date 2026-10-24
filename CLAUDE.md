@@ -1,23 +1,20 @@
-# Weave New-Repository Notes
+# Weave Repository Notes
 
-The old repository is frozen as the reference implementation. This repository is the migrated structure.
+Read [AGENTS.md](AGENTS.md) for the authoritative repository instructions and
+[docs/架构/README.md](docs/架构/README.md) for current architecture entry points.
+This file does not grant additional dependency exceptions.
 
-Use the four-band layout under `internal/`:
+The current layout has three bands: `internal/base`, `internal/kernel`, and
+`internal/app`. Dependencies go downward. Execution and orchestration belong
+to the kernel; the base has no execution behavior or forwarding aliases.
+Before changing execution, revision context, or verification, follow the
+responsibility and validation requirements linked from AGENTS.md.
 
-- `base` must stay independent of kernel, build, and app code.
-- `kernel` may depend on base and kernel only.
-- `build` may depend on base, kernel, and build only.
-- `app` may assemble all bands.
+`weave-next` is the source trunk. The supported business client is GooeyPi
+desktop plus Forge; the browser interface is the operator/developer admin
+console in `web/admin`. Keep retired product paths retired.
 
-Known migration baselines are documented and enforced by `scripts/depguard.sh`:
-
-- `base/teamrun` may import `kernel/workflow`, `kernel/workflow/machine`, and `kernel/loomruntime`.
-
-Validation commands:
-
-```bash
-go build ./...
-go vet ./...
-go test ./internal/... ./cmd/...
-make depguard
-```
+Run `make test depguard base-depguard productguard`. Console changes also run
+`make admin-check admin-build`; platform validation uses
+`docker-compose.platform.yml`. Report engineering checks and normal-path
+product acceptance separately.
