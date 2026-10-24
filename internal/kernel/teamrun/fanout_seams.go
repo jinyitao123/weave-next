@@ -14,8 +14,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jinyitao123/weave/internal/kernel/fanout"
-	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 	"github.com/jinyitao123/weave/internal/kernel/loomruntime"
+	"github.com/jinyitao123/weave/internal/kernel/taskqueue"
 )
 
 type FanoutCheckpointReader struct {
@@ -111,22 +111,34 @@ func (r *FanoutCreatorLeaseReader) CreatorLeaseState(ctx context.Context, identi
 	if err != nil {
 		return fanout.CreatorLeaseState{}, fanout.NewWorkflowError(fanout.ErrorStoreUnavailable, "read creator terminal marker: %v", err)
 	}
+	result, err := creatorLeaseStateOf(lease, marker, markerPresent)
+	if err != nil {
+		return fanout.CreatorLeaseState{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fanout.CreatorLeaseState{}, fanout.NewWorkflowError(fanout.ErrorStoreUnavailable, "commit creator lease read: %v", err)
+	}
+	return result, nil
+}
+
+func creatorLeaseStateOf(lease loomruntime.RunAttemptLease, marker loomruntime.TerminalMarkerV1, markerPresent bool) (fanout.CreatorLeaseState, error) {
 	result := fanout.CreatorLeaseState{
 		WorkspaceID: lease.WorkspaceID, RunID: lease.RunID, AttemptGeneration: lease.AttemptGeneration,
 		AttemptID: lease.AttemptID.String(), State: string(lease.State), LeaseExpiresAt: lease.LeaseExpiresAt,
 		MarkerPhase: "absent",
 	}
-	if markerPresent {
-		if marker.AttemptGeneration != lease.AttemptGeneration || marker.AttemptID != lease.AttemptID {
-			return fanout.CreatorLeaseState{}, fanout.NewWorkflowError(fanout.ErrorResumeConflict, "creator terminal marker attempt differs")
-		}
-		result.MarkerPhase = string(marker.Phase)
-		result.MarkerGeneration = marker.AttemptGeneration
-		result.MarkerAttemptID = marker.AttemptID.String()
+	// Advancing the lease to a resumed attempt leaves the parked attempt's
+	// yielded marker in place until the resumed attempt writes its own, so a
+	// marker from an earlier generation means this attempt has none yet.
+	if !markerPresent || marker.AttemptGeneration < lease.AttemptGeneration {
+		return result, nil
 	}
-	if err := tx.Commit(ctx); err != nil {
-		return fanout.CreatorLeaseState{}, fanout.NewWorkflowError(fanout.ErrorStoreUnavailable, "commit creator lease read: %v", err)
+	if marker.AttemptGeneration != lease.AttemptGeneration || marker.AttemptID != lease.AttemptID {
+		return fanout.CreatorLeaseState{}, fanout.NewWorkflowError(fanout.ErrorResumeConflict, "creator terminal marker attempt differs")
 	}
+	result.MarkerPhase = string(marker.Phase)
+	result.MarkerGeneration = marker.AttemptGeneration
+	result.MarkerAttemptID = marker.AttemptID.String()
 	return result, nil
 }
 
@@ -418,13 +430,27 @@ func (r *FanoutParentRunResumer) advanceGraph(ctx context.Context, req fanout.Re
 	if err := tx.Commit(ctx); err != nil {
 		return fanout.ResumeResult{}, err
 	}
+	// Resuming leaves resume_generation unchanged, so it is still the
+	// sequence of the checkpoint the parent parked at.
+	return fanoutResumeAdvanceResult(fanout.AdvancedResumeRequest{
+		WorkspaceID: req.WorkspaceID, ParentRunID: req.ParentRunID, GroupCompletionID: req.GroupCompletionID,
+		ClaimID: req.ClaimID, PreviousAttemptGeneration: req.ExpectedAttemptGeneration,
+		NewAttemptGeneration: req.NewAttemptGeneration, NewAttemptID: req.NewAttemptID,
+		CheckpointSequence: int64(run.ResumeGeneration),
+	}, taskID, createdAt, existed)
+}
+
+// fanoutResumeAdvanceResult is the receipt of a graph advance. Every field
+// comes from the claim and its durable resume task, so a later reader of the
+// same advance rebuilds the same bytes.
+func fanoutResumeAdvanceResult(req fanout.AdvancedResumeRequest, taskID string, createdAt time.Time, existed bool) (fanout.ResumeResult, error) {
 	receiptID := "fre1_" + hex.EncodeToString(fanoutSHA256(req.WorkspaceID, req.ParentRunID, req.ClaimID))
 	receipt, err := json.Marshal(fanoutResumeReceiptV1{
 		WorkspaceID: req.WorkspaceID, ParentRunID: req.ParentRunID,
 		GroupCompletionID: req.GroupCompletionID, ClaimID: req.ClaimID,
-		PreviousAttemptGeneration: req.ExpectedAttemptGeneration,
+		PreviousAttemptGeneration: req.PreviousAttemptGeneration,
 		NewAttemptGeneration:      req.NewAttemptGeneration, NewAttemptID: req.NewAttemptID,
-		ResumedCheckpointSequence: int64(run.ResumeGeneration), GraphAdvanceEvidenceID: taskID,
+		ResumedCheckpointSequence: req.CheckpointSequence, GraphAdvanceEvidenceID: taskID,
 		AdvancedAt: createdAt.UTC(),
 	})
 	if err != nil {
@@ -439,6 +465,38 @@ func (r *FanoutParentRunResumer) advanceGraph(ctx context.Context, req fanout.Re
 		AttemptGeneration: req.NewAttemptGeneration, AttemptID: req.NewAttemptID,
 		ResumeReceipt: receipt,
 	}, nil
+}
+
+// AdvancedResume reports the graph advance an earlier resume of this claim
+// already committed: the advance enqueued its resume task in the same
+// transaction as the joined checkpoint, so the task's existence is the
+// evidence. It reads only the task and does not touch the parent run, which
+// may have moved on past the join.
+func (r *FanoutParentRunResumer) AdvancedResume(ctx context.Context, req fanout.AdvancedResumeRequest) (fanout.ResumeResult, bool, error) {
+	if err := r.validate(); err != nil {
+		return fanout.ResumeResult{}, false, err
+	}
+	taskID, err := fanout.DeriveResumeTaskID(req.WorkspaceID, req.ParentRunID, req.ClaimID)
+	if err != nil {
+		return fanout.ResumeResult{}, false, err
+	}
+	tx, err := r.Transactions.Begin(ctx)
+	if err != nil {
+		return fanout.ResumeResult{}, false, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	var createdAt time.Time
+	err = tx.QueryRow(ctx, `SELECT created_at FROM weave_task_queue
+		WHERE workspace_id=$1 AND id=$2 AND identity_kind='team_workflow' AND source='fanout_resume' AND kind='team_workflow'`,
+		req.WorkspaceID, taskID).Scan(&createdAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return fanout.ResumeResult{}, false, nil
+	}
+	if err != nil {
+		return fanout.ResumeResult{}, false, err
+	}
+	result, err := fanoutResumeAdvanceResult(req, taskID, createdAt, true)
+	return result, err == nil, err
 }
 
 // joinProjectionWithLegs augments the fanout runtime projection with the
@@ -656,4 +714,7 @@ func (a FanoutCoordinatorAdapter) RecordLegCompletion(ctx context.Context, compl
 var _ fanout.CheckpointReader = (*FanoutCheckpointReader)(nil)
 var _ fanout.CreatorLeaseReader = (*FanoutCreatorLeaseReader)(nil)
 var _ fanout.ParentRunResumer = (*FanoutParentRunResumer)(nil)
+var _ interface {
+	AdvancedResume(context.Context, fanout.AdvancedResumeRequest) (fanout.ResumeResult, bool, error)
+} = (*FanoutParentRunResumer)(nil)
 var _ ExecutorFanout = FanoutCoordinatorAdapter{}

@@ -30,6 +30,12 @@ type ParentRunResumer interface {
 	ResumeParkedRun(context.Context, ResumeParkedRunRequest) (ResumeResult, error)
 }
 
+// advancedResumeReader reports the advance an earlier resume of the same
+// claim already made, rebuilt exactly, without touching the parent again.
+type advancedResumeReader interface {
+	AdvancedResume(context.Context, AdvancedResumeRequest) (ResumeResult, bool, error)
+}
+
 type resumeAttemptPlanner interface {
 	PlanResumeAttempt(context.Context, string, string, int64) (string, error)
 }
@@ -356,6 +362,9 @@ func (c *WorkflowCoordinator) ReconcileGroup(ctx context.Context, workspaceID, g
 	)
 	if err != nil {
 		if errors.Is(err, ErrYieldedCheckpointUnavailable) {
+			if handled, finishErr := c.finishAdmittedResume(ctx, plan); handled || finishErr != nil {
+				return finishErr
+			}
 			closed, closeErr := c.closeWorkflowResumeGroupIfCreatorUnavailable(
 				ctx, plan, "yielded_checkpoint_unavailable_after_resume_decision",
 			)
@@ -398,6 +407,42 @@ func (c *WorkflowCoordinator) ReconcileGroup(ctx context.Context, workspaceID, g
 		return workflowError(ErrorResumeConflict, "parent resume claim conflicted")
 	}
 	return c.advanceResume(ctx, plan, result)
+}
+
+// finishAdmittedResume handles an admitted claim whose parent run has left its
+// park: this claim resumed it, so the creator attempt moving on is not a
+// reason to close the group. When the graph advance is already durable, the
+// advance is recorded with the same receipt; while the resumed attempt is
+// still live, the resumer that admitted it is finishing and nothing is done.
+// Only otherwise does the caller fall back to closing the group.
+func (c *WorkflowCoordinator) finishAdmittedResume(ctx context.Context, plan WorkflowResumePlan) (bool, error) {
+	if plan.ResumeClaimState == nil || *plan.ResumeClaimState != ResumeClaimAdmitted ||
+		plan.NewAttemptGeneration == nil || plan.NewAttemptID == "" || plan.CheckpointSequence == nil {
+		return false, nil
+	}
+	if reader, ok := c.Resumer.(advancedResumeReader); ok {
+		result, advanced, err := reader.AdvancedResume(ctx, AdvancedResumeRequest{
+			WorkspaceID: plan.WorkspaceID, ParentRunID: plan.ParentRunID, GroupCompletionID: plan.GroupCompletionID,
+			ClaimID: plan.ResumeClaimID, PreviousAttemptGeneration: plan.PreviousAttemptGeneration,
+			NewAttemptGeneration: *plan.NewAttemptGeneration, NewAttemptID: plan.NewAttemptID,
+			CheckpointSequence: *plan.CheckpointSequence,
+		})
+		if err != nil {
+			return true, err
+		}
+		if advanced {
+			return true, c.advanceResume(ctx, plan, result)
+		}
+	}
+	lease, err := c.CreatorLeases.CreatorLeaseState(ctx, CreatorLeaseIdentity{
+		WorkspaceID: plan.WorkspaceID, RunID: plan.ParentRunID, CreatorEpoch: *plan.NewAttemptGeneration,
+		AttemptGeneration: *plan.NewAttemptGeneration, AttemptID: plan.NewAttemptID,
+	})
+	if err == nil && !creatorAttemptUnavailableAfterMissingCheckpoint(
+		WorkflowResumePlan{CreatorAttemptGeneration: *plan.NewAttemptGeneration, CreatorAttemptID: plan.NewAttemptID}, lease, c.now()) {
+		return true, nil
+	}
+	return false, nil
 }
 
 func (c *WorkflowCoordinator) closeWorkflowResumeGroupIfCreatorUnavailable(
@@ -458,6 +503,15 @@ func (c *WorkflowCoordinator) closeWorkflowResumeGroup(
 		locked.GroupCompletionID != plan.GroupCompletionID {
 		return workflowError(ErrorResumeConflict, "workflow resume close identity differs")
 	}
+	// The creator was judged unavailable from a plan read before this lock. A
+	// claim taken or admitted since then is what moved the creator's lease, so
+	// the group is left to that resumer rather than closed under it.
+	if locked.ResumeClaimID != plan.ResumeClaimID || claimStateOf(locked) != claimStateOf(plan) {
+		if err := tx.Commit(ctx); err != nil {
+			return workflowError(ErrorStoreUnavailable, "commit workflow resume close skip: %v", err)
+		}
+		return nil
+	}
 	if _, err := c.Store.CASCloseWorkflowResumeGroupTx(ctx, tx, CloseWorkflowResumeGroupRequest{
 		WorkspaceID: locked.WorkspaceID, GroupID: locked.GroupID, Generation: locked.Generation,
 		GroupCompletionID: locked.GroupCompletionID, Reason: reason, ClosedAt: c.now(),
@@ -468,6 +522,13 @@ func (c *WorkflowCoordinator) closeWorkflowResumeGroup(
 		return workflowError(ErrorStoreUnavailable, "commit workflow resume close: %v", err)
 	}
 	return nil
+}
+
+func claimStateOf(plan WorkflowResumePlan) ResumeClaimState {
+	if plan.ResumeClaimState == nil {
+		return ""
+	}
+	return *plan.ResumeClaimState
 }
 
 func (c *WorkflowCoordinator) tryDecideGroup(ctx context.Context, workspaceID, groupID string) error {

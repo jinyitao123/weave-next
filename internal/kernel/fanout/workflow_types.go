@@ -446,6 +446,19 @@ const (
 	ResumeClaimConflict   ResumeStatus = "claim_conflict"
 )
 
+// AdvancedResumeRequest names an admitted resume claim whose parent run has
+// already left its park, so its yielded checkpoint can no longer be read.
+type AdvancedResumeRequest struct {
+	WorkspaceID               string
+	ParentRunID               string
+	GroupCompletionID         string
+	ClaimID                   string
+	PreviousAttemptGeneration int64
+	NewAttemptGeneration      int64
+	NewAttemptID              string
+	CheckpointSequence        int64
+}
+
 type ResumeResult struct {
 	Status            ResumeStatus
 	ClaimID           string
