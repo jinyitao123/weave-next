@@ -70,7 +70,7 @@ func editLabelTaken(graph editGraph, label string) bool {
 // parallel regions and one delivery, which the edits alone do not prove.
 func editHasGuarantees(graph editGraph) bool {
 	for _, node := range editItems(graph, "nodes") {
-		if editOneOf(editNodeType(node), "wait", "condition") {
+		if editOneOf(editNodeType(node), "wait", "condition", "loop", "transform") {
 			return true
 		}
 	}

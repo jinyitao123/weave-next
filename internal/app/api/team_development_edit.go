@@ -433,6 +433,9 @@ func editRemoveStep(graph editGraph, id string) error {
 	if node != nil && editFailureEdge(graph, id) != nil {
 		return editFail("“%s”设置了失败分支，请先用 on_failure_remove 移除", editString(node["label"]))
 	}
+	if len(incoming) == 1 && editString(incoming[0]["route"]) == "body" {
+		return editFail("“%s”在检查回路里，请先用 check_loop_remove 移除检查回路", editString(node["label"]))
+	}
 	if len(incoming) == 1 && editString(incoming[0]["route"]) == "failure" {
 		return editFail("“%s”是失败分支的第一步，请用 on_failure_remove 移除整个失败分支", editString(node["label"]))
 	}

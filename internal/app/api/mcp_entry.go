@@ -293,6 +293,8 @@ func mcpDraftView(draft developmentDraft, catalog []catalogCapability) map[strin
 					step["type"] = "条件分支"
 				case "loop":
 					step["type"], step["max_rounds"] = "循环", config["max_iterations"]
+				case "transform":
+					step["type"] = "整理结果"
 				default:
 					step["type"] = "其他步骤"
 				}
